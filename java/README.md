@@ -1,27 +1,58 @@
 # WoT Blitz Replay Data Extractor - Java 主线
 
-`java/` 是项目后续主线。目标不是只做 Web 版，而是基于同一套 Java 核心能力交付两种形态：
+`java/` 是项目后续主线。基于同一套 Java 核心能力同时交付两种形态：
 
-- Java 离线 exe：无须安装 Python，双击运行，本地选择/拖拽回放并导出 Excel。
-- Web 版：Spring Boot 4 后端，前端暂定 Vue 3，支持浏览器上传、预览、下载。
+- **Java 离线 exe**：无须安装 Python / JDK，双击运行，自动打开浏览器，本地选择/拖拽回放并导出 Excel。
+- **Web 版**：Spring Boot 4 后端，Vue 3 前端，支持浏览器上传、预览、下载。
 
-当前代码已经具备 `wotb-core`、Spring Boot API 和 Vue 前端雏形；离线 exe 还未完成。路线图见 [../TODO.md](../TODO.md)。
+当前两种形态均已实现。路线图见 [../TODO.md](../TODO.md)。
 
 ## 模块
 
 | 模块 | 说明 |
 | --- | --- |
 | `wotb-core` | 核心库：解压回放、读取 pickle、解码 protobuf、车辆库映射、去重汇总、POI 导出 xlsx |
-| `wotb-web` | Spring Boot 4 REST API，监听 `8087` |
-| `frontend` | Vue 3 + Vite 前端，开发端口 `5173`，Docker 运行时由 nginx 暴露 `8088` |
+| `wotb-web` | Spring Boot 4 REST API + 桌面模式入口，监听 `8087`（Web 模式）或自动端口（桌面模式） |
+| `frontend` | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173` |
+| `build-desktop.bat` | 离线 exe 构建脚本：前端构建 → Maven 打包 → jpackage |
+| `dist-desktop/` | jpackage 产物目录 |
 
-计划新增或补齐：
+## 离线 exe（桌面模式）
 
-- `wotb-desktop` 或等价离线启动模块：承载 Java 离线 exe 的入口。
-- `jpackage` 构建脚本：输出 Windows exe / installer。
-- 前端静态资源打包到 Spring Boot 的流程：为“本地 Spring Boot + 内置 Web UI”离线模式服务。
+离线 exe 采用"本地 Spring Boot + 内置 Vue 静态资源 + jpackage"方案：
 
-## Docker 运行
+1. Vue 前端构建产物（`frontend/dist/`）在 Maven 构建时自动复制到 JAR 的 `classpath:/static/`。
+2. 启动时检测 `--desktop` 参数，自动选择可用端口、绑定 `127.0.0.1`、打开默认浏览器。
+3. 前端通过 `/api/health` 的 `desktop` 字段识别桌面模式，显示"关闭离线程序"按钮。
+4. `POST /api/shutdown` 优雅关闭服务并退出 JVM（仅桌面模式可用）。
+
+### 构建
+
+需要 JDK 21、Maven、Node.js。
+
+```bash
+cd java
+build-desktop.bat
+```
+
+输出：
+
+```
+dist-desktop/WoT Blitz Replay Extractor/
+  ├── WoT Blitz Replay Extractor.exe
+  ├── app/
+  └── runtime/
+```
+
+### 运行
+
+```bat
+dist-desktop\WoT Blitz Replay Extractor\WoT Blitz Replay Extractor.exe
+```
+
+双击即可，无需 Python、JDK 或 Node.js。首次启动可能略慢（JVM 启动）。
+
+## Web 版（Docker）
 
 ```bash
 cd java
@@ -59,22 +90,19 @@ npm run dev
 
 Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
-## Java 离线 exe 目标
+### 桌面模式开发
 
-离线 exe 的推荐路线：
-
-1. 复用 `wotb-core` 做解析、汇总和 Excel 导出。
-2. 复用现有 Vue 前端作为本地 UI，构建后放入 `wotb-web/src/main/resources/static/` 或构建产物复制目录。
-3. 由 Spring Boot 在本机随机或固定端口启动服务，并打开默认浏览器。
-4. 使用 `jpackage` 打包 runtime、jar、图标和启动脚本，生成 Windows exe。
-
-也可以选择 JavaFX/Swing 原生 UI，但当前已有 Vue 前端，因此优先路线是“本地 Spring Boot + 内置 Vue 静态资源 + jpackage”。
+```bash
+cd java
+mvn -s settings.xml -DskipTests -pl wotb-core,wotb-web -am install
+java -jar wotb-web/target/wotb-web.jar --desktop
+```
 
 ## API
 
 ### `GET /api/health`
 
-返回服务状态和已加载车辆数量。
+返回服务状态、已加载车辆数量、是否桌面模式。
 
 ### `GET /api/columns`
 
@@ -97,12 +125,16 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 ### `POST /api/export`
 
-`multipart/form-data`，字段名为 `files`。
+`multipart/form-data`，字段名为 `files`。可选 `?mode=aggregate`（默认）或 `?mode=each`。
 
-返回 xlsx：
+返回：
 
-- 单场：单场工作簿。
-- 多场：按 `arenaUniqueId` 去重后的汇总工作簿。
+- `mode=aggregate`（默认）：返回 xlsx。仅一场战斗时为单场工作簿；多场时为按 `arenaUniqueId` 去重后的汇总工作簿。
+- `mode=each`：返回 zip（`逐场导出.zip`），内含每场各自的单场 xlsx；无法解析的文件会被跳过。
+
+### `POST /api/shutdown`
+
+仅桌面模式可用。优雅关闭后端服务并退出 JVM。
 
 ## 测试
 
@@ -113,8 +145,8 @@ mvn -s settings.xml test
 
 测试覆盖：
 
-- `wotb-core` 的解析、字段一致性、去重、汇总、xlsx 导出。
-- `wotb-web` 的 `/api/columns`、`/api/preview`、`/api/export`。
+- `wotb-core` 的 `ParityTest`：与 Python 版输出一致性的集成测试，覆盖解析、字段不变量、去重、汇总、xlsx 导出。
+- `wotb-web` 的 `WebApiTest`：`/api/columns`、`/api/preview`、`/api/export` 的 controller 测试。
 
 测试样本来自仓库根目录的 `Data/`。
 
@@ -132,14 +164,15 @@ mvn -s settings.xml test
 server.port=8087
 spring.servlet.multipart.max-file-size=20MB
 spring.servlet.multipart.max-request-size=200MB
+spring.web.resources.static-locations=classpath:/static/
 ```
 
-注意：父 `java/pom.xml` 和 `wotb-web/pom.xml` 中的 Spring Boot 版本声明需要收敛；当前 Web 模块实际声明 `4.1.0`，项目目标按 Spring Boot 4 维护。
+桌面模式下会忽略 `server.port`，自动选择 8087+ 的可用端口。
 
 ## 维护注意
 
 - Java 版字段号、列定义和汇总规则应与 Python 版同步。
-- 修改解析逻辑后同时更新 `wotb-core` 测试和 Python `test_wotb.py`。
-- 修改前端表格列时优先从 `/api/columns` 获取列定义，不要在前端硬编码业务字段。
+- 修改解析逻辑后同时更新 `ParityTest` 和 Python `test_wotb.py`。
+- 列定义在 `wotb-core/.../Columns.java` 中集中管理，前端通过 `/api/columns` 获取，不在前端硬编码业务字段。
 - `wotb-core/src/main/resources/tankopedia.json` 应与根目录 `tankopedia.json` 保持一致。
-- 离线 exe 和 Web 版必须复用同一个 `wotb-core`，不要复制解析逻辑。
+- 离线 exe 和 Web 版复用同一个 `wotb-core`，不复制解析逻辑。
