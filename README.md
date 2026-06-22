@@ -6,21 +6,21 @@
 
 ## 当前目标
 
-| 目标 | 技术方向 | 状态 |
-| --- | --- | --- |
-| Java 离线 exe | Java 21 + Spring Boot 4 + 内置 Vue UI + jpackage | ✅ 已完成 |
-| Web 版 | Spring Boot 4 后端 + Vue 3 前端 | ✅ 已完成 |
-| Python 离线版 | Python + Tkinter + PyInstaller | 历史可用版本，作为迁移参照 |
+| 目标          | 技术方向                                           | 状态            |
+|-------------|------------------------------------------------|---------------|
+| Java 离线 exe | Java 21 + Spring Boot 4 + 内置 Vue UI + jpackage | ✅ 已完成         |
+| Web 版       | Spring Boot 4 后端 + Vue 3 前端                    | ✅ 已完成         |
+| Python 离线版  | Python + Tkinter + PyInstaller                 | 历史可用版本，作为迁移参照 |
 
 详细任务拆分见 [TODO.md](TODO.md)。
 
 ## 当前实现
 
-| 版本 | 技术栈 | 入口 | 适用场景 |
-| --- | --- | --- | --- |
-| Python 离线版 | Python + Tkinter + openpyxl + PyInstaller | 根目录脚本与 `dist\*.exe` | 本机批量处理、拖拽使用、生成 xlsx |
-| Java 离线 exe | Java 21 + Spring Boot 4 + Vue 3 + jpackage | `java\dist-desktop\WoT Blitz Replay Extractor\*.exe` | 双击运行、本地浏览器 UI、离线导出 |
-| Java Web 版 | Java 21 + Spring Boot 4 + Vue 3 + Docker | `java/` | 浏览器上传、在线预览、REST API、容器部署 |
+| 版本          | 技术栈                                        | 入口                                                   | 适用场景                     |
+|-------------|--------------------------------------------|------------------------------------------------------|--------------------------|
+| Python 离线版  | Python + Tkinter + openpyxl + PyInstaller  | 根目录脚本与 `dist\*.exe`                                  | 本机批量处理、拖拽使用、生成 xlsx      |
+| Java 离线 exe | Java 21 + Spring Boot 4 + Vue 3 + jpackage | `java\dist-desktop\WoT Blitz Replay Extractor\*.exe` | 双击运行、本地浏览器 UI、离线导出       |
+| Java Web 版  | Java 21 + Spring Boot 4 + Vue 3 + Docker   | `java/`                                              | 浏览器上传、在线预览、REST API、容器部署 |
 
 文档入口：
 
@@ -156,19 +156,19 @@ mvn -s settings.xml test
 
 ## 主要文件
 
-| 路径 | 说明 |
-| --- | --- |
-| `wotb_extractor.py` | Python 核心解析、汇总、Excel 导出、CLI |
-| `wotb_gui.py` | Tkinter GUI，复用 `wotb_extractor.py` 的核心逻辑 |
-| `test_wotb.py` | Python 回归测试 |
-| `update_tankopedia.py` | 更新车辆库 |
-| `tankopedia.json` | 车辆 ID 映射数据 |
-| `Data/` | 示例 `.wotbreplay` 文件 |
-| `java/` | Java 主线（核心库 + Web + 离线 exe 构建） |
-| `java/wotb-core/` | Java 核心库：解析、protobuf 解码、pickle 读取、汇总、POI 导出 |
-| `java/wotb-web/` | Spring Boot 4 REST API + 桌面模式入口 |
-| `java/frontend/` | Vue 3 前端（单文件组件，无 router） |
-| `java/build-desktop.bat` | jpackage 离线 exe 构建脚本 |
+| 路径                       | 说明                                          |
+|--------------------------|---------------------------------------------|
+| `wotb_extractor.py`      | Python 核心解析、汇总、Excel 导出、CLI                 |
+| `wotb_gui.py`            | Tkinter GUI，复用 `wotb_extractor.py` 的核心逻辑    |
+| `test_wotb.py`           | Python 回归测试                                 |
+| `update_tankopedia.py`   | 更新车辆库                                       |
+| `tankopedia.json`        | 车辆 ID 映射数据                                  |
+| `Data/`                  | 示例 `.wotbreplay` 文件                         |
+| `java/`                  | Java 主线（核心库 + Web + 离线 exe 构建）              |
+| `java/wotb-core/`        | Java 核心库：解析、protobuf 解码、pickle 读取、汇总、POI 导出 |
+| `java/wotb-web/`         | Spring Boot 4 REST API + 桌面模式入口             |
+| `java/frontend/`         | Vue 3 前端（单文件组件，无 router）                    |
+| `java/build-desktop.bat` | jpackage 离线 exe 构建脚本                        |
 
 ## 数据来源与限制
 
