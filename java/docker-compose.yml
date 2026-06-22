@@ -1,0 +1,22 @@
+# 在线版: 两个容器 (前端 nginx+Vue / 后端 Spring Boot API)
+# 用法: cd java && docker compose up --build
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: wotb-web/Dockerfile
+    container_name: wotb-backend
+    ports:
+      - "8087:8087"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: wotb-frontend
+    ports:
+      - "8088:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

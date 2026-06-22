@@ -1,0 +1,2 @@
+openpyxl>=3.1
+pyinstaller>=6.0
