@@ -9,13 +9,13 @@
 
 ## 模块
 
-| 模块 | 说明 |
-| --- | --- |
-| `wotb-core` | 核心库：解压回放、读取 pickle、解码 protobuf、车辆库映射、去重汇总、POI 导出 xlsx |
-| `wotb-web` | Spring Boot 4 REST API + 桌面模式入口，监听 `8087`（Web 模式）或自动端口（桌面模式） |
-| `frontend` | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173` |
-| `build-desktop.bat` | 离线 exe 构建脚本：前端构建 → Maven 打包 → jpackage |
-| `dist-desktop/` | jpackage 产物目录 |
+| 模块                  | 说明                                                           |
+|---------------------|--------------------------------------------------------------|
+| `wotb-core`         | 核心库：解压回放、读取 pickle、解码 protobuf、车辆库映射、去重汇总、POI 导出 xlsx        |
+| `wotb-web`          | Spring Boot 4 REST API + 桌面模式入口，监听 `8087`（Web 模式）或自动端口（桌面模式） |
+| `frontend`          | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
+| `build-desktop.bat` | 离线 exe 构建脚本：前端构建 → Maven 打包 → jpackage                       |
+| `dist-desktop/`     | jpackage 产物目录                                                |
 
 ## 离线 exe（桌面模式）
 
