@@ -8,7 +8,6 @@ import java.util.function.Function;
 
 /**
  * 集中的列定义 (Excel 与各前端共用)。
- * 与 Python 版 PLAYER_COLUMNS / STAT_COLUMNS 对应。
  */
 public final class Columns {
 

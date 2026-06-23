@@ -14,8 +14,8 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * 验证 Java 解析与 Python 版输出一致 (逐字段比对真实回放)。
- * 期望值取自 Python wotb_extractor 在同一批回放上的已验证输出。
+ * 逐字段比对真实回放, 验证解析输出与已知正确值一致 (回归基线)。
+ * 期望值为人工核对真实回放后固定下来的已验证值。
  */
 class ParityTest {
 

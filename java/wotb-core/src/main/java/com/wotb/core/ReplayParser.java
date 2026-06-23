@@ -19,7 +19,6 @@ import java.util.zip.ZipInputStream;
 
 /**
  * 解析 .wotbreplay (= zip 包含 meta.json + battle_results.dat)。
- * 字段含义与 Python 版 wotb_extractor.parse_replay 完全一致。
  */
 public final class ReplayParser {
 

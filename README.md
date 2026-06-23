@@ -106,7 +106,7 @@ mvn -s settings.xml test
 
 | 路径                            | 说明                                          |
 |-------------------------------|---------------------------------------------|
-| `common/`                     | 共享资源：`tankopedia.json`、`assets/`(图标)、`data/`(示例回放) |
+| `common/`                     | 共享资源：`tankopedia.json`、`rating.json`、`map_names.json`(地图中文名)、`assets/`(图标)、`data/`(示例回放) |
 | `python/`                     | 车辆库更新脚本（`update_tankopedia.py`） |
 | `java/`                       | Java 主线（共享核心 + Web + 离线打包）                   |
 | `java/wotb-core/`             | 共享核心库：解析、protobuf 解码、pickle 读取、汇总、POI 导出     |
