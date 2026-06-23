@@ -66,7 +66,8 @@
     │   ├── src/{main.js, App.vue}
     │   ├── index.html  package.json  vite.config.js  .npmrc
     ├── offline/              # 离线版打包
-    │   └── build-desktop.bat     # 前端构建 → Maven 打包 → jpackage
+    │   ├── build-desktop.bat     # 入口（调用 .ps1；兼容双击）
+    │   └── build-desktop.ps1    # 主脚本：自动检测/下载工具 → 构建 → jpackage
     └── online/               # 联网版部署
         ├── docker-compose.yml    # nginx(Vue) + Spring Boot 两容器
         ├── backend.Dockerfile    # 上下文=仓库根（需 common/ 与 java/）
