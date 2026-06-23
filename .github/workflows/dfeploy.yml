@@ -1,5 +1,7 @@
 name: Deploy WOTB Web
 
+run-name: Deploy ${{ github.ref_name }} by @${{ github.actor }}
+
 on:
   push:
     branches:
