@@ -88,7 +88,7 @@ final class Mapper {
             for (AggCol c : AGG_COLS) {
                 cells.put(c.key(), c.get().apply(a));
             }
-            out.add(new Dtos.AggRow(cells));
+            out.add(new Dtos.AggRow(cells, a.team));
         }
         return out;
     }

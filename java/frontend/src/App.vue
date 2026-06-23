@@ -287,12 +287,34 @@ function fmtDuration(s) {
   const t = Math.floor(s)
   return `${Math.floor(t / 60)}分${t % 60}秒`
 }
+
+// 评分分级 -> 徽章配色
+const RATING_KEYS = new Set(['rating', 'rating_avg'])
+function ratingTier(v) {
+  v = Number(v) || 0
+  if (v >= 1600) return 'r-elite'
+  if (v >= 1300) return 'r-great'
+  if (v >= 1000) return 'r-good'
+  if (v >= 700) return 'r-mid'
+  return 'r-poor'
+}
+
+// 汇总页顶部指标卡
+const aggStats = computed(() => {
+  if (!resp.value) return null
+  const battles = resp.value.battles || []
+  const agg = resp.value.aggregate || []
+  let maxRating = 0, maxDmg = 0
+  agg.forEach(r => { maxRating = Math.max(maxRating, Number(r.cells.rating_avg) || 0) })
+  battles.forEach(b => (b.players || []).forEach(p => { maxDmg = Math.max(maxDmg, Number(p.cells.damage_dealt) || 0) }))
+  return { battles: battles.length, players: agg.length, maxRating, maxDmg }
+})
 </script>
 
 <template>
   <div class="wrap">
     <header>
-      <h1>WoT Blitz 回放数据提取</h1>
+      <div class="brand"><span class="logo">W</span><h1>WoT Blitz 回放分析</h1></div>
       <button v-if="isDesktop" class="ghost" @click="shutdown">关闭离线程序</button>
     </header>
 
@@ -374,35 +396,55 @@ function fmtDuration(s) {
         </button>
       </div>
 
-      <div v-if="activeTab === 'aggregate' && resp.aggregate.length" class="tablewrap">
-        <table>
-          <thead><tr>
-            <th v-for="c in shownAggCols" :key="c.key" @click="sortBy('agg', c)">{{ aggLabel(c.key) }}{{ arrow('agg', c.key) }}</th>
-          </tr></thead>
-          <tbody>
-            <tr v-for="(row, i) in sorted(resp.aggregate, 'agg', shownAggCols)" :key="i">
-              <td v-for="c in shownAggCols" :key="c.key" :class="{ num: c.num }">{{ row.cells[c.key] }}</td>
-            </tr>
-          </tbody>
-        </table>
+      <div v-if="activeTab === 'aggregate' && resp.aggregate.length">
+        <div v-if="aggStats" class="mcards">
+          <div class="mc"><div class="k">战斗场次</div><div class="v">{{ aggStats.battles }}</div></div>
+          <div class="mc"><div class="k">选手</div><div class="v">{{ aggStats.players }}</div></div>
+          <div class="mc"><div class="k">最高场均评分</div><div class="v">{{ aggStats.maxRating }}</div></div>
+          <div class="mc"><div class="k">最高单场伤害</div><div class="v">{{ aggStats.maxDmg }}</div></div>
+        </div>
+        <div class="tablewrap">
+          <table>
+            <thead><tr>
+              <th v-for="c in shownAggCols" :key="c.key" @click="sortBy('agg', c)">{{ aggLabel(c.key) }}{{ arrow('agg', c.key) }}</th>
+            </tr></thead>
+            <tbody>
+              <tr v-for="(row, i) in sorted(resp.aggregate, 'agg', shownAggCols)" :key="i"
+                  :class="row.team === 1 ? 't1' : 't2'">
+                <td v-for="c in shownAggCols" :key="c.key">
+                  <span v-if="RATING_KEYS.has(c.key)" class="rbadge" :class="ratingTier(row.cells[c.key])">{{ row.cells[c.key] }}</span>
+                  <span v-else>{{ row.cells[c.key] }}</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i" class="tablewrap">
-        <p class="info">地图: {{ b.mapName }} · 时长: {{ fmtDuration(b.durationS) }}
-          · 获胜: {{ TEAM[b.winnerTeam] || '平局/未知' }} · 版本: {{ b.version }}</p>
-        <table>
-          <thead><tr>
-            <th v-for="c in shownCols" :key="c.key" @click="sortBy('b' + i, c)">{{ playerLabel(c.key) }}{{ arrow('b' + i, c.key) }}</th>
-          </tr></thead>
-          <tbody>
-            <tr v-for="(row, ri) in sorted(b.players, 'b' + i, shownCols)" :key="ri"
-                :class="row.team === 1 ? 't1' : 't2'">
-              <td v-for="c in shownCols" :key="c.key" :class="{ num: c.num, left: LEFT_KEYS.has(c.key) }">
-                {{ row.cells[c.key] }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i">
+        <div class="mcards">
+          <div class="mc"><div class="k">地图</div><div class="v">{{ b.mapName }}</div></div>
+          <div class="mc"><div class="k">时长</div><div class="v">{{ fmtDuration(b.durationS) }}</div></div>
+          <div class="mc"><div class="k">获胜</div><div class="v">{{ TEAM[b.winnerTeam] || '平局/未知' }}</div></div>
+          <div class="mc"><div class="k">玩家</div><div class="v">{{ b.players.length }}</div></div>
+        </div>
+        <div class="tablewrap">
+          <table>
+            <thead><tr>
+              <th v-for="c in shownCols" :key="c.key" @click="sortBy('b' + i, c)">{{ playerLabel(c.key) }}{{ arrow('b' + i, c.key) }}</th>
+            </tr></thead>
+            <tbody>
+              <tr v-for="(row, ri) in sorted(b.players, 'b' + i, shownCols)" :key="ri"
+                  :class="row.team === 1 ? 't1' : 't2'">
+                <td v-for="c in shownCols" :key="c.key">
+                  <span v-if="RATING_KEYS.has(c.key)" class="rbadge" :class="ratingTier(row.cells[c.key])">{{ row.cells[c.key] }}</span>
+                  <span v-else-if="c.key === 'survived_label'" :class="row.cells[c.key] === '存活' ? 'alive' : 'dead'">{{ row.cells[c.key] }}</span>
+                  <span v-else>{{ row.cells[c.key] }}</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </template>
 
@@ -423,8 +465,23 @@ function fmtDuration(s) {
 <style>
 body { margin: 0; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; color: #222; background: #f7f8fa; }
 .wrap { max-width: 1400px; margin: 0 auto; padding: 16px 20px; }
-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-h1 { font-size: 20px; margin: 0 0 12px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+h1 { font-size: 18px; margin: 0; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.logo { width: 30px; height: 30px; border-radius: 7px; background: #e6f1fb; color: #185fa5;
+  display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 16px; }
+.mcards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 4px 0 12px; }
+.mc { background: #f1f4f8; border-radius: 8px; padding: 9px 13px; }
+.mc .k { font-size: 12px; color: #777; }
+.mc .v { font-size: 18px; font-weight: 600; margin-top: 2px; }
+.rbadge { display: inline-block; min-width: 42px; padding: 1px 7px; border-radius: 6px; font-size: 12px; }
+.r-poor { background: #FCEBEB; color: #791F1F; }
+.r-mid { background: #F1EFE8; color: #444441; }
+.r-good { background: #EAF3DE; color: #27500A; }
+.r-great { background: #E6F1FB; color: #0C447C; }
+.r-elite { background: #EEEDFE; color: #3C3489; }
+.alive { color: #3B6D11; }
+.dead { color: #9aa1ad; }
 .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 button, .filebtn { padding: 6px 14px; border: 1px solid #2f5597; background: #2f5597; color: #fff;
   border-radius: 4px; cursor: pointer; font-size: 13px; }
@@ -470,18 +527,19 @@ button:disabled { opacity: .5; cursor: default; }
 .tabs button { background: #e8edf5; color: #2f5597; border-color: #c7d3e6; }
 .tabs button.active { background: #2f5597; color: #fff; }
 .tabs.locked button:disabled { cursor: not-allowed; }
-.info { color: #1b5e20; font-size: 13px; margin: 6px 0; }
-.tablewrap { overflow-x: auto; background: #fff; }
+.tablewrap { overflow-x: auto; background: #fff; border: 1px solid #e3e8ef; border-radius: 10px; }
 /* 按内容自然宽度排列(不挤压列), 内容窄时仍填满容器; 横向滚动可完整看到末列 */
 table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 13px; }
-th, td { border: 1px solid #cfd8e3; padding: 4px 8px; white-space: nowrap; }
-th { background: #2f5597; color: #fff; cursor: pointer; user-select: none; position: sticky; top: 0; }
-/* 末列(账号ID)留出右侧余量, 不贴边/被滚动条裁切 */
+th, td { padding: 7px 12px; white-space: nowrap; text-align: center;
+  border-bottom: 1px solid #eef1f6; font-variant-numeric: tabular-nums; }
+th { background: #f1f4f8; color: #46566f; font-weight: 500; cursor: pointer; user-select: none;
+  position: sticky; top: 0; border-bottom: 1px solid #d6deea; }
+tbody tr:last-child td { border-bottom: none; }
+/* 末列留出右侧余量, 不贴边/被滚动条裁切 */
 th:last-child, td:last-child { padding-right: 16px; }
-td.num { text-align: center; }
-td.left { text-align: left; }
-tr.t1 td { background: #ddebf7; }
-tr.t2 td { background: #fce4d6; }
+/* 队伍行底色(浅) */
+tr.t1 td { background: #eef4fb; }
+tr.t2 td { background: #fbf1ec; }
 .closed { padding: 30px; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
 /* 二次确认对话框 */
 .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex;

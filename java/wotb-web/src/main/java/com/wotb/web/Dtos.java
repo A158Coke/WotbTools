@@ -17,7 +17,7 @@ public final class Dtos {
                             String sourceName, List<PlayerRow> players) {
     }
 
-    public record AggRow(java.util.Map<String, Object> cells) {
+    public record AggRow(java.util.Map<String, Object> cells, int team) {
     }
 
     /** 列定义 (纯数据形状: 字段键 + 是否数值)。中文显示名由前端/导出层各自映射。 */
