@@ -362,10 +362,13 @@ function fmtDuration(s) {
         <span v-for="(f, i) in resp.failures" :key="i">{{ f[0] }} ({{ f[1] }})</span>
       </div>
 
-      <div class="tabs">
-        <button v-if="resp.aggregate.length" :class="{ active: activeTab === 'aggregate' }"
+      <div class="tabs" :class="{ locked: showColPicker }"
+           :title="showColPicker ? '列选择器打开时不可切换表格，请先点「完成」' : ''">
+        <button v-if="resp.aggregate.length" :disabled="showColPicker"
+                :class="{ active: activeTab === 'aggregate' }"
                 @click="activeTab = 'aggregate'">汇总 ({{ resp.aggregate.length }} 名选手)</button>
-        <button v-for="(b, i) in resp.battles" :key="i" :class="{ active: activeTab === 'b' + i }"
+        <button v-for="(b, i) in resp.battles" :key="i" :disabled="showColPicker"
+                :class="{ active: activeTab === 'b' + i }"
                 @click="activeTab = 'b' + i">{{ b.mapName }} #{{ i + 1 }}
           <span class="tabx" title="移除该场" @click.stop="askRemoveBattle(b, i)">×</span>
         </button>
@@ -466,6 +469,7 @@ button:disabled { opacity: .5; cursor: default; }
 .tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 12px 0 6px; }
 .tabs button { background: #e8edf5; color: #2f5597; border-color: #c7d3e6; }
 .tabs button.active { background: #2f5597; color: #fff; }
+.tabs.locked button:disabled { cursor: not-allowed; }
 .info { color: #1b5e20; font-size: 13px; margin: 6px 0; }
 .tablewrap { overflow-x: auto; background: #fff; }
 /* 按内容自然宽度排列(不挤压列), 内容窄时仍填满容器; 横向滚动可完整看到末列 */
