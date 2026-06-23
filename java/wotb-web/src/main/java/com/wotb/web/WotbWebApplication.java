@@ -5,6 +5,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.env.Environment;
 
 import java.awt.Desktop;
 import java.io.IOException;
@@ -36,7 +37,7 @@ public class WotbWebApplication {
     }
 
     @Bean
-    ApplicationRunner desktopBrowserLauncher(org.springframework.core.env.Environment env) {
+    ApplicationRunner desktopBrowserLauncher(Environment env) {
         return new ApplicationRunner() {
             @Override
             public void run(ApplicationArguments args) {

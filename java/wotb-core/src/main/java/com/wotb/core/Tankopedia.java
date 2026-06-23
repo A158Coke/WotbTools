@@ -2,6 +2,7 @@ package com.wotb.core;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wotb.core.model.TankInfo;
 
 import java.io.InputStream;
 import java.util.HashMap;
@@ -9,21 +10,6 @@ import java.util.Map;
 
 /** 车辆库 (tank_id -> 名称/等级/车种/国家), 来自 blitzkit。 */
 public final class Tankopedia {
-
-    /** 单辆车的信息。 */
-    public static final class TankInfo {
-        public final String name;
-        public final Object tier;
-        public final String type;   // 车种(轻坦/中坦/重坦/TD)
-        public final String nation;
-
-        TankInfo(String name, Object tier, String type, String nation) {
-            this.name = name;
-            this.tier = tier;
-            this.type = type;
-            this.nation = nation;
-        }
-    }
 
     private final Map<String, JsonNode> data;
 

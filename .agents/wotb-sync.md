@@ -35,7 +35,7 @@
 1. **解析**:`wotb-core/.../ReplayParser.java` 读出字段写入 `PlayerResult`(单场列在 `RESULT_UINT_FIELDS`/对应解析;汇总指标在 `Aggregator.java` 累计)。
 2. **列定义/取值**:
    - 单场:`Columns.java` 加一条 `Col(title, key, xlsxW, pxW, num, getter)`。
-   - 汇总:`Mapper.AGG_COLS`(key+num+getter) 和 `ExcelExporter` 的汇总 `AggCol`(title+宽+num+getter) 各加一条;指标计算在 `Aggregator.Agg`。
+   - 汇总:`Mapper.AGG_COLS`(key+num+getter) 和 `ExcelExporter` 的汇总 `AggCol`(title+宽+num+getter) 各加一条;指标计算在 `model.Agg`(由 `Aggregator` 聚合产生)。
 3. **API 暴露**:`/api/columns` 自动包含(来自 Columns/AGG_COLS 的 key)。
 5. **前端**:`App.vue` 的 `PLAYER_LABELS`/`AGG_LABELS` 补该 key 的中文;如要默认显示,改 `DEFAULT_VISIBLE`。
 6. 验证 + 文档(含 DEVELOPER_GUIDE 字段表)。

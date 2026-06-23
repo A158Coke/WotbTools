@@ -2,6 +2,11 @@ package com.wotb.web;
 
 import com.wotb.core.*;
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.Collected;
+import com.wotb.core.model.Source;
+import com.wotb.web.dto.AggRow;
+import com.wotb.web.dto.BattleDto;
+import com.wotb.web.dto.PreviewResponse;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
@@ -24,7 +29,7 @@ import java.util.zip.ZipOutputStream;
 
 /**
  * 回放处理 REST API (无状态)。
- * 跨域开放 (在线时前端为独立容器)。
+ * 跨域开放
  */
 @RestController
 @RequestMapping("/api")
@@ -59,19 +64,19 @@ public class ReplayController {
 
     /** 解析(并去重), 返回预览 JSON: 每场玩家数据 + 跨场汇总 + 去重/失败信息。 */
     @PostMapping(value = "/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public Dtos.PreviewResponse preview(@RequestParam("files") MultipartFile[] files) throws Exception {
-        Replays.Collected c = Replays.collect(toSources(files), null);
+    public PreviewResponse preview(@RequestParam("files") MultipartFile[] files) throws Exception {
+        Collected c = Replays.collect(toSources(files), null);
         Rating.compute(c.battles, tankopedia);   // 基准=本次上传集合
 
-        List<Dtos.BattleDto> battles = new ArrayList<>();
+        List<BattleDto> battles = new ArrayList<>();
         for (int i = 0; i < c.battles.size(); i++) {
             battles.add(Mapper.toBattle(c.battles.get(i), c.battleSourceNames.get(i), tankopedia));
         }
-        List<Dtos.AggRow> aggregate = c.battles.size() > 1
+        List<AggRow> aggregate = c.battles.size() > 1
                 ? Mapper.toAggregate(Aggregator.aggregate(c.battles, tankopedia))
                 : List.of();
 
-        return new Dtos.PreviewResponse(battles, aggregate, c.duplicates, c.failures,
+        return new PreviewResponse(battles, aggregate, c.duplicates, c.failures,
                 Mapper.playerColumns(), Mapper.aggregateColumns());
     }
 
@@ -83,15 +88,15 @@ public class ReplayController {
             return exportEach(files);
         }
 
-        Replays.Collected c = Replays.collect(toSources(files), null);
+        Collected c = Replays.collect(toSources(files), null);
         if (c.battles.isEmpty()) {
             return ResponseEntity.badRequest().build();
         }
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         String filename;
         if (c.battles.size() == 1) {
-            ExcelExporter.writeSingle(c.battles.get(0), tankopedia, out);
-            String base = stripExt(c.battleSourceNames.get(0));
+            ExcelExporter.writeSingle(c.battles.getFirst(), tankopedia, out);
+            String base = stripExt(c.battleSourceNames.getFirst());
             filename = base + ".xlsx";
         } else {
             ExcelExporter.writeAggregate(c.battles, c.battleSourceNames, c.duplicates, tankopedia, out);
@@ -126,12 +131,12 @@ public class ReplayController {
     }
 
     private ResponseEntity<Resource> exportEach(MultipartFile[] files) throws Exception {
-        List<Replays.Source> sources = toSources(files);
+        List<Source> sources = toSources(files);
         ByteArrayOutputStream zipBytes = new ByteArrayOutputStream();
         int exported = 0;
         Set<String> usedNames = new HashSet<>();
         try (ZipOutputStream zip = new ZipOutputStream(zipBytes, StandardCharsets.UTF_8)) {
-            for (Replays.Source source : sources) {
+            for (Source source : sources) {
                 try {
                     Battle battle = ReplayParser.parse(source.bytes());
                     ByteArrayOutputStream xlsx = new ByteArrayOutputStream();
@@ -175,11 +180,11 @@ public class ReplayController {
         }
     }
 
-    private static List<Replays.Source> toSources(MultipartFile[] files) throws Exception {
-        List<Replays.Source> sources = new ArrayList<>();
+    private static List<Source> toSources(MultipartFile[] files) throws Exception {
+        List<Source> sources = new ArrayList<>();
         for (MultipartFile f : files) {
             String name = f.getOriginalFilename();
-            sources.add(new Replays.Source(name == null ? "replay.wotbreplay" : name, f.getBytes()));
+            sources.add(new Source(name == null ? "replay.wotbreplay" : name, f.getBytes()));
         }
         return sources;
     }

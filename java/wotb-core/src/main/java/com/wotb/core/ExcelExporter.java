@@ -1,5 +1,6 @@
 package com.wotb.core;
 
+import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import org.apache.poi.ss.usermodel.*;
@@ -15,14 +16,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
-/** 导出 xlsx (POI)。对应 Python export_xlsx / export_aggregate_xlsx。 */
+/** 导出 xlsx (POI): 单场 / 多场汇总。 */
 public final class ExcelExporter {
 
     private static final DateTimeFormatter DT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter DT_MIN = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     /** 汇总表的一列。 */
-    private record AggCol(String title, int xlsx, boolean num, Function<Aggregator.Agg, Object> get) {
+    private record AggCol(String title, int xlsx, boolean num, Function<Agg, Object> get) {
     }
 
     private final Workbook wb;
@@ -174,7 +175,7 @@ public final class ExcelExporter {
                                       OutputStream out) throws IOException {
         Rating.compute(battles, tp);   // 基准=这批战斗
         ExcelExporter e = new ExcelExporter();
-        Map<Long, Aggregator.Agg> agg = Aggregator.aggregate(battles, tp);
+        Map<Long, Agg> agg = Aggregator.aggregate(battles, tp);
         e.sheetSummary(agg);
         e.sheetDetail(battles, tp);
         e.sheetBattleList(battles, sourceNames, duplicates);
@@ -182,7 +183,7 @@ public final class ExcelExporter {
         e.wb.close();
     }
 
-    private void sheetSummary(Map<Long, Aggregator.Agg> aggMap) {
+    private void sheetSummary(Map<Long, Agg> aggMap) {
         Sheet ws = wb.createSheet("汇总");
         List<AggCol> cols = List.of(
                 new AggCol("玩家", 18, false, a -> a.nickname),
@@ -203,14 +204,14 @@ public final class ExcelExporter {
                 new AggCol("命中率%", 8, true, a -> r1(a.hitRate())),
                 new AggCol("击穿率%", 8, true, a -> r1(a.penRate())),
                 new AggCol("场均击伤", 9, true, a -> r2(a.avg(a.enemiesDamaged))),
-                new AggCol("用车", 30, false, Aggregator.Agg::tanksStr),
+                new AggCol("用车", 30, false, Agg::tanksStr),
                 new AggCol("账号ID", 12, true, a -> a.accountId)
         );
         writeHeader(ws, cols.stream().map(c -> new String[]{c.title(), String.valueOf(c.xlsx())}).toList());
-        List<Aggregator.Agg> rows = new java.util.ArrayList<>(aggMap.values());
+        List<Agg> rows = new java.util.ArrayList<>(aggMap.values());
         rows.sort((x, y) -> Double.compare(y.avg(y.damage), x.avg(x.damage)));
         int rIdx = 1;
-        for (Aggregator.Agg a : rows) {
+        for (Agg a : rows) {
             Row row = ws.createRow(rIdx++);
             for (int c = 0; c < cols.size(); c++) {
                 setCell(row.createCell(c), cols.get(c).get().apply(a), plain, c < 2 ? "nickname" : "x");

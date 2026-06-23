@@ -46,14 +46,20 @@
     │   │   ├── Aggregator.java      # 跨场汇总
     │   │   ├── ExcelExporter.java   # POI xlsx 导出
     │   │   ├── Replays.java         # 多回放去重收集
-    │   │   └── model/{Battle.java, PlayerResult.java}
+    │   │   └── model/             # 数据模型(每个一个文件)
+    │   │       ├── Battle.java  PlayerResult.java
+    │   │       ├── Agg.java           # 跨场汇总(原 Aggregator.Agg)
+    │   │       ├── TankInfo.java      # 车辆信息(原 Tankopedia.TankInfo)
+    │   │       ├── Source.java        # 待处理回放(原 Replays.Source)
+    │   │       └── Collected.java     # 去重结果(原 Replays.Collected)
     │   └── src/test/java/com/wotb/core/ParityTest.java   # 读 ../../common/data
     ├── wotb-web/              # 【共享】Spring Boot 应用（离线与联网都用它）
     │   ├── src/main/java/com/wotb/web/
     │   │   ├── WotbWebApplication.java  # 启动入口（含 --desktop 模式）
     │   │   ├── ReplayController.java    # REST API + /api/shutdown
     │   │   ├── Mapper.java              # 核心模型 → DTO 映射
-    │   │   └── Dtos.java                # API 响应 DTO
+    │   │   └── dto/                     # API 响应 DTO(每个一个文件)
+    │   │       └── PlayerRow / BattleDto / AggRow / ColumnDef / PreviewResponse
     │   └── src/test/java/com/wotb/web/WebApiTest.java
     ├── frontend/             # 【共享】Vue 3 前端（单文件组件，无 router）
     │   ├── src/{main.js, App.vue}
@@ -171,7 +177,7 @@ BattleResults
 - 主要交互：
   - **顶部上传区按状态切换**(无外部依赖, 图标为内联 SVG 以兼容离线 exe):未选文件时显示**上传卡**`.uploadcard`(上传图标 + 提示 + 内嵌「选择回放文件 / 选择文件夹」, 同时是拖拽目标);已选文件后收起为紧凑**文件条**`.filebar`(文件数 + 文件 chip + 添加文件/文件夹 + 清空), 下方是强调主按钮**「解析预览」**`.actionrow`。文件列表每项 `×` 单删、「清空」清全部。
   - **导出按钮在解析后才出现**, 位于结果区工具条 `.restoolbar`(左侧标签页 + 右侧 `.resactions`:选择列 / 合并汇总 / 每场导出);解析后**每个战斗标签页(地图 #n)带 `×`** 可移除该场:点击弹应用内二次确认对话框,确认后(`confirmRemoveBattle`)删对应回放并自动重新解析以更新汇总。
-  - 视觉(数据网格风):浅色表头、**所有列居中**、行下细线;**队伍行底色**——单场按本场队伍、汇总按该选手最近一场队伍(后端 `Aggregator.Agg.team` → `Dtos.AggRow.team`);`评分`/`场均评分` 渲染为**分级彩色徽章**(`ratingTier()`:差/中/良/优/卓越);表格上方一排**指标卡**(汇总=场次/选手/最高场均评分/最高单场伤害;单场=地图/时长/获胜/玩家)。
+  - 视觉(数据网格风):浅色表头、**所有列居中**、行下细线;**队伍行底色**——单场按本场队伍、汇总按该选手最近一场队伍(后端 `model.Agg.team` → `dto.AggRow.team`);`评分`/`场均评分` 渲染为**分级彩色徽章**(`ratingTier()`:差/中/良/优/卓越);表格上方一排**指标卡**(汇总=场次/选手/最高场均评分/最高单场伤害;单场=地图/时长/获胜/玩家)。
   - **列选择器**是按钮下的下拉面板，作用于当前所在的表（汇总/单场各一套），**即点即生效**：勾选切换显示、**拖拽 `⋮⋮` 调整列顺序**，另有 全选/重置/完成。**面板打开时锁定表格切换**(汇总/各场标签禁用),避免作用域错乱，点「完成」后恢复。状态：`visibleKeys`/`aggVisibleKeys`(显示集合) + `playerOrder`/`aggOrder`(顺序)；表格列 = 顺序过滤出可见列。
 
 ### 显示名（i18n）架构
