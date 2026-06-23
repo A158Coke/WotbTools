@@ -1,11 +1,15 @@
 package com.wotb.web;
 
-import com.wotb.core.Aggregator;
 import com.wotb.core.Columns;
 import com.wotb.core.Players;
 import com.wotb.core.Tankopedia;
+import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.web.dto.AggRow;
+import com.wotb.web.dto.BattleDto;
+import com.wotb.web.dto.ColumnDef;
+import com.wotb.web.dto.PlayerRow;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -20,16 +24,16 @@ final class Mapper {
     }
 
     /** 玩家表列定义 (纯数据: key + 是否数值; 中文名由前端映射)。 */
-    static List<Dtos.ColumnDef> playerColumns() {
-        List<Dtos.ColumnDef> out = new ArrayList<>();
+    static List<ColumnDef> playerColumns() {
+        List<ColumnDef> out = new ArrayList<>();
         for (Columns.Col c : Columns.PLAYER) {
-            out.add(new Dtos.ColumnDef(c.key(), c.num()));
+            out.add(new ColumnDef(c.key(), c.num()));
         }
         return out;
     }
 
     /** 汇总表列定义 (key + 是否数值 + 取值函数; 中文名由前端/导出层各自映射)。 */
-    record AggCol(String key, boolean num, Function<Aggregator.Agg, Object> get) {
+    record AggCol(String key, boolean num, Function<Agg, Object> get) {
     }
 
     static final List<AggCol> AGG_COLS = List.of(
@@ -51,21 +55,21 @@ final class Mapper {
             new AggCol("hit_rate", true, a -> r1(a.hitRate())),
             new AggCol("pen_rate", true, a -> r1(a.penRate())),
             new AggCol("enemies_damaged_avg", true, a -> r2(a.avg(a.enemiesDamaged))),
-            new AggCol("tanks", false, Aggregator.Agg::tanksStr),
+            new AggCol("tanks", false, Agg::tanksStr),
             new AggCol("account_id", true, a -> a.accountId)
     );
 
-    static List<Dtos.ColumnDef> aggregateColumns() {
-        List<Dtos.ColumnDef> out = new ArrayList<>();
+    static List<ColumnDef> aggregateColumns() {
+        List<ColumnDef> out = new ArrayList<>();
         for (AggCol c : AGG_COLS) {
-            out.add(new Dtos.ColumnDef(c.key(), c.num()));
+            out.add(new ColumnDef(c.key(), c.num()));
         }
         return out;
     }
 
-    static Dtos.BattleDto toBattle(Battle b, String sourceName, Tankopedia tp) {
+    static BattleDto toBattle(Battle b, String sourceName, Tankopedia tp) {
         Function<Long, String> platoon = Players.platoonLabeler();
-        List<Dtos.PlayerRow> rows = new ArrayList<>();
+        List<PlayerRow> rows = new ArrayList<>();
         for (PlayerResult p : Players.sorted(b.players)) {
             Players.enrich(p, tp);
             p.platoonLabel = platoon.apply(p.platoonId);
@@ -73,22 +77,22 @@ final class Mapper {
             for (Columns.Col c : Columns.PLAYER) {
                 cells.put(c.key(), c.get().apply(p));
             }
-            rows.add(new Dtos.PlayerRow(cells, p.team));
+            rows.add(new PlayerRow(cells, p.team));
         }
-        return new Dtos.BattleDto(b.arenaId, b.mapName, b.version, b.durationS,
+        return new BattleDto(b.arenaId, b.mapName, b.version, b.durationS,
                 b.startTime, b.winnerTeam, sourceName, rows);
     }
 
-    static List<Dtos.AggRow> toAggregate(Map<Long, Aggregator.Agg> aggMap) {
-        List<Aggregator.Agg> list = new ArrayList<>(aggMap.values());
+    static List<AggRow> toAggregate(Map<Long, Agg> aggMap) {
+        List<Agg> list = new ArrayList<>(aggMap.values());
         list.sort((x, y) -> Double.compare(y.avg(y.damage), x.avg(x.damage)));
-        List<Dtos.AggRow> out = new ArrayList<>();
-        for (Aggregator.Agg a : list) {
+        List<AggRow> out = new ArrayList<>();
+        for (Agg a : list) {
             Map<String, Object> cells = new LinkedHashMap<>();
             for (AggCol c : AGG_COLS) {
                 cells.put(c.key(), c.get().apply(a));
             }
-            out.add(new Dtos.AggRow(cells, a.team));
+            out.add(new AggRow(cells, a.team));
         }
         return out;
     }

@@ -1,64 +1,15 @@
 package com.wotb.core;
 
+import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
 
 /** 跨场次按账号ID汇总每位选手 (对应 Python aggregate_players)。 */
 public final class Aggregator {
-
-    /** 一位选手的跨场累计。 */
-    public static final class Agg {
-        public long accountId;
-        public String nickname = "";
-        public String clan = "";
-        public int team;                  // 最近一场的队伍(供 UI 行底色)
-        long lastTime = -1;
-        public int battles, wins, survived;
-        public long kills, damage, assisted, received, blocked;
-        public long shots, hits, pens, hitsReceived, pensReceived, enemiesDamaged;
-        public long ratingSum;            // 各场 rating 之和(用于场均)
-        public final Map<String, Integer> tanks = new TreeMap<>();
-
-        public double winRate() {
-            return battles == 0 ? 0 : 100.0 * wins / battles;
-        }
-
-        public double avgRating() {
-            return battles == 0 ? 0 : (double) ratingSum / battles;
-        }
-
-        public double survivalRate() {
-            return battles == 0 ? 0 : 100.0 * survived / battles;
-        }
-
-        public double avg(long total) {
-            return battles == 0 ? 0 : (double) total / battles;
-        }
-
-        public double hitRate() {
-            return shots == 0 ? 0 : 100.0 * hits / shots;
-        }
-
-        public double penRate() {
-            return shots == 0 ? 0 : 100.0 * pens / shots;
-        }
-
-        public String tanksStr() {
-            StringBuilder sb = new StringBuilder();
-            tanks.entrySet().stream()
-                    .sorted((a, b) -> b.getValue() - a.getValue())
-                    .forEach(e -> {
-                        if (sb.length() > 0) sb.append(", ");
-                        sb.append(e.getValue() > 1 ? e.getKey() + "×" + e.getValue() : e.getKey());
-                    });
-            return sb.toString();
-        }
-    }
 
     private Aggregator() {
     }

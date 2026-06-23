@@ -1,7 +1,9 @@
 package com.wotb.core;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.Collected;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.model.Source;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
@@ -104,14 +106,14 @@ class ParityTest {
     @Test
     void dedupAndAggregate() throws Exception {
         List<Path> files = replays();
-        List<Replays.Source> sources = new ArrayList<>();
+        List<Source> sources = new ArrayList<>();
         for (Path p : files) {
-            sources.add(new Replays.Source(p.getFileName().toString(), Files.readAllBytes(p)));
+            sources.add(new Source(p.getFileName().toString(), Files.readAllBytes(p)));
         }
         // 再加一份重复(同一场)
-        sources.add(new Replays.Source("dup.wotbreplay", Files.readAllBytes(files.get(0))));
+        sources.add(new Source("dup.wotbreplay", Files.readAllBytes(files.get(0))));
 
-        Replays.Collected c = Replays.collect(sources, null);
+        Collected c = Replays.collect(sources, null);
         assertEquals(files.size(), c.battles.size(), "唯一战斗数");
         assertEquals(1, c.duplicates.size(), "应跳过 1 个重复");
         assertEquals(0, c.failures.size());

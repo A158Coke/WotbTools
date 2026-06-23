@@ -1,6 +1,7 @@
 package com.wotb.core;
 
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.model.TankInfo;
 
 import java.util.Comparator;
 import java.util.HashMap;
@@ -19,7 +20,7 @@ public final class Players {
 
     /** 补上展示用派生字段 (车名/车种/国家)。 */
     public static void enrich(PlayerResult p, Tankopedia tp) {
-        Tankopedia.TankInfo ti = tp.info(p.tankId);
+        TankInfo ti = tp.info(p.tankId);
         p.tankName = ti.name;
         p.tankTier = ti.tier;
         p.tankType = ti.type;
