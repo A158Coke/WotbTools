@@ -2,7 +2,6 @@
 import { ref, computed, onMounted } from 'vue'
 
 const files = ref([])
-const selectedKeys = ref([])       // 文件列表中被勾选的回放(fileKey)
 const loading = ref(false)
 const error = ref('')
 const resp = ref(null)
@@ -84,27 +83,20 @@ function onDrop(e) {
 
 function clearFiles() {
   files.value = []
-  selectedKeys.value = []
   resp.value = null
   error.value = ''
-}
-
-// 清除"勾选的"回放; 没勾选时不动(按钮会被禁用)
-function clearSelected() {
-  const sel = new Set(selectedKeys.value)
-  files.value = files.value.filter(f => !sel.has(fileKey(f)))
-  selectedKeys.value = []
 }
 
 function removeFile(f) {
   const k = fileKey(f)
   files.value = files.value.filter(x => fileKey(x) !== k)
-  selectedKeys.value = selectedKeys.value.filter(x => x !== k)
 }
 
-function toggleSelectAll() {
-  if (selectedKeys.value.length === files.value.length) selectedKeys.value = []
-  else selectedKeys.value = files.value.map(fileKey)
+// 移除某一场(及其回放文件), 再重新解析以更新汇总
+function removeBattle(battle) {
+  files.value = files.value.filter(f => displayName(f) !== battle.sourceName)
+  if (files.value.length) preview()
+  else { resp.value = null; activeTab.value = 'aggregate' }
 }
 
 function formData() {
@@ -259,8 +251,7 @@ function fmtDuration(s) {
         选择文件夹
         <input type="file" multiple webkitdirectory @change="onPick" />
       </label>
-      <button class="ghost" :disabled="loading || !selectedKeys.length" @click="clearSelected">清除所选{{ selectedKeys.length ? ` (${selectedKeys.length})` : '' }}</button>
-      <button class="ghost" :disabled="loading || !files.length" @click="clearFiles">清空全部</button>
+      <button class="ghost" :disabled="loading || !files.length" @click="clearFiles">清空</button>
       <button :disabled="loading || !files.length" @click="preview">解析预览</button>
       <button :disabled="loading || !files.length" @click="exportXlsx('aggregate')">合并汇总(去重)</button>
       <button :disabled="loading || !files.length" @click="exportXlsx('each')">每场单独导出</button>
@@ -277,16 +268,10 @@ function fmtDuration(s) {
     </section>
 
     <section v-if="files.length" class="files">
-      <label class="selall">
-        <input type="checkbox" :checked="selectedKeys.length === files.length"
-               @change="toggleSelectAll" /> 全选
-      </label>
-      <label v-for="f in files" :key="fileKey(f)" class="chip"
-             :class="{ sel: selectedKeys.includes(fileKey(f)) }">
-        <input type="checkbox" :value="fileKey(f)" v-model="selectedKeys" />
+      <span v-for="f in files" :key="fileKey(f)" class="chip">
         {{ displayName(f) }}
-        <button class="chipx" title="移除该回放" @click.prevent="removeFile(f)">×</button>
-      </label>
+        <button class="chipx" title="移除该回放" @click="removeFile(f)">×</button>
+      </span>
     </section>
 
     <p v-if="error" class="error">{{ error }}</p>
@@ -318,7 +303,9 @@ function fmtDuration(s) {
         <button v-if="resp.aggregate.length" :class="{ active: activeTab === 'aggregate' }"
                 @click="activeTab = 'aggregate'">汇总 ({{ resp.aggregate.length }} 名选手)</button>
         <button v-for="(b, i) in resp.battles" :key="i" :class="{ active: activeTab === 'b' + i }"
-                @click="activeTab = 'b' + i">{{ b.mapName }} #{{ i + 1 }}</button>
+                @click="activeTab = 'b' + i">{{ b.mapName }} #{{ i + 1 }}
+          <span class="tabx" title="移除该场" @click.stop="removeBattle(b)">×</span>
+        </button>
       </div>
 
       <div v-if="activeTab === 'aggregate' && resp.aggregate.length" class="tablewrap">
@@ -374,14 +361,14 @@ button:disabled { opacity: .5; cursor: default; }
   border-radius: 6px; margin-bottom: 10px; }
 .dropzone.dragging { border-color: #2f5597; background: #eef4ff; color: #2f5597; }
 .files { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
-.selall { font-size: 12px; color: #555; display: inline-flex; align-items: center; gap: 4px;
-  margin-right: 4px; cursor: pointer; }
 .chip { background: #eef2f7; border: 1px solid #d7dee9; border-radius: 4px; padding: 3px 6px;
-  font-size: 12px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
-.chip.sel { background: #dbe8fb; border-color: #2f5597; }
+  font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
 .chipx { padding: 0 4px; border: none; background: transparent; color: #8a93a6; font-size: 14px;
   line-height: 1; cursor: pointer; border-radius: 3px; }
 .chipx:hover { background: #d9534f; color: #fff; }
+/* 战斗标签上的移除按钮 */
+.tabx { margin-left: 4px; padding: 0 3px; border-radius: 3px; opacity: .65; }
+.tabx:hover { background: #d9534f; color: #fff; opacity: 1; }
 .colpicker { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 12px;
   background: #fff; border: 1px solid #d6e0ef; border-radius: 4px; margin-bottom: 10px; }
 .colTitle { flex-basis: 100%; font-size: 13px; color: #2f5597; font-weight: bold; }
