@@ -12,6 +12,8 @@
 | Web 版       | Spring Boot 4 后端 + Vue 3 前端                    | ✅ 已完成         |
 | Python 离线版  | Python + Tkinter + PyInstaller                 | 历史可用版本，作为迁移参照 |
 
+在线演示：https://replay.wotbtools.com
+
 详细任务拆分见 [TODO.md](TODO.md)。
 
 ## 当前实现
