@@ -8,7 +8,6 @@ const resp = ref(null)
 const playerCols = ref([])
 const visibleKeys = ref([])        // 单场表显示的列
 const aggVisibleKeys = ref([])     // 汇总表显示的列
-const draftKeys = ref([])          // 列选择器里的草稿(点"应用"才生效)
 const pickerScope = ref('player')  // 当前选择器作用的表: 'player' | 'agg'
 const showColPicker = ref(false)
 const activeTab = ref('aggregate')
@@ -127,11 +126,11 @@ async function preview() {
     if (!r.ok) throw new Error('解析失败: HTTP ' + r.status)
     resp.value = await r.json()
     playerCols.value = resp.value.playerColumns
+    const aggKeys = (resp.value.aggregateColumns || []).map(c => c.key)
     if (!visibleKeys.value.length) visibleKeys.value = [...DEFAULT_VISIBLE]
-    // 汇总表默认显示全部列
-    if (!aggVisibleKeys.value.length) {
-      aggVisibleKeys.value = (resp.value.aggregateColumns || []).map(c => c.key)
-    }
+    if (!playerOrder.value.length) playerOrder.value = resp.value.playerColumns.map(c => c.key)
+    if (!aggVisibleKeys.value.length) aggVisibleKeys.value = [...aggKeys]   // 汇总默认全显
+    if (!aggOrder.value.length) aggOrder.value = [...aggKeys]
     activeTab.value = resp.value.battles.length > 1 ? 'aggregate' : 'b0'
   } catch (e) {
     error.value = e.message
@@ -182,39 +181,80 @@ async function shutdown() {
 
 const aggCols = computed(() => resp.value?.aggregateColumns || [])
 
-// 各表实际显示的列(按规范列顺序过滤)
+// 列顺序(可拖拽); 显示集合 = visibleKeys / aggVisibleKeys。即点即生效。
+const playerOrder = ref([])
+const aggOrder = ref([])
+const dragIdx = ref(-1)
+const playerColMap = computed(() => Object.fromEntries(playerCols.value.map(c => [c.key, c])))
+const aggColMap = computed(() => Object.fromEntries(aggCols.value.map(c => [c.key, c])))
+
+// 各表实际显示的列: 按用户顺序过滤出可见列
 const shownCols = computed(() =>
-  playerCols.value.filter(c => visibleKeys.value.includes(c.key)))
+  playerOrder.value.filter(k => visibleKeys.value.includes(k)).map(k => playerColMap.value[k]).filter(Boolean))
 const shownAggCols = computed(() =>
-  aggCols.value.filter(c => aggVisibleKeys.value.includes(c.key)))
+  aggOrder.value.filter(k => aggVisibleKeys.value.includes(k)).map(k => aggColMap.value[k]).filter(Boolean))
 
-// 列选择器作用于"当前所在的表"
 const colScope = computed(() => (activeTab.value === 'aggregate' ? 'agg' : 'player'))
-const pickerCols = computed(() => (pickerScope.value === 'agg' ? aggCols.value : playerCols.value))
 const pickerLabel = (key) => (pickerScope.value === 'agg' ? aggLabel(key) : playerLabel(key))
+const currentOrder = computed(() => (pickerScope.value === 'agg' ? aggOrder.value : playerOrder.value))
 
-function openColPicker() {
+// 面板里的分组标签
+const COL_GROUP = {
+  nickname: '身份', clan: '身份', account_id: '附加',
+  tank_name: '车辆', tank_tier: '车辆', tank_type: '车辆', tank_nation: '车辆', tank_id: '附加',
+  rating: '战斗', survived_label: '战斗', kills: '战斗', damage_dealt: '战斗',
+  damage_assisted: '战斗', damage_received: '战斗', damage_blocked: '战斗',
+  n_shots: '战斗', n_hits_dealt: '战斗', n_penetrations_dealt: '战斗',
+  n_hits_received: '战斗', n_penetrations_received: '战斗', n_enemies_damaged: '战斗',
+  platoon_label: '附加',
+  battles: '总览', wins: '总览', win_rate: '总览', survival_rate: '总览', rating_avg: '总览',
+  kills_avg: '战斗', damage: '战斗', damage_avg: '战斗', assisted: '战斗', assisted_avg: '战斗',
+  received_avg: '战斗', blocked_avg: '战斗', hit_rate: '战斗', pen_rate: '战斗',
+  enemies_damaged_avg: '战斗', tanks: '附加',
+}
+const catOf = (key) => COL_GROUP[key] || ''
+
+function toggleColPicker() {
   if (showColPicker.value) { showColPicker.value = false; return }
   pickerScope.value = colScope.value
-  const current = pickerScope.value === 'agg' ? aggVisibleKeys.value : visibleKeys.value
-  draftKeys.value = [...current]
   showColPicker.value = true
 }
 
-function applyColumns() {
-  if (pickerScope.value === 'agg') aggVisibleKeys.value = [...draftKeys.value]
-  else visibleKeys.value = [...draftKeys.value]
-  showColPicker.value = false
+function isVisible(key) {
+  return (pickerScope.value === 'agg' ? aggVisibleKeys.value : visibleKeys.value).includes(key)
 }
 
-function setAllColumns() {
-  draftKeys.value = pickerCols.value.map(c => c.key)
+function toggleCol(key) {
+  const ref_ = pickerScope.value === 'agg' ? aggVisibleKeys : visibleKeys
+  ref_.value = ref_.value.includes(key) ? ref_.value.filter(k => k !== key) : [...ref_.value, key]
 }
 
-function resetColumns() {
-  draftKeys.value = pickerScope.value === 'agg'
-    ? aggCols.value.map(c => c.key)
-    : [...DEFAULT_VISIBLE]
+function selectAllCols() {
+  const all = currentOrder.value.slice()
+  if (pickerScope.value === 'agg') aggVisibleKeys.value = all
+  else visibleKeys.value = all
+}
+
+function resetCols() {
+  if (pickerScope.value === 'agg') {
+    aggOrder.value = aggCols.value.map(c => c.key)
+    aggVisibleKeys.value = aggCols.value.map(c => c.key)
+  } else {
+    playerOrder.value = playerCols.value.map(c => c.key)
+    visibleKeys.value = [...DEFAULT_VISIBLE]
+  }
+}
+
+function onColDragStart(i) { dragIdx.value = i }
+function onColDrop(i) {
+  const from = dragIdx.value
+  dragIdx.value = -1
+  if (from < 0 || from === i) return
+  const orderRef = pickerScope.value === 'agg' ? aggOrder : playerOrder
+  const next = orderRef.value.slice()
+  const [moved] = next.splice(from, 1)
+  next.splice(i, 0, moved)
+  orderRef.value = next
 }
 
 function sortBy(scope, col) {
@@ -269,7 +309,29 @@ function fmtDuration(s) {
       <button :disabled="loading || !files.length" @click="preview">解析预览</button>
       <button :disabled="loading || !files.length" @click="exportXlsx('aggregate')">合并汇总(去重)</button>
       <button :disabled="loading || !files.length" @click="exportXlsx('each')">每场单独导出</button>
-      <button v-if="resp" class="ghost" @click="openColPicker">选择列</button>
+      <span v-if="resp" class="dropdown">
+        <button class="ghost" @click="toggleColPicker">选择列 ▾</button>
+        <div v-if="showColPicker" class="colpanel">
+          <div class="colpanel-head">
+            <span class="cph-title">{{ pickerScope === 'agg' ? '汇总表' : '单场表' }}列 · 勾选显示、拖拽排序</span>
+            <button class="linkbtn" @click="selectAllCols">全选</button>
+            <button class="linkbtn" @click="resetCols">重置</button>
+            <button class="linkbtn" @click="showColPicker = false">完成</button>
+          </div>
+          <ul class="collist">
+            <li v-for="(key, idx) in currentOrder" :key="key" draggable="true"
+                @dragstart="onColDragStart(idx)" @dragover.prevent @drop="onColDrop(idx)"
+                :class="{ dragging: dragIdx === idx }">
+              <span class="grip" title="拖拽排序">⋮⋮</span>
+              <label class="colitem">
+                <input type="checkbox" :checked="isVisible(key)" @change="toggleCol(key)" />
+                {{ pickerLabel(key) }}
+              </label>
+              <span class="cat">{{ catOf(key) }}</span>
+            </li>
+          </ul>
+        </div>
+      </span>
       <span class="muted">{{ files.length ? `已选 ${files.length} 个回放` : '未选择文件' }}</span>
       <span v-if="loading" class="muted">处理中…</span>
     </section>
@@ -289,19 +351,6 @@ function fmtDuration(s) {
     </section>
 
     <p v-if="error" class="error">{{ error }}</p>
-
-    <div v-if="showColPicker && pickerCols.length" class="colpicker">
-      <div class="colTitle">选择「{{ pickerScope === 'agg' ? '汇总表' : '单场表' }}」显示的列：</div>
-      <label v-for="c in pickerCols" :key="c.key">
-        <input type="checkbox" :value="c.key" v-model="draftKeys" /> {{ pickerLabel(c.key) }}
-      </label>
-      <div class="colActions">
-        <button @click="applyColumns">应用</button>
-        <button class="ghost" @click="setAllColumns">全选</button>
-        <button class="ghost" @click="resetColumns">重置默认</button>
-        <button class="ghost" @click="showColPicker = false">取消</button>
-      </div>
-    </div>
 
     <template v-if="resp">
       <div v-if="resp.duplicates.length" class="warn">
@@ -395,11 +444,25 @@ button:disabled { opacity: .5; cursor: default; }
 /* 战斗标签上的移除按钮 */
 .tabx { margin-left: 4px; padding: 0 3px; border-radius: 3px; opacity: .65; }
 .tabx:hover { background: #d9534f; color: #fff; opacity: 1; }
-.colpicker { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 12px;
-  background: #fff; border: 1px solid #d6e0ef; border-radius: 4px; margin-bottom: 10px; }
-.colTitle { flex-basis: 100%; font-size: 13px; color: #2f5597; font-weight: bold; }
-.colpicker label { font-size: 13px; white-space: nowrap; }
-.colActions { flex-basis: 100%; display: flex; gap: 8px; margin-top: 4px; }
+/* 列选择下拉面板 */
+.dropdown { position: relative; display: inline-block; }
+.colpanel { position: absolute; top: 110%; left: 0; z-index: 50; width: 260px;
+  background: #fff; border: 1px solid #c7d3e6; border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.15); padding: 6px 0; }
+.colpanel-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 4px 10px 6px; border-bottom: 1px solid #eef1f6; }
+.cph-title { flex-basis: 100%; font-size: 12px; color: #777; margin-bottom: 2px; }
+.linkbtn { background: none; border: none; color: #2f5597; padding: 2px 4px;
+  font-size: 12px; cursor: pointer; }
+.linkbtn:hover { text-decoration: underline; }
+.collist { list-style: none; margin: 0; padding: 4px 0; max-height: 320px; overflow-y: auto; }
+.collist li { display: flex; align-items: center; gap: 6px; padding: 3px 10px; }
+.collist li:hover { background: #f3f6fb; }
+.collist li.dragging { opacity: .4; }
+.grip { cursor: grab; color: #aab; user-select: none; font-size: 12px; letter-spacing: -2px; }
+.colitem { flex: 1; font-size: 13px; display: flex; align-items: center; gap: 6px;
+  white-space: nowrap; cursor: default; }
+.cat { font-size: 11px; color: #9aa3b2; }
 .tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 12px 0 6px; }
 .tabs button { background: #e8edf5; color: #2f5597; border-color: #c7d3e6; }
 .tabs button.active { background: #2f5597; color: #fff; }
