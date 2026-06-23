@@ -15,6 +15,7 @@ const activeTab = ref('aggregate')
 const sortState = ref({})
 const dragging = ref(false)
 const isDesktop = ref(false)
+const pendingRemove = ref(null)    // 待确认移除的战斗 { battle, label }
 
 const DEFAULT_VISIBLE = [
   'nickname', 'clan', 'tank_name', 'tank_type', 'survived_label',
@@ -92,8 +93,20 @@ function removeFile(f) {
   files.value = files.value.filter(x => fileKey(x) !== k)
 }
 
-// 移除某一场(及其回放文件), 再重新解析以更新汇总
-function removeBattle(battle) {
+// 移除某一场: 先弹确认对话框
+function askRemoveBattle(battle, idx) {
+  pendingRemove.value = { battle, label: `${battle.mapName} #${idx + 1}` }
+}
+
+function cancelRemove() {
+  pendingRemove.value = null
+}
+
+// 确认后: 删对应回放文件, 再重新解析以更新汇总
+function confirmRemoveBattle() {
+  const battle = pendingRemove.value?.battle
+  pendingRemove.value = null
+  if (!battle) return
   files.value = files.value.filter(f => displayName(f) !== battle.sourceName)
   if (files.value.length) preview()
   else { resp.value = null; activeTab.value = 'aggregate' }
@@ -304,7 +317,7 @@ function fmtDuration(s) {
                 @click="activeTab = 'aggregate'">汇总 ({{ resp.aggregate.length }} 名选手)</button>
         <button v-for="(b, i) in resp.battles" :key="i" :class="{ active: activeTab === 'b' + i }"
                 @click="activeTab = 'b' + i">{{ b.mapName }} #{{ i + 1 }}
-          <span class="tabx" title="移除该场" @click.stop="removeBattle(b)">×</span>
+          <span class="tabx" title="移除该场" @click.stop="askRemoveBattle(b, i)">×</span>
         </button>
       </div>
 
@@ -339,6 +352,18 @@ function fmtDuration(s) {
         </table>
       </div>
     </template>
+
+    <div v-if="pendingRemove" class="modal-mask" @click.self="cancelRemove">
+      <div class="modal">
+        <p class="modal-title">移除该场</p>
+        <p>确定移除「{{ pendingRemove.label }}」这场回放吗？</p>
+        <p class="modal-sub">将从列表删除对应回放文件并重新汇总。可重新选择文件再解析。</p>
+        <div class="modal-actions">
+          <button @click="confirmRemoveBattle">确认移除</button>
+          <button class="ghost" @click="cancelRemove">取消</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -390,4 +415,12 @@ td.left { text-align: left; }
 tr.t1 td { background: #ddebf7; }
 tr.t2 td { background: #fce4d6; }
 .closed { padding: 30px; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+/* 二次确认对话框 */
+.modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex;
+  align-items: center; justify-content: center; z-index: 100; }
+.modal { background: #fff; border-radius: 8px; padding: 18px 20px; width: 360px; max-width: 90vw;
+  box-shadow: 0 8px 30px rgba(0,0,0,.2); }
+.modal-title { font-size: 15px; font-weight: bold; margin: 0 0 8px; color: #2f5597; }
+.modal-sub { font-size: 12px; color: #777; margin: 6px 0 0; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 </style>
