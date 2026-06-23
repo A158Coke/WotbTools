@@ -19,7 +19,7 @@ public final class Players {
     }
 
     /** 补上展示用派生字段 (车名/车种/国家)。 */
-    public static void enrich(PlayerResult p, Tankopedia tp) {
+    public static void enrich(final PlayerResult p, final Tankopedia tp) {
         TankInfo ti = tp.info(p.tankId);
         p.tankName = ti.name;
         p.tankTier = ti.tier;
@@ -28,7 +28,7 @@ public final class Players {
     }
 
     /** 统一排序: 先队伍, 同队按伤害降序。 */
-    public static List<PlayerResult> sorted(List<PlayerResult> players) {
+    public static List<PlayerResult> sorted(final List<PlayerResult> players) {
         return players.stream()
                 .sorted(Comparator.<PlayerResult>comparingInt(p -> p.team)
                         .thenComparing(Comparator.comparingInt((PlayerResult p) -> p.damageDealt).reversed()))

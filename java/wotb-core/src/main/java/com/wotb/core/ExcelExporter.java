@@ -58,14 +58,14 @@ public final class ExcelExporter {
         return s;
     }
 
-    private void tint(CellStyle s, byte r, byte g, byte b) {
+    private void tint(final CellStyle s, final byte r, final byte g, final byte b) {
         ((org.apache.poi.xssf.usermodel.XSSFCellStyle) s).setFillForegroundColor(
                 new org.apache.poi.xssf.usermodel.XSSFColor(new byte[]{r, g, b}, null));
         s.setFillPattern(FillPatternType.SOLID_FOREGROUND);
     }
 
     // ---------------- 单场 ----------------
-    public static void writeSingle(Battle battle, Tankopedia tp, OutputStream out) throws IOException {
+    public static void writeSingle(final Battle battle, final Tankopedia tp, final OutputStream out) throws IOException {
         Rating.compute(java.util.List.of(battle), tp);   // 基准=该场内
         ExcelExporter e = new ExcelExporter();
         e.sheetBattleInfo(battle);
@@ -75,7 +75,7 @@ public final class ExcelExporter {
         e.wb.close();
     }
 
-    private void sheetBattleInfo(Battle b) {
+    private void sheetBattleInfo(final Battle b) {
         Sheet ws = wb.createSheet("战斗信息");
         Font big = wb.createFont();
         big.setBold(true);
@@ -113,7 +113,7 @@ public final class ExcelExporter {
         ws.setColumnWidth(1, 40 * 256);
     }
 
-    private void sheetPlayers(Battle b, Tankopedia tp) {
+    private void sheetPlayers(final Battle b, final Tankopedia tp) {
         Sheet ws = wb.createSheet("玩家数据");
         List<Columns.Col> cols = Columns.PLAYER;
         writeHeader(ws, cols.stream().map(c -> new String[]{c.title(), String.valueOf(c.xlsx())}).toList());
@@ -137,7 +137,7 @@ public final class ExcelExporter {
         ws.setAutoFilter(new CellRangeAddress(0, players.size(), 0, cols.size() - 1));
     }
 
-    private void sheetRaw(Battle b) {
+    private void sheetRaw(final Battle b) {
         Sheet ws = wb.createSheet("原始字段");
         java.util.TreeSet<Integer> fieldNums = new java.util.TreeSet<>();
         for (PlayerResult p : b.players) {
@@ -170,9 +170,9 @@ public final class ExcelExporter {
     }
 
     // ---------------- 汇总 (多场) ----------------
-    public static void writeAggregate(List<Battle> battles, List<String> sourceNames,
-                                      List<String[]> duplicates, Tankopedia tp,
-                                      OutputStream out) throws IOException {
+    public static void writeAggregate(final List<Battle> battles, final List<String> sourceNames,
+                                      final List<String[]> duplicates, final Tankopedia tp,
+                                      final OutputStream out) throws IOException {
         Rating.compute(battles, tp);   // 基准=这批战斗
         ExcelExporter e = new ExcelExporter();
         Map<Long, Agg> agg = Aggregator.aggregate(battles, tp);
@@ -183,7 +183,7 @@ public final class ExcelExporter {
         e.wb.close();
     }
 
-    private void sheetSummary(Map<Long, Agg> aggMap) {
+    private void sheetSummary(final Map<Long, Agg> aggMap) {
         Sheet ws = wb.createSheet("汇总");
         List<AggCol> cols = List.of(
                 new AggCol("玩家", 18, false, a -> a.nickname),
@@ -221,7 +221,7 @@ public final class ExcelExporter {
         ws.setAutoFilter(new CellRangeAddress(0, rows.size(), 0, cols.size() - 1));
     }
 
-    private void sheetDetail(List<Battle> battles, Tankopedia tp) {
+    private void sheetDetail(final List<Battle> battles, final Tankopedia tp) {
         Sheet ws = wb.createSheet("明细");
         // 复用 STAT 列, 前面加场次信息, 末尾加账号
         record DCol(String title, int xlsx, String key, Function<PlayerResult, Object> get) {
@@ -267,7 +267,7 @@ public final class ExcelExporter {
         ws.setAutoFilter(new CellRangeAddress(0, rIdx - 1, 0, hdrSpec.size() - 1));
     }
 
-    private void sheetBattleList(List<Battle> battles, List<String> names, List<String[]> duplicates) {
+    private void sheetBattleList(final List<Battle> battles, final List<String> names, final List<String[]> duplicates) {
         Sheet ws = wb.createSheet("战斗列表");
         String[][] spec = {{"序号", "6"}, {"日期", "17"}, {"地图", "12"}, {"时长", "9"},
                 {"获胜队", "8"}, {"玩家数", "7"}, {"arenaUniqueId", "22"}, {"文件名", "40"}};
@@ -304,7 +304,7 @@ public final class ExcelExporter {
     }
 
     // ---------------- 共用 ----------------
-    private void writeHeader(Sheet ws, List<String[]> titleWidth) {
+    private void writeHeader(final Sheet ws, final List<String[]> titleWidth) {
         Row h = ws.createRow(0);
         for (int c = 0; c < titleWidth.size(); c++) {
             String title = titleWidth.get(c)[0];
@@ -315,7 +315,7 @@ public final class ExcelExporter {
         }
     }
 
-    private void setCell(Cell cell, Object val, CellStyle fill, String key) {
+    private void setCell(final Cell cell, final Object val, final CellStyle fill, final String key) {
         if (val instanceof Number) {
             cell.setCellValue(((Number) val).doubleValue());
         } else {
@@ -334,11 +334,11 @@ public final class ExcelExporter {
     // 按需组合 "填充 + 对齐" 的样式缓存
     private final Map<String, CellStyle> styleCache = new java.util.HashMap<>();
 
-    private CellStyle centerWithFill(CellStyle fill) {
+    private CellStyle centerWithFill(final CellStyle fill) {
         return combo(fill, true);
     }
 
-    private CellStyle leftWithFill(CellStyle fill) {
+    private CellStyle leftWithFill(final CellStyle fill) {
         return combo(fill, false);
     }
 
@@ -352,26 +352,26 @@ public final class ExcelExporter {
         });
     }
 
-    private static String fmt(Long epochSec, DateTimeFormatter f) {
+    private static String fmt(final Long epochSec, final DateTimeFormatter f) {
         if (epochSec == null) return "";
         return Instant.ofEpochSecond(epochSec).atZone(ZoneId.systemDefault()).format(f);
     }
 
-    private static String duration(Double s) {
+    private static String duration(final Double s) {
         if (s == null) return "";
         int t = (int) Math.floor(s);
         return (t / 60) + "分" + (t % 60) + "秒";
     }
 
-    private static double r1(double v) {
+    private static double r1(final double v) {
         return Math.round(v * 10) / 10.0;
     }
 
-    private static double r2(double v) {
+    private static double r2(final double v) {
         return Math.round(v * 100) / 100.0;
     }
 
-    private static String toHex(byte[] b) {
+    private static String toHex(final byte[] b) {
         StringBuilder sb = new StringBuilder();
         for (byte x : b) sb.append(String.format("%02x", x));
         return sb.toString();

@@ -33,7 +33,7 @@ public final class MapNames {
     }
 
     /** 中文名;未匹配则原样返回(与 Python get_map_cn_name 行为一致)。 */
-    public static String cn(String mapName) {
+    public static String cn(final String mapName) {
         if (mapName == null || mapName.isEmpty()) {
             return mapName;
         }

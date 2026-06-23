@@ -13,7 +13,7 @@ public final class Tankopedia {
 
     private final Map<String, JsonNode> data;
 
-    private Tankopedia(Map<String, JsonNode> data) {
+    private Tankopedia(final Map<String, JsonNode> data) {
         this.data = data;
     }
 
@@ -32,7 +32,7 @@ public final class Tankopedia {
         return new Tankopedia(map);
     }
 
-    public TankInfo info(long tankId) {
+    public TankInfo info(final long tankId) {
         JsonNode t = data.get(String.valueOf(tankId));
         if (t == null) {
             return new TankInfo("#" + tankId, "", "", "");

@@ -37,10 +37,10 @@ public class WotbWebApplication {
     }
 
     @Bean
-    ApplicationRunner desktopBrowserLauncher(Environment env) {
+    ApplicationRunner desktopBrowserLauncher(final Environment env) {
         return new ApplicationRunner() {
             @Override
-            public void run(ApplicationArguments args) {
+            public void run(final ApplicationArguments args) {
                 if (!env.getProperty("app.desktop", Boolean.class, false)) {
                     return;
                 }
@@ -51,7 +51,7 @@ public class WotbWebApplication {
         };
     }
 
-    private static int choosePort(int preferred) {
+    private static int choosePort(final int preferred) {
         for (int port = preferred; port < preferred + 100; port++) {
             if (available(port)) {
                 return port;
@@ -69,7 +69,7 @@ public class WotbWebApplication {
         }
     }
 
-    private static void openBrowser(String url) {
+    private static void openBrowser(final String url) {
         try {
             if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
                 Desktop.getDesktop().browse(URI.create(url));

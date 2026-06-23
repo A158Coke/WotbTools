@@ -28,7 +28,7 @@ public final class Agg {
         return battles == 0 ? 0 : 100.0 * survived / battles;
     }
 
-    public double avg(long total) {
+    public double avg(final long total) {
         return battles == 0 ? 0 : (double) total / battles;
     }
 

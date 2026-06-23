@@ -14,7 +14,7 @@ public final class Aggregator {
     private Aggregator() {
     }
 
-    public static Map<Long, Agg> aggregate(List<Battle> battles, Tankopedia tp) {
+    public static Map<Long, Agg> aggregate(final List<Battle> battles, final Tankopedia tp) {
         Map<Long, Agg> map = new LinkedHashMap<>();
         for (Battle b : battles) {
             Integer winner = b.winnerTeam;

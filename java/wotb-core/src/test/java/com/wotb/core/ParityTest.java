@@ -32,7 +32,7 @@ class ParityTest {
         }
     }
 
-    private static Battle battleByArena(String arenaId) throws Exception {
+    private static Battle battleByArena(final String arenaId) throws Exception {
         for (Path p : replays()) {
             Battle b = ReplayParser.parse(p);
             if (arenaId.equals(b.arenaId)) {
@@ -42,7 +42,7 @@ class ParityTest {
         throw new AssertionError("找不到 arenaId=" + arenaId + " 的回放");
     }
 
-    private static PlayerResult byAccount(Battle b, long acc) {
+    private static PlayerResult byAccount(final Battle b, final long acc) {
         return b.players.stream().filter(p -> p.accountId == acc).findFirst().orElseThrow();
     }
 
