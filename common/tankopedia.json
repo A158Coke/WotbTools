@@ -1,1 +1,5013 @@
-{"meta":{"count":715,"source":"blitzkit (assets.blitzkit.app/definitions/tanks.pb)"},"data":{"1":{"name":"T-34","tier":5,"class":"中坦","nation":"苏联","premium":false},"17":{"name":"Pz. IV G","tier":5,"class":"中坦","nation":"德国","premium":false},"33":{"name":"T14","tier":5,"class":"重坦","nation":"美国","premium":true},"49":{"name":"Type 59","tier":8,"class":"中坦","nation":"中国","premium":false},"81":{"name":"Medium I","tier":1,"class":"中坦","nation":"英国","premium":false},"113":{"name":"Vindicator UM","tier":7,"class":"TD","nation":"其他","premium":false},"257":{"name":"SU-85","tier":5,"class":"TD","nation":"苏联","premium":false},"289":{"name":"M3 Stuart","tier":2,"class":"轻坦","nation":"美国","premium":false},"321":{"name":"D2","tier":3,"class":"重坦","nation":"法国","premium":false},"337":{"name":"Medium II","tier":2,"class":"中坦","nation":"英国","premium":false},"353":{"name":"Chi-Ni","tier":2,"class":"中坦","nation":"日本","premium":false},"385":{"name":"Progetto 65","tier":10,"class":"中坦","nation":"欧洲","premium":false},"513":{"name":"IS","tier":7,"class":"重坦","nation":"苏联","premium":false},"529":{"name":"Tiger I","tier":7,"class":"重坦","nation":"德国","premium":false},"545":{"name":"T1","tier":1,"class":"轻坦","nation":"美国","premium":false},"577":{"name":"FT","tier":1,"class":"轻坦","nation":"法国","premium":false},"593":{"name":"Sherman Firefly","tier":6,"class":"中坦","nation":"英国","premium":false},"609":{"name":"R. Otsu","tier":1,"class":"轻坦","nation":"日本","premium":false},"625":{"name":"Strv 74A2","tier":6,"class":"中坦","nation":"其他","premium":true},"641":{"name":"Standard B","tier":9,"class":"中坦","nation":"欧洲","premium":false},"769":{"name":"BT-7","tier":3,"class":"轻坦","nation":"苏联","premium":false},"785":{"name":"Pz. 35 (t)","tier":2,"class":"轻坦","nation":"德国","premium":false},"801":{"name":"M6","tier":6,"class":"重坦","nation":"美国","premium":false},"817":{"name":"WZ-111","tier":8,"class":"重坦","nation":"中国","premium":false},"849":{"name":"Matilda","tier":4,"class":"重坦","nation":"英国","premium":false},"865":{"name":"Ha-Go","tier":1,"class":"轻坦","nation":"日本","premium":false},"881":{"name":"Edelweiss","tier":7,"class":"中坦","nation":"其他","premium":true},"897":{"name":"P.44 Pantera","tier":8,"class":"中坦","nation":"欧洲","premium":false},"1025":{"name":"BT-2","tier":2,"class":"轻坦","nation":"苏联","premium":false},"1041":{"name":"StuG III G","tier":5,"class":"TD","nation":"德国","premium":false},"1057":{"name":"M4 Sherman","tier":5,"class":"中坦","nation":"美国","premium":false},"1073":{"name":"T-34-1","tier":7,"class":"中坦","nation":"中国","premium":false},"1089":{"name":"B1","tier":4,"class":"重坦","nation":"法国","premium":false},"1105":{"name":"Cromwell","tier":6,"class":"中坦","nation":"英国","premium":false},"1121":{"name":"Chi-Ri","tier":7,"class":"中坦","nation":"日本","premium":false},"1137":{"name":"Predator UM","tier":7,"class":"重坦","nation":"其他","premium":false},"1153":{"name":"P.43 ter","tier":7,"class":"中坦","nation":"欧洲","premium":false},"1297":{"name":"Panther","tier":7,"class":"中坦","nation":"德国","premium":false},"1313":{"name":"M4A3E8","tier":6,"class":"中坦","nation":"美国","premium":false},"1329":{"name":"NC-31","tier":1,"class":"轻坦","nation":"中国","premium":false},"1361":{"name":"Churchill Mk. VI","tier":6,"class":"重坦","nation":"英国","premium":true},"1377":{"name":"Chi-Nu","tier":5,"class":"中坦","nation":"日本","premium":false},"1393":{"name":"Nameless","tier":7,"class":"重坦","nation":"其他","premium":false},"1409":{"name":"P.43 bis","tier":6,"class":"中坦","nation":"欧洲","premium":false},"1537":{"name":"T-28 mod. 1940","tier":4,"class":"中坦","nation":"苏联","premium":false},"1553":{"name":"Jg.Pz. IV","tier":6,"class":"TD","nation":"德国","premium":false},"1569":{"name":"T20","tier":7,"class":"中坦","nation":"美国","premium":false},"1585":{"name":"T-34-2","tier":8,"class":"中坦","nation":"中国","premium":false},"1601":{"name":"D1","tier":2,"class":"轻坦","nation":"法国","premium":false},"1617":{"name":"Sherman V","tier":5,"class":"中坦","nation":"英国","premium":false},"1633":{"name":"Chi-He","tier":4,"class":"中坦","nation":"日本","premium":false},"1649":{"name":"Helsing","tier":7,"class":"TD","nation":"其他","premium":true},"1665":{"name":"Lago","tier":4,"class":"中坦","nation":"欧洲","premium":false},"1809":{"name":"Hetzer","tier":4,"class":"TD","nation":"德国","premium":false},"1825":{"name":"M2 Light","tier":1,"class":"轻坦","nation":"美国","premium":false},"1841":{"name":"WZ-120","tier":9,"class":"中坦","nation":"中国","premium":false},"1857":{"name":"B-C 25 t AP","tier":9,"class":"轻坦","nation":"法国","premium":false},"1889":{"name":"Chi-To","tier":6,"class":"中坦","nation":"日本","premium":false},"1905":{"name":"O-47","tier":8,"class":"中坦","nation":"其他","premium":true},"1921":{"name":"Strv m/42","tier":5,"class":"中坦","nation":"欧洲","premium":false},"2049":{"name":"A-20","tier":4,"class":"轻坦","nation":"苏联","premium":false},"2065":{"name":"Pz. II","tier":1,"class":"轻坦","nation":"德国","premium":false},"2097":{"name":"WZ-111 1-4","tier":9,"class":"重坦","nation":"中国","premium":false},"2129":{"name":"Crusader","tier":5,"class":"轻坦","nation":"英国","premium":false},"2145":{"name":"Chi-Ha","tier":3,"class":"中坦","nation":"日本","premium":false},"2161":{"name":"WZ Blaze","tier":7,"class":"TD","nation":"其他","premium":true},"2177":{"name":"14TP","tier":3,"class":"轻坦","nation":"欧洲","premium":false},"2305":{"name":"SU-152","tier":7,"class":"TD","nation":"苏联","premium":false},"2321":{"name":"VK 36.01 H","tier":6,"class":"重坦","nation":"德国","premium":false},"2353":{"name":"VAE Type B","tier":1,"class":"轻坦","nation":"中国","premium":false},"2369":{"name":"FCM 36 Pak 40","tier":3,"class":"TD","nation":"法国","premium":false},"2385":{"name":"Medium III","tier":3,"class":"中坦","nation":"英国","premium":false},"2401":{"name":"Ke-Ni","tier":3,"class":"轻坦","nation":"日本","premium":false},"2433":{"name":"10TP","tier":2,"class":"轻坦","nation":"欧洲","premium":false},"2561":{"name":"T-34-85","tier":6,"class":"中坦","nation":"苏联","premium":false},"2577":{"name":"VK 30.01 H","tier":5,"class":"重坦","nation":"德国","premium":false},"2593":{"name":"T30","tier":9,"class":"TD","nation":"美国","premium":false},"2609":{"name":"Type 64","tier":6,"class":"轻坦","nation":"中国","premium":false},"2625":{"name":"ARL 44","tier":6,"class":"重坦","nation":"法国","premium":false},"2657":{"name":"STA-1","tier":8,"class":"中坦","nation":"日本","premium":false},"2689":{"name":"Vickers Mk. F","tier":1,"class":"轻坦","nation":"欧洲","premium":false},"2817":{"name":"KV-1S","tier":6,"class":"重坦","nation":"苏联","premium":false},"2849":{"name":"T34","tier":8,"class":"重坦","nation":"美国","premium":true},"2865":{"name":"WZ-110","tier":8,"class":"重坦","nation":"中国","premium":false},"2881":{"name":"AMX 40","tier":4,"class":"中坦","nation":"法国","premium":false},"2897":{"name":"Churchill I","tier":5,"class":"重坦","nation":"英国","premium":false},"2913":{"name":"Ke-Ho","tier":4,"class":"轻坦","nation":"日本","premium":false},"2945":{"name":"Progetto 46","tier":8,"class":"中坦","nation":"欧洲","premium":true},"3073":{"name":"T-46","tier":3,"class":"轻坦","nation":"苏联","premium":false},"3089":{"name":"L.Tr.","tier":1,"class":"轻坦","nation":"德国","premium":false},"3105":{"name":"M3 Lee","tier":4,"class":"中坦","nation":"美国","premium":false},"3121":{"name":"M5A1 Stuart","tier":4,"class":"轻坦","nation":"中国","premium":false},"3137":{"name":"AMX 50 100","tier":8,"class":"重坦","nation":"法国","premium":false},"3153":{"name":"Black Prince","tier":7,"class":"重坦","nation":"英国","premium":false},"3201":{"name":"50TP prototyp","tier":9,"class":"重坦","nation":"欧洲","premium":false},"3329":{"name":"MS-1 mod. 1","tier":1,"class":"轻坦","nation":"苏联","premium":false},"3345":{"name":"Pz. 38 (t)","tier":3,"class":"轻坦","nation":"德国","premium":false},"3361":{"name":"T1 Heavy","tier":5,"class":"重坦","nation":"美国","premium":false},"3377":{"name":"WZ-131","tier":7,"class":"轻坦","nation":"中国","premium":false},"3425":{"name":"Type 61","tier":9,"class":"中坦","nation":"日本","premium":false},"3457":{"name":"Emil I","tier":8,"class":"重坦","nation":"欧洲","premium":false},"3585":{"name":"SU-100","tier":6,"class":"TD","nation":"苏联","premium":false},"3601":{"name":"Pz.Jäg. I","tier":2,"class":"TD","nation":"德国","premium":false},"3633":{"name":"IS-2","tier":7,"class":"重坦","nation":"中国","premium":false},"3649":{"name":"B-C 25 t","tier":10,"class":"轻坦","nation":"法国","premium":false},"3681":{"name":"STB-1","tier":10,"class":"中坦","nation":"日本","premium":false},"3697":{"name":"Lupus","tier":7,"class":"重坦","nation":"其他","premium":false},"3713":{"name":"Strv 74","tier":6,"class":"中坦","nation":"欧洲","premium":false},"3857":{"name":"JPanther","tier":7,"class":"TD","nation":"德国","premium":false},"3873":{"name":"T29","tier":7,"class":"重坦","nation":"美国","premium":false},"3889":{"name":"WZ-132","tier":8,"class":"轻坦","nation":"中国","premium":false},"3905":{"name":"AMX 50 120","tier":9,"class":"重坦","nation":"法国","premium":false},"3921":{"name":"Caernarvon","tier":8,"class":"重坦","nation":"英国","premium":false},"3937":{"name":"Ho-Ri","tier":10,"class":"TD","nation":"日本","premium":false},"3953":{"name":"T 55A","tier":9,"class":"中坦","nation":"其他","premium":false},"3969":{"name":"Leo","tier":7,"class":"中坦","nation":"欧洲","premium":false},"4113":{"name":"VK 30.02 D","tier":7,"class":"中坦","nation":"德国","premium":false},"4145":{"name":"WZ-121","tier":10,"class":"中坦","nation":"中国","premium":false},"4193":{"name":"Ho-Ri T.II","tier":9,"class":"TD","nation":"日本","premium":false},"4209":{"name":"WarDuck","tier":1,"class":"中坦","nation":"其他","premium":false},"4225":{"name":"Emil II","tier":9,"class":"重坦","nation":"欧洲","premium":false},"4353":{"name":"T-44","tier":8,"class":"中坦","nation":"苏联","premium":false},"4369":{"name":"Pz. III","tier":3,"class":"中坦","nation":"德国","premium":false},"4385":{"name":"T32","tier":8,"class":"重坦","nation":"美国","premium":false},"4401":{"name":"Chi-Ha","tier":3,"class":"中坦","nation":"中国","premium":false},"4417":{"name":"AMX M4 mle. 54","tier":10,"class":"重坦","nation":"法国","premium":false},"4433":{"name":"Conqueror","tier":9,"class":"重坦","nation":"英国","premium":false},"4449":{"name":"IS-2 Pravda SP","tier":7,"class":"重坦","nation":"日本","premium":false},"4465":{"name":"Hafen","tier":7,"class":"中坦","nation":"其他","premium":true},"4481":{"name":"Kranvagn","tier":10,"class":"重坦","nation":"欧洲","premium":false},"4609":{"name":"T-26","tier":1,"class":"轻坦","nation":"苏联","premium":false},"4657":{"name":"Type T-34","tier":5,"class":"中坦","nation":"中国","premium":false},"4689":{"name":"Churchill VII","tier":6,"class":"重坦","nation":"英国","premium":false},"4705":{"name":"Firefly Saunders SP","tier":6,"class":"中坦","nation":"日本","premium":false},"4721":{"name":"Gravedigger","tier":7,"class":"重坦","nation":"其他","premium":false},"4737":{"name":"EMIL 1951","tier":8,"class":"重坦","nation":"欧洲","premium":false},"4881":{"name":"Pz. III A","tier":3,"class":"轻坦","nation":"德国","premium":false},"4897":{"name":"M2 Medium","tier":3,"class":"中坦","nation":"美国","premium":false},"4913":{"name":"59-16","tier":6,"class":"轻坦","nation":"中国","premium":false},"4929":{"name":"AMX 13 90","tier":8,"class":"轻坦","nation":"法国","premium":false},"4945":{"name":"Valentine Mk. IX","tier":4,"class":"轻坦","nation":"英国","premium":false},"4961":{"name":"Ho-Ri T.I","tier":8,"class":"TD","nation":"日本","premium":false},"4977":{"name":"Scavenger","tier":5,"class":"中坦","nation":"其他","premium":false},"4993":{"name":"P.43/06 ann.","tier":6,"class":"中坦","nation":"欧洲","premium":false},"5121":{"name":"AT-1","tier":2,"class":"TD","nation":"苏联","premium":false},"5137":{"name":"Tiger II","tier":8,"class":"重坦","nation":"德国","premium":false},"5153":{"name":"M5 Stuart","tier":3,"class":"轻坦","nation":"美国","premium":false},"5169":{"name":"Type 58","tier":6,"class":"中坦","nation":"中国","premium":false},"5185":{"name":"AMX 13 75","tier":7,"class":"轻坦","nation":"法国","premium":false},"5201":{"name":"Cruiser I","tier":2,"class":"轻坦","nation":"英国","premium":false},"5217":{"name":"Chi-To SPG","tier":7,"class":"TD","nation":"日本","premium":false},"5233":{"name":"Smasher","tier":7,"class":"重坦","nation":"其他","premium":false},"5249":{"name":"Pudel","tier":6,"class":"中坦","nation":"欧洲","premium":false},"5377":{"name":"IS-3","tier":8,"class":"重坦","nation":"苏联","premium":false},"5393":{"name":"Leopard","tier":5,"class":"轻坦","nation":"德国","premium":false},"5409":{"name":"M7","tier":4,"class":"中坦","nation":"美国","premium":false},"5425":{"name":"WZ-113","tier":10,"class":"重坦","nation":"中国","premium":false},"5441":{"name":"AMX 30 1er prot.","tier":9,"class":"中坦","nation":"法国","premium":false},"5457":{"name":"Comet","tier":7,"class":"中坦","nation":"英国","premium":false},"5473":{"name":"Mitsu 108","tier":5,"class":"重坦","nation":"日本","premium":false},"5489":{"name":"Y5 T-34","tier":5,"class":"中坦","nation":"其他","premium":true},"5505":{"name":"TVP T 50/51","tier":10,"class":"中坦","nation":"欧洲","premium":false},"5665":{"name":"T2 Medium","tier":2,"class":"中坦","nation":"美国","premium":false},"5681":{"name":"121B","tier":10,"class":"中坦","nation":"中国","premium":false},"5713":{"name":"Centurion 7/1","tier":9,"class":"中坦","nation":"英国","premium":false},"5729":{"name":"Ju-Nu","tier":6,"class":"重坦","nation":"日本","premium":false},"5745":{"name":"Y5 Firefly","tier":6,"class":"中坦","nation":"其他","premium":true},"5761":{"name":"Škoda T 50","tier":9,"class":"中坦","nation":"欧洲","premium":false},"5889":{"name":"KV-3","tier":7,"class":"重坦","nation":"苏联","premium":false},"5921":{"name":"Pershing","tier":8,"class":"中坦","nation":"美国","premium":false},"5937":{"name":"59-Patton","tier":9,"class":"中坦","nation":"中国","premium":false},"5953":{"name":"AMX 38","tier":2,"class":"中坦","nation":"法国","premium":false},"5969":{"name":"Centurion I","tier":8,"class":"中坦","nation":"英国","premium":false},"5985":{"name":"Ju-To","tier":7,"class":"重坦","nation":"日本","premium":false},"6001":{"name":"Y5 ELC bis","tier":7,"class":"中坦","nation":"其他","premium":true},"6017":{"name":"TVP VTU","tier":8,"class":"中坦","nation":"欧洲","premium":false},"6145":{"name":"IS-4","tier":10,"class":"重坦","nation":"苏联","premium":false},"6161":{"name":"Luchs","tier":4,"class":"轻坦","nation":"德国","premium":false},"6177":{"name":"T18","tier":2,"class":"TD","nation":"美国","premium":false},"6193":{"name":"T-34-3","tier":9,"class":"中坦","nation":"中国","premium":false},"6209":{"name":"AMX 50 B","tier":10,"class":"重坦","nation":"法国","premium":false},"6225":{"name":"FV215b","tier":10,"class":"重坦","nation":"英国","premium":false},"6241":{"name":"Chi-Se","tier":8,"class":"重坦","nation":"日本","premium":false},"6257":{"name":"M4/FL10","tier":7,"class":"中坦","nation":"其他","premium":false},"6273":{"name":"T-34/100","tier":7,"class":"中坦","nation":"欧洲","premium":false},"6401":{"name":"SU-76","tier":3,"class":"TD","nation":"苏联","premium":false},"6417":{"name":"Pz. III/IV","tier":5,"class":"中坦","nation":"德国","premium":false},"6433":{"name":"T82","tier":3,"class":"TD","nation":"美国","premium":false},"6449":{"name":"WZ-113G FT","tier":10,"class":"TD","nation":"中国","premium":false},"6465":{"name":"AMX 12 t","tier":6,"class":"轻坦","nation":"法国","premium":false},"6481":{"name":"Covenanter","tier":4,"class":"轻坦","nation":"英国","premium":false},"6497":{"name":"Type 68","tier":9,"class":"重坦","nation":"日本","premium":false},"6529":{"name":"Škoda T 25","tier":6,"class":"中坦","nation":"欧洲","premium":false},"6657":{"name":"T-43","tier":7,"class":"中坦","nation":"苏联","premium":false},"6673":{"name":"Marder II","tier":3,"class":"TD","nation":"德国","premium":false},"6689":{"name":"T49 A","tier":7,"class":"轻坦","nation":"美国","premium":true},"6705":{"name":"LT vz. 38","tier":2,"class":"轻坦","nation":"中国","premium":false},"6721":{"name":"BDR G1 B","tier":5,"class":"重坦","nation":"法国","premium":false},"6753":{"name":"Type 71","tier":10,"class":"重坦","nation":"日本","premium":false},"6785":{"name":"Škoda T 27","tier":9,"class":"中坦","nation":"欧洲","premium":true},"6913":{"name":"SU-85B","tier":4,"class":"TD","nation":"苏联","premium":false},"6929":{"name":"Maus","tier":10,"class":"重坦","nation":"德国","premium":false},"6945":{"name":"Wolverine","tier":5,"class":"TD","nation":"美国","premium":false},"6961":{"name":"WZ-120-1G FT","tier":8,"class":"TD","nation":"中国","premium":true},"6977":{"name":"AMX M4 45","tier":7,"class":"重坦","nation":"法国","premium":false},"6993":{"name":"Cruiser II","tier":1,"class":"轻坦","nation":"英国","premium":false},"7009":{"name":"Type 57","tier":8,"class":"重坦","nation":"日本","premium":false},"7025":{"name":"Vulcan","tier":7,"class":"重坦","nation":"其他","premium":false},"7041":{"name":"Turbo","tier":6,"class":"中坦","nation":"欧洲","premium":false},"7169":{"name":"IS-7","tier":10,"class":"重坦","nation":"苏联","premium":false},"7185":{"name":"VK 30.01 P","tier":6,"class":"中坦","nation":"德国","premium":false},"7201":{"name":"Jackson","tier":6,"class":"TD","nation":"美国","premium":false},"7217":{"name":"WZ-112-2","tier":8,"class":"重坦","nation":"中国","premium":false},"7249":{"name":"FV4202","tier":10,"class":"中坦","nation":"英国","premium":false},"7265":{"name":"Ferrum","tier":6,"class":"重坦","nation":"日本","premium":false},"7281":{"name":"Lycan","tier":7,"class":"重坦","nation":"其他","premium":false},"7297":{"name":"60TP Lewandowskiego","tier":10,"class":"重坦","nation":"欧洲","premium":false},"7425":{"name":"ISU-152","tier":8,"class":"TD","nation":"苏联","premium":false},"7441":{"name":"VK 45.02 B","tier":9,"class":"重坦","nation":"德国","premium":false},"7473":{"name":"T-34-2G FT","tier":7,"class":"TD","nation":"中国","premium":false},"7505":{"name":"Cruiser IV","tier":3,"class":"中坦","nation":"英国","premium":false},"7521":{"name":"Type 5 Ka-Ri","tier":8,"class":"TD","nation":"日本","premium":false},"7537":{"name":"Nightmare","tier":5,"class":"TD","nation":"其他","premium":false},"7553":{"name":"50TP Tyszkiewicza","tier":9,"class":"重坦","nation":"欧洲","premium":false},"7697":{"name":"Ferdinand","tier":8,"class":"TD","nation":"德国","premium":false},"7713":{"name":"T40","tier":4,"class":"TD","nation":"美国","premium":false},"7729":{"name":"WZ-131G FT","tier":6,"class":"TD","nation":"中国","premium":false},"7745":{"name":"FT AC","tier":2,"class":"TD","nation":"法国","premium":false},"7761":{"name":"Cruiser III","tier":2,"class":"中坦","nation":"英国","premium":false},"7777":{"name":"Type 63","tier":8,"class":"重坦","nation":"日本","premium":false},"7793":{"name":"Annihilator","tier":7,"class":"重坦","nation":"其他","premium":false},"7809":{"name":"53TP Markowskiego","tier":8,"class":"重坦","nation":"欧洲","premium":false},"7937":{"name":"T-54","tier":9,"class":"中坦","nation":"苏联","premium":false},"7953":{"name":"Jagdtiger","tier":9,"class":"TD","nation":"德国","premium":false},"7985":{"name":"WZ-111-1G FT","tier":8,"class":"TD","nation":"中国","premium":false},"8001":{"name":"Lorraine 40 t","tier":8,"class":"中坦","nation":"法国","premium":true},"8017":{"name":"Valentine AT","tier":3,"class":"TD","nation":"英国","premium":false},"8033":{"name":"Type 5 Heavy","tier":10,"class":"重坦","nation":"日本","premium":false},"8049":{"name":"Spike","tier":5,"class":"中坦","nation":"其他","premium":false},"8065":{"name":"40TP Habicha","tier":6,"class":"重坦","nation":"欧洲","premium":false},"8193":{"name":"Obj. 704","tier":9,"class":"TD","nation":"苏联","premium":false},"8209":{"name":"Pz. 38 nA","tier":4,"class":"轻坦","nation":"德国","premium":false},"8225":{"name":"T28","tier":8,"class":"TD","nation":"美国","premium":false},"8241":{"name":"WZ-111G FT","tier":9,"class":"TD","nation":"中国","premium":false},"8257":{"name":"UE 57","tier":3,"class":"TD","nation":"法国","premium":false},"8273":{"name":"UC 2-pdr","tier":2,"class":"TD","nation":"英国","premium":false},"8289":{"name":"Type 95 Ji-Ro","tier":8,"class":"TD","nation":"日本","premium":false},"8305":{"name":"Titan H-Nd","tier":7,"class":"重坦","nation":"其他","premium":false},"8321":{"name":"45TP Habicha","tier":7,"class":"重坦","nation":"欧洲","premium":false},"8465":{"name":"Panther II","tier":8,"class":"中坦","nation":"德国","premium":false},"8497":{"name":"WZ-111 5A","tier":10,"class":"重坦","nation":"中国","premium":false},"8513":{"name":"AMX 30 B","tier":10,"class":"中坦","nation":"法国","premium":false},"8529":{"name":"AT 15","tier":8,"class":"TD","nation":"英国","premium":false},"8561":{"name":"Titan T24 57","tier":6,"class":"轻坦","nation":"其他","premium":false},"8577":{"name":"Lansen C","tier":8,"class":"中坦","nation":"欧洲","premium":false},"8737":{"name":"T95","tier":9,"class":"TD","nation":"美国","premium":false},"8753":{"name":"M41D","tier":7,"class":"轻坦","nation":"中国","premium":true},"8785":{"name":"AT 2","tier":5,"class":"TD","nation":"英国","premium":false},"8817":{"name":"Titan Mk. I","tier":5,"class":"轻坦","nation":"其他","premium":false},"8833":{"name":"Spark","tier":6,"class":"中坦","nation":"欧洲","premium":false},"8961":{"name":"KV-13","tier":7,"class":"中坦","nation":"苏联","premium":false},"8993":{"name":"M46 Patton","tier":9,"class":"中坦","nation":"美国","premium":false},"9009":{"name":"Ox","tier":6,"class":"中坦","nation":"中国","premium":false},"9041":{"name":"Alecto","tier":4,"class":"TD","nation":"英国","premium":false},"9057":{"name":"Type 5 H Zetsu","tier":10,"class":"重坦","nation":"日本","premium":false},"9073":{"name":"Titan-54d","tier":8,"class":"中坦","nation":"其他","premium":false},"9089":{"name":"Škoda T 56","tier":8,"class":"重坦","nation":"欧洲","premium":true},"9217":{"name":"IS-6","tier":8,"class":"重坦","nation":"苏联","premium":true},"9249":{"name":"T25 AT","tier":7,"class":"TD","nation":"美国","premium":false},"9297":{"name":"FV215b 183","tier":10,"class":"TD","nation":"英国","premium":false},"9329":{"name":"Titan-150","tier":6,"class":"重坦","nation":"其他","premium":false},"9345":{"name":"Svear","tier":7,"class":"中坦","nation":"欧洲","premium":false},"9489":{"name":"E 100","tier":10,"class":"重坦","nation":"德国","premium":false},"9505":{"name":"M103","tier":9,"class":"重坦","nation":"美国","premium":false},"9521":{"name":"WZ-122 TM","tier":8,"class":"中坦","nation":"中国","premium":true},"9553":{"name":"AT 8","tier":6,"class":"TD","nation":"英国","premium":false},"9601":{"name":"CS-52 LIS","tier":7,"class":"中坦","nation":"欧洲","premium":false},"9745":{"name":"E 75","tier":9,"class":"重坦","nation":"德国","premium":false},"9761":{"name":"Chaffee","tier":6,"class":"轻坦","nation":"美国","premium":false},"9777":{"name":"WZ-114","tier":9,"class":"重坦","nation":"中国","premium":false},"9793":{"name":"SAu 40","tier":4,"class":"TD","nation":"法国","premium":false},"9809":{"name":"Churchill GC","tier":6,"class":"TD","nation":"英国","premium":false},"9841":{"name":"Rover","tier":6,"class":"轻坦","nation":"其他","premium":false},"9857":{"name":"Škoda T 45","tier":7,"class":"重坦","nation":"欧洲","premium":true},"9985":{"name":"SU-101","tier":8,"class":"TD","nation":"苏联","premium":false},"10001":{"name":"VK 28.01","tier":6,"class":"轻坦","nation":"德国","premium":false},"10017":{"name":"M4A3E2","tier":6,"class":"中坦","nation":"美国","premium":false},"10033":{"name":"WZ-132A","tier":9,"class":"轻坦","nation":"中国","premium":false},"10049":{"name":"S35 CA","tier":5,"class":"TD","nation":"法国","premium":false},"10065":{"name":"AT 7","tier":7,"class":"TD","nation":"英国","premium":false},"10097":{"name":"Medjay","tier":5,"class":"重坦","nation":"其他","premium":false},"10113":{"name":"Carro 45t","tier":10,"class":"中坦","nation":"欧洲","premium":false},"10241":{"name":"SU-100M1","tier":7,"class":"TD","nation":"苏联","premium":false},"10257":{"name":"E 50","tier":9,"class":"中坦","nation":"德国","premium":false},"10273":{"name":"M8A1","tier":4,"class":"TD","nation":"美国","premium":false},"10289":{"name":"WZ-132-1","tier":10,"class":"轻坦","nation":"中国","premium":false},"10353":{"name":"Pharaoh","tier":7,"class":"重坦","nation":"其他","premium":false},"10369":{"name":"Minotauro","tier":10,"class":"TD","nation":"欧洲","premium":false},"10497":{"name":"KV-2","tier":6,"class":"重坦","nation":"苏联","premium":false},"10513":{"name":"VK 45.02 A","tier":8,"class":"重坦","nation":"德国","premium":false},"10529":{"name":"T67","tier":5,"class":"TD","nation":"美国","premium":false},"10545":{"name":"Wind","tier":6,"class":"轻坦","nation":"中国","premium":false},"10609":{"name":"Magnate","tier":7,"class":"中坦","nation":"其他","premium":false},"10625":{"name":"CC 1 Mk. 2","tier":9,"class":"TD","nation":"欧洲","premium":false},"10753":{"name":"ST-I","tier":9,"class":"重坦","nation":"苏联","premium":false},"10769":{"name":"Tiger (P)","tier":7,"class":"重坦","nation":"德国","premium":false},"10785":{"name":"T110E5","tier":10,"class":"重坦","nation":"美国","premium":false},"10801":{"name":"Panlong","tier":6,"class":"TD","nation":"中国","premium":false},"10817":{"name":"AMX AC 46","tier":7,"class":"TD","nation":"法国","premium":false},"10865":{"name":"Fixer","tier":8,"class":"中坦","nation":"其他","premium":false},"10881":{"name":"SMV CC-64","tier":8,"class":"TD","nation":"欧洲","premium":false},"11009":{"name":"KV-4","tier":8,"class":"重坦","nation":"苏联","premium":false},"11025":{"name":"St. Emil","tier":7,"class":"TD","nation":"德国","premium":false},"11041":{"name":"T25/2","tier":7,"class":"TD","nation":"美国","premium":false},"11057":{"name":"114 SP2","tier":10,"class":"重坦","nation":"中国","premium":false},"11073":{"name":"Foch","tier":9,"class":"TD","nation":"法国","premium":false},"11121":{"name":"Regressor","tier":9,"class":"重坦","nation":"其他","premium":false},"11137":{"name":"SMV CC-56","tier":7,"class":"TD","nation":"欧洲","premium":false},"11265":{"name":"T-150","tier":6,"class":"重坦","nation":"苏联","premium":false},"11281":{"name":"Kpz 70","tier":10,"class":"重坦","nation":"德国","premium":false},"11297":{"name":"T28 Prot.","tier":8,"class":"TD","nation":"美国","premium":false},"11313":{"name":"Type 58 50-08","tier":7,"class":"中坦","nation":"中国","premium":false},"11377":{"name":"Basilisk","tier":7,"class":"中坦","nation":"其他","premium":false},"11393":{"name":"Bassotto","tier":6,"class":"TD","nation":"欧洲","premium":false},"11521":{"name":"IS-8","tier":9,"class":"重坦","nation":"苏联","premium":false},"11537":{"name":"JPanther II","tier":8,"class":"TD","nation":"德国","premium":false},"11553":{"name":"Hellcat","tier":6,"class":"TD","nation":"美国","premium":false},"11569":{"name":"BZ-58-2","tier":9,"class":"重坦","nation":"中国","premium":false},"11585":{"name":"ARL V39","tier":6,"class":"TD","nation":"法国","premium":false},"11633":{"name":"Forest Witch","tier":7,"class":"重坦","nation":"其他","premium":false},"11649":{"name":"Semovente M41","tier":5,"class":"TD","nation":"欧洲","premium":false},"11777":{"name":"KV-1","tier":5,"class":"重坦","nation":"苏联","premium":false},"11793":{"name":"Nashorn","tier":6,"class":"TD","nation":"德国","premium":false},"11809":{"name":"T23E3","tier":7,"class":"中坦","nation":"美国","premium":true},"11825":{"name":"BZ-75","tier":10,"class":"重坦","nation":"中国","premium":false},"11889":{"name":"Nebulon","tier":8,"class":"中坦","nation":"其他","premium":false},"11905":{"name":"Shadowhunter","tier":6,"class":"中坦","nation":"欧洲","premium":false},"12033":{"name":"SU-122-54","tier":9,"class":"TD","nation":"苏联","premium":false},"12049":{"name":"Jg.Pz. E 100","tier":10,"class":"TD","nation":"德国","premium":false},"12065":{"name":"T95E2","tier":8,"class":"中坦","nation":"美国","premium":true},"12081":{"name":"BZ-68","tier":9,"class":"重坦","nation":"中国","premium":false},"12097":{"name":"AMX AC 48","tier":8,"class":"TD","nation":"法国","premium":false},"12145":{"name":"Glacier","tier":9,"class":"中坦","nation":"其他","premium":false},"12161":{"name":"Strv K","tier":10,"class":"重坦","nation":"欧洲","premium":false},"12305":{"name":"E 50 M","tier":10,"class":"中坦","nation":"德国","premium":false},"12321":{"name":"T6E1 Grizzly","tier":4,"class":"中坦","nation":"美国","premium":true},"12337":{"name":"BZ-58","tier":7,"class":"重坦","nation":"中国","premium":false},"12417":{"name":"Bisonte C45","tier":8,"class":"重坦","nation":"欧洲","premium":false},"12545":{"name":"K-91","tier":9,"class":"重坦","nation":"苏联","premium":false},"12593":{"name":"BZ-166","tier":8,"class":"重坦","nation":"中国","premium":false},"12657":{"name":"Titan Charioteer","tier":8,"class":"TD","nation":"其他","premium":false},"12673":{"name":"Tornvagn","tier":9,"class":"重坦","nation":"欧洲","premium":false},"12849":{"name":"116-F3","tier":10,"class":"重坦","nation":"中国","premium":false},"12913":{"name":"Groundtank","tier":8,"class":"重坦","nation":"其他","premium":false},"12929":{"name":"TNH T Vz. 51","tier":9,"class":"重坦","nation":"欧洲","premium":false},"13073":{"name":"Pz. II G","tier":3,"class":"轻坦","nation":"德国","premium":false},"13089":{"name":"T110E4","tier":10,"class":"TD","nation":"美国","premium":false},"13105":{"name":"BZ-176","tier":9,"class":"重坦","nation":"中国","premium":false},"13169":{"name":"AC Wedge","tier":4,"class":"重坦","nation":"其他","premium":false},"13185":{"name":"Vz. 55","tier":10,"class":"重坦","nation":"欧洲","premium":false},"13329":{"name":"D.W. 2","tier":4,"class":"重坦","nation":"德国","premium":false},"13345":{"name":"T26E4","tier":8,"class":"中坦","nation":"美国","premium":true},"13425":{"name":"AC Highlander","tier":5,"class":"重坦","nation":"其他","premium":false},"13441":{"name":"Aeonix","tier":6,"class":"中坦","nation":"欧洲","premium":false},"13569":{"name":"Obj. 268","tier":10,"class":"TD","nation":"苏联","premium":false},"13617":{"name":"Type 59 spc","tier":8,"class":"中坦","nation":"中国","premium":false},"13681":{"name":"AC Ocelote","tier":6,"class":"重坦","nation":"其他","premium":false},"13697":{"name":"TNH 105/1000","tier":8,"class":"重坦","nation":"欧洲","premium":false},"13825":{"name":"T-62A","tier":10,"class":"中坦","nation":"苏联","premium":false},"13841":{"name":"Indien-Pz.","tier":8,"class":"中坦","nation":"德国","premium":false},"13857":{"name":"T110E3","tier":10,"class":"TD","nation":"美国","premium":false},"13873":{"name":"BZ-74-1","tier":9,"class":"重坦","nation":"中国","premium":false},"13889":{"name":"Foch 155","tier":10,"class":"TD","nation":"法国","premium":false},"13937":{"name":"AC Rebelde","tier":7,"class":"重坦","nation":"其他","premium":false},"13953":{"name":"Vz. 44-1","tier":7,"class":"重坦","nation":"欧洲","premium":false},"14097":{"name":"VK 30.01 D","tier":6,"class":"中坦","nation":"德国","premium":false},"14113":{"name":"M48 Patton","tier":10,"class":"中坦","nation":"美国","premium":false},"14129":{"name":"BZT-70","tier":10,"class":"重坦","nation":"中国","premium":false},"14145":{"name":"AMX ELC bis","tier":5,"class":"轻坦","nation":"法国","premium":false},"14193":{"name":"Silencer","tier":7,"class":"TD","nation":"其他","premium":false},"14209":{"name":"Škoda P-JS","tier":6,"class":"重坦","nation":"欧洲","premium":false},"14337":{"name":"Obj. 263","tier":10,"class":"TD","nation":"苏联","premium":false},"14385":{"name":"WZ-120G FT","tier":9,"class":"TD","nation":"中国","premium":false},"14449":{"name":"Swindler","tier":8,"class":"轻坦","nation":"其他","premium":false},"14465":{"name":"DS PZInż","tier":5,"class":"中坦","nation":"欧洲","premium":false},"14609":{"name":"Leopard 1","tier":10,"class":"中坦","nation":"德国","premium":false},"14625":{"name":"T69","tier":8,"class":"中坦","nation":"美国","premium":false},"14705":{"name":"Fänrik","tier":9,"class":"重坦","nation":"其他","premium":false},"14721":{"name":"Strv 81","tier":8,"class":"中坦","nation":"欧洲","premium":false},"14865":{"name":"Leopard PT A","tier":9,"class":"中坦","nation":"德国","premium":false},"14881":{"name":"T57 Heavy","tier":10,"class":"重坦","nation":"美国","premium":false},"14961":{"name":"Mutant","tier":7,"class":"中坦","nation":"其他","premium":false},"14977":{"name":"CS-63","tier":10,"class":"中坦","nation":"欧洲","premium":false},"15137":{"name":"T21","tier":6,"class":"轻坦","nation":"美国","premium":false},"15217":{"name":"AC Forger","tier":6,"class":"重坦","nation":"其他","premium":true},"15233":{"name":"CS-59","tier":9,"class":"中坦","nation":"欧洲","premium":false},"15393":{"name":"T54E1","tier":9,"class":"中坦","nation":"美国","premium":false},"15441":{"name":"Chieftain","tier":8,"class":"重坦","nation":"英国","premium":false},"15473":{"name":"Endurance","tier":7,"class":"轻坦","nation":"其他","premium":false},"15489":{"name":"CS-53","tier":8,"class":"中坦","nation":"欧洲","premium":false},"15617":{"name":"Obj. 907","tier":10,"class":"中坦","nation":"苏联","premium":false},"15649":{"name":"T71","tier":7,"class":"轻坦","nation":"美国","premium":false},"15697":{"name":"Chieftain Mk. 6","tier":10,"class":"重坦","nation":"英国","premium":false},"15729":{"name":"TSL-7 Defender","tier":8,"class":"中坦","nation":"其他","premium":false},"15745":{"name":"CS-44","tier":7,"class":"中坦","nation":"欧洲","premium":false},"15889":{"name":"VK 30.02 M","tier":6,"class":"中坦","nation":"德国","premium":false},"15905":{"name":"M60","tier":10,"class":"中坦","nation":"美国","premium":false},"15937":{"name":"R35","tier":1,"class":"中坦","nation":"法国","premium":false},"15953":{"name":"FV201 (A45)","tier":7,"class":"重坦","nation":"英国","premium":true},"15985":{"name":"Toxique","tier":8,"class":"中坦","nation":"其他","premium":false},"16001":{"name":"B.U.G.I.","tier":6,"class":"中坦","nation":"欧洲","premium":false},"16145":{"name":"Pz.Sfl. IVc","tier":5,"class":"TD","nation":"德国","premium":false},"16193":{"name":"M4A1 Rev.","tier":8,"class":"中坦","nation":"法国","premium":false},"16241":{"name":"Rammer","tier":7,"class":"重坦","nation":"其他","premium":false},"16257":{"name":"Outcast","tier":6,"class":"重坦","nation":"欧洲","premium":false},"16401":{"name":"WT auf Pz. IV","tier":9,"class":"TD","nation":"德国","premium":false},"16449":{"name":"AMX 13 57","tier":7,"class":"轻坦","nation":"法国","premium":false},"16497":{"name":"E-10","tier":7,"class":"重坦","nation":"其他","premium":false},"16513":{"name":"ShPTK-TVP 100","tier":8,"class":"TD","nation":"欧洲","premium":false},"16641":{"name":"MT-25","tier":6,"class":"轻坦","nation":"苏联","premium":false},"16657":{"name":"Rhm.-B. WT","tier":8,"class":"TD","nation":"德国","premium":false},"16673":{"name":"T37","tier":6,"class":"轻坦","nation":"美国","premium":false},"16705":{"name":"AMX M4 49","tier":8,"class":"重坦","nation":"法国","premium":true},"16753":{"name":"DTH-STR","tier":8,"class":"TD","nation":"其他","premium":false},"16769":{"name":"SMV Vipera","tier":8,"class":"TD","nation":"欧洲","premium":false},"16897":{"name":"Obj. 140","tier":10,"class":"中坦","nation":"苏联","premium":false},"17009":{"name":"KV-JR","tier":9,"class":"重坦","nation":"其他","premium":false},"17025":{"name":"Progetto CC55 mod. 54","tier":8,"class":"重坦","nation":"欧洲","premium":false},"17169":{"name":"Pz. IV A","tier":3,"class":"中坦","nation":"德国","premium":false},"17217":{"name":"Eraser BP44","tier":6,"class":"重坦","nation":"法国","premium":false},"17233":{"name":"Conway","tier":9,"class":"TD","nation":"英国","premium":false},"17265":{"name":"Souleater","tier":8,"class":"TD","nation":"其他","premium":false},"17281":{"name":"Progetto C50 mod. 66","tier":9,"class":"重坦","nation":"欧洲","premium":false},"17425":{"name":"Pz. IV D","tier":4,"class":"中坦","nation":"德国","premium":false},"17473":{"name":"AMX Defender","tier":8,"class":"轻坦","nation":"法国","premium":false},"17489":{"name":"Charioteer","tier":8,"class":"TD","nation":"英国","premium":false},"17521":{"name":"Lightbringer","tier":7,"class":"重坦","nation":"其他","premium":false},"17537":{"name":"Carro d'assalto P.88","tier":7,"class":"重坦","nation":"欧洲","premium":false},"17729":{"name":"Somua SM","tier":9,"class":"重坦","nation":"法国","premium":false},"17745":{"name":"FV217 Badger","tier":10,"class":"TD","nation":"英国","premium":false},"17777":{"name":"Titan Strife","tier":8,"class":"重坦","nation":"其他","premium":false},"17793":{"name":"Rinoceronte","tier":10,"class":"重坦","nation":"欧洲","premium":false},"17953":{"name":"M41 Bulldog","tier":7,"class":"轻坦","nation":"美国","premium":false},"17985":{"name":"Bretagne Panther","tier":6,"class":"中坦","nation":"法国","premium":true},"18001":{"name":"FV4005","tier":10,"class":"TD","nation":"英国","premium":false},"18033":{"name":"Hazard I","tier":7,"class":"中坦","nation":"其他","premium":false},"18049":{"name":"Lion","tier":10,"class":"中坦","nation":"欧洲","premium":false},"18177":{"name":"T-54 ltwt.","tier":8,"class":"轻坦","nation":"苏联","premium":false},"18209":{"name":"T49","tier":8,"class":"轻坦","nation":"美国","premium":false},"18241":{"name":"B-C Bourrasque","tier":8,"class":"中坦","nation":"法国","premium":false},"18257":{"name":"Challenger","tier":7,"class":"TD","nation":"英国","premium":false},"18289":{"name":"Quetzal","tier":8,"class":"重坦","nation":"其他","premium":false},"18305":{"name":"SDP 40 Zadymka","tier":5,"class":"TD","nation":"欧洲","premium":false},"18433":{"name":"LTTB","tier":7,"class":"轻坦","nation":"苏联","premium":false},"18449":{"name":"Ru 251","tier":8,"class":"轻坦","nation":"德国","premium":false},"18497":{"name":"Lorraine Fearless","tier":8,"class":"中坦","nation":"法国","premium":true},"18513":{"name":"Chimera","tier":8,"class":"中坦","nation":"英国","premium":false},"18545":{"name":"Argonaut","tier":9,"class":"TD","nation":"其他","premium":false},"18561":{"name":"SDP 44 Burza","tier":6,"class":"TD","nation":"欧洲","premium":false},"18689":{"name":"T-70/57","tier":3,"class":"轻坦","nation":"苏联","premium":false},"18753":{"name":"AMX CDA 105","tier":8,"class":"TD","nation":"法国","premium":false},"18769":{"name":"Action X","tier":8,"class":"重坦","nation":"英国","premium":false},"18801":{"name":"mau5Tank","tier":9,"class":"中坦","nation":"其他","premium":false},"18817":{"name":"SDP 57 Gowika","tier":7,"class":"TD","nation":"欧洲","premium":false},"18945":{"name":"ISU-130","tier":8,"class":"TD","nation":"苏联","premium":true},"18961":{"name":"SP I C","tier":7,"class":"轻坦","nation":"德国","premium":false},"18977":{"name":"T95E6","tier":10,"class":"重坦","nation":"美国","premium":false},"19009":{"name":"AMXmas","tier":6,"class":"轻坦","nation":"法国","premium":false},"19025":{"name":"Defender Mk. 1","tier":8,"class":"中坦","nation":"英国","premium":true},"19057":{"name":"Destiny","tier":9,"class":"重坦","nation":"其他","premium":false},"19073":{"name":"SDP 58 Kilana","tier":8,"class":"TD","nation":"欧洲","premium":false},"19217":{"name":"Grille 15","tier":10,"class":"TD","nation":"德国","premium":false},"19233":{"name":"Chrysler K","tier":8,"class":"重坦","nation":"美国","premium":true},"19265":{"name":"Charles","tier":6,"class":"TD","nation":"法国","premium":false},"19281":{"name":"Super Conqueror","tier":10,"class":"重坦","nation":"英国","premium":false},"19313":{"name":"Prowler","tier":8,"class":"重坦","nation":"其他","premium":false},"19329":{"name":"SDP 60 Gonkiewicza","tier":9,"class":"TD","nation":"欧洲","premium":false},"19473":{"name":"Krupp-38(D)","tier":5,"class":"中坦","nation":"德国","premium":true},"19489":{"name":"T28 Defender","tier":8,"class":"TD","nation":"美国","premium":true},"19521":{"name":"B-C 25 t Avenir","tier":9,"class":"轻坦","nation":"法国","premium":false},"19537":{"name":"Vickers Light","tier":10,"class":"轻坦","nation":"英国","premium":false},"19569":{"name":"AC Sterope","tier":9,"class":"重坦","nation":"其他","premium":false},"19585":{"name":"NC 70 Błyskawica","tier":10,"class":"TD","nation":"欧洲","premium":false},"19713":{"name":"Loza's Sherman","tier":6,"class":"中坦","nation":"苏联","premium":true},"19729":{"name":"Tiger 131","tier":6,"class":"重坦","nation":"德国","premium":false},"19745":{"name":"T26E5","tier":8,"class":"重坦","nation":"美国","premium":false},"19777":{"name":"A.P. AMX 30","tier":8,"class":"中坦","nation":"法国","premium":true},"19793":{"name":"Vickers CR","tier":9,"class":"轻坦","nation":"英国","premium":false},"19825":{"name":"AC Atlas","tier":10,"class":"重坦","nation":"其他","premium":false},"19841":{"name":"SDP wz 66 Grom","tier":8,"class":"TD","nation":"欧洲","premium":false},"19969":{"name":"T-22 medium","tier":10,"class":"中坦","nation":"苏联","premium":false},"19985":{"name":"Skorpion G","tier":8,"class":"TD","nation":"德国","premium":false},"20001":{"name":"T92E1","tier":9,"class":"轻坦","nation":"美国","premium":false},"20033":{"name":"Char Futur 4","tier":9,"class":"中坦","nation":"法国","premium":false},"20049":{"name":"FV301","tier":8,"class":"轻坦","nation":"英国","premium":false},"20081":{"name":"AC Celeno","tier":9,"class":"重坦","nation":"其他","premium":false},"20097":{"name":"Felice","tier":10,"class":"重坦","nation":"欧洲","premium":false},"20257":{"name":"Sheridan","tier":10,"class":"轻坦","nation":"美国","premium":false},"20289":{"name":"Pirate","tier":6,"class":"TD","nation":"法国","premium":false},"20305":{"name":"Centurion Mk. 5/1","tier":8,"class":"中坦","nation":"英国","premium":false},"20337":{"name":"AC Taygete","tier":8,"class":"重坦","nation":"其他","premium":false},"20481":{"name":"Obj. 252U","tier":8,"class":"重坦","nation":"苏联","premium":false},"20497":{"name":"VK 100.01 (P)","tier":8,"class":"重坦","nation":"德国","premium":false},"20513":{"name":"T54E2","tier":8,"class":"重坦","nation":"美国","premium":false},"20545":{"name":"Renault G1","tier":5,"class":"重坦","nation":"法国","premium":false},"20561":{"name":"Turtle Mk. I","tier":8,"class":"TD","nation":"英国","premium":true},"20593":{"name":"AC Pleione","tier":8,"class":"重坦","nation":"其他","premium":false},"20737":{"name":"SU-130PM","tier":8,"class":"TD","nation":"苏联","premium":false},"20753":{"name":"Mäuschen","tier":9,"class":"重坦","nation":"德国","premium":false},"20769":{"name":"T25 Pilot 1","tier":8,"class":"中坦","nation":"美国","premium":false},"20801":{"name":"Lorraine 50 t","tier":9,"class":"重坦","nation":"法国","premium":false},"20817":{"name":"Explorer","tier":6,"class":"中坦","nation":"英国","premium":false},"20849":{"name":"FVE Defender","tier":9,"class":"中坦","nation":"其他","premium":false},"20993":{"name":"T-2020","tier":9,"class":"重坦","nation":"苏联","premium":false},"21009":{"name":"Panzer 58","tier":8,"class":"中坦","nation":"德国","premium":true},"21025":{"name":"T26E3 Eagle 7","tier":7,"class":"中坦","nation":"美国","premium":true},"21057":{"name":"Projet Murat","tier":10,"class":"中坦","nation":"法国","premium":false},"21073":{"name":"Dreadnought","tier":6,"class":"TD","nation":"英国","premium":false},"21105":{"name":"AC-07V Merope","tier":7,"class":"重坦","nation":"其他","premium":false},"21249":{"name":"Thunder","tier":6,"class":"重坦","nation":"苏联","premium":false},"21265":{"name":"VK 168.01 (P)","tier":9,"class":"重坦","nation":"德国","premium":false},"21281":{"name":"Rudolph","tier":6,"class":"中坦","nation":"美国","premium":false},"21313":{"name":"AMX 13 M24","tier":7,"class":"中坦","nation":"法国","premium":false},"21329":{"name":"GSOR 1008","tier":8,"class":"TD","nation":"英国","premium":false},"21361":{"name":"Herdbreaker","tier":9,"class":"中坦","nation":"其他","premium":false},"21505":{"name":"T-44-85","tier":7,"class":"中坦","nation":"苏联","premium":false},"21521":{"name":"E 75 TS","tier":9,"class":"重坦","nation":"德国","premium":false},"21569":{"name":"ERAC 105 Proto","tier":8,"class":"中坦","nation":"法国","premium":false},"21585":{"name":"Blasteroid","tier":6,"class":"重坦","nation":"英国","premium":false},"21617":{"name":"Biter","tier":8,"class":"中坦","nation":"其他","premium":false},"21761":{"name":"STG","tier":8,"class":"中坦","nation":"苏联","premium":true},"21777":{"name":"VK 90.01 (P)","tier":10,"class":"重坦","nation":"德国","premium":false},"21793":{"name":"Sheridan Missile","tier":10,"class":"轻坦","nation":"美国","premium":false},"21825":{"name":"Projet Louis","tier":9,"class":"中坦","nation":"法国","premium":false},"21841":{"name":"Caliban","tier":8,"class":"重坦","nation":"英国","premium":false},"21889":{"name":"56TP","tier":8,"class":"重坦","nation":"欧洲","premium":false},"22033":{"name":"Agent","tier":6,"class":"轻坦","nation":"德国","premium":false},"22049":{"name":"Magnus","tier":6,"class":"重坦","nation":"美国","premium":false},"22081":{"name":"ELC AMX-901","tier":8,"class":"轻坦","nation":"法国","premium":false},"22097":{"name":"Churchill VIII","tier":6,"class":"重坦","nation":"英国","premium":false},"22129":{"name":"AC Teichos","tier":10,"class":"中坦","nation":"其他","premium":false},"22273":{"name":"Obj. 260","tier":10,"class":"重坦","nation":"苏联","premium":false},"22305":{"name":"AE Phase I","tier":9,"class":"重坦","nation":"美国","premium":false},"22337":{"name":"Sentinelle","tier":8,"class":"重坦","nation":"法国","premium":false},"22353":{"name":"Churchill W","tier":6,"class":"重坦","nation":"英国","premium":false},"22385":{"name":"Titan JPanther II","tier":8,"class":"TD","nation":"其他","premium":false},"22529":{"name":"LT-432","tier":8,"class":"轻坦","nation":"苏联","premium":true},"22545":{"name":"Kanonenjagdpanzer","tier":9,"class":"TD","nation":"德国","premium":false},"22561":{"name":"TS-5","tier":8,"class":"TD","nation":"美国","premium":true},"22609":{"name":"Caernarvon Defender","tier":8,"class":"重坦","nation":"英国","premium":true},"22641":{"name":"Convoyer","tier":8,"class":"重坦","nation":"其他","premium":false},"22785":{"name":"Triumphant","tier":6,"class":"中坦","nation":"苏联","premium":false},"22801":{"name":"Icebreaker","tier":6,"class":"重坦","nation":"德国","premium":false},"22817":{"name":"M-VI-Yoh","tier":10,"class":"重坦","nation":"美国","premium":false},"22849":{"name":"Brennos","tier":8,"class":"重坦","nation":"法国","premium":false},"22865":{"name":"Charlemagne","tier":8,"class":"重坦","nation":"英国","premium":true},"23041":{"name":"T-34 shielded","tier":5,"class":"中坦","nation":"苏联","premium":true},"23057":{"name":"Kunze Panzer","tier":7,"class":"轻坦","nation":"德国","premium":false},"23073":{"name":"M-V-Yoh","tier":9,"class":"重坦","nation":"美国","premium":false},"23121":{"name":"Cobra","tier":9,"class":"中坦","nation":"英国","premium":false},"23297":{"name":"Object 244","tier":6,"class":"重坦","nation":"苏联","premium":false},"23313":{"name":"Kpz 50 t","tier":10,"class":"中坦","nation":"德国","premium":false},"23329":{"name":"M-III-Yoh","tier":8,"class":"重坦","nation":"美国","premium":false},"23377":{"name":"FV1066 Senlac","tier":8,"class":"轻坦","nation":"英国","premium":false},"23553":{"name":"MS-1","tier":2,"class":"轻坦","nation":"苏联","premium":false},"23569":{"name":"Pz. IV Gargoyle","tier":5,"class":"中坦","nation":"德国","premium":false},"23585":{"name":"M-VII-Yoh","tier":7,"class":"重坦","nation":"美国","premium":false},"23633":{"name":"A25 Harry Hopkins I","tier":5,"class":"中坦","nation":"英国","premium":false},"23809":{"name":"Object 84","tier":9,"class":"轻坦","nation":"苏联","premium":false},"23825":{"name":"Steyr WT","tier":7,"class":"TD","nation":"德国","premium":false},"23841":{"name":"Super Hellcat","tier":7,"class":"TD","nation":"美国","premium":false},"23889":{"name":"FV4201 Chieftain Proto","tier":9,"class":"重坦","nation":"英国","premium":false},"24065":{"name":"LTG","tier":7,"class":"轻坦","nation":"苏联","premium":false},"24081":{"name":"U-Panzer","tier":6,"class":"中坦","nation":"德国","premium":false},"24097":{"name":"BLTZ9000","tier":6,"class":"中坦","nation":"美国","premium":false},"24145":{"name":"GSOR Fearless","tier":8,"class":"TD","nation":"英国","premium":false},"24321":{"name":"T-100 LT","tier":10,"class":"轻坦","nation":"苏联","premium":false},"24337":{"name":"M48A2 Räumpanzer","tier":8,"class":"中坦","nation":"德国","premium":false},"24401":{"name":"Vickers MBT","tier":9,"class":"中坦","nation":"英国","premium":false},"24577":{"name":"Object 268/4","tier":10,"class":"TD","nation":"苏联","premium":false},"24593":{"name":"Keiler","tier":8,"class":"重坦","nation":"德国","premium":false},"24609":{"name":"Concept 1B","tier":10,"class":"重坦","nation":"美国","premium":false},"24657":{"name":"A46 Different","tier":7,"class":"轻坦","nation":"英国","premium":false},"24849":{"name":"Kryos","tier":6,"class":"TD","nation":"德国","premium":false},"24865":{"name":"Scepter","tier":8,"class":"重坦","nation":"美国","premium":true},"24913":{"name":"Nemesis","tier":8,"class":"中坦","nation":"英国","premium":false},"25089":{"name":"Object 752","tier":9,"class":"重坦","nation":"苏联","premium":false},"25105":{"name":"Barkhan","tier":6,"class":"重坦","nation":"德国","premium":false},"25121":{"name":"M46 Jaguar","tier":9,"class":"中坦","nation":"美国","premium":false},"25169":{"name":"GSOR the TANK","tier":10,"class":"重坦","nation":"英国","premium":false},"25345":{"name":"Object 274a","tier":8,"class":"中坦","nation":"苏联","premium":true},"25361":{"name":"WT Ritter","tier":9,"class":"TD","nation":"德国","premium":false},"25377":{"name":"T77","tier":8,"class":"重坦","nation":"美国","premium":false},"25601":{"name":"IS-2 shielded","tier":7,"class":"重坦","nation":"苏联","premium":true},"25617":{"name":"HWK 30","tier":8,"class":"轻坦","nation":"德国","premium":true},"25633":{"name":"M-IV-Y","tier":8,"class":"重坦","nation":"美国","premium":false},"25857":{"name":"Obj. 777 II","tier":10,"class":"重坦","nation":"苏联","premium":false},"25873":{"name":"Elefant","tier":8,"class":"TD","nation":"德国","premium":false},"25889":{"name":"Ranger","tier":6,"class":"轻坦","nation":"美国","premium":false},"26113":{"name":"Object 452K","tier":9,"class":"重坦","nation":"苏联","premium":false},"26129":{"name":"Epsilon","tier":6,"class":"TD","nation":"德国","premium":false},"26145":{"name":"High Score","tier":5,"class":"中坦","nation":"美国","premium":false},"26369":{"name":"ST-62 Ver. 2","tier":8,"class":"中坦","nation":"苏联","premium":false},"26385":{"name":"Tiger Frontline","tier":7,"class":"重坦","nation":"德国","premium":false},"26401":{"name":"Enforcer","tier":6,"class":"TD","nation":"美国","premium":false},"26625":{"name":"T-34-85 Breakthrough","tier":7,"class":"中坦","nation":"苏联","premium":false},"26641":{"name":"Kpz 07 RH","tier":8,"class":"中坦","nation":"德国","premium":false},"26657":{"name":"ASTRON Rex","tier":8,"class":"中坦","nation":"美国","premium":true},"26881":{"name":"Obj. 590","tier":8,"class":"中坦","nation":"苏联","premium":false},"26897":{"name":"Kpz. Pr.68 (P)","tier":8,"class":"中坦","nation":"德国","premium":false},"26913":{"name":"Frosty","tier":6,"class":"轻坦","nation":"美国","premium":false},"27137":{"name":"K-2","tier":8,"class":"重坦","nation":"苏联","premium":false},"27153":{"name":"Aufkl. Panther","tier":7,"class":"轻坦","nation":"德国","premium":false},"27169":{"name":"Cyborg","tier":6,"class":"重坦","nation":"美国","premium":false},"27393":{"name":"Obj. Kust","tier":8,"class":"TD","nation":"苏联","premium":false},"27409":{"name":"Projekt Kpz. 07P(E)","tier":9,"class":"重坦","nation":"德国","premium":false},"27425":{"name":"TL-7-120","tier":9,"class":"重坦","nation":"美国","premium":false},"27665":{"name":"Schwarzpanzer 58","tier":8,"class":"中坦","nation":"德国","premium":false},"27681":{"name":"Pawlack Tank","tier":6,"class":"重坦","nation":"美国","premium":false},"27921":{"name":"Erich Konzept I","tier":9,"class":"中坦","nation":"德国","premium":false},"27937":{"name":"T49 Fearless","tier":8,"class":"轻坦","nation":"美国","premium":true},"28177":{"name":"LKpz.70 K","tier":9,"class":"轻坦","nation":"德国","premium":false},"28193":{"name":"TS-60","tier":9,"class":"TD","nation":"美国","premium":false},"28433":{"name":"HWK 12","tier":9,"class":"轻坦","nation":"德国","premium":false},"28449":{"name":"T42","tier":7,"class":"中坦","nation":"美国","premium":false},"28689":{"name":"Rhm. Pzw.","tier":10,"class":"轻坦","nation":"德国","premium":false},"28705":{"name":"XM66F","tier":10,"class":"TD","nation":"美国","premium":false},"28945":{"name":"Waffen F1.0","tier":10,"class":"TD","nation":"德国","premium":false},"28961":{"name":"Sherman Easy 8","tier":7,"class":"中坦","nation":"美国","premium":false},"29201":{"name":"Tiger-Maus","tier":9,"class":"重坦","nation":"德国","premium":false},"29217":{"name":"MBT-B","tier":9,"class":"重坦","nation":"美国","premium":true},"29457":{"name":"VK 19.02“闪送宝”","tier":8,"class":"轻坦","nation":"德国","premium":false},"29473":{"name":"ATAC","tier":9,"class":"轻坦","nation":"美国","premium":false},"29713":{"name":"KJPZ TIII Jäger","tier":9,"class":"TD","nation":"德国","premium":false},"29985":{"name":"SPHT","tier":10,"class":"重坦","nation":"美国","premium":false},"30481":{"name":"Kpz 70 Missile","tier":10,"class":"重坦","nation":"德国","premium":false},"51201":{"name":"KV-220 T","tier":5,"class":"重坦","nation":"苏联","premium":false},"51457":{"name":"Matilda IV","tier":5,"class":"中坦","nation":"苏联","premium":true},"51473":{"name":"Pz. V/IV","tier":5,"class":"中坦","nation":"德国","premium":true},"51489":{"name":"T2 Light","tier":2,"class":"轻坦","nation":"美国","premium":false},"51713":{"name":"Churchill III","tier":5,"class":"重坦","nation":"苏联","premium":true},"51729":{"name":"Pz. II J","tier":3,"class":"轻坦","nation":"德国","premium":false},"51745":{"name":"Ram II","tier":5,"class":"中坦","nation":"美国","premium":true},"51809":{"name":"Ke-Ni Otsu","tier":3,"class":"轻坦","nation":"日本","premium":true},"51985":{"name":"Pz. S35","tier":3,"class":"中坦","nation":"德国","premium":false},"52065":{"name":"Hetzer Kamesan SP","tier":4,"class":"TD","nation":"日本","premium":false},"52225":{"name":"BT-SV","tier":3,"class":"轻坦","nation":"苏联","premium":false},"52241":{"name":"Pz. B2","tier":4,"class":"重坦","nation":"德国","premium":false},"52257":{"name":"M4A2E4","tier":5,"class":"中坦","nation":"美国","premium":false},"52481":{"name":"Valentine II","tier":4,"class":"轻坦","nation":"苏联","premium":false},"52497":{"name":"Pz. 38H","tier":2,"class":"轻坦","nation":"德国","premium":false},"52513":{"name":"M6A2E1","tier":7,"class":"重坦","nation":"美国","premium":true},"52561":{"name":"Tortoise","tier":9,"class":"TD","nation":"英国","premium":false},"52737":{"name":"M3 Light","tier":3,"class":"轻坦","nation":"苏联","premium":false},"52769":{"name":"Locust","tier":3,"class":"轻坦","nation":"美国","premium":false},"52993":{"name":"A-32","tier":4,"class":"中坦","nation":"苏联","premium":false},"53025":{"name":"M6A2E1 EXP","tier":8,"class":"重坦","nation":"美国","premium":true},"53249":{"name":"KV-5","tier":8,"class":"重坦","nation":"苏联","premium":true},"53505":{"name":"T-127","tier":3,"class":"轻坦","nation":"苏联","premium":false},"53537":{"name":"T1E6","tier":2,"class":"轻坦","nation":"美国","premium":false},"53585":{"name":"Matilda BP","tier":5,"class":"中坦","nation":"英国","premium":true},"53761":{"name":"SU-85I","tier":5,"class":"TD","nation":"苏联","premium":true},"53841":{"name":"TOG II*","tier":6,"class":"重坦","nation":"英国","premium":true},"54097":{"name":"AT 15A","tier":7,"class":"TD","nation":"英国","premium":false},"54273":{"name":"SU-76I","tier":3,"class":"TD","nation":"苏联","premium":false},"54289":{"name":"Löwe","tier":8,"class":"重坦","nation":"德国","premium":true},"54353":{"name":"Excelsior","tier":5,"class":"重坦","nation":"英国","premium":true},"54529":{"name":"Tetrarch","tier":2,"class":"轻坦","nation":"苏联","premium":false},"54545":{"name":"T-25","tier":5,"class":"中坦","nation":"德国","premium":true},"54785":{"name":"SU-100Y","tier":6,"class":"TD","nation":"苏联","premium":false},"54801":{"name":"T-15","tier":3,"class":"轻坦","nation":"德国","premium":false},"54865":{"name":"Light VIC","tier":2,"class":"轻坦","nation":"英国","premium":false},"55057":{"name":"Pz. IV hydr.","tier":5,"class":"中坦","nation":"德国","premium":false},"55073":{"name":"T7 Car","tier":2,"class":"轻坦","nation":"美国","premium":false},"55297":{"name":"SU-122-44","tier":7,"class":"TD","nation":"苏联","premium":true},"55313":{"name":"JgTig.8,8 cm","tier":8,"class":"TD","nation":"德国","premium":true},"55889":{"name":"Cromwell B","tier":6,"class":"中坦","nation":"英国","premium":true},"56097":{"name":"Fury","tier":6,"class":"中坦","nation":"美国","premium":true},"56577":{"name":"LTP","tier":3,"class":"轻坦","nation":"苏联","premium":false},"56609":{"name":"T28 HTC","tier":7,"class":"TD","nation":"美国","premium":false},"57105":{"name":"Dicker Max","tier":6,"class":"TD","nation":"德国","premium":false},"57361":{"name":"Pz. IV S.","tier":6,"class":"中坦","nation":"德国","premium":true},"57617":{"name":"Panther/M10","tier":7,"class":"中坦","nation":"德国","premium":false},"58641":{"name":"VK 72.01 K","tier":10,"class":"重坦","nation":"德国","premium":false},"58881":{"name":"IS-5","tier":8,"class":"重坦","nation":"苏联","premium":true},"59137":{"name":"IS-2 (1945)","tier":7,"class":"重坦","nation":"苏联","premium":false},"59649":{"name":"ISU-122S","tier":7,"class":"TD","nation":"苏联","premium":true},"59665":{"name":"Großtraktor","tier":3,"class":"重坦","nation":"德国","premium":false},"59905":{"name":"T-54 mod. 1","tier":8,"class":"中坦","nation":"苏联","premium":true},"60161":{"name":"IS-2Sh","tier":8,"class":"重坦","nation":"苏联","premium":false},"60177":{"name":"Panther 8,8","tier":8,"class":"中坦","nation":"德国","premium":true},"60417":{"name":"IS-3 Defender","tier":8,"class":"重坦","nation":"苏联","premium":false},"60929":{"name":"BT-7 art.","tier":3,"class":"轻坦","nation":"苏联","premium":false},"62737":{"name":"leKpz M 41 90 mm","tier":8,"class":"轻坦","nation":"德国","premium":false},"62977":{"name":"T-44-100","tier":8,"class":"中坦","nation":"苏联","premium":true},"62993":{"name":"VK 45.03","tier":7,"class":"重坦","nation":"德国","premium":false},"63553":{"name":"AMX CDC","tier":8,"class":"中坦","nation":"法国","premium":true},"63585":{"name":"Tiger Kuromorimine SP","tier":6,"class":"重坦","nation":"日本","premium":false},"63601":{"name":"Dracula","tier":7,"class":"中坦","nation":"其他","premium":false},"63841":{"name":"Pz. IV Ankou SP","tier":5,"class":"中坦","nation":"日本","premium":false},"64001":{"name":"T-34-85 Rudy","tier":7,"class":"中坦","nation":"苏联","premium":false},"64017":{"name":"Tankenstein","tier":7,"class":"重坦","nation":"德国","premium":false},"64065":{"name":"FCM 50 t","tier":8,"class":"中坦","nation":"法国","premium":false},"64081":{"name":"Mk I* Heavy Tank","tier":1,"class":"重坦","nation":"英国","premium":true},"64257":{"name":"T-34-85 Victory","tier":6,"class":"中坦","nation":"苏联","premium":true},"64273":{"name":"JgTig.8,8 cm (2015)","tier":8,"class":"TD","nation":"德国","premium":true},"64337":{"name":"AC IV Sentinel","tier":6,"class":"中坦","nation":"英国","premium":true},"64529":{"name":"E 25","tier":7,"class":"TD","nation":"德国","premium":true},"64561":{"name":"112 Glacial","tier":8,"class":"重坦","nation":"中国","premium":true},"64593":{"name":"Angry Connor","tier":5,"class":"TD","nation":"英国","premium":true},"64769":{"name":"IS-6 Fearless","tier":8,"class":"重坦","nation":"苏联","premium":true},"64801":{"name":"T34 (1776)","tier":8,"class":"重坦","nation":"美国","premium":true},"64849":{"name":"AC 1 Sentinel","tier":4,"class":"中坦","nation":"英国","premium":false},"65329":{"name":"Type 62","tier":7,"class":"轻坦","nation":"中国","premium":true},"65377":{"name":"Chi-Nu Kai","tier":5,"class":"中坦","nation":"日本","premium":true}}}
+{
+  "meta": {
+    "count": 715,
+    "source": "blitzkit (assets.blitzkit.app/definitions/tanks.pb)"
+  },
+  "data": {
+    "1": {
+      "name": "T-34",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "17": {
+      "name": "Pz. IV G",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "33": {
+      "name": "T14",
+      "tier": 5,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": true
+    },
+    "49": {
+      "name": "Type 59",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "81": {
+      "name": "Medium I",
+      "tier": 1,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "113": {
+      "name": "Vindicator UM",
+      "tier": 7,
+      "class": "TD",
+      "nation": "其他",
+      "premium": false
+    },
+    "257": {
+      "name": "SU-85",
+      "tier": 5,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": false
+    },
+    "289": {
+      "name": "M3 Stuart",
+      "tier": 2,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "321": {
+      "name": "D2",
+      "tier": 3,
+      "class": "重坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "337": {
+      "name": "Medium II",
+      "tier": 2,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "353": {
+      "name": "Chi-Ni",
+      "tier": 2,
+      "class": "中坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "385": {
+      "name": "Progetto 65",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "513": {
+      "name": "IS",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "529": {
+      "name": "Tiger I",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "545": {
+      "name": "T1",
+      "tier": 1,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "577": {
+      "name": "FT",
+      "tier": 1,
+      "class": "轻坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "593": {
+      "name": "Sherman Firefly",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "609": {
+      "name": "R. Otsu",
+      "tier": 1,
+      "class": "轻坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "625": {
+      "name": "Strv 74A2",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": true
+    },
+    "641": {
+      "name": "Standard B",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "769": {
+      "name": "BT-7",
+      "tier": 3,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "785": {
+      "name": "Pz. 35 (t)",
+      "tier": 2,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "801": {
+      "name": "M6",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "817": {
+      "name": "WZ-111",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "849": {
+      "name": "Matilda",
+      "tier": 4,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "865": {
+      "name": "Ha-Go",
+      "tier": 1,
+      "class": "轻坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "881": {
+      "name": "Edelweiss",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": true
+    },
+    "897": {
+      "name": "P.44 Pantera",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "1025": {
+      "name": "BT-2",
+      "tier": 2,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "1041": {
+      "name": "StuG III G",
+      "tier": 5,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "1057": {
+      "name": "M4 Sherman",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "1073": {
+      "name": "T-34-1",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "1089": {
+      "name": "B1",
+      "tier": 4,
+      "class": "重坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "1105": {
+      "name": "Cromwell",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "1121": {
+      "name": "Chi-Ri",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "1137": {
+      "name": "Predator UM",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "1153": {
+      "name": "P.43 ter",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "1297": {
+      "name": "Panther",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "1313": {
+      "name": "M4A3E8",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "1329": {
+      "name": "NC-31",
+      "tier": 1,
+      "class": "轻坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "1361": {
+      "name": "Churchill Mk. VI",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": true
+    },
+    "1377": {
+      "name": "Chi-Nu",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "1393": {
+      "name": "Nameless",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "1409": {
+      "name": "P.43 bis",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "1537": {
+      "name": "T-28 mod. 1940",
+      "tier": 4,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "1553": {
+      "name": "Jg.Pz. IV",
+      "tier": 6,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "1569": {
+      "name": "T20",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "1585": {
+      "name": "T-34-2",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "1601": {
+      "name": "D1",
+      "tier": 2,
+      "class": "轻坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "1617": {
+      "name": "Sherman V",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "1633": {
+      "name": "Chi-He",
+      "tier": 4,
+      "class": "中坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "1649": {
+      "name": "Helsing",
+      "tier": 7,
+      "class": "TD",
+      "nation": "其他",
+      "premium": true
+    },
+    "1665": {
+      "name": "Lago",
+      "tier": 4,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "1809": {
+      "name": "Hetzer",
+      "tier": 4,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "1825": {
+      "name": "M2 Light",
+      "tier": 1,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "1841": {
+      "name": "WZ-120",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "1857": {
+      "name": "B-C 25 t AP",
+      "tier": 9,
+      "class": "轻坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "1889": {
+      "name": "Chi-To",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "1905": {
+      "name": "O-47",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": true
+    },
+    "1921": {
+      "name": "Strv m/42",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "2049": {
+      "name": "A-20",
+      "tier": 4,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "2065": {
+      "name": "Pz. II",
+      "tier": 1,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "2097": {
+      "name": "WZ-111 1-4",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "2129": {
+      "name": "Crusader",
+      "tier": 5,
+      "class": "轻坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "2145": {
+      "name": "Chi-Ha",
+      "tier": 3,
+      "class": "中坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "2161": {
+      "name": "WZ Blaze",
+      "tier": 7,
+      "class": "TD",
+      "nation": "其他",
+      "premium": true
+    },
+    "2177": {
+      "name": "14TP",
+      "tier": 3,
+      "class": "轻坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "2305": {
+      "name": "SU-152",
+      "tier": 7,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": false
+    },
+    "2321": {
+      "name": "VK 36.01 H",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "2353": {
+      "name": "VAE Type B",
+      "tier": 1,
+      "class": "轻坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "2369": {
+      "name": "FCM 36 Pak 40",
+      "tier": 3,
+      "class": "TD",
+      "nation": "法国",
+      "premium": false
+    },
+    "2385": {
+      "name": "Medium III",
+      "tier": 3,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "2401": {
+      "name": "Ke-Ni",
+      "tier": 3,
+      "class": "轻坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "2433": {
+      "name": "10TP",
+      "tier": 2,
+      "class": "轻坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "2561": {
+      "name": "T-34-85",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "2577": {
+      "name": "VK 30.01 H",
+      "tier": 5,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "2593": {
+      "name": "T30",
+      "tier": 9,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "2609": {
+      "name": "Type 64",
+      "tier": 6,
+      "class": "轻坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "2625": {
+      "name": "ARL 44",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "2657": {
+      "name": "STA-1",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "2689": {
+      "name": "Vickers Mk. F",
+      "tier": 1,
+      "class": "轻坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "2817": {
+      "name": "KV-1S",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "2849": {
+      "name": "T34",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": true
+    },
+    "2865": {
+      "name": "WZ-110",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "2881": {
+      "name": "AMX 40",
+      "tier": 4,
+      "class": "中坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "2897": {
+      "name": "Churchill I",
+      "tier": 5,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "2913": {
+      "name": "Ke-Ho",
+      "tier": 4,
+      "class": "轻坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "2945": {
+      "name": "Progetto 46",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": true
+    },
+    "3073": {
+      "name": "T-46",
+      "tier": 3,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "3089": {
+      "name": "L.Tr.",
+      "tier": 1,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "3105": {
+      "name": "M3 Lee",
+      "tier": 4,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "3121": {
+      "name": "M5A1 Stuart",
+      "tier": 4,
+      "class": "轻坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "3137": {
+      "name": "AMX 50 100",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "3153": {
+      "name": "Black Prince",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "3201": {
+      "name": "50TP prototyp",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "3329": {
+      "name": "MS-1 mod. 1",
+      "tier": 1,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "3345": {
+      "name": "Pz. 38 (t)",
+      "tier": 3,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "3361": {
+      "name": "T1 Heavy",
+      "tier": 5,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "3377": {
+      "name": "WZ-131",
+      "tier": 7,
+      "class": "轻坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "3425": {
+      "name": "Type 61",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "3457": {
+      "name": "Emil I",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "3585": {
+      "name": "SU-100",
+      "tier": 6,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": false
+    },
+    "3601": {
+      "name": "Pz.Jäg. I",
+      "tier": 2,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "3633": {
+      "name": "IS-2",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "3649": {
+      "name": "B-C 25 t",
+      "tier": 10,
+      "class": "轻坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "3681": {
+      "name": "STB-1",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "3697": {
+      "name": "Lupus",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "3713": {
+      "name": "Strv 74",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "3857": {
+      "name": "JPanther",
+      "tier": 7,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "3873": {
+      "name": "T29",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "3889": {
+      "name": "WZ-132",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "3905": {
+      "name": "AMX 50 120",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "3921": {
+      "name": "Caernarvon",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "3937": {
+      "name": "Ho-Ri",
+      "tier": 10,
+      "class": "TD",
+      "nation": "日本",
+      "premium": false
+    },
+    "3953": {
+      "name": "T 55A",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "3969": {
+      "name": "Leo",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "4113": {
+      "name": "VK 30.02 D",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "4145": {
+      "name": "WZ-121",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "4193": {
+      "name": "Ho-Ri T.II",
+      "tier": 9,
+      "class": "TD",
+      "nation": "日本",
+      "premium": false
+    },
+    "4209": {
+      "name": "WarDuck",
+      "tier": 1,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "4225": {
+      "name": "Emil II",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "4353": {
+      "name": "T-44",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "4369": {
+      "name": "Pz. III",
+      "tier": 3,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "4385": {
+      "name": "T32",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "4401": {
+      "name": "Chi-Ha",
+      "tier": 3,
+      "class": "中坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "4417": {
+      "name": "AMX M4 mle. 54",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "4433": {
+      "name": "Conqueror",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "4449": {
+      "name": "IS-2 Pravda SP",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "4465": {
+      "name": "Hafen",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": true
+    },
+    "4481": {
+      "name": "Kranvagn",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "4609": {
+      "name": "T-26",
+      "tier": 1,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "4657": {
+      "name": "Type T-34",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "4689": {
+      "name": "Churchill VII",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "4705": {
+      "name": "Firefly Saunders SP",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "4721": {
+      "name": "Gravedigger",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "4737": {
+      "name": "EMIL 1951",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "4881": {
+      "name": "Pz. III A",
+      "tier": 3,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "4897": {
+      "name": "M2 Medium",
+      "tier": 3,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "4913": {
+      "name": "59-16",
+      "tier": 6,
+      "class": "轻坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "4929": {
+      "name": "AMX 13 90",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "4945": {
+      "name": "Valentine Mk. IX",
+      "tier": 4,
+      "class": "轻坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "4961": {
+      "name": "Ho-Ri T.I",
+      "tier": 8,
+      "class": "TD",
+      "nation": "日本",
+      "premium": false
+    },
+    "4977": {
+      "name": "Scavenger",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "4993": {
+      "name": "P.43/06 ann.",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "5121": {
+      "name": "AT-1",
+      "tier": 2,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": false
+    },
+    "5137": {
+      "name": "Tiger II",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "5153": {
+      "name": "M5 Stuart",
+      "tier": 3,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "5169": {
+      "name": "Type 58",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "5185": {
+      "name": "AMX 13 75",
+      "tier": 7,
+      "class": "轻坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "5201": {
+      "name": "Cruiser I",
+      "tier": 2,
+      "class": "轻坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "5217": {
+      "name": "Chi-To SPG",
+      "tier": 7,
+      "class": "TD",
+      "nation": "日本",
+      "premium": false
+    },
+    "5233": {
+      "name": "Smasher",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "5249": {
+      "name": "Pudel",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "5377": {
+      "name": "IS-3",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "5393": {
+      "name": "Leopard",
+      "tier": 5,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "5409": {
+      "name": "M7",
+      "tier": 4,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "5425": {
+      "name": "WZ-113",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "5441": {
+      "name": "AMX 30 1er prot.",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "5457": {
+      "name": "Comet",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "5473": {
+      "name": "Mitsu 108",
+      "tier": 5,
+      "class": "重坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "5489": {
+      "name": "Y5 T-34",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": true
+    },
+    "5505": {
+      "name": "TVP T 50/51",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "5665": {
+      "name": "T2 Medium",
+      "tier": 2,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "5681": {
+      "name": "121B",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "5713": {
+      "name": "Centurion 7/1",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "5729": {
+      "name": "Ju-Nu",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "5745": {
+      "name": "Y5 Firefly",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": true
+    },
+    "5761": {
+      "name": "Škoda T 50",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "5889": {
+      "name": "KV-3",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "5921": {
+      "name": "Pershing",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "5937": {
+      "name": "59-Patton",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "5953": {
+      "name": "AMX 38",
+      "tier": 2,
+      "class": "中坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "5969": {
+      "name": "Centurion I",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "5985": {
+      "name": "Ju-To",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "6001": {
+      "name": "Y5 ELC bis",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": true
+    },
+    "6017": {
+      "name": "TVP VTU",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "6145": {
+      "name": "IS-4",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "6161": {
+      "name": "Luchs",
+      "tier": 4,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "6177": {
+      "name": "T18",
+      "tier": 2,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "6193": {
+      "name": "T-34-3",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "6209": {
+      "name": "AMX 50 B",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "6225": {
+      "name": "FV215b",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "6241": {
+      "name": "Chi-Se",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "6257": {
+      "name": "M4/FL10",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "6273": {
+      "name": "T-34/100",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "6401": {
+      "name": "SU-76",
+      "tier": 3,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": false
+    },
+    "6417": {
+      "name": "Pz. III/IV",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "6433": {
+      "name": "T82",
+      "tier": 3,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "6449": {
+      "name": "WZ-113G FT",
+      "tier": 10,
+      "class": "TD",
+      "nation": "中国",
+      "premium": false
+    },
+    "6465": {
+      "name": "AMX 12 t",
+      "tier": 6,
+      "class": "轻坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "6481": {
+      "name": "Covenanter",
+      "tier": 4,
+      "class": "轻坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "6497": {
+      "name": "Type 68",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "6529": {
+      "name": "Škoda T 25",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "6657": {
+      "name": "T-43",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "6673": {
+      "name": "Marder II",
+      "tier": 3,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "6689": {
+      "name": "T49 A",
+      "tier": 7,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": true
+    },
+    "6705": {
+      "name": "LT vz. 38",
+      "tier": 2,
+      "class": "轻坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "6721": {
+      "name": "BDR G1 B",
+      "tier": 5,
+      "class": "重坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "6753": {
+      "name": "Type 71",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "6785": {
+      "name": "Škoda T 27",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": true
+    },
+    "6913": {
+      "name": "SU-85B",
+      "tier": 4,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": false
+    },
+    "6929": {
+      "name": "Maus",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "6945": {
+      "name": "Wolverine",
+      "tier": 5,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "6961": {
+      "name": "WZ-120-1G FT",
+      "tier": 8,
+      "class": "TD",
+      "nation": "中国",
+      "premium": true
+    },
+    "6977": {
+      "name": "AMX M4 45",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "6993": {
+      "name": "Cruiser II",
+      "tier": 1,
+      "class": "轻坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "7009": {
+      "name": "Type 57",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "7025": {
+      "name": "Vulcan",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "7041": {
+      "name": "Turbo",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "7169": {
+      "name": "IS-7",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "7185": {
+      "name": "VK 30.01 P",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "7201": {
+      "name": "Jackson",
+      "tier": 6,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "7217": {
+      "name": "WZ-112-2",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "7249": {
+      "name": "FV4202",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "7265": {
+      "name": "Ferrum",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "7281": {
+      "name": "Lycan",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "7297": {
+      "name": "60TP Lewandowskiego",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "7425": {
+      "name": "ISU-152",
+      "tier": 8,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": false
+    },
+    "7441": {
+      "name": "VK 45.02 B",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "7473": {
+      "name": "T-34-2G FT",
+      "tier": 7,
+      "class": "TD",
+      "nation": "中国",
+      "premium": false
+    },
+    "7505": {
+      "name": "Cruiser IV",
+      "tier": 3,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "7521": {
+      "name": "Type 5 Ka-Ri",
+      "tier": 8,
+      "class": "TD",
+      "nation": "日本",
+      "premium": false
+    },
+    "7537": {
+      "name": "Nightmare",
+      "tier": 5,
+      "class": "TD",
+      "nation": "其他",
+      "premium": false
+    },
+    "7553": {
+      "name": "50TP Tyszkiewicza",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "7697": {
+      "name": "Ferdinand",
+      "tier": 8,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "7713": {
+      "name": "T40",
+      "tier": 4,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "7729": {
+      "name": "WZ-131G FT",
+      "tier": 6,
+      "class": "TD",
+      "nation": "中国",
+      "premium": false
+    },
+    "7745": {
+      "name": "FT AC",
+      "tier": 2,
+      "class": "TD",
+      "nation": "法国",
+      "premium": false
+    },
+    "7761": {
+      "name": "Cruiser III",
+      "tier": 2,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "7777": {
+      "name": "Type 63",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "7793": {
+      "name": "Annihilator",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "7809": {
+      "name": "53TP Markowskiego",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "7937": {
+      "name": "T-54",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "7953": {
+      "name": "Jagdtiger",
+      "tier": 9,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "7985": {
+      "name": "WZ-111-1G FT",
+      "tier": 8,
+      "class": "TD",
+      "nation": "中国",
+      "premium": false
+    },
+    "8001": {
+      "name": "Lorraine 40 t",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "法国",
+      "premium": true
+    },
+    "8017": {
+      "name": "Valentine AT",
+      "tier": 3,
+      "class": "TD",
+      "nation": "英国",
+      "premium": false
+    },
+    "8033": {
+      "name": "Type 5 Heavy",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "8049": {
+      "name": "Spike",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "8065": {
+      "name": "40TP Habicha",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "8193": {
+      "name": "Obj. 704",
+      "tier": 9,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": false
+    },
+    "8209": {
+      "name": "Pz. 38 nA",
+      "tier": 4,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "8225": {
+      "name": "T28",
+      "tier": 8,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "8241": {
+      "name": "WZ-111G FT",
+      "tier": 9,
+      "class": "TD",
+      "nation": "中国",
+      "premium": false
+    },
+    "8257": {
+      "name": "UE 57",
+      "tier": 3,
+      "class": "TD",
+      "nation": "法国",
+      "premium": false
+    },
+    "8273": {
+      "name": "UC 2-pdr",
+      "tier": 2,
+      "class": "TD",
+      "nation": "英国",
+      "premium": false
+    },
+    "8289": {
+      "name": "Type 95 Ji-Ro",
+      "tier": 8,
+      "class": "TD",
+      "nation": "日本",
+      "premium": false
+    },
+    "8305": {
+      "name": "Titan H-Nd",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "8321": {
+      "name": "45TP Habicha",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "8465": {
+      "name": "Panther II",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "8497": {
+      "name": "WZ-111 5A",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "8513": {
+      "name": "AMX 30 B",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "8529": {
+      "name": "AT 15",
+      "tier": 8,
+      "class": "TD",
+      "nation": "英国",
+      "premium": false
+    },
+    "8561": {
+      "name": "Titan T24 57",
+      "tier": 6,
+      "class": "轻坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "8577": {
+      "name": "Lansen C",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "8737": {
+      "name": "T95",
+      "tier": 9,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "8753": {
+      "name": "M41D",
+      "tier": 7,
+      "class": "轻坦",
+      "nation": "中国",
+      "premium": true
+    },
+    "8785": {
+      "name": "AT 2",
+      "tier": 5,
+      "class": "TD",
+      "nation": "英国",
+      "premium": false
+    },
+    "8817": {
+      "name": "Titan Mk. I",
+      "tier": 5,
+      "class": "轻坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "8833": {
+      "name": "Spark",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "8961": {
+      "name": "KV-13",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "8993": {
+      "name": "M46 Patton",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "9009": {
+      "name": "Ox",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "9041": {
+      "name": "Alecto",
+      "tier": 4,
+      "class": "TD",
+      "nation": "英国",
+      "premium": false
+    },
+    "9057": {
+      "name": "Type 5 H Zetsu",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "9073": {
+      "name": "Titan-54d",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "9089": {
+      "name": "Škoda T 56",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": true
+    },
+    "9217": {
+      "name": "IS-6",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": true
+    },
+    "9249": {
+      "name": "T25 AT",
+      "tier": 7,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "9297": {
+      "name": "FV215b 183",
+      "tier": 10,
+      "class": "TD",
+      "nation": "英国",
+      "premium": false
+    },
+    "9329": {
+      "name": "Titan-150",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "9345": {
+      "name": "Svear",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "9489": {
+      "name": "E 100",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "9505": {
+      "name": "M103",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "9521": {
+      "name": "WZ-122 TM",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "中国",
+      "premium": true
+    },
+    "9553": {
+      "name": "AT 8",
+      "tier": 6,
+      "class": "TD",
+      "nation": "英国",
+      "premium": false
+    },
+    "9601": {
+      "name": "CS-52 LIS",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "9745": {
+      "name": "E 75",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "9761": {
+      "name": "Chaffee",
+      "tier": 6,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "9777": {
+      "name": "WZ-114",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "9793": {
+      "name": "SAu 40",
+      "tier": 4,
+      "class": "TD",
+      "nation": "法国",
+      "premium": false
+    },
+    "9809": {
+      "name": "Churchill GC",
+      "tier": 6,
+      "class": "TD",
+      "nation": "英国",
+      "premium": false
+    },
+    "9841": {
+      "name": "Rover",
+      "tier": 6,
+      "class": "轻坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "9857": {
+      "name": "Škoda T 45",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": true
+    },
+    "9985": {
+      "name": "SU-101",
+      "tier": 8,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": false
+    },
+    "10001": {
+      "name": "VK 28.01",
+      "tier": 6,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "10017": {
+      "name": "M4A3E2",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "10033": {
+      "name": "WZ-132A",
+      "tier": 9,
+      "class": "轻坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "10049": {
+      "name": "S35 CA",
+      "tier": 5,
+      "class": "TD",
+      "nation": "法国",
+      "premium": false
+    },
+    "10065": {
+      "name": "AT 7",
+      "tier": 7,
+      "class": "TD",
+      "nation": "英国",
+      "premium": false
+    },
+    "10097": {
+      "name": "Medjay",
+      "tier": 5,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "10113": {
+      "name": "Carro 45t",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "10241": {
+      "name": "SU-100M1",
+      "tier": 7,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": false
+    },
+    "10257": {
+      "name": "E 50",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "10273": {
+      "name": "M8A1",
+      "tier": 4,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "10289": {
+      "name": "WZ-132-1",
+      "tier": 10,
+      "class": "轻坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "10353": {
+      "name": "Pharaoh",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "10369": {
+      "name": "Minotauro",
+      "tier": 10,
+      "class": "TD",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "10497": {
+      "name": "KV-2",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "10513": {
+      "name": "VK 45.02 A",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "10529": {
+      "name": "T67",
+      "tier": 5,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "10545": {
+      "name": "Wind",
+      "tier": 6,
+      "class": "轻坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "10609": {
+      "name": "Magnate",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "10625": {
+      "name": "CC 1 Mk. 2",
+      "tier": 9,
+      "class": "TD",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "10753": {
+      "name": "ST-I",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "10769": {
+      "name": "Tiger (P)",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "10785": {
+      "name": "T110E5",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "10801": {
+      "name": "Panlong",
+      "tier": 6,
+      "class": "TD",
+      "nation": "中国",
+      "premium": false
+    },
+    "10817": {
+      "name": "AMX AC 46",
+      "tier": 7,
+      "class": "TD",
+      "nation": "法国",
+      "premium": false
+    },
+    "10865": {
+      "name": "Fixer",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "10881": {
+      "name": "SMV CC-64",
+      "tier": 8,
+      "class": "TD",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "11009": {
+      "name": "KV-4",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "11025": {
+      "name": "St. Emil",
+      "tier": 7,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "11041": {
+      "name": "T25/2",
+      "tier": 7,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "11057": {
+      "name": "114 SP2",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "11073": {
+      "name": "Foch",
+      "tier": 9,
+      "class": "TD",
+      "nation": "法国",
+      "premium": false
+    },
+    "11121": {
+      "name": "Regressor",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "11137": {
+      "name": "SMV CC-56",
+      "tier": 7,
+      "class": "TD",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "11265": {
+      "name": "T-150",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "11281": {
+      "name": "Kpz 70",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "11297": {
+      "name": "T28 Prot.",
+      "tier": 8,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "11313": {
+      "name": "Type 58 50-08",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "11377": {
+      "name": "Basilisk",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "11393": {
+      "name": "Bassotto",
+      "tier": 6,
+      "class": "TD",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "11521": {
+      "name": "IS-8",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "11537": {
+      "name": "JPanther II",
+      "tier": 8,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "11553": {
+      "name": "Hellcat",
+      "tier": 6,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "11569": {
+      "name": "BZ-58-2",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "11585": {
+      "name": "ARL V39",
+      "tier": 6,
+      "class": "TD",
+      "nation": "法国",
+      "premium": false
+    },
+    "11633": {
+      "name": "Forest Witch",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "11649": {
+      "name": "Semovente M41",
+      "tier": 5,
+      "class": "TD",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "11777": {
+      "name": "KV-1",
+      "tier": 5,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "11793": {
+      "name": "Nashorn",
+      "tier": 6,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "11809": {
+      "name": "T23E3",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": true
+    },
+    "11825": {
+      "name": "BZ-75",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "11889": {
+      "name": "Nebulon",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "11905": {
+      "name": "Shadowhunter",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "12033": {
+      "name": "SU-122-54",
+      "tier": 9,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": false
+    },
+    "12049": {
+      "name": "Jg.Pz. E 100",
+      "tier": 10,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "12065": {
+      "name": "T95E2",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": true
+    },
+    "12081": {
+      "name": "BZ-68",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "12097": {
+      "name": "AMX AC 48",
+      "tier": 8,
+      "class": "TD",
+      "nation": "法国",
+      "premium": false
+    },
+    "12145": {
+      "name": "Glacier",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "12161": {
+      "name": "Strv K",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "12305": {
+      "name": "E 50 M",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "12321": {
+      "name": "T6E1 Grizzly",
+      "tier": 4,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": true
+    },
+    "12337": {
+      "name": "BZ-58",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "12417": {
+      "name": "Bisonte C45",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "12545": {
+      "name": "K-91",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "12593": {
+      "name": "BZ-166",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "12657": {
+      "name": "Titan Charioteer",
+      "tier": 8,
+      "class": "TD",
+      "nation": "其他",
+      "premium": false
+    },
+    "12673": {
+      "name": "Tornvagn",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "12849": {
+      "name": "116-F3",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "12913": {
+      "name": "Groundtank",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "12929": {
+      "name": "TNH T Vz. 51",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "13073": {
+      "name": "Pz. II G",
+      "tier": 3,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "13089": {
+      "name": "T110E4",
+      "tier": 10,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "13105": {
+      "name": "BZ-176",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "13169": {
+      "name": "AC Wedge",
+      "tier": 4,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "13185": {
+      "name": "Vz. 55",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "13329": {
+      "name": "D.W. 2",
+      "tier": 4,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "13345": {
+      "name": "T26E4",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": true
+    },
+    "13425": {
+      "name": "AC Highlander",
+      "tier": 5,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "13441": {
+      "name": "Aeonix",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "13569": {
+      "name": "Obj. 268",
+      "tier": 10,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": false
+    },
+    "13617": {
+      "name": "Type 59 spc",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "13681": {
+      "name": "AC Ocelote",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "13697": {
+      "name": "TNH 105/1000",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "13825": {
+      "name": "T-62A",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "13841": {
+      "name": "Indien-Pz.",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "13857": {
+      "name": "T110E3",
+      "tier": 10,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "13873": {
+      "name": "BZ-74-1",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "13889": {
+      "name": "Foch 155",
+      "tier": 10,
+      "class": "TD",
+      "nation": "法国",
+      "premium": false
+    },
+    "13937": {
+      "name": "AC Rebelde",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "13953": {
+      "name": "Vz. 44-1",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "14097": {
+      "name": "VK 30.01 D",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "14113": {
+      "name": "M48 Patton",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "14129": {
+      "name": "BZT-70",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "中国",
+      "premium": false
+    },
+    "14145": {
+      "name": "AMX ELC bis",
+      "tier": 5,
+      "class": "轻坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "14193": {
+      "name": "Silencer",
+      "tier": 7,
+      "class": "TD",
+      "nation": "其他",
+      "premium": false
+    },
+    "14209": {
+      "name": "Škoda P-JS",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "14337": {
+      "name": "Obj. 263",
+      "tier": 10,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": false
+    },
+    "14385": {
+      "name": "WZ-120G FT",
+      "tier": 9,
+      "class": "TD",
+      "nation": "中国",
+      "premium": false
+    },
+    "14449": {
+      "name": "Swindler",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "14465": {
+      "name": "DS PZInż",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "14609": {
+      "name": "Leopard 1",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "14625": {
+      "name": "T69",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "14705": {
+      "name": "Fänrik",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "14721": {
+      "name": "Strv 81",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "14865": {
+      "name": "Leopard PT A",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "14881": {
+      "name": "T57 Heavy",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "14961": {
+      "name": "Mutant",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "14977": {
+      "name": "CS-63",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "15137": {
+      "name": "T21",
+      "tier": 6,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "15217": {
+      "name": "AC Forger",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": true
+    },
+    "15233": {
+      "name": "CS-59",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "15393": {
+      "name": "T54E1",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "15441": {
+      "name": "Chieftain",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "15473": {
+      "name": "Endurance",
+      "tier": 7,
+      "class": "轻坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "15489": {
+      "name": "CS-53",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "15617": {
+      "name": "Obj. 907",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "15649": {
+      "name": "T71",
+      "tier": 7,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "15697": {
+      "name": "Chieftain Mk. 6",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "15729": {
+      "name": "TSL-7 Defender",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "15745": {
+      "name": "CS-44",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "15889": {
+      "name": "VK 30.02 M",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "15905": {
+      "name": "M60",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "15937": {
+      "name": "R35",
+      "tier": 1,
+      "class": "中坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "15953": {
+      "name": "FV201 (A45)",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": true
+    },
+    "15985": {
+      "name": "Toxique",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "16001": {
+      "name": "B.U.G.I.",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "16145": {
+      "name": "Pz.Sfl. IVc",
+      "tier": 5,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "16193": {
+      "name": "M4A1 Rev.",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "16241": {
+      "name": "Rammer",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "16257": {
+      "name": "Outcast",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "16401": {
+      "name": "WT auf Pz. IV",
+      "tier": 9,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "16449": {
+      "name": "AMX 13 57",
+      "tier": 7,
+      "class": "轻坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "16497": {
+      "name": "E-10",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "16513": {
+      "name": "ShPTK-TVP 100",
+      "tier": 8,
+      "class": "TD",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "16641": {
+      "name": "MT-25",
+      "tier": 6,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "16657": {
+      "name": "Rhm.-B. WT",
+      "tier": 8,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "16673": {
+      "name": "T37",
+      "tier": 6,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "16705": {
+      "name": "AMX M4 49",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "法国",
+      "premium": true
+    },
+    "16753": {
+      "name": "DTH-STR",
+      "tier": 8,
+      "class": "TD",
+      "nation": "其他",
+      "premium": false
+    },
+    "16769": {
+      "name": "SMV Vipera",
+      "tier": 8,
+      "class": "TD",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "16897": {
+      "name": "Obj. 140",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "17009": {
+      "name": "KV-JR",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "17025": {
+      "name": "Progetto CC55 mod. 54",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "17169": {
+      "name": "Pz. IV A",
+      "tier": 3,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "17217": {
+      "name": "Eraser BP44",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "17233": {
+      "name": "Conway",
+      "tier": 9,
+      "class": "TD",
+      "nation": "英国",
+      "premium": false
+    },
+    "17265": {
+      "name": "Souleater",
+      "tier": 8,
+      "class": "TD",
+      "nation": "其他",
+      "premium": false
+    },
+    "17281": {
+      "name": "Progetto C50 mod. 66",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "17425": {
+      "name": "Pz. IV D",
+      "tier": 4,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "17473": {
+      "name": "AMX Defender",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "17489": {
+      "name": "Charioteer",
+      "tier": 8,
+      "class": "TD",
+      "nation": "英国",
+      "premium": false
+    },
+    "17521": {
+      "name": "Lightbringer",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "17537": {
+      "name": "Carro d'assalto P.88",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "17729": {
+      "name": "Somua SM",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "17745": {
+      "name": "FV217 Badger",
+      "tier": 10,
+      "class": "TD",
+      "nation": "英国",
+      "premium": false
+    },
+    "17777": {
+      "name": "Titan Strife",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "17793": {
+      "name": "Rinoceronte",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "17953": {
+      "name": "M41 Bulldog",
+      "tier": 7,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "17985": {
+      "name": "Bretagne Panther",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "法国",
+      "premium": true
+    },
+    "18001": {
+      "name": "FV4005",
+      "tier": 10,
+      "class": "TD",
+      "nation": "英国",
+      "premium": false
+    },
+    "18033": {
+      "name": "Hazard I",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "18049": {
+      "name": "Lion",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "18177": {
+      "name": "T-54 ltwt.",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "18209": {
+      "name": "T49",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "18241": {
+      "name": "B-C Bourrasque",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "18257": {
+      "name": "Challenger",
+      "tier": 7,
+      "class": "TD",
+      "nation": "英国",
+      "premium": false
+    },
+    "18289": {
+      "name": "Quetzal",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "18305": {
+      "name": "SDP 40 Zadymka",
+      "tier": 5,
+      "class": "TD",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "18433": {
+      "name": "LTTB",
+      "tier": 7,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "18449": {
+      "name": "Ru 251",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "18497": {
+      "name": "Lorraine Fearless",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "法国",
+      "premium": true
+    },
+    "18513": {
+      "name": "Chimera",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "18545": {
+      "name": "Argonaut",
+      "tier": 9,
+      "class": "TD",
+      "nation": "其他",
+      "premium": false
+    },
+    "18561": {
+      "name": "SDP 44 Burza",
+      "tier": 6,
+      "class": "TD",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "18689": {
+      "name": "T-70/57",
+      "tier": 3,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "18753": {
+      "name": "AMX CDA 105",
+      "tier": 8,
+      "class": "TD",
+      "nation": "法国",
+      "premium": false
+    },
+    "18769": {
+      "name": "Action X",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "18801": {
+      "name": "mau5Tank",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "18817": {
+      "name": "SDP 57 Gowika",
+      "tier": 7,
+      "class": "TD",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "18945": {
+      "name": "ISU-130",
+      "tier": 8,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": true
+    },
+    "18961": {
+      "name": "SP I C",
+      "tier": 7,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "18977": {
+      "name": "T95E6",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "19009": {
+      "name": "AMXmas",
+      "tier": 6,
+      "class": "轻坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "19025": {
+      "name": "Defender Mk. 1",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": true
+    },
+    "19057": {
+      "name": "Destiny",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "19073": {
+      "name": "SDP 58 Kilana",
+      "tier": 8,
+      "class": "TD",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "19217": {
+      "name": "Grille 15",
+      "tier": 10,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "19233": {
+      "name": "Chrysler K",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": true
+    },
+    "19265": {
+      "name": "Charles",
+      "tier": 6,
+      "class": "TD",
+      "nation": "法国",
+      "premium": false
+    },
+    "19281": {
+      "name": "Super Conqueror",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "19313": {
+      "name": "Prowler",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "19329": {
+      "name": "SDP 60 Gonkiewicza",
+      "tier": 9,
+      "class": "TD",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "19473": {
+      "name": "Krupp-38(D)",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": true
+    },
+    "19489": {
+      "name": "T28 Defender",
+      "tier": 8,
+      "class": "TD",
+      "nation": "美国",
+      "premium": true
+    },
+    "19521": {
+      "name": "B-C 25 t Avenir",
+      "tier": 9,
+      "class": "轻坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "19537": {
+      "name": "Vickers Light",
+      "tier": 10,
+      "class": "轻坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "19569": {
+      "name": "AC Sterope",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "19585": {
+      "name": "NC 70 Błyskawica",
+      "tier": 10,
+      "class": "TD",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "19713": {
+      "name": "Loza's Sherman",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": true
+    },
+    "19729": {
+      "name": "Tiger 131",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "19745": {
+      "name": "T26E5",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "19777": {
+      "name": "A.P. AMX 30",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "法国",
+      "premium": true
+    },
+    "19793": {
+      "name": "Vickers CR",
+      "tier": 9,
+      "class": "轻坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "19825": {
+      "name": "AC Atlas",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "19841": {
+      "name": "SDP wz 66 Grom",
+      "tier": 8,
+      "class": "TD",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "19969": {
+      "name": "T-22 medium",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "19985": {
+      "name": "Skorpion G",
+      "tier": 8,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "20001": {
+      "name": "T92E1",
+      "tier": 9,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "20033": {
+      "name": "Char Futur 4",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "20049": {
+      "name": "FV301",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "20081": {
+      "name": "AC Celeno",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "20097": {
+      "name": "Felice",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "20257": {
+      "name": "Sheridan",
+      "tier": 10,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "20289": {
+      "name": "Pirate",
+      "tier": 6,
+      "class": "TD",
+      "nation": "法国",
+      "premium": false
+    },
+    "20305": {
+      "name": "Centurion Mk. 5/1",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "20337": {
+      "name": "AC Taygete",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "20481": {
+      "name": "Obj. 252U",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "20497": {
+      "name": "VK 100.01 (P)",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "20513": {
+      "name": "T54E2",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "20545": {
+      "name": "Renault G1",
+      "tier": 5,
+      "class": "重坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "20561": {
+      "name": "Turtle Mk. I",
+      "tier": 8,
+      "class": "TD",
+      "nation": "英国",
+      "premium": true
+    },
+    "20593": {
+      "name": "AC Pleione",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "20737": {
+      "name": "SU-130PM",
+      "tier": 8,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": false
+    },
+    "20753": {
+      "name": "Mäuschen",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "20769": {
+      "name": "T25 Pilot 1",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "20801": {
+      "name": "Lorraine 50 t",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "20817": {
+      "name": "Explorer",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "20849": {
+      "name": "FVE Defender",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "20993": {
+      "name": "T-2020",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "21009": {
+      "name": "Panzer 58",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": true
+    },
+    "21025": {
+      "name": "T26E3 Eagle 7",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": true
+    },
+    "21057": {
+      "name": "Projet Murat",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "21073": {
+      "name": "Dreadnought",
+      "tier": 6,
+      "class": "TD",
+      "nation": "英国",
+      "premium": false
+    },
+    "21105": {
+      "name": "AC-07V Merope",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "21249": {
+      "name": "Thunder",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "21265": {
+      "name": "VK 168.01 (P)",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "21281": {
+      "name": "Rudolph",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "21313": {
+      "name": "AMX 13 M24",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "21329": {
+      "name": "GSOR 1008",
+      "tier": 8,
+      "class": "TD",
+      "nation": "英国",
+      "premium": false
+    },
+    "21361": {
+      "name": "Herdbreaker",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "21505": {
+      "name": "T-44-85",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "21521": {
+      "name": "E 75 TS",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "21569": {
+      "name": "ERAC 105 Proto",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "21585": {
+      "name": "Blasteroid",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "21617": {
+      "name": "Biter",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "21761": {
+      "name": "STG",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": true
+    },
+    "21777": {
+      "name": "VK 90.01 (P)",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "21793": {
+      "name": "Sheridan Missile",
+      "tier": 10,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "21825": {
+      "name": "Projet Louis",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "21841": {
+      "name": "Caliban",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "21889": {
+      "name": "56TP",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "欧洲",
+      "premium": false
+    },
+    "22033": {
+      "name": "Agent",
+      "tier": 6,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "22049": {
+      "name": "Magnus",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "22081": {
+      "name": "ELC AMX-901",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "22097": {
+      "name": "Churchill VIII",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "22129": {
+      "name": "AC Teichos",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "22273": {
+      "name": "Obj. 260",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "22305": {
+      "name": "AE Phase I",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "22337": {
+      "name": "Sentinelle",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "22353": {
+      "name": "Churchill W",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "22385": {
+      "name": "Titan JPanther II",
+      "tier": 8,
+      "class": "TD",
+      "nation": "其他",
+      "premium": false
+    },
+    "22529": {
+      "name": "LT-432",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": true
+    },
+    "22545": {
+      "name": "Kanonenjagdpanzer",
+      "tier": 9,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "22561": {
+      "name": "TS-5",
+      "tier": 8,
+      "class": "TD",
+      "nation": "美国",
+      "premium": true
+    },
+    "22609": {
+      "name": "Caernarvon Defender",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": true
+    },
+    "22641": {
+      "name": "Convoyer",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "22785": {
+      "name": "Triumphant",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "22801": {
+      "name": "Icebreaker",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "22817": {
+      "name": "M-VI-Yoh",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "22849": {
+      "name": "Brennos",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "22865": {
+      "name": "Charlemagne",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": true
+    },
+    "23041": {
+      "name": "T-34 shielded",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": true
+    },
+    "23057": {
+      "name": "Kunze Panzer",
+      "tier": 7,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "23073": {
+      "name": "M-V-Yoh",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "23121": {
+      "name": "Cobra",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "23297": {
+      "name": "Object 244",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "23313": {
+      "name": "Kpz 50 t",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "23329": {
+      "name": "M-III-Yoh",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "23377": {
+      "name": "FV1066 Senlac",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "23553": {
+      "name": "MS-1",
+      "tier": 2,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "23569": {
+      "name": "Pz. IV Gargoyle",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "23585": {
+      "name": "M-VII-Yoh",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "23633": {
+      "name": "A25 Harry Hopkins I",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "23809": {
+      "name": "Object 84",
+      "tier": 9,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "23825": {
+      "name": "Steyr WT",
+      "tier": 7,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "23841": {
+      "name": "Super Hellcat",
+      "tier": 7,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "23889": {
+      "name": "FV4201 Chieftain Proto",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "24065": {
+      "name": "LTG",
+      "tier": 7,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "24081": {
+      "name": "U-Panzer",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "24097": {
+      "name": "BLTZ9000",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "24145": {
+      "name": "GSOR Fearless",
+      "tier": 8,
+      "class": "TD",
+      "nation": "英国",
+      "premium": false
+    },
+    "24321": {
+      "name": "T-100 LT",
+      "tier": 10,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "24337": {
+      "name": "M48A2 Räumpanzer",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "24401": {
+      "name": "Vickers MBT",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "24577": {
+      "name": "Object 268/4",
+      "tier": 10,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": false
+    },
+    "24593": {
+      "name": "Keiler",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "24609": {
+      "name": "Concept 1B",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "24657": {
+      "name": "A46 Different",
+      "tier": 7,
+      "class": "轻坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "24849": {
+      "name": "Kryos",
+      "tier": 6,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "24865": {
+      "name": "Scepter",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": true
+    },
+    "24913": {
+      "name": "Nemesis",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "25089": {
+      "name": "Object 752",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "25105": {
+      "name": "Barkhan",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "25121": {
+      "name": "M46 Jaguar",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "25169": {
+      "name": "GSOR the TANK",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "25345": {
+      "name": "Object 274a",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": true
+    },
+    "25361": {
+      "name": "WT Ritter",
+      "tier": 9,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "25377": {
+      "name": "T77",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "25601": {
+      "name": "IS-2 shielded",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": true
+    },
+    "25617": {
+      "name": "HWK 30",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": true
+    },
+    "25633": {
+      "name": "M-IV-Y",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "25857": {
+      "name": "Obj. 777 II",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "25873": {
+      "name": "Elefant",
+      "tier": 8,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "25889": {
+      "name": "Ranger",
+      "tier": 6,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "26113": {
+      "name": "Object 452K",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "26129": {
+      "name": "Epsilon",
+      "tier": 6,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "26145": {
+      "name": "High Score",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "26369": {
+      "name": "ST-62 Ver. 2",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "26385": {
+      "name": "Tiger Frontline",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "26401": {
+      "name": "Enforcer",
+      "tier": 6,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "26625": {
+      "name": "T-34-85 Breakthrough",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "26641": {
+      "name": "Kpz 07 RH",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "26657": {
+      "name": "ASTRON Rex",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": true
+    },
+    "26881": {
+      "name": "Obj. 590",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "26897": {
+      "name": "Kpz. Pr.68 (P)",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "26913": {
+      "name": "Frosty",
+      "tier": 6,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "27137": {
+      "name": "K-2",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "27153": {
+      "name": "Aufkl. Panther",
+      "tier": 7,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "27169": {
+      "name": "Cyborg",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "27393": {
+      "name": "Obj. Kust",
+      "tier": 8,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": false
+    },
+    "27409": {
+      "name": "Projekt Kpz. 07P(E)",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "27425": {
+      "name": "TL-7-120",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "27665": {
+      "name": "Schwarzpanzer 58",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "27681": {
+      "name": "Pawlack Tank",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "27921": {
+      "name": "Erich Konzept I",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "27937": {
+      "name": "T49 Fearless",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": true
+    },
+    "28177": {
+      "name": "LKpz.70 K",
+      "tier": 9,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "28193": {
+      "name": "TS-60",
+      "tier": 9,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "28433": {
+      "name": "HWK 12",
+      "tier": 9,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "28449": {
+      "name": "T42",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "28689": {
+      "name": "Rhm. Pzw.",
+      "tier": 10,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "28705": {
+      "name": "XM66F",
+      "tier": 10,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "28945": {
+      "name": "Waffen F1.0",
+      "tier": 10,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "28961": {
+      "name": "Sherman Easy 8",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "29201": {
+      "name": "Tiger-Maus",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "29217": {
+      "name": "MBT-B",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": true
+    },
+    "29457": {
+      "name": "VK 19.02“闪送宝”",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "29473": {
+      "name": "ATAC",
+      "tier": 9,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "29713": {
+      "name": "KJPZ TIII Jäger",
+      "tier": 9,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "29985": {
+      "name": "SPHT",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "30481": {
+      "name": "Kpz 70 Missile",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "51201": {
+      "name": "KV-220 T",
+      "tier": 5,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "51457": {
+      "name": "Matilda IV",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": true
+    },
+    "51473": {
+      "name": "Pz. V/IV",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": true
+    },
+    "51489": {
+      "name": "T2 Light",
+      "tier": 2,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "51713": {
+      "name": "Churchill III",
+      "tier": 5,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": true
+    },
+    "51729": {
+      "name": "Pz. II J",
+      "tier": 3,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "51745": {
+      "name": "Ram II",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": true
+    },
+    "51809": {
+      "name": "Ke-Ni Otsu",
+      "tier": 3,
+      "class": "轻坦",
+      "nation": "日本",
+      "premium": true
+    },
+    "51985": {
+      "name": "Pz. S35",
+      "tier": 3,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "52065": {
+      "name": "Hetzer Kamesan SP",
+      "tier": 4,
+      "class": "TD",
+      "nation": "日本",
+      "premium": false
+    },
+    "52225": {
+      "name": "BT-SV",
+      "tier": 3,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "52241": {
+      "name": "Pz. B2",
+      "tier": 4,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "52257": {
+      "name": "M4A2E4",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "52481": {
+      "name": "Valentine II",
+      "tier": 4,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "52497": {
+      "name": "Pz. 38H",
+      "tier": 2,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "52513": {
+      "name": "M6A2E1",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": true
+    },
+    "52561": {
+      "name": "Tortoise",
+      "tier": 9,
+      "class": "TD",
+      "nation": "英国",
+      "premium": false
+    },
+    "52737": {
+      "name": "M3 Light",
+      "tier": 3,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "52769": {
+      "name": "Locust",
+      "tier": 3,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "52993": {
+      "name": "A-32",
+      "tier": 4,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "53025": {
+      "name": "M6A2E1 EXP",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": true
+    },
+    "53249": {
+      "name": "KV-5",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": true
+    },
+    "53505": {
+      "name": "T-127",
+      "tier": 3,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "53537": {
+      "name": "T1E6",
+      "tier": 2,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "53585": {
+      "name": "Matilda BP",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": true
+    },
+    "53761": {
+      "name": "SU-85I",
+      "tier": 5,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": true
+    },
+    "53841": {
+      "name": "TOG II*",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": true
+    },
+    "54097": {
+      "name": "AT 15A",
+      "tier": 7,
+      "class": "TD",
+      "nation": "英国",
+      "premium": false
+    },
+    "54273": {
+      "name": "SU-76I",
+      "tier": 3,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": false
+    },
+    "54289": {
+      "name": "Löwe",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": true
+    },
+    "54353": {
+      "name": "Excelsior",
+      "tier": 5,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": true
+    },
+    "54529": {
+      "name": "Tetrarch",
+      "tier": 2,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "54545": {
+      "name": "T-25",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": true
+    },
+    "54785": {
+      "name": "SU-100Y",
+      "tier": 6,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": false
+    },
+    "54801": {
+      "name": "T-15",
+      "tier": 3,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "54865": {
+      "name": "Light VIC",
+      "tier": 2,
+      "class": "轻坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "55057": {
+      "name": "Pz. IV hydr.",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "55073": {
+      "name": "T7 Car",
+      "tier": 2,
+      "class": "轻坦",
+      "nation": "美国",
+      "premium": false
+    },
+    "55297": {
+      "name": "SU-122-44",
+      "tier": 7,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": true
+    },
+    "55313": {
+      "name": "JgTig.8,8 cm",
+      "tier": 8,
+      "class": "TD",
+      "nation": "德国",
+      "premium": true
+    },
+    "55889": {
+      "name": "Cromwell B",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": true
+    },
+    "56097": {
+      "name": "Fury",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "美国",
+      "premium": true
+    },
+    "56577": {
+      "name": "LTP",
+      "tier": 3,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "56609": {
+      "name": "T28 HTC",
+      "tier": 7,
+      "class": "TD",
+      "nation": "美国",
+      "premium": false
+    },
+    "57105": {
+      "name": "Dicker Max",
+      "tier": 6,
+      "class": "TD",
+      "nation": "德国",
+      "premium": false
+    },
+    "57361": {
+      "name": "Pz. IV S.",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": true
+    },
+    "57617": {
+      "name": "Panther/M10",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "58641": {
+      "name": "VK 72.01 K",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "58881": {
+      "name": "IS-5",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": true
+    },
+    "59137": {
+      "name": "IS-2 (1945)",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "59649": {
+      "name": "ISU-122S",
+      "tier": 7,
+      "class": "TD",
+      "nation": "苏联",
+      "premium": true
+    },
+    "59665": {
+      "name": "Großtraktor",
+      "tier": 3,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "59905": {
+      "name": "T-54 mod. 1",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": true
+    },
+    "60161": {
+      "name": "IS-2Sh",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "60177": {
+      "name": "Panther 8,8",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "德国",
+      "premium": true
+    },
+    "60417": {
+      "name": "IS-3 Defender",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "60929": {
+      "name": "BT-7 art.",
+      "tier": 3,
+      "class": "轻坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "62737": {
+      "name": "leKpz M 41 90 mm",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "62977": {
+      "name": "T-44-100",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": true
+    },
+    "62993": {
+      "name": "VK 45.03",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "63553": {
+      "name": "AMX CDC",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "法国",
+      "premium": true
+    },
+    "63585": {
+      "name": "Tiger Kuromorimine SP",
+      "tier": 6,
+      "class": "重坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "63601": {
+      "name": "Dracula",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "其他",
+      "premium": false
+    },
+    "63841": {
+      "name": "Pz. IV Ankou SP",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "日本",
+      "premium": false
+    },
+    "64001": {
+      "name": "T-34-85 Rudy",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": false
+    },
+    "64017": {
+      "name": "Tankenstein",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "德国",
+      "premium": false
+    },
+    "64065": {
+      "name": "FCM 50 t",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "法国",
+      "premium": false
+    },
+    "64081": {
+      "name": "Mk I* Heavy Tank",
+      "tier": 1,
+      "class": "重坦",
+      "nation": "英国",
+      "premium": true
+    },
+    "64257": {
+      "name": "T-34-85 Victory",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "苏联",
+      "premium": true
+    },
+    "64273": {
+      "name": "JgTig.8,8 cm (2015)",
+      "tier": 8,
+      "class": "TD",
+      "nation": "德国",
+      "premium": true
+    },
+    "64337": {
+      "name": "AC IV Sentinel",
+      "tier": 6,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": true
+    },
+    "64529": {
+      "name": "E 25",
+      "tier": 7,
+      "class": "TD",
+      "nation": "德国",
+      "premium": true
+    },
+    "64561": {
+      "name": "112 Glacial",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "中国",
+      "premium": true
+    },
+    "64593": {
+      "name": "Angry Connor",
+      "tier": 5,
+      "class": "TD",
+      "nation": "英国",
+      "premium": true
+    },
+    "64769": {
+      "name": "IS-6 Fearless",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "苏联",
+      "premium": true
+    },
+    "64801": {
+      "name": "T34 (1776)",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "美国",
+      "premium": true
+    },
+    "64849": {
+      "name": "AC 1 Sentinel",
+      "tier": 4,
+      "class": "中坦",
+      "nation": "英国",
+      "premium": false
+    },
+    "65329": {
+      "name": "Type 62",
+      "tier": 7,
+      "class": "轻坦",
+      "nation": "中国",
+      "premium": true
+    },
+    "65377": {
+      "name": "Chi-Nu Kai",
+      "tier": 5,
+      "class": "中坦",
+      "nation": "日本",
+      "premium": true
+    }
+  }
+}
