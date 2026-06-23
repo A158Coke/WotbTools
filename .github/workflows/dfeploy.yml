@@ -1,0 +1,45 @@
+name: Deploy WOTB Web
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "java/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          port: ${{ secrets.VPS_PORT }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+
+            echo "Deploying WOTB Replay Data Extractor..."
+
+            cd /opt/wotb
+
+            echo "Fetching latest code..."
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "Building and restarting Docker Compose services..."
+            cd /opt/wotb/java/online
+            docker compose up -d --build
+
+            echo "Cleaning unused Docker images..."
+            docker image prune -f
+
+            echo "Current containers:"
+            docker compose ps
+
+            echo "Deployment finished."
