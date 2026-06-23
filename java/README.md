@@ -110,10 +110,12 @@ java -jar wotb-web/target/wotb-web.jar --desktop
 
 ### `GET /api/columns`
 
-返回前端构建表格所需的列定义：
+返回列的**集合与顺序**（纯英文，不含中文显示名）：每项为 `{key, num}`。
 
 - `player`：单场玩家数据列。
 - `aggregate`：多场汇总列。
+
+中文显示名不在 API 里：前端有自己的 `PLAYER_LABELS` / `AGG_LABELS` 映射，导出层（`Columns.java` / `ExcelExporter` / Python）各自维护 xlsx 表头。详见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
 
 ### `POST /api/preview`
 
