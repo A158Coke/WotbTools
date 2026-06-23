@@ -36,6 +36,9 @@ public class PlayerResult {
     public String tankNation = "";
     public String platoonLabel = "";
 
+    // 评分 (按车型基准归一化, 由 Rating.compute 计算; 未计算时为 null)
+    public Integer rating;
+
     // 明细表临时字段 (每场不同)
     public String tmpDate = "";
     public String tmpMap = "";

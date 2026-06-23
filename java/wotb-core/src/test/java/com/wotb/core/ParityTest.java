@@ -125,6 +125,20 @@ class ParityTest {
     }
 
     @Test
+    void ratingComputedAndCentered() throws Exception {
+        List<Battle> battles = new ArrayList<>();
+        for (Path p : replays()) {
+            battles.add(ReplayParser.parse(p));
+        }
+        Rating.compute(battles, Tankopedia.load());
+        List<PlayerResult> all = new ArrayList<>();
+        battles.forEach(b -> all.addAll(b.players));
+        assertTrue(all.stream().allMatch(p -> p.rating != null), "每位玩家都应有评分");
+        double avg = all.stream().mapToInt(p -> p.rating).average().orElse(0);
+        assertTrue(avg > 850 && avg < 1150, "评分均值应接近 1000, 实际 " + avg);
+    }
+
+    @Test
     void exportsXlsx() throws Exception {
         Tankopedia tp = Tankopedia.load();
         Battle b = ReplayParser.parse(replays().get(0));

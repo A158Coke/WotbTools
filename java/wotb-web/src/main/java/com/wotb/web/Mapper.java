@@ -39,6 +39,7 @@ final class Mapper {
             new AggCol("wins", true, a -> a.wins),
             new AggCol("win_rate", true, a -> r1(a.winRate())),
             new AggCol("survival_rate", true, a -> r1(a.survivalRate())),
+            new AggCol("rating_avg", true, a -> Math.round(a.avgRating())),
             new AggCol("kills", true, a -> a.kills),
             new AggCol("kills_avg", true, a -> r2(a.avg(a.kills))),
             new AggCol("damage", true, a -> a.damage),

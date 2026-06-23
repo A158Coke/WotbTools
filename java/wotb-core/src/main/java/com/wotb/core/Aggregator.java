@@ -20,10 +20,15 @@ public final class Aggregator {
         public int battles, wins, survived;
         public long kills, damage, assisted, received, blocked;
         public long shots, hits, pens, hitsReceived, pensReceived, enemiesDamaged;
+        public long ratingSum;            // 各场 rating 之和(用于场均)
         public final Map<String, Integer> tanks = new TreeMap<>();
 
         public double winRate() {
             return battles == 0 ? 0 : 100.0 * wins / battles;
+        }
+
+        public double avgRating() {
+            return battles == 0 ? 0 : (double) ratingSum / battles;
         }
 
         public double survivalRate() {
@@ -92,6 +97,9 @@ public final class Aggregator {
                 a.hitsReceived += p.nHitsReceived;
                 a.pensReceived += p.nPenetrationsReceived;
                 a.enemiesDamaged += p.nEnemiesDamaged;
+                if (p.rating != null) {
+                    a.ratingSum += p.rating;
+                }
                 String tn = tp.info(p.tankId).name;
                 a.tanks.merge(tn, 1, Integer::sum);
             }

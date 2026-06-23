@@ -86,6 +86,7 @@ docker compose up --build
 
 ```bash
 cd java
+set JAVA_HOME=%USERPROFILE%\.jdks\jdk-21.0.1
 mvn -s settings.xml -DskipTests -pl wotb-core,wotb-web -am install
 java -jar wotb-web/target/wotb-web.jar
 ```
@@ -104,6 +105,7 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 ```bash
 cd java
+set JAVA_HOME=%USERPROFILE%\.jdks\jdk-21.0.1
 mvn -s settings.xml -DskipTests -pl wotb-core,wotb-web -am install
 java -jar wotb-web/target/wotb-web.jar --desktop
 ```
@@ -152,6 +154,7 @@ java -jar wotb-web/target/wotb-web.jar --desktop
 
 ```bash
 cd java
+set JAVA_HOME=%USERPROFILE%\.jdks\jdk-21.0.1
 mvn -s settings.xml test
 ```
 
@@ -160,7 +163,7 @@ mvn -s settings.xml test
 - `wotb-core` 的 `ParityTest`：与 Python 版输出一致性的集成测试，覆盖解析、字段不变量、去重、汇总、xlsx 导出。
 - `wotb-web` 的 `WebApiTest`：`/api/columns`、`/api/preview`、`/api/export` 的 controller 测试。
 
-测试样本来自仓库根目录的 `Data/`。
+测试样本来自仓库根目录的 `common/data/`。
 
 ## 构建配置
 

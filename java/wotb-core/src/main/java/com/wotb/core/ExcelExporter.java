@@ -65,6 +65,7 @@ public final class ExcelExporter {
 
     // ---------------- 单场 ----------------
     public static void writeSingle(Battle battle, Tankopedia tp, OutputStream out) throws IOException {
+        Rating.compute(java.util.List.of(battle), tp);   // 基准=该场内
         ExcelExporter e = new ExcelExporter();
         e.sheetBattleInfo(battle);
         e.sheetPlayers(battle, tp);
@@ -171,6 +172,7 @@ public final class ExcelExporter {
     public static void writeAggregate(List<Battle> battles, List<String> sourceNames,
                                       List<String[]> duplicates, Tankopedia tp,
                                       OutputStream out) throws IOException {
+        Rating.compute(battles, tp);   // 基准=这批战斗
         ExcelExporter e = new ExcelExporter();
         Map<Long, Aggregator.Agg> agg = Aggregator.aggregate(battles, tp);
         e.sheetSummary(agg);
@@ -189,6 +191,7 @@ public final class ExcelExporter {
                 new AggCol("胜场", 6, true, a -> a.wins),
                 new AggCol("胜率%", 8, true, a -> r1(a.winRate())),
                 new AggCol("存活率%", 9, true, a -> r1(a.survivalRate())),
+                new AggCol("场均评分", 8, true, a -> Math.round(a.avgRating())),
                 new AggCol("总击杀", 7, true, a -> a.kills),
                 new AggCol("场均击杀", 7, true, a -> r2(a.avg(a.kills))),
                 new AggCol("总伤害", 9, true, a -> a.damage),

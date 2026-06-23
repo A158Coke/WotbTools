@@ -36,6 +36,7 @@
 - 使用 `tankopedia.json` 将车辆 ID 映射为车辆名、等级、类型和国家。
 - 单场导出 Excel：`战斗信息`、`玩家数据`、`原始字段`。
 - 多场导出 Excel：按 `arenaUniqueId` 去重，生成 `汇总`、`明细`、`战斗列表`。
+- 自包含表现**评分**：按车型基准归一化(类 WN8，1000=同型平均)，单场出「评分」、汇总出「场均评分」。详见 [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) 的「评分（Rating）」。
 - GUI 支持选择文件或文件夹、预览数据、合并汇总或逐场导出。
 - Java / Web 版提供 `/api/preview`、`/api/export`、`/api/columns`、`/api/health`、`/api/shutdown`。
 - Java 离线 exe：双击运行，自动打开浏览器，无需 Python 或 JDK。
@@ -107,9 +108,12 @@ build.bat
 
 ```bat
 cd java
+set JAVA_HOME=%USERPROFILE%\.jdks\jdk-21.0.1
 mvn -s settings.xml -DskipTests -pl wotb-core,wotb-web -am install
 java -jar wotb-web\target\wotb-web.jar
 ```
+
+> Windows 环境默认 `java` 可能是 JDK 8。执行 Maven 前请先把 `JAVA_HOME` 指向 JDK 21。
 
 构建离线 exe：
 
@@ -152,6 +156,7 @@ Java 侧：
 
 ```bash
 cd java
+set JAVA_HOME=%USERPROFILE%\.jdks\jdk-21.0.1
 mvn -s settings.xml test
 ```
 

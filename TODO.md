@@ -11,7 +11,7 @@
 - [x] Python 版已有 Tkinter GUI 和 PyInstaller exe 构建脚本。
 - [x] Java `wotb-core` 已实现回放解析、车辆库映射、去重汇总和 POI 导出。
 - [x] Java `wotb-web` 已提供 `/api/preview`、`/api/export`、`/api/columns`、`/api/health`、`/api/shutdown`。
-- [x] Vue 3 前端已有上传、预览、下载、排序、列选择、拖拽上传功能。
+- [x] Vue 3 前端已有上传、预览、下载、排序、列选择、拖拽上传、文件夹选择、重复/失败提示、单场移除后二次确认与自动重新汇总。
 - [x] Java 离线 exe 已实现：`build-desktop.bat` + `WotbWebApplication --desktop` 模式 + jpackage。
 - [x] Spring Boot 版本已统一为 `4.1.0`（父 POM 与 Web 模块一致）。
 - [x] 前端静态资源已嵌入 Spring Boot JAR（Maven 构建阶段从 `frontend/dist` 复制到 `classpath:/static/`）。
@@ -24,17 +24,17 @@
 ## P1：Web 版完善
 
 - [ ] 完善上传体验。
-  - [ ] 支持文件夹/多文件批量上传（当前前端已支持单文件多选和拖拽；文件夹上传需 `webkitdirectory` 优化）。
-  - [ ] 清晰展示重复文件和解析失败文件。
+  - [x] 支持文件夹/多文件批量上传（`webkitdirectory` + 多选 + 拖拽）。
+  - [x] 清晰展示重复文件和解析失败文件。
 - [ ] 完善预览表格。
   - [ ] 列选择持久化（localStorage）。
   - [ ] 大批量回放时保持可用性能（虚拟滚动或分页）。
 - [ ] 完善导出体验。
-  - [ ] 单场和多场文件名策略。
-  - [ ] 下载失败时展示后端错误。
+  - [x] 单场和多场文件名策略（单场沿用源文件名，多场 `联赛汇总.xlsx`，逐场 `逐场导出.zip`）。
+  - [x] 下载失败时展示后端错误（前端显示 HTTP 错误信息）。
 - [ ] Docker 部署完善。
   - [ ] 固定镜像构建流程。
-  - [ ] 明确端口配置。
+  - [x] 明确端口配置（前端 `8088`，后端 `8087`，健康检查 `/api/health`）。
   - [ ] 补充生产部署注意事项。
 
 ## P1：测试与质量

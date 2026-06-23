@@ -286,6 +286,7 @@ IDENTITY_COLUMNS = [
 ]
 # 战斗数据列 (玩家数据表 / 明细表 共用)
 STAT_COLUMNS = [
+    Col("评分", "rating", 6, 55, True),
     Col("存活", "survived_label", 6, 45, False),
     Col("击杀", "kills", 6, 45, True),
     Col("伤害", "damage_dealt", 8, 65, True),
@@ -385,6 +386,7 @@ def export_xlsx(battle, players, tankopedia, out_path):
     from openpyxl.styles import Font
     from openpyxl.utils import get_column_letter
 
+    compute_ratings([(battle, players, None)], tankopedia)   # 基准=该场内
     wb = Workbook()
     st = _excel_styles()
 
@@ -505,6 +507,55 @@ def _safe_div(a, b):
     return (a / b) if b else 0.0
 
 
+# ---------------------------------------------------------------------------
+# 评分 (自包含, 按车型基准归一化; 与 Java Rating.java 一致)
+# ---------------------------------------------------------------------------
+RATING_W_ASSIST = 0.6
+RATING_W_BLOCK = 0.35
+RATING_KILL_VALUE = 200
+RATING_WIN_BONUS = 0.05
+RATING_MIN_SAMPLES = 5
+RATING_SCALE = 1000
+
+
+def effective_contribution(r):
+    """有效贡献(伤害当量)。"""
+    return (r["damage_dealt"]
+            + RATING_W_ASSIST * r["damage_assisted"]
+            + RATING_W_BLOCK * r["damage_blocked"]
+            + RATING_KILL_VALUE * r["kills"])
+
+
+def compute_ratings(battles, tankopedia):
+    """对一批战斗的所有玩家写入 r['rating']; 基准按车型从这批数据求得。"""
+    by_class = {}            # cls -> [sumEC, count]
+    all_sum = 0.0
+    all_n = 0
+    for _battle, players, _ in battles:
+        for r in players:
+            ec = effective_contribution(r)
+            cls = tank_info(tankopedia, r["tank_id"])["type"] or "其他"
+            acc = by_class.setdefault(cls, [0.0, 0])
+            acc[0] += ec
+            acc[1] += 1
+            all_sum += ec
+            all_n += 1
+    if all_n == 0:
+        return
+    overall = all_sum / all_n
+    for battle, players, _ in battles:
+        winner = battle.get("winner_team")
+        for r in players:
+            cls = tank_info(tankopedia, r["tank_id"])["type"] or "其他"
+            acc = by_class.get(cls)
+            baseline = acc[0] / acc[1] if (acc and acc[1] >= RATING_MIN_SAMPLES) else overall
+            if baseline <= 0:
+                baseline = overall if overall > 0 else 1
+            ratio = effective_contribution(r) / baseline
+            win = bool(winner) and r["team"] == winner
+            r["rating"] = round(RATING_SCALE * ratio * (1 + (RATING_WIN_BONUS if win else 0)))
+
+
 def aggregate_players(battles, tankopedia):
     """跨场次按账号ID累计每位选手的数据。battles 来自 collect_battles。"""
     agg = {}
@@ -525,7 +576,7 @@ def aggregate_players(battles, tankopedia):
                     "kills": 0, "damage": 0, "assisted": 0, "received": 0, "blocked": 0,
                     "shots": 0, "hits": 0, "pens": 0,
                     "hits_received": 0, "pens_received": 0, "enemies_damaged": 0,
-                    "tanks": {},
+                    "rating_sum": 0, "tanks": {},
                 }
             # 用最近一场的昵称/战队
             if start >= a["_last"]:
@@ -548,6 +599,7 @@ def aggregate_players(battles, tankopedia):
             a["hits_received"] += r["n_hits_received"]
             a["pens_received"] += r["n_penetrations_received"]
             a["enemies_damaged"] += r["n_enemies_damaged"]
+            a["rating_sum"] += r.get("rating") or 0
             tname = tank_info(tankopedia, r["tank_id"])["name"]
             a["tanks"][tname] = a["tanks"].get(tname, 0) + 1
     return agg
@@ -568,6 +620,7 @@ def export_aggregate_xlsx(battles, tankopedia, out_path, duplicates=None):
         _write_header(ws, cols, st)
 
     # ---------- Sheet 1: 汇总 (每位选手跨场累计) ----------
+    compute_ratings(battles, tankopedia)   # 基准=这批战斗
     agg = aggregate_players(battles, tankopedia)
     ws = wb.active
     ws.title = "汇总"
@@ -578,6 +631,7 @@ def export_aggregate_xlsx(battles, tankopedia, out_path, duplicates=None):
         ("胜场", "wins", 6),
         ("胜率%", "win_rate", 8),
         ("存活率%", "survival_rate", 9),
+        ("场均评分", "rating_avg", 8),
         ("总击杀", "kills", 7),
         ("场均击杀", "kills_avg", 7),
         ("总伤害", "damage", 9),
@@ -602,6 +656,7 @@ def export_aggregate_xlsx(battles, tankopedia, out_path, duplicates=None):
             **a,
             "win_rate": round(_safe_div(a["wins"], n) * 100, 1),
             "survival_rate": round(_safe_div(a["survived"], n) * 100, 1),
+            "rating_avg": round(_safe_div(a["rating_sum"], n)),
             "kills_avg": round(_safe_div(a["kills"], n), 2),
             "damage_avg": round(_safe_div(a["damage"], n), 1),
             "assisted_avg": round(_safe_div(a["assisted"], n), 1),
