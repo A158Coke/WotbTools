@@ -118,6 +118,9 @@ cd java\offline
 build-desktop.bat
 ```
 
+> 脚本会自动检测或下载 JDK 21、Maven、Node.js 到 `java/offline/tools/`，宿主机无需预先安装。
+> 可加 `--no-download` 禁止自动下载（仅用 PATH 已有工具）。
+
 输出：
 
 - `java\offline\dist-desktop\WoT Blitz Replay Extractor\WoT Blitz Replay Extractor.exe`
