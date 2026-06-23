@@ -43,13 +43,13 @@ final class Mapper {
             new AggCol("均击杀", "kills_avg", true, a -> r2(a.avg(a.kills))),
             new AggCol("总伤害", "damage", true, a -> a.damage),
             new AggCol("均伤害", "damage_avg", true, a -> r1(a.avg(a.damage))),
-            new AggCol("总辅助", "assisted", true, a -> a.assisted),
-            new AggCol("均辅助", "assisted_avg", true, a -> r1(a.avg(a.assisted))),
-            new AggCol("均承受", "received_avg", true, a -> r1(a.avg(a.received))),
-            new AggCol("均抵挡", "blocked_avg", true, a -> r1(a.avg(a.blocked))),
+            new AggCol("总辅助伤害", "assisted", true, a -> a.assisted),
+            new AggCol("均辅助伤害", "assisted_avg", true, a -> r1(a.avg(a.assisted))),
+            new AggCol("均承受伤害", "received_avg", true, a -> r1(a.avg(a.received))),
+            new AggCol("均抵挡伤害", "blocked_avg", true, a -> r1(a.avg(a.blocked))),
             new AggCol("命中率%", "hit_rate", true, a -> r1(a.hitRate())),
             new AggCol("击穿率%", "pen_rate", true, a -> r1(a.penRate())),
-            new AggCol("均击伤敌", "enemies_damaged_avg", true, a -> r2(a.avg(a.enemiesDamaged))),
+            new AggCol("均击伤敌数", "enemies_damaged_avg", true, a -> r2(a.avg(a.enemiesDamaged))),
             new AggCol("用车", "tanks", false, Aggregator.Agg::tanksStr),
             new AggCol("账号ID", "account_id", true, a -> a.accountId)
     );
