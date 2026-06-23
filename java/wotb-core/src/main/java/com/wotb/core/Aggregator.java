@@ -16,6 +16,7 @@ public final class Aggregator {
         public long accountId;
         public String nickname = "";
         public String clan = "";
+        public int team;                  // 最近一场的队伍(供 UI 行底色)
         long lastTime = -1;
         public int battles, wins, survived;
         public long kills, damage, assisted, received, blocked;
@@ -73,11 +74,12 @@ public final class Aggregator {
                     x.accountId = k;
                     return x;
                 });
-                if (start >= a.lastTime) {   // 用最近一场的昵称/战队
+                if (start >= a.lastTime) {   // 用最近一场的昵称/战队/队伍
                     a.lastTime = start;
                     a.nickname = (p.nickname == null || p.nickname.isEmpty())
                             ? String.valueOf(p.accountId) : p.nickname;
                     a.clan = p.clan == null ? "" : p.clan;
+                    a.team = p.team;
                 }
                 a.battles++;
                 if (winner != null && winner != 0 && p.team == winner) {

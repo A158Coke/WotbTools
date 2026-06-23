@@ -2,15 +2,82 @@
 # -*- coding: utf-8 -*-
 """
 从 blitzkit 拉取最新车辆库 (tanks.pb) 并转换为本工具用的 tankopedia.json。
-游戏出新车后运行本脚本, 再执行 build.bat 重建 exe 即可。
+游戏出新车后运行本脚本即可。
 
     python update_tankopedia.py
 """
 import json
 import os
 import urllib.request
+import struct
 
-from wotb_extractor import decode_protobuf, as_str, f1
+# ---- protobuf helpers (copied from wotb_extractor.py to make this script standalone) ----
+
+def _read_varint(buf, i):
+    shift = 0
+    result = 0
+    while True:
+        b = buf[i]
+        i += 1
+        result |= (b & 0x7F) << shift
+        if not (b & 0x80):
+            break
+        shift += 7
+    return result, i
+
+
+def decode_protobuf(buf):
+    fields = {}
+    i = 0
+    n = len(buf)
+    while i < n:
+        try:
+            tag, i = _read_varint(buf, i)
+        except IndexError:
+            break
+        field = tag >> 3
+        wt = tag & 7
+        if field == 0:
+            break
+        try:
+            if wt == 0:
+                val, i = _read_varint(buf, i)
+            elif wt == 1:
+                val = struct.unpack("<Q", buf[i:i + 8])[0]
+                i += 8
+            elif wt == 5:
+                val = struct.unpack("<I", buf[i:i + 4])[0]
+                i += 4
+            elif wt == 2:
+                ln, i = _read_varint(buf, i)
+                val = buf[i:i + ln]
+                i += ln
+            else:
+                break
+        except (IndexError, struct.error):
+            break
+        fields.setdefault(field, []).append(val)
+    return fields
+
+
+def as_str(raw):
+    if isinstance(raw, str):
+        return raw
+    if not isinstance(raw, (bytes, bytearray)):
+        return raw
+    for enc in ("utf-8", "latin1"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.hex()
+
+
+def f1(fields, num, default=None):
+    v = fields.get(num)
+    if not v:
+        return default
+    return v[0]
 
 URL = "https://assets.blitzkit.app/definitions/tanks.pb"
 CLASS = {0: "轻坦", 1: "中坦", 2: "重坦", 3: "TD"}

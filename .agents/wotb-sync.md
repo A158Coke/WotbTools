@@ -13,7 +13,7 @@
 - **API 纯英文**:`/api/columns`、DTO 只回 `key`(snake_case) + 数据,绝不放中文。
 - **中文显示名分散在两类出口**,改名要全改:
   - 前端:`java/frontend/src/App.vue` 的 `PLAYER_LABELS`(单场)与 `AGG_LABELS`(汇总)。
-  - 导出:`java/wotb-core/.../Columns.java`(单场 xlsx)、`java/wotb-core/.../ExcelExporter.java`(汇总 xlsx)、`python/wotb_extractor.py`(`STAT_COLUMNS` + `export_aggregate_xlsx`)。
+  - 导出:`java/wotb-core/.../Columns.java`(单场 xlsx)、`java/wotb-core/.../ExcelExporter.java`(汇总 xlsx)、`python-legacy/wotb_extractor.py`(`STAT_COLUMNS` + `export_aggregate_xlsx`)。
 - **列 `key` 三方一致**:API / 前端 / 导出。
 - **改完必过测试 + 更新文档**(见末尾)。
 
@@ -26,7 +26,7 @@
 1. `App.vue` → `PLAYER_LABELS` 和/或 `AGG_LABELS` 中该 `key` 的值。
 2. `Columns.java`(若是单场列)对应 `Col(...)` 的 title。
 3. `ExcelExporter.java` 的汇总 `AggCol(...)`(若是汇总列)。
-4. `python/wotb_extractor.py` 的 `STAT_COLUMNS`(单场)/ `export_aggregate_xlsx` 的 `agg_cols`(汇总)。
+4. `python-legacy/wotb_extractor.py` 的 `STAT_COLUMNS`(单场)/ `export_aggregate_xlsx` 的 `agg_cols`(汇总)。
 5. 验证 + 文档。
 
 > 命名约定:辅助伤害=「协助伤害」、承受伤害=「损失血量」、抵挡伤害=「格挡」、击伤敌数=「击伤」;汇总「总X / 场均X」。
@@ -67,7 +67,7 @@
 
 ```bash
 cd java && JAVA_HOME=<jdk21> mvn -s settings.xml test     # ParityTest + WebApiTest
-cd python && python test_wotb.py                          # 26 项
+cd python-legacy && python test_wotb.py                    # 26 项 (历史版)
 cd java/frontend && npm run build                         # 改了前端时
 ```
 

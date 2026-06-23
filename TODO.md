@@ -15,6 +15,9 @@
 - [x] Java 离线 exe 已实现：`build-desktop.bat` + `WotbWebApplication --desktop` 模式 + jpackage。
 - [x] Spring Boot 版本已统一为 `4.1.0`（父 POM 与 Web 模块一致）。
 - [x] 前端静态资源已嵌入 Spring Boot JAR（Maven 构建阶段从 `frontend/dist` 复制到 `classpath:/static/`）。
+- [x] 离线 exe 便携构建：`build-desktop.ps1` 自动下载 JDK 21 / Maven / Node.js 到 `tools/`，宿主机零依赖。
+- [x] Maven settings.xml 本地仓库路径改为模板 + 动态生成，不再写死。
+- [x] 在线演示：https://replay.wotbtools.com
 
 ## P0：Java 主线完善
 
