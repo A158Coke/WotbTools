@@ -234,8 +234,21 @@ try {
 Write-OK "Jar built."
 
 Write-Step "[3/4] jpackage app-image..."
+# Kill any running instance of the app before cleaning
+Get-Process -Name "$appName" -ErrorAction SilentlyContinue | Stop-Process -Force
 if (Test-Path $distDir) {
-  Remove-Item $distDir -Recurse -Force -ErrorAction Stop
+  $retries = 3
+  do {
+    try {
+      Remove-Item $distDir -Recurse -Force -ErrorAction Stop
+      break
+    } catch {
+      $retries--
+      if ($retries -eq 0) { throw }
+      Write-Info "  dist-desktop locked, retrying in 2s..."
+      Start-Sleep -Seconds 2
+    }
+  } while ($true)
 }
 New-Item -ItemType Directory -Path $distDir -Force | Out-Null
 
