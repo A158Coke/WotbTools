@@ -223,6 +223,18 @@ if (-not $SkipFrontend) {
   Write-Step "[1/4] Skipping frontend (--SkipFrontend)..."
 }
 
+# Generate settings.xml with correct local repo path
+$settingsTemplate = "$javaRoot\settings.xml.template"
+$settingsFile = "$javaRoot\settings.xml"
+if (Test-Path $settingsTemplate) {
+  $localRepo = [System.IO.Path]::GetFullPath("$javaRoot\.m2repo")
+  (Get-Content $settingsTemplate -Raw) -replace '@LOCAL_REPO@', $localRepo.Replace('\', '/') | Set-Content $settingsFile -NoNewline
+  Write-Info "Generated settings.xml (localRepo: $localRepo)"
+} else {
+  Write-Err "settings.xml.template not found at $settingsTemplate"
+  throw "Missing settings.xml.template"
+}
+
 Write-Step "[2/4] Building Spring Boot jar..."
 $mvnArgs = @("-s", "settings.xml", "-pl", "wotb-core,wotb-web", "-am", "clean", "package")
 if ($SkipMvnTest) { $mvnArgs += "-DskipTests" }
