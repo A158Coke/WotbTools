@@ -18,13 +18,13 @@ import java.util.Map;
 import java.util.function.Function;
 
 /** model -> 前端 DTO (复用 core 的列定义, 保证与 Excel/桌面一致)。 */
-final class Mapper {
+public final class Mapper {
 
     private Mapper() {
     }
 
     /** 玩家表列定义 (纯数据: key + 是否数值; 中文名由前端映射)。 */
-    static List<ColumnDef> playerColumns() {
+    public static List<ColumnDef> playerColumns() {
         List<ColumnDef> out = new ArrayList<>();
         for (Columns.Col c : Columns.PLAYER) {
             out.add(new ColumnDef(c.key(), c.num()));
@@ -59,7 +59,7 @@ final class Mapper {
             new AggCol("account_id", true, a -> a.accountId)
     );
 
-    static List<ColumnDef> aggregateColumns() {
+    public static List<ColumnDef> aggregateColumns() {
         List<ColumnDef> out = new ArrayList<>();
         for (AggCol c : AGG_COLS) {
             out.add(new ColumnDef(c.key(), c.num()));
@@ -67,7 +67,7 @@ final class Mapper {
         return out;
     }
 
-    static BattleDto toBattle(Battle b, String sourceName, Tankopedia tp) {
+    public static BattleDto toBattle(final Battle b, final String sourceName, final Tankopedia tp) {
         Function<Long, String> platoon = Players.platoonLabeler();
         List<PlayerRow> rows = new ArrayList<>();
         for (PlayerResult p : Players.sorted(b.players)) {
@@ -83,7 +83,7 @@ final class Mapper {
                 b.startTime, b.winnerTeam, sourceName, rows);
     }
 
-    static List<AggRow> toAggregate(Map<Long, Agg> aggMap) {
+    public static List<AggRow> toAggregate(final Map<Long, Agg> aggMap) {
         List<Agg> list = new ArrayList<>(aggMap.values());
         list.sort((x, y) -> Double.compare(y.avg(y.damage), x.avg(x.damage)));
         List<AggRow> out = new ArrayList<>();
@@ -97,11 +97,11 @@ final class Mapper {
         return out;
     }
 
-    private static double r1(double v) {
+    private static double r1(final double v) {
         return Math.round(v * 10) / 10.0;
     }
 
-    private static double r2(double v) {
+    private static double r2(final double v) {
         return Math.round(v * 100) / 100.0;
     }
 }

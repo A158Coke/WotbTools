@@ -34,7 +34,7 @@ public final class Rating {
                 "重坦", 1.0, "中坦", 0.9, "TD", 1.0, "轻坦", 0.7, "其他", 0.9));
         public double defaultFactor = 1.0;
 
-        double factor(String cls) {
+        double factor(final String cls) {
             return classFactor.getOrDefault(cls, defaultFactor);
         }
     }
@@ -84,7 +84,7 @@ public final class Rating {
     }
 
     /** 有效贡献(伤害当量)。 */
-    public static double effectiveContribution(PlayerResult p) {
+    public static double effectiveContribution(final PlayerResult p) {
         Config c = config;
         return p.damageDealt
                 + c.assist * p.damageAssisted
@@ -93,7 +93,7 @@ public final class Rating {
     }
 
     /** 对一批战斗的所有玩家计算并写入 rating。基准按车型从这批数据求得。 */
-    public static void compute(List<Battle> battles, Tankopedia tp) {
+    public static void compute(final List<Battle> battles, final Tankopedia tp) {
         Config c = config;
         Map<String, double[]> byClass = new HashMap<>();   // class -> [sumEC, count]
         double allSum = 0;
@@ -133,7 +133,7 @@ public final class Rating {
     }
 
     /** 车型分桶键; 无车型信息归入"其他"。 */
-    private static String classKey(Tankopedia tp, PlayerResult p) {
+    private static String classKey(final Tankopedia tp, final PlayerResult p) {
         String type = tp.info(p.tankId).type;
         return (type == null || type.isEmpty()) ? "其他" : type;
     }

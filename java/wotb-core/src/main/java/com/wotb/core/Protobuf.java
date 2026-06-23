@@ -16,7 +16,7 @@ public final class Protobuf {
     }
 
     /** 解码一段 protobuf, 返回 field -> 值列表 (重复字段保留多值)。 */
-    public static Map<Integer, List<Object>> decode(byte[] buf) {
+    public static Map<Integer, List<Object>> decode(final byte[] buf) {
         Map<Integer, List<Object>> fields = new LinkedHashMap<>();
         int i = 0;
         int n = buf.length;
@@ -90,7 +90,7 @@ public final class Protobuf {
         return new long[]{result, i};
     }
 
-    private static long readLE(byte[] buf, int off, int bytes) {
+    private static long readLE(final byte[] buf, final int off, final int bytes) {
         long v = 0;
         for (int k = 0; k < bytes; k++) {
             v |= (long) (buf[off + k] & 0xFF) << (8 * k);
@@ -101,13 +101,13 @@ public final class Protobuf {
     // ---- 取值辅助 (对应 Python 的 f1 / f_uint / as_str / as_message) ----
 
     /** 取字段第一个值; 不存在返回 null。 */
-    public static Object first(Map<Integer, List<Object>> fields, int num) {
+    public static Object first(final Map<Integer, List<Object>> fields, final int num) {
         List<Object> v = fields.get(num);
         return (v == null || v.isEmpty()) ? null : v.get(0);
     }
 
     /** 取字段第一个值作为 long; 不存在返回 default。 */
-    public static long firstLong(Map<Integer, List<Object>> fields, int num, long def) {
+    public static long firstLong(final Map<Integer, List<Object>> fields, final int num, final long def) {
         Object o = first(fields, num);
         if (o instanceof Number) {
             return ((Number) o).longValue();
@@ -116,7 +116,7 @@ public final class Protobuf {
     }
 
     /** 取字段第一个值作为嵌套消息。 */
-    public static Map<Integer, List<Object>> message(Map<Integer, List<Object>> fields, int num) {
+    public static Map<Integer, List<Object>> message(final Map<Integer, List<Object>> fields, final int num) {
         Object o = first(fields, num);
         if (o instanceof byte[]) {
             return decode((byte[]) o);
@@ -125,7 +125,7 @@ public final class Protobuf {
     }
 
     /** 把 length-delimited 字段当作字符串 (UTF-8)。 */
-    public static String string(Map<Integer, List<Object>> fields, int num) {
+    public static String string(final Map<Integer, List<Object>> fields, final int num) {
         Object o = first(fields, num);
         if (o instanceof byte[]) {
             return new String((byte[]) o, StandardCharsets.UTF_8);

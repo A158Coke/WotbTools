@@ -47,7 +47,7 @@ class WebApiTest {
         }
     }
 
-    private static MockMultipartFile file(Path p) throws Exception {
+    private static MockMultipartFile file(final Path p) throws Exception {
         return new MockMultipartFile("files", p.getFileName().toString(),
                 "application/octet-stream", Files.readAllBytes(p));
     }

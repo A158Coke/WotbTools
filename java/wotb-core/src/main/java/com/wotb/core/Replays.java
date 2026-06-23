@@ -15,7 +15,7 @@ public final class Replays {
     private Replays() {
     }
 
-    public static Collected collect(List<Source> sources, Consumer<String> log) {
+    public static Collected collect(final List<Source> sources, final Consumer<String> log) {
         Collected res = new Collected();
         Map<String, String> seen = new LinkedHashMap<>(); // arenaId -> name
         for (Source s : sources) {

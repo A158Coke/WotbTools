@@ -22,12 +22,12 @@ public final class PickleReader {
     /** MARK 的占位标记。 */
     private static final Object MARK = new Object();
 
-    private PickleReader(byte[] data) {
+    private PickleReader(final byte[] data) {
         this.b = data;
     }
 
     /** 解析整个 pickle, 返回顶层对象。 */
-    public static Object loads(byte[] data) {
+    public static Object loads(final byte[] data) {
         return new PickleReader(data).run();
     }
 
@@ -99,20 +99,20 @@ public final class PickleReader {
         stack.push(items.toArray());
     }
 
-    private byte[] readBytes(int len) {
+    private byte[] readBytes(final int len) {
         byte[] out = new byte[len];
         System.arraycopy(b, pos, out, 0, len);
         pos += len;
         return out;
     }
 
-    private String readStr(int len) {
+    private String readStr(final int len) {
         String s = new String(b, pos, len, StandardCharsets.UTF_8);
         pos += len;
         return s;
     }
 
-    private long readLE(int bytes) {
+    private long readLE(final int bytes) {
         long v = 0;
         for (int k = 0; k < bytes; k++) {
             v |= (long) (b[pos + k] & 0xFF) << (8 * k);
@@ -132,7 +132,7 @@ public final class PickleReader {
         return readLong(len);
     }
 
-    private Object readLong(int len) {
+    private Object readLong(final int len) {
         if (len == 0) {
             return 0L;
         }

@@ -57,7 +57,7 @@ public final class Columns {
     public static final Set<String> LEFT_ALIGN = Set.of(
             "nickname", "clan", "tank_name", "date", "map_name");
 
-    private static List<Col> concat(List<Col>... lists) {
+    private static List<Col> concat(final List<Col>... lists) {
         java.util.ArrayList<Col> out = new java.util.ArrayList<>();
         for (List<Col> l : lists) {
             out.addAll(l);
@@ -66,7 +66,7 @@ public final class Columns {
     }
 
     /** 表头显示宽度: 中文算 2, 其余算 1。 */
-    public static int displayWidth(String text) {
+    public static int displayWidth(final String text) {
         int w = 0;
         for (int i = 0; i < text.length(); i++) {
             w += text.charAt(i) > 0x2E7F ? 2 : 1;

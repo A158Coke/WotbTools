@@ -7,7 +7,7 @@ public final class TankInfo {
     public final String type;   // 车种(轻坦/中坦/重坦/TD)
     public final String nation;
 
-    public TankInfo(String name, Object tier, String type, String nation) {
+    public TankInfo(final String name, final Object tier, final String type, final String nation) {
         this.name = name;
         this.tier = tier;
         this.type = type;

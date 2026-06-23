@@ -15,6 +15,7 @@
   - 前端:`java/frontend/src/App.vue` 的 `PLAYER_LABELS`(单场)与 `AGG_LABELS`(汇总)。
   - 导出:`java/wotb-core/.../Columns.java`(单场 xlsx)、`java/wotb-core/.../ExcelExporter.java`(汇总 xlsx)。
 - **列 `key` 三方一致**:API / 前端 / 导出。
+- **Web 分层**:`ReplayController` 只做 HTTP 映射;业务编排在 `service/ReplayService`(解析/评分/映射/导出),桌面关机在 `service/DesktopLifecycle`。新增 endpoint 的业务逻辑写进 service,controller 只接参数、拼 `ResponseEntity`。
 - **改完必过测试 + 更新文档**(见末尾)。
 
 ---

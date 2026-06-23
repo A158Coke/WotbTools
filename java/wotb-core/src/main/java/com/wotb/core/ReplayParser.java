@@ -38,16 +38,16 @@ public final class ReplayParser {
     private ReplayParser() {
     }
 
-    public static Battle parse(Path path) throws IOException {
+    public static Battle parse(final Path path) throws IOException {
         Map<String, byte[]> entries = unzip(Files.readAllBytes(path));
         return parse(entries);
     }
 
-    public static Battle parse(byte[] replayBytes) throws IOException {
+    public static Battle parse(final byte[] replayBytes) throws IOException {
         return parse(unzip(replayBytes));
     }
 
-    private static Battle parse(Map<String, byte[]> entries) throws IOException {
+    private static Battle parse(final Map<String, byte[]> entries) throws IOException {
         JsonNode meta = MAPPER.createObjectNode();
         if (entries.containsKey("meta.json")) {
             meta = MAPPER.readTree(entries.get("meta.json"));
@@ -134,11 +134,11 @@ public final class ReplayParser {
         return battle;
     }
 
-    private static String text(JsonNode n, String key) {
+    private static String text(final JsonNode n, final String key) {
         return n.hasNonNull(key) ? n.get(key).asText() : "";
     }
 
-    private static Long parseLong(String s) {
+    private static Long parseLong(final String s) {
         try {
             return s == null || s.isEmpty() ? null : Long.parseLong(s.trim());
         } catch (NumberFormatException e) {
@@ -146,7 +146,7 @@ public final class ReplayParser {
         }
     }
 
-    private static Map<String, byte[]> unzip(byte[] data) throws IOException {
+    private static Map<String, byte[]> unzip(final byte[] data) throws IOException {
         Map<String, byte[]> out = new HashMap<>();
         try (ZipInputStream zis = new ZipInputStream(new java.io.ByteArrayInputStream(data))) {
             ZipEntry e;
