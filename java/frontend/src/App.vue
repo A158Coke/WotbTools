@@ -314,62 +314,67 @@ const aggStats = computed(() => {
 <template>
   <div class="wrap">
     <header>
-      <div class="brand"><span class="logo">W</span><h1>WoT Blitz 回放分析</h1></div>
-      <button v-if="isDesktop" class="ghost" @click="shutdown">关闭离线程序</button>
+      <div class="brand">
+        <span class="logo">W</span>
+        <div class="brandtext">
+          <h1>WoT Blitz 回放分析</h1>
+          <p class="subtitle">解析回放 · 14 人战场数据 · 导出 xlsx</p>
+        </div>
+      </div>
+      <button v-if="isDesktop" class="ghost" @click="shutdown">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M7 6a7.7 7.7 0 1 0 10 0M12 4v8" /></svg>关闭离线程序
+      </button>
     </header>
 
-    <section class="toolbar">
-      <label class="filebtn">
-        选择回放文件
-        <input type="file" multiple accept=".wotbreplay" @change="onPick" />
-      </label>
-      <label class="filebtn">
-        选择文件夹
-        <input type="file" multiple webkitdirectory @change="onPick" />
-      </label>
-      <button class="ghost" :disabled="loading || !files.length" @click="clearFiles">清空</button>
-      <button :disabled="loading || !files.length" @click="preview">解析预览</button>
-      <button :disabled="loading || !files.length" @click="exportXlsx('aggregate')">合并汇总(去重)</button>
-      <button :disabled="loading || !files.length" @click="exportXlsx('each')">每场单独导出</button>
-      <span v-if="resp" class="dropdown">
-        <button class="ghost" @click="toggleColPicker">选择列 ▾</button>
-        <div v-if="showColPicker" class="colpanel">
-          <div class="colpanel-head">
-            <span class="cph-title">{{ pickerScope === 'agg' ? '汇总表' : '单场表' }}列 · 勾选显示、拖拽排序</span>
-            <button class="linkbtn" @click="selectAllCols">全选</button>
-            <button class="linkbtn" @click="resetCols">重置</button>
-            <button class="linkbtn" @click="showColPicker = false">完成</button>
-          </div>
-          <ul class="collist">
-            <li v-for="(key, idx) in currentOrder" :key="key" draggable="true"
-                @dragstart="onColDragStart(idx)" @dragover.prevent @drop="onColDrop(idx)"
-                :class="{ dragging: dragIdx === idx }">
-              <span class="grip" title="拖拽排序">⋮⋮</span>
-              <label class="colitem">
-                <input type="checkbox" :checked="isVisible(key)" @change="toggleCol(key)" />
-                {{ pickerLabel(key) }}
-              </label>
-              <span class="cat">{{ catOf(key) }}</span>
-            </li>
-          </ul>
-        </div>
-      </span>
-      <span class="muted">{{ files.length ? `已选 ${files.length} 个回放` : '未选择文件' }}</span>
-      <span v-if="loading" class="muted">处理中…</span>
-    </section>
-
-    <section class="dropzone" :class="{ dragging }"
+    <section class="uploadwrap"
              @dragover.prevent="dragging = true"
              @dragleave.prevent="dragging = false"
              @drop.prevent="onDrop">
-      拖拽 .wotbreplay 文件到这里
-    </section>
+      <div v-if="!files.length" class="uploadcard" :class="{ dragging }">
+        <span class="up-icon"><svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg></span>
+        <div class="up-title">拖拽 .wotbreplay 文件到这里</div>
+        <div class="up-sub">支持多选文件，或选择整个文件夹</div>
+        <div class="up-actions">
+          <label class="filebtn">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>选择回放文件
+            <input type="file" multiple accept=".wotbreplay" @change="onPick" />
+          </label>
+          <label class="filebtn ghost">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /></svg>选择文件夹
+            <input type="file" multiple webkitdirectory @change="onPick" />
+          </label>
+        </div>
+      </div>
 
-    <section v-if="files.length" class="files">
-      <span v-for="f in files" :key="fileKey(f)" class="chip">
-        {{ displayName(f) }}
-        <button class="chipx" title="移除该回放" @click="removeFile(f)">×</button>
-      </span>
+      <div v-else class="filebar" :class="{ dragging }">
+        <svg class="ic fb-ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
+        <span class="fb-count">{{ files.length }} 个文件</span>
+        <div class="fb-chips">
+          <span v-for="f in files" :key="fileKey(f)" class="chip">
+            {{ displayName(f) }}
+            <button class="chipx" title="移除该回放" @click="removeFile(f)">×</button>
+          </span>
+        </div>
+        <label class="filebtn ghost sm" title="添加回放文件">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>添加
+          <input type="file" multiple accept=".wotbreplay" @change="onPick" />
+        </label>
+        <label class="filebtn ghost sm" title="添加文件夹">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /></svg>文件夹
+          <input type="file" multiple webkitdirectory @change="onPick" />
+        </label>
+        <button class="ghost sm" :disabled="loading" @click="clearFiles">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3" /></svg>清空
+        </button>
+      </div>
+
+      <div v-if="files.length" class="actionrow">
+        <button class="lg" :disabled="loading" @click="preview">
+          解析预览<svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+        </button>
+        <span v-if="loading" class="muted">处理中…</span>
+        <span v-else class="muted">解析后，导出按钮出现在结果区</span>
+      </div>
     </section>
 
     <p v-if="error" class="error">{{ error }}</p>
@@ -384,16 +389,51 @@ const aggStats = computed(() => {
         <span v-for="(f, i) in resp.failures" :key="i">{{ f[0] }} ({{ f[1] }})</span>
       </div>
 
-      <div class="tabs" :class="{ locked: showColPicker }"
-           :title="showColPicker ? '列选择器打开时不可切换表格，请先点「完成」' : ''">
-        <button v-if="resp.aggregate.length" :disabled="showColPicker"
-                :class="{ active: activeTab === 'aggregate' }"
-                @click="activeTab = 'aggregate'">汇总 ({{ resp.aggregate.length }} 名选手)</button>
-        <button v-for="(b, i) in resp.battles" :key="i" :disabled="showColPicker"
-                :class="{ active: activeTab === 'b' + i }"
-                @click="activeTab = 'b' + i">{{ b.mapName }} #{{ i + 1 }}
-          <span class="tabx" title="移除该场" @click.stop="askRemoveBattle(b, i)">×</span>
-        </button>
+      <div class="restoolbar">
+        <div class="tabs" :class="{ locked: showColPicker }"
+             :title="showColPicker ? '列选择器打开时不可切换表格，请先点「完成」' : ''">
+          <button v-if="resp.aggregate.length" :disabled="showColPicker"
+                  :class="{ active: activeTab === 'aggregate' }"
+                  @click="activeTab = 'aggregate'">汇总 ({{ resp.aggregate.length }} 名选手)</button>
+          <button v-for="(b, i) in resp.battles" :key="i" :disabled="showColPicker"
+                  :class="{ active: activeTab === 'b' + i }"
+                  @click="activeTab = 'b' + i">{{ b.mapName }} #{{ i + 1 }}
+            <span class="tabx" title="移除该场" @click.stop="askRemoveBattle(b, i)">×</span>
+          </button>
+        </div>
+        <div class="resactions">
+          <span class="dropdown">
+            <button class="ghost sm" @click="toggleColPicker">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" /></svg>选择列 ▾
+            </button>
+            <div v-if="showColPicker" class="colpanel">
+              <div class="colpanel-head">
+                <span class="cph-title">{{ pickerScope === 'agg' ? '汇总表' : '单场表' }}列 · 勾选显示、拖拽排序</span>
+                <button class="linkbtn" @click="selectAllCols">全选</button>
+                <button class="linkbtn" @click="resetCols">重置</button>
+                <button class="linkbtn" @click="showColPicker = false">完成</button>
+              </div>
+              <ul class="collist">
+                <li v-for="(key, idx) in currentOrder" :key="key" draggable="true"
+                    @dragstart="onColDragStart(idx)" @dragover.prevent @drop="onColDrop(idx)"
+                    :class="{ dragging: dragIdx === idx }">
+                  <span class="grip" title="拖拽排序">⋮⋮</span>
+                  <label class="colitem">
+                    <input type="checkbox" :checked="isVisible(key)" @change="toggleCol(key)" />
+                    {{ pickerLabel(key) }}
+                  </label>
+                  <span class="cat">{{ catOf(key) }}</span>
+                </li>
+              </ul>
+            </div>
+          </span>
+          <button class="sm" :disabled="loading" @click="exportXlsx('aggregate')">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>合并汇总
+          </button>
+          <button class="ghost sm" :disabled="loading" @click="exportXlsx('each')">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>每场导出
+          </button>
+        </div>
       </div>
 
       <div v-if="activeTab === 'aggregate' && resp.aggregate.length">
@@ -465,11 +505,16 @@ const aggStats = computed(() => {
 <style>
 body { margin: 0; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; color: #222; background: #f7f8fa; }
 .wrap { max-width: 1400px; margin: 0 auto; padding: 16px 20px; }
-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
-h1 { font-size: 18px; margin: 0; }
-.brand { display: flex; align-items: center; gap: 10px; }
-.logo { width: 30px; height: 30px; border-radius: 7px; background: #e6f1fb; color: #185fa5;
-  display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 16px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding-bottom: 14px; border-bottom: 1px solid #e9edf3; margin-bottom: 18px; }
+h1 { font-size: 17px; margin: 0; font-weight: 600; color: #28313f; line-height: 1.2; }
+.brand { display: flex; align-items: center; gap: 11px; }
+.brandtext { display: flex; flex-direction: column; }
+.subtitle { font-size: 12px; color: #8b94a3; margin: 2px 0 0; }
+.logo { width: 34px; height: 34px; border-radius: 9px; background: #e6f1fb; color: #185fa5;
+  display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 17px; }
+.ic { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; }
 .mcards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 4px 0 12px; }
 .mc { background: #f1f4f8; border-radius: 8px; padding: 9px 13px; }
 .mc .k { font-size: 12px; color: #777; }
@@ -482,22 +527,40 @@ h1 { font-size: 18px; margin: 0; }
 .r-elite { background: #EEEDFE; color: #3C3489; }
 .alive { color: #3B6D11; }
 .dead { color: #9aa1ad; }
-.toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
-button, .filebtn { padding: 7px 14px; border: 1px solid transparent; background: #4f88d6; color: #fff;
+button, .filebtn { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 7px 14px; border: 1px solid transparent; background: #4f88d6; color: #fff; line-height: 1;
   border-radius: 7px; cursor: pointer; font-size: 13px; transition: background .12s, border-color .12s; }
-button:hover:not(:disabled) { background: #4079c9; }
+button:hover:not(:disabled), .filebtn:hover { background: #4079c9; }
 button:disabled { opacity: .5; cursor: default; }
 .ghost { background: #f1f4f8; color: #46566f; border-color: #dbe3ef; }
-.ghost:hover:not(:disabled) { background: #e7ecf4; }
+.ghost:hover:not(:disabled), .filebtn.ghost:hover { background: #e7ecf4; }
 .filebtn input { display: none; }
+.lg { padding: 10px 20px; font-size: 14px; font-weight: 600; border-radius: 9px; }
+.lg .ic { width: 18px; height: 18px; }
+.sm { padding: 5px 11px; font-size: 12px; border-radius: 7px; }
+.sm .ic { width: 14px; height: 14px; }
 .muted { color: #777; font-size: 13px; }
 .error { color: #c00; }
 .warn { color: #8a5200; background: #fff8e8; border: 1px solid #f0d08a; padding: 8px; border-radius: 4px; }
 .warn span, .error span { display: inline-block; margin: 2px 8px 2px 0; }
-.dropzone { border: 1px dashed #9fb4d4; background: #fff; color: #5b6f8f; padding: 16px; text-align: center;
-  border-radius: 6px; margin-bottom: 10px; }
-.dropzone.dragging { border-color: #4f88d6; background: #eef4fb; color: #185fa5; }
-.files { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+/* 上传区 (两态: 空状态卡 / 已选文件条) */
+.uploadwrap { margin-bottom: 16px; }
+.uploadcard { border: 1.5px dashed #c2d0e4; background: #fbfcfe; border-radius: 12px;
+  padding: 30px 20px; text-align: center; transition: border-color .12s, background .12s; }
+.uploadcard.dragging { border-color: #4f88d6; background: #eef4fb; }
+.up-icon { display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 52px;
+  border-radius: 50%; background: #e6f1fb; color: #3a82d2; margin-bottom: 12px; }
+.up-icon .ic { width: 26px; height: 26px; }
+.up-title { font-size: 15px; font-weight: 600; color: #3a4555; }
+.up-sub { font-size: 13px; color: #9098a6; margin-top: 4px; }
+.up-actions { display: flex; gap: 10px; justify-content: center; margin-top: 16px; }
+.filebar { display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid #e3e8ef;
+  border-radius: 10px; padding: 9px 13px; transition: border-color .12s, background .12s; }
+.filebar.dragging { border-color: #4f88d6; background: #eef4fb; }
+.fb-ic { width: 18px; height: 18px; color: #5b86c4; }
+.fb-count { font-size: 13px; font-weight: 600; color: #3a4555; flex: none; }
+.fb-chips { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.actionrow { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
 .chip { background: #eef2f7; border: 1px solid #d7dee9; border-radius: 4px; padding: 3px 6px;
   font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
 .chipx { padding: 0 4px; border: none; background: transparent; color: #8a93a6; font-size: 14px;
@@ -508,7 +571,7 @@ button:disabled { opacity: .5; cursor: default; }
 .tabx:hover { background: #d9534f; color: #fff; opacity: 1; }
 /* 列选择下拉面板 */
 .dropdown { position: relative; display: inline-block; }
-.colpanel { position: absolute; top: 110%; left: 0; z-index: 50; width: 260px;
+.colpanel { position: absolute; top: 110%; right: 0; z-index: 50; width: 260px;
   background: #fff; border: 1px solid #c7d3e6; border-radius: 6px;
   box-shadow: 0 6px 24px rgba(0,0,0,.15); padding: 6px 0; }
 .colpanel-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
@@ -526,7 +589,9 @@ button:disabled { opacity: .5; cursor: default; }
 .colitem { flex: 1; font-size: 13px; display: flex; align-items: center; gap: 6px;
   white-space: nowrap; cursor: default; }
 .cat { font-size: 11px; color: #9aa3b2; }
-.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 6px; }
+.restoolbar { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; margin: 16px 0 8px; }
+.resactions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; min-width: 0; margin: 0; }
 .tabs button { background: #f1f4f8; color: #46566f; border-color: #dbe3ef; }
 .tabs button:hover:not(:disabled) { background: #e7ecf4; }
 .tabs button.active { background: #e6f1fb; color: #185fa5; border-color: #bcd8f2; font-weight: 600; }

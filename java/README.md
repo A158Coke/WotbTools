@@ -2,7 +2,7 @@
 
 `java/` 是项目后续主线。基于同一套 Java 核心能力同时交付两种形态：
 
-- **Java 离线 exe**：无须安装 Python / JDK，双击运行，自动打开浏览器，本地选择/拖拽回放并导出 Excel。
+- **Java 离线 exe**：无须安装 JDK，双击运行，自动打开浏览器，本地选择/拖拽回放并导出 Excel。
 - **Web 版**：Spring Boot 4 后端，Vue 3 前端，支持浏览器上传、预览、下载。
 
 当前两种形态均已实现。路线图见 [../TODO.md](../TODO.md)。
@@ -60,7 +60,7 @@ java/offline/dist-desktop/WoT Blitz Replay Extractor/
 offline\dist-desktop\WoT Blitz Replay Extractor\WoT Blitz Replay Extractor.exe
 ```
 
-双击即可，无需 Python、JDK 或 Node.js。首次启动可能略慢（JVM 启动）。
+双击即可，无需 JDK 或 Node.js。首次启动可能略慢（JVM 启动）。
 
 ## Web 版（Docker）
 
@@ -123,7 +123,7 @@ java -jar wotb-web/target/wotb-web.jar --desktop
 - `player`：单场玩家数据列。
 - `aggregate`：多场汇总列。
 
-中文显示名不在 API 里：前端有自己的 `PLAYER_LABELS` / `AGG_LABELS` 映射，导出层（`Columns.java` / `ExcelExporter` / Python）各自维护 xlsx 表头。详见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
+中文显示名不在 API 里：前端有自己的 `PLAYER_LABELS` / `AGG_LABELS` 映射，导出层（`Columns.java` / `ExcelExporter`）各自维护 xlsx 表头。详见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
 
 ### `POST /api/preview`
 
@@ -160,7 +160,7 @@ mvn -s settings.xml test
 
 测试覆盖：
 
-- `wotb-core` 的 `ParityTest`：与 Python 版输出一致性的集成测试，覆盖解析、字段不变量、去重、汇总、xlsx 导出。
+- `wotb-core` 的 `ParityTest`：集成测试，覆盖解析、字段不变量、去重、汇总、xlsx 导出。
 - `wotb-web` 的 `WebApiTest`：`/api/columns`、`/api/preview`、`/api/export` 的 controller 测试。
 
 测试样本来自仓库根目录的 `common/data/`。
@@ -186,8 +186,6 @@ spring.web.resources.static-locations=classpath:/static/
 
 ## 维护注意
 
-- Java 版字段号、列定义和汇总规则应与 Python 版同步。
-- 修改解析逻辑后同时更新 `ParityTest` 和 Python `test_wotb.py`。
 - 列定义在 `wotb-core/.../Columns.java` 中集中管理，前端通过 `/api/columns` 获取，不在前端硬编码业务字段。
 - 车辆库单一来源在 `common/tankopedia.json`；`wotb-core` 构建时自动复制到 classpath，勿在模块内再放副本。
 - 离线 exe 和 Web 版复用同一个 `wotb-core`，不复制解析逻辑。
