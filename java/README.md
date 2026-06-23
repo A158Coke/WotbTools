@@ -173,13 +173,19 @@ mvn -s settings.xml test
 - `java/settings-docker.xml`：Docker 构建用 Maven settings。
 - `frontend/package-lock.json`：固定前端依赖版本。
 
-默认端口在 `wotb-web/src/main/resources/application.properties`：
+默认端口在 `wotb-web/src/main/resources/application.yml`：
 
-```properties
-server.port=8087
-spring.servlet.multipart.max-file-size=20MB
-spring.servlet.multipart.max-request-size=200MB
-spring.web.resources.static-locations=classpath:/static/
+```yaml
+server:
+  port: 8087
+spring:
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 200MB
+  web:
+    resources:
+      static-locations: classpath:/static/
 ```
 
 桌面模式下会忽略 `server.port`，自动选择 8087+ 的可用端口。
