@@ -13,7 +13,7 @@
 - **API 纯英文**:`/api/columns`、DTO 只回 `key`(snake_case) + 数据,绝不放中文。
 - **中文显示名分散在两类出口**,改名要全改:
   - 前端:`java/frontend/src/App.vue` 的 `PLAYER_LABELS`(单场)与 `AGG_LABELS`(汇总)。
-  - 导出:`java/wotb-core/.../Columns.java`(单场 xlsx)、`java/wotb-core/.../ExcelExporter.java`(汇总 xlsx)、`python-legacy/wotb_extractor.py`(`STAT_COLUMNS` + `export_aggregate_xlsx`)。
+  - 导出:`java/wotb-core/.../Columns.java`(单场 xlsx)、`java/wotb-core/.../ExcelExporter.java`(汇总 xlsx)。
 - **列 `key` 三方一致**:API / 前端 / 导出。
 - **改完必过测试 + 更新文档**(见末尾)。
 
@@ -26,8 +26,7 @@
 1. `App.vue` → `PLAYER_LABELS` 和/或 `AGG_LABELS` 中该 `key` 的值。
 2. `Columns.java`(若是单场列)对应 `Col(...)` 的 title。
 3. `ExcelExporter.java` 的汇总 `AggCol(...)`(若是汇总列)。
-4. `python-legacy/wotb_extractor.py` 的 `STAT_COLUMNS`(单场)/ `export_aggregate_xlsx` 的 `agg_cols`(汇总)。
-5. 验证 + 文档。
+4. 验证 + 文档。
 
 > 命名约定:辅助伤害=「协助伤害」、承受伤害=「损失血量」、抵挡伤害=「格挡」、击伤敌数=「击伤」;汇总「总X / 场均X」。
 
@@ -38,16 +37,14 @@
    - 单场:`Columns.java` 加一条 `Col(title, key, xlsxW, pxW, num, getter)`。
    - 汇总:`Mapper.AGG_COLS`(key+num+getter) 和 `ExcelExporter` 的汇总 `AggCol`(title+宽+num+getter) 各加一条;指标计算在 `Aggregator.Agg`。
 3. **API 暴露**:`/api/columns` 自动包含(来自 Columns/AGG_COLS 的 key)。
-4. **前端**:`App.vue` 的 `PLAYER_LABELS`/`AGG_LABELS` 补该 key 的中文;如要默认显示,改 `DEFAULT_VISIBLE`。
-5. **Python**(若历史版也要):`RESULT_UINT_FIELDS` / `STAT_COLUMNS` / `aggregate_players` / `export_aggregate_xlsx`。
+5. **前端**:`App.vue` 的 `PLAYER_LABELS`/`AGG_LABELS` 补该 key 的中文;如要默认显示,改 `DEFAULT_VISIBLE`。
 6. 验证 + 文档(含 DEVELOPER_GUIDE 字段表)。
 
 ## 配方 C:改解析逻辑(字段含义/protobuf 字段号)
 
 1. `ReplayParser.java`(及 `Protobuf`/`PickleReader` 如涉及格式)。
-2. 同步 Python `wotb_extractor.py` 的对应解析(若需保持历史版一致)。
-3. 更新 `ParityTest` 与 `test_wotb.py` 的断言/期望值。
-4. 验证 + 更新 DEVELOPER_GUIDE 的字段表。
+2. 更新 `ParityTest` 的断言/期望值。
+3. 验证 + 更新 DEVELOPER_GUIDE 的字段表。
 
 ## 配方 D:纯前端交互/样式
 
@@ -55,7 +52,7 @@
 
 ## 配方 F:调评分(权重/系数/阈值)
 
-只改 `common/rating.json`(权重 assist/block/killValue/winBonus、minSamples、scale、车型系数 classFactor)。Java 经 classpath、Python 经 `../common` 共用同一份,**改它即生效不必改代码**。改完跑测试(均值应仍 ≈ scale)、重建 exe/镜像。改公式结构(而非数值)才需动 `Rating.java` + Python `compute_ratings` 两处。
+只改 `common/rating.json`(权重 assist/block/killValue/winBonus、minSamples、scale、车型系数 classFactor)。改完跑测试(均值应仍 ≈ scale)、重建 exe/镜像。改公式结构(而非数值)才需动 `Rating.java`。
 
 ## 配方 E:更新车辆库
 
@@ -67,7 +64,6 @@
 
 ```bash
 cd java && JAVA_HOME=<jdk21> mvn -s settings.xml test     # ParityTest + WebApiTest
-cd python-legacy && python test_wotb.py                    # 26 项 (历史版)
 cd java/frontend && npm run build                         # 改了前端时
 ```
 
