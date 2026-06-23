@@ -19,45 +19,45 @@ final class Mapper {
     private Mapper() {
     }
 
-    /** 玩家表列定义。 */
+    /** 玩家表列定义 (纯数据: key + 是否数值; 中文名由前端映射)。 */
     static List<Dtos.ColumnDef> playerColumns() {
         List<Dtos.ColumnDef> out = new ArrayList<>();
         for (Columns.Col c : Columns.PLAYER) {
-            out.add(new Dtos.ColumnDef(c.title(), c.key(), c.num()));
+            out.add(new Dtos.ColumnDef(c.key(), c.num()));
         }
         return out;
     }
 
-    /** 汇总表列定义 (与 ExcelExporter 的「汇总」表一致)。 */
-    record AggCol(String title, String key, boolean num, Function<Aggregator.Agg, Object> get) {
+    /** 汇总表列定义 (key + 是否数值 + 取值函数; 中文名由前端/导出层各自映射)。 */
+    record AggCol(String key, boolean num, Function<Aggregator.Agg, Object> get) {
     }
 
     static final List<AggCol> AGG_COLS = List.of(
-            new AggCol("玩家", "nickname", false, a -> a.nickname),
-            new AggCol("战队", "clan", false, a -> a.clan),
-            new AggCol("场次", "battles", true, a -> a.battles),
-            new AggCol("胜场", "wins", true, a -> a.wins),
-            new AggCol("胜率%", "win_rate", true, a -> r1(a.winRate())),
-            new AggCol("存活率%", "survival_rate", true, a -> r1(a.survivalRate())),
-            new AggCol("总击杀", "kills", true, a -> a.kills),
-            new AggCol("均击杀", "kills_avg", true, a -> r2(a.avg(a.kills))),
-            new AggCol("总伤害", "damage", true, a -> a.damage),
-            new AggCol("均伤害", "damage_avg", true, a -> r1(a.avg(a.damage))),
-            new AggCol("总辅助伤害", "assisted", true, a -> a.assisted),
-            new AggCol("均辅助伤害", "assisted_avg", true, a -> r1(a.avg(a.assisted))),
-            new AggCol("均承受伤害", "received_avg", true, a -> r1(a.avg(a.received))),
-            new AggCol("均抵挡伤害", "blocked_avg", true, a -> r1(a.avg(a.blocked))),
-            new AggCol("命中率%", "hit_rate", true, a -> r1(a.hitRate())),
-            new AggCol("击穿率%", "pen_rate", true, a -> r1(a.penRate())),
-            new AggCol("均击伤敌数", "enemies_damaged_avg", true, a -> r2(a.avg(a.enemiesDamaged))),
-            new AggCol("用车", "tanks", false, Aggregator.Agg::tanksStr),
-            new AggCol("账号ID", "account_id", true, a -> a.accountId)
+            new AggCol("nickname", false, a -> a.nickname),
+            new AggCol("clan", false, a -> a.clan),
+            new AggCol("battles", true, a -> a.battles),
+            new AggCol("wins", true, a -> a.wins),
+            new AggCol("win_rate", true, a -> r1(a.winRate())),
+            new AggCol("survival_rate", true, a -> r1(a.survivalRate())),
+            new AggCol("kills", true, a -> a.kills),
+            new AggCol("kills_avg", true, a -> r2(a.avg(a.kills))),
+            new AggCol("damage", true, a -> a.damage),
+            new AggCol("damage_avg", true, a -> r1(a.avg(a.damage))),
+            new AggCol("assisted", true, a -> a.assisted),
+            new AggCol("assisted_avg", true, a -> r1(a.avg(a.assisted))),
+            new AggCol("received_avg", true, a -> r1(a.avg(a.received))),
+            new AggCol("blocked_avg", true, a -> r1(a.avg(a.blocked))),
+            new AggCol("hit_rate", true, a -> r1(a.hitRate())),
+            new AggCol("pen_rate", true, a -> r1(a.penRate())),
+            new AggCol("enemies_damaged_avg", true, a -> r2(a.avg(a.enemiesDamaged))),
+            new AggCol("tanks", false, Aggregator.Agg::tanksStr),
+            new AggCol("account_id", true, a -> a.accountId)
     );
 
     static List<Dtos.ColumnDef> aggregateColumns() {
         List<Dtos.ColumnDef> out = new ArrayList<>();
         for (AggCol c : AGG_COLS) {
-            out.add(new Dtos.ColumnDef(c.title(), c.key(), c.num()));
+            out.add(new Dtos.ColumnDef(c.key(), c.num()));
         }
         return out;
     }

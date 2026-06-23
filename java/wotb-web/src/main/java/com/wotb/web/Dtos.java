@@ -20,8 +20,8 @@ public final class Dtos {
     public record AggRow(java.util.Map<String, Object> cells) {
     }
 
-    /** 列定义 (供前端构建表头/列选择/排序)。 */
-    public record ColumnDef(String title, String key, boolean num) {
+    /** 列定义 (纯数据形状: 字段键 + 是否数值)。中文显示名由前端/导出层各自映射。 */
+    public record ColumnDef(String key, boolean num) {
     }
 
     public record PreviewResponse(List<BattleDto> battles,

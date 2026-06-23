@@ -33,15 +33,15 @@ public final class Columns {
             new Col("存活", "survived_label", 6, 45, false, p -> p.survived ? "存活" : "阵亡"),
             new Col("击杀", "kills", 6, 45, true, p -> p.kills),
             new Col("伤害", "damage_dealt", 8, 65, true, p -> p.damageDealt),
-            new Col("辅助伤害", "damage_assisted", 9, 65, true, p -> p.damageAssisted),
-            new Col("承受伤害", "damage_received", 9, 65, true, p -> p.damageReceived),
-            new Col("抵挡伤害", "damage_blocked", 9, 65, true, p -> p.damageBlocked),
+            new Col("协助伤害", "damage_assisted", 9, 65, true, p -> p.damageAssisted),
+            new Col("损失血量", "damage_received", 9, 65, true, p -> p.damageReceived),
+            new Col("格挡", "damage_blocked", 9, 65, true, p -> p.damageBlocked),
             new Col("发射", "n_shots", 6, 45, true, p -> p.nShots),
             new Col("命中", "n_hits_dealt", 6, 45, true, p -> p.nHitsDealt),
             new Col("击穿", "n_penetrations_dealt", 6, 45, true, p -> p.nPenetrationsDealt),
             new Col("被命中", "n_hits_received", 7, 50, true, p -> p.nHitsReceived),
             new Col("被击穿", "n_penetrations_received", 7, 50, true, p -> p.nPenetrationsReceived),
-            new Col("击伤敌数", "n_enemies_damaged", 9, 55, true, p -> p.nEnemiesDamaged)
+            new Col("击伤", "n_enemies_damaged", 9, 55, true, p -> p.nEnemiesDamaged)
     );
 
     public static final List<Col> TAIL = List.of(
