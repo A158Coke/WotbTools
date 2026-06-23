@@ -320,9 +320,12 @@ button:disabled { opacity: .5; cursor: default; }
 .tabs button.active { background: #2f5597; color: #fff; }
 .info { color: #1b5e20; font-size: 13px; margin: 6px 0; }
 .tablewrap { overflow-x: auto; background: #fff; }
-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+/* 按内容自然宽度排列(不挤压列), 内容窄时仍填满容器; 横向滚动可完整看到末列 */
+table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 13px; }
 th, td { border: 1px solid #cfd8e3; padding: 4px 8px; white-space: nowrap; }
 th { background: #2f5597; color: #fff; cursor: pointer; user-select: none; position: sticky; top: 0; }
+/* 末列(账号ID)留出右侧余量, 不贴边/被滚动条裁切 */
+th:last-child, td:last-child { padding-right: 16px; }
 td.num { text-align: center; }
 td.left { text-align: left; }
 tr.t1 td { background: #ddebf7; }
