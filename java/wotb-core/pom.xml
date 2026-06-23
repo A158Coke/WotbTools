@@ -37,6 +37,7 @@
                 <includes>
                     <include>tankopedia.json</include>
                     <include>rating.json</include>
+                    <include>map_names.json</include>
                 </includes>
             </resource>
         </resources>

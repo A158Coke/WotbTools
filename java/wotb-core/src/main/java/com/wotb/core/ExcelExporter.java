@@ -88,7 +88,7 @@ public final class ExcelExporter {
 
         String[][] rows = {
                 {"游戏版本", b.version},
-                {"地图", b.mapName},
+                {"地图", MapNames.cn(b.mapName)},
                 {"开始时间", fmt(b.startTime, DT)},
                 {"战斗时长", duration(b.durationS)},
                 {"获胜队伍", Players.TEAM_NAME.getOrDefault(b.winnerTeam == null ? 0 : b.winnerTeam, "平局/未知")},
@@ -246,7 +246,7 @@ public final class ExcelExporter {
             for (PlayerResult p : Players.sorted(b.players)) {
                 Players.enrich(p, tp);
                 p.tmpDate = date;
-                p.tmpMap = b.mapName;
+                p.tmpMap = MapNames.cn(b.mapName);
                 p.tmpResult = (winner != null && winner != 0)
                         ? (p.team == winner ? "胜" : "负") : "平";
                 Row row = ws.createRow(rIdx++);
@@ -277,7 +277,7 @@ public final class ExcelExporter {
             Row r = ws.createRow(rIdx++);
             r.createCell(0).setCellValue(i + 1);
             r.createCell(1).setCellValue(fmt(b.startTime, DT));
-            r.createCell(2).setCellValue(b.mapName);
+            r.createCell(2).setCellValue(MapNames.cn(b.mapName));
             r.createCell(3).setCellValue(duration(b.durationS));
             r.createCell(4).setCellValue(Players.TEAM_NAME.getOrDefault(b.winnerTeam == null ? 0 : b.winnerTeam, "平局/未知"));
             r.createCell(5).setCellValue(b.nPlayers());

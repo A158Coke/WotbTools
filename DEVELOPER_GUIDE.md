@@ -205,6 +205,7 @@ Java 离线 exe、Java Web 版必须保持以下规则一致：
 - 多场 xlsx 的 `汇总`、`明细`、`战斗列表` 语义。
 - 车辆库 fallback：找不到车辆时显示 `#tank_id`。
 - 列的 `key`（snake_case）在 API、前端映射、导出三方一致；中文显示名在前端两套映射 + 导出标签一致。
+- **地图名中文化**：`meta.json` 的 `mapName` 是内部英文名（如 `lagoon`），中文名映射**单一来源** `common/map_names.json`（构建复制到 classpath）。导出走 `MapNames.cn()`（`ExcelExporter` 三处：单场信息/明细列/战斗列表），前端 `App.vue` 直接 `import` 同一份 JSON 用 `mapLabel()`（标签页/地图卡/移除确认）。API 仍回原始英文 `mapName`。未匹配则原样显示。
 
 如修改字段解释或列名，必须同步：
 

@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import MAP_NAMES from '../../../common/map_names.json'
 
 const files = ref([])
 const loading = ref(false)
@@ -46,6 +47,8 @@ const AGG_LABELS = {
 }
 const playerLabel = (key) => PLAYER_LABELS[key] || key
 const aggLabel = (key) => AGG_LABELS[key] || key
+// 地图内部名 -> 中文 (与导出共用 common/map_names.json); 未匹配原样返回。
+const mapLabel = (m) => MAP_NAMES[(m || '').toLowerCase().trim()] || m
 
 onMounted(async () => {
   try {
@@ -95,7 +98,7 @@ function removeFile(f) {
 
 // 移除某一场: 先弹确认对话框
 function askRemoveBattle(battle, idx) {
-  pendingRemove.value = { battle, label: `${battle.mapName} #${idx + 1}` }
+  pendingRemove.value = { battle, label: `${mapLabel(battle.mapName)} #${idx + 1}` }
 }
 
 function cancelRemove() {
@@ -397,7 +400,7 @@ const aggStats = computed(() => {
                   @click="activeTab = 'aggregate'">汇总 ({{ resp.aggregate.length }} 名选手)</button>
           <button v-for="(b, i) in resp.battles" :key="i" :disabled="showColPicker"
                   :class="{ active: activeTab === 'b' + i }"
-                  @click="activeTab = 'b' + i">{{ b.mapName }} #{{ i + 1 }}
+                  @click="activeTab = 'b' + i">{{ mapLabel(b.mapName) }} #{{ i + 1 }}
             <span class="tabx" title="移除该场" @click.stop="askRemoveBattle(b, i)">×</span>
           </button>
         </div>
@@ -463,7 +466,7 @@ const aggStats = computed(() => {
 
       <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i">
         <div class="mcards">
-          <div class="mc"><div class="k">地图</div><div class="v">{{ b.mapName }}</div></div>
+          <div class="mc"><div class="k">地图</div><div class="v">{{ mapLabel(b.mapName) }}</div></div>
           <div class="mc"><div class="k">时长</div><div class="v">{{ fmtDuration(b.durationS) }}</div></div>
           <div class="mc"><div class="k">获胜</div><div class="v">{{ TEAM[b.winnerTeam] || '平局/未知' }}</div></div>
           <div class="mc"><div class="k">玩家</div><div class="v">{{ b.players.length }}</div></div>
