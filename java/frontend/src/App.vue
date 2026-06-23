@@ -6,7 +6,10 @@ const loading = ref(false)
 const error = ref('')
 const resp = ref(null)
 const playerCols = ref([])
-const visibleKeys = ref([])
+const visibleKeys = ref([])        // 单场表显示的列
+const aggVisibleKeys = ref([])     // 汇总表显示的列
+const draftKeys = ref([])          // 列选择器里的草稿(点"应用"才生效)
+const pickerScope = ref('player')  // 当前选择器作用的表: 'player' | 'agg'
 const showColPicker = ref(false)
 const activeTab = ref('aggregate')
 const sortState = ref({})
@@ -84,6 +87,11 @@ function clearFiles() {
   error.value = ''
 }
 
+function removeFile(f) {
+  const k = fileKey(f)
+  files.value = files.value.filter(x => fileKey(x) !== k)
+}
+
 function formData() {
   const fd = new FormData()
   files.value.forEach(f => fd.append('files', f, displayName(f)))
@@ -99,6 +107,10 @@ async function preview() {
     resp.value = await r.json()
     playerCols.value = resp.value.playerColumns
     if (!visibleKeys.value.length) visibleKeys.value = [...DEFAULT_VISIBLE]
+    // 汇总表默认显示全部列
+    if (!aggVisibleKeys.value.length) {
+      aggVisibleKeys.value = (resp.value.aggregateColumns || []).map(c => c.key)
+    }
     activeTab.value = resp.value.battles.length > 1 ? 'aggregate' : 'b0'
   } catch (e) {
     error.value = e.message
@@ -147,17 +159,41 @@ async function shutdown() {
   }
 }
 
-const shownCols = computed(() =>
-  visibleKeys.value.map(k => playerCols.value.find(c => c.key === k)).filter(Boolean))
-
 const aggCols = computed(() => resp.value?.aggregateColumns || [])
 
+// 各表实际显示的列(按规范列顺序过滤)
+const shownCols = computed(() =>
+  playerCols.value.filter(c => visibleKeys.value.includes(c.key)))
+const shownAggCols = computed(() =>
+  aggCols.value.filter(c => aggVisibleKeys.value.includes(c.key)))
+
+// 列选择器作用于"当前所在的表"
+const colScope = computed(() => (activeTab.value === 'aggregate' ? 'agg' : 'player'))
+const pickerCols = computed(() => (pickerScope.value === 'agg' ? aggCols.value : playerCols.value))
+const pickerLabel = (key) => (pickerScope.value === 'agg' ? aggLabel(key) : playerLabel(key))
+
+function openColPicker() {
+  if (showColPicker.value) { showColPicker.value = false; return }
+  pickerScope.value = colScope.value
+  const current = pickerScope.value === 'agg' ? aggVisibleKeys.value : visibleKeys.value
+  draftKeys.value = [...current]
+  showColPicker.value = true
+}
+
+function applyColumns() {
+  if (pickerScope.value === 'agg') aggVisibleKeys.value = [...draftKeys.value]
+  else visibleKeys.value = [...draftKeys.value]
+  showColPicker.value = false
+}
+
 function setAllColumns() {
-  visibleKeys.value = playerCols.value.map(c => c.key)
+  draftKeys.value = pickerCols.value.map(c => c.key)
 }
 
 function resetColumns() {
-  visibleKeys.value = [...DEFAULT_VISIBLE]
+  draftKeys.value = pickerScope.value === 'agg'
+    ? aggCols.value.map(c => c.key)
+    : [...DEFAULT_VISIBLE]
 }
 
 function sortBy(scope, col) {
@@ -212,7 +248,7 @@ function fmtDuration(s) {
       <button :disabled="loading || !files.length" @click="preview">解析预览</button>
       <button :disabled="loading || !files.length" @click="exportXlsx('aggregate')">合并汇总(去重)</button>
       <button :disabled="loading || !files.length" @click="exportXlsx('each')">每场单独导出</button>
-      <button v-if="resp" class="ghost" @click="showColPicker = !showColPicker">选择列</button>
+      <button v-if="resp" class="ghost" @click="openColPicker">选择列</button>
       <span class="muted">{{ files.length ? `已选 ${files.length} 个回放` : '未选择文件' }}</span>
       <span v-if="loading" class="muted">处理中…</span>
     </section>
@@ -225,18 +261,24 @@ function fmtDuration(s) {
     </section>
 
     <section v-if="files.length" class="files">
-      <span v-for="f in files" :key="fileKey(f)">{{ displayName(f) }}</span>
+      <span v-for="f in files" :key="fileKey(f)">
+        {{ displayName(f) }}
+        <button class="chipx" title="移除该回放" @click="removeFile(f)">×</button>
+      </span>
     </section>
 
     <p v-if="error" class="error">{{ error }}</p>
 
-    <div v-if="showColPicker && playerCols.length" class="colpicker">
-      <label v-for="c in playerCols" :key="c.key">
-        <input type="checkbox" :value="c.key" v-model="visibleKeys" /> {{ playerLabel(c.key) }}
+    <div v-if="showColPicker && pickerCols.length" class="colpicker">
+      <div class="colTitle">选择「{{ pickerScope === 'agg' ? '汇总表' : '单场表' }}」显示的列：</div>
+      <label v-for="c in pickerCols" :key="c.key">
+        <input type="checkbox" :value="c.key" v-model="draftKeys" /> {{ pickerLabel(c.key) }}
       </label>
       <div class="colActions">
+        <button @click="applyColumns">应用</button>
         <button class="ghost" @click="setAllColumns">全选</button>
         <button class="ghost" @click="resetColumns">重置默认</button>
+        <button class="ghost" @click="showColPicker = false">取消</button>
       </div>
     </div>
 
@@ -260,11 +302,11 @@ function fmtDuration(s) {
       <div v-if="activeTab === 'aggregate' && resp.aggregate.length" class="tablewrap">
         <table>
           <thead><tr>
-            <th v-for="c in aggCols" :key="c.key" @click="sortBy('agg', c)">{{ aggLabel(c.key) }}{{ arrow('agg', c.key) }}</th>
+            <th v-for="c in shownAggCols" :key="c.key" @click="sortBy('agg', c)">{{ aggLabel(c.key) }}{{ arrow('agg', c.key) }}</th>
           </tr></thead>
           <tbody>
-            <tr v-for="(row, i) in sorted(resp.aggregate, 'agg', aggCols)" :key="i">
-              <td v-for="c in aggCols" :key="c.key" :class="{ num: c.num }">{{ row.cells[c.key] }}</td>
+            <tr v-for="(row, i) in sorted(resp.aggregate, 'agg', shownAggCols)" :key="i">
+              <td v-for="c in shownAggCols" :key="c.key" :class="{ num: c.num }">{{ row.cells[c.key] }}</td>
             </tr>
           </tbody>
         </table>
@@ -310,11 +352,16 @@ button:disabled { opacity: .5; cursor: default; }
   border-radius: 6px; margin-bottom: 10px; }
 .dropzone.dragging { border-color: #2f5597; background: #eef4ff; color: #2f5597; }
 .files { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-.files span { background: #eef2f7; border: 1px solid #d7dee9; border-radius: 4px; padding: 3px 6px; font-size: 12px; }
+.files span { background: #eef2f7; border: 1px solid #d7dee9; border-radius: 4px; padding: 3px 6px;
+  font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
+.chipx { padding: 0 4px; border: none; background: transparent; color: #8a93a6; font-size: 14px;
+  line-height: 1; cursor: pointer; border-radius: 3px; }
+.chipx:hover { background: #d9534f; color: #fff; }
 .colpicker { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 12px;
   background: #fff; border: 1px solid #d6e0ef; border-radius: 4px; margin-bottom: 10px; }
+.colTitle { flex-basis: 100%; font-size: 13px; color: #2f5597; font-weight: bold; }
 .colpicker label { font-size: 13px; white-space: nowrap; }
-.colActions { flex-basis: 100%; display: flex; gap: 8px; }
+.colActions { flex-basis: 100%; display: flex; gap: 8px; margin-top: 4px; }
 .tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 12px 0 6px; }
 .tabs button { background: #e8edf5; color: #2f5597; border-color: #c7d3e6; }
 .tabs button.active { background: #2f5597; color: #fff; }
