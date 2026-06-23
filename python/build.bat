@@ -6,6 +6,7 @@ chcp 65001 >nul
 set "COMMON=..\common"
 set "ICON=%COMMON%\assets\icon.ico"
 set "TANKS=%COMMON%\tankopedia.json"
+set "RATING=%COMMON%\rating.json"
 
 if not exist "%ICON%" (
   echo 生成图标 icon.ico ...
@@ -13,10 +14,10 @@ if not exist "%ICON%" (
 )
 
 echo [1/2] 构建图形界面版 wotb_gui.exe ...
-python -m PyInstaller --onefile --windowed --name wotb_gui --icon "%ICON%" --add-data "%TANKS%;." --add-data "%ICON%;." wotb_gui.py
+python -m PyInstaller --onefile --windowed --name wotb_gui --icon "%ICON%" --add-data "%TANKS%;." --add-data "%RATING%;." --add-data "%ICON%;." wotb_gui.py
 
 echo [2/2] 构建命令行版 wotb_extractor.exe ...
-python -m PyInstaller --onefile --console --name wotb_extractor --icon "%ICON%" --add-data "%TANKS%;." wotb_extractor.py
+python -m PyInstaller --onefile --console --name wotb_extractor --icon "%ICON%" --add-data "%TANKS%;." --add-data "%RATING%;." wotb_extractor.py
 
 echo.
 echo 构建完成:

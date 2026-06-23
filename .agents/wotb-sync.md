@@ -53,6 +53,10 @@
 
 只动 `App.vue`(+ 必要时 `online/nginx.conf`)。不碰后端/导出。改完 `npm run build`,并在文档记一句。
 
+## 配方 F:调评分(权重/系数/阈值)
+
+只改 `common/rating.json`(权重 assist/block/killValue/winBonus、minSamples、scale、车型系数 classFactor)。Java 经 classpath、Python 经 `../common` 共用同一份,**改它即生效不必改代码**。改完跑测试(均值应仍 ≈ scale)、重建 exe/镜像。改公式结构(而非数值)才需动 `Rating.java` + Python `compute_ratings` 两处。
+
 ## 配方 E:更新车辆库
 
 `cd python && python update_tankopedia.py`(写 `common/tankopedia.json`,需联网)→ 跑测试 → 重建 exe/镜像。Java 构建会自动把 `common/tankopedia.json` 复制到 classpath,无需手动同步。

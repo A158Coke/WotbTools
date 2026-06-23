@@ -31,11 +31,12 @@
 
     <build>
         <resources>
-            <!-- 车辆库单一来源在仓库根的 common/, 构建时复制到 classpath:/tankopedia.json -->
+            <!-- 共享资源单一来源在仓库根 common/: 车辆库 + 评分配置, 构建时复制到 classpath -->
             <resource>
                 <directory>${project.basedir}/../../common</directory>
                 <includes>
                     <include>tankopedia.json</include>
+                    <include>rating.json</include>
                 </includes>
             </resource>
         </resources>

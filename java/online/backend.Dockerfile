@@ -2,8 +2,9 @@
 # 构建上下文为仓库根: 需要 common/tankopedia.json (车辆库单一来源) 与 java/。
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
-# 车辆库 (wotb-core 通过 ../../common/tankopedia.json 引用)
+# 共享资源 (wotb-core 通过 ../../common 引用): 车辆库 + 评分配置
 COPY common/tankopedia.json common/tankopedia.json
+COPY common/rating.json common/rating.json
 # 先拷 pom 拉依赖 (利用缓存)
 COPY java/pom.xml java/settings-docker.xml java/
 COPY java/wotb-core/pom.xml java/wotb-core/pom.xml

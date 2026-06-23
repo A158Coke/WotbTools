@@ -509,34 +509,59 @@ def _safe_div(a, b):
 
 # ---------------------------------------------------------------------------
 # 评分 (自包含, 按车型基准归一化; 与 Java Rating.java 一致)
+# 可调参数在 common/rating.json (与 Java 共用同一份), 缺失则用内置默认。
 # ---------------------------------------------------------------------------
-RATING_W_ASSIST = 0.6
-RATING_W_BLOCK = 0.35
-RATING_KILL_VALUE = 200
-RATING_WIN_BONUS = 0.05
-RATING_MIN_SAMPLES = 5
-RATING_SCALE = 1000
-# 车型难度系数(经验默认, 可调): 同类样本不足时 基准 = 全体均值 * 系数
-RATING_CLASS_FACTOR = {"重坦": 1.0, "中坦": 0.9, "TD": 1.0, "轻坦": 0.7, "其他": 0.9}
-RATING_DEFAULT_FACTOR = 1.0
+_RATING_DEFAULTS = {
+    "assist": 0.6, "block": 0.35, "killValue": 200, "winBonus": 0.05,
+    "minSamples": 5, "scale": 1000,
+    "classFactor": {"重坦": 1.0, "中坦": 0.9, "TD": 1.0, "轻坦": 0.7, "其他": 0.9},
+    "defaultFactor": 1.0,
+}
+_RATING_CFG = None
 
 
-def effective_contribution(r):
+def rating_config():
+    """读取 common/rating.json(只读一次); 缺失/损坏用内置默认。"""
+    global _RATING_CFG
+    if _RATING_CFG is None:
+        cfg = dict(_RATING_DEFAULTS)
+        cfg["classFactor"] = dict(_RATING_DEFAULTS["classFactor"])
+        try:
+            with open(resource_path("rating.json"), encoding="utf-8") as fp:
+                data = json.load(fp)
+            w = data.get("weights", {})
+            for k in ("assist", "block", "killValue", "winBonus"):
+                if k in w:
+                    cfg[k] = w[k]
+            for k in ("minSamples", "scale"):
+                if k in data:
+                    cfg[k] = data[k]
+            if isinstance(data.get("classFactor"), dict) and data["classFactor"]:
+                cfg["classFactor"] = data["classFactor"]
+        except Exception:
+            pass
+        _RATING_CFG = cfg
+    return _RATING_CFG
+
+
+def effective_contribution(r, cfg=None):
     """有效贡献(伤害当量)。"""
+    cfg = cfg or rating_config()
     return (r["damage_dealt"]
-            + RATING_W_ASSIST * r["damage_assisted"]
-            + RATING_W_BLOCK * r["damage_blocked"]
-            + RATING_KILL_VALUE * r["kills"])
+            + cfg["assist"] * r["damage_assisted"]
+            + cfg["block"] * r["damage_blocked"]
+            + cfg["killValue"] * r["kills"])
 
 
 def compute_ratings(battles, tankopedia):
     """对一批战斗的所有玩家写入 r['rating']; 基准按车型从这批数据求得。"""
+    cfg = rating_config()
     by_class = {}            # cls -> [sumEC, count]
     all_sum = 0.0
     all_n = 0
     for _battle, players, _ in battles:
         for r in players:
-            ec = effective_contribution(r)
+            ec = effective_contribution(r, cfg)
             cls = tank_info(tankopedia, r["tank_id"])["type"] or "其他"
             acc = by_class.setdefault(cls, [0.0, 0])
             acc[0] += ec
@@ -551,15 +576,15 @@ def compute_ratings(battles, tankopedia):
         for r in players:
             cls = tank_info(tankopedia, r["tank_id"])["type"] or "其他"
             acc = by_class.get(cls)
-            if acc and acc[1] >= RATING_MIN_SAMPLES:
+            if acc and acc[1] >= cfg["minSamples"]:
                 baseline = acc[0] / acc[1]
             else:
-                baseline = overall * RATING_CLASS_FACTOR.get(cls, RATING_DEFAULT_FACTOR)
+                baseline = overall * cfg["classFactor"].get(cls, cfg["defaultFactor"])
             if baseline <= 0:
                 baseline = overall if overall > 0 else 1
-            ratio = effective_contribution(r) / baseline
+            ratio = effective_contribution(r, cfg) / baseline
             win = bool(winner) and r["team"] == winner
-            r["rating"] = round(RATING_SCALE * ratio * (1 + (RATING_WIN_BONUS if win else 0)))
+            r["rating"] = round(cfg["scale"] * ratio * (1 + (cfg["winBonus"] if win else 0)))
 
 
 def aggregate_players(battles, tankopedia):
