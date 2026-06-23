@@ -516,6 +516,9 @@ RATING_KILL_VALUE = 200
 RATING_WIN_BONUS = 0.05
 RATING_MIN_SAMPLES = 5
 RATING_SCALE = 1000
+# 车型难度系数(经验默认, 可调): 同类样本不足时 基准 = 全体均值 * 系数
+RATING_CLASS_FACTOR = {"重坦": 1.0, "中坦": 0.9, "TD": 1.0, "轻坦": 0.7, "其他": 0.9}
+RATING_DEFAULT_FACTOR = 1.0
 
 
 def effective_contribution(r):
@@ -548,7 +551,10 @@ def compute_ratings(battles, tankopedia):
         for r in players:
             cls = tank_info(tankopedia, r["tank_id"])["type"] or "其他"
             acc = by_class.get(cls)
-            baseline = acc[0] / acc[1] if (acc and acc[1] >= RATING_MIN_SAMPLES) else overall
+            if acc and acc[1] >= RATING_MIN_SAMPLES:
+                baseline = acc[0] / acc[1]
+            else:
+                baseline = overall * RATING_CLASS_FACTOR.get(cls, RATING_DEFAULT_FACTOR)
             if baseline <= 0:
                 baseline = overall if overall > 0 else 1
             ratio = effective_contribution(r) / baseline

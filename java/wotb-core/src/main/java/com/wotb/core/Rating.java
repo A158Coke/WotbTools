@@ -25,10 +25,20 @@ public final class Rating {
     public static final double W_BLOCK = 0.35;     // 格挡权重
     public static final double KILL_VALUE = 200;   // 每个击杀的当量加成
     public static final double WIN_BONUS = 0.05;   // 胜场微调
-    public static final int MIN_SAMPLES = 5;       // 车型样本不足则回退全体基准
+    public static final int MIN_SAMPLES = 5;       // 同车型样本不足则用 全体均值*车型系数
     public static final int SCALE = 1000;          // 1000 = 同型平均
 
+    // 车型难度系数(经验默认, 可调): 同类样本不足时 基准 = 全体均值 * 系数。
+    // 让独苗轻坦不至于被重坦拉高的全体均值压低。
+    public static final Map<String, Double> CLASS_FACTOR = Map.of(
+            "重坦", 1.0, "中坦", 0.9, "TD", 1.0, "轻坦", 0.7, "其他", 0.9);
+    public static final double DEFAULT_FACTOR = 1.0;
+
     private Rating() {
+    }
+
+    private static double classFactor(String cls) {
+        return CLASS_FACTOR.getOrDefault(cls, DEFAULT_FACTOR);
     }
 
     /** 有效贡献(伤害当量)。 */
@@ -65,7 +75,9 @@ public final class Rating {
             for (PlayerResult p : b.players) {
                 String cls = classKey(tp, p);
                 double[] acc = byClass.get(cls);
-                double baseline = (acc != null && acc[1] >= MIN_SAMPLES) ? acc[0] / acc[1] : overall;
+                double baseline = (acc != null && acc[1] >= MIN_SAMPLES)
+                        ? acc[0] / acc[1]
+                        : overall * classFactor(cls);
                 if (baseline <= 0) {
                     baseline = overall > 0 ? overall : 1;
                 }
