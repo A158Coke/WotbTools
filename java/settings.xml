@@ -10,7 +10,7 @@
           xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
               https://maven.apache.org/xsd/settings-1.0.0.xsd">
 
-    <localRepository>C:/Users/yu.chen/Desktop/MyPersonalProject/wotbDataExtracter/java/.m2repo</localRepository>
+    <localRepository>C:/Users/yu.chen/Desktop/MyPersonalProject/WotbReplayDataExtractor/java/.m2repo</localRepository>
 
     <mirrors>
         <mirror>

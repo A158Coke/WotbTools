@@ -19,7 +19,7 @@
 ## P0：Java 主线完善
 
 - [ ] 给 `wotb-core` 增加更明确的 parity 测试说明：哪些字段必须与 Python 输出一致。
-- [ ] 确认 `wotb-core/src/main/resources/tankopedia.json` 与根目录 `tankopedia.json` 同步策略（当前无自动同步脚本）。
+- [x] 车辆库同步：已统一为单一来源 `common/tankopedia.json`，`wotb-core` 构建时自动复制到 classpath，`update_tankopedia.py` 直接写 common，两侧不再各存一份。
 
 ## P1：Web 版完善
 

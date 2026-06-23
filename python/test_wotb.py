@@ -17,7 +17,8 @@ sys.stdout.reconfigure(encoding="utf-8") if hasattr(sys.stdout, "reconfigure") e
 
 import wotb_extractor as W
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Data")
+DATA_DIR = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common", "data"))
 REPLAYS = sorted(glob.glob(os.path.join(DATA_DIR, "*.wotbreplay")))
 
 passed = 0

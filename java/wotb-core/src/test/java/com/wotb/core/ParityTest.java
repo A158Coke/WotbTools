@@ -19,9 +19,9 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class ParityTest {
 
-    /** 定位项目根的 Data 目录 (surefire 运行时 user.dir = wotb-core 模块目录)。 */
+    /** 定位共享样本目录 common/data (surefire 运行时 user.dir = wotb-core 模块目录)。 */
     private static Path dataDir() {
-        return Path.of(System.getProperty("user.dir"), "..", "..", "Data").normalize();
+        return Path.of(System.getProperty("user.dir"), "..", "..", "common", "data").normalize();
     }
 
     private static List<Path> replays() throws Exception {

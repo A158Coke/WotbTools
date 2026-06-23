@@ -18,9 +18,9 @@
 
 | 版本          | 技术栈                                        | 入口                                                   | 适用场景                     |
 |-------------|--------------------------------------------|------------------------------------------------------|--------------------------|
-| Python 离线版  | Python + Tkinter + openpyxl + PyInstaller  | 根目录脚本与 `dist\*.exe`                                  | 本机批量处理、拖拽使用、生成 xlsx      |
-| Java 离线 exe | Java 21 + Spring Boot 4 + Vue 3 + jpackage | `java\dist-desktop\WoT Blitz Replay Extractor\*.exe` | 双击运行、本地浏览器 UI、离线导出       |
-| Java Web 版  | Java 21 + Spring Boot 4 + Vue 3 + Docker   | `java/`                                              | 浏览器上传、在线预览、REST API、容器部署 |
+| Python 离线版  | Python + Tkinter + openpyxl + PyInstaller  | `python/` 下脚本与 `python\dist\*.exe`                        | 本机批量处理、拖拽使用、生成 xlsx      |
+| Java 离线 exe | Java 21 + Spring Boot 4 + Vue 3 + jpackage | `java\offline\dist-desktop\WoT Blitz Replay Extractor\*.exe` | 双击运行、本地浏览器 UI、离线导出       |
+| Java Web 版  | Java 21 + Spring Boot 4 + Vue 3 + Docker   | `java/`（`java\online\` 部署）                                | 浏览器上传、在线预览、REST API、容器部署 |
 
 文档入口：
 
@@ -43,7 +43,7 @@
 ## 快速使用：Python 离线版
 
 ```bat
-dist\wotb_gui.exe
+python\dist\wotb_gui.exe
 ```
 
 GUI 流程：
@@ -55,10 +55,10 @@ GUI 流程：
 命令行版本：
 
 ```bat
-dist\wotb_extractor.exe replay.wotbreplay
-dist\wotb_extractor.exe C:\replays\
-dist\wotb_extractor.exe C:\replays\ -o 联赛汇总.xlsx
-dist\wotb_extractor.exe C:\replays\ --each
+python\dist\wotb_extractor.exe replay.wotbreplay
+python\dist\wotb_extractor.exe C:\replays\
+python\dist\wotb_extractor.exe C:\replays\ -o 联赛汇总.xlsx
+python\dist\wotb_extractor.exe C:\replays\ --each
 ```
 
 默认规则：
@@ -71,7 +71,7 @@ dist\wotb_extractor.exe C:\replays\ --each
 ## 快速使用：Java 离线 exe
 
 ```bat
-java\dist-desktop\WoT Blitz Replay Extractor\WoT Blitz Replay Extractor.exe
+java\offline\dist-desktop\WoT Blitz Replay Extractor\WoT Blitz Replay Extractor.exe
 ```
 
 无需安装 Python、JDK 或 Node.js，双击即可运行。自动打开浏览器，UI 与 Web 版一致，提供文件选择、预览、导出功能。
@@ -80,24 +80,26 @@ java\dist-desktop\WoT Blitz Replay Extractor\WoT Blitz Replay Extractor.exe
 
 ### Python 版
 
-需要 Python 3.9+。
+需要 Python 3.9+。在 `python/` 目录运行：
 
 ```bat
+cd python
 pip install -r requirements.txt
-python wotb_extractor.py Data
+python wotb_extractor.py ..\common\data
 python wotb_gui.py
 ```
 
 构建两个单文件 exe：
 
 ```bat
+cd python
 build.bat
 ```
 
 输出：
 
-- `dist\wotb_gui.exe`：图形界面版。
-- `dist\wotb_extractor.exe`：命令行 / 拖拽版。
+- `python\dist\wotb_gui.exe`：图形界面版。
+- `python\dist\wotb_extractor.exe`：命令行 / 拖拽版。
 
 ### Java 版
 
@@ -112,63 +114,60 @@ java -jar wotb-web\target\wotb-web.jar
 构建离线 exe：
 
 ```bat
-cd java
+cd java\offline
 build-desktop.bat
 ```
 
 输出：
 
-- `java\dist-desktop\WoT Blitz Replay Extractor\WoT Blitz Replay Extractor.exe`
+- `java\offline\dist-desktop\WoT Blitz Replay Extractor\WoT Blitz Replay Extractor.exe`
 
 详细说明见 [java/README.md](java/README.md)。
 
 ## 更新车辆库
 
-车辆库文件是 `tankopedia.json`，由 `update_tankopedia.py` 从 blitzkit 的 `tanks.pb` 转换生成。游戏新增车辆后可重新拉取：
+车辆库 `common/tankopedia.json` 是 Python 与 Java 两侧**共用的单一来源**，由 `update_tankopedia.py`
+从 blitzkit 的 `tanks.pb` 转换生成。游戏新增车辆后重新拉取即可（需要网络）：
 
 ```bat
+cd python
 python update_tankopedia.py
-build.bat
 ```
 
-注意：这一步需要网络访问。
-
-同步到 Java 资源目录：
-
-```bat
-copy tankopedia.json java\wotb-core\src\main\resources\tankopedia.json
-```
+无需手动同步到 Java：`wotb-core` 构建时会自动把 `common/tankopedia.json` 复制到 classpath。
 
 ## 测试
 
-Python 侧测试脚本：
+Python 侧：
 
 ```bat
+cd python
 python test_wotb.py
 ```
 
-Java 侧测试：
+Java 侧：
 
 ```bash
 cd java
 mvn -s settings.xml test
 ```
 
-## 主要文件
+## 主要目录
 
-| 路径                       | 说明                                          |
-|--------------------------|---------------------------------------------|
-| `wotb_extractor.py`      | Python 核心解析、汇总、Excel 导出、CLI                 |
-| `wotb_gui.py`            | Tkinter GUI，复用 `wotb_extractor.py` 的核心逻辑    |
-| `test_wotb.py`           | Python 回归测试                                 |
-| `update_tankopedia.py`   | 更新车辆库                                       |
-| `tankopedia.json`        | 车辆 ID 映射数据                                  |
-| `Data/`                  | 示例 `.wotbreplay` 文件                         |
-| `java/`                  | Java 主线（核心库 + Web + 离线 exe 构建）              |
-| `java/wotb-core/`        | Java 核心库：解析、protobuf 解码、pickle 读取、汇总、POI 导出 |
-| `java/wotb-web/`         | Spring Boot 4 REST API + 桌面模式入口             |
-| `java/frontend/`         | Vue 3 前端（单文件组件，无 router）                    |
-| `java/build-desktop.bat` | jpackage 离线 exe 构建脚本                        |
+| 路径                            | 说明                                          |
+|-------------------------------|---------------------------------------------|
+| `common/`                     | 两侧共享资源：`tankopedia.json`、`assets/`(图标)、`data/`(示例回放) |
+| `python/`                     | Python 离线版：核心解析、Tkinter GUI、CLI、构建脚本、回归测试   |
+| `python/wotb_extractor.py`    | Python 核心解析、汇总、Excel 导出、CLI                 |
+| `python/wotb_gui.py`          | Tkinter GUI，复用 `wotb_extractor.py` 的核心逻辑    |
+| `python/test_wotb.py`         | Python 回归测试                                 |
+| `python/update_tankopedia.py` | 更新车辆库（写入 `common/tankopedia.json`）          |
+| `java/`                       | Java 主线（共享核心 + Web + 离线打包）                   |
+| `java/wotb-core/`             | 共享核心库：解析、protobuf 解码、pickle 读取、汇总、POI 导出     |
+| `java/wotb-web/`              | 共享 Spring Boot 4 应用：REST API + 桌面模式入口       |
+| `java/frontend/`              | 共享 Vue 3 前端（单文件组件，无 router）                  |
+| `java/offline/`               | 离线版打包：`build-desktop.bat`（jpackage）         |
+| `java/online/`                | 联网版部署：`docker-compose.yml`、Dockerfile、nginx.conf |
 
 ## 数据来源与限制
 

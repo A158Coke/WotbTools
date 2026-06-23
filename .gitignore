@@ -1,14 +1,17 @@
-Data/
+# 共享样本回放 (本地测试夹具, 不入库)
+common/data/
+*.wotbreplay
+
+# 构建产物
 dist/
+dist-desktop/
 __pycache__/
 *.xlsx
-*.wotbreplay
 
 target/
 *.jar
 *.class
 
-java/dist-desktop/
 java/frontend/node_modules/
 java/frontend/dist/
 java/.m2repo/

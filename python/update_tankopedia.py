@@ -7,6 +7,7 @@
     python update_tankopedia.py
 """
 import json
+import os
 import urllib.request
 
 from wotb_extractor import decode_protobuf, as_str, f1
@@ -59,9 +60,13 @@ def main():
         },
         "data": data,
     }
-    with open("tankopedia.json", "w", encoding="utf-8") as fp:
+    # 车辆库是 Python 与 Java 两侧共用的单一来源, 写到仓库的 common/tankopedia.json。
+    here = os.path.dirname(os.path.abspath(__file__))
+    out_path = os.path.normpath(os.path.join(here, "..", "common", "tankopedia.json"))
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as fp:
         json.dump(obj, fp, ensure_ascii=False, separators=(",", ":"))
-    print(f"已写入 tankopedia.json: {len(data)} 辆车")
+    print(f"已写入 {out_path}: {len(data)} 辆车")
 
 
 if __name__ == "__main__":

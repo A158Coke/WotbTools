@@ -41,8 +41,23 @@ for _stream in (sys.stdout, sys.stderr):
 # 资源路径 (兼容 PyInstaller --onefile 打包)
 # ---------------------------------------------------------------------------
 def resource_path(rel):
-    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(base, rel)
+    """定位打包资源。
+    - 冻结(PyInstaller)时: 资源被 --add-data 放在 _MEIPASS 根。
+    - 源码运行时: 共享资源(如 tankopedia.json)在仓库的 common/ 目录,
+      即 python/ 的同级 ../common/; 兼容旧的同目录放置。
+    """
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        return os.path.join(meipass, rel)
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(here, rel),                       # 同目录(兼容旧布局)
+        os.path.join(here, "..", "common", rel),       # 新布局: common/
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return candidates[0]
 
 
 # ---------------------------------------------------------------------------

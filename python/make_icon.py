@@ -4,6 +4,8 @@
 生成一个原创的坦克主题应用图标 icon.ico (非任何官方 logo, 自绘, 可自由分发)。
     python make_icon.py
 """
+import os
+
 from PIL import Image, ImageDraw
 
 BG1 = (47, 67, 89)     # 深蓝灰 (与 xlsx 表头同色系)
@@ -50,12 +52,18 @@ def render(size):
 
 
 def main():
+    # 图标是 Python 与 Java 两侧构建共用的资源, 输出到仓库的 common/assets/。
+    here = os.path.dirname(os.path.abspath(__file__))
+    out_dir = os.path.join(here, "..", "common", "assets")
+    os.makedirs(out_dir, exist_ok=True)
+    ico = os.path.join(out_dir, "icon.ico")
+    png = os.path.join(out_dir, "icon.png")
     sizes = [16, 24, 32, 48, 64, 128, 256]
     imgs = [render(s) for s in sizes]
-    imgs[0].save("icon.ico", format="ICO", sizes=[(s, s) for s in sizes],
+    imgs[0].save(ico, format="ICO", sizes=[(s, s) for s in sizes],
                  append_images=imgs[1:])
-    render(256).save("icon.png")
-    print("已生成 icon.ico 和 icon.png")
+    render(256).save(png)
+    print(f"已生成 {ico} 和 {png}")
 
 
 if __name__ == "__main__":

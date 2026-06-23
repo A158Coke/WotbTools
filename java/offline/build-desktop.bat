@@ -2,11 +2,13 @@
 setlocal enabledelayedexpansion
 chcp 65001 >nul
 
+REM 从 java/offline/ 运行。ROOT=本目录, JAVA_ROOT=java/, REPO_ROOT=仓库根。
 set "APP_NAME=WoT Blitz Replay Extractor"
 set "ROOT=%~dp0"
-set "PROJECT_ROOT=%ROOT%.."
+set "JAVA_ROOT=%ROOT%.."
+set "REPO_ROOT=%ROOT%..\.."
 set "DIST=%ROOT%dist-desktop"
-set "ICON=%PROJECT_ROOT%\icon.ico"
+set "ICON=%REPO_ROOT%\common\assets\icon.ico"
 
 if exist "%USERPROFILE%\.jdks\jdk-21.0.1\bin\jpackage.exe" (
   set "JAVA_HOME=%USERPROFILE%\.jdks\jdk-21.0.1"
@@ -26,7 +28,7 @@ if errorlevel 1 (
 )
 
 echo [1/4] Build Vue frontend...
-pushd "%ROOT%frontend"
+pushd "%JAVA_ROOT%\frontend"
 if exist "node_modules\vite\bin\vite.js" (
   node node_modules\vite\bin\vite.js build
 ) else (
@@ -43,7 +45,7 @@ if errorlevel 1 exit /b 1
 popd
 
 echo [2/4] Build Spring Boot jar with embedded frontend...
-pushd "%ROOT%"
+pushd "%JAVA_ROOT%"
 call mvn -s settings.xml -pl wotb-core,wotb-web -am -DskipTests clean package
 if errorlevel 1 exit /b 1
 popd
@@ -57,7 +59,7 @@ if exist "%ICON%" (
     --type app-image ^
     --name "%APP_NAME%" ^
     --dest "%DIST%" ^
-    --input "%ROOT%wotb-web\target" ^
+    --input "%JAVA_ROOT%\wotb-web\target" ^
     --main-jar wotb-web.jar ^
     --arguments "--desktop" ^
     --icon "%ICON%"
@@ -66,7 +68,7 @@ if exist "%ICON%" (
     --type app-image ^
     --name "%APP_NAME%" ^
     --dest "%DIST%" ^
-    --input "%ROOT%wotb-web\target" ^
+    --input "%JAVA_ROOT%\wotb-web\target" ^
     --main-jar wotb-web.jar ^
     --arguments "--desktop"
 )
@@ -74,7 +76,6 @@ if errorlevel 1 exit /b 1
 
 echo [4/4] Copy assets...
 mkdir "%DIST%\%APP_NAME%\assets" >nul 2>nul
-mkdir "%DIST%\%APP_NAME%\app\config" >nul 2>nul
 if exist "%ICON%" copy /Y "%ICON%" "%DIST%\%APP_NAME%\assets\icon.ico" >nul
 
 echo.

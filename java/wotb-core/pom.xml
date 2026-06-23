@@ -30,6 +30,15 @@
     </dependencies>
 
     <build>
+        <resources>
+            <!-- 车辆库单一来源在仓库根的 common/, 构建时复制到 classpath:/tankopedia.json -->
+            <resource>
+                <directory>${project.basedir}/../../common</directory>
+                <includes>
+                    <include>tankopedia.json</include>
+                </includes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

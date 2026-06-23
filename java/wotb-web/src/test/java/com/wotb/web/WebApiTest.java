@@ -41,7 +41,7 @@ class WebApiTest {
     }
 
     private static List<Path> replays() throws Exception {
-        Path dir = Path.of(System.getProperty("user.dir"), "..", "..", "Data").normalize();
+        Path dir = Path.of(System.getProperty("user.dir"), "..", "..", "common", "data").normalize();
         try (Stream<Path> s = Files.list(dir)) {
             return s.filter(p -> p.toString().toLowerCase().endsWith(".wotbreplay")).sorted().toList();
         }

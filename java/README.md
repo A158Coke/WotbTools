@@ -9,13 +9,17 @@
 
 ## 模块
 
-| 模块                  | 说明                                                           |
-|---------------------|--------------------------------------------------------------|
-| `wotb-core`         | 核心库：解压回放、读取 pickle、解码 protobuf、车辆库映射、去重汇总、POI 导出 xlsx        |
-| `wotb-web`          | Spring Boot 4 REST API + 桌面模式入口，监听 `8087`（Web 模式）或自动端口（桌面模式） |
-| `frontend`          | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
-| `build-desktop.bat` | 离线 exe 构建脚本：前端构建 → Maven 打包 → jpackage                       |
-| `dist-desktop/`     | jpackage 产物目录                                                |
+离线版与联网版**共用同一套源码**（`wotb-core` + `wotb-web` + `frontend`），区别只在打包/部署方式，分别放在 `offline/` 与 `online/`。
+
+| 模块/目录       | 共享? | 说明                                                           |
+|-------------|------|--------------------------------------------------------------|
+| `wotb-core` | 共享 | 核心库：解压回放、读取 pickle、解码 protobuf、车辆库映射、去重汇总、POI 导出 xlsx        |
+| `wotb-web`  | 共享 | Spring Boot 4 REST API + 桌面模式入口，监听 `8087`（Web 模式）或自动端口（桌面模式） |
+| `frontend`  | 共享 | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
+| `offline/`  | 离线 | `build-desktop.bat`（前端构建 → Maven 打包 → jpackage），产物 `offline/dist-desktop/` |
+| `online/`   | 联网 | `docker-compose.yml`、`backend.Dockerfile`、`frontend.Dockerfile`、`nginx.conf` |
+
+> 车辆库 `common/tankopedia.json`（仓库根的共享目录）在 `wotb-core` 构建时自动复制到 classpath，无需在模块内再放一份。
 
 ## 离线 exe（桌面模式）
 
@@ -31,14 +35,14 @@
 需要 JDK 21、Maven、Node.js。
 
 ```bash
-cd java
+cd java\offline
 build-desktop.bat
 ```
 
 输出：
 
 ```
-dist-desktop/WoT Blitz Replay Extractor/
+java/offline/dist-desktop/WoT Blitz Replay Extractor/
   ├── WoT Blitz Replay Extractor.exe
   ├── app/
   └── runtime/
@@ -47,7 +51,7 @@ dist-desktop/WoT Blitz Replay Extractor/
 ### 运行
 
 ```bat
-dist-desktop\WoT Blitz Replay Extractor\WoT Blitz Replay Extractor.exe
+offline\dist-desktop\WoT Blitz Replay Extractor\WoT Blitz Replay Extractor.exe
 ```
 
 双击即可，无需 Python、JDK 或 Node.js。首次启动可能略慢（JVM 启动）。
@@ -55,7 +59,7 @@ dist-desktop\WoT Blitz Replay Extractor\WoT Blitz Replay Extractor.exe
 ## Web 版（Docker）
 
 ```bash
-cd java
+cd java\online
 docker compose up --build
 ```
 
@@ -174,5 +178,5 @@ spring.web.resources.static-locations=classpath:/static/
 - Java 版字段号、列定义和汇总规则应与 Python 版同步。
 - 修改解析逻辑后同时更新 `ParityTest` 和 Python `test_wotb.py`。
 - 列定义在 `wotb-core/.../Columns.java` 中集中管理，前端通过 `/api/columns` 获取，不在前端硬编码业务字段。
-- `wotb-core/src/main/resources/tankopedia.json` 应与根目录 `tankopedia.json` 保持一致。
+- 车辆库单一来源在 `common/tankopedia.json`；`wotb-core` 构建时自动复制到 classpath，勿在模块内再放副本。
 - 离线 exe 和 Web 版复用同一个 `wotb-core`，不复制解析逻辑。
