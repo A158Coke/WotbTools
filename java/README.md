@@ -32,12 +32,21 @@
 
 ### 构建
 
-需要 JDK 21、Maven、Node.js。
+**前置条件(都要在 PATH 上)**：
+
+- **JDK 21**(必须自带 `jpackage` —— JDK 8 没有 jpackage);脚本也会自动识别 `%USERPROFILE%\.jdks\jdk-21.x`。
+- **Maven**(`mvn`)
+- **Node.js**(`npm`)
 
 ```bash
 cd java\offline
 build-desktop.bat
 ```
+
+> **双击闪退?** 多半是上面某个工具缺失,脚本在检查处报错退出、双击的窗口随即关闭。
+> 改进后的脚本出错会 `pause` 停住显示原因;若仍想看,请在**已打开的命令行**里 `cd java\offline` 再运行 `build-desktop.bat`,按提示装齐 JDK21/Maven/Node 即可。
+>
+> **注意:构建产物 `dist-desktop/` 不在仓库里**(已 gitignore)。新克隆的人要么按上面自行构建,要么由他人把已构建好的整个 `WoT Blitz Replay Extractor` 文件夹打包发送。
 
 输出：
 
