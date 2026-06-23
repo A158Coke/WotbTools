@@ -1,5 +1,5 @@
 {
-  "_comment": "评分(rating)可调参数。Java(wotb-core/Rating)与 Python(wotb_extractor)共用。改这里即可调，不必改代码。缺失项用内置默认。",
+  "_comment": "评分(rating)可调参数。由 Java wotb-core/Rating 经 classpath 读取。改这里即可调，不必改代码。缺失项用内置默认。",
   "weights": {
     "assist": 0.6,
     "block": 0.35,

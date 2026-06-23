@@ -11,7 +11,7 @@ import os
 import urllib.request
 import struct
 
-# ---- protobuf helpers (copied from wotb_extractor.py to make this script standalone) ----
+# ---- protobuf helpers (self-contained; this script has no other deps) ----
 
 def _read_varint(buf, i):
     shift = 0

@@ -9,7 +9,6 @@ import java.util.Map;
 /**
  * 通用 protobuf 解码器 (无需 .proto)。
  * 解码为 field -> List(值): varint/定长 -> Long, length-delimited -> byte[]。
- * 与 Python 版 decode_protobuf 等价。
  */
 public final class Protobuf {
 
