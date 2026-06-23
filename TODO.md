@@ -1,14 +1,12 @@
 # TODO
 
-本文件记录项目从"Python 离线 exe"迁移到"Java 主线"的待办。最终目标有两个交付物：
+本文件记录项目构建 Java 主线的待办。最终目标有两个交付物：
 
-1. Java 离线 exe：纯离线、无需 Python、双击运行、可选择/拖拽回放、预览并导出 xlsx。
+1. Java 离线 exe：纯离线、双击运行、可选择/拖拽回放、预览并导出 xlsx。
 2. Web 版：Spring Boot 4 后端，Vue 3 前端，支持浏览器上传、预览、导出。
 
 ## 当前状态
 
-- [x] Python 版可解析 `.wotbreplay` 并导出单场 / 多场 xlsx。
-- [x] Python 版已有 Tkinter GUI 和 PyInstaller exe 构建脚本。
 - [x] Java `wotb-core` 已实现回放解析、车辆库映射、去重汇总和 POI 导出。
 - [x] Java `wotb-web` 已提供 `/api/preview`、`/api/export`、`/api/columns`、`/api/health`、`/api/shutdown`。
 - [x] Vue 3 前端已有上传、预览、下载、排序、列选择、拖拽上传、文件夹选择、重复/失败提示、单场移除后二次确认与自动重新汇总。
@@ -21,8 +19,8 @@
 
 ## P0：Java 主线完善
 
-- [ ] 给 `wotb-core` 增加更明确的 parity 测试说明：哪些字段必须与 Python 输出一致。
-- [x] 车辆库同步：已统一为单一来源 `common/tankopedia.json`，`wotb-core` 构建时自动复制到 classpath，`update_tankopedia.py` 直接写 common，两侧不再各存一份。
+- [ ] 给 `wotb-core` 增加更明确的 parity 测试说明：字段不变量与导出格式一致性。
+- [x] 车辆库同步：已统一为单一来源 `common/tankopedia.json`，`wotb-core` 构建时自动复制到 classpath。
 
 ## P1：Web 版完善
 
@@ -47,12 +45,6 @@
 - [ ] 增加离线 exe 冒烟测试说明或脚本。
 - [ ] 增加 Excel 导出结构快照测试，避免工作表/列名无意变化。
 
-## P2：Python 历史版处理
-
-- [ ] 明确 Python 版定位：历史可用版本 / 行为参照 / 紧急 fallback。
-- [ ] 除 bugfix 外，新功能优先进入 Java 主线。
-- [ ] 视情况保留或归档 Python PyInstaller 构建脚本。
-
 ## P2：发布与文档
 
 - [ ] 增加版本发布清单。
@@ -63,4 +55,3 @@
 - 解析与导出逻辑必须集中在 `wotb-core`，离线 exe 和 Web 版都复用它。
 - 前端暂定 Vue 3，因为仓库已有 Vue/Vite 雏形。
 - 离线 exe 已采用"本地 Spring Boot + 内置 Vue 静态资源 + jpackage"方案，避免维护第二套桌面 UI。
-- Python 版不再作为新功能主线，但短期仍保留用于对照和回归。
