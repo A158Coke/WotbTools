@@ -193,13 +193,13 @@ public final class ExcelExporter {
                 new AggCol("均击杀", 7, true, a -> r2(a.avg(a.kills))),
                 new AggCol("总伤害", 9, true, a -> a.damage),
                 new AggCol("均伤害", 9, true, a -> r1(a.avg(a.damage))),
-                new AggCol("总辅助", 9, true, a -> a.assisted),
-                new AggCol("均辅助", 9, true, a -> r1(a.avg(a.assisted))),
-                new AggCol("均承受", 8, true, a -> r1(a.avg(a.received))),
-                new AggCol("均抵挡", 8, true, a -> r1(a.avg(a.blocked))),
+                new AggCol("总辅助伤害", 9, true, a -> a.assisted),
+                new AggCol("均辅助伤害", 9, true, a -> r1(a.avg(a.assisted))),
+                new AggCol("均承受伤害", 8, true, a -> r1(a.avg(a.received))),
+                new AggCol("均抵挡伤害", 8, true, a -> r1(a.avg(a.blocked))),
                 new AggCol("命中率%", 8, true, a -> r1(a.hitRate())),
                 new AggCol("击穿率%", 8, true, a -> r1(a.penRate())),
-                new AggCol("均击伤敌", 9, true, a -> r2(a.avg(a.enemiesDamaged))),
+                new AggCol("均击伤敌数", 9, true, a -> r2(a.avg(a.enemiesDamaged))),
                 new AggCol("用车", 30, false, Aggregator.Agg::tanksStr),
                 new AggCol("账号ID", 12, true, a -> a.accountId)
         );
