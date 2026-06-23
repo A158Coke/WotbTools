@@ -482,11 +482,13 @@ h1 { font-size: 18px; margin: 0; }
 .r-elite { background: #EEEDFE; color: #3C3489; }
 .alive { color: #3B6D11; }
 .dead { color: #9aa1ad; }
-.toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-button, .filebtn { padding: 6px 14px; border: 1px solid #2f5597; background: #2f5597; color: #fff;
-  border-radius: 4px; cursor: pointer; font-size: 13px; }
+.toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+button, .filebtn { padding: 7px 14px; border: 1px solid transparent; background: #4f88d6; color: #fff;
+  border-radius: 7px; cursor: pointer; font-size: 13px; transition: background .12s, border-color .12s; }
+button:hover:not(:disabled) { background: #4079c9; }
 button:disabled { opacity: .5; cursor: default; }
-.ghost { background: #fff; color: #2f5597; }
+.ghost { background: #f1f4f8; color: #46566f; border-color: #dbe3ef; }
+.ghost:hover:not(:disabled) { background: #e7ecf4; }
 .filebtn input { display: none; }
 .muted { color: #777; font-size: 13px; }
 .error { color: #c00; }
@@ -494,7 +496,7 @@ button:disabled { opacity: .5; cursor: default; }
 .warn span, .error span { display: inline-block; margin: 2px 8px 2px 0; }
 .dropzone { border: 1px dashed #9fb4d4; background: #fff; color: #5b6f8f; padding: 16px; text-align: center;
   border-radius: 6px; margin-bottom: 10px; }
-.dropzone.dragging { border-color: #2f5597; background: #eef4ff; color: #2f5597; }
+.dropzone.dragging { border-color: #4f88d6; background: #eef4fb; color: #185fa5; }
 .files { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
 .chip { background: #eef2f7; border: 1px solid #d7dee9; border-radius: 4px; padding: 3px 6px;
   font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
@@ -512,8 +514,9 @@ button:disabled { opacity: .5; cursor: default; }
 .colpanel-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   padding: 4px 10px 6px; border-bottom: 1px solid #eef1f6; }
 .cph-title { flex-basis: 100%; font-size: 12px; color: #777; margin-bottom: 2px; }
-.linkbtn { background: none; border: none; color: #2f5597; padding: 2px 4px;
+.linkbtn { background: none; border: none; color: #4f88d6; padding: 2px 4px;
   font-size: 12px; cursor: pointer; }
+.linkbtn:hover:not(:disabled) { background: none; }
 .linkbtn:hover { text-decoration: underline; }
 .collist { list-style: none; margin: 0; padding: 4px 0; max-height: 320px; overflow-y: auto; }
 .collist li { display: flex; align-items: center; gap: 6px; padding: 3px 10px; }
@@ -523,9 +526,10 @@ button:disabled { opacity: .5; cursor: default; }
 .colitem { flex: 1; font-size: 13px; display: flex; align-items: center; gap: 6px;
   white-space: nowrap; cursor: default; }
 .cat { font-size: 11px; color: #9aa3b2; }
-.tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 12px 0 6px; }
-.tabs button { background: #e8edf5; color: #2f5597; border-color: #c7d3e6; }
-.tabs button.active { background: #2f5597; color: #fff; }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 6px; }
+.tabs button { background: #f1f4f8; color: #46566f; border-color: #dbe3ef; }
+.tabs button:hover:not(:disabled) { background: #e7ecf4; }
+.tabs button.active { background: #e6f1fb; color: #185fa5; border-color: #bcd8f2; font-weight: 600; }
 .tabs.locked button:disabled { cursor: not-allowed; }
 .tablewrap { overflow-x: auto; background: #fff; border: 1px solid #e3e8ef; border-radius: 10px; }
 /* 按内容自然宽度排列(不挤压列), 内容窄时仍填满容器; 横向滚动可完整看到末列 */
@@ -546,7 +550,7 @@ tr.t2 td { background: #fbf1ec; }
   align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 8px; padding: 18px 20px; width: 360px; max-width: 90vw;
   box-shadow: 0 8px 30px rgba(0,0,0,.2); }
-.modal-title { font-size: 15px; font-weight: bold; margin: 0 0 8px; color: #2f5597; }
+.modal-title { font-size: 15px; font-weight: bold; margin: 0 0 8px; color: #34465f; }
 .modal-sub { font-size: 12px; color: #777; margin: 6px 0 0; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 </style>
