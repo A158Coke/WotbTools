@@ -25,8 +25,8 @@ public final class Mapper {
 
     /** 玩家表列定义 (纯数据: key + 是否数值; 中文名由前端映射)。 */
     public static List<ColumnDef> playerColumns() {
-        List<ColumnDef> out = new ArrayList<>();
-        for (Columns.Col c : Columns.PLAYER) {
+        final List<ColumnDef> out = new ArrayList<>();
+        for (final Columns.Col c : Columns.PLAYER) {
             out.add(new ColumnDef(c.key(), c.num()));
         }
         return out;
@@ -60,21 +60,21 @@ public final class Mapper {
     );
 
     public static List<ColumnDef> aggregateColumns() {
-        List<ColumnDef> out = new ArrayList<>();
-        for (AggCol c : AGG_COLS) {
+        final List<ColumnDef> out = new ArrayList<>();
+        for (final AggCol c : AGG_COLS) {
             out.add(new ColumnDef(c.key(), c.num()));
         }
         return out;
     }
 
     public static BattleDto toBattle(final Battle b, final String sourceName, final Tankopedia tp) {
-        Function<Long, String> platoon = Players.platoonLabeler();
-        List<PlayerRow> rows = new ArrayList<>();
-        for (PlayerResult p : Players.sorted(b.players)) {
+        final Function<Long, String> platoon = Players.platoonLabeler();
+        final List<PlayerRow> rows = new ArrayList<>();
+        for (final PlayerResult p : Players.sorted(b.players)) {
             Players.enrich(p, tp);
             p.platoonLabel = platoon.apply(p.platoonId);
-            Map<String, Object> cells = new LinkedHashMap<>();
-            for (Columns.Col c : Columns.PLAYER) {
+            final Map<String, Object> cells = new LinkedHashMap<>();
+            for (final Columns.Col c : Columns.PLAYER) {
                 cells.put(c.key(), c.get().apply(p));
             }
             rows.add(new PlayerRow(cells, p.team));
@@ -84,12 +84,12 @@ public final class Mapper {
     }
 
     public static List<AggRow> toAggregate(final Map<Long, Agg> aggMap) {
-        List<Agg> list = new ArrayList<>(aggMap.values());
+        final List<Agg> list = new ArrayList<>(aggMap.values());
         list.sort((x, y) -> Double.compare(y.avg(y.damage), x.avg(x.damage)));
-        List<AggRow> out = new ArrayList<>();
-        for (Agg a : list) {
-            Map<String, Object> cells = new LinkedHashMap<>();
-            for (AggCol c : AGG_COLS) {
+        final List<AggRow> out = new ArrayList<>();
+        for (final Agg a : list) {
+            final Map<String, Object> cells = new LinkedHashMap<>();
+            for (final AggCol c : AGG_COLS) {
                 cells.put(c.key(), c.get().apply(a));
             }
             out.add(new AggRow(cells, a.team));

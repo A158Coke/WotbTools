@@ -20,10 +20,10 @@ public final class MapNames {
     }
 
     private static Map<String, String> load() {
-        Map<String, String> map = new HashMap<>();
+        final Map<String, String> map = new HashMap<>();
         try (InputStream in = MapNames.class.getResourceAsStream("/map_names.json")) {
             if (in != null) {
-                JsonNode root = new ObjectMapper().readTree(in);
+                final JsonNode root = new ObjectMapper().readTree(in);
                 root.fields().forEachRemaining(e -> map.put(e.getKey(), e.getValue().asText()));
             }
         } catch (Exception ignored) {

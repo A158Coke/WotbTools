@@ -15,12 +15,12 @@ public final class Aggregator {
     }
 
     public static Map<Long, Agg> aggregate(final List<Battle> battles, final Tankopedia tp) {
-        Map<Long, Agg> map = new LinkedHashMap<>();
+        final Map<Long, Agg> map = new LinkedHashMap<>();
         for (Battle b : battles) {
-            Integer winner = b.winnerTeam;
-            long start = b.startTime == null ? 0 : b.startTime;
+            final Integer winner = b.winnerTeam;
+            final long start = b.startTime == null ? 0 : b.startTime;
             for (PlayerResult p : b.players) {
-                Agg a = map.computeIfAbsent(p.accountId, k -> {
+                final Agg a = map.computeIfAbsent(p.accountId, k -> {
                     Agg x = new Agg();
                     x.accountId = k;
                     return x;
@@ -53,7 +53,7 @@ public final class Aggregator {
                 if (p.rating != null) {
                     a.ratingSum += p.rating;
                 }
-                String tn = tp.info(p.tankId).name;
+                final String tn = tp.info(p.tankId).name;
                 a.tanks.merge(tn, 1, Integer::sum);
             }
         }

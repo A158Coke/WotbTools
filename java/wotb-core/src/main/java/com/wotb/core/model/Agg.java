@@ -41,7 +41,7 @@ public final class Agg {
     }
 
     public String tanksStr() {
-        StringBuilder sb = new StringBuilder();
+        final StringBuilder sb = new StringBuilder();
         tanks.entrySet().stream()
                 .sorted((a, b) -> b.getValue() - a.getValue())
                 .forEach(e -> {

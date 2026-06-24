@@ -16,9 +16,9 @@ import java.util.List;
 
 @SpringBootApplication
 public class WotbWebApplication {
-    public static void main(String[] args) {
+    public static void main(final String[] args) {
         boolean desktop = false;
-        for (String arg : args) {
+        for (final String arg : args) {
             if ("--desktop".equals(arg)) {
                 desktop = true;
                 break;
@@ -26,12 +26,13 @@ public class WotbWebApplication {
         }
 
         if (desktop) {
-            int port = choosePort(8087);
-            List<String> desktopArgs = new ArrayList<>(List.of(args));
+            final int port = choosePort(8087);
+            final List<String> desktopArgs = new ArrayList<>(List.of(args));
             desktopArgs.add("--app.desktop=true");
             desktopArgs.add("--server.address=127.0.0.1");
             desktopArgs.add("--server.port=" + port);
-            args = desktopArgs.toArray(String[]::new);
+            SpringApplication.run(WotbWebApplication.class, desktopArgs.toArray(String[]::new));
+            return;
         }
         SpringApplication.run(WotbWebApplication.class, args);
     }
@@ -60,7 +61,7 @@ public class WotbWebApplication {
         throw new IllegalStateException("No available local port found near " + preferred);
     }
 
-    private static boolean available(int port) {
+    private static boolean available(final int port) {
         try (ServerSocket socket = new ServerSocket(port)) {
             socket.setReuseAddress(true);
             return true;

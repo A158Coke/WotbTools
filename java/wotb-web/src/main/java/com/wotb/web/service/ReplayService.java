@@ -52,10 +52,10 @@ public class ReplayService {
 
     /** 解析(并去重), 返回预览: 每场玩家数据 + 跨场汇总 + 去重/失败信息。 */
     public PreviewResponse preview(final MultipartFile[] files) throws Exception {
-        Collected c = Replays.collect(toSources(files), null);
+        final Collected c = Replays.collect(toSources(files), null);
         Rating.compute(c.battles, tankopedia);   // 基准=本次上传集合
 
-        List<BattleDto> battles = new ArrayList<>();
+        final List<BattleDto> battles = new ArrayList<>();
         for (int i = 0; i < c.battles.size(); i++) {
             battles.add(Mapper.toBattle(c.battles.get(i), c.battleSourceNames.get(i), tankopedia));
         }
@@ -75,12 +75,12 @@ public class ReplayService {
         if ("each".equalsIgnoreCase(mode)) {
             return exportEach(files);
         }
-        Collected c = Replays.collect(toSources(files), null);
+        final Collected c = Replays.collect(toSources(files), null);
         if (c.battles.isEmpty()) {
             return null;
         }
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        String filename;
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        final String filename;
         if (c.battles.size() == 1) {
             ExcelExporter.writeSingle(c.battles.getFirst(), tankopedia, out);
             filename = stripExt(c.battleSourceNames.getFirst()) + ".xlsx";
@@ -92,10 +92,10 @@ public class ReplayService {
     }
 
     private ExportResult exportEach(final MultipartFile[] files) throws Exception {
-        List<Source> sources = toSources(files);
-        ByteArrayOutputStream zipBytes = new ByteArrayOutputStream();
+        final List<Source> sources = toSources(files);
+        final ByteArrayOutputStream zipBytes = new ByteArrayOutputStream();
         int exported = 0;
-        Set<String> usedNames = new HashSet<>();
+        final Set<String> usedNames = new HashSet<>();
         try (ZipOutputStream zip = new ZipOutputStream(zipBytes, StandardCharsets.UTF_8)) {
             for (Source source : sources) {
                 try {
@@ -119,15 +119,15 @@ public class ReplayService {
     }
 
     private static String uniqueName(final String preferred, final Set<String> usedNames) {
-        String safe = preferred.replace('\\', '_').replace('/', '_');
+        final String safe = preferred.replace('\\', '_').replace('/', '_');
         if (usedNames.add(safe)) {
             return safe;
         }
-        int dot = safe.lastIndexOf('.');
-        String base = dot > 0 ? safe.substring(0, dot) : safe;
-        String ext = dot > 0 ? safe.substring(dot) : "";
+        final int dot = safe.lastIndexOf('.');
+        final String base = dot > 0 ? safe.substring(0, dot) : safe;
+        final String ext = dot > 0 ? safe.substring(dot) : "";
         for (int i = 2; ; i++) {
-            String candidate = base + "-" + i + ext;
+            final String candidate = base + "-" + i + ext;
             if (usedNames.add(candidate)) {
                 return candidate;
             }
@@ -135,16 +135,16 @@ public class ReplayService {
     }
 
     private static List<Source> toSources(final MultipartFile[] files) throws Exception {
-        List<Source> sources = new ArrayList<>();
-        for (MultipartFile f : files) {
-            String name = f.getOriginalFilename();
+        final List<Source> sources = new ArrayList<>();
+        for (final MultipartFile f : files) {
+            final String name = f.getOriginalFilename();
             sources.add(new Source(name == null ? "replay.wotbreplay" : name, f.getBytes()));
         }
         return sources;
     }
 
     private static String stripExt(final String name) {
-        int dot = name.lastIndexOf('.');
+        final int dot = name.lastIndexOf('.');
         return dot > 0 ? name.substring(0, dot) : name;
     }
 }

@@ -41,7 +41,7 @@ class WebApiTest {
     }
 
     private static List<Path> replays() throws Exception {
-        Path dir = Path.of(System.getProperty("user.dir"), "..", "..", "common", "data").normalize();
+        final Path dir = Path.of(System.getProperty("user.dir"), "..", "..", "common", "data").normalize();
         try (Stream<Path> s = Files.list(dir)) {
             return s.filter(p -> p.toString().toLowerCase().endsWith(".wotbreplay")).sorted().toList();
         }
@@ -54,41 +54,41 @@ class WebApiTest {
 
     @Test
     void columnsEndpoint() throws Exception {
-        String json = mvc().perform(get("/api/columns"))
+        final String json = mvc().perform(get("/api/columns"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        JsonNode n = om.readTree(json);
+        final JsonNode n = om.readTree(json);
         assertTrue(n.get("player").size() > 10);
         assertTrue(n.get("aggregate").size() > 10);
     }
 
     @Test
     void previewMultipleWithDuplicate() throws Exception {
-        List<Path> files = replays();
+        final List<Path> files = replays();
         var req = multipart("/api/preview");
-        for (Path p : files) {
+        for (final Path p : files) {
             req = req.file(file(p));
         }
         req = req.file(new MockMultipartFile("files", "dup.wotbreplay",
                 "application/octet-stream", Files.readAllBytes(files.get(0))));
 
-        String json = mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
+        final String json = mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        JsonNode n = om.readTree(json);
+        final JsonNode n = om.readTree(json);
         assertEquals(files.size(), n.get("battles").size(), "唯一战斗数");
         assertEquals(1, n.get("duplicates").size(), "跳过 1 个重复");
         assertTrue(n.get("aggregate").size() > 0, "多场应有汇总");
         // 校验首场玩家数据结构
-        JsonNode b0 = n.get("battles").get(0);
+        final JsonNode b0 = n.get("battles").get(0);
         assertEquals(14, b0.get("players").size());
         assertTrue(b0.get("players").get(0).get("cells").has("damage_dealt"));
     }
 
     @Test
     void exportReturnsXlsx() throws Exception {
-        var req = multipart("/api/export").file(file(replays().get(0)));
-        byte[] body = mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
+        final var req = multipart("/api/export").file(file(replays().get(0)));
+        final byte[] body = mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsByteArray();
         assertTrue(body.length > 3000, "xlsx 应有内容");
@@ -99,19 +99,19 @@ class WebApiTest {
 
     @Test
     void exportEachReturnsZipWithOneXlsxPerReplay() throws Exception {
-        List<Path> files = replays();
+        final List<Path> files = replays();
         var req = multipart("/api/export").param("mode", "each");
-        for (Path p : files) {
+        for (final Path p : files) {
             req = req.file(file(p));
         }
 
-        byte[] body = mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
+        final byte[] body = mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsByteArray();
         assertEquals('P', body[0]);
         assertEquals('K', body[1]);
 
-        Set<String> names = new HashSet<>();
+        final Set<String> names = new HashSet<>();
         try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(body))) {
             java.util.zip.ZipEntry entry;
             while ((entry = zip.getNextEntry()) != null) {

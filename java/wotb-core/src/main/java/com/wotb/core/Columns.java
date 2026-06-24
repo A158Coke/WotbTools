@@ -58,8 +58,8 @@ public final class Columns {
             "nickname", "clan", "tank_name", "date", "map_name");
 
     private static List<Col> concat(final List<Col>... lists) {
-        java.util.ArrayList<Col> out = new java.util.ArrayList<>();
-        for (List<Col> l : lists) {
+        final java.util.ArrayList<Col> out = new java.util.ArrayList<>();
+        for (final List<Col> l : lists) {
             out.addAll(l);
         }
         return List.copyOf(out);

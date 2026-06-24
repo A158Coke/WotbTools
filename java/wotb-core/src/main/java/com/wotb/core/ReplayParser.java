@@ -48,40 +48,42 @@ public final class ReplayParser {
     }
 
     private static Battle parse(final Map<String, byte[]> entries) throws IOException {
-        JsonNode meta = MAPPER.createObjectNode();
+        final JsonNode meta;
         if (entries.containsKey("meta.json")) {
             meta = MAPPER.readTree(entries.get("meta.json"));
+        } else {
+            meta = MAPPER.createObjectNode();
         }
-        byte[] dat = entries.get("battle_results.dat");
+        final byte[] dat = entries.get("battle_results.dat");
         if (dat == null) {
             throw new IOException("回放中没有 battle_results.dat (可能是不完整或加密的回放)");
         }
 
-        Object[] tuple = (Object[]) PickleReader.loads(dat);
-        Object arenaId = tuple[0];
-        byte[] pb = (byte[]) tuple[1];
-        Map<Integer, List<Object>> root = Protobuf.decode(pb);
+        final Object[] tuple = (Object[]) PickleReader.loads(dat);
+        final Object arenaId = tuple[0];
+        final byte[] pb = (byte[]) tuple[1];
+        final Map<Integer, List<Object>> root = Protobuf.decode(pb);
 
         // ---- 名册 #201 ----
-        Map<Long, String[]> roster = new HashMap<>();   // acc -> [nickname, clan]
-        Map<Long, Long> platoonByAcc = new HashMap<>();
-        for (Object praw : root.getOrDefault(201, List.of())) {
-            Map<Integer, List<Object>> p = Protobuf.decode((byte[]) praw);
-            long acc = Protobuf.firstLong(p, 1, 0);
-            Map<Integer, List<Object>> info = Protobuf.message(p, 2);
+        final Map<Long, String[]> roster = new HashMap<>();   // acc -> [nickname, clan]
+        final Map<Long, Long> platoonByAcc = new HashMap<>();
+        for (final Object praw : root.getOrDefault(201, List.of())) {
+            final Map<Integer, List<Object>> p = Protobuf.decode((byte[]) praw);
+            final long acc = Protobuf.firstLong(p, 1, 0);
+            final Map<Integer, List<Object>> info = Protobuf.message(p, 2);
             roster.put(acc, new String[]{Protobuf.string(info, R_NICK), Protobuf.string(info, R_CLAN)});
-            Object pl = Protobuf.first(info, R_PLATOON);
+            final Object pl = Protobuf.first(info, R_PLATOON);
             if (pl instanceof Number) {
                 platoonByAcc.put(acc, ((Number) pl).longValue());
             }
         }
 
         // ---- 战绩 #301 ----
-        List<PlayerResult> players = new ArrayList<>();
-        for (Object rraw : root.getOrDefault(301, List.of())) {
-            Map<Integer, List<Object>> r = Protobuf.decode((byte[]) rraw);
-            Map<Integer, List<Object>> info = Protobuf.message(r, 2);
-            PlayerResult pr = new PlayerResult();
+        final List<PlayerResult> players = new ArrayList<>();
+        for (final Object rraw : root.getOrDefault(301, List.of())) {
+            final Map<Integer, List<Object>> r = Protobuf.decode((byte[]) rraw);
+            final Map<Integer, List<Object>> info = Protobuf.message(r, 2);
+            final PlayerResult pr = new PlayerResult();
             pr.accountId = Protobuf.firstLong(info, F_ACCOUNT, 0);
             pr.team = (int) Protobuf.firstLong(info, F_TEAM, 0);
             pr.tankId = Protobuf.firstLong(info, F_TANK, 0);
@@ -90,7 +92,7 @@ public final class ReplayParser {
             pr.nPenetrationsDealt = (int) Protobuf.firstLong(info, F_PENS, 0);
             pr.damageDealt = (int) Protobuf.firstLong(info, F_DAMAGE, 0);
             int assist = 0;
-            for (int f : F_ASSIST) {
+            for (final int f : F_ASSIST) {
                 assist += (int) Protobuf.firstLong(info, f, 0);
             }
             pr.damageAssisted = assist;
@@ -102,27 +104,27 @@ public final class ReplayParser {
             pr.damageBlocked = (int) Protobuf.firstLong(info, F_BLOCKED, 0);
             pr.xp = (int) Protobuf.firstLong(info, F_XP, 0);
             pr.credits = (int) Protobuf.firstLong(info, F_CREDITS, 0);
-            Object killer = Protobuf.first(info, F_SURVIVED);
+            final Object killer = Protobuf.first(info, F_SURVIVED);
             pr.survived = (killer instanceof Number) && ((Number) killer).longValue() == -1L;
             pr.raw = info;
             players.add(pr);
         }
 
         // 合并名册
-        for (PlayerResult pr : players) {
-            String[] info = roster.get(pr.accountId);
+        for (final PlayerResult pr : players) {
+            final String[] info = roster.get(pr.accountId);
             pr.nickname = (info != null && info[0] != null && !info[0].isEmpty())
                     ? info[0] : String.valueOf(pr.accountId);
             pr.clan = (info != null && info[1] != null) ? info[1] : "";
             pr.platoonId = platoonByAcc.get(pr.accountId);
         }
 
-        Battle battle = new Battle();
+        final Battle battle = new Battle();
         battle.arenaId = String.valueOf(arenaId);
-        Object win = Protobuf.first(root, 3);
+        final Object win = Protobuf.first(root, 3);
         battle.winnerTeam = (win instanceof Number) ? ((Number) win).intValue() : null;
-        battle.modeMapId = (Long) Protobuf.first(root, 1) instanceof Long
-                ? (Long) Protobuf.first(root, 1) : null;
+        final Object modeMap = Protobuf.first(root, 1);
+        battle.modeMapId = modeMap != null ? (Long) modeMap : null;
         battle.version = text(meta, "version");
         battle.mapName = text(meta, "mapName");
         battle.mapId = meta.hasNonNull("mapId") ? meta.get("mapId").asInt() : "";
@@ -147,12 +149,12 @@ public final class ReplayParser {
     }
 
     private static Map<String, byte[]> unzip(final byte[] data) throws IOException {
-        Map<String, byte[]> out = new HashMap<>();
+        final Map<String, byte[]> out = new HashMap<>();
         try (ZipInputStream zis = new ZipInputStream(new java.io.ByteArrayInputStream(data))) {
             ZipEntry e;
-            byte[] tmp = new byte[8192];
+            final byte[] tmp = new byte[8192];
             while ((e = zis.getNextEntry()) != null) {
-                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                final ByteArrayOutputStream bos = new ByteArrayOutputStream();
                 int read;
                 while ((read = zis.read(tmp)) != -1) {
                     bos.write(tmp, 0, read);
