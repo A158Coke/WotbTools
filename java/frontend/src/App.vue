@@ -478,6 +478,7 @@ const aggStats = computed(() => {
             </tbody>
           </table>
         </div>
+        <p class="scroll-hint">← 左右滑动查看更多数据 →</p>
       </div>
 
       <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i">
@@ -504,6 +505,7 @@ const aggStats = computed(() => {
             </tbody>
           </table>
         </div>
+        <p class="scroll-hint">← 左右滑动查看更多数据 →</p>
       </div>
     </template>
 
@@ -644,15 +646,31 @@ tr.t2 td { background: #fbf1ec; }
   header { flex-direction: column; align-items: flex-start; gap: 8px; }
   .mcards { grid-template-columns: repeat(2, 1fr); }
   .filebar { flex-wrap: wrap; }
-  .colpanel { width: 240px; right: auto; left: 0; }
   th, td { padding: 5px 8px; font-size: 12px; }
   .rbadge { min-width: 36px; padding: 1px 5px; font-size: 11px; }
+  /* 水平滚动标签页 */
+  .tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs button { flex: none; white-space: nowrap; }
+  /* 列选择器: 固定居中覆盖 */
+  .colpanel { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: calc(100vw - 40px); max-width: 380px; z-index: 200; max-height: 80vh; }
+  .collist { max-height: 50vh; }
+  /* 粘性首列 + 右侧渐隐提示可滚动 */
+  .tablewrap { background: linear-gradient(to right, transparent calc(100% - 48px), rgba(0,0,0,.04) 100%), #fff; }
+  th:first-child, td:first-child { position: sticky; left: 0; z-index: 2; }
+  th:first-child { background: #f1f4f8; }
+  td:first-child { background: #fff; }
+  tr.t1 td:first-child { background: #eef4fb; }
+  tr.t2 td:first-child { background: #fbf1ec; }
 }
 @media (max-width: 480px) {
   .wrap { padding: 10px 8px; }
+  /* 指标卡: 单列 */
   .mcards { grid-template-columns: 1fr; gap: 6px; }
   .mc { padding: 6px 10px; }
   .mc .v { font-size: 15px; }
+  /* 上传区: 堆叠 */
   .up-actions { flex-direction: column; align-items: stretch; }
   .up-actions .filebtn { width: 100%; }
   .filebar { flex-direction: column; align-items: stretch; gap: 6px; }
@@ -660,15 +678,25 @@ tr.t2 td { background: #fbf1ec; }
   .fb-chips { max-height: 80px; overflow-y: auto; }
   .actionrow { flex-direction: column; align-items: stretch; }
   .actionrow .lg { width: 100%; }
-  .colpanel { width: calc(100vw - 20px); left: 0; right: 0; }
-  .collist { max-height: 240px; }
+  /* 列选择器 */
+  .colpanel { width: calc(100vw - 24px); }
+  .collist { max-height: 50vh; }
+  /* 工具栏 */
   .restoolbar { flex-direction: column; }
   .tabs { flex: none; width: 100%; }
-  .resactions { width: 100%; gap: 4px; }
-  .resactions button { flex: 1; min-width: 0; }
+  .restoolbar .resactions { width: 100%; gap: 4px; }
+  .restoolbar .resactions button { flex: 1; min-width: 0; }
   .modal { width: calc(100vw - 32px); }
+  /* 表格紧凑 */
   th, td { padding: 4px 5px; font-size: 11px; }
   .rbadge { min-width: 28px; padding: 1px 4px; font-size: 10px; }
   .chip { font-size: 11px; padding: 2px 4px; }
+  /* 头部关闭按钮: 仅图标 */
+  header .ghost { font-size: 0; gap: 0; padding: 6px; width: 32px; height: 32px; border-radius: 50%; }
+  header .ghost .ic { font-size: 0; width: 18px; height: 18px; }
+}
+.scroll-hint { display: none; }
+@media (max-width: 768px) {
+  .scroll-hint { display: block; text-align: center; font-size: 11px; color: #9aa3b2; margin: 6px 0 0; padding-bottom: 4px; }
 }
 </style>
