@@ -1,6 +1,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import MAP_NAMES from '../../../common/map_names.json'
+
+const { t } = useI18n()
 
 const files = ref([])
 const loading = ref(false)
@@ -24,30 +27,15 @@ const DEFAULT_VISIBLE = [
   'hit_rate', 'pen_rate', 'n_enemies_damaged'
 ]
 const LEFT_KEYS = new Set(['nickname', 'clan', 'tank_name'])
-const TEAM = { 1: '队伍1', 2: '队伍2' }
+const langs = [
+  { key: 'zh', label: '中文' },
+  { key: 'en', label: 'English' },
+  { key: 'ru', label: 'Русский' },
+]
+function onLangChange(e) {
+  localStorage.setItem('wotb-lang', e.target.value)
+}
 
-// 中文显示名由前端维护 (API 只回英文 key + 类型)。
-// 单场表与汇总表各一套: 同名 key(如 kills) 在两表含义不同(击杀 vs 总击杀)。
-const PLAYER_LABELS = {
-  nickname: '玩家', clan: '战队', tank_name: '车辆', tank_tier: '等级',
-  tank_type: '坦克类型', tank_nation: '国家', rating: '评分', survived_label: '存活',
-  kills: '击杀', damage_dealt: '伤害', damage_assisted: '协助伤害',
-  damage_received: '损失血量', damage_blocked: '格挡', n_shots: '射击次数',
-  n_hits_dealt: '命中次数', n_penetrations_dealt: '击穿',
-  hit_rate: '命中率', pen_rate: '击穿率', n_hits_received: '被命中',
-  n_penetrations_received: '被击穿', n_enemies_damaged: '击伤',
-  platoon_label: '排', tank_id: '车辆ID', account_id: '账号ID'
-}
-const AGG_LABELS = {
-  nickname: '玩家', clan: '战队', battles: '场次', wins: '胜场',
-  win_rate: '胜率%', survival_rate: '存活率%', rating_avg: '场均评分',
-  kills: '总击杀', kills_avg: '场均击杀',
-  damage: '总伤害', damage_avg: '场均伤害', assisted: '总协助伤害', assisted_avg: '场均协助伤害',
-  received_avg: '场均损失血量', blocked_avg: '场均格挡', hit_rate: '命中率%', pen_rate: '击穿率%',
-  enemies_damaged_avg: '场均击伤', shots: '总射击次数', hits: '总命中次数', pens: '总击穿次数', tanks: '用车', account_id: '账号ID'
-}
-const playerLabel = (key) => PLAYER_LABELS[key] || key
-const aggLabel = (key) => AGG_LABELS[key] || key
 // 地图内部名 -> 中文 (与导出共用 common/map_names.json); 未匹配原样返回。
 const mapLabel = (m) => MAP_NAMES[(m || '').toLowerCase().trim()] || m
 
@@ -199,24 +187,26 @@ const shownAggCols = computed(() =>
   aggOrder.value.filter(k => aggVisibleKeys.value.includes(k)).map(k => aggColMap.value[k]).filter(Boolean))
 
 const colScope = computed(() => (activeTab.value === 'aggregate' ? 'agg' : 'player'))
-const pickerLabel = (key) => (pickerScope.value === 'agg' ? aggLabel(key) : playerLabel(key))
 const currentOrder = computed(() => (pickerScope.value === 'agg' ? aggOrder.value : playerOrder.value))
 
-// 面板里的分组标签
-const COL_GROUP = {
-  nickname: '身份', clan: '身份', account_id: '附加',
-  tank_name: '车辆', tank_tier: '车辆', tank_type: '车辆', tank_nation: '车辆', tank_id: '附加',
-  rating: '战斗', survived_label: '战斗', kills: '战斗', damage_dealt: '战斗',
-  damage_assisted: '战斗', damage_received: '战斗', damage_blocked: '战斗',
-  n_shots: '战斗', n_hits_dealt: '战斗', n_penetrations_dealt: '战斗',
-  n_hits_received: '战斗', n_penetrations_received: '战斗', n_enemies_damaged: '战斗',
-  platoon_label: '附加',
-  battles: '总览', wins: '总览', win_rate: '总览', survival_rate: '总览', rating_avg: '总览',
-  kills_avg: '战斗', damage: '战斗', damage_avg: '战斗', assisted: '战斗', assisted_avg: '战斗',
-  received_avg: '战斗', blocked_avg: '战斗', hit_rate: '战斗', pen_rate: '战斗',
-  enemies_damaged_avg: '战斗', tanks: '附加',
+// 面板里的分组标签（用英文 key，由 i18n 渲染）
+const COL_GROUP_CAT = {
+  nickname: 'identity', clan: 'identity', account_id: 'extra',
+  tank_name: 'vehicle', tank_tier: 'vehicle', tank_type: 'vehicle', tank_nation: 'vehicle', tank_id: 'extra',
+  rating: 'battle', survived_label: 'battle', kills: 'battle', damage_dealt: 'battle',
+  damage_assisted: 'battle', damage_received: 'battle', damage_blocked: 'battle',
+  n_shots: 'battle', n_hits_dealt: 'battle', n_penetrations_dealt: 'battle',
+  n_hits_received: 'battle', n_penetrations_received: 'battle', n_enemies_damaged: 'battle',
+  platoon_label: 'extra',
+  battles: 'overview', wins: 'overview', win_rate: 'overview', survival_rate: 'overview', rating_avg: 'overview',
+  kills_avg: 'battle', damage: 'battle', damage_avg: 'battle', assisted: 'battle', assisted_avg: 'battle',
+  received_avg: 'battle', blocked_avg: 'battle', hit_rate: 'battle', pen_rate: 'battle',
+  enemies_damaged_avg: 'battle', tanks: 'extra',
 }
-const catOf = (key) => COL_GROUP[key] || ''
+const catOf = (key) => {
+  const c = COL_GROUP_CAT[key]
+  return c ? t('col_groups.' + c) : ''
+}
 
 function toggleColPicker() {
   if (showColPicker.value) { showColPicker.value = false; return }
@@ -289,7 +279,7 @@ function arrow(scope, key) {
 function fmtDuration(s) {
   if (s == null) return ''
   const t = Math.floor(s)
-  return `${Math.floor(t / 60)}分${t % 60}秒`
+  return t('duration', { min: Math.floor(t / 60), sec: t % 60 })
 }
 
 // 评分分级 -> 徽章配色
@@ -336,12 +326,15 @@ const aggStats = computed(() => {
       <div class="brand">
         <span class="logo">W</span>
         <div class="brandtext">
-          <h1>WoT Blitz 回放分析</h1>
-          <p class="subtitle">解析回放 · 14 人战场数据 · 导出 xlsx</p>
+          <h1>{{ $t('app.title') }}</h1>
+          <p class="subtitle">{{ $t('app.subtitle') }}</p>
         </div>
       </div>
+      <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
+        <option v-for="l in langs" :key="l.key" :value="l.key">{{ l.label }}</option>
+      </select>
       <button v-if="isDesktop" class="ghost" @click="shutdown">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M7 6a7.7 7.7 0 1 0 10 0M12 4v8" /></svg>关闭离线程序
+        <svg class="ic" viewBox="0 0 24 24"><path d="M7 6a7.7 7.7 0 1 0 10 0M12 4v8" /></svg>{{ $t('app.shutdown') }}
       </button>
     </header>
 
@@ -351,15 +344,15 @@ const aggStats = computed(() => {
              @drop.prevent="onDrop">
       <div v-if="!files.length" class="uploadcard" :class="{ dragging }">
         <span class="up-icon"><svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg></span>
-        <div class="up-title">拖拽 .wotbreplay 文件到这里</div>
-        <div class="up-sub">支持多选文件，或选择整个文件夹</div>
+        <div class="up-title">{{ $t('upload.drop_hint') }}</div>
+        <div class="up-sub">{{ $t('upload.sub_hint') }}</div>
         <div class="up-actions">
           <label class="filebtn">
-            <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>选择回放文件
+            <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>{{ $t('upload.select_files') }}
             <input type="file" multiple accept=".wotbreplay" @change="onPick" />
           </label>
           <label class="filebtn ghost">
-            <svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /></svg>选择文件夹
+            <svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /></svg>{{ $t('upload.select_folder') }}
             <input type="file" multiple webkitdirectory @change="onPick" />
           </label>
         </div>
@@ -367,32 +360,32 @@ const aggStats = computed(() => {
 
       <div v-else class="filebar" :class="{ dragging }">
         <svg class="ic fb-ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
-        <span class="fb-count">{{ files.length }} 个文件</span>
+        <span class="fb-count">{{ $t('upload.files_count', { count: files.length }) }}</span>
         <div class="fb-chips">
           <span v-for="f in files" :key="fileKey(f)" class="chip">
             {{ displayName(f) }}
-            <button class="chipx" title="移除该回放" @click="removeFile(f)">×</button>
+            <button class="chipx" :title="$t('upload.remove_title')" @click="removeFile(f)">×</button>
           </span>
         </div>
-        <label class="filebtn ghost sm" title="添加回放文件">
-          <svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>添加
+        <label class="filebtn ghost sm" :title="$t('upload.add_files_title')">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>{{ $t('upload.add') }}
           <input type="file" multiple accept=".wotbreplay" @change="onPick" />
         </label>
-        <label class="filebtn ghost sm" title="添加文件夹">
-          <svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /></svg>文件夹
+        <label class="filebtn ghost sm" :title="$t('upload.add_folder_title')">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /></svg>{{ $t('upload.folder') }}
           <input type="file" multiple webkitdirectory @change="onPick" />
         </label>
         <button class="ghost sm" :disabled="loading" @click="clearFiles">
-          <svg class="ic" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3" /></svg>清空
+          <svg class="ic" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3" /></svg>{{ $t('upload.clear') }}
         </button>
       </div>
 
       <div v-if="files.length" class="actionrow">
         <button class="lg" :disabled="loading" @click="preview">
-          解析预览<svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+          {{ $t('action.preview') }}<svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
         </button>
-        <span v-if="loading" class="muted">处理中…</span>
-        <span v-else class="muted">解析后，导出按钮出现在结果区</span>
+        <span v-if="loading" class="muted">{{ $t('action.processing') }}</span>
+        <span v-else class="muted">{{ $t('action.preview_hint') }}</span>
       </div>
     </section>
 
@@ -400,46 +393,46 @@ const aggStats = computed(() => {
 
     <template v-if="resp">
       <div v-if="resp.duplicates.length" class="warn">
-        已跳过 {{ resp.duplicates.length }} 个重复上传：
+        {{ $t('result.duplicates', { count: resp.duplicates.length }) }}
         <span v-for="(d, i) in resp.duplicates" :key="i">{{ d[0] }}</span>
       </div>
       <div v-if="resp.failures.length" class="error">
-        {{ resp.failures.length }} 个文件解析失败：
+        {{ $t('result.failures', { count: resp.failures.length }) }}
         <span v-for="(f, i) in resp.failures" :key="i">{{ f[0] }} ({{ f[1] }})</span>
       </div>
 
       <div class="restoolbar">
         <div class="tabs" :class="{ locked: showColPicker }"
-             :title="showColPicker ? '列选择器打开时不可切换表格，请先点「完成」' : ''">
+             :title="showColPicker ? $t('action.picker_locked') : ''">
           <button v-if="resp.aggregate.length" :disabled="showColPicker"
                   :class="{ active: activeTab === 'aggregate' }"
-                  @click="activeTab = 'aggregate'">汇总 ({{ resp.aggregate.length }} 名选手)</button>
+                  @click="activeTab = 'aggregate'">{{ $t('result.aggregate_tab', { count: resp.aggregate.length }) }}</button>
           <button v-for="(b, i) in resp.battles" :key="i" :disabled="showColPicker"
                   :class="{ active: activeTab === 'b' + i }"
                   @click="activeTab = 'b' + i">{{ mapLabel(b.mapName) }} #{{ i + 1 }}
-            <span class="tabx" title="移除该场" @click.stop="askRemoveBattle(b, i)">×</span>
+            <span class="tabx" :title="$t('modal.remove_title')" @click.stop="askRemoveBattle(b, i)">×</span>
           </button>
         </div>
         <div class="resactions">
           <span class="dropdown">
             <button class="ghost sm" @click="toggleColPicker">
-              <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" /></svg>选择列 ▾
+              <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" /></svg>{{ $t('action.select_cols') }} ▾
             </button>
             <div v-if="showColPicker" class="colpanel">
               <div class="colpanel-head">
-                <span class="cph-title">{{ pickerScope === 'agg' ? '汇总表' : '单场表' }}列 · 勾选显示、拖拽排序</span>
-                <button class="linkbtn" @click="selectAllCols">全选</button>
-                <button class="linkbtn" @click="resetCols">重置</button>
-                <button class="linkbtn" @click="showColPicker = false">完成</button>
+                <span class="cph-title">{{ pickerScope === 'agg' ? $t('col_picker.title_agg') : $t('col_picker.title_player') }} · {{ $t('col_picker.desc') }}</span>
+                <button class="linkbtn" @click="selectAllCols">{{ $t('col_picker.select_all') }}</button>
+                <button class="linkbtn" @click="resetCols">{{ $t('col_picker.reset') }}</button>
+                <button class="linkbtn" @click="showColPicker = false">{{ $t('col_picker.done') }}</button>
               </div>
               <ul class="collist">
                 <li v-for="(key, idx) in currentOrder" :key="key" draggable="true"
                     @dragstart="onColDragStart(idx)" @dragover.prevent @drop="onColDrop(idx)"
                     :class="{ dragging: dragIdx === idx }">
-                  <span class="grip" title="拖拽排序">⋮⋮</span>
+                  <span class="grip" title="⋮⋮">⋮⋮</span>
                   <label class="colitem">
                     <input type="checkbox" :checked="isVisible(key)" @change="toggleCol(key)" />
-                    {{ pickerLabel(key) }}
+                    {{ $t((pickerScope === 'agg' ? 'agg_labels.' : 'player_labels.') + key) }}
                   </label>
                   <span class="cat">{{ catOf(key) }}</span>
                 </li>
@@ -447,25 +440,25 @@ const aggStats = computed(() => {
             </div>
           </span>
           <button class="sm" :disabled="loading" @click="exportXlsx('aggregate')">
-            <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>合并汇总
+            <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_aggregate') }}
           </button>
           <button class="ghost sm" :disabled="loading" @click="exportXlsx('each')">
-            <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>每场导出
+            <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_each') }}
           </button>
         </div>
       </div>
 
       <div v-if="activeTab === 'aggregate' && resp.aggregate.length">
         <div v-if="aggStats" class="mcards">
-          <div class="mc"><div class="k">战斗场次</div><div class="v">{{ aggStats.battles }}</div></div>
-          <div class="mc"><div class="k">选手</div><div class="v">{{ aggStats.players }}</div></div>
-          <div class="mc"><div class="k">最高场均评分</div><div class="v">{{ aggStats.maxRating }}</div></div>
-          <div class="mc"><div class="k">最高单场伤害</div><div class="v">{{ aggStats.maxDmg }}</div></div>
+          <div class="mc"><div class="k">{{ $t('metric.battles') }}</div><div class="v">{{ aggStats.battles }}</div></div>
+          <div class="mc"><div class="k">{{ $t('metric.players') }}</div><div class="v">{{ aggStats.players }}</div></div>
+          <div class="mc"><div class="k">{{ $t('metric.max_rating') }}</div><div class="v">{{ aggStats.maxRating }}</div></div>
+          <div class="mc"><div class="k">{{ $t('metric.max_damage') }}</div><div class="v">{{ aggStats.maxDmg }}</div></div>
         </div>
         <div class="tablewrap">
           <table>
             <thead><tr>
-              <th v-for="c in shownAggCols" :key="c.key" @click="sortBy('agg', c)">{{ aggLabel(c.key) }}{{ arrow('agg', c.key) }}</th>
+              <th v-for="c in shownAggCols" :key="c.key" @click="sortBy('agg', c)">{{ $t('agg_labels.' + c.key) }}{{ arrow('agg', c.key) }}</th>
             </tr></thead>
             <tbody>
               <tr v-for="(row, i) in sorted(resp.aggregate, 'agg', shownAggCols)" :key="i"
@@ -483,22 +476,22 @@ const aggStats = computed(() => {
 
       <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i">
         <div class="mcards">
-          <div class="mc"><div class="k">地图</div><div class="v">{{ mapLabel(b.mapName) }}</div></div>
-          <div class="mc"><div class="k">时长</div><div class="v">{{ fmtDuration(b.durationS) }}</div></div>
-          <div class="mc"><div class="k">获胜</div><div class="v">{{ TEAM[b.winnerTeam] || '平局/未知' }}</div></div>
-          <div class="mc"><div class="k">玩家</div><div class="v">{{ b.players.length }}</div></div>
+          <div class="mc"><div class="k">{{ $t('metric.map') }}</div><div class="v">{{ mapLabel(b.mapName) }}</div></div>
+          <div class="mc"><div class="k">{{ $t('metric.duration') }}</div><div class="v">{{ fmtDuration(b.durationS) }}</div></div>
+          <div class="mc"><div class="k">{{ $t('metric.winner') }}</div><div class="v">{{ b.winnerTeam ? $t('team.' + b.winnerTeam) : $t('team.unknown') }}</div></div>
+          <div class="mc"><div class="k">{{ $t('metric.player_count') }}</div><div class="v">{{ b.players.length }}</div></div>
         </div>
         <div class="tablewrap">
           <table>
             <thead><tr>
-              <th v-for="c in shownCols" :key="c.key" @click="sortBy('b' + i, c)">{{ playerLabel(c.key) }}{{ arrow('b' + i, c.key) }}</th>
+              <th v-for="c in shownCols" :key="c.key" @click="sortBy('b' + i, c)">{{ $t('player_labels.' + c.key) }}{{ arrow('b' + i, c.key) }}</th>
             </tr></thead>
             <tbody>
               <tr v-for="(row, ri) in sorted(b.players, 'b' + i, shownCols)" :key="ri"
                   :class="row.team === 1 ? 't1' : 't2'">
                 <td v-for="c in shownCols" :key="c.key">
                   <span v-if="RATING_KEYS.has(c.key)" class="rbadge" :class="ratingTier(row.cells[c.key])">{{ row.cells[c.key] }}<span class="medal">{{ medal(b.players, c.key, row.cells[c.key]) }}</span></span>
-                  <span v-else-if="c.key === 'survived_label'" :class="row.cells[c.key] === '存活' ? 'alive' : 'dead'">{{ row.cells[c.key] }}</span>
+                  <span v-else-if="c.key === 'survived_label'" :class="row.cells[c.key] === '存活' ? 'alive' : 'dead'">{{ row.cells[c.key] === '存活' ? $t('survived.alive') : $t('survived.dead') }}</span>
                   <span v-else>{{ row.cells[c.key] }}</span>
                 </td>
               </tr>
@@ -511,12 +504,12 @@ const aggStats = computed(() => {
 
     <div v-if="pendingRemove" class="modal-mask" @click.self="cancelRemove">
       <div class="modal">
-        <p class="modal-title">移除该场</p>
-        <p>确定移除「{{ pendingRemove.label }}」这场回放吗？</p>
-        <p class="modal-sub">将从列表删除对应回放文件并重新汇总。可重新选择文件再解析。</p>
+        <p class="modal-title">{{ $t('modal.remove_title') }}</p>
+        <p>{{ $t('modal.remove_confirm', { label: pendingRemove.label }) }}</p>
+        <p class="modal-sub">{{ $t('modal.remove_hint') }}</p>
         <div class="modal-actions">
-          <button @click="confirmRemoveBattle">确认移除</button>
-          <button class="ghost" @click="cancelRemove">取消</button>
+          <button @click="confirmRemoveBattle">{{ $t('modal.confirm') }}</button>
+          <button class="ghost" @click="cancelRemove">{{ $t('modal.cancel') }}</button>
         </div>
       </div>
     </div>
@@ -640,6 +633,11 @@ tr.t2 td { background: #fbf1ec; }
 .modal-title { font-size: 15px; font-weight: bold; margin: 0 0 8px; color: #34465f; }
 .modal-sub { font-size: 12px; color: #777; margin: 6px 0 0; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.lang-select { appearance: none; -webkit-appearance: none; border: 1px solid #dbe3ef; background: #f1f4f8;
+  color: #46566f; padding: 6px 28px 6px 10px; border-radius: 7px; font-size: 13px; cursor: pointer;
+  font-family: inherit; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' stroke='%2346566f' stroke-width='2' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 6px center; background-size: 14px; }
+.lang-select:hover { background-color: #e7ecf4; }
 
 /* ====== 响应式 ====== */
 @media (max-width: 768px) {
