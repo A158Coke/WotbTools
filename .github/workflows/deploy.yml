@@ -43,9 +43,8 @@ jobs:
           context: .
           file: Dockerfile
           push: true
-          tags: |
-            a158coke/wotbtool:latest
-            a158coke/wotbtool:${{ steps.vars.outputs.sha }}
+          # Docker Hub 仓库启用了标签不可变, 故只推唯一的 sha 标签(永不覆盖); 不推 latest
+          tags: a158coke/wotbtool:${{ steps.vars.outputs.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -62,7 +61,7 @@ jobs:
             cat > docker-compose.yml <<'EOF'
             services:
               wotb:
-                image: a158coke/wotbtool:latest
+                image: a158coke/wotbtool:${{ steps.vars.outputs.sha }}
                 container_name: wotb
                 ports:
                   - "8088:80"
