@@ -1,7 +1,7 @@
 # 在线版: 两个容器 (前端 nginx+Vue / 后端 Spring Boot API)
 # 用法: cd java/online && docker compose up --build
-#   - backend 上下文为仓库根 (编译时需要 common/tankopedia.json 与 java/)
-#   - frontend 上下文为 java/ (需要 frontend/ 与 online/nginx.conf)
+#   - backend 上下文为仓库根 (编译时需要 common/*.json 与 java/)
+#   - frontend 上下文为仓库根 (App.vue 需 import common/map_names.json)
 services:
   backend:
     build:
@@ -14,8 +14,8 @@ services:
 
   frontend:
     build:
-      context: ..
-      dockerfile: online/frontend.Dockerfile
+      context: ../..
+      dockerfile: java/online/frontend.Dockerfile
     container_name: wotb-frontend
     ports:
       - "8088:80"
