@@ -25,6 +25,7 @@
 文档入口：
 
 - 本文件：项目概览、Java 版使用与构建。
+- [HANDOVER.md](HANDOVER.md)：**交接 / AI 工具迁移总入口**（环境坑、CI/CD、部署、约定一站式）。
 - [java/README.md](java/README.md)：Java / Web 版运行、接口、部署、离线 exe 构建。
 - [TODO.md](TODO.md)：迁移目标与待办。
 - [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)：给后续开发者和 AI coder 的维护上下文、数据格式、测试策略。
