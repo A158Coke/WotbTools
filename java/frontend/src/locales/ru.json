@@ -1,0 +1,122 @@
+{
+  "app": {
+    "title": "Анализатор реплеев WoT Blitz",
+    "subtitle": "Разбор реплеев · данные 14 игроков · экспорт xlsx",
+    "shutdown": "Выключить"
+  },
+  "lang": "Русский",
+  "upload": {
+    "drop_hint": "Перетащите .wotbreplay файлы сюда",
+    "sub_hint": "Поддерживаются несколько файлов или целые папки",
+    "select_files": "Выбрать файлы реплеев",
+    "select_folder": "Выбрать папку",
+    "add": "Добавить",
+    "folder": "Папка",
+    "clear": "Очистить",
+    "files_count": "{count} файл(ов)",
+    "remove_title": "Удалить этот реплей",
+    "add_files_title": "Добавить файлы реплеев",
+    "add_folder_title": "Добавить папку"
+  },
+  "action": {
+    "preview": "Разобрать",
+    "processing": "Обработка…",
+    "preview_hint": "Кнопки экспорта появятся после разбора",
+    "select_cols": "Колонки",
+    "picker_locked": "Выбор колонок открыт — нажмите Готово для переключения таблиц",
+    "export_aggregate": "Сводный экспорт",
+    "export_each": "Экспорт каждого боя"
+  },
+  "result": {
+    "aggregate_tab": "Сводка ({count} игроков)",
+    "scroll_hint": "← Листайте вправо для полных данных →",
+    "duplicates": "Пропущено {count} дубликатов:",
+    "failures": "{count} файл(ов) не удалось разобрать:"
+  },
+  "col_picker": {
+    "title_player": "Таблица боя",
+    "title_agg": "Сводная таблица",
+    "desc": "Колонки — отметьте для показа, перетащите для сортировки",
+    "select_all": "Выбрать все",
+    "reset": "Сброс",
+    "done": "Готово"
+  },
+  "metric": {
+    "battles": "Боёв",
+    "players": "Игроков",
+    "max_rating": "Макс. ср. рейтинг",
+    "max_damage": "Макс. урон за бой",
+    "map": "Карта",
+    "duration": "Длительность",
+    "winner": "Победитель",
+    "player_count": "Игроки"
+  },
+  "modal": {
+    "remove_title": "Удалить бой",
+    "remove_confirm": "Удалить «{label}» из списка?",
+    "remove_hint": "Файл реплея будет удалён, сводка обновится.",
+    "confirm": "Удалить",
+    "cancel": "Отмена"
+  },
+  "duration": "{min} мин {sec} сек",
+  "team": { "1": "Команда 1", "2": "Команда 2", "unknown": "Ничья/Неизвестно" },
+  "survived": { "alive": "Выжил", "dead": "Уничтожен" },
+  "col_groups": {
+    "identity": "Личность",
+    "vehicle": "Техника",
+    "battle": "Бой",
+    "extra": "Дополнительно",
+    "overview": "Обзор"
+  },
+  "player_labels": {
+    "nickname": "Игрок",
+    "clan": "Клан",
+    "tank_name": "Танк",
+    "tank_tier": "Уровень",
+    "tank_type": "Тип",
+    "tank_nation": "Нация",
+    "rating": "Рейтинг",
+    "survived_label": "Статус",
+    "kills": "Убийств",
+    "damage_dealt": "Урон",
+    "damage_assisted": "Помощь",
+    "damage_received": "Получено",
+    "damage_blocked": "Заблокировано",
+    "n_shots": "Выстрелы",
+    "n_hits_dealt": "Попадания",
+    "n_penetrations_dealt": "Пробития",
+    "hit_rate": "Меткость",
+    "pen_rate": "Пробиваемость",
+    "n_hits_received": "Попаданий получено",
+    "n_penetrations_received": "Пробитий получено",
+    "n_enemies_damaged": "Целей поражено",
+    "platoon_label": "Взвод",
+    "tank_id": "ID техники",
+    "account_id": "ID аккаунта"
+  },
+  "agg_labels": {
+    "nickname": "Игрок",
+    "clan": "Клан",
+    "battles": "Боёв",
+    "wins": "Побед",
+    "win_rate": "% Побед",
+    "survival_rate": "% Выживания",
+    "rating_avg": "Ср. рейтинг",
+    "kills": "Всего убийств",
+    "kills_avg": "Ср. убийств",
+    "damage": "Всего урона",
+    "damage_avg": "Ср. урон",
+    "assisted": "Всего помощи",
+    "assisted_avg": "Ср. помощь",
+    "received_avg": "Ср. получено",
+    "blocked_avg": "Ср. заблокировано",
+    "hit_rate": "% Попаданий",
+    "pen_rate": "% Пробитий",
+    "enemies_damaged_avg": "Ср. целей поражено",
+    "shots": "Всего выстрелов",
+    "hits": "Всего попаданий",
+    "pens": "Всего пробитий",
+    "tanks": "Техники использовано",
+    "account_id": "ID аккаунта"
+  }
+}

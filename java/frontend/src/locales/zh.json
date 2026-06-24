@@ -1,0 +1,122 @@
+{
+  "app": {
+    "title": "WoT Blitz 回放分析",
+    "subtitle": "解析回放 · 14 人战场数据 · 导出 xlsx",
+    "shutdown": "关闭离线程序"
+  },
+  "lang": "中文",
+  "upload": {
+    "drop_hint": "拖拽 .wotbreplay 文件到这里",
+    "sub_hint": "支持多选文件，或选择整个文件夹",
+    "select_files": "选择回放文件",
+    "select_folder": "选择文件夹",
+    "add": "添加",
+    "folder": "文件夹",
+    "clear": "清空",
+    "files_count": "{count} 个文件",
+    "remove_title": "移除该回放",
+    "add_files_title": "添加回放文件",
+    "add_folder_title": "添加文件夹"
+  },
+  "action": {
+    "preview": "解析预览",
+    "processing": "处理中…",
+    "preview_hint": "解析后，导出按钮出现在结果区",
+    "select_cols": "选择列",
+    "picker_locked": "列选择器打开时不可切换表格，请先点「完成」",
+    "export_aggregate": "合并汇总",
+    "export_each": "每场导出"
+  },
+  "result": {
+    "aggregate_tab": "汇总 ({count} 名选手)",
+    "scroll_hint": "← 左右滑动查看更多数据 →",
+    "duplicates": "已跳过 {count} 个重复上传：",
+    "failures": "{count} 个文件解析失败："
+  },
+  "col_picker": {
+    "title_player": "单场表",
+    "title_agg": "汇总表",
+    "desc": "列 · 勾选显示、拖拽排序",
+    "select_all": "全选",
+    "reset": "重置",
+    "done": "完成"
+  },
+  "metric": {
+    "battles": "战斗场次",
+    "players": "选手",
+    "max_rating": "最高场均评分",
+    "max_damage": "最高单场伤害",
+    "map": "地图",
+    "duration": "时长",
+    "winner": "获胜",
+    "player_count": "玩家"
+  },
+  "modal": {
+    "remove_title": "移除该场",
+    "remove_confirm": "确定移除「{label}」这场回放吗？",
+    "remove_hint": "将从列表删除对应回放文件并重新汇总。可重新选择文件再解析。",
+    "confirm": "确认移除",
+    "cancel": "取消"
+  },
+  "duration": "{min}分{sec}秒",
+  "team": { "1": "队伍1", "2": "队伍2", "unknown": "平局/未知" },
+  "survived": { "alive": "存活", "dead": "阵亡" },
+  "col_groups": {
+    "identity": "身份",
+    "vehicle": "车辆",
+    "battle": "战斗",
+    "extra": "附加",
+    "overview": "总览"
+  },
+  "player_labels": {
+    "nickname": "玩家",
+    "clan": "战队",
+    "tank_name": "车辆",
+    "tank_tier": "等级",
+    "tank_type": "坦克类型",
+    "tank_nation": "国家",
+    "rating": "评分",
+    "survived_label": "存活",
+    "kills": "击杀",
+    "damage_dealt": "伤害",
+    "damage_assisted": "协助伤害",
+    "damage_received": "损失血量",
+    "damage_blocked": "格挡",
+    "n_shots": "射击次数",
+    "n_hits_dealt": "命中次数",
+    "n_penetrations_dealt": "击穿",
+    "hit_rate": "命中率",
+    "pen_rate": "击穿率",
+    "n_hits_received": "被命中",
+    "n_penetrations_received": "被击穿",
+    "n_enemies_damaged": "击伤",
+    "platoon_label": "排",
+    "tank_id": "车辆ID",
+    "account_id": "账号ID"
+  },
+  "agg_labels": {
+    "nickname": "玩家",
+    "clan": "战队",
+    "battles": "场次",
+    "wins": "胜场",
+    "win_rate": "胜率%",
+    "survival_rate": "存活率%",
+    "rating_avg": "场均评分",
+    "kills": "总击杀",
+    "kills_avg": "场均击杀",
+    "damage": "总伤害",
+    "damage_avg": "场均伤害",
+    "assisted": "总协助伤害",
+    "assisted_avg": "场均协助伤害",
+    "received_avg": "场均损失血量",
+    "blocked_avg": "场均格挡",
+    "hit_rate": "命中率%",
+    "pen_rate": "击穿率%",
+    "enemies_damaged_avg": "场均击伤",
+    "shots": "总射击次数",
+    "hits": "总命中次数",
+    "pens": "总击穿次数",
+    "tanks": "用车",
+    "account_id": "账号ID"
+  }
+}
