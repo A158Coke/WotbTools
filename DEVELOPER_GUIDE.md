@@ -153,7 +153,10 @@ BattleResults
 | `Players`            | `wotb-core/.../Players.java`           | `enrich_display()` / `sort_players()`       |
 | `Columns`            | `wotb-core/.../Columns.java`           | `PLAYER_COLUMNS` 等                          |
 | `Aggregator`         | `wotb-core/.../Aggregator.java`        | `aggregate_players()`                       |
-| `ExcelExporter`      | `wotb-core/.../ExcelExporter.java`     | `export_xlsx()` / `export_aggregate_xlsx()` |
+| `ExcelExporter`      | `wotb-core/.../ExcelExporter.java`     | 导出门面 `export_xlsx()` / `export_aggregate_xlsx()` |
+| `ExcelStyles`        | `wotb-core/.../ExcelStyles.java`       | POI 渲染底座 (样式 + 写格 + 值格式化)        |
+| `SingleBattleSheets` | `wotb-core/.../SingleBattleSheets.java` | 单场三表 (战斗信息/玩家数据/原始字段)        |
+| `AggregateSheets`    | `wotb-core/.../AggregateSheets.java`   | 汇总三表 (汇总/明细/战斗列表)                 |
 | `Replays`            | `wotb-core/.../Replays.java`           | `collect_battles()`                         |
 | `ReplayController`   | `wotb-web/.../ReplayController.java`   | REST API（仅 HTTP 映射）                          |
 | `ReplayService`      | `wotb-web/.../service/ReplayService.java` | 业务编排（解析/评分/映射/导出）              |
