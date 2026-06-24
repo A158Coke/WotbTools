@@ -43,7 +43,7 @@ function arrow(key) {
     <div class="tablewrap">
       <table>
         <thead><tr>
-          <th v-for="c in shownCols" :key="c.key" @click="sortBy(c)">{{ $t('agg_labels.' + c.key) }}{{ arrow(c.key) }}</th>
+          <th v-for="c in shownCols" :key="c.key" @click="sortBy(c)" :title="c.key === 'survival_avg' ? $t('agg_labels.survival_avg_tip') : undefined">{{ $t('agg_labels.' + c.key) }}{{ arrow(c.key) }}</th>
         </tr></thead>
         <tbody>
           <tr v-for="(row, i) in sorted" :key="i" :class="row.team === 1 ? 't1' : 't2'">

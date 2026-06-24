@@ -43,7 +43,7 @@ function arrow(key) {
     <div class="tablewrap">
       <table>
         <thead><tr>
-          <th v-for="c in shownCols" :key="c.key" @click="sortBy(c)">{{ $t('player_labels.' + c.key) }}{{ arrow(c.key) }}</th>
+          <th v-for="c in shownCols" :key="c.key" @click="sortBy(c)" :title="c.key === 'survival_time' ? $t('player_labels.survival_time_tip') : undefined">{{ $t('player_labels.' + c.key) }}{{ arrow(c.key) }}</th>
         </tr></thead>
         <tbody>
           <tr v-for="(row, ri) in sorted" :key="ri" :class="row.team === 1 ? 't1' : 't2'">

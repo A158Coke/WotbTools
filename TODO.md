@@ -21,6 +21,11 @@
 
 - [ ] 给 `wotb-core` 增加更明确的 parity 测试说明：字段不变量与导出格式一致性。
 - [x] 车辆库同步：已统一为单一来源 `common/tankopedia.json`，`wotb-core` 构建时自动复制到 classpath。
+- [ ] **存活时间(survivalTimeSec)推算仍然不准。** 当前逻辑：deathTimeMillis → EntityLeave → Position 三层 fallback。问题：
+  - EntityLeave(type 4) 事件不承诺是阵亡——存在大量假阳性（临时离场）和假阴性（阵亡无 leave）；
+  - Position(type 10) 数据在某些 replay 中会覆盖整场，另一些则在玩家阵亡后继续（来自玩家化身实体的观战坐标）；
+  - event stream 时钟与 meta.json battleDuration 有时不一致。
+  - 需要重新研究 protobuf #104 字段实际含义，或寻找更可靠的死亡事件（如 EntityProperty 血量归零）。
 
 ## P1：Web 版完善
 
