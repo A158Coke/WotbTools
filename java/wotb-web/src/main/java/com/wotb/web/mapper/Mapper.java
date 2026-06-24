@@ -1,4 +1,4 @@
-package com.wotb.web;
+package com.wotb.web.mapper;
 
 import com.wotb.core.Columns;
 import com.wotb.core.Players;
@@ -26,7 +26,7 @@ public final class Mapper {
     /** 玩家表列定义 (纯数据: key + 是否数值; 中文名由前端映射)。 */
     public static List<ColumnDef> playerColumns() {
         final List<ColumnDef> out = new ArrayList<>();
-        for (final Columns.Col c : Columns.PLAYER) {
+        for (final Columns.Column c : Columns.PLAYER) {
             out.add(new ColumnDef(c.key(), c.num()));
         }
         return out;
@@ -74,7 +74,7 @@ public final class Mapper {
             Players.enrich(p, tp);
             p.platoonLabel = platoon.apply(p.platoonId);
             final Map<String, Object> cells = new LinkedHashMap<>();
-            for (final Columns.Col c : Columns.PLAYER) {
+            for (final Columns.Column c : Columns.PLAYER) {
                 cells.put(c.key(), c.get().apply(p));
             }
             rows.add(new PlayerRow(cells, p.team));

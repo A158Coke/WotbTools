@@ -80,6 +80,12 @@ docker compose up --build
 - `frontend`：nginx 托管 Vue 构建产物，并把 `/api` 反代到后端容器。
 - `backend`：Spring Boot 服务，无状态处理上传文件，不落库。
 
+> 两个镜像的构建上下文都是**仓库根**（`docker-compose.yml` 里 `context: ../..`）：后端构建要 `common/*.json`，前端构建因 `App.vue` `import` 了 `common/map_names.json` 也需要仓库根。仓库根的 `.dockerignore` 负责排除 `node_modules`/`dist`/`target` 等，避免上下文过大。
+
+### 自动部署（CI/CD）
+
+`push` 到 `main` 且改动命中 `java/**`、`common/**` 或 `.github/workflows/deploy.yml` 时，[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) 会 SSH 到 VPS（`/opt/wotb`）执行 `git reset --hard origin/main` → `docker compose up -d --build` 重建并重启容器。即：**推送即部署**，无需手动操作。
+
 ## 本地开发
 
 后端需要 JDK 21。
@@ -123,7 +129,7 @@ java -jar wotb-web/target/wotb-web.jar --desktop
 - `player`：单场玩家数据列。
 - `aggregate`：多场汇总列。
 
-中文显示名不在 API 里：前端有自己的 `PLAYER_LABELS` / `AGG_LABELS` 映射，导出层（`Columns.java` / `ExcelExporter`）各自维护 xlsx 表头。详见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
+中文显示名不在 API 里：前端有自己的 `PLAYER_LABELS` / `AGG_LABELS` 映射，导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。详见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
 
 ### `POST /api/preview`
 

@@ -1,4 +1,4 @@
-package com.wotb.web;
+package com.wotb.web.controller;
 
 import com.wotb.web.dto.ExportResult;
 import com.wotb.web.dto.PreviewResponse;

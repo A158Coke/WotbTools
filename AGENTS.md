@@ -7,7 +7,7 @@
 ## 硬性规则(RULES)
 
 1. **改动即更新文档。** 任何影响"界面 / 导出 / 数据 / 构建 / 用法"的改动,必须在同一次提交里更新 [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) 及相关 README([根](README.md) / [java](java/README.md))。
-2. **跨层一致性。** 列的 `key`(snake_case)在 **API / 前端 / 导出** 三方一致;中文显示名在 **前端两套映射(`PLAYER_LABELS`/`AGG_LABELS`)+ 导出两处(`Columns.java`、`ExcelExporter` 汇总列)** 一致。
+2. **跨层一致性。** 列的 `key`(snake_case)在 **API / 前端 / 导出** 三方一致;中文显示名在 **前端两套映射(`PLAYER_LABELS`/`AGG_LABELS`)+ 导出两处(`Columns.java`、`AggregateSheets` 汇总列)** 一致。
 3. **API 纯英文。** `/api/columns` 和 DTO 只回 `key`+数据,**不得**把中文塞回 API。中文是前端/导出层各自的事。
 4. **提交前必须通过测试。**
    - Java:`cd java && mvn -s settings.xml test`(需 `JAVA_HOME` 指向 JDK 21)
