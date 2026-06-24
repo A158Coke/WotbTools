@@ -17,7 +17,6 @@ public final class PickleReader {
     private final byte[] b;
     private int pos;
     private final Deque<Object> stack = new ArrayDeque<>();
-    private final Deque<Integer> marks = new ArrayDeque<>();
 
     /** MARK 的占位标记。 */
     private static final Object MARK = new Object();
@@ -33,7 +32,7 @@ public final class PickleReader {
 
     private Object run() {
         while (pos < b.length) {
-            int op = b[pos++] & 0xFF;
+            final int op = b[pos++] & 0xFF;
             switch (op) {
                 case 0x80: pos++; break;                       // PROTO: 跳过版本号
                 case 0x95: pos += 8; break;                    // FRAME: 跳过 8 字节长度
@@ -80,8 +79,8 @@ public final class PickleReader {
         return stack.peek();
     }
 
-    private void tuple(int k) {
-        Object[] t = new Object[k];
+    private void tuple(final int k) {
+        final Object[] t = new Object[k];
         for (int i = k - 1; i >= 0; i--) {
             t[i] = stack.pop();
         }
@@ -89,7 +88,7 @@ public final class PickleReader {
     }
 
     private void tupleMark() {
-        List<Object> items = new ArrayList<>();
+        final List<Object> items = new ArrayList<>();
         while (!stack.isEmpty() && stack.peek() != MARK) {
             items.add(0, stack.pop());
         }
@@ -100,14 +99,14 @@ public final class PickleReader {
     }
 
     private byte[] readBytes(final int len) {
-        byte[] out = new byte[len];
+        final byte[] out = new byte[len];
         System.arraycopy(b, pos, out, 0, len);
         pos += len;
         return out;
     }
 
     private String readStr(final int len) {
-        String s = new String(b, pos, len, StandardCharsets.UTF_8);
+        final String s = new String(b, pos, len, StandardCharsets.UTF_8);
         pos += len;
         return s;
     }
@@ -123,12 +122,12 @@ public final class PickleReader {
 
     /** LONG1: 1 字节长度 + 小端二进制补码大整数。 */
     private Object readLong1() {
-        int len = b[pos++] & 0xFF;
+        final int len = b[pos++] & 0xFF;
         return readLong(len);
     }
 
     private Object readLong4() {
-        int len = (int) readLE(4);
+        final int len = (int) readLE(4);
         return readLong(len);
     }
 
@@ -136,13 +135,13 @@ public final class PickleReader {
         if (len == 0) {
             return 0L;
         }
-        byte[] le = readBytes(len);
+        final byte[] le = readBytes(len);
         // 小端 -> 大端供 BigInteger 解释(二进制补码)
-        byte[] be = new byte[len];
+        final byte[] be = new byte[len];
         for (int k = 0; k < len; k++) {
             be[k] = le[len - 1 - k];
         }
-        BigInteger bi = new BigInteger(be);
+        final BigInteger bi = new BigInteger(be);
         return (bi.bitLength() < 63) ? (Object) bi.longValue() : (Object) bi;
     }
 }

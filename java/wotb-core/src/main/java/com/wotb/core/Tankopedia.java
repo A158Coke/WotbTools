@@ -19,11 +19,11 @@ public final class Tankopedia {
 
     /** 从 classpath 的 tankopedia.json 加载。 */
     public static Tankopedia load() {
-        Map<String, JsonNode> map = new HashMap<>();
+        final Map<String, JsonNode> map = new HashMap<>();
         try (InputStream in = Tankopedia.class.getResourceAsStream("/tankopedia.json")) {
             if (in != null) {
-                JsonNode root = new ObjectMapper().readTree(in);
-                JsonNode d = root.has("data") ? root.get("data") : root;
+                final JsonNode root = new ObjectMapper().readTree(in);
+                final JsonNode d = root.has("data") ? root.get("data") : root;
                 d.fields().forEachRemaining(e -> map.put(e.getKey(), e.getValue()));
             }
         } catch (Exception ignored) {
@@ -33,14 +33,14 @@ public final class Tankopedia {
     }
 
     public TankInfo info(final long tankId) {
-        JsonNode t = data.get(String.valueOf(tankId));
+        final JsonNode t = data.get(String.valueOf(tankId));
         if (t == null) {
             return new TankInfo("#" + tankId, "", "", "");
         }
-        String name = t.hasNonNull("name") ? t.get("name").asText() : "#" + tankId;
-        Object tier = t.hasNonNull("tier") ? t.get("tier").asInt() : "";
-        String type = t.hasNonNull("class") ? t.get("class").asText() : "";
-        String nation = t.hasNonNull("nation") ? t.get("nation").asText() : "";
+        final String name = t.hasNonNull("name") ? t.get("name").asText() : "#" + tankId;
+        final Object tier = t.hasNonNull("tier") ? t.get("tier").asInt() : "";
+        final String type = t.hasNonNull("class") ? t.get("class").asText() : "";
+        final String nation = t.hasNonNull("nation") ? t.get("nation").asText() : "";
         return new TankInfo(name, tier, type, nation);
     }
 

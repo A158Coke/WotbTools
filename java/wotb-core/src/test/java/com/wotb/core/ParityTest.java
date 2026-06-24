@@ -33,8 +33,8 @@ class ParityTest {
     }
 
     private static Battle battleByArena(final String arenaId) throws Exception {
-        for (Path p : replays()) {
-            Battle b = ReplayParser.parse(p);
+        for (final Path p : replays()) {
+            final Battle b = ReplayParser.parse(p);
             if (arenaId.equals(b.arenaId)) {
                 return b;
             }
@@ -48,7 +48,7 @@ class ParityTest {
 
     @Test
     void tankopediaResolves() {
-        Tankopedia tp = Tankopedia.load();
+        final Tankopedia tp = Tankopedia.load();
         assertTrue(tp.size() > 600, "车辆库应非空");
         assertEquals("Kranvagn", tp.info(4481).name);
         assertEquals("重坦", tp.info(4481).type);
@@ -58,12 +58,12 @@ class ParityTest {
 
     @Test
     void parsesBattleExactValues() throws Exception {
-        Battle b = battleByArena("1161909687528274499");   // lagoon 那场
+        final Battle b = battleByArena("1161909687528274499");   // lagoon 那场
         assertEquals(14, b.players.size());
         assertEquals(Integer.valueOf(2), b.winnerTeam);
 
         // 录像者 WHAT_HPSHARING 的精确战绩 (与 Python 输出一致)
-        PlayerResult owner = byAccount(b, 3125699886L);
+        final PlayerResult owner = byAccount(b, 3125699886L);
         assertEquals("WHAT_HPSHARING", owner.nickname);
         assertEquals(2, owner.team);
         assertEquals(4481, owner.tankId);
@@ -84,17 +84,18 @@ class ParityTest {
 
     @Test
     void battleInvariants() throws Exception {
-        for (Path p : replays()) {
-            Battle b = ReplayParser.parse(p);
+        for (final Path p : replays()) {
+            final Battle b = ReplayParser.parse(p);
             assertEquals(14, b.players.size(), p.getFileName().toString());
             // 发射 >= 命中 >= 击穿
-            for (PlayerResult pr : b.players) {
+            for (final PlayerResult pr : b.players) {
                 assertTrue(pr.nShots >= pr.nHitsDealt && pr.nHitsDealt >= pr.nPenetrationsDealt,
                         "发射>=命中>=击穿: " + pr.nickname);
             }
             // 每队击杀数 == 敌队阵亡数
-            int[] kills = new int[3], deaths = new int[3];
-            for (PlayerResult pr : b.players) {
+            final int[] kills = new int[3];
+            final int[] deaths = new int[3];
+            for (final PlayerResult pr : b.players) {
                 kills[pr.team] += pr.kills;
                 if (!pr.survived) deaths[pr.team]++;
             }
@@ -105,20 +106,20 @@ class ParityTest {
 
     @Test
     void dedupAndAggregate() throws Exception {
-        List<Path> files = replays();
-        List<Source> sources = new ArrayList<>();
-        for (Path p : files) {
+        final List<Path> files = replays();
+        final List<Source> sources = new ArrayList<>();
+        for (final Path p : files) {
             sources.add(new Source(p.getFileName().toString(), Files.readAllBytes(p)));
         }
         // 再加一份重复(同一场)
         sources.add(new Source("dup.wotbreplay", Files.readAllBytes(files.get(0))));
 
-        Collected c = Replays.collect(sources, null);
+        final Collected c = Replays.collect(sources, null);
         assertEquals(files.size(), c.battles.size(), "唯一战斗数");
         assertEquals(1, c.duplicates.size(), "应跳过 1 个重复");
         assertEquals(0, c.failures.size());
 
-        var agg = Aggregator.aggregate(c.battles, Tankopedia.load());
+        final var agg = Aggregator.aggregate(c.battles, Tankopedia.load());
         assertFalse(agg.isEmpty());
         agg.values().forEach(a -> {
             assertTrue(a.battles >= 1 && a.battles <= c.battles.size());
@@ -128,33 +129,33 @@ class ParityTest {
 
     @Test
     void ratingComputedAndCentered() throws Exception {
-        List<Battle> battles = new ArrayList<>();
-        for (Path p : replays()) {
+        final List<Battle> battles = new ArrayList<>();
+        for (final Path p : replays()) {
             battles.add(ReplayParser.parse(p));
         }
         Rating.compute(battles, Tankopedia.load());
-        List<PlayerResult> all = new ArrayList<>();
+        final List<PlayerResult> all = new ArrayList<>();
         battles.forEach(b -> all.addAll(b.players));
         assertTrue(all.stream().allMatch(p -> p.rating != null), "每位玩家都应有评分");
-        double avg = all.stream().mapToInt(p -> p.rating).average().orElse(0);
+        final double avg = all.stream().mapToInt(p -> p.rating).average().orElse(0);
         assertTrue(avg > 850 && avg < 1150, "评分均值应接近 1000, 实际 " + avg);
     }
 
     @Test
     void exportsXlsx() throws Exception {
-        Tankopedia tp = Tankopedia.load();
-        Battle b = ReplayParser.parse(replays().get(0));
-        ByteArrayOutputStream single = new ByteArrayOutputStream();
+        final Tankopedia tp = Tankopedia.load();
+        final Battle b = ReplayParser.parse(replays().get(0));
+        final ByteArrayOutputStream single = new ByteArrayOutputStream();
         ExcelExporter.writeSingle(b, tp, single);
         assertTrue(single.size() > 3000, "单场 xlsx 应有内容");
 
-        List<Battle> battles = new ArrayList<>();
-        List<String> names = new ArrayList<>();
-        for (Path p : replays()) {
+        final List<Battle> battles = new ArrayList<>();
+        final List<String> names = new ArrayList<>();
+        for (final Path p : replays()) {
             battles.add(ReplayParser.parse(p));
             names.add(p.getFileName().toString());
         }
-        ByteArrayOutputStream agg = new ByteArrayOutputStream();
+        final ByteArrayOutputStream agg = new ByteArrayOutputStream();
         ExcelExporter.writeAggregate(battles, names, List.of(), tp, agg);
         assertTrue(agg.size() > 3000, "汇总 xlsx 应有内容");
     }

@@ -27,11 +27,14 @@ public final class ExcelExporter {
     }
 
     private final Workbook wb;
-    private final CellStyle hdr, center, left, team1, team2, plain;
+    private final CellStyle hdr;
+    private final CellStyle team1;
+    private final CellStyle team2;
+    private final CellStyle plain;
 
     private ExcelExporter() {
         wb = new XSSFWorkbook();
-        Font hf = wb.createFont();
+        final Font hf = wb.createFont();
         hf.setBold(true);
         hf.setColor(IndexedColors.WHITE.getIndex());
         hdr = base();
@@ -39,9 +42,8 @@ public final class ExcelExporter {
         hdr.setFillForegroundColor(IndexedColors.DARK_BLUE.getIndex());
         hdr.setFillPattern(FillPatternType.SOLID_FOREGROUND);
         hdr.setAlignment(HorizontalAlignment.CENTER);
-        center = base();
+        final CellStyle center = base();
         center.setAlignment(HorizontalAlignment.CENTER);
-        left = base();
         plain = base();
         team1 = base();
         tint(team1, (byte) 0xDD, (byte) 0xEB, (byte) 0xF7);
@@ -50,7 +52,7 @@ public final class ExcelExporter {
     }
 
     private CellStyle base() {
-        CellStyle s = wb.createCellStyle();
+        final CellStyle s = wb.createCellStyle();
         s.setBorderTop(BorderStyle.THIN);
         s.setBorderBottom(BorderStyle.THIN);
         s.setBorderLeft(BorderStyle.THIN);
@@ -67,7 +69,7 @@ public final class ExcelExporter {
     // ---------------- 单场 ----------------
     public static void writeSingle(final Battle battle, final Tankopedia tp, final OutputStream out) throws IOException {
         Rating.compute(java.util.List.of(battle), tp);   // 基准=该场内
-        ExcelExporter e = new ExcelExporter();
+        final ExcelExporter e = new ExcelExporter();
         e.sheetBattleInfo(battle);
         e.sheetPlayers(battle, tp);
         e.sheetRaw(battle);
@@ -76,18 +78,18 @@ public final class ExcelExporter {
     }
 
     private void sheetBattleInfo(final Battle b) {
-        Sheet ws = wb.createSheet("战斗信息");
-        Font big = wb.createFont();
+        final Sheet ws = wb.createSheet("战斗信息");
+        final Font big = wb.createFont();
         big.setBold(true);
         big.setFontHeightInPoints((short) 14);
-        CellStyle title = wb.createCellStyle();
+        final CellStyle title = wb.createCellStyle();
         title.setFont(big);
-        Row r0 = ws.createRow(0);
-        Cell c0 = r0.createCell(0);
+        final Row r0 = ws.createRow(0);
+        final Cell c0 = r0.createCell(0);
         c0.setCellValue("战斗信息");
         c0.setCellStyle(title);
 
-        String[][] rows = {
+        final String[][] rows = {
                 {"游戏版本", b.version},
                 {"地图", MapNames.cn(b.mapName)},
                 {"开始时间", fmt(b.startTime, DT)},
@@ -98,13 +100,13 @@ public final class ExcelExporter {
                 {"玩家数", String.valueOf(b.nPlayers())},
                 {"竞技场ID", b.arenaId},
         };
-        Font bold = wb.createFont();
+        final Font bold = wb.createFont();
         bold.setBold(true);
-        CellStyle boldStyle = wb.createCellStyle();
+        final CellStyle boldStyle = wb.createCellStyle();
         boldStyle.setFont(bold);
         for (int i = 0; i < rows.length; i++) {
-            Row r = ws.createRow(i + 2);
-            Cell k = r.createCell(0);
+            final Row r = ws.createRow(i + 2);
+            final Cell k = r.createCell(0);
             k.setCellValue(rows[i][0]);
             k.setCellStyle(boldStyle);
             r.createCell(1).setCellValue(rows[i][1] == null ? "" : rows[i][1]);
@@ -114,22 +116,22 @@ public final class ExcelExporter {
     }
 
     private void sheetPlayers(final Battle b, final Tankopedia tp) {
-        Sheet ws = wb.createSheet("玩家数据");
-        List<Columns.Col> cols = Columns.PLAYER;
+        final Sheet ws = wb.createSheet("玩家数据");
+        final List<Columns.Col> cols = Columns.PLAYER;
         writeHeader(ws, cols.stream().map(c -> new String[]{c.title(), String.valueOf(c.xlsx())}).toList());
 
-        List<PlayerResult> players = Players.sorted(b.players);
-        Function<Long, String> platoon = Players.platoonLabeler();
-        for (PlayerResult p : players) {
+        final List<PlayerResult> players = Players.sorted(b.players);
+        final Function<Long, String> platoon = Players.platoonLabeler();
+        for (final PlayerResult p : players) {
             Players.enrich(p, tp);
             p.platoonLabel = platoon.apply(p.platoonId);
         }
         int rIdx = 1;
-        for (PlayerResult p : players) {
-            Row row = ws.createRow(rIdx++);
-            CellStyle fill = p.team == 1 ? team1 : team2;
+        for (final PlayerResult p : players) {
+            final Row row = ws.createRow(rIdx++);
+            final CellStyle fill = p.team == 1 ? team1 : team2;
             for (int c = 0; c < cols.size(); c++) {
-                Columns.Col col = cols.get(c);
+                final Columns.Col col = cols.get(c);
                 setCell(row.createCell(c), col.get().apply(p), fill, col.key());
             }
         }
@@ -138,29 +140,29 @@ public final class ExcelExporter {
     }
 
     private void sheetRaw(final Battle b) {
-        Sheet ws = wb.createSheet("原始字段");
-        java.util.TreeSet<Integer> fieldNums = new java.util.TreeSet<>();
-        for (PlayerResult p : b.players) {
+        final Sheet ws = wb.createSheet("原始字段");
+        final java.util.TreeSet<Integer> fieldNums = new java.util.TreeSet<>();
+        for (final PlayerResult p : b.players) {
             if (p.raw != null) fieldNums.addAll(p.raw.keySet());
         }
-        List<Integer> cols = new java.util.ArrayList<>(fieldNums);
-        Row h = ws.createRow(0);
+        final List<Integer> cols = new java.util.ArrayList<>(fieldNums);
+        final Row h = ws.createRow(0);
         cell(h, 0, "玩家", hdr);
         cell(h, 1, "账号ID", hdr);
         for (int i = 0; i < cols.size(); i++) {
             cell(h, i + 2, "#" + cols.get(i), hdr);
         }
-        List<PlayerResult> players = Players.sorted(b.players);
+        final List<PlayerResult> players = Players.sorted(b.players);
         int rIdx = 1;
-        for (PlayerResult p : players) {
-            Row row = ws.createRow(rIdx++);
+        for (final PlayerResult p : players) {
+            final Row row = ws.createRow(rIdx++);
             row.createCell(0).setCellValue(p.nickname);
             row.createCell(1).setCellValue(p.accountId);
             for (int i = 0; i < cols.size(); i++) {
-                List<Object> vals = p.raw == null ? null : p.raw.get(cols.get(i));
+                final List<Object> vals = p.raw == null ? null : p.raw.get(cols.get(i));
                 if (vals == null) continue;
-                StringBuilder sb = new StringBuilder();
-                for (Object v : vals) {
+                final StringBuilder sb = new StringBuilder();
+                for (final Object v : vals) {
                     if (sb.length() > 0) sb.append(", ");
                     sb.append(v instanceof byte[] ? toHex((byte[]) v) : String.valueOf(v));
                 }
@@ -174,8 +176,8 @@ public final class ExcelExporter {
                                       final List<String[]> duplicates, final Tankopedia tp,
                                       final OutputStream out) throws IOException {
         Rating.compute(battles, tp);   // 基准=这批战斗
-        ExcelExporter e = new ExcelExporter();
-        Map<Long, Agg> agg = Aggregator.aggregate(battles, tp);
+        final ExcelExporter e = new ExcelExporter();
+        final Map<Long, Agg> agg = Aggregator.aggregate(battles, tp);
         e.sheetSummary(agg);
         e.sheetDetail(battles, tp);
         e.sheetBattleList(battles, sourceNames, duplicates);
@@ -184,8 +186,8 @@ public final class ExcelExporter {
     }
 
     private void sheetSummary(final Map<Long, Agg> aggMap) {
-        Sheet ws = wb.createSheet("汇总");
-        List<AggCol> cols = List.of(
+        final Sheet ws = wb.createSheet("汇总");
+        final List<AggCol> cols = List.of(
                 new AggCol("玩家", 18, false, a -> a.nickname),
                 new AggCol("战队", 10, false, a -> a.clan),
                 new AggCol("场次", 6, true, a -> a.battles),
@@ -208,11 +210,11 @@ public final class ExcelExporter {
                 new AggCol("账号ID", 12, true, a -> a.accountId)
         );
         writeHeader(ws, cols.stream().map(c -> new String[]{c.title(), String.valueOf(c.xlsx())}).toList());
-        List<Agg> rows = new java.util.ArrayList<>(aggMap.values());
+        final List<Agg> rows = new java.util.ArrayList<>(aggMap.values());
         rows.sort((x, y) -> Double.compare(y.avg(y.damage), x.avg(x.damage)));
         int rIdx = 1;
-        for (Agg a : rows) {
-            Row row = ws.createRow(rIdx++);
+        for (final Agg a : rows) {
+            final Row row = ws.createRow(rIdx++);
             for (int c = 0; c < cols.size(); c++) {
                 setCell(row.createCell(c), cols.get(c).get().apply(a), plain, c < 2 ? "nickname" : "x");
             }
@@ -222,7 +224,7 @@ public final class ExcelExporter {
     }
 
     private void sheetDetail(final List<Battle> battles, final Tankopedia tp) {
-        Sheet ws = wb.createSheet("明细");
+        final Sheet ws = wb.createSheet("明细");
         // 复用 STAT 列, 前面加场次信息, 末尾加账号
         record DCol(String title, int xlsx, String key, Function<PlayerResult, Object> get) {
         }
@@ -234,29 +236,29 @@ public final class ExcelExporter {
                 new DCol("车辆", 16, "tank_name", p -> p.tankName),
                 new DCol("胜负", 6, "result", p -> p.tmpResult)
         );
-        java.util.List<String[]> hdrSpec = new java.util.ArrayList<>();
+        final java.util.List<String[]> hdrSpec = new java.util.ArrayList<>();
         head.forEach(d -> hdrSpec.add(new String[]{d.title(), String.valueOf(d.xlsx())}));
         Columns.STAT.forEach(c -> hdrSpec.add(new String[]{c.title(), String.valueOf(c.xlsx())}));
         hdrSpec.add(new String[]{"账号ID", "12"});
         writeHeader(ws, hdrSpec);
 
         int rIdx = 1;
-        for (Battle b : battles) {
-            String date = fmt(b.startTime, DT_MIN);
-            Integer winner = b.winnerTeam;
-            for (PlayerResult p : Players.sorted(b.players)) {
+        for (final Battle b : battles) {
+            final String date = fmt(b.startTime, DT_MIN);
+            final Integer winner = b.winnerTeam;
+            for (final PlayerResult p : Players.sorted(b.players)) {
                 Players.enrich(p, tp);
                 p.tmpDate = date;
                 p.tmpMap = MapNames.cn(b.mapName);
                 p.tmpResult = (winner != null && winner != 0)
                         ? (p.team == winner ? "胜" : "负") : "平";
-                Row row = ws.createRow(rIdx++);
+                final Row row = ws.createRow(rIdx++);
                 int c = 0;
-                for (DCol d : head) {
+                for (final DCol d : head) {
                     setCell(row.createCell(c), d.get().apply(p), plain, d.key());
                     c++;
                 }
-                for (Columns.Col col : Columns.STAT) {
+                for (final Columns.Col col : Columns.STAT) {
                     setCell(row.createCell(c), col.get().apply(p), plain, col.key());
                     c++;
                 }
@@ -268,14 +270,14 @@ public final class ExcelExporter {
     }
 
     private void sheetBattleList(final List<Battle> battles, final List<String> names, final List<String[]> duplicates) {
-        Sheet ws = wb.createSheet("战斗列表");
-        String[][] spec = {{"序号", "6"}, {"日期", "17"}, {"地图", "12"}, {"时长", "9"},
+        final Sheet ws = wb.createSheet("战斗列表");
+        final String[][] spec = {{"序号", "6"}, {"日期", "17"}, {"地图", "12"}, {"时长", "9"},
                 {"获胜队", "8"}, {"玩家数", "7"}, {"arenaUniqueId", "22"}, {"文件名", "40"}};
         writeHeader(ws, java.util.Arrays.asList(spec));
         int rIdx = 1;
         for (int i = 0; i < battles.size(); i++) {
-            Battle b = battles.get(i);
-            Row r = ws.createRow(rIdx++);
+            final Battle b = battles.get(i);
+            final Row r = ws.createRow(rIdx++);
             r.createCell(0).setCellValue(i + 1);
             r.createCell(1).setCellValue(fmt(b.startTime, DT));
             r.createCell(2).setCellValue(MapNames.cn(b.mapName));
@@ -287,16 +289,16 @@ public final class ExcelExporter {
         }
         if (duplicates != null && !duplicates.isEmpty()) {
             rIdx++;
-            Font f = wb.createFont();
+            final Font f = wb.createFont();
             f.setBold(true);
             f.setColor(IndexedColors.RED.getIndex());
-            CellStyle s = wb.createCellStyle();
+            final CellStyle s = wb.createCellStyle();
             s.setFont(f);
-            Cell c = ws.createRow(rIdx++).createCell(0);
+            final Cell c = ws.createRow(rIdx++).createCell(0);
             c.setCellValue("已跳过的重复上传:");
             c.setCellStyle(s);
-            for (String[] d : duplicates) {
-                Row r = ws.createRow(rIdx++);
+            for (final String[] d : duplicates) {
+                final Row r = ws.createRow(rIdx++);
                 r.createCell(1).setCellValue(d[0]);
                 r.createCell(6).setCellValue(d[1]);
             }
@@ -305,9 +307,9 @@ public final class ExcelExporter {
 
     // ---------------- 共用 ----------------
     private void writeHeader(final Sheet ws, final List<String[]> titleWidth) {
-        Row h = ws.createRow(0);
+        final Row h = ws.createRow(0);
         for (int c = 0; c < titleWidth.size(); c++) {
-            String title = titleWidth.get(c)[0];
+            final String title = titleWidth.get(c)[0];
             int width = Integer.parseInt(titleWidth.get(c)[1]);
             width = Math.max(width, Columns.displayWidth(title) + 4); // 防止被自动筛选箭头截断
             cell(h, c, title, hdr);
@@ -325,8 +327,8 @@ public final class ExcelExporter {
         cell.setCellStyle(Columns.LEFT_ALIGN.contains(key) ? leftWithFill(fill) : centerWithFill(fill));
     }
 
-    private void cell(Row row, int c, String text, CellStyle style) {
-        Cell cell = row.createCell(c);
+    private void cell(final Row row, final int c, final String text, final CellStyle style) {
+        final Cell cell = row.createCell(c);
         cell.setCellValue(text);
         cell.setCellStyle(style);
     }
@@ -342,10 +344,10 @@ public final class ExcelExporter {
         return combo(fill, false);
     }
 
-    private CellStyle combo(CellStyle fill, boolean center) {
-        String key = System.identityHashCode(fill) + (center ? "C" : "L");
+    private CellStyle combo(final CellStyle fill, final boolean center) {
+        final String key = System.identityHashCode(fill) + (center ? "C" : "L");
         return styleCache.computeIfAbsent(key, k -> {
-            CellStyle s = wb.createCellStyle();
+            final CellStyle s = wb.createCellStyle();
             s.cloneStyleFrom(fill);
             s.setAlignment(center ? HorizontalAlignment.CENTER : HorizontalAlignment.LEFT);
             return s;
@@ -359,7 +361,7 @@ public final class ExcelExporter {
 
     private static String duration(final Double s) {
         if (s == null) return "";
-        int t = (int) Math.floor(s);
+        final int t = (int) Math.floor(s);
         return (t / 60) + "分" + (t % 60) + "秒";
     }
 
@@ -372,8 +374,8 @@ public final class ExcelExporter {
     }
 
     private static String toHex(final byte[] b) {
-        StringBuilder sb = new StringBuilder();
-        for (byte x : b) sb.append(String.format("%02x", x));
+        final StringBuilder sb = new StringBuilder();
+        for (final byte x : b) sb.append(String.format("%02x", x));
         return sb.toString();
     }
 }

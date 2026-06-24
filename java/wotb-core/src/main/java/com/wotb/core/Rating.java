@@ -55,11 +55,11 @@ public final class Rating {
     }
 
     private static Config load() {
-        Config c = new Config();
+        final Config c = new Config();
         try (InputStream in = Rating.class.getResourceAsStream("/rating.json")) {
             if (in != null) {
-                JsonNode n = new ObjectMapper().readTree(in);
-                JsonNode w = n.get("weights");
+                final JsonNode n = new ObjectMapper().readTree(in);
+                final JsonNode w = n.get("weights");
                 if (w != null) {
                     c.assist = w.path("assist").asDouble(c.assist);
                     c.block = w.path("block").asDouble(c.block);
@@ -68,9 +68,9 @@ public final class Rating {
                 }
                 c.minSamples = n.path("minSamples").asInt(c.minSamples);
                 c.scale = n.path("scale").asInt(c.scale);
-                JsonNode cf = n.get("classFactor");
+                final JsonNode cf = n.get("classFactor");
                 if (cf != null && cf.isObject()) {
-                    Map<String, Double> m = new HashMap<>();
+                    final Map<String, Double> m = new HashMap<>();
                     cf.fields().forEachRemaining(e -> m.put(e.getKey(), e.getValue().asDouble()));
                     if (!m.isEmpty()) {
                         c.classFactor = m;
@@ -85,7 +85,7 @@ public final class Rating {
 
     /** 有效贡献(伤害当量)。 */
     public static double effectiveContribution(final PlayerResult p) {
-        Config c = config;
+        final Config c = config;
         return p.damageDealt
                 + c.assist * p.damageAssisted
                 + c.block * p.damageBlocked
@@ -94,15 +94,15 @@ public final class Rating {
 
     /** 对一批战斗的所有玩家计算并写入 rating。基准按车型从这批数据求得。 */
     public static void compute(final List<Battle> battles, final Tankopedia tp) {
-        Config c = config;
-        Map<String, double[]> byClass = new HashMap<>();   // class -> [sumEC, count]
+        final Config c = config;
+        final Map<String, double[]> byClass = new HashMap<>();   // class -> [sumEC, count]
         double allSum = 0;
         int allN = 0;
         for (Battle b : battles) {
             for (PlayerResult p : b.players) {
-                double ec = effectiveContribution(p);
-                String cls = classKey(tp, p);
-                double[] acc = byClass.computeIfAbsent(cls, k -> new double[2]);
+                final double ec = effectiveContribution(p);
+                final String cls = classKey(tp, p);
+                final double[] acc = byClass.computeIfAbsent(cls, k -> new double[2]);
                 acc[0] += ec;
                 acc[1] += 1;
                 allSum += ec;
@@ -112,21 +112,21 @@ public final class Rating {
         if (allN == 0) {
             return;
         }
-        double overall = allSum / allN;
+        final double overall = allSum / allN;
 
         for (Battle b : battles) {
-            Integer winner = b.winnerTeam;
+            final Integer winner = b.winnerTeam;
             for (PlayerResult p : b.players) {
-                String cls = classKey(tp, p);
-                double[] acc = byClass.get(cls);
+                final String cls = classKey(tp, p);
+                final double[] acc = byClass.get(cls);
                 double baseline = (acc != null && acc[1] >= c.minSamples)
                         ? acc[0] / acc[1]
                         : overall * c.factor(cls);
                 if (baseline <= 0) {
                     baseline = overall > 0 ? overall : 1;
                 }
-                double ratio = effectiveContribution(p) / baseline;
-                boolean win = winner != null && winner != 0 && p.team == winner;
+                final double ratio = effectiveContribution(p) / baseline;
+                final boolean win = winner != null && winner != 0 && p.team == winner;
                 p.rating = (int) Math.round(c.scale * ratio * (1 + (win ? c.winBonus : 0)));
             }
         }
@@ -134,7 +134,7 @@ public final class Rating {
 
     /** 车型分桶键; 无车型信息归入"其他"。 */
     private static String classKey(final Tankopedia tp, final PlayerResult p) {
-        String type = tp.info(p.tankId).type;
+        final String type = tp.info(p.tankId).type;
         return (type == null || type.isEmpty()) ? "其他" : type;
     }
 }

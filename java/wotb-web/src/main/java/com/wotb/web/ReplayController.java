@@ -60,13 +60,13 @@ public class ReplayController {
     public ResponseEntity<Resource> export(@RequestParam("files") final MultipartFile[] files,
                                            @RequestParam(value = "mode", defaultValue = "aggregate") final String mode)
             throws Exception {
-        ExportResult result = service.export(files, mode);
+        final ExportResult result = service.export(files, mode);
         if (result == null) {
             return ResponseEntity.badRequest().build();
         }
-        boolean zip = result.contentType().contains("zip");
-        String asciiFallback = zip ? "each-export.zip" : "export.xlsx";
-        String encoded = URLEncoder.encode(result.filename(), StandardCharsets.UTF_8).replace("+", "%20");
+        final boolean zip = result.contentType().contains("zip");
+        final String asciiFallback = zip ? "each-export.zip" : "export.xlsx";
+        final String encoded = URLEncoder.encode(result.filename(), StandardCharsets.UTF_8).replace("+", "%20");
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"" + asciiFallback + "\"; filename*=UTF-8''" + encoded)

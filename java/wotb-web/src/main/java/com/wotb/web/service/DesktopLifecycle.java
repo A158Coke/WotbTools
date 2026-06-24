@@ -30,7 +30,7 @@ public class DesktopLifecycle {
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             }
-            int code = SpringApplication.exit(context, () -> 0);
+            final int code = SpringApplication.exit(context, () -> 0);
             System.exit(code);
         }, "desktop-shutdown").start();
     }

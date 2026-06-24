@@ -17,9 +17,9 @@ public final class Protobuf {
 
     /** 解码一段 protobuf, 返回 field -> 值列表 (重复字段保留多值)。 */
     public static Map<Integer, List<Object>> decode(final byte[] buf) {
-        Map<Integer, List<Object>> fields = new LinkedHashMap<>();
+        final Map<Integer, List<Object>> fields = new LinkedHashMap<>();
         int i = 0;
-        int n = buf.length;
+        final int n = buf.length;
         while (i < n) {
             long[] tagRes;
             try {
@@ -27,10 +27,10 @@ public final class Protobuf {
             } catch (IndexOutOfBoundsException e) {
                 break;
             }
-            long tag = tagRes[0];
+            final long tag = tagRes[0];
             i = (int) tagRes[1];
-            int field = (int) (tag >>> 3);
-            int wt = (int) (tag & 7);
+            final int field = (int) (tag >>> 3);
+            final int wt = (int) (tag & 7);
             if (field == 0) {
                 break;
             }
@@ -38,7 +38,7 @@ public final class Protobuf {
                 Object val;
                 switch (wt) {
                     case 0: { // varint
-                        long[] r = readVarint(buf, i);
+                        final long[] r = readVarint(buf, i);
                         val = r[0];
                         i = (int) r[1];
                         break;
@@ -54,10 +54,10 @@ public final class Protobuf {
                         break;
                     }
                     case 2: { // length-delimited
-                        long[] r = readVarint(buf, i);
-                        int len = (int) r[0];
+                        final long[] r = readVarint(buf, i);
+                        final int len = (int) r[0];
                         i = (int) r[1];
-                        byte[] sub = new byte[len];
+                        final byte[] sub = new byte[len];
                         System.arraycopy(buf, i, sub, 0, len);
                         i += len;
                         val = sub;
@@ -75,19 +75,20 @@ public final class Protobuf {
     }
 
     /** 读取一个 varint, 返回 [值, 新位置]。 */
-    static long[] readVarint(byte[] buf, int i) {
+    static long[] readVarint(final byte[] buf, final int i) {
+        int index = i;
         int shift = 0;
         long result = 0;
         while (true) {
-            int b = buf[i] & 0xFF;
-            i++;
+            int b = buf[index] & 0xFF;
+            index++;
             result |= (long) (b & 0x7F) << shift;
             if ((b & 0x80) == 0) {
                 break;
             }
             shift += 7;
         }
-        return new long[]{result, i};
+        return new long[]{result, index};
     }
 
     private static long readLE(final byte[] buf, final int off, final int bytes) {
@@ -102,13 +103,13 @@ public final class Protobuf {
 
     /** 取字段第一个值; 不存在返回 null。 */
     public static Object first(final Map<Integer, List<Object>> fields, final int num) {
-        List<Object> v = fields.get(num);
+        final List<Object> v = fields.get(num);
         return (v == null || v.isEmpty()) ? null : v.get(0);
     }
 
     /** 取字段第一个值作为 long; 不存在返回 default。 */
     public static long firstLong(final Map<Integer, List<Object>> fields, final int num, final long def) {
-        Object o = first(fields, num);
+        final Object o = first(fields, num);
         if (o instanceof Number) {
             return ((Number) o).longValue();
         }
@@ -117,7 +118,7 @@ public final class Protobuf {
 
     /** 取字段第一个值作为嵌套消息。 */
     public static Map<Integer, List<Object>> message(final Map<Integer, List<Object>> fields, final int num) {
-        Object o = first(fields, num);
+        final Object o = first(fields, num);
         if (o instanceof byte[]) {
             return decode((byte[]) o);
         }
@@ -126,7 +127,7 @@ public final class Protobuf {
 
     /** 把 length-delimited 字段当作字符串 (UTF-8)。 */
     public static String string(final Map<Integer, List<Object>> fields, final int num) {
-        Object o = first(fields, num);
+        final Object o = first(fields, num);
         if (o instanceof byte[]) {
             return new String((byte[]) o, StandardCharsets.UTF_8);
         }
