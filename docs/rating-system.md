@@ -85,7 +85,7 @@ rating = round( scale  ×  (EC / baseline)  ×  (1 + winBonus if 获胜) )
 ## 前端展示
 
 - 彩色徽章 (`rbadge`) 按分数段着色
-- 同一组（单场/汇总）最高分标记 🥇，最低分标记 🍅
+- 同一组（单场/汇总）最高分标记 🥇，最低分标记 💩（金便便图 `src/assets/poop.png`，由 `common/assets/goldenShit.jpg` 去黑底而来）
 - 汇总页顶部指标卡显示"最高场均评分"
 - **头部「评分规则」按钮** → 弹窗展示公式 + 分级图例，参数实时取自 `GET /api/rating`（即 `common/rating.json` 的生效值，不在前端写死）。说明文案走 i18n（`locales/*.json` 的 `rating_help`，三语）。
 
