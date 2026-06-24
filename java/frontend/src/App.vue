@@ -303,6 +303,21 @@ function ratingTier(v) {
   return 'r-poor'
 }
 
+// 同一组里评分最高/最低的趣味标记
+function medal(rows, key, val) {
+  if (!rows?.length) return ''
+  let maxV = -Infinity, minV = Infinity
+  for (const r of rows) {
+    const v = Number(r.cells[key]) || 0
+    if (v > maxV) maxV = v
+    if (v < minV) minV = v
+  }
+  const v = Number(val) || 0
+  if (v === maxV && maxV > 0) return ' 🥇'
+  if (v === minV && minV > 0) return ' 🍅'
+  return ''
+}
+
 // 汇总页顶部指标卡
 const aggStats = computed(() => {
   if (!resp.value) return null
@@ -456,7 +471,7 @@ const aggStats = computed(() => {
               <tr v-for="(row, i) in sorted(resp.aggregate, 'agg', shownAggCols)" :key="i"
                   :class="row.team === 1 ? 't1' : 't2'">
                 <td v-for="c in shownAggCols" :key="c.key">
-                  <span v-if="RATING_KEYS.has(c.key)" class="rbadge" :class="ratingTier(row.cells[c.key])">{{ row.cells[c.key] }}</span>
+                  <span v-if="RATING_KEYS.has(c.key)" class="rbadge" :class="ratingTier(row.cells[c.key])">{{ row.cells[c.key] }}<span class="medal">{{ medal(resp.aggregate, c.key, row.cells[c.key]) }}</span></span>
                   <span v-else>{{ row.cells[c.key] }}</span>
                 </td>
               </tr>
@@ -481,7 +496,7 @@ const aggStats = computed(() => {
               <tr v-for="(row, ri) in sorted(b.players, 'b' + i, shownCols)" :key="ri"
                   :class="row.team === 1 ? 't1' : 't2'">
                 <td v-for="c in shownCols" :key="c.key">
-                  <span v-if="RATING_KEYS.has(c.key)" class="rbadge" :class="ratingTier(row.cells[c.key])">{{ row.cells[c.key] }}</span>
+                  <span v-if="RATING_KEYS.has(c.key)" class="rbadge" :class="ratingTier(row.cells[c.key])">{{ row.cells[c.key] }}<span class="medal">{{ medal(b.players, c.key, row.cells[c.key]) }}</span></span>
                   <span v-else-if="c.key === 'survived_label'" :class="row.cells[c.key] === '存活' ? 'alive' : 'dead'">{{ row.cells[c.key] }}</span>
                   <span v-else>{{ row.cells[c.key] }}</span>
                 </td>
@@ -525,6 +540,7 @@ h1 { font-size: 17px; margin: 0; font-weight: 600; color: #28313f; line-height: 
 .mc .v { font-size: 18px; font-weight: 600; margin-top: 2px; }
 .rbadge { display: inline-block; min-width: 42px; padding: 1px 7px; border-radius: 6px; font-size: 12px; }
 .r-poor { background: #FCEBEB; color: #791F1F; }
+.medal { font-size: 12px; }
 .r-mid { background: #F1EFE8; color: #444441; }
 .r-good { background: #EAF3DE; color: #27500A; }
 .r-great { background: #E6F1FB; color: #0C447C; }
