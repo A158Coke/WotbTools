@@ -54,6 +54,9 @@ public final class Mapper {
             new AggCol("blocked_avg", true, a -> r1(a.avg(a.blocked))),
             new AggCol("hit_rate", true, a -> r1(a.hitRate())),
             new AggCol("pen_rate", true, a -> r1(a.penRate())),
+            new AggCol("shots", true, a -> a.shots),
+            new AggCol("hits", true, a -> a.hits),
+            new AggCol("pens", true, a -> a.pens),
             new AggCol("enemies_damaged_avg", true, a -> r2(a.avg(a.enemiesDamaged))),
             new AggCol("tanks", false, Agg::tanksStr),
             new AggCol("account_id", true, a -> a.accountId)

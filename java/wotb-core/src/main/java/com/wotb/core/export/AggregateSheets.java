@@ -61,6 +61,9 @@ final class AggregateSheets {
                 new AggregateColumn("场均格挡", 8, true, a -> ExcelStyles.r1(a.avg(a.blocked))),
                 new AggregateColumn("命中率%", 8, true, a -> ExcelStyles.r1(a.hitRate())),
                 new AggregateColumn("击穿率%", 8, true, a -> ExcelStyles.r1(a.penRate())),
+                new AggregateColumn("总射击次数", 8, true, a -> a.shots),
+                new AggregateColumn("总命中次数", 8, true, a -> a.hits),
+                new AggregateColumn("总击穿次数", 8, true, a -> a.pens),
                 new AggregateColumn("场均击伤", 9, true, a -> ExcelStyles.r2(a.avg(a.enemiesDamaged))),
                 new AggregateColumn("用车", 30, false, Agg::tanksStr),
                 new AggregateColumn("账号ID", 12, true, a -> a.accountId)
