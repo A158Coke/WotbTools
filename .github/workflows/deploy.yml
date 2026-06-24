@@ -21,7 +21,7 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
+          username: a158coke   # Docker Hub 用户名非机密(已出现在镜像名中); 仅 token 用 secret
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Set up Buildx
