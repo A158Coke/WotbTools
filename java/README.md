@@ -88,9 +88,9 @@ docker compose up --build
 
 1. 根目录 `Dockerfile` 多阶段构建单镜像（nginx + JRE 合并）。
 2. 推送 `a158coke/wotbtool:sha-<7位SHA>` + `latest` 到 Docker Hub。
-3. SSH 登录 VPS，`/opt/wotb` 下 `docker compose pull && docker compose up -d`。
+3. SSH 登录 VPS，在 `/opt/wotb` 写入单镜像 `docker-compose.yml` 后执行 `docker compose pull && docker compose up -d`。
 
-> VPS 上的 `docker-compose.yml` 使用预构建镜像（`image: a158coke/wotbtool:latest`），不再从源码构建。本地开发仍用 `java/online/docker-compose.yml` 从源码构建。
+> CI/CD 单镜像使用 `deploy/nginx.conf` 反代同容器内的 `localhost:8087`；本地开发仍用 `java/online/docker-compose.yml` 从源码构建，`java/online/nginx.conf` 反代 compose 服务名 `backend:8087`。
 
 ## 本地开发
 

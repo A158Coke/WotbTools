@@ -306,9 +306,9 @@ npm run build
 
 1. **构建镜像**：根目录 `Dockerfile` 多阶段构建，合并 nginx + JRE 单镜像。
 2. **推送 Docker Hub**：`a158coke/wotbtool:sha-<7位SHA>` + `a158coke/wotbtool:latest`。
-3. **SSH 部署 VPS**：`/opt/wotb` 下 `docker compose pull && docker compose up -d`。
+3. **SSH 部署 VPS**：在 `/opt/wotb` 写入单镜像 `docker-compose.yml`，再执行 `docker compose pull && docker compose up -d`。
 
-VPS 上只需要一个 `docker-compose.yml`：
+workflow 会在 VPS 上生成这个 `docker-compose.yml`：
 
 ```yaml
 services:
@@ -320,7 +320,7 @@ services:
     restart: unless-stopped
 ```
 
-> 根 `Dockerfile` 与 `java/online/` 下的 Dockerfile 用途不同：前者是 CI/CD 单镜像（部署用），后者保留给本地 `docker compose up --build` 开发。
+> 根 `Dockerfile` 使用 `deploy/nginx.conf`，反代同容器内的 `localhost:8087`；`java/online/` 下的 Dockerfile 使用 `java/online/nginx.conf`，反代本地 compose 的 `backend:8087` 服务。两者用途不同：前者是 CI/CD 单镜像（部署用），后者保留给本地 `docker compose up --build` 开发。
 
 ## 给 AI coder 的工作准则
 

@@ -25,8 +25,19 @@ jobs:
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            mkdir -p /opt/wotb
             cd /opt/wotb
+            cat > docker-compose.yml <<'EOF'
+            services:
+              wotb:
+                image: a158coke/wotbtool:latest
+                container_name: wotb
+                ports:
+                  - "8088:80"
+                restart: unless-stopped
+            EOF
             docker compose pull
             docker compose up -d

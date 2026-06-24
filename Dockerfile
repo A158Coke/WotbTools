@@ -28,7 +28,7 @@ FROM nginx:alpine
 RUN apk add --no-cache openjdk21-jre-headless
 COPY --from=backend-build /build/java/wotb-web/target/wotb-web.jar /app/app.jar
 COPY --from=frontend-build /app/java/frontend/dist /usr/share/nginx/html
-COPY java/online/nginx.conf /etc/nginx/conf.d/default.conf
+COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
 
 COPY <<'EOF' /entrypoint.sh
 #!/bin/sh
