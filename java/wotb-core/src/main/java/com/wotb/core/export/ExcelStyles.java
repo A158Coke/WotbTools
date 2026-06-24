@@ -1,5 +1,6 @@
-package com.wotb.core;
+package com.wotb.core.export;
 
+import com.wotb.core.Columns;
 import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;

@@ -1,4 +1,4 @@
-package com.wotb.core;
+package com.wotb.core.parse;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.Collected;
