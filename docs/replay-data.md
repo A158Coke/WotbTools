@@ -465,9 +465,9 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | 2 | EntityLeave (Type 4) | 部分实体有 leave 事件 | 秒级 |
 | 3 | Position (Type 10) | 坐标更新停止 ≈ 阵亡 | 秒级（坐标间隔约 0.01s） |
 
-**EntityLeave 限制：** EntityLeave（type 4）并非所有阵亡玩家都触发——约 30-50% 的死亡对应的实体不产生 leave 事件。需要 entity_id↔account_id 映射（来自 method 48 updateArena2 protobuf）。某些实体会多次 leave/enter，取最后一次 keep。
+**EntityLeave 限制：** EntityLeave（type 4）并非所有阵亡玩家都触发——约 30-50% 的死亡对应的实体不产生 leave 事件。需要 entity_id↔account_id 映射（来自 method 48 updateArena2 protobuf）。某些实体会多次 leave/enter，取最后一次 keep。部分 leave 是**假阳性**（临时离场而非阵亡），此时通过 Position 数据识别：若 Position 最后时间显著晚于 EntityLeave（>5s），以 Position为准。
 
-**Position 补充：** Position（type 10）覆盖大多数玩家实体。阵亡后玩家实体停止发送坐标更新，因此最后坐标时间可作为死亡时间近似。与 EntityLeave 互补使用基本覆盖全部阵亡玩家。
+**Position 补充：** Position（type 10）覆盖大多数玩家实体，是比 EntityLeave 更可靠的死亡指标。阵亡后实体停止发送坐标更新。与 EntityLeave 互补使用基本覆盖全部阵亡玩家。少数实体（非载具实体如玩家化身）无 Position 数据，但通常有 EntityLeave。
 
 ### 2. 战斗时长上限
 
