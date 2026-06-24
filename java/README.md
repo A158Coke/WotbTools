@@ -82,9 +82,15 @@ docker compose up --build
 
 > 两个镜像的构建上下文都是**仓库根**（`docker-compose.yml` 里 `context: ../..`）：后端构建要 `common/*.json`，前端构建因 `App.vue` `import` 了 `common/map_names.json` 也需要仓库根。仓库根的 `.dockerignore` 负责排除 `node_modules`/`dist`/`target` 等，避免上下文过大。
 
-### 自动部署（CI/CD）
+### CI/CD 自动部署
 
-`push` 到 `main` 且改动命中 `java/**`、`common/**` 或 `.github/workflows/deploy.yml` 时，[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) 会 SSH 到 VPS（`/opt/wotb`）执行 `git reset --hard origin/main` → `docker compose up -d --build` 重建并重启容器。即：**推送即部署**，无需手动操作。
+`push` 到 `main` 分支触发 GitHub Actions（[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)）：
+
+1. 根目录 `Dockerfile` 多阶段构建单镜像（nginx + JRE 合并）。
+2. 推送 `a158coke/wotbtool:sha-<7位SHA>` + `latest` 到 Docker Hub。
+3. SSH 登录 VPS，`/opt/wotb` 下 `docker compose pull && docker compose up -d`。
+
+> VPS 上的 `docker-compose.yml` 使用预构建镜像（`image: a158coke/wotbtool:latest`），不再从源码构建。本地开发仍用 `java/online/docker-compose.yml` 从源码构建。
 
 ## 本地开发
 

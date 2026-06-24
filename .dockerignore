@@ -1,10 +1,10 @@
-# Docker 构建上下文(仓库根, backend 与 frontend 共用)排除项。
-# 避免把宿主机平台相关产物/大文件塞进镜像: 容器内会自行 npm install / mvn package。
-**/node_modules
-**/dist
-**/target
 .git
-.idea
-*.iml
-common/data
-offline/dist-desktop
+node_modules
+target
+dist
+dist-desktop
+.m2repo
+python
+.gitignore
+*.md
+**/tsconfig*.json

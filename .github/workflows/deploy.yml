@@ -1,49 +1,32 @@
-name: Deploy WOTB Web
-
-run-name: Deploy ${{ github.ref_name }} by @${{ github.actor }}
-
+name: Build & Deploy
 on:
   push:
-    branches:
-      - main
-    paths:
-      - "java/**"
-      - "common/**"
-      - ".github/workflows/deploy.yml"
-  workflow_dispatch:
-
+    branches: [main]
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Deploy to VPS
-        uses: appleboy/ssh-action@v1.0.3
+      - uses: actions/checkout@v4
+
+      - name: Build and push Docker image
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        run: |
+          SHA_TAG=sha-$(git rev-parse --short HEAD)
+          docker build -f Dockerfile \
+            -t a158coke/wotbtool:$SHA_TAG \
+            -t a158coke/wotbtool:latest .
+          echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+          docker push a158coke/wotbtool --all-tags
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
-          port: ${{ secrets.VPS_PORT }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          command_timeout: '30m'
           script: |
-            set -e
-
-            echo "Deploying WOTB Replay Data Extractor..."
-
             cd /opt/wotb
-
-            echo "Fetching latest code..."
-            git fetch origin main
-            git reset --hard origin/main
-
-            echo "Building and restarting Docker Compose services..."
-            cd /opt/wotb/java/online
-            docker compose up -d --build
-
-            echo "Cleaning unused Docker images..."
-            docker image prune -f
-
-            echo "Current containers:"
-            docker compose ps
-
-            echo "Deployment finished."
+            docker compose pull
+            docker compose up -d
