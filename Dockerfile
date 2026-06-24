@@ -32,8 +32,9 @@ COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
 
 COPY <<'EOF' /entrypoint.sh
 #!/bin/sh
-nginx
-exec java -jar /app/app.jar
+set -e
+nginx                       # 启动失败则 set -e 让容器快速失败暴露问题
+exec java -jar /app/app.jar # PID 1; jar 退出即容器退出
 EOF
 RUN chmod +x /entrypoint.sh
 

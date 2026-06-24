@@ -278,8 +278,8 @@ function arrow(scope, key) {
 
 function fmtDuration(s) {
   if (s == null) return ''
-  const t = Math.floor(s)
-  return t('duration', { min: Math.floor(t / 60), sec: t % 60 })
+  const total = Math.floor(s)
+  return t('duration', { min: Math.floor(total / 60), sec: total % 60 })
 }
 
 // 评分分级 -> 徽章配色

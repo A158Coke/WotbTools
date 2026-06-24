@@ -49,7 +49,7 @@
 
 ## 配方 D:纯前端交互/样式
 
-只动 `App.vue`(+ 必要时 `online/nginx.conf`)。不碰后端/导出。改完 `npm run build`,并在文档记一句。
+只动 `App.vue`(+ 必要时 `deploy/nginx.conf`)。不碰后端/导出。改完 `npm run build`,并在文档记一句。
 
 ## 配方 F:调评分(权重/系数/阈值)
 
@@ -62,7 +62,7 @@
 1. 编辑 `common/map_names.json`(key 用 `meta.json` 里的原始 `mapName`,全小写)。
 2. 无需改代码:导出端 `MapNames.cn()`(已在 `SingleBattleSheets`/`AggregateSheets` 接入)读 classpath 的副本;前端 `App.vue` `import` 同一份 JSON 经 `mapLabel()` 显示。
 3. 新增 key 别忘了让 `wotb-core/pom.xml` 的 `<includes>` 仍含 `map_names.json`(已含)。
-4. **docker 部署**:两个 Dockerfile 的构建上下文都是仓库根,且都 `COPY common/map_names.json`(前端因 `App.vue` 跨目录 import 该 JSON,故 `frontend.Dockerfile` 上下文必须是仓库根、镜像内保持 `java/frontend` 与 `common` 的相对结构)。若以后前端再 import 新的 `common/*.json`,记得在 `frontend.Dockerfile` 加对应 `COPY`。
+4. **docker 部署**:根 `Dockerfile`(单镜像,CI/CD 与本地 compose 共用)构建上下文是仓库根,已 `COPY common/map_names.json` 到后端 classpath 与前端构建处(`/app/common/`,因 `App.vue` 跨目录 import 该 JSON,镜像内保持 `java/frontend` 与 `common` 的相对结构)。若以后前端再 import 新的 `common/*.json`,记得在 `Dockerfile` 的前端阶段加对应 `COPY`。
 5. 验证(改前端要 `npm run build`,Java 改了才需 `mvn test`;改 docker 用 `docker compose up --build` 重建)+ 文档。
 
 > 未匹配的地图名原样显示(英文内部名),不会报错。API 始终回原始英文 `mapName`,中文只在前端/导出两个出口呈现。
