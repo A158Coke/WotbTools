@@ -128,6 +128,15 @@ java -jar wotb-web/target/wotb-web.jar --desktop
 
 显示名不在 API 里：前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`），导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。详见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
 
+### `GET /api/rating`
+
+返回当前生效的评分参数（取自 `common/rating.json`），供前端「评分规则」弹窗实时展示算法与真实权重：
+
+```json
+{ "assist": 0.6, "block": 0.35, "killValue": 200, "winBonus": 0.05,
+  "minSamples": 5, "scale": 1000, "classFactor": { "重坦": 1.0, "中坦": 0.9, "TD": 1.0, "轻坦": 0.7, "其他": 0.9 } }
+```
+
 ### `POST /api/preview`
 
 `multipart/form-data`，字段名为 `files`，可上传一个或多个 `.wotbreplay`。

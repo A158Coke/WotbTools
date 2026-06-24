@@ -3,6 +3,7 @@ package com.wotb.web.service;
 import com.wotb.core.stats.Aggregator;
 import com.wotb.core.export.ExcelExporter;
 import com.wotb.core.stats.Rating;
+import com.wotb.core.stats.RatingConfig;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.parse.Replays;
 import com.wotb.core.ref.Tankopedia;
@@ -48,6 +49,11 @@ public class ReplayService {
     /** 已加载车辆数 (健康检查用)。 */
     public int tankCount() {
         return tankopedia.size();
+    }
+
+    /** 当前评分参数 (供前端「评分规则」展示算法与真实权重)。 */
+    public RatingConfig ratingConfig() {
+        return Rating.config();
     }
 
     /** 解析(并去重), 返回预览: 每场玩家数据 + 跨场汇总 + 去重/失败信息。 */

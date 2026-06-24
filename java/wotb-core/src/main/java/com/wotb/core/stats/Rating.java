@@ -43,6 +43,13 @@ public final class Rating {
     private Rating() {
     }
 
+    /** 当前生效的评分参数快照 (供 API / 前端展示; 内部计算仍直接用私有 config 字段)。 */
+    public static RatingConfig config() {
+        final Config c = config;
+        return new RatingConfig(c.assist, c.block, c.killValue, c.winBonus,
+                c.minSamples, c.scale, Map.copyOf(c.classFactor));
+    }
+
     private static Config load() {
         final Config c = new Config();
         try (InputStream in = Rating.class.getResourceAsStream("/rating.json")) {

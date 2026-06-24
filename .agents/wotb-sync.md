@@ -54,6 +54,7 @@
 ## 配方 F:调评分(权重/系数/阈值)
 
 只改 `common/rating.json`(权重 assist/block/killValue/winBonus、minSamples、scale、车型系数 classFactor)。改完跑测试(均值应仍 ≈ scale)、重建 exe/镜像。改公式结构(而非数值)才需动 `Rating.java`。
+> 前端「评分规则」弹窗与 `GET /api/rating`(`Rating.config()`→`RatingConfig`)自动反映 rating.json 的数值,无需改前端。只有改了**公式文字说明**才动 `locales/*.json` 的 `rating_help`(三语)。
 
 ## 配方 G:增改地图中文名
 
