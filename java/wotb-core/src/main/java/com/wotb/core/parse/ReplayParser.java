@@ -140,7 +140,7 @@ public final class ReplayParser {
         // 存活时间: 存活=战斗时长, 阵亡=deathTimeMillis 或事件流估算
         final double bd = battle.durationS != null ? battle.durationS : 0;
         Map<Long, Double> entityLeaveDeathTimes = Map.of();
-        if (arenaSnapshots.isEmpty() && !esPackets.isEmpty()) {
+        if (!esPackets.isEmpty()) {
             entityLeaveDeathTimes = EventStreamReader.estimateDeathTimesByEntityLeaves(esPackets, bd);
         }
         for (final PlayerResult pr : players) {
