@@ -38,6 +38,12 @@
   - [x] 明确端口配置（前端 `8088`，后端 `8087`，健康检查 `/api/health`）。
   - [ ] 补充生产部署注意事项。
 
+## P1：国际化（i18n）
+
+- [x] 前端三语（中/英/俄）：UI 文案 + 列显示名（`locales/{zh,en,ru}.json` 的 `player_labels`/`agg_labels`）。
+- [ ] **地图名未接 i18n**：当前 `common/map_names.json` 只有「内部英文名（如 `lagoon`）→ 中文（海岸礁湖）」一套映射，`mapLabel()` 在任何语言下都返回中文（表里没有的图则原样显示内部英文名）。导致 en/ru 界面地图名仍是中文，且**内部名 / 中文名 / 英文名三者不统一**。
+  - 方案待定：把 `map_names.json` 扩成多语言（如 `{ "lagoon": { "zh": "海岸礁湖", "en": "Lagoon", "ru": "Лагуна" } }`），`mapLabel()` 按当前 locale 取值；导出层（`MapNames.cn()`）相应改造或保持中文。需同步后端 `MapNames` 读取逻辑、`wotb-core/pom.xml` 资源、wotb-sync 配方 G。
+
 ## P1：测试与质量
 
 - [ ] Java 单元测试覆盖更多字段边界。
