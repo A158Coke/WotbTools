@@ -56,8 +56,11 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            set -e
             mkdir -p /opt/wotb
             cd /opt/wotb
+            # 清掉 PR 前遗留的双容器(占用 8087/8088), 否则新单容器无法绑定端口
+            docker rm -f wotb-backend wotb-frontend 2>/dev/null || true
             cat > docker-compose.yml <<'EOF'
             services:
               wotb:
@@ -68,5 +71,5 @@ jobs:
                 restart: unless-stopped
             EOF
             docker compose pull
-            docker compose up -d
+            docker compose up -d --remove-orphans
             docker image prune -f
