@@ -21,8 +21,6 @@ public class PlayerResult {
     public int kills;
     public int damageBlocked;
     public boolean survived;
-    public int xp;                 // 含义存疑, 不展示
-    public int credits;            // 含义存疑, 不展示
 
     // 名册信息
     public String nickname = "";

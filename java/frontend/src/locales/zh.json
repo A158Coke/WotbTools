@@ -4,7 +4,6 @@
     "subtitle": "解析回放 · 14 人战场数据 · 导出 xlsx",
     "shutdown": "关闭离线程序"
   },
-  "lang": "中文",
   "upload": {
     "drop_hint": "拖拽 .wotbreplay 文件到这里",
     "sub_hint": "支持多选文件，或选择整个文件夹",

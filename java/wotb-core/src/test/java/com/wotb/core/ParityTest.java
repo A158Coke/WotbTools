@@ -40,7 +40,7 @@ class ParityTest {
 
     private static Battle battleByArena(final String arenaId) throws Exception {
         for (final Path p : replays()) {
-            final Battle b = ReplayParser.parse(p);
+            final Battle b = ReplayParser.parse(Files.readAllBytes(p));
             if (arenaId.equals(b.arenaId)) {
                 return b;
             }
@@ -91,7 +91,7 @@ class ParityTest {
     @Test
     void battleInvariants() throws Exception {
         for (final Path p : replays()) {
-            final Battle b = ReplayParser.parse(p);
+            final Battle b = ReplayParser.parse(Files.readAllBytes(p));
             assertEquals(14, b.players.size(), p.getFileName().toString());
             // 发射 >= 命中 >= 击穿
             for (final PlayerResult pr : b.players) {
@@ -137,7 +137,7 @@ class ParityTest {
     void ratingComputedAndCentered() throws Exception {
         final List<Battle> battles = new ArrayList<>();
         for (final Path p : replays()) {
-            battles.add(ReplayParser.parse(p));
+            battles.add(ReplayParser.parse(Files.readAllBytes(p)));
         }
         Rating.compute(battles, Tankopedia.load());
         final List<PlayerResult> all = new ArrayList<>();
@@ -150,7 +150,7 @@ class ParityTest {
     @Test
     void exportsXlsx() throws Exception {
         final Tankopedia tp = Tankopedia.load();
-        final Battle b = ReplayParser.parse(replays().get(0));
+        final Battle b = ReplayParser.parse(Files.readAllBytes(replays().get(0)));
         final ByteArrayOutputStream single = new ByteArrayOutputStream();
         ExcelExporter.writeSingle(b, tp, single);
         assertTrue(single.size() > 3000, "单场 xlsx 应有内容");
@@ -158,7 +158,7 @@ class ParityTest {
         final List<Battle> battles = new ArrayList<>();
         final List<String> names = new ArrayList<>();
         for (final Path p : replays()) {
-            battles.add(ReplayParser.parse(p));
+            battles.add(ReplayParser.parse(Files.readAllBytes(p)));
             names.add(p.getFileName().toString());
         }
         final ByteArrayOutputStream agg = new ByteArrayOutputStream();

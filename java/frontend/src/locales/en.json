@@ -4,7 +4,6 @@
     "subtitle": "Parse replays · 14-player battle data · Export xlsx",
     "shutdown": "Shut Down"
   },
-  "lang": "English",
   "upload": {
     "drop_hint": "Drop .wotbreplay files here",
     "sub_hint": "Multiple files or entire folders supported",
