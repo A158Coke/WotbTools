@@ -302,16 +302,16 @@ npm run build
 
 `push` 到 `main` 分支触发 GitHub Actions（[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)）：
 
-1. **构建镜像**：根目录 `Dockerfile` 多阶段构建，合并 nginx + JRE 单镜像。
-2. **推送 Docker Hub**：`a158coke/wotbtool:sha-<7位SHA>` + `a158coke/wotbtool:latest`。
-3. **SSH 部署 VPS**：在 `/opt/wotb` 写入单镜像 `docker-compose.yml`，再执行 `docker compose pull && docker compose up -d`。
+1. **构建镜像**：根目录 `Dockerfile` 多阶段构建，合并 nginx + JRE 单镜像（带 `type=gha` 层缓存）。
+2. **推送 Docker Hub**：只推唯一标签 `a158coke/wotbtool:sha-<7位SHA>`。**不推 `:latest`** —— 该仓库启用了标签不可变，覆盖会被拒；用 sha 也便于按提交回滚。用户名 `a158coke` 硬编码在 workflow（非机密），仅 token 走 `secrets.DOCKER_PASSWORD`。
+3. **SSH 部署 VPS**：在 `/opt/wotb` 写入单镜像 `docker-compose.yml`（image 用该确切 sha），先 `docker rm -f` 清理遗留旧容器腾出端口，再 `docker compose pull && up -d --remove-orphans`。脚本带 `set -e`（否则失败仍退出 0、Actions 假绿、站点不更新）。
 
-workflow 会在 VPS 上生成这个 `docker-compose.yml`：
+workflow 会在 VPS 上生成这个 `docker-compose.yml`（`<sha>` 为当次提交短 SHA）：
 
 ```yaml
 services:
   wotb:
-    image: a158coke/wotbtool:latest
+    image: a158coke/wotbtool:sha-<sha>
     container_name: wotb
     ports:
       - "8088:80"
