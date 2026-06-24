@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MAP_NAMES from '../../../common/map_names.json'
+import poopUrl from './assets/poop.png'
 
 const { t } = useI18n()
 
@@ -327,8 +328,8 @@ function medal(rows, key, val) {
     if (v < minV) minV = v
   }
   const v = Number(val) || 0
-  if (v === maxV && maxV > 0) return ' 🥇'
-  if (v === minV && minV > 0) return ' 🍅'
+  if (v === maxV && maxV > 0) return 'first'   // 最高 -> 🥇
+  if (v === minV && minV > 0) return 'last'    // 最低 -> 💩 图
   return ''
 }
 
@@ -491,7 +492,7 @@ const aggStats = computed(() => {
               <tr v-for="(row, i) in sorted(resp.aggregate, 'agg', shownAggCols)" :key="i"
                   :class="row.team === 1 ? 't1' : 't2'">
                 <td v-for="c in shownAggCols" :key="c.key">
-                  <span v-if="RATING_KEYS.has(c.key)" class="rbadge" :class="ratingTier(row.cells[c.key])">{{ row.cells[c.key] }}<span class="medal">{{ medal(resp.aggregate, c.key, row.cells[c.key]) }}</span></span>
+                  <span v-if="RATING_KEYS.has(c.key)" class="rbadge" :class="ratingTier(row.cells[c.key])">{{ row.cells[c.key] }}<span class="medal"><template v-if="medal(resp.aggregate, c.key, row.cells[c.key]) === 'first'"> 🥇</template><img v-else-if="medal(resp.aggregate, c.key, row.cells[c.key]) === 'last'" class="poop" :src="poopUrl" alt="倒数"></span></span>
                   <span v-else>{{ row.cells[c.key] }}</span>
                 </td>
               </tr>
@@ -517,7 +518,7 @@ const aggStats = computed(() => {
               <tr v-for="(row, ri) in sorted(b.players, 'b' + i, shownCols)" :key="ri"
                   :class="row.team === 1 ? 't1' : 't2'">
                 <td v-for="c in shownCols" :key="c.key">
-                  <span v-if="RATING_KEYS.has(c.key)" class="rbadge" :class="ratingTier(row.cells[c.key])">{{ row.cells[c.key] }}<span class="medal">{{ medal(b.players, c.key, row.cells[c.key]) }}</span></span>
+                  <span v-if="RATING_KEYS.has(c.key)" class="rbadge" :class="ratingTier(row.cells[c.key])">{{ row.cells[c.key] }}<span class="medal"><template v-if="medal(b.players, c.key, row.cells[c.key]) === 'first'"> 🥇</template><img v-else-if="medal(b.players, c.key, row.cells[c.key]) === 'last'" class="poop" :src="poopUrl" alt="倒数"></span></span>
                   <span v-else-if="c.key === 'survived_label'" :class="row.cells[c.key] === '存活' ? 'alive' : 'dead'">{{ row.cells[c.key] === '存活' ? $t('survived.alive') : $t('survived.dead') }}</span>
                   <span v-else>{{ row.cells[c.key] }}</span>
                 </td>
@@ -600,6 +601,7 @@ h1 { font-size: 17px; margin: 0; font-weight: 600; color: #28313f; line-height: 
 .rbadge { display: inline-block; min-width: 42px; padding: 1px 7px; border-radius: 6px; font-size: 12px; }
 .r-poor { background: #FCEBEB; color: #791F1F; }
 .medal { font-size: 12px; }
+.poop { height: 1.15em; width: auto; vertical-align: -0.25em; margin-left: 2px; }
 .r-mid { background: #F1EFE8; color: #444441; }
 .r-good { background: #EAF3DE; color: #27500A; }
 .r-great { background: #E6F1FB; color: #0C447C; }
