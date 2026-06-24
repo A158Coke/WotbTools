@@ -307,8 +307,11 @@ public final class EventStreamReader {
     public static double estimateDeathTime(
             long accountId, boolean survived, double battleDurationS,
             List<ArenaSnapshot> snapshots) {
-        if (survived || snapshots.isEmpty()) {
+        if (survived) {
             return battleDurationS;
+        }
+        if (snapshots.isEmpty()) {
+            return 0;
         }
         double lastSeen = -1;
         for (final ArenaSnapshot snap : snapshots) {
