@@ -7,8 +7,6 @@ import com.wotb.core.model.PlayerResult;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -28,7 +26,6 @@ public final class ReplayParser {
     static final int F_SHOTS = 4, F_HITS = 5, F_PENS = 7, F_DAMAGE = 8;
     static final int F_RECEIVED = 11, F_HITS_RECV = 12, F_PENS_RECV = 15;
     static final int F_ENEMIES_DMG = 17, F_KILLS = 18, F_BLOCKED = 117;
-    static final int F_XP = 23, F_CREDITS = 106;
     static final int[] F_ASSIST = {9, 10};
     static final int F_SURVIVED = 105;          // == -1 表示存活
     static final int F_DEATH_TIME = 104;        // 死亡时刻(ms; 存活时=0)
@@ -36,11 +33,6 @@ public final class ReplayParser {
     static final int R_NICK = 1, R_PLATOON = 2, R_CLAN = 5;
 
     private ReplayParser() {
-    }
-
-    //这个方法只有测试在使用
-    public static Battle parse(final Path path) throws IOException {
-        return parse(unzip(Files.readAllBytes(path)));
     }
 
     public static Battle parse(final byte[] replayBytes) throws IOException {
@@ -102,8 +94,6 @@ public final class ReplayParser {
             pr.nEnemiesDamaged = (int) Protobuf.firstLong(info, F_ENEMIES_DMG, 0);
             pr.kills = (int) Protobuf.firstLong(info, F_KILLS, 0);
             pr.damageBlocked = (int) Protobuf.firstLong(info, F_BLOCKED, 0);
-            pr.xp = (int) Protobuf.firstLong(info, F_XP, 0);
-            pr.credits = (int) Protobuf.firstLong(info, F_CREDITS, 0);
             final Object killer = Protobuf.first(info, F_SURVIVED);
             pr.survived = (killer instanceof Number) && ((Number) killer).longValue() == -1L;
             pr.deathTimeMillis = Protobuf.firstLong(info, F_DEATH_TIME, 0);
@@ -124,11 +114,8 @@ public final class ReplayParser {
         battle.arenaId = String.valueOf(arenaId);
         final Object win = Protobuf.first(root, 3);
         battle.winnerTeam = (win instanceof Number) ? ((Number) win).intValue() : null;
-        final Object modeMap = Protobuf.first(root, 1);
-        battle.modeMapId = modeMap != null ? (Long) modeMap : null;
         battle.version = text(meta, "version");
         battle.mapName = text(meta, "mapName");
-        battle.mapId = meta.hasNonNull("mapId") ? meta.get("mapId").asInt() : "";
         battle.durationS = meta.hasNonNull("battleDuration") ? meta.get("battleDuration").asDouble() : null;
         battle.startTime = parseLong(text(meta, "battleStartTime"));
         battle.recorder = text(meta, "playerName");

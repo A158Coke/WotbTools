@@ -1,8 +1,13 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import MAP_NAMES from '../../../common/map_names.json'
-import poopUrl from './assets/poop.png'
+import { DEFAULT_VISIBLE, mapLabel, displayName } from './utils/helpers.js'
+import FileUploader from './components/FileUploader.vue'
+import ColumnPicker from './components/ColumnPicker.vue'
+import AggregateTable from './components/AggregateTable.vue'
+import BattleTable from './components/BattleTable.vue'
+import RemoveConfirmModal from './components/RemoveConfirmModal.vue'
+import RatingModal from './components/RatingModal.vue'
 
 const { t } = useI18n()
 
@@ -11,100 +16,53 @@ const loading = ref(false)
 const error = ref('')
 const resp = ref(null)
 const playerCols = ref([])
-const visibleKeys = ref([])        // 单场表显示的列
-const aggVisibleKeys = ref([])     // 汇总表显示的列
-const pickerScope = ref('player')  // 当前选择器作用的表: 'player' | 'agg'
+const visibleKeys = ref([])
+const aggVisibleKeys = ref([])
 const showColPicker = ref(false)
+const pickerScope = ref('player')
 const activeTab = ref('aggregate')
-const sortState = ref({})
-const dragging = ref(false)
 const isDesktop = ref(false)
-const pendingRemove = ref(null)    // 待确认移除的战斗 { battle, label }
-const showRating = ref(false)      // 评分规则弹窗
-const ratingCfg = ref(null)        // /api/rating 返回的真实评分参数
+const pendingRemove = ref(null)
+const showRating = ref(false)
 
-const DEFAULT_VISIBLE = [
-  'nickname', 'clan', 'tank_name', 'tank_type', 'rating', 'survived_label',
-  'kills', 'damage_dealt', 'damage_assisted', 'damage_received',
-  'damage_blocked', 'n_shots', 'n_hits_dealt', 'n_penetrations_dealt',
-  'hit_rate', 'pen_rate', 'n_enemies_damaged'
-]
-const LEFT_KEYS = new Set(['nickname', 'clan', 'tank_name'])
-const langs = [
-  { key: 'zh', label: '中文' },
-  { key: 'en', label: 'English' },
-  { key: 'ru', label: 'Русский' },
-]
-function onLangChange(e) {
-  localStorage.setItem('wotb-lang', e.target.value)
-}
+const playerOrder = ref([])
+const aggOrder = ref([])
 
-// 地图内部名 -> 中文 (与导出共用 common/map_names.json); 未匹配原样返回。
-const mapLabel = (m) => MAP_NAMES[(m || '').toLowerCase().trim()] || m
+const aggCols = computed(() => resp.value?.aggregateColumns || [])
+const playerColMap = computed(() => Object.fromEntries(playerCols.value.map(c => [c.key, c])))
+const aggColMap = computed(() => Object.fromEntries(aggCols.value.map(c => [c.key, c])))
+const colScope = computed(() => activeTab.value === 'aggregate' ? 'agg' : 'player')
+const currentOrder = computed(() => pickerScope.value === 'agg' ? aggOrder.value : playerOrder.value)
+const shownCols = computed(() =>
+  playerOrder.value.filter(k => visibleKeys.value.includes(k)).map(k => playerColMap.value[k]).filter(Boolean))
+const shownAggCols = computed(() =>
+  aggOrder.value.filter(k => aggVisibleKeys.value.includes(k)).map(k => aggColMap.value[k]).filter(Boolean))
+
+const aggStats = computed(() => {
+  if (!resp.value) return null
+  const battles = resp.value.battles || []
+  const agg = resp.value.aggregate || []
+  let maxRating = 0, maxDmg = 0
+  agg.forEach(r => { maxRating = Math.max(maxRating, Number(r.cells.rating_avg) || 0) })
+  battles.forEach(b => (b.players || []).forEach(p => { maxDmg = Math.max(maxDmg, Number(p.cells.damage_dealt) || 0) }))
+  return { battles: battles.length, players: agg.length, maxRating, maxDmg }
+})
 
 onMounted(async () => {
   try {
     const r = await fetch('/api/health')
     if (r.ok) isDesktop.value = Boolean((await r.json()).desktop)
-  } catch {
-    isDesktop.value = false
-  }
+  } catch { isDesktop.value = false }
 })
 
-function addFiles(list) {
-  const picked = Array.from(list || []).filter(f => f.name.toLowerCase().endsWith('.wotbreplay'))
-  const byKey = new Map(files.value.map(f => [fileKey(f), f]))
-  picked.forEach(f => byKey.set(fileKey(f), f))
-  files.value = Array.from(byKey.values()).sort((a, b) => displayName(a).localeCompare(displayName(b)))
-  error.value = ''
+function toggleColPicker() {
+  if (showColPicker.value) { showColPicker.value = false; return }
+  pickerScope.value = colScope.value
+  showColPicker.value = true
 }
 
-function fileKey(f) {
-  return `${f.webkitRelativePath || f.name}:${f.size}:${f.lastModified}`
-}
-
-function displayName(f) {
-  return f.webkitRelativePath || f.name
-}
-
-function onPick(e) {
-  addFiles(e.target.files)
-  e.target.value = ''
-}
-
-function onDrop(e) {
-  dragging.value = false
-  addFiles(e.dataTransfer.files)
-}
-
-function clearFiles() {
-  files.value = []
-  resp.value = null
-  error.value = ''
-}
-
-function removeFile(f) {
-  const k = fileKey(f)
-  files.value = files.value.filter(x => fileKey(x) !== k)
-}
-
-// 移除某一场: 先弹确认对话框
-function askRemoveBattle(battle, idx) {
-  pendingRemove.value = { battle, label: `${mapLabel(battle.mapName)} #${idx + 1}` }
-}
-
-function cancelRemove() {
-  pendingRemove.value = null
-}
-
-// 确认后: 删对应回放文件, 再重新解析以更新汇总
-function confirmRemoveBattle() {
-  const battle = pendingRemove.value?.battle
-  pendingRemove.value = null
-  if (!battle) return
-  files.value = files.value.filter(f => displayName(f) !== battle.sourceName)
-  if (files.value.length) preview()
-  else { resp.value = null; activeTab.value = 'aggregate' }
+function onLangChange(e) {
+  localStorage.setItem('wotb-lang', e.target.value)
 }
 
 function formData() {
@@ -124,7 +82,7 @@ async function preview() {
     const aggKeys = (resp.value.aggregateColumns || []).map(c => c.key)
     if (!visibleKeys.value.length) visibleKeys.value = [...DEFAULT_VISIBLE]
     if (!playerOrder.value.length) playerOrder.value = resp.value.playerColumns.map(c => c.key)
-    if (!aggVisibleKeys.value.length) aggVisibleKeys.value = [...aggKeys]   // 汇总默认全显
+    if (!aggVisibleKeys.value.length) aggVisibleKeys.value = [...aggKeys]
     if (!aggOrder.value.length) aggOrder.value = [...aggKeys]
     activeTab.value = resp.value.battles.length > 1 ? 'aggregate' : 'b0'
   } catch (e) {
@@ -132,36 +90,6 @@ async function preview() {
   } finally {
     loading.value = false
   }
-}
-
-async function exportXlsx(mode) {
-  if (!files.value.length) { error.value = '请先选择回放文件或文件夹'; return }
-  loading.value = true; error.value = ''
-  try {
-    const r = await fetch(`/api/export?mode=${encodeURIComponent(mode)}`, {
-      method: 'POST',
-      body: formData()
-    })
-    if (!r.ok) throw new Error('导出失败: HTTP ' + r.status)
-    await downloadResponse(r, mode === 'each' ? '逐场导出.zip' : '联赛汇总.xlsx')
-  } catch (e) {
-    error.value = e.message
-  } finally {
-    loading.value = false
-  }
-}
-
-async function downloadResponse(r, fallback) {
-  const blob = await r.blob()
-  const cd = r.headers.get('Content-Disposition') || ''
-  const m = cd.match(/filename\*=UTF-8''([^;]+)/)
-  const name = m ? decodeURIComponent(m[1]) : fallback
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = name
-  a.click()
-  URL.revokeObjectURL(url)
 }
 
 async function shutdown() {
@@ -174,175 +102,47 @@ async function shutdown() {
   }
 }
 
-const aggCols = computed(() => resp.value?.aggregateColumns || [])
-
-// 列顺序(可拖拽); 显示集合 = visibleKeys / aggVisibleKeys。即点即生效。
-const playerOrder = ref([])
-const aggOrder = ref([])
-const dragIdx = ref(-1)
-const playerColMap = computed(() => Object.fromEntries(playerCols.value.map(c => [c.key, c])))
-const aggColMap = computed(() => Object.fromEntries(aggCols.value.map(c => [c.key, c])))
-
-// 各表实际显示的列: 按用户顺序过滤出可见列
-const shownCols = computed(() =>
-  playerOrder.value.filter(k => visibleKeys.value.includes(k)).map(k => playerColMap.value[k]).filter(Boolean))
-const shownAggCols = computed(() =>
-  aggOrder.value.filter(k => aggVisibleKeys.value.includes(k)).map(k => aggColMap.value[k]).filter(Boolean))
-
-const colScope = computed(() => (activeTab.value === 'aggregate' ? 'agg' : 'player'))
-const currentOrder = computed(() => (pickerScope.value === 'agg' ? aggOrder.value : playerOrder.value))
-
-// 面板里的分组标签（用英文 key，由 i18n 渲染）
-const COL_GROUP_CAT = {
-  nickname: 'identity', clan: 'identity', account_id: 'extra',
-  tank_name: 'vehicle', tank_tier: 'vehicle', tank_type: 'vehicle', tank_nation: 'vehicle', tank_id: 'extra',
-  rating: 'battle', survived_label: 'battle', survival_time: 'battle', kills: 'battle', damage_dealt: 'battle',
-  damage_assisted: 'battle', damage_received: 'battle', damage_blocked: 'battle',
-  n_shots: 'battle', n_hits_dealt: 'battle', n_penetrations_dealt: 'battle',
-  n_hits_received: 'battle', n_penetrations_received: 'battle', n_enemies_damaged: 'battle',
-  platoon_label: 'extra',
-  battles: 'overview', wins: 'overview', win_rate: 'overview', survival_rate: 'overview', rating_avg: 'overview',
-  kills_avg: 'battle', damage: 'battle', damage_avg: 'battle', assisted: 'battle', assisted_avg: 'battle',
-  received_avg: 'battle', blocked_avg: 'battle', hit_rate: 'battle', pen_rate: 'battle',
-  enemies_damaged_avg: 'battle', survival_avg: 'battle', tanks: 'extra',
-}
-const catOf = (key) => {
-  const c = COL_GROUP_CAT[key]
-  return c ? t('col_groups.' + c) : ''
-}
-
-function toggleColPicker() {
-  if (showColPicker.value) { showColPicker.value = false; return }
-  pickerScope.value = colScope.value
-  showColPicker.value = true
-}
-
-function isVisible(key) {
-  return (pickerScope.value === 'agg' ? aggVisibleKeys.value : visibleKeys.value).includes(key)
-}
-
-function toggleCol(key) {
-  const ref_ = pickerScope.value === 'agg' ? aggVisibleKeys : visibleKeys
-  ref_.value = ref_.value.includes(key) ? ref_.value.filter(k => k !== key) : [...ref_.value, key]
-}
-
-function selectAllCols() {
-  const all = currentOrder.value.slice()
-  if (pickerScope.value === 'agg') aggVisibleKeys.value = all
-  else visibleKeys.value = all
-}
-
-function resetCols() {
-  if (pickerScope.value === 'agg') {
-    aggOrder.value = aggCols.value.map(c => c.key)
-    aggVisibleKeys.value = aggCols.value.map(c => c.key)
-  } else {
-    playerOrder.value = playerCols.value.map(c => c.key)
-    visibleKeys.value = [...DEFAULT_VISIBLE]
+async function exportXlsx(mode) {
+  if (!files.value.length) { error.value = '请先选择回放文件或文件夹'; return }
+  loading.value = true; error.value = ''
+  try {
+    const r = await fetch(`/api/export?mode=${encodeURIComponent(mode)}`, { method: 'POST', body: formData() })
+    if (!r.ok) throw new Error('导出失败: HTTP ' + r.status)
+    const blob = await r.blob()
+    const cd = r.headers.get('Content-Disposition') || ''
+    const m = cd.match(/filename\*=UTF-8''([^;]+)/)
+    const name = m ? decodeURIComponent(m[1]) : (mode === 'each' ? '逐场导出.zip' : '联赛汇总.xlsx')
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = name; a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    loading.value = false
   }
 }
 
-function onColDragStart(i) { dragIdx.value = i }
-function onColDrop(i) {
-  const from = dragIdx.value
-  dragIdx.value = -1
-  if (from < 0 || from === i) return
-  const orderRef = pickerScope.value === 'agg' ? aggOrder : playerOrder
-  const next = orderRef.value.slice()
-  const [moved] = next.splice(from, 1)
-  next.splice(i, 0, moved)
-  orderRef.value = next
+function askRemoveBattle(battle, idx) {
+  pendingRemove.value = { battle, label: `${mapLabel(battle.mapName)} #${idx + 1}` }
+}
+function cancelRemove() { pendingRemove.value = null }
+function confirmRemoveBattle() {
+  const battle = pendingRemove.value?.battle
+  pendingRemove.value = null
+  if (!battle) return
+  files.value = files.value.filter(f => displayName(f) !== battle.sourceName)
+  if (files.value.length) preview()
+  else { resp.value = null; activeTab.value = 'aggregate' }
 }
 
-function sortBy(scope, col) {
-  const s = sortState.value[scope]
-  if (s && s.key === col.key) s.reverse = !s.reverse
-  else sortState.value[scope] = { key: col.key, reverse: false }
+// Column picker callbacks
+function toggleCol(e) { const ref_ = e.scope === 'agg' ? aggVisibleKeys : visibleKeys; ref_.value = ref_.value.includes(e.key) ? ref_.value.filter(k => k !== e.key) : [...ref_.value, e.key] }
+function selectAllCols(scope) { const all = (scope === 'agg' ? aggOrder : playerOrder).value.slice(); if (scope === 'agg') aggVisibleKeys.value = all; else visibleKeys.value = all }
+function resetCols(scope) {
+  if (scope === 'agg') { aggOrder.value = aggCols.value.map(c => c.key); aggVisibleKeys.value = aggCols.value.map(c => c.key) }
+  else { playerOrder.value = playerCols.value.map(c => c.key); visibleKeys.value = [...DEFAULT_VISIBLE] }
 }
-
-function sorted(rows, scope, cols) {
-  const s = sortState.value[scope]
-  if (!s) return rows
-  const col = cols.find(c => c.key === s.key)
-  const arr = [...rows]
-  arr.sort((ra, rb) => {
-    let a = ra.cells[s.key], b = rb.cells[s.key]
-    if (col?.num) { a = Number(a) || 0; b = Number(b) || 0; return a - b }
-    return String(a).localeCompare(String(b))
-  })
-  if (s.reverse) arr.reverse()
-  return arr
-}
-
-function arrow(scope, key) {
-  const s = sortState.value[scope]
-  return s && s.key === key ? (s.reverse ? ' ▼' : ' ▲') : ''
-}
-
-function fmtDuration(s) {
-  if (s == null) return ''
-  const total = Math.floor(s)
-  return t('duration', { min: Math.floor(total / 60), sec: total % 60 })
-}
-
-// 评分分级 -> 徽章配色
-const RATING_KEYS = new Set(['rating', 'rating_avg'])
-function ratingTier(v) {
-  v = Number(v) || 0
-  if (v >= 1600) return 'r-elite'
-  if (v >= 1300) return 'r-great'
-  if (v >= 1000) return 'r-good'
-  if (v >= 700) return 'r-mid'
-  return 'r-poor'
-}
-
-// 评分规则弹窗：实时参数取自 /api/rating（真值在 common/rating.json），分级阈值见 RATING_TIERS
-const RATING_DEFAULTS = { assist: 0.6, block: 0.35, killValue: 200, winBonus: 0.05, minSamples: 5, scale: 1000, classFactor: {} }
-const cfg = computed(() => ({ ...RATING_DEFAULTS, ...(ratingCfg.value || {}) }))
-const RATING_TIERS = [
-  { cls: 'r-elite', key: 'elite', min: 1600 },
-  { cls: 'r-great', key: 'great', min: 1300 },
-  { cls: 'r-good', key: 'good', min: 1000 },
-  { cls: 'r-mid', key: 'mid', min: 700 },
-  { cls: 'r-poor', key: 'poor', min: 0 },
-]
-function tierRange(i) {
-  if (i === 0) return '≥ ' + RATING_TIERS[0].min
-  if (RATING_TIERS[i].min === 0) return '< ' + RATING_TIERS[i - 1].min
-  return RATING_TIERS[i].min + '–' + (RATING_TIERS[i - 1].min - 1)
-}
-async function openRating() {
-  if (!ratingCfg.value) {
-    try { ratingCfg.value = await (await fetch('/api/rating')).json() } catch { ratingCfg.value = {} }
-  }
-  showRating.value = true
-}
-
-// 同一组里评分最高/最低的趣味标记
-function medal(rows, key, val) {
-  if (!rows?.length) return ''
-  let maxV = -Infinity, minV = Infinity
-  for (const r of rows) {
-    const v = Number(r.cells[key]) || 0
-    if (v > maxV) maxV = v
-    if (v < minV) minV = v
-  }
-  const v = Number(val) || 0
-  if (v === maxV && maxV > 0) return 'first'   // 最高 -> 🥇
-  if (v === minV && minV > 0) return 'last'    // 最低 -> 💩 图
-  return ''
-}
-
-// 汇总页顶部指标卡
-const aggStats = computed(() => {
-  if (!resp.value) return null
-  const battles = resp.value.battles || []
-  const agg = resp.value.aggregate || []
-  let maxRating = 0, maxDmg = 0
-  agg.forEach(r => { maxRating = Math.max(maxRating, Number(r.cells.rating_avg) || 0) })
-  battles.forEach(b => (b.players || []).forEach(p => { maxDmg = Math.max(maxDmg, Number(p.cells.damage_dealt) || 0) }))
-  return { battles: battles.length, players: agg.length, maxRating, maxDmg }
-})
+function handleReorder(next) { (pickerScope.value === 'agg' ? aggOrder : playerOrder).value = next }
 </script>
 
 <template>
@@ -355,67 +155,18 @@ const aggStats = computed(() => {
           <p class="subtitle">{{ $t('app.subtitle') }}</p>
         </div>
       </div>
-      <button class="ghost" @click="openRating">
+      <button class="ghost" @click="showRating = true">
         <svg class="ic" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M9.6 9.4a2.4 2.4 0 0 1 4.4 1.3c0 1.6-2 1.9-2 3.3M12 17h.01" /></svg>{{ $t('rating_help.btn') }}
       </button>
       <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
-        <option v-for="l in langs" :key="l.key" :value="l.key">{{ l.label }}</option>
+        <option v-for="l in [{key:'zh',label:'中文'},{key:'en',label:'English'},{key:'ru',label:'Русский'}]" :key="l.key" :value="l.key">{{ l.label }}</option>
       </select>
       <button v-if="isDesktop" class="ghost" @click="shutdown">
         <svg class="ic" viewBox="0 0 24 24"><path d="M7 6a7.7 7.7 0 1 0 10 0M12 4v8" /></svg>{{ $t('app.shutdown') }}
       </button>
     </header>
 
-    <section class="uploadwrap"
-             @dragover.prevent="dragging = true"
-             @dragleave.prevent="dragging = false"
-             @drop.prevent="onDrop">
-      <div v-if="!files.length" class="uploadcard" :class="{ dragging }">
-        <span class="up-icon"><svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg></span>
-        <div class="up-title">{{ $t('upload.drop_hint') }}</div>
-        <div class="up-sub">{{ $t('upload.sub_hint') }}</div>
-        <div class="up-actions">
-          <label class="filebtn">
-            <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>{{ $t('upload.select_files') }}
-            <input type="file" multiple accept=".wotbreplay" @change="onPick" />
-          </label>
-          <label class="filebtn ghost">
-            <svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /></svg>{{ $t('upload.select_folder') }}
-            <input type="file" multiple webkitdirectory @change="onPick" />
-          </label>
-        </div>
-      </div>
-
-      <div v-else class="filebar" :class="{ dragging }">
-        <svg class="ic fb-ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
-        <span class="fb-count">{{ $t('upload.files_count', { count: files.length }) }}</span>
-        <div class="fb-chips">
-          <span v-for="f in files" :key="fileKey(f)" class="chip">
-            {{ displayName(f) }}
-            <button class="chipx" :title="$t('upload.remove_title')" @click="removeFile(f)">×</button>
-          </span>
-        </div>
-        <label class="filebtn ghost sm" :title="$t('upload.add_files_title')">
-          <svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>{{ $t('upload.add') }}
-          <input type="file" multiple accept=".wotbreplay" @change="onPick" />
-        </label>
-        <label class="filebtn ghost sm" :title="$t('upload.add_folder_title')">
-          <svg class="ic" viewBox="0 0 24 24"><path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /></svg>{{ $t('upload.folder') }}
-          <input type="file" multiple webkitdirectory @change="onPick" />
-        </label>
-        <button class="ghost sm" :disabled="loading" @click="clearFiles">
-          <svg class="ic" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3" /></svg>{{ $t('upload.clear') }}
-        </button>
-      </div>
-
-      <div v-if="files.length" class="actionrow">
-        <button class="lg" :disabled="loading" @click="preview">
-          {{ $t('action.preview') }}<svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
-        </button>
-        <span v-if="loading" class="muted">{{ $t('action.processing') }}</span>
-        <span v-else class="muted">{{ $t('action.preview_hint') }}</span>
-      </div>
-    </section>
+    <FileUploader :files="files" :loading="loading" @update:files="files = $event" @preview="preview" />
 
     <p v-if="error" class="error">{{ error }}</p>
 
@@ -446,26 +197,10 @@ const aggStats = computed(() => {
             <button class="ghost sm" @click="toggleColPicker">
               <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" /></svg>{{ $t('action.select_cols') }} ▾
             </button>
-            <div v-if="showColPicker" class="colpanel">
-              <div class="colpanel-head">
-                <span class="cph-title">{{ pickerScope === 'agg' ? $t('col_picker.title_agg') : $t('col_picker.title_player') }} · {{ $t('col_picker.desc') }}</span>
-                <button class="linkbtn" @click="selectAllCols">{{ $t('col_picker.select_all') }}</button>
-                <button class="linkbtn" @click="resetCols">{{ $t('col_picker.reset') }}</button>
-                <button class="linkbtn" @click="showColPicker = false">{{ $t('col_picker.done') }}</button>
-              </div>
-              <ul class="collist">
-                <li v-for="(key, idx) in currentOrder" :key="key" draggable="true"
-                    @dragstart="onColDragStart(idx)" @dragover.prevent @drop="onColDrop(idx)"
-                    :class="{ dragging: dragIdx === idx }">
-                  <span class="grip" title="⋮⋮">⋮⋮</span>
-                  <label class="colitem">
-                    <input type="checkbox" :checked="isVisible(key)" @change="toggleCol(key)" />
-                    {{ $t((pickerScope === 'agg' ? 'agg_labels.' : 'player_labels.') + key) }}
-                  </label>
-                  <span class="cat">{{ catOf(key) }}</span>
-                </li>
-              </ul>
-            </div>
+            <ColumnPicker v-if="showColPicker" :scope="pickerScope" :order="currentOrder"
+              :visible="pickerScope === 'agg' ? aggVisibleKeys : visibleKeys"
+              @close="showColPicker = false" @toggle="toggleCol"
+              @select-all="selectAllCols" @reset="resetCols" @reorder="handleReorder" />
           </span>
           <button class="sm" :disabled="loading" @click="exportXlsx('aggregate')">
             <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_aggregate') }}
@@ -476,110 +211,17 @@ const aggStats = computed(() => {
         </div>
       </div>
 
-      <div v-if="activeTab === 'aggregate' && resp.aggregate.length">
-        <div v-if="aggStats" class="mcards">
-          <div class="mc"><div class="k">{{ $t('metric.battles') }}</div><div class="v">{{ aggStats.battles }}</div></div>
-          <div class="mc"><div class="k">{{ $t('metric.players') }}</div><div class="v">{{ aggStats.players }}</div></div>
-          <div class="mc"><div class="k">{{ $t('metric.max_rating') }}</div><div class="v">{{ aggStats.maxRating }}</div></div>
-          <div class="mc"><div class="k">{{ $t('metric.max_damage') }}</div><div class="v">{{ aggStats.maxDmg }}</div></div>
-        </div>
-        <div class="tablewrap">
-          <table>
-            <thead><tr>
-              <th v-for="c in shownAggCols" :key="c.key" @click="sortBy('agg', c)">{{ $t('agg_labels.' + c.key) }}{{ arrow('agg', c.key) }}</th>
-            </tr></thead>
-            <tbody>
-              <tr v-for="(row, i) in sorted(resp.aggregate, 'agg', shownAggCols)" :key="i"
-                  :class="row.team === 1 ? 't1' : 't2'">
-                <td v-for="c in shownAggCols" :key="c.key">
-                  <span v-if="RATING_KEYS.has(c.key)" class="rbadge" :class="ratingTier(row.cells[c.key])">{{ row.cells[c.key] }}<span class="medal"><template v-if="medal(resp.aggregate, c.key, row.cells[c.key]) === 'first'"> 🥇</template><img v-else-if="medal(resp.aggregate, c.key, row.cells[c.key]) === 'last'" class="poop" :src="poopUrl" alt="倒数"></span></span>
-                  <span v-else-if="c.key === 'survival_avg'">{{ fmtDuration(row.cells[c.key]) }}</span>
-                  <span v-else>{{ row.cells[c.key] }}</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="scroll-hint">← 左右滑动查看更多数据 →</p>
+      <div v-show="activeTab === 'aggregate' && resp.aggregate.length">
+        <AggregateTable :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
       </div>
 
       <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i">
-        <div class="mcards">
-          <div class="mc"><div class="k">{{ $t('metric.map') }}</div><div class="v">{{ mapLabel(b.mapName) }}</div></div>
-          <div class="mc"><div class="k">{{ $t('metric.duration') }}</div><div class="v">{{ fmtDuration(b.durationS) }}</div></div>
-          <div class="mc"><div class="k">{{ $t('metric.winner') }}</div><div class="v">{{ b.winnerTeam ? $t('team.' + b.winnerTeam) : $t('team.unknown') }}</div></div>
-          <div class="mc"><div class="k">{{ $t('metric.player_count') }}</div><div class="v">{{ b.players.length }}</div></div>
-        </div>
-        <div class="tablewrap">
-          <table>
-            <thead><tr>
-              <th v-for="c in shownCols" :key="c.key" @click="sortBy('b' + i, c)">{{ $t('player_labels.' + c.key) }}{{ arrow('b' + i, c.key) }}</th>
-            </tr></thead>
-            <tbody>
-              <tr v-for="(row, ri) in sorted(b.players, 'b' + i, shownCols)" :key="ri"
-                  :class="row.team === 1 ? 't1' : 't2'">
-                <td v-for="c in shownCols" :key="c.key">
-                  <span v-if="RATING_KEYS.has(c.key)" class="rbadge" :class="ratingTier(row.cells[c.key])">{{ row.cells[c.key] }}<span class="medal"><template v-if="medal(b.players, c.key, row.cells[c.key]) === 'first'"> 🥇</template><img v-else-if="medal(b.players, c.key, row.cells[c.key]) === 'last'" class="poop" :src="poopUrl" alt="倒数"></span></span>
-                  <span v-else-if="c.key === 'survived_label'" :class="row.cells[c.key] === '存活' ? 'alive' : 'dead'">{{ row.cells[c.key] === '存活' ? $t('survived.alive') : $t('survived.dead') }}</span>
-                  <span v-else-if="c.key === 'survival_time'">{{ fmtDuration(row.cells[c.key]) }}</span>
-                  <span v-else>{{ row.cells[c.key] }}</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="scroll-hint">← 左右滑动查看更多数据 →</p>
+        <BattleTable :battle="b" :shown-cols="shownCols" />
       </div>
     </template>
 
-    <div v-if="pendingRemove" class="modal-mask" @click.self="cancelRemove">
-      <div class="modal">
-        <p class="modal-title">{{ $t('modal.remove_title') }}</p>
-        <p>{{ $t('modal.remove_confirm', { label: pendingRemove.label }) }}</p>
-        <p class="modal-sub">{{ $t('modal.remove_hint') }}</p>
-        <div class="modal-actions">
-          <button @click="confirmRemoveBattle">{{ $t('modal.confirm') }}</button>
-          <button class="ghost" @click="cancelRemove">{{ $t('modal.cancel') }}</button>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="showRating" class="modal-mask" @click.self="showRating = false">
-      <div class="modal modal-rating">
-        <p class="modal-title">{{ $t('rating_help.title') }}</p>
-        <p class="modal-sub">{{ $t('rating_help.intro') }}</p>
-
-        <div class="rh-block">
-          <div class="rh-h">{{ $t('rating_help.ec_title') }}</div>
-          <code class="rh-f">EC = {{ $t('rating_help.dmg') }} + {{ cfg.assist }}·{{ $t('rating_help.assist') }} + {{ cfg.block }}·{{ $t('rating_help.block') }} + {{ cfg.killValue }}·{{ $t('rating_help.kills') }}</code>
-        </div>
-
-        <div class="rh-block">
-          <div class="rh-h">{{ $t('rating_help.baseline_title') }}</div>
-          <p class="rh-p">{{ $t('rating_help.baseline_desc', { n: cfg.minSamples }) }}</p>
-          <div class="rh-factors">
-            <span v-for="(f, k) in cfg.classFactor" :key="k" class="rh-tag">{{ k }} ×{{ f }}</span>
-          </div>
-        </div>
-
-        <div class="rh-block">
-          <div class="rh-h">{{ $t('rating_help.score_title') }}</div>
-          <code class="rh-f">{{ $t('rating_help.score_word') }} = round( {{ cfg.scale }} × EC / {{ $t('rating_help.baseline_word') }} × (1 + {{ cfg.winBonus }} {{ $t('rating_help.if_win') }}) )</code>
-        </div>
-
-        <div class="rh-block">
-          <div class="rh-h">{{ $t('rating_help.tier_title') }}</div>
-          <div class="rh-tiers">
-            <span v-for="(tr, i) in RATING_TIERS" :key="tr.key" class="rbadge" :class="tr.cls">{{ $t('rating_help.tiers.' + tr.key) }} {{ tierRange(i) }}</span>
-          </div>
-        </div>
-
-        <p class="modal-sub">{{ $t('rating_help.note') }}</p>
-        <div class="modal-actions">
-          <button class="ghost" @click="showRating = false">{{ $t('rating_help.close') }}</button>
-        </div>
-      </div>
-    </div>
+    <RemoveConfirmModal :pending="pendingRemove" @confirm="confirmRemoveBattle" @cancel="cancelRemove" />
+    <RatingModal :show="showRating" @close="showRating = false" />
   </div>
 </template>
 
@@ -626,7 +268,6 @@ button:disabled { opacity: .5; cursor: default; }
 .error { color: #c00; }
 .warn { color: #8a5200; background: #fff8e8; border: 1px solid #f0d08a; padding: 8px; border-radius: 4px; }
 .warn span, .error span { display: inline-block; margin: 2px 8px 2px 0; }
-/* 上传区 (两态: 空状态卡 / 已选文件条) */
 .uploadwrap { margin-bottom: 16px; }
 .uploadcard { border: 1.5px dashed #c2d0e4; background: #fbfcfe; border-radius: 12px;
   padding: 30px 20px; text-align: center; transition: border-color .12s, background .12s; }
@@ -649,10 +290,8 @@ button:disabled { opacity: .5; cursor: default; }
 .chipx { padding: 0 4px; border: none; background: transparent; color: #8a93a6; font-size: 14px;
   line-height: 1; cursor: pointer; border-radius: 3px; }
 .chipx:hover { background: #d9534f; color: #fff; }
-/* 战斗标签上的移除按钮 */
 .tabx { margin-left: 4px; padding: 0 3px; border-radius: 3px; opacity: .65; }
 .tabx:hover { background: #d9534f; color: #fff; opacity: 1; }
-/* 列选择下拉面板 */
 .dropdown { position: relative; display: inline-block; }
 .colpanel { position: absolute; top: 110%; right: 0; z-index: 50; width: 260px;
   background: #fff; border: 1px solid #c7d3e6; border-radius: 6px;
@@ -680,26 +319,21 @@ button:disabled { opacity: .5; cursor: default; }
 .tabs button.active { background: #e6f1fb; color: #185fa5; border-color: #bcd8f2; font-weight: 600; }
 .tabs.locked button:disabled { cursor: not-allowed; }
 .tablewrap { overflow-x: auto; background: #fff; border: 1px solid #e3e8ef; border-radius: 10px; }
-/* 按内容自然宽度排列(不挤压列), 内容窄时仍填满容器; 横向滚动可完整看到末列 */
 table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 13px; }
 th, td { padding: 7px 12px; white-space: nowrap; text-align: center;
   border-bottom: 1px solid #eef1f6; font-variant-numeric: tabular-nums; }
 th { background: #f1f4f8; color: #46566f; font-weight: 500; cursor: pointer; user-select: none;
   position: sticky; top: 0; border-bottom: 1px solid #d6deea; }
 tbody tr:last-child td { border-bottom: none; }
-/* 末列留出右侧余量, 不贴边/被滚动条裁切 */
 th:last-child, td:last-child { padding-right: 16px; }
-/* 队伍行底色(浅) */
 tr.t1 td { background: #eef4fb; }
 tr.t2 td { background: #fbf1ec; }
-/* 粘性首列: 任何宽度下横向滚动时玩家列始终可见 */
 th:first-child, td:first-child { position: sticky; left: 0; z-index: 2; }
 th:first-child { background: #f1f4f8; }
 td:first-child { background: #fff; }
 tr.t1 td:first-child { background: #eef4fb; }
 tr.t2 td:first-child { background: #fbf1ec; }
 .closed { padding: 30px; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
-/* 二次确认对话框 */
 .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex;
   align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 8px; padding: 18px 20px; width: 360px; max-width: 90vw;
@@ -722,31 +356,25 @@ tr.t2 td:first-child { background: #fbf1ec; }
   background-repeat: no-repeat; background-position: right 6px center; background-size: 14px; }
 .lang-select:hover { background-color: #e7ecf4; }
 
-/* ====== 响应式 ====== */
 @media (max-width: 768px) {
   header { flex-direction: column; align-items: flex-start; gap: 8px; }
   .mcards { grid-template-columns: repeat(2, 1fr); }
   .filebar { flex-wrap: wrap; }
   th, td { padding: 5px 8px; font-size: 12px; }
   .rbadge { min-width: 36px; padding: 1px 5px; font-size: 11px; }
-  /* 水平滚动标签页 */
   .tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
   .tabs button { flex: none; white-space: nowrap; }
-  /* 列选择器: 固定居中覆盖 */
   .colpanel { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
     width: calc(100vw - 40px); max-width: 380px; z-index: 200; max-height: 80vh; }
   .collist { max-height: 50vh; }
-  /* 右侧渐隐提示可滚动（仅小屏需要提示） */
   .tablewrap { background: linear-gradient(to right, transparent calc(100% - 48px), rgba(0,0,0,.04) 100%), #fff; }
 }
 @media (max-width: 480px) {
   .wrap { padding: 10px 8px; }
-  /* 指标卡: 单列 */
   .mcards { grid-template-columns: 1fr; gap: 6px; }
   .mc { padding: 6px 10px; }
   .mc .v { font-size: 15px; }
-  /* 上传区: 堆叠 */
   .up-actions { flex-direction: column; align-items: stretch; }
   .up-actions .filebtn { width: 100%; }
   .filebar { flex-direction: column; align-items: stretch; gap: 6px; }
@@ -754,20 +382,16 @@ tr.t2 td:first-child { background: #fbf1ec; }
   .fb-chips { max-height: 80px; overflow-y: auto; }
   .actionrow { flex-direction: column; align-items: stretch; }
   .actionrow .lg { width: 100%; }
-  /* 列选择器 */
   .colpanel { width: calc(100vw - 24px); }
   .collist { max-height: 50vh; }
-  /* 工具栏 */
   .restoolbar { flex-direction: column; }
   .tabs { flex: none; width: 100%; }
   .restoolbar .resactions { width: 100%; gap: 4px; }
   .restoolbar .resactions button { flex: 1; min-width: 0; }
   .modal { width: calc(100vw - 32px); }
-  /* 表格紧凑 */
   th, td { padding: 4px 5px; font-size: 11px; }
   .rbadge { min-width: 28px; padding: 1px 4px; font-size: 10px; }
   .chip { font-size: 11px; padding: 2px 4px; }
-  /* 头部关闭按钮: 仅图标 */
   header .ghost { font-size: 0; gap: 0; padding: 6px; width: 32px; height: 32px; border-radius: 50%; }
   header .ghost .ic { font-size: 0; width: 18px; height: 18px; }
 }

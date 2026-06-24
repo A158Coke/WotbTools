@@ -16,7 +16,7 @@
 
 ## 仓库结构
 
-仓库按"语言/形态"分层：`common/`(共享资源) + `python/`(车辆库更新脚本) + `java/`(Java 主线，其下再分共享模块与 `offline/`、`online/` 两种打包/部署)。
+仓库按"语言/形态"分层：`common/`(共享资源) + `common/python/`(车辆库更新脚本) + `java/`(Java 主线，其下再分共享模块与 `offline/`、`online/` 两种打包/部署)。
 
 ```text
 .
@@ -32,7 +32,7 @@
 │   ├── map_names.json          # 地图内部名→中文 单一来源（前端+导出共用）
 │   ├── assets/                 # 共享图标 icon.ico / icon.png
 │   └── data/                   # 示例回放（gitignore，本地测试夹具）
-├── python/                     # 车辆库更新脚本
+├── common/python/              # 车辆库更新脚本
 │   └── update_tankopedia.py    # 更新车辆库 → 写 ../common/tankopedia.json
 └── java/
     ├── README.md
@@ -244,7 +244,7 @@ Java 离线 exe、Java Web 版必须保持以下规则一致：
 3. 测试（`ParityTest`、`WebApiTest`）。
 5. 文档（本文件 + README）。
 
-原则：业务逻辑只有 Java 一套主线（`python/` 仅保留车辆库更新脚本，不承载提取/导出逻辑）。所有解析/评分/导出改动都进 `java/`。
+原则：业务逻辑只有 Java 一套主线（`common/python/` 仅保留车辆库更新脚本，不承载提取/导出逻辑）。所有解析/评分/导出改动都进 `java/`。
 
 ## 测试命令
 

@@ -49,8 +49,6 @@ public final class Aggregator {
                 a.shots += p.nShots;
                 a.hits += p.nHitsDealt;
                 a.pens += p.nPenetrationsDealt;
-                a.hitsReceived += p.nHitsReceived;
-                a.pensReceived += p.nPenetrationsReceived;
                 a.enemiesDamaged += p.nEnemiesDamaged;
                 if (p.rating != null) {
                     a.ratingSum += p.rating;

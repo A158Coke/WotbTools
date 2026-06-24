@@ -58,7 +58,7 @@
   - cmd: `set JAVA_HOME=%USERPROFILE%\.jdks\jdk-21.0.1`
 - **Maven 必须带 `-s java/settings.xml`**（Aliyun 镜像 + 独立本地仓库 `java/.m2repo`，避免污染/依赖用户全局 Maven）。容器内用 `java/settings-docker.xml`。
 - **Node**：前端 `java/frontend`，开发端口 5173，构建用 `npm run build`。
-- **Python 3 + Pillow**：仅用于 `python/update_tankopedia.py`（更新车辆库，需联网）和偶尔的图像处理。
+- **Python 3 + Pillow**：仅用于 `common/python/update_tankopedia.py`（更新车辆库，需联网）和偶尔的图像处理。
 
 ---
 

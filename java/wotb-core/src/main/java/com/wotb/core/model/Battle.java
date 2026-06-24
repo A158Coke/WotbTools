@@ -6,10 +6,8 @@ import java.util.List;
 public class Battle {
     public String arenaId;
     public Integer winnerTeam;
-    public Long modeMapId;
     public String version = "";
     public String mapName = "";
-    public Object mapId = "";
     public Double durationS;
     public Long startTime;
     public String recorder = "";

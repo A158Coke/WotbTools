@@ -70,7 +70,7 @@
 
 ## 配方 E:更新车辆库
 
-`cd python && python update_tankopedia.py`(写 `common/tankopedia.json`,需联网)→ 跑测试 → 重建 exe/镜像。Java 构建会自动把 `common/tankopedia.json` 复制到 classpath,无需手动同步。
+`cd common/python && python update_tankopedia.py`(写 `common/tankopedia.json`,需联网)→ 跑测试 → 重建 exe/镜像。Java 构建会自动把 `common/tankopedia.json` 复制到 classpath,无需手动同步。
 
 ---
 
