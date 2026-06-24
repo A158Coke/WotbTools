@@ -1,11 +1,11 @@
 package com.wotb.web.service;
 
-import com.wotb.core.Aggregator;
-import com.wotb.core.ExcelExporter;
-import com.wotb.core.Rating;
-import com.wotb.core.ReplayParser;
-import com.wotb.core.Replays;
-import com.wotb.core.Tankopedia;
+import com.wotb.core.stats.Aggregator;
+import com.wotb.core.export.ExcelExporter;
+import com.wotb.core.stats.Rating;
+import com.wotb.core.parse.ReplayParser;
+import com.wotb.core.parse.Replays;
+import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.Collected;
 import com.wotb.core.model.Source;

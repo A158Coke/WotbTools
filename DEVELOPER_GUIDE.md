@@ -36,21 +36,26 @@
     ├── settings-docker.xml     # 容器内 Maven 配置（仅 Aliyun 镜像）
     ├── wotb-core/              # 【共享】Java 核心库
     │   ├── pom.xml             #   构建时把 ../../common/tankopedia.json 复制到 classpath
-    │   ├── src/main/java/com/wotb/core/
-    │   │   ├── ReplayParser.java    # 回放解析入口
-    │   │   ├── Protobuf.java        # protobuf wire decoder
-    │   │   ├── PickleReader.java    # Python pickle 读取
-    │   │   ├── Tankopedia.java      # 车辆库
-    │   │   ├── Players.java         # 玩家展示字段与排序
-    │   │   ├── Columns.java         # 列定义（单数据源）
-    │   │   ├── Aggregator.java      # 跨场汇总
-    │   │   ├── MapNames.java        # 地图内部名 → 中文（读 classpath map_names.json）
-    │   │   ├── ExcelExporter.java   # xlsx 导出门面（writeSingle/writeAggregate）
-    │   │   ├── ExcelStyles.java     # POI 渲染底座（样式 + 写格 + 值格式化）
-    │   │   ├── SingleBattleSheets.java  # 单场三表（战斗信息/玩家数据/原始字段）
-    │   │   ├── AggregateSheets.java     # 汇总三表（汇总/明细/战斗列表）
-    │   │   ├── Replays.java         # 多回放去重收集
-    │   │   └── model/             # 数据模型(每个一个文件)
+    │   ├── src/main/java/com/wotb/core/   # 按功能分包
+    │   │   ├── Columns.java         # 列定义（单数据源, export 与 API 共用的跨切契约）
+    │   │   ├── parse/               # 回放摄入：解析 + 去重
+    │   │   │   ├── ReplayParser.java    # 回放解析入口
+    │   │   │   ├── Protobuf.java        # protobuf wire decoder
+    │   │   │   ├── PickleReader.java    # Python pickle 读取
+    │   │   │   └── Replays.java         # 多回放去重收集
+    │   │   ├── ref/                 # 参考数据查表
+    │   │   │   ├── Tankopedia.java      # 车辆库
+    │   │   │   └── MapNames.java        # 地图内部名 → 中文（读 classpath map_names.json）
+    │   │   ├── stats/               # 解析后的派生 / 富化
+    │   │   │   ├── Players.java         # 玩家展示字段与排序
+    │   │   │   ├── Rating.java          # 表现评分
+    │   │   │   └── Aggregator.java      # 跨场汇总
+    │   │   ├── export/              # xlsx 输出
+    │   │   │   ├── ExcelExporter.java   # 导出门面（writeSingle/writeAggregate）
+    │   │   │   ├── ExcelStyles.java     # POI 渲染底座（样式 + 写格 + 值格式化）
+    │   │   │   ├── SingleBattleSheets.java  # 单场三表（战斗信息/玩家数据/原始字段）
+    │   │   │   └── AggregateSheets.java     # 汇总三表（汇总/明细/战斗列表）
+    │   │   └── model/               # 数据模型(每个一个文件)
     │   │       ├── Battle.java  PlayerResult.java
     │   │       ├── Agg.java           # 跨场汇总(原 Aggregator.Agg)
     │   │       ├── TankInfo.java      # 车辆信息(原 Tankopedia.TankInfo)

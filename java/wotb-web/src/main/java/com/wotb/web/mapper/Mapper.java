@@ -1,8 +1,8 @@
 package com.wotb.web.mapper;
 
 import com.wotb.core.Columns;
-import com.wotb.core.Players;
-import com.wotb.core.Tankopedia;
+import com.wotb.core.stats.Players;
+import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;

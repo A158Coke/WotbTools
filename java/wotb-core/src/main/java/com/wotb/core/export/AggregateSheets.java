@@ -1,8 +1,13 @@
-package com.wotb.core;
+package com.wotb.core.export;
 
 import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.Columns;
+import com.wotb.core.ref.MapNames;
+import com.wotb.core.ref.Tankopedia;
+import com.wotb.core.stats.Aggregator;
+import com.wotb.core.stats.Players;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Font;

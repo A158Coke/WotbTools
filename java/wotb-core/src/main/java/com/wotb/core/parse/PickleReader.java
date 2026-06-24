@@ -1,4 +1,4 @@
-package com.wotb.core;
+package com.wotb.core.parse;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;

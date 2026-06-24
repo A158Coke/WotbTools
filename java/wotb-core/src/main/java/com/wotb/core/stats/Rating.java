@@ -1,9 +1,10 @@
-package com.wotb.core;
+package com.wotb.core.stats;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.ref.Tankopedia;
 
 import java.io.InputStream;
 import java.util.HashMap;

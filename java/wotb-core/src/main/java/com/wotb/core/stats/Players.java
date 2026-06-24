@@ -1,7 +1,8 @@
-package com.wotb.core;
+package com.wotb.core.stats;
 
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.TankInfo;
+import com.wotb.core.ref.Tankopedia;
 
 import java.util.Comparator;
 import java.util.HashMap;

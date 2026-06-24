@@ -1,4 +1,4 @@
-package com.wotb.core;
+package com.wotb.core.parse;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

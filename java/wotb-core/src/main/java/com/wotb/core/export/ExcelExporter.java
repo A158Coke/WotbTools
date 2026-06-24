@@ -1,6 +1,8 @@
-package com.wotb.core;
+package com.wotb.core.export;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.ref.Tankopedia;
+import com.wotb.core.stats.Rating;
 
 import java.io.IOException;
 import java.io.OutputStream;
