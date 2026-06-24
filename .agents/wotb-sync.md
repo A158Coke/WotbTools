@@ -26,7 +26,7 @@
 
 1. `App.vue` → `PLAYER_LABELS` 和/或 `AGG_LABELS` 中该 `key` 的值。
 2. `Columns.java`(若是单场列)对应 `Col(...)` 的 title。
-3. `ExcelExporter.java` 的汇总 `AggCol(...)`(若是汇总列)。
+3. `AggregateSheets.java` 的汇总 `AggCol(...)`(若是汇总列;单场表结构在 `SingleBattleSheets.java`)。
 4. 验证 + 文档。
 
 > 命名约定:辅助伤害=「协助伤害」、承受伤害=「损失血量」、抵挡伤害=「格挡」、击伤敌数=「击伤」;汇总「总X / 场均X」。
@@ -36,7 +36,7 @@
 1. **解析**:`wotb-core/.../ReplayParser.java` 读出字段写入 `PlayerResult`(单场列在 `RESULT_UINT_FIELDS`/对应解析;汇总指标在 `Aggregator.java` 累计)。
 2. **列定义/取值**:
    - 单场:`Columns.java` 加一条 `Col(title, key, xlsxW, pxW, num, getter)`。
-   - 汇总:`Mapper.AGG_COLS`(key+num+getter) 和 `ExcelExporter` 的汇总 `AggCol`(title+宽+num+getter) 各加一条;指标计算在 `model.Agg`(由 `Aggregator` 聚合产生)。
+   - 汇总:`Mapper.AGG_COLS`(key+num+getter) 和 `AggregateSheets` 的汇总 `AggCol`(title+宽+num+getter) 各加一条;指标计算在 `model.Agg`(由 `Aggregator` 聚合产生)。
 3. **API 暴露**:`/api/columns` 自动包含(来自 Columns/AGG_COLS 的 key)。
 5. **前端**:`App.vue` 的 `PLAYER_LABELS`/`AGG_LABELS` 补该 key 的中文;如要默认显示,改 `DEFAULT_VISIBLE`。
 6. 验证 + 文档(含 DEVELOPER_GUIDE 字段表)。
