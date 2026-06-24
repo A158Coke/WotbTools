@@ -2,7 +2,7 @@
 
 本文件是任何 AI/自动化在本仓库工作的**入口**。先读这里,深入背景见 [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)。
 
-项目:从 WoT Blitz `.wotbreplay` 提取战斗数据导出 Excel。`java/`(主线:`wotb-core` 共享核心 + `wotb-web` Spring Boot + `frontend` Vue;`offline/` jpackage、`online/` docker)、`common/`(共享 tankopedia/图标/样本)、`python/`(车辆库更新脚本)。
+项目:从 WoT Blitz `.wotbreplay` 提取战斗数据导出 Excel。`java/`(主线:`wotb-core` 共享核心 + `wotb-web` Spring Boot + `frontend` Vue;`offline/` jpackage、`online/` docker)、`common/`(共享 tankopedia/图标/样本)、`python/`(车辆库更新脚本)。CI/CD: `.github/workflows/deploy.yml` push main 触发,构建根 `Dockerfile` 单镜像 → Docker Hub(`a158coke/wotbtool`) → SSH 部署 VPS(`/opt/wotb`)。
 
 ## 硬性规则(RULES)
 
@@ -28,6 +28,8 @@ cd java/frontend && npm run build
 # 离线 exe / 在线容器
 cd java/offline && build-desktop.bat
 cd java/online && docker compose up --build
+# 根 Dockerfile 单镜像构建(CI/CD)
+docker build -f Dockerfile -t a158coke/wotbtool:test .
 ```
 
 ## 不要做

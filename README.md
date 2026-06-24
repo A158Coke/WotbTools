@@ -20,7 +20,7 @@
 | 版本          | 技术栈                                        | 入口                                                   | 适用场景                     |
 |-------------|--------------------------------------------|------------------------------------------------------|--------------------------|
 | Java 离线 exe | Java 21 + Spring Boot 4 + Vue 3 + jpackage | `java\offline\dist-desktop\WoT Blitz Replay Extractor\*.exe` | 双击运行、本地浏览器 UI、离线导出       |
-| Java Web 版  | Java 21 + Spring Boot 4 + Vue 3 + Docker   | `java/`（`java\online\` 部署）                                | 浏览器上传、在线预览、REST API、容器部署 |
+| Java Web 版  | Java 21 + Spring Boot 4 + Vue 3 + Docker   | `java/`（`java\online\` 本地开发；CI/CD→ `a158coke/wotbtool` 镜像） | 浏览器上传、在线预览、REST API、容器部署 |
 
 文档入口：
 

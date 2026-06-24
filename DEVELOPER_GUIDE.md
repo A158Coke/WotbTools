@@ -21,6 +21,10 @@
 ```text
 .
 ├── README.md  TODO.md  DEVELOPER_GUIDE.md  LICENSE  .gitignore
+├── Dockerfile                  # CI/CD 单镜像（前后端合并，用于 Docker Hub 推送与 VPS 部署）
+├── .dockerignore               # 减少 Docker 构建上下文
+├── .github/
+│   └── workflows/deploy.yml    # GitHub Actions: 构建镜像 → 推送 Docker Hub → SSH 部署 VPS
 ├── common/                     # 共享资源
 │   ├── tankopedia.json         # 车辆库单一来源
 │   ├── rating.json             # 评分可调参数单一来源
@@ -81,10 +85,10 @@
     │   ├── build-desktop.bat     # 入口（调用 .ps1；兼容双击）
     │   └── build-desktop.ps1    # 主脚本：自动检测/下载工具 → 构建 → jpackage
     └── online/               # 联网版部署
-        ├── docker-compose.yml    # nginx(Vue) + Spring Boot 两容器
-        ├── backend.Dockerfile    # 上下文=仓库根（需 common/ 与 java/）
-        ├── frontend.Dockerfile   # 上下文=仓库根（App.vue import common/map_names.json）
-        └── nginx.conf
+        ├── docker-compose.yml    # 本地开发用：nginx(Vue) + Spring Boot 两容器
+        ├── backend.Dockerfile    # 本地开发用，上下文=仓库根（需 common/ 与 java/）
+        ├── frontend.Dockerfile   # 本地开发用，上下文=仓库根（App.vue import common/map_names.json）
+        └── nginx.conf            # CI/CD 与本地共用
 ```
 
 > 关键：离线版与联网版**复用同一套源码**（`wotb-core` + `wotb-web` + `frontend`）。`offline/` 与 `online/` 只放打包/部署文件，**不要把共享逻辑复制进去**。
@@ -295,6 +299,28 @@ npm run build
 - `tankopedia.json` 依赖外部 blitzkit 资源，更新时需要网络。
 - Web 上传接口无持久化和鉴权，适合本地/内网工具，不是公开服务安全模型。
 - 离线 exe 采用本地 Web UI，已处理端口占用、浏览器自动启动、程序退出服务残留等问题。
+
+## CI/CD 自动部署
+
+`push` 到 `main` 分支触发 GitHub Actions（[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)）：
+
+1. **构建镜像**：根目录 `Dockerfile` 多阶段构建，合并 nginx + JRE 单镜像。
+2. **推送 Docker Hub**：`a158coke/wotbtool:sha-<7位SHA>` + `a158coke/wotbtool:latest`。
+3. **SSH 部署 VPS**：`/opt/wotb` 下 `docker compose pull && docker compose up -d`。
+
+VPS 上只需要一个 `docker-compose.yml`：
+
+```yaml
+services:
+  wotb:
+    image: a158coke/wotbtool:latest
+    container_name: wotb
+    ports:
+      - "8088:80"
+    restart: unless-stopped
+```
+
+> 根 `Dockerfile` 与 `java/online/` 下的 Dockerfile 用途不同：前者是 CI/CD 单镜像（部署用），后者保留给本地 `docker compose up --build` 开发。
 
 ## 给 AI coder 的工作准则
 
