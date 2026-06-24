@@ -68,8 +68,8 @@ final class SingleBattleSheets {
 
     private static void players(final ExcelStyles styles, final Battle b, final Tankopedia tp) {
         final Sheet ws = styles.workbook().createSheet("玩家数据");
-        final List<Columns.Col> cols = Columns.PLAYER;
-        styles.writeHeader(ws, cols.stream().map(c -> new String[]{c.title(), String.valueOf(c.xlsx())}).toList());
+        final List<Columns.Column> columns = Columns.PLAYER;
+        styles.writeHeader(ws, columns.stream().map(c -> new String[]{c.title(), String.valueOf(c.xlsx())}).toList());
 
         final List<PlayerResult> players = Players.sorted(b.players);
         final Function<Long, String> platoon = Players.platoonLabeler();
@@ -81,13 +81,13 @@ final class SingleBattleSheets {
         for (final PlayerResult p : players) {
             final Row row = ws.createRow(rIdx++);
             final CellStyle fill = p.team == 1 ? styles.team1() : styles.team2();
-            for (int c = 0; c < cols.size(); c++) {
-                final Columns.Col col = cols.get(c);
-                styles.setCell(row.createCell(c), col.get().apply(p), fill, col.key());
+            for (int c = 0; c < columns.size(); c++) {
+                final Columns.Column column = columns.get(c);
+                styles.setCell(row.createCell(c), column.get().apply(p), fill, column.key());
             }
         }
         ws.createFreezePane(1, 1);
-        ws.setAutoFilter(new CellRangeAddress(0, players.size(), 0, cols.size() - 1));
+        ws.setAutoFilter(new CellRangeAddress(0, players.size(), 0, columns.size() - 1));
     }
 
     private static void raw(final ExcelStyles styles, final Battle b) {

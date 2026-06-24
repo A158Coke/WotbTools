@@ -22,7 +22,7 @@ import java.util.function.Function;
 final class AggregateSheets {
 
     /** 汇总表的一列。 */
-    private record AggCol(String title, int xlsx, boolean num, Function<Agg, Object> get) {
+    private record AggregateColumn(String title, int xlsx, boolean num, Function<Agg, Object> get) {
     }
 
     private AggregateSheets() {
@@ -38,27 +38,27 @@ final class AggregateSheets {
 
     private static void summary(final ExcelStyles styles, final Map<Long, Agg> aggMap) {
         final Sheet ws = styles.workbook().createSheet("汇总");
-        final List<AggCol> cols = List.of(
-                new AggCol("玩家", 18, false, a -> a.nickname),
-                new AggCol("战队", 10, false, a -> a.clan),
-                new AggCol("场次", 6, true, a -> a.battles),
-                new AggCol("胜场", 6, true, a -> a.wins),
-                new AggCol("胜率%", 8, true, a -> ExcelStyles.r1(a.winRate())),
-                new AggCol("存活率%", 9, true, a -> ExcelStyles.r1(a.survivalRate())),
-                new AggCol("场均评分", 8, true, a -> Math.round(a.avgRating())),
-                new AggCol("总击杀", 7, true, a -> a.kills),
-                new AggCol("场均击杀", 7, true, a -> ExcelStyles.r2(a.avg(a.kills))),
-                new AggCol("总伤害", 9, true, a -> a.damage),
-                new AggCol("场均伤害", 9, true, a -> ExcelStyles.r1(a.avg(a.damage))),
-                new AggCol("总协助伤害", 9, true, a -> a.assisted),
-                new AggCol("场均协助伤害", 9, true, a -> ExcelStyles.r1(a.avg(a.assisted))),
-                new AggCol("场均损失血量", 8, true, a -> ExcelStyles.r1(a.avg(a.received))),
-                new AggCol("场均格挡", 8, true, a -> ExcelStyles.r1(a.avg(a.blocked))),
-                new AggCol("命中率%", 8, true, a -> ExcelStyles.r1(a.hitRate())),
-                new AggCol("击穿率%", 8, true, a -> ExcelStyles.r1(a.penRate())),
-                new AggCol("场均击伤", 9, true, a -> ExcelStyles.r2(a.avg(a.enemiesDamaged))),
-                new AggCol("用车", 30, false, Agg::tanksStr),
-                new AggCol("账号ID", 12, true, a -> a.accountId)
+        final List<AggregateColumn> cols = List.of(
+                new AggregateColumn("玩家", 18, false, a -> a.nickname),
+                new AggregateColumn("战队", 10, false, a -> a.clan),
+                new AggregateColumn("场次", 6, true, a -> a.battles),
+                new AggregateColumn("胜场", 6, true, a -> a.wins),
+                new AggregateColumn("胜率%", 8, true, a -> ExcelStyles.r1(a.winRate())),
+                new AggregateColumn("存活率%", 9, true, a -> ExcelStyles.r1(a.survivalRate())),
+                new AggregateColumn("场均评分", 8, true, a -> Math.round(a.avgRating())),
+                new AggregateColumn("总击杀", 7, true, a -> a.kills),
+                new AggregateColumn("场均击杀", 7, true, a -> ExcelStyles.r2(a.avg(a.kills))),
+                new AggregateColumn("总伤害", 9, true, a -> a.damage),
+                new AggregateColumn("场均伤害", 9, true, a -> ExcelStyles.r1(a.avg(a.damage))),
+                new AggregateColumn("总协助伤害", 9, true, a -> a.assisted),
+                new AggregateColumn("场均协助伤害", 9, true, a -> ExcelStyles.r1(a.avg(a.assisted))),
+                new AggregateColumn("场均损失血量", 8, true, a -> ExcelStyles.r1(a.avg(a.received))),
+                new AggregateColumn("场均格挡", 8, true, a -> ExcelStyles.r1(a.avg(a.blocked))),
+                new AggregateColumn("命中率%", 8, true, a -> ExcelStyles.r1(a.hitRate())),
+                new AggregateColumn("击穿率%", 8, true, a -> ExcelStyles.r1(a.penRate())),
+                new AggregateColumn("场均击伤", 9, true, a -> ExcelStyles.r2(a.avg(a.enemiesDamaged))),
+                new AggregateColumn("用车", 30, false, Agg::tanksStr),
+                new AggregateColumn("账号ID", 12, true, a -> a.accountId)
         );
         styles.writeHeader(ws, cols.stream().map(c -> new String[]{c.title(), String.valueOf(c.xlsx())}).toList());
         final List<Agg> rows = new ArrayList<>(aggMap.values());
@@ -109,8 +109,8 @@ final class AggregateSheets {
                     styles.setCell(row.createCell(c), d.get().apply(p), styles.plain(), d.key());
                     c++;
                 }
-                for (final Columns.Col col : Columns.STAT) {
-                    styles.setCell(row.createCell(c), col.get().apply(p), styles.plain(), col.key());
+                for (final Columns.Column column : Columns.STAT) {
+                    styles.setCell(row.createCell(c), column.get().apply(p), styles.plain(), column.key());
                     c++;
                 }
                 styles.setCell(row.createCell(c), p.accountId, styles.plain(), "x");

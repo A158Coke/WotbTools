@@ -9,7 +9,7 @@ import com.wotb.core.Tankopedia;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.Collected;
 import com.wotb.core.model.Source;
-import com.wotb.web.Mapper;
+import com.wotb.web.mapper.Mapper;
 import com.wotb.web.dto.AggRow;
 import com.wotb.web.dto.BattleDto;
 import com.wotb.web.dto.ColumnDef;
