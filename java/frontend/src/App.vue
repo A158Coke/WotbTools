@@ -21,7 +21,7 @@ const DEFAULT_VISIBLE = [
   'nickname', 'clan', 'tank_name', 'tank_type', 'rating', 'survived_label',
   'kills', 'damage_dealt', 'damage_assisted', 'damage_received',
   'damage_blocked', 'n_shots', 'n_hits_dealt', 'n_penetrations_dealt',
-  'n_enemies_damaged'
+  'hit_rate', 'pen_rate', 'n_enemies_damaged'
 ]
 const LEFT_KEYS = new Set(['nickname', 'clan', 'tank_name'])
 const TEAM = { 1: '队伍1', 2: '队伍2' }
@@ -32,8 +32,9 @@ const PLAYER_LABELS = {
   nickname: '玩家', clan: '战队', tank_name: '车辆', tank_tier: '等级',
   tank_type: '坦克类型', tank_nation: '国家', rating: '评分', survived_label: '存活',
   kills: '击杀', damage_dealt: '伤害', damage_assisted: '协助伤害',
-  damage_received: '损失血量', damage_blocked: '格挡', n_shots: '发射',
-  n_hits_dealt: '命中', n_penetrations_dealt: '击穿', n_hits_received: '被命中',
+  damage_received: '损失血量', damage_blocked: '格挡', n_shots: '射击次数',
+  n_hits_dealt: '命中次数', n_penetrations_dealt: '击穿',
+  hit_rate: '命中率', pen_rate: '击穿率', n_hits_received: '被命中',
   n_penetrations_received: '被击穿', n_enemies_damaged: '击伤',
   platoon_label: '排', tank_id: '车辆ID', account_id: '账号ID'
 }
@@ -43,7 +44,7 @@ const AGG_LABELS = {
   kills: '总击杀', kills_avg: '场均击杀',
   damage: '总伤害', damage_avg: '场均伤害', assisted: '总协助伤害', assisted_avg: '场均协助伤害',
   received_avg: '场均损失血量', blocked_avg: '场均格挡', hit_rate: '命中率%', pen_rate: '击穿率%',
-  enemies_damaged_avg: '场均击伤', tanks: '用车', account_id: '账号ID'
+  enemies_damaged_avg: '场均击伤', shots: '总射击次数', hits: '总命中次数', pens: '总击穿次数', tanks: '用车', account_id: '账号ID'
 }
 const playerLabel = (key) => PLAYER_LABELS[key] || key
 const aggLabel = (key) => AGG_LABELS[key] || key

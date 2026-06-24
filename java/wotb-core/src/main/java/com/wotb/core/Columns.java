@@ -36,9 +36,11 @@ public final class Columns {
             new Column("协助伤害", "damage_assisted", 9, 65, true, p -> p.damageAssisted),
             new Column("损失血量", "damage_received", 9, 65, true, p -> p.damageReceived),
             new Column("格挡", "damage_blocked", 9, 65, true, p -> p.damageBlocked),
-            new Column("发射", "n_shots", 6, 45, true, p -> p.nShots),
-            new Column("命中", "n_hits_dealt", 6, 45, true, p -> p.nHitsDealt),
+            new Column("射击次数", "n_shots", 6, 45, true, p -> p.nShots),
+            new Column("命中次数", "n_hits_dealt", 6, 45, true, p -> p.nHitsDealt),
             new Column("击穿", "n_penetrations_dealt", 6, 45, true, p -> p.nPenetrationsDealt),
+            new Column("命中率", "hit_rate", 7, 50, true, p -> p.nShots == 0 ? 0 : Math.round(1000.0 * p.nHitsDealt / p.nShots) / 10.0),
+            new Column("击穿率", "pen_rate", 7, 50, true, p -> p.nShots == 0 ? 0 : Math.round(1000.0 * p.nPenetrationsDealt / p.nShots) / 10.0),
             new Column("被命中", "n_hits_received", 7, 50, true, p -> p.nHitsReceived),
             new Column("被击穿", "n_penetrations_received", 7, 50, true, p -> p.nPenetrationsReceived),
             new Column("击伤", "n_enemies_damaged", 9, 55, true, p -> p.nEnemiesDamaged)
