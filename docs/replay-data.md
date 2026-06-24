@@ -163,8 +163,8 @@ survivalTimeSec:
   if survived → battleDuration (meta.json)
   else:
     1. deathTimeMillis / 1000  (proto #104, v11.18 实际不存在)
-    2. arenaSnapshots          (Type 8 sub_type 47 / updateArena)
-    3. entityLeaveDeathTimes    (Type 4 EntityLeave + updateArena2 映射)
+    2. entityLeaveDeathTimes    (Type 4 EntityLeave + updateArena2 映射)
+    3. positionDeathTimes       (Type 10 Position + updateArena2 映射, 坐标停止≈阵亡)
 ```
 
 ---
@@ -396,7 +396,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `damage_assisted` | 整数 | `PlayerResult.damageAssisted` | HP | #9 + #10 |
 | `damage_received` | 整数 | `PlayerResult.damageReceived` | HP | #11 |
 | `damage_blocked` | 整数 | `PlayerResult.damageBlocked` | HP | #117 |
-| `survival_time` | 浮点数 | `PlayerResult.survivalTimeSec` | 秒 | 存活者=durationS，阵亡者=3 层 fallback |
+| `survival_time` | 浮点数 | `PlayerResult.survivalTimeSec` | 秒 | 存活者=durationS，阵亡者=#104>EntityLeave>Position |
 | `n_shots` | 整数 | `PlayerResult.nShots` | 次数 | #4 |
 | `n_hits_dealt` | 整数 | `PlayerResult.nHitsDealt` | 次数 | #5 |
 | `n_penetrations_dealt` | 整数 | `PlayerResult.nPenetrationsDealt` | 次数 | #7 |
@@ -440,7 +440,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | 含义 | 单位 | 说明 |
 |------|------|------|
 | 伤害值 | **HP** | 游戏内生命值点数 |
-| 存活时间 | **秒** | 3 层 fallback（#104→ArenaSnapshot→EntityLeave） |
+| 存活时间 | **秒** | 3 层 fallback（#104→EntityLeave→Position） |
 | 战斗时长 | **秒** | `meta.json#battleDuration`（浮点） |
 | 时间戳 | **Unix 秒** | 自 1970-01-01 起的秒数 |
 | 次数/计数 | **次** | 射击/命中/击杀/人数 |
@@ -462,10 +462,12 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | 层级 | 来源 | 适用场景 | 精度 |
 |------|------|----------|------|
 | 1 | proto #104 | 新版本回放（含此字段） | 精确 ms |
-| 2 | ArenaSnapshot (method 47) | 所有回放（含 sub_type 47 包） | 秒级（snapshot 间隔） |
-| 3 | EntityLeave (method 48) | fallback | 秒级（leave 时刻） |
+| 2 | EntityLeave (Type 4) | 部分实体有 leave 事件 | 秒级 |
+| 3 | Position (Type 10) | 坐标更新停止 ≈ 阵亡 | 秒级（坐标间隔约 0.01s） |
 
-**EntityLeave 限制：** 某些实体会多次 leave/enter，取最后一次 leave 为此实体大致的死亡时间。需要 entity_id↔account_id 映射（来自 method 48 updateArena2 protobuf）。
+**EntityLeave 限制：** EntityLeave（type 4）并非所有阵亡玩家都触发——约 30-50% 的死亡对应的实体不产生 leave 事件。需要 entity_id↔account_id 映射（来自 method 48 updateArena2 protobuf）。某些实体会多次 leave/enter，取最后一次 keep。
+
+**Position 补充：** Position（type 10）覆盖大多数玩家实体。阵亡后玩家实体停止发送坐标更新，因此最后坐标时间可作为死亡时间近似。与 EntityLeave 互补使用基本覆盖全部阵亡玩家。
 
 ### 2. 战斗时长上限
 

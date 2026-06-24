@@ -124,36 +124,31 @@ public final class ReplayParser {
 
         // ---- data.wotreplay 事件流 ----
         final byte[] eventData = entries.get("data.wotreplay");
-        List<EventStreamReader.ArenaSnapshot> arenaSnapshots = List.of();
         List<EventStreamReader.ParsedPacket> esPackets = List.of();
         if (eventData != null) {
             try {
                 final EventStreamReader.EventStream es = EventStreamReader.read(eventData);
                 battle.clientVersion = es.clientVersion;
                 esPackets = es.packets;
-                arenaSnapshots = EventStreamReader.extractArenaSnapshots(es.packets);
             } catch (Exception ignored) {
-                // 事件流解析失败不阻塞主流程
             }
         }
 
-        // 存活时间: 存活=战斗时长, 阵亡=deathTimeMillis 或事件流估算
+        // 存活时间: 存活=战斗时长, 阵亡=3 层 fallback
         final double bd = battle.durationS != null ? battle.durationS : 0;
-        Map<Long, Double> entityLeaveDeathTimes = Map.of();
+        Map<Long, Double> deathTimesByEntityLeave = Map.of();
+        Map<Long, Double> deathTimesByPosition = Map.of();
         if (!esPackets.isEmpty()) {
-            entityLeaveDeathTimes = EventStreamReader.estimateDeathTimesByEntityLeaves(esPackets, bd);
+            deathTimesByEntityLeave = EventStreamReader.estimateDeathTimesByEntityLeaves(esPackets, bd);
+            deathTimesByPosition = EventStreamReader.estimateDeathTimesByPositions(esPackets, bd);
         }
         for (final PlayerResult pr : players) {
             if (pr.survived) {
                 pr.survivalTimeSec = bd;
             } else {
                 double st = pr.deathTimeMillis / 1000.0;
-                if (st <= 0) {
-                    st = EventStreamReader.estimateDeathTime(pr.accountId, false, bd, arenaSnapshots);
-                }
-                if (st <= 0) {
-                    st = entityLeaveDeathTimes.getOrDefault(pr.accountId, 0.0);
-                }
+                if (st <= 0) st = deathTimesByEntityLeave.getOrDefault(pr.accountId, 0.0);
+                if (st <= 0) st = deathTimesByPosition.getOrDefault(pr.accountId, 0.0);
                 pr.survivalTimeSec = st > 0 ? Math.min(st, bd) : 0;
             }
         }

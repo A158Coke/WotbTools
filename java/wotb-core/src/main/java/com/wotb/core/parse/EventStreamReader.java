@@ -284,6 +284,28 @@ public final class EventStreamReader {
         return deathTimes;
     }
 
+    /**
+     * 用 entity_id ↔ account_id 映射 + Position 事件推算各玩家死亡时间。
+     * Position 更新停止的时间 ≈ 玩家阵亡时间（玩家阵亡后不再发送坐标）。
+     * 返回 map: account_id → death_time_sec (0=未知).
+     */
+    public static Map<Long, Double> estimateDeathTimesByPositions(
+            List<ParsedPacket> packets, double battleDurationS) {
+        final Map<Integer, Long> entityToAccount = extractEntityToAccountMap(packets);
+        final List<PositionData> positions = extractPositions(packets);
+        final Map<Integer, Double> lastPosByEid = new HashMap<>();
+        for (final PositionData pos : positions) {
+            lastPosByEid.merge(pos.entityId, (double) pos.clockSecs, Math::max);
+        }
+        final Map<Long, Double> deathTimes = new HashMap<>();
+        for (final Map.Entry<Integer, Long> entry : entityToAccount.entrySet()) {
+            final double lastPos = lastPosByEid.getOrDefault(entry.getKey(), 0.0);
+            final double dt = lastPos > 0 ? Math.min(lastPos, battleDurationS) : 0;
+            deathTimes.put(entry.getValue(), dt);
+        }
+        return deathTimes;
+    }
+
     // ---- EntityMethod 解析 ----
 
     public static List<ArenaSnapshot> extractArenaSnapshots(List<ParsedPacket> packets) {
