@@ -7,9 +7,6 @@ import com.wotb.core.model.PlayerResult;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -32,15 +29,11 @@ public final class ReplayParser {
     static final int F_XP = 23, F_CREDITS = 106;
     static final int[] F_ASSIST = {9, 10};
     static final int F_SURVIVED = 105;          // == -1 表示存活
+    static final int F_DEATH_TIME = 104;        // 死亡时刻(ms; 存活时=0)
     // 名册 PlayerInfo (#201 -> #2)
-    static final int R_NICK = 1, R_PLATOON = 2, R_TEAM = 3, R_CLAN = 5;
+    static final int R_NICK = 1, R_PLATOON = 2, R_CLAN = 5;
 
     private ReplayParser() {
-    }
-
-    public static Battle parse(final Path path) throws IOException {
-        Map<String, byte[]> entries = unzip(Files.readAllBytes(path));
-        return parse(entries);
     }
 
     public static Battle parse(final byte[] replayBytes) throws IOException {
@@ -106,6 +99,7 @@ public final class ReplayParser {
             pr.credits = (int) Protobuf.firstLong(info, F_CREDITS, 0);
             final Object killer = Protobuf.first(info, F_SURVIVED);
             pr.survived = (killer instanceof Number) && ((Number) killer).longValue() == -1L;
+            pr.deathTimeMillis = Protobuf.firstLong(info, F_DEATH_TIME, 0);
             pr.raw = info;
             players.add(pr);
         }
@@ -133,6 +127,18 @@ public final class ReplayParser {
         battle.recorder = text(meta, "playerName");
         battle.recorderVehicle = text(meta, "playerVehicleName");
         battle.players = players;
+
+        // 存活时间: 存活=战斗时长, 阵亡=死亡时刻/1000
+        final double bd = battle.durationS != null ? battle.durationS : 0;
+        for (final PlayerResult pr : players) {
+            if (pr.survived) {
+                pr.survivalTimeSec = bd;
+            } else {
+                final double st = pr.deathTimeMillis / 1000.0;
+                pr.survivalTimeSec = st > 0 ? Math.min(st, bd) : 0;
+            }
+        }
+
         return battle;
     }
 

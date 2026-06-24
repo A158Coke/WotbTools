@@ -50,6 +50,7 @@ final class AggregateSheets {
                 new AggregateColumn("胜场", 6, true, a -> a.wins),
                 new AggregateColumn("胜率%", 8, true, a -> ExcelStyles.r1(a.winRate())),
                 new AggregateColumn("存活率%", 9, true, a -> ExcelStyles.r1(a.survivalRate())),
+                new AggregateColumn("平均存活时间", 12, false, a -> ExcelStyles.duration(a.avg(a.survivalSum))),
                 new AggregateColumn("场均评分", 8, true, a -> Math.round(a.avgRating())),
                 new AggregateColumn("总击杀", 7, true, a -> a.kills),
                 new AggregateColumn("场均击杀", 7, true, a -> ExcelStyles.r2(a.avg(a.kills))),
@@ -118,7 +119,10 @@ final class AggregateSheets {
                     c++;
                 }
                 for (final Columns.Column column : Columns.STAT) {
-                    styles.setCell(row.createCell(c), column.get().apply(p), styles.plain(), column.key());
+                    final Object val = "survival_time".equals(column.key())
+                            ? ExcelStyles.duration((Double) column.get().apply(p))
+                            : column.get().apply(p);
+                    styles.setCell(row.createCell(c), val, styles.plain(), column.key());
                     c++;
                 }
                 styles.setCell(row.createCell(c), p.accountId, styles.plain(), "x");

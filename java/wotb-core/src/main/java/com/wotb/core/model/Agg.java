@@ -13,6 +13,7 @@ public final class Agg {
     public int battles, wins, survived;
     public long kills, damage, assisted, received, blocked;
     public long shots, hits, pens, hitsReceived, pensReceived, enemiesDamaged;
+    public double survivalSum;        // 各场存活时间(秒)之和(用于场均)
     public long ratingSum;            // 各场 rating 之和(用于场均)
     public final Map<String, Integer> tanks = new TreeMap<>();
 
@@ -32,6 +33,10 @@ public final class Agg {
         return battles == 0 ? 0 : (double) total / battles;
     }
 
+    public double avg(final double total) {
+        return battles == 0 ? 0 : total / battles;
+    }
+
     public double hitRate() {
         return shots == 0 ? 0 : 100.0 * hits / shots;
     }
@@ -45,7 +50,7 @@ public final class Agg {
         tanks.entrySet().stream()
                 .sorted((a, b) -> b.getValue() - a.getValue())
                 .forEach(e -> {
-                    if (sb.length() > 0) sb.append(", ");
+                    if (!sb.isEmpty()) sb.append(", ");
                     sb.append(e.getValue() > 1 ? e.getKey() + "×" + e.getValue() : e.getKey());
                 });
         return sb.toString();

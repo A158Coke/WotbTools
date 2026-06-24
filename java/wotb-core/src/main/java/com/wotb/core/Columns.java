@@ -36,6 +36,7 @@ public final class Columns {
             new Column("协助伤害", "damage_assisted", 9, 65, true, p -> p.damageAssisted),
             new Column("损失血量", "damage_received", 9, 65, true, p -> p.damageReceived),
             new Column("格挡", "damage_blocked", 9, 65, true, p -> p.damageBlocked),
+            new Column("存活时间", "survival_time", 10, 70, true, p -> p.survivalTimeSec),
             new Column("射击次数", "n_shots", 6, 45, true, p -> p.nShots),
             new Column("命中次数", "n_hits_dealt", 6, 45, true, p -> p.nHitsDealt),
             new Column("击穿", "n_penetrations_dealt", 6, 45, true, p -> p.nPenetrationsDealt),

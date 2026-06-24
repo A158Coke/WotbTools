@@ -196,7 +196,7 @@ const currentOrder = computed(() => (pickerScope.value === 'agg' ? aggOrder.valu
 const COL_GROUP_CAT = {
   nickname: 'identity', clan: 'identity', account_id: 'extra',
   tank_name: 'vehicle', tank_tier: 'vehicle', tank_type: 'vehicle', tank_nation: 'vehicle', tank_id: 'extra',
-  rating: 'battle', survived_label: 'battle', kills: 'battle', damage_dealt: 'battle',
+  rating: 'battle', survived_label: 'battle', survival_time: 'battle', kills: 'battle', damage_dealt: 'battle',
   damage_assisted: 'battle', damage_received: 'battle', damage_blocked: 'battle',
   n_shots: 'battle', n_hits_dealt: 'battle', n_penetrations_dealt: 'battle',
   n_hits_received: 'battle', n_penetrations_received: 'battle', n_enemies_damaged: 'battle',
@@ -204,7 +204,7 @@ const COL_GROUP_CAT = {
   battles: 'overview', wins: 'overview', win_rate: 'overview', survival_rate: 'overview', rating_avg: 'overview',
   kills_avg: 'battle', damage: 'battle', damage_avg: 'battle', assisted: 'battle', assisted_avg: 'battle',
   received_avg: 'battle', blocked_avg: 'battle', hit_rate: 'battle', pen_rate: 'battle',
-  enemies_damaged_avg: 'battle', tanks: 'extra',
+  enemies_damaged_avg: 'battle', survival_avg: 'battle', tanks: 'extra',
 }
 const catOf = (key) => {
   const c = COL_GROUP_CAT[key]
@@ -493,6 +493,7 @@ const aggStats = computed(() => {
                   :class="row.team === 1 ? 't1' : 't2'">
                 <td v-for="c in shownAggCols" :key="c.key">
                   <span v-if="RATING_KEYS.has(c.key)" class="rbadge" :class="ratingTier(row.cells[c.key])">{{ row.cells[c.key] }}<span class="medal"><template v-if="medal(resp.aggregate, c.key, row.cells[c.key]) === 'first'"> 🥇</template><img v-else-if="medal(resp.aggregate, c.key, row.cells[c.key]) === 'last'" class="poop" :src="poopUrl" alt="倒数"></span></span>
+                  <span v-else-if="c.key === 'survival_avg'">{{ fmtDuration(row.cells[c.key]) }}</span>
                   <span v-else>{{ row.cells[c.key] }}</span>
                 </td>
               </tr>
@@ -520,6 +521,7 @@ const aggStats = computed(() => {
                 <td v-for="c in shownCols" :key="c.key">
                   <span v-if="RATING_KEYS.has(c.key)" class="rbadge" :class="ratingTier(row.cells[c.key])">{{ row.cells[c.key] }}<span class="medal"><template v-if="medal(b.players, c.key, row.cells[c.key]) === 'first'"> 🥇</template><img v-else-if="medal(b.players, c.key, row.cells[c.key]) === 'last'" class="poop" :src="poopUrl" alt="倒数"></span></span>
                   <span v-else-if="c.key === 'survived_label'" :class="row.cells[c.key] === '存活' ? 'alive' : 'dead'">{{ row.cells[c.key] === '存活' ? $t('survived.alive') : $t('survived.dead') }}</span>
+                  <span v-else-if="c.key === 'survival_time'">{{ fmtDuration(row.cells[c.key]) }}</span>
                   <span v-else>{{ row.cells[c.key] }}</span>
                 </td>
               </tr>
