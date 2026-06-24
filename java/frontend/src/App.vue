@@ -690,6 +690,12 @@ th:last-child, td:last-child { padding-right: 16px; }
 /* 队伍行底色(浅) */
 tr.t1 td { background: #eef4fb; }
 tr.t2 td { background: #fbf1ec; }
+/* 粘性首列: 任何宽度下横向滚动时玩家列始终可见 */
+th:first-child, td:first-child { position: sticky; left: 0; z-index: 2; }
+th:first-child { background: #f1f4f8; }
+td:first-child { background: #fff; }
+tr.t1 td:first-child { background: #eef4fb; }
+tr.t2 td:first-child { background: #fbf1ec; }
 .closed { padding: 30px; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
 /* 二次确认对话框 */
 .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex;
@@ -729,13 +735,8 @@ tr.t2 td { background: #fbf1ec; }
   .colpanel { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
     width: calc(100vw - 40px); max-width: 380px; z-index: 200; max-height: 80vh; }
   .collist { max-height: 50vh; }
-  /* 粘性首列 + 右侧渐隐提示可滚动 */
+  /* 右侧渐隐提示可滚动（仅小屏需要提示） */
   .tablewrap { background: linear-gradient(to right, transparent calc(100% - 48px), rgba(0,0,0,.04) 100%), #fff; }
-  th:first-child, td:first-child { position: sticky; left: 0; z-index: 2; }
-  th:first-child { background: #f1f4f8; }
-  td:first-child { background: #fff; }
-  tr.t1 td:first-child { background: #eef4fb; }
-  tr.t2 td:first-child { background: #fbf1ec; }
 }
 @media (max-width: 480px) {
   .wrap { padding: 10px 8px; }
