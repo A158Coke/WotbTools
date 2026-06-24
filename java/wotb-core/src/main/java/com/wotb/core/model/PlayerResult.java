@@ -36,6 +36,12 @@ public class PlayerResult {
     public String tankNation = "";
     public String platoonLabel = "";
 
+    // 原始死亡时刻(ms; proto #104; 存活/未知=0)
+    public long deathTimeMillis;
+
+    // 存活时间(秒, 由 ReplayParser 计算)
+    public double survivalTimeSec;
+
     // 评分 (按车型基准归一化, 由 Rating.compute 计算; 未计算时为 null)
     public Integer rating;
 

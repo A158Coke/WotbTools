@@ -40,6 +40,7 @@ public final class Aggregator {
                 if (p.survived) {
                     a.survived++;
                 }
+                a.survivalSum += p.survivalTimeSec;
                 a.kills += p.kills;
                 a.damage += p.damageDealt;
                 a.assisted += p.damageAssisted;

@@ -87,7 +87,10 @@ final class SingleBattleSheets {
             final CellStyle fill = p.team == 1 ? styles.team1() : styles.team2();
             for (int c = 0; c < columns.size(); c++) {
                 final Columns.Column column = columns.get(c);
-                styles.setCell(row.createCell(c), column.get().apply(p), fill, column.key());
+                final Object val = "survival_time".equals(column.key())
+                        ? ExcelStyles.duration((Double) column.get().apply(p))
+                        : column.get().apply(p);
+                styles.setCell(row.createCell(c), val, fill, column.key());
             }
         }
         ws.createFreezePane(1, 1);
@@ -122,7 +125,7 @@ final class SingleBattleSheets {
                 }
                 final StringBuilder sb = new StringBuilder();
                 for (final Object v : vals) {
-                    if (sb.length() > 0) {
+                    if (!sb.isEmpty()) {
                         sb.append(", ");
                     }
                     sb.append(v instanceof byte[] ? ExcelStyles.toHex((byte[]) v) : String.valueOf(v));
