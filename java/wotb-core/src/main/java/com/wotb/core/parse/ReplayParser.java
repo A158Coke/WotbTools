@@ -147,8 +147,19 @@ public final class ReplayParser {
                 pr.survivalTimeSec = bd;
             } else {
                 double st = pr.deathTimeMillis / 1000.0;
-                if (st <= 0) st = deathTimesByEntityLeave.getOrDefault(pr.accountId, 0.0);
-                if (st <= 0) st = deathTimesByPosition.getOrDefault(pr.accountId, 0.0);
+                if (st <= 0) {
+                    final double el = deathTimesByEntityLeave.getOrDefault(pr.accountId, 0.0);
+                    final double pos = deathTimesByPosition.getOrDefault(pr.accountId, 0.0);
+                    // EntityLeave 常出现假阳性(临时离场而非阵亡), 若 Position 数据显著晚于
+                    // EntityLeave 且 >0, 取 Position 作为更可靠的死亡时间
+                    if (el > 0 && pos > 0 && pos > el + 5.0) {
+                        st = pos;
+                    } else if (el > 0) {
+                        st = el;
+                    } else {
+                        st = pos;
+                    }
+                }
                 pr.survivalTimeSec = st > 0 ? Math.min(st, bd) : 0;
             }
         }
