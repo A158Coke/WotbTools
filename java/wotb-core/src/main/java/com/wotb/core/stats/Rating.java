@@ -21,8 +21,8 @@ import java.util.Map;
  */
 public final class Rating {
 
-    /** 可调配置(对应 common/rating.json)。 */
-    public static final class Config {
+    /** 可调配置(对应 common/rating.json), 仅 Rating 内部使用。 */
+    private static final class Config {
         public double assist = 0.6;
         public double block = 0.35;
         public double killValue = 200;
