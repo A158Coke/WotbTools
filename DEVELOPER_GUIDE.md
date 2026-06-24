@@ -21,8 +21,9 @@
 ```text
 .
 ├── README.md  TODO.md  DEVELOPER_GUIDE.md  LICENSE  .gitignore
-├── Dockerfile                  # CI/CD 单镜像（前后端合并，用于 Docker Hub 推送与 VPS 部署）
+├── Dockerfile                  # 单镜像（前后端合并）：CI/CD 与本地 compose 共用
 ├── .dockerignore               # 减少 Docker 构建上下文
+├── deploy/nginx.conf           # 单镜像内 nginx：托管 Vue + 反代 /api→localhost:8087
 ├── .github/
 │   └── workflows/deploy.yml    # GitHub Actions: 构建镜像 → 推送 Docker Hub → SSH 部署 VPS
 ├── common/                     # 共享资源
@@ -84,11 +85,8 @@
     ├── offline/              # 离线版打包
     │   ├── build-desktop.bat     # 入口（调用 .ps1；兼容双击）
     │   └── build-desktop.ps1    # 主脚本：自动检测/下载工具 → 构建 → jpackage
-    └── online/               # 联网版部署
-        ├── docker-compose.yml    # 本地开发用：nginx(Vue) + Spring Boot 两容器
-        ├── backend.Dockerfile    # 本地开发用，上下文=仓库根（需 common/ 与 java/）
-        ├── frontend.Dockerfile   # 本地开发用，上下文=仓库根（App.vue import common/map_names.json）
-        └── nginx.conf            # CI/CD 与本地共用
+    └── online/               # 联网版本地运行
+        └── docker-compose.yml    # 构建并运行与 CI/CD 相同的根 Dockerfile 单镜像（context=仓库根）
 ```
 
 > 关键：离线版与联网版**复用同一套源码**（`wotb-core` + `wotb-web` + `frontend`）。`offline/` 与 `online/` 只放打包/部署文件，**不要把共享逻辑复制进去**。
@@ -320,7 +318,7 @@ services:
     restart: unless-stopped
 ```
 
-> 根 `Dockerfile` 使用 `deploy/nginx.conf`，反代同容器内的 `localhost:8087`；`java/online/` 下的 Dockerfile 使用 `java/online/nginx.conf`，反代本地 compose 的 `backend:8087` 服务。两者用途不同：前者是 CI/CD 单镜像（部署用），后者保留给本地 `docker compose up --build` 开发。
+> 镜像只有**一套**：根 `Dockerfile` + `deploy/nginx.conf`（nginx 反代同容器内 `localhost:8087`）。CI/CD 构建它推 Docker Hub；本地 `java/online/docker-compose.yml` 用 `docker compose up --build` 构建运行**同一个** Dockerfile，不再各自维护 nginx 配置。
 
 ## 给 AI coder 的工作准则
 

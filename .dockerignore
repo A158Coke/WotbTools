@@ -1,10 +1,13 @@
+# Docker 构建上下文(仓库根)排除项: 避免把宿主机产物/大文件塞进上下文。
+# 目录类用 **/ 以匹配任意层级(如 java/frontend/node_modules、java/*/target)。
 .git
-node_modules
-target
-dist
+.gitignore
+**/node_modules
+**/target
+**/dist
 dist-desktop
 .m2repo
 python
-.gitignore
+common/data
 *.md
 **/tsconfig*.json

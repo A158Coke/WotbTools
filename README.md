@@ -113,7 +113,8 @@ mvn -s settings.xml test
 | `java/wotb-web/`              | 共享 Spring Boot 4 应用：REST API + 桌面模式入口       |
 | `java/frontend/`              | 共享 Vue 3 前端（单文件组件，无 router）                  |
 | `java/offline/`               | 离线版打包：`build-desktop.bat`（jpackage）         |
-| `java/online/`                | 联网版部署：`docker-compose.yml`、Dockerfile、nginx.conf |
+| `java/online/`                | 联网版本地运行：`docker-compose.yml`（构建根 `Dockerfile` 单镜像） |
+| `Dockerfile` / `deploy/` / `.github/` | 单镜像（前后端合并）+ nginx 配置 + CI/CD（push `main`→Docker Hub→VPS） |
 
 ## 数据来源与限制
 
