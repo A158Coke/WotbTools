@@ -7,6 +7,8 @@ import com.wotb.core.model.PlayerResult;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -34,6 +36,11 @@ public final class ReplayParser {
     static final int R_NICK = 1, R_PLATOON = 2, R_CLAN = 5;
 
     private ReplayParser() {
+    }
+
+    //这个方法只有测试在使用
+    public static Battle parse(final Path path) throws IOException {
+        return parse(unzip(Files.readAllBytes(path)));
     }
 
     public static Battle parse(final byte[] replayBytes) throws IOException {
