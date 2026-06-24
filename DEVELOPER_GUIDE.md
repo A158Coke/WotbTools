@@ -204,12 +204,12 @@ BattleResults
 
 ### 显示名（i18n）架构
 
-API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + 数据，**不含中文**。中文显示名由各输出通道**各自映射**：
+API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + 数据，**不含中文**。显示名由各输出通道**各自映射**：
 
-- 前端：`App.vue` 的 `PLAYER_LABELS` / `AGG_LABELS`（两套，因 `kills` 在单场=「击杀」、汇总=「总击杀」，同 key 不同义）。
-- 导出层：`Columns.java`（单场 xlsx 表头）、`AggregateSheets.java` 的汇总列。
+- 前端：`vue-i18n` 三语 locale `java/frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`（两套 key，因 `kills` 在单场=「击杀」、汇总=「总击杀」，同 key 不同义），模板用 `$t('player_labels.' + key)` 渲染，语言可切换、`localStorage` 记忆（`wotb-lang`）。
+- 导出层：`Columns.java`（单场 xlsx 表头）、`AggregateSheets.java` 的汇总列（导出仅中文）。
 
-> 这是有意的取舍：API 干净、可多语言，但中文标签存在多份（前端 + 导出）。**改任一列名，务必同步前端两套映射与三处导出标签。**
+> 这是有意的取舍：API 干净、可多语言，但显示名存在多份（前端三语 locale + 导出）。**改/增任一列名，务必同步三语 locale 的两套 key（缺 key 会回退 `en`，再缺则显示原始 key）与导出标签。**
 >
 > 当前命名约定：辅助伤害=「协助伤害」、承受伤害=「损失血量」、抵挡伤害=「格挡」、击伤敌数=「击伤」；汇总用「总X / 场均X」。
 
@@ -242,7 +242,7 @@ Java 离线 exe、Java Web 版必须保持以下规则一致：
 如修改字段解释或列名，必须同步：
 
 1. Java `ReplayParser`、`PlayerResult`、`Columns`（单场列）、`AggregateSheets`（汇总列）。
-2. Java Web API `Mapper`（`/api/columns` 只回英文 key）+ 前端 `PLAYER_LABELS` / `AGG_LABELS`。
+2. Java Web API `Mapper`（`/api/columns` 只回英文 key）+ 前端三语 locale `locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`。
 3. 测试（`ParityTest`、`WebApiTest`）。
 5. 文档（本文件 + README）。
 
@@ -328,6 +328,6 @@ services:
 - 不要根据乱码输出判断文件内容坏了；优先用 UTF-8 方式读取。
 - 不要在 `node_modules`、`target`、`dist` 中做源码修改。
 - 小改动也要考虑 Java 离线 exe 与 Web 版是否需要同步。
-- 如果只改 Web UI 的显示名，改前端 `PLAYER_LABELS` / `AGG_LABELS` 即可；API 只回英文 key，不要把中文加回 API。
-- `Columns.java` 是 Java 侧列的 key/顺序/取值与**单场 xlsx 表头**的来源；新增字段先加 `Col` 记录，再同步前端映射、汇总列。
+- 如果只改 Web UI 的显示名，改前端三语 locale `locales/{zh,en,ru}.json` 的 `player_labels`/`agg_labels` 即可；API 只回英文 key，不要把中文加回 API。
+- `Columns.java` 是 Java 侧列的 key/顺序/取值与**单场 xlsx 表头**的来源；新增字段先加 `Column` 记录，再同步前端 locale、汇总列。
 - 任何会改变界面/导出/数据的更新，都要同步更新文档（本文件 + README/java/README）。
