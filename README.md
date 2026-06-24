@@ -20,7 +20,7 @@
 | 版本          | 技术栈                                        | 入口                                                   | 适用场景                     |
 |-------------|--------------------------------------------|------------------------------------------------------|--------------------------|
 | Java 离线 exe | Java 21 + Spring Boot 4 + Vue 3 + jpackage | `java\offline\dist-desktop\WoT Blitz Replay Extractor\*.exe` | 双击运行、本地浏览器 UI、离线导出       |
-| Java Web 版  | Java 21 + Spring Boot 4 + Vue 3 + Docker   | `java/`（`java\online\` 部署）                                | 浏览器上传、在线预览、REST API、容器部署 |
+| Java Web 版  | Java 21 + Spring Boot 4 + Vue 3 + Docker   | `java/`（`java\online\` 本地开发；CI/CD→ `a158coke/wotbtool` 镜像） | 浏览器上传、在线预览、REST API、容器部署 |
 
 文档入口：
 
@@ -113,7 +113,8 @@ mvn -s settings.xml test
 | `java/wotb-web/`              | 共享 Spring Boot 4 应用：REST API + 桌面模式入口       |
 | `java/frontend/`              | 共享 Vue 3 前端（单文件组件，无 router）                  |
 | `java/offline/`               | 离线版打包：`build-desktop.bat`（jpackage）         |
-| `java/online/`                | 联网版部署：`docker-compose.yml`、Dockerfile、nginx.conf |
+| `java/online/`                | 联网版本地运行：`docker-compose.yml`（构建根 `Dockerfile` 单镜像） |
+| `Dockerfile` / `deploy/` / `.github/` | 单镜像（前后端合并）+ nginx 配置 + CI/CD（push `main`→Docker Hub→VPS） |
 
 ## 数据来源与限制
 

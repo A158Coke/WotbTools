@@ -17,7 +17,7 @@
 | `wotb-web`  | 共享 | Spring Boot 4 REST API + 桌面模式入口，监听 `8087`（Web 模式）或自动端口（桌面模式） |
 | `frontend`  | 共享 | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
 | `offline/`  | 离线 | `build-desktop.bat`（前端构建 → Maven 打包 → jpackage），产物 `offline/dist-desktop/` |
-| `online/`   | 联网 | `docker-compose.yml`、`backend.Dockerfile`、`frontend.Dockerfile`、`nginx.conf` |
+| `online/`   | 联网 | `docker-compose.yml`：本地构建并运行根 `Dockerfile` 单镜像（与 CI/CD 同一镜像） |
 
 > 车辆库 `common/tankopedia.json`（仓库根的共享目录）在 `wotb-core` 构建时自动复制到 classpath，无需在模块内再放一份。
 
@@ -69,22 +69,19 @@ cd java\online
 docker compose up --build
 ```
 
-访问：
+访问 http://localhost:8088 （健康检查 `http://localhost:8088/api/health`）。
 
-- 前端：http://localhost:8088
-- 后端 API：http://localhost:8087
-- 健康检查：http://localhost:8087/api/health
+`java/online/docker-compose.yml` 构建并运行**与 CI/CD 完全相同的根 `Dockerfile` 单镜像**（`context: ../..` = 仓库根，因 Dockerfile 需要 `common/*.json` + `java/`）。单容器内 nginx(:80) 托管 Vue 静态资源，并把 `/api` 反代到同容器的 Spring Boot(:8087)；后端无状态、不落库。仓库根 `.dockerignore` 负责排除 `node_modules`/`target`/`dist` 等，避免上下文过大。
 
-容器结构：
+### CI/CD 自动部署
 
-- `frontend`：nginx 托管 Vue 构建产物，并把 `/api` 反代到后端容器。
-- `backend`：Spring Boot 服务，无状态处理上传文件，不落库。
+`push` 到 `main` 分支触发 GitHub Actions（[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)）：
 
-> 两个镜像的构建上下文都是**仓库根**（`docker-compose.yml` 里 `context: ../..`）：后端构建要 `common/*.json`，前端构建因 `App.vue` `import` 了 `common/map_names.json` 也需要仓库根。仓库根的 `.dockerignore` 负责排除 `node_modules`/`dist`/`target` 等，避免上下文过大。
+1. 根目录 `Dockerfile` 多阶段构建单镜像（nginx + JRE 合并）。
+2. 推送 `a158coke/wotbtool:sha-<7位SHA>` + `latest` 到 Docker Hub。
+3. SSH 登录 VPS，在 `/opt/wotb` 写入单镜像 `docker-compose.yml` 后执行 `docker compose pull && docker compose up -d`。
 
-### 自动部署（CI/CD）
-
-`push` 到 `main` 且改动命中 `java/**`、`common/**` 或 `.github/workflows/deploy.yml` 时，[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) 会 SSH 到 VPS（`/opt/wotb`）执行 `git reset --hard origin/main` → `docker compose up -d --build` 重建并重启容器。即：**推送即部署**，无需手动操作。
+> 镜像只有一套：根 `Dockerfile` + `deploy/nginx.conf`。CI/CD 与本地 `java/online/docker-compose.yml` 构建的是**同一个** Dockerfile，无重复 nginx 配置。`paths` 过滤使纯文档 push 不触发部署；也可在 Actions 页手动 `workflow_dispatch`。CI 用 GitHub Actions 缓存(`type=gha`)加速镜像层。
 
 ## 本地开发
 
@@ -129,7 +126,7 @@ java -jar wotb-web/target/wotb-web.jar --desktop
 - `player`：单场玩家数据列。
 - `aggregate`：多场汇总列。
 
-中文显示名不在 API 里：前端有自己的 `PLAYER_LABELS` / `AGG_LABELS` 映射，导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。详见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
+显示名不在 API 里：前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`），导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。详见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
 
 ### `POST /api/preview`
 
