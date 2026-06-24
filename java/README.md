@@ -135,7 +135,7 @@ java -jar wotb-web/target/wotb-web.jar --desktop
 - `player`：单场玩家数据列。
 - `aggregate`：多场汇总列。
 
-中文显示名不在 API 里：前端有自己的 `PLAYER_LABELS` / `AGG_LABELS` 映射，导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。详见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
+显示名不在 API 里：前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`），导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。详见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
 
 ### `POST /api/preview`
 

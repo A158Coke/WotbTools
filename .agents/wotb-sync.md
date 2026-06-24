@@ -11,20 +11,20 @@
 ## 黄金法则
 
 - **API 纯英文**:`/api/columns`、DTO 只回 `key`(snake_case) + 数据,绝不放中文。
-- **中文显示名分散在两类出口**,改名要全改:
-  - 前端:`java/frontend/src/App.vue` 的 `PLAYER_LABELS`(单场)与 `AGG_LABELS`(汇总)。
-  - 导出:`java/wotb-core/.../Columns.java`(单场 xlsx)、`java/wotb-core/.../AggregateSheets.java`(汇总 xlsx)。
+- **显示名分散在两类出口**,改名要全改:
+  - 前端(三语 i18n):`java/frontend/src/locales/{zh,en,ru}.json` 的 `player_labels`(单场)与 `agg_labels`(汇总),**三语都改**。
+  - 导出:`java/wotb-core/.../Columns.java`(单场 xlsx)、`java/wotb-core/.../AggregateSheets.java`(汇总 xlsx,仅中文)。
 - **列 `key` 三方一致**:API / 前端 / 导出。
 - **Web 分层**:`ReplayController` 只做 HTTP 映射;业务编排在 `service/ReplayService`(解析/评分/映射/导出),桌面关机在 `service/DesktopLifecycle`。新增 endpoint 的业务逻辑写进 service,controller 只接参数、拼 `ResponseEntity`。
 - **改完必过测试 + 更新文档**(见末尾)。
 
 ---
 
-## 配方 A:给某列改中文显示名(不动数据)
+## 配方 A:给某列改显示名(不动数据)
 
-`key` 不变,只改中文。**改这几处,保持一致**:
+`key` 不变,只改显示文案。**改这几处,保持一致**:
 
-1. `App.vue` → `PLAYER_LABELS` 和/或 `AGG_LABELS` 中该 `key` 的值。
+1. `locales/{zh,en,ru}.json` → `player_labels` 和/或 `agg_labels` 中该 `key` 的值(**三语都改**;导出仍中文)。
 2. `Columns.java`(若是单场列)对应 `Column(...)` 的 title。
 3. `AggregateSheets.java` 的汇总 `AggregateColumn(...)`(若是汇总列;单场表结构在 `SingleBattleSheets.java`)。
 4. 验证 + 文档。
@@ -38,7 +38,7 @@
    - 单场:`Columns.java` 加一条 `Column(title, key, xlsxW, pxW, num, getter)`。
    - 汇总:`Mapper.AGG_COLS`(key+num+getter) 和 `AggregateSheets` 的汇总 `AggregateColumn`(title+宽+num+getter) 各加一条;指标计算在 `model.Agg`(由 `Aggregator` 聚合产生)。
 3. **API 暴露**:`/api/columns` 自动包含(来自 Columns/AGG_COLS 的 key)。
-5. **前端**:`App.vue` 的 `PLAYER_LABELS`/`AGG_LABELS` 补该 key 的中文;如要默认显示,改 `DEFAULT_VISIBLE`。
+5. **前端**:`locales/{zh,en,ru}.json` 的 `player_labels`/`agg_labels` 补该 key 的三语文案;如要默认显示,改 `App.vue` 的 `DEFAULT_VISIBLE`。
 6. 验证 + 文档(含 DEVELOPER_GUIDE 字段表)。
 
 ## 配方 C:改解析逻辑(字段含义/protobuf 字段号)
