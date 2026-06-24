@@ -63,6 +63,17 @@ class WebApiTest {
     }
 
     @Test
+    void ratingEndpoint() throws Exception {
+        final String json = mvc().perform(get("/api/rating"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        final JsonNode n = om.readTree(json);
+        assertTrue(n.get("scale").asInt() > 0, "scale 应为正");
+        assertTrue(n.get("killValue").asDouble() > 0, "killValue 应为正");
+        assertTrue(n.get("classFactor").isObject() && n.get("classFactor").size() > 0, "应含车型系数");
+    }
+
+    @Test
     void previewMultipleWithDuplicate() throws Exception {
         final List<Path> files = replays();
         var req = multipart("/api/preview");

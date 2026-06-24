@@ -40,6 +40,12 @@ public class ReplayController {
         return service.columns();
     }
 
+    /** 评分参数 (前端「评分规则」展示算法与真实权重/系数)。 */
+    @GetMapping("/rating")
+    public Object rating() {
+        return service.ratingConfig();
+    }
+
     /** 健康检查。 */
     @GetMapping("/health")
     public Object health() {

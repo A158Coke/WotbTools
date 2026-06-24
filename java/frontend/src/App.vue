@@ -19,6 +19,8 @@ const sortState = ref({})
 const dragging = ref(false)
 const isDesktop = ref(false)
 const pendingRemove = ref(null)    // 待确认移除的战斗 { battle, label }
+const showRating = ref(false)      // 评分规则弹窗
+const ratingCfg = ref(null)        // /api/rating 返回的真实评分参数
 
 const DEFAULT_VISIBLE = [
   'nickname', 'clan', 'tank_name', 'tank_type', 'rating', 'survived_label',
@@ -293,6 +295,28 @@ function ratingTier(v) {
   return 'r-poor'
 }
 
+// 评分规则弹窗：实时参数取自 /api/rating（真值在 common/rating.json），分级阈值见 RATING_TIERS
+const RATING_DEFAULTS = { assist: 0.6, block: 0.35, killValue: 200, winBonus: 0.05, minSamples: 5, scale: 1000, classFactor: {} }
+const cfg = computed(() => ({ ...RATING_DEFAULTS, ...(ratingCfg.value || {}) }))
+const RATING_TIERS = [
+  { cls: 'r-elite', key: 'elite', min: 1600 },
+  { cls: 'r-great', key: 'great', min: 1300 },
+  { cls: 'r-good', key: 'good', min: 1000 },
+  { cls: 'r-mid', key: 'mid', min: 700 },
+  { cls: 'r-poor', key: 'poor', min: 0 },
+]
+function tierRange(i) {
+  if (i === 0) return '≥ ' + RATING_TIERS[0].min
+  if (RATING_TIERS[i].min === 0) return '< ' + RATING_TIERS[i - 1].min
+  return RATING_TIERS[i].min + '–' + (RATING_TIERS[i - 1].min - 1)
+}
+async function openRating() {
+  if (!ratingCfg.value) {
+    try { ratingCfg.value = await (await fetch('/api/rating')).json() } catch { ratingCfg.value = {} }
+  }
+  showRating.value = true
+}
+
 // 同一组里评分最高/最低的趣味标记
 function medal(rows, key, val) {
   if (!rows?.length) return ''
@@ -330,6 +354,9 @@ const aggStats = computed(() => {
           <p class="subtitle">{{ $t('app.subtitle') }}</p>
         </div>
       </div>
+      <button class="ghost" @click="openRating">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M9.6 9.4a2.4 2.4 0 0 1 4.4 1.3c0 1.6-2 1.9-2 3.3M12 17h.01" /></svg>{{ $t('rating_help.btn') }}
+      </button>
       <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
         <option v-for="l in langs" :key="l.key" :value="l.key">{{ l.label }}</option>
       </select>
@@ -513,6 +540,43 @@ const aggStats = computed(() => {
         </div>
       </div>
     </div>
+
+    <div v-if="showRating" class="modal-mask" @click.self="showRating = false">
+      <div class="modal modal-rating">
+        <p class="modal-title">{{ $t('rating_help.title') }}</p>
+        <p class="modal-sub">{{ $t('rating_help.intro') }}</p>
+
+        <div class="rh-block">
+          <div class="rh-h">{{ $t('rating_help.ec_title') }}</div>
+          <code class="rh-f">EC = {{ $t('rating_help.dmg') }} + {{ cfg.assist }}·{{ $t('rating_help.assist') }} + {{ cfg.block }}·{{ $t('rating_help.block') }} + {{ cfg.killValue }}·{{ $t('rating_help.kills') }}</code>
+        </div>
+
+        <div class="rh-block">
+          <div class="rh-h">{{ $t('rating_help.baseline_title') }}</div>
+          <p class="rh-p">{{ $t('rating_help.baseline_desc', { n: cfg.minSamples }) }}</p>
+          <div class="rh-factors">
+            <span v-for="(f, k) in cfg.classFactor" :key="k" class="rh-tag">{{ k }} ×{{ f }}</span>
+          </div>
+        </div>
+
+        <div class="rh-block">
+          <div class="rh-h">{{ $t('rating_help.score_title') }}</div>
+          <code class="rh-f">{{ $t('rating_help.score_word') }} = round( {{ cfg.scale }} × EC / {{ $t('rating_help.baseline_word') }} × (1 + {{ cfg.winBonus }} {{ $t('rating_help.if_win') }}) )</code>
+        </div>
+
+        <div class="rh-block">
+          <div class="rh-h">{{ $t('rating_help.tier_title') }}</div>
+          <div class="rh-tiers">
+            <span v-for="(tr, i) in RATING_TIERS" :key="tr.key" class="rbadge" :class="tr.cls">{{ $t('rating_help.tiers.' + tr.key) }} {{ tierRange(i) }}</span>
+          </div>
+        </div>
+
+        <p class="modal-sub">{{ $t('rating_help.note') }}</p>
+        <div class="modal-actions">
+          <button class="ghost" @click="showRating = false">{{ $t('rating_help.close') }}</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -633,6 +697,15 @@ tr.t2 td { background: #fbf1ec; }
 .modal-title { font-size: 15px; font-weight: bold; margin: 0 0 8px; color: #34465f; }
 .modal-sub { font-size: 12px; color: #777; margin: 6px 0 0; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.modal-rating { width: 460px; }
+.rh-block { margin-top: 12px; }
+.rh-h { font-size: 12px; font-weight: 600; color: #34465f; margin-bottom: 5px; }
+.rh-p { font-size: 12px; color: #555; margin: 0 0 6px; line-height: 1.5; }
+.rh-f { display: block; background: #f3f6fa; border: 1px solid #e4eaf1; border-radius: 6px;
+  padding: 8px 10px; font-size: 12px; color: #2b3a4d; line-height: 1.5; word-break: break-word; }
+.rh-factors, .rh-tiers { display: flex; flex-wrap: wrap; gap: 6px; }
+.rh-tag { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: #eef2f7; color: #46566f; }
+.rh-tiers .rbadge { font-size: 11px; }
 .lang-select { appearance: none; -webkit-appearance: none; border: 1px solid #dbe3ef; background: #f1f4f8;
   color: #46566f; padding: 6px 28px 6px 10px; border-radius: 7px; font-size: 13px; cursor: pointer;
   font-family: inherit; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' stroke='%2346566f' stroke-width='2' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
