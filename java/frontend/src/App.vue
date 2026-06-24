@@ -638,4 +638,37 @@ tr.t2 td { background: #fbf1ec; }
 .modal-title { font-size: 15px; font-weight: bold; margin: 0 0 8px; color: #34465f; }
 .modal-sub { font-size: 12px; color: #777; margin: 6px 0 0; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+/* ====== 响应式 ====== */
+@media (max-width: 768px) {
+  header { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .mcards { grid-template-columns: repeat(2, 1fr); }
+  .filebar { flex-wrap: wrap; }
+  .colpanel { width: 240px; right: auto; left: 0; }
+  th, td { padding: 5px 8px; font-size: 12px; }
+  .rbadge { min-width: 36px; padding: 1px 5px; font-size: 11px; }
+}
+@media (max-width: 480px) {
+  .wrap { padding: 10px 8px; }
+  .mcards { grid-template-columns: 1fr; gap: 6px; }
+  .mc { padding: 6px 10px; }
+  .mc .v { font-size: 15px; }
+  .up-actions { flex-direction: column; align-items: stretch; }
+  .up-actions .filebtn { width: 100%; }
+  .filebar { flex-direction: column; align-items: stretch; gap: 6px; }
+  .filebar .ghost.sm { width: 100%; }
+  .fb-chips { max-height: 80px; overflow-y: auto; }
+  .actionrow { flex-direction: column; align-items: stretch; }
+  .actionrow .lg { width: 100%; }
+  .colpanel { width: calc(100vw - 20px); left: 0; right: 0; }
+  .collist { max-height: 240px; }
+  .restoolbar { flex-direction: column; }
+  .tabs { flex: none; width: 100%; }
+  .resactions { width: 100%; gap: 4px; }
+  .resactions button { flex: 1; min-width: 0; }
+  .modal { width: calc(100vw - 32px); }
+  th, td { padding: 4px 5px; font-size: 11px; }
+  .rbadge { min-width: 28px; padding: 1px 4px; font-size: 10px; }
+  .chip { font-size: 11px; padding: 2px 4px; }
+}
 </style>
