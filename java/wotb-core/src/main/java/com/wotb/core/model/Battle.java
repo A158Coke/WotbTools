@@ -12,6 +12,7 @@ public class Battle {
     public Long startTime;
     public String recorder = "";
     public String recorderVehicle = "";
+    public String clientVersion = "";
     public List<PlayerResult> players;
 
     public int nPlayers() {
