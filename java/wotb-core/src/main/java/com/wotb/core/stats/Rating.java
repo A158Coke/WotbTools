@@ -13,12 +13,10 @@ import java.util.Map;
 
 /**
  * 自包含的表现评分 (类 WN8 机制, 但"期望值"来自当前处理的这批战斗, 不依赖外部表)。
- *
  *  1) 每人每场算"有效贡献" EC(伤害为主, 计入协助/格挡/击杀)。
  *  2) 按车型(轻/中/重/TD)从这批数据求 EC 基准均值; 同型相比 -> 跨车型公平。
  *     同型样本不足时, 基准 = 全体均值 * 车型难度系数(避免独苗轻坦被重坦拉低)。
  *  3) Rating = scale * EC/基准 * (1 + 胜场微调)。scale(默认1000) = 同型平均。
- *
  * 所有可调参数在 common/rating.json(classpath:/rating.json), 缺失则用内置默认。
  */
 public final class Rating {
@@ -40,19 +38,9 @@ public final class Rating {
         }
     }
 
-    private static volatile Config config = load();
+    private static final Config config = load();
 
     private Rating() {
-    }
-
-    /** 当前配置。 */
-    public static Config config() {
-        return config;
-    }
-
-    /** 重新加载配置(改了 rating.json 后可调用)。 */
-    public static void reload() {
-        config = load();
     }
 
     private static Config load() {
@@ -135,7 +123,7 @@ public final class Rating {
 
     /** 车型分桶键; 无车型信息归入"其他"。 */
     private static String classKey(final Tankopedia tp, final PlayerResult p) {
-        final String type = tp.info(p.tankId).type;
+        final String type = tp.info(p.tankId).type();
         return (type == null || type.isEmpty()) ? "其他" : type;
     }
 }

@@ -22,10 +22,10 @@ public final class Players {
     /** 补上展示用派生字段 (车名/车种/国家)。 */
     public static void enrich(final PlayerResult p, final Tankopedia tp) {
         final TankInfo ti = tp.info(p.tankId);
-        p.tankName = ti.name;
-        p.tankTier = ti.tier;
-        p.tankType = ti.type;
-        p.tankNation = ti.nation;
+        p.tankName = ti.name();
+        p.tankTier = ti.tier();
+        p.tankType = ti.type();
+        p.tankNation = ti.nation();
     }
 
     /** 统一排序: 先队伍, 同队按伤害降序。 */

@@ -54,7 +54,7 @@ public final class Aggregator {
                 if (p.rating != null) {
                     a.ratingSum += p.rating;
                 }
-                final String tn = tp.info(p.tankId).name;
+                final String tn = tp.info(p.tankId).name();
                 a.tanks.merge(tn, 1, Integer::sum);
             }
         }
