@@ -1,4 +1,10 @@
 name: Build & Deploy
+run-name: Deploy ${{ github.ref_name }} by @${{ github.actor }}
+
+# 同一时刻只跑一个部署; 新 push 取消进行中的旧 run, 避免 VPS 上并发部署打架
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
 
 on:
   push:
