@@ -1,4 +1,4 @@
-# .wotbreplay 回放数据字典
+# WOTB replay 回放数据字典
 
 > 基于 v11.18.0_china_apple 版本回放分析。字段号和含义可能随游戏版本变化。
 
