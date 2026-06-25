@@ -11,7 +11,7 @@
 | 目标          | 技术方向                                           | 状态            |
 |-------------|------------------------------------------------|---------------|
 | Java 离线 exe | Java 21 + Spring Boot 4 + 内置 Vue UI + jpackage | ✅ 已完成         |
-| Web 版       | Spring Boot 4 后端 + Vue 3 前端                    | ✅ 已完成         |
+| Web 版       | Spring Boot 4 + Vue 3 + PostgreSQL + Docker | ✅ 已完成         |
 
 在线演示：https://replay.wotbtools.com
 工具集主页：https://wotbtools.com

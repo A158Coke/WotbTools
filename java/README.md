@@ -17,7 +17,7 @@
 | `wotb-web`  | 共享 | Spring Boot 4 REST API + 桌面模式入口，监听 `8087`（Web 模式）或自动端口（桌面模式） |
 | `frontend`  | 共享 | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
 | `offline/`  | 离线 | `build-desktop.bat`（前端构建 → Maven 打包 → jpackage），产物 `offline/dist-desktop/` |
-| `online/`   | 联网 | `docker-compose.yml`：本地构建并运行根 `Dockerfile` 单镜像（与 CI/CD 同一镜像） |
+| `online/`   | 联网 | `docker-compose.yml`：本地构建运行三容器（postgres + backend + frontend） |
 
 > 车辆库 `common/tankopedia.json`（仓库根的共享目录）在 `wotb-core` 构建时自动复制到 classpath，无需在模块内再放一份。
 
@@ -62,7 +62,7 @@ offline\dist-desktop\WoT Blitz Replay Extractor\WoT Blitz Replay Extractor.exe
 
 双击即可，无需 JDK 或 Node.js。首次启动可能略慢（JVM 启动）。
 
-## Web 版（Docker）
+## Web 版（Docker + PostgreSQL）
 
 ```bash
 cd java\online
@@ -71,7 +71,7 @@ docker compose up --build
 
 访问 http://localhost:8088 （健康检查 `http://localhost:8088/api/health`）。
 
-`java/online/docker-compose.yml` 构建并运行**与 CI/CD 完全相同的根 `Dockerfile` 单镜像**（`context: ../..` = 仓库根，因 Dockerfile 需要 `common/*.json` + `java/`）。单容器内 nginx(:80) 托管 Vue 静态资源，并把 `/api` 反代到同容器的 Spring Boot(:8087)；后端无状态、不落库。仓库根 `.dockerignore` 负责排除 `node_modules`/`target`/`dist` 等，避免上下文过大。
+`java/online/docker-compose.yml` 启动**三容器**（`postgres:18` + `wotb-backend` + `wotb-frontend`），分别构建 `Dockerfile.backend` 和 `Dockerfile.frontend`。nginx 托管 Vue + 反代 `/api → wotb-backend:8087`，后端通过 `SPRING_PROFILES_ACTIVE: postgres` 连接 PostgreSQL。
 
 ### CI/CD 自动部署
 
@@ -81,7 +81,7 @@ docker compose up --build
 2. 推送 `a158coke/wotbtool:backend-sha-<SHA>` + `frontend-sha-<SHA>` + `backend-latest` + `frontend-latest` 到 Docker Hub。
 3. SSH 登录 VPS，写入三服务 `docker-compose.yml`（postgres + wotb-backend + wotb-frontend），`docker compose pull && up -d`。
 
-> 三个容器：`postgres:18`（数据持久化）→ `wotb-backend`（Spring Boot 8087）→ `wotb-frontend`（nginx + Vue，暴露 8088:80）。homepage 作为 volume 挂载，不编进镜像。`paths` 过滤使纯文档 push 不触发部署。
+> 三个容器：`postgres:18`（数据持久化）→ `wotb-backend`（Spring Boot 8087）→ `wotb-frontend`（nginx + Vue，暴露 8088:80）。`paths` 过滤使纯文档 push 不触发部署。
 
 ## 本地开发
 

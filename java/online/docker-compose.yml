@@ -31,8 +31,6 @@ services:
       - "8088:80"
     depends_on:
       - wotb-backend
-    volumes:
-      - ../../homepage:/homepage:ro
     restart: unless-stopped
 
 volumes:

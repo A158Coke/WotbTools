@@ -16,7 +16,7 @@
 6. **Git。** 个人仓库,SSH remote `github-personal` 以账号 `A158Coke` 推送,**不使用**任何公司 token。提交信息中文、结尾带 `Co-Authored-By`。
 7. **跨站点状态共享用 `.wotbtools.com` 域 Cookie。** 主页(`wotbtools.com`)与各工具子域名(如 `replay.wotbtools.com`)间共享用户偏好时,写 `domain=.wotbtools.com` 的 Cookie 为主,`localStorage` 为本地开发回退。新增跨站点状态(如主题、语言、偏好)统一用这个模式,读写函数命名 `readXxx()`/`saveXxx()`。
 
-> 复杂或多文件联动的改动,先看**工具无关的改动检查单** [.agents/wotb-sync.md](.agents/wotb-sync.md)(任何 AI/人都可读)。Claude Code 用户也可调用同名技能 `.claude/skills/wotb-sync/`(它只是指向那份)。
+> 复杂或多文件联动的改动,先看**工具无关的改动检查单** [.agents/wotb-sync.md](.agents/wotb-sync.md)(任何 AI/人都可读)。
 
 ## 常用命令(均从仓库根)
 
