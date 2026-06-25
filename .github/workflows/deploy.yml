@@ -80,7 +80,7 @@ jobs:
                 environment:
                   POSTGRES_DB: wotb
                   POSTGRES_USER: wotb
-                  POSTGRES_PASSWORD: wotb
+                  POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
                 volumes:
                   - postgres_data:/var/lib/postgresql/data
                 restart: unless-stopped
@@ -91,7 +91,7 @@ jobs:
                 environment:
                   SPRING_PROFILES_ACTIVE: postgres
                   POSTGRES_HOST: postgres
-                  POSTGRES_PASSWORD: wotb
+                  POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
                 restart: unless-stopped
               wotb-frontend:
                 image: a158coke/wotbtool:frontend-${{ steps.vars.outputs.sha }}
