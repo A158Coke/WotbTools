@@ -78,8 +78,8 @@ docker compose up --build
 `push` 到 `main` 分支触发 GitHub Actions（[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)）：
 
 1. 根目录 `Dockerfile` 多阶段构建单镜像（nginx + JRE 合并）。
-2. 推送 `a158coke/wotbtool:sha-<7位SHA>` + `latest` 到 Docker Hub。
-3. SSH 登录 VPS，在 `/opt/wotb` 写入单镜像 `docker-compose.yml` 后执行 `docker compose pull && docker compose up -d`。
+2. 推送 `a158coke/wotbtool:sha-<7位SHA>` 到 Docker Hub（**不推 `:latest`**，仓库开启了标签不可变）。
+3. SSH 登录 VPS，在 `/opt/wotb` 写入单镜像 `docker-compose.yml`（image 用该确切 sha），执行 `docker compose pull && docker compose up -d`。
 
 > 镜像只有一套：根 `Dockerfile` + `deploy/nginx.conf`。CI/CD 与本地 `java/online/docker-compose.yml` 构建的是**同一个** Dockerfile，无重复 nginx 配置。`paths` 过滤使纯文档 push 不触发部署；也可在 Actions 页手动 `workflow_dispatch`。CI 用 GitHub Actions 缓存(`type=gha`)加速镜像层。
 

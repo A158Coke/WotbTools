@@ -13,7 +13,7 @@
 
 在线演示：https://replay.wotbtools.com
 
-详细任务拆分见 [TODO.md](TODO.md)。
+版本历史见 [CHANGELOG.md](CHANGELOG.md)，任务拆分见 [TODO.md](TODO.md)。
 
 ## 当前实现
 
@@ -27,17 +27,21 @@
 - 本文件：项目概览、Java 版使用与构建。
 - [HANDOVER.md](HANDOVER.md)：**交接 / AI 工具迁移总入口**（环境坑、CI/CD、部署、约定一站式）。
 - [java/README.md](java/README.md)：Java / Web 版运行、接口、部署、离线 exe 构建。
-- [TODO.md](TODO.md)：迁移目标与待办。
-- [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)：给后续开发者和 AI coder 的维护上下文、数据格式、测试策略。
+- [CHANGELOG.md](CHANGELOG.md)：版本历史（对外）。
+- [TODO.md](TODO.md)：待办事项。
+- [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)：维护上下文、架构、回放格式、i18n、测试策略。
+- [docs/replay-data.md](docs/replay-data.md)：data.wotreplay 事件流格式、protobuf 字段表、死亡时间推算。
+- [docs/rating-system.md](docs/rating-system.md)：评分算法、参数、展示。
 
 ## 功能
 
 - 解析单个 `.wotbreplay` 中的 14 名玩家战斗数据。
-- 读取 `meta.json` 战斗信息与 `battle_results.dat` 中的 pickle + protobuf 数据。
+- 读取 `meta.json` 战斗信息、`battle_results.dat` pickle + protobuf、`data.wotreplay` 事件流。
 - 使用 `tankopedia.json` 将车辆 ID 映射为车辆名、等级、类型和国家。
 - 单场导出 Excel：`战斗信息`、`玩家数据`、`原始字段`。
 - 多场导出 Excel：按 `arenaUniqueId` 去重，生成 `汇总`、`明细`、`战斗列表`。
-- 自包含表现**评分**：按车型基准归一化(类 WN8，1000=同型平均)，单场出「评分」、汇总出「场均评分」。详见 [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) 的「评分（Rating）」。
+- 存活时间列：基于伤害事件的秒级估算。
+- 自包含表现**评分**：按车型基准归一化（类 WN8，1000=同型平均），单场「评分」、汇总「场均评分」。
 - GUI 支持选择文件或文件夹、预览数据、合并汇总或逐场导出。
 - Java / Web 版提供 `/api/preview`、`/api/export`、`/api/columns`、`/api/health`、`/api/shutdown`。
 - Java 离线 exe：双击运行，自动打开浏览器，无需 Python 或 JDK。
@@ -119,9 +123,10 @@ mvn -s settings.xml test
 
 ## 数据来源与限制
 
-`.wotbreplay` 本质是 zip 包，当前工具只依赖其中的：
+`.wotbreplay` 本质是 zip 包，当前工具使用其中的：
 
 - `meta.json`：地图、版本、开始时间、时长、录像者等基础信息。
 - `battle_results.dat`：pickle 包装的 `(arenaId, protobufBytes)`，其中 protobuf 包含玩家战绩。
+- `data.wotreplay`：BigWorld 事件流，用于存活时间推算（Type 8 EntityMethod 伤害事件）。
 
-项目不解析 `data.wotreplay` 的完整战斗过程流，因此不会输出逐帧轨迹、击毁时间线等事件级数据。
+项目不解析完整战斗过程流，因此不会输出逐帧轨迹、每发炮弹弹道等事件级数据。
