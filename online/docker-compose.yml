@@ -1,0 +1,37 @@
+# 开发者本地构建：从源码编译两镜像并启动三容器。
+# 用法: cd online && docker compose up --build
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: wotb
+      POSTGRES_USER: wotb
+      POSTGRES_PASSWORD: wotb
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    restart: unless-stopped
+
+  wotb-backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    depends_on:
+      - postgres
+    environment:
+      SPRING_PROFILES_ACTIVE: postgres
+      POSTGRES_HOST: postgres
+      POSTGRES_PASSWORD: wotb
+    restart: unless-stopped
+
+  wotb-frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    ports:
+      - "8088:80"
+    depends_on:
+      - wotb-backend
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

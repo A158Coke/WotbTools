@@ -84,7 +84,7 @@ jobs:
                   POSTGRES_USER: wotb
                   POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
                 volumes:
-                  - postgres_data:/var/lib/postgresql/data
+                  - postgres_data:/var/lib/postgresql
                 restart: unless-stopped
               wotb-backend:
                 image: a158coke/wotbtool:backend-${{ steps.vars.outputs.sha }}
