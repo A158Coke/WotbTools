@@ -2,6 +2,7 @@ package com.wotb.core.parse;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -25,6 +26,9 @@ public final class EventStreamReader {
     static final int TYPE_POSITION = 10;
     static final int SUBTYPE_UPDATE_ARENA = 47;
     static final int SUBTYPE_UPDATE_ARENA2 = 48;
+    static final int SUBTYPE_ENTITY_METHOD_DAMAGE = 8;
+    // damage body body[13] subtypes:
+    static final int DAMAGE_SUB_DIRECT = 3;       // direct HP damage
     private static final int MAX_PAYLOAD_LEN = 200_000;
     private static final float MAX_SANE_CLOCK = 5000f;
 
@@ -304,6 +308,70 @@ public final class EventStreamReader {
             deathTimes.put(entry.getValue(), dt);
         }
         return deathTimes;
+    }
+
+    /**
+     * 用 Type 8 EntityMethod (subtype 8 = damage) 推算各玩家死亡时间秒。
+     * body 25B 格式: len(4) + attackerEid(4) + victimEid(4) + type(1) + sub(1) + dmgBE(2) + data(6) + flag(1)
+     * sub=3 = direct HP damage. 双遍扫描：
+     *   第 1 遍: 累计每个玩家的 sub3 总量 (sub3Total)。
+     *   第 2 遍: 按时间顺序推进, 当累计值 >= threshold (= min(accountToThreshold, sub3Total)) 时记录阵亡时刻。
+     * 返回 map: account_id → death_time_sec (0=未知).
+     */
+    public static Map<Long, Double> estimateDeathTimesByDamage(
+            List<ParsedPacket> packets,
+            Map<Integer, Long> entityToAccount,
+            Map<Long, Integer> accountToThreshold,
+            double battleDurationS) {
+        // 先行一步: 提取所有 sub3 事件并排序
+        final List<Sub3Event> events = new ArrayList<>();
+        for (final ParsedPacket pkt : packets) {
+            if (pkt.type != TYPE_ENTITY_METHOD || pkt.payload.length < 12) continue;
+            if (readU32LE(pkt.payload, 4) != SUBTYPE_ENTITY_METHOD_DAMAGE) continue;
+            final byte[] body = new byte[pkt.payload.length - 8];
+            System.arraycopy(pkt.payload, 8, body, 0, body.length);
+            if (body.length != 25) continue;
+            if ((body[13] & 0xFF) != DAMAGE_SUB_DIRECT) continue;
+            final int victimEid = readI32LE(body, 8);
+            final Long acc = entityToAccount.get(victimEid);
+            if (acc == null) continue;
+            final int dmg = (body[14] & 0xFF) << 8 | (body[15] & 0xFF); // BE u16
+            events.add(new Sub3Event(pkt.clockSecs, acc, dmg));
+        }
+        events.sort(Comparator.comparingDouble(e -> e.clockSecs));
+
+        // 第 1 遍: 累计 sub3Total
+        final Map<Long, Integer> sub3Total = new HashMap<>();
+        for (final Sub3Event ev : events) {
+            sub3Total.merge(ev.accountId, ev.damage, Integer::sum);
+        }
+
+        // 第 2 遍: 找首次超阈值时刻
+        final Map<Long, Integer> cumulative = new HashMap<>();
+        final Map<Long, Double> result = new HashMap<>();
+        // 预填充 0
+        for (final Long acc : accountToThreshold.keySet()) {
+            result.put(acc, 0.0);
+        }
+        for (final Sub3Event ev : events) {
+            final int prev = cumulative.getOrDefault(ev.accountId, 0);
+            final int next = prev + ev.damage;
+            cumulative.put(ev.accountId, next);
+            // 该玩家死亡已找到?
+            if (result.getOrDefault(ev.accountId, 0.0) > 0) continue;
+            final Integer rcvThreshold = accountToThreshold.get(ev.accountId);
+            if (rcvThreshold == null || rcvThreshold <= 0) continue;
+            // threshold = min(rcv, sub3Total) — sub3 可能无法覆盖全部受伤
+            final int total = sub3Total.getOrDefault(ev.accountId, 0);
+            final int threshold = Math.min(rcvThreshold, total);
+            if (threshold > 0 && prev < threshold && next >= threshold) {
+                result.put(ev.accountId, Math.min((double) ev.clockSecs, battleDurationS));
+            }
+        }
+        return result;
+    }
+
+    private record Sub3Event(float clockSecs, long accountId, int damage) {
     }
 
     // ---- EntityMethod 解析 ----

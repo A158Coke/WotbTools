@@ -134,11 +134,23 @@ public final class ReplayParser {
             }
         }
 
-        // 存活时间: 存活=战斗时长, 阵亡=3 层 fallback
+        // 存活时间: 存活=战斗时长, 阵亡=4 层 fallback
         final double bd = battle.durationS != null ? battle.durationS : 0;
+        Map<Long, Double> deathTimesByDamage = Map.of();
         Map<Long, Double> deathTimesByEntityLeave = Map.of();
         Map<Long, Double> deathTimesByPosition = Map.of();
         if (!esPackets.isEmpty()) {
+            // 第 1 层: data.wotreplay 事件流 Type 8 EntityMethod 伤害子类型 3 (直接HP伤害)
+            final Map<Integer, Long> e2a = EventStreamReader.extractEntityToAccountMap(esPackets);
+            final Map<Long, Integer> threshold = new HashMap<>();
+            for (final PlayerResult pr : players) {
+                // 用 damageReceived 作阈值: 阵亡玩家所受总伤害 ≈ 坦克最大 HP
+                if (!pr.survived && pr.damageReceived > 0) {
+                    threshold.put(pr.accountId, pr.damageReceived);
+                }
+            }
+            deathTimesByDamage = EventStreamReader.estimateDeathTimesByDamage(esPackets, e2a, threshold, bd);
+
             deathTimesByEntityLeave = EventStreamReader.estimateDeathTimesByEntityLeaves(esPackets, bd);
             deathTimesByPosition = EventStreamReader.estimateDeathTimesByPositions(esPackets, bd);
         }
@@ -147,6 +159,9 @@ public final class ReplayParser {
                 pr.survivalTimeSec = bd;
             } else {
                 double st = pr.deathTimeMillis / 1000.0;
+                if (st <= 0) {
+                    st = deathTimesByDamage.getOrDefault(pr.accountId, 0.0);
+                }
                 if (st <= 0) {
                     final double el = deathTimesByEntityLeave.getOrDefault(pr.accountId, 0.0);
                     final double pos = deathTimesByPosition.getOrDefault(pr.accountId, 0.0);

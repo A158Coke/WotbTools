@@ -21,11 +21,12 @@
 
 - [ ] 给 `wotb-core` 增加更明确的 parity 测试说明：字段不变量与导出格式一致性。
 - [x] 车辆库同步：已统一为单一来源 `common/tankopedia.json`，`wotb-core` 构建时自动复制到 classpath。
-- [ ] **存活时间(survivalTimeSec)推算仍然不准。** 当前逻辑：deathTimeMillis → EntityLeave → Position 三层 fallback。问题：
-  - EntityLeave(type 4) 事件不承诺是阵亡——存在大量假阳性（临时离场）和假阴性（阵亡无 leave）；
-  - Position(type 10) 数据在某些 replay 中会覆盖整场，另一些则在玩家阵亡后继续（来自玩家化身实体的观战坐标）；
-  - event stream 时钟与 meta.json battleDuration 有时不一致。
-  - 需要重新研究 protobuf #104 字段实际含义，或寻找更可靠的死亡事件（如 EntityProperty 血量归零）。
+- [x] **存活时间(survivalTimeSec)推算已改善。** 新增第 4 层 fallback（Damage，优先于 EntityLeave/Position）：
+  - Type 8 EntityMethod subtype 8 body[13]=3（直接 HP 伤害）的 25B 事件中，body[14:16] 为 BE u16 伤害值；
+  - 按时间顺序累计 victimEid→accountId 的 HP 伤害，当累计值 ≥ min(damageReceived, sub3_total) 时记录阵亡时刻；
+  - 解决 EntityLeave 假阳性（临时离场）和 Position 在部分模式实体不停止的问题；
+  - 留 EntityLeave/Position 作为最后兜底。
+  - 已知局限：sub3 可能不覆盖全部受伤（火烧/撞击伤害走不同 subtype），此时取最后一次 sub3 事件时间为近似阵亡时刻。
 
 ## P1：Web 版完善
 
