@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WoTBTools</title>
 <script>
-(function(){
+ (function(){
   var m = document.cookie.match(/(?:^|;\s*)wotbtools-theme=([^;]+)/);
   var s = m ? m[1] : localStorage.getItem('wotbtools-theme');
-  var m = (s==='dark') || (s!=='light' && matchMedia('(prefers-color-scheme:dark)').matches) ? 'dark' : 'light';
-  var v = m==='dark'
+  var mode = (!s || s==='auto') ? (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light') : s;
+  var v = mode==='dark'
     ? {bg:'#0d1117',t:'#c9d1d9',h:'#f0f6fc',mu:'#8b949e',cb:'#161b22',cbd:'#30363d',a:'#58a6ff',as:'rgba(88,166,255,.15)',tb:'#1f6feb33',f:'#484f58'}
     : {bg:'#ffffff',t:'#24292f',h:'#0d1117',mu:'#57606a',cb:'#f6f8fa',cbd:'#d0d7de',a:'#0969da',as:'rgba(9,105,218,.15)',tb:'#ddf4ff',f:'#6e7681'};
   var r = document.documentElement.style;

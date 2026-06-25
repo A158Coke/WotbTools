@@ -13,8 +13,8 @@
     (function(){
       var m = document.cookie.match(/(?:^|;\s*)wotbtools-theme=([^;]+)/);
       var s = m ? m[1] : localStorage.getItem('wotbtools-theme');
-      var d = (s==='dark') || (s!=='light' && matchMedia('(prefers-color-scheme:dark)').matches) ? 'dark' : 'light';
-      document.documentElement.setAttribute('data-theme', d);
+      var t = (!s || s==='auto') ? (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light') : s;
+      document.documentElement.setAttribute('data-theme', t);
     })();
   </script>
 </head>

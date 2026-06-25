@@ -1,7 +1,11 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { DEFAULT_VISIBLE, mapLabel, displayName } from './utils/helpers.js'
+import { mapLabel } from './utils/helpers.js'
+import { useTheme } from './composables/useTheme.js'
+import { useReplay } from './composables/useReplay.js'
+import { useColumns } from './composables/useColumns.js'
+import * as api from './utils/api.js'
 import FileUploader from './components/FileUploader.vue'
 import ColumnPicker from './components/ColumnPicker.vue'
 import AggregateTable from './components/AggregateTable.vue'
@@ -12,165 +16,46 @@ import VersionPage from './components/VersionPage.vue'
 
 const { t } = useI18n()
 
-const files = ref([])
-const loading = ref(false)
-const error = ref('')
-const resp = ref(null)
-const playerCols = ref([])
-const visibleKeys = ref([])
-const aggVisibleKeys = ref([])
-const showColPicker = ref(false)
-const pickerScope = ref('player')
-const activeTab = ref('aggregate')
+// --- 工具状态 ---
+const { theme, handleTheme } = useTheme()
+const replay = useReplay()
+const cols = useColumns(replay.playerCols, replay.aggCols, replay.activeTab)
+
+// --- 应用状态 ---
 const isDesktop = ref(false)
-const pendingRemove = ref(null)
 const showRating = ref(false)
-function readTheme() {
-  const m = document.cookie.match(/(?:^|;\s*)wotbtools-theme=([^;]+)/)
-  return m ? m[1] : localStorage.getItem('wotbtools-theme')
-}
-function saveTheme(v) {
-  document.cookie = 'wotbtools-theme=' + v + '; path=/; domain=.wotbtools.com; max-age=31536000; SameSite=Lax'
-  localStorage.setItem('wotbtools-theme', v)
-}
-
 const showVersion = ref(false)
-const theme = ref(readTheme() || 'auto')
 
-function goHome() { window.location.href = 'https://wotbtools.com' }
-
-function applyTheme(t) {
-  theme.value = t
-  saveTheme(t)
-  const mql = window.matchMedia('(prefers-color-scheme: dark)')
-  const acting = t === 'auto' ? (mql.matches ? 'dark' : 'light') : t
-  document.documentElement.setAttribute('data-theme', acting)
-}
-
-function onThemeChange(e) { applyTheme(e.target.value) }
-
-const themeMql = window.matchMedia('(prefers-color-scheme: dark)')
-themeMql.addEventListener('change', () => { if (theme.value === 'auto') applyTheme('auto') })
-applyTheme(theme.value)
-
-const playerOrder = ref([])
-const aggOrder = ref([])
-
-const aggCols = computed(() => resp.value?.aggregateColumns || [])
-const playerColMap = computed(() => Object.fromEntries(playerCols.value.map(c => [c.key, c])))
-const aggColMap = computed(() => Object.fromEntries(aggCols.value.map(c => [c.key, c])))
-const colScope = computed(() => activeTab.value === 'aggregate' ? 'agg' : 'player')
-const currentOrder = computed(() => pickerScope.value === 'agg' ? aggOrder.value : playerOrder.value)
-const shownCols = computed(() =>
-  playerOrder.value.filter(k => visibleKeys.value.includes(k)).map(k => playerColMap.value[k]).filter(Boolean))
-const shownAggCols = computed(() =>
-  aggOrder.value.filter(k => aggVisibleKeys.value.includes(k)).map(k => aggColMap.value[k]).filter(Boolean))
-
-const aggStats = computed(() => {
-  if (!resp.value) return null
-  const battles = resp.value.battles || []
-  const agg = resp.value.aggregate || []
-  let maxRating = 0, maxDmg = 0
-  agg.forEach(r => { maxRating = Math.max(maxRating, Number(r.cells.rating_avg) || 0) })
-  battles.forEach(b => (b.players || []).forEach(p => { maxDmg = Math.max(maxDmg, Number(p.cells.damage_dealt) || 0) }))
-  return { battles: battles.length, players: agg.length, maxRating, maxDmg }
-})
-
+// --- 生命周期 ---
 onMounted(async () => {
-  try {
-    const r = await fetch('/api/health')
-    if (r.ok) isDesktop.value = Boolean((await r.json()).desktop)
-  } catch { isDesktop.value = false }
+  try { isDesktop.value = (await api.healthCheck()).desktop } catch { /* 离线模式 */ }
 })
 
-function toggleColPicker() {
-  if (showColPicker.value) { showColPicker.value = false; return }
-  pickerScope.value = colScope.value
-  showColPicker.value = true
-}
-
-function onLangChange(e) {
-  localStorage.setItem('wotb-lang', e.target.value)
-}
-
-function formData() {
-  const fd = new FormData()
-  files.value.forEach(f => fd.append('files', f, displayName(f)))
-  return fd
-}
+// --- 桥接函数 ---
+function goHome() { window.location.href = 'https://wotbtools.com' }
+function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
 
 async function preview() {
-  if (!files.value.length) { error.value = '请先选择回放文件或文件夹'; return }
-  loading.value = true; error.value = ''
-  try {
-    const r = await fetch('/api/preview', { method: 'POST', body: formData() })
-    if (!r.ok) throw new Error('解析失败: HTTP ' + r.status)
-    resp.value = await r.json()
-    playerCols.value = resp.value.playerColumns
-    const aggKeys = (resp.value.aggregateColumns || []).map(c => c.key)
-    if (!visibleKeys.value.length) visibleKeys.value = [...DEFAULT_VISIBLE]
-    if (!playerOrder.value.length) playerOrder.value = resp.value.playerColumns.map(c => c.key)
-    if (!aggVisibleKeys.value.length) aggVisibleKeys.value = [...aggKeys]
-    if (!aggOrder.value.length) aggOrder.value = [...aggKeys]
-    activeTab.value = resp.value.battles.length > 1 ? 'aggregate' : 'b0'
-  } catch (e) {
-    error.value = e.message
-  } finally {
-    loading.value = false
-  }
+  await replay.doPreview(cols.initFromResponse)
+}
+
+async function exportXlsx(mode) {
+  await replay.doExport(mode)
 }
 
 async function shutdown() {
   if (!isDesktop.value) return
   try {
-    await fetch('/api/shutdown', { method: 'POST' })
+    await api.shutdown()
     document.body.innerHTML = '<div class="closed">离线程序正在关闭，可以关闭此浏览器标签页。</div>'
   } catch (e) {
-    error.value = '关闭失败: ' + e.message
+    replay.error.value = '关闭失败: ' + e.message
   }
 }
 
-async function exportXlsx(mode) {
-  if (!files.value.length) { error.value = '请先选择回放文件或文件夹'; return }
-  loading.value = true; error.value = ''
-  try {
-    const r = await fetch(`/api/export?mode=${encodeURIComponent(mode)}`, { method: 'POST', body: formData() })
-    if (!r.ok) throw new Error('导出失败: HTTP ' + r.status)
-    const blob = await r.blob()
-    const cd = r.headers.get('Content-Disposition') || ''
-    const m = cd.match(/filename\*=UTF-8''([^;]+)/)
-    const name = m ? decodeURIComponent(m[1]) : (mode === 'each' ? '逐场导出.zip' : '联赛汇总.xlsx')
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = name; a.click()
-    URL.revokeObjectURL(url)
-  } catch (e) {
-    error.value = e.message
-  } finally {
-    loading.value = false
-  }
-}
-
-function askRemoveBattle(battle, idx) {
-  pendingRemove.value = { battle, label: `${mapLabel(battle.mapName)} #${idx + 1}` }
-}
-function cancelRemove() { pendingRemove.value = null }
 function confirmRemoveBattle() {
-  const battle = pendingRemove.value?.battle
-  pendingRemove.value = null
-  if (!battle) return
-  files.value = files.value.filter(f => displayName(f) !== battle.sourceName)
-  if (files.value.length) preview()
-  else { resp.value = null; activeTab.value = 'aggregate' }
+  replay.confirmRemoveBattle(cols.initFromResponse)
 }
-
-// Column picker callbacks
-function toggleCol(e) { const ref_ = e.scope === 'agg' ? aggVisibleKeys : visibleKeys; ref_.value = ref_.value.includes(e.key) ? ref_.value.filter(k => k !== e.key) : [...ref_.value, e.key] }
-function selectAllCols(scope) { const all = (scope === 'agg' ? aggOrder : playerOrder).value.slice(); if (scope === 'agg') aggVisibleKeys.value = all; else visibleKeys.value = all }
-function resetCols(scope) {
-  if (scope === 'agg') { aggOrder.value = aggCols.value.map(c => c.key); aggVisibleKeys.value = aggCols.value.map(c => c.key) }
-  else { playerOrder.value = playerCols.value.map(c => c.key); visibleKeys.value = [...DEFAULT_VISIBLE] }
-}
-function handleReorder(next) { (pickerScope.value === 'agg' ? aggOrder : playerOrder).value = next }
 </script>
 
 <template>
@@ -195,11 +80,11 @@ function handleReorder(next) { (pickerScope.value === 'agg' ? aggOrder : playerO
       <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
         <option v-for="l in [{key:'zh',label:'中文'},{key:'en',label:'English'},{key:'ru',label:'Русский'}]" :key="l.key" :value="l.key">{{ l.label }}</option>
       </select>
-      <select class="theme-select" :value="theme" @change="onThemeChange" :title="$t('app.theme')">
-        <option value="auto">auto</option>
-        <option value="light">light</option>
-        <option value="dark">dark</option>
-      </select>
+      <div class="theme-bar">
+        <button :class="{ active: theme === 'auto' }" @click="handleTheme('auto')" :title="$t('app.theme')">auto</button>
+        <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">light</button>
+        <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">dark</button>
+      </div>
       <button v-if="isDesktop" class="ghost" @click="shutdown">
         <svg class="ic" viewBox="0 0 24 24"><path d="M7 6a7.7 7.7 0 1 0 10 0M12 4v8" /></svg>{{ $t('app.shutdown') }}
       </button>
@@ -207,61 +92,61 @@ function handleReorder(next) { (pickerScope.value === 'agg' ? aggOrder : playerO
 
     <VersionPage v-if="showVersion" @back="showVersion = false" />
     <template v-else>
-    <FileUploader :files="files" :loading="loading" @update:files="files = $event" @preview="preview" />
+    <FileUploader :files="replay.files" :loading="replay.loading" @update:files="replay.files = $event" @preview="preview" />
 
-    <p v-if="error" class="error">{{ error }}</p>
+    <p v-if="replay.error" class="error">{{ replay.error }}</p>
 
-    <template v-if="resp">
-      <div v-if="resp.duplicates.length" class="warn">
-        {{ $t('result.duplicates', { count: resp.duplicates.length }) }}
-        <span v-for="(d, i) in resp.duplicates" :key="i">{{ d[0] }}</span>
+    <template v-if="replay.resp">
+      <div v-if="replay.resp.duplicates.length" class="warn">
+        {{ $t('result.duplicates', { count: replay.resp.duplicates.length }) }}
+        <span v-for="(d, i) in replay.resp.duplicates" :key="i">{{ d[0] }}</span>
       </div>
-      <div v-if="resp.failures.length" class="error">
-        {{ $t('result.failures', { count: resp.failures.length }) }}
-        <span v-for="(f, i) in resp.failures" :key="i">{{ f[0] }} ({{ f[1] }})</span>
+      <div v-if="replay.resp.failures.length" class="error">
+        {{ $t('result.failures', { count: replay.resp.failures.length }) }}
+        <span v-for="(f, i) in replay.resp.failures" :key="i">{{ f[0] }} ({{ f[1] }})</span>
       </div>
 
       <div class="restoolbar">
-        <div class="tabs" :class="{ locked: showColPicker }"
-             :title="showColPicker ? $t('action.picker_locked') : ''">
-          <button v-if="resp.aggregate.length" :disabled="showColPicker"
-                  :class="{ active: activeTab === 'aggregate' }"
-                  @click="activeTab = 'aggregate'">{{ $t('result.aggregate_tab', { count: resp.aggregate.length }) }}</button>
-          <button v-for="(b, i) in resp.battles" :key="i" :disabled="showColPicker"
-                  :class="{ active: activeTab === 'b' + i }"
-                  @click="activeTab = 'b' + i">{{ mapLabel(b.mapName) }} #{{ i + 1 }}
-            <span class="tabx" :title="$t('modal.remove_title')" @click.stop="askRemoveBattle(b, i)">×</span>
+        <div class="tabs" :class="{ locked: cols.showColPicker }"
+             :title="cols.showColPicker ? $t('action.picker_locked') : ''">
+          <button v-if="replay.resp.aggregate.length" :disabled="cols.showColPicker"
+                  :class="{ active: replay.activeTab === 'aggregate' }"
+                  @click="replay.activeTab = 'aggregate'">{{ $t('result.aggregate_tab', { count: replay.resp.aggregate.length }) }}</button>
+          <button v-for="(b, i) in replay.resp.battles" :key="i" :disabled="cols.showColPicker"
+                  :class="{ active: replay.activeTab === 'b' + i }"
+                  @click="replay.activeTab = 'b' + i">{{ mapLabel(b.mapName) }} #{{ i + 1 }}
+            <span class="tabx" :title="$t('modal.remove_title')" @click.stop="replay.askRemoveBattle(b, i)">×</span>
           </button>
         </div>
         <div class="resactions">
           <span class="dropdown">
-            <button class="ghost sm" @click="toggleColPicker">
+            <button class="ghost sm" @click="cols.toggleColPicker">
               <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" /></svg>{{ $t('action.select_cols') }} ▾
             </button>
-            <ColumnPicker v-if="showColPicker" :scope="pickerScope" :order="currentOrder"
-              :visible="pickerScope === 'agg' ? aggVisibleKeys : visibleKeys"
-              @close="showColPicker = false" @toggle="toggleCol"
-              @select-all="selectAllCols" @reset="resetCols" @reorder="handleReorder" />
+            <ColumnPicker v-if="cols.showColPicker" :scope="cols.pickerScope" :order="cols.currentOrder"
+              :visible="cols.pickerScope === 'agg' ? cols.aggVisibleKeys : cols.visibleKeys"
+              @close="cols.showColPicker = false" @toggle="cols.toggleCol"
+              @select-all="cols.selectAllCols" @reset="cols.resetCols" @reorder="cols.handleReorder" />
           </span>
-          <button class="sm" :disabled="loading" @click="exportXlsx('aggregate')">
+          <button class="sm" :disabled="replay.loading" @click="exportXlsx('aggregate')">
             <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_aggregate') }}
           </button>
-          <button class="ghost sm" :disabled="loading" @click="exportXlsx('each')">
+          <button class="ghost sm" :disabled="replay.loading" @click="exportXlsx('each')">
             <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_each') }}
           </button>
         </div>
       </div>
 
-      <div v-show="activeTab === 'aggregate' && resp.aggregate.length">
-        <AggregateTable :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
+      <div v-show="replay.activeTab === 'aggregate' && replay.resp.aggregate.length">
+        <AggregateTable :aggregate="replay.resp.aggregate" :shown-cols="cols.shownAggCols" :agg-stats="replay.aggStats" />
       </div>
 
-      <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i">
-        <BattleTable :battle="b" :shown-cols="shownCols" />
+      <div v-for="(b, i) in replay.resp.battles" :key="i" v-show="replay.activeTab === 'b' + i">
+        <BattleTable :battle="b" :shown-cols="cols.shownCols" />
       </div>
     </template>
 
-    <RemoveConfirmModal :pending="pendingRemove" @confirm="confirmRemoveBattle" @cancel="cancelRemove" />
+    <RemoveConfirmModal :pending="replay.pendingRemove" @confirm="confirmRemoveBattle" @cancel="replay.cancelRemove" />
     <RatingModal :show="showRating" @close="showRating = false" />
     </template>
   </div>
@@ -506,11 +391,27 @@ tr.t2 td:first-child { background: var(--bg-t2); }
 .rh-factors, .rh-tiers { display: flex; flex-wrap: wrap; gap: 6px; }
 .rh-tag { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: var(--bg-chip); color: var(--text-label); }
 .rh-tiers .rbadge { font-size: 11px; }
-.lang-select, .theme-select { appearance: none; -webkit-appearance: none; border: 1px solid var(--border-ghost); background: var(--bg-card2);
+.lang-select { appearance: none; -webkit-appearance: none; border: 1px solid var(--border-ghost); background: var(--bg-card2);
   color: var(--text-label); padding: 6px 28px 6px 10px; border-radius: 7px; font-size: 13px; cursor: pointer;
   font-family: inherit; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' stroke='%2346566f' stroke-width='2' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 6px center; background-size: 14px; }
-.lang-select:hover, .theme-select:hover { background-color: var(--bg-card-hover); }
+.lang-select:hover { background-color: var(--bg-card-hover); }
+
+.theme-bar {
+  display: flex; gap: 4px;
+  background: var(--bg-card2); border: 1px solid var(--border-ghost);
+  border-radius: 8px; padding: 3px;
+}
+.theme-bar button {
+  padding: 5px 12px; border: none; border-radius: 6px;
+  background: transparent; color: var(--text-muted); font-size: .78rem;
+  cursor: pointer; transition: background .15s, color .15s;
+  font-family: inherit;
+}
+.theme-bar button:hover { color: var(--text) }
+.theme-bar button.active {
+  background: var(--accent); color: #fff; font-weight: 600;
+}
 
 @media (max-width: 768px) {
   header { flex-direction: column; align-items: flex-start; gap: 8px; }
