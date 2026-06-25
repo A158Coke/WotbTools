@@ -3,7 +3,8 @@
     "title": "WoT Blitz 回放分析",
     "subtitle": "解析回放 · 14 人战场数据 · 导出 xlsx",
     "shutdown": "关闭离线程序",
-    "homepage": "工具集"
+    "homepage": "工具集",
+    "theme": "主题"
   },
   "upload": {
     "drop_hint": "拖拽 .wotbreplay 文件到这里",

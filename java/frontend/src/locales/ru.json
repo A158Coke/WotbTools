@@ -3,7 +3,8 @@
     "title": "Анализатор реплеев WoT Blitz",
     "subtitle": "Разбор реплеев · данные 14 игроков · экспорт xlsx",
     "shutdown": "Выключить",
-    "homepage": "Главная"
+    "homepage": "Главная",
+    "theme": "Тема"
   },
   "upload": {
     "drop_hint": "Перетащите .wotbreplay файлы сюда",
