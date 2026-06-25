@@ -4,15 +4,30 @@ server:
 spring:
   servlet:
     multipart:
-      # 上传限制 (回放约 2MB/个, 联赛可能一次传很多)
       max-file-size: 20MB
       max-request-size: 200MB
   web:
     resources:
-      # 离线模式: 若打包了 Vue 静态资源(static/), Spring Boot 会一并提供
       static-locations: classpath:/static/
+  # 默认无数据库，JPA 不启动（离线版/dev 可用）
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
 
-# POI 用 log4j2-api, 无实现时降噪
 logging:
   level:
     org.apache.poi: WARN
+
+---
+# postgres profile: 排行榜数据库（docker compose 设置 SPRING_PROFILES_ACTIVE=postgres）
+spring:
+  config.activate.on-profile: postgres
+  autoconfigure.exclude: []
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:5432/${POSTGRES_DB:wotb}
+    username: ${POSTGRES_USER:wotb}
+    password: ${POSTGRES_PASSWORD:wotb}
+  jpa:
+    hibernate.ddl-auto: update
+    properties.hibernate.dialect: org.hibernate.dialect.PostgreSQLDialect

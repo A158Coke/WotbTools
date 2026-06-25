@@ -1,0 +1,21 @@
+FROM maven:3.9-eclipse-temurin-21 AS build
+WORKDIR /build
+COPY common/tankopedia.json common/tankopedia.json
+COPY common/rating.json common/rating.json
+COPY common/map_names.json common/map_names.json
+COPY java/pom.xml java/settings-docker.xml java/
+COPY java/wotb-core/pom.xml java/wotb-core/pom.xml
+COPY java/wotb-web/pom.xml java/wotb-web/pom.xml
+WORKDIR /build/java
+RUN mvn -s settings-docker.xml -pl wotb-core,wotb-web -am -DskipTests dependency:go-offline -q || true
+WORKDIR /build
+COPY java/wotb-core/src java/wotb-core/src
+COPY java/wotb-web/src java/wotb-web/src
+WORKDIR /build/java
+RUN mvn -s settings-docker.xml -pl wotb-core,wotb-web -am -DskipTests clean package -q
+
+FROM alpine:3.22
+RUN apk add --no-cache openjdk21-jre-headless
+COPY --from=build /build/java/wotb-web/target/wotb-web.jar /app/app.jar
+EXPOSE 8087
+CMD ["java", "-jar", "/app/app.jar"]

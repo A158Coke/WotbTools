@@ -21,11 +21,12 @@
 ```text
 .
 ├── README.md  TODO.md  DEVELOPER_GUIDE.md  LICENSE  .gitignore
-├── Dockerfile                  # 单镜像（前后端合并+主页）：CI/CD 与本地 compose 共用
+├── Dockerfile.backend           # 后端镜像：Maven 编译 → JRE runtime（Spring Boot :8087）
+├── Dockerfile.frontend          # 前端镜像：Node 编译 Vue → nginx 托管（:80）
 ├── .dockerignore               # 减少 Docker 构建上下文
 ├── homepage/                   # 工具集主页（wotbtools.com，独立于 Vue SPA）
 │   └── index.html              #   暗色主题，卡片式入口
-├── deploy/nginx.conf           # 单镜像内 nginx：双 server（主页 + Vue SPA 反代 /api→localhost:8087）
+├── deploy/nginx.conf           # 前端 nginx：双 server（主页 + Vue SPA 反代 /api→wotb-backend:8087）
 ├── .github/
 │   └── workflows/deploy.yml    # GitHub Actions: 构建镜像 → 推送 Docker Hub → SSH 部署 VPS
 ├── common/                     # 共享资源
