@@ -1,5 +1,5 @@
 name: Build & Deploy
-run-name: Deploy ${{ github.ref_name }} by @${{ github.actor }}
+run-name: Deploy ${{ github.ref_name }} by @${{ github.actor }} to Production
 
 # 同一时刻只跑一个部署; 新 push 取消进行中的旧 run, 避免 VPS 上并发部署打架
 concurrency:
@@ -27,10 +27,10 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: a158coke   # Docker Hub 用户名非机密(已出现在镜像名中); 仅 token 用 secret
+          username: a158coke   # Docker Hub 用户名非机密(已出现在镜像名中); 仅 token 用 secret. 这里硬编码写死了docker用户名， 未来可以从 secrets 中获取
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Set up Buildx
+      - name: Set up Builds
         uses: docker/setup-buildx-action@v3
 
       - name: Compute image tag
