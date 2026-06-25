@@ -43,8 +43,9 @@ jobs:
           context: .
           file: Dockerfile
           push: true
-          # Docker Hub 仓库启用了标签不可变, 故只推唯一的 sha 标签(永不覆盖); 不推 latest
-          tags: a158coke/wotbtool:${{ steps.vars.outputs.sha }}
+          tags: |
+            a158coke/wotbtool:${{ steps.vars.outputs.sha }}
+            a158coke/wotbtool:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
