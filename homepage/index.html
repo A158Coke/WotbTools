@@ -6,7 +6,8 @@
 <title>WoTBTools</title>
 <script>
 (function(){
-  var s = localStorage.getItem('wotbtools-theme');
+  var m = document.cookie.match(/(?:^|;\s*)wotbtools-theme=([^;]+)/);
+  var s = m ? m[1] : localStorage.getItem('wotbtools-theme');
   var m = (s==='dark') || (s!=='light' && matchMedia('(prefers-color-scheme:dark)').matches) ? 'dark' : 'light';
   var v = m==='dark'
     ? {bg:'#0d1117',t:'#c9d1d9',h:'#f0f6fc',mu:'#8b949e',cb:'#161b22',cbd:'#30363d',a:'#58a6ff',as:'rgba(88,166,255,.15)',tb:'#1f6feb33',f:'#484f58'}
@@ -161,8 +162,18 @@
     for (const k in s) html.style.setProperty(k, s[k]);
   }
 
+  function readTheme() {
+    var m = document.cookie.match(/(?:^|;\s*)wotbtools-theme=([^;]+)/);
+    return m ? m[1] : localStorage.getItem(KEY);
+  }
+
+  function saveTheme(v) {
+    document.cookie = KEY + '=' + v + '; path=/; domain=.wotbtools.com; max-age=31536000; SameSite=Lax';
+    localStorage.setItem(KEY, v);
+  }
+
   function refresh() {
-    const saved = localStorage.getItem(KEY) || 'auto';
+    const saved = readTheme() || 'auto';
     const acting = saved === 'auto' ? (mql.matches ? 'dark' : 'light') : saved;
     setVars(acting);
     btns.forEach(b => b.classList.toggle('active', b.dataset.theme === saved));
@@ -170,7 +181,7 @@
 
   btns.forEach(b => {
     b.addEventListener('click', () => {
-      localStorage.setItem(KEY, b.dataset.theme);
+      saveTheme(b.dataset.theme);
       refresh();
     });
   });

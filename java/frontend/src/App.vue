@@ -25,14 +25,23 @@ const activeTab = ref('aggregate')
 const isDesktop = ref(false)
 const pendingRemove = ref(null)
 const showRating = ref(false)
+function readTheme() {
+  const m = document.cookie.match(/(?:^|;\s*)wotbtools-theme=([^;]+)/)
+  return m ? m[1] : localStorage.getItem('wotbtools-theme')
+}
+function saveTheme(v) {
+  document.cookie = 'wotbtools-theme=' + v + '; path=/; domain=.wotbtools.com; max-age=31536000; SameSite=Lax'
+  localStorage.setItem('wotbtools-theme', v)
+}
+
 const showVersion = ref(false)
-const theme = ref(localStorage.getItem('wotbtools-theme') || 'auto')
+const theme = ref(readTheme() || 'auto')
 
 function goHome() { window.location.href = 'https://wotbtools.com' }
 
 function applyTheme(t) {
   theme.value = t
-  localStorage.setItem('wotbtools-theme', t)
+  saveTheme(t)
   const mql = window.matchMedia('(prefers-color-scheme: dark)')
   const acting = t === 'auto' ? (mql.matches ? 'dark' : 'light') : t
   document.documentElement.setAttribute('data-theme', acting)

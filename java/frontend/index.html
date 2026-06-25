@@ -11,9 +11,10 @@
   </style>
   <script>
     (function(){
-      var s = localStorage.getItem('wotbtools-theme');
-      var m = (s==='dark') || (s!=='light' && matchMedia('(prefers-color-scheme:dark)').matches) ? 'dark' : 'light';
-      document.documentElement.setAttribute('data-theme', m);
+      var m = document.cookie.match(/(?:^|;\s*)wotbtools-theme=([^;]+)/);
+      var s = m ? m[1] : localStorage.getItem('wotbtools-theme');
+      var d = (s==='dark') || (s!=='light' && matchMedia('(prefers-color-scheme:dark)').matches) ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', d);
     })();
   </script>
 </head>
