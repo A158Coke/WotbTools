@@ -108,3 +108,17 @@ jobs:
             docker compose pull
             docker compose up -d --remove-orphans
             docker image prune -f
+            # 健康检查：等待所有容器无 restarting 状态，最多 60 秒
+            for i in $(seq 1 30); do
+              if docker compose ps | grep -qE "Restarting|Exited|unhealthy"; then
+                sleep 2
+              else
+                break
+              fi
+            done
+            if docker compose ps | grep -qE "Restarting|Exited|unhealthy"; then
+              echo "ERROR: Containers not healthy!"
+              docker compose ps
+              docker compose logs --tail 50
+              exit 1
+            fi
