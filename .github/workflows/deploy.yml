@@ -12,8 +12,8 @@ on:
       - "java/**"
       - "common/**"
       - "homepage/**"
-      - "Dockerfile.backend"
-      - "Dockerfile.frontend"
+      - "docker/Dockerfile.backend"
+      - "docker/Dockerfile.frontend"
       - "deploy/**"
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
@@ -41,7 +41,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile.backend
+          file: docker/Dockerfile.backend
           push: true
           tags: |
             a158coke/wotbtool:backend-${{ steps.vars.outputs.sha }}
@@ -53,7 +53,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile.frontend
+          file: docker/Dockerfile.frontend
           push: true
           tags: |
             a158coke/wotbtool:frontend-${{ steps.vars.outputs.sha }}

@@ -1,4 +1,4 @@
-# wotb-sync — 改动检查单 (工具无关)
+﻿# wotb-sync — 改动检查单 (工具无关)
 
 > 本文件是**工具无关**的改动 playbook,供任意 AI coder / 人类贡献者使用。
 > 背景与数据格式见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md),硬性约定见 [../AGENTS.md](../AGENTS.md)。
@@ -11,7 +11,7 @@
 
 - **API 纯英文**:`/api/columns`、DTO 只回 `key`(snake_case) + 数据,绝不放中文。
 - **显示名分散在两类出口**,改名要全改:
-  - 前端(三语 i18n):`java/frontend/src/locales/{zh,en,ru}.json` 的 `player_labels`(单场)与 `agg_labels`(汇总),**三语都改**。
+  - 前端(三语 i18n):`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels`(单场)与 `agg_labels`(汇总),**三语都改**。
   - 导出:`java/wotb-core/.../Columns.java`(单场 xlsx)、`java/wotb-core/.../AggregateSheets.java`(汇总 xlsx,仅中文)。
 - **列 `key` 三方一致**:API / 前端 / 导出。
 - **Web 分层**:`ReplayController` 只做 HTTP 映射;业务编排在 `service/ReplayService`(解析/评分/映射/导出),桌面关机在 `service/DesktopLifecycle`。新增 endpoint 的业务逻辑写进 service,controller 只接参数、拼 `ResponseEntity`。
@@ -48,7 +48,7 @@
 
 ## 配方 D:纯前端交互/样式
 
-只动 `App.vue`(+ 必要时 `deploy/nginx.conf`)。不碰后端/导出。改完 `npm run build`,并在文档记一句。
+只动 `App.vue`(+ 必要时 `deploy/nginx/nginx.conf`)。不碰后端/导出。改完 `npm run build`,并在文档记一句。
 
 ## 配方 F:调评分(权重/系数/阈值)
 
@@ -77,7 +77,7 @@
 
 ```bash
 cd java && JAVA_HOME=<jdk21> mvn -s settings.xml test     # ParityTest + WebApiTest
-cd java/frontend && npm run build                         # 改了前端时
+cd frontend && npm run build                         # 改了前端时
 ```
 
 > 默认 `java` 是 JDK 8,跑 mvn 必须先把 `JAVA_HOME` 指向 JDK 21。本环境/沙箱可能无法真正监听端口,用 MockMvc 测试(`WebApiTest`)即可,不必起服务。

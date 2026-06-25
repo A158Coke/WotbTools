@@ -1,5 +1,6 @@
-# 本地起在线版: 三容器 — postgres + backend + frontend。
-# 用法: cd java/online && docker compose up --build
+# 离线版 / 本地一键启动：拉取 Docker Hub 镜像，无需源码。
+# 用法：docker compose up -d
+# 首次需 docker pull a158coke/wotbtool:backend-latest frontend-latest
 services:
   postgres:
     image: postgres:18-alpine
@@ -12,9 +13,7 @@ services:
     restart: unless-stopped
 
   wotb-backend:
-    build:
-      context: ../..
-      dockerfile: Dockerfile.backend
+    image: a158coke/wotbtool:backend-latest
     depends_on:
       - postgres
     environment:
@@ -24,9 +23,7 @@ services:
     restart: unless-stopped
 
   wotb-frontend:
-    build:
-      context: ../..
-      dockerfile: Dockerfile.frontend
+    image: a158coke/wotbtool:frontend-latest
     ports:
       - "8088:80"
     depends_on:

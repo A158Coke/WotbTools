@@ -1,4 +1,4 @@
-# TODO
+﻿# TODO
 
 本文件记录项目构建 Java 主线的待办。最终目标有两个交付物：
 
@@ -10,10 +10,10 @@
 - [x] Java `wotb-core` 已实现回放解析、车辆库映射、去重汇总和 POI 导出。
 - [x] Java `wotb-web` 已提供 `/api/preview`、`/api/export`、`/api/columns`、`/api/health`、`/api/shutdown`。
 - [x] Vue 3 前端已有上传、预览、下载、排序、列选择、拖拽上传、文件夹选择、重复/失败提示、单场移除后二次确认与自动重新汇总。
-- [x] Java 离线 exe 已实现：`build-desktop.bat` + `WotbWebApplication --desktop` 模式 + jpackage。
+- [x] Java 离线版已实现：Docker 镜像分发（`start.bat` → pull → compose up），三容器本地运行。
 - [x] Spring Boot 版本已统一为 `4.1.0`（父 POM 与 Web 模块一致）。
 - [x] 前端静态资源已嵌入 Spring Boot JAR（Maven 构建阶段从 `frontend/dist` 复制到 `classpath:/static/`）。
-- [x] 离线 exe 便携构建：`build-desktop.ps1` 自动下载 JDK 21 / Maven / Node.js 到 `tools/`，宿主机零依赖。
+- [x] 离线版 Docker 分发：`start.bat` 自动检测 Docker → pull → compose up。
 - [x] Maven settings.xml 本地仓库路径改为模板 + 动态生成，不再写死。
 - [x] 在线演示：https://replay.wotbtools.com
 
@@ -64,4 +64,4 @@
 
 - 解析与导出逻辑必须集中在 `wotb-core`，离线 exe 和 Web 版都复用它。
 - 前端暂定 Vue 3，因为仓库已有 Vue/Vite 雏形。
-- 离线 exe 已采用"本地 Spring Boot + 内置 Vue 静态资源 + jpackage"方案，避免维护第二套桌面 UI。
+- 离线版采用 Docker 镜像分发（`start.bat` → pull → compose up），避免维护第二套桌面 UI。

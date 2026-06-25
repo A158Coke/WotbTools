@@ -1,4 +1,4 @@
-import MAP_NAMES from '../../../../common/map_names.json'
+import MAP_NAMES from '../../../common/map_names.json'
 
 export const DEFAULT_VISIBLE = [
   'nickname', 'clan', 'tank_name', 'tank_type', 'rating', 'survived_label',

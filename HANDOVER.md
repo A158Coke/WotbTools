@@ -1,4 +1,4 @@
-# HANDOVER — 项目交接 / AI 工具迁移指南
+﻿# HANDOVER — 项目交接 / AI 工具迁移指南
 
 > 本文件是**工具无关**的总入口。无论用哪个 AI coding 工具（Cursor / Copilot / Windsurf / Claude Code / 其它）接手本仓库，先读这一份，再按需深入下面列出的文档。目标读者：接手维护的人或 AI。
 
@@ -8,7 +8,7 @@
 
 从《坦克世界闪击战》(WoT Blitz) 的 `.wotbreplay` 回放里提取战斗结算数据，导出可分析的 Excel，并提供在线预览。一套 Java 核心逻辑，交付两种形态：
 
-- **离线 exe**（jpackage 打包，双击运行、本地浏览器 UI、离线导出）
+- **离线版**（Docker 镜像分发，需 Docker Desktop，双击 `start.bat`）
 - **Web 版**（Spring Boot + Vue，浏览器上传/预览/导出，已上线 https://replay.wotbtools.com）
 
 两种形态**复用同一套源码**（`wotb-core` + `wotb-web` + `frontend`），区别只在打包/部署。
@@ -59,7 +59,7 @@
   - bash: `JAVA_HOME="/c/Users/<user>/.jdks/jdk-21.0.1"`（本机实测路径，**不是** `C:\Program Files\Java`）
   - cmd: `set JAVA_HOME=%USERPROFILE%\.jdks\jdk-21.0.1`
 - **Maven 必须带 `-s java/settings.xml`**（aliyun 镜像 + 独立本地仓库 `java/.m2repo`，避免污染/依赖用户全局 Maven）。容器内用 `java/settings-docker.xml`。
-- **Node**：前端 `java/frontend`，开发端口 5173，构建用 `npm run build`。
+- **Node**：前端 `frontend`，开发端口 5173，构建用 `npm run build`。
 - **Python 3 + Pillow**：仅用于 `common/python/update_tankopedia.py`（更新车辆库，需联网）和偶尔的图像处理。
 
 ---
@@ -71,18 +71,18 @@
 cd java && JAVA_HOME=<jdk21> mvn -s settings.xml test
 
 # 前端构建
-cd java/frontend && npm run build       # 产物 dist/, Maven 会复制到 jar 的 classpath:/static/
+cd frontend && npm run build       # 产物 dist/, Maven 会复制到 jar 的 classpath:/static/
 
 # 本地跑 Web 版 (jar)
 cd java && JAVA_HOME=<jdk21> mvn -s settings.xml -DskipTests -pl wotb-core,wotb-web -am install
 java -jar wotb-web/target/wotb-web.jar           # 8087, Web 模式
 java -jar wotb-web/target/wotb-web.jar --desktop # 桌面模式(自动选端口+开浏览器)
 
-# 本地跑在线版三容器 (postgres + backend + frontend)
-cd java/online && docker compose up --build       # 构建 Dockerfile.backend + Dockerfile.frontend, 8088
+# 本地开发 — 三容器编译启动
+cd online && docker compose up --build       # 构建 Dockerfile.backend + Dockerfile.frontend, 8088
 
-# 离线 exe
-cd java/offline && build-desktop.bat              # 前端构建→Maven→jpackage
+# 用户分发 — 一键拉镜像启动
+cd offline && start.bat                      # 检测 Docker → pull → compose up
 ```
 
 > **测试夹具**：`ParityTest`/`WebApiTest` 读 `common/data/*.wotbreplay` 真实样本，而 `common/data/` 是 **gitignore 的**。所以：① 新克隆的环境本地无样本、测试会失败，需自备样本回放放进 `common/data/`；② **CI 里跑不了 `mvn test`**（检出里没有样本）——这是 CI 不含测试步骤的根本原因。
@@ -94,7 +94,7 @@ cd java/offline && build-desktop.bat              # 前端构建→Maven→jpack
 - **改动即更新文档**（同一次提交）。影响界面/导出/数据/构建/用法的改动，必须同步 `DEVELOPER_GUIDE.md` + 相关 README。
 - **API 纯英文**：`/api/columns` 与 DTO 只回 `key`(snake_case) + 数据，**不放显示名**。
 - **显示名分两类出口**（改列名要全改）：
-  - 前端：`java/frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`（**三语都改**）。
+  - 前端：`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`（**三语都改**）。
   - 导出：`Columns.java`（单场 xlsx）、`AggregateSheets.java`（汇总 xlsx，仅中文）。
 - **单一数据源**：`common/tankopedia.json`（车辆库）、`common/rating.json`（评分参数）、`common/map_names.json`（地图中文名）。构建时由 `wotb-core/pom.xml` 复制到 classpath；**勿在模块内放副本**。
 - **代码风格**：不可变模型用 `record`；可变模型用公有字段 POJO（**不引入 Lombok**）；局部变量/参数尽量 `final`。
