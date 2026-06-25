@@ -1,6 +1,8 @@
-# WoT Blitz Replay Data Extractor
+# WoTBTools
 
-从《坦克世界闪击战》（World of Tanks Blitz）的 `.wotbreplay` 回放文件中提取战斗数据，并导出为 Excel。
+《坦克世界闪击战》（World of Tanks Blitz）工具集。
+
+当前唯一已上线工具：从 `.wotbreplay` 回放文件中提取战斗数据，并导出为 Excel。
 
 项目主线为 Java：**Java 离线 exe** 与 **Web 版** 均已完成。
 
@@ -12,6 +14,7 @@
 | Web 版       | Spring Boot 4 后端 + Vue 3 前端                    | ✅ 已完成         |
 
 在线演示：https://replay.wotbtools.com
+工具集主页：https://wotbtools.com
 
 版本历史见 [CHANGELOG.md](CHANGELOG.md)，任务拆分见 [TODO.md](TODO.md)。
 
@@ -111,6 +114,7 @@ mvn -s settings.xml test
 
 | 路径                            | 说明                                          |
 |-------------------------------|---------------------------------------------|
+| `homepage/`                   | 工具集主页（`wotbtools.com`，暗色卡片式单页）|
 | `common/`                     | 共享资源：`tankopedia.json`、`rating.json`、`map_names.json`(地图中文名)、`assets/`(图标)、`data/`(示例回放) |
 | `common/python/`              | 车辆库更新脚本（`update_tankopedia.py`） |
 | `java/`                       | Java 主线（共享核心 + Web + 离线打包）                   |
