@@ -80,6 +80,7 @@
   "duration": "{min} мин {sec} сек",
   "team": { "1": "Команда 1", "2": "Команда 2", "unknown": "Ничья/Неизвестно" },
   "survived": { "alive": "Выжил", "dead": "Уничтожен" },
+  "version": { "btn": "История", "back": "Назад", "added": "Добавлено", "fixed": "Исправлено", "changed": "Изменено", "removed": "Удалено" },
   "col_groups": {
     "identity": "Личность",
     "vehicle": "Техника",
