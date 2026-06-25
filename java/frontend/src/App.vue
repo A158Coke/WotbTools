@@ -27,6 +27,8 @@ const pendingRemove = ref(null)
 const showRating = ref(false)
 const showVersion = ref(false)
 
+function goHome() { window.location.href = 'https://wotbtools.com' }
+
 const playerOrder = ref([])
 const aggOrder = ref([])
 
@@ -162,6 +164,9 @@ function handleReorder(next) { (pickerScope.value === 'agg' ? aggOrder : playerO
       </button>
       <button class="ghost" @click="showVersion = true">
         <svg class="ic" viewBox="0 0 24 24"><path d="M12 8v4l2 2"/><circle cx="12" cy="12" r="9"/></svg>{{ $t('version.btn') }}
+      </button>
+      <button class="ghost" @click="goHome" :title="$t('app.homepage')">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M3 12l9-8 9 8M5 10v9a1 1 0 0 0 1 1h4v-7h4v7h4a1 1 0 0 0 1-1v-9"/></svg>{{ $t('app.homepage') }}
       </button>
       <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
         <option v-for="l in [{key:'zh',label:'中文'},{key:'en',label:'English'},{key:'ru',label:'Русский'}]" :key="l.key" :value="l.key">{{ l.label }}</option>

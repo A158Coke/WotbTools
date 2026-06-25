@@ -2,7 +2,8 @@
   "app": {
     "title": "WoT Blitz Replay Analyzer",
     "subtitle": "Parse replays · 14-player battle data · Export xlsx",
-    "shutdown": "Shut Down"
+    "shutdown": "Shut Down",
+    "homepage": "Home"
   },
   "upload": {
     "drop_hint": "Drop .wotbreplay files here",
