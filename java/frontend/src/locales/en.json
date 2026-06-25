@@ -80,6 +80,7 @@
   "duration": "{min}m {sec}s",
   "team": { "1": "Team 1", "2": "Team 2", "unknown": "Draw/Unknown" },
   "survived": { "alive": "Alive", "dead": "Destroyed" },
+  "version": { "btn": "Changelog", "back": "Back", "added": "Added", "fixed": "Fixed", "changed": "Changed", "removed": "Removed" },
   "col_groups": {
     "identity": "Identity",
     "vehicle": "Vehicle",

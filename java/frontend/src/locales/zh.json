@@ -80,6 +80,7 @@
   "duration": "{min}分{sec}秒",
   "team": { "1": "队伍1", "2": "队伍2", "unknown": "平局/未知" },
   "survived": { "alive": "存活", "dead": "阵亡" },
+  "version": { "btn": "更新历史", "back": "返回", "added": "新增", "fixed": "修复", "changed": "变更", "removed": "移除" },
   "col_groups": {
     "identity": "身份",
     "vehicle": "车辆",
