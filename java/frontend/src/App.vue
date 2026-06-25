@@ -19,7 +19,12 @@ const { t } = useI18n()
 // --- 工具状态 ---
 const { theme, handleTheme } = useTheme()
 const replay = useReplay()
+const { files, loading, error, resp, activeTab, aggStats, pendingRemove,
+  doPreview, doExport, askRemoveBattle, cancelRemove } = replay
 const cols = useColumns(replay.playerCols, replay.aggCols, replay.activeTab)
+const { visibleKeys, aggVisibleKeys, playerOrder, aggOrder, showColPicker, pickerScope, colScope,
+  currentOrder, playerColMap, aggColMap, shownCols, shownAggCols,
+  initFromResponse, toggleColPicker, toggleCol, selectAllCols, resetCols, handleReorder } = cols
 
 // --- 应用状态 ---
 const isDesktop = ref(false)
@@ -92,61 +97,61 @@ function confirmRemoveBattle() {
 
     <VersionPage v-if="showVersion" @back="showVersion = false" />
     <template v-else>
-    <FileUploader :files="replay.files" :loading="replay.loading" @update:files="replay.files = $event" @preview="preview" />
+    <FileUploader :files="files" :loading="loading" @update:files="files = $event" @preview="preview" />
 
-    <p v-if="replay.error" class="error">{{ replay.error }}</p>
+    <p v-if="error" class="error">{{ error }}</p>
 
-    <template v-if="replay.resp">
-      <div v-if="replay.resp.duplicates.length" class="warn">
-        {{ $t('result.duplicates', { count: replay.resp.duplicates.length }) }}
-        <span v-for="(d, i) in replay.resp.duplicates" :key="i">{{ d[0] }}</span>
+    <template v-if="resp">
+      <div v-if="resp.duplicates.length" class="warn">
+        {{ $t('result.duplicates', { count: resp.duplicates.length }) }}
+        <span v-for="(d, i) in resp.duplicates" :key="i">{{ d[0] }}</span>
       </div>
-      <div v-if="replay.resp.failures.length" class="error">
-        {{ $t('result.failures', { count: replay.resp.failures.length }) }}
-        <span v-for="(f, i) in replay.resp.failures" :key="i">{{ f[0] }} ({{ f[1] }})</span>
+      <div v-if="resp.failures.length" class="error">
+        {{ $t('result.failures', { count: resp.failures.length }) }}
+        <span v-for="(f, i) in resp.failures" :key="i">{{ f[0] }} ({{ f[1] }})</span>
       </div>
 
       <div class="restoolbar">
-        <div class="tabs" :class="{ locked: cols.showColPicker }"
-             :title="cols.showColPicker ? $t('action.picker_locked') : ''">
-          <button v-if="replay.resp.aggregate.length" :disabled="cols.showColPicker"
-                  :class="{ active: replay.activeTab === 'aggregate' }"
-                  @click="replay.activeTab = 'aggregate'">{{ $t('result.aggregate_tab', { count: replay.resp.aggregate.length }) }}</button>
-          <button v-for="(b, i) in replay.resp.battles" :key="i" :disabled="cols.showColPicker"
-                  :class="{ active: replay.activeTab === 'b' + i }"
-                  @click="replay.activeTab = 'b' + i">{{ mapLabel(b.mapName) }} #{{ i + 1 }}
-            <span class="tabx" :title="$t('modal.remove_title')" @click.stop="replay.askRemoveBattle(b, i)">×</span>
+        <div class="tabs" :class="{ locked: showColPicker }"
+             :title="showColPicker ? $t('action.picker_locked') : ''">
+          <button v-if="resp.aggregate.length" :disabled="showColPicker"
+                  :class="{ active: activeTab === 'aggregate' }"
+                  @click="activeTab = 'aggregate'">{{ $t('result.aggregate_tab', { count: resp.aggregate.length }) }}</button>
+          <button v-for="(b, i) in resp.battles" :key="i" :disabled="showColPicker"
+                  :class="{ active: activeTab === 'b' + i }"
+                  @click="activeTab = 'b' + i">{{ mapLabel(b.mapName) }} #{{ i + 1 }}
+            <span class="tabx" :title="$t('modal.remove_title')" @click.stop="askRemoveBattle(b, i)">×</span>
           </button>
         </div>
         <div class="resactions">
           <span class="dropdown">
-            <button class="ghost sm" @click="cols.toggleColPicker">
+            <button class="ghost sm" @click="toggleColPicker">
               <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" /></svg>{{ $t('action.select_cols') }} ▾
             </button>
-            <ColumnPicker v-if="cols.showColPicker" :scope="cols.pickerScope" :order="cols.currentOrder"
-              :visible="cols.pickerScope === 'agg' ? cols.aggVisibleKeys : cols.visibleKeys"
-              @close="cols.showColPicker = false" @toggle="cols.toggleCol"
-              @select-all="cols.selectAllCols" @reset="cols.resetCols" @reorder="cols.handleReorder" />
+            <ColumnPicker v-if="showColPicker" :scope="pickerScope" :order="currentOrder"
+              :visible="pickerScope === 'agg' ? aggVisibleKeys : visibleKeys"
+              @close="showColPicker = false" @toggle="toggleCol"
+              @select-all="selectAllCols" @reset="resetCols" @reorder="handleReorder" />
           </span>
-          <button class="sm" :disabled="replay.loading" @click="exportXlsx('aggregate')">
+          <button class="sm" :disabled="loading" @click="exportXlsx('aggregate')">
             <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_aggregate') }}
           </button>
-          <button class="ghost sm" :disabled="replay.loading" @click="exportXlsx('each')">
+          <button class="ghost sm" :disabled="loading" @click="exportXlsx('each')">
             <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_each') }}
           </button>
         </div>
       </div>
 
-      <div v-show="replay.activeTab === 'aggregate' && replay.resp.aggregate.length">
-        <AggregateTable :aggregate="replay.resp.aggregate" :shown-cols="cols.shownAggCols" :agg-stats="replay.aggStats" />
+      <div v-show="activeTab === 'aggregate' && resp.aggregate.length">
+        <AggregateTable :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
       </div>
 
-      <div v-for="(b, i) in replay.resp.battles" :key="i" v-show="replay.activeTab === 'b' + i">
-        <BattleTable :battle="b" :shown-cols="cols.shownCols" />
+      <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i">
+        <BattleTable :battle="b" :shown-cols="shownCols" />
       </div>
     </template>
 
-    <RemoveConfirmModal :pending="replay.pendingRemove" @confirm="confirmRemoveBattle" @cancel="replay.cancelRemove" />
+    <RemoveConfirmModal :pending="pendingRemove" @confirm="confirmRemoveBattle" @cancel="cancelRemove" />
     <RatingModal :show="showRating" @close="showRating = false" />
     </template>
   </div>
