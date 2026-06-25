@@ -6,6 +6,9 @@
 - 工具集主页：`wotbtools.com` 作为入口，展示回放提取器及未来工具卡片
 - 主题切换：亮色/暗色/跟随系统，主页与 replay 通过 `.wotbtools.com` 域名 cookie 全局同步，localStorage 本地回退
 
+### Changed
+- 容器拆分：单镜像 → `postgres:18` + `wotb-backend` + `wotb-frontend` 三服务，改前端不触发 Maven 构建
+
 ## [1.4.0] - 2026-06-25
 
 ### Fixed

@@ -29,8 +29,9 @@ cd java/frontend && npm run build
 # 离线 exe / 在线容器
 cd java/offline && build-desktop.bat
 cd java/online && docker compose up --build
-# 根 Dockerfile 单镜像构建(CI/CD)
-docker build -f Dockerfile -t a158coke/wotbtool:test .
+# 分镜像构建(CI/CD 用)
+docker build -f Dockerfile.backend -t a158coke/wotbtool:backend-test .
+docker build -f Dockerfile.frontend -t a158coke/wotbtool:frontend-test .
 ```
 
 ## 不要做

@@ -1,7 +1,6 @@
 name: Build & Deploy
 run-name: Deploy ${{ github.ref_name }} by @${{ github.actor }} to Production
 
-# 同一时刻只跑一个部署; 新 push 取消进行中的旧 run, 避免 VPS 上并发部署打架
 concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: true
@@ -9,14 +8,14 @@ concurrency:
 on:
   push:
     branches: [main]
-    # 只在影响镜像的改动上触发 (纯文档 push 不重建)
     paths:
       - "java/**"
       - "common/**"
-      - "Dockerfile"
+      - "Dockerfile.backend"
+      - "Dockerfile.frontend"
       - "deploy/**"
       - ".github/workflows/deploy.yml"
-  workflow_dispatch:   # 允许手动触发 (例如仅想重新部署)
+  workflow_dispatch:
 
 jobs:
   build-and-deploy:
@@ -27,7 +26,7 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: a158coke   # Docker Hub 用户名非机密(已出现在镜像名中); 仅 token 用 secret. 这里硬编码写死了docker用户名， 未来可以从 secrets 中获取
+          username: a158coke
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Set up Builds
@@ -37,15 +36,27 @@ jobs:
         id: vars
         run: echo "sha=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push (with layer cache)
+      - name: Build and push backend
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile
+          file: Dockerfile.backend
           push: true
           tags: |
-            a158coke/wotbtool:${{ steps.vars.outputs.sha }}
-            a158coke/wotbtool:latest
+            a158coke/wotbtool:backend-${{ steps.vars.outputs.sha }}
+            a158coke/wotbtool:backend-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.frontend
+          push: true
+          tags: |
+            a158coke/wotbtool:frontend-${{ steps.vars.outputs.sha }}
+            a158coke/wotbtool:frontend-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -58,18 +69,40 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             set -e
-            mkdir -p /opt/wotb
+            mkdir -p /opt/wotb /opt/wotb/homepage
             cd /opt/wotb
-            # 清掉 PR 前遗留的双容器(占用 8087/8088), 否则新单容器无法绑定端口
-            docker rm -f wotb-backend wotb-frontend 2>/dev/null || true
+            docker rm -f wotb wotb-backend wotb-frontend 2>/dev/null || true
             cat > docker-compose.yml <<'EOF'
             services:
-              wotb:
-                image: a158coke/wotbtool:${{ steps.vars.outputs.sha }}
-                container_name: wotb
+              postgres:
+                image: postgres:18-alpine
+                environment:
+                  POSTGRES_DB: wotb
+                  POSTGRES_USER: wotb
+                  POSTGRES_PASSWORD: wotb
+                volumes:
+                  - postgres_data:/var/lib/postgresql/data
+                restart: unless-stopped
+              wotb-backend:
+                image: a158coke/wotbtool:backend-${{ steps.vars.outputs.sha }}
+                depends_on:
+                  - postgres
+                environment:
+                  SPRING_PROFILES_ACTIVE: postgres
+                  POSTGRES_HOST: postgres
+                  POSTGRES_PASSWORD: wotb
+                restart: unless-stopped
+              wotb-frontend:
+                image: a158coke/wotbtool:frontend-${{ steps.vars.outputs.sha }}
                 ports:
                   - "8088:80"
+                depends_on:
+                  - wotb-backend
+                volumes:
+                  - /opt/wotb/homepage:/homepage:ro
                 restart: unless-stopped
+            volumes:
+              postgres_data:
             EOF
             docker compose pull
             docker compose up -d --remove-orphans

@@ -77,11 +77,11 @@ docker compose up --build
 
 `push` 到 `main` 分支触发 GitHub Actions（[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)）：
 
-1. 根目录 `Dockerfile` 多阶段构建单镜像（nginx + JRE 合并）。
-2. 推送 `a158coke/wotbtool:sha-<7位SHA>` + `a158coke/wotbtool:latest` 到 Docker Hub。
-3. SSH 登录 VPS，在 `/opt/wotb` 写入单镜像 `docker-compose.yml`（image 用该确切 sha），执行 `docker compose pull && docker compose up -d`。
+1. 并行构建两个镜像：`Dockerfile.backend`（Maven + JRE）+ `Dockerfile.frontend`（Node + nginx）。
+2. 推送 `a158coke/wotbtool:backend-sha-<SHA>` + `frontend-sha-<SHA>` + `backend-latest` + `frontend-latest` 到 Docker Hub。
+3. SSH 登录 VPS，写入三服务 `docker-compose.yml`（postgres + wotb-backend + wotb-frontend），`docker compose pull && up -d`。
 
-> 镜像只有一套：根 `Dockerfile` + `deploy/nginx.conf`。CI/CD 与本地 `java/online/docker-compose.yml` 构建的是**同一个** Dockerfile，无重复 nginx 配置。`paths` 过滤使纯文档 push 不触发部署；也可在 Actions 页手动 `workflow_dispatch`。CI 用 GitHub Actions 缓存(`type=gha`)加速镜像层。
+> 三个容器：`postgres:18`（数据持久化）→ `wotb-backend`（Spring Boot 8087）→ `wotb-frontend`（nginx + Vue，暴露 8088:80）。homepage 作为 volume 挂载，不编进镜像。`paths` 过滤使纯文档 push 不触发部署。
 
 ## 本地开发
 
