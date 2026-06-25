@@ -78,8 +78,8 @@ cd java && JAVA_HOME=<jdk21> mvn -s settings.xml -DskipTests -pl wotb-core,wotb-
 java -jar wotb-web/target/wotb-web.jar           # 8087, Web 模式
 java -jar wotb-web/target/wotb-web.jar --desktop # 桌面模式(自动选端口+开浏览器)
 
-# 本地跑在线版单镜像 (与生产同一镜像)
-cd java/online && docker compose up --build       # 构建根 Dockerfile, 8088
+# 本地跑在线版三容器 (postgres + backend + frontend)
+cd java/online && docker compose up --build       # 构建 Dockerfile.backend + Dockerfile.frontend, 8088
 
 # 离线 exe
 cd java/offline && build-desktop.bat              # 前端构建→Maven→jpackage
@@ -107,16 +107,16 @@ cd java/offline && build-desktop.bat              # 前端构建→Maven→jpack
 ## 7. CI/CD 与部署（本会话踩坑最多，重点看）
 
 **流水线**：`.github/workflows/deploy.yml` —— push 到 `main`（命中 `java/** / common/** / Dockerfile / deploy/** / 本文件路径`，或手动 `workflow_dispatch`）触发：
-1. 构建**根 `Dockerfile` 单镜像**（多阶段：Maven 出 jar + Node 出 dist → `nginx:alpine + JRE`，entrypoint 同容器起 nginx + jar，nginx :80 反代 `/api`→`localhost:8087`）。
-2. 推到 Docker Hub。
-3. SSH 到 VPS（`/opt/wotb`）写 compose、`pull` + `up -d` 重启容器。
+1. 并行构建**两镜像**：`Dockerfile.backend`（Maven → JRE runtime）和 `Dockerfile.frontend`（Node → nginx）。
+2. 推送到 Docker Hub（`backend-sha-<SHA>` + `backend-latest` + `frontend-sha-<SHA>` + `frontend-latest`）。
+3. SSH 到 VPS（`/opt/wotb`）写三服务 compose（postgres:18 + wotb-backend + wotb-frontend）、`pull` + `up -d` 重启容器。
 
 **必须配置的 GitHub Secrets**（迁移/换仓库时容易漏）：
 - `DOCKER_PASSWORD` —— Docker Hub access token（用户名 `a158coke` 已**硬编码**在 workflow，因为用户名非机密、已在镜像名里）。
 - `VPS_HOST` / `VPS_USER` / `VPS_PORT` / `VPS_SSH_KEY` —— VPS SSH。
 
 **已知坑 & 现有对策**（改 workflow/Dockerfile 时别踩回去）：
-- **Docker Hub 仓库开了「标签不可变」** → 不能覆盖 `:latest`。所以**只推唯一的 `a158coke/wotbtool:sha-<短SHA>`**，VPS compose 也用该确切 sha（顺带可按 sha 回滚）。别加回 `:latest`。
+- **两镜像各自推 sha + latest 标签** → `a158coke/wotbtool:backend-sha-<SHA>` + `backend-latest`，`frontend-sha-<SHA>` + `frontend-latest`。VPS compose 用 backend 的 sha 标签（按 sha 回滚）。
 - **VPS 上可能有遗留旧容器占端口** → 部署脚本会先 `docker rm -f wotb-backend wotb-frontend` 腾出 8088，`up -d` 带 `--remove-orphans`。
 - **SSH 脚本必须 `set -e`** → 否则 `docker compose up` 失败仍退出 0，Actions「假绿」而站点不更新（本会话真实发生过）。
 - **构建上下文是仓库根**（前端 `App.vue` 跨目录 `import ../../../common/map_names.json`，后端要 `common/*.json`）。仓库根 `.dockerignore` 排除 `**/node_modules`、`**/target`、`**/dist`、`common/data` 等。
@@ -142,8 +142,8 @@ cd java/offline && build-desktop.bat              # 前端构建→Maven→jpack
 
 - **回放格式**：zip 包含 3 个文件 —— `meta.json`（战斗信息）+ `battle_results.dat`（pickle + protobuf 战绩）+ `data.wotreplay`（BigWorld 事件流，用于存活时间推算）。字段表见 `docs/replay-data.md`。**不要轻易重命名/删字段**，新字段先进「原始字段」表交叉验证。
 - **存活时间**：3 层 fallback（#104 → Damage 伤害事件 → hybrid EntityLeave/Position），详见 `docs/replay-data.md`。
-- **评分**：自包含、类 WN8，基准来自“一同计算的这批战斗”（相对分，非绝对天梯）。参数在 `common/rating.json`，前端「评分规则」弹窗 + `GET /api/rating` 实时展示。细节见 `docs/rating-system.md`。
-- **存活时间**：3 层 fallback（`#104`→ Damage sub=3 事件 → hybrid EntityLeave/Position），见 `docs/replay-data.md`。
+- **评分**：自包含、类 WN8，基准来自"一同计算的这批战斗"（相对分，非绝对天梯）。参数在 `common/rating.json`，前端「评分规则」弹窗 + `GET /api/rating` 实时展示。细节见 `docs/rating-system.md`。
+- **数据库**：在线版使用 PostgreSQL（`postgres:18-alpine`），通过 `SPRING_PROFILES_ACTIVE: postgres` 激活。默认 profile 排除 JPA auto-config，离线版/dev 无数据库启动。密码硬编码 `wotb`。
 - **i18n**：vue-i18n 三语（zh/en/ru），`locales/*.json`；语言持久化在 `localStorage('wotb-lang')`。**地图名尚未接 i18n**（只有中文映射），见 `TODO.md`「P1：国际化」。
 - **API 端点**：`GET /api/health`、`GET /api/columns`、`GET /api/rating`、`POST /api/preview`、`POST /api/export?mode=aggregate|each`、`POST /api/shutdown`（仅桌面）。
 

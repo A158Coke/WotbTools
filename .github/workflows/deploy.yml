@@ -11,6 +11,7 @@ on:
     paths:
       - "java/**"
       - "common/**"
+      - "homepage/**"
       - "Dockerfile.backend"
       - "Dockerfile.frontend"
       - "deploy/**"
@@ -69,7 +70,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             set -e
-            mkdir -p /opt/wotb /opt/wotb/homepage
+            mkdir -p /opt/wotb
             cd /opt/wotb
             docker rm -f wotb wotb-backend wotb-frontend 2>/dev/null || true
             cat > docker-compose.yml <<'EOF'
@@ -98,8 +99,6 @@ jobs:
                   - "8088:80"
                 depends_on:
                   - wotb-backend
-                volumes:
-                  - /opt/wotb/homepage:/homepage:ro
                 restart: unless-stopped
             volumes:
               postgres_data:

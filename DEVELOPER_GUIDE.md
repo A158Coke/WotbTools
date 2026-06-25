@@ -83,13 +83,19 @@
     │   │       └── PlayerRow / BattleDto / AggRow / ColumnDef / PreviewResponse / ExportResult
     │   └── src/test/java/com/wotb/web/WebApiTest.java
     ├── frontend/             # 【共享】Vue 3 前端（单文件组件，无 router）
-    │   ├── src/{main.js, App.vue}
+    │   ├── src/
+    │   │   ├── App.vue              # 根组件（tab 导航 + 编排层）
+    │   │   ├── main.js              # Vue 入口
+    │   │   ├── composables/         # 组合式模块（useTheme / useReplay / useColumns）
+    │   │   ├── utils/               # 工具层（api.js / theme.js / helpers.js）
+    │   │   ├── components/          # UI 组件（FileUploader / ColumnPicker / *_Table 等）
+    │   │   └── locales/             # 三语（zh / en / ru）
     │   ├── index.html  package.json  vite.config.js  .npmrc
     ├── offline/              # 离线版打包
     │   ├── build-desktop.bat     # 入口（调用 .ps1；兼容双击）
     │   └── build-desktop.ps1    # 主脚本：自动检测/下载工具 → 构建 → jpackage
     └── online/               # 联网版本地运行
-        └── docker-compose.yml    # 构建并运行与 CI/CD 相同的根 Dockerfile 单镜像（context=仓库根）
+        └── docker-compose.yml    # 三容器：postgres + wotb-backend + wotb-frontend（context=仓库根）
 ```
 
 > 关键：离线版与联网版**复用同一套源码**（`wotb-core` + `wotb-web` + `frontend`）。`offline/` 与 `online/` 只放打包/部署文件，**不要把共享逻辑复制进去**。
@@ -197,15 +203,16 @@ BattleResults
 
 ### 前端
 
-- 单文件组件 `App.vue`，无 Vue Router、无组件库。
+- 根组件 `App.vue`（编排层），无 Vue Router、无组件库。逻辑全在 **composables** 和 **utils** 中：
+  - `composables/useReplay.js` — 文件/预览/导出/战斗移除状态管理
+  - `composables/useColumns.js` — 列可见性/排序/选择器状态
+  - `composables/useTheme.js` — 主题切换（auto/light/dark），数据持久化调用 `utils/theme.js`
+  - `utils/api.js` — 集中式 API 层（healthCheck / preview / downloadBlob / shutdown）
+  - `utils/theme.js` — 纯函数（readTheme / saveTheme / resolveTheme / applyTheme），Cookie `.wotbtools.com` 域共享 + localStorage 回退
+  - `utils/helpers.js` — 常量（DEFAULT_VISIBLE / RATING_TIERS）+ 工具函数（mapLabel / ratingTier 等）
+- UI 组件在 `components/`：FileUploader / ColumnPicker / AggregateTable / BattleTable / RatingModal / RemoveConfirmModal / VersionPage
 - 开发时 Vite 代理 `/api → localhost:8087`。
-- 通过 `/api/health` 的 `desktop` 字段检测是否为离线模式，如果是则显示"关闭离线程序"按钮。
-- 列**集合与顺序**通过 `/api/columns` 获取（纯数据：`{key, num}`），但**中文显示名由前端自带映射**（见下）。
-- 主要交互：
-  - **顶部上传区按状态切换**(无外部依赖, 图标为内联 SVG 以兼容离线 exe):未选文件时显示**上传卡**`.uploadcard`(上传图标 + 提示 + 内嵌「选择回放文件 / 选择文件夹」, 同时是拖拽目标);已选文件后收起为紧凑**文件条**`.filebar`(文件数 + 文件 chip + 添加文件/文件夹 + 清空), 下方是强调主按钮**「解析预览」**`.actionrow`。文件列表每项 `×` 单删、「清空」清全部。
-  - **导出按钮在解析后才出现**, 位于结果区工具条 `.restoolbar`(左侧标签页 + 右侧 `.resactions`:选择列 / 合并汇总 / 每场导出);解析后**每个战斗标签页(地图 #n)带 `×`** 可移除该场:点击弹应用内二次确认对话框,确认后(`confirmRemoveBattle`)删对应回放并自动重新解析以更新汇总。
-  - 视觉(数据网格风):浅色表头、**所有列居中**、行下细线;**队伍行底色**——单场按本场队伍、汇总按该选手最近一场队伍(后端 `model.Agg.team` → `dto.AggRow.team`);`评分`/`场均评分` 渲染为**分级彩色徽章**(`ratingTier()`:差/中/良/优/卓越);表格上方一排**指标卡**(汇总=场次/选手/最高场均评分/最高单场伤害;单场=地图/时长/获胜/玩家)。
-  - **列选择器**是按钮下的下拉面板，作用于当前所在的表（汇总/单场各一套），**即点即生效**：勾选切换显示、**拖拽 `⋮⋮` 调整列顺序**，另有 全选/重置/完成。**面板打开时锁定表格切换**(汇总/各场标签禁用),避免作用域错乱，点「完成」后恢复。状态：`visibleKeys`/`aggVisibleKeys`(显示集合) + `playerOrder`/`aggOrder`(顺序)；表格列 = 顺序过滤出可见列。
+- 语言持久化 `localStorage('wotb-lang')`，主题持久化 Cookie `wotbtools-theme`（domain `.wotbtools.com`）+ localStorage 回退。
 
 ### 显示名（i18n）架构
 
@@ -324,23 +331,44 @@ npm run build
 
 `push` 到 `main` 分支触发 GitHub Actions（[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)）：
 
-1. **构建镜像**：根目录 `Dockerfile` 多阶段构建，合并 nginx + JRE 单镜像（带 `type=gha` 层缓存）。
-2. **推送 Docker Hub**：只推唯一标签 `a158coke/wotbtool:sha-<7位SHA>`。**不推 `:latest`** —— 该仓库启用了标签不可变，覆盖会被拒；用 sha 也便于按提交回滚。用户名 `a158coke` 硬编码在 workflow（非机密），仅 token 走 `secrets.DOCKER_PASSWORD`。
-3. **SSH 部署 VPS**：在 `/opt/wotb` 写入单镜像 `docker-compose.yml`（image 用该确切 sha），先 `docker rm -f` 清理遗留旧容器腾出端口，再 `docker compose pull && up -d --remove-orphans`。脚本带 `set -e`（否则失败仍退出 0、Actions 假绿、站点不更新）。
+1. **并行构建两镜像**：`Dockerfile.backend`（Maven → JRE runtime，Spring Boot :8087）+ `Dockerfile.frontend`（Node → nginx，:80）。带 `type=gha` 层缓存。
+2. **推送 Docker Hub**：四标签 `a158coke/wotbtool:backend-sha-<SHA>` + `backend-latest` + `frontend-sha-<SHA>` + `frontend-latest`。用户名 `a158coke` 硬编码在 workflow（非机密），仅 token 走 `secrets.DOCKER_PASSWORD`。
+3. **SSH 部署 VPS**：在 `/opt/wotb` 写入三服务 `docker-compose.yml`（postgres + wotb-backend + wotb-frontend），先清理旧容器再 `docker compose pull && up -d --remove-orphans`。homepage 编入前端镜像（`COPY homepage /homepage`）。
 
-workflow 会在 VPS 上生成这个 `docker-compose.yml`（`<sha>` 为当次提交短 SHA）：
+VPS 上生成的 `docker-compose.yml`：
 
 ```yaml
 services:
-  wotb:
-    image: a158coke/wotbtool:sha-<sha>
-    container_name: wotb
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: wotb
+      POSTGRES_USER: wotb
+      POSTGRES_PASSWORD: wotb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+  wotb-backend:
+    image: a158coke/wotbtool:backend-<sha>
+    depends_on:
+      - postgres
+    environment:
+      SPRING_PROFILES_ACTIVE: postgres
+      POSTGRES_HOST: postgres
+      POSTGRES_PASSWORD: wotb
+    restart: unless-stopped
+  wotb-frontend:
+    image: a158coke/wotbtool:frontend-<sha>
     ports:
       - "8088:80"
+    depends_on:
+      - wotb-backend
     restart: unless-stopped
+volumes:
+  postgres_data:
 ```
 
-> 镜像只有**一套**：根 `Dockerfile` + `deploy/nginx.conf`（nginx 反代同容器内 `localhost:8087`）。CI/CD 构建它推 Docker Hub；本地 `java/online/docker-compose.yml` 用 `docker compose up --build` 构建运行**同一个** Dockerfile，不再各自维护 nginx 配置。
+> 本地 `java/online/docker-compose.yml` 用相同结构（`docker compose up --build`），构建 `Dockerfile.backend` + `Dockerfile.frontend`。nginx 反代 `/api → wotb-backend:8087`（Compose 内部 DNS）。
 
 ## 给 AI coder 的工作准则
 

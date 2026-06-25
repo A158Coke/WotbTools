@@ -1,7 +1,6 @@
 # wotb-sync — 改动检查单 (工具无关)
 
 > 本文件是**工具无关**的改动 playbook,供任意 AI coder / 人类贡献者使用。
-> Claude Code 用户可通过技能 `.claude/skills/wotb-sync/` 调用它;其它工具直接读本文件即可。
 > 背景与数据格式见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md),硬性约定见 [../AGENTS.md](../AGENTS.md)。
 
 本项目同一份数据要经过**多层多语言**呈现,所以一处改动常需多处同步。下面按"改什么"给出最小步骤。
@@ -63,7 +62,7 @@
 1. 编辑 `common/map_names.json`(key 用 `meta.json` 里的原始 `mapName`,全小写)。
 2. 无需改代码:导出端 `MapNames.cn()`(已在 `SingleBattleSheets`/`AggregateSheets` 接入)读 classpath 的副本;前端 `App.vue` `import` 同一份 JSON 经 `mapLabel()` 显示。
 3. 新增 key 别忘了让 `wotb-core/pom.xml` 的 `<includes>` 仍含 `map_names.json`(已含)。
-4. **docker 部署**:根 `Dockerfile`(单镜像,CI/CD 与本地 compose 共用)构建上下文是仓库根,已 `COPY common/map_names.json` 到后端 classpath 与前端构建处(`/app/common/`,因 `App.vue` 跨目录 import 该 JSON,镜像内保持 `java/frontend` 与 `common` 的相对结构)。若以后前端再 import 新的 `common/*.json`,记得在 `Dockerfile` 的前端阶段加对应 `COPY`。
+4. **docker 部署**：`Dockerfile.backend` 已 `COPY common/map_names.json` 到后端 classpath；`Dockerfile.frontend` 已 `COPY common/map_names.json /common/` 供前端 import。若以后前端再 import 新 `common/*.json`，在 `Dockerfile.frontend` 加对应 `COPY`。
 5. 验证(改前端要 `npm run build`,Java 改了才需 `mvn test`;改 docker 用 `docker compose up --build` 重建)+ 文档。
 
 > 未匹配的地图名原样显示(英文内部名),不会报错。API 始终回原始英文 `mapName`,中文只在前端/导出两个出口呈现。
