@@ -1,4 +1,4 @@
-# WoTBTools
+﻿# WoTBTools
 
 《坦克世界闪击战》（World of Tanks Blitz）工具集。
 
@@ -10,7 +10,7 @@
 
 | 目标          | 技术方向                                           | 状态            |
 |-------------|------------------------------------------------|---------------|
-| Java 离线 exe | Java 21 + Spring Boot 4 + 内置 Vue UI + jpackage | ✅ 已完成         |
+| Java 离线版 | Docker Desktop + 拉取镜像 | ✅ 已完成         |
 | Web 版       | Spring Boot 4 + Vue 3 + PostgreSQL + Docker | ✅ 已完成         |
 
 在线演示：https://replay.wotbtools.com
@@ -22,14 +22,14 @@
 
 | 版本          | 技术栈                                        | 入口                                                   | 适用场景                     |
 |-------------|--------------------------------------------|------------------------------------------------------|--------------------------|
-| Java 离线 exe | Java 21 + Spring Boot 4 + Vue 3 + jpackage | `java\offline\dist-desktop\WoT Blitz Replay Extractor\*.exe` | 双击运行、本地浏览器 UI、离线导出       |
-| Java Web 版  | Java 21 + Spring Boot 4 + Vue 3 + Docker   | `java/`（`java\online\` 本地开发；CI/CD→ `a158coke/wotbtool` 镜像） | 浏览器上传、在线预览、REST API、容器部署 |
+| Java 离线版 | Docker Desktop + pull 镜像 | `java\offline\start.bat` | 双击启动、拉镜像、本地浏览器 UI、离线导出       |
+| Java Web 版  | Java 21 + Spring Boot 4 + Vue 3 + Docker | `java/`（`java\online\` 本地开发；CI/CD→ `a158coke/wotbtool` 镜像） | 浏览器上传、在线预览、REST API、容器部署 |
 
 文档入口：
 
 - 本文件：项目概览、Java 版使用与构建。
 - [HANDOVER.md](HANDOVER.md)：**交接 / AI 工具迁移总入口**（环境坑、CI/CD、部署、约定一站式）。
-- [java/README.md](java/README.md)：Java / Web 版运行、接口、部署、离线 exe 构建。
+- [java/README.md](java/README.md)：Java / Web 版运行、接口、部署、离线版分发。
 - [CHANGELOG.md](CHANGELOG.md)：版本历史（对外）。
 - [TODO.md](TODO.md)：待办事项。
 - [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)：维护上下文、架构、回放格式、i18n、测试策略。
@@ -47,15 +47,16 @@
 - 自包含表现**评分**：按车型基准归一化（类 WN8，1000=同型平均），单场「评分」、汇总「场均评分」。
 - GUI 支持选择文件或文件夹、预览数据、合并汇总或逐场导出。
 - Java / Web 版提供 `/api/preview`、`/api/export`、`/api/columns`、`/api/health`、`/api/shutdown`。
-- Java 离线 exe：双击运行，自动打开浏览器，无需 Python 或 JDK。
+- Java 离线版：双击 `start.bat`，拉取 Docker 镜像，自动打开浏览器，无需源码或 JDK。
 
-## 快速使用：Java 离线 exe
+## 快速使用：离线版
 
-```bat
-java\offline\dist-desktop\WoT Blitz Replay Extractor\WoT Blitz Replay Extractor.exe
-```
+需提前安装 Docker Desktop。
 
-无需安装 JDK 或 Node.js，双击即可运行。自动打开浏览器，UI 与 Web 版一致，提供文件选择、预览、导出功能。
+- Windows：双击 `java\offline\start.bat`
+- macOS / Linux：终端运行 `offline/start.sh`
+
+脚本自动检测系统 → 检查 Docker → 拉镜像 → 启动 → 打开浏览器 `http://localhost:8088`。首次需联网拉取镜像，后续离线可用。停止：`docker compose -f offline/docker-compose.yml down`。
 
 ## 从源码运行与构建
 
@@ -72,19 +73,14 @@ java -jar wotb-web\target\wotb-web.jar
 
 > Windows 环境默认 `java` 可能是 JDK 8。执行 Maven 前请先把 `JAVA_HOME` 指向 JDK 21。
 
-构建离线 exe：
+### 离线版（用户分发，需 Docker Desktop）
 
 ```bat
 cd java\offline
-build-desktop.bat
+start.bat
 ```
 
-> 脚本会自动检测或下载 JDK 21、Maven、Node.js 到 `java/offline/tools/`，宿主机无需预先安装。
-> 可加 `--no-download` 禁止自动下载（仅用 PATH 已有工具）。
-
-输出：
-
-- `java\offline\dist-desktop\WoT Blitz Replay Extractor\WoT Blitz Replay Extractor.exe`
+脚本自动检测 Docker → `docker pull` 拉取 `a158coke/wotbtool:backend-latest` + `frontend-latest` → `docker compose up` 启动 → 打开浏览器 `http://localhost:8088`。
 
 详细说明见 [java/README.md](java/README.md)。
 
@@ -120,9 +116,9 @@ mvn -s settings.xml test
 | `java/`                       | Java 主线（共享核心 + Web + 离线打包）                   |
 | `java/wotb-core/`             | 共享核心库：解析、protobuf 解码、pickle 读取、汇总、POI 导出     |
 | `java/wotb-web/`              | 共享 Spring Boot 4 应用：REST API + 桌面模式入口       |
-| `java/frontend/`              | 共享 Vue 3 前端（单文件组件，无 router）                  |
-| `java/offline/`               | 离线版打包：`build-desktop.bat`（jpackage）         |
-| `java/online/`                | 联网版本地运行：`docker-compose.yml`（三容器：postgres + backend + frontend） |
+| `frontend/`              | 共享 Vue 3 前端（单文件组件，无 router）                  |
+| `offline/`               | 离线版分发：`start.bat` 一键拉镜像启动 |
+| `online/`                | 开发者本地：`docker compose up --build` 编译启动 |
 | `Dockerfile.backend` `Dockerfile.frontend` / `deploy/` / `.github/` | 分镜像构建 + nginx 配置 + CI/CD（push `main`→Docker Hub→VPS） |
 
 ## 数据来源与限制

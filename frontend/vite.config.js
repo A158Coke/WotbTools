@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     port: 5173,
     // 允许 dev server 读取仓库根的共享 JSON (common/map_names.json 等)。
-    fs: { allow: ['../..'] },
+    fs: { allow: ['..'] },
     proxy: {
       '/api': { target: 'http://localhost:8087', changeOrigin: true }
     }

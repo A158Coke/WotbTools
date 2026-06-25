@@ -44,7 +44,7 @@
                 <directory>src/main/resources</directory>
             </resource>
             <resource>
-                <directory>../frontend/dist</directory>
+                <directory>../../frontend/dist</directory>
                 <targetPath>static</targetPath>
                 <includes>
                     <include>**/*</include>

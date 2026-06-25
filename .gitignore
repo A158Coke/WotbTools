@@ -12,8 +12,8 @@ target/
 *.jar
 *.class
 
-java/frontend/node_modules/
-java/frontend/dist/
+frontend/node_modules/
+frontend/dist/
 java/.m2repo/
 java/settings.xml
 

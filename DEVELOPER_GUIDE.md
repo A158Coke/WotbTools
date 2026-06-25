@@ -1,4 +1,4 @@
-# Developer Guide for AI Maintainers
+﻿# Developer Guide for AI Maintainers
 
 本文档面向后续维护者和 AI coder。优先阅读本文件，再改解析、导出或 Web API。项目里已有中文注释，但部分终端可能按错误编码显示乱码；源码和文档应保持 UTF-8。
 
@@ -16,96 +16,57 @@
 
 ## 仓库结构
 
-仓库按"语言/形态"分层：`common/`(共享资源) + `common/python/`(车辆库更新脚本) + `java/`(Java 主线，其下再分共享模块与 `offline/`、`online/` 两种打包/部署)。
+仓库按"语言/形态"分层：`common/`(共享资源) + `common/python/`(车辆库更新脚本) + `java/`(Java 主线，其下再分共享模块与 `offline/`、`online/` 两种运行方式)。
 
 ```text
 .
-├── README.md  TODO.md  DEVELOPER_GUIDE.md  LICENSE  .gitignore
-├── Dockerfile.backend           # 后端镜像：Maven 编译 → JRE runtime（Spring Boot :8087）
-├── Dockerfile.frontend          # 前端镜像：Node 编译 Vue → nginx 托管（:80）
-├── .dockerignore               # 减少 Docker 构建上下文
-├── homepage/                   # 工具集主页（wotbtools.com，独立于 Vue SPA）
-│   └── index.html              #   暗色主题，卡片式入口
-├── deploy/nginx.conf           # 前端 nginx：双 server（主页 + Vue SPA 反代 /api→wotb-backend:8087）
+├── README.md  TODO.md  DEVELOPER_GUIDE.md  LICENSE  .gitignore  AGENTS.md  CHANGELOG.md  HANDOVER.md
+├── docker/                       # Docker 构建 + nginx 配置
+│   ├── Dockerfile.backend        #   后端镜像：Maven → JRE（Spring Boot :8087）
+│   ├── Dockerfile.frontend       #   前端镜像：Node → nginx（:80）
+│   └── nginx/                #   双 server（主页 + Vue SPA 反代 /api→wotb-backend:8087）
+├── .dockerignore                 # 减少 Docker 构建上下文
+├── offline/                      # 离线版分发（用户用）
+│   ├── start.bat                 #   Windows 一键启动
+│   ├── start.sh                  #   macOS/Linux 一键启动
+│   └── docker-compose.yml        #   用户版 compose（image: Docker Hub 标签）
+├── online/                       # 本地开发用
+│   └── docker-compose.yml        #   开发者版 compose（build: 源码编译）
+├── frontend/                     # Vue 3 前端
+│   ├── src/
+│   │   ├── App.vue               #   根组件
+│   │   ├── main.js               #   Vue 入口
+│   │   ├── composables/          #   组合式模块（useTheme / useReplay / useColumns）
+│   │   ├── utils/                #   工具层（api.js / theme.js / helpers.js）
+│   │   ├── components/           #   UI 组件
+│   │   └── locales/              #   三语（zh / en / ru）
+│   ├── index.html  package.json  vite.config.js  .npmrc
+├── homepage/                     # 工具集主页（wotbtools.com）
+│   └── index.html                #   暗色主题，卡片式入口
 ├── .github/
-│   └── workflows/deploy.yml    # GitHub Actions: 构建镜像 → 推送 Docker Hub → SSH 部署 VPS
-├── common/                     # 共享资源
-│   ├── tankopedia.json         # 车辆库单一来源
-│   ├── rating.json             # 评分可调参数单一来源
-│   ├── map_names.json          # 地图内部名→中文 单一来源（前端+导出共用）
-│   ├── assets/                 # 共享图标 icon.ico / icon.png
-│   └── data/                   # 示例回放（gitignore，本地测试夹具）
-├── common/python/              # 车辆库更新脚本
-│   └── update_tankopedia.py    # 更新车辆库 → 写 ../common/tankopedia.json
+│   └── workflows/deploy.yml      # CI/CD
+├── common/                       # 共享资源
+│   ├── tankopedia.json           #   车辆库
+│   ├── rating.json               #   评分参数
+│   ├── map_names.json            #   地图名
+│   ├── assets/                   #   图标
+│   └── data/                     #   示例回放（gitignore）
+├── common/python/                # 车辆库更新脚本
+│   └── update_tankopedia.py
 └── java/
     ├── README.md
-    ├── pom.xml                 # 父 POM：Spring Boot 4.1.0, Java 21
-    ├── settings.xml            # 本地 Maven 配置，独立仓库 .m2repo（Aliyun 镜像）
-    ├── settings-docker.xml     # 容器内 Maven 配置（仅 Aliyun 镜像）
-    ├── wotb-core/              # 【共享】Java 核心库
-    │   ├── pom.xml             #   构建时把 ../../common/tankopedia.json 复制到 classpath
-    │   ├── src/main/java/com/wotb/core/   # 按功能分包
-    │   │   ├── Columns.java         # 列定义（单数据源, export 与 API 共用的跨切契约）
-    │   │   ├── parse/               # 回放摄入：解析 + 去重
-    │   │   │   ├── ReplayParser.java    # 回放解析入口
-    │   │   │   ├── Protobuf.java        # protobuf wire decoder
-    │   │   │   ├── PickleReader.java    # Python pickle 读取
-    │   │   │   └── Replays.java         # 多回放去重收集
-    │   │   ├── ref/                 # 参考数据查表
-    │   │   │   ├── Tankopedia.java      # 车辆库
-    │   │   │   └── MapNames.java        # 地图内部名 → 中文（读 classpath map_names.json）
-    │   │   ├── stats/               # 解析后的派生 / 富化
-    │   │   │   ├── Players.java         # 玩家展示字段与排序
-    │   │   │   ├── Rating.java          # 表现评分
-    │   │   │   └── Aggregator.java      # 跨场汇总
-    │   │   ├── export/              # xlsx 输出
-    │   │   │   ├── ExcelExporter.java   # 导出门面（writeSingle/writeAggregate）
-    │   │   │   ├── ExcelStyles.java     # POI 渲染底座（样式 + 写格 + 值格式化）
-    │   │   │   ├── SingleBattleSheets.java  # 单场三表（战斗信息/玩家数据/原始字段）
-    │   │   │   └── AggregateSheets.java     # 汇总三表（汇总/明细/战斗列表）
-    │   │   └── model/               # 数据模型(每个一个文件)
-    │   │       ├── Battle.java  PlayerResult.java
-    │   │       ├── Agg.java           # 跨场汇总(原 Aggregator.Agg)
-    │   │       ├── TankInfo.java      # 车辆信息(原 Tankopedia.TankInfo)
-    │   │       ├── Source.java        # 待处理回放(原 Replays.Source)
-    │   │       └── Collected.java     # 去重结果(原 Replays.Collected)
-    │   └── src/test/java/com/wotb/core/ParityTest.java   # 读 ../../common/data
-    ├── wotb-web/              # 【共享】Spring Boot 应用（离线与联网都用它）
-    │   ├── src/main/java/com/wotb/web/
-    │   │   ├── WotbWebApplication.java  # 启动入口（含 --desktop 模式）
-    │   │   ├── controller/              # REST API（仅 HTTP 映射）
-    │   │   │   └── ReplayController.java
-    │   │   ├── service/                 # 业务层（与 HTTP 解耦）
-    │   │   │   └── ReplayService（解析/评分/映射/导出） / DesktopLifecycle（桌面判定/关机）
-    │   │   ├── mapper/                  # 核心模型 → DTO 映射
-    │   │   │   └── Mapper.java
-    │   │   └── dto/                     # API 响应 DTO(每个一个文件)
-    │   │       └── PlayerRow / BattleDto / AggRow / ColumnDef / PreviewResponse / ExportResult
-    │   └── src/test/java/com/wotb/web/WebApiTest.java
-    ├── frontend/             # 【共享】Vue 3 前端（单文件组件，无 router）
-    │   ├── src/
-    │   │   ├── App.vue              # 根组件（tab 导航 + 编排层）
-    │   │   ├── main.js              # Vue 入口
-    │   │   ├── composables/         # 组合式模块（useTheme / useReplay / useColumns）
-    │   │   ├── utils/               # 工具层（api.js / theme.js / helpers.js）
-    │   │   ├── components/          # UI 组件（FileUploader / ColumnPicker / *_Table 等）
-    │   │   └── locales/             # 三语（zh / en / ru）
-    │   ├── index.html  package.json  vite.config.js  .npmrc
-    ├── offline/              # 离线版打包
-    │   ├── build-desktop.bat     # 入口（调用 .ps1；兼容双击）
-    │   └── build-desktop.ps1    # 主脚本：自动检测/下载工具 → 构建 → jpackage
-    └── online/               # 联网版本地运行
-        └── docker-compose.yml    # 三容器：postgres + wotb-backend + wotb-frontend（context=仓库根）
-```
-
-> 关键：离线版与联网版**复用同一套源码**（`wotb-core` + `wotb-web` + `frontend`）。`offline/` 与 `online/` 只放打包/部署文件，**不要把共享逻辑复制进去**。
+    ├── pom.xml                   # 父 POM
+    ├── settings.xml / settings-docker.xml
+    ├── wotb-core/                # 核心库
+    │   └── ...
+    └── wotb-web/                 # Spring Boot 应用
+        └── ...
 
 生成物和依赖目录通常不应手工维护，也已 gitignore：
 
 - `java/**/target/`
-- `java/frontend/node_modules/`、`java/frontend/dist/`
+- `frontend/node_modules/`、`frontend/dist/`
 - `java/.m2repo/`
-- `java/offline/dist-desktop/`
 - `common/data/`（本地样本）
 
 ## 回放格式
@@ -190,16 +151,16 @@ BattleResults
 | `Mapper`             | `wotb-web/.../Mapper.java`             | 核心模型 → DTO                           |
 | `WotbWebApplication` | `wotb-web/.../WotbWebApplication.java` | Spring Boot 入口                          |
 
-### 桌面模式 (离线 exe)
+### 离线版（用户分发）
 
-离线 exe 的实现方案是"本地 Spring Boot + 内置 Vue 静态资源 + jpackage"：
+离线版不依赖源码、JDK 或 Node.js。用户只需安装 Docker Desktop，运行 `offline/start.bat`：
 
-1. Vue 前端构建产物被打入 Spring Boot JAR 的 `classpath:/static/` 目录。
-2. `WotbWebApplication` 检测 `--desktop` 参数后：
-   - 选择 8087+ 的可用端口。
-   - 绑定 `127.0.0.1`（仅本地访问）。
-   - 启动后自动打开默认浏览器。
-3. `build-desktop.bat` 执行：前端构建 → Maven 打包 → jpackage 生成 app image。
+1. 检测 Docker 是否安装并运行。
+2. `docker pull a158coke/wotbtool:backend-latest` + `frontend-latest`。
+3. `docker compose up -d` 启动 postgres + backend + frontend 三容器。
+4. 自动打开浏览器 `http://localhost:8088`。
+
+> 离线版与服务器版功能一致（回放提取 + 排行榜上传查询），区别仅在于数据存本地 PostgreSQL 容器。`offline/docker-compose.yml` 使用 Docker Hub `image:` 标签；`online/docker-compose.yml` 使用 `build:` 从源码编译。离线版**不**提供排行榜功能——排行榜仅在线版（`postgres` profile）。
 
 ### 前端
 
@@ -218,7 +179,7 @@ BattleResults
 
 API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + 数据，**不含中文**。显示名由各输出通道**各自映射**：
 
-- 前端：`vue-i18n` 三语 locale `java/frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`（两套 key，因 `kills` 在单场=「击杀」、汇总=「总击杀」，同 key 不同义），模板用 `$t('player_labels.' + key)` 渲染，语言可切换、`localStorage` 记忆（`wotb-lang`）。
+- 前端：`vue-i18n` 三语 locale `frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`（两套 key，因 `kills` 在单场=「击杀」、汇总=「总击杀」，同 key 不同义），模板用 `$t('player_labels.' + key)` 渲染，语言可切换、`localStorage` 记忆（`wotb-lang`）。
 - 导出层：`Columns.java`（单场 xlsx 表头）、`AggregateSheets.java` 的汇总列（导出仅中文）。
 
 > 这是有意的取舍：API 干净、可多语言，但显示名存在多份（前端三语 locale + 导出）。**改/增任一列名，务必同步三语 locale 的两套 key（缺 key 会回退 `en`，再缺则显示原始 key）与导出标签。**
@@ -287,7 +248,7 @@ mvn -s settings.xml test
 前端构建：
 
 ```bash
-cd java/frontend
+cd frontend
 npm run build
 ```
 
@@ -368,7 +329,7 @@ volumes:
   postgres_data:
 ```
 
-> 本地 `java/online/docker-compose.yml` 用相同结构（`docker compose up --build`），构建 `Dockerfile.backend` + `Dockerfile.frontend`。nginx 反代 `/api → wotb-backend:8087`（Compose 内部 DNS）。
+> 本地 `online/docker-compose.yml` 用 `build:` 从源码编译；用户版 `offline/docker-compose.yml` 用 `image:` 拉 Docker Hub 镜像。
 
 ## 给 AI coder 的工作准则
 

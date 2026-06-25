@@ -1,4 +1,4 @@
-# WoT Blitz Replay Data Extractor - Java 主线
+﻿# WoT Blitz Replay Data Extractor - Java 主线
 
 `java/` 是项目后续主线。基于同一套 Java 核心能力同时交付两种形态：
 
@@ -9,58 +9,36 @@
 
 ## 模块
 
-离线版与联网版**共用同一套源码**（`wotb-core` + `wotb-web` + `frontend`），区别只在打包/部署方式，分别放在 `offline/` 与 `online/`。
+离线版与联网版**共用同一套源码**（`wotb-core` + `wotb-web` + `frontend`），区别只在分发方式：离线版拉 Docker Hub 镜像，在线版从源码编译。
 
 | 模块/目录       | 共享? | 说明                                                           |
 |-------------|------|--------------------------------------------------------------|
 | `wotb-core` | 共享 | 核心库：解压回放、读取 pickle、解码 protobuf、车辆库映射、去重汇总、POI 导出 xlsx        |
 | `wotb-web`  | 共享 | Spring Boot 4 REST API + 桌面模式入口，监听 `8087`（Web 模式）或自动端口（桌面模式） |
 | `frontend`  | 共享 | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
-| `offline/`  | 离线 | `build-desktop.bat`（前端构建 → Maven 打包 → jpackage），产物 `offline/dist-desktop/` |
-| `online/`   | 联网 | `docker-compose.yml`：本地构建运行三容器（postgres + backend + frontend） |
+| `offline/`  | 离线 | `start.bat`（检测 Docker → pull 镜像 → compose up），用户零源码依赖 |
+| `online/`   | 联网 | `docker-compose.yml`：`build:` 从源码编译运行三容器（postgres + backend + frontend） |
 
 > 车辆库 `common/tankopedia.json`（仓库根的共享目录）在 `wotb-core` 构建时自动复制到 classpath，无需在模块内再放一份。
 
-## 离线 exe（桌面模式）
+## 离线版（用户分发）
 
-离线 exe 采用"本地 Spring Boot + 内置 Vue 静态资源 + jpackage"方案：
+离线版不需要源码、JDK 或 Node.js。用户只需安装 Docker Desktop，运行启动脚本：
 
-1. Vue 前端构建产物（`frontend/dist/`）在 Maven 构建时自动复制到 JAR 的 `classpath:/static/`。
-2. 启动时检测 `--desktop` 参数，自动选择可用端口、绑定 `127.0.0.1`、打开默认浏览器。
-3. 前端通过 `/api/health` 的 `desktop` 字段识别桌面模式，显示"关闭离线程序"按钮。
-4. `POST /api/shutdown` 优雅关闭服务并退出 JVM（仅桌面模式可用）。
-
-### 构建
-
-脚本会自动检测：`tools/` 便携工具 → `%USERPROFILE%\.jdks\jdk-21*` → 系统 PATH。全都没有则**自动下载**到 `java\offline\tools\`，宿主机只需联网，无需预装任何工具。
-
-```bash
-cd java\offline
-build-desktop.bat
-```
-
-> **首次运行**会下载 JDK 21、Maven、Node.js 到 `tools/`（~200MB），缓存后后续离线也可构建。
->
-> 用 `--no-download` 禁止自动下载（仅用已有工具或 PATH）。
->
-> **注意：构建产物 `dist-desktop/` 不在仓库里**（已 gitignore）。新克隆的人按上面自行构建，或用他人打包的 `WoT Blitz Replay Extractor` 文件夹。
-
-输出：
-
-```
-java/offline/dist-desktop/WoT Blitz Replay Extractor/
-  ├── WoT Blitz Replay Extractor.exe
-  ├── app/
-  └── runtime/
-```
-
-### 运行
+- **Windows**：双击 `start.bat`
+- **macOS / Linux**：终端运行 `./start.sh`
 
 ```bat
-offline\dist-desktop\WoT Blitz Replay Extractor\WoT Blitz Replay Extractor.exe
+# Windows
+cd java\offline
+start.bat
+
+# macOS / Linux
+cd offline
+chmod +x start.sh && ./start.sh
 ```
 
-双击即可，无需 JDK 或 Node.js。首次启动可能略慢（JVM 启动）。
+> 镜像从 Docker Hub 拉取，首次需联网。后续离线可用（镜像已缓存）。停止用 `docker compose down`，更新用 `docker compose pull && docker compose up -d`。离线版不提供排行榜功能。
 
 ## Web 版（Docker + PostgreSQL）
 
@@ -71,7 +49,7 @@ docker compose up --build
 
 访问 http://localhost:8088 （健康检查 `http://localhost:8088/api/health`）。
 
-`java/online/docker-compose.yml` 启动**三容器**（`postgres:18` + `wotb-backend` + `wotb-frontend`），分别构建 `Dockerfile.backend` 和 `Dockerfile.frontend`。nginx 托管 Vue + 反代 `/api → wotb-backend:8087`，后端通过 `SPRING_PROFILES_ACTIVE: postgres` 连接 PostgreSQL。
+`online/docker-compose.yml` 启动**三容器**（`postgres:18` + `wotb-backend` + `wotb-frontend`），分别构建 `Dockerfile.backend` 和 `Dockerfile.frontend`。nginx 托管 Vue + 反代 `/api → wotb-backend:8087`，后端通过 `SPRING_PROFILES_ACTIVE: postgres` 连接 PostgreSQL。
 
 ### CI/CD 自动部署
 
@@ -97,7 +75,7 @@ java -jar wotb-web/target/wotb-web.jar
 前端：
 
 ```bash
-cd java/frontend
+cd frontend
 npm install
 npm run dev
 ```
