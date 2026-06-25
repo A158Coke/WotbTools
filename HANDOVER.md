@@ -58,7 +58,7 @@
 - **JDK 21 必需，且系统默认 `java` 可能是 JDK 8。** 跑任何 Maven 命令前必须先设：
   - bash: `JAVA_HOME="/c/Users/<user>/.jdks/jdk-21.0.1"`（本机实测路径，**不是** `C:\Program Files\Java`）
   - cmd: `set JAVA_HOME=%USERPROFILE%\.jdks\jdk-21.0.1`
-- **Maven 必须带 `-s java/settings.xml`**（Aliyun 镜像 + 独立本地仓库 `java/.m2repo`，避免污染/依赖用户全局 Maven）。容器内用 `java/settings-docker.xml`。
+- **Maven 必须带 `-s java/settings.xml`**（aliyun 镜像 + 独立本地仓库 `java/.m2repo`，避免污染/依赖用户全局 Maven）。容器内用 `java/settings-docker.xml`。
 - **Node**：前端 `java/frontend`，开发端口 5173，构建用 `npm run build`。
 - **Python 3 + Pillow**：仅用于 `common/python/update_tankopedia.py`（更新车辆库，需联网）和偶尔的图像处理。
 
