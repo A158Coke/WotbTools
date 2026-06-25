@@ -173,19 +173,23 @@ EventStream → Type 8 sub_type 48 (updateArena2)
   → Map<Integer, Long> entityToAccount
 ```
 
-## 死亡时间推算（4 层 fallback）
+## 死亡时间推算（3 层 fallback + 假阳性检测）
 
 ```
 survivalTimeSec:
   if survived → battleDuration (meta.json)
   else:
-    1. deathTimeMillis / 1000  (proto #104, v11.18 实际不存在)
+    1. deathTimeMillis / 1000  (proto #104; v11.18 实测不存在)
     2. damageDeathTimes         (Type 8 sub_type 8, sub=3 累计 HP 伤害达 threshold)
-    3. entityLeaveDeathTimes    (Type 4 EntityLeave + updateArena2 映射)
-    4. positionDeathTimes       (Type 10 Position + updateArena2 映射, 坐标停止≈阵亡)
+    3. hybrid EntityLeave / Position:
+       a) EntityLeave > 0 且 Position > 0 且 Position > EntityLeave + 5s → Position
+       b) EntityLeave > 0 → EntityLeave
+       c) 否则 → Position
 ```
 
 **Layer 2 (damageDeathTimes)：** 遍历 Type 8 subtype 8 body[13]=3 (direct HP damage) 事件，按时间累计 victimEid→accountId 的 HP 伤害量。threshold = min(proto.damageReceived, sub3_total) — 当累计值首次 ≥ threshold 时，该事件时钟即为死亡时间。解决旧 EntityLeave 假阳性（临时离场而非阵亡）和 Position 在部分模式中实体不停止的问题。
+
+**Layer 3 假阳性检测：** EntityLeave 常有临时离场事件被误判为阵亡。若同玩家有 EntityLeave 和 Position 数据，且最后 Position 时间比最后 EntityLeave 晚 5 秒以上，以 Position 为准。
 
 ---
 
@@ -308,7 +312,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | **#120** | — | varint | — | `2` / `3` | 未知 — 部分存活玩家有 | 否 |
 | **#122** | — | sub_msg | — | `{#5:5}` | 未知 — 单字段子消息 | 否 |
 
-> **⚠️ 字段 #104 现状：** 在 v11.18 sample 回放的 `PlayerResultInfo` 中 **实际不存在**（protobuf 字节级确认无 #104 标签）。`Protobuf.firstLong(…,0)` 返回默认值 `0`，导致阵亡玩家的 `deathTimeMillis = 0`，进而 `survivalTimeSec = 0`。此字段可能在新版本回放中存在，或存储在 `#150` blob 内。
+> **⚠️ 字段 #104 现状：** 在 v11.18 sample 回放的 `PlayerResultInfo` 中 **实际不存在**（protobuf 字节级确认无 #104 标签）。`Protobuf.firstLong(…,0)` 返回默认值 `0`，因此 fallback 自动落到第 2 层（Damage）。此字段可能在新版本回放中存在，代码保持兼容。
 
 ### 字段 #106 说明
 
@@ -416,7 +420,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `damage_assisted` | 整数 | `PlayerResult.damageAssisted` | HP | #9 + #10 |
 | `damage_received` | 整数 | `PlayerResult.damageReceived` | HP | #11 |
 | `damage_blocked` | 整数 | `PlayerResult.damageBlocked` | HP | #117 |
-| `survival_time` | 浮点数 | `PlayerResult.survivalTimeSec` | 秒 | 存活者=durationS，阵亡者=#104>Damage>EntityLeave>Position |
+| `survival_time` | 浮点数 | `PlayerResult.survivalTimeSec` | 秒 | 存活者=durationS，阵亡者=#104>Damage>hybrid EntityLeave/Position |
 | `n_shots` | 整数 | `PlayerResult.nShots` | 次数 | #4 |
 | `n_hits_dealt` | 整数 | `PlayerResult.nHitsDealt` | 次数 | #5 |
 | `n_penetrations_dealt` | 整数 | `PlayerResult.nPenetrationsDealt` | 次数 | #7 |
@@ -436,22 +440,25 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `battles` | 整数 | Sum | 场次 |
 | `wins` | 整数 | Sum（team==winnerTeam） | 场次 |
 | `win_rate` | 浮点数 | `wins/battles * 100` | % |
-| `survived` | 整数 | Sum（survived==true） | 场次 |
 | `survival_rate` | 浮点数 | `survived/battles * 100` | % |
 | `survival_avg` | 浮点数 | `survivalSum/battles` | 秒 |
+| `rating_avg` | 浮点数 | `ratingSum/battles` | 评分/场 |
+| `kills` | 整数 | Sum | 人数 |
 | `kills_avg` | 浮点数 | `kills/battles` | 人数/场 |
+| `damage` | 整数 | Sum | HP |
 | `damage_avg` | 浮点数 | `damage/battles` | HP/场 |
+| `assisted` | 整数 | Sum | HP |
 | `assisted_avg` | 浮点数 | `assisted/battles` | HP/场 |
 | `received_avg` | 浮点数 | `received/battles` | HP/场 |
 | `blocked_avg` | 浮点数 | `blocked/battles` | HP/场 |
-| `shots_avg` | 浮点数 | `shots/battles` | 次数/场 |
-| `hits_avg` | 浮点数 | `hits/battles` | 次数/场 |
-| `pens_avg` | 浮点数 | `pens/battles` | 次数/场 |
 | `hit_rate` | 浮点数 | `hits/shots * 100` | % |
 | `pen_rate` | 浮点数 | `pens/shots * 100` | % |
+| `shots` | 整数 | Sum | 次数 |
+| `hits` | 整数 | Sum | 次数 |
+| `pens` | 整数 | Sum | 次数 |
 | `enemies_damaged_avg` | 浮点数 | `enemiesDamaged/battles` | 人数/场 |
-| `rating_avg` | 浮点数 | `ratingSum/battles` | 评分/场 |
 | `tanks` | 文本 | `Map<车辆名, 场次>` | — |
+| `account_id` | 长整数 | — | — |
 
 ---
 
@@ -460,7 +467,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | 含义 | 单位 | 说明 |
 |------|------|------|
 | 伤害值 | **HP** | 游戏内生命值点数 |
-| 存活时间 | **秒** | 4 层 fallback（#104→Damage→EntityLeave→Position） |
+| 存活时间 | **秒** | 3 层 fallback（#104→Damage→hybrid EntityLeave/Position） |
 | 战斗时长 | **秒** | `meta.json#battleDuration`（浮点） |
 | 时间戳 | **Unix 秒** | 自 1970-01-01 起的秒数 |
 | 次数/计数 | **次** | 射击/命中/击杀/人数 |
@@ -477,22 +484,21 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 
 字段 #104（`F_DEATH_TIME`）在 v11.18 sample 回放的 `PlayerResultInfo`（#301→#2）中 **实际不存在**。
 
-当前 4 层 fallback 方案：
+当前 fallback 方案：
 
 | 层级 | 来源 | 适用场景 | 精度 |
 |------|------|----------|------|
 | 1 | proto #104 | 新版本回放（含此字段） | 精确 ms |
 | 2 | Damage (Type 8 sub 8 sub=3) | 所有受到直接 HP 伤害的阵亡玩家 | 秒级（伤害事件间隔） |
-| 3 | EntityLeave (Type 4) | 部分实体有 leave 事件 | 秒级 |
-| 4 | Position (Type 10) | 坐标更新停止 ≈ 阵亡 | 秒级（坐标间隔约 0.01s） |
+| 3 | EntityLeave / Position (hybrid) | EntityLeave 有假阳性时以 Position 为准 | 秒级 |
 
-Layer 2 为 **2025-06 新增**，解决了旧方法的两个缺陷：
+Layer 2 为 **2026-06 新增**，解决了旧方法的两个缺陷：
 - EntityLeave 假阳性（实体临时离场被误判为阵亡）
 - Position 在一些模式里实体坐标持续更新至战斗结束（spectator 实体，阵亡不停止）
 
-**EntityLeave 限制：** EntityLeave（type 4）并非所有阵亡玩家都触发——约 30-50% 的死亡对应的实体不产生 leave 事件。需要 entity_id↔account_id 映射（来自 method 48 updateArena2 protobuf）。某些实体会多次 leave/enter，取最后一次 keep。部分 leave 是**假阳性**（临时离场而非阵亡），此时通过 Position 数据识别：若 Position 最后时间显著晚于 EntityLeave（>5s），以 Position为准。
+**EntityLeave 限制：** EntityLeave（type 4）并非所有阵亡玩家都触发——约 30-50% 的死亡对应的实体不产生 leave 事件。需要 entity_id↔account_id 映射（来自 method 48 updateArena2 protobuf）。某些实体会多次 leave/enter，取最后一次 keep。部分 leave 是**假阳性**（临时离场而非阵亡），通过 Position 识别：若 Position 最后时间显著晚于 EntityLeave（>5s），以 Position 为准。
 
-**Position 补充：** Position（type 10）覆盖大多数玩家实体，是比 EntityLeave 更可靠的死亡指标。阵亡后实体停止发送坐标更新。与 EntityLeave 互补使用基本覆盖全部阵亡玩家。少数实体（非载具实体如玩家化身）无 Position 数据，但通常有 EntityLeave。
+**Position 补充：** Position（type 10）覆盖大多数玩家实体，是比 EntityLeave 更可靠的死亡指标。阵亡后实体停止发送坐标更新。Damage 层已在第 2 层优先处理，EntityLeave/Position 仅作为第 3 层兜底。
 
 ### 2. 战斗时长上限
 

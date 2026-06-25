@@ -21,12 +21,10 @@
 
 - [ ] 给 `wotb-core` 增加更明确的 parity 测试说明：字段不变量与导出格式一致性。
 - [x] 车辆库同步：已统一为单一来源 `common/tankopedia.json`，`wotb-core` 构建时自动复制到 classpath。
-- [x] **存活时间(survivalTimeSec)推算已改善。** 新增第 4 层 fallback（Damage，优先于 EntityLeave/Position）：
-  - Type 8 EntityMethod subtype 8 body[13]=3（直接 HP 伤害）的 25B 事件中，body[14:16] 为 BE u16 伤害值；
-  - 按时间顺序累计 victimEid→accountId 的 HP 伤害，当累计值 ≥ min(damageReceived, sub3_total) 时记录阵亡时刻；
-  - 解决 EntityLeave 假阳性（临时离场）和 Position 在部分模式实体不停止的问题；
-  - 留 EntityLeave/Position 作为最后兜底。
-  - 已知局限：sub3 可能不覆盖全部受伤（火烧/撞击伤害走不同 subtype），此时取最后一次 sub3 事件时间为近似阵亡时刻。
+- [x] **存活时间(survivalTimeSec)推算已改善。** 新增 Damage 层 fallback（Type 8 sub=3事件，优先于 EntityLeave/Position）：
+  - 3 层 fallback：deathTimeMillis → Damage (sub=3 累计) → hybrid EntityLeave/Position
+  - 解决 EntityLeave 假阳性（临时离场）和 Position 在部分模式实体不停止的问题
+  - 已知局限：sub=3 可能不覆盖全部受伤（火烧/撞击伤害走不同 subtype）
 
 ## P1：Web 版完善
 
