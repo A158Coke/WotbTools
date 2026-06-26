@@ -84,17 +84,12 @@ function rankClass(i) {
       <div class="brand">
         <span class="logo">W</span>
         <div class="brandtext">
-          <h1>{{ $t('app.title') }}</h1>
-          <p class="subtitle">{{ $t('app.subtitle') }}</p>
+          <h1>{{ $t('leaderboard.title') }}</h1>
+          <p class="subtitle">{{ $t('leaderboard.subtitle') }}</p>
         </div>
       </div>
       <button class="ghost" @click="$emit('back')">← {{ $t('leaderboard.back') }}</button>
     </header>
-
-    <div class="lb-head">
-      <h2 class="lb-title">{{ $t('leaderboard.title') }}</h2>
-      <p class="subtitle">{{ $t('leaderboard.subtitle') }}</p>
-    </div>
 
     <section class="lb-upload-section"
              @dragover.prevent="dragging = true"
@@ -158,9 +153,6 @@ function rankClass(i) {
 
 <style scoped>
 .lb-wrap { max-width: 900px; margin: 0 auto; padding: 16px 20px; }
-.lb-head { margin-top: 18px; }
-.lb-title { font-size: 17px; font-weight: 600; color: var(--text-heading); margin: 0; }
-.subtitle { font-size: 12px; color: var(--text-sub); margin: 4px 0 0; }
 .lb-toolbar { display: flex; align-items: center; gap: 12px; margin: 14px 0 10px; flex-wrap: wrap; }
 .lb-limit { font-size: 13px; color: var(--text-label); display: inline-flex; align-items: center; gap: 6px; }
 .lb-limit select { appearance: none; -webkit-appearance: none; border: 1px solid var(--border-ghost);
