@@ -16,6 +16,9 @@ frontend/node_modules/
 frontend/dist/
 java/.m2repo/
 java/settings.xml
+# 误用未替换的 settings.xml 模板(localRepository=@LOCAL_REPO@)时 Maven 会在 cwd 建此目录
+@LOCAL_REPO@/
+java/@LOCAL_REPO@/
 
 node_modules/
 .env
