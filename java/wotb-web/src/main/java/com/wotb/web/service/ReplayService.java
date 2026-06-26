@@ -16,6 +16,7 @@ import com.wotb.web.dto.BattleDto;
 import com.wotb.web.dto.ColumnDef;
 import com.wotb.web.dto.ExportResult;
 import com.wotb.web.dto.PreviewResponse;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -39,6 +40,13 @@ public class ReplayService {
 
     private final Tankopedia tankopedia = Tankopedia.load();
 
+    /** 排行榜服务: 仅 postgres profile 存在; 离线/dev 时为空, preview/export 照常工作。 */
+    private final ObjectProvider<LeaderboardService> leaderboardProvider;
+
+    public ReplayService(final ObjectProvider<LeaderboardService> leaderboardProvider) {
+        this.leaderboardProvider = leaderboardProvider;
+    }
+
     /** 列定义 (前端构建表头/列选择/排序)。 */
     public Map<String, List<ColumnDef>> columns() {
         return Map.of(
@@ -60,6 +68,8 @@ public class ReplayService {
     public PreviewResponse preview(final MultipartFile[] files) throws Exception {
         final Collected c = Replays.collect(toSources(files), null);
         Rating.compute(c.battles, tankopedia);   // 基准=本次上传集合
+
+        recordLeaderboard(c.battles);
 
         final List<BattleDto> battles = new ArrayList<>();
         for (int i = 0; i < c.battles.size(); i++) {
@@ -136,6 +146,24 @@ public class ReplayService {
             final String candidate = base + "-" + i + ext;
             if (usedNames.add(candidate)) {
                 return candidate;
+            }
+        }
+    }
+
+    /**
+     * best-effort 写入排行榜 (仅录像者本人)。无数据库 (离线/dev) 时 provider 为空, 直接跳过;
+     * 任何写入异常都不得影响预览主流程。
+     */
+    private void recordLeaderboard(final List<Battle> battles) {
+        final LeaderboardService leaderboard = leaderboardProvider.getIfAvailable();
+        if (leaderboard == null) {
+            return;
+        }
+        for (final Battle battle : battles) {
+            try {
+                leaderboard.recordRecorder(battle, tankopedia);
+            } catch (final Exception ignored) {
+                // 排行榜写入失败不影响预览。
             }
         }
     }

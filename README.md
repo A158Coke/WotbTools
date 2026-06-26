@@ -46,7 +46,8 @@
 - 存活时间列：基于伤害事件的秒级估算。
 - 自包含表现**评分**：按车型基准归一化（类 WN8，1000=同型平均），单场「评分」、汇总「场均评分」。
 - GUI 支持选择文件或文件夹、预览数据、合并汇总或逐场导出。
-- Java / Web 版提供 `/api/preview`、`/api/export`、`/api/columns`、`/api/health`、`/api/shutdown`。
+- Java / Web 版提供 `/api/preview`、`/api/export`、`/api/columns`、`/api/rating`、`/api/health`、`/api/shutdown`。
+- 排行榜（仅在线版 `postgres` profile）：上传随机战斗回放自动记录录像者单场伤害，`/api/leaderboard/top-damage` 等端点查询。
 - Java 离线版：双击 `start.bat`，拉取 Docker 镜像，自动打开浏览器，无需源码或 JDK。
 
 ## 快速使用：离线版

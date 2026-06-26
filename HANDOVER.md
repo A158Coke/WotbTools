@@ -143,9 +143,10 @@ cd offline && start.bat                      # 检测 Docker → pull → compos
 - **回放格式**：zip 包含 3 个文件 —— `meta.json`（战斗信息）+ `battle_results.dat`（pickle + protobuf 战绩）+ `data.wotreplay`（BigWorld 事件流，用于存活时间推算）。字段表见 `docs/replay-data.md`。**不要轻易重命名/删字段**，新字段先进「原始字段」表交叉验证。
 - **存活时间**：3 层 fallback（#104 → Damage 伤害事件 → hybrid EntityLeave/Position），详见 `docs/replay-data.md`。
 - **评分**：自包含、类 WN8，基准来自"一同计算的这批战斗"（相对分，非绝对天梯）。参数在 `common/rating.json`，前端「评分规则」弹窗 + `GET /api/rating` 实时展示。细节见 `docs/rating-system.md`。
-- **数据库**：在线版使用 PostgreSQL（`postgres:18-alpine`），通过 `SPRING_PROFILES_ACTIVE: postgres` 激活。默认 profile 排除 JPA auto-config，离线版/dev 无数据库启动。密码由 GitHub Secret `DB_PASSWORD` 注入，本地开发用 `POSTGRES_PASSWORD=wotb`。
+- **数据库**：在线版使用 PostgreSQL（`postgres:18-alpine`），通过 `SPRING_PROFILES_ACTIVE: postgres` 激活。默认 profile 排除 JPA auto-config，离线版/dev 无数据库启动（注意 Boot 4 的 exclude 类名在 `org.springframework.boot.{jdbc,hibernate,data.jpa}.autoconfigure.*`，且 Flyway 需 `spring-boot-flyway` 模块——详见 DEVELOPER_GUIDE 风险点）。密码由 GitHub Secret `DB_PASSWORD` 注入，本地开发用 `POSTGRES_PASSWORD=wotb`。
+- **排行榜**：仅在线版（`postgres` profile）。schema 由 Flyway 管理（`wotb-web/.../db/migration`），`ddl-auto: validate`。只记录录像者本人在**随机战斗**（`arenaBonusType==1`）中的单场伤害，去重键 `arena_id+account_id`。`ReplayService` 经 `ObjectProvider` 可选调用，无库时静默跳过。细节见 DEVELOPER_GUIDE「排行榜（Leaderboard）」。
 - **i18n**：vue-i18n 三语（zh/en/ru），`locales/*.json`；语言持久化在 `localStorage('wotb-lang')`。**地图名尚未接 i18n**（只有中文映射），见 `TODO.md`「P1：国际化」。
-- **API 端点**：`GET /api/health`、`GET /api/columns`、`GET /api/rating`、`POST /api/preview`、`POST /api/export?mode=aggregate|each`、`POST /api/shutdown`（仅桌面）。
+- **API 端点**：`GET /api/health`、`GET /api/columns`、`GET /api/rating`、`POST /api/preview`、`POST /api/export?mode=aggregate|each`、`POST /api/shutdown`（仅桌面）；排行榜（仅 postgres profile）`GET /api/leaderboard/top-damage`、`GET /api/leaderboard/tanks/{tankId}/top-damage`、`GET /api/leaderboard/records/{id}`。
 
 ---
 
