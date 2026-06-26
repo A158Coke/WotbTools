@@ -3,8 +3,6 @@ import { ref, onMounted } from 'vue'
 import { mapLabel } from '../utils/helpers.js'
 import * as api from '../utils/api.js'
 
-defineEmits(['back'])
-
 const rows = ref([])
 const loading = ref(false)
 const error = ref('')
@@ -80,17 +78,6 @@ function rankClass(i) {
 
 <template>
   <div class="lb-wrap">
-    <header>
-      <div class="brand">
-        <span class="logo">W</span>
-        <div class="brandtext">
-          <h1>{{ $t('leaderboard.title') }}</h1>
-          <p class="subtitle">{{ $t('leaderboard.subtitle') }}</p>
-        </div>
-      </div>
-      <button class="ghost" @click="$emit('back')">← {{ $t('leaderboard.back') }}</button>
-    </header>
-
     <section class="lb-upload-section"
              @dragover.prevent="dragging = true"
              @dragleave.prevent="dragging = false"

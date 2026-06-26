@@ -1,163 +1,46 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { mapLabel } from './utils/helpers.js'
 import { useTheme } from './composables/useTheme.js'
-import { useReplay } from './composables/useReplay.js'
-import { useColumns } from './composables/useColumns.js'
 import * as api from './utils/api.js'
-import FileUploader from './components/FileUploader.vue'
-import ColumnPicker from './components/ColumnPicker.vue'
-import AggregateTable from './components/AggregateTable.vue'
-import BattleTable from './components/BattleTable.vue'
-import RemoveConfirmModal from './components/RemoveConfirmModal.vue'
-import RatingModal from './components/RatingModal.vue'
+import ReplayPage from './components/ReplayPage.vue'
 import LeaderboardPage from './components/LeaderboardPage.vue'
 
 const { t } = useI18n()
-
-// --- 工具状态 ---
 const { theme, handleTheme } = useTheme()
-const replay = useReplay()
-const { files, loading, error, resp, activeTab, aggStats, pendingRemove,
-  doPreview, doExport, askRemoveBattle, cancelRemove } = replay
-const cols = useColumns(replay.playerCols, replay.aggCols, replay.activeTab)
-const { visibleKeys, aggVisibleKeys, playerOrder, aggOrder, showColPicker, pickerScope, colScope,
-  currentOrder, playerColMap, aggColMap, shownCols, shownAggCols,
-  initFromResponse, toggleColPicker, toggleCol, selectAllCols, resetCols, handleReorder } = cols
 
-// --- 应用状态 ---
 const isDesktop = ref(false)
-const showRating = ref(false)
-const showLeaderboard = ref(false)
+const activeTool = ref('replay')
 
-// --- 生命周期 ---
 onMounted(async () => {
-  // 深链: 主页排行榜卡片 → /?view=leaderboard 直接打开榜单
-  if (new URLSearchParams(window.location.search).get('view') === 'leaderboard') {
-    showLeaderboard.value = true
-  }
   try { isDesktop.value = (await api.healthCheck()).desktop } catch { /* 离线模式 */ }
 })
 
-// --- 桥接函数 ---
-function goHome() { window.location.href = 'https://wotbtools.com' }
 function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
-
-async function preview() {
-  await replay.doPreview(cols.initFromResponse)
-}
-
-async function exportXlsx(mode) {
-  await replay.doExport(mode)
-}
-
-async function shutdown() {
-  if (!isDesktop.value) return
-  try {
-    await api.shutdown()
-    document.body.innerHTML = '<div class="closed">离线程序正在关闭，可以关闭此浏览器标签页。</div>'
-  } catch (e) {
-    replay.error.value = '关闭失败: ' + e.message
-  }
-}
-
-function confirmRemoveBattle() {
-  replay.confirmRemoveBattle(cols.initFromResponse)
-}
 </script>
 
 <template>
-  <div class="wrap">
-    <header>
-      <div class="brand">
-        <span class="logo">W</span>
-        <div class="brandtext">
-          <h1>{{ $t('app.title') }}</h1>
-          <p class="subtitle">{{ $t('app.subtitle') }}</p>
-        </div>
-      </div>
-      <button class="ghost" @click="showRating = true">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M9.6 9.4a2.4 2.4 0 0 1 4.4 1.3c0 1.6-2 1.9-2 3.3M12 17h.01" /></svg>{{ $t('rating_help.btn') }}
-      </button>
-      <button v-if="!isDesktop" class="ghost" @click="showLeaderboard = true">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M6 4h12v5a6 6 0 0 1-12 0zM6 6H3v2a3 3 0 0 0 3 3M18 6h3v2a3 3 0 0 1-3 3"/></svg>{{ $t('leaderboard.btn') }}
-      </button>
-      <button class="ghost" @click="goHome" :title="$t('app.homepage')">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M3 12l9-8 9 8M5 10v9a1 1 0 0 0 1 1h4v-7h4v7h4a1 1 0 0 0 1-1v-9"/></svg>{{ $t('app.homepage') }}
-      </button>
-      <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
-        <option v-for="l in [{key:'zh',label:'中文'},{key:'en',label:'English'},{key:'ru',label:'Русский'}]" :key="l.key" :value="l.key">{{ l.label }}</option>
-      </select>
-      <div class="theme-bar">
-        <button :class="{ active: theme === 'auto' }" @click="handleTheme('auto')" :title="$t('app.theme')">{{ $t('theme.auto') }}</button>
-        <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">{{ $t('theme.light') }}</button>
-        <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">{{ $t('theme.dark') }}</button>
-      </div>
-      <button v-if="isDesktop" class="ghost" @click="shutdown">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M7 6a7.7 7.7 0 1 0 10 0M12 4v8" /></svg>{{ $t('app.shutdown') }}
-      </button>
-    </header>
+  <div class="topbar">
+    <a class="tb-brand" href="https://wotbtools.com">WoTBTools</a>
+    <nav>
+      <button :class="{ active: activeTool === 'replay' }" @click="activeTool = 'replay'">{{ $t('app.replay_tab') }}</button>
+      <button v-if="!isDesktop" :class="{ active: activeTool === 'leaderboard' }" @click="activeTool = 'leaderboard'">{{ $t('leaderboard.btn') }}</button>
+    </nav>
+    <div class="tb-spacer"></div>
+    <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
+      <option v-for="l in [{key:'zh',label:'中文'},{key:'en',label:'English'},{key:'ru',label:'Русский'}]" :key="l.key" :value="l.key">{{ l.label }}</option>
+    </select>
+    <div class="theme-bar">
+      <button :class="{ active: theme === 'auto' }" @click="handleTheme('auto')" :title="$t('app.theme')">{{ $t('theme.auto') }}</button>
+      <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">{{ $t('theme.light') }}</button>
+      <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">{{ $t('theme.dark') }}</button>
+    </div>
+    <a class="tb-back" href="https://wotbtools.com" :title="$t('app.homepage')">&larr;</a>
+  </div>
 
-    <LeaderboardPage v-if="showLeaderboard" @back="showLeaderboard = false" />
-    <template v-else>
-    <FileUploader :files="files" :loading="loading" @update:files="files = $event" @preview="preview" />
-
-    <p v-if="error" class="error">{{ error }}</p>
-
-    <template v-if="resp">
-      <div v-if="resp.duplicates.length" class="warn">
-        {{ $t('result.duplicates', { count: resp.duplicates.length }) }}
-        <span v-for="(d, i) in resp.duplicates" :key="i">{{ d[0] }}</span>
-      </div>
-      <div v-if="resp.failures.length" class="error">
-        {{ $t('result.failures', { count: resp.failures.length }) }}
-        <span v-for="(f, i) in resp.failures" :key="i">{{ f[0] }} ({{ f[1] }})</span>
-      </div>
-
-      <div class="restoolbar">
-        <div class="tabs" :class="{ locked: showColPicker }"
-             :title="showColPicker ? $t('action.picker_locked') : ''">
-          <button v-if="resp.aggregate.length" :disabled="showColPicker"
-                  :class="{ active: activeTab === 'aggregate' }"
-                  @click="activeTab = 'aggregate'">{{ $t('result.aggregate_tab', { count: resp.aggregate.length }) }}</button>
-          <button v-for="(b, i) in resp.battles" :key="i" :disabled="showColPicker"
-                  :class="{ active: activeTab === 'b' + i }"
-                  @click="activeTab = 'b' + i">{{ mapLabel(b.mapName) }} #{{ i + 1 }}
-            <span class="tabx" :title="$t('modal.remove_title')" @click.stop="askRemoveBattle(b, i)">×</span>
-          </button>
-        </div>
-        <div class="resactions">
-          <span class="dropdown">
-            <button class="ghost sm" @click="toggleColPicker">
-              <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4zM10 4v16" /></svg>{{ $t('action.select_cols') }} ▾
-            </button>
-            <ColumnPicker v-if="showColPicker" :scope="pickerScope" :order="currentOrder"
-              :visible="pickerScope === 'agg' ? aggVisibleKeys : visibleKeys"
-              @close="showColPicker = false" @toggle="toggleCol"
-              @select-all="selectAllCols" @reset="resetCols" @reorder="handleReorder" />
-          </span>
-          <button class="sm" :disabled="loading" @click="exportXlsx('aggregate')">
-            <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_aggregate') }}
-          </button>
-          <button class="ghost sm" :disabled="loading" @click="exportXlsx('each')">
-            <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_each') }}
-          </button>
-        </div>
-      </div>
-
-      <div v-show="activeTab === 'aggregate' && resp.aggregate.length">
-        <AggregateTable :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
-      </div>
-
-      <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i">
-        <BattleTable :battle="b" :shown-cols="shownCols" />
-      </div>
-    </template>
-
-    <RemoveConfirmModal :pending="pendingRemove" @confirm="confirmRemoveBattle" @cancel="cancelRemove" />
-    <RatingModal :show="showRating" @close="showRating = false" />
-    </template>
+  <div class="tb-content">
+    <LeaderboardPage v-if="activeTool === 'leaderboard'" />
+    <ReplayPage v-else />
   </div>
 </template>
 
@@ -277,14 +160,41 @@ function confirmRemoveBattle() {
 
 body { margin: 0; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--text); background: var(--bg); transition: background .25s, color .25s; }
 .wrap { max-width: 1400px; margin: 0 auto; padding: 16px 20px; }
-header { display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  padding-bottom: 14px; border-bottom: 1px solid var(--border-header); margin-bottom: 18px; }
-h1 { font-size: 17px; margin: 0; font-weight: 600; color: var(--text-heading); line-height: 1.2; }
-.brand { display: flex; align-items: center; gap: 11px; }
-.brandtext { display: flex; flex-direction: column; }
-.subtitle { font-size: 12px; color: var(--text-sub); margin: 2px 0 0; }
-.logo { width: 34px; height: 34px; border-radius: 9px; background: var(--bg-blue); color: var(--accent-dark);
-  display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 17px; }
+
+.topbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 20px; height: 48px;
+  background: var(--bg-card); border-bottom: 1px solid var(--border-header);
+}
+.tb-brand { text-decoration: none; font-size: 15px; font-weight: 700; color: var(--heading); white-space: nowrap }
+.tb-brand:hover { color: var(--accent) }
+.topbar nav { display: flex; gap: 4px }
+.topbar nav button {
+  padding: 5px 14px; border: none; border-radius: 7px; font-family: inherit;
+  background: transparent; color: var(--text-muted); font-size: .85rem; cursor: pointer; transition: background .12s, color .12s;
+}
+.topbar nav button:hover { color: var(--text) }
+.topbar nav button.active { background: var(--bg-blue); color: var(--accent-dark); font-weight: 600 }
+.tb-spacer { flex: 1 }
+.tb-back { text-decoration: none; color: var(--text-muted); font-size: 1.1rem; padding: 4px 8px; border-radius: 6px; line-height: 1 }
+.tb-back:hover { color: var(--text); background: var(--bg-card2) }
+.tb-content { padding-top: 56px }
+
+.topbar .theme-bar {
+  display: flex; gap: 2px;
+  background: var(--bg-card2); border: 1px solid var(--border-ghost);
+  border-radius: 7px; padding: 2px;
+}
+.topbar .theme-bar button {
+  padding: 4px 10px; border: none; border-radius: 5px;
+  background: transparent; color: var(--text-muted); font-size: .73rem;
+  cursor: pointer; transition: background .15s, color .15s; font-family: inherit;
+}
+.topbar .theme-bar button:hover { color: var(--text) }
+.topbar .theme-bar button.active { background: var(--accent); color: #fff; font-weight: 600; }
+.topbar .lang-select { font-size: .73rem; padding: 4px 22px 4px 8px; background-size: 12px }
+
 .ic { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2;
   stroke-linecap: round; stroke-linejoin: round; }
 .mcards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 4px 0 12px; }
@@ -406,24 +316,7 @@ tr.t2 td:first-child { background: var(--bg-t2); }
   background-repeat: no-repeat; background-position: right 6px center; background-size: 14px; }
 .lang-select:hover { background-color: var(--bg-card-hover); }
 
-.theme-bar {
-  display: flex; gap: 4px;
-  background: var(--bg-card2); border: 1px solid var(--border-ghost);
-  border-radius: 8px; padding: 3px;
-}
-.theme-bar button {
-  padding: 5px 12px; border: none; border-radius: 6px;
-  background: transparent; color: var(--text-muted); font-size: .78rem;
-  cursor: pointer; transition: background .15s, color .15s;
-  font-family: inherit;
-}
-.theme-bar button:hover { color: var(--text) }
-.theme-bar button.active {
-  background: var(--accent); color: #fff; font-weight: 600;
-}
-
 @media (max-width: 768px) {
-  header { flex-direction: column; align-items: flex-start; gap: 8px; }
   .mcards { grid-template-columns: repeat(2, 1fr); }
   .filebar { flex-wrap: wrap; }
   th, td { padding: 5px 8px; font-size: 12px; }
@@ -458,8 +351,6 @@ tr.t2 td:first-child { background: var(--bg-t2); }
   th, td { padding: 4px 5px; font-size: 11px; }
   .rbadge { min-width: 28px; padding: 1px 4px; font-size: 10px; }
   .chip { font-size: 11px; padding: 2px 4px; }
-  header .ghost { font-size: 0; gap: 0; padding: 6px; width: 32px; height: 32px; border-radius: 50%; }
-  header .ghost .ic { font-size: 0; width: 18px; height: 18px; }
 }
 .scroll-hint { display: none; }
 @media (max-width: 768px) {
