@@ -38,8 +38,12 @@
     margin-top: 12px; color: var(--muted); font-size: 1.1rem;
   }
 
-  .theme-bar {
+  /* 右上角固定工具簇: 语言选择 + 主题切换并排 */
+  .topctl {
     position: fixed; top: 16px; right: 20px; z-index: 10;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .theme-bar {
     display: flex; gap: 4px;
     background: var(--card-bg); border: 1px solid var(--card-border);
     border-radius: 8px; padding: 3px;
@@ -107,6 +111,31 @@
   .ver-tag.add { background: var(--tag-bg); color: var(--accent) }
   .ver-tag.fix { background: #fcebeb33; color: #f85149 }
   .ver p { font-size: .82rem; color: var(--muted); margin: 2px 0 0; flex-basis: 100% }
+
+  /* 平板 */
+  @media (max-width: 768px) {
+    header { padding: 56px 20px 40px; }
+    header h1 { font-size: 2.1rem; }
+  }
+  /* 手机 */
+  @media (max-width: 560px) {
+    .topctl { top: 10px; right: 10px; gap: 6px; }
+    .theme-bar { gap: 2px; padding: 2px; }
+    .theme-bar button { padding: 5px 9px; font-size: .72rem; }
+    .lang-select { padding: 5px 22px 5px 8px; font-size: .72rem; }
+    header { padding: 60px 16px 32px; }
+    header h1 { font-size: 1.8rem; }
+    header p { font-size: .95rem; }
+    .tools { padding: 0 16px 40px; gap: 14px; }
+    .version { padding: 0 16px 40px; }
+    .card { padding: 22px 18px; }
+  }
+  /* 窄屏手机: 进一步收紧工具簇, 避免与标题挤占 */
+  @media (max-width: 380px) {
+    .topctl { gap: 4px; }
+    .theme-bar button { padding: 4px 7px; font-size: .68rem; }
+    .lang-select { padding: 4px 20px 4px 7px; font-size: .68rem; }
+  }
 </style>
 </head>
 <body>
@@ -116,13 +145,14 @@
   <p data-i18n="subtitle">《坦克世界闪击战》工具集</p>
 </header>
 
-<div class="theme-bar">
-  <button data-theme="auto"  class="active">auto</button>
-  <button data-theme="light">light</button>
-  <button data-theme="dark">dark</button>
+<div class="topctl">
+  <select class="lang-select" id="lang-select" onchange="switchLang(this.value)"></select>
+  <div class="theme-bar">
+    <button data-theme="auto"  class="active">auto</button>
+    <button data-theme="light">light</button>
+    <button data-theme="dark">dark</button>
+  </div>
 </div>
-
-<select class="lang-select" id="lang-select" onchange="switchLang(this.value)"></select>
 
 <div class="tools">
   <a class="card" href="https://replay.wotbtools.com">
