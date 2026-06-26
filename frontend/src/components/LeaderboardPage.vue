@@ -12,6 +12,7 @@ const limit = ref(50)
 const uploading = ref(false)
 const uploadMsg = ref('')
 const uploadOk = ref(false)
+const dragging = ref(false)
 const fileInput = ref(null)
 
 async function load() {
@@ -57,6 +58,11 @@ function onFileChange(e) {
   if (f) upload(f)
 }
 
+function onDrop(e) {
+  const f = e.dataTransfer.files?.[0]
+  if (f) upload(f)
+}
+
 onMounted(load)
 
 function fmtTime(s) {
@@ -90,11 +96,22 @@ function rankClass(i) {
       <p class="subtitle">{{ $t('leaderboard.subtitle') }}</p>
     </div>
 
-    <div class="lb-upload">
-      <input ref="fileInput" type="file" accept=".wotbreplay" @change="onFileChange" :disabled="uploading" />
-      <span v-if="uploadMsg" class="lb-upload-msg" :class="{ err: !uploadOk }">{{ uploadMsg }}</span>
-      <span v-if="uploading" class="muted">上传中...</span>
-    </div>
+    <section class="lb-upload-section"
+             @dragover.prevent="dragging = true"
+             @dragleave.prevent="dragging = false"
+             @drop.prevent="dragging = false; onDrop($event)">
+      <div class="lb-upload-card" :class="{ dragging }">
+        <span class="up-icon"><svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg></span>
+        <div class="up-title">{{ $t('leaderboard.upload_title') }}</div>
+        <div class="up-sub">{{ $t('leaderboard.upload_hint') }}</div>
+        <label class="filebtn" :class="{ 'lb-uploading': uploading }">
+          <input ref="fileInput" type="file" accept=".wotbreplay" @change="onFileChange" :disabled="uploading" />
+          <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
+          {{ uploading ? '上传中...' : $t('leaderboard.upload_btn') }}
+        </label>
+      </div>
+      <p v-if="uploadMsg" class="lb-upload-msg" :class="{ err: !uploadOk }">{{ uploadMsg }}</p>
+    </section>
 
     <div class="lb-toolbar">
       <label class="lb-limit">{{ $t('leaderboard.limit') }}
@@ -160,8 +177,18 @@ function rankClass(i) {
 [data-theme="dark"] .rk-silver { background: #3a414d; color: #cdd5e1; }
 [data-theme="dark"] .rk-bronze { background: #4d3621; color: #f0cda6; }
 .muted { padding: 24px 4px; }
-.lb-upload { display: flex; align-items: center; gap: 12px; margin: 12px 0; flex-wrap: wrap; }
-.lb-upload input[type="file"] { font-size: 13px; color: var(--text-label); }
-.lb-upload-msg { font-size: 13px; }
+
+/* Upload card — 对齐 FileUploader 风格 */
+.lb-upload-section { margin: 16px 0; }
+.lb-upload-card {
+  border: 1.5px dashed var(--border-dashed); background: var(--bg-upload);
+  border-radius: 12px; padding: 24px 20px; text-align: center;
+  transition: border-color .12s, background .12s;
+}
+.lb-upload-card.dragging { border-color: var(--accent); background: var(--bg-blue-light); }
+.lb-upload-card .filebtn { margin-top: 14px; }
+.lb-upload-card .filebtn input { display: none; }
+.lb-upload-card .filebtn.lb-uploading { opacity: .6; pointer-events: none; }
+.lb-upload-msg { margin-top: 10px; font-size: 13px; text-align: center; }
 .lb-upload-msg.err { color: var(--error); }
 </style>

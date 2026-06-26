@@ -108,7 +108,9 @@
     "error": "排行榜加载失败",
     "upload_hint": "仅支持单场 .wotbreplay 回放",
     "upload_success": "上传成功！已录入排行榜",
-    "upload_failed": "上传失败"
+    "upload_failed": "上传失败",
+    "upload_title": "上传回放以计入排名",
+    "upload_btn": "选择回放文件"
   },
   "player_labels": {
     "nickname": "玩家",

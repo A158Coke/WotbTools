@@ -108,7 +108,9 @@
     "error": "Failed to load leaderboard",
     "upload_hint": "Only .wotbreplay single replay",
     "upload_success": "Uploaded! Record added to leaderboard",
-    "upload_failed": "Upload failed"
+    "upload_failed": "Upload failed",
+    "upload_title": "Upload replay to rank",
+    "upload_btn": "Select Replay"
   },
   "player_labels": {
     "nickname": "Player",
