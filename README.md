@@ -4,7 +4,7 @@
 
 当前唯一已上线工具：从 `.wotbreplay` 回放文件中提取战斗数据，并导出为 Excel。
 
-项目主线为 Java：**Java 离线 exe** 与 **Web 版** 均已完成。
+项目主线为 Java：**Java 离线版** 与 **Web 版** 均已完成。
 
 ## 当前目标
 
@@ -54,7 +54,7 @@
 
 需提前安装 Docker Desktop。
 
-- Windows：双击 `java\offline\start.bat`
+- Windows：双击 `offline\start.bat`
 - macOS / Linux：终端运行 `offline/start.sh`
 
 脚本自动检测系统 → 检查 Docker → 拉镜像 → 启动 → 打开浏览器 `http://localhost:8088`。首次需联网拉取镜像，后续离线可用。停止：`docker compose -f offline/docker-compose.yml down`。
@@ -77,7 +77,7 @@ java -jar wotb-web\target\wotb-web.jar
 ### 离线版（用户分发，需 Docker Desktop）
 
 ```bat
-cd java\offline
+cd offline
 start.bat
 ```
 
@@ -114,13 +114,15 @@ mvn -s settings.xml test
 | `homepage/`                   | 工具集主页（`wotbtools.com`，暗色卡片式单页）|
 | `common/`                     | 共享资源：`tankopedia.json`、`rating.json`、`map_names.json`(地图中文名)、`assets/`(图标)、`data/`(示例回放) |
 | `common/python/`              | 车辆库更新脚本（`update_tankopedia.py`） |
-| `java/`                       | Java 主线（共享核心 + Web + 离线打包）                   |
+| `java/`                       | Java 主线（wotb-core + wotb-web）                   |
 | `java/wotb-core/`             | 共享核心库：解析、protobuf 解码、pickle 读取、汇总、POI 导出     |
-| `java/wotb-web/`              | 共享 Spring Boot 4 应用：REST API + 桌面模式入口       |
-| `frontend/`              | 共享 Vue 3 前端（单文件组件，无 router）                  |
-| `offline/`               | 离线版分发：`start.bat` 一键拉镜像启动 |
-| `online/`                | 开发者本地：`docker compose up --build` 编译启动 |
-| `Dockerfile.backend` `Dockerfile.frontend` / `deploy/` / `.github/` | 分镜像构建 + nginx 配置 + CI/CD（push `main`→Docker Hub→VPS） |
+| `java/wotb-web/`              | Spring Boot 4 应用：REST API + Leaderboard + Flyway |
+| `frontend/`                   | Vue 3 前端（composables + utils + 组件）                  |
+| `offline/`                    | 离线版分发：`start.bat` / `start.sh` 一键拉镜像启动 |
+| `online/`                     | 开发者本地：`docker compose up --build` 编译启动 |
+| `docker/`                     | Dockerfile.backend / Dockerfile.frontend |
+| `deploy/nginx/`               | nginx 配置（双 server：主页 + Vue SPA） |
+| `.github/workflows/`          | CI/CD 自动部署 |
 
 ## 数据来源与限制
 

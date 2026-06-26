@@ -152,4 +152,4 @@ cd offline && start.bat                      # 检测 Docker → pull → compos
 
 ## 10. 给接手的 AI 工具的一句话
 
-> 这是个单人维护的 WoT Blitz 回放分析工具（Java core + Spring Boot + Vue，离线 exe 与 Docker 双形态）。动手前读 `AGENTS.md` 和 `DEVELOPER_GUIDE.md`；跨层改动按 `.agents/wotb-sync.md` 的配方；Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；改完跑 `mvn -s settings.xml test`（需本地有 `common/data` 样本）和 `npm run build`；提交用中文信息、推 `github-personal`(账号 A158Coke)，push main 即自动部署。
+> 这是个单人维护的 WoT Blitz 回放分析工具（Java core + Spring Boot + Vue，离线版 与 Docker 双形态）。动手前读 `AGENTS.md` 和 `DEVELOPER_GUIDE.md`；跨层改动按 `.agents/wotb-sync.md` 的配方；Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；改完跑 `mvn -s settings.xml test`（需本地有 `common/data` 样本）和 `npm run build`；提交用中文信息、推 `github-personal`(账号 A158Coke)，push main 即自动部署。

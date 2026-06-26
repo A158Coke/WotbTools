@@ -82,6 +82,20 @@ cd frontend && npm run build                         # 改了前端时
 
 > 默认 `java` 是 JDK 8,跑 mvn 必须先把 `JAVA_HOME` 指向 JDK 21。本环境/沙箱可能无法真正监听端口,用 MockMvc 测试(`WebApiTest`)即可,不必起服务。
 
+## 配方 H: 新增/修改排行榜 Schema 或端点
+
+1. 改表结构必须新增 Flyway 迁移（`V2__xxx.sql`），不改已应用的 `V1__init_leaderboard.sql`。
+2. JPA 实体与迁移列逐列对齐，否则 `ddl-auto: validate` 启动失败。
+3. 新端点走 `LeaderboardController` + `LeaderboardService`（`@Profile("postgres")`）。
+4. API 纯英文 key；前端三语文案在 `locales/*.json` 的 `leaderboard` 块。
+5. 验证 + 文档。
+
+## 配方 I: 新增跨站点状态（主题/语言/偏好）
+
+1. Cookie 写入 `domain=.wotbtools.com`（主页 + 子域名共享），key 命名 `wotbtools-xxx`。
+2. 读写函数命名 `readXxx()` / `saveXxx()`，localStorage 作为本地开发回退。
+3. 前端三语文案同步更新 `locales/*.json`。
+
 ## 收尾
 
 1. **更新文档**:`DEVELOPER_GUIDE.md` + 相关 `README.md` / `java/README.md`(任何影响界面/导出/数据/构建/用法的改动)。
