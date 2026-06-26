@@ -108,7 +108,9 @@
     "error": "Не удалось загрузить рейтинг",
     "upload_hint": "Только .wotbreplay один реплей",
     "upload_success": "Загружено! Запись добавлена в рейтинг",
-    "upload_failed": "Ошибка загрузки"
+    "upload_failed": "Ошибка загрузки",
+    "upload_title": "Загрузите реплей для рейтинга",
+    "upload_btn": "Выбрать реплей"
   },
   "player_labels": {
     "nickname": "Игрок",
