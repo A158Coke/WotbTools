@@ -1,5 +1,9 @@
 # 开发者本地构建：从源码编译两镜像并启动三容器。
-# 用法: cd online && docker compose up --build
+# 用法（任选其一，二选一即可）：
+#   cd docker/online && docker compose up -d --build
+#   docker compose -f docker/online/docker-compose.yml -p online up -d --build
+# 注意：build.context 指向仓库根（../..），因为两个 Dockerfile 的 COPY 都按仓库根写
+# （common/ java/ frontend/ homepage deploy/nginx/）；dockerfile 路径相对 context 解析。
 services:
   postgres:
     image: postgres:18-alpine
@@ -9,14 +13,20 @@ services:
       POSTGRES_PASSWORD: wotb
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wotb -d wotb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
   wotb-backend:
     build:
-      context: ..
+      context: ../..
       dockerfile: docker/Dockerfile.backend
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: postgres
       POSTGRES_HOST: postgres
@@ -25,7 +35,7 @@ services:
 
   wotb-frontend:
     build:
-      context: ..
+      context: ../..
       dockerfile: docker/Dockerfile.frontend
     ports:
       - "8088:80"
