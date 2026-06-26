@@ -86,6 +86,22 @@
   footer {
     margin-top: auto; padding: 24px; color: var(--footer); font-size: .8rem;
   }
+  .version {
+    max-width: 640px; width: 100%; padding: 0 24px 48px;
+  }
+  .version-title {
+    font-size: 1rem; color: var(--heading); margin-bottom: 16px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--card-border);
+  }
+  .ver {
+    margin-bottom: 14px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
+  }
+  .ver-num { font-size: .85rem; font-weight: 600; color: var(--accent); min-width: 56px }
+  .ver-date { font-size: .78rem; color: var(--muted) }
+  .ver-tag { font-size: .7rem; font-weight: 600; padding: 1px 6px; border-radius: 4px }
+  .ver-tag.add { background: var(--tag-bg); color: var(--accent) }
+  .ver-tag.fix { background: #fcebeb33; color: #f85149 }
+  .ver p { font-size: .82rem; color: var(--muted); margin: 2px 0 0; flex-basis: 100% }
 </style>
 </head>
 <body>
@@ -130,6 +146,36 @@
     </div>
   </div>
 </div>
+
+<section class="version">
+  <h2 class="version-title">版本历史</h2>
+  <div class="version-list">
+    <div class="ver">
+      <span class="ver-num">v1.4.0</span>
+      <span class="ver-date">2026-06-25</span>
+      <span class="ver-tag fix">修复</span>
+      <p>存活时间推算更准确：解决部分玩家被误判阵亡或观战期间不停止的问题</p>
+    </div>
+    <div class="ver">
+      <span class="ver-num">v1.3.0</span>
+      <span class="ver-date">2026-06-24</span>
+      <span class="ver-tag add">新增</span>
+      <p>存活时间列 · 三语 i18n · 评分系统 · 地图中文化 · Docker 部署 · 离线版</p>
+    </div>
+    <div class="ver">
+      <span class="ver-num">v1.0.0</span>
+      <span class="ver-date">2026-06-23</span>
+      <span class="ver-tag add">新增</span>
+      <p>回放解析引擎 · Web API · Vue 前端 · Excel 导出 · 离线 exe</p>
+    </div>
+    <div class="ver">
+      <span class="ver-num">v0.1.0</span>
+      <span class="ver-date">2026-06-22</span>
+      <span class="ver-tag add">新增</span>
+      <p>项目初始化</p>
+    </div>
+  </div>
+</section>
 
 <footer>WoTBTools &mdash; 社区工具，非 Wargaming 官方产品</footer>
 
