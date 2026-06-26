@@ -39,9 +39,7 @@ export async function leaderboardUpload(file) {
   const fd = new FormData()
   fd.append('file', file)
   const r = await fetch('/api/leaderboard/upload', { method: 'POST', body: fd })
-  if (!r.ok) {
-    const err = await r.json().catch(() => ({}))
-    throw new Error(err.error || '上传失败: HTTP ' + r.status)
-  }
-  return r.json()
+  const data = await r.json().catch(() => ({}))
+  if (!r.ok) throw new Error(data.error || '上传失败: HTTP ' + r.status)
+  return data
 }

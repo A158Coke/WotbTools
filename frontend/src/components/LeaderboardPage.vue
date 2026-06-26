@@ -11,6 +11,7 @@ const error = ref('')
 const limit = ref(50)
 const uploading = ref(false)
 const uploadMsg = ref('')
+const uploadOk = ref(false)
 const fileInput = ref(null)
 
 async function load() {
@@ -33,9 +34,15 @@ async function upload(file) {
   }
   uploading.value = true
   uploadMsg.value = ''
+  uploadOk.value = false
   try {
-    await api.leaderboardUpload(file)
-    uploadMsg.value = '上传成功！已录入排行榜'
+    const result = await api.leaderboardUpload(file)
+    if (result.status === 'skipped') {
+      uploadMsg.value = '已跳过：' + (result.reason || '已存在或无法识别录像者')
+    } else {
+      uploadMsg.value = '上传成功！已录入排行榜'
+      uploadOk.value = true
+    }
     fileInput.value.value = ''
     await load()
   } catch (e) {
@@ -85,7 +92,7 @@ function rankClass(i) {
 
     <div class="lb-upload">
       <input ref="fileInput" type="file" accept=".wotbreplay" @change="onFileChange" :disabled="uploading" />
-      <span v-if="uploadMsg" class="lb-upload-msg" :class="{ err: uploading === false && uploadMsg.includes('失败') || uploadMsg.includes('请选择') }">{{ uploadMsg }}</span>
+      <span v-if="uploadMsg" class="lb-upload-msg" :class="{ err: !uploadOk }">{{ uploadMsg }}</span>
       <span v-if="uploading" class="muted">上传中...</span>
     </div>
 

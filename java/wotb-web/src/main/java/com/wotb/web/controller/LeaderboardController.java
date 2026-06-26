@@ -1,5 +1,8 @@
 package com.wotb.web.controller;
 
+import com.wotb.core.parse.ReplayParser;
+import com.wotb.core.model.Battle;
+import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.dto.LeaderboardRecordDto;
 import com.wotb.web.service.LeaderboardService;
 import org.springframework.context.annotation.Profile;
@@ -7,12 +10,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 排行榜 REST API (仅 postgres profile; 只做 HTTP 映射, 业务在 LeaderboardService)。
@@ -24,9 +30,24 @@ import java.util.List;
 public class LeaderboardController {
 
     private final LeaderboardService service;
+    private final Tankopedia tankopedia = Tankopedia.load();
 
     public LeaderboardController(final LeaderboardService service) {
         this.service = service;
+    }
+
+    /** 上传单场回放，写入排行榜。 */
+    @PostMapping("/upload")
+    public Map<String, Object> upload(@RequestParam("file") final MultipartFile file) throws Exception {
+        final Battle battle = ReplayParser.parse(file.getBytes());
+        final boolean saved = service.recordRecorder(battle, tankopedia);
+        if (!saved) {
+            return Map.of("status", "skipped",
+                "arenaId", battle.arenaId,
+                "reason", battle.arenaBonusType == null || battle.arenaBonusType != 1
+                    ? "仅支持随机战斗" : "已存在或无法识别录像者");
+        }
+        return Map.of("status", "ok", "arenaId", battle.arenaId);
     }
 
     /** 全局伤害榜。 */

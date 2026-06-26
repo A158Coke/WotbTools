@@ -42,20 +42,19 @@ public class LeaderboardService {
      * meta 无录像者 accountId, 故按昵称在 players 中匹配 battle.recorder; 匹配不到则跳过。
      * 已存在 (arena_id, account_id) 则不重复插入。
      */
-    public void recordRecorder(final Battle battle, final Tankopedia tankopedia) {
+    public boolean recordRecorder(final Battle battle, final Tankopedia tankopedia) {
         if (battle == null || battle.arenaId == null) {
-            return;
+            return false;
         }
-        // 只收随机战斗; 模式未知 (null) 也拒绝, 避免污染排行榜。
         if (battle.arenaBonusType == null || battle.arenaBonusType != RANDOM_BATTLE_BONUS_TYPE) {
-            return;
+            return false;
         }
         final PlayerResult recorder = battle.recorderResult();
         if (recorder == null) {
-            return;
+            return false;
         }
         if (repository.findByArenaIdAndAccountId(battle.arenaId, recorder.accountId).isPresent()) {
-            return;
+            return false;
         }
         final LeaderboardRecord record = new LeaderboardRecord();
         record.setArenaId(battle.arenaId);
@@ -67,8 +66,9 @@ public class LeaderboardService {
         record.setMapName(battle.mapName);
         try {
             repository.save(record);
+            return true;
         } catch (final DataIntegrityViolationException ignored) {
-            // 并发下唯一约束冲突: 另一次上传已写入同 (arena_id, account_id), 视为去重成功。
+            return false;
         }
     }
 
