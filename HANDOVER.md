@@ -146,7 +146,7 @@ cd offline && start.bat                      # 检测 Docker → pull → compos
 - **数据库**：在线版使用 PostgreSQL（`postgres:18-alpine`），通过 `SPRING_PROFILES_ACTIVE: postgres` 激活。默认 profile 排除 JPA auto-config，离线版/dev 无数据库启动（注意 Boot 4 的 exclude 类名在 `org.springframework.boot.{jdbc,hibernate,data.jpa}.autoconfigure.*`，且 Flyway 需 `spring-boot-flyway` 模块——详见 DEVELOPER_GUIDE 风险点）。密码由 GitHub Secret `DB_PASSWORD` 注入，本地开发用 `POSTGRES_PASSWORD=wotb`。
 - **排行榜**：仅在线版（`postgres` profile）。schema 由 Flyway 管理（`wotb-web/.../db/migration`），`ddl-auto: validate`。只记录录像者本人在**随机战斗**（`arenaBonusType==1`）中的单场伤害，去重键 `arena_id+account_id`。`ReplayService` 经 `ObjectProvider` 可选调用，无库时静默跳过。细节见 DEVELOPER_GUIDE「排行榜（Leaderboard）」。
 - **i18n**：vue-i18n 三语（zh/en/ru），`locales/*.json`；语言持久化在 `localStorage('wotb-lang')`。**地图名尚未接 i18n**（只有中文映射），见 `TODO.md`「P1：国际化」。
-- **API 端点**：`GET /api/health`、`GET /api/columns`、`GET /api/rating`、`POST /api/preview`、`POST /api/export?mode=aggregate|each`、`POST /api/shutdown`（仅桌面）；排行榜（仅 postgres profile）`GET /api/leaderboard/top-damage`、`GET /api/leaderboard/tanks/{tankId}/top-damage`、`GET /api/leaderboard/records/{id}`。
+- **API 端点**：`GET /api/health`、`GET /api/rating`、`POST /api/preview`、`POST /api/export?mode=aggregate|each`、`POST /api/shutdown`（仅桌面）；排行榜（仅 postgres profile）`GET /api/leaderboard/top-damage`、`GET /api/leaderboard/tanks/{tankId}/top-damage`（支持按车辆筛选伤害榜）。
 
 ---
 

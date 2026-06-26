@@ -38,7 +38,6 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">{{ $t('theme.light') }}</button>
       <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">{{ $t('theme.dark') }}</button>
     </div>
-    <a class="tb-back" href="https://wotbtools.com" :title="$t('app.homepage')">&larr;</a>
   </div>
 
   <div class="tb-content">
@@ -181,8 +180,6 @@ body { margin: 0; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; color:
 .topbar nav button:hover { color: var(--text) }
 .topbar nav button.active { background: var(--bg-blue); color: var(--accent-dark); font-weight: 600 }
 .tb-spacer { flex: 1 }
-.tb-back { text-decoration: none; color: var(--text-muted); font-size: 1.1rem; padding: 4px 8px; border-radius: 6px; line-height: 1 }
-.tb-back:hover { color: var(--text); background: var(--bg-card2) }
 .tb-content { padding-top: 56px }
 
 .topbar .theme-bar {

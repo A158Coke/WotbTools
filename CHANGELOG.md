@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+- 品牌升级：添加 logo（`wotbtoolslogo.png`）和 favicon（`icon.ico`/`icon.png`），首页 header + 前端顶栏双站点展示，`common/assets/` 单一来源、Dockerfile 构建时分发
+- 主题按钮三语 i18n：跟随系统/亮色/暗色 三档支持中英俄切换
+
+### Fixed
+- 修复主页排行榜卡片点击后进入回放页面而非排行榜视图（前端 `App.vue` 读取 `?view=leaderboard` 查询参数）
+
 ## [1.6.0] - 2026-06-26
 
 ### Added
