@@ -47,6 +47,12 @@ public class LeaderboardRecord {
     @Column(name = "map_name", length = 100)
     private String mapName;
 
+    @Column(name = "version", length = 32)
+    private String version;
+
+    @Column(name = "battle_time")
+    private OffsetDateTime battleTime;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
@@ -113,6 +119,22 @@ public class LeaderboardRecord {
 
     public void setMapName(final String mapName) {
         this.mapName = mapName;
+    }
+
+    public String getVersion() {
+        return version;
+    }
+
+    public void setVersion(final String version) {
+        this.version = version;
+    }
+
+    public OffsetDateTime getBattleTime() {
+        return battleTime;
+    }
+
+    public void setBattleTime(final OffsetDateTime battleTime) {
+        this.battleTime = battleTime;
     }
 
     public OffsetDateTime getCreatedAt() {

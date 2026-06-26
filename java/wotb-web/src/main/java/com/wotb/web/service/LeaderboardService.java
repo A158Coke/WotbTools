@@ -11,6 +11,9 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
@@ -64,6 +67,11 @@ public class LeaderboardService {
         record.setTankName(tankopedia.info(recorder.tankId).name());
         record.setDamageDealt(recorder.damageDealt);
         record.setMapName(battle.mapName);
+        record.setVersion(battle.version != null && !battle.version.isEmpty() ? battle.version : null);
+        if (battle.startTime != null) {
+            record.setBattleTime(OffsetDateTime.ofInstant(
+                    Instant.ofEpochMilli(battle.startTime), ZoneOffset.UTC));
+        }
         try {
             repository.save(record);
             return true;
@@ -98,6 +106,7 @@ public class LeaderboardService {
 
     private static LeaderboardRecordDto toDto(final LeaderboardRecord r) {
         return new LeaderboardRecordDto(r.getId(), r.getArenaId(), r.getTankId(), r.getTankName(),
-                r.getAccountId(), r.getNickname(), r.getDamageDealt(), r.getMapName(), r.getCreatedAt());
+                r.getAccountId(), r.getNickname(), r.getDamageDealt(), r.getMapName(),
+                r.getVersion(), r.getBattleTime(), r.getCreatedAt());
     }
 }

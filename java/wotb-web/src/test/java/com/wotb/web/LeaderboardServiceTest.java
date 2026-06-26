@@ -8,11 +8,15 @@ import com.wotb.web.repository.LeaderboardRecordRepository;
 import com.wotb.web.service.LeaderboardService;
 import org.junit.jupiter.api.Test;
 
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -35,6 +39,8 @@ class LeaderboardServiceTest {
         b.mapName = "rockfield";
         b.recorder = recorderNick;
         b.arenaBonusType = 1;   // 默认随机战斗 (1=随机, 2=训练房)
+        b.version = "11.18.0";
+        b.startTime = 1719849600000L;  // 2024-07-01T12:00:00Z
 
         final List<PlayerResult> players = new ArrayList<>();
         final PlayerResult rec = new PlayerResult();
@@ -68,6 +74,10 @@ class LeaderboardServiceTest {
         assertEquals("Recorder1", saved.getNickname());
         assertEquals(3200, saved.getDamageDealt());
         assertEquals("arenaA", saved.getArenaId());
+        assertEquals("11.18.0", saved.getVersion());
+        assertNotNull(saved.getBattleTime(), "battleTime 应从 startTime 转换");
+        assertEquals(OffsetDateTime.of(2024, 7, 1, 12, 0, 0, 0, ZoneOffset.UTC),
+                saved.getBattleTime());
     }
 
     @Test

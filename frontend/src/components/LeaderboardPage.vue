@@ -120,7 +120,9 @@ function rankClass(i) {
             <th>{{ $t('leaderboard.tank_name') }}</th>
             <th>{{ $t('leaderboard.damage_dealt') }}</th>
             <th>{{ $t('leaderboard.map') }}</th>
-            <th>{{ $t('leaderboard.time') }}</th>
+            <th>{{ $t('leaderboard.version') }}</th>
+            <th>{{ $t('leaderboard.battle_time') }}</th>
+            <th>{{ $t('leaderboard.upload_time') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -130,6 +132,8 @@ function rankClass(i) {
             <td>{{ r.tankName }}</td>
             <td class="lb-dmg">{{ r.damageDealt.toLocaleString() }}</td>
             <td>{{ mapLabel(r.mapName) }}</td>
+            <td class="lb-version">{{ r.version || '-' }}</td>
+            <td class="lb-time">{{ fmtTime(r.battleTime) || '-' }}</td>
             <td class="lb-time">{{ fmtTime(r.createdAt) }}</td>
           </tr>
         </tbody>
@@ -146,7 +150,8 @@ function rankClass(i) {
   background: var(--bg-card2); color: var(--text-label); padding: 5px 10px; border-radius: 7px;
   font-size: 13px; cursor: pointer; font-family: inherit; }
 .lb-dmg { font-weight: 600; color: var(--text-heading); }
-.lb-time { color: var(--text-muted); }
+.lb-time { color: var(--text-muted); font-size: .9em; white-space: nowrap; }
+.lb-version { color: var(--text-muted); font-size: .85em; }
 .rk { display: inline-block; min-width: 26px; padding: 1px 8px; border-radius: 6px; font-size: 12px;
   font-weight: 600; background: var(--bg-chip); color: var(--text-label); }
 .rk-gold { background: #f7e29a; color: #6b4e00; }
