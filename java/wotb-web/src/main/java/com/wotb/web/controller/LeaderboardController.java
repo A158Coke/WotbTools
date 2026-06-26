@@ -31,20 +31,22 @@ public class LeaderboardController {
 
     /** 全局伤害榜。 */
     @GetMapping("/top-damage")
-    public List<LeaderboardRecordDto> topDamage(@RequestParam(defaultValue = "50") final int limit) {
+    public List<LeaderboardRecordDto> topDamage(
+            @RequestParam(name = "limit", defaultValue = "50") final int limit) {
         return service.topDamage(limit);
     }
 
     /** 指定车辆的伤害榜。 */
     @GetMapping("/tanks/{tankId}/top-damage")
-    public List<LeaderboardRecordDto> topDamageByTank(@PathVariable final long tankId,
-                                                      @RequestParam(defaultValue = "50") final int limit) {
+    public List<LeaderboardRecordDto> topDamageByTank(
+            @PathVariable("tankId") final long tankId,
+            @RequestParam(name = "limit", defaultValue = "50") final int limit) {
         return service.topDamageByTank(tankId, limit);
     }
 
     /** 单条记录; 不存在返回 404。 */
     @GetMapping("/records/{id}")
-    public LeaderboardRecordDto record(@PathVariable final long id) {
+    public LeaderboardRecordDto record(@PathVariable("id") final long id) {
         return service.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "记录不存在: " + id));
     }
