@@ -105,7 +105,10 @@
     "time": "Time",
     "loading": "Loading…",
     "empty": "No data yet. Upload random-battle replays to appear here.",
-    "error": "Failed to load leaderboard"
+    "error": "Failed to load leaderboard",
+    "upload_hint": "Only .wotbreplay single replay",
+    "upload_success": "Uploaded! Record added to leaderboard",
+    "upload_failed": "Upload failed"
   },
   "player_labels": {
     "nickname": "Player",
