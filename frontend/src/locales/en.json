@@ -102,7 +102,7 @@
     "tank_name": "Tank",
     "damage_dealt": "Damage",
     "map": "Map",
-    "time": "Time",
+    "time": "Upload Time",
     "loading": "Loading…",
     "empty": "No data yet. Upload random-battle replays to appear here.",
     "error": "Failed to load leaderboard",
