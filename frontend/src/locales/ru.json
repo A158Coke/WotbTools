@@ -1,7 +1,7 @@
 ﻿{
   "app": {
-    "title": "Анализатор реплеев WoT Blitz",
-    "subtitle": "Разбор реплеев · данные 14 игроков · экспорт xlsx",
+    "title": "WoTBTools",
+    "subtitle": "Инструменты World of Tanks Blitz",
     "shutdown": "Выключить",
     "homepage": "Главная",
     "theme": "Тема"

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
@@ -54,6 +54,11 @@
     background: var(--tag-bg); color: var(--accent); font-weight: 600;
   }
 
+  .lang-select { appearance: none; -webkit-appearance: none; border: 1px solid var(--card-border);
+    background: var(--card-bg); color: var(--muted); padding: 5px 28px 5px 10px; border-radius: 7px;
+    font-size: .8rem; cursor: pointer; font-family: inherit; }
+  .lang-select:hover { color: var(--text) }
+
   .tools {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -107,8 +112,8 @@
 <body>
 
 <header>
-  <h1>WoTBTools</h1>
-  <p>《坦克世界闪击战》工具集</p>
+  <h1 data-i18n="title">WoTBTools</h1>
+  <p data-i18n="subtitle">《坦克世界闪击战》工具集</p>
 </header>
 
 <div class="theme-bar">
@@ -117,73 +122,149 @@
   <button data-theme="dark">dark</button>
 </div>
 
+<select class="lang-select" id="lang-select" onchange="switchLang(this.value)"></select>
+
 <div class="tools">
   <a class="card" href="https://replay.wotbtools.com">
-    <h2>回放提取器</h2>
-    <p>上传 .wotbreplay 回放文件，提取战斗数据并导出 Excel。支持多场次上传、评分系统、多语言界面。</p>
-    <span class="tag">可用</span>
+    <h2 data-i18n="tool_replay">回放提取器</h2>
+    <p data-i18n="tool_replay_desc">上传 .wotbreplay 回放文件，提取战斗数据并导出 Excel。支持多场次上传、评分系统、多语言界面。</p>
+    <span class="tag" data-i18n="tag_avail">可用</span>
   </a>
 
   <a class="card" href="https://replay.wotbtools.com/?view=leaderboard">
-    <h2>排行榜</h2>
-    <p>随机战斗的单场伤害排行 —— 上传回放即可上榜，按车辆查看伤害榜。</p>
-    <span class="tag">可用</span>
+    <h2 data-i18n="tool_lb">排行榜</h2>
+    <p data-i18n="tool_lb_desc">随机战斗的单场伤害排行 —— 上传回放即可上榜，按车辆查看伤害榜。</p>
+    <span class="tag" data-i18n="tag_avail">可用</span>
   </a>
 
   <div class="coming-soon">
     <div class="card">
-      <h2>战绩卡片</h2>
-      <p>为个人主页或论坛生成实时战绩卡片，根据玩家数据自动更新。</p>
-      <span class="tag">规划中</span>
+      <h2 data-i18n="tool_card">战绩卡片</h2>
+      <p data-i18n="tool_card_desc">为个人主页或论坛生成实时战绩卡片，根据玩家数据自动更新。</p>
+      <span class="tag" data-i18n="tag_planned">规划中</span>
     </div>
   </div>
 
   <div class="coming-soon">
     <div class="card">
-      <h2>开发者 API</h2>
-      <p>开放 API 查询坦克数据、地图名、评分配置等参考数据。</p>
-      <span class="tag">规划中</span>
+      <h2 data-i18n="tool_api">开发者 API</h2>
+      <p data-i18n="tool_api_desc">开放 API 查询坦克数据、地图名、评分配置等参考数据。</p>
+      <span class="tag" data-i18n="tag_planned">规划中</span>
     </div>
   </div>
 </div>
 
 <section class="version">
-  <h2 class="version-title">版本历史</h2>
+  <h2 class="version-title" data-i18n="ver_title">版本历史</h2>
   <div class="version-list">
     <div class="ver">
       <span class="ver-num">v1.5.0</span>
       <span class="ver-date">2026-06-26</span>
-      <span class="ver-tag add">新增</span>
-      <p>工具集主页 · 主题切换系统 · 排行榜功能 · PostgreSQL · Flyway · 全局异常处理 · 离线版 Docker 分发 · 项目重构</p>
+      <span class="ver-tag add" data-i18n="ver_added">新增</span>
+      <p data-i18n="ver_150">工具集主页 · 主题切换系统 · 排行榜功能 · PostgreSQL · Flyway · 全局异常处理 · 离线版 Docker 分发 · 项目重构</p>
     </div>
     <div class="ver">
       <span class="ver-num">v1.4.0</span>
       <span class="ver-date">2026-06-25</span>
-      <span class="ver-tag fix">修复</span>
-      <p>存活时间推算更准确</p>
+      <span class="ver-tag fix" data-i18n="ver_fixed">修复</span>
+      <p data-i18n="ver_140">存活时间推算更准确</p>
     </div>
     <div class="ver">
       <span class="ver-num">v1.3.0</span>
       <span class="ver-date">2026-06-24</span>
-      <span class="ver-tag add">新增</span>
-      <p>存活时间列 · 三语 i18n · 评分系统 · 地图中文化 · Docker 部署</p>
+      <span class="ver-tag add" data-i18n="ver_added">新增</span>
+      <p data-i18n="ver_130">存活时间列 · 三语 i18n · 评分系统 · 地图中文化 · Docker 部署</p>
     </div>
     <div class="ver">
       <span class="ver-num">v1.0.0</span>
       <span class="ver-date">2026-06-23</span>
-      <span class="ver-tag add">新增</span>
-      <p>回放解析引擎 · Web API · Vue 前端 · Excel 导出</p>
+      <span class="ver-tag add" data-i18n="ver_added">新增</span>
+      <p data-i18n="ver_100">回放解析引擎 · Web API · Vue 前端 · Excel 导出</p>
     </div>
     <div class="ver">
       <span class="ver-num">v0.1.0</span>
       <span class="ver-date">2026-06-22</span>
-      <span class="ver-tag add">新增</span>
-      <p>项目初始化</p>
+      <span class="ver-tag add" data-i18n="ver_added">新增</span>
+      <p data-i18n="ver_010">项目初始化</p>
     </div>
   </div>
 </section>
 
-<footer>WoTBTools &mdash; 社区工具，非 Wargaming 官方产品</footer>
+<footer data-i18n="foot">WoTBTools &mdash; 社区工具，非 Wargaming 官方产品</footer>
+
+<i18n style="display:none">
+{
+"zh": {
+"title":"WoTBTools",
+"subtitle":"《坦克世界闪击战》工具集",
+"tool_replay":"回放提取器",
+"tool_replay_desc":"上传 .wotbreplay 回放文件，提取战斗数据并导出 Excel。支持多场次上传、评分系统、多语言界面。",
+"tool_lb":"排行榜",
+"tool_lb_desc":"随机战斗的单场伤害排行 —— 上传回放即可上榜，按车辆查看伤害榜。",
+"tool_card":"战绩卡片",
+"tool_card_desc":"为个人主页或论坛生成实时战绩卡片，根据玩家数据自动更新。",
+"tool_api":"开发者 API",
+"tool_api_desc":"开放 API 查询坦克数据、地图名、评分配置等参考数据。",
+"tag_avail":"可用",
+"tag_planned":"规划中",
+"ver_title":"版本历史",
+"ver_added":"新增",
+"ver_fixed":"修复",
+"ver_150":"工具集主页 · 主题切换系统 · 排行榜功能 · PostgreSQL · Flyway · 全局异常处理 · 离线版 Docker 分发 · 项目重构",
+"ver_140":"存活时间推算更准确",
+"ver_130":"存活时间列 · 三语 i18n · 评分系统 · 地图中文化 · Docker 部署",
+"ver_100":"回放解析引擎 · Web API · Vue 前端 · Excel 导出",
+"ver_010":"项目初始化",
+"foot":"WoTBTools — 社区工具，非 Wargaming 官方产品"
+},
+"en": {
+"title":"WoTBTools",
+"subtitle":"World of Tanks Blitz Tool Suite",
+"tool_replay":"Replay Extractor",
+"tool_replay_desc":"Upload .wotbreplay files, extract battle data and export to Excel. Multi-file upload, rating system, multilingual UI.",
+"tool_lb":"Leaderboard",
+"tool_lb_desc":"Single-battle damage ranking for random battles — upload replays to appear on the board, filter by tank.",
+"tool_card":"Battle Cards",
+"tool_card_desc":"Generate real-time battle stat cards for personal pages or forums, auto-updated with player data.",
+"tool_api":"Developer API",
+"tool_api_desc":"Open API to query tank data, map names, rating configuration, and other reference data.",
+"tag_avail":"Available",
+"tag_planned":"Planned",
+"ver_title":"Changelog",
+"ver_added":"Added",
+"ver_fixed":"Fixed",
+"ver_150":"Homepage · Theme system · Leaderboard · PostgreSQL · Flyway · Exception handler · Docker distribution · Project restructure",
+"ver_140":"More accurate survival time estimation",
+"ver_130":"Survival time · i18n · Rating system · Map i18n · Docker deploy",
+"ver_100":"Replay parser · Web API · Vue frontend · Excel export",
+"ver_010":"Project init",
+"foot":"WoTBTools — Community tool, not affiliated with Wargaming"
+},
+"ru": {
+"title":"WoTBTools",
+"subtitle":"Инструменты World of Tanks Blitz",
+"tool_replay":"Анализатор реплеев",
+"tool_replay_desc":"Загружайте .wotbreplay, извлекайте данные боя и экспортируйте в Excel. Массовая загрузка, рейтинг, мультиязычный UI.",
+"tool_lb":"Рейтинг",
+"tool_lb_desc":"Рейтинг урона за случайные бои — загружайте реплеи для попадания в таблицу, фильтруйте по танку.",
+"tool_card":"Карточки боёв",
+"tool_card_desc":"Генерация карточек статистики для форумов и профилей, автообновление по данным игрока.",
+"tool_api":"API для разработчиков",
+"tool_api_desc":"Открытый API для запроса данных о танках, названий карт, параметров рейтинга.",
+"tag_avail":"Доступно",
+"tag_planned":"Планируется",
+"ver_title":"История версий",
+"ver_added":"Добавлено",
+"ver_fixed":"Исправлено",
+"ver_150":"Главная · Темы · Рейтинг · PostgreSQL · Flyway · Обработчик ошибок · Docker · Реструктуризация",
+"ver_140":"Улучшена оценка времени выживания",
+"ver_130":"Время выживания · i18n · Рейтинг · Карты · Docker",
+"ver_100":"Парсер реплеев · Web API · Vue · Excel",
+"ver_010":"Запуск проекта",
+"foot":"WoTBTools — Инструмент сообщества, не связан с Wargaming"
+}
+}
+</i18n>
 
 <script>
 (function(){
@@ -238,6 +319,31 @@
 
   mql.addEventListener('change', refresh);
   refresh();
+
+  // --- i18n ---
+  var I18N = JSON.parse(document.querySelector('i18n').textContent);
+  var langs = [{k:'zh',l:'中文'},{k:'en',l:'English'},{k:'ru',l:'Русский'}];
+  var sel = document.getElementById('lang-select');
+  langs.forEach(function(l){
+    var o = document.createElement('option');
+    o.value = l.k; o.textContent = l.l;
+    sel.appendChild(o);
+  });
+
+  var savedLang = localStorage.getItem('wotb-lang') || 'zh';
+  sel.value = savedLang;
+
+  function switchLang(lang) {
+    if (!I18N[lang]) return;
+    localStorage.setItem('wotb-lang', lang);
+    var dict = I18N[lang];
+    document.querySelectorAll('[data-i18n]').forEach(function(el){
+      var k = el.getAttribute('data-i18n');
+      if (dict[k]) el.textContent = dict[k];
+    });
+  }
+  window.switchLang = switchLang;
+  switchLang(savedLang);
 })();
 </script>
 

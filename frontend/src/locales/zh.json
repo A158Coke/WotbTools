@@ -1,7 +1,7 @@
 ﻿{
   "app": {
-    "title": "WoT Blitz 回放分析",
-    "subtitle": "解析回放 · 14 人战场数据 · 导出 xlsx",
+    "title": "WoTBTools",
+    "subtitle": "《坦克世界闪击战》工具集",
     "shutdown": "关闭离线程序",
     "homepage": "工具集",
     "theme": "主题"

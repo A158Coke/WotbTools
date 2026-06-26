@@ -1,7 +1,7 @@
 ﻿{
   "app": {
-    "title": "WoT Blitz Replay Analyzer",
-    "subtitle": "Parse replays · 14-player battle data · Export xlsx",
+    "title": "WoTBTools",
+    "subtitle": "World of Tanks Blitz Tool Suite",
     "shutdown": "Shut Down",
     "homepage": "Home",
     "theme": "Theme"
