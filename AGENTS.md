@@ -13,7 +13,7 @@
    - Java:`cd java && mvn -s settings.xml test`(需 `JAVA_HOME` 指向 JDK 21)
    - 改了前端:`cd frontend && npm run build`
 5. **构建隔离(个人项目,勿碰公司基建)。** Maven 一律 `-s java/settings.xml`(Aliyun 镜像 + 独立 `java/.m2repo`);**系统默认 `java` 是 JDK 8,跑 mvn 必须先设 `JAVA_HOME` 指向 JDK 21**(`%USERPROFILE%\.jdks\jdk-21.0.1`)。车辆库单一来源在 `common/tankopedia.json`,勿在模块内放副本。
-   - ⚠️ `java/settings.xml` 是**生成文件**(`build-desktop.ps1` 把 `settings.xml.template` 的 `@LOCAL_REPO@` 占位符替换为绝对路径;gitignored)。若磁盘上的 `settings.xml` 仍是字面量 `@LOCAL_REPO@`,直接 `-s` 它会让 Maven 在当前目录建一个名为 `@LOCAL_REPO@` 的本地仓库(垃圾)。先确保 `localRepository` 是绝对路径,或临时加 `-Dmaven.repo.local=<abs>` 覆盖。
+   - ⚠️ `java/settings.xml` 是**生成文件**(`settings.xml.template` 的 `@LOCAL_REPO@` 占位符替换为绝对路径;gitignored)。若磁盘上的 `settings.xml` 仍是字面量 `@LOCAL_REPO@`,直接 `-s` 它会让 Maven 在当前目录建一个名为 `@LOCAL_REPO@` 的本地仓库(垃圾)。先确保 `localRepository` 是绝对路径,或临时加 `-Dmaven.repo.local=<abs>` 覆盖。
 6. **Git。** 个人仓库,SSH remote `github-personal` 以账号 `A158Coke` 推送,**不使用**任何公司 token。提交信息中文、结尾带 `Co-Authored-By`。
 7. **跨站点状态共享用 `.wotbtools.com` 域 Cookie。** 主页(`wotbtools.com`)与各工具子域名(如 `replay.wotbtools.com`)间共享用户偏好时,写 `domain=.wotbtools.com` 的 Cookie 为主,`localStorage` 为本地开发回退。新增跨站点状态(如主题、语言、偏好)统一用这个模式,读写函数命名 `readXxx()`/`saveXxx()`。
 8. **Spring controller 显式参数名。** `@RequestParam(name="x")` / `@PathVariable("x")` 必须写名字。父 pom 已开 `-parameters`,但仍以显式命名为准——隐式命名一旦哪天编译漏标 `-parameters` 就会运行时 500。新 controller 配 standalone MockMvc 测试守 HTTP 绑定(参考 `LeaderboardControllerTest`)。
@@ -33,8 +33,8 @@ cd offline && start.bat
 # 在线版（本地开发）→ 编译启动
 cd online && docker compose up --build
 # 分镜像构建(CI/CD 用)
-docker build -f Dockerfile.backend -t a158coke/wotbtool:backend-test .
-docker build -f Dockerfile.frontend -t a158coke/wotbtool:frontend-test .
+docker build -f docker/Dockerfile.backend -t a158coke/wotbtool:backend-test .
+docker build -f docker/Dockerfile.frontend -t a158coke/wotbtool:frontend-test .
 ```
 
 ## 不要做

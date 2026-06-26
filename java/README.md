@@ -2,7 +2,7 @@
 
 `java/` 是项目后续主线。基于同一套 Java 核心能力同时交付两种形态：
 
-- **Java 离线 exe**：无须安装 JDK，双击运行，自动打开浏览器，本地选择/拖拽回放并导出 Excel。
+- **Java 离线版**：无须安装 JDK，双击运行，自动打开浏览器，本地选择/拖拽回放并导出 Excel。
 - **Web 版**：Spring Boot 4 后端，Vue 3 前端，支持浏览器上传、预览、下载。
 
 当前两种形态均已实现。路线图见 [../TODO.md](../TODO.md)。
@@ -38,7 +38,7 @@ cd offline
 chmod +x start.sh && ./start.sh
 ```
 
-> 镜像从 Docker Hub 拉取，首次需联网。后续离线可用（镜像已缓存）。停止用 `docker compose down`，更新用 `docker compose pull && docker compose up -d`。离线版不提供排行榜功能。
+> 镜像从 Docker Hub 拉取，首次需联网。后续离线可用（镜像已缓存）。停止用 `docker compose down`，更新用 `docker compose pull && docker compose up -d`。
 
 ## Web 版（Docker + PostgreSQL）
 
@@ -192,4 +192,4 @@ spring:
 
 - 列定义在 `wotb-core/.../Columns.java` 中集中管理，前端通过 `/api/columns` 获取，不在前端硬编码业务字段。
 - 车辆库单一来源在 `common/tankopedia.json`；`wotb-core` 构建时自动复制到 classpath，勿在模块内再放副本。
-- 离线 exe 和 Web 版复用同一个 `wotb-core`，不复制解析逻辑。
+- 离线版 和 Web 版复用同一个 `wotb-core`，不复制解析逻辑。
