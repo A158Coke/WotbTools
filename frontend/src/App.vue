@@ -21,7 +21,9 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
 
 <template>
   <div class="topbar">
-    <a class="tb-brand" href="https://wotbtools.com">WoTBTools</a>
+    <a class="tb-brand" href="https://wotbtools.com">
+      <img class="tb-logo" src="/wotbtoolslogo.png" alt="WoTBTools">
+    </a>
     <nav>
       <button :class="{ active: activeTool === 'replay' }" @click="activeTool = 'replay'">{{ $t('app.replay_tab') }}</button>
       <button v-if="!isDesktop" :class="{ active: activeTool === 'leaderboard' }" @click="activeTool = 'leaderboard'">{{ $t('leaderboard.btn') }}</button>
@@ -169,6 +171,7 @@ body { margin: 0; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; color:
 }
 .tb-brand { text-decoration: none; font-size: 15px; font-weight: 700; color: var(--heading); white-space: nowrap }
 .tb-brand:hover { color: var(--accent) }
+.tb-logo { height: 28px; width: auto; vertical-align: middle; border-radius: 6px }
 .topbar nav { display: flex; gap: 4px }
 .topbar nav button {
   padding: 5px 14px; border: none; border-radius: 7px; font-family: inherit;

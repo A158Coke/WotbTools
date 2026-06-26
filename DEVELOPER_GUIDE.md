@@ -49,7 +49,8 @@
 │   ├── tankopedia.json           #   车辆库
 │   ├── rating.json               #   评分参数
 │   ├── map_names.json            #   地图名
-│   ├── assets/                   #   图标
+│   ├── assets/                   #   图标/logo 单一来源
+│   │   ├── wotbtoolslogo.png  icon.ico  icon.png   #   Dockerfile 构建时 → homepage + frontend dist
 │   └── data/                     #   示例回放（gitignore）
 ├── common/python/                # 车辆库更新脚本
 │   └── update_tankopedia.py

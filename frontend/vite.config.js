@@ -12,5 +12,6 @@ export default defineConfig({
       '/api': { target: 'http://localhost:8087', changeOrigin: true }
     }
   },
+  publicDir: '../common/assets',
   build: { outDir: 'dist' }
 })

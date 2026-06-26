@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/x-icon" href="icon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="icon.png">
 <title>WoTBTools</title>
 <script>
  (function(){
@@ -28,6 +30,17 @@
     display: flex; flex-direction: column; align-items: center;
     transition: background .25s, color .25s;
   }
+  .header-logo {
+    display: block;
+    margin: 0 auto 16px;
+    width: 72px;
+    height: 72px;
+    border-radius: 16px;
+  }
+  @media (max-width: 560px) {
+    .header-logo { width: 56px; height: 56px; margin-bottom: 12px; }
+  }
+
   header {
     text-align: center; padding: 64px 24px 48px;
   }
@@ -141,6 +154,7 @@
 <body>
 
 <header>
+  <img class="header-logo" src="wotbtoolslogo.png" alt="WoTBTools logo">
   <h1 data-i18n="title">WoTBTools</h1>
   <p data-i18n="subtitle">《坦克世界闪击战》工具集</p>
 </header>
