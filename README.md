@@ -22,8 +22,8 @@
 
 | 版本          | 技术栈                                        | 入口                                                   | 适用场景                     |
 |-------------|--------------------------------------------|------------------------------------------------------|--------------------------|
-| Java 离线版 | Docker Desktop + pull 镜像 | `java\offline\start.bat` | 双击启动、拉镜像、本地浏览器 UI、离线导出       |
-| Java Web 版  | Java 21 + Spring Boot 4 + Vue 3 + Docker | `java/`（`java\online\` 本地开发；CI/CD→ `a158coke/wotbtool` 镜像） | 浏览器上传、在线预览、REST API、容器部署 |
+| Java 离线版 | Docker Desktop + pull 镜像 | `offline\start.bat` | 双击启动、首次需联网（安装 Docker + 拉镜像）、本地浏览器 UI       |
+| Java Web 版  | Java 21 + Spring Boot 4 + Vue 3 + Docker | `online\` 本地开发；CI/CD → `a158coke/wotbtool` 双镜像 | 浏览器上传、在线预览、排行榜、REST API |
 
 文档入口：
 
@@ -52,12 +52,14 @@
 
 ## 快速使用：离线版
 
-需提前安装 Docker Desktop。
+**前提**：首次运行需联网（安装 Docker、拉取镜像）。后续可离线使用。
+
+脚本自动检测 Docker：未安装则询问是否自动安装（Windows 调用 winget，macOS 调用 Homebrew，Linux 调用 get.docker.com）。用户拒绝则需手动安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/)。
 
 - Windows：双击 `offline\start.bat`
 - macOS / Linux：终端运行 `offline/start.sh`
 
-脚本自动检测系统 → 检查 Docker → 拉镜像 → 启动 → 打开浏览器 `http://localhost:8088`。首次需联网拉取镜像，后续离线可用。停止：`docker compose -f offline/docker-compose.yml down`。
+脚本自动检测系统 → 安装/检查 Docker → 拉取最新镜像 → 启动 → 打开浏览器 `http://localhost:8088`。停止：`docker compose -f offline/docker-compose.yml down`。
 
 ## 从源码运行与构建
 
@@ -74,14 +76,14 @@ java -jar wotb-web\target\wotb-web.jar
 
 > Windows 环境默认 `java` 可能是 JDK 8。执行 Maven 前请先把 `JAVA_HOME` 指向 JDK 21。
 
-### 离线版（用户分发，需 Docker Desktop）
+### 离线版（用户分发，首次需联网）
 
 ```bat
 cd offline
 start.bat
 ```
 
-脚本自动检测 Docker → `docker pull` 拉取 `a158coke/wotbtool:backend-latest` + `frontend-latest` → `docker compose up` 启动 → 打开浏览器 `http://localhost:8088`。
+脚本自动检测系统 → 未安装 Docker 则询问是否自动安装（winget / Homebrew / get.docker.com）→ 拉取镜像 → 启动 → 打开浏览器 `http://localhost:8088`。首次需联网，后续离线可用。
 
 详细说明见 [java/README.md](java/README.md)。
 

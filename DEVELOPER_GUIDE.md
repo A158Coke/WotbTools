@@ -158,9 +158,9 @@ BattleResults
 
 ### 离线版（用户分发）
 
-离线版不依赖源码、JDK 或 Node.js。用户只需安装 Docker Desktop，运行 `offline/start.bat`：
+离线版不依赖源码、JDK 或 Node.js。首次需联网（安装 Docker、拉取镜像）。运行 `offline/start.bat`（Windows）或 `offline/start.sh`（macOS/Linux）：
 
-1. 检测 Docker 是否安装并运行。
+1. 检测 Docker 是否安装。未安装则询问是否自动安装（winget / Homebrew / get.docker.com），用户拒绝则需手动安装 Docker Desktop。
 2. `docker pull a158coke/wotbtool:backend-latest` + `frontend-latest`。
 3. `docker compose up -d` 启动 postgres + backend + frontend 三容器。
 4. 自动打开浏览器 `http://localhost:8088`。

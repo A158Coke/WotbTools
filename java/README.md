@@ -23,33 +23,33 @@
 
 ## 离线版（用户分发）
 
-离线版不需要源码、JDK 或 Node.js。用户只需安装 Docker Desktop，运行启动脚本：
+离线版不需要源码、JDK 或 Node.js。脚本自动检测 Docker：未安装则询问是否自动安装（Windows 调用 winget，macOS 调用 Homebrew，Linux 调用 get.docker.com）。用户拒绝则需手动安装 Docker Desktop。
 
 - **Windows**：双击 `start.bat`
 - **macOS / Linux**：终端运行 `./start.sh`
 
 ```bat
 # Windows
-cd java\offline
+cd ..\offline
 start.bat
 
 # macOS / Linux
-cd offline
+cd ../offline
 chmod +x start.sh && ./start.sh
 ```
 
-> 镜像从 Docker Hub 拉取，首次需联网。后续离线可用（镜像已缓存）。停止用 `docker compose down`，更新用 `docker compose pull && docker compose up -d`。
+> 首次需联网（安装 Docker、拉取镜像），后续离线可用（镜像已缓存）。停止用 `docker compose down`，更新用 `docker compose pull && docker compose up -d`。
 
 ## Web 版（Docker + PostgreSQL）
 
 ```bash
-cd java\online
+cd ..\online
 docker compose up --build
 ```
 
 访问 http://localhost:8088 （健康检查 `http://localhost:8088/api/health`）。
 
-`online/docker-compose.yml` 启动**三容器**（`postgres:18` + `wotb-backend` + `wotb-frontend`），分别构建 `Dockerfile.backend` 和 `Dockerfile.frontend`。nginx 托管 Vue + 反代 `/api → wotb-backend:8087`，后端通过 `SPRING_PROFILES_ACTIVE: postgres` 连接 PostgreSQL。
+`online/docker-compose.yml` 启动**三容器**（`postgres:18` + `wotb-backend` + `wotb-frontend`），分别构建 `docker/Dockerfile.backend` 和 `docker/Dockerfile.frontend`。nginx 托管 Vue + 反代 `/api → wotb-backend:8087`，后端通过 `SPRING_PROFILES_ACTIVE: postgres` 连接 PostgreSQL。
 
 ### CI/CD 自动部署
 
