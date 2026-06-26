@@ -1,4 +1,4 @@
-{
+﻿{
   "app": {
     "title": "WoT Blitz 回放分析",
     "subtitle": "解析回放 · 14 人战场数据 · 导出 xlsx",
@@ -144,5 +144,6 @@
     "pens": "总击穿次数",
     "tanks": "用车",
     "account_id": "账号ID"
-  }
+  },
+  "theme": { "auto": "跟随系统", "light": "亮色", "dark": "暗色" }
 }

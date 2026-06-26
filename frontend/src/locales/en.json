@@ -1,4 +1,4 @@
-{
+﻿{
   "app": {
     "title": "WoT Blitz Replay Analyzer",
     "subtitle": "Parse replays · 14-player battle data · Export xlsx",
@@ -144,5 +144,6 @@
     "pens": "Total Pens",
     "tanks": "Tanks Used",
     "account_id": "Account ID"
-  }
+  },
+  "theme": { "auto": "Auto", "light": "Light", "dark": "Dark" }
 }

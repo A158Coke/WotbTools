@@ -86,9 +86,9 @@ function confirmRemoveBattle() {
         <option v-for="l in [{key:'zh',label:'中文'},{key:'en',label:'English'},{key:'ru',label:'Русский'}]" :key="l.key" :value="l.key">{{ l.label }}</option>
       </select>
       <div class="theme-bar">
-        <button :class="{ active: theme === 'auto' }" @click="handleTheme('auto')" :title="$t('app.theme')">auto</button>
-        <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">light</button>
-        <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">dark</button>
+        <button :class="{ active: theme === 'auto' }" @click="handleTheme('auto')" :title="$t('app.theme')">{{ $t('theme.auto') }}</button>
+        <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">{{ $t('theme.light') }}</button>
+        <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">{{ $t('theme.dark') }}</button>
       </div>
       <button v-if="isDesktop" class="ghost" @click="shutdown">
         <svg class="ic" viewBox="0 0 24 24"><path d="M7 6a7.7 7.7 0 1 0 10 0M12 4v8" /></svg>{{ $t('app.shutdown') }}
