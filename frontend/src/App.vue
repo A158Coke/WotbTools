@@ -10,7 +10,8 @@ const { t } = useI18n()
 const { theme, handleTheme } = useTheme()
 
 const isDesktop = ref(false)
-const activeTool = ref('replay')
+const params = new URLSearchParams(window.location.search)
+const activeTool = ref(params.get('view') === 'leaderboard' ? 'leaderboard' : 'replay')
 
 onMounted(async () => {
   try { isDesktop.value = (await api.healthCheck()).desktop } catch { /* 离线模式 */ }
