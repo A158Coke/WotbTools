@@ -90,6 +90,23 @@
     "extra": "Extra",
     "overview": "Overview"
   },
+  "leaderboard": {
+    "btn": "Leaderboard",
+    "title": "Damage Leaderboard",
+    "subtitle": "Random battles only · recorder's single-battle damage",
+    "back": "Back",
+    "refresh": "Refresh",
+    "limit": "Show",
+    "rank": "Rank",
+    "nickname": "Player",
+    "tank_name": "Tank",
+    "damage_dealt": "Damage",
+    "map": "Map",
+    "time": "Time",
+    "loading": "Loading…",
+    "empty": "No data yet. Upload random-battle replays to appear here.",
+    "error": "Failed to load leaderboard"
+  },
   "player_labels": {
     "nickname": "Player",
     "clan": "Clan",

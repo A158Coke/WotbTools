@@ -13,6 +13,7 @@ import BattleTable from './components/BattleTable.vue'
 import RemoveConfirmModal from './components/RemoveConfirmModal.vue'
 import RatingModal from './components/RatingModal.vue'
 import VersionPage from './components/VersionPage.vue'
+import LeaderboardPage from './components/LeaderboardPage.vue'
 
 const { t } = useI18n()
 
@@ -30,6 +31,7 @@ const { visibleKeys, aggVisibleKeys, playerOrder, aggOrder, showColPicker, picke
 const isDesktop = ref(false)
 const showRating = ref(false)
 const showVersion = ref(false)
+const showLeaderboard = ref(false)
 
 // --- 生命周期 ---
 onMounted(async () => {
@@ -76,6 +78,9 @@ function confirmRemoveBattle() {
       <button class="ghost" @click="showRating = true">
         <svg class="ic" viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M9.6 9.4a2.4 2.4 0 0 1 4.4 1.3c0 1.6-2 1.9-2 3.3M12 17h.01" /></svg>{{ $t('rating_help.btn') }}
       </button>
+      <button v-if="!isDesktop" class="ghost" @click="showLeaderboard = true">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M6 4h12v5a6 6 0 0 1-12 0zM6 6H3v2a3 3 0 0 0 3 3M18 6h3v2a3 3 0 0 1-3 3"/></svg>{{ $t('leaderboard.btn') }}
+      </button>
       <button class="ghost" @click="showVersion = true">
         <svg class="ic" viewBox="0 0 24 24"><path d="M12 8v4l2 2"/><circle cx="12" cy="12" r="9"/></svg>{{ $t('version.btn') }}
       </button>
@@ -95,7 +100,8 @@ function confirmRemoveBattle() {
       </button>
     </header>
 
-    <VersionPage v-if="showVersion" @back="showVersion = false" />
+    <LeaderboardPage v-if="showLeaderboard" @back="showLeaderboard = false" />
+    <VersionPage v-else-if="showVersion" @back="showVersion = false" />
     <template v-else>
     <FileUploader :files="files" :loading="loading" @update:files="files = $event" @preview="preview" />
 

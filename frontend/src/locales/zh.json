@@ -90,6 +90,23 @@
     "extra": "附加",
     "overview": "总览"
   },
+  "leaderboard": {
+    "btn": "排行榜",
+    "title": "伤害排行榜",
+    "subtitle": "仅随机战斗 · 录像者单场伤害",
+    "back": "返回",
+    "refresh": "刷新",
+    "limit": "显示数量",
+    "rank": "排名",
+    "nickname": "玩家",
+    "tank_name": "车辆",
+    "damage_dealt": "伤害",
+    "map": "地图",
+    "time": "时间",
+    "loading": "加载中…",
+    "empty": "暂无数据。上传随机战斗回放后即可上榜。",
+    "error": "排行榜加载失败"
+  },
   "player_labels": {
     "nickname": "玩家",
     "clan": "战队",

@@ -21,3 +21,16 @@ export async function downloadBlob(mode, body) {
 export async function shutdown() {
   await fetch('/api/shutdown', { method: 'POST' })
 }
+
+// 排行榜 (仅在线版 postgres profile; 离线版无这些端点)
+export async function leaderboardTopDamage(limit = 50) {
+  const r = await fetch(`/api/leaderboard/top-damage?limit=${encodeURIComponent(limit)}`)
+  if (!r.ok) throw new Error('排行榜加载失败: HTTP ' + r.status)
+  return r.json()
+}
+
+export async function leaderboardTopDamageByTank(tankId, limit = 50) {
+  const r = await fetch(`/api/leaderboard/tanks/${encodeURIComponent(tankId)}/top-damage?limit=${encodeURIComponent(limit)}`)
+  if (!r.ok) throw new Error('排行榜加载失败: HTTP ' + r.status)
+  return r.json()
+}
