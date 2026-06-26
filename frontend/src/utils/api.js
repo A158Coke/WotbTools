@@ -34,3 +34,14 @@ export async function leaderboardTopDamageByTank(tankId, limit = 50) {
   if (!r.ok) throw new Error('排行榜加载失败: HTTP ' + r.status)
   return r.json()
 }
+
+export async function leaderboardUpload(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  const r = await fetch('/api/leaderboard/upload', { method: 'POST', body: fd })
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}))
+    throw new Error(err.error || '上传失败: HTTP ' + r.status)
+  }
+  return r.json()
+}

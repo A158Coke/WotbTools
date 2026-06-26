@@ -9,6 +9,9 @@ const rows = ref([])
 const loading = ref(false)
 const error = ref('')
 const limit = ref(50)
+const uploading = ref(false)
+const uploadMsg = ref('')
+const fileInput = ref(null)
 
 async function load() {
   loading.value = true
@@ -21,6 +24,30 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+async function upload(file) {
+  if (!file || !file.name.endsWith('.wotbreplay')) {
+    uploadMsg.value = '请选择 .wotbreplay 文件'
+    return
+  }
+  uploading.value = true
+  uploadMsg.value = ''
+  try {
+    await api.leaderboardUpload(file)
+    uploadMsg.value = '上传成功！已录入排行榜'
+    fileInput.value.value = ''
+    await load()
+  } catch (e) {
+    uploadMsg.value = e.message
+  } finally {
+    uploading.value = false
+  }
+}
+
+function onFileChange(e) {
+  const f = e.target.files?.[0]
+  if (f) upload(f)
 }
 
 onMounted(load)
@@ -54,6 +81,12 @@ function rankClass(i) {
     <div class="lb-head">
       <h2 class="lb-title">{{ $t('leaderboard.title') }}</h2>
       <p class="subtitle">{{ $t('leaderboard.subtitle') }}</p>
+    </div>
+
+    <div class="lb-upload">
+      <input ref="fileInput" type="file" accept=".wotbreplay" @change="onFileChange" :disabled="uploading" />
+      <span v-if="uploadMsg" class="lb-upload-msg" :class="{ err: uploading === false && uploadMsg.includes('失败') || uploadMsg.includes('请选择') }">{{ uploadMsg }}</span>
+      <span v-if="uploading" class="muted">上传中...</span>
     </div>
 
     <div class="lb-toolbar">
@@ -120,4 +153,8 @@ function rankClass(i) {
 [data-theme="dark"] .rk-silver { background: #3a414d; color: #cdd5e1; }
 [data-theme="dark"] .rk-bronze { background: #4d3621; color: #f0cda6; }
 .muted { padding: 24px 4px; }
+.lb-upload { display: flex; align-items: center; gap: 12px; margin: 12px 0; flex-wrap: wrap; }
+.lb-upload input[type="file"] { font-size: 13px; color: var(--text-label); }
+.lb-upload-msg { font-size: 13px; }
+.lb-upload-msg.err { color: var(--error); }
 </style>
