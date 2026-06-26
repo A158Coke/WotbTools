@@ -120,6 +120,7 @@ public final class ReplayParser {
         battle.startTime = parseLong(text(meta, "battleStartTime"));
         battle.recorder = text(meta, "playerName");
         battle.recorderVehicle = text(meta, "playerVehicleName");
+        battle.arenaBonusType = meta.hasNonNull("arenaBonusType") ? meta.get("arenaBonusType").asInt() : null;
         battle.players = players;
 
         // ---- data.wotreplay 事件流 ----

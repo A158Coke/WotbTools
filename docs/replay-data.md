@@ -209,7 +209,7 @@ survivalTimeSec:
 | 10 | `vehicleCompDescriptor` | int | — | `4481` | 车辆组件描述符（== tankId） | 否 |
 | 11 | `camouflageId` | int | — | `406` | 涂装 ID | 否 |
 | 12 | `mapId` | int | — | `26` | 地图数字 ID | 否（已移除） |
-| 13 | `arenaBonusType` | int | — | `2` | 模式类型（2=随机） | 否 |
+| 13 | `arenaBonusType` | int | — | `1` | 模式类型（**1=随机；2=训练房**；其他=娱乐/联赛等。经真实样本核实，早期"2=随机"系误标——当时分析的是训练房回放） | 是 → `Battle.arenaBonusType`（排行榜仅收 ==1） |
 | 14 | `camouflageCustomData` | string | — | `""` | 自定义涂装数据 | 否 |
 
 ---
@@ -510,4 +510,3 @@ Layer 2 为 **2026-06 新增**，解决了旧方法的两个缺陷：
 - `#301→#2→#1` — 单独统计的点亮协助分量
 - `#150` — 丰富的分车统计/成就事件
 - `#302` — MVP 排行数据
-- `meta.json#arenaBonusType` — 模式类型

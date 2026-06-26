@@ -140,6 +140,14 @@ java -jar wotb-web/target/wotb-web.jar --desktop
 
 仅桌面模式可用。优雅关闭后端服务并退出 JVM。
 
+### 排行榜（仅 `postgres` profile）
+
+仅在线版提供，需数据库。离线/桌面版不暴露这些端点。每条记录 = 录像者本人在一场**随机战斗**（`arenaBonusType==1`，训练房/娱乐/联赛拒绝）中用某辆车打出的单场伤害；上传 `/api/preview` 时自动落库（去重键 `arena_id + account_id`）。
+
+- `GET /api/leaderboard/top-damage?limit=50` — 全局伤害榜（降序，`limit` 1–200）。
+- `GET /api/leaderboard/tanks/{tankId}/top-damage?limit=50` — 指定车辆伤害榜。
+- `GET /api/leaderboard/records/{id}` — 单条记录（不存在返回 404）。
+
 ## 测试
 
 ```bash
