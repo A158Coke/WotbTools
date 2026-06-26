@@ -9,11 +9,15 @@ spring:
   web:
     resources:
       static-locations: classpath:/static/
-  # 默认无数据库，JPA 不启动（离线版/dev 可用）
+  # 默认无数据库，JPA/DataSource 不启动（离线版/dev 可用）。
+  # 注意：Spring Boot 4 把自动配置迁到了 org.springframework.boot.{jdbc,hibernate,data.jpa}.autoconfigure.*，
+  # 旧的 org.springframework.boot.autoconfigure.* 类名不再匹配（等于没排除）。
   autoconfigure:
     exclude:
-      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
-      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
+      - org.springframework.boot.jdbc.autoconfigure.DataSourceInitializationAutoConfiguration
+      - org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration
+      - org.springframework.boot.data.jpa.autoconfigure.DataJpaRepositoriesAutoConfiguration
 
 logging:
   level:
@@ -33,3 +37,8 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+    # 兜底：线上库若已有 ddl-auto 时代的残留表但无 flyway_schema_history，
+    # 在 v0 处建立基线后再跑 V1（baseline-version 必须为 0，否则默认 v1 会跳过 V1__init）。
+    # 空库时此项为 no-op，正常从 V1 开始。
+    baseline-on-migrate: true
+    baseline-version: 0
