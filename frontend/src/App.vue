@@ -35,6 +35,10 @@ const showLeaderboard = ref(false)
 
 // --- 生命周期 ---
 onMounted(async () => {
+  // 深链: 主页排行榜卡片 → /?view=leaderboard 直接打开榜单
+  if (new URLSearchParams(window.location.search).get('view') === 'leaderboard') {
+    showLeaderboard.value = true
+  }
   try { isDesktop.value = (await api.healthCheck()).desktop } catch { /* 离线模式 */ }
 })
 
