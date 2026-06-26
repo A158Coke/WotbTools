@@ -23,6 +23,12 @@ export async function shutdown() {
 }
 
 // 排行榜 (仅在线版 postgres profile; 离线版无这些端点)
+export async function ratingConfig() {
+  const r = await fetch('/api/rating')
+  if (!r.ok) throw new Error('Rating config failed: HTTP ' + r.status)
+  return r.json()
+}
+
 export async function leaderboardTopDamage(limit = 50) {
   const r = await fetch(`/api/leaderboard/top-damage?limit=${encodeURIComponent(limit)}`)
   if (!r.ok) throw new Error('排行榜加载失败: HTTP ' + r.status)

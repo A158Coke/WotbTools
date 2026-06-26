@@ -6,7 +6,6 @@ import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.dto.LeaderboardRecordDto;
 import com.wotb.web.service.LeaderboardService;
 import org.springframework.context.annotation.Profile;
-import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -15,7 +14,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
@@ -63,12 +61,5 @@ public class LeaderboardController {
             @PathVariable final long tankId,
             @RequestParam(name = "limit", defaultValue = "50") final int limit) {
         return service.topDamageByTank(tankId, limit);
-    }
-
-    /** 单条记录; 不存在返回 404。 */
-    @GetMapping("/records/{id}")
-    public LeaderboardRecordDto record(@PathVariable final long id) {
-        return service.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "记录不存在: " + id));
     }
 }

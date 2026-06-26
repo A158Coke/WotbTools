@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { RATING_DEFAULTS, RATING_TIERS, tierRange } from '../utils/helpers.js'
+import * as api from '../utils/api.js'
 
 const emit = defineEmits(['close'])
 const props = defineProps({ show: Boolean })
@@ -10,7 +11,7 @@ const cfg = computed(() => ({ ...RATING_DEFAULTS, ...(ratingCfg.value || {}) }))
 
 watch(() => props.show, async (v) => {
   if (v && !ratingCfg.value) {
-    try { ratingCfg.value = await (await fetch('/api/rating')).json() } catch { ratingCfg.value = {} }
+    try { ratingCfg.value = await api.ratingConfig() } catch { ratingCfg.value = {} }
   }
 })
 </script>

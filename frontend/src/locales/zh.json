@@ -113,7 +113,10 @@
     "upload_success": "上传成功！已录入排行榜",
     "upload_failed": "上传失败",
     "upload_title": "上传回放以计入排名",
-    "upload_btn": "选择回放文件"
+        "upload_btn": "选择回放文件",
+        "all_tanks": "全部车辆",
+        "filter_tank": "当前筛选",
+        "filter_by_tank": "点击查看该车辆排行榜"
   },
   "player_labels": {
     "nickname": "玩家",
