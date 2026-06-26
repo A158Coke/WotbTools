@@ -17,6 +17,9 @@
 - [x] Maven settings.xml 本地仓库路径改为模板 + 动态生成，不再写死。
 - [x] 在线演示：https://replay.wotbtools.com
 
+- [x] 排行榜支持按车辆筛选（点击车辆名查看专属伤害榜）。
+- [x] 排行榜新增 version（回放游戏版本号）和 battle_time（战斗实际发生时间）列。
+
 ## P0：Java 主线完善
 
 - [ ] 给 `wotb-core` 增加更明确的 parity 测试说明：字段不变量与导出格式一致性。
@@ -47,6 +50,15 @@
 - [x] 前端三语（中/英/俄）：UI 文案 + 列显示名（`locales/{zh,en,ru}.json` 的 `player_labels`/`agg_labels`）。
 - [ ] **地图名未接 i18n**：当前 `common/map_names.json` 只有「内部英文名（如 `lagoon`）→ 中文（海岸礁湖）」一套映射，`mapLabel()` 在任何语言下都返回中文（表里没有的图则原样显示内部英文名）。导致 en/ru 界面地图名仍是中文，且**内部名 / 中文名 / 英文名三者不统一**。
   - 方案待定：把 `map_names.json` 扩成多语言（如 `{ "lagoon": { "zh": "海岸礁湖", "en": "Lagoon", "ru": "Лагуна" } }`），`mapLabel()` 按当前 locale 取值；导出层（`MapNames.cn()`）相应改造或保持中文。需同步后端 `MapNames` 读取逻辑、`wotb-core/pom.xml` 资源、wotb-sync 配方 G。
+
+## P1：用户认证
+
+- [ ] Keycloak + QQ-only 登录。详见 [docs/auth/keycloak-qq-only.md](docs/auth/keycloak-qq-only.md)
+  - [ ] 部署 `auth.wotbtools.com` Keycloak
+  - [ ] QQ IdP 接入可行性验证
+  - [ ] Spring Security Resource Server JWT 验证
+  - [ ] `app_user` 表 + `GET /api/me`
+  - [ ] 前端 QQ 登录/退出/当前用户
 
 ## P1：测试与质量
 

@@ -2,9 +2,9 @@
 
 《坦克世界闪击战》（World of Tanks Blitz）工具集。
 
-当前唯一已上线工具：从 `.wotbreplay` 回放文件中提取战斗数据，并导出为 Excel。
+已上线工具：从 `.wotbreplay` 回放文件中提取战斗数据导出 Excel、在线伤害排行榜。
 
-项目主线为 Java：**Java 离线版** 与 **Web 版** 均已完成。
+项目主线为 Java：**Java 离线版**、**Web 版** 与 **工具集主页** 均已完成。
 
 ## 当前目标
 
@@ -12,6 +12,7 @@
 |-------------|------------------------------------------------|---------------|
 | Java 离线版 | Docker Desktop + 拉取镜像 | ✅ 已完成         |
 | Web 版       | Spring Boot 4 + Vue 3 + PostgreSQL + Docker | ✅ 已完成         |
+| 工具集主页    | 暗色卡片式入口 + 主题切换 + 三语 i18n | ✅ 已完成         |
 
 在线演示：https://replay.wotbtools.com
 工具集主页：https://wotbtools.com
@@ -38,6 +39,7 @@
 
 ## 功能
 
+- 品牌展示：logo 与 favicon（`common/assets/` 单一来源，Docker 构建时分发至首页与前端）
 - 解析单个 `.wotbreplay` 中的 14 名玩家战斗数据。
 - 读取 `meta.json` 战斗信息、`battle_results.dat` pickle + protobuf、`data.wotreplay` 事件流。
 - 使用 `tankopedia.json` 将车辆 ID 映射为车辆名、等级、类型和国家。
@@ -49,6 +51,8 @@
 - Java / Web 版提供 `/api/preview`、`/api/export`、`/api/columns`、`/api/rating`、`/api/health`、`/api/shutdown`。
 - 排行榜（仅在线版 `postgres` profile）：上传随机战斗回放自动记录录像者单场伤害，`/api/leaderboard/top-damage` 等端点查询。
 - Java 离线版：双击 `start.bat`，拉取 Docker 镜像，自动打开浏览器，无需源码或 JDK。
+
+> 排行榜支持按车辆筛选（点击车辆名查看专属伤害榜），URL 参数 `?view=leaderboard` 可直接跳转排行榜视图。
 
 ## 快速使用：离线版
 
@@ -114,8 +118,8 @@ mvn -s settings.xml test
 | 路径                            | 说明                                          |
 |-------------------------------|---------------------------------------------|
 | `homepage/`                   | 工具集主页（`wotbtools.com`，暗色卡片式单页）|
-| `common/`                     | 共享资源：`tankopedia.json`、`rating.json`、`map_names.json`(地图中文名)、`assets/`(图标)、`data/`(示例回放) |
-| `common/python/`              | 车辆库更新脚本（`update_tankopedia.py`） |
+| `common/`                     | 共享资源：`tankopedia.json`、`rating.json`、`map_names.json`、`assets/`（logo/favicon 单一来源）、`data/`（示例回放） |
+| `common/python/`              | 车辆库更新脚本（`update_tankopedia.py`）    |
 | `java/`                       | Java 主线（wotb-core + wotb-web）                   |
 | `java/wotb-core/`             | 共享核心库：解析、protobuf 解码、pickle 读取、汇总、POI 导出     |
 | `java/wotb-web/`              | Spring Boot 4 应用：REST API + Leaderboard + Flyway |
