@@ -97,14 +97,7 @@ java -jar wotb-web/target/wotb-web.jar --desktop
 
 返回服务状态、已加载车辆数量、是否桌面模式。
 
-### `GET /api/columns`
-
-返回列的**集合与顺序**（纯英文，不含中文显示名）：每项为 `{key, num}`。
-
-- `player`：单场玩家数据列。
-- `aggregate`：多场汇总列。
-
-显示名不在 API 里：前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`），导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。详见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
+列定义由后端 `/api/preview` 响应中的 `playerColumns`/`aggregateColumns` 字段提供（纯英文 key），前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`）映射显示名，导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。详见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
 
 ### `GET /api/rating`
 
@@ -146,7 +139,6 @@ java -jar wotb-web/target/wotb-web.jar --desktop
 
 - `GET /api/leaderboard/top-damage?limit=50` — 全局伤害榜（降序，`limit` 1–200）。
 - `GET /api/leaderboard/tanks/{tankId}/top-damage?limit=50` — 指定车辆伤害榜。
-- `GET /api/leaderboard/records/{id}` — 单条记录（不存在返回 404）。
 
 ## 测试
 
@@ -159,7 +151,7 @@ mvn -s settings.xml test
 测试覆盖：
 
 - `wotb-core` 的 `ParityTest`：集成测试，覆盖解析、字段不变量、去重、汇总、xlsx 导出。
-- `wotb-web` 的 `WebApiTest`：`/api/columns`、`/api/preview`、`/api/export` 的 controller 测试。
+- `wotb-web` 的 `WebApiTest`：`/api/preview`、`/api/export` 的 controller 测试。
 
 测试样本来自仓库根目录的 `common/data/`。
 
@@ -190,6 +182,6 @@ spring:
 
 ## 维护注意
 
-- 列定义在 `wotb-core/.../Columns.java` 中集中管理，前端通过 `/api/columns` 获取，不在前端硬编码业务字段。
+- 列定义在 `wotb-core/.../Columns.java` 中集中管理，前端通过 `/api/preview` 响应获取列定义，不在前端硬编码业务字段。
 - 车辆库单一来源在 `common/tankopedia.json`；`wotb-core` 构建时自动复制到 classpath，勿在模块内再放副本。
 - 离线版 和 Web 版复用同一个 `wotb-core`，不复制解析逻辑。

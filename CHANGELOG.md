@@ -6,6 +6,10 @@
 
 ### Added
 - 排行榜新增 `version`（回放游戏版本号）和 `battle_time`（战斗实际发生时间）列，V2 Flyway 迁移、前端表格同步展示
+- 排行榜新增按车辆筛选：点击车辆名即可查看该车专属伤害榜，复用 `/api/leaderboard/tanks/{tankId}/top-damage`
+
+### Changed
+- 后端删除未使用的 `/api/columns` 和 `/api/leaderboard/records/{id}` 端点，前端 `RatingModal.vue` 统一走 `api.js`
 
 ## [1.5.0] - 2026-06-26
 

@@ -9,10 +9,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -27,7 +25,8 @@ class LeaderboardControllerTest {
 
     private static LeaderboardRecordDto dto() {
         return new LeaderboardRecordDto(1L, "arenaA", 6481L, "FV4005",
-                111L, "Recorder1", 3200, "milbase", OffsetDateTime.now());
+                111L, "Recorder1", 3200, "milbase",
+                "11.18.0", OffsetDateTime.now(), OffsetDateTime.now());
     }
 
     private MockMvc mvc(final LeaderboardService svc) {
@@ -49,15 +48,5 @@ class LeaderboardControllerTest {
         when(svc.topDamageByTank(eq(6481L), anyInt())).thenReturn(List.of(dto()));
         mvc(svc).perform(get("/api/leaderboard/tanks/6481/top-damage").param("limit", "25"))
                 .andExpect(status().isOk());
-    }
-
-    @Test
-    void recordFoundAndNotFound() throws Exception {
-        final LeaderboardService svc = mock(LeaderboardService.class);
-        when(svc.findById(1L)).thenReturn(Optional.of(dto()));
-        when(svc.findById(999L)).thenReturn(Optional.empty());
-        final MockMvc mvc = mvc(svc);
-        mvc.perform(get("/api/leaderboard/records/1")).andExpect(status().isOk());
-        mvc.perform(get("/api/leaderboard/records/999")).andExpect(status().isNotFound());
     }
 }

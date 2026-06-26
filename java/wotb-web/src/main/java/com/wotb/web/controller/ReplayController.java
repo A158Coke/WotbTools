@@ -34,12 +34,6 @@ public class ReplayController {
         this.lifecycle = lifecycle;
     }
 
-    /** 列定义 (前端构建表头/列选择/排序)。 */
-    @GetMapping("/columns")
-    public Object columns() {
-        return service.columns();
-    }
-
     /** 评分参数 (前端「评分规则」展示算法与真实权重/系数)。 */
     @GetMapping("/rating")
     public Object rating() {

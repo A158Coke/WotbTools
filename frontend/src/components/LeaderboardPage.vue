@@ -13,17 +13,37 @@ const uploadOk = ref(false)
 const dragging = ref(false)
 const fileInput = ref(null)
 
+// 车辆筛选
+const selectedTankId = ref(null)
+const selectedTankName = ref('')
+
 async function load() {
   loading.value = true
   error.value = ''
   try {
-    rows.value = await api.leaderboardTopDamage(limit.value)
+    if (selectedTankId.value) {
+      rows.value = await api.leaderboardTopDamageByTank(selectedTankId.value, limit.value)
+    } else {
+      rows.value = await api.leaderboardTopDamage(limit.value)
+    }
   } catch (e) {
     error.value = e.message
     rows.value = []
   } finally {
     loading.value = false
   }
+}
+
+function filterByTank(tankId, tankName) {
+  selectedTankId.value = tankId
+  selectedTankName.value = tankName
+  load()
+}
+
+function clearFilter() {
+  selectedTankId.value = null
+  selectedTankName.value = ''
+  load()
 }
 
 async function upload(file) {
@@ -103,10 +123,17 @@ function rankClass(i) {
           <option :value="100">100</option>
         </select>
       </label>
+      <button v-if="selectedTankId" class="ghost sm" @click="clearFilter">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M12 20a8 8 0 1 1 0-16 8 8 0 0 1 0 16zM12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM14.8 9.2l-5.6 5.6M9.2 9.2l5.6 5.6" /></svg>{{ $t('leaderboard.all_tanks') }}
+      </button>
       <button class="ghost sm" :disabled="loading" @click="load">
         <svg class="ic" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v6h-6" /></svg>{{ $t('leaderboard.refresh') }}
       </button>
     </div>
+
+    <p v-if="selectedTankId" class="lb-filter-hint">
+      {{ $t('leaderboard.filter_tank') }}：<strong>{{ selectedTankName }}</strong>
+    </p>
 
     <p v-if="error" class="error">{{ $t('leaderboard.error') }}: {{ error }}</p>
     <p v-else-if="loading" class="muted">{{ $t('leaderboard.loading') }}</p>
@@ -129,7 +156,15 @@ function rankClass(i) {
           <tr v-for="(r, i) in rows" :key="r.id">
             <td><span class="rk" :class="rankClass(i)">{{ i + 1 }}</span></td>
             <td>{{ r.nickname }}</td>
-            <td>{{ r.tankName }}</td>
+            <td>
+              <button
+                v-if="!selectedTankId"
+                class="lb-tank-link"
+                :title="$t('leaderboard.filter_by_tank')"
+                @click="filterByTank(r.tankId, r.tankName)"
+              >{{ r.tankName }}</button>
+              <span v-else>{{ r.tankName }}</span>
+            </td>
             <td class="lb-dmg">{{ r.damageDealt.toLocaleString() }}</td>
             <td>{{ mapLabel(r.mapName) }}</td>
             <td class="lb-version">{{ r.version || '-' }}</td>
@@ -152,6 +187,13 @@ function rankClass(i) {
 .lb-dmg { font-weight: 600; color: var(--text-heading); }
 .lb-time { color: var(--text-muted); font-size: .9em; white-space: nowrap; }
 .lb-version { color: var(--text-muted); font-size: .85em; }
+.lb-tank-link {
+  background: none; border: none; padding: 0; color: var(--accent); font-family: inherit;
+  font-size: inherit; cursor: pointer; text-decoration: none;
+}
+.lb-tank-link:hover { text-decoration: underline; color: var(--accent-hover); }
+.lb-filter-hint { margin: 6px 0 2px; font-size: 13px; color: var(--text-label); }
+.lb-filter-hint strong { color: var(--accent-dark); }
 .rk { display: inline-block; min-width: 26px; padding: 1px 8px; border-radius: 6px; font-size: 12px;
   font-weight: 600; background: var(--bg-chip); color: var(--text-label); }
 .rk-gold { background: #f7e29a; color: #6b4e00; }

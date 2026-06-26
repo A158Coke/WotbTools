@@ -113,7 +113,10 @@
     "upload_success": "Загружено! Запись добавлена в рейтинг",
     "upload_failed": "Ошибка загрузки",
     "upload_title": "Загрузите реплей для рейтинга",
-    "upload_btn": "Выбрать реплей"
+        "upload_btn": "Выбрать реплей",
+        "all_tanks": "Все танки",
+        "filter_tank": "Фильтр",
+        "filter_by_tank": "Нажмите для рейтинга по танку"
   },
   "player_labels": {
     "nickname": "Игрок",
