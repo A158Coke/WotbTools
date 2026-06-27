@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useTheme } from './composables/useTheme.js'
 import * as api from './utils/api.js'
+import HomePage from './components/HomePage.vue'
 import ReplayPage from './components/ReplayPage.vue'
 import LeaderboardPage from './components/LeaderboardPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
@@ -12,7 +13,9 @@ const { theme, handleTheme } = useTheme()
 
 const isDesktop = ref(false)
 const params = new URLSearchParams(window.location.search)
-const activeTool = ref(params.get('view') === 'leaderboard' ? 'leaderboard' : params.get('view') === 'profile' ? 'profile' : 'replay')
+const isHomeHost = window.location.hostname === 'wotbtools.com' || window.location.hostname === 'www.wotbtools.com'
+const defaultView = isHomeHost ? 'home' : 'replay'
+const activeTool = ref(params.get('view') === 'leaderboard' ? 'leaderboard' : params.get('view') === 'profile' ? 'profile' : defaultView)
 
 onMounted(async () => {
   try { isDesktop.value = (await api.healthCheck()).desktop } catch { /* 离线模式 */ }
@@ -27,6 +30,7 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <img class="tb-logo" src="/wotbtoolslogo.png" alt="WoTBTools">
     </a>
     <nav>
+      <button v-if="isHomeHost" :class="{ active: activeTool === 'home' }" @click="activeTool = 'home'">首页</button>
       <button :class="{ active: activeTool === 'replay' }" @click="activeTool = 'replay'">{{ $t('app.replay_tab') }}</button>
       <button v-if="!isDesktop" :class="{ active: activeTool === 'leaderboard' }" @click="activeTool = 'leaderboard'">{{ $t('leaderboard.btn') }}</button>
     </nav>
@@ -42,7 +46,8 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
   </div>
 
   <div class="tb-content">
-    <ProfilePage v-if="activeTool === 'profile'" />
+    <HomePage v-if="activeTool === 'home'" />
+    <ProfilePage v-else-if="activeTool === 'profile'" />
     <LeaderboardPage v-else-if="activeTool === 'leaderboard'" />
     <ReplayPage v-else />
   </div>
