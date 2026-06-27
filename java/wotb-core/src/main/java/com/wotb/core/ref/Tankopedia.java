@@ -35,13 +35,14 @@ public final class Tankopedia {
     public TankInfo info(final long tankId) {
         final JsonNode t = data.get(String.valueOf(tankId));
         if (t == null) {
-            return new TankInfo("#" + tankId, "", "", "");
+            return new TankInfo("#" + tankId, "", "", "", null);
         }
         final String name = t.hasNonNull("name") ? t.get("name").asText() : "#" + tankId;
         final Object tier = t.hasNonNull("tier") ? t.get("tier").asInt() : "";
         final String type = t.hasNonNull("class") ? t.get("class").asText() : "";
         final String nation = t.hasNonNull("nation") ? t.get("nation").asText() : "";
-        return new TankInfo(name, tier, type, nation);
+        final Integer alphaDamage = t.hasNonNull("alphaDamage") ? t.get("alphaDamage").asInt() : null;
+        return new TankInfo(name, tier, type, nation, alphaDamage);
     }
 
     public int size() {

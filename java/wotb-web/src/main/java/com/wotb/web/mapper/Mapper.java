@@ -1,15 +1,17 @@
 package com.wotb.web.mapper;
 
 import com.wotb.core.Columns;
-import com.wotb.core.stats.Players;
-import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.ref.Tankopedia;
+import com.wotb.core.stats.Players;
+import com.wotb.core.stats.RatingAnalyzer;
 import com.wotb.web.dto.AggRow;
 import com.wotb.web.dto.BattleDto;
 import com.wotb.web.dto.ColumnDef;
 import com.wotb.web.dto.PlayerRow;
+import com.wotb.web.dto.RatingRow;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -49,6 +51,9 @@ public final class Mapper {
             new AggCol("kills_avg", true, a -> r2(a.avg(a.kills))),
             new AggCol("damage", true, a -> a.damage),
             new AggCol("damage_avg", true, a -> r1(a.avg(a.damage))),
+            new AggCol("potential_damage", true, a -> a.potentialDamage),
+            new AggCol("potential_damage_avg", true, a -> r1(a.avg(a.potentialDamage))),
+            new AggCol("potential_damage_supplement_avg", true, a -> r1(a.avg(a.potentialDamageSupplement))),
             new AggCol("assisted", true, a -> a.assisted),
             new AggCol("assisted_avg", true, a -> r1(a.avg(a.assisted))),
             new AggCol("received_avg", true, a -> r1(a.avg(a.received))),
@@ -69,6 +74,28 @@ public final class Mapper {
             out.add(new ColumnDef(c.key(), c.num()));
         }
         return out;
+    }
+
+    static final List<ColumnDef> RATING_COLS = List.of(
+            new ColumnDef("nickname", false),
+            new ColumnDef("clan", false),
+            new ColumnDef("battles", true),
+            new ColumnDef("wins", true),
+            new ColumnDef("win_rate", true),
+            new ColumnDef("rating", true),
+            new ColumnDef("kast", true),
+            new ColumnDef("contribution", true),
+            new ColumnDef("influence", true),
+            new ColumnDef("damage_avg", true),
+            new ColumnDef("potential_damage_avg", true),
+            new ColumnDef("potential_damage_supplement_avg", true),
+            new ColumnDef("kills", true),
+            new ColumnDef("kills_avg", true),
+            new ColumnDef("account_id", true)
+    );
+
+    public static List<ColumnDef> ratingColumns() {
+        return RATING_COLS;
     }
 
     public static BattleDto toBattle(final Battle b, final String sourceName, final Tankopedia tp) {
@@ -97,6 +124,30 @@ public final class Mapper {
                 cells.put(c.key(), c.get().apply(a));
             }
             out.add(new AggRow(cells, a.team));
+        }
+        return out;
+    }
+
+    public static List<RatingRow> toRatings(final List<RatingAnalyzer.Row> ratings) {
+        final List<RatingRow> out = new ArrayList<>();
+        for (final RatingAnalyzer.Row rating : ratings) {
+            final Map<String, Object> cells = new LinkedHashMap<>();
+            cells.put("nickname", rating.nickname);
+            cells.put("clan", rating.clan);
+            cells.put("battles", rating.battles);
+            cells.put("wins", rating.wins);
+            cells.put("win_rate", r1(rating.winRate()));
+            cells.put("rating", rating.rating);
+            cells.put("kast", r1(rating.kast));
+            cells.put("contribution", r1(rating.contribution));
+            cells.put("influence", r1(rating.influence));
+            cells.put("damage_avg", r1(rating.damageAvg));
+            cells.put("potential_damage_avg", r1(rating.potentialDamageAvg));
+            cells.put("potential_damage_supplement_avg", r1(rating.potentialDamageSupplementAvg));
+            cells.put("kills", rating.kills);
+            cells.put("kills_avg", r2(rating.killsAvg));
+            cells.put("account_id", rating.accountId);
+            out.add(new RatingRow(cells));
         }
         return out;
     }

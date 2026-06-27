@@ -176,7 +176,7 @@ BattleResults
   - `composables/useTheme.js` — 主题切换（auto/light/dark），数据持久化调用 `utils/theme.js`
   - `utils/api.js` — 集中式 API 层（healthCheck / preview / downloadBlob / shutdown）
   - `utils/theme.js` — 纯函数（readTheme / saveTheme / resolveTheme / applyTheme），Cookie `.wotbtools.com` 域共享 + localStorage 回退
-  - `utils/helpers.js` — 常量（DEFAULT_VISIBLE / RATING_TIERS）+ 工具函数（mapLabel / ratingTier 等）
+  - `utils/helpers.js` — 常量（DEFAULT_VISIBLE / EXTENDED_ONLY_PLAYER_KEYS / RATING_TIERS）+ 工具函数（mapLabel / ratingTier 等）
 - UI 组件在 `components/`：FileUploader / ColumnPicker / AggregateTable / BattleTable / RatingModal / RemoveConfirmModal / VersionPage / LeaderboardPage（排行榜整页，仅在线版显示）
 - 开发时 Vite 代理 `/api → localhost:8087`。
 - 语言持久化 `localStorage('wotb-lang')`，主题持久化 Cookie `wotbtools-theme`（domain `.wotbtools.com`）+ localStorage 回退。
@@ -185,12 +185,34 @@ BattleResults
 
 API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + 数据，**不含中文**。显示名由各输出通道**各自映射**：
 
-- 前端：`vue-i18n` 三语 locale `frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`（两套 key，因 `kills` 在单场=「击杀」、汇总=「总击杀」，同 key 不同义），模板用 `$t('player_labels.' + key)` 渲染，语言可切换、`localStorage` 记忆（`wotb-lang`）。
+- 前端：`vue-i18n` 三语 locale `frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels` / `rating_labels`（多套 key，因 `kills` 在单场=「击杀」、汇总=「总击杀」、rating=「人头」），模板用 `$t(...)` 渲染，语言可切换、`localStorage` 记忆（`wotb-lang`）。
 - 导出层：`Columns.java`（单场 xlsx 表头）、`AggregateSheets.java` 的汇总列（导出仅中文）。
 
-> 这是有意的取舍：API 干净、可多语言，但显示名存在多份（前端三语 locale + 导出）。**改/增任一列名，务必同步三语 locale 的两套 key（缺 key 会回退 `en`，再缺则显示原始 key）与导出标签。**
+> 这是有意的取舍：API 干净、可多语言，但显示名存在多份（前端三语 locale + 导出）。**改/增任一列名，务必同步三语 locale 的相关 key（缺 key 会回退 `en`，再缺则显示原始 key）与导出标签。**
 >
 > 当前命名约定：辅助伤害=「协助伤害」、承受伤害=「损失血量」、抵挡伤害=「格挡」、击伤敌数=「击伤」；汇总用「总X / 场均X」。
+
+
+
+### 潜在伤害与实时 rating
+
+本轮扩展不改当前回放解析页面入口，新增独立 `/extended` 多页构建入口；生产 nginx 对 `/extended` 映射到 `extended.html`，离线/同源 Spring 静态资源由 `StaticForwardController` 转发。
+
+新增字段：
+
+- 单场玩家列：`alpha_damage`、`rank`、`potential_damage`、`potential_damage_supplement`、`potential_damage_detail`。
+- 汇总列：`potential_damage`、`potential_damage_avg`、`potential_damage_supplement_avg`。
+- 实时 rating 列：`rating`、`kast`、`contribution`、`influence`、`damage_avg`、`potential_damage_avg`、`potential_damage_supplement_avg`、`kills`、`kills_avg`。
+
+`frontend/src/composables/useColumns.js` 会过滤 `EXTENDED_ONLY_PLAYER_KEYS`，所以原回放解析页面不展示扩展专用列；扩展页 `/extended` 直接读取 `playerColumns`，可展示完整字段。
+
+`ReplayParser` 仍解析 `xp`、`credits` 到 `PlayerResult`，但这两个值受经济/加成/首胜等因素影响，不作为玩家战绩展示字段、导出列或 rating 输入。
+
+`Tankopedia` 已支持读取 `alphaDamage` 并映射为玩家列 `alpha_damage`；当前 `common/tankopedia.json` 没有该字段时显示为空，不影响解析。
+
+`PotentialDamage.apply(...)` 当前只保守打通字段链路：在尚未解析“击杀者 -> 被击杀者”的逐目标伤害/击穿明细时，`potential_damage == damage_dealt`、`potential_damage_supplement == 0`、`potential_damage_detail == 未解析`。这不会覆盖均伤。若未来 `killVictims` 与 `alphaDamage` 同时可用，会按 0.9 × 炮伤补增规则计算。
+
+`POST /api/rating` 只基于本次上传的 multipart 回放实时计算，不落库、不读取历史记录；`GET /api/rating` 仍保留为评分参数接口。进入最终 rating 公式设计前，需要先确认潜在场均、KAST/Trade/impact/多伤率等权重方案，不要直接替换当前公式。
 
 ### 评分（Rating）
 
@@ -250,7 +272,7 @@ Java 离线版、Java Web 版必须保持以下规则一致：
 如修改字段解释或列名，必须同步：
 
 1. Java `ReplayParser`、`PlayerResult`、`Columns`（单场列）、`AggregateSheets`（汇总列）。
-2. Java Web API `Mapper`（`/api/columns` 只回英文 key）+ 前端三语 locale `locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`。
+2. Java Web API `Mapper`（`/api/columns` 只回英文 key）+ 前端三语 locale `locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels` / `rating_labels`。
 3. 测试（`ParityTest`、`WebApiTest`）。
 5. 文档（本文件 + README）。
 

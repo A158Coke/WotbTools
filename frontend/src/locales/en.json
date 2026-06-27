@@ -79,14 +79,34 @@
     "baseline_word": "baseline",
     "if_win": "if won",
     "tier_title": "Tiers",
-    "tiers": { "elite": "Elite", "great": "Great", "good": "Good", "mid": "Average", "poor": "Poor" },
+    "tiers": {
+      "elite": "Elite",
+      "great": "Great",
+      "good": "Good",
+      "mid": "Average",
+      "poor": "Poor"
+    },
     "note": "The baseline is the batch computed together, so this is a relative score, not an absolute ladder rating; single battles have fewer samples and vary more.",
     "close": "Close"
   },
   "duration": "{min}m {sec}s",
-  "team": { "1": "Team 1", "2": "Team 2", "unknown": "Draw/Unknown" },
-  "survived": { "alive": "Alive", "dead": "Destroyed" },
-  "version": { "btn": "Changelog", "back": "Back", "added": "Added", "fixed": "Fixed", "changed": "Changed", "removed": "Removed" },
+  "team": {
+    "1": "Team 1",
+    "2": "Team 2",
+    "unknown": "Draw/Unknown"
+  },
+  "survived": {
+    "alive": "Alive",
+    "dead": "Destroyed"
+  },
+  "version": {
+    "btn": "Changelog",
+    "back": "Back",
+    "added": "Added",
+    "fixed": "Fixed",
+    "changed": "Changed",
+    "removed": "Removed"
+  },
   "col_groups": {
     "identity": "Identity",
     "vehicle": "Vehicle",
@@ -106,9 +126,9 @@
     "tank_name": "Tank",
     "damage_dealt": "Damage",
     "map": "Map",
-        "version": "Version",
-        "battle_time": "Battle Time",
-        "upload_time": "Upload Time",
+    "version": "Version",
+    "battle_time": "Battle Time",
+    "upload_time": "Upload Time",
     "loading": "Loading…",
     "empty": "No data yet. Upload random-battle replays to appear here.",
     "error": "Failed to load leaderboard",
@@ -116,10 +136,10 @@
     "upload_success": "Uploaded! Record added to leaderboard",
     "upload_failed": "Upload failed",
     "upload_title": "Upload replay to rank",
-        "upload_btn": "Select Replay",
-        "all_tanks": "All Tanks",
-        "filter_tank": "Filter",
-        "filter_by_tank": "Click to view tank leaderboard"
+    "upload_btn": "Select Replay",
+    "all_tanks": "All Tanks",
+    "filter_tank": "Filter",
+    "filter_by_tank": "Click to view tank leaderboard"
   },
   "player_labels": {
     "nickname": "Player",
@@ -128,6 +148,7 @@
     "tank_tier": "Tier",
     "tank_type": "Type",
     "tank_nation": "Nation",
+    "alpha_damage": "Alpha damage",
     "rating": "Rating",
     "survived_label": "Status",
     "survival_time": "Survival Time",
@@ -147,7 +168,11 @@
     "n_enemies_damaged": "Enemies Hit",
     "platoon_label": "Platoon",
     "tank_id": "Tank ID",
-    "account_id": "Account ID"
+    "account_id": "Account ID",
+    "rank": "Military rank",
+    "potential_damage": "Potential damage",
+    "potential_damage_supplement": "Supplement damage",
+    "potential_damage_detail": "Potential detail"
   },
   "agg_labels": {
     "nickname": "Player",
@@ -174,7 +199,42 @@
     "hits": "Total Hits",
     "pens": "Total Pens",
     "tanks": "Tanks Used",
+    "account_id": "Account ID",
+    "potential_damage": "Total potential damage",
+    "potential_damage_avg": "Avg potential damage",
+    "potential_damage_supplement_avg": "Avg supplement damage"
+  },
+  "theme": {
+    "auto": "Auto",
+    "light": "Light",
+    "dark": "Dark"
+  },
+  "rating_labels": {
+    "nickname": "Player",
+    "clan": "Clan",
+    "battles": "Battles",
+    "wins": "Wins",
+    "win_rate": "Win rate %",
+    "rating": "Rating",
+    "kast": "KAST %",
+    "contribution": "Contribution %",
+    "influence": "Influence",
+    "damage_avg": "Avg damage",
+    "potential_damage_avg": "Potential DPB",
+    "potential_damage_supplement_avg": "Avg supplement",
+    "kills": "Kills",
+    "kills_avg": "Avg kills",
     "account_id": "Account ID"
   },
-  "theme": { "auto": "Auto", "light": "Light", "dark": "Dark" }
+  "extended": {
+    "title": "Extended analysis",
+    "preview": "Parse extended fields",
+    "rating": "Rating analysis",
+    "rating_title": "Realtime rating",
+    "fields_title": "Extended fields",
+    "empty": "No files selected",
+    "no_files": "Select replay files or a folder first",
+    "scope_preview": "Extended fields",
+    "scope_rating": "Rating"
+  }
 }

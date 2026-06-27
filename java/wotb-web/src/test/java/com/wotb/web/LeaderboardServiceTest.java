@@ -40,7 +40,7 @@ class LeaderboardServiceTest {
         b.recorder = recorderNick;
         b.arenaBonusType = 1;   // 默认随机战斗 (1=随机, 2=训练房)
         b.version = "11.18.0";
-        b.startTime = 1719849600000L;  // 2024-07-01T12:00:00Z
+        b.startTime = 1719835200000L;  // 2024-07-01T12:00:00Z
 
         final List<PlayerResult> players = new ArrayList<>();
         final PlayerResult rec = new PlayerResult();

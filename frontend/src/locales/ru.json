@@ -79,14 +79,34 @@
     "baseline_word": "база",
     "if_win": "при победе",
     "tier_title": "Уровни",
-    "tiers": { "elite": "Элита", "great": "Отлично", "good": "Хорошо", "mid": "Средне", "poor": "Слабо" },
+    "tiers": {
+      "elite": "Элита",
+      "great": "Отлично",
+      "good": "Хорошо",
+      "mid": "Средне",
+      "poor": "Слабо"
+    },
     "note": "База — это совместно рассчитанный набор боёв, поэтому это относительная оценка, а не абсолютный рейтинг; в одиночных боях меньше выборка и больше разброс.",
     "close": "Закрыть"
   },
   "duration": "{min} мин {sec} сек",
-  "team": { "1": "Команда 1", "2": "Команда 2", "unknown": "Ничья/Неизвестно" },
-  "survived": { "alive": "Выжил", "dead": "Уничтожен" },
-  "version": { "btn": "История", "back": "Назад", "added": "Добавлено", "fixed": "Исправлено", "changed": "Изменено", "removed": "Удалено" },
+  "team": {
+    "1": "Команда 1",
+    "2": "Команда 2",
+    "unknown": "Ничья/Неизвестно"
+  },
+  "survived": {
+    "alive": "Выжил",
+    "dead": "Уничтожен"
+  },
+  "version": {
+    "btn": "История",
+    "back": "Назад",
+    "added": "Добавлено",
+    "fixed": "Исправлено",
+    "changed": "Изменено",
+    "removed": "Удалено"
+  },
   "col_groups": {
     "identity": "Личность",
     "vehicle": "Техника",
@@ -106,9 +126,9 @@
     "tank_name": "Танк",
     "damage_dealt": "Урон",
     "map": "Карта",
-        "version": "Версия",
-        "battle_time": "Время боя",
-        "upload_time": "Время загрузки",
+    "version": "Версия",
+    "battle_time": "Время боя",
+    "upload_time": "Время загрузки",
     "loading": "Загрузка…",
     "empty": "Пока нет данных. Загрузите реплеи случайных боёв, чтобы попасть в рейтинг.",
     "error": "Не удалось загрузить рейтинг",
@@ -116,10 +136,10 @@
     "upload_success": "Загружено! Запись добавлена в рейтинг",
     "upload_failed": "Ошибка загрузки",
     "upload_title": "Загрузите реплей для рейтинга",
-        "upload_btn": "Выбрать реплей",
-        "all_tanks": "Все танки",
-        "filter_tank": "Фильтр",
-        "filter_by_tank": "Нажмите для рейтинга по танку"
+    "upload_btn": "Выбрать реплей",
+    "all_tanks": "Все танки",
+    "filter_tank": "Фильтр",
+    "filter_by_tank": "Нажмите для рейтинга по танку"
   },
   "player_labels": {
     "nickname": "Игрок",
@@ -128,6 +148,7 @@
     "tank_tier": "Уровень",
     "tank_type": "Тип",
     "tank_nation": "Нация",
+    "alpha_damage": "Альфа-урон",
     "rating": "Рейтинг",
     "survived_label": "Статус",
     "survival_time": "Время жизни",
@@ -147,7 +168,11 @@
     "n_enemies_damaged": "Целей поражено",
     "platoon_label": "Взвод",
     "tank_id": "ID техники",
-    "account_id": "ID аккаунта"
+    "account_id": "ID аккаунта",
+    "rank": "Ранг",
+    "potential_damage": "Потенциальный урон",
+    "potential_damage_supplement": "Добавленный урон",
+    "potential_damage_detail": "Детали потенциала"
   },
   "agg_labels": {
     "nickname": "Игрок",
@@ -174,7 +199,42 @@
     "hits": "Всего попаданий",
     "pens": "Всего пробитий",
     "tanks": "Техники использовано",
+    "account_id": "ID аккаунта",
+    "potential_damage": "Всего потенциального урона",
+    "potential_damage_avg": "Средний потенциальный урон",
+    "potential_damage_supplement_avg": "Средний добавленный урон"
+  },
+  "theme": {
+    "auto": "Авто",
+    "light": "Светлая",
+    "dark": "Тёмная"
+  },
+  "rating_labels": {
+    "nickname": "Игрок",
+    "clan": "Клан",
+    "battles": "Бои",
+    "wins": "Победы",
+    "win_rate": "Победы %",
+    "rating": "Rating",
+    "kast": "KAST %",
+    "contribution": "Вклад %",
+    "influence": "Влияние",
+    "damage_avg": "Средний урон",
+    "potential_damage_avg": "Потенциальный DPB",
+    "potential_damage_supplement_avg": "Среднее добавление",
+    "kills": "Фраги",
+    "kills_avg": "Средние фраги",
     "account_id": "ID аккаунта"
   },
-  "theme": { "auto": "Авто", "light": "Светлая", "dark": "Тёмная" }
+  "extended": {
+    "title": "Расширенный анализ",
+    "preview": "Разобрать поля",
+    "rating": "Анализ Rating",
+    "rating_title": "Rating в реальном времени",
+    "fields_title": "Расширенные поля",
+    "empty": "Файлы не выбраны",
+    "no_files": "Сначала выберите реплеи или папку",
+    "scope_preview": "Расширенные поля",
+    "scope_rating": "Rating"
+  }
 }

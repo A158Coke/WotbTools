@@ -11,7 +11,7 @@ public final class Agg {
     public int team;                  // 最近一场的队伍(供 UI 行底色)
     public long lastTime = -1;
     public int battles, wins, survived;
-    public long kills, damage, assisted, received, blocked;
+    public long kills, damage, potentialDamage, potentialDamageSupplement, assisted, received, blocked;
     public long shots, hits, pens, enemiesDamaged;
     public double survivalSum;        // 各场存活时间(秒)之和(用于场均)
     public long ratingSum;            // 各场 rating 之和(用于场均)

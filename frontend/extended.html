@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/x-icon" href="/icon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icon.png">
+  <title>WoT Blitz 扩展分析</title>
+  <style>
+    :root{--bg:#f7f8fa;--bg-card:#fff;--bg-card2:#f1f4f8;--text:#222;--text-heading:#28313f;--text-sub:#8b94a3;--text-muted:#777;--text-label:#46566f;--border:#e3e8ef;--border-header:#e9edf3;--border-ghost:#dbe3ef;--accent:#4f88d6;--accent-hover:#4079c9;--accent-dark:#185fa5;--error:#c00}
+    [data-theme="dark"]{--bg:#0d1117;--bg-card:#161b22;--bg-card2:#21262d;--text:#c9d1d9;--text-heading:#f0f6fc;--text-sub:#8b949e;--text-muted:#8b949e;--text-label:#8b949e;--border:#30363d;--border-header:#21262d;--border-ghost:#30363d;--accent:#58a6ff;--accent-hover:#79c0ff;--accent-dark:#58a6ff;--error:#f85149}
+    body{margin:0;font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:var(--text);background:var(--bg)}
+  </style>
+  <script>
+    (function(){
+      var m = document.cookie.match(/(?:^|;\s*)wotbtools-theme=([^;]+)/);
+      var s = m ? m[1] : localStorage.getItem('wotbtools-theme');
+      var t = (!s || s==='auto') ? (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light') : s;
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="/src/extended.js"></script>
+</body>
+</html>
