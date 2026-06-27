@@ -41,8 +41,8 @@
 │   │   ├── components/           #   UI 组件
 │   │   └── locales/              #   三语（zh / en / ru）
 │   ├── index.html  package.json  vite.config.js  .npmrc
-├── homepage/                     # 工具集主页（wotbtools.com）
-│   └── index.html                #   暗色主题，卡片式入口
+│   ├── homepage/                 #   工具集主页（wotbtools.com，暗色卡片式）
+│   │   └── index.html
 ├── .github/
 │   └── workflows/deploy.yml      # CI/CD
 ├── common/                       # 共享资源
@@ -316,7 +316,7 @@ npm run build
 
 1. **并行构建两镜像**：`Dockerfile.backend`（Maven → JRE runtime，Spring Boot :8087）+ `Dockerfile.frontend`（Node → nginx，:80）。带 `type=gha` 层缓存。
 2. **推送 Docker Hub**：四标签 `a158coke/wotbtool:backend-sha-<SHA>` + `backend-latest` + `frontend-sha-<SHA>` + `frontend-latest`。用户名 `a158coke` 硬编码在 workflow（非机密），仅 token 走 `secrets.DOCKER_PASSWORD`。
-3. **SSH 部署 VPS**：在 `/opt/wotb` 写入三服务 `docker-compose.yml`（postgres + wotb-backend + wotb-frontend），先清理旧容器再 `docker compose pull && up -d --remove-orphans`。homepage 编入前端镜像（`COPY homepage /homepage`）。
+3. **SSH 部署 VPS**：在 `/opt/wotb` 写入三服务 `docker-compose.yml`（postgres + wotb-backend + wotb-frontend），先清理旧容器再 `docker compose pull && up -d --remove-orphans`。homepage 编入前端镜像（`COPY frontend/homepage /homepage`）。
 
 VPS 上生成的 `docker-compose.yml`：
 

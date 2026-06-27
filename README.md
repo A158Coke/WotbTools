@@ -117,13 +117,12 @@ mvn -s settings.xml test
 
 | 路径                            | 说明                                          |
 |-------------------------------|---------------------------------------------|
-| `homepage/`                   | 工具集主页（`wotbtools.com`，暗色卡片式单页）|
 | `common/`                     | 共享资源：`tankopedia.json`、`rating.json`、`map_names.json`、`assets/`（logo/favicon 单一来源）、`data/`（示例回放） |
 | `common/python/`              | 车辆库更新脚本（`update_tankopedia.py`）    |
 | `java/`                       | Java 主线（wotb-core + wotb-web）                   |
 | `java/wotb-core/`             | 共享核心库：解析、protobuf 解码、pickle 读取、汇总、POI 导出     |
 | `java/wotb-web/`              | Spring Boot 4 应用：REST API + Leaderboard + Flyway |
-| `frontend/`                   | Vue 3 前端（composables + utils + 组件）                  |
+| `frontend/`                   | Vue 3 前端 + 工具集主页（`homepage/` 子目录）             |
 | `offline/`                    | 离线版分发：`start.bat` / `start.sh` 一键拉镜像启动 |
 | `online/`                     | 开发者本地：`docker compose up --build` 编译启动 |
 | `docker/`                     | Dockerfile.backend / Dockerfile.frontend |

@@ -68,7 +68,7 @@ public class LeaderboardService {
         record.setDamageDealt(recorder.damageDealt);
         record.setMapName(battle.mapName);
         record.setVersion(battle.version != null && !battle.version.isEmpty() ? battle.version : null);
-        if (battle.startTime != null) {
+        if (battle.startTime != null && battle.startTime > 0) {
             record.setBattleTime(OffsetDateTime.ofInstant(
                     Instant.ofEpochMilli(battle.startTime), ZoneOffset.UTC));
         }
