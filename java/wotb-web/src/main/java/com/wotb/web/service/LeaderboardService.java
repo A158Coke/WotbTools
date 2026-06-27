@@ -15,7 +15,6 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * 排行榜业务 (仅 postgres profile)。MVP 只记录录像者本人单场成绩, 不存全场 14 人,
@@ -31,7 +30,7 @@ public class LeaderboardService {
      * 排行榜只收随机战斗 (meta.json#arenaBonusType==1); 训练房(==2)/娱乐/联赛等一律拒绝。
      * 取值经真实样本核实: 1=随机, 2=训练房 (docs/replay-data.md 旧表的 "2=随机" 系误标)。
      */
-    private static final int RANDOM_BATTLE_BONUS_TYPE = 1;
+    private static final int BATTLE_TYPE = 1;
 
     private final LeaderboardRecordRepository repository;
 
@@ -49,7 +48,7 @@ public class LeaderboardService {
         if (battle == null || battle.arenaId == null) {
             return false;
         }
-        if (battle.arenaBonusType == null || battle.arenaBonusType != RANDOM_BATTLE_BONUS_TYPE) {
+        if (battle.arenaBonusType == null || battle.arenaBonusType != BATTLE_TYPE) {
             return false;
         }
         final PlayerResult recorder = battle.recorderResult();
