@@ -116,6 +116,9 @@ jobs:
                 image: a158coke/wotbtool:frontend-${{ steps.vars.outputs.sha }}
                 ports:
                   - "8088:80"
+                  - "443:443"
+                volumes:
+                  - /etc/letsencrypt:/etc/letsencrypt:ro
                 depends_on:
                   - wotb-backend
                   - keycloak
