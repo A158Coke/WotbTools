@@ -5,7 +5,10 @@
     "shutdown": "关闭离线程序",
     "homepage": "工具集",
     "replay_tab": "回放解析",
-    "theme": "主题"
+    "theme": "主题",
+    "login": "登入",
+    "logout": "登出",
+    "profile": "个人中心"
   },
   "upload": {
     "drop_hint": "拖拽 .wotbreplay 文件到这里",
@@ -63,7 +66,7 @@
   "rating_help": {
     "btn": "评分规则",
     "title": "评分规则",
-    "intro": "自包含的表现评分（类 WN8），但“期望值”来自当前这批战斗，不依赖外部表。下列参数为服务器实时配置。",
+    "intro": "自包含的表现评分（类 WN8），但"期望值"来自当前这批战斗，不依赖外部表。下列参数为服务器实时配置。",
     "ec_title": "1. 有效贡献 EC",
     "dmg": "伤害",
     "assist": "协助",
