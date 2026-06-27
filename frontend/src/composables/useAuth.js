@@ -28,24 +28,15 @@ export function useAuth() {
   }
 
   const login = () => {
-    // 登录后跳转 profile 页面
+    // 直接构建 URL 跳转，不依赖 keycloak.init
+    const kc = ensureKeycloak()
     const redirectUri = window.location.origin + '/?view=profile'
-    try {
-      ensureKeycloak().login({ redirectUri })
-    } catch (e) {
-      console.error('Keycloak login error', e)
-      const kc = ensureKeycloak()
-      const url = kc.createLoginUrl({ redirectUri })
-      if (url) window.location.href = url
-    }
+    window.location.href = kc.createLoginUrl({ redirectUri })
   }
 
   const logout = () => {
-    try {
-      ensureKeycloak().logout({ redirectUri: window.location.origin })
-    } catch (e) {
-      console.error('Keycloak logout error', e)
-    }
+    const kc = ensureKeycloak()
+    window.location.href = kc.createLogoutUrl({ redirectUri: window.location.origin })
   }
 
   const isAuthenticated = () => keycloak?.authenticated ?? false
