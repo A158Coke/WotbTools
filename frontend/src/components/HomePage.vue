@@ -40,11 +40,13 @@ const { t, locale } = useI18n()
         </div>
       </div>
 
-      <a class="card" href="/sponsor.html">
-        <h2>{{ locale === 'zh' ? '支持项目' : locale === 'ru' ? 'Поддержать' : 'Sponsor' }}</h2>
-        <p>{{ locale === 'zh' ? '自愿赞助，用于服务器和维护成本。' : locale === 'ru' ? 'Добровольная поддержка сервера.' : 'Voluntary sponsorship for server costs.' }}</p>
-        <span class="tag support">{{ locale === 'zh' ? '赞助' : locale === 'ru' ? 'Донат' : 'Support' }}</span>
-      </a>
+      <div class="coming-soon">
+        <div class="card">
+          <h2>{{ locale === 'zh' ? '支持项目' : locale === 'ru' ? 'Поддержать' : 'Sponsor' }}</h2>
+          <p>{{ locale === 'zh' ? '自愿赞助，用于服务器和维护成本。' : locale === 'ru' ? 'Добровольная поддержка сервера.' : 'Voluntary sponsorship for server costs.' }}</p>
+          <span class="tag planned" style="background:var(--warn-bg);color:var(--warn-text);opacity:1">{{ locale === 'zh' ? '暂不可用' : 'Soon' }}</span>
+        </div>
+      </div>
     </div>
 
     <section class="version">
