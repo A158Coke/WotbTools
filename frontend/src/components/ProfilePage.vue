@@ -40,7 +40,7 @@ onMounted(async () => {
 })
 
 function doLogout() {
-  if (kc) kc.logout({ redirectUri: window.location.origin })
+  if (kc) kc.logout({ redirectUri: 'https://wotbtools.com' })
 }
 </script>
 
