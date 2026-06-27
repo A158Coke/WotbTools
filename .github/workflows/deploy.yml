@@ -85,23 +85,40 @@ jobs:
                   POSTGRES_USER: wotb
                   POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
                 volumes:
-                  - postgres_data:/var/lib/postgresql
+                  - postgres_data:/var/lib/postgresql/data
+                  - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+                restart: unless-stopped
+              keycloak:
+                image: quay.io/keycloak/keycloak:26.1
+                environment:
+                  KC_BOOTSTRAP_ADMIN_USERNAME: admin
+                  KC_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.KC_ADMIN_PASSWORD }}
+                  KC_DB: postgres
+                  KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+                  KC_DB_USERNAME: wotb
+                  KC_DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+                command: start --hostname-strict=false --http-enabled=true --http-port=8080 --proxy-headers=xforwarded
+                depends_on:
+                  - postgres
                 restart: unless-stopped
               wotb-backend:
                 image: a158coke/wotbtool:backend-${{ steps.vars.outputs.sha }}
                 depends_on:
                   - postgres
+                  - keycloak
                 environment:
                   SPRING_PROFILES_ACTIVE: postgres
                   POSTGRES_HOST: postgres
                   POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
+                  KEYCLOAK_ISSUER_URI: https://auth.wotbtools.com/realms/wotbtools
                 restart: unless-stopped
               wotb-frontend:
                 image: a158coke/wotbtool:frontend-${{ steps.vars.outputs.sha }}
                 ports:
-                  - "8088:80"
+                  - "80:80"
                 depends_on:
                   - wotb-backend
+                  - keycloak
                 restart: unless-stopped
             volumes:
               postgres_data:
