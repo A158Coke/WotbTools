@@ -73,7 +73,10 @@ jobs:
             set -e
             mkdir -p /opt/wotb
             cd /opt/wotb
-            echo "CREATE DATABASE keycloak;" > init-db.sql
+            rm -rf init-db.sql
+            cat > init-db.sql <<'EOF'
+            CREATE DATABASE keycloak;
+            EOF
             docker rm -f wotb wotb-backend wotb-frontend 2>/dev/null || true
             cat > docker-compose.yml <<'EOF'
             services:
