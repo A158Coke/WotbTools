@@ -1,14 +1,17 @@
 import Keycloak from 'keycloak-js'
 
-const keycloak = new Keycloak({
-  url: import.meta.env.VITE_KEYCLOAK_URL,
-  realm: import.meta.env.VITE_KEYCLOAK_REALM,
-  clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID,
-})
-
+let keycloak = null
 let initPromise = null
 
 export function useAuth() {
+  if (!keycloak) {
+    keycloak = new Keycloak({
+      url: import.meta.env.VITE_KEYCLOAK_URL,
+      realm: import.meta.env.VITE_KEYCLOAK_REALM,
+      clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID,
+    })
+  }
+
   if (!initPromise) {
     initPromise = keycloak.init({
       onLoad: 'check-sso',
