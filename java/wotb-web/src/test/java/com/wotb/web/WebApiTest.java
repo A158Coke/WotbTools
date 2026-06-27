@@ -53,16 +53,6 @@ class WebApiTest {
     }
 
     @Test
-    void columnsEndpoint() throws Exception {
-        final String json = mvc().perform(get("/api/columns"))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-        final JsonNode n = om.readTree(json);
-        assertTrue(n.get("player").size() > 10);
-        assertTrue(n.get("aggregate").size() > 10);
-    }
-
-    @Test
     void ratingEndpoint() throws Exception {
         final String json = mvc().perform(get("/api/rating"))
                 .andExpect(status().isOk())

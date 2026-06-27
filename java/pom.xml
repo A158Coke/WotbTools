@@ -58,6 +58,11 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>3.13.0</version>
+                    <configuration>
+                        <!-- 保留方法参数名: Spring MVC 的 @RequestParam/@PathVariable 隐式命名依赖它
+                             (本父 pom 未继承 spring-boot-starter-parent, 否则默认即开)。 -->
+                        <parameters>true</parameters>
+                    </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>

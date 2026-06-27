@@ -4,15 +4,41 @@ server:
 spring:
   servlet:
     multipart:
-      # 上传限制 (回放约 2MB/个, 联赛可能一次传很多)
       max-file-size: 20MB
       max-request-size: 200MB
   web:
     resources:
-      # 离线模式: 若打包了 Vue 静态资源(static/), Spring Boot 会一并提供
       static-locations: classpath:/static/
+  # 默认无数据库，JPA/DataSource 不启动（离线版/dev 可用）。
+  # 注意：Spring Boot 4 把自动配置迁到了 org.springframework.boot.{jdbc,hibernate,data.jpa}.autoconfigure.*，
+  # 旧的 org.springframework.boot.autoconfigure.* 类名不再匹配（等于没排除）。
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
+      - org.springframework.boot.jdbc.autoconfigure.DataSourceInitializationAutoConfiguration
+      - org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration
+      - org.springframework.boot.data.jpa.autoconfigure.DataJpaRepositoriesAutoConfiguration
 
-# POI 用 log4j2-api, 无实现时降噪
 logging:
   level:
     org.apache.poi: WARN
+
+---
+# postgres profile: 排行榜数据库（docker compose 设置 SPRING_PROFILES_ACTIVE=postgres）
+spring:
+  config.activate.on-profile: postgres
+  autoconfigure.exclude: []
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:5432/${POSTGRES_DB:wotb}
+    username: ${POSTGRES_USER:wotb}
+    password: ${POSTGRES_PASSWORD:wotb}
+  jpa:
+    hibernate.ddl-auto: validate
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # 兜底：线上库若已有 ddl-auto 时代的残留表但无 flyway_schema_history，
+    # 在 v0 处建立基线后再跑 V1（baseline-version 必须为 0，否则默认 v1 会跳过 V1__init）。
+    # 空库时此项为 no-op，正常从 V1 开始。
+    baseline-on-migrate: true
+    baseline-version: 0
