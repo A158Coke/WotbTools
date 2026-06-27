@@ -219,6 +219,9 @@
     "damage_avg": "Avg damage",
     "potential_damage_avg": "Potential DPB",
     "potential_damage_supplement_avg": "Avg supplement",
+    "assist_avg": "Avg assist",
+    "average_hp": "Avg HP",
+    "multi_damage_rate": "Multi-damage %",
     "kills": "Kills",
     "kills_avg": "Avg kills",
     "account_id": "Account ID"

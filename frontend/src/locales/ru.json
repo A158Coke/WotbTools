@@ -219,6 +219,9 @@
     "damage_avg": "Средний урон",
     "potential_damage_avg": "Потенциальный DPB",
     "potential_damage_supplement_avg": "Среднее добавление",
+    "assist_avg": "Средняя помощь",
+    "average_hp": "Средний HP",
+    "multi_damage_rate": "Мульти-урон %",
     "kills": "Фраги",
     "kills_avg": "Средние фраги",
     "account_id": "ID аккаунта"
