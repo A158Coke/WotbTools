@@ -30,14 +30,17 @@ onMounted(async () => {
       phase.value = 'done'
     } else {
       phase.value = 'login'
-      kc.login({ redirectUri: window.location.origin + '/?view=profile' })
     }
   } catch (e) {
     console.error('[Profile] init error:', e)
     error.value = String(e)
-      phase.value = 'error'
+    phase.value = 'error'
   }
 })
+
+function doLogin() {
+  if (kc) kc.login({ redirectUri: window.location.origin + '/?view=profile' })
+}
 
 function doLogout() {
   if (kc) kc.logout({ redirectUri: 'https://wotbtools.com' })
@@ -55,8 +58,12 @@ function doLogout() {
       <p class="profile-status">已登录</p>
       <button class="sm ghost" style="margin-top:12px" @click="doLogout">登出</button>
     </div>
+    <div class="profile-card" v-else-if="phase === 'login'">
+      <p>未登录</p>
+      <button class="lg" style="margin-top:12px" @click="doLogin">登入</button>
+    </div>
     <div class="profile-card" v-else>
-      <p>{{ phase === 'login' ? '正在跳转登录…' : '加载中…' }}</p>
+      <p>加载中…</p>
     </div>
   </div>
 </template>
