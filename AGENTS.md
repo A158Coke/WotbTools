@@ -2,7 +2,7 @@
 
 **默认 caveman mode**：回复极简、砍废话、无寒暄。用户说"退出 caveman"才恢复正常。
 
-项目：WoT Blitz `.wotbreplay` 提取 Excel + 排行榜。入口 `wotbtools.com`，工具 `replay.wotbtools.com`。
+项目：WoT Blitz `.wotbreplay` 提取 Excel + 排行榜。入口 `wotbtools.com`。
 
 ## 规则
 
