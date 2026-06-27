@@ -50,10 +50,16 @@ const { t, locale } = useI18n()
     <section class="version">
       <h2 class="version-title">{{ locale === 'zh' ? '版本历史' : locale === 'ru' ? 'История версий' : 'Version History' }}</h2>
       <div class="ver">
+        <span class="ver-num">v1.6.0</span>
+        <span class="ver-date">2026-06-27</span>
+        <span class="ver-tag add">{{ locale === 'zh' ? '新增' : 'Added' }}</span>
+        <p>Keycloak 认证集成 · 个人中心 · Vue SPA 主页 · 域名统一 · 移除离线版</p>
+      </div>
+      <div class="ver">
         <span class="ver-num">v1.5.0</span>
         <span class="ver-date">2026-06-26</span>
         <span class="ver-tag add">{{ locale === 'zh' ? '新增' : 'Added' }}</span>
-        <p>工具集主页 · 主题切换 · 排行榜 · Keycloak 认证 · PostgreSQL · Flyway</p>
+        <p>工具集主页 · 主题切换 · 排行榜 · PostgreSQL · Flyway · Docker 分发</p>
       </div>
       <div class="ver">
         <span class="ver-num">v1.4.0</span>
