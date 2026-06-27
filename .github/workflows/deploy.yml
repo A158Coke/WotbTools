@@ -133,7 +133,9 @@ jobs:
             docker compose up -d --remove-orphans
             # 确保 keycloak 数据库存在（init-db.sql 仅在首次初始化执行）
             docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
-            docker image prune -f
+            # 清理磁盘：旧镜像 + 构建缓存
+            docker image prune -af
+            docker builder prune -af
             # 健康检查：等待所有容器无 restarting 状态，最多 60 秒
             for i in $(seq 1 30); do
               if docker compose ps | grep -qE "Restarting|Exited|unhealthy"; then
