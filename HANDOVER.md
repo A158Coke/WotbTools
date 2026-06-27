@@ -25,6 +25,7 @@
 | [`.agents/wotb-sync.md`](.agents/wotb-sync.md) | 跨层改动检查单（配方 A–G）| 增删/改名数据列、改解析/导出/前端时 |
 | [`docs/replay-data.md`](docs/replay-data.md) | data.wotreplay 事件流格式、protobuf 字段表、死亡时间推算 | 深入回放格式时 |
 | [`docs/rating-system.md`](docs/rating-system.md) | 评分算法细节 | 碰评分时 |
+| [`docs/rating-progress.md`](docs/rating-progress.md) | rating 扩展目标、已完成项、缺口与下一步 | 接手 rating 扩展时 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本历史（对外） | 了解发布历史 |
 | [`README.md`](README.md) / [`java/README.md`](java/README.md) | 用户向 + 运行/接口/构建 | 跑起来时 |
 | [`TODO.md`](TODO.md) | 待办（含「地图名未接 i18n」）| 找下一步做什么 |

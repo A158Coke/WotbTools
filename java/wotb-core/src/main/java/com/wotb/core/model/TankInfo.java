@@ -5,5 +5,5 @@ package com.wotb.core.model;
  *
  * @param type 车种(轻坦/中坦/重坦/TD)
  */
-public record TankInfo(String name, Object tier, String type, String nation) {
+public record TankInfo(String name, Object tier, String type, String nation, Integer alphaDamage) {
 }

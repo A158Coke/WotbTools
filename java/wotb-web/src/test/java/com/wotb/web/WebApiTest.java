@@ -2,6 +2,7 @@ package com.wotb.web;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -11,16 +12,17 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
+import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.io.ByteArrayInputStream;
-import java.util.List;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
 import java.util.zip.ZipInputStream;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -42,8 +44,11 @@ class WebApiTest {
 
     private static List<Path> replays() throws Exception {
         final Path dir = Path.of(System.getProperty("user.dir"), "..", "..", "common", "data").normalize();
+        Assumptions.assumeTrue(Files.isDirectory(dir), "common/data 样本目录不存在, 跳过真实回放 API 回归");
         try (Stream<Path> s = Files.list(dir)) {
-            return s.filter(p -> p.toString().toLowerCase().endsWith(".wotbreplay")).sorted().toList();
+            final List<Path> files = s.filter(p -> p.toString().toLowerCase().endsWith(".wotbreplay")).sorted().toList();
+            Assumptions.assumeTrue(!files.isEmpty(), "common/data 中没有 .wotbreplay, 跳过真实回放 API 回归");
+            return files;
         }
     }
 
@@ -53,7 +58,28 @@ class WebApiTest {
     }
 
     @Test
-    void ratingEndpoint() throws Exception {
+    void extendedPageAliasForwardsToStaticHtml() throws Exception {
+        mvc().perform(get("/extended"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.forwardedUrl("/extended.html"));
+    }
+
+    @Test
+    void columnsEndpoint() throws Exception {
+        final String json = mvc().perform(get("/api/columns"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        final JsonNode n = om.readTree(json);
+        assertTrue(n.get("player").size() > 10);
+        assertTrue(stream(n.get("player")).anyMatch(c -> "alpha_damage".equals(c.get("key").asText())));
+        assertTrue(stream(n.get("player")).anyMatch(c -> "potential_damage".equals(c.get("key").asText())));
+        assertTrue(stream(n.get("player")).anyMatch(c -> "rank".equals(c.get("key").asText())));
+        assertTrue(stream(n.get("aggregate")).anyMatch(c -> "potential_damage_avg".equals(c.get("key").asText())));
+        assertTrue(stream(n.get("rating")).anyMatch(c -> "kast".equals(c.get("key").asText())));
+    }
+
+    @Test
+    void ratingConfigEndpoint() throws Exception {
         final String json = mvc().perform(get("/api/rating"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
@@ -61,6 +87,33 @@ class WebApiTest {
         assertTrue(n.get("scale").asInt() > 0, "scale 应为正");
         assertTrue(n.get("killValue").asDouble() > 0, "killValue 应为正");
         assertTrue(n.get("classFactor").isObject() && n.get("classFactor").size() > 0, "应含车型系数");
+    }
+
+    @Test
+    void ratingEndpointReturnsRealtimeLeaderboard() throws Exception {
+        final List<Path> files = replays();
+        var req = multipart("/api/rating");
+        for (final Path p : files) {
+            req = req.file(file(p));
+        }
+        req = req.file(new MockMultipartFile("files", "dup.wotbreplay",
+                "application/octet-stream", Files.readAllBytes(files.get(0))));
+
+        final String json = mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        final JsonNode n = om.readTree(json);
+        assertEquals(1, n.get("duplicates").size(), "跳过 1 个重复");
+        assertTrue(n.get("rows").size() >= 14, "应返回选手 rating 行");
+        final JsonNode cells = n.get("rows").get(0).get("cells");
+        assertTrue(cells.has("rating"));
+        assertTrue(cells.has("kast"));
+        assertTrue(cells.has("contribution"));
+        assertTrue(cells.has("influence"));
+        assertTrue(cells.has("damage_avg"));
+        assertTrue(cells.has("potential_damage_avg"));
+        assertTrue(cells.has("potential_damage_supplement_avg"));
+        assertTrue(cells.has("kills"));
     }
 
     @Test
@@ -80,10 +133,11 @@ class WebApiTest {
         assertEquals(files.size(), n.get("battles").size(), "唯一战斗数");
         assertEquals(1, n.get("duplicates").size(), "跳过 1 个重复");
         assertTrue(n.get("aggregate").size() > 0, "多场应有汇总");
-        // 校验首场玩家数据结构
         final JsonNode b0 = n.get("battles").get(0);
         assertEquals(14, b0.get("players").size());
         assertTrue(b0.get("players").get(0).get("cells").has("damage_dealt"));
+        assertTrue(b0.get("players").get(0).get("cells").has("potential_damage"));
+        assertTrue(b0.get("players").get(0).get("cells").has("potential_damage_supplement"));
     }
 
     @Test
@@ -93,7 +147,6 @@ class WebApiTest {
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsByteArray();
         assertTrue(body.length > 3000, "xlsx 应有内容");
-        // xlsx = zip, 头两字节 PK
         assertEquals('P', body[0]);
         assertEquals('K', body[1]);
     }
@@ -121,5 +174,11 @@ class WebApiTest {
         }
         assertEquals(files.size(), names.size());
         assertTrue(names.stream().allMatch(n -> n.endsWith(".xlsx")));
+    }
+
+    private static Stream<JsonNode> stream(final JsonNode n) {
+        final List<JsonNode> nodes = new java.util.ArrayList<>();
+        n.forEach(nodes::add);
+        return nodes.stream();
     }
 }

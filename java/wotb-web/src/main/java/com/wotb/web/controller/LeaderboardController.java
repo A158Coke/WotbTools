@@ -1,7 +1,7 @@
 package com.wotb.web.controller;
 
-import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.model.Battle;
+import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.dto.LeaderboardRecordDto;
 import com.wotb.web.service.LeaderboardService;
@@ -36,7 +36,7 @@ public class LeaderboardController {
 
     /** 上传单场回放，写入排行榜。 */
     @PostMapping("/upload")
-    public Map<String, Object> upload(@RequestParam("file") final MultipartFile file) throws Exception {
+    public Map<String, Object> upload(@RequestParam(name = "file") final MultipartFile file) throws Exception {
         final Battle battle = ReplayParser.parse(file.getBytes());
         final boolean saved = service.recordRecorder(battle, tankopedia);
         if (!saved) {

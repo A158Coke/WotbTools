@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue'
-import { DEFAULT_VISIBLE } from '../utils/helpers.js'
+import { DEFAULT_VISIBLE, EXTENDED_ONLY_PLAYER_KEYS } from '../utils/helpers.js'
 
 export function useColumns(playerCols, aggCols, activeTab) {
   const visibleKeys = ref([])
@@ -11,8 +11,10 @@ export function useColumns(playerCols, aggCols, activeTab) {
 
   const colScope = computed(() => activeTab.value === 'aggregate' ? 'agg' : 'player')
   const currentOrder = computed(() => pickerScope.value === 'agg' ? aggOrder.value : playerOrder.value)
+  const basePlayerCols = computed(() =>
+    playerCols.value.filter(c => !EXTENDED_ONLY_PLAYER_KEYS.has(c.key)))
 
-  const playerColMap = computed(() => Object.fromEntries(playerCols.value.map(c => [c.key, c])))
+  const playerColMap = computed(() => Object.fromEntries(basePlayerCols.value.map(c => [c.key, c])))
   const aggColMap = computed(() => Object.fromEntries(aggCols.value.map(c => [c.key, c])))
 
   const shownCols = computed(() =>
@@ -21,7 +23,9 @@ export function useColumns(playerCols, aggCols, activeTab) {
     aggOrder.value.filter(k => aggVisibleKeys.value.includes(k)).map(k => aggColMap.value[k]).filter(Boolean))
 
   function initFromResponse(resp) {
-    const pk = resp.playerColumns.map(c => c.key)
+    const pk = resp.playerColumns
+      .filter(c => !EXTENDED_ONLY_PLAYER_KEYS.has(c.key))
+      .map(c => c.key)
     const ak = (resp.aggregateColumns || []).map(c => c.key)
     if (!visibleKeys.value.length) visibleKeys.value = [...DEFAULT_VISIBLE]
     if (!playerOrder.value.length) playerOrder.value = [...pk]
@@ -53,7 +57,7 @@ export function useColumns(playerCols, aggCols, activeTab) {
       aggOrder.value = aggCols.value.map(c => c.key)
       aggVisibleKeys.value = aggCols.value.map(c => c.key)
     } else {
-      playerOrder.value = playerCols.value.map(c => c.key)
+      playerOrder.value = basePlayerCols.value.map(c => c.key)
       visibleKeys.value = [...DEFAULT_VISIBLE]
     }
   }

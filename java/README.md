@@ -97,7 +97,9 @@ java -jar wotb-web/target/wotb-web.jar --desktop
 
 返回服务状态、已加载车辆数量、是否桌面模式。
 
-列定义由后端 `/api/preview` 响应中的 `playerColumns`/`aggregateColumns` 字段提供（纯英文 key），前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`）映射显示名，导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。详见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
+列定义由后端 `/api/preview` 响应中的 `playerColumns`/`aggregateColumns` 字段和 `/api/columns` 提供（纯英文 key）；实时 rating 使用 `ratingColumns`。前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels` / `rating_labels`）映射显示名，导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。详见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
+
+扩展页 `/extended` 可展示原回放页隐藏的扩展字段：`alpha_damage`、`rank`、`potential_damage`、`potential_damage_supplement`、`potential_damage_detail`。这些字段仍会出现在 API 与导出列定义中，原回放页面的列选择器会过滤扩展专用字段。`xp`、`credits` 仅在 parser/model 保留，不作为战绩字段展示。
 
 ### `GET /api/rating`
 
@@ -107,6 +109,20 @@ java -jar wotb-web/target/wotb-web.jar --desktop
 { "assist": 0.6, "block": 0.35, "killValue": 200, "winBonus": 0.05,
   "minSamples": 5, "scale": 1000, "classFactor": { "重坦": 1.0, "中坦": 0.9, "TD": 1.0, "轻坦": 0.7, "其他": 0.9 } }
 ```
+
+
+
+### `POST /api/rating`
+
+`multipart/form-data`，字段名为 `files`。只基于本次上传回放实时计算，不落库、不读取历史记录。
+
+返回：
+
+- `rows`：每名选手的 `rating`、`kast`、`contribution`、`influence`、`damage_avg`、`potential_damage_avg`、`kills` 等。
+- `duplicates` / `failures`：与 `/api/preview` 相同的去重和失败信息。
+- `ratingColumns`：纯英文 key + 是否数值，前端由三语 `rating_labels` 显示。
+
+独立前端入口为 `/extended`，不在当前回放解析页面增加跳转按钮。
 
 ### `POST /api/preview`
 
@@ -151,7 +167,7 @@ mvn -s settings.xml test
 测试覆盖：
 
 - `wotb-core` 的 `ParityTest`：集成测试，覆盖解析、字段不变量、去重、汇总、xlsx 导出。
-- `wotb-web` 的 `WebApiTest`：`/api/preview`、`/api/export` 的 controller 测试。
+- `wotb-web` 的 `WebApiTest`：`/api/columns`、`GET/POST /api/rating`、`/api/preview`、`/api/export` 的 controller 测试。
 
 测试样本来自仓库根目录的 `common/data/`。
 

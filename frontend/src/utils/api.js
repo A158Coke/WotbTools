@@ -23,6 +23,12 @@ export async function shutdown() {
 }
 
 // 排行榜 (仅在线版 postgres profile; 离线版无这些端点)
+export async function ratingLeaderboard(body) {
+  const r = await fetch('/api/rating', { method: 'POST', body })
+  if (!r.ok) throw new Error('Rating failed: HTTP ' + r.status)
+  return r.json()
+}
+
 export async function ratingConfig() {
   const r = await fetch('/api/rating')
   if (!r.ok) throw new Error('Rating config failed: HTTP ' + r.status)

@@ -1,5 +1,8 @@
 package com.wotb.core.model;
 
+import com.wotb.core.stats.PotentialDamage;
+
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -21,17 +24,27 @@ public class PlayerResult {
     public int kills;
     public int damageBlocked;
     public boolean survived;
+    public int xp;
+    public int credits;
+
+    // 潜在伤害: 当前保留字段链路; 逐击杀目标明细解析完成前等于实际伤害。
+    public final List<PotentialDamage.KillVictim> killVictims = new ArrayList<>();
+    public int potentialDamage;
+    public int potentialDamageSupplement;
+    public boolean potentialDamageDetailed;
 
     // 名册信息
     public String nickname = "";
     public String clan = "";
     public Long platoonId;
+    public Long rank;
 
     // 展示派生字段 (enrich)
     public String tankName = "";
     public Object tankTier = "";
     public String tankType = "";
     public String tankNation = "";
+    public Object alphaDamage = "";
     public String platoonLabel = "";
 
     // 原始死亡时刻(ms; proto #104; 存活/未知=0)

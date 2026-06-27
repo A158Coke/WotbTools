@@ -47,8 +47,11 @@
 - 多场导出 Excel：按 `arenaUniqueId` 去重，生成 `汇总`、`明细`、`战斗列表`。
 - 存活时间列：基于伤害事件的秒级估算。
 - 自包含表现**评分**：按车型基准归一化（类 WN8，1000=同型平均），单场「评分」、汇总「场均评分」。
+- 独立扩展分析页 `/extended`：不改当前解析页面，额外展示扩展字段与本次上传实时 rating。
+- 扩展字段：`alpha_damage`、`rank` 已接入 API/导出/扩展页，原回放页面不默认展示；`xp`、`credits` 仅解析保留，不作为战绩字段展示。
+- 潜在伤害字段：`potential_damage` / `potential_damage_supplement` / `potential_damage_detail`，当前逐击杀目标明细未解析时保守等于实际伤害。
 - GUI 支持选择文件或文件夹、预览数据、合并汇总或逐场导出。
-- Java / Web 版提供 `/api/preview`、`/api/export`、`/api/columns`、`/api/rating`、`/api/health`、`/api/shutdown`。
+- Java / Web 版提供 `/api/preview`、`/api/export`、`/api/columns`、`GET /api/rating`（评分参数）、`POST /api/rating`（实时 rating）、`/api/health`、`/api/shutdown`。
 - 排行榜（仅在线版 `postgres` profile）：上传随机战斗回放自动记录录像者单场伤害，`/api/leaderboard/top-damage` 等端点查询。
 - Java 离线版：双击 `start.bat`，拉取 Docker 镜像，自动打开浏览器，无需源码或 JDK。
 

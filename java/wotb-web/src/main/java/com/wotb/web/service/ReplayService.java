@@ -1,21 +1,24 @@
 package com.wotb.web.service;
 
-import com.wotb.core.stats.Aggregator;
 import com.wotb.core.export.ExcelExporter;
-import com.wotb.core.stats.Rating;
-import com.wotb.core.stats.RatingConfig;
-import com.wotb.core.parse.ReplayParser;
-import com.wotb.core.parse.Replays;
-import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.Collected;
 import com.wotb.core.model.Source;
-import com.wotb.web.mapper.Mapper;
+import com.wotb.core.parse.ReplayParser;
+import com.wotb.core.parse.Replays;
+import com.wotb.core.ref.Tankopedia;
+import com.wotb.core.stats.Aggregator;
+import com.wotb.core.stats.PotentialDamage;
+import com.wotb.core.stats.Rating;
+import com.wotb.core.stats.RatingAnalyzer;
+import com.wotb.core.stats.RatingConfig;
 import com.wotb.web.dto.AggRow;
 import com.wotb.web.dto.BattleDto;
 import com.wotb.web.dto.ColumnDef;
 import com.wotb.web.dto.ExportResult;
 import com.wotb.web.dto.PreviewResponse;
+import com.wotb.web.dto.RatingResponse;
+import com.wotb.web.mapper.Mapper;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -43,7 +46,8 @@ public class ReplayService {
     public Map<String, List<ColumnDef>> columns() {
         return Map.of(
                 "player", Mapper.playerColumns(),
-                "aggregate", Mapper.aggregateColumns());
+                "aggregate", Mapper.aggregateColumns(),
+                "rating", Mapper.ratingColumns());
     }
 
     /** 已加载车辆数 (健康检查用)。 */
@@ -59,18 +63,26 @@ public class ReplayService {
     /** 解析(并去重), 返回预览: 每场玩家数据 + 跨场汇总 + 去重/失败信息。 */
     public PreviewResponse preview(final MultipartFile[] files) throws Exception {
         final Collected c = Replays.collect(toSources(files), null);
+        PotentialDamage.apply(c.battles, tankopedia);
         Rating.compute(c.battles, tankopedia);   // 基准=本次上传集合
 
         final List<BattleDto> battles = new ArrayList<>();
         for (int i = 0; i < c.battles.size(); i++) {
             battles.add(Mapper.toBattle(c.battles.get(i), c.battleSourceNames.get(i), tankopedia));
         }
-        List<AggRow> aggregate = c.battles.size() > 1
+        final List<AggRow> aggregate = c.battles.size() > 1
                 ? Mapper.toAggregate(Aggregator.aggregate(c.battles, tankopedia))
                 : List.of();
 
         return new PreviewResponse(battles, aggregate, c.duplicates, c.failures,
                 Mapper.playerColumns(), Mapper.aggregateColumns());
+    }
+
+    /** 实时 rating: 只基于本次上传回放计算，不落库、不读取历史记录。 */
+    public RatingResponse ratingLeaderboard(final MultipartFile[] files) throws Exception {
+        final Collected c = Replays.collect(toSources(files), null);
+        return new RatingResponse(Mapper.toRatings(RatingAnalyzer.compute(c.battles, tankopedia)),
+                c.duplicates, c.failures, Mapper.ratingColumns());
     }
 
     /**
@@ -108,7 +120,7 @@ public class ReplayService {
                     final Battle battle = ReplayParser.parse(source.bytes());
                     final ByteArrayOutputStream xlsx = new ByteArrayOutputStream();
                     ExcelExporter.writeSingle(battle, tankopedia, xlsx);
-                    ZipEntry entry = new ZipEntry(uniqueName(stripExt(source.name()) + ".xlsx", usedNames));
+                    final ZipEntry entry = new ZipEntry(uniqueName(stripExt(source.name()) + ".xlsx", usedNames));
                     zip.putNextEntry(entry);
                     zip.write(xlsx.toByteArray());
                     zip.closeEntry();
