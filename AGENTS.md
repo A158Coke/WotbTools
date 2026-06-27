@@ -14,6 +14,10 @@
 6. **Git** — SSH remote `github-personal`，账号 `A158Coke`。中文提交，尾带 `Co-Authored-By`。
 7. **跨站 Cookie** — 主题/语言偏好写 `domain=.wotbtools.com` Cookie，localStorage 回退。
 8. **显式参数名** — `@RequestParam(name="x")` 必须写名字。
+9. **Java final** — 局部变量、方法入参一律 `final`。
+10. **三语 i18n** — 新增页面/文案必须在 zh/en/ru 三语字典同步，主题按钮不能硬编码。
+11. **数据库迁移** — 改表结构必须新增 Flyway migration（`V3__...`），不改已应用的 V1/V2；实体列与迁移列逐列对齐。
+12. **安全** — 不存密码/凭据；Keycloak JWT 验证不由后端自签；token/secret 走 GitHub Secrets。
 
 ## 常用命令
 
@@ -36,3 +40,4 @@ cd online && docker compose up --build                       # 在线版
 - API 塞中文
 - 模块内放 tankopedia 副本
 - 用公司 token/凭据
+- 在付款/赞助页面或代码中硬编码个人收款信息

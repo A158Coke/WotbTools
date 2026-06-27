@@ -1,0 +1,38 @@
+{
+  "id": "wotbtools",
+  "realm": "wotbtools",
+  "displayName": "WoTBTools",
+  "enabled": true,
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": true,
+  "internationalizationEnabled": true,
+  "defaultLocale": "zh",
+  "supportedLocales": ["zh","en","ru"],
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 86400,
+  "ssoSessionMaxLifespan": 604800,
+  "clients": [
+    {
+      "clientId": "wotbtools-frontend",
+      "name": "WoTBTools Frontend",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "https://wotbtools.com/*",
+        "https://replay.wotbtools.com/*",
+        "http://localhost:5173/*",
+        "http://localhost:8088/*"
+      ],
+      "webOrigins": [
+        "https://wotbtools.com",
+        "https://replay.wotbtools.com",
+        "http://localhost:5173",
+        "http://localhost:8088"
+      ]
+    }
+  ]
+}

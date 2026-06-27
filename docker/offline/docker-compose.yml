@@ -2,6 +2,14 @@
 # 用法：docker compose up -d
 # 首次需 docker pull a158coke/wotbtool:backend-latest frontend-latest
 services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    command: start --import-realm --hostname-strict=false --http-enabled=true --http-port=9000
+    restart: unless-stopped
+
   postgres:
     image: postgres:18-alpine
     environment:

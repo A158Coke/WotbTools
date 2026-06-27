@@ -15,7 +15,6 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * 排行榜业务 (仅 postgres profile)。MVP 只记录录像者本人单场成绩, 不存全场 14 人,
@@ -31,7 +30,7 @@ public class LeaderboardService {
      * 排行榜只收随机战斗 (meta.json#arenaBonusType==1); 训练房(==2)/娱乐/联赛等一律拒绝。
      * 取值经真实样本核实: 1=随机, 2=训练房 (docs/replay-data.md 旧表的 "2=随机" 系误标)。
      */
-    private static final int RANDOM_BATTLE_BONUS_TYPE = 1;
+    private static final int BATTLE_TYPE = 1;
 
     private final LeaderboardRecordRepository repository;
 
@@ -49,7 +48,7 @@ public class LeaderboardService {
         if (battle == null || battle.arenaId == null) {
             return false;
         }
-        if (battle.arenaBonusType == null || battle.arenaBonusType != RANDOM_BATTLE_BONUS_TYPE) {
+        if (battle.arenaBonusType == null || battle.arenaBonusType != BATTLE_TYPE) {
             return false;
         }
         final PlayerResult recorder = battle.recorderResult();
@@ -68,9 +67,10 @@ public class LeaderboardService {
         record.setDamageDealt(recorder.damageDealt);
         record.setMapName(battle.mapName);
         record.setVersion(battle.version != null && !battle.version.isEmpty() ? battle.version : null);
-        if (battle.startTime != null && battle.startTime > 0) {
+        // 过滤无效时间戳 (秒级 epoch): 0 或早于 WoT Blitz 发布 (2014)
+        if (battle.startTime != null && battle.startTime > 1388534400L) {
             record.setBattleTime(OffsetDateTime.ofInstant(
-                    Instant.ofEpochMilli(battle.startTime), ZoneOffset.UTC));
+                    Instant.ofEpochSecond(battle.startTime), ZoneOffset.UTC));
         }
         try {
             repository.save(record);
@@ -90,11 +90,6 @@ public class LeaderboardService {
     public List<LeaderboardRecordDto> topDamageByTank(final long tankId, final int limit) {
         return repository.findByTankIdOrderByDamageDealtDesc(tankId, PageRequest.of(0, clamp(limit)))
                 .stream().map(LeaderboardService::toDto).toList();
-    }
-
-    /** 单条记录。 */
-    public Optional<LeaderboardRecordDto> findById(final long id) {
-        return repository.findById(id).map(LeaderboardService::toDto);
     }
 
     private static int clamp(final int limit) {

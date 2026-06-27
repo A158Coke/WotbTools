@@ -86,7 +86,7 @@ onMounted(load)
 function fmtTime(s) {
   if (!s) return ''
   const d = new Date(s)
-  if (isNaN(d.getTime())) return ''
+  if (isNaN(d.getTime()) || d.getFullYear() < 2014) return ''
   const p = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
@@ -191,7 +191,7 @@ function rankClass(i) {
   background: none; border: none; padding: 0; color: var(--accent); font-family: inherit;
   font-size: inherit; cursor: pointer; text-decoration: none;
 }
-.lb-tank-link:hover { text-decoration: underline; color: var(--accent-hover); }
+.lb-tank-link:hover { text-decoration: underline; color: var(--accent-hover); background: var(--accent-shadow); border-radius: 3px; transition: all .12s; }
 .lb-filter-hint { margin: 6px 0 2px; font-size: 13px; color: var(--text-label); }
 .lb-filter-hint strong { color: var(--accent-dark); }
 .rk { display: inline-block; min-width: 26px; padding: 1px 8px; border-radius: 6px; font-size: 12px;
