@@ -10,7 +10,7 @@ import ProfilePage from './components/ProfilePage.vue'
 
 const { t } = useI18n()
 const { theme, handleTheme } = useTheme()
-const { isAuthenticated, userName, initPromise } = useAuth()
+const { login, isAuthenticated, userName, initPromise } = useAuth()
 
 const isDesktop = ref(false)
 const params = new URLSearchParams(window.location.search)
@@ -52,8 +52,8 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">{{ $t('theme.light') }}</button>
       <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">{{ $t('theme.dark') }}</button>
     </div>
-    <a v-if="authenticated" class="auth-btn" href="https://auth.wotbtools.com/realms/wotbtools/account">{{ user || $t('app.profile') }}</a>
-    <a v-else class="auth-btn ghost" href="https://auth.wotbtools.com/realms/wotbtools/account">{{ $t('app.login') }}</a>
+    <button v-if="authenticated" class="auth-btn" @click="login">{{ user || $t('app.profile') }}</button>
+    <button v-else class="auth-btn ghost" @click="login">{{ $t('app.login') }}</button>
   </div>
 
   <div class="tb-content">
