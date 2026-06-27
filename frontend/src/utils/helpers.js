@@ -9,14 +9,21 @@ export const DEFAULT_VISIBLE = [
 
 export const RATING_KEYS = new Set(['rating', 'rating_avg'])
 
+export const EXTENDED_ONLY_PLAYER_KEYS = new Set([
+  'alpha_damage', 'potential_damage', 'potential_damage_supplement', 'potential_damage_detail',
+  'rank'
+])
+
 export const COL_GROUP_CAT = {
   nickname: 'identity', clan: 'identity', account_id: 'extra',
-  tank_name: 'vehicle', tank_tier: 'vehicle', tank_type: 'vehicle', tank_nation: 'vehicle', tank_id: 'extra',
+  tank_name: 'vehicle', tank_tier: 'vehicle', tank_type: 'vehicle', tank_nation: 'vehicle',
+  alpha_damage: 'vehicle', tank_id: 'extra',
   rating: 'battle', survived_label: 'battle', survival_time: 'battle', kills: 'battle', damage_dealt: 'battle',
+  potential_damage: 'battle', potential_damage_supplement: 'battle', potential_damage_detail: 'extra',
   damage_assisted: 'battle', damage_received: 'battle', damage_blocked: 'battle',
   n_shots: 'battle', n_hits_dealt: 'battle', n_penetrations_dealt: 'battle',
   n_hits_received: 'battle', n_penetrations_received: 'battle', n_enemies_damaged: 'battle',
-  platoon_label: 'extra',
+  platoon_label: 'extra', rank: 'extra',
   battles: 'overview', wins: 'overview', win_rate: 'overview', survival_rate: 'overview', rating_avg: 'overview',
   kills_avg: 'battle', damage: 'battle', damage_avg: 'battle', assisted: 'battle', assisted_avg: 'battle',
   received_avg: 'battle', blocked_avg: 'battle', hit_rate: 'battle', pen_rate: 'battle',

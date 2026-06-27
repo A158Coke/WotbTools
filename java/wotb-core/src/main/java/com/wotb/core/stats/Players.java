@@ -26,6 +26,7 @@ public final class Players {
         p.tankTier = ti.tier();
         p.tankType = ti.type();
         p.tankNation = ti.nation();
+        p.alphaDamage = ti.alphaDamage() == null ? "" : ti.alphaDamage();
     }
 
     /** 统一排序: 先队伍, 同队按伤害降序。 */

@@ -10,6 +10,7 @@ import com.wotb.core.parse.Replays;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.stats.Aggregator;
 import com.wotb.core.stats.Rating;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
@@ -33,8 +34,12 @@ class ParityTest {
     }
 
     private static List<Path> replays() throws Exception {
-        try (Stream<Path> s = Files.list(dataDir())) {
-            return s.filter(p -> p.toString().toLowerCase().endsWith(".wotbreplay")).sorted().toList();
+        final Path dir = dataDir();
+        Assumptions.assumeTrue(Files.isDirectory(dir), "common/data 样本目录不存在, 跳过真实回放回归");
+        try (Stream<Path> s = Files.list(dir)) {
+            final List<Path> files = s.filter(p -> p.toString().toLowerCase().endsWith(".wotbreplay")).sorted().toList();
+            Assumptions.assumeTrue(!files.isEmpty(), "common/data 中没有 .wotbreplay, 跳过真实回放回归");
+            return files;
         }
     }
 

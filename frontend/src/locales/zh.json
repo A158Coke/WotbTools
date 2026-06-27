@@ -79,14 +79,34 @@
     "baseline_word": "基准",
     "if_win": "若获胜",
     "tier_title": "分级",
-    "tiers": { "elite": "卓越", "great": "优秀", "good": "良好", "mid": "中等", "poor": "较差" },
+    "tiers": {
+      "elite": "卓越",
+      "great": "优秀",
+      "good": "良好",
+      "mid": "中等",
+      "poor": "较差"
+    },
     "note": "基准来自一同计算的这批战斗，因此是相对评分，不是绝对天梯分；单场样本少、波动更大。",
     "close": "关闭"
   },
   "duration": "{min}分{sec}秒",
-  "team": { "1": "队伍1", "2": "队伍2", "unknown": "平局/未知" },
-  "survived": { "alive": "存活", "dead": "阵亡" },
-  "version": { "btn": "更新历史", "back": "返回", "added": "新增", "fixed": "修复", "changed": "变更", "removed": "移除" },
+  "team": {
+    "1": "队伍1",
+    "2": "队伍2",
+    "unknown": "平局/未知"
+  },
+  "survived": {
+    "alive": "存活",
+    "dead": "阵亡"
+  },
+  "version": {
+    "btn": "更新历史",
+    "back": "返回",
+    "added": "新增",
+    "fixed": "修复",
+    "changed": "变更",
+    "removed": "移除"
+  },
   "col_groups": {
     "identity": "身份",
     "vehicle": "车辆",
@@ -106,9 +126,9 @@
     "tank_name": "车辆",
     "damage_dealt": "伤害",
     "map": "地图",
-        "version": "版本",
-        "battle_time": "战斗时间",
-        "upload_time": "上传时间",
+    "version": "版本",
+    "battle_time": "战斗时间",
+    "upload_time": "上传时间",
     "loading": "加载中…",
     "empty": "暂无数据。上传随机战斗回放后即可上榜。",
     "error": "排行榜加载失败",
@@ -116,10 +136,10 @@
     "upload_success": "上传成功！已录入排行榜",
     "upload_failed": "上传失败",
     "upload_title": "上传回放以计入排名",
-        "upload_btn": "选择回放文件",
-        "all_tanks": "全部车辆",
-        "filter_tank": "当前筛选",
-        "filter_by_tank": "点击查看该车辆排行榜"
+    "upload_btn": "选择回放文件",
+    "all_tanks": "全部车辆",
+    "filter_tank": "当前筛选",
+    "filter_by_tank": "点击查看该车辆排行榜"
   },
   "player_labels": {
     "nickname": "玩家",
@@ -128,6 +148,7 @@
     "tank_tier": "等级",
     "tank_type": "坦克类型",
     "tank_nation": "国家",
+    "alpha_damage": "炮伤",
     "rating": "评分",
     "survived_label": "存活",
     "survival_time": "存活时间",
@@ -147,7 +168,11 @@
     "n_enemies_damaged": "击伤",
     "platoon_label": "排",
     "tank_id": "车辆ID",
-    "account_id": "账号ID"
+    "account_id": "账号ID",
+    "rank": "军阶",
+    "potential_damage": "潜在伤害",
+    "potential_damage_supplement": "补增伤害",
+    "potential_damage_detail": "潜在明细"
   },
   "agg_labels": {
     "nickname": "玩家",
@@ -174,7 +199,42 @@
     "hits": "总命中次数",
     "pens": "总击穿次数",
     "tanks": "用车",
+    "account_id": "账号ID",
+    "potential_damage": "总潜在伤害",
+    "potential_damage_avg": "场均潜在伤害",
+    "potential_damage_supplement_avg": "场均补增伤害"
+  },
+  "theme": {
+    "auto": "跟随系统",
+    "light": "亮色",
+    "dark": "暗色"
+  },
+  "rating_labels": {
+    "nickname": "玩家",
+    "clan": "战队",
+    "battles": "场次",
+    "wins": "胜场",
+    "win_rate": "胜率%",
+    "rating": "Rating",
+    "kast": "KAST%",
+    "contribution": "贡献率%",
+    "influence": "影响力",
+    "damage_avg": "均伤",
+    "potential_damage_avg": "潜在均伤",
+    "potential_damage_supplement_avg": "场均补增",
+    "kills": "人头",
+    "kills_avg": "场均人头",
     "account_id": "账号ID"
   },
-  "theme": { "auto": "跟随系统", "light": "亮色", "dark": "暗色" }
+  "extended": {
+    "title": "扩展分析",
+    "preview": "扩展字段解析",
+    "rating": "Rating 分析",
+    "rating_title": "实时 Rating",
+    "fields_title": "扩展字段",
+    "empty": "未选择文件",
+    "no_files": "请先选择回放文件或文件夹",
+    "scope_preview": "扩展字段",
+    "scope_rating": "Rating"
+  }
 }
