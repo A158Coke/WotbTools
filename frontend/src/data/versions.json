@@ -1,0 +1,7 @@
+[
+  { "v": "1.8.0", "date": "2026-06-27", "tag": "add", "zh": "Keycloak 认证 · 个人中心 · Vue SPA 主页 · 域名统一 · 项目重命名", "en": "Keycloak auth · Profile · Vue SPA homepage · Unified domain · Renamed", "ru": "Keycloak · Профиль · Vue SPA главная · Единый домен" },
+  { "v": "1.5.0", "date": "2026-06-26", "tag": "add", "zh": "工具集主页 · 主题切换 · 排行榜 · PostgreSQL · Flyway · Docker 分发", "en": "Homepage · Theme switcher · Leaderboard · PostgreSQL · Flyway · Docker", "ru": "Главная · Переключение тем · Рейтинг · PostgreSQL · Flyway · Docker" },
+  { "v": "1.4.0", "date": "2026-06-25", "tag": "fix", "zh": "存活时间推算更准确", "en": "More accurate survival time estimation", "ru": "Более точная оценка времени выживания" },
+  { "v": "1.3.0", "date": "2026-06-24", "tag": "add", "zh": "存活时间列 · 三语 i18n · 评分系统 · 地图中文化 · Docker 部署", "en": "Survival time · i18n · Rating · Map CN · Docker", "ru": "Время выживания · i18n · Рейтинг · Карты · Docker" },
+  { "v": "1.0.0", "date": "2026-06-23", "tag": "add", "zh": "回放解析引擎 · Web API · Vue 前端 · Excel 导出", "en": "Replay parser · Web API · Vue frontend · Excel export", "ru": "Парсер реплеев · Web API · Vue · Excel" }
+]
