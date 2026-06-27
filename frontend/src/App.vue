@@ -43,6 +43,7 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">{{ $t('theme.light') }}</button>
       <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">{{ $t('theme.dark') }}</button>
     </div>
+    <a class="auth-btn ghost" href="/?view=profile">个人中心</a>
   </div>
 
   <div class="tb-content">
