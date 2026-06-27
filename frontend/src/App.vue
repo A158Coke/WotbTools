@@ -2,19 +2,28 @@
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useTheme } from './composables/useTheme.js'
+import { useAuth } from './composables/useAuth.js'
 import * as api from './utils/api.js'
 import ReplayPage from './components/ReplayPage.vue'
 import LeaderboardPage from './components/LeaderboardPage.vue'
 
 const { t } = useI18n()
 const { theme, handleTheme } = useTheme()
+const { login, logout, isAuthenticated, userName, initPromise } = useAuth()
 
 const isDesktop = ref(false)
 const params = new URLSearchParams(window.location.search)
 const activeTool = ref(params.get('view') === 'leaderboard' ? 'leaderboard' : 'replay')
+const authenticated = ref(false)
+const user = ref('')
 
 onMounted(async () => {
   try { isDesktop.value = (await api.healthCheck()).desktop } catch { /* 离线模式 */ }
+  try {
+    await initPromise
+    authenticated.value = isAuthenticated()
+    if (authenticated.value) user.value = userName()
+  } catch { /* Keycloak 不可用时保持游客 */ }
 })
 
 function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
@@ -38,6 +47,8 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">{{ $t('theme.light') }}</button>
       <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">{{ $t('theme.dark') }}</button>
     </div>
+    <button v-if="authenticated" class="auth-btn" @click="logout">{{ user || $t('app.profile') }}</button>
+    <button v-else class="auth-btn ghost" @click="login">{{ $t('app.login') }}</button>
   </div>
 
   <div class="tb-content">
@@ -194,6 +205,9 @@ body { margin: 0; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; color:
 }
 .topbar .theme-bar button:hover { color: var(--text) }
 .topbar .theme-bar button.active { background: var(--accent); color: #fff; font-weight: 600; }
+.topbar .auth-btn { padding: 5px 14px; border: none; border-radius: 7px; font-family: inherit; font-size: .85rem; cursor: pointer; transition: background .12s, color .12s; color: #fff; white-space: nowrap; }
+.topbar .auth-btn.ghost { background: var(--bg-card2); color: var(--text-label); border: 1px solid var(--border-ghost); }
+.topbar .auth-btn.ghost:hover { background: var(--bg-card-hover); }
 .topbar .lang-select { font-size: .73rem; padding: 4px 22px 4px 8px; background-size: 12px }
 
 .ic { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2;

@@ -5,7 +5,10 @@
     "shutdown": "Shut Down",
     "homepage": "Home",
     "replay_tab": "Replay",
-    "theme": "Theme"
+    "theme": "Theme",
+    "login": "Login",
+    "logout": "Logout",
+    "profile": "Profile"
   },
   "upload": {
     "drop_hint": "Drop .wotbreplay files here",
