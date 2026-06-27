@@ -1,17 +1,69 @@
 <script setup>
-import { useAuth } from '../composables/useAuth.js'
+import { onMounted, ref } from 'vue'
+import Keycloak from 'keycloak-js'
 
-const { isAuthenticated, userName, logout } = useAuth()
+const phase = ref('init')
+const user = ref('')
+const error = ref('')
+let kc = null
+
+onMounted(async () => {
+  console.log('[Profile] mounted')
+
+  kc = new Keycloak({
+    url: 'https://auth.wotbtools.com',
+    realm: 'wotbtools',
+    clientId: 'wotbtools-web',
+  })
+
+  try {
+    console.log('[Profile] calling kc.init')
+    const loggedIn = await kc.init({
+      onLoad: 'check-sso',
+      pkceMethod: 'S256',
+      silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
+    })
+    console.log('[Profile] kc.init done, loggedIn:', loggedIn)
+
+    if (loggedIn) {
+      user.value = kc.tokenParsed?.preferred_username || kc.tokenParsed?.name || 'WoTBTools User'
+      phase.value = 'done'
+    } else {
+      phase.value = 'login'
+    }
+  } catch (e) {
+    console.error('[Profile] init error:', e)
+    error.value = String(e)
+    phase.value = 'error'
+  }
+})
+
+function doLogin() {
+  if (kc) kc.login({ redirectUri: window.location.origin + '/?view=profile' })
+}
+
+function doLogout() {
+  if (kc) kc.logout({ redirectUri: 'https://wotbtools.com' })
+}
 </script>
 
 <template>
   <div class="wrap profile-page">
-    <div class="profile-card">
+    <div class="profile-card" v-if="phase === 'error'">
+      <p style="color:red">错误: {{ error }}</p>
+    </div>
+    <div class="profile-card" v-else-if="phase === 'done'">
       <div class="profile-avatar"></div>
-      <h2 v-if="isAuthenticated()" class="profile-name">{{ userName() }}</h2>
-      <h2 v-else class="profile-name">游客</h2>
-      <p class="profile-status">{{ isAuthenticated() ? '已登录' : '未登录' }}</p>
-      <button v-if="isAuthenticated()" class="sm ghost" style="margin-top:12px" @click="logout">登出</button>
+      <h2 class="profile-name">{{ user }}</h2>
+      <p class="profile-status">已登录</p>
+      <button class="sm ghost" style="margin-top:12px" @click="doLogout">登出</button>
+    </div>
+    <div class="profile-card" v-else-if="phase === 'login'">
+      <p>未登录</p>
+      <button class="lg" style="margin-top:12px" @click="doLogin">登入</button>
+    </div>
+    <div class="profile-card" v-else>
+      <p>加载中…</p>
     </div>
   </div>
 </template>

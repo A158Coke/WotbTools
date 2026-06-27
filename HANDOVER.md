@@ -8,7 +8,7 @@
 
 从《坦克世界闪击战》(WoT Blitz) 的 `.wotbreplay` 回放里提取战斗结算数据，导出可分析的 Excel，并提供在线预览。一套 Java 核心逻辑，交付 Web 版：
 
-- **Web 版**（Spring Boot + Vue，浏览器上传/预览/导出，已上线 https://replay.wotbtools.com）
+- **Web 版**（Spring Boot + Vue，浏览器上传/预览/导出，已上线 https://wotbtools.com）
 
 在线版支持 Keycloak 认证（游客 + 登录），排行榜，三语 i18n。
 
