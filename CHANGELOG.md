@@ -9,6 +9,22 @@
 - 补齐旧解析链路字段：单场玩家列新增 `alpha_damage`、`rank`，扩展页/API/导出可用，原回放页面列选择器保持隐藏；`xp`、`credits` 仅在 parser/model 保留，不作为战绩展示字段。
 - 扩展页 rating 算法落地：按潜在均伤、KAST、全场 impact、AST、多伤率、场均人头加权；KAST 改为单场最大贡献项，impact 改按双方总池计算，多伤率阈值按 1.5 倍均血 / 1.2 倍均血+人头 / 均血+2 头 / 3 头判定。
 
+## [1.8.0] - 2026-06-27
+
+### Added
+- Keycloak 认证集成：auth.wotbtools.com + realm wotbtools + client wotbtools-web
+- 个人中心（ProfilePage）：check-sso + 登录/登出 + 用户名显示
+- Vue SPA 工具集主页：HomePage.vue 替代静态 HTML，版本历史动态加载
+- 域名统一：移除 replay.wotbtools.com，仅 wotbtools.com
+- 部署磁盘清理：docker image prune -af && docker builder prune -af
+
+### Changed
+- nginx 单 server block，wotbtools.com/replay 合并
+- 移除 offline 版本
+
+### Fixed
+- Keycloak client 统一为 wotbtools-web
+
 ## [1.7.0] - 2026-06-27
 
 ### Added
