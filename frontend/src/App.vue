@@ -2,33 +2,23 @@
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useTheme } from './composables/useTheme.js'
-import { useAuth } from './composables/useAuth.js'
 import * as api from './utils/api.js'
+import HomePage from './components/HomePage.vue'
 import ReplayPage from './components/ReplayPage.vue'
 import LeaderboardPage from './components/LeaderboardPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
 
 const { t } = useI18n()
 const { theme, handleTheme } = useTheme()
-const { login, logout, isAuthenticated, userName, initPromise } = useAuth()
 
 const isDesktop = ref(false)
 const params = new URLSearchParams(window.location.search)
-const activeTool = ref(params.get('view') === 'leaderboard' ? 'leaderboard' : 'replay')
-const authenticated = ref(false)
-const user = ref('')
+const isHomeHost = window.location.hostname === 'wotbtools.com' || window.location.hostname === 'www.wotbtools.com'
+const defaultView = isHomeHost ? 'home' : 'replay'
+const activeTool = ref(params.get('view') === 'leaderboard' ? 'leaderboard' : params.get('view') === 'profile' ? 'profile' : defaultView)
 
 onMounted(async () => {
   try { isDesktop.value = (await api.healthCheck()).desktop } catch { /* 离线模式 */ }
-  try {
-    await initPromise
-    authenticated.value = isAuthenticated()
-    if (authenticated.value) {
-      user.value = userName()
-      // 登录后没有指定 view 则自动跳 profile
-      if (!params.has('view')) activeTool.value = 'profile'
-    }
-  } catch { /* Keycloak 不可用时保持游客 */ }
 })
 
 function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
@@ -40,6 +30,7 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <img class="tb-logo" src="/wotbtoolslogo.png" alt="WoTBTools">
     </a>
     <nav>
+      <button v-if="isHomeHost" :class="{ active: activeTool === 'home' }" @click="activeTool = 'home'">首页</button>
       <button :class="{ active: activeTool === 'replay' }" @click="activeTool = 'replay'">{{ $t('app.replay_tab') }}</button>
       <button v-if="!isDesktop" :class="{ active: activeTool === 'leaderboard' }" @click="activeTool = 'leaderboard'">{{ $t('leaderboard.btn') }}</button>
     </nav>
@@ -52,12 +43,12 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">{{ $t('theme.light') }}</button>
       <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">{{ $t('theme.dark') }}</button>
     </div>
-    <button v-if="authenticated" class="auth-btn" @click="activeTool = 'profile'">{{ user || $t('app.profile') }}</button>
-    <button v-else class="auth-btn ghost" @click="login">{{ $t('app.login') }}</button>
+    <a class="auth-btn ghost" href="/?view=profile">个人中心</a>
   </div>
 
   <div class="tb-content">
-    <ProfilePage v-if="activeTool === 'profile'" />
+    <HomePage v-if="activeTool === 'home'" />
+    <ProfilePage v-else-if="activeTool === 'profile'" />
     <LeaderboardPage v-else-if="activeTool === 'leaderboard'" />
     <ReplayPage v-else />
   </div>
@@ -211,7 +202,7 @@ body { margin: 0; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; color:
 }
 .topbar .theme-bar button:hover { color: var(--text) }
 .topbar .theme-bar button.active { background: var(--accent); color: #fff; font-weight: 600; }
-.topbar .auth-btn { padding: 5px 14px; border: none; border-radius: 7px; font-family: inherit; font-size: .85rem; cursor: pointer; transition: background .12s, color .12s; color: #fff; white-space: nowrap; }
+.topbar .auth-btn { padding: 5px 14px; border: none; border-radius: 7px; font-family: inherit; font-size: .85rem; cursor: pointer; transition: background .12s, color .12s; color: #fff; white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; }
 .topbar .auth-btn.ghost { background: var(--bg-card2); color: var(--text-label); border: 1px solid var(--border-ghost); }
 .topbar .auth-btn.ghost:hover { background: var(--bg-card-hover); }
 .topbar .lang-select { font-size: .73rem; padding: 4px 22px 4px 8px; background-size: 12px }

@@ -10,7 +10,7 @@
 - [x] Spring Boot 版本已统一为 `4.1.0`（父 POM 与 Web 模块一致）。
 - [x] 前端静态资源已嵌入 Spring Boot JAR（Maven 构建阶段从 `frontend/dist` 复制到 `classpath:/static/`）。
 - [x] Maven settings.xml 本地仓库路径改为模板 + 动态生成，不再写死。
-- [x] 在线演示：https://replay.wotbtools.com
+- [x] 在线演示：https://wotbtools.com
 - [x] Keycloak 容器部署 + realm 配置 + 前端 check-sso 认证集成。
 
 - [x] 排行榜支持按车辆筛选（点击车辆名查看专属伤害榜）。
@@ -51,7 +51,7 @@
 
 - [x] Keycloak 容器部署。详见 [docs/auth/keycloak-qq-only.md](docs/auth/keycloak-qq-only.md)
   - [x] `auth.wotbtools.com` Keycloak 部署（外层 Caddy → KC 8080）
-  - [x] realm `wotbtools` + client `wotbtools-frontend` 导入
+  - [x] realm `wotbtools` + client `wotbtools-web` 导入
   - [x] 前端 `useAuth.js` — Keycloak 适配器（check-sso 游客模式 + 登录/登出）
   - [ ] QQ IdP 接入
   - [ ] Spring Security Resource Server JWT 验证
