@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>支持 WoTBTools</title>
+<title data-i18n-doc="title">支持 WoTBTools</title>
 <link rel="icon" type="image/x-icon" href="icon.ico">
 <link rel="icon" type="image/png" sizes="32x32" href="icon.png">
 <script>
@@ -33,6 +33,10 @@
     position: fixed; top: 16px; right: 20px; z-index: 10;
     display: flex; align-items: center; gap: 8px;
   }
+  .lang-select { appearance: none; -webkit-appearance: none; border: 1px solid var(--card-border);
+    background: var(--card-bg); color: var(--muted); padding: 5px 28px 5px 10px; border-radius: 7px;
+    font-size: .8rem; cursor: pointer; font-family: inherit; }
+  .lang-select:hover { color: var(--text) }
   .theme-bar {
     display: flex; gap: 4px;
     background: var(--card-bg); border: 1px solid var(--card-border);
@@ -86,6 +90,7 @@
   @media (max-width: 560px) {
     .topctl { top: 10px; right: 10px; gap: 6px; }
     .theme-bar button { padding: 5px 9px; font-size: .72rem; }
+    .lang-select { padding: 4px 20px 4px 7px; font-size: .72rem; }
     header { padding: 48px 16px 24px; }
     header h1 { font-size: 1.6rem; }
     .card { padding: 20px 16px; }
@@ -96,41 +101,87 @@
 <body>
 
 <div class="topctl">
+  <select class="lang-select" id="lang-select" onchange="switchLang(this.value)"></select>
   <div class="theme-bar">
-    <button data-theme="auto"  class="active">auto</button>
-    <button data-theme="light">light</button>
-    <button data-theme="dark">dark</button>
+    <button data-theme="auto"  class="active" data-i18n="theme_auto">auto</button>
+    <button data-theme="light" data-i18n="theme_light">light</button>
+    <button data-theme="dark" data-i18n="theme_dark">dark</button>
   </div>
 </div>
 
 <header>
-  <a href="/">&larr; WoTBTools</a>
-  <h1>支持 WoTBTools</h1>
+  <a href="/" data-i18n="sponsor_back">&larr; WoTBTools</a>
+  <h1 data-i18n="sponsor_title">支持 WoTBTools</h1>
 </header>
 
 <main>
   <div class="card">
-    <p>WotBTools 是个人维护的免费工具。如果这个项目帮到了你，可以自愿赞助，用于服务器和维护成本。</p>
-    <p>赞助完全自愿，不设置固定金额，不影响任何功能使用，也不会解锁额外服务。</p>
-    <div class="note">请勿在付款备注中填写敏感个人信息。如误转或需要联系作者，可以通过页面上的联系方式联系我。</div>
+    <p data-i18n="sponsor_desc1">WotBTools 是个人维护的免费工具。如果这个项目帮到了你，可以自愿赞助，用于服务器和维护成本。</p>
+    <p data-i18n="sponsor_desc2">赞助完全自愿，不设置固定金额，不影响任何功能使用，也不会解锁额外服务。</p>
+    <div class="note" data-i18n="sponsor_note">请勿在付款备注中填写敏感个人信息。如误转或需要联系作者，可以通过页面上的联系方式联系我。</div>
   </div>
 
   <div class="card">
-    <h2>扫码赞助</h2>
+    <h2 data-i18n="sponsor_qr">扫码赞助</h2>
     <div class="qr-row">
       <div class="qr-item">
         <img src="qr/alipay.png" alt="支付宝">
-        <div class="label">支付宝</div>
+        <div class="label" data-i18n="sponsor_alipay">支付宝</div>
       </div>
       <div class="qr-item">
         <img src="qr/wechat.png" alt="微信支付">
-        <div class="label">微信支付</div>
+        <div class="label" data-i18n="sponsor_wechat">微信支付</div>
       </div>
     </div>
   </div>
 </main>
 
 <footer>WoTBTools &copy; 2026</footer>
+
+<i18n style="display:none">{
+"zh":{
+"title":"支持 WoTBTools",
+"sponsor_title":"支持 WoTBTools",
+"sponsor_back":"← WoTBTools",
+"sponsor_desc1":"WotBTools 是个人维护的免费工具。如果这个项目帮到了你，可以自愿赞助，用于服务器和维护成本。",
+"sponsor_desc2":"赞助完全自愿，不设置固定金额，不影响任何功能使用，也不会解锁额外服务。",
+"sponsor_note":"请勿在付款备注中填写敏感个人信息。如误转或需要联系作者，可以通过页面上的联系方式联系我。",
+"sponsor_qr":"扫码赞助",
+"sponsor_alipay":"支付宝",
+"sponsor_wechat":"微信支付",
+"theme_auto":"跟随系统",
+"theme_light":"亮色",
+"theme_dark":"暗色"
+},
+"en":{
+"title":"Support WoTBTools",
+"sponsor_title":"Support WoTBTools",
+"sponsor_back":"← WoTBTools",
+"sponsor_desc1":"WotBTools is a free tool maintained by an individual. If it has helped you, voluntary sponsorship is appreciated to cover server and maintenance costs.",
+"sponsor_desc2":"Sponsorship is completely voluntary, with no fixed amount, no features locked, and no additional services unlocked.",
+"sponsor_note":"Please do not include sensitive personal information in payment notes. For accidental transfers or contact, reach out via the contact info on this page.",
+"sponsor_qr":"Scan to Sponsor",
+"sponsor_alipay":"Alipay",
+"sponsor_wechat":"WeChat Pay",
+"theme_auto":"Auto",
+"theme_light":"Light",
+"theme_dark":"Dark"
+},
+"ru":{
+"title":"Поддержать WoTBTools",
+"sponsor_title":"Поддержать WoTBTools",
+"sponsor_back":"← WoTBTools",
+"sponsor_desc1":"WotBTools — бесплатный инструмент, поддерживаемый одним человеком. Если он вам помог, вы можете добровольно поддержать проект на сервер и обслуживание.",
+"sponsor_desc2":"Поддержка полностью добровольная, без фиксированной суммы, без блокировки функций и без дополнительных услуг.",
+"sponsor_note":"Пожалуйста, не указывайте личную информацию в комментариях к платежу. При ошибочном переводе или для связи используйте контакты на странице.",
+"sponsor_qr":"Сканировать для поддержки",
+"sponsor_alipay":"Alipay",
+"sponsor_wechat":"WeChat Pay",
+"theme_auto":"Авто",
+"theme_light":"Светлая",
+"theme_dark":"Тёмная"
+}
+}</i18n>
 
 <script>
 (function(){
@@ -149,6 +200,32 @@
   btns.forEach(function(b){ b.addEventListener('click', function(){ saveTheme(b.dataset.theme); refresh(); }); });
   mql.addEventListener('change', refresh);
   refresh();
+
+  // --- i18n ---
+  var I18N = JSON.parse(document.querySelector('i18n').textContent);
+  var langs = [{k:'zh',l:'中文'},{k:'en',l:'English'},{k:'ru',l:'Русский'}];
+  var sel = document.getElementById('lang-select');
+  langs.forEach(function(l){
+    var o = document.createElement('option');
+    o.value = l.k; o.textContent = l.l;
+    sel.appendChild(o);
+  });
+  var savedLang = localStorage.getItem('wotb-lang') || 'zh';
+  if (!I18N[savedLang]) savedLang = 'zh';
+  sel.value = savedLang;
+  function switchLang(lang) {
+    if (!I18N[lang]) return;
+    localStorage.setItem('wotb-lang', lang);
+    var dict = I18N[lang];
+    document.querySelectorAll('[data-i18n]').forEach(function(el){
+      var k = el.getAttribute('data-i18n');
+      if (dict[k]) el.textContent = dict[k];
+    });
+    var t = document.querySelector('[data-i18n-doc]');
+    if (t && dict[t.getAttribute('data-i18n-doc')]) document.title = dict[t.getAttribute('data-i18n-doc')];
+  }
+  window.switchLang = switchLang;
+  switchLang(savedLang);
 })();
 </script>
 </body>

@@ -103,17 +103,17 @@ public class ReplayService {
         int exported = 0;
         final Set<String> usedNames = new HashSet<>();
         try (ZipOutputStream zip = new ZipOutputStream(zipBytes, StandardCharsets.UTF_8)) {
-            for (Source source : sources) {
+            for (final Source source : sources) {
                 try {
-                    Battle battle = ReplayParser.parse(source.bytes());
-                    ByteArrayOutputStream xlsx = new ByteArrayOutputStream();
+                    final Battle battle = ReplayParser.parse(source.bytes());
+                    final ByteArrayOutputStream xlsx = new ByteArrayOutputStream();
                     ExcelExporter.writeSingle(battle, tankopedia, xlsx);
                     ZipEntry entry = new ZipEntry(uniqueName(stripExt(source.name()) + ".xlsx", usedNames));
                     zip.putNextEntry(entry);
                     zip.write(xlsx.toByteArray());
                     zip.closeEntry();
                     exported++;
-                } catch (Exception ignored) {
+                } catch (final Exception ignored) {
                     // 预览已逐项报告失败; 逐场导出跳过无效输入。
                 }
             }
