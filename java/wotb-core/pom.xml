@@ -10,7 +10,7 @@
     </parent>
 
     <artifactId>wotb-core</artifactId>
-    <name>WoT Blitz Extractor - Core</name>
+    <name>WotBTools Core</name>
 
     <dependencies>
         <dependency>

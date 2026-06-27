@@ -8,7 +8,7 @@
     <artifactId>wotb-parent</artifactId>
     <version>1.0.0</version>
     <packaging>pom</packaging>
-    <name>WoT Blitz Replay Extractor (Java)</name>
+    <name>WotBTools</name>
 
     <modules>
         <module>wotb-core</module>
