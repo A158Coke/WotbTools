@@ -28,13 +28,14 @@ export function useAuth() {
   }
 
   const login = () => {
+    // 登录后跳转 profile 页面
+    const redirectUri = window.location.origin + '/?view=profile'
     try {
-      ensureKeycloak().login({ redirectUri: window.location.href })
+      ensureKeycloak().login({ redirectUri })
     } catch (e) {
       console.error('Keycloak login error', e)
-      // 回退：直接跳转 KC 登录页
       const kc = ensureKeycloak()
-      const url = kc.createLoginUrl({ redirectUri: window.location.href })
+      const url = kc.createLoginUrl({ redirectUri })
       if (url) window.location.href = url
     }
   }

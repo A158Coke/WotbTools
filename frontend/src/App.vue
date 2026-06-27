@@ -6,6 +6,7 @@ import { useAuth } from './composables/useAuth.js'
 import * as api from './utils/api.js'
 import ReplayPage from './components/ReplayPage.vue'
 import LeaderboardPage from './components/LeaderboardPage.vue'
+import ProfilePage from './components/ProfilePage.vue'
 
 const { t } = useI18n()
 const { theme, handleTheme } = useTheme()
@@ -22,7 +23,11 @@ onMounted(async () => {
   try {
     await initPromise
     authenticated.value = isAuthenticated()
-    if (authenticated.value) user.value = userName()
+    if (authenticated.value) {
+      user.value = userName()
+      // 登录后没有指定 view 则自动跳 profile
+      if (!params.has('view')) activeTool.value = 'profile'
+    }
   } catch { /* Keycloak 不可用时保持游客 */ }
 })
 
@@ -47,12 +52,13 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">{{ $t('theme.light') }}</button>
       <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">{{ $t('theme.dark') }}</button>
     </div>
-    <button v-if="authenticated" class="auth-btn" @click="logout">{{ user || $t('app.profile') }}</button>
+    <button v-if="authenticated" class="auth-btn" @click="activeTool = 'profile'">{{ user || $t('app.profile') }}</button>
     <button v-else class="auth-btn ghost" @click="login">{{ $t('app.login') }}</button>
   </div>
 
   <div class="tb-content">
-    <LeaderboardPage v-if="activeTool === 'leaderboard'" />
+    <ProfilePage v-if="activeTool === 'profile'" />
+    <LeaderboardPage v-else-if="activeTool === 'leaderboard'" />
     <ReplayPage v-else />
   </div>
 </template>
