@@ -1,61 +1,56 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { useAuth } from '../composables/useAuth.js'
+import Keycloak from 'keycloak-js'
 
-const {
-  initPromise,
-  login,
-  logout,
-  isAuthenticated,
-  userName,
-  initError,
-} = useAuth()
-
-const pageReady = ref(false)
-const authenticated = ref(false)
+const phase = ref('init')
 const user = ref('')
-const loginStarted = ref(false)
+const error = ref('')
 
 onMounted(async () => {
-  const loggedIn = await initPromise
+  console.log('[Profile] mounted')
 
-  authenticated.value = Boolean(loggedIn || isAuthenticated())
-  user.value = userName()
-  pageReady.value = true
+  const kc = new Keycloak({
+    url: 'https://auth.wotbtools.com',
+    realm: 'wotbtools',
+    clientId: 'wotbtools-web',
+  })
 
-  if (!authenticated.value && !loginStarted.value && !initError.value) {
-    loginStarted.value = true
-    await login()
+  try {
+    console.log('[Profile] calling kc.init')
+    const loggedIn = await kc.init({
+      onLoad: 'check-sso',
+      pkceMethod: 'S256',
+      silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
+    })
+    console.log('[Profile] kc.init done, loggedIn:', loggedIn)
+
+    if (loggedIn) {
+      user.value = kc.tokenParsed?.preferred_username || kc.tokenParsed?.name || 'WoTBTools User'
+      phase.value = 'done'
+    } else {
+      phase.value = 'login'
+      kc.login({ redirectUri: window.location.origin + '/?view=profile' })
+    }
+  } catch (e) {
+    console.error('[Profile] init error:', e)
+    error.value = String(e)
+    phase.value = 'error'
   }
 })
-
-function doLogout() {
-  logout()
-}
-
-function retryLogin() {
-  loginStarted.value = true
-  login()
-}
 </script>
 
 <template>
   <div class="wrap profile-page">
-    <div class="profile-card" v-if="authenticated">
-      <div class="profile-avatar"></div>
-      <h2 class="profile-name">{{ user || 'WotBTools User' }}</h2>
-      <p class="profile-status">已登录</p>
-      <button class="sm ghost" style="margin-top:12px" @click="doLogout">登出</button>
+    <div class="profile-card" v-if="phase === 'error'">
+      <p style="color:red">错误: {{ error }}</p>
     </div>
-
+    <div class="profile-card" v-else-if="phase === 'done'">
+      <div class="profile-avatar"></div>
+      <h2 class="profile-name">{{ user }}</h2>
+      <p class="profile-status">已登录</p>
+    </div>
     <div class="profile-card" v-else>
-      <template v-if="initError">
-        <p style="color:red">认证失败，请刷新重试</p>
-        <button class="sm primary" style="margin-top:12px" @click="retryLogin">重新登录</button>
-      </template>
-      <template v-else>
-        <p>{{ pageReady ? '正在跳转登录...' : '正在初始化登录...' }}</p>
-      </template>
+      <p>{{ phase === 'login' ? '正在跳转登录…' : '加载中…' }}</p>
     </div>
   </div>
 </template>
