@@ -22,6 +22,7 @@ import java.util.stream.Stream;
 import java.util.zip.ZipInputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -76,6 +77,10 @@ class WebApiTest {
         assertTrue(stream(n.get("player")).anyMatch(c -> "rank".equals(c.get("key").asText())));
         assertTrue(stream(n.get("aggregate")).anyMatch(c -> "potential_damage_avg".equals(c.get("key").asText())));
         assertTrue(stream(n.get("rating")).anyMatch(c -> "kast".equals(c.get("key").asText())));
+        assertTrue(stream(n.get("rating")).anyMatch(c -> "assist_avg".equals(c.get("key").asText())));
+        assertTrue(stream(n.get("rating")).anyMatch(c -> "multi_damage_rate".equals(c.get("key").asText())));
+        assertFalse(stream(n.get("rating")).anyMatch(c -> "average_hp".equals(c.get("key").asText())));
+        assertFalse(stream(n.get("rating")).anyMatch(c -> "account_id".equals(c.get("key").asText())));
     }
 
     @Test
@@ -114,6 +119,8 @@ class WebApiTest {
         assertTrue(cells.has("potential_damage_avg"));
         assertTrue(cells.has("potential_damage_supplement_avg"));
         assertTrue(cells.has("kills"));
+        assertFalse(cells.has("average_hp"));
+        assertFalse(cells.has("account_id"));
     }
 
     @Test

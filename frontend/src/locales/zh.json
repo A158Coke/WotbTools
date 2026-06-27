@@ -222,6 +222,9 @@
     "damage_avg": "均伤",
     "potential_damage_avg": "潜在均伤",
     "potential_damage_supplement_avg": "场均补增",
+    "assist_avg": "场均协助",
+    "average_hp": "平均血量",
+    "multi_damage_rate": "多伤率%",
     "kills": "人头",
     "kills_avg": "场均人头",
     "account_id": "账号ID"

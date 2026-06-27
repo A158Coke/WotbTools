@@ -1,78 +1,45 @@
 # Rating 扩展进度记录
 
-记录日期：2026-06-27
+记录日期：2026-06-28
 
-## 最终目标
+## 当前状态
 
-完整解析回放参数字段；不改当前参数解析页面和字段；额外提供 rating 跳转入口和实时上传计算接口。基于本次上传的回放记录实时展示每名选手：
-
-- rating
-- KAST
-- 贡献率
-- 影响力
-- 均伤
-- 潜在均伤
-- 人头
-- 场均人头
-
-不需要历史记录功能，不落库。
-
-## 目标算法因子
-
-- `potential-DPB`：潜在场均。
-- `KAST`：不白给率，Kill / Assist / Survivor / Traded death。
-  - Kill 替换为 `DPB / average-HP`。
-  - Assist 使用 WoT Blitz 的协助伤害。
-  - Trade 需要分析帧信息，用玩家死亡前后 5 秒（10 秒窗口）内敌方死亡人数充当交换比。
-- `impact`：主要统计赢局里个人 `DPB + Assist + kills` 对回合平均胜率的影响。
-  - `DPB + Assist` 看个人占比。
-  - 每个人头按 `1/7` 直接加入单局 impact。
-- `AST`：协助伤害。
-- 多伤率：单局中 `DPB > average-HP` 且 `kills > 1` 视为多伤。
-- 平均人头：平均 `kills`。
-
-权重待定，由实现时根据数据可解释性决定。
-
-## 当前完成度
-
-整体约 40%。框架已经搭好，最终 rating 算法还没真正完成。
+扩展页、实时接口和目标算法主体已完成。`average_hp` 的公式口径已确定，但本地车辆库当前查不到 HP，回放里的每台车实际进场血量 / 双方总血量字段也尚未确认解析；当前暂定未知单车 HP 为 2400。剩余核心缺口是精确 `average_hp` 数据源和真实 `potential-DPB`。
 
 ## 已完成
 
-- 最新仓库已迁移。
 - 原参数解析页面保持不动。
 - 新扩展页 `/extended` 已有。
 - 实时接口 `POST /api/rating` 已有，只按本次上传回放实时计算，不写历史库。
-- 扩展页已能展示：rating、KAST、贡献率、影响力、均伤、潜在均伤、人头、场均人头。
+- 扩展页已展示：rating、KAST、贡献率、影响力、均伤、潜在均伤、场均协助、多伤率、人头、场均人头；平均血量和账号 ID 不再展示。
 - 基础字段已解析：伤害、协助、格挡、击杀、命中、击穿、承伤、击伤、存活、存活时间、车辆、玩家、战队、排、军阶等。
 - `xp` / `credits` 已保留解析，但不展示、不用于 rating。
-- 潜在伤害字段链路已打通，补增公式已有测试。
+- `average_hp` 公式已确定：敌方 7 台车实际进场总血量 / 7；车辆库无 HP 时未知单车 HP 暂定 2400。
+- KAST 已改为单场最大贡献项：伤害、协助、胜局存活、Trade death、伤害+协助五项取最大值后跨场平均。
+- Trade death 已用玩家死亡前后 5 秒窗口内敌方死亡判断，KAST 中按成立 / 不成立处理。
+- impact / influence 已改为统计全部场次，按双方 `damage + assist` 总池占比和人头影响计算。
+- AST 已作为 `assist_avg` 独立进入 rating 因子。
+- 多伤率已实现：`1.5 倍均血输出`、`1.2 倍均血输出 + 1 人头`、`1 倍均血输出 + 2 人头`、`3 人头` 任一成立。
+- 最终 rating 权重已落地：potential 30%、KAST 20%、influence 25%、AST 10%、多伤率 10%、场均人头 5%。
 
-## 未完成 / 临时实现
+## 剩余缺口
 
-- `potential-DPB` 还不是真正潜在均伤：当前基本等于实际均伤，因为还没解析出“击杀者对每个被击杀者造成的伤害 + 击穿次数”。
-- `KAST` 仍是简化版：`kills > 0 || assistDamage > 0 || survived`。
-- `KAST` 还没按 `DPB / average-HP`、协助、存活、Trade death 计算。
-- Trade death 未完成：还没做“死亡前后 5 秒窗口内敌方死亡人数”的帧/事件分析。
-- `impact` 仍是临时影响力：按贡献占比、人头占比、击伤占比加权。
-- `impact` 还不是目标定义里的“赢局中 DPB + Assist + kills 对胜率影响”。
-- `AST` 基础数据已有，但还没作为独立 rating 因子设计。
-- 多伤率未实现。
-- `average-HP` 未实现，需要车辆 HP 数据源，或从回放/车辆库补字段。
-- 最终 rating 权重未设计。
+- 精确 `average_hp` 数据源：当前 `common/tankopedia.json` 和更新脚本都没有 HP 字段，还没从回放确认/解析每台车实际进场血量或双方总血量。当前实现为：车辆库有 HP 时用车辆库，否则未知单车 HP 暂定 2400。
+- 真实 `potential-DPB`：仍缺逐击杀目标明细。当前 `killVictims` 为空时，`potential_damage == damage_dealt`。
+- 后续需要继续解析“击杀者 -> 被击杀者”的逐目标伤害和击穿次数，再填充 `killVictims`。
 
 ## 验证状态
 
-记录时最近一次验证：
+最近一次已通过：
 
-- Java 测试通过：`cd java && JAVA_HOME=<jdk21> mvn -s settings.xml test`
-- 前端构建通过：`cd frontend && npm run build`
+- `cd java && JAVA_HOME=D:\Env-Web-Java\jdk\temurin-21 mvn -s settings.xml test`
+  - Core：11 tests，0 failures，0 errors，5 skipped（真实回放样本缺失跳过）。
+  - Web：14 tests，0 failures，0 errors，4 skipped（真实回放样本缺失跳过）。
+- `cd frontend && npm run build`
 
 ## 下一步建议
 
-1. 先确定 `average-HP` 数据来源：车辆库 HP 字段优先；缺失时再考虑从回放/样本估算。
-2. 补 Trade death 事件分析：从 `data.wotreplay` 死亡时间线建立 10 秒窗口。
-3. 重写 `KAST`：按 `DPB / average-HP`、Assist、Survivor、Trade 四项计算。
-4. 重写 `impact`：只或主要基于赢局统计 `DPB + Assist + kills` 占比。
-5. 加多伤率和 AST 因子。
-6. 最后再定 rating 权重，并补测试与 `docs/rating-system.md` 正式算法说明。
+1. 深挖 `battle_results.dat` 或 `data.wotreplay`，确认/解析每台车实际进场血量或双方总血量。
+2. 深挖 `battle_results.dat` 或 `data.wotreplay`，解析“击杀者 -> 被击杀者”的逐目标伤害/击穿明细。
+3. 将解析结果填充进 `PlayerResult.killVictims`。
+4. 用真实比赛批量样本导出 rating 分布，微调权重和封顶值。

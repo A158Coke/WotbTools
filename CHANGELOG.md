@@ -1,12 +1,13 @@
-﻿# 版本历史
+# 版本历史
 
 ## [Unreleased]
 
 ### Added
 - 实时 rating 扩展页：新增独立 `/extended` 入口，不改现有回放解析页面入口。
-- `POST /api/rating`：基于本次 multipart 上传回放实时计算每名选手 rating、KAST、贡献率、影响力、均伤、潜在均伤和人头，不落库。
+- `POST /api/rating`：基于本次 multipart 上传回放实时计算每名选手 rating、KAST、贡献率、影响力、均伤、潜在均伤、AST、多伤率和人头，不落库；平均血量和账号 ID 不再作为 rating 展示列。
 - 潜在伤害字段链路：新增 `potential_damage`、`potential_damage_supplement`、`potential_damage_detail`，并同步单场/汇总导出、API、前端三语 label。
 - 补齐旧解析链路字段：单场玩家列新增 `alpha_damage`、`rank`，扩展页/API/导出可用，原回放页面列选择器保持隐藏；`xp`、`credits` 仅在 parser/model 保留，不作为战绩展示字段。
+- 扩展页 rating 算法落地：按潜在均伤、KAST、全场 impact、AST、多伤率、场均人头加权；KAST 改为单场最大贡献项，impact 改按双方总池计算，多伤率阈值按 1.5 倍均血 / 1.2 倍均血+人头 / 均血+2 头 / 3 头判定。
 
 ## [1.7.0] - 2026-06-27
 

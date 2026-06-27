@@ -89,9 +89,10 @@ public final class Mapper {
             new ColumnDef("damage_avg", true),
             new ColumnDef("potential_damage_avg", true),
             new ColumnDef("potential_damage_supplement_avg", true),
+            new ColumnDef("assist_avg", true),
+            new ColumnDef("multi_damage_rate", true),
             new ColumnDef("kills", true),
-            new ColumnDef("kills_avg", true),
-            new ColumnDef("account_id", true)
+            new ColumnDef("kills_avg", true)
     );
 
     public static List<ColumnDef> ratingColumns() {
@@ -144,9 +145,10 @@ public final class Mapper {
             cells.put("damage_avg", r1(rating.damageAvg));
             cells.put("potential_damage_avg", r1(rating.potentialDamageAvg));
             cells.put("potential_damage_supplement_avg", r1(rating.potentialDamageSupplementAvg));
+            cells.put("assist_avg", r1(rating.assistAvg));
+            cells.put("multi_damage_rate", r1(rating.multiDamageRate));
             cells.put("kills", rating.kills);
             cells.put("kills_avg", r2(rating.killsAvg));
-            cells.put("account_id", rating.accountId);
             out.add(new RatingRow(cells));
         }
         return out;

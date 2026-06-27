@@ -35,14 +35,24 @@ public final class Tankopedia {
     public TankInfo info(final long tankId) {
         final JsonNode t = data.get(String.valueOf(tankId));
         if (t == null) {
-            return new TankInfo("#" + tankId, "", "", "", null);
+            return new TankInfo("#" + tankId, "", "", "", null, null);
         }
         final String name = t.hasNonNull("name") ? t.get("name").asText() : "#" + tankId;
         final Object tier = t.hasNonNull("tier") ? t.get("tier").asInt() : "";
         final String type = t.hasNonNull("class") ? t.get("class").asText() : "";
         final String nation = t.hasNonNull("nation") ? t.get("nation").asText() : "";
         final Integer alphaDamage = t.hasNonNull("alphaDamage") ? t.get("alphaDamage").asInt() : null;
-        return new TankInfo(name, tier, type, nation, alphaDamage);
+        final Integer maxHp = firstInt(t, "maxHp", "hp", "health", "hitpoints", "hitPoints", "maxHealth");
+        return new TankInfo(name, tier, type, nation, alphaDamage, maxHp);
+    }
+
+    private static Integer firstInt(final JsonNode node, final String... keys) {
+        for (final String key : keys) {
+            if (node.hasNonNull(key) && node.get(key).canConvertToInt()) {
+                return node.get(key).asInt();
+            }
+        }
+        return null;
     }
 
     public int size() {
