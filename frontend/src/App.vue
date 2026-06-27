@@ -10,7 +10,7 @@ import ProfilePage from './components/ProfilePage.vue'
 
 const { t } = useI18n()
 const { theme, handleTheme } = useTheme()
-const { login, logout, isAuthenticated, userName, initPromise } = useAuth()
+const { isAuthenticated, userName, initPromise } = useAuth()
 
 const isDesktop = ref(false)
 const params = new URLSearchParams(window.location.search)
@@ -52,8 +52,8 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">{{ $t('theme.light') }}</button>
       <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">{{ $t('theme.dark') }}</button>
     </div>
-    <button v-if="authenticated" class="auth-btn" @click="activeTool = 'profile'">{{ user || $t('app.profile') }}</button>
-    <button v-else class="auth-btn ghost" @click="login">{{ $t('app.login') }}</button>
+    <a v-if="authenticated" class="auth-btn" href="https://auth.wotbtools.com/realms/wotbtools/account">{{ user || $t('app.profile') }}</a>
+    <a v-else class="auth-btn ghost" href="https://auth.wotbtools.com/realms/wotbtools/account">{{ $t('app.login') }}</a>
   </div>
 
   <div class="tb-content">
@@ -211,7 +211,7 @@ body { margin: 0; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; color:
 }
 .topbar .theme-bar button:hover { color: var(--text) }
 .topbar .theme-bar button.active { background: var(--accent); color: #fff; font-weight: 600; }
-.topbar .auth-btn { padding: 5px 14px; border: none; border-radius: 7px; font-family: inherit; font-size: .85rem; cursor: pointer; transition: background .12s, color .12s; color: #fff; white-space: nowrap; }
+.topbar .auth-btn { padding: 5px 14px; border: none; border-radius: 7px; font-family: inherit; font-size: .85rem; cursor: pointer; transition: background .12s, color .12s; color: #fff; white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; }
 .topbar .auth-btn.ghost { background: var(--bg-card2); color: var(--text-label); border: 1px solid var(--border-ghost); }
 .topbar .auth-btn.ghost:hover { background: var(--bg-card-hover); }
 .topbar .lang-select { font-size: .73rem; padding: 4px 22px 4px 8px; background-size: 12px }
