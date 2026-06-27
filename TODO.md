@@ -51,7 +51,7 @@
 
 - [x] Keycloak 容器部署。详见 [docs/auth/keycloak-qq-only.md](docs/auth/keycloak-qq-only.md)
   - [x] `auth.wotbtools.com` Keycloak 部署（外层 Caddy → KC 8080）
-  - [x] realm `wotbtools` + client `wotbtools-frontend` 导入
+  - [x] realm `wotbtools` + client `wotbtools-web` 导入
   - [x] 前端 `useAuth.js` — Keycloak 适配器（check-sso 游客模式 + 登录/登出）
   - [ ] QQ IdP 接入
   - [ ] Spring Security Resource Server JWT 验证

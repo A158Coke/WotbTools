@@ -42,7 +42,7 @@ User clicks "Login with QQ"
 ## Keycloak Realm 设计
 
 - Realm: `wotbtools`
-- Client: `wotbtools-frontend` (public, Standard flow ON, Direct/Implicit OFF)
+- Client: `wotbtools-web` (public, Standard flow ON, Direct/Implicit OFF)
 - Redirect URIs: `https://wotbtools.com/*`, `https://replay.wotbtools.com/*`, `http://localhost:5173/*`
 - 关闭 User registration、Forgot password、Direct access grants
 - Browser Flow 禁用 Username Password Form
@@ -231,7 +231,7 @@ GET  /api/me    (返回含 blitzAccountId、teams、roles)
 ## MVP 实施顺序
 
 1. 部署 `auth.wotbtools.com` Keycloak
-2. 创建 `wotbtools` realm + `wotbtools-frontend` client
+2. 创建 `wotbtools` realm + `wotbtools-web` client
 3. 研究 QQ IdP 接入可行性
 4. 禁用 Keycloak 本地登录/注册
 5. 后端接 Spring Security Resource Server
