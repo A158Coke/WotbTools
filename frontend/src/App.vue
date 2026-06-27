@@ -5,13 +5,14 @@ import { useTheme } from './composables/useTheme.js'
 import * as api from './utils/api.js'
 import ReplayPage from './components/ReplayPage.vue'
 import LeaderboardPage from './components/LeaderboardPage.vue'
+import ProfilePage from './components/ProfilePage.vue'
 
 const { t } = useI18n()
 const { theme, handleTheme } = useTheme()
 
 const isDesktop = ref(false)
 const params = new URLSearchParams(window.location.search)
-const activeTool = ref(params.get('view') === 'leaderboard' ? 'leaderboard' : 'replay')
+const activeTool = ref(params.get('view') === 'leaderboard' ? 'leaderboard' : params.get('view') === 'profile' ? 'profile' : 'replay')
 
 onMounted(async () => {
   try { isDesktop.value = (await api.healthCheck()).desktop } catch { /* 离线模式 */ }
@@ -41,7 +42,8 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
   </div>
 
   <div class="tb-content">
-    <LeaderboardPage v-if="activeTool === 'leaderboard'" />
+    <ProfilePage v-if="activeTool === 'profile'" />
+    <LeaderboardPage v-else-if="activeTool === 'leaderboard'" />
     <ReplayPage v-else />
   </div>
 </template>
