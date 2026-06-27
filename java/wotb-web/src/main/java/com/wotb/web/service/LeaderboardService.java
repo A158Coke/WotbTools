@@ -92,11 +92,6 @@ public class LeaderboardService {
                 .stream().map(LeaderboardService::toDto).toList();
     }
 
-    /** 单条记录。 */
-    public Optional<LeaderboardRecordDto> findById(final long id) {
-        return repository.findById(id).map(LeaderboardService::toDto);
-    }
-
     private static int clamp(final int limit) {
         if (limit <= 0) {
             return DEFAULT_LIMIT;
