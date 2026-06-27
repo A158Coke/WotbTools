@@ -24,7 +24,6 @@
 ```bash
 cd java && JAVA_HOME=<jdk21> mvn -s settings.xml test      # 测试
 cd frontend && npm run build                                 # 前端构建
-cd offline && start.bat                                      # 离线版
 cd online && docker compose up --build                       # 在线版
 ```
 

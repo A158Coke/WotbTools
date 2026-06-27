@@ -6,12 +6,11 @@
 
 ## 1. 这是什么
 
-从《坦克世界闪击战》(WoT Blitz) 的 `.wotbreplay` 回放里提取战斗结算数据，导出可分析的 Excel，并提供在线预览。一套 Java 核心逻辑，交付两种形态：
+从《坦克世界闪击战》(WoT Blitz) 的 `.wotbreplay` 回放里提取战斗结算数据，导出可分析的 Excel，并提供在线预览。一套 Java 核心逻辑，交付 Web 版：
 
-- **离线版**（Docker 镜像分发，需 Docker Desktop，双击 `start.bat`）
 - **Web 版**（Spring Boot + Vue，浏览器上传/预览/导出，已上线 https://replay.wotbtools.com）
 
-两种形态**复用同一套源码**（`wotb-core` + `wotb-web` + `frontend`），区别只在打包/部署。
+在线版支持 Keycloak 认证（游客 + 登录），排行榜，三语 i18n。
 
 ---
 
@@ -30,7 +29,7 @@
 | [`README.md`](README.md) / [`java/README.md`](java/README.md) | 用户向 + 运行/接口/构建 | 跑起来时 |
 | [`TODO.md`](TODO.md) | 待办（含「地图名未接 i18n」）| 找下一步做什么 |
 
-> 注：`AGENTS.md` / `wotb-sync.md` 本就是写给“任意 AI/人”的，不绑定特定工具。迁移到新工具时，把这几份指给它即可。
+> 注：`AGENTS.md` / `wotb-sync.md` 本就是写给"任意 AI/人"的，不绑定特定工具。迁移到新工具时，把这几份指给它即可。
 
 ---
 
@@ -47,7 +46,7 @@
         │
    wotb-web (Spring Boot)  controller(HTTP) → service(业务) → mapper(→DTO) → dto
         │
-   frontend (Vue 3 + Vite, 单文件 App.vue, vue-i18n 三语)
+   frontend (Vue 3 + Vite, 单文件 App.vue, vue-i18n 三语, Keycloak 认证)
 ```
 
 完整目录树见 `DEVELOPER_GUIDE.md`。核心包结构（`com.wotb.core`）：`parse / ref / stats / export / model` 子包 + 顶层 `Columns`。Web 侧：`controller / service / mapper / dto`。
@@ -81,9 +80,6 @@ java -jar wotb-web/target/wotb-web.jar --desktop # 桌面模式(自动选端口+
 
 # 本地开发 — 三容器编译启动
 cd online && docker compose up --build       # 构建 Dockerfile.backend + Dockerfile.frontend, 8088
-
-# 用户分发 — 一键拉镜像启动
-cd offline && start.bat                      # 检测 Docker → pull → compose up
 ```
 
 > **测试夹具**：`ParityTest`/`WebApiTest` 读 `common/data/*.wotbreplay` 真实样本，而 `common/data/` 是 **gitignore 的**。所以：① 新克隆的环境本地无样本、测试会失败，需自备样本回放放进 `common/data/`；② **CI 里跑不了 `mvn test`**（检出里没有样本）——这是 CI 不含测试步骤的根本原因。
@@ -110,11 +106,12 @@ cd offline && start.bat                      # 检测 Docker → pull → compos
 **流水线**：`.github/workflows/deploy.yml` —— push 到 `main`（命中 `java/** / common/** / Dockerfile / deploy/** / 本文件路径`，或手动 `workflow_dispatch`）触发：
 1. 并行构建**两镜像**：`Dockerfile.backend`（Maven → JRE runtime）和 `Dockerfile.frontend`（Node → nginx）。
 2. 推送到 Docker Hub（`backend-sha-<SHA>` + `backend-latest` + `frontend-sha-<SHA>` + `frontend-latest`）。
-3. SSH 到 VPS（`/opt/wotb`）写三服务 compose（postgres:18 + wotb-backend + wotb-frontend）、`pull` + `up -d` 重启容器。
+3. SSH 到 VPS（`/opt/wotb`）写 compose（postgres:18 + keycloak + wotb-backend + wotb-frontend）、`pull` + `up -d` 重启容器。
 
 **必须配置的 GitHub Secrets**（迁移/换仓库时容易漏）：
 - `DOCKER_PASSWORD` —— Docker Hub access token（用户名 `a158coke` 已**硬编码**在 workflow，因为用户名非机密、已在镜像名里）。
 - `VPS_HOST` / `VPS_USER` / `VPS_PORT` / `VPS_SSH_KEY` —— VPS SSH。
+- `KC_ADMIN_PASSWORD` / `DB_PASSWORD` —— Keycloak 与 PostgreSQL 密码。
 
 **已知坑 & 现有对策**（改 workflow/Dockerfile 时别踩回去）：
 - **两镜像各自推 sha + latest 标签** → `a158coke/wotbtool:backend-sha-<SHA>` + `backend-latest`，`frontend-sha-<SHA>` + `frontend-latest`。VPS compose 用 backend 的 sha 标签（按 sha 回滚）。
@@ -144,7 +141,7 @@ cd offline && start.bat                      # 检测 Docker → pull → compos
 - **回放格式**：zip 包含 3 个文件 —— `meta.json`（战斗信息）+ `battle_results.dat`（pickle + protobuf 战绩）+ `data.wotreplay`（BigWorld 事件流，用于存活时间推算）。字段表见 `docs/replay-data.md`。**不要轻易重命名/删字段**，新字段先进「原始字段」表交叉验证。
 - **存活时间**：3 层 fallback（#104 → Damage 伤害事件 → hybrid EntityLeave/Position），详见 `docs/replay-data.md`。
 - **评分**：自包含、类 WN8，基准来自"一同计算的这批战斗"（相对分，非绝对天梯）。参数在 `common/rating.json`，前端「评分规则」弹窗 + `GET /api/rating` 实时展示。细节见 `docs/rating-system.md`。
-- **数据库**：在线版使用 PostgreSQL（`postgres:18-alpine`），通过 `SPRING_PROFILES_ACTIVE: postgres` 激活。默认 profile 排除 JPA auto-config，离线版/dev 无数据库启动（注意 Boot 4 的 exclude 类名在 `org.springframework.boot.{jdbc,hibernate,data.jpa}.autoconfigure.*`，且 Flyway 需 `spring-boot-flyway` 模块——详见 DEVELOPER_GUIDE 风险点）。密码由 GitHub Secret `DB_PASSWORD` 注入，本地开发用 `POSTGRES_PASSWORD=wotb`。
+- **数据库**：在线版使用 PostgreSQL（`postgres:18-alpine`），通过 `SPRING_PROFILES_ACTIVE: postgres` 激活。默认 profile 排除 JPA auto-config，桌面版/dev 无数据库启动（注意 Boot 4 的 exclude 类名在 `org.springframework.boot.{jdbc,hibernate,data.jpa}.autoconfigure.*`，且 Flyway 需 `spring-boot-flyway` 模块——详见 DEVELOPER_GUIDE 风险点）。密码由 GitHub Secret `DB_PASSWORD` 注入，本地开发用 `POSTGRES_PASSWORD=wotb`。
 - **排行榜**：仅在线版（`postgres` profile）。schema 由 Flyway 管理（`wotb-web/.../db/migration`），`ddl-auto: validate`。只记录录像者本人在**随机战斗**（`arenaBonusType==1`）中的单场伤害，去重键 `arena_id+account_id`。`ReplayService` 经 `ObjectProvider` 可选调用，无库时静默跳过。细节见 DEVELOPER_GUIDE「排行榜（Leaderboard）」。
 - **i18n**：vue-i18n 三语（zh/en/ru），`locales/*.json`；语言持久化在 `localStorage('wotb-lang')`。**地图名尚未接 i18n**（只有中文映射），见 `TODO.md`「P1：国际化」。
 - **API 端点**：`GET /api/health`、`GET /api/rating`、`POST /api/preview`、`POST /api/export?mode=aggregate|each`、`POST /api/shutdown`（仅桌面）；排行榜（仅 postgres profile）`GET /api/leaderboard/top-damage`、`GET /api/leaderboard/tanks/{tankId}/top-damage`（支持按车辆筛选伤害榜）。
@@ -153,4 +150,4 @@ cd offline && start.bat                      # 检测 Docker → pull → compos
 
 ## 10. 给接手的 AI 工具的一句话
 
-> 这是个单人维护的 WoT Blitz 回放分析工具（Java core + Spring Boot + Vue，离线版 与 Docker 双形态）。动手前读 `AGENTS.md` 和 `DEVELOPER_GUIDE.md`；跨层改动按 `.agents/wotb-sync.md` 的配方；Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；改完跑 `mvn -s settings.xml test`（需本地有 `common/data` 样本）和 `npm run build`；提交用中文信息、推 `github-personal`(账号 A158Coke)，push main 即自动部署。
+> 这是个单人维护的 WoT Blitz 回放分析工具（Java core + Spring Boot + Vue + Keycloak，Web 版）。动手前读 `AGENTS.md` 和 `DEVELOPER_GUIDE.md`；跨层改动按 `.agents/wotb-sync.md` 的配方；Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；改完跑 `mvn -s settings.xml test`（需本地有 `common/data` 样本）和 `npm run build`；提交用中文信息、推 `github-personal`(账号 A158Coke)，push main 即自动部署。
