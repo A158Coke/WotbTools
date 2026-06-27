@@ -1,21 +1,17 @@
 ﻿# TODO
 
-本文件记录项目构建 Java 主线的待办。最终目标有两个交付物：
-
-1. Java 离线版：纯离线、双击运行、可选择/拖拽回放、预览并导出 xlsx。
-2. Web 版：Spring Boot 4 后端，Vue 3 前端，支持浏览器上传、预览、导出。
+本文件记录项目待办。最终交付 Web 版：Spring Boot 4 后端，Vue 3 前端，支持浏览器上传、预览、导出，Keycloak 认证。
 
 ## 当前状态
 
 - [x] Java `wotb-core` 已实现回放解析、车辆库映射、去重汇总和 POI 导出。
 - [x] Java `wotb-web` 已提供 `/api/preview`、`/api/export`、`/api/columns`、`/api/health`、`/api/shutdown`。
 - [x] Vue 3 前端已有上传、预览、下载、排序、列选择、拖拽上传、文件夹选择、重复/失败提示、单场移除后二次确认与自动重新汇总。
-- [x] Java 离线版已实现：Docker 镜像分发（`start.bat` → pull → compose up），三容器本地运行。
 - [x] Spring Boot 版本已统一为 `4.1.0`（父 POM 与 Web 模块一致）。
 - [x] 前端静态资源已嵌入 Spring Boot JAR（Maven 构建阶段从 `frontend/dist` 复制到 `classpath:/static/`）。
-- [x] 离线版 Docker 分发：`start.bat` 自动检测 Docker → pull → compose up。
 - [x] Maven settings.xml 本地仓库路径改为模板 + 动态生成，不再写死。
 - [x] 在线演示：https://replay.wotbtools.com
+- [x] Keycloak 容器部署 + realm 配置 + 前端 check-sso 认证集成。
 
 - [x] 排行榜支持按车辆筛选（点击车辆名查看专属伤害榜）。
 - [x] 排行榜新增 version（回放游戏版本号）和 battle_time（战斗实际发生时间）列。
@@ -53,9 +49,11 @@
 
 ## P1：用户认证
 
-- [ ] Keycloak + QQ-only 登录。详见 [docs/auth/keycloak-qq-only.md](docs/auth/keycloak-qq-only.md)
-  - [ ] 部署 `auth.wotbtools.com` Keycloak
-  - [ ] QQ IdP 接入可行性验证
+- [x] Keycloak 容器部署。详见 [docs/auth/keycloak-qq-only.md](docs/auth/keycloak-qq-only.md)
+  - [x] `auth.wotbtools.com` Keycloak 部署（外层 Caddy → KC 8080）
+  - [x] realm `wotbtools` + client `wotbtools-frontend` 导入
+  - [x] 前端 `useAuth.js` — Keycloak 适配器（check-sso 游客模式 + 登录/登出）
+  - [ ] QQ IdP 接入
   - [ ] Spring Security Resource Server JWT 验证
   - [ ] `app_user` 表 + `GET /api/me`
   - [ ] `blitz_account_binding` 表 + 绑定 API（account_id 验证）
@@ -65,7 +63,6 @@
 
 - [ ] Java 单元测试覆盖更多字段边界。
 - [ ] 增加 Web API 错误路径测试。
-- [ ] 增加离线版 冒烟测试说明或脚本。
 - [ ] 增加 Excel 导出结构快照测试，避免工作表/列名无意变化。
 
 ## P2：发布与文档
@@ -82,6 +79,6 @@
 
 ## 决策记录
 
-- 解析与导出逻辑必须集中在 `wotb-core`，离线版 和 Web 版都复用它。
-- 前端暂定 Vue 3，因为仓库已有 Vue/Vite 雏形。
-- 离线版采用 Docker 镜像分发（`start.bat` → pull → compose up），避免维护第二套桌面 UI。
+- 解析与导出逻辑必须集中在 `wotb-core`。
+- 前端 Vue 3，Vite 构建。
+- Web 版通过 Docker 镜像部署，CI/CD 自动构建推送。

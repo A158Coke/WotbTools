@@ -5,7 +5,10 @@
     "shutdown": "Выключить",
     "homepage": "Главная",
     "replay_tab": "Реплей",
-    "theme": "Тема"
+    "theme": "Тема",
+    "login": "Войти",
+    "logout": "Выйти",
+    "profile": "Профиль"
   },
   "upload": {
     "drop_hint": "Перетащите .wotbreplay файлы сюда",

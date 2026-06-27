@@ -1,44 +1,21 @@
 ﻿# WoT Blitz Replay Data Extractor - Java 主线
 
-`java/` 是项目后续主线。基于同一套 Java 核心能力同时交付两种形态：
+`java/` 是项目主线。基于同一套 Java 核心能力交付：
 
-- **Java 离线版**：无须安装 JDK，双击运行，自动打开浏览器，本地选择/拖拽回放并导出 Excel。
 - **Web 版**：Spring Boot 4 后端，Vue 3 前端，支持浏览器上传、预览、下载。
 
-当前两种形态均已实现。路线图见 [../TODO.md](../TODO.md)。
+当前 Web 版已实现。路线图见 [../TODO.md](../TODO.md)。
 
 ## 模块
 
-离线版与联网版**共用同一套源码**（`wotb-core` + `wotb-web` + `frontend`），区别只在分发方式：离线版拉 Docker Hub 镜像，在线版从源码编译。
-
-| 模块/目录       | 共享? | 说明                                                           |
-|-------------|------|--------------------------------------------------------------|
-| `wotb-core` | 共享 | 核心库：解压回放、读取 pickle、解码 protobuf、车辆库映射、去重汇总、POI 导出 xlsx        |
-| `wotb-web`  | 共享 | Spring Boot 4 REST API + 桌面模式入口，监听 `8087`（Web 模式）或自动端口（桌面模式） |
-| `frontend`  | 共享 | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
-| `offline/`  | 离线 | `start.bat`（检测 Docker → pull 镜像 → compose up），用户零源码依赖 |
-| `online/`   | 联网 | `docker-compose.yml`：`build:` 从源码编译运行三容器（postgres + backend + frontend） |
+| 模块/目录       | 说明                                                           |
+|-------------|--------------------------------------------------------------|
+| `wotb-core` | 核心库：解压回放、读取 pickle、解码 protobuf、车辆库映射、去重汇总、POI 导出 xlsx        |
+| `wotb-web`  | Spring Boot 4 REST API + 桌面模式入口，监听 `8087`（Web 模式）或自动端口（桌面模式） |
+| `frontend`  | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
+| `online/`   | `docker-compose.yml`：`build:` 从源码编译运行三容器（postgres + backend + frontend） |
 
 > 车辆库 `common/tankopedia.json`（仓库根的共享目录）在 `wotb-core` 构建时自动复制到 classpath，无需在模块内再放一份。
-
-## 离线版（用户分发）
-
-离线版不需要源码、JDK 或 Node.js。脚本自动检测 Docker：未安装则询问是否自动安装（Windows 调用 winget，macOS 调用 Homebrew，Linux 调用 get.docker.com）。用户拒绝则需手动安装 Docker Desktop。
-
-- **Windows**：双击 `start.bat`
-- **macOS / Linux**：终端运行 `./start.sh`
-
-```bat
-# Windows
-cd ..\offline
-start.bat
-
-# macOS / Linux
-cd ../offline
-chmod +x start.sh && ./start.sh
-```
-
-> 首次需联网（安装 Docker、拉取镜像），后续离线可用（镜像已缓存）。停止用 `docker compose down`，更新用 `docker compose pull && docker compose up -d`。
 
 ## Web 版（Docker + PostgreSQL）
 
@@ -151,7 +128,7 @@ java -jar wotb-web/target/wotb-web.jar --desktop
 
 ### 排行榜（仅 `postgres` profile）
 
-仅在线版提供，需数据库。离线/桌面版不暴露这些端点。每条记录 = 录像者本人在一场**随机战斗**（`arenaBonusType==1`，训练房/娱乐/联赛拒绝）中用某辆车打出的单场伤害；上传 `/api/preview` 时自动落库（去重键 `arena_id + account_id`）。
+仅在线版提供，需数据库。桌面版不暴露这些端点。每条记录 = 录像者本人在一场**随机战斗**（`arenaBonusType==1`，训练房/娱乐/联赛拒绝）中用某辆车打出的单场伤害；上传 `/api/preview` 时自动落库（去重键 `arena_id + account_id`）。
 
 - `GET /api/leaderboard/top-damage?limit=50` — 全局伤害榜（降序，`limit` 1–200）。
 - `GET /api/leaderboard/tanks/{tankId}/top-damage?limit=50` — 指定车辆伤害榜。
@@ -200,4 +177,3 @@ spring:
 
 - 列定义在 `wotb-core/.../Columns.java` 中集中管理，前端通过 `/api/preview` 响应获取列定义，不在前端硬编码业务字段。
 - 车辆库单一来源在 `common/tankopedia.json`；`wotb-core` 构建时自动复制到 classpath，勿在模块内再放副本。
-- 离线版 和 Web 版复用同一个 `wotb-core`，不复制解析逻辑。
