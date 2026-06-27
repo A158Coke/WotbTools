@@ -58,7 +58,8 @@
   - [ ] QQ IdP 接入可行性验证
   - [ ] Spring Security Resource Server JWT 验证
   - [ ] `app_user` 表 + `GET /api/me`
-  - [ ] 前端 QQ 登录/退出/当前用户
+  - [ ] `blitz_account_binding` 表 + 绑定 API（account_id 验证）
+  - [ ] 前端 QQ 登录/退出/当前用户 + Blitz 绑定 UI
 
 ## P1：测试与质量
 
