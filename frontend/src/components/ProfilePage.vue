@@ -10,20 +10,26 @@ const kc = new Keycloak({
 
 const authenticated = ref(false)
 const user = ref('')
+const error = ref('')
 
 onMounted(async () => {
   try {
-    await kc.init({ onLoad: 'check-sso', pkceMethod: 'S256', silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html' })
-    authenticated.value = kc.authenticated ?? false
-    if (authenticated.value) {
+    const ok = await kc.init({
+      onLoad: 'check-sso',
+      pkceMethod: 'S256',
+      silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
+    })
+    if (ok) {
+      authenticated.value = true
       user.value = kc.tokenParsed?.preferred_username || kc.tokenParsed?.name || ''
     } else {
-      // 未登录 → 跳 KC
+      // 无 session → 跳 KC 登录
       kc.login({ redirectUri: window.location.origin + '/?view=profile' })
     }
-  } catch {
-    // init 失败也跳 KC
-    kc.login({ redirectUri: window.location.origin + '/?view=profile' })
+  } catch (e) {
+    // init 异常（token 交换失败等），不重试避免循环
+    error.value = '认证失败，请刷新重试'
+    console.error('Keycloak init error', e)
   }
 })
 
@@ -39,6 +45,9 @@ function doLogout() {
       <h2 class="profile-name">{{ user }}</h2>
       <p class="profile-status">已登录</p>
       <button class="sm ghost" style="margin-top:12px" @click="doLogout">登出</button>
+    </div>
+    <div class="profile-card" v-else-if="error">
+      <p class="error">{{ error }}</p>
     </div>
     <div class="profile-card" v-else>
       <p>正在跳转登录…</p>
@@ -59,4 +68,5 @@ function doLogout() {
 }
 .profile-name { font-size: 1.2rem; color: var(--text-heading); margin: 0 0 8px; }
 .profile-status { font-size: .9rem; color: var(--text-sub); margin: 0; }
+.error { color: var(--error); }
 </style>
