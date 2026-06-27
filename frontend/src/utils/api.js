@@ -55,3 +55,22 @@ export async function leaderboardUpload(file) {
   if (!r.ok) throw new Error(data.error || '上传失败: HTTP ' + r.status)
   return data
 }
+
+// Profile (后端可能未实现，404/401 静默返回 null)
+export async function getMe(token) {
+  const r = await fetch('/api/me', { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  if (!r.ok) return null
+  return r.json()
+}
+
+export async function getWotbAccount(token) {
+  const r = await fetch('/api/me/wotb-account', { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  if (!r.ok) return null
+  return r.json()
+}
+
+export async function getMyRecords(token) {
+  const r = await fetch('/api/me/leaderboard-records', { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  if (!r.ok) return []
+  return r.json()
+}
