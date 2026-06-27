@@ -10,7 +10,7 @@
     </parent>
 
     <artifactId>wotb-web</artifactId>
-    <name>WoT Blitz Extractor - Web (Spring Boot)</name>
+    <name>WotBTools Web</name>
 
     <dependencies>
         <dependency>
