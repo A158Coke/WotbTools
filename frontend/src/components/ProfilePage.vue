@@ -1,17 +1,47 @@
 <script setup>
-import { useAuth } from '../composables/useAuth.js'
+import { ref, onMounted } from 'vue'
+import Keycloak from 'keycloak-js'
 
-const { isAuthenticated, userName, logout } = useAuth()
+const kc = new Keycloak({
+  url: import.meta.env.VITE_KEYCLOAK_URL,
+  realm: import.meta.env.VITE_KEYCLOAK_REALM,
+  clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID,
+})
+
+const authenticated = ref(false)
+const user = ref('')
+
+onMounted(async () => {
+  try {
+    await kc.init({ onLoad: 'check-sso', pkceMethod: 'S256', silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html' })
+    authenticated.value = kc.authenticated ?? false
+    if (authenticated.value) {
+      user.value = kc.tokenParsed?.preferred_username || kc.tokenParsed?.name || ''
+    } else {
+      // 未登录 → 跳 KC
+      kc.login({ redirectUri: window.location.origin + '/?view=profile' })
+    }
+  } catch {
+    // init 失败也跳 KC
+    kc.login({ redirectUri: window.location.origin + '/?view=profile' })
+  }
+})
+
+function doLogout() {
+  kc.logout({ redirectUri: window.location.origin })
+}
 </script>
 
 <template>
   <div class="wrap profile-page">
-    <div class="profile-card">
+    <div class="profile-card" v-if="authenticated">
       <div class="profile-avatar"></div>
-      <h2 v-if="isAuthenticated()" class="profile-name">{{ userName() }}</h2>
-      <h2 v-else class="profile-name">游客</h2>
-      <p class="profile-status">{{ isAuthenticated() ? '已登录' : '未登录' }}</p>
-      <button v-if="isAuthenticated()" class="sm ghost" style="margin-top:12px" @click="logout">登出</button>
+      <h2 class="profile-name">{{ user }}</h2>
+      <p class="profile-status">已登录</p>
+      <button class="sm ghost" style="margin-top:12px" @click="doLogout">登出</button>
+    </div>
+    <div class="profile-card" v-else>
+      <p>正在跳转登录…</p>
     </div>
   </div>
 </template>
