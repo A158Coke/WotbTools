@@ -118,7 +118,7 @@ public final class ReplayParser {
         battle.mapName = text(meta, "mapName");
         battle.durationS = meta.hasNonNull("battleDuration") ? Math.min(meta.get("battleDuration").asDouble(), 420) : null;
         final Long startTime = parseLong(text(meta, "battleStartTime"));
-        battle.startTime = (startTime != null && startTime > 0) ? startTime : null;
+        battle.startTime = (startTime != null && startTime > 1388534400L) ? startTime : null;
         battle.recorder = text(meta, "playerName");
         battle.recorderVehicle = text(meta, "playerVehicleName");
         battle.arenaBonusType = meta.hasNonNull("arenaBonusType") ? meta.get("arenaBonusType").asInt() : null;

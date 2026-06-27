@@ -68,9 +68,10 @@ public class LeaderboardService {
         record.setDamageDealt(recorder.damageDealt);
         record.setMapName(battle.mapName);
         record.setVersion(battle.version != null && !battle.version.isEmpty() ? battle.version : null);
-        if (battle.startTime != null && battle.startTime > 0) {
+        // 过滤无效时间戳 (秒级 epoch): 0 或早于 WoT Blitz 发布 (2014)
+        if (battle.startTime != null && battle.startTime > 1388534400L) {
             record.setBattleTime(OffsetDateTime.ofInstant(
-                    Instant.ofEpochMilli(battle.startTime), ZoneOffset.UTC));
+                    Instant.ofEpochSecond(battle.startTime), ZoneOffset.UTC));
         }
         try {
             repository.save(record);
