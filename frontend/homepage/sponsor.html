@@ -29,38 +29,41 @@
     transition: background .25s, color .25s;
   }
 
-  .topctl {
-    position: fixed; top: 16px; right: 20px; z-index: 10;
+  .topbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
     display: flex; align-items: center; gap: 8px;
+    padding: 6px 20px; height: 48px;
+    background: var(--card-bg); border-bottom: 1px solid var(--card-border);
   }
-  .lang-select { appearance: none; -webkit-appearance: none; border: 1px solid var(--card-border);
-    background: var(--card-bg); color: var(--muted); padding: 5px 28px 5px 10px; border-radius: 7px;
-    font-size: .8rem; cursor: pointer; font-family: inherit; }
-  .lang-select:hover { color: var(--text) }
-  .theme-bar {
-    display: flex; gap: 4px;
-    background: var(--card-bg); border: 1px solid var(--card-border);
-    border-radius: 8px; padding: 3px;
+  .tb-brand { text-decoration: none; font-size: 15px; font-weight: 700; color: var(--heading); }
+  .tb-brand:hover { color: var(--accent) }
+  .tb-spacer { flex: 1 }
+  .topbar .theme-bar {
+    display: flex; gap: 2px;
+    background: var(--bg); border: 1px solid var(--card-border);
+    border-radius: 7px; padding: 2px;
   }
-  .theme-bar button {
-    padding: 6px 14px; border: none; border-radius: 6px;
-    background: transparent; color: var(--muted); font-size: .8rem;
-    cursor: pointer; transition: background .15s, color .15s;
+  .topbar .theme-bar button {
+    padding: 4px 10px; border: none; border-radius: 5px;
+    background: transparent; color: var(--muted); font-size: .73rem;
+    cursor: pointer; transition: background .15s, color .15s; font-family: inherit;
   }
-  .theme-bar button:hover { color: var(--text) }
-  .theme-bar button.active {
-    background: var(--tag-bg); color: var(--accent); font-weight: 600;
+  .topbar .theme-bar button:hover { color: var(--text) }
+  .topbar .theme-bar button.active { background: var(--accent); color: #fff; font-weight: 600 }
+  .topbar .lang-select {
+    appearance: none; -webkit-appearance: none;
+    border: 1px solid var(--card-border);
+    background: var(--card-bg); color: var(--muted);
+    padding: 5px 28px 5px 10px; border-radius: 7px;
+    font-size: .73rem; cursor: pointer; font-family: inherit;
   }
+  .topbar .lang-select:hover { color: var(--text) }
 
   header {
-    text-align: center; padding: 64px 24px 32px;
+    text-align: center; padding: 72px 24px 32px;
   }
-  header a {
-    text-decoration: none; color: var(--accent); font-size: .9rem;
-  }
-  header a:hover { text-decoration: underline }
   header h1 {
-    font-size: 2rem; font-weight: 700; color: var(--heading); margin-bottom: 8px;
+    font-size: 2rem; font-weight: 700; color: var(--heading);
   }
 
   main {
@@ -88,10 +91,10 @@
   }
 
   @media (max-width: 560px) {
-    .topctl { top: 10px; right: 10px; gap: 6px; }
-    .theme-bar button { padding: 5px 9px; font-size: .72rem; }
-    .lang-select { padding: 4px 20px 4px 7px; font-size: .72rem; }
-    header { padding: 48px 16px 24px; }
+    .topbar { padding: 4px 12px; height: 42px; }
+    .topbar .theme-bar button { padding: 3px 8px; font-size: .68rem; }
+    .topbar .lang-select { font-size: .68rem; padding: 4px 20px 4px 7px; }
+    header { padding: 56px 16px 24px; }
     header h1 { font-size: 1.6rem; }
     .card { padding: 20px 16px; }
     .qr-item img { width: 170px; height: 170px; }
@@ -100,17 +103,18 @@
 </head>
 <body>
 
-<div class="topctl">
+<div class="topbar">
+  <a class="tb-brand" href="/">WoTBTools</a>
+  <div class="tb-spacer"></div>
   <select class="lang-select" id="lang-select" onchange="switchLang(this.value)"></select>
   <div class="theme-bar">
-    <button data-theme="auto"  class="active" data-i18n="theme_auto">auto</button>
+    <button data-theme="auto" class="active" data-i18n="theme_auto">auto</button>
     <button data-theme="light" data-i18n="theme_light">light</button>
     <button data-theme="dark" data-i18n="theme_dark">dark</button>
   </div>
 </div>
 
 <header>
-  <a href="/" data-i18n="sponsor_back">&larr; WoTBTools</a>
   <h1 data-i18n="sponsor_title">支持 WoTBTools</h1>
 </header>
 
@@ -142,7 +146,6 @@
 "zh":{
 "title":"支持 WoTBTools",
 "sponsor_title":"支持 WoTBTools",
-"sponsor_back":"← WoTBTools",
 "sponsor_desc1":"WotBTools 是个人维护的免费工具。如果这个项目帮到了你，可以自愿赞助，用于服务器和维护成本。",
 "sponsor_desc2":"赞助完全自愿，不设置固定金额，不影响任何功能使用，也不会解锁额外服务。",
 "sponsor_note":"请勿在付款备注中填写敏感个人信息。如误转或需要联系作者，可以通过页面上的联系方式联系我。",
@@ -156,7 +159,6 @@
 "en":{
 "title":"Support WoTBTools",
 "sponsor_title":"Support WoTBTools",
-"sponsor_back":"← WoTBTools",
 "sponsor_desc1":"WotBTools is a free tool maintained by an individual. If it has helped you, voluntary sponsorship is appreciated to cover server and maintenance costs.",
 "sponsor_desc2":"Sponsorship is completely voluntary, with no fixed amount, no features locked, and no additional services unlocked.",
 "sponsor_note":"Please do not include sensitive personal information in payment notes. For accidental transfers or contact, reach out via the contact info on this page.",
@@ -170,7 +172,6 @@
 "ru":{
 "title":"Поддержать WoTBTools",
 "sponsor_title":"Поддержать WoTBTools",
-"sponsor_back":"← WoTBTools",
 "sponsor_desc1":"WotBTools — бесплатный инструмент, поддерживаемый одним человеком. Если он вам помог, вы можете добровольно поддержать проект на сервер и обслуживание.",
 "sponsor_desc2":"Поддержка полностью добровольная, без фиксированной суммы, без блокировки функций и без дополнительных услуг.",
 "sponsor_note":"Пожалуйста, не указывайте личную информацию в комментариях к платежу. При ошибочном переводе или для связи используйте контакты на странице.",
@@ -201,15 +202,10 @@
   mql.addEventListener('change', refresh);
   refresh();
 
-  // --- i18n ---
   var I18N = JSON.parse(document.querySelector('i18n').textContent);
   var langs = [{k:'zh',l:'中文'},{k:'en',l:'English'},{k:'ru',l:'Русский'}];
   var sel = document.getElementById('lang-select');
-  langs.forEach(function(l){
-    var o = document.createElement('option');
-    o.value = l.k; o.textContent = l.l;
-    sel.appendChild(o);
-  });
+  langs.forEach(function(l){ var o = document.createElement('option'); o.value = l.k; o.textContent = l.l; sel.appendChild(o); });
   var savedLang = localStorage.getItem('wotb-lang') || 'zh';
   if (!I18N[savedLang]) savedLang = 'zh';
   sel.value = savedLang;
