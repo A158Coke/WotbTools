@@ -10,6 +10,7 @@ services:
       POSTGRES_PASSWORD: wotb
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ../../deploy/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wotb -d wotb"]
       interval: 5s
@@ -22,11 +23,15 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: wotb
+      KC_DB_PASSWORD: wotb
     volumes:
       - ../keycloak/wotbtools-realm.json:/opt/keycloak/data/import/wotbtools-realm.json
-    command: start --import-realm --hostname-strict=false --http-enabled=true --http-port=9000
+    command: start --import-realm --hostname-strict=false --http-enabled=true --http-port=8080
     ports:
-      - "9000:9000"
+      - "8080:8080"
     restart: unless-stopped
 
   wotb-backend:
@@ -42,7 +47,7 @@ services:
       SPRING_PROFILES_ACTIVE: postgres
       POSTGRES_HOST: postgres
       POSTGRES_PASSWORD: wotb
-      KEYCLOAK_ISSUER_URI: http://keycloak:9000/realms/wotbtools
+      KEYCLOAK_ISSUER_URI: http://keycloak:8080/realms/wotbtools
     restart: unless-stopped
 
   wotb-frontend:

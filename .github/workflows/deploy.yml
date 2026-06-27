@@ -73,6 +73,10 @@ jobs:
             set -e
             mkdir -p /opt/wotb
             cd /opt/wotb
+            rm -rf init-db.sql
+            cat > init-db.sql <<'EOF'
+            CREATE DATABASE keycloak;
+            EOF
             docker rm -f wotb wotb-backend wotb-frontend 2>/dev/null || true
             cat > docker-compose.yml <<'EOF'
             services:
@@ -97,7 +101,9 @@ jobs:
                   KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
                   KC_DB_USERNAME: wotb
                   KC_DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-                command: start --hostname-strict=false --http-enabled=true --http-port=9000 --proxy-headers=xforwarded
+                command: start --hostname=auth.wotbtools.com --hostname-strict=false --http-enabled=true --http-port=8080 --proxy-headers=xforwarded
+                ports:
+                  - "127.0.0.1:8080:8080"
                 depends_on:
                   - postgres
                 restart: unless-stopped
@@ -115,7 +121,7 @@ jobs:
               wotb-frontend:
                 image: a158coke/wotbtool:frontend-${{ steps.vars.outputs.sha }}
                 ports:
-                  - "8088:80"
+                  - "127.0.0.1:8088:80"
                 depends_on:
                   - wotb-backend
                   - keycloak
@@ -125,6 +131,8 @@ jobs:
             EOF
             docker compose pull
             docker compose up -d --remove-orphans
+            # 确保 keycloak 数据库存在（init-db.sql 仅在首次初始化执行）
+            docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
             docker image prune -f
             # 健康检查：等待所有容器无 restarting 状态，最多 60 秒
             for i in $(seq 1 30); do
