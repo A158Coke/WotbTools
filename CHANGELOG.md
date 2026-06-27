@@ -2,12 +2,23 @@
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-06-27
+
 ### Added
-- 品牌升级：添加 logo（`wotbtoolslogo.png`）和 favicon（`icon.ico`/`icon.png`），首页 header + 前端顶栏双站点展示，`common/assets/` 单一来源、Dockerfile 构建时分发
-- 主题按钮三语 i18n：跟随系统/亮色/暗色 三档支持中英俄切换
+- 品牌升级：logo + favicon 首页/前端双站点展示，`common/assets/` 单一来源
+- 赞助页面：暗色卡片式 + 主题自适应 + 支付宝/微信二维码，三语 i18n 同步
+- 主题按钮 i18n：auto/light/dark 三档中英俄切换，主页+赞助页统一
+- Blitz account 绑定设计文档（`docs/auth/keycloak-qq-only.md`）
+- AGENTS.md 新增规则：三语 i18n、数据库迁移、安全、Java final
+- Java 全量 final 审计：局部变量、方法入参一律 `final`
+
+### Changed
+- homepage 目录归入 `frontend/homepage/`，Docker 构建路径同步
+- AGENTS.md 精简并增强（12 条规则 + 6 条禁止）
 
 ### Fixed
-- 修复主页排行榜卡片点击后进入回放页面而非排行榜视图（前端 `App.vue` 读取 `?view=leaderboard` 查询参数）
+- 排行榜卡片点击跳转回放页面 → 正确读取 `?view=leaderboard` 参数
+- 排行榜战斗时间显示 1970 年 → `battleStartTime == 0` 按 null 处理
 
 ## [1.6.0] - 2026-06-26
 
