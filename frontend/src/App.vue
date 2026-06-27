@@ -2,33 +2,19 @@
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useTheme } from './composables/useTheme.js'
-import { useAuth } from './composables/useAuth.js'
 import * as api from './utils/api.js'
 import ReplayPage from './components/ReplayPage.vue'
 import LeaderboardPage from './components/LeaderboardPage.vue'
-import ProfilePage from './components/ProfilePage.vue'
 
 const { t } = useI18n()
 const { theme, handleTheme } = useTheme()
-const { login, isAuthenticated, userName, initPromise } = useAuth()
 
 const isDesktop = ref(false)
 const params = new URLSearchParams(window.location.search)
 const activeTool = ref(params.get('view') === 'leaderboard' ? 'leaderboard' : 'replay')
-const authenticated = ref(false)
-const user = ref('')
 
 onMounted(async () => {
   try { isDesktop.value = (await api.healthCheck()).desktop } catch { /* 离线模式 */ }
-  try {
-    await initPromise
-    authenticated.value = isAuthenticated()
-    if (authenticated.value) {
-      user.value = userName()
-      // 登录后没有指定 view 则自动跳 profile
-      if (!params.has('view')) activeTool.value = 'profile'
-    }
-  } catch { /* Keycloak 不可用时保持游客 */ }
 })
 
 function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
@@ -52,13 +38,10 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">{{ $t('theme.light') }}</button>
       <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">{{ $t('theme.dark') }}</button>
     </div>
-    <button v-if="authenticated" class="auth-btn" @click="login">{{ user || $t('app.profile') }}</button>
-    <button v-else class="auth-btn ghost" @click="login">{{ $t('app.login') }}</button>
   </div>
 
   <div class="tb-content">
-    <ProfilePage v-if="activeTool === 'profile'" />
-    <LeaderboardPage v-else-if="activeTool === 'leaderboard'" />
+    <LeaderboardPage v-if="activeTool === 'leaderboard'" />
     <ReplayPage v-else />
   </div>
 </template>
