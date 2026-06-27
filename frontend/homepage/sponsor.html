@@ -1,0 +1,155 @@
+﻿<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>支持 WoTBTools</title>
+<link rel="icon" type="image/x-icon" href="icon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="icon.png">
+<script>
+ (function(){
+  var m = document.cookie.match(/(?:^|;\s*)wotbtools-theme=([^;]+)/);
+  var s = m ? m[1] : localStorage.getItem('wotbtools-theme');
+  var mode = (!s || s==='auto') ? (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light') : s;
+  var v = mode==='dark'
+    ? {bg:'#0d1117',t:'#c9d1d9',h:'#f0f6fc',mu:'#8b949e',cb:'#161b22',cbd:'#30363d',a:'#58a6ff',as:'rgba(88,166,255,.15)',tb:'#1f6feb33',f:'#484f58'}
+    : {bg:'#ffffff',t:'#24292f',h:'#0d1117',mu:'#57606a',cb:'#f6f8fa',cbd:'#d0d7de',a:'#0969da',as:'rgba(9,105,218,.15)',tb:'#ddf4ff',f:'#6e7681'};
+  var r = document.documentElement.style;
+  r.setProperty('--bg',v.bg); r.setProperty('--text',v.t); r.setProperty('--heading',v.h); r.setProperty('--muted',v.mu); r.setProperty('--card-bg',v.cb); r.setProperty('--card-border',v.cbd); r.setProperty('--accent',v.a); r.setProperty('--accent-shadow',v.as); r.setProperty('--tag-bg',v.tb); r.setProperty('--footer',v.f);
+ })();
+</script>
+<style>
+  :root { --bg:#0d1117; --text:#c9d1d9; --heading:#f0f6fc; --muted:#8b949e; --card-bg:#161b22; --card-border:#30363d; --accent:#58a6ff; --accent-shadow:rgba(88,166,255,.15); --tag-bg:#1f6feb33; --footer:#484f58 }
+  @media (prefers-color-scheme: light) { :root { --bg:#ffffff; --text:#24292f; --heading:#0d1117; --muted:#57606a; --card-bg:#f6f8fa; --card-border:#d0d7de; --accent:#0969da; --accent-shadow:rgba(9,105,218,.15); --tag-bg:#ddf4ff; --footer:#6e7681 } }
+  * { margin:0; padding:0; box-sizing:border-box }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    transition: background .25s, color .25s;
+  }
+
+  .topctl {
+    position: fixed; top: 16px; right: 20px; z-index: 10;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .theme-bar {
+    display: flex; gap: 4px;
+    background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 8px; padding: 3px;
+  }
+  .theme-bar button {
+    padding: 6px 14px; border: none; border-radius: 6px;
+    background: transparent; color: var(--muted); font-size: .8rem;
+    cursor: pointer; transition: background .15s, color .15s;
+  }
+  .theme-bar button:hover { color: var(--text) }
+  .theme-bar button.active {
+    background: var(--tag-bg); color: var(--accent); font-weight: 600;
+  }
+
+  header {
+    text-align: center; padding: 64px 24px 32px;
+  }
+  header a {
+    text-decoration: none; color: var(--accent); font-size: .9rem;
+  }
+  header a:hover { text-decoration: underline }
+  header h1 {
+    font-size: 2rem; font-weight: 700; color: var(--heading); margin-bottom: 8px;
+  }
+
+  main {
+    max-width: 520px; width: 100%; padding: 0 24px 64px;
+  }
+  .card {
+    background: var(--card-bg); border: 1px solid var(--card-border);
+    border-radius: 12px; padding: 28px 24px; margin-bottom: 24px;
+  }
+  .card p { font-size: .92rem; color: var(--muted); line-height: 1.65; margin-bottom: 12px }
+  .card p:last-child { margin-bottom: 0 }
+  .card h2 { font-size: 1.1rem; color: var(--heading); margin-bottom: 12px }
+  .card .note {
+    font-size: .82rem; color: var(--muted); border-top: 1px solid var(--card-border);
+    margin-top: 16px; padding-top: 12px;
+  }
+
+  .qr-row { display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; }
+  .qr-item { text-align: center; }
+  .qr-item img { width: 160px; height: 160px; border-radius: 10px; background: #fff; padding: 4px; }
+  .qr-item .label { font-size: .82rem; color: var(--muted); margin-top: 6px; }
+
+  footer {
+    margin-top: auto; padding: 24px; color: var(--footer); font-size: .8rem;
+  }
+
+  @media (max-width: 560px) {
+    .topctl { top: 10px; right: 10px; gap: 6px; }
+    .theme-bar button { padding: 5px 9px; font-size: .72rem; }
+    header { padding: 48px 16px 24px; }
+    header h1 { font-size: 1.6rem; }
+    .card { padding: 20px 16px; }
+    .qr-item img { width: 130px; height: 130px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topctl">
+  <div class="theme-bar">
+    <button data-theme="auto"  class="active">auto</button>
+    <button data-theme="light">light</button>
+    <button data-theme="dark">dark</button>
+  </div>
+</div>
+
+<header>
+  <a href="/">&larr; WoTBTools</a>
+  <h1>支持 WoTBTools</h1>
+</header>
+
+<main>
+  <div class="card">
+    <p>WotBTools 是个人维护的免费工具。如果这个项目帮到了你，可以自愿赞助，用于服务器和维护成本。</p>
+    <p>赞助完全自愿，不设置固定金额，不影响任何功能使用，也不会解锁额外服务。</p>
+    <div class="note">请勿在付款备注中填写敏感个人信息。如误转或需要联系作者，可以通过页面上的联系方式联系我。</div>
+  </div>
+
+  <div class="card">
+    <h2>扫码赞助</h2>
+    <div class="qr-row">
+      <div class="qr-item">
+        <img src="qr/alipay.png" alt="支付宝">
+        <div class="label">支付宝</div>
+      </div>
+      <div class="qr-item">
+        <img src="qr/wechat.png" alt="微信支付">
+        <div class="label">微信支付</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>WoTBTools &copy; 2026</footer>
+
+<script>
+(function(){
+  const html = document.documentElement;
+  const btns = document.querySelectorAll('.theme-bar button');
+  const mql = window.matchMedia('(prefers-color-scheme: dark)');
+  const KEY = 'wotbtools-theme';
+  const STYLES = {
+    dark:  {'--bg':'#0d1117','--text':'#c9d1d9','--heading':'#f0f6fc','--muted':'#8b949e','--card-bg':'#161b22','--card-border':'#30363d','--accent':'#58a6ff','--accent-shadow':'rgba(88,166,255,.15)','--tag-bg':'#1f6feb33','--footer':'#484f58'},
+    light: {'--bg':'#ffffff','--text':'#24292f','--heading':'#0d1117','--muted':'#57606a','--card-bg':'#f6f8fa','--card-border':'#d0d7de','--accent':'#0969da','--accent-shadow':'rgba(9,105,218,.15)','--tag-bg':'#ddf4ff','--footer':'#6e7681'}
+  };
+  function setVars(mode) { var s = STYLES[mode]; for (var k in s) html.style.setProperty(k, s[k]); }
+  function readTheme() { var m = document.cookie.match(/(?:^|;\s*)wotbtools-theme=([^;]+)/); return m ? m[1] : localStorage.getItem(KEY); }
+  function saveTheme(v) { document.cookie = KEY + '=' + v + '; path=/; domain=.wotbtools.com; max-age=31536000; SameSite=Lax'; localStorage.setItem(KEY, v); }
+  function refresh() { var saved = readTheme() || 'auto'; var acting = saved === 'auto' ? (mql.matches ? 'dark' : 'light') : saved; setVars(acting); btns.forEach(function(b){ b.classList.toggle('active', b.dataset.theme === saved); }); }
+  btns.forEach(function(b){ b.addEventListener('click', function(){ saveTheme(b.dataset.theme); refresh(); }); });
+  mql.addEventListener('change', refresh);
+  refresh();
+})();
+</script>
+</body>
+</html>
