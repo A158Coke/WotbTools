@@ -5,11 +5,12 @@ import Keycloak from 'keycloak-js'
 const phase = ref('init')
 const user = ref('')
 const error = ref('')
+let kc = null
 
 onMounted(async () => {
   console.log('[Profile] mounted')
 
-  const kc = new Keycloak({
+  kc = new Keycloak({
     url: 'https://auth.wotbtools.com',
     realm: 'wotbtools',
     clientId: 'wotbtools-web',
@@ -34,9 +35,13 @@ onMounted(async () => {
   } catch (e) {
     console.error('[Profile] init error:', e)
     error.value = String(e)
-    phase.value = 'error'
+      phase.value = 'error'
   }
 })
+
+function doLogout() {
+  if (kc) kc.logout({ redirectUri: window.location.origin })
+}
 </script>
 
 <template>
@@ -48,6 +53,7 @@ onMounted(async () => {
       <div class="profile-avatar"></div>
       <h2 class="profile-name">{{ user }}</h2>
       <p class="profile-status">已登录</p>
+      <button class="sm ghost" style="margin-top:12px" @click="doLogout">登出</button>
     </div>
     <div class="profile-card" v-else>
       <p>{{ phase === 'login' ? '正在跳转登录…' : '加载中…' }}</p>
