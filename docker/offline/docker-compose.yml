@@ -7,7 +7,7 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
-    command: start --import-realm --hostname-strict=false --http-enabled=true --http-port=9000
+    command: start --import-realm --hostname-strict=false --http-enabled=true --http-port=8080
     restart: unless-stopped
 
   postgres:

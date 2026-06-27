@@ -97,7 +97,9 @@ jobs:
                   KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
                   KC_DB_USERNAME: wotb
                   KC_DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-                command: start --hostname-strict=false --http-enabled=true --http-port=9000 --proxy-headers=xforwarded
+                command: start --hostname=auth.wotbtools.com --hostname-strict=false --http-enabled=true --http-port=8080 --proxy-headers=xforwarded
+                ports:
+                  - "127.0.0.1:8080:8080"
                 depends_on:
                   - postgres
                 restart: unless-stopped
@@ -115,10 +117,7 @@ jobs:
               wotb-frontend:
                 image: a158coke/wotbtool:frontend-${{ steps.vars.outputs.sha }}
                 ports:
-                  - "8088:80"
-                  - "443:443"
-                volumes:
-                  - /etc/letsencrypt:/etc/letsencrypt:ro
+                  - "127.0.0.1:8088:80"
                 depends_on:
                   - wotb-backend
                   - keycloak
