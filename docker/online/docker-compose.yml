@@ -24,9 +24,9 @@ services:
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
     volumes:
       - ../keycloak/wotbtools-realm.json:/opt/keycloak/data/import/wotbtools-realm.json
-    command: start --import-realm --hostname-strict=false --http-enabled=true --http-port=8080
+    command: start --import-realm --hostname-strict=false --http-enabled=true --http-port=9000
     ports:
-      - "8080:8080"
+      - "9000:9000"
     restart: unless-stopped
 
   wotb-backend:
@@ -42,7 +42,7 @@ services:
       SPRING_PROFILES_ACTIVE: postgres
       POSTGRES_HOST: postgres
       POSTGRES_PASSWORD: wotb
-      KEYCLOAK_ISSUER_URI: http://keycloak:8080/realms/wotbtools
+      KEYCLOAK_ISSUER_URI: http://keycloak:9000/realms/wotbtools
     restart: unless-stopped
 
   wotb-frontend:
