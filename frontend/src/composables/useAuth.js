@@ -32,7 +32,6 @@ async function initAuth() {
   if (!initPromise) {
     initPromise = kc.init({
       onLoad: 'check-sso',
-      silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
       pkceMethod: 'S256',
       checkLoginIframe: false,
     }).then(isLoggedIn => {
