@@ -32,6 +32,7 @@ onMounted(async () => {
       phase.value = 'error'
     } else {
       phase.value = 'login'
+      login()
     }
   } catch {
     phase.value = 'error'
