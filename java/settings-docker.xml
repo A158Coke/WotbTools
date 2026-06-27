@@ -1,15 +1,40 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- 容器内构建用: 仅配置 Aliyun 公共镜像 (Maven Central 在本网络被拦)。 -->
+<!-- Docker/CI 构建用: Maven Central 直连 + Aliyun 作为附加仓库。
+     阿里云不再 mirrorOf *, 避免 502 时全链路阻塞。 -->
 <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
               https://maven.apache.org/xsd/settings-1.0.0.xsd">
+
     <mirrors>
         <mirror>
-            <id>aliyun-public</id>
-            <name>Aliyun Public Mirror</name>
-            <url>https://maven.aliyun.com/repository/public</url>
-            <mirrorOf>*</mirrorOf>
+            <id>maven-central</id>
+            <name>Maven Central</name>
+            <url>https://repo.maven.apache.org/maven2</url>
+            <mirrorOf>central</mirrorOf>
         </mirror>
     </mirrors>
+
+    <profiles>
+        <profile>
+            <id>docker</id>
+            <activation><activeByDefault>true</activeByDefault></activation>
+            <repositories>
+                <repository>
+                    <id>aliyun-public</id>
+                    <name>Aliyun Public</name>
+                    <url>https://maven.aliyun.com/repository/public</url>
+                    <releases><enabled>true</enabled></releases>
+                    <snapshots><enabled>false</enabled></snapshots>
+                </repository>
+                <repository>
+                    <id>central-fallback</id>
+                    <name>Maven Central</name>
+                    <url>https://repo.maven.apache.org/maven2</url>
+                    <releases><enabled>true</enabled></releases>
+                    <snapshots><enabled>false</enabled></snapshots>
+                </repository>
+            </repositories>
+        </profile>
+    </profiles>
 </settings>
