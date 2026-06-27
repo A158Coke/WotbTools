@@ -7,6 +7,10 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: wotb
+      KC_DB_PASSWORD: wotb
     command: start --import-realm --hostname-strict=false --http-enabled=true --http-port=8080
     restart: unless-stopped
 
@@ -18,6 +22,7 @@ services:
       POSTGRES_PASSWORD: wotb
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ../../deploy/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     restart: unless-stopped
 
   wotb-backend:
