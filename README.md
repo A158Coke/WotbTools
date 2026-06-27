@@ -13,7 +13,7 @@
 | Web 版       | Spring Boot 4 + Vue 3 + PostgreSQL + Docker | ✅ 已完成         |
 | 工具集主页    | 暗色卡片式入口 + 主题切换 + 三语 i18n | ✅ 已完成         |
 
-在线演示：https://replay.wotbtools.com
+在线演示：https://wotbtools.com
 工具集主页：https://wotbtools.com
 
 版本历史见 [CHANGELOG.md](CHANGELOG.md)，任务拆分见 [TODO.md](TODO.md)。

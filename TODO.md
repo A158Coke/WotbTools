@@ -10,7 +10,7 @@
 - [x] Spring Boot 版本已统一为 `4.1.0`（父 POM 与 Web 模块一致）。
 - [x] 前端静态资源已嵌入 Spring Boot JAR（Maven 构建阶段从 `frontend/dist` 复制到 `classpath:/static/`）。
 - [x] Maven settings.xml 本地仓库路径改为模板 + 动态生成，不再写死。
-- [x] 在线演示：https://replay.wotbtools.com
+- [x] 在线演示：https://wotbtools.com
 - [x] Keycloak 容器部署 + realm 配置 + 前端 check-sso 认证集成。
 
 - [x] 排行榜支持按车辆筛选（点击车辆名查看专属伤害榜）。

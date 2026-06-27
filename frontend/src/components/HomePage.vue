@@ -12,13 +12,13 @@ const { t, locale } = useI18n()
     </header>
 
     <div class="tools">
-      <a class="card" href="https://replay.wotbtools.com">
+      <a class="card" href="/?view=replay">
         <h2>{{ locale === 'zh' ? '回放提取器' : locale === 'ru' ? 'Анализатор реплеев' : 'Replay Extractor' }}</h2>
         <p>{{ locale === 'zh' ? '上传 .wotbreplay 回放文件，提取战斗数据并导出 Excel。' : locale === 'ru' ? 'Загружайте .wotbreplay файлы и экспортируйте данные в Excel.' : 'Upload .wotbreplay files, extract battle data and export to Excel.' }}</p>
         <span class="tag avail">{{ locale === 'zh' ? '可用' : locale === 'ru' ? 'Доступно' : 'Available' }}</span>
       </a>
 
-      <a class="card" href="https://replay.wotbtools.com/?view=leaderboard">
+      <a class="card" href="/?view=leaderboard">
         <h2>{{ locale === 'zh' ? '排行榜' : locale === 'ru' ? 'Рейтинг' : 'Leaderboard' }}</h2>
         <p>{{ locale === 'zh' ? '随机战斗的单场伤害排行 — 上传回放即可上榜。' : locale === 'ru' ? 'Рейтинг урона за случайные бои.' : 'Damage leaderboard for random battles.' }}</p>
         <span class="tag avail">{{ locale === 'zh' ? '可用' : locale === 'ru' ? 'Доступно' : 'Available' }}</span>

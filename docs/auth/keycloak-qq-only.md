@@ -43,7 +43,7 @@ User clicks "Login with QQ"
 
 - Realm: `wotbtools`
 - Client: `wotbtools-web` (public, Standard flow ON, Direct/Implicit OFF)
-- Redirect URIs: `https://wotbtools.com/*`, `https://replay.wotbtools.com/*`, `http://localhost:5173/*`
+- Redirect URIs: `https://wotbtools.com/*`, `http://localhost:5173/*`
 - 关闭 User registration、Forgot password、Direct access grants
 - Browser Flow 禁用 Username Password Form
 - QQ 设为默认 IdP，目标：用户只看到"使用 QQ 登录"
