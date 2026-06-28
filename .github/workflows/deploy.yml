@@ -22,14 +22,18 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # 推送 / 清理 GHCR 镜像(内置 GITHUB_TOKEN)
     steps:
       - uses: actions/checkout@v4
 
-      - name: Log in to Docker Hub
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          username: a158coke
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Builds
         uses: docker/setup-buildx-action@v3
@@ -45,10 +49,13 @@ jobs:
           file: docker/Dockerfile.backend
           push: true
           tags: |
-            a158coke/wotbtool:backend-${{ steps.vars.outputs.sha }}
-            a158coke/wotbtool:backend-latest
+            ghcr.io/a158coke/wotbtools-backend:${{ steps.vars.outputs.sha }}
+            ghcr.io/a158coke/wotbtools-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # 不生成 provenance/SBOM attestation: 单架构镜像无需,避免每次推送多出 index+attestation digest
+          provenance: false
+          sbom: false
 
       - name: Build and push frontend
         uses: docker/build-push-action@v6
@@ -57,10 +64,12 @@ jobs:
           file: docker/Dockerfile.frontend
           push: true
           tags: |
-            a158coke/wotbtool:frontend-${{ steps.vars.outputs.sha }}
-            a158coke/wotbtool:frontend-latest
+            ghcr.io/a158coke/wotbtools-frontend:${{ steps.vars.outputs.sha }}
+            ghcr.io/a158coke/wotbtools-frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: false
+          sbom: false
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
@@ -89,7 +98,9 @@ jobs:
                   POSTGRES_USER: wotb
                   POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
                 volumes:
-                  - postgres_data:/var/lib/postgresql/data
+                  # postgres:18 把集群放在 /var/lib/postgresql/<major>/docker。现有卷数据在 18/docker,
+                  # 因此挂载点必须用 /var/lib/postgresql(卷根),镜像默认 PGDATA 才能命中现有集群、保留数据。
+                  - postgres_data:/var/lib/postgresql
                   - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
                 restart: unless-stopped
               keycloak:
@@ -108,7 +119,7 @@ jobs:
                   - postgres
                 restart: unless-stopped
               wotb-backend:
-                image: a158coke/wotbtool:backend-${{ steps.vars.outputs.sha }}
+                image: ghcr.io/a158coke/wotbtools-backend:${{ steps.vars.outputs.sha }}
                 depends_on:
                   - postgres
                   - keycloak
@@ -119,7 +130,7 @@ jobs:
                   KEYCLOAK_ISSUER_URI: https://auth.wotbtools.com/realms/wotbtools
                 restart: unless-stopped
               wotb-frontend:
-                image: a158coke/wotbtool:frontend-${{ steps.vars.outputs.sha }}
+                image: ghcr.io/a158coke/wotbtools-frontend:${{ steps.vars.outputs.sha }}
                 ports:
                   - "127.0.0.1:8088:80"
                 depends_on:
@@ -150,3 +161,24 @@ jobs:
               docker compose logs --tail 50
               exit 1
             fi
+
+  # 部署成功后清理 GHCR: 每个镜像只保留最近 5 个版本,删更老的(含无 tag)。
+  # 官方 Action + 内置 GITHUB_TOKEN,独立 job: 清理失败也不影响已成功的部署。
+  cleanup-ghcr:
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Prune backend versions (keep 5)
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: wotbtools-backend
+          package-type: container
+          min-versions-to-keep: 5
+      - name: Prune frontend versions (keep 5)
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: wotbtools-frontend
+          package-type: container
+          min-versions-to-keep: 5

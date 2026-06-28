@@ -1,20 +1,22 @@
 ---
 name: wotb-sync
-description: 在本仓库(WoT Blitz 回放提取)做改动时使用——尤其是增删/改名数据列、改解析或导出、改前端交互。强制按检查单跨层同步(API 纯英文 key、前端两套中文映射、导出两处)、跑测试、更新文档。
+description: >
+  改回放解析、数据列、前端交互、排行榜 schema、auth、i18n 时使用。
+  跨层同步检查单：API key → locale JSON → 导出 Java → 测试 → 文档。
+  Trigger: 新增列、改 protobuf、改表结构、改 i18n、改 Flyway、改 Keycloak。
 ---
 
 # wotb-sync
 
-本技能是项目改动检查单的 **Codex 薄封装**。真正的内容是工具无关的:
+本技能是项目改动检查单的 **OpenCode 薄封装**。真正内容是工具无关的：
 
-**请打开并严格遵循 [`.agents/wotb-sync.md`](../../../.agents/wotb-sync.md)**(从仓库根算 `.agents/wotb-sync.md`)。
+**请打开并严格遵循 [`.agents/wotb-sync.md`](../../wotb-sync.md)**。
 
-要点速记(详情以那份为准):
+要点速记（详情以那份为准）：
 
-- **API 纯英文**:`/api/columns`、DTO 只回 `key` + 数据,不放中文。
-- **改列中文名 = 全改**:前端 `App.vue` 的 `PLAYER_LABELS`/`AGG_LABELS` + 导出两处(`Columns.java`、`ExcelExporter` 汇总)。
-- **列 `key` 三方一致**:API / 前端 / 导出。
-- **改完必跑**:`mvn -s settings.xml test`(JDK21)、改前端则 `npm run build`。
-- **收尾**:更新 `DEVELOPER_GUIDE.md` 与相关 README;提交结尾带 `Co-Authored-By`;推送用 SSH `github-personal`(账号 A158Coke,不用公司 token)。
-
-> 其它 AI 工具不读本文件,直接用 `.agents/wotb-sync.md` 与根目录 `AGENTS.md` 即可。
+- **API 纯英文**：`/api/columns`、DTO 只回 `key`(snake_case) + 数据，不放中文。
+- **改列显示名 = 全改**：`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels`/`agg_labels` 三语同步 + 导出 `Columns.java`/`AggregateSheets.java`。
+- **列 `key` 三方一致**：API / 前端 / 导出。
+- **改表结构**：新增 Flyway migration（V3+），不改已应用的 V1/V2；Entity、DTO、column 与迁移逐列对齐。
+- **改完必跑**：`mvn -s settings.xml test`(JAVA_HOME→JDK21)、改前端则 `npm run build`。
+- **收尾**：更新 `DEVELOPER_GUIDE.md` 与相关 README；中文提交尾带 `Co-Authored-By`；推送 SSH `github-personal`。

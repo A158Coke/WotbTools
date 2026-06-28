@@ -22,6 +22,13 @@ onMounted(async () => {
   try { isDesktop.value = (await api.healthCheck()).desktop } catch { /* 离线模式 */ }
 })
 
+function navigate(view) {
+  activeTool.value = view
+  const url = new URL(window.location.href)
+  if (view === 'home') url.searchParams.delete('view')
+  else url.searchParams.set('view', view)
+  window.history.replaceState({}, '', url.toString())
+}
 function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
 </script>
 
@@ -31,9 +38,9 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <img class="tb-logo" src="/wotbtoolslogo.png" alt="WoTBTools">
     </a>
     <nav>
-      <button v-if="isHomeHost" :class="{ active: activeTool === 'home' }" @click="activeTool = 'home'">{{ $t('profile.home') }}</button>
-      <button :class="{ active: activeTool === 'replay' }" @click="activeTool = 'replay'">{{ $t('app.replay_tab') }}</button>
-      <button v-if="!isDesktop" :class="{ active: activeTool === 'leaderboard' }" @click="activeTool = 'leaderboard'">{{ $t('leaderboard.btn') }}</button>
+      <button v-if="isHomeHost" :class="{ active: activeTool === 'home' }" @click="navigate('home')">{{ $t('profile.home') }}</button>
+      <button :class="{ active: activeTool === 'replay' }" @click="navigate('replay')">{{ $t('app.replay_tab') }}</button>
+      <button v-if="!isDesktop" :class="{ active: activeTool === 'leaderboard' }" @click="navigate('leaderboard')">{{ $t('leaderboard.btn') }}</button>
     </nav>
     <div class="tb-spacer"></div>
     <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
@@ -44,7 +51,7 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">{{ $t('theme.light') }}</button>
       <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">{{ $t('theme.dark') }}</button>
     </div>
-    <a class="auth-btn ghost" href="/?view=profile">个人中心</a>
+    <a class="auth-btn ghost" @click.prevent="navigate('profile')" href="/?view=profile">个人中心</a>
   </div>
 
   <div class="tb-content">

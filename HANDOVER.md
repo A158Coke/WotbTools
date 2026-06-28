@@ -78,8 +78,8 @@ cd java && JAVA_HOME=<jdk21> mvn -s settings.xml -DskipTests -pl wotb-core,wotb-
 java -jar wotb-web/target/wotb-web.jar           # 8087, Web 模式
 java -jar wotb-web/target/wotb-web.jar --desktop # 桌面模式(自动选端口+开浏览器)
 
-# 本地开发 — 三容器编译启动
-cd online && docker compose up --build       # 构建 Dockerfile.backend + Dockerfile.frontend, 8088
+# 本地开发 — 四容器编译启动 (postgres + keycloak + backend + frontend)
+cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend + Dockerfile.frontend, 8088
 ```
 
 > **测试夹具**：`ParityTest`/`WebApiTest` 读 `common/data/*.wotbreplay` 真实样本，而 `common/data/` 是 **gitignore 的**。所以：① 新克隆的环境本地无样本、测试会失败，需自备样本回放放进 `common/data/`；② **CI 里跑不了 `mvn test`**（检出里没有样本）——这是 CI 不含测试步骤的根本原因。
@@ -105,16 +105,15 @@ cd online && docker compose up --build       # 构建 Dockerfile.backend + Docke
 
 **流水线**：`.github/workflows/deploy.yml` —— push 到 `main`（命中 `java/** / common/** / Dockerfile / deploy/** / 本文件路径`，或手动 `workflow_dispatch`）触发：
 1. 并行构建**两镜像**：`Dockerfile.backend`（Maven → JRE runtime）和 `Dockerfile.frontend`（Node → nginx）。
-2. 推送到 Docker Hub（`backend-sha-<SHA>` + `backend-latest` + `frontend-sha-<SHA>` + `frontend-latest`）。
+2. 推送到 GHCR（`ghcr.io/a158coke/wotbtools-backend:sha-<SHA>` + `:latest` 和 `ghcr.io/a158coke/wotbtools-frontend:sha-<SHA>` + `:latest`）。
 3. SSH 到 VPS（`/opt/wotb`）写 compose（postgres:18 + keycloak + wotb-backend + wotb-frontend）、`pull` + `up -d` 重启容器。
 
 **必须配置的 GitHub Secrets**（迁移/换仓库时容易漏）：
-- `DOCKER_PASSWORD` —— Docker Hub access token（用户名 `a158coke` 已**硬编码**在 workflow，因为用户名非机密、已在镜像名里）。
 - `VPS_HOST` / `VPS_USER` / `VPS_PORT` / `VPS_SSH_KEY` —— VPS SSH。
 - `KC_ADMIN_PASSWORD` / `DB_PASSWORD` —— Keycloak 与 PostgreSQL 密码。
 
 **已知坑 & 现有对策**（改 workflow/Dockerfile 时别踩回去）：
-- **两镜像各自推 sha + latest 标签** → `a158coke/wotbtool:backend-sha-<SHA>` + `backend-latest`，`frontend-sha-<SHA>` + `frontend-latest`。VPS compose 用 backend 的 sha 标签（按 sha 回滚）。
+- **两镜像各自推 sha + latest 标签** → `ghcr.io/a158coke/wotbtools-backend:sha-<SHA>` + `:latest`，`ghcr.io/a158coke/wotbtools-frontend:sha-<SHA>` + `:latest`。VPS compose 用 sha 标签（按 sha 回滚）。
 - **VPS 上可能有遗留旧容器占端口** → 部署脚本会先 `docker rm -f wotb-backend wotb-frontend` 腾出 8088，`up -d` 带 `--remove-orphans`。
 - **SSH 脚本必须 `set -e`** → 否则 `docker compose up` 失败仍退出 0，Actions「假绿」而站点不更新（本会话真实发生过）。
 - **构建上下文是仓库根**（前端 `App.vue` 跨目录 `import ../../../common/map_names.json`，后端要 `common/*.json`）。仓库根 `.dockerignore` 排除 `**/node_modules`、`**/target`、`**/dist`、`common/data` 等。
