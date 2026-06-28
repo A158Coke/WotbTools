@@ -4,7 +4,12 @@ import com.wotb.web.user.dto.UpdateProfileRequest;
 import com.wotb.web.user.dto.UpdateWotbAccountRequest;
 import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.service.UserProfileService;
+import com.wotb.web.dto.LeaderboardRecordDto;
+import com.wotb.web.repository.LeaderboardRecordRepository;
 import com.wotb.web.util.JwtUtil;
+import org.springframework.data.domain.PageRequest;
+
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -21,9 +26,12 @@ import org.springframework.web.server.ResponseStatusException;
 public class UserProfileController {
 
     private final UserProfileService service;
+    private final LeaderboardRecordRepository leaderboardRepo;
 
-    public UserProfileController(final UserProfileService service) {
+    public UserProfileController(final UserProfileService service,
+                                  final LeaderboardRecordRepository leaderboardRepo) {
         this.service = service;
+        this.leaderboardRepo = leaderboardRepo;
     }
 
     @GetMapping("/profile")
@@ -58,5 +66,20 @@ public class UserProfileController {
     @DeleteMapping("/wotb-account")
     public UserProfileDto deleteWotbAccount() {
         return service.deleteWotbAccount(JwtUtil.requireUserId());
+    }
+
+    @GetMapping("/profile/records")
+    public List<LeaderboardRecordDto> myRecords() {
+        final UserProfileDto profile = service.getOrCreate(JwtUtil.requireUserId(), null);
+        if (profile.wotbAccountId() == null) {
+            return List.of();
+        }
+        return leaderboardRepo.findByAccountIdOrderByDamageDealtDesc(
+                profile.wotbAccountId(), PageRequest.of(0, 50))
+                .stream().map(r -> new LeaderboardRecordDto(
+                        r.getId(), r.getArenaId(), r.getTankId(), r.getTankName(),
+                        r.getAccountId(), r.getNickname(), r.getDamageDealt(),
+                        r.getMapName(), r.getVersion(), r.getBattleTime(), r.getCreatedAt()))
+                .toList();
     }
 }

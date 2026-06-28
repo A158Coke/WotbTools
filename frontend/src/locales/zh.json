@@ -276,7 +276,9 @@
     "setAccount": "设置游戏账号",
     "unbind": "解绑",
     "unbindConfirm": "确定解绑游戏账号？",
-    "server": "服务器"
+    "server": "服务器",
+    "records": "排行榜记录",
+    "noRecords": "暂无记录，上传回放后关联到此账号"
   },
   "extended": {
     "title": "扩展分析",
