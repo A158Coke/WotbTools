@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-06-29
+
+### Added
+- **陪练功能**：玩家提交需求、管理员审核分配、打手管理、需求管理。前端 /?view=boost 页面，后端 12 个 REST API，三语 i18n。
+- **用户资料系统**：user_profile 表（Flyway V5），Keycloak sub 关联，支持设置展示名和 WoTB 账号绑定（唯一性约束），前端个人中心可编辑。
+- 首页新增「寻找陪练」卡片。
+- 页面加载动画（旋转环 + 品牌名），替代白屏等待。
+
+### Changed
+- Keycloak 从 26.1 升级至 26.6.3（Docker 镜像），前端 keycloak-js 升级至 26.2.0。
+- Keycloak realm 新增 wotbtools-admin 和 boost-manager 角色。
+- Spring Security 启用 OAuth2 Resource Server JWT 认证，自定义嵌套 claim 提取（realm_access.roles）。
+- 移除离线/桌面模式：删除 DesktopLifecycle、--desktop 启动参数、/api/shutdown 端点。
+- 合并 @Profile("postgres") 为单一配置，移除双 profile 架构。
+- 顶栏响应式优化（768/480px 断点）。
+
+### Fixed
+- PostgreSQL 18 volume 挂载路径适配。
+- JWT 角色提取 bug：JwtGrantedAuthoritiesConverter 不支持嵌套 claim，改为手动解析。
+- 已取消/已完成需求不再显示分配按钮。
+- 管理员设终态时自动清理活跃分配。
+- api.js 死代码清理（shutdown/getMe/getWotbAccount/getMyRecords）。
+
 ## [1.9.0] - 2026-06-28
 
 ### Changed
