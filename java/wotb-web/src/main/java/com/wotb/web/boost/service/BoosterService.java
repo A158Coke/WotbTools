@@ -1,0 +1,141 @@
+package com.wotb.web.boost.service;
+
+import com.wotb.web.boost.dto.BoosterDto;
+import com.wotb.web.boost.entity.BoosterProfile;
+import com.wotb.web.boost.enums.BoosterLevel;
+import com.wotb.web.boost.enums.BoosterStatus;
+import com.wotb.web.boost.enums.ContactType;
+import com.wotb.web.boost.repository.BoostRequestAssignmentRepository;
+import com.wotb.web.boost.repository.BoosterProfileRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.OffsetDateTime;
+
+/** 打手管理服务。 */
+@Service
+public class BoosterService {
+
+    private final BoosterProfileRepository repository;
+    private final BoostRequestAssignmentRepository assignmentRepository;
+
+    public BoosterService(final BoosterProfileRepository repository,
+                          final BoostRequestAssignmentRepository assignmentRepository) {
+        this.repository = repository;
+        this.assignmentRepository = assignmentRepository;
+    }
+
+    public BoosterProfile getById(final Long id) {
+        return repository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("BOOSTER_NOT_FOUND"));
+    }
+
+    @Transactional
+    public BoosterDto create(final String nickname, final String level,
+                             final Boolean available, final String status,
+                             final String contactType, final String contactValue,
+                             final String specialties, final String description) {
+        if (nickname == null || nickname.isBlank()) {
+            throw new IllegalArgumentException("打手昵称不能为空");
+        }
+        if (level == null) {
+            throw new IllegalArgumentException("打手等级不能为空");
+        }
+        BoosterLevel.from(level);
+
+        final BoosterProfile p = new BoosterProfile();
+        p.setNickname(nickname.trim());
+        p.setLevel(level.toUpperCase());
+        p.setAvailable(available != null ? available : true);
+        p.setStatus(status != null ? status.toUpperCase() : BoosterStatus.ACTIVE.name());
+        if (contactType != null && !contactType.isBlank()) {
+            ContactType.from(contactType);
+            p.setContactType(contactType.toUpperCase());
+        }
+        p.setContactValue(contactValue);
+        p.setSpecialties(specialties);
+        p.setDescription(description);
+
+        repository.save(p);
+        return toDto(p);
+    }
+
+    @Transactional
+    public BoosterDto update(final Long id, final String nickname, final String level,
+                             final Boolean available, final String status,
+                             final String contactType, final String contactValue,
+                             final String specialties, final String description) {
+        final BoosterProfile p = getById(id);
+
+        if (nickname != null) { p.setNickname(nickname.trim()); }
+        if (level != null) {
+            BoosterLevel.from(level);
+            p.setLevel(level.toUpperCase());
+        }
+        if (available != null) { p.setAvailable(available); }
+        if (status != null) {
+            BoosterStatus.from(status);
+            p.setStatus(status.toUpperCase());
+        }
+        if (contactType != null) {
+            ContactType.from(contactType);
+            p.setContactType(contactType.toUpperCase());
+        }
+        if (contactValue != null) { p.setContactValue(contactValue); }
+        if (specialties != null) { p.setSpecialties(specialties); }
+        if (description != null) { p.setDescription(description); }
+        p.setUpdatedAt(OffsetDateTime.now());
+
+        repository.save(p);
+        return toDto(p);
+    }
+
+    @Transactional
+    public BoosterDto setAvailability(final Long id, final Boolean available) {
+        final BoosterProfile p = getById(id);
+        p.setAvailable(available);
+        p.setUpdatedAt(OffsetDateTime.now());
+        repository.save(p);
+        return toDto(p);
+    }
+
+    public BoosterDto getDto(final Long id) {
+        return toDto(getById(id));
+    }
+
+    public Page<BoosterDto> list(final String status, final Boolean available,
+                                 final Pageable pageable) {
+        Page<BoosterProfile> page;
+        if (status != null && !status.isBlank() && available != null) {
+            page = repository.findByStatusAndAvailable(status, available, pageable);
+        } else if (status != null && !status.isBlank()) {
+            page = repository.findByStatus(status, pageable);
+        } else if (available != null) {
+            page = repository.findByAvailable(available, pageable);
+        } else {
+            page = repository.findAll(pageable);
+        }
+        return page.map(this::toDto);
+    }
+
+    private BoosterDto toDto(final BoosterProfile p) {
+        return new BoosterDto(
+                p.getId(),
+                p.getNickname(),
+                p.getLevel(),
+                BoosterLevel.from(p.getLevel()).label(),
+                p.getAvailable(),
+                p.getStatus(),
+                BoosterStatus.from(p.getStatus()).label(),
+                p.getContactType(),
+                p.getContactValue(),
+                p.getSpecialties(),
+                p.getDescription(),
+                (int) assignmentRepository.countByBoosterIdAndUnassignedAtIsNull(p.getId()),
+                p.getCreatedAt(),
+                p.getUpdatedAt()
+        );
+    }
+}

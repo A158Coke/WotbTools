@@ -124,7 +124,6 @@ jobs:
                   - postgres
                   - keycloak
                 environment:
-                  SPRING_PROFILES_ACTIVE: postgres
                   POSTGRES_HOST: postgres
                   POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
                   KEYCLOAK_ISSUER_URI: https://auth.wotbtools.com/realms/wotbtools
