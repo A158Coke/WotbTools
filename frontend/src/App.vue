@@ -7,6 +7,7 @@ import HomePage from './components/HomePage.vue'
 import ReplayPage from './components/ReplayPage.vue'
 import LeaderboardPage from './components/LeaderboardPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
+import BoostPage from './components/BoostPage.vue'
 
 const { t } = useI18n()
 const { theme, handleTheme } = useTheme()
@@ -16,7 +17,7 @@ const params = new URLSearchParams(window.location.search)
 const isHomeHost = window.location.hostname === 'wotbtools.com' || window.location.hostname === 'www.wotbtools.com'
 const defaultView = isHomeHost ? 'home' : 'replay'
 const viewParam = params.get('view')
-const activeTool = ref(['replay', 'leaderboard', 'profile'].includes(viewParam) ? viewParam : defaultView)
+const activeTool = ref(['replay', 'leaderboard', 'profile', 'boost'].includes(viewParam) ? viewParam : defaultView)
 
 onMounted(async () => {
   try { isDesktop.value = (await api.healthCheck()).desktop } catch { /* 离线模式 */ }
@@ -41,6 +42,7 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button v-if="isHomeHost" :class="{ active: activeTool === 'home' }" @click="navigate('home')">{{ $t('profile.home') }}</button>
       <button :class="{ active: activeTool === 'replay' }" @click="navigate('replay')">{{ $t('app.replay_tab') }}</button>
       <button v-if="!isDesktop" :class="{ active: activeTool === 'leaderboard' }" @click="navigate('leaderboard')">{{ $t('leaderboard.btn') }}</button>
+      <button :class="{ active: activeTool === 'boost' }" @click="navigate('boost')">陪练</button>
     </nav>
     <div class="tb-spacer"></div>
     <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
@@ -58,6 +60,7 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
     <HomePage v-if="activeTool === 'home'" />
     <ProfilePage v-else-if="activeTool === 'profile'" />
     <LeaderboardPage v-else-if="activeTool === 'leaderboard'" />
+    <BoostPage v-else-if="activeTool === 'boost'" />
     <ReplayPage v-else />
   </div>
 </template>
