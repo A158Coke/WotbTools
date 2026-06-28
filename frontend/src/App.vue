@@ -15,7 +15,8 @@ const isDesktop = ref(false)
 const params = new URLSearchParams(window.location.search)
 const isHomeHost = window.location.hostname === 'wotbtools.com' || window.location.hostname === 'www.wotbtools.com'
 const defaultView = isHomeHost ? 'home' : 'replay'
-const activeTool = ref(params.get('view') === 'leaderboard' ? 'leaderboard' : params.get('view') === 'profile' ? 'profile' : defaultView)
+const viewParam = params.get('view')
+const activeTool = ref(['replay', 'leaderboard', 'profile'].includes(viewParam) ? viewParam : defaultView)
 
 onMounted(async () => {
   try { isDesktop.value = (await api.healthCheck()).desktop } catch { /* 离线模式 */ }

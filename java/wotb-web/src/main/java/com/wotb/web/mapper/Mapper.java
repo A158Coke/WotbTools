@@ -85,7 +85,7 @@ public final class Mapper {
             new ColumnDef("rating", true),
             new ColumnDef("kast", true),
             new ColumnDef("contribution", true),
-            new ColumnDef("influence", true),
+            new ColumnDef("impact", true),
             new ColumnDef("damage_avg", true),
             new ColumnDef("potential_damage_avg", true),
             new ColumnDef("potential_damage_supplement_avg", true),
@@ -141,7 +141,7 @@ public final class Mapper {
             cells.put("rating", rating.rating);
             cells.put("kast", r1(rating.kast));
             cells.put("contribution", r1(rating.contribution));
-            cells.put("influence", r1(rating.influence));
+            cells.put("impact", rating.impact);
             cells.put("damage_avg", r1(rating.damageAvg));
             cells.put("potential_damage_avg", r1(rating.potentialDamageAvg));
             cells.put("potential_damage_supplement_avg", r1(rating.potentialDamageSupplementAvg));
