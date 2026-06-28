@@ -11,7 +11,15 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
 
-/** 安全配置: Keycloak JWT + admin 角色。测试阶段仍放行大部分请求。 */
+/**
+ * 安全配置: Keycloak JWT 认证 + 角色授权。
+ *
+ * 权限层级:
+ *   wotbtools-admin → 全部放行（super admin）
+ *   boost-manager    → /api/admin/** 放行
+ *   已登录用户        → 玩家接口 + boost 页面
+ *   匿名用户          → 公开接口
+ */
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
@@ -26,18 +34,21 @@ public class SecurityConfig {
                 .jwtAuthenticationConverter(jwtAuthenticationConverter())
             ))
             .authorizeHttpRequests(auth -> auth
-                // 公开接口
+                // --- 公开接口 ---
                 .requestMatchers("/api/boost/options").permitAll()
                 .requestMatchers("/api/health", "/api/columns", "/api/rating",
                         "/api/preview", "/api/export").permitAll()
                 .requestMatchers("/api/leaderboard/**").permitAll()
-                // 玩家接口: 需登录
-                .requestMatchers("/api/boost/requests/**").authenticated()
-                // boost 页面: 需登录
-                .requestMatchers("/boost", "/boost/**").authenticated()
-                // 管理员接口: 需 wotbtools-admin 角色
-                .requestMatchers("/api/admin/**").hasAnyRole("wotbtools-admin", "boost-manager")
-                // 其他放行 (测试阶段)
+
+                // --- 管理员接口 (wotbtools-admin 放行全部，boost-manager 放行管理) ---
+                .requestMatchers("/api/admin/**")
+                    .hasAnyRole("wotbtools-admin", "boost-manager")
+
+                // --- 需登录接口 (wotbtools-admin 也是已登录用户，自动通过) ---
+                .requestMatchers("/api/boost/requests/**", "/boost", "/boost/**")
+                    .authenticated()
+
+                // --- 其他放行 ---
                 .anyRequest().permitAll()
             );
         return http.build();
