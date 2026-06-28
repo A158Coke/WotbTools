@@ -44,6 +44,14 @@ public class BoostAssignmentService {
             throw new IllegalStateException("ACTIVE_ASSIGNMENT_EXISTS");
         }
 
+        // 仅允许 NEW / REVIEWING 状态分配打手
+        final BoostRequest req = requestRepository.findById(requestId)
+                .orElseThrow(() -> new IllegalArgumentException("REQUEST_NOT_FOUND"));
+        final String status = req.getStatus().toUpperCase();
+        if (!"NEW".equals(status) && !"REVIEWING".equals(status)) {
+            throw new IllegalArgumentException("当前状态不允许分配打手");
+        }
+
         final BoosterProfile booster = boosterService.getById(boosterId);
         if (!"ACTIVE".equalsIgnoreCase(booster.getStatus())) {
             throw new IllegalArgumentException("BOOSTER_NOT_AVAILABLE");
@@ -57,9 +65,7 @@ public class BoostAssignmentService {
         assignment.setNote(note);
         assignmentRepository.save(assignment);
 
-        // 更新需求状态
-        final BoostRequest req = requestRepository.findById(requestId)
-                .orElseThrow(() -> new IllegalArgumentException("REQUEST_NOT_FOUND"));
+        // 更新需求状态（复用上方已查找的 req）
         req.setStatus(BoostRequestStatus.MATCHED.name());
         req.setUpdatedAt(OffsetDateTime.now());
         requestRepository.save(req);

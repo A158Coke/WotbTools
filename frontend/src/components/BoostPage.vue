@@ -356,8 +356,8 @@ function switchTab(t) {
               <button class="btn-ghost btn-sm" @click="updateStatus(r.id, 'CLOSED')">{{ $t('boost.action.CLOSED') }}</button>
             </template>
 
-            <!-- Assignment -->
-            <template v-if="!r.currentAssignment">
+            <!-- Assignment: 仅 REVIEWING 且无活跃分配时显示 -->
+            <template v-if="!r.currentAssignment && (r.status === 'REVIEWING' || r.status === 'MATCHED' || r.status === 'NEW')">
               <button class="btn-primary btn-sm" @click="assigningRequest = r; assignBoosterId = null; assignNote = ''; assignError = ''">
                 {{ $t('boost.assign') }}
               </button>
