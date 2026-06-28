@@ -25,7 +25,7 @@ onMounted(async () => {
 function navigate(view) {
   activeTool.value = view
   const url = new URL(window.location.href)
-  if (view === 'home' || view === 'replay') url.searchParams.delete('view')
+  if (view === 'home') url.searchParams.delete('view')
   else url.searchParams.set('view', view)
   window.history.replaceState({}, '', url.toString())
 }
