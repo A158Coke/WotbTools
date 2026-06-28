@@ -112,6 +112,9 @@ jobs:
                   KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
                   KC_DB_USERNAME: wotb
                   KC_DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+                volumes:
+                  # QQ 社交登录 provider(start 时自动 build 加载)
+                  - ./keycloak-qq.jar:/opt/keycloak/providers/keycloak-qq.jar
                 command: start --hostname=auth.wotbtools.com --hostname-strict=false --http-enabled=true --http-port=8080 --proxy-headers=xforwarded
                 ports:
                   - "127.0.0.1:8080:8080"
@@ -139,6 +142,8 @@ jobs:
             volumes:
               postgres_data:
             EOF
+            # QQ 社交登录 provider JAR(挂载进 keycloak); 必须在 up 之前存在,否则 docker 会把它当目录
+            curl -fSL -o keycloak-qq.jar https://github.com/trashblazer/keycloak-social-provider-china/releases/download/v1.0.0/keycloak-social-provider-china-1.0.0.jar
             docker compose pull
             docker compose up -d --remove-orphans
             # 确保 keycloak 数据库存在（init-db.sql 仅在首次初始化执行）
