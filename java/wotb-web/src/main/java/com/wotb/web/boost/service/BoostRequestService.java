@@ -179,7 +179,7 @@ public class BoostRequestService {
         return value.substring(0, 3) + "****" + value.substring(len - 3);
     }
 
-    static void checkSensitive(final String text) {
+    private static void checkSensitive(final String text) {
         if (text == null) { return; }
         final String lower = text.toLowerCase();
         for (final String kw : SENSITIVE_KEYWORDS) {
