@@ -9,6 +9,11 @@ function boostHeaders() {
 }
 
 async function boostHandle(r) {
+  if (r.status === 401) {
+    const { login } = useAuth()
+    login()
+    throw new Error('请先登录')
+  }
   if (!r.ok) {
     let msg = `HTTP ${r.status}`
     try { const e = await r.json(); msg = e.message || e.error || msg } catch {}
@@ -69,4 +74,21 @@ export async function adminBoostBoosterUpdate(id, body) {
 
 export async function adminBoostBoosterAvailability(id, body) {
   return boostHandle(await fetch(`/api/admin/boost/boosters/${encodeURIComponent(id)}/availability`, { method: 'PATCH', headers: boostHeaders(), body: JSON.stringify(body) }))
+}
+
+// ========== User Profile ==========
+export async function getUserProfile() {
+  return boostHandle(await fetch('/api/users/profile', { headers: boostHeaders() }))
+}
+
+export async function updateUserProfile(body) {
+  return boostHandle(await fetch('/api/users/profile', { method: 'PATCH', headers: boostHeaders(), body: JSON.stringify(body) }))
+}
+
+export async function updateUserWotbAccount(body) {
+  return boostHandle(await fetch('/api/users/wotb-account', { method: 'PATCH', headers: boostHeaders(), body: JSON.stringify(body) }))
+}
+
+export async function deleteUserWotbAccount() {
+  return boostHandle(await fetch('/api/users/wotb-account', { method: 'DELETE', headers: boostHeaders() }))
 }

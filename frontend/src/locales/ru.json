@@ -242,8 +242,8 @@
     "wotbNotBound": "Аккаунт WoTB не привязан",
     "wotbNotBoundDesc": "Загрузите свой реплей, чтобы привязать аккаунт.",
     "goReplay": "Загрузить реплей",
-    "nickname": "Никнейм",
-    "accountId": "Account ID",
+    "nickname": "Ник",
+    "accountId": "ID",
     "status": "Статус",
     "bound": "Привязан",
     "notBound": "Не привязан",
@@ -268,7 +268,15 @@
     "loginMethod": "Метод входа",
     "authService": "Провайдер",
     "securityDesc": "Мы не храним ваш пароль. Аутентификация через Keycloak.",
-    "profile": "Профиль"
+    "profile": "Профиль",
+    "displayName": "Имя",
+    "edit": "Ред.",
+    "save": "Сохранить",
+    "cancel": "Отмена",
+    "setAccount": "Привязать",
+    "unbind": "Отвязать",
+    "unbindConfirm": "Отвязать аккаунт?",
+    "server": "Сервер"
   },
   "extended": {
     "title": "Расширенный анализ",
