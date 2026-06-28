@@ -3,11 +3,11 @@ package com.wotb.web.boost.service;
 import com.wotb.web.boost.dto.BoostRequestDto;
 import com.wotb.web.boost.dto.CreateBoostRequestResponse;
 import com.wotb.web.boost.entity.BoostRequest;
-import com.wotb.web.boost.entity.BoostRequestAssignment;
 import com.wotb.web.boost.enums.BoostRegion;
 import com.wotb.web.boost.enums.BoostRequestStatus;
 import com.wotb.web.boost.enums.BoostRequestType;
 import com.wotb.web.boost.enums.ContactType;
+import com.wotb.web.boost.repository.BoostRequestAssignmentRepository;
 import com.wotb.web.boost.repository.BoostRequestRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -24,16 +24,16 @@ import java.util.Set;
 public class BoostRequestService {
 
     private final BoostRequestRepository repository;
-    private final BoostAssignmentService assignmentService;
+    private final BoostRequestAssignmentRepository assignmentRepository;
 
     private static final Set<String> SENSITIVE_KEYWORDS = Set.of(
             "密码", "验证码", "账号密码", "登录密码", "password", "verification code"
     );
 
     public BoostRequestService(final BoostRequestRepository repository,
-                               final BoostAssignmentService assignmentService) {
+                               final BoostRequestAssignmentRepository assignmentRepository) {
         this.repository = repository;
-        this.assignmentService = assignmentService;
+        this.assignmentRepository = assignmentRepository;
     }
 
     /** 创建陪练需求。 */
@@ -145,7 +145,7 @@ public class BoostRequestService {
 
     /** 转为玩家侧 DTO — 联系方式脱敏、不暴露 adminNote。 */
     BoostRequestDto toPlayerDto(final BoostRequest req) {
-        final Optional<BoostRequestAssignment> active = assignmentService.findActive(req.getId());
+        final var active = assignmentRepository.findByRequestIdAndUnassignedAtIsNull(req.getId());
         return new BoostRequestDto(
                 req.getId(),
                 req.getPlayerAccountId(),
