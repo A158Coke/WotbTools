@@ -13,21 +13,17 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 
-/**
- * 打手管理服务。
- * 只操作 booster_profile 表。
- * 跨域统计活跃分配数通过 BoostAssignmentService。
- */
+/** 打手管理服务。只操作 booster_profile 表。跨域统计通过 BoostAssignmentService。 */
 @Service
 public class BoosterService {
 
     private final BoosterProfileRepository boosterRepository;
-    private final BoostAssignmentService assignmentService;
+    private final BoostStatsService statsService;
 
     public BoosterService(final BoosterProfileRepository boosterRepository,
-                          final BoostAssignmentService assignmentService) {
+                          final BoostStatsService statsService) {
         this.boosterRepository = boosterRepository;
-        this.assignmentService = assignmentService;
+        this.statsService = statsService;
     }
 
     public BoosterProfile getById(final Long id) {
@@ -40,27 +36,18 @@ public class BoosterService {
                              final Boolean available, final String status,
                              final String contactType, final String contactValue,
                              final String specialties, final String description) {
-        if (nickname == null || nickname.isBlank()) {
-            throw new IllegalArgumentException("打手昵称不能为空");
-        }
-        if (level == null) {
-            throw new IllegalArgumentException("打手等级不能为空");
-        }
+        if (nickname == null || nickname.isBlank()) throw new IllegalArgumentException("打手昵称不能为空");
+        if (level == null) throw new IllegalArgumentException("打手等级不能为空");
         BoosterLevel.from(level);
-
         final BoosterProfile p = new BoosterProfile();
         p.setNickname(nickname.trim());
         p.setLevel(level.toUpperCase());
         p.setAvailable(available != null ? available : true);
         p.setStatus(status != null ? status.toUpperCase() : BoosterStatus.ACTIVE.name());
-        if (contactType != null && !contactType.isBlank()) {
-            ContactType.from(contactType);
-            p.setContactType(contactType.toUpperCase());
-        }
+        if (contactType != null && !contactType.isBlank()) { ContactType.from(contactType); p.setContactType(contactType.toUpperCase()); }
         p.setContactValue(contactValue);
         p.setSpecialties(specialties);
         p.setDescription(description);
-
         boosterRepository.save(p);
         return toDto(p);
     }
@@ -71,26 +58,15 @@ public class BoosterService {
                              final String contactType, final String contactValue,
                              final String specialties, final String description) {
         final BoosterProfile p = getById(id);
-
-        if (nickname != null) { p.setNickname(nickname.trim()); }
-        if (level != null) {
-            BoosterLevel.from(level);
-            p.setLevel(level.toUpperCase());
-        }
-        if (available != null) { p.setAvailable(available); }
-        if (status != null) {
-            BoosterStatus.from(status);
-            p.setStatus(status.toUpperCase());
-        }
-        if (contactType != null) {
-            ContactType.from(contactType);
-            p.setContactType(contactType.toUpperCase());
-        }
-        if (contactValue != null) { p.setContactValue(contactValue); }
-        if (specialties != null) { p.setSpecialties(specialties); }
-        if (description != null) { p.setDescription(description); }
+        if (nickname != null) p.setNickname(nickname.trim());
+        if (level != null) { BoosterLevel.from(level); p.setLevel(level.toUpperCase()); }
+        if (available != null) p.setAvailable(available);
+        if (status != null) { BoosterStatus.from(status); p.setStatus(status.toUpperCase()); }
+        if (contactType != null) { ContactType.from(contactType); p.setContactType(contactType.toUpperCase()); }
+        if (contactValue != null) p.setContactValue(contactValue);
+        if (specialties != null) p.setSpecialties(specialties);
+        if (description != null) p.setDescription(description);
         p.setUpdatedAt(OffsetDateTime.now());
-
         boosterRepository.save(p);
         return toDto(p);
     }
@@ -104,41 +80,27 @@ public class BoosterService {
         return toDto(p);
     }
 
-    public BoosterDto getDto(final Long id) {
-        return toDto(getById(id));
-    }
+    public BoosterDto getDto(final Long id) { return toDto(getById(id)); }
 
-    public Page<BoosterDto> list(final String status, final Boolean available,
-                                 final Pageable pageable) {
+    public Page<BoosterDto> list(final String status, final Boolean available, final Pageable pageable) {
         Page<BoosterProfile> page;
-        if (status != null && !status.isBlank() && available != null) {
+        if (status != null && !status.isBlank() && available != null)
             page = boosterRepository.findByStatusAndAvailable(status, available, pageable);
-        } else if (status != null && !status.isBlank()) {
+        else if (status != null && !status.isBlank())
             page = boosterRepository.findByStatus(status, pageable);
-        } else if (available != null) {
+        else if (available != null)
             page = boosterRepository.findByAvailable(available, pageable);
-        } else {
+        else
             page = boosterRepository.findAll(pageable);
-        }
         return page.map(this::toDto);
     }
 
     private BoosterDto toDto(final BoosterProfile p) {
-        return new BoosterDto(
-                p.getId(),
-                p.getNickname(),
-                p.getLevel(),
-                BoosterLevel.from(p.getLevel()).label(),
-                p.getAvailable(),
-                p.getStatus(),
-                BoosterStatus.from(p.getStatus()).label(),
-                p.getContactType(),
-                p.getContactValue(),
-                p.getSpecialties(),
-                p.getDescription(),
-                (int) assignmentService.activeCount(p.getId()),
-                p.getCreatedAt(),
-                p.getUpdatedAt()
-        );
+        return new BoosterDto(p.getId(), p.getNickname(), p.getLevel(),
+                BoosterLevel.from(p.getLevel()).label(), p.getAvailable(),
+                p.getStatus(), BoosterStatus.from(p.getStatus()).label(),
+                p.getContactType(), p.getContactValue(), p.getSpecialties(),
+                p.getDescription(), (int) statsService.activeAssignmentCount(p.getId()),
+                p.getCreatedAt(), p.getUpdatedAt());
     }
 }

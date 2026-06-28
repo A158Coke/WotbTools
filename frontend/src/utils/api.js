@@ -1,9 +1,3 @@
-export async function healthCheck() {
-  const r = await fetch('/api/health')
-  if (!r.ok) throw new Error('Health check failed: HTTP ' + r.status)
-  return r.json()
-}
-
 export async function preview(body) {
   const r = await fetch('/api/preview', { method: 'POST', body })
   if (!r.ok) throw new Error('解析失败: HTTP ' + r.status)
