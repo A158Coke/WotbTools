@@ -4,7 +4,7 @@ run-name: Cleanup old Docker Hub tags (keep latest 10)
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 3 * * 1'  # 每周一凌晨3点
+    - cron: '0 3 * * 1'
 
 jobs:
   cleanup:
@@ -19,39 +19,26 @@ jobs:
 
           # Docker Hub API
           REPO="a158coke/wotbtool"
-          BASE="https://hub.docker.com/v2/repositories/${REPO}/tags"
+          HUB="https://hub.docker.com/v2"
+          TOKEN=$(curl -sS -H "Content-Type: application/json" \
+            -d "{\"username\":\"${DOCKER_USER}\",\"password\":\"${DOCKER_TOKEN}\"}" \
+            "${HUB}/users/login/" | jq -r '.token')
 
           for IMG in backend frontend; do
             echo "=== Cleaning ${IMG} tags ==="
-
-            # 获取所有 tag（分页）
-            TAGS=$(curl -sS -H "Authorization: Bearer $(curl -sS "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${REPO}:pull" | jq -r '.token')" \
-              "https://registry-1.docker.io/v2/${REPO}/tags/list?n=200" | jq -r '.tags[]' || true)
-
-            if [ -z "$TAGS" ]; then
-              echo "No tags found for ${IMG}, skipping"
-              continue
-            fi
-
-            # 筛选对应 image 的 tag（backend-* 或 frontend-*），排除 latest
-            FILTERED=$(echo "$TAGS" | grep "^${IMG}-" | grep -v 'latest' | sort -r | tail -n +11)
-
-            if [ -z "$FILTERED" ]; then
-              echo "No old tags to delete for ${IMG}"
-              continue
-            fi
-
-            # 获取 token（用于删除）
-            TOKEN=$(curl -sS -H "Content-Type: application/json" \
-              -d "{\"username\":\"${DOCKER_USER}\",\"password\":\"${DOCKER_TOKEN}\"}" \
-              "https://hub.docker.com/v2/users/login/" | jq -r '.token')
-
-            for TAG in $FILTERED; do
+            URL="${HUB}/repositories/${REPO}/tags?page_size=100"
+            TAGS=""
+            while [ -n "$URL" ]; do
+              RESP=$(curl -sS -H "Authorization: JWT ${TOKEN}" "$URL")
+              TAGS="$TAGS"$'\n'"$(echo "$RESP" | jq -r '.results[] | "\(.last_updated)\t\(.name)"')"
+              URL=$(echo "$RESP" | jq -r '.next // empty')
+            done
+            echo "$TAGS" | grep "${IMG}-" | grep -v 'latest' | sort -r | tail -n +11 | cut -f2 | while read -r TAG; do
+              [ -z "$TAG" ] && continue
               echo "Deleting ${REPO}:${TAG}..."
               curl -sS -X DELETE -H "Authorization: JWT ${TOKEN}" \
-                "https://hub.docker.com/v2/repositories/${REPO}/tags/${TAG}/"
-              sleep 0.5
+                "${HUB}/repositories/${REPO}/tags/${TAG}/"
+              sleep 0.3
             done
-
-            echo "=== Done cleaning ${IMG} ==="
+            echo "=== Done ${IMG} ==="
           done
