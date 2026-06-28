@@ -276,7 +276,9 @@
     "setAccount": "Set Account",
     "unbind": "Unbind",
     "unbindConfirm": "Unbind game account?",
-    "server": "Server"
+    "server": "Server",
+    "records": "Leaderboard Records",
+    "noRecords": "No records yet. Upload replays to associate."
   },
   "extended": {
     "title": "Extended analysis",

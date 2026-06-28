@@ -276,7 +276,9 @@
     "setAccount": "Привязать",
     "unbind": "Отвязать",
     "unbindConfirm": "Отвязать аккаунт?",
-    "server": "Сервер"
+    "server": "Сервер",
+    "records": "Записи рейтинга",
+    "noRecords": "Нет записей"
   },
   "extended": {
     "title": "Расширенный анализ",

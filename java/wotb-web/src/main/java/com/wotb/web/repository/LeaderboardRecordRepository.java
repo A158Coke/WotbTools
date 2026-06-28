@@ -20,4 +20,7 @@ public interface LeaderboardRecordRepository extends JpaRepository<LeaderboardRe
 
     /** 指定车辆的伤害榜 (降序)。 */
     List<LeaderboardRecord> findByTankIdOrderByDamageDealtDesc(long tankId, Pageable pageable);
+
+    /** 指定玩家的伤害记录 (降序)。 */
+    List<LeaderboardRecord> findByAccountIdOrderByDamageDealtDesc(long accountId, Pageable pageable);
 }

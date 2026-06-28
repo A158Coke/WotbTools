@@ -18,6 +18,7 @@ const editName = ref('')
 const editAccountId = ref(null)
 const editNickname = ref('')
 const editError = ref('')
+const records = ref([])
 
 onMounted(async () => {
   try {
@@ -42,6 +43,7 @@ async function loadProfile() {
   } catch {
     profile.value = null
   }
+  if (profile.value?.wotbAccountId) { loadRecords() }
 }
 
 function doLogin() { if (!loginStarted.value) { loginStarted.value = true; login() } }
@@ -75,7 +77,11 @@ async function saveAccount() {
       wotbServer: 'CN'
     })
     editingAccount.value = false
+    loadRecords()
   } catch (e) { editError.value = e.message }
+}
+async function loadRecords() {
+  try { records.value = await api.getUserLeaderboardRecords() } catch { records.value = [] }
 }
 async function removeAccount() {
   if (!confirm(t('profile.unbindConfirm'))) return
@@ -165,6 +171,24 @@ async function removeAccount() {
             </div>
             <p v-else class="profile-empty">{{ $t('profile.wotbNotBound') }}</p>
           </div>
+
+          <!-- Leaderboard records -->
+          <div v-if="profile.wotbAccountId" class="profile-card profile-section">
+            <h3 class="card-title" style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border)">{{ $t('profile.records') }}</h3>
+            <div v-if="records.length" class="records-table-wrap">
+              <table class="records-table">
+                <thead><tr><th>{{ $t('profile.tank') }}</th><th>{{ $t('profile.damage') }}</th><th>{{ $t('profile.map') }}</th></tr></thead>
+                <tbody>
+                  <tr v-for="r in records" :key="r.id">
+                    <td>{{ r.tankName || '—' }}</td>
+                    <td>{{ r.damageDealt || '—' }}</td>
+                    <td>{{ r.map || '—' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p v-else class="profile-empty">{{ $t('profile.noRecords') }}</p>
+          </div>
         </div>
 
         <div class="profile-right">
@@ -224,6 +248,10 @@ async function removeAccount() {
 .btn-ghost { padding: 8px 18px; border: 1px solid var(--border); border-radius: 10px; background: transparent; color: var(--text); font-size: .85rem; cursor: pointer; font-family: inherit; }
 .btn-ghost.btn-sm { padding: 5px 12px; font-size: .8rem; border-radius: 8px; }
 .btn-ghost:hover { background: var(--bg-card2); }
+.records-table-wrap { overflow-x: auto; }
+.records-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.records-table th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--text-sub); font-weight: 600; }
+.records-table td { padding: 6px 8px; border-bottom: 1px solid var(--border-light); color: var(--text); }
 @media (max-width: 768px) {
   .profile-body { flex-direction: column; }
   .profile-right { width: 100%; }

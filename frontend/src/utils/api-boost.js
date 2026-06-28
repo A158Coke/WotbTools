@@ -92,3 +92,10 @@ export async function updateUserWotbAccount(body) {
 export async function deleteUserWotbAccount() {
   return boostHandle(await fetch('/api/users/wotb-account', { method: 'DELETE', headers: boostHeaders() }))
 }
+
+export async function getUserLeaderboardRecords() {
+  const r = await fetch('/api/users/profile/records', { headers: boostHeaders() })
+  if (r.status === 401) return []
+  if (!r.ok) return []
+  return r.json()
+}
