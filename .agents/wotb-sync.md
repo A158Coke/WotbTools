@@ -96,6 +96,34 @@ cd frontend && npm run build                         # 改了前端时
 2. 读写函数命名 `readXxx()` / `saveXxx()`，localStorage 作为本地开发回退。
 3. 前端三语文案同步更新 `locales/*.json`。
 
+## 配方 J: 改 Extended 扩展页
+
+1. `ExtendedApp.vue` 独立入口 (`/extended`)，和 App.vue 无关，不改主回放页。
+2. 静态路由：`frontend/extended.html` → `src/extended.js` → 挂载 ExtendedApp。
+3. nginx：`location = /extended { try_files /extended.html =404; }`。
+4. 离线/dev：`StaticForwardController` `@GetMapping("/extended")` → `forward:/extended.html`。
+5. 三语 i18n：`locales/*.json` 的 `extended` 块。
+6. API：`POST /api/preview`（复用）+ `POST /api/rating`（实时评分）。
+7. 验证 + 文档。
+
+## 配方 K: Leaderboard 改动
+
+1. 改表结构必须新增 Flyway migration（`V3__xxx.sql`），不改已应用的 V1/V2。
+2. JPA Entity、DTO、repository column 与迁移逐列对齐，否则 `ddl-auto: validate` 启动失败。
+3. 新查询走 `LeaderboardRepository` + `LeaderboardService`（`@Profile("postgres")`）。
+4. API 纯英文 key；前端 label 在 `locales/*.json` → `leaderboard` 块。
+5. 前端上传：`api.leaderboardUpload(file)` → `POST /api/leaderboard/upload`。
+6. 验证 + 文档。
+
+## 配方 L: Auth 改动
+
+1. Keycloak：`auth.wotbtools.com` 独立容器，realm `wotbtools`，client `wotbtools-web`。
+2. 前端：`useAuth.js` composable（Keycloak adapter check-sso 游客模式）。
+3. 后端：Spring Security Resource Server + `application.yml` JWT 验证。
+4. 新表（user/binding）：Flyway migration，`ddl-auto: validate` 验证。
+5. Profile 隔离：auth 组件 `@Profile("postgres")`，离线版无 auth。
+6. 验证 + 文档。
+
 ## 收尾
 
 1. **更新文档**:`DEVELOPER_GUIDE.md` + 相关 `README.md` / `java/README.md`(任何影响界面/导出/数据/构建/用法的改动)。

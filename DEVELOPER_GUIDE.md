@@ -20,18 +20,18 @@
 
 ## 仓库结构
 
-仓库按"语言/形态"分层：`common/`(共享资源) + `common/python/`(车辆库更新脚本) + `java/`(Java 主线 wotb-core + wotb-web) + `online/`(本地开发 compose 入口)。
+仓库按"语言/形态"分层：`common/`(共享资源) + `common/python/`(车辆库更新脚本) + `java/`(Java 主线 wotb-core + wotb-web) + `frontend/`(Vue 3 + 工具集主页) + `docker/`(镜像构建 + 本地开发 compose `docker/online/`)。
 
 ```text
 .
 ├── README.md  TODO.md  DEVELOPER_GUIDE.md  LICENSE  .gitignore  AGENTS.md  CHANGELOG.md  HANDOVER.md
-├── docker/                       # Docker 构建 + nginx 配置
+├── docker/                       # Docker 构建 + 本地开发 compose
 │   ├── Dockerfile.backend        #   后端镜像：Maven → JRE（Spring Boot :8087）
 │   ├── Dockerfile.frontend       #   前端镜像：Node → nginx（:80）
-│   └── nginx/                #   双 server（主页 + Vue SPA 反代 /api→wotb-backend:8087）
+│   ├── nginx/                #   双 server（主页 + Vue SPA 反代 /api→wotb-backend:8087）
+│   ├── keycloak/                 #   Keycloak realm 导入文件
+│   └── online/                   #   开发者版 compose（build: 源码编译，四容器: pg+keycloak+backend+frontend）
 ├── .dockerignore                 # 减少 Docker 构建上下文
-├── online/                       # 本地开发用
-│   └── docker-compose.yml        #   开发者版 compose（build: 源码编译）
 ├── frontend/                     # Vue 3 前端
 │   ├── src/
 │   │   ├── App.vue               #   根组件
@@ -335,7 +335,7 @@ npm run build
 `push` 到 `main` 分支触发 GitHub Actions（[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)）：
 
 1. **并行构建两镜像**：`Dockerfile.backend`（Maven → JRE runtime，Spring Boot :8087）+ `Dockerfile.frontend`（Node → nginx，:80）。带 `type=gha` 层缓存。
-2. **推送 Docker Hub**：四标签 `a158coke/wotbtool:backend-sha-<SHA>` + `backend-latest` + `frontend-sha-<SHA>` + `frontend-latest`。用户名 `a158coke` 硬编码在 workflow（非机密），仅 token 走 `secrets.DOCKER_PASSWORD`。
+2. **推送 GHCR**：双镜像各推 `sha-<SHA>` + `latest` 标签 — `ghcr.io/a158coke/wotbtools-backend` 和 `ghcr.io/a158coke/wotbtools-frontend`。认证走内置 `GITHUB_TOKEN`（`packages: write` 权限），无需额外 secret。
 3. **SSH 部署 VPS**：在 `/opt/wotb` 写入三服务 `docker-compose.yml`（postgres + keycloak + wotb-backend + wotb-frontend），先清理旧容器再 `docker compose pull && up -d --remove-orphans`。homepage 编入前端镜像（`COPY frontend/homepage /homepage`）。
 
 ## 给 AI coder 的工作准则
