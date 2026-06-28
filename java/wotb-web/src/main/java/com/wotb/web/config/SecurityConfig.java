@@ -54,7 +54,8 @@ public class SecurityConfig {
                     .hasAnyRole("wotbtools-admin", "boost-manager")
 
                 // --- 需登录接口 (wotbtools-admin 也是已登录用户，自动通过) ---
-                .requestMatchers("/api/boost/requests/**", "/boost", "/boost/**")
+                .requestMatchers("/api/users/**",
+                        "/api/boost/requests/**", "/boost", "/boost/**")
                     .authenticated()
 
                 // --- 其他放行 ---

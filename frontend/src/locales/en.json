@@ -268,7 +268,15 @@
     "loginMethod": "Login method",
     "authService": "Auth provider",
     "securityDesc": "We do not store your password. All auth is handled by Keycloak.",
-    "profile": "Profile"
+    "profile": "Profile",
+    "displayName": "Display Name",
+    "edit": "Edit",
+    "save": "Save",
+    "cancel": "Cancel",
+    "setAccount": "Set Account",
+    "unbind": "Unbind",
+    "unbindConfirm": "Unbind game account?",
+    "server": "Server"
   },
   "extended": {
     "title": "Extended analysis",

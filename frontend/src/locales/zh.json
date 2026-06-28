@@ -242,8 +242,8 @@
     "wotbNotBound": "尚未绑定 WoTB 玩家账号",
     "wotbNotBoundDesc": "上传自己的 replay 后，可将解析出的玩家账号绑定到当前用户。",
     "goReplay": "去上传 Replay",
-    "nickname": "昵称",
-    "accountId": "Account ID",
+    "nickname": "游戏昵称",
+    "accountId": "游戏账号 ID",
     "status": "状态",
     "bound": "已绑定",
     "notBound": "未绑定",
@@ -268,7 +268,15 @@
     "loginMethod": "登录方式",
     "authService": "认证服务",
     "securityDesc": "本工具不保存你的密码，所有认证由 Keycloak 提供。",
-    "profile": "个人中心"
+    "profile": "个人中心",
+    "displayName": "展示名",
+    "edit": "编辑",
+    "save": "保存",
+    "cancel": "取消",
+    "setAccount": "设置游戏账号",
+    "unbind": "解绑",
+    "unbindConfirm": "确定解绑游戏账号？",
+    "server": "服务器"
   },
   "extended": {
     "title": "扩展分析",
