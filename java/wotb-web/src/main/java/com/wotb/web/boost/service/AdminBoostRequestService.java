@@ -59,8 +59,19 @@ public class AdminBoostRequestService {
                 .orElseThrow(() -> new IllegalArgumentException("REQUEST_NOT_FOUND"));
 
         BoostRequestStatus.from(status);
+        final String upper = status.toUpperCase();
 
-        req.setStatus(status.toUpperCase());
+        // 终态 (CANCELLED/CLOSED/REJECTED): 自动清理活跃分配
+        if ("CANCELLED".equals(upper) || "CLOSED".equals(upper) || "REJECTED".equals(upper)) {
+            assignmentRepository.findByRequestIdAndUnassignedAtIsNull(id).ifPresent(a -> {
+                a.setUnassignedAt(OffsetDateTime.now());
+                a.setStatus(BoostAssignmentStatus.CANCELLED.name());
+                a.setUpdatedAt(OffsetDateTime.now());
+                assignmentRepository.save(a);
+            });
+        }
+
+        req.setStatus(upper);
         if (adminNote != null) {
             req.setAdminNote(adminNote);
         }

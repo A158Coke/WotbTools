@@ -362,7 +362,8 @@ function switchTab(t) {
                 {{ $t('boost.assign') }}
               </button>
             </template>
-            <template v-else>
+            <!-- Unassign: 仅 MATCHED/REVIEWING 且存在活跃分配时显示 -->
+            <template v-else-if="r.status === 'MATCHED' || r.status === 'REVIEWING'">
               <button class="btn-ghost btn-sm" @click="unassignBooster(r.id)">{{ $t('boost.unassign') }}</button>
             </template>
           </div>
