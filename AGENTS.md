@@ -24,7 +24,7 @@
 ```bash
 cd java && JAVA_HOME=<jdk21> mvn -s settings.xml test      # 测试
 cd frontend && npm run build                                 # 前端构建
-cd online && docker compose up --build                       # 在线版
+cd docker/online && docker compose up -d --build             # 在线版(四容器: pg+keycloak+backend+frontend)
 ```
 
 ## 改动流程

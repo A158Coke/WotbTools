@@ -13,20 +13,20 @@
 | `wotb-core` | 核心库：解压回放、读取 pickle、解码 protobuf、车辆库映射、去重汇总、POI 导出 xlsx        |
 | `wotb-web`  | Spring Boot 4 REST API + 桌面模式入口，监听 `8087`（Web 模式）或自动端口（桌面模式） |
 | `frontend`  | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
-| `online/`   | `docker-compose.yml`：`build:` 从源码编译运行三容器（postgres + backend + frontend） |
+| `docker/online/` | `docker-compose.yml`：`build:` 从源码编译运行四容器（postgres + keycloak + backend + frontend） |
 
 > 车辆库 `common/tankopedia.json`（仓库根的共享目录）在 `wotb-core` 构建时自动复制到 classpath，无需在模块内再放一份。
 
 ## Web 版（Docker + PostgreSQL）
 
 ```bash
-cd ..\online
-docker compose up --build
+cd ..\docker\online
+docker compose up -d --build
 ```
 
 访问 http://localhost:8088 （健康检查 `http://localhost:8088/api/health`）。
 
-`online/docker-compose.yml` 启动**三容器**（`postgres:18` + `wotb-backend` + `wotb-frontend`），分别构建 `docker/Dockerfile.backend` 和 `docker/Dockerfile.frontend`。nginx 托管 Vue + 反代 `/api → wotb-backend:8087`，后端通过 `SPRING_PROFILES_ACTIVE: postgres` 连接 PostgreSQL。
+`docker/online/docker-compose.yml` 启动**四容器**（`postgres:18` + `keycloak` + `wotb-backend` + `wotb-frontend`），后两者分别构建 `docker/Dockerfile.backend` 和 `docker/Dockerfile.frontend`。nginx 托管 Vue + 反代 `/api → wotb-backend:8087`，后端通过 `SPRING_PROFILES_ACTIVE: postgres` 连接 PostgreSQL。
 
 ### CI/CD 自动部署
 
@@ -34,9 +34,9 @@ docker compose up --build
 
 1. 并行构建两个镜像：`Dockerfile.backend`（Maven + JRE）+ `Dockerfile.frontend`（Node + nginx）。
 2. 推送 `a158coke/wotbtool:backend-sha-<SHA>` + `frontend-sha-<SHA>` + `backend-latest` + `frontend-latest` 到 Docker Hub。
-3. SSH 登录 VPS，写入三服务 `docker-compose.yml`（postgres + wotb-backend + wotb-frontend），`docker compose pull && up -d`。
+3. SSH 登录 VPS，写入四服务 `docker-compose.yml`（postgres + keycloak + wotb-backend + wotb-frontend），`docker compose pull && up -d`。
 
-> 三个容器：`postgres:18`（数据持久化）→ `wotb-backend`（Spring Boot 8087）→ `wotb-frontend`（nginx + Vue，暴露 8088:80）。`paths` 过滤使纯文档 push 不触发部署。
+> 四个容器：`postgres:18`（数据持久化，卷挂 `/var/lib/postgresql`）→ `keycloak`（认证，`auth.wotbtools.com`）→ `wotb-backend`（Spring Boot 8087）→ `wotb-frontend`（nginx + Vue，暴露 8088:80）。`paths` 过滤使纯文档 push 不触发部署。
 
 ## 本地开发
 

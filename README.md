@@ -25,7 +25,7 @@
 
 | 版本          | 技术栈                                        | 入口                                                   | 适用场景                     |
 |-------------|--------------------------------------------|------------------------------------------------------|--------------------------|
-| Java Web 版  | Java 21 + Spring Boot 4 + Vue 3 + Docker | `online\` 本地开发；CI/CD → `a158coke/wotbtool` 双镜像 | 浏览器上传、在线预览、排行榜、REST API、Keycloak 认证 |
+| Java Web 版  | Java 21 + Spring Boot 4 + Vue 3 + Docker | `docker\online\` 本地开发；CI/CD → `a158coke/wotbtool` 双镜像 | 浏览器上传、在线预览、排行榜、REST API、Keycloak 认证 |
 
 文档入口：
 
@@ -109,7 +109,7 @@ mvn -s settings.xml test
 | `java/wotb-web/`              | Spring Boot 4 应用：REST API + Leaderboard + Flyway |
 | `frontend/`                   | Vue 3 前端（含工具集主页 HomePage.vue、三语 locale） |
 | `frontend/src/data/`          | 纯前端数据（版本历史 versions.json） |
-| `online/`                     | 开发者本地：`docker compose up --build` 编译启动 |
+| `docker/online/`              | 开发者本地：`docker compose up -d --build` 编译启动（四容器含 keycloak） |
 | `docker/`                     | Dockerfile.backend / Dockerfile.frontend / keycloak (realm) |
 | `deploy/`                     | `nginx/` 配置 + `init-db.sql` |
 | `.github/workflows/`          | CI/CD 自动部署 |
