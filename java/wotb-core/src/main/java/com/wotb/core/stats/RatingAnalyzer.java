@@ -17,7 +17,7 @@ public final class RatingAnalyzer {
     private static final double EXPECTED_BATTLE_SHARE = 1.0 / 14.0;
     private static final double POTENTIAL_WEIGHT = 0.70;
     private static final double KAST_WEIGHT = 0.15;
-    private static final double INFLUENCE_WEIGHT = 0.25;
+    private static final double IMPACT_WEIGHT = 0.25;
     private static final double AST_WEIGHT = 0.30;
     private static final double MULTI_DAMAGE_WEIGHT = 0.10;
     private static final double KILLS_WEIGHT = 0.10;
@@ -37,7 +37,7 @@ public final class RatingAnalyzer {
         public int rating;
         public double kast;
         public double contribution;
-        public double influence;
+        public double impactValue;
         public String impact = "0.00%";
         public double damageAvg;
         public double assistAvg;
@@ -49,10 +49,10 @@ public final class RatingAnalyzer {
         double kastSum;
         double roundContribution;
         double teamRoundContribution;
-        double influenceSum;
+        double impactSum;
         double averageHpSum;
         long lastTime = Long.MIN_VALUE;
-        int influenceBattles;
+        int impactBattles;
         int multiDamageBattles;
         int survivalBattles;
         int tradedDeaths;
@@ -74,8 +74,8 @@ public final class RatingAnalyzer {
             kast = cap(100.0 * kastSum / battles, 100.0);
             contribution = teamRoundContribution == 0
                     ? 0 : 100.0 * roundContribution / teamRoundContribution;
-            influence = influenceBattles == 0 ? 0 : influenceSum / influenceBattles;
-            impact = percent(influence);
+            impactValue = impactBattles == 0 ? 0 : impactSum / impactBattles;
+            impact = percent(impactValue);
             multiDamageRate = 100.0 * multiDamageBattles / battles;
             rating = finalRating();
         }
@@ -84,11 +84,11 @@ public final class RatingAnalyzer {
             final double hp = averageHp > 0 ? averageHp : 1;
             final double potentialIndex = cap(100.0 * potentialDamageAvg / hp, 250.0);
             final double astIndex = cap(100.0 * assistAvg / hp, 200.0);
-            final double influenceIndex = cap(influence, 250.0);
+            final double impactIndex = cap(impactValue, 250.0);
             final double killIndex = cap(100.0 * killsAvg, 250.0);
             final double weighted = POTENTIAL_WEIGHT * potentialIndex
                     + KAST_WEIGHT * cap(kast, 250.0)
-                    + INFLUENCE_WEIGHT * influenceIndex
+                    + IMPACT_WEIGHT * impactIndex
                     + AST_WEIGHT * astIndex
                     + MULTI_DAMAGE_WEIGHT * multiDamageRate
                     + KILLS_WEIGHT * killIndex;
@@ -140,7 +140,7 @@ public final class RatingAnalyzer {
         final double teamContribution = ctx.teamContribution[team];
         final double traded = tradedDeath(player, battle.players);
         final double kastBattle = singleBattleKast(player, win, traded, averageHp);
-        final double influence = singleBattleInfluence(player, ctx);
+        final double impactValue = singleBattleImpact(player, ctx);
 
         row.battles++;
         if (win) {
@@ -153,8 +153,8 @@ public final class RatingAnalyzer {
         row.potentialDamageSupplement += player.potentialDamageSupplement;
         row.roundContribution += contributionValue;
         row.teamRoundContribution += teamContribution;
-        row.influenceSum += influence;
-        row.influenceBattles++;
+        row.impactSum += impactValue;
+        row.impactBattles++;
         row.averageHpSum += averageHp;
         row.kastSum += kastBattle;
         if (player.survived) {
@@ -168,7 +168,7 @@ public final class RatingAnalyzer {
         }
     }
 
-    private static double singleBattleInfluence(final PlayerResult player, final BattleContext ctx) {
+    private static double singleBattleImpact(final PlayerResult player, final BattleContext ctx) {
         final double battleDamageAssist = ctx.battleDamageAssist;
         final double damageAssistShare = battleDamageAssist == 0
                 ? 0 : (player.damageDealt + player.damageAssisted) / battleDamageAssist;

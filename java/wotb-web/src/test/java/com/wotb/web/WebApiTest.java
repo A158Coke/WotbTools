@@ -77,8 +77,10 @@ class WebApiTest {
         assertTrue(stream(n.get("player")).anyMatch(c -> "rank".equals(c.get("key").asText())));
         assertTrue(stream(n.get("aggregate")).anyMatch(c -> "potential_damage_avg".equals(c.get("key").asText())));
         assertTrue(stream(n.get("rating")).anyMatch(c -> "kast".equals(c.get("key").asText())));
+        assertTrue(stream(n.get("rating")).anyMatch(c -> "impact".equals(c.get("key").asText())));
         assertTrue(stream(n.get("rating")).anyMatch(c -> "assist_avg".equals(c.get("key").asText())));
         assertTrue(stream(n.get("rating")).anyMatch(c -> "multi_damage_rate".equals(c.get("key").asText())));
+        assertFalse(stream(n.get("rating")).anyMatch(c -> "influence".equals(c.get("key").asText())));
         assertFalse(stream(n.get("rating")).anyMatch(c -> "average_hp".equals(c.get("key").asText())));
         assertFalse(stream(n.get("rating")).anyMatch(c -> "account_id".equals(c.get("key").asText())));
     }
@@ -114,7 +116,9 @@ class WebApiTest {
         assertTrue(cells.has("rating"));
         assertTrue(cells.has("kast"));
         assertTrue(cells.has("contribution"));
-        assertTrue(cells.has("influence"));
+        assertTrue(cells.has("impact"));
+        assertTrue(cells.get("impact").asText().endsWith("%"));
+        assertFalse(cells.has("influence"));
         assertTrue(cells.has("damage_avg"));
         assertTrue(cells.has("potential_damage_avg"));
         assertTrue(cells.has("potential_damage_supplement_avg"));
