@@ -88,6 +88,9 @@ jobs:
                   POSTGRES_DB: wotb
                   POSTGRES_USER: wotb
                   POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
+                  # postgres:18 镜像改了默认 PGDATA 位置; 现有卷数据在旧路径,
+                  # 显式指回 /var/lib/postgresql/data 以复用数据并避免 "unused mount" 拒启。
+                  PGDATA: /var/lib/postgresql/data
                 volumes:
                   - postgres_data:/var/lib/postgresql/data
                   - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
