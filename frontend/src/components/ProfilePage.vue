@@ -181,8 +181,8 @@ async function removeAccount() {
                 <tbody>
                   <tr v-for="r in records" :key="r.id">
                     <td>{{ r.tankName || '—' }}</td>
-                    <td>{{ r.damageDealt || '—' }}</td>
-                    <td>{{ r.map || '—' }}</td>
+                    <td>{{ r.damageDealt ?? '—' }}</td>
+                    <td>{{ r.mapName || '—' }}</td>
                   </tr>
                 </tbody>
               </table>
