@@ -21,15 +21,7 @@ public class UserProfileService {
 
     @Transactional
     public UserProfileDto getOrCreate(final String keycloakUserId, final String defaultDisplayName) {
-        final UserProfile profile = repository.findByKeycloakUserId(keycloakUserId)
-                .orElseGet(() -> {
-                    final UserProfile p = new UserProfile();
-                    p.setKeycloakUserId(keycloakUserId);
-                    p.setDisplayName(defaultDisplayName);
-                    p.setWotbServer("CN");
-                    return repository.save(p);
-                });
-        return toDto(profile);
+        return toDto(findOrCreate(keycloakUserId, defaultDisplayName));
     }
 
     @Transactional
