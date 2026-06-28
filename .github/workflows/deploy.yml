@@ -49,6 +49,9 @@ jobs:
             a158coke/wotbtool:backend-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # 不生成 provenance/SBOM attestation: 单架构镜像无需,避免每次推送多出 index+attestation digest
+          provenance: false
+          sbom: false
 
       - name: Build and push frontend
         uses: docker/build-push-action@v6
@@ -61,6 +64,8 @@ jobs:
             a158coke/wotbtool:frontend-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: false
+          sbom: false
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
