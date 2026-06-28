@@ -57,18 +57,25 @@ for IMG in backend frontend; do
   done <<< "$DELETE"
 done
 
-# ========== 2) 删除无 tag 的 digest ==========
+# ========== 2) 删除无 tag 的 digest(best-effort, 不让本步失败影响整个 job) ==========
 echo "== 无 tag digest 清理 (DRY_RUN=${DRY_RUN}) =="
 DG="$(mktemp)"
-URL="${HUB}/namespaces/${NS}/repositories/${REPO_NAME}/images?currently_tagged=false&status=active&page_size=100"
-while [ -n "$URL" ] && [ "$URL" != "null" ]; do
-  RESP=$(curl -fsS -H "Authorization: JWT ${TOKEN}" "$URL")
-  echo "$RESP" | jq -r '.results[]?.digest' >> "$DG"
-  URL=$(echo "$RESP" | jq -r '.next // empty')
-done
-N=$(grep -c . "$DG" || true)
-echo "无 tag digest 数: ${N}"
-if [ "${N}" != "0" ]; then
+# 先探测 image-management 列表端点是否可用(带鉴权)。不可用就告警跳过,不 exit。
+IMG_URL="${HUB}/namespaces/${NS}/repositories/${REPO_NAME}/images?currently_tagged=false&status=active&page_size=100"
+HTTP=$(curl -sS -o /tmp/img0.json -w '%{http_code}' -H "Authorization: JWT ${TOKEN}" "$IMG_URL" || echo "000")
+if [ "$HTTP" != "200" ]; then
+  echo "::warning::无 tag digest 列表 API 返回 HTTP ${HTTP} —— 端点不可用(可能免费版不开放/路径变更),跳过 digest 清理。"
+  echo "  替代: Docker Hub 网页 image-management → Filter by Untagged → Preview and delete;或抓浏览器 Network 里的真实请求反馈以校准。"
+else
+  URL="$IMG_URL"
+  while [ -n "$URL" ] && [ "$URL" != "null" ]; do
+    RESP=$(curl -sS -H "Authorization: JWT ${TOKEN}" "$URL")
+    echo "$RESP" | jq -r '.results[]?.digest' >> "$DG" 2>/dev/null || true
+    URL=$(echo "$RESP" | jq -r '.next // empty' 2>/dev/null || echo "")
+  done
+  N=$(grep -c . "$DG" || true)
+  echo "无 tag digest 数: ${N}"
+  if [ "${N}" != "0" ]; then
   MAN=$(jq -R -s --arg repo "$REPO_NAME" \
     'split("\n")|map(select(length>0))|map({repository:$repo,digest:.})' "$DG")
   # 先 dry-run 探测 warnings
@@ -86,6 +93,7 @@ if [ "${N}" != "0" ]; then
     echo "  删除摘要: $(echo "$RES" | jq -c '.metrics' 2>/dev/null || echo "$RES" | head -c 600)"
     ERRN=$(echo "$RES" | jq -r '((.errors // []) | length)' 2>/dev/null || echo 0)
     [ "${ERRN}" != "0" ] && echo "::warning::部分 digest 删除报错: $(echo "$RES" | jq -c '.errors' 2>/dev/null)"
+    fi
   fi
 fi
 
