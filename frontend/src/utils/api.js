@@ -18,11 +18,6 @@ export async function downloadBlob(mode, body) {
   return { blob, disposition: cd }
 }
 
-export async function shutdown() {
-  await fetch('/api/shutdown', { method: 'POST' })
-}
-
-// 排行榜 (仅在线版 postgres profile; 离线版无这些端点)
 export async function ratingLeaderboard(body) {
   const r = await fetch('/api/rating', { method: 'POST', body })
   if (!r.ok) throw new Error('Rating failed: HTTP ' + r.status)
@@ -54,23 +49,4 @@ export async function leaderboardUpload(file) {
   const data = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error(data.error || '上传失败: HTTP ' + r.status)
   return data
-}
-
-// Profile (后端可能未实现，404/401 静默返回 null)
-export async function getMe(token) {
-  const r = await fetch('/api/me', { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-  if (!r.ok) return null
-  return r.json()
-}
-
-export async function getWotbAccount(token) {
-  const r = await fetch('/api/me/wotb-account', { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-  if (!r.ok) return null
-  return r.json()
-}
-
-export async function getMyRecords(token) {
-  const r = await fetch('/api/me/leaderboard-records', { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-  if (!r.ok) return []
-  return r.json()
 }

@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write   # 推送 / 清理 GHCR 镜像(内置 GITHUB_TOKEN)
+      packages: write   # 推送 / 清理 GHCR（GitHub Container Registry） 镜像。(内置 GITHUB_TOKEN)
     steps:
       - uses: actions/checkout@v4
 
