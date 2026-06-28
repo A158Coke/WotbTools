@@ -44,7 +44,6 @@ services:
       keycloak:
         condition: service_started
     environment:
-      SPRING_PROFILES_ACTIVE: postgres
       POSTGRES_HOST: postgres
       POSTGRES_PASSWORD: wotb
       KEYCLOAK_ISSUER_URI: http://keycloak:8080/realms/wotbtools
