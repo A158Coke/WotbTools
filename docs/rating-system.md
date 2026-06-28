@@ -16,7 +16,7 @@
 | `rating` | 综合评分 |
 | `kast` | 不白给率百分比 |
 | `contribution` | 贡献率百分比 |
-| `influence` | 全场影响力指数 |
+| `impact` | 全场 Impact 百分比 |
 | `damage_avg` | 均伤 |
 | `potential_damage_avg` | 潜在均伤 |
 | `potential_damage_supplement_avg` | 场均补增伤害 |
@@ -45,23 +45,23 @@ CS2 / CS:GO 的 KAST 是回合级统计：玩家在该回合有 Kill、Assist、
 
 ```text
 KAST_battle = 100 * max(
-  damage / (average_hp * 1.1),
+  damage / (average_hp * 1.15),
   assist / (average_hp * 1.25),
   win && survived ? 1 : 0,
   traded_death ? 1 : 0,
-  (damage + assist) / (average_hp * 1.15)
+  (damage + assist) / (average_hp * 1.20)
 )
 ```
 
 最终：
 
 ```text
-KAST = avg(KAST_battle)
+KAST = min(100, avg(KAST_battle))
 ```
 
 `traded_death`：玩家阵亡且死亡时间前后 5 秒窗口内至少有 1 名敌方阵亡。当前 KAST 的 trade 项按成立 / 不成立处理，不再按一换多叠加。
 
-### 影响力 impact
+### Impact
 
 统计全部场次，不再只统计赢局。单局按 `damage + assist` 在双方总池中的占比和人头折算：
 
@@ -71,7 +71,7 @@ damageAssistIndex = damageAssistShare / (1 / 14)
 impact_battle = 100 * (0.75 * damageAssistIndex + 0.25 * kills)
 ```
 
-最终 `influence` 为所有场次 `impact_battle` 平均值。这样输局玩家也会有影响力，不会因为无胜局直接为 0。
+最终 `impact` 为所有场次 `impact_battle` 平均值，并以百分比字符串展示。这样输局玩家也会有 impact，不会因为无胜局直接为 0。
 
 ### 贡献率
 
@@ -99,14 +99,14 @@ kills >= 3
 
 先把各因子转为 100 左右的指数，再加权：
 
-| 因子 | 权重 |
+| 因子 | 系数 |
 | --- | --- |
-| `potential-DPB / average_hp` | 30% |
-| `KAST` | 20% |
-| `influence` | 25% |
-| `AST / average_hp` | 10% |
-| `multi_damage_rate` | 10% |
-| `kills_avg` | 5% |
+| `potential-DPB / average_hp` | 0.70 |
+| `KAST` | 0.15 |
+| `impact` | 0.25 |
+| `AST / average_hp` | 0.30 |
+| `multi_damage_rate` | 0.10 |
+| `kills_avg` | 0.10 |
 
 ```text
 rating = round(10 * weightedIndex)
@@ -142,5 +142,5 @@ EC = damageDealt + 0.6 * damageAssisted + 0.35 * damageBlocked + 200 * kills
 
 ## 测试
 
-- `RatingAnalyzerTest` 覆盖 Trade death KAST、多伤率、协助、影响力和综合 rating 排序。
+- `RatingAnalyzerTest` 覆盖 Trade death KAST、多伤率、协助、Impact 和综合 rating 排序。
 - `WebApiTest` 覆盖 `/api/columns.rating` 和 `POST /api/rating` 返回字段。
