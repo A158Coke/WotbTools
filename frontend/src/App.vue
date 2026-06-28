@@ -35,7 +35,6 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
 
 <template>
   <div class="topbar">
-    <button v-if="activeTool !== 'home'" class="tb-back" @click="navigate('home')" :title="$t('app.back')">← <span class="tb-back-label">{{$t('app.back')}}</span></button>
     <a class="tb-brand" href="https://wotbtools.com">
       <img class="tb-logo" src="/wotbtoolslogo.png" alt="WoTBTools">
     </a>
@@ -381,21 +380,12 @@ tr.t2 td:first-child { background: var(--bg-t2); }
   .scroll-hint { display: block; text-align: center; font-size: 11px; color: var(--text-sub); margin: 6px 0 0; padding-bottom: 4px; }
 }
 
-/* ----- 顶栏响应式 + 返回按钮 ----- */
-.tb-back {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 5px 10px; border: 1px solid var(--border-ghost); border-radius: 7px;
-  background: var(--bg-card2); color: var(--text-label); font-size: .85rem;
-  cursor: pointer; transition: background .12s; font-family: inherit; white-space: nowrap;
-}
-.tb-back:hover { background: var(--bg-card-hover); }
+/* ----- topbar responsive ----- */
 @media (max-width: 768px) {
   .topbar { padding: 6px 10px; gap: 4px; }
   .topbar nav { gap: 2px; }
   .topbar nav button { padding: 5px 8px; font-size: .78rem; }
   .theme-bar { display: none; }
-  .tb-back-label { display: none; }
-  .tb-back { padding: 5px 8px; font-size: .85rem; }
 }
 @media (max-width: 480px) {
   .topbar { padding: 4px 6px; gap: 2px; height: 40px; }
