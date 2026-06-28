@@ -1,5 +1,13 @@
 [
   {
+    "v": "1.9.0",
+    "date": "2026-06-28",
+    "tag": "changed",
+    "zh": "CI/CD 镜像仓库迁移至 GHCR · PostgreSQL 18 适配 · 清理 workflow 重构",
+    "en": "CI/CD migrated to GHCR · PostgreSQL 18 volume fix · Cleanup workflow refactor",
+    "ru": "CI/CD перенос на GHCR · Адаптация PostgreSQL 18 · Рефакторинг cleanup"
+  },
+  {
     "v": "1.8.0",
     "date": "2026-06-27",
     "tag": "add",
