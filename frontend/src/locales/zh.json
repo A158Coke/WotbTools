@@ -1,4 +1,4 @@
-﻿{
+{
   "app": {
     "title": "WoTBTools",
     "subtitle": "《坦克世界闪击战》工具集",
@@ -26,7 +26,7 @@
   "player_labels": { "nickname": "玩家", "clan": "战队", "tank_name": "车辆", "tank_tier": "等级", "tank_type": "坦克类型", "tank_nation": "国家", "alpha_damage": "炮伤", "rating": "评分", "survived_label": "存活", "survival_time": "存活时间", "survival_time_tip": "基于伤害事件的秒级估算；阵亡=累计受伤达到阈值，存活=战斗时长", "kills": "击杀", "damage_dealt": "伤害", "damage_assisted": "协助伤害", "damage_received": "损失血量", "damage_blocked": "格挡", "n_shots": "射击次数", "n_hits_dealt": "命中次数", "n_penetrations_dealt": "击穿", "hit_rate": "命中率", "pen_rate": "击穿率", "n_hits_received": "被命中", "n_penetrations_received": "被击穿", "n_enemies_damaged": "击伤", "platoon_label": "排", "tank_id": "车辆ID", "account_id": "账号ID", "rank": "军阶", "potential_damage": "潜在伤害", "potential_damage_supplement": "补增伤害", "potential_damage_detail": "潜在明细" },
   "agg_labels": { "nickname": "玩家", "clan": "战队", "battles": "场次", "wins": "胜场", "win_rate": "胜率%", "survival_rate": "存活率%", "survival_avg": "平均存活时间", "survival_avg_tip": "基于伤害事件的秒级估算；阵亡=累计受伤达到阈值，存活=战斗时长", "rating_avg": "场均评分", "kills": "总击杀", "kills_avg": "场均击杀", "damage": "总伤害", "damage_avg": "场均伤害", "assisted": "总协助伤害", "assisted_avg": "场均协助伤害", "received_avg": "场均损失血量", "blocked_avg": "场均格挡", "hit_rate": "命中率%", "pen_rate": "击穿率%", "enemies_damaged_avg": "场均击伤", "shots": "总射击次数", "hits": "总命中次数", "pens": "总击穿次数", "tanks": "用车", "account_id": "账号ID", "potential_damage": "总潜在伤害", "potential_damage_avg": "场均潜在伤害", "potential_damage_supplement_avg": "场均补增伤害" },
   "theme": { "auto": "跟随系统", "light": "亮色", "dark": "暗色" },
-  "rating_labels": { "nickname": "玩家", "clan": "战队", "battles": "场次", "wins": "胜场", "win_rate": "胜率%", "rating": "Rating", "kast": "KAST%", "contribution": "贡献率%", "influence": "影响力", "damage_avg": "均伤", "potential_damage_avg": "潜在均伤", "potential_damage_supplement_avg": "场均补增", "assist_avg": "场均协助", "average_hp": "平均血量", "multi_damage_rate": "多伤率%", "kills": "人头", "kills_avg": "场均人头", "account_id": "账号ID" },
+  "rating_labels": { "nickname": "玩家", "clan": "战队", "battles": "场次", "wins": "胜场", "win_rate": "胜率%", "rating": "Rating", "kast": "KAST%", "contribution": "贡献率%", "impact": "Impact%", "damage_avg": "均伤", "potential_damage_avg": "潜在均伤", "potential_damage_supplement_avg": "场均补增", "assist_avg": "场均协助", "average_hp": "平均血量", "multi_damage_rate": "多伤率%", "kills": "人头", "kills_avg": "场均人头", "account_id": "账号ID" },
   "profile": {
     "home": "首页",
     "loading": "正在初始化登录...",

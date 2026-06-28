@@ -113,7 +113,7 @@ function sorted(rows, scope) {
   out.sort((a, b) => {
     const av = a.cells?.[state.key]
     const bv = b.cells?.[state.key]
-    if (state.num) return (Number(av) || 0) - (Number(bv) || 0)
+    if (state.num) return (parseFloat(String(av ?? '').replace('%', '')) || 0) - (parseFloat(String(bv ?? '').replace('%', '')) || 0)
     return String(av ?? '').localeCompare(String(bv ?? ''))
   })
   return state.reverse ? out.reverse() : out

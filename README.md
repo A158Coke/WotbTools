@@ -1,5 +1,11 @@
 ﻿# WoTBTools
 
+## SPA 路由参数
+
+- `?view=replay`：进入回放提取器。
+- `?view=leaderboard`：进入排行榜。
+- `?view=profile`：进入个人中心。
+
 《坦克世界闪击战》（World of Tanks Blitz）工具集。
 
 已上线工具：从 `.wotbreplay` 回放文件中提取战斗数据导出 Excel、在线伤害排行榜、Keycloak 认证。
