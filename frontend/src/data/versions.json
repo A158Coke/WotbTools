@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.0.0",
+    "date": "2026-06-29",
+    "tag": "add",
+    "zh": "陪练功能 · 用户资料 · Keycloak 26.6.3 · JWT 安全 · 响应式顶栏 · 死代码清理",
+    "en": "Coaching · User profile · Keycloak 26.6.3 · JWT security · Responsive topbar",
+    "ru": "Тренер · Профиль · Keycloak 26.6.3 · JWT · Адаптивный дизайн"
+  },
+  {
     "v": "1.9.0",
     "date": "2026-06-28",
     "tag": "changed",
