@@ -1,9 +1,12 @@
 name: Cleanup Docker Images
-run-name: Cleanup Docker Hub (keep 10 tags/family + prune untagged digests)
+run-name: Cleanup Docker Hub (keep N tags/family + prune untagged digests)
 
 on:
   workflow_dispatch:
     inputs:
+      keep:
+        description: "每个 *-sha-* 家族保留的 tag 数"
+        default: "10"
       dry_run:
         description: "untagged digest 删除: true=仅预览, false=真删"
         type: boolean
@@ -14,86 +17,13 @@ on:
 jobs:
   cleanup:
     runs-on: ubuntu-latest
-    env:
-      DOCKER_USER: a158coke
-      DOCKER_TOKEN: ${{ secrets.DOCKER_PASSWORD }}
-      NS: a158coke
-      REPO_NAME: wotbtool
-      KEEP: "10"
-      # 手动触发尊重输入(默认 true=预览); 定时触发 inputs 为空 -> 真删
-      DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
     steps:
-      - name: Cleanup tags + untagged digests
-        run: |
-          set -euo pipefail
-          HUB="https://hub.docker.com/v2"
-          REPO="${NS}/${REPO_NAME}"
-
-          # ---- 登录 (token 需有删除权限的 PAT) ----
-          TOKEN=$(curl -fsS -H "Content-Type: application/json" \
-            -d "{\"username\":\"${DOCKER_USER}\",\"password\":\"${DOCKER_TOKEN}\"}" \
-            "${HUB}/users/login/" | jq -r '.token // empty')
-          [ -z "$TOKEN" ] && { echo "::error::Docker Hub 登录失败(token 为空,检查 DOCKER_PASSWORD)。"; exit 1; }
-          echo "登录成功。DRY_RUN=${DRY_RUN}"
-
-          FAILED=0
-
-          # ========== 1) 每个 *-sha-* 家族保留最新 KEEP 个 tag ==========
-          ALL="$(mktemp)"
-          URL="${HUB}/repositories/${REPO}/tags?page_size=100"
-          while [ -n "$URL" ] && [ "$URL" != "null" ]; do
-            RESP=$(curl -fsS -H "Authorization: JWT ${TOKEN}" "$URL")
-            echo "$RESP" | jq -r '.results[] | "\(.last_updated)\t\(.name)"' >> "$ALL"
-            URL=$(echo "$RESP" | jq -r '.next // empty')
-          done
-          echo "当前 tag 数: $(grep -c . "$ALL" || true)"
-          for IMG in backend frontend; do
-            echo "===== ${IMG}-sha-* (保留最新 ${KEEP}) ====="
-            DELETE=$({ grep -P "\t${IMG}-sha-" "$ALL" || true; } | sort -rk1,1 | tail -n +"$((KEEP+1))" | cut -f2)
-            [ -z "$DELETE" ] && { echo "  无需删除"; continue; }
-            while IFS= read -r TAG; do
-              [ -z "$TAG" ] && continue
-              CODE=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE \
-                -H "Authorization: JWT ${TOKEN}" "${HUB}/repositories/${REPO}/tags/${TAG}/")
-              if [ "$CODE" = "204" ] || [ "$CODE" = "200" ]; then echo "  已删 tag ${TAG} ($CODE)"; else echo "::warning::删 tag 失败 ${TAG} ($CODE)"; FAILED=1; fi
-              sleep 0.3
-            done <<< "$DELETE"
-          done
-
-          # ========== 2) 删除无 tag 的 digest(真正占 image-management 数量的) ==========
-          echo "===== 无 tag digest 清理 (DRY_RUN=${DRY_RUN}) ====="
-          DIGESTS="$(mktemp)"
-          URL="${HUB}/namespaces/${NS}/repositories/${REPO_NAME}/images?currently_tagged=false&status=active&page_size=100"
-          while [ -n "$URL" ] && [ "$URL" != "null" ]; do
-            RESP=$(curl -fsS -H "Authorization: JWT ${TOKEN}" "$URL")
-            echo "$RESP" | jq -r '.results[]?.digest' >> "$DIGESTS"
-            URL=$(echo "$RESP" | jq -r '.next // empty')
-          done
-          N=$(grep -c . "$DIGESTS" || true)
-          echo "无 tag digest 数: ${N}"
-
-          if [ "${N}" = "0" ]; then
-            echo "  没有 untagged digest,跳过。"
-          else
-            MANIFESTS=$(jq -R -s --arg repo "$REPO_NAME" \
-              'split("\n") | map(select(length>0)) | map({repository:$repo, digest:.})' "$DIGESTS")
-            # 先 dry-run 探测 warnings
-            DRY=$(curl -sS -H "Authorization: JWT ${TOKEN}" -H "Content-Type: application/json" \
-              -d "$(jq -n --argjson m "$MANIFESTS" '{dry_run:true, manifests:$m}')" \
-              -X POST "${HUB}/namespaces/${NS}/delete-images")
-            echo "  dry-run 摘要: $(echo "$DRY" | jq -c '{dry_run, metrics}' 2>/dev/null || echo "$DRY" | head -c 800)"
-            if [ "${DRY_RUN}" = "true" ]; then
-              echo "  DRY_RUN=true: 仅预览。手动触发时把 dry_run 设为 false 才真删(定时任务会真删)。"
-            else
-              IGNORE=$(echo "$DRY" | jq -c '[.manifests[]? | . as $m | (($m.warnings // [])[] | {repository:$m.repository, digest:$m.digest, warning:.})]' 2>/dev/null || echo '[]')
-              RES=$(curl -sS -H "Authorization: JWT ${TOKEN}" -H "Content-Type: application/json" \
-                -d "$(jq -n --argjson m "$MANIFESTS" --argjson ig "$IGNORE" '{dry_run:false, manifests:$m, ignore_warnings:$ig}')" \
-                -X POST "${HUB}/namespaces/${NS}/delete-images")
-              echo "  删除摘要: $(echo "$RES" | jq -c '.metrics' 2>/dev/null || echo "$RES" | head -c 800)"
-              ERRN=$(echo "$RES" | jq -r '((.errors // []) | length)' 2>/dev/null || echo 0)
-              [ "${ERRN}" != "0" ] && echo "::warning::部分删除报错: $(echo "$RES" | jq -c '.errors' 2>/dev/null)"
-            fi
-          fi
-
-          [ "${FAILED}" = "1" ] && { echo "::error::有 tag 删除失败(检查 PAT 删除权限: Read/Write/Delete)。"; exit 1; }
-          echo "清理完成。"
+      - uses: actions/checkout@v4
+      - name: Cleanup Docker Hub
+        env:
+          DOCKER_USER: a158coke
+          DOCKER_TOKEN: ${{ secrets.DOCKER_PASSWORD }}
+          KEEP: ${{ github.event.inputs.keep || '10' }}
+          # 手动触发默认 dry_run=true(预览); 定时触发 inputs 为空 -> 真删
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: bash .github/scripts/cleanup-dockerhub.sh

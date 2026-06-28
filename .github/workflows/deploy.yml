@@ -157,3 +157,18 @@ jobs:
               docker compose logs --tail 50
               exit 1
             fi
+
+  # 部署成功后清理 Docker Hub: 每族保留最近 5 个 sha 版本(可回滚) + 删所有无 tag digest。
+  # 独立 job: 即使清理失败也不影响已成功的部署。
+  cleanup-hub:
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prune Docker Hub
+        env:
+          DOCKER_USER: a158coke
+          DOCKER_TOKEN: ${{ secrets.DOCKER_PASSWORD }}
+          KEEP: "5"
+          DRY_RUN: "false"
+        run: bash .github/scripts/cleanup-dockerhub.sh
