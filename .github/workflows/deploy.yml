@@ -104,7 +104,7 @@ jobs:
                   - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
                 restart: unless-stopped
               keycloak:
-                image: quay.io/keycloak/keycloak:26.1
+                image: quay.io/keycloak/keycloak:26.6.3
                 environment:
                   KC_BOOTSTRAP_ADMIN_USERNAME: admin
                   KC_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.KC_ADMIN_PASSWORD }}
