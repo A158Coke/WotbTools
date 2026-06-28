@@ -24,14 +24,6 @@ const showRating = ref(false)
 async function preview() { await replay.doPreview(cols.initFromResponse) }
 async function exportXlsx(mode) { await replay.doExport(mode) }
 function confirmRemoveBattle() { replay.confirmRemoveBattle(cols.initFromResponse) }
-async function shutdown() {
-  try {
-    await api.shutdown()
-    document.body.innerHTML = '<div class="closed">离线程序正在关闭，可以关闭此浏览器标签页。</div>'
-  } catch (e) {
-    replay.error.value = '关闭失败: ' + e.message
-  }
-}
 </script>
 
 <template>

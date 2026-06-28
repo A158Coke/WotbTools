@@ -99,6 +99,7 @@ public class UserProfileService {
                     p.setKeycloakUserId(keycloakUserId);
                     p.setDisplayName(displayName);
                     p.setWotbServer("CN");
+                    p.setUpdatedAt(OffsetDateTime.now());
                     return repository.save(p);
                 });
     }
