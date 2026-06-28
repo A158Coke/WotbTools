@@ -1,15 +1,12 @@
 package com.wotb.web.user.controller;
 
+import com.wotb.web.dto.LeaderboardRecordDto;
+import com.wotb.web.service.LeaderboardService;
 import com.wotb.web.user.dto.UpdateProfileRequest;
 import com.wotb.web.user.dto.UpdateWotbAccountRequest;
 import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.service.UserProfileService;
-import com.wotb.web.dto.LeaderboardRecordDto;
-import com.wotb.web.repository.LeaderboardRecordRepository;
 import com.wotb.web.util.JwtUtil;
-import org.springframework.data.domain.PageRequest;
-
-import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -20,18 +17,20 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/users")
 @CrossOrigin(origins = "*")
 public class UserProfileController {
 
     private final UserProfileService service;
-    private final LeaderboardRecordRepository leaderboardRepo;
+    private final LeaderboardService leaderboardService;
 
     public UserProfileController(final UserProfileService service,
-                                  final LeaderboardRecordRepository leaderboardRepo) {
+                                  final LeaderboardService leaderboardService) {
         this.service = service;
-        this.leaderboardRepo = leaderboardRepo;
+        this.leaderboardService = leaderboardService;
     }
 
     @GetMapping("/profile")
@@ -74,12 +73,6 @@ public class UserProfileController {
         if (profile.wotbAccountId() == null) {
             return List.of();
         }
-        return leaderboardRepo.findByAccountIdOrderByDamageDealtDesc(
-                profile.wotbAccountId(), PageRequest.of(0, 50))
-                .stream().map(r -> new LeaderboardRecordDto(
-                        r.getId(), r.getArenaId(), r.getTankId(), r.getTankName(),
-                        r.getAccountId(), r.getNickname(), r.getDamageDealt(),
-                        r.getMapName(), r.getVersion(), r.getBattleTime(), r.getCreatedAt()))
-                .toList();
+        return leaderboardService.recordsByAccountId(profile.wotbAccountId(), 50);
     }
 }

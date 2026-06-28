@@ -1,17 +1,16 @@
 package com.wotb.web.boost.service;
 
-import com.wotb.web.boost.dto.BoostAssignmentDto;
 import com.wotb.web.boost.dto.BoostRequestDto;
 import com.wotb.web.boost.dto.CreateBoostRequestResponse;
 import com.wotb.web.boost.entity.BoostRequest;
 import com.wotb.web.boost.entity.BoostRequestAssignment;
-import com.wotb.web.boost.entity.BoosterProfile;
-import com.wotb.web.boost.enums.BoostAssignmentStatus;
 import com.wotb.web.boost.enums.BoostRegion;
 import com.wotb.web.boost.enums.BoostRequestStatus;
 import com.wotb.web.boost.enums.BoostRequestType;
 import com.wotb.web.boost.enums.ContactType;
 import com.wotb.web.boost.repository.BoostRequestRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -127,6 +126,16 @@ public class BoostRequestService {
         repository.save(req);
 
         return toPlayerDto(req);
+    }
+
+    // --- 管理员侧委托方法 ---
+
+    public Page<BoostRequest> findAll(final Pageable pageable) {
+        return repository.findAll(pageable);
+    }
+
+    public Page<BoostRequest> findByStatus(final String status, final Pageable pageable) {
+        return repository.findByStatus(status, pageable);
     }
 
     public BoostRequest getById(final Long id) {

@@ -101,7 +101,13 @@ public class LeaderboardService {
         return Math.min(limit, MAX_LIMIT);
     }
 
-    private static LeaderboardRecordDto toDto(final LeaderboardRecord r) {
+    /** 查询指定玩家的排行榜记录。 */
+    public List<LeaderboardRecordDto> recordsByAccountId(final long accountId, final int limit) {
+        return repository.findByAccountIdOrderByDamageDealtDesc(accountId, PageRequest.of(0, clamp(limit)))
+                .stream().map(LeaderboardService::toDto).toList();
+    }
+
+    static LeaderboardRecordDto toDto(final LeaderboardRecord r) {
         return new LeaderboardRecordDto(r.getId(), r.getArenaId(), r.getTankId(), r.getTankName(),
                 r.getAccountId(), r.getNickname(), r.getDamageDealt(), r.getMapName(),
                 r.getVersion(), r.getBattleTime(), r.getCreatedAt());

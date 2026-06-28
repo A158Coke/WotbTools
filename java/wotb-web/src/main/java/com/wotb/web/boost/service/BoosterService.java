@@ -5,7 +5,6 @@ import com.wotb.web.boost.entity.BoosterProfile;
 import com.wotb.web.boost.enums.BoosterLevel;
 import com.wotb.web.boost.enums.BoosterStatus;
 import com.wotb.web.boost.enums.ContactType;
-import com.wotb.web.boost.repository.BoostRequestAssignmentRepository;
 import com.wotb.web.boost.repository.BoosterProfileRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -14,21 +13,25 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 
-/** 打手管理服务。 */
+/**
+ * 打手管理服务。
+ * 只操作 booster_profile 表。
+ * 跨域统计活跃分配数通过 BoostAssignmentService。
+ */
 @Service
 public class BoosterService {
 
-    private final BoosterProfileRepository repository;
-    private final BoostRequestAssignmentRepository assignmentRepository;
+    private final BoosterProfileRepository boosterRepository;
+    private final BoostAssignmentService assignmentService;
 
-    public BoosterService(final BoosterProfileRepository repository,
-                          final BoostRequestAssignmentRepository assignmentRepository) {
-        this.repository = repository;
-        this.assignmentRepository = assignmentRepository;
+    public BoosterService(final BoosterProfileRepository boosterRepository,
+                          final BoostAssignmentService assignmentService) {
+        this.boosterRepository = boosterRepository;
+        this.assignmentService = assignmentService;
     }
 
     public BoosterProfile getById(final Long id) {
-        return repository.findById(id)
+        return boosterRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("BOOSTER_NOT_FOUND"));
     }
 
@@ -58,7 +61,7 @@ public class BoosterService {
         p.setSpecialties(specialties);
         p.setDescription(description);
 
-        repository.save(p);
+        boosterRepository.save(p);
         return toDto(p);
     }
 
@@ -88,7 +91,7 @@ public class BoosterService {
         if (description != null) { p.setDescription(description); }
         p.setUpdatedAt(OffsetDateTime.now());
 
-        repository.save(p);
+        boosterRepository.save(p);
         return toDto(p);
     }
 
@@ -97,7 +100,7 @@ public class BoosterService {
         final BoosterProfile p = getById(id);
         p.setAvailable(available);
         p.setUpdatedAt(OffsetDateTime.now());
-        repository.save(p);
+        boosterRepository.save(p);
         return toDto(p);
     }
 
@@ -109,13 +112,13 @@ public class BoosterService {
                                  final Pageable pageable) {
         Page<BoosterProfile> page;
         if (status != null && !status.isBlank() && available != null) {
-            page = repository.findByStatusAndAvailable(status, available, pageable);
+            page = boosterRepository.findByStatusAndAvailable(status, available, pageable);
         } else if (status != null && !status.isBlank()) {
-            page = repository.findByStatus(status, pageable);
+            page = boosterRepository.findByStatus(status, pageable);
         } else if (available != null) {
-            page = repository.findByAvailable(available, pageable);
+            page = boosterRepository.findByAvailable(available, pageable);
         } else {
-            page = repository.findAll(pageable);
+            page = boosterRepository.findAll(pageable);
         }
         return page.map(this::toDto);
     }
@@ -133,7 +136,7 @@ public class BoosterService {
                 p.getContactValue(),
                 p.getSpecialties(),
                 p.getDescription(),
-                (int) assignmentRepository.countByBoosterIdAndUnassignedAtIsNull(p.getId()),
+                (int) assignmentService.activeCount(p.getId()),
                 p.getCreatedAt(),
                 p.getUpdatedAt()
         );
