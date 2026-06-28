@@ -8,7 +8,8 @@
     "theme": "Theme",
     "login": "Login",
     "logout": "Logout",
-    "profile": "Profile"
+    "profile": "Profile",
+    "back": "Back"
   },
   "upload": {
     "drop_hint": "Drop .wotbreplay files here",

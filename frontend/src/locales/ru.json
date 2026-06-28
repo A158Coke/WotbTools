@@ -8,7 +8,8 @@
     "theme": "Тема",
     "login": "Войти",
     "logout": "Выйти",
-    "profile": "Профиль"
+    "profile": "Профиль",
+    "back": "Назад"
   },
   "upload": {
     "drop_hint": "Перетащите .wotbreplay файлы сюда",

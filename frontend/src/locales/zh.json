@@ -8,7 +8,8 @@
     "theme": "主题",
     "login": "登入",
     "logout": "登出",
-    "profile": "个人中心"
+    "profile": "个人中心",
+    "back": "返回"
   },
   "upload": {
     "drop_hint": "拖拽 .wotbreplay 文件到这里",
