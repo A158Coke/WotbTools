@@ -27,10 +27,14 @@ const formSuccess = ref('')
 const myRequests = ref([])
 const loadingMy = ref(false)
 
-// Admin
+// Admin: 检查 realm 角色 + 客户端角色 (resource_access)
 const isAdmin = computed(() => {
-  if (!tokenParsed.value?.realm_access?.roles) return false
-  const roles = tokenParsed.value.realm_access.roles
+  const tp = tokenParsed.value
+  if (!tp) return false
+  const roles = [
+    ...(tp.realm_access?.roles || []),
+    ...(tp.resource_access?.['wotbtools-web']?.roles || [])
+  ]
   return roles.includes('wotbtools-admin') || roles.includes('boost-manager')
 })
 
