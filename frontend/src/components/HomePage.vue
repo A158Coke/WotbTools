@@ -1,6 +1,8 @@
 <script setup>
 import { useI18n } from 'vue-i18n'
-const { t, locale } = useI18n()
+import versions from '../data/versions.json'
+const { locale } = useI18n()
+const tagLabel = { add: { zh: '新增', en: 'Added', ru: 'Добавлено' }, fix: { zh: '修复', en: 'Fixed', ru: 'Исправлено' } }
 </script>
 
 <template>
@@ -49,35 +51,11 @@ const { t, locale } = useI18n()
 
     <section class="version">
       <h2 class="version-title">{{ locale === 'zh' ? '版本历史' : locale === 'ru' ? 'История версий' : 'Version History' }}</h2>
-      <div class="ver">
-        <span class="ver-num">v1.6.0</span>
-        <span class="ver-date">2026-06-27</span>
-        <span class="ver-tag add">{{ locale === 'zh' ? '新增' : 'Added' }}</span>
-        <p>Keycloak 认证集成 · 个人中心 · Vue SPA 主页 · 域名统一 · 移除离线版</p>
-      </div>
-      <div class="ver">
-        <span class="ver-num">v1.5.0</span>
-        <span class="ver-date">2026-06-26</span>
-        <span class="ver-tag add">{{ locale === 'zh' ? '新增' : 'Added' }}</span>
-        <p>工具集主页 · 主题切换 · 排行榜 · PostgreSQL · Flyway · Docker 分发</p>
-      </div>
-      <div class="ver">
-        <span class="ver-num">v1.4.0</span>
-        <span class="ver-date">2026-06-25</span>
-        <span class="ver-tag fix">{{ locale === 'zh' ? '修复' : 'Fixed' }}</span>
-        <p>存活时间推算更准确</p>
-      </div>
-      <div class="ver">
-        <span class="ver-num">v1.3.0</span>
-        <span class="ver-date">2026-06-24</span>
-        <span class="ver-tag add">{{ locale === 'zh' ? '新增' : 'Added' }}</span>
-        <p>存活时间列 · 三语 i18n · 评分系统 · 地图中文化 · Docker 部署</p>
-      </div>
-      <div class="ver">
-        <span class="ver-num">v1.0.0</span>
-        <span class="ver-date">2026-06-23</span>
-        <span class="ver-tag add">{{ locale === 'zh' ? '新增' : 'Added' }}</span>
-        <p>回放解析引擎 · Web API · Vue 前端 · Excel 导出</p>
+      <div class="ver" v-for="(ver, i) in versions" :key="i">
+        <span class="ver-num">v{{ ver.v }}</span>
+        <span class="ver-date">{{ ver.date }}</span>
+        <span class="ver-tag" :class="ver.tag">{{ tagLabel[ver.tag]?.[locale] || tagLabel[ver.tag]?.zh }}</span>
+        <p>{{ ver[locale] || ver.zh }}</p>
       </div>
     </section>
 

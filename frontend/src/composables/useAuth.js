@@ -9,17 +9,12 @@ const authenticated = ref(false)
 const tokenParsed = ref(null)
 const initError = ref(null)
 
-function requiredEnv(name, value) {
-  if (!value) throw new Error(`Missing required env: ${name}`)
-  return value
-}
-
 function ensureKeycloak() {
   if (!keycloak) {
     keycloak = new Keycloak({
-      url: requiredEnv('VITE_KEYCLOAK_URL', import.meta.env.VITE_KEYCLOAK_URL),
-      realm: requiredEnv('VITE_KEYCLOAK_REALM', import.meta.env.VITE_KEYCLOAK_REALM),
-      clientId: requiredEnv('VITE_KEYCLOAK_CLIENT_ID', import.meta.env.VITE_KEYCLOAK_CLIENT_ID),
+      url: 'https://auth.wotbtools.com',
+      realm: 'wotbtools',
+      clientId: 'wotbtools-web',
     })
   }
   return keycloak
@@ -37,7 +32,6 @@ async function initAuth() {
   if (!initPromise) {
     initPromise = kc.init({
       onLoad: 'check-sso',
-      silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
       pkceMethod: 'S256',
       checkLoginIframe: false,
     }).then(isLoggedIn => {
