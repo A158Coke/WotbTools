@@ -335,7 +335,7 @@ npm run build
 `push` 到 `main` 分支触发 GitHub Actions（[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)）：
 
 1. **并行构建两镜像**：`Dockerfile.backend`（Maven → JRE runtime，Spring Boot :8087）+ `Dockerfile.frontend`（Node → nginx，:80）。带 `type=gha` 层缓存。
-2. **推送 Docker Hub**：四标签 `a158coke/wotbtool:backend-sha-<SHA>` + `backend-latest` + `frontend-sha-<SHA>` + `frontend-latest`。用户名 `a158coke` 硬编码在 workflow（非机密），仅 token 走 `secrets.DOCKER_PASSWORD`。
+2. **推送 GHCR**：双镜像各推 `sha-<SHA>` + `latest` 标签 — `ghcr.io/a158coke/wotbtools-backend` 和 `ghcr.io/a158coke/wotbtools-frontend`。认证走内置 `GITHUB_TOKEN`（`packages: write` 权限），无需额外 secret。
 3. **SSH 部署 VPS**：在 `/opt/wotb` 写入三服务 `docker-compose.yml`（postgres + keycloak + wotb-backend + wotb-frontend），先清理旧容器再 `docker compose pull && up -d --remove-orphans`。homepage 编入前端镜像（`COPY frontend/homepage /homepage`）。
 
 ## 给 AI coder 的工作准则
