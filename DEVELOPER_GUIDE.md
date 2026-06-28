@@ -20,18 +20,18 @@
 
 ## 仓库结构
 
-仓库按"语言/形态"分层：`common/`(共享资源) + `common/python/`(车辆库更新脚本) + `java/`(Java 主线 wotb-core + wotb-web) + `online/`(本地开发 compose 入口)。
+仓库按"语言/形态"分层：`common/`(共享资源) + `common/python/`(车辆库更新脚本) + `java/`(Java 主线 wotb-core + wotb-web) + `frontend/`(Vue 3 + 工具集主页) + `docker/`(镜像构建 + 本地开发 compose `docker/online/`)。
 
 ```text
 .
 ├── README.md  TODO.md  DEVELOPER_GUIDE.md  LICENSE  .gitignore  AGENTS.md  CHANGELOG.md  HANDOVER.md
-├── docker/                       # Docker 构建 + nginx 配置
+├── docker/                       # Docker 构建 + 本地开发 compose
 │   ├── Dockerfile.backend        #   后端镜像：Maven → JRE（Spring Boot :8087）
 │   ├── Dockerfile.frontend       #   前端镜像：Node → nginx（:80）
-│   └── nginx/                #   双 server（主页 + Vue SPA 反代 /api→wotb-backend:8087）
+│   ├── nginx/                #   双 server（主页 + Vue SPA 反代 /api→wotb-backend:8087）
+│   ├── keycloak/                 #   Keycloak realm 导入文件
+│   └── online/                   #   开发者版 compose（build: 源码编译，四容器: pg+keycloak+backend+frontend）
 ├── .dockerignore                 # 减少 Docker 构建上下文
-├── online/                       # 本地开发用
-│   └── docker-compose.yml        #   开发者版 compose（build: 源码编译）
 ├── frontend/                     # Vue 3 前端
 │   ├── src/
 │   │   ├── App.vue               #   根组件

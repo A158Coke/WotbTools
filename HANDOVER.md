@@ -78,8 +78,8 @@ cd java && JAVA_HOME=<jdk21> mvn -s settings.xml -DskipTests -pl wotb-core,wotb-
 java -jar wotb-web/target/wotb-web.jar           # 8087, Web 模式
 java -jar wotb-web/target/wotb-web.jar --desktop # 桌面模式(自动选端口+开浏览器)
 
-# 本地开发 — 三容器编译启动
-cd online && docker compose up --build       # 构建 Dockerfile.backend + Dockerfile.frontend, 8088
+# 本地开发 — 四容器编译启动 (postgres + keycloak + backend + frontend)
+cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend + Dockerfile.frontend, 8088
 ```
 
 > **测试夹具**：`ParityTest`/`WebApiTest` 读 `common/data/*.wotbreplay` 真实样本，而 `common/data/` 是 **gitignore 的**。所以：① 新克隆的环境本地无样本、测试会失败，需自备样本回放放进 `common/data/`；② **CI 里跑不了 `mvn test`**（检出里没有样本）——这是 CI 不含测试步骤的根本原因。
