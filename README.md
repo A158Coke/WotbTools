@@ -1,20 +1,17 @@
-# WoTBTools
+﻿# WoTBTools
 
 《坦克世界闪击战》（World of Tanks Blitz）工具集。
 
-已上线工具：从 `.wotbreplay` 回放文件中提取战斗数据导出 Excel、在线伤害排行榜。
+已上线工具：从 `.wotbreplay` 回放文件中提取战斗数据导出 Excel、在线伤害排行榜、Keycloak 认证。
 
-项目主线为 Java：**Web 版** 与 **工具集主页** 均已完成。
+入口：[https://wotbtools.com](https://wotbtools.com)
 
 ## 当前目标
 
 | 目标          | 技术方向                                           | 状态            |
 |-------------|------------------------------------------------|---------------|
-| Web 版       | Spring Boot 4 + Vue 3 + PostgreSQL + Docker | ✅ 已完成         |
-| 工具集主页    | 暗色卡片式入口 + 主题切换 + 三语 i18n | ✅ 已完成         |
-
-在线演示：https://wotbtools.com
-工具集主页：https://wotbtools.com
+| Web 版       | Spring Boot 4 + Vue 3 + PostgreSQL + Docker + Keycloak | ✅ 已完成         |
+| 工具集主页    | Vue SPA 卡片式入口 + 主题切换 + 三语 i18n | ✅ 已完成         |
 
 版本历史见 [CHANGELOG.md](CHANGELOG.md)，任务拆分见 [TODO.md](TODO.md)。
 
@@ -22,7 +19,7 @@
 
 | 版本          | 技术栈                                        | 入口                                                   | 适用场景                     |
 |-------------|--------------------------------------------|------------------------------------------------------|--------------------------|
-| Java Web 版  | Java 21 + Spring Boot 4 + Vue 3 + Docker | `online\` 本地开发；CI/CD → `a158coke/wotbtool` 双镜像 | 浏览器上传、在线预览、排行榜、REST API |
+| Java Web 版  | Java 21 + Spring Boot 4 + Vue 3 + Docker | `online\` 本地开发；CI/CD → `a158coke/wotbtool` 双镜像 | 浏览器上传、在线预览、排行榜、REST API、Keycloak 认证 |
 
 文档入口：
 
@@ -45,12 +42,16 @@
 - 多场导出 Excel：按 `arenaUniqueId` 去重，生成 `汇总`、`明细`、`战斗列表`。
 - 存活时间列：基于伤害事件的秒级估算。
 - 自包含表现**评分**：按车型基准归一化（类 WN8，1000=同型平均），单场「评分」、汇总「场均评分」。
-- 独立扩展分析页 `/extended`：不改当前解析页面，额外展示扩展字段与本次上传实时 rating（KAST、贡献率、全场影响力、均伤、潜在均伤、AST、多伤率、人头等；平均血量和账号 ID 不展示）。
+- 独立扩展分析页 `/extended`：不改当前解析页面，额外展示扩展字段与本次上传实时 rating。
 - 扩展字段：`alpha_damage`、`rank` 已接入 API/导出/扩展页，原回放页面不默认展示；`xp`、`credits` 仅解析保留，不作为战绩字段展示。
-- 潜在伤害字段：`potential_damage` / `potential_damage_supplement` / `potential_damage_detail`，当前逐击杀目标明细未解析时保守等于实际伤害；实时 rating 的 `average_hp` 目标口径为敌方 7 台车实际进场总血量 / 7，当前真实进场血量字段尚未解析且车辆库无 HP 时，未知单车 HP 暂定 2400。
+- 潜在伤害字段：`potential_damage` / `potential_damage_supplement` / `potential_damage_detail`，当前逐击杀目标明细未解析时保守等于实际伤害。
 - GUI 支持选择文件或文件夹、预览数据、合并汇总或逐场导出。
-- Java / Web 版提供 `/api/preview`、`/api/export`、`/api/columns`、`GET /api/rating`（评分参数）、`POST /api/rating`（实时 rating）、`/api/health`、`/api/shutdown`。
+- Java / Web 版提供 `/api/preview`、`/api/export`、`/api/columns`、`/api/rating`、`/api/health`、`/api/shutdown`。
 - 排行榜（仅在线版 `postgres` profile）：上传随机战斗回放自动记录录像者单场伤害，`/api/leaderboard/top-damage` 等端点查询。
+- **Keycloak 认证**：`https://auth.wotbtools.com` Keycloak 容器，realm `wotbtools`，client `wotbtools-web`。前端 `check-sso` 游客模式 + 登录/登出。
+- **个人中心**：`/profile` 页面，显示用户名、登出按钮。未登录时展示"登入"按钮触发 Keycloak OIDC 流程。
+- **工具集主页**：Vue SPA 内 `HomePage.vue`（卡片入口 + 版本历史），版本历史数据来自 `frontend/src/data/versions.json`。
+- **域名统一**：`wotbtools.com` 和 `www.wotbtools.com`，去除 `replay.wotbtools.com` 子域名。
 
 > 排行榜支持按车辆筛选（点击车辆名查看专属伤害榜），URL 参数 `?view=leaderboard` 可直接跳转排行榜视图。
 
@@ -100,10 +101,11 @@ mvn -s settings.xml test
 | `java/`                       | Java 主线（wotb-core + wotb-web）                   |
 | `java/wotb-core/`             | 共享核心库：解析、protobuf 解码、pickle 读取、汇总、POI 导出     |
 | `java/wotb-web/`              | Spring Boot 4 应用：REST API + Leaderboard + Flyway |
-| `frontend/`                   | Vue 3 前端 + 工具集主页（`homepage/` 子目录）             |
+| `frontend/`                   | Vue 3 前端（含工具集主页 HomePage.vue、三语 locale） |
+| `frontend/src/data/`          | 纯前端数据（版本历史 versions.json） |
 | `online/`                     | 开发者本地：`docker compose up --build` 编译启动 |
-| `docker/`                     | Dockerfile.backend / Dockerfile.frontend |
-| `deploy/nginx/`               | nginx 配置（双 server：主页 + Vue SPA） |
+| `docker/`                     | Dockerfile.backend / Dockerfile.frontend / keycloak (realm) |
+| `deploy/`                     | `nginx/` 配置 + `init-db.sql` |
 | `.github/workflows/`          | CI/CD 自动部署 |
 
 ## 数据来源与限制

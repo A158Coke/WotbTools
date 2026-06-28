@@ -30,7 +30,7 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <img class="tb-logo" src="/wotbtoolslogo.png" alt="WoTBTools">
     </a>
     <nav>
-      <button v-if="isHomeHost" :class="{ active: activeTool === 'home' }" @click="activeTool = 'home'">首页</button>
+      <button v-if="isHomeHost" :class="{ active: activeTool === 'home' }" @click="activeTool = 'home'">{{ $t('profile.home') }}</button>
       <button :class="{ active: activeTool === 'replay' }" @click="activeTool = 'replay'">{{ $t('app.replay_tab') }}</button>
       <button v-if="!isDesktop" :class="{ active: activeTool === 'leaderboard' }" @click="activeTool = 'leaderboard'">{{ $t('leaderboard.btn') }}</button>
     </nav>
