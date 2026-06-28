@@ -1,29 +1,30 @@
-name: Cleanup Docker Images
-run-name: Cleanup Docker Hub (keep N tags/family + prune untagged digests)
+name: Cleanup GHCR Images
+run-name: Cleanup GHCR (keep N versions per package)
 
 on:
   workflow_dispatch:
     inputs:
       keep:
-        description: "每个 *-sha-* 家族保留的 tag 数"
+        description: "每个镜像包保留的版本数"
         default: "10"
-      dry_run:
-        description: "untagged digest 删除: true=仅预览, false=真删"
-        type: boolean
-        default: true
   schedule:
     - cron: '0 3 * * 1'
 
 jobs:
   cleanup:
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
     steps:
-      - uses: actions/checkout@v4
-      - name: Cleanup Docker Hub
-        env:
-          DOCKER_USER: a158coke
-          DOCKER_TOKEN: ${{ secrets.DOCKER_PASSWORD }}
-          KEEP: ${{ github.event.inputs.keep || '10' }}
-          # 手动触发默认 dry_run=true(预览); 定时触发 inputs 为空 -> 真删
-          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-        run: bash .github/scripts/cleanup-dockerhub.sh
+      - name: Prune backend versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: wotbtools-backend
+          package-type: container
+          min-versions-to-keep: ${{ github.event.inputs.keep || '10' }}
+      - name: Prune frontend versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: wotbtools-frontend
+          package-type: container
+          min-versions-to-keep: ${{ github.event.inputs.keep || '10' }}

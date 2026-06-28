@@ -25,7 +25,7 @@
 
 | 版本          | 技术栈                                        | 入口                                                   | 适用场景                     |
 |-------------|--------------------------------------------|------------------------------------------------------|--------------------------|
-| Java Web 版  | Java 21 + Spring Boot 4 + Vue 3 + Docker | `docker\online\` 本地开发；CI/CD → `a158coke/wotbtool` 双镜像 | 浏览器上传、在线预览、排行榜、REST API、Keycloak 认证 |
+| Java Web 版  | Java 21 + Spring Boot 4 + Vue 3 + Docker | `docker\online\` 本地开发；CI/CD → GHCR `ghcr.io/a158coke/wotbtools-*` 双镜像 | 浏览器上传、在线预览、排行榜、REST API、Keycloak 认证 |
 
 文档入口：
 
