@@ -116,10 +116,12 @@ public final class JuheQqIdentityProvider
         final String type = uriInfo.getQueryParameters().getFirst("type");
         final String code = uriInfo.getQueryParameters().getFirst("code");
 
-        logger.debugf("juhe-qq: callback state=%s type=%s code=%s",
+        logger.info("juhe-qq callback entered");
+        logger.debugf("juhe-qq callback: state=%s type=%s code=%s codeLength=%d",
                 state != null ? "present" : "absent",
-                type != null ? type : "absent",
-                code != null ? "present" : "absent");
+                type != null && !type.isBlank() ? type : "absent",
+                code != null ? "present" : "absent",
+                code != null ? code.length() : 0);
 
         if (state == null || state.isBlank()) {
             logger.error("juhe-qq: callback missing state");
@@ -136,17 +138,30 @@ public final class JuheQqIdentityProvider
             return errorResponse();
         }
 
+        // 通过 state 恢复 AuthenticationSession
+        final var authenticationSession = callback.getAndVerifyAuthenticationSession(state);
+        if (authenticationSession == null) {
+            logger.error("juhe-qq: authenticationSession not found via state");
+            return errorResponse();
+        }
+        session.getContext().setAuthenticationSession(authenticationSession);
+        logger.debugf("juhe-qq: authenticationSession restored, clientId=%s",
+                authenticationSession.getClient() != null
+                        ? authenticationSession.getClient().getClientId()
+                        : "null");
+
         final String appid = getConfig().getAppid();
         final String appkey = getConfig().getAppkey();
         final String loginBaseUrl = getConfig().getLoginBaseUrl();
-
-        logger.debugf("juhe-qq: callback received, appid=%s, codeLength=%d, baseUrl=%s",   // TODO: remove after verification
-                appid != null ? "present" : "absent", code.length(), loginBaseUrl);
 
         if (isBlank(appid) || isBlank(appkey)) {
             logger.error("juhe-qq: callback missing credentials");
             return errorResponse();
         }
+
+        logger.info("juhe-qq act=callback request prepared");
+        logger.debugf("juhe-qq act=callback diag: appid=%s type=%s codeLength=%d baseUrl=%s",
+                appid != null ? "present" : "absent", "qq", code.length(), loginBaseUrl != null ? loginBaseUrl : "null");
 
         final String actCallbackUrl = loginBaseUrl
                 + "?act=callback&appid=" + encode(appid)
@@ -162,21 +177,39 @@ public final class JuheQqIdentityProvider
 
             final HttpResponse<String> httpResp = HTTP.send(httpReq, HttpResponse.BodyHandlers.ofString());
 
+            logger.infof("juhe-qq act=callback HTTP %d", httpResp.statusCode());
+            logger.debugf("juhe-qq act=callback response body prefix: %s",
+                    truncate(httpResp.body(), 500));
+
             if (httpResp.statusCode() != 200) {
-                logger.errorf("juhe-qq: act=callback HTTP %d, body=%s",    // TODO: remove after verification
+                logger.errorf("juhe-qq act=callback failed HTTP %d, body=%s",
                         httpResp.statusCode(), truncate(httpResp.body(), 500));
                 return errorResponse();
             }
 
-            final JsonNode json = MAPPER.readTree(httpResp.body());
+            final String body = httpResp.body();
+            final JsonNode json = MAPPER.readTree(body);
             final int respCode = json.path("code").asInt(-1);
-            final String respMsg = json.path("msg").asText("");             // TODO: remove after verification
+            final String respMsg = json.path("msg").asText("");
             final String respType = json.path("type").asText("");
             final String socialUid = json.path("social_uid").asText("");
 
-            if (respCode != 0 || !"qq".equals(respType) || socialUid.isEmpty()) {
-                logger.errorf("juhe-qq: act=callback failed, providerCode=%d, providerMsg=%s, type=%s, body=%s",   // TODO: remove after verification
-                        respCode, respMsg, respType, truncate(httpResp.body(), 500));
+            logger.debugf("juhe-qq act=callback parsed: providerCode=%d providerMsg=%s type=%s social_uid=%s",
+                    respCode, respMsg, respType, socialUid.isEmpty() ? "absent" : "present");
+
+            if (respCode != 0) {
+                logger.errorf("juhe-qq act=callback provider error: code=%d msg=%s", respCode, respMsg);
+                return errorResponse();
+            }
+
+            if (!"qq".equals(respType)) {
+                logger.errorf("juhe-qq act=callback type mismatch, expected=qq actual=%s", respType);
+                return errorResponse();
+            }
+
+            if (socialUid.isEmpty()) {
+                logger.errorf("juhe-qq act=callback social_uid missing, body prefix=%s",
+                        truncate(body, 500));
                 return errorResponse();
             }
 
@@ -184,16 +217,6 @@ public final class JuheQqIdentityProvider
             final String faceimg = json.path("faceimg").asText("");
             final String gender = json.path("gender").asText("");
             final String location = json.path("location").asText("");
-
-            // 通过 state 恢复 AuthenticationSession
-            final var authenticationSession = callback.getAndVerifyAuthenticationSession(state);
-            if (authenticationSession == null) {
-                logger.error("juhe-qq: failed to restore authentication session");
-                return errorResponse();
-            }
-            session.getContext().setAuthenticationSession(authenticationSession);
-
-            logger.debugf("juhe-qq: user info retrieved uid=*** nick=%s", nickname);
 
             final BrokeredIdentityContext context = new BrokeredIdentityContext(
                     "qq:" + socialUid, getConfig());
@@ -218,10 +241,19 @@ public final class JuheQqIdentityProvider
 
             context.setEmail(null);
 
+            logger.debugf("juhe-qq context: externalId=%s username=%s idp=%s session=%s",
+                    "present", context.getUsername() != null ? "present" : "absent",
+                    context.getIdp() != null ? "present" : "absent",
+                    context.getAuthenticationSession() != null ? "present" : "absent");
+
+            logger.info("juhe-qq calling callback.authenticated");
             return callback.authenticated(context);
 
         } catch (final IOException | InterruptedException e) {
-            logger.error("juhe-qq: act=callback request failed", e);
+            logger.error("juhe-qq login failed", e);
+            return errorResponse();
+        } catch (final RuntimeException e) {
+            logger.error("juhe-qq login failed", e);
             return errorResponse();
         }
     }
