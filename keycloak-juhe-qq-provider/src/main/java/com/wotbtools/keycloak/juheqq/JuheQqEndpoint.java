@@ -119,6 +119,7 @@ public final class JuheQqEndpoint {
             context.setBrokerUserId(externalId);
             context.setBrokerSessionId(externalId);
             context.setUsername(username);
+            context.setEmail(null);
             context.setIdp(provider);
             context.setAuthenticationSession(authenticationSession);
 
