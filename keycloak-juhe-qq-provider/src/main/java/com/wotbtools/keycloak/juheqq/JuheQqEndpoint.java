@@ -3,6 +3,7 @@ package com.wotbtools.keycloak.juheqq;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
@@ -37,6 +38,7 @@ public final class JuheQqEndpoint {
     }
 
     @GET
+    @Path("")
     public Response handleCallback(@QueryParam("state") final String state,
                                    @QueryParam("type") final String type,
                                    @QueryParam("code") final String code) {
@@ -86,7 +88,7 @@ public final class JuheQqEndpoint {
 
         logger.info("juhe-qq act=callback request prepared");  // TODO: remove after verification
         logger.debugf("juhe-qq act=callback diag: appid=%s type=%s codeLength=%d baseUrl=%s",  // TODO: remove after verification
-                appid != null ? "present" : "absent", "qq", code.length(),
+                "present", "qq", code.length(),
                 loginBaseUrl != null ? loginBaseUrl : "null");
 
         final String actCallbackUrl = loginBaseUrl
@@ -174,7 +176,7 @@ public final class JuheQqEndpoint {
             }
 
             logger.infof("juhe-qq authenticated context: providerCode=%d, providerMsg=%s, socialUid=%s, externalId=%s, username=%s, idpConfig=%s, idp=%s, authSession=%s",  // TODO: remove after verification
-                    respCode, respMsg, socialUid.isEmpty() ? "absent" : "present",
+                    respCode, respMsg, "present",
                     context.getId(), context.getUsername(),
                     context.getIdpConfig() != null ? "present" : "absent",
                     context.getIdp() != null ? "present" : "absent",
@@ -192,10 +194,7 @@ public final class JuheQqEndpoint {
                 throw t;
             }
 
-        } catch (final IOException | InterruptedException e) {
-            logger.error("juhe-qq login failed", e);
-            return errorResponse();
-        } catch (final RuntimeException e) {
+        } catch (final IOException | InterruptedException | RuntimeException e) {
             logger.error("juhe-qq login failed", e);
             return errorResponse();
         }
