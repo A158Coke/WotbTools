@@ -6,7 +6,6 @@ COPY common/map_names.json common/map_names.json
 COPY java/pom.xml java/settings-docker.xml java/
 COPY java/wotb-core/pom.xml java/wotb-core/pom.xml
 COPY java/wotb-web/pom.xml java/wotb-web/pom.xml
-RUN mkdir -p /build/java/keycloak-juhe-qq-provider/src/main/java
 WORKDIR /build/java
 RUN mvn -s settings-docker.xml -pl wotb-core,wotb-web -am -DskipTests dependency:go-offline -q || true
 WORKDIR /build
