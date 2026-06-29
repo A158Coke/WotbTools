@@ -3,6 +3,8 @@ package com.wotbtools.keycloak.juheqq;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
@@ -19,6 +21,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 
+@Path("")
 public final class JuheQqEndpoint {
 
     private static final Logger logger = Logger.getLogger(JuheQqEndpoint.class);
@@ -42,6 +45,7 @@ public final class JuheQqEndpoint {
     }
 
     @GET
+    @Path("")
     public Response handleCallback(@QueryParam("state") final String state,
                                    @QueryParam("type") final String type,
                                    @QueryParam("code") final String code) {
@@ -161,7 +165,7 @@ public final class JuheQqEndpoint {
             context.setUsername(username);
             context.setName(nickname);
             context.setFirstName(nickname);
-            context.setLastName("");
+            context.setLastName("-");
             context.setIdp(provider);
             context.setAuthenticationSession(authenticationSession);
 
@@ -204,6 +208,15 @@ public final class JuheQqEndpoint {
             logger.error("juhe-qq login failed", e);
             return errorResponse();
         }
+    }
+
+    @POST
+    @Path("")
+    public Response postCallback() {
+        logger.error("juhe-qq endpoint received POST unexpectedly");
+        return Response.status(405)
+                .entity("POST not supported for juhe-qq callback")
+                .build();
     }
 
     private static Response errorResponse() {
