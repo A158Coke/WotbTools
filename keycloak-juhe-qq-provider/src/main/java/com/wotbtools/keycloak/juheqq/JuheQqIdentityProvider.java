@@ -258,8 +258,9 @@ public final class JuheQqIdentityProvider
             logger.info("juhe-qq calling callback.authenticated");  // TODO: remove after verification
             try {
                 final Response response = callback.authenticated(context);
-                logger.infof("juhe-qq callback.authenticated returned status=%d",  // TODO: remove after verification
-                        response.getStatus());
+                final String redirectLocation = response.getHeaderString("Location");
+                logger.infof("juhe-qq callback.authenticated returned status=%d location=%s",  // TODO: remove after verification
+                        response.getStatus(), redirectLocation);
                 return response;
             } catch (final Throwable t) {
                 logger.error("juhe-qq callback.authenticated failed", t);
