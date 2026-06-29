@@ -114,7 +114,7 @@ public final class JuheQqIdentityProvider
     public Object callback(final RealmModel realm,
                            final AuthenticationCallback callback,
                            final EventBuilder event) {
-        return new JuheQqEndpoint(session, this, getConfig(), callback, event);
+        return new JuheQqEndpoint(session, this, getConfig(), callback);
     }
 
     @Override
