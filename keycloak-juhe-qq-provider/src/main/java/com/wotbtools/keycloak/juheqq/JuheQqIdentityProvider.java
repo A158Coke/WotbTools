@@ -53,7 +53,20 @@ public final class JuheQqIdentityProvider
                     .build();
         }
 
-        final String callbackUrl = request.getRedirectUri();
+        // Keycloak 框架生成 IdentityBrokerState，获取其编码值
+        final String state = request.getState().getEncoded();
+        if (state == null || state.isBlank()) {
+            logger.error("juhe-qq: authentication request missing state");
+            return errorResponse();
+        }
+
+        final URI endpointUri = session.getContext().getUri().getBaseUriBuilder()
+                .path("realms/{realm}/broker/{provider}/endpoint")
+                .build(session.getContext().getRealm().getName(), getConfig().getAlias());
+        final String callbackUrl = endpointUri.toString() + "?state=" + encode(state);
+
+        logger.debug("juhe-qq: state obtained from IdentityBrokerState");
+
         final String actLoginUrl = loginBaseUrl
                 + "?act=login&appid=" + encode(appid)
                 + "&appkey=" + encode(appkey)
@@ -99,8 +112,19 @@ public final class JuheQqIdentityProvider
                            final AuthenticationCallback callback,
                            final EventBuilder event) {
         final UriInfo uriInfo = session.getContext().getUri();
+        final String state = uriInfo.getQueryParameters().getFirst("state");
         final String type = uriInfo.getQueryParameters().getFirst("type");
         final String code = uriInfo.getQueryParameters().getFirst("code");
+
+        logger.debugf("juhe-qq: callback state=%s type=%s code=%s",
+                state != null ? "present" : "absent",
+                type != null ? type : "absent",
+                code != null ? "present" : "absent");
+
+        if (state == null || state.isBlank()) {
+            logger.error("juhe-qq: callback missing state");
+            return errorResponse();
+        }
 
         if (!"qq".equals(type)) {
             logger.errorf("juhe-qq: callback type mismatch '%s'", type);
@@ -166,8 +190,9 @@ public final class JuheQqIdentityProvider
             context.setUsername("juhe_qq_" + socialUid);
             context.setFirstName(nickname);
             context.setIdp(this);
-            context.setAuthenticationSession(session.getContext().getAuthenticationSession());
 
+            // 不手动设置 AuthenticationSession — callback.authenticated() 内部
+            // 会通过 IdentityBrokerService 从 state 恢复 session
             context.setUserAttribute("juhe.provider", "qq");
             context.setUserAttribute("juhe.social_uid", socialUid);
             context.setUserAttribute("juhe.nickname", nickname);
