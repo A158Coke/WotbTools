@@ -23,6 +23,7 @@
 14. **分层调用** — Controller → Service → Repository。 Controller 只能调 Service（禁止直接调 Repository）。Service 只能调自己 domain 的 Repository 或其他 domain 的 Service（禁止 Service 跨 domain 调 Repository）。
 15. **线上排障** — 部署后 502/启动失败，SSH 进 VPS：`ssh -i "$env:USERPROFILE\.ssh\wotb_vps_deploy" -o IdentitiesOnly=yes root@45.136.14.101 -p 58361`，`docker logs wotb-wotb-backend-1 --tail 100`。常见根因：循环依赖、Flyway 冲突、PG volume 不兼容。
 16. **结尾签名** — 完成工作后回复末尾附带：我完成了喵
+17. **临时代码标记** — 调试/测试用的临时日志、工具方法必须标注 `// TODO: remove after verification`，业务跑通后清理。Grill-Fix 检查单包含临时代码残留检查。
 
 ## 常用命令
 

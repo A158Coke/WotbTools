@@ -136,11 +136,12 @@ public final class JuheQqIdentityProvider
             return errorResponse();
         }
 
-        logger.debug("juhe-qq: callback received");
-
         final String appid = getConfig().getAppid();
         final String appkey = getConfig().getAppkey();
         final String loginBaseUrl = getConfig().getLoginBaseUrl();
+
+        logger.debugf("juhe-qq: callback received, appid=%s, codeLength=%d, baseUrl=%s",   // TODO: remove after verification
+                appid != null ? "present" : "absent", code.length(), loginBaseUrl);
 
         if (isBlank(appid) || isBlank(appkey)) {
             logger.error("juhe-qq: callback missing credentials");
@@ -162,18 +163,20 @@ public final class JuheQqIdentityProvider
             final HttpResponse<String> httpResp = HTTP.send(httpReq, HttpResponse.BodyHandlers.ofString());
 
             if (httpResp.statusCode() != 200) {
-                logger.errorf("juhe-qq: act=callback HTTP %d", httpResp.statusCode());
+                logger.errorf("juhe-qq: act=callback HTTP %d, body=%s",    // TODO: remove after verification
+                        httpResp.statusCode(), truncate(httpResp.body(), 500));
                 return errorResponse();
             }
 
             final JsonNode json = MAPPER.readTree(httpResp.body());
             final int respCode = json.path("code").asInt(-1);
+            final String respMsg = json.path("msg").asText("");             // TODO: remove after verification
             final String respType = json.path("type").asText("");
             final String socialUid = json.path("social_uid").asText("");
 
             if (respCode != 0 || !"qq".equals(respType) || socialUid.isEmpty()) {
-                logger.errorf("juhe-qq: act=callback failed code=%d type=%s uid=%s",
-                        respCode, respType, socialUid.isEmpty() ? "(empty)" : "***");
+                logger.errorf("juhe-qq: act=callback failed, providerCode=%d, providerMsg=%s, type=%s, body=%s",   // TODO: remove after verification
+                        respCode, respMsg, respType, truncate(httpResp.body(), 500));
                 return errorResponse();
             }
 
@@ -244,6 +247,11 @@ public final class JuheQqIdentityProvider
 
     private static String encode(final String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private static String truncate(final String s, final int maxLen) {   // TODO: remove after verification
+        if (s == null) return "null";
+        return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...";
     }
 
     private static boolean isBlank(final String s) {
