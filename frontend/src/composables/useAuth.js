@@ -56,7 +56,7 @@ async function initAuth() {
 async function login() {
   const kc = ensureKeycloak()
   await initAuth()
-  return kc.login({ redirectUri: profileRedirectUri(), idpHint: 'juhe-qq' })
+  return kc.login({ redirectUri: profileRedirectUri() })
 }
 
 async function logout() {
