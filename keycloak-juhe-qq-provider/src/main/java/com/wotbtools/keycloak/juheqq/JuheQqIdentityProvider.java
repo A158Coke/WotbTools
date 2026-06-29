@@ -227,8 +227,11 @@ public final class JuheQqIdentityProvider
                     externalId, getConfig());
             context.setId(externalId);
             context.setBrokerUserId(externalId);
+            context.setBrokerSessionId(externalId);
             context.setUsername(username);
+            context.setName(nickname);
             context.setFirstName(nickname);
+            context.setLastName("");
             context.setIdp(this);
             context.setAuthenticationSession(authenticationSession);
 
@@ -253,7 +256,15 @@ public final class JuheQqIdentityProvider
                     context.getAuthenticationSession() != null ? "present" : "absent");
 
             logger.info("juhe-qq calling callback.authenticated");  // TODO: remove after verification
-            return callback.authenticated(context);
+            try {
+                final Response response = callback.authenticated(context);
+                logger.infof("juhe-qq callback.authenticated returned status=%d",  // TODO: remove after verification
+                        response.getStatus());
+                return response;
+            } catch (final Throwable t) {
+                logger.error("juhe-qq callback.authenticated failed", t);
+                throw t;
+            }
 
         } catch (final IOException | InterruptedException e) {
             logger.error("juhe-qq login failed", e);
