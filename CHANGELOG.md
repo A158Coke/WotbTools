@@ -2,8 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+- **Juhe QQ 登录**：Keycloak 自定义 Identity Provider (`keycloak-juhe-qq-provider`)，通过聚合登录平台 open.juhedenglu.cn 实现 QQ 登录。
+  - 新增 Maven 模块：`keycloak-juhe-qq-provider`（Keycloak SPI，provider ID: juhe-qq）
+  - 自定义 Keycloak Docker 镜像（`docker/Dockerfile.keycloak`），集成 provider jar
+
 ### Changed
-- Keycloak 从 26.6.3 升级至 26.6.4（安全补丁 + Quarkus 3.33.2.1）
+- Keycloak 从 26.6.3 升级至 26.6.4（安全补丁 + Quarkus 3.33.2.1），Docker Compose 切换为自定义构建镜像
+- 前端 QQ 登录按钮添加 `kc_idp_hint=juhe-qq`，直接跳转聚合登录平台
 
 ## [2.0.0] - 2026-06-29
 

@@ -13,6 +13,7 @@
     <modules>
         <module>wotb-core</module>
         <module>wotb-web</module>
+        <module>keycloak-juhe-qq-provider</module>
     </modules>
 
     <properties>
