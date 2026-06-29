@@ -10,14 +10,17 @@
 2. **跨层一致** — 列 key(snake_case) API/前端/导出三方一致。显示名前端三语 locale + 导出两处一致。
 3. **API 纯英文** — 只回 key+数据，中文归前端/导出。
 4. **提交前通过测试** — Java `mvn -s settings.xml test`(JAVA_HOME→JDK21)、前端 `npm run build`。
-5. **构建隔离** — Maven `-s java/settings.xml`(Aliyun + 独立 `.m2repo`)。车辆库单源 `common/tankopedia.json`。
-6. **Git** — SSH remote `github-personal`，账号 `A158Coke`。中文提交，尾带 `Co-Authored-By`。
-7. **跨站 Cookie** — 主题/语言偏好写 `domain=.wotbtools.com` Cookie，localStorage 回退。
-8. **显式参数名** — `@RequestParam(name="x")` 必须写名字。
-9. **Java final** — 局部变量、方法入参一律 `final`。
-10. **三语 i18n** — 新增页面/文案必须在 zh/en/ru 三语字典同步，主题按钮不能硬编码。
-11. **数据库迁移** — 改表结构必须新增 Flyway migration（`V3__...`），不改已应用的 V1/V2；实体列与迁移列逐列对齐。
-12. **安全** — 不存密码/凭据；Keycloak JWT 验证不由后端自签；token/secret 走 GitHub Secrets。
+5. **Grill-Fix 闭环** — 每次代码变更后反复审查（grep 残留、硬编码、未用 import、命名不一致、空值边界、并发安全），修复找到的问题，循环直到无新问题出现。
+6. **构建隔离** — Maven `-s java/settings.xml`(Aliyun + 独立 `.m2repo`)。车辆库单源 `common/tankopedia.json`。
+7. **Git** — SSH remote `github-personal`，账号 `A158Coke`。中文提交，尾带 `Co-Authored-By`。
+8. **跨站 Cookie** — 主题/语言偏好写 `domain=.wotbtools.com` Cookie，localStorage 回退。
+9. **显式参数名** — `@RequestParam(name="x")` 必须写名字。
+10. **Java final** — 局部变量、方法入参一律 `final`。
+11. **三语 i18n** — 新增页面/文案必须在 zh/en/ru 三语字典同步，主题按钮不能硬编码。
+12. **数据库迁移** — 改表结构必须新增 Flyway migration（`V3__...`），不改已应用的 V1/V2；实体列与迁移列逐列对齐。
+13. **安全** — 不存密码/凭据；Keycloak JWT 验证不由后端自签；token/secret 走 GitHub Secrets。
+14. **分层调用** — Controller → Service → Repository。 Controller 只能调 Service（禁止直接调 Repository）。Service 只能调自己 domain 的 Repository 或其他 domain 的 Service（禁止 Service 跨 domain 调 Repository）。
+15. **线上排障** — 部署后 502/启动失败，SSH 进 VPS：`ssh -i "$env:USERPROFILE\.ssh\wotb_vps_deploy" -o IdentitiesOnly=yes root@45.136.14.101 -p 58361`，`docker logs wotb-wotb-backend-1 --tail 100`。常见根因：循环依赖、Flyway 冲突、PG volume 不兼容。
 
 ## 常用命令
 

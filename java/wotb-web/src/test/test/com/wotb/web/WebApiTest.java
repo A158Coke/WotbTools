@@ -93,7 +93,7 @@ class WebApiTest {
         final JsonNode n = om.readTree(json);
         assertTrue(n.get("scale").asInt() > 0, "scale 应为正");
         assertTrue(n.get("killValue").asDouble() > 0, "killValue 应为正");
-        assertTrue(n.get("classFactor").isObject() && n.get("classFactor").size() > 0, "应含车型系数");
+        assertTrue(n.get("classFactor").isObject() && !n.get("classFactor").isEmpty(), "应含车型系数");
     }
 
     @Test
@@ -104,7 +104,7 @@ class WebApiTest {
             req = req.file(file(p));
         }
         req = req.file(new MockMultipartFile("files", "dup.wotbreplay",
-                "application/octet-stream", Files.readAllBytes(files.get(0))));
+                "application/octet-stream", Files.readAllBytes(files.getFirst())));
 
         final String json = mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isOk())
@@ -135,7 +135,7 @@ class WebApiTest {
             req = req.file(file(p));
         }
         req = req.file(new MockMultipartFile("files", "dup.wotbreplay",
-                "application/octet-stream", Files.readAllBytes(files.get(0))));
+                "application/octet-stream", Files.readAllBytes(files.getFirst())));
 
         final String json = mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isOk())
@@ -143,7 +143,7 @@ class WebApiTest {
         final JsonNode n = om.readTree(json);
         assertEquals(files.size(), n.get("battles").size(), "唯一战斗数");
         assertEquals(1, n.get("duplicates").size(), "跳过 1 个重复");
-        assertTrue(n.get("aggregate").size() > 0, "多场应有汇总");
+        assertFalse(n.get("aggregate").isEmpty(), "多场应有汇总");
         final JsonNode b0 = n.get("battles").get(0);
         assertEquals(14, b0.get("players").size());
         assertTrue(b0.get("players").get(0).get("cells").has("damage_dealt"));
@@ -153,7 +153,7 @@ class WebApiTest {
 
     @Test
     void exportReturnsXlsx() throws Exception {
-        final var req = multipart("/api/export").file(file(replays().get(0)));
+        final var req = multipart("/api/export").file(file(replays().getFirst()));
         final byte[] body = mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsByteArray();

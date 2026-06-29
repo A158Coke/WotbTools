@@ -10,6 +10,15 @@
     :root{--bg:#f7f8fa;--bg-card:#fff;--bg-card2:#f1f4f8;--text:#222;--text-heading:#28313f;--text-sub:#8b94a3;--text-muted:#777;--text-label:#46566f;--border:#e3e8ef;--border-header:#e9edf3;--border-ghost:#dbe3ef;--accent:#4f88d6;--accent-hover:#4079c9;--accent-dark:#185fa5;--error:#c00}
     [data-theme="dark"]{--bg:#0d1117;--bg-card:#161b22;--bg-card2:#21262d;--text:#c9d1d9;--text-heading:#f0f6fc;--text-sub:#8b949e;--text-muted:#8b949e;--text-label:#8b949e;--border:#30363d;--border-header:#21262d;--border-ghost:#30363d;--accent:#58a6ff;--accent-hover:#79c0ff;--accent-dark:#58a6ff;--error:#f85149}
     body{margin:0;font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:var(--text);background:var(--bg)}
+    #app:has(.app-loader){display:flex;align-items:center;justify-content:center;min-height:100vh}
+    .app-loader{display:flex;flex-direction:column;align-items:center;gap:16px}
+    .lds-ring{position:relative;width:48px;height:48px}
+    .lds-ring div{box-sizing:border-box;display:block;position:absolute;width:40px;height:40px;margin:4px;border:3px solid var(--accent);border-radius:50%;animation:lds-ring 1.2s cubic-bezier(0.5,0,0.5,1) infinite;border-color:var(--accent) transparent transparent transparent}
+    .lds-ring div:nth-child(1){animation-delay:-0.45s}
+    .lds-ring div:nth-child(2){animation-delay:-0.3s}
+    .lds-ring div:nth-child(3){animation-delay:-0.15s}
+    @keyframes lds-ring{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+    .loader-text{font-size:1.2rem;font-weight:600;color:var(--text-sub);letter-spacing:2px}
   </style>
   <script>
     (function(){
@@ -21,7 +30,12 @@
   </script>
 </head>
 <body>
-  <div id="app"></div>
+  <div id="app">
+    <div class="app-loader">
+      <div class="lds-ring"><div></div><div></div><div></div><div></div></div>
+      <span class="loader-text">WoTBTools</span>
+    </div>
+  </div>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>
