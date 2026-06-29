@@ -14,7 +14,6 @@
     "vue-i18n": "11.1.10"
   },
   "devDependencies": {
-    "@fallow-cli/fallow-node": "^0.1.0",
     "@vitejs/plugin-vue": "^5.2.1",
     "vite": "^6.0.7"
   }
