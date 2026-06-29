@@ -1,27 +1,22 @@
 package com.wotbtools.keycloak.juheqq;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.broker.provider.UserAuthenticationIdentityProvider.AuthenticationCallback;
-import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
 import java.io.IOException;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 
-@Path("")
 public final class JuheQqEndpoint {
 
     private static final Logger logger = Logger.getLogger(JuheQqEndpoint.class);
@@ -30,22 +25,18 @@ public final class JuheQqEndpoint {
     private final JuheQqIdentityProvider provider;
     private final JuheQqIdentityProviderConfig config;
     private final AuthenticationCallback authCallback;
-    private final EventBuilder event;
 
     public JuheQqEndpoint(final KeycloakSession session,
                           final JuheQqIdentityProvider provider,
                           final JuheQqIdentityProviderConfig config,
-                          final AuthenticationCallback authCallback,
-                          final EventBuilder event) {
+                          final AuthenticationCallback authCallback) {
         this.session = session;
         this.provider = provider;
         this.config = config;
         this.authCallback = authCallback;
-        this.event = event;
     }
 
     @GET
-    @Path("")
     public Response handleCallback(@QueryParam("state") final String state,
                                    @QueryParam("type") final String type,
                                    @QueryParam("code") final String code) {
@@ -211,7 +202,6 @@ public final class JuheQqEndpoint {
     }
 
     @POST
-    @Path("")
     public Response postCallback() {
         logger.error("juhe-qq endpoint received POST unexpectedly");
         return Response.status(405)
