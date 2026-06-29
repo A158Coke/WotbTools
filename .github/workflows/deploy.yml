@@ -155,7 +155,12 @@ jobs:
             volumes:
               postgres_data:
             EOF
-            docker compose pull
+            # pull 失败时重试 3 次（DNS 暂不可达等 transient 错误）
+            for attempt in 1 2 3; do
+              docker compose pull && break
+              echo "docker compose pull failed (attempt $attempt), retrying in 10s..."
+              sleep 10
+            done
             docker compose up -d --remove-orphans
             # 确保 keycloak 数据库存在（init-db.sql 仅在首次初始化执行）
             docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
