@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import * as api from '../utils/api-boost.js'
+import { mapLabel } from '../utils/helpers.js'
 
 const { t } = useI18n()
 const { initPromise, login, logout, isAuthenticated, userName, initError } = useAuth()
@@ -177,12 +178,12 @@ async function removeAccount() {
             <h3 class="card-title" style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border)">{{ $t('profile.records') }}</h3>
             <div v-if="records.length" class="records-table-wrap">
               <table class="records-table">
-                <thead><tr><th>{{ $t('profile.tank') }}</th><th>{{ $t('profile.damage') }}</th><th>{{ $t('profile.map') }}</th></tr></thead>
+                <thead><tr><th>{{ $t('profile.tank') }}</th><th class="rec-dmg">{{ $t('profile.damage') }}</th><th>{{ $t('profile.map') }}</th></tr></thead>
                 <tbody>
                   <tr v-for="r in records" :key="r.id">
-                    <td>{{ r.tankName || '—' }}</td>
-                    <td>{{ r.damageDealt ?? '—' }}</td>
-                    <td>{{ r.mapName || '—' }}</td>
+                    <td class="rec-tank">{{ r.tankName || '—' }}</td>
+                    <td class="rec-dmg">{{ r.damageDealt != null ? r.damageDealt.toLocaleString() : '—' }}</td>
+                    <td class="rec-map">{{ mapLabel(r.mapName) || '—' }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -249,9 +250,13 @@ async function removeAccount() {
 .btn-ghost.btn-sm { padding: 5px 12px; font-size: .8rem; border-radius: 8px; }
 .btn-ghost:hover { background: var(--bg-card2); }
 .records-table-wrap { overflow-x: auto; }
-.records-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
-.records-table th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--text-sub); font-weight: 600; }
-.records-table td { padding: 6px 8px; border-bottom: 1px solid var(--border-light); color: var(--text); }
+.records-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.records-table th { text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); color: var(--text-sub); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
+.records-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-light); color: var(--text); }
+.records-table tbody tr:hover { background: var(--bg-card2); }
+.rec-dmg { text-align: right !important; font-variant-numeric: tabular-nums; font-weight: 600; width: 90px; }
+.rec-tank { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-map { color: var(--text-sub); }
 @media (max-width: 768px) {
   .profile-body { flex-direction: column; }
   .profile-right { width: 100%; }
