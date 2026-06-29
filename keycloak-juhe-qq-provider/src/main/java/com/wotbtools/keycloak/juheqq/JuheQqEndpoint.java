@@ -2,7 +2,6 @@ package com.wotbtools.keycloak.juheqq;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.ws.rs.GET;
-import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Response;
@@ -43,11 +42,6 @@ public final class JuheQqEndpoint {
                                    @QueryParam("type") final String type,
                                    @QueryParam("code") final String code) {
         logger.info("juhe-qq endpoint entered");  // TODO: remove after verification
-        logger.debugf("juhe-qq endpoint: state=%s type=%s code=%s codeLength=%d",  // TODO: remove after verification
-                state != null ? "present" : "absent",
-                type != null && !type.isBlank() ? type : "absent",
-                code != null ? "present" : "absent",
-                code != null ? code.length() : 0);
 
         if (state == null || state.isBlank()) {
             logger.error("juhe-qq: callback missing state");
@@ -72,10 +66,6 @@ public final class JuheQqEndpoint {
             return errorResponse();
         }
         session.getContext().setAuthenticationSession(authenticationSession);
-        logger.debugf("juhe-qq: authenticationSession restored, clientId=%s",  // TODO: remove after verification
-                authenticationSession.getClient() != null
-                        ? authenticationSession.getClient().getClientId()
-                        : "null");
 
         final String appid = config.getAppid();
         final String appkey = config.getAppkey();
@@ -87,9 +77,6 @@ public final class JuheQqEndpoint {
         }
 
         logger.info("juhe-qq act=callback request prepared");  // TODO: remove after verification
-        logger.debugf("juhe-qq act=callback diag: appid=%s type=%s codeLength=%d baseUrl=%s",  // TODO: remove after verification
-                "present", "qq", code.length(),
-                loginBaseUrl != null ? loginBaseUrl : "null");
 
         final String actCallbackUrl = loginBaseUrl
                 + "?act=callback&appid=" + JuheQqIdentityProvider.encode(appid)
@@ -107,8 +94,6 @@ public final class JuheQqEndpoint {
                     .send(httpReq, HttpResponse.BodyHandlers.ofString());
 
             logger.infof("juhe-qq act=callback HTTP %d", httpResp.statusCode());  // TODO: remove after verification
-            logger.debugf("juhe-qq act=callback response body prefix: %s",  // TODO: remove after verification
-                    JuheQqIdentityProvider.truncate(httpResp.body(), 500));
 
             if (httpResp.statusCode() != 200) {
                 logger.errorf("juhe-qq act=callback failed HTTP %d, body=%s",
@@ -117,14 +102,14 @@ public final class JuheQqEndpoint {
             }
 
             final String body = httpResp.body();
+            logger.infof("juhe-qq act=callback raw response body: %s",  // TODO: remove after verification
+                    JuheQqIdentityProvider.truncate(body, 2000));
+
             final JsonNode json = JuheQqIdentityProvider.MAPPER.readTree(body);
             final int respCode = json.path("code").asInt(-1);
             final String respMsg = json.path("msg").asText("");
             final String respType = json.path("type").asText("");
             final String socialUid = json.path("social_uid").asText("");
-
-            logger.debugf("juhe-qq act=callback parsed: providerCode=%d providerMsg=%s type=%s social_uid=%s",  // TODO: remove after verification
-                    respCode, respMsg, respType, socialUid.isEmpty() ? "absent" : "present");
 
             if (respCode != 0) {
                 logger.errorf("juhe-qq act=callback provider error: code=%d msg=%s", respCode, respMsg);
@@ -142,29 +127,33 @@ public final class JuheQqEndpoint {
                 return errorResponse();
             }
 
+            // ── 解析 Juhe callback 字段 ────────────────────────────────
             final String nickname = json.path("nickname").asText("");
             final String faceimg = json.path("faceimg").asText("");
             final String gender = json.path("gender").asText("");
             final String location = json.path("location").asText("");
 
             final String externalId = "qq:" + socialUid;
-            final String username = "juhe_qq_" + JuheQqIdentityProvider.sha256prefix(socialUid, 32);
+            final String username = sanitizeUsername(nickname, socialUid);
 
-            final BrokeredIdentityContext context = new BrokeredIdentityContext(
-                    externalId, config);
+            // 临时使用 nickname@qq.com，待确认 API 返回字段后再调整
+            final String emailLocalPart = sanitizeEmailLocalPart(nickname, socialUid);
+            final String email = emailLocalPart + "@qq.com";
+
+            final BrokeredIdentityContext context = new BrokeredIdentityContext(externalId, config);
             context.setId(externalId);
             context.setBrokerUserId(externalId);
             context.setBrokerSessionId(externalId);
             context.setUsername(username);
+            context.setEmail(email);
             context.setName(nickname);
-            context.setFirstName(nickname);
-            context.setLastName("-");
             context.setIdp(provider);
             context.setAuthenticationSession(authenticationSession);
 
             context.setUserAttribute("juhe.provider", "qq");
             context.setUserAttribute("juhe.social_uid", socialUid);
             context.setUserAttribute("juhe.nickname", nickname);
+            context.setUserAttribute("juhe.username_source", "nickname");
             if (!faceimg.isEmpty()) {
                 context.setUserAttribute("juhe.faceimg", faceimg);
             }
@@ -175,9 +164,14 @@ public final class JuheQqEndpoint {
                 context.setUserAttribute("juhe.location", location);
             }
 
-            logger.infof("juhe-qq authenticated context: providerCode=%d, providerMsg=%s, socialUid=%s, externalId=%s, username=%s, idpConfig=%s, idp=%s, authSession=%s",  // TODO: remove after verification
+            logger.infof(
+                    "juhe-qq authenticated context: providerCode=%d, providerMsg=%s, socialUid=%s, username=%s, email=%s, nickname=%s, location=%s, gender=%s, idpConfig=%s, idp=%s, authSession=%s",  // TODO: remove after verification
                     respCode, respMsg, "present",
-                    context.getId(), context.getUsername(),
+                    context.getUsername(),
+                    email != null && !email.isBlank() ? "present" : "absent",
+                    nickname != null && !nickname.isBlank() ? "present" : "absent",
+                    location != null && !location.isBlank() ? location : "absent",
+                    gender != null && !gender.isBlank() ? gender : "absent",
                     context.getIdpConfig() != null ? "present" : "absent",
                     context.getIdp() != null ? "present" : "absent",
                     context.getAuthenticationSession() != null ? "present" : "absent");
@@ -200,12 +194,63 @@ public final class JuheQqEndpoint {
         }
     }
 
-    @POST
-    public Response postCallback() {
-        logger.error("juhe-qq endpoint received POST unexpectedly");
-        return Response.status(405)
-                .entity("POST not supported for juhe-qq callback")
-                .build();
+    // ── 辅助方法 ──────────────────────────────────────────────────────
+
+    /**
+     * 将昵称安全化为 email local part（@ 左边部分）。
+     * 昵称为空或清洗后为空时 fallback 到 qq_{hash}。
+     */
+    private static String sanitizeEmailLocalPart(final String nickname, final String socialUid) {
+        final String fallback = "qq_" + JuheQqIdentityProvider.sha256prefix(socialUid, 12);
+
+        if (nickname == null || nickname.isBlank()) {
+            return fallback;
+        }
+
+        String value = nickname.trim().toLowerCase();
+
+        value = value.replaceAll("[^a-z0-9.\\-_]", "_");
+        value = value.replaceAll("_{2,}", "_");
+        value = value.replaceAll("^[^a-z0-9]+", "");
+        value = value.replaceAll("[^a-z0-9]+$", "");
+
+        if (value.isBlank() || value.length() < 2) {
+            return fallback;
+        }
+
+        if (value.length() > 48) {
+            value = value.substring(0, 48);
+        }
+
+        return value;
+    }
+
+    /**
+     * 将 QQ 昵称安全化为 Keycloak username。
+     * 昵称为空或清洗后为空时 fallback 到 qq_user_{hash}。
+     */
+    private static String sanitizeUsername(final String nickname, final String socialUid) {
+        final String fallback = "qq_user_" + JuheQqIdentityProvider.sha256prefix(socialUid, 12);
+
+        if (nickname == null || nickname.isBlank()) {
+            return fallback;
+        }
+
+        String value = nickname.trim();
+
+        value = value.replaceAll("[\\p{Cntrl}]", "");
+        value = value.replaceAll("[/@\\\\:?#\\[\\]{}|<>\"']", "_");
+        value = value.replaceAll("\\s+", "_");
+
+        if (value.isBlank()) {
+            return fallback;
+        }
+
+        if (value.length() > 64) {
+            value = value.substring(0, 64);
+        }
+
+        return value;
     }
 
     private static Response errorResponse() {
