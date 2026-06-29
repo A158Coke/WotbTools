@@ -182,6 +182,14 @@ public final class JuheQqIdentityProvider
             final String gender = json.path("gender").asText("");
             final String location = json.path("location").asText("");
 
+            // 通过 state 恢复 AuthenticationSession
+            final var authenticationSession = callback.getAndVerifyAuthenticationSession(state);
+            if (authenticationSession == null) {
+                logger.error("juhe-qq: failed to restore authentication session");
+                return errorResponse();
+            }
+            session.getContext().setAuthenticationSession(authenticationSession);
+
             logger.debugf("juhe-qq: user info retrieved uid=*** nick=%s", nickname);
 
             final BrokeredIdentityContext context = new BrokeredIdentityContext(
@@ -190,9 +198,8 @@ public final class JuheQqIdentityProvider
             context.setUsername("juhe_qq_" + socialUid);
             context.setFirstName(nickname);
             context.setIdp(this);
+            context.setAuthenticationSession(authenticationSession);
 
-            // 不手动设置 AuthenticationSession — callback.authenticated() 内部
-            // 会通过 IdentityBrokerService 从 state 恢复 session
             context.setUserAttribute("juhe.provider", "qq");
             context.setUserAttribute("juhe.social_uid", socialUid);
             context.setUserAttribute("juhe.nickname", nickname);
