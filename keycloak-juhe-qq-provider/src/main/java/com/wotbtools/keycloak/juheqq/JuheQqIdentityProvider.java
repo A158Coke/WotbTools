@@ -3,7 +3,6 @@ package com.wotbtools.keycloak.juheqq;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.ws.rs.core.Response;
-import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.AuthenticationRequest;
 import org.keycloak.events.EventBuilder;
@@ -27,8 +26,6 @@ import java.time.Duration;
 public final class JuheQqIdentityProvider
         extends AbstractIdentityProvider<JuheQqIdentityProviderConfig> {
 
-    private static final Logger logger = Logger.getLogger(JuheQqIdentityProvider.class);
-
     static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
@@ -47,7 +44,6 @@ public final class JuheQqIdentityProvider
         final String loginBaseUrl = getConfig().getLoginBaseUrl();
 
         if (isBlank(appid) || isBlank(appkey) || isBlank(loginBaseUrl)) {
-            logger.error("juhe-qq: provider not fully configured");
             return Response.status(500)
                     .entity("QQ login not configured. Please contact administrator.")
                     .build();
@@ -55,7 +51,6 @@ public final class JuheQqIdentityProvider
 
         final String state = request.getState().getEncoded();
         if (state == null || state.isBlank()) {
-            logger.error("juhe-qq: authentication request missing state");
             return errorResponse();
         }
 
@@ -64,14 +59,10 @@ public final class JuheQqIdentityProvider
                 .build(session.getContext().getRealm().getName(), getConfig().getAlias());
         final String callbackUrl = endpointUri.toString() + "?state=" + encode(state);
 
-        logger.debug("juhe-qq: state obtained from IdentityBrokerState");  // TODO: remove after verification
-
         final String actLoginUrl = loginBaseUrl
                 + "?act=login&appid=" + encode(appid)
                 + "&appkey=" + encode(appkey)
                 + "&type=qq&redirect_uri=" + encode(callbackUrl);
-
-        logger.debug("juhe-qq: login request started");  // TODO: remove after verification
 
         try {
             final HttpRequest httpReq = HttpRequest.newBuilder()
@@ -83,7 +74,6 @@ public final class JuheQqIdentityProvider
             final HttpResponse<String> httpResp = HTTP.send(httpReq, HttpResponse.BodyHandlers.ofString());
 
             if (httpResp.statusCode() != 200) {
-                logger.errorf("juhe-qq: act=login HTTP %d", httpResp.statusCode());
                 return errorResponse();
             }
 
@@ -93,15 +83,12 @@ public final class JuheQqIdentityProvider
             final String redirectUrl = json.path("url").asText("");
 
             if (code != 0 || !"qq".equals(type) || redirectUrl.isEmpty()) {
-                logger.errorf("juhe-qq: act=login failed code=%d type=%s", code, type);
                 return errorResponse();
             }
 
-            logger.debug("juhe-qq: redirecting user to QQ login");  // TODO: remove after verification
             return Response.status(302).header("Location", redirectUrl).build();
 
         } catch (final IOException | InterruptedException e) {
-            logger.error("juhe-qq: act=login request failed", e);
             return errorResponse();
         }
     }
@@ -138,12 +125,7 @@ public final class JuheQqIdentityProvider
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
-    static String truncate(final String s, final int maxLen) {   // TODO: remove after verification
-        if (s == null) return "null";
-        return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...";
-    }
-
-    static String sha256prefix(final String input, final int len) {  // TODO: remove after verification
+    static String sha256prefix(final String input) {
         if (input == null) {
             return "";
         }
@@ -151,7 +133,7 @@ public final class JuheQqIdentityProvider
             final MessageDigest md = MessageDigest.getInstance("SHA-256");
             final byte[] hash = md.digest(input.getBytes(StandardCharsets.UTF_8));
             final StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < hash.length && sb.length() < len; i++) {
+            for (int i = 0; i < hash.length && sb.length() < 12; i++) {
                 sb.append(String.format("%02x", hash[i] & 0xff));
             }
             return sb.toString();
@@ -160,7 +142,7 @@ public final class JuheQqIdentityProvider
         }
     }
 
-    private static boolean isBlank(final String s) {
+    static boolean isBlank(final String s) {
         return s == null || s.isBlank();
     }
 }
