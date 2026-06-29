@@ -6,12 +6,14 @@ import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
 import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
-import org.keycloak.broker.provider.AuthenticationCallback;
 import org.keycloak.broker.provider.AuthenticationRequest;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.events.EventBuilder;
+import org.keycloak.models.FederatedIdentityModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserModel;
+import org.keycloak.models.UserSessionModel;
 
 import java.io.IOException;
 import java.net.URI;
@@ -93,9 +95,9 @@ public final class JuheQqIdentityProvider
     }
 
     @Override
-    public Response callback(final RealmModel realm,
-                             final AuthenticationCallback callback,
-                             final EventBuilder event) {
+    public Object callback(final RealmModel realm,
+                           final AuthenticationCallback callback,
+                           final EventBuilder event) {
         final UriInfo uriInfo = session.getContext().getUri();
         final String type = uriInfo.getQueryParameters().getFirst("type");
         final String code = uriInfo.getQueryParameters().getFirst("code");
@@ -190,8 +192,16 @@ public final class JuheQqIdentityProvider
     }
 
     @Override
-    protected boolean supportsExternalExchange() {
-        return false;
+    public Response retrieveToken(final KeycloakSession session,
+                                   final FederatedIdentityModel identity,
+                                   final UserSessionModel userSession,
+                                   final UserModel user) {
+        return Response.status(400).entity("Token retrieval not supported").build();
+    }
+
+    public Response retrieveToken(final KeycloakSession session,
+                                   final FederatedIdentityModel identity) {
+        return Response.status(400).entity("Token retrieval not supported").build();
     }
 
     private static Response errorResponse() {

@@ -30,6 +30,11 @@ public final class JuheQqIdentityProviderFactory
     }
 
     @Override
+    public JuheQqIdentityProviderConfig createConfig() {
+        return new JuheQqIdentityProviderConfig();
+    }
+
+    @Override
     public List<ProviderConfigProperty> getConfigProperties() {
         final List<ProviderConfigProperty> props = new ArrayList<>();
 
@@ -41,7 +46,7 @@ public final class JuheQqIdentityProviderFactory
         props.add(appid);
 
         final ProviderConfigProperty appkey = new ProviderConfigProperty();
-        appkey.setName(JuheQqIdentityProviderConfig.CONFIG_APPKEY);
+        appkey.setName(JuheQqIdentityProviderConfig.CONFIG_APP_KEY);
         appkey.setLabel("APPKEY");
         appkey.setHelpText("聚合登录平台分配的 APPKEY（加密存储，不打印日志）");
         appkey.setType(ProviderConfigProperty.STRING_TYPE);
