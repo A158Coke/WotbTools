@@ -5,7 +5,6 @@ import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.dto.LeaderboardRecordDto;
 import com.wotb.web.service.LeaderboardService;
-import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,12 +18,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 排行榜 REST API (仅 postgres profile; 只做 HTTP 映射, 业务在 LeaderboardService)。
+ * 排行榜 REST API (只做 HTTP 映射, 业务在 LeaderboardService)。
  */
 @RestController
 @RequestMapping("/api/leaderboard")
 @CrossOrigin(origins = "*")
-@Profile("postgres")
 public class LeaderboardController {
 
     private final LeaderboardService service;

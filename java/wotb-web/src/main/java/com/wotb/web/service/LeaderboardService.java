@@ -6,7 +6,6 @@ import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.dto.LeaderboardRecordDto;
 import com.wotb.web.entity.LeaderboardRecord;
 import com.wotb.web.repository.LeaderboardRecordRepository;
-import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -17,11 +16,10 @@ import java.time.ZoneOffset;
 import java.util.List;
 
 /**
- * 排行榜业务 (仅 postgres profile)。MVP 只记录录像者本人单场成绩, 不存全场 14 人,
- * 不存 replay 原文件。默认/离线 profile 无此 bean, 由 ReplayService 经 ObjectProvider 可选调用。
+ * 排行榜业务。MVP 只记录录像者本人单场成绩, 不存全场 14 人,
+ * 不存 replay 原文件。
  */
 @Service
-@Profile("postgres")
 public class LeaderboardService {
 
     private static final int MAX_LIMIT = 200;
@@ -103,7 +101,13 @@ public class LeaderboardService {
         return Math.min(limit, MAX_LIMIT);
     }
 
-    private static LeaderboardRecordDto toDto(final LeaderboardRecord r) {
+    /** 查询指定玩家的排行榜记录。 */
+    public List<LeaderboardRecordDto> recordsByAccountId(final long accountId, final int limit) {
+        return repository.findByAccountIdOrderByDamageDealtDesc(accountId, PageRequest.of(0, clamp(limit)))
+                .stream().map(LeaderboardService::toDto).toList();
+    }
+
+    static LeaderboardRecordDto toDto(final LeaderboardRecord r) {
         return new LeaderboardRecordDto(r.getId(), r.getArenaId(), r.getTankId(), r.getTankName(),
                 r.getAccountId(), r.getNickname(), r.getDamageDealt(), r.getMapName(),
                 r.getVersion(), r.getBattleTime(), r.getCreatedAt());

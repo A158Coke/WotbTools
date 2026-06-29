@@ -30,3 +30,6 @@ node_modules/
 *.log
 *.exe
 *.zip
+
+# keycloak provider JAR 需要随仓库走(本地 compose 挂载),例外于上面的 *.jar
+!docker/keycloak/*.jar

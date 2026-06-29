@@ -8,8 +8,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * 排行榜记录仓库。仅在 postgres profile 下随 JPA 自动配置生效;
- * 默认/离线 profile 排除了 JPA, 此接口不会被实例化。
+ * 排行榜记录仓库。随 JPA 自动配置生效。
  */
 public interface LeaderboardRecordRepository extends JpaRepository<LeaderboardRecord, Long> {
 
@@ -21,4 +20,7 @@ public interface LeaderboardRecordRepository extends JpaRepository<LeaderboardRe
 
     /** 指定车辆的伤害榜 (降序)。 */
     List<LeaderboardRecord> findByTankIdOrderByDamageDealtDesc(long tankId, Pageable pageable);
+
+    /** 指定玩家的伤害记录 (降序)。 */
+    List<LeaderboardRecord> findByAccountIdOrderByDamageDealtDesc(long accountId, Pageable pageable);
 }

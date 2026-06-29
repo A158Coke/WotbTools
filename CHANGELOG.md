@@ -2,8 +2,36 @@
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-06-29
+
+### Added
+- **陪练功能**：玩家提交需求、管理员审核分配、打手管理、需求管理。前端 /?view=boost 页面，后端 12 个 REST API，三语 i18n。
+- **用户资料系统**：user_profile 表（Flyway V5），Keycloak sub 关联，支持设置展示名和 WoTB 账号绑定（唯一性约束），前端个人中心可编辑。
+- 首页新增「寻找陪练」卡片。
+- 页面加载动画（旋转环 + 品牌名），替代白屏等待。
+
+### Changed
+- Keycloak 从 26.1 升级至 26.6.3（Docker 镜像），前端 keycloak-js 升级至 26.2.0。
+- Keycloak realm 新增 wotbtools-admin 和 boost-manager 角色。
+- Spring Security 启用 OAuth2 Resource Server JWT 认证，自定义嵌套 claim 提取（realm_access.roles）。
+- 移除离线/桌面模式：删除 DesktopLifecycle、--desktop 启动参数、/api/shutdown 端点。
+- 合并 @Profile("postgres") 为单一配置，移除双 profile 架构。
+- 顶栏响应式优化（768/480px 断点）。
+
 ### Fixed
-- 修复首页 `?view=replay` 未被 SPA 识别导致回放提取器卡片跳转仍停留首页的问题。
+- PostgreSQL 18 volume 挂载路径适配。
+- JWT 角色提取 bug：JwtGrantedAuthoritiesConverter 不支持嵌套 claim，改为手动解析。
+- 已取消/已完成需求不再显示分配按钮。
+- 管理员设终态时自动清理活跃分配。
+- api.js 死代码清理（shutdown/getMe/getWotbAccount/getMyRecords）。
+
+## [1.9.0] - 2026-06-28
+
+### Changed
+- CI/CD 镜像仓库从 DockerHub 迁移至 GHCR：`deploy.yml` 双镜像推送 `ghcr.io/a158coke/wotbtools-backend` / `wotbtools-frontend`，认证改用内置 `GITHUB_TOKEN`。
+- `cleanup-images` workflow 改为清理 GHCR 旧版本（`actions/delete-package-versions@v5`），移除 DockerHub 清理脚本。
+- PostgreSQL 容器 volume 挂载点适配 18+ 布局：`/var/lib/postgresql/data` → `/var/lib/postgresql`。
+- 文档（README、java/README、HANDOVER、DEVELOPER_GUIDE）同步更新镜像路径，移除 `DOCKER_PASSWORD` secret 引用。
 
 ### Added
 - 实时 rating 扩展页：新增独立 `/extended` 入口，不改现有回放解析页面入口。
@@ -11,6 +39,9 @@
 - 潜在伤害字段链路：新增 `potential_damage`、`potential_damage_supplement`、`potential_damage_detail`，并同步单场/汇总导出、API、前端三语 label。
 - 补齐旧解析链路字段：单场玩家列新增 `alpha_damage`、`rank`，扩展页/API/导出可用，原回放页面列选择器保持隐藏；`xp`、`credits` 仅在 parser/model 保留，不作为战绩展示字段。
 - 扩展页 rating 算法落地：按潜在均伤、KAST、全场 impact、AST、多伤率、场均人头加权；KAST 改为单场最大贡献项且封顶 100%，impact 改按双方总池计算并按百分比展示，多伤率阈值按 1.5 倍均血 / 1.2 倍均血+人头 / 均血+2 头 / 3 头判定。
+
+### Fixed
+- 修复首页 `?view=replay` 未被 SPA 识别导致回放提取器卡片跳转仍停留首页的问题。
 
 ## [1.8.0] - 2026-06-27
 

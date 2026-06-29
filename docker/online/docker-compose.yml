@@ -19,7 +19,7 @@ services:
     restart: unless-stopped
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.1
+    image: quay.io/keycloak/keycloak:26.6.3
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
@@ -29,6 +29,7 @@ services:
       KC_DB_PASSWORD: wotb
     volumes:
       - ../keycloak/wotbtools-realm.json:/opt/keycloak/data/import/wotbtools-realm.json
+      - ../keycloak/keycloak-social-provider-china-1.0.0.jar:/opt/keycloak/providers/keycloak-qq.jar
     command: start --import-realm --hostname-strict=false --http-enabled=true --http-port=8080
     ports:
       - "8080:8080"
@@ -44,7 +45,6 @@ services:
       keycloak:
         condition: service_started
     environment:
-      SPRING_PROFILES_ACTIVE: postgres
       POSTGRES_HOST: postgres
       POSTGRES_PASSWORD: wotb
       KEYCLOAK_ISSUER_URI: http://keycloak:8080/realms/wotbtools
