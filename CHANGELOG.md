@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Keycloak 从 26.6.3 升级至 26.6.4（安全补丁 + Quarkus 3.33.2.1）
+
 ## [2.0.0] - 2026-06-29
 
 ### Added
