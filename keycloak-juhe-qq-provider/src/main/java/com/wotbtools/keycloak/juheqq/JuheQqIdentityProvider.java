@@ -22,6 +22,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 
 public final class JuheQqIdentityProvider
@@ -65,14 +67,14 @@ public final class JuheQqIdentityProvider
                 .build(session.getContext().getRealm().getName(), getConfig().getAlias());
         final String callbackUrl = endpointUri.toString() + "?state=" + encode(state);
 
-        logger.debug("juhe-qq: state obtained from IdentityBrokerState");
+        logger.debug("juhe-qq: state obtained from IdentityBrokerState");  // TODO: remove after verification
 
         final String actLoginUrl = loginBaseUrl
                 + "?act=login&appid=" + encode(appid)
                 + "&appkey=" + encode(appkey)
                 + "&type=qq&redirect_uri=" + encode(callbackUrl);
 
-        logger.debug("juhe-qq: login request started");
+        logger.debug("juhe-qq: login request started");  // TODO: remove after verification
 
         try {
             final HttpRequest httpReq = HttpRequest.newBuilder()
@@ -98,7 +100,7 @@ public final class JuheQqIdentityProvider
                 return errorResponse();
             }
 
-            logger.debug("juhe-qq: redirecting user to QQ login");
+            logger.debug("juhe-qq: redirecting user to QQ login");  // TODO: remove after verification
             return Response.status(302).header("Location", redirectUrl).build();
 
         } catch (final IOException | InterruptedException e) {
@@ -116,8 +118,8 @@ public final class JuheQqIdentityProvider
         final String type = uriInfo.getQueryParameters().getFirst("type");
         final String code = uriInfo.getQueryParameters().getFirst("code");
 
-        logger.info("juhe-qq callback entered");
-        logger.debugf("juhe-qq callback: state=%s type=%s code=%s codeLength=%d",
+        logger.info("juhe-qq callback entered");  // TODO: remove after verification
+        logger.debugf("juhe-qq callback: state=%s type=%s code=%s codeLength=%d",  // TODO: remove after verification
                 state != null ? "present" : "absent",
                 type != null && !type.isBlank() ? type : "absent",
                 code != null ? "present" : "absent",
@@ -145,7 +147,7 @@ public final class JuheQqIdentityProvider
             return errorResponse();
         }
         session.getContext().setAuthenticationSession(authenticationSession);
-        logger.debugf("juhe-qq: authenticationSession restored, clientId=%s",
+        logger.debugf("juhe-qq: authenticationSession restored, clientId=%s",  // TODO: remove after verification
                 authenticationSession.getClient() != null
                         ? authenticationSession.getClient().getClientId()
                         : "null");
@@ -159,8 +161,8 @@ public final class JuheQqIdentityProvider
             return errorResponse();
         }
 
-        logger.info("juhe-qq act=callback request prepared");
-        logger.debugf("juhe-qq act=callback diag: appid=%s type=%s codeLength=%d baseUrl=%s",
+        logger.info("juhe-qq act=callback request prepared");  // TODO: remove after verification
+        logger.debugf("juhe-qq act=callback diag: appid=%s type=%s codeLength=%d baseUrl=%s",  // TODO: remove after verification
                 appid != null ? "present" : "absent", "qq", code.length(), loginBaseUrl != null ? loginBaseUrl : "null");
 
         final String actCallbackUrl = loginBaseUrl
@@ -177,8 +179,8 @@ public final class JuheQqIdentityProvider
 
             final HttpResponse<String> httpResp = HTTP.send(httpReq, HttpResponse.BodyHandlers.ofString());
 
-            logger.infof("juhe-qq act=callback HTTP %d", httpResp.statusCode());
-            logger.debugf("juhe-qq act=callback response body prefix: %s",
+            logger.infof("juhe-qq act=callback HTTP %d", httpResp.statusCode());  // TODO: remove after verification
+            logger.debugf("juhe-qq act=callback response body prefix: %s",  // TODO: remove after verification
                     truncate(httpResp.body(), 500));
 
             if (httpResp.statusCode() != 200) {
@@ -194,7 +196,7 @@ public final class JuheQqIdentityProvider
             final String respType = json.path("type").asText("");
             final String socialUid = json.path("social_uid").asText("");
 
-            logger.debugf("juhe-qq act=callback parsed: providerCode=%d providerMsg=%s type=%s social_uid=%s",
+            logger.debugf("juhe-qq act=callback parsed: providerCode=%d providerMsg=%s type=%s social_uid=%s",  // TODO: remove after verification
                     respCode, respMsg, respType, socialUid.isEmpty() ? "absent" : "present");
 
             if (respCode != 0) {
@@ -218,10 +220,14 @@ public final class JuheQqIdentityProvider
             final String gender = json.path("gender").asText("");
             final String location = json.path("location").asText("");
 
+            final String externalId = "qq:" + socialUid;
+            final String username = "juhe_qq_" + sha256prefix(socialUid, 32);
+
             final BrokeredIdentityContext context = new BrokeredIdentityContext(
-                    "qq:" + socialUid, getConfig());
-            context.setBrokerUserId("qq:" + socialUid);
-            context.setUsername("juhe_qq_" + socialUid);
+                    externalId, getConfig());
+            context.setId(externalId);
+            context.setBrokerUserId(externalId);
+            context.setUsername(username);
             context.setFirstName(nickname);
             context.setIdp(this);
             context.setAuthenticationSession(authenticationSession);
@@ -239,14 +245,14 @@ public final class JuheQqIdentityProvider
                 context.setUserAttribute("juhe.location", location);
             }
 
-            context.setEmail(null);
-
-            logger.debugf("juhe-qq context: externalId=%s username=%s idp=%s session=%s",
-                    "present", context.getUsername() != null ? "present" : "absent",
+            logger.infof("juhe-qq authenticated context: providerCode=%d, providerMsg=%s, socialUid=%s, externalId=%s, username=%s, idpConfig=%s, idp=%s, authSession=%s",  // TODO: remove after verification
+                    respCode, respMsg, socialUid.isEmpty() ? "absent" : "present",
+                    context.getId(), context.getUsername(),
+                    context.getIdpConfig() != null ? "present" : "absent",
                     context.getIdp() != null ? "present" : "absent",
                     context.getAuthenticationSession() != null ? "present" : "absent");
 
-            logger.info("juhe-qq calling callback.authenticated");
+            logger.info("juhe-qq calling callback.authenticated");  // TODO: remove after verification
             return callback.authenticated(context);
 
         } catch (final IOException | InterruptedException e) {
@@ -284,6 +290,23 @@ public final class JuheQqIdentityProvider
     private static String truncate(final String s, final int maxLen) {   // TODO: remove after verification
         if (s == null) return "null";
         return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...";
+    }
+
+    private static String sha256prefix(final String input, final int len) {  // TODO: remove after verification
+        if (input == null) {
+            return "";
+        }
+        try {
+            final MessageDigest md = MessageDigest.getInstance("SHA-256");
+            final byte[] hash = md.digest(input.getBytes(StandardCharsets.UTF_8));
+            final StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < hash.length && sb.length() < len; i++) {
+                sb.append(String.format("%02x", hash[i] & 0xff));
+            }
+            return sb.toString();
+        } catch (final NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 not available", e);
+        }
     }
 
     private static boolean isBlank(final String s) {
