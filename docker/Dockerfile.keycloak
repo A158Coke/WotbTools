@@ -1,8 +1,9 @@
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
+COPY java/settings-docker.xml settings.xml
 COPY keycloak-juhe-qq-provider/pom.xml keycloak-juhe-qq-provider/pom.xml
 COPY keycloak-juhe-qq-provider/src keycloak-juhe-qq-provider/src
-RUN mvn -f keycloak-juhe-qq-provider/pom.xml -DskipTests clean package -q
+RUN mvn -s settings.xml -f keycloak-juhe-qq-provider/pom.xml -DskipTests clean package -q
 
 FROM quay.io/keycloak/keycloak:26.6.4
 COPY --from=build /build/keycloak-juhe-qq-provider/target/keycloak-juhe-qq-provider.jar /opt/keycloak/providers/
