@@ -7,6 +7,8 @@ const rows = ref([])
 const loading = ref(false)
 const error = ref('')
 const limit = ref(50)
+const page = ref(1)
+const totalPages = ref(0)
 const uploading = ref(false)
 const uploadMsg = ref('')
 const uploadOk = ref(false)
@@ -21,11 +23,11 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    if (selectedTankId.value) {
-      rows.value = await api.leaderboardTopDamageByTank(selectedTankId.value, limit.value)
-    } else {
-      rows.value = await api.leaderboardTopDamage(limit.value)
-    }
+    const res = selectedTankId.value
+      ? await api.leaderboardTopDamageByTank(selectedTankId.value, page.value, limit.value)
+      : await api.leaderboardTopDamage(page.value, limit.value)
+    rows.value = res.items
+    totalPages.value = res.totalPages
   } catch (e) {
     error.value = e.message
     rows.value = []
@@ -37,12 +39,19 @@ async function load() {
 function filterByTank(tankId, tankName) {
   selectedTankId.value = tankId
   selectedTankName.value = tankName
+  page.value = 1
   load()
 }
 
 function clearFilter() {
   selectedTankId.value = null
   selectedTankName.value = ''
+  page.value = 1
+  load()
+}
+
+function goPage(p) {
+  page.value = p
   load()
 }
 
@@ -117,7 +126,7 @@ function rankClass(i) {
 
     <div class="lb-toolbar">
       <label class="lb-limit">{{ $t('leaderboard.limit') }}
-        <select v-model.number="limit" @change="load">
+        <select v-model.number="limit" @change="page = 1; load()">
           <option :value="20">20</option>
           <option :value="50">50</option>
           <option :value="100">100</option>
@@ -174,6 +183,11 @@ function rankClass(i) {
         </tbody>
       </table>
     </div>
+    <div v-if="totalPages > 1" class="pagination">
+      <button :disabled="page <= 1" @click="goPage(page - 1)">← {{ $t('leaderboard.prev') }}</button>
+      <span>{{ $t('leaderboard.page_info', { page, total: totalPages }) }}</span>
+      <button :disabled="page >= totalPages" @click="goPage(page + 1)">{{ $t('leaderboard.next') }} →</button>
+    </div>
   </div>
 </template>
 
@@ -217,4 +231,8 @@ function rankClass(i) {
 .lb-upload-card .filebtn.lb-uploading { opacity: .6; pointer-events: none; }
 .lb-upload-msg { margin-top: 10px; font-size: 13px; text-align: center; }
 .lb-upload-msg.err { color: var(--error); }
+.pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 16px 0; font-size: .85rem; }
+.pagination button { padding: 6px 14px; border: 1px solid var(--border-ghost); border-radius: 7px; background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-family: inherit; font-size: .82rem; }
+.pagination button:disabled { opacity: .4; cursor: not-allowed; }
+.pagination button:hover:not(:disabled) { background: var(--bg-card-hover); }
 </style>
