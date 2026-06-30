@@ -24,7 +24,7 @@ public final class JwtUtil {
             return null;
         }
         final String sub = jwt.getSubject();
-        return StringUtils.hasText(sub) ? null : sub;
+        return StringUtils.hasText(sub) ? sub : null;
     }
 
     /**

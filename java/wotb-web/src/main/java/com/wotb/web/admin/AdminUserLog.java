@@ -107,10 +107,10 @@ public class AdminUserLog {
         this.errorMessage = errorMessage;
     }
 
-    public void markFailedKeycloakDelete(final boolean localDeleted, final String errorMessage) {
+    public void markFailedKeycloakDelete(final String errorCode, final boolean localDeleted, final String errorMessage) {
         this.status = "FAILED_KEYCLOAK_DELETE";
         this.localProfileDeleted = localDeleted;
-        this.errorCode = "FAILED_KEYCLOAK_DELETE";
+        this.errorCode = errorCode;
         this.errorMessage = errorMessage;
     }
 

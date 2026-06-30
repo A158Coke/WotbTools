@@ -22,7 +22,6 @@ import java.util.Map;
 
 /**
  * 安全配置: Keycloak JWT 认证 + 角色授权。
- *
  * 权限层级:
  *   wotbtools-admin → 全部放行（super admin）
  *   boost-manager    → /api/admin/** 放行
@@ -35,7 +34,7 @@ import java.util.Map;
 public class SecurityConfig {
 
     @Bean
-    public SecurityFilterChain filterChain(final HttpSecurity http) throws Exception {
+    public SecurityFilterChain filterChain(final HttpSecurity http)  {
         http
             .csrf(AbstractHttpConfigurer::disable)
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -48,6 +47,10 @@ public class SecurityConfig {
                 .requestMatchers("/api/health", "/api/columns", "/api/rating",
                         "/api/preview", "/api/export").permitAll()
                 .requestMatchers("/api/leaderboard/**").permitAll()
+
+                // --- 管理员用户管理 (仅 wotbtools-admin) ---
+                .requestMatchers("/api/admin/users/**")
+                    .hasRole("wotbtools-admin")
 
                 // --- 管理员接口 (wotbtools-admin 放行全部，boost-manager 放行管理) ---
                 .requestMatchers("/api/admin/**")

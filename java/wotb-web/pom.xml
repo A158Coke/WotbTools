@@ -65,6 +65,18 @@
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
         </dependency>
+        <!-- Keycloak Admin Client: 后端通过 Admin API 管理 Keycloak 用户 -->
+        <dependency>
+            <groupId>org.keycloak</groupId>
+            <artifactId>keycloak-admin-client</artifactId>
+            <version>26.0.9</version>
+        </dependency>
+        <dependency>
+            <groupId>org.keycloak</groupId>
+            <artifactId>keycloak-core</artifactId>
+            <version>26.6.4</version>
+            <scope>compile</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -78,6 +90,12 @@
                 <targetPath>static</targetPath>
                 <includes>
                     <include>**/*</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>../../common</directory>
+                <includes>
+                    <include>error-codes.json</include>
                 </includes>
             </resource>
         </resources>
