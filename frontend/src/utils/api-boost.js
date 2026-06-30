@@ -81,8 +81,8 @@ export async function getUserProfile() {
   return boostHandle(await fetch('/api/users/profile', { headers: boostHeaders() }))
 }
 
-export async function updateUserProfile(body) {
-  return boostHandle(await fetch('/api/users/profile', { method: 'PATCH', headers: boostHeaders(), body: JSON.stringify(body) }))
+export async function createUserProfile() {
+  return boostHandle(await fetch('/api/users/profile', { method: 'POST', headers: boostHeaders() }))
 }
 
 export async function updateUserWotbAccount(body) {
