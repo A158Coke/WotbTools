@@ -7,6 +7,7 @@ import com.wotb.web.boost.enums.BoosterStatus;
 import com.wotb.web.boost.enums.ContactType;
 import com.wotb.web.boost.repository.BoosterProfileRepository;
 import org.springframework.data.domain.Page;
+import org.springframework.util.StringUtils;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,7 +37,7 @@ public class BoosterService {
                              final Boolean available, final String status,
                              final String contactType, final String contactValue,
                              final String specialties, final String description) {
-        if (nickname == null || nickname.isBlank()) throw new IllegalArgumentException("打手昵称不能为空");
+        if (!StringUtils.hasText(nickname)) throw new IllegalArgumentException("打手昵称不能为空");
         if (level == null) throw new IllegalArgumentException("打手等级不能为空");
         BoosterLevel.from(level);
         final BoosterProfile p = new BoosterProfile();
