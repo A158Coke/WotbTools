@@ -77,19 +77,33 @@ export async function adminBoostBoosterAvailability(id, body) {
 }
 
 // ========== Admin Users ==========
+async function adminHandle(r) {
+  if (r.status === 401 || r.status === 403) {
+    let msg = 'Access denied'
+    try { const e = await r.json(); msg = e.error || msg } catch {}
+    throw new Error(msg)
+  }
+  if (!r.ok) {
+    let msg = `HTTP ${r.status}`
+    try { const e = await r.json(); msg = e.message || e.error || msg } catch {}
+    throw new Error(msg)
+  }
+  return r.json()
+}
+
 export async function adminSearchUsers(query = '', limit = 50) {
   const params = new URLSearchParams()
   if (query) params.set('query', query)
   params.set('limit', String(limit))
-  return boostHandle(await fetch(`/api/admin/users?${params}`, { headers: boostHeaders() }))
+  return adminHandle(await fetch(`/api/admin/users?${params}`, { headers: boostHeaders() }))
 }
 
 export async function adminGetUser(keycloakUserId) {
-  return boostHandle(await fetch(`/api/admin/users/${encodeURIComponent(keycloakUserId)}`, { headers: boostHeaders() }))
+  return adminHandle(await fetch(`/api/admin/users/${encodeURIComponent(keycloakUserId)}`, { headers: boostHeaders() }))
 }
 
 export async function adminDeleteUser(keycloakUserId) {
-  return boostHandle(await fetch(`/api/admin/users/${encodeURIComponent(keycloakUserId)}?confirm=true`, { method: 'DELETE', headers: boostHeaders() }))
+  return adminHandle(await fetch(`/api/admin/users/${encodeURIComponent(keycloakUserId)}?confirm=true`, { method: 'DELETE', headers: boostHeaders() }))
 }
 
 // ========== User Profile ==========
