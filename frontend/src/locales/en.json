@@ -365,6 +365,7 @@
     "unavailable": "Off",
     "setUnavailable": "Offline",
     "setAvailable": "Online",
+    "activeAssignments": "Active",
     "noBoosters": "None",
     "pleaseLogin": "Login required",
     "authError": "Auth error"
