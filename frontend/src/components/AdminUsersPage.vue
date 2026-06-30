@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useAuth } from '../composables/useAuth.js'
 import * as api from '../utils/api-boost.js'
 
 const users = ref([])
@@ -13,7 +14,26 @@ const deleteConfirmText = ref('')
 const deleting = ref(false)
 const deleteResult = ref('')
 
-onMounted(() => { loadUsers() })
+const { initPromise, keycloak } = useAuth()
+
+async function ensureToken() {
+  await initPromise
+  try {
+    await keycloak.updateToken(5)
+  } catch {
+    keycloak.login()
+    throw new Error('Session expired, please login again')
+  }
+}
+
+onMounted(async () => {
+  try {
+    await ensureToken()
+    loadUsers()
+  } catch (e) {
+    error.value = e.message
+  }
+})
 
 async function loadUsers() {
   loading.value = true
