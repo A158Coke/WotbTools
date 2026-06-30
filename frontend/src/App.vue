@@ -195,6 +195,20 @@ tr:hover td { background: var(--bg-list-hover); }
 .r3 { background: #ad7235 !important; color: #fff !important; }
 .r4 { background: var(--bg-chip) !important; color: var(--text-label) !important; }
 
+/* ---- replay results ---- */
+.restoolbar { display: flex; align-items: flex-start; gap: 12px; margin: 16px 0; flex-wrap: wrap; }
+.restoolbar .tabs { flex: 1; min-width: 0; }
+.resactions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.resactions button { white-space: nowrap; }
+.tabx { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
+  margin-left: 4px; border-radius: 50%; font-size: 12px; font-weight: 700; line-height: 1;
+  color: var(--text-sub); background: transparent; cursor: pointer; transition: all .12s; }
+.tabx:hover { background: var(--error); color: #fff; }
+.dropdown { position: relative; }
+.wrap .warn, .wrap .error { padding: 10px 16px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; }
+.wrap .warn { background: var(--warn-bg, #fff8e8); border: 1px solid var(--border-warn, #f0d08a); color: var(--warn-text, #8a5200); }
+.wrap .error { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
+
 /* ---- file upload ---- */
 .up-area { border: 2px dashed var(--border-dashed); border-radius: 10px; padding: 20px 16px; text-align: center;
   background: var(--bg-upload); cursor: pointer; margin-bottom: 12px; transition: background .15s, border-color .15s; }
