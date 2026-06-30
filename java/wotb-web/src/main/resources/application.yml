@@ -12,7 +12,7 @@ spring:
   datasource:
     url: jdbc:postgresql://${POSTGRES_HOST:localhost}:5432/${POSTGRES_DB:wotb}
     username: ${POSTGRES_USER:wotb}
-    password: ${POSTGRES_PASSWORD:wotb}
+    password: ${POSTGRES_PASSWORD}
   jpa:
     hibernate.ddl-auto: validate
   flyway:
@@ -29,3 +29,10 @@ spring:
 logging:
   level:
     org.apache.poi: WARN
+
+keycloak:
+  admin:
+    server-url: ${KEYCLOAK_ADMIN_SERVER_URL:https://auth.wotbtools.com}
+    realm: ${KEYCLOAK_ADMIN_REALM:wotbtools}
+    client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:wotbtools-admin-api}
+    client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
