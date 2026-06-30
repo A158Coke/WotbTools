@@ -38,6 +38,22 @@
         "https://*.wotbtools.com",
         "http://localhost:5173",
         "http://localhost:8088"
+      ],
+      "protocolMappers": [
+        {
+          "name": "display-name-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "displayName",
+            "claim.name": "displayName",
+            "claim.value": "attribute_value",
+            "jsonType.label": "String",
+            "id.token.claim": true,
+            "access.token.claim": true,
+            "userinfo.token.claim": true
+          }
+        }
       ]
     }
   ]

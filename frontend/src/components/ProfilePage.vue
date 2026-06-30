@@ -13,9 +13,7 @@ const profile = ref(null)
 const loginStarted = ref(false)
 
 // Edit states
-const editingName = ref(false)
 const editingAccount = ref(false)
-const editName = ref('')
 const editAccountId = ref(null)
 const editNickname = ref('')
 const editError = ref('')
@@ -42,26 +40,18 @@ async function loadProfile() {
   try {
     profile.value = await api.getUserProfile()
   } catch {
-    profile.value = null
+    // 首次登录，user_profile 不存在 → 创建
+    try {
+      profile.value = await api.createUserProfile()
+    } catch {
+      profile.value = null
+    }
   }
   if (profile.value?.wotbAccountId) { loadRecords() }
 }
 
 function doLogin() { if (!loginStarted.value) { loginStarted.value = true; login() } }
 function doLogout() { logout() }
-
-function startEditName() {
-  editName.value = profile.value?.displayName || userName() || ''
-  editingName.value = true
-  editError.value = ''
-}
-async function saveName() {
-  editError.value = ''
-  try {
-    profile.value = await api.updateUserProfile({ displayName: editName.value })
-    editingName.value = false
-  } catch (e) { editError.value = e.message }
-}
 
 function startEditAccount() {
   editAccountId.value = profile.value?.wotbAccountId || null
@@ -114,7 +104,7 @@ async function removeAccount() {
           <div class="hero-identity">
             <h2 class="hero-name">{{ profile.displayName || userName() || 'WoTBTools User' }}</h2>
             <div class="hero-meta">
-              <span class="hero-badge">Keycloak</span>
+              <span class="hero-username">{{ profile.username || '—' }}</span>
             </div>
           </div>
         </div>
@@ -123,19 +113,13 @@ async function removeAccount() {
 
       <div class="profile-body">
         <div class="profile-left">
-          <!-- Display Name -->
+          <!-- 身份信息（来自 Keycloak，不可修改） -->
           <div class="profile-card profile-section">
             <div class="section-head">
-              <h3 class="card-title">{{ $t('profile.displayName') }}</h3>
-              <button v-if="!editingName" class="btn-ghost btn-sm" @click="startEditName">{{ $t('profile.edit') }}</button>
+              <h3 class="card-title">{{ $t('profile.identity') }}</h3>
             </div>
-            <div v-if="editingName" class="edit-row">
-              <input v-model="editName" maxlength="64" class="edit-input" />
-              <button class="btn-primary btn-sm" @click="saveName">{{ $t('profile.save') }}</button>
-              <button class="btn-ghost btn-sm" @click="editingName = false">{{ $t('profile.cancel') }}</button>
-              <span v-if="editError" class="error">{{ editError }}</span>
-            </div>
-            <p v-else class="profile-value">{{ profile.displayName || '—' }}</p>
+            <div class="field"><label class="field-label">{{ $t('profile.displayName') }}</label><span class="profile-value">{{ profile.displayName || '—' }}</span></div>
+            <div class="field"><label class="field-label">{{ $t('profile.username') }}</label><code class="profile-value">{{ profile.username || '—' }}</code></div>
           </div>
 
           <!-- WoTB Account -->
@@ -223,7 +207,7 @@ async function removeAccount() {
 .hero-avatar { width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, #2563eb, #7c3aed); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; font-weight: 700; flex-shrink: 0; }
 .hero-name { font-size: 1.3rem; font-weight: 700; color: var(--text-heading); margin: 0 0 6px; }
 .hero-meta { display: flex; gap: 8px; align-items: center; }
-.hero-badge { font-size: .72rem; padding: 2px 10px; border-radius: 10px; background: var(--bg-blue); color: var(--accent); font-weight: 600; }
+.hero-username { font-size: .82rem; color: var(--text-sub); font-family: monospace; word-break: break-all; }
 .profile-body { display: flex; gap: 24px; align-items: flex-start; }
 .profile-left { flex: 1; min-width: 0; }
 .profile-right { width: 340px; flex-shrink: 0; }

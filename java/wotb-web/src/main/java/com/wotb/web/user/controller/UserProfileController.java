@@ -2,20 +2,18 @@ package com.wotb.web.user.controller;
 
 import com.wotb.web.dto.LeaderboardRecordDto;
 import com.wotb.web.service.LeaderboardService;
-import com.wotb.web.user.dto.UpdateProfileRequest;
 import com.wotb.web.user.dto.UpdateWotbAccountRequest;
 import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.service.UserProfileService;
 import com.wotb.web.util.JwtUtil;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -33,33 +31,25 @@ public class UserProfileController {
         this.leaderboardService = leaderboardService;
     }
 
+    /** 查询当前用户资料。未创建 → 404。 */
     @GetMapping("/profile")
     public UserProfileDto getProfile() {
         final String uid = JwtUtil.requireUserId();
-        return service.getOrCreate(uid, JwtUtil.currentUsername());
+        return service.findByKeycloakUserId(uid)
+                .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
     }
 
-    @PatchMapping("/profile")
-    public UserProfileDto updateProfile(@RequestBody final UpdateProfileRequest body) {
-        try {
-            return service.updateDisplayName(JwtUtil.requireUserId(), body.displayName());
-        } catch (final IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        }
+    /** 创建当前用户资料（首次进入时调用）。username 和 displayName 来自 JWT，不可修改。 */
+    @PostMapping("/profile")
+    public UserProfileDto createProfile() {
+        return service.create(JwtUtil.requireUserId(),
+                JwtUtil.currentUsername(), JwtUtil.currentDisplayName());
     }
 
     @PatchMapping("/wotb-account")
     public UserProfileDto updateWotbAccount(@RequestBody final UpdateWotbAccountRequest body) {
-        try {
-            return service.updateWotbAccount(JwtUtil.requireUserId(),
-                    body.wotbAccountId(), body.wotbNickname(), body.wotbServer());
-        } catch (final IllegalArgumentException e) {
-            final String msg = e.getMessage();
-            if ("WOTB_ACCOUNT_ALREADY_USED".equals(msg)) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, msg);
-            }
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, msg);
-        }
+        return service.updateWotbAccount(JwtUtil.requireUserId(),
+                body.wotbAccountId(), body.wotbNickname(), body.wotbServer());
     }
 
     @DeleteMapping("/wotb-account")
@@ -67,12 +57,13 @@ public class UserProfileController {
         return service.deleteWotbAccount(JwtUtil.requireUserId());
     }
 
+    /** 当前用户的排行榜战绩。 */
     @GetMapping("/profile/records")
     public List<LeaderboardRecordDto> myRecords() {
-        final UserProfileDto profile = service.getOrCreate(JwtUtil.requireUserId(), null);
-        if (profile.wotbAccountId() == null) {
+        final var profileOpt = service.findByKeycloakUserId(JwtUtil.requireUserId());
+        if (profileOpt.isEmpty() || profileOpt.get().wotbAccountId() == null) {
             return List.of();
         }
-        return leaderboardService.recordsByAccountId(profile.wotbAccountId(), 50);
+        return leaderboardService.recordsByAccountId(profileOpt.get().wotbAccountId(), 50);
     }
 }

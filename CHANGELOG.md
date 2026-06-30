@@ -6,6 +6,9 @@
 - **管理员用户删除**：后端 `/api/admin/users` 全套 API（搜索/详情/双删），Keycloak Admin Client 集成，审计日志 `admin_user_log` 表（Flyway V6），`wotbtools-admin` 角色权限校验。
 - **通用错误码系统**：`common/error-codes.json` 单源，Java `ErrorCodes` 加载器 + 前端可直读，替代硬编码字符串。
 - AGENTS.md 规则 18（StringUtils.hasText）、19（优先 Stream）。
+- **用户资料增强**：`user_profile` 新增 `username` 字段（Flyway V7），映射 Keycloak `preferred_username`。
+- **displayName JWT 映射**：`wotbtools-web` client 新增 `display-name-mapper` protocol mapper，QQ 昵称映射到 JWT `display_name` claim。
+- **QQ username 生成**：`{清洗后昵称}-{sha8(socialUid)}` 确保唯一，无效昵称返回 400。
 - **Juhe QQ 登录**：Keycloak 自定义 Identity Provider (`keycloak-juhe-qq-provider`)，通过聚合登录平台 open.juhedenglu.cn 实现 QQ 登录。
   - 新增 Maven 模块：`keycloak-juhe-qq-provider`（Keycloak SPI，provider ID: juhe-qq）
   - 自定义 Keycloak Docker 镜像（`docker/Dockerfile.keycloak`），集成 provider jar

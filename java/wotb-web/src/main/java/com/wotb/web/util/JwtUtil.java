@@ -11,9 +11,7 @@ import org.springframework.web.server.ResponseStatusException;
  */
 public final class JwtUtil {
 
-    private JwtUtil() {
-        // 工具类
-    }
+    private JwtUtil() {}
 
     /**
      * 从当前 JWT 提取用户 Keycloak ID（sub claim）。
@@ -28,7 +26,7 @@ public final class JwtUtil {
     }
 
     /**
-     * 从当前 JWT 提取用户名（preferred_username）。
+     * 从当前 JWT 提取 username（preferred_claim，唯一带 hash 后缀）。
      */
     public static String currentUsername() {
         final var auth = SecurityContextHolder.getContext().getAuthentication();
@@ -36,6 +34,18 @@ public final class JwtUtil {
             return null;
         }
         return jwt.getClaimAsString("preferred_username");
+    }
+
+    /**
+     * 从当前 JWT 提取 displayName（由 Keycloak protocol mapper 映射的 user attribute）。
+     * QQ 昵称等用户可读展示名，不含唯一性 hash 后缀。
+     */
+    public static String currentDisplayName() {
+        final var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof final Jwt jwt)) {
+            return null;
+        }
+        return jwt.getClaimAsString("displayName");
     }
 
     /**
