@@ -24,6 +24,8 @@
 15. **线上排障** — 部署后 502/启动失败，SSH 进 VPS：`ssh -i "$env:USERPROFILE\.ssh\wotb_vps_deploy" -o IdentitiesOnly=yes root@45.136.14.101 -p 58361`，`docker logs wotb-wotb-backend-1 --tail 100`。常见根因：循环依赖、Flyway 冲突、PG volume 不兼容。
 16. **结尾签名** — 完成工作后回复末尾附带：我完成了喵
 17. **临时代码标记** — 调试/测试用的临时日志、工具方法必须标注 `// TODO: remove after verification`，业务跑通后清理。Grill-Fix 检查单包含临时代码残留检查。
+18. **String 空值判断** — 字符串判空或 null 统一用 `org.springframework.util.StringUtils.hasText(s)`。禁止手写 `s == null || s.isBlank()`。例外：仅当项目内无处引用 Spring 的核心模块可保留手写。
+19. **优先 Stream** — 集合遍历优先用 Java Stream（`map`/`filter`/`toList()` 等），不可行（如需要受检异常、多语句副作用）再回退 for-each。
 
 ## 常用命令
 
