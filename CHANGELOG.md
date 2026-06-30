@@ -37,6 +37,7 @@
 - 顶栏响应式优化（768/480px 断点）。
 
 ### Fixed
+- 修复移动端回放解析/排行榜页面顶栏挤压导致主题切换器样式异常的问题，并清理静态首页残留的旧 `replay.wotbtools.com` 入口链接。
 - PostgreSQL 18 volume 挂载路径适配。
 - JWT 角色提取 bug：JwtGrantedAuthoritiesConverter 不支持嵌套 claim，改为手动解析。
 - 已取消/已完成需求不再显示分配按钮。

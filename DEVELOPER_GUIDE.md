@@ -1,5 +1,9 @@
 # Developer Guide for AI Maintainers
 
+## Frontend Layout Note
+
+- `App.vue` 顶栏样式为全局样式：桌面端固定在顶部，移动端使用 sticky + flex-wrap，避免语言选择、主题切换和个人中心入口挤压回放/排行榜页面。
+
 ## SPA 路由参数
 
 - `?view=replay`：进入回放提取器。

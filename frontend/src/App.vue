@@ -121,7 +121,7 @@ h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
   background: var(--bg-card); border-bottom: 1px solid var(--border); }
 .tb-brand { display: flex; align-items: center; }
 .tb-logo { height: 28px; }
-.topbar nav { display: flex; gap: 4px; }
+.topbar nav { display: flex; gap: 4px; flex: 0 0 auto; min-width: 0; }
 .topbar nav button { padding: 6px 12px; border: 1px solid transparent; border-radius: 7px;
   background: transparent; color: var(--text-sub); cursor: pointer; font-size: .85rem; font-family: inherit; white-space: nowrap; }
 .topbar nav button.active { background: var(--bg-blue); color: var(--accent-dark); border-color: var(--border-tab-active); font-weight: 600; }
@@ -134,6 +134,12 @@ h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
 .uploadwrap { max-width: 780px; }
 .uploadcard { padding: 24px 16px; }
 .tb-spacer { flex: 1; }
+.theme-bar { display: flex; gap: 2px; flex: 0 0 auto; align-items: center; white-space: nowrap;
+  background: var(--bg-card2); border: 1px solid var(--border-ghost); border-radius: 7px; padding: 2px; }
+.theme-bar button { flex: 0 0 auto; padding: 4px 10px; border: none; border-radius: 5px;
+  background: transparent; color: var(--text-sub); cursor: pointer; font-size: .73rem; line-height: 1; font-family: inherit; }
+.theme-bar button:hover { color: var(--text-label); background: transparent; }
+.theme-bar button.active { background: var(--accent); color: #fff; font-weight: 600; }
 .auth-btn { padding: 6px 14px; border: 1px solid var(--border-ghost); border-radius: 7px;
   background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-size: .82rem; font-family: inherit; white-space: nowrap; }
 .auth-btn:hover { background: var(--bg-blue-light); border-color: var(--accent); color: var(--accent-dark); text-decoration: none; }
@@ -256,19 +262,27 @@ tr:hover td { background: var(--bg-list-hover); }
 
 /* ----- topbar responsive ----- */
 @media (max-width: 768px) {
-  .topbar { padding: 6px 10px; gap: 4px; }
-  .topbar nav { gap: 2px; }
+  .topbar { position: sticky; height: auto; min-height: 50px; flex-wrap: wrap; padding: 6px 10px; gap: 6px; }
+  .tb-content { padding-top: 0; }
+  .tb-spacer { display: none; }
+  .topbar nav { flex: 1 1 auto; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+  .topbar nav::-webkit-scrollbar { display: none; }
   .topbar nav button { padding: 5px 8px; font-size: .78rem; }
-  .theme-bar { display: none; }
   .uploadwrap { max-width: 100%; }
   .lb-toolbar { flex-wrap: wrap; gap: 6px; }
+  .theme-bar { display: flex; margin-left: auto; }
+  .theme-bar button { padding: 4px 8px; font-size: .7rem; }
+  .auth-btn { padding: 5px 10px; font-size: .78rem; }
+  .lang-select { font-size: .7rem; padding: 4px 20px 4px 7px; }
 }
 @media (max-width: 480px) {
-  .topbar { padding: 4px 6px; gap: 2px; height: 40px; }
-  .tb-content { padding-top: 46px; }
+  .topbar { padding: 4px 6px; gap: 4px; }
+  .tb-brand { flex: 0 0 auto; }
+  .topbar nav { order: 2; flex: 1 1 calc(100% - 34px); }
   .topbar nav button { padding: 4px 6px; font-size: .72rem; }
-  .lang-select { font-size: .7rem; padding: 3px 18px 3px 5px; background-size: 10px; }
+  .lang-select { order: 3; font-size: .7rem; padding: 3px 18px 3px 5px; background-size: 10px; }
+  .theme-bar { order: 4; margin-left: 0; }
   .tb-logo { height: 22px; }
-  .auth-btn { padding: 4px 8px; font-size: .75rem; }
+  .auth-btn { order: 5; margin-left: auto; padding: 4px 8px; font-size: .75rem; }
 }
 </style>
