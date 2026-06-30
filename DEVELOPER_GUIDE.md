@@ -176,6 +176,7 @@ BattleResults
 - UI 组件在 `components/`：FileUploader / ColumnPicker / AggregateTable / BattleTable / RatingModal / RemoveConfirmModal / VersionPage / LeaderboardPage（排行榜整页，仅在线版显示）
 - 开发时 Vite 代理 `/api → localhost:8087`。
 - 语言持久化 `localStorage('wotb-lang')`，主题持久化 Cookie `wotbtools-theme`（domain `.wotbtools.com`）+ localStorage 回退。
+- 内联 SVG 图标统一使用全局 `.ic` 描边样式；上传按钮使用 `.filebtn input { display:none; }` 隐藏原生文件控件，避免浏览器默认控件破坏布局。
 
 ### 显示名（i18n）架构
 

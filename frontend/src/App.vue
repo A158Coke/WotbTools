@@ -113,6 +113,32 @@ body { margin: 0; font: 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Robo
   background: var(--bg); color: var(--text); }
 a { color: var(--accent); text-decoration: none; }
 a:hover { color: var(--accent-hover); text-decoration: underline; }
+.ic {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: -3px;
+}
+.up-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  background: var(--bg-blue-light);
+  color: var(--accent-icon);
+}
+.up-icon .ic {
+  width: 28px;
+  height: 28px;
+}
 .wrap { max-width: 1200px; margin: 0 auto; padding: 16px 20px; }
 h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
 .tb-content { padding-top: 52px; }
@@ -186,13 +212,14 @@ tr:hover td { background: var(--bg-list-hover); }
 .chip .del { cursor: pointer; opacity: .6; }
 .chip .del:hover { opacity: 1; color: var(--error); font-weight: 700; }
 .actionrow { display: flex; align-items: center; gap: 8px; }
-.filebtn { background: var(--accent); color: #fff; border: none; padding: 8px 24px; border-radius: 7px; font-size: .85rem; font-family: inherit; cursor: pointer; }
+.filebtn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: var(--accent); color: #fff; border: none; padding: 8px 24px; border-radius: 7px; font-size: .85rem; font-family: inherit; cursor: pointer; }
+.filebtn input { display: none; }
 .filebtn:hover { background: var(--accent-hover); }
 .filebtn:disabled { opacity: .5; cursor: not-allowed; }
 .filebtn.lg { font-size: 1rem; padding: 10px 36px; }
 
 /* ---- ghost / outline ---- */
-.ghost { background: transparent; color: var(--text-label); border: 1px solid var(--border-ghost); padding: 6px 14px; border-radius: 7px; cursor: pointer; font-size: .82rem; font-family: inherit; }
+.ghost { display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: transparent; color: var(--text-label); border: 1px solid var(--border-ghost); padding: 6px 14px; border-radius: 7px; cursor: pointer; font-size: .82rem; font-family: inherit; }
 .ghost:hover { background: var(--bg-card-hover); }
 .ghost.sm { font-size: .78rem; padding: 4px 10px; }
 .ghost.danger { color: var(--error); border-color: var(--error); }
