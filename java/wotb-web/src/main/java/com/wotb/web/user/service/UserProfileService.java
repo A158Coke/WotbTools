@@ -4,13 +4,13 @@ import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.repository.UserProfileRepository;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.util.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.Optional;
 
-/** 用户资料服务：lazy create + CRUD。 */
+/** 用户资料服务。创建/查询分离，username 和 displayName 来自 Keycloak 不可修改。 */
 @Service
 public class UserProfileService {
 
@@ -20,29 +20,36 @@ public class UserProfileService {
         this.repository = repository;
     }
 
-    @Transactional
-    public UserProfileDto getOrCreate(final String keycloakUserId, final String defaultDisplayName) {
-        return toDto(findOrCreate(keycloakUserId, defaultDisplayName));
+    /** 查询用户资料，不存在则返回 empty。 */
+    @Transactional(readOnly = true)
+    public Optional<UserProfileDto> findByKeycloakUserId(final String keycloakUserId) {
+        return repository.findByKeycloakUserId(keycloakUserId).map(this::toDto);
     }
 
+    /** 创建用户资料（首次登录时由前端 POST /profile 触发）。 */
     @Transactional
-    public UserProfileDto updateDisplayName(final String keycloakUserId, final String displayName) {
-        final UserProfile profile = findOrCreate(keycloakUserId, null);
-        if (!StringUtils.hasText(displayName) || displayName.length() > 64) {
-            throw new IllegalArgumentException("INVALID_DISPLAY_NAME");
+    public UserProfileDto create(final String keycloakUserId, final String username, final String displayName) {
+        if (repository.findByKeycloakUserId(keycloakUserId).isPresent()) {
+            throw new IllegalArgumentException("PROFILE_ALREADY_EXISTS");
         }
-        profile.setDisplayName(displayName.trim());
+
+        final UserProfile profile = new UserProfile();
+        profile.setKeycloakUserId(keycloakUserId);
+        profile.setUsername(username);
+        profile.setDisplayName(displayName);
+        profile.setWotbServer("CN");
         profile.setUpdatedAt(OffsetDateTime.now());
-        repository.save(profile);
-        return toDto(profile);
+        return toDto(repository.save(profile));
     }
 
+    /** 更新坦克世界账号绑定。 */
     @Transactional
     public UserProfileDto updateWotbAccount(final String keycloakUserId,
                                             final Long wotbAccountId,
                                             final String wotbNickname,
                                             final String wotbServer) {
-        final UserProfile profile = findOrCreate(keycloakUserId, null);
+        final UserProfile profile = repository.findByKeycloakUserId(keycloakUserId)
+                .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
 
         if (wotbAccountId == null || wotbAccountId <= 0) {
             throw new IllegalArgumentException("INVALID_WOTB_ACCOUNT_ID");
@@ -67,39 +74,29 @@ public class UserProfileService {
         profile.setUpdatedAt(OffsetDateTime.now());
 
         try {
-            repository.save(profile);
+            return toDto(repository.save(profile));
         } catch (final DataIntegrityViolationException e) {
             throw new IllegalArgumentException("WOTB_ACCOUNT_ALREADY_USED");
         }
-        return toDto(profile);
     }
 
+    /** 清空坦克世界账号绑定。 */
     @Transactional
     public UserProfileDto deleteWotbAccount(final String keycloakUserId) {
-        final UserProfile profile = findOrCreate(keycloakUserId, null);
+        final UserProfile profile = repository.findByKeycloakUserId(keycloakUserId)
+                .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
+
         profile.setWotbAccountId(null);
         profile.setWotbNickname(null);
         profile.setWotbServer("CN");
         profile.setUpdatedAt(OffsetDateTime.now());
-        repository.save(profile);
-        return toDto(profile);
+        return toDto(repository.save(profile));
     }
 
-    private UserProfile findOrCreate(final String keycloakUserId, final String displayName) {
-        return repository.findByKeycloakUserId(keycloakUserId)
-                .orElseGet(() -> {
-                    final UserProfile p = new UserProfile();
-                    p.setKeycloakUserId(keycloakUserId);
-                    p.setDisplayName(displayName);
-                    p.setWotbServer("CN");
-                    p.setUpdatedAt(OffsetDateTime.now());
-                    return repository.save(p);
-                });
-    }
-
-    private static UserProfileDto toDto(final UserProfile p) {
+    private UserProfileDto toDto(final UserProfile p) {
         return new UserProfileDto(
                 p.getId(), p.getKeycloakUserId(), p.getDisplayName(),
+                p.getUsername(),
                 p.getWotbAccountId(), p.getWotbNickname(), p.getWotbServer()
         );
     }

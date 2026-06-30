@@ -126,6 +126,13 @@ h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
   background: transparent; color: var(--text-sub); cursor: pointer; font-size: .85rem; font-family: inherit; white-space: nowrap; }
 .topbar nav button.active { background: var(--bg-blue); color: var(--accent-dark); border-color: var(--border-tab-active); font-weight: 600; }
 .topbar nav button:hover { background: var(--bg-card-hover); color: var(--text-label); }
+.theme-bar { display: flex; gap: 2px; align-items: center; }
+.theme-bar button { padding: 6px 10px; border: 1px solid transparent; border-radius: 7px;
+  background: transparent; color: var(--text-sub); cursor: pointer; font-size: .82rem; font-family: inherit; white-space: nowrap; }
+.theme-bar button.active { background: var(--bg-blue); color: var(--accent-dark); border-color: var(--border-tab-active); font-weight: 600; }
+.theme-bar button:hover { background: var(--bg-card-hover); color: var(--text-label); }
+.uploadwrap { max-width: 780px; }
+.uploadcard { padding: 24px 16px; }
 .tb-spacer { flex: 1; }
 .theme-bar { display: flex; gap: 2px; flex: 0 0 auto; align-items: center; white-space: nowrap;
   background: var(--bg-card2); border: 1px solid var(--border-ghost); border-radius: 7px; padding: 2px; }
@@ -261,6 +268,8 @@ tr:hover td { background: var(--bg-list-hover); }
   .topbar nav { flex: 1 1 auto; gap: 2px; overflow-x: auto; scrollbar-width: none; }
   .topbar nav::-webkit-scrollbar { display: none; }
   .topbar nav button { padding: 5px 8px; font-size: .78rem; }
+  .uploadwrap { max-width: 100%; }
+  .lb-toolbar { flex-wrap: wrap; gap: 6px; }
   .theme-bar { display: flex; margin-left: auto; }
   .theme-bar button { padding: 4px 8px; font-size: .7rem; }
   .auth-btn { padding: 5px 10px; font-size: .78rem; }

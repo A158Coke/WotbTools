@@ -32,6 +32,9 @@ public class UserProfile {
     @Column(name = "display_name", length = 64)
     private String displayName;
 
+    @Column(name = "username", nullable = false, length = 128)
+    private String username = "";
+
     @Column(name = "wotb_account_id")
     private Long wotbAccountId;
 
@@ -60,6 +63,9 @@ public class UserProfile {
 
     public String getDisplayName() { return displayName; }
     public void setDisplayName(final String displayName) { this.displayName = displayName; }
+
+    public String getUsername() { return username; }
+    public void setUsername(final String username) { this.username = username; }
 
     public Long getWotbAccountId() { return wotbAccountId; }
     public void setWotbAccountId(final Long wotbAccountId) { this.wotbAccountId = wotbAccountId; }

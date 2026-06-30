@@ -108,11 +108,16 @@ public final class JuheQqEndpoint {
             // ── 解析 Juhe callback 字段 ────────────────────────────────
             final String nickname = json.path("nickname").asText("");
             final String faceimg = json.path("faceimg").asText("");
-            final String gender = json.path("gender").asText("");
-            final String location = json.path("location").asText("");
+
+            final String cleanedNickname = prepareNickname(nickname);
+            if (cleanedNickname == null) {
+                return Response.status(400)
+                        .entity("QQ nickname is invalid. Please set a valid nickname in your QQ profile and try again.")
+                        .build();
+            }
 
             final String externalId = "qq:" + socialUid;
-            final String username = sanitizeUsername(nickname, socialUid);
+            final String username = buildUsername(cleanedNickname, socialUid);
 
             final BrokeredIdentityContext context = new BrokeredIdentityContext(externalId, config);
             context.setId(externalId);
@@ -123,18 +128,12 @@ public final class JuheQqEndpoint {
             context.setIdp(provider);
             context.setAuthenticationSession(authenticationSession);
 
+            context.setUserAttribute("displayName", nickname);
             context.setUserAttribute("juhe.provider", "qq");
             context.setUserAttribute("juhe.social_uid", socialUid);
             context.setUserAttribute("juhe.nickname", nickname);
-            context.setUserAttribute("juhe.username_source", "nickname");
             if (!faceimg.isEmpty()) {
                 context.setUserAttribute("juhe.faceimg", faceimg);
-            }
-            if (!gender.isEmpty()) {
-                context.setUserAttribute("juhe.gender", gender);
-            }
-            if (location != null && !location.isBlank() && !"null".equalsIgnoreCase(location)) {
-                context.setUserAttribute("juhe.location", location);
             }
 
             return authCallback.authenticated(context);
@@ -147,30 +146,37 @@ public final class JuheQqEndpoint {
     // ── 辅助方法 ──────────────────────────────────────────────────────
 
     /**
-     * 将 QQ 昵称安全化为 Keycloak username。
-     * 昵称为空或清洗后为空时 fallback 到 qq_user_{hash}。
+     * 清洗并验证昵称。
+     * 清洗：去控制字符、特殊字符转下划线、空白合并下划线。
+     * 清洗后为空 → 返回 null（拒绝创建用户）。
+     * 清洗后有效 → 返回清洗后的字符串，下游直接使用无需再清洗。
      */
-    private static String sanitizeUsername(final String nickname, final String socialUid) {
-        final String fallback = "qq_user_" + JuheQqIdentityProvider.sha256prefix(socialUid);
-
+    private static String prepareNickname(final String nickname) {
         if (nickname == null || nickname.isBlank()) {
-            return fallback;
+            return null;
         }
 
         String value = nickname.trim();
-
-        value = value.replaceAll("[\\p{Cntrl}]", "");
+        value = value.replaceAll("\\p{Cntrl}", "");
         value = value.replaceAll("[/@\\\\:?#\\[\\]{}|<>\"']", "_");
         value = value.replaceAll("\\s+", "_");
 
-        if (value.isBlank()) {
-            return fallback;
+        return value.isBlank() ? null : value;
+    }
+
+    /**
+     * 生成唯一 username：{清洗后昵称}-{sha8(socialUid)}。
+     * 参数 nickname 必须是清洗后的有效昵称（由 prepareNickname 返回）。
+     */
+    private static String buildUsername(final String nickname, final String socialUid) {
+        final String hashedUid = JuheQqIdentityProvider.sha256prefix(socialUid);
+        final String shortHash = hashedUid.length() >= 8 ? hashedUid.substring(0, 8) : hashedUid;
+
+        String value = nickname;
+        if (value.length() > 55) {
+            value = value.substring(0, 55);
         }
 
-        if (value.length() > 64) {
-            value = value.substring(0, 64);
-        }
-
-        return value;
+        return value + "-" + shortHash;
     }
 }
