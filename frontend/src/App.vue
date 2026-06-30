@@ -8,9 +8,11 @@ import LeaderboardPage from './components/LeaderboardPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
 import BoostPage from './components/BoostPage.vue'
 import AdminUsersPage from './components/AdminUsersPage.vue'
+import { useError } from './composables/useError.js'
 
 const { t } = useI18n()
 const { theme, handleTheme } = useTheme()
+const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
 
 const params = new URLSearchParams(window.location.search)
 const isHomeHost = window.location.hostname === 'wotbtools.com' || window.location.hostname === 'www.wotbtools.com'
@@ -59,6 +61,17 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
     <BoostPage v-else-if="activeTool === 'boost'" />
     <AdminUsersPage v-else-if="activeTool === 'admin-users'" />
     <ReplayPage v-else />
+  </div>
+
+  <!-- Global Error Dialog -->
+  <div v-if="showGlobalError && globalError" class="modal-overlay" @click.self="closeGlobalError">
+    <div class="modal" style="max-width:480px;">
+      <h3>Error</h3>
+      <p class="error-msg">{{ globalError }}</p>
+      <div class="modal-actions">
+        <button class="btn-sm" @click="closeGlobalError">Close</button>
+      </div>
+    </div>
   </div>
 </template>
 

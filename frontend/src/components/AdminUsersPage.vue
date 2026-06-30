@@ -1,11 +1,12 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useAuth } from '../composables/useAuth.js'
+import { useError } from '../composables/useError.js'
 import * as api from '../utils/api-boost.js'
 
+const { show: showError } = useError()
 const users = ref([])
 const loading = ref(false)
-const error = ref('')
 const searchQuery = ref('')
 const detailUser = ref(null)
 const showDetail = ref(false)
@@ -31,15 +32,14 @@ onMounted(async () => {
     await ensureToken()
     loadUsers()
   } catch (e) {
-    error.value = e.message
+    showError(e.message)
   }
 })
 
 async function loadUsers() {
   loading.value = true
-  error.value = ''
   try { users.value = await api.adminSearchUsers(searchQuery.value, 200) }
-  catch (e) { error.value = e.message; users.value = [] }
+  catch (e) { showError(e.message); users.value = [] }
   finally { loading.value = false }
 }
 
@@ -47,7 +47,7 @@ async function loadDetail(u) {
   try {
     detailUser.value = await api.adminGetUser(u.keycloakUserId)
     showDetail.value = true
-  } catch (e) { error.value = e.message }
+  } catch (e) { showError(e.message) }
 }
 
 function closeDetail() { showDetail.value = false; detailUser.value = null }
@@ -86,7 +86,6 @@ function fmtTime(s) {
       <button @click="loadUsers">{{ $t('admin.searchBtn') }}</button>
     </div>
 
-    <p v-if="error" class="admin-error">{{ error }}</p>
     <p v-if="loading" class="admin-muted">{{ $t('admin.loading') }}</p>
 
     <table v-if="!loading && users.length" class="admin-table">
@@ -118,7 +117,7 @@ function fmtTime(s) {
         </tr>
       </tbody>
     </table>
-    <p v-else-if="!loading && !error" class="admin-muted">{{ $t('admin.empty') }}</p>
+    <p v-else-if="!loading" class="admin-muted">{{ $t('admin.empty') }}</p>
 
     <!-- Detail Modal -->
     <div v-if="showDetail && detailUser" class="modal-overlay" @click.self="closeDetail">
