@@ -100,8 +100,12 @@ function fmtTime(s) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
-function rankClass(i) {
-  return i === 0 ? 'rk-gold' : i === 1 ? 'rk-silver' : i === 2 ? 'rk-bronze' : ''
+function globalRank(i) {
+  return (page.value - 1) * limit.value + i
+}
+
+function rankClass(rank) {
+  return rank === 0 ? 'rk-gold' : rank === 1 ? 'rk-silver' : rank === 2 ? 'rk-bronze' : ''
 }
 </script>
 
@@ -163,7 +167,7 @@ function rankClass(i) {
         </thead>
         <tbody>
           <tr v-for="(r, i) in rows" :key="r.id">
-            <td><span class="rk" :class="rankClass(i)">{{ i + 1 }}</span></td>
+            <td><span class="rk" :class="rankClass(globalRank(i))">{{ globalRank(i) + 1 }}</span></td>
             <td>{{ r.nickname }}</td>
             <td>
               <button
