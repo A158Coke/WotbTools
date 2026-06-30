@@ -7,6 +7,7 @@ import ReplayPage from './components/ReplayPage.vue'
 import LeaderboardPage from './components/LeaderboardPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
 import BoostPage from './components/BoostPage.vue'
+import AdminUsersPage from './components/AdminUsersPage.vue'
 
 const { t } = useI18n()
 const { theme, handleTheme } = useTheme()
@@ -15,7 +16,7 @@ const params = new URLSearchParams(window.location.search)
 const isHomeHost = window.location.hostname === 'wotbtools.com' || window.location.hostname === 'www.wotbtools.com'
 const defaultView = isHomeHost ? 'home' : 'replay'
 const viewParam = params.get('view')
-const activeTool = ref(['replay', 'leaderboard', 'profile', 'boost'].includes(viewParam) ? viewParam : defaultView)
+const activeTool = ref(['replay', 'leaderboard', 'profile', 'boost', 'admin-users'].includes(viewParam) ? viewParam : defaultView)
 
 
 function navigate(view) {
@@ -56,6 +57,7 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
     <ProfilePage v-else-if="activeTool === 'profile'" />
     <LeaderboardPage v-else-if="activeTool === 'leaderboard'" />
     <BoostPage v-else-if="activeTool === 'boost'" />
+    <AdminUsersPage v-else-if="activeTool === 'admin-users'" />
     <ReplayPage v-else />
   </div>
 </template>
@@ -152,20 +154,13 @@ h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
   background: transparent; color: var(--text-sub); cursor: pointer; font-size: .85rem; font-family: inherit; white-space: nowrap; }
 .topbar nav button.active { background: var(--bg-blue); color: var(--accent-dark); border-color: var(--border-tab-active); font-weight: 600; }
 .topbar nav button:hover { background: var(--bg-card-hover); color: var(--text-label); }
-.theme-bar { display: flex; gap: 2px; align-items: center; }
-.theme-bar button { padding: 6px 10px; border: 1px solid transparent; border-radius: 7px;
-  background: transparent; color: var(--text-sub); cursor: pointer; font-size: .82rem; font-family: inherit; white-space: nowrap; }
-.theme-bar button.active { background: var(--bg-blue); color: var(--accent-dark); border-color: var(--border-tab-active); font-weight: 600; }
-.theme-bar button:hover { background: var(--bg-card-hover); color: var(--text-label); }
-.uploadwrap { max-width: 780px; }
-.uploadcard { padding: 24px 16px; }
-.tb-spacer { flex: 1; }
 .theme-bar { display: flex; gap: 2px; flex: 0 0 auto; align-items: center; white-space: nowrap;
   background: var(--bg-card2); border: 1px solid var(--border-ghost); border-radius: 7px; padding: 2px; }
 .theme-bar button { flex: 0 0 auto; padding: 4px 10px; border: none; border-radius: 5px;
   background: transparent; color: var(--text-sub); cursor: pointer; font-size: .73rem; line-height: 1; font-family: inherit; }
 .theme-bar button:hover { color: var(--text-label); background: transparent; }
 .theme-bar button.active { background: var(--accent); color: #fff; font-weight: 600; }
+.tb-spacer { flex: 1; }
 .auth-btn { padding: 6px 14px; border: 1px solid var(--border-ghost); border-radius: 7px;
   background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-size: .82rem; font-family: inherit; white-space: nowrap; }
 .auth-btn:hover { background: var(--bg-blue-light); border-color: var(--accent); color: var(--accent-dark); text-decoration: none; }
@@ -226,14 +221,13 @@ tr:hover td { background: var(--bg-list-hover); }
 .chip .del { cursor: pointer; opacity: .6; }
 .chip .del:hover { opacity: 1; color: var(--error); font-weight: 700; }
 .actionrow { display: flex; align-items: center; gap: 8px; }
-.filebtn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: var(--accent); color: #fff; border: none; padding: 8px 24px; border-radius: 7px; font-size: .85rem; font-family: inherit; cursor: pointer; }
-.filebtn input { display: none; }
+.filebtn { background: var(--accent); color: #fff; border: none; padding: 8px 24px; border-radius: 7px; font-size: .85rem; font-family: inherit; cursor: pointer; }
 .filebtn:hover { background: var(--accent-hover); }
 .filebtn:disabled { opacity: .5; cursor: not-allowed; }
 .filebtn.lg { font-size: 1rem; padding: 10px 36px; }
 
 /* ---- ghost / outline ---- */
-.ghost { display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: transparent; color: var(--text-label); border: 1px solid var(--border-ghost); padding: 6px 14px; border-radius: 7px; cursor: pointer; font-size: .82rem; font-family: inherit; }
+.ghost { background: transparent; color: var(--text-label); border: 1px solid var(--border-ghost); padding: 6px 14px; border-radius: 7px; cursor: pointer; font-size: .82rem; font-family: inherit; }
 .ghost:hover { background: var(--bg-card-hover); }
 .ghost.sm { font-size: .78rem; padding: 4px 10px; }
 .ghost.danger { color: var(--error); border-color: var(--error); }
@@ -303,27 +297,19 @@ tr:hover td { background: var(--bg-list-hover); }
 
 /* ----- topbar responsive ----- */
 @media (max-width: 768px) {
-  .topbar { position: sticky; height: auto; min-height: 50px; flex-wrap: wrap; padding: 6px 10px; gap: 6px; }
-  .tb-content { padding-top: 0; }
-  .tb-spacer { display: none; }
-  .topbar nav { flex: 1 1 auto; gap: 2px; overflow-x: auto; scrollbar-width: none; }
-  .topbar nav::-webkit-scrollbar { display: none; }
+  .topbar { padding: 6px 10px; gap: 4px; }
+  .topbar nav { gap: 2px; }
   .topbar nav button { padding: 5px 8px; font-size: .78rem; }
+  .theme-bar { display: none; }
   .uploadwrap { max-width: 100%; }
   .lb-toolbar { flex-wrap: wrap; gap: 6px; }
-  .theme-bar { display: flex; margin-left: auto; }
-  .theme-bar button { padding: 4px 8px; font-size: .7rem; }
-  .auth-btn { padding: 5px 10px; font-size: .78rem; }
-  .lang-select { font-size: .7rem; padding: 4px 20px 4px 7px; }
 }
 @media (max-width: 480px) {
-  .topbar { padding: 4px 6px; gap: 4px; }
-  .tb-brand { flex: 0 0 auto; }
-  .topbar nav { order: 2; flex: 1 1 calc(100% - 34px); }
+  .topbar { padding: 4px 6px; gap: 2px; height: 40px; }
+  .tb-content { padding-top: 46px; }
   .topbar nav button { padding: 4px 6px; font-size: .72rem; }
-  .lang-select { order: 3; font-size: .7rem; padding: 3px 18px 3px 5px; background-size: 10px; }
-  .theme-bar { order: 4; margin-left: 0; }
+  .lang-select { font-size: .7rem; padding: 3px 18px 3px 5px; background-size: 10px; }
   .tb-logo { height: 22px; }
-  .auth-btn { order: 5; margin-left: auto; padding: 4px 8px; font-size: .75rem; }
+  .auth-btn { padding: 4px 8px; font-size: .75rem; }
 }
 </style>
