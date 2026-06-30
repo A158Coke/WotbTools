@@ -140,7 +140,10 @@
     "upload_btn": "Выбрать реплей",
     "all_tanks": "Все танки",
     "filter_tank": "Фильтр",
-    "filter_by_tank": "Нажмите для рейтинга по танку"
+    "filter_by_tank": "Нажмите для рейтинга по танку",
+    "prev": "Назад",
+    "next": "Вперёд",
+    "page_info": "{page}/{total}"
   },
   "player_labels": {
     "nickname": "Игрок",
