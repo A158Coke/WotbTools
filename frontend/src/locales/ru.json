@@ -365,6 +365,7 @@
     "unavailable": "Занят",
     "setUnavailable": "Занят",
     "setAvailable": "Свободен",
+    "activeAssignments": "Активно",
     "noBoosters": "Нет",
     "pleaseLogin": "Войдите",
     "authError": "Ошибка"

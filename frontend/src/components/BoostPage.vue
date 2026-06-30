@@ -458,7 +458,7 @@ function switchTab(t) {
             <span>{{ b.levelLabel }}</span>
             <span :class="'badge badge-' + statusBadge(b.status)">{{ b.statusLabel }}</span>
             <span v-if="!b.available" class="badge badge-warn">{{ $t('boost.unavailable') }}</span>
-            <span class="booster-stats">活跃: {{ b.activeAssignmentCount }}</span>
+            <span class="booster-stats">{{ $t('boost.activeAssignments') }}: {{ b.activeAssignmentCount }}</span>
           </div>
           <div class="booster-meta" v-if="b.specialties">{{ b.specialties }}</div>
           <div class="booster-actions">
@@ -539,4 +539,11 @@ function switchTab(t) {
 .pager button:disabled { opacity: 0.4; cursor: default; }
 
 .booster-stats { font-size: 12px; color: var(--text-secondary); margin-left: auto; }
+/* Button styles (shared, used across ProfilePage and BoostPage) */
+.btn-primary { padding: 8px 20px; border: none; border-radius: 10px; background: var(--accent); color: #fff; font-size: .88rem; cursor: pointer; font-family: inherit; }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+.btn-ghost { padding: 8px 18px; border: 1px solid var(--border); border-radius: 10px; background: transparent; color: var(--text); font-size: .85rem; cursor: pointer; font-family: inherit; }
+.btn-ghost:hover { background: var(--bg-card-hover); }
+.btn-sm { padding: 5px 12px; font-size: .8rem; border-radius: 8px; }
 </style>

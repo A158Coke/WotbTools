@@ -365,6 +365,7 @@
     "unavailable": "不可用",
     "setUnavailable": "下线",
     "setAvailable": "上线",
+    "activeAssignments": "活跃",
     "noBoosters": "暂无",
     "pleaseLogin": "请先登录",
     "authError": "认证失败"
