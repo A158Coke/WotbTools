@@ -5,6 +5,7 @@
 - `?view=replay`：进入回放提取器。
 - `?view=leaderboard`：进入排行榜。
 - `?view=profile`：进入个人中心。
+- `?view=admin-users`：进入管理员用户管理（仅 `wotbtools-admin` 角色可见）。
 - `wotbtools.com` / `www.wotbtools.com` 无参数时默认显示工具集首页。
 
 本文档面向后续维护者和 AI coder。优先阅读本文件，再改解析、导出或 Web API。项目里已有中文注释，但部分终端可能按错误编码显示乱码；源码和文档应保持 UTF-8。
@@ -46,6 +47,7 @@
 ├── .github/
 │   └── workflows/deploy.yml      # CI/CD
 ├── common/                       # 共享资源
+│   ├── error-codes.json          #   通用错误码（Java 加载 + 前端直读）
 │   ├── tankopedia.json           #   车辆库
 │   ├── rating.json               #   评分参数
 │   ├── map_names.json            #   地图名

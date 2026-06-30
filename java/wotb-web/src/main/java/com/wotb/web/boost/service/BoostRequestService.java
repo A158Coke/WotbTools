@@ -10,6 +10,7 @@ import com.wotb.web.boost.enums.ContactType;
 import com.wotb.web.boost.repository.BoostRequestAssignmentRepository;
 import com.wotb.web.boost.repository.BoostRequestRepository;
 import org.springframework.data.domain.Page;
+import org.springframework.util.StringUtils;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,10 +65,10 @@ public class BoostRequestService {
         checkSensitive(remark);
 
         // 校验必填
-        if (targetDescription == null || targetDescription.isBlank()) {
+        if (!StringUtils.hasText(targetDescription)) {
             throw new IllegalArgumentException("目标描述不能为空");
         }
-        if (contactValue == null || contactValue.isBlank()) {
+        if (!StringUtils.hasText(contactValue)) {
             throw new IllegalArgumentException("联系方式不能为空");
         }
 

@@ -15,6 +15,8 @@ on:
       - "homepage/**"
       - "docker/Dockerfile.backend"
       - "docker/Dockerfile.frontend"
+      - "docker/Dockerfile.keycloak"
+      - "keycloak-juhe-qq-provider/**"
       - "deploy/**"
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
@@ -71,6 +73,20 @@ jobs:
           provenance: false
           sbom: false
 
+      - name: Build and push keycloak
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.keycloak
+          push: true
+          tags: |
+            ghcr.io/a158coke/wotbtools-keycloak:${{ steps.vars.outputs.sha }}
+            ghcr.io/a158coke/wotbtools-keycloak:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+          sbom: false
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
@@ -104,7 +120,7 @@ jobs:
                   - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
                 restart: unless-stopped
               keycloak:
-                image: quay.io/keycloak/keycloak:26.6.3
+                image: ghcr.io/a158coke/wotbtools-keycloak:${{ steps.vars.outputs.sha }}
                 environment:
                   KC_BOOTSTRAP_ADMIN_USERNAME: admin
                   KC_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.KC_ADMIN_PASSWORD }}
@@ -112,9 +128,6 @@ jobs:
                   KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
                   KC_DB_USERNAME: wotb
                   KC_DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-                volumes:
-                  # QQ 社交登录 provider(start 时自动 build 加载)
-                  - ./keycloak-qq.jar:/opt/keycloak/providers/keycloak-qq.jar
                 command: start --hostname=auth.wotbtools.com --hostname-strict=false --http-enabled=true --http-port=8080 --proxy-headers=xforwarded
                 ports:
                   - "127.0.0.1:8080:8080"
@@ -130,6 +143,10 @@ jobs:
                   POSTGRES_HOST: postgres
                   POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
                   KEYCLOAK_ISSUER_URI: https://auth.wotbtools.com/realms/wotbtools
+                  KEYCLOAK_ADMIN_SERVER_URL: https://auth.wotbtools.com
+                  KEYCLOAK_ADMIN_REALM: wotbtools
+                  KEYCLOAK_ADMIN_CLIENT_ID: wotbtools-admin-api
+                  KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
                 restart: unless-stopped
               wotb-frontend:
                 image: ghcr.io/a158coke/wotbtools-frontend:${{ steps.vars.outputs.sha }}
@@ -142,9 +159,12 @@ jobs:
             volumes:
               postgres_data:
             EOF
-            # QQ 社交登录 provider JAR(挂载进 keycloak); 必须在 up 之前存在,否则 docker 会把它当目录
-            curl -fSL -o keycloak-qq.jar https://github.com/trashblazer/keycloak-social-provider-china/releases/download/v1.0.0/keycloak-social-provider-china-1.0.0.jar
-            docker compose pull
+            # pull 失败时重试 3 次（DNS 暂不可达等 transient 错误）
+            for attempt in 1 2 3; do
+              docker compose pull && break
+              echo "docker compose pull failed (attempt $attempt), retrying in 10s..."
+              sleep 10
+            done
             docker compose up -d --remove-orphans
             # 确保 keycloak 数据库存在（init-db.sql 仅在首次初始化执行）
             docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
@@ -184,5 +204,11 @@ jobs:
         uses: actions/delete-package-versions@v5
         with:
           package-name: wotbtools-frontend
+          package-type: container
+          min-versions-to-keep: 5
+      - name: Prune keycloak versions (keep 5)
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: wotbtools-keycloak
           package-type: container
           min-versions-to-keep: 5

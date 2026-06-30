@@ -5,6 +5,7 @@
 - `?view=replay`：进入回放提取器。
 - `?view=leaderboard`：进入排行榜。
 - `?view=profile`：进入个人中心。
+- `?view=admin-users`：进入管理员用户管理（需 `wotbtools-admin` 角色）。
 
 《坦克世界闪击战》（World of Tanks Blitz）工具集。
 
@@ -58,6 +59,7 @@
 - **个人中心**：`/profile` 页面，显示用户名、登出按钮。未登录时展示"登入"按钮触发 Keycloak OIDC 流程。
 - **工具集主页**：Vue SPA 内 `HomePage.vue`（卡片入口 + 版本历史），版本历史数据来自 `frontend/src/data/versions.json`。
 - **域名统一**：`wotbtools.com` 和 `www.wotbtools.com`，去除 `replay.wotbtools.com` 子域名。
+- **管理员用户管理**：`/api/admin/users` API 搜索/查看/删除用户，Keycloak Admin API 集成，审计日志 `admin_user_log` 表，`wotbtools-admin` 角色权限控制。
 
 > 排行榜支持按车辆筛选（点击车辆名查看专属伤害榜），URL 参数 `?view=leaderboard` 可直接跳转排行榜视图。
 

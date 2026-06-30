@@ -4,6 +4,7 @@ import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.repository.UserProfileRepository;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.util.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,7 +28,7 @@ public class UserProfileService {
     @Transactional
     public UserProfileDto updateDisplayName(final String keycloakUserId, final String displayName) {
         final UserProfile profile = findOrCreate(keycloakUserId, null);
-        if (displayName == null || displayName.isBlank() || displayName.length() > 64) {
+        if (!StringUtils.hasText(displayName) || displayName.length() > 64) {
             throw new IllegalArgumentException("INVALID_DISPLAY_NAME");
         }
         profile.setDisplayName(displayName.trim());

@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added
+- **管理员用户删除**：后端 `/api/admin/users` 全套 API（搜索/详情/双删），Keycloak Admin Client 集成，审计日志 `admin_user_log` 表（Flyway V6），`wotbtools-admin` 角色权限校验。
+- **通用错误码系统**：`common/error-codes.json` 单源，Java `ErrorCodes` 加载器 + 前端可直读，替代硬编码字符串。
+- AGENTS.md 规则 18（StringUtils.hasText）、19（优先 Stream）。
+- **Juhe QQ 登录**：Keycloak 自定义 Identity Provider (`keycloak-juhe-qq-provider`)，通过聚合登录平台 open.juhedenglu.cn 实现 QQ 登录。
+  - 新增 Maven 模块：`keycloak-juhe-qq-provider`（Keycloak SPI，provider ID: juhe-qq）
+  - 自定义 Keycloak Docker 镜像（`docker/Dockerfile.keycloak`），集成 provider jar
+
+### Changed
+- Keycloak 从 26.6.3 升级至 26.6.4（安全补丁 + Quarkus 3.33.2.1），Docker Compose 切换为自定义构建镜像
+- 前端 QQ 登录按钮添加 `kc_idp_hint=juhe-qq`，直接跳转聚合登录平台
+
+### Fixed
+- CI/CD 部署：`docker compose pull` 添加 3 次重试，缓解 VPS DNS 暂时不可达问题
+
 ## [2.0.0] - 2026-06-29
 
 ### Added
