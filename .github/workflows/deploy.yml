@@ -143,6 +143,10 @@ jobs:
                   POSTGRES_HOST: postgres
                   POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
                   KEYCLOAK_ISSUER_URI: https://auth.wotbtools.com/realms/wotbtools
+                  KEYCLOAK_ADMIN_SERVER_URL: https://auth.wotbtools.com
+                  KEYCLOAK_ADMIN_REALM: wotbtools
+                  KEYCLOAK_ADMIN_CLIENT_ID: wotbtools-admin-api
+                  KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
                 restart: unless-stopped
               wotb-frontend:
                 image: ghcr.io/a158coke/wotbtools-frontend:${{ steps.vars.outputs.sha }}
