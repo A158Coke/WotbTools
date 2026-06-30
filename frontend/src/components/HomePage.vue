@@ -36,9 +36,9 @@ const tagLabel = { add: { zh: '新增', en: 'Added', ru: 'Добавлено' },
       </a>
 
       <a v-if="isAdmin" class="card" href="/?view=admin-users">
-        <h2>Admin</h2>
-        <p>用户管理 — 查看和删除用户</p>
-        <span class="tag avail">管理</span>
+        <h2>{{ $t('admin.cardTitle') }}</h2>
+        <p>{{ $t('admin.cardDesc') }}</p>
+        <span class="tag avail">Admin</span>
       </a>
 
       <div class="coming-soon">
