@@ -140,7 +140,10 @@
     "upload_btn": "Select Replay",
     "all_tanks": "All Tanks",
     "filter_tank": "Filter",
-    "filter_by_tank": "Click to view tank leaderboard"
+    "filter_by_tank": "Click to view tank leaderboard",
+    "prev": "Previous",
+    "next": "Next",
+    "page_info": "{page}/{total}"
   },
   "player_labels": {
     "nickname": "Player",
