@@ -78,72 +78,68 @@ function fmtTime(s) {
 
 <template>
   <div class="admin-page">
-    <h2>Admin Users</h2>
-    <p class="admin-hint">管理后台 — 只读 + 删除，不可修改用户信息。</p>
+    <h2>{{ $t('admin.title') }}</h2>
+    <p class="admin-hint">{{ $t('admin.hint') }}</p>
 
     <div class="admin-search">
-      <input v-model="searchQuery" placeholder="搜索 keycloakUserId / displayName / wotbNickname / accountId" @keyup.enter="loadUsers" />
-      <button @click="loadUsers">Search</button>
+      <input v-model="searchQuery" :placeholder="$t('admin.search')" @keyup.enter="loadUsers" />
+      <button @click="loadUsers">{{ $t('admin.searchBtn') }}</button>
     </div>
 
     <p v-if="error" class="admin-error">{{ error }}</p>
-    <p v-if="loading" class="admin-muted">Loading...</p>
+    <p v-if="loading" class="admin-muted">{{ $t('admin.loading') }}</p>
 
     <table v-if="!loading && users.length" class="admin-table">
       <thead>
         <tr>
-          <th>ID</th>
-          <th>Display Name</th>
-          <th>Keycloak ID</th>
-          <th>Account ID</th>
-          <th>Nickname</th>
-          <th>Server</th>
-          <th>Created</th>
-          <th>Actions</th>
+          <th>{{ $t('admin.colId') }}</th>
+          <th>{{ $t('admin.colDisplayName') }}</th>
+          <th>{{ $t('admin.colKcId') }}</th>
+          <th>{{ $t('admin.colAccountId') }}</th>
+          <th>{{ $t('admin.colNickname') }}</th>
+          <th>{{ $t('admin.colServer') }}</th>
+          <th>{{ $t('admin.colCreated') }}</th>
+          <th>{{ $t('admin.colActions') }}</th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="u in users" :key="u.keycloakUserId">
           <td>{{ u.profileId }}</td>
           <td>{{ u.displayName }}</td>
-          <td class="cell-mono">{{ u.keycloakUserId }}</td>
           <td class="cell-mono cell-short">{{ u.keycloakUserId }}</td>
           <td>{{ u.wotbAccountId }}</td>
           <td>{{ u.wotbNickname }}</td>
           <td>{{ u.wotbServer }}</td>
           <td class="cell-time">{{ fmtTime(u.createdAt) }}</td>
           <td class="cell-actions">
-            <button class="btn-sm" @click="loadDetail(u)">View</button>
-            <button class="btn-sm btn-danger" @click="startDelete(u)">Delete</button>
+            <button class="btn-sm" @click="loadDetail(u)">{{ $t('admin.view') }}</button>
+            <button class="btn-sm btn-danger" @click="startDelete(u)">{{ $t('admin.delete') }}</button>
           </td>
         </tr>
       </tbody>
     </table>
-    <p v-else-if="!loading && !error" class="admin-muted">No users found.</p>
+    <p v-else-if="!loading && !error" class="admin-muted">{{ $t('admin.empty') }}</p>
 
     <!-- Detail Modal -->
     <div v-if="showDetail && detailUser" class="modal-overlay" @click.self="closeDetail">
       <div class="modal admin-modal">
-        <h3>User Detail</h3>
+        <h3>{{ $t('admin.detail') }}</h3>
         <div class="admin-detail">
           <div class="detail-section" v-if="detailUser.profile">
             <h4>Profile</h4>
-            <div class="detail-row"><span class="dl">ID</span><span>{{ detailUser.profile.id }}</span></div>
-            <div class="detail-row"><span class="dl">Display Name</span><span>{{ detailUser.profile.displayName }}</span></div>
-            <div class="detail-row"><span class="dl">Account ID</span><span>{{ detailUser.profile.wotbAccountId }}</span></div>
-            <div class="detail-row"><span class="dl">Nickname</span><span>{{ detailUser.profile.wotbNickname }}</span></div>
-            <div class="detail-row"><span class="dl">Server</span><span>{{ detailUser.profile.wotbServer }}</span></div>
-            <div class="detail-row"><span class="dl">Created</span><span>{{ fmtTime(detailUser.profile.createdAt) }}</span></div>
-            <div class="detail-row"><span class="dl">Updated</span><span>{{ fmtTime(detailUser.profile.updatedAt) }}</span></div>
+            <div class="detail-row"><span class="dl">{{ $t('admin.colId') }}</span><span>{{ detailUser.profile.id }}</span></div>
+            <div class="detail-row"><span class="dl">{{ $t('admin.colDisplayName') }}</span><span>{{ detailUser.profile.displayName }}</span></div>
+            <div class="detail-row"><span class="dl">{{ $t('admin.colAccountId') }}</span><span>{{ detailUser.profile.wotbAccountId }}</span></div>
+            <div class="detail-row"><span class="dl">{{ $t('admin.colNickname') }}</span><span>{{ detailUser.profile.wotbNickname }}</span></div>
+            <div class="detail-row"><span class="dl">{{ $t('admin.colServer') }}</span><span>{{ detailUser.profile.wotbServer }}</span></div>
+            <div class="detail-row"><span class="dl">{{ $t('admin.colCreated') }}</span><span>{{ fmtTime(detailUser.profile.createdAt) }}</span></div>
           </div>
           <div class="detail-section" v-if="detailUser.keycloak">
-            <h4>Keycloak</h4>
-            <div class="detail-row"><span class="dl">ID</span><span class="cell-mono">{{ detailUser.keycloak.id }}</span></div>
+            <h4>{{ $t('admin.keycloak') }}</h4>
+            <div class="detail-row"><span class="dl">{{ $t('admin.colId') }}</span><span class="cell-mono">{{ detailUser.keycloak.id }}</span></div>
             <div class="detail-row"><span class="dl">Username</span><span>{{ detailUser.keycloak.username }}</span></div>
             <div class="detail-row"><span class="dl">Email</span><span>{{ detailUser.keycloak.email }}</span></div>
-            <div class="detail-row"><span class="dl">First Name</span><span>{{ detailUser.keycloak.firstName }}</span></div>
-            <div class="detail-row"><span class="dl">Last Name</span><span>{{ detailUser.keycloak.lastName }}</span></div>
-            <div class="detail-row"><span class="dl">Enabled</span><span>{{ detailUser.keycloak.enabled }}</span></div>
+            <div class="detail-row"><span class="dl">{{ $t('admin.enabled') }}</span><span>{{ detailUser.keycloak.enabled }}</span></div>
             <div class="detail-row" v-for="fi in (detailUser.keycloak.federatedIdentities || [])" :key="fi.userId">
               <span class="dl">{{ fi.identityProvider }}</span>
               <span>{{ fi.userName }} ({{ fi.userId }})</span>
@@ -151,28 +147,28 @@ function fmtTime(s) {
           </div>
           <p v-if="detailUser.warnings" class="admin-warn">{{ detailUser.warnings.join(', ') }}</p>
         </div>
-        <button class="btn-sm" @click="closeDetail">Close</button>
+        <button class="btn-sm" @click="closeDetail">{{ $t('admin.close') }}</button>
       </div>
     </div>
 
     <!-- Delete Confirm Modal -->
     <div v-if="deleteUserId" class="modal-overlay" @click.self="cancelDelete">
       <div class="modal admin-modal confirm-modal">
-        <h3 class="danger">Confirm Deletion</h3>
+        <h3 class="danger">{{ $t('admin.confirmDelete') }}</h3>
         <div class="admin-detail">
-          <p>Permanently delete user {{ deleteUserId }} from WotBTools and Keycloak.</p>
-          <p class="admin-warn">This cannot be undone.</p>
-          <p v-if="deleteResult === 'DELETED'" class="admin-ok">User deleted successfully.</p>
+          <p>{{ $t('admin.confirmText') }}</p>
+          <p class="admin-warn">{{ $t('admin.confirmWarn') }}</p>
+          <p v-if="deleteResult === 'DELETED'" class="admin-ok">{{ $t('admin.deleted') }}</p>
           <p v-else-if="deleteResult" class="admin-error">{{ deleteResult }}</p>
           <div v-else>
-            <label>Type <strong>DELETE</strong> to confirm:</label>
+            <label>{{ $t('admin.confirmInput') }}</label>
             <input v-model="deleteConfirmText" placeholder="DELETE" class="admin-confirm-input" />
           </div>
         </div>
         <div class="modal-actions">
-          <button class="btn-sm" @click="cancelDelete">Cancel</button>
+          <button class="btn-sm" @click="cancelDelete">{{ $t('admin.cancel') }}</button>
           <button class="btn-sm btn-danger" :disabled="deleteConfirmText !== 'DELETE' || deleting" @click="confirmDelete">
-            {{ deleting ? 'Deleting...' : 'Delete User' }}
+            {{ deleting ? $t('admin.deleting') : $t('admin.delete') }}
           </button>
         </div>
       </div>
