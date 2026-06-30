@@ -5,6 +5,7 @@ public record UserProfileDto(
     Long id,
     String keycloakUserId,
     String displayName,
+    String username,
     Long wotbAccountId,
     String wotbNickname,
     String wotbServer
