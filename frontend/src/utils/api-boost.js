@@ -76,6 +76,22 @@ export async function adminBoostBoosterAvailability(id, body) {
   return boostHandle(await fetch(`/api/admin/boost/boosters/${encodeURIComponent(id)}/availability`, { method: 'PATCH', headers: boostHeaders(), body: JSON.stringify(body) }))
 }
 
+// ========== Admin Users ==========
+export async function adminSearchUsers(query = '', limit = 50) {
+  const params = new URLSearchParams()
+  if (query) params.set('query', query)
+  params.set('limit', String(limit))
+  return boostHandle(await fetch(`/api/admin/users?${params}`, { headers: boostHeaders() }))
+}
+
+export async function adminGetUser(keycloakUserId) {
+  return boostHandle(await fetch(`/api/admin/users/${encodeURIComponent(keycloakUserId)}`, { headers: boostHeaders() }))
+}
+
+export async function adminDeleteUser(keycloakUserId) {
+  return boostHandle(await fetch(`/api/admin/users/${encodeURIComponent(keycloakUserId)}?confirm=true`, { method: 'DELETE', headers: boostHeaders() }))
+}
+
 // ========== User Profile ==========
 export async function getUserProfile() {
   return boostHandle(await fetch('/api/users/profile', { headers: boostHeaders() }))

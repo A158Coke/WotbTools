@@ -1,7 +1,16 @@
 <script setup>
+import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useAuth } from '../composables/useAuth.js'
 import versions from '../data/versions.json'
 const { locale } = useI18n()
+const { initPromise, tokenParsed } = useAuth()
+const isAdmin = ref(false)
+onMounted(async () => {
+  await initPromise
+  const tp = tokenParsed.value
+  isAdmin.value = tp?.realm_access?.roles?.includes('wotbtools-admin') || false
+})
 const tagLabel = { add: { zh: '新增', en: 'Added', ru: 'Добавлено' }, fix: { zh: '修复', en: 'Fixed', ru: 'Исправлено' } }
 </script>
 
@@ -24,6 +33,12 @@ const tagLabel = { add: { zh: '新增', en: 'Added', ru: 'Добавлено' },
         <h2>{{ locale === 'zh' ? '排行榜' : locale === 'ru' ? 'Рейтинг' : 'Leaderboard' }}</h2>
         <p>{{ locale === 'zh' ? '随机战斗的单场伤害排行 — 上传回放即可上榜。' : locale === 'ru' ? 'Рейтинг урона за случайные бои.' : 'Damage leaderboard for random battles.' }}</p>
         <span class="tag avail">{{ locale === 'zh' ? '可用' : locale === 'ru' ? 'Доступно' : 'Available' }}</span>
+      </a>
+
+      <a v-if="isAdmin" class="card" href="/?view=admin-users">
+        <h2>Admin</h2>
+        <p>用户管理 — 查看和删除用户</p>
+        <span class="tag avail">管理</span>
       </a>
 
       <div class="coming-soon">
