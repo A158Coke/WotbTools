@@ -39,6 +39,17 @@ function onDrop(e) {
            @dragover.prevent="dragging = true"
            @dragleave.prevent="dragging = false"
            @drop.prevent="onDrop">
+    <div class="uploadhead">
+      <span class="upload-kicker">{{ $t('upload.kicker') }}</span>
+      <h1>{{ $t('upload.title') }}</h1>
+      <p>{{ $t('upload.description') }}</p>
+      <div class="upload-points">
+        <span>{{ $t('upload.multi') }}</span>
+        <span>{{ $t('upload.excel') }}</span>
+        <span>{{ $t('upload.privacy') }}</span>
+      </div>
+    </div>
+
     <div v-if="!files.length" class="uploadcard" :class="{ dragging }">
       <span class="up-icon"><svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg></span>
       <div class="up-title">{{ $t('upload.drop_hint') }}</div>
@@ -56,12 +67,17 @@ function onDrop(e) {
     </div>
 
     <div v-else class="filebar" :class="{ dragging }">
-      <svg class="ic fb-ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
-      <span class="fb-count">{{ $t('upload.files_count', { count: files.length }) }}</span>
+      <div class="fb-summary">
+        <svg class="ic fb-ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
+        <div>
+          <strong>{{ $t('upload.selected_title') }}</strong>
+          <span class="fb-count">{{ $t('upload.files_count', { count: files.length }) }}</span>
+        </div>
+      </div>
       <div class="fb-chips">
         <span v-for="f in files" :key="fileKey(f)" class="chip">
           {{ displayName(f) }}
-          <button class="chipx" :title="$t('upload.remove_title')" @click="removeFile(f)">×</button>
+          <button class="chipx" :title="$t('upload.remove_title')" @click="removeFile(f)">&times;</button>
         </span>
       </div>
       <label class="filebtn ghost sm" :title="$t('upload.add_files_title')">
