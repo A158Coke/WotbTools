@@ -217,6 +217,10 @@ tr.t2 td { background: color-mix(in srgb, #d66b4f 10%, var(--bg-card)); }
   color: var(--text-sub); background: transparent; cursor: pointer; transition: all .12s; }
 .tabx:hover { background: var(--error); color: #fff; }
 .dropdown { position: relative; }
+.mcards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+.mc { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; text-align: center; }
+.mc .k { font-size: .78rem; color: var(--text-sub); margin-bottom: 4px; }
+.mc .v { font-size: 1.4rem; font-weight: 700; color: var(--text-heading); font-variant-numeric: tabular-nums; }
 .wrap .warn, .wrap .error { padding: 10px 16px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; }
 .wrap .warn { background: var(--warn-bg, #fff8e8); border: 1px solid var(--border-warn, #f0d08a); color: var(--warn-text, #8a5200); }
 .wrap .error { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
