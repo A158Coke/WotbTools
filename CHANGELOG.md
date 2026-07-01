@@ -14,6 +14,7 @@
 - **异常响应增强**：`GlobalExceptionHandler` 统一 `error` + `message` + `timestamp` 三个字段，`ErrorCode` 枚举映射可读消息。
 - **暗色主题修复**：新增 `[data-theme="dark"]` CSS 变量块，暗色模式全站生效。
 - **Keycloak 先决策略**：打手创建/删除/用户删除等操作一律先 Keycloak 后业务库，KC 失败则不写入。
+- **部署 Workflow 拆分**：`deploy.yml` 改为 3 个独立 build job（前端/后端/Keycloak 按变更路径条件并行构建）+ deploy job（统一 pull + restart），不再全量构建。
 - **Juhe QQ 登录**：Keycloak 自定义 Identity Provider (`keycloak-juhe-qq-provider`)，通过聚合登录平台 open.juhedenglu.cn 实现 QQ 登录。
   - 新增 Maven 模块：`keycloak-juhe-qq-provider`（Keycloak SPI，provider ID: juhe-qq）
   - 自定义 Keycloak Docker 镜像（`docker/Dockerfile.keycloak`），集成 provider jar

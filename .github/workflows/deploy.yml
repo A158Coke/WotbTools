@@ -12,81 +12,139 @@ on:
       - "java/**"
       - "frontend/**"
       - "common/**"
-      - "homepage/**"
       - "docker/Dockerfile.backend"
       - "docker/Dockerfile.frontend"
       - "docker/Dockerfile.keycloak"
+      - "docker/keycloak/**"
       - "keycloak-juhe-qq-provider/**"
       - "deploy/**"
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
+env:
+  GHCR_IMAGE_PREFIX: ghcr.io/a158coke/wotbtools
+  SHORT_SHA: sha-${{ github.sha }}
+
 jobs:
-  build-and-deploy:
+  # ── 路径检测：判断哪些组件需要构建 ──────────────────────────────
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      keycloak: ${{ steps.filter.outputs.keycloak }}
+    steps:
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'java/**'
+              - 'common/tankopedia.json'
+              - 'docker/Dockerfile.backend'
+            frontend:
+              - 'frontend/**'
+              - 'docker/Dockerfile.frontend'
+            keycloak:
+              - 'docker/Dockerfile.keycloak'
+              - 'docker/keycloak/**'
+              - 'keycloak-juhe-qq-provider/**'
+
+  # ── 构建后端 ────────────────────────────────────────────────────
+  build-backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write   # 推送 / 清理 GHCR（GitHub Container Registry） 镜像。(内置 GITHUB_TOKEN)
+      packages: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Builds
-        uses: docker/setup-buildx-action@v3
-
-      - name: Compute image tag
-        id: vars
-        run: echo "sha=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Build and push backend
-        uses: docker/build-push-action@v6
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile.backend
           push: true
           tags: |
-            ghcr.io/a158coke/wotbtools-backend:${{ steps.vars.outputs.sha }}
-            ghcr.io/a158coke/wotbtools-backend:latest
+            ${{ env.GHCR_IMAGE_PREFIX }}-backend:${{ env.SHORT_SHA }}
+            ${{ env.GHCR_IMAGE_PREFIX }}-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          # 不生成 provenance/SBOM attestation: 单架构镜像无需,避免每次推送多出 index+attestation digest
           provenance: false
           sbom: false
 
-      - name: Build and push frontend
-        uses: docker/build-push-action@v6
+  # ── 构建前端 ────────────────────────────────────────────────────
+  build-frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile.frontend
           push: true
           tags: |
-            ghcr.io/a158coke/wotbtools-frontend:${{ steps.vars.outputs.sha }}
-            ghcr.io/a158coke/wotbtools-frontend:latest
+            ${{ env.GHCR_IMAGE_PREFIX }}-frontend:${{ env.SHORT_SHA }}
+            ${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
           sbom: false
 
-      - name: Build and push keycloak
-        uses: docker/build-push-action@v6
+  # ── 构建 Keycloak ───────────────────────────────────────────────
+  build-keycloak:
+    needs: changes
+    if: needs.changes.outputs.keycloak == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile.keycloak
           push: true
           tags: |
-            ghcr.io/a158coke/wotbtools-keycloak:${{ steps.vars.outputs.sha }}
-            ghcr.io/a158coke/wotbtools-keycloak:latest
+            ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:${{ env.SHORT_SHA }}
+            ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
           sbom: false
+        env:
+          KEYCLOAK_BUILD_FILE: ${{ github.workspace }}/keycloak-juhe-qq-provider
 
+  # ── 部署：等全部构建完成后（略过跳过的），统一 pull + restart ──
+  deploy:
+    needs: [build-backend, build-frontend, build-keycloak]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    runs-on: ubuntu-latest
+    steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
@@ -103,7 +161,7 @@ jobs:
             CREATE DATABASE keycloak;
             EOF
             docker rm -f wotb wotb-backend wotb-frontend 2>/dev/null || true
-            cat > docker-compose.yml <<'EOF'
+            cat > docker-compose.yml <<'ENDCOMPOSE'
             services:
               postgres:
                 image: postgres:18-alpine
@@ -114,13 +172,11 @@ jobs:
                   POSTGRES_USER: wotb
                   POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
                 volumes:
-                  # postgres:18 把集群放在 /var/lib/postgresql/<major>/docker。现有卷数据在 18/docker,
-                  # 因此挂载点必须用 /var/lib/postgresql(卷根),镜像默认 PGDATA 才能命中现有集群、保留数据。
                   - postgres_data:/var/lib/postgresql
                   - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
                 restart: unless-stopped
               keycloak:
-                image: ghcr.io/a158coke/wotbtools-keycloak:${{ steps.vars.outputs.sha }}
+                image: ghcr.io/a158coke/wotbtools-keycloak:${{ env.SHORT_SHA }}
                 environment:
                   KC_BOOTSTRAP_ADMIN_USERNAME: admin
                   KC_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.KC_ADMIN_PASSWORD }}
@@ -135,7 +191,7 @@ jobs:
                   - postgres
                 restart: unless-stopped
               wotb-backend:
-                image: ghcr.io/a158coke/wotbtools-backend:${{ steps.vars.outputs.sha }}
+                image: ghcr.io/a158coke/wotbtools-backend:${{ env.SHORT_SHA }}
                 depends_on:
                   - postgres
                   - keycloak
@@ -149,7 +205,7 @@ jobs:
                   KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
                 restart: unless-stopped
               wotb-frontend:
-                image: ghcr.io/a158coke/wotbtools-frontend:${{ steps.vars.outputs.sha }}
+                image: ghcr.io/a158coke/wotbtools-frontend:${{ env.SHORT_SHA }}
                 ports:
                   - "127.0.0.1:8088:80"
                 depends_on:
@@ -158,20 +214,16 @@ jobs:
                 restart: unless-stopped
             volumes:
               postgres_data:
-            EOF
-            # pull 失败时重试 3 次（DNS 暂不可达等 transient 错误）
+            ENDCOMPOSE
             for attempt in 1 2 3; do
               docker compose pull && break
               echo "docker compose pull failed (attempt $attempt), retrying in 10s..."
               sleep 10
             done
             docker compose up -d --remove-orphans
-            # 确保 keycloak 数据库存在（init-db.sql 仅在首次初始化执行）
             docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
-            # 清理磁盘：旧镜像 + 构建缓存
             docker image prune -af
             docker builder prune -af
-            # 健康检查：等待所有容器无 restarting 状态，最多 60 秒
             for i in $(seq 1 30); do
               if docker compose ps | grep -qE "Restarting|Exited|unhealthy"; then
                 sleep 2
@@ -186,10 +238,10 @@ jobs:
               exit 1
             fi
 
-  # 部署成功后清理 GHCR: 每个镜像只保留最近 5 个版本,删更老的(含无 tag)。
-  # 官方 Action + 内置 GITHUB_TOKEN,独立 job: 清理失败也不影响已成功的部署。
+  # ── 清理 GHCR（独立 job，清理失败不影响部署） ──────────────────
   cleanup-ghcr:
-    needs: build-and-deploy
+    needs: deploy
+    if: success()
     runs-on: ubuntu-latest
     permissions:
       packages: write

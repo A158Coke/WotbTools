@@ -61,11 +61,11 @@
 
 ## P1：运维与 CI/CD
 
-- [ ] **拆分部署 Workflow**：不再每次部署都构建全端（前端/后端/Keycloak）。改为：
-  - [ ] 前端变动 → 只构建前端镜像并推送 GHCR
-  - [ ] 后端变动 → 只构建后端镜像并推送 GHCR
-  - [ ] Keycloak 变动 → 只构建 Keycloak 镜像并推送 GHCR
-  - [ ] 全端变更 → 并行构建 + 统一 docker compose pull + restart
+- [x] **拆分部署 Workflow**：不再每次部署都构建全端（前端/后端/Keycloak）。改为：
+  - [x] 前端变动 → 只构建前端镜像并推送 GHCR
+  - [x] 后端变动 → 只构建后端镜像并推送 GHCR
+  - [x] Keycloak 变动 → 只构建 Keycloak 镜像并推送 GHCR
+  - [x] 全端变更 → 并行构建 + 统一 docker compose pull + restart
 - [ ] 优化 deploy.yml，利用 GHCR 标签判断增量构建。
 
 ## P1：打手视角订单系统
