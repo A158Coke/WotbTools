@@ -53,15 +53,23 @@ const boosterForm = ref({ nickname: '', level: 'ELITE', keycloakUserId: '', avai
 const boosterError = ref('')
 
 // Admin: user search
+const allUsers = ref([])
 const userSearchQuery = ref('')
 const userSearchResults = ref([])
 const showUserSearch = ref(false)
 let searchTimer = null
 
+async function loadAllUsers() {
+  try {
+    const res = await api.adminSearchUsers('', 200)
+    allUsers.value = res.content || res || []
+  } catch { allUsers.value = [] }
+}
+
 function searchUsers() {
   if (!userSearchQuery.value.trim()) {
-    userSearchResults.value = []
-    showUserSearch.value = false
+    userSearchResults.value = allUsers.value.slice(0, 30)
+    showUserSearch.value = true
     return
   }
   clearTimeout(searchTimer)
@@ -207,8 +215,8 @@ function startNewBooster() {
   editingBooster.value = {}
   boosterForm.value = { nickname: '', level: 'ELITE', keycloakUserId: '', available: true, status: 'ACTIVE', contactType: '', contactValue: '', specialties: '', description: '' }
   userSearchQuery.value = ''
-  userSearchResults.value = []
-  showUserSearch.value = false
+  userSearchResults.value = allUsers.value.slice(0, 30)
+  showUserSearch.value = true
   boosterError.value = ''
 }
 
@@ -253,7 +261,7 @@ function statusBadge(s) {
 function switchTab(t) {
   tab.value = t
   if (t === 'adminRequests') { loadAdminRequests(); loadBoosters() }
-  else if (t === 'boosters') loadBoosters()
+  else if (t === 'boosters') { loadBoosters(); loadAllUsers() }
 }
 </script>
 
@@ -447,10 +455,6 @@ function switchTab(t) {
       <!-- Booster editor -->
       <div v-if="editingBooster !== null" class="booster-editor">
         <h4>{{ editingBooster.id ? $t('boost.editBooster') : $t('boost.newBooster') }}</h4>
-        <div class="form-row">
-          <label>{{ $t('boost.boosterNickname') }} *</label>
-          <input :value="boosterForm.nickname" readonly class="readonly-field" :placeholder="$t('boost.selectUserFirstHint')" />
-        </div>
         <div class="form-row">
           <label>{{ $t('boost.boosterLevel') }}</label>
           <select v-model="boosterForm.level">
