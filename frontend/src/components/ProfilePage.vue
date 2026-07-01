@@ -52,8 +52,8 @@ async function loadProfile() {
 
 const displayName = computed(() =>
   profile.value?.displayName
-  ?? tokenParsed?.display_name
-  ?? tokenParsed?.preferred_username
+  ?? tokenParsed.value?.display_name
+  ?? tokenParsed.value?.preferred_username
   ?? 'User'
 )
 
