@@ -372,7 +372,7 @@ function switchTab(t) {
           <div v-if="assigningRequest === r" class="assign-box">
             <select v-model.number="assignBoosterId" class="mr">
               <option :value="null" disabled>{{ $t('boost.selectBooster') }}</option>
-              <option v-for="b in boosters" :key="b.id" :value="b.id" :disabled="!b.available || b.status !== 'ACTIVE'">
+              <option v-for="b in boosters" :key="b.id" :value="b.id" :disabled="!b.available">
                 {{ b.nickname }} ({{ b.levelLabel }}) {{ b.available ? '' : '[' + $t('boost.unavailable') + ']' }}
               </option>
             </select>

@@ -4,6 +4,8 @@ import com.wotb.web.boost.dto.AssignBoosterRequest;
 import com.wotb.web.boost.dto.BoostAssignmentDto;
 import com.wotb.web.boost.dto.UnassignBoosterRequest;
 import com.wotb.web.boost.service.BoostAssignmentService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -23,6 +25,8 @@ import java.util.Map;
 @CrossOrigin(origins = "*")
 public class AdminBoostAssignmentController {
 
+    private static final Logger log = LoggerFactory.getLogger(AdminBoostAssignmentController.class);
+
     private final BoostAssignmentService assignmentService;
 
     public AdminBoostAssignmentController(final BoostAssignmentService assignmentService) {
@@ -36,7 +40,10 @@ public class AdminBoostAssignmentController {
         try {
             return assignmentService.assign(id, body.boosterId(), body.note());
         } catch (final DataIntegrityViolationException e) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "ACTIVE_ASSIGNMENT_EXISTS");
+            final String cause = e.getMostSpecificCause().getMessage();
+            log.warn("分配打手时数据库约束异常: {}", cause);
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "ACTIVE_ASSIGNMENT_EXISTS: " + cause);
         } catch (final IllegalArgumentException | IllegalStateException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }

@@ -39,7 +39,7 @@ public class BoostAssignmentService {
     @Transactional
     public BoostAssignmentDto assign(final Long requestId, final Long boosterId, final String note) {
         if (assignmentRepository.findByRequestIdAndUnassignedAtIsNull(requestId).isPresent()) {
-            throw new IllegalStateException("ACTIVE_ASSIGNMENT_EXISTS");
+            throw new IllegalStateException("该需求已有一个活跃分配，请先取消当前分配");
         }
 
         final BoostRequest req = requestService.getById(requestId);
@@ -49,7 +49,7 @@ public class BoostAssignmentService {
         }
 
         final BoosterProfile booster = boosterService.getById(boosterId);
-        if (!"ACTIVE".equalsIgnoreCase(booster.getStatus())) {
+        if (booster.getAvailable() == null || !booster.getAvailable()) {
             throw new IllegalArgumentException("BOOSTER_NOT_AVAILABLE");
         }
 
