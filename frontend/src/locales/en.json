@@ -17,6 +17,13 @@
     "upload": {
         "drop_hint": "Drop .wotbreplay files here",
         "sub_hint": "Multiple files or entire folders supported",
+        "kicker": "Batch parsing",
+        "title": "Replay Data Extraction",
+        "description": "Upload or drop .wotbreplay files, preview battle data, then export to Excel.",
+        "multi": "Multiple files and folders",
+        "excel": "Aggregate or per-battle Excel",
+        "privacy": "Replay files are not stored",
+        "selected_title": "Selected replays",
         "select_files": "Select Replay Files",
         "select_folder": "Select Folder",
         "add": "Add",
