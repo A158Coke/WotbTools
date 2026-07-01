@@ -17,6 +17,13 @@
     "upload": {
         "drop_hint": "拖拽 .wotbreplay 文件到这里",
         "sub_hint": "支持多选文件，或选择整个文件夹",
+        "kicker": "\u6279\u91cf\u89e3\u6790",
+        "title": "\u56de\u653e\u6570\u636e\u63d0\u53d6",
+        "description": "\u4e0a\u4f20\u6216\u62d6\u5165 .wotbreplay \u6587\u4ef6\uff0c\u9884\u89c8\u6218\u6597\u6570\u636e\u540e\u5bfc\u51fa Excel\u3002",
+        "multi": "\u652f\u6301\u591a\u9009\u548c\u6587\u4ef6\u5939",
+        "excel": "\u5bfc\u51fa\u6c47\u603b\u6216\u5355\u573a Excel",
+        "privacy": "\u672c\u9875\u4e0d\u4fdd\u5b58\u56de\u653e\u6587\u4ef6",
+        "selected_title": "\u5df2\u9009\u62e9\u56de\u653e",
         "select_files": "选择回放文件",
         "select_folder": "选择文件夹",
         "add": "添加",
