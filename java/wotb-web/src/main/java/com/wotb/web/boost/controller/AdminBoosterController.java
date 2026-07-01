@@ -45,16 +45,16 @@ public class AdminBoosterController {
     @PostMapping
     public BoosterDto create(@RequestBody final CreateBoosterRequest body) {
         try {
-            final BoosterDto dto = service.create(
+            // 先操作 Keycloak（分配 role），失败则业务数据不写入
+            if (StringUtils.hasText(body.keycloakUserId())) {
+                keycloakAdminUserService.addRealmRole(body.keycloakUserId(), BOOSTER_ROLE);
+            }
+            return service.create(
                     body.nickname(), body.level(), body.keycloakUserId(),
                     body.available(), body.status(),
                     body.contactType(), body.contactValue(),
                     body.specialties(), body.description()
             );
-            if (StringUtils.hasText(dto.keycloakUserId())) {
-                keycloakAdminUserService.addRealmRole(dto.keycloakUserId(), BOOSTER_ROLE);
-            }
-            return dto;
         } catch (final IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }

@@ -11,6 +11,9 @@
 - **displayName JWT 映射**：`wotbtools-web` client 新增 `display-name-mapper` protocol mapper，QQ 昵称映射到 JWT `display_name` claim。
 - **打手关联用户**：`booster_profile` 新增 `keycloak_user_id`（Flyway V8），打手必须从已有用户注册。创建/删除时自动分配/移除 `booster` realm role。
 - **QQ username 生成**：`{清洗后昵称}-{sha8(socialUid)}` 确保唯一，无效昵称返回 400。
+- **异常响应增强**：`GlobalExceptionHandler` 统一 `error` + `message` + `timestamp` 三个字段，`ErrorCode` 枚举映射可读消息。
+- **暗色主题修复**：新增 `[data-theme="dark"]` CSS 变量块，暗色模式全站生效。
+- **Keycloak 先决策略**：打手创建/删除/用户删除等操作一律先 Keycloak 后业务库，KC 失败则不写入。
 - **Juhe QQ 登录**：Keycloak 自定义 Identity Provider (`keycloak-juhe-qq-provider`)，通过聚合登录平台 open.juhedenglu.cn 实现 QQ 登录。
   - 新增 Maven 模块：`keycloak-juhe-qq-provider`（Keycloak SPI，provider ID: juhe-qq）
   - 自定义 Keycloak Docker 镜像（`docker/Dockerfile.keycloak`），集成 provider jar
