@@ -1,4 +1,4 @@
-﻿# WoT Blitz Replay Data Extractor - Java 主线
+﻿# WoT Blitz Tools - Java 主线
 
 `java/` 是项目主线。基于同一套 Java 核心能力交付：
 

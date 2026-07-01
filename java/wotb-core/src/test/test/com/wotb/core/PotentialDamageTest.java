@@ -1,4 +1,4 @@
-package com.wotb.core;
+package test.test.com.wotb.core;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;

@@ -53,11 +53,11 @@
   - [x] `auth.wotbtools.com` Keycloak 部署（外层 Caddy → KC 8080）
   - [x] realm `wotbtools` + client `wotbtools-web` 导入
   - [x] 前端 `useAuth.js` — Keycloak 适配器（check-sso 游客模式 + 登录/登出）
-  - [ ] QQ IdP 接入
+  - [x] QQ IdP 接入
   - [ ] Spring Security Resource Server JWT 验证
-  - [ ] `app_user` 表 + `GET /api/me`
-  - [ ] `blitz_account_binding` 表 + 绑定 API（account_id 验证）
-  - [ ] 前端 QQ 登录/退出/当前用户 + Blitz 绑定 UI
+  - [x] `user_profile` 表 + `GET /api/profile`
+  - [x] `blitz_account_binding` 表 + 绑定 API（account_id）
+  - [x] 前端 QQ 登录/退出/当前用户 + Blitz 绑定 UI
 
 ## P1：测试与质量
 

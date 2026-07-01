@@ -152,15 +152,15 @@ BattleResults
 | `SingleBattleSheets` | `wotb-core/.../SingleBattleSheets.java` | 单场三表                                  |
 | `AggregateSheets`    | `wotb-core/.../AggregateSheets.java`   | 汇总三表                                  |
 | `Replays`            | `wotb-core/.../Replays.java`           | 多回放去重收集                            |
-| `ReplayController`   | `wotb-web/.../ReplayController.java`   | REST API 映射                            |
-| `ReplayService`      | `wotb-web/.../ReplayService.java`      | 业务编排                                  |
+| `ReplayController`   | `wotb-web/.../replay/controller/ReplayController.java`   | REST API 映射                            |
+| `ReplayService`      | `wotb-web/.../replay/service/ReplayService.java`      | 业务编排                                  |
 | `DesktopLifecycle`   | `wotb-web/.../DesktopLifecycle.java`   | 桌面模式判定 + 关机                       |
-| `Mapper`             | `wotb-web/.../Mapper.java`             | 核心模型 → DTO                           |
+| `Mapper`             | `wotb-web/.../replay/mapper/Mapper.java`             | 核心模型 → DTO                           |
 | `WotbWebApplication` | `wotb-web/.../WotbWebApplication.java` | Spring Boot 入口                          |
-| `LeaderboardController` | `wotb-web/.../controller/LeaderboardController.java` | 排行榜 REST API（`@Profile("postgres")`）|
-| `LeaderboardService` | `wotb-web/.../service/LeaderboardService.java` | 排行榜业务：录像者匹配/去重/查询（`@Profile("postgres")`）|
-| `LeaderboardRecord`  | `wotb-web/.../entity/LeaderboardRecord.java` | JPA 实体（列与 Flyway V1 逐列对齐）|
-| `LeaderboardRecordRepository` | `wotb-web/.../repository/LeaderboardRecordRepository.java` | Spring Data JPA 仓库 |
+| `LeaderboardController` | `wotb-web/.../leaderboard/controller/LeaderboardController.java` | 排行榜 REST API（`@Profile("postgres")`）|
+| `LeaderboardService` | `wotb-web/.../leaderboard/service/LeaderboardService.java` | 排行榜业务：录像者匹配/去重/查询（`@Profile("postgres")`）|
+| `LeaderboardRecord`  | `wotb-web/.../leaderboard/entity/LeaderboardRecord.java` | JPA 实体（列与 Flyway V1 逐列对齐）|
+| `LeaderboardRecordRepository` | `wotb-web/.../leaderboard/repository/LeaderboardRecordRepository.java` | Spring Data JPA 仓库 |
 | `GlobalExceptionHandler` | `wotb-web/.../controller/GlobalExceptionHandler.java` | 统一异常处理 → JSON 错误响应 |
 
 ### 前端
