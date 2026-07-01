@@ -9,6 +9,7 @@
 - **Java 后端包重构**：按 domain 分包（`user/` `leaderboard/` `replay/` `boost/` `admin/`），删除旧层分包（`service/` `entity/` `repository/` `mapper/`）。
 - **用户资料增强**：`user_profile` 新增 `username` 字段（Flyway V7），映射 Keycloak `preferred_username`。
 - **displayName JWT 映射**：`wotbtools-web` client 新增 `display-name-mapper` protocol mapper，QQ 昵称映射到 JWT `display_name` claim。
+- **打手关联用户**：`booster_profile` 新增 `keycloak_user_id`（Flyway V8），打手必须从已有用户注册。创建/删除时自动分配/移除 `booster` realm role。
 - **QQ username 生成**：`{清洗后昵称}-{sha8(socialUid)}` 确保唯一，无效昵称返回 400。
 - **Juhe QQ 登录**：Keycloak 自定义 Identity Provider (`keycloak-juhe-qq-provider`)，通过聚合登录平台 open.juhedenglu.cn 实现 QQ 登录。
   - 新增 Maven 模块：`keycloak-juhe-qq-provider`（Keycloak SPI，provider ID: juhe-qq）

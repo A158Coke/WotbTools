@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import * as api from '../utils/api-boost.js'
+import { getMyBoosterProfile } from '../utils/api-boost.js'
 import { mapLabel } from '../utils/helpers.js'
 
 const { t } = useI18n()
@@ -18,6 +19,7 @@ const editAccountId = ref(null)
 const editNickname = ref('')
 const editError = ref('')
 const records = ref([])
+const boosterInfo = ref(null)
 
 onMounted(async () => {
   try {
@@ -48,6 +50,7 @@ async function loadProfile() {
     }
   }
   if (profile.value?.wotbAccountId) { loadRecords() }
+  loadBoosterInfo()
 }
 
 const displayName = computed(() =>
@@ -83,6 +86,9 @@ async function saveAccount() {
     editingAccount.value = false
     loadRecords()
   } catch (e) { editError.value = e.message }
+}
+async function loadBoosterInfo() {
+  try { boosterInfo.value = await getMyBoosterProfile() } catch { boosterInfo.value = null }
 }
 async function loadRecords() {
   try { records.value = await api.getUserLeaderboardRecords() } catch { records.value = [] }
@@ -194,6 +200,18 @@ async function removeAccount() {
         </div>
 
         <div class="profile-right">
+          <!-- Booster Info -->
+          <div v-if="boosterInfo" class="profile-card profile-section">
+            <h3 class="card-title">{{ $t('profile.boosterTitle') }}</h3>
+            <div class="booster-info">
+              <div class="sec-row"><span>{{ $t('profile.boosterNickname') }}</span><strong>{{ boosterInfo.nickname }}</strong></div>
+              <div class="sec-row"><span>{{ $t('profile.boosterLevel') }}</span><span class="badge-ok">{{ boosterInfo.levelLabel }}</span></div>
+              <div class="sec-row"><span>{{ $t('profile.boosterActiveAssignments') }}</span><strong>{{ boosterInfo.activeAssignmentCount }}</strong></div>
+              <div v-if="boosterInfo.status === 'ACTIVE'" class="profile-status-ok">{{ $t('profile.boosterActive') }}</div>
+              <div v-else class="profile-status-warn">{{ $t('profile.boosterInactive') }}</div>
+            </div>
+          </div>
+
           <div class="profile-card profile-section">
             <h3 class="card-title">{{ $t('profile.securityTitle') }}</h3>
             <div class="security-info">
@@ -245,6 +263,9 @@ async function removeAccount() {
 .sec-row { display: flex; justify-content: space-between; font-size: .88rem; }
 .sec-row span { color: var(--text-sub); }
 .sec-row code { font-family: monospace; font-size: .78rem; color: var(--accent); }
+.booster-info { display: flex; flex-direction: column; gap: 8px; }
+.profile-status-ok { font-size: .8rem; color: #166534; font-weight: 600; }
+.profile-status-warn { font-size: .8rem; color: #b45309; font-weight: 600; }
 .btn-primary { padding: 8px 20px; border: none; border-radius: 10px; background: var(--accent); color: #fff; font-size: .88rem; cursor: pointer; font-family: inherit; }
 .btn-primary:hover { background: var(--accent-hover); }
 .btn-sm { padding: 5px 12px; font-size: .8rem; border-radius: 8px; }

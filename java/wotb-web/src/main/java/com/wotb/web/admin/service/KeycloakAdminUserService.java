@@ -39,6 +39,26 @@ public class KeycloakAdminUserService {
         }
     }
 
+    /** 给 Keycloak 用户分配 realm role。 */
+    public void addRealmRole(final String keycloakUserId, final String roleName) {
+        try {
+            final var role = keycloak.realm(realm).roles().get(roleName).toRepresentation();
+            keycloak.realm(realm).users().get(keycloakUserId).roles().realmLevel().add(List.of(role));
+        } catch (final jakarta.ws.rs.NotFoundException e) {
+            // role 或 user 不存在
+        }
+    }
+
+    /** 移除 Keycloak 用户的 realm role。 */
+    public void removeRealmRole(final String keycloakUserId, final String roleName) {
+        try {
+            final var role = keycloak.realm(realm).roles().get(roleName).toRepresentation();
+            keycloak.realm(realm).users().get(keycloakUserId).roles().realmLevel().remove(List.of(role));
+        } catch (final jakarta.ws.rs.NotFoundException e) {
+            // role 或 user 不存在
+        }
+    }
+
     /** 删除 Keycloak 用户。用户不存在时不抛异常。 */
     public void deleteUser(final String keycloakUserId) {
         try {

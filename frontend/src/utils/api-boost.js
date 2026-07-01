@@ -76,6 +76,15 @@ export async function adminBoostBoosterAvailability(id, body) {
   return boostHandle(await fetch(`/api/admin/boost/boosters/${encodeURIComponent(id)}/availability`, { method: 'PATCH', headers: boostHeaders(), body: JSON.stringify(body) }))
 }
 
+export async function adminBoostBoosterDelete(id) {
+  return boostHandle(await fetch(`/api/admin/boost/boosters/${encodeURIComponent(id)}`, { method: 'DELETE', headers: boostHeaders() }))
+}
+
+// ========== My Booster Profile ==========
+export async function getMyBoosterProfile() {
+  return boostHandle(await fetch('/api/boost/boosters/my', { headers: boostHeaders() }))
+}
+
 // ========== Admin Users ==========
 async function adminHandle(r) {
   if (r.status === 401 || r.status === 403) {

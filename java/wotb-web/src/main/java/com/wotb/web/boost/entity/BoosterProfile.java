@@ -26,6 +26,9 @@ public class BoosterProfile {
     @Column(name = "level", nullable = false, length = 32)
     private String level;
 
+    @Column(name = "keycloak_user_id", length = 64)
+    private String keycloakUserId;
+
     @Column(name = "available", nullable = false)
     private Boolean available;
 
@@ -64,6 +67,9 @@ public class BoosterProfile {
 
     public String getLevel() { return level; }
     public void setLevel(final String level) { this.level = level; }
+
+    public String getKeycloakUserId() { return keycloakUserId; }
+    public void setKeycloakUserId(final String keycloakUserId) { this.keycloakUserId = keycloakUserId; }
 
     public Boolean getAvailable() { return available; }
     public void setAvailable(final Boolean available) { this.available = available; }
