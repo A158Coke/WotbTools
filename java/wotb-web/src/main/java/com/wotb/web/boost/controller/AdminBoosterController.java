@@ -31,7 +31,7 @@ import java.util.Map;
 @CrossOrigin(origins = "*")
 public class AdminBoosterController {
 
-    private static final String BOOSTER_ROLE = "boost-manager";
+    private static final String BOOSTER_ROLE = "booster";
 
     private final BoosterService service;
     private final KeycloakAdminUserService keycloakAdminUserService;
