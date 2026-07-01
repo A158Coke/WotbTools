@@ -7,15 +7,18 @@ import ReplayPage from './components/ReplayPage.vue'
 import LeaderboardPage from './components/LeaderboardPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
 import BoostPage from './components/BoostPage.vue'
+import AdminUsersPage from './components/AdminUsersPage.vue'
+import { useError } from './composables/useError.js'
 
 const { t } = useI18n()
 const { theme, handleTheme } = useTheme()
+const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
 
 const params = new URLSearchParams(window.location.search)
 const isHomeHost = window.location.hostname === 'wotbtools.com' || window.location.hostname === 'www.wotbtools.com'
 const defaultView = isHomeHost ? 'home' : 'replay'
 const viewParam = params.get('view')
-const activeTool = ref(['replay', 'leaderboard', 'profile', 'boost'].includes(viewParam) ? viewParam : defaultView)
+const activeTool = ref(['replay', 'leaderboard', 'profile', 'boost', 'admin-users'].includes(viewParam) ? viewParam : defaultView)
 
 
 function navigate(view) {
@@ -56,7 +59,19 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
     <ProfilePage v-else-if="activeTool === 'profile'" />
     <LeaderboardPage v-else-if="activeTool === 'leaderboard'" />
     <BoostPage v-else-if="activeTool === 'boost'" />
+    <AdminUsersPage v-else-if="activeTool === 'admin-users'" />
     <ReplayPage v-else />
+  </div>
+
+  <!-- Global Error Dialog -->
+  <div v-if="showGlobalError && globalError" class="modal-overlay" @click.self="closeGlobalError">
+    <div class="modal" style="max-width:480px;">
+      <h3>Error</h3>
+      <p class="error-msg">{{ globalError }}</p>
+      <div class="modal-actions">
+        <button class="btn-sm" @click="closeGlobalError">Close</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -113,6 +128,32 @@ body { margin: 0; font: 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Robo
   background: var(--bg); color: var(--text); }
 a { color: var(--accent); text-decoration: none; }
 a:hover { color: var(--accent-hover); text-decoration: underline; }
+.ic {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: -3px;
+}
+.up-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  background: var(--bg-blue-light);
+  color: var(--accent-icon);
+}
+.up-icon .ic {
+  width: 28px;
+  height: 28px;
+}
 .wrap { max-width: 1200px; margin: 0 auto; padding: 16px 20px; }
 h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
 .tb-content { padding-top: 52px; }
@@ -126,20 +167,13 @@ h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
   background: transparent; color: var(--text-sub); cursor: pointer; font-size: .85rem; font-family: inherit; white-space: nowrap; }
 .topbar nav button.active { background: var(--bg-blue); color: var(--accent-dark); border-color: var(--border-tab-active); font-weight: 600; }
 .topbar nav button:hover { background: var(--bg-card-hover); color: var(--text-label); }
-.theme-bar { display: flex; gap: 2px; align-items: center; }
-.theme-bar button { padding: 6px 10px; border: 1px solid transparent; border-radius: 7px;
-  background: transparent; color: var(--text-sub); cursor: pointer; font-size: .82rem; font-family: inherit; white-space: nowrap; }
-.theme-bar button.active { background: var(--bg-blue); color: var(--accent-dark); border-color: var(--border-tab-active); font-weight: 600; }
-.theme-bar button:hover { background: var(--bg-card-hover); color: var(--text-label); }
-.uploadwrap { max-width: 780px; }
-.uploadcard { padding: 24px 16px; }
-.tb-spacer { flex: 1; }
 .theme-bar { display: flex; gap: 2px; flex: 0 0 auto; align-items: center; white-space: nowrap;
   background: var(--bg-card2); border: 1px solid var(--border-ghost); border-radius: 7px; padding: 2px; }
 .theme-bar button { flex: 0 0 auto; padding: 4px 10px; border: none; border-radius: 5px;
   background: transparent; color: var(--text-sub); cursor: pointer; font-size: .73rem; line-height: 1; font-family: inherit; }
 .theme-bar button:hover { color: var(--text-label); background: transparent; }
 .theme-bar button.active { background: var(--accent); color: #fff; font-weight: 600; }
+.tb-spacer { flex: 1; }
 .auth-btn { padding: 6px 14px; border: 1px solid var(--border-ghost); border-radius: 7px;
   background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-size: .82rem; font-family: inherit; white-space: nowrap; }
 .auth-btn:hover { background: var(--bg-blue-light); border-color: var(--accent); color: var(--accent-dark); text-decoration: none; }
@@ -168,6 +202,20 @@ tr:hover td { background: var(--bg-list-hover); }
 .r2 { background: #b0b7c0 !important; color: #fff !important; }
 .r3 { background: #ad7235 !important; color: #fff !important; }
 .r4 { background: var(--bg-chip) !important; color: var(--text-label) !important; }
+
+/* ---- replay results ---- */
+.restoolbar { display: flex; align-items: flex-start; gap: 12px; margin: 16px 0; flex-wrap: wrap; }
+.restoolbar .tabs { flex: 1; min-width: 0; }
+.resactions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.resactions button { white-space: nowrap; }
+.tabx { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
+  margin-left: 4px; border-radius: 50%; font-size: 12px; font-weight: 700; line-height: 1;
+  color: var(--text-sub); background: transparent; cursor: pointer; transition: all .12s; }
+.tabx:hover { background: var(--error); color: #fff; }
+.dropdown { position: relative; }
+.wrap .warn, .wrap .error { padding: 10px 16px; border-radius: 8px; margin-bottom: 12px; font-size: 13px; }
+.wrap .warn { background: var(--warn-bg, #fff8e8); border: 1px solid var(--border-warn, #f0d08a); color: var(--warn-text, #8a5200); }
+.wrap .error { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
 
 /* ---- file upload ---- */
 .up-area { border: 2px dashed var(--border-dashed); border-radius: 10px; padding: 20px 16px; text-align: center;
@@ -262,27 +310,19 @@ tr:hover td { background: var(--bg-list-hover); }
 
 /* ----- topbar responsive ----- */
 @media (max-width: 768px) {
-  .topbar { position: sticky; height: auto; min-height: 50px; flex-wrap: wrap; padding: 6px 10px; gap: 6px; }
-  .tb-content { padding-top: 0; }
-  .tb-spacer { display: none; }
-  .topbar nav { flex: 1 1 auto; gap: 2px; overflow-x: auto; scrollbar-width: none; }
-  .topbar nav::-webkit-scrollbar { display: none; }
+  .topbar { padding: 6px 10px; gap: 4px; }
+  .topbar nav { gap: 2px; }
   .topbar nav button { padding: 5px 8px; font-size: .78rem; }
+  .theme-bar { display: none; }
   .uploadwrap { max-width: 100%; }
   .lb-toolbar { flex-wrap: wrap; gap: 6px; }
-  .theme-bar { display: flex; margin-left: auto; }
-  .theme-bar button { padding: 4px 8px; font-size: .7rem; }
-  .auth-btn { padding: 5px 10px; font-size: .78rem; }
-  .lang-select { font-size: .7rem; padding: 4px 20px 4px 7px; }
 }
 @media (max-width: 480px) {
-  .topbar { padding: 4px 6px; gap: 4px; }
-  .tb-brand { flex: 0 0 auto; }
-  .topbar nav { order: 2; flex: 1 1 calc(100% - 34px); }
+  .topbar { padding: 4px 6px; gap: 2px; height: 40px; }
+  .tb-content { padding-top: 46px; }
   .topbar nav button { padding: 4px 6px; font-size: .72rem; }
-  .lang-select { order: 3; font-size: .7rem; padding: 3px 18px 3px 5px; background-size: 10px; }
-  .theme-bar { order: 4; margin-left: 0; }
+  .lang-select { font-size: .7rem; padding: 3px 18px 3px 5px; background-size: 10px; }
   .tb-logo { height: 22px; }
-  .auth-btn { order: 5; margin-left: auto; padding: 4px 8px; font-size: .75rem; }
+  .auth-btn { padding: 4px 8px; font-size: .75rem; }
 }
 </style>

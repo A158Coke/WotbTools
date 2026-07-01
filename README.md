@@ -61,6 +61,7 @@
 - **域名统一**：`wotbtools.com` 和 `www.wotbtools.com`，去除 `replay.wotbtools.com` 子域名。
 - **管理员用户管理**：`/api/admin/users` API 搜索/查看/删除用户，Keycloak Admin API 集成，审计日志 `admin_user_log` 表，`wotbtools-admin` 角色权限控制。
 - **移动端顶栏**：回放解析、排行榜、个人中心共享同一套响应式顶栏；主题/语言/账号入口自动换行，不压缩主题切换器。
+- **上传区图标**：回放解析与排行榜上传区共用描边 SVG 图标样式，原生文件控件隐藏在自定义按钮内。
 
 > 排行榜支持按车辆筛选（点击车辆名查看专属伤害榜），URL 参数 `?view=leaderboard` 可直接跳转排行榜视图。
 

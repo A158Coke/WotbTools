@@ -3,7 +3,7 @@ package com.wotb.web.controller;
 import com.wotb.core.model.Battle;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.ref.Tankopedia;
-import com.wotb.web.dto.LeaderboardRecordDto;
+import com.wotb.web.dto.LeaderboardPageDto;
 import com.wotb.web.service.LeaderboardService;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -46,18 +45,20 @@ public class LeaderboardController {
         return Map.of("status", "ok", "arenaId", battle.arenaId);
     }
 
-    /** 全局伤害榜。 */
+    /** 全局伤害榜（分页）。 */
     @GetMapping("/top-damage")
-    public List<LeaderboardRecordDto> topDamage(
-            @RequestParam(name = "limit", defaultValue = "50") final int limit) {
-        return service.topDamage(limit);
+    public LeaderboardPageDto topDamage(
+            @RequestParam(name = "page", defaultValue = "1") final int page,
+            @RequestParam(name = "size", defaultValue = "50") final int size) {
+        return service.topDamage(page, size);
     }
 
-    /** 指定车辆的伤害榜。 */
+    /** 指定车辆的伤害榜（分页）。 */
     @GetMapping("/tanks/{tankId}/top-damage")
-    public List<LeaderboardRecordDto> topDamageByTank(
+    public LeaderboardPageDto topDamageByTank(
             @PathVariable final long tankId,
-            @RequestParam(name = "limit", defaultValue = "50") final int limit) {
-        return service.topDamageByTank(tankId, limit);
+            @RequestParam(name = "page", defaultValue = "1") final int page,
+            @RequestParam(name = "size", defaultValue = "50") final int size) {
+        return service.topDamageByTank(tankId, page, size);
     }
 }
