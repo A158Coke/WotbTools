@@ -194,6 +194,9 @@ th, td { padding: 7px 12px; text-align: left; white-space: nowrap; }
 th { background: var(--bg-card2); color: var(--text-sub); font-weight: 600; font-size: 12px; border-bottom: 1px solid var(--border); }
 td { border-bottom: 1px solid var(--border-light); }
 tr:hover td { background: var(--bg-list-hover); }
+tr.t1 td { background: color-mix(in srgb, var(--accent) 10%, var(--bg-card)); }
+tr.t2 td { background: color-mix(in srgb, #d66b4f 10%, var(--bg-card)); }
+.poop { display: inline; width: 16px; height: 16px; vertical-align: -3px; }
 
 /* ---- rating / badges ---- */
 .rbadge { display: inline-block; min-width: 44px; text-align: center; padding: 2px 6px; border-radius: 6px; font-size: 12px; font-weight: 700; }
