@@ -4,8 +4,9 @@
 
 ### Added
 - **管理员用户删除**：后端 `/api/admin/users` 全套 API（搜索/详情/双删），Keycloak Admin Client 集成，审计日志 `admin_user_log` 表（Flyway V6），`wotbtools-admin` 角色权限校验。
-- **通用错误码系统**：`common/error-codes.json` 单源，Java `ErrorCodes` 加载器 + 前端可直读，替代硬编码字符串。
-- AGENTS.md 规则 18（StringUtils.hasText）、19（优先 Stream）。
+- **通用错误码系统**：`ErrorCode` 枚举（`dto/ErrorCode.java`），取代 JSON 加载的 `ErrorCodes` 工具类。
+- AGENTS.md 规则 18（StringUtils.hasText）、19（优先 Stream）、20（禁止 import \*）。
+- **Java 后端包重构**：按 domain 分包（`user/` `leaderboard/` `replay/` `boost/` `admin/`），删除旧层分包（`service/` `entity/` `repository/` `mapper/`）。
 - **用户资料增强**：`user_profile` 新增 `username` 字段（Flyway V7），映射 Keycloak `preferred_username`。
 - **displayName JWT 映射**：`wotbtools-web` client 新增 `display-name-mapper` protocol mapper，QQ 昵称映射到 JWT `display_name` claim。
 - **QQ username 生成**：`{清洗后昵称}-{sha8(socialUid)}` 确保唯一，无效昵称返回 400。

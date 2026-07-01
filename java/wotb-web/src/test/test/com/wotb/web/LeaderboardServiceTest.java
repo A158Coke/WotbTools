@@ -1,11 +1,11 @@
-package com.wotb.web;
+package test.test.com.wotb.web;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
-import com.wotb.web.entity.LeaderboardRecord;
-import com.wotb.web.repository.LeaderboardRecordRepository;
-import com.wotb.web.service.LeaderboardService;
+import com.wotb.web.leaderboard.entity.LeaderboardRecord;
+import com.wotb.web.leaderboard.repository.LeaderboardRecordRepository;
+import com.wotb.web.leaderboard.service.LeaderboardService;
 import org.junit.jupiter.api.Test;
 
 import java.time.OffsetDateTime;

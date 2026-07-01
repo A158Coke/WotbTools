@@ -14,18 +14,32 @@
 5. **Grill-Fix 闭环** — 每次代码变更后反复审查（grep 残留、硬编码、未用 import、命名不一致、空值边界、并发安全），修复找到的问题，循环直到无新问题出现。详见 `.agents/skills/grill-fix/SKILL.md`。
 6. **构建隔离** — Maven `-s java/settings.xml`(Aliyun + 独立 `.m2repo`)。车辆库单源 `common/tankopedia.json`。
 7. **Git** — SSH remote `github-personal`，账号 `A158Coke`。中文提交，尾带 `Co-Authored-By`。
-8. **跨站 Cookie** — 主题/语言偏好写 `domain=.wotbtools.com` Cookie，localStorage 回退。
-9. **显式参数名** — `@RequestParam(name="x")` 必须写名字。
-10. **Java final** — 局部变量、方法入参一律 `final`。
-11. **三语 i18n** — 新增页面/文案必须在 zh/en/ru 三语字典同步，主题按钮不能硬编码。
-12. **数据库迁移** — 改表结构必须新增 Flyway migration（`V3__...`），不改已应用的 V1/V2；实体列与迁移列逐列对齐。
-13. **安全** — 不存密码/凭据；Keycloak JWT 验证不由后端自签；token/secret 走 GitHub Secrets。
-14. **分层调用** — Controller → Service → Repository。 Controller 只能调 Service（禁止直接调 Repository）。Service 只能调自己 domain 的 Repository 或其他 domain 的 Service（禁止 Service 跨 domain 调 Repository）。
-15. **线上排障** — 部署后 502/启动失败，SSH 进 VPS：`ssh -i "$env:USERPROFILE\.ssh\wotb_vps_deploy" -o IdentitiesOnly=yes root@45.136.14.101 -p 58361`，`docker logs wotb-wotb-backend-1 --tail 100`。常见根因：循环依赖、Flyway 冲突、PG volume 不兼容。
-16. **结尾签名** — 完成工作后回复末尾附带：我完成了喵
-17. **临时代码标记** — 调试/测试用的临时日志、工具方法必须标注 `// TODO: remove after verification`，业务跑通后清理。Grill-Fix 检查单包含临时代码残留检查。
-18. **String 空值判断** — 字符串判空或 null 统一用 `org.springframework.util.StringUtils.hasText(s)`。禁止手写 `s == null || s.isBlank()`。例外：仅当项目内无处引用 Spring 的核心模块可保留手写。
-19. **优先 Stream** — 集合遍历优先用 Java Stream（`map`/`filter`/`toList()` 等），不可行（如需要受检异常、多语句副作用）再回退 for-each。
+8. **Domain 分包** — 后端 Java 包按业务 domain 拆分（`user/` `leaderboard/` `replay/` `boost/` `admin/`），每个 domain 含 `controller/` `service/` `entity/` `repository/` `dto/` 子包。禁止层分包（`com.wotb.web.controller/` `service/` 等）。共享工具类（`config/` `util/`）例外。
+9. **跨站 Cookie** — 主题/语言偏好写 `domain=.wotbtools.com` Cookie，localStorage 回退。
+10. **显式参数名** — `@RequestParam(name="x")` 必须写名字。
+11. **Java final** — 局部变量、方法入参一律 `final`。
+12. **三语 i18n** — 新增页面/文案必须在 zh/en/ru 三语字典同步，主题按钮不能硬编码。
+13. **数据库迁移** — 改表结构必须新增 Flyway migration（`V3__...`），不改已应用的 V1/V2；实体列与迁移列逐列对齐。
+14. **安全** — 不存密码/凭据；Keycloak JWT 验证不由后端自签；token/secret或环境变量 走 GitHub Secrets。
+15. **分层调用** — Controller → Service → Repository。 Controller 只能调 Service（禁止直接调 Repository）。Service 只能调自己 domain 的 Repository 或其他 domain 的 Service（禁止 Service 跨 domain 调 Repository）。
+16. **线上排障** — 部署后 502/启动失败，SSH 进 VPS：`ssh -i "$env:USERPROFILE\.ssh\wotb_vps_deploy" -o IdentitiesOnly=yes root@45.136.14.101 -p 58361`，`docker logs wotb-wotb-backend-1 --tail 100`。常见根因：循环依赖、Flyway 冲突、PG volume 不兼容。
+17. **结尾签名** — 完成工作后回复末尾附带：我完成了喵
+18. **临时代码标记** — 调试/测试用的临时日志、工具方法必须标注 `// TODO: remove after verification`，业务跑通后清理。Grill-Fix 检查单包含临时代码残留检查。
+19. **String 空值判断** — 字符串判空或 null 统一用 `org.springframework.util.StringUtils.hasText(s)`。禁止手写 `s == null || s.isBlank()`。例外：仅当项目内无处引用 Spring 的核心模块可保留手写。
+20. **优先 Stream** — 集合遍历优先用 Java Stream（`map`/`filter`/`toList()` 等），不可行（如需要受检异常、多语句副作用）再回退 for-each。
+21. **禁止 import \*** — 不准用 `import com.foo.*` 通配导入。必须显式逐类导入。
+22. **子代理完成确认** — spawn 子 agent/task 后必须显式验证完成状态：
+    - `task_list` / `task_read` 检查 status=completed
+    - `list_dir` 验证文件已移动到目标位置
+    - `read_file` 验证关键文件内容正确
+    不可假设子代理自动完成。失败/超时则手动修正或重新 spawn。
+23. **子代理完成通知** — 子代理完成后以醒目格式通知用户：
+    ```
+    ═══════════════════════════════════
+      ✅ task_xxx 完成（耗时 Ns）
+      验证: <逐项结果>
+    ═══════════════════════════════════
+    ```
 
 ## 常用命令
 

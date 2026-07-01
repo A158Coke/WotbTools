@@ -1,7 +1,7 @@
 package com.wotb.web.user.controller;
 
-import com.wotb.web.dto.LeaderboardRecordDto;
-import com.wotb.web.service.LeaderboardService;
+import com.wotb.web.leaderboard.dto.LeaderboardRecordDto;
+import com.wotb.web.leaderboard.service.LeaderboardService;
 import com.wotb.web.user.dto.UpdateWotbAccountRequest;
 import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.service.UserProfileService;

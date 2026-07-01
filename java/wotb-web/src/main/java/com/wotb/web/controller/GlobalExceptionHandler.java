@@ -11,6 +11,9 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.wotb.web.admin.exception.AdminBadRequestException;
+import com.wotb.web.admin.exception.AdminConflictException;
+import com.wotb.web.admin.exception.AdminInternalException;
 import java.io.IOException;
 import java.util.Map;
 
@@ -59,6 +62,25 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleResponseStatus(final ResponseStatusException e) {
         return ResponseEntity.status(e.getStatusCode())
                 .body(Map.of("error", e.getReason() != null ? e.getReason() : "Unknown error"));
+    }
+
+    // ── 管理员 API 异常 ────────────────────────────────────────────
+    @ExceptionHandler(AdminBadRequestException.class)
+    public ResponseEntity<Map<String, String>> handleAdminBadRequest(final AdminBadRequestException e) {
+        return ResponseEntity.badRequest()
+                .body(Map.of("error", e.getErrorCode(), "message", e.getMessage()));
+    }
+
+    @ExceptionHandler(AdminConflictException.class)
+    public ResponseEntity<Map<String, String>> handleAdminConflict(final AdminConflictException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("error", e.getErrorCode(), "message", e.getMessage()));
+    }
+
+    @ExceptionHandler(AdminInternalException.class)
+    public ResponseEntity<Map<String, String>> handleAdminInternal(final AdminInternalException e) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", e.getErrorCode(), "message", e.getMessage()));
     }
 
     @ExceptionHandler(Exception.class)
