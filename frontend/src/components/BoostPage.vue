@@ -78,7 +78,9 @@ function searchUsers() {
 
 function selectUser(user) {
   boosterForm.value.keycloakUserId = user.keycloakUserId || user.id
-  userSearchQuery.value = user.displayName || user.keycloakUsername || user.keycloakUserId || user.id
+  const displayName = user.displayName || user.keycloakUsername || 'User'
+  boosterForm.value.nickname = displayName
+  userSearchQuery.value = displayName
   showUserSearch.value = false
 }
 
@@ -447,7 +449,7 @@ function switchTab(t) {
         <h4>{{ editingBooster.id ? $t('boost.editBooster') : $t('boost.newBooster') }}</h4>
         <div class="form-row">
           <label>{{ $t('boost.boosterNickname') }} *</label>
-          <input v-model="boosterForm.nickname" maxlength="100" />
+          <input :value="boosterForm.nickname" readonly class="readonly-field" :placeholder="$t('boost.selectUserFirstHint')" />
         </div>
         <div class="form-row">
           <label>{{ $t('boost.boosterLevel') }}</label>
@@ -585,6 +587,7 @@ function switchTab(t) {
 .assign-box { margin-top: 8px; padding: 10px; background: var(--bg); border-radius: 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .assign-box select, .assign-box input { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font-size: 13px; }
 .mr { margin-right: 4px; }
+.readonly-field { background: var(--bg-card2, #f1f4f8); color: var(--text-sub, #8b94a3); cursor: not-allowed; border: 1px solid var(--border-light, #eef1f6); }
 
 .booster-editor { border: 1px solid var(--accent); border-radius: 8px; padding: 16px; margin-bottom: 16px; background: var(--bg); }
 .booster-editor .form-row { margin-bottom: 10px; }

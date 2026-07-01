@@ -366,6 +366,7 @@
         "newBooster": "新建",
         "editBooster": "编辑",
         "boosterNickname": "昵称",
+        "selectUserFirstHint": "请先搜索用户",
         "boosterLevel": "等级",
         "boosterStatus": "状态",
         "boosterContact": "联系",

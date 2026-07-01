@@ -366,6 +366,7 @@
         "newBooster": "Новый",
         "editBooster": "Ред.",
         "boosterNickname": "Ник",
+        "selectUserFirstHint": "Выберите пользователя",
         "boosterLevel": "Уровень",
         "boosterStatus": "Статус",
         "boosterContact": "Контакт",

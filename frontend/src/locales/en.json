@@ -366,6 +366,7 @@
         "newBooster": "New",
         "editBooster": "Edit",
         "boosterNickname": "Nick",
+        "selectUserFirstHint": "Select a user first",
         "boosterLevel": "Level",
         "boosterStatus": "Status",
         "boosterContact": "Contact",
