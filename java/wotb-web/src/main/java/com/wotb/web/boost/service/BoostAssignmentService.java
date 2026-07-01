@@ -59,6 +59,7 @@ public class BoostAssignmentService {
         assignment.setBoosterId(boosterId);
         assignment.setStatus(BoostAssignmentStatus.ASSIGNED.name());
         assignment.setAssignedAt(now);
+        assignment.setUpdatedAt(now);
         assignment.setNote(note);
         assignmentRepository.save(assignment);
 
