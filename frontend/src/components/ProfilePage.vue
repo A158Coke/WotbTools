@@ -1,12 +1,12 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import * as api from '../utils/api-boost.js'
 import { mapLabel } from '../utils/helpers.js'
 
 const { t } = useI18n()
-const { initPromise, login, logout, isAuthenticated, userName, initError } = useAuth()
+const { initPromise, login, logout, isAuthenticated, initError, tokenParsed } = useAuth()
 
 const phase = ref('init')
 const profile = ref(null)
@@ -49,6 +49,19 @@ async function loadProfile() {
   }
   if (profile.value?.wotbAccountId) { loadRecords() }
 }
+
+const displayName = computed(() =>
+  profile.value?.displayName
+  ?? tokenParsed?.display_name
+  ?? tokenParsed?.preferred_username
+  ?? 'User'
+)
+
+const heroSubtitle = computed(() =>
+  profile.value?.wotbNickname
+    ? profile.value.wotbNickname
+    : t('profile.notBoundWotbAccount')
+)
 
 function doLogin() { if (!loginStarted.value) { loginStarted.value = true; login() } }
 function doLogout() { logout() }
@@ -100,12 +113,10 @@ async function removeAccount() {
     <div v-else-if="profile" class="profile-main">
       <div class="profile-card profile-hero">
         <div class="hero-left">
-          <div class="hero-avatar">{{ (profile.displayName || userName() || '?')[0] }}</div>
+          <div class="hero-avatar">{{ (displayName || '?')[0] }}</div>
           <div class="hero-identity">
-            <h2 class="hero-name">{{ profile.displayName || userName() || 'WoTBTools User' }}</h2>
-            <div class="hero-meta">
-              <span class="hero-username">{{ profile.username || '—' }}</span>
-            </div>
+            <h2 class="hero-name">{{ displayName }}</h2>
+            <p class="hero-subtitle">{{ heroSubtitle }}</p>
           </div>
         </div>
         <button class="btn-ghost" @click="doLogout">{{ $t('profile.logout') }}</button>
@@ -113,13 +124,19 @@ async function removeAccount() {
 
       <div class="profile-body">
         <div class="profile-left">
-          <!-- 身份信息（来自 Keycloak，不可修改） -->
+          <!-- 身份信息 -->
           <div class="profile-card profile-section">
             <div class="section-head">
               <h3 class="card-title">{{ $t('profile.identity') }}</h3>
             </div>
-            <div class="field"><label class="field-label">{{ $t('profile.displayName') }}</label><span class="profile-value">{{ profile.displayName || '—' }}</span></div>
-            <div class="field"><label class="field-label">{{ $t('profile.username') }}</label><code class="profile-value">{{ profile.username || '—' }}</code></div>
+            <div class="info-row">
+              <span class="info-label">{{ $t('profile.displayName') }}</span>
+              <span class="info-value">{{ displayName }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">{{ $t('profile.authProvider') }}</span>
+              <span class="info-value">Keycloak</span>
+            </div>
           </div>
 
           <!-- WoTB Account -->
@@ -206,12 +223,13 @@ async function removeAccount() {
 .hero-left { display: flex; align-items: center; gap: 20px; }
 .hero-avatar { width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, #2563eb, #7c3aed); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; font-weight: 700; flex-shrink: 0; }
 .hero-name { font-size: 1.3rem; font-weight: 700; color: var(--text-heading); margin: 0 0 6px; }
-.hero-meta { display: flex; gap: 8px; align-items: center; }
-.hero-username { font-size: .82rem; color: var(--text-sub); font-family: monospace; word-break: break-all; }
+.hero-subtitle { font-size: .85rem; color: var(--text-sub); margin: 0; }
 .profile-body { display: flex; gap: 24px; align-items: flex-start; }
 .profile-left { flex: 1; min-width: 0; }
 .profile-right { width: 340px; flex-shrink: 0; }
-.profile-value { font-size: 1rem; color: var(--text); }
+.info-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; gap: 16px; }
+.info-label { color: var(--text-sub); font-size: .85rem; flex-shrink: 0; }
+.info-value { color: var(--text); font-size: .85rem; font-weight: 500; text-align: right; word-break: break-all; }
 .account-bound { display: flex; flex-direction: column; gap: 10px; }
 .account-row { display: flex; justify-content: space-between; font-size: .88rem; color: var(--text); }
 .account-row span { color: var(--text-sub); }

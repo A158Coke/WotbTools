@@ -1,6 +1,7 @@
 package com.wotb.web.repository;
 
 import com.wotb.web.entity.LeaderboardRecord;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -16,10 +17,10 @@ public interface LeaderboardRecordRepository extends JpaRepository<LeaderboardRe
     Optional<LeaderboardRecord> findByArenaIdAndAccountId(String arenaId, long accountId);
 
     /** 全局伤害榜 (降序)。 */
-    List<LeaderboardRecord> findAllByOrderByDamageDealtDesc(Pageable pageable);
+    Page<LeaderboardRecord> findAllByOrderByDamageDealtDesc(Pageable pageable);
 
     /** 指定车辆的伤害榜 (降序)。 */
-    List<LeaderboardRecord> findByTankIdOrderByDamageDealtDesc(long tankId, Pageable pageable);
+    Page<LeaderboardRecord> findByTankIdOrderByDamageDealtDesc(long tankId, Pageable pageable);
 
     /** 指定玩家的伤害记录 (降序)。 */
     List<LeaderboardRecord> findByAccountIdOrderByDamageDealtDesc(long accountId, Pageable pageable);
