@@ -95,6 +95,7 @@ public class AdminBoostRequestService {
                             b.getNickname(),
                             b.getLevel(),
                             BoosterLevel.from(b.getLevel()).label(),
+                            b.getKeycloakUserId(),
                             b.getAvailable(),
                             b.getStatus(),
                             BoosterStatus.from(b.getStatus()).label()

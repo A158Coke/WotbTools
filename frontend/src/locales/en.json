@@ -381,7 +381,12 @@
         "pleaseLogin": "Login required",
         "authError": "Auth error",
         "playerNicknameHint": "Optional, helps the coach identify your account",
-        "playerAccountIdHint": "Optional numeric account ID"
+        "playerAccountIdHint": "Optional numeric account ID",
+        "boosterUserSearch": "Linked User",
+        "boosterUserSearchHint": "Search user by name or ID...",
+        "noUsersFound": "No matching users",
+        "delete": "Delete",
+        "boosterAvailable": "Available"
     },
     "admin": {
         "title": "User Management",

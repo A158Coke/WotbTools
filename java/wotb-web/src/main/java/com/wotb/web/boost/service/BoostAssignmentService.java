@@ -92,15 +92,11 @@ public class BoostAssignmentService {
         return toDto(assignment, booster);
     }
 
-    public long activeCount(final Long boosterId) {
-        return assignmentRepository.countByBoosterIdAndUnassignedAtIsNull(boosterId);
-    }
-
     static BoostAssignmentDto toDto(final BoostRequestAssignment a, final BoosterProfile b) {
         return new BoostAssignmentDto(
                 a.getId(), a.getRequestId(),
                 new BoosterSummaryDto(b.getId(), b.getNickname(), b.getLevel(),
-                        BoosterLevel.from(b.getLevel()).label(),
+                        BoosterLevel.from(b.getLevel()).label(), b.getKeycloakUserId(),
                         b.getAvailable(), b.getStatus(), BoosterStatus.from(b.getStatus()).label()),
                 a.getStatus(), BoostAssignmentStatus.from(a.getStatus()).label(),
                 a.getAssignedAt(), a.getUnassignedAt(), a.getNote(),

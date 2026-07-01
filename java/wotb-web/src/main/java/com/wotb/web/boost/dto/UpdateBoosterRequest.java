@@ -4,6 +4,7 @@ package com.wotb.web.boost.dto;
 public record UpdateBoosterRequest(
     String nickname,
     String level,
+    String keycloakUserId,
     Boolean available,
     String status,
     String contactType,
