@@ -21,14 +21,14 @@ import java.util.Optional;
 public class BoosterService {
 
     private final BoosterProfileRepository boosterRepository;
-    private final BoostStatsService statsService;
+    private final BoosterMapper mapper;
     private final UserProfileRepository userProfileRepository;
 
     public BoosterService(final BoosterProfileRepository boosterRepository,
-                          final BoostStatsService statsService,
+                          final BoosterMapper mapper,
                           final UserProfileRepository userProfileRepository) {
         this.boosterRepository = boosterRepository;
-        this.statsService = statsService;
+        this.mapper = mapper;
         this.userProfileRepository = userProfileRepository;
     }
 
@@ -65,7 +65,7 @@ public class BoosterService {
         p.setSpecialties(specialties);
         p.setDescription(description);
         boosterRepository.save(p);
-        return toDto(p);
+        return mapper.toDto(p);
     }
 
     @Transactional
@@ -90,7 +90,7 @@ public class BoosterService {
         if (description != null) p.setDescription(description);
         p.setUpdatedAt(OffsetDateTime.now());
         boosterRepository.save(p);
-        return toDto(p);
+        return mapper.toDto(p);
     }
 
     @Transactional
@@ -99,7 +99,7 @@ public class BoosterService {
         p.setAvailable(available);
         p.setUpdatedAt(OffsetDateTime.now());
         boosterRepository.save(p);
-        return toDto(p);
+        return mapper.toDto(p);
     }
 
     @Transactional
@@ -108,11 +108,11 @@ public class BoosterService {
     }
 
     @Transactional(readOnly = true)
-    public BoosterDto getDto(final Long id) { return toDto(getById(id)); }
+    public BoosterDto getDto(final Long id) { return mapper.toDto(getById(id)); }
 
     @Transactional(readOnly = true)
     public Optional<BoosterDto> findByKeycloakUserId(final String keycloakUserId) {
-        return boosterRepository.findByKeycloakUserId(keycloakUserId).map(this::toDto);
+        return boosterRepository.findByKeycloakUserId(keycloakUserId).map(mapper::toDto);
     }
 
     @Transactional(readOnly = true)
@@ -127,15 +127,6 @@ public class BoosterService {
         } else {
             page = boosterRepository.findAll(pageable);
         }
-        return page.map(this::toDto);
-    }
-
-    private BoosterDto toDto(final BoosterProfile p) {
-        return new BoosterDto(p.getId(), p.getNickname(), p.getLevel(),
-                BoosterLevel.from(p.getLevel()).label(), p.getKeycloakUserId(), p.getAvailable(),
-                p.getStatus(), BoosterStatus.from(p.getStatus()).label(),
-                p.getContactType(), p.getContactValue(), p.getSpecialties(),
-                p.getDescription(), (int) statsService.activeAssignmentCount(p.getId()),
-                p.getCreatedAt(), p.getUpdatedAt());
+        return page.map(mapper::toDto);
     }
 }

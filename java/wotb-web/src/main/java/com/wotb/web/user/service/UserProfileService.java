@@ -15,15 +15,17 @@ import java.util.Optional;
 public class UserProfileService {
 
     private final UserProfileRepository repository;
+    private final UserProfileMapper mapper;
 
-    public UserProfileService(final UserProfileRepository repository) {
+    public UserProfileService(final UserProfileRepository repository, final UserProfileMapper mapper) {
         this.repository = repository;
+        this.mapper = mapper;
     }
 
     /** 查询用户资料，不存在则返回 empty。 */
     @Transactional(readOnly = true)
     public Optional<UserProfileDto> findByKeycloakUserId(final String keycloakUserId) {
-        return repository.findByKeycloakUserId(keycloakUserId).map(this::toDto);
+        return repository.findByKeycloakUserId(keycloakUserId).map(mapper::toDto);
     }
 
     /** 创建用户资料（首次登录时由前端 POST /profile 触发）。 */
@@ -39,7 +41,7 @@ public class UserProfileService {
         profile.setDisplayName(displayName);
         profile.setWotbServer("CN");
         profile.setUpdatedAt(OffsetDateTime.now());
-        return toDto(repository.save(profile));
+        return mapper.toDto(repository.save(profile));
     }
 
     /** 更新坦克世界账号绑定。 */
@@ -74,7 +76,7 @@ public class UserProfileService {
         profile.setUpdatedAt(OffsetDateTime.now());
 
         try {
-            return toDto(repository.save(profile));
+            return mapper.toDto(repository.save(profile));
         } catch (final DataIntegrityViolationException e) {
             throw new IllegalArgumentException("WOTB_ACCOUNT_ALREADY_USED");
         }
@@ -90,14 +92,7 @@ public class UserProfileService {
         profile.setWotbNickname(null);
         profile.setWotbServer("CN");
         profile.setUpdatedAt(OffsetDateTime.now());
-        return toDto(repository.save(profile));
+        return mapper.toDto(repository.save(profile));
     }
 
-    private UserProfileDto toDto(final UserProfile p) {
-        return new UserProfileDto(
-                p.getId(), p.getKeycloakUserId(), p.getDisplayName(),
-                p.getUsername(),
-                p.getWotbAccountId(), p.getWotbNickname(), p.getWotbServer()
-        );
-    }
 }

@@ -1,14 +1,11 @@
 package com.wotb.web.boost.service;
 
 import com.wotb.web.boost.dto.BoostAssignmentDto;
-import com.wotb.web.boost.dto.BoosterSummaryDto;
 import com.wotb.web.boost.entity.BoostRequest;
 import com.wotb.web.boost.entity.BoostRequestAssignment;
 import com.wotb.web.boost.entity.BoosterProfile;
 import com.wotb.web.boost.enums.BoostAssignmentStatus;
 import com.wotb.web.boost.enums.BoostRequestStatus;
-import com.wotb.web.boost.enums.BoosterLevel;
-import com.wotb.web.boost.enums.BoosterStatus;
 import com.wotb.web.boost.repository.BoostRequestAssignmentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,13 +20,16 @@ public class BoostAssignmentService {
     private final BoostRequestAssignmentRepository assignmentRepository;
     private final BoostRequestService requestService;
     private final BoosterService boosterService;
+    private final BoostAssignmentMapper mapper;
 
     public BoostAssignmentService(final BoostRequestAssignmentRepository assignmentRepository,
                                   final BoostRequestService requestService,
-                                  final BoosterService boosterService) {
+                                  final BoosterService boosterService,
+                                  final BoostAssignmentMapper mapper) {
         this.assignmentRepository = assignmentRepository;
         this.requestService = requestService;
         this.boosterService = boosterService;
+        this.mapper = mapper;
     }
 
     public Optional<BoostRequestAssignment> findActive(final Long requestId) {
@@ -66,7 +66,7 @@ public class BoostAssignmentService {
         req.setStatus(BoostRequestStatus.MATCHED.name());
         req.setUpdatedAt(now);
 
-        return toDto(assignment, booster);
+        return mapper.toDto(assignment, booster);
     }
 
     @Transactional
@@ -89,18 +89,6 @@ public class BoostAssignmentService {
         }
 
         final BoosterProfile booster = boosterService.getById(assignment.getBoosterId());
-        return toDto(assignment, booster);
-    }
-
-    static BoostAssignmentDto toDto(final BoostRequestAssignment a, final BoosterProfile b) {
-        return new BoostAssignmentDto(
-                a.getId(), a.getRequestId(),
-                new BoosterSummaryDto(b.getId(), b.getNickname(), b.getLevel(),
-                        BoosterLevel.from(b.getLevel()).label(), b.getKeycloakUserId(),
-                        b.getAvailable(), b.getStatus(), BoosterStatus.from(b.getStatus()).label()),
-                a.getStatus(), BoostAssignmentStatus.from(a.getStatus()).label(),
-                a.getAssignedAt(), a.getUnassignedAt(), a.getNote(),
-                a.getCreatedAt(), a.getUpdatedAt()
-        );
+        return mapper.toDto(assignment, booster);
     }
 }
