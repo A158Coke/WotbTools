@@ -3,78 +3,86 @@ import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import versions from '../data/versions.json'
-const { locale } = useI18n()
+const { locale, t } = useI18n()
 const { initPromise, tokenParsed } = useAuth()
 const isAdmin = ref(false)
 onMounted(async () => {
   await initPromise
   const tp = tokenParsed.value
-  isAdmin.value = tp?.realm_access?.roles?.includes('wotbtools-admin') || false
+  const roles = [
+    ...(tp?.realm_access?.roles || []),
+  ]
+  isAdmin.value = roles.includes('wotbtools-admin')
 })
-const tagLabel = { add: { zh: '新增', en: 'Added', ru: 'Добавлено' }, fix: { zh: '修复', en: 'Fixed', ru: 'Исправлено' } }
+
+function versionTagLabel(tag) {
+  if (tag === 'add') return t('version.added')
+  if (tag === 'fix') return t('version.fixed')
+  return t(`version.${tag}`)
+}
 </script>
 
 <template>
   <div class="homepage">
     <header>
       <img class="header-logo" src="/wotbtoolslogo.png" alt="WoTBTools">
-      <h1>{{ locale === 'zh' ? 'WoTBTools' : 'WoTBTools' }}</h1>
-      <p class="subtitle">{{ locale === 'zh' ? '《坦克世界闪击战》工具集' : locale === 'ru' ? 'Инструменты World of Tanks Blitz' : 'World of Tanks Blitz Tool Suite' }}</p>
+      <h1>{{ $t('app.title') }}</h1>
+      <p class="subtitle">{{ $t('app.subtitle') }}</p>
     </header>
 
     <div class="tools">
       <a class="card" href="/?view=replay">
-        <h2>{{ locale === 'zh' ? '回放提取器' : locale === 'ru' ? 'Анализатор реплеев' : 'Replay Extractor' }}</h2>
-        <p>{{ locale === 'zh' ? '上传 .wotbreplay 回放文件，提取战斗数据并导出 Excel。' : locale === 'ru' ? 'Загружайте .wotbreplay файлы и экспортируйте данные в Excel.' : 'Upload .wotbreplay files, extract battle data and export to Excel.' }}</p>
-        <span class="tag avail">{{ locale === 'zh' ? '可用' : locale === 'ru' ? 'Доступно' : 'Available' }}</span>
+        <h2>{{ $t('home.replayTitle') }}</h2>
+        <p>{{ $t('home.replayDesc') }}</p>
+        <span class="tag avail">{{ $t('home.available') }}</span>
       </a>
 
       <a class="card" href="/?view=leaderboard">
-        <h2>{{ locale === 'zh' ? '排行榜' : locale === 'ru' ? 'Рейтинг' : 'Leaderboard' }}</h2>
-        <p>{{ locale === 'zh' ? '随机战斗的单场伤害排行 — 上传回放即可上榜。' : locale === 'ru' ? 'Рейтинг урона за случайные бои.' : 'Damage leaderboard for random battles.' }}</p>
-        <span class="tag avail">{{ locale === 'zh' ? '可用' : locale === 'ru' ? 'Доступно' : 'Available' }}</span>
+        <h2>{{ $t('leaderboard.btn') }}</h2>
+        <p>{{ $t('home.leaderboardDesc') }}</p>
+        <span class="tag avail">{{ $t('home.available') }}</span>
       </a>
 
       <a v-if="isAdmin" class="card" href="/?view=admin-users">
         <h2>{{ $t('admin.cardTitle') }}</h2>
         <p>{{ $t('admin.cardDesc') }}</p>
-        <span class="tag avail">Admin</span>
+        <span class="tag avail">{{ $t('admin.cardBadge') }}</span>
       </a>
 
       <div class="coming-soon">
         <div class="card">
-          <h2>{{ locale === 'zh' ? '战绩卡片' : locale === 'ru' ? 'Карточка статистики' : 'Stats Card' }}</h2>
-          <p>{{ locale === 'zh' ? '生成实时战绩卡片。' : locale === 'ru' ? 'Карточка статистики.' : 'Generate live stats card.' }}</p>
-          <span class="tag planned">{{ locale === 'zh' ? '规划中' : locale === 'ru' ? 'Планируется' : 'Planned' }}</span>
+          <h2>{{ $t('home.statsCardTitle') }}</h2>
+          <p>{{ $t('home.statsCardDesc') }}</p>
+          <span class="tag planned">{{ $t('home.planned') }}</span>
         </div>
       </div>
 
       <div class="coming-soon">
         <div class="card">
-          <h2>{{ locale === 'zh' ? '开发者 API' : locale === 'ru' ? 'API для разработчиков' : 'Developer API' }}</h2>
-          <p>{{ locale === 'zh' ? '开放 API 查询参考数据。' : locale === 'ru' ? 'Открытый API для справочных данных.' : 'Open API for reference data.' }}</p>
-          <span class="tag planned">{{ locale === 'zh' ? '规划中' : locale === 'ru' ? 'Планируется' : 'Planned' }}</span>
+          <h2>{{ $t('home.apiTitle') }}</h2>
+          <p>{{ $t('home.apiDesc') }}</p>
+          <span class="tag planned">{{ $t('home.planned') }}</span>
         </div>
       </div>
 
       <a class="card" href="/sponsor.html">
-        <h2>{{ locale === 'zh' ? '支持项目' : locale === 'ru' ? 'Поддержать' : 'Sponsor' }}</h2>
-        <p>{{ locale === 'zh' ? '自愿赞助，用于服务器和维护成本。' : locale === 'ru' ? 'Добровольная поддержка сервера.' : 'Voluntary sponsorship for server costs.' }}</p>
-        <span class="tag support">{{ locale === 'zh' ? '赞助' : locale === 'ru' ? 'Донат' : 'Support' }}</span>
+        <h2>{{ $t('home.sponsorTitle') }}</h2>
+        <p>{{ $t('home.sponsorDesc') }}</p>
+        <span class="tag support">{{ $t('home.sponsorTag') }}</span>
       </a>
     </div>
 
     <section class="version">
-      <h2 class="version-title">{{ locale === 'zh' ? '版本历史' : locale === 'ru' ? 'История версий' : 'Version History' }}</h2>
+      <h2 class="version-title">{{ $t('home.versionTitle') }}</h2>
       <div class="ver" v-for="(ver, i) in versions" :key="i">
         <span class="ver-num">v{{ ver.v }}</span>
         <span class="ver-date">{{ ver.date }}</span>
-        <span class="ver-tag" :class="ver.tag">{{ tagLabel[ver.tag]?.[locale] || tagLabel[ver.tag]?.zh }}</span>
+        <span class="ver-tag" :class="ver.tag">{{ versionTagLabel(ver.tag) }}</span>
         <p>{{ ver[locale] || ver.zh }}</p>
       </div>
     </section>
 
-    <footer>{{ locale === 'zh' ? 'WoTBTools — 社区工具，非 Wargaming 官方产品' : 'WoTBTools — Community tool, not a Wargaming product' }}</footer>
+    <footer>{{ $t('home.footer') }}</footer>
   </div>
 </template>
 
