@@ -9,7 +9,10 @@
         "login": "Войти",
         "logout": "Выйти",
         "profile": "Профиль",
-        "back": "Назад"
+        "back": "Назад",
+        "boost_tab": "Буст",
+        "global_error_title": "Ошибка",
+        "close": "Закрыть"
     },
     "upload": {
         "drop_hint": "Перетащите .wotbreplay файлы сюда",
@@ -368,7 +371,9 @@
         "activeAssignments": "Активно",
         "noBoosters": "Нет",
         "pleaseLogin": "Войдите",
-        "authError": "Ошибка"
+        "authError": "Ошибка",
+        "playerNicknameHint": "Необязательно, поможет тренеру найти аккаунт",
+        "playerAccountIdHint": "Необязательный числовой ID аккаунта"
     },
     "admin": {
         "title": "Управление пользователями",
@@ -400,6 +405,23 @@
         "close": "Закрыть",
         "keycloak": "Keycloak",
         "enabled": "Включён",
-        "unknownError": "Неизвестная ошибка"
+        "unknownError": "Неизвестная ошибка",
+        "cardBadge": "Админ"
+    },
+    "home": {
+        "replayTitle": "Анализатор реплеев",
+        "replayDesc": "Загружайте .wotbreplay файлы и экспортируйте данные в Excel.",
+        "leaderboardDesc": "Рейтинг урона за случайные бои.",
+        "available": "Доступно",
+        "planned": "Планируется",
+        "statsCardTitle": "Карточка статистики",
+        "statsCardDesc": "Карточка статистики.",
+        "apiTitle": "API для разработчиков",
+        "apiDesc": "Открытый API для справочных данных.",
+        "sponsorTitle": "Поддержать",
+        "sponsorDesc": "Добровольная поддержка сервера.",
+        "sponsorTag": "Донат",
+        "footer": "WoTBTools - инструмент сообщества, не официальный продукт Wargaming",
+        "versionTitle": "История версий"
     }
 }

@@ -40,7 +40,7 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button v-if="isHomeHost" :class="{ active: activeTool === 'home' }" @click="navigate('home')">{{ $t('profile.home') }}</button>
       <button :class="{ active: activeTool === 'replay' }" @click="navigate('replay')">{{ $t('app.replay_tab') }}</button>
       <button :class="{ active: activeTool === 'leaderboard' }" @click="navigate('leaderboard')">{{ $t('leaderboard.btn') }}</button>
-      <button :class="{ active: activeTool === 'boost' }" @click="navigate('boost')">陪练</button>
+      <button :class="{ active: activeTool === 'boost' }" @click="navigate('boost')">{{ $t('app.boost_tab') }}</button>
     </nav>
     <div class="tb-spacer"></div>
     <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
@@ -66,10 +66,10 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
   <!-- Global Error Dialog -->
   <div v-if="showGlobalError && globalError" class="modal-overlay" @click.self="closeGlobalError">
     <div class="modal" style="max-width:480px;">
-      <h3>Error</h3>
+      <h3>{{ $t('app.global_error_title') }}</h3>
       <p class="error-msg">{{ globalError }}</p>
       <div class="modal-actions">
-        <button class="btn-sm" @click="closeGlobalError">Close</button>
+        <button class="btn-sm" @click="closeGlobalError">{{ $t('app.close') }}</button>
       </div>
     </div>
   </div>
