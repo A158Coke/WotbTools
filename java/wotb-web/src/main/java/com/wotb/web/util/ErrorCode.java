@@ -1,4 +1,4 @@
-package com.wotb.web.dto;
+package com.wotb.web.util;
 
 /** 通用 API 错误码枚举。取代 ErrorCodes（JSON 加载类）。 */
 public enum ErrorCode {
