@@ -333,6 +333,7 @@
         "availableTime": "可安排时间",
         "timeHint": "如：晚上 20:00-23:00",
         "remark": "备注",
+        "remarkHint": "附加说明或特殊要求",
         "contact": "联系方式",
         "assigned": "已匹配",
         "cancel": "取消",

@@ -333,6 +333,7 @@
         "availableTime": "Time",
         "timeHint": "20:00-23:00",
         "remark": "Notes",
+        "remarkHint": "Additional notes or special requests",
         "contact": "Contact",
         "assigned": "Matched",
         "cancel": "Cancel",
