@@ -6,6 +6,7 @@ import com.wotb.web.boost.entity.BoostRequestAssignment;
 import com.wotb.web.boost.entity.BoosterProfile;
 import com.wotb.web.boost.enums.BoostAssignmentStatus;
 import com.wotb.web.boost.enums.BoostRequestStatus;
+import com.wotb.web.boost.enums.BoostRequestType;
 import com.wotb.web.boost.repository.BoostRequestAssignmentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,7 +42,12 @@ public class BoostAssignmentService {
     public List<BoostAssignmentDto> findByBooster(final Long boosterId) {
         return assignmentRepository.findByBoosterIdAndUnassignedAtIsNull(boosterId)
                 .stream()
-                .map(a -> mapper.toDto(a, boosterService.getById(a.getBoosterId())))
+                .map(a -> {
+                    final BoostRequest req = requestService.getById(a.getRequestId());
+                    final String typeLabel = BoostRequestType.from(req.getRequestType()).label();
+                    return mapper.toDto(a, boosterService.getById(a.getBoosterId()),
+                            typeLabel, req.getTargetDescription());
+                })
                 .toList();
     }
 

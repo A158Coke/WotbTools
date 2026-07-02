@@ -285,6 +285,7 @@
         "identity": "Identity",
         "authProvider": "Auth provider",
         "notBoundWotbAccount": "No WoTB player account linked",
+"myAssignments": "My Orders",
         "displayName": "Display Name",
         "edit": "Edit",
         "save": "Save",

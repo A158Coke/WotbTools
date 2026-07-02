@@ -227,14 +227,18 @@ async function removeAccount() {
           <!-- Booster Assignments -->
           <div v-if="boosterAssignments.length" class="profile-card profile-section">
             <div class="section-head">
-              <h3 class="card-title">我的订单</h3>
+              <h3 class="card-title">{{ $t('profile.myAssignments') }}</h3>
             </div>
-            <div v-for="a in boosterAssignments" :key="a.id" class="assign-row">
+            <div v-for="a in boosterAssignments" :key="a.id" class="assign-card">
               <div class="assign-head">
-                <span class="assign-type">{{ a.statusLabel }}</span>
-                <span class="assign-date">{{ a.assignedAt ? a.assignedAt.substring(0,10) : '' }}</span>
+                <span class="assign-type">{{ a.requestTypeLabel || $t('boost.requestType') }}</span>
+                <span class="assign-status-tag" :class="a.status?.toLowerCase()">{{ a.statusLabel }}</span>
               </div>
-              <div class="assign-desc">{{ a.note || '—' }}</div>
+              <div class="assign-desc">{{ a.targetDescription || '—' }}</div>
+              <div class="assign-meta">
+                <span>{{ $t('boost.assigned') }}: {{ a.assignedAt ? a.assignedAt.substring(0, 10) : '—' }}</span>
+                <span v-if="a.note">· {{ a.note }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -293,6 +297,15 @@ async function removeAccount() {
 .records-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
 .records-table th { text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); color: var(--text-sub); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
 .records-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-light); color: var(--text); }
+.assign-card { padding: 12px; border: 1px solid var(--border-light); border-radius: 10px; margin-bottom: 8px; background: var(--bg); }
+.assign-card:last-child { margin-bottom: 0; }
+.assign-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.assign-type { font-weight: 600; font-size: .88rem; color: var(--text-heading); }
+.assign-status-tag { font-size: .75rem; padding: 2px 8px; border-radius: 6px; background: var(--bg-chip); color: var(--text-sub); }
+.assign-status-tag.assigned { background: #dbeafe; color: #1e40af; }
+.assign-status-tag.cancelled { background: #fee2e2; color: #991b1b; }
+.assign-desc { font-size: .85rem; color: var(--text); margin-bottom: 4px; line-height: 1.4; }
+.assign-meta { font-size: .78rem; color: var(--text-sub); }
 .records-table tbody tr:hover { background: var(--bg-card2); }
 .rec-dmg { text-align: right !important; font-variant-numeric: tabular-nums; font-weight: 600; width: 90px; }
 .rec-tank { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

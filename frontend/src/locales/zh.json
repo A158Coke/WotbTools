@@ -294,7 +294,8 @@
         "noRecords": "暂无记录，上传回放后关联到此账号",
         "identity": "身份信息",
         "authProvider": "认证服务",
-        "notBoundWotbAccount": "尚未绑定 WoTB 玩家账号"
+        "notBoundWotbAccount": "尚未绑定 WoTB 玩家账号",
+"myAssignments": "我的订单"
     },
     "extended": {
         "title": "扩展分析",

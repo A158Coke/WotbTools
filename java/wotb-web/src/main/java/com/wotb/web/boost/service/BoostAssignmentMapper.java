@@ -20,6 +20,21 @@ public class BoostAssignmentMapper {
                         BoosterLevel.from(b.getLevel()).label(), b.getKeycloakUserId(),
                         b.getAvailable(), b.getStatus(), BoosterStatus.from(b.getStatus()).label()),
                 a.getStatus(), BoostAssignmentStatus.from(a.getStatus()).label(),
+                null, null,
+                a.getAssignedAt(), a.getUnassignedAt(), a.getNote(),
+                a.getCreatedAt(), a.getUpdatedAt()
+        );
+    }
+
+    public BoostAssignmentDto toDto(final BoostRequestAssignment a, final BoosterProfile b,
+                                    final String requestTypeLabel, final String targetDescription) {
+        return new BoostAssignmentDto(
+                a.getId(), a.getRequestId(),
+                new BoosterSummaryDto(b.getId(), b.getNickname(), b.getLevel(),
+                        BoosterLevel.from(b.getLevel()).label(), b.getKeycloakUserId(),
+                        b.getAvailable(), b.getStatus(), BoosterStatus.from(b.getStatus()).label()),
+                a.getStatus(), BoostAssignmentStatus.from(a.getStatus()).label(),
+                requestTypeLabel, targetDescription,
                 a.getAssignedAt(), a.getUnassignedAt(), a.getNote(),
                 a.getCreatedAt(), a.getUpdatedAt()
         );
