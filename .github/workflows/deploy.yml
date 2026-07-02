@@ -30,28 +30,31 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-      keycloak: ${{ steps.filter.outputs.keycloak }}
+      backend: ${{ steps.backend.outputs.changed }}
+      frontend: ${{ steps.frontend.outputs.changed }}
+      keycloak: ${{ steps.keycloak.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            backend:
-              - 'java/**'
-              - 'common/tankopedia.json'
-              - 'docker/Dockerfile.backend'
-            frontend:
-              - 'frontend/**'
-              - 'docker/Dockerfile.frontend'
-            keycloak:
-              - 'docker/Dockerfile.keycloak'
-              - 'docker/keycloak/**'
-              - 'keycloak-juhe-qq-provider/**'
+          fetch-depth: 2
+      - name: Check backend changes
+        id: backend
+        run: |
+          git diff --quiet HEAD~1 -- java/ common/tankopedia.json docker/Dockerfile.backend \
+            && echo "changed=false" >> "$GITHUB_OUTPUT" \
+            || echo "changed=true" >> "$GITHUB_OUTPUT"
+      - name: Check frontend changes
+        id: frontend
+        run: |
+          git diff --quiet HEAD~1 -- frontend/ docker/Dockerfile.frontend \
+            && echo "changed=false" >> "$GITHUB_OUTPUT" \
+            || echo "changed=true" >> "$GITHUB_OUTPUT"
+      - name: Check keycloak changes
+        id: keycloak
+        run: |
+          git diff --quiet HEAD~1 -- docker/Dockerfile.keycloak docker/keycloak/ keycloak-juhe-qq-provider/ \
+            && echo "changed=false" >> "$GITHUB_OUTPUT" \
+            || echo "changed=true" >> "$GITHUB_OUTPUT"
 
   # ── 构建后端 ────────────────────────────────────────────────────
   build-backend:
