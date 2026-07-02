@@ -23,7 +23,6 @@ on:
 
 env:
   GHCR_IMAGE_PREFIX: ghcr.io/a158coke/wotbtools
-  SHORT_SHA: sha-${{ github.sha }}
 
 jobs:
   # ── 路径检测：判断哪些组件需要构建 ──────────────────────────────
@@ -33,10 +32,14 @@ jobs:
       backend: ${{ steps.backend.outputs.changed }}
       frontend: ${{ steps.frontend.outputs.changed }}
       keycloak: ${{ steps.keycloak.outputs.changed }}
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
+      - name: Compute image tag
+        id: tag
+        run: echo "tag=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
       - name: Check backend changes
         id: backend
         run: |
@@ -78,7 +81,7 @@ jobs:
           file: docker/Dockerfile.backend
           push: true
           tags: |
-            ${{ env.GHCR_IMAGE_PREFIX }}-backend:${{ env.SHORT_SHA }}
+            ${{ env.GHCR_IMAGE_PREFIX }}-backend:${{ needs.changes.outputs.tag }}
             ${{ env.GHCR_IMAGE_PREFIX }}-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -107,7 +110,7 @@ jobs:
           file: docker/Dockerfile.frontend
           push: true
           tags: |
-            ${{ env.GHCR_IMAGE_PREFIX }}-frontend:${{ env.SHORT_SHA }}
+            ${{ env.GHCR_IMAGE_PREFIX }}-frontend:${{ needs.changes.outputs.tag }}
             ${{ env.GHCR_IMAGE_PREFIX }}-frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -136,7 +139,7 @@ jobs:
           file: docker/Dockerfile.keycloak
           push: true
           tags: |
-            ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:${{ env.SHORT_SHA }}
+            ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:${{ needs.changes.outputs.tag }}
             ${{ env.GHCR_IMAGE_PREFIX }}-keycloak:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -145,10 +148,10 @@ jobs:
         env:
           KEYCLOAK_BUILD_FILE: ${{ github.workspace }}/keycloak-juhe-qq-provider
 
-  # ── 部署：等全部构建完成后（略过跳过的），统一 pull + restart ──
+  # ── 部署：等全部构建完成后（至少有一个构建），统一 pull + restart ──
   deploy:
-    needs: [build-backend, build-frontend, build-keycloak]
-    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    needs: [changes, build-backend, build-frontend, build-keycloak]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && (needs.build-backend.result != 'skipped' || needs.build-frontend.result != 'skipped' || needs.build-keycloak.result != 'skipped')
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH
@@ -182,7 +185,7 @@ jobs:
                   - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
                 restart: unless-stopped
               keycloak:
-                image: ghcr.io/a158coke/wotbtools-keycloak:${{ env.SHORT_SHA }}
+                image: ghcr.io/a158coke/wotbtools-keycloak:latest
                 environment:
                   KC_BOOTSTRAP_ADMIN_USERNAME: admin
                   KC_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.KC_ADMIN_PASSWORD }}
@@ -197,7 +200,7 @@ jobs:
                   - postgres
                 restart: unless-stopped
               wotb-backend:
-                image: ghcr.io/a158coke/wotbtools-backend:${{ env.SHORT_SHA }}
+                image: ghcr.io/a158coke/wotbtools-backend:latest
                 depends_on:
                   - postgres
                   - keycloak
@@ -211,7 +214,7 @@ jobs:
                   KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
                 restart: unless-stopped
               wotb-frontend:
-                image: ghcr.io/a158coke/wotbtools-frontend:${{ env.SHORT_SHA }}
+                image: ghcr.io/a158coke/wotbtools-frontend:latest
                 ports:
                   - "127.0.0.1:8088:80"
                 depends_on:
