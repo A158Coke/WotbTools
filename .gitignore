@@ -12,21 +12,40 @@ target/
 *.jar
 *.class
 
-frontend/node_modules/
-frontend/dist/
 java/.m2repo/
 java/settings.xml
 # 误用未替换的 settings.xml 模板(localRepository=@LOCAL_REPO@)时 Maven 会在 cwd 建此目录
 @LOCAL_REPO@/
 java/@LOCAL_REPO@/
 
-node_modules/
 .env
 .env.*
-.idea/
-.vscode/
 .claude/settings.local.json
 *.iml
-*.log
 *.exe
 *.zip
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
