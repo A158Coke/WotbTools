@@ -3,7 +3,6 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import * as api from '../utils/api-boost.js'
-import { getMyBoosterProfile } from '../utils/api-boost.js'
 import { mapLabel } from '../utils/helpers.js'
 
 const { t } = useI18n()
@@ -20,6 +19,7 @@ const editNickname = ref('')
 const editError = ref('')
 const records = ref([])
 const boosterInfo = ref(null)
+const boosterAssignments = ref([])
 
 onMounted(async () => {
   try {
@@ -51,6 +51,9 @@ async function loadProfile() {
   }
   if (profile.value?.wotbAccountId) { loadRecords() }
   loadBoosterInfo()
+  if (tokenParsed.value?.realm_access?.roles?.includes('booster')) {
+    try { boosterAssignments.value = await api.getMyBoosterAssignments() } catch {}
+  }
 }
 
 const displayName = computed(() =>
@@ -88,7 +91,7 @@ async function saveAccount() {
   } catch (e) { editError.value = e.message }
 }
 async function loadBoosterInfo() {
-  try { boosterInfo.value = await getMyBoosterProfile() } catch { boosterInfo.value = null }
+  try { boosterInfo.value = await api.getMyBoosterProfile() } catch { boosterInfo.value = null }
 }
 async function loadRecords() {
   try { records.value = await api.getUserLeaderboardRecords() } catch { records.value = [] }
@@ -218,6 +221,20 @@ async function removeAccount() {
               <div class="sec-row"><span>{{ $t('profile.loginMethod') }}</span><strong>Keycloak</strong></div>
               <div class="sec-row"><span>{{ $t('profile.authService') }}</span><code>auth.wotbtools.com</code></div>
               <p class="text-muted">{{ $t('profile.securityDesc') }}</p>
+            </div>
+          </div>
+
+          <!-- Booster Assignments -->
+          <div v-if="boosterAssignments.length" class="profile-card profile-section">
+            <div class="section-head">
+              <h3 class="card-title">我的订单</h3>
+            </div>
+            <div v-for="a in boosterAssignments" :key="a.id" class="assign-row">
+              <div class="assign-head">
+                <span class="assign-type">{{ a.statusLabel }}</span>
+                <span class="assign-date">{{ a.assignedAt ? a.assignedAt.substring(0,10) : '' }}</span>
+              </div>
+              <div class="assign-desc">{{ a.note || '—' }}</div>
             </div>
           </div>
         </div>

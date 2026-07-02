@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
 /** 分配服务。 */
@@ -34,6 +35,14 @@ public class BoostAssignmentService {
 
     public Optional<BoostRequestAssignment> findActive(final Long requestId) {
         return assignmentRepository.findByRequestIdAndUnassignedAtIsNull(requestId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<BoostAssignmentDto> findByBooster(final Long boosterId) {
+        return assignmentRepository.findByBoosterIdAndUnassignedAtIsNull(boosterId)
+                .stream()
+                .map(a -> mapper.toDto(a, boosterService.getById(a.getBoosterId())))
+                .toList();
     }
 
     @Transactional

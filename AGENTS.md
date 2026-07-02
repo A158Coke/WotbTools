@@ -8,7 +8,7 @@
 
 0. **Plan-First** — 代码改动前先出 plan（范围/影响/风险），待用户批准后执行。Grill-Fix 循环内部自动进行不需用户介入，但结束后必须出具可视化审查报告。
 0. **Feature 流程** — 任何 feature 类或大范围改动必须：出 plan → 等待用户批准 → 执行 → Grill-Fix 闭环 → 出具审查报告。未批准不得开始编码。小修小补（bug fix、CSS、i18n 缺漏）可跳过 plan 直接修。
-1. **改动即更新文档** — 影响界面/导出/数据/构建的改动，同提交更新 CHANGELOG、DEVELOPER_GUIDE、相关 README。
+1. **改动即更新文档** — 影响界面/导出/数据/构建的改动，同提交更新 CHANGELOG（技术变更）、CHANGELOG-PRODUCT（产品功能变更）、DEVELOPER_GUIDE、相关 README。
 2. **跨层一致** — 列 key(snake_case) API/前端/导出三方一致。显示名前端三语 locale + 导出两处一致。
 3. **API 纯英文** — 只回 key+数据，中文归前端/导出。
 4. **提交前通过测试** — Java `mvn -s settings.xml test`(JAVA_HOME→JDK21)、前端 `npm run build`。

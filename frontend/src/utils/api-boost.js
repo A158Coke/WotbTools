@@ -82,6 +82,10 @@ export async function adminBoostBoosterDelete(id) {
 }
 
 // ========== My Booster Profile ==========
+export async function getMyBoosterAssignments() {
+  return await boostHandle(await fetch('/api/booster/assignments', { headers: await boostHeaders() }))
+}
+
 export async function getMyBoosterProfile() {
   return boostHandle(await fetch('/api/boost/boosters/my', { headers: await boostHeaders() }))
 }
