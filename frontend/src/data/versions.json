@@ -3,33 +3,49 @@
     "v": "2.0.0",
     "date": "2026-06-29",
     "tag": "add",
-    "zh": "陪练功能 · 用户资料 · Keycloak 26.6.3 · JWT 安全 · 响应式顶栏 · 死代码清理",
-    "en": "Coaching · User profile · Keycloak 26.6.3 · JWT security · Responsive topbar",
-    "ru": "Тренер · Профиль · Keycloak 26.6.3 · JWT · Адаптивный дизайн"
+    "zh": "陪练功能 · 用户资料系统 · 个人中心 · Keycloak 认证 · OAuth2 JWT · 响应式顶栏",
+    "en": "Coaching · User profile · Profile page · Keycloak auth · OAuth2 JWT · Responsive topbar",
+    "ru": "Тренер · Профиль · Keycloak · OAuth2 JWT · Адаптивный дизайн"
   },
   {
     "v": "1.9.0",
     "date": "2026-06-28",
-    "tag": "changed",
-    "zh": "CI/CD 镜像仓库迁移至 GHCR · PostgreSQL 18 适配 · 清理 workflow 重构",
-    "en": "CI/CD migrated to GHCR · PostgreSQL 18 volume fix · Cleanup workflow refactor",
-    "ru": "CI/CD перенос на GHCR · Адаптация PostgreSQL 18 · Рефакторинг cleanup"
+    "tag": "add",
+    "zh": "实时评分扩展页 · 潜在伤害字段 · 评分算法优化",
+    "en": "Live rating page · Potential damage fields · Rating algorithm",
+    "ru": "Страница рейтинга · Потенциальный урон · Алгоритм рейтинга"
   },
   {
     "v": "1.8.0",
     "date": "2026-06-27",
     "tag": "add",
-    "zh": "Keycloak 认证 · 个人中心 · Vue SPA 主页 · 域名统一 · 项目重命名",
-    "en": "Keycloak auth · Profile · Vue SPA homepage · Unified domain · Renamed",
+    "zh": "Keycloak 认证 · 个人中心 · Vue SPA 主页 · 域名统一",
+    "en": "Keycloak auth · Profile · Vue SPA homepage · Unified domain",
     "ru": "Keycloak · Профиль · Vue SPA главная · Единый домен"
+  },
+  {
+    "v": "1.7.0",
+    "date": "2026-06-27",
+    "tag": "add",
+    "zh": "品牌升级 · 赞助页面 · 主题按钮完整三语",
+    "en": "Branding · Sponsor page · Theme i18n",
+    "ru": "Брендинг · Спонсорство · Тема i18n"
+  },
+  {
+    "v": "1.6.0",
+    "date": "2026-06-26",
+    "tag": "add",
+    "zh": "排行榜版本号与战斗时间 · 按车辆筛选",
+    "en": "Leaderboard version & battle time · Filter by tank",
+    "ru": "Версия и время боя в таблице · Фильтр по танку"
   },
   {
     "v": "1.5.0",
     "date": "2026-06-26",
     "tag": "add",
-    "zh": "工具集主页 · 主题切换 · 排行榜 · PostgreSQL · Flyway · Docker 分发",
-    "en": "Homepage · Theme switcher · Leaderboard · PostgreSQL · Flyway · Docker",
-    "ru": "Главная · Переключение тем · Рейтинг · PostgreSQL · Flyway · Docker"
+    "zh": "工具集主页 · 三档主题切换 · 伤害排行榜 · 实时评分",
+    "en": "Homepage · Theme switcher · Damage leaderboard · Live rating",
+    "ru": "Главная · Переключение тем · Рейтинг урона · Рейтинг"
   },
   {
     "v": "1.4.0",
@@ -43,9 +59,9 @@
     "v": "1.3.0",
     "date": "2026-06-24",
     "tag": "add",
-    "zh": "存活时间列 · 三语 i18n · 评分系统 · 地图中文化 · Docker 部署",
-    "en": "Survival time · i18n · Rating · Map CN · Docker",
-    "ru": "Время выживания · i18n · Рейтинг · Карты · Docker"
+    "zh": "存活时间列 · 三语 i18n · 评分系统 · 地图中文化",
+    "en": "Survival time · i18n · Rating · Map CN",
+    "ru": "Время выживания · i18n · Рейтинг · Карты"
   },
   {
     "v": "1.0.0",
