@@ -29,7 +29,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * 用 MockMvc 在进程内验证 REST API (不绑定端口, 规避本环境的 NIO selector 限制)。
+ * MockMvc 进程内 REST API 测试 (不绑定端口)。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 class WebApiTest {
@@ -91,9 +91,9 @@ class WebApiTest {
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         final JsonNode n = om.readTree(json);
-        assertTrue(n.get("scale").asInt() > 0, "scale 应为正");
-        assertTrue(n.get("killValue").asDouble() > 0, "killValue 应为正");
-        assertTrue(n.get("classFactor").isObject() && !n.get("classFactor").isEmpty(), "应含车型系数");
+        assertTrue(n.get("scale").asInt() > 0);
+        assertTrue(n.get("killValue").asDouble() > 0);
+        assertTrue(n.get("classFactor").isObject() && !n.get("classFactor").isEmpty());
     }
 
     @Test
@@ -110,8 +110,8 @@ class WebApiTest {
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         final JsonNode n = om.readTree(json);
-        assertEquals(1, n.get("duplicates").size(), "跳过 1 个重复");
-        assertTrue(n.get("rows").size() >= 14, "应返回选手 rating 行");
+        assertEquals(1, n.get("duplicates").size());
+        assertTrue(n.get("rows").size() >= 14);
         final JsonNode cells = n.get("rows").get(0).get("cells");
         assertTrue(cells.has("rating"));
         assertTrue(cells.has("kast"));
@@ -141,9 +141,9 @@ class WebApiTest {
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         final JsonNode n = om.readTree(json);
-        assertEquals(files.size(), n.get("battles").size(), "唯一战斗数");
-        assertEquals(1, n.get("duplicates").size(), "跳过 1 个重复");
-        assertFalse(n.get("aggregate").isEmpty(), "多场应有汇总");
+        assertEquals(files.size(), n.get("battles").size());
+        assertEquals(1, n.get("duplicates").size());
+        assertFalse(n.get("aggregate").isEmpty());
         final JsonNode b0 = n.get("battles").get(0);
         assertEquals(14, b0.get("players").size());
         assertTrue(b0.get("players").get(0).get("cells").has("damage_dealt"));
@@ -157,7 +157,7 @@ class WebApiTest {
         final byte[] body = mvc().perform(req.contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsByteArray();
-        assertTrue(body.length > 3000, "xlsx 应有内容");
+        assertTrue(body.length > 3000);
         assertEquals('P', body[0]);
         assertEquals('K', body[1]);
     }
