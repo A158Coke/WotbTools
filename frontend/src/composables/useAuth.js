@@ -33,6 +33,7 @@ async function initAuth() {
     initPromise = kc.init({
       onLoad: 'check-sso',
       pkceMethod: 'S256',
+      silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
       checkLoginIframe: false,
     }).then(isLoggedIn => {
       authenticated.value = Boolean(isLoggedIn && kc.authenticated)
@@ -79,7 +80,7 @@ function token() {
   return keycloak?.token || ''
 }
 
-/** 确保 token 还有至少 minValidity 秒有效，不足则静默刷新。 */
+/** Keep the token valid for at least minValidity seconds when the user is signed in. */
 async function ensureToken(minValidity = 30) {
   const kc = ensureKeycloak()
   if (!kc.authenticated) return false
