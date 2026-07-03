@@ -51,6 +51,10 @@ public class BoosterService {
                 && userProfileRepository.findByKeycloakUserId(keycloakUserId.trim()).isEmpty()) {
             throw new IllegalArgumentException("关联用户不存在");
         }
+        if (StringUtils.hasText(keycloakUserId)
+                && boosterRepository.findByKeycloakUserId(keycloakUserId.trim()).isPresent()) {
+            throw new IllegalArgumentException("该用户已是打手");
+        }
         final BoosterProfile p = new BoosterProfile();
         p.setNickname(nickname.trim());
         p.setLevel(level.toUpperCase());
