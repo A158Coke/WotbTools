@@ -64,8 +64,11 @@ public class BoostAssignmentService {
         }
 
         final BoosterProfile booster = boosterService.getById(boosterId);
+        if (!"ACTIVE".equalsIgnoreCase(booster.getStatus())) {
+            throw new IllegalArgumentException("打手当前状态不可接单");
+        }
         if (booster.getAvailable() == null || !booster.getAvailable()) {
-            throw new IllegalArgumentException("BOOSTER_NOT_AVAILABLE");
+            throw new IllegalArgumentException("打手不可用");
         }
 
         final OffsetDateTime now = OffsetDateTime.now();
