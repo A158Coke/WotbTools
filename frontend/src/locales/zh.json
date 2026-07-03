@@ -55,7 +55,8 @@
         "desc": "列 · 勾选显示、拖拽排序",
         "select_all": "全选",
         "reset": "重置",
-        "done": "完成"
+        "done": "完成",
+        "drag": "拖拽排序"
     },
     "metric": {
         "battles": "战斗场次",
@@ -148,6 +149,10 @@
         "upload_failed": "上传失败",
         "upload_title": "上传回放以计入排名",
         "upload_btn": "选择回放文件",
+        "uploading": "上传中...",
+        "invalid_file": "请选择 .wotbreplay 文件",
+        "upload_skipped": "已跳过：{reason}",
+        "upload_skipped_default": "已存在或无法识别录像者",
         "all_tanks": "全部车辆",
         "filter_tank": "当前筛选",
         "filter_by_tank": "点击查看该车辆排行榜",
@@ -296,6 +301,11 @@
         "authProvider": "认证服务",
         "notBoundWotbAccount": "尚未绑定 WoTB 玩家账号",
 "myAssignments": "我的订单"
+    },
+    "replay": {
+        "no_files": "????????????",
+        "preview_failed": "????",
+        "export_failed": "????"
     },
     "extended": {
         "title": "扩展分析",

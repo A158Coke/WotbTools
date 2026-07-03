@@ -1,8 +1,10 @@
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { mapLabel } from '../utils/helpers.js'
 import * as api from '../utils/api.js'
 
+const { t } = useI18n()
 const rows = ref([])
 const loading = ref(false)
 const error = ref('')
@@ -15,7 +17,6 @@ const uploadOk = ref(false)
 const dragging = ref(false)
 const fileInput = ref(null)
 
-// 车辆筛选
 const selectedTankId = ref(null)
 const selectedTankName = ref('')
 
@@ -57,7 +58,7 @@ function goPage(p) {
 
 async function upload(file) {
   if (!file || !file.name.endsWith('.wotbreplay')) {
-    uploadMsg.value = '请选择 .wotbreplay 文件'
+    uploadMsg.value = t('leaderboard.invalid_file')
     return
   }
   uploading.value = true
@@ -66,9 +67,11 @@ async function upload(file) {
   try {
     const result = await api.leaderboardUpload(file)
     if (result.status === 'skipped') {
-      uploadMsg.value = '已跳过：' + (result.reason || '已存在或无法识别录像者')
+      uploadMsg.value = t('leaderboard.upload_skipped', {
+        reason: result.reason || t('leaderboard.upload_skipped_default'),
+      })
     } else {
-      uploadMsg.value = '上传成功！已录入排行榜'
+      uploadMsg.value = t('leaderboard.upload_success')
       uploadOk.value = true
     }
     fileInput.value.value = ''
@@ -111,6 +114,12 @@ function rankClass(rank) {
 
 <template>
   <div class="lb-wrap">
+    <header class="lb-head">
+      <span class="lb-kicker">{{ $t('leaderboard.btn') }}</span>
+      <h1>{{ $t('leaderboard.title') }}</h1>
+      <p>{{ $t('leaderboard.subtitle') }}</p>
+    </header>
+
     <section class="lb-upload-section"
              @dragover.prevent="dragging = true"
              @dragleave.prevent="dragging = false"
@@ -122,7 +131,7 @@ function rankClass(rank) {
         <label class="filebtn" :class="{ 'lb-uploading': uploading }">
           <input ref="fileInput" type="file" accept=".wotbreplay" @change="onFileChange" :disabled="uploading" />
           <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
-          {{ uploading ? '上传中...' : $t('leaderboard.upload_btn') }}
+          {{ uploading ? $t('leaderboard.uploading') : $t('leaderboard.upload_btn') }}
         </label>
       </div>
       <p v-if="uploadMsg" class="lb-upload-msg" :class="{ err: !uploadOk }">{{ uploadMsg }}</p>
@@ -145,7 +154,7 @@ function rankClass(rank) {
     </div>
 
     <p v-if="selectedTankId" class="lb-filter-hint">
-      {{ $t('leaderboard.filter_tank') }}：<strong>{{ selectedTankName }}</strong>
+      {{ $t('leaderboard.filter_tank') }}: <strong>{{ selectedTankName }}</strong>
     </p>
 
     <p v-if="error" class="error">{{ $t('leaderboard.error') }}: {{ error }}</p>
@@ -188,21 +197,25 @@ function rankClass(rank) {
       </table>
     </div>
     <div v-if="totalPages > 1" class="pagination">
-      <button :disabled="page <= 1" @click="goPage(page - 1)">← {{ $t('leaderboard.prev') }}</button>
+      <button :disabled="page <= 1" @click="goPage(page - 1)">{{ $t('leaderboard.prev') }}</button>
       <span>{{ $t('leaderboard.page_info', { page, total: totalPages }) }}</span>
-      <button :disabled="page >= totalPages" @click="goPage(page + 1)">{{ $t('leaderboard.next') }} →</button>
+      <button :disabled="page >= totalPages" @click="goPage(page + 1)">{{ $t('leaderboard.next') }}</button>
     </div>
   </div>
 </template>
 
 <style scoped>
-.lb-wrap { max-width: 900px; margin: 0 auto; padding: 16px 20px; }
-.lb-toolbar { display: flex; align-items: center; gap: 12px; margin: 14px 0 10px; flex-wrap: wrap; }
+.lb-wrap { max-width: 1040px; margin: 0 auto; padding: 24px 20px 56px; }
+.lb-head { margin: 0 0 14px; }
+.lb-kicker { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 6px; background: var(--bg-rating); color: var(--accent-dark); font-size: 12px; font-weight: 800; }
+.lb-head h1 { margin: 10px 0 6px; color: var(--text-heading); font-size: 1.7rem; line-height: 1.15; letter-spacing: 0; }
+.lb-head p { margin: 0; color: var(--text-label); line-height: 1.65; }
+.lb-toolbar { display: flex; align-items: center; gap: 12px; margin: 16px 0 12px; flex-wrap: wrap; }
 .lb-limit { font-size: 13px; color: var(--text-label); display: inline-flex; align-items: center; gap: 6px; }
 .lb-limit select { appearance: none; -webkit-appearance: none; border: 1px solid var(--border-ghost);
   background: var(--bg-card2); color: var(--text-label); padding: 5px 10px; border-radius: 7px;
   font-size: 13px; cursor: pointer; font-family: inherit; }
-.lb-dmg { font-weight: 600; color: var(--text-heading); }
+.lb-dmg { font-weight: 800; color: var(--accent-dark); font-variant-numeric: tabular-nums; }
 .lb-time { color: var(--text-muted); font-size: .9em; white-space: nowrap; }
 .lb-version { color: var(--text-muted); font-size: .85em; }
 .lb-tank-link {
@@ -210,7 +223,7 @@ function rankClass(rank) {
   font-size: inherit; cursor: pointer; text-decoration: none;
 }
 .lb-tank-link:hover { text-decoration: underline; color: var(--accent-hover); background: var(--accent-shadow); border-radius: 3px; transition: all .12s; }
-.lb-filter-hint { margin: 6px 0 2px; font-size: 13px; color: var(--text-label); }
+.lb-filter-hint { margin: 8px 0 10px; font-size: 13px; color: var(--text-label); }
 .lb-filter-hint strong { color: var(--accent-dark); }
 .rk { display: inline-block; min-width: 26px; padding: 1px 8px; border-radius: 6px; font-size: 12px;
   font-weight: 600; background: var(--bg-chip); color: var(--text-label); }
@@ -220,23 +233,50 @@ function rankClass(rank) {
 [data-theme="dark"] .rk-gold { background: #5a4a14; color: #f7e29a; }
 [data-theme="dark"] .rk-silver { background: #3a414d; color: #cdd5e1; }
 [data-theme="dark"] .rk-bronze { background: #4d3621; color: #f0cda6; }
-.muted { padding: 24px 4px; }
+.muted { padding: 28px 4px; color: var(--text-muted); }
 
-/* Upload card — 对齐 FileUploader 风格 */
 .lb-upload-section { margin: 16px 0; }
 .lb-upload-card {
-  border: 1.5px dashed var(--border-dashed); background: var(--bg-upload);
-  border-radius: 12px; padding: 24px 20px; text-align: center;
-  transition: border-color .12s, background .12s;
+  position: relative;
+  overflow: hidden;
+  border: 1.5px dashed var(--border-dashed);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 9%, transparent), transparent 48%),
+    var(--bg-upload);
+  border-radius: 8px;
+  padding: 30px 20px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: border-color .12s, background .12s, box-shadow .12s, transform .12s;
 }
-.lb-upload-card.dragging { border-color: var(--accent); background: var(--bg-blue-light); }
-.lb-upload-card .filebtn { margin-top: 14px; }
+.lb-upload-card::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: .75;
+}
+.lb-upload-card.dragging { border-color: var(--accent); background: var(--bg-blue-light); box-shadow: 0 16px 36px var(--accent-shadow); transform: translateY(-1px); }
+.lb-upload-card .up-title { max-width: 420px; margin-top: 10px; line-height: 1.25; }
+.lb-upload-card .up-sub { max-width: 360px; margin-top: 8px; line-height: 1.5; }
+.lb-upload-card .filebtn { margin-top: 18px; position: relative; z-index: 1; }
 .lb-upload-card .filebtn input { display: none; }
 .lb-upload-card .filebtn.lb-uploading { opacity: .6; pointer-events: none; }
 .lb-upload-msg { margin-top: 10px; font-size: 13px; text-align: center; }
 .lb-upload-msg.err { color: var(--error); }
+.lb-wrap .error { display: inline-block; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--error) 35%, var(--border)); border-radius: 8px; background: color-mix(in srgb, var(--error) 8%, var(--bg-card)); color: var(--error); }
 .pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 16px 0; font-size: .85rem; }
 .pagination button { padding: 6px 14px; border: 1px solid var(--border-ghost); border-radius: 7px; background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-family: inherit; font-size: .82rem; }
 .pagination button:disabled { opacity: .4; cursor: not-allowed; }
 .pagination button:hover:not(:disabled) { background: var(--bg-card-hover); }
+@media (max-width: 560px) {
+  .lb-head h1 { font-size: 2rem; }
+  .lb-upload-card { min-height: 230px; padding: 28px 16px; }
+  .lb-upload-card .up-title { max-width: 260px; }
+  .lb-upload-card .up-sub { max-width: 240px; }
+}
 </style>

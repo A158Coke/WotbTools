@@ -19,10 +19,12 @@
 
 ### Changed
 - Keycloak 从 26.6.3 升级至 26.6.4。
+- **前端视觉系统**：统一 Vue SPA 全局色板、按钮、表格、上传区、顶栏和深浅色变量，改为 Blitz 工具站风格。
 
 ### Fixed
 - CI/CD 部署：`docker compose pull` 添加 3 次重试。
 - 前端 nginx 增加 UTF-8 charset。
+- Keycloak `check-sso` 配置 `silentCheckSsoRedirectUri`，避免公共首页本地预览被静默登录流程整页跳转。
 
 ## [2.0.0] - 2026-06-29
 

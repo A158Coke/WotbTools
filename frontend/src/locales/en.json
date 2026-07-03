@@ -55,7 +55,8 @@
         "desc": "Columns — check to show, drag to reorder",
         "select_all": "Select All",
         "reset": "Reset",
-        "done": "Done"
+        "done": "Done",
+        "drag": "Drag to reorder"
     },
     "metric": {
         "battles": "Battles",
@@ -148,6 +149,10 @@
         "upload_failed": "Upload failed",
         "upload_title": "Upload replay to rank",
         "upload_btn": "Select Replay",
+        "uploading": "Uploading...",
+        "invalid_file": "Please select a .wotbreplay file",
+        "upload_skipped": "Skipped: {reason}",
+        "upload_skipped_default": "Already exists or recorder cannot be identified",
         "all_tanks": "All Tanks",
         "filter_tank": "Filter",
         "filter_by_tank": "Click to view tank leaderboard",
@@ -296,6 +301,11 @@
         "server": "Server",
         "records": "Leaderboard Records",
         "noRecords": "No records yet. Upload replays to associate."
+    },
+    "replay": {
+        "no_files": "Select replay files or a folder first",
+        "preview_failed": "Preview failed",
+        "export_failed": "Export failed"
     },
     "extended": {
         "title": "Extended analysis",

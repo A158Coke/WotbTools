@@ -3,9 +3,13 @@
 ## Frontend Layout Note
 
 - `App.vue` 顶栏样式为全局样式：桌面端固定在顶部，移动端使用 sticky + flex-wrap，避免语言选择、主题切换和个人中心入口挤压回放/排行榜页面。
+- Vue SPA 视觉变量集中在 `App.vue` 的 `:root` / `[data-theme="dark"]`，首页、上传区、排行榜和表格应优先复用这些变量，避免局部硬编码色板。
+- 公共首页可通过 `?view=home` 本地预览；线上 `wotbtools.com` / `www.wotbtools.com` 无参数仍默认进入首页。
+- Keycloak `check-sso` 依赖 `frontend/public/silent-check-sso.html`，不要移除，否则公共页面会被静默登录流程整页跳转。
 
 ## SPA 路由参数
 
+- `?view=home`：进入工具集首页（本地预览可用）。
 - `?view=replay`：进入回放提取器。
 - `?view=leaderboard`：进入排行榜。
 - `?view=profile`：进入个人中心。
