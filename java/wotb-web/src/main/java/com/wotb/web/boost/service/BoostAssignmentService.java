@@ -1,19 +1,18 @@
 package com.wotb.web.boost.service;
 
 import com.wotb.web.boost.dto.BoostAssignmentDto;
-import com.wotb.web.boost.dto.BoosterSummaryDto;
 import com.wotb.web.boost.entity.BoostRequest;
 import com.wotb.web.boost.entity.BoostRequestAssignment;
 import com.wotb.web.boost.entity.BoosterProfile;
 import com.wotb.web.boost.enums.BoostAssignmentStatus;
 import com.wotb.web.boost.enums.BoostRequestStatus;
-import com.wotb.web.boost.enums.BoosterLevel;
-import com.wotb.web.boost.enums.BoosterStatus;
+import com.wotb.web.boost.enums.BoostRequestType;
 import com.wotb.web.boost.repository.BoostRequestAssignmentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
 /** 分配服务。 */
@@ -23,23 +22,39 @@ public class BoostAssignmentService {
     private final BoostRequestAssignmentRepository assignmentRepository;
     private final BoostRequestService requestService;
     private final BoosterService boosterService;
+    private final BoostAssignmentMapper mapper;
 
     public BoostAssignmentService(final BoostRequestAssignmentRepository assignmentRepository,
                                   final BoostRequestService requestService,
-                                  final BoosterService boosterService) {
+                                  final BoosterService boosterService,
+                                  final BoostAssignmentMapper mapper) {
         this.assignmentRepository = assignmentRepository;
         this.requestService = requestService;
         this.boosterService = boosterService;
+        this.mapper = mapper;
     }
 
     public Optional<BoostRequestAssignment> findActive(final Long requestId) {
         return assignmentRepository.findByRequestIdAndUnassignedAtIsNull(requestId);
     }
 
+    @Transactional(readOnly = true)
+    public List<BoostAssignmentDto> findByBooster(final Long boosterId) {
+        return assignmentRepository.findByBoosterIdAndUnassignedAtIsNull(boosterId)
+                .stream()
+                .map(a -> {
+                    final BoostRequest req = requestService.getById(a.getRequestId());
+                    final String typeLabel = BoostRequestType.from(req.getRequestType()).label();
+                    return mapper.toDto(a, boosterService.getById(a.getBoosterId()),
+                            typeLabel, req.getTargetDescription());
+                })
+                .toList();
+    }
+
     @Transactional
     public BoostAssignmentDto assign(final Long requestId, final Long boosterId, final String note) {
         if (assignmentRepository.findByRequestIdAndUnassignedAtIsNull(requestId).isPresent()) {
-            throw new IllegalStateException("ACTIVE_ASSIGNMENT_EXISTS");
+            throw new IllegalStateException("该需求已有一个活跃分配，请先取消当前分配");
         }
 
         final BoostRequest req = requestService.getById(requestId);
@@ -49,7 +64,7 @@ public class BoostAssignmentService {
         }
 
         final BoosterProfile booster = boosterService.getById(boosterId);
-        if (!"ACTIVE".equalsIgnoreCase(booster.getStatus())) {
+        if (booster.getAvailable() == null || !booster.getAvailable()) {
             throw new IllegalArgumentException("BOOSTER_NOT_AVAILABLE");
         }
 
@@ -59,13 +74,14 @@ public class BoostAssignmentService {
         assignment.setBoosterId(boosterId);
         assignment.setStatus(BoostAssignmentStatus.ASSIGNED.name());
         assignment.setAssignedAt(now);
+        assignment.setUpdatedAt(now);
         assignment.setNote(note);
         assignmentRepository.save(assignment);
 
         req.setStatus(BoostRequestStatus.MATCHED.name());
         req.setUpdatedAt(now);
 
-        return toDto(assignment, booster);
+        return mapper.toDto(assignment, booster);
     }
 
     @Transactional
@@ -88,22 +104,6 @@ public class BoostAssignmentService {
         }
 
         final BoosterProfile booster = boosterService.getById(assignment.getBoosterId());
-        return toDto(assignment, booster);
-    }
-
-    public long activeCount(final Long boosterId) {
-        return assignmentRepository.countByBoosterIdAndUnassignedAtIsNull(boosterId);
-    }
-
-    static BoostAssignmentDto toDto(final BoostRequestAssignment a, final BoosterProfile b) {
-        return new BoostAssignmentDto(
-                a.getId(), a.getRequestId(),
-                new BoosterSummaryDto(b.getId(), b.getNickname(), b.getLevel(),
-                        BoosterLevel.from(b.getLevel()).label(),
-                        b.getAvailable(), b.getStatus(), BoosterStatus.from(b.getStatus()).label()),
-                a.getStatus(), BoostAssignmentStatus.from(a.getStatus()).label(),
-                a.getAssignedAt(), a.getUnassignedAt(), a.getNote(),
-                a.getCreatedAt(), a.getUpdatedAt()
-        );
+        return mapper.toDto(assignment, booster);
     }
 }
