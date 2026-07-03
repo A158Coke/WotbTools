@@ -7,7 +7,8 @@
 ## 规则
 
 0. **Plan-First** — 代码改动前先出 plan（范围/影响/风险），待用户批准后执行。Grill-Fix 循环内部自动进行不需用户介入，但结束后必须出具可视化审查报告。
-1. **改动即更新文档** — 影响界面/导出/数据/构建的改动，同提交更新 CHANGELOG、DEVELOPER_GUIDE、相关 README。
+0. **Feature 流程** — 任何 feature 类或大范围改动必须：出 plan → 等待用户批准 → 执行 → Grill-Fix 闭环 → 出具审查报告。未批准不得开始编码。小修小补（bug fix、CSS、i18n 缺漏）可跳过 plan 直接修。
+1. **改动即更新文档** — 影响界面/导出/数据/构建的改动，同提交更新 CHANGELOG（技术变更）、CHANGELOG-PRODUCT（产品功能变更）、DEVELOPER_GUIDE、相关 README。
 2. **跨层一致** — 列 key(snake_case) API/前端/导出三方一致。显示名前端三语 locale + 导出两处一致。
 3. **API 纯英文** — 只回 key+数据，中文归前端/导出。
 4. **提交前通过测试** — Java `mvn -s settings.xml test`(JAVA_HOME→JDK21)、前端 `npm run build`。
@@ -28,12 +29,13 @@
 19. **String 空值判断** — 字符串判空或 null 统一用 `org.springframework.util.StringUtils.hasText(s)`。禁止手写 `s == null || s.isBlank()`。例外：仅当项目内无处引用 Spring 的核心模块可保留手写。
 20. **优先 Stream** — 集合遍历优先用 Java Stream（`map`/`filter`/`toList()` 等），不可行（如需要受检异常、多语句副作用）再回退 for-each。
 21. **禁止 import \*** — 不准用 `import com.foo.*` 通配导入。必须显式逐类导入。
-22. **子代理完成确认** — spawn 子 agent/task 后必须显式验证完成状态：
+22. **使用 Mapper 替代 toXxx** — 禁止在 Service/Entity 中手写 `toDto()` / `toEntity()`。必须创建独立 Mapper 类（如 `UserMapper`），可用泛型接口 `Mapper<E, D>` 统一约束。DTO 转换集中在 Mapper 层，Service 只调 `mapper.toDto(entity)`。
+23. **子代理完成确认** — spawn 子 agent/task 后必须显式验证完成状态：
     - `task_list` / `task_read` 检查 status=completed
     - `list_dir` 验证文件已移动到目标位置
     - `read_file` 验证关键文件内容正确
     不可假设子代理自动完成。失败/超时则手动修正或重新 spawn。
-23. **子代理完成通知** — 子代理完成后以醒目格式通知用户：
+24. **子代理完成通知** — 子代理完成后以醒目格式通知用户：
     ```
     ═══════════════════════════════════
       ✅ task_xxx 完成（耗时 Ns）

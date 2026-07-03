@@ -8,6 +8,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 /** 打手档案仓库。 */
 public interface BoosterProfileRepository extends JpaRepository<BoosterProfile, Long> {
 
+    java.util.Optional<BoosterProfile> findByKeycloakUserId(String keycloakUserId);
+
     Page<BoosterProfile> findByStatus(String status, Pageable pageable);
 
     Page<BoosterProfile> findByAvailable(Boolean available, Pageable pageable);

@@ -59,6 +59,23 @@
   - [x] `blitz_account_binding` 表 + 绑定 API（account_id）
   - [x] 前端 QQ 登录/退出/当前用户 + Blitz 绑定 UI
 
+## P1：运维与 CI/CD
+
+- [x] **拆分部署 Workflow**：不再每次部署都构建全端（前端/后端/Keycloak）。改为：
+  - [x] 前端变动 → 只构建前端镜像并推送 GHCR
+  - [x] 后端变动 → 只构建后端镜像并推送 GHCR
+  - [x] Keycloak 变动 → 只构建 Keycloak 镜像并推送 GHCR
+  - [x] 全端变更 → 并行构建 + 统一 docker compose pull + restart
+- [ ] 优化 deploy.yml，利用 GHCR 标签判断增量构建。
+
+## P1：打手视角订单系统
+
+- [ ] **打手个人订单面板**：登录用户若为打手（`booster` role），可在个人中心查看与自己相关的订单。
+  - [ ] 后端：根据 `keycloak_user_id` 查 `booster_profile`，再查 `boost_request_assignment` 获取活跃/历史分配
+  - [ ] 后端 API：`GET /api/booster/assignments`（打手视角，仅返回自己的订单）
+  - [ ] 前端 Profile 页面：显示当前活跃订单（需求名称、状态、匹配时间）和历史订单
+  - [ ] 订单状态变更通知（需求更新、新的匹配提醒）
+
 ## P1：测试与质量
 
 - [ ] Java 单元测试覆盖更多字段边界。

@@ -30,9 +30,11 @@ public class LeaderboardService {
     private static final int BATTLE_TYPE = 1;
 
     private final LeaderboardRecordRepository repository;
+    private final LeaderboardRecordMapper mapper;
 
-    public LeaderboardService(final LeaderboardRecordRepository repository) {
+    public LeaderboardService(final LeaderboardRecordRepository repository, final LeaderboardRecordMapper mapper) {
         this.repository = repository;
+        this.mapper = mapper;
     }
 
     public boolean recordRecorder(final Battle battle, final Tankopedia tankopedia) {
@@ -86,12 +88,12 @@ public class LeaderboardService {
     /** 指定玩家的伤害记录。保持 flat 返回供个人中心使用。 */
     public List<LeaderboardRecordDto> recordsByAccountId(final long accountId, final int limit) {
         return repository.findByAccountIdOrderByDamageDealtDesc(accountId, PageRequest.of(0, clamp(limit)))
-                .stream().map(LeaderboardService::toDto).toList();
+                .stream().map(mapper::toDto).toList();
     }
 
-    private static LeaderboardPageDto toPageDto(final Page<LeaderboardRecord> page, final int pageNo, final int pageSize) {
+    private LeaderboardPageDto toPageDto(final Page<LeaderboardRecord> page, final int pageNo, final int pageSize) {
         return new LeaderboardPageDto(
-                page.getContent().stream().map(LeaderboardService::toDto).toList(),
+                page.getContent().stream().map(mapper::toDto).toList(),
                 pageNo, pageSize,
                 page.getTotalElements(), page.getTotalPages());
     }
@@ -101,9 +103,5 @@ public class LeaderboardService {
         return Math.min(limit, MAX_LIMIT);
     }
 
-    static LeaderboardRecordDto toDto(final LeaderboardRecord r) {
-        return new LeaderboardRecordDto(r.getId(), r.getArenaId(), r.getTankId(), r.getTankName(),
-                r.getAccountId(), r.getNickname(), r.getDamageDealt(), r.getMapName(),
-                r.getVersion(), r.getBattleTime(), r.getCreatedAt());
-    }
+
 }

@@ -8,6 +8,7 @@ public record BoosterDto(
     String nickname,
     String level,
     String levelLabel,
+    String keycloakUserId,
     Boolean available,
     String status,
     String statusLabel,

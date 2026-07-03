@@ -15,7 +15,8 @@
   "roles": {
     "realm": [
       { "name": "wotbtools-admin", "description": "WoTBTools 管理员" },
-      { "name": "boost-manager", "description": "陪练管理员" }
+      { "name": "boost-manager", "description": "陪练管理员" },
+      { "name": "booster", "description": "打手" }
     ]
   },
   "clients": [

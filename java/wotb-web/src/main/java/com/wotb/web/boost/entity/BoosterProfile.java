@@ -7,6 +7,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.OffsetDateTime;
 
@@ -24,6 +25,9 @@ public class BoosterProfile {
 
     @Column(name = "level", nullable = false, length = 32)
     private String level;
+
+    @Column(name = "keycloak_user_id", length = 64)
+    private String keycloakUserId;
 
     @Column(name = "available", nullable = false)
     private Boolean available;
@@ -47,6 +51,7 @@ public class BoosterProfile {
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
+    @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
@@ -62,6 +67,9 @@ public class BoosterProfile {
 
     public String getLevel() { return level; }
     public void setLevel(final String level) { this.level = level; }
+
+    public String getKeycloakUserId() { return keycloakUserId; }
+    public void setKeycloakUserId(final String keycloakUserId) { this.keycloakUserId = keycloakUserId; }
 
     public Boolean getAvailable() { return available; }
     public void setAvailable(final Boolean available) { this.available = available; }

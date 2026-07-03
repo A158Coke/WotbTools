@@ -1,14 +1,18 @@
 package com.wotb.web.boost.controller;
 
+import com.wotb.web.admin.service.KeycloakAdminUserService;
 import com.wotb.web.boost.dto.BoosterDto;
 import com.wotb.web.boost.dto.CreateBoosterRequest;
 import com.wotb.web.boost.dto.UpdateBoosterAvailabilityRequest;
 import com.wotb.web.boost.dto.UpdateBoosterRequest;
+import com.wotb.web.boost.entity.BoosterProfile;
 import com.wotb.web.boost.service.BoosterService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,22 +31,46 @@ import java.util.Map;
 @CrossOrigin(origins = "*")
 public class AdminBoosterController {
 
-    private final BoosterService service;
+    private static final String BOOSTER_ROLE = "booster";
 
-    public AdminBoosterController(final BoosterService service) {
+    private final BoosterService service;
+    private final KeycloakAdminUserService keycloakAdminUserService;
+
+    public AdminBoosterController(final BoosterService service,
+                                  final KeycloakAdminUserService keycloakAdminUserService) {
         this.service = service;
+        this.keycloakAdminUserService = keycloakAdminUserService;
     }
 
     @PostMapping
     public BoosterDto create(@RequestBody final CreateBoosterRequest body) {
         try {
+            // 先操作 Keycloak（分配 role），失败则业务数据不写入
+            if (StringUtils.hasText(body.keycloakUserId())) {
+                keycloakAdminUserService.addRealmRole(body.keycloakUserId(), BOOSTER_ROLE);
+            }
             return service.create(
-                    body.nickname(), body.level(), body.available(), body.status(),
+                    body.nickname(), body.level(), body.keycloakUserId(),
+                    body.available(), body.status(),
                     body.contactType(), body.contactValue(),
                     body.specialties(), body.description()
             );
         } catch (final IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    @DeleteMapping("/{id}")
+    public Map<String, Object> delete(@PathVariable final Long id) {
+        try {
+            final BoosterProfile booster = service.getById(id);
+            if (StringUtils.hasText(booster.getKeycloakUserId())) {
+                keycloakAdminUserService.removeRealmRole(booster.getKeycloakUserId(), BOOSTER_ROLE);
+            }
+            service.deleteById(id);
+            return Map.of("id", id, "deleted", true);
+        } catch (final IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         }
     }
 
@@ -69,7 +97,8 @@ public class AdminBoosterController {
                              @RequestBody final UpdateBoosterRequest body) {
         try {
             return service.update(
-                    id, body.nickname(), body.level(), body.available(), body.status(),
+                    id, body.nickname(), body.level(), body.keycloakUserId(),
+                    body.available(), body.status(),
                     body.contactType(), body.contactValue(),
                     body.specialties(), body.description()
             );

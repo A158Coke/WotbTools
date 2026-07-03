@@ -18,6 +18,8 @@ const editAccountId = ref(null)
 const editNickname = ref('')
 const editError = ref('')
 const records = ref([])
+const boosterInfo = ref(null)
+const boosterAssignments = ref([])
 
 onMounted(async () => {
   try {
@@ -48,6 +50,10 @@ async function loadProfile() {
     }
   }
   if (profile.value?.wotbAccountId) { loadRecords() }
+  loadBoosterInfo()
+  if (tokenParsed.value?.realm_access?.roles?.includes('booster')) {
+    try { boosterAssignments.value = await api.getMyBoosterAssignments() } catch {}
+  }
 }
 
 const displayName = computed(() =>
@@ -83,6 +89,9 @@ async function saveAccount() {
     editingAccount.value = false
     loadRecords()
   } catch (e) { editError.value = e.message }
+}
+async function loadBoosterInfo() {
+  try { boosterInfo.value = await api.getMyBoosterProfile() } catch { boosterInfo.value = null }
 }
 async function loadRecords() {
   try { records.value = await api.getUserLeaderboardRecords() } catch { records.value = [] }
@@ -194,12 +203,42 @@ async function removeAccount() {
         </div>
 
         <div class="profile-right">
+          <!-- Booster Info -->
+          <div v-if="boosterInfo" class="profile-card profile-section">
+            <h3 class="card-title">{{ $t('profile.boosterTitle') }}</h3>
+            <div class="booster-info">
+              <div class="sec-row"><span>{{ $t('profile.boosterNickname') }}</span><strong>{{ boosterInfo.nickname }}</strong></div>
+              <div class="sec-row"><span>{{ $t('profile.boosterLevel') }}</span><span class="badge-ok">{{ boosterInfo.levelLabel }}</span></div>
+              <div class="sec-row"><span>{{ $t('profile.boosterActiveAssignments') }}</span><strong>{{ boosterInfo.activeAssignmentCount }}</strong></div>
+              <div v-if="boosterInfo.status === 'ACTIVE'" class="profile-status-ok">{{ $t('profile.boosterActive') }}</div>
+              <div v-else class="profile-status-warn">{{ $t('profile.boosterInactive') }}</div>
+            </div>
+          </div>
+
           <div class="profile-card profile-section">
             <h3 class="card-title">{{ $t('profile.securityTitle') }}</h3>
             <div class="security-info">
               <div class="sec-row"><span>{{ $t('profile.loginMethod') }}</span><strong>Keycloak</strong></div>
               <div class="sec-row"><span>{{ $t('profile.authService') }}</span><code>auth.wotbtools.com</code></div>
               <p class="text-muted">{{ $t('profile.securityDesc') }}</p>
+            </div>
+          </div>
+
+          <!-- Booster Assignments -->
+          <div v-if="boosterAssignments.length" class="profile-card profile-section">
+            <div class="section-head">
+              <h3 class="card-title">{{ $t('profile.myAssignments') }}</h3>
+            </div>
+            <div v-for="a in boosterAssignments" :key="a.id" class="assign-card">
+              <div class="assign-head">
+                <span class="assign-type">{{ a.requestTypeLabel || $t('boost.requestType') }}</span>
+                <span class="assign-status-tag" :class="a.status?.toLowerCase()">{{ a.statusLabel }}</span>
+              </div>
+              <div class="assign-desc">{{ a.targetDescription || '—' }}</div>
+              <div class="assign-meta">
+                <span>{{ $t('boost.assigned') }}: {{ a.assignedAt ? a.assignedAt.substring(0, 10) : '—' }}</span>
+                <span v-if="a.note">· {{ a.note }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -245,6 +284,9 @@ async function removeAccount() {
 .sec-row { display: flex; justify-content: space-between; font-size: .88rem; }
 .sec-row span { color: var(--text-sub); }
 .sec-row code { font-family: monospace; font-size: .78rem; color: var(--accent); }
+.booster-info { display: flex; flex-direction: column; gap: 8px; }
+.profile-status-ok { font-size: .8rem; color: #166534; font-weight: 600; }
+.profile-status-warn { font-size: .8rem; color: #b45309; font-weight: 600; }
 .btn-primary { padding: 8px 20px; border: none; border-radius: 10px; background: var(--accent); color: #fff; font-size: .88rem; cursor: pointer; font-family: inherit; }
 .btn-primary:hover { background: var(--accent-hover); }
 .btn-sm { padding: 5px 12px; font-size: .8rem; border-radius: 8px; }
@@ -255,6 +297,15 @@ async function removeAccount() {
 .records-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
 .records-table th { text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); color: var(--text-sub); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
 .records-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-light); color: var(--text); }
+.assign-card { padding: 12px; border: 1px solid var(--border-light); border-radius: 10px; margin-bottom: 8px; background: var(--bg); }
+.assign-card:last-child { margin-bottom: 0; }
+.assign-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.assign-type { font-weight: 600; font-size: .88rem; color: var(--text-heading); }
+.assign-status-tag { font-size: .75rem; padding: 2px 8px; border-radius: 6px; background: var(--bg-chip); color: var(--text-sub); }
+.assign-status-tag.assigned { background: #dbeafe; color: #1e40af; }
+.assign-status-tag.cancelled { background: #fee2e2; color: #991b1b; }
+.assign-desc { font-size: .85rem; color: var(--text); margin-bottom: 4px; line-height: 1.4; }
+.assign-meta { font-size: .78rem; color: var(--text-sub); }
 .records-table tbody tr:hover { background: var(--bg-card2); }
 .rec-dmg { text-align: right !important; font-variant-numeric: tabular-nums; font-weight: 600; width: 90px; }
 .rec-tank { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

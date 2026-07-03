@@ -285,6 +285,7 @@
         "identity": "Identity",
         "authProvider": "Auth provider",
         "notBoundWotbAccount": "No WoTB player account linked",
+"myAssignments": "My Orders",
         "displayName": "Display Name",
         "edit": "Edit",
         "save": "Save",
@@ -333,6 +334,7 @@
         "availableTime": "Time",
         "timeHint": "20:00-23:00",
         "remark": "Notes",
+        "remarkHint": "Additional notes or special requests",
         "contact": "Contact",
         "assigned": "Matched",
         "cancel": "Cancel",
@@ -365,6 +367,7 @@
         "newBooster": "New",
         "editBooster": "Edit",
         "boosterNickname": "Nick",
+        "selectUserFirstHint": "Select a user first",
         "boosterLevel": "Level",
         "boosterStatus": "Status",
         "boosterContact": "Contact",
@@ -380,7 +383,12 @@
         "pleaseLogin": "Login required",
         "authError": "Auth error",
         "playerNicknameHint": "Optional, helps the coach identify your account",
-        "playerAccountIdHint": "Optional numeric account ID"
+        "playerAccountIdHint": "Optional numeric account ID",
+        "boosterUserSearch": "Linked User",
+        "boosterUserSearchHint": "Search user by name or ID...",
+        "noUsersFound": "No matching users",
+        "delete": "Delete",
+        "boosterAvailable": "Available"
     },
     "admin": {
         "title": "User Management",

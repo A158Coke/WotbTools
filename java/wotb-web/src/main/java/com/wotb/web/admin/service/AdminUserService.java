@@ -7,7 +7,7 @@ import com.wotb.web.admin.entity.AdminUserLog;
 import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.admin.exception.AdminConflictException;
 import com.wotb.web.admin.exception.AdminInternalException;
-import com.wotb.web.dto.ErrorCode;
+import com.wotb.web.util.ErrorCode;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.repository.UserProfileRepository;
 import org.keycloak.representations.idm.UserRepresentation;

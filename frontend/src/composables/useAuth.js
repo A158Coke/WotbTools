@@ -79,6 +79,23 @@ function token() {
   return keycloak?.token || ''
 }
 
+/** 确保 token 还有至少 minValidity 秒有效，不足则静默刷新。 */
+async function ensureToken(minValidity = 30) {
+  const kc = ensureKeycloak()
+  if (!kc.authenticated) return false
+  try {
+    const refreshed = await kc.updateToken(minValidity)
+    if (refreshed) {
+      tokenParsed.value = kc.tokenParsed
+    }
+    return true
+  } catch {
+    authenticated.value = false
+    tokenParsed.value = null
+    return false
+  }
+}
+
 export function useAuth() {
   return {
     keycloak: ensureKeycloak(),
@@ -89,6 +106,7 @@ export function useAuth() {
     isAuthenticated,
     userName,
     token,
+    ensureToken,
     initialized,
     authenticated,
     tokenParsed,

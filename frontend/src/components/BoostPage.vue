@@ -49,8 +49,56 @@ const boosters = ref([])
 const boosterPage = ref({ page: 0, size: 20 })
 const loadingBoosters = ref(false)
 const editingBooster = ref(null)
-const boosterForm = ref({ nickname: '', level: 'ELITE', available: true, status: 'ACTIVE', contactType: '', contactValue: '', specialties: '', description: '' })
+const boosterForm = ref({ nickname: '', level: 'ELITE', keycloakUserId: '', available: true, status: 'ACTIVE', contactType: '', contactValue: '', specialties: '', description: '' })
 const boosterError = ref('')
+
+// Admin: user search
+const allUsers = ref([])
+const userSearchQuery = ref('')
+const userSearchResults = ref([])
+const showUserSearch = ref(false)
+let searchTimer = null
+
+async function loadAllUsers() {
+  try {
+    const res = await api.adminSearchUsers('', 200)
+    allUsers.value = res.content || res || []
+  } catch { allUsers.value = [] }
+}
+
+function searchUsers() {
+  if (!userSearchQuery.value.trim()) {
+    userSearchResults.value = allUsers.value.slice(0, 30)
+    showUserSearch.value = true
+    return
+  }
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(async () => {
+    try {
+      const res = await api.adminSearchUsers(userSearchQuery.value.trim(), 10)
+      userSearchResults.value = (res.content || res).slice(0, 10)
+      showUserSearch.value = true
+    } catch {
+      userSearchResults.value = []
+    }
+  }, 300)
+}
+
+function selectUser(user) {
+  boosterForm.value.keycloakUserId = user.keycloakUserId || user.id
+  const displayName = user.displayName || user.keycloakUsername || 'User'
+  boosterForm.value.nickname = displayName
+  userSearchQuery.value = displayName
+  showUserSearch.value = false
+}
+
+async function deleteBooster(b) {
+  if (!confirm(`确认删除打手 ${b.nickname}？`)) return
+  try {
+    await api.adminBoostBoosterDelete(b.id)
+    loadBoosters(boosterPage.value.page)
+  } catch (e) { alert(e.message) }
+}
 
 // Admin: assignment
 const assigningRequest = ref(null)
@@ -165,13 +213,19 @@ async function loadBoosters(page = 0) {
 
 function startNewBooster() {
   editingBooster.value = {}
-  boosterForm.value = { nickname: '', level: 'ELITE', available: true, status: 'ACTIVE', contactType: '', contactValue: '', specialties: '', description: '' }
+  boosterForm.value = { nickname: '', level: 'ELITE', keycloakUserId: '', available: true, status: 'ACTIVE', contactType: '', contactValue: '', specialties: '', description: '' }
+  userSearchQuery.value = ''
+  userSearchResults.value = allUsers.value.slice(0, 30)
+  showUserSearch.value = true
   boosterError.value = ''
 }
 
 function startEditBooster(b) {
   editingBooster.value = b
-  boosterForm.value = { nickname: b.nickname || '', level: b.level || 'ELITE', available: b.available, status: b.status || 'ACTIVE', contactType: b.contactType || '', contactValue: b.contactValue || '', specialties: b.specialties || '', description: b.description || '' }
+  boosterForm.value = { nickname: b.nickname || '', level: b.level || 'ELITE', keycloakUserId: b.keycloakUserId || '', available: b.available, status: b.status || 'ACTIVE', contactType: b.contactType || '', contactValue: b.contactValue || '', specialties: b.specialties || '', description: b.description || '' }
+  userSearchQuery.value = b.keycloakUserId || ''
+  userSearchResults.value = []
+  showUserSearch.value = false
   boosterError.value = ''
 }
 
@@ -207,7 +261,7 @@ function statusBadge(s) {
 function switchTab(t) {
   tab.value = t
   if (t === 'adminRequests') { loadAdminRequests(); loadBoosters() }
-  else if (t === 'boosters') loadBoosters()
+  else if (t === 'boosters') { loadBoosters(); loadAllUsers() }
 }
 </script>
 
@@ -372,7 +426,7 @@ function switchTab(t) {
           <div v-if="assigningRequest === r" class="assign-box">
             <select v-model.number="assignBoosterId" class="mr">
               <option :value="null" disabled>{{ $t('boost.selectBooster') }}</option>
-              <option v-for="b in boosters" :key="b.id" :value="b.id" :disabled="!b.available || b.status !== 'ACTIVE'">
+              <option v-for="b in boosters" :key="b.id" :value="b.id" :disabled="!b.available">
                 {{ b.nickname }} ({{ b.levelLabel }}) {{ b.available ? '' : '[' + $t('boost.unavailable') + ']' }}
               </option>
             </select>
@@ -402,10 +456,6 @@ function switchTab(t) {
       <div v-if="editingBooster !== null" class="booster-editor">
         <h4>{{ editingBooster.id ? $t('boost.editBooster') : $t('boost.newBooster') }}</h4>
         <div class="form-row">
-          <label>{{ $t('boost.boosterNickname') }} *</label>
-          <input v-model="boosterForm.nickname" maxlength="100" />
-        </div>
-        <div class="form-row">
           <label>{{ $t('boost.boosterLevel') }}</label>
           <select v-model="boosterForm.level">
             <option value="CASUAL">普通</option>
@@ -424,6 +474,20 @@ function switchTab(t) {
         </div>
         <div class="form-row">
           <label><input type="checkbox" v-model="boosterForm.available" /> {{ $t('boost.boosterAvailable') }}</label>
+        </div>
+        <div class="form-row" style="position:relative">
+          <label>{{ $t('boost.boosterUserSearch') }}</label>
+          <input v-model="userSearchQuery" @input="searchUsers()" @focus="searchUsers()" @blur="setTimeout(() => showUserSearch = false, 200)" maxlength="100" :placeholder="$t('boost.boosterUserSearchHint')" />
+          <div v-if="showUserSearch && userSearchResults.length" class="user-search-dropdown">
+            <div v-for="u in userSearchResults" :key="u.keycloakUserId || u.id" class="user-search-item" @mousedown.prevent="selectUser(u)">
+              <span class="user-search-name">{{ u.displayName || u.keycloakUsername || u.keycloakUserId }}</span>
+              <span class="user-search-id" v-if="u.wotbNickname">{{ u.wotbNickname }}</span>
+            </div>
+          </div>
+          <div v-if="showUserSearch && !userSearchResults.length && userSearchQuery.trim()" class="user-search-dropdown">
+            <div class="user-search-empty">{{ $t('boost.noUsersFound') }}</div>
+          </div>
+          <input type="hidden" v-model="boosterForm.keycloakUserId" />
         </div>
         <div class="form-row">
           <label>{{ $t('boost.boosterContact') }}</label>
@@ -466,6 +530,7 @@ function switchTab(t) {
             <button class="btn-ghost btn-sm" @click="toggleBoosterAvailable(b)">
               {{ b.available ? $t('boost.setUnavailable') : $t('boost.setAvailable') }}
             </button>
+            <button class="btn-ghost btn-sm btn-danger" @click="deleteBooster(b)">{{ $t('boost.delete') }}</button>
           </div>
         </div>
       </div>
@@ -526,6 +591,7 @@ function switchTab(t) {
 .assign-box { margin-top: 8px; padding: 10px; background: var(--bg); border-radius: 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .assign-box select, .assign-box input { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font-size: 13px; }
 .mr { margin-right: 4px; }
+.readonly-field { background: var(--bg-card2, #f1f4f8); color: var(--text-sub, #8b94a3); cursor: not-allowed; border: 1px solid var(--border-light, #eef1f6); }
 
 .booster-editor { border: 1px solid var(--accent); border-radius: 8px; padding: 16px; margin-bottom: 16px; background: var(--bg); }
 .booster-editor .form-row { margin-bottom: 10px; }
@@ -539,6 +605,14 @@ function switchTab(t) {
 .pager button:disabled { opacity: 0.4; cursor: default; }
 
 .booster-stats { font-size: 12px; color: var(--text-secondary); margin-left: auto; }
+.user-search-dropdown { position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; max-height: 240px; overflow-y: auto; margin-top: 2px; }
+.user-search-item { padding: 8px 10px; cursor: pointer; font-size: 13px; display: flex; justify-content: space-between; }
+.user-search-item:hover { background: var(--bg-card-hover); }
+.user-search-name { font-weight: 600; }
+.user-search-id { color: var(--text-secondary); font-size: 12px; }
+.user-search-empty { padding: 10px; text-align: center; color: var(--text-secondary); font-size: 13px; }
+.btn-danger { color: #dc3545; border-color: #dc3545; }
+.btn-danger:hover { background: #dc3545; color: #fff; }
 /* Button styles (shared, used across ProfilePage and BoostPage) */
 .btn-primary { padding: 8px 20px; border: none; border-radius: 10px; background: var(--accent); color: #fff; font-size: .88rem; cursor: pointer; font-family: inherit; }
 .btn-primary:hover { background: var(--accent-hover); }
