@@ -1,12 +1,12 @@
 export async function preview(body) {
   const r = await fetch('/api/preview', { method: 'POST', body })
-  if (!r.ok) throw new Error('解析失败: HTTP ' + r.status)
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
   return r.json()
 }
 
 export async function downloadBlob(mode, body) {
   const r = await fetch(`/api/export?mode=${encodeURIComponent(mode)}`, { method: 'POST', body })
-  if (!r.ok) throw new Error('导出失败: HTTP ' + r.status)
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
   const blob = await r.blob()
   const cd = r.headers.get('Content-Disposition') || ''
   return { blob, disposition: cd }
@@ -26,13 +26,13 @@ export async function ratingConfig() {
 
 export async function leaderboardTopDamage(page = 1, size = 50) {
   const r = await fetch(`/api/leaderboard/top-damage?page=${page}&size=${size}`)
-  if (!r.ok) throw new Error('排行榜加载失败: HTTP ' + r.status)
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
   return r.json()
 }
 
 export async function leaderboardTopDamageByTank(tankId, page = 1, size = 50) {
   const r = await fetch(`/api/leaderboard/tanks/${encodeURIComponent(tankId)}/top-damage?page=${page}&size=${size}`)
-  if (!r.ok) throw new Error('排行榜加载失败: HTTP ' + r.status)
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
   return r.json()
 }
 
@@ -41,6 +41,6 @@ export async function leaderboardUpload(file) {
   fd.append('file', file)
   const r = await fetch('/api/leaderboard/upload', { method: 'POST', body: fd })
   const data = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(data.error || '上传失败: HTTP ' + r.status)
+  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`)
   return data
 }

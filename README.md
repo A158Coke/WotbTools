@@ -2,6 +2,7 @@
 
 ## SPA 路由参数
 
+- `?view=home`：进入工具集首页。
 - `?view=replay`：进入回放提取器。
 - `?view=leaderboard`：进入排行榜。
 - `?view=profile`：进入个人中心。
@@ -18,7 +19,7 @@
 | 目标          | 技术方向                                           | 状态            |
 |-------------|------------------------------------------------|---------------|
 | Web 版       | Spring Boot 4 + Vue 3 + PostgreSQL + Docker + Keycloak | ✅ 已完成         |
-| 工具集主页    | Vue SPA 卡片式入口 + 主题切换 + 三语 i18n | ✅ 已完成         |
+| 工具集主页    | Vue SPA 游戏工具站风格入口 + 主题切换 + 三语 i18n | ✅ 已完成         |
 
 版本历史见 [CHANGELOG.md](CHANGELOG.md)，任务拆分见 [TODO.md](TODO.md)。
 

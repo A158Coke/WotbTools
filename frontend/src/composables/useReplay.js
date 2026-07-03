@@ -1,8 +1,10 @@
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { displayName, mapLabel } from '../utils/helpers.js'
 import * as api from '../utils/api.js'
 
 export function useReplay() {
+  const { t } = useI18n()
   const files = ref([])
   const loading = ref(false)
   const error = ref('')
@@ -30,7 +32,7 @@ export function useReplay() {
   }
 
   async function doPreview(onColumnsInit) {
-    if (!files.value.length) { error.value = '请先选择回放文件或文件夹'; return }
+    if (!files.value.length) { error.value = t('replay.no_files'); return }
     loading.value = true; error.value = ''
     try {
       const data = await api.preview(buildFormData())
@@ -38,24 +40,24 @@ export function useReplay() {
       if (onColumnsInit) onColumnsInit(data)
       activeTab.value = data.battles.length > 1 ? 'aggregate' : 'b0'
     } catch (e) {
-      error.value = e.message
+      error.value = `${t('replay.preview_failed')}: ${e.message}`
     } finally {
       loading.value = false
     }
   }
 
   async function doExport(mode) {
-    if (!files.value.length) { error.value = '请先选择回放文件或文件夹'; return }
+    if (!files.value.length) { error.value = t('replay.no_files'); return }
     loading.value = true; error.value = ''
     try {
       const { blob, disposition } = await api.downloadBlob(mode, buildFormData())
       const m = disposition.match(/filename\*=UTF-8''([^;]+)/)
-      const name = m ? decodeURIComponent(m[1]) : (mode === 'each' ? '逐场导出.zip' : '联赛汇总.xlsx')
+      const name = m ? decodeURIComponent(m[1]) : (mode === 'each' ? 'battle-export.zip' : 'league-summary.xlsx')
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a'); a.href = url; a.download = name; a.click()
       URL.revokeObjectURL(url)
     } catch (e) {
-      error.value = e.message
+      error.value = `${t('replay.export_failed')}: ${e.message}`
     } finally {
       loading.value = false
     }
