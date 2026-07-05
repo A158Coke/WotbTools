@@ -227,12 +227,9 @@ function rankClass(rank) {
 .lb-filter-hint strong { color: var(--accent-dark); }
 .rk { display: inline-block; min-width: 26px; padding: 1px 8px; border-radius: 6px; font-size: 12px;
   font-weight: 600; background: var(--bg-chip); color: var(--text-label); }
-.rk-gold { background: #f7e29a; color: #6b4e00; }
-.rk-silver { background: #dde2ea; color: #45505f; }
-.rk-bronze { background: #f0cda6; color: #6e4321; }
-[data-theme="dark"] .rk-gold { background: #5a4a14; color: #f7e29a; }
-[data-theme="dark"] .rk-silver { background: #3a414d; color: #cdd5e1; }
-[data-theme="dark"] .rk-bronze { background: #4d3621; color: #f0cda6; }
+.rk-gold { background: var(--rating-good-bg); color: var(--rating-good-fg); }
+.rk-silver { background: var(--bg-chip); color: var(--text-label); }
+.rk-bronze { background: var(--rating-great-bg); color: var(--rating-great-fg); }
 .muted { padding: 28px 4px; color: var(--text-muted); }
 
 .lb-upload-section { margin: 16px 0; }
@@ -274,7 +271,8 @@ function rankClass(rank) {
 .pagination button:disabled { opacity: .4; cursor: not-allowed; }
 .pagination button:hover:not(:disabled) { background: var(--bg-card-hover); }
 @media (max-width: 560px) {
-  .lb-head h1 { font-size: 2rem; }
+  .lb-wrap { padding: 14px 12px 48px; }
+  .lb-head h1 { font-size: 1.55rem; }
   .lb-upload-card { min-height: 230px; padding: 28px 16px; }
   .lb-upload-card .up-title { max-width: 260px; }
   .lb-upload-card .up-sub { max-width: 240px; }

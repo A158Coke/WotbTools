@@ -3,8 +3,10 @@
 ## Frontend Layout Note
 
 - `App.vue` 顶栏样式为全局样式：桌面端固定在顶部，移动端使用 sticky + flex-wrap，避免语言选择、主题切换和个人中心入口挤压回放/排行榜页面。
-- Vue SPA 视觉变量集中在 `App.vue` 的 `:root` / `[data-theme="dark"]`，首页、上传区、排行榜和表格应优先复用这些变量，避免局部硬编码色板。
+- Vue SPA 主入口视觉变量集中在 `App.vue` 的 `:root` / `[data-theme="dark"]`；独立 `/extended` 入口通过 `frontend/src/styles/theme.css` 复用同一套变量。首页、上传区、排行榜和表格应优先复用这些变量，避免局部硬编码色板。
+- 评分徽章样式使用 `r-elite` / `r-great` / `r-good` / `r-mid` / `r-poor`；最高/最低标记由 `utils/helpers.js` 的 `medal(...)` 统一计算，最低评分允许为 `0`，全员同分不显示奖惩。
 - 公共首页可通过 `?view=home` 本地预览；线上 `wotbtools.com` / `www.wotbtools.com` 无参数仍默认进入首页。
+- 首页首屏「最高伤害记录」读取 `/api/leaderboard/top-damage?page=1&size=1`，只展示当前全局第一条 `damageDealt`，接口失败或无数据时显示 `--`。
 - Keycloak `check-sso` 依赖 `frontend/public/silent-check-sso.html`，不要移除，否则公共页面会被静默登录流程整页跳转。
 
 ## SPA 路由参数
@@ -47,6 +49,7 @@
 │   │   ├── main.js               #   Vue 入口
 │   │   ├── composables/          #   组合式模块（useTheme / useReplay / useColumns / useAuth）
 │   │   ├── utils/                #   工具层（api.js / theme.js / helpers.js）
+│   │   ├── styles/               #   独立入口共享主题变量（theme.css）
 │   │   ├── components/           #   UI 组件
 │   │   └── locales/              #   三语（zh / en / ru）
 │   ├── index.html  package.json  vite.config.js  .npmrc
@@ -182,8 +185,8 @@ BattleResults
   - `composables/useAuth.js` — Keycloak 认证适配器（check-sso 游客模式）
   - `utils/api.js` — 集中式 API 层（healthCheck / preview / downloadBlob / shutdown）
   - `utils/theme.js` — 纯函数（readTheme / saveTheme / resolveTheme / applyTheme），Cookie `.wotbtools.com` 域共享 + localStorage 回退
-  - `utils/helpers.js` — 常量（DEFAULT_VISIBLE / EXTENDED_ONLY_PLAYER_KEYS / RATING_TIERS）+ 工具函数（mapLabel / ratingTier 等）
-- UI 组件在 `components/`：FileUploader / ColumnPicker / AggregateTable / BattleTable / RatingModal / RemoveConfirmModal / VersionPage / LeaderboardPage（排行榜整页，仅在线版显示）
+- `utils/helpers.js` — 常量（DEFAULT_VISIBLE / EXTENDED_ONLY_PLAYER_KEYS / RATING_TIERS）+ 工具函数（mapLabel / ratingTier / medal 等）
+- UI 组件在 `components/`：FileUploader / ColumnPicker / AggregateTable / BattleTable / RatingModal / RemoveConfirmModal / LeaderboardPage / ProfilePage / BoostPage / AdminUsersPage
 - 回放解析上传页由 `FileUploader.vue` 负责交互，`App.vue` 提供全局上传区样式；空态、拖拽态、已选文件态共用 `upload.*` 三语文案。
 - 开发时 Vite 代理 `/api → localhost:8087`。
 - 语言持久化 `localStorage('wotb-lang')`，主题持久化 Cookie `wotbtools-theme`（domain `.wotbtools.com`）+ localStorage 回退。

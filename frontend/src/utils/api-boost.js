@@ -44,10 +44,6 @@ export async function adminBoostRequests(params = {}) {
   return boostHandle(await fetch(`/api/admin/boost/requests${qs ? '?' + qs : ''}`, { headers: await boostHeaders() }))
 }
 
-export async function adminBoostRequest(id) {
-  return boostHandle(await fetch(`/api/admin/boost/requests/${encodeURIComponent(id)}`, { headers: await boostHeaders() }))
-}
-
 export async function adminBoostUpdateStatus(id, body) {
   return boostHandle(await fetch(`/api/admin/boost/requests/${encodeURIComponent(id)}/status`, { method: 'PATCH', headers: await boostHeaders(), body: JSON.stringify(body) }))
 }
