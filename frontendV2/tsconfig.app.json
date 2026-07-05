@@ -22,5 +22,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src", "src/config/.i18n/i18n.ts", "src/config/.i18n/i18next.d.ts"]
 }
