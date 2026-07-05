@@ -35,6 +35,16 @@ public final class EventStreamReader {
     private EventStreamReader() {
     }
 
+    /** One direct HP damage event resolved from replay entity ids to account ids. */
+    public record DirectDamageEvent(float clockSecs, long attackerAccountId,
+                                    long victimAccountId, int damage) {
+    }
+
+    /** Damage dealt by one killer to one victim before the victim is inferred dead. */
+    public record KillVictimDamage(long killerAccountId, long victimAccountId,
+                                   int damage, int penetrations) {
+    }
+
     public static final class EventStream {
         public final String clientVersion;
         public final String clientHash;
@@ -319,31 +329,18 @@ public final class EventStreamReader {
      * 返回 map: account_id → death_time_sec (0=未知).
      */
     public static Map<Long, Double> estimateDeathTimesByDamage(
-            List<ParsedPacket> packets,
-            Map<Integer, Long> entityToAccount,
-            Map<Long, Integer> accountToThreshold,
-            double battleDurationS) {
+            final List<ParsedPacket> packets,
+            final Map<Integer, Long> entityToAccount,
+            final Map<Long, Integer> accountToThreshold,
+            final double battleDurationS) {
         // 先行一步: 提取所有 sub3 事件并排序
-        final List<Sub3Event> events = new ArrayList<>();
-        for (final ParsedPacket pkt : packets) {
-            if (pkt.type != TYPE_ENTITY_METHOD || pkt.payload.length < 12) continue;
-            if (readU32LE(pkt.payload, 4) != SUBTYPE_ENTITY_METHOD_DAMAGE) continue;
-            final byte[] body = new byte[pkt.payload.length - 8];
-            System.arraycopy(pkt.payload, 8, body, 0, body.length);
-            if (body.length != 25) continue;
-            if ((body[13] & 0xFF) != DAMAGE_SUB_DIRECT) continue;
-            final int victimEid = readI32LE(body, 8);
-            final Long acc = entityToAccount.get(victimEid);
-            if (acc == null) continue;
-            final int dmg = (body[14] & 0xFF) << 8 | (body[15] & 0xFF); // BE u16
-            events.add(new Sub3Event(pkt.clockSecs, acc, dmg));
-        }
-        events.sort(Comparator.comparingDouble(e -> e.clockSecs));
+        final List<DirectDamageEvent> events = extractDirectDamageEvents(packets, entityToAccount);
+        events.sort(Comparator.comparingDouble(DirectDamageEvent::clockSecs));
 
         // 第 1 遍: 累计 sub3Total
         final Map<Long, Integer> sub3Total = new HashMap<>();
-        for (final Sub3Event ev : events) {
-            sub3Total.merge(ev.accountId, ev.damage, Integer::sum);
+        for (final DirectDamageEvent ev : events) {
+            sub3Total.merge(ev.victimAccountId(), ev.damage(), Integer::sum);
         }
 
         // 第 2 遍: 找首次超阈值时刻
@@ -353,25 +350,134 @@ public final class EventStreamReader {
         for (final Long acc : accountToThreshold.keySet()) {
             result.put(acc, 0.0);
         }
-        for (final Sub3Event ev : events) {
-            final int prev = cumulative.getOrDefault(ev.accountId, 0);
-            final int next = prev + ev.damage;
-            cumulative.put(ev.accountId, next);
+        for (final DirectDamageEvent ev : events) {
+            final int prev = cumulative.getOrDefault(ev.victimAccountId(), 0);
+            final int next = prev + ev.damage();
+            cumulative.put(ev.victimAccountId(), next);
             // 该玩家死亡已找到?
-            if (result.getOrDefault(ev.accountId, 0.0) > 0) continue;
-            final Integer rcvThreshold = accountToThreshold.get(ev.accountId);
+            if (result.getOrDefault(ev.victimAccountId(), 0.0) > 0) continue;
+            final Integer rcvThreshold = accountToThreshold.get(ev.victimAccountId());
             if (rcvThreshold == null || rcvThreshold <= 0) continue;
             // threshold = min(rcv, sub3Total) — sub3 可能无法覆盖全部受伤
-            final int total = sub3Total.getOrDefault(ev.accountId, 0);
+            final int total = sub3Total.getOrDefault(ev.victimAccountId(), 0);
             final int threshold = Math.min(rcvThreshold, total);
             if (threshold > 0 && prev < threshold && next >= threshold) {
-                result.put(ev.accountId, Math.min((double) ev.clockSecs, battleDurationS));
+                result.put(ev.victimAccountId(), Math.min((double) ev.clockSecs(), battleDurationS));
             }
         }
         return result;
     }
 
-    private record Sub3Event(float clockSecs, long accountId, int damage) {
+    public static List<DirectDamageEvent> extractDirectDamageEvents(
+            final List<ParsedPacket> packets,
+            final Map<Integer, Long> entityToAccount) {
+        final List<DirectDamageEvent> events = new ArrayList<>();
+        for (final ParsedPacket packet : packets) {
+            final DirectDamageEvent event = parseDirectDamageEvent(packet, entityToAccount);
+            if (event != null) {
+                events.add(event);
+            }
+        }
+        return events;
+    }
+
+    public static Map<Long, List<KillVictimDamage>> extractKillVictims(
+            final List<ParsedPacket> packets,
+            final Map<Integer, Long> entityToAccount,
+            final Map<Long, Integer> accountToThreshold) {
+        final List<DirectDamageEvent> events = extractDirectDamageEvents(packets, entityToAccount);
+        events.sort(Comparator.comparingDouble(DirectDamageEvent::clockSecs));
+
+        final Map<Long, Integer> directTotalByVictim = new HashMap<>();
+        for (final DirectDamageEvent event : events) {
+            directTotalByVictim.merge(event.victimAccountId(), event.damage(), Integer::sum);
+        }
+
+        final Map<Long, Integer> cumulativeByVictim = new HashMap<>();
+        final Map<DamagePair, DamageBucket> damageByPair = new HashMap<>();
+        final Map<Long, List<KillVictimDamage>> victimsByKiller = new HashMap<>();
+        final Set<Long> completedVictims = new HashSet<>();
+        for (final DirectDamageEvent event : events) {
+            final long victimAccountId = event.victimAccountId();
+            if (completedVictims.contains(victimAccountId)) {
+                continue;
+            }
+
+            final int previousDamage = cumulativeByVictim.getOrDefault(victimAccountId, 0);
+            final int nextDamage = previousDamage + event.damage();
+            cumulativeByVictim.put(victimAccountId, nextDamage);
+
+            if (event.attackerAccountId() != victimAccountId) {
+                final DamagePair pair = new DamagePair(event.attackerAccountId(), victimAccountId);
+                final DamageBucket bucket = damageByPair.computeIfAbsent(pair, ignored -> new DamageBucket());
+                bucket.damage += event.damage();
+                bucket.penetrations++;
+            }
+
+            final Integer receivedThreshold = accountToThreshold.get(victimAccountId);
+            if (receivedThreshold == null || receivedThreshold <= 0) {
+                continue;
+            }
+            final int directTotal = directTotalByVictim.getOrDefault(victimAccountId, 0);
+            if (directTotal < receivedThreshold) {
+                continue;
+            }
+            final int threshold = receivedThreshold;
+            if (threshold <= 0 || previousDamage >= threshold || nextDamage < threshold) {
+                continue;
+            }
+            completedVictims.add(victimAccountId);
+
+            final long killerAccountId = event.attackerAccountId();
+            if (killerAccountId == victimAccountId) {
+                continue;
+            }
+            final DamageBucket bucket = damageByPair.get(new DamagePair(killerAccountId, victimAccountId));
+            if (bucket == null || bucket.damage <= 0 || bucket.penetrations <= 0) {
+                continue;
+            }
+            victimsByKiller.computeIfAbsent(killerAccountId, ignored -> new ArrayList<>())
+                    .add(new KillVictimDamage(killerAccountId, victimAccountId,
+                            bucket.damage, bucket.penetrations));
+        }
+        return victimsByKiller;
+    }
+
+    private static DirectDamageEvent parseDirectDamageEvent(
+            final ParsedPacket packet,
+            final Map<Integer, Long> entityToAccount) {
+        if (packet.type != TYPE_ENTITY_METHOD || packet.payload.length < 12) {
+            return null;
+        }
+        if (readU32LE(packet.payload, 4) != SUBTYPE_ENTITY_METHOD_DAMAGE) {
+            return null;
+        }
+        final byte[] body = new byte[packet.payload.length - 8];
+        System.arraycopy(packet.payload, 8, body, 0, body.length);
+        if (body.length != 25 || (body[13] & 0xFF) != DAMAGE_SUB_DIRECT) {
+            return null;
+        }
+
+        final int attackerEid = readI32LE(body, 4);
+        final int victimEid = readI32LE(body, 8);
+        final Long attackerAccountId = entityToAccount.get(attackerEid);
+        final Long victimAccountId = entityToAccount.get(victimEid);
+        if (attackerAccountId == null || victimAccountId == null) {
+            return null;
+        }
+        final int damage = (body[14] & 0xFF) << 8 | (body[15] & 0xFF);
+        if (damage <= 0) {
+            return null;
+        }
+        return new DirectDamageEvent(packet.clockSecs, attackerAccountId, victimAccountId, damage);
+    }
+
+    private record DamagePair(long attackerAccountId, long victimAccountId) {
+    }
+
+    private static final class DamageBucket {
+        private int damage;
+        private int penetrations;
     }
 
     // ---- EntityMethod 解析 ----
