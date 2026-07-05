@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.stats.PotentialDamage;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -11,6 +12,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -158,6 +161,21 @@ public final class ReplayParser {
                 // 用 damageReceived 作阈值: 阵亡玩家所受总伤害 ≈ 坦克最大 HP
                 if (!pr.survived && pr.damageReceived > 0) {
                     threshold.put(pr.accountId, pr.damageReceived);
+                }
+            }
+            final Map<Long, PlayerResult> playersByAccount = players.stream()
+                    .collect(Collectors.toMap(player -> player.accountId,
+                            Function.identity(), (first, ignored) -> first));
+            final Map<Long, List<EventStreamReader.KillVictimDamage>> killVictims =
+                    EventStreamReader.extractKillVictims(esPackets, e2a, threshold);
+            for (final Map.Entry<Long, List<EventStreamReader.KillVictimDamage>> entry : killVictims.entrySet()) {
+                final PlayerResult killer = playersByAccount.get(entry.getKey());
+                if (killer == null) {
+                    continue;
+                }
+                for (final EventStreamReader.KillVictimDamage victim : entry.getValue()) {
+                    killer.killVictims.add(new PotentialDamage.KillVictim(
+                            victim.victimAccountId(), victim.damage(), victim.penetrations()));
                 }
             }
             deathTimesByDamage = EventStreamReader.estimateDeathTimesByDamage(esPackets, e2a, threshold, bd);
