@@ -1,6 +1,7 @@
 import { createApp } from 'vue'
 import { createI18n } from 'vue-i18n'
 import ExtendedApp from './ExtendedApp.vue'
+import './styles/theme.css'
 import zh from './locales/zh.json'
 import en from './locales/en.json'
 import ru from './locales/ru.json'

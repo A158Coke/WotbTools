@@ -88,35 +88,37 @@ function fmtTime(s) {
 
     <p v-if="loading" class="admin-muted">{{ $t('admin.loading') }}</p>
 
-    <table v-if="!loading && users.length" class="admin-table">
-      <thead>
-        <tr>
-          <th>{{ $t('admin.colId') }}</th>
-          <th>{{ $t('admin.colDisplayName') }}</th>
-          <th>{{ $t('admin.colKcId') }}</th>
-          <th>{{ $t('admin.colAccountId') }}</th>
-          <th>{{ $t('admin.colNickname') }}</th>
-          <th>{{ $t('admin.colServer') }}</th>
-          <th>{{ $t('admin.colCreated') }}</th>
-          <th>{{ $t('admin.colActions') }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="u in users" :key="u.keycloakUserId">
-          <td>{{ u.profileId }}</td>
-          <td>{{ u.displayName }}</td>
-          <td class="cell-mono cell-short">{{ u.keycloakUserId }}</td>
-          <td>{{ u.wotbAccountId }}</td>
-          <td>{{ u.wotbNickname }}</td>
-          <td>{{ u.wotbServer }}</td>
-          <td class="cell-time">{{ fmtTime(u.createdAt) }}</td>
-          <td class="cell-actions">
-            <button class="btn-sm" @click="loadDetail(u)">{{ $t('admin.view') }}</button>
-            <button class="btn-sm btn-danger" @click="startDelete(u)">{{ $t('admin.delete') }}</button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <div v-if="!loading && users.length" class="admin-table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>{{ $t('admin.colId') }}</th>
+            <th>{{ $t('admin.colDisplayName') }}</th>
+            <th>{{ $t('admin.colKcId') }}</th>
+            <th>{{ $t('admin.colAccountId') }}</th>
+            <th>{{ $t('admin.colNickname') }}</th>
+            <th>{{ $t('admin.colServer') }}</th>
+            <th>{{ $t('admin.colCreated') }}</th>
+            <th>{{ $t('admin.colActions') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="u in users" :key="u.keycloakUserId">
+            <td>{{ u.profileId }}</td>
+            <td>{{ u.displayName }}</td>
+            <td class="cell-mono cell-short">{{ u.keycloakUserId }}</td>
+            <td>{{ u.wotbAccountId }}</td>
+            <td>{{ u.wotbNickname }}</td>
+            <td>{{ u.wotbServer }}</td>
+            <td class="cell-time">{{ fmtTime(u.createdAt) }}</td>
+            <td class="cell-actions">
+              <button class="btn-sm" @click="loadDetail(u)">{{ $t('admin.view') }}</button>
+              <button class="btn-sm btn-danger" @click="startDelete(u)">{{ $t('admin.delete') }}</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
     <p v-else-if="!loading" class="admin-muted">{{ $t('admin.empty') }}</p>
 
     <!-- Detail Modal -->
@@ -176,12 +178,13 @@ function fmtTime(s) {
 </template>
 
 <style scoped>
-.admin-page { max-width: 1200px; margin: 0 auto; padding: 24px 20px; }
+.admin-page { max-width: 1200px; margin: 0 auto; padding: 24px 20px 64px; }
 .admin-page h2 { font-size: 1.3rem; margin: 0 0 4px; }
 .admin-hint { font-size: .85rem; color: var(--text-sub); margin: 0 0 16px; }
 .admin-search { display: flex; gap: 8px; margin-bottom: 16px; }
 .admin-search input { flex: 1; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); font-size: .85rem; }
-.admin-search button { padding: 8px 20px; border: none; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; font-size: .85rem; }
+.admin-search button { padding: 8px 20px; border: none; border-radius: 7px; background: var(--accent); color: var(--accent-text); cursor: pointer; font-size: .85rem; font-weight: 700; }
+.admin-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); box-shadow: var(--surface-shadow); }
 .admin-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
 .admin-table th, .admin-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border-light); white-space: nowrap; }
 .admin-table th { background: var(--bg-card2); font-weight: 600; color: var(--text-sub); font-size: .78rem; position: sticky; top: 0; }
@@ -202,8 +205,8 @@ function fmtTime(s) {
 .detail-row { display: flex; gap: 12px; padding: 4px 0; font-size: .85rem; }
 .detail-row .dl { font-weight: 600; color: var(--text-sub); min-width: 110px; flex-shrink: 0; }
 .admin-error { color: var(--error); font-size: .85rem; padding: 8px 0; }
-.admin-warn { color: #e67e22; font-size: .85rem; }
-.admin-ok { color: #27ae60; font-size: .85rem; font-weight: 600; }
+.admin-warn { color: var(--status-warn-fg); font-size: .85rem; }
+.admin-ok { color: var(--status-ok-fg); font-size: .85rem; font-weight: 700; }
 .admin-muted { color: var(--text-sub); font-size: .85rem; padding: 16px 0; text-align: center; }
 .confirm-modal { max-width: 480px; }
 .confirm-modal .danger { color: var(--error); }

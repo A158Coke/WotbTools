@@ -230,13 +230,14 @@ function arrow(scope, key) {
 </template>
 
 <style>
-.topbar { height: 56px; display: flex; align-items: center; gap: 14px; padding: 0 20px; background: var(--bg-card); border-bottom: 1px solid var(--border-header); position: sticky; top: 0; z-index: 5; }
+.topbar { min-height: 56px; display: flex; align-items: center; gap: 14px; padding: 10px 20px; background: color-mix(in srgb, var(--bg-card) 92%, transparent); border-bottom: 1px solid var(--border-header); position: sticky; top: 0; z-index: 5; box-shadow: 0 10px 24px rgba(18, 22, 18, .08); backdrop-filter: blur(14px); }
 .brand img { height: 34px; display: block; }
 .spacer { flex: 1; }
-.lang { border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text); padding: 6px 8px; }
+.lang { border: 1px solid var(--border-ghost); border-radius: 7px; background: var(--bg-card2); color: var(--text); padding: 6px 8px; }
 .themebar { display: flex; gap: 6px; }
-.themebar button, button, .filebtn { border: 1px solid var(--border-ghost); background: var(--bg-card2); color: var(--text); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
-.themebar button.active, button:not(.ghost), .filebtn:not(.ghost) { background: var(--accent); color: #fff; border-color: var(--accent); }
+.themebar button, button, .filebtn { border: 1px solid var(--border-ghost); background: var(--bg-card2); color: var(--text); border-radius: 7px; padding: 7px 12px; cursor: pointer; }
+.themebar button.active, .toolbar button:not(.ghost), .filebtn:not(.ghost) { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 700; }
+.themebar button:hover, button:hover:not(:disabled), .filebtn:hover { background: var(--bg-card-hover); }
 button:disabled { opacity: .55; cursor: default; }
 .filebtn input { display: none; }
 .wrap { max-width: 1500px; margin: 0 auto; padding: 18px 20px 32px; }
@@ -245,19 +246,20 @@ button:disabled { opacity: .55; cursor: default; }
 .chip { border: 1px solid var(--border); background: var(--bg-card2); border-radius: 6px; padding: 4px 7px; font-size: 12px; }
 .muted, .meta { color: var(--text-muted); font-size: 13px; }
 .error { color: var(--error); }
-.notice { margin-top: 10px; border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; display: flex; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+.notice { margin-top: 10px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; display: flex; gap: 10px; flex-wrap: wrap; font-size: 13px; }
 .warn { background: color-mix(in srgb, var(--accent) 9%, var(--bg-card)); }
 .fail { color: var(--error); }
-.panel { margin-top: 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+.panel { margin-top: 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 14px; box-shadow: var(--surface-shadow); }
 h2 { font-size: 16px; margin: 0 0 10px; color: var(--text-heading); }
 .tabs { margin-bottom: 8px; }
-.tabs button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-.tablewrap { overflow-x: auto; }
+.tabs button { background: transparent; color: var(--text-sub); }
+.tabs button.active { background: var(--bg-card); color: var(--accent-dark); border-color: var(--border-tab-active); font-weight: 700; }
+.tablewrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
 table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 13px; }
-th, td { border: 1px solid var(--border); padding: 6px 9px; white-space: nowrap; }
+th, td { border-bottom: 1px solid var(--border-light); padding: 6px 9px; white-space: nowrap; }
 th { background: var(--bg-card2); color: var(--text-heading); cursor: pointer; user-select: none; }
 td.num { text-align: center; }
 tr.t1 td { background: color-mix(in srgb, var(--accent) 10%, var(--bg-card)); }
-tr.t2 td { background: color-mix(in srgb, #d66b4f 10%, var(--bg-card)); }
-@media (max-width: 760px) { .topbar { height: auto; align-items: flex-start; padding: 10px; flex-wrap: wrap; } .wrap { padding: 12px; } }
+tr.t2 td { background: color-mix(in srgb, var(--bg-t2) 72%, var(--bg-card)); }
+@media (max-width: 760px) { .topbar { height: auto; align-items: flex-start; padding: 10px; flex-wrap: wrap; } .wrap { padding: 12px; } .spacer { display: none; } }
 </style>

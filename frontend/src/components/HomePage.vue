@@ -1,24 +1,48 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
+import * as api from '../utils/api.js'
 import versions from '../data/versions.json'
 const { locale, t } = useI18n()
 const { initPromise, tokenParsed } = useAuth()
 const isAdmin = ref(false)
-onMounted(async () => {
-  await initPromise
-  const tp = tokenParsed.value
-  const roles = [
-    ...(tp?.realm_access?.roles || []),
-  ]
-  isAdmin.value = roles.includes('wotbtools-admin')
+const topDamage = ref(null)
+const topDamageDisplay = computed(() => topDamage.value == null ? '--' : formatDamage(topDamage.value))
+
+onMounted(() => {
+  initPromise
+    .then(() => {
+      const tp = tokenParsed.value
+      const roles = [
+        ...(tp?.realm_access?.roles || []),
+      ]
+      isAdmin.value = roles.includes('wotbtools-admin')
+    })
+    .catch(() => {
+      isAdmin.value = false
+    })
+  loadTopDamageRecord()
 })
 
 function versionTagLabel(tag) {
   if (tag === 'add') return t('version.added')
   if (tag === 'fix') return t('version.fixed')
   return t(`version.${tag}`)
+}
+
+async function loadTopDamageRecord() {
+  try {
+    const res = await api.leaderboardTopDamage(1, 1)
+    const damage = Number(res?.items?.[0]?.damageDealt)
+    topDamage.value = Number.isFinite(damage) ? damage : null
+  } catch {
+    topDamage.value = null
+  }
+}
+
+function formatDamage(value) {
+  return String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
 }
 </script>
 
@@ -39,8 +63,8 @@ function versionTagLabel(tag) {
         <div class="armor-plate plate-a"></div>
         <div class="armor-plate plate-b"></div>
         <div class="hero-stat">
-          <span>{{ $t('leaderboard.damage_dealt') }}</span>
-          <strong>12 840</strong>
+          <span>{{ $t('home.highestDamageRecord') }}</span>
+          <strong>{{ topDamageDisplay }}</strong>
         </div>
       </div>
     </header>
@@ -186,8 +210,8 @@ function versionTagLabel(tag) {
 .ver-num { font-size: .8rem; font-weight: 600; color: var(--accent); min-width: 50px; }
 .ver-date { font-size: .75rem; color: var(--text-muted); }
 .ver-tag { font-size: .7rem; font-weight: 600; padding: 1px 6px; border-radius: 4px; }
-.ver-tag.add { background: var(--tag-bg); color: var(--accent); }
-.ver-tag.fix { background: #fcebeb33; color: #f85149; }
+.ver-tag.add { background: var(--tag-bg); color: var(--accent-dark); }
+.ver-tag.fix { background: var(--status-err-bg); color: var(--status-err-fg); }
 .ver p { font-size: .8rem; color: var(--text-muted); margin: 2px 0 0; flex-basis: 100%; }
 footer { margin-top: 32px; text-align: center; font-size: .75rem; color: var(--text-muted); }
 @media (max-width: 820px) {
