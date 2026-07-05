@@ -398,7 +398,8 @@
         "boosterUserSearchHint": "搜索用户名或 ID...",
         "noUsersFound": "未找到匹配用户",
         "delete": "删除",
-        "boosterAvailable": "可用"
+        "boosterAvailable": "可用",
+        "deleteBoosterConfirm": "确认删除打手 {name}？"
     },
     "admin": {
         "title": "用户管理",
@@ -436,6 +437,7 @@
     "home": {
         "replayTitle": "回放提取器",
         "replayDesc": "上传 .wotbreplay 回放文件，提取战斗数据并导出 Excel。",
+        "highestDamageRecord": "最高伤害记录",
         "leaderboardDesc": "随机战斗的单场伤害排行 - 上传回放即可上榜。",
         "available": "可用",
         "planned": "规划中",

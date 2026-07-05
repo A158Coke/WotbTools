@@ -20,11 +20,18 @@
 ### Changed
 - Keycloak 从 26.6.3 升级至 26.6.4。
 - **前端视觉系统**：统一 Vue SPA 全局色板、按钮、表格、上传区、顶栏和深浅色变量，改为 Blitz 工具站风格。
+- **前端页面打磨**：统一回放解析、排行榜、个人中心、陪练、管理员和扩展页的卡片、表格、按钮、状态徽章和移动端间距。
+- **首页最高伤害记录**：首屏伤害 tag 改为读取 `/api/leaderboard/top-damage?page=1&size=1` 的当前最高单场伤害。
+- 删除未被入口引用的旧 `VersionPage.vue`，版本历史继续由首页 `versions.json` 渲染。
 
 ### Fixed
 - CI/CD 部署：`docker compose pull` 添加 3 次重试。
 - 前端 nginx 增加 UTF-8 charset。
 - Keycloak `check-sso` 配置 `silentCheckSsoRedirectUri`，避免公共首页本地预览被静默登录流程整页跳转。
+- 回放解析评分徽章：最低评分为 `0` 时也正确显示金 shit，且全员同分时不误发最高/最低标记。
+- 评分等级颜色：补齐前端 `r-elite` / `r-great` / `r-good` / `r-mid` / `r-poor` 样式，避免评分徽章只显示默认底色。
+- 评分规则弹窗：区间符号改为 ASCII，避免终端或浏览器编码异常时出现乱码。
+- `/extended` 独立入口补充主题变量，避免扩展分析页脱离主入口时丢失深浅色样式。
 
 ## [2.0.0] - 2026-06-29
 

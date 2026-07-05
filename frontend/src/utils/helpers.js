@@ -14,7 +14,7 @@ export const EXTENDED_ONLY_PLAYER_KEYS = new Set([
   'rank'
 ])
 
-export const COL_GROUP_CAT = {
+const COL_GROUP_CAT = {
   nickname: 'identity', clan: 'identity', account_id: 'extra',
   tank_name: 'vehicle', tank_tier: 'vehicle', tank_type: 'vehicle', tank_nation: 'vehicle',
   alpha_damage: 'vehicle', tank_id: 'extra',
@@ -57,22 +57,29 @@ export function ratingTier(v) {
 
 export function medal(rows, key, val) {
   if (!rows?.length) return ''
-  let maxV = -Infinity, minV = Infinity
-  for (const r of rows) {
-    const v = Number(r.cells[key]) || 0
-    if (v > maxV) maxV = v
-    if (v < minV) minV = v
-  }
-  const v = Number(val) || 0
-  if (v === maxV && maxV > 0) return 'first'
-  if (v === minV && minV > 0) return 'last'
+  const values = rows
+    .map(r => finiteNumber(r?.cells?.[key]))
+    .filter(Number.isFinite)
+  if (!values.length) return ''
+  const maxV = Math.max(...values)
+  const minV = Math.min(...values)
+  const v = finiteNumber(val)
+  if (!Number.isFinite(v) || maxV === minV) return ''
+  if (v === maxV) return 'first'
+  if (v === minV) return 'last'
   return ''
 }
 
+function finiteNumber(value) {
+  if (value == null || value === '') return NaN
+  const n = Number(value)
+  return Number.isFinite(n) ? n : NaN
+}
+
 export function tierRange(i) {
-  if (i === 0) return '≥ ' + RATING_TIERS[0].min
+  if (i === 0) return '>= ' + RATING_TIERS[0].min
   if (RATING_TIERS[i].min === 0) return '< ' + RATING_TIERS[i - 1].min
-  return RATING_TIERS[i].min + '–' + (RATING_TIERS[i - 1].min - 1)
+  return RATING_TIERS[i].min + ' - ' + (RATING_TIERS[i - 1].min - 1)
 }
 
 export function mapLabel(m) {

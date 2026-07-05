@@ -398,7 +398,8 @@
         "boosterUserSearchHint": "Search user by name or ID...",
         "noUsersFound": "No matching users",
         "delete": "Delete",
-        "boosterAvailable": "Available"
+        "boosterAvailable": "Available",
+        "deleteBoosterConfirm": "Delete booster {name}?"
     },
     "admin": {
         "title": "User Management",
@@ -436,6 +437,7 @@
     "home": {
         "replayTitle": "Replay Extractor",
         "replayDesc": "Upload .wotbreplay files, extract battle data and export to Excel.",
+        "highestDamageRecord": "Highest Damage Record",
         "leaderboardDesc": "Damage leaderboard for random battles.",
         "available": "Available",
         "planned": "Planned",
