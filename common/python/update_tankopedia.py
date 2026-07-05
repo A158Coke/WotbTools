@@ -79,7 +79,54 @@ def f1(fields, num, default=None):
         return default
     return v[0]
 
+
+def as_int(raw, default=None):
+    if isinstance(raw, int):
+        return raw
+    return default
+
+
+def shell_damage(raw):
+    if not isinstance(raw, (bytes, bytearray)):
+        return None
+    shell = decode_protobuf(raw)
+    return as_int(f1(shell, FIELD_SHELL_DAMAGE))
+
+
+def collect_gun_candidates(fields, fallback_tier=0):
+    candidates = []
+    shells = fields.get(FIELD_SHELLS, [])
+    if shells:
+        damages = [shell_damage(shell) for shell in shells]
+        damages = [damage for damage in damages if damage and damage > 0]
+        if damages:
+            tier = as_int(f1(fields, FIELD_GUN_TIER), fallback_tier)
+            candidates.append((tier, damages[0]))
+
+    child_tier = as_int(f1(fields, FIELD_MODULE_TIER), fallback_tier)
+    for values in fields.values():
+        for value in values:
+            if isinstance(value, (bytes, bytearray)):
+                candidates.extend(collect_gun_candidates(decode_protobuf(value), child_tier))
+    return candidates
+
+
+def alpha_damage(td):
+    candidates = []
+    for raw in td.get(FIELD_GUN_MODULES, []):
+        if isinstance(raw, (bytes, bytearray)):
+            candidates.extend(collect_gun_candidates(decode_protobuf(raw)))
+    if not candidates:
+        return None
+    max_tier = max(tier for tier, _ in candidates)
+    return max(damage for tier, damage in candidates if tier == max_tier)
+
 URL = "https://assets.blitzkit.app/definitions/tanks.pb"
+FIELD_GUN_MODULES = 20
+FIELD_SHELLS = 10
+FIELD_SHELL_DAMAGE = 4
+FIELD_GUN_TIER = 9
+FIELD_MODULE_TIER = 7
 CLASS = {0: "轻坦", 1: "中坦", 2: "重坦", 3: "TD"}
 NATION = {
     "ussr": "苏联", "germany": "德国", "usa": "美国", "china": "中国",
@@ -119,6 +166,7 @@ def main():
             "class": CLASS.get(f1(td, 17, 0), ""),
             "nation": NATION.get(nation, nation),
             "premium": (f1(td, 13) == 1),
+            "alphaDamage": alpha_damage(td),
         }
     obj = {
         "meta": {
@@ -129,10 +177,10 @@ def main():
     }
     # 车辆库是 Python 与 Java 两侧共用的单一来源, 写到仓库的 common/tankopedia.json。
     here = os.path.dirname(os.path.abspath(__file__))
-    out_path = os.path.normpath(os.path.join(here, "..", "common", "tankopedia.json"))
+    out_path = os.path.normpath(os.path.join(here, "..", "tankopedia.json"))
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as fp:
-        json.dump(obj, fp, ensure_ascii=False, separators=(",", ":"))
+        json.dump(obj, fp, ensure_ascii=False, indent=2)
     print(f"已写入 {out_path}: {len(data)} 辆车")
 
 
