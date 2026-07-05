@@ -35,7 +35,7 @@ function onDrop(i) {
       <li v-for="(key, idx) in order" :key="key" draggable="true"
           @dragstart="onDragStart(idx)" @dragover.prevent @drop="onDrop(idx)"
           :class="{ dragging: dragIdx === idx }">
-        <span class="grip" title="⋮⋮">⋮⋮</span>
+        <span class="grip" :title="$t('col_picker.drag')">::</span>
         <label class="colitem">
           <input type="checkbox" :checked="visible.includes(key)" @change="$emit('toggle', { key, scope })" />
           {{ $t((scope === 'agg' ? 'agg_labels.' : 'player_labels.') + key) }}

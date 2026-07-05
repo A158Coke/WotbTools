@@ -1,4 +1,4 @@
-export const THEME_KEY = 'wotbtools-theme'
+const THEME_KEY = 'wotbtools-theme'
 
 const THEME_COOKIE = new RegExp('(?:^|;\\s*)' + THEME_KEY + '=([^;]+)')
 
@@ -13,7 +13,7 @@ export function saveTheme(value) {
   try { localStorage.setItem(THEME_KEY, value) } catch (_) { /* quota / private mode */ }
 }
 
-export function resolveTheme(saved) {
+function resolveTheme(saved) {
   if (!saved || saved === 'auto') {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   }

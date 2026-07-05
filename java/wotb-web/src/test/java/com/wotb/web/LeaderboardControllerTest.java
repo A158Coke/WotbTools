@@ -1,4 +1,4 @@
-package test.test.com.wotb.web;
+package com.wotb.web;
 
 import com.wotb.web.leaderboard.controller.LeaderboardController;
 import com.wotb.web.leaderboard.dto.LeaderboardPageDto;
@@ -66,7 +66,6 @@ class LeaderboardControllerTest {
         final String json = mvc(svc).perform(get("/api/leaderboard/top-damage"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        // 验证返回的是 page DTO 而非 flat list
         Assertions.assertThat(json).contains("\"items\"");
         Assertions.assertThat(json).contains("\"totalItems\"");
         Assertions.assertThat(json).contains("\"FV4005\"");

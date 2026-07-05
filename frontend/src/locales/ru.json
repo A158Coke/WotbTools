@@ -55,7 +55,8 @@
         "desc": "Колонки — отметьте для показа, перетащите для сортировки",
         "select_all": "Выбрать все",
         "reset": "Сброс",
-        "done": "Готово"
+        "done": "Готово",
+        "drag": "Перетащите для сортировки"
     },
     "metric": {
         "battles": "Боёв",
@@ -148,6 +149,10 @@
         "upload_failed": "Ошибка загрузки",
         "upload_title": "Загрузите реплей для рейтинга",
         "upload_btn": "Выбрать реплей",
+        "uploading": "Загрузка...",
+        "invalid_file": "Выберите файл .wotbreplay",
+        "upload_skipped": "Пропущено: {reason}",
+        "upload_skipped_default": "Уже существует или автор реплея не определен",
         "all_tanks": "Все танки",
         "filter_tank": "Фильтр",
         "filter_by_tank": "Нажмите для рейтинга по танку",
@@ -281,10 +286,17 @@
         "loginMethod": "Метод входа",
         "authService": "Провайдер",
         "securityDesc": "Мы не храним ваш пароль. Аутентификация через Keycloak.",
+        "boosterTitle": "Профиль тренера",
+        "boosterNickname": "Ник тренера",
+        "boosterLevel": "Уровень тренера",
+        "boosterActiveAssignments": "Активные заказы",
+        "boosterActive": "Активен",
+        "boosterInactive": "Неактивен",
         "profile": "Профиль",
         "identity": "Личность",
         "authProvider": "Провайдер",
         "notBoundWotbAccount": "Аккаунт WoTB не привязан",
+"myAssignments": "Мои заказы",
         "displayName": "Имя",
         "edit": "Ред.",
         "save": "Сохранить",
@@ -296,7 +308,13 @@
         "records": "Записи рейтинга",
         "noRecords": "Нет записей"
     },
+    "replay": {
+        "no_files": "??????? ???????? ?????? ??? ?????",
+        "preview_failed": "?????? ???????",
+        "export_failed": "?????? ????????"
+    },
     "extended": {
+        "nav": "Rating V2",
         "title": "Расширенный анализ",
         "preview": "Разобрать поля",
         "rating": "Анализ Rating",
@@ -387,7 +405,8 @@
         "boosterUserSearchHint": "Поиск пользователя по имени или ID...",
         "noUsersFound": "Ничего не найдено",
         "delete": "Удалить",
-        "boosterAvailable": "Доступен"
+        "boosterAvailable": "Доступен",
+        "deleteBoosterConfirm": "Удалить бустера {name}?"
     },
     "admin": {
         "title": "Управление пользователями",
@@ -425,7 +444,10 @@
     "home": {
         "replayTitle": "Анализатор реплеев",
         "replayDesc": "Загружайте .wotbreplay файлы и экспортируйте данные в Excel.",
+        "highestDamageRecord": "Рекорд урона",
         "leaderboardDesc": "Рейтинг урона за случайные бои.",
+        "ratingV2Title": "Анализ Rating V2",
+        "ratingV2Desc": "Композитный рейтинг по потенциальному урону, содействию, KAST, Impact, мульти-урону и фрагам.",
         "available": "Доступно",
         "planned": "Планируется",
         "statsCardTitle": "Карточка статистики",

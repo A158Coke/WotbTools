@@ -55,7 +55,8 @@
         "desc": "Columns — check to show, drag to reorder",
         "select_all": "Select All",
         "reset": "Reset",
-        "done": "Done"
+        "done": "Done",
+        "drag": "Drag to reorder"
     },
     "metric": {
         "battles": "Battles",
@@ -148,6 +149,10 @@
         "upload_failed": "Upload failed",
         "upload_title": "Upload replay to rank",
         "upload_btn": "Select Replay",
+        "uploading": "Uploading...",
+        "invalid_file": "Please select a .wotbreplay file",
+        "upload_skipped": "Skipped: {reason}",
+        "upload_skipped_default": "Already exists or recorder cannot be identified",
         "all_tanks": "All Tanks",
         "filter_tank": "Filter",
         "filter_by_tank": "Click to view tank leaderboard",
@@ -281,10 +286,17 @@
         "loginMethod": "Login method",
         "authService": "Auth provider",
         "securityDesc": "We do not store your password. All auth is handled by Keycloak.",
+        "boosterTitle": "Coach Profile",
+        "boosterNickname": "Coach Nickname",
+        "boosterLevel": "Coach Level",
+        "boosterActiveAssignments": "Active Orders",
+        "boosterActive": "Active",
+        "boosterInactive": "Inactive",
         "profile": "Profile",
         "identity": "Identity",
         "authProvider": "Auth provider",
         "notBoundWotbAccount": "No WoTB player account linked",
+"myAssignments": "My Orders",
         "displayName": "Display Name",
         "edit": "Edit",
         "save": "Save",
@@ -296,7 +308,13 @@
         "records": "Leaderboard Records",
         "noRecords": "No records yet. Upload replays to associate."
     },
+    "replay": {
+        "no_files": "Select replay files or a folder first",
+        "preview_failed": "Preview failed",
+        "export_failed": "Export failed"
+    },
     "extended": {
+        "nav": "Rating V2",
         "title": "Extended analysis",
         "preview": "Parse extended fields",
         "rating": "Rating analysis",
@@ -387,7 +405,8 @@
         "boosterUserSearchHint": "Search user by name or ID...",
         "noUsersFound": "No matching users",
         "delete": "Delete",
-        "boosterAvailable": "Available"
+        "boosterAvailable": "Available",
+        "deleteBoosterConfirm": "Delete booster {name}?"
     },
     "admin": {
         "title": "User Management",
@@ -425,7 +444,10 @@
     "home": {
         "replayTitle": "Replay Extractor",
         "replayDesc": "Upload .wotbreplay files, extract battle data and export to Excel.",
+        "highestDamageRecord": "Highest Damage Record",
         "leaderboardDesc": "Damage leaderboard for random battles.",
+        "ratingV2Title": "Rating V2 Analysis",
+        "ratingV2Desc": "A composite rating from potential damage, assist, KAST, Impact, multi-damage rate and kills.",
         "available": "Available",
         "planned": "Planned",
         "statsCardTitle": "Stats Card",

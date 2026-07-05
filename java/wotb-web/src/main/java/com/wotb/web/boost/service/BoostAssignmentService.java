@@ -6,11 +6,13 @@ import com.wotb.web.boost.entity.BoostRequestAssignment;
 import com.wotb.web.boost.entity.BoosterProfile;
 import com.wotb.web.boost.enums.BoostAssignmentStatus;
 import com.wotb.web.boost.enums.BoostRequestStatus;
+import com.wotb.web.boost.enums.BoostRequestType;
 import com.wotb.web.boost.repository.BoostRequestAssignmentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
 /** 分配服务。 */
@@ -36,6 +38,19 @@ public class BoostAssignmentService {
         return assignmentRepository.findByRequestIdAndUnassignedAtIsNull(requestId);
     }
 
+    @Transactional(readOnly = true)
+    public List<BoostAssignmentDto> findByBooster(final Long boosterId) {
+        return assignmentRepository.findByBoosterIdAndUnassignedAtIsNull(boosterId)
+                .stream()
+                .map(a -> {
+                    final BoostRequest req = requestService.getById(a.getRequestId());
+                    final String typeLabel = BoostRequestType.from(req.getRequestType()).label();
+                    return mapper.toDto(a, boosterService.getById(a.getBoosterId()),
+                            typeLabel, req.getTargetDescription());
+                })
+                .toList();
+    }
+
     @Transactional
     public BoostAssignmentDto assign(final Long requestId, final Long boosterId, final String note) {
         if (assignmentRepository.findByRequestIdAndUnassignedAtIsNull(requestId).isPresent()) {
@@ -49,8 +64,11 @@ public class BoostAssignmentService {
         }
 
         final BoosterProfile booster = boosterService.getById(boosterId);
+        if (!"ACTIVE".equalsIgnoreCase(booster.getStatus())) {
+            throw new IllegalArgumentException("打手当前状态不可接单");
+        }
         if (booster.getAvailable() == null || !booster.getAvailable()) {
-            throw new IllegalArgumentException("BOOSTER_NOT_AVAILABLE");
+            throw new IllegalArgumentException("打手不可用");
         }
 
         final OffsetDateTime now = OffsetDateTime.now();

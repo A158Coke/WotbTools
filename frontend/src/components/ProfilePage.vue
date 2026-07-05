@@ -3,7 +3,6 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import * as api from '../utils/api-boost.js'
-import { getMyBoosterProfile } from '../utils/api-boost.js'
 import { mapLabel } from '../utils/helpers.js'
 
 const { t } = useI18n()
@@ -20,6 +19,7 @@ const editNickname = ref('')
 const editError = ref('')
 const records = ref([])
 const boosterInfo = ref(null)
+const boosterAssignments = ref([])
 
 onMounted(async () => {
   try {
@@ -51,6 +51,9 @@ async function loadProfile() {
   }
   if (profile.value?.wotbAccountId) { loadRecords() }
   loadBoosterInfo()
+  if (tokenParsed.value?.realm_access?.roles?.includes('booster')) {
+    try { boosterAssignments.value = await api.getMyBoosterAssignments() } catch {}
+  }
 }
 
 const displayName = computed(() =>
@@ -88,7 +91,7 @@ async function saveAccount() {
   } catch (e) { editError.value = e.message }
 }
 async function loadBoosterInfo() {
-  try { boosterInfo.value = await getMyBoosterProfile() } catch { boosterInfo.value = null }
+  try { boosterInfo.value = await api.getMyBoosterProfile() } catch { boosterInfo.value = null }
 }
 async function loadRecords() {
   try { records.value = await api.getUserLeaderboardRecords() } catch { records.value = [] }
@@ -182,7 +185,7 @@ async function removeAccount() {
 
           <!-- Leaderboard records -->
           <div v-if="profile.wotbAccountId" class="profile-card profile-section">
-            <h3 class="card-title" style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border)">{{ $t('profile.records') }}</h3>
+            <h3 class="card-title section-title-line">{{ $t('profile.records') }}</h3>
             <div v-if="records.length" class="records-table-wrap">
               <table class="records-table">
                 <thead><tr><th>{{ $t('profile.tank') }}</th><th class="rec-dmg">{{ $t('profile.damage') }}</th><th>{{ $t('profile.map') }}</th></tr></thead>
@@ -220,6 +223,24 @@ async function removeAccount() {
               <p class="text-muted">{{ $t('profile.securityDesc') }}</p>
             </div>
           </div>
+
+          <!-- Booster Assignments -->
+          <div v-if="boosterAssignments.length" class="profile-card profile-section">
+            <div class="section-head">
+              <h3 class="card-title">{{ $t('profile.myAssignments') }}</h3>
+            </div>
+            <div v-for="a in boosterAssignments" :key="a.id" class="assign-card">
+              <div class="assign-head">
+                <span class="assign-type">{{ a.requestTypeLabel || $t('boost.requestType') }}</span>
+                <span class="assign-status-tag" :class="a.status?.toLowerCase()">{{ a.statusLabel }}</span>
+              </div>
+              <div class="assign-desc">{{ a.targetDescription || '—' }}</div>
+              <div class="assign-meta">
+                <span>{{ $t('boost.assigned') }}: {{ a.assignedAt ? a.assignedAt.substring(0, 10) : '—' }}</span>
+                <span v-if="a.note">· {{ a.note }}</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -229,17 +250,18 @@ async function removeAccount() {
 </template>
 
 <style scoped>
-.profile-page { max-width: 900px; margin: 0 auto; padding: 24px 20px 64px; }
-.profile-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; }
+.profile-page { max-width: 1040px; margin: 0 auto; padding: 24px 20px 64px; }
+.profile-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--surface-shadow); }
 .profile-message { max-width: 400px; margin: 60px auto; padding: 40px; text-align: center; }
 .profile-empty { padding: 24px 0; text-align: center; color: var(--text-sub); font-size: .9rem; }
-.profile-section { padding: 24px; margin-bottom: 16px; }
+.profile-section { padding: 20px; margin-bottom: 16px; }
 .card-title { font-size: .95rem; font-weight: 600; color: var(--text-heading); margin: 0; }
+.section-title-line { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
 .section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
 .section-actions { display: flex; gap: 6px; }
-.profile-hero { display: flex; align-items: center; justify-content: space-between; padding: 28px 32px; margin-bottom: 24px; }
+.profile-hero { display: flex; align-items: center; justify-content: space-between; padding: 24px 28px; margin-bottom: 24px; background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 10%, var(--bg-card)), var(--bg-card)); }
 .hero-left { display: flex; align-items: center; gap: 20px; }
-.hero-avatar { width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, #2563eb, #7c3aed); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; font-weight: 700; flex-shrink: 0; }
+.hero-avatar { width: 56px; height: 56px; border-radius: 8px; background: linear-gradient(135deg, var(--accent), var(--accent-hover)); color: var(--accent-text); display: flex; align-items: center; justify-content: center; font-size: 1.4rem; font-weight: 800; flex-shrink: 0; box-shadow: 0 12px 26px var(--accent-shadow); }
 .hero-name { font-size: 1.3rem; font-weight: 700; color: var(--text-heading); margin: 0 0 6px; }
 .hero-subtitle { font-size: .85rem; color: var(--text-sub); margin: 0; }
 .profile-body { display: flex; gap: 24px; align-items: flex-start; }
@@ -252,30 +274,39 @@ async function removeAccount() {
 .account-row { display: flex; justify-content: space-between; font-size: .88rem; color: var(--text); }
 .account-row span { color: var(--text-sub); }
 .account-row code { font-family: monospace; font-size: .8rem; color: var(--accent); }
-.badge-ok { font-size: .72rem; padding: 1px 8px; border-radius: 8px; background: #dcfce7; color: #166534; font-weight: 600; }
+.badge-ok { font-size: .72rem; padding: 2px 8px; border-radius: 6px; background: var(--status-ok-bg); color: var(--status-ok-fg); font-weight: 700; }
 .edit-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
 .edit-form .edit-row { margin-bottom: 10px; }
 .edit-form label { display: block; font-size: .8rem; color: var(--text-sub); margin-bottom: 3px; }
 .edit-input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-size: .88rem; width: 200px; font-family: inherit; }
-.error { color: #dc3545; font-size: .82rem; }
+.error { color: var(--error); font-size: .82rem; }
 .text-muted { font-size: .8rem; color: var(--text-sub); line-height: 1.5; }
 .security-info { display: flex; flex-direction: column; gap: 8px; }
 .sec-row { display: flex; justify-content: space-between; font-size: .88rem; }
 .sec-row span { color: var(--text-sub); }
 .sec-row code { font-family: monospace; font-size: .78rem; color: var(--accent); }
 .booster-info { display: flex; flex-direction: column; gap: 8px; }
-.profile-status-ok { font-size: .8rem; color: #166534; font-weight: 600; }
-.profile-status-warn { font-size: .8rem; color: #b45309; font-weight: 600; }
-.btn-primary { padding: 8px 20px; border: none; border-radius: 10px; background: var(--accent); color: #fff; font-size: .88rem; cursor: pointer; font-family: inherit; }
+.profile-status-ok { font-size: .8rem; color: var(--status-ok-fg); font-weight: 700; }
+.profile-status-warn { font-size: .8rem; color: var(--status-warn-fg); font-weight: 700; }
+.btn-primary { padding: 8px 20px; border: none; border-radius: 7px; background: var(--accent); color: var(--accent-text); font-size: .88rem; cursor: pointer; font-family: inherit; font-weight: 700; }
 .btn-primary:hover { background: var(--accent-hover); }
-.btn-sm { padding: 5px 12px; font-size: .8rem; border-radius: 8px; }
-.btn-ghost { padding: 8px 18px; border: 1px solid var(--border); border-radius: 10px; background: transparent; color: var(--text); font-size: .85rem; cursor: pointer; font-family: inherit; }
-.btn-ghost.btn-sm { padding: 5px 12px; font-size: .8rem; border-radius: 8px; }
+.btn-sm { padding: 5px 12px; font-size: .8rem; border-radius: 6px; }
+.btn-ghost { padding: 8px 18px; border: 1px solid var(--border-ghost); border-radius: 7px; background: transparent; color: var(--text); font-size: .85rem; cursor: pointer; font-family: inherit; }
+.btn-ghost.btn-sm { padding: 5px 12px; font-size: .8rem; border-radius: 6px; }
 .btn-ghost:hover { background: var(--bg-card2); }
 .records-table-wrap { overflow-x: auto; }
 .records-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
 .records-table th { text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); color: var(--text-sub); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
 .records-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-light); color: var(--text); }
+.assign-card { padding: 12px; border: 1px solid var(--border-light); border-radius: 8px; margin-bottom: 8px; background: var(--bg); }
+.assign-card:last-child { margin-bottom: 0; }
+.assign-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.assign-type { font-weight: 600; font-size: .88rem; color: var(--text-heading); }
+.assign-status-tag { font-size: .75rem; padding: 2px 8px; border-radius: 6px; background: var(--bg-chip); color: var(--text-sub); }
+.assign-status-tag.assigned { background: var(--status-info-bg); color: var(--status-info-fg); }
+.assign-status-tag.cancelled { background: var(--status-err-bg); color: var(--status-err-fg); }
+.assign-desc { font-size: .85rem; color: var(--text); margin-bottom: 4px; line-height: 1.4; }
+.assign-meta { font-size: .78rem; color: var(--text-sub); }
 .records-table tbody tr:hover { background: var(--bg-card2); }
 .rec-dmg { text-align: right !important; font-variant-numeric: tabular-nums; font-weight: 600; width: 90px; }
 .rec-tank { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

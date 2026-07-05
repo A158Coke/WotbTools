@@ -132,7 +132,7 @@ args (25B body):
   flag:        u8          // 末尾标志 (01=正常, 03=致命一击?)
 ```
 
-方法调用在 victim 实体上（methodEid == victimEid）。sub=3 事件累计到达 `damageReceived` 阈值时即判定为阵亡。
+方法调用在 victim 实体上（methodEid == victimEid）。sub=3 事件累计到达 `damageReceived` 阈值时即判定为阵亡；同一事件流也会累计 killer→victim 的 direct damage / penetrations，用于填充 `PlayerResult.killVictims` 并驱动潜在均伤。
 
 ### Type 10：Position（含 space_id）
 
@@ -187,7 +187,7 @@ survivalTimeSec:
        c) 否则 → Position
 ```
 
-**Layer 2 (damageDeathTimes)：** 遍历 Type 8 subtype 8 body[13]=3 (direct HP damage) 事件，按时间累计 victimEid→accountId 的 HP 伤害量。threshold = min(proto.damageReceived, sub3_total) — 当累计值首次 ≥ threshold 时，该事件时钟即为死亡时间。解决旧 EntityLeave 假阳性（临时离场而非阵亡）和 Position 在部分模式中实体不停止的问题。
+**Layer 2 (damageDeathTimes)：** 遍历 Type 8 subtype 8 body[13]=3 (direct HP damage) 事件，按时间累计 victimEid→accountId 的 HP 伤害量。threshold = min(proto.damageReceived, sub3_total) — 当累计值首次 ≥ threshold 时，该事件时钟即为死亡时间；当前事件的 attacker 会被推断为 killer，并把该 killer 对 victim 的累计 direct damage / penetrations 写入 `killVictims`。这解决旧 EntityLeave 假阳性（临时离场而非阵亡）和 Position 在部分模式中实体不停止的问题；特殊伤害缺失时仍保守回退。
 
 **Layer 3 假阳性检测：** EntityLeave 常有临时离场事件被误判为阵亡。若同玩家有 EntityLeave 和 Position 数据，且最后 Position 时间比最后 EntityLeave 晚 5 秒以上，以 Position 为准。
 

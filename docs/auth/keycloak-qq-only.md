@@ -1,4 +1,4 @@
-# Keycloak + QQ-only Authentication 设计
+# Keycloak Authentication 设计
 
 ## 背景
 
@@ -9,10 +9,10 @@ WotBTools 后续用户功能（leaderboard 记录归属、QQ 通知绑定、Blit
 ## 核心决策
 
 ```
-Keycloak + QQ Identity Provider only
+Keycloak-hosted authentication + optional QQ Identity Provider
 ```
 
-- WotBTools 不做本地用户名/密码注册。
+- WotBTools 不做本地用户名/密码注册表单，注册由 Keycloak realm 托管。
 - Keycloak 负责认证。
 - 用户只能通过 QQ IdP 登录。
 - 后端只信任 Keycloak 签发的 JWT。
@@ -44,9 +44,9 @@ User clicks "Login with QQ"
 - Realm: `wotbtools`
 - Client: `wotbtools-web` (public, Standard flow ON, Direct/Implicit OFF)
 - Redirect URIs: `https://wotbtools.com/*`, `http://localhost:5173/*`
-- 关闭 User registration、Forgot password、Direct access grants
-- Browser Flow 禁用 Username Password Form
-- QQ 设为默认 IdP，目标：用户只看到"使用 QQ 登录"
+- 开启 User registration，关闭 Forgot password、Direct access grants
+- Browser Flow 使用 Keycloak 托管登录/注册页
+- QQ IdP 可作为第三方登录入口
 
 ## QQ IdP 接入风险
 
@@ -233,7 +233,7 @@ GET  /api/me    (返回含 blitzAccountId、teams、roles)
 1. 部署 `auth.wotbtools.com` Keycloak
 2. 创建 `wotbtools` realm + `wotbtools-web` client
 3. 研究 QQ IdP 接入可行性
-4. 禁用 Keycloak 本地登录/注册
+4. 启用 Keycloak 托管注册，禁用 Direct access grants
 5. 后端接 Spring Security Resource Server
 6. 新增 `app_user` 表 (Flyway migration)
 7. 新增 `GET /api/me`
@@ -243,7 +243,7 @@ GET  /api/me    (返回含 blitzAccountId、teams、roles)
 
 ## 暂时不做
 
-- 用户名密码/邮箱注册/忘记密码
+- 自建用户名密码/邮箱注册/忘记密码
 - 自建登录表单
 - 保存密码
 - QQ Bot 发消息
@@ -255,8 +255,8 @@ GET  /api/me    (返回含 blitzAccountId、teams、roles)
 ## 验收标准
 
 - Keycloak 运行在 `auth.wotbtools.com`
-- 仅 QQ IdP 登录可用
-- Keycloak 无用户名密码入口
+- Keycloak 登录/注册页可用
+- 前端无自建用户名密码入口
 - 后端验证 Keycloak JWT
 - `/api/me` 需登录，可创建/更新 app_user
 - 现有 replay/leaderboard 不受影响
