@@ -93,7 +93,7 @@ function selectUser(user) {
 }
 
 async function deleteBooster(b) {
-  if (!confirm(`确认删除打手 ${b.nickname}？`)) return
+  if (!confirm(t('boost.deleteBoosterConfirm', { name: b.nickname }))) return
   try {
     await api.adminBoostBoosterDelete(b.id)
     loadBoosters(boosterPage.value.page)
@@ -475,7 +475,7 @@ function switchTab(t) {
         <div class="form-row">
           <label><input type="checkbox" v-model="boosterForm.available" /> {{ $t('boost.boosterAvailable') }}</label>
         </div>
-        <div class="form-row" style="position:relative">
+        <div class="form-row user-search-row">
           <label>{{ $t('boost.boosterUserSearch') }}</label>
           <input v-model="userSearchQuery" @input="searchUsers()" @focus="searchUsers()" @blur="setTimeout(() => showUserSearch = false, 200)" maxlength="100" :placeholder="$t('boost.boosterUserSearchHint')" />
           <div v-if="showUserSearch && userSearchResults.length" class="user-search-dropdown">
@@ -553,71 +553,77 @@ function switchTab(t) {
 </template>
 
 <style scoped>
-.boost-page { max-width: 800px; margin: 0 auto; padding: 20px; }
-.boost-tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
-.boost-tabs button { padding: 8px 16px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); border-radius: 6px 6px 0 0; cursor: pointer; font-size: 14px; }
-.boost-tabs button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-.boost-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 0 8px 8px 8px; padding: 20px; }
+.boost-page { max-width: 1040px; margin: 0 auto; padding: 24px 20px 64px; }
+.boost-tabs { display: inline-flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; padding: 3px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card2); }
+.boost-tabs button { padding: 8px 16px; border: 1px solid transparent; background: transparent; color: var(--text-sub); border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; }
+.boost-tabs button:hover { color: var(--text-label); background: var(--bg-card-hover); }
+.boost-tabs button.active { background: var(--bg-card); color: var(--accent-dark); border-color: var(--border-tab-active); box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.boost-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; box-shadow: var(--surface-shadow); }
 .card-title { margin: 0 0 12px; font-size: 18px; }
-.boost-warning { background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; color: #856404; }
+.boost-warning { background: var(--status-warn-bg); border: 1px solid var(--border-warn); border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; color: var(--status-warn-fg); }
 .boost-form .form-row { margin-bottom: 12px; }
 .boost-form label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-secondary); }
-.boost-form input, .boost-form select, .boost-form textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 14px; box-sizing: border-box; }
+.boost-form input, .boost-form select, .boost-form textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); color: var(--text); font-size: 14px; box-sizing: border-box; }
 .boost-form textarea { resize: vertical; }
-.boost-error { color: #dc3545; font-size: 13px; margin: 8px 0; }
-.boost-success { color: #28a745; font-size: 13px; margin: 8px 0; }
+.boost-error { color: var(--error); font-size: 13px; margin: 8px 0; }
+.boost-success { color: var(--status-ok-fg); font-size: 13px; margin: 8px 0; }
 .boost-loading, .boost-empty, .boost-login { text-align: center; padding: 40px; color: var(--text-secondary); }
 .boost-hint { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
 
-.my-item, .admin-item, .booster-item { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 8px; }
+.my-item, .admin-item, .booster-item { border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 10px; background: linear-gradient(180deg, var(--bg-card), color-mix(in srgb, var(--bg-card2) 36%, var(--bg-card))); }
 .my-header, .admin-header, .booster-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
 .my-type, .admin-player { font-weight: 600; }
 .my-time, .admin-time { color: var(--text-secondary); font-size: 12px; margin-left: auto; }
 .my-desc, .admin-desc { margin: 6px 0; font-size: 14px; }
 .my-meta, .admin-meta { font-size: 12px; color: var(--text-secondary); display: flex; gap: 12px; flex-wrap: wrap; }
 .my-actions, .admin-actions, .booster-actions { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
-.my-assigned { color: #28a745; font-weight: 600; }
+.my-assigned { color: var(--status-ok-fg); font-weight: 700; }
 
-.badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
-.badge-info { background: #d1ecf1; color: #0c5460; }
-.badge-warn { background: #fff3cd; color: #856404; }
-.badge-ok { background: #d4edda; color: #155724; }
-.badge-err { background: #f8d7da; color: #721c24; }
+.badge { font-size: 11px; padding: 2px 7px; border-radius: 6px; font-weight: 700; }
+.badge-info { background: var(--status-info-bg); color: var(--status-info-fg); }
+.badge-warn { background: var(--status-warn-bg); color: var(--status-warn-fg); }
+.badge-ok { background: var(--status-ok-bg); color: var(--status-ok-fg); }
+.badge-err { background: var(--status-err-bg); color: var(--status-err-fg); }
 
 .admin-filters { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .admin-filters select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); }
 .admin-count { font-size: 12px; color: var(--text-secondary); }
 
-.assign-box { margin-top: 8px; padding: 10px; background: var(--bg); border-radius: 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.assign-box select, .assign-box input { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font-size: 13px; }
+.assign-box { margin-top: 10px; padding: 12px; background: var(--bg); border: 1px solid var(--border-light); border-radius: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.assign-box select, .assign-box input { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 13px; }
 .mr { margin-right: 4px; }
-.readonly-field { background: var(--bg-card2, #f1f4f8); color: var(--text-sub, #8b94a3); cursor: not-allowed; border: 1px solid var(--border-light, #eef1f6); }
-
-.booster-editor { border: 1px solid var(--accent); border-radius: 8px; padding: 16px; margin-bottom: 16px; background: var(--bg); }
+.booster-editor { border: 1px solid var(--accent); border-radius: 8px; padding: 16px; margin-bottom: 16px; background: color-mix(in srgb, var(--accent) 6%, var(--bg-card)); }
 .booster-editor .form-row { margin-bottom: 10px; }
 .booster-editor label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 2px; }
-.booster-editor input, .booster-editor select, .booster-editor textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-card); color: var(--text); font-size: 13px; box-sizing: border-box; }
+.booster-editor input, .booster-editor select, .booster-editor textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text); font-size: 13px; box-sizing: border-box; }
 .form-actions { display: flex; gap: 8px; margin-top: 10px; }
 .flex-between { display: flex; justify-content: space-between; align-items: center; }
 
 .pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 12px; font-size: 13px; }
-.pager button { padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-card); color: var(--text); cursor: pointer; }
+.pager button { padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text); cursor: pointer; }
 .pager button:disabled { opacity: 0.4; cursor: default; }
 
 .booster-stats { font-size: 12px; color: var(--text-secondary); margin-left: auto; }
-.user-search-dropdown { position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; max-height: 240px; overflow-y: auto; margin-top: 2px; }
+.user-search-row { position: relative; }
+.user-search-dropdown { position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; max-height: 240px; overflow-y: auto; margin-top: 2px; box-shadow: var(--hard-shadow); }
 .user-search-item { padding: 8px 10px; cursor: pointer; font-size: 13px; display: flex; justify-content: space-between; }
 .user-search-item:hover { background: var(--bg-card-hover); }
 .user-search-name { font-weight: 600; }
 .user-search-id { color: var(--text-secondary); font-size: 12px; }
 .user-search-empty { padding: 10px; text-align: center; color: var(--text-secondary); font-size: 13px; }
-.btn-danger { color: #dc3545; border-color: #dc3545; }
-.btn-danger:hover { background: #dc3545; color: #fff; }
+.btn-danger { color: var(--error); border-color: var(--error); }
+.btn-danger:hover { background: var(--error); color: var(--danger-solid-fg); }
 /* Button styles (shared, used across ProfilePage and BoostPage) */
-.btn-primary { padding: 8px 20px; border: none; border-radius: 10px; background: var(--accent); color: #fff; font-size: .88rem; cursor: pointer; font-family: inherit; }
+.btn-primary { padding: 8px 20px; border: none; border-radius: 7px; background: var(--accent); color: var(--accent-text); font-size: .88rem; cursor: pointer; font-family: inherit; font-weight: 700; }
 .btn-primary:hover { background: var(--accent-hover); }
 .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
-.btn-ghost { padding: 8px 18px; border: 1px solid var(--border); border-radius: 10px; background: transparent; color: var(--text); font-size: .85rem; cursor: pointer; font-family: inherit; }
+.btn-ghost { padding: 8px 18px; border: 1px solid var(--border-ghost); border-radius: 7px; background: transparent; color: var(--text); font-size: .85rem; cursor: pointer; font-family: inherit; }
 .btn-ghost:hover { background: var(--bg-card-hover); }
-.btn-sm { padding: 5px 12px; font-size: .8rem; border-radius: 8px; }
+.btn-sm { padding: 5px 12px; font-size: .8rem; border-radius: 6px; }
+@media (max-width: 640px) {
+  .boost-page { padding: 14px 12px 48px; }
+  .boost-tabs { display: flex; }
+  .boost-tabs button { flex: 1 1 auto; }
+  .flex-between { align-items: flex-start; gap: 10px; flex-direction: column; }
+}
 </style>
