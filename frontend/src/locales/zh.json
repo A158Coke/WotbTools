@@ -314,6 +314,7 @@
         "export_failed": "????"
     },
     "extended": {
+        "nav": "Rating V2",
         "title": "扩展分析",
         "preview": "扩展字段解析",
         "rating": "Rating 分析",
@@ -445,6 +446,8 @@
         "replayDesc": "上传 .wotbreplay 回放文件，提取战斗数据并导出 Excel。",
         "highestDamageRecord": "最高伤害记录",
         "leaderboardDesc": "随机战斗的单场伤害排行 - 上传回放即可上榜。",
+        "ratingV2Title": "Rating V2 解析",
+        "ratingV2Desc": "基于潜在均伤、协助、KAST、Impact、多伤率与人头表现的复合评分解析。",
         "available": "可用",
         "planned": "规划中",
         "statsCardTitle": "战绩卡片",

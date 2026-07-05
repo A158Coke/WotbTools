@@ -84,8 +84,15 @@ function formatDamage(value) {
         <span class="tag avail">{{ $t('home.available') }}</span>
       </a>
 
-      <a v-if="isAdmin" class="card" href="/?view=admin-users">
+      <a class="card" href="/?view=extended">
         <span class="card-mark">03</span>
+        <h2>{{ $t('home.ratingV2Title') }}</h2>
+        <p>{{ $t('home.ratingV2Desc') }}</p>
+        <span class="tag avail">{{ $t('extended.nav') }}</span>
+      </a>
+
+      <a v-if="isAdmin" class="card" href="/?view=admin-users">
+        <span class="card-mark">04</span>
         <h2>{{ $t('admin.cardTitle') }}</h2>
         <p>{{ $t('admin.cardDesc') }}</p>
         <span class="tag avail">{{ $t('admin.cardBadge') }}</span>

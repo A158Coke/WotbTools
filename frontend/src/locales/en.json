@@ -314,6 +314,7 @@
         "export_failed": "Export failed"
     },
     "extended": {
+        "nav": "Rating V2",
         "title": "Extended analysis",
         "preview": "Parse extended fields",
         "rating": "Rating analysis",
@@ -445,6 +446,8 @@
         "replayDesc": "Upload .wotbreplay files, extract battle data and export to Excel.",
         "highestDamageRecord": "Highest Damage Record",
         "leaderboardDesc": "Damage leaderboard for random battles.",
+        "ratingV2Title": "Rating V2 Analysis",
+        "ratingV2Desc": "A composite rating from potential damage, assist, KAST, Impact, multi-damage rate and kills.",
         "available": "Available",
         "planned": "Planned",
         "statsCardTitle": "Stats Card",

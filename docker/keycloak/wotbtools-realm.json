@@ -3,20 +3,20 @@
   "realm": "wotbtools",
   "displayName": "WoTBTools",
   "enabled": true,
-  "registrationAllowed": false,
+  "registrationAllowed": true,
   "resetPasswordAllowed": false,
   "editUsernameAllowed": true,
   "internationalizationEnabled": true,
   "defaultLocale": "zh",
-  "supportedLocales": ["zh","en","ru"],
+  "supportedLocales": ["zh", "en", "ru"],
   "accessTokenLifespan": 1800,
   "ssoSessionIdleTimeout": 86400,
   "ssoSessionMaxLifespan": 604800,
   "roles": {
     "realm": [
-      { "name": "wotbtools-admin", "description": "WoTBTools 管理员" },
-      { "name": "boost-manager", "description": "陪练管理员" },
-      { "name": "booster", "description": "打手" }
+      { "name": "wotbtools-admin", "description": "WoTBTools admin" },
+      { "name": "boost-manager", "description": "Boost manager" },
+      { "name": "booster", "description": "Booster" }
     ]
   },
   "clients": [

@@ -75,7 +75,7 @@ impact_battle = 100 * (0.75 * damageAssistIndex + 0.25 * kills)
 
 ### 贡献率
 
-贡献率覆盖全部场次，仍按本方队伍内占比计算：
+贡献率覆盖全部场次，仍按本方队伍内占比计算。当前只作为展示字段，不参与最终 rating 权重：
 
 ```text
 roundContribution = damage + assist + kills * average_hp / 7

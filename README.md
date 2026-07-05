@@ -51,14 +51,14 @@
 - 存活时间列：基于伤害事件的秒级估算。
 - 自包含表现**评分**：按车型基准归一化（类 WN8，1000=同型平均），单场「评分」、汇总「场均评分」。
 - 评分徽章：回放预览中最高评分显示奖牌，最低评分显示金 shit，支持 `0` 分最低值。
-- 独立扩展分析页 `/extended`：不改当前解析页面，额外展示扩展字段与本次上传实时 rating。
+- Rating V2 分析页：主站 `?view=extended` 与独立入口 `/extended` 均可进入，额外展示扩展字段与本次上传实时 rating。
 - 扩展字段：`alpha_damage`、`rank` 已接入 API/导出/扩展页，原回放页面不默认展示；`xp`、`credits` 仅解析保留，不作为战绩字段展示。
 - 潜在伤害字段：`potential_damage` / `potential_damage_supplement` / `potential_damage_detail`，优先从回放 direct HP damage 事件推断逐击杀目标；事件缺失、映射失败或特殊伤害未覆盖时保守等于实际伤害。
 - GUI 支持选择文件或文件夹、预览数据、合并汇总或逐场导出。
 - Java / Web 版提供 `/api/preview`、`/api/export`、`/api/columns`、`/api/rating`、`/api/health`、`/api/shutdown`。
 - 排行榜（仅在线版 `postgres` profile）：上传随机战斗回放自动记录录像者单场伤害，`/api/leaderboard/top-damage` 等端点查询。
 - 工具集首页首屏展示排行榜当前最高单场伤害记录；排行榜暂无数据或接口不可用时显示 `--`。
-- **Keycloak 认证**：`https://auth.wotbtools.com` Keycloak 容器，realm `wotbtools`，client `wotbtools-web`。前端 `check-sso` 游客模式 + 登录/登出。
+- **Keycloak 认证**：`https://auth.wotbtools.com` Keycloak 容器，realm `wotbtools`，client `wotbtools-web`。前端 `check-sso` 游客模式 + 登录/登出，注册入口由 Keycloak realm 托管。
 - **个人中心**：`/profile` 页面，显示用户名、登出按钮。未登录时展示"登入"按钮触发 Keycloak OIDC 流程。
 - **工具集主页**：Vue SPA 内 `HomePage.vue`（卡片入口 + 版本历史），版本历史数据来自 `frontend/src/data/versions.json`。
 - **域名统一**：`wotbtools.com` 和 `www.wotbtools.com`，去除 `replay.wotbtools.com` 子域名。
