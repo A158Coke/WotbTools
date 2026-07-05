@@ -45,7 +45,7 @@
 - 品牌展示：logo 与 favicon（`common/assets/` 单一来源，Docker 构建时分发至首页与前端）
 - 解析单个 `.wotbreplay` 中的 14 名玩家战斗数据。
 - 读取 `meta.json` 战斗信息、`battle_results.dat` pickle + protobuf、`data.wotreplay` 事件流。
-- 使用 `tankopedia.json` 将车辆 ID 映射为车辆名、等级、类型和国家。
+- 使用 `tankopedia.json` 将车辆 ID 映射为车辆名、等级、类型、国家和炮伤。
 - 单场导出 Excel：`战斗信息`、`玩家数据`、`原始字段`。
 - 多场导出 Excel：按 `arenaUniqueId` 去重，生成 `汇总`、`明细`、`战斗列表`。
 - 存活时间列：基于伤害事件的秒级估算。
@@ -86,10 +86,10 @@ java -jar wotb-web\target\wotb-web.jar
 ## 更新车辆库
 
 车辆库 `common/tankopedia.json` 是**单一来源**，由 `update_tankopedia.py`
-从 blitzkit 的 `tanks.pb` 转换生成。游戏新增车辆后重新拉取即可（需要网络）：
+从 blitzkit 的 `tanks.pb` 转换生成，包含车辆基础信息和 `alphaDamage`。游戏新增车辆后重新拉取即可（需要网络）：
 
 ```bat
-cd python
+cd common/python
 python update_tankopedia.py
 ```
 
