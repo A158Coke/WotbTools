@@ -19,6 +19,8 @@
 - **打手订单查询**：新增 `MyAssignmentController` + `GET /api/booster/assignments`，打手查看自己的活跃分配。
 
 ### Changed
+- **扩展 Rating V2 入口**：主 Vue SPA 新增 `?view=extended` 路由，复用独立 `/extended` 的实时 rating 页面，并在首页与顶栏暴露入口。
+- **Keycloak 自助注册**：realm 导入配置开启 `registrationAllowed`，注册入口仍由 Keycloak 托管。
 - Keycloak 从 26.6.3 升级至 26.6.4。
 - **前端视觉系统**：统一 Vue SPA 全局色板、按钮、表格、上传区、顶栏和深浅色变量，改为 Blitz 工具站风格。
 - **前端页面打磨**：统一回放解析、排行榜、个人中心、陪练、管理员和扩展页的卡片、表格、按钮、状态徽章和移动端间距。

@@ -8,6 +8,7 @@ import LeaderboardPage from './components/LeaderboardPage.vue'
 import ProfilePage from './components/ProfilePage.vue'
 import BoostPage from './components/BoostPage.vue'
 import AdminUsersPage from './components/AdminUsersPage.vue'
+import ExtendedPage from './components/ExtendedPage.vue'
 
 const { theme, handleTheme } = useTheme()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
@@ -22,7 +23,7 @@ const params = new URLSearchParams(window.location.search)
 const isHomeHost = window.location.hostname === 'wotbtools.com' || window.location.hostname === 'www.wotbtools.com'
 const defaultView = isHomeHost ? 'home' : 'replay'
 const viewParam = params.get('view')
-const activeTool = ref(['home', 'replay', 'leaderboard', 'profile', 'boost', 'admin-users'].includes(viewParam) ? viewParam : defaultView)
+const activeTool = ref(['home', 'replay', 'leaderboard', 'extended', 'profile', 'boost', 'admin-users'].includes(viewParam) ? viewParam : defaultView)
 
 function navigate(view) {
   activeTool.value = view
@@ -43,6 +44,7 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button v-if="isHomeHost" :class="{ active: activeTool === 'home' }" @click="navigate('home')">{{ $t('profile.home') }}</button>
       <button :class="{ active: activeTool === 'replay' }" @click="navigate('replay')">{{ $t('app.replay_tab') }}</button>
       <button :class="{ active: activeTool === 'leaderboard' }" @click="navigate('leaderboard')">{{ $t('leaderboard.btn') }}</button>
+      <button :class="{ active: activeTool === 'extended' }" @click="navigate('extended')">{{ $t('extended.nav') }}</button>
       <button :class="{ active: activeTool === 'boost' }" @click="navigate('boost')">{{ $t('app.boost_tab') }}</button>
     </nav>
     <div class="tb-spacer"></div>
@@ -61,6 +63,7 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
     <HomePage v-if="activeTool === 'home'" />
     <ProfilePage v-else-if="activeTool === 'profile'" />
     <LeaderboardPage v-else-if="activeTool === 'leaderboard'" />
+    <ExtendedPage v-else-if="activeTool === 'extended'" />
     <BoostPage v-else-if="activeTool === 'boost'" />
     <AdminUsersPage v-else-if="activeTool === 'admin-users'" />
     <ReplayPage v-else />

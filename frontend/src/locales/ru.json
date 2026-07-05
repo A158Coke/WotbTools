@@ -314,6 +314,7 @@
         "export_failed": "?????? ????????"
     },
     "extended": {
+        "nav": "Rating V2",
         "title": "Расширенный анализ",
         "preview": "Разобрать поля",
         "rating": "Анализ Rating",
@@ -445,6 +446,8 @@
         "replayDesc": "Загружайте .wotbreplay файлы и экспортируйте данные в Excel.",
         "highestDamageRecord": "Рекорд урона",
         "leaderboardDesc": "Рейтинг урона за случайные бои.",
+        "ratingV2Title": "Анализ Rating V2",
+        "ratingV2Desc": "Композитный рейтинг по потенциальному урону, содействию, KAST, Impact, мульти-урону и фрагам.",
         "available": "Доступно",
         "planned": "Планируется",
         "statsCardTitle": "Карточка статистики",
