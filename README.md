@@ -53,7 +53,7 @@
 - 评分徽章：回放预览中最高评分显示奖牌，最低评分显示金 shit，支持 `0` 分最低值。
 - 独立扩展分析页 `/extended`：不改当前解析页面，额外展示扩展字段与本次上传实时 rating。
 - 扩展字段：`alpha_damage`、`rank` 已接入 API/导出/扩展页，原回放页面不默认展示；`xp`、`credits` 仅解析保留，不作为战绩字段展示。
-- 潜在伤害字段：`potential_damage` / `potential_damage_supplement` / `potential_damage_detail`，当前逐击杀目标明细未解析时保守等于实际伤害。
+- 潜在伤害字段：`potential_damage` / `potential_damage_supplement` / `potential_damage_detail`，优先从回放 direct HP damage 事件推断逐击杀目标；事件缺失、映射失败或特殊伤害未覆盖时保守等于实际伤害。
 - GUI 支持选择文件或文件夹、预览数据、合并汇总或逐场导出。
 - Java / Web 版提供 `/api/preview`、`/api/export`、`/api/columns`、`/api/rating`、`/api/health`、`/api/shutdown`。
 - 排行榜（仅在线版 `postgres` profile）：上传随机战斗回放自动记录录像者单场伤害，`/api/leaderboard/top-damage` 等端点查询。
