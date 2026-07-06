@@ -1,0 +1,27 @@
+name: Production Diagnostics
+
+on:
+  workflow_dispatch:
+
+jobs:
+  backend-logs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect backend diagnostics
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/wotb
+            echo "== docker compose ps =="
+            docker compose ps
+            echo "== backend inspect =="
+            docker inspect -f '{{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}' wotb-wotb-backend-1 2>/dev/null || true
+            echo "== backend logs =="
+            docker compose logs --tail 220 wotb-backend
+            echo "== frontend logs =="
+            docker compose logs --tail 80 wotb-frontend
