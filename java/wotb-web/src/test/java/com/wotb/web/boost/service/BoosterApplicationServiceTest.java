@@ -7,6 +7,7 @@ import com.wotb.web.boost.entity.BoosterApplication;
 import com.wotb.web.boost.enums.BoosterApplicationStatus;
 import com.wotb.web.boost.repository.BoosterApplicationRepository;
 import com.wotb.web.user.dto.UserProfileDto;
+import com.wotb.web.user.service.UserNotificationService;
 import com.wotb.web.user.service.UserProfileService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -47,6 +48,9 @@ class BoosterApplicationServiceTest {
     @Mock
     KeycloakAdminUserService keycloakAdminUserService;
 
+    @Mock
+    UserNotificationService notificationService;
+
     BoosterApplicationService service;
 
     @BeforeEach
@@ -56,7 +60,8 @@ class BoosterApplicationServiceTest {
                 mapper,
                 userProfileService,
                 boosterService,
-                keycloakAdminUserService
+                keycloakAdminUserService,
+                notificationService
         );
     }
 

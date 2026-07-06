@@ -12,6 +12,8 @@ import com.wotb.web.boost.enums.BoosterStatus;
 import com.wotb.web.boost.enums.ContactType;
 import com.wotb.web.boost.repository.BoosterApplicationRepository;
 import com.wotb.web.user.dto.UserProfileDto;
+import com.wotb.web.user.enums.UserNotificationType;
+import com.wotb.web.user.service.UserNotificationService;
 import com.wotb.web.user.service.UserProfileService;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -24,6 +26,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class BoosterApplicationService {
@@ -40,17 +43,20 @@ public class BoosterApplicationService {
     private final UserProfileService userProfileService;
     private final BoosterService boosterService;
     private final KeycloakAdminUserService keycloakAdminUserService;
+    private final UserNotificationService notificationService;
 
     public BoosterApplicationService(final BoosterApplicationRepository repository,
                                      final BoosterApplicationMapper mapper,
                                      final UserProfileService userProfileService,
                                      final BoosterService boosterService,
-                                     final KeycloakAdminUserService keycloakAdminUserService) {
+                                     final KeycloakAdminUserService keycloakAdminUserService,
+                                     final UserNotificationService notificationService) {
         this.repository = repository;
         this.mapper = mapper;
         this.userProfileService = userProfileService;
         this.boosterService = boosterService;
         this.keycloakAdminUserService = keycloakAdminUserService;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -160,6 +166,7 @@ public class BoosterApplicationService {
         application.setReviewedBy(adminUserId);
         application.setReviewedAt(OffsetDateTime.now());
         application.setUpdatedAt(OffsetDateTime.now());
+        notifyApplication(application, UserNotificationType.BOOSTER_APPLICATION_REJECTED);
         return mapper.toDto(application);
     }
 
@@ -206,7 +213,22 @@ public class BoosterApplicationService {
         application.setReviewedBy(adminUserId);
         application.setReviewedAt(OffsetDateTime.now());
         application.setUpdatedAt(OffsetDateTime.now());
+        notifyApplication(application, UserNotificationType.BOOSTER_APPLICATION_APPROVED);
         return mapper.toDto(application);
+    }
+
+    private void notifyApplication(final BoosterApplication application,
+                                   final UserNotificationType type) {
+        notificationService.create(
+                application.getKeycloakUserId(),
+                type,
+                "booster_application",
+                application.getId(),
+                Map.of(
+                        "applicationId", String.valueOf(application.getId()),
+                        "status", application.getStatus()
+                )
+        );
     }
 
     private BoosterApplication getById(final Long id) {

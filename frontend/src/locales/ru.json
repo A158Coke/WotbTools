@@ -366,15 +366,36 @@
             "NEW": "Новая",
             "REVIEWING": "Проверка",
             "MATCHED": "Назначена",
+            "ACCEPTED": "Принята",
+            "IN_PROGRESS": "В работе",
+            "PENDING_CONFIRM": "Ждет подтверждения",
             "CLOSED": "Закрыта",
+            "EXCEPTION": "Проблема",
             "REJECTED": "Отказ",
             "CANCELLED": "Отмена"
+        },
+        "assignmentStatus": {
+            "ASSIGNED": "Назначено",
+            "ACCEPTED": "Принято",
+            "IN_PROGRESS": "В работе",
+            "PENDING_CONFIRM": "Ждет подтверждения",
+            "DECLINED": "Отклонено",
+            "CANCELLED": "Отменено",
+            "COMPLETED": "Завершено",
+            "EXCEPTION": "Проблема"
         },
         "action": {
             "REVIEWING": "Проверить",
             "REJECTED": "Отказ",
             "CANCELLED": "Отмена",
-            "CLOSED": "Закрыть"
+            "CLOSED": "Закрыть",
+            "EXCEPTION": "Проблема"
+        },
+        "assignmentAction": {
+            "accept": "Принять",
+            "start": "Начать",
+            "complete": "Отправить",
+            "decline": "Отклонить"
         },
         "applicationStatus": {
             "NEW": "Ожидает",
@@ -479,7 +500,41 @@
         "applicationApproveConfirm": "Одобрить и создать бустера?",
         "applicationRejectConfirm": "Отклонить заявку?",
         "applicationApprove": "Одобрить",
-        "applicationApprovedBooster": "Создан бустер #{id}"
+        "applicationApprovedBooster": "Создан бустер #{id}",
+        "completeNoteHint": "Комментарий к завершению, необязательно",
+        "declineNoteHint": "Причина отказа, необязательно",
+        "declineAssignmentConfirm": "Отклонить этот заказ?",
+        "notifications": "Уведомления",
+        "markAllRead": "Все прочитано",
+        "noNotifications": "Нет уведомлений",
+        "notificationTitle": {
+            "BOOST_REQUEST_ASSIGNED": "Запрос назначен",
+            "BOOST_ASSIGNMENT_RECEIVED": "Новый заказ",
+            "BOOST_ASSIGNMENT_ACCEPTED": "Заказ принят",
+            "BOOST_ASSIGNMENT_IN_PROGRESS": "Заказ начат",
+            "BOOST_ASSIGNMENT_PENDING_CONFIRM": "Ждет подтверждения",
+            "BOOST_ASSIGNMENT_COMPLETED": "Заказ завершен",
+            "BOOST_ASSIGNMENT_DECLINED": "Заказ отклонен",
+            "BOOST_ASSIGNMENT_CANCELLED": "Заказ отменен",
+            "BOOST_ASSIGNMENT_EXCEPTION": "Проблема с заказом",
+            "BOOST_REQUEST_REJECTED": "Запрос отклонен",
+            "BOOSTER_APPLICATION_APPROVED": "Заявка одобрена",
+            "BOOSTER_APPLICATION_REJECTED": "Заявка отклонена"
+        },
+        "notificationMessage": {
+            "BOOST_REQUEST_ASSIGNED": "Запрос #{requestId} назначен.",
+            "BOOST_ASSIGNMENT_RECEIVED": "Вы получили запрос #{requestId}.",
+            "BOOST_ASSIGNMENT_ACCEPTED": "Бустер принял запрос #{requestId}.",
+            "BOOST_ASSIGNMENT_IN_PROGRESS": "Запрос #{requestId} в работе.",
+            "BOOST_ASSIGNMENT_PENDING_CONFIRM": "Запрос #{requestId} ждет подтверждения.",
+            "BOOST_ASSIGNMENT_COMPLETED": "Запрос #{requestId} завершен.",
+            "BOOST_ASSIGNMENT_DECLINED": "Бустер отклонил запрос #{requestId}.",
+            "BOOST_ASSIGNMENT_CANCELLED": "Назначение запроса #{requestId} отменено.",
+            "BOOST_ASSIGNMENT_EXCEPTION": "Запрос #{requestId} требует внимания.",
+            "BOOST_REQUEST_REJECTED": "Запрос #{requestId} отклонен.",
+            "BOOSTER_APPLICATION_APPROVED": "Ваша заявка бустера #{applicationId} одобрена.",
+            "BOOSTER_APPLICATION_REJECTED": "Ваша заявка бустера #{applicationId} отклонена."
+        }
     },
     "admin": {
         "title": "Управление пользователями",

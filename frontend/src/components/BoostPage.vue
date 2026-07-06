@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import {
+  acceptMyBoosterAssignment,
   adminBoostAssign,
   adminBoostBoosterApplicationApprove,
   adminBoostBoosterApplicationReject,
@@ -17,6 +18,7 @@ import {
   adminBoostUnassign,
   adminBoostUpdateStatus,
   adminSearchUsers,
+  completeMyBoosterAssignment,
   boostCancelRequest,
   boostCreateBoosterApplication,
   boostCreateRequest,
@@ -24,9 +26,15 @@ import {
   boostListMyRequests,
   boostOptions,
   createUserProfile,
+  declineMyBoosterAssignment,
+  getUnreadNotificationCount,
   getMyBoosterAssignments,
   getMyBoosterProfile,
-  getUserProfile
+  getUserProfile,
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  startMyBoosterAssignment
 } from '../utils/api-boost.js'
 
 const { t } = useI18n()
@@ -82,6 +90,11 @@ const isBooster = computed(() => !!myBooster.value)
 const boundWotbAccount = computed(() => !!profile.value?.wotbAccountId && !!String(profile.value?.wotbNickname || '').trim())
 const myAssignments = ref([])
 const loadingAssignments = ref(false)
+const notifications = ref([])
+const unreadNotifications = ref(0)
+const notificationsOpen = ref(false)
+const loadingNotifications = ref(false)
+const notificationError = ref('')
 
 // Admin: 检查 realm 角色 + 客户端角色 (resource_access)
 const isAdmin = computed(() => {
@@ -178,6 +191,7 @@ onMounted(async () => {
       loadOptions()
       loadMyRequests()
       loadApplicantState()
+      loadUnreadNotificationCount()
     } else {
       phase.value = 'login'
       login()
@@ -214,6 +228,52 @@ async function loadMyAssignments() {
   loadingAssignments.value = true
   try { myAssignments.value = await getMyBoosterAssignments() } catch { myAssignments.value = [] }
   finally { loadingAssignments.value = false }
+}
+
+async function loadNotifications() {
+  loadingNotifications.value = true
+  notificationError.value = ''
+  try {
+    notifications.value = await listNotifications()
+    unreadNotifications.value = notifications.value.filter(n => !n.read).length
+  } catch (e) {
+    notificationError.value = e.message
+    notifications.value = []
+  } finally {
+    loadingNotifications.value = false
+  }
+}
+
+async function loadUnreadNotificationCount() {
+  try {
+    const res = await getUnreadNotificationCount()
+    unreadNotifications.value = res.count || 0
+  } catch {
+    unreadNotifications.value = 0
+  }
+}
+
+async function toggleNotifications() {
+  notificationsOpen.value = !notificationsOpen.value
+  if (notificationsOpen.value) await loadNotifications()
+}
+
+async function readNotification(notification) {
+  if (!notification.read) {
+    try {
+      await markNotificationRead(notification.id)
+      await loadNotifications()
+    } catch {}
+  }
+}
+
+async function readAllNotifications() {
+  try {
+    await markAllNotificationsRead()
+    await loadNotifications()
+  } catch (e) {
+    notificationError.value = e.message
+  }
 }
 
 function applyBoundAccount() {
@@ -291,6 +351,22 @@ function isRecommendedBooster(booster, request) {
 
 function applicationStatusLabel(status) {
   return t(`boost.applicationStatus.${status || 'NEW'}`)
+}
+
+function statusText(status) {
+  return t(`boost.status.${status || 'NEW'}`)
+}
+
+function assignmentStatusText(status) {
+  return t(`boost.assignmentStatus.${status || 'ASSIGNED'}`)
+}
+
+function notificationTitle(notification) {
+  return t(`boost.notificationTitle.${notification.type}`, notification.payload || {})
+}
+
+function notificationMessage(notification) {
+  return t(`boost.notificationMessage.${notification.type}`, notification.payload || {})
 }
 
 function latestOpenApplication() {
@@ -386,6 +462,61 @@ async function cancelRequest(id) {
   } catch (e) {
     alert(e.message)
   }
+}
+
+async function acceptAssignment(a) {
+  try {
+    await acceptMyBoosterAssignment(a.id)
+    await afterAssignmentAction()
+  } catch (e) { alert(e.message) }
+}
+
+async function startAssignment(a) {
+  try {
+    await startMyBoosterAssignment(a.id)
+    await afterAssignmentAction()
+  } catch (e) { alert(e.message) }
+}
+
+async function completeAssignment(a) {
+  const note = prompt(t('boost.completeNoteHint'))
+  if (note === null) return
+  try {
+    await completeMyBoosterAssignment(a.id, { note })
+    await afterAssignmentAction()
+  } catch (e) { alert(e.message) }
+}
+
+async function declineAssignment(a) {
+  if (!confirm(t('boost.declineAssignmentConfirm'))) return
+  const note = prompt(t('boost.declineNoteHint'))
+  if (note === null) return
+  try {
+    await declineMyBoosterAssignment(a.id, { note })
+    await afterAssignmentAction()
+  } catch (e) { alert(e.message) }
+}
+
+async function afterAssignmentAction() {
+  await loadMyAssignments()
+  loadMyRequests()
+  loadUnreadNotificationCount()
+}
+
+function canAcceptAssignment(a) {
+  return a.status === 'ASSIGNED'
+}
+
+function canStartAssignment(a) {
+  return a.status === 'ACCEPTED'
+}
+
+function canCompleteAssignment(a) {
+  return a.status === 'ACCEPTED' || a.status === 'IN_PROGRESS'
+}
+
+function canDeclineAssignment(a) {
+  return a.status === 'ASSIGNED'
 }
 
 // Admin functions
@@ -518,7 +649,25 @@ async function toggleBoosterAvailable(b) {
 }
 
 function statusBadge(s) {
-  const map = { NEW: 'info', REVIEWING: 'warn', APPROVED: 'ok', MATCHED: 'ok', CLOSED: 'ok', REJECTED: 'err', CANCELLED: 'err', ASSIGNED: 'ok', ACTIVE: 'ok', INACTIVE: 'warn', BANNED: 'err' }
+  const map = {
+    NEW: 'info',
+    REVIEWING: 'warn',
+    APPROVED: 'ok',
+    MATCHED: 'info',
+    ACCEPTED: 'ok',
+    IN_PROGRESS: 'ok',
+    PENDING_CONFIRM: 'warn',
+    CLOSED: 'ok',
+    COMPLETED: 'ok',
+    EXCEPTION: 'err',
+    REJECTED: 'err',
+    DECLINED: 'err',
+    CANCELLED: 'err',
+    ASSIGNED: 'info',
+    ACTIVE: 'ok',
+    INACTIVE: 'warn',
+    BANNED: 'err'
+  }
   return map[s] || ''
 }
 
@@ -536,16 +685,39 @@ function switchTab(t) {
 <template>
   <div class="boost-page" v-if="phase === 'done'">
     <!-- Tabs -->
-    <div class="boost-tabs">
-      <button :class="{ active: tab === 'request' }" @click="switchTab('request')">{{ $t('boost.submitTab') }}</button>
-      <button :class="{ active: tab === 'my' }" @click="switchTab('my')">{{ $t('boost.myTab') }}</button>
-      <button v-if="isBooster" :class="{ active: tab === 'myAssignments' }" @click="switchTab('myAssignments')">{{ $t('boost.myAssignmentsTab') }}</button>
-      <button v-if="!isBooster" :class="{ active: tab === 'apply' }" @click="switchTab('apply')">{{ $t('boost.applyBoosterTab') }}</button>
-      <template v-if="isAdmin">
-        <button :class="{ active: tab === 'adminRequests' }" @click="switchTab('adminRequests')">{{ $t('boost.adminRequestsTab') }}</button>
-        <button :class="{ active: tab === 'applicationReview' }" @click="switchTab('applicationReview')">{{ $t('boost.applicationReviewTab') }}</button>
-        <button :class="{ active: tab === 'boosters' }" @click="switchTab('boosters')">{{ $t('boost.boostersTab') }}</button>
-      </template>
+    <div class="boost-topbar">
+      <div class="boost-tabs">
+        <button :class="{ active: tab === 'request' }" @click="switchTab('request')">{{ $t('boost.submitTab') }}</button>
+        <button :class="{ active: tab === 'my' }" @click="switchTab('my')">{{ $t('boost.myTab') }}</button>
+        <button v-if="isBooster" :class="{ active: tab === 'myAssignments' }" @click="switchTab('myAssignments')">{{ $t('boost.myAssignmentsTab') }}</button>
+        <button v-if="!isBooster" :class="{ active: tab === 'apply' }" @click="switchTab('apply')">{{ $t('boost.applyBoosterTab') }}</button>
+        <template v-if="isAdmin">
+          <button :class="{ active: tab === 'adminRequests' }" @click="switchTab('adminRequests')">{{ $t('boost.adminRequestsTab') }}</button>
+          <button :class="{ active: tab === 'applicationReview' }" @click="switchTab('applicationReview')">{{ $t('boost.applicationReviewTab') }}</button>
+          <button :class="{ active: tab === 'boosters' }" @click="switchTab('boosters')">{{ $t('boost.boostersTab') }}</button>
+        </template>
+      </div>
+      <button class="notification-toggle" @click="toggleNotifications()">
+        {{ $t('boost.notifications') }}
+        <span v-if="unreadNotifications" class="notification-count">{{ unreadNotifications }}</span>
+      </button>
+    </div>
+
+    <div v-if="notificationsOpen" class="boost-card notification-panel">
+      <div class="flex-between">
+        <h3 class="card-title">{{ $t('boost.notifications') }}</h3>
+        <button class="btn-ghost btn-sm" @click="readAllNotifications()">{{ $t('boost.markAllRead') }}</button>
+      </div>
+      <div v-if="notificationError" class="boost-error">{{ notificationError }}</div>
+      <div v-if="loadingNotifications" class="boost-loading">{{ $t('boost.loading') }}</div>
+      <div v-else-if="!notifications.length" class="boost-empty">{{ $t('boost.noNotifications') }}</div>
+      <div v-else class="notification-list">
+        <button v-for="n in notifications" :key="n.id" class="notification-item" :class="{ unread: !n.read }" @click="readNotification(n)">
+          <strong>{{ notificationTitle(n) }}</strong>
+          <span>{{ notificationMessage(n) }}</span>
+          <small>{{ new Date(n.createdAt).toLocaleString() }}</small>
+        </button>
+      </div>
     </div>
 
     <!-- Tab: Submit Request -->
@@ -711,7 +883,7 @@ function switchTab(t) {
         <div v-for="r in myRequests" :key="r.id" class="my-item">
           <div class="my-header">
             <span class="my-type">{{ r.requestTypeLabel }}</span>
-            <span :class="'badge badge-' + statusBadge(r.status)">{{ r.statusLabel }}</span>
+            <span :class="'badge badge-' + statusBadge(r.status)">{{ statusText(r.status) }}</span>
             <span class="my-time">{{ new Date(r.createdAt).toLocaleString() }}</span>
           </div>
           <p class="my-desc">{{ r.targetDescription }}</p>
@@ -739,7 +911,8 @@ function switchTab(t) {
           <div class="my-header">
             <strong>#{{ a.requestId }}</strong>
             <span>{{ a.requestTypeLabel }}</span>
-            <span :class="'badge badge-' + statusBadge(a.requestStatus)">{{ a.requestStatusLabel }}</span>
+            <span :class="'badge badge-' + statusBadge(a.requestStatus)">{{ statusText(a.requestStatus) }}</span>
+            <span :class="'badge badge-' + statusBadge(a.status)">{{ assignmentStatusText(a.status) }}</span>
             <span class="my-time">{{ new Date(a.assignedAt).toLocaleString() }}</span>
           </div>
           <p class="my-desc">{{ a.targetDescription }}</p>
@@ -750,6 +923,12 @@ function switchTab(t) {
             <span v-if="a.availableTime">{{ $t('boost.availableTime') }}: {{ a.availableTime }}</span>
           </div>
           <p v-if="a.note" class="my-desc">{{ a.note }}</p>
+          <div class="my-actions">
+            <button v-if="canAcceptAssignment(a)" class="btn-primary btn-sm" @click="acceptAssignment(a)">{{ $t('boost.assignmentAction.accept') }}</button>
+            <button v-if="canStartAssignment(a)" class="btn-primary btn-sm" @click="startAssignment(a)">{{ $t('boost.assignmentAction.start') }}</button>
+            <button v-if="canCompleteAssignment(a)" class="btn-ghost btn-sm" @click="completeAssignment(a)">{{ $t('boost.assignmentAction.complete') }}</button>
+            <button v-if="canDeclineAssignment(a)" class="btn-ghost btn-sm btn-danger" @click="declineAssignment(a)">{{ $t('boost.assignmentAction.decline') }}</button>
+          </div>
         </div>
       </div>
     </div>
@@ -763,7 +942,11 @@ function switchTab(t) {
           <option value="NEW">{{ $t('boost.status.NEW') }}</option>
           <option value="REVIEWING">{{ $t('boost.status.REVIEWING') }}</option>
           <option value="MATCHED">{{ $t('boost.status.MATCHED') }}</option>
+          <option value="ACCEPTED">{{ $t('boost.status.ACCEPTED') }}</option>
+          <option value="IN_PROGRESS">{{ $t('boost.status.IN_PROGRESS') }}</option>
+          <option value="PENDING_CONFIRM">{{ $t('boost.status.PENDING_CONFIRM') }}</option>
           <option value="CLOSED">{{ $t('boost.status.CLOSED') }}</option>
+          <option value="EXCEPTION">{{ $t('boost.status.EXCEPTION') }}</option>
           <option value="REJECTED">{{ $t('boost.status.REJECTED') }}</option>
           <option value="CANCELLED">{{ $t('boost.status.CANCELLED') }}</option>
         </select>
@@ -776,7 +959,7 @@ function switchTab(t) {
           <div class="admin-header">
             <strong>#{{ r.id }}</strong>
             <span>{{ r.requestTypeLabel }}</span>
-            <span :class="'badge badge-' + statusBadge(r.status)">{{ r.statusLabel }}</span>
+            <span :class="'badge badge-' + statusBadge(r.status)">{{ statusText(r.status) }}</span>
             <span class="admin-player">{{ r.playerNickname || r.contactValue }}</span>
             <span class="admin-time">{{ new Date(r.createdAt).toLocaleString() }}</span>
           </div>
@@ -784,7 +967,7 @@ function switchTab(t) {
           <div class="admin-meta">
             <span>{{ $t('boost.contact') }}: {{ r.contactValue }}</span>
             <span v-if="r.currentAssignment">
-              → {{ r.currentAssignment.booster.nickname }} ({{ r.currentAssignment.statusLabel }})
+              → {{ r.currentAssignment.booster.nickname }} ({{ assignmentStatusText(r.currentAssignment.status) }})
             </span>
           </div>
           <div class="admin-actions">
@@ -797,18 +980,27 @@ function switchTab(t) {
               <button class="btn-ghost btn-sm" @click="updateStatus(r.id, 'REJECTED')">{{ $t('boost.action.REJECTED') }}</button>
               <button class="btn-ghost btn-sm" @click="updateStatus(r.id, 'CANCELLED')">{{ $t('boost.action.CANCELLED') }}</button>
             </template>
-            <template v-if="r.status === 'MATCHED'">
+            <template v-if="r.status === 'MATCHED' || r.status === 'ACCEPTED' || r.status === 'IN_PROGRESS'">
+              <button class="btn-ghost btn-sm" @click="updateStatus(r.id, 'EXCEPTION')">{{ $t('boost.action.EXCEPTION') }}</button>
+              <button class="btn-ghost btn-sm" @click="updateStatus(r.id, 'CANCELLED')">{{ $t('boost.action.CANCELLED') }}</button>
+            </template>
+            <template v-if="r.status === 'PENDING_CONFIRM'">
               <button class="btn-ghost btn-sm" @click="updateStatus(r.id, 'CLOSED')">{{ $t('boost.action.CLOSED') }}</button>
+              <button class="btn-ghost btn-sm" @click="updateStatus(r.id, 'EXCEPTION')">{{ $t('boost.action.EXCEPTION') }}</button>
+            </template>
+            <template v-if="r.status === 'EXCEPTION'">
+              <button class="btn-ghost btn-sm" @click="updateStatus(r.id, 'CLOSED')">{{ $t('boost.action.CLOSED') }}</button>
+              <button class="btn-ghost btn-sm" @click="updateStatus(r.id, 'CANCELLED')">{{ $t('boost.action.CANCELLED') }}</button>
             </template>
 
             <!-- Assignment: 仅 REVIEWING 且无活跃分配时显示 -->
-            <template v-if="!r.currentAssignment && (r.status === 'REVIEWING' || r.status === 'MATCHED' || r.status === 'NEW')">
+            <template v-if="!r.currentAssignment && (r.status === 'REVIEWING' || r.status === 'NEW')">
               <button class="btn-primary btn-sm" @click="assigningRequest = r; assignBoosterId = null; assignNote = ''; assignError = ''">
                 {{ $t('boost.assign') }}
               </button>
             </template>
             <!-- Unassign: 仅 MATCHED/REVIEWING 且存在活跃分配时显示 -->
-            <template v-else-if="r.status === 'MATCHED' || r.status === 'REVIEWING'">
+            <template v-else-if="r.currentAssignment && (r.status === 'MATCHED' || r.status === 'ACCEPTED' || r.status === 'IN_PROGRESS' || r.status === 'PENDING_CONFIRM' || r.status === 'EXCEPTION')">
               <button class="btn-ghost btn-sm" @click="unassignBooster(r.id)">{{ $t('boost.unassign') }}</button>
             </template>
           </div>
@@ -1005,10 +1197,19 @@ function switchTab(t) {
 
 <style scoped>
 .boost-page { max-width: 1040px; margin: 0 auto; padding: 24px 20px 64px; }
+.boost-topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .boost-tabs { display: inline-flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; padding: 3px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card2); }
 .boost-tabs button { padding: 8px 16px; border: 1px solid transparent; background: transparent; color: var(--text-sub); border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; }
 .boost-tabs button:hover { color: var(--text-label); background: var(--bg-card-hover); }
 .boost-tabs button.active { background: var(--bg-card); color: var(--accent-dark); border-color: var(--border-tab-active); box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.notification-toggle { position: relative; padding: 9px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); cursor: pointer; font-weight: 700; white-space: nowrap; }
+.notification-count { display: inline-flex; min-width: 18px; height: 18px; align-items: center; justify-content: center; margin-left: 6px; padding: 0 4px; border-radius: 999px; background: var(--error); color: var(--danger-solid-fg); font-size: 11px; }
+.notification-panel { margin-bottom: 16px; }
+.notification-list { display: grid; gap: 8px; }
+.notification-item { text-align: left; display: grid; gap: 3px; width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card2); color: var(--text); cursor: pointer; }
+.notification-item.unread { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--bg-card)); }
+.notification-item span { color: var(--text-secondary); font-size: 13px; }
+.notification-item small { color: var(--text-sub); font-size: 11px; }
 .boost-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; box-shadow: var(--surface-shadow); }
 .card-title { margin: 0 0 12px; font-size: 18px; }
 .boost-warning { background: var(--status-warn-bg); border: 1px solid var(--border-warn); border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; color: var(--status-warn-fg); }
@@ -1088,8 +1289,10 @@ function switchTab(t) {
 .btn-sm { padding: 5px 12px; font-size: .8rem; border-radius: 6px; }
 @media (max-width: 640px) {
   .boost-page { padding: 14px 12px 48px; }
+  .boost-topbar { flex-direction: column; }
   .boost-tabs { display: flex; }
   .boost-tabs button { flex: 1 1 auto; }
+  .notification-toggle { width: 100%; }
   .flex-between { align-items: flex-start; gap: 10px; flex-direction: column; }
   .form-grid, .application-details, .application-images { grid-template-columns: 1fr; }
 }

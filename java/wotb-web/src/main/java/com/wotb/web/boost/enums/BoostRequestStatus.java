@@ -1,13 +1,17 @@
 package com.wotb.web.boost.enums;
 
-/** 陪练需求状态。数据库存英文值，前端展示中文 label。 */
+/** Boost request lifecycle. Database stores English enum names. */
 public enum BoostRequestStatus {
-    NEW("待审核"),
-    REVIEWING("审核中"),
-    MATCHED("已匹配"),
-    CLOSED("已完成"),
-    REJECTED("已拒绝"),
-    CANCELLED("已取消");
+    NEW("NEW"),
+    REVIEWING("REVIEWING"),
+    MATCHED("MATCHED"),
+    ACCEPTED("ACCEPTED"),
+    IN_PROGRESS("IN_PROGRESS"),
+    PENDING_CONFIRM("PENDING_CONFIRM"),
+    CLOSED("CLOSED"),
+    EXCEPTION("EXCEPTION"),
+    REJECTED("REJECTED"),
+    CANCELLED("CANCELLED");
 
     private final String label;
 
@@ -25,6 +29,6 @@ public enum BoostRequestStatus {
                 return s;
             }
         }
-        throw new IllegalArgumentException("未知需求状态: " + value);
+        throw new IllegalArgumentException("UNKNOWN_BOOST_REQUEST_STATUS: " + value);
     }
 }

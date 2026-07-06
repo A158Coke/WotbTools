@@ -366,15 +366,36 @@
             "NEW": "New",
             "REVIEWING": "Review",
             "MATCHED": "Matched",
+            "ACCEPTED": "Accepted",
+            "IN_PROGRESS": "In progress",
+            "PENDING_CONFIRM": "Pending confirmation",
             "CLOSED": "Closed",
+            "EXCEPTION": "Exception",
             "REJECTED": "Rejected",
             "CANCELLED": "Cancelled"
+        },
+        "assignmentStatus": {
+            "ASSIGNED": "Assigned",
+            "ACCEPTED": "Accepted",
+            "IN_PROGRESS": "In progress",
+            "PENDING_CONFIRM": "Pending confirmation",
+            "DECLINED": "Declined",
+            "CANCELLED": "Cancelled",
+            "COMPLETED": "Completed",
+            "EXCEPTION": "Exception"
         },
         "action": {
             "REVIEWING": "Review",
             "REJECTED": "Reject",
             "CANCELLED": "Cancel",
-            "CLOSED": "Close"
+            "CLOSED": "Close",
+            "EXCEPTION": "Mark exception"
+        },
+        "assignmentAction": {
+            "accept": "Accept",
+            "start": "Start",
+            "complete": "Submit done",
+            "decline": "Decline"
         },
         "applicationStatus": {
             "NEW": "Pending",
@@ -479,7 +500,41 @@
         "applicationApproveConfirm": "Approve and create booster?",
         "applicationRejectConfirm": "Reject this application?",
         "applicationApprove": "Approve",
-        "applicationApprovedBooster": "Created booster #{id}"
+        "applicationApprovedBooster": "Created booster #{id}",
+        "completeNoteHint": "Completion note, optional",
+        "declineNoteHint": "Decline reason, optional",
+        "declineAssignmentConfirm": "Decline this order?",
+        "notifications": "Notifications",
+        "markAllRead": "Mark all read",
+        "noNotifications": "No notifications",
+        "notificationTitle": {
+            "BOOST_REQUEST_ASSIGNED": "Request assigned",
+            "BOOST_ASSIGNMENT_RECEIVED": "New order",
+            "BOOST_ASSIGNMENT_ACCEPTED": "Order accepted",
+            "BOOST_ASSIGNMENT_IN_PROGRESS": "Order started",
+            "BOOST_ASSIGNMENT_PENDING_CONFIRM": "Waiting for confirmation",
+            "BOOST_ASSIGNMENT_COMPLETED": "Order completed",
+            "BOOST_ASSIGNMENT_DECLINED": "Order declined",
+            "BOOST_ASSIGNMENT_CANCELLED": "Order cancelled",
+            "BOOST_ASSIGNMENT_EXCEPTION": "Order exception",
+            "BOOST_REQUEST_REJECTED": "Request rejected",
+            "BOOSTER_APPLICATION_APPROVED": "Application approved",
+            "BOOSTER_APPLICATION_REJECTED": "Application rejected"
+        },
+        "notificationMessage": {
+            "BOOST_REQUEST_ASSIGNED": "Request #{requestId} has been assigned.",
+            "BOOST_ASSIGNMENT_RECEIVED": "You received request #{requestId}.",
+            "BOOST_ASSIGNMENT_ACCEPTED": "Booster accepted request #{requestId}.",
+            "BOOST_ASSIGNMENT_IN_PROGRESS": "Request #{requestId} is now in progress.",
+            "BOOST_ASSIGNMENT_PENDING_CONFIRM": "Request #{requestId} is waiting for confirmation.",
+            "BOOST_ASSIGNMENT_COMPLETED": "Request #{requestId} has been completed.",
+            "BOOST_ASSIGNMENT_DECLINED": "Booster declined request #{requestId}.",
+            "BOOST_ASSIGNMENT_CANCELLED": "Request #{requestId} assignment was cancelled.",
+            "BOOST_ASSIGNMENT_EXCEPTION": "Request #{requestId} needs attention.",
+            "BOOST_REQUEST_REJECTED": "Request #{requestId} was rejected.",
+            "BOOSTER_APPLICATION_APPROVED": "Your booster application #{applicationId} was approved.",
+            "BOOSTER_APPLICATION_REJECTED": "Your booster application #{applicationId} was rejected."
+        }
     },
     "admin": {
         "title": "User Management",

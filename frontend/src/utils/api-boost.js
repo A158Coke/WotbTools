@@ -108,8 +108,40 @@ export async function getMyBoosterAssignments() {
   return await boostHandle(await fetch('/api/booster/assignments', { headers: await boostHeaders() }))
 }
 
+export async function acceptMyBoosterAssignment(id) {
+  return boostHandle(await fetch(`/api/booster/assignments/${encodeURIComponent(id)}/accept`, { method: 'PATCH', headers: await boostHeaders() }))
+}
+
+export async function startMyBoosterAssignment(id) {
+  return boostHandle(await fetch(`/api/booster/assignments/${encodeURIComponent(id)}/start`, { method: 'PATCH', headers: await boostHeaders() }))
+}
+
+export async function completeMyBoosterAssignment(id, body = {}) {
+  return boostHandle(await fetch(`/api/booster/assignments/${encodeURIComponent(id)}/complete`, { method: 'PATCH', headers: await boostHeaders(), body: JSON.stringify(body) }))
+}
+
+export async function declineMyBoosterAssignment(id, body = {}) {
+  return boostHandle(await fetch(`/api/booster/assignments/${encodeURIComponent(id)}/decline`, { method: 'PATCH', headers: await boostHeaders(), body: JSON.stringify(body) }))
+}
+
 export async function getMyBoosterProfile() {
   return boostHandle(await fetch('/api/boost/boosters/my', { headers: await boostHeaders() }))
+}
+
+export async function listNotifications() {
+  return boostHandle(await fetch('/api/users/notifications', { headers: await boostHeaders() }))
+}
+
+export async function getUnreadNotificationCount() {
+  return boostHandle(await fetch('/api/users/notifications/unread-count', { headers: await boostHeaders() }))
+}
+
+export async function markNotificationRead(id) {
+  return boostHandle(await fetch(`/api/users/notifications/${encodeURIComponent(id)}/read`, { method: 'PATCH', headers: await boostHeaders() }))
+}
+
+export async function markAllNotificationsRead() {
+  return boostHandle(await fetch('/api/users/notifications/read-all', { method: 'PATCH', headers: await boostHeaders() }))
 }
 
 // ========== Admin Users ==========
