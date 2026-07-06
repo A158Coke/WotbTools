@@ -133,6 +133,10 @@ java -jar wotb-web/target/wotb-web.jar --desktop
 - `GET /api/leaderboard/top-damage?limit=50` — 全局伤害榜（降序，`limit` 1–200）。
 - `GET /api/leaderboard/tanks/{tankId}/top-damage?limit=50` — 指定车辆伤害榜。
 
+### 陪练与打手（仅在线版）
+
+`GET /api/booster/assignments` 返回当前登录打手的活跃订单，用于前端工作台展示需求状态、联系方式、可安排时间和分配备注。管理员分配订单时要求打手资格为 `ACTIVE`、未暂停接单且没有活跃订单；前端会按资格、接单状态、活跃订单数、等级和擅长内容推荐排序。
+
 ## 测试
 
 ```bash

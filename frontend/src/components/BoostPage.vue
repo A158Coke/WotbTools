@@ -2,7 +2,32 @@
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
-import * as api from '../utils/api-boost.js'
+import {
+  adminBoostAssign,
+  adminBoostBoosterApplicationApprove,
+  adminBoostBoosterApplicationReject,
+  adminBoostBoosterApplicationReviewing,
+  adminBoostBoosterApplications,
+  adminBoostBoosterAvailability,
+  adminBoostBoosterCreate,
+  adminBoostBoosterDelete,
+  adminBoostBoosterList,
+  adminBoostBoosterUpdate,
+  adminBoostRequests,
+  adminBoostUnassign,
+  adminBoostUpdateStatus,
+  adminSearchUsers,
+  boostCancelRequest,
+  boostCreateBoosterApplication,
+  boostCreateRequest,
+  boostListMyBoosterApplications,
+  boostListMyRequests,
+  boostOptions,
+  createUserProfile,
+  getMyBoosterAssignments,
+  getMyBoosterProfile,
+  getUserProfile
+} from '../utils/api-boost.js'
 
 const { t } = useI18n()
 const { initPromise, login, isAuthenticated, userName, tokenParsed } = useAuth()
@@ -18,6 +43,7 @@ const tab = ref('request')
 const options = ref({ regions: [], requestTypes: [], contactTypes: [], warning: '' })
 const imageMaxBytes = 4 * 1024 * 1024
 const boosterLevels = ['CASUAL', 'SKILLED', 'ELITE', 'PRO']
+const boosterLevelRank = { CASUAL: 1, SKILLED: 2, ELITE: 3, PRO: 4 }
 const availabilityTiers = ['YEAR_360', 'QUARTER_80', 'MONTH_20', 'WEEK_5', 'WEEK_4', 'WEEK_3', 'WEEK_1']
 
 // Form
@@ -54,6 +80,8 @@ const applicationError = ref('')
 const applicationSuccess = ref('')
 const isBooster = computed(() => !!myBooster.value)
 const boundWotbAccount = computed(() => !!profile.value?.wotbAccountId && !!String(profile.value?.wotbNickname || '').trim())
+const myAssignments = ref([])
+const loadingAssignments = ref(false)
 
 // Admin: 检查 realm 角色 + 客户端角色 (resource_access)
 const isAdmin = computed(() => {
@@ -96,7 +124,7 @@ let searchTimer = null
 
 async function loadAllUsers() {
   try {
-    const res = await api.adminSearchUsers('', 200)
+    const res = await adminSearchUsers('', 200)
     allUsers.value = res.content || res || []
   } catch { allUsers.value = [] }
 }
@@ -110,7 +138,7 @@ function searchUsers() {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(async () => {
     try {
-      const res = await api.adminSearchUsers(userSearchQuery.value.trim(), 10)
+      const res = await adminSearchUsers(userSearchQuery.value.trim(), 10)
       userSearchResults.value = (res.content || res).slice(0, 10)
       showUserSearch.value = true
     } catch {
@@ -130,7 +158,7 @@ function selectUser(user) {
 async function deleteBooster(b) {
   if (!confirm(t('boost.deleteBoosterConfirm', { name: b.nickname }))) return
   try {
-    await api.adminBoostBoosterDelete(b.id)
+    await adminBoostBoosterDelete(b.id)
     loadBoosters(boosterPage.value.page)
   } catch (e) { alert(e.message) }
 }
@@ -160,25 +188,32 @@ onMounted(async () => {
 })
 
 async function loadOptions() {
-  try { options.value = await api.boostOptions() } catch {}
+  try { options.value = await boostOptions() } catch {}
 }
 
 async function loadMyRequests() {
   loadingMy.value = true
-  try { myRequests.value = await api.boostListMyRequests() } catch { myRequests.value = [] }
+  try { myRequests.value = await boostListMyRequests() } catch { myRequests.value = [] }
   finally { loadingMy.value = false }
 }
 
 async function loadApplicantState() {
   try {
-    profile.value = await api.getUserProfile()
+    profile.value = await getUserProfile()
   } catch {
-    try { profile.value = await api.createUserProfile() } catch { profile.value = null }
+    try { profile.value = await createUserProfile() } catch { profile.value = null }
   }
   applyBoundAccount()
-  try { myBooster.value = await api.getMyBoosterProfile() } catch { myBooster.value = null }
+  try { myBooster.value = await getMyBoosterProfile() } catch { myBooster.value = null }
   if (isBooster.value && tab.value === 'apply') tab.value = 'request'
+  if (isBooster.value) await loadMyAssignments()
   await loadMyApplications()
+}
+
+async function loadMyAssignments() {
+  loadingAssignments.value = true
+  try { myAssignments.value = await getMyBoosterAssignments() } catch { myAssignments.value = [] }
+  finally { loadingAssignments.value = false }
 }
 
 function applyBoundAccount() {
@@ -190,7 +225,7 @@ function applyBoundAccount() {
 
 async function loadMyApplications() {
   loadingApplications.value = true
-  try { myApplications.value = await api.boostListMyBoosterApplications() } catch { myApplications.value = [] }
+  try { myApplications.value = await boostListMyBoosterApplications() } catch { myApplications.value = [] }
   finally { loadingApplications.value = false }
 }
 
@@ -202,8 +237,17 @@ function availabilityLabel(tier) {
   return t(`boost.availability.${tier || 'MONTH_20'}`)
 }
 
-function boosterAvailabilityLabel(available) {
-  return available ? t('boost.availableNow') : t('boost.unavailable')
+function boosterAvailabilityState(booster) {
+  if (!booster?.available) return 'paused'
+  return (booster.activeAssignmentCount || 0) > 0 ? 'busy' : 'available'
+}
+
+function boosterAvailabilityLabel(booster) {
+  return t(`boost.boosterAvailabilityState.${boosterAvailabilityState(booster)}`)
+}
+
+function boosterAvailabilityBadge(booster) {
+  return boosterAvailabilityState(booster) === 'available' ? 'ok' : 'warn'
 }
 
 function boosterAvailabilityActionLabel(available) {
@@ -211,14 +255,38 @@ function boosterAvailabilityActionLabel(available) {
 }
 
 function boosterAssignable(booster) {
-  return booster?.available && booster?.status === 'ACTIVE'
+  return booster?.status === 'ACTIVE' && boosterAvailabilityState(booster) === 'available'
 }
 
 function boosterPickerSuffix(booster) {
   const tags = []
   if (booster?.status && booster.status !== 'ACTIVE') tags.push(booster.statusLabel)
-  if (!booster?.available) tags.push(boosterAvailabilityLabel(false))
+  if (boosterAvailabilityState(booster) !== 'available') tags.push(boosterAvailabilityLabel(booster))
   return tags.length ? ` [${tags.join(' / ')}]` : ''
+}
+
+function recommendedBoosters(request) {
+  return [...boosters.value].sort((a, b) => boosterMatchScore(b, request) - boosterMatchScore(a, request)
+    || (a.activeAssignmentCount || 0) - (b.activeAssignmentCount || 0)
+    || (boosterLevelRank[b.level] || 0) - (boosterLevelRank[a.level] || 0)
+    || String(a.nickname || '').localeCompare(String(b.nickname || '')))
+}
+
+function boosterMatchScore(booster, request) {
+  const text = `${request?.requestTypeLabel || ''} ${request?.targetDescription || ''}`.toLowerCase()
+  const profile = `${booster?.specialties || ''} ${booster?.description || ''} ${booster?.levelLabel || ''}`.toLowerCase()
+  let score = 0
+  if (boosterAssignable(booster)) score += 1000
+  if (booster?.status === 'ACTIVE') score += 100
+  if (booster?.available) score += 80
+  score -= (booster?.activeAssignmentCount || 0) * 200
+  score += (boosterLevelRank[booster?.level] || 0) * 10
+  if (profile && text && profile.split(/\s+/).some(part => part.length >= 2 && text.includes(part))) score += 60
+  return score
+}
+
+function isRecommendedBooster(booster, request) {
+  return recommendedBoosters(request).find(boosterAssignable)?.id === booster?.id
 }
 
 function applicationStatusLabel(status) {
@@ -276,7 +344,7 @@ async function submitBoosterApplication() {
   }
   applicationSubmitting.value = true
   try {
-    await api.boostCreateBoosterApplication(f)
+    await boostCreateBoosterApplication(f)
     applicationSuccess.value = t('boost.applicationSubmitted')
     f.overallStatsImage = ''
     f.vehicleStatsImage = ''
@@ -299,7 +367,7 @@ async function submitRequest() {
   }
   submitting.value = true
   try {
-    const res = await api.boostCreateRequest(form.value)
+    const res = await boostCreateRequest(form.value)
     formSuccess.value = res.message || t('boost.submitted')
     form.value.targetDescription = ''
     form.value.contactValue = ''
@@ -313,7 +381,7 @@ async function submitRequest() {
 
 async function cancelRequest(id) {
   try {
-    await api.boostCancelRequest(id)
+    await boostCancelRequest(id)
     loadMyRequests()
   } catch (e) {
     alert(e.message)
@@ -326,7 +394,7 @@ async function loadAdminRequests(page = 0) {
   try {
     const params = { page, size: adminPage.value.size }
     if (adminStatusFilter.value) params.status = adminStatusFilter.value
-    const data = await api.adminBoostRequests(params)
+    const data = await adminBoostRequests(params)
     adminRequests.value = data.content || []
     adminPage.value = { page: data.page, size: data.size, totalElements: data.totalElements, totalPages: data.totalPages }
   } catch { adminRequests.value = [] }
@@ -335,8 +403,9 @@ async function loadAdminRequests(page = 0) {
 
 async function updateStatus(id, status) {
   try {
-    await api.adminBoostUpdateStatus(id, { status, adminNote: '' })
+    await adminBoostUpdateStatus(id, { status, adminNote: '' })
     loadAdminRequests(adminPage.value.page)
+    loadBoosters(boosterPage.value.page)
   } catch (e) { alert(e.message) }
 }
 
@@ -345,7 +414,7 @@ async function loadAdminApplications(page = 0) {
   try {
     const params = { page, size: applicationPage.value.size }
     if (applicationStatusFilter.value) params.status = applicationStatusFilter.value
-    const data = await api.adminBoostBoosterApplications(params)
+    const data = await adminBoostBoosterApplications(params)
     adminApplications.value = data.content || []
     applicationPage.value = { page: data.page, size: data.size, totalElements: data.totalElements, totalPages: data.totalPages }
   } catch { adminApplications.value = [] }
@@ -354,7 +423,7 @@ async function loadAdminApplications(page = 0) {
 
 async function reviewApplication(id) {
   try {
-    await api.adminBoostBoosterApplicationReviewing(id, { adminNote: applicationNotes.value[id] || '' })
+    await adminBoostBoosterApplicationReviewing(id, { adminNote: applicationNotes.value[id] || '' })
     loadAdminApplications(applicationPage.value.page)
   } catch (e) { alert(e.message) }
 }
@@ -362,7 +431,7 @@ async function reviewApplication(id) {
 async function approveApplication(id) {
   if (!confirm(t('boost.applicationApproveConfirm'))) return
   try {
-    await api.adminBoostBoosterApplicationApprove(id, { adminNote: applicationNotes.value[id] || '' })
+    await adminBoostBoosterApplicationApprove(id, { adminNote: applicationNotes.value[id] || '' })
     loadAdminApplications(applicationPage.value.page)
     loadBoosters(boosterPage.value.page)
   } catch (e) { alert(e.message) }
@@ -371,7 +440,7 @@ async function approveApplication(id) {
 async function rejectApplication(id) {
   if (!confirm(t('boost.applicationRejectConfirm'))) return
   try {
-    await api.adminBoostBoosterApplicationReject(id, { adminNote: applicationNotes.value[id] || '' })
+    await adminBoostBoosterApplicationReject(id, { adminNote: applicationNotes.value[id] || '' })
     loadAdminApplications(applicationPage.value.page)
   } catch (e) { alert(e.message) }
 }
@@ -379,25 +448,27 @@ async function rejectApplication(id) {
 async function assignBooster(id) {
   assignError.value = ''
   try {
-    await api.adminBoostAssign(id, { boosterId: assignBoosterId.value, note: assignNote.value })
+    await adminBoostAssign(id, { boosterId: assignBoosterId.value, note: assignNote.value })
     assigningRequest.value = null
     assignBoosterId.value = null
     assignNote.value = ''
     loadAdminRequests(adminPage.value.page)
+    loadBoosters(boosterPage.value.page)
   } catch (e) { assignError.value = e.message }
 }
 
 async function unassignBooster(id) {
   try {
-    await api.adminBoostUnassign(id, { note: '' })
+    await adminBoostUnassign(id, { note: '' })
     loadAdminRequests(adminPage.value.page)
+    loadBoosters(boosterPage.value.page)
   } catch (e) { alert(e.message) }
 }
 
 async function loadBoosters(page = 0) {
   loadingBoosters.value = true
   try {
-    const data = await api.adminBoostBoosterList({ page, size: boosterPage.value.size })
+    const data = await adminBoostBoosterList({ page, size: boosterPage.value.size })
     boosters.value = data.content || []
     boosterPage.value = { page: data.page, size: data.size, totalElements: data.totalElements, totalPages: data.totalPages }
   } catch { boosters.value = [] }
@@ -430,9 +501,9 @@ async function saveBooster() {
   boosterError.value = ''
   try {
     if (editingBooster.value?.id) {
-      await api.adminBoostBoosterUpdate(editingBooster.value.id, boosterForm.value)
+      await adminBoostBoosterUpdate(editingBooster.value.id, boosterForm.value)
     } else {
-      await api.adminBoostBoosterCreate(boosterForm.value)
+      await adminBoostBoosterCreate(boosterForm.value)
     }
     editingBooster.value = null
     loadBoosters(boosterPage.value.page)
@@ -441,7 +512,7 @@ async function saveBooster() {
 
 async function toggleBoosterAvailable(b) {
   try {
-    await api.adminBoostBoosterAvailability(b.id, { available: !b.available })
+    await adminBoostBoosterAvailability(b.id, { available: !b.available })
     loadBoosters(boosterPage.value.page)
   } catch (e) { alert(e.message) }
 }
@@ -457,6 +528,7 @@ function switchTab(t) {
   if (t === 'adminRequests') { loadAdminRequests(); loadBoosters() }
   else if (t === 'boosters') { loadBoosters(); loadAllUsers() }
   else if (t === 'apply') { loadApplicantState() }
+  else if (t === 'myAssignments') { loadMyAssignments() }
   else if (t === 'applicationReview') { loadAdminApplications(); loadBoosters() }
 }
 </script>
@@ -467,6 +539,7 @@ function switchTab(t) {
     <div class="boost-tabs">
       <button :class="{ active: tab === 'request' }" @click="switchTab('request')">{{ $t('boost.submitTab') }}</button>
       <button :class="{ active: tab === 'my' }" @click="switchTab('my')">{{ $t('boost.myTab') }}</button>
+      <button v-if="isBooster" :class="{ active: tab === 'myAssignments' }" @click="switchTab('myAssignments')">{{ $t('boost.myAssignmentsTab') }}</button>
       <button v-if="!isBooster" :class="{ active: tab === 'apply' }" @click="switchTab('apply')">{{ $t('boost.applyBoosterTab') }}</button>
       <template v-if="isAdmin">
         <button :class="{ active: tab === 'adminRequests' }" @click="switchTab('adminRequests')">{{ $t('boost.adminRequestsTab') }}</button>
@@ -653,6 +726,34 @@ function switchTab(t) {
       </div>
     </div>
 
+    <!-- Tab: My Booster Assignments -->
+    <div v-if="isBooster && tab === 'myAssignments'" class="boost-card">
+      <div class="flex-between">
+        <h3 class="card-title">{{ $t('boost.myBoosterAssignments') }}</h3>
+        <button class="btn-ghost btn-sm" @click="loadMyAssignments()">{{ $t('boost.refresh') }}</button>
+      </div>
+      <div v-if="loadingAssignments" class="boost-loading">{{ $t('boost.loading') }}</div>
+      <div v-else-if="!myAssignments.length" class="boost-empty">{{ $t('boost.noAssignments') }}</div>
+      <div v-else class="my-list">
+        <div v-for="a in myAssignments" :key="a.id" class="my-item">
+          <div class="my-header">
+            <strong>#{{ a.requestId }}</strong>
+            <span>{{ a.requestTypeLabel }}</span>
+            <span :class="'badge badge-' + statusBadge(a.requestStatus)">{{ a.requestStatusLabel }}</span>
+            <span class="my-time">{{ new Date(a.assignedAt).toLocaleString() }}</span>
+          </div>
+          <p class="my-desc">{{ a.targetDescription }}</p>
+          <div class="my-meta">
+            <span>{{ $t('boost.contact') }}: {{ a.contactValue }}</span>
+            <span v-if="a.playerNickname">{{ $t('boost.playerNickname') }}: {{ a.playerNickname }}</span>
+            <span v-if="a.playerAccountId">{{ $t('boost.playerAccountId') }}: {{ a.playerAccountId }}</span>
+            <span v-if="a.availableTime">{{ $t('boost.availableTime') }}: {{ a.availableTime }}</span>
+          </div>
+          <p v-if="a.note" class="my-desc">{{ a.note }}</p>
+        </div>
+      </div>
+    </div>
+
     <!-- Tab: Admin Requests -->
     <div v-if="isAdmin && tab === 'adminRequests'" class="boost-card">
       <h3 class="card-title">{{ $t('boost.adminRequests') }}</h3>
@@ -716,8 +817,8 @@ function switchTab(t) {
           <div v-if="assigningRequest === r" class="assign-box">
             <select v-model.number="assignBoosterId" class="mr">
               <option :value="null" disabled>{{ $t('boost.selectBooster') }}</option>
-              <option v-for="b in boosters" :key="b.id" :value="b.id" :disabled="!boosterAssignable(b)">
-                {{ b.nickname }} ({{ b.levelLabel }}){{ boosterPickerSuffix(b) }}
+              <option v-for="b in recommendedBoosters(r)" :key="b.id" :value="b.id" :disabled="!boosterAssignable(b)">
+                {{ isRecommendedBooster(b, r) ? '[' + $t('boost.recommended') + '] ' : '' }}{{ b.nickname }} ({{ b.levelLabel }}){{ boosterPickerSuffix(b) }}
               </option>
             </select>
             <input v-model="assignNote" :placeholder="$t('boost.assignNote')" class="mr" />
@@ -871,7 +972,7 @@ function switchTab(t) {
             <strong>{{ b.nickname }}</strong>
             <span>{{ b.levelLabel }}</span>
             <span :class="'badge badge-' + statusBadge(b.status)">{{ b.statusLabel }}</span>
-            <span :class="'badge badge-' + (b.available ? 'ok' : 'warn')">{{ boosterAvailabilityLabel(b.available) }}</span>
+            <span :class="'badge badge-' + boosterAvailabilityBadge(b)">{{ boosterAvailabilityLabel(b) }}</span>
             <span class="booster-stats">{{ $t('boost.activeAssignments') }}: {{ b.activeAssignmentCount }}</span>
           </div>
           <div class="booster-meta" v-if="b.specialties">{{ b.specialties }}</div>

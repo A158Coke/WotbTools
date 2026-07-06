@@ -17,7 +17,7 @@
 - **Keycloak 先决策略**：打手创建/删除/用户删除等操作一律先 Keycloak 后业务库。
 - **部署 Workflow 拆分**：`deploy.yml` 改为 3 个独立 build job（按变更路径条件并行构建）。
 - **测试包修复**：`src/test/test/` → `src/test/java/`，修正包声明。
-- **打手订单查询**：新增 `MyAssignmentController` + `GET /api/booster/assignments`，打手查看自己的活跃分配。
+- **打手工作台**：新增 `MyAssignmentController` + `GET /api/booster/assignments`，打手查看自己的活跃分配、联系方式、需求状态与分配备注。
 
 ### Changed
 - **扩展 Rating V2 入口**：主 Vue SPA 新增 `?view=extended` 路由，复用独立 `/extended` 的实时 rating 页面，并在首页与顶栏暴露入口。
@@ -26,10 +26,11 @@
 - **前端视觉系统**：统一 Vue SPA 全局色板、按钮、表格、上传区、顶栏和深浅色变量，改为 Blitz 工具站风格。
 - **前端页面打磨**：统一回放解析、排行榜、个人中心、陪练、管理员和扩展页的卡片、表格、按钮、状态徽章和移动端间距。
 - **首页最高伤害记录**：首屏伤害 tag 改为读取 `/api/leaderboard/top-damage?page=1&size=1` 的当前最高单场伤害。
+- **打手调度体验**：分配弹窗按资格状态、接单状态、活跃订单数、等级和擅长内容推荐打手；打手已有活跃订单时自动显示为忙碌，不再允许继续分配新单。
 - 删除未被入口引用的旧 `VersionPage.vue`，版本历史继续由首页 `versions.json` 渲染。
 
 ### Fixed
-- **打手状态文案去歧义**：打手管理页把 `booster_profile.status` 明确显示为“资格状态”，把 `available` 明确显示为“可接单/暂停接单”，并在分配弹窗禁用非 `ACTIVE` 或暂停接单的打手，避免出现“正常 + 不可用”的误读。
+- **打手状态文案去歧义**：打手管理页把 `booster_profile.status` 明确显示为“资格状态”，把 `available + activeAssignmentCount` 明确显示为“可接单/忙碌/暂停接单”，避免出现“正常 + 不可用”的误读。
 - 个人中心补齐陪练身份卡片的三语 i18n key，避免直接显示 `profile.booster*` 原始 key。
 - 车辆库更新脚本补全 `alphaDamage`：从 BlitzKit `tanks.pb` 炮/弹模块解析最高等级炮的首发弹伤害，并修正脚本输出路径，避免潜在伤害补增因炮伤为空恒为 0。
 - CI/CD 部署：`docker compose pull` 添加 3 次重试。

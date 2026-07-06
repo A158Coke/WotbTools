@@ -8,6 +8,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.OffsetDateTime;
 import java.util.Optional;
@@ -33,7 +34,7 @@ public class AdminBoostRequestService {
 
     public Page<AdminBoostRequestDto> list(final String status, final Pageable pageable) {
         final Page<BoostRequest> page;
-        if (status != null && !status.isBlank()) {
+        if (StringUtils.hasText(status)) {
             page = requestService.findByStatus(status, pageable);
         } else {
             page = requestService.findAll(pageable);
