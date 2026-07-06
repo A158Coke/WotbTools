@@ -62,7 +62,7 @@
 - 工具集首页首屏展示排行榜当前最高单场伤害记录；排行榜暂无数据或接口不可用时显示 `--`。
 - **Keycloak 认证**：`https://auth.wotbtools.com` Keycloak 容器，realm `wotbtools`，client `wotbtools-web`。前端 `check-sso` 游客模式 + 登录/登出，注册入口由 Keycloak realm 托管。
 - **个人中心**：`/profile` 页面，显示用户名、登出按钮。未登录时展示"登入"按钮触发 Keycloak OIDC 流程。
-- **陪练与打手申请**：`?view=boost` 页面支持玩家提交打手资格申请，管理员在资格审批中查看截图、联系方式和在线时间，审批通过后自动关联 Keycloak `booster` role 与打手资料。
+- **陪练与打手申请**：`?view=boost` 页面支持玩家提交打手资格申请，管理员在资格审批中查看截图、联系方式和在线时间，审批通过后自动关联 Keycloak `booster` role 与打手资料。打手管理页会分别显示资格状态（`status`）和接单状态（`available`）。
 - **工具集主页**：Vue SPA 内 `HomePage.vue`（卡片入口 + 版本历史），版本历史数据来自 `frontend/src/data/versions.json`。
 - **域名统一**：`wotbtools.com` 和 `www.wotbtools.com`，去除 `replay.wotbtools.com` 子域名。
 - **管理员用户管理**：`/api/admin/users` API 搜索/查看/删除用户，Keycloak Admin API 集成，审计日志 `admin_user_log` 表，`wotbtools-admin` 角色权限控制。
