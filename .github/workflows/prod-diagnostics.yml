@@ -2,6 +2,10 @@ name: Production Diagnostics
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/prod-diagnostics.yml"
 
 jobs:
   backend-logs:
