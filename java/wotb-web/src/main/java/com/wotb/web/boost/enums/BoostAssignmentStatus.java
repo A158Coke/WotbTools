@@ -1,12 +1,15 @@
 package com.wotb.web.boost.enums;
 
-/** 分配记录状态。 */
+/** Boost assignment lifecycle. Database stores English enum names. */
 public enum BoostAssignmentStatus {
-    ASSIGNED("已分配"),
-    ACCEPTED("已接受"),
-    DECLINED("已拒绝"),
-    CANCELLED("已取消"),
-    COMPLETED("已完成");
+    ASSIGNED("ASSIGNED"),
+    ACCEPTED("ACCEPTED"),
+    IN_PROGRESS("IN_PROGRESS"),
+    PENDING_CONFIRM("PENDING_CONFIRM"),
+    DECLINED("DECLINED"),
+    CANCELLED("CANCELLED"),
+    COMPLETED("COMPLETED"),
+    EXCEPTION("EXCEPTION");
 
     private final String label;
 
@@ -24,6 +27,6 @@ public enum BoostAssignmentStatus {
                 return s;
             }
         }
-        throw new IllegalArgumentException("未知分配状态: " + value);
+        throw new IllegalArgumentException("UNKNOWN_BOOST_ASSIGNMENT_STATUS: " + value);
     }
 }

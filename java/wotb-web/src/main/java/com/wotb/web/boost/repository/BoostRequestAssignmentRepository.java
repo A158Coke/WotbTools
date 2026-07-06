@@ -11,6 +11,8 @@ public interface BoostRequestAssignmentRepository extends JpaRepository<BoostReq
 
     Optional<BoostRequestAssignment> findByRequestIdAndUnassignedAtIsNull(Long requestId);
 
+    Optional<BoostRequestAssignment> findByIdAndBoosterIdAndUnassignedAtIsNull(Long id, Long boosterId);
+
     List<BoostRequestAssignment> findByRequestIdOrderByAssignedAtDesc(Long requestId);
 
     List<BoostRequestAssignment> findByBoosterIdAndUnassignedAtIsNull(Long boosterId);

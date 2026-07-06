@@ -2,7 +2,6 @@ package com.wotb.web.boost.service;
 
 import com.wotb.web.boost.dto.AdminBoostRequestDto;
 import com.wotb.web.boost.entity.BoostRequest;
-import com.wotb.web.boost.enums.BoostAssignmentStatus;
 import com.wotb.web.boost.enums.BoostRequestStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -12,6 +11,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.OffsetDateTime;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 管理员侧需求服务。
@@ -19,6 +19,14 @@ import java.util.Optional;
  */
 @Service
 public class AdminBoostRequestService {
+
+    private static final Set<BoostRequestStatus> ADMIN_TARGET_STATUSES = Set.of(
+            BoostRequestStatus.REVIEWING,
+            BoostRequestStatus.REJECTED,
+            BoostRequestStatus.CANCELLED,
+            BoostRequestStatus.CLOSED,
+            BoostRequestStatus.EXCEPTION
+    );
 
     private final BoostRequestService requestService;
     private final BoostAssignmentService assignmentService;
@@ -50,19 +58,15 @@ public class AdminBoostRequestService {
     public AdminBoostRequestDto updateStatus(final Long id, final String status, final String adminNote) {
         final BoostRequest req = requestService.getById(id);
 
-        BoostRequestStatus.from(status);
-        final String upper = status.toUpperCase();
-        req.setStatus(upper);
+        final BoostRequestStatus targetStatus = BoostRequestStatus.from(status);
+        if (!ADMIN_TARGET_STATUSES.contains(targetStatus)) {
+            throw new IllegalArgumentException("REQUEST_STATUS_NOT_ADMIN_MUTABLE");
+        }
+        req.setStatus(targetStatus.name());
         if (adminNote != null) req.setAdminNote(adminNote);
         req.setUpdatedAt(OffsetDateTime.now());
 
-        if ("CANCELLED".equals(upper) || "CLOSED".equals(upper) || "REJECTED".equals(upper)) {
-            assignmentService.findActive(id).ifPresent(a -> {
-                a.setUnassignedAt(OffsetDateTime.now());
-                a.setStatus(BoostAssignmentStatus.CANCELLED.name());
-                a.setUpdatedAt(OffsetDateTime.now());
-            });
-        }
+        assignmentService.syncActiveAssignmentForRequestStatus(req, targetStatus, adminNote);
 
         return boostRequestMapper.toDto(req);
     }

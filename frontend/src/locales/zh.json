@@ -366,15 +366,36 @@
             "NEW": "待审核",
             "REVIEWING": "审核中",
             "MATCHED": "已匹配",
+            "ACCEPTED": "已接单",
+            "IN_PROGRESS": "进行中",
+            "PENDING_CONFIRM": "待确认完成",
             "CLOSED": "已完成",
+            "EXCEPTION": "异常中",
             "REJECTED": "已拒绝",
             "CANCELLED": "已取消"
+        },
+        "assignmentStatus": {
+            "ASSIGNED": "已分配",
+            "ACCEPTED": "已接单",
+            "IN_PROGRESS": "进行中",
+            "PENDING_CONFIRM": "待确认完成",
+            "DECLINED": "已拒单",
+            "CANCELLED": "已取消",
+            "COMPLETED": "已完成",
+            "EXCEPTION": "异常中"
         },
         "action": {
             "REVIEWING": "审核",
             "REJECTED": "拒绝",
             "CANCELLED": "取消",
-            "CLOSED": "完成"
+            "CLOSED": "完成",
+            "EXCEPTION": "标异常"
+        },
+        "assignmentAction": {
+            "accept": "接单",
+            "start": "开始",
+            "complete": "提交完成",
+            "decline": "拒单"
         },
         "applicationStatus": {
             "NEW": "待审批",
@@ -479,7 +500,41 @@
         "applicationApproveConfirm": "确认通过申请并创建打手？",
         "applicationRejectConfirm": "确认拒绝该申请？",
         "applicationApprove": "通过",
-        "applicationApprovedBooster": "已创建打手 #{id}"
+        "applicationApprovedBooster": "已创建打手 #{id}",
+        "completeNoteHint": "完成备注，可留空",
+        "declineNoteHint": "拒单原因，可留空",
+        "declineAssignmentConfirm": "确认拒绝这个订单？",
+        "notifications": "通知",
+        "markAllRead": "全部已读",
+        "noNotifications": "暂无通知",
+        "notificationTitle": {
+            "BOOST_REQUEST_ASSIGNED": "需求已分配",
+            "BOOST_ASSIGNMENT_RECEIVED": "新订单",
+            "BOOST_ASSIGNMENT_ACCEPTED": "打手已接单",
+            "BOOST_ASSIGNMENT_IN_PROGRESS": "订单已开始",
+            "BOOST_ASSIGNMENT_PENDING_CONFIRM": "等待确认完成",
+            "BOOST_ASSIGNMENT_COMPLETED": "订单已完成",
+            "BOOST_ASSIGNMENT_DECLINED": "打手已拒单",
+            "BOOST_ASSIGNMENT_CANCELLED": "订单已取消",
+            "BOOST_ASSIGNMENT_EXCEPTION": "订单异常",
+            "BOOST_REQUEST_REJECTED": "需求被拒绝",
+            "BOOSTER_APPLICATION_APPROVED": "申请通过",
+            "BOOSTER_APPLICATION_REJECTED": "申请被拒绝"
+        },
+        "notificationMessage": {
+            "BOOST_REQUEST_ASSIGNED": "需求 #{requestId} 已分配打手。",
+            "BOOST_ASSIGNMENT_RECEIVED": "你收到需求 #{requestId}。",
+            "BOOST_ASSIGNMENT_ACCEPTED": "打手已接下需求 #{requestId}。",
+            "BOOST_ASSIGNMENT_IN_PROGRESS": "需求 #{requestId} 正在进行中。",
+            "BOOST_ASSIGNMENT_PENDING_CONFIRM": "需求 #{requestId} 等待确认完成。",
+            "BOOST_ASSIGNMENT_COMPLETED": "需求 #{requestId} 已完成。",
+            "BOOST_ASSIGNMENT_DECLINED": "打手拒绝了需求 #{requestId}。",
+            "BOOST_ASSIGNMENT_CANCELLED": "需求 #{requestId} 的分配已取消。",
+            "BOOST_ASSIGNMENT_EXCEPTION": "需求 #{requestId} 需要处理异常。",
+            "BOOST_REQUEST_REJECTED": "需求 #{requestId} 已被拒绝。",
+            "BOOSTER_APPLICATION_APPROVED": "你的打手申请 #{applicationId} 已通过。",
+            "BOOSTER_APPLICATION_REJECTED": "你的打手申请 #{applicationId} 被拒绝。"
+        }
     },
     "admin": {
         "title": "用户管理",
