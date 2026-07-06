@@ -328,6 +328,7 @@
     "boost": {
         "submitTab": "提交需求",
         "myTab": "我的需求",
+        "myAssignmentsTab": "我的接单",
         "applyBoosterTab": "成为打手",
         "adminRequestsTab": "需求管理",
         "applicationReviewTab": "资格审批",
@@ -420,10 +421,18 @@
         "boosterDesc": "备注",
         "save": "保存",
         "edit": "编辑",
-        "availableNow": "可接单",
+        "boosterAvailabilityState": {
+            "available": "可接单",
+            "busy": "忙碌",
+            "paused": "暂停接单"
+        },
         "unavailable": "暂停接单",
         "setUnavailable": "暂停接单",
         "setAvailable": "恢复接单",
+        "recommended": "推荐",
+        "myBoosterAssignments": "我的接单",
+        "noAssignments": "暂无接单",
+        "refresh": "刷新",
         "noBoosters": "暂无",
         "pleaseLogin": "请先登录",
         "authError": "认证失败",

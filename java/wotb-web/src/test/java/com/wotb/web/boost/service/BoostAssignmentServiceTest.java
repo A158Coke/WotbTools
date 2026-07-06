@@ -48,7 +48,7 @@ class BoostAssignmentServiceTest {
         req.setStatus("NEW");
         activeBooster.setStatus("INACTIVE");
         when(requestService.getById(100L)).thenReturn(req);
-        when(boosterService.getById(1L)).thenReturn(activeBooster);
+        when(boosterService.getByIdForUpdate(1L)).thenReturn(activeBooster);
 
         assertThatThrownBy(() -> service.assign(100L, 1L, "note"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -61,7 +61,7 @@ class BoostAssignmentServiceTest {
         req.setStatus("NEW");
         activeBooster.setAvailable(false);
         when(requestService.getById(100L)).thenReturn(req);
-        when(boosterService.getById(1L)).thenReturn(activeBooster);
+        when(boosterService.getByIdForUpdate(1L)).thenReturn(activeBooster);
 
         assertThatThrownBy(() -> service.assign(100L, 1L, "note"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -77,6 +77,19 @@ class BoostAssignmentServiceTest {
         assertThatThrownBy(() -> service.assign(100L, 1L, "note"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("当前状态不允许分配打手");
+    }
+
+    @Test
+    void shouldRejectAssignmentToBusyBooster() {
+        final var req = new BoostRequest();
+        req.setStatus("NEW");
+        when(requestService.getById(100L)).thenReturn(req);
+        when(boosterService.getByIdForUpdate(1L)).thenReturn(activeBooster);
+        when(assignmentRepository.countByBoosterIdAndUnassignedAtIsNull(1L)).thenReturn(1L);
+
+        assertThatThrownBy(() -> service.assign(100L, 1L, "note"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("打手当前忙碌，无法接单");
     }
 
     @Test

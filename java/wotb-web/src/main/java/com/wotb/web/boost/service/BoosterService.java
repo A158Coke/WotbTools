@@ -39,6 +39,12 @@ public class BoosterService {
     }
 
     @Transactional
+    public BoosterProfile getByIdForUpdate(final Long id) {
+        return boosterRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new IllegalArgumentException("BOOSTER_NOT_FOUND"));
+    }
+
+    @Transactional
     public BoosterDto create(final String nickname, final String level,
                              final String keycloakUserId,
                              final Boolean available, final String status,
@@ -122,9 +128,9 @@ public class BoosterService {
     @Transactional(readOnly = true)
     public Page<BoosterDto> list(final String status, final Boolean available, final Pageable pageable) {
         final Page<BoosterProfile> page;
-        if (status != null && !status.isBlank() && available != null) {
+        if (StringUtils.hasText(status) && available != null) {
             page = boosterRepository.findByStatusAndAvailable(status, available, pageable);
-        } else if (status != null && !status.isBlank()) {
+        } else if (StringUtils.hasText(status)) {
             page = boosterRepository.findByStatus(status, pageable);
         } else if (available != null) {
             page = boosterRepository.findByAvailable(available, pageable);

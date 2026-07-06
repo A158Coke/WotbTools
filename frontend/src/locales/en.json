@@ -328,6 +328,7 @@
     "boost": {
         "submitTab": "Submit",
         "myTab": "My",
+        "myAssignmentsTab": "Orders",
         "applyBoosterTab": "Apply",
         "adminRequestsTab": "Manage",
         "applicationReviewTab": "Approvals",
@@ -420,10 +421,18 @@
         "boosterDesc": "Notes",
         "save": "Save",
         "edit": "Edit",
-        "availableNow": "Taking orders",
+        "boosterAvailabilityState": {
+            "available": "Taking orders",
+            "busy": "Busy",
+            "paused": "Paused"
+        },
         "unavailable": "Paused",
         "setUnavailable": "Pause orders",
         "setAvailable": "Resume orders",
+        "recommended": "Recommended",
+        "myBoosterAssignments": "My Orders",
+        "noAssignments": "No orders",
+        "refresh": "Refresh",
         "activeAssignments": "Active",
         "noBoosters": "None",
         "pleaseLogin": "Login required",

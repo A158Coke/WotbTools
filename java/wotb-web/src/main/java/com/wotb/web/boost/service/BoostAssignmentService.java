@@ -6,7 +6,6 @@ import com.wotb.web.boost.entity.BoostRequestAssignment;
 import com.wotb.web.boost.entity.BoosterProfile;
 import com.wotb.web.boost.enums.BoostAssignmentStatus;
 import com.wotb.web.boost.enums.BoostRequestStatus;
-import com.wotb.web.boost.enums.BoostRequestType;
 import com.wotb.web.boost.repository.BoostRequestAssignmentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,9 +43,7 @@ public class BoostAssignmentService {
                 .stream()
                 .map(a -> {
                     final BoostRequest req = requestService.getById(a.getRequestId());
-                    final String typeLabel = BoostRequestType.from(req.getRequestType()).label();
-                    return mapper.toDto(a, boosterService.getById(a.getBoosterId()),
-                            typeLabel, req.getTargetDescription());
+                    return mapper.toDto(a, boosterService.getById(a.getBoosterId()), req);
                 })
                 .toList();
     }
@@ -63,12 +60,15 @@ public class BoostAssignmentService {
             throw new IllegalArgumentException("当前状态不允许分配打手");
         }
 
-        final BoosterProfile booster = boosterService.getById(boosterId);
+        final BoosterProfile booster = boosterService.getByIdForUpdate(boosterId);
         if (!"ACTIVE".equalsIgnoreCase(booster.getStatus())) {
             throw new IllegalArgumentException("打手当前状态不可接单");
         }
         if (booster.getAvailable() == null || !booster.getAvailable()) {
             throw new IllegalArgumentException("打手不可用");
+        }
+        if (assignmentRepository.countByBoosterIdAndUnassignedAtIsNull(boosterId) > 0) {
+            throw new IllegalArgumentException("打手当前忙碌，无法接单");
         }
 
         final OffsetDateTime now = OffsetDateTime.now();

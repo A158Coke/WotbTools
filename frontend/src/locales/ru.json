@@ -328,6 +328,7 @@
     "boost": {
         "submitTab": "Заявка",
         "myTab": "Мои",
+        "myAssignmentsTab": "Заказы",
         "applyBoosterTab": "Стать бустером",
         "adminRequestsTab": "Заявки",
         "applicationReviewTab": "Проверка",
@@ -420,10 +421,18 @@
         "boosterDesc": "Заметки",
         "save": "Сохранить",
         "edit": "Ред.",
-        "availableNow": "Берет заказы",
+        "boosterAvailabilityState": {
+            "available": "Берет заказы",
+            "busy": "Занят",
+            "paused": "Пауза"
+        },
         "unavailable": "Пауза по заказам",
         "setUnavailable": "Пауза по заказам",
         "setAvailable": "Возобновить заказы",
+        "recommended": "Рекомендуется",
+        "myBoosterAssignments": "Мои заказы",
+        "noAssignments": "Заказов нет",
+        "refresh": "Обновить",
         "activeAssignments": "Активно",
         "noBoosters": "Нет",
         "pleaseLogin": "Войдите",
