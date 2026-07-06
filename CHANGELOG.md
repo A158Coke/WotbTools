@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- **打手资格申请链路**：新增 `booster_application` 申请表（Flyway V9）、玩家申请 API、管理员资格审批 API；审批通过时先授予 Keycloak `booster` role，再创建 `booster_profile`。
 - **潜在场均链路**：`data.wotreplay` 的 direct HP damage 事件会推断击杀目标并填充 `killVictims`，用于 `/extended` 实时 rating 的 `potential_damage_avg`。
 - **通用错误码系统**：`ErrorCode` 枚举（`dto/ErrorCode.java`），取代 JSON 加载的 `ErrorCodes` 工具类。
 - AGENTS.md 规则 18（StringUtils.hasText）、19（优先 Stream）、20（禁止 import \*）、21（禁止 import \*）、22（Mapper 替代 toXxx）、23（子代理确认 + 完成通知）。
