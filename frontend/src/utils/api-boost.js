@@ -13,7 +13,7 @@ async function boostHandle(r) {
   if (r.status === 401) {
     const { login } = useAuth()
     login()
-    throw new Error('请先登录')
+    throw new Error('AUTH_REQUIRED')
   }
   if (!r.ok) {
     let msg = `HTTP ${r.status}`
@@ -75,6 +75,32 @@ export async function adminBoostBoosterAvailability(id, body) {
 
 export async function adminBoostBoosterDelete(id) {
   return boostHandle(await fetch(`/api/admin/boost/boosters/${encodeURIComponent(id)}`, { method: 'DELETE', headers: await boostHeaders() }))
+}
+
+// ========== Booster Applications ==========
+export async function boostCreateBoosterApplication(body) {
+  return boostHandle(await fetch('/api/boost/booster-applications', { method: 'POST', headers: await boostHeaders(), body: JSON.stringify(body) }))
+}
+
+export async function boostListMyBoosterApplications() {
+  return boostHandle(await fetch('/api/boost/booster-applications/my', { headers: await boostHeaders() }))
+}
+
+export async function adminBoostBoosterApplications(params = {}) {
+  const qs = new URLSearchParams(params).toString()
+  return boostHandle(await fetch(`/api/admin/boost/booster-applications${qs ? '?' + qs : ''}`, { headers: await boostHeaders() }))
+}
+
+export async function adminBoostBoosterApplicationReviewing(id, body = {}) {
+  return boostHandle(await fetch(`/api/admin/boost/booster-applications/${encodeURIComponent(id)}/reviewing`, { method: 'PATCH', headers: await boostHeaders(), body: JSON.stringify(body) }))
+}
+
+export async function adminBoostBoosterApplicationApprove(id, body = {}) {
+  return boostHandle(await fetch(`/api/admin/boost/booster-applications/${encodeURIComponent(id)}/approve`, { method: 'PATCH', headers: await boostHeaders(), body: JSON.stringify(body) }))
+}
+
+export async function adminBoostBoosterApplicationReject(id, body = {}) {
+  return boostHandle(await fetch(`/api/admin/boost/booster-applications/${encodeURIComponent(id)}/reject`, { method: 'PATCH', headers: await boostHeaders(), body: JSON.stringify(body) }))
 }
 
 // ========== My Booster Profile ==========

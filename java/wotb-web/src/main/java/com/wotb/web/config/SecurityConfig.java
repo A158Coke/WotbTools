@@ -58,7 +58,11 @@ public class SecurityConfig {
 
                 // --- 需登录接口 (wotbtools-admin 也是已登录用户，自动通过) ---
                 .requestMatchers("/api/users/**",
-                        "/api/boost/requests/**", "/boost", "/boost/**")
+                        "/api/boost/requests/**",
+                        "/api/boost/boosters/**",
+                        "/api/boost/booster-applications/**",
+                        "/api/booster/**",
+                        "/boost", "/boost/**")
                     .authenticated()
 
                 // --- 其他放行 ---

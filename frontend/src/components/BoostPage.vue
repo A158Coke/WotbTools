@@ -16,6 +16,9 @@ const tab = ref('request')
 
 // Options (dropdown data)
 const options = ref({ regions: [], requestTypes: [], contactTypes: [], warning: '' })
+const imageMaxBytes = 4 * 1024 * 1024
+const boosterLevels = ['CASUAL', 'SKILLED', 'ELITE', 'PRO']
+const availabilityTiers = ['YEAR_360', 'QUARTER_80', 'MONTH_20', 'WEEK_5', 'WEEK_4', 'WEEK_3', 'WEEK_1']
 
 // Form
 const form = ref({ region: 'CN', requestType: 'COACHING', contactType: 'QQ', targetDescription: '', contactValue: '', playerNickname: '', playerAccountId: null, budgetRange: '', availableTime: '', remark: '' })
@@ -26,6 +29,31 @@ const formSuccess = ref('')
 // My requests
 const myRequests = ref([])
 const loadingMy = ref(false)
+
+// Booster application
+const profile = ref(null)
+const myBooster = ref(null)
+const myApplications = ref([])
+const loadingApplications = ref(false)
+const applicationForm = ref({
+  wotbAccountId: null,
+  wotbNickname: '',
+  wotbServer: 'CN',
+  overallStatsImage: '',
+  vehicleStatsImage: '',
+  requestedLevel: 'SKILLED',
+  qq: '',
+  wechat: '',
+  availabilityTier: 'MONTH_20',
+  dailyTimeWindow: '',
+  selfAssessment: ''
+})
+const imageNames = ref({ overall: '', vehicle: '' })
+const applicationSubmitting = ref(false)
+const applicationError = ref('')
+const applicationSuccess = ref('')
+const isBooster = computed(() => !!myBooster.value)
+const boundWotbAccount = computed(() => !!profile.value?.wotbAccountId && !!String(profile.value?.wotbNickname || '').trim())
 
 // Admin: 检查 realm 角色 + 客户端角色 (resource_access)
 const isAdmin = computed(() => {
@@ -43,6 +71,13 @@ const adminRequests = ref([])
 const adminPage = ref({ page: 0, size: 20, totalElements: 0, totalPages: 0 })
 const adminStatusFilter = ref('')
 const loadingAdmin = ref(false)
+
+// Admin: booster applications
+const adminApplications = ref([])
+const applicationPage = ref({ page: 0, size: 20, totalElements: 0, totalPages: 0 })
+const applicationStatusFilter = ref('')
+const loadingAdminApplications = ref(false)
+const applicationNotes = ref({})
 
 // Admin: booster list
 const boosters = ref([])
@@ -114,6 +149,7 @@ onMounted(async () => {
       phase.value = 'done'
       loadOptions()
       loadMyRequests()
+      loadApplicantState()
     } else {
       phase.value = 'login'
       login()
@@ -131,6 +167,108 @@ async function loadMyRequests() {
   loadingMy.value = true
   try { myRequests.value = await api.boostListMyRequests() } catch { myRequests.value = [] }
   finally { loadingMy.value = false }
+}
+
+async function loadApplicantState() {
+  try {
+    profile.value = await api.getUserProfile()
+  } catch {
+    try { profile.value = await api.createUserProfile() } catch { profile.value = null }
+  }
+  applyBoundAccount()
+  try { myBooster.value = await api.getMyBoosterProfile() } catch { myBooster.value = null }
+  if (isBooster.value && tab.value === 'apply') tab.value = 'request'
+  await loadMyApplications()
+}
+
+function applyBoundAccount() {
+  if (!profile.value?.wotbAccountId) return
+  applicationForm.value.wotbAccountId = profile.value.wotbAccountId
+  applicationForm.value.wotbNickname = profile.value.wotbNickname || ''
+  applicationForm.value.wotbServer = profile.value.wotbServer || 'CN'
+}
+
+async function loadMyApplications() {
+  loadingApplications.value = true
+  try { myApplications.value = await api.boostListMyBoosterApplications() } catch { myApplications.value = [] }
+  finally { loadingApplications.value = false }
+}
+
+function applicationLevelLabel(level) {
+  return t(`boost.level.${level || 'SKILLED'}`)
+}
+
+function availabilityLabel(tier) {
+  return t(`boost.availability.${tier || 'MONTH_20'}`)
+}
+
+function applicationStatusLabel(status) {
+  return t(`boost.applicationStatus.${status || 'NEW'}`)
+}
+
+function latestOpenApplication() {
+  return myApplications.value.find(a => a.status === 'NEW' || a.status === 'REVIEWING')
+}
+
+function readImage(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) { resolve(''); return }
+    if (!file.type?.startsWith('image/')) {
+      reject(new Error(t('boost.applicationImageTypeError')))
+      return
+    }
+    if (file.size > imageMaxBytes) {
+      reject(new Error(t('boost.applicationImageSizeError')))
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(new Error(t('boost.applicationImageReadError')))
+    reader.readAsDataURL(file)
+  })
+}
+
+async function selectApplicationImage(kind, event) {
+  applicationError.value = ''
+  const file = event.target.files?.[0]
+  try {
+    const dataUrl = await readImage(file)
+    if (kind === 'overall') {
+      applicationForm.value.overallStatsImage = dataUrl
+      imageNames.value.overall = file?.name || ''
+    } else {
+      applicationForm.value.vehicleStatsImage = dataUrl
+      imageNames.value.vehicle = file?.name || ''
+    }
+  } catch (e) {
+    applicationError.value = e.message
+    event.target.value = ''
+  }
+}
+
+async function submitBoosterApplication() {
+  applicationError.value = ''
+  applicationSuccess.value = ''
+  applyBoundAccount()
+  const f = applicationForm.value
+  if (!f.wotbAccountId || !String(f.wotbNickname || '').trim() || !f.qq.trim() || !f.dailyTimeWindow.trim() || !f.overallStatsImage || !f.vehicleStatsImage) {
+    applicationError.value = t('boost.applicationFillRequired')
+    return
+  }
+  applicationSubmitting.value = true
+  try {
+    await api.boostCreateBoosterApplication(f)
+    applicationSuccess.value = t('boost.applicationSubmitted')
+    f.overallStatsImage = ''
+    f.vehicleStatsImage = ''
+    f.selfAssessment = ''
+    imageNames.value = { overall: '', vehicle: '' }
+    await loadMyApplications()
+  } catch (e) {
+    applicationError.value = e.message
+  } finally {
+    applicationSubmitting.value = false
+  }
 }
 
 async function submitRequest() {
@@ -180,6 +318,42 @@ async function updateStatus(id, status) {
   try {
     await api.adminBoostUpdateStatus(id, { status, adminNote: '' })
     loadAdminRequests(adminPage.value.page)
+  } catch (e) { alert(e.message) }
+}
+
+async function loadAdminApplications(page = 0) {
+  loadingAdminApplications.value = true
+  try {
+    const params = { page, size: applicationPage.value.size }
+    if (applicationStatusFilter.value) params.status = applicationStatusFilter.value
+    const data = await api.adminBoostBoosterApplications(params)
+    adminApplications.value = data.content || []
+    applicationPage.value = { page: data.page, size: data.size, totalElements: data.totalElements, totalPages: data.totalPages }
+  } catch { adminApplications.value = [] }
+  finally { loadingAdminApplications.value = false }
+}
+
+async function reviewApplication(id) {
+  try {
+    await api.adminBoostBoosterApplicationReviewing(id, { adminNote: applicationNotes.value[id] || '' })
+    loadAdminApplications(applicationPage.value.page)
+  } catch (e) { alert(e.message) }
+}
+
+async function approveApplication(id) {
+  if (!confirm(t('boost.applicationApproveConfirm'))) return
+  try {
+    await api.adminBoostBoosterApplicationApprove(id, { adminNote: applicationNotes.value[id] || '' })
+    loadAdminApplications(applicationPage.value.page)
+    loadBoosters(boosterPage.value.page)
+  } catch (e) { alert(e.message) }
+}
+
+async function rejectApplication(id) {
+  if (!confirm(t('boost.applicationRejectConfirm'))) return
+  try {
+    await api.adminBoostBoosterApplicationReject(id, { adminNote: applicationNotes.value[id] || '' })
+    loadAdminApplications(applicationPage.value.page)
   } catch (e) { alert(e.message) }
 }
 
@@ -254,14 +428,17 @@ async function toggleBoosterAvailable(b) {
 }
 
 function statusBadge(s) {
-  const map = { NEW: 'info', REVIEWING: 'warn', MATCHED: 'ok', CLOSED: 'ok', REJECTED: 'err', CANCELLED: 'err', ASSIGNED: 'ok', ACTIVE: 'ok', INACTIVE: 'warn', BANNED: 'err' }
+  const map = { NEW: 'info', REVIEWING: 'warn', APPROVED: 'ok', MATCHED: 'ok', CLOSED: 'ok', REJECTED: 'err', CANCELLED: 'err', ASSIGNED: 'ok', ACTIVE: 'ok', INACTIVE: 'warn', BANNED: 'err' }
   return map[s] || ''
 }
 
 function switchTab(t) {
+  if (t === 'apply' && isBooster.value) return
   tab.value = t
   if (t === 'adminRequests') { loadAdminRequests(); loadBoosters() }
   else if (t === 'boosters') { loadBoosters(); loadAllUsers() }
+  else if (t === 'apply') { loadApplicantState() }
+  else if (t === 'applicationReview') { loadAdminApplications(); loadBoosters() }
 }
 </script>
 
@@ -271,8 +448,10 @@ function switchTab(t) {
     <div class="boost-tabs">
       <button :class="{ active: tab === 'request' }" @click="switchTab('request')">{{ $t('boost.submitTab') }}</button>
       <button :class="{ active: tab === 'my' }" @click="switchTab('my')">{{ $t('boost.myTab') }}</button>
+      <button v-if="!isBooster" :class="{ active: tab === 'apply' }" @click="switchTab('apply')">{{ $t('boost.applyBoosterTab') }}</button>
       <template v-if="isAdmin">
         <button :class="{ active: tab === 'adminRequests' }" @click="switchTab('adminRequests')">{{ $t('boost.adminRequestsTab') }}</button>
+        <button :class="{ active: tab === 'applicationReview' }" @click="switchTab('applicationReview')">{{ $t('boost.applicationReviewTab') }}</button>
         <button :class="{ active: tab === 'boosters' }" @click="switchTab('boosters')">{{ $t('boost.boostersTab') }}</button>
       </template>
     </div>
@@ -336,6 +515,98 @@ function switchTab(t) {
         <button class="btn-primary" @click="submitRequest" :disabled="submitting">
           {{ submitting ? $t('boost.submitting') : $t('boost.submit') }}
         </button>
+      </div>
+    </div>
+
+    <!-- Tab: Apply Booster -->
+    <div v-if="tab === 'apply' && !isBooster" class="boost-card">
+      <h3 class="card-title">{{ $t('boost.applyBoosterTitle') }}</h3>
+      <p class="boost-warning">{{ $t('boost.applyBoosterWarning') }}</p>
+
+      <div v-if="latestOpenApplication()" class="boost-success">
+        {{ $t('boost.applicationOpenHint', { status: applicationStatusLabel(latestOpenApplication().status) }) }}
+      </div>
+
+      <div class="boost-form">
+        <div class="form-row">
+          <label>{{ $t('boost.playerNickname') }} *</label>
+          <input v-model="applicationForm.wotbNickname" maxlength="100" :disabled="boundWotbAccount" :placeholder="$t('boost.applicationNicknameHint')" />
+          <small v-if="boundWotbAccount" class="field-hint">{{ $t('boost.applicationBoundHint') }}</small>
+        </div>
+        <div class="form-row">
+          <label>{{ $t('boost.playerAccountId') }} *</label>
+          <input v-model.number="applicationForm.wotbAccountId" type="number" :disabled="boundWotbAccount" :placeholder="$t('boost.applicationAccountIdHint')" />
+        </div>
+        <div class="form-row">
+          <label>{{ $t('boost.applicationLevel') }} *</label>
+          <select v-model="applicationForm.requestedLevel">
+            <option v-for="level in boosterLevels" :key="level" :value="level">{{ applicationLevelLabel(level) }}</option>
+          </select>
+        </div>
+        <div class="form-grid">
+          <div class="form-row">
+            <label>{{ $t('boost.applicationOverallImage') }} *</label>
+            <input type="file" accept="image/*" @change="selectApplicationImage('overall', $event)" />
+            <small class="field-hint">{{ imageNames.overall || $t('boost.applicationImageHint') }}</small>
+          </div>
+          <div class="form-row">
+            <label>{{ $t('boost.applicationVehicleImage') }} *</label>
+            <input type="file" accept="image/*" @change="selectApplicationImage('vehicle', $event)" />
+            <small class="field-hint">{{ imageNames.vehicle || $t('boost.applicationImageHint') }}</small>
+          </div>
+        </div>
+        <div class="form-grid">
+          <div class="form-row">
+            <label>{{ $t('boost.applicationQq') }} *</label>
+            <input v-model="applicationForm.qq" maxlength="64" :placeholder="$t('boost.applicationQqHint')" />
+          </div>
+          <div class="form-row">
+            <label>{{ $t('boost.applicationWechat') }}</label>
+            <input v-model="applicationForm.wechat" maxlength="64" :placeholder="$t('boost.applicationWechatHint')" />
+          </div>
+        </div>
+        <div class="form-row">
+          <label>{{ $t('boost.applicationAvailability') }} *</label>
+          <select v-model="applicationForm.availabilityTier">
+            <option v-for="tier in availabilityTiers" :key="tier" :value="tier">{{ availabilityLabel(tier) }}</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>{{ $t('boost.applicationDailyTime') }} *</label>
+          <input v-model="applicationForm.dailyTimeWindow" maxlength="255" :placeholder="$t('boost.applicationDailyTimeHint')" />
+        </div>
+        <div class="form-row">
+          <label>{{ $t('boost.applicationSelfAssessment') }}</label>
+          <textarea v-model="applicationForm.selfAssessment" rows="3" maxlength="2000" :placeholder="$t('boost.applicationSelfAssessmentHint')"></textarea>
+        </div>
+
+        <div v-if="applicationError" class="boost-error">{{ applicationError }}</div>
+        <div v-if="applicationSuccess" class="boost-success">{{ applicationSuccess }}</div>
+
+        <button class="btn-primary" @click="submitBoosterApplication" :disabled="applicationSubmitting || !!latestOpenApplication()">
+          {{ applicationSubmitting ? $t('boost.submitting') : $t('boost.applyBoosterSubmit') }}
+        </button>
+      </div>
+
+      <div class="application-history">
+        <h4>{{ $t('boost.myBoosterApplications') }}</h4>
+        <div v-if="loadingApplications" class="boost-loading">{{ $t('boost.loading') }}</div>
+        <div v-else-if="!myApplications.length" class="boost-empty">{{ $t('boost.noBoosterApplications') }}</div>
+        <div v-else class="my-list">
+          <div v-for="a in myApplications" :key="a.id" class="my-item">
+            <div class="my-header">
+              <strong>#{{ a.id }}</strong>
+              <span>{{ applicationLevelLabel(a.requestedLevel) }}</span>
+              <span :class="'badge badge-' + statusBadge(a.status)">{{ applicationStatusLabel(a.status) }}</span>
+              <span class="my-time">{{ new Date(a.createdAt).toLocaleString() }}</span>
+            </div>
+            <div class="my-meta">
+              <span>{{ a.wotbNickname }} / {{ a.wotbAccountId }}</span>
+              <span>{{ availabilityLabel(a.availabilityTier) }}</span>
+            </div>
+            <p v-if="a.adminNote" class="my-desc">{{ a.adminNote }}</p>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -445,6 +716,69 @@ function switchTab(t) {
       </div>
     </div>
 
+    <!-- Tab: Booster Application Review -->
+    <div v-if="isAdmin && tab === 'applicationReview'" class="boost-card">
+      <h3 class="card-title">{{ $t('boost.applicationReviewTitle') }}</h3>
+      <div class="admin-filters">
+        <select v-model="applicationStatusFilter" @change="loadAdminApplications()">
+          <option value="">{{ $t('boost.allStatus') }}</option>
+          <option value="NEW">{{ $t('boost.applicationStatus.NEW') }}</option>
+          <option value="REVIEWING">{{ $t('boost.applicationStatus.REVIEWING') }}</option>
+          <option value="APPROVED">{{ $t('boost.applicationStatus.APPROVED') }}</option>
+          <option value="REJECTED">{{ $t('boost.applicationStatus.REJECTED') }}</option>
+        </select>
+        <span class="admin-count">{{ applicationPage.totalElements }} {{ $t('boost.total') }}</span>
+      </div>
+
+      <div v-if="loadingAdminApplications" class="boost-loading">{{ $t('boost.loading') }}</div>
+      <div v-else-if="!adminApplications.length" class="boost-empty">{{ $t('boost.noBoosterApplications') }}</div>
+      <div v-else class="application-list">
+        <div v-for="a in adminApplications" :key="a.id" class="application-item">
+          <div class="admin-header">
+            <strong>#{{ a.id }}</strong>
+            <span>{{ a.wotbNickname }} / {{ a.wotbAccountId }}</span>
+            <span>{{ applicationLevelLabel(a.requestedLevel) }}</span>
+            <span :class="'badge badge-' + statusBadge(a.status)">{{ applicationStatusLabel(a.status) }}</span>
+            <span class="admin-time">{{ new Date(a.createdAt).toLocaleString() }}</span>
+          </div>
+          <div class="application-details">
+            <div><span>{{ $t('boost.applicationQq') }}</span><strong>{{ a.qq }}</strong></div>
+            <div><span>{{ $t('boost.applicationWechat') }}</span><strong>{{ a.wechat || '-' }}</strong></div>
+            <div><span>{{ $t('boost.applicationAvailability') }}</span><strong>{{ availabilityLabel(a.availabilityTier) }}</strong></div>
+            <div><span>{{ $t('boost.applicationDailyTime') }}</span><strong>{{ a.dailyTimeWindow }}</strong></div>
+            <div><span>{{ $t('boost.applicationSelfAssessment') }}</span><strong>{{ a.selfAssessment || '-' }}</strong></div>
+          </div>
+          <div class="application-images">
+            <a :href="a.overallStatsImage" target="_blank" rel="noopener">
+              <img :src="a.overallStatsImage" :alt="$t('boost.applicationOverallImage')" />
+              <span>{{ $t('boost.applicationOverallImage') }}</span>
+            </a>
+            <a :href="a.vehicleStatsImage" target="_blank" rel="noopener">
+              <img :src="a.vehicleStatsImage" :alt="$t('boost.applicationVehicleImage')" />
+              <span>{{ $t('boost.applicationVehicleImage') }}</span>
+            </a>
+          </div>
+          <div class="form-row">
+            <label>{{ $t('boost.applicationAdminNote') }}</label>
+            <input v-model="applicationNotes[a.id]" maxlength="500" :placeholder="a.adminNote || $t('boost.applicationAdminNoteHint')" />
+          </div>
+          <div class="admin-actions" v-if="a.status === 'NEW' || a.status === 'REVIEWING'">
+            <button v-if="a.status === 'NEW'" class="btn-ghost btn-sm" @click="reviewApplication(a.id)">{{ $t('boost.action.REVIEWING') }}</button>
+            <button class="btn-primary btn-sm" @click="approveApplication(a.id)">{{ $t('boost.applicationApprove') }}</button>
+            <button class="btn-ghost btn-sm btn-danger" @click="rejectApplication(a.id)">{{ $t('boost.action.REJECTED') }}</button>
+          </div>
+          <div v-else-if="a.approvedBoosterId" class="boost-success">
+            {{ $t('boost.applicationApprovedBooster', { id: a.approvedBoosterId }) }}
+          </div>
+        </div>
+      </div>
+      <div v-if="applicationPage.totalPages > 1" class="pager">
+        <button :disabled="applicationPage.page <= 0" @click="loadAdminApplications(applicationPage.page - 1)">←</button>
+        <span>{{ applicationPage.page + 1 }} / {{ applicationPage.totalPages }}</span>
+        <button :disabled="applicationPage.page >= applicationPage.totalPages - 1" @click="loadAdminApplications(applicationPage.page + 1)">→</button>
+      </div>
+    </div>
+
     <!-- Tab: Boosters -->
     <div v-if="isAdmin && tab === 'boosters'" class="boost-card">
       <div class="flex-between">
@@ -458,18 +792,15 @@ function switchTab(t) {
         <div class="form-row">
           <label>{{ $t('boost.boosterLevel') }}</label>
           <select v-model="boosterForm.level">
-            <option value="CASUAL">普通</option>
-            <option value="SKILLED">熟练</option>
-            <option value="ELITE">高手</option>
-            <option value="PRO">职业级</option>
+            <option v-for="level in boosterLevels" :key="level" :value="level">{{ applicationLevelLabel(level) }}</option>
           </select>
         </div>
         <div class="form-row">
           <label>{{ $t('boost.boosterStatus') }}</label>
           <select v-model="boosterForm.status">
-            <option value="ACTIVE">正常</option>
-            <option value="INACTIVE">停用</option>
-            <option value="BANNED">禁用</option>
+            <option value="ACTIVE">{{ $t('boost.boosterStatusValue.ACTIVE') }}</option>
+            <option value="INACTIVE">{{ $t('boost.boosterStatusValue.INACTIVE') }}</option>
+            <option value="BANNED">{{ $t('boost.boosterStatusValue.BANNED') }}</option>
           </select>
         </div>
         <div class="form-row">
@@ -494,7 +825,7 @@ function switchTab(t) {
           <select v-model="boosterForm.contactType">
             <option value="">--</option>
             <option value="QQ">QQ</option>
-            <option value="WECHAT">微信</option>
+            <option value="WECHAT">{{ $t('boost.contactWechat') }}</option>
           </select>
           <input v-model="boosterForm.contactValue" maxlength="255" :placeholder="$t('boost.contactHint')" />
         </div>
@@ -565,12 +896,20 @@ function switchTab(t) {
 .boost-form label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-secondary); }
 .boost-form input, .boost-form select, .boost-form textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); color: var(--text); font-size: 14px; box-sizing: border-box; }
 .boost-form textarea { resize: vertical; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.field-hint { display: block; margin-top: 4px; color: var(--text-sub); font-size: 12px; }
 .boost-error { color: var(--error); font-size: 13px; margin: 8px 0; }
 .boost-success { color: var(--status-ok-fg); font-size: 13px; margin: 8px 0; }
 .boost-loading, .boost-empty, .boost-login { text-align: center; padding: 40px; color: var(--text-secondary); }
 .boost-hint { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+.application-history { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border); }
+.application-history h4 { margin: 0 0 10px; font-size: 14px; color: var(--text-heading); }
 
 .my-item, .admin-item, .booster-item { border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 10px; background: linear-gradient(180deg, var(--bg-card), color-mix(in srgb, var(--bg-card2) 36%, var(--bg-card))); }
+.application-item { border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 12px; background: linear-gradient(180deg, var(--bg-card), color-mix(in srgb, var(--bg-card2) 36%, var(--bg-card))); }
+.application-item .form-row { margin: 10px 0; }
+.application-item .form-row label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-secondary); }
+.application-item .form-row input { width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); color: var(--text); box-sizing: border-box; }
 .my-header, .admin-header, .booster-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
 .my-type, .admin-player { font-weight: 600; }
 .my-time, .admin-time { color: var(--text-secondary); font-size: 12px; margin-left: auto; }
@@ -578,6 +917,13 @@ function switchTab(t) {
 .my-meta, .admin-meta { font-size: 12px; color: var(--text-secondary); display: flex; gap: 12px; flex-wrap: wrap; }
 .my-actions, .admin-actions, .booster-actions { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
 .my-assigned { color: var(--status-ok-fg); font-weight: 700; }
+.application-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; margin: 12px 0; font-size: 13px; }
+.application-details div { display: flex; gap: 8px; justify-content: space-between; border-bottom: 1px solid var(--border-light); padding-bottom: 6px; }
+.application-details span { color: var(--text-sub); }
+.application-details strong { color: var(--text); text-align: right; word-break: break-word; }
+.application-images { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 12px 0; }
+.application-images a { display: grid; gap: 6px; color: var(--accent-dark); text-decoration: none; font-size: 12px; font-weight: 700; }
+.application-images img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
 
 .badge { font-size: 11px; padding: 2px 7px; border-radius: 6px; font-weight: 700; }
 .badge-info { background: var(--status-info-bg); color: var(--status-info-fg); }
@@ -625,5 +971,6 @@ function switchTab(t) {
   .boost-tabs { display: flex; }
   .boost-tabs button { flex: 1 1 auto; }
   .flex-between { align-items: flex-start; gap: 10px; flex-direction: column; }
+  .form-grid, .application-details, .application-images { grid-template-columns: 1fr; }
 }
 </style>
