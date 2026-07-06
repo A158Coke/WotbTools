@@ -1,7 +1,5 @@
 package com.wotb.web.user.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wotb.web.user.dto.UserNotificationDto;
 import com.wotb.web.user.entity.UserNotification;
 import com.wotb.web.user.enums.UserNotificationType;
@@ -13,22 +11,22 @@ import org.springframework.util.StringUtils;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 @Service
 public class UserNotificationService {
 
     private static final String EMPTY_PAYLOAD = "{}";
+    private static final ObjectMapper OBJECT_MAPPER = JsonMapper.builder().build();
 
     private final UserNotificationRepository repository;
     private final UserNotificationMapper mapper;
-    private final ObjectMapper objectMapper;
 
     public UserNotificationService(final UserNotificationRepository repository,
-                                   final UserNotificationMapper mapper,
-                                   final ObjectMapper objectMapper) {
+                                   final UserNotificationMapper mapper) {
         this.repository = repository;
         this.mapper = mapper;
-        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -84,8 +82,8 @@ public class UserNotificationService {
             return EMPTY_PAYLOAD;
         }
         try {
-            return objectMapper.writeValueAsString(payload);
-        } catch (final JsonProcessingException e) {
+            return OBJECT_MAPPER.writeValueAsString(payload);
+        } catch (final Exception e) {
             return EMPTY_PAYLOAD;
         }
     }

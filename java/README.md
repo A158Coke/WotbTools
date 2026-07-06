@@ -35,6 +35,9 @@ docker compose up -d --build
 1. 并行构建两个镜像：`Dockerfile.backend`（Maven + JRE）+ `Dockerfile.frontend`（Node + nginx）。
 2. 推送 `ghcr.io/a158coke/wotbtools-backend:sha-<SHA>` + `:latest` 和 `ghcr.io/a158coke/wotbtools-frontend:sha-<SHA>` + `:latest` 到 GitHub Container Registry (GHCR)。
 3. SSH 登录 VPS，写入四服务 `docker-compose.yml`（postgres + keycloak + wotb-backend + wotb-frontend），`docker compose pull && up -d`。
+4. 部署等待 `wotb-backend` 的 `/api/health` 成功；失败会输出后端/前端日志并让 workflow 失败。
+
+线上 502 排查可手动运行 [`.github/workflows/prod-diagnostics.yml`](../.github/workflows/prod-diagnostics.yml)，读取 VPS compose 状态与后端/前端日志。
 
 > 四个容器：`postgres:18`（数据持久化，卷挂 `/var/lib/postgresql`）→ `keycloak`（认证，`auth.wotbtools.com`）→ `wotb-backend`（Spring Boot 8087）→ `wotb-frontend`（nginx + Vue，暴露 8088:80）。`paths` 过滤使纯文档 push 不触发部署。
 

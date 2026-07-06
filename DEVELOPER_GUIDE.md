@@ -59,7 +59,8 @@
 │   ├── homepage/                 #   工具集主页（wotbtools.com，暗色卡片式）
 │   │   └── index.html
 ├── .github/
-│   └── workflows/deploy.yml      # CI/CD
+│   ├── workflows/deploy.yml      # CI/CD
+│   └── workflows/prod-diagnostics.yml # 线上诊断日志
 ├── common/                       # 共享资源
 │   ├── error-codes.json          #   通用错误码（Java 加载 + 前端直读）
 │   ├── tankopedia.json           #   车辆库
@@ -374,6 +375,9 @@ npm run build
 1. **并行构建两镜像**：`Dockerfile.backend`（Maven → JRE runtime，Spring Boot :8087）+ `Dockerfile.frontend`（Node → nginx，:80）。带 `type=gha` 层缓存。前端 nginx 必须保留 `charset utf-8;`，否则中文 locale 和内联文案可能在浏览器中显示为乱码。
 2. **推送 GHCR**：双镜像各推 `sha-<SHA>` + `latest` 标签 — `ghcr.io/a158coke/wotbtools-backend` 和 `ghcr.io/a158coke/wotbtools-frontend`。认证走内置 `GITHUB_TOKEN`（`packages: write` 权限），无需额外 secret。
 3. **SSH 部署 VPS**：在 `/opt/wotb` 写入三服务 `docker-compose.yml`（postgres + keycloak + wotb-backend + wotb-frontend），先清理旧容器再 `docker compose pull && up -d --remove-orphans`。homepage 编入前端镜像（`COPY frontend/homepage /homepage`）。
+4. **健康检查**：部署必须等 `wotb-backend` 的 `http://127.0.0.1:8087/api/health` 返回成功；失败时输出后端/前端日志并让 workflow 失败，避免线上 API 502 但 Actions 显示成功。
+
+线上 502 排查优先运行 [`.github/workflows/prod-diagnostics.yml`](.github/workflows/prod-diagnostics.yml)，它会通过 VPS SSH secrets 打印 `docker compose ps`、后端容器状态和后端/前端日志。
 
 ## 给 AI coder 的工作准则
 
