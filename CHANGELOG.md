@@ -29,6 +29,7 @@
 - 删除未被入口引用的旧 `VersionPage.vue`，版本历史继续由首页 `versions.json` 渲染。
 
 ### Fixed
+- **打手状态文案去歧义**：打手管理页把 `booster_profile.status` 明确显示为“资格状态”，把 `available` 明确显示为“可接单/暂停接单”，并在分配弹窗禁用非 `ACTIVE` 或暂停接单的打手，避免出现“正常 + 不可用”的误读。
 - 个人中心补齐陪练身份卡片的三语 i18n key，避免直接显示 `profile.booster*` 原始 key。
 - 车辆库更新脚本补全 `alphaDamage`：从 BlitzKit `tanks.pb` 炮/弹模块解析最高等级炮的首发弹伤害，并修正脚本输出路径，避免潜在伤害补增因炮伤为空恒为 0。
 - CI/CD 部署：`docker compose pull` 添加 3 次重试。

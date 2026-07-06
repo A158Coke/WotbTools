@@ -202,6 +202,25 @@ function availabilityLabel(tier) {
   return t(`boost.availability.${tier || 'MONTH_20'}`)
 }
 
+function boosterAvailabilityLabel(available) {
+  return available ? t('boost.availableNow') : t('boost.unavailable')
+}
+
+function boosterAvailabilityActionLabel(available) {
+  return available ? t('boost.setUnavailable') : t('boost.setAvailable')
+}
+
+function boosterAssignable(booster) {
+  return booster?.available && booster?.status === 'ACTIVE'
+}
+
+function boosterPickerSuffix(booster) {
+  const tags = []
+  if (booster?.status && booster.status !== 'ACTIVE') tags.push(booster.statusLabel)
+  if (!booster?.available) tags.push(boosterAvailabilityLabel(false))
+  return tags.length ? ` [${tags.join(' / ')}]` : ''
+}
+
 function applicationStatusLabel(status) {
   return t(`boost.applicationStatus.${status || 'NEW'}`)
 }
@@ -697,8 +716,8 @@ function switchTab(t) {
           <div v-if="assigningRequest === r" class="assign-box">
             <select v-model.number="assignBoosterId" class="mr">
               <option :value="null" disabled>{{ $t('boost.selectBooster') }}</option>
-              <option v-for="b in boosters" :key="b.id" :value="b.id" :disabled="!b.available">
-                {{ b.nickname }} ({{ b.levelLabel }}) {{ b.available ? '' : '[' + $t('boost.unavailable') + ']' }}
+              <option v-for="b in boosters" :key="b.id" :value="b.id" :disabled="!boosterAssignable(b)">
+                {{ b.nickname }} ({{ b.levelLabel }}){{ boosterPickerSuffix(b) }}
               </option>
             </select>
             <input v-model="assignNote" :placeholder="$t('boost.assignNote')" class="mr" />
@@ -852,14 +871,14 @@ function switchTab(t) {
             <strong>{{ b.nickname }}</strong>
             <span>{{ b.levelLabel }}</span>
             <span :class="'badge badge-' + statusBadge(b.status)">{{ b.statusLabel }}</span>
-            <span v-if="!b.available" class="badge badge-warn">{{ $t('boost.unavailable') }}</span>
+            <span :class="'badge badge-' + (b.available ? 'ok' : 'warn')">{{ boosterAvailabilityLabel(b.available) }}</span>
             <span class="booster-stats">{{ $t('boost.activeAssignments') }}: {{ b.activeAssignmentCount }}</span>
           </div>
           <div class="booster-meta" v-if="b.specialties">{{ b.specialties }}</div>
           <div class="booster-actions">
             <button class="btn-ghost btn-sm" @click="startEditBooster(b)">{{ $t('boost.edit') }}</button>
             <button class="btn-ghost btn-sm" @click="toggleBoosterAvailable(b)">
-              {{ b.available ? $t('boost.setUnavailable') : $t('boost.setAvailable') }}
+              {{ boosterAvailabilityActionLabel(b.available) }}
             </button>
             <button class="btn-ghost btn-sm btn-danger" @click="deleteBooster(b)">{{ $t('boost.delete') }}</button>
           </div>
