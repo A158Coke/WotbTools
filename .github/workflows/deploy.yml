@@ -233,17 +233,25 @@ jobs:
             docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
             docker image prune -af
             docker builder prune -af
-            for i in $(seq 1 30); do
+            backend_ready=false
+            for i in $(seq 1 60); do
               if docker compose ps | grep -qE "Restarting|Exited|unhealthy"; then
                 sleep 2
-              else
+                continue
+              fi
+              if docker compose exec -T wotb-backend wget -qO- http://127.0.0.1:8087/api/health >/tmp/wotb-backend-health.txt 2>/dev/null; then
+                backend_ready=true
                 break
               fi
+              sleep 2
             done
-            if docker compose ps | grep -qE "Restarting|Exited|unhealthy"; then
-              echo "ERROR: Containers not healthy!"
+            if [ "$backend_ready" != "true" ]; then
+              echo "ERROR: Backend health check failed!"
               docker compose ps
-              docker compose logs --tail 50
+              echo "== backend logs =="
+              docker compose logs --tail 160 wotb-backend
+              echo "== frontend logs =="
+              docker compose logs --tail 80 wotb-frontend
               exit 1
             fi
 
