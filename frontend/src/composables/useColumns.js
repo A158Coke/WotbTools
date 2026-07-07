@@ -1,5 +1,69 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { DEFAULT_VISIBLE, EXTENDED_ONLY_PLAYER_KEYS } from '../utils/helpers.js'
+
+const STORAGE_KEYS = {
+  playerVisible: 'wotb-replay-player-visible-cols',
+  playerOrder: 'wotb-replay-player-order',
+  aggVisible: 'wotb-replay-agg-visible-cols',
+  aggOrder: 'wotb-replay-agg-order',
+}
+
+function readStoredList(key) {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? uniqueKeys(parsed.filter(value => typeof value === 'string')) : null
+  } catch (_) {
+    return null
+  }
+}
+
+function writeStoredList(key, values) {
+  try {
+    localStorage.setItem(key, JSON.stringify(values))
+  } catch (_) {
+    // Ignore quota/private-mode failures and keep in-memory behavior.
+  }
+}
+
+function mergeOrder(availableKeys, storedOrder) {
+  const available = new Set(availableKeys)
+  const sanitized = uniqueKeys((storedOrder || []).filter(key => available.has(key)))
+  return appendMissingKeys(sanitized, availableKeys)
+}
+
+function restorePlayerVisible(availableKeys, storedOrder, storedVisible) {
+  const available = new Set(availableKeys)
+  const visible = uniqueKeys((storedVisible || []).filter(key => available.has(key)))
+  const missingDefault = availableKeys.filter(key =>
+    !(storedOrder || []).includes(key) && DEFAULT_VISIBLE.includes(key))
+  return [...visible, ...missingDefault.filter(key => !visible.includes(key))]
+}
+
+function restoreAggVisible(availableKeys, storedOrder, storedVisible) {
+  if (storedVisible == null) return [...availableKeys]
+  const available = new Set(availableKeys)
+  const visible = uniqueKeys(storedVisible.filter(key => available.has(key)))
+  return hadAllColumnsVisible(storedOrder, storedVisible)
+    ? appendMissingKeys(visible, availableKeys.filter(key => !(storedOrder || []).includes(key)))
+    : visible
+}
+
+function uniqueKeys(keys) {
+  return [...new Set(keys)]
+}
+
+function appendMissingKeys(baseKeys, candidateKeys) {
+  const missing = candidateKeys.filter(key => !baseKeys.includes(key))
+  return [...baseKeys, ...missing]
+}
+
+function hadAllColumnsVisible(storedOrder, storedVisible) {
+  return Array.isArray(storedOrder)
+    && storedOrder.length > 0
+    && storedOrder.every(key => storedVisible.includes(key))
+}
 
 export function useColumns(playerCols, aggCols, activeTab) {
   const visibleKeys = ref([])
@@ -23,14 +87,20 @@ export function useColumns(playerCols, aggCols, activeTab) {
     aggOrder.value.filter(k => aggVisibleKeys.value.includes(k)).map(k => aggColMap.value[k]).filter(Boolean))
 
   function initFromResponse(resp) {
-    const pk = resp.playerColumns
+    const pk = (resp.playerColumns || [])
       .filter(c => !EXTENDED_ONLY_PLAYER_KEYS.has(c.key))
       .map(c => c.key)
     const ak = (resp.aggregateColumns || []).map(c => c.key)
-    if (!visibleKeys.value.length) visibleKeys.value = [...DEFAULT_VISIBLE]
-    if (!playerOrder.value.length) playerOrder.value = [...pk]
-    if (!aggVisibleKeys.value.length) aggVisibleKeys.value = [...ak]
-    if (!aggOrder.value.length) aggOrder.value = [...ak]
+
+    const storedPlayerOrder = readStoredList(STORAGE_KEYS.playerOrder)
+    const storedPlayerVisible = readStoredList(STORAGE_KEYS.playerVisible)
+    const storedAggOrder = readStoredList(STORAGE_KEYS.aggOrder)
+    const storedAggVisible = readStoredList(STORAGE_KEYS.aggVisible)
+
+    playerOrder.value = mergeOrder(pk, storedPlayerOrder)
+    visibleKeys.value = restorePlayerVisible(pk, storedPlayerOrder, storedPlayerVisible)
+    aggOrder.value = mergeOrder(ak, storedAggOrder)
+    aggVisibleKeys.value = restoreAggVisible(ak, storedAggOrder, storedAggVisible)
   }
 
   function toggleColPicker() {
@@ -65,6 +135,11 @@ export function useColumns(playerCols, aggCols, activeTab) {
   function handleReorder(next) {
     ;(pickerScope.value === 'agg' ? aggOrder : playerOrder).value = next
   }
+
+  watch(visibleKeys, value => writeStoredList(STORAGE_KEYS.playerVisible, value))
+  watch(playerOrder, value => writeStoredList(STORAGE_KEYS.playerOrder, value))
+  watch(aggVisibleKeys, value => writeStoredList(STORAGE_KEYS.aggVisible, value))
+  watch(aggOrder, value => writeStoredList(STORAGE_KEYS.aggOrder, value))
 
   return {
     visibleKeys, aggVisibleKeys, playerOrder, aggOrder,
