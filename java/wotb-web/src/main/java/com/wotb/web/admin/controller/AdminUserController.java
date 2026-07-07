@@ -28,8 +28,8 @@ public class AdminUserController {
 
     @GetMapping
     public List<AdminUserDto> searchUsers(
-            @RequestParam(required = false) final String query,
-            @RequestParam(defaultValue = "50") final int limit) {
+            @RequestParam(name = "query", required = false) final String query,
+            @RequestParam(name = "limit", defaultValue = "50") final int limit) {
         return adminUserService.searchUsers(query, limit);
     }
 
@@ -41,7 +41,7 @@ public class AdminUserController {
     @DeleteMapping("/{keycloakUserId}")
     public AdminDeleteUserResponse deleteUser(
             @PathVariable final String keycloakUserId,
-            @RequestParam(defaultValue = "false") final boolean confirm,
+            @RequestParam(name = "confirm", defaultValue = "false") final boolean confirm,
             @AuthenticationPrincipal final Jwt jwt) {
         return adminUserService.deleteUser(keycloakUserId, confirm, jwt);
     }
