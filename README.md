@@ -56,6 +56,7 @@
 - Rating V2 分析页：主站 `?view=extended` 与独立入口 `/extended` 均可进入，额外展示扩展字段与本次上传实时 rating。
 - 扩展字段：`alpha_damage`、`rank` 已接入 API/导出/扩展页，原回放页面不默认展示；`xp`、`credits` 仅解析保留，不作为战绩字段展示。
 - 潜在伤害字段：`potential_damage` / `potential_damage_supplement` / `potential_damage_detail`，优先从回放 direct HP damage 事件推断逐击杀目标；事件缺失、映射失败或特殊伤害未覆盖时保守等于实际伤害。
+- 地图名共享字典：`common/map_names.json` 现提供 `zh/en/ru` 三语映射，网页按当前语言显示，导出继续使用中文。
 - GUI 支持选择文件或文件夹、预览数据、合并汇总或逐场导出。
 - 回放预览列选择器会把单场/汇总的列可见性与排序分别记到 `localStorage`，新增列会自动补到当前顺序末尾。
 - Java / Web 版提供 `/api/preview`、`/api/export`、`/api/columns`、`/api/rating`、`/api/health`、`/api/shutdown`。

@@ -65,7 +65,7 @@
 │   ├── error-codes.json          #   通用错误码（Java 加载 + 前端直读）
 │   ├── tankopedia.json           #   车辆库
 │   ├── rating.json               #   评分参数
-│   ├── map_names.json            #   地图名
+│   ├── map_names.json            #   地图名三语映射
 │   ├── assets/                   #   图标/logo 单一来源
 │   │   ├── wotbtoolslogo.png  icon.ico  icon.png   #   Dockerfile 构建时 → homepage + frontend dist
 │   └── data/                     #   示例回放（gitignore）
@@ -153,7 +153,7 @@ BattleResults
 | `Protobuf`           | `wotb-core/.../Protobuf.java`          | protobuf wire decoder                     |
 | `PickleReader`       | `wotb-core/.../PickleReader.java`      | Python pickle 读取                        |
 | `Tankopedia`         | `wotb-core/.../Tankopedia.java`        | 车辆库查表                                |
-| `MapNames`           | `wotb-core/.../MapNames.java`          | 地图名中文化（读 classpath map_names.json）|
+| `MapNames`           | `wotb-core/.../MapNames.java`          | 地图名多语读取（导出固定中文，读 classpath map_names.json）|
 | `Players`            | `wotb-core/.../Players.java`           | 展示字段富化 + 排序                       |
 | `Rating`             | `wotb-core/.../Rating.java`            | 表现评分计算                              |
 | `Columns`            | `wotb-core/.../Columns.java`           | 列定义（单数据源, export 与 API 共用）    |
@@ -196,7 +196,7 @@ BattleResults
   - `composables/useAuth.js` — Keycloak 认证适配器（check-sso 游客模式）
   - `utils/api.js` — 集中式 API 层（healthCheck / preview / downloadBlob / shutdown）
   - `utils/theme.js` — 纯函数（readTheme / saveTheme / resolveTheme / applyTheme），Cookie `.wotbtools.com` 域共享 + localStorage 回退
-- `utils/helpers.js` — 常量（DEFAULT_VISIBLE / EXTENDED_ONLY_PLAYER_KEYS / RATING_TIERS）+ 工具函数（mapLabel / ratingTier / medal 等）
+- `utils/helpers.js` — 常量（DEFAULT_VISIBLE / EXTENDED_ONLY_PLAYER_KEYS / RATING_TIERS）+ 工具函数（按 locale 取地图名的 `mapLabel` / ratingTier / medal 等）
 - UI 组件在 `components/`：FileUploader / ColumnPicker / AggregateTable / BattleTable / RatingModal / RemoveConfirmModal / LeaderboardPage / ProfilePage / BoostPage / AdminUsersPage
 - 回放解析上传页由 `FileUploader.vue` 负责交互，`App.vue` 提供全局上传区样式；空态、拖拽态、已选文件态共用 `upload.*` 三语文案。
 - 开发时 Vite 代理 `/api → localhost:8087`。
@@ -305,7 +305,7 @@ Java Web 版必须保持以下规则一致：
 - 多场 xlsx 的 `汇总`、`明细`、`战斗列表` 语义。
 - 车辆库 fallback：找不到车辆时显示 `#tank_id`。
 - 列的 `key`（snake_case）在 API、前端映射、导出三方一致；中文显示名在前端两套映射 + 导出标签一致。
-- **地图名中文化**：`meta.json` 的 `mapName` 是内部英文名（如 `lagoon`），中文名映射**单一来源** `common/map_names.json`（构建复制到 classpath）。导出走 `MapNames.cn()`（`SingleBattleSheets` 单场信息 + `AggregateSheets` 明细列/战斗列表），前端 `App.vue` 直接 `import` 同一份 JSON 用 `mapLabel()`（标签页/地图卡/移除确认）。API 仍回原始英文 `mapName`。未匹配则原样显示。
+- **地图名三语映射**：`meta.json` 的 `mapName` 是内部英文名（如 `lagoon`），显示名**单一来源** `common/map_names.json`，结构为 `{ zh, en, ru }`（构建复制到 classpath）。前端 `utils/helpers.js` 直接 `import` 同一份 JSON，`mapLabel()` 按当前 locale 渲染回放页/排行榜/扩展页/个人中心；导出继续走 `MapNames.cn()`（`SingleBattleSheets` 单场信息 + `AggregateSheets` 明细列/战斗列表）固定使用中文。API 仍回原始英文 `mapName`。未匹配则原样显示。
 
 如修改字段解释或列名，必须同步：
 

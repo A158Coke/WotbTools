@@ -55,17 +55,17 @@
 只改 `common/rating.json`(权重 assist/block/killValue/winBonus、minSamples、scale、车型系数 classFactor)。改完跑测试(均值应仍 ≈ scale)、重建 exe/镜像。改公式结构(而非数值)才需动 `Rating.java`。
 > 前端「评分规则」弹窗与 `GET /api/rating`(`Rating.config()`→`RatingConfig`)自动反映 rating.json 的数值,无需改前端。只有改了**公式文字说明**才动 `locales/*.json` 的 `rating_help`(三语)。
 
-## 配方 G:增改地图中文名
+## 配方 G:增改地图显示名
 
-地图中文名**单一来源**在 `common/map_names.json`(`内部名(小写) -> 中文`)。只改这一个文件即可两端生效:
+地图显示名**单一来源**在 `common/map_names.json`，结构为 `内部名(小写) -> { zh, en, ru }`。只改这一个文件即可两端生效:
 
-1. 编辑 `common/map_names.json`(key 用 `meta.json` 里的原始 `mapName`,全小写)。
-2. 无需改代码:导出端 `MapNames.cn()`(已在 `SingleBattleSheets`/`AggregateSheets` 接入)读 classpath 的副本;前端 `App.vue` `import` 同一份 JSON 经 `mapLabel()` 显示。
+1. 编辑 `common/map_names.json`(key 用 `meta.json` 里的原始 `mapName`,全小写；值同步补齐 `zh/en/ru`)。
+2. 无需改代码:导出端 `MapNames.cn()`(已在 `SingleBattleSheets`/`AggregateSheets` 接入)读 classpath 的副本并固定用中文;前端 `utils/helpers.js` `import` 同一份 JSON，经 `mapLabel()` 按当前 locale 显示。
 3. 新增 key 别忘了让 `wotb-core/pom.xml` 的 `<includes>` 仍含 `map_names.json`(已含)。
 4. **docker 部署**：`Dockerfile.backend` 已 `COPY common/map_names.json` 到后端 classpath；`Dockerfile.frontend` 已 `COPY common/map_names.json /common/` 供前端 import。若以后前端再 import 新 `common/*.json`，在 `Dockerfile.frontend` 加对应 `COPY`。
 5. 验证(改前端要 `npm run build`,Java 改了才需 `mvn test`;改 docker 用 `docker compose up --build` 重建)+ 文档。
 
-> 未匹配的地图名原样显示(英文内部名),不会报错。API 始终回原始英文 `mapName`,中文只在前端/导出两个出口呈现。
+> 未匹配的地图名原样显示(英文内部名),不会报错。API 始终回原始英文 `mapName`；前端按 locale 渲染，导出固定中文。
 
 ## 配方 E:更新车辆库
 

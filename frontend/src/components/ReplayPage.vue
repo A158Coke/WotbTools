@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { mapLabel } from '../utils/helpers.js'
 import { useReplay } from '../composables/useReplay.js'
 import { useColumns } from '../composables/useColumns.js'
@@ -10,6 +11,7 @@ import BattleTable from './BattleTable.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import RatingModal from './RatingModal.vue'
 
+const { locale } = useI18n()
 const replay = useReplay()
 const { files, loading, error, resp, activeTab, aggStats, pendingRemove,
   askRemoveBattle, cancelRemove } = replay
@@ -49,7 +51,7 @@ function confirmRemoveBattle() { replay.confirmRemoveBattle(cols.initFromRespons
                   @click="activeTab = 'aggregate'">{{ $t('result.aggregate_tab', { count: resp.aggregate.length }) }}</button>
           <button v-for="(b, i) in resp.battles" :key="i" :disabled="showColPicker"
                   :class="{ active: activeTab === 'b' + i }"
-                  @click="activeTab = 'b' + i">{{ mapLabel(b.mapName) }} #{{ i + 1 }}
+                  @click="activeTab = 'b' + i">{{ mapLabel(b.mapName, locale) }} #{{ i + 1 }}
             <span class="tabx" :title="$t('modal.remove_title')" @click.stop="askRemoveBattle(b, i)">&times;</span>
           </button>
         </div>

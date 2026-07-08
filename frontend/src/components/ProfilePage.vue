@@ -5,7 +5,7 @@ import { useAuth } from '../composables/useAuth.js'
 import * as api from '../utils/api-boost.js'
 import { mapLabel } from '../utils/helpers.js'
 
-const { t } = useI18n()
+const { locale, t } = useI18n()
 const { initPromise, login, logout, isAuthenticated, initError, tokenParsed } = useAuth()
 
 const phase = ref('init')
@@ -193,7 +193,7 @@ async function removeAccount() {
                   <tr v-for="r in records" :key="r.id">
                     <td class="rec-tank">{{ r.tankName || '—' }}</td>
                     <td class="rec-dmg">{{ r.damageDealt != null ? r.damageDealt.toLocaleString() : '—' }}</td>
-                    <td class="rec-map">{{ mapLabel(r.mapName) || '—' }}</td>
+                    <td class="rec-map">{{ mapLabel(r.mapName, locale) || '—' }}</td>
                   </tr>
                 </tbody>
               </table>

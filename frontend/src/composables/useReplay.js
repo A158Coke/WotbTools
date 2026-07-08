@@ -4,7 +4,7 @@ import { displayName, mapLabel } from '../utils/helpers.js'
 import * as api from '../utils/api.js'
 
 export function useReplay() {
-  const { t } = useI18n()
+  const { locale, t } = useI18n()
   const files = ref([])
   const loading = ref(false)
   const error = ref('')
@@ -64,7 +64,7 @@ export function useReplay() {
   }
 
   function askRemoveBattle(battle, idx) {
-    pendingRemove.value = { battle, label: `${mapLabel(battle.mapName)} #${idx + 1}` }
+    pendingRemove.value = { battle, label: `${mapLabel(battle.mapName, locale.value)} #${idx + 1}` }
   }
 
   function cancelRemove() { pendingRemove.value = null }

@@ -1,31 +1,147 @@
 {
-  "canal": "运河尽头",
-  "desert_train": "黄沙荒漠",
-  "erlenberg": "米德尔堡",
-  "forgecity": "都市港口",
-  "fort": "绝望堡垒",
-  "italy": "葡萄庄园",
-  "lagoon": "海岸礁湖",
-  "lumber": "山麓角逐",
-  "malinovka": "马利诺夫卡",
-  "plant": "幽灵工厂",
-  "pliego": "卡斯提拉",
-  "port": "港湾小镇",
-  "rock": "古老秘境",
-  "savanna": "沙漠之心",
-  "karelia": "乱石荒野",
-  "karieri": "铜矿采集场",
-  "amigosville": "乡间溪流",
-  "medvedkovo": "废弃轨道",
-  "himmelsdorf": "锡默尔斯多夫",
-  "mountain": "暗金矿窑",
-  "milbase": "落日军港",
-  "canyon": "夺命峡谷",
-  "skit": "海防前沿",
-  "faust": "浮士德",
-  "neptune": "滩涂阵地",
-  "rift": "海拉斯",
-  "idle": "峪崆",
-  "holmeisk": "废弃之地",
-  "holland": "莫伦迪克"
+  "canal": {
+    "zh": "运河尽头",
+    "en": "Canal",
+    "ru": "Канал"
+  },
+  "desert_train": {
+    "zh": "黄沙荒漠",
+    "en": "Desert Sands",
+    "ru": "Пустынные пески"
+  },
+  "erlenberg": {
+    "zh": "米德尔堡",
+    "en": "Middleburg",
+    "ru": "Миддлбург"
+  },
+  "forgecity": {
+    "zh": "都市港口",
+    "en": "New Bay",
+    "ru": "Новая бухта"
+  },
+  "fort": {
+    "zh": "绝望堡垒",
+    "en": "Fort Despair",
+    "ru": "Форт Отчаяния"
+  },
+  "italy": {
+    "zh": "葡萄庄园",
+    "en": "Vineyards",
+    "ru": "Виноградники"
+  },
+  "lagoon": {
+    "zh": "海岸礁湖",
+    "en": "Lagoon",
+    "ru": "Лагуна"
+  },
+  "lumber": {
+    "zh": "山麓角逐",
+    "en": "Horrorstadt",
+    "ru": "Хоррорштадт"
+  },
+  "malinovka": {
+    "zh": "马利诺夫卡",
+    "en": "Winter Malinovka",
+    "ru": "Зимняя Малиновка"
+  },
+  "plant": {
+    "zh": "幽灵工厂",
+    "en": "Ghost Factory",
+    "ru": "Призрачный завод"
+  },
+  "pliego": {
+    "zh": "卡斯提拉",
+    "en": "Castilla",
+    "ru": "Кастилья"
+  },
+  "port": {
+    "zh": "港湾小镇",
+    "en": "Port Bay",
+    "ru": "Портовая бухта"
+  },
+  "rock": {
+    "zh": "古老秘境",
+    "en": "Mayan Ruins",
+    "ru": "Руины майя"
+  },
+  "savanna": {
+    "zh": "沙漠之心",
+    "en": "Oasis Palms",
+    "ru": "Пальмовый оазис"
+  },
+  "karelia": {
+    "zh": "乱石荒野",
+    "en": "Rockfield",
+    "ru": "Рокфилд"
+  },
+  "karieri": {
+    "zh": "铜矿采集场",
+    "en": "Copperfield",
+    "ru": "Копперфилд"
+  },
+  "amigosville": {
+    "zh": "乡间溪流",
+    "en": "Falls Creek",
+    "ru": "Фолс-Крик"
+  },
+  "medvedkovo": {
+    "zh": "废弃轨道",
+    "en": "Dead Rail",
+    "ru": "Мертвая колея"
+  },
+  "himmelsdorf": {
+    "zh": "锡默尔斯多夫",
+    "en": "Himmelsdorf",
+    "ru": "Химмельсдорф"
+  },
+  "mountain": {
+    "zh": "暗金矿窑",
+    "en": "Black Goldville",
+    "ru": "Блэк Голдвилл"
+  },
+  "milbase": {
+    "zh": "落日军港",
+    "en": "Yamato Harbor",
+    "ru": "Гавань Ямато"
+  },
+  "canyon": {
+    "zh": "夺命峡谷",
+    "en": "Canyon",
+    "ru": "Каньон"
+  },
+  "skit": {
+    "zh": "海防前沿",
+    "en": "Naval Frontier",
+    "ru": "Морской рубеж"
+  },
+  "faust": {
+    "zh": "浮士德",
+    "en": "Faust",
+    "ru": "Фауст"
+  },
+  "neptune": {
+    "zh": "滩涂阵地",
+    "en": "Normandy",
+    "ru": "Нормандия"
+  },
+  "rift": {
+    "zh": "海拉斯",
+    "en": "Hellas",
+    "ru": "Эллада"
+  },
+  "idle": {
+    "zh": "峪崆",
+    "en": "Yukon",
+    "ru": "Юкон"
+  },
+  "holmeisk": {
+    "zh": "废弃之地",
+    "en": "Wasteland",
+    "ru": "Пустошь"
+  },
+  "holland": {
+    "zh": "莫伦迪克",
+    "en": "Molendijk",
+    "ru": "Молендейк"
+  }
 }

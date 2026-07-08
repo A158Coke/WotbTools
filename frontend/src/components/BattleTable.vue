@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { RATING_KEYS, ratingTier, medal, fmtDuration, mapLabel } from '../utils/helpers.js'
 import poopUrl from '../assets/poop.png'
 
-const { t } = useI18n()
+const { locale, t } = useI18n()
 const props = defineProps({ battle: Object, shownCols: Array })
 const sortKey = ref('')
 const sortReverse = ref(false)
@@ -35,7 +35,7 @@ function arrow(key) {
 <template>
   <div>
     <div class="mcards">
-      <div class="mc"><div class="k">{{ $t('metric.map') }}</div><div class="v">{{ mapLabel(battle.mapName) }}</div></div>
+      <div class="mc"><div class="k">{{ $t('metric.map') }}</div><div class="v">{{ mapLabel(battle.mapName, locale) }}</div></div>
       <div class="mc"><div class="k">{{ $t('metric.duration') }}</div><div class="v">{{ fmtDuration(battle.durationS, t) }}</div></div>
       <div class="mc"><div class="k">{{ $t('metric.winner') }}</div><div class="v">{{ battle.winnerTeam ? $t('team.' + battle.winnerTeam) : $t('team.unknown') }}</div></div>
       <div class="mc"><div class="k">{{ $t('metric.player_count') }}</div><div class="v">{{ battle.players.length }}</div></div>
