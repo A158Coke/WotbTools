@@ -187,6 +187,8 @@ BattleResults
 | `UserNotificationService` | `wotb-web/.../user/service/UserNotificationService.java` | 写入站内通知，API payload 保持英文 key + 数据 |
 | `UserNotification` | `wotb-web/.../user/entity/UserNotification.java` | 站内通知 JPA 实体（列与 Flyway V10 对齐） |
 
+- 字符串空值规范：回放解析、地图名回退、排行榜入库、汇总昵称和实时 rating 昵称一律把仅含空白的字符串视为缺失值；Java 侧统一使用 `org.springframework.util.StringUtils.hasText(...)`，避免空格版本号入库或空白时间戳触发解析异常。
+
 ### 前端
 
 - 根组件 `App.vue`（编排层），无 Vue Router、无组件库。逻辑全在 **composables** 和 **utils** 中：

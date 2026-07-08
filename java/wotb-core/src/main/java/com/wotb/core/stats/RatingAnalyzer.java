@@ -4,6 +4,7 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.TankInfo;
 import com.wotb.core.ref.Tankopedia;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -127,8 +128,8 @@ public final class RatingAnalyzer {
         final long start = battle.startTime == null ? 0 : battle.startTime;
         if (start >= row.lastTime) {
             row.lastTime = start;
-            row.nickname = (player.nickname == null || player.nickname.isEmpty())
-                    ? String.valueOf(player.accountId) : player.nickname;
+            row.nickname = StringUtils.hasText(player.nickname)
+                    ? player.nickname : String.valueOf(player.accountId);
             row.clan = player.clan == null ? "" : player.clan;
         }
 

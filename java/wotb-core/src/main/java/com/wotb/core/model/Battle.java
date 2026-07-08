@@ -1,5 +1,7 @@
 package com.wotb.core.model;
 
+import org.springframework.util.StringUtils;
+
 import java.util.List;
 
 /** 一场战斗的基本信息 + 全部玩家战绩。 */
@@ -26,7 +28,7 @@ public class Battle {
      * 无录像者名 / 无名册 / 匹配不到时返回 null。
      */
     public PlayerResult recorderResult() {
-        if (recorder == null || recorder.isBlank() || players == null) {
+        if (!StringUtils.hasText(recorder) || players == null) {
             return null;
         }
         for (final PlayerResult p : players) {

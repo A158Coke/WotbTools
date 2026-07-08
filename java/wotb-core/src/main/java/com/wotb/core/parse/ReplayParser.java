@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.stats.PotentialDamage;
+import org.springframework.util.StringUtils;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -115,7 +116,7 @@ public final class ReplayParser {
         // 合并名册
         for (final PlayerResult pr : players) {
             final String[] info = roster.get(pr.accountId);
-            pr.nickname = (info != null && info[0] != null && !info[0].isEmpty())
+            pr.nickname = (info != null && StringUtils.hasText(info[0]))
                     ? info[0] : String.valueOf(pr.accountId);
             pr.clan = (info != null && info[1] != null) ? info[1] : "";
             pr.platoonId = platoonByAcc.get(pr.accountId);
@@ -217,8 +218,11 @@ public final class ReplayParser {
 
     private static Long parseLong(final String s) {
         try {
-            return s == null || s.isEmpty() ? null : Long.parseLong(s.trim());
-        } catch (NumberFormatException e) {
+            if (!StringUtils.hasText(s)) {
+                return null;
+            }
+            return Long.parseLong(s.trim());
+        } catch (final NumberFormatException e) {
             return null;
         }
     }

@@ -54,6 +54,24 @@ class RatingAnalyzerTest {
         assertTrue(carry.rating > low.rating);
     }
 
+    @Test
+    void computeFallsBackToAccountIdWhenNicknameWhitespace() {
+        final PlayerResult blankNicknamePlayer = player(1, 1, 2600, 400, 2, true, 0, 0);
+        blankNicknamePlayer.nickname = "   ";
+        final Battle battle = new Battle();
+        battle.winnerTeam = 1;
+        battle.players = List.of(
+                blankNicknamePlayer,
+                player(2, 1, 100, 0, 0, true, 0, 0),
+                player(3, 2, 600, 0, 0, false, 120, 1000),
+                player(4, 2, 200, 0, 0, true, 0, 0)
+        );
+
+        final List<RatingAnalyzer.Row> rows = RatingAnalyzer.compute(List.of(battle), Tankopedia.load());
+
+        assertEquals("1", row(rows, 1).nickname);
+    }
+
     private static RatingAnalyzer.Row row(final List<RatingAnalyzer.Row> rows, final long accountId) {
         return rows.stream().filter(r -> r.accountId == accountId).findFirst().orElseThrow();
     }

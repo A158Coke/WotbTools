@@ -2,6 +2,7 @@ package com.wotb.core.ref;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.util.StringUtils;
 
 import java.io.InputStream;
 import java.util.HashMap;
@@ -41,18 +42,27 @@ public final class MapNames {
         if (node == null || node.isNull()) {
             return fallback;
         }
-        if (node.isTextual()) {
-            return node.asText();
+        final String directLabel = textOrNull(node);
+        if (directLabel != null) {
+            return directLabel;
         }
-        final JsonNode zhNode = node.get(LOCALE_ZH);
-        if (zhNode != null && zhNode.isTextual() && !zhNode.asText().isBlank()) {
-            return zhNode.asText();
+        final String zhLabel = textOrNull(node.get(LOCALE_ZH));
+        if (zhLabel != null) {
+            return zhLabel;
         }
-        final JsonNode enNode = node.get(LOCALE_EN);
-        if (enNode != null && enNode.isTextual() && !enNode.asText().isBlank()) {
-            return enNode.asText();
+        final String enLabel = textOrNull(node.get(LOCALE_EN));
+        if (enLabel != null) {
+            return enLabel;
         }
         return fallback;
+    }
+
+    private static String textOrNull(final JsonNode node) {
+        if (node == null || !node.isTextual()) {
+            return null;
+        }
+        final String text = node.asText();
+        return StringUtils.hasText(text) ? text : null;
     }
 
     private static String normalizeKey(final String mapName) {
@@ -61,7 +71,7 @@ public final class MapNames {
 
     /** 中文名,未匹配则原样返回(与 Python get_map_cn_name 行为一致)。 */
     public static String cn(final String mapName) {
-        if (mapName == null || mapName.isEmpty()) {
+        if (!StringUtils.hasText(mapName)) {
             return mapName;
         }
         return CN.getOrDefault(normalizeKey(mapName), mapName);

@@ -4,6 +4,7 @@ import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
+import org.springframework.util.StringUtils;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,8 +29,8 @@ public final class Aggregator {
                 });
                 if (start >= a.lastTime) {   // 用最近一场的昵称/战队/队伍
                     a.lastTime = start;
-                    a.nickname = (p.nickname == null || p.nickname.isEmpty())
-                            ? String.valueOf(p.accountId) : p.nickname;
+                    a.nickname = StringUtils.hasText(p.nickname)
+                            ? p.nickname : String.valueOf(p.accountId);
                     a.clan = p.clan == null ? "" : p.clan;
                     a.team = p.team;
                 }
