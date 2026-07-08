@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { mapLabel } from '../utils/helpers.js'
 import * as api from '../utils/api.js'
 
-const { t } = useI18n()
+const { locale, t } = useI18n()
 const rows = ref([])
 const loading = ref(false)
 const error = ref('')
@@ -188,7 +188,7 @@ function rankClass(rank) {
               <span v-else>{{ r.tankName }}</span>
             </td>
             <td class="lb-dmg">{{ r.damageDealt.toLocaleString() }}</td>
-            <td>{{ mapLabel(r.mapName) }}</td>
+            <td>{{ mapLabel(r.mapName, locale) }}</td>
             <td class="lb-version">{{ r.version || '-' }}</td>
             <td class="lb-time">{{ fmtTime(r.battleTime) || '-' }}</td>
             <td class="lb-time">{{ fmtTime(r.createdAt) }}</td>

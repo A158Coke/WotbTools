@@ -40,6 +40,14 @@ export const RATING_TIERS = [
 
 export const RATING_DEFAULTS = { assist: 0.6, block: 0.35, killValue: 200, winBonus: 0.05, minSamples: 5, scale: 1000, classFactor: {} }
 
+const MAP_FALLBACK_LOCALE = 'zh'
+
+function currentMapLocale(locale) {
+  if (locale) return locale
+  if (typeof localStorage !== 'undefined') return localStorage.getItem('wotb-lang')
+  return MAP_FALLBACK_LOCALE
+}
+
 export function fmtDuration(s, t) {
   if (s == null) return ''
   const total = Math.floor(s)
@@ -82,8 +90,17 @@ export function tierRange(i) {
   return RATING_TIERS[i].min + ' - ' + (RATING_TIERS[i - 1].min - 1)
 }
 
-export function mapLabel(m) {
-  return MAP_NAMES[(m || '').toLowerCase().trim()] || m
+export function mapLabel(m, locale) {
+  const key = (m || '').toLowerCase().trim()
+  if (!key) return m
+  const labels = MAP_NAMES[key]
+  if (!labels) return m
+  if (typeof labels === 'string') return labels
+  const normalizedLocale = String(currentMapLocale(locale) || MAP_FALLBACK_LOCALE)
+    .toLowerCase()
+    .trim()
+    .split('-')[0]
+  return labels[normalizedLocale] || labels[MAP_FALLBACK_LOCALE] || labels.en || m
 }
 
 export function fileKey(f) {

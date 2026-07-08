@@ -2,8 +2,9 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import * as api from '../utils/api.js'
+import { mapLabel } from '../utils/helpers.js'
 
-const { t, te } = useI18n()
+const { locale, t, te } = useI18n()
 
 const files = ref([])
 const loading = ref(false)
@@ -180,13 +181,13 @@ function arrow(scope, key) {
       <h2>{{ $t('extended.fields_title') }}</h2>
       <div class="tabs">
         <button v-for="(b, i) in battles" :key="i" :class="{ active: activeBattle === i }" @click="activeBattle = i">
-          {{ b.mapName || $t('team.unknown') }} #{{ i + 1 }}
+          {{ mapLabel(b.mapName, locale) || $t('team.unknown') }} #{{ i + 1 }}
         </button>
       </div>
 
       <template v-if="currentBattle">
         <p class="meta">
-          {{ $t('metric.map') }}: {{ currentBattle.mapName || '-' }} ·
+          {{ $t('metric.map') }}: {{ mapLabel(currentBattle.mapName, locale) || '-' }} ·
           {{ $t('leaderboard.version') }}: {{ currentBattle.version || '-' }} ·
           {{ $t('metric.winner') }}: {{ currentBattle.winnerTeam || '-' }} ·
           {{ currentBattle.sourceName }}

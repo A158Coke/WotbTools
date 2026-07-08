@@ -27,7 +27,7 @@
 | [`docs/rating-progress.md`](docs/rating-progress.md) | rating 扩展目标、已完成项、缺口与下一步 | 接手 rating 扩展时 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本历史（对外） | 了解发布历史 |
 | [`README.md`](README.md) / [`java/README.md`](java/README.md) | 用户向 + 运行/接口/构建 | 跑起来时 |
-| [`TODO.md`](TODO.md) | 待办（含「地图名未接 i18n」）| 找下一步做什么 |
+| [`TODO.md`](TODO.md) | 待办（含已完成收尾记录与下一步）| 找下一步做什么 |
 
 > 注：`AGENTS.md` / `wotb-sync.md` 本就是写给"任意 AI/人"的，不绑定特定工具。迁移到新工具时，把这几份指给它即可。
 
@@ -93,7 +93,7 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 - **显示名分两类出口**（改列名要全改）：
   - 前端：`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`（**三语都改**）。
   - 导出：`Columns.java`（单场 xlsx）、`AggregateSheets.java`（汇总 xlsx，仅中文）。
-- **单一数据源**：`common/tankopedia.json`（车辆库）、`common/rating.json`（评分参数）、`common/map_names.json`（地图中文名）。构建时由 `wotb-core/pom.xml` 复制到 classpath；**勿在模块内放副本**。
+- **单一数据源**：`common/tankopedia.json`（车辆库）、`common/rating.json`（评分参数）、`common/map_names.json`（地图三语名）。构建时由 `wotb-core/pom.xml` 复制到 classpath；**勿在模块内放副本**。
 - **代码风格**：不可变模型用 `record`；可变模型用公有字段 POJO（**不引入 Lombok**）；局部变量/参数尽量 `final`。
 - **分层**：controller 只做 HTTP；业务在 service；core 按功能分包。新 endpoint 的逻辑写进 service。
 
@@ -116,7 +116,7 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 - **两镜像各自推 sha + latest 标签** → `ghcr.io/a158coke/wotbtools-backend:sha-<SHA>` + `:latest`，`ghcr.io/a158coke/wotbtools-frontend:sha-<SHA>` + `:latest`。VPS compose 用 sha 标签（按 sha 回滚）。
 - **VPS 上可能有遗留旧容器占端口** → 部署脚本会先 `docker rm -f wotb-backend wotb-frontend` 腾出 8088，`up -d` 带 `--remove-orphans`。
 - **SSH 脚本必须 `set -e`** → 否则 `docker compose up` 失败仍退出 0，Actions「假绿」而站点不更新（本会话真实发生过）。
-- **构建上下文是仓库根**（前端 `App.vue` 跨目录 `import ../../../common/map_names.json`，后端要 `common/*.json`）。仓库根 `.dockerignore` 排除 `**/node_modules`、`**/target`、`**/dist`、`common/data` 等。
+- **构建上下文是仓库根**（前端 `utils/helpers.js` 跨目录 `import ../../../common/map_names.json`，后端要 `common/*.json`）。仓库根 `.dockerignore` 排除 `**/node_modules`、`**/target`、`**/dist`、`common/data` 等。
 - 镜像层用 GitHub Actions 缓存（`type=gha`）加速。
 - `run-name` 已设为 `Deploy <ref> by @<actor>`，并加了 `concurrency`（新 push 取消进行中的旧 run）。
 
@@ -142,7 +142,7 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 - **评分**：自包含、类 WN8，基准来自"一同计算的这批战斗"（相对分，非绝对天梯）。参数在 `common/rating.json`，前端「评分规则」弹窗 + `GET /api/rating` 实时展示。细节见 `docs/rating-system.md`。
 - **数据库**：在线版使用 PostgreSQL（`postgres:18-alpine`），通过 `SPRING_PROFILES_ACTIVE: postgres` 激活。默认 profile 排除 JPA auto-config，桌面版/dev 无数据库启动（注意 Boot 4 的 exclude 类名在 `org.springframework.boot.{jdbc,hibernate,data.jpa}.autoconfigure.*`，且 Flyway 需 `spring-boot-flyway` 模块——详见 DEVELOPER_GUIDE 风险点）。密码由 GitHub Secret `DB_PASSWORD` 注入，本地开发用 `POSTGRES_PASSWORD=wotb`。
 - **排行榜**：仅在线版（`postgres` profile）。schema 由 Flyway 管理（`wotb-web/.../db/migration`），`ddl-auto: validate`。只记录录像者本人在**随机战斗**（`arenaBonusType==1`）中的单场伤害，去重键 `arena_id+account_id`。`ReplayService` 经 `ObjectProvider` 可选调用，无库时静默跳过。细节见 DEVELOPER_GUIDE「排行榜（Leaderboard）」。
-- **i18n**：vue-i18n 三语（zh/en/ru），`locales/*.json`；语言持久化在 `localStorage('wotb-lang')`。**地图名尚未接 i18n**（只有中文映射），见 `TODO.md`「P1：国际化」。
+- **i18n**：vue-i18n 三语（zh/en/ru），`locales/*.json`；语言持久化在 `localStorage('wotb-lang')`。地图名共享字典 `common/map_names.json` 已接 `zh/en/ru`，网页按当前语言显示，导出仍固定中文。
 - **API 端点**：`GET /api/health`、`GET /api/rating`、`POST /api/preview`、`POST /api/export?mode=aggregate|each`、`POST /api/shutdown`（仅桌面）；排行榜（仅 postgres profile）`GET /api/leaderboard/top-damage`、`GET /api/leaderboard/tanks/{tankId}/top-damage`（支持按车辆筛选伤害榜）。
 
 ---
