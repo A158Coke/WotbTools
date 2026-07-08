@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
+import org.springframework.util.StringUtils;
 
 import java.io.InputStream;
 import java.util.HashMap;
@@ -131,6 +132,6 @@ public final class Rating {
     /** 车型分桶键; 无车型信息归入"其他"。 */
     private static String classKey(final Tankopedia tp, final PlayerResult p) {
         final String type = tp.info(p.tankId).type();
-        return (type == null || type.isEmpty()) ? "其他" : type;
+        return StringUtils.hasText(type) ? type : "其他";
     }
 }

@@ -13,6 +13,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -52,7 +53,7 @@ public class LeaderboardService {
         record.setTankName(tankopedia.info(recorder.tankId).name());
         record.setDamageDealt(recorder.damageDealt);
         record.setMapName(battle.mapName);
-        record.setVersion(battle.version != null && !battle.version.isEmpty() ? battle.version : null);
+        record.setVersion(StringUtils.hasText(battle.version) ? battle.version : null);
         if (battle.startTime != null) {
             final long epochSeconds = battle.startTime > 100_000_000_000L
                     ? battle.startTime / 1000L : battle.startTime;

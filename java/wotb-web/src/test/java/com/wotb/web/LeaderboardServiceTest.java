@@ -17,6 +17,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -129,5 +130,20 @@ class LeaderboardServiceTest {
         service.recordRecorder(b, tankopedia);
 
         verify(repo, never()).save(any());
+    }
+
+    @Test
+    void savesNullVersionWhenVersionWhitespace() {
+        final LeaderboardRecordRepository repo = mock(LeaderboardRecordRepository.class);
+        when(repo.findByArenaIdAndAccountId(eq("arenaA"), eq(111L))).thenReturn(Optional.empty());
+        final LeaderboardService service = new LeaderboardService(repo, mock(LeaderboardRecordMapper.class));
+        final Battle battle = battle("arenaA", "Recorder1", 111L);
+        battle.version = "   ";
+
+        service.recordRecorder(battle, tankopedia);
+
+        final var captor = org.mockito.ArgumentCaptor.forClass(LeaderboardRecord.class);
+        verify(repo).save(captor.capture());
+        assertNull(captor.getValue().getVersion());
     }
 }
