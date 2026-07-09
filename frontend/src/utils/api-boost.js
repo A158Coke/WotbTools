@@ -131,6 +131,10 @@ export async function getMyBoosterProfile() {
   return boostHandle(await fetch('/api/boost/boosters/my', { headers: await boostHeaders() }))
 }
 
+export async function updateMyBoosterAvailability(body) {
+  return boostHandle(await fetch('/api/boost/boosters/my/availability', { method: 'PATCH', headers: await boostHeaders(), body: JSON.stringify(body) }))
+}
+
 export async function listNotifications() {
   return boostHandle(await fetch('/api/users/notifications', { headers: await boostHeaders() }))
 }

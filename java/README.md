@@ -140,7 +140,7 @@ java -jar wotb-web/target/wotb-web.jar --desktop
 
 ### 陪练与打手（仅在线版）
 
-`GET /api/booster/assignments` 默认返回当前登录打手的活跃订单；追加 `?includeHistory=true` 时返回活跃 + 历史订单（活跃优先、历史按分配时间倒序），供个人中心回看已完成/已取消/已拒绝订单。打手可通过 `PATCH /api/booster/assignments/{id}/accept|start|complete|decline` 流转自己的订单；管理员通过需求状态把 `PENDING_CONFIRM` 确认为 `CLOSED`，或标记 `EXCEPTION`。管理员分配订单时要求打手资格为 `ACTIVE`、未暂停接单且没有活跃订单；前端会按资格、接单状态、活跃订单数、等级和擅长内容推荐排序。
+`GET /api/booster/assignments` 默认返回当前登录打手的活跃订单；追加 `?includeHistory=true` 时返回活跃 + 历史订单（活跃优先、历史按分配时间倒序），供个人中心回看已完成/已取消/已拒绝订单。`PATCH /api/boost/boosters/my/availability` 允许打手本人切换 `available`，用于暂停/恢复接收新订单，并返回最新 `BoosterDto` 给个人中心即时刷新。打手可通过 `PATCH /api/booster/assignments/{id}/accept|start|complete|decline` 流转自己的订单；管理员通过需求状态把 `PENDING_CONFIRM` 确认为 `CLOSED`，或标记 `EXCEPTION`。管理员分配订单时要求打手资格为 `ACTIVE`、未暂停接单且没有活跃订单；前端会按资格、接单状态、活跃订单数、等级和擅长内容推荐排序。
 
 `GET /api/users/notifications`、`GET /api/users/notifications/unread-count`、`PATCH /api/users/notifications/{id}/read` 和 `PATCH /api/users/notifications/read-all` 提供站内通知基础能力。通知 API 返回英文 `type` 与 `payload` 数据，具体文案由前端三语 i18n 渲染。
 

@@ -105,6 +105,9 @@ public class BoosterService {
 
     @Transactional
     public BoosterDto setAvailability(final Long id, final Boolean available) {
+        if (available == null) {
+            throw new IllegalArgumentException("BOOSTER_AVAILABILITY_REQUIRED");
+        }
         final BoosterProfile p = getById(id);
         p.setAvailable(available);
         p.setUpdatedAt(OffsetDateTime.now());

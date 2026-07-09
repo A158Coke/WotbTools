@@ -9,6 +9,7 @@ import {
   getMyBoosterProfile,
   getUserLeaderboardRecords,
   getUserProfile,
+  updateMyBoosterAvailability,
   updateUserWotbAccount
 } from '../utils/api-boost.js'
 import { mapLabel } from '../utils/helpers.js'
@@ -28,6 +29,8 @@ const records = ref([])
 const boosterInfo = ref(null)
 const boosterAssignments = ref([])
 const loadingBoosterAssignments = ref(false)
+const boosterAvailabilityPending = ref(false)
+const boosterAvailabilityError = ref('')
 
 onMounted(async () => {
   try {
@@ -94,6 +97,19 @@ const historyBoosterAssignments = computed(() =>
   boosterAssignments.value.filter(assignment => assignment.unassignedAt)
 )
 
+const boosterAvailabilityKey = computed(() => {
+  if (!boosterInfo.value?.available) return 'paused'
+  return (boosterInfo.value?.activeAssignmentCount || 0) > 0 ? 'busy' : 'available'
+})
+
+const boosterAvailabilityLabel = computed(() =>
+  boosterInfo.value ? t(`boost.boosterAvailabilityState.${boosterAvailabilityKey.value}`) : '--'
+)
+
+const boosterAvailabilityActionLabel = computed(() =>
+  boosterInfo.value?.available ? t('profile.pauseBoosterAvailability') : t('profile.resumeBoosterAvailability')
+)
+
 function doLogin() {
   if (!loginStarted.value) {
     loginStarted.value = true
@@ -130,8 +146,24 @@ async function saveAccount() {
 async function loadBoosterInfo() {
   try {
     boosterInfo.value = await getMyBoosterProfile()
+    boosterAvailabilityError.value = ''
   } catch {
     boosterInfo.value = null
+  }
+}
+
+async function toggleBoosterAvailability() {
+  if (!boosterInfo.value || boosterAvailabilityPending.value) return
+  boosterAvailabilityPending.value = true
+  boosterAvailabilityError.value = ''
+  try {
+    boosterInfo.value = await updateMyBoosterAvailability({
+      available: !boosterInfo.value.available
+    })
+  } catch (e) {
+    boosterAvailabilityError.value = e.message
+  } finally {
+    boosterAvailabilityPending.value = false
   }
 }
 
@@ -266,13 +298,30 @@ function assignmentTime(value) {
 
         <div class="profile-right">
           <div v-if="boosterInfo" class="profile-card profile-section">
-            <h3 class="card-title">{{ $t('profile.boosterTitle') }}</h3>
+            <div class="section-head">
+              <h3 class="card-title">{{ $t('profile.boosterTitle') }}</h3>
+              <div class="section-actions">
+                <button
+                  class="btn-ghost btn-sm"
+                  :disabled="boosterAvailabilityPending"
+                  @click="toggleBoosterAvailability"
+                >
+                  {{ boosterAvailabilityPending ? $t('profile.boosterAvailabilitySaving') : boosterAvailabilityActionLabel }}
+                </button>
+              </div>
+            </div>
             <div class="booster-info">
               <div class="sec-row"><span>{{ $t('profile.boosterNickname') }}</span><strong>{{ boosterInfo.nickname }}</strong></div>
               <div class="sec-row"><span>{{ $t('profile.boosterLevel') }}</span><span class="badge-ok">{{ boosterInfo.levelLabel }}</span></div>
               <div class="sec-row"><span>{{ $t('profile.boosterActiveAssignments') }}</span><strong>{{ boosterInfo.activeAssignmentCount }}</strong></div>
+              <div class="sec-row">
+                <span>{{ $t('profile.boosterAvailability') }}</span>
+                <span class="availability-badge" :class="boosterAvailabilityKey">{{ boosterAvailabilityLabel }}</span>
+              </div>
               <div v-if="boosterInfo.status === 'ACTIVE'" class="profile-status-ok">{{ $t('profile.boosterActive') }}</div>
               <div v-else class="profile-status-warn">{{ $t('profile.boosterInactive') }}</div>
+              <p class="text-muted">{{ $t('profile.boosterAvailabilityHint') }}</p>
+              <p v-if="boosterAvailabilityError" class="error">{{ boosterAvailabilityError }}</p>
             </div>
           </div>
 
@@ -377,6 +426,10 @@ function assignmentTime(value) {
 .sec-row span { color: var(--text-sub); }
 .sec-row code { font-family: monospace; font-size: .78rem; color: var(--accent); }
 .booster-info { display: flex; flex-direction: column; gap: 8px; }
+.availability-badge { font-size: .72rem; padding: 2px 8px; border-radius: 6px; font-weight: 700; }
+.availability-badge.available { background: var(--status-ok-bg); color: var(--status-ok-fg); }
+.availability-badge.busy { background: var(--status-info-bg); color: var(--status-info-fg); }
+.availability-badge.paused { background: var(--status-warn-bg); color: var(--status-warn-fg); }
 .profile-status-ok { font-size: .8rem; color: var(--status-ok-fg); font-weight: 700; }
 .profile-status-warn { font-size: .8rem; color: var(--status-warn-fg); font-weight: 700; }
 .btn-primary { padding: 8px 20px; border: none; border-radius: 7px; background: var(--accent); color: var(--accent-text); font-size: .88rem; cursor: pointer; font-family: inherit; font-weight: 700; }
@@ -385,6 +438,7 @@ function assignmentTime(value) {
 .btn-ghost { padding: 8px 18px; border: 1px solid var(--border-ghost); border-radius: 7px; background: transparent; color: var(--text); font-size: .85rem; cursor: pointer; font-family: inherit; }
 .btn-ghost.btn-sm { padding: 5px 12px; font-size: .8rem; border-radius: 6px; }
 .btn-ghost:hover { background: var(--bg-card2); }
+.btn-ghost:disabled { cursor: wait; opacity: .65; background: var(--bg-card2); }
 .records-table-wrap { overflow-x: auto; }
 .records-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
 .records-table th { text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); color: var(--text-sub); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
