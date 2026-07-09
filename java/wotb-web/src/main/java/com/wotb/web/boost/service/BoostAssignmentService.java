@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.OffsetDateTime;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,12 +48,21 @@ public class BoostAssignmentService {
     }
 
     @Transactional(readOnly = true)
-    public List<BoostAssignmentDto> findByBooster(final Long boosterId) {
-        return assignmentRepository.findByBoosterIdAndUnassignedAtIsNull(boosterId)
+    public List<BoostAssignmentDto> findByBooster(final Long boosterId, final boolean includeHistory) {
+        final BoosterProfile booster = boosterService.getById(boosterId);
+        final List<BoostRequestAssignment> assignments = includeHistory
+                ? assignmentRepository.findByBoosterIdOrderByAssignedAtDesc(boosterId)
+                : assignmentRepository.findByBoosterIdAndUnassignedAtIsNull(boosterId);
+
+        return assignments
                 .stream()
+                // Active assignments stay on top when the profile asks for history.
+                .sorted(Comparator
+                        .comparing((BoostRequestAssignment assignment) -> assignment.getUnassignedAt() != null)
+                        .thenComparing(BoostRequestAssignment::getAssignedAt, Comparator.reverseOrder()))
                 .map(a -> {
                     final BoostRequest req = requestService.getById(a.getRequestId());
-                    return mapper.toDto(a, boosterService.getById(a.getBoosterId()), req);
+                    return mapper.toDto(a, booster, req);
                 })
                 .toList();
     }

@@ -69,11 +69,11 @@
 
 ## P1：打手视角订单系统
 
-- [ ] **打手个人订单面板**：登录用户若为打手（`booster` role），可在个人中心查看与自己相关的订单。
-  - [ ] 后端：根据 `keycloak_user_id` 查 `booster_profile`，再查 `boost_request_assignment` 获取活跃/历史分配
-  - [ ] 后端 API：`GET /api/booster/assignments`（打手视角，仅返回自己的订单）
-  - [ ] 前端 Profile 页面：显示当前活跃订单（需求名称、状态、匹配时间）和历史订单
-  - [ ] 订单状态变更通知（需求更新、新的匹配提醒）
+- [x] **打手个人订单面板**：登录用户若为打手（`booster` role），可在个人中心查看与自己相关的订单。
+  - [x] 后端：根据 `keycloak_user_id` 查 `booster_profile`，再查 `boost_request_assignment` 获取活跃/历史分配
+  - [x] 后端 API：`GET /api/booster/assignments`（默认活跃；`includeHistory=true` 返回活跃 + 历史）
+  - [x] 前端 Profile 页面：显示当前活跃订单（需求名称、状态、匹配时间）和历史订单
+  - [x] 订单状态变更通知（需求更新、新的匹配提醒）
 
 ## P1：测试与质量
 

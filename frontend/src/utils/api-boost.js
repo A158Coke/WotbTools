@@ -104,8 +104,11 @@ export async function adminBoostBoosterApplicationReject(id, body = {}) {
 }
 
 // ========== My Booster Profile ==========
-export async function getMyBoosterAssignments() {
-  return await boostHandle(await fetch('/api/booster/assignments', { headers: await boostHeaders() }))
+export async function getMyBoosterAssignments(includeHistory = false) {
+  const params = new URLSearchParams()
+  if (includeHistory) params.set('includeHistory', 'true')
+  const suffix = params.toString()
+  return await boostHandle(await fetch(`/api/booster/assignments${suffix ? '?' + suffix : ''}`, { headers: await boostHeaders() }))
 }
 
 export async function acceptMyBoosterAssignment(id) {

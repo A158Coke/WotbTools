@@ -64,8 +64,8 @@
 - 排行榜（仅在线版 `postgres` profile）：上传随机战斗回放自动记录录像者单场伤害，`/api/leaderboard/top-damage` 等端点查询。
 - 工具集首页首屏展示排行榜当前最高单场伤害记录；排行榜暂无数据或接口不可用时显示 `--`。
 - **Keycloak 认证**：`https://auth.wotbtools.com` Keycloak 容器，realm `wotbtools`，client `wotbtools-web`。前端 `check-sso` 游客模式 + 登录/登出，注册入口由 Keycloak realm 托管。
-- **个人中心**：`/profile` 页面，显示用户名、登出按钮。未登录时展示"登入"按钮触发 Keycloak OIDC 流程。
-- **陪练与打手申请**：`?view=boost` 页面支持玩家提交打手资格申请，管理员在资格审批中查看截图、联系方式和在线时间，审批通过后自动关联 Keycloak `booster` role 与打手资料。打手管理页会分别显示资格状态（`status`）和接单状态（由 `available + activeAssignmentCount` 推导为可接单/忙碌/暂停接单），分配时会优先推荐可接单且匹配度更高的打手；打手本人可在工作台接单、开始、提交完成或拒单，订单状态覆盖 `MATCHED/ACCEPTED/IN_PROGRESS/PENDING_CONFIRM/CLOSED/EXCEPTION`，并通过站内通知提醒相关用户。
+- **个人中心**：`/profile` 页面显示用户名、登出按钮、排行榜记录；若当前用户是打手，还会展示进行中订单和历史订单。未登录时展示"登入"按钮触发 Keycloak OIDC 流程。
+- **陪练与打手申请**：`?view=boost` 页面支持玩家提交打手资格申请，管理员在资格审批中查看截图、联系方式和在线时间，审批通过后自动关联 Keycloak `booster` role 与打手资料。打手管理页会分别显示资格状态（`status`）和接单状态（由 `available + activeAssignmentCount` 推导为可接单/忙碌/暂停接单），分配时会优先推荐可接单且匹配度更高的打手；打手本人可在工作台接单、开始、提交完成或拒单，个人中心可回看历史订单，订单状态覆盖 `MATCHED/ACCEPTED/IN_PROGRESS/PENDING_CONFIRM/CLOSED/EXCEPTION`，并通过站内通知提醒相关用户。
 - **工具集主页**：Vue SPA 内 `HomePage.vue`（卡片入口 + 版本历史），版本历史数据来自 `frontend/src/data/versions.json`。
 - **域名统一**：`wotbtools.com` 和 `www.wotbtools.com`，去除 `replay.wotbtools.com` 子域名。
 - **管理员用户管理**：`/api/admin/users` API 搜索/查看/删除用户，Keycloak Admin API 集成，审计日志 `admin_user_log` 表，`wotbtools-admin` 角色权限控制。

@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -35,13 +36,14 @@ public class MyAssignmentController {
     }
 
     @GetMapping("/assignments")
-    public List<BoostAssignmentDto> myAssignments() {
+    public List<BoostAssignmentDto> myAssignments(
+            @RequestParam(name = "includeHistory", defaultValue = "false") final boolean includeHistory) {
         final String uid = JwtUtil.requireUserId();
         final Optional<BoosterDto> boosterOpt = boosterService.findByKeycloakUserId(uid);
         if (boosterOpt.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "BOOSTER_NOT_FOUND");
         }
-        return assignmentService.findByBooster(boosterOpt.get().id());
+        return assignmentService.findByBooster(boosterOpt.get().id(), includeHistory);
     }
 
     @PatchMapping("/assignments/{id}/accept")
