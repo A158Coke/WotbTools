@@ -74,6 +74,7 @@
   - [x] 后端 API：`GET /api/booster/assignments`（默认活跃；`includeHistory=true` 返回活跃 + 历史）
   - [x] 前端 Profile 页面：显示当前活跃订单（需求名称、状态、匹配时间）和历史订单
   - [x] 订单状态变更通知（需求更新、新的匹配提醒）
+- [x] **打手自助接单状态**：个人中心可直接暂停/恢复接收新订单，复用 `booster_profile.available`，不影响已有进行中订单。
 
 ## P1：测试与质量
 

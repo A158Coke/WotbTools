@@ -1,5 +1,6 @@
 package com.wotb.web.boost.service;
 
+import com.wotb.web.boost.dto.BoosterDto;
 import com.wotb.web.boost.repository.BoosterProfileRepository;
 import com.wotb.web.boost.entity.BoosterProfile;
 import com.wotb.web.user.entity.UserProfile;
@@ -10,8 +11,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.OffsetDateTime;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -100,5 +103,34 @@ class BoosterServiceTest {
                 "QQ", "123", "专精中坦", "专业打手");
 
         verify(boosterRepository).save(any());
+    }
+
+    @Test
+    void shouldRejectNullAvailabilityToggle() {
+        assertThatThrownBy(() -> service.setAvailability(7L, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("BOOSTER_AVAILABILITY_REQUIRED");
+    }
+
+    @Test
+    void shouldUpdateAvailabilityForExistingBooster() {
+        final BoosterProfile booster = new BoosterProfile();
+        booster.setId(7L);
+        booster.setAvailable(true);
+        booster.setUpdatedAt(OffsetDateTime.parse("2026-07-01T00:00:00Z"));
+        final BoosterDto dto = new BoosterDto(
+                7L, "booster", "ELITE", "elite", "kc-booster",
+                false, "ACTIVE", "active", null, null, null, null,
+                0, null, OffsetDateTime.parse("2026-07-09T00:00:00Z")
+        );
+        when(boosterRepository.findById(eq(7L))).thenReturn(Optional.of(booster));
+        when(boosterRepository.save(eq(booster))).thenReturn(booster);
+        when(mapper.toDto(eq(booster))).thenReturn(dto);
+
+        final BoosterDto result = service.setAvailability(7L, false);
+
+        assertThat(result.available()).isFalse();
+        assertThat(booster.getAvailable()).isFalse();
+        verify(boosterRepository).save(eq(booster));
     }
 }

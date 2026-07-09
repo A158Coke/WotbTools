@@ -1,11 +1,14 @@
 package com.wotb.web.boost.controller;
 
 import com.wotb.web.boost.dto.BoosterDto;
+import com.wotb.web.boost.dto.UpdateBoosterAvailabilityRequest;
 import com.wotb.web.boost.service.BoosterService;
 import com.wotb.web.util.JwtUtil;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -24,6 +27,19 @@ public class MyBoosterController {
 
     @GetMapping("/my")
     public BoosterDto myBooster() {
+        return currentBooster();
+    }
+
+    @PatchMapping("/my/availability")
+    public BoosterDto setMyAvailability(@RequestBody final UpdateBoosterAvailabilityRequest body) {
+        try {
+            return service.setAvailability(currentBooster().id(), body.available());
+        } catch (final IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    private BoosterDto currentBooster() {
         final String uid = JwtUtil.requireUserId();
         return service.findByKeycloakUserId(uid)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "BOOSTER_NOT_FOUND"));
