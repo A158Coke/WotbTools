@@ -306,7 +306,13 @@
         "identity": "身份信息",
         "authProvider": "认证服务",
         "notBoundWotbAccount": "尚未绑定 WoTB 玩家账号",
-"myAssignments": "我的订单"
+        "myAssignments": "我的订单",
+        "activeAssignments": "进行中的订单",
+        "noActiveAssignments": "当前没有进行中的订单",
+        "assignmentHistory": "历史订单",
+        "noAssignmentHistory": "还没有历史订单",
+        "assignmentClosedAt": "结束时间",
+        "assignmentNote": "备注"
     },
     "replay": {
         "no_files": "????????????",

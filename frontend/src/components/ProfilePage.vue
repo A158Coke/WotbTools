@@ -2,7 +2,15 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
-import * as api from '../utils/api-boost.js'
+import {
+  createUserProfile,
+  deleteUserWotbAccount,
+  getMyBoosterAssignments,
+  getMyBoosterProfile,
+  getUserLeaderboardRecords,
+  getUserProfile,
+  updateUserWotbAccount
+} from '../utils/api-boost.js'
 import { mapLabel } from '../utils/helpers.js'
 
 const { locale, t } = useI18n()
@@ -12,7 +20,6 @@ const phase = ref('init')
 const profile = ref(null)
 const loginStarted = ref(false)
 
-// Edit states
 const editingAccount = ref(false)
 const editAccountId = ref(null)
 const editNickname = ref('')
@@ -20,6 +27,7 @@ const editError = ref('')
 const records = ref([])
 const boosterInfo = ref(null)
 const boosterAssignments = ref([])
+const loadingBoosterAssignments = ref(false)
 
 onMounted(async () => {
   try {
@@ -40,19 +48,20 @@ onMounted(async () => {
 
 async function loadProfile() {
   try {
-    profile.value = await api.getUserProfile()
+    profile.value = await getUserProfile()
   } catch {
-    // 首次登录，user_profile 不存在 → 创建
     try {
-      profile.value = await api.createUserProfile()
+      profile.value = await createUserProfile()
     } catch {
       profile.value = null
     }
   }
-  if (profile.value?.wotbAccountId) { loadRecords() }
+  if (profile.value?.wotbAccountId) {
+    loadRecords()
+  }
   loadBoosterInfo()
-  if (tokenParsed.value?.realm_access?.roles?.includes('booster')) {
-    try { boosterAssignments.value = await api.getMyBoosterAssignments() } catch {}
+  if (isBoosterUser.value) {
+    await loadBoosterAssignments()
   }
 }
 
@@ -69,8 +78,32 @@ const heroSubtitle = computed(() =>
     : t('profile.notBoundWotbAccount')
 )
 
-function doLogin() { if (!loginStarted.value) { loginStarted.value = true; login() } }
-function doLogout() { logout() }
+const isBoosterUser = computed(() => {
+  const roles = [
+    ...(tokenParsed.value?.realm_access?.roles || []),
+    ...(tokenParsed.value?.resource_access?.['wotbtools-web']?.roles || [])
+  ]
+  return roles.includes('booster')
+})
+
+const activeBoosterAssignments = computed(() =>
+  boosterAssignments.value.filter(assignment => !assignment.unassignedAt)
+)
+
+const historyBoosterAssignments = computed(() =>
+  boosterAssignments.value.filter(assignment => assignment.unassignedAt)
+)
+
+function doLogin() {
+  if (!loginStarted.value) {
+    loginStarted.value = true
+    login()
+  }
+}
+
+function doLogout() {
+  logout()
+}
 
 function startEditAccount() {
   editAccountId.value = profile.value?.wotbAccountId || null
@@ -78,30 +111,62 @@ function startEditAccount() {
   editingAccount.value = true
   editError.value = ''
 }
+
 async function saveAccount() {
   editError.value = ''
   try {
-    profile.value = await api.updateUserWotbAccount({
+    profile.value = await updateUserWotbAccount({
       wotbAccountId: editAccountId.value,
       wotbNickname: editNickname.value,
       wotbServer: 'CN'
     })
     editingAccount.value = false
     loadRecords()
-  } catch (e) { editError.value = e.message }
+  } catch (e) {
+    editError.value = e.message
+  }
 }
+
 async function loadBoosterInfo() {
-  try { boosterInfo.value = await api.getMyBoosterProfile() } catch { boosterInfo.value = null }
+  try {
+    boosterInfo.value = await getMyBoosterProfile()
+  } catch {
+    boosterInfo.value = null
+  }
 }
+
+async function loadBoosterAssignments() {
+  loadingBoosterAssignments.value = true
+  try {
+    boosterAssignments.value = await getMyBoosterAssignments(true)
+  } catch {
+    boosterAssignments.value = []
+  } finally {
+    loadingBoosterAssignments.value = false
+  }
+}
+
 async function loadRecords() {
-  try { records.value = await api.getUserLeaderboardRecords() } catch { records.value = [] }
+  try {
+    records.value = await getUserLeaderboardRecords()
+  } catch {
+    records.value = []
+  }
 }
+
 async function removeAccount() {
   if (!confirm(t('profile.unbindConfirm'))) return
   editError.value = ''
   try {
-    profile.value = await api.deleteUserWotbAccount()
-  } catch (e) { editError.value = e.message }
+    profile.value = await deleteUserWotbAccount()
+    records.value = []
+  } catch (e) {
+    editError.value = e.message
+  }
+}
+
+function assignmentTime(value) {
+  return value ? new Date(value).toLocaleString() : '--'
 }
 </script>
 
@@ -133,7 +198,6 @@ async function removeAccount() {
 
       <div class="profile-body">
         <div class="profile-left">
-          <!-- 身份信息 -->
           <div class="profile-card profile-section">
             <div class="section-head">
               <h3 class="card-title">{{ $t('profile.identity') }}</h3>
@@ -148,7 +212,6 @@ async function removeAccount() {
             </div>
           </div>
 
-          <!-- WoTB Account -->
           <div class="profile-card profile-section">
             <div class="section-head">
               <h3 class="card-title">{{ $t('profile.wotbTitle') }}</h3>
@@ -177,13 +240,12 @@ async function removeAccount() {
 
             <div v-else-if="profile.wotbAccountId" class="account-bound">
               <div class="account-row"><span>{{ $t('profile.accountId') }}</span><code>{{ profile.wotbAccountId }}</code></div>
-              <div class="account-row"><span>{{ $t('profile.nickname') }}</span><strong>{{ profile.wotbNickname || '—' }}</strong></div>
+              <div class="account-row"><span>{{ $t('profile.nickname') }}</span><strong>{{ profile.wotbNickname || '--' }}</strong></div>
               <div class="account-row"><span>{{ $t('profile.server') }}</span><span class="badge-ok">{{ profile.wotbServer }}</span></div>
             </div>
             <p v-else class="profile-empty">{{ $t('profile.wotbNotBound') }}</p>
           </div>
 
-          <!-- Leaderboard records -->
           <div v-if="profile.wotbAccountId" class="profile-card profile-section">
             <h3 class="card-title section-title-line">{{ $t('profile.records') }}</h3>
             <div v-if="records.length" class="records-table-wrap">
@@ -191,9 +253,9 @@ async function removeAccount() {
                 <thead><tr><th>{{ $t('profile.tank') }}</th><th class="rec-dmg">{{ $t('profile.damage') }}</th><th>{{ $t('profile.map') }}</th></tr></thead>
                 <tbody>
                   <tr v-for="r in records" :key="r.id">
-                    <td class="rec-tank">{{ r.tankName || '—' }}</td>
-                    <td class="rec-dmg">{{ r.damageDealt != null ? r.damageDealt.toLocaleString() : '—' }}</td>
-                    <td class="rec-map">{{ mapLabel(r.mapName, locale) || '—' }}</td>
+                    <td class="rec-tank">{{ r.tankName || '--' }}</td>
+                    <td class="rec-dmg">{{ r.damageDealt != null ? r.damageDealt.toLocaleString() : '--' }}</td>
+                    <td class="rec-map">{{ mapLabel(r.mapName, locale) || '--' }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -203,7 +265,6 @@ async function removeAccount() {
         </div>
 
         <div class="profile-right">
-          <!-- Booster Info -->
           <div v-if="boosterInfo" class="profile-card profile-section">
             <h3 class="card-title">{{ $t('profile.boosterTitle') }}</h3>
             <div class="booster-info">
@@ -224,22 +285,50 @@ async function removeAccount() {
             </div>
           </div>
 
-          <!-- Booster Assignments -->
-          <div v-if="boosterAssignments.length" class="profile-card profile-section">
+          <div v-if="isBoosterUser" class="profile-card profile-section">
             <div class="section-head">
               <h3 class="card-title">{{ $t('profile.myAssignments') }}</h3>
+              <span class="section-meta">{{ boosterAssignments.length }}</span>
             </div>
-            <div v-for="a in boosterAssignments" :key="a.id" class="assign-card">
-              <div class="assign-head">
-                <span class="assign-type">{{ a.requestTypeLabel || $t('boost.requestType') }}</span>
-                <span class="assign-status-tag" :class="a.status?.toLowerCase()">{{ a.statusLabel }}</span>
+            <div v-if="loadingBoosterAssignments" class="profile-empty profile-empty-tight">{{ $t('profile.loading') }}</div>
+            <template v-else>
+              <div class="assignment-group">
+                <h4 class="assign-group-title">{{ $t('profile.activeAssignments') }}</h4>
+                <p v-if="!activeBoosterAssignments.length" class="profile-empty profile-empty-tight">{{ $t('profile.noActiveAssignments') }}</p>
+                <div v-else class="assign-list">
+                  <div v-for="a in activeBoosterAssignments" :key="a.id" class="assign-card">
+                    <div class="assign-head">
+                      <span class="assign-type">{{ a.requestTypeLabel || $t('boost.requestType') }}</span>
+                      <span class="assign-status-tag" :class="a.status?.toLowerCase()">{{ a.statusLabel }}</span>
+                    </div>
+                    <div class="assign-desc">{{ a.targetDescription || '--' }}</div>
+                    <div class="assign-meta">
+                      <span>{{ $t('boost.assigned') }}: {{ assignmentTime(a.assignedAt) }}</span>
+                    </div>
+                    <p v-if="a.note" class="assign-note">{{ $t('profile.assignmentNote') }}: {{ a.note }}</p>
+                  </div>
+                </div>
               </div>
-              <div class="assign-desc">{{ a.targetDescription || '—' }}</div>
-              <div class="assign-meta">
-                <span>{{ $t('boost.assigned') }}: {{ a.assignedAt ? a.assignedAt.substring(0, 10) : '—' }}</span>
-                <span v-if="a.note">· {{ a.note }}</span>
+
+              <div class="assignment-group">
+                <h4 class="assign-group-title">{{ $t('profile.assignmentHistory') }}</h4>
+                <p v-if="!historyBoosterAssignments.length" class="profile-empty profile-empty-tight">{{ $t('profile.noAssignmentHistory') }}</p>
+                <div v-else class="assign-list">
+                  <div v-for="a in historyBoosterAssignments" :key="a.id" class="assign-card">
+                    <div class="assign-head">
+                      <span class="assign-type">{{ a.requestTypeLabel || $t('boost.requestType') }}</span>
+                      <span class="assign-status-tag" :class="a.status?.toLowerCase()">{{ a.statusLabel }}</span>
+                    </div>
+                    <div class="assign-desc">{{ a.targetDescription || '--' }}</div>
+                    <div class="assign-meta">
+                      <span>{{ $t('boost.assigned') }}: {{ assignmentTime(a.assignedAt) }}</span>
+                      <span>{{ $t('profile.assignmentClosedAt') }}: {{ assignmentTime(a.unassignedAt) }}</span>
+                    </div>
+                    <p v-if="a.note" class="assign-note">{{ $t('profile.assignmentNote') }}: {{ a.note }}</p>
+                  </div>
+                </div>
               </div>
-            </div>
+            </template>
           </div>
         </div>
       </div>
@@ -254,8 +343,10 @@ async function removeAccount() {
 .profile-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--surface-shadow); }
 .profile-message { max-width: 400px; margin: 60px auto; padding: 40px; text-align: center; }
 .profile-empty { padding: 24px 0; text-align: center; color: var(--text-sub); font-size: .9rem; }
+.profile-empty-tight { padding: 8px 0 0; }
 .profile-section { padding: 20px; margin-bottom: 16px; }
 .card-title { font-size: .95rem; font-weight: 600; color: var(--text-heading); margin: 0; }
+.section-meta { font-size: .75rem; color: var(--text-sub); }
 .section-title-line { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
 .section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
 .section-actions { display: flex; gap: 6px; }
@@ -282,7 +373,7 @@ async function removeAccount() {
 .error { color: var(--error); font-size: .82rem; }
 .text-muted { font-size: .8rem; color: var(--text-sub); line-height: 1.5; }
 .security-info { display: flex; flex-direction: column; gap: 8px; }
-.sec-row { display: flex; justify-content: space-between; font-size: .88rem; }
+.sec-row { display: flex; justify-content: space-between; font-size: .88rem; gap: 12px; }
 .sec-row span { color: var(--text-sub); }
 .sec-row code { font-family: monospace; font-size: .78rem; color: var(--accent); }
 .booster-info { display: flex; flex-direction: column; gap: 8px; }
@@ -298,19 +389,29 @@ async function removeAccount() {
 .records-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
 .records-table th { text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); color: var(--text-sub); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
 .records-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-light); color: var(--text); }
-.assign-card { padding: 12px; border: 1px solid var(--border-light); border-radius: 8px; margin-bottom: 8px; background: var(--bg); }
-.assign-card:last-child { margin-bottom: 0; }
-.assign-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-.assign-type { font-weight: 600; font-size: .88rem; color: var(--text-heading); }
-.assign-status-tag { font-size: .75rem; padding: 2px 8px; border-radius: 6px; background: var(--bg-chip); color: var(--text-sub); }
-.assign-status-tag.assigned { background: var(--status-info-bg); color: var(--status-info-fg); }
-.assign-status-tag.cancelled { background: var(--status-err-bg); color: var(--status-err-fg); }
-.assign-desc { font-size: .85rem; color: var(--text); margin-bottom: 4px; line-height: 1.4; }
-.assign-meta { font-size: .78rem; color: var(--text-sub); }
 .records-table tbody tr:hover { background: var(--bg-card2); }
 .rec-dmg { text-align: right !important; font-variant-numeric: tabular-nums; font-weight: 600; width: 90px; }
 .rec-tank { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rec-map { color: var(--text-sub); }
+.assignment-group + .assignment-group { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.assign-group-title { margin: 0 0 10px; font-size: .78rem; font-weight: 700; color: var(--text-sub); letter-spacing: .05em; text-transform: uppercase; }
+.assign-list { display: flex; flex-direction: column; gap: 8px; }
+.assign-card { padding: 12px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--bg); }
+.assign-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.assign-type { font-weight: 600; font-size: .88rem; color: var(--text-heading); }
+.assign-status-tag { font-size: .75rem; padding: 2px 8px; border-radius: 6px; background: var(--bg-chip); color: var(--text-sub); }
+.assign-status-tag.assigned { background: var(--status-info-bg); color: var(--status-info-fg); }
+.assign-status-tag.accepted,
+.assign-status-tag.in_progress,
+.assign-status-tag.pending_confirm,
+.assign-status-tag.completed { background: var(--status-ok-bg); color: var(--status-ok-fg); }
+.assign-status-tag.declined,
+.assign-status-tag.cancelled { background: var(--status-err-bg); color: var(--status-err-fg); }
+.assign-status-tag.exception { background: var(--status-warn-bg); color: var(--status-warn-fg); }
+.assign-desc { font-size: .85rem; color: var(--text); margin-bottom: 4px; line-height: 1.4; }
+.assign-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: .78rem; color: var(--text-sub); }
+.assign-note { margin: 6px 0 0; font-size: .78rem; color: var(--text-sub); line-height: 1.4; }
+
 @media (max-width: 768px) {
   .profile-body { flex-direction: column; }
   .profile-right { width: 100%; }
