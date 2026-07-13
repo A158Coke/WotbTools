@@ -24,7 +24,7 @@ const showRating = ref(false)
 
 async function preview() { await replay.doPreview(cols.initFromResponse) }
 async function exportXlsx(mode) { await replay.doExport(mode) }
-function onFileRemoveRequest(f) { replay.askRemoveFile(f) }
+function onFileRemoveRequest(f) { askRemoveFile(f) }
 </script>
 
 <template>
