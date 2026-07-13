@@ -1,0 +1,173 @@
+name: Deploy Sponsor Assets Once
+run-name: Deploy sponsor assets once by @${{ github.actor }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type DEPLOY-SPONSOR-ASSETS to continue
+        required: true
+        type: string
+
+concurrency:
+  group: production-maintenance
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: inputs.confirm == 'DEPLOY-SPONSOR-ASSETS'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare and verify legacy assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          readonly source_commit="3a5cda7cff2fd0a62f866599ccbed961c3919385"
+          readonly alipay_sha="3e2f2f05d9e3e710722d28278b0ea62b30297c9e933813b4ba5f70607b7c408d"
+          readonly wechat_sha="8c63d21aa54c6b771b322d04f1888b0f9c885343d7f8aff13477b113f04f471e"
+
+          mkdir -p .sponsor-deploy
+          git cat-file -e "${source_commit}^{commit}"
+          git show "${source_commit}:frontend/homepage/qr/alipay.png" > .sponsor-deploy/alipay.jpg
+          git show "${source_commit}:frontend/homepage/qr/wechat.png" > .sponsor-deploy/wechat.jpg
+
+          test "$(stat -c '%s' .sponsor-deploy/alipay.jpg)" = "78082"
+          test "$(stat -c '%s' .sponsor-deploy/wechat.jpg)" = "58778"
+          test "$(file --brief --mime-type .sponsor-deploy/alipay.jpg)" = "image/jpeg"
+          test "$(file --brief --mime-type .sponsor-deploy/wechat.jpg)" = "image/jpeg"
+          printf '%s  %s\n' "$alipay_sha" .sponsor-deploy/alipay.jpg | sha256sum --check --strict
+          printf '%s  %s\n' "$wechat_sha" .sponsor-deploy/wechat.jpg | sha256sum --check --strict
+
+          cat > .sponsor-deploy/sponsor-config.json <<'JSON'
+          {
+            "enabled": true,
+            "methods": [
+              { "type": "alipay", "image": "/sponsor-assets/alipay.jpg" },
+              { "type": "wechat", "image": "/sponsor-assets/wechat.jpg" }
+            ]
+          }
+          JSON
+
+      - name: Upload verified staging files
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: .sponsor-deploy/alipay.jpg,.sponsor-deploy/wechat.jpg,.sponsor-deploy/sponsor-config.json
+          target: /tmp/wotb-sponsor-${{ github.run_id }}
+          strip_components: 1
+          overwrite: true
+
+      - name: Activate and verify sponsor assets
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 10m
+          script: |
+            set -Eeuo pipefail
+            umask 077
+
+            readonly run_id="${{ github.run_id }}"
+            readonly stage="/tmp/wotb-sponsor-${run_id}"
+            readonly backup="${stage}/backup"
+            readonly config_root="/opt/wotb/config"
+            readonly compose_root="/opt/wotb"
+            readonly alipay_sha="3e2f2f05d9e3e710722d28278b0ea62b30297c9e933813b4ba5f70607b7c408d"
+            readonly wechat_sha="8c63d21aa54c6b771b322d04f1888b0f9c885343d7f8aff13477b113f04f471e"
+            readonly managed_paths=(
+              "sponsor-config.json"
+              "sponsor/alipay.jpg"
+              "sponsor/wechat.jpg"
+            )
+
+            test -f "${stage}/alipay.jpg"
+            test -f "${stage}/wechat.jpg"
+            test -f "${stage}/sponsor-config.json"
+            printf '%s  %s\n' "$alipay_sha" "${stage}/alipay.jpg" | sha256sum --check --strict
+            printf '%s  %s\n' "$wechat_sha" "${stage}/wechat.jpg" | sha256sum --check --strict
+            test ! -d "${config_root}/sponsor-config.json"
+            test ! -L "${config_root}/sponsor-config.json"
+            test ! -L "${config_root}/sponsor"
+
+            install -d -m 700 "$backup"
+            for relative_path in "${managed_paths[@]}"; do
+              if [[ -f "${config_root}/${relative_path}" ]]; then
+                install -D -m 600 \
+                  "${config_root}/${relative_path}" \
+                  "${backup}/${relative_path}"
+              fi
+            done
+
+            finish() {
+              local status=$?
+              trap - EXIT
+              if [[ "$status" -ne 0 ]]; then
+                echo "Sponsor activation failed; restoring previous runtime files." >&2
+                for relative_path in "${managed_paths[@]}"; do
+                  if [[ -f "${backup}/${relative_path}" ]]; then
+                    install -D -m 644 \
+                      "${backup}/${relative_path}" \
+                      "${config_root}/${relative_path}"
+                  else
+                    rm -f -- "${config_root}/${relative_path}"
+                  fi
+                done
+                cd "$compose_root"
+                docker compose up -d --no-deps --force-recreate wotb-frontend || true
+              fi
+              rm -rf -- "$stage"
+              exit "$status"
+            }
+            trap finish EXIT
+
+            install -d -m 755 "${config_root}/sponsor"
+            install -m 644 "${stage}/alipay.jpg" "${config_root}/sponsor/.alipay.jpg.${run_id}"
+            install -m 644 "${stage}/wechat.jpg" "${config_root}/sponsor/.wechat.jpg.${run_id}"
+            mv -f -- "${config_root}/sponsor/.alipay.jpg.${run_id}" "${config_root}/sponsor/alipay.jpg"
+            mv -f -- "${config_root}/sponsor/.wechat.jpg.${run_id}" "${config_root}/sponsor/wechat.jpg"
+            install -m 644 "${stage}/sponsor-config.json" "${config_root}/.sponsor-config.json.${run_id}"
+            mv -f -- "${config_root}/.sponsor-config.json.${run_id}" "${config_root}/sponsor-config.json"
+
+            cd "$compose_root"
+            docker compose up -d --no-deps --force-recreate wotb-frontend
+
+            config_ready=false
+            for _ in $(seq 1 20); do
+              if docker compose exec -T wotb-frontend \
+                  wget -qO- --header='Host: wotbtools.com' \
+                  http://127.0.0.1/sponsor-config.json \
+                  > "${stage}/served-config.json" 2>/dev/null \
+                  && cmp --silent \
+                    "${stage}/sponsor-config.json" \
+                    "${stage}/served-config.json"; then
+                config_ready=true
+                break
+              fi
+              sleep 1
+            done
+            test "$config_ready" = "true"
+
+            docker compose exec -T wotb-frontend \
+              wget -qO- --header='Host: wotbtools.com' \
+              http://127.0.0.1/sponsor-assets/alipay.jpg \
+              > "${stage}/served-alipay.jpg"
+            docker compose exec -T wotb-frontend \
+              wget -qO- --header='Host: wotbtools.com' \
+              http://127.0.0.1/sponsor-assets/wechat.jpg \
+              > "${stage}/served-wechat.jpg"
+            printf '%s  %s\n' "$alipay_sha" "${stage}/served-alipay.jpg" | sha256sum --check --strict
+            printf '%s  %s\n' "$wechat_sha" "${stage}/served-wechat.jpg" | sha256sum --check --strict
+            echo "Sponsor assets activated and verified."
