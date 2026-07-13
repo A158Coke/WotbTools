@@ -4,7 +4,7 @@
 
 - **Web 版**：Spring Boot 4 后端，Vue 3 前端，支持浏览器上传、预览、下载。
 
-当前 Web 版已实现。路线图见 [../TODO.md](../TODO.md)。
+当前 Web 版已实现。路线图见 [../TODO.md]。
 
 ## 模块
 

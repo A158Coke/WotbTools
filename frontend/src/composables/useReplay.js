@@ -65,22 +65,35 @@ export function useReplay() {
   }
 
   function askRemoveBattle(battle, idx) {
-    pendingRemove.value = { battle, label: `${mapLabel(battle.mapName, locale.value)} #${idx + 1}` }
+    pendingRemove.value = { type: 'battle', battle, label: `${mapLabel(battle.mapName, locale.value)} #${idx + 1}` }
+  }
+
+  function askRemoveFile(file) {
+    pendingRemove.value = { type: 'file', file, label: displayName(file) }
   }
 
   function cancelRemove() { pendingRemove.value = null }
 
-  function confirmRemoveBattle(onColumnsInit) {
-    const battle = pendingRemove.value?.battle
+  function confirmRemove(onColumnsInit) {
+    const p = pendingRemove.value
     pendingRemove.value = null
-    if (!battle) return
-    files.value = files.value.filter(f => displayName(f) !== battle.sourceName)
+    if (!p) return
+    if (p.type === 'battle') {
+      files.value = files.value.filter(f => displayName(f) !== p.battle.sourceName)
+    } else if (p.type === 'file') {
+      files.value = files.value.filter(f => fileKey(f) !== fileKey(p.file))
+    }
     if (files.value.length) doPreview(onColumnsInit)
     else { resp.value = null; activeTab.value = 'aggregate' }
   }
 
+  function confirmRemoveBattle(onColumnsInit) {
+    if (pendingRemove.value?.type === 'battle') confirmRemove(onColumnsInit)
+    else pendingRemove.value = null
+  }
+
   return {
     files, loading, error, resp, playerCols, aggCols, activeTab, aggStats, pendingRemove,
-    doPreview, doExport, askRemoveBattle, cancelRemove, confirmRemoveBattle,
+    doPreview, doExport, askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove, confirmRemoveBattle,
   }
 }
