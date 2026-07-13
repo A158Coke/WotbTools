@@ -2,8 +2,8 @@
 import { ref } from 'vue'
 import { fileKey, displayName } from '../utils/helpers.js'
 
-const emit = defineEmits(['update:files', 'preview'])
-const props = defineProps({ files: Array, loading: Boolean })
+const emit = defineEmits(['update:files', 'preview', 'remove-request'])
+const props = defineProps({ files: Array, loading: Boolean, confirmRemove: Boolean })
 const dragging = ref(false)
 
 function addFiles(list) {
@@ -15,6 +15,10 @@ function addFiles(list) {
 }
 
 function removeFile(f) {
+  if (props.confirmRemove) {
+    emit('remove-request', f)
+    return
+  }
   const k = fileKey(f)
   emit('update:files', props.files.filter(x => fileKey(x) !== k))
 }
