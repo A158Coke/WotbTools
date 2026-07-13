@@ -2,10 +2,11 @@ package com.wotb.web.boost.service;
 
 import com.wotb.web.admin.service.KeycloakAdminUserService;
 import com.wotb.web.boost.dto.BoosterDto;
+import com.wotb.web.boost.entity.BoosterApplication;
 import com.wotb.web.boost.entity.BoosterProfile;
+import com.wotb.web.boost.repository.BoostRequestAssignmentRepository;
 import com.wotb.web.boost.repository.BoosterApplicationRepository;
 import com.wotb.web.boost.repository.BoosterProfileRepository;
-import com.wotb.web.boost.repository.BoostRequestAssignmentRepository;
 import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.service.UserProfileService;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,9 +20,9 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -245,17 +246,32 @@ class BoosterServiceTest {
     }
 
     @Test
-    void shouldRejectDeleteWhenApprovedApplicationReferencesBooster() {
+    void shouldClearApprovedApplicationRefWhenDeletingBooster() {
+        // 打手有关联的已审批申请 → 不会拒绝删除，而是解除引用后继续
         final BoosterProfile booster = booster(7L, "kc-booster");
         when(boosterRepository.findById(7L)).thenReturn(Optional.of(booster));
-        when(applicationRepository.existsByApprovedBoosterId(7L)).thenReturn(true);
+        when(assignmentRepository.existsByBoosterId(7L)).thenReturn(false);
+        when(applicationRepository.findByApprovedBoosterId(7L))
+                .thenReturn(List.of(applicationWithRef(7L)));
+        when(keycloakAdminUserService.hasRealmRole("kc-booster", "booster")).thenReturn(true);
+
+        service.deleteById(7L);
+
+        verify(applicationRepository).findByApprovedBoosterId(7L);
+        verify(boosterRepository).delete(booster);
+        verify(boosterRepository).flush();
+        verify(keycloakAdminUserService).removeRealmRole("kc-booster", "booster");
+    }
+
+    @Test
+    void shouldRejectDeleteWhenAssignmentDependenciesExist() {
+        final BoosterProfile booster = booster(7L, "kc-booster");
+        when(boosterRepository.findById(7L)).thenReturn(Optional.of(booster));
+        when(assignmentRepository.existsByBoosterId(7L)).thenReturn(true);
 
         assertThatThrownBy(() -> service.deleteById(7L))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("BOOSTER_HAS_DEPENDENCIES");
-
-        verifyNoInteractions(keycloakAdminUserService);
-        verify(boosterRepository, never()).delete(any());
     }
 
     @Test
@@ -387,6 +403,13 @@ class BoosterServiceTest {
     private static UserProfileDto profile(final String keycloakUserId) {
         return new UserProfileDto(11L, keycloakUserId, "Display", "username",
                 1001L, "Player", "CN");
+    }
+
+    private static BoosterApplication applicationWithRef(final Long boosterId) {
+        final BoosterApplication app = new BoosterApplication();
+        app.setId(100L);
+        app.setApprovedBoosterId(boosterId);
+        return app;
     }
 
     private static BoosterDto dto(final Long id, final String keycloakUserId, final boolean available) {

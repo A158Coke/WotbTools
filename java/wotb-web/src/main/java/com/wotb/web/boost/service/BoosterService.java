@@ -2,6 +2,7 @@ package com.wotb.web.boost.service;
 
 import com.wotb.web.admin.service.KeycloakAdminUserService;
 import com.wotb.web.boost.dto.BoosterDto;
+import com.wotb.web.boost.entity.BoosterApplication;
 import com.wotb.web.boost.entity.BoosterProfile;
 import com.wotb.web.boost.enums.BoosterLevel;
 import com.wotb.web.boost.enums.BoosterStatus;
@@ -194,10 +195,19 @@ public class BoosterService {
     @Transactional
     public void deleteById(final Long id) {
         final BoosterProfile booster = getById(id);
-        if (assignmentRepository.existsByBoosterId(id)
-                || applicationRepository.existsByApprovedBoosterId(id)) {
+        if (assignmentRepository.existsByBoosterId(id)) {
             throw new IllegalStateException("BOOSTER_HAS_DEPENDENCIES");
         }
+
+        // 解除关联的申请记录引用，避免外键约束阻塞删除
+        // 申请状态保持 APPROVED 不变，不影响二次申请
+        final List<BoosterApplication> linkedApps = applicationRepository.findByApprovedBoosterId(id);
+        for (final BoosterApplication app : linkedApps) {
+            app.setApprovedBoosterId(null);
+            app.setUpdatedAt(OffsetDateTime.now());
+            applicationRepository.save(app);
+        }
+        applicationRepository.flush();
 
         try {
             boosterRepository.delete(booster);
