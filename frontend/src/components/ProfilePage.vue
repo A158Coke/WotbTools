@@ -13,8 +13,9 @@ import {
   updateUserWotbAccount
 } from '../utils/api-boost.js'
 import { mapLabel } from '../utils/helpers.js'
+import { apiErrorLabel, enumLabel } from '../utils/display.js'
 
-const { locale, t } = useI18n()
+const { locale, t, te } = useI18n()
 const { initPromise, login, logout, isAuthenticated, initError, tokenParsed } = useAuth()
 
 const phase = ref('init')
@@ -26,11 +27,21 @@ const editAccountId = ref(null)
 const editNickname = ref('')
 const editError = ref('')
 const records = ref([])
+const recordsError = ref('')
 const boosterInfo = ref(null)
 const boosterAssignments = ref([])
 const loadingBoosterAssignments = ref(false)
+const boosterAssignmentsError = ref('')
 const boosterAvailabilityPending = ref(false)
 const boosterAvailabilityError = ref('')
+
+function label(group, value, fallback = '--') {
+  return enumLabel(t, te, group, value, fallback)
+}
+
+function apiError(error) {
+  return apiErrorLabel(t, te, error)
+}
 
 onMounted(async () => {
   try {
@@ -57,6 +68,8 @@ async function loadProfile() {
       profile.value = await createUserProfile()
     } catch {
       profile.value = null
+      phase.value = 'error'
+      return
     }
   }
   if (profile.value?.wotbAccountId) {
@@ -72,7 +85,7 @@ const displayName = computed(() =>
   profile.value?.displayName
   ?? tokenParsed.value?.display_name
   ?? tokenParsed.value?.preferred_username
-  ?? 'User'
+  ?? t('profile.unknownUser')
 )
 
 const heroSubtitle = computed(() =>
@@ -139,7 +152,7 @@ async function saveAccount() {
     editingAccount.value = false
     loadRecords()
   } catch (e) {
-    editError.value = e.message
+    editError.value = apiError(e)
   }
 }
 
@@ -161,7 +174,7 @@ async function toggleBoosterAvailability() {
       available: !boosterInfo.value.available
     })
   } catch (e) {
-    boosterAvailabilityError.value = e.message
+    boosterAvailabilityError.value = apiError(e)
   } finally {
     boosterAvailabilityPending.value = false
   }
@@ -169,20 +182,22 @@ async function toggleBoosterAvailability() {
 
 async function loadBoosterAssignments() {
   loadingBoosterAssignments.value = true
+  boosterAssignmentsError.value = ''
   try {
     boosterAssignments.value = await getMyBoosterAssignments(true)
-  } catch {
-    boosterAssignments.value = []
+  } catch (error) {
+    boosterAssignmentsError.value = apiError(error)
   } finally {
     loadingBoosterAssignments.value = false
   }
 }
 
 async function loadRecords() {
+  recordsError.value = ''
   try {
     records.value = await getUserLeaderboardRecords()
-  } catch {
-    records.value = []
+  } catch (error) {
+    recordsError.value = apiError(error)
   }
 }
 
@@ -193,12 +208,12 @@ async function removeAccount() {
     profile.value = await deleteUserWotbAccount()
     records.value = []
   } catch (e) {
-    editError.value = e.message
+    editError.value = apiError(e)
   }
 }
 
 function assignmentTime(value) {
-  return value ? new Date(value).toLocaleString() : '--'
+  return value ? new Date(value).toLocaleString(locale.value) : '--'
 }
 </script>
 
@@ -292,7 +307,8 @@ function assignmentTime(value) {
                 </tbody>
               </table>
             </div>
-            <p v-else class="profile-empty">{{ $t('profile.noRecords') }}</p>
+            <p v-if="recordsError" class="error">{{ recordsError }}</p>
+            <p v-else-if="!records.length" class="profile-empty">{{ $t('profile.noRecords') }}</p>
           </div>
         </div>
 
@@ -312,7 +328,7 @@ function assignmentTime(value) {
             </div>
             <div class="booster-info">
               <div class="sec-row"><span>{{ $t('profile.boosterNickname') }}</span><strong>{{ boosterInfo.nickname }}</strong></div>
-              <div class="sec-row"><span>{{ $t('profile.boosterLevel') }}</span><span class="badge-ok">{{ boosterInfo.levelLabel }}</span></div>
+              <div class="sec-row"><span>{{ $t('profile.boosterLevel') }}</span><span class="badge-ok">{{ label('level', boosterInfo.level) }}</span></div>
               <div class="sec-row"><span>{{ $t('profile.boosterActiveAssignments') }}</span><strong>{{ boosterInfo.activeAssignmentCount }}</strong></div>
               <div class="sec-row">
                 <span>{{ $t('profile.boosterAvailability') }}</span>
@@ -340,6 +356,7 @@ function assignmentTime(value) {
               <span class="section-meta">{{ boosterAssignments.length }}</span>
             </div>
             <div v-if="loadingBoosterAssignments" class="profile-empty profile-empty-tight">{{ $t('profile.loading') }}</div>
+            <p v-else-if="boosterAssignmentsError" class="error">{{ boosterAssignmentsError }}</p>
             <template v-else>
               <div class="assignment-group">
                 <h4 class="assign-group-title">{{ $t('profile.activeAssignments') }}</h4>
@@ -347,8 +364,8 @@ function assignmentTime(value) {
                 <div v-else class="assign-list">
                   <div v-for="a in activeBoosterAssignments" :key="a.id" class="assign-card">
                     <div class="assign-head">
-                      <span class="assign-type">{{ a.requestTypeLabel || $t('boost.requestType') }}</span>
-                      <span class="assign-status-tag" :class="a.status?.toLowerCase()">{{ a.statusLabel }}</span>
+                      <span class="assign-type">{{ label('requestTypeValue', a.requestType, $t('boost.requestType')) }}</span>
+                      <span class="assign-status-tag" :class="a.status?.toLowerCase()">{{ label('assignmentStatus', a.status) }}</span>
                     </div>
                     <div class="assign-desc">{{ a.targetDescription || '--' }}</div>
                     <div class="assign-meta">
@@ -365,8 +382,8 @@ function assignmentTime(value) {
                 <div v-else class="assign-list">
                   <div v-for="a in historyBoosterAssignments" :key="a.id" class="assign-card">
                     <div class="assign-head">
-                      <span class="assign-type">{{ a.requestTypeLabel || $t('boost.requestType') }}</span>
-                      <span class="assign-status-tag" :class="a.status?.toLowerCase()">{{ a.statusLabel }}</span>
+                      <span class="assign-type">{{ label('requestTypeValue', a.requestType, $t('boost.requestType')) }}</span>
+                      <span class="assign-status-tag" :class="a.status?.toLowerCase()">{{ label('assignmentStatus', a.status) }}</span>
                     </div>
                     <div class="assign-desc">{{ a.targetDescription || '--' }}</div>
                     <div class="assign-meta">

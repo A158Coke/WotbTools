@@ -26,15 +26,18 @@ public class BoostRequestService {
 
     private final BoostRequestRepository repository;
     private final BoostRequestAssignmentRepository assignmentRepository;
+    private final BoostRequestMapper mapper;
 
     private static final Set<String> SENSITIVE_KEYWORDS = Set.of(
             "密码", "验证码", "账号密码", "登录密码", "password", "verification code"
     );
 
     public BoostRequestService(final BoostRequestRepository repository,
-                               final BoostRequestAssignmentRepository assignmentRepository) {
+                               final BoostRequestAssignmentRepository assignmentRepository,
+                               final BoostRequestMapper mapper) {
         this.repository = repository;
         this.assignmentRepository = assignmentRepository;
+        this.mapper = mapper;
     }
 
     /** 创建陪练需求。 */
@@ -51,14 +54,15 @@ public class BoostRequestService {
                                              final String availableTime,
                                              final String remark) {
         // 校验 region
-        final String effectiveRegion = region != null ? region : "CN";
-        BoostRegion.from(effectiveRegion);
+        final String effectiveRegion = BoostRegion.from(
+                StringUtils.hasText(region) ? region.trim() : "CN"
+        ).name();
 
         // 校验 requestType
-        BoostRequestType.from(requestType);
+        final String effectiveRequestType = BoostRequestType.from(requestType).name();
 
         // 校验 contactType
-        ContactType.from(contactType);
+        final String effectiveContactType = ContactType.from(contactType).name();
 
         // 敏感词检查
         checkSensitive(targetDescription);
@@ -66,18 +70,18 @@ public class BoostRequestService {
 
         // 校验必填
         if (!StringUtils.hasText(targetDescription)) {
-            throw new IllegalArgumentException("目标描述不能为空");
+            throw new IllegalArgumentException("TARGET_DESCRIPTION_REQUIRED");
         }
         if (!StringUtils.hasText(contactValue)) {
-            throw new IllegalArgumentException("联系方式不能为空");
+            throw new IllegalArgumentException("CONTACT_VALUE_REQUIRED");
         }
 
         final BoostRequest req = new BoostRequest();
         req.setRequesterUserId(requesterUserId);
-        req.setRegion(effectiveRegion.toUpperCase());
-        req.setRequestType(requestType.toUpperCase());
+        req.setRegion(effectiveRegion);
+        req.setRequestType(effectiveRequestType);
         req.setTargetDescription(targetDescription.trim());
-        req.setContactType(contactType.toUpperCase());
+        req.setContactType(effectiveContactType);
         req.setContactValue(contactValue.trim());
         req.setPlayerAccountId(playerAccountId);
         req.setPlayerNickname(playerNickname);
@@ -92,7 +96,7 @@ public class BoostRequestService {
         return new CreateBoostRequestResponse(
                 req.getId(),
                 req.getStatus(),
-                "需求已提交，管理员会人工审核并联系你。",
+                "BOOST_REQUEST_SUBMITTED",
                 req.getCreatedAt()
         );
     }
@@ -101,14 +105,14 @@ public class BoostRequestService {
     public List<BoostRequestDto> listMy(final String requesterUserId) {
         return repository.findByRequesterUserIdOrderByCreatedAtDesc(requesterUserId)
                 .stream()
-                .map(this::toPlayerDto)
+                .map(request -> mapper.toDto(request, hasActiveAssignment(request)))
                 .toList();
     }
 
     /** 查询当前用户单个需求。 */
     public Optional<BoostRequestDto> getMy(final Long id, final String requesterUserId) {
         return repository.findByIdAndRequesterUserId(id, requesterUserId)
-                .map(this::toPlayerDto);
+                .map(request -> mapper.toDto(request, hasActiveAssignment(request)));
     }
 
     /** 取消自己的需求。 */
@@ -117,16 +121,16 @@ public class BoostRequestService {
         final BoostRequest req = repository.findByIdAndRequesterUserId(id, requesterUserId)
                 .orElseThrow(() -> new IllegalArgumentException("REQUEST_NOT_FOUND"));
 
-        final String currentStatus = req.getStatus().toUpperCase();
-        if (!currentStatus.equals("NEW") && !currentStatus.equals("REVIEWING")) {
-            throw new IllegalArgumentException("当前状态不允许取消");
+        final BoostRequestStatus currentStatus = BoostRequestStatus.from(req.getStatus());
+        if (currentStatus != BoostRequestStatus.NEW && currentStatus != BoostRequestStatus.REVIEWING) {
+            throw new IllegalArgumentException("REQUEST_STATUS_NOT_CANCELLABLE");
         }
 
         req.setStatus(BoostRequestStatus.CANCELLED.name());
         req.setUpdatedAt(OffsetDateTime.now());
         repository.save(req);
 
-        return toPlayerDto(req);
+        return mapper.toDto(req, hasActiveAssignment(req));
     }
 
     // --- 管理员侧委托方法 ---
@@ -144,44 +148,12 @@ public class BoostRequestService {
                 .orElseThrow(() -> new IllegalArgumentException("REQUEST_NOT_FOUND"));
     }
 
-    /** 转为玩家侧 DTO — 联系方式脱敏、不暴露 adminNote。 */
-    BoostRequestDto toPlayerDto(final BoostRequest req) {
-        final var active = assignmentRepository.findByRequestIdAndUnassignedAtIsNull(req.getId());
-        return new BoostRequestDto(
-                req.getId(),
-                req.getPlayerAccountId(),
-                req.getPlayerNickname(),
-                req.getRegion(),
-                BoostRegion.from(req.getRegion()).label(),
-                req.getRequestType(),
-                BoostRequestType.from(req.getRequestType()).label(),
-                req.getTargetDescription(),
-                req.getBudgetRange(),
-                req.getContactType(),
-                maskContact(req.getContactValue()),
-                req.getAvailableTime(),
-                req.getRemark(),
-                req.getStatus(),
-                BoostRequestStatus.from(req.getStatus()).label(),
-                active.isPresent(),
-                req.getCreatedAt(),
-                req.getUpdatedAt()
-        );
-    }
-
-    /** 联系方式脱敏。 */
-    static String maskContact(final String value) {
-        if (value == null) { return null; }
-        final int len = value.length();
-        if (len <= 3) { return "***"; }
-        if (len <= 7) {
-            return value.charAt(0) + "***" + value.charAt(len - 1);
-        }
-        return value.substring(0, 3) + "****" + value.substring(len - 3);
+    private boolean hasActiveAssignment(final BoostRequest request) {
+        return assignmentRepository.findByRequestIdAndUnassignedAtIsNull(request.getId()).isPresent();
     }
 
     private static void checkSensitive(final String text) {
-        if (text == null) { return; }
+        if (!StringUtils.hasText(text)) { return; }
         final String lower = text.toLowerCase();
         for (final String kw : SENSITIVE_KEYWORDS) {
             if (lower.contains(kw)) {

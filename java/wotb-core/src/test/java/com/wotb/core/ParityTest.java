@@ -1,4 +1,4 @@
-package test.test.com.wotb.core;
+package com.wotb.core;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.Collected;
@@ -20,7 +20,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 逐字段比对真实回放, 验证解析输出与已知正确值一致 (回归基线)。
@@ -53,8 +55,11 @@ class ParityTest {
         throw new AssertionError("找不到 arenaId=" + arenaId + " 的回放");
     }
 
-    private static PlayerResult byAccount(final Battle b, final long acc) {
-        return b.players.stream().filter(p -> p.accountId == acc).findFirst().orElseThrow();
+    private static PlayerResult byAccount(final Battle battle, final long accountId) {
+        return battle.players.stream()
+                .filter(player -> player.accountId == accountId)
+                .findFirst()
+                .orElseThrow();
     }
 
     @Test

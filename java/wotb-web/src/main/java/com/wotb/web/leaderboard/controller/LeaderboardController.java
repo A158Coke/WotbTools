@@ -1,10 +1,8 @@
 package com.wotb.web.leaderboard.controller;
 
-import com.wotb.core.model.Battle;
-import com.wotb.core.parse.ReplayParser;
-import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.leaderboard.dto.LeaderboardPageDto;
 import com.wotb.web.leaderboard.service.LeaderboardService;
+import com.wotb.web.leaderboard.service.LeaderboardUploadService;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -25,24 +23,19 @@ import java.util.Map;
 public class LeaderboardController {
 
     private final LeaderboardService service;
-    private final Tankopedia tankopedia = Tankopedia.load();
+    private final LeaderboardUploadService uploadService;
 
-    public LeaderboardController(final LeaderboardService service) {
+    public LeaderboardController(
+            final LeaderboardService service,
+            final LeaderboardUploadService uploadService) {
         this.service = service;
+        this.uploadService = uploadService;
     }
 
     /** 上传单场回放，写入排行榜。 */
     @PostMapping("/upload")
     public Map<String, Object> upload(@RequestParam(name = "file") final MultipartFile file) throws Exception {
-        final Battle battle = ReplayParser.parse(file.getBytes());
-        final boolean saved = service.recordRecorder(battle, tankopedia);
-        if (!saved) {
-            return Map.of("status", "skipped",
-                "arenaId", battle.arenaId,
-                "reason", battle.arenaBonusType == null || battle.arenaBonusType != 1
-                    ? "仅支持随机战斗" : "已存在或无法识别录像者");
-        }
-        return Map.of("status", "ok", "arenaId", battle.arenaId);
+        return uploadService.upload(file);
     }
 
     /** 全局伤害榜（分页）。 */

@@ -43,6 +43,6 @@ public class UserNotificationController {
     @PatchMapping("/read-all")
     public Map<String, String> markAllRead() {
         service.markAllRead(JwtUtil.requireUserId());
-        return Map.of("message", "NOTIFICATIONS_MARKED_READ");
+        return Map.of("code", "NOTIFICATIONS_MARKED_READ");
     }
 }

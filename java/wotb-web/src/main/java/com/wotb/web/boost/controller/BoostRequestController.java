@@ -34,16 +34,12 @@ public class BoostRequestController {
     @PostMapping
     public CreateBoostRequestResponse create(@RequestBody final CreateBoostRequestRequest body) {
         final String userId = JwtUtil.requireUserId();
-        try {
-            return service.create(
-                    userId, body.region(), body.requestType(),
-                    body.targetDescription(), body.contactType(), body.contactValue(),
-                    body.playerAccountId(), body.playerNickname(),
-                    body.budgetRange(), body.availableTime(), body.remark()
-            );
-        } catch (final IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        }
+        return service.create(
+                userId, body.region(), body.requestType(),
+                body.targetDescription(), body.contactType(), body.contactValue(),
+                body.playerAccountId(), body.playerNickname(),
+                body.budgetRange(), body.availableTime(), body.remark()
+        );
     }
 
     @GetMapping("/my")
@@ -54,18 +50,17 @@ public class BoostRequestController {
     @GetMapping("/my/{id}")
     public BoostRequestDto getMy(@PathVariable final Long id) {
         return service.getMy(id, JwtUtil.requireUserId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "需求不存在"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "REQUEST_NOT_FOUND"));
     }
 
     @PatchMapping("/my/{id}/cancel")
     public Map<String, Object> cancel(@PathVariable final Long id) {
         final String userId = JwtUtil.requireUserId();
-        try {
-            final BoostRequestDto dto = service.cancel(id, userId);
-            return Map.of("id", dto.id(), "status", dto.status(),
-                    "statusLabel", dto.statusLabel(), "message", "需求已取消。");
-        } catch (final IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        }
+        final BoostRequestDto dto = service.cancel(id, userId);
+        return Map.of(
+                "id", dto.id(),
+                "status", dto.status(),
+                "code", "BOOST_REQUEST_CANCELLED"
+        );
     }
 }

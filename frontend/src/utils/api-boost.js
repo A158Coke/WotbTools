@@ -1,25 +1,25 @@
 
 // ========== Boost / ==========
 import { useAuth } from '../composables/useAuth.js'
+import { ApiError, apiErrorFromResponse } from './http.js'
 
 async function boostHeaders() {
   const { token, ensureToken } = useAuth()
   await ensureToken(30)
-  const t = token()
-  return t ? { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` } : { 'Content-Type': 'application/json' }
+  const accessToken = token()
+  return accessToken ? { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` } : { 'Content-Type': 'application/json' }
 }
 
 async function boostHandle(r) {
   if (r.status === 401) {
     const { login } = useAuth()
     login()
-    throw new Error('AUTH_REQUIRED')
+    throw new ApiError('AUTH_REQUIRED', 401)
   }
   if (!r.ok) {
-    let msg = `HTTP ${r.status}`
-    try { const e = await r.json(); msg = e.message || e.error || msg } catch {}
-    throw new Error(msg)
+    throw await apiErrorFromResponse(r)
   }
+  if (r.status === 204) return null
   return r.json()
 }
 
@@ -108,7 +108,7 @@ export async function getMyBoosterAssignments(includeHistory = false) {
   const params = new URLSearchParams()
   if (includeHistory) params.set('includeHistory', 'true')
   const suffix = params.toString()
-  return await boostHandle(await fetch(`/api/booster/assignments${suffix ? '?' + suffix : ''}`, { headers: await boostHeaders() }))
+  return boostHandle(await fetch(`/api/booster/assignments${suffix ? '?' + suffix : ''}`, { headers: await boostHeaders() }))
 }
 
 export async function acceptMyBoosterAssignment(id) {
@@ -153,16 +153,10 @@ export async function markAllNotificationsRead() {
 
 // ========== Admin Users ==========
 async function adminHandle(r) {
-  if (r.status === 401 || r.status === 403) {
-    let msg = 'Access denied'
-    try { const e = await r.json(); msg = e.error || msg } catch {}
-    throw new Error(msg)
-  }
   if (!r.ok) {
-    let msg = `HTTP ${r.status}`
-    try { const e = await r.json(); msg = e.message || e.error || msg } catch {}
-    throw new Error(msg)
+    throw await apiErrorFromResponse(r)
   }
+  if (r.status === 204) return null
   return r.json()
 }
 
@@ -199,8 +193,5 @@ export async function deleteUserWotbAccount() {
 }
 
 export async function getUserLeaderboardRecords() {
-  const r = await fetch('/api/users/profile/records', { headers: await boostHeaders() })
-  if (r.status === 401) return []
-  if (!r.ok) return []
-  return r.json()
+  return boostHandle(await fetch('/api/users/profile/records', { headers: await boostHeaders() }))
 }

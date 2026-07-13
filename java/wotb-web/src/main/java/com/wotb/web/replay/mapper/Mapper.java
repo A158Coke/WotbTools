@@ -5,6 +5,7 @@ import com.wotb.core.model.Agg;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
+import com.wotb.core.ref.VehicleCodes;
 import com.wotb.core.stats.Players;
 import com.wotb.core.stats.RatingAnalyzer;
 import com.wotb.web.replay.dto.AggRow;
@@ -19,7 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
-/** model -> 前端 DTO (复用 core 的列定义, 保证与 Excel/桌面一致)。 */
+/** model -> 前端 DTO（复用 core 列 key；展示值转换为稳定英文码）。 */
 public final class Mapper {
 
     private Mapper() {
@@ -107,7 +108,7 @@ public final class Mapper {
             p.platoonLabel = platoon.apply(p.platoonId);
             final Map<String, Object> cells = new LinkedHashMap<>();
             for (final Columns.Column c : Columns.PLAYER) {
-                cells.put(c.key(), c.get().apply(p));
+                cells.put(c.key(), playerValue(c, p));
             }
             rows.add(new PlayerRow(cells, p.team));
         }
@@ -160,5 +161,15 @@ public final class Mapper {
 
     private static double r2(final double v) {
         return Math.round(v * 100) / 100.0;
+    }
+
+    private static Object playerValue(final Columns.Column column, final PlayerResult player) {
+        return switch (column.key()) {
+            case "tank_type" -> VehicleCodes.classCode(player.tankType);
+            case "tank_nation" -> VehicleCodes.nationCode(player.tankNation);
+            case "survived_label" -> player.survived ? "SURVIVED" : "DESTROYED";
+            case "potential_damage_detail" -> player.potentialDamageDetailed ? "PARSED" : "UNPARSED";
+            default -> column.get().apply(player);
+        };
     }
 }

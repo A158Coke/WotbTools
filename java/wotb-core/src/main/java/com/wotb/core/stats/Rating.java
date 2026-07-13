@@ -5,12 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
+import com.wotb.core.ref.VehicleCodes;
 import org.springframework.util.StringUtils;
 
 import java.io.InputStream;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 自包含的表现评分 (类 WN8 机制, 但"期望值"来自当前处理的这批战斗, 不依赖外部表)。
@@ -47,8 +49,13 @@ public final class Rating {
     /** 当前生效的评分参数快照 (供 API / 前端展示; 内部计算仍直接用私有 config 字段)。 */
     public static RatingConfig config() {
         final Config c = config;
+        final Map<String, Double> publicClassFactors = c.classFactor.entrySet().stream()
+                .collect(Collectors.toUnmodifiableMap(
+                        entry -> VehicleCodes.classCode(entry.getKey()),
+                        Map.Entry::getValue,
+                        (first, second) -> second));
         return new RatingConfig(c.assist, c.block, c.killValue, c.winBonus,
-                c.minSamples, c.scale, Map.copyOf(c.classFactor));
+                c.minSamples, c.scale, publicClassFactors);
     }
 
     private static Config load() {

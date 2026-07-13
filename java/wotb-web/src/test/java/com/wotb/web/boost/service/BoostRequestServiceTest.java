@@ -25,11 +25,14 @@ class BoostRequestServiceTest {
     @Mock
     BoostRequestAssignmentRepository assignmentRepository;
 
+    @Mock
+    BoostRequestMapper mapper;
+
     BoostRequestService service;
 
     @BeforeEach
     void setUp() {
-        service = new BoostRequestService(repository, assignmentRepository);
+        service = new BoostRequestService(repository, assignmentRepository, mapper);
     }
 
     @Test
@@ -56,7 +59,7 @@ class BoostRequestServiceTest {
                 "想找人指导", "QQ", "123456789",
                 12345L, "Coke_158", null, null, null))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("当前仅支持国服");
+                .hasMessage("UNSUPPORTED_BOOST_REGION");
     }
 
     @Test
@@ -81,7 +84,7 @@ class BoostRequestServiceTest {
                 "", "QQ", "123456789",
                 12345L, "Coke_158", null, null, null))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("目标描述不能为空");
+                .hasMessage("TARGET_DESCRIPTION_REQUIRED");
     }
 
     @Test

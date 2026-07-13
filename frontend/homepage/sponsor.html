@@ -1,100 +1,133 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title data-i18n-doc="title">支持 WoTBTools</title>
-<link rel="icon" type="image/x-icon" href="icon.ico">
-<link rel="icon" type="image/png" sizes="32x32" href="icon.png">
+<title>支持 WoTBTools</title>
+<link rel="icon" type="image/x-icon" href="/icon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/icon.png">
 <script>
- (function(){
-  var m = document.cookie.match(/(?:^|;\s*)wotbtools-theme=([^;]+)/);
-  var s = m ? m[1] : localStorage.getItem('wotbtools-theme');
-  var mode = (!s || s==='auto') ? (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light') : s;
-  var v = mode==='dark'
-    ? {bg:'#0d1117',t:'#c9d1d9',h:'#f0f6fc',mu:'#8b949e',cb:'#161b22',cbd:'#30363d',a:'#58a6ff',as:'rgba(88,166,255,.15)',tb:'#1f6feb33',f:'#484f58'}
-    : {bg:'#ffffff',t:'#24292f',h:'#0d1117',mu:'#57606a',cb:'#f6f8fa',cbd:'#d0d7de',a:'#0969da',as:'rgba(9,105,218,.15)',tb:'#ddf4ff',f:'#6e7681'};
-  var r = document.documentElement.style;
-  r.setProperty('--bg',v.bg); r.setProperty('--text',v.t); r.setProperty('--heading',v.h); r.setProperty('--muted',v.mu); r.setProperty('--card-bg',v.cb); r.setProperty('--card-border',v.cbd); r.setProperty('--accent',v.a); r.setProperty('--accent-shadow',v.as); r.setProperty('--tag-bg',v.tb); r.setProperty('--footer',v.f);
- })();
+(function () {
+  var match = document.cookie.match(/(?:^|;\s*)wotbtools-theme=([^;]+)/)
+  var saved = null
+  if (match) {
+    try { saved = decodeURIComponent(match[1]) } catch (_) { saved = null }
+  }
+  if (!saved) {
+    try { saved = localStorage.getItem('wotbtools-theme') } catch (_) { saved = null }
+  }
+  if (saved !== 'auto' && saved !== 'light' && saved !== 'dark') saved = 'auto'
+  var mode = (!saved || saved === 'auto')
+    ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+    : saved
+  document.documentElement.dataset.theme = mode
+})()
 </script>
 <style>
-  :root { --bg:#0d1117; --text:#c9d1d9; --heading:#f0f6fc; --muted:#8b949e; --card-bg:#161b22; --card-border:#30363d; --accent:#58a6ff; --accent-shadow:rgba(88,166,255,.15); --tag-bg:#1f6feb33; --footer:#484f58 }
-  @media (prefers-color-scheme: light) { :root { --bg:#ffffff; --text:#24292f; --heading:#0d1117; --muted:#57606a; --card-bg:#f6f8fa; --card-border:#d0d7de; --accent:#0969da; --accent-shadow:rgba(9,105,218,.15); --tag-bg:#ddf4ff; --footer:#6e7681 } }
-  * { margin:0; padding:0; box-sizing:border-box }
+  :root {
+    color-scheme: dark;
+    --bg: #0d1117;
+    --text: #c9d1d9;
+    --heading: #f0f6fc;
+    --muted: #8b949e;
+    --card-bg: #161b22;
+    --card-border: #30363d;
+    --accent: #58a6ff;
+    --footer: #484f58;
+    --on-accent: #ffffff;
+    --qr-bg: #ffffff;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #ffffff;
+    --text: #24292f;
+    --heading: #0d1117;
+    --muted: #57606a;
+    --card-bg: #f6f8fa;
+    --card-border: #d0d7de;
+    --accent: #0969da;
+    --footer: #6e7681;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: var(--bg);
+    color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: var(--bg); color: var(--text);
-    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
     transition: background .25s, color .25s;
   }
-
   .topbar {
-    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
-    display: flex; align-items: center; gap: 8px;
-    padding: 6px 20px; height: 48px;
-    background: var(--card-bg); border-bottom: 1px solid var(--card-border);
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 100;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 20px;
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--card-border);
   }
-  .tb-brand { text-decoration: none; font-size: 15px; font-weight: 700; color: var(--heading); }
-  .tb-brand:hover { color: var(--accent) }
-  .tb-spacer { flex: 1 }
-  .topbar .theme-bar {
-    display: flex; gap: 2px;
-    background: var(--bg); border: 1px solid var(--card-border);
-    border-radius: 7px; padding: 2px;
+  .tb-brand { color: var(--heading); font-size: 15px; font-weight: 700; text-decoration: none; }
+  .tb-brand:hover { color: var(--accent); }
+  .tb-spacer { flex: 1; }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
-  .topbar .theme-bar button {
-    padding: 4px 10px; border: none; border-radius: 5px;
-    background: transparent; color: var(--muted); font-size: .73rem;
-    cursor: pointer; transition: background .15s, color .15s; font-family: inherit;
+  .theme-bar { display: flex; gap: 2px; padding: 2px; background: var(--bg); border: 1px solid var(--card-border); border-radius: 7px; }
+  .theme-bar button {
+    padding: 4px 10px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font: inherit;
+    font-size: .73rem;
   }
-  .topbar .theme-bar button:hover { color: var(--text) }
-  .topbar .theme-bar button.active { background: var(--accent); color: #fff; font-weight: 600 }
-  .topbar .lang-select {
-    appearance: none; -webkit-appearance: none;
+  .theme-bar button:hover { color: var(--text); }
+  .theme-bar button.active { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+  .lang-select {
+    padding: 5px 10px;
     border: 1px solid var(--card-border);
-    background: var(--card-bg); color: var(--muted);
-    padding: 5px 28px 5px 10px; border-radius: 7px;
-    font-size: .73rem; cursor: pointer; font-family: inherit;
+    border-radius: 7px;
+    background: var(--card-bg);
+    color: var(--muted);
+    cursor: pointer;
+    font: inherit;
+    font-size: .73rem;
   }
-  .topbar .lang-select:hover { color: var(--text) }
-
-  header {
-    text-align: center; padding: 72px 24px 32px;
-  }
-  header h1 {
-    font-size: 2rem; font-weight: 700; color: var(--heading);
-  }
-
-  main {
-    max-width: 520px; width: 100%; padding: 0 24px 64px;
-  }
-  .card {
-    background: var(--card-bg); border: 1px solid var(--card-border);
-    border-radius: 12px; padding: 28px 24px; margin-bottom: 24px;
-  }
-  .card p { font-size: .92rem; color: var(--muted); line-height: 1.65; margin-bottom: 12px }
-  .card p:last-child { margin-bottom: 0 }
-  .card h2 { font-size: 1.1rem; color: var(--heading); margin-bottom: 12px }
-  .card .note {
-    font-size: .82rem; color: var(--muted); border-top: 1px solid var(--card-border);
-    margin-top: 16px; padding-top: 12px;
-  }
-
-  .qr-row { display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; }
+  header { padding: 78px 24px 32px; text-align: center; }
+  header h1 { color: var(--heading); font-size: 2rem; }
+  main { width: 100%; max-width: 560px; padding: 0 24px 64px; }
+  .card { margin-bottom: 24px; padding: 28px 24px; border: 1px solid var(--card-border); border-radius: 12px; background: var(--card-bg); }
+  .card h2 { margin-bottom: 16px; color: var(--heading); font-size: 1.1rem; }
+  .card p { margin-bottom: 12px; color: var(--muted); font-size: .92rem; line-height: 1.65; }
+  .card p:last-child { margin-bottom: 0; }
+  .note { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--card-border); color: var(--muted); font-size: .82rem; line-height: 1.55; }
+  .qr-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 24px; }
   .qr-item { text-align: center; }
-  .qr-item img { width: 210px; height: 210px; border-radius: 10px; background: #fff; padding: 4px; }
-  .qr-item .label { font-size: .82rem; color: var(--muted); margin-top: 6px; }
-
-  footer {
-    margin-top: auto; padding: 24px; color: var(--footer); font-size: .8rem;
-  }
-
+  .qr-item img { width: 210px; height: 210px; padding: 4px; border-radius: 10px; background: var(--qr-bg); object-fit: contain; }
+  .qr-item .label { margin-top: 6px; color: var(--muted); font-size: .82rem; }
+  .unconfigured { padding: 24px 0; text-align: center; }
+  footer { margin-top: auto; padding: 24px; color: var(--footer); font-size: .8rem; }
+  [hidden] { display: none !important; }
   @media (max-width: 560px) {
-    .topbar { padding: 4px 12px; height: 42px; }
-    .topbar .theme-bar button { padding: 3px 8px; font-size: .68rem; }
-    .topbar .lang-select { font-size: .68rem; padding: 4px 20px 4px 7px; }
-    header { padding: 56px 16px 24px; }
+    .topbar { height: 42px; padding: 4px 12px; }
+    .theme-bar button { padding: 3px 8px; font-size: .68rem; }
+    .lang-select { padding: 4px 7px; font-size: .68rem; }
+    header { padding: 60px 16px 24px; }
     header h1 { font-size: 1.6rem; }
     .card { padding: 20px 16px; }
     .qr-item img { width: 170px; height: 170px; }
@@ -102,127 +135,212 @@
 </style>
 </head>
 <body>
-
-<div class="topbar">
+<nav class="topbar" aria-label="WoTBTools">
   <a class="tb-brand" href="/">WoTBTools</a>
   <div class="tb-spacer"></div>
-  <select class="lang-select" id="lang-select" onchange="switchLang(this.value)"></select>
+  <label class="sr-only" for="lang-select" data-i18n="language_label">语言</label>
+  <select class="lang-select" id="lang-select"></select>
   <div class="theme-bar">
-    <button data-theme="auto" class="active" data-i18n="theme_auto">auto</button>
-    <button data-theme="light" data-i18n="theme_light">light</button>
-    <button data-theme="dark" data-i18n="theme_dark">dark</button>
+    <button type="button" data-theme="auto" data-i18n="theme_auto">跟随系统</button>
+    <button type="button" data-theme="light" data-i18n="theme_light">亮色</button>
+    <button type="button" data-theme="dark" data-i18n="theme_dark">暗色</button>
   </div>
-</div>
+</nav>
 
 <header>
   <h1 data-i18n="sponsor_title">支持 WoTBTools</h1>
 </header>
 
 <main>
-  <div class="card">
-    <p data-i18n="sponsor_desc1">WotBTools 是个人维护的免费工具。如果这个项目帮到了你，可以自愿赞助，用于服务器和维护成本。</p>
+  <section class="card">
+    <p data-i18n="sponsor_desc1">WoTBTools 是个人维护的免费工具。如果这个项目帮到了你，可以自愿赞助，用于服务器和维护成本。</p>
     <p data-i18n="sponsor_desc2">赞助完全自愿，不设置固定金额，不影响任何功能使用，也不会解锁额外服务。</p>
-    <div class="note" data-i18n="sponsor_note">请勿在付款备注中填写敏感个人信息。如误转或需要联系作者，可以通过页面上的联系方式联系我。</div>
-  </div>
+    <div class="note" data-i18n="sponsor_note">请勿在付款备注中填写敏感个人信息。</div>
+  </section>
 
-  <div class="card">
+  <section class="card">
     <h2 data-i18n="sponsor_qr">扫码赞助</h2>
-    <div class="qr-row">
-      <div class="qr-item">
-        <img src="qr/alipay.png" alt="支付宝">
-        <div class="label" data-i18n="sponsor_alipay">支付宝</div>
-      </div>
-      <div class="qr-item">
-        <img src="qr/wechat.png" alt="微信支付">
-        <div class="label" data-i18n="sponsor_wechat">微信支付</div>
-      </div>
-    </div>
-  </div>
+    <p id="sponsor-unconfigured" class="unconfigured" role="status" data-i18n="sponsor_unconfigured">赞助方式暂未配置</p>
+    <div id="sponsor-methods" class="qr-row" hidden></div>
+  </section>
 </main>
 
 <footer>WoTBTools &copy; 2026</footer>
 
-<i18n style="display:none">{
-"zh":{
-"title":"支持 WoTBTools",
-"sponsor_title":"支持 WoTBTools",
-"sponsor_desc1":"WotBTools 是个人维护的免费工具。如果这个项目帮到了你，可以自愿赞助，用于服务器和维护成本。",
-"sponsor_desc2":"赞助完全自愿，不设置固定金额，不影响任何功能使用，也不会解锁额外服务。",
-"sponsor_note":"请勿在付款备注中填写敏感个人信息。如误转或需要联系作者，可以通过页面上的联系方式联系我。",
-"sponsor_qr":"扫码赞助",
-"sponsor_alipay":"支付宝",
-"sponsor_wechat":"微信支付",
-"theme_auto":"跟随系统",
-"theme_light":"亮色",
-"theme_dark":"暗色"
-},
-"en":{
-"title":"Support WoTBTools",
-"sponsor_title":"Support WoTBTools",
-"sponsor_desc1":"WotBTools is a free tool maintained by an individual. If it has helped you, voluntary sponsorship is appreciated to cover server and maintenance costs.",
-"sponsor_desc2":"Sponsorship is completely voluntary, with no fixed amount, no features locked, and no additional services unlocked.",
-"sponsor_note":"Please do not include sensitive personal information in payment notes. For accidental transfers or contact, reach out via the contact info on this page.",
-"sponsor_qr":"Scan to Sponsor",
-"sponsor_alipay":"Alipay",
-"sponsor_wechat":"WeChat Pay",
-"theme_auto":"Auto",
-"theme_light":"Light",
-"theme_dark":"Dark"
-},
-"ru":{
-"title":"Поддержать WoTBTools",
-"sponsor_title":"Поддержать WoTBTools",
-"sponsor_desc1":"WotBTools — бесплатный инструмент, поддерживаемый одним человеком. Если он вам помог, вы можете добровольно поддержать проект на сервер и обслуживание.",
-"sponsor_desc2":"Поддержка полностью добровольная, без фиксированной суммы, без блокировки функций и без дополнительных услуг.",
-"sponsor_note":"Пожалуйста, не указывайте личную информацию в комментариях к платежу. При ошибочном переводе или для связи используйте контакты на странице.",
-"sponsor_qr":"Сканировать для поддержки",
-"sponsor_alipay":"Alipay",
-"sponsor_wechat":"WeChat Pay",
-"theme_auto":"Авто",
-"theme_light":"Светлая",
-"theme_dark":"Тёмная"
-}
-}</i18n>
-
-<script>
-(function(){
-  const html = document.documentElement;
-  const btns = document.querySelectorAll('.theme-bar button');
-  const mql = window.matchMedia('(prefers-color-scheme: dark)');
-  const KEY = 'wotbtools-theme';
-  const STYLES = {
-    dark:  {'--bg':'#0d1117','--text':'#c9d1d9','--heading':'#f0f6fc','--muted':'#8b949e','--card-bg':'#161b22','--card-border':'#30363d','--accent':'#58a6ff','--accent-shadow':'rgba(88,166,255,.15)','--tag-bg':'#1f6feb33','--footer':'#484f58'},
-    light: {'--bg':'#ffffff','--text':'#24292f','--heading':'#0d1117','--muted':'#57606a','--card-bg':'#f6f8fa','--card-border':'#d0d7de','--accent':'#0969da','--accent-shadow':'rgba(9,105,218,.15)','--tag-bg':'#ddf4ff','--footer':'#6e7681'}
-  };
-  function setVars(mode) { var s = STYLES[mode]; for (var k in s) html.style.setProperty(k, s[k]); }
-  function readTheme() { var m = document.cookie.match(/(?:^|;\s*)wotbtools-theme=([^;]+)/); return m ? m[1] : localStorage.getItem(KEY); }
-  function saveTheme(v) { document.cookie = KEY + '=' + v + '; path=/; domain=.wotbtools.com; max-age=31536000; SameSite=Lax'; localStorage.setItem(KEY, v); }
-  function refresh() { var saved = readTheme() || 'auto'; var acting = saved === 'auto' ? (mql.matches ? 'dark' : 'light') : saved; setVars(acting); btns.forEach(function(b){ b.classList.toggle('active', b.dataset.theme === saved); }); }
-  btns.forEach(function(b){ b.addEventListener('click', function(){ saveTheme(b.dataset.theme); refresh(); }); });
-  mql.addEventListener('change', refresh);
-  refresh();
-
-  var I18N = JSON.parse(document.querySelector('i18n').textContent);
-  var langs = [{k:'zh',l:'中文'},{k:'en',l:'English'},{k:'ru',l:'Русский'}];
-  var sel = document.getElementById('lang-select');
-  langs.forEach(function(l){ var o = document.createElement('option'); o.value = l.k; o.textContent = l.l; sel.appendChild(o); });
-  var savedLang = localStorage.getItem('wotb-lang') || 'zh';
-  if (!I18N[savedLang]) savedLang = 'zh';
-  sel.value = savedLang;
-  function switchLang(lang) {
-    if (!I18N[lang]) return;
-    localStorage.setItem('wotb-lang', lang);
-    var dict = I18N[lang];
-    document.querySelectorAll('[data-i18n]').forEach(function(el){
-      var k = el.getAttribute('data-i18n');
-      if (dict[k]) el.textContent = dict[k];
-    });
-    var t = document.querySelector('[data-i18n-doc]');
-    if (t && dict[t.getAttribute('data-i18n-doc')]) document.title = dict[t.getAttribute('data-i18n-doc')];
+<script id="sponsor-i18n" type="application/json">
+{
+  "zh": {
+    "title": "支持 WoTBTools",
+    "language_label": "语言",
+    "sponsor_title": "支持 WoTBTools",
+    "sponsor_desc1": "WoTBTools 是个人维护的免费工具。如果这个项目帮到了你，可以自愿赞助，用于服务器和维护成本。",
+    "sponsor_desc2": "赞助完全自愿，不设置固定金额，不影响任何功能使用，也不会解锁额外服务。",
+    "sponsor_note": "请勿在付款备注中填写敏感个人信息。",
+    "sponsor_qr": "扫码赞助",
+    "sponsor_unconfigured": "赞助方式暂未配置",
+    "sponsor_alipay": "支付宝",
+    "sponsor_wechat": "微信支付",
+    "theme_auto": "跟随系统",
+    "theme_light": "亮色",
+    "theme_dark": "暗色"
+  },
+  "en": {
+    "title": "Support WoTBTools",
+    "language_label": "Language",
+    "sponsor_title": "Support WoTBTools",
+    "sponsor_desc1": "WoTBTools is a free tool maintained by an individual. If it has helped you, voluntary sponsorship is appreciated to cover server and maintenance costs.",
+    "sponsor_desc2": "Sponsorship is completely voluntary, with no fixed amount, no features locked, and no additional services unlocked.",
+    "sponsor_note": "Please do not include sensitive personal information in payment notes.",
+    "sponsor_qr": "Scan to Sponsor",
+    "sponsor_unconfigured": "Sponsorship methods are not configured yet",
+    "sponsor_alipay": "Alipay",
+    "sponsor_wechat": "WeChat Pay",
+    "theme_auto": "Auto",
+    "theme_light": "Light",
+    "theme_dark": "Dark"
+  },
+  "ru": {
+    "title": "Поддержать WoTBTools",
+    "language_label": "Язык",
+    "sponsor_title": "Поддержать WoTBTools",
+    "sponsor_desc1": "WoTBTools — бесплатный инструмент, поддерживаемый одним человеком. Если он вам помог, вы можете добровольно поддержать расходы на сервер и обслуживание.",
+    "sponsor_desc2": "Поддержка полностью добровольная, без фиксированной суммы, ограничений функций и дополнительных услуг.",
+    "sponsor_note": "Пожалуйста, не указывайте конфиденциальные личные данные в комментариях к платежу.",
+    "sponsor_qr": "Сканировать для поддержки",
+    "sponsor_unconfigured": "Способы поддержки пока не настроены",
+    "sponsor_alipay": "Alipay",
+    "sponsor_wechat": "WeChat Pay",
+    "theme_auto": "Авто",
+    "theme_light": "Светлая",
+    "theme_dark": "Тёмная"
   }
-  window.switchLang = switchLang;
-  switchLang(savedLang);
-})();
+}
+</script>
+<script type="module">
+import { loadSponsorMethods } from '/sponsor-config.js'
+
+const html = document.documentElement
+const themeButtons = document.querySelectorAll('.theme-bar button')
+const media = window.matchMedia('(prefers-color-scheme: dark)')
+const themeKey = 'wotbtools-theme'
+const languageKey = 'wotb-lang'
+const dictionaries = JSON.parse(document.getElementById('sponsor-i18n').textContent)
+const languageSelect = document.getElementById('lang-select')
+const methodsElement = document.getElementById('sponsor-methods')
+const unconfiguredElement = document.getElementById('sponsor-unconfigured')
+const failedTypes = new Set()
+let activeLanguage = 'zh'
+let sponsorMethods = []
+
+function readCookie(name) {
+  const match = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]+)'))
+  if (!match) return null
+  try {
+    return decodeURIComponent(match[1])
+  } catch {
+    return null
+  }
+}
+
+function savePreference(name, value) {
+  document.cookie = name + '=' + encodeURIComponent(value) + '; path=/; domain=.wotbtools.com; max-age=31536000; SameSite=Lax'
+  try {
+    localStorage.setItem(name, value)
+  } catch {
+    // Cookie remains the primary cross-subdomain preference store.
+  }
+}
+
+function readStorage(name) {
+  try {
+    return localStorage.getItem(name)
+  } catch {
+    return null
+  }
+}
+
+function readTheme() {
+  const saved = readCookie(themeKey) || readStorage(themeKey)
+  return ['auto', 'light', 'dark'].includes(saved) ? saved : 'auto'
+}
+
+function refreshTheme() {
+  const saved = readTheme()
+  const mode = saved === 'auto' ? (media.matches ? 'dark' : 'light') : saved
+  html.dataset.theme = mode
+  themeButtons.forEach((button) => button.classList.toggle('active', button.dataset.theme === saved))
+}
+
+function renderMethods() {
+  const dictionary = dictionaries[activeLanguage]
+  const visibleMethods = sponsorMethods.filter((method) => !failedTypes.has(method.type))
+  methodsElement.replaceChildren()
+
+  visibleMethods.forEach((method) => {
+    const item = document.createElement('div')
+    const image = document.createElement('img')
+    const label = document.createElement('div')
+    const methodLabel = dictionary['sponsor_' + method.type]
+
+    item.className = 'qr-item'
+    image.src = method.image
+    image.alt = methodLabel
+    image.loading = 'lazy'
+    image.decoding = 'async'
+    image.addEventListener('error', () => {
+      failedTypes.add(method.type)
+      renderMethods()
+    }, { once: true })
+    label.className = 'label'
+    label.textContent = methodLabel
+    item.append(image, label)
+    methodsElement.append(item)
+  })
+
+  methodsElement.hidden = visibleMethods.length === 0
+  unconfiguredElement.hidden = visibleMethods.length > 0
+}
+
+function switchLanguage(language) {
+  if (!dictionaries[language]) return
+  activeLanguage = language
+  html.lang = language
+  languageSelect.value = language
+  const dictionary = dictionaries[language]
+  document.querySelectorAll('[data-i18n]').forEach((element) => {
+    const key = element.dataset.i18n
+    if (dictionary[key]) element.textContent = dictionary[key]
+  })
+  document.title = dictionary.title
+  renderMethods()
+}
+
+[
+  { value: 'zh', label: '中文' },
+  { value: 'en', label: 'English' },
+  { value: 'ru', label: 'Русский' }
+].forEach(({ value, label }) => {
+  const option = document.createElement('option')
+  option.value = value
+  option.textContent = label
+  languageSelect.append(option)
+})
+
+themeButtons.forEach((button) => button.addEventListener('click', () => {
+  savePreference(themeKey, button.dataset.theme)
+  refreshTheme()
+}))
+media.addEventListener('change', refreshTheme)
+languageSelect.addEventListener('change', () => {
+  savePreference(languageKey, languageSelect.value)
+  switchLanguage(languageSelect.value)
+})
+
+const savedLanguage = readCookie(languageKey) || readStorage(languageKey) || 'zh'
+refreshTheme()
+switchLanguage(dictionaries[savedLanguage] ? savedLanguage : 'zh')
+sponsorMethods = await loadSponsorMethods()
+renderMethods()
 </script>
 </body>
 </html>

@@ -1,0 +1,13 @@
+{
+  "enabled": false,
+  "methods": [
+    {
+      "type": "alipay",
+      "image": "/sponsor-assets/alipay.png"
+    },
+    {
+      "type": "wechat",
+      "image": "/sponsor-assets/wechat.png"
+    }
+  ]
+}

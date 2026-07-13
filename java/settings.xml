@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  本项目专用 Maven 配置 (个人项目, 与公司 azdops feed / 凭据完全隔离)。
-  本文件是模板, @LOCAL_REPO@ 会被 build-desktop.ps1 替换为绝对路径后生成 settings.xml。
-  手动使用: cp settings.xml.template settings.xml, 将 @LOCAL_REPO@ 替换为实际路径。
+  本项目专用 Maven 配置（已跟踪，干净 clone 可直接使用）。
+  与公司 feed / 凭据完全隔离；命令需在 java/ 目录执行。
    - 镜像: 所有依赖走 Aliyun 公共仓库 (Maven Central 在本网络被拦)。
    - 本地仓库: 单独放在项目内 .m2repo, 不与 ~/.m2/repository (含公司构件) 混用。
 -->
@@ -11,7 +10,7 @@
           xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
               https://maven.apache.org/xsd/settings-1.0.0.xsd">
 
-    <localRepository>@LOCAL_REPO@</localRepository>
+    <localRepository>${user.dir}/.m2repo</localRepository>
 
     <mirrors>
         <mirror>

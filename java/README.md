@@ -11,7 +11,7 @@
 | 模块/目录       | 说明                                                           |
 |-------------|--------------------------------------------------------------|
 | `wotb-core` | 核心库：解压回放、读取 pickle、解码 protobuf、车辆库映射、去重汇总、POI 导出 xlsx        |
-| `wotb-web`  | Spring Boot 4 REST API + 桌面模式入口，监听 `8087`（Web 模式）或自动端口（桌面模式） |
+| `wotb-web`  | Spring Boot 4 REST API + PostgreSQL/Flyway/Keycloak，监听 `8087` |
 | `frontend`  | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
 | `docker/online/` | `docker-compose.yml`：`build:` 从源码编译运行四容器（postgres + keycloak + backend + frontend） |
 
@@ -26,16 +26,19 @@ docker compose up -d --build
 
 访问 http://localhost:8088 （健康检查 `http://localhost:8088/api/health`）。
 
-`docker/online/docker-compose.yml` 启动**四容器**（`postgres:18` + `keycloak` + `wotb-backend` + `wotb-frontend`），后两者分别构建 `docker/Dockerfile.backend` 和 `docker/Dockerfile.frontend`。nginx 托管 Vue + 反代 `/api → wotb-backend:8087`，后端通过 `SPRING_PROFILES_ACTIVE: postgres` 连接 PostgreSQL。
+`docker/online/docker-compose.yml` 启动**四容器**（`postgres:18` + `keycloak` + `wotb-backend` + `wotb-frontend`），后两者分别构建 `docker/Dockerfile.backend` 和 `docker/Dockerfile.frontend`。nginx 托管 Vue + 反代 `/api → wotb-backend:8087`，后端连接 PostgreSQL 并由 Flyway 管理 schema。
+
+赞助页从 `/sponsor-config.json` 读取运行时配置。生产配置保存在 `/opt/wotb/config/sponsor-config.json`，二维码保存在 `/opt/wotb/config/sponsor/`，以只读方式挂载到前端容器；仓库仅提供 disabled 示例配置，不包含个人收款二维码。
 
 ### CI/CD 自动部署
 
 `push` 到 `main` 分支触发 GitHub Actions（[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)）：
 
-1. 并行构建两个镜像：`Dockerfile.backend`（Maven + JRE）+ `Dockerfile.frontend`（Node + nginx）。
-2. 推送 `ghcr.io/a158coke/wotbtools-backend:sha-<SHA>` + `:latest` 和 `ghcr.io/a158coke/wotbtools-frontend:sha-<SHA>` + `:latest` 到 GitHub Container Registry (GHCR)。
-3. SSH 登录 VPS，写入四服务 `docker-compose.yml`（postgres + keycloak + wotb-backend + wotb-frontend），`docker compose pull && up -d`。
-4. 部署等待 `wotb-backend` 的 `/api/health` 成功；失败会输出后端/前端日志并让 workflow 失败。
+1. 按完整 push change range 判断后端、前端、Keycloak 和部署脚本是否变化。
+2. 后端先跑 `mvn test`；前端先跑 `npm ci && npm test && npm run build`。测试失败不会构建或部署镜像。
+3. 按需构建并推送 backend/frontend/keycloak 镜像到 GHCR。
+4. SSH 部署前先备份 `wotb` 与 `keycloak` 两个数据库，再 `docker compose pull && up -d`。
+5. 部署等待 `wotb-backend` 的 `/api/health` 成功；失败会输出后端/前端日志并让 workflow 失败。
 
 线上 502 排查可手动运行 [`.github/workflows/prod-diagnostics.yml`](../.github/workflows/prod-diagnostics.yml)，读取 VPS compose 状态与后端/前端日志。
 
@@ -43,13 +46,14 @@ docker compose up -d --build
 
 ## 本地开发
 
-后端需要 JDK 21。
+后端需要 JDK 21；完整运行使用四容器开发环境，确保 PostgreSQL、Keycloak 与必要环境变量同时存在。
 
 ```bash
 cd java
 set JAVA_HOME=%USERPROFILE%\.jdks\jdk-21.0.1
-mvn -s settings.xml -DskipTests -pl wotb-core,wotb-web -am install
-java -jar wotb-web/target/wotb-web.jar
+mvn -s settings.xml test
+cd ../docker/online
+docker compose up -d --build
 ```
 
 前端：
@@ -62,20 +66,13 @@ npm run dev
 
 Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
-### 桌面模式开发
-
-```bash
-cd java
-set JAVA_HOME=%USERPROFILE%\.jdks\jdk-21.0.1
-mvn -s settings.xml -DskipTests -pl wotb-core,wotb-web -am install
-java -jar wotb-web/target/wotb-web.jar --desktop
-```
-
 ## API
 
 ### `GET /api/health`
 
-返回服务状态、已加载车辆数量、是否桌面模式。
+返回服务状态与已加载车辆数量。
+
+所有 JSON API 只返回英文 key、raw enum 与稳定 `code`/`error`；不返回本地化 `*Label` 或 `message`。前端通过三语 locale 显示状态、成功和错误文案。未显式声明的 `/api/**` 默认拒绝；`boost-manager` 仅能访问 `/api/admin/boost/**`。
 
 列定义由后端 `/api/preview` 响应中的 `playerColumns`/`aggregateColumns` 字段和 `/api/columns` 提供（纯英文 key）；实时 rating 使用 `ratingColumns`。前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels` / `rating_labels`）映射显示名，导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。回放页列选择器会把单场/汇总两套列顺序与可见性记到 `localStorage`，并在后端新增列时自动补齐缺失键。详见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
 
@@ -89,7 +86,8 @@ java -jar wotb-web/target/wotb-web.jar --desktop
 
 ```json
 { "assist": 0.6, "block": 0.35, "killValue": 200, "winBonus": 0.05,
-  "minSamples": 5, "scale": 1000, "classFactor": { "重坦": 1.0, "中坦": 0.9, "TD": 1.0, "轻坦": 0.7, "其他": 0.9 } }
+  "minSamples": 5, "scale": 1000,
+  "classFactor": { "HEAVY_TANK": 1.0, "MEDIUM_TANK": 0.9, "TANK_DESTROYER": 1.0, "LIGHT_TANK": 0.7, "OTHER": 0.9 } }
 ```
 
 
@@ -100,15 +98,17 @@ java -jar wotb-web/target/wotb-web.jar --desktop
 
 返回：
 
-- `rows`：每名选手的 `rating`、`kast`、`contribution`、`influence`、`damage_avg`、`potential_damage_avg`、`kills` 等。
+- `rows`：每名选手的 `rating`、`kast`、`contribution`、`impact`、`assist_avg`、`multi_damage_rate`、`damage_avg`、`potential_damage_avg`、`kills` 等。
 - `duplicates` / `failures`：与 `/api/preview` 相同的去重和失败信息。
 - `ratingColumns`：纯英文 key + 是否数值，前端由三语 `rating_labels` 显示。
 
-独立前端入口为 `/extended`，不在当前回放解析页面增加跳转按钮。
+前端可从 SPA 的 `?view=extended` 或独立 `/extended` 入口进入。
 
 ### `POST /api/preview`
 
 `multipart/form-data`，字段名为 `files`，可上传一个或多个 `.wotbreplay`。
+
+入口限制：最多 100 个文件，单文件不超过 20 MiB，请求合计不超过 200 MiB；每个应用实例默认最多同时处理 2 个解析任务（`REPLAY_MAX_CONCURRENT_JOBS` 可调），容量满返回 HTTP 503 + `REPLAY_BUSY`。ZIP、pickle、protobuf、单场玩家数与事件流包/扫描次数另有独立预算。
 
 返回：
 
@@ -127,16 +127,13 @@ java -jar wotb-web/target/wotb-web.jar --desktop
 - `mode=aggregate`（默认）：返回 xlsx。仅一场战斗时为单场工作簿；多场时为按 `arenaUniqueId` 去重后的汇总工作簿。
 - `mode=each`：返回 zip（`逐场导出.zip`），内含每场各自的单场 xlsx；无法解析的文件会被跳过。
 
-### `POST /api/shutdown`
+### 排行榜
 
-仅桌面模式可用。优雅关闭后端服务并退出 JVM。
+每条记录 = 录像者本人在一场**随机战斗**（`arenaBonusType==1`，训练房/娱乐/联赛拒绝）中用某辆车打出的单场伤害；通过排行榜上传入口写入（去重键 `arena_id + account_id`）。
 
-### 排行榜（仅 `postgres` profile）
-
-仅在线版提供，需数据库。桌面版不暴露这些端点。每条记录 = 录像者本人在一场**随机战斗**（`arenaBonusType==1`，训练房/娱乐/联赛拒绝）中用某辆车打出的单场伤害；上传 `/api/preview` 时自动落库（去重键 `arena_id + account_id`）。
-
-- `GET /api/leaderboard/top-damage?limit=50` — 全局伤害榜（降序，`limit` 1–200）。
-- `GET /api/leaderboard/tanks/{tankId}/top-damage?limit=50` — 指定车辆伤害榜。
+- `GET /api/leaderboard/top-damage?page=1&size=50` — 全局伤害榜（降序，`size` 最大 200）。
+- `GET /api/leaderboard/tanks/{tankId}/top-damage?page=1&size=50` — 指定车辆伤害榜。
+- `POST /api/leaderboard/upload` — 上传单场回放；跳过时返回英文 `reasonCode`，由前端本地化。
 
 ### 陪练与打手（仅在线版）
 
@@ -155,15 +152,31 @@ mvn -s settings.xml test
 测试覆盖：
 
 - `wotb-core` 的 `ParityTest`：集成测试，覆盖解析、字段不变量、去重、汇总、xlsx 导出。
-- `wotb-web` 的 boost / leaderboard 单元测试会在 `mvn test` 中执行；`WebApiTest` 覆盖 `/api/columns`、`GET/POST /api/rating`、`/api/preview`、`/api/export`，在无 Docker 环境会自动跳过 Testcontainers。
+- `wotb-web` 的 boost / leaderboard / security / API 契约单元测试都会执行；无需数据库的 controller 契约已拆出，始终运行。
+- `WebApiTest` 只保留 PostgreSQL/真实回放集成路径；无 Docker 或无 `common/data` 时按条件跳过。
 
 测试样本来自仓库根目录的 `common/data/`。
+
+前端测试与构建：
+
+```bash
+cd frontend
+npm test
+npm run build
+```
+
+## 生产备份与恢复
+
+- `.github/workflows/database-backup.yml` 每日香港时间 03:15 备份 `wotb` 与 `keycloak`；部署前也会自动备份。
+- 归档在 `/opt/wotb/backups/{wotb,keycloak}/`，通过 catalog + 全压缩数据读取校验，按数据库分别保留 7 天。
+- 查看归档：`deploy/postgres-backup-inspect.sh <archive.dump>`。
+- 恢复：`deploy/postgres-restore.sh --database wotb|keycloak --file <archive.dump> --confirm RESTORE-<database>`。脚本会先做安全备份；恢复失败时依赖服务保持停止，需人工处理。
 
 ## 构建配置
 
 项目使用独立 Maven 配置，避免污染或依赖用户全局 Maven 设置：
 
-- `java/settings.xml`：本地开发 Maven settings，使用独立本地仓库 `java/.m2repo`。
+- `java/settings.xml`：仓库跟踪的可移植本地 Maven settings；在 `java/` 目录执行时使用独立仓库 `java/.m2repo`，干净 clone 无需生成。
 - `java/settings-docker.xml`：Docker 构建用 Maven settings。
 - `frontend/package-lock.json`：固定前端依赖版本。
 
@@ -180,9 +193,10 @@ spring:
   web:
     resources:
       static-locations: classpath:/static/
+wotb:
+  replay:
+    max-concurrent-jobs: ${REPLAY_MAX_CONCURRENT_JOBS:2}
 ```
-
-桌面模式下会忽略 `server.port`，自动选择 8087+ 的可用端口。
 
 ## 维护注意
 

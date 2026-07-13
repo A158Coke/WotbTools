@@ -12,6 +12,15 @@
 | `data.wotreplay` | 原始游戏事件数据（BigWorld 包序列） | 是（EventStreamReader） |
 | `battle_results.dat` | Python pickle → protobuf 战绩 | 是 |
 
+### 解析安全预算
+
+- 压缩包不超过 20 MiB，只允许表中 3 个标准条目，目录、额外条目和重复文件名一律拒绝。
+- `meta.json` / `battle_results.dat` / `data.wotreplay` 分别不超过 1 / 8 / 20 MiB，总解压不超过 24 MiB。
+- pickle：输入/二进制 8 MiB、文本 1 MiB、LONG 128 B、栈 4096、opcode 100000。
+- protobuf：消息和 length-delimited 8 MiB、值数 16384、field number ≤ 2²⁹−1、varint ≤ 10 B。
+- 单回放 `#201` 名册与 `#301` 战绩各最多 64 项；事件流最多保留 200000 个包（高于已观察约 112K 合法样本），并限制为 1000000 次扫描/重同步。
+- ZIP/结构错误抛稳定英文 `IOException`；pickle/protobuf 的非法长度、截断和溢出在 `ReplayParser` 边界统一包装为 `Invalid replay data: ...`。
+
 ---
 
 ## data.wotreplay — BigWorld 事件流
@@ -411,12 +420,15 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `clan` | 文本 | `PlayerResult.clan` | — | 战队（名册 #201→#2→#5） |
 | `tank_name` | 文本 | `Tankopedia.info(tankId).name()` | — | 车辆名（查表） |
 | `tank_tier` | 整数 | `Tankopedia.info(tankId).tier()` | 等级 | 车辆等级（查表） |
-| `tank_type` | 文本 | `Tankopedia.info(tankId).type()` | — | 车辆类型（查表） |
-| `tank_nation` | 文本 | `Tankopedia.info(tankId).nation()` | — | 国家（查表） |
+| `tank_type` | 文本 | `Tankopedia.info(tankId).type()` | — | API 稳定码：`HEAVY_TANK`/`MEDIUM_TANK`/`LIGHT_TANK`/`TANK_DESTROYER`/`OTHER`；导出使用中文 |
+| `tank_nation` | 文本 | `Tankopedia.info(tankId).nation()` | — | API 稳定国家码；导出使用中文 |
 | `rating` | 整数 | `PlayerResult.rating` | 评分 | EC 标准化评分（Rating 计算） |
-| `survived_label` | 文本 | `PlayerResult.survived` | — | 存活/阵亡（#105==-1 → 存活） |
+| `survived_label` | 文本 | `PlayerResult.survived` | — | API 返回 `SURVIVED`/`DESTROYED`，前端映射存活/阵亡（#105==-1 → 存活） |
 | `kills` | 整数 | `PlayerResult.kills` | 人数 | #18 |
 | `damage_dealt` | 整数 | `PlayerResult.damageDealt` | HP | #8 |
+| `potential_damage` | 整数 | `PlayerResult.potentialDamage` | HP | 潜在伤害 |
+| `potential_damage_supplement` | 整数 | `PlayerResult.potentialDamageSupplement` | HP | 补增伤害 |
+| `potential_damage_detail` | 文本 | `PlayerResult.potentialDamageDetailed` | — | API 返回 `PARSED`/`UNPARSED`，前端三语映射；导出使用中文 |
 | `damage_assisted` | 整数 | `PlayerResult.damageAssisted` | HP | #9 + #10 |
 | `damage_received` | 整数 | `PlayerResult.damageReceived` | HP | #11 |
 | `damage_blocked` | 整数 | `PlayerResult.damageBlocked` | HP | #117 |

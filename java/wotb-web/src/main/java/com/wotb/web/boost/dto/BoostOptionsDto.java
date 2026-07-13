@@ -7,5 +7,5 @@ public record BoostOptionsDto(
     List<OptionDto> regions,
     List<OptionDto> requestTypes,
     List<OptionDto> contactTypes,
-    String warning
+    String warningCode
 ) {}

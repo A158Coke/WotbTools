@@ -37,8 +37,6 @@ public class AdminBoostAssignmentController {
             return assignmentService.assign(id, body.boosterId(), body.note());
         } catch (final DataIntegrityViolationException e) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "ACTIVE_ASSIGNMENT_EXISTS");
-        } catch (final IllegalArgumentException | IllegalStateException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
     }
 
@@ -46,18 +44,13 @@ public class AdminBoostAssignmentController {
     @PatchMapping("/current/unassign")
     public Map<String, Object> unassign(@PathVariable final Long id,
                                         @RequestBody final UnassignBoosterRequest body) {
-        try {
-            final BoostAssignmentDto dto = assignmentService.unassign(id, body.note());
-            return Map.of(
-                    "id", dto.id(),
-                    "requestId", dto.requestId(),
-                    "status", dto.status(),
-                    "statusLabel", dto.statusLabel(),
-                    "unassignedAt", dto.unassignedAt(),
-                    "message", "当前分配已取消。"
-            );
-        } catch (final IllegalArgumentException | IllegalStateException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        }
+        final BoostAssignmentDto dto = assignmentService.unassign(id, body.note());
+        return Map.of(
+                "id", dto.id(),
+                "requestId", dto.requestId(),
+                "status", dto.status(),
+                "unassignedAt", dto.unassignedAt(),
+                "code", "BOOST_ASSIGNMENT_CANCELLED"
+        );
     }
 }

@@ -38,7 +38,8 @@
 ```
 .wotbreplay (zip)
   ├─ meta.json            地图(内部英文名)、版本、时间、录像者…
-  └─ battle_results.dat   Python pickle → (arenaId, protobuf bytes)
+  ├─ battle_results.dat   Python pickle → (arenaId, protobuf bytes)
+  └─ data.wotreplay       BigWorld 事件流（存活时间推算）
         │
    wotb-core (纯 Java 库, 无 Spring)
    parse/ 解析+去重 → stats/ 评分+富化+汇总 → export/ POI 写 xlsx
@@ -49,7 +50,7 @@
    frontend (Vue 3 + Vite, 单文件 App.vue, vue-i18n 三语, Keycloak 认证)
 ```
 
-完整目录树见 `DEVELOPER_GUIDE.md`。核心包结构（`com.wotb.core`）：`parse / ref / stats / export / model` 子包 + 顶层 `Columns`。Web 侧：`controller / service / mapper / dto`。
+完整目录树见 `DEVELOPER_GUIDE.md`。核心包结构（`com.wotb.core`）：`parse / ref / stats / export / model` 子包 + 顶层 `Columns`。Web 侧按 `user / leaderboard / replay / boost / admin` 业务域分包，每个域内部再分 controller/service/entity/repository/dto。
 
 ---
 
@@ -58,7 +59,7 @@
 - **JDK 21 必需，且系统默认 `java` 可能是 JDK 8。** 跑任何 Maven 命令前必须先设：
   - bash: `JAVA_HOME="/c/Users/<user>/.jdks/jdk-21.0.1"`（本机实测路径，**不是** `C:\Program Files\Java`）
   - cmd: `set JAVA_HOME=%USERPROFILE%\.jdks\jdk-21.0.1`
-- **Maven 必须带 `-s java/settings.xml`**（aliyun 镜像 + 独立本地仓库 `java/.m2repo`，避免污染/依赖用户全局 Maven）。容器内用 `java/settings-docker.xml`。
+- **Maven 必须带 `-s java/settings.xml`**（该文件已跟踪，使用 aliyun 镜像 + `java/.m2repo`，干净 clone 可直接运行）。容器内用 `java/settings-docker.xml`。
 - **Node**：前端 `frontend`，开发端口 5173，构建用 `npm run build`。
 - **Python 3 + Pillow**：仅用于 `common/python/update_tankopedia.py`（更新车辆库，需联网）和偶尔的图像处理。
 
@@ -67,29 +68,26 @@
 ## 5. 构建 / 运行 / 测试（确切命令）
 
 ```bash
-# 测试 (ParityTest 6 + WebApiTest 5 = 11)
+# Java 全量测试
 cd java && JAVA_HOME=<jdk21> mvn -s settings.xml test
 
-# 前端构建
-cd frontend && npm run build       # 产物 dist/, Maven 会复制到 jar 的 classpath:/static/
-
-# 本地跑 Web 版 (jar)
-cd java && JAVA_HOME=<jdk21> mvn -s settings.xml -DskipTests -pl wotb-core,wotb-web -am install
-java -jar wotb-web/target/wotb-web.jar           # 8087, Web 模式
-java -jar wotb-web/target/wotb-web.jar --desktop # 桌面模式(自动选端口+开浏览器)
+# 前端测试 + 构建
+cd frontend && npm test && npm run build
 
 # 本地开发 — 四容器编译启动 (postgres + keycloak + backend + frontend)
 cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend + Dockerfile.frontend, 8088
 ```
 
-> **测试夹具**：`ParityTest`/`WebApiTest` 读 `common/data/*.wotbreplay` 真实样本，而 `common/data/` 是 **gitignore 的**。所以：① 新克隆的环境本地无样本、测试会失败，需自备样本回放放进 `common/data/`；② **CI 里跑不了 `mvn test`**（检出里没有样本）——这是 CI 不含测试步骤的根本原因。
+后端没有无数据库 profile。若要测试本地 Keycloak 管理员写操作，需在本地 realm 配置 `wotbtools-admin-api` 服务账号，并在启动 compose 前设置 `KEYCLOAK_ADMIN_CLIENT_SECRET`；普通回放解析可留空。
+
+> **测试夹具**：真实回放断言读取 gitignored 的 `common/data/*.wotbreplay`；新克隆或 CI 无样本时只跳过对应样本测试，其余 parser、service、security、API 契约与 controller 测试仍执行。`WebApiTest` 的 PostgreSQL 集成路径在无 Docker 时条件跳过。
 
 ---
 
 ## 6. 硬性约定（详见 AGENTS.md，这里是要点）
 
 - **改动即更新文档**（同一次提交）。影响界面/导出/数据/构建/用法的改动，必须同步 `DEVELOPER_GUIDE.md` + 相关 README。
-- **API 纯英文**：`/api/columns` 与 DTO 只回 `key`(snake_case) + 数据，**不放显示名**。
+- **API 纯英文**：DTO 只回 raw enum、稳定 `code`/`error` + 数据，**不放 `*Label` 或 `message`**；显示名/错误文案归前端三语 locale。
 - **显示名分两类出口**（改列名要全改）：
   - 前端：`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`（**三语都改**）。
   - 导出：`Columns.java`（单场 xlsx）、`AggregateSheets.java`（汇总 xlsx，仅中文）。
@@ -103,22 +101,28 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 
 ## 7. CI/CD 与部署（本会话踩坑最多，重点看）
 
-**流水线**：`.github/workflows/deploy.yml` —— push 到 `main`（命中 `java/** / common/** / Dockerfile / deploy/** / 本文件路径`，或手动 `workflow_dispatch`）触发：
-1. 并行构建**两镜像**：`Dockerfile.backend`（Maven → JRE runtime）和 `Dockerfile.frontend`（Node → nginx）。
-2. 推送到 GHCR（`ghcr.io/a158coke/wotbtools-backend:sha-<SHA>` + `:latest` 和 `ghcr.io/a158coke/wotbtools-frontend:sha-<SHA>` + `:latest`）。
-3. SSH 到 VPS（`/opt/wotb`）写 compose（postgres:18 + keycloak + wotb-backend + wotb-frontend）、`pull` + `up -d` 重启容器。
+**流水线**：`.github/workflows/deploy.yml` —— push 到 `main` 命中 `java/**`、`frontend/**`、`common/**`、Dockerfile、Keycloak 或 `deploy/**` 时触发，也支持手动 `workflow_dispatch`：
+1. 用完整 push range 判断 backend/frontend/keycloak/deployment 哪些范围变化。
+2. 后端 Maven 全测、前端 Vitest + Vite build 通过后，才按需构建三类镜像。
+3. SSH 部署前备份 `wotb` 与 `keycloak`，再更新 `/opt/wotb` compose、`pull` + `up -d`。
+4. 后端健康检查失败会输出日志并让 workflow 失败。
 
 **必须配置的 GitHub Secrets**（迁移/换仓库时容易漏）：
 - `VPS_HOST` / `VPS_USER` / `VPS_PORT` / `VPS_SSH_KEY` —— VPS SSH。
 - `KC_ADMIN_PASSWORD` / `DB_PASSWORD` —— Keycloak 与 PostgreSQL 密码。
+- `KEYCLOAK_ADMIN_CLIENT_SECRET` —— 后端 Keycloak Admin API 服务账号 secret。
 
 **已知坑 & 现有对策**（改 workflow/Dockerfile 时别踩回去）：
-- **两镜像各自推 sha + latest 标签** → `ghcr.io/a158coke/wotbtools-backend:sha-<SHA>` + `:latest`，`ghcr.io/a158coke/wotbtools-frontend:sha-<SHA>` + `:latest`。VPS compose 用 sha 标签（按 sha 回滚）。
+- backend/frontend/keycloak 镜像各推 `sha-<SHA>` + `latest`；当前 VPS compose 使用 `latest`，需要回滚时手工改为对应 sha 标签。
 - **VPS 上可能有遗留旧容器占端口** → 部署脚本会先 `docker rm -f wotb-backend wotb-frontend` 腾出 8088，`up -d` 带 `--remove-orphans`。
 - **SSH 脚本必须 `set -e`** → 否则 `docker compose up` 失败仍退出 0，Actions「假绿」而站点不更新（本会话真实发生过）。
 - **构建上下文是仓库根**（前端 `utils/helpers.js` 跨目录 `import ../../../common/map_names.json`，后端要 `common/*.json`）。仓库根 `.dockerignore` 排除 `**/node_modules`、`**/target`、`**/dist`、`common/data` 等。
 - 镜像层用 GitHub Actions 缓存（`type=gha`）加速。
-- `run-name` 已设为 `Deploy <ref> by @<actor>`，并加了 `concurrency`（新 push 取消进行中的旧 run）。
+- deploy 与 database-backup 共用 `production-maintenance` concurrency，且 `cancel-in-progress: false`，避免部署与备份互相中断。
+
+**数据库保护**：`.github/workflows/database-backup.yml` 每日香港时间 03:15 备份两库；归档在 `/opt/wotb/backups/{wotb,keycloak}/`，完整读取校验后分库保留 7 天。恢复只允许 SSH 手动执行 `deploy/postgres-restore.sh`，必须传对应目录文件和 `--confirm RESTORE-<database>`；脚本先做安全备份，失败时依赖服务保持停止。
+
+**赞助运行时配置**：二维码不在仓库/镜像内。VPS 使用 `/opt/wotb/config/sponsor-config.json` 与 `/opt/wotb/config/sponsor/{alipay,wechat}.png`，前端容器只读挂载。部署只在配置不存在时写入 `deploy/sponsor-config.example.json` 的 disabled 默认值，绝不覆盖线上二维码；更新二维码无需重建镜像。
 
 > 部署后验证：站点强刷（`Ctrl+Shift+R`，绕开旧 `index.html` 缓存）。若 Actions 绿但站点没变，多半是 VPS 容器/端口或上层缓存问题，去看 `Deploy via SSH` 步骤日志里的 `docker compose` 输出。
 
@@ -127,7 +131,7 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 ## 8. Git / 推送（个人项目，勿碰公司基建）
 
 - **远程**：SSH remote `github-personal`，账号 **`A158Coke`**。推送：
-  `GIT_SSH_COMMAND="ssh -o ConnectTimeout=15" git push origin main`
+  `GIT_SSH_COMMAND="ssh -o ConnectTimeout=15" git push github-personal main`
 - **绝不**使用任何公司 token / 凭据。
 - **提交信息**：中文，结尾带 `Co-Authored-By`（若工具支持）。
 - ⚠️ **提交信息别用 `git commit -m @'...'`** —— 那是 PowerShell here-string，在 **bash** 里 `@` 会变成提交首行（历史里能看到一串以 `@` 开头的提交就是这么来的）。bash 里用普通双引号 `-m "..."` 或多个 `-m`。
@@ -140,13 +144,14 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 - **回放格式**：zip 包含 3 个文件 —— `meta.json`（战斗信息）+ `battle_results.dat`（pickle + protobuf 战绩）+ `data.wotreplay`（BigWorld 事件流，用于存活时间推算）。字段表见 `docs/replay-data.md`。**不要轻易重命名/删字段**，新字段先进「原始字段」表交叉验证。
 - **存活时间**：3 层 fallback（#104 → Damage 伤害事件 → hybrid EntityLeave/Position），详见 `docs/replay-data.md`。
 - **评分**：自包含、类 WN8，基准来自"一同计算的这批战斗"（相对分，非绝对天梯）。参数在 `common/rating.json`，前端「评分规则」弹窗 + `GET /api/rating` 实时展示。细节见 `docs/rating-system.md`。
-- **数据库**：在线版使用 PostgreSQL（`postgres:18-alpine`），通过 `SPRING_PROFILES_ACTIVE: postgres` 激活。默认 profile 排除 JPA auto-config，桌面版/dev 无数据库启动（注意 Boot 4 的 exclude 类名在 `org.springframework.boot.{jdbc,hibernate,data.jpa}.autoconfigure.*`，且 Flyway 需 `spring-boot-flyway` 模块——详见 DEVELOPER_GUIDE 风险点）。密码由 GitHub Secret `DB_PASSWORD` 注入，本地开发用 `POSTGRES_PASSWORD=wotb`。
-- **排行榜**：仅在线版（`postgres` profile）。schema 由 Flyway 管理（`wotb-web/.../db/migration`），`ddl-auto: validate`。只记录录像者本人在**随机战斗**（`arenaBonusType==1`）中的单场伤害，去重键 `arena_id+account_id`。`ReplayService` 经 `ObjectProvider` 可选调用，无库时静默跳过。细节见 DEVELOPER_GUIDE「排行榜（Leaderboard）」。
+- **数据库**：后端使用 PostgreSQL 18，单一配置始终启用 JPA/Flyway（`ddl-auto: validate`）；本地运行也必须提供数据库与 `POSTGRES_PASSWORD`。Flyway 自动配置依赖 `spring-boot-flyway`。
+- **排行榜**：schema 由 Flyway 管理。只记录录像者本人在**随机战斗**（`arenaBonusType==1`）中的单场伤害，去重键 `arena_id+account_id`；由 `POST /api/leaderboard/upload` 显式写入，预览不隐式落库。
 - **i18n**：vue-i18n 三语（zh/en/ru），`locales/*.json`；语言持久化在 `localStorage('wotb-lang')`。地图名共享字典 `common/map_names.json` 已接 `zh/en/ru`，网页按当前语言显示，导出仍固定中文。
-- **API 端点**：`GET /api/health`、`GET /api/rating`、`POST /api/preview`、`POST /api/export?mode=aggregate|each`、`POST /api/shutdown`（仅桌面）；排行榜（仅 postgres profile）`GET /api/leaderboard/top-damage`、`GET /api/leaderboard/tanks/{tankId}/top-damage`（支持按车辆筛选伤害榜）。
+- **API 端点**：`GET /api/health`、`GET/POST /api/rating`、`POST /api/preview`、`POST /api/export?mode=aggregate|each`；排行榜 `POST /api/leaderboard/upload`、`GET /api/leaderboard/top-damage?page=&size=`、`GET /api/leaderboard/tanks/{tankId}/top-damage?page=&size=`。
+- **公开解析边界**：最多 100 个回放、单文件 20 MiB、总请求 200 MiB；单实例默认同时处理 2 个任务。ZIP/pickle/protobuf 还有独立预算，容量满返回 503 `REPLAY_BUSY`。
 
 ---
 
 ## 10. 给接手的 AI 工具的一句话
 
-> 这是个单人维护的 WoT Blitz 回放分析工具（Java core + Spring Boot + Vue + Keycloak，Web 版）。动手前读 `AGENTS.md` 和 `DEVELOPER_GUIDE.md`；跨层改动按 `.agents/wotb-sync.md` 的配方；Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；改完跑 `mvn -s settings.xml test`（需本地有 `common/data` 样本）和 `npm run build`；提交用中文信息、推 `github-personal`(账号 A158Coke)，push main 即自动部署。
+> 这是个单人维护的 WoT Blitz 回放分析工具（Java core + Spring Boot + Vue + Keycloak，Web 版）。动手前读 `AGENTS.md` 和 `DEVELOPER_GUIDE.md`；跨层改动按 `.agents/wotb-sync.md` 的配方；Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；改完跑 `mvn -s settings.xml test`、`npm test` 和 `npm run build`；提交用中文信息、推 `github-personal`(账号 A158Coke)，push main 即自动部署。

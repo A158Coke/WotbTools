@@ -1,7 +1,7 @@
 FROM node:22-alpine AS build
 WORKDIR /app
-COPY frontend/package.json ./
-RUN npm config set registry https://registry.npmmirror.com && npm install
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm config set registry https://registry.npmmirror.com && npm ci
 COPY frontend/ .
 COPY common/map_names.json /common/map_names.json
 COPY common/assets /common/assets
@@ -9,8 +9,7 @@ RUN npm run build
 
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY frontend/homepage/sponsor.html /usr/share/nginx/html/sponsor.html
-COPY frontend/homepage/qr /usr/share/nginx/html/qr
+COPY frontend/homepage/sponsor.html frontend/homepage/sponsor-config.js /usr/share/nginx/html/
 COPY common/assets/icon.ico common/assets/icon.png common/assets/wotbtoolslogo.png /usr/share/nginx/html/
 COPY deploy/nginx/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80

@@ -5,9 +5,7 @@ public record BoosterSummaryDto(
     Long id,
     String nickname,
     String level,
-    String levelLabel,
     String keycloakUserId,
     Boolean available,
-    String status,
-    String statusLabel
+    String status
 ) {}

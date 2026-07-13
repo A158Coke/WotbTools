@@ -2,8 +2,8 @@ name: Build & Deploy
 run-name: Deploy ${{ github.ref_name }} by @${{ github.actor }} to Production
 
 concurrency:
-  group: deploy-${{ github.ref }}
-  cancel-in-progress: true
+  group: production-maintenance
+  cancel-in-progress: false
 
 on:
   push:
@@ -12,6 +12,7 @@ on:
       - "java/**"
       - "frontend/**"
       - "common/**"
+      - ".dockerignore"
       - "docker/Dockerfile.backend"
       - "docker/Dockerfile.frontend"
       - "docker/Dockerfile.keycloak"
@@ -29,40 +30,115 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      backend: ${{ steps.backend.outputs.changed }}
-      frontend: ${{ steps.frontend.outputs.changed }}
-      keycloak: ${{ steps.keycloak.outputs.changed }}
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      keycloak: ${{ steps.filter.outputs.keycloak }}
+      deployment: ${{ steps.filter.outputs.deployment }}
       tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
       - name: Compute image tag
         id: tag
         run: echo "tag=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-      - name: Check backend changes
-        id: backend
+      - name: Check complete push change range
+        id: filter
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
         run: |
-          git diff --quiet HEAD~1 -- java/ common/tankopedia.json docker/Dockerfile.backend \
-            && echo "changed=false" >> "$GITHUB_OUTPUT" \
-            || echo "changed=true" >> "$GITHUB_OUTPUT"
-      - name: Check frontend changes
-        id: frontend
-        run: |
-          git diff --quiet HEAD~1 -- frontend/ docker/Dockerfile.frontend \
-            && echo "changed=false" >> "$GITHUB_OUTPUT" \
-            || echo "changed=true" >> "$GITHUB_OUTPUT"
-      - name: Check keycloak changes
-        id: keycloak
-        run: |
-          git diff --quiet HEAD~1 -- docker/Dockerfile.keycloak docker/keycloak/ keycloak-juhe-qq-provider/ \
-            && echo "changed=false" >> "$GITHUB_OUTPUT" \
-            || echo "changed=true" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          zero_sha="0000000000000000000000000000000000000000"
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || -z "$BEFORE_SHA" || "$BEFORE_SHA" == "$zero_sha" ]]; then
+            backend=true
+            frontend=true
+            keycloak=true
+            deployment=true
+          else
+            if ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+              git fetch --no-tags --depth=1 origin "$BEFORE_SHA"
+            fi
+            changed_files="$(git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA")"
+            printf '%s\n' "$changed_files"
+
+            backend=false
+            frontend=false
+            keycloak=false
+            deployment=false
+
+            if grep -Eq '^(java/|common/(tankopedia|rating|map_names)\.json$|docker/Dockerfile\.backend$|\.dockerignore$)' <<< "$changed_files"; then
+              backend=true
+            fi
+            if grep -Eq '^(frontend/|common/map_names\.json$|common/assets/|docker/Dockerfile\.frontend$|deploy/nginx/|\.dockerignore$)' <<< "$changed_files"; then
+              frontend=true
+            fi
+            if grep -Eq '^(docker/Dockerfile\.keycloak$|docker/keycloak/|keycloak-juhe-qq-provider/|java/settings-docker\.xml$|\.dockerignore$)' <<< "$changed_files"; then
+              keycloak=true
+            fi
+            if grep -Eq '^(deploy/|\.github/workflows/deploy\.yml$)' <<< "$changed_files"; then
+              deployment=true
+            fi
+          fi
+
+          {
+            echo "backend=$backend"
+            echo "frontend=$frontend"
+            echo "keycloak=$keycloak"
+            echo "deployment=$deployment"
+          } >> "$GITHUB_OUTPUT"
+
+  test-backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/cache@v4
+        with:
+          path: java/.m2repo
+          key: ${{ runner.os }}-maven-${{ hashFiles('java/**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
+      - name: Run Java tests
+        working-directory: java
+        run: mvn --batch-mode --no-transfer-progress -s settings.xml -Dmaven.repo.local=.m2repo test
+
+  test-frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm test
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
 
   # ── 构建后端 ────────────────────────────────────────────────────
   build-backend:
-    needs: changes
-    if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
+    needs: [changes, test-backend]
+    if: always() && needs.changes.outputs.backend == 'true' && needs.test-backend.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -90,8 +166,8 @@ jobs:
 
   # ── 构建前端 ────────────────────────────────────────────────────
   build-frontend:
-    needs: changes
-    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
+    needs: [changes, test-frontend]
+    if: always() && needs.changes.outputs.frontend == 'true' && needs.test-frontend.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -150,10 +226,38 @@ jobs:
 
   # ── 部署：等全部构建完成后（至少有一个构建），统一 pull + restart ──
   deploy:
-    needs: [changes, build-backend, build-frontend, build-keycloak]
-    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && (needs.build-backend.result != 'skipped' || needs.build-frontend.result != 'skipped' || needs.build-keycloak.result != 'skipped')
+    needs: [changes, test-backend, test-frontend, build-backend, build-frontend, build-keycloak]
+    if: >-
+      always() &&
+      needs.changes.result == 'success' &&
+      !contains(needs.*.result, 'failure') &&
+      !contains(needs.*.result, 'cancelled') &&
+      (needs.changes.outputs.deployment == 'true' ||
+       needs.build-backend.result != 'skipped' ||
+       needs.build-frontend.result != 'skipped' ||
+       needs.build-keycloak.result != 'skipped')
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
+      - uses: actions/checkout@v4
+      - name: Prepare deployment directory
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: mkdir -p /opt/wotb
+      - name: Install deployment scripts
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: deploy
+          target: /opt/wotb
+          overwrite: true
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
@@ -161,14 +265,22 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 35m
           script: |
             set -e
             mkdir -p /opt/wotb
             cd /opt/wotb
-            rm -rf init-db.sql
-            cat > init-db.sql <<'EOF'
-            CREATE DATABASE keycloak;
-            EOF
+            mkdir -p config/sponsor
+            if [ ! -e config/sponsor-config.json ] && [ ! -L config/sponsor-config.json ]; then
+              install -m 644 deploy/sponsor-config.example.json config/sponsor-config.json
+            fi
+            chmod 700 deploy/postgres-backup.sh deploy/postgres-backup-inspect.sh deploy/postgres-restore.sh
+            if [ -f docker-compose.yml ]; then
+              deploy/postgres-backup.sh --database wotb
+              deploy/postgres-backup.sh --database keycloak
+            else
+              echo "No existing deployment; skipping pre-deploy backup."
+            fi
             docker rm -f wotb wotb-backend wotb-frontend 2>/dev/null || true
             cat > docker-compose.yml <<'ENDCOMPOSE'
             services:
@@ -182,7 +294,7 @@ jobs:
                   POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
                 volumes:
                   - postgres_data:/var/lib/postgresql
-                  - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+                  - ./deploy/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
                 restart: unless-stopped
               keycloak:
                 image: ghcr.io/a158coke/wotbtools-keycloak:latest
@@ -217,6 +329,9 @@ jobs:
                 image: ghcr.io/a158coke/wotbtools-frontend:latest
                 ports:
                   - "127.0.0.1:8088:80"
+                volumes:
+                  - ./config/sponsor-config.json:/usr/share/nginx/html/sponsor-config.json:ro
+                  - ./config/sponsor:/usr/share/nginx/html/sponsor-assets:ro
                 depends_on:
                   - wotb-backend
                   - keycloak
@@ -224,11 +339,21 @@ jobs:
             volumes:
               postgres_data:
             ENDCOMPOSE
+            pull_succeeded=false
             for attempt in 1 2 3; do
-              docker compose pull && break
-              echo "docker compose pull failed (attempt $attempt), retrying in 10s..."
-              sleep 10
+              if docker compose pull; then
+                pull_succeeded=true
+                break
+              fi
+              if [ "$attempt" -lt 3 ]; then
+                echo "docker compose pull failed (attempt $attempt), retrying in 10s..."
+                sleep 10
+              fi
             done
+            if [ "$pull_succeeded" != "true" ]; then
+              echo "ERROR: docker compose pull failed after 3 attempts." >&2
+              exit 1
+            fi
             docker compose up -d --remove-orphans
             docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
             docker image prune -af

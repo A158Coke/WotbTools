@@ -6,6 +6,6 @@ import java.time.OffsetDateTime;
 public record CreateBoostRequestResponse(
     Long id,
     String status,
-    String message,
+    String code,
     OffsetDateTime createdAt
 ) {}

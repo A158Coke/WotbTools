@@ -36,3 +36,7 @@ keycloak:
     realm: ${KEYCLOAK_ADMIN_REALM:wotbtools}
     client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:wotbtools-admin-api}
     client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
+
+wotb:
+  replay:
+    max-concurrent-jobs: ${REPLAY_MAX_CONCURRENT_JOBS:2}

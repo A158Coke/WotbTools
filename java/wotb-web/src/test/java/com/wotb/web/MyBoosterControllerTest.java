@@ -26,13 +26,13 @@ class MyBoosterControllerTest {
     void myAvailabilityShouldToggleCurrentBooster() throws Exception {
         final BoosterService boosterService = mock(BoosterService.class);
         final BoosterDto booster = new BoosterDto(
-                7L, "booster", "ELITE", "elite", "kc-booster",
-                true, "ACTIVE", "active", null, null, null, null,
+                7L, "booster", "ELITE", "kc-booster",
+                true, "ACTIVE", null, null, null, null,
                 0, null, null
         );
         final BoosterDto updated = new BoosterDto(
-                7L, "booster", "ELITE", "elite", "kc-booster",
-                false, "ACTIVE", "active", null, null, null, null,
+                7L, "booster", "ELITE", "kc-booster",
+                false, "ACTIVE", null, null, null, null,
                 0, null, null
         );
         when(boosterService.findByKeycloakUserId("kc-booster")).thenReturn(Optional.of(booster));
