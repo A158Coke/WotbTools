@@ -14,7 +14,7 @@ import RatingModal from './RatingModal.vue'
 const { locale } = useI18n()
 const replay = useReplay()
 const { files, loading, error, resp, activeTab, aggStats, pendingRemove,
-  askRemoveBattle, cancelRemove } = replay
+  askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove } = replay
 const cols = useColumns(replay.playerCols, replay.aggCols, replay.activeTab)
 const { visibleKeys, aggVisibleKeys, showColPicker, pickerScope,
   currentOrder, shownCols, shownAggCols,
@@ -24,12 +24,13 @@ const showRating = ref(false)
 
 async function preview() { await replay.doPreview(cols.initFromResponse) }
 async function exportXlsx(mode) { await replay.doExport(mode) }
-function confirmRemoveBattle() { replay.confirmRemoveBattle(cols.initFromResponse) }
+function onFileRemoveRequest(f) { replay.askRemoveFile(f) }
 </script>
 
 <template>
   <div class="wrap">
-    <FileUploader :files="files" :loading="loading" @update:files="files = $event" @preview="preview" />
+    <FileUploader :files="files" :loading="loading" :confirm-remove="!!resp"
+      @update:files="files = $event" @preview="preview" @remove-request="onFileRemoveRequest" />
 
     <p v-if="error" class="error">{{ error }}</p>
 
@@ -86,7 +87,7 @@ function confirmRemoveBattle() { replay.confirmRemoveBattle(cols.initFromRespons
       </div>
     </template>
 
-    <RemoveConfirmModal :pending="pendingRemove" @confirm="confirmRemoveBattle" @cancel="cancelRemove" />
+    <RemoveConfirmModal :pending="pendingRemove" @confirm="confirmRemove" @cancel="cancelRemove" />
     <RatingModal :show="showRating" @close="showRating = false" />
   </div>
 </template>
