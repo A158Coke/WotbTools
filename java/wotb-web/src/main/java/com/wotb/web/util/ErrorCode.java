@@ -6,6 +6,7 @@ public enum ErrorCode {
     CONFIRMATION_REQUIRED("Deletion requires confirm=true."),
     CANNOT_DELETE_SELF("You cannot delete your own admin account."),
     USER_HAS_DEPENDENCIES("User has related records and cannot be deleted directly."),
+    BOOSTER_HAS_DEPENDENCIES("The booster has related records and cannot be deleted"),
     FAILED_LOCAL_DELETE("Local user profile could not be deleted."),
     FAILED_KEYCLOAK_DELETE("Local profile was deleted, but Keycloak user deletion failed."),
     KEYCLOAK_USER_NOT_FOUND("Keycloak user was not found.");
