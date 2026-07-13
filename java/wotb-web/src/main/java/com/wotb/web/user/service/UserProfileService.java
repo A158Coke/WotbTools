@@ -4,10 +4,14 @@ import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.repository.UserProfileRepository;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
 /** 用户资料服务。创建/查询分离，username 和 displayName 来自 Keycloak 不可修改。 */
@@ -26,6 +30,31 @@ public class UserProfileService {
     @Transactional(readOnly = true)
     public Optional<UserProfileDto> findByKeycloakUserId(final String keycloakUserId) {
         return repository.findByKeycloakUserId(keycloakUserId).map(mapper::toDto);
+    }
+
+    /** 供其他业务域编排使用的内部实体查询。 */
+    @Transactional(readOnly = true)
+    public Optional<UserProfile> findEntityByKeycloakUserId(final String keycloakUserId) {
+        return repository.findByKeycloakUserId(keycloakUserId);
+    }
+
+    /** 管理端用户检索，Repository 保持封装在 user 域内。 */
+    @Transactional(readOnly = true)
+    public List<UserProfile> searchForAdministration(final String query, final int limit) {
+        final int effectiveLimit = Math.clamp(limit, 1, 100);
+        if (!StringUtils.hasText(query)) {
+            return repository.findAll(
+                    PageRequest.of(0, effectiveLimit, Sort.by(Sort.Direction.DESC, "createdAt")))
+                    .getContent();
+        }
+        return repository.searchAdminUsers(query.trim(), PageRequest.of(0, effectiveLimit));
+    }
+
+    /** 管理端删除入口；flush 让约束异常在调用方补偿范围内暴露。 */
+    @Transactional
+    public void deleteForAdministration(final UserProfile profile) {
+        repository.delete(profile);
+        repository.flush();
     }
 
     /** 创建用户资料（首次登录时由前端 POST /profile 触发）。 */

@@ -2,9 +2,10 @@
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { mapLabel } from '../utils/helpers.js'
+import { apiErrorLabel } from '../utils/display.js'
 import * as api from '../utils/api.js'
 
-const { locale, t } = useI18n()
+const { locale, t, te } = useI18n()
 const rows = ref([])
 const loading = ref(false)
 const error = ref('')
@@ -19,21 +20,23 @@ const fileInput = ref(null)
 
 const selectedTankId = ref(null)
 const selectedTankName = ref('')
+let loadGeneration = 0
 
 async function load() {
+  const generation = ++loadGeneration
   loading.value = true
   error.value = ''
   try {
     const res = selectedTankId.value
       ? await api.leaderboardTopDamageByTank(selectedTankId.value, page.value, limit.value)
       : await api.leaderboardTopDamage(page.value, limit.value)
-    rows.value = res.items
-    totalPages.value = res.totalPages
+    if (generation !== loadGeneration) return
+    rows.value = res.items || []
+    totalPages.value = res.totalPages || 0
   } catch (e) {
-    error.value = e.message
-    rows.value = []
+    if (generation === loadGeneration) error.value = apiErrorLabel(t, te, e)
   } finally {
-    loading.value = false
+    if (generation === loadGeneration) loading.value = false
   }
 }
 
@@ -57,7 +60,8 @@ function goPage(p) {
 }
 
 async function upload(file) {
-  if (!file || !file.name.endsWith('.wotbreplay')) {
+  if (uploading.value) return
+  if (!file || !file.name.toLowerCase().endsWith('.wotbreplay')) {
     uploadMsg.value = t('leaderboard.invalid_file')
     return
   }
@@ -68,16 +72,18 @@ async function upload(file) {
     const result = await api.leaderboardUpload(file)
     if (result.status === 'skipped') {
       uploadMsg.value = t('leaderboard.upload_skipped', {
-        reason: result.reason || t('leaderboard.upload_skipped_default'),
+        reason: result.reasonCode && te(`leaderboard.reason.${result.reasonCode}`)
+          ? t(`leaderboard.reason.${result.reasonCode}`)
+          : t('leaderboard.upload_skipped_default'),
       })
     } else {
       uploadMsg.value = t('leaderboard.upload_success')
       uploadOk.value = true
     }
-    fileInput.value.value = ''
+    if (fileInput.value) fileInput.value.value = ''
     await load()
   } catch (e) {
-    uploadMsg.value = e.message
+    uploadMsg.value = apiErrorLabel(t, te, e)
   } finally {
     uploading.value = false
   }
@@ -98,7 +104,7 @@ onMounted(load)
 function fmtTime(s) {
   if (!s) return ''
   const d = new Date(s)
-  if (isNaN(d.getTime()) || d.getFullYear() < 2014) return ''
+  if (Number.isNaN(d.getTime()) || d.getFullYear() < 2014) return ''
   const p = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }

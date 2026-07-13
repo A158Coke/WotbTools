@@ -12,125 +12,173 @@ import java.util.Map;
  */
 public final class Protobuf {
 
+    private static final int MAX_MESSAGE_BYTES = 8 * 1024 * 1024;
+    private static final int MAX_LENGTH_DELIMITED_BYTES = MAX_MESSAGE_BYTES;
+    static final int MAX_FIELD_VALUES = 16_384;
+    private static final long MAX_FIELD_NUMBER = (1L << 29) - 1;
+
     private Protobuf() {
     }
 
     /** 解码一段 protobuf, 返回 field -> 值列表 (重复字段保留多值)。 */
-    public static Map<Integer, List<Object>> decode(final byte[] buf) {
+    public static Map<Integer, List<Object>> decode(final byte[] buffer) {
+        if (buffer == null) {
+            throw invalid("input is null", 0);
+        }
+        if (buffer.length > MAX_MESSAGE_BYTES) {
+            throw invalid("message exceeds size limit", 0);
+        }
+
         final Map<Integer, List<Object>> fields = new LinkedHashMap<>();
-        int i = 0;
-        final int n = buf.length;
-        while (i < n) {
-            long[] tagRes;
-            try {
-                tagRes = readVarint(buf, i);
-            } catch (IndexOutOfBoundsException e) {
-                break;
+        int index = 0;
+        int valueCount = 0;
+        while (index < buffer.length) {
+            final int tagOffset = index;
+            final long[] tagResult = readVarint(buffer, index);
+            final long tag = tagResult[0];
+            index = (int) tagResult[1];
+
+            final long rawFieldNumber = tag >>> 3;
+            if (rawFieldNumber == 0 || rawFieldNumber > MAX_FIELD_NUMBER) {
+                throw invalid("invalid field number", tagOffset);
             }
-            final long tag = tagRes[0];
-            i = (int) tagRes[1];
-            final int field = (int) (tag >>> 3);
-            final int wt = (int) (tag & 7);
-            if (field == 0) {
-                break;
+            final int fieldNumber = (int) rawFieldNumber;
+            final int wireType = (int) (tag & 7);
+            if (valueCount >= MAX_FIELD_VALUES) {
+                throw invalid("field value count exceeds limit", tagOffset);
             }
-            try {
-                Object val;
-                switch (wt) {
-                    case 0: { // varint
-                        final long[] r = readVarint(buf, i);
-                        val = r[0];
-                        i = (int) r[1];
-                        break;
-                    }
-                    case 1: { // 64-bit
-                        val = readLE(buf, i, 8);
-                        i += 8;
-                        break;
-                    }
-                    case 5: { // 32-bit
-                        val = readLE(buf, i, 4);
-                        i += 4;
-                        break;
-                    }
-                    case 2: { // length-delimited
-                        final long[] r = readVarint(buf, i);
-                        final int len = (int) r[0];
-                        i = (int) r[1];
-                        final byte[] sub = new byte[len];
-                        System.arraycopy(buf, i, sub, 0, len);
-                        i += len;
-                        val = sub;
-                        break;
-                    }
-                    default: // 3/4 组(已废弃), 6/7 非法 -> 停止
-                        return fields;
+
+            final Object value;
+            switch (wireType) {
+                case 0: {
+                    final long[] valueResult = readVarint(buffer, index);
+                    value = valueResult[0];
+                    index = (int) valueResult[1];
+                    break;
                 }
-                fields.computeIfAbsent(field, k -> new ArrayList<>()).add(val);
-            } catch (IndexOutOfBoundsException e) {
-                break;
+                case 1:
+                    requireRemaining(buffer, index, 8, "64-bit field");
+                    value = readLittleEndian(buffer, index, 8);
+                    index += 8;
+                    break;
+                case 2: {
+                    final long[] lengthResult = readVarint(buffer, index);
+                    final long rawLength = lengthResult[0];
+                    index = (int) lengthResult[1];
+                    final int length = checkedLength(buffer, index, rawLength);
+                    final byte[] bytes = new byte[length];
+                    System.arraycopy(buffer, index, bytes, 0, length);
+                    index += length;
+                    value = bytes;
+                    break;
+                }
+                case 5:
+                    requireRemaining(buffer, index, 4, "32-bit field");
+                    value = readLittleEndian(buffer, index, 4);
+                    index += 4;
+                    break;
+                default:
+                    throw invalid("unsupported wire type " + wireType, tagOffset);
             }
+            fields.computeIfAbsent(fieldNumber, ignored -> new ArrayList<>()).add(value);
+            valueCount++;
         }
         return fields;
     }
 
     /** 读取一个 varint, 返回 [值, 新位置]。 */
-    static long[] readVarint(final byte[] buf, final int i) {
-        int index = i;
-        int shift = 0;
-        long result = 0;
-        while (true) {
-            int b = buf[index] & 0xFF;
-            index++;
-            result |= (long) (b & 0x7F) << shift;
-            if ((b & 0x80) == 0) {
-                break;
-            }
-            shift += 7;
+    static long[] readVarint(final byte[] buffer, final int startIndex) {
+        if (buffer == null) {
+            throw invalid("input is null", startIndex);
         }
-        return new long[]{result, index};
+        if (startIndex < 0 || startIndex >= buffer.length) {
+            throw invalid("truncated varint", startIndex);
+        }
+
+        int index = startIndex;
+        long result = 0;
+        for (int byteIndex = 0; byteIndex < 10; byteIndex++) {
+            if (index >= buffer.length) {
+                throw invalid("truncated varint", startIndex);
+            }
+            final int current = buffer[index++] & 0xFF;
+            if (byteIndex == 9 && (current & 0xFE) != 0) {
+                throw invalid("varint overflow", startIndex);
+            }
+            result |= (long) (current & 0x7F) << (7 * byteIndex);
+            if ((current & 0x80) == 0) {
+                return new long[]{result, index};
+            }
+        }
+        throw invalid("varint overflow", startIndex);
     }
 
-    private static long readLE(final byte[] buf, final int off, final int bytes) {
-        long v = 0;
-        for (int k = 0; k < bytes; k++) {
-            v |= (long) (buf[off + k] & 0xFF) << (8 * k);
+    private static int checkedLength(final byte[] buffer, final int index, final long rawLength) {
+        if (rawLength < 0 || rawLength > Integer.MAX_VALUE) {
+            throw invalid("length-delimited field exceeds integer range", index);
         }
-        return v;
+        if (rawLength > MAX_LENGTH_DELIMITED_BYTES) {
+            throw invalid("length-delimited field exceeds size limit", index);
+        }
+        final int length = (int) rawLength;
+        requireRemaining(buffer, index, length, "length-delimited field");
+        return length;
+    }
+
+    private static long readLittleEndian(final byte[] buffer, final int offset, final int bytes) {
+        long value = 0;
+        for (int index = 0; index < bytes; index++) {
+            value |= (long) (buffer[offset + index] & 0xFF) << (8 * index);
+        }
+        return value;
+    }
+
+    private static void requireRemaining(
+            final byte[] buffer,
+            final int index,
+            final int bytes,
+            final String label) {
+        if (index < 0 || index > buffer.length || bytes < 0 || bytes > buffer.length - index) {
+            throw invalid("truncated " + label, index);
+        }
+    }
+
+    private static IllegalArgumentException invalid(final String detail, final int offset) {
+        return new IllegalArgumentException("Invalid protobuf at offset " + offset + ": " + detail);
     }
 
     // ---- 取值辅助 (对应 Python 的 f1 / f_uint / as_str / as_message) ----
 
     /** 取字段第一个值; 不存在返回 null。 */
     public static Object first(final Map<Integer, List<Object>> fields, final int num) {
-        final List<Object> v = fields.get(num);
-        return (v == null || v.isEmpty()) ? null : v.get(0);
+        final List<Object> values = fields.get(num);
+        return values == null || values.isEmpty() ? null : values.getFirst();
     }
 
     /** 取字段第一个值作为 long; 不存在返回 default。 */
-    public static long firstLong(final Map<Integer, List<Object>> fields, final int num, final long def) {
-        final Object o = first(fields, num);
-        if (o instanceof Number) {
-            return ((Number) o).longValue();
+    public static long firstLong(final Map<Integer, List<Object>> fields, final int num, final long defaultValue) {
+        final Object value = first(fields, num);
+        if (value instanceof Number number) {
+            return number.longValue();
         }
-        return def;
+        return defaultValue;
     }
 
     /** 取字段第一个值作为嵌套消息。 */
     public static Map<Integer, List<Object>> message(final Map<Integer, List<Object>> fields, final int num) {
-        final Object o = first(fields, num);
-        if (o instanceof byte[]) {
-            return decode((byte[]) o);
+        final Object value = first(fields, num);
+        if (value instanceof byte[] bytes) {
+            return decode(bytes);
         }
         return new LinkedHashMap<>();
     }
 
     /** 把 length-delimited 字段当作字符串 (UTF-8)。 */
     public static String string(final Map<Integer, List<Object>> fields, final int num) {
-        final Object o = first(fields, num);
-        if (o instanceof byte[]) {
-            return new String((byte[]) o, StandardCharsets.UTF_8);
+        final Object value = first(fields, num);
+        if (value instanceof byte[] bytes) {
+            return new String(bytes, StandardCharsets.UTF_8);
         }
-        return o == null ? "" : o.toString();
+        return value == null ? "" : value.toString();
     }
 }

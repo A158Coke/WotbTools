@@ -1,46 +1,45 @@
+import { apiErrorFromResponse } from './http.js'
+
+async function requireOk(response) {
+  if (!response.ok) throw await apiErrorFromResponse(response)
+  return response
+}
+
 export async function preview(body) {
-  const r = await fetch('/api/preview', { method: 'POST', body })
-  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  const r = await requireOk(await fetch('/api/preview', { method: 'POST', body }))
   return r.json()
 }
 
 export async function downloadBlob(mode, body) {
-  const r = await fetch(`/api/export?mode=${encodeURIComponent(mode)}`, { method: 'POST', body })
-  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  const r = await requireOk(await fetch(`/api/export?mode=${encodeURIComponent(mode)}`, { method: 'POST', body }))
   const blob = await r.blob()
   const cd = r.headers.get('Content-Disposition') || ''
   return { blob, disposition: cd }
 }
 
 export async function ratingLeaderboard(body) {
-  const r = await fetch('/api/rating', { method: 'POST', body })
-  if (!r.ok) throw new Error('Rating failed: HTTP ' + r.status)
+  const r = await requireOk(await fetch('/api/rating', { method: 'POST', body }))
   return r.json()
 }
 
 export async function ratingConfig() {
-  const r = await fetch('/api/rating')
-  if (!r.ok) throw new Error('Rating config failed: HTTP ' + r.status)
+  const r = await requireOk(await fetch('/api/rating'))
   return r.json()
 }
 
 export async function leaderboardTopDamage(page = 1, size = 50) {
-  const r = await fetch(`/api/leaderboard/top-damage?page=${page}&size=${size}`)
-  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  const r = await requireOk(await fetch(`/api/leaderboard/top-damage?page=${page}&size=${size}`))
   return r.json()
 }
 
 export async function leaderboardTopDamageByTank(tankId, page = 1, size = 50) {
-  const r = await fetch(`/api/leaderboard/tanks/${encodeURIComponent(tankId)}/top-damage?page=${page}&size=${size}`)
-  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  const r = await requireOk(await fetch(`/api/leaderboard/tanks/${encodeURIComponent(tankId)}/top-damage?page=${page}&size=${size}`))
   return r.json()
 }
 
 export async function leaderboardUpload(file) {
   const fd = new FormData()
   fd.append('file', file)
-  const r = await fetch('/api/leaderboard/upload', { method: 'POST', body: fd })
-  const data = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`)
-  return data
+  const r = await requireOk(await fetch('/api/leaderboard/upload', { method: 'POST', body: fd }))
+  return r.json()
 }

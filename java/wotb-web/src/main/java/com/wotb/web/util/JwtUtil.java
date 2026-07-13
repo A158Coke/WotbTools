@@ -54,7 +54,7 @@ public final class JwtUtil {
     public static String requireUserId() {
         final String uid = currentUserId();
         if (uid == null) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "请先登录");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED");
         }
         return uid;
     }

@@ -38,17 +38,13 @@ public class AdminBoostRequestController {
     @GetMapping("/{id}")
     public AdminBoostRequestDto get(@PathVariable final Long id) {
         return service.get(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "需求不存在"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "REQUEST_NOT_FOUND"));
     }
 
     @PatchMapping("/{id}/status")
     public AdminBoostRequestDto updateStatus(
             @PathVariable final Long id,
             @RequestBody final Map<String, String> body) {
-        try {
-            return service.updateStatus(id, body.get("status"), body.get("adminNote"));
-        } catch (final IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        }
+        return service.updateStatus(id, body.get("status"), body.get("adminNote"));
     }
 }

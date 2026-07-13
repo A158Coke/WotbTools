@@ -49,12 +49,19 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PASSWORD: wotb
       KEYCLOAK_ISSUER_URI: http://keycloak:8080/realms/wotbtools
+      KEYCLOAK_ADMIN_SERVER_URL: http://keycloak:8080
+      KEYCLOAK_ADMIN_REALM: wotbtools
+      KEYCLOAK_ADMIN_CLIENT_ID: wotbtools-admin-api
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:-}
     restart: unless-stopped
 
   wotb-frontend:
     build:
       context: ../../
       dockerfile: docker/Dockerfile.frontend
+    volumes:
+      - ../../deploy/sponsor-config.example.json:/usr/share/nginx/html/sponsor-config.json:ro
+      - ../../deploy/sponsor-assets:/usr/share/nginx/html/sponsor-assets:ro
     ports:
       - "8088:80"
     depends_on:

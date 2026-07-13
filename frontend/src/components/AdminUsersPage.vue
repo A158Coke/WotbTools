@@ -1,9 +1,12 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onBeforeUnmount, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { useError } from '../composables/useError.js'
+import { apiErrorLabel } from '../utils/display.js'
 import * as api from '../utils/api-boost.js'
 
+const { t, te } = useI18n()
 const { show: showError } = useError()
 const users = ref([])
 const loading = ref(false)
@@ -14,8 +17,14 @@ const deleteUserId = ref(null)
 const deleteConfirmText = ref('')
 const deleting = ref(false)
 const deleteResult = ref('')
+let userLoadGeneration = 0
+let detailLoadGeneration = 0
 
 const { initPromise, keycloak } = useAuth()
+
+function apiError(error) {
+  return apiErrorLabel(t, te, error)
+}
 
 async function ensureToken() {
   await initPromise
@@ -23,7 +32,7 @@ async function ensureToken() {
     await keycloak.updateToken(5)
   } catch {
     keycloak.login()
-    throw new Error('Session expired, please login again')
+    throw new Error('AUTH_REQUIRED')
   }
 }
 
@@ -32,25 +41,47 @@ onMounted(async () => {
     await ensureToken()
     loadUsers()
   } catch (e) {
-    showError(e.message)
+    showError(apiError(e))
   }
 })
 
 async function loadUsers() {
+  const generation = ++userLoadGeneration
+  const query = searchQuery.value
   loading.value = true
-  try { users.value = await api.adminSearchUsers(searchQuery.value, 200) }
-  catch (e) { showError(e.message); users.value = [] }
-  finally { loading.value = false }
+  try {
+    const result = await api.adminSearchUsers(query, 200)
+    if (generation === userLoadGeneration) users.value = result
+  } catch (e) {
+    if (generation === userLoadGeneration) showError(apiError(e))
+  } finally {
+    if (generation === userLoadGeneration) loading.value = false
+  }
 }
 
 async function loadDetail(u) {
+  const generation = ++detailLoadGeneration
   try {
-    detailUser.value = await api.adminGetUser(u.keycloakUserId)
-    showDetail.value = true
-  } catch (e) { showError(e.message) }
+    const result = await api.adminGetUser(u.keycloakUserId)
+    if (generation === detailLoadGeneration) {
+      detailUser.value = result
+      showDetail.value = true
+    }
+  } catch (e) {
+    if (generation === detailLoadGeneration) showError(apiError(e))
+  }
 }
 
-function closeDetail() { showDetail.value = false; detailUser.value = null }
+function closeDetail() {
+  detailLoadGeneration += 1
+  showDetail.value = false
+  detailUser.value = null
+}
+
+onBeforeUnmount(() => {
+  userLoadGeneration += 1
+  detailLoadGeneration += 1
+})
 
 function startDelete(u) { deleteUserId.value = u.keycloakUserId; deleteConfirmText.value = ''; deleteResult.value = ''; deleting.value = false }
 function cancelDelete() { deleteUserId.value = null; deleteConfirmText.value = ''; deleteResult.value = '' }
@@ -60,17 +91,17 @@ async function confirmDelete() {
   deleteResult.value = ''
   try {
     const res = await api.adminDeleteUser(deleteUserId.value)
-    deleteResult.value = res.deleted ? 'DELETED' : (res.error || 'FAILED')
+    deleteResult.value = res.deleted ? 'DELETED' : apiError({ code: 'UNKNOWN_ERROR' })
     setTimeout(() => { cancelDelete(); loadUsers() }, 1200)
   } catch (e) {
-    deleteResult.value = e.message
+    deleteResult.value = apiError(e)
   } finally { deleting.value = false }
 }
 
 function fmtTime(s) {
   if (!s) return ''
   const d = new Date(s)
-  if (isNaN(d.getTime())) return ''
+  if (Number.isNaN(d.getTime())) return ''
   const p = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
@@ -127,7 +158,7 @@ function fmtTime(s) {
         <h3>{{ $t('admin.detail') }}</h3>
         <div class="admin-detail">
           <div class="detail-section" v-if="detailUser.profile">
-            <h4>Profile</h4>
+            <h4>{{ $t('admin.profileSection') }}</h4>
             <div class="detail-row"><span class="dl">{{ $t('admin.colId') }}</span><span>{{ detailUser.profile.id }}</span></div>
             <div class="detail-row"><span class="dl">{{ $t('admin.colDisplayName') }}</span><span>{{ detailUser.profile.displayName }}</span></div>
             <div class="detail-row"><span class="dl">{{ $t('admin.colAccountId') }}</span><span>{{ detailUser.profile.wotbAccountId }}</span></div>
@@ -138,15 +169,15 @@ function fmtTime(s) {
           <div class="detail-section" v-if="detailUser.keycloak">
             <h4>{{ $t('admin.keycloak') }}</h4>
             <div class="detail-row"><span class="dl">{{ $t('admin.colId') }}</span><span class="cell-mono">{{ detailUser.keycloak.id }}</span></div>
-            <div class="detail-row"><span class="dl">Username</span><span>{{ detailUser.keycloak.username }}</span></div>
-            <div class="detail-row"><span class="dl">Email</span><span>{{ detailUser.keycloak.email }}</span></div>
+            <div class="detail-row"><span class="dl">{{ $t('admin.username') }}</span><span>{{ detailUser.keycloak.username }}</span></div>
+            <div class="detail-row"><span class="dl">{{ $t('admin.email') }}</span><span>{{ detailUser.keycloak.email }}</span></div>
             <div class="detail-row"><span class="dl">{{ $t('admin.enabled') }}</span><span>{{ detailUser.keycloak.enabled }}</span></div>
             <div class="detail-row" v-for="fi in (detailUser.keycloak.federatedIdentities || [])" :key="fi.userId">
               <span class="dl">{{ fi.identityProvider }}</span>
               <span>{{ fi.userName }} ({{ fi.userId }})</span>
             </div>
           </div>
-          <p v-if="detailUser.warnings" class="admin-warn">{{ detailUser.warnings.join(', ') }}</p>
+          <p v-if="detailUser.warnings?.length" class="admin-warn">{{ detailUser.warnings.map(warning => apiErrorLabel(t, te, { code: warning })).join(', ') }}</p>
         </div>
         <button class="btn-sm" @click="closeDetail">{{ $t('admin.close') }}</button>
       </div>
@@ -163,7 +194,7 @@ function fmtTime(s) {
           <p v-else-if="deleteResult" class="admin-error">{{ deleteResult }}</p>
           <div v-else>
             <label>{{ $t('admin.confirmInput') }}</label>
-            <input v-model="deleteConfirmText" placeholder="DELETE" class="admin-confirm-input" />
+            <input v-model="deleteConfirmText" :placeholder="$t('admin.deleteKeyword')" class="admin-confirm-input" />
           </div>
         </div>
         <div class="modal-actions">

@@ -7,12 +7,15 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.stats.PotentialDamage;
 import org.springframework.util.StringUtils;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
@@ -24,6 +27,19 @@ import java.util.zip.ZipInputStream;
 public final class ReplayParser {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final int MEBIBYTE = 1024 * 1024;
+
+    static final int MAX_ARCHIVE_BYTES = 20 * MEBIBYTE;
+    static final int MAX_META_JSON_BYTES = MEBIBYTE;
+    static final int MAX_BATTLE_RESULTS_BYTES = 8 * MEBIBYTE;
+    static final int MAX_DATA_WOTREPLAY_BYTES = 20 * MEBIBYTE;
+    static final int MAX_TOTAL_UNCOMPRESSED_BYTES = 24 * MEBIBYTE;
+    static final int MAX_PLAYERS_PER_REPLAY = 64;
+
+    private static final Map<String, Integer> ENTRY_SIZE_LIMITS = Map.of(
+            "meta.json", MAX_META_JSON_BYTES,
+            "battle_results.dat", MAX_BATTLE_RESULTS_BYTES,
+            "data.wotreplay", MAX_DATA_WOTREPLAY_BYTES);
 
     // PlayerResultsInfo (#301 -> #2) 简单 uint 字段: protobuf 字段号
     static final int F_ACCOUNT = 101, F_TEAM = 102, F_TANK = 103;
@@ -41,22 +57,33 @@ public final class ReplayParser {
     }
 
     public static Battle parse(final byte[] replayBytes) throws IOException {
-        return parse(unzip(replayBytes));
+        try {
+            return parse(unzip(replayBytes));
+        } catch (final IllegalArgumentException | IllegalStateException e) {
+            throw new IOException("Invalid replay data: " + e.getMessage(), e);
+        }
     }
 
     private static Battle parse(final Map<String, byte[]> entries) throws IOException {
         final JsonNode meta;
         if (entries.containsKey("meta.json")) {
-            meta = MAPPER.readTree(entries.get("meta.json"));
+            final JsonNode parsedMeta = MAPPER.readTree(entries.get("meta.json"));
+            if (parsedMeta == null || !parsedMeta.isObject()) {
+                throw new IOException("Invalid meta.json: expected a JSON object");
+            }
+            meta = parsedMeta;
         } else {
             meta = MAPPER.createObjectNode();
         }
         final byte[] dat = entries.get("battle_results.dat");
         if (dat == null) {
-            throw new IOException("回放中没有 battle_results.dat (可能是不完整或加密的回放)");
+            throw new IOException("Replay is missing battle_results.dat");
         }
 
-        final Object[] tuple = (Object[]) PickleReader.loads(dat);
+        final Object pickle = PickleReader.loads(dat);
+        if (!(pickle instanceof Object[] tuple) || tuple.length != 2 || !(tuple[1] instanceof byte[])) {
+            throw new IOException("Invalid battle_results.dat: expected (arenaId, protobufBytes)");
+        }
         final Object arenaId = tuple[0];
         final byte[] pb = (byte[]) tuple[1];
         final Map<Integer, List<Object>> root = Protobuf.decode(pb);
@@ -65,8 +92,15 @@ public final class ReplayParser {
         final Map<Long, String[]> roster = new HashMap<>();   // acc -> [nickname, clan]
         final Map<Long, Long> platoonByAcc = new HashMap<>();
         final Map<Long, Long> rankByAcc = new HashMap<>();
-        for (final Object praw : root.getOrDefault(201, List.of())) {
-            final Map<Integer, List<Object>> p = Protobuf.decode((byte[]) praw);
+        final List<Object> rosterEntries = root.getOrDefault(201, List.of());
+        if (rosterEntries.size() > MAX_PLAYERS_PER_REPLAY) {
+            throw new IOException("Replay roster exceeds player limit");
+        }
+        for (final Object praw : rosterEntries) {
+            if (!(praw instanceof byte[] playerBytes)) {
+                throw new IOException("Invalid battle protobuf: field 201 must be length-delimited");
+            }
+            final Map<Integer, List<Object>> p = Protobuf.decode(playerBytes);
             final long acc = Protobuf.firstLong(p, 1, 0);
             final Map<Integer, List<Object>> info = Protobuf.message(p, 2);
             roster.put(acc, new String[]{Protobuf.string(info, R_NICK), Protobuf.string(info, R_CLAN)});
@@ -82,8 +116,15 @@ public final class ReplayParser {
 
         // ---- 战绩 #301 ----
         final List<PlayerResult> players = new ArrayList<>();
-        for (final Object rraw : root.getOrDefault(301, List.of())) {
-            final Map<Integer, List<Object>> r = Protobuf.decode((byte[]) rraw);
+        final List<Object> resultEntries = root.getOrDefault(301, List.of());
+        if (resultEntries.size() > MAX_PLAYERS_PER_REPLAY) {
+            throw new IOException("Replay results exceed player limit");
+        }
+        for (final Object rraw : resultEntries) {
+            if (!(rraw instanceof byte[] resultBytes)) {
+                throw new IOException("Invalid battle protobuf: field 301 must be length-delimited");
+            }
+            final Map<Integer, List<Object>> r = Protobuf.decode(resultBytes);
             final Map<Integer, List<Object>> info = Protobuf.message(r, 2);
             final PlayerResult pr = new PlayerResult();
             pr.accountId = Protobuf.firstLong(info, F_ACCOUNT, 0);
@@ -228,17 +269,59 @@ public final class ReplayParser {
     }
 
     private static Map<String, byte[]> unzip(final byte[] data) throws IOException {
+        if (data == null) {
+            throw new IOException("Replay archive is null");
+        }
+        if (data.length > MAX_ARCHIVE_BYTES) {
+            throw new IOException("Replay archive exceeds compressed size limit");
+        }
+
         final Map<String, byte[]> out = new HashMap<>();
-        try (ZipInputStream zis = new ZipInputStream(new java.io.ByteArrayInputStream(data))) {
-            ZipEntry e;
+        final Set<String> seenEntryNames = new HashSet<>();
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(data))) {
+            ZipEntry entry;
             final byte[] tmp = new byte[8192];
-            while ((e = zis.getNextEntry()) != null) {
+            int entryCount = 0;
+            int totalUncompressedBytes = 0;
+            while ((entry = zis.getNextEntry()) != null) {
+                entryCount++;
+                if (entryCount > ENTRY_SIZE_LIMITS.size()) {
+                    throw new IOException("Replay archive contains too many entries");
+                }
+
+                final String entryName = entry.getName();
+                if (entry.isDirectory() || !ENTRY_SIZE_LIMITS.containsKey(entryName)) {
+                    throw new IOException("Unexpected replay entry: " + entryName);
+                }
+                if (!seenEntryNames.add(entryName)) {
+                    throw new IOException("Duplicate replay entry: " + entryName);
+                }
+
+                final int entryLimit = ENTRY_SIZE_LIMITS.get(entryName);
+                final long declaredSize = entry.getSize();
+                if (declaredSize < -1 || declaredSize > entryLimit) {
+                    throw new IOException("Replay entry too large: " + entryName);
+                }
+
                 final ByteArrayOutputStream bos = new ByteArrayOutputStream();
                 int read;
+                int entryBytes = 0;
                 while ((read = zis.read(tmp)) != -1) {
+                    if (read == 0) {
+                        continue;
+                    }
+                    if ((long) entryBytes + read > entryLimit) {
+                        throw new IOException("Replay entry too large: " + entryName);
+                    }
+                    if ((long) totalUncompressedBytes + read > MAX_TOTAL_UNCOMPRESSED_BYTES) {
+                        throw new IOException("Replay uncompressed data exceeds total size limit");
+                    }
                     bos.write(tmp, 0, read);
+                    entryBytes += read;
+                    totalUncompressedBytes += read;
                 }
-                out.put(e.getName(), bos.toByteArray());
+                out.put(entryName, bos.toByteArray());
+                zis.closeEntry();
             }
         }
         return out;

@@ -1,7 +1,10 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
+import { apiCodeLabel, apiErrorLabel, enumLabel } from '../utils/display.js'
+import { normalizeSpringPage } from '../utils/page.js'
+import { createLatestDebounce } from '../utils/latest-debounce.js'
 import {
   acceptMyBoosterAssignment,
   adminBoostAssign,
@@ -37,7 +40,7 @@ import {
   startMyBoosterAssignment
 } from '../utils/api-boost.js'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const { initPromise, login, isAuthenticated, userName, tokenParsed } = useAuth()
 
 // Auth gate
@@ -48,7 +51,7 @@ const user = ref('')
 const tab = ref('request')
 
 // Options (dropdown data)
-const options = ref({ regions: [], requestTypes: [], contactTypes: [], warning: '' })
+const options = ref({ regions: [], requestTypes: [], contactTypes: [], warningCode: '' })
 const imageMaxBytes = 4 * 1024 * 1024
 const boosterLevels = ['CASUAL', 'SKILLED', 'ELITE', 'PRO']
 const boosterLevelRank = { CASUAL: 1, SKILLED: 2, ELITE: 3, PRO: 4 }
@@ -95,6 +98,10 @@ const unreadNotifications = ref(0)
 const notificationsOpen = ref(false)
 const loadingNotifications = ref(false)
 const notificationError = ref('')
+const loadError = ref('')
+let adminRequestLoadGeneration = 0
+let adminApplicationLoadGeneration = 0
+let boosterLoadGeneration = 0
 
 // Admin: 检查 realm 角色 + 客户端角色 (resource_access)
 const isAdmin = computed(() => {
@@ -133,36 +140,56 @@ const allUsers = ref([])
 const userSearchQuery = ref('')
 const userSearchResults = ref([])
 const showUserSearch = ref(false)
-let searchTimer = null
+const latestUserSearch = createLatestDebounce(300)
+
+function label(group, value, fallback = '--') {
+  return enumLabel(t, te, group, value, fallback)
+}
+
+function apiError(error) {
+  return apiErrorLabel(t, te, error)
+}
+
+function apiCode(code, fallbackKey) {
+  return apiCodeLabel(t, te, code, fallbackKey)
+}
 
 async function loadAllUsers() {
+  loadError.value = ''
   try {
     const res = await adminSearchUsers('', 200)
     allUsers.value = res.content || res || []
-  } catch { allUsers.value = [] }
+  } catch (error) {
+    loadError.value = apiError(error)
+  }
 }
 
 function searchUsers() {
-  if (!userSearchQuery.value.trim()) {
+  loadError.value = ''
+  const query = userSearchQuery.value.trim()
+  if (!query) {
+    latestUserSearch.cancel()
     userSearchResults.value = allUsers.value.slice(0, 30)
     showUserSearch.value = true
     return
   }
-  clearTimeout(searchTimer)
-  searchTimer = setTimeout(async () => {
-    try {
-      const res = await adminSearchUsers(userSearchQuery.value.trim(), 10)
+  latestUserSearch.schedule(
+    async () => adminSearchUsers(query, 10),
+    res => {
       userSearchResults.value = (res.content || res).slice(0, 10)
       showUserSearch.value = true
-    } catch {
+    },
+    error => {
       userSearchResults.value = []
+      loadError.value = apiError(error)
     }
-  }, 300)
+  )
 }
 
 function selectUser(user) {
+  latestUserSearch.cancel()
   boosterForm.value.keycloakUserId = user.keycloakUserId || user.id
-  const displayName = user.displayName || user.keycloakUsername || 'User'
+  const displayName = user.displayName || user.keycloakUsername || t('admin.unknownUser')
   boosterForm.value.nickname = displayName
   userSearchQuery.value = displayName
   showUserSearch.value = false
@@ -173,7 +200,7 @@ async function deleteBooster(b) {
   try {
     await adminBoostBoosterDelete(b.id)
     loadBoosters(boosterPage.value.page)
-  } catch (e) { alert(e.message) }
+  } catch (e) { alert(apiError(e)) }
 }
 
 // Admin: assignment
@@ -202,12 +229,26 @@ onMounted(async () => {
 })
 
 async function loadOptions() {
-  try { options.value = await boostOptions() } catch {}
+  loadError.value = ''
+  try {
+    options.value = await boostOptions()
+  } catch (error) {
+    loadError.value = apiError(error)
+  }
 }
 
+onBeforeUnmount(() => {
+  latestUserSearch.cancel()
+  adminRequestLoadGeneration += 1
+  adminApplicationLoadGeneration += 1
+  boosterLoadGeneration += 1
+})
+
 async function loadMyRequests() {
+  loadError.value = ''
   loadingMy.value = true
-  try { myRequests.value = await boostListMyRequests() } catch { myRequests.value = [] }
+  try { myRequests.value = await boostListMyRequests() }
+  catch (error) { loadError.value = apiError(error) }
   finally { loadingMy.value = false }
 }
 
@@ -225,8 +266,10 @@ async function loadApplicantState() {
 }
 
 async function loadMyAssignments() {
+  loadError.value = ''
   loadingAssignments.value = true
-  try { myAssignments.value = await getMyBoosterAssignments() } catch { myAssignments.value = [] }
+  try { myAssignments.value = await getMyBoosterAssignments() }
+  catch (error) { loadError.value = apiError(error) }
   finally { loadingAssignments.value = false }
 }
 
@@ -237,8 +280,7 @@ async function loadNotifications() {
     notifications.value = await listNotifications()
     unreadNotifications.value = notifications.value.filter(n => !n.read).length
   } catch (e) {
-    notificationError.value = e.message
-    notifications.value = []
+    notificationError.value = apiError(e)
   } finally {
     loadingNotifications.value = false
   }
@@ -263,7 +305,9 @@ async function readNotification(notification) {
     try {
       await markNotificationRead(notification.id)
       await loadNotifications()
-    } catch {}
+    } catch (error) {
+      notificationError.value = apiError(error)
+    }
   }
 }
 
@@ -272,7 +316,7 @@ async function readAllNotifications() {
     await markAllNotificationsRead()
     await loadNotifications()
   } catch (e) {
-    notificationError.value = e.message
+    notificationError.value = apiError(e)
   }
 }
 
@@ -284,8 +328,10 @@ function applyBoundAccount() {
 }
 
 async function loadMyApplications() {
+  loadError.value = ''
   loadingApplications.value = true
-  try { myApplications.value = await boostListMyBoosterApplications() } catch { myApplications.value = [] }
+  try { myApplications.value = await boostListMyBoosterApplications() }
+  catch (error) { loadError.value = apiError(error) }
   finally { loadingApplications.value = false }
 }
 
@@ -320,7 +366,7 @@ function boosterAssignable(booster) {
 
 function boosterPickerSuffix(booster) {
   const tags = []
-  if (booster?.status && booster.status !== 'ACTIVE') tags.push(booster.statusLabel)
+  if (booster?.status && booster.status !== 'ACTIVE') tags.push(label('boosterStatusValue', booster.status))
   if (boosterAvailabilityState(booster) !== 'available') tags.push(boosterAvailabilityLabel(booster))
   return tags.length ? ` [${tags.join(' / ')}]` : ''
 }
@@ -333,8 +379,8 @@ function recommendedBoosters(request) {
 }
 
 function boosterMatchScore(booster, request) {
-  const text = `${request?.requestTypeLabel || ''} ${request?.targetDescription || ''}`.toLowerCase()
-  const profile = `${booster?.specialties || ''} ${booster?.description || ''} ${booster?.levelLabel || ''}`.toLowerCase()
+  const text = `${request?.requestType || ''} ${label('requestTypeValue', request?.requestType, '')} ${request?.targetDescription || ''}`.toLowerCase()
+  const profile = `${booster?.specialties || ''} ${booster?.description || ''} ${booster?.level || ''} ${label('level', booster?.level, '')}`.toLowerCase()
   let score = 0
   if (boosterAssignable(booster)) score += 1000
   if (booster?.status === 'ACTIVE') score += 100
@@ -404,7 +450,7 @@ async function selectApplicationImage(kind, event) {
       imageNames.value.vehicle = file?.name || ''
     }
   } catch (e) {
-    applicationError.value = e.message
+    applicationError.value = apiError(e)
     event.target.value = ''
   }
 }
@@ -420,15 +466,15 @@ async function submitBoosterApplication() {
   }
   applicationSubmitting.value = true
   try {
-    await boostCreateBoosterApplication(f)
-    applicationSuccess.value = t('boost.applicationSubmitted')
+    const response = await boostCreateBoosterApplication(f)
+    applicationSuccess.value = apiCode(response.code, 'boost.applicationSubmitted')
     f.overallStatsImage = ''
     f.vehicleStatsImage = ''
     f.selfAssessment = ''
     imageNames.value = { overall: '', vehicle: '' }
     await loadMyApplications()
   } catch (e) {
-    applicationError.value = e.message
+    applicationError.value = apiError(e)
   } finally {
     applicationSubmitting.value = false
   }
@@ -444,13 +490,13 @@ async function submitRequest() {
   submitting.value = true
   try {
     const res = await boostCreateRequest(form.value)
-    formSuccess.value = res.message || t('boost.submitted')
+    formSuccess.value = apiCode(res.code, 'boost.submitted')
     form.value.targetDescription = ''
     form.value.contactValue = ''
     form.value.remark = ''
     loadMyRequests()
   } catch (e) {
-    formError.value = e.message
+    formError.value = apiError(e)
   }
   finally { submitting.value = false }
 }
@@ -460,7 +506,7 @@ async function cancelRequest(id) {
     await boostCancelRequest(id)
     loadMyRequests()
   } catch (e) {
-    alert(e.message)
+    alert(apiError(e))
   }
 }
 
@@ -468,14 +514,14 @@ async function acceptAssignment(a) {
   try {
     await acceptMyBoosterAssignment(a.id)
     await afterAssignmentAction()
-  } catch (e) { alert(e.message) }
+  } catch (e) { alert(apiError(e)) }
 }
 
 async function startAssignment(a) {
   try {
     await startMyBoosterAssignment(a.id)
     await afterAssignmentAction()
-  } catch (e) { alert(e.message) }
+  } catch (e) { alert(apiError(e)) }
 }
 
 async function completeAssignment(a) {
@@ -484,7 +530,7 @@ async function completeAssignment(a) {
   try {
     await completeMyBoosterAssignment(a.id, { note })
     await afterAssignmentAction()
-  } catch (e) { alert(e.message) }
+  } catch (e) { alert(apiError(e)) }
 }
 
 async function declineAssignment(a) {
@@ -494,7 +540,7 @@ async function declineAssignment(a) {
   try {
     await declineMyBoosterAssignment(a.id, { note })
     await afterAssignmentAction()
-  } catch (e) { alert(e.message) }
+  } catch (e) { alert(apiError(e)) }
 }
 
 async function afterAssignmentAction() {
@@ -521,15 +567,22 @@ function canDeclineAssignment(a) {
 
 // Admin functions
 async function loadAdminRequests(page = 0) {
+  const generation = ++adminRequestLoadGeneration
+  loadError.value = ''
   loadingAdmin.value = true
   try {
     const params = { page, size: adminPage.value.size }
     if (adminStatusFilter.value) params.status = adminStatusFilter.value
     const data = await adminBoostRequests(params)
-    adminRequests.value = data.content || []
-    adminPage.value = { page: data.page, size: data.size, totalElements: data.totalElements, totalPages: data.totalPages }
-  } catch { adminRequests.value = [] }
-  finally { loadingAdmin.value = false }
+    if (generation === adminRequestLoadGeneration) {
+      adminRequests.value = data.content || []
+      adminPage.value = normalizeSpringPage(data, page, adminPage.value.size)
+    }
+  } catch (error) {
+    if (generation === adminRequestLoadGeneration) loadError.value = apiError(error)
+  } finally {
+    if (generation === adminRequestLoadGeneration) loadingAdmin.value = false
+  }
 }
 
 async function updateStatus(id, status) {
@@ -537,26 +590,33 @@ async function updateStatus(id, status) {
     await adminBoostUpdateStatus(id, { status, adminNote: '' })
     loadAdminRequests(adminPage.value.page)
     loadBoosters(boosterPage.value.page)
-  } catch (e) { alert(e.message) }
+  } catch (e) { alert(apiError(e)) }
 }
 
 async function loadAdminApplications(page = 0) {
+  const generation = ++adminApplicationLoadGeneration
+  loadError.value = ''
   loadingAdminApplications.value = true
   try {
     const params = { page, size: applicationPage.value.size }
     if (applicationStatusFilter.value) params.status = applicationStatusFilter.value
     const data = await adminBoostBoosterApplications(params)
-    adminApplications.value = data.content || []
-    applicationPage.value = { page: data.page, size: data.size, totalElements: data.totalElements, totalPages: data.totalPages }
-  } catch { adminApplications.value = [] }
-  finally { loadingAdminApplications.value = false }
+    if (generation === adminApplicationLoadGeneration) {
+      adminApplications.value = data.content || []
+      applicationPage.value = normalizeSpringPage(data, page, applicationPage.value.size)
+    }
+  } catch (error) {
+    if (generation === adminApplicationLoadGeneration) loadError.value = apiError(error)
+  } finally {
+    if (generation === adminApplicationLoadGeneration) loadingAdminApplications.value = false
+  }
 }
 
 async function reviewApplication(id) {
   try {
     await adminBoostBoosterApplicationReviewing(id, { adminNote: applicationNotes.value[id] || '' })
     loadAdminApplications(applicationPage.value.page)
-  } catch (e) { alert(e.message) }
+  } catch (e) { alert(apiError(e)) }
 }
 
 async function approveApplication(id) {
@@ -565,7 +625,7 @@ async function approveApplication(id) {
     await adminBoostBoosterApplicationApprove(id, { adminNote: applicationNotes.value[id] || '' })
     loadAdminApplications(applicationPage.value.page)
     loadBoosters(boosterPage.value.page)
-  } catch (e) { alert(e.message) }
+  } catch (e) { alert(apiError(e)) }
 }
 
 async function rejectApplication(id) {
@@ -573,7 +633,7 @@ async function rejectApplication(id) {
   try {
     await adminBoostBoosterApplicationReject(id, { adminNote: applicationNotes.value[id] || '' })
     loadAdminApplications(applicationPage.value.page)
-  } catch (e) { alert(e.message) }
+  } catch (e) { alert(apiError(e)) }
 }
 
 async function assignBooster(id) {
@@ -585,7 +645,7 @@ async function assignBooster(id) {
     assignNote.value = ''
     loadAdminRequests(adminPage.value.page)
     loadBoosters(boosterPage.value.page)
-  } catch (e) { assignError.value = e.message }
+  } catch (e) { assignError.value = apiError(e) }
 }
 
 async function unassignBooster(id) {
@@ -593,17 +653,24 @@ async function unassignBooster(id) {
     await adminBoostUnassign(id, { note: '' })
     loadAdminRequests(adminPage.value.page)
     loadBoosters(boosterPage.value.page)
-  } catch (e) { alert(e.message) }
+  } catch (e) { alert(apiError(e)) }
 }
 
 async function loadBoosters(page = 0) {
+  const generation = ++boosterLoadGeneration
+  loadError.value = ''
   loadingBoosters.value = true
   try {
     const data = await adminBoostBoosterList({ page, size: boosterPage.value.size })
-    boosters.value = data.content || []
-    boosterPage.value = { page: data.page, size: data.size, totalElements: data.totalElements, totalPages: data.totalPages }
-  } catch { boosters.value = [] }
-  finally { loadingBoosters.value = false }
+    if (generation === boosterLoadGeneration) {
+      boosters.value = data.content || []
+      boosterPage.value = normalizeSpringPage(data, page, boosterPage.value.size)
+    }
+  } catch (error) {
+    if (generation === boosterLoadGeneration) loadError.value = apiError(error)
+  } finally {
+    if (generation === boosterLoadGeneration) loadingBoosters.value = false
+  }
 }
 
 function startNewBooster() {
@@ -638,14 +705,14 @@ async function saveBooster() {
     }
     editingBooster.value = null
     loadBoosters(boosterPage.value.page)
-  } catch (e) { boosterError.value = e.message }
+  } catch (e) { boosterError.value = apiError(e) }
 }
 
 async function toggleBoosterAvailable(b) {
   try {
     await adminBoostBoosterAvailability(b.id, { available: !b.available })
     loadBoosters(boosterPage.value.page)
-  } catch (e) { alert(e.message) }
+  } catch (e) { alert(apiError(e)) }
 }
 
 function statusBadge(s) {
@@ -703,6 +770,8 @@ function switchTab(t) {
       </button>
     </div>
 
+    <div v-if="loadError" class="boost-error">{{ loadError }}</div>
+
     <div v-if="notificationsOpen" class="boost-card notification-panel">
       <div class="flex-between">
         <h3 class="card-title">{{ $t('boost.notifications') }}</h3>
@@ -723,19 +792,19 @@ function switchTab(t) {
     <!-- Tab: Submit Request -->
     <div v-if="tab === 'request'" class="boost-card">
       <h3 class="card-title">{{ $t('boost.submitTitle') }}</h3>
-      <p class="boost-warning">{{ options.warning }}</p>
+      <p v-if="options.warningCode" class="boost-warning">{{ apiCode(options.warningCode) }}</p>
 
       <div class="boost-form">
         <div class="form-row">
           <label>{{ $t('boost.region') }}</label>
           <select v-model="form.region">
-            <option v-for="o in options.regions" :key="o.value" :value="o.value">{{ o.label }}</option>
+            <option v-for="o in options.regions" :key="o.value" :value="o.value">{{ label('regionValue', o.value) }}</option>
           </select>
         </div>
         <div class="form-row">
           <label>{{ $t('boost.requestType') }}</label>
           <select v-model="form.requestType">
-            <option v-for="o in options.requestTypes" :key="o.value" :value="o.value">{{ o.label }}</option>
+            <option v-for="o in options.requestTypes" :key="o.value" :value="o.value">{{ label('requestTypeValue', o.value) }}</option>
           </select>
         </div>
         <div class="form-row">
@@ -753,7 +822,7 @@ function switchTab(t) {
         <div class="form-row">
           <label>{{ $t('boost.contactType') }}</label>
           <select v-model="form.contactType">
-            <option v-for="o in options.contactTypes" :key="o.value" :value="o.value">{{ o.label }}</option>
+            <option v-for="o in options.contactTypes" :key="o.value" :value="o.value">{{ label('contactTypeValue', o.value) }}</option>
           </select>
         </div>
         <div class="form-row">
@@ -882,7 +951,7 @@ function switchTab(t) {
       <div v-else class="my-list">
         <div v-for="r in myRequests" :key="r.id" class="my-item">
           <div class="my-header">
-            <span class="my-type">{{ r.requestTypeLabel }}</span>
+            <span class="my-type">{{ label('requestTypeValue', r.requestType) }}</span>
             <span :class="'badge badge-' + statusBadge(r.status)">{{ statusText(r.status) }}</span>
             <span class="my-time">{{ new Date(r.createdAt).toLocaleString() }}</span>
           </div>
@@ -910,7 +979,7 @@ function switchTab(t) {
         <div v-for="a in myAssignments" :key="a.id" class="my-item">
           <div class="my-header">
             <strong>#{{ a.requestId }}</strong>
-            <span>{{ a.requestTypeLabel }}</span>
+            <span>{{ label('requestTypeValue', a.requestType) }}</span>
             <span :class="'badge badge-' + statusBadge(a.requestStatus)">{{ statusText(a.requestStatus) }}</span>
             <span :class="'badge badge-' + statusBadge(a.status)">{{ assignmentStatusText(a.status) }}</span>
             <span class="my-time">{{ new Date(a.assignedAt).toLocaleString() }}</span>
@@ -958,7 +1027,7 @@ function switchTab(t) {
         <div v-for="r in adminRequests" :key="r.id" class="admin-item">
           <div class="admin-header">
             <strong>#{{ r.id }}</strong>
-            <span>{{ r.requestTypeLabel }}</span>
+            <span>{{ label('requestTypeValue', r.requestType) }}</span>
             <span :class="'badge badge-' + statusBadge(r.status)">{{ statusText(r.status) }}</span>
             <span class="admin-player">{{ r.playerNickname || r.contactValue }}</span>
             <span class="admin-time">{{ new Date(r.createdAt).toLocaleString() }}</span>
@@ -1010,7 +1079,7 @@ function switchTab(t) {
             <select v-model.number="assignBoosterId" class="mr">
               <option :value="null" disabled>{{ $t('boost.selectBooster') }}</option>
               <option v-for="b in recommendedBoosters(r)" :key="b.id" :value="b.id" :disabled="!boosterAssignable(b)">
-                {{ isRecommendedBooster(b, r) ? '[' + $t('boost.recommended') + '] ' : '' }}{{ b.nickname }} ({{ b.levelLabel }}){{ boosterPickerSuffix(b) }}
+                {{ isRecommendedBooster(b, r) ? '[' + $t('boost.recommended') + '] ' : '' }}{{ b.nickname }} ({{ label('level', b.level) }}){{ boosterPickerSuffix(b) }}
               </option>
             </select>
             <input v-model="assignNote" :placeholder="$t('boost.assignNote')" class="mr" />
@@ -1162,8 +1231,8 @@ function switchTab(t) {
         <div v-for="b in boosters" :key="b.id" class="booster-item">
           <div class="booster-header">
             <strong>{{ b.nickname }}</strong>
-            <span>{{ b.levelLabel }}</span>
-            <span :class="'badge badge-' + statusBadge(b.status)">{{ b.statusLabel }}</span>
+            <span>{{ label('level', b.level) }}</span>
+            <span :class="'badge badge-' + statusBadge(b.status)">{{ label('boosterStatusValue', b.status) }}</span>
             <span :class="'badge badge-' + boosterAvailabilityBadge(b)">{{ boosterAvailabilityLabel(b) }}</span>
             <span class="booster-stats">{{ $t('boost.activeAssignments') }}: {{ b.activeAssignmentCount }}</span>
           </div>

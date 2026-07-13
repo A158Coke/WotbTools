@@ -9,6 +9,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class EventStreamReaderTest {
 
@@ -48,6 +49,37 @@ class EventStreamReaderTest {
         assertEquals(220, potential.supplementDamage());
     }
 
+    @Test
+    void rejectsTooManyPackets() {
+        final byte[] header = eventStreamHeader();
+        final byte[] data = new byte[header.length + (EventStreamReader.MAX_PACKETS + 1) * 13];
+        System.arraycopy(header, 0, data, 0, header.length);
+        int offset = header.length;
+        for (int index = 0; index <= EventStreamReader.MAX_PACKETS; index++) {
+            writeI32LE(data, offset, 1);
+            writeI32LE(data, offset + 4, 4);
+            writeI32LE(data, offset + 8, Float.floatToIntBits(1.0f));
+            offset += 13;
+        }
+
+        final IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> EventStreamReader.read(data));
+
+        assertEquals("Event stream packet limit exceeded", error.getMessage());
+    }
+
+    @Test
+    void rejectsExcessiveResynchronization() {
+        final byte[] header = eventStreamHeader();
+        final byte[] data = new byte[header.length + EventStreamReader.MAX_SCAN_STEPS + 12];
+        System.arraycopy(header, 0, data, 0, header.length);
+
+        final IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> EventStreamReader.read(data));
+
+        assertEquals("Event stream scan budget exceeded", error.getMessage());
+    }
+
     private static EventStreamReader.ParsedPacket directDamagePacket(
             final float clockSecs,
             final int attackerEid,
@@ -69,5 +101,11 @@ class EventStreamReaderTest {
         data[offset + 1] = (byte) ((value >>> 8) & 0xFF);
         data[offset + 2] = (byte) ((value >>> 16) & 0xFF);
         data[offset + 3] = (byte) ((value >>> 24) & 0xFF);
+    }
+
+    private static byte[] eventStreamHeader() {
+        final byte[] header = new byte[15];
+        writeI32LE(header, 0, 0x12345678);
+        return header;
     }
 }

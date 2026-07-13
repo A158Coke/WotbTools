@@ -8,9 +8,7 @@ public record BoostRequestDto(
     Long playerAccountId,
     String playerNickname,
     String region,
-    String regionLabel,
     String requestType,
-    String requestTypeLabel,
     String targetDescription,
     String budgetRange,
     String contactType,
@@ -18,7 +16,6 @@ public record BoostRequestDto(
     String availableTime,
     String remark,
     String status,
-    String statusLabel,
     Boolean assigned,
     OffsetDateTime createdAt,
     OffsetDateTime updatedAt

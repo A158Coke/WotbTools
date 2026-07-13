@@ -1,6 +1,5 @@
 package com.wotb.web.boost.service;
 
-import com.wotb.web.admin.service.KeycloakAdminUserService;
 import com.wotb.web.boost.dto.BoosterApplicationDto;
 import com.wotb.web.boost.dto.BoosterDto;
 import com.wotb.web.boost.dto.CreateBoosterApplicationResponse;
@@ -31,7 +30,6 @@ import java.util.Map;
 @Service
 public class BoosterApplicationService {
 
-    private static final String BOOSTER_ROLE = "booster";
     private static final int MAX_IMAGE_CHARS = 5_500_000;
     private static final Collection<String> OPEN_STATUSES = List.of(
             BoosterApplicationStatus.NEW.name(),
@@ -42,20 +40,17 @@ public class BoosterApplicationService {
     private final BoosterApplicationMapper mapper;
     private final UserProfileService userProfileService;
     private final BoosterService boosterService;
-    private final KeycloakAdminUserService keycloakAdminUserService;
     private final UserNotificationService notificationService;
 
     public BoosterApplicationService(final BoosterApplicationRepository repository,
                                      final BoosterApplicationMapper mapper,
                                      final UserProfileService userProfileService,
                                      final BoosterService boosterService,
-                                     final KeycloakAdminUserService keycloakAdminUserService,
                                      final UserNotificationService notificationService) {
         this.repository = repository;
         this.mapper = mapper;
         this.userProfileService = userProfileService;
         this.boosterService = boosterService;
-        this.keycloakAdminUserService = keycloakAdminUserService;
         this.notificationService = notificationService;
     }
 
@@ -95,8 +90,12 @@ public class BoosterApplicationService {
         validateServer(effectiveServer);
         validateImage(overallStatsImage, "OVERALL_STATS_IMAGE_REQUIRED");
         validateImage(vehicleStatsImage, "VEHICLE_STATS_IMAGE_REQUIRED");
-        BoosterLevel.from(trimRequired(requestedLevel, "BOOSTER_LEVEL_REQUIRED"));
-        BoosterAvailabilityTier.from(trimRequired(availabilityTier, "AVAILABILITY_TIER_REQUIRED"));
+        final String effectiveLevel = BoosterLevel.from(
+                trimRequired(requestedLevel, "BOOSTER_LEVEL_REQUIRED")
+        ).name();
+        final String effectiveAvailabilityTier = BoosterAvailabilityTier.from(
+                trimRequired(availabilityTier, "AVAILABILITY_TIER_REQUIRED")
+        ).name();
         final String effectiveQq = trimRequired(qq, "QQ_REQUIRED");
         final String effectiveTimeWindow = trimRequired(dailyTimeWindow, "DAILY_TIME_WINDOW_REQUIRED");
 
@@ -105,13 +104,13 @@ public class BoosterApplicationService {
         application.setUserProfileId(profile.id());
         application.setWotbAccountId(effectiveAccountId);
         application.setWotbNickname(effectiveNickname);
-        application.setWotbServer(effectiveServer.toUpperCase());
+        application.setWotbServer("CN");
         application.setOverallStatsImage(overallStatsImage.trim());
         application.setVehicleStatsImage(vehicleStatsImage.trim());
-        application.setRequestedLevel(requestedLevel.trim().toUpperCase());
+        application.setRequestedLevel(effectiveLevel);
         application.setQq(limit(effectiveQq, 64, "QQ_TOO_LONG"));
         application.setWechat(limit(trimOrNull(wechat), 64, "WECHAT_TOO_LONG"));
-        application.setAvailabilityTier(availabilityTier.trim().toUpperCase());
+        application.setAvailabilityTier(effectiveAvailabilityTier);
         application.setDailyTimeWindow(limit(effectiveTimeWindow, 255, "DAILY_TIME_WINDOW_TOO_LONG"));
         application.setSelfAssessment(limit(trimOrNull(selfAssessment), 2000, "SELF_ASSESSMENT_TOO_LONG"));
         application.setStatus(BoosterApplicationStatus.NEW.name());
@@ -166,7 +165,6 @@ public class BoosterApplicationService {
         application.setReviewedBy(adminUserId);
         application.setReviewedAt(OffsetDateTime.now());
         application.setUpdatedAt(OffsetDateTime.now());
-        notifyApplication(application, UserNotificationType.BOOSTER_APPLICATION_REJECTED);
         return mapper.toDto(application);
     }
 
@@ -181,6 +179,7 @@ public class BoosterApplicationService {
         application.setReviewedBy(adminUserId);
         application.setReviewedAt(OffsetDateTime.now());
         application.setUpdatedAt(OffsetDateTime.now());
+        notifyApplication(application, UserNotificationType.BOOSTER_APPLICATION_REJECTED);
         return mapper.toDto(application);
     }
 
@@ -194,7 +193,6 @@ public class BoosterApplicationService {
             throw new IllegalArgumentException("ALREADY_BOOSTER");
         }
 
-        keycloakAdminUserService.addRealmRole(application.getKeycloakUserId(), BOOSTER_ROLE);
         final BoosterDto booster = boosterService.create(
                 application.getWotbNickname(),
                 application.getRequestedLevel(),
@@ -281,7 +279,7 @@ public class BoosterApplicationService {
     }
 
     private static String limit(final String value, final int maxLength, final String errorCode) {
-        if (value != null && value.length() > maxLength) {
+        if (StringUtils.hasText(value) && value.length() > maxLength) {
             throw new IllegalArgumentException(errorCode);
         }
         return value;

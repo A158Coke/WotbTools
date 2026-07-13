@@ -1,10 +1,13 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { RATING_DEFAULTS, RATING_TIERS, tierRange } from '../utils/helpers.js'
+import { replayValueLabel } from '../utils/display.js'
 import * as api from '../utils/api.js'
 
 const emit = defineEmits(['close'])
 const props = defineProps({ show: Boolean })
+const { t, te } = useI18n()
 const ratingCfg = ref(null)
 
 const cfg = computed(() => ({ ...RATING_DEFAULTS, ...(ratingCfg.value || {}) }))
@@ -31,7 +34,7 @@ watch(() => props.show, async (v) => {
         <div class="rh-h">{{ $t('rating_help.baseline_title') }}</div>
         <p class="rh-p">{{ $t('rating_help.baseline_desc', { n: cfg.minSamples }) }}</p>
         <div class="rh-factors">
-          <span v-for="(f, k) in cfg.classFactor" :key="k" class="rh-tag">{{ k }} ×{{ f }}</span>
+          <span v-for="(f, k) in cfg.classFactor" :key="k" class="rh-tag">{{ replayValueLabel(t, te, k) }} ×{{ f }}</span>
         </div>
       </div>
 

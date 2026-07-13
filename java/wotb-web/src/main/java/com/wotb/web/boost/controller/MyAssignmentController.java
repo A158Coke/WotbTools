@@ -48,40 +48,24 @@ public class MyAssignmentController {
 
     @PatchMapping("/assignments/{id}/accept")
     public BoostAssignmentDto accept(@PathVariable final Long id) {
-        try {
-            return assignmentService.acceptByBooster(id, currentBoosterId());
-        } catch (final IllegalArgumentException | IllegalStateException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        }
+        return assignmentService.acceptByBooster(id, currentBoosterId());
     }
 
     @PatchMapping("/assignments/{id}/start")
     public BoostAssignmentDto start(@PathVariable final Long id) {
-        try {
-            return assignmentService.startByBooster(id, currentBoosterId());
-        } catch (final IllegalArgumentException | IllegalStateException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        }
+        return assignmentService.startByBooster(id, currentBoosterId());
     }
 
     @PatchMapping("/assignments/{id}/complete")
     public BoostAssignmentDto complete(@PathVariable final Long id,
                                        @RequestBody(required = false) final UpdateMyAssignmentRequest body) {
-        try {
-            return assignmentService.completeByBooster(id, currentBoosterId(), body == null ? null : body.note());
-        } catch (final IllegalArgumentException | IllegalStateException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        }
+        return assignmentService.completeByBooster(id, currentBoosterId(), body == null ? null : body.note());
     }
 
     @PatchMapping("/assignments/{id}/decline")
     public BoostAssignmentDto decline(@PathVariable final Long id,
                                       @RequestBody(required = false) final UpdateMyAssignmentRequest body) {
-        try {
-            return assignmentService.declineByBooster(id, currentBoosterId(), body == null ? null : body.note());
-        } catch (final IllegalArgumentException | IllegalStateException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        }
+        return assignmentService.declineByBooster(id, currentBoosterId(), body == null ? null : body.note());
     }
 
     private Long currentBoosterId() {

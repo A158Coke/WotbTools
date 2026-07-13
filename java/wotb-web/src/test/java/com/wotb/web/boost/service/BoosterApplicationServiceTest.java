@@ -1,19 +1,18 @@
 package com.wotb.web.boost.service;
 
-import com.wotb.web.admin.service.KeycloakAdminUserService;
 import com.wotb.web.boost.dto.BoosterApplicationDto;
 import com.wotb.web.boost.dto.BoosterDto;
 import com.wotb.web.boost.entity.BoosterApplication;
 import com.wotb.web.boost.enums.BoosterApplicationStatus;
 import com.wotb.web.boost.repository.BoosterApplicationRepository;
 import com.wotb.web.user.dto.UserProfileDto;
+import com.wotb.web.user.enums.UserNotificationType;
 import com.wotb.web.user.service.UserNotificationService;
 import com.wotb.web.user.service.UserProfileService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -24,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -46,9 +45,6 @@ class BoosterApplicationServiceTest {
     BoosterService boosterService;
 
     @Mock
-    KeycloakAdminUserService keycloakAdminUserService;
-
-    @Mock
     UserNotificationService notificationService;
 
     BoosterApplicationService service;
@@ -60,7 +56,6 @@ class BoosterApplicationServiceTest {
                 mapper,
                 userProfileService,
                 boosterService,
-                keycloakAdminUserService,
                 notificationService
         );
     }
@@ -108,8 +103,8 @@ class BoosterApplicationServiceTest {
         when(userProfileService.findByKeycloakUserId(eq("kc-user")))
                 .thenReturn(Optional.of(profile(1001L, "BoundName")));
         when(boosterService.findByKeycloakUserId(eq("kc-user")))
-                .thenReturn(Optional.of(new BoosterDto(1L, "B", "ELITE", "ELITE", "kc-user",
-                        true, "ACTIVE", "ACTIVE", "QQ", "1", null, null,
+                .thenReturn(Optional.of(new BoosterDto(1L, "B", "ELITE", "kc-user",
+                        true, "ACTIVE", "QQ", "1", null, null,
                         0, null, null)));
 
         assertThatThrownBy(() -> service.create("kc-user", 2222L, "RequestName", "CN",
@@ -120,26 +115,61 @@ class BoosterApplicationServiceTest {
     }
 
     @Test
-    void shouldAssignKeycloakRoleBeforeCreatingBoosterWhenApproving() {
+    void shouldCreateBoosterAndNotifyWhenApproving() {
         final BoosterApplication application = application();
         when(repository.findById(eq(9L))).thenReturn(Optional.of(application));
         when(boosterService.findByKeycloakUserId(eq("kc-user"))).thenReturn(Optional.empty());
         when(boosterService.create(eq("BoundName"), eq("ELITE"), eq("kc-user"),
                 eq(true), eq("ACTIVE"), eq("QQ"), eq("123456"), eq("self"), any()))
-                .thenReturn(new BoosterDto(33L, "BoundName", "ELITE", "ELITE", "kc-user",
-                        true, "ACTIVE", "ACTIVE", "QQ", "123456", "self", "desc",
+                .thenReturn(new BoosterDto(33L, "BoundName", "ELITE", "kc-user",
+                        true, "ACTIVE", "QQ", "123456", "self", "desc",
                         0, null, null));
         when(mapper.toDto(any())).thenReturn(dto());
 
         service.approve(9L, "admin-user", "ok");
 
-        final InOrder inOrder = inOrder(keycloakAdminUserService, boosterService);
-        inOrder.verify(keycloakAdminUserService).addRealmRole("kc-user", "booster");
-        inOrder.verify(boosterService).create(eq("BoundName"), eq("ELITE"), eq("kc-user"),
+        verify(boosterService).create(eq("BoundName"), eq("ELITE"), eq("kc-user"),
                 eq(true), eq("ACTIVE"), eq("QQ"), eq("123456"), eq("self"), any());
+        verify(notificationService).create(
+                eq("kc-user"),
+                eq(UserNotificationType.BOOSTER_APPLICATION_APPROVED),
+                eq("booster_application"),
+                eq(9L),
+                any()
+        );
         assertThat(application.getStatus()).isEqualTo(BoosterApplicationStatus.APPROVED.name());
         assertThat(application.getApprovedBoosterId()).isEqualTo(33L);
         assertThat(application.getReviewedBy()).isEqualTo("admin-user");
+    }
+
+    @Test
+    void shouldNotSendRejectedNotificationWhenMarkingReviewing() {
+        final BoosterApplication application = application();
+        when(repository.findById(eq(9L))).thenReturn(Optional.of(application));
+        when(mapper.toDto(application)).thenReturn(dto());
+
+        service.markReviewing(9L, "admin-user", null);
+
+        verify(notificationService, never()).create(any(), any(), any(), any(), any());
+        assertThat(application.getStatus()).isEqualTo(BoosterApplicationStatus.REVIEWING.name());
+    }
+
+    @Test
+    void shouldSendRejectedNotificationWhenRejecting() {
+        final BoosterApplication application = application();
+        when(repository.findById(eq(9L))).thenReturn(Optional.of(application));
+        when(mapper.toDto(application)).thenReturn(dto());
+
+        service.reject(9L, "admin-user", "not qualified");
+
+        verify(notificationService).create(
+                eq("kc-user"),
+                eq(UserNotificationType.BOOSTER_APPLICATION_REJECTED),
+                eq("booster_application"),
+                eq(9L),
+                any()
+        );
+        assertThat(application.getStatus()).isEqualTo(BoosterApplicationStatus.REJECTED.name());
     }
 
     private static UserProfileDto profile(final Long wotbAccountId, final String wotbNickname) {

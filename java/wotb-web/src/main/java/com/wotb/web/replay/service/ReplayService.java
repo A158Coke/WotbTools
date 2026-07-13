@@ -36,11 +36,20 @@ import java.util.zip.ZipOutputStream;
 @Service
 public class ReplayService {
 
+    static final int MAX_REPLAY_FILES = 100;
+    static final long MAX_REPLAY_FILE_BYTES = 20L * 1024 * 1024;
+    static final long MAX_REPLAY_REQUEST_BYTES = 200L * 1024 * 1024;
+
     private static final String XLSX_MIME =
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     private static final String ZIP_MIME = "application/zip";
 
     private final Tankopedia tankopedia = Tankopedia.load();
+    private final ReplayCapacityLimiter capacityLimiter;
+
+    public ReplayService(final ReplayCapacityLimiter capacityLimiter) {
+        this.capacityLimiter = capacityLimiter;
+    }
 
     /** 列定义 (前端构建表头/列选择/排序)。 */
     public Map<String, List<ColumnDef>> columns() {
@@ -62,6 +71,10 @@ public class ReplayService {
 
     /** 解析(并去重), 返回预览: 每场玩家数据 + 跨场汇总 + 去重/失败信息。 */
     public PreviewResponse preview(final MultipartFile[] files) throws Exception {
+        return capacityLimiter.execute(() -> previewWithinPermit(files));
+    }
+
+    private PreviewResponse previewWithinPermit(final MultipartFile[] files) throws Exception {
         final Collected c = Replays.collect(toSources(files), null);
         PotentialDamage.apply(c.battles, tankopedia);
         Rating.compute(c.battles, tankopedia);   // 基准=本次上传集合
@@ -80,6 +93,10 @@ public class ReplayService {
 
     /** 实时 rating: 只基于本次上传回放计算，不落库、不读取历史记录。 */
     public RatingResponse ratingLeaderboard(final MultipartFile[] files) throws Exception {
+        return capacityLimiter.execute(() -> ratingWithinPermit(files));
+    }
+
+    private RatingResponse ratingWithinPermit(final MultipartFile[] files) throws Exception {
         final Collected c = Replays.collect(toSources(files), null);
         return new RatingResponse(Mapper.toRatings(RatingAnalyzer.compute(c.battles, tankopedia)),
                 c.duplicates, c.failures, Mapper.ratingColumns());
@@ -90,6 +107,10 @@ public class ReplayService {
      * 无可导出内容时返回 null (由调用方转 400)。
      */
     public ExportResult export(final MultipartFile[] files, final String mode) throws Exception {
+        return capacityLimiter.execute(() -> exportWithinPermit(files, mode));
+    }
+
+    private ExportResult exportWithinPermit(final MultipartFile[] files, final String mode) throws Exception {
         if ("each".equalsIgnoreCase(mode)) {
             return exportEach(files);
         }
@@ -153,12 +174,36 @@ public class ReplayService {
     }
 
     private static List<Source> toSources(final MultipartFile[] files) throws Exception {
+        validateUploads(files);
         final List<Source> sources = new ArrayList<>();
         for (final MultipartFile f : files) {
             final String name = f.getOriginalFilename();
             sources.add(new Source(name == null ? "replay.wotbreplay" : name, f.getBytes()));
         }
         return sources;
+    }
+
+    static void validateUploads(final MultipartFile[] files) {
+        if (files == null || files.length == 0) {
+            throw new IllegalArgumentException("NO_REPLAY_FILES");
+        }
+        if (files.length > MAX_REPLAY_FILES) {
+            throw new IllegalArgumentException("TOO_MANY_REPLAY_FILES");
+        }
+        long totalBytes = 0;
+        for (final MultipartFile file : files) {
+            if (file == null) {
+                throw new IllegalArgumentException("INVALID_REPLAY_FILE");
+            }
+            final long size = file.getSize();
+            if (size < 0 || size > MAX_REPLAY_FILE_BYTES) {
+                throw new IllegalArgumentException("FILE_TOO_LARGE");
+            }
+            if (totalBytes > MAX_REPLAY_REQUEST_BYTES - size) {
+                throw new IllegalArgumentException("REQUEST_TOO_LARGE");
+            }
+            totalBytes += size;
+        }
     }
 
     private static String stripExt(final String name) {

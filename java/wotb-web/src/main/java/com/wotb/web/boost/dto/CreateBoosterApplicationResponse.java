@@ -5,6 +5,6 @@ import java.time.OffsetDateTime;
 public record CreateBoosterApplicationResponse(
     Long id,
     String status,
-    String message,
+    String code,
     OffsetDateTime createdAt
 ) {}

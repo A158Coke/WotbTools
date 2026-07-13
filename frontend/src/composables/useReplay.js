@@ -1,10 +1,11 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { displayName, mapLabel } from '../utils/helpers.js'
+import { apiErrorLabel } from '../utils/display.js'
 import * as api from '../utils/api.js'
 
 export function useReplay() {
-  const { locale, t } = useI18n()
+  const { locale, t, te } = useI18n()
   const files = ref([])
   const loading = ref(false)
   const error = ref('')
@@ -40,7 +41,7 @@ export function useReplay() {
       if (onColumnsInit) onColumnsInit(data)
       activeTab.value = data.battles.length > 1 ? 'aggregate' : 'b0'
     } catch (e) {
-      error.value = `${t('replay.preview_failed')}: ${e.message}`
+      error.value = `${t('replay.preview_failed')}: ${apiErrorLabel(t, te, e)}`
     } finally {
       loading.value = false
     }
@@ -57,7 +58,7 @@ export function useReplay() {
       const a = document.createElement('a'); a.href = url; a.download = name; a.click()
       URL.revokeObjectURL(url)
     } catch (e) {
-      error.value = `${t('replay.export_failed')}: ${e.message}`
+      error.value = `${t('replay.export_failed')}: ${apiErrorLabel(t, te, e)}`
     } finally {
       loading.value = false
     }

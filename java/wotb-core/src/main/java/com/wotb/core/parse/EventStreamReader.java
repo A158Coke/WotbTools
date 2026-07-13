@@ -31,6 +31,8 @@ public final class EventStreamReader {
     static final int DAMAGE_SUB_DIRECT = 3;       // direct HP damage
     private static final int MAX_PAYLOAD_LEN = 200_000;
     private static final float MAX_SANE_CLOCK = 5000f;
+    static final int MAX_PACKETS = 200_000;
+    static final int MAX_SCAN_STEPS = 1_000_000;
 
     private EventStreamReader() {
     }
@@ -136,7 +138,12 @@ public final class EventStreamReader {
 
         // packets (error-tolerant)
         final List<ParsedPacket> packets = new ArrayList<>();
+        int scanSteps = 0;
         while (i + 12 <= n) {
+            scanSteps++;
+            if (scanSteps > MAX_SCAN_STEPS) {
+                throw new IllegalArgumentException("Event stream scan budget exceeded");
+            }
             final int payloadLen = readU32LE(data, i);
             if (payloadLen <= 0 || payloadLen > MAX_PAYLOAD_LEN) {
                 i++;
@@ -154,6 +161,9 @@ public final class EventStreamReader {
             }
             final byte[] payload = new byte[payloadLen];
             System.arraycopy(data, i + 12, payload, 0, payloadLen);
+            if (packets.size() >= MAX_PACKETS) {
+                throw new IllegalArgumentException("Event stream packet limit exceeded");
+            }
             packets.add(new ParsedPacket(type, clockSecs, payload));
             i += 12 + payloadLen;
         }

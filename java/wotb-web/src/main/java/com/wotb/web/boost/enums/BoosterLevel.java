@@ -2,20 +2,10 @@ package com.wotb.web.boost.enums;
 
 /** 打手等级。 */
 public enum BoosterLevel {
-    CASUAL("普通"),
-    SKILLED("熟练"),
-    ELITE("高手"),
-    PRO("职业级");
-
-    private final String label;
-
-    BoosterLevel(final String label) {
-        this.label = label;
-    }
-
-    public String label() {
-        return label;
-    }
+    CASUAL,
+    SKILLED,
+    ELITE,
+    PRO;
 
     public static BoosterLevel from(final String value) {
         for (final BoosterLevel l : values()) {
@@ -23,6 +13,6 @@ public enum BoosterLevel {
                 return l;
             }
         }
-        throw new IllegalArgumentException("未知打手等级: " + value);
+        throw new IllegalArgumentException("UNKNOWN_BOOSTER_LEVEL");
     }
 }

@@ -75,7 +75,7 @@ public class LeaderboardService {
         final Pageable pageable = PageRequest.of(page - 1, clamp(size),
                 Sort.by(Sort.Direction.DESC, "damageDealt", "id"));
         final Page<LeaderboardRecord> records = repository.findAllByOrderByDamageDealtDesc(pageable);
-        return toPageDto(records, page, size);
+        return mapper.toPageDto(records, page, size);
     }
 
     /** 指定车辆的伤害榜（分页）。 */
@@ -83,20 +83,13 @@ public class LeaderboardService {
         final Pageable pageable = PageRequest.of(page - 1, clamp(size),
                 Sort.by(Sort.Direction.DESC, "damageDealt", "id"));
         final Page<LeaderboardRecord> records = repository.findByTankIdOrderByDamageDealtDesc(tankId, pageable);
-        return toPageDto(records, page, size);
+        return mapper.toPageDto(records, page, size);
     }
 
     /** 指定玩家的伤害记录。保持 flat 返回供个人中心使用。 */
     public List<LeaderboardRecordDto> recordsByAccountId(final long accountId, final int limit) {
         return repository.findByAccountIdOrderByDamageDealtDesc(accountId, PageRequest.of(0, clamp(limit)))
                 .stream().map(mapper::toDto).toList();
-    }
-
-    private LeaderboardPageDto toPageDto(final Page<LeaderboardRecord> page, final int pageNo, final int pageSize) {
-        return new LeaderboardPageDto(
-                page.getContent().stream().map(mapper::toDto).toList(),
-                pageNo, pageSize,
-                page.getTotalElements(), page.getTotalPages());
     }
 
     private static int clamp(final int limit) {

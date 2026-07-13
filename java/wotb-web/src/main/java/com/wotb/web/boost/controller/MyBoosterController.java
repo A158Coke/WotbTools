@@ -32,11 +32,7 @@ public class MyBoosterController {
 
     @PatchMapping("/my/availability")
     public BoosterDto setMyAvailability(@RequestBody final UpdateBoosterAvailabilityRequest body) {
-        try {
-            return service.setAvailability(currentBooster().id(), body.available());
-        } catch (final IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        }
+        return service.setAvailability(currentBooster().id(), body.available());
     }
 
     private BoosterDto currentBooster() {

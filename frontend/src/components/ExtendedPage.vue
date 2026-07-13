@@ -2,12 +2,14 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import * as api from '../utils/api.js'
+import { apiErrorLabel, replayValueLabel } from '../utils/display.js'
 import { mapLabel } from '../utils/helpers.js'
 
 const { locale, t, te } = useI18n()
 
 const files = ref([])
 const loading = ref(false)
+const LOCALIZED_VALUE_KEYS = new Set(['tank_type', 'tank_nation', 'potential_damage_detail'])
 const error = ref('')
 const previewResp = ref(null)
 const ratingResp = ref(null)
@@ -69,7 +71,7 @@ async function runPreview() {
     previewResp.value = await api.preview(formData())
     activeBattle.value = 0
   } catch (e) {
-    error.value = e.message
+    error.value = apiErrorLabel(t, te, e)
   } finally {
     loading.value = false
   }
@@ -85,7 +87,7 @@ async function runRating() {
   try {
     ratingResp.value = await api.ratingLeaderboard(formData())
   } catch (e) {
-    error.value = e.message
+    error.value = apiErrorLabel(t, te, e)
   } finally {
     loading.value = false
   }
@@ -94,6 +96,17 @@ async function runRating() {
 function label(scope, key) {
   const path = `${scope}.${key}`
   return te(path) ? t(path) : key
+}
+
+function cellValue(row, column) {
+  const value = row.cells[column.key]
+  if (column.key === 'survived_label') {
+    if (value === 'SURVIVED') return t('survived.alive')
+    if (value === 'DESTROYED') return t('survived.dead')
+    return value ?? '--'
+  }
+  if (LOCALIZED_VALUE_KEYS.has(column.key)) return replayValueLabel(t, te, value)
+  return value
 }
 
 function setSort(scope, key, num) {
@@ -156,7 +169,7 @@ function arrow(scope, key) {
 
     <section v-if="failureRows.length" class="notice fail">
       <strong>{{ $t('result.failures', { count: failureRows.length }) }}</strong>
-      <span v-for="(f, i) in failureRows" :key="`fail-${i}`">[{{ $t(`extended.scope_${f.scope}`) }}] {{ f.name }}</span>
+      <span v-for="(f, i) in failureRows" :key="`fail-${i}`">[{{ $t(`extended.scope_${f.scope}`) }}] {{ f.name }}<template v-if="f.detail"> — {{ f.detail }}</template></span>
     </section>
 
     <section v-if="ratingResp?.rows?.length" class="panel">
@@ -201,7 +214,7 @@ function arrow(scope, key) {
             </tr></thead>
             <tbody>
               <tr v-for="(row, i) in sorted(currentBattle.players, 'players')" :key="i" :class="row.team === 1 ? 't1' : 't2'">
-                <td v-for="c in playerCols" :key="c.key" :class="{ num: c.num }">{{ row.cells[c.key] }}</td>
+                <td v-for="c in playerCols" :key="c.key" :class="{ num: c.num }">{{ cellValue(row, c) }}</td>
               </tr>
             </tbody>
           </table>

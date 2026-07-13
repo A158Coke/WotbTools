@@ -14,7 +14,7 @@ function extendedAlias() {
   }
 }
 
-// dev 时把 /api 代理到本地后端; 生产由 nginx 代理(在线)或同源(离线)。
+// dev 时把 /api 代理到本地后端；生产由 nginx 反向代理。
 export default defineConfig({
   plugins: [vue(), extendedAlias()],
   server: {

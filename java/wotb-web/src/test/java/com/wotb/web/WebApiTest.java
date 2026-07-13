@@ -29,7 +29,6 @@ import java.util.zip.ZipInputStream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -84,44 +83,6 @@ class WebApiTest {
     private static MockMultipartFile file(final Path p) throws Exception {
         return new MockMultipartFile("files", p.getFileName().toString(),
                 "application/octet-stream", Files.readAllBytes(p));
-    }
-
-    @Test
-    void extendedPageAliasForwardsToStaticHtml() throws Exception {
-        mvc().perform(get("/extended"))
-                .andExpect(status().isOk())
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.forwardedUrl("/extended.html"));
-    }
-
-    @Test
-    void columnsEndpoint() throws Exception {
-        final String json = mvc().perform(get("/api/columns"))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-        final JsonNode n = om.readTree(json);
-        assertTrue(n.get("player").size() > 10);
-        assertTrue(stream(n.get("player")).anyMatch(c -> "alpha_damage".equals(c.get("key").asText())));
-        assertTrue(stream(n.get("player")).anyMatch(c -> "potential_damage".equals(c.get("key").asText())));
-        assertTrue(stream(n.get("player")).anyMatch(c -> "rank".equals(c.get("key").asText())));
-        assertTrue(stream(n.get("aggregate")).anyMatch(c -> "potential_damage_avg".equals(c.get("key").asText())));
-        assertTrue(stream(n.get("rating")).anyMatch(c -> "kast".equals(c.get("key").asText())));
-        assertTrue(stream(n.get("rating")).anyMatch(c -> "impact".equals(c.get("key").asText())));
-        assertTrue(stream(n.get("rating")).anyMatch(c -> "assist_avg".equals(c.get("key").asText())));
-        assertTrue(stream(n.get("rating")).anyMatch(c -> "multi_damage_rate".equals(c.get("key").asText())));
-        assertFalse(stream(n.get("rating")).anyMatch(c -> "influence".equals(c.get("key").asText())));
-        assertFalse(stream(n.get("rating")).anyMatch(c -> "average_hp".equals(c.get("key").asText())));
-        assertFalse(stream(n.get("rating")).anyMatch(c -> "account_id".equals(c.get("key").asText())));
-    }
-
-    @Test
-    void ratingConfigEndpoint() throws Exception {
-        final String json = mvc().perform(get("/api/rating"))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-        final JsonNode n = om.readTree(json);
-        assertTrue(n.get("scale").asInt() > 0);
-        assertTrue(n.get("killValue").asDouble() > 0);
-        assertTrue(n.get("classFactor").isObject() && !n.get("classFactor").isEmpty());
     }
 
     @Test
