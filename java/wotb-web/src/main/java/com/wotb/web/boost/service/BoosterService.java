@@ -272,9 +272,18 @@ public class BoosterService {
     }
 
     private RollbackCompensation removeRoleIfPresent(final String keycloakUserId) {
-        if (!StringUtils.hasText(keycloakUserId)
-                || !keycloakAdminUserService.hasRealmRole(keycloakUserId, BOOSTER_ROLE)) {
+        if (!StringUtils.hasText(keycloakUserId)) {
             return RollbackCompensation.none();
+        }
+        try {
+            if (!keycloakAdminUserService.hasRealmRole(keycloakUserId, BOOSTER_ROLE)) {
+                return RollbackCompensation.none();
+            }
+        } catch (final IllegalArgumentException e) {
+            if ("KEYCLOAK_USER_NOT_FOUND".equals(e.getMessage())) {
+                return RollbackCompensation.none();
+            }
+            throw e;
         }
         keycloakAdminUserService.removeRealmRole(keycloakUserId, BOOSTER_ROLE);
         return registerRollback(() -> keycloakAdminUserService.addRealmRole(keycloakUserId, BOOSTER_ROLE));
