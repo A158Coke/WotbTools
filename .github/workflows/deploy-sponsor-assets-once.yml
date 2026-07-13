@@ -171,3 +171,70 @@ jobs:
             printf '%s  %s\n' "$alipay_sha" "${stage}/served-alipay.jpg" | sha256sum --check --strict
             printf '%s  %s\n' "$wechat_sha" "${stage}/served-wechat.jpg" | sha256sum --check --strict
             echo "Sponsor assets activated and verified."
+
+      - name: Verify public sponsor endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          readonly alipay_sha="3e2f2f05d9e3e710722d28278b0ea62b30297c9e933813b4ba5f70607b7c408d"
+          readonly wechat_sha="8c63d21aa54c6b771b322d04f1888b0f9c885343d7f8aff13477b113f04f471e"
+          readonly cache_buster="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          fetch_public() {
+            local path="$1"
+            local expected="$2"
+            local content_type="$3"
+            local output="$4"
+            local headers="$5"
+            local attempt
+            local http_status
+            local url="https://wotbtools.com${path}?verify=${cache_buster}"
+
+            for attempt in $(seq 1 6); do
+              if http_status="$(curl --fail --silent --show-error \
+                  --connect-timeout 10 \
+                  --max-time 30 \
+                  --header 'Cache-Control: no-cache' \
+                  --dump-header "$headers" \
+                  --output "$output" \
+                  --write-out '%{http_code}' \
+                  "$url")" \
+                  && [[ "$http_status" = "200" ]] \
+                  && cmp --silent "$expected" "$output" \
+                  && grep -Eiq \
+                    "^content-type:[[:space:]]*${content_type}([;[:space:]]|$)" \
+                    "$headers" \
+                  && grep -Eiq \
+                    '^cache-control:[[:space:]]*no-store,[[:space:]]*max-age=0[[:space:]]*$' \
+                    "$headers"; then
+                return 0
+              fi
+              echo "Public verification attempt ${attempt}/6 failed for ${path}." >&2
+              if [[ "$attempt" -lt 6 ]]; then
+                sleep 5
+              fi
+            done
+            return 1
+          }
+
+          fetch_public "/sponsor-config.json" \
+            ".sponsor-deploy/sponsor-config.json" \
+            "application/json" \
+            ".sponsor-deploy/public-config.json" \
+            ".sponsor-deploy/public-config.headers"
+          fetch_public "/sponsor-assets/alipay.jpg" \
+            ".sponsor-deploy/alipay.jpg" \
+            "image/jpeg" \
+            ".sponsor-deploy/public-alipay.jpg" \
+            ".sponsor-deploy/public-alipay.headers"
+          fetch_public "/sponsor-assets/wechat.jpg" \
+            ".sponsor-deploy/wechat.jpg" \
+            "image/jpeg" \
+            ".sponsor-deploy/public-wechat.jpg" \
+            ".sponsor-deploy/public-wechat.headers"
+
+          printf '%s  %s\n' "$alipay_sha" .sponsor-deploy/public-alipay.jpg \
+            | sha256sum --check --strict
+          printf '%s  %s\n' "$wechat_sha" .sponsor-deploy/public-wechat.jpg \
+            | sha256sum --check --strict
+          echo "Public sponsor endpoints verified."
