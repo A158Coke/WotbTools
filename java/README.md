@@ -72,13 +72,22 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 返回服务状态与已加载车辆数量。
 
-所有 JSON API 只返回英文 key、raw enum 与稳定 `code`/`error`；不返回本地化 `*Label` 或 `message`。前端通过三语 locale 显示状态、成功和错误文案。未显式声明的 `/api/**` 默认拒绝；`boost-manager` 仅能访问 `/api/admin/boost/**`。
+所有 JSON API 只返回英文 key、raw enum 与稳定 `code`/`error`；不返回本地化 `*Label` 或 `message`。前端通过三语 locale 显示状态、成功和错误文案。
+未显式声明的 `/api/**` 默认拒绝；`boost-manager` 仅能访问 `/api/admin/boost/**`。
 
-列定义由后端 `/api/preview` 响应中的 `playerColumns`/`aggregateColumns` 字段和 `/api/columns` 提供（纯英文 key）；实时 rating 使用 `ratingColumns`。前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels` / `rating_labels`）映射显示名，导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。回放页列选择器会把单场/汇总两套列顺序与可见性记到 `localStorage`，并在后端新增列时自动补齐缺失键。详见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
+
+列定义由后端 `/api/preview` 响应中的 `playerColumns`/`aggregateColumns` 字段和 `/api/columns` 提供（纯英文 key）；实时 rating 使用 `ratingColumns`。
+前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels` / `rating_labels`）映射显示名，
+导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。回放页列选择器会把单场/汇总两套列顺序与可见性记到 `localStorage`，
+并在后端新增列时自动补齐缺失键。详见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
+
 
 地图名由共享字典 `common/map_names.json` 提供 `zh/en/ru` 三语映射；前端 `mapLabel()` 按当前 locale 取值，导出层 `MapNames.cn()` 继续固定使用中文。
 
-扩展页 `/extended` 可展示原回放页隐藏的扩展字段：`alpha_damage`、`rank`、`potential_damage`、`potential_damage_supplement`、`potential_damage_detail`。这些字段仍会出现在 API 与导出列定义中，原回放页面的列选择器会过滤扩展专用字段。`xp`、`credits` 仅在 parser/model 保留，不作为战绩字段展示。
+
+扩展页 `/extended` 可展示原回放页隐藏的扩展字段：`alpha_damage`、`rank`、`potential_damage`、`potential_damage_supplement`、`potential_damage_detail`。
+这些字段仍会出现在 API 与导出列定义中，原回放页面的列选择器会过滤扩展专用字段。`xp`、`credits` 仅在 parser/model 保留，不作为战绩字段展示。
+
 
 ### `GET /api/rating`
 

@@ -1,5 +1,7 @@
 package com.wotb.web.admin.service;
 
+import com.wotb.web.boost.dto.BoosterDto;
+import com.wotb.web.boost.service.BoosterService;
 import com.wotb.web.admin.dto.AdminDeleteUserResponse;
 import com.wotb.web.admin.dto.AdminUserDetailDto;
 import com.wotb.web.admin.dto.AdminUserDto;
@@ -29,15 +31,18 @@ public class AdminUserService {
     private final AdminUserMapper mapper;
     private final AdminUserLogPersister logPersister;
     private final KeycloakAdminUserService keycloakAdminUserService;
+    private final BoosterService boosterService;
 
     public AdminUserService(final UserProfileService userProfileService,
                             final AdminUserMapper mapper,
                             final AdminUserLogPersister logPersister,
-                            final KeycloakAdminUserService keycloakAdminUserService) {
+                            final KeycloakAdminUserService keycloakAdminUserService,
+                            final BoosterService boosterService) {
         this.userProfileService = userProfileService;
         this.mapper = mapper;
         this.logPersister = logPersister;
         this.keycloakAdminUserService = keycloakAdminUserService;
+        this.boosterService = boosterService;
     }
 
     /**
@@ -98,6 +103,21 @@ public class AdminUserService {
 
         final Optional<UserProfile> profileOpt = userProfileService
                 .findEntityByKeycloakUserId(targetKeycloakUserId);
+
+        // 如有打手档案，先尝试删除（会检查活跃订单，有则阻断用户删除）
+        final Optional<BoosterDto> boosterOpt = boosterService.findByKeycloakUserId(targetKeycloakUserId);
+        if (boosterOpt.isPresent()) {
+            try {
+                boosterService.deleteById(boosterOpt.get().id());
+            } catch (final IllegalStateException e) {
+                if ("BOOSTER_HAS_DEPENDENCIES".equals(e.getMessage())) {
+                    throw new AdminConflictException(ErrorCode.BOOSTER_HAS_DEPENDENCIES.name(),
+                            ErrorCode.BOOSTER_HAS_DEPENDENCIES.getDefaultMessage());
+                }
+                throw e;
+            }
+        }
+
         final UserProfile profile = profileOpt.orElse(null);
 
         final AdminUserLog log = logPersister.save(

@@ -2,6 +2,7 @@ package com.wotb.web.admin.service;
 
 import com.wotb.web.admin.entity.AdminUserLog;
 import com.wotb.web.admin.exception.AdminConflictException;
+import com.wotb.web.boost.service.BoosterService;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
 import org.junit.jupiter.api.Test;
@@ -25,11 +26,14 @@ class AdminUserServiceTest {
     void flushesLocalDeleteBeforeDeletingKeycloakUser() {
         final UserProfileService userProfileService = mock(UserProfileService.class);
         final KeycloakAdminUserService keycloakService = mock(KeycloakAdminUserService.class);
+        final BoosterService boosterService = mock(BoosterService.class);
         final AdminUserLogPersister logPersister = logPersister();
         final UserProfile profile = new UserProfile();
         when(userProfileService.findEntityByKeycloakUserId("target"))
                 .thenReturn(Optional.of(profile));
-        final AdminUserService service = service(userProfileService, logPersister, keycloakService);
+        when(boosterService.findByKeycloakUserId("target"))
+                .thenReturn(Optional.empty());
+        final AdminUserService service = service(userProfileService, logPersister, keycloakService, boosterService);
 
         service.deleteUser("target", true, adminJwt());
 
@@ -42,13 +46,16 @@ class AdminUserServiceTest {
     void databaseConstraintFailureDoesNotDeleteKeycloakUser() {
         final UserProfileService userProfileService = mock(UserProfileService.class);
         final KeycloakAdminUserService keycloakService = mock(KeycloakAdminUserService.class);
+        final BoosterService boosterService = mock(BoosterService.class);
         final AdminUserLogPersister logPersister = logPersister();
         final UserProfile profile = new UserProfile();
         when(userProfileService.findEntityByKeycloakUserId("target"))
                 .thenReturn(Optional.of(profile));
+        when(boosterService.findByKeycloakUserId("target"))
+                .thenReturn(Optional.empty());
         doThrow(new DataIntegrityViolationException("foreign key"))
                 .when(userProfileService).deleteForAdministration(profile);
-        final AdminUserService service = service(userProfileService, logPersister, keycloakService);
+        final AdminUserService service = service(userProfileService, logPersister, keycloakService, boosterService);
 
         assertThrows(AdminConflictException.class,
                 () -> service.deleteUser("target", true, adminJwt()));
@@ -59,12 +66,14 @@ class AdminUserServiceTest {
     private static AdminUserService service(
             final UserProfileService userProfileService,
             final AdminUserLogPersister logPersister,
-            final KeycloakAdminUserService keycloakService) {
+            final KeycloakAdminUserService keycloakService,
+            final BoosterService boosterService) {
         return new AdminUserService(
                 userProfileService,
                 new AdminUserMapper(),
                 logPersister,
-                keycloakService
+                keycloakService,
+                boosterService
         );
     }
 
