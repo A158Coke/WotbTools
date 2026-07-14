@@ -18,7 +18,5 @@ public interface BoosterApplicationRepository extends JpaRepository<BoosterAppli
 
     Page<BoosterApplication> findByStatusOrderByCreatedAtDesc(final String status, final Pageable pageable);
 
-    boolean existsByApprovedBoosterId(final Long approvedBoosterId);
-
     List<BoosterApplication> findByApprovedBoosterId(final Long approvedBoosterId);
 }

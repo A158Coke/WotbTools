@@ -19,14 +19,14 @@
 | 文档 | 作用 | 何时读 |
 |---|---|---|---|
 | **本文件 `HANDOVER.md`** | 总入口 + 运维坑 | 最先 |
-| [`AGENTS.md`](AGENTS.md) | AI 硬性约定（RULES）| 动手前必读 |
+| [`AGENTS.md`](../.agents/AGENTS.md) | AI 硬性约定（RULES）| 动手前必读 |
 | [`DEVELOPER_GUIDE.md`](DEVELOPER_GUIDE.md) | 架构、目录树、回放格式、字段表、i18n/评分、改动流程 | 改解析/导出/API 前 |
-| [`.agents/wotb-sync.md`](.agents/wotb-sync.md) | 跨层改动检查单（配方 A–G）| 增删/改名数据列、改解析/导出/前端时 |
-| [`docs/replay-data.md`](docs/replay-data.md) | data.wotreplay 事件流格式、protobuf 字段表、死亡时间推算 | 深入回放格式时 |
-| [`docs/rating-system.md`](docs/rating-system.md) | 评分算法细节 | 碰评分时 |
-| [`docs/rating-progress.md`](docs/rating-progress.md) | rating 扩展目标、已完成项、缺口与下一步 | 接手 rating 扩展时 |
+| [`.agents/wotb-sync.md`](../.agents/wotb-sync.md) | 跨层改动检查单（配方 A–G）| 增删/改名数据列、改解析/导出/前端时 |
+| [`docs/replay-data.md`](replay-data.md) | data.wotreplay 事件流格式、protobuf 字段表、死亡时间推算 | 深入回放格式时 |
+| [`docs/rating-system.md`](rating-system.md) | 评分算法细节 | 碰评分时 |
+| [`docs/rating-progress.md`](rating-progress.md) | rating 扩展目标、已完成项、缺口与下一步 | 接手 rating 扩展时 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本历史（对外） | 了解发布历史 |
-| [`README.md`](README.md) / [`java/README.md`](java/README.md) | 用户向 + 运行/接口/构建 | 跑起来时 |
+| [`README.md`](../README.md) / [`java/README.md`](../java/README.md) | 用户向 + 运行/接口/构建 | 跑起来时 |
 | [`TODO.md`](TODO.md) | 待办（含已完成收尾记录与下一步）| 找下一步做什么 |
 
 > 注：`AGENTS.md` / `wotb-sync.md` 本就是写给"任意 AI/人"的，不绑定特定工具。迁移到新工具时，把这几份指给它即可。
