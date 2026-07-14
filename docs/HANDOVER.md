@@ -84,18 +84,10 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 
 ---
 
-## 6. 硬性约定（详见 AGENTS.md，这里是要点）
+## 6. 硬性约定
 
 - **改动即更新文档**（同一次提交）。影响界面/导出/数据/构建/用法的改动，必须同步 `DEVELOPER_GUIDE.md` + 相关 README。
-- **API 纯英文**：DTO 只回 raw enum、稳定 `code`/`error` + 数据，**不放 `*Label` 或 `message`**；显示名/错误文案归前端三语 locale。
-- **显示名分两类出口**（改列名要全改）：
-  - 前端：`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`（**三语都改**）。
-  - 导出：`Columns.java`（单场 xlsx）、`AggregateSheets.java`（汇总 xlsx，仅中文）。
-- **单一数据源**：`common/tankopedia.json`（车辆库）、`common/rating.json`（评分参数）、`common/map_names.json`（地图三语名）。构建时由 `wotb-core/pom.xml` 复制到 classpath；**勿在模块内放副本**。
-- **代码风格**：不可变模型用 `record`；可变模型用公有字段 POJO（**不引入 Lombok**）；局部变量/参数尽量 `final`。
-- **分层**：controller 只做 HTTP；业务在 service；core 按功能分包。新 endpoint 的逻辑写进 service。
-
-跨层联动改动（加列/改解析/改评分/改地图名…）务必按 `.agents/wotb-sync.md` 的配方走。
+- 详细约定（API 纯英文、显示名分三套出口、代码风格、分层原则）见 `DEVELOPER_GUIDE.md`。跨层联动改动走 `.agents/wotb-sync.md`。
 
 ---
 
