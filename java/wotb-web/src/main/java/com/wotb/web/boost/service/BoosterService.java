@@ -194,22 +194,39 @@ public class BoosterService {
 
     @Transactional
     public void deleteById(final Long id) {
-        final BoosterProfile booster = getById(id);
+        final BoosterProfile booster = getByIdForUpdate(id);
+        deleteLocked(booster);
+    }
+
+    @Transactional
+    public void deleteByKeycloakUserId(final String keycloakUserId) {
+        if (!StringUtils.hasText(keycloakUserId)) {
+            return;
+        }
+        final Optional<BoosterProfile> booster = boosterRepository.findByKeycloakUserIdForUpdate(
+                keycloakUserId.trim()
+        );
+        if (booster.isEmpty()) {
+            return;
+        }
+        deleteLocked(booster.get());
+    }
+
+    private void deleteLocked(final BoosterProfile booster) {
+        final Long id = booster.getId();
         if (assignmentRepository.existsByBoosterId(id)) {
             throw new IllegalStateException("BOOSTER_HAS_DEPENDENCIES");
         }
 
-        // 解除关联的申请记录引用，避免外键约束阻塞删除
-        // 申请状态保持 APPROVED 不变，不影响二次申请
-        final List<BoosterApplication> linkedApps = applicationRepository.findByApprovedBoosterId(id);
-        for (final BoosterApplication app : linkedApps) {
-            app.setApprovedBoosterId(null);
-            app.setUpdatedAt(OffsetDateTime.now());
-            applicationRepository.save(app);
-        }
-        applicationRepository.flush();
-
         try {
+            // 解除关联的申请记录引用，避免外键约束阻塞删除
+            // 申请状态保持 APPROVED 不变，不影响二次申请
+            final List<BoosterApplication> linkedApps = applicationRepository.findByApprovedBoosterId(id);
+            for (final BoosterApplication app : linkedApps) {
+                app.setApprovedBoosterId(null);
+                app.setUpdatedAt(OffsetDateTime.now());
+            }
+            applicationRepository.flush();
             boosterRepository.delete(booster);
             boosterRepository.flush();
         } catch (final DataIntegrityViolationException e) {
@@ -252,7 +269,7 @@ public class BoosterService {
         if (!StringUtils.hasText(keycloakUserId)) {
             return;
         }
-        if (userProfileService.findByKeycloakUserId(keycloakUserId).isEmpty()) {
+        if (userProfileService.findEntityByKeycloakUserIdForUpdate(keycloakUserId).isEmpty()) {
             throw new IllegalArgumentException("USER_PROFILE_NOT_FOUND");
         }
         boosterRepository.findByKeycloakUserId(keycloakUserId)
@@ -279,13 +296,14 @@ public class BoosterService {
             if (!keycloakAdminUserService.hasRealmRole(keycloakUserId, BOOSTER_ROLE)) {
                 return RollbackCompensation.none();
             }
+            keycloakAdminUserService.removeRealmRole(keycloakUserId, BOOSTER_ROLE);
         } catch (final IllegalArgumentException e) {
-            if ("KEYCLOAK_USER_NOT_FOUND".equals(e.getMessage())) {
+            if ("KEYCLOAK_USER_NOT_FOUND".equals(e.getMessage())
+                    || "KEYCLOAK_USER_OR_ROLE_NOT_FOUND".equals(e.getMessage())) {
                 return RollbackCompensation.none();
             }
             throw e;
         }
-        keycloakAdminUserService.removeRealmRole(keycloakUserId, BOOSTER_ROLE);
         return registerRollback(() -> keycloakAdminUserService.addRealmRole(keycloakUserId, BOOSTER_ROLE));
     }
 
