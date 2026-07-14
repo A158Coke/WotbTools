@@ -528,7 +528,7 @@
         "applicationAccountIdHint": "数字账号 ID",
         "applicationLevel": "申请等级",
         "applicationOverallImage": "总页面截图",
-        "applicationVehicleImage": "单车场均页面截图",
+        "applicationVehicleImage": "单车场均一页截图",
         "applicationImageHint": "请选择图片，单张不超过 4MB",
         "applicationQq": "QQ 号",
         "applicationQqHint": "必须提供",
