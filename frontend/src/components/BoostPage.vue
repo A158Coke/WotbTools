@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
+import { ref, computed, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { apiCodeLabel, apiErrorLabel, enumLabel } from '../utils/display.js'
@@ -123,9 +123,12 @@ const loadingAdmin = ref(false)
 // Admin: booster applications
 const adminApplications = ref([])
 const applicationPage = ref({ page: 0, size: 20, totalElements: 0, totalPages: 0 })
-const applicationStatusFilter = ref('')
+const applicationStatusFilter = ref('NEW')
 const loadingAdminApplications = ref(false)
 const applicationNotes = ref({})
+const applicationImagePreview = ref(null)
+const applicationImageCloseButton = ref(null)
+let applicationImageTrigger = null
 
 // Admin: booster list
 const boosters = ref([])
@@ -210,6 +213,7 @@ const assignNote = ref('')
 const assignError = ref('')
 
 onMounted(async () => {
+  window.addEventListener('keydown', handleImagePreviewKeydown)
   try {
     const loggedIn = await initPromise
     if (loggedIn || isAuthenticated()) {
@@ -238,6 +242,7 @@ async function loadOptions() {
 }
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleImagePreviewKeydown)
   latestUserSearch.cancel()
   adminRequestLoadGeneration += 1
   adminApplicationLoadGeneration += 1
@@ -453,6 +458,32 @@ async function selectApplicationImage(kind, event) {
     applicationError.value = apiError(e)
     event.target.value = ''
   }
+}
+
+async function openApplicationImage(src, alt, trigger) {
+  if (!src) return
+  applicationImageTrigger = trigger
+  applicationImagePreview.value = { src, alt }
+  await nextTick()
+  applicationImageCloseButton.value?.focus()
+}
+
+function closeApplicationImage() {
+  const trigger = applicationImageTrigger
+  applicationImagePreview.value = null
+  applicationImageTrigger = null
+  nextTick(() => {
+    if (trigger?.isConnected) trigger.focus()
+  })
+}
+
+function handleImagePreviewKeydown(event) {
+  if (event.key === 'Escape' && applicationImagePreview.value) closeApplicationImage()
+}
+
+function keepImagePreviewFocus(event) {
+  event.preventDefault()
+  applicationImageCloseButton.value?.focus()
 }
 
 async function submitBoosterApplication() {
@@ -1130,14 +1161,14 @@ function switchTab(t) {
             <div><span>{{ $t('boost.applicationSelfAssessment') }}</span><strong>{{ a.selfAssessment || '-' }}</strong></div>
           </div>
           <div class="application-images">
-            <a :href="a.overallStatsImage" target="_blank" rel="noopener">
+            <button type="button" class="application-image-thumb" @click="openApplicationImage(a.overallStatsImage, $t('boost.applicationOverallImage'), $event.currentTarget)">
               <img :src="a.overallStatsImage" :alt="$t('boost.applicationOverallImage')" />
               <span>{{ $t('boost.applicationOverallImage') }}</span>
-            </a>
-            <a :href="a.vehicleStatsImage" target="_blank" rel="noopener">
+            </button>
+            <button type="button" class="application-image-thumb" @click="openApplicationImage(a.vehicleStatsImage, $t('boost.applicationVehicleImage'), $event.currentTarget)">
               <img :src="a.vehicleStatsImage" :alt="$t('boost.applicationVehicleImage')" />
               <span>{{ $t('boost.applicationVehicleImage') }}</span>
-            </a>
+            </button>
           </div>
           <div class="form-row">
             <label>{{ $t('boost.applicationAdminNote') }}</label>
@@ -1252,6 +1283,19 @@ function switchTab(t) {
         <button :disabled="boosterPage.page >= boosterPage.totalPages - 1" @click="loadBoosters(boosterPage.page + 1)">→</button>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div v-if="applicationImagePreview" class="application-image-overlay" role="dialog" aria-modal="true"
+        :aria-label="applicationImagePreview.alt" @click.self="closeApplicationImage" @keydown.tab="keepImagePreviewFocus">
+        <div class="application-image-viewer">
+          <div class="application-image-viewer-header">
+            <strong>{{ applicationImagePreview.alt }}</strong>
+            <button ref="applicationImageCloseButton" type="button" :aria-label="$t('app.close')" @click="closeApplicationImage">&times;</button>
+          </div>
+          <img :src="applicationImagePreview.src" :alt="applicationImagePreview.alt" />
+        </div>
+      </div>
+    </Teleport>
   </div>
 
   <!-- Auth states -->
@@ -1312,8 +1356,14 @@ function switchTab(t) {
 .application-details span { color: var(--text-sub); }
 .application-details strong { color: var(--text); text-align: right; word-break: break-word; }
 .application-images { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 12px 0; }
-.application-images a { display: grid; gap: 6px; color: var(--accent-dark); text-decoration: none; font-size: 12px; font-weight: 700; }
-.application-images img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.application-image-thumb { display: grid; gap: 6px; padding: 0; border: 0; background: transparent; color: var(--accent-dark); text-align: left; font: inherit; font-size: 12px; font-weight: 700; cursor: zoom-in; }
+.application-image-thumb img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.application-image-thumb:focus-visible img { outline: 2px solid var(--accent); outline-offset: 2px; }
+.application-image-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 24px; background: color-mix(in srgb, var(--text-heading) 72%, transparent); }
+.application-image-viewer { display: flex; flex-direction: column; width: min(100%, 1440px); height: min(100%, 1000px); overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card); box-shadow: var(--hard-shadow); }
+.application-image-viewer-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 14px; color: var(--text-heading); }
+.application-image-viewer-header button { width: 36px; height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card2); color: var(--text); cursor: pointer; font-size: 24px; line-height: 1; }
+.application-image-viewer > img { flex: 1 1 auto; min-height: 0; width: 100%; object-fit: contain; background: var(--bg); }
 
 .badge { font-size: 11px; padding: 2px 7px; border-radius: 6px; font-weight: 700; }
 .badge-info { background: var(--status-info-bg); color: var(--status-info-fg); }
@@ -1364,5 +1414,7 @@ function switchTab(t) {
   .notification-toggle { width: 100%; }
   .flex-between { align-items: flex-start; gap: 10px; flex-direction: column; }
   .form-grid, .application-details, .application-images { grid-template-columns: 1fr; }
+  .application-image-overlay { padding: 8px; }
+  .application-image-viewer { width: 100%; height: 96vh; }
 }
 </style>
