@@ -38,7 +38,9 @@
 
 ```text
 .
-├── README.md  TODO.md  DEVELOPER_GUIDE.md  LICENSE  .gitignore  AGENTS.md  CHANGELOG.md  HANDOVER.md
+├── README.md  LICENSE  .gitignore
+├── docs/                        # TODO / DEVELOPER_GUIDE / CHANGELOG / HANDOVER
+├── .agents/                     # AI 约定、技能与跨层同步检查单
 ├── docker/                       # Docker 构建 + 本地开发 compose
 │   ├── Dockerfile.backend        #   后端镜像：Maven → JRE（Spring Boot :8087）
 │   ├── Dockerfile.frontend       #   前端镜像：Node → nginx（:80）
@@ -181,7 +183,7 @@ BattleResults
 | `LeaderboardRecordRepository` | `wotb-web/.../leaderboard/repository/LeaderboardRecordRepository.java` | Spring Data JPA 仓库 |
 | `GlobalExceptionHandler` | `wotb-web/.../controller/GlobalExceptionHandler.java` | 统一异常处理 → `error + timestamp` |
 | `AdminUserController` | `wotb-web/.../admin/controller/AdminUserController.java` | 管理员用户管理 REST API |
-| `AdminUserService` | `wotb-web/.../admin/service/AdminUserService.java` | 管理员用户管理业务 |
+| `AdminUserService` | `wotb-web/.../admin/service/AdminUserService.java` | 管理员用户管理；删除用户前编排打手档案、本地资料与 Keycloak 清理 |
 | `AdminUserMapper` | `wotb-web/.../admin/service/AdminUserMapper.java` | 本地/Keycloak 用户 → 管理 DTO |
 | `KeycloakAdminUserService` | `wotb-web/.../admin/service/KeycloakAdminUserService.java` | Keycloak Admin API 封装 |
 | `AdminUserLog` | `wotb-web/.../admin/entity/AdminUserLog.java` | 管理员操作审计日志实体 |
@@ -224,7 +226,7 @@ BattleResults
 - Boost DTO 不返回 `*Label`、`message` 或本地化 `warning`；选项只返回 `value + enabled`，状态使用 raw enum，成功/失败/警告分别使用 `code`、`error`、`warningCode`。新增任何 code 必须同步三语 `api_codes` / `api_errors`。
 - 回放 DTO 的 `tank_type`、`tank_nation`、`survived_label`、`potential_damage_detail` 与 `/api/rating.classFactor` 只返回稳定英文码；车型、国家、潜在解析状态和评分车型通过 `replay_values` 映射，存活状态通过 `survived.alive/dead` 映射；Excel 导出继续使用中文。
 - 权限采用 allowlist：公开端点、登录端点和后台端点必须显式列入 `SecurityConfig`；末尾 `/api/**` 为 `denyAll()`。`boost-manager` 仅允许 `/api/admin/boost/**`，其他 `/api/admin/**` 只允许 `wotbtools-admin`。
-- Keycloak realm role 不是数据库事务资源：`BoosterService` 先 `saveAndFlush` 验证唯一键/外键，再增删 role，并注册 transaction rollback compensation。删除打手前只查活跃分配依赖（`assignmentRepository.existsByBoosterId`），已审批申请的 `approved_booster_id` 引用会在删除时自动解除并保持 APPROVED 状态，不阻塞二次申请；不要在 Controller 或申请 Service 中重复直接改 role。
+- Keycloak realm role 不是数据库事务资源：`BoosterService` 先 `saveAndFlush` 验证唯一键/外键，再增删 role，并注册 transaction rollback compensation。删除打手会锁定打手行并与分配流程串行化；打手创建/换绑和管理员删除用户还会共同锁定 `user_profile` 行，避免删除过程中并发产生孤立档案。`assignmentRepository.existsByBoosterId` 检查任意订单分配历史，已审批申请的 `approved_booster_id` 引用会自动解除并保持 `APPROVED` 状态。`AdminUserService` 删除用户前复用这条删除链；不要在 Controller 或申请 Service 中重复直接改 role。
 
 ### 显示名（i18n）架构
 
@@ -397,7 +399,7 @@ npm run build
 - VPS：`/opt/wotb/config/sponsor-config.json` + `/opt/wotb/config/sponsor/`，前端容器只读挂载为 `/usr/share/nginx/html/sponsor-config.json` 与 `/usr/share/nginx/html/sponsor-assets/`。
 - 首次部署从 `deploy/sponsor-config.example.json` 创建 disabled 配置，后续部署不得覆盖现有配置。配置缺失或无效时页面显示三语“暂未配置”。
 
-`push` 到 `main` 分支触发 GitHub Actions（[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)）：
+`push` 到 `main` 分支触发 GitHub Actions（[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)）：
 
 1. **完整 push range 检测**：用 `github.event.before..github.sha` 判定 backend/frontend/keycloak/deployment；`rating.json`、`map_names.json`、`common/assets/` 和部署脚本都有明确映射。
 2. **测试门禁**：后端变化先跑 Maven 全测；前端变化先跑 `npm ci`、Vitest 和 Vite build。任一失败都禁止构建/部署对应镜像。
@@ -407,7 +409,7 @@ npm run build
 
 独立 `.github/workflows/database-backup.yml` 每日香港时间 03:15 运行。归档按 `/opt/wotb/backups/{wotb,keycloak}/` 分库保存并保留 7 天；`pg_restore --list` 加 `--file=/dev/null` 校验 catalog 与全部压缩数据。恢复只能 SSH 手动调用 `deploy/postgres-restore.sh`，必须使用对应目录与 `RESTORE-<database>` 确认词，并会先创建安全备份。恢复失败时依赖服务保持停止。
 
-线上 502 排查优先运行 [`.github/workflows/prod-diagnostics.yml`](.github/workflows/prod-diagnostics.yml)，它会通过 VPS SSH secrets 打印 `docker compose ps`、后端容器状态和后端/前端日志。
+线上 502 排查优先运行 [`.github/workflows/prod-diagnostics.yml`](../.github/workflows/prod-diagnostics.yml)，它会通过 VPS SSH secrets 打印 `docker compose ps`、后端容器状态和后端/前端日志。
 
 ## 给 AI coder 的工作准则
 

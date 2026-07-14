@@ -38,6 +38,12 @@ public class UserProfileService {
         return repository.findByKeycloakUserId(keycloakUserId);
     }
 
+    /** 供跨域写操作串行化用户删除、打手创建与换绑。 */
+    @Transactional
+    public Optional<UserProfile> findEntityByKeycloakUserIdForUpdate(final String keycloakUserId) {
+        return repository.findByKeycloakUserIdForUpdate(keycloakUserId);
+    }
+
     /** 管理端用户检索，Repository 保持封装在 user 域内。 */
     @Transactional(readOnly = true)
     public List<UserProfile> searchForAdministration(final String query, final int limit) {

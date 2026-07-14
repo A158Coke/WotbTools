@@ -18,6 +18,11 @@ public interface BoosterProfileRepository extends JpaRepository<BoosterProfile, 
     @Query("select b from BoosterProfile b where b.id = :id")
     java.util.Optional<BoosterProfile> findByIdForUpdate(@Param("id") Long id);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select b from BoosterProfile b where b.keycloakUserId = :keycloakUserId")
+    java.util.Optional<BoosterProfile> findByKeycloakUserIdForUpdate(
+            @Param("keycloakUserId") final String keycloakUserId);
+
     Page<BoosterProfile> findByStatus(String status, Pageable pageable);
 
     Page<BoosterProfile> findByAvailable(Boolean available, Pageable pageable);

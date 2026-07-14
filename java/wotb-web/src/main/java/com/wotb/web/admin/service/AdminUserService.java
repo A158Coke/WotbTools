@@ -1,7 +1,5 @@
 package com.wotb.web.admin.service;
 
-import com.wotb.web.boost.dto.BoosterDto;
-import com.wotb.web.boost.service.BoosterService;
 import com.wotb.web.admin.dto.AdminDeleteUserResponse;
 import com.wotb.web.admin.dto.AdminUserDetailDto;
 import com.wotb.web.admin.dto.AdminUserDto;
@@ -9,6 +7,7 @@ import com.wotb.web.admin.entity.AdminUserLog;
 import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.admin.exception.AdminConflictException;
 import com.wotb.web.admin.exception.AdminInternalException;
+import com.wotb.web.boost.service.BoosterService;
 import com.wotb.web.util.ErrorCode;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
@@ -102,27 +101,28 @@ public class AdminUserService {
         }
 
         final Optional<UserProfile> profileOpt = userProfileService
-                .findEntityByKeycloakUserId(targetKeycloakUserId);
-
-        // 如有打手档案，先尝试删除（会检查活跃订单，有则阻断用户删除）
-        final Optional<BoosterDto> boosterOpt = boosterService.findByKeycloakUserId(targetKeycloakUserId);
-        if (boosterOpt.isPresent()) {
-            try {
-                boosterService.deleteById(boosterOpt.get().id());
-            } catch (final IllegalStateException e) {
-                if ("BOOSTER_HAS_DEPENDENCIES".equals(e.getMessage())) {
-                    throw new AdminConflictException(ErrorCode.BOOSTER_HAS_DEPENDENCIES.name(),
-                            ErrorCode.BOOSTER_HAS_DEPENDENCIES.getDefaultMessage());
-                }
-                throw e;
-            }
-        }
-
+                .findEntityByKeycloakUserIdForUpdate(targetKeycloakUserId);
         final UserProfile profile = profileOpt.orElse(null);
-
         final AdminUserLog log = logPersister.save(
                 AdminUserLog.started(targetKeycloakUserId, profile,
                         adminKeycloakUserId, adminUsername));
+
+        // 如有打手档案，先尝试删除（存在订单分配历史时阻断用户删除）。
+        try {
+            boosterService.deleteByKeycloakUserId(targetKeycloakUserId);
+        } catch (final RuntimeException e) {
+            if (e instanceof IllegalStateException
+                    && "BOOSTER_HAS_DEPENDENCIES".equals(e.getMessage())) {
+                log.markFailedLocalDelete(ErrorCode.BOOSTER_HAS_DEPENDENCIES.name(), e.getMessage());
+                logPersister.save(log);
+                throw new AdminConflictException(ErrorCode.BOOSTER_HAS_DEPENDENCIES.name(),
+                        ErrorCode.BOOSTER_HAS_DEPENDENCIES.getDefaultMessage());
+            }
+            log.markFailedLocalDelete(ErrorCode.FAILED_LOCAL_DELETE.name(), e.getMessage());
+            logPersister.save(log);
+            throw new AdminInternalException(ErrorCode.FAILED_LOCAL_DELETE.name(),
+                    ErrorCode.FAILED_LOCAL_DELETE.getDefaultMessage());
+        }
 
         boolean localDeleted = false;
 
