@@ -548,6 +548,8 @@
         "applicationImageSizeError": "Each image must be 4MB or smaller.",
         "applicationImageReadError": "Failed to read image.",
         "applicationReviewTitle": "Qualification Approval",
+        "applicationShowDetails": "Details",
+        "applicationHideDetails": "Hide details",
         "applicationAdminNote": "Review note",
         "applicationAdminNoteHint": "Optional review note",
         "applicationApproveConfirm": "Approve and create booster?",

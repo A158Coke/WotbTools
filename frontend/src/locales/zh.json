@@ -548,6 +548,8 @@
         "applicationImageSizeError": "单张图片不能超过 4MB。",
         "applicationImageReadError": "图片读取失败。",
         "applicationReviewTitle": "资格审批",
+        "applicationShowDetails": "详情",
+        "applicationHideDetails": "收起详情",
         "applicationAdminNote": "审批备注",
         "applicationAdminNoteHint": "可填写审批说明",
         "applicationApproveConfirm": "确认通过申请并创建打手？",
