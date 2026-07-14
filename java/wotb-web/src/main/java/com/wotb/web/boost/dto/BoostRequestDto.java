@@ -17,6 +17,7 @@ public record BoostRequestDto(
     String remark,
     String status,
     Boolean assigned,
+    OffsetDateTime autoConfirmAt,
     OffsetDateTime createdAt,
     OffsetDateTime updatedAt
 ) {}

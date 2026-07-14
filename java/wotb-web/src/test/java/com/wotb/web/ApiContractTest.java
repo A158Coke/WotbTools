@@ -6,6 +6,7 @@ import com.wotb.web.boost.dto.BoostAssignmentDto;
 import com.wotb.web.boost.dto.BoosterDto;
 import com.wotb.web.boost.dto.CreateBoostRequestResponse;
 import com.wotb.web.boost.dto.CreateBoosterApplicationResponse;
+import com.wotb.web.boost.dto.ConfirmBoostRequestResponse;
 import com.wotb.web.boost.service.BoostOptionsMapper;
 import com.wotb.web.boost.service.BoostOptionsService;
 import com.wotb.web.controller.GlobalExceptionHandler;
@@ -57,6 +58,9 @@ class ApiContractTest {
                 "request", new CreateBoostRequestResponse(
                         1L, "NEW", "BOOST_REQUEST_SUBMITTED", now
                 ),
+                "confirmation", new ConfirmBoostRequestResponse(
+                        1L, "CLOSED", "BOOST_REQUEST_COMPLETED", now
+                ),
                 "application", new CreateBoosterApplicationResponse(
                         2L, "NEW", "BOOSTER_APPLICATION_SUBMITTED", now
                 )
@@ -64,6 +68,7 @@ class ApiContractTest {
 
         assertThat(json)
                 .contains("\"code\":\"BOOST_REQUEST_SUBMITTED\"")
+                .contains("\"code\":\"BOOST_REQUEST_COMPLETED\"")
                 .contains("\"code\":\"BOOSTER_APPLICATION_SUBMITTED\"")
                 .doesNotContain("\"message\"");
     }

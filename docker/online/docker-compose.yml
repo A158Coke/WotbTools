@@ -53,6 +53,8 @@ services:
       KEYCLOAK_ADMIN_REALM: wotbtools
       KEYCLOAK_ADMIN_CLIENT_ID: wotbtools-admin-api
       KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:-}
+      BOOST_AUTO_CONFIRM_HOURS: ${BOOST_AUTO_CONFIRM_HOURS:-72}
+      BOOST_AUTO_CONFIRM_SCAN_MS: ${BOOST_AUTO_CONFIRM_SCAN_MS:-300000}
     restart: unless-stopped
 
   wotb-frontend:
