@@ -11,6 +11,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Pageable;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -19,6 +22,9 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -50,7 +56,8 @@ class BoostAssignmentServiceTest {
                 requestService,
                 boosterService,
                 mapper,
-                notificationService
+                notificationService,
+                72L
         );
         activeBooster = new BoosterProfile();
         activeBooster.setId(1L);
@@ -63,7 +70,7 @@ class BoostAssignmentServiceTest {
     void shouldRejectAssignmentToInactiveBooster() {
         final BoostRequest req = request("NEW");
         activeBooster.setStatus("INACTIVE");
-        when(requestService.getById(100L)).thenReturn(req);
+        when(requestService.getByIdForUpdate(100L)).thenReturn(req);
         when(boosterService.getByIdForUpdate(1L)).thenReturn(activeBooster);
 
         assertThatThrownBy(() -> service.assign(100L, 1L, "note"))
@@ -75,7 +82,7 @@ class BoostAssignmentServiceTest {
     void shouldRejectAssignmentToUnavailableBooster() {
         final BoostRequest req = request("NEW");
         activeBooster.setAvailable(false);
-        when(requestService.getById(100L)).thenReturn(req);
+        when(requestService.getByIdForUpdate(100L)).thenReturn(req);
         when(boosterService.getByIdForUpdate(1L)).thenReturn(activeBooster);
 
         assertThatThrownBy(() -> service.assign(100L, 1L, "note"))
@@ -86,7 +93,7 @@ class BoostAssignmentServiceTest {
     @Test
     void shouldRejectAssignmentWhenRequestAlreadyMatched() {
         final BoostRequest req = request("MATCHED");
-        when(requestService.getById(100L)).thenReturn(req);
+        when(requestService.getByIdForUpdate(100L)).thenReturn(req);
 
         assertThatThrownBy(() -> service.assign(100L, 1L, "note"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -96,7 +103,7 @@ class BoostAssignmentServiceTest {
     @Test
     void shouldRejectAssignmentToBusyBooster() {
         final BoostRequest req = request("NEW");
-        when(requestService.getById(100L)).thenReturn(req);
+        when(requestService.getByIdForUpdate(100L)).thenReturn(req);
         when(boosterService.getByIdForUpdate(1L)).thenReturn(activeBooster);
         when(assignmentRepository.countByBoosterIdAndUnassignedAtIsNull(1L)).thenReturn(1L);
 
@@ -111,7 +118,9 @@ class BoostAssignmentServiceTest {
         final BoostRequest req = request("MATCHED");
         when(assignmentRepository.findByIdAndBoosterIdAndUnassignedAtIsNull(9L, 1L))
                 .thenReturn(Optional.of(assignment));
-        when(requestService.getById(100L)).thenReturn(req);
+        when(requestService.getByIdForUpdate(100L)).thenReturn(req);
+        when(assignmentRepository.findActiveByIdAndBoosterIdForUpdate(9L, 1L))
+                .thenReturn(Optional.of(assignment));
         when(boosterService.getById(1L)).thenReturn(activeBooster);
 
         service.acceptByBooster(9L, 1L);
@@ -126,6 +135,131 @@ class BoostAssignmentServiceTest {
         assertThat(assignment.getStatus()).isEqualTo("PENDING_CONFIRM");
         assertThat(req.getStatus()).isEqualTo("PENDING_CONFIRM");
         assertThat(assignment.getNote()).isEqualTo("done");
+        assertThat(req.getCompletionSubmittedAt()).isNotNull();
+        assertThat(req.getAutoConfirmAt()).isEqualTo(req.getCompletionSubmittedAt().plusHours(72));
+    }
+
+    @Test
+    void shouldRejectRepeatedCompletionAfterLockedStateRecheck() {
+        final BoostRequestAssignment assignment = assignment("PENDING_CONFIRM");
+        final BoostRequest req = request("PENDING_CONFIRM");
+        when(assignmentRepository.findByIdAndBoosterIdAndUnassignedAtIsNull(9L, 1L))
+                .thenReturn(Optional.of(assignment));
+        when(requestService.getByIdForUpdate(100L)).thenReturn(req);
+        when(assignmentRepository.findActiveByIdAndBoosterIdForUpdate(9L, 1L))
+                .thenReturn(Optional.of(assignment));
+
+        assertThatThrownBy(() -> service.completeByBooster(9L, 1L, "done again"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("ASSIGNMENT_STATUS_NOT_COMPLETABLE");
+
+        verify(notificationService, never()).create(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void shouldLetRequesterConfirmCompletionAndReleaseBooster() {
+        final BoostRequestAssignment assignment = assignment("PENDING_CONFIRM");
+        final BoostRequest req = request("PENDING_CONFIRM");
+        when(requestService.getByIdForRequesterForUpdate(100L, "kc-requester")).thenReturn(req);
+        when(assignmentRepository.findActiveByRequestIdForUpdate(100L)).thenReturn(Optional.of(assignment));
+        when(boosterService.getById(1L)).thenReturn(activeBooster);
+
+        final var response = service.confirmByRequester(100L, "kc-requester");
+
+        assertThat(response.status()).isEqualTo("CLOSED");
+        assertThat(response.code()).isEqualTo("BOOST_REQUEST_COMPLETED");
+        assertThat(assignment.getStatus()).isEqualTo("COMPLETED");
+        assertThat(assignment.getUnassignedAt()).isNotNull();
+        assertThat(req.getStatus()).isEqualTo("CLOSED");
+    }
+
+    @Test
+    void shouldTreatRepeatedRequesterConfirmationAsSuccessWithoutDuplicateNotifications() {
+        final BoostRequest req = request("CLOSED");
+        req.setUpdatedAt(OffsetDateTime.parse("2026-07-14T12:00:00Z"));
+        when(requestService.getByIdForRequesterForUpdate(100L, "kc-requester")).thenReturn(req);
+
+        final var response = service.confirmByRequester(100L, "kc-requester");
+
+        assertThat(response.status()).isEqualTo("CLOSED");
+        verify(assignmentRepository, never()).findActiveByRequestIdForUpdate(100L);
+        verify(notificationService, never()).create(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void shouldHideRequestFromDifferentRequesterDuringConfirmation() {
+        when(requestService.getByIdForRequesterForUpdate(100L, "another-user"))
+                .thenThrow(new IllegalArgumentException("REQUEST_NOT_FOUND"));
+
+        assertThatThrownBy(() -> service.confirmByRequester(100L, "another-user"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("REQUEST_NOT_FOUND");
+    }
+
+    @Test
+    void shouldFindDueAutoConfirmRequestIds() {
+        final OffsetDateTime now = OffsetDateTime.parse("2026-07-14T12:00:00Z");
+        when(requestService.findDueAutoConfirmIds(eq(now), any(Pageable.class))).thenReturn(List.of(100L));
+
+        assertThat(service.findDueAutoConfirmRequestIds(now)).containsExactly(100L);
+    }
+
+    @Test
+    void shouldRunEachAutoConfirmationInAnIndependentTransaction() throws NoSuchMethodException {
+        final Transactional transaction = BoostAssignmentService.class
+                .getMethod("autoConfirmExpiredRequest", Long.class, OffsetDateTime.class)
+                .getAnnotation(Transactional.class);
+
+        assertThat(transaction).isNotNull();
+        assertThat(transaction.propagation()).isEqualTo(Propagation.REQUIRES_NEW);
+    }
+
+    @Test
+    void shouldAutoConfirmExpiredRequest() {
+        final OffsetDateTime now = OffsetDateTime.parse("2026-07-14T12:00:00Z");
+        final BoostRequestAssignment assignment = assignment("PENDING_CONFIRM");
+        final BoostRequest req = request("PENDING_CONFIRM");
+        req.setAutoConfirmAt(now.minusMinutes(1));
+        when(requestService.getByIdForUpdate(100L)).thenReturn(req);
+        when(assignmentRepository.findActiveByRequestIdForUpdate(100L)).thenReturn(Optional.of(assignment));
+        when(boosterService.getById(1L)).thenReturn(activeBooster);
+
+        final boolean completed = service.autoConfirmExpiredRequest(100L, now);
+
+        assertThat(completed).isTrue();
+        assertThat(req.getStatus()).isEqualTo("CLOSED");
+        assertThat(assignment.getStatus()).isEqualTo("COMPLETED");
+        assertThat(assignment.getUnassignedAt()).isEqualTo(now);
+    }
+
+    @Test
+    void shouldLetAdminCloseExceptionRequest() {
+        final BoostRequestAssignment assignment = assignment("EXCEPTION");
+        final BoostRequest req = request("EXCEPTION");
+        when(requestService.getByIdForUpdate(100L)).thenReturn(req);
+        when(assignmentRepository.findActiveByRequestIdForUpdate(100L)).thenReturn(Optional.of(assignment));
+        when(boosterService.getById(1L)).thenReturn(activeBooster);
+
+        service.confirmByAdmin(100L, "resolved");
+
+        assertThat(req.getStatus()).isEqualTo("CLOSED");
+        assertThat(req.getAdminNote()).isEqualTo("resolved");
+        assertThat(assignment.getStatus()).isEqualTo("COMPLETED");
+        assertThat(assignment.getNote()).isEqualTo("resolved");
+        assertThat(assignment.getUnassignedAt()).isNotNull();
+    }
+
+    @Test
+    void shouldSkipStaleAutoConfirmCandidateAfterConcurrentCompletion() {
+        final OffsetDateTime now = OffsetDateTime.parse("2026-07-14T12:00:00Z");
+        final BoostRequest req = request("CLOSED");
+        req.setAutoConfirmAt(now.minusMinutes(1));
+        when(requestService.getByIdForUpdate(100L)).thenReturn(req);
+
+        final boolean completed = service.autoConfirmExpiredRequest(100L, now);
+
+        assertThat(completed).isFalse();
+        verify(assignmentRepository, never()).findActiveByRequestIdForUpdate(100L);
     }
 
     @Test
@@ -134,7 +268,9 @@ class BoostAssignmentServiceTest {
         final BoostRequest req = request("MATCHED");
         when(assignmentRepository.findByIdAndBoosterIdAndUnassignedAtIsNull(9L, 1L))
                 .thenReturn(Optional.of(assignment));
-        when(requestService.getById(100L)).thenReturn(req);
+        when(requestService.getByIdForUpdate(100L)).thenReturn(req);
+        when(assignmentRepository.findActiveByIdAndBoosterIdForUpdate(9L, 1L))
+                .thenReturn(Optional.of(assignment));
         when(boosterService.getById(1L)).thenReturn(activeBooster);
 
         service.declineByBooster(9L, 1L, "busy");
@@ -146,7 +282,8 @@ class BoostAssignmentServiceTest {
 
     @Test
     void shouldFailUnassignWithoutActiveAssignment() {
-        when(assignmentRepository.findByRequestIdAndUnassignedAtIsNull(100L))
+        when(requestService.getByIdForUpdate(100L)).thenReturn(request("MATCHED"));
+        when(assignmentRepository.findActiveByRequestIdForUpdate(100L))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.unassign(100L, "test"))

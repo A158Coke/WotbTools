@@ -23,6 +23,7 @@ import {
   adminSearchUsers,
   completeMyBoosterAssignment,
   boostCancelRequest,
+  boostConfirmRequestCompletion,
   boostCreateBoosterApplication,
   boostCreateRequest,
   boostListMyBoosterApplications,
@@ -66,6 +67,7 @@ const formSuccess = ref('')
 // My requests
 const myRequests = ref([])
 const loadingMy = ref(false)
+const confirmingRequestId = ref(null)
 
 // Booster application
 const profile = ref(null)
@@ -541,6 +543,21 @@ async function cancelRequest(id) {
   }
 }
 
+async function confirmRequestCompletion(id) {
+  if (!confirm(t('boost.confirmCompletionPrompt'))) return
+  confirmingRequestId.value = id
+  try {
+    const response = await boostConfirmRequestCompletion(id)
+    await loadMyRequests()
+    loadUnreadNotificationCount()
+    alert(apiCode(response.code, 'boost.confirmCompletion'))
+  } catch (e) {
+    alert(apiError(e))
+  } finally {
+    if (confirmingRequestId.value === id) confirmingRequestId.value = null
+  }
+}
+
 async function acceptAssignment(a) {
   try {
     await acceptMyBoosterAssignment(a.id)
@@ -990,9 +1007,17 @@ function switchTab(t) {
           <div class="my-meta">
             <span>{{ $t('boost.contact') }}: {{ r.contactValueMasked }}</span>
             <span v-if="r.assigned" class="my-assigned">✓ {{ $t('boost.assigned') }}</span>
+            <span v-if="r.status === 'PENDING_CONFIRM' && r.autoConfirmAt">
+              {{ $t('boost.autoConfirmHint', { time: new Date(r.autoConfirmAt).toLocaleString() }) }}
+            </span>
           </div>
           <div v-if="r.status === 'NEW' || r.status === 'REVIEWING'" class="my-actions">
             <button class="btn-ghost btn-sm" @click="cancelRequest(r.id)">{{ $t('boost.cancel') }}</button>
+          </div>
+          <div v-else-if="r.status === 'PENDING_CONFIRM'" class="my-actions">
+            <button class="btn-primary btn-sm" :disabled="confirmingRequestId !== null" @click="confirmRequestCompletion(r.id)">
+              {{ confirmingRequestId === r.id ? $t('boost.confirmingCompletion') : $t('boost.confirmCompletion') }}
+            </button>
           </div>
         </div>
       </div>

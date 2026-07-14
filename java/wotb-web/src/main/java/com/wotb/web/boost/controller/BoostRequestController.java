@@ -1,8 +1,10 @@
 package com.wotb.web.boost.controller;
 
 import com.wotb.web.boost.dto.BoostRequestDto;
+import com.wotb.web.boost.dto.ConfirmBoostRequestResponse;
 import com.wotb.web.boost.dto.CreateBoostRequestRequest;
 import com.wotb.web.boost.dto.CreateBoostRequestResponse;
+import com.wotb.web.boost.service.BoostAssignmentService;
 import com.wotb.web.boost.service.BoostRequestService;
 import com.wotb.web.util.JwtUtil;
 import org.springframework.http.HttpStatus;
@@ -26,9 +28,12 @@ import java.util.Map;
 public class BoostRequestController {
 
     private final BoostRequestService service;
+    private final BoostAssignmentService assignmentService;
 
-    public BoostRequestController(final BoostRequestService service) {
+    public BoostRequestController(final BoostRequestService service,
+                                  final BoostAssignmentService assignmentService) {
         this.service = service;
+        this.assignmentService = assignmentService;
     }
 
     @PostMapping
@@ -62,5 +67,10 @@ public class BoostRequestController {
                 "status", dto.status(),
                 "code", "BOOST_REQUEST_CANCELLED"
         );
+    }
+
+    @PatchMapping("/my/{id}/confirm-completion")
+    public ConfirmBoostRequestResponse confirmCompletion(@PathVariable final Long id) {
+        return assignmentService.confirmByRequester(id, JwtUtil.requireUserId());
     }
 }
