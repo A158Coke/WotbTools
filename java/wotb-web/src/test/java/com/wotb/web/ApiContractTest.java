@@ -3,6 +3,7 @@ package com.wotb.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wotb.web.admin.dto.AdminDeleteUserResponse;
 import com.wotb.web.boost.dto.BoostAssignmentDto;
+import com.wotb.web.boost.dto.BoosterApplicationSummaryDto;
 import com.wotb.web.boost.dto.BoosterDto;
 import com.wotb.web.boost.dto.CreateBoostRequestResponse;
 import com.wotb.web.boost.dto.CreateBoosterApplicationResponse;
@@ -71,6 +72,34 @@ class ApiContractTest {
                 .contains("\"code\":\"BOOST_REQUEST_COMPLETED\"")
                 .contains("\"code\":\"BOOSTER_APPLICATION_SUBMITTED\"")
                 .doesNotContain("\"message\"");
+    }
+
+    @Test
+    void boosterApplicationSummariesShouldExcludeImagesAndExtendedDetails() throws Exception {
+        final BoosterApplicationSummaryDto summary = new BoosterApplicationSummaryDto(
+                2L,
+                1001L,
+                "Player",
+                "ELITE",
+                "123456",
+                "MONTH_20",
+                "NEW",
+                null,
+                null,
+                OffsetDateTime.parse("2026-07-15T00:00:00Z")
+        );
+
+        final String json = objectMapper.writeValueAsString(summary);
+
+        assertThat(json)
+                .contains("\"wotbNickname\":\"Player\"")
+                .contains("\"requestedLevel\":\"ELITE\"")
+                .contains("\"qq\":\"123456\"")
+                .contains("\"availabilityTier\":\"MONTH_20\"")
+                .doesNotContain("overallStatsImage")
+                .doesNotContain("vehicleStatsImage")
+                .doesNotContain("dailyTimeWindow")
+                .doesNotContain("selfAssessment");
     }
 
     @Test

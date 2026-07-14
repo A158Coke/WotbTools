@@ -95,6 +95,10 @@ export async function adminBoostBoosterApplications(params = {}) {
   return boostHandle(await fetch(`/api/admin/boost/booster-applications${qs ? '?' + qs : ''}`, { headers: await boostHeaders() }))
 }
 
+export async function adminBoostBoosterApplication(id, { signal } = {}) {
+  return boostHandle(await fetch(`/api/admin/boost/booster-applications/${encodeURIComponent(id)}`, { headers: await boostHeaders(), signal }))
+}
+
 export async function adminBoostBoosterApplicationReviewing(id, body = {}) {
   return boostHandle(await fetch(`/api/admin/boost/booster-applications/${encodeURIComponent(id)}/reviewing`, { method: 'PATCH', headers: await boostHeaders(), body: JSON.stringify(body) }))
 }

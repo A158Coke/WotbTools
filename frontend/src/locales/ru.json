@@ -548,6 +548,8 @@
         "applicationImageSizeError": "Каждое изображение не больше 4MB.",
         "applicationImageReadError": "Не удалось прочитать изображение.",
         "applicationReviewTitle": "Проверка квалификации",
+        "applicationShowDetails": "Подробнее",
+        "applicationHideDetails": "Скрыть детали",
         "applicationAdminNote": "Заметка проверки",
         "applicationAdminNoteHint": "Необязательная заметка",
         "applicationApproveConfirm": "Одобрить и создать бустера?",

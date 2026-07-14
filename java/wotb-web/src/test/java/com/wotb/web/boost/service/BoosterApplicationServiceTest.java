@@ -1,6 +1,6 @@
 package com.wotb.web.boost.service;
 
-import com.wotb.web.boost.dto.BoosterApplicationDto;
+import com.wotb.web.boost.dto.BoosterApplicationSummaryDto;
 import com.wotb.web.boost.dto.BoosterDto;
 import com.wotb.web.boost.entity.BoosterApplication;
 import com.wotb.web.boost.enums.BoosterApplicationStatus;
@@ -15,8 +15,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -115,8 +119,32 @@ class BoosterApplicationServiceTest {
     }
 
     @Test
+    void shouldLoadMyApplicationSummariesWithoutMappingImageEntities() {
+        final BoosterApplicationSummaryDto summary = summary();
+        when(repository.findSummariesByKeycloakUserId("kc-user")).thenReturn(List.of(summary));
+
+        assertThat(service.listMine("kc-user")).containsExactly(summary);
+
+        verify(mapper, never()).toDto(any());
+    }
+
+    @Test
+    void shouldLoadFilteredApplicationSummaries() {
+        final PageRequest pageable = PageRequest.of(0, 20);
+        final Page<BoosterApplicationSummaryDto> summaries = new PageImpl<>(List.of(summary()), pageable, 1);
+        when(repository.findSummariesByStatus(BoosterApplicationStatus.NEW.name(), pageable))
+                .thenReturn(summaries);
+
+        assertThat(service.list("new", pageable)).isSameAs(summaries);
+
+        verify(repository).findSummariesByStatus(BoosterApplicationStatus.NEW.name(), pageable);
+        verify(repository, never()).findAllSummaries(any());
+    }
+
+    @Test
     void shouldCreateBoosterAndNotifyWhenApproving() {
         final BoosterApplication application = application();
+        final BoosterApplicationSummaryDto summary = summary();
         when(repository.findById(eq(9L))).thenReturn(Optional.of(application));
         when(boosterService.findByKeycloakUserId(eq("kc-user"))).thenReturn(Optional.empty());
         when(boosterService.create(eq("BoundName"), eq("ELITE"), eq("kc-user"),
@@ -124,9 +152,9 @@ class BoosterApplicationServiceTest {
                 .thenReturn(new BoosterDto(33L, "BoundName", "ELITE", "kc-user",
                         true, "ACTIVE", "QQ", "123456", "self", "desc",
                         0, null, null));
-        when(mapper.toDto(any())).thenReturn(dto());
+        when(mapper.toSummary(any())).thenReturn(summary);
 
-        service.approve(9L, "admin-user", "ok");
+        assertThat(service.approve(9L, "admin-user", "ok")).isSameAs(summary);
 
         verify(boosterService).create(eq("BoundName"), eq("ELITE"), eq("kc-user"),
                 eq(true), eq("ACTIVE"), eq("QQ"), eq("123456"), eq("self"), any());
@@ -140,13 +168,15 @@ class BoosterApplicationServiceTest {
         assertThat(application.getStatus()).isEqualTo(BoosterApplicationStatus.APPROVED.name());
         assertThat(application.getApprovedBoosterId()).isEqualTo(33L);
         assertThat(application.getReviewedBy()).isEqualTo("admin-user");
+        verify(mapper).toSummary(application);
+        verify(mapper, never()).toDto(any());
     }
 
     @Test
     void shouldNotSendRejectedNotificationWhenMarkingReviewing() {
         final BoosterApplication application = application();
         when(repository.findById(eq(9L))).thenReturn(Optional.of(application));
-        when(mapper.toDto(application)).thenReturn(dto());
+        when(mapper.toSummary(application)).thenReturn(summary());
 
         service.markReviewing(9L, "admin-user", null);
 
@@ -158,7 +188,7 @@ class BoosterApplicationServiceTest {
     void shouldSendRejectedNotificationWhenRejecting() {
         final BoosterApplication application = application();
         when(repository.findById(eq(9L))).thenReturn(Optional.of(application));
-        when(mapper.toDto(application)).thenReturn(dto());
+        when(mapper.toSummary(application)).thenReturn(summary());
 
         service.reject(9L, "admin-user", "not qualified");
 
@@ -196,10 +226,18 @@ class BoosterApplicationServiceTest {
         return application;
     }
 
-    private static BoosterApplicationDto dto() {
-        return new BoosterApplicationDto(9L, "kc-user", 11L, 1001L, "BoundName",
-                "CN", IMAGE, IMAGE, "ELITE", "123456", null, "MONTH_20",
-                "20:00-23:00", "self", "APPROVED", "ok", 33L,
-                "admin-user", OffsetDateTime.now(), OffsetDateTime.now(), OffsetDateTime.now());
+    private static BoosterApplicationSummaryDto summary() {
+        return new BoosterApplicationSummaryDto(
+                9L,
+                1001L,
+                "BoundName",
+                "ELITE",
+                "123456",
+                "MONTH_20",
+                "NEW",
+                null,
+                null,
+                OffsetDateTime.parse("2026-07-15T00:00:00Z")
+        );
     }
 }

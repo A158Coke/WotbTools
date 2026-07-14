@@ -1,6 +1,7 @@
 package com.wotb.web.boost.controller;
 
 import com.wotb.web.boost.dto.BoosterApplicationDto;
+import com.wotb.web.boost.dto.BoosterApplicationSummaryDto;
 import com.wotb.web.boost.dto.ReviewBoosterApplicationRequest;
 import com.wotb.web.boost.service.BoosterApplicationService;
 import com.wotb.web.util.JwtUtil;
@@ -25,7 +26,7 @@ public class AdminBoosterApplicationController {
     }
 
     @GetMapping
-    public Page<BoosterApplicationDto> list(
+    public Page<BoosterApplicationSummaryDto> list(
             @RequestParam(name = "status", required = false) final String status,
             @RequestParam(name = "page", defaultValue = "0") final int page,
             @RequestParam(name = "size", defaultValue = "20") final int size) {
@@ -38,20 +39,23 @@ public class AdminBoosterApplicationController {
     }
 
     @PatchMapping("/{id}/reviewing")
-    public BoosterApplicationDto markReviewing(@PathVariable final Long id,
-                                               @RequestBody(required = false) final ReviewBoosterApplicationRequest body) {
+    public BoosterApplicationSummaryDto markReviewing(
+            @PathVariable final Long id,
+            @RequestBody(required = false) final ReviewBoosterApplicationRequest body) {
         return service.markReviewing(id, JwtUtil.requireUserId(), adminNote(body));
     }
 
     @PatchMapping("/{id}/approve")
-    public BoosterApplicationDto approve(@PathVariable final Long id,
-                                         @RequestBody(required = false) final ReviewBoosterApplicationRequest body) {
+    public BoosterApplicationSummaryDto approve(
+            @PathVariable final Long id,
+            @RequestBody(required = false) final ReviewBoosterApplicationRequest body) {
         return service.approve(id, JwtUtil.requireUserId(), adminNote(body));
     }
 
     @PatchMapping("/{id}/reject")
-    public BoosterApplicationDto reject(@PathVariable final Long id,
-                                        @RequestBody(required = false) final ReviewBoosterApplicationRequest body) {
+    public BoosterApplicationSummaryDto reject(
+            @PathVariable final Long id,
+            @RequestBody(required = false) final ReviewBoosterApplicationRequest body) {
         return service.reject(id, JwtUtil.requireUserId(), adminNote(body));
     }
 
