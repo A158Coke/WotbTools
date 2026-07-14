@@ -12,6 +12,12 @@ import {
   updateMyBoosterAvailability,
   updateUserWotbAccount
 } from '../utils/api-boost.js'
+import {
+  getUnreadNotificationCount,
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead
+} from '../utils/api-boost.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel, enumLabel } from '../utils/display.js'
 
@@ -34,6 +40,13 @@ const loadingBoosterAssignments = ref(false)
 const boosterAssignmentsError = ref('')
 const boosterAvailabilityPending = ref(false)
 const boosterAvailabilityError = ref('')
+
+// Notifications
+const notifications = ref([])
+const unreadNotifications = ref(0)
+const notificationsOpen = ref(false)
+const loadingNotifications = ref(false)
+const notificationError = ref('')
 
 function label(group, value, fallback = '--') {
   return enumLabel(t, te, group, value, fallback)
@@ -76,6 +89,7 @@ async function loadProfile() {
     loadRecords()
   }
   loadBoosterInfo()
+  loadUnreadNotificationCount()
   if (isBoosterUser.value) {
     await loadBoosterAssignments()
   }
@@ -215,6 +229,62 @@ async function removeAccount() {
 function assignmentTime(value) {
   return value ? new Date(value).toLocaleString(locale.value) : '--'
 }
+
+// Notifications
+async function loadNotifications() {
+  loadingNotifications.value = true
+  notificationError.value = ''
+  try {
+    notifications.value = await listNotifications()
+    unreadNotifications.value = notifications.value.filter(n => !n.read).length
+  } catch (e) {
+    notificationError.value = apiError(e)
+  } finally {
+    loadingNotifications.value = false
+  }
+}
+
+async function loadUnreadNotificationCount() {
+  try {
+    const res = await getUnreadNotificationCount()
+    unreadNotifications.value = res.count || 0
+  } catch {
+    unreadNotifications.value = 0
+  }
+}
+
+async function toggleNotifications() {
+  notificationsOpen.value = !notificationsOpen.value
+  if (notificationsOpen.value) await loadNotifications()
+}
+
+async function readNotification(notification) {
+  if (!notification.read) {
+    try {
+      await markNotificationRead(notification.id)
+      await loadNotifications()
+    } catch (error) {
+      notificationError.value = apiError(error)
+    }
+  }
+}
+
+async function readAllNotifications() {
+  try {
+    await markAllNotificationsRead()
+    await loadNotifications()
+  } catch (e) {
+    notificationError.value = apiError(e)
+  }
+}
+
+function notificationTitle(notification) {
+  return t(`boost.notificationTitle.${notification.type}`, notification.payload || {})
+}
+
+function notificationMessage(notification) {
+  return t(`boost.notificationMessage.${notification.type}`, notification.payload || {})
+}
 </script>
 
 <template>
@@ -313,6 +383,37 @@ function assignmentTime(value) {
         </div>
 
         <div class="profile-right">
+          <!-- Notifications -->
+          <div class="profile-card profile-section">
+            <div class="section-head" style="cursor: pointer" @click="toggleNotifications()">
+              <h3 class="card-title">
+                {{ $t('boost.notifications') }}
+                <span v-if="unreadNotifications > 0" class="notification-count">{{ unreadNotifications }}</span>
+              </h3>
+              <div class="section-actions">
+                <button v-if="notificationsOpen && notifications.length" class="btn-ghost btn-sm" @click.stop="readAllNotifications()">{{ $t('boost.markAllRead') }}</button>
+              </div>
+            </div>
+            <div v-if="notificationError" class="error">{{ notificationError }}</div>
+            <div v-if="notificationsOpen">
+              <div v-if="loadingNotifications" class="profile-empty profile-empty-tight">{{ $t('profile.loading') }}</div>
+              <div v-else-if="!notifications.length" class="profile-empty profile-empty-tight">{{ $t('boost.noNotifications') }}</div>
+              <div v-else class="notification-list">
+                <div
+                  v-for="n in notifications"
+                  :key="n.id"
+                  class="notification-item"
+                  :class="{ unread: !n.read }"
+                  @click="readNotification(n)"
+                >
+                  <div class="notification-title">{{ notificationTitle(n) }}</div>
+                  <div class="notification-msg">{{ notificationMessage(n) }}</div>
+                  <div class="notification-time">{{ new Date(n.createdAt).toLocaleString() }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div v-if="boosterInfo" class="profile-card profile-section">
             <div class="section-head">
               <h3 class="card-title">{{ $t('profile.boosterTitle') }}</h3>
@@ -482,6 +583,16 @@ function assignmentTime(value) {
 .assign-desc { font-size: .85rem; color: var(--text); margin-bottom: 4px; line-height: 1.4; }
 .assign-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: .78rem; color: var(--text-sub); }
 .assign-note { margin: 6px 0 0; font-size: .78rem; color: var(--text-sub); line-height: 1.4; }
+
+/* Notifications */
+.notification-count { display: inline-flex; min-width: 18px; height: 18px; align-items: center; justify-content: center; margin-left: 6px; padding: 0 4px; border-radius: 999px; background: var(--error); color: var(--danger-solid-fg); font-size: 11px; vertical-align: middle; }
+.notification-list { display: flex; flex-direction: column; gap: 6px; }
+.notification-item { cursor: pointer; padding: 8px 10px; border: 1px solid var(--border-light); border-radius: 6px; background: var(--bg); transition: background .12s; }
+.notification-item:hover { background: var(--bg-card-hover); }
+.notification-item.unread { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--bg)); }
+.notification-title { font-weight: 600; font-size: .82rem; color: var(--text); line-height: 1.3; }
+.notification-msg { font-size: .78rem; color: var(--text-secondary); margin-top: 2px; }
+.notification-time { font-size: .72rem; color: var(--text-sub); margin-top: 3px; }
 
 @media (max-width: 768px) {
   .profile-body { flex-direction: column; }

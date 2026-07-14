@@ -30,13 +30,9 @@ import {
   boostOptions,
   createUserProfile,
   declineMyBoosterAssignment,
-  getUnreadNotificationCount,
   getMyBoosterAssignments,
   getMyBoosterProfile,
   getUserProfile,
-  listNotifications,
-  markAllNotificationsRead,
-  markNotificationRead,
   startMyBoosterAssignment
 } from '../utils/api-boost.js'
 
@@ -93,11 +89,6 @@ const isBooster = computed(() => !!myBooster.value)
 const boundWotbAccount = computed(() => !!profile.value?.wotbAccountId && !!String(profile.value?.wotbNickname || '').trim())
 const myAssignments = ref([])
 const loadingAssignments = ref(false)
-const notifications = ref([])
-const unreadNotifications = ref(0)
-const notificationsOpen = ref(false)
-const loadingNotifications = ref(false)
-const notificationError = ref('')
 const loadError = ref('')
 let adminRequestLoadGeneration = 0
 let adminApplicationLoadGeneration = 0
@@ -218,7 +209,6 @@ onMounted(async () => {
       loadOptions()
       loadMyRequests()
       loadApplicantState()
-      loadUnreadNotificationCount()
     } else {
       phase.value = 'login'
       login()
@@ -271,53 +261,6 @@ async function loadMyAssignments() {
   try { myAssignments.value = await getMyBoosterAssignments() }
   catch (error) { loadError.value = apiError(error) }
   finally { loadingAssignments.value = false }
-}
-
-async function loadNotifications() {
-  loadingNotifications.value = true
-  notificationError.value = ''
-  try {
-    notifications.value = await listNotifications()
-    unreadNotifications.value = notifications.value.filter(n => !n.read).length
-  } catch (e) {
-    notificationError.value = apiError(e)
-  } finally {
-    loadingNotifications.value = false
-  }
-}
-
-async function loadUnreadNotificationCount() {
-  try {
-    const res = await getUnreadNotificationCount()
-    unreadNotifications.value = res.count || 0
-  } catch {
-    unreadNotifications.value = 0
-  }
-}
-
-async function toggleNotifications() {
-  notificationsOpen.value = !notificationsOpen.value
-  if (notificationsOpen.value) await loadNotifications()
-}
-
-async function readNotification(notification) {
-  if (!notification.read) {
-    try {
-      await markNotificationRead(notification.id)
-      await loadNotifications()
-    } catch (error) {
-      notificationError.value = apiError(error)
-    }
-  }
-}
-
-async function readAllNotifications() {
-  try {
-    await markAllNotificationsRead()
-    await loadNotifications()
-  } catch (e) {
-    notificationError.value = apiError(e)
-  }
 }
 
 function applyBoundAccount() {
@@ -405,14 +348,6 @@ function statusText(status) {
 
 function assignmentStatusText(status) {
   return t(`boost.assignmentStatus.${status || 'ASSIGNED'}`)
-}
-
-function notificationTitle(notification) {
-  return t(`boost.notificationTitle.${notification.type}`, notification.payload || {})
-}
-
-function notificationMessage(notification) {
-  return t(`boost.notificationMessage.${notification.type}`, notification.payload || {})
 }
 
 function latestOpenApplication() {
@@ -546,7 +481,6 @@ async function declineAssignment(a) {
 async function afterAssignmentAction() {
   await loadMyAssignments()
   loadMyRequests()
-  loadUnreadNotificationCount()
 }
 
 function canAcceptAssignment(a) {
@@ -764,30 +698,9 @@ function switchTab(t) {
           <button :class="{ active: tab === 'boosters' }" @click="switchTab('boosters')">{{ $t('boost.boostersTab') }}</button>
         </template>
       </div>
-      <button class="notification-toggle" @click="toggleNotifications()">
-        {{ $t('boost.notifications') }}
-        <span v-if="unreadNotifications" class="notification-count">{{ unreadNotifications }}</span>
-      </button>
     </div>
 
     <div v-if="loadError" class="boost-error">{{ loadError }}</div>
-
-    <div v-if="notificationsOpen" class="boost-card notification-panel">
-      <div class="flex-between">
-        <h3 class="card-title">{{ $t('boost.notifications') }}</h3>
-        <button class="btn-ghost btn-sm" @click="readAllNotifications()">{{ $t('boost.markAllRead') }}</button>
-      </div>
-      <div v-if="notificationError" class="boost-error">{{ notificationError }}</div>
-      <div v-if="loadingNotifications" class="boost-loading">{{ $t('boost.loading') }}</div>
-      <div v-else-if="!notifications.length" class="boost-empty">{{ $t('boost.noNotifications') }}</div>
-      <div v-else class="notification-list">
-        <button v-for="n in notifications" :key="n.id" class="notification-item" :class="{ unread: !n.read }" @click="readNotification(n)">
-          <strong>{{ notificationTitle(n) }}</strong>
-          <span>{{ notificationMessage(n) }}</span>
-          <small>{{ new Date(n.createdAt).toLocaleString() }}</small>
-        </button>
-      </div>
-    </div>
 
     <!-- Tab: Submit Request -->
     <div v-if="tab === 'request'" class="boost-card">
@@ -1271,14 +1184,6 @@ function switchTab(t) {
 .boost-tabs button { padding: 8px 16px; border: 1px solid transparent; background: transparent; color: var(--text-sub); border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; }
 .boost-tabs button:hover { color: var(--text-label); background: var(--bg-card-hover); }
 .boost-tabs button.active { background: var(--bg-card); color: var(--accent-dark); border-color: var(--border-tab-active); box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-.notification-toggle { position: relative; padding: 9px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); cursor: pointer; font-weight: 700; white-space: nowrap; }
-.notification-count { display: inline-flex; min-width: 18px; height: 18px; align-items: center; justify-content: center; margin-left: 6px; padding: 0 4px; border-radius: 999px; background: var(--error); color: var(--danger-solid-fg); font-size: 11px; }
-.notification-panel { margin-bottom: 16px; }
-.notification-list { display: grid; gap: 8px; }
-.notification-item { text-align: left; display: grid; gap: 3px; width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card2); color: var(--text); cursor: pointer; }
-.notification-item.unread { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--bg-card)); }
-.notification-item span { color: var(--text-secondary); font-size: 13px; }
-.notification-item small { color: var(--text-sub); font-size: 11px; }
 .boost-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; box-shadow: var(--surface-shadow); }
 .card-title { margin: 0 0 12px; font-size: 18px; }
 .boost-warning { background: var(--status-warn-bg); border: 1px solid var(--border-warn); border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; color: var(--status-warn-fg); }
@@ -1361,7 +1266,6 @@ function switchTab(t) {
   .boost-topbar { flex-direction: column; }
   .boost-tabs { display: flex; }
   .boost-tabs button { flex: 1 1 auto; }
-  .notification-toggle { width: 100%; }
   .flex-between { align-items: flex-start; gap: 10px; flex-direction: column; }
   .form-grid, .application-details, .application-images { grid-template-columns: 1fr; }
 }
