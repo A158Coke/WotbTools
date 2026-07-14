@@ -371,7 +371,7 @@ tr:hover td { background: var(--bg-list-hover); }
 .ghost.sm { font-size: .78rem; padding: 4px 10px; }
 .ghost.danger { color: var(--error); border-color: var(--error); }
 .ghost.danger:hover { background: var(--bg-card-hover); }
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 200; }
+.modal-overlay, .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 200; }
 .modal { background: var(--bg-card); border-radius: 12px; padding: 20px; max-width: 600px; width: 90%; max-height: 85vh; overflow-y: auto; box-shadow: 0 8px 30px rgba(0,0,0,.15); }
 .global-error-modal { max-width: 480px; }
 .modal h2 { margin: 0 0 4px; font-size: 1.1rem; }
