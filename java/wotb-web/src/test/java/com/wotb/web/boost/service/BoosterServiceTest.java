@@ -7,7 +7,7 @@ import com.wotb.web.boost.entity.BoosterProfile;
 import com.wotb.web.boost.repository.BoostRequestAssignmentRepository;
 import com.wotb.web.boost.repository.BoosterApplicationRepository;
 import com.wotb.web.boost.repository.BoosterProfileRepository;
-import com.wotb.web.user.dto.UserProfileDto;
+import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -71,7 +71,7 @@ class BoosterServiceTest {
 
     @Test
     void shouldRejectDuplicateKeycloakUserId() {
-        when(userProfileService.findByKeycloakUserId(eq("kc-user-1")))
+        when(userProfileService.findEntityByKeycloakUserIdForUpdate(eq("kc-user-1")))
                 .thenReturn(Optional.of(profile("kc-user-1")));
         when(boosterRepository.findByKeycloakUserId(eq("kc-user-1")))
                 .thenReturn(Optional.of(booster(8L, "kc-user-1")));
@@ -87,7 +87,8 @@ class BoosterServiceTest {
 
     @Test
     void shouldRejectWhenUserProfileNotFound() {
-        when(userProfileService.findByKeycloakUserId(eq("kc-unknown"))).thenReturn(Optional.empty());
+        when(userProfileService.findEntityByKeycloakUserIdForUpdate(eq("kc-unknown")))
+                .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.create("TestBooster", "ELITE",
                 "kc-unknown", true, "ACTIVE",
@@ -128,7 +129,7 @@ class BoosterServiceTest {
     @Test
     void shouldPersistBoosterBeforeAssigningRole() {
         final BoosterDto expected = dto(7L, "kc-new", true);
-        when(userProfileService.findByKeycloakUserId(eq("kc-new")))
+        when(userProfileService.findEntityByKeycloakUserIdForUpdate(eq("kc-new")))
                 .thenReturn(Optional.of(profile("kc-new")));
         when(boosterRepository.findByKeycloakUserId(eq("kc-new"))).thenReturn(Optional.empty());
         when(keycloakAdminUserService.hasRealmRole("kc-new", "booster")).thenReturn(false);
@@ -151,7 +152,7 @@ class BoosterServiceTest {
 
     @Test
     void shouldNotChangeRoleWhenCreatePersistenceFails() {
-        when(userProfileService.findByKeycloakUserId(eq("kc-new")))
+        when(userProfileService.findEntityByKeycloakUserIdForUpdate(eq("kc-new")))
                 .thenReturn(Optional.of(profile("kc-new")));
         when(boosterRepository.findByKeycloakUserId(eq("kc-new"))).thenReturn(Optional.empty());
         when(boosterRepository.saveAndFlush(any()))
@@ -169,7 +170,7 @@ class BoosterServiceTest {
 
     @Test
     void shouldPreservePreexistingRoleWhenCreatingProfile() {
-        when(userProfileService.findByKeycloakUserId(eq("kc-new")))
+        when(userProfileService.findEntityByKeycloakUserIdForUpdate(eq("kc-new")))
                 .thenReturn(Optional.of(profile("kc-new")));
         when(boosterRepository.findByKeycloakUserId(eq("kc-new"))).thenReturn(Optional.empty());
         when(keycloakAdminUserService.hasRealmRole("kc-new", "booster")).thenReturn(true);
@@ -186,7 +187,7 @@ class BoosterServiceTest {
 
     @Test
     void shouldRemoveNewRoleWhenOuterApprovalTransactionRollsBack() {
-        when(userProfileService.findByKeycloakUserId(eq("kc-new")))
+        when(userProfileService.findEntityByKeycloakUserIdForUpdate(eq("kc-new")))
                 .thenReturn(Optional.of(profile("kc-new")));
         when(boosterRepository.findByKeycloakUserId(eq("kc-new"))).thenReturn(Optional.empty());
         when(keycloakAdminUserService.hasRealmRole("kc-new", "booster")).thenReturn(false);
@@ -235,7 +236,7 @@ class BoosterServiceTest {
     @Test
     void shouldRejectDeleteBeforeChangingRoleWhenDependenciesExist() {
         final BoosterProfile booster = booster(7L, "kc-booster");
-        when(boosterRepository.findById(7L)).thenReturn(Optional.of(booster));
+        when(boosterRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(booster));
         when(assignmentRepository.existsByBoosterId(7L)).thenReturn(true);
 
         assertThatThrownBy(() -> service.deleteById(7L))
@@ -243,71 +244,139 @@ class BoosterServiceTest {
                 .hasMessage("BOOSTER_HAS_DEPENDENCIES");
 
         verifyNoInteractions(keycloakAdminUserService);
+        verifyNoInteractions(applicationRepository);
         verify(boosterRepository, never()).delete(any());
     }
 
     @Test
     void shouldClearApprovedApplicationRefWhenDeletingBooster() {
-        // 打手有关联的已审批申请 → 不会拒绝删除，而是解除引用后继续
         final BoosterProfile booster = booster(7L, "kc-booster");
-        when(boosterRepository.findById(7L)).thenReturn(Optional.of(booster));
+        final BoosterApplication application = applicationWithRef(7L);
+        when(boosterRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(booster));
         when(assignmentRepository.existsByBoosterId(7L)).thenReturn(false);
         when(applicationRepository.findByApprovedBoosterId(7L))
-                .thenReturn(List.of(applicationWithRef(7L)));
+                .thenReturn(List.of(application));
         when(keycloakAdminUserService.hasRealmRole("kc-booster", "booster")).thenReturn(true);
 
         service.deleteById(7L);
 
-        verify(applicationRepository).findByApprovedBoosterId(7L);
+        final InOrder inOrder = inOrder(applicationRepository, boosterRepository, keycloakAdminUserService);
+        inOrder.verify(applicationRepository).findByApprovedBoosterId(7L);
+        inOrder.verify(applicationRepository).flush();
+        inOrder.verify(boosterRepository).delete(booster);
+        inOrder.verify(boosterRepository).flush();
+        inOrder.verify(keycloakAdminUserService).removeRealmRole("kc-booster", "booster");
+        assertThat(application.getApprovedBoosterId()).isNull();
+        assertThat(application.getUpdatedAt()).isNotNull();
+    }
+
+    @Test
+    void shouldDeleteByKeycloakUserIdUsingLockedLookup() {
+        final BoosterProfile booster = booster(7L, "kc-booster");
+        when(boosterRepository.findByKeycloakUserIdForUpdate("kc-booster"))
+                .thenReturn(Optional.of(booster));
+
+        service.deleteByKeycloakUserId("  kc-booster  ");
+
+        verify(boosterRepository).findByKeycloakUserIdForUpdate("kc-booster");
         verify(boosterRepository).delete(booster);
         verify(boosterRepository).flush();
-        verify(keycloakAdminUserService).removeRealmRole("kc-booster", "booster");
+        verify(boosterRepository, never()).findByIdForUpdate(any());
     }
 
     @Test
-    void shouldRejectDeleteWhenAssignmentDependenciesExist() {
+    void shouldDoNothingWhenKeycloakUserHasNoBooster() {
+        when(boosterRepository.findByKeycloakUserIdForUpdate("kc-user"))
+                .thenReturn(Optional.empty());
+
+        service.deleteByKeycloakUserId("kc-user");
+
+        verifyNoInteractions(applicationRepository, keycloakAdminUserService);
+        verify(boosterRepository, never()).delete(any());
+    }
+
+    @Test
+    void shouldMapApplicationFlushFailureBeforeDeletingBooster() {
         final BoosterProfile booster = booster(7L, "kc-booster");
-        when(boosterRepository.findById(7L)).thenReturn(Optional.of(booster));
-        when(assignmentRepository.existsByBoosterId(7L)).thenReturn(true);
+        when(boosterRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(booster));
+        doThrow(new DataIntegrityViolationException("application foreign key"))
+                .when(applicationRepository).flush();
 
         assertThatThrownBy(() -> service.deleteById(7L))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("BOOSTER_HAS_DEPENDENCIES");
+
+        verify(boosterRepository, never()).delete(any());
+        verify(boosterRepository, never()).flush();
+        verifyNoInteractions(keycloakAdminUserService);
     }
 
     @Test
-    void shouldNotChangeRoleWhenDeletePersistenceFails() {
+    void shouldNotChangeRoleWhenDeleteFlushFails() {
         final BoosterProfile booster = booster(7L, "kc-booster");
-        when(boosterRepository.findById(7L)).thenReturn(Optional.of(booster));
+        when(boosterRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(booster));
         doThrow(new DataIntegrityViolationException("foreign key"))
-                .when(boosterRepository).delete(booster);
+                .when(boosterRepository).flush();
 
         assertThatThrownBy(() -> service.deleteById(7L))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("BOOSTER_HAS_DEPENDENCIES");
 
         verify(boosterRepository).delete(booster);
+        verify(boosterRepository).flush();
         verifyNoInteractions(keycloakAdminUserService);
     }
 
     @Test
     void shouldDeleteProfileBeforeRemovingRole() {
         final BoosterProfile booster = booster(7L, "kc-booster");
-        when(boosterRepository.findById(7L)).thenReturn(Optional.of(booster));
+        when(boosterRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(booster));
         when(keycloakAdminUserService.hasRealmRole("kc-booster", "booster")).thenReturn(true);
 
         service.deleteById(7L);
 
-        final InOrder inOrder = inOrder(boosterRepository, keycloakAdminUserService);
+        final InOrder inOrder = inOrder(boosterRepository, applicationRepository, keycloakAdminUserService);
+        inOrder.verify(boosterRepository).findByIdForUpdate(7L);
+        inOrder.verify(applicationRepository).findByApprovedBoosterId(7L);
+        inOrder.verify(applicationRepository).flush();
         inOrder.verify(boosterRepository).delete(booster);
         inOrder.verify(boosterRepository).flush();
         inOrder.verify(keycloakAdminUserService).removeRealmRole("kc-booster", "booster");
     }
 
     @Test
+    void shouldDeleteProfileWhenKeycloakUserIsAlreadyMissing() {
+        final BoosterProfile booster = booster(7L, "kc-missing");
+        when(boosterRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(booster));
+        when(keycloakAdminUserService.hasRealmRole("kc-missing", "booster"))
+                .thenThrow(new IllegalArgumentException("KEYCLOAK_USER_NOT_FOUND"));
+
+        service.deleteById(7L);
+
+        verify(boosterRepository).delete(booster);
+        verify(boosterRepository).flush();
+        verify(keycloakAdminUserService, never()).removeRealmRole(any(), any());
+    }
+
+    @Test
+    void shouldDeleteProfileWhenKeycloakUserDisappearsBeforeRoleRemoval() {
+        final BoosterProfile booster = booster(7L, "kc-missing");
+        when(boosterRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(booster));
+        when(keycloakAdminUserService.hasRealmRole("kc-missing", "booster")).thenReturn(true);
+        doThrow(new IllegalArgumentException("KEYCLOAK_USER_OR_ROLE_NOT_FOUND"))
+                .when(keycloakAdminUserService).removeRealmRole("kc-missing", "booster");
+
+        service.deleteById(7L);
+
+        verify(boosterRepository).delete(booster);
+        verify(boosterRepository).flush();
+        verify(keycloakAdminUserService).removeRealmRole("kc-missing", "booster");
+    }
+
+    @Test
     void shouldRestoreRemovedRoleWhenDeleteTransactionRollsBack() {
         final BoosterProfile booster = booster(7L, "kc-booster");
-        when(boosterRepository.findById(7L)).thenReturn(Optional.of(booster));
+        when(boosterRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(booster));
         when(keycloakAdminUserService.hasRealmRole("kc-booster", "booster")).thenReturn(true);
 
         TransactionSynchronizationManager.initSynchronization();
@@ -328,7 +397,7 @@ class BoosterServiceTest {
     void shouldMoveRolesWhenRebindingBooster() {
         final BoosterProfile booster = booster(7L, "kc-old");
         when(boosterRepository.findById(7L)).thenReturn(Optional.of(booster));
-        when(userProfileService.findByKeycloakUserId("kc-new"))
+        when(userProfileService.findEntityByKeycloakUserIdForUpdate("kc-new"))
                 .thenReturn(Optional.of(profile("kc-new")));
         when(boosterRepository.findByKeycloakUserId("kc-new")).thenReturn(Optional.empty());
         when(keycloakAdminUserService.hasRealmRole("kc-new", "booster")).thenReturn(false);
@@ -350,7 +419,7 @@ class BoosterServiceTest {
     void shouldNotChangeRolesWhenRebindPersistenceFails() {
         final BoosterProfile booster = booster(7L, "kc-old");
         when(boosterRepository.findById(7L)).thenReturn(Optional.of(booster));
-        when(userProfileService.findByKeycloakUserId("kc-new"))
+        when(userProfileService.findEntityByKeycloakUserIdForUpdate("kc-new"))
                 .thenReturn(Optional.of(profile("kc-new")));
         when(boosterRepository.findByKeycloakUserId("kc-new")).thenReturn(Optional.empty());
         when(boosterRepository.saveAndFlush(booster))
@@ -369,7 +438,7 @@ class BoosterServiceTest {
     void shouldRestoreBothRolesWhenMapperFailsAfterRebind() {
         final BoosterProfile booster = booster(7L, "kc-old");
         when(boosterRepository.findById(7L)).thenReturn(Optional.of(booster));
-        when(userProfileService.findByKeycloakUserId("kc-new"))
+        when(userProfileService.findEntityByKeycloakUserIdForUpdate("kc-new"))
                 .thenReturn(Optional.of(profile("kc-new")));
         when(boosterRepository.findByKeycloakUserId("kc-new")).thenReturn(Optional.empty());
         when(keycloakAdminUserService.hasRealmRole("kc-new", "booster")).thenReturn(false);
@@ -401,9 +470,13 @@ class BoosterServiceTest {
         return booster;
     }
 
-    private static UserProfileDto profile(final String keycloakUserId) {
-        return new UserProfileDto(11L, keycloakUserId, "Display", "username",
-                1001L, "Player", "CN");
+    private static UserProfile profile(final String keycloakUserId) {
+        final UserProfile profile = new UserProfile();
+        profile.setId(11L);
+        profile.setKeycloakUserId(keycloakUserId);
+        profile.setDisplayName("Display");
+        profile.setUsername("username");
+        return profile;
     }
 
     private static BoosterApplication applicationWithRef(final Long boosterId) {

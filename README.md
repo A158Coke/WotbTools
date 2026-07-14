@@ -23,7 +23,7 @@
 | Web 版       | Spring Boot 4 + Vue 3 + PostgreSQL + Docker + Keycloak | ✅ 已完成         |
 | 工具集主页    | Vue SPA 游戏工具站风格入口 + 主题切换 + 三语 i18n | ✅ 已完成         |
 
-版本历史见 [CHANGELOG.md](CHANGELOG.md)，任务拆分见 [TODO.md](TODO.md)。
+版本历史见 [CHANGELOG.md](docs/CHANGELOG.md)，任务拆分见 [TODO.md](docs/TODO.md)。
 
 ## 当前实现
 
@@ -34,11 +34,11 @@
 文档入口：
 
 - 本文件：项目概览、Java 版使用与构建。
-- [HANDOVER.md](HANDOVER.md)：**交接 / AI 工具迁移总入口**（环境坑、CI/CD、部署、约定一站式）。
+- [HANDOVER.md](docs/HANDOVER.md)：**交接 / AI 工具迁移总入口**（环境坑、CI/CD、部署、约定一站式）。
 - [java/README.md](java/README.md)：Java / Web 版运行、接口、部署。
-- [CHANGELOG.md](CHANGELOG.md)：版本历史（对外）。
-- [TODO.md](TODO.md)：待办事项。
-- [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)：维护上下文、架构、回放格式、i18n、测试策略。
+- [CHANGELOG.md](docs/CHANGELOG.md)：版本历史（对外）。
+- [TODO.md](docs/TODO.md)：待办事项。
+- [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)：维护上下文、架构、回放格式、i18n、测试策略。
 - [docs/replay-data.md](docs/replay-data.md)：data.wotreplay 事件流格式、protobuf 字段表、死亡时间推算。
 - [docs/rating-system.md](docs/rating-system.md)：评分算法、参数、展示。
 
@@ -70,7 +70,7 @@
 - **工具集主页**：Vue SPA 内 `HomePage.vue`（卡片入口 + 版本历史），版本历史数据来自 `frontend/src/data/versions.json`。
 - **赞助页面**：首页保留三语赞助入口；运行时读取同源 `/sponsor-config.json`，二维码由 VPS `/opt/wotb/config/sponsor/` 只读挂载，不进入仓库或镜像。
 - **域名统一**：`wotbtools.com` 和 `www.wotbtools.com`，去除 `replay.wotbtools.com` 子域名。
-- **管理员用户管理**：`/api/admin/users` API 搜索/查看/删除用户，Keycloak Admin API 集成，审计日志 `admin_user_log` 表，`wotbtools-admin` 角色权限控制。
+- **管理员用户管理**：`/api/admin/users` API 搜索/查看/删除用户，删除前会清理无订单分配历史的关联打手档案；Keycloak Admin API 集成，审计日志 `admin_user_log` 表，`wotbtools-admin` 角色权限控制。
 - **API 国际化契约**：后端只返回英文 raw enum、`code`/`error` 与数据；可读状态、成功和错误文案统一由前端中/英/俄词典渲染。
 - **权限默认拒绝**：未声明的 `/api/**` 不开放；`boost-manager` 仅管理 `/api/admin/boost/**`，用户管理等其他后台接口只允许 `wotbtools-admin`。
 - **移动端顶栏**：回放解析、排行榜、个人中心、陪练和管理员页面共享同一套响应式顶栏；主题/语言/账号入口自动换行，不压缩主题切换器。

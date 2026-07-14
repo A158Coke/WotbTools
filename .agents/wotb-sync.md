@@ -1,7 +1,7 @@
 ﻿# wotb-sync — 改动检查单 (工具无关)
 
 > 本文件是**工具无关**的改动 playbook,供任意 AI coder / 人类贡献者使用。
-> 背景与数据格式见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md),硬性约定见 [../AGENTS.md](../AGENTS.md)。
+> 背景与数据格式见 [DEVELOPER_GUIDE.md](../docs/DEVELOPER_GUIDE.md),硬性约定见 [AGENTS.md](AGENTS.md)。
 
 本项目同一份数据要经过**多层多语言**呈现,所以一处改动常需多处同步。下面按"改什么"给出最小步骤。
 
