@@ -1,6 +1,7 @@
 package com.wotb.web.boost.service;
 
 import com.wotb.web.boost.dto.BoosterApplicationDto;
+import com.wotb.web.boost.dto.BoosterApplicationSummaryDto;
 import com.wotb.web.boost.dto.BoosterDto;
 import com.wotb.web.boost.dto.CreateBoosterApplicationResponse;
 import com.wotb.web.boost.entity.BoosterApplication;
@@ -130,23 +131,17 @@ public class BoosterApplicationService {
     }
 
     @Transactional(readOnly = true)
-    public List<BoosterApplicationDto> listMine(final String keycloakUserId) {
-        return repository.findByKeycloakUserIdOrderByCreatedAtDesc(keycloakUserId)
-                .stream()
-                .map(mapper::toDto)
-                .toList();
+    public List<BoosterApplicationSummaryDto> listMine(final String keycloakUserId) {
+        return repository.findSummariesByKeycloakUserId(keycloakUserId);
     }
 
     @Transactional(readOnly = true)
-    public Page<BoosterApplicationDto> list(final String status, final Pageable pageable) {
-        final Page<BoosterApplication> page;
+    public Page<BoosterApplicationSummaryDto> list(final String status, final Pageable pageable) {
         if (StringUtils.hasText(status)) {
             final String upper = BoosterApplicationStatus.from(status).name();
-            page = repository.findByStatusOrderByCreatedAtDesc(upper, pageable);
-        } else {
-            page = repository.findAllByOrderByCreatedAtDesc(pageable);
+            return repository.findSummariesByStatus(upper, pageable);
         }
-        return page.map(mapper::toDto);
+        return repository.findAllSummaries(pageable);
     }
 
     @Transactional(readOnly = true)
@@ -155,9 +150,9 @@ public class BoosterApplicationService {
     }
 
     @Transactional
-    public BoosterApplicationDto markReviewing(final Long id,
-                                               final String adminUserId,
-                                               final String adminNote) {
+    public BoosterApplicationSummaryDto markReviewing(final Long id,
+                                                      final String adminUserId,
+                                                      final String adminNote) {
         final BoosterApplication application = getById(id);
         ensureOpen(application);
         application.setStatus(BoosterApplicationStatus.REVIEWING.name());
@@ -165,13 +160,13 @@ public class BoosterApplicationService {
         application.setReviewedBy(adminUserId);
         application.setReviewedAt(OffsetDateTime.now());
         application.setUpdatedAt(OffsetDateTime.now());
-        return mapper.toDto(application);
+        return mapper.toSummary(application);
     }
 
     @Transactional
-    public BoosterApplicationDto reject(final Long id,
-                                        final String adminUserId,
-                                        final String adminNote) {
+    public BoosterApplicationSummaryDto reject(final Long id,
+                                               final String adminUserId,
+                                               final String adminNote) {
         final BoosterApplication application = getById(id);
         ensureOpen(application);
         application.setStatus(BoosterApplicationStatus.REJECTED.name());
@@ -180,13 +175,13 @@ public class BoosterApplicationService {
         application.setReviewedAt(OffsetDateTime.now());
         application.setUpdatedAt(OffsetDateTime.now());
         notifyApplication(application, UserNotificationType.BOOSTER_APPLICATION_REJECTED);
-        return mapper.toDto(application);
+        return mapper.toSummary(application);
     }
 
     @Transactional
-    public BoosterApplicationDto approve(final Long id,
-                                         final String adminUserId,
-                                         final String adminNote) {
+    public BoosterApplicationSummaryDto approve(final Long id,
+                                                final String adminUserId,
+                                                final String adminNote) {
         final BoosterApplication application = getById(id);
         ensureOpen(application);
         if (boosterService.findByKeycloakUserId(application.getKeycloakUserId()).isPresent()) {
@@ -212,7 +207,7 @@ public class BoosterApplicationService {
         application.setReviewedAt(OffsetDateTime.now());
         application.setUpdatedAt(OffsetDateTime.now());
         notifyApplication(application, UserNotificationType.BOOSTER_APPLICATION_APPROVED);
-        return mapper.toDto(application);
+        return mapper.toSummary(application);
     }
 
     private void notifyApplication(final BoosterApplication application,

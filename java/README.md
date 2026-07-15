@@ -79,7 +79,7 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 列定义由后端 `/api/preview` 响应中的 `playerColumns`/`aggregateColumns` 字段和 `/api/columns` 提供（纯英文 key）；实时 rating 使用 `ratingColumns`。
 前端用 `vue-i18n` 三语 locale（`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels` / `rating_labels`）映射显示名，
 导出层（单场 `Columns.java`、汇总 `AggregateSheets.java`）各自维护 xlsx 表头。回放页列选择器会把单场/汇总两套列顺序与可见性记到 `localStorage`，
-并在后端新增列时自动补齐缺失键。详见 [../DEVELOPER_GUIDE.md](../DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
+并在后端新增列时自动补齐缺失键。详见 [DEVELOPER_GUIDE.md](../docs/DEVELOPER_GUIDE.md) 的「显示名（i18n）架构」。
 
 
 地图名由共享字典 `common/map_names.json` 提供 `zh/en/ru` 三语映射；前端 `mapLabel()` 按当前 locale 取值，导出层 `MapNames.cn()` 继续固定使用中文。
@@ -146,7 +146,13 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 ### 陪练与打手（仅在线版）
 
-`GET /api/booster/assignments` 默认返回当前登录打手的活跃订单；追加 `?includeHistory=true` 时返回活跃 + 历史订单（活跃优先、历史按分配时间倒序），供个人中心回看已完成/已取消/已拒绝订单。`PATCH /api/boost/boosters/my/availability` 允许打手本人切换 `available`，用于暂停/恢复接收新订单，并返回最新 `BoosterDto` 给个人中心即时刷新。打手可通过 `PATCH /api/booster/assignments/{id}/accept|start|complete|decline` 流转自己的订单；管理员通过需求状态把 `PENDING_CONFIRM` 确认为 `CLOSED`，或标记 `EXCEPTION`。管理员分配订单时要求打手资格为 `ACTIVE`、未暂停接单且没有活跃订单；前端会按资格、接单状态、活跃订单数、等级和擅长内容推荐排序。
+`GET /api/booster/assignments` 默认返回当前登录打手的活跃订单；追加 `?includeHistory=true` 时返回活跃 + 历史订单（活跃优先、历史按分配时间倒序），供个人中心回看已完成/已取消/已拒绝订单。`PATCH /api/boost/boosters/my/availability` 允许打手本人切换 `available`，用于暂停/恢复接收新订单，并返回最新 `BoosterDto` 给个人中心即时刷新。打手可通过 `PATCH /api/booster/assignments/{id}/accept|start|complete|decline` 流转自己的订单；提交完成后需求进入 `PENDING_CONFIRM`，客户调用 `PATCH /api/boost/requests/my/{id}/confirm-completion` 确认为 `CLOSED`。若客户未操作，系统默认 72 小时后自动确认；管理员也可关闭 `PENDING_CONFIRM`/`EXCEPTION` 订单。三条入口共用带行锁的幂等完结路径，同时把分配置为 `COMPLETED`、写入 `unassigned_at` 并释放打手。管理员分配订单时要求打手资格为 `ACTIVE`、未暂停接单且没有活跃订单；前端会按资格、接单状态、活跃订单数、等级和擅长内容推荐排序。
+
+打手资格申请列表接口 `GET /api/boost/booster-applications/my` 与 `GET /api/admin/boost/booster-applications` 返回不含截图、微信、日常时段和自评的 `BoosterApplicationSummaryDto`，并通过 JPA 构造投影避免读取 Base64 图片列；审核状态变更接口也返回该摘要 DTO，避免重复回传图片。管理员需要完整资料时调用 `GET /api/admin/boost/booster-applications/{id}`；资格审批前端只在点击“详情”后请求该接口。
+
+完成确认窗口由 `BOOST_AUTO_CONFIRM_HOURS` 配置（默认 `72`），到期扫描间隔由 `BOOST_AUTO_CONFIRM_SCAN_MS` 配置（默认 `300000` 毫秒）；线上部署可用同名 GitHub repository variables 覆盖。Flyway V11 会给已有 `PENDING_CONFIRM` 订单从迁移时刻起补一个 72 小时窗口。
+
+`DELETE /api/admin/boost/boosters/{id}` 会保留资格申请并清空其 `approved_booster_id`；存在任意订单分配历史时以 `BOOSTER_HAS_DEPENDENCIES` 拒绝。管理员删除用户时会先复用该流程清理关联打手档案，再删除本地资料与 Keycloak 用户。
 
 `GET /api/users/notifications`、`GET /api/users/notifications/unread-count`、`PATCH /api/users/notifications/{id}/read` 和 `PATCH /api/users/notifications/read-all` 提供站内通知基础能力。通知 API 返回英文 `type` 与 `payload` 数据，具体文案由前端三语 i18n 渲染。
 

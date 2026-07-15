@@ -24,6 +24,7 @@ public class BoostRequestMapper {
                 request.getRemark(),
                 request.getStatus(),
                 assigned,
+                request.getAutoConfirmAt(),
                 request.getCreatedAt(),
                 request.getUpdatedAt()
         );

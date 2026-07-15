@@ -10,10 +10,10 @@ import com.wotb.web.boost.enums.ContactType;
 import com.wotb.web.boost.repository.BoostRequestAssignmentRepository;
 import com.wotb.web.boost.repository.BoostRequestRepository;
 import org.springframework.data.domain.Page;
-import org.springframework.util.StringUtils;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -118,7 +118,7 @@ public class BoostRequestService {
     /** 取消自己的需求。 */
     @Transactional
     public BoostRequestDto cancel(final Long id, final String requesterUserId) {
-        final BoostRequest req = repository.findByIdAndRequesterUserId(id, requesterUserId)
+        final BoostRequest req = repository.findByIdAndRequesterUserIdForUpdate(id, requesterUserId)
                 .orElseThrow(() -> new IllegalArgumentException("REQUEST_NOT_FOUND"));
 
         final BoostRequestStatus currentStatus = BoostRequestStatus.from(req.getStatus());
@@ -146,6 +146,20 @@ public class BoostRequestService {
     public BoostRequest getById(final Long id) {
         return repository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("REQUEST_NOT_FOUND"));
+    }
+
+    public BoostRequest getByIdForUpdate(final Long id) {
+        return repository.findByIdForUpdate(id)
+                .orElseThrow(() -> new IllegalArgumentException("REQUEST_NOT_FOUND"));
+    }
+
+    public BoostRequest getByIdForRequesterForUpdate(final Long id, final String requesterUserId) {
+        return repository.findByIdAndRequesterUserIdForUpdate(id, requesterUserId)
+                .orElseThrow(() -> new IllegalArgumentException("REQUEST_NOT_FOUND"));
+    }
+
+    public List<Long> findDueAutoConfirmIds(final OffsetDateTime now, final Pageable pageable) {
+        return repository.findDueAutoConfirmIds(BoostRequestStatus.PENDING_CONFIRM.name(), now, pageable);
     }
 
     private boolean hasActiveAssignment(final BoostRequest request) {

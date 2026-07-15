@@ -40,3 +40,6 @@ keycloak:
 wotb:
   replay:
     max-concurrent-jobs: ${REPLAY_MAX_CONCURRENT_JOBS:2}
+  boost:
+    auto-confirm-hours: ${BOOST_AUTO_CONFIRM_HOURS:72}
+    auto-confirm-scan-ms: ${BOOST_AUTO_CONFIRM_SCAN_MS:300000}

@@ -10,7 +10,7 @@ import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.OffsetDateTime;
 
-/** 陪练需求/订单。与 Flyway V3__create_boosting_tables.sql 逐列对齐。 */
+/** 陪练需求/订单。与 boost_request 的 Flyway 迁移逐列对齐。 */
 @Entity
 @Table(name = "boost_request")
 public class BoostRequest {
@@ -60,6 +60,12 @@ public class BoostRequest {
 
     @Column(name = "admin_note", columnDefinition = "text")
     private String adminNote;
+
+    @Column(name = "completion_submitted_at")
+    private OffsetDateTime completionSubmittedAt;
+
+    @Column(name = "auto_confirm_at")
+    private OffsetDateTime autoConfirmAt;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false)
@@ -116,6 +122,14 @@ public class BoostRequest {
 
     public String getAdminNote() { return adminNote; }
     public void setAdminNote(final String adminNote) { this.adminNote = adminNote; }
+
+    public OffsetDateTime getCompletionSubmittedAt() { return completionSubmittedAt; }
+    public void setCompletionSubmittedAt(final OffsetDateTime completionSubmittedAt) {
+        this.completionSubmittedAt = completionSubmittedAt;
+    }
+
+    public OffsetDateTime getAutoConfirmAt() { return autoConfirmAt; }
+    public void setAutoConfirmAt(final OffsetDateTime autoConfirmAt) { this.autoConfirmAt = autoConfirmAt; }
 
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(final OffsetDateTime createdAt) { this.createdAt = createdAt; }

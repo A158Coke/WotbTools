@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.OffsetDateTime;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -26,6 +27,15 @@ public class AdminBoostRequestService {
             BoostRequestStatus.CANCELLED,
             BoostRequestStatus.CLOSED,
             BoostRequestStatus.EXCEPTION
+    );
+    private static final Map<BoostRequestStatus, Set<BoostRequestStatus>> ADMIN_TRANSITIONS = Map.of(
+            BoostRequestStatus.NEW, Set.of(BoostRequestStatus.REVIEWING, BoostRequestStatus.REJECTED),
+            BoostRequestStatus.REVIEWING, Set.of(BoostRequestStatus.REJECTED, BoostRequestStatus.CANCELLED),
+            BoostRequestStatus.MATCHED, Set.of(BoostRequestStatus.EXCEPTION, BoostRequestStatus.CANCELLED),
+            BoostRequestStatus.ACCEPTED, Set.of(BoostRequestStatus.EXCEPTION, BoostRequestStatus.CANCELLED),
+            BoostRequestStatus.IN_PROGRESS, Set.of(BoostRequestStatus.EXCEPTION, BoostRequestStatus.CANCELLED),
+            BoostRequestStatus.PENDING_CONFIRM, Set.of(BoostRequestStatus.EXCEPTION),
+            BoostRequestStatus.EXCEPTION, Set.of(BoostRequestStatus.CANCELLED)
     );
 
     private final BoostRequestService requestService;
@@ -56,17 +66,34 @@ public class AdminBoostRequestService {
 
     @Transactional
     public AdminBoostRequestDto updateStatus(final Long id, final String status, final String adminNote) {
-        final BoostRequest req = requestService.getById(id);
-
         final BoostRequestStatus targetStatus = BoostRequestStatus.from(status);
         if (!ADMIN_TARGET_STATUSES.contains(targetStatus)) {
             throw new IllegalArgumentException("REQUEST_STATUS_NOT_ADMIN_MUTABLE");
         }
+        if (targetStatus == BoostRequestStatus.CLOSED) {
+            return boostRequestMapper.toDto(assignmentService.confirmByAdmin(id, adminNote));
+        }
+
+        final BoostRequest req = requestService.getByIdForUpdate(id);
+        final BoostRequestStatus currentStatus = BoostRequestStatus.from(req.getStatus());
+        if (currentStatus == targetStatus) {
+            if (adminNote != null) {
+                req.setAdminNote(adminNote);
+                req.setUpdatedAt(OffsetDateTime.now());
+            }
+            return boostRequestMapper.toDto(req);
+        }
+        if (!ADMIN_TRANSITIONS.getOrDefault(currentStatus, Set.of()).contains(targetStatus)) {
+            throw new IllegalArgumentException("REQUEST_STATUS_TRANSITION_INVALID");
+        }
+
         req.setStatus(targetStatus.name());
-        if (adminNote != null) req.setAdminNote(adminNote);
+        if (adminNote != null) {
+            req.setAdminNote(adminNote);
+        }
         req.setUpdatedAt(OffsetDateTime.now());
 
-        assignmentService.syncActiveAssignmentForRequestStatus(req, targetStatus, adminNote);
+        assignmentService.syncActiveAssignmentForRequestStatus(req, currentStatus, targetStatus, adminNote);
 
         return boostRequestMapper.toDto(req);
     }

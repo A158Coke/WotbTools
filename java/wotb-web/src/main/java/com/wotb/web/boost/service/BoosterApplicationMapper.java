@@ -1,6 +1,7 @@
 package com.wotb.web.boost.service;
 
 import com.wotb.web.boost.dto.BoosterApplicationDto;
+import com.wotb.web.boost.dto.BoosterApplicationSummaryDto;
 import com.wotb.web.boost.entity.BoosterApplication;
 import com.wotb.web.util.Mapper;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,21 @@ public class BoosterApplicationMapper implements Mapper<BoosterApplication, Boos
                 application.getReviewedAt(),
                 application.getCreatedAt(),
                 application.getUpdatedAt()
+        );
+    }
+
+    public BoosterApplicationSummaryDto toSummary(final BoosterApplication application) {
+        return new BoosterApplicationSummaryDto(
+                application.getId(),
+                application.getWotbAccountId(),
+                application.getWotbNickname(),
+                application.getRequestedLevel(),
+                application.getQq(),
+                application.getAvailabilityTier(),
+                application.getStatus(),
+                application.getAdminNote(),
+                application.getApprovedBoosterId(),
+                application.getCreatedAt()
         );
     }
 }
