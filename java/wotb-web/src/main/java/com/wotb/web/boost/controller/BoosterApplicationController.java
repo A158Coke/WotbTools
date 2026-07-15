@@ -1,6 +1,6 @@
 package com.wotb.web.boost.controller;
 
-import com.wotb.web.boost.dto.BoosterApplicationDto;
+import com.wotb.web.boost.dto.BoosterApplicationSummaryDto;
 import com.wotb.web.boost.dto.CreateBoosterApplicationRequest;
 import com.wotb.web.boost.dto.CreateBoosterApplicationResponse;
 import com.wotb.web.boost.service.BoosterApplicationService;
@@ -44,7 +44,7 @@ public class BoosterApplicationController {
     }
 
     @GetMapping("/my")
-    public List<BoosterApplicationDto> listMine() {
+    public List<BoosterApplicationSummaryDto> listMine() {
         return service.listMine(JwtUtil.requireUserId());
     }
 }

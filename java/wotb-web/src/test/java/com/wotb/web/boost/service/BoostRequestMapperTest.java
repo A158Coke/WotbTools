@@ -4,6 +4,8 @@ import com.wotb.web.boost.dto.BoostRequestDto;
 import com.wotb.web.boost.entity.BoostRequest;
 import org.junit.jupiter.api.Test;
 
+import java.time.OffsetDateTime;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class BoostRequestMapperTest {
@@ -19,6 +21,7 @@ class BoostRequestMapperTest {
         request.setContactType("QQ");
         request.setContactValue("123456789");
         request.setStatus("MATCHED");
+        request.setAutoConfirmAt(OffsetDateTime.parse("2026-07-17T12:00:00Z"));
 
         final BoostRequestDto result = mapper.toDto(request, true);
 
@@ -27,6 +30,7 @@ class BoostRequestMapperTest {
         assertThat(result.status()).isEqualTo("MATCHED");
         assertThat(result.contactValueMasked()).isEqualTo("123****789");
         assertThat(result.assigned()).isTrue();
+        assertThat(result.autoConfirmAt()).isEqualTo(request.getAutoConfirmAt());
     }
 
     @Test

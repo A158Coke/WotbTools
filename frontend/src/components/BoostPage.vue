@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
+import { ref, computed, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { apiCodeLabel, apiErrorLabel, enumLabel } from '../utils/display.js'
@@ -8,6 +8,7 @@ import { createLatestDebounce } from '../utils/latest-debounce.js'
 import {
   acceptMyBoosterAssignment,
   adminBoostAssign,
+  adminBoostBoosterApplication,
   adminBoostBoosterApplicationApprove,
   adminBoostBoosterApplicationReject,
   adminBoostBoosterApplicationReviewing,
@@ -23,6 +24,7 @@ import {
   adminSearchUsers,
   completeMyBoosterAssignment,
   boostCancelRequest,
+  boostConfirmRequestCompletion,
   boostCreateBoosterApplication,
   boostCreateRequest,
   boostListMyBoosterApplications,
@@ -62,6 +64,7 @@ const formSuccess = ref('')
 // My requests
 const myRequests = ref([])
 const loadingMy = ref(false)
+const confirmingRequestId = ref(null)
 
 // Booster application
 const profile = ref(null)
@@ -92,6 +95,7 @@ const loadingAssignments = ref(false)
 const loadError = ref('')
 let adminRequestLoadGeneration = 0
 let adminApplicationLoadGeneration = 0
+let adminApplicationDetailLoadGeneration = 0
 let boosterLoadGeneration = 0
 
 // Admin: 检查 realm 角色 + 客户端角色 (resource_access)
@@ -114,9 +118,17 @@ const loadingAdmin = ref(false)
 // Admin: booster applications
 const adminApplications = ref([])
 const applicationPage = ref({ page: 0, size: 20, totalElements: 0, totalPages: 0 })
-const applicationStatusFilter = ref('')
+const applicationStatusFilter = ref('NEW')
 const loadingAdminApplications = ref(false)
 const applicationNotes = ref({})
+const expandedApplicationId = ref(null)
+const applicationDetail = ref(null)
+const loadingApplicationDetailId = ref(null)
+const applicationDetailError = ref('')
+const applicationImagePreview = ref(null)
+const applicationImageCloseButton = ref(null)
+let applicationImageTrigger = null
+let applicationDetailAbortController = null
 
 // Admin: booster list
 const boosters = ref([])
@@ -201,6 +213,7 @@ const assignNote = ref('')
 const assignError = ref('')
 
 onMounted(async () => {
+  window.addEventListener('keydown', handleImagePreviewKeydown)
   try {
     const loggedIn = await initPromise
     if (loggedIn || isAuthenticated()) {
@@ -228,9 +241,12 @@ async function loadOptions() {
 }
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleImagePreviewKeydown)
   latestUserSearch.cancel()
   adminRequestLoadGeneration += 1
   adminApplicationLoadGeneration += 1
+  adminApplicationDetailLoadGeneration += 1
+  applicationDetailAbortController?.abort()
   boosterLoadGeneration += 1
 })
 
@@ -390,6 +406,32 @@ async function selectApplicationImage(kind, event) {
   }
 }
 
+async function openApplicationImage(src, alt, trigger) {
+  if (!src) return
+  applicationImageTrigger = trigger
+  applicationImagePreview.value = { src, alt }
+  await nextTick()
+  applicationImageCloseButton.value?.focus()
+}
+
+function closeApplicationImage() {
+  const trigger = applicationImageTrigger
+  applicationImagePreview.value = null
+  applicationImageTrigger = null
+  nextTick(() => {
+    if (trigger?.isConnected) trigger.focus()
+  })
+}
+
+function handleImagePreviewKeydown(event) {
+  if (event.key === 'Escape' && applicationImagePreview.value) closeApplicationImage()
+}
+
+function keepImagePreviewFocus(event) {
+  event.preventDefault()
+  applicationImageCloseButton.value?.focus()
+}
+
 async function submitBoosterApplication() {
   applicationError.value = ''
   applicationSuccess.value = ''
@@ -442,6 +484,21 @@ async function cancelRequest(id) {
     loadMyRequests()
   } catch (e) {
     alert(apiError(e))
+  }
+}
+
+async function confirmRequestCompletion(id) {
+  if (!confirm(t('boost.confirmCompletionPrompt'))) return
+  confirmingRequestId.value = id
+  try {
+    const response = await boostConfirmRequestCompletion(id)
+    await loadMyRequests()
+    loadUnreadNotificationCount()
+    alert(apiCode(response.code, 'boost.confirmCompletion'))
+  } catch (e) {
+    alert(apiError(e))
+  } finally {
+    if (confirmingRequestId.value === id) confirmingRequestId.value = null
   }
 }
 
@@ -529,6 +586,7 @@ async function updateStatus(id, status) {
 
 async function loadAdminApplications(page = 0) {
   const generation = ++adminApplicationLoadGeneration
+  closeApplicationDetail()
   loadError.value = ''
   loadingAdminApplications.value = true
   try {
@@ -543,6 +601,48 @@ async function loadAdminApplications(page = 0) {
     if (generation === adminApplicationLoadGeneration) loadError.value = apiError(error)
   } finally {
     if (generation === adminApplicationLoadGeneration) loadingAdminApplications.value = false
+  }
+}
+
+function closeApplicationDetail() {
+  adminApplicationDetailLoadGeneration += 1
+  applicationDetailAbortController?.abort()
+  applicationDetailAbortController = null
+  if (applicationImagePreview.value) closeApplicationImage()
+  expandedApplicationId.value = null
+  applicationDetail.value = null
+  loadingApplicationDetailId.value = null
+  applicationDetailError.value = ''
+}
+
+async function toggleApplicationDetail(id) {
+  if (expandedApplicationId.value === id) {
+    closeApplicationDetail()
+    return
+  }
+
+  const generation = ++adminApplicationDetailLoadGeneration
+  applicationDetailAbortController?.abort()
+  const abortController = new AbortController()
+  applicationDetailAbortController = abortController
+  expandedApplicationId.value = id
+  applicationDetail.value = null
+  applicationDetailError.value = ''
+  loadingApplicationDetailId.value = id
+  try {
+    const detail = await adminBoostBoosterApplication(id, { signal: abortController.signal })
+    if (generation === adminApplicationDetailLoadGeneration) {
+      applicationDetail.value = detail
+    }
+  } catch (error) {
+    if (error?.name !== 'AbortError' && generation === adminApplicationDetailLoadGeneration) {
+      applicationDetailError.value = apiError(error)
+    }
+  } finally {
+    if (generation === adminApplicationDetailLoadGeneration) {
+      applicationDetailAbortController = null
+      loadingApplicationDetailId.value = null
+    }
   }
 }
 
@@ -674,6 +774,7 @@ function statusBadge(s) {
 
 function switchTab(t) {
   if (t === 'apply' && isBooster.value) return
+  if (tab.value === 'applicationReview' && t !== 'applicationReview') closeApplicationDetail()
   tab.value = t
   if (t === 'adminRequests') { loadAdminRequests(); loadBoosters() }
   else if (t === 'boosters') { loadBoosters(); loadAllUsers() }
@@ -872,9 +973,17 @@ function switchTab(t) {
           <div class="my-meta">
             <span>{{ $t('boost.contact') }}: {{ r.contactValueMasked }}</span>
             <span v-if="r.assigned" class="my-assigned">✓ {{ $t('boost.assigned') }}</span>
+            <span v-if="r.status === 'PENDING_CONFIRM' && r.autoConfirmAt">
+              {{ $t('boost.autoConfirmHint', { time: new Date(r.autoConfirmAt).toLocaleString() }) }}
+            </span>
           </div>
           <div v-if="r.status === 'NEW' || r.status === 'REVIEWING'" class="my-actions">
             <button class="btn-ghost btn-sm" @click="cancelRequest(r.id)">{{ $t('boost.cancel') }}</button>
+          </div>
+          <div v-else-if="r.status === 'PENDING_CONFIRM'" class="my-actions">
+            <button class="btn-primary btn-sm" :disabled="confirmingRequestId !== null" @click="confirmRequestCompletion(r.id)">
+              {{ confirmingRequestId === r.id ? $t('boost.confirmingCompletion') : $t('boost.confirmCompletion') }}
+            </button>
           </div>
         </div>
       </div>
@@ -1031,38 +1140,54 @@ function switchTab(t) {
           <div class="admin-header">
             <strong>#{{ a.id }}</strong>
             <span>{{ a.wotbNickname }} / {{ a.wotbAccountId }}</span>
-            <span>{{ applicationLevelLabel(a.requestedLevel) }}</span>
             <span :class="'badge badge-' + statusBadge(a.status)">{{ applicationStatusLabel(a.status) }}</span>
             <span class="admin-time">{{ new Date(a.createdAt).toLocaleString() }}</span>
           </div>
-          <div class="application-details">
+          <div class="application-summary">
+            <div><span>{{ $t('boost.applicationLevel') }}</span><strong>{{ applicationLevelLabel(a.requestedLevel) }}</strong></div>
             <div><span>{{ $t('boost.applicationQq') }}</span><strong>{{ a.qq }}</strong></div>
-            <div><span>{{ $t('boost.applicationWechat') }}</span><strong>{{ a.wechat || '-' }}</strong></div>
             <div><span>{{ $t('boost.applicationAvailability') }}</span><strong>{{ availabilityLabel(a.availabilityTier) }}</strong></div>
-            <div><span>{{ $t('boost.applicationDailyTime') }}</span><strong>{{ a.dailyTimeWindow }}</strong></div>
-            <div><span>{{ $t('boost.applicationSelfAssessment') }}</span><strong>{{ a.selfAssessment || '-' }}</strong></div>
           </div>
-          <div class="application-images">
-            <a :href="a.overallStatsImage" target="_blank" rel="noopener">
-              <img :src="a.overallStatsImage" :alt="$t('boost.applicationOverallImage')" />
-              <span>{{ $t('boost.applicationOverallImage') }}</span>
-            </a>
-            <a :href="a.vehicleStatsImage" target="_blank" rel="noopener">
-              <img :src="a.vehicleStatsImage" :alt="$t('boost.applicationVehicleImage')" />
-              <span>{{ $t('boost.applicationVehicleImage') }}</span>
-            </a>
+          <div class="application-summary-actions">
+            <button type="button" class="btn-ghost btn-sm"
+              :aria-expanded="expandedApplicationId === a.id"
+              :aria-controls="'application-detail-' + a.id"
+              @click="toggleApplicationDetail(a.id)">
+              {{ expandedApplicationId === a.id ? $t('boost.applicationHideDetails') : $t('boost.applicationShowDetails') }}
+            </button>
           </div>
-          <div class="form-row">
-            <label>{{ $t('boost.applicationAdminNote') }}</label>
-            <input v-model="applicationNotes[a.id]" maxlength="500" :placeholder="a.adminNote || $t('boost.applicationAdminNoteHint')" />
-          </div>
-          <div class="admin-actions" v-if="a.status === 'NEW' || a.status === 'REVIEWING'">
-            <button v-if="a.status === 'NEW'" class="btn-ghost btn-sm" @click="reviewApplication(a.id)">{{ $t('boost.action.REVIEWING') }}</button>
-            <button class="btn-primary btn-sm" @click="approveApplication(a.id)">{{ $t('boost.applicationApprove') }}</button>
-            <button class="btn-ghost btn-sm btn-danger" @click="rejectApplication(a.id)">{{ $t('boost.action.REJECTED') }}</button>
-          </div>
-          <div v-else-if="a.approvedBoosterId" class="boost-success">
-            {{ $t('boost.applicationApprovedBooster', { id: a.approvedBoosterId }) }}
+          <div v-if="expandedApplicationId === a.id" :id="'application-detail-' + a.id" class="application-detail-panel">
+            <div v-if="loadingApplicationDetailId === a.id" class="boost-loading">{{ $t('boost.loading') }}</div>
+            <div v-else-if="applicationDetailError" class="boost-error">{{ applicationDetailError }}</div>
+            <template v-else-if="applicationDetail?.id === a.id">
+              <div class="application-details">
+                <div><span>{{ $t('boost.applicationWechat') }}</span><strong>{{ applicationDetail.wechat || '-' }}</strong></div>
+                <div><span>{{ $t('boost.applicationDailyTime') }}</span><strong>{{ applicationDetail.dailyTimeWindow }}</strong></div>
+                <div><span>{{ $t('boost.applicationSelfAssessment') }}</span><strong>{{ applicationDetail.selfAssessment || '-' }}</strong></div>
+              </div>
+              <div class="application-images">
+                <button type="button" class="application-image-thumb" @click="openApplicationImage(applicationDetail.overallStatsImage, $t('boost.applicationOverallImage'), $event.currentTarget)">
+                  <img :src="applicationDetail.overallStatsImage" :alt="$t('boost.applicationOverallImage')" loading="lazy" decoding="async" />
+                  <span>{{ $t('boost.applicationOverallImage') }}</span>
+                </button>
+                <button type="button" class="application-image-thumb" @click="openApplicationImage(applicationDetail.vehicleStatsImage, $t('boost.applicationVehicleImage'), $event.currentTarget)">
+                  <img :src="applicationDetail.vehicleStatsImage" :alt="$t('boost.applicationVehicleImage')" loading="lazy" decoding="async" />
+                  <span>{{ $t('boost.applicationVehicleImage') }}</span>
+                </button>
+              </div>
+              <div class="form-row">
+                <label>{{ $t('boost.applicationAdminNote') }}</label>
+                <input v-model="applicationNotes[a.id]" maxlength="500" :placeholder="applicationDetail.adminNote || $t('boost.applicationAdminNoteHint')" />
+              </div>
+              <div class="admin-actions" v-if="a.status === 'NEW' || a.status === 'REVIEWING'">
+                <button v-if="a.status === 'NEW'" class="btn-ghost btn-sm" @click="reviewApplication(a.id)">{{ $t('boost.action.REVIEWING') }}</button>
+                <button class="btn-primary btn-sm" @click="approveApplication(a.id)">{{ $t('boost.applicationApprove') }}</button>
+                <button class="btn-ghost btn-sm btn-danger" @click="rejectApplication(a.id)">{{ $t('boost.action.REJECTED') }}</button>
+              </div>
+              <div v-else-if="a.approvedBoosterId" class="boost-success">
+                {{ $t('boost.applicationApprovedBooster', { id: a.approvedBoosterId }) }}
+              </div>
+            </template>
           </div>
         </div>
       </div>
@@ -1165,6 +1290,19 @@ function switchTab(t) {
         <button :disabled="boosterPage.page >= boosterPage.totalPages - 1" @click="loadBoosters(boosterPage.page + 1)">→</button>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div v-if="applicationImagePreview" class="application-image-overlay" role="dialog" aria-modal="true"
+        :aria-label="applicationImagePreview.alt" @click.self="closeApplicationImage" @keydown.tab="keepImagePreviewFocus">
+        <div class="application-image-viewer">
+          <div class="application-image-viewer-header">
+            <strong>{{ applicationImagePreview.alt }}</strong>
+            <button ref="applicationImageCloseButton" type="button" :aria-label="$t('app.close')" @click="closeApplicationImage">&times;</button>
+          </div>
+          <img :src="applicationImagePreview.src" :alt="applicationImagePreview.alt" />
+        </div>
+      </div>
+    </Teleport>
   </div>
 
   <!-- Auth states -->
@@ -1212,13 +1350,25 @@ function switchTab(t) {
 .my-meta, .admin-meta { font-size: 12px; color: var(--text-secondary); display: flex; gap: 12px; flex-wrap: wrap; }
 .my-actions, .admin-actions, .booster-actions { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
 .my-assigned { color: var(--status-ok-fg); font-weight: 700; }
+.application-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 14px; margin: 12px 0; font-size: 13px; }
+.application-summary div { display: flex; gap: 8px; justify-content: space-between; border-bottom: 1px solid var(--border-light); padding-bottom: 6px; }
+.application-summary span { color: var(--text-sub); }
+.application-summary strong { color: var(--text); text-align: right; word-break: break-word; }
+.application-summary-actions { display: flex; justify-content: flex-end; }
+.application-detail-panel { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-light); }
 .application-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; margin: 12px 0; font-size: 13px; }
 .application-details div { display: flex; gap: 8px; justify-content: space-between; border-bottom: 1px solid var(--border-light); padding-bottom: 6px; }
 .application-details span { color: var(--text-sub); }
 .application-details strong { color: var(--text); text-align: right; word-break: break-word; }
 .application-images { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 12px 0; }
-.application-images a { display: grid; gap: 6px; color: var(--accent-dark); text-decoration: none; font-size: 12px; font-weight: 700; }
-.application-images img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.application-image-thumb { display: grid; gap: 6px; padding: 0; border: 0; background: transparent; color: var(--accent-dark); text-align: left; font: inherit; font-size: 12px; font-weight: 700; cursor: zoom-in; }
+.application-image-thumb img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.application-image-thumb:focus-visible img { outline: 2px solid var(--accent); outline-offset: 2px; }
+.application-image-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 24px; background: color-mix(in srgb, var(--text-heading) 72%, transparent); }
+.application-image-viewer { display: flex; flex-direction: column; width: min(100%, 1440px); height: min(100%, 1000px); overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card); box-shadow: var(--hard-shadow); }
+.application-image-viewer-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 14px; color: var(--text-heading); }
+.application-image-viewer-header button { width: 36px; height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card2); color: var(--text); cursor: pointer; font-size: 24px; line-height: 1; }
+.application-image-viewer > img { flex: 1 1 auto; min-height: 0; width: 100%; object-fit: contain; background: var(--bg); }
 
 .badge { font-size: 11px; padding: 2px 7px; border-radius: 6px; font-weight: 700; }
 .badge-info { background: var(--status-info-bg); color: var(--status-info-fg); }
@@ -1267,6 +1417,8 @@ function switchTab(t) {
   .boost-tabs { display: flex; }
   .boost-tabs button { flex: 1 1 auto; }
   .flex-between { align-items: flex-start; gap: 10px; flex-direction: column; }
-  .form-grid, .application-details, .application-images { grid-template-columns: 1fr; }
+  .form-grid, .application-summary, .application-details, .application-images { grid-template-columns: 1fr; }
+  .application-image-overlay { padding: 8px; }
+  .application-image-viewer { width: 100%; height: 96vh; }
 }
 </style>

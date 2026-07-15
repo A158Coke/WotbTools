@@ -2,10 +2,15 @@ package com.wotb.web;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wotb.web.boost.dto.BoosterApplicationSummaryDto;
+import com.wotb.web.boost.entity.BoosterApplication;
+import com.wotb.web.boost.repository.BoosterApplicationRepository;
+import org.hibernate.resource.jdbc.spi.StatementInspector;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -20,6 +25,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -37,7 +43,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
-class WebApiTest {
+public class WebApiTest {
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18-alpine")
@@ -58,11 +64,16 @@ class WebApiTest {
         registry.add("keycloak.admin.realm", () -> "test");
         registry.add("keycloak.admin.client-id", () -> "test");
         registry.add("keycloak.admin.client-secret", () -> "test");
+        registry.add("spring.jpa.properties.hibernate.session_factory.statement_inspector",
+                () -> SqlCaptureInspector.class.getName());
     }
 
 
     @Autowired
     WebApplicationContext ctx;
+
+    @Autowired
+    BoosterApplicationRepository boosterApplicationRepository;
 
     private final ObjectMapper om = new ObjectMapper();
 
@@ -174,6 +185,101 @@ class WebApiTest {
         }
         assertEquals(files.size(), names.size());
         assertTrue(names.stream().allMatch(n -> n.endsWith(".xlsx")));
+    }
+
+    @Test
+    void boosterApplicationSummaryQueriesDoNotSelectImageColumns() {
+        final BoosterApplication application = new BoosterApplication();
+        application.setKeycloakUserId("summary-query-user");
+        application.setUserProfileId(100L);
+        application.setWotbAccountId(200L);
+        application.setWotbNickname("SummaryPlayer");
+        application.setWotbServer("CN");
+        application.setOverallStatsImage("data:image/png;base64,overall");
+        application.setVehicleStatsImage("data:image/png;base64,vehicle");
+        application.setRequestedLevel("ELITE");
+        application.setQq("123456");
+        application.setAvailabilityTier("MONTH_20");
+        application.setDailyTimeWindow("20:00-23:00");
+        application.setStatus("NEW");
+        boosterApplicationRepository.saveAndFlush(application);
+
+        try {
+            SqlCaptureInspector.beginCapture();
+            final BoosterApplicationSummaryDto allSummary = boosterApplicationRepository
+                    .findAllSummaries(PageRequest.of(0, 20))
+                    .getContent()
+                    .stream()
+                    .filter(summary -> application.getId().equals(summary.id()))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals(application.getId(), allSummary.id());
+            assertProjectionSelectExcludesImages();
+
+            SqlCaptureInspector.clear();
+            assertTrue(boosterApplicationRepository
+                    .findSummariesByStatus("NEW", PageRequest.of(0, 20))
+                    .stream()
+                    .anyMatch(summary -> application.getId().equals(summary.id())));
+            assertProjectionSelectExcludesImages();
+
+            SqlCaptureInspector.clear();
+            assertEquals(1, boosterApplicationRepository
+                    .findSummariesByKeycloakUserId("summary-query-user")
+                    .size());
+            assertProjectionSelectExcludesImages();
+        } finally {
+            SqlCaptureInspector.endCapture();
+            boosterApplicationRepository.deleteById(application.getId());
+            boosterApplicationRepository.flush();
+        }
+    }
+
+    private static void assertProjectionSelectExcludesImages() {
+        final List<String> selects = SqlCaptureInspector.statements().stream()
+                .map(String::toLowerCase)
+                .filter(sql -> sql.stripLeading().startsWith("select"))
+                .filter(sql -> sql.contains("booster_application"))
+                .toList();
+        assertTrue(selects.stream().anyMatch(sql -> sql.contains("wotb_nickname")),
+                () -> "Booster application projection SELECT was not captured: " + selects);
+        selects.forEach(select -> {
+            assertFalse(select.contains("overall_stats_image"), select);
+            assertFalse(select.contains("vehicle_stats_image"), select);
+        });
+    }
+
+    public static final class SqlCaptureInspector implements StatementInspector {
+        private static final ThreadLocal<List<String>> SQL = new ThreadLocal<>();
+
+        @Override
+        public String inspect(final String sql) {
+            final List<String> statements = SQL.get();
+            if (statements != null) {
+                statements.add(sql);
+            }
+            return sql;
+        }
+
+        static void beginCapture() {
+            SQL.set(new ArrayList<>());
+        }
+
+        static void clear() {
+            final List<String> statements = SQL.get();
+            if (statements != null) {
+                statements.clear();
+            }
+        }
+
+        static void endCapture() {
+            SQL.remove();
+        }
+
+        static List<String> statements() {
+            final List<String> statements = SQL.get();
+            return statements == null ? List.of() : List.copyOf(statements);
+        }
     }
 
     private static Stream<JsonNode> stream(final JsonNode n) {

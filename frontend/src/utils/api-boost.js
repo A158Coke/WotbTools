@@ -39,6 +39,10 @@ export async function boostCancelRequest(id) {
   return boostHandle(await fetch(`/api/boost/requests/my/${encodeURIComponent(id)}/cancel`, { method: 'PATCH', headers: await boostHeaders() }))
 }
 
+export async function boostConfirmRequestCompletion(id) {
+  return boostHandle(await fetch(`/api/boost/requests/my/${encodeURIComponent(id)}/confirm-completion`, { method: 'PATCH', headers: await boostHeaders() }))
+}
+
 export async function adminBoostRequests(params = {}) {
   const qs = new URLSearchParams(params).toString()
   return boostHandle(await fetch(`/api/admin/boost/requests${qs ? '?' + qs : ''}`, { headers: await boostHeaders() }))
@@ -89,6 +93,10 @@ export async function boostListMyBoosterApplications() {
 export async function adminBoostBoosterApplications(params = {}) {
   const qs = new URLSearchParams(params).toString()
   return boostHandle(await fetch(`/api/admin/boost/booster-applications${qs ? '?' + qs : ''}`, { headers: await boostHeaders() }))
+}
+
+export async function adminBoostBoosterApplication(id, { signal } = {}) {
+  return boostHandle(await fetch(`/api/admin/boost/booster-applications/${encodeURIComponent(id)}`, { headers: await boostHeaders(), signal }))
 }
 
 export async function adminBoostBoosterApplicationReviewing(id, body = {}) {
