@@ -81,7 +81,7 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 目标是把 WoT Blitz `.wotbreplay` 回放中的战斗结果提取成可分析的 Excel。项目主线为 Java，交付 Web 版：Spring Boot 4 后端，Vue 3 前端，支持浏览器上传、预览和下载。
 
 当前边界：
-- 解析战斗结算结果，不解析完整战斗过程流。
+- 解析战斗结算结果，完整战斗重建已上线（支持逐文件解析 + 可选重建）。
 - 输出重点是玩家战绩、车辆信息、战斗基本信息、跨场汇总。
 
 ---
@@ -153,16 +153,27 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
   ├─ battle_results.dat   Python pickle → (arenaId, protobuf bytes)
   └─ data.wotreplay       BigWorld 事件流（存活时间推算）
         │
-   wotb-core (纯 Java 库, 无 Spring)
-   parse/ 解析+去重 → stats/ 评分+富化+汇总 → export/ POI 写 xlsx
-   ref/ 车辆库+地图名查表 ; model/ 数据模型(record) ; Columns 列定义契约
+    wotb-core (纯 Java 库, 无 Spring)
+    ├── parse/      解析+去重
+    ├── stats/      评分+富化+汇总
+    ├── export/     POI 写 xlsx
+    ├── ref/        车辆库+地图名查表
+    ├── model/      数据模型(record)
+    ├── Columns     列定义契约
+    ├── processing/ 统一单/多文件处理门面
+    └── replay/
+         ├── stream/       原始包流读取
+         ├── decoder/      包解码器
+         ├── event/        领域事件模型
+         ├── reconstruction/ 战场状态重建
+         └── feature/      战术特征提取 + AI 输入占位
         │
    wotb-web (Spring Boot)  controller(HTTP) → service(业务) → mapper(→DTO) → dto
         │
    frontend (Vue 3 + Vite, 单文件 App.vue, vue-i18n 三语, Keycloak 认证)
 ```
 
-核心包结构（`com.wotb.core`）：`parse / ref / stats / export / model` 子包 + 顶层 `Columns`。Web 侧按 `user / leaderboard / replay / boost / admin` 业务域分包，每个域内部再分 controller/service/entity/repository/dto。
+核心包结构（`com.wotb.core`）：`parse / ref / stats / export / model / processing / replay` 子包 + 顶层 `Columns`。Web 侧按 `user / leaderboard / replay / boost / admin` 业务域分包，每个域内部再分 controller/service/entity/repository/dto。
 
 ### 后端核心类
 
@@ -233,6 +244,7 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 - `?view=boost`：进入陪练、打手申请与管理员资格审批页。
 - `?view=profile`：进入个人中心。
 - `?view=admin-users`：进入管理员用户管理（仅 `wotbtools-admin` 角色可见）。
+- `?view=reconstruction`：进入回放战斗重建测试页（仅 `wotbtools-admin` 可见）。
 - `wotbtools.com` / `www.wotbtools.com` 无参数时默认显示工具集首页。
 
 ### 前端组件
