@@ -134,10 +134,11 @@ public class BattleStateReconstructor {
         final VehicleState vs = state.getOrCreateVehicle(e.entityId(), e.timestamp().rawClockSec());
         vs.setLastObservedAt(e.timestamp().rawClockSec());
 
-        // 如果已经确认为 DESTROYED，不能恢复
+        // 如果已经确认为 DESTROYED，低置信度（PARTIAL/UNKNOWN）位置更新不得覆盖，
+        // 只接受高置信度（EXACT/INFERRED）数据。与 applyVehicleDestroyed/applyHealth 的处理一致。
         if (vs.lifeState() == LifeState.DESTROYED
-                && DecodeConfidenceHelper.ordinal(e.confidence()) <= DecodeConfidenceHelper.ordinal(
-                        com.wotb.core.replay.event.DecodeConfidence.INFERRED)) {
+                && DecodeConfidenceHelper.ordinal(e.confidence()) >= DecodeConfidenceHelper.ordinal(
+                        com.wotb.core.replay.event.DecodeConfidence.PARTIAL)) {
             return;
         }
 
@@ -263,14 +264,14 @@ public class BattleStateReconstructor {
         final BattleState state = snapshotToMutable(nearest.stateSnapshot());
         state.setRawClockSec(nearest.rawClockSec());
 
-        // 应用 checkpoint 后、目标时间前的事件
+        // 应用 checkpoint 后、目标时间前的事件。
+        // applyEvent 不依赖实例状态，只需一个临时实例，循环外创建即可，避免逐事件分配。
+        final BattleStateReconstructor tempReconstructor = new BattleStateReconstructor();
         for (int i = nearest.eventIndex(); i < events.size(); i++) {
             final ReplayEvent event = events.get(i);
             if (event.timestamp().rawClockSec() > targetClockSec) {
                 break;
             }
-            // 重建器方法需要实例调用，这里用临时实例
-            final BattleStateReconstructor tempReconstructor = new BattleStateReconstructor();
             tempReconstructor.applyEvent(state, event);
             state.setRawClockSec(event.timestamp().rawClockSec());
         }

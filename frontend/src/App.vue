@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useTheme } from './composables/useTheme.js'
 import { useError } from './composables/useError.js'
 import { useAuth } from './composables/useAuth.js'
@@ -37,6 +37,8 @@ const allowedViews = computed(() => {
   return base
 })
 const activeTool = ref('')
+// 用户是否已手动切换视图（避免鉴权就绪后覆盖用户选择）
+const userNavigated = ref(false)
 // 初始化时根据 viewParam 和权限决定
 function initView() {
   const views = allowedViews.value
@@ -44,7 +46,17 @@ function initView() {
 }
 initView()
 
+// 鉴权是异步的：setup 阶段 token 可能尚未解析，导致 admin 用 ?view=reconstruction
+// 深链被回退到默认视图。token 就绪后若权限允许且用户未手动切换，则重新解析一次深链。
+watch(allowedViews, (views) => {
+  if (userNavigated.value) return
+  if (viewParam && views.includes(viewParam) && activeTool.value !== viewParam) {
+    activeTool.value = viewParam
+  }
+})
+
 function navigate(view) {
+  userNavigated.value = true
   activeTool.value = view
   const url = new URL(window.location.href)
   if (view === 'home') url.searchParams.delete('view')

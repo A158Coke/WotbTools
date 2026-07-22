@@ -42,12 +42,13 @@ public class PositionDecoder implements ReplayPacketDecoder {
         final float x = Float.intBitsToFloat(readU32LE(payload, 12));
         final float y = Float.intBitsToFloat(readU32LE(payload, 16));
         final float z = Float.intBitsToFloat(readU32LE(payload, 20));
-        final float errX = payload.length >= 48 ? Float.intBitsToFloat(readU32LE(payload, 24)) : 0f;
-        final float errY = payload.length >= 48 ? Float.intBitsToFloat(readU32LE(payload, 28)) : 0f;
-        final float errZ = payload.length >= 48 ? Float.intBitsToFloat(readU32LE(payload, 32)) : 0f;
-        final float yaw = payload.length >= 45 ? Float.intBitsToFloat(readU32LE(payload, 36)) : 0f;
-        final float pitch = payload.length >= 45 ? Float.intBitsToFloat(readU32LE(payload, 40)) : 0f;
-        final float roll = payload.length >= 45 ? Float.intBitsToFloat(readU32LE(payload, 44)) : 0f;
+        // 每个字段各自要求读取到末尾字节，避免越界（readU32LE 读 offset..offset+3）。
+        final float errX = payload.length >= 28 ? Float.intBitsToFloat(readU32LE(payload, 24)) : 0f;
+        final float errY = payload.length >= 32 ? Float.intBitsToFloat(readU32LE(payload, 28)) : 0f;
+        final float errZ = payload.length >= 36 ? Float.intBitsToFloat(readU32LE(payload, 32)) : 0f;
+        final float yaw = payload.length >= 40 ? Float.intBitsToFloat(readU32LE(payload, 36)) : 0f;
+        final float pitch = payload.length >= 44 ? Float.intBitsToFloat(readU32LE(payload, 40)) : 0f;
+        final float roll = payload.length >= 48 ? Float.intBitsToFloat(readU32LE(payload, 44)) : 0f;
         final byte errorFlag = payload.length >= 49 ? payload[48] : 0;
 
         DecodeConfidence confidence = DecodeConfidence.EXACT;
