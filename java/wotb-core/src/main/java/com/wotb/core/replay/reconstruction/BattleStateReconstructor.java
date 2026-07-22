@@ -250,54 +250,30 @@ public class BattleStateReconstructor {
             List<ReplayEvent> events,
             List<BattleStateCheckpoint> checkpoints) {
 
-        // 找到最近的 checkpoint
-        BattleStateCheckpoint nearest = checkpoints.getFirst();
-        for (final BattleStateCheckpoint cp : checkpoints) {
-            if (cp.rawClockSec() <= targetClockSec) {
-                nearest = cp;
-            } else {
-                break;
+        // 时钟可能回退（诊断中的 clockRegressionCount 可 > 0）：不能假设 events 的
+        // rawClockSec 单调递增，也不能在遇到第一个"超过目标时间"的事件时 break，
+        // 否则其后 sequence 更大但时钟更小的事件会被永久漏掉，checkpoint 快路径同理不安全。
+        // 因此按原始 sequence 顺序，从空态重放所有 rawClockSec <= targetClockSec 的事件
+        // （跳过晚于目标时间的），保证与完整重建在该时间点的结果一致。
+        // checkpoints 仍保留在重建结果中供未来（无回退时）快速查询优化使用。
+        final BattleState state = new BattleState();
+        final BattleStateReconstructor replayer = new BattleStateReconstructor();
+        float maxAppliedClock = 0f;
+        boolean anyApplied = false;
+        for (final ReplayEvent event : events) {
+            final float clock = event.timestamp().rawClockSec();
+            if (clock > targetClockSec) {
+                continue;
+            }
+            replayer.applyEvent(state, event);
+            if (!anyApplied || clock > maxAppliedClock) {
+                maxAppliedClock = clock;
+                anyApplied = true;
             }
         }
-
-        // 从 checkpoint 复制状态
-        final BattleState state = snapshotToMutable(nearest.stateSnapshot());
-        state.setRawClockSec(nearest.rawClockSec());
-
-        // 应用 checkpoint 后、目标时间前的事件。
-        // applyEvent 不依赖实例状态，只需一个临时实例，循环外创建即可，避免逐事件分配。
-        final BattleStateReconstructor tempReconstructor = new BattleStateReconstructor();
-        for (int i = nearest.eventIndex(); i < events.size(); i++) {
-            final ReplayEvent event = events.get(i);
-            if (event.timestamp().rawClockSec() > targetClockSec) {
-                break;
-            }
-            tempReconstructor.applyEvent(state, event);
-            state.setRawClockSec(event.timestamp().rawClockSec());
-        }
+        state.setRawClockSec(anyApplied ? maxAppliedClock : 0f);
 
         return BattleStateSnapshot.from(state);
-    }
-
-    /**
-     * 将不可变快照转换为可变状态（用于从 checkpoint 恢复后继续应用事件）。
-     */
-    private static BattleState snapshotToMutable(BattleStateSnapshot snapshot) {
-        final BattleState state = new BattleState();
-        state.setRawClockSec(snapshot.rawClockSec());
-        state.setBattleClockSec(snapshot.battleClockSec());
-        state.setLifecycle(snapshot.lifecycle());
-        state.setBattleEnded(snapshot.battleEnded());
-        state.setWinnerTeam(snapshot.winnerTeam());
-
-        for (final java.util.Map.Entry<Integer, VehicleState> entry
-                : snapshot.vehiclesByEntityId().entrySet()) {
-            state.getVehiclesByEntityId().put(entry.getKey(), entry.getValue().copy());
-        }
-        state.getEntityIdByAccountId().putAll(snapshot.entityIdByAccountId());
-        state.getParticipants().addAll(snapshot.participants());
-
-        return state;
     }
 
     /**

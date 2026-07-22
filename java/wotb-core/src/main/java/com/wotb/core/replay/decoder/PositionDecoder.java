@@ -77,6 +77,15 @@ public class PositionDecoder implements ReplayPacketDecoder {
                             + x + "," + y + "," + z));
         }
 
+        // 完整 Type 10 包为 49 字节；45–48 字节时 roll/errorFlag 等尾部字段缺失，
+        // 被填成默认 0。这属于"字段不存在"而非"真实值为 0"，不能标记为 EXACT。
+        if (payload.length < 49 && confidence == DecodeConfidence.EXACT) {
+            warnings.add(new ReplayDecodeWarning("TRUNCATED_POSITION",
+                    "Position packet truncated (" + payload.length
+                            + " bytes < 49): trailing fields defaulted at entity " + entityId));
+            confidence = DecodeConfidence.PARTIAL;
+        }
+
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
         final PositionChangedEvent event = new PositionChangedEvent(
                 packet.sequence(), ts, packet.type(), confidence,

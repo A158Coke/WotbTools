@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 
 const { t } = useI18n()
-const { tokenParsed } = useAuth()
+const { tokenParsed, token, ensureToken, login } = useAuth()
 
 // AI 功能灰度：仅 wotbtools-admin 可见（后端 /api/replay/analyze 亦按该角色鉴权）
 const isAdmin = computed(() => {
@@ -52,6 +52,27 @@ function formData() {
   return fd
 }
 
+// 统一的受保护请求：确保带上有效的 Keycloak Bearer Token（这些接口需要 wotbtools-admin 角色），
+// 并统一处理 token 刷新失败 / 401 / 403。所有 /api/replay/* 受保护接口都必须经由此方法。
+async function authedFetch(url) {
+  const valid = await ensureToken(30)
+  if (!valid) {
+    login()
+    throw new Error(t('recon.auth_required'))
+  }
+  const accessToken = token()
+  const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
+  const r = await fetch(url, { method: 'POST', headers, body: formData() })
+  if (r.status === 401) {
+    login()
+    throw new Error(t('recon.auth_required'))
+  }
+  if (r.status === 403) {
+    throw new Error(t('recon.forbidden'))
+  }
+  return r
+}
+
 async function runReconstruct() {
   if (!file.value) {
     error.value = t('recon.no_file')
@@ -64,8 +85,7 @@ async function runReconstruct() {
   analysisResult.value = null
   showAnalysis.value = false
   try {
-    const fd = formData()
-    const r = await fetch('/api/replay/reconstruct', { method: 'POST', body: fd })
+    const r = await authedFetch('/api/replay/reconstruct')
     if (!r.ok) {
       const text = await r.text().catch(() => '')
       throw new Error(text || `HTTP ${r.status}`)
@@ -91,8 +111,7 @@ async function runStateAt() {
   loading.value = true
   error.value = ''
   try {
-    const fd = formData()
-    const r = await fetch(`/api/replay/state-at?time=${time}`, { method: 'POST', body: fd })
+    const r = await authedFetch(`/api/replay/state-at?time=${time}`)
     if (!r.ok) {
       const text = await r.text().catch(() => '')
       throw new Error(text || `HTTP ${r.status}`)
@@ -114,13 +133,7 @@ async function runAnalyze() {
   error.value = ''
   analysisResult.value = null
   try {
-    // 与全站一致：带上 Keycloak bearer token（该接口需要 wotbtools-admin 角色）
-    const { token, ensureToken } = useAuth()
-    await ensureToken(30)
-    const accessToken = token()
-    const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
-    const fd = formData()
-    const r = await fetch('/api/replay/analyze', { method: 'POST', headers, body: fd })
+    const r = await authedFetch('/api/replay/analyze')
     if (!r.ok) {
       const text = (await r.text().catch(() => '')).trim()
       if (text === 'AI_NOT_CONFIGURED') {
