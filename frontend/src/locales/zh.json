@@ -794,6 +794,8 @@
         "close": "关闭",
         "key_events": "关键事件",
         "ai_not_configured": "AI 功能未配置（缺少 API 密钥），请联系管理员。",
-        "ai_error": "AI 分析失败"
+        "ai_error": "AI 分析失败",
+        "auth_required": "需要登录，正在跳转登录……",
+        "forbidden": "无权限：该功能仅限 wotbtools-admin"
     }
 }
