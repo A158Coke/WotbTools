@@ -202,6 +202,10 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
         int shift = 0;
         long result = 0;
         while (true) {
+            // 边界与长度保护：截断的 varint 不得越界读取，最多 10 字节（64 位）。
+            if (idx >= buf.length || shift >= 64) {
+                throw new IllegalArgumentException("Malformed varint at offset " + i);
+            }
             final int b = buf[idx] & 0xFF;
             idx++;
             result |= (long) (b & 0x7F) << shift;
