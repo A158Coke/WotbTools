@@ -1,7 +1,8 @@
 package com.wotb.core.replay.reconstruction;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import com.wotb.core.replay.decoder.ReplayDecodeContext;
 import com.wotb.core.replay.decoder.ReplayDecodeResult;
 import com.wotb.core.replay.decoder.ReplayPacketDecoderRegistry;
@@ -42,7 +43,7 @@ import java.util.zip.ZipInputStream;
  */
 public class ReplayReconstructionService {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = JsonMapper.builder().build();
     private static final int MAX_ARCHIVE_BYTES = 20 * 1024 * 1024;
     private static final int MAX_META_JSON_BYTES = 1024 * 1024;
     private static final int MAX_BATTLE_RESULTS_BYTES = 8 * 1024 * 1024;

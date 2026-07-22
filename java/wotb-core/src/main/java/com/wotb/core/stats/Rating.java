@@ -1,7 +1,7 @@
 package com.wotb.core.stats;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
@@ -62,7 +62,7 @@ public final class Rating {
         final Config c = new Config();
         try (InputStream in = Rating.class.getResourceAsStream("/rating.json")) {
             if (in != null) {
-                final JsonNode n = new ObjectMapper().readTree(in);
+                final JsonNode n = JsonMapper.builder().build().readTree(in);
                 final JsonNode w = n.get("weights");
                 if (w != null) {
                     c.assist = w.path("assist").asDouble(c.assist);
@@ -75,7 +75,7 @@ public final class Rating {
                 final JsonNode cf = n.get("classFactor");
                 if (cf != null && cf.isObject()) {
                     final Map<String, Double> m = new HashMap<>();
-                    cf.fields().forEachRemaining(e -> m.put(e.getKey(), e.getValue().asDouble()));
+                    cf.properties().forEach(e -> m.put(e.getKey(), e.getValue().asDouble()));
                     if (!m.isEmpty()) {
                         c.classFactor = m;
                     }
