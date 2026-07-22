@@ -8,9 +8,15 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
+import com.wotb.web.replay.ai.AiReplayAnalysisService;
+import com.wotb.web.replay.ai.AiUpstreamException;
+import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.dto.ReconstructSummary;
 import com.wotb.web.replay.dto.StateAtResponse;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -33,10 +39,12 @@ public class ReconstructionController {
 
     private final DefaultReplayProcessingFacade processingFacade;
     private final ReplayReconstructionService reconstructionService;
+    private final AiReplayAnalysisService aiService;
 
-    public ReconstructionController() {
+    public ReconstructionController(AiReplayAnalysisService aiService) {
         this.reconstructionService = new ReplayReconstructionService();
         this.processingFacade = new DefaultReplayProcessingFacade(reconstructionService);
+        this.aiService = aiService;
     }
 
     /**
@@ -85,6 +93,29 @@ public class ReconstructionController {
     }
 
     /**
+     * 单文件重建后调用 AI 生成战术复盘。
+     * POST /api/replay/analyze
+     */
+    @PostMapping(value = "/analyze", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public AnalyzeResponse analyze(
+            @RequestParam("file") MultipartFile file) throws IOException {
+
+        validateFile(file);
+
+        final byte[] replayBytes = file.getBytes();
+        final ReplayReconstruction reconstruction = reconstructionService.reconstruct(replayBytes);
+        final AiReplayAnalysisService.AnalyzeResult result = aiService.analyze(reconstruction);
+
+        return new AnalyzeResponse(
+                result.analysis(),
+                result.model(),
+                reconstruction.diagnostics().packetCount(),
+                reconstruction.participants().size(),
+                reconstruction.events().size(),
+                result.features().keyEvents());
+    }
+
+    /**
      * 批量重建（公开给 admin 使用的新 pipeline）。
      * POST /api/replay/reconstruct-batch
      */
@@ -123,6 +154,24 @@ public class ReconstructionController {
         }
 
         return processingFacade.processBatch(sources, options);
+    }
+
+    // ---- 异常映射（仅本控制器；返回稳定错误码文本，供前端本地化） ----
+
+    /** AI 未配置密钥 → 503 AI_NOT_CONFIGURED。 */
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<String> handleNotConfigured(IllegalStateException e) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .contentType(MediaType.TEXT_PLAIN)
+                .body(e.getMessage());
+    }
+
+    /** 上游 AI 调用失败 → 502。 */
+    @ExceptionHandler(AiUpstreamException.class)
+    public ResponseEntity<String> handleUpstream(AiUpstreamException e) {
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .contentType(MediaType.TEXT_PLAIN)
+                .body(e.getMessage());
     }
 
     // ---- 验证 ----

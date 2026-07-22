@@ -326,6 +326,9 @@ jobs:
                   KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
                   BOOST_AUTO_CONFIRM_HOURS: "${{ vars.BOOST_AUTO_CONFIRM_HOURS || '72' }}"
                   BOOST_AUTO_CONFIRM_SCAN_MS: "${{ vars.BOOST_AUTO_CONFIRM_SCAN_MS || '300000' }}"
+                  AI_API_KEY: ${{ secrets.AI_API_KEY }}
+                  AI_BASE_URL: "${{ vars.AI_BASE_URL || 'https://api.deepseek.com' }}"
+                  AI_MODEL: "${{ vars.AI_MODEL || 'deepseek-chat' }}"
                 restart: unless-stopped
               wotb-frontend:
                 image: ghcr.io/a158coke/wotbtools-frontend:latest

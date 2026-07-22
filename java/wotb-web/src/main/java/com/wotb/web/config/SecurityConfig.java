@@ -52,7 +52,8 @@ public class SecurityConfig {
                         "/api/replay/reconstruct",
                         "/api/replay/reconstruct-batch",
                         "/api/replay/state-at",
-                        "/api/replay/process")
+                        "/api/replay/process",
+                        "/api/replay/analyze")
                     .hasRole("wotbtools-admin")
 
                 // --- 打手管理（boost-manager 仅可访问该域） ---
