@@ -786,6 +786,14 @@
         "obs": "观测状态",
         "damage_dealt": "造成伤害",
         "damage_recv": "承受伤害",
-        "position": "位置坐标"
+        "position": "位置坐标",
+        "analyze_btn": "AI 战术复盘",
+        "analysis_title": "AI 战术复盘",
+        "show_analysis": "显示 AI 复盘",
+        "hide_analysis": "隐藏 AI 复盘",
+        "close": "关闭",
+        "key_events": "关键事件",
+        "ai_not_configured": "AI 功能未配置（缺少 API 密钥），请联系管理员。",
+        "ai_error": "AI 分析失败"
     }
 }

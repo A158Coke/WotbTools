@@ -786,6 +786,14 @@
         "obs": "Статус",
         "damage_dealt": "Урон",
         "damage_recv": "Получено",
-        "position": "Позиция"
+        "position": "Позиция",
+        "analyze_btn": "AI-анализ",
+        "analysis_title": "AI-разбор боя",
+        "show_analysis": "Показать AI-разбор",
+        "hide_analysis": "Скрыть AI-разбор",
+        "close": "Закрыть",
+        "key_events": "Ключевые события",
+        "ai_not_configured": "AI не настроен (нет API-ключа). Обратитесь к администратору.",
+        "ai_error": "Ошибка AI-анализа"
     }
 }

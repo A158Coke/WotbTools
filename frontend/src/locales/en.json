@@ -786,6 +786,14 @@
         "obs": "Obs",
         "damage_dealt": "Dmg Dealt",
         "damage_recv": "Dmg Recv",
-        "position": "Position"
+        "position": "Position",
+        "analyze_btn": "AI Analysis",
+        "analysis_title": "AI Tactical Review",
+        "show_analysis": "Show AI review",
+        "hide_analysis": "Hide AI review",
+        "close": "Close",
+        "key_events": "Key events",
+        "ai_not_configured": "AI is not configured (missing API key). Please contact the administrator.",
+        "ai_error": "AI analysis failed"
     }
 }

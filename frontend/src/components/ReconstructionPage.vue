@@ -1,8 +1,16 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useAuth } from '../composables/useAuth.js'
 
 const { t } = useI18n()
+const { tokenParsed } = useAuth()
+
+// AI 功能灰度：仅 wotbtools-admin 可见（后端 /api/replay/analyze 亦按该角色鉴权）
+const isAdmin = computed(() => {
+  const roles = tokenParsed.value?.realm_access?.roles
+  return Array.isArray(roles) && roles.includes('wotbtools-admin')
+})
 
 const file = ref(null)
 const loading = ref(false)
@@ -10,6 +18,9 @@ const error = ref('')
 const reconResult = ref(null)
 const queryTime = ref('')
 const stateResult = ref(null)
+const analyzing = ref(false)
+const analysisResult = ref(null)
+const showAnalysis = ref(false)
 
 function addFile(e) {
   const picked = e.target.files?.[0]
@@ -18,6 +29,8 @@ function addFile(e) {
     error.value = ''
     reconResult.value = null
     stateResult.value = null
+    analysisResult.value = null
+    showAnalysis.value = false
   } else if (picked) {
     error.value = t('recon.invalid_file')
   }
@@ -28,6 +41,8 @@ function clearFile() {
   error.value = ''
   reconResult.value = null
   stateResult.value = null
+  analysisResult.value = null
+  showAnalysis.value = false
   queryTime.value = ''
 }
 
@@ -45,6 +60,9 @@ async function runReconstruct() {
   loading.value = true
   error.value = ''
   stateResult.value = null
+  // 新的重建结果，作废上一份 AI 分析
+  analysisResult.value = null
+  showAnalysis.value = false
   try {
     const fd = formData()
     const r = await fetch('/api/replay/reconstruct', { method: 'POST', body: fd })
@@ -85,6 +103,42 @@ async function runStateAt() {
   } finally {
     loading.value = false
   }
+}
+
+async function runAnalyze() {
+  if (!file.value) {
+    error.value = t('recon.no_file')
+    return
+  }
+  analyzing.value = true
+  error.value = ''
+  analysisResult.value = null
+  try {
+    // 与全站一致：带上 Keycloak bearer token（该接口需要 wotbtools-admin 角色）
+    const { token, ensureToken } = useAuth()
+    await ensureToken(30)
+    const accessToken = token()
+    const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
+    const fd = formData()
+    const r = await fetch('/api/replay/analyze', { method: 'POST', headers, body: fd })
+    if (!r.ok) {
+      const text = (await r.text().catch(() => '')).trim()
+      if (text === 'AI_NOT_CONFIGURED') {
+        throw new Error(t('recon.ai_not_configured'))
+      }
+      throw new Error(t('recon.ai_error') + (text ? `: ${text}` : ` (HTTP ${r.status})`))
+    }
+    analysisResult.value = await r.json()
+    showAnalysis.value = true
+  } catch (e) {
+    error.value = e.message || String(e)
+  } finally {
+    analyzing.value = false
+  }
+}
+
+function toggleAnalysis() {
+  showAnalysis.value = !showAnalysis.value
 }
 
 function fmtJson(obj) {
@@ -163,6 +217,34 @@ function fmtJson(obj) {
       <details class="recon-details">
         <summary>{{ $t('recon.raw_json') }}</summary>
         <pre class="json-block">{{ fmtJson(reconResult) }}</pre>
+      </details>
+
+      <!-- AI 分析：仅 wotbtools-admin 可见（灰度）；重建出结果后才出现 -->
+      <div v-if="isAdmin" class="ai-action">
+        <button v-if="!analysisResult" class="lg" :disabled="analyzing" @click="runAnalyze">
+          {{ analyzing ? $t('action.processing') : $t('recon.analyze_btn') }}
+        </button>
+        <button v-else class="ghost" @click="toggleAnalysis">
+          {{ showAnalysis ? $t('recon.hide_analysis') : $t('recon.show_analysis') }}
+        </button>
+      </div>
+    </div>
+
+    <div v-if="analysisResult && showAnalysis" class="panel" style="margin-top:16px">
+      <div class="panel-head">
+        <h2>{{ $t('recon.analysis_title') }}</h2>
+        <button class="close-x" :aria-label="$t('recon.close')" @click="showAnalysis = false">×</button>
+      </div>
+      <p class="analysis-text">{{ analysisResult.analysis }}</p>
+      <details v-if="analysisResult.keyEvents?.length" class="recon-details">
+        <summary>{{ $t('recon.key_events') }} ({{ analysisResult.keyEvents.length }})</summary>
+        <ul class="key-events">
+          <li v-for="(ev, i) in analysisResult.keyEvents" :key="i">
+            <span class="ke-time">{{ ev.clockSec?.toFixed(1) }}s</span>
+            <span class="ke-type">{{ ev.type }}</span>
+            <span class="ke-label">{{ ev.label }}</span>
+          </li>
+        </ul>
       </details>
     </div>
 
@@ -281,4 +363,39 @@ function fmtJson(obj) {
 .recon-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .recon-table .mono { font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace; font-size: 11px; }
 .recon-table tbody tr:hover { background: var(--bg-list-hover); }
+
+.ai-action { margin-top: 14px; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.panel-head h2 { margin: 0 0 12px; }
+.close-x {
+  background: none;
+  border: none;
+  color: var(--text-sub);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  margin-bottom: 8px;
+}
+.close-x:hover { color: var(--text); }
+
+.analysis-text {
+  white-space: pre-wrap;
+  line-height: 1.6;
+  font-size: .9rem;
+  color: var(--text);
+  margin: 0 0 8px;
+}
+.key-events { list-style: none; margin: 8px 0 0; padding: 0; }
+.key-events li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border-light);
+  font-size: .82rem;
+}
+.ke-time { color: var(--text-sub); font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; }
+.ke-type { color: var(--accent); font-weight: 600; min-width: 130px; }
+.ke-label { color: var(--text); }
 </style>
