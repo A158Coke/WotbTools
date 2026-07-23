@@ -1,34 +1,50 @@
 package com.wotb.core.processing;
 
 /**
- * AI 分析响应中每个文件的处理状态。
- *
- * @param fileName             文件名
- * @param status               处理状态
- * @param capabilities         能力标记
- * @param analysisIncluded     该文件是否进入 AI 分析
- * @param duplicate            是否被判定为重复
- * @param summaryError         战绩解析错误（如有）
- * @param reconstructionError  重建错误（如有）
+ * AI 分析响应中每个文件的处理状态（扩展版，支持视角分组）。
  */
 public record ReplayFileAnalysisStatus(
         String fileName,
         ReplayProcessingStatus status,
-        ReplayProcessingCapabilities capabilities,
+        ReplayFileRelation relation,
+        BattleCategory battleCategory,
+        ReplayAnalysisScope analysisScope,
+        String arenaUniqueId,
+        Integer perspectiveTeam,
         boolean analysisIncluded,
-        boolean duplicate,
-        ReplayProcessingError summaryError,
-        ReplayProcessingError reconstructionError
+        String duplicateOf,
+        ReplayProcessingCapabilities capabilities,
+        ReplayProcessingError error
 ) {
 
-    public static ReplayFileAnalysisStatus from(ReplayProcessingResult result, boolean included) {
-        return new ReplayFileAnalysisStatus(
-                result.fileName(),
-                result.status(),
-                result.capabilities(),
-                included,
-                false,
-                null, null
-        );
+    public static ReplayFileAnalysisStatus primary(
+            String fileName, ReplayProcessingStatus status,
+            BattleCategory category, ReplayAnalysisScope scope,
+            String arenaUniqueId, Integer perspectiveTeam,
+            ReplayProcessingCapabilities capabilities) {
+        return new ReplayFileAnalysisStatus(fileName, status,
+                ReplayFileRelation.PRIMARY_PERSPECTIVE,
+                category, scope, arenaUniqueId, perspectiveTeam,
+                true, null, capabilities, null);
+    }
+
+    public static ReplayFileAnalysisStatus duplicate(
+            String fileName, ReplayFileRelation relation,
+            String duplicateOf) {
+        return new ReplayFileAnalysisStatus(fileName,
+                ReplayProcessingStatus.FAILED, relation,
+                BattleCategory.UNKNOWN, null, null, null,
+                false, duplicateOf,
+                ReplayProcessingCapabilities.NONE, null);
+    }
+
+    public static ReplayFileAnalysisStatus failed(
+            String fileName, ReplayProcessingError error) {
+        return new ReplayFileAnalysisStatus(fileName,
+                ReplayProcessingStatus.FAILED,
+                ReplayFileRelation.INDEPENDENT_BATTLE,
+                BattleCategory.UNKNOWN, null, null, null,
+                false, null,
+                ReplayProcessingCapabilities.NONE, error);
     }
 }
