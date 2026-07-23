@@ -1,6 +1,5 @@
 package com.wotb.core.processing;
 
-import com.wotb.core.replay.event.DecodeConfidence;
 import java.util.List;
 
 /**
@@ -10,9 +9,4 @@ public record MixedRecordersDetail(
         String message,
         List<RecorderGroup> recorders
 ) {
-    public record RecorderGroup(
-            Long accountId,
-            String nickname,
-            List<String> fileNames
-    ) {}
 }

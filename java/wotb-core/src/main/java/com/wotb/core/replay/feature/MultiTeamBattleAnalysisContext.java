@@ -10,11 +10,4 @@ public record MultiTeamBattleAnalysisContext(
         List<TeamBattleAnalysisSummary> perspectives,
         List<String> limitations
 ) {
-
-    public record TeamBattleAnalysisSummary(
-            String fileName,
-            String mapName,
-            int perspectiveTeam,
-            TeamBattleFeatureSet features
-    ) {}
 }

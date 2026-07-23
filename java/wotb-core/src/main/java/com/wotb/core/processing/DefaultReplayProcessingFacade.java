@@ -1,24 +1,22 @@
 package com.wotb.core.processing;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.Source;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.model.Source;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionContext;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HexFormat;
+import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
+import java.util.HexFormat;
 import java.util.List;
-import java.util.Objects;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -43,7 +41,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
         this(new ReplayReconstructionService());
     }
 
-    public DefaultReplayProcessingFacade(ReplayReconstructionService reconstructionService) {
+    public DefaultReplayProcessingFacade(final ReplayReconstructionService reconstructionService) {
         this.reconstructionService = reconstructionService;
     }
 
@@ -284,22 +282,22 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
 
     /** 文件级基础验证：扩展名 + 非空 + 大小限制。 */
     private static ReplayFileValidationResult validateFile(Source input) {
-        final List<ReplayFileValidationResult.ReplayValidationError> errors = new ArrayList<>();
+        final List<ReplayValidationError> errors = new ArrayList<>();
         final String name = input.name();
         if (name == null || name.isBlank()) {
-            errors.add(ReplayFileValidationResult.ReplayValidationError.of(
+            errors.add(ReplayValidationError.of(
                     "INVALID_FILE_NAME", "File name is empty"));
         } else if (!name.toLowerCase().endsWith(".wotbreplay")) {
-            errors.add(ReplayFileValidationResult.ReplayValidationError.of(
+            errors.add(ReplayValidationError.of(
                     "INVALID_FILE_EXTENSION",
                     "File must end with .wotbreplay: " + name));
         }
         final byte[] data = input.bytes();
         if (data == null || data.length == 0) {
-            errors.add(ReplayFileValidationResult.ReplayValidationError.of(
+            errors.add(ReplayValidationError.of(
                     "EMPTY_FILE", "File is empty: " + name));
         } else if (data.length > 20L * 1024 * 1024) {
-            errors.add(ReplayFileValidationResult.ReplayValidationError.of(
+            errors.add(ReplayValidationError.of(
                     "FILE_TOO_LARGE",
                     "File exceeds 20MB limit: " + name + " (" + data.length + " bytes)"));
         }
@@ -308,7 +306,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
     }
 
     private static ReplayProcessingResult fileValidationFailed(
-            String fileName, List<ReplayFileValidationResult.ReplayValidationError> errors) {
+            String fileName, List<ReplayValidationError> errors) {
         final String message = errors.isEmpty() ? "Validation failed"
                 : errors.getFirst().code() + ": " + errors.getFirst().message();
         return new ReplayProcessingResult(

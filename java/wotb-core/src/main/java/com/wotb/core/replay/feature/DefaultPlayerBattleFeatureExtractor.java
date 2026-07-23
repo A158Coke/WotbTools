@@ -88,7 +88,7 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         if (positions.size() == 1) {
             return List.of(new MovementSegment(clockOf(positions.get(0).timestamp()),
                     clockOf(positions.get(0).timestamp()),
-                    MovementSegment.MovementType.STATIONARY,
+                    MovementType.STATIONARY,
                     new Vector3(positions.get(0).x(), positions.get(0).y(), positions.get(0).z()),
                     new Vector3(positions.get(0).x(), positions.get(0).y(), positions.get(0).z()),
                     0f, 0f, com.wotb.core.replay.event.DecodeConfidence.EXACT));
@@ -118,7 +118,7 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
             result.add(new MovementSegment(
                     clockOf(positions.get(start).timestamp()),
                     clockOf(positions.get(i).timestamp()),
-                    stationary ? MovementSegment.MovementType.STATIONARY : MovementSegment.MovementType.MOVING,
+                    stationary ? MovementType.STATIONARY : MovementType.MOVING,
                     new Vector3(positions.get(start).x(), positions.get(start).y(), positions.get(start).z()),
                     new Vector3(positions.get(i).x(), positions.get(i).y(), positions.get(i).z()),
                     totalDist, segmentTime > 0 ? totalDist / segmentTime : 0f,
@@ -154,11 +154,11 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
             dealt += d.damage();
             received += d.damage();
         }
-        EngagementSummary.EngagementOutcome outcome = (dealt > received * 1.25)
-                ? EngagementSummary.EngagementOutcome.FAVORABLE
+        EngagementOutcome outcome = (dealt > received * 1.25)
+                ? EngagementOutcome.FAVORABLE
                 : (received > dealt * 1.25)
-                ? EngagementSummary.EngagementOutcome.UNFAVORABLE
-                : EngagementSummary.EngagementOutcome.EVEN;
+                ? EngagementOutcome.UNFAVORABLE
+                : EngagementOutcome.EVEN;
 
         return new EngagementSummary(
                 clockOf(events.getFirst().timestamp()),
