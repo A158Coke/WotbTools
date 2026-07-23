@@ -69,7 +69,7 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         final List<MovementSegment> movements = compressMovements(positions);
 
         // 交火段
-        final List<EngagementSummary> engagements = buildEngagements(damages);
+        final List<EngagementSummary> engagements = buildEngagements(damages, recorder.entityId());
 
         // 战斗阶段
         final float battleStart = findBattleStart(positions, damages);
@@ -128,7 +128,7 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         return result;
     }
 
-    static List<EngagementSummary> buildEngagements(List<DamageEvent> damages) {
+    static List<EngagementSummary> buildEngagements(List<DamageEvent> damages, int recorderEid) {
         if (damages.isEmpty()) return List.of();
         final List<DamageEvent> sorted = damages.stream()
                 .sorted(Comparator.comparingDouble(d -> clockOf(d.timestamp())))
@@ -137,22 +137,21 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         int segStart = 0;
         for (int i = 1; i < sorted.size(); i++) {
             if (clockOf(sorted.get(i).timestamp()) - clockOf(sorted.get(i - 1).timestamp()) > ENGAGEMENT_GAP_SEC) {
-                result.add(buildEngagementSegment(sorted.subList(segStart, i)));
+                result.add(buildEngagementSegment(sorted.subList(segStart, i), recorderEid));
                 segStart = i;
             }
         }
         if (segStart < sorted.size()) {
-            result.add(buildEngagementSegment(sorted.subList(segStart, sorted.size())));
+            result.add(buildEngagementSegment(sorted.subList(segStart, sorted.size()), recorderEid));
         }
         return result;
     }
 
-    private static EngagementSummary buildEngagementSegment(List<DamageEvent> events) {
+    private static EngagementSummary buildEngagementSegment(List<DamageEvent> events, int recorderEid) {
         int dealt = 0, received = 0;
         for (final DamageEvent d : events) {
-            // dealt/received 已在过滤时保证至少一项为 recorder
-            dealt += d.damage();
-            received += d.damage();
+            if (d.attackerEid() == recorderEid) dealt += d.damage();
+            if (d.victimEid() == recorderEid) received += d.damage();
         }
         EngagementOutcome outcome = (dealt > received * 1.25)
                 ? EngagementOutcome.FAVORABLE

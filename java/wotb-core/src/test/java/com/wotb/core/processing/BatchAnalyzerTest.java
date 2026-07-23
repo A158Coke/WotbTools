@@ -113,4 +113,41 @@ class BatchAnalyzerTest {
         final var plan = analyzer.analyze(List.of(failed));
         assertNull(plan.dominantScope());
     }
+
+    // ======== 18.2: 录像者映射测试 ========
+
+    @Test
+    void sameRecorderMultiBattleNoException() {
+        // 两场相同 accountId=1000 → 正常
+        final var r1 = makeResult("a.wotbreplay", "arena1", 1, true, true, ReplayProcessingStatus.SUCCESS);
+        final var r2 = makeResult("b.wotbreplay", "arena2", 1, true, true, ReplayProcessingStatus.SUCCESS);
+        assertDoesNotThrow(() -> analyzer.analyze(List.of(r1, r2)));
+    }
+
+    @Test
+    void mixedRecorderThrowsException() {
+        // 两场不同 accountId → MixedReplayRecordersException
+        final Battle b1 = new Battle();
+        b1.arenaId = "arena1"; b1.mapName = "map1"; b1.arenaBonusType = 1;
+        final PlayerResult p1 = new PlayerResult(); p1.accountId = 1000L; p1.nickname = "PlayerA"; p1.team = 1;
+        b1.players = List.of(p1); b1.recorder = "PlayerA";
+        final ReplayReconstruction rec1 = new ReplayReconstruction(null, null, 300f, null,
+                List.of(new BattleParticipant(1000L, "PlayerA", 1, 0, "", true)),
+                List.of(), List.of(), null, null, null);
+        final var caps1 = ReplayProcessingCapabilities.of(true, true, true, false, true, false, ReplayAnalysisScope.PLAYER_FOCUSED);
+        final var r1 = new ReplayProcessingResult("a.wotbreplay", ReplayProcessingStatus.SUCCESS, null, b1, rec1, null, caps1, null, null);
+
+        final Battle b2 = new Battle();
+        b2.arenaId = "arena2"; b2.mapName = "map2"; b2.arenaBonusType = 1;
+        final PlayerResult p2 = new PlayerResult(); p2.accountId = 2000L; p2.nickname = "PlayerB"; p2.team = 1;
+        b2.players = List.of(p2); b2.recorder = "PlayerB";
+        final ReplayReconstruction rec2 = new ReplayReconstruction(null, null, 300f, null,
+                List.of(new BattleParticipant(2000L, "PlayerB", 1, 0, "", true)),
+                List.of(), List.of(), null, null, null);
+        final var caps2 = ReplayProcessingCapabilities.of(true, true, true, false, true, false, ReplayAnalysisScope.PLAYER_FOCUSED);
+        final var r2 = new ReplayProcessingResult("b.wotbreplay", ReplayProcessingStatus.SUCCESS, null, b2, rec2, null, caps2, null, null);
+
+        assertThrows(MixedRandomBattleRecordersException.class,
+                () -> analyzer.analyze(List.of(r1, r2)));
+    }
 }
