@@ -21,6 +21,7 @@ import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
+import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
@@ -217,12 +218,9 @@ public class ReconstructionController {
                     fileStatuses, buildAnalysisUnits(plan.groups()), aiResult.keyEvents());
         }
 
-        // TEAM_PERSPECTIVE 或无 scope
-        return new AnalyzeResponse(
-                plan.mode(),
-                total, analyzableCount, effectiveUnits, 0, 0, "",
-                failedCount, dupCount, 0,
-                fileStatuses, buildAnalysisUnits(plan.groups()), List.of());
+        // TEAM_PERSPECTIVE 或无 scope - 团队 AI 尚未实现
+        throw new UnsupportedReplayAnalysisModeException(
+                "TEAM_ANALYSIS_NOT_IMPLEMENTED");
     }
 
     /**
@@ -278,6 +276,14 @@ public class ReconstructionController {
                 .body(e.getMessage());
     }
 
+    /** 不支持的 AI 分析模式（团队视角等）→ 422。 */
+    @ExceptionHandler(UnsupportedReplayAnalysisModeException.class)
+    public ResponseEntity<String> handleUnsupportedMode(final UnsupportedReplayAnalysisModeException e) {
+        return ResponseEntity.unprocessableEntity()
+                .contentType(MediaType.TEXT_PLAIN)
+                .body(e.getMessage());
+    }
+
     // ---- 验证 ----
 
     private static void validateFile(final MultipartFile file) {
@@ -301,11 +307,9 @@ public class ReconstructionController {
             throw new IllegalArgumentException("TOO_MANY_REPLAY_FILES");
         }
         long totalBytes = 0;
-        for (final MultipartFile f : files) {
-            if (f == null || f.isEmpty()) {
-                throw new IllegalArgumentException("INVALID_REPLAY_FILE");
-            }
-            totalBytes += f.getSize();
+        for (final MultipartFile file : files) {
+            validateFile(file);
+            totalBytes += file.getSize();
         }
         if (totalBytes > 200L * 1024 * 1024) {
             throw new IllegalArgumentException("TOTAL_REQUEST_TOO_LARGE");
@@ -329,21 +333,27 @@ public class ReconstructionController {
 
     private AiReplayAnalysisService.AnalyzeResult callPlayerContext(final ReplayProcessingResult rep) {
         if (rep.battle() == null) return new AiReplayAnalysisService.AnalyzeResult("", "", List.of());
-        if (rep.reconstruction() != null) {
-            try {
-                final var extractor = new DefaultPlayerBattleFeatureExtractor();
-                final var recorder = findRecorder(rep);
-                final PlayerBattleFeatureSet fs = extractor.extract(rep.reconstruction(), recorder);
-                final var ctx = new SinglePlayerBattleAnalysisContext(
-                        null, fs, recorder, rep.reconstruction().coverage(), fs.limitations());
-                return aiService.analyzePlayerContext(ctx);
-            } catch (Exception e) {
-                // fallback to old api on feature extraction failure
-                System.getLogger("ReconstructionController")
-                        .log(System.Logger.Level.WARNING, "Feature extraction failed, falling back: {0}", e.getMessage());
-            }
+        if (rep.reconstruction() == null) {
+            return aiService.analyze(rep.battle(), null);
         }
-        return aiService.analyze(rep.battle(), rep.reconstruction());
+
+        final SinglePlayerBattleAnalysisContext context;
+        try {
+            final var extractor = new DefaultPlayerBattleFeatureExtractor();
+            final var recorder = findRecorder(rep);
+            final PlayerBattleFeatureSet featureSet = extractor.extract(rep.reconstruction(), recorder);
+            context = new SinglePlayerBattleAnalysisContext(
+                    null, rep.battle(), featureSet, recorder,
+                    rep.reconstruction().coverage(), featureSet.limitations());
+        } catch (Exception extractionException) {
+            System.getLogger("ReconstructionController")
+                    .log(System.Logger.Level.WARNING,
+                            "Feature extraction failed, falling back: {0}",
+                            extractionException.getMessage());
+            return aiService.analyze(rep.battle(), rep.reconstruction());
+        }
+
+        return aiService.analyzePlayerContext(context);
     }
 
     private static RecorderEntityMapping findRecorder(final ReplayProcessingResult rep) {

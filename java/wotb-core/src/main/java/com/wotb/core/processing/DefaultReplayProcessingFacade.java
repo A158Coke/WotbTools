@@ -47,6 +47,17 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
 
     @Override
     public ReplayProcessingResult process(final Source input, final ReplayProcessingOptions options) {
+        final ReplayFileValidationResult validation = validateFile(input);
+        if (!validation.valid()) {
+            final String msg = validation.errors().isEmpty() ? "Validation failed"
+                    : validation.errors().getFirst().code() + ": " + validation.errors().getFirst().message();
+            return new ReplayProcessingResult(
+                    input.name(), ReplayProcessingStatus.FAILED,
+                    null, null, null, null,
+                    ReplayProcessingCapabilities.NONE,
+                    ReplayProcessingError.of("FILE_VALIDATION_FAILED", msg),
+                    null);
+        }
         return processSingle(input, options);
     }
 
@@ -61,7 +72,6 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
                 // 0. 逐文件基础验证
                 final ReplayFileValidationResult validation = validateFile(input);
                 if (!validation.valid()) {
-                    duplicateNames.add(input.name());
                     results.add(fileValidationFailed(input.name(), validation.errors()));
                     continue;
                 }
@@ -311,12 +321,19 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
         if (battle == null) {
             return new ReplayIdentity(contentHash, null, null, null, null, null);
         }
+        final Long recorderAccountId;
+        final var recorder = battle.recorderResult();
+        if (recorder != null && recorder.accountId > 0) {
+            recorderAccountId = recorder.accountId;
+        } else {
+            recorderAccountId = null;
+        }
         return new ReplayIdentity(
                 contentHash,
                 battle.arenaId,
                 battle.clientVersion,
                 battle.mapName,
-                null, // recorder accountId not available from Battle currently
+                recorderAccountId,
                 battle.startTime != null ? Instant.ofEpochSecond(battle.startTime) : null
         );
     }

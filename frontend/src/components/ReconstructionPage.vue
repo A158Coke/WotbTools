@@ -262,7 +262,7 @@ function fmtJson(obj) {
         <h2>{{ $t('recon.analysis_title') }}</h2>
         <button class="close-x" :aria-label="$t('recon.close')" @click="showAnalysis = false">×</button>
       </div>
-      <p v-if="analysisResult.mode === 'MULTI_BATTLE'" class="sub-hint">
+      <p v-if="['MULTI_PLAYER_BATTLE', 'MULTI_TEAM_BATTLE'].includes(analysisResult.mode)" class="sub-hint">
         {{ $t('recon.multi_summary', { n: analysisResult.battleCount }) }}
       </p>
       <p class="analysis-text">{{ analysisResult.analysis }}</p>

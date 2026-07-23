@@ -176,15 +176,24 @@ public class BatchAnalyzer {
         }).orElse(group.getFirst());
     }
 
-    private Long extractRecorderAccountId(final ReplayProcessingResult result) {
-        if (result.reconstruction() == null) return null;
-        for (final BattleParticipant p : result.reconstruction().participants()) {
-            if (p.recorder()) return p.accountId();
+    private static Long extractRecorderAccountId(final ReplayProcessingResult result) {
+        // 权威数据源：battle_results.dat 的 PlayerResult
+        if (result.battle() != null) {
+            final var recorder = result.battle().recorderResult();
+            if (recorder != null && recorder.accountId > 0) {
+                return recorder.accountId;
+            }
         }
-        if (result.battle() != null && result.battle().recorder != null) {
-            final String nick = result.battle().recorder;
+        // 降级：从 reconstruction participants 查找
+        if (result.reconstruction() != null) {
             for (final BattleParticipant p : result.reconstruction().participants()) {
-                if (nick.equals(p.nickname())) return p.accountId();
+                if (p.recorder() && p.accountId() > 0) return p.accountId();
+            }
+            if (result.battle() != null && result.battle().recorder != null) {
+                final String nick = result.battle().recorder;
+                for (final BattleParticipant p : result.reconstruction().participants()) {
+                    if (nick.equals(p.nickname()) && p.accountId() > 0) return p.accountId();
+                }
             }
         }
         return null;

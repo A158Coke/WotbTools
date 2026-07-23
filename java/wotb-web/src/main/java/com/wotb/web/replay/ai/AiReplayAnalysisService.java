@@ -3,6 +3,7 @@ package com.wotb.web.replay.ai;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.EngagementSummary;
@@ -152,16 +153,65 @@ public class AiReplayAnalysisService {
             只能根据录像者个人的实战信息评价其决策，
             不可声称看到了未点亮的敌方位置。""";
 
-    private String buildPlayerContextSummary(SinglePlayerBattleAnalysisContext ctx) {
-        final StringBuilder sb = new StringBuilder(1024);
+    private String buildPlayerContextSummary(final SinglePlayerBattleAnalysisContext ctx) {
+        final StringBuilder sb = new StringBuilder(2048);
+        final var battle = ctx.battle();
         final var features = ctx.features();
 
-        sb.append("=== 战斗概览 ===\n");
-        sb.append("图像重建完成, 特征集可用\n\n");
+        // ====== 权威结算数据（优先） ======
+        if (battle != null) {
+            sb.append("=== 战斗结算数据（权威） ===\n");
+            sb.append("地图: ").append(safe(battle.mapName)).append('\n');
+            if (battle.arenaBonusType != null) {
+                sb.append("模式编号: ").append(battle.arenaBonusType).append('\n');
+            }
+            if (battle.durationS != null) {
+                sb.append("时长: ").append(String.format("%.1f", battle.durationS)).append("s\n");
+            }
+            sb.append("胜方队伍: ").append(battle.winnerTeam != null ? battle.winnerTeam : "未知").append('\n');
 
-        sb.append("=== 录像者特征 ===\n");
+            final PlayerResult rec = battle.recorderResult();
+            if (rec != null) {
+                sb.append("\n录像者: ").append(safe(rec.nickname))
+                        .append(" | 队伍").append(rec.team)
+                        .append(" | ").append(safe(rec.tankName))
+                        .append(" | 输出").append(rec.damageDealt)
+                        .append(" 承伤").append(rec.damageReceived)
+                        .append(" 助攻").append(rec.damageAssisted)
+                        .append(" 格挡").append(rec.damageBlocked)
+                        .append(" 击杀").append(rec.kills)
+                        .append(rec.survived ? " 存活" : " 阵亡@" + String.format("%.1f", deathSec(rec)) + "s")
+                        .append("\n");
+            }
+
+            sb.append("\n全体玩家战绩 (队伍/昵称/坦克/输出/承伤/助攻/格挡/击杀/存活):\n");
+            if (battle.players != null) {
+                final java.util.List<PlayerResult> players = new java.util.ArrayList<>(battle.players);
+                players.sort(java.util.Comparator.<PlayerResult>comparingInt(p -> p.team)
+                        .thenComparing(java.util.Comparator.comparingInt((PlayerResult p) -> p.damageDealt).reversed()));
+                for (final PlayerResult p : players) {
+                    sb.append("- 队伍").append(p.team)
+                            .append(' ').append(safe(p.nickname))
+                            .append(" (").append(safe(p.tankName)).append(')')
+                            .append(" 输出").append(p.damageDealt)
+                            .append(" 承伤").append(p.damageReceived)
+                            .append(" 助攻").append(p.damageAssisted)
+                            .append(" 格挡").append(p.damageBlocked)
+                            .append(" 击杀").append(p.kills)
+                            .append(p.survived ? " 存活" : " 阵亡@" + String.format("%.1f", deathSec(p)) + "s")
+                            .append('\n');
+                }
+            }
+        } else {
+            sb.append("=== 警告：无权威结算数据 ===\n");
+        }
+
+        // ====== 重建补充信息 ======
+        sb.append("\n=== 重建补充 ===\n");
+        sb.append("图像重建完成, 特征集可用\n");
+
         if (ctx.recorder() != null) {
-            sb.append("账号: ").append(ctx.recorder().accountId())
+            sb.append("录像者 entity: 账号 ").append(ctx.recorder().accountId())
                     .append(" | 队伍: ").append(ctx.recorder().team())
                     .append(" | 车辆 ID: ").append(ctx.recorder().tankId()).append('\n');
         }
