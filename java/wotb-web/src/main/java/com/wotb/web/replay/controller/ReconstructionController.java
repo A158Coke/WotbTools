@@ -9,6 +9,7 @@ import com.wotb.core.processing.ReplayAnalysisScope;
 import com.wotb.core.processing.ReplayBatchProcessingResult;
 import com.wotb.core.processing.ReplayFileAnalysisStatus;
 import com.wotb.core.processing.ReplayFileRelation;
+import com.wotb.core.processing.AnalysisUnitResult;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingError;
 import com.wotb.core.processing.ReplayProcessingOptions;
@@ -20,6 +21,11 @@ import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
+import com.wotb.core.processing.RecorderEntityMapping;
+import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
+import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
+import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.web.replay.dto.ReconstructSummary;
 import com.wotb.web.replay.dto.StateAtResponse;
 import org.springframework.http.HttpStatus;
@@ -189,13 +195,13 @@ public class ReconstructionController {
                     .map(ReplayPerspectiveGroup::representative)
                     .toList();
             if (effectiveUnits == 1) {
-                // 单场随机战斗
+                // 单场随机战斗 — 使用 context 感知入口（含特征数据）
                 final var rep = reps.getFirst();
-                final var aiResult = aiService.analyze(rep.battle(), rep.reconstruction());
+                final var aiResult = callPlayerContext(rep);
                 return new AnalyzeResponse(
                         ReplayAnalysisMode.SINGLE_PLAYER_BATTLE,
                         total, analyzableCount, effectiveUnits, 1, failedCount, dupCount, 0,
-                        fileStatuses, List.of(), aiResult.keyEvents());
+                        fileStatuses, buildAnalysisUnits(plan.groups()), aiResult.keyEvents());
             }
             // 多场随机战斗
             final var battles = reps.stream()
@@ -205,14 +211,14 @@ public class ReconstructionController {
             return new AnalyzeResponse(
                     ReplayAnalysisMode.MULTI_PLAYER_BATTLE,
                     total, analyzableCount, effectiveUnits, effectiveUnits, failedCount, dupCount, 0,
-                    fileStatuses, List.of(), aiResult.keyEvents());
+                    fileStatuses, buildAnalysisUnits(plan.groups()), aiResult.keyEvents());
         }
 
         // TEAM_PERSPECTIVE 或无 scope
         return new AnalyzeResponse(
                 plan.mode(),
                 total, analyzableCount, effectiveUnits, 0, failedCount, dupCount, 0,
-                fileStatuses, List.of(), List.of());
+                fileStatuses, buildAnalysisUnits(plan.groups()), List.of());
     }
 
     /**
@@ -314,5 +320,50 @@ public class ReconstructionController {
         if (totalBytes > 200L * 1024 * 1024) {
             throw new IllegalArgumentException("TOTAL_REQUEST_TOO_LARGE");
         }
+    }
+
+    // ---- 辅助 ----
+
+    private AiReplayAnalysisService.AnalyzeResult callPlayerContext(ReplayProcessingResult rep) {
+        if (rep.battle() == null) return new AiReplayAnalysisService.AnalyzeResult("", "", List.of());
+        if (rep.reconstruction() != null) {
+            try {
+                final var extractor = new DefaultPlayerBattleFeatureExtractor();
+                final var recorder = findRecorder(rep);
+                final PlayerBattleFeatureSet fs = extractor.extract(rep.reconstruction(), recorder);
+                final var ctx = new SinglePlayerBattleAnalysisContext(
+                        null, fs, recorder, rep.reconstruction().coverage(), fs.limitations());
+                return aiService.analyzePlayerContext(ctx);
+            } catch (Exception ignored) { /* fallback to old api */ }
+        }
+        return aiService.analyze(rep.battle(), rep.reconstruction());
+    }
+
+    private static RecorderEntityMapping findRecorder(ReplayProcessingResult rep) {
+        if (rep.reconstruction() != null) {
+            for (final var p : rep.reconstruction().participants()) {
+                if (p.recorder())
+                    return new RecorderEntityMapping(p.accountId(), (int) p.tankId(),
+                            null, p.nickname(), p.team(), (int) p.tankId(), DecodeConfidence.EXACT);
+            }
+        }
+        if (rep.battle() != null && rep.battle().recorder != null)
+            return new RecorderEntityMapping(null, null, null,
+                    rep.battle().recorder, 0, 0, DecodeConfidence.INFERRED);
+        return RecorderEntityMapping.unresolved();
+    }
+
+    private static List<AnalysisUnitResult> buildAnalysisUnits(List<ReplayPerspectiveGroup> groups) {
+        return groups.stream()
+                .<AnalysisUnitResult>map(g -> new AnalysisUnitResult(
+                        "unit-" + g.key().battleIdentity().arenaUniqueId(),
+                        g.key().battleIdentity(),
+                        null,
+                        g.key().perspectiveTeam(),
+                        g.representative().fileName(),
+                        g.duplicates().stream().map(ReplayProcessingResult::fileName).toList(),
+                        null, null
+                ))
+                .toList();
     }
 }
