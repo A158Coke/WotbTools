@@ -768,18 +768,58 @@ Body: file=<单个 .wotbreplay>
 
 ### AI 分析数据流（`/api/replay/analyze`，仅 `wotbtools-admin`）
 
+#### 完整回放重建架构
+
 ```
-上传 .wotbreplay
-  └─ DefaultReplayProcessingFacade.process(full)
-       ├─ ReplayParser.parse           → Battle（权威结算数据）
-       └─ ReplayReconstructionService  → ReplayReconstruction（位置/时间线，可为 null）
-  └─ AiReplayAnalysisService.analyze(battle, recon)
-       ├─ 关键事件/死亡时间线 ← battle_results（PlayerResult.deathTimeMillis）
-       ├─ 战局摘要           ← Battle/PlayerResult（伤害/承伤/存活/录像者…）
-       └─ 调 DeepSeek（OpenAI 兼容 /chat/completions）→ 中文战术复盘
+com.wotb.core.replay 包：
+  stream/      原始包流读取（错误容忍 + 重同步）
+  event/       统一领域事件接口
+  decoder/     包解码器注册中心（Type 4/7/8/10/14 等）
+  reconstruction/ 战场状态重建 + checkpoint + stateAt(t)
+  feature/     战术特征提取（PlayerBattleFeatureExtractor / TeamBattleFeatureExtractor）
 ```
 
-- **战绩解析失败** → `NO_BATTLE_DATA`（无权威数据可分析）。
-- **战绩成功但完整重建失败** → 仍可基于结算数据分析（位置维度标记为不可用）。
-- **未配置密钥** → `AI_NOT_CONFIGURED`，应用照常启动。
-- 逐帧血量时间线待拿到客户端属性定义（`.def`）参考后再实现；在此之前 AI 不会收到任何臆断的血量/死亡数据。
+#### 处理流水线
+
+```
+files[]
+  └─ DefaultReplayProcessingFacade.processBatch() / process()
+       ├─ validateFile（扩展名/空/大小）
+       ├─ ReplayParser.parse           → Battle（结算数据）
+       └─ ReplayReconstructionService.reconstruct(data, context) → ReplayReconstruction
+  └─ BatchAnalyzer.analyze()
+       ├─ BattleCategoryUtils → RANDOM / TRAINING / TOURNAMENT
+       ├─ resolveScope() → PLAYER_FOCUSED / TEAM_PERSPECTIVE
+       ├─ scope 一致性验证
+       ├─ perspective 分组（BattleIdentity + perspectiveTeam）
+       ├─ 代表回放选择
+       └─ 录像者一致性验证（PLAYER_FOCUSED）
+  └─ mode 判定 → SINGLE/MULTI_PLAYER_BATTLE | SINGLE/MULTI_TEAM_BATTLE
+  └─ scope 感知 AI 调用
+```
+
+#### 视角规则
+
+| 战斗模式 | Scope | 分析对象 | 必要条件 |
+|----------|-------|----------|----------|
+| RANDOM | PLAYER_FOCUSED | 录像者个人 | recorderMapped=true |
+| TRAINING | TEAM_PERSPECTIVE | 整支队伍 | perspectiveTeamResolved=true |
+| TOURNAMENT | TEAM_PERSPECTIVE | 整支队伍 | perspectiveTeamResolved=true |
+| UNKNOWN | — | 抛出 UnsupportedBattleCategoryException | — |
+
+#### 去重与分组
+
+- **EXACT_DUPLICATE**：SHA-256 完全相同，只处理一次
+- **SAME_TEAM_DUPLICATE_PERSPECTIVE**：同一 `arenaUniqueId` + 相同队伍，只选代表
+- **INDEPENDENT_PERSPECTIVE**：同一场不同队伍，分别分析，禁止合并
+
+#### 错误处理
+
+| 错误 | 原因 | 行为 |
+|------|------|------|
+| NO_BATTLE_DATA | 战绩解析失败 | 不可分析 |
+| AI_NOT_CONFIGURED | 未配置 AI 密钥 | 返回 503 |
+| MIXED_REPLAY_RECORDERS | 多场随机战斗不同录像者 | 返回 400 |
+| MIXED_ANALYSIS_SCOPES | 同时包含随机和训练房 | 返回 400 |
+| UNSUPPORTED_BATTLE_CATEGORY | 战斗类型无法识别 | 返回 400 |
+| 文件级错误（损坏/过大/空） | 逐文件隔离 | 不影响其他文件 |
