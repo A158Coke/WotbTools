@@ -6,8 +6,11 @@ import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.ReplayAnalysisMode;
 import com.wotb.core.processing.ReplayBatchProcessingResult;
 import com.wotb.core.processing.ReplayFileAnalysisStatus;
+import com.wotb.core.processing.BattleCategory;
+import com.wotb.core.processing.ReplayAnalysisScope;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.core.processing.ReplayProcessingOptions;
+import com.wotb.core.processing.ReplayProcessingError;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
@@ -122,10 +125,17 @@ public class ReconstructionController {
             final byte[] bytes = f.getBytes();
             final ReplayProcessingResult result = processingFacade.process(new Source(name, bytes),
                     ReplayProcessingOptions.full());
-            final boolean included = result.capabilities() != null && result.capabilities().aiAnalyzable();
-            fileStatuses.add(ReplayFileAnalysisStatus.from(result, included));
-            if (included) {
+            final var cap = result.capabilities();
+            if (cap != null && cap.aiAnalyzable()) {
+                fileStatuses.add(ReplayFileAnalysisStatus.primary(name, result.status(),
+                        BattleCategory.RANDOM, ReplayAnalysisScope.PLAYER_FOCUSED,
+                        null, null, cap));
                 analyzable.add(result);
+            } else if (result.error() != null) {
+                fileStatuses.add(ReplayFileAnalysisStatus.failed(name, result.error()));
+            } else {
+                fileStatuses.add(ReplayFileAnalysisStatus.failed(name,
+                        ReplayProcessingError.of("NOT_ANALYZABLE", "Not AI-analyzable")));
             }
             // bytes 在此释放（无引用后 GC 回收）
         }
@@ -135,7 +145,6 @@ public class ReconstructionController {
         final int success = (int) fileStatuses.stream().filter(s -> s.status() == ReplayProcessingStatus.SUCCESS).count();
         final int partial = (int) fileStatuses.stream().filter(s -> s.status() == ReplayProcessingStatus.PARTIAL_SUCCESS).count();
         final int failed = total - success - partial;
-        final int dup = (int) fileStatuses.stream().filter(ReplayFileAnalysisStatus::duplicate).count();
 
         if (aiCount == 0) {
             throw new IllegalArgumentException("NO_BATTLE_DATA");
@@ -145,7 +154,7 @@ public class ReconstructionController {
         if (battleCount == 1) {
             return new AnalyzeResponse(
                     ReplayAnalysisMode.SINGLE_PLAYER_BATTLE,
-                    total, total, 1, 1, failed, 0, 0,
+                    total, analyzable.size(), 1, 1, failed, 0, 0,
                     fileStatuses, List.of(), List.of());
         }
 

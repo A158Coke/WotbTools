@@ -65,7 +65,9 @@ public class AiReplayAnalysisService {
                 .build();
     }
 
-    /** 是否已配置 AI 密钥。 */
+    /**
+     * 是否已配置 AI 密钥。
+     */
     public boolean isConfigured() {
         return !apiKey.isBlank();
     }
@@ -130,7 +132,9 @@ public class AiReplayAnalysisService {
         return new AnalyzeResult(content, model, List.of());
     }
 
-    /** 发送请求并取回文本；统一异常处理。 */
+    /**
+     * 发送请求并取回文本；统一异常处理。
+     */
     private String call(Map<String, Object> requestBody) {
         final ChatCompletionResponse response;
         try {
@@ -153,7 +157,9 @@ public class AiReplayAnalysisService {
         return content;
     }
 
-    /** 每场独立摘要 + 后端确定性聚合（录像者视角）。 */
+    /**
+     * 每场独立摘要 + 后端确定性聚合（录像者视角）。
+     */
     private static String buildMultiSummary(List<Battle> battles) {
         final StringBuilder sb = new StringBuilder(4096);
         sb.append("共 ").append(battles.size()).append(" 场。\n\n=== 各场摘要（录像者视角）===\n");
@@ -213,19 +219,21 @@ public class AiReplayAnalysisService {
         return sb.toString();
     }
 
-    private static String extractContent(ChatCompletionResponse response) {
+    private static String extractContent(final ChatCompletionResponse response) {
         if (response == null || response.choices() == null || response.choices().isEmpty()) {
             return "";
         }
-        final ChatCompletionResponse.Choice choice = response.choices().get(0);
+        final ChatCompletionResponse.Choice choice = response.choices().getFirst();
         if (choice == null || choice.message() == null || choice.message().content() == null) {
             return "";
         }
         return choice.message().content();
     }
 
-    /** 从结算数据构建可靠的死亡时间线（按死亡时刻升序），外加战斗结束事件。 */
-    private static List<KeyBattleEvent> buildDeathTimeline(Battle battle) {
+    /**
+     * 从结算数据构建可靠的死亡时间线（按死亡时刻升序），外加战斗结束事件。
+     */
+    private static List<KeyBattleEvent> buildDeathTimeline(final Battle battle) {
         final List<KeyBattleEvent> events = new ArrayList<>();
         if (battle.players != null) {
             final List<PlayerResult> dead = new ArrayList<>();
@@ -248,8 +256,10 @@ public class AiReplayAnalysisService {
         return List.copyOf(events);
     }
 
-    /** 死亡时刻（秒）：优先 deathTimeMillis，回退 survivalTimeSec。 */
-    private static double deathSec(PlayerResult p) {
+    /**
+     * 死亡时刻（秒）：优先 deathTimeMillis，回退 survivalTimeSec。
+     */
+    private static double deathSec(final PlayerResult p) {
         if (p.deathTimeMillis > 0) {
             return p.deathTimeMillis / 1000.0;
         }
@@ -260,9 +270,10 @@ public class AiReplayAnalysisService {
         return (s == null || s.isBlank()) ? "?" : s;
     }
 
-    /** 构建以结算数据为准的紧凑战局摘要。 */
-    private static String buildSummary(Battle battle, ReplayReconstruction recon,
-                                       List<KeyBattleEvent> keyEvents) {
+    /**
+     * 构建以结算数据为准的紧凑战局摘要。
+     */
+    private static String buildSummary(final Battle battle, final ReplayReconstruction recon, final List<KeyBattleEvent> keyEvents) {
         final StringBuilder sb = new StringBuilder(2048);
         sb.append("地图: ").append(safe(battle.mapName)).append('\n');
         if (battle.arenaBonusType != null) {
