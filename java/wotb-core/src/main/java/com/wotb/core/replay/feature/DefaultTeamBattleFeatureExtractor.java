@@ -1,6 +1,7 @@
 package com.wotb.core.replay.feature;
 
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
@@ -63,8 +64,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         // 压缩移动段
         final List<MovementSegment> movements = DefaultPlayerBattleFeatureExtractor.compressMovements(teamPositions);
 
-        // 交火段
-        final List<EngagementSummary> engagements = DefaultPlayerBattleFeatureExtractor.buildEngagements(teamDamageEvents);
+        // 交火段（团队视角简化：汇总时间段内所有团队相关伤害事件）
+        final List<EngagementSummary> engagements = buildTeamEngagements(teamDamageEvents);
 
         // 阶段划分
         float battleEndClock = Float.NaN;
@@ -109,5 +110,17 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             }
         }
         return result;
+    }
+
+    private static List<EngagementSummary> buildTeamEngagements(List<DamageEvent> teamDamage) {
+        if (teamDamage.isEmpty()) return List.of();
+        final var sorted = teamDamage.stream()
+                .sorted(java.util.Comparator.comparingDouble(d -> DefaultPlayerBattleFeatureExtractor.clockOf(d.timestamp())))
+                .toList();
+        int totalDmg = sorted.stream().mapToInt(DamageEvent::damage).sum();
+        final float start = DefaultPlayerBattleFeatureExtractor.clockOf(sorted.getFirst().timestamp());
+        final float end = DefaultPlayerBattleFeatureExtractor.clockOf(sorted.getLast().timestamp());
+        return List.of(new EngagementSummary(start, end, List.of(), List.of(),
+                totalDmg, totalDmg, null, null, EngagementOutcome.UNKNOWN, DecodeConfidence.INFERRED));
     }
 }
