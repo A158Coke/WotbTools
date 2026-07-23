@@ -30,3 +30,4 @@ node_modules/
 .claude
 .deepseek
 .codewhale
+.opencode

@@ -1,6 +1,7 @@
 package com.wotb.core.replay.feature;
 
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
@@ -24,7 +25,7 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
 
     @Override
     public PlayerBattleFeatureSet extract(final ReplayReconstruction reconstruction, final RecorderEntityMapping recorder) {
-        if (recorder == null || !recorder.resolved()) {
+        if (recorder == null || !recorder.resolved() || reconstruction == null) {
             return PlayerBattleFeatureSet.empty();
         }
 
@@ -79,8 +80,20 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         // 关键事件
         final List<KeyBattleEvent> keyEvents = extractRecorderKeyEvents(damages, recorder);
 
+        final boolean hasRealFeatures = !movements.isEmpty()
+                || !engagements.isEmpty()
+                || !keyEvents.isEmpty();
+        final List<String> limitations = new ArrayList<>();
+        if (!hasRealFeatures) {
+            limitations.add("Recorder entity has no position or damage events in event stream");
+        }
+        if (recorder.confidence() != DecodeConfidence.EXACT) {
+            limitations.add("Recorder entity mapping confidence: " + recorder.confidence()
+                    + " — entity ID may be unreliable");
+        }
+
         return new PlayerBattleFeatureSet(movements, engagements, phases, keyEvents,
-                List.of(), true);
+                limitations, hasRealFeatures);
     }
 
     static List<MovementSegment> compressMovements(final List<PositionChangedEvent> positions) {

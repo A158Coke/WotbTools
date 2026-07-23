@@ -1,11 +1,10 @@
 package com.wotb.web.replay.controller;
 
 import com.wotb.core.model.Source;
-import com.wotb.core.processing.AnalysisUnitResult;
 import com.wotb.core.processing.BatchAnalyzer;
 import com.wotb.core.processing.BattleCategory;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.processing.RecorderEntityMapping;
+import com.wotb.core.processing.MixedRandomBattleRecordersException;
 import com.wotb.core.processing.ReplayAnalysisMode;
 import com.wotb.core.processing.ReplayAnalysisScope;
 import com.wotb.core.processing.ReplayBatchProcessingResult;
@@ -17,10 +16,6 @@ import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
-import com.wotb.core.replay.event.DecodeConfidence;
-import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
-import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
-import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
@@ -42,9 +37,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * 回放重建 REST API（开发和验证用）。
@@ -132,122 +125,37 @@ public class ReconstructionController {
             @RequestParam("files") final MultipartFile[] files) throws IOException {
 
         validateBatch(files);
+        final List<ReplayProcessingResult> allResults = processFiles(files);
+        final BatchAnalyzer.AnalysisPlan plan = new BatchAnalyzer().analyze(allResults);
 
-        // 1. 逐文件处理（非先全部读取再处理）：降低内存峰值
-        final List<ReplayProcessingResult> allResults = new ArrayList<>();
-        for (final MultipartFile f : files) {
-            final String name = f.getOriginalFilename() != null ? f.getOriginalFilename() : "replay.wotbreplay";
-            final byte[] bytes = f.getBytes();
-            allResults.add(processingFacade.process(
-                    new Source(name, bytes), ReplayProcessingOptions.full()));
-            // bytes 释放后 GC 回收
-        }
+        if (plan.effectiveUnitCount() == 0) throw new IllegalArgumentException("NO_BATTLE_DATA");
+        if (plan.dominantScope() == null) throw new UnsupportedReplayAnalysisModeException("UNSUPPORTED_BATTLE_CATEGORY");
 
-        // 2. BatchAnalyzer 视角分组 + 模式判定
-        final BatchAnalyzer analyzer = new BatchAnalyzer();
-        final BatchAnalyzer.AnalysisPlan plan = analyzer.analyze(allResults);
-
-        // 3. 构建文件状态
-        final List<ReplayFileAnalysisStatus> fileStatuses = new ArrayList<>();
-        for (final var gp : plan.groups()) {
-            final var rep = gp.representative();
-            final var cap = rep.capabilities();
-            fileStatuses.add(ReplayFileAnalysisStatus.primary(
-                    rep.fileName(), rep.status(),
-                    plan.dominantScope() != null ? BattleCategory.RANDOM : BattleCategory.UNKNOWN,
-                    plan.dominantScope(),
-                    rep.battle() != null ? rep.battle().arenaId : null,
-                    0, cap));
-            for (final var dup : gp.duplicates()) {
-                fileStatuses.add(ReplayFileAnalysisStatus.duplicate(
-                        dup.fileName(),
-                        ReplayFileRelation.SAME_TEAM_DUPLICATE_PERSPECTIVE,
-                        rep.fileName()));
-            }
-        }
-        // 精确重复文件
-        final Set<String> dupFileNames = new HashSet<>();
-        for (final var dup : plan.exactDuplicates()) {
-            fileStatuses.add(ReplayFileAnalysisStatus.duplicate(
-                    dup.fileName(),
-                    ReplayFileRelation.EXACT_DUPLICATE,
-                    dup.fileName()));
-            dupFileNames.add(dup.fileName());
-        }
-        // 真正失败文件（非重复、非分组内）
-        final Set<String> groupedFileNames = new HashSet<>();
-        for (final var gp : plan.groups()) {
-            groupedFileNames.add(gp.representative().fileName());
-            for (final var dup : gp.duplicates()) {
-                groupedFileNames.add(dup.fileName());
-            }
-        }
-        for (final ReplayProcessingResult r : allResults) {
-            if (r.status() == ReplayProcessingStatus.FAILED
-                    && !groupedFileNames.contains(r.fileName())
-                    && !dupFileNames.contains(r.fileName())) {
-                fileStatuses.add(ReplayFileAnalysisStatus.failed(
-                        r.fileName(), r.error() != null ? r.error()
-                                : ReplayProcessingError.of("FAILED", "Processing failed")));
-            }
-        }
-
-        // 4. 统计
+        final var fileStatuses = buildFileStatuses(allResults, plan);
+        final int failedCount = countFailed(fileStatuses);
         final int total = files.length;
-        final int analyzableCount = (int) allResults.stream()
-                .filter(r -> r.capabilities() != null && r.capabilities().aiAnalyzable())
-                .count();
-        final int failedCount = (int) fileStatuses.stream()
-                .filter(f -> f.status() == ReplayProcessingStatus.FAILED
-                        && f.relation() == ReplayFileRelation.INDEPENDENT_BATTLE
-                        && f.error() != null)
-                .count();
+        final var reps = plan.groups().stream().map(ReplayPerspectiveGroup::representative).toList();
+        final var units = AiReplayAnalysisService.buildAnalysisUnits(plan.groups());
 
-        if (analyzableCount == 0 && plan.effectiveUnitCount() == 0) {
-            throw new IllegalArgumentException("NO_BATTLE_DATA");
-        }
-
-        // 5. 处理 null scope（全 UNKNOWN）
-        final int effectiveUnits = plan.effectiveUnitCount();
-        if (plan.dominantScope() == null) {
-            throw new UnsupportedReplayAnalysisModeException(
-                    "UNSUPPORTED_BATTLE_CATEGORY");
-        }
-
-        // 6. 按 scope 调用 AI
         if (plan.dominantScope() == ReplayAnalysisScope.PLAYER_FOCUSED) {
-            final var reps = plan.groups().stream()
-                    .map(ReplayPerspectiveGroup::representative)
-                    .toList();
-            if (effectiveUnits == 1) {
-                // 单场随机战斗 — 使用 context 感知入口（含特征数据）
-                final var rep = reps.getFirst();
-                final var aiResult = callPlayerContext(rep);
-                return new AnalyzeResponse(
-                        ReplayAnalysisMode.SINGLE_PLAYER_BATTLE,
-                        total, analyzableCount, effectiveUnits, 1, effectiveUnits,
+            if (plan.effectiveUnitCount() == 1) {
+                final var aiResult = aiService.analyzePlayerOrFallback(reps.getFirst());
+                return new AnalyzeResponse(ReplayAnalysisMode.SINGLE_PLAYER_BATTLE,
+                        total, plan.analyzableUnitCount(), plan.effectiveUnitCount(), 1, plan.effectiveUnitCount(),
                         aiResult.analysis(), failedCount,
-                        plan.exactDuplicateCount(),
-                        plan.sameTeamDuplicatePerspectiveCount(),
-                        fileStatuses, buildAnalysisUnits(plan.groups()), aiResult.keyEvents());
+                        plan.exactDuplicateCount(), plan.sameTeamDuplicatePerspectiveCount(),
+                        fileStatuses, units, aiResult.keyEvents());
             }
-            // 多场随机战斗
-            final var battles = reps.stream()
-                    .map(ReplayProcessingResult::battle)
-                    .toList();
+            final var battles = reps.stream().map(ReplayProcessingResult::battle).toList();
             final var aiResult = aiService.analyzeMulti(battles);
-            return new AnalyzeResponse(
-                    ReplayAnalysisMode.MULTI_PLAYER_BATTLE,
-                    total, analyzableCount, effectiveUnits, effectiveUnits, effectiveUnits,
+            return new AnalyzeResponse(ReplayAnalysisMode.MULTI_PLAYER_BATTLE,
+                    total, plan.analyzableUnitCount(), plan.effectiveUnitCount(), plan.effectiveUnitCount(), plan.effectiveUnitCount(),
                     aiResult.analysis(), failedCount,
-                    plan.exactDuplicateCount(),
-                    plan.sameTeamDuplicatePerspectiveCount(),
-                    fileStatuses, buildAnalysisUnits(plan.groups()), aiResult.keyEvents());
+                    plan.exactDuplicateCount(), plan.sameTeamDuplicatePerspectiveCount(),
+                    fileStatuses, units, aiResult.keyEvents());
         }
 
-        // TEAM_PERSPECTIVE - 团队 AI 尚未实现
-        throw new UnsupportedReplayAnalysisModeException(
-                "TEAM_ANALYSIS_NOT_IMPLEMENTED");
+        throw new UnsupportedReplayAnalysisModeException("TEAM_ANALYSIS_NOT_IMPLEMENTED");
     }
 
     /**
@@ -319,6 +227,16 @@ public class ReconstructionController {
                 .body(e.getMessage());
     }
 
+    /**
+     * 不同录像者混入（多场随机战斗）→ 400。
+     */
+    @ExceptionHandler(MixedRandomBattleRecordersException.class)
+    public ResponseEntity<String> handleMixedRecorders(final MixedRandomBattleRecordersException e) {
+        return ResponseEntity.badRequest()
+                .contentType(MediaType.TEXT_PLAIN)
+                .body(e.getMessage());
+    }
+
     // ---- 验证 ----
 
     private static void validateFile(final MultipartFile file) {
@@ -353,8 +271,60 @@ public class ReconstructionController {
 
     // ---- 辅助 ----
 
+    private List<ReplayProcessingResult> processFiles(final MultipartFile[] files) throws IOException {
+        final List<ReplayProcessingResult> results = new ArrayList<>();
+        for (final MultipartFile f : files) {
+            final String name = f.getOriginalFilename() != null ? f.getOriginalFilename() : "replay.wotbreplay";
+            results.add(processingFacade.process(
+                    new Source(name, f.getBytes()), ReplayProcessingOptions.full()));
+        }
+        return results;
+    }
+
+    private static List<ReplayFileAnalysisStatus> buildFileStatuses(
+            final List<ReplayProcessingResult> allResults,
+            final BatchAnalyzer.AnalysisPlan plan) {
+        final List<ReplayFileAnalysisStatus> statuses = new ArrayList<>();
+        for (final var gp : plan.groups()) {
+            final var rep = gp.representative();
+            statuses.add(ReplayFileAnalysisStatus.primary(
+                    rep.fileName(), rep.status(), BattleCategory.RANDOM, plan.dominantScope(),
+                    rep.battle() != null ? rep.battle().arenaId : null,
+                    gp.key().perspectiveTeam(), rep.capabilities()));
+            for (final var dup : gp.duplicates()) {
+                statuses.add(ReplayFileAnalysisStatus.duplicate(
+                        dup.fileName(), ReplayProcessingStatus.SUCCESS,
+                        ReplayFileRelation.SAME_TEAM_DUPLICATE_PERSPECTIVE,
+                        rep.fileName()));
+            }
+        }
+        for (final var dup : plan.exactDuplicates()) {
+            statuses.add(ReplayFileAnalysisStatus.duplicate(
+                    dup.duplicate().fileName(), ReplayProcessingStatus.SUCCESS,
+                    ReplayFileRelation.EXACT_DUPLICATE,
+                    dup.original().fileName()));
+        }
+        for (final ReplayProcessingResult r : allResults) {
+            if (r.status() == ReplayProcessingStatus.FAILED
+                    && statuses.stream().noneMatch(s -> s.fileName().equals(r.fileName()))) {
+                statuses.add(ReplayFileAnalysisStatus.failed(
+                        r.fileName(), r.error() != null ? r.error()
+                                : ReplayProcessingError.of("FAILED", "Processing failed")));
+            }
+        }
+        return statuses;
+    }
+
+    private static int countFailed(final List<ReplayFileAnalysisStatus> statuses) {
+        return (int) statuses.stream()
+                .filter(f -> f.status() == ReplayProcessingStatus.FAILED
+                        && f.relation() == ReplayFileRelation.INDEPENDENT_BATTLE
+                        && f.error() != null)
+                .count();
+    }
+
     /**
-     * 将 MultipartFile 数组转换为 Source 列表（复用，消除重复代码）。
+     * 将 MultipartFile 数组转换为 Source 列表。
      */
     private static List<Source> toSources(final MultipartFile[] files) throws IOException {
         final List<Source> sources = new ArrayList<>();
@@ -364,68 +334,5 @@ public class ReconstructionController {
                     f.getBytes()));
         }
         return sources;
-    }
-
-    private AiReplayAnalysisService.AnalyzeResult callPlayerContext(final ReplayProcessingResult rep) {
-        if (rep.battle() == null) return new AiReplayAnalysisService.AnalyzeResult("", "", List.of());
-        if (rep.reconstruction() == null) {
-            return aiService.analyze(rep.battle(), null);
-        }
-
-        final SinglePlayerBattleAnalysisContext context;
-        try {
-            final var extractor = new DefaultPlayerBattleFeatureExtractor();
-            final var recorder = findRecorder(rep);
-            final PlayerBattleFeatureSet featureSet = extractor.extract(rep.reconstruction(), recorder);
-            context = new SinglePlayerBattleAnalysisContext(
-                    null, rep.battle(), featureSet, recorder,
-                    rep.reconstruction().coverage(), featureSet.limitations());
-        } catch (Exception extractionException) {
-            System.getLogger("ReconstructionController")
-                    .log(System.Logger.Level.WARNING,
-                            "Feature extraction failed, falling back: {0}",
-                            extractionException.getMessage());
-            return aiService.analyze(rep.battle(), rep.reconstruction());
-        }
-
-        return aiService.analyzePlayerContext(context);
-    }
-
-    private static RecorderEntityMapping findRecorder(final ReplayProcessingResult rep) {
-        if (rep.reconstruction() != null) {
-            // 从 ParticipantMappingEvent 建立 entityId → accountId 映射
-            final java.util.Map<Long, Integer> entityByAccount = new java.util.HashMap<>();
-            for (final var e : rep.reconstruction().events()) {
-                if (e instanceof com.wotb.core.replay.event.ParticipantMappingEvent pm) {
-                    entityByAccount.put(pm.accountId(), pm.entityId());
-                }
-            }
-            for (final var p : rep.reconstruction().participants()) {
-                if (p.recorder()) {
-                    final Integer eid = entityByAccount.get(p.accountId());
-                    return new RecorderEntityMapping(p.accountId(), p.tankId(),
-                            eid, p.nickname(), p.team(), p.tankId(),
-                            eid != null ? DecodeConfidence.EXACT : DecodeConfidence.INFERRED);
-                }
-            }
-        }
-        if (rep.battle() != null && rep.battle().recorder != null)
-            return new RecorderEntityMapping(null, null, null,
-                    rep.battle().recorder, 0, 0, DecodeConfidence.INFERRED);
-        return RecorderEntityMapping.unresolved();
-    }
-
-    private static List<AnalysisUnitResult> buildAnalysisUnits(final List<ReplayPerspectiveGroup> groups) {
-        return groups.stream()
-                .map(g -> new AnalysisUnitResult(
-                        "unit-" + g.key().battleIdentity().arenaUniqueId(),
-                        g.key().battleIdentity(),
-                        null,
-                        g.key().perspectiveTeam(),
-                        g.representative().fileName(),
-                        g.duplicates().stream().map(ReplayProcessingResult::fileName).toList(),
-                        null, null
-                ))
-                .toList();
     }
 }
