@@ -4,6 +4,15 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.AiNotConfiguredException;
+import com.wotb.core.replay.feature.BattlePhaseSummary;
+import com.wotb.core.replay.feature.EngagementSummary;
+import com.wotb.core.replay.feature.MovementSegment;
+import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
+import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
+import com.wotb.core.replay.feature.MultiPlayerBattleAnalysisContext;
+import com.wotb.core.replay.feature.PlayerBattleAnalysisSummary;
+import com.wotb.core.replay.feature.PlayerAggregate;
+import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,6 +25,7 @@ import org.springframework.web.client.RestClientResponseException;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -98,6 +108,135 @@ public class AiReplayAnalysisService {
 
         final String content = call(requestBody);
         return new AnalyzeResult(content, model, keyEvents);
+    }
+
+    /**
+     * 基于完整 battle + reconstruction + feature set 生成单场个人复盘。
+     * <p>这是真正的完整流程复盘入口，使用压缩后的移动段、交火段和阶段数据。</p>
+     */
+    public AnalyzeResult analyzePlayerContext(SinglePlayerBattleAnalysisContext ctx) {
+        if (!isConfigured()) throw new AiNotConfiguredException();
+        final String summary = buildPlayerContextSummary(ctx);
+        final Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", model);
+        body.put("stream", false);
+        body.put("messages", List.of(
+                Map.of("role", "system", "content", SINGLE_PLAYER_PROMPT),
+                Map.of("role", "user", "content", summary)));
+        final String content = call(body);
+        return new AnalyzeResult(content, model, ctx.features().keyEvents());
+    }
+
+    public AnalyzeResult analyzeMultiPlayerContext(MultiPlayerBattleAnalysisContext ctx) {
+        if (!isConfigured()) throw new AiNotConfiguredException();
+        final String summary = buildMultiPlayerContextSummary(ctx);
+        final Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", model);
+        body.put("stream", false);
+        body.put("messages", List.of(
+                Map.of("role", "system", "content", MULTI_PLAYER_PROMPT),
+                Map.of("role", "user", "content", summary)));
+        final String content = call(body);
+        return new AnalyzeResult(content, model, List.of());
+    }
+
+    private static final String SINGLE_PLAYER_PROMPT = """
+            你是《坦克世界闪击战》(WoT Blitz) 的资深教练，正在对一场随机战斗做个人复盘。
+            数据包括：战后结算（可靠）+ 完整战斗位置时间线 + 移动段 + 交火段 + 战斗阶段。
+            位置数据已经过压缩（移动段），不要期待逐帧坐标。
+            请用简体中文输出：
+            1) 整体评价（车辆、地图适应性、战绩概述）
+            2) 开局路线和首次接敌分析
+            3) 主要交火段分析（输出和承伤时机、站位）
+            4) 关键转折点（转场、击杀、阵亡）
+            5) 残局处理（如存活到残局）
+            6) 做得好的地方和需要改进的地方（需引用时间或事件证据）
+            7) 可执行的训练建议
+            严格基于给定数据，不要编造。无法判断时明确说明。
+            只能根据录像者个人的实战信息评价其决策，
+            不可声称看到了未点亮的敌方位置。""";
+
+    private String buildPlayerContextSummary(SinglePlayerBattleAnalysisContext ctx) {
+        final StringBuilder sb = new StringBuilder(1024);
+        final var features = ctx.features();
+
+        sb.append("=== 战斗概览 ===\n");
+        sb.append("图像重建完成, 特征集可用\n\n");
+
+        sb.append("=== 录像者特征 ===\n");
+        if (ctx.recorder() != null) {
+            sb.append("账号: ").append(ctx.recorder().accountId())
+                    .append(" | 队伍: ").append(ctx.recorder().team())
+                    .append(" | 车辆 ID: ").append(ctx.recorder().tankId()).append('\n');
+        }
+
+        if (!features.movements().isEmpty()) {
+            sb.append("\n=== 移动段（压缩） ===\n");
+            int n = 0;
+            for (final MovementSegment seg : features.movements()) {
+                if (n++ >= 5) { sb.append("  ... 还有 ").append(features.movements().size() - 5).append(" 段\n"); break; }
+                sb.append("  [").append(String.format("%.1f-%.1f", seg.startTime(), seg.endTime())).append("s] ")
+                        .append(seg.type()).append(" | 距离 ").append(String.format("%.1f", seg.distance()))
+                        .append("m 速度 ").append(String.format("%.1f", seg.averageSpeed())).append("m/s\n");
+            }
+        }
+
+        if (!features.engagements().isEmpty()) {
+            sb.append("\n=== 交火段 ===\n");
+            for (int i = 0; i < features.engagements().size(); i++) {
+                final EngagementSummary e = features.engagements().get(i);
+                sb.append("  #").append(i + 1).append(" [")
+                        .append(String.format("%.1f-%.1f", e.startTime(), e.endTime())).append("s]")
+                        .append(" 输出").append(e.damageDealt()).append(" 承伤").append(e.damageReceived())
+                        .append(" 结果: ").append(e.outcome()).append('\n');
+            }
+        }
+
+        if (!features.phases().isEmpty()) {
+            sb.append("\n=== 战斗阶段 ===\n");
+            for (final BattlePhaseSummary p : features.phases()) {
+                sb.append("  [").append(String.format("%.1f-%.1f", p.startTime(), p.endTime())).append("s] ")
+                        .append(p.type()).append('\n');
+            }
+        }
+
+        sb.append("\n覆盖: ").append(ctx.coverage() != null ? ctx.coverage().decodedPacketRatio() : "N/A").append('\n');
+        return sb.toString();
+    }
+
+    private static final String MULTI_PLAYER_PROMPT = """
+            你是《坦克世界闪击战》(WoT Blitz) 的资深教练，正在对同一玩家的多场随机战斗做趋势复盘。
+            每场都已后端压缩为移动段和交火段，不要期待逐帧坐标。
+            聚合统计由后端确定性计算。请用简体中文输出：
+            1) 总体表现概览（场均输出/承伤/存活时间）
+            2) 反复出现的问题（引用具体场次和时间段证据）
+            3) 稳定发挥的优点
+            4) 跨场景可执行的训练建议
+            严格基于数据，不要混淆场次。""";
+
+    private String buildMultiPlayerContextSummary(MultiPlayerBattleAnalysisContext ctx) {
+        final StringBuilder sb = new StringBuilder(512);
+        sb.append("分析场次: ").append(ctx.battleCount()).append('\n');
+        sb.append("限制: ").append(String.join("; ", ctx.limitations())).append('\n');
+        for (int i = 0; i < ctx.battles().size(); i++) {
+            final var b = ctx.battles().get(i);
+            sb.append("\n=== 第 ").append(i + 1).append(" 场: ").append(b.fileName()).append(" ===\n");
+            sb.append("地图: ").append(b.mapName()).append(" | ")
+                    .append("时长: ").append(b.durationSec()).append("s | ")
+                    .append(b.victory() ? "胜" : "负").append('\n');
+            final var fs = b.features();
+            if (fs != null) {
+                int dealt = 0, received = 0;
+                for (final var eng : fs.engagements()) {
+                    dealt += eng.damageDealt();
+                    received += eng.damageReceived();
+                }
+                sb.append("输出: ").append(dealt).append(" 承伤: ").append(received).append('\n');
+                sb.append("交火段: ").append(fs.engagements().size())
+                        .append(" | 移动段: ").append(fs.movements().size()).append('\n');
+            }
+        }
+        return sb.toString();
     }
 
     private static final String MULTI_SYSTEM_PROMPT = """
