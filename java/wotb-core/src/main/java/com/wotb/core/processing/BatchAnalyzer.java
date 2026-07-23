@@ -1,11 +1,11 @@
 package com.wotb.core.processing;
 
-import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -31,6 +31,17 @@ public class BatchAnalyzer {
 
     /**
      * 分析一批回放结果，返回分组后的分析计划。
+     * <p>
+     * 处理流程：
+     * <ol>
+     *   <li>按 BattleCategory 确定 AnalysisScope</li>
+     *   <li>验证 scope 一致性（不混合随机战斗和训练房，以及 UNKNOWN）</li>
+     *   <li>精确重复去重（SHA-256）</li>
+     *   <li>按 BattleIdentity + perspectiveTeam 视角分组</li>
+     *   <li>选择代表回放</li>
+     *   <li>验证录像者一致性（随机战斗时）</li>
+     *   <li>计算有效分析单元数，判定 ReplayAnalysisMode</li>
+     * </ol>
      *
      * @param results 逐文件处理结果（保留顺序）
      * @return 分析计划
@@ -50,32 +61,65 @@ public class BatchAnalyzer {
             throw new MixedAnalysisScopesException(
                     "Mixed analysis scopes: " + scopes);
         }
+        // 2b. UNKNOWN category 不得与已知 scope 混合
+        final boolean hasUnknownNonFailed = scoped.stream()
+                .anyMatch(s -> s.scope() == null
+                        && s.result().status() != ReplayProcessingStatus.FAILED);
+        if (hasUnknownNonFailed && scopes.size() == 1) {
+            throw new MixedAnalysisScopesException(
+                    "Cannot mix UNKNOWN battle category with "
+                            + scopes.iterator().next());
+        }
 
-        // 3. 过滤失败结果，按 BattleIdentity + perspectiveTeam 分组
-        final Map<ReplayPerspectiveGroupKey, List<ScopedResult>> groups = new HashMap<>();
+        // 3. SHA-256 精确重复去重（跳过 FAILED 结果）
+        final Map<String, List<ScopedResult>> byHash = new LinkedHashMap<>();
         for (final ScopedResult sr : scoped) {
             if (sr.result().status() == ReplayProcessingStatus.FAILED) continue;
+            final String hash = sr.result().identity() != null
+                    ? sr.result().identity().contentHash() : null;
+            final String key = hash != null ? hash
+                    : "__no_hash_" + sr.result().fileName();
+            byHash.computeIfAbsent(key, k -> new ArrayList<>()).add(sr);
+        }
+
+        final List<ScopedResult> uniqueResults = new ArrayList<>();
+        final List<ReplayProcessingResult> exactDuplicates = new ArrayList<>();
+        for (final var entry : byHash.entrySet()) {
+            final List<ScopedResult> hashGroup = entry.getValue();
+            uniqueResults.add(hashGroup.getFirst());
+            for (int i = 1; i < hashGroup.size(); i++) {
+                exactDuplicates.add(hashGroup.get(i).result());
+            }
+        }
+
+        // 4. 按 BattleIdentity + perspectiveTeam 分组（跳过 FAILED 和 UNKNOWN scope）
+        final Map<ReplayPerspectiveGroupKey, List<ScopedResult>> groups = new HashMap<>();
+        for (final ScopedResult sr : uniqueResults) {
+            if (sr.result().status() == ReplayProcessingStatus.FAILED) continue;
+            if (sr.scope() == null) continue; // UNKNOWN 不参与分析分组
             final ReplayPerspectiveGroupKey key = resolveKey(sr);
             groups.computeIfAbsent(key, k -> new ArrayList<>()).add(sr);
         }
 
-        // 4. 选择代表回放，计算关系
+        // 5. 选择代表回放，计算同队重复视角
         final List<ReplayPerspectiveGroup> perspectiveGroups = new ArrayList<>();
+        int sameTeamDupCount = 0;
         for (final var entry : groups.entrySet()) {
             final List<ScopedResult> groupResults = entry.getValue();
             final ScopedResult representative = selectRepresentative(groupResults);
 
-            final List<ReplayProcessingResult> duplicates = new ArrayList<>();
+            final List<ReplayProcessingResult> teamDuplicates = new ArrayList<>();
             for (final ScopedResult sr : groupResults) {
                 if (sr.result() != representative.result()) {
-                    duplicates.add(sr.result());
+                    teamDuplicates.add(sr.result());
+                    sameTeamDupCount++;
                 }
             }
             perspectiveGroups.add(new ReplayPerspectiveGroup(
-                    entry.getKey(), representative.result(), duplicates));
+                    entry.getKey(), representative.result(), teamDuplicates));
         }
 
-        // 5. 验证录像者一致性（仅 PLAYER_FOCUSED）
+        // 6. 验证录像者一致性（仅 PLAYER_FOCUSED + RANDOM）
         if (scopes.contains(ReplayAnalysisScope.PLAYER_FOCUSED)) {
             final List<ScopedResult> playerResults = scoped.stream()
                     .filter(s -> s.scope() == ReplayAnalysisScope.PLAYER_FOCUSED)
@@ -93,7 +137,7 @@ public class BatchAnalyzer {
             }
         }
 
-        // 6. 判定模式
+        // 7. 判定模式
         final ReplayAnalysisScope dominantScope = scopes.isEmpty() ? null : scopes.iterator().next();
         final int effectiveUnits = perspectiveGroups.size();
         final int analyzableCount = (int) perspectiveGroups.stream()
@@ -103,7 +147,8 @@ public class BatchAnalyzer {
 
         final ReplayAnalysisMode mode = resolveMode(dominantScope, analyzableCount);
 
-        return new AnalysisPlan(mode, dominantScope, perspectiveGroups, effectiveUnits);
+        return new AnalysisPlan(mode, dominantScope, perspectiveGroups, effectiveUnits,
+                exactDuplicates, exactDuplicates.size(), sameTeamDupCount);
     }
 
     private ScopedResult toScopedResult(final ReplayProcessingResult result) {
@@ -216,18 +261,27 @@ public class BatchAnalyzer {
 
     // ---- 内部类型 ----
 
-    /** 处理结果 + 推导的 category + scope。 */
+    /**
+     * 处理结果 + 推导的 category + scope。
+     */
     public record ScopedResult(
             ReplayProcessingResult result,
             BattleCategory category,
             ReplayAnalysisScope scope
-    ) {}
+    ) {
+    }
 
-    /** 分析计划。 */
+    /**
+     * 分析计划。
+     */
     public record AnalysisPlan(
             ReplayAnalysisMode mode,
             ReplayAnalysisScope dominantScope,
             List<ReplayPerspectiveGroup> groups,
-            int effectiveUnitCount
-    ) {}
+            int effectiveUnitCount,
+            List<ReplayProcessingResult> exactDuplicates,
+            int exactDuplicateCount,
+            int sameTeamDuplicatePerspectiveCount
+    ) {
+    }
 }

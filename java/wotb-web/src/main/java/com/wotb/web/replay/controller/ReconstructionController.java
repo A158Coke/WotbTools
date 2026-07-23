@@ -1,32 +1,32 @@
 package com.wotb.web.replay.controller;
 
 import com.wotb.core.model.Source;
+import com.wotb.core.processing.AnalysisUnitResult;
 import com.wotb.core.processing.BatchAnalyzer;
 import com.wotb.core.processing.BattleCategory;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
+import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.processing.ReplayAnalysisMode;
 import com.wotb.core.processing.ReplayAnalysisScope;
 import com.wotb.core.processing.ReplayBatchProcessingResult;
 import com.wotb.core.processing.ReplayFileAnalysisStatus;
 import com.wotb.core.processing.ReplayFileRelation;
-import com.wotb.core.processing.AnalysisUnitResult;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingError;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
+import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
+import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
+import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
+import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
-import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
-import com.wotb.core.processing.RecorderEntityMapping;
-import com.wotb.core.replay.event.DecodeConfidence;
-import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
-import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
-import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.web.replay.dto.ReconstructSummary;
 import com.wotb.web.replay.dto.StateAtResponse;
 import org.springframework.http.HttpStatus;
@@ -42,7 +42,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 回放重建 REST API（开发和验证用）。
@@ -152,7 +154,8 @@ public class ReconstructionController {
             final var cap = rep.capabilities();
             fileStatuses.add(ReplayFileAnalysisStatus.primary(
                     rep.fileName(), rep.status(),
-                    BattleCategory.RANDOM, plan.dominantScope(),
+                    plan.dominantScope() != null ? BattleCategory.RANDOM : BattleCategory.UNKNOWN,
+                    plan.dominantScope(),
                     rep.battle() != null ? rep.battle().arenaId : null,
                     0, cap));
             for (final var dup : gp.duplicates()) {
@@ -162,9 +165,27 @@ public class ReconstructionController {
                         rep.fileName()));
             }
         }
-        // 失败文件
+        // 精确重复文件
+        final Set<String> dupFileNames = new HashSet<>();
+        for (final var dup : plan.exactDuplicates()) {
+            fileStatuses.add(ReplayFileAnalysisStatus.duplicate(
+                    dup.fileName(),
+                    ReplayFileRelation.EXACT_DUPLICATE,
+                    dup.fileName()));
+            dupFileNames.add(dup.fileName());
+        }
+        // 真正失败文件（非重复、非分组内）
+        final Set<String> groupedFileNames = new HashSet<>();
+        for (final var gp : plan.groups()) {
+            groupedFileNames.add(gp.representative().fileName());
+            for (final var dup : gp.duplicates()) {
+                groupedFileNames.add(dup.fileName());
+            }
+        }
         for (final ReplayProcessingResult r : allResults) {
-            if (r.status() == ReplayProcessingStatus.FAILED) {
+            if (r.status() == ReplayProcessingStatus.FAILED
+                    && !groupedFileNames.contains(r.fileName())
+                    && !dupFileNames.contains(r.fileName())) {
                 fileStatuses.add(ReplayFileAnalysisStatus.failed(
                         r.fileName(), r.error() != null ? r.error()
                                 : ReplayProcessingError.of("FAILED", "Processing failed")));
@@ -176,22 +197,24 @@ public class ReconstructionController {
         final int analyzableCount = (int) allResults.stream()
                 .filter(r -> r.capabilities() != null && r.capabilities().aiAnalyzable())
                 .count();
-        final int successCount = (int) allResults.stream()
-                .filter(r -> r.status() == ReplayProcessingStatus.SUCCESS).count();
-        final int partialCount = (int) allResults.stream()
-                .filter(r -> r.status() == ReplayProcessingStatus.PARTIAL_SUCCESS).count();
-        final int failedCount = total - successCount - partialCount;
-        final int dupCount = (int) allResults.stream()
-                .filter(r -> r.status() == ReplayProcessingStatus.FAILED
-                        && r.error() != null && "DUPLICATE_FILE".equals(r.error().code()))
+        final int failedCount = (int) fileStatuses.stream()
+                .filter(f -> f.status() == ReplayProcessingStatus.FAILED
+                        && f.relation() == ReplayFileRelation.INDEPENDENT_BATTLE
+                        && f.error() != null)
                 .count();
 
-        if (analyzableCount == 0) {
+        if (analyzableCount == 0 && plan.effectiveUnitCount() == 0) {
             throw new IllegalArgumentException("NO_BATTLE_DATA");
         }
 
-        // 5. 按 scope 调用 AI
+        // 5. 处理 null scope（全 UNKNOWN）
         final int effectiveUnits = plan.effectiveUnitCount();
+        if (plan.dominantScope() == null) {
+            throw new UnsupportedReplayAnalysisModeException(
+                    "UNSUPPORTED_BATTLE_CATEGORY");
+        }
+
+        // 6. 按 scope 调用 AI
         if (plan.dominantScope() == ReplayAnalysisScope.PLAYER_FOCUSED) {
             final var reps = plan.groups().stream()
                     .map(ReplayPerspectiveGroup::representative)
@@ -203,7 +226,9 @@ public class ReconstructionController {
                 return new AnalyzeResponse(
                         ReplayAnalysisMode.SINGLE_PLAYER_BATTLE,
                         total, analyzableCount, effectiveUnits, 1, effectiveUnits,
-                        aiResult.analysis(), failedCount, dupCount, 0,
+                        aiResult.analysis(), failedCount,
+                        plan.exactDuplicateCount(),
+                        plan.sameTeamDuplicatePerspectiveCount(),
                         fileStatuses, buildAnalysisUnits(plan.groups()), aiResult.keyEvents());
             }
             // 多场随机战斗
@@ -214,11 +239,13 @@ public class ReconstructionController {
             return new AnalyzeResponse(
                     ReplayAnalysisMode.MULTI_PLAYER_BATTLE,
                     total, analyzableCount, effectiveUnits, effectiveUnits, effectiveUnits,
-                    aiResult.analysis(), failedCount, dupCount, 0,
+                    aiResult.analysis(), failedCount,
+                    plan.exactDuplicateCount(),
+                    plan.sameTeamDuplicatePerspectiveCount(),
                     fileStatuses, buildAnalysisUnits(plan.groups()), aiResult.keyEvents());
         }
 
-        // TEAM_PERSPECTIVE 或无 scope - 团队 AI 尚未实现
+        // TEAM_PERSPECTIVE - 团队 AI 尚未实现
         throw new UnsupportedReplayAnalysisModeException(
                 "TEAM_ANALYSIS_NOT_IMPLEMENTED");
     }
@@ -252,7 +279,9 @@ public class ReconstructionController {
 
     // ---- 异常映射（仅本控制器；返回稳定错误码文本，供前端本地化） ----
 
-    /** 请求/数据错误（文件校验失败、NO_BATTLE_DATA 等）→ 400。 */
+    /**
+     * 请求/数据错误（文件校验失败、NO_BATTLE_DATA 等）→ 400。
+     */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<String> handleBadRequest(final IllegalArgumentException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
@@ -260,7 +289,9 @@ public class ReconstructionController {
                 .body(e.getMessage());
     }
 
-    /** AI 未配置密钥 → 503 AI_NOT_CONFIGURED。 */
+    /**
+     * AI 未配置密钥 → 503 AI_NOT_CONFIGURED。
+     */
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<String> handleNotConfigured(final IllegalStateException e) {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
@@ -268,7 +299,9 @@ public class ReconstructionController {
                 .body(e.getMessage());
     }
 
-    /** 上游 AI 调用失败 → 502。 */
+    /**
+     * 上游 AI 调用失败 → 502。
+     */
     @ExceptionHandler(AiUpstreamException.class)
     public ResponseEntity<String> handleUpstream(final AiUpstreamException e) {
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
@@ -276,10 +309,12 @@ public class ReconstructionController {
                 .body(e.getMessage());
     }
 
-    /** 不支持的 AI 分析模式（团队视角等）→ 422。 */
+    /**
+     * 不支持的 AI 分析模式（团队视角等）→ 422。
+     */
     @ExceptionHandler(UnsupportedReplayAnalysisModeException.class)
     public ResponseEntity<String> handleUnsupportedMode(final UnsupportedReplayAnalysisModeException e) {
-        return ResponseEntity.unprocessableEntity()
+        return ResponseEntity.unprocessableContent()
                 .contentType(MediaType.TEXT_PLAIN)
                 .body(e.getMessage());
     }
@@ -368,8 +403,8 @@ public class ReconstructionController {
             for (final var p : rep.reconstruction().participants()) {
                 if (p.recorder()) {
                     final Integer eid = entityByAccount.get(p.accountId());
-                    return new RecorderEntityMapping(p.accountId(), (int) p.tankId(),
-                            eid, p.nickname(), p.team(), (int) p.tankId(),
+                    return new RecorderEntityMapping(p.accountId(), p.tankId(),
+                            eid, p.nickname(), p.team(), p.tankId(),
                             eid != null ? DecodeConfidence.EXACT : DecodeConfidence.INFERRED);
                 }
             }
@@ -382,7 +417,7 @@ public class ReconstructionController {
 
     private static List<AnalysisUnitResult> buildAnalysisUnits(final List<ReplayPerspectiveGroup> groups) {
         return groups.stream()
-                .<AnalysisUnitResult>map(g -> new AnalysisUnitResult(
+                .map(g -> new AnalysisUnitResult(
                         "unit-" + g.key().battleIdentity().arenaUniqueId(),
                         g.key().battleIdentity(),
                         null,
