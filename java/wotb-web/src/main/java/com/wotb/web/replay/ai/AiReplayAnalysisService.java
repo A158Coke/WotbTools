@@ -19,6 +19,7 @@ import com.wotb.core.replay.feature.MultiPlayerBattleAnalysisContext;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.util.PlayerResultFormat;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -170,49 +171,28 @@ public class AiReplayAnalysisService {
         int authoritativeReceived = 0;
         if (battle != null) {
             sb.append("=== 战斗结算数据（权威） ===\n");
-            sb.append("地图: ").append(safe(battle.mapName)).append('\n');
+            sb.append("地图: ").append(PlayerResultFormat.safe(battle.mapName)).append('\n');
             if (battle.arenaBonusType != null) {
                 sb.append("模式编号: ").append(battle.arenaBonusType).append('\n');
             }
             if (battle.durationS != null) {
                 sb.append("时长: ").append(String.format("%.1f", battle.durationS)).append("s\n");
             }
-            sb.append("胜方队伍: ").append(battle.winnerTeam != null ? battle.winnerTeam : "未知").append('\n');
+            sb.append("胜方队伍: ").append(PlayerResultFormat.winnerTeamDisplay(battle)).append('\n');
 
             final PlayerResult rec = battle.recorderResult();
             if (rec != null) {
                 authoritativeDealt = rec.damageDealt;
                 authoritativeReceived = rec.damageReceived;
-                sb.append("\n录像者: ").append(safe(rec.nickname))
+                sb.append("\n录像者: ").append(PlayerResultFormat.safe(rec.nickname))
                         .append(" | 队伍").append(rec.team)
-                        .append(" | ").append(safe(rec.tankName))
-                        .append(" | 输出").append(rec.damageDealt)
-                        .append(" 承伤").append(rec.damageReceived)
-                        .append(" 助攻").append(rec.damageAssisted)
-                        .append(" 格挡").append(rec.damageBlocked)
-                        .append(" 击杀").append(rec.kills)
-                        .append(rec.survived ? " 存活" : " 阵亡@" + String.format("%.1f", deathSec(rec)) + "s")
-                        .append("\n");
+                        .append(" | ").append(PlayerResultFormat.safe(rec.tankName));
+                PlayerResultFormat.appendRecorderLine(sb, rec);
+                sb.append('\n');
             }
 
             sb.append("\n全体玩家战绩 (队伍/昵称/坦克/输出/承伤/助攻/格挡/击杀/存活):\n");
-            if (battle.players != null) {
-                final java.util.List<PlayerResult> players = new java.util.ArrayList<>(battle.players);
-                players.sort(java.util.Comparator.<PlayerResult>comparingInt(p -> p.team)
-                        .thenComparing(java.util.Comparator.comparingInt((PlayerResult p) -> p.damageDealt).reversed()));
-                for (final PlayerResult p : players) {
-                    sb.append("- 队伍").append(p.team)
-                            .append(' ').append(safe(p.nickname))
-                            .append(" (").append(safe(p.tankName)).append(')')
-                            .append(" 输出").append(p.damageDealt)
-                            .append(" 承伤").append(p.damageReceived)
-                            .append(" 助攻").append(p.damageAssisted)
-                            .append(" 格挡").append(p.damageBlocked)
-                            .append(" 击杀").append(p.kills)
-                            .append(p.survived ? " 存活" : " 阵亡@" + String.format("%.1f", deathSec(p)) + "s")
-                            .append('\n');
-                }
-            }
+            PlayerResultFormat.appendAllPlayers(sb, battle.players);
         } else {
             sb.append("=== 警告：无权威结算数据 ===\n");
         }
@@ -400,31 +380,22 @@ public class AiReplayAnalysisService {
         for (int i = 0; i < battles.size(); i++) {
             final Battle b = battles.get(i);
             final PlayerResult rec = b.recorderResult();
-            sb.append("场 ").append(i + 1).append(": 地图 ").append(safe(b.mapName));
+            sb.append("场 ").append(i + 1).append(": 地图 ").append(PlayerResultFormat.safe(b.mapName));
             if (rec != null) {
                 final boolean win = b.winnerTeam != null && b.winnerTeam == rec.team;
-                sb.append(" | ").append(safe(rec.tankName))
-                        .append(win ? " | 胜" : " | 负")
-                        .append(" | 输出").append(rec.damageDealt)
-                        .append(" 承伤").append(rec.damageReceived)
-                        .append(" 助攻").append(rec.damageAssisted)
-                        .append(" 击杀").append(rec.kills)
-                        .append(rec.survived ? " | 存活"
-                                : " | 阵亡@" + String.format("%.1f", deathSec(rec)) + "s");
+                sb.append(" | ").append(PlayerResultFormat.safe(rec.tankName))
+                        .append(win ? " | 胜" : " | 负");
+                PlayerResultFormat.appendRecorderLine(sb, rec);
                 withRec++;
-                if (win) {
-                    wins++;
-                }
+                if (win) wins++;
                 sumDmg += rec.damageDealt;
                 sumRecv += rec.damageReceived;
                 sumAssist += rec.damageAssisted;
                 if (rec.survived) {
                     survivedCount++;
-                    if (b.durationS != null) {
-                        sumSurvival += b.durationS;
-                    }
+                    if (b.durationS != null) sumSurvival += b.durationS;
                 } else {
-                    sumSurvival += deathSec(rec);
+                    sumSurvival += PlayerResultFormat.deathSec(rec);
                 }
             } else {
                 sb.append(" | (未能定位录像者战绩)");
@@ -464,18 +435,15 @@ public class AiReplayAnalysisService {
     private static List<KeyBattleEvent> buildDeathTimeline(final Battle battle) {
         final List<KeyBattleEvent> events = new ArrayList<>();
         if (battle.players != null) {
-            final List<PlayerResult> dead = new ArrayList<>();
-            for (final PlayerResult p : battle.players) {
-                if (!p.survived) {
-                    dead.add(p);
-                }
-            }
-            dead.sort(Comparator.comparingDouble(AiReplayAnalysisService::deathSec));
+            final var dead = battle.players.stream()
+                    .filter(p -> !p.survived)
+                    .sorted(Comparator.comparingDouble(PlayerResultFormat::deathSec))
+                    .toList();
             for (final PlayerResult p : dead) {
                 events.add(new KeyBattleEvent(
-                        (float) deathSec(p), "VEHICLE_DESTROYED",
-                        "队伍" + p.team + " " + safe(p.nickname)
-                                + " (" + safe(p.tankName) + ") 阵亡"));
+                        (float) PlayerResultFormat.deathSec(p), "VEHICLE_DESTROYED",
+                        "队伍" + p.team + " " + PlayerResultFormat.safe(p.nickname)
+                                + " (" + PlayerResultFormat.safe(p.tankName) + ") 阵亡"));
             }
         }
         final float endSec = battle.durationS != null ? battle.durationS.floatValue() : 0f;
@@ -485,69 +453,32 @@ public class AiReplayAnalysisService {
     }
 
     /**
-     * 死亡时刻（秒）：优先 deathTimeMillis，回退 survivalTimeSec。
-     */
-    private static double deathSec(final PlayerResult p) {
-        if (p.deathTimeMillis > 0) {
-            return p.deathTimeMillis / 1000.0;
-        }
-        return p.survivalTimeSec;
-    }
-
-    private static String safe(String s) {
-        return (s == null || s.isBlank()) ? "?" : s;
-    }
-
-    /**
      * 构建以结算数据为准的紧凑战局摘要。
      */
     private static String buildSummary(final Battle battle, final ReplayReconstruction recon, final List<KeyBattleEvent> keyEvents) {
         final StringBuilder sb = new StringBuilder(2048);
-        sb.append("地图: ").append(safe(battle.mapName)).append('\n');
+        sb.append("地图: ").append(PlayerResultFormat.safe(battle.mapName)).append('\n');
         if (battle.arenaBonusType != null) {
             sb.append("模式编号: ").append(battle.arenaBonusType).append('\n');
         }
         if (battle.durationS != null) {
             sb.append("时长: ").append(String.format("%.1f", battle.durationS)).append("s\n");
         }
-        sb.append("胜方队伍: ")
-                .append(battle.winnerTeam != null ? battle.winnerTeam : "未知").append('\n');
+        sb.append("胜方队伍: ").append(PlayerResultFormat.winnerTeamDisplay(battle)).append('\n');
 
         final PlayerResult rec = battle.recorderResult();
         if (rec != null) {
-            sb.append("\n录像者: ").append(safe(rec.nickname))
+            sb.append("\n录像者: ").append(PlayerResultFormat.safe(rec.nickname))
                     .append(" | 队伍").append(rec.team)
-                    .append(" | ").append(safe(rec.tankName))
-                    .append(" | 输出").append(rec.damageDealt)
-                    .append(" 承伤").append(rec.damageReceived)
-                    .append(" 助攻").append(rec.damageAssisted)
-                    .append(" 格挡").append(rec.damageBlocked)
-                    .append(" 击杀").append(rec.kills)
-                    .append(rec.survived ? " 存活" : " 阵亡@" + String.format("%.1f", deathSec(rec)) + "s")
-                    .append('\n');
+                    .append(" | ").append(PlayerResultFormat.safe(rec.tankName));
+            PlayerResultFormat.appendRecorderLine(sb, rec);
+            sb.append('\n');
         } else {
             sb.append("\n(未能定位录像者战绩)\n");
         }
 
         sb.append("\n全体玩家战绩 (队伍/昵称/坦克/输出/承伤/助攻/格挡/击杀/存活):\n");
-        if (battle.players != null) {
-            final List<PlayerResult> players = new ArrayList<>(battle.players);
-            players.sort(Comparator.<PlayerResult>comparingInt(p -> p.team)
-                    .thenComparing(Comparator.comparingInt((PlayerResult p) -> p.damageDealt).reversed()));
-            for (final PlayerResult p : players) {
-                sb.append("- 队伍").append(p.team)
-                        .append(' ').append(safe(p.nickname))
-                        .append(" (").append(safe(p.tankName)).append(')')
-                        .append(" 输出").append(p.damageDealt)
-                        .append(" 承伤").append(p.damageReceived)
-                        .append(" 助攻").append(p.damageAssisted)
-                        .append(" 格挡").append(p.damageBlocked)
-                        .append(" 击杀").append(p.kills)
-                        .append(p.survived ? " 存活"
-                                : " 阵亡@" + String.format("%.1f", deathSec(p)) + "s")
-                        .append('\n');
-            }
-        }
+        PlayerResultFormat.appendAllPlayers(sb, battle.players);
 
         sb.append("\n死亡时间线:\n");
         for (final KeyBattleEvent e : keyEvents) {

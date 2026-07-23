@@ -1,6 +1,7 @@
 package com.wotb.core.processing;
 
 import com.wotb.core.replay.reconstruction.BattleParticipant;
+import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -224,13 +225,8 @@ public class BatchAnalyzer {
     }
 
     private static Long extractRecorderAccountId(final ReplayProcessingResult result) {
-        // 权威数据源：battle_results.dat 的 PlayerResult
-        if (result.battle() != null) {
-            final var recorder = result.battle().recorderResult();
-            if (recorder != null && recorder.accountId > 0) {
-                return recorder.accountId;
-            }
-        }
+        final Long authoritative = PlayerResultFormat.recorderAccountId(result.battle());
+        if (authoritative != null) return authoritative;
         // 降级：从 reconstruction participants 查找
         if (result.reconstruction() != null) {
             for (final BattleParticipant p : result.reconstruction().participants()) {
