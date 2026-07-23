@@ -35,49 +35,35 @@ public class EntityPropertyDecoder implements ReplayPacketDecoder {
     public ReplayDecodeResult decode(ReplayDecodeContext context, RawReplayPacket packet) {
         final byte[] payload = packet.payload();
 
-        if (payload.length < 8) {
+        // 载荷结构（已从 11.18 样本逆向确认，稳定）：
+        //   entityId(u32) + propId(u32) + valueLen(u32) + value(valueLen 字节)
+        // 至少需要 12 字节的三段头。
+        if (payload.length < 12) {
             return new ReplayDecodeResult(DecodeStatus.MALFORMED, List.of(),
                     List.of(new ReplayDecodeWarning("TRUNCATED_PAYLOAD",
                             "EntityProperty packet too short: " + payload.length)));
         }
 
         final int entityId = readI32LE(payload, 0);
+        final int propId = readU32LE(payload, 4);
+        final int valueLen = readU32LE(payload, 8);
         final ReplayTimestamp ts = new ReplayTimestamp(packet.rawClockSec(), null);
 
-        final List<com.wotb.core.replay.event.ReplayEvent> events = new ArrayList<>();
         final List<ReplayDecodeWarning> warnings = new ArrayList<>();
-
-        // 尝试解析属性块
-        // 第一阶段保守处理：尝试识别血量相关属性
-        // 格式(猜测): entityId(4) + count(4) + {propId(4) + valueBytes(var)} * count
-        if (payload.length >= 8) {
-            final int count = readI32LE(payload, 4);
-            int off = 8;
-
-            for (int i = 0; i < count && off + 4 <= payload.length; i++) {
-                final int propId = readI32LE(payload, off);
-                off += 4;
-
-                // 根据已知属性 ID 尝试解析（待根据实际样本验证）
-                // 常见属性 ID（根据 WoT 社区已知信息，可能不准确）：
-                // - health/curHealth: 可能为特定 propId
-                // - maxHealth: 可能为特定 propId
-                // - isAlive: 可能为特定 propId
-                // 这里不做猜测，记录为 unknown
-                warnings.add(new ReplayDecodeWarning("UNKNOWN_PROPERTY",
-                        "EntityProperty propId=" + propId + " at entity " + entityId
-                                + " not yet decoded"));
-
-                // 跳过剩余 payload 的解析
-                // 准确解析需要知道每个 propId 对应的值类型和长度
-                // 目前无法可靠确定属性长度，故不尝试进一步解析
-            }
+        if (valueLen < 0 || 12 + valueLen > payload.length) {
+            warnings.add(new ReplayDecodeWarning("PROPERTY_VALUE_TRUNCATED",
+                    "EntityProperty valueLen=" + valueLen + " exceeds payload " + payload.length
+                            + " at entity " + entityId));
         }
 
-        // 输出 unknown 事件
+        // 结构已知，但 propId → 语义（尤其血量）的映射尚未可靠逆向：
+        // 单靠回放样本无法确定 value 的位布局（详见 docs/replay-data.md 的已知限制）。
+        // 因此这里只保留结构信息、不臆断血量/存活，避免向上层/AI 提供伪造数据。
+        // 可靠的血量/伤害/击杀/存活/死亡时刻请以 battle_results.dat（Battle/PlayerResult）为准。
+        final List<com.wotb.core.replay.event.ReplayEvent> events = new ArrayList<>();
         events.add(new UnknownReplayEvent(
                 packet.sequence(), ts, packet.type(),
-                payload.length, "ENTITY_PROPERTY_NOT_DECODED",
+                payload.length, "ENTITY_PROPERTY_prop" + propId + "_len" + valueLen,
                 DecodeConfidence.UNKNOWN));
 
         return new ReplayDecodeResult(DecodeStatus.PARTIAL, events, warnings);
@@ -86,5 +72,10 @@ public class EntityPropertyDecoder implements ReplayPacketDecoder {
     private static int readI32LE(byte[] buf, int i) {
         return (buf[i] & 0xFF) | ((buf[i + 1] & 0xFF) << 8)
                 | ((buf[i + 2] & 0xFF) << 16) | (buf[i + 3] << 24);
+    }
+
+    private static int readU32LE(byte[] buf, int i) {
+        return (buf[i] & 0xFF) | ((buf[i + 1] & 0xFF) << 8)
+                | ((buf[i + 2] & 0xFF) << 16) | ((buf[i + 3] & 0xFF) << 24);
     }
 }

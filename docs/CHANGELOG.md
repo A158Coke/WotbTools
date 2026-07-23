@@ -5,6 +5,12 @@
 ## [Unreleased]
 
 ### Added
+- **AI 战术复盘（DeepSeek，`wotbtools-admin` 灰度）**：新增 `POST /api/replay/analyze` 与 `AiReplayAnalysisService`（Spring `RestClient` 调 OpenAI 兼容 `/chat/completions`）。**以 `battle_results.dat`（`Battle`/`PlayerResult`）为权威数据源**——伤害/承伤/助攻/格挡/击杀/存活/死亡时刻(`deathTimeMillis`)/录像者均取自游戏结算；死亡时间线据此生成；完整重建仅补充位置维度。经统一门面 `DefaultReplayProcessingFacade.process(full)` 获取战绩+重建，战绩失败返回 `NO_BATTLE_DATA`、战绩成功但重建失败仍可分析、未配置密钥返回 `AI_NOT_CONFIGURED`（应用照常启动）。密钥 `AI_API_KEY` 经 GitHub Actions secret → 容器环境变量注入（沿用 `KEYCLOAK_ADMIN_CLIENT_SECRET` 路径）。前端在重建出结果后才显示 AI 按钮，结果面板可显示/关闭。
+
+### Changed / Fixed
+- **全项目统一 Jackson 3**（`tools.jackson.*`）：`wotb-core` 依赖改为 `tools.jackson.core:jackson-databind`（版本由 Spring Boot 4.1 BOM 托管），`ObjectMapper` 统一 `JsonMapper.builder().build()`，适配 `fields()/fieldNames()→properties()`、`TextNode→StringNode` 等改名；注解包 `com.fasterxml.jackson.annotation` 保持不变。
+- **回放代码审查修复**：前端 `/api/replay/*` 统一携带 Keycloak Bearer Token（含 401/403 处理）；`stateAt` 修正时钟回退下漏事件的问题（不再遇首个超时事件即 break）；`PositionDecoder` 截断（<49B）位置包降级为 PARTIAL；`PositionDecoder`/`ProtobufDecoder`/`EntityMethodDecoder` 修正越界与 varint 边界；`EntityPropertyDecoder` 改为解析已确认的 Type 7 结构（entity/prop/valueLen/value），**不臆断血量语义**（逐帧血量为已知限制，见 `docs/replay-data.md`）。
+
 - **完整回放重建处理流水线**：新增 `com.wotb.core.processing` 包（统一单/多文件处理门面），将现有 `ReplayParser` 战绩解析与 `ReplayReconstructionService` 完整重建整合为 `ReplayProcessingResult`；新增 `ReplayProcessingOptions` 控制是否执行重建，普通 preview 不承担额外成本；新增 `ReplayAnalysisMode`（NONE/SINGLE_BATTLE/MULTI_BATTLE）由后端根据可分析回放数量自动确定。新增 `POST /api/replay/reconstruct-batch`（批量重建）和 `POST /api/replay/process?reconstruct=`（可选重建）端点，仅 `wotbtools-admin` 可访问。新增特征提取与 AI 输入层占位（`com.wotb.core.replay.feature` 包：`BattleFeatureExtractor`、`Single/MultiBattleAnalysisContext`）。
 - **陪练订单完成确认**：新增 Flyway V11 的完成提交/自动确认时间字段、客户确认接口 `PATCH /api/boost/requests/my/{id}/confirm-completion`、72 小时默认自动确认调度与悲观锁幂等完结路径；客户、管理员和定时任务统一将需求置为 `CLOSED`、分配置为 `COMPLETED` 并释放打手。相关写操作统一锁顺序并重检需求/分配状态，管理员使用显式转换矩阵且不能重开终态，自动确认按订单使用独立事务隔离失败。
 - **回放解析资源预算**：ZIP 仅接受标准条目并限制压缩/解压大小；pickle、protobuf 增加长度、栈、opcode、字段数与 varint 边界；单回放名册/战绩最多 64 人，事件流最多 200000 包与 1000000 次扫描（高于已观测约 112K 合法样本）；公开解析任务增加文件数、请求总量与单实例并发限制。
