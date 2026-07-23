@@ -9,7 +9,13 @@ import com.wotb.core.replay.feature.KeyBattleEvent;
 import java.util.List;
 
 /**
- * AI 战术复盘响应（扩展版）。
+ * AI 战术复盘响应。
+ * 注意前端 `ReconstructionPage.vue` 依赖以下字段：
+ * - mode (String: SINGLE_PLAYER_BATTLE / MULTI_PLAYER_BATTLE)
+ * - analysis (AI 复盘文本)
+ * - battleCount (实际分析场次数)
+ * - files (每文件状态)
+ * - keyEvents (关键事件)
  */
 public record AnalyzeResponse(
         @JsonProperty("mode") ReplayAnalysisMode mode,
@@ -17,6 +23,8 @@ public record AnalyzeResponse(
         @JsonProperty("validFileCount") int validFileCount,
         @JsonProperty("analysisUnitCount") int analysisUnitCount,
         @JsonProperty("analyzedUnitCount") int analyzedUnitCount,
+        @JsonProperty("battleCount") int battleCount,
+        @JsonProperty("analysis") String analysis,
         @JsonProperty("failedFileCount") int failedFileCount,
         @JsonProperty("exactDuplicateCount") int exactDuplicateCount,
         @JsonProperty("sameTeamDuplicatePerspectiveCount") int sameTeamDuplicatePerspectiveCount,
