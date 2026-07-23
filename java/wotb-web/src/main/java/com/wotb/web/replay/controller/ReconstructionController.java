@@ -1,4 +1,4 @@
-﻿package com.wotb.web.replay.controller;
+package com.wotb.web.replay.controller;
 
 import com.wotb.core.model.Source;
 import com.wotb.core.processing.BatchAnalyzer;
