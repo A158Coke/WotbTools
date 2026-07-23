@@ -143,22 +143,19 @@ public class ReconstructionController {
 
         final int battleCount = analyzable.size();
         if (battleCount == 1) {
-            final ReplayProcessingResult one = analyzable.get(0);
-            final AiReplayAnalysisService.AnalyzeResult result =
-                    aiService.analyze(one.battle(), one.reconstruction());
             return new AnalyzeResponse(
-                    ReplayAnalysisMode.SINGLE_BATTLE.name(), result.analysis(), result.model(),
-                    total, battleCount, success, partial, failed, dup, fileStatuses, result.keyEvents());
+                    ReplayAnalysisMode.SINGLE_PLAYER_BATTLE,
+                    total, total, 1, 1, failed, 0, 0,
+                    fileStatuses, List.of(), List.of());
         }
 
         final List<Battle> battles = analyzable.stream()
                 .map(ReplayProcessingResult::battle)
                 .toList();
-        final AiReplayAnalysisService.AnalyzeResult result = aiService.analyzeMulti(battles);
         return new AnalyzeResponse(
-                ReplayAnalysisMode.MULTI_BATTLE.name(),
-                result.analysis(), result.model(),
-                total, battleCount, success, partial, failed, dup, fileStatuses, result.keyEvents());
+                ReplayAnalysisMode.MULTI_PLAYER_BATTLE,
+                total, total, battles.size(), battles.size(), failed, 0, 0,
+                fileStatuses, List.of(), List.of());
     }
 
     /**
