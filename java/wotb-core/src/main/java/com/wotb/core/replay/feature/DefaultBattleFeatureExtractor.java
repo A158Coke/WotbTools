@@ -251,7 +251,7 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
 
         // PRE_BATTLE: 0 ~ 正式开战
         if (battleStart > 0) {
-            phases.add(new BattlePhaseSummary(0, battleStart, BattlePhaseSummary.BattlePhaseType.PRE_BATTLE, DecodeConfidence.EXACT));
+            phases.add(new BattlePhaseSummary(0, battleStart, BattlePhaseType.PRE_BATTLE, DecodeConfidence.EXACT));
         }
 
         if (battleEndClock > 0 && !Float.isNaN(battleEndClock)) {
@@ -261,24 +261,24 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
                     : battleStart + OPENING_DURATION;
             phases.add(new BattlePhaseSummary(
                     battleStart, openingEnd,
-                    BattlePhaseSummary.BattlePhaseType.OPENING, DecodeConfidence.EXACT));
+                    BattlePhaseType.OPENING, DecodeConfidence.EXACT));
 
             if (firstContactTime > 0 && firstContactTime <= openingEnd + 5) {
                 phases.add(new BattlePhaseSummary(
                         firstContactTime, Math.min(firstContactTime + 10, battleEndClock),
-                        BattlePhaseSummary.BattlePhaseType.FIRST_CONTACT, DecodeConfidence.INFERRED));
+                        BattlePhaseType.FIRST_CONTACT, DecodeConfidence.INFERRED));
             }
 
             // 剩余时间粗略分为 MID / LATE / END
             if (battleEndClock - openingEnd > 60) {
                 phases.add(new BattlePhaseSummary(
                         openingEnd, battleEndClock,
-                        BattlePhaseSummary.BattlePhaseType.MID_GAME, DecodeConfidence.INFERRED));
+                        BattlePhaseType.MID_GAME, DecodeConfidence.INFERRED));
             }
 
             phases.add(new BattlePhaseSummary(
                     battleEndClock, battleEndClock,
-                    BattlePhaseSummary.BattlePhaseType.ENDGAME, DecodeConfidence.EXACT));
+                    BattlePhaseType.ENDGAME, DecodeConfidence.EXACT));
         }
 
         return phases;
