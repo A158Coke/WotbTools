@@ -3,6 +3,7 @@ package com.wotb.web.replay.ai;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import org.springframework.beans.factory.annotation.Value;
@@ -82,7 +83,7 @@ public class AiReplayAnalysisService {
      */
     public AnalyzeResult analyze(Battle battle, ReplayReconstruction recon) {
         if (!isConfigured()) {
-            throw new IllegalStateException("AI_NOT_CONFIGURED");
+            throw new AiNotConfiguredException();
         }
 
         final List<KeyBattleEvent> keyEvents = buildDeathTimeline(battle);
@@ -117,7 +118,7 @@ public class AiReplayAnalysisService {
      */
     public AnalyzeResult analyzeMulti(List<Battle> battles) {
         if (!isConfigured()) {
-            throw new IllegalStateException("AI_NOT_CONFIGURED");
+            throw new AiNotConfiguredException();
         }
         final String summary = buildMultiSummary(battles);
 

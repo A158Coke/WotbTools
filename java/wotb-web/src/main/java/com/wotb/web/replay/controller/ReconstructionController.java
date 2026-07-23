@@ -1,21 +1,20 @@
 package com.wotb.web.replay.controller;
 
-import com.wotb.core.model.Battle;
 import com.wotb.core.model.Source;
+import com.wotb.core.processing.BatchAnalyzer;
+import com.wotb.core.processing.BattleCategory;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.ReplayAnalysisMode;
+import com.wotb.core.processing.ReplayAnalysisScope;
 import com.wotb.core.processing.ReplayBatchProcessingResult;
 import com.wotb.core.processing.ReplayFileAnalysisStatus;
-import com.wotb.core.processing.BattleCategory;
-import com.wotb.core.processing.ReplayAnalysisScope;
-import com.wotb.core.processing.ReplayProcessingStatus;
-import com.wotb.core.processing.ReplayProcessingOptions;
-import com.wotb.core.processing.ReplayProcessingError;
-import com.wotb.core.processing.ReplayProcessingResult;
-import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
-import com.wotb.core.processing.BatchAnalyzer;
 import com.wotb.core.processing.ReplayFileRelation;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
+import com.wotb.core.processing.ReplayProcessingError;
+import com.wotb.core.processing.ReplayProcessingOptions;
+import com.wotb.core.processing.ReplayProcessingResult;
+import com.wotb.core.processing.ReplayProcessingStatus;
+import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
@@ -26,6 +25,7 @@ import com.wotb.web.replay.dto.StateAtResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -45,6 +45,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/replay")
+@CrossOrigin(origins = "*")
 public class ReconstructionController {
 
     private final DefaultReplayProcessingFacade processingFacade;
