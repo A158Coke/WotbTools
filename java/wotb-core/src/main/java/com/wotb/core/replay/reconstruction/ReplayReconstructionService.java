@@ -305,7 +305,8 @@ public class ReplayReconstructionService {
                 diagnostics.clockRegressionCount(),
                 updatedTypes,
                 diagnostics.battleStartIdentified(),
-                diagnostics.battleStartRawClockSec()
+                diagnostics.battleStartRawClockSec(),
+                diagnostics.reachedPhysicalEnd()
         );
     }
 

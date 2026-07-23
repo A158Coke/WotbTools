@@ -164,6 +164,9 @@ public final class ReplayPacketStreamReader {
         // 尾部剩余字节
         trailingByteCount = sourceSize - offset;
         scannedBytes = offset;
+        // while 循环仅在 offset+12 > sourceSize（末尾不足一个包头）时正常退出；
+        // 超出包数/重同步硬上限会在循环内抛异常，不会走到这里。
+        final boolean reachedPhysicalEnd = offset + 12 > sourceSize;
 
         // 构建诊断
         final Map<Integer, PacketTypeDiagnostics> diagTypes = new HashMap<>();
@@ -195,7 +198,8 @@ public final class ReplayPacketStreamReader {
                 clockRegressionCount,
                 Collections.unmodifiableMap(diagTypes),
                 false,  // battleStartIdentified
-                null    // battleStartRawClockSec
+                null,   // battleStartRawClockSec
+                reachedPhysicalEnd
         );
 
         return new ReplayStreamResult(header, Collections.unmodifiableList(packets), diagnostics);
