@@ -788,6 +788,8 @@
         "damage_recv": "Получено",
         "position": "Позиция",
         "analyze_btn": "AI-анализ",
+        "analyze_multi_btn": "AI по сериям ({n})",
+        "multi_summary": "Разбор трендов по сериям · боёв: {n}",
         "analysis_title": "AI-разбор боя",
         "show_analysis": "Показать AI-разбор",
         "hide_analysis": "Скрыть AI-разбор",

@@ -93,6 +93,45 @@ public class AiReplayAnalysisService {
                 Map.of("role", "system", "content", SYSTEM_PROMPT),
                 Map.of("role", "user", "content", summary)));
 
+        final String content = call(requestBody);
+        return new AnalyzeResult(content, model, keyEvents);
+    }
+
+    private static final String MULTI_SYSTEM_PROMPT = """
+            你是《坦克世界闪击战》(WoT Blitz) 的资深教练，正在对同一玩家的多场战斗做趋势复盘。
+            下面给出每场的结算摘要（以录像者视角）与已由后端确定性计算好的聚合统计。
+            数据来自游戏结算，可靠。请用简体中文输出：
+            1) 总体表现概览（胜率、场均输出/承伤/助攻、平均存活时间）；
+            2) 反复出现的问题（例如过早阵亡、承伤过高、输出不足的地图/车型）；
+            3) 稳定发挥的优点；
+            4) 3-5 条跨场景、可操作的训练建议。
+            严格基于给定的每场摘要与聚合统计，不要臆造；每场之间不要混淆（实体/时钟各自独立）。""";
+
+    /**
+     * 多场趋势复盘：每场独立取结算摘要，后端确定性计算聚合统计后交给 AI，
+     * <b>不拼接各场的原始事件流</b>（不同场次时钟/实体各自独立，直接合并会语义冲突）。
+     *
+     * @param battles 各场结算数据（均应含玩家名册；顺序保留）
+     */
+    public AnalyzeResult analyzeMulti(List<Battle> battles) {
+        if (!isConfigured()) {
+            throw new IllegalStateException("AI_NOT_CONFIGURED");
+        }
+        final String summary = buildMultiSummary(battles);
+
+        final Map<String, Object> requestBody = new LinkedHashMap<>();
+        requestBody.put("model", model);
+        requestBody.put("stream", false);
+        requestBody.put("messages", List.of(
+                Map.of("role", "system", "content", MULTI_SYSTEM_PROMPT),
+                Map.of("role", "user", "content", summary)));
+
+        final String content = call(requestBody);
+        return new AnalyzeResult(content, model, List.of());
+    }
+
+    /** 发送请求并取回文本；统一异常处理。 */
+    private String call(Map<String, Object> requestBody) {
         final ChatCompletionResponse response;
         try {
             response = restClient.post()
@@ -107,12 +146,71 @@ public class AiReplayAnalysisService {
         } catch (RestClientException e) {
             throw new AiUpstreamException("AI_UPSTREAM_ERROR: " + e.getClass().getSimpleName());
         }
-
         final String content = extractContent(response);
         if (content.isBlank()) {
             throw new AiUpstreamException("AI_EMPTY_RESPONSE");
         }
-        return new AnalyzeResult(content, model, keyEvents);
+        return content;
+    }
+
+    /** 每场独立摘要 + 后端确定性聚合（录像者视角）。 */
+    private static String buildMultiSummary(List<Battle> battles) {
+        final StringBuilder sb = new StringBuilder(4096);
+        sb.append("共 ").append(battles.size()).append(" 场。\n\n=== 各场摘要（录像者视角）===\n");
+
+        int wins = 0, withRec = 0;
+        long sumDmg = 0, sumRecv = 0, sumAssist = 0;
+        double sumSurvival = 0;
+        int survivedCount = 0;
+
+        for (int i = 0; i < battles.size(); i++) {
+            final Battle b = battles.get(i);
+            final PlayerResult rec = b.recorderResult();
+            sb.append("场 ").append(i + 1).append(": 地图 ").append(safe(b.mapName));
+            if (rec != null) {
+                final boolean win = b.winnerTeam != null && b.winnerTeam == rec.team;
+                sb.append(" | ").append(safe(rec.tankName))
+                        .append(win ? " | 胜" : " | 负")
+                        .append(" | 输出").append(rec.damageDealt)
+                        .append(" 承伤").append(rec.damageReceived)
+                        .append(" 助攻").append(rec.damageAssisted)
+                        .append(" 击杀").append(rec.kills)
+                        .append(rec.survived ? " | 存活"
+                                : " | 阵亡@" + String.format("%.1f", deathSec(rec)) + "s");
+                withRec++;
+                if (win) {
+                    wins++;
+                }
+                sumDmg += rec.damageDealt;
+                sumRecv += rec.damageReceived;
+                sumAssist += rec.damageAssisted;
+                if (rec.survived) {
+                    survivedCount++;
+                    if (b.durationS != null) {
+                        sumSurvival += b.durationS;
+                    }
+                } else {
+                    sumSurvival += deathSec(rec);
+                }
+            } else {
+                sb.append(" | (未能定位录像者战绩)");
+            }
+            sb.append('\n');
+        }
+
+        sb.append("\n=== 聚合统计（后端计算，录像者）===\n");
+        if (withRec > 0) {
+            sb.append("可统计场数: ").append(withRec).append('\n');
+            sb.append("胜率: ").append(String.format("%.0f%%", 100.0 * wins / withRec)).append('\n');
+            sb.append("场均输出: ").append(sumDmg / withRec).append('\n');
+            sb.append("场均承伤: ").append(sumRecv / withRec).append('\n');
+            sb.append("场均助攻: ").append(sumAssist / withRec).append('\n');
+            sb.append("平均存活时间: ").append(String.format("%.1f", sumSurvival / withRec)).append("s\n");
+            sb.append("存活率: ").append(String.format("%.0f%%", 100.0 * survivedCount / withRec)).append('\n');
+        } else {
+            sb.append("(无法定位任一场的录像者战绩，无法聚合)\n");
+        }
+        return sb.toString();
     }
 
     private static String extractContent(ChatCompletionResponse response) {
