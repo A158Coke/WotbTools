@@ -22,6 +22,9 @@ import java.util.Map;
  * @param packetTypes        各 packet type 的详细诊断
  * @param battleStartIdentified 是否已识别出战斗开始时刻
  * @param battleStartRawClockSec 识别的战斗开始原始时钟（如果有）
+ * @param reachedPhysicalEnd 扫描是否推进到数据物理末尾（末尾仅剩不足一个包头的字节）。
+ *                           由扫描器根据循环退出条件显式给出；超出包数/重同步硬上限时读取器
+ *                           直接抛异常（不会返回半截诊断），因此正常返回即代表扫描未被硬上限中断。
  */
 public record ReplayStreamDiagnostics(
         int sourceSize,
@@ -37,14 +40,18 @@ public record ReplayStreamDiagnostics(
         int clockRegressionCount,
         Map<Integer, PacketTypeDiagnostics> packetTypes,
         boolean battleStartIdentified,
-        Float battleStartRawClockSec
+        Float battleStartRawClockSec,
+        boolean reachedPhysicalEnd
 ) {
 
     /**
-     * 是否已完整扫描至数据末尾（包括尾部残留字节）。
-     * 不等于所有包都已解码，只表示扫描过程没有提前中断。
+     * 是否完整扫描至数据物理末尾。
+     * <p>
+     * 取自 {@link #reachedPhysicalEnd}（扫描到达末尾边界），而非早先"扫描字节+尾部字节≥总大小"
+     * 的恒真算术式。不等于所有包都已语义解码——解码覆盖率见 {@code ReplayCoverage}。
+     * </p>
      */
     public boolean streamComplete() {
-        return scannedBytes + trailingByteCount >= sourceSize;
+        return reachedPhysicalEnd;
     }
 }
