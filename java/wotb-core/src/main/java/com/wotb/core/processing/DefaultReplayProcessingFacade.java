@@ -124,10 +124,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
         }
         // 模式必须按"真正可用于 AI 分析的回放数量"判断（以战绩这一权威源为准），
         // 不能用用户上传的文件数量或粗略的 SUCCESS/PARTIAL 数量。
-        final int analyzable = (int) results.stream()
-                .filter(r -> r.capabilities() != null && r.capabilities().aiAnalyzable())
-                .count();
-        final ReplayAnalysisMode mode = ReplayAnalysisMode.resolve(analyzable);
+        final ReplayAnalysisMode mode = resolveMode(results);
         final ReplayBatchSummary summary = new ReplayBatchSummary(
                 inputs.size(), success, partial, failed,
                 duplicateNames.size(), duplicateNames);
@@ -216,8 +213,15 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
         }
 
         final boolean hasFeatureSet = reconstruction != null && reconOk;
-        final ReplayProcessingCapabilities capabilities =
-                ReplayProcessingCapabilities.of(summaryOk, reconOk, recorderMapped, hasFeatureSet);
+        // scope 默认 PLAYER_FOCUSED，后续由 BattleCategory 细化
+        final ReplayAnalysisScope scope = ReplayAnalysisScope.PLAYER_FOCUSED;
+        final boolean perspectiveTeamResolved = false; // TODO: 由 BattleCategory 驱动
+        final boolean playerFs = hasFeatureSet;
+        final boolean teamFs = false;
+        final ReplayProcessingCapabilities capabilities = ReplayProcessingCapabilities.of(
+                summaryOk, reconOk,
+                recorderMapped, perspectiveTeamResolved,
+                playerFs, teamFs, scope);
 
         return new ReplayProcessingResult(
                 input.name(), status, identity,
@@ -244,7 +248,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
         final int analyzable = (int) results.stream()
                 .filter(r -> r.capabilities() != null && r.capabilities().aiAnalyzable())
                 .count();
-        final ReplayAnalysisMode mode = ReplayAnalysisMode.resolve(analyzable);
+        final ReplayAnalysisMode mode = resolveMode(results);
         final long dupCount = results.stream()
                 .filter(r -> r.error() != null && "DUPLICATE_FILE".equals(r.error().code()))
                 .count();
@@ -257,6 +261,16 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
         return new ReplayBatchProcessingResult(
                 mode, totalInputs, success, partial, failed,
                 List.copyOf(results), summary);
+    }
+
+    /** 临时模式解析，后续由 BatchAnalyzer 接管。 */
+    private static ReplayAnalysisMode resolveMode(List<ReplayProcessingResult> results) {
+        final long analyzable = results.stream()
+                .filter(r -> r.capabilities() != null && r.capabilities().aiAnalyzable())
+                .count();
+        if (analyzable <= 0) return ReplayAnalysisMode.NONE;
+        // 暂简化：返回默认单场模式
+        return analyzable == 1 ? ReplayAnalysisMode.SINGLE_PLAYER_BATTLE : ReplayAnalysisMode.MULTI_PLAYER_BATTLE;
     }
 
     private ReplayProcessingResult failedResult(String fileName, Exception e) {

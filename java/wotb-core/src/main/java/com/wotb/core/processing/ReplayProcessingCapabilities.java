@@ -2,43 +2,48 @@ package com.wotb.core.processing;
 
 /**
  * 单个回放"能做什么分析"的能力标记。
- *
- * @param summaryAvailable        战绩（Battle）是否可用
- * @param reconstructionAvailable 完整重建（位置/时间线）是否可用
- * @param recorderMapped          录像者实体是否已识别
- * @param featureSetAvailable     战术特征是否已提取
- * @param aiAnalyzable            是否可进行完整 AI 战术复盘
+ * aiAnalyzable 按分析范围分别计算。
  */
 public record ReplayProcessingCapabilities(
         boolean summaryAvailable,
         boolean reconstructionAvailable,
         boolean recorderMapped,
-        boolean featureSetAvailable,
+        boolean perspectiveTeamResolved,
+        boolean playerFeatureSetAvailable,
+        boolean teamFeatureSetAvailable,
         boolean aiAnalyzable
 ) {
 
     public static final ReplayProcessingCapabilities NONE =
-            new ReplayProcessingCapabilities(false, false, false, false, false);
+            new ReplayProcessingCapabilities(false, false, false, false, false, false, false);
+
+    /** 仅战绩可用（降级模式）。 */
+    public static ReplayProcessingCapabilities summaryOnly() {
+        return new ReplayProcessingCapabilities(true, false, false, false, false, false, false);
+    }
 
     /**
-     * 以战绩为权威源构建，自动计算 aiAnalyzable。
+     * 按分析范围构建，自动计算 aiAnalyzable。
      */
     public static ReplayProcessingCapabilities of(
             boolean summaryAvailable,
             boolean reconstructionAvailable,
             boolean recorderMapped,
-            boolean featureSetAvailable) {
-        final boolean aiOk = summaryAvailable
-                && reconstructionAvailable
-                && recorderMapped
-                && featureSetAvailable;
+            boolean perspectiveTeamResolved,
+            boolean playerFeatureSetAvailable,
+            boolean teamFeatureSetAvailable,
+            ReplayAnalysisScope scope) {
+
+        final boolean aiOk = switch (scope) {
+            case PLAYER_FOCUSED -> summaryAvailable && reconstructionAvailable
+                    && recorderMapped && playerFeatureSetAvailable;
+            case TEAM_PERSPECTIVE -> summaryAvailable && reconstructionAvailable
+                    && perspectiveTeamResolved && teamFeatureSetAvailable;
+        };
         return new ReplayProcessingCapabilities(
                 summaryAvailable, reconstructionAvailable,
-                recorderMapped, featureSetAvailable, aiOk);
-    }
-
-    /** 仅战绩可用（降级模式，AI 只能做总结，不能做个人复盘）。 */
-    public static ReplayProcessingCapabilities summaryOnly() {
-        return new ReplayProcessingCapabilities(true, false, false, false, false);
+                recorderMapped, perspectiveTeamResolved,
+                playerFeatureSetAvailable, teamFeatureSetAvailable,
+                aiOk);
     }
 }
