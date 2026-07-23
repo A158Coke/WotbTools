@@ -18,8 +18,7 @@ public class ReplayProcessingConfig {
     }
 
     @Bean
-    public DefaultReplayProcessingFacade replayProcessingFacade(
-            ReplayReconstructionService reconstructionService) {
+    public DefaultReplayProcessingFacade replayProcessingFacade(final ReplayReconstructionService reconstructionService) {
         return new DefaultReplayProcessingFacade(reconstructionService);
     }
 }
