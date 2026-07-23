@@ -4,6 +4,7 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
 import com.wotb.core.parse.ReplayParser;
+import com.wotb.core.util.PlayerResultFormat;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionContext;
@@ -321,19 +322,12 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
         if (battle == null) {
             return new ReplayIdentity(contentHash, null, null, null, null, null);
         }
-        final Long recorderAccountId;
-        final var recorder = battle.recorderResult();
-        if (recorder != null && recorder.accountId > 0) {
-            recorderAccountId = recorder.accountId;
-        } else {
-            recorderAccountId = null;
-        }
         return new ReplayIdentity(
                 contentHash,
                 battle.arenaId,
                 battle.clientVersion,
                 battle.mapName,
-                recorderAccountId,
+                PlayerResultFormat.recorderAccountId(battle),
                 battle.startTime != null ? Instant.ofEpochSecond(battle.startTime) : null
         );
     }
