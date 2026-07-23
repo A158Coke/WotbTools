@@ -1,7 +1,6 @@
 package com.wotb.core.replay.feature;
 
 import com.wotb.core.processing.RecorderIdentity;
-
 import java.util.List;
 
 /**
@@ -13,18 +12,4 @@ public record MultiPlayerBattleAnalysisContext(
         List<PlayerBattleAnalysisSummary> battles,
         List<String> limitations
 ) {
-
-    public record PlayerBattleAnalysisSummary(
-            String fileName,
-            String mapName,
-            int durationSec,
-            boolean victory,
-            PlayerBattleFeatureSet features
-    ) {}
-
-    public record PlayerAggregate(
-            double avgDamage,
-            double avgSurvivalTime,
-            double winRate
-    ) {}
 }

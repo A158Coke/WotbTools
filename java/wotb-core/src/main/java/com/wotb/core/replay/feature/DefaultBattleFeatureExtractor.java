@@ -129,7 +129,7 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
             final Vector3 pos = new Vector3(p.x(), p.y(), p.z());
             return List.of(new MovementSegment(
                     clockOf(p.timestamp()), clockOf(p.timestamp()),
-                    MovementSegment.MovementType.STATIONARY, pos, pos,
+                    MovementType.STATIONARY, pos, pos,
                     0f, 0f, DecodeConfidence.EXACT));
         }
 
@@ -155,9 +155,9 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
                 final float segmentDistance = segmentDistance(positions.subList(start, i + 1));
                 final float segmentTime = clockOf(curr.timestamp()) - clockOf(first.timestamp());
                 final boolean segmentStationary = segmentDistance < STATIONARY_THRESHOLD * (i - start);
-                final MovementSegment.MovementType type = segmentStationary
-                        ? MovementSegment.MovementType.STATIONARY
-                        : MovementSegment.MovementType.MOVING;
+                final MovementType type = segmentStationary
+                        ? MovementType.STATIONARY
+                        : MovementType.MOVING;
 
                 segments.add(new MovementSegment(
                         clockOf(first.timestamp()), clockOf(curr.timestamp()),
@@ -230,10 +230,10 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
         final float startTime = clockOf(events.getFirst().timestamp());
         final float endTime = clockOf(events.getLast().timestamp());
 
-        EngagementSummary.EngagementOutcome outcome;
-        if (dealt > received * 1.25) outcome = EngagementSummary.EngagementOutcome.FAVORABLE;
-        else if (received > dealt * 1.25) outcome = EngagementSummary.EngagementOutcome.UNFAVORABLE;
-        else outcome = EngagementSummary.EngagementOutcome.EVEN;
+        EngagementOutcome outcome;
+        if (dealt > received * 1.25) outcome = EngagementOutcome.FAVORABLE;
+        else if (received > dealt * 1.25) outcome = EngagementOutcome.UNFAVORABLE;
+        else outcome = EngagementOutcome.EVEN;
 
         return new EngagementSummary(
                 startTime, endTime,

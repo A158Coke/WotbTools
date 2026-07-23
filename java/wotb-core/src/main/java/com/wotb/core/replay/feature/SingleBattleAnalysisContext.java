@@ -16,36 +16,4 @@ public record SingleBattleAnalysisContext(
         BattleFeatureSet features,
         Coverage coverage
 ) {
-
-    /** 战后统计摘要（预留）。 */
-    public record BattleSummary(
-            String mapName,
-            int durationSec,
-            Integer winnerTeam,
-            int playerCount
-    ) {
-        public static BattleSummary from(Battle battle) {
-            return new BattleSummary(
-                    battle.mapName,
-                    battle.durationS != null ? battle.durationS.intValue() : 0,
-                    battle.winnerTeam,
-                    battle.nPlayers()
-            );
-        }
-    }
-
-    /** 覆盖率摘要（预留）。 */
-    public record Coverage(
-            boolean streamComplete,
-            int totalPackets,
-            double decodedRatio
-    ) {
-        public static Coverage from(com.wotb.core.replay.reconstruction.ReplayCoverage c) {
-            return new Coverage(
-                    c.streamComplete(),
-                    c.totalPackets(),
-                    c.decodedPacketRatio()
-            );
-        }
-    }
 }
