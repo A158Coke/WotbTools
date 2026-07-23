@@ -1,13 +1,11 @@
 name: CI
 
-# deploy.yml 只在 push 到 main 时跑测试，PR 上看不到检查。
-# 本 workflow 在 PR(目标 main)与非 main 分支 push 时运行后端测试 + 前端测试/构建，
-# 作为 PR 合并的必需检查（对应 review P3#13）。
+# deploy.yml 只在 push 到 main 时跑测试(main 由其覆盖)，PR 上原本看不到检查。
+# 本 workflow 仅在 PR(目标 main)时运行后端测试 + 前端测试/构建，作为 PR 合并检查
+# (对应 review P3#13)。只监听 pull_request，避免与 push 触发重复跑。
 on:
   pull_request:
     branches: [main]
-  push:
-    branches-ignore: [main]
 
 permissions:
   contents: read
