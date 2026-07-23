@@ -12,7 +12,9 @@ const isAdmin = computed(() => {
   return Array.isArray(roles) && roles.includes('wotbtools-admin')
 })
 
-const file = ref(null)
+// 支持多选：AI 分析可一次分析多场。reconstruct/state-at 为单文件工具，取第一个。
+const files = ref([])
+const file = computed(() => files.value[0] || null)
 const loading = ref(false)
 const error = ref('')
 const reconResult = ref(null)
@@ -22,39 +24,49 @@ const analyzing = ref(false)
 const analysisResult = ref(null)
 const showAnalysis = ref(false)
 
+function resetResults() {
+  reconResult.value = null
+  stateResult.value = null
+  analysisResult.value = null
+  showAnalysis.value = false
+}
+
 function addFile(e) {
-  const picked = e.target.files?.[0]
-  if (picked && picked.name.toLowerCase().endsWith('.wotbreplay')) {
-    file.value = picked
+  const picked = Array.from(e.target.files || [])
+    .filter(f => f.name.toLowerCase().endsWith('.wotbreplay'))
+  if (picked.length) {
+    files.value = picked
     error.value = ''
-    reconResult.value = null
-    stateResult.value = null
-    analysisResult.value = null
-    showAnalysis.value = false
-  } else if (picked) {
+    resetResults()
+  } else if ((e.target.files || []).length) {
     error.value = t('recon.invalid_file')
   }
 }
 
 function clearFile() {
-  file.value = null
+  files.value = []
   error.value = ''
-  reconResult.value = null
-  stateResult.value = null
-  analysisResult.value = null
-  showAnalysis.value = false
+  resetResults()
   queryTime.value = ''
 }
 
-function formData() {
+/** 单文件表单（reconstruct / state-at 用第一个文件）。 */
+function singleFormData() {
   const fd = new FormData()
   if (file.value) fd.append('file', file.value)
   return fd
 }
 
+/** 多文件表单（analyze 用全部所选文件）。 */
+function multiFormData() {
+  const fd = new FormData()
+  for (const f of files.value) fd.append('files', f)
+  return fd
+}
+
 // 统一的受保护请求：确保带上有效的 Keycloak Bearer Token（这些接口需要 wotbtools-admin 角色），
 // 并统一处理 token 刷新失败 / 401 / 403。所有 /api/replay/* 受保护接口都必须经由此方法。
-async function authedFetch(url) {
+async function authedFetch(url, body) {
   const valid = await ensureToken(30)
   if (!valid) {
     login()
@@ -62,7 +74,7 @@ async function authedFetch(url) {
   }
   const accessToken = token()
   const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
-  const r = await fetch(url, { method: 'POST', headers, body: formData() })
+  const r = await fetch(url, { method: 'POST', headers, body })
   if (r.status === 401) {
     login()
     throw new Error(t('recon.auth_required'))
@@ -85,7 +97,7 @@ async function runReconstruct() {
   analysisResult.value = null
   showAnalysis.value = false
   try {
-    const r = await authedFetch('/api/replay/reconstruct')
+    const r = await authedFetch('/api/replay/reconstruct', singleFormData())
     if (!r.ok) {
       const text = await r.text().catch(() => '')
       throw new Error(text || `HTTP ${r.status}`)
@@ -111,7 +123,7 @@ async function runStateAt() {
   loading.value = true
   error.value = ''
   try {
-    const r = await authedFetch(`/api/replay/state-at?time=${time}`)
+    const r = await authedFetch(`/api/replay/state-at?time=${time}`, singleFormData())
     if (!r.ok) {
       const text = await r.text().catch(() => '')
       throw new Error(text || `HTTP ${r.status}`)
@@ -133,7 +145,7 @@ async function runAnalyze() {
   error.value = ''
   analysisResult.value = null
   try {
-    const r = await authedFetch('/api/replay/analyze')
+    const r = await authedFetch('/api/replay/analyze', multiFormData())
     if (!r.ok) {
       const text = (await r.text().catch(() => '')).trim()
       if (text === 'AI_NOT_CONFIGURED') {
@@ -171,13 +183,13 @@ function fmtJson(obj) {
       <div class="up-actions">
         <label class="filebtn">
           {{ $t('recon.select_file') }}
-          <input type="file" accept=".wotbreplay" @change="addFile">
+          <input type="file" accept=".wotbreplay" multiple @change="addFile">
         </label>
-        <button v-if="file" class="ghost" @click="clearFile">{{ $t('upload.clear') }}</button>
+        <button v-if="files.length" class="ghost" @click="clearFile">{{ $t('upload.clear') }}</button>
       </div>
 
-      <div v-if="file" class="fb-chips" style="margin-top:12px">
-        <span class="chip">{{ file.name }}</span>
+      <div v-if="files.length" class="fb-chips" style="margin-top:12px">
+        <span v-for="(f, i) in files" :key="i" class="chip">{{ f.name }}</span>
       </div>
 
       <div class="actionrow">
@@ -235,7 +247,9 @@ function fmtJson(obj) {
       <!-- AI 分析：仅 wotbtools-admin 可见（灰度）；重建出结果后才出现 -->
       <div v-if="isAdmin" class="ai-action">
         <button v-if="!analysisResult" class="lg" :disabled="analyzing" @click="runAnalyze">
-          {{ analyzing ? $t('action.processing') : $t('recon.analyze_btn') }}
+          {{ analyzing ? $t('action.processing')
+             : (files.length > 1 ? $t('recon.analyze_multi_btn', { n: files.length })
+                                  : $t('recon.analyze_btn')) }}
         </button>
         <button v-else class="ghost" @click="toggleAnalysis">
           {{ showAnalysis ? $t('recon.hide_analysis') : $t('recon.show_analysis') }}
@@ -248,6 +262,9 @@ function fmtJson(obj) {
         <h2>{{ $t('recon.analysis_title') }}</h2>
         <button class="close-x" :aria-label="$t('recon.close')" @click="showAnalysis = false">×</button>
       </div>
+      <p v-if="analysisResult.mode === 'MULTI_BATTLE'" class="sub-hint">
+        {{ $t('recon.multi_summary', { n: analysisResult.battleCount }) }}
+      </p>
       <p class="analysis-text">{{ analysisResult.analysis }}</p>
       <details v-if="analysisResult.keyEvents?.length" class="recon-details">
         <summary>{{ $t('recon.key_events') }} ({{ analysisResult.keyEvents.length }})</summary>

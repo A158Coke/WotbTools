@@ -3,6 +3,7 @@ package com.wotb.web.replay.controller;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.Source;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
+import com.wotb.core.processing.ReplayAnalysisMode;
 import com.wotb.core.processing.ReplayBatchProcessingResult;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
@@ -42,9 +43,11 @@ public class ReconstructionController {
     private final ReplayReconstructionService reconstructionService;
     private final AiReplayAnalysisService aiService;
 
-    public ReconstructionController(AiReplayAnalysisService aiService) {
-        this.reconstructionService = new ReplayReconstructionService();
-        this.processingFacade = new DefaultReplayProcessingFacade(reconstructionService);
+    public ReconstructionController(DefaultReplayProcessingFacade processingFacade,
+                                    ReplayReconstructionService reconstructionService,
+                                    AiReplayAnalysisService aiService) {
+        this.processingFacade = processingFacade;
+        this.reconstructionService = reconstructionService;
         this.aiService = aiService;
     }
 
@@ -94,40 +97,56 @@ public class ReconstructionController {
     }
 
     /**
-     * 单文件 AI 战术复盘。
+     * AI 战术复盘（支持一个或多个文件）。
      * <p>
-     * 经统一处理门面 {@link DefaultReplayProcessingFacade} 解析：战绩(battle_results)为权威源，
-     * 完整重建仅补充位置维度。战绩解析失败即无权威数据可分析（NO_BATTLE_DATA）；
-     * 战绩成功但重建失败时仍可基于结算数据分析。
+     * 经统一处理门面 {@link DefaultReplayProcessingFacade} 逐文件解析（战绩=权威源，
+     * 完整重建补充位置维度、失败可降级）。模式按<b>真正可分析（战绩解析成功）的回放数量</b>确定：
+     * 0 → NONE（NO_BATTLE_DATA）；1 → 单场深度复盘；≥2 → 多场趋势复盘（每场独立 + 聚合，
+     * 不拼接原始事件流）。
      * </p>
      * POST /api/replay/analyze
      */
     @PostMapping(value = "/analyze", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public AnalyzeResponse analyze(
-            @RequestParam("file") MultipartFile file) throws IOException {
+            @RequestParam("files") MultipartFile[] files) throws IOException {
 
-        validateFile(file);
+        validateBatch(files);
 
-        final String name = file.getOriginalFilename() != null
-                ? file.getOriginalFilename() : "replay.wotbreplay";
-        final ReplayProcessingResult processed = processingFacade.process(
-                new Source(name, file.getBytes()), ReplayProcessingOptions.full());
+        final List<Source> sources = new ArrayList<>();
+        for (final MultipartFile f : files) {
+            sources.add(new Source(
+                    f.getOriginalFilename() != null ? f.getOriginalFilename() : "replay.wotbreplay",
+                    f.getBytes()));
+        }
 
-        final Battle battle = processed.battle();
-        if (battle == null) {
-            // 战绩解析失败——没有可用于分析的权威数据
+        final ReplayBatchProcessingResult batch =
+                processingFacade.processBatch(sources, ReplayProcessingOptions.full());
+
+        // 仅取真正可分析（战绩成功）的结果，保留上传顺序
+        final List<ReplayProcessingResult> analyzable = batch.results().stream()
+                .filter(r -> r.battle() != null)
+                .toList();
+
+        if (analyzable.isEmpty()) {
             throw new IllegalArgumentException("NO_BATTLE_DATA");
         }
-        final ReplayReconstruction recon = processed.reconstruction();
-        final AiReplayAnalysisService.AnalyzeResult result = aiService.analyze(battle, recon);
 
+        if (analyzable.size() == 1) {
+            final ReplayProcessingResult one = analyzable.get(0);
+            final AiReplayAnalysisService.AnalyzeResult result =
+                    aiService.analyze(one.battle(), one.reconstruction());
+            return new AnalyzeResponse(
+                    ReplayAnalysisMode.SINGLE_BATTLE.name(),
+                    result.analysis(), result.model(), 1, result.keyEvents());
+        }
+
+        final List<Battle> battles = analyzable.stream()
+                .map(ReplayProcessingResult::battle)
+                .toList();
+        final AiReplayAnalysisService.AnalyzeResult result = aiService.analyzeMulti(battles);
         return new AnalyzeResponse(
-                result.analysis(),
-                result.model(),
-                recon != null ? recon.diagnostics().packetCount() : 0,
-                battle.nPlayers(),
-                recon != null ? recon.events().size() : 0,
-                result.keyEvents());
+                ReplayAnalysisMode.MULTI_BATTLE.name(),
+                result.analysis(), result.model(), battles.size(), result.keyEvents());
     }
 
     /**

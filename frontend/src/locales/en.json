@@ -788,6 +788,8 @@
         "damage_recv": "Dmg Recv",
         "position": "Position",
         "analyze_btn": "AI Analysis",
+        "analyze_multi_btn": "AI Multi-battle ({n})",
+        "multi_summary": "Multi-battle trend review · {n} battles",
         "analysis_title": "AI Tactical Review",
         "show_analysis": "Show AI review",
         "hide_analysis": "Hide AI review",

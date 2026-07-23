@@ -788,6 +788,8 @@
         "damage_recv": "承受伤害",
         "position": "位置坐标",
         "analyze_btn": "AI 战术复盘",
+        "analyze_multi_btn": "AI 多场复盘 ({n})",
+        "multi_summary": "多场趋势复盘 · 共 {n} 场",
         "analysis_title": "AI 战术复盘",
         "show_analysis": "显示 AI 复盘",
         "hide_analysis": "隐藏 AI 复盘",

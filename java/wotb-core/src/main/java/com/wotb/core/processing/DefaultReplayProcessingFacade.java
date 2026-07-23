@@ -65,8 +65,10 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
                             ReplayProcessingStatus.FAILED,
                             new ReplayIdentity(contentHash, null, null, null, null, null),
                             null, null, null,
+                            ReplayProcessingCapabilities.NONE,
                             ReplayProcessingError.of("DUPLICATE_FILE",
-                                    "Duplicate file: " + input.name())));
+                                    "Duplicate file: " + input.name()),
+                            null));
                     continue;
                 }
                 seenContentHashes.add(contentHash);
@@ -89,7 +91,11 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
                 case FAILED -> failed++;
             }
         }
-        final int analyzable = success + partial;
+        // 模式必须按"真正可用于 AI 分析的回放数量"判断（以战绩这一权威源为准），
+        // 不能用用户上传的文件数量或粗略的 SUCCESS/PARTIAL 数量。
+        final int analyzable = (int) results.stream()
+                .filter(r -> r.capabilities() != null && r.capabilities().aiAnalyzable())
+                .count();
         final ReplayAnalysisMode mode = ReplayAnalysisMode.resolve(analyzable);
         final ReplayBatchSummary summary = new ReplayBatchSummary(
                 inputs.size(), success, partial, failed,
@@ -115,32 +121,35 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
                 battle = ReplayParser.parse(data);
                 summaryOk = true;
             } catch (Exception e) {
-                // 战绩解析失败是致命错误，直接返回 FAILED
+                // 战绩解析失败是致命错误（无权威数据），直接返回 FAILED
                 return new ReplayProcessingResult(
                         input.name(), ReplayProcessingStatus.FAILED,
                         new ReplayIdentity(contentHash, null, null, null, null, null),
                         null, null,
                         ReplayProcessingDiagnostics.summaryOnly(false),
-                        ReplayProcessingError.of("SUMMARY_PARSE_FAILED", e.getMessage()));
+                        ReplayProcessingCapabilities.NONE,
+                        ReplayProcessingError.of("SUMMARY_PARSE_FAILED", e.getMessage()),
+                        null);
             }
         }
 
-        // 2. 完整重建
+        // 2. 完整重建（失败不吞：保留 reconstructionError，AI 仍可基于战绩分析）
         ReplayReconstruction reconstruction = null;
         boolean streamOk = false;
         boolean reconOk = false;
+        ReplayProcessingError reconstructionError = null;
         if (options.reconstructTimeline()) {
             try {
                 reconstruction = reconstructionService.reconstruct(data);
                 streamOk = true;
                 reconOk = true;
             } catch (IllegalArgumentException e) {
-                // 时长超限等 — PARTIAL_SUCCESS
-                streamOk = false;
-                reconOk = false;
+                // 时长超限等
+                reconstructionError = ReplayProcessingError.of(
+                        "RECONSTRUCTION_LIMIT", e.getMessage());
             } catch (Exception e) {
-                streamOk = false;
-                reconOk = false;
+                reconstructionError = ReplayProcessingError.of(
+                        "RECONSTRUCTION_FAILED", e.getMessage());
             }
         }
 
@@ -170,16 +179,22 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
             diagnostics = ReplayProcessingDiagnostics.empty();
         }
 
+        final ReplayProcessingCapabilities capabilities =
+                ReplayProcessingCapabilities.of(summaryOk, reconstruction != null);
+
         return new ReplayProcessingResult(
                 input.name(), status, identity,
-                battle, reconstruction, diagnostics, null);
+                battle, reconstruction, diagnostics,
+                capabilities, null, reconstructionError);
     }
 
     private ReplayProcessingResult failedResult(String fileName, Exception e) {
         return new ReplayProcessingResult(
                 fileName, ReplayProcessingStatus.FAILED,
                 null, null, null, null,
-                ReplayProcessingError.of(e));
+                ReplayProcessingCapabilities.NONE,
+                ReplayProcessingError.of(e),
+                null);
     }
 
     private static ReplayIdentity buildIdentity(String contentHash, Battle battle) {
