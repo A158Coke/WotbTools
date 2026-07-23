@@ -195,6 +195,14 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 | `AggregateSheets` | `wotb-core/.../AggregateSheets.java` | 汇总三表 |
 | `Replays` | `wotb-core/.../Replays.java` | 多回放去重收集 |
 | `ReplayController` | `wotb-web/.../replay/controller/ReplayController.java` | REST API 映射 |
+| `ReconstructionController` | `wotb-web/.../replay/controller/ReconstructionController.java` | AI 分析 + 重建 REST API |
+| `ReplayProcessingCapabilities` | `wotb-core/.../processing/ReplayProcessingCapabilities.java` | 能力模型（`aiAnalyzable` / `fullFeatureAnalysisAvailable`） |
+| `RecorderEntityMapping` | `wotb-core/.../processing/RecorderEntityMapping.java` | 录像者 entity 映射结果 |
+| `DefaultReplayProcessingFacade` | `wotb-core/.../processing/DefaultReplayProcessingFacade.java` | 统一处理门面（解析+重建+能力标记） |
+| `BatchAnalyzer` | `wotb-core/.../processing/BatchAnalyzer.java` | 视角分组+去重+模式判定 |
+| `DefaultPlayerBattleFeatureExtractor` | `wotb-core/.../feature/DefaultPlayerBattleFeatureExtractor.java` | 录像者个人特征提取（移动段/交火段） |
+| `PlayerBattleFeatureSet` | `wotb-core/.../feature/PlayerBattleFeatureSet.java` | 个人特征集（含 `hasFeatures` / `limitations`） |
+| `AiReplayAnalysisService` | `wotb-web/.../ai/AiReplayAnalysisService.java` | AI 调用入口 + Prompt 构建 |
 | `ReplayService` | `wotb-web/.../replay/service/ReplayService.java` | 业务编排 |
 | `ReplayCapacityLimiter` | `wotb-web/.../replay/service/ReplayCapacityLimiter.java` | 单实例回放解析并发闸门 |
 | `Mapper` | `wotb-web/.../replay/mapper/Mapper.java` | 核心模型 → DTO |
@@ -453,25 +461,23 @@ cd frontend && npm test
 ```
 files → DefaultReplayProcessingFacade.processBatch()
   → 逐文件 validateFile(扩展名/大小) + parse + reconstruct
+  → ReplayProcessingCapabilities.of(summaryOk, recorderResultAvailable, …)
   → BatchAnalyzer.analyze()
        ├─ BattleCategoryUtils.detectCategory()
        ├─ resolveScope() → PLAYER_FOCUSED / TEAM_PERSPECTIVE
-       ├─ scope 一致性验证（不混合）
+       ├─ SHA-256 精确重复去重
+       ├─ scope 一致性验证（不混合 + UNKNOWN 排除）
        ├─ BattleIdentity + perspectiveTeam 分组
        ├─ 代表回放选择（reconstruction 成功优先）
-       └─ 录像者一致性验证（PLAYER_FOCUSED）
+       └─ 录像者一致性验证（PLAYER_FOCUSED + RANDOM）
   → resolveMode() → SINGLE/MULTI_PLAYER_BATTLE, SINGLE/MULTI_TEAM_BATTLE
+  → ReconstructionController.callPlayerContext()
+       ├─ reconstruction==null → aiService.analyze(fallback)
+       ├─ recorder.resolved() == false → aiService.analyze(fallback)
+       ├─ featureSet.hasFeatures() == false → aiService.analyze(fallback)
+       └─ full feature → aiService.analyzePlayerContext(context)
 ```
-
-### 关键类
-
-| class | 职责 |
-|-------|------|
-| DefaultReplayProcessingFacade | 统一处理门面 |
-| BatchAnalyzer | 视角分组+模式判定 |
-| ReplayPerspectiveGroupKey | 分组键 |
-| DefaultBattleFeatureExtractor | 移动段/交火段/阶段特征 |
 
 ### 测试
 
-wotb-core: 81 tests / wotb-web: 114 tests = 195，0 failure（9 skip 因缺少样本）
+wotb-core: 104 tests / wotb-web: 114 tests ≈ 218，0 failure（部分 skip 因缺少样本或 Docker）

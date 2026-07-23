@@ -83,12 +83,14 @@ public class BatchAnalyzer {
         }
 
         final List<ScopedResult> uniqueResults = new ArrayList<>();
-        final List<ReplayProcessingResult> exactDuplicates = new ArrayList<>();
+        final List<ExactDuplicate> exactDuplicates = new ArrayList<>();
         for (final var entry : byHash.entrySet()) {
             final List<ScopedResult> hashGroup = entry.getValue();
+            final ReplayProcessingResult original = hashGroup.getFirst().result();
             uniqueResults.add(hashGroup.getFirst());
             for (int i = 1; i < hashGroup.size(); i++) {
-                exactDuplicates.add(hashGroup.get(i).result());
+                exactDuplicates.add(new ExactDuplicate(
+                        original, hashGroup.get(i).result()));
             }
         }
 
@@ -148,7 +150,7 @@ public class BatchAnalyzer {
         final ReplayAnalysisMode mode = resolveMode(dominantScope, analyzableCount);
 
         return new AnalysisPlan(mode, dominantScope, perspectiveGroups, effectiveUnits,
-                exactDuplicates, exactDuplicates.size(), sameTeamDupCount);
+                exactDuplicates, exactDuplicates.size(), sameTeamDupCount, analyzableCount);
     }
 
     private ScopedResult toScopedResult(final ReplayProcessingResult result) {
@@ -272,6 +274,15 @@ public class BatchAnalyzer {
     }
 
     /**
+     * 精确重复关系：original 是保留的原始文件，duplicate 是被去重的副本。
+     */
+    public record ExactDuplicate(
+            ReplayProcessingResult original,
+            ReplayProcessingResult duplicate
+    ) {
+    }
+
+    /**
      * 分析计划。
      */
     public record AnalysisPlan(
@@ -279,9 +290,10 @@ public class BatchAnalyzer {
             ReplayAnalysisScope dominantScope,
             List<ReplayPerspectiveGroup> groups,
             int effectiveUnitCount,
-            List<ReplayProcessingResult> exactDuplicates,
+            List<ExactDuplicate> exactDuplicates,
             int exactDuplicateCount,
-            int sameTeamDuplicatePerspectiveCount
+            int sameTeamDuplicatePerspectiveCount,
+            int analyzableUnitCount
     ) {
     }
 }

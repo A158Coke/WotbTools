@@ -3,15 +3,21 @@ package com.wotb.web.replay.ai;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
-import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.AiNotConfiguredException;
+import com.wotb.core.processing.AnalysisUnitResult;
+import com.wotb.core.processing.RecorderEntityMapping;
+import com.wotb.core.processing.ReplayPerspectiveGroup;
+import com.wotb.core.processing.ReplayProcessingResult;
+import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
+import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
 import com.wotb.core.replay.feature.EngagementSummary;
+import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.MovementSegment;
+import com.wotb.core.replay.feature.MultiPlayerBattleAnalysisContext;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
-import com.wotb.core.replay.feature.MultiPlayerBattleAnalysisContext;
-import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -23,6 +29,7 @@ import org.springframework.web.client.RestClientResponseException;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -159,6 +166,8 @@ public class AiReplayAnalysisService {
         final var features = ctx.features();
 
         // ====== 权威结算数据（优先） ======
+        int authoritativeDealt = 0;
+        int authoritativeReceived = 0;
         if (battle != null) {
             sb.append("=== 战斗结算数据（权威） ===\n");
             sb.append("地图: ").append(safe(battle.mapName)).append('\n');
@@ -172,6 +181,8 @@ public class AiReplayAnalysisService {
 
             final PlayerResult rec = battle.recorderResult();
             if (rec != null) {
+                authoritativeDealt = rec.damageDealt;
+                authoritativeReceived = rec.damageReceived;
                 sb.append("\n录像者: ").append(safe(rec.nickname))
                         .append(" | 队伍").append(rec.team)
                         .append(" | ").append(safe(rec.tankName))
@@ -208,33 +219,56 @@ public class AiReplayAnalysisService {
 
         // ====== 重建补充信息 ======
         sb.append("\n=== 重建补充 ===\n");
-        sb.append("图像重建完成, 特征集可用\n");
-
-        if (ctx.recorder() != null) {
+        if (ctx.recorder() != null && ctx.recorder().resolved()) {
+            sb.append("录像者 entity 已映射, 特征集可用\n");
             sb.append("录像者 entity: 账号 ").append(ctx.recorder().accountId())
                     .append(" | 队伍: ").append(ctx.recorder().team())
                     .append(" | 车辆 ID: ").append(ctx.recorder().tankId()).append('\n');
+        } else {
+            sb.append("位置流存在, 但录像者实体无法可靠映射\n");
         }
 
         if (!features.movements().isEmpty()) {
             sb.append("\n=== 移动段（压缩） ===\n");
             int n = 0;
             for (final MovementSegment seg : features.movements()) {
-                if (n++ >= 5) { sb.append("  ... 还有 ").append(features.movements().size() - 5).append(" 段\n"); break; }
+                if (n++ >= 5) {
+                    sb.append("  ... 还有 ").append(features.movements().size() - 5).append(" 段\n");
+                    break;
+                }
                 sb.append("  [").append(String.format("%.1f-%.1f", seg.startTime(), seg.endTime())).append("s] ")
                         .append(seg.type()).append(" | 距离 ").append(String.format("%.1f", seg.distance()))
                         .append("m 速度 ").append(String.format("%.1f", seg.averageSpeed())).append("m/s\n");
             }
         }
 
+        // 计算事件流观察到的伤害子集
+        int observedDealt = 0;
+        int observedReceived = 0;
         if (!features.engagements().isEmpty()) {
-            sb.append("\n=== 交火段 ===\n");
+            for (final EngagementSummary e : features.engagements()) {
+                observedDealt += e.damageDealt();
+                observedReceived += e.damageReceived();
+            }
+            sb.append("\n=== 交火段（事件流观测子集） ===\n");
+            sb.append("权威结算总输出: ").append(authoritativeDealt)
+                    .append(" | 事件流观测输出子集: ").append(observedDealt)
+                    .append(" (").append(String.format("%.0f%%", authoritativeDealt > 0 ? 100.0 * observedDealt / authoritativeDealt : 0))
+                    .append(")\n");
+            sb.append("权威结算总承伤: ").append(authoritativeReceived)
+                    .append(" | 事件流观测承伤子集: ").append(observedReceived)
+                    .append(" (").append(String.format("%.0f%%", authoritativeReceived > 0 ? 100.0 * observedReceived / authoritativeReceived : 0))
+                    .append(")\n");
+            sb.append("注意: 事件流数值仅为观测子集, 不是整场权威总伤害.\n");
             for (int i = 0; i < features.engagements().size(); i++) {
                 final EngagementSummary e = features.engagements().get(i);
                 sb.append("  #").append(i + 1).append(" [")
                         .append(String.format("%.1f-%.1f", e.startTime(), e.endTime())).append("s]")
-                        .append(" 输出").append(e.damageDealt()).append(" 承伤").append(e.damageReceived())
-                        .append(" 结果: ").append(e.outcome()).append('\n');
+                        .append(" 事件流输出: ").append(e.damageDealt())
+                        .append(" 事件流承伤: ").append(e.damageReceived())
+                        .append(" 结果: ").append(e.outcome())
+                        .append(" 置信度: ").append(e.confidence())
+                        .append('\n');
             }
         }
 
@@ -247,6 +281,14 @@ public class AiReplayAnalysisService {
         }
 
         sb.append("\n覆盖: ").append(ctx.coverage() != null ? ctx.coverage().decodedPacketRatio() : "N/A").append('\n');
+
+        // ====== 数据限制 ======
+        if (!ctx.limitations().isEmpty()) {
+            sb.append("\n=== 数据限制 ===\n");
+            for (final String limitation : ctx.limitations()) {
+                sb.append("- ").append(limitation).append('\n');
+            }
+        }
         return sb.toString();
     }
 
@@ -522,6 +564,81 @@ public class AiReplayAnalysisService {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * 查找录像者在重建结果中的 entity 映射。
+     */
+    public static RecorderEntityMapping findRecorder(final ReplayProcessingResult rep) {
+        if (rep.reconstruction() != null) {
+            final java.util.Map<Long, Integer> entityByAccount = new HashMap<>();
+            for (final var e : rep.reconstruction().events()) {
+                if (e instanceof ParticipantMappingEvent pm) {
+                    entityByAccount.put(pm.accountId(), pm.entityId());
+                }
+            }
+            for (final var p : rep.reconstruction().participants()) {
+                if (p.recorder()) {
+                    final Integer eid = entityByAccount.get(p.accountId());
+                    return new RecorderEntityMapping(p.accountId(), p.tankId(),
+                            eid, p.nickname(), p.team(), p.tankId(),
+                            eid != null ? DecodeConfidence.EXACT : DecodeConfidence.INFERRED);
+                }
+            }
+        }
+        if (rep.battle() != null && rep.battle().recorder != null)
+            return new RecorderEntityMapping(null, null, null,
+                    rep.battle().recorder, 0, 0, DecodeConfidence.INFERRED);
+        return RecorderEntityMapping.unresolved();
+    }
+
+    /**
+     * 单场分析：先尝试完整特征分析，不满足条件时降级到结算分析。
+     */
+    public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult rep) {
+        if (rep.battle() == null) return new AnalyzeResult("", "", List.of());
+        final var fallback = rep.reconstruction() != null
+                ? analyze(rep.battle(), rep.reconstruction())
+                : analyze(rep.battle(), null);
+        if (rep.reconstruction() == null) return fallback;
+
+        final var recorder = findRecorder(rep);
+        if (!recorder.resolved()) return fallback;
+
+        final PlayerBattleFeatureSet featureSet;
+        try {
+            final var extractor = new DefaultPlayerBattleFeatureExtractor();
+            featureSet = extractor.extract(rep.reconstruction(), recorder);
+        } catch (Exception e) {
+            System.getLogger("AiReplayAnalysisService")
+                    .log(System.Logger.Level.WARNING,
+                            "Feature extraction failed, falling back: {0}", e.getMessage());
+            return fallback;
+        }
+
+        if (!featureSet.hasFeatures()) return fallback;
+
+        final var ctx = new SinglePlayerBattleAnalysisContext(
+                null, rep.battle(), featureSet, recorder,
+                rep.reconstruction().coverage(), featureSet.limitations());
+        return analyzePlayerContext(ctx);
+    }
+
+    /**
+     * 构建分析单元列表。
+     */
+    public static List<AnalysisUnitResult> buildAnalysisUnits(final List<ReplayPerspectiveGroup> groups) {
+        return groups.stream()
+                .map(g -> new AnalysisUnitResult(
+                        "unit-" + g.key().battleIdentity().arenaUniqueId(),
+                        g.key().battleIdentity(),
+                        null,
+                        g.key().perspectiveTeam(),
+                        g.representative().fileName(),
+                        g.duplicates().stream().map(ReplayProcessingResult::fileName).toList(),
+                        null, null
+                ))
+                .toList();
     }
 
     /**

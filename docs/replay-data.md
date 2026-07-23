@@ -6,11 +6,11 @@
 
 `.wotbreplay` = ZIP 压缩包，包含 3 个条目：
 
-| 条目 | 说明 | 本工具使用 |
-|------|------|-----------|
-| `meta.json` | JSON 元数据（战斗信息/录像者） | 是 |
-| `data.wotreplay` | 原始游戏事件数据（BigWorld 包序列） | 是（EventStreamReader） |
-| `battle_results.dat` | Python pickle → protobuf 战绩 | 是 |
+| 条目                   | 说明                          | 本工具使用                |
+|----------------------|-----------------------------|----------------------|
+| `meta.json`          | JSON 元数据（战斗信息/录像者）          | 是                    |
+| `data.wotreplay`     | 原始游戏事件数据（BigWorld 包序列）      | 是（EventStreamReader） |
+| `battle_results.dat` | Python pickle → protobuf 战绩 | 是                    |
 
 ### 解析安全预算
 
@@ -18,8 +18,10 @@
 - `meta.json` / `battle_results.dat` / `data.wotreplay` 分别不超过 1 / 8 / 20 MiB，总解压不超过 24 MiB。
 - pickle：输入/二进制 8 MiB、文本 1 MiB、LONG 128 B、栈 4096、opcode 100000。
 - protobuf：消息和 length-delimited 8 MiB、值数 16384、field number ≤ 2²⁹−1、varint ≤ 10 B。
-- 单回放 `#201` 名册与 `#301` 战绩各最多 64 项；事件流最多保留 200000 个包（高于已观察约 112K 合法样本），并限制为 1000000 次扫描/重同步。
-- ZIP/结构错误抛稳定英文 `IOException`；pickle/protobuf 的非法长度、截断和溢出在 `ReplayParser` 边界统一包装为 `Invalid replay data: ...`。
+- 单回放 `#201` 名册与 `#301` 战绩各最多 64 项；事件流最多保留 200000 个包（高于已观察约 112K 合法样本），并限制为 1000000
+  次扫描/重同步。
+- ZIP/结构错误抛稳定英文 `IOException`；pickle/protobuf 的非法长度、截断和溢出在 `ReplayParser` 边界统一包装为
+  `Invalid replay data: ...`。
 
 ---
 
@@ -29,13 +31,13 @@
 
 ### 全局头（offset 0 起）
 
-| 偏移 | 长度 | 说明 |
-|------|------|------|
-| 0 | 4 | 魔数 `0x12345678` |
-| 4 | 8 | 未知（8 字节） |
-| 12 | 1+len | 客户端哈希（长度前缀） |
+| 偏移     | 长度    | 说明                               |
+|--------|-------|----------------------------------|
+| 0      | 4     | 魔数 `0x12345678`                  |
+| 4      | 8     | 未知（8 字节）                         |
+| 12     | 1+len | 客户端哈希（长度前缀）                      |
 | 13+len | 1+len | 客户端版本（如 `"11.18.0_china_apple"`） |
-| 末 | 1 | 额外字节（忽略） |
+| 末      | 1     | 额外字节（忽略）                         |
 
 ### 包格式（头后紧跟）
 
@@ -50,24 +52,24 @@ payload:     [u8; payload_len]  // 负载
 
 ### 已观察到的包类型
 
-| 类型 | 十六进制 | 含义 | 负载格式 | 数量/场（random_game） |
-|------|----------|------|----------|----------------------|
-| 0 | `0x00` | **BasePlayerCreate** | skip 10B + nickname(1+len) + arena_uid(u64) + arena_type(u32) + pickle(Python dict) | 5 |
-| 1 | `0x01` | **CellCreate** | domain_id(u32) + entity_id(i32) + init_props_flat | 1 |
-| 2 | `0x02` | **Control/PlayerCreate** | init_props_flat | 1 |
-| 4 | `0x04` | **EntityLeave** | entity_id(i32 LE) | 13–21 |
-| 5 | `0x05` | **Spotting** | undefined | ~100 |
-| 7 | `0x07` | **EntityProperty** | `entity_id(u32)+propId(u32)+valueLen(u32)+value`（结构已确认；血量语义未解，见下） | 13K–29K |
-| 8 | `0x08` | **EntityMethod**（RPC 调用） | entity_id(i32) + sub_type(u32) + args | 630–700 |
-| 10 | `0x0A` | **Position**（坐标） | 49 字节（见下） | 14K–29K |
-| 11 | `0x0B` | Entity method（未知） | — | 2 |
-| 14 | `0x0E` | **BattleEnd** | — | 1 |
-| 23 | `0x17` | Game-specific | — | ~32 |
-| 29 | `0x1D` | Game-specific | — | 2 |
-| 31 | `0x1F` | **Tracked/State** | — | ~2.7K |
-| 32 | `0x20` | Game-specific | — | ~223 |
-| 35 | `0x23` | **Chat**（聊天消息） | — | 1.4K–2K |
-| 39 | `0x27` | **Map/NestedProperty** | 最多（24K–35K/场） | 16K–35K |
+| 类型 | 十六进制   | 含义                       | 负载格式                                                                                | 数量/场（random_game） |
+|----|--------|--------------------------|-------------------------------------------------------------------------------------|-------------------|
+| 0  | `0x00` | **BasePlayerCreate**     | skip 10B + nickname(1+len) + arena_uid(u64) + arena_type(u32) + pickle(Python dict) | 5                 |
+| 1  | `0x01` | **CellCreate**           | domain_id(u32) + entity_id(i32) + init_props_flat                                   | 1                 |
+| 2  | `0x02` | **Control/PlayerCreate** | init_props_flat                                                                     | 1                 |
+| 4  | `0x04` | **EntityLeave**          | entity_id(i32 LE)                                                                   | 13–21             |
+| 5  | `0x05` | **Spotting**             | undefined                                                                           | ~100              |
+| 7  | `0x07` | **EntityProperty**       | `entity_id(u32)+propId(u32)+valueLen(u32)+value`（结构已确认；血量语义未解，见下）                   | 13K–29K           |
+| 8  | `0x08` | **EntityMethod**（RPC 调用） | entity_id(i32) + sub_type(u32) + args                                               | 630–700           |
+| 10 | `0x0A` | **Position**（坐标）         | 49 字节（见下）                                                                           | 14K–29K           |
+| 11 | `0x0B` | Entity method（未知）        | —                                                                                   | 2                 |
+| 14 | `0x0E` | **BattleEnd**            | —                                                                                   | 1                 |
+| 23 | `0x17` | Game-specific            | —                                                                                   | ~32               |
+| 29 | `0x1D` | Game-specific            | —                                                                                   | 2                 |
+| 31 | `0x1F` | **Tracked/State**        | —                                                                                   | ~2.7K             |
+| 32 | `0x20` | Game-specific            | —                                                                                   | ~223              |
+| 35 | `0x23` | **Chat**（聊天消息）           | —                                                                                   | 1.4K–2K           |
+| 39 | `0x27` | **Map/NestedProperty**   | 最多（24K–35K/场）                                                                       | 16K–35K           |
 
 ### Type 0：BasePlayerCreate
 
@@ -120,11 +122,11 @@ value:     [u8; value_len]
 
 格式：`entity_id(i32) + sub_type(u32) + args`
 
-| sub_type | 名称 | 说明 |
-|----------|------|------|
-| 8 | **entityMethodDamage** | 伤害事件（仅 sub=3 直接 HP 伤害用于死亡推算） |
-| 47 | **updateArena** | 玩家存活名单（WoT PC/Blitz 通用） |
-| 48 | **updateArena2** | **Blitz 特有**，含 entity_id↔account_id 映射 |
+| sub_type | 名称                     | 说明                                     |
+|----------|------------------------|----------------------------------------|
+| 8        | **entityMethodDamage** | 伤害事件（仅 sub=3 直接 HP 伤害用于死亡推算）           |
+| 47       | **updateArena**        | 玩家存活名单（WoT PC/Blitz 通用）                |
+| 48       | **updateArena2**       | **Blitz 特有**，含 entity_id↔account_id 映射 |
 
 #### sub_type 48 (updateArena2) 完整格式
 
@@ -163,7 +165,8 @@ args (25B body):
   flag:        u8          // 末尾标志 (01=正常, 03=致命一击?)
 ```
 
-方法调用在 victim 实体上（methodEid == victimEid）。sub=3 事件累计到达 `damageReceived` 阈值时即判定为阵亡；同一事件流也会累计 killer→victim 的 direct damage / penetrations，用于填充 `PlayerResult.killVictims` 并驱动潜在均伤。
+方法调用在 victim 实体上（methodEid == victimEid）。sub=3 事件累计到达 `damageReceived` 阈值时即判定为阵亡；同一事件流也会累计
+killer→victim 的 direct damage / penetrations，用于填充 `PlayerResult.killVictims` 并驱动潜在均伤。
 
 ### Type 10：Position（含 space_id）
 
@@ -191,7 +194,8 @@ is_error:      i8     // 1 字节
 
 ### 第 1 包 vs 错误容忍
 
-旧解析在第 1 个坏包处停止，导致只读前 ~28KB（0–2.4s，仅 Type 0/1/2/部分 39）。**错误容忍** 下，全部 ~72K–112K 包覆盖整场战斗（210s–310s），Type 10/4/7/31/35 数据完整可用。
+旧解析在第 1 个坏包处停止，导致只读前 ~28KB（0–2.4s，仅 Type 0/1/2/部分 39）。**错误容忍** 下，全部 ~72K–112K
+包覆盖整场战斗（210s–310s），Type 10/4/7/31/35 数据完整可用。
 
 ---
 
@@ -218,30 +222,34 @@ survivalTimeSec:
        c) 否则 → Position
 ```
 
-**Layer 2 (damageDeathTimes)：** 遍历 Type 8 subtype 8 body[13]=3 (direct HP damage) 事件，按时间累计 victimEid→accountId 的 HP 伤害量。threshold = min(proto.damageReceived, sub3_total) — 当累计值首次 ≥ threshold 时，该事件时钟即为死亡时间；当前事件的 attacker 会被推断为 killer，并把该 killer 对 victim 的累计 direct damage / penetrations 写入 `killVictims`。这解决旧 EntityLeave 假阳性（临时离场而非阵亡）和 Position 在部分模式中实体不停止的问题；特殊伤害缺失时仍保守回退。
+**Layer 2 (damageDeathTimes)：** 遍历 Type 8 subtype 8 body[13]=3 (direct HP damage) 事件，按时间累计 victimEid→accountId
+的 HP 伤害量。threshold = min(proto.damageReceived, sub3_total) — 当累计值首次 ≥ threshold 时，该事件时钟即为死亡时间；当前事件的
+attacker 会被推断为 killer，并把该 killer 对 victim 的累计 direct damage / penetrations 写入 `killVictims`。这解决旧
+EntityLeave 假阳性（临时离场而非阵亡）和 Position 在部分模式中实体不停止的问题；特殊伤害缺失时仍保守回退。
 
-**Layer 3 假阳性检测：** EntityLeave 常有临时离场事件被误判为阵亡。若同玩家有 EntityLeave 和 Position 数据，且最后 Position 时间比最后 EntityLeave 晚 5 秒以上，以 Position 为准。
+**Layer 3 假阳性检测：** EntityLeave 常有临时离场事件被误判为阵亡。若同玩家有 EntityLeave 和 Position 数据，且最后 Position
+时间比最后 EntityLeave 晚 5 秒以上，以 Position 为准。
 
 ---
 
 ## meta.json（14 个键）
 
-| # | 键 | 类型 | 单位 | 示例值 | 说明 | 是否解析 |
-|---|-----|------|------|--------|------|---------|
-| 1 | `version` | string | — | `"11.18.0_china_apple"` | 游戏版本 | 是 → `Battle.version` |
-| 2 | `title` | string | — | `""` | 回放标题（通常为空） | 否 |
-| 3 | `dbid` | string | — | `"3125699886"` | 录像者数据库 ID | 否 |
-| 4 | `playerName` | string | — | `"WHAT_HPSHARING"` | 录像者昵称 | 是 → `Battle.recorder` |
-| 5 | `battleStartTime` | string | Unix 秒 | `"1781873222"` | 战斗开始时间戳 | 是 → `Battle.startTime` |
-| 6 | `playerVehicleName` | string | — | `"S16_Kranvagn"` | 录像者车辆名 | 是 → `Battle.recorderVehicle` |
-| 7 | `mapName` | string | — | `"lagoon"` | 地图内部名 | 是 → `Battle.mapName` |
-| 8 | `arenaUniqueId` | string | — | `"1161909687528274499"` | 战斗唯一 ID（去重用） | 否（pickle tuple[0] 作为 `Battle.arenaId`） |
-| 9 | `battleDuration` | number | 秒 | `306.19186` | 战斗持续时长（浮点数） | 是 → `Battle.durationS` |
-| 10 | `vehicleCompDescriptor` | int | — | `4481` | 车辆组件描述符（== tankId） | 否 |
-| 11 | `camouflageId` | int | — | `406` | 涂装 ID | 否 |
-| 12 | `mapId` | int | — | `26` | 地图数字 ID | 否（已移除） |
-| 13 | `arenaBonusType` | int | — | `1` | 模式类型（**1=随机；2=训练房**；其他=娱乐/联赛等。经真实样本核实，早期"2=随机"系误标——当时分析的是训练房回放） | 是 → `Battle.arenaBonusType`（排行榜仅收 ==1） |
-| 14 | `camouflageCustomData` | string | — | `""` | 自定义涂装数据 | 否 |
+| #  | 键                       | 类型     | 单位     | 示例值                     | 说明                                                              | 是否解析                                   |
+|----|-------------------------|--------|--------|-------------------------|-----------------------------------------------------------------|----------------------------------------|
+| 1  | `version`               | string | —      | `"11.18.0_china_apple"` | 游戏版本                                                            | 是 → `Battle.version`                   |
+| 2  | `title`                 | string | —      | `""`                    | 回放标题（通常为空）                                                      | 否                                      |
+| 3  | `dbid`                  | string | —      | `"3125699886"`          | 录像者数据库 ID                                                       | 否                                      |
+| 4  | `playerName`            | string | —      | `"WHAT_HPSHARING"`      | 录像者昵称                                                           | 是 → `Battle.recorder`                  |
+| 5  | `battleStartTime`       | string | Unix 秒 | `"1781873222"`          | 战斗开始时间戳                                                         | 是 → `Battle.startTime`                 |
+| 6  | `playerVehicleName`     | string | —      | `"S16_Kranvagn"`        | 录像者车辆名                                                          | 是 → `Battle.recorderVehicle`           |
+| 7  | `mapName`               | string | —      | `"lagoon"`              | 地图内部名                                                           | 是 → `Battle.mapName`                   |
+| 8  | `arenaUniqueId`         | string | —      | `"1161909687528274499"` | 战斗唯一 ID（去重用）                                                    | 否（pickle tuple[0] 作为 `Battle.arenaId`） |
+| 9  | `battleDuration`        | number | 秒      | `306.19186`             | 战斗持续时长（浮点数）                                                     | 是 → `Battle.durationS`                 |
+| 10 | `vehicleCompDescriptor` | int    | —      | `4481`                  | 车辆组件描述符（== tankId）                                              | 否                                      |
+| 11 | `camouflageId`          | int    | —      | `406`                   | 涂装 ID                                                           | 否                                      |
+| 12 | `mapId`                 | int    | —      | `26`                    | 地图数字 ID                                                         | 否（已移除）                                 |
+| 13 | `arenaBonusType`        | int    | —      | `1`                     | 模式类型（**1=随机；2=训练房**；其他=娱乐/联赛等。经真实样本核实，早期"2=随机"系误标——当时分析的是训练房回放） | 是 → `Battle.arenaBonusType`（排行榜仅收 ==1） |
+| 14 | `camouflageCustomData`  | string | —      | `""`                    | 自定义涂装数据                                                         | 否                                      |
 
 ---
 
@@ -253,21 +261,21 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 
 ### 根层 protobuf（13 个字段）
 
-| 字段号 | 类型 | 数量 | 示例值 | 说明 | 是否解析 |
-|--------|------|------|--------|------|---------|
-| 1 | varint | 1 | `65562` | 未知 — 小整数 | 否 |
-| 2 | varint | 1 | `1781873219` | 战斗开始 Unix 秒 | 否 |
-| 3 | varint | 1 | `2` | **胜方队伍**（1 或 2） | 是 → `Battle.winnerTeam` |
-| 4 | varint | 1 | `1` | 未知 — 小整数 | 否 |
-| 5 | varint | 1 | `295` | 未知 — 中整数 | 否 |
-| 8 | sub_msg | 1 | (24字段) | **录像者自身战绩**（结构同 #301→#2） | 否 |
-| 9 | varint | 1 | `2` | 未知 — 恒为 2 | 否 |
-| 11 | bytes | 1 | (空) | 空字节字段 | 否 |
-| 150 | sub_msg | 1 | (16字段, ~30KB) | **竞技场统计数据**（见下文） | 否 |
-| 201 | sub_msg[] | 15-16 | (2字段/条) | **名册**（玩家信息列表） | 是 |
-| 301 | sub_msg[] | 14 | (2字段/条) | **玩家战绩**（每人一条） | 是 |
-| 302 | sub_msg | 1 | (4-5条目) | **MVP排行**信息 | 否 |
-| 303 | sub_msg | 1 | (2字段) | 未知 — 两个常量值 | 否 |
+| 字段号 | 类型        | 数量    | 示例值           | 说明                       | 是否解析                    |
+|-----|-----------|-------|---------------|--------------------------|-------------------------|
+| 1   | varint    | 1     | `65562`       | 未知 — 小整数                 | 否                       |
+| 2   | varint    | 1     | `1781873219`  | 战斗开始 Unix 秒              | 否                       |
+| 3   | varint    | 1     | `2`           | **胜方队伍**（1 或 2）          | 是 → `Battle.winnerTeam` |
+| 4   | varint    | 1     | `1`           | 未知 — 小整数                 | 否                       |
+| 5   | varint    | 1     | `295`         | 未知 — 中整数                 | 否                       |
+| 8   | sub_msg   | 1     | (24字段)        | **录像者自身战绩**（结构同 #301→#2） | 否                       |
+| 9   | varint    | 1     | `2`           | 未知 — 恒为 2                | 否                       |
+| 11  | bytes     | 1     | (空)           | 空字节字段                    | 否                       |
+| 150 | sub_msg   | 1     | (16字段, ~30KB) | **竞技场统计数据**（见下文）         | 否                       |
+| 201 | sub_msg[] | 15-16 | (2字段/条)       | **名册**（玩家信息列表）           | 是                       |
+| 301 | sub_msg[] | 14    | (2字段/条)       | **玩家战绩**（每人一条）           | 是                       |
+| 302 | sub_msg   | 1     | (4-5条目)       | **MVP排行**信息              | 否                       |
+| 303 | sub_msg   | 1     | (2字段)         | 未知 — 两个常量值               | 否                       |
 
 ---
 
@@ -275,24 +283,24 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 
 每条 2 个子字段：
 
-| 子字段 | 类型 | 示例值 | 说明 | 是否解析 |
-|--------|------|--------|------|---------|
-| #1 | varint | `3106010506` | **accountId** | 是 |
-| #2 | sub_msg | (8-9字段) | **PlayerInfo** 子消息 | 是 |
+| 子字段 | 类型      | 示例值          | 说明                 | 是否解析 |
+|-----|---------|--------------|--------------------|------|
+| #1  | varint  | `3106010506` | **accountId**      | 是    |
+| #2  | sub_msg | (8-9字段)      | **PlayerInfo** 子消息 | 是    |
 
 #### PlayerInfo（#201→#2）子字段：
 
-| 子字段 | 常量 | 类型 | 示例值 | 说明 | 是否解析 |
-|--------|------|------|--------|------|---------|
-| **#1** | `R_NICK = 1` | bytes(UTF-8) | `"田_..."` | **昵称** | 是 → `PlayerResult.nickname` |
-| **#2** | `R_PLATOON = 2` | varint | `281447127` | **组队 ID** | 是 → `PlayerResult.platoonId` |
-| **#3** | — | varint | `1` / `2` | **队伍**（名册来源） | 否（队伍从战绩 #301→#2→#102 获取） |
-| **#4** | — | varint | `380362` | 未知 — 车辆相关 ID？ | 否 |
-| **#5** | `R_CLAN = 5` | bytes(UTF-8) | `"猫猫乐坏"` | **战队标签** | 是 → `PlayerResult.clan` |
-| **#6** | — | bytes(2) | `\x00\x00` | 未知（2 字节零） | 否 |
-| **#7** | — | sub_msg | `{#1:1, #2:1}` | 未知 — 徽章标志？ | 否 |
-| **#8** | — | varint | `2281982` | **狗牌 ID** | 否 |
-| **#9** | — | varint | `1` / `46` | 未知 — 小整数 | 否 |
+| 子字段    | 常量              | 类型           | 示例值            | 说明            | 是否解析                         |
+|--------|-----------------|--------------|----------------|---------------|------------------------------|
+| **#1** | `R_NICK = 1`    | bytes(UTF-8) | `"田_..."`      | **昵称**        | 是 → `PlayerResult.nickname`  |
+| **#2** | `R_PLATOON = 2` | varint       | `281447127`    | **组队 ID**     | 是 → `PlayerResult.platoonId` |
+| **#3** | —               | varint       | `1` / `2`      | **队伍**（名册来源）  | 否（队伍从战绩 #301→#2→#102 获取）     |
+| **#4** | —               | varint       | `380362`       | 未知 — 车辆相关 ID？ | 否                            |
+| **#5** | `R_CLAN = 5`    | bytes(UTF-8) | `"猫猫乐坏"`       | **战队标签**      | 是 → `PlayerResult.clan`      |
+| **#6** | —               | bytes(2)     | `\x00\x00`     | 未知（2 字节零）     | 否                            |
+| **#7** | —               | sub_msg      | `{#1:1, #2:1}` | 未知 — 徽章标志？    | 否                            |
+| **#8** | —               | varint       | `2281982`      | **狗牌 ID**     | 否                            |
+| **#9** | —               | varint       | `1` / `46`     | 未知 — 小整数      | 否                            |
 
 ---
 
@@ -300,54 +308,56 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 
 每条 2 个子字段：
 
-| 子字段 | 类型 | 示例值 | 说明 |
-|--------|------|--------|------|
-| #1 | varint | `280428036` | 内部 accountId（关联 #301→#2→#25） |
-| #2 | sub_msg | (18-27字段) | **PlayerResultInfo** — 实际战绩数据 |
+| 子字段 | 类型      | 示例值         | 说明                            |
+|-----|---------|-------------|-------------------------------|
+| #1  | varint  | `280428036` | 内部 accountId（关联 #301→#2→#25）  |
+| #2  | sub_msg | (18-27字段)   | **PlayerResultInfo** — 实际战绩数据 |
 
 #### PlayerResultInfo（#301→#2）全部字段：
 
-| 字段号 | 常量 | 类型 | 单位 | 示例值 | 说明 | 是否解析 |
-|--------|------|------|------|--------|------|---------|
-| **#1** | — | varint | HP | `86`-`2291` | 点亮/协助分量（与 #9+#10 独立统计） | 否 |
-| **#4** | `F_SHOTS = 4` | varint | 次数 | `5`-`14` | **射击次数** | 是 |
-| **#5** | `F_HITS = 5` | varint | 次数 | `3`-`11` | **命中次数** | 是 |
-| **#6** | — | varint | 次数 | `1`-`6` | 未知 — 基础命中？ | 否 |
-| **#7** | `F_PENS = 7` | varint | 次数 | `2`-`10` | **击穿次数** | 是 |
-| **#8** | `F_DAMAGE = 8` | varint | HP | `766`-`4571` | **造成伤害** | 是 |
-| **#9** | `F_ASSIST[0] = 9` | varint | HP | `99`-`381` | **协助伤害分量 1** | 是（#9 + #10 求和） |
-| **#10** | `F_ASSIST[1] = 10` | varint | HP | `86`-`1726` | **协助伤害分量 2** | 同上 |
-| **#11** | `F_RECEIVED = 11` | varint | HP | `349`-`3074` | **受到伤害** | 是 |
-| **#12** | `F_HITS_RECV = 12` | varint | 次数 | `2`-`11` | **被命中次数** | 是 |
-| **#13** | — | varint | 次数 | `1`-`3` | 未知 — 跳弹？未击穿？ | 否 |
-| **#15** | `F_PENS_RECV = 15` | varint | 次数 | `1`-`9` | **被击穿次数** | 是 |
-| **#16** | — | varint | 次数 | `1`-`3` | 未知 — HE/溅射命中？ | 否 |
-| **#17** | `F_ENEMIES_DMG = 17` | varint | 人数 | `1`-`5` | **击伤敌方数**（不同目标） | 是 |
-| **#18** | `F_KILLS = 18` | varint | 人数 | `1`-`3` | **击杀数** | 是 |
-| **#23** | — | varint | 经验 | `418`-`2527` | **基础经验**（不含加成） | 否 |
-| **#24** | — | varint | — | `63`-`295` | 未知 — 小累计值 | 否 |
-| **#25** | — | varint | — | `280428036` | 内部 accountId（关联 #301→#1） | 否 |
-| **#32** | — | varint | — | `32`-`477` | 点亮/活动分数？ | 否 |
-| **#33** | — | varint | — | `40`-`120` | 关联 #32 | 否 |
-| **#101** | `F_ACCOUNT = 101` | varint | — | `3100730745` | **accountId**（Wargaming ID） | 是 |
-| **#102** | `F_TEAM = 102` | varint | — | `1` / `2` | **队伍** | 是 |
-| **#103** | `F_TANK = 103` | varint | — | `4481` | **车辆 ID**（tankId） | 是 |
-| **#104** | `F_DEATH_TIME = 104` | varint | 毫秒 | `0`（默认） | ⚠️ **死亡时刻**（存活/缺失=0） | 是 → `deathTimeMillis` |
-| **#105** | `F_SURVIVED = 105` | varint | — | `0xFFFFFFFFFFFFFFFF`(-1) | **存活标志**：`-1`=存活，缺失=阵亡 | 是 |
-| **#106** | — | varint | 银币 | `68600`-`542712` | **获得银币** | 否（已移除） |
-| **#107** | — | varint | — | `1104555167` | 未知 — 大整数，类似哈希 | 否 |
-| **#116** | — | varint | — | `262392` | 未知 | 否 |
-| **#117** | `F_BLOCKED = 117` | varint | HP | `410`-`1620` | **跳弹/未击穿伤害**（装甲阻挡） | 是 |
-| **#118** | — | varint | — | `6`-`176` | 未知 — 小整数 | 否 |
-| **#119** | — | varint | — | `1` / `2` | 未知 — 少量 | 否 |
-| **#120** | — | varint | — | `2` / `3` | 未知 — 部分存活玩家有 | 否 |
-| **#122** | — | sub_msg | — | `{#5:5}` | 未知 — 单字段子消息 | 否 |
+| 字段号      | 常量                   | 类型      | 单位 | 示例值                      | 说明                          | 是否解析                  |
+|----------|----------------------|---------|----|--------------------------|-----------------------------|-----------------------|
+| **#1**   | —                    | varint  | HP | `86`-`2291`              | 点亮/协助分量（与 #9+#10 独立统计）      | 否                     |
+| **#4**   | `F_SHOTS = 4`        | varint  | 次数 | `5`-`14`                 | **射击次数**                    | 是                     |
+| **#5**   | `F_HITS = 5`         | varint  | 次数 | `3`-`11`                 | **命中次数**                    | 是                     |
+| **#6**   | —                    | varint  | 次数 | `1`-`6`                  | 未知 — 基础命中？                  | 否                     |
+| **#7**   | `F_PENS = 7`         | varint  | 次数 | `2`-`10`                 | **击穿次数**                    | 是                     |
+| **#8**   | `F_DAMAGE = 8`       | varint  | HP | `766`-`4571`             | **造成伤害**                    | 是                     |
+| **#9**   | `F_ASSIST[0] = 9`    | varint  | HP | `99`-`381`               | **协助伤害分量 1**                | 是（#9 + #10 求和）        |
+| **#10**  | `F_ASSIST[1] = 10`   | varint  | HP | `86`-`1726`              | **协助伤害分量 2**                | 同上                    |
+| **#11**  | `F_RECEIVED = 11`    | varint  | HP | `349`-`3074`             | **受到伤害**                    | 是                     |
+| **#12**  | `F_HITS_RECV = 12`   | varint  | 次数 | `2`-`11`                 | **被命中次数**                   | 是                     |
+| **#13**  | —                    | varint  | 次数 | `1`-`3`                  | 未知 — 跳弹？未击穿？                | 否                     |
+| **#15**  | `F_PENS_RECV = 15`   | varint  | 次数 | `1`-`9`                  | **被击穿次数**                   | 是                     |
+| **#16**  | —                    | varint  | 次数 | `1`-`3`                  | 未知 — HE/溅射命中？               | 否                     |
+| **#17**  | `F_ENEMIES_DMG = 17` | varint  | 人数 | `1`-`5`                  | **击伤敌方数**（不同目标）             | 是                     |
+| **#18**  | `F_KILLS = 18`       | varint  | 人数 | `1`-`3`                  | **击杀数**                     | 是                     |
+| **#23**  | —                    | varint  | 经验 | `418`-`2527`             | **基础经验**（不含加成）              | 否                     |
+| **#24**  | —                    | varint  | —  | `63`-`295`               | 未知 — 小累计值                   | 否                     |
+| **#25**  | —                    | varint  | —  | `280428036`              | 内部 accountId（关联 #301→#1）    | 否                     |
+| **#32**  | —                    | varint  | —  | `32`-`477`               | 点亮/活动分数？                    | 否                     |
+| **#33**  | —                    | varint  | —  | `40`-`120`               | 关联 #32                      | 否                     |
+| **#101** | `F_ACCOUNT = 101`    | varint  | —  | `3100730745`             | **accountId**（Wargaming ID） | 是                     |
+| **#102** | `F_TEAM = 102`       | varint  | —  | `1` / `2`                | **队伍**                      | 是                     |
+| **#103** | `F_TANK = 103`       | varint  | —  | `4481`                   | **车辆 ID**（tankId）           | 是                     |
+| **#104** | `F_DEATH_TIME = 104` | varint  | 毫秒 | `0`（默认）                  | ⚠️ **死亡时刻**（存活/缺失=0）        | 是 → `deathTimeMillis` |
+| **#105** | `F_SURVIVED = 105`   | varint  | —  | `0xFFFFFFFFFFFFFFFF`(-1) | **存活标志**：`-1`=存活，缺失=阵亡      | 是                     |
+| **#106** | —                    | varint  | 银币 | `68600`-`542712`         | **获得银币**                    | 否（已移除）                |
+| **#107** | —                    | varint  | —  | `1104555167`             | 未知 — 大整数，类似哈希               | 否                     |
+| **#116** | —                    | varint  | —  | `262392`                 | 未知                          | 否                     |
+| **#117** | `F_BLOCKED = 117`    | varint  | HP | `410`-`1620`             | **跳弹/未击穿伤害**（装甲阻挡）          | 是                     |
+| **#118** | —                    | varint  | —  | `6`-`176`                | 未知 — 小整数                    | 否                     |
+| **#119** | —                    | varint  | —  | `1` / `2`                | 未知 — 少量                     | 否                     |
+| **#120** | —                    | varint  | —  | `2` / `3`                | 未知 — 部分存活玩家有                | 否                     |
+| **#122** | —                    | sub_msg | —  | `{#5:5}`                 | 未知 — 单字段子消息                 | 否                     |
 
-> **⚠️ 字段 #104 现状：** 在 v11.18 sample 回放的 `PlayerResultInfo` 中 **实际不存在**（protobuf 字节级确认无 #104 标签）。`Protobuf.firstLong(…,0)` 返回默认值 `0`，因此 fallback 自动落到第 2 层（Damage）。此字段可能在新版本回放中存在，代码保持兼容。
+> **⚠️ 字段 #104 现状：** 在 v11.18 sample 回放的 `PlayerResultInfo` 中 **实际不存在**（protobuf 字节级确认无 #104 标签）。
+`Protobuf.firstLong(…,0)` 返回默认值 `0`，因此 fallback 自动落到第 2 层（Damage）。此字段可能在新版本回放中存在，代码保持兼容。
 
 ### 字段 #106 说明
 
-`#106` 的值域（`68600`-`542712`）与银币数量级吻合，此前被解析为 `credits`（已移除）。其数值约为基础经验（#23）的 `20-200` 倍，取决于加成/高级账号。
+`#106` 的值域（`68600`-`542712`）与银币数量级吻合，此前被解析为 `credits`（已移除）。其数值约为基础经验（#23）的 `20-200`
+倍，取决于加成/高级账号。
 
 ---
 
@@ -355,71 +365,71 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 
 16 个子字段，包含丰富的分车辆/分玩家统计和成就事件。
 
-| 子字段 | 类型 | 值 | 说明 |
-|--------|------|----|------|
-| #8 | bytes(4) | `00000000` | 恒为 4 字节零 |
-| #9 | bytes(2) | `0000` | 恒为 2 字节零 |
-| #10 | bytes(2) | `0000` | 恒为 2 字节零 |
-| #12 | varint | `1` | 常量 |
-| #13 | varint | `15` | 最大队伍数？ |
-| #14 | varint | `15` | 每队最大玩家数？ |
-| #15 | varint | `10` | 1 队实际人数 |
-| #16 | varint | `10` | 2 队实际人数 |
-| #17 | varint | `10` | 未知 |
-| **#20** | sub_msg | (28字段) | **玩家统计数组**（一队） |
-| **#21** | sub_msg | (1字段) | 队伍统计变体 |
-| **#22** | sub_msg | (28字段) | **玩家统计数组**（另一队） |
-| **#23** | sub_msg | (1字段) | 队伍统计变体 |
-| #25 | bytes(2) | `0000` | 2 字节零 |
-| #26 | bytes(2) | `0000` | 2 字节零 |
-| **#114** | sub_msg[] | (6-8条) | **成就/事件列表** |
+| 子字段      | 类型        | 值          | 说明              |
+|----------|-----------|------------|-----------------|
+| #8       | bytes(4)  | `00000000` | 恒为 4 字节零        |
+| #9       | bytes(2)  | `0000`     | 恒为 2 字节零        |
+| #10      | bytes(2)  | `0000`     | 恒为 2 字节零        |
+| #12      | varint    | `1`        | 常量              |
+| #13      | varint    | `15`       | 最大队伍数？          |
+| #14      | varint    | `15`       | 每队最大玩家数？        |
+| #15      | varint    | `10`       | 1 队实际人数         |
+| #16      | varint    | `10`       | 2 队实际人数         |
+| #17      | varint    | `10`       | 未知              |
+| **#20**  | sub_msg   | (28字段)     | **玩家统计数组**（一队）  |
+| **#21**  | sub_msg   | (1字段)      | 队伍统计变体          |
+| **#22**  | sub_msg   | (28字段)     | **玩家统计数组**（另一队） |
+| **#23**  | sub_msg   | (1字段)      | 队伍统计变体          |
+| #25      | bytes(2)  | `0000`     | 2 字节零           |
+| #26      | bytes(2)  | `0000`     | 2 字节零           |
+| **#114** | sub_msg[] | (6-8条)     | **成就/事件列表**     |
 
 #### #150→#20/#22 — 玩家统计子消息（28 字段）
 
-| 子字段 | 类型 | 示例值 | 说明 |
-|--------|------|--------|------|
-| #5[0] | fixed32 | `134220032` | 玩家/车辆 ID |
-| #5[1] | fixed32 | `111692050` | 另一个 ID |
-| #5[2] | sub_msg | (36字段: #401-#476) | **分车辆统计数据** |
-| #6 | sub_msg | (3字段: #601, #604, #605) | 战斗结果标志 |
-| #7 | sub_msg | (5字段: #701-#708) | 战区/位置数据 |
-| #8 | sub_msg | (2字段: #801, #802) | 会话/活动数据 |
-| #9 | sub_msg[] | (89条) | **装备/消耗品使用**（#901=类型ID, #902=次数） |
-| #19 | sub_msg | (18字段: #1103-#1128) | **伤害明细分解** |
-| #25 | varint | `9` | 常量 |
-| #26 | sub_msg | (3字段) | 未知 |
-| #27 | bytes | (空) | 空 |
-| #28 | sub_msg | (1字段: #4) | 未知 |
-| #102 | varint | `141` | 伤害变体 |
-| #103 | varint | `100` | 命中变体 |
-| #104 | varint | `39` | 击穿变体 |
-| #105 | varint | `77` | 受击变体 |
-| #106 | varint | `76` | 射击变体 |
-| #107 | varint | `204` | 阻挡变体 |
-| #108 | varint | `204` | 阻挡变体（同 #107） |
-| #109 | varint | `1520` | 经验变体 |
-| #110 | varint | `1357` | 经验变体 |
-| #111 | varint | `242` | 未知 |
-| #112 | varint | `431633` | **对车辆总伤害**（分车伤害和） |
-| #113 | varint | `302161` | **协助总伤害**（分车协助和） |
-| #115 | varint | `97` | 未知 |
-| #116 | varint | `44` | 未知 |
-| #117 | varint | `2153` | 阻挡伤害变体 |
-| #118 | varint | `1650` | 未知 |
-| #119 | varint | `106835` | **总经验**（可能含加成） |
-| #120 | varint | `16` | 未知 |
+| 子字段   | 类型        | 示例值                     | 说明                               |
+|-------|-----------|-------------------------|----------------------------------|
+| #5[0] | fixed32   | `134220032`             | 玩家/车辆 ID                         |
+| #5[1] | fixed32   | `111692050`             | 另一个 ID                           |
+| #5[2] | sub_msg   | (36字段: #401-#476)       | **分车辆统计数据**                      |
+| #6    | sub_msg   | (3字段: #601, #604, #605) | 战斗结果标志                           |
+| #7    | sub_msg   | (5字段: #701-#708)        | 战区/位置数据                          |
+| #8    | sub_msg   | (2字段: #801, #802)       | 会话/活动数据                          |
+| #9    | sub_msg[] | (89条)                   | **装备/消耗品使用**（#901=类型ID, #902=次数） |
+| #19   | sub_msg   | (18字段: #1103-#1128)     | **伤害明细分解**                       |
+| #25   | varint    | `9`                     | 常量                               |
+| #26   | sub_msg   | (3字段)                   | 未知                               |
+| #27   | bytes     | (空)                     | 空                                |
+| #28   | sub_msg   | (1字段: #4)               | 未知                               |
+| #102  | varint    | `141`                   | 伤害变体                             |
+| #103  | varint    | `100`                   | 命中变体                             |
+| #104  | varint    | `39`                    | 击穿变体                             |
+| #105  | varint    | `77`                    | 受击变体                             |
+| #106  | varint    | `76`                    | 射击变体                             |
+| #107  | varint    | `204`                   | 阻挡变体                             |
+| #108  | varint    | `204`                   | 阻挡变体（同 #107）                     |
+| #109  | varint    | `1520`                  | 经验变体                             |
+| #110  | varint    | `1357`                  | 经验变体                             |
+| #111  | varint    | `242`                   | 未知                               |
+| #112  | varint    | `431633`                | **对车辆总伤害**（分车伤害和）                |
+| #113  | varint    | `302161`                | **协助总伤害**（分车协助和）                 |
+| #115  | varint    | `97`                    | 未知                               |
+| #116  | varint    | `44`                    | 未知                               |
+| #117  | varint    | `2153`                  | 阻挡伤害变体                           |
+| #118  | varint    | `1650`                  | 未知                               |
+| #119  | varint    | `106835`                | **总经验**（可能含加成）                   |
+| #120  | varint    | `16`                    | 未知                               |
 
 #### #150→#114 — 成就/事件列表
 
 每条含 #1=事件类型ID、#2=次数？、#3=参数？、#4=值：
 
-| 事件类型 | 说明 |
-|----------|------|
-| `#1=1` | 击杀/里程碑（#4=伤害值） |
-| `#1=3` | 团队事件 |
-| `#1=5` | 阻挡里程碑（#4=阻挡伤害） |
-| `#1=8` | 命中里程碑？ |
-| `#1=15` | 存活事件 |
+| 事件类型    | 说明             |
+|---------|----------------|
+| `#1=1`  | 击杀/里程碑（#4=伤害值） |
+| `#1=3`  | 团队事件           |
+| `#1=5`  | 阻挡里程碑（#4=阻挡伤害） |
+| `#1=8`  | 命中里程碑？         |
+| `#1=15` | 存活事件           |
 | `#1=17` | 协助里程碑（#4=协助伤害） |
 
 ---
@@ -427,6 +437,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 ### 字段 #302 — MVP 排行
 
 4-5 条记录，每条含：
+
 - `#1 = accountId`
 - `#2 = sub_msg` — 未知标志位
 
@@ -436,79 +447,79 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 
 ### 单场展示列（Columns.java）
 
-| 列 key | 类型 | 来源字段 | 单位/格式 | 说明 |
-|--------|------|----------|-----------|------|
-| `nickname` | 文本 | `PlayerResult.nickname` | — | 昵称（名册 #201→#2→#1） |
-| `clan` | 文本 | `PlayerResult.clan` | — | 战队（名册 #201→#2→#5） |
-| `tank_name` | 文本 | `Tankopedia.info(tankId).name()` | — | 车辆名（查表） |
-| `tank_tier` | 整数 | `Tankopedia.info(tankId).tier()` | 等级 | 车辆等级（查表） |
-| `tank_type` | 文本 | `Tankopedia.info(tankId).type()` | — | API 稳定码：`HEAVY_TANK`/`MEDIUM_TANK`/`LIGHT_TANK`/`TANK_DESTROYER`/`OTHER`；导出使用中文 |
-| `tank_nation` | 文本 | `Tankopedia.info(tankId).nation()` | — | API 稳定国家码；导出使用中文 |
-| `rating` | 整数 | `PlayerResult.rating` | 评分 | EC 标准化评分（Rating 计算） |
-| `survived_label` | 文本 | `PlayerResult.survived` | — | API 返回 `SURVIVED`/`DESTROYED`，前端映射存活/阵亡（#105==-1 → 存活） |
-| `kills` | 整数 | `PlayerResult.kills` | 人数 | #18 |
-| `damage_dealt` | 整数 | `PlayerResult.damageDealt` | HP | #8 |
-| `potential_damage` | 整数 | `PlayerResult.potentialDamage` | HP | 潜在伤害 |
-| `potential_damage_supplement` | 整数 | `PlayerResult.potentialDamageSupplement` | HP | 补增伤害 |
-| `potential_damage_detail` | 文本 | `PlayerResult.potentialDamageDetailed` | — | API 返回 `PARSED`/`UNPARSED`，前端三语映射；导出使用中文 |
-| `damage_assisted` | 整数 | `PlayerResult.damageAssisted` | HP | #9 + #10 |
-| `damage_received` | 整数 | `PlayerResult.damageReceived` | HP | #11 |
-| `damage_blocked` | 整数 | `PlayerResult.damageBlocked` | HP | #117 |
-| `survival_time` | 浮点数 | `PlayerResult.survivalTimeSec` | 秒 | 存活者=durationS，阵亡者=#104>Damage>hybrid EntityLeave/Position |
-| `n_shots` | 整数 | `PlayerResult.nShots` | 次数 | #4 |
-| `n_hits_dealt` | 整数 | `PlayerResult.nHitsDealt` | 次数 | #5 |
-| `n_penetrations_dealt` | 整数 | `PlayerResult.nPenetrationsDealt` | 次数 | #7 |
-| `hit_rate` | 浮点数 | `nHitsDealt / nShots * 100` | % | 推导 |
-| `pen_rate` | 浮点数 | `nPenetrationsDealt / nShots * 100` | % | 推导 |
-| `n_hits_received` | 整数 | `PlayerResult.nHitsReceived` | 次数 | #12 |
-| `n_penetrations_received` | 整数 | `PlayerResult.nPenetrationsReceived` | 次数 | #15 |
-| `n_enemies_damaged` | 整数 | `PlayerResult.nEnemiesDamaged` | 人数 | #17 |
-| `platoon_label` | 文本 | `PlayerResult.platoonLabel` | — | 组队标记（名册 #201→#2→#2 推导） |
-| `tank_id` | 长整数 | `PlayerResult.tankId` | — | #103 |
-| `account_id` | 长整数 | `PlayerResult.accountId` | — | #101 |
+| 列 key                         | 类型  | 来源字段                                     | 单位/格式 | 说明                                                                              |
+|-------------------------------|-----|------------------------------------------|-------|---------------------------------------------------------------------------------|
+| `nickname`                    | 文本  | `PlayerResult.nickname`                  | —     | 昵称（名册 #201→#2→#1）                                                               |
+| `clan`                        | 文本  | `PlayerResult.clan`                      | —     | 战队（名册 #201→#2→#5）                                                               |
+| `tank_name`                   | 文本  | `Tankopedia.info(tankId).name()`         | —     | 车辆名（查表）                                                                         |
+| `tank_tier`                   | 整数  | `Tankopedia.info(tankId).tier()`         | 等级    | 车辆等级（查表）                                                                        |
+| `tank_type`                   | 文本  | `Tankopedia.info(tankId).type()`         | —     | API 稳定码：`HEAVY_TANK`/`MEDIUM_TANK`/`LIGHT_TANK`/`TANK_DESTROYER`/`OTHER`；导出使用中文 |
+| `tank_nation`                 | 文本  | `Tankopedia.info(tankId).nation()`       | —     | API 稳定国家码；导出使用中文                                                                |
+| `rating`                      | 整数  | `PlayerResult.rating`                    | 评分    | EC 标准化评分（Rating 计算）                                                             |
+| `survived_label`              | 文本  | `PlayerResult.survived`                  | —     | API 返回 `SURVIVED`/`DESTROYED`，前端映射存活/阵亡（#105==-1 → 存活）                          |
+| `kills`                       | 整数  | `PlayerResult.kills`                     | 人数    | #18                                                                             |
+| `damage_dealt`                | 整数  | `PlayerResult.damageDealt`               | HP    | #8                                                                              |
+| `potential_damage`            | 整数  | `PlayerResult.potentialDamage`           | HP    | 潜在伤害                                                                            |
+| `potential_damage_supplement` | 整数  | `PlayerResult.potentialDamageSupplement` | HP    | 补增伤害                                                                            |
+| `potential_damage_detail`     | 文本  | `PlayerResult.potentialDamageDetailed`   | —     | API 返回 `PARSED`/`UNPARSED`，前端三语映射；导出使用中文                                        |
+| `damage_assisted`             | 整数  | `PlayerResult.damageAssisted`            | HP    | #9 + #10                                                                        |
+| `damage_received`             | 整数  | `PlayerResult.damageReceived`            | HP    | #11                                                                             |
+| `damage_blocked`              | 整数  | `PlayerResult.damageBlocked`             | HP    | #117                                                                            |
+| `survival_time`               | 浮点数 | `PlayerResult.survivalTimeSec`           | 秒     | 存活者=durationS，阵亡者=#104>Damage>hybrid EntityLeave/Position                       |
+| `n_shots`                     | 整数  | `PlayerResult.nShots`                    | 次数    | #4                                                                              |
+| `n_hits_dealt`                | 整数  | `PlayerResult.nHitsDealt`                | 次数    | #5                                                                              |
+| `n_penetrations_dealt`        | 整数  | `PlayerResult.nPenetrationsDealt`        | 次数    | #7                                                                              |
+| `hit_rate`                    | 浮点数 | `nHitsDealt / nShots * 100`              | %     | 推导                                                                              |
+| `pen_rate`                    | 浮点数 | `nPenetrationsDealt / nShots * 100`      | %     | 推导                                                                              |
+| `n_hits_received`             | 整数  | `PlayerResult.nHitsReceived`             | 次数    | #12                                                                             |
+| `n_penetrations_received`     | 整数  | `PlayerResult.nPenetrationsReceived`     | 次数    | #15                                                                             |
+| `n_enemies_damaged`           | 整数  | `PlayerResult.nEnemiesDamaged`           | 人数    | #17                                                                             |
+| `platoon_label`               | 文本  | `PlayerResult.platoonLabel`              | —     | 组队标记（名册 #201→#2→#2 推导）                                                          |
+| `tank_id`                     | 长整数 | `PlayerResult.tankId`                    | —     | #103                                                                            |
+| `account_id`                  | 长整数 | `PlayerResult.accountId`                 | —     | #101                                                                            |
 
 ### 汇总列（AggregateSheets / AGG_COLS）
 
-| 列 key | 类型 | 计算方式 | 单位 |
-|--------|------|----------|------|
-| `battles` | 整数 | Sum | 场次 |
-| `wins` | 整数 | Sum（team==winnerTeam） | 场次 |
-| `win_rate` | 浮点数 | `wins/battles * 100` | % |
-| `survival_rate` | 浮点数 | `survived/battles * 100` | % |
-| `survival_avg` | 浮点数 | `survivalSum/battles` | 秒 |
-| `rating_avg` | 浮点数 | `ratingSum/battles` | 评分/场 |
-| `kills` | 整数 | Sum | 人数 |
-| `kills_avg` | 浮点数 | `kills/battles` | 人数/场 |
-| `damage` | 整数 | Sum | HP |
-| `damage_avg` | 浮点数 | `damage/battles` | HP/场 |
-| `assisted` | 整数 | Sum | HP |
-| `assisted_avg` | 浮点数 | `assisted/battles` | HP/场 |
-| `received_avg` | 浮点数 | `received/battles` | HP/场 |
-| `blocked_avg` | 浮点数 | `blocked/battles` | HP/场 |
-| `hit_rate` | 浮点数 | `hits/shots * 100` | % |
-| `pen_rate` | 浮点数 | `pens/shots * 100` | % |
-| `shots` | 整数 | Sum | 次数 |
-| `hits` | 整数 | Sum | 次数 |
-| `pens` | 整数 | Sum | 次数 |
+| 列 key                 | 类型  | 计算方式                     | 单位   |
+|-----------------------|-----|--------------------------|------|
+| `battles`             | 整数  | Sum                      | 场次   |
+| `wins`                | 整数  | Sum（team==winnerTeam）    | 场次   |
+| `win_rate`            | 浮点数 | `wins/battles * 100`     | %    |
+| `survival_rate`       | 浮点数 | `survived/battles * 100` | %    |
+| `survival_avg`        | 浮点数 | `survivalSum/battles`    | 秒    |
+| `rating_avg`          | 浮点数 | `ratingSum/battles`      | 评分/场 |
+| `kills`               | 整数  | Sum                      | 人数   |
+| `kills_avg`           | 浮点数 | `kills/battles`          | 人数/场 |
+| `damage`              | 整数  | Sum                      | HP   |
+| `damage_avg`          | 浮点数 | `damage/battles`         | HP/场 |
+| `assisted`            | 整数  | Sum                      | HP   |
+| `assisted_avg`        | 浮点数 | `assisted/battles`       | HP/场 |
+| `received_avg`        | 浮点数 | `received/battles`       | HP/场 |
+| `blocked_avg`         | 浮点数 | `blocked/battles`        | HP/场 |
+| `hit_rate`            | 浮点数 | `hits/shots * 100`       | %    |
+| `pen_rate`            | 浮点数 | `pens/shots * 100`       | %    |
+| `shots`               | 整数  | Sum                      | 次数   |
+| `hits`                | 整数  | Sum                      | 次数   |
+| `pens`                | 整数  | Sum                      | 次数   |
 | `enemies_damaged_avg` | 浮点数 | `enemiesDamaged/battles` | 人数/场 |
-| `tanks` | 文本 | `Map<车辆名, 场次>` | — |
-| `account_id` | 长整数 | — | — |
+| `tanks`               | 文本  | `Map<车辆名, 场次>`           | —    |
+| `account_id`          | 长整数 | —                        | —    |
 
 ---
 
 ## 单位速查
 
-| 含义 | 单位 | 说明 |
-|------|------|------|
-| 伤害值 | **HP** | 游戏内生命值点数 |
-| 存活时间 | **秒** | 3 层 fallback（#104→Damage→hybrid EntityLeave/Position） |
-| 战斗时长 | **秒** | `meta.json#battleDuration`（浮点） |
-| 时间戳 | **Unix 秒** | 自 1970-01-01 起的秒数 |
-| 次数/计数 | **次** | 射击/命中/击杀/人数 |
-| 百分比 | **%** | `0.0-100.0` |
-| 评分 | **rating** | EC 归一化评分（≈200-1500） |
-| 银币 | **银币** | 字段 #106（未使用） |
-| 经验 | **经验** | 字段 #23（未使用） |
+| 含义    | 单位         | 说明                                                    |
+|-------|------------|-------------------------------------------------------|
+| 伤害值   | **HP**     | 游戏内生命值点数                                              |
+| 存活时间  | **秒**      | 3 层 fallback（#104→Damage→hybrid EntityLeave/Position） |
+| 战斗时长  | **秒**      | `meta.json#battleDuration`（浮点）                        |
+| 时间戳   | **Unix 秒** | 自 1970-01-01 起的秒数                                     |
+| 次数/计数 | **次**      | 射击/命中/击杀/人数                                           |
+| 百分比   | **%**      | `0.0-100.0`                                           |
+| 评分    | **rating** | EC 归一化评分（≈200-1500）                                   |
+| 银币    | **银币**     | 字段 #106（未使用）                                          |
+| 经验    | **经验**     | 字段 #23（未使用）                                           |
 
 ---
 
@@ -520,26 +531,30 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 
 当前 fallback 方案：
 
-| 层级 | 来源 | 适用场景 | 精度 |
-|------|------|----------|------|
-| 1 | proto #104 | 新版本回放（含此字段） | 精确 ms |
-| 2 | Damage (Type 8 sub 8 sub=3) | 所有受到直接 HP 伤害的阵亡玩家 | 秒级（伤害事件间隔） |
-| 3 | EntityLeave / Position (hybrid) | EntityLeave 有假阳性时以 Position 为准 | 秒级 |
+| 层级 | 来源                              | 适用场景                           | 精度         |
+|----|---------------------------------|--------------------------------|------------|
+| 1  | proto #104                      | 新版本回放（含此字段）                    | 精确 ms      |
+| 2  | Damage (Type 8 sub 8 sub=3)     | 所有受到直接 HP 伤害的阵亡玩家              | 秒级（伤害事件间隔） |
+| 3  | EntityLeave / Position (hybrid) | EntityLeave 有假阳性时以 Position 为准 | 秒级         |
 
 Layer 2 为 **2026-06 新增**，解决了旧方法的两个缺陷：
+
 - EntityLeave 假阳性（实体临时离场被误判为阵亡）
 - Position 在一些模式里实体坐标持续更新至战斗结束（spectator 实体，阵亡不停止）
 
-**EntityLeave 限制：** EntityLeave（type 4）并非所有阵亡玩家都触发——约 30-50% 的死亡对应的实体不产生 leave 事件。需要 entity_id↔account_id 映射（来自 method 48 updateArena2 protobuf）。某些实体会多次 leave/enter，取最后一次 keep。部分 leave 是**假阳性**（临时离场而非阵亡），通过 Position 识别：若 Position 最后时间显著晚于 EntityLeave（>5s），以 Position 为准。
+**EntityLeave 限制：** EntityLeave（type 4）并非所有阵亡玩家都触发——约 30-50% 的死亡对应的实体不产生 leave 事件。需要
+entity_id↔account_id 映射（来自 method 48 updateArena2 protobuf）。某些实体会多次 leave/enter，取最后一次 keep。部分 leave 是
+**假阳性**（临时离场而非阵亡），通过 Position 识别：若 Position 最后时间显著晚于 EntityLeave（>5s），以 Position 为准。
 
-**Position 补充：** Position（type 10）覆盖大多数玩家实体，是比 EntityLeave 更可靠的死亡指标。阵亡后实体停止发送坐标更新。Damage 层已在第 2 层优先处理，EntityLeave/Position 仅作为第 3 层兜底。
+**Position 补充：** Position（type 10）覆盖大多数玩家实体，是比 EntityLeave 更可靠的死亡指标。阵亡后实体停止发送坐标更新。Damage
+层已在第 2 层优先处理，EntityLeave/Position 仅作为第 3 层兜底。
 
 ### 2. 战斗时长上限
 
 `meta.json#battleDuration` 已按标准随机战 7 分钟截断：`Math.min(val, 420)`。
 
 ---
- 
+
 ## 完整回放重建（2026-07 新增）
 
 从 `data.wotreplay` 完整扫描事件流并重建战场状态的独立能力。
@@ -589,6 +604,7 @@ ReplayReconstruction 输出
 ### 新增/修改文件 (wotb-core)
 
 **stream 包**:
+
 - `replay/stream/PacketReadStatus.java` — 包读取状态枚举
 - `replay/stream/RawReplayPacket.java` — 原始包 record（共享 source 数组）
 - `replay/stream/ReplayStreamHeader.java` — 流头部模型
@@ -598,6 +614,7 @@ ReplayReconstruction 输出
 - `replay/stream/ReplayPacketStreamReader.java` — 流读取器
 
 **event 包**:
+
 - `replay/event/ReplayTimestamp.java` — 双时间模型（raw + battle）
 - `replay/event/DecodeConfidence.java` — 解码置信度
 - `replay/event/ReplayEvent.java` — 领域事件接口
@@ -612,6 +629,7 @@ ReplayReconstruction 输出
 - `replay/event/ParticipantMappingEvent.java` — 账号映射
 
 **decoder 包**:
+
 - `replay/decoder/ReplayDecodeContext.java` — 解码上下文
 - `replay/decoder/DecodeStatus.java` — 解码状态
 - `replay/decoder/ReplayDecodeWarning.java` — 解码警告
@@ -628,6 +646,7 @@ ReplayReconstruction 输出
 - `replay/decoder/PlaceholderDecoder.java` — 占位解码器（Type 5/31/35/39）
 
 **reconstruction 包**:
+
 - `replay/reconstruction/LifeState.java` — 存活状态枚举
 - `replay/reconstruction/ObservationState.java` — 观测状态枚举
 - `replay/reconstruction/BattleLifecycle.java` — 战斗阶段枚举
@@ -645,35 +664,37 @@ ReplayReconstruction 输出
 - `replay/reconstruction/ReplayReconstructionService.java` — 服务编排
 
 ### 修改文件 (wotb-web)
+
 - `config/SecurityConfig.java` — 放行 `/api/replay/reconstruct` 和 `/api/replay/state-at`
 - `replay/controller/ReconstructionController.java` — 新建 controller
 - `replay/dto/ReconstructSummary.java` — 重建摘要 DTO
 - `replay/dto/StateAtResponse.java` — 状态查询 DTO
 
 ### 测试文件
+
 - `replay/stream/ReplayPacketStreamReaderTest.java` — 流读取单元测试
 
 ### 已支持的 packet type
 
-| Type | 含义 | 解码状态 | 说明 |
-|------|------|----------|------|
-| 0 | BasePlayerCreate | PARTIAL | 实体创建，payload 格式待深度解析 |
-| 1 | CellCreate | PARTIAL | 同上 |
-| 2 | Control/PlayerCreate | PARTIAL | 同上 |
-| 4 | EntityLeave | EXACT | entityId 精确提取 |
-| 8 | EntityMethod | EXACT | damage + updateArena2 映射 |
-| 10 | Position | EXACT | 完整位置解析，NaN/Infinity 验证 |
-| 14 | BattleEnd | EXACT/PARTIAL | 结束状态 + 胜方尝试 |
+| Type | 含义                   | 解码状态          | 说明                       |
+|------|----------------------|---------------|--------------------------|
+| 0    | BasePlayerCreate     | PARTIAL       | 实体创建，payload 格式待深度解析     |
+| 1    | CellCreate           | PARTIAL       | 同上                       |
+| 2    | Control/PlayerCreate | PARTIAL       | 同上                       |
+| 4    | EntityLeave          | EXACT         | entityId 精确提取            |
+| 8    | EntityMethod         | EXACT         | damage + updateArena2 映射 |
+| 10   | Position             | EXACT         | 完整位置解析，NaN/Infinity 验证   |
+| 14   | BattleEnd            | EXACT/PARTIAL | 结束状态 + 胜方尝试              |
 
 ### 部分支持的 packet type
 
-| Type | 含义 | 状态 | 说明 |
-|------|------|------|------|
-| 7 | EntityProperty | PARTIAL | 属性块结构识别中，血量/存活待研究 |
-| 5 | Spotting | UNKNOWN | 占位 |
-| 31 | Tracked/State | UNKNOWN | 占位 |
-| 35 | Chat | UNKNOWN | 占位 |
-| 39 | Map/NestedProperty | UNKNOWN | 占位 |
+| Type | 含义                 | 状态      | 说明                |
+|------|--------------------|---------|-------------------|
+| 7    | EntityProperty     | PARTIAL | 属性块结构识别中，血量/存活待研究 |
+| 5    | Spotting           | UNKNOWN | 占位                |
+| 31   | Tracked/State      | UNKNOWN | 占位                |
+| 35   | Chat               | UNKNOWN | 占位                |
+| 39   | Map/NestedProperty | UNKNOWN | 占位                |
 
 ### 尚未支持的 packet type
 
@@ -757,14 +778,14 @@ Body: file=<单个 .wotbreplay>
 
 回放里有两类数据，可靠性与用途不同，**AI 战术复盘以结算数据为权威源**：
 
-| 维度 | 权威来源 | 说明 |
-|------|----------|------|
-| 伤害 / 承伤 / 助攻 / 格挡 / 击杀 | `battle_results.dat` → `PlayerResult` | 游戏结算值，可靠 |
-| 是否存活 / **死亡时刻** / 存活时间 | `battle_results.dat` → `PlayerResult.survived` / `deathTimeMillis`(#104) / `survivalTimeSec` | 可靠；死亡时间线据此生成 |
-| 队伍 / 坦克 / 昵称 / 录像者 | `Battle` / `PlayerResult` / `Battle.recorderResult()` | 可靠 |
-| 胜负 / 地图 / 时长 / 模式 | `Battle.winnerTeam` / `mapName` / `durationS` / `arenaBonusType` | 可靠 |
-| 位置 / 走位时间线 | `data.wotreplay` type 10（重建） | 可靠（几何坐标） |
-| **逐帧血量 / 击毁事件** | —（type 7/8 尚不可靠） | **已知限制**：不作为血量/死亡来源，见 Type 7 小节 |
+| 维度                     | 权威来源                                                                                         | 说明                              |
+|------------------------|----------------------------------------------------------------------------------------------|---------------------------------|
+| 伤害 / 承伤 / 助攻 / 格挡 / 击杀 | `battle_results.dat` → `PlayerResult`                                                        | 游戏结算值，可靠                        |
+| 是否存活 / **死亡时刻** / 存活时间 | `battle_results.dat` → `PlayerResult.survived` / `deathTimeMillis`(#104) / `survivalTimeSec` | 可靠；死亡时间线据此生成                    |
+| 队伍 / 坦克 / 昵称 / 录像者     | `Battle` / `PlayerResult` / `Battle.recorderResult()`                                        | 可靠                              |
+| 胜负 / 地图 / 时长 / 模式      | `Battle.winnerTeam` / `mapName` / `durationS` / `arenaBonusType`                             | 可靠                              |
+| 位置 / 走位时间线             | `data.wotreplay` type 10（重建）                                                                 | 可靠（几何坐标）                        |
+| **逐帧血量 / 击毁事件**        | —（type 7/8 尚不可靠）                                                                             | **已知限制**：不作为血量/死亡来源，见 Type 7 小节 |
 
 ### AI 分析数据流（`/api/replay/analyze`，仅 `wotbtools-admin`）
 
@@ -800,12 +821,16 @@ files[]
 
 #### 视角规则
 
-| 战斗模式 | Scope | 分析对象 | 必要条件 |
-|----------|-------|----------|----------|
-| RANDOM | PLAYER_FOCUSED | 录像者个人 | recorderMapped=true |
-| TRAINING | TEAM_PERSPECTIVE | 整支队伍 | perspectiveTeamResolved=true |
-| TOURNAMENT | TEAM_PERSPECTIVE | 整支队伍 | perspectiveTeamResolved=true |
-| UNKNOWN | — | 抛出 UnsupportedBattleCategoryException | — |
+| 战斗模式       | Scope            | 分析对象                                       | 必要条件                                                      |
+|------------|------------------|--------------------------------------------|-----------------------------------------------------------|
+| RANDOM     | PLAYER_FOCUSED   | 录像者个人                                      | `recorderResultAvailable=true`（结算有录像者战绩）                  |
+| TRAINING   | TEAM_PERSPECTIVE | 整支队伍                                       | `perspectiveTeamResolved=true && teamFeatureSetAvailable` |
+| TOURNAMENT | TEAM_PERSPECTIVE | 整支队伍                                       | `perspectiveTeamResolved=true && teamFeatureSetAvailable` |
+| UNKNOWN    | —                | 抛出 UnsupportedBattleCategoryException（422） | —                                                         |
+
+`aiAnalyzable` = `summaryAvailable && recorderResultAvailable`，不要求 reconstruction。
+`fullFeatureAnalysisAvailable` =
+`aiAnalyzable && reconstructionAvailable && recorderEntityMapped && playerFeatureSetAvailable`。
 
 #### 去重与分组
 
@@ -815,11 +840,12 @@ files[]
 
 #### 错误处理
 
-| 错误 | 原因 | 行为 |
-|------|------|------|
-| NO_BATTLE_DATA | 战绩解析失败 | 不可分析 |
-| AI_NOT_CONFIGURED | 未配置 AI 密钥 | 返回 503 |
-| MIXED_REPLAY_RECORDERS | 多场随机战斗不同录像者 | 返回 400 |
-| MIXED_ANALYSIS_SCOPES | 同时包含随机和训练房 | 返回 400 |
-| UNSUPPORTED_BATTLE_CATEGORY | 战斗类型无法识别 | 返回 400 |
-| 文件级错误（损坏/过大/空） | 逐文件隔离 | 不影响其他文件 |
+| 错误                            | 原因                 | 行为      |
+|-------------------------------|--------------------|---------|
+| NO_BATTLE_DATA                | 战绩解析失败             | 不可分析    |
+| AI_NOT_CONFIGURED             | 未配置 AI 密钥          | 返回 503  |
+| MIXED_REPLAY_RECORDERS        | 多场随机战斗不同录像者        | 返回 400  |
+| MIXED_ANALYSIS_SCOPES         | 同时包含随机/训练房/UNKNOWN | 返回 400  |
+| UNSUPPORTED_BATTLE_CATEGORY   | 战斗类型无法识别           | 返回 422  |
+| TEAM_ANALYSIS_NOT_IMPLEMENTED | 团队视角尚未实现           | 返回 422  |
+| 文件级错误（损坏/过大/空）                | 逐文件隔离              | 不影响其他文件 |
