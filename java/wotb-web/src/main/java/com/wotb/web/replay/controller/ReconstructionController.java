@@ -5,6 +5,8 @@ import com.wotb.core.model.Source;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.ReplayAnalysisMode;
 import com.wotb.core.processing.ReplayBatchProcessingResult;
+import com.wotb.core.processing.ReplayFileAnalysisStatus;
+import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
@@ -112,32 +114,41 @@ public class ReconstructionController {
 
         validateBatch(files);
 
-        final List<Source> sources = new ArrayList<>();
+        // 逐文件处理（非先全部读取再处理）：降低内存峰值
+        final List<ReplayProcessingResult> analyzable = new ArrayList<>();
+        final List<ReplayFileAnalysisStatus> fileStatuses = new ArrayList<>();
         for (final MultipartFile f : files) {
-            sources.add(new Source(
-                    f.getOriginalFilename() != null ? f.getOriginalFilename() : "replay.wotbreplay",
-                    f.getBytes()));
+            final String name = f.getOriginalFilename() != null ? f.getOriginalFilename() : "replay.wotbreplay";
+            final byte[] bytes = f.getBytes();
+            final ReplayProcessingResult result = processingFacade.process(new Source(name, bytes),
+                    ReplayProcessingOptions.full());
+            final boolean included = result.capabilities() != null && result.capabilities().aiAnalyzable();
+            fileStatuses.add(ReplayFileAnalysisStatus.from(result, included));
+            if (included) {
+                analyzable.add(result);
+            }
+            // bytes 在此释放（无引用后 GC 回收）
         }
 
-        final ReplayBatchProcessingResult batch =
-                processingFacade.processBatch(sources, ReplayProcessingOptions.full());
+        final int total = files.length;
+        final int aiCount = analyzable.size();
+        final int success = (int) fileStatuses.stream().filter(s -> s.status() == ReplayProcessingStatus.SUCCESS).count();
+        final int partial = (int) fileStatuses.stream().filter(s -> s.status() == ReplayProcessingStatus.PARTIAL_SUCCESS).count();
+        final int failed = total - success - partial;
+        final int dup = (int) fileStatuses.stream().filter(ReplayFileAnalysisStatus::duplicate).count();
 
-        // 仅取真正可分析（战绩成功）的结果，保留上传顺序
-        final List<ReplayProcessingResult> analyzable = batch.results().stream()
-                .filter(r -> r.battle() != null)
-                .toList();
-
-        if (analyzable.isEmpty()) {
+        if (aiCount == 0) {
             throw new IllegalArgumentException("NO_BATTLE_DATA");
         }
 
-        if (analyzable.size() == 1) {
+        final int battleCount = analyzable.size();
+        if (battleCount == 1) {
             final ReplayProcessingResult one = analyzable.get(0);
             final AiReplayAnalysisService.AnalyzeResult result =
                     aiService.analyze(one.battle(), one.reconstruction());
             return new AnalyzeResponse(
-                    ReplayAnalysisMode.SINGLE_BATTLE.name(),
-                    result.analysis(), result.model(), 1, result.keyEvents());
+                    ReplayAnalysisMode.SINGLE_BATTLE.name(), result.analysis(), result.model(),
+                    total, battleCount, success, partial, failed, dup, fileStatuses, result.keyEvents());
         }
 
         final List<Battle> battles = analyzable.stream()
@@ -146,7 +157,8 @@ public class ReconstructionController {
         final AiReplayAnalysisService.AnalyzeResult result = aiService.analyzeMulti(battles);
         return new AnalyzeResponse(
                 ReplayAnalysisMode.MULTI_BATTLE.name(),
-                result.analysis(), result.model(), battles.size(), result.keyEvents());
+                result.analysis(), result.model(),
+                total, battleCount, success, partial, failed, dup, fileStatuses, result.keyEvents());
     }
 
     /**

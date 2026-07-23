@@ -244,8 +244,9 @@ function fmtJson(obj) {
         <pre class="json-block">{{ fmtJson(reconResult) }}</pre>
       </details>
 
-      <!-- AI 分析：仅 wotbtools-admin 可见（灰度）；重建出结果后才出现 -->
-      <div v-if="isAdmin" class="ai-action">
+    </div>
+      <!-- AI 分析：仅 wotbtools-admin 可见（灰度）；不依赖重建结果 -->
+      <div v-if="isAdmin && files.length > 0" class="ai-action" style="margin-top:16px">
         <button v-if="!analysisResult" class="lg" :disabled="analyzing" @click="runAnalyze">
           {{ analyzing ? $t('action.processing')
              : (files.length > 1 ? $t('recon.analyze_multi_btn', { n: files.length })
@@ -255,7 +256,6 @@ function fmtJson(obj) {
           {{ showAnalysis ? $t('recon.hide_analysis') : $t('recon.show_analysis') }}
         </button>
       </div>
-    </div>
 
     <div v-if="analysisResult && showAnalysis" class="panel" style="margin-top:16px">
       <div class="panel-head">

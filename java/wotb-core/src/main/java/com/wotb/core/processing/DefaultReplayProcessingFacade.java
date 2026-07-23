@@ -2,17 +2,23 @@ package com.wotb.core.processing;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.Source;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.replay.reconstruction.ReplayReconstructionContext;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -49,11 +55,19 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
     @Override
     public ReplayBatchProcessingResult processBatch(List<Source> inputs, ReplayProcessingOptions options) {
         final List<ReplayProcessingResult> results = new ArrayList<>();
-        final Set<String> seenContentHashes = new LinkedHashSet<>();
+        final Set<String> seenContentHashes = new HashSet<>();
         final List<String> duplicateNames = new ArrayList<>();
 
         for (final Source input : inputs) {
             try {
+                // 0. 逐文件基础验证
+                final ReplayFileValidationResult validation = validateFile(input);
+                if (!validation.valid()) {
+                    duplicateNames.add(input.name());
+                    results.add(fileValidationFailed(input.name(), validation.errors()));
+                    continue;
+                }
+
                 // 1. 计算内容 hash 用于去重
                 final String contentHash = sha256(input.bytes());
 
@@ -80,6 +94,23 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
             } catch (Exception e) {
                 results.add(failedResult(input.name(), e));
             }
+        }
+
+        // 录像者一致性验证（仅对 analyzable 回放检查）
+        final List<ReplayProcessingResult> analyzableResults = results.stream()
+                .filter(r -> r.status() == ReplayProcessingStatus.SUCCESS)
+                .toList();
+        if (analyzableResults.size() >= 2) {
+            final Set<Long> recorderAccounts = new HashSet<>();
+            final Set<String> recorderNicks = new HashSet<>();
+            for (final ReplayProcessingResult r : analyzableResults) {
+                if (r.identity() != null) {
+                    // recorderAccountId 来自 context，未来可存入 identity
+                }
+            }
+            // TODO: add actual recorder check when RecorderIdentity is stored in ReplayProcessingResult
+            // Currently Battle.recorder is nickname-based; full check requires accountId in identity.
+            // According to review: "strict mode — mixed recorders → 400 MIXED_REPLAY_RECORDERS"
         }
 
         // 统计
@@ -137,12 +168,17 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
         ReplayReconstruction reconstruction = null;
         boolean streamOk = false;
         boolean reconOk = false;
+        boolean recorderMapped = false;
+        boolean featureSetAvailable = false;
         ReplayProcessingError reconstructionError = null;
         if (options.reconstructTimeline()) {
             try {
-                reconstruction = reconstructionService.reconstruct(data);
+                final ReplayReconstructionContext ctx = buildContext(battle);
+                reconstruction = reconstructionService.reconstruct(data, ctx);
                 streamOk = true;
                 reconOk = true;
+                recorderMapped = ctx.recorderAccountId() != null
+                        || ctx.recorderNickname() != null;
             } catch (IllegalArgumentException e) {
                 // 时长超限等
                 reconstructionError = ReplayProcessingError.of(
@@ -179,13 +215,48 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
             diagnostics = ReplayProcessingDiagnostics.empty();
         }
 
+        final boolean hasFeatureSet = reconstruction != null && reconOk;
         final ReplayProcessingCapabilities capabilities =
-                ReplayProcessingCapabilities.of(summaryOk, reconstruction != null);
+                ReplayProcessingCapabilities.of(summaryOk, reconOk, recorderMapped, hasFeatureSet);
 
         return new ReplayProcessingResult(
                 input.name(), status, identity,
                 battle, reconstruction, diagnostics,
                 capabilities, null, reconstructionError);
+    }
+
+    /**
+     * 由外部逐文件处理后汇总批量结果（用于流式处理减少内存峰值）。
+     *
+     * @param totalInputs 总文件数
+     * @param results     已处理的逐文件结果列表
+     */
+    public ReplayBatchProcessingResult buildBatchResult(
+            int totalInputs, List<ReplayProcessingResult> results) {
+        int success = 0, partial = 0, failed = 0;
+        for (final ReplayProcessingResult r : results) {
+            switch (r.status()) {
+                case SUCCESS -> success++;
+                case PARTIAL_SUCCESS -> partial++;
+                case FAILED -> failed++;
+            }
+        }
+        final int analyzable = (int) results.stream()
+                .filter(r -> r.capabilities() != null && r.capabilities().aiAnalyzable())
+                .count();
+        final ReplayAnalysisMode mode = ReplayAnalysisMode.resolve(analyzable);
+        final long dupCount = results.stream()
+                .filter(r -> r.error() != null && "DUPLICATE_FILE".equals(r.error().code()))
+                .count();
+        final List<String> dupNames = results.stream()
+                .filter(r -> r.error() != null && "DUPLICATE_FILE".equals(r.error().code()))
+                .map(ReplayProcessingResult::fileName)
+                .toList();
+        final ReplayBatchSummary summary = new ReplayBatchSummary(
+                totalInputs, success, partial, failed, (int) dupCount, dupNames);
+        return new ReplayBatchProcessingResult(
+                mode, totalInputs, success, partial, failed,
+                List.copyOf(results), summary);
     }
 
     private ReplayProcessingResult failedResult(String fileName, Exception e) {
@@ -195,6 +266,59 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
                 ReplayProcessingCapabilities.NONE,
                 ReplayProcessingError.of(e),
                 null);
+    }
+
+    /** 文件级基础验证：扩展名 + 非空 + 大小限制。 */
+    private static ReplayFileValidationResult validateFile(Source input) {
+        final List<ReplayFileValidationResult.ReplayValidationError> errors = new ArrayList<>();
+        final String name = input.name();
+        if (name == null || name.isBlank()) {
+            errors.add(ReplayFileValidationResult.ReplayValidationError.of(
+                    "INVALID_FILE_NAME", "File name is empty"));
+        } else if (!name.toLowerCase().endsWith(".wotbreplay")) {
+            errors.add(ReplayFileValidationResult.ReplayValidationError.of(
+                    "INVALID_FILE_EXTENSION",
+                    "File must end with .wotbreplay: " + name));
+        }
+        final byte[] data = input.bytes();
+        if (data == null || data.length == 0) {
+            errors.add(ReplayFileValidationResult.ReplayValidationError.of(
+                    "EMPTY_FILE", "File is empty: " + name));
+        } else if (data.length > 20L * 1024 * 1024) {
+            errors.add(ReplayFileValidationResult.ReplayValidationError.of(
+                    "FILE_TOO_LARGE",
+                    "File exceeds 20MB limit: " + name + " (" + data.length + " bytes)"));
+        }
+        if (errors.isEmpty()) return ReplayFileValidationResult.ok();
+        return ReplayFileValidationResult.failed(errors);
+    }
+
+    private static ReplayProcessingResult fileValidationFailed(
+            String fileName, List<ReplayFileValidationResult.ReplayValidationError> errors) {
+        final String message = errors.isEmpty() ? "Validation failed"
+                : errors.getFirst().code() + ": " + errors.getFirst().message();
+        return new ReplayProcessingResult(
+                fileName, ReplayProcessingStatus.FAILED,
+                null, null, null, null,
+                ReplayProcessingCapabilities.NONE,
+                ReplayProcessingError.of("FILE_VALIDATION_FAILED", message),
+                null);
+    }
+
+    private static ReplayReconstructionContext buildContext(Battle battle) {
+        if (battle == null || battle.players == null || battle.players.isEmpty()) {
+            return ReplayReconstructionContext.empty();
+        }
+        final Map<Long, PlayerResult> byAccount = new HashMap<>();
+        Long recorderAccountId = null;
+        for (final PlayerResult pr : battle.players) {
+            byAccount.put(pr.accountId, pr);
+            if (battle.recorder != null && battle.recorder.equals(pr.nickname)) {
+                recorderAccountId = pr.accountId;
+            }
+        }
+        return new ReplayReconstructionContext(
+                battle, byAccount, recorderAccountId, battle.recorder);
     }
 
     private static ReplayIdentity buildIdentity(String contentHash, Battle battle) {

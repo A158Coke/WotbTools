@@ -3,9 +3,12 @@ package com.wotb.core.replay.reconstruction;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
+import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.decoder.ReplayDecodeContext;
 import com.wotb.core.replay.decoder.ReplayDecodeResult;
 import com.wotb.core.replay.decoder.ReplayPacketDecoderRegistry;
+import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.stream.PacketTypeDiagnostics;
 import com.wotb.core.replay.stream.RawReplayPacket;
@@ -20,26 +23,13 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 /**
  * 回放重建服务 —— 协调完整重建流程的主入口。
- * <p>
- * 职责：
- * <ol>
- *   <li>解压 .wotbreplay ZIP 存档</li>
- *   <li>读取 data.wotreplay 原始流</li>
- *   <li>解析 meta.json 和 battle_results.dat 元数据</li>
- *   <li>解码所有原始包为领域事件</li>
- *   <li>重建战场状态</li>
- *   <li>计算覆盖率和诊断信息</li>
- *   <li>输出完整 ReplayReconstruction 结果</li>
- * </ol>
- * </p>
- *
- * <p>此服务无状态，多请求并发时互不污染。</p>
  */
 public class ReplayReconstructionService {
 
@@ -50,16 +40,8 @@ public class ReplayReconstructionService {
     private static final int MAX_DATA_WOTREPLAY_BYTES = 20 * 1024 * 1024;
     private static final int MAX_TOTAL_UNCOMPRESSED_BYTES = 24 * 1024 * 1024;
 
-    /**
-     * 最大允许时长（秒）
-     */
     private final float maxClockSec;
-
-    /**
-     * 时钟容差（秒）
-     */
     private final float clockToleranceSec;
-
     private final ReplayPacketDecoderRegistry decoderRegistry;
 
     public ReplayReconstructionService() {
@@ -73,30 +55,16 @@ public class ReplayReconstructionService {
     }
 
     /**
-     * 从 .wotbreplay 字节数组重建整场回放。
-     *
-     * @param replayBytes 完整的 .wotbreplay 文件内容
-     * @return 完整重建结果
-     * @throws IOException              如果存档损坏或元数据解析失败
-     * @throws IllegalArgumentException 如果超出安全限制
+     * 无上下文重建（仅基于事件流，不影响参与者映射）。
      */
     public ReplayReconstruction reconstruct(byte[] replayBytes) throws IOException {
-        return reconstruct(replayBytes, null, null);
+        return reconstruct(replayBytes, ReplayReconstructionContext.empty());
     }
 
     /**
-     * 从 .wotbreplay 字节数组重建整场回放。
-     *
-     * @param replayBytes      完整的 .wotbreplay 文件内容
-     * @param tankCodeResolver Tank ID → tankCode 的解析函数（可选）
-     * @param nicknameResolver 账号 → 昵称的解析函数（可选）
-     * @return 完整重建结果
+     * 带上下文重建 —— 使用 roster 丰富参与者映射。
      */
-    public ReplayReconstruction reconstruct(
-            byte[] replayBytes,
-            java.util.function.IntFunction<String> tankCodeResolver,
-            java.util.function.LongFunction<String> nicknameResolver) throws IOException {
-
+    public ReplayReconstruction reconstruct(byte[] replayBytes, ReplayReconstructionContext context) throws IOException {
         final var entries = unzip(replayBytes);
 
         // 1. 读取元数据
@@ -132,9 +100,7 @@ public class ReplayReconstructionService {
         for (final RawReplayPacket rawPacket : streamResult.packets()) {
             final ReplayDecodeResult result = decoderRegistry.decode(decodeContext, rawPacket);
 
-            // 初始化/更新类型统计
             typeDecodeStats.computeIfAbsent(rawPacket.type(), k -> new TypeDecodeStats());
-
             final TypeDecodeStats stats = typeDecodeStats.get(rawPacket.type());
             stats.total++;
 
@@ -149,19 +115,17 @@ public class ReplayReconstructionService {
         }
 
         // 5. 重建战场状态
-        // 按原始顺序排列（已在 stream 中保证 sequence 顺序）
         final BattleStateReconstructor reconstructor = new BattleStateReconstructor();
         final BattleStateReconstructor.ReconstructionResult reconstructionResult =
                 reconstructor.reconstruct(allEvents);
 
         // 6. 构建覆盖率
-        final ReplayCoverage coverage = buildCoverage(
-                streamResult.diagnostics(), typeDecodeStats);
+        final ReplayCoverage coverage = buildCoverage(streamResult.diagnostics(), typeDecodeStats);
 
-        // 7. 构建参与者列表（从事件中提取）
-        final List<BattleParticipant> participants = extractParticipants(allEvents, metadata);
+        // 7. 从事件流 + context 构建参与者
+        final List<BattleParticipant> participants = extractParticipants(allEvents, context);
 
-        // 8. 更新诊断中的解码计数
+        // 8. 更新诊断
         final ReplayStreamDiagnostics updatedDiagnostics = updateDiagnostics(
                 streamResult.diagnostics(), typeDecodeStats);
 
@@ -179,7 +143,7 @@ public class ReplayReconstructionService {
                 metadata,
                 streamResult.header(),
                 replayDuration,
-                null, // battleStartRawClockSec — 暂未识别
+                null,
                 participants,
                 List.copyOf(allEvents),
                 reconstructionResult.checkpoints(),
@@ -194,15 +158,16 @@ public class ReplayReconstructionService {
      */
     public BattleStateSnapshot stateAt(byte[] replayBytes, float timeSec) throws IOException {
         final ReplayReconstruction reconstruction = reconstruct(replayBytes);
+        final boolean hasClockRegression =
+                reconstruction.diagnostics() != null
+                && reconstruction.diagnostics().clockRegressionCount() > 0;
         return BattleStateReconstructor.stateAt(
                 timeSec,
                 reconstruction.events(),
-                reconstruction.checkpoints());
+                reconstruction.checkpoints(),
+                hasClockRegression);
     }
 
-    /**
-     * 获取 decoder registry（用于测试和扩展）。
-     */
     public ReplayPacketDecoderRegistry getDecoderRegistry() {
         return decoderRegistry;
     }
@@ -310,23 +275,34 @@ public class ReplayReconstructionService {
         );
     }
 
-    private static List<BattleParticipant> extractParticipants(
-            List<ReplayEvent> events, ReplayMetadata metadata) {
+    static List<BattleParticipant> extractParticipants(
+            List<ReplayEvent> events, ReplayReconstructionContext context) {
 
-        // 从 ParticipantMappingEvent 中提取
-        final Map<Long, Integer> accToEntity = new HashMap<>();
+        // 从事件流中提取 entity→account 映射
+        final Map<Long, Integer> entityByAccount = new HashMap<>();
         for (final ReplayEvent event : events) {
-            if (event instanceof com.wotb.core.replay.event.ParticipantMappingEvent pm) {
-                accToEntity.put(pm.accountId(), pm.entityId());
+            if (event instanceof ParticipantMappingEvent pm) {
+                entityByAccount.put(pm.accountId(), pm.entityId());
             }
         }
 
-        // 由于重建阶段没有完整的 roster 信息
-        // 参与者信息暂时只包含已知映射，nickname 和 tankCode 留空
+        // 使用 context 中的 roster 丰富参与者信息
+        final Map<Long, PlayerResult> roster = context.playersByAccountId();
+        final Battle battle = context.battle();
+        final String recorderNick = context.recorderNickname();
+
         final List<BattleParticipant> participants = new ArrayList<>();
-        for (final Map.Entry<Long, Integer> entry : accToEntity.entrySet()) {
+        for (final Map.Entry<Long, Integer> entry : entityByAccount.entrySet()) {
+            final long accountId = entry.getKey();
+            final PlayerResult pr = roster.get(accountId);
+            final String nickname = pr != null ? pr.nickname : "";
+            final int team = pr != null ? pr.team : 0;
+            final long tankId = pr != null ? pr.tankId : 0;
+            final boolean isRecorder = accountId == (context.recorderAccountId() != null ? context.recorderAccountId() : -1L)
+                    || (recorderNick != null && nickname.equals(recorderNick));
+
             participants.add(new BattleParticipant(
-                    entry.getKey(), "", 0, 0, "", false));
+                    accountId, nickname, team, (int) tankId, "", isRecorder));
         }
 
         return participants;
