@@ -13,6 +13,9 @@ import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingError;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
+import com.wotb.core.processing.BatchAnalyzer;
+import com.wotb.core.processing.ReplayFileRelation;
+import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
@@ -104,10 +107,12 @@ public class ReconstructionController {
     /**
      * AI 战术复盘（支持一个或多个文件）。
      * <p>
-     * 经统一处理门面 {@link DefaultReplayProcessingFacade} 逐文件解析（战绩=权威源，
-     * 完整重建补充位置维度、失败可降级）。模式按<b>真正可分析（战绩解析成功）的回放数量</b>确定：
-     * 0 → NONE（NO_BATTLE_DATA）；1 → 单场深度复盘；≥2 → 多场趋势复盘（每场独立 + 聚合，
-     * 不拼接原始事件流）。
+     * 使用统一批量处理流程：
+     * <ol>
+     *   <li>逐文件 process()</li>
+     *   <li>BatchAnalyzer 视角分组 + 代表选择 + mode 判定</li>
+     *   <li>scope 感知的 AI 调用</li>
+     * </ol>
      * </p>
      * POST /api/replay/analyze
      */
@@ -117,53 +122,95 @@ public class ReconstructionController {
 
         validateBatch(files);
 
-        // 逐文件处理（非先全部读取再处理）：降低内存峰值
-        final List<ReplayProcessingResult> analyzable = new ArrayList<>();
-        final List<ReplayFileAnalysisStatus> fileStatuses = new ArrayList<>();
+        // 1. 逐文件处理（非先全部读取再处理）：降低内存峰值
+        final List<ReplayProcessingResult> allResults = new ArrayList<>();
         for (final MultipartFile f : files) {
             final String name = f.getOriginalFilename() != null ? f.getOriginalFilename() : "replay.wotbreplay";
             final byte[] bytes = f.getBytes();
-            final ReplayProcessingResult result = processingFacade.process(new Source(name, bytes),
-                    ReplayProcessingOptions.full());
-            final var cap = result.capabilities();
-            if (cap != null && cap.aiAnalyzable()) {
-                fileStatuses.add(ReplayFileAnalysisStatus.primary(name, result.status(),
-                        BattleCategory.RANDOM, ReplayAnalysisScope.PLAYER_FOCUSED,
-                        null, null, cap));
-                analyzable.add(result);
-            } else if (result.error() != null) {
-                fileStatuses.add(ReplayFileAnalysisStatus.failed(name, result.error()));
-            } else {
-                fileStatuses.add(ReplayFileAnalysisStatus.failed(name,
-                        ReplayProcessingError.of("NOT_ANALYZABLE", "Not AI-analyzable")));
-            }
-            // bytes 在此释放（无引用后 GC 回收）
+            allResults.add(processingFacade.process(
+                    new Source(name, bytes), ReplayProcessingOptions.full()));
+            // bytes 释放后 GC 回收
         }
 
-        final int total = files.length;
-        final int aiCount = analyzable.size();
-        final int success = (int) fileStatuses.stream().filter(s -> s.status() == ReplayProcessingStatus.SUCCESS).count();
-        final int partial = (int) fileStatuses.stream().filter(s -> s.status() == ReplayProcessingStatus.PARTIAL_SUCCESS).count();
-        final int failed = total - success - partial;
+        // 2. BatchAnalyzer 视角分组 + 模式判定
+        final BatchAnalyzer analyzer = new BatchAnalyzer();
+        final BatchAnalyzer.AnalysisPlan plan = analyzer.analyze(allResults);
 
-        if (aiCount == 0) {
+        // 3. 构建文件状态
+        final List<ReplayFileAnalysisStatus> fileStatuses = new ArrayList<>();
+        for (final var gp : plan.groups()) {
+            final var rep = gp.representative();
+            final var cap = rep.capabilities();
+            fileStatuses.add(ReplayFileAnalysisStatus.primary(
+                    rep.fileName(), rep.status(),
+                    BattleCategory.RANDOM, plan.dominantScope(),
+                    rep.battle() != null ? rep.battle().arenaId : null,
+                    0, cap));
+            for (final var dup : gp.duplicates()) {
+                fileStatuses.add(ReplayFileAnalysisStatus.duplicate(
+                        dup.fileName(),
+                        ReplayFileRelation.SAME_TEAM_DUPLICATE_PERSPECTIVE,
+                        rep.fileName()));
+            }
+        }
+        // 失败文件
+        for (final ReplayProcessingResult r : allResults) {
+            if (r.status() == ReplayProcessingStatus.FAILED) {
+                fileStatuses.add(ReplayFileAnalysisStatus.failed(
+                        r.fileName(), r.error() != null ? r.error()
+                                : ReplayProcessingError.of("FAILED", "Processing failed")));
+            }
+        }
+
+        // 4. 统计
+        final int total = files.length;
+        final int analyzableCount = (int) allResults.stream()
+                .filter(r -> r.capabilities() != null && r.capabilities().aiAnalyzable())
+                .count();
+        final int successCount = (int) allResults.stream()
+                .filter(r -> r.status() == ReplayProcessingStatus.SUCCESS).count();
+        final int partialCount = (int) allResults.stream()
+                .filter(r -> r.status() == ReplayProcessingStatus.PARTIAL_SUCCESS).count();
+        final int failedCount = total - successCount - partialCount;
+        final int dupCount = (int) allResults.stream()
+                .filter(r -> r.status() == ReplayProcessingStatus.FAILED
+                        && r.error() != null && "DUPLICATE_FILE".equals(r.error().code()))
+                .count();
+
+        if (analyzableCount == 0) {
             throw new IllegalArgumentException("NO_BATTLE_DATA");
         }
 
-        final int battleCount = analyzable.size();
-        if (battleCount == 1) {
+        // 5. 按 scope 调用 AI
+        final int effectiveUnits = plan.effectiveUnitCount();
+        if (plan.dominantScope() == ReplayAnalysisScope.PLAYER_FOCUSED) {
+            final var reps = plan.groups().stream()
+                    .map(ReplayPerspectiveGroup::representative)
+                    .toList();
+            if (effectiveUnits == 1) {
+                // 单场随机战斗
+                final var rep = reps.getFirst();
+                final var aiResult = aiService.analyze(rep.battle(), rep.reconstruction());
+                return new AnalyzeResponse(
+                        ReplayAnalysisMode.SINGLE_PLAYER_BATTLE,
+                        total, analyzableCount, effectiveUnits, 1, failedCount, dupCount, 0,
+                        fileStatuses, List.of(), aiResult.keyEvents());
+            }
+            // 多场随机战斗
+            final var battles = reps.stream()
+                    .map(ReplayProcessingResult::battle)
+                    .toList();
+            final var aiResult = aiService.analyzeMulti(battles);
             return new AnalyzeResponse(
-                    ReplayAnalysisMode.SINGLE_PLAYER_BATTLE,
-                    total, analyzable.size(), 1, 1, failed, 0, 0,
-                    fileStatuses, List.of(), List.of());
+                    ReplayAnalysisMode.MULTI_PLAYER_BATTLE,
+                    total, analyzableCount, effectiveUnits, effectiveUnits, failedCount, dupCount, 0,
+                    fileStatuses, List.of(), aiResult.keyEvents());
         }
 
-        final List<Battle> battles = analyzable.stream()
-                .map(ReplayProcessingResult::battle)
-                .toList();
+        // TEAM_PERSPECTIVE 或无 scope
         return new AnalyzeResponse(
-                ReplayAnalysisMode.MULTI_PLAYER_BATTLE,
-                total, total, battles.size(), battles.size(), failed, 0, 0,
+                plan.mode(),
+                total, analyzableCount, effectiveUnits, 0, failedCount, dupCount, 0,
                 fileStatuses, List.of(), List.of());
     }
 
