@@ -10,9 +10,6 @@ import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.feature.MultiPlayerBattleAnalysisContext;
-import com.wotb.core.replay.feature.PlayerBattleAnalysisSummary;
-import com.wotb.core.replay.feature.PlayerAggregate;
-import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,7 +22,6 @@ import org.springframework.web.client.RestClientResponseException;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;

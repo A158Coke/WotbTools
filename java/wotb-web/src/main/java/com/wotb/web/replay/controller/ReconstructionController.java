@@ -200,7 +200,8 @@ public class ReconstructionController {
                 final var aiResult = callPlayerContext(rep);
                 return new AnalyzeResponse(
                         ReplayAnalysisMode.SINGLE_PLAYER_BATTLE,
-                        total, analyzableCount, effectiveUnits, 1, failedCount, dupCount, 0,
+                        total, analyzableCount, effectiveUnits, 1, effectiveUnits,
+                        aiResult.analysis(), failedCount, dupCount, 0,
                         fileStatuses, buildAnalysisUnits(plan.groups()), aiResult.keyEvents());
             }
             // 多场随机战斗
@@ -210,14 +211,16 @@ public class ReconstructionController {
             final var aiResult = aiService.analyzeMulti(battles);
             return new AnalyzeResponse(
                     ReplayAnalysisMode.MULTI_PLAYER_BATTLE,
-                    total, analyzableCount, effectiveUnits, effectiveUnits, failedCount, dupCount, 0,
+                    total, analyzableCount, effectiveUnits, effectiveUnits, effectiveUnits,
+                    aiResult.analysis(), failedCount, dupCount, 0,
                     fileStatuses, buildAnalysisUnits(plan.groups()), aiResult.keyEvents());
         }
 
         // TEAM_PERSPECTIVE 或无 scope
         return new AnalyzeResponse(
                 plan.mode(),
-                total, analyzableCount, effectiveUnits, 0, failedCount, dupCount, 0,
+                total, analyzableCount, effectiveUnits, 0, 0, "",
+                failedCount, dupCount, 0,
                 fileStatuses, buildAnalysisUnits(plan.groups()), List.of());
     }
 
@@ -334,17 +337,31 @@ public class ReconstructionController {
                 final var ctx = new SinglePlayerBattleAnalysisContext(
                         null, fs, recorder, rep.reconstruction().coverage(), fs.limitations());
                 return aiService.analyzePlayerContext(ctx);
-            } catch (Exception ignored) { /* fallback to old api */ }
+            } catch (Exception e) {
+                // fallback to old api on feature extraction failure
+                System.getLogger("ReconstructionController")
+                        .log(System.Logger.Level.WARNING, "Feature extraction failed, falling back: {0}", e.getMessage());
+            }
         }
         return aiService.analyze(rep.battle(), rep.reconstruction());
     }
 
     private static RecorderEntityMapping findRecorder(ReplayProcessingResult rep) {
         if (rep.reconstruction() != null) {
+            // 从 ParticipantMappingEvent 建立 entityId → accountId 映射
+            final java.util.Map<Long, Integer> entityByAccount = new java.util.HashMap<>();
+            for (final var e : rep.reconstruction().events()) {
+                if (e instanceof com.wotb.core.replay.event.ParticipantMappingEvent pm) {
+                    entityByAccount.put(pm.accountId(), pm.entityId());
+                }
+            }
             for (final var p : rep.reconstruction().participants()) {
-                if (p.recorder())
+                if (p.recorder()) {
+                    final Integer eid = entityByAccount.get(p.accountId());
                     return new RecorderEntityMapping(p.accountId(), (int) p.tankId(),
-                            null, p.nickname(), p.team(), (int) p.tankId(), DecodeConfidence.EXACT);
+                            eid, p.nickname(), p.team(), (int) p.tankId(),
+                            eid != null ? DecodeConfidence.EXACT : DecodeConfidence.INFERRED);
+                }
             }
         }
         if (rep.battle() != null && rep.battle().recorder != null)

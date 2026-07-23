@@ -113,14 +113,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     }
 
     private static List<EngagementSummary> buildTeamEngagements(List<DamageEvent> teamDamage) {
-        if (teamDamage.isEmpty()) return List.of();
-        final var sorted = teamDamage.stream()
-                .sorted(java.util.Comparator.comparingDouble(d -> DefaultPlayerBattleFeatureExtractor.clockOf(d.timestamp())))
-                .toList();
-        int totalDmg = sorted.stream().mapToInt(DamageEvent::damage).sum();
-        final float start = DefaultPlayerBattleFeatureExtractor.clockOf(sorted.getFirst().timestamp());
-        final float end = DefaultPlayerBattleFeatureExtractor.clockOf(sorted.getLast().timestamp());
-        return List.of(new EngagementSummary(start, end, List.of(), List.of(),
-                totalDmg, totalDmg, null, null, EngagementOutcome.UNKNOWN, DecodeConfidence.INFERRED));
+        // 当前缺少可靠的 entity→team 映射，无法区分 team dealt vs team received
+        // 因此报告 dealt=0, received=0，在 limitation 中说明
+        return List.of();
     }
 }
