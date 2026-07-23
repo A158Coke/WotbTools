@@ -57,7 +57,7 @@ payload:     [u8; payload_len]  // 负载
 | 2 | `0x02` | **Control/PlayerCreate** | init_props_flat | 1 |
 | 4 | `0x04` | **EntityLeave** | entity_id(i32 LE) | 13–21 |
 | 5 | `0x05` | **Spotting** | undefined | ~100 |
-| 7 | `0x07` | **EntityProperty**（血量等） | entity_id(i32) + prop_changes | 13K–29K |
+| 7 | `0x07` | **EntityProperty** | `entity_id(u32)+propId(u32)+valueLen(u32)+value`（结构已确认；血量语义未解，见下） | 13K–29K |
 | 8 | `0x08` | **EntityMethod**（RPC 调用） | entity_id(i32) + sub_type(u32) + args | 630–700 |
 | 10 | `0x0A` | **Position**（坐标） | 49 字节（见下） | 14K–29K |
 | 11 | `0x0B` | Entity method（未知） | — | 2 |
@@ -93,6 +93,28 @@ payload:     [u8; payload_len]  // 负载
 死亡/离开检测。负载 = entity_id (i32 LE)。
 
 **用途：** 实体可能多次离开/重回战场（反复出现 EntityLeave）。取**最后**一次 leave 时刻作为大致死亡时间。
+
+### Type 7：EntityProperty（结构已确认，血量语义未解）
+
+单个属性更新，负载为定长三段头 + 变长值：
+
+```
+entity_id: u32 LE   // 实体 ID（车辆实体形如 0x10ca48xx，低字节为车位序号）
+prop_id:   u32 LE   // 属性编号（车辆实体上观察到 0/1/2/3/4/7/8/9）
+value_len: u32 LE   // 值字节数，观察到 ∈ {1, 2, 4}（对应包总长 13/14/16）
+value:     [u8; value_len]
+```
+
+该结构在 11.18 样本上 100% 干净解析。**但 `prop_id → 语义`（尤其血量）尚未可靠逆向**：
+
+- `prop_id=4` 表面像血量（战斗结束时归零），但把 2 字节 value 当 int16 读时，
+  与 type 8 直接伤害的前后差值**对不齐**（普通场 0/46 精确吻合），且差值多为 2048/1024/512 这类 2 的幂，
+  说明 value 存在位标志、真实位布局需要客户端属性定义（`.def`）级参考才能确定，单靠回放样本无法收敛。
+- 因此解码器（`EntityPropertyDecoder`）**只保留结构信息**（记录 `prop_id`/`value_len`），
+  **不臆断血量/存活**，避免向上层与 AI 提供伪造数据。
+
+> **可靠的血量/伤害/助攻/格挡/击杀/存活/死亡时刻请以 `battle_results.dat`（`Battle`/`PlayerResult`）为准**——
+> 见下文《权威数据源与 AI 分析》。逐帧血量时间线属于已知限制，待拿到属性定义参考后再实现。
 
 ### Type 8：EntityMethod（关键）
 
@@ -728,3 +750,36 @@ Body: file=<单个 .wotbreplay>
 - `#301→#2→#1` — 单独统计的点亮协助分量
 - `#150` — 丰富的分车统计/成就事件
 - `#302` — MVP 排行数据
+
+---
+
+## 权威数据源与 AI 分析
+
+回放里有两类数据，可靠性与用途不同，**AI 战术复盘以结算数据为权威源**：
+
+| 维度 | 权威来源 | 说明 |
+|------|----------|------|
+| 伤害 / 承伤 / 助攻 / 格挡 / 击杀 | `battle_results.dat` → `PlayerResult` | 游戏结算值，可靠 |
+| 是否存活 / **死亡时刻** / 存活时间 | `battle_results.dat` → `PlayerResult.survived` / `deathTimeMillis`(#104) / `survivalTimeSec` | 可靠；死亡时间线据此生成 |
+| 队伍 / 坦克 / 昵称 / 录像者 | `Battle` / `PlayerResult` / `Battle.recorderResult()` | 可靠 |
+| 胜负 / 地图 / 时长 / 模式 | `Battle.winnerTeam` / `mapName` / `durationS` / `arenaBonusType` | 可靠 |
+| 位置 / 走位时间线 | `data.wotreplay` type 10（重建） | 可靠（几何坐标） |
+| **逐帧血量 / 击毁事件** | —（type 7/8 尚不可靠） | **已知限制**：不作为血量/死亡来源，见 Type 7 小节 |
+
+### AI 分析数据流（`/api/replay/analyze`，仅 `wotbtools-admin`）
+
+```
+上传 .wotbreplay
+  └─ DefaultReplayProcessingFacade.process(full)
+       ├─ ReplayParser.parse           → Battle（权威结算数据）
+       └─ ReplayReconstructionService  → ReplayReconstruction（位置/时间线，可为 null）
+  └─ AiReplayAnalysisService.analyze(battle, recon)
+       ├─ 关键事件/死亡时间线 ← battle_results（PlayerResult.deathTimeMillis）
+       ├─ 战局摘要           ← Battle/PlayerResult（伤害/承伤/存活/录像者…）
+       └─ 调 DeepSeek（OpenAI 兼容 /chat/completions）→ 中文战术复盘
+```
+
+- **战绩解析失败** → `NO_BATTLE_DATA`（无权威数据可分析）。
+- **战绩成功但完整重建失败** → 仍可基于结算数据分析（位置维度标记为不可用）。
+- **未配置密钥** → `AI_NOT_CONFIGURED`，应用照常启动。
+- 逐帧血量时间线待拿到客户端属性定义（`.def`）参考后再实现；在此之前 AI 不会收到任何臆断的血量/死亡数据。

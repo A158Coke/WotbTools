@@ -1,5 +1,6 @@
 package com.wotb.web.replay.controller;
 
+import com.wotb.core.model.Battle;
 import com.wotb.core.model.Source;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.ReplayBatchProcessingResult;
@@ -93,7 +94,12 @@ public class ReconstructionController {
     }
 
     /**
-     * 单文件重建后调用 AI 生成战术复盘。
+     * 单文件 AI 战术复盘。
+     * <p>
+     * 经统一处理门面 {@link DefaultReplayProcessingFacade} 解析：战绩(battle_results)为权威源，
+     * 完整重建仅补充位置维度。战绩解析失败即无权威数据可分析（NO_BATTLE_DATA）；
+     * 战绩成功但重建失败时仍可基于结算数据分析。
+     * </p>
      * POST /api/replay/analyze
      */
     @PostMapping(value = "/analyze", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -102,17 +108,26 @@ public class ReconstructionController {
 
         validateFile(file);
 
-        final byte[] replayBytes = file.getBytes();
-        final ReplayReconstruction reconstruction = reconstructionService.reconstruct(replayBytes);
-        final AiReplayAnalysisService.AnalyzeResult result = aiService.analyze(reconstruction);
+        final String name = file.getOriginalFilename() != null
+                ? file.getOriginalFilename() : "replay.wotbreplay";
+        final ReplayProcessingResult processed = processingFacade.process(
+                new Source(name, file.getBytes()), ReplayProcessingOptions.full());
+
+        final Battle battle = processed.battle();
+        if (battle == null) {
+            // 战绩解析失败——没有可用于分析的权威数据
+            throw new IllegalArgumentException("NO_BATTLE_DATA");
+        }
+        final ReplayReconstruction recon = processed.reconstruction();
+        final AiReplayAnalysisService.AnalyzeResult result = aiService.analyze(battle, recon);
 
         return new AnalyzeResponse(
                 result.analysis(),
                 result.model(),
-                reconstruction.diagnostics().packetCount(),
-                reconstruction.participants().size(),
-                reconstruction.events().size(),
-                result.features().keyEvents());
+                recon != null ? recon.diagnostics().packetCount() : 0,
+                battle.nPlayers(),
+                recon != null ? recon.events().size() : 0,
+                result.keyEvents());
     }
 
     /**
@@ -157,6 +172,14 @@ public class ReconstructionController {
     }
 
     // ---- 异常映射（仅本控制器；返回稳定错误码文本，供前端本地化） ----
+
+    /** 请求/数据错误（文件校验失败、NO_BATTLE_DATA 等）→ 400。 */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<String> handleBadRequest(IllegalArgumentException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.TEXT_PLAIN)
+                .body(e.getMessage());
+    }
 
     /** AI 未配置密钥 → 503 AI_NOT_CONFIGURED。 */
     @ExceptionHandler(IllegalStateException.class)
