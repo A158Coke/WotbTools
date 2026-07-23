@@ -35,7 +35,7 @@ public class BatchAnalyzer {
      * @param results 逐文件处理结果（保留顺序）
      * @return 分析计划
      */
-    public AnalysisPlan analyze(List<ReplayProcessingResult> results) {
+    public AnalysisPlan analyze(final List<ReplayProcessingResult> results) {
         // 1. 确定每个文件的 category + scope
         final List<ScopedResult> scoped = results.stream()
                 .map(this::toScopedResult)
@@ -106,7 +106,7 @@ public class BatchAnalyzer {
         return new AnalysisPlan(mode, dominantScope, perspectiveGroups, effectiveUnits);
     }
 
-    private ScopedResult toScopedResult(ReplayProcessingResult result) {
+    private ScopedResult toScopedResult(final ReplayProcessingResult result) {
         if (result.status() == ReplayProcessingStatus.FAILED) {
             return new ScopedResult(result, BattleCategory.UNKNOWN, null);
         }
@@ -120,14 +120,14 @@ public class BatchAnalyzer {
         return new ScopedResult(result, category, scope);
     }
 
-    private BattleCategory detectCategory(ReplayProcessingResult result) {
+    private BattleCategory detectCategory(final ReplayProcessingResult result) {
         if (result.battle() != null && result.battle().arenaBonusType != null) {
             return BattleCategoryUtils.fromArenaBonusType(result.battle().arenaBonusType);
         }
         return BattleCategory.UNKNOWN;
     }
 
-    private ReplayPerspectiveGroupKey resolveKey(ScopedResult sr) {
+    private static ReplayPerspectiveGroupKey resolveKey(final ScopedResult sr) {
         final ReplayProcessingResult r = sr.result();
         final String arenaUniqueId = r.battle() != null ? r.battle().arenaId : "";
         final String mapCode = r.battle() != null ? r.battle().mapName : "";
@@ -164,7 +164,7 @@ public class BatchAnalyzer {
     /**
      * 选择代表回放：优先 streamComplete → reconstruction → coverage → resync少 → 上传顺序前。
      */
-    static ScopedResult selectRepresentative(List<ScopedResult> group) {
+    static ScopedResult selectRepresentative(final List<ScopedResult> group) {
         if (group.size() == 1) return group.getFirst();
 
         return group.stream().min((a, b) -> {
@@ -176,7 +176,7 @@ public class BatchAnalyzer {
         }).orElse(group.getFirst());
     }
 
-    private Long extractRecorderAccountId(ReplayProcessingResult result) {
+    private Long extractRecorderAccountId(final ReplayProcessingResult result) {
         if (result.reconstruction() == null) return null;
         for (final BattleParticipant p : result.reconstruction().participants()) {
             if (p.recorder()) return p.accountId();
@@ -190,7 +190,7 @@ public class BatchAnalyzer {
         return null;
     }
 
-    private static ReplayAnalysisMode resolveMode(ReplayAnalysisScope scope, int analyzableCount) {
+    private static ReplayAnalysisMode resolveMode(final ReplayAnalysisScope scope, final int analyzableCount) {
         if (analyzableCount <= 0) return ReplayAnalysisMode.NONE;
         if (scope == ReplayAnalysisScope.PLAYER_FOCUSED) {
             return analyzableCount == 1

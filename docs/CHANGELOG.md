@@ -5,6 +5,9 @@
 ## [Unreleased]
 
 ### Added
+- **团队特征提取器单元测试**：新增 `DefaultTeamBattleFeatureExtractorTest`，覆盖移动段压缩、关键事件提取、空事件流边界和阶段划分。
+- **代码质量重构**：提取公共 `ReplayTimestamp.safeClockSec()` 消除 `DefaultPlayerBattleFeatureExtractor`/`DefaultTeamBattleFeatureExtractor`/`DefaultBattleFeatureExtractor` 三处重复的 `clockOf` 静态方法；`ReconstructionController.toSources()` 消除 `reconstructBatch`/`process` 重复的 Source 构建；`DefaultReplayProcessingFacade` 移除未使用的 TODO recorder 一致性检查死代码，提取 `buildSummary` 公共方法复用统计逻辑。
+- **方法入参 final 化**：`DefaultPlayerBattleFeatureExtractor.extract`/`compressMovements`、`BatchAnalyzer.resolveKey`、`ReconstructionController` 构造器及 handler 参数、`DefaultBattleFeatureExtractor` 多方法参数补齐 `final`。`DefaultTeamBattleFeatureExtractor.extractKeyEvents`/`buildTeamEngagements` 改为 `private static`。
 - **AI 战术复盘（DeepSeek，`wotbtools-admin` 灰度）**：新增 `POST /api/replay/analyze` 与 `AiReplayAnalysisService`（Spring `RestClient` 调 OpenAI 兼容 `/chat/completions`）。**以 `battle_results.dat`（`Battle`/`PlayerResult`）为权威数据源**——伤害/承伤/助攻/格挡/击杀/存活/死亡时刻(`deathTimeMillis`)/录像者均取自游戏结算；死亡时间线据此生成；完整重建仅补充位置维度。经统一门面 `DefaultReplayProcessingFacade.process(full)` 获取战绩+重建，战绩失败返回 `NO_BATTLE_DATA`、战绩成功但重建失败仍可分析、未配置密钥返回 `AI_NOT_CONFIGURED`（应用照常启动）。密钥 `AI_API_KEY` 经 GitHub Actions secret → 容器环境变量注入（沿用 `KEYCLOAK_ADMIN_CLIENT_SECRET` 路径）。前端在重建出结果后才显示 AI 按钮，结果面板可显示/关闭。
 
 ### Changed / Fixed
@@ -73,7 +76,7 @@
 - **空白字符串归一化**：`wotb-core` 与排行榜入库统一用 `StringUtils.hasText(...)` 处理录像者、昵称、版本号、地图映射与时间戳，空白字符串不再污染昵称回退、版本入库或触发时间解析异常。
 - **线上 502 热修**：站内通知改用 Jackson 3 `tools.jackson` 本地 mapper，避免 Spring Boot 4 不再注入旧 `com.fasterxml.jackson.databind.ObjectMapper` 导致后端启动失败。
 - **部署健康检查**：`deploy.yml` 改为等待后端 `/api/health` 真正可访问，失败时输出后端/前端日志，避免容器刚 Started 就误判部署成功。
-- **打手状态文案去歧义**：打手管理页把 `booster_profile.status` 明确显示为“资格状态”，把 `available + activeAssignmentCount` 明确显示为“可接单/忙碌/暂停接单”，避免出现“正常 + 不可用”的误读。
+- **打手状态文案去歧义**：打手管理页把 `booster_profile.status` 明确显示为"资格状态"，把 `available + activeAssignmentCount` 明确显示为"可接单/忙碌/暂停接单"，避免出现"正常 + 不可用"的误读。
 - 个人中心补齐陪练身份卡片的三语 i18n key，避免直接显示 `profile.booster*` 原始 key。
 - 车辆库更新脚本补全 `alphaDamage`：从 BlitzKit `tanks.pb` 炮/弹模块解析最高等级炮的首发弹伤害，并修正脚本输出路径，避免潜在伤害补增因炮伤为空恒为 0。
 - CI/CD 部署：`docker compose pull` 添加 3 次重试。

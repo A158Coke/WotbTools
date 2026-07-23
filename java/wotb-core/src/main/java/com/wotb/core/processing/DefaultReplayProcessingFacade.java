@@ -46,12 +46,12 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
     }
 
     @Override
-    public ReplayProcessingResult process(Source input, ReplayProcessingOptions options) {
+    public ReplayProcessingResult process(final Source input, final ReplayProcessingOptions options) {
         return processSingle(input, options);
     }
 
     @Override
-    public ReplayBatchProcessingResult processBatch(List<Source> inputs, ReplayProcessingOptions options) {
+    public ReplayBatchProcessingResult processBatch(final List<Source> inputs, final ReplayProcessingOptions options) {
         final List<ReplayProcessingResult> results = new ArrayList<>();
         final Set<String> seenContentHashes = new HashSet<>();
         final List<String> duplicateNames = new ArrayList<>();
@@ -94,48 +94,19 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
             }
         }
 
-        // 录像者一致性验证（仅对 analyzable 回放检查）
-        final List<ReplayProcessingResult> analyzableResults = results.stream()
-                .filter(r -> r.status() == ReplayProcessingStatus.SUCCESS)
-                .toList();
-        if (analyzableResults.size() >= 2) {
-            final Set<Long> recorderAccounts = new HashSet<>();
-            final Set<String> recorderNicks = new HashSet<>();
-            for (final ReplayProcessingResult r : analyzableResults) {
-                if (r.identity() != null) {
-                    // recorderAccountId 来自 context，未来可存入 identity
-                }
-            }
-            // TODO: add actual recorder check when RecorderIdentity is stored in ReplayProcessingResult
-            // Currently Battle.recorder is nickname-based; full check requires accountId in identity.
-            // According to review: "strict mode — mixed recorders → 400 MIXED_REPLAY_RECORDERS"
-        }
-
         // 统计
-        int success = 0, partial = 0, failed = 0;
-        for (final ReplayProcessingResult r : results) {
-            switch (r.status()) {
-                case SUCCESS -> success++;
-                case PARTIAL_SUCCESS -> partial++;
-                case FAILED -> failed++;
-            }
-        }
-        // 模式必须按"真正可用于 AI 分析的回放数量"判断（以战绩这一权威源为准），
-        // 不能用用户上传的文件数量或粗略的 SUCCESS/PARTIAL 数量。
+        final ReplayBatchSummary summary = buildSummary(inputs.size(), results, duplicateNames);
         final ReplayAnalysisMode mode = resolveMode(results);
-        final ReplayBatchSummary summary = new ReplayBatchSummary(
-                inputs.size(), success, partial, failed,
-                duplicateNames.size(), duplicateNames);
 
         return new ReplayBatchProcessingResult(
-                mode, inputs.size(), success, partial, failed,
+                mode, inputs.size(), summary.totalSuccessful(), summary.totalPartial(), summary.totalFailed(),
                 List.copyOf(results), summary);
     }
 
     /**
      * 处理单个文件。
      */
-    private ReplayProcessingResult processSingle(Source input, ReplayProcessingOptions options) {
+    private ReplayProcessingResult processSingle(final Source input, final ReplayProcessingOptions options) {
         final String contentHash = sha256(input.bytes());
         final byte[] data = input.bytes();
 
@@ -164,7 +135,6 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
         boolean streamOk = false;
         boolean reconOk = false;
         boolean recorderMapped = false;
-        boolean featureSetAvailable = false;
         ReplayProcessingError reconstructionError = null;
         if (options.reconstructTimeline()) {
             try {
@@ -234,7 +204,19 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
      * @param results     已处理的逐文件结果列表
      */
     public ReplayBatchProcessingResult buildBatchResult(
-            int totalInputs, List<ReplayProcessingResult> results) {
+            final int totalInputs, final List<ReplayProcessingResult> results) {
+        final ReplayBatchSummary summary = buildSummary(totalInputs, results, List.of());
+        final ReplayAnalysisMode mode = resolveMode(results);
+        return new ReplayBatchProcessingResult(
+                mode, totalInputs, summary.totalSuccessful(), summary.totalPartial(), summary.totalFailed(),
+                List.copyOf(results), summary);
+    }
+
+    /**
+     * 构建批量摘要统计。
+     */
+    private static ReplayBatchSummary buildSummary(
+            final int totalInputs, final List<ReplayProcessingResult> results, final List<String> externalDupNames) {
         int success = 0, partial = 0, failed = 0;
         for (final ReplayProcessingResult r : results) {
             switch (r.status()) {
@@ -243,26 +225,18 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
                 case FAILED -> failed++;
             }
         }
-        final int analyzable = (int) results.stream()
-                .filter(r -> r.capabilities() != null && r.capabilities().aiAnalyzable())
-                .count();
-        final ReplayAnalysisMode mode = resolveMode(results);
-        final long dupCount = results.stream()
-                .filter(r -> r.error() != null && "DUPLICATE_FILE".equals(r.error().code()))
-                .count();
-        final List<String> dupNames = results.stream()
-                .filter(r -> r.error() != null && "DUPLICATE_FILE".equals(r.error().code()))
-                .map(ReplayProcessingResult::fileName)
-                .toList();
-        final ReplayBatchSummary summary = new ReplayBatchSummary(
-                totalInputs, success, partial, failed, (int) dupCount, dupNames);
-        return new ReplayBatchProcessingResult(
-                mode, totalInputs, success, partial, failed,
-                List.copyOf(results), summary);
+        final List<String> dupNames = externalDupNames.isEmpty()
+                ? results.stream()
+                        .filter(r -> r.error() != null && "DUPLICATE_FILE".equals(r.error().code()))
+                        .map(ReplayProcessingResult::fileName)
+                        .toList()
+                : externalDupNames;
+        return new ReplayBatchSummary(
+                totalInputs, success, partial, failed, dupNames.size(), dupNames);
     }
 
     /** 临时模式解析，后续由 BatchAnalyzer 接管。 */
-    private static ReplayAnalysisMode resolveMode(List<ReplayProcessingResult> results) {
+    private static ReplayAnalysisMode resolveMode(final List<ReplayProcessingResult> results) {
         final long analyzable = results.stream()
                 .filter(r -> r.capabilities() != null && r.capabilities().aiAnalyzable())
                 .count();
@@ -271,7 +245,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
         return analyzable == 1 ? ReplayAnalysisMode.SINGLE_PLAYER_BATTLE : ReplayAnalysisMode.MULTI_PLAYER_BATTLE;
     }
 
-    private ReplayProcessingResult failedResult(String fileName, Exception e) {
+    private static ReplayProcessingResult failedResult(final String fileName, final Exception e) {
         return new ReplayProcessingResult(
                 fileName, ReplayProcessingStatus.FAILED,
                 null, null, null, null,
@@ -281,7 +255,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
     }
 
     /** 文件级基础验证：扩展名 + 非空 + 大小限制。 */
-    private static ReplayFileValidationResult validateFile(Source input) {
+    private static ReplayFileValidationResult validateFile(final Source input) {
         final List<ReplayValidationError> errors = new ArrayList<>();
         final String name = input.name();
         if (name == null || name.isBlank()) {
@@ -306,7 +280,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
     }
 
     private static ReplayProcessingResult fileValidationFailed(
-            String fileName, List<ReplayValidationError> errors) {
+            final String fileName, final List<ReplayValidationError> errors) {
         final String message = errors.isEmpty() ? "Validation failed"
                 : errors.getFirst().code() + ": " + errors.getFirst().message();
         return new ReplayProcessingResult(
@@ -317,7 +291,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
                 null);
     }
 
-    private static ReplayReconstructionContext buildContext(Battle battle) {
+    private static ReplayReconstructionContext buildContext(final Battle battle) {
         if (battle == null || battle.players == null || battle.players.isEmpty()) {
             return ReplayReconstructionContext.empty();
         }
@@ -333,7 +307,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
                 battle, byAccount, recorderAccountId, battle.recorder);
     }
 
-    private static ReplayIdentity buildIdentity(String contentHash, Battle battle) {
+    private static ReplayIdentity buildIdentity(final String contentHash, final Battle battle) {
         if (battle == null) {
             return new ReplayIdentity(contentHash, null, null, null, null, null);
         }
@@ -347,7 +321,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
         );
     }
 
-    private static String sha256(byte[] data) {
+    private static String sha256(final byte[] data) {
         try {
             final MessageDigest md = MessageDigest.getInstance("SHA-256");
             final byte[] hash = md.digest(data);

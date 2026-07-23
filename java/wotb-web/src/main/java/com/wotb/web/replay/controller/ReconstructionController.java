@@ -1,4 +1,4 @@
-package com.wotb.web.replay.controller;
+﻿package com.wotb.web.replay.controller;
 
 import com.wotb.core.model.Source;
 import com.wotb.core.processing.BatchAnalyzer;
@@ -58,9 +58,10 @@ public class ReconstructionController {
     private final ReplayReconstructionService reconstructionService;
     private final AiReplayAnalysisService aiService;
 
-    public ReconstructionController(DefaultReplayProcessingFacade processingFacade,
-                                    ReplayReconstructionService reconstructionService,
-                                    AiReplayAnalysisService aiService) {
+    public ReconstructionController(
+            final DefaultReplayProcessingFacade processingFacade,
+            final ReplayReconstructionService reconstructionService,
+            final AiReplayAnalysisService aiService) {
         this.processingFacade = processingFacade;
         this.reconstructionService = reconstructionService;
         this.aiService = aiService;
@@ -72,7 +73,7 @@ public class ReconstructionController {
      */
     @PostMapping(value = "/reconstruct", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ReconstructSummary reconstruct(
-            @RequestParam("file") MultipartFile file) throws IOException {
+            @RequestParam("file") final MultipartFile file) throws IOException {
 
         validateFile(file);
 
@@ -100,8 +101,8 @@ public class ReconstructionController {
      */
     @PostMapping(value = "/state-at", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public StateAtResponse stateAt(
-            @RequestParam("file") MultipartFile file,
-            @RequestParam("time") float timeSec) throws IOException {
+            @RequestParam("file") final MultipartFile file,
+            @RequestParam("time") final float timeSec) throws IOException {
 
         validateFile(file);
 
@@ -125,7 +126,7 @@ public class ReconstructionController {
      */
     @PostMapping(value = "/analyze", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public AnalyzeResponse analyze(
-            @RequestParam("files") MultipartFile[] files) throws IOException {
+            @RequestParam("files") final MultipartFile[] files) throws IOException {
 
         validateBatch(files);
 
@@ -230,24 +231,17 @@ public class ReconstructionController {
      */
     @PostMapping(value = "/reconstruct-batch", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ReplayBatchProcessingResult reconstructBatch(
-            @RequestParam("files") MultipartFile[] files) throws IOException {
+            @RequestParam("files") final MultipartFile[] files) throws IOException {
 
         validateBatch(files);
-
-        final List<Source> sources = new ArrayList<>();
-        for (final MultipartFile f : files) {
-            sources.add(new Source(
-                    f.getOriginalFilename() != null ? f.getOriginalFilename() : "replay.wotbreplay",
-                    f.getBytes()));
-        }
-
+        final List<Source> sources = toSources(files);
         return processingFacade.processBatch(sources, ReplayProcessingOptions.full());
     }
 
     @PostMapping(value = "/process", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ReplayBatchProcessingResult process(
-            @RequestParam("files") MultipartFile[] files,
-            @RequestParam(name = "reconstruct", defaultValue = "false") boolean doReconstruct) throws IOException {
+            @RequestParam("files") final MultipartFile[] files,
+            @RequestParam(name = "reconstruct", defaultValue = "false") final boolean doReconstruct) throws IOException {
 
         validateBatch(files);
 
@@ -255,21 +249,14 @@ public class ReconstructionController {
                 ? ReplayProcessingOptions.full()
                 : ReplayProcessingOptions.summaryOnly();
 
-        final List<Source> sources = new ArrayList<>();
-        for (final MultipartFile f : files) {
-            sources.add(new Source(
-                    f.getOriginalFilename() != null ? f.getOriginalFilename() : "replay.wotbreplay",
-                    f.getBytes()));
-        }
-
-        return processingFacade.processBatch(sources, options);
+        return processingFacade.processBatch(toSources(files), options);
     }
 
     // ---- 异常映射（仅本控制器；返回稳定错误码文本，供前端本地化） ----
 
     /** 请求/数据错误（文件校验失败、NO_BATTLE_DATA 等）→ 400。 */
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<String> handleBadRequest(IllegalArgumentException e) {
+    public ResponseEntity<String> handleBadRequest(final IllegalArgumentException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .contentType(MediaType.TEXT_PLAIN)
                 .body(e.getMessage());
@@ -277,7 +264,7 @@ public class ReconstructionController {
 
     /** AI 未配置密钥 → 503 AI_NOT_CONFIGURED。 */
     @ExceptionHandler(IllegalStateException.class)
-    public ResponseEntity<String> handleNotConfigured(IllegalStateException e) {
+    public ResponseEntity<String> handleNotConfigured(final IllegalStateException e) {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .contentType(MediaType.TEXT_PLAIN)
                 .body(e.getMessage());
@@ -285,7 +272,7 @@ public class ReconstructionController {
 
     /** 上游 AI 调用失败 → 502。 */
     @ExceptionHandler(AiUpstreamException.class)
-    public ResponseEntity<String> handleUpstream(AiUpstreamException e) {
+    public ResponseEntity<String> handleUpstream(final AiUpstreamException e) {
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .contentType(MediaType.TEXT_PLAIN)
                 .body(e.getMessage());
@@ -293,7 +280,7 @@ public class ReconstructionController {
 
     // ---- 验证 ----
 
-    private static void validateFile(MultipartFile file) {
+    private static void validateFile(final MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("NO_REPLAY_FILE");
         }
@@ -306,7 +293,7 @@ public class ReconstructionController {
         }
     }
 
-    private static void validateBatch(MultipartFile[] files) {
+    private static void validateBatch(final MultipartFile[] files) {
         if (files == null || files.length == 0) {
             throw new IllegalArgumentException("NO_REPLAY_FILES");
         }
@@ -327,7 +314,20 @@ public class ReconstructionController {
 
     // ---- 辅助 ----
 
-    private AiReplayAnalysisService.AnalyzeResult callPlayerContext(ReplayProcessingResult rep) {
+    /**
+     * 将 MultipartFile 数组转换为 Source 列表（复用，消除重复代码）。
+     */
+    private static List<Source> toSources(final MultipartFile[] files) throws IOException {
+        final List<Source> sources = new ArrayList<>();
+        for (final MultipartFile f : files) {
+            sources.add(new Source(
+                    f.getOriginalFilename() != null ? f.getOriginalFilename() : "replay.wotbreplay",
+                    f.getBytes()));
+        }
+        return sources;
+    }
+
+    private AiReplayAnalysisService.AnalyzeResult callPlayerContext(final ReplayProcessingResult rep) {
         if (rep.battle() == null) return new AiReplayAnalysisService.AnalyzeResult("", "", List.of());
         if (rep.reconstruction() != null) {
             try {
@@ -346,7 +346,7 @@ public class ReconstructionController {
         return aiService.analyze(rep.battle(), rep.reconstruction());
     }
 
-    private static RecorderEntityMapping findRecorder(ReplayProcessingResult rep) {
+    private static RecorderEntityMapping findRecorder(final ReplayProcessingResult rep) {
         if (rep.reconstruction() != null) {
             // 从 ParticipantMappingEvent 建立 entityId → accountId 映射
             final java.util.Map<Long, Integer> entityByAccount = new java.util.HashMap<>();
@@ -370,7 +370,7 @@ public class ReconstructionController {
         return RecorderEntityMapping.unresolved();
     }
 
-    private static List<AnalysisUnitResult> buildAnalysisUnits(List<ReplayPerspectiveGroup> groups) {
+    private static List<AnalysisUnitResult> buildAnalysisUnits(final List<ReplayPerspectiveGroup> groups) {
         return groups.stream()
                 .<AnalysisUnitResult>map(g -> new AnalysisUnitResult(
                         "unit-" + g.key().battleIdentity().arenaUniqueId(),

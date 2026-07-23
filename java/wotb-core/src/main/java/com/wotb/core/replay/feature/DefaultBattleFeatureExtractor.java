@@ -41,7 +41,7 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
     static final int LATE_GAME_VEHICLES = 6;     // 存活 ≤6 辆进入后期
 
     @Override
-    public BattleFeatureSet extract(ReplayReconstruction reconstruction, BattleStateSnapshot finalState) {
+    public BattleFeatureSet extract(final ReplayReconstruction reconstruction, final BattleStateSnapshot finalState) {
         final String battleId = battleId(reconstruction);
         final List<ReplayEvent> events = reconstruction.events();
 
@@ -70,7 +70,7 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
                 }
                 case BattleEndedEvent b -> {
                     if (Float.isNaN(battleEndClock)) {
-                        battleEndClock = clockOf(b.timestamp());
+                        battleEndClock = ReplayTimestamp.safeClockSec(b.timestamp());
                     }
                 }
                 default -> {}
@@ -99,7 +99,7 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
 
     // ---- 移动段压缩 ----
 
-    static List<MovementSegment> compressMovements(List<PositionChangedEvent> positions) {
+    static List<MovementSegment> compressMovements(final List<PositionChangedEvent> positions) {
         if (positions.isEmpty()) return List.of();
 
         // 按 entity 分组压缩
@@ -122,13 +122,13 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
                 .toList();
     }
 
-    private static List<MovementSegment> compressOneEntity(List<PositionChangedEvent> positions) {
+    private static List<MovementSegment> compressOneEntity(final List<PositionChangedEvent> positions) {
         if (positions.isEmpty()) return List.of();
         if (positions.size() == 1) {
             final PositionChangedEvent p = positions.getFirst();
             final Vector3 pos = new Vector3(p.x(), p.y(), p.z());
             return List.of(new MovementSegment(
-                    clockOf(p.timestamp()), clockOf(p.timestamp()),
+                    ReplayTimestamp.safeClockSec(p.timestamp()), ReplayTimestamp.safeClockSec(p.timestamp()),
                     MovementType.STATIONARY, pos, pos,
                     0f, 0f, DecodeConfidence.EXACT));
         }
@@ -138,7 +138,7 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
         for (int i = 1; i < positions.size(); i++) {
             final PositionChangedEvent prev = positions.get(i - 1);
             final PositionChangedEvent curr = positions.get(i);
-            final float timeDelta = clockOf(curr.timestamp()) - clockOf(prev.timestamp());
+            final float timeDelta = ReplayTimestamp.safeClockSec(curr.timestamp()) - ReplayTimestamp.safeClockSec(prev.timestamp());
 
             if (timeDelta <= 0.001f) continue; // 同一时刻跳过
 
@@ -153,14 +153,14 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
             if (i > start) {
                 final PositionChangedEvent first = positions.get(start);
                 final float segmentDistance = segmentDistance(positions.subList(start, i + 1));
-                final float segmentTime = clockOf(curr.timestamp()) - clockOf(first.timestamp());
+                final float segmentTime = ReplayTimestamp.safeClockSec(curr.timestamp()) - ReplayTimestamp.safeClockSec(first.timestamp());
                 final boolean segmentStationary = segmentDistance < STATIONARY_THRESHOLD * (i - start);
                 final MovementType type = segmentStationary
                         ? MovementType.STATIONARY
                         : MovementType.MOVING;
 
                 segments.add(new MovementSegment(
-                        clockOf(first.timestamp()), clockOf(curr.timestamp()),
+                        ReplayTimestamp.safeClockSec(first.timestamp()), ReplayTimestamp.safeClockSec(curr.timestamp()),
                         type, new Vector3(first.x(), first.y(), first.z()),
                         new Vector3(curr.x(), curr.y(), curr.z()),
                         segmentDistance,
@@ -173,7 +173,7 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
         return segments;
     }
 
-    private static float segmentDistance(List<PositionChangedEvent> positions) {
+    private static float segmentDistance(final List<PositionChangedEvent> positions) {
         float total = 0f;
         for (int i = 1; i < positions.size(); i++) {
             final float dx = positions.get(i).x() - positions.get(i - 1).x();
@@ -186,22 +186,22 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
     // ---- 交火段识别 ----
 
     static List<EngagementSummary> identifyEngagements(
-            List<DamageEvent> damages,
-            Map<Integer, Long> entityToAccount,
-            Map<Integer, List<PositionChangedEvent>> positionsByEntity) {
+            final List<DamageEvent> damages,
+            final Map<Integer, Long> entityToAccount,
+            final Map<Integer, List<PositionChangedEvent>> positionsByEntity) {
 
         if (damages.isEmpty()) return List.of();
 
         final List<DamageEvent> sorted = damages.stream()
-                .sorted(Comparator.comparingDouble(d -> clockOf(d.timestamp())))
+                .sorted(Comparator.comparingDouble(d -> ReplayTimestamp.safeClockSec(d.timestamp())))
                 .toList();
 
         final List<EngagementSummary> engagements = new ArrayList<>();
         int segStart = 0;
 
         for (int i = 1; i < sorted.size(); i++) {
-            final float gap = clockOf(sorted.get(i).timestamp())
-                    - clockOf(sorted.get(i - 1).timestamp());
+            final float gap = ReplayTimestamp.safeClockSec(sorted.get(i).timestamp())
+                    - ReplayTimestamp.safeClockSec(sorted.get(i - 1).timestamp());
             if (gap > ENGAGEMENT_GAP_SEC) {
                 // 结束一段交火
                 engagements.add(buildEngagement(sorted.subList(segStart, i), entityToAccount, positionsByEntity));
@@ -217,9 +217,9 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
     }
 
     private static EngagementSummary buildEngagement(
-            List<DamageEvent> events,
-            Map<Integer, Long> entityToAccount,
-            Map<Integer, List<PositionChangedEvent>> positionsByEntity) {
+            final List<DamageEvent> events,
+            final Map<Integer, Long> entityToAccount,
+            final Map<Integer, List<PositionChangedEvent>> positionsByEntity) {
 
         int dealt = 0, received = 0;
         for (final DamageEvent d : events) {
@@ -227,8 +227,8 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
             received += d.damage();
         }
 
-        final float startTime = clockOf(events.getFirst().timestamp());
-        final float endTime = clockOf(events.getLast().timestamp());
+        final float startTime = ReplayTimestamp.safeClockSec(events.getFirst().timestamp());
+        final float endTime = ReplayTimestamp.safeClockSec(events.getLast().timestamp());
 
         EngagementOutcome outcome;
         if (dealt > received * 1.25) outcome = EngagementOutcome.FAVORABLE;
@@ -244,10 +244,10 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
     // ---- 战斗阶段划分 ----
 
     static List<BattlePhaseSummary> dividePhases(
-            List<ReplayEvent> events, float battleEndClock, float firstContactTime) {
+            final List<ReplayEvent> events, final float battleEndClock, final float firstContactTime) {
 
         final List<BattlePhaseSummary> phases = new ArrayList<>();
-        float battleStart = findBattleStart(events);
+        final float battleStart = findBattleStart(events);
 
         // PRE_BATTLE: 0 ~ 正式开战
         if (battleStart > 0) {
@@ -287,7 +287,7 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
     // ---- 关键事件 ----
 
     static List<KeyBattleEvent> extractKeyEvents(
-            List<ReplayEvent> events, Map<Integer, Long> entityToAccount) {
+            final List<ReplayEvent> events, final Map<Integer, Long> entityToAccount) {
         final List<KeyBattleEvent> keyEvents = new ArrayList<>();
         boolean firstBloodRecorded = false;
 
@@ -299,23 +299,23 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
                     if (!firstBloodRecorded) {
                         firstBloodRecorded = true;
                         keyEvents.add(new KeyBattleEvent(
-                                clockOf(d.timestamp()), "FIRST_BLOOD",
+                                ReplayTimestamp.safeClockSec(d.timestamp()), "FIRST_BLOOD",
                                 "首次伤害 EID" + d.attackerEid()
                                         + " → EID" + d.victimEid() + " (" + d.damage() + ")"));
                     } else if (d.damage() >= DAMAGE_SPIKE_THRESHOLD) {
                         keyEvents.add(new KeyBattleEvent(
-                                clockOf(d.timestamp()), "DAMAGE_SPIKE",
+                                ReplayTimestamp.safeClockSec(d.timestamp()), "DAMAGE_SPIKE",
                                 "高额伤害 EID" + d.attackerEid()
                                         + " → EID" + d.victimEid() + " (" + d.damage() + ")"));
                     }
                 }
                 case VehicleDestroyedEvent v -> keyEvents.add(new KeyBattleEvent(
-                        clockOf(v.timestamp()), "VEHICLE_DESTROYED",
+                        ReplayTimestamp.safeClockSec(v.timestamp()), "VEHICLE_DESTROYED",
                         "击毁 EID" + v.entityId()
                                 + (v.killerEid() != null ? " (击毁者 EID" + v.killerEid() + ")" : "")
                                 + (v.inferred() ? " [推断]" : "")));
                 case BattleEndedEvent b -> keyEvents.add(new KeyBattleEvent(
-                        clockOf(b.timestamp()), "BATTLE_END",
+                        ReplayTimestamp.safeClockSec(b.timestamp()), "BATTLE_END",
                         "战斗结束" + (b.winnerTeam() != null ? " 胜方队伍 " + b.winnerTeam() : "")));
                 default -> {}
             }
@@ -325,27 +325,22 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
 
     // ---- 辅助 ----
 
-    private static float findBattleStart(List<ReplayEvent> events) {
+    private static float findBattleStart(final List<ReplayEvent> events) {
         // 使用第一个 PositionChangedEvent 或 DamageEvent 的时刻作为战斗开始
         for (final ReplayEvent e : events) {
-            if (e instanceof PositionChangedEvent) return clockOf(e.timestamp());
-            if (e instanceof DamageEvent) return clockOf(e.timestamp());
+            if (e instanceof PositionChangedEvent) return ReplayTimestamp.safeClockSec(e.timestamp());
+            if (e instanceof DamageEvent) return ReplayTimestamp.safeClockSec(e.timestamp());
         }
         return 0f;
     }
 
-    private static float findFirstContact(List<DamageEvent> damages) {
-        return damages.isEmpty() ? -1 : clockOf(damages.getFirst().timestamp());
+    private static float findFirstContact(final List<DamageEvent> damages) {
+        return damages.isEmpty() ? -1 : ReplayTimestamp.safeClockSec(damages.getFirst().timestamp());
     }
 
-    private static String battleId(ReplayReconstruction reconstruction) {
+    private static String battleId(final ReplayReconstruction reconstruction) {
         final String arenaId = reconstruction.metadata() != null
                 ? reconstruction.metadata().arenaId() : null;
         return (arenaId != null && !arenaId.isBlank()) ? arenaId : "unknown";
-    }
-
-    static float clockOf(ReplayTimestamp ts) {
-        if (ts == null) return 0f;
-        return ts.battleClockSec() != null ? ts.battleClockSec() : ts.rawClockSec();
     }
 }

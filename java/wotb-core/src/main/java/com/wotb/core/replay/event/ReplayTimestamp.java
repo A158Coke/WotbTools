@@ -11,4 +11,13 @@ public record ReplayTimestamp(
         float rawClockSec,
         Float battleClockSec
 ) {
+
+    /**
+     * 获取可用的时钟值（优先 battleClockSec，fallback rawClockSec），
+     * 当 timestamp 为 null 时返回 0f。
+     */
+    public static float safeClockSec(final ReplayTimestamp ts) {
+        if (ts == null) return 0f;
+        return ts.battleClockSec() != null ? ts.battleClockSec() : ts.rawClockSec();
+    }
 }
