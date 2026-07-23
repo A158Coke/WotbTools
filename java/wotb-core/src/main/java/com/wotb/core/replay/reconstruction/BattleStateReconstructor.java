@@ -239,41 +239,90 @@ public class BattleStateReconstructor {
 
     /**
      * 在给定时间点查询战场状态。
+     * <p>
+     * 无时钟回退时使用 checkpoint 快速查询；
+     * 存在时钟回退时使用安全全量重放。
+     * </p>
      *
-     * @param targetClockSec 目标时间（原始时钟）
-     * @param events         全部领域事件列表
-     * @param checkpoints    checkpoint 列表
+     * @param targetClockSec      目标时间（原始时钟）
+     * @param events              全部领域事件列表
+     * @param checkpoints         checkpoint 列表
+     * @param hasClockRegression  是否存在时钟回退
      * @return 目标时间的战场状态快照
      */
     public static BattleStateSnapshot stateAt(
             float targetClockSec,
             List<ReplayEvent> events,
-            List<BattleStateCheckpoint> checkpoints) {
+            List<BattleStateCheckpoint> checkpoints,
+            boolean hasClockRegression) {
 
-        // 时钟可能回退（诊断中的 clockRegressionCount 可 > 0）：不能假设 events 的
-        // rawClockSec 单调递增，也不能在遇到第一个"超过目标时间"的事件时 break，
-        // 否则其后 sequence 更大但时钟更小的事件会被永久漏掉，checkpoint 快路径同理不安全。
-        // 因此按原始 sequence 顺序，从空态重放所有 rawClockSec <= targetClockSec 的事件
-        // （跳过晚于目标时间的），保证与完整重建在该时间点的结果一致。
-        // checkpoints 仍保留在重建结果中供未来（无回退时）快速查询优化使用。
+        if (!hasClockRegression && checkpoints != null && !checkpoints.isEmpty()) {
+            return stateAtWithCheckpoints(targetClockSec, events, checkpoints);
+        }
+        return stateAtSafe(targetClockSec, events);
+    }
+
+    /** 向下兼容（默认安全全量重放）。 */
+    public static BattleStateSnapshot stateAt(
+            float targetClockSec,
+            List<ReplayEvent> events,
+            List<BattleStateCheckpoint> checkpoints) {
+        return stateAt(targetClockSec, events, checkpoints, true);
+    }
+
+    /** 使用 checkpoint 快速查询。 */
+    private static BattleStateSnapshot stateAtWithCheckpoints(
+            float targetClockSec,
+            List<ReplayEvent> events,
+            List<BattleStateCheckpoint> checkpoints) {
+        BattleStateCheckpoint nearest = checkpoints.getFirst();
+        for (final BattleStateCheckpoint cp : checkpoints) {
+            if (cp.rawClockSec() <= targetClockSec) nearest = cp;
+            else break;
+        }
+        final BattleState state = snapshotToMutable(nearest.stateSnapshot());
+        state.setRawClockSec(nearest.rawClockSec());
+        final BattleStateReconstructor replayer = new BattleStateReconstructor();
+        for (int i = nearest.eventIndex(); i < events.size(); i++) {
+            final ReplayEvent event = events.get(i);
+            if (event.timestamp().rawClockSec() > targetClockSec) break;
+            replayer.applyEvent(state, event);
+            state.setRawClockSec(event.timestamp().rawClockSec());
+        }
+        return BattleStateSnapshot.from(state);
+    }
+
+    /** 安全全量重放。 */
+    private static BattleStateSnapshot stateAtSafe(
+            float targetClockSec, List<ReplayEvent> events) {
         final BattleState state = new BattleState();
         final BattleStateReconstructor replayer = new BattleStateReconstructor();
-        float maxAppliedClock = 0f;
-        boolean anyApplied = false;
+        float maxClock = 0f;
+        boolean any = false;
         for (final ReplayEvent event : events) {
             final float clock = event.timestamp().rawClockSec();
-            if (clock > targetClockSec) {
-                continue;
-            }
+            if (clock > targetClockSec) continue;
             replayer.applyEvent(state, event);
-            if (!anyApplied || clock > maxAppliedClock) {
-                maxAppliedClock = clock;
-                anyApplied = true;
-            }
+            if (!any || clock > maxClock) { maxClock = clock; any = true; }
         }
-        state.setRawClockSec(anyApplied ? maxAppliedClock : 0f);
-
+        state.setRawClockSec(any ? maxClock : 0f);
         return BattleStateSnapshot.from(state);
+    }
+
+    /** 将不可变快照转换为可变状态。 */
+    private static BattleState snapshotToMutable(BattleStateSnapshot snapshot) {
+        final BattleState state = new BattleState();
+        state.setRawClockSec(snapshot.rawClockSec());
+        state.setBattleClockSec(snapshot.battleClockSec());
+        state.setLifecycle(snapshot.lifecycle());
+        state.setBattleEnded(snapshot.battleEnded());
+        state.setWinnerTeam(snapshot.winnerTeam());
+        for (final var entry : snapshot.vehiclesByEntityId().entrySet()) {
+            state.getVehiclesByEntityId().put(entry.getKey(), entry.getValue().copy());
+        }
+        state.getEntityIdByAccountId().putAll(snapshot.entityIdByAccountId());
+        state.getParticipants().addAll(snapshot.participants());
+        return state;
     }
 
     /**
