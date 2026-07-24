@@ -52,7 +52,10 @@ class BattleStateReconstructorReentryTest {
 
     @Test
     void eventCountIntervalTrigger() {
-        // Event interval 2, time interval 100 (effectively disabled), 4 events
+        // Event interval 2. The first event triggers a time-based checkpoint because
+        // lastCheckpointClock starts at -Float.MAX_VALUE. Afterward the 100s time interval
+        // does not trigger again, so subsequent checkpoints exercise the event-count
+        // interval and the final checkpoint.
         var rec = new BattleStateReconstructor(null, 100f, 2);
         var result = rec.reconstruct(List.of(
                 eventAt(1f, 101), eventAt(2f, 102), eventAt(3f, 103), eventAt(4f, 104)));
