@@ -177,36 +177,63 @@ public class BatchAnalyzer {
 
     private static ReplayPerspectiveGroupKey resolveKey(final ScopedResult sr) {
         final ReplayProcessingResult r = sr.result();
-        final String arenaUniqueId = r.battle() != null ? r.battle().arenaId : "";
-        final String mapCode = r.battle() != null ? r.battle().mapName : "";
-        final BattleCategory category = sr.category();
-
+        final CanonicalBattleKey battleKey = canonicalBattleKey(r);
         final BattleIdentity identity = new BattleIdentity(
-                arenaUniqueId, mapCode, "", null);
-
+                battleKey.arenaUniqueId(),
+                battleKey.mapCode() != null ? battleKey.mapCode() : "",
+                battleKey.clientVersion() != null ? battleKey.clientVersion() : "",
+                battleKey.battleStartEpochSecond()
+        );
         // 对于 PLAYER_FOCUSED，perspectiveTeam 取录像者所在队伍
-        int perspectiveTeam = 0;
+        int perspectiveTeam = resolvePerspectiveTeam(r);
+        return new ReplayPerspectiveGroupKey(identity, perspectiveTeam);
+    }
+
+    /** 规范化战斗 key：优先 arenaUniqueId，降级 Battle 字段，最后用 contentHash 避免错误合并。 */
+    private static CanonicalBattleKey canonicalBattleKey(final ReplayProcessingResult result) {
+        // 优先从 ReplayIdentity 提取 arenaUniqueId
+        final var identity = result.identity();
+        if (identity != null) {
+            final String arenaId = blankToNull(identity.arenaUniqueId());
+            if (arenaId != null) return new CanonicalBattleKey(arenaId, null, null, null, null);
+            final String map = blankToNull(identity.mapCode());
+            final String clientVersion = blankToNull(identity.clientVersion());
+            final Long startEpoch = identity.battleTime() != null ? identity.battleTime().getEpochSecond() : null;
+            if (map != null && clientVersion != null && startEpoch != null)
+                return new CanonicalBattleKey(null, map, clientVersion, startEpoch, null);
+            // 降级到 contentHash — 宁可独立也不要错误合并
+            return new CanonicalBattleKey(null, null, null, null, identity.contentHash());
+        }
+        // identity null 时从 Battle 降级
+        final var battle = result.battle();
+        if (battle != null) {
+            final String arenaId = blankToNull(battle.arenaId);
+            if (arenaId != null) return new CanonicalBattleKey(arenaId, null, null, null, null);
+            final String map = blankToNull(battle.mapName);
+            if (map != null) return new CanonicalBattleKey(null, map, null, null, null);
+        }
+        return new CanonicalBattleKey(null, null, null, null, result.fileName());
+    }
+
+    private static String blankToNull(final String s) {
+        return (s == null || s.isBlank()) ? null : s;
+    }
+
+    private static int resolvePerspectiveTeam(final ReplayProcessingResult r) {
+        int team = 0;
         if (r.battle() != null && r.battle().recorder != null) {
-            final String recorderNick = r.battle().recorder;
+            final String nick = r.battle().recorder;
             for (final BattleParticipant p : (r.reconstruction() != null
                     ? r.reconstruction().participants() : List.<BattleParticipant>of())) {
-                if (p.nickname().equals(recorderNick)) {
-                    perspectiveTeam = p.team();
-                    break;
-                }
+                if (nick.equals(p.nickname())) { team = p.team(); break; }
             }
-            // 从 Battle player 列表降级
-            if (perspectiveTeam == 0 && r.battle().players != null) {
+            if (team == 0 && r.battle().players != null) {
                 for (final var pr : r.battle().players) {
-                    if (recorderNick.equals(pr.nickname)) {
-                        perspectiveTeam = pr.team;
-                        break;
-                    }
+                    if (nick.equals(pr.nickname)) { team = pr.team; break; }
                 }
             }
         }
-
-        return new ReplayPerspectiveGroupKey(identity, perspectiveTeam);
+        return team;
     }
 
     /**
@@ -258,6 +285,16 @@ public class BatchAnalyzer {
     }
 
     // ---- 内部类型 ----
+
+    /** 规范化战斗 key —— 按优先级：arenaUniqueId > map+version+time > contentHash。 */
+    record CanonicalBattleKey(
+            String arenaUniqueId,
+            String mapCode,
+            String clientVersion,
+            Long battleStartEpochSecond,
+            String uniqueFallback
+    ) {
+    }
 
     /**
      * 处理结果 + 推导的 category + scope。
