@@ -377,10 +377,22 @@ public class ReconstructionController {
             }
         }
 
-        // 验证每个 uploadIndex 恰好一次
-        assert statuses.size() == uploadResults.size()
-                : "FILE_STATUS_COUNT_MISMATCH: " + statuses.size() + " != " + uploadResults.size();
-        // 按上传顺序排序
+        // 显式校验每个 uploadIndex 恰好一次
+        if (statuses.size() != uploadResults.size()) {
+            throw new IllegalStateException(
+                    "FILE_STATUS_COUNT_MISMATCH: " + statuses.size() + " != " + uploadResults.size());
+        }
+        final var uploadIndices = statuses.stream()
+                .map(ReplayFileAnalysisStatus::uploadIndex)
+                .collect(java.util.stream.Collectors.toSet());
+        if (uploadIndices.size() != uploadResults.size()) {
+            throw new IllegalStateException("DUPLICATE_UPLOAD_INDEX");
+        }
+        for (int i = 0; i < uploadResults.size(); i++) {
+            if (!uploadIndices.contains(i)) {
+                throw new IllegalStateException("MISSING_UPLOAD_INDEX_" + i);
+            }
+        }
         statuses.sort(java.util.Comparator.comparingInt(ReplayFileAnalysisStatus::uploadIndex));
         return statuses;
     }

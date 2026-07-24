@@ -19,7 +19,6 @@ import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * 默认回放处理门面 —— 将现有战绩解析与完整重建整合为统一结果。
@@ -80,12 +79,26 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
             }
         }
 
-        final ReplayBatchSummary summary = buildSummary(inputs.size(), results, List.of());
-        // 使用 BatchAnalyzer 保证 mode 与实际处理语义一致
-        final ReplayAnalysisMode mode = resolveMode(results);
+        // 只执行一次 BatchAnalyzer
+        final BatchAnalyzer.AnalysisPlan plan;
+        try {
+            plan = new BatchAnalyzer().analyze(results);
+        } catch (MixedAnalysisScopesException | MixedRandomBattleRecordersException e) {
+            // 处理接口仍然返回逐文件结果，但不能建议单一 AI 模式
+            final ReplayBatchSummary summary = buildSummary(inputs.size(), results, List.of());
+            return new ReplayBatchProcessingResult(
+                    ReplayAnalysisMode.NONE, inputs.size(),
+                    summary.totalSuccessful(), summary.totalPartial(), summary.totalFailed(),
+                    List.copyOf(results), summary);
+        }
+
+        final List<String> dupNames = plan.exactDuplicates().stream()
+                .map(d -> d.duplicate().fileName()).toList();
+        final ReplayBatchSummary summary = buildSummary(inputs.size(), results, dupNames);
 
         return new ReplayBatchProcessingResult(
-                mode, inputs.size(), summary.totalSuccessful(), summary.totalPartial(), summary.totalFailed(),
+                plan.mode(), inputs.size(),
+                summary.totalSuccessful(), summary.totalPartial(), summary.totalFailed(),
                 List.copyOf(results), summary);
     }
 
@@ -190,7 +203,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
     public ReplayBatchProcessingResult buildBatchResult(
             final int totalInputs, final List<ReplayProcessingResult> results) {
         final ReplayBatchSummary summary = buildSummary(totalInputs, results, List.of());
-        final ReplayAnalysisMode mode = resolveMode(results);
+        final var mode = ReplayAnalysisMode.NONE;
         return new ReplayBatchProcessingResult(
                 mode, totalInputs, summary.totalSuccessful(), summary.totalPartial(), summary.totalFailed(),
                 List.copyOf(results), summary);
@@ -200,7 +213,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
      * 构建批量摘要统计。
      */
     private static ReplayBatchSummary buildSummary(
-            final int totalInputs, final List<ReplayProcessingResult> results, final List<String> externalDupNames) {
+            final int totalInputs, final List<ReplayProcessingResult> results, final List<String> duplicateNames) {
         int success = 0, partial = 0, failed = 0;
         for (final ReplayProcessingResult r : results) {
             switch (r.status()) {
@@ -210,16 +223,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
             }
         }
         return new ReplayBatchSummary(
-                totalInputs, success, partial, failed, 0, List.of());
-    }
-
-    /** 使用 BatchAnalyzer 实现统一模式判定。 */
-    private static ReplayAnalysisMode resolveMode(final List<ReplayProcessingResult> results) {
-        try {
-            return new BatchAnalyzer().analyze(results).mode();
-        } catch (MixedAnalysisScopesException | MixedRandomBattleRecordersException e) {
-            return ReplayAnalysisMode.NONE;
-        }
+                totalInputs, success, partial, failed, duplicateNames.size(), List.copyOf(duplicateNames));
     }
 
     private static ReplayProcessingResult failedResult(final String fileName, final Exception e) {

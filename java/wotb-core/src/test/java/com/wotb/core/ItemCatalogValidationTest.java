@@ -78,9 +78,10 @@ class ItemCatalogValidationTest {
                 assertTrue(sid.asInt() >= 0, "Provision " + item.get("id") + " negative sourceId: " + sid.asInt());
                 assertTrue(allSourceIds.add(sid.asInt()), "Duplicate sourceId across provisions: " + sid.asInt());
             }
-            if (item.has("effects")) {
-                validateEffects(item.get("effects"));
-            }
+            assertTrue(item.hasNonNull("effects"), "Provision " + item.get("id") + " missing effects");
+            assertTrue(item.get("effects").isArray(), "Provision " + item.get("id") + " effects must be array");
+            assertTrue(item.get("effects").size() > 0, "Provision " + item.get("id") + " has empty effects");
+            validateEffects(item.get("effects"));
         }
     }
 

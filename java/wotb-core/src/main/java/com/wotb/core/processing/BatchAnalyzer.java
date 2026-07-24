@@ -1,6 +1,7 @@
 package com.wotb.core.processing;
 
 import com.wotb.core.replay.reconstruction.BattleParticipant;
+import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
@@ -199,7 +200,7 @@ public class BatchAnalyzer {
     }
 
     /**
-     * 选择代表回放：按质量降序排列：reconstruction → streamComplete → decodedRatio → failedPackets → unknownPackets。
+     * 选择代表回放：按质量降序排列：reconstruction → streamComplete → decodedRatio → failedPackets → unknownPackets → resyncCount。
      */
     static ScopedResult selectRepresentative(final List<ScopedResult> group) {
         if (group.size() == 1) return group.getFirst();
@@ -208,14 +209,16 @@ public class BatchAnalyzer {
 
     private static java.util.Comparator<ScopedResult> representativeComparator() {
         return java.util.Comparator
-                .<ScopedResult>comparingInt(s -> hasReconstruction(s) ? 1 : 0)
-                .reversed()
-                .thenComparingInt(s -> isStreamComplete(s) ? 1 : 0)
-                .reversed()
-                .thenComparingDouble(s -> decodedRatio(s))
-                .reversed()
-                .thenComparingInt(s -> failedPackets(s))
-                .thenComparingInt(s -> unknownPackets(s));
+                .<ScopedResult>comparingInt(s -> hasReconstruction(s) ? 0 : 1)
+                .thenComparing(
+                        java.util.Comparator.<ScopedResult>comparingInt(
+                                s -> isStreamComplete(s) ? 0 : 1))
+                .thenComparing(
+                        java.util.Comparator.<ScopedResult>comparingDouble(
+                                BatchAnalyzer::decodedRatio).reversed())
+                .thenComparingInt(BatchAnalyzer::failedPackets)
+                .thenComparingInt(BatchAnalyzer::unknownPackets)
+                .thenComparingInt(BatchAnalyzer::resyncCount);
     }
 
     private static boolean hasReconstruction(final ScopedResult s) {
@@ -228,21 +231,29 @@ public class BatchAnalyzer {
         return diag != null && diag.diagnostics() != null && diag.diagnostics().streamComplete();
     }
 
+    private static ReplayCoverage coverage(final ScopedResult s) {
+        return s.result().reconstruction() != null ? s.result().reconstruction().coverage() : null;
+    }
+
     private static double decodedRatio(final ScopedResult s) {
-        final var cov = s.result().reconstruction() != null ? s.result().reconstruction().coverage() : null;
+        final var cov = coverage(s);
         return cov != null ? cov.decodedPacketRatio() : 0.0;
     }
 
     private static int failedPackets(final ScopedResult s) {
-        final var diag = s.result().diagnostics();
-        if (diag == null || diag.diagnostics() == null) return Integer.MAX_VALUE;
-        return diag.diagnostics().packetCount() - diag.diagnostics().normalPacketCount();
+        final var cov = coverage(s);
+        return cov != null ? cov.failedPackets() : Integer.MAX_VALUE;
     }
 
     private static int unknownPackets(final ScopedResult s) {
+        final var cov = coverage(s);
+        return cov != null ? cov.unknownPackets() : Integer.MAX_VALUE;
+    }
+
+    private static int resyncCount(final ScopedResult s) {
         final var diag = s.result().diagnostics();
         if (diag == null || diag.diagnostics() == null) return Integer.MAX_VALUE;
-        return diag.diagnostics().packetCount() - diag.diagnostics().normalPacketCount() - diag.diagnostics().recoveredPacketCount();
+        return diag.diagnostics().resyncCount();
     }
 
     private static Long extractRecorderAccountId(final ReplayProcessingResult result) {
