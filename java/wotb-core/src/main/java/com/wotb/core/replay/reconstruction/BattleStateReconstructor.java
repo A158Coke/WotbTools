@@ -206,9 +206,8 @@ public class BattleStateReconstructor {
 
         if (e.currentHealth() != null) {
             if (DecodeConfidenceHelper.isLowConfidence(e.confidence())
-                    && vs.currentHealth() != null
                     && vs.lifeState() == LifeState.DESTROYED) {
-                // 低置信度，不覆盖已确认阵亡状态
+                // 低置信度不得覆盖已确认阵亡状态，无论是否已有 currentHealth
             } else {
                 vs.setCurrentHealth(e.currentHealth());
             }

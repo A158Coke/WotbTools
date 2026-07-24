@@ -17,7 +17,15 @@ class BattleStateReconstructorReentryTest {
     }
 
     private static ReplayEvent eventAt(final float sec, final int eid) {
-        return new EntityCreatedEvent((int)(sec*1000), ts(sec), 1, DecodeConfidence.EXACT, eid, null);
+        return new EntityCreatedEvent((int) (sec * 1000), ts(sec), 1, DecodeConfidence.EXACT, eid, null);
+    }
+
+    private static void assertCheckpoint(
+            final BattleStateCheckpoint cp,
+            final int expectedEventIndex,
+            final float expectedClock) {
+        assertEquals(expectedEventIndex, cp.eventIndex());
+        assertEquals(expectedClock, cp.rawClockSec(), 0.001f);
     }
 
     @Test
@@ -25,6 +33,35 @@ class BattleStateReconstructorReentryTest {
         var rec = new BattleStateReconstructor();
         var result = rec.reconstruct(List.of());
         assertEquals(1, result.checkpoints().size());
+        assertCheckpoint(result.checkpoints().get(0), 0, 0f);
+    }
+
+    @Test
+    void timeIntervalTrigger() {
+        // Checkpoint interval 2s, events at 0s, 2.5s, 5s
+        // First event always triggers because lastCheckpointClock starts at -MAX
+        var rec = new BattleStateReconstructor(null, 2f, 100);
+        var result = rec.reconstruct(List.of(eventAt(0f, 101), eventAt(2.5f, 102), eventAt(5f, 103)));
+        // cp0: initial; cp1: event1 triggers @0/1 (time from -MAX); cp2: event2 @2.5/2; cp3: event3 @5/3
+        assertEquals(4, result.checkpoints().size());
+        assertCheckpoint(result.checkpoints().get(0), 0, 0f);
+        assertCheckpoint(result.checkpoints().get(1), 1, 0f);
+        assertCheckpoint(result.checkpoints().get(2), 2, 2.5f);
+        assertCheckpoint(result.checkpoints().get(3), 3, 5f);
+    }
+
+    @Test
+    void eventCountIntervalTrigger() {
+        // Event interval 2, time interval 100 (effectively disabled), 4 events
+        var rec = new BattleStateReconstructor(null, 100f, 2);
+        var result = rec.reconstruct(List.of(
+                eventAt(1f, 101), eventAt(2f, 102), eventAt(3f, 103), eventAt(4f, 104)));
+        // cp0: initial; cp1: event1 @1/1 (time from -MAX >= 100? 1 - (-MAX) >= 100 YES); cp2: event3 @3/3 (event-count=2); cp3: final @4/4
+        assertEquals(4, result.checkpoints().size());
+        assertCheckpoint(result.checkpoints().get(0), 0, 0f);
+        assertCheckpoint(result.checkpoints().get(1), 1, 1f);
+        assertCheckpoint(result.checkpoints().get(2), 3, 3f);
+        assertCheckpoint(result.checkpoints().get(3), 4, 4f);
     }
 
     @Test
@@ -41,39 +78,10 @@ class BattleStateReconstructorReentryTest {
     }
 
     @Test
-    void singleEvent() {
-        var rec = new BattleStateReconstructor();
-        var result = rec.reconstruct(List.of(eventAt(1f, 101)));
-        // Initial checkpoint + after processing one event
-        assertEquals(2, result.checkpoints().size());
-    }
-
-    @Test
-    void timeIntervalTrigger() {
-        var rec = new BattleStateReconstructor(null, 2f, 100);
-        var events = List.of(eventAt(0f, 101), eventAt(2.5f, 102), eventAt(5f, 103));
-        var result = rec.reconstruct(events);
-        // initial + 2 interval checkpoints + final = 4
-        assertEquals(4, result.checkpoints().size());
-    }
-
-    @Test
-    void eventCountIntervalTrigger() {
-        var rec = new BattleStateReconstructor(null, 100f, 2);
-        var events = List.of(eventAt(1f, 101), eventAt(2f, 102), eventAt(3f, 103), eventAt(4f, 104));
-        var result = rec.reconstruct(events);
-        // initial + 2 event-interval checkpoints + final = 4
-        assertEquals(4, result.checkpoints().size());
-    }
-
-    @Test
     void longThenShortList() {
         var rec = new BattleStateReconstructor();
-        var longList = List.of(eventAt(1f, 101), eventAt(2f, 102));
-        var shortList = List.of(eventAt(1f, 101));
-        var longResult = rec.reconstruct(longList);
-        var shortResult = rec.reconstruct(shortList);
-        // Short list should not be polluted by long list
+        rec.reconstruct(List.of(eventAt(1f, 101), eventAt(2f, 102)));
+        var shortResult = rec.reconstruct(List.of(eventAt(1f, 101)));
         assertEquals(2, shortResult.checkpoints().size());
         assertEquals(1, shortResult.checkpoints().getLast().eventIndex());
     }
@@ -81,10 +89,8 @@ class BattleStateReconstructorReentryTest {
     @Test
     void shortThenLongList() {
         var rec = new BattleStateReconstructor();
-        var shortList = List.of(eventAt(1f, 101));
-        var longList = List.of(eventAt(1f, 101), eventAt(2f, 102));
-        rec.reconstruct(shortList);
-        var longResult = rec.reconstruct(longList);
+        rec.reconstruct(List.of(eventAt(1f, 101)));
+        var longResult = rec.reconstruct(List.of(eventAt(1f, 101), eventAt(2f, 102)));
         assertEquals(3, longResult.checkpoints().size());
         assertEquals(2, longResult.checkpoints().getLast().eventIndex());
     }
