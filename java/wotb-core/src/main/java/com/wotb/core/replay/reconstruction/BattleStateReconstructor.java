@@ -214,13 +214,16 @@ public class BattleStateReconstructor {
             }
         }
         if (e.maxHealth() != null) {
+            // maxHealth is a structural property (like entityId), not a runtime state value.
+            // It is always applied regardless of confidence, unlike currentHealth and alive.
             vs.setMaxHealth(e.maxHealth());
         }
         if (e.alive() != null) {
             if (!e.alive() && vs.lifeState() != LifeState.DESTROYED) {
                 vs.setLifeState(LifeState.DESTROYED);
                 vs.setObservationState(ObservationState.REMOVED);
-            } else if (e.alive()) {
+            } else if (e.alive() && !(vs.lifeState() == LifeState.DESTROYED
+                    && DecodeConfidenceHelper.isLowConfidence(e.confidence()))) {
                 vs.setLifeState(LifeState.ALIVE);
             }
         }

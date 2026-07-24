@@ -21,9 +21,4 @@ final class DecodeConfidenceHelper {
     static boolean isLowConfidence(final DecodeConfidence c) {
         return c == null || ordinal(c) >= ordinal(DecodeConfidence.PARTIAL);
     }
-
-    /** true if confidence is at least as reliable as the given threshold. */
-    static boolean atLeast(final DecodeConfidence c, final DecodeConfidence threshold) {
-        return c != null && ordinal(c) <= ordinal(threshold);
-    }
 }
