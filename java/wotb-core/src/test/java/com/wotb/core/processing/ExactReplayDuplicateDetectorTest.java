@@ -150,7 +150,7 @@ class ExactReplayDuplicateDetectorTest {
         assertSame(r3, p.duplicates().get(0).duplicate());
         assertSame(r2, p.duplicates().get(1).original());
         assertSame(r5, p.duplicates().get(1).duplicate());
-        assertTrue(p.uniqueResults().size() + p.count() == 5);
+        assertEquals(5, p.uniqueResults().size() + p.count());
     }
 
     @Test
@@ -194,13 +194,6 @@ class ExactReplayDuplicateDetectorTest {
         return new ReplayProcessingResult(
                 name, status, null,
                 null, null, null, ReplayProcessingCapabilities.NONE, null, null);
-    }
-
-    private static ReplayProcessingResult resultWithHash(
-            final String name,
-            final String hash,
-            final ReplayProcessingStatus status) {
-        return result(name, hash, status);
     }
 
     private static ReplayProcessingResult failedResult(
