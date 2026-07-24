@@ -92,12 +92,6 @@ class ItemCatalogValidationTest {
     void setPojoValueFails() { assertInvalid(setEffect(NF.pojoNode("x"))); }
 
     @Test
-    void setMissingNodeValueFails() {
-        // MissingNode cannot be meaningfully stored in ObjectNode.
-        // The "missing value field" case is covered by setMissingValueFails above.
-    }
-
-    @Test
     void setBooleanValuePasses() { assertValid(setEffect(true)); }
 
     @Test

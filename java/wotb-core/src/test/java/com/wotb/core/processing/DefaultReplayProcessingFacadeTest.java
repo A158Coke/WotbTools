@@ -156,17 +156,35 @@ class DefaultReplayProcessingFacadeTest {
 
     @Test
     void buildBatchResultPreservesOrder() {
-        var caps = new ReplayProcessingCapabilities(true, true, false, false, false, false, false, false);
-        var r1 = new ReplayProcessingResult("unique-1.wotbreplay", ReplayProcessingStatus.SUCCESS, null, null, null, null, caps, null, null);
-        var id2 = new ReplayIdentity("same-hash", null, null, null, null, null);
-        var b = new Battle(); b.arenaId = "a"; b.arenaBonusType = 1;
-        var pr = new PlayerResult(); pr.accountId = 1L; pr.nickname = "P"; pr.team = 1;
-        b.players = List.of(pr); b.recorder = "P";
-        var r2 = new ReplayProcessingResult("orig.wotbreplay", ReplayProcessingStatus.SUCCESS, id2, b, null, null, caps, null, null);
-        var r3 = new ReplayProcessingResult("dup.wotbreplay", ReplayProcessingStatus.SUCCESS, id2, b, null, null, caps, null, null);
-        var r4 = new ReplayProcessingResult("failed.wotbreplay", ReplayProcessingStatus.FAILED, null, null, null, null, ReplayProcessingCapabilities.NONE,
+        var caps = new ReplayProcessingCapabilities(
+                true, true, false, false, false, false, false, false);
+        var r1 = new ReplayProcessingResult(
+                "unique-1.wotbreplay", ReplayProcessingStatus.SUCCESS,
+                null, null, null, null, caps, null, null);
+        var id2 = new ReplayIdentity(
+                "same-hash", null, null, null, null, null);
+        var b = new Battle();
+        b.arenaId = "a";
+        b.arenaBonusType = 1;
+        var pr = new PlayerResult();
+        pr.accountId = 1L;
+        pr.nickname = "P";
+        pr.team = 1;
+        b.players = List.of(pr);
+        b.recorder = "P";
+        var r2 = new ReplayProcessingResult(
+                "orig.wotbreplay", ReplayProcessingStatus.SUCCESS,
+                id2, b, null, null, caps, null, null);
+        var r3 = new ReplayProcessingResult(
+                "dup.wotbreplay", ReplayProcessingStatus.SUCCESS,
+                id2, b, null, null, caps, null, null);
+        var r4 = new ReplayProcessingResult(
+                "failed.wotbreplay", ReplayProcessingStatus.FAILED,
+                null, null, null, null, ReplayProcessingCapabilities.NONE,
                 ReplayProcessingError.of("FAILED", ""), null);
-        var r5 = new ReplayProcessingResult("unique-2.wotbreplay", ReplayProcessingStatus.SUCCESS, null, null, null, null, caps, null, null);
+        var r5 = new ReplayProcessingResult(
+                "unique-2.wotbreplay", ReplayProcessingStatus.SUCCESS,
+                null, null, null, null, caps, null, null);
         var input = List.of(r1, r2, r3, r4, r5);
         var result = facade.buildBatchResult(input.size(), input);
         for (int i = 0; i < input.size(); i++) {
