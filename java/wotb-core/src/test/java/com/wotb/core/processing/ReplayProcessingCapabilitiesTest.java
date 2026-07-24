@@ -10,7 +10,7 @@ class ReplayProcessingCapabilitiesTest {
         final var caps = ReplayProcessingCapabilities.of(
                 true, false, false, false, false, false, false, ReplayAnalysisScope.PLAYER_FOCUSED);
         assertFalse(caps.aiAnalyzable());
-        assertFalse(caps.fullFeatureAnalysisAvailable());
+        assertFalse(caps.fullFeatureAnalysisPossible());
     }
 
     @Test
@@ -18,7 +18,7 @@ class ReplayProcessingCapabilitiesTest {
         final var caps = ReplayProcessingCapabilities.of(
                 true, true, false, false, false, false, false, ReplayAnalysisScope.PLAYER_FOCUSED);
         assertTrue(caps.aiAnalyzable());
-        assertFalse(caps.fullFeatureAnalysisAvailable());
+        assertFalse(caps.fullFeatureAnalysisPossible());
     }
 
     @Test
@@ -26,7 +26,7 @@ class ReplayProcessingCapabilitiesTest {
         final var caps = ReplayProcessingCapabilities.of(
                 true, true, true, true, false, true, false, ReplayAnalysisScope.PLAYER_FOCUSED);
         assertTrue(caps.aiAnalyzable());
-        assertTrue(caps.fullFeatureAnalysisAvailable());
+        assertTrue(caps.fullFeatureAnalysisPossible());
     }
 
     @Test
@@ -34,7 +34,7 @@ class ReplayProcessingCapabilitiesTest {
         final var caps = ReplayProcessingCapabilities.of(
                 true, true, true, false, false, true, false, ReplayAnalysisScope.PLAYER_FOCUSED);
         assertTrue(caps.aiAnalyzable());
-        assertFalse(caps.fullFeatureAnalysisAvailable());
+        assertFalse(caps.fullFeatureAnalysisPossible());
     }
 
     @Test
@@ -42,7 +42,7 @@ class ReplayProcessingCapabilitiesTest {
         final var caps = ReplayProcessingCapabilities.of(
                 true, true, true, true, false, false, false, ReplayAnalysisScope.PLAYER_FOCUSED);
         assertTrue(caps.aiAnalyzable());
-        assertFalse(caps.fullFeatureAnalysisAvailable());
+        assertFalse(caps.fullFeatureAnalysisPossible());
     }
 
     @Test
@@ -50,7 +50,7 @@ class ReplayProcessingCapabilitiesTest {
         final var caps = ReplayProcessingCapabilities.of(
                 false, false, false, false, false, false, false, ReplayAnalysisScope.PLAYER_FOCUSED);
         assertFalse(caps.aiAnalyzable());
-        assertFalse(caps.fullFeatureAnalysisAvailable());
+        assertFalse(caps.fullFeatureAnalysisPossible());
     }
 
     @Test
@@ -71,13 +71,13 @@ class ReplayProcessingCapabilitiesTest {
     void summaryOnlyWithRecorderResult() {
         final var caps = ReplayProcessingCapabilities.summaryOnly(true);
         assertTrue(caps.aiAnalyzable());
-        assertFalse(caps.fullFeatureAnalysisAvailable());
+        assertFalse(caps.fullFeatureAnalysisPossible());
     }
 
     @Test
     void summaryOnlyWithoutRecorderResult() {
         final var caps = ReplayProcessingCapabilities.summaryOnly(false);
         assertFalse(caps.aiAnalyzable());
-        assertFalse(caps.fullFeatureAnalysisAvailable());
+        assertFalse(caps.fullFeatureAnalysisPossible());
     }
 }
