@@ -48,14 +48,14 @@ public class BatchAnalyzer {
      * @return 分析计划
      */
     public AnalysisPlan analyze(final List<ReplayProcessingResult> results) {
-        return analyze(results, ExactReplayDuplicateDetector.partition(results));
+        Objects.requireNonNull(results, "results");
+        return analyzePartition(ExactReplayDuplicateDetector.partition(results));
     }
 
-    public AnalysisPlan analyze(
-            final List<ReplayProcessingResult> results,
+    /** 直接使用已计算的 partition（package-private 供 Facade 共享）。 */
+    AnalysisPlan analyzePartition(
             final ExactReplayDuplicateDetector.ExactDuplicatePartition partition
     ) {
-        Objects.requireNonNull(results, "results");
         Objects.requireNonNull(partition, "partition");
 
         // 1. 确定每个文件的 category + scope（仅 unique 结果参与）

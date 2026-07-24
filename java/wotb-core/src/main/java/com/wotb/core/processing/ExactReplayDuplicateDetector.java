@@ -4,29 +4,33 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
-/**
- * 精确重复检测器，独立于 scope/recorder 验证。
- * <p>
- * 即使 scope 混合或录像者不同，也能正确检测 content-hash 完全相同的文件。
- * 无 contentHash 时不得将同名文件猜测为精确重复。
- * </p>
- */
 public final class ExactReplayDuplicateDetector {
 
     private ExactReplayDuplicateDetector() {}
 
-    /** 分成 unique + duplicates，unique 完全有序。 */
     public static ExactDuplicatePartition partition(final List<ReplayProcessingResult> results) {
+        Objects.requireNonNull(results, "results");
+        for (final ReplayProcessingResult r : results) {
+            Objects.requireNonNull(r, "results contains null");
+        }
+
         final Map<String, ReplayProcessingResult> originalByHash = new LinkedHashMap<>();
         final List<ReplayProcessingResult> unique = new ArrayList<>();
         final List<ExactReplayDuplicate> duplicates = new ArrayList<>();
 
         for (final ReplayProcessingResult result : results) {
-            if (result.status() == ReplayProcessingStatus.FAILED) { unique.add(result); continue; }
+            if (result.status() == ReplayProcessingStatus.FAILED) {
+                unique.add(result);
+                continue;
+            }
             final var identity = result.identity();
             final String hash = identity != null ? identity.contentHash() : null;
-            if (hash == null || hash.isBlank()) { unique.add(result); continue; }
+            if (hash == null || hash.isBlank()) {
+                unique.add(result);
+                continue;
+            }
             final ReplayProcessingResult original = originalByHash.putIfAbsent(hash, result);
             if (original == null) {
                 unique.add(result);
@@ -43,8 +47,8 @@ public final class ExactReplayDuplicateDetector {
             List<ExactReplayDuplicate> duplicates
     ) {
         public ExactDuplicatePartition {
-            uniqueResults = List.copyOf(uniqueResults);
-            duplicates = List.copyOf(duplicates);
+            uniqueResults = List.copyOf(Objects.requireNonNull(uniqueResults, "uniqueResults"));
+            duplicates = List.copyOf(Objects.requireNonNull(duplicates, "duplicates"));
         }
         public int count() { return duplicates.size(); }
         public List<String> duplicateFileNames() {
