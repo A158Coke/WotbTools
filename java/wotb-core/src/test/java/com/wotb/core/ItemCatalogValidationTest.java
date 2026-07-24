@@ -12,9 +12,6 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/**
- * 物品目录 JSON 自动校验。
- */
 class ItemCatalogValidationTest {
 
     private static final JsonMapper MAPPER = JsonMapper.builder().build();
@@ -22,71 +19,156 @@ class ItemCatalogValidationTest {
             .resolve("common").resolve("wotb-item-catalog-json");
 
     @Test
-    void equipmentJsonIsValidAndIdsAreUnique() throws Exception {
-        final var tree = load("equipment.json");
-        final var items = tree.get("items");
-        assertNotNull(items, "equipment.json must have items array");
+    void equipmentJsonIsValid() throws Exception {
+        final var items = requireItems("equipment.json");
         final Set<Integer> ids = new HashSet<>();
         final Set<String> codes = new HashSet<>();
         for (final var item : items) {
-            assertTrue(ids.add(item.get("id").asInt()), "Duplicate equipment id: " + item.get("id"));
-            assertTrue(codes.add(item.get("code").asText()), "Duplicate equipment code: " + item.get("code"));
-            assertNotNull(item.get("effects"), "Equipment " + item.get("id") + " has null effects");
-            assertTrue(item.get("effects").size() > 0, "Equipment " + item.get("id") + " has empty effects");
-            validateEffects(item.get("effects"));
-            validateGrid(item.get("grid"));
+            final int id = requireNonNegativeInt(item, "id", "Equipment");
+            assertTrue(ids.add(id), "Duplicate equipment id: " + id);
+            requireNonBlankText(item, "code", "Equipment " + id);
+            assertTrue(codes.add(item.get("code").textValue()));
+            validateGrid(item.get("grid"), "Equipment " + id);
+            validateEffects(item.get("effects"), "Equipment " + id);
         }
     }
 
     @Test
-    void consumablesJsonIsValidAndIdsAreUnique() throws Exception {
-        final var tree = load("consumables.json");
-        final var items = tree.get("items");
-        assertNotNull(items);
+    void consumablesJsonIsValid() throws Exception {
+        final var items = requireItems("consumables.json");
         final Set<Integer> ids = new HashSet<>();
         final Set<String> codes = new HashSet<>();
         for (final var item : items) {
-            assertTrue(ids.add(item.get("id").asInt()), "Duplicate consumable id: " + item.get("id"));
-            assertTrue(codes.add(item.get("code").asText()), "Duplicate consumable code: " + item.get("code"));
-            assertTrue(item.hasNonNull("cooldownSeconds") && item.get("cooldownSeconds").isIntegralNumber()
-                    && item.get("cooldownSeconds").canConvertToInt() && item.get("cooldownSeconds").intValue() > 0,
-                    "Consumable " + item.get("id") + " cooldownSeconds must be positive int");
-            if (item.hasNonNull("activationType")) {
-                assertTrue(Set.of("INSTANT", "DURATION").contains(item.get("activationType").asText()),
-                        "Consumable " + item.get("id") + " unknown activationType");
+            final int id = requireNonNegativeInt(item, "id", "Consumable");
+            assertTrue(ids.add(id), "Duplicate consumable id: " + id);
+            requireNonBlankText(item, "code", "Consumable " + id);
+            assertTrue(codes.add(item.get("code").textValue()));
+            final String activationType = requireNonBlankText(item, "activationType", "Consumable " + id);
+            assertTrue(Set.of("INSTANT", "DURATION").contains(activationType),
+                    "Consumable " + id + " invalid activationType: " + activationType);
+            requirePositiveInt(item, "cooldownSeconds", "Consumable " + id);
+            if ("DURATION".equals(activationType)) {
+                requirePositiveInt(item, "durationSeconds", "Consumable " + id);
+            } else {
+                assertFalse(item.hasNonNull("durationSeconds"),
+                        "Consumable " + id + " INSTANT must not define durationSeconds");
             }
-            if (item.has("activationType") && "DURATION".equals(item.get("activationType").asText())) {
-                assertTrue(item.hasNonNull("durationSeconds") && item.get("durationSeconds").asInt() > 0,
-                        "DURATION consumable " + item.get("id") + " missing or invalid durationSeconds");
-            }
-            assertNotNull(item.get("effects"));
-            assertTrue(item.get("effects").size() > 0);
-            validateEffects(item.get("effects"));
+            validateEffects(item.get("effects"), "Consumable " + id);
         }
     }
 
     @Test
-    void provisionsJsonIsValidAndLogicalIdsAreUnique() throws Exception {
-        final var tree = load("provisions.json");
-        final var items = tree.get("items");
-        assertNotNull(items);
-        final Set<String> provisionIds = new HashSet<>();
+    void provisionsJsonIsValid() throws Exception {
+        final var items = requireItems("provisions.json");
+        final Set<String> ids = new HashSet<>();
+        final Set<String> codes = new HashSet<>();
         final Set<Integer> allSourceIds = new HashSet<>();
-        final Set<String> codes = new HashSet<>();
         for (final var item : items) {
-            assertTrue(provisionIds.add(item.get("id").asText()), "Duplicate provision id: " + item.get("id"));
-            assertTrue(codes.add(item.get("code").asText()), "Duplicate provision code: " + item.get("code"));
-            assertTrue(item.hasNonNull("sourceIds"), "Provision " + item.get("id") + " missing sourceIds");
-            assertTrue(item.get("sourceIds").size() > 0, "Provision " + item.get("id") + " has empty sourceIds");
-            for (final var sid : item.get("sourceIds")) {
-                assertTrue(sid.isIntegralNumber() && sid.canConvertToInt(), "sourceId must be valid int: " + sid);
+            final String pid = requireNonBlankText(item, "id", "Provision");
+            assertTrue(ids.add(pid), "Duplicate provision id: " + pid);
+            requireNonBlankText(item, "code", "Provision " + pid);
+            assertTrue(codes.add(item.get("code").textValue()));
+            final JsonNode sourceIds = item.get("sourceIds");
+            assertNotNull(sourceIds, "Provision " + pid + " missing sourceIds");
+            assertTrue(sourceIds.isArray(), "Provision " + pid + " sourceIds must be array");
+            assertFalse(sourceIds.isEmpty(), "Provision " + pid + " sourceIds must not be empty");
+            for (final var sid : sourceIds) {
+                assertTrue(sid.isIntegralNumber() && sid.canConvertToInt(),
+                        "Provision " + pid + " sourceId must be valid int");
                 final int sourceId = sid.intValue();
-                assertTrue(sourceId >= 0, "Provision " + item.get("id") + " negative sourceId: " + sourceId);
-                assertTrue(allSourceIds.add(sourceId), "Duplicate sourceId across provisions: " + sourceId);
+                assertTrue(sourceId >= 0, "Provision " + pid + " sourceId must be non-negative");
+                assertTrue(allSourceIds.add(sourceId), "Duplicate sourceId: " + sourceId);
             }
-            assertTrue(item.hasNonNull("effects"), "Provision " + item.get("id") + " missing effects");
-            assertTrue(item.get("effects").size() > 0, "Provision " + item.get("id") + " has empty effects");
-            validateEffects(item.get("effects"));
+            validateEffects(item.get("effects"), "Provision " + pid);
+        }
+    }
+
+    // ======== Schema helpers ========
+
+    private static JsonNode requireItems(final String fileName) throws Exception {
+        final JsonNode root = load(fileName);
+        assertNotNull(root, fileName + " root is null");
+        assertTrue(root.isObject(), fileName + " root must be object");
+        final JsonNode items = root.get("items");
+        assertNotNull(items, fileName + " missing items");
+        assertTrue(items.isArray(), fileName + " items must be array");
+        assertFalse(items.isEmpty(), fileName + " items must not be empty");
+        return items;
+    }
+
+    private static String requireNonBlankText(final JsonNode object, final String field, final String context) {
+        assertNotNull(object, context + " object is null");
+        assertTrue(object.isObject(), context + " must be object");
+        final JsonNode node = object.get(field);
+        assertNotNull(node, context + " missing " + field);
+        assertTrue(node.isTextual(), context + " " + field + " must be string");
+        final String value = node.textValue();
+        assertFalse(value.isBlank(), context + " " + field + " must not be blank");
+        return value;
+    }
+
+    private static int requireNonNegativeInt(final JsonNode object, final String field, final String context) {
+        final JsonNode node = object.get(field);
+        assertNotNull(node, context + " missing " + field);
+        assertTrue(node.isIntegralNumber(), context + " " + field + " must be integer");
+        assertTrue(node.canConvertToInt(), context + " " + field + " outside int range");
+        final int value = node.intValue();
+        assertTrue(value >= 0, context + " " + field + " must be non-negative");
+        return value;
+    }
+
+    private static int requirePositiveInt(final JsonNode object, final String field, final String context) {
+        final int value = requireNonNegativeInt(object, field, context);
+        assertTrue(value > 0, context + " " + field + " must be positive");
+        return value;
+    }
+
+    private static void validateGrid(final JsonNode grid, final String context) {
+        assertNotNull(grid, context + " missing grid");
+        assertTrue(grid.isObject(), context + " grid must be object");
+        final String group = requireNonBlankText(grid, "group", context + " grid");
+        final String side = requireNonBlankText(grid, "side", context + " grid");
+        final int slot = requireNonNegativeInt(grid, "slot", context + " grid");
+        assertTrue(Set.of("FIREPOWER", "VITALITY", "SPECIALIZATION").contains(group),
+                context + " invalid grid group: " + group);
+        assertTrue(Set.of(1, 2, 3).contains(slot), context + " invalid grid slot: " + slot);
+        assertTrue(Set.of("LEFT", "RIGHT").contains(side), context + " invalid grid side: " + side);
+    }
+
+    private static void validateEffects(final JsonNode effects, final String context) {
+        assertNotNull(effects, context + " missing effects");
+        assertTrue(effects.isArray(), context + " effects must be array");
+        assertFalse(effects.isEmpty(), context + " effects must not be empty");
+        for (final var effect : effects) {
+            assertTrue(effect.isObject(), context + " effect must be object");
+            final String operation = requireNonBlankText(effect, "operation", context + " effect");
+            switch (operation) {
+                case "MULTIPLY", "ADD", "ADD_PERCENTAGE_POINTS" -> {
+                    final JsonNode value = effect.get("value");
+                    assertNotNull(value, context + " " + operation + " missing value");
+                    assertTrue(value.isNumber(), context + " " + operation + " value must be numeric");
+                    assertTrue(Double.isFinite(value.doubleValue()), context + " " + operation + " value must be finite");
+                }
+                case "SET" -> {
+                    final JsonNode value = effect.get("value");
+                    assertNotNull(value, context + " SET missing value");
+                }
+                case "INSTANT_ACTION" ->
+                    requireNonBlankText(effect, "action", context + " INSTANT_ACTION");
+                case "SET_RELATIVE_RANGE" -> {
+                    final JsonNode min = effect.get("minimumMultiplier");
+                    final JsonNode max = effect.get("maximumMultiplier");
+                    assertNotNull(min, context + " SET_RELATIVE_RANGE missing minimumMultiplier");
+                    assertNotNull(max, context + " SET_RELATIVE_RANGE missing maximumMultiplier");
+                    assertTrue(min.isNumber(), context + " minimumMultiplier must be numeric");
+                    assertTrue(max.isNumber(), context + " maximumMultiplier must be numeric");
+                    assertTrue(Double.isFinite(min.doubleValue()), context + " minimumMultiplier must be finite");
+                    assertTrue(Double.isFinite(max.doubleValue()), context + " maximumMultiplier must be finite");
+                    assertTrue(min.doubleValue() <= max.doubleValue(),
+                            context + " minimumMultiplier must not exceed maximumMultiplier");
+                }
+                default -> fail(context + " unknown operation: " + operation);
+            }
         }
     }
 
@@ -94,41 +176,5 @@ class ItemCatalogValidationTest {
         final File file = CATALOG_DIR.resolve(fileName).toFile();
         assertTrue(file.exists(), "File not found: " + file);
         return MAPPER.readTree(file);
-    }
-
-    private static void validateEffects(final JsonNode effects) {
-        assertNotNull(effects);
-        assertTrue(effects.isArray(), "Effects must be an array");
-        for (final var effect : effects) {
-            assertTrue(effect.hasNonNull("operation"), "Effect missing operation");
-            final String op = effect.get("operation").asText();
-            switch (op) {
-                case "MULTIPLY", "ADD", "SET", "ADD_PERCENTAGE_POINTS" ->
-                    assertTrue(effect.hasNonNull("value"), op + " requires value");
-                case "INSTANT_ACTION" -> {
-                    assertTrue(effect.hasNonNull("action"), "INSTANT_ACTION requires action");
-                    assertTrue(effect.get("action").isTextual() && !effect.get("action").asText().isBlank(),
-                            "INSTANT_ACTION requires non-empty string action");
-                }
-                case "SET_RELATIVE_RANGE" -> {
-                    assertTrue(effect.hasNonNull("minimumMultiplier"), "SET_RELATIVE_RANGE requires minimumMultiplier");
-                    assertTrue(effect.get("minimumMultiplier").isNumber(), "minimumMultiplier must be numeric");
-                    assertTrue(effect.hasNonNull("maximumMultiplier"), "SET_RELATIVE_RANGE requires maximumMultiplier");
-                    assertTrue(effect.get("maximumMultiplier").isNumber(), "maximumMultiplier must be numeric");
-                    assertTrue(effect.get("minimumMultiplier").doubleValue() <= effect.get("maximumMultiplier").doubleValue(),
-                            "minimumMultiplier must not exceed maximumMultiplier");
-                }
-                default -> fail("Unknown operation: " + op);
-            }
-        }
-    }
-
-    private static void validateGrid(final JsonNode grid) {
-        final var validGroups = Set.of("FIREPOWER", "VITALITY", "SPECIALIZATION");
-        final var validSlots = Set.of(1, 2, 3);
-        final var validSides = Set.of("LEFT", "RIGHT");
-        assertTrue(validGroups.contains(grid.get("group").asText()), "Invalid grid group: " + grid.get("group"));
-        assertTrue(validSlots.contains(grid.get("slot").asInt()), "Invalid grid slot: " + grid.get("slot"));
-        assertTrue(validSides.contains(grid.get("side").asText()), "Invalid grid side: " + grid.get("side"));
     }
 }
