@@ -48,8 +48,15 @@ public class BatchAnalyzer {
      * @return 分析计划
      */
     public AnalysisPlan analyze(final List<ReplayProcessingResult> results) {
-        // 0. 精确重复去重（独立于 scope/recorder）
-        final var partition = ExactReplayDuplicateDetector.partition(results);
+        return analyze(results, ExactReplayDuplicateDetector.partition(results));
+    }
+
+    public AnalysisPlan analyze(
+            final List<ReplayProcessingResult> results,
+            final ExactReplayDuplicateDetector.ExactDuplicatePartition partition
+    ) {
+        Objects.requireNonNull(results, "results");
+        Objects.requireNonNull(partition, "partition");
 
         // 1. 确定每个文件的 category + scope（仅 unique 结果参与）
         final List<ScopedResult> scoped = partition.uniqueResults().stream()
@@ -193,11 +200,9 @@ public class BatchAnalyzer {
     private static java.util.Comparator<ScopedResult> representativeComparator() {
         return java.util.Comparator
                 .<ScopedResult>comparingInt(s -> hasReconstruction(s) ? 0 : 1)
+                .thenComparing((s -> isStreamComplete(s) ? 0 : 1))
                 .thenComparing(
-                        java.util.Comparator.<ScopedResult>comparingInt(
-                                s -> isStreamComplete(s) ? 0 : 1))
-                .thenComparing(
-                        java.util.Comparator.<ScopedResult>comparingDouble(
+                        java.util.Comparator.comparingDouble(
                                 BatchAnalyzer::decodedRatio).reversed())
                 .thenComparingInt(BatchAnalyzer::failedPackets)
                 .thenComparingInt(BatchAnalyzer::unknownPackets)
@@ -305,15 +310,6 @@ public class BatchAnalyzer {
     }
 
     /**
-     * 精确重复关系：original 是保留的原始文件，duplicate 是被去重的副本。
-     */
-    public record ExactDuplicate(
-            ReplayProcessingResult original,
-            ReplayProcessingResult duplicate
-    ) {
-    }
-
-    /**
      * 分析计划。
      */
     public record AnalysisPlan(
@@ -321,7 +317,7 @@ public class BatchAnalyzer {
             ReplayAnalysisScope dominantScope,
             List<ReplayPerspectiveGroup> groups,
             int effectiveUnitCount,
-            List<ExactDuplicate> exactDuplicates,
+            List<ExactReplayDuplicate> exactDuplicates,
             int exactDuplicateCount,
             int sameTeamDuplicatePerspectiveCount,
             int analyzableUnitCount

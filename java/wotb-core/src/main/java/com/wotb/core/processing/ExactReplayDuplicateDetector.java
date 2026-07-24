@@ -16,28 +16,22 @@ public final class ExactReplayDuplicateDetector {
 
     private ExactReplayDuplicateDetector() {}
 
-    /** 分成 unique + duplicates，unique 保留完全有序。 */
+    /** 分成 unique + duplicates，unique 完全有序。 */
     public static ExactDuplicatePartition partition(final List<ReplayProcessingResult> results) {
         final Map<String, ReplayProcessingResult> originalByHash = new LinkedHashMap<>();
         final List<ReplayProcessingResult> unique = new ArrayList<>();
-        final List<BatchAnalyzer.ExactDuplicate> duplicates = new ArrayList<>();
+        final List<ExactReplayDuplicate> duplicates = new ArrayList<>();
 
         for (final ReplayProcessingResult result : results) {
-            if (result.status() == ReplayProcessingStatus.FAILED) {
-                unique.add(result);
-                continue;
-            }
+            if (result.status() == ReplayProcessingStatus.FAILED) { unique.add(result); continue; }
             final var identity = result.identity();
             final String hash = identity != null ? identity.contentHash() : null;
-            if (hash == null || hash.isBlank()) {
-                unique.add(result);
-                continue;
-            }
+            if (hash == null || hash.isBlank()) { unique.add(result); continue; }
             final ReplayProcessingResult original = originalByHash.putIfAbsent(hash, result);
             if (original == null) {
                 unique.add(result);
             } else {
-                duplicates.add(new BatchAnalyzer.ExactDuplicate(original, result));
+                duplicates.add(new ExactReplayDuplicate(original, result));
             }
         }
 
@@ -46,8 +40,12 @@ public final class ExactReplayDuplicateDetector {
 
     public record ExactDuplicatePartition(
             List<ReplayProcessingResult> uniqueResults,
-            List<BatchAnalyzer.ExactDuplicate> duplicates
+            List<ExactReplayDuplicate> duplicates
     ) {
+        public ExactDuplicatePartition {
+            uniqueResults = List.copyOf(uniqueResults);
+            duplicates = List.copyOf(duplicates);
+        }
         public int count() { return duplicates.size(); }
         public List<String> duplicateFileNames() {
             return duplicates.stream().map(d -> d.duplicate().fileName()).toList();
