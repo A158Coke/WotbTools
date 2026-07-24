@@ -93,8 +93,8 @@ public class AiReplayAnalysisService {
      *
      * @param battle 结算数据（必须非空且含玩家名册）
      * @param recon  完整重建（可为 null；仅用于报告位置/时间线可用性）
-     * @throws IllegalStateException 未配置密钥（消息 {@code AI_NOT_CONFIGURED}）
-     * @throws AiUpstreamException   上游调用失败或返回异常
+     * @throws AiNotConfiguredException 未配置密钥（消息 {@code AI_NOT_CONFIGURED}）
+     * @throws AiUpstreamException      上游调用失败或返回异常
      */
     public AnalyzeResult analyze(Battle battle, ReplayReconstruction recon) {
         if (!isConfigured()) {
@@ -525,34 +525,31 @@ public class AiReplayAnalysisService {
 
     /**
      * 单场分析：先尝试完整特征分析，不满足条件时降级到结算分析。
+     * <p>fallback 是延迟执行的控制流，不提前调用 AI。</p>
      */
-    public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult rep) {
-        if (rep.battle() == null) return new AnalyzeResult("", "", List.of());
-        final var fallback = rep.reconstruction() != null
-                ? analyze(rep.battle(), rep.reconstruction())
-                : analyze(rep.battle(), null);
-        if (rep.reconstruction() == null) return fallback;
+    public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result) {
+        if (result.battle() == null) throw new IllegalArgumentException("NO_BATTLE_DATA");
+        if (result.reconstruction() == null) return analyze(result.battle(), null);
 
-        final var recorder = findRecorder(rep);
-        if (!recorder.resolved()) return fallback;
+        final var recorder = findRecorder(result);
+        if (!recorder.resolved()) return analyze(result.battle(), result.reconstruction());
 
-        final PlayerBattleFeatureSet featureSet;
+        final PlayerBattleFeatureSet features;
         try {
-            final var extractor = new DefaultPlayerBattleFeatureExtractor();
-            featureSet = extractor.extract(rep.reconstruction(), recorder);
-        } catch (Exception e) {
-            System.getLogger("AiReplayAnalysisService")
-                    .log(System.Logger.Level.WARNING,
-                            "Feature extraction failed, falling back: {0}", e.getMessage());
-            return fallback;
+            features = new DefaultPlayerBattleFeatureExtractor()
+                    .extract(result.reconstruction(), recorder);
+        } catch (RuntimeException e) {
+            System.getLogger("AiReplayAnalysisService").log(
+                    System.Logger.Level.WARNING,
+                    "Feature extraction failed, falling back: {0}", e.getMessage());
+            return analyze(result.battle(), result.reconstruction());
         }
 
-        if (!featureSet.hasFeatures()) return fallback;
+        if (!features.hasFeatures()) return analyze(result.battle(), result.reconstruction());
 
-        final var ctx = new SinglePlayerBattleAnalysisContext(
-                null, rep.battle(), featureSet, recorder,
-                rep.reconstruction().coverage(), featureSet.limitations());
-        return analyzePlayerContext(ctx);
+        return analyzePlayerContext(new SinglePlayerBattleAnalysisContext(
+                null, result.battle(), features, recorder,
+                result.reconstruction().coverage(), features.limitations()));
     }
 
     /**

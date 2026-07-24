@@ -22,9 +22,10 @@ public record ReplayProcessingCapabilities(
     public static final ReplayProcessingCapabilities NONE =
             new ReplayProcessingCapabilities(false, false, false, false, false, false, false, false, false);
 
-    /** 仅战绩可用（降级模式）。 */
-    public static ReplayProcessingCapabilities summaryOnly() {
-        return new ReplayProcessingCapabilities(true, false, false, false, false, false, false, true, false);
+    /** 仅战绩可用（降级模式）。recorderResultAvailable 按实际情况传入。 */
+    public static ReplayProcessingCapabilities summaryOnly(final boolean recorderResultAvailable) {
+        return new ReplayProcessingCapabilities(true, recorderResultAvailable, false, false, false, false, false,
+                true && recorderResultAvailable, false);
     }
 
     /**
