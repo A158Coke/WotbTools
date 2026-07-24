@@ -189,7 +189,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
         final var partition = ExactReplayDuplicateDetector.partition(results);
         ReplayAnalysisMode mode;
         try {
-            mode = new BatchAnalyzer().analyze(results, partition).mode();
+            mode = new BatchAnalyzer().analyzePartition(partition).mode();
         } catch (MixedAnalysisScopesException | MixedRandomBattleRecordersException e) {
             mode = ReplayAnalysisMode.NONE;
         }

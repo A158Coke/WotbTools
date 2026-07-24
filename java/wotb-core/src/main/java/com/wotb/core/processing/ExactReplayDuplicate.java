@@ -14,13 +14,18 @@ public record ExactReplayDuplicate(
     public ExactReplayDuplicate {
         Objects.requireNonNull(original, "original");
         Objects.requireNonNull(duplicate, "duplicate");
-        if (original == duplicate) throw new IllegalArgumentException("Duplicate cannot reference itself");
-        if (original.status() == ReplayProcessingStatus.FAILED || duplicate.status() == ReplayProcessingStatus.FAILED)
+        if (original == duplicate) {
+            throw new IllegalArgumentException("Duplicate cannot reference itself");
+        }
+        if (original.status() == ReplayProcessingStatus.FAILED
+                || duplicate.status() == ReplayProcessingStatus.FAILED) {
             throw new IllegalArgumentException("Failed results cannot be exact duplicates");
+        }
         final String oh = contentHash(original);
         final String dh = contentHash(duplicate);
-        if (oh == null || dh == null || !oh.equals(dh))
+        if (oh == null || dh == null || !oh.equals(dh)) {
             throw new IllegalArgumentException("Exact duplicates must have identical non-empty hashes");
+        }
     }
 
     private static String contentHash(final ReplayProcessingResult result) {

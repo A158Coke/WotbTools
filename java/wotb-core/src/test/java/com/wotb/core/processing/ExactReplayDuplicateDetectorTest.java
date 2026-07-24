@@ -7,6 +7,14 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ExactReplayDuplicateDetectorTest {
 
+    @Test void nullResultsThrows() { assertThrows(NullPointerException.class, () -> ExactReplayDuplicateDetector.partition(null)); }
+    @Test void nullElementThrows() { assertThrows(NullPointerException.class, () -> ExactReplayDuplicateDetector.partition(List.of(result("a", "h", ReplayProcessingStatus.SUCCESS), null))); }
+    @Test void partitionListsAreImmutable() {
+        var p = ExactReplayDuplicateDetector.partition(List.of());
+        assertThrows(UnsupportedOperationException.class, () -> p.uniqueResults().add(null));
+        assertThrows(UnsupportedOperationException.class, () -> p.duplicates().add(null));
+    }
+
     @Test
     void sameHashProducesDuplicate() {
         final var r1 = result("a.wotbreplay", "hash-1", ReplayProcessingStatus.SUCCESS);
