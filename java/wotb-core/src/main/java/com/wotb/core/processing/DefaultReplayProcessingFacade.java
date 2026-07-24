@@ -186,14 +186,14 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
     /** 统一汇总入口：mode + duplicates + summary。processBatch 与 buildBatchResult 共享。 */
     private ReplayBatchProcessingResult assembleBatchResult(
             final int totalInputs, final List<ReplayProcessingResult> results) {
-        final var dupSummary = ExactReplayDuplicateDetector.partition(results);
+        final var partition = ExactReplayDuplicateDetector.partition(results);
         ReplayAnalysisMode mode;
         try {
-            mode = new BatchAnalyzer().analyze(results).mode();
+            mode = new BatchAnalyzer().analyze(results, partition).mode();
         } catch (MixedAnalysisScopesException | MixedRandomBattleRecordersException e) {
             mode = ReplayAnalysisMode.NONE;
         }
-        final ReplayBatchSummary summary = buildSummary(totalInputs, results, dupSummary.duplicateFileNames());
+        final ReplayBatchSummary summary = buildSummary(totalInputs, results, partition.duplicateFileNames());
         return new ReplayBatchProcessingResult(
                 mode, totalInputs, summary.totalSuccessful(), summary.totalPartial(), summary.totalFailed(),
                 List.copyOf(results), summary);
