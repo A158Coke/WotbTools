@@ -8,74 +8,96 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class BattleStateReconstructorHealthTest {
 
-    private final BattleStateReconstructor r = new BattleStateReconstructor();
-
-    /** Helper: DESTROY vehicle first via EXACT confidence, then apply low-confidence alive=true */
-    private BattleState sequence(final DecodeConfidence destroyConfidence,
-                                  final DecodeConfidence reviveConfidence,
-                                  final Integer reviveHealth) {
-        // Destroy by EXACT confidence
-        var destroy = new HealthChangedEvent(1, ts(0f), 1, destroyConfidence, 101, null, null, false);
-        // Revive attempt
-        var ts2 = ts(1f);
-        var revive = new HealthChangedEvent(2, ts2, 2, reviveConfidence, 101, reviveHealth, null, true);
-        var result = r.reconstruct(List.of(destroy, revive));
-        return result.finalState();
-    }
+    private final BattleStateReconstructor reconstructor = new BattleStateReconstructor();
 
     private static ReplayTimestamp ts(final float sec) {
         return new ReplayTimestamp(sec, null);
     }
 
+    private static HealthChangedEvent event(
+            final int seq, final float sec, final int type,
+            final DecodeConfidence confidence, final int eid,
+            final Integer health, final Integer maxHealth,
+            final Boolean alive) {
+        return new HealthChangedEvent(seq, ts(sec), type, confidence, eid, health, maxHealth, alive);
+    }
+
+    /** EXACT destroy with health=0, then attempt revive with given confidence/health. */
+    private BattleState destroyThenRevive(
+            final DecodeConfidence reviveConfidence,
+            final Integer reviveHealth) {
+        var destroy = event(1, 0f, 1, DecodeConfidence.EXACT, 101, 0, null, false);
+        var revive = event(2, 1f, 2, reviveConfidence, 101, reviveHealth, null, true);
+        return reconstructor.reconstruct(List.of(destroy, revive)).finalState();
+    }
+
     @Test
     void exactDestroyThenPartialAliveStaysDestroyed() {
-        var state = sequence(DecodeConfidence.EXACT, DecodeConfidence.PARTIAL, null);
-        assertEquals(LifeState.DESTROYED, state.getVehicle(101).lifeState());
+        var state = destroyThenRevive(DecodeConfidence.PARTIAL, 500);
+        var v = state.getVehicle(101);
+        assertEquals(LifeState.DESTROYED, v.lifeState());
+        assertEquals(0, v.currentHealth().intValue(), "currentHealth must remain 0, not overwritten by PARTIAL");
     }
 
     @Test
     void exactDestroyThenUnknownAliveStaysDestroyed() {
-        var state = sequence(DecodeConfidence.EXACT, DecodeConfidence.UNKNOWN, null);
-        assertEquals(LifeState.DESTROYED, state.getVehicle(101).lifeState());
+        var state = destroyThenRevive(DecodeConfidence.UNKNOWN, 500);
+        var v = state.getVehicle(101);
+        assertEquals(LifeState.DESTROYED, v.lifeState());
+        assertEquals(0, v.currentHealth().intValue(), "currentHealth must remain 0, not overwritten by UNKNOWN");
     }
 
     @Test
     void exactDestroyThenNullConfidenceAliveStaysDestroyed() {
-        var state = sequence(DecodeConfidence.EXACT, null, null);
-        assertEquals(LifeState.DESTROYED, state.getVehicle(101).lifeState());
+        var state = destroyThenRevive(null, 500);
+        var v = state.getVehicle(101);
+        assertEquals(LifeState.DESTROYED, v.lifeState());
+        assertEquals(0, v.currentHealth().intValue(), "currentHealth must remain 0, not overwritten by null confidence");
     }
 
     @Test
-    void exactDestroyThenPartialHealthDoesNotOverride() {
-        var state = sequence(DecodeConfidence.EXACT, DecodeConfidence.PARTIAL, 500);
-        var vehicle = state.getVehicle(101);
-        assertEquals(LifeState.DESTROYED, vehicle.lifeState());
+    void lowConfidenceHealthDoesNotWriteToDestroyedWithNullCurrent() {
+        // Destroy without setting currentHealth (null), then partial writes health=500
+        var destroy = event(1, 0f, 1, DecodeConfidence.EXACT, 101, null, null, false);
+        var revive = event(2, 1f, 2, DecodeConfidence.PARTIAL, 101, 500, null, true);
+        var state = reconstructor.reconstruct(List.of(destroy, revive)).finalState();
+        var v = state.getVehicle(101);
+        assertEquals(LifeState.DESTROYED, v.lifeState());
+        assertNull(v.currentHealth(), "low-confidence health must not write to destroyed vehicle with null currentHealth");
     }
 
     @Test
-    void exactDestroyThenExactAliveRevives() {
-        var destroyed = r.reconstruct(List.of(
-                new HealthChangedEvent(1, ts(0f), 1, DecodeConfidence.EXACT, 101, null, null, false)));
-        var revived = r.reconstruct(List.of(
-                new HealthChangedEvent(2, ts(1f), 1, DecodeConfidence.EXACT, 101, 500, null, true)));
-        assertEquals(LifeState.ALIVE, revived.finalState().getVehicle(101).lifeState());
+    void exactDestroyThenExactAliveSameSequence() {
+        var destroy = event(1, 0f, 1, DecodeConfidence.EXACT, 101, 0, null, false);
+        var revive = event(2, 1f, 2, DecodeConfidence.EXACT, 101, 500, null, true);
+        var state = reconstructor.reconstruct(List.of(destroy, revive)).finalState();
+        var v = state.getVehicle(101);
+        assertEquals(LifeState.ALIVE, v.lifeState());
+        assertEquals(500, v.currentHealth().intValue());
     }
 
     @Test
     void lowConfidenceMaxHealthStillApplied() {
-        // maxHealth is a structural property; always set regardless of confidence
-        var e1 = new HealthChangedEvent(1, ts(0f), 1, DecodeConfidence.EXACT, 101, null, 2000, false);
-        var result = r.reconstruct(List.of(e1));
-        assertEquals(2000, result.finalState().getVehicle(101).maxHealth().intValue());
+        // maxHealth is structural: should be written even by low-confidence events
+        for (var conf : new DecodeConfidence[]{
+                DecodeConfidence.PARTIAL, DecodeConfidence.UNKNOWN, null}) {
+            var e = event(1, 0f, 1, conf, 101, null, 2000, null);
+            var state = reconstructor.reconstruct(List.of(e)).finalState();
+            var v = state.getVehicle(101);
+            assertNotNull(v.maxHealth(), "maxHealth must be set by " + conf);
+            assertEquals(2000, v.maxHealth().intValue());
+        }
     }
 
     @Test
     void inferredMaxHealthApplied() {
-        var e1 = new HealthChangedEvent(1, ts(0f), 1, DecodeConfidence.INFERRED, 101, null, 2000, false);
-        var result = r.reconstruct(List.of(e1));
-        assertEquals(2000, result.finalState().getVehicle(101).maxHealth().intValue());
+        var e = event(1, 0f, 1, DecodeConfidence.INFERRED, 101, null, 2000, null);
+        var state = reconstructor.reconstruct(List.of(e)).finalState();
+        assertEquals(2000, state.getVehicle(101).maxHealth().intValue());
     }
 }

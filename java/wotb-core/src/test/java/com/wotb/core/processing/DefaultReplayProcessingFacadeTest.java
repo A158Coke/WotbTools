@@ -20,7 +20,7 @@ class DefaultReplayProcessingFacadeTest {
 
     private final DefaultReplayProcessingFacade facade = new DefaultReplayProcessingFacade();
 
-    private static Source src(String name, byte... bytes) {
+    private static Source src(final String name, final byte... bytes) {
         return new Source(name, bytes);
     }
 
@@ -58,13 +58,25 @@ class DefaultReplayProcessingFacadeTest {
 
     // ======== 批量汇总一致性测试 ========
 
-    private static ReplayProcessingResult makeBattleResult(final String name, final String hash, final int arenaBonusType, final long accountId) {
+    private static ReplayProcessingResult makeBattleResult(
+            final String name,
+            final String hash,
+            final int arenaBonusType,
+            final long accountId) {
         final var b = new Battle();
-        b.arenaId = "a"; b.mapName = "m"; b.arenaBonusType = arenaBonusType;
-        final var pr = new PlayerResult(); pr.accountId = accountId; pr.nickname = "P"; pr.team = 1;
-        b.players = List.of(pr); b.recorder = "P";
-        final var caps = new ReplayProcessingCapabilities(true, true, false, false, false, false, false, false);
-        return new ReplayProcessingResult(name, ReplayProcessingStatus.SUCCESS,
+        b.arenaId = "a";
+        b.mapName = "m";
+        b.arenaBonusType = arenaBonusType;
+        final var pr = new PlayerResult();
+        pr.accountId = accountId;
+        pr.nickname = "P";
+        pr.team = 1;
+        b.players = List.of(pr);
+        b.recorder = "P";
+        final var caps = new ReplayProcessingCapabilities(
+                true, true, false, false, false, false, false, false);
+        return new ReplayProcessingResult(
+                name, ReplayProcessingStatus.SUCCESS,
                 new ReplayIdentity(hash, null, null, null, accountId, null),
                 b, null, null, caps, null, null);
     }
