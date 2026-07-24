@@ -11,16 +11,83 @@ class ExactReplayDuplicateTest {
                 null, null, null, ReplayProcessingCapabilities.NONE, null, null);
     }
 
-    @Test void nullOriginal() { assertThrows(NullPointerException.class, () -> new ExactReplayDuplicate(null, success("h"))); }
-    @Test void nullDuplicate() { assertThrows(NullPointerException.class, () -> new ExactReplayDuplicate(success("h"), null)); }
-    @Test void selfReference() { var r = success("h"); assertThrows(IllegalArgumentException.class, () -> new ExactReplayDuplicate(r, r)); }
-    @Test void originalFailed() { assertThrows(IllegalArgumentException.class, () -> new ExactReplayDuplicate(new ReplayProcessingResult("f", ReplayProcessingStatus.FAILED, null, null, null, null, ReplayProcessingCapabilities.NONE, null, null), success("h"))); }
-    @Test void duplicateFailed() { assertThrows(IllegalArgumentException.class, () -> new ExactReplayDuplicate(success("h"), new ReplayProcessingResult("f", ReplayProcessingStatus.FAILED, null, null, null, null, ReplayProcessingCapabilities.NONE, null, null))); }
-    @Test void originalIdentityNull() { assertThrows(IllegalArgumentException.class, () -> new ExactReplayDuplicate(new ReplayProcessingResult("f", ReplayProcessingStatus.SUCCESS, null, null, null, null, ReplayProcessingCapabilities.NONE, null, null), success("h"))); }
-    @Test void duplicateIdentityNull() { assertThrows(IllegalArgumentException.class, () -> new ExactReplayDuplicate(success("h"), new ReplayProcessingResult("f", ReplayProcessingStatus.SUCCESS, null, null, null, null, ReplayProcessingCapabilities.NONE, null, null))); }
-    @Test void originalHashNull() { assertThrows(IllegalArgumentException.class, () -> new ExactReplayDuplicate(success(null), success("h"))); }
-    @Test void duplicateHashBlank() { assertThrows(IllegalArgumentException.class, () -> new ExactReplayDuplicate(success("h"), success(""))); }
-    @Test void duplicateHashBlankSpaces() { assertThrows(IllegalArgumentException.class, () -> new ExactReplayDuplicate(success("h"), success("   "))); }
-    @Test void differentHashes() { assertThrows(IllegalArgumentException.class, () -> new ExactReplayDuplicate(success("h1"), success("h2"))); }
-    @Test void successCase() { assertDoesNotThrow(() -> new ExactReplayDuplicate(success("hash-x"), success("hash-x"))); }
+    @Test
+    void nullOriginalThrows() {
+        assertThrows(NullPointerException.class,
+                () -> new ExactReplayDuplicate(null, success("h")));
+    }
+
+    @Test
+    void nullDuplicateThrows() {
+        assertThrows(NullPointerException.class,
+                () -> new ExactReplayDuplicate(success("h"), null));
+    }
+
+    @Test
+    void selfReferenceThrows() {
+        var r = success("h");
+        assertThrows(IllegalArgumentException.class,
+                () -> new ExactReplayDuplicate(r, r));
+    }
+
+    @Test
+    void originalFailedThrows() {
+        var r = new ReplayProcessingResult("f", ReplayProcessingStatus.FAILED, null, null, null, null,
+                ReplayProcessingCapabilities.NONE, null, null);
+        assertThrows(IllegalArgumentException.class,
+                () -> new ExactReplayDuplicate(r, success("h")));
+    }
+
+    @Test
+    void duplicateFailedThrows() {
+        var r = new ReplayProcessingResult("f", ReplayProcessingStatus.FAILED, null, null, null, null,
+                ReplayProcessingCapabilities.NONE, null, null);
+        assertThrows(IllegalArgumentException.class,
+                () -> new ExactReplayDuplicate(success("h"), r));
+    }
+
+    @Test
+    void originalIdentityNullThrows() {
+        var r = new ReplayProcessingResult("f", ReplayProcessingStatus.SUCCESS, null, null, null, null,
+                ReplayProcessingCapabilities.NONE, null, null);
+        assertThrows(IllegalArgumentException.class,
+                () -> new ExactReplayDuplicate(r, success("h")));
+    }
+
+    @Test
+    void duplicateIdentityNullThrows() {
+        var r = new ReplayProcessingResult("f", ReplayProcessingStatus.SUCCESS, null, null, null, null,
+                ReplayProcessingCapabilities.NONE, null, null);
+        assertThrows(IllegalArgumentException.class,
+                () -> new ExactReplayDuplicate(success("h"), r));
+    }
+
+    @Test
+    void originalHashNullThrows() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new ExactReplayDuplicate(success(null), success("h")));
+    }
+
+    @Test
+    void duplicateHashBlankThrows() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new ExactReplayDuplicate(success("h"), success("")));
+    }
+
+    @Test
+    void duplicateHashBlankSpacesThrows() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new ExactReplayDuplicate(success("h"), success("   ")));
+    }
+
+    @Test
+    void differentHashesThrows() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new ExactReplayDuplicate(success("h1"), success("h2")));
+    }
+
+    @Test
+    void sameHashSucceeds() {
+        assertDoesNotThrow(() -> new ExactReplayDuplicate(success("hash-x"), success("hash-x")));
+    }
 }
