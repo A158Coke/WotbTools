@@ -1,7 +1,7 @@
 package com.wotb.core.ref;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.springframework.util.StringUtils;
 
 import java.io.InputStream;
@@ -27,8 +27,8 @@ public final class MapNames {
         final Map<String, String> map = new HashMap<>();
         try (InputStream in = MapNames.class.getResourceAsStream("/map_names.json")) {
             if (in != null) {
-                final JsonNode root = new ObjectMapper().readTree(in);
-                root.fields().forEachRemaining(entry ->
+                final JsonNode root = JsonMapper.builder().build().readTree(in);
+                root.properties().forEach(entry ->
                     map.put(normalizeKey(entry.getKey()), resolveChineseLabel(entry.getKey(), entry.getValue()))
                 );
             }

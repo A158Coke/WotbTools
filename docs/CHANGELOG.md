@@ -5,6 +5,21 @@
 ## [Unreleased]
 
 ### Added
+- **团队特征提取器单元测试**：新增 `DefaultTeamBattleFeatureExtractorTest`，覆盖移动段压缩、关键事件提取、空事件流边界和阶段划分。
+- **代码质量重构**：提取公共 `ReplayTimestamp.safeClockSec()` 消除 `DefaultPlayerBattleFeatureExtractor`/`DefaultTeamBattleFeatureExtractor`/`DefaultBattleFeatureExtractor` 三处重复的 `clockOf` 静态方法；`ReconstructionController.toSources()` 消除 `reconstructBatch`/`process` 重复的 Source 构建；`DefaultReplayProcessingFacade` 移除未使用的 TODO recorder 一致性检查死代码，提取 `buildSummary` 公共方法复用统计逻辑。
+- **方法入参 final 化**：`DefaultPlayerBattleFeatureExtractor.extract`/`compressMovements`、`BatchAnalyzer.resolveKey`、`ReconstructionController` 构造器及 handler 参数、`DefaultBattleFeatureExtractor` 多方法参数补齐 `final`。`DefaultTeamBattleFeatureExtractor.extractKeyEvents`/`buildTeamEngagements` 改为 `private static`。
+- **AI 战术复盘（DeepSeek，`wotbtools-admin` 灰度）**：新增 `POST /api/replay/analyze` 与 `AiReplayAnalysisService`（Spring `RestClient` 调 OpenAI 兼容 `/chat/completions`）。**以 `battle_results.dat`（`Battle`/`PlayerResult`）为权威数据源**——伤害/承伤/助攻/格挡/击杀/存活/死亡时刻(`deathTimeMillis`)/录像者均取自游戏结算；死亡时间线据此生成；完整重建仅补充位置维度。经统一门面 `DefaultReplayProcessingFacade.process(full)` 获取战绩+重建，战绩失败返回 `NO_BATTLE_DATA`、战绩成功但重建失败仍可分析、未配置密钥返回 `AI_NOT_CONFIGURED`（应用照常启动）。密钥 `AI_API_KEY` 经 GitHub Actions secret → 容器环境变量注入（沿用 `KEYCLOAK_ADMIN_CLIENT_SECRET` 路径）。前端在重建出结果后才显示 AI 按钮，结果面板可显示/关闭。
+
+### Changed / Fixed
+- **AI 能力模型修复**：`ReplayProcessingCapabilities` 新增 `recorderResultAvailable` / `fullFeatureAnalysisAvailable`；`PLAYER_FOCUSED.aiAnalyzable` 改为 `summaryAvailable && recorderResultAvailable`（不再要求 reconstruction 成功）。`recorderEntityMapped` 语义改为基于 `BattleParticipant.recorder`（真实 entity 映射），而非 `ReplayReconstructionContext` 中的昵称存在判断。`DefaultPlayerBattleFeatureExtractor.hasFeatures` 改为基于实际事件内容判断，并输出真实 `limitations`。
+- **AI Prompt 权威 vs 事件流对账**：`buildPlayerContextSummary` 新增权威结算与事件流观测伤害子集的对比输出；交火段数值标记为"观测子集"而非权威总伤害；每个 engagement 输出置信度；Prompt 末尾追加 `limitations` 章节。
+- **Duplicate 响应修复**：`BatchAnalyzer.ExactDuplicate` 记录 original→duplicate 关系，`duplicateOf` 指向保留的原始文件而非自身。`ReplayFileAnalysisStatus.duplicate()` 保留文件原始 `SUCCESS` 状态不再标记为 `FAILED`。`ReconstructionController` 中 `perspectiveTeam` 使用 `gp.key().perspectiveTeam()` 而非硬编码 0；`failedFileCount` 只统计 `INDEPENDENT_BATTLE + FAILED + error != null`。`callPlayerContext` 增加 `recorder.resolved()` 和 `featureSet.hasFeatures()` 守卫。
+- **PR CI + streamComplete 诚实化 + 补测试**：新增 `.github/workflows/ci.yml`（仅 `pull_request→main` 触发，已与文档一致），跑后端 `mvn -s settings.xml test` + 前端 `npm ci/test/build`——补上 PR 缺失的自动检查（deploy.yml 仅在 push main 时跑）。`ReplayStreamDiagnostics.streamComplete()` 由恒真算术式改为显式 `reachedPhysicalEnd`（扫描到达物理末尾；超包数/重同步硬上限时读取器直接抛异常，不会返回半截诊断）。补充测试：`stateAt` 时钟回退、`DefaultReplayProcessingFacade`（mode=NONE/能力/去重）、`PositionDecoder`（49B=EXACT、45–48B=PARTIAL、<45=MALFORMED）。（批处理已为顺序 for 循环且限 10 文件/200MB，无 `parallelStream`，内存/并发风险已受控。）
+- **AI 分析支持多文件 + 能力模型 + DI**：`POST /api/replay/analyze` 改为接收 `files[]`（1..N），经统一门面逐文件处理；模式按**真正可分析（战绩成功）的回放数量**判断——0→`NO_BATTLE_DATA`、1→单场深度复盘、≥2→多场趋势复盘（每场独立取结算摘要 + 后端确定性聚合胜率/场均输出承伤助攻/存活，**不拼接原始事件流**）。新增 `ReplayProcessingCapabilities`（`summaryAvailable`/`reconstructionAvailable`/`aiAnalyzable`，以战绩为准），`ReplayProcessingResult` 增加 `capabilities` 与 `reconstructionError`（重建失败不再被吞、`analyzable()` 改判 `aiAnalyzable`）。`ReconstructionController` 改为构造器注入（新增 `ReplayProcessingConfig` 提供 `ReplayReconstructionService`/`DefaultReplayProcessingFacade` Bean），不再手动 `new`。
+- **全项目统一 Jackson 3**（`tools.jackson.*`）：`wotb-core` 依赖改为 `tools.jackson.core:jackson-databind`（版本由 Spring Boot 4.1 BOM 托管），`ObjectMapper` 统一 `JsonMapper.builder().build()`，适配 `fields()/fieldNames()→properties()`、`TextNode→StringNode` 等改名；注解包 `com.fasterxml.jackson.annotation` 保持不变。
+- **回放代码审查修复**：前端 `/api/replay/*` 统一携带 Keycloak Bearer Token（含 401/403 处理）；`stateAt` 修正时钟回退下漏事件的问题（不再遇首个超时事件即 break）；`PositionDecoder` 截断（<49B）位置包降级为 PARTIAL；`PositionDecoder`/`ProtobufDecoder`/`EntityMethodDecoder` 修正越界与 varint 边界；`EntityPropertyDecoder` 改为解析已确认的 Type 7 结构（entity/prop/valueLen/value），**不臆断血量语义**（逐帧血量为已知限制，见 `docs/replay-data.md`）。
+
+- **完整回放重建处理流水线**：新增 `com.wotb.core.processing` 包（统一单/多文件处理门面），将现有 `ReplayParser` 战绩解析与 `ReplayReconstructionService` 完整重建整合为 `ReplayProcessingResult`；新增 `ReplayProcessingOptions` 控制是否执行重建，普通 preview 不承担额外成本；新增 `ReplayAnalysisMode`（NONE/SINGLE_BATTLE/MULTI_BATTLE）由后端根据可分析回放数量自动确定。新增 `POST /api/replay/reconstruct-batch`（批量重建）和 `POST /api/replay/process?reconstruct=`（可选重建）端点，仅 `wotbtools-admin` 可访问。新增特征提取与 AI 输入层占位（`com.wotb.core.replay.feature` 包：`BattleFeatureExtractor`、`Single/MultiBattleAnalysisContext`）。
 - **陪练订单完成确认**：新增 Flyway V11 的完成提交/自动确认时间字段、客户确认接口 `PATCH /api/boost/requests/my/{id}/confirm-completion`、72 小时默认自动确认调度与悲观锁幂等完结路径；客户、管理员和定时任务统一将需求置为 `CLOSED`、分配置为 `COMPLETED` 并释放打手。相关写操作统一锁顺序并重检需求/分配状态，管理员使用显式转换矩阵且不能重开终态，自动确认按订单使用独立事务隔离失败。
 - **回放解析资源预算**：ZIP 仅接受标准条目并限制压缩/解压大小；pickle、protobuf 增加长度、栈、opcode、字段数与 varint 边界；单回放名册/战绩最多 64 人，事件流最多 200000 包与 1000000 次扫描（高于已观测约 112K 合法样本）；公开解析任务增加文件数、请求总量与单实例并发限制。
 - **生产双库备份恢复**：新增 `wotb`/`keycloak` 部署前备份、每日香港时间 03:15 定时备份、7 日保留、完整归档校验及带显式确认的手动恢复脚本。
@@ -64,7 +79,7 @@
 - **空白字符串归一化**：`wotb-core` 与排行榜入库统一用 `StringUtils.hasText(...)` 处理录像者、昵称、版本号、地图映射与时间戳，空白字符串不再污染昵称回退、版本入库或触发时间解析异常。
 - **线上 502 热修**：站内通知改用 Jackson 3 `tools.jackson` 本地 mapper，避免 Spring Boot 4 不再注入旧 `com.fasterxml.jackson.databind.ObjectMapper` 导致后端启动失败。
 - **部署健康检查**：`deploy.yml` 改为等待后端 `/api/health` 真正可访问，失败时输出后端/前端日志，避免容器刚 Started 就误判部署成功。
-- **打手状态文案去歧义**：打手管理页把 `booster_profile.status` 明确显示为“资格状态”，把 `available + activeAssignmentCount` 明确显示为“可接单/忙碌/暂停接单”，避免出现“正常 + 不可用”的误读。
+- **打手状态文案去歧义**：打手管理页把 `booster_profile.status` 明确显示为"资格状态"，把 `available + activeAssignmentCount` 明确显示为"可接单/忙碌/暂停接单"，避免出现"正常 + 不可用"的误读。
 - 个人中心补齐陪练身份卡片的三语 i18n key，避免直接显示 `profile.booster*` 原始 key。
 - 车辆库更新脚本补全 `alphaDamage`：从 BlitzKit `tanks.pb` 炮/弹模块解析最高等级炮的首发弹伤害，并修正脚本输出路径，避免潜在伤害补增因炮伤为空恒为 0。
 - CI/CD 部署：`docker compose pull` 添加 3 次重试。

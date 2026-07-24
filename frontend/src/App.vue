@@ -1,7 +1,8 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useTheme } from './composables/useTheme.js'
 import { useError } from './composables/useError.js'
+import { useAuth } from './composables/useAuth.js'
 import HomePage from './components/HomePage.vue'
 import ReplayPage from './components/ReplayPage.vue'
 import LeaderboardPage from './components/LeaderboardPage.vue'
@@ -9,9 +10,16 @@ import ProfilePage from './components/ProfilePage.vue'
 import BoostPage from './components/BoostPage.vue'
 import AdminUsersPage from './components/AdminUsersPage.vue'
 import ExtendedPage from './components/ExtendedPage.vue'
+import ReconstructionPage from './components/ReconstructionPage.vue'
 
 const { theme, handleTheme } = useTheme()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
+const { tokenParsed } = useAuth()
+
+const isAdmin = computed(() => {
+  const roles = tokenParsed.value?.realm_access?.roles
+  return Array.isArray(roles) && roles.includes('wotbtools-admin')
+})
 
 const languageOptions = [
   { key: 'zh', label: '中文' },
@@ -23,9 +31,32 @@ const params = new URLSearchParams(window.location.search)
 const isHomeHost = window.location.hostname === 'wotbtools.com' || window.location.hostname === 'www.wotbtools.com'
 const defaultView = isHomeHost ? 'home' : 'replay'
 const viewParam = params.get('view')
-const activeTool = ref(['home', 'replay', 'leaderboard', 'extended', 'profile', 'boost', 'admin-users'].includes(viewParam) ? viewParam : defaultView)
+const allowedViews = computed(() => {
+  const base = ['home', 'replay', 'leaderboard', 'extended', 'profile', 'boost', 'admin-users']
+  if (isAdmin.value) base.push('reconstruction')
+  return base
+})
+const activeTool = ref('')
+// 用户是否已手动切换视图（避免鉴权就绪后覆盖用户选择）
+const userNavigated = ref(false)
+// 初始化时根据 viewParam 和权限决定
+function initView() {
+  const views = allowedViews.value
+  activeTool.value = views.includes(viewParam) ? viewParam : defaultView
+}
+initView()
+
+// 鉴权是异步的：setup 阶段 token 可能尚未解析，导致 admin 用 ?view=reconstruction
+// 深链被回退到默认视图。token 就绪后若权限允许且用户未手动切换，则重新解析一次深链。
+watch(allowedViews, (views) => {
+  if (userNavigated.value) return
+  if (viewParam && views.includes(viewParam) && activeTool.value !== viewParam) {
+    activeTool.value = viewParam
+  }
+})
 
 function navigate(view) {
+  userNavigated.value = true
   activeTool.value = view
   const url = new URL(window.location.href)
   if (view === 'home') url.searchParams.delete('view')
@@ -46,6 +77,7 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button :class="{ active: activeTool === 'leaderboard' }" @click="navigate('leaderboard')">{{ $t('leaderboard.btn') }}</button>
       <button :class="{ active: activeTool === 'extended' }" @click="navigate('extended')">{{ $t('extended.nav') }}</button>
       <button :class="{ active: activeTool === 'boost' }" @click="navigate('boost')">{{ $t('app.boost_tab') }}</button>
+      <button v-if="isAdmin" :class="{ active: activeTool === 'reconstruction' }" @click="navigate('reconstruction')">{{ $t('recon.nav') }}</button>
     </nav>
     <div class="tb-spacer"></div>
     <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
@@ -66,6 +98,7 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
     <ExtendedPage v-else-if="activeTool === 'extended'" />
     <BoostPage v-else-if="activeTool === 'boost'" />
     <AdminUsersPage v-else-if="activeTool === 'admin-users'" />
+    <ReconstructionPage v-else-if="activeTool === 'reconstruction' && isAdmin" />
     <ReplayPage v-else />
   </div>
 

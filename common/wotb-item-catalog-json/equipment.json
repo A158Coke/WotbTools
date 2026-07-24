@@ -1,0 +1,612 @@
+{
+  "items": [
+    {
+      "id": 100,
+      "code": "GUN_RAMMER",
+      "nameZh": "火炮输弹机",
+      "nameEn": "Gun Rammer",
+      "scope": "COMMON",
+      "special": false,
+      "grid": {
+        "group": "FIREPOWER",
+        "slot": 1,
+        "side": "LEFT"
+      },
+      "effects": [
+        {
+          "stat": "reloadTime",
+          "operation": "MULTIPLY",
+          "value": 0.95
+        }
+      ]
+    },
+    {
+      "id": 102,
+      "code": "IMPROVED_VENTILATION",
+      "nameZh": "改进型通风系统",
+      "nameEn": "Improved Ventilation",
+      "scope": "MECHANISM_SPECIFIC",
+      "special": false,
+      "grid": {
+        "group": "FIREPOWER",
+        "slot": 1,
+        "side": "LEFT"
+      },
+      "effects": [
+        {
+          "stat": "crewMastery",
+          "operation": "ADD_PERCENTAGE_POINTS",
+          "value": 8.0,
+          "requiresCrewFormula": true
+        }
+      ]
+    },
+    {
+      "id": 103,
+      "code": "CALIBRATED_SHELLS",
+      "nameZh": "校准炮弹",
+      "nameEn": "Calibrated Shells",
+      "scope": "COMMON",
+      "special": false,
+      "grid": {
+        "group": "FIREPOWER",
+        "slot": 1,
+        "side": "RIGHT"
+      },
+      "effects": [
+        {
+          "stat": "penetration",
+          "operation": "MULTIPLY",
+          "value": 1.08,
+          "conditions": {
+            "shellTypes": [
+              "AP"
+            ]
+          }
+        },
+        {
+          "stat": "penetration",
+          "operation": "MULTIPLY",
+          "value": 1.05,
+          "conditions": {
+            "shellTypes": [
+              "APCR"
+            ]
+          }
+        },
+        {
+          "stat": "penetration",
+          "operation": "MULTIPLY",
+          "value": 1.13,
+          "conditions": {
+            "shellTypes": [
+              "HEAT"
+            ]
+          }
+        },
+        {
+          "stat": "penetration",
+          "operation": "MULTIPLY",
+          "value": 1.08,
+          "conditions": {
+            "shellTypes": [
+              "HE",
+              "HEP",
+              "HESH"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 108,
+      "code": "ENHANCED_GUN_LAYING_DRIVE",
+      "nameZh": "改进型炮控系统",
+      "nameEn": "Enhanced Gun Laying Drive",
+      "scope": "COMMON",
+      "special": false,
+      "grid": {
+        "group": "FIREPOWER",
+        "slot": 2,
+        "side": "LEFT"
+      },
+      "effects": [
+        {
+          "stat": "aimingSpeed",
+          "operation": "MULTIPLY",
+          "value": 1.15
+        }
+      ]
+    },
+    {
+      "id": 109,
+      "code": "SUPERCHARGER",
+      "nameZh": "超级充能器",
+      "nameEn": "Supercharger",
+      "scope": "COMMON",
+      "special": false,
+      "grid": {
+        "group": "FIREPOWER",
+        "slot": 2,
+        "side": "RIGHT"
+      },
+      "effects": [
+        {
+          "stat": "shellVelocity",
+          "operation": "MULTIPLY",
+          "value": 1.35
+        },
+        {
+          "stat": "penetrationLossOverDistance",
+          "operation": "MULTIPLY",
+          "value": 0.4,
+          "conditions": {
+            "shellTypes": [
+              "AP",
+              "APCR"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 114,
+      "code": "VERTICAL_STABILIZER",
+      "nameZh": "垂直稳定器",
+      "nameEn": "Vertical Stabilizer",
+      "scope": "COMMON",
+      "special": false,
+      "grid": {
+        "group": "FIREPOWER",
+        "slot": 3,
+        "side": "LEFT"
+      },
+      "effects": [
+        {
+          "stat": "dispersionWhileMoving",
+          "operation": "MULTIPLY",
+          "value": 0.88
+        },
+        {
+          "stat": "dispersionWhileHullTraversing",
+          "operation": "MULTIPLY",
+          "value": 0.88
+        },
+        {
+          "stat": "dispersionWhileTurretTraversing",
+          "operation": "MULTIPLY",
+          "value": 0.88
+        }
+      ]
+    },
+    {
+      "id": 115,
+      "code": "REFINED_GUN",
+      "nameZh": "精密火炮",
+      "nameEn": "Refined Gun",
+      "scope": "COMMON",
+      "special": false,
+      "grid": {
+        "group": "FIREPOWER",
+        "slot": 3,
+        "side": "RIGHT"
+      },
+      "effects": [
+        {
+          "stat": "baseDispersion",
+          "operation": "MULTIPLY",
+          "value": 0.85
+        }
+      ]
+    },
+    {
+      "id": 122,
+      "code": "IMPROVED_VERTICAL_STABILIZER",
+      "nameZh": "改进型垂直稳定器",
+      "nameEn": "Improved Vertical Stabilizer",
+      "scope": "VEHICLE_SPECIFIC",
+      "special": true,
+      "grid": {
+        "group": "FIREPOWER",
+        "slot": 3,
+        "side": "LEFT"
+      },
+      "effects": [
+        {
+          "stat": "gunElevationDegrees",
+          "operation": "ADD",
+          "value": 4.0
+        },
+        {
+          "stat": "gunDepressionMagnitudeDegrees",
+          "operation": "ADD",
+          "value": 3.0
+        }
+      ]
+    },
+    {
+      "id": 123,
+      "code": "IMPROVED_SUSPENSION",
+      "nameZh": "改进型悬挂",
+      "nameEn": "Improved Suspension",
+      "scope": "VEHICLE_SPECIFIC",
+      "special": true,
+      "grid": {
+        "group": "FIREPOWER",
+        "slot": 3,
+        "side": "RIGHT"
+      },
+      "effects": [
+        {
+          "stat": "terrainPerformanceHard",
+          "operation": "MULTIPLY",
+          "value": 1.2
+        },
+        {
+          "stat": "terrainPerformanceMedium",
+          "operation": "MULTIPLY",
+          "value": 1.15
+        },
+        {
+          "stat": "terrainPerformanceSoft",
+          "operation": "MULTIPLY",
+          "value": 1.3
+        }
+      ],
+      "notes": [
+        "该效果应作用于地形通过性及由其派生的加速、实际转向表现，不应直接乘算最高速度。"
+      ]
+    },
+    {
+      "id": 104,
+      "code": "IMPROVED_MODULES",
+      "nameZh": "改进型模块",
+      "nameEn": "Improved Modules",
+      "scope": "COMMON",
+      "special": false,
+      "grid": {
+        "group": "VITALITY",
+        "slot": 1,
+        "side": "LEFT"
+      },
+      "effects": [
+        {
+          "stat": "trackDurability",
+          "operation": "MULTIPLY",
+          "value": 1.2
+        },
+        {
+          "stat": "rammingDamageReceived",
+          "operation": "MULTIPLY",
+          "value": 0.6
+        }
+      ]
+    },
+    {
+      "id": 107,
+      "code": "DEFENSE_SYSTEM",
+      "nameZh": "防护系统",
+      "nameEn": "Defense System",
+      "scope": "COMMON",
+      "special": false,
+      "grid": {
+        "group": "VITALITY",
+        "slot": 1,
+        "side": "RIGHT"
+      },
+      "effects": [
+        {
+          "stat": "engineDamageChance",
+          "operation": "MULTIPLY",
+          "value": 0.9
+        },
+        {
+          "stat": "crewInjuryChance",
+          "operation": "MULTIPLY",
+          "value": 0.85
+        },
+        {
+          "stat": "ammoRackExplosionChance",
+          "operation": "MULTIPLY",
+          "value": 0.75
+        }
+      ]
+    },
+    {
+      "id": 110,
+      "code": "ENHANCED_ARMOR",
+      "nameZh": "强化装甲",
+      "nameEn": "Enhanced Armor",
+      "scope": "COMMON",
+      "special": false,
+      "grid": {
+        "group": "VITALITY",
+        "slot": 2,
+        "side": "LEFT"
+      },
+      "effects": [
+        {
+          "stat": "nominalArmorThickness",
+          "operation": "MULTIPLY",
+          "value": 1.03,
+          "applyBefore": "ARMOR_SIMULATION"
+        }
+      ]
+    },
+    {
+      "id": 111,
+      "code": "IMPROVED_ASSEMBLY",
+      "nameZh": "改进型组装",
+      "nameEn": "Improved Assembly",
+      "scope": "COMMON",
+      "special": false,
+      "grid": {
+        "group": "VITALITY",
+        "slot": 2,
+        "side": "RIGHT"
+      },
+      "effects": [
+        {
+          "stat": "hitPoints",
+          "operation": "MULTIPLY",
+          "value": 1.04
+        }
+      ]
+    },
+    {
+      "id": 116,
+      "code": "ENHANCED_TRACKS",
+      "nameZh": "强化履带",
+      "nameEn": "Enhanced Tracks",
+      "scope": "COMMON",
+      "special": false,
+      "grid": {
+        "group": "VITALITY",
+        "slot": 3,
+        "side": "LEFT"
+      },
+      "effects": [
+        {
+          "stat": "trackRepairRestoresFullDurability",
+          "operation": "SET",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": 117,
+      "code": "TOOLBOX",
+      "nameZh": "工具箱",
+      "nameEn": "Toolbox",
+      "scope": "COMMON",
+      "special": false,
+      "grid": {
+        "group": "VITALITY",
+        "slot": 3,
+        "side": "RIGHT"
+      },
+      "effects": [
+        {
+          "stat": "moduleRepairSpeed",
+          "operation": "MULTIPLY",
+          "value": 1.2
+        }
+      ]
+    },
+    {
+      "id": 105,
+      "code": "IMPROVED_OPTICS",
+      "nameZh": "改进型光学系统",
+      "nameEn": "Improved Optics",
+      "scope": "COMMON",
+      "special": false,
+      "grid": {
+        "group": "SPECIALIZATION",
+        "slot": 1,
+        "side": "LEFT"
+      },
+      "effects": [
+        {
+          "stat": "viewRange",
+          "operation": "MULTIPLY",
+          "value": 1.11,
+          "conditions": {
+            "vehicleClasses": [
+              "LIGHT"
+            ]
+          }
+        },
+        {
+          "stat": "viewRange",
+          "operation": "MULTIPLY",
+          "value": 1.08,
+          "conditions": {
+            "vehicleClasses": [
+              "MEDIUM"
+            ]
+          }
+        },
+        {
+          "stat": "viewRange",
+          "operation": "MULTIPLY",
+          "value": 1.06,
+          "conditions": {
+            "vehicleClasses": [
+              "HEAVY"
+            ]
+          }
+        },
+        {
+          "stat": "viewRange",
+          "operation": "MULTIPLY",
+          "value": 1.04,
+          "conditions": {
+            "vehicleClasses": [
+              "TANK_DESTROYER"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 106,
+      "code": "CAMOUFLAGE_NET",
+      "nameZh": "伪装网",
+      "nameEn": "Camouflage Net",
+      "scope": "COMMON",
+      "special": false,
+      "grid": {
+        "group": "SPECIALIZATION",
+        "slot": 1,
+        "side": "RIGHT"
+      },
+      "effects": [
+        {
+          "stat": "camouflageRatingBonus",
+          "operation": "ADD_PERCENTAGE_POINTS",
+          "value": 7.0,
+          "conditions": {
+            "vehicleClasses": [
+              "LIGHT"
+            ]
+          }
+        },
+        {
+          "stat": "camouflageRatingBonus",
+          "operation": "ADD_PERCENTAGE_POINTS",
+          "value": 4.0,
+          "conditions": {
+            "vehicleClasses": [
+              "MEDIUM"
+            ]
+          }
+        },
+        {
+          "stat": "camouflageRatingBonus",
+          "operation": "ADD_PERCENTAGE_POINTS",
+          "value": 2.0,
+          "conditions": {
+            "vehicleClasses": [
+              "HEAVY"
+            ]
+          }
+        },
+        {
+          "stat": "camouflageRatingBonus",
+          "operation": "ADD_PERCENTAGE_POINTS",
+          "value": 10.0,
+          "conditions": {
+            "vehicleClasses": [
+              "TANK_DESTROYER"
+            ]
+          }
+        },
+        {
+          "stat": "camouflageNetBonus",
+          "operation": "MULTIPLY",
+          "value": 2.0,
+          "conditions": {
+            "stationarySecondsAtLeast": 3
+          }
+        }
+      ]
+    },
+    {
+      "id": 112,
+      "code": "IMPROVED_CONTROL",
+      "nameZh": "改进型操控",
+      "nameEn": "Improved Control",
+      "scope": "COMMON",
+      "special": false,
+      "grid": {
+        "group": "SPECIALIZATION",
+        "slot": 2,
+        "side": "LEFT"
+      },
+      "effects": [
+        {
+          "stat": "hullTraverseSpeed",
+          "operation": "MULTIPLY",
+          "value": 1.11
+        }
+      ]
+    },
+    {
+      "id": 113,
+      "code": "ENGINE_ACCELERATOR",
+      "nameZh": "发动机加速器",
+      "nameEn": "Engine Accelerator",
+      "scope": "COMMON",
+      "special": false,
+      "grid": {
+        "group": "SPECIALIZATION",
+        "slot": 2,
+        "side": "RIGHT"
+      },
+      "effects": [
+        {
+          "stat": "enginePower",
+          "operation": "MULTIPLY",
+          "value": 1.04,
+          "conditions": {
+            "vehicleClasses": [
+              "LIGHT",
+              "MEDIUM"
+            ]
+          }
+        },
+        {
+          "stat": "enginePower",
+          "operation": "MULTIPLY",
+          "value": 1.05,
+          "conditions": {
+            "vehicleClasses": [
+              "HEAVY",
+              "TANK_DESTROYER"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 118,
+      "code": "CONSUMABLE_DELIVERY_SYSTEM",
+      "nameZh": "消耗品输送系统",
+      "nameEn": "Consumable Delivery System",
+      "scope": "COMMON",
+      "special": false,
+      "grid": {
+        "group": "SPECIALIZATION",
+        "slot": 3,
+        "side": "LEFT"
+      },
+      "effects": [
+        {
+          "stat": "consumableCooldownSpeed",
+          "operation": "MULTIPLY",
+          "value": 1.12
+        }
+      ]
+    },
+    {
+      "id": 101,
+      "code": "HIGH_END_CONSUMABLES",
+      "nameZh": "高级消耗品",
+      "nameEn": "High-End Consumables",
+      "scope": "COMMON",
+      "special": false,
+      "grid": {
+        "group": "SPECIALIZATION",
+        "slot": 3,
+        "side": "RIGHT"
+      },
+      "effects": [
+        {
+          "stat": "consumableDuration",
+          "operation": "MULTIPLY",
+          "value": 1.33
+        }
+      ]
+    }
+  ]
+}

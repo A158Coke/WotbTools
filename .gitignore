@@ -31,3 +31,8 @@ node_modules/
 *.log
 *.exe
 *.zip
+
+.claude
+.deepseek
+.codewhale
+.opencode
