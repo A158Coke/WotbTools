@@ -6,7 +6,6 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -66,8 +65,26 @@ class ExactReplayDuplicateDetectorTest {
 
     @Test
     void nullIdentityNoDuplicate() {
+        var r1 = resultWithoutIdentity("a", ReplayProcessingStatus.SUCCESS);
+        var r2 = resultWithoutIdentity("a", ReplayProcessingStatus.SUCCESS);
+        var p = ExactReplayDuplicateDetector.partition(List.of(r1, r2));
+        assertEquals(2, p.uniqueResults().size());
+        assertEquals(0, p.count());
+    }
+
+    @Test
+    void nullContentHashNoDuplicate() {
         var r1 = result("a", null, ReplayProcessingStatus.SUCCESS);
-        var r2 = result("a", null, ReplayProcessingStatus.SUCCESS);
+        var r2 = result("b", null, ReplayProcessingStatus.SUCCESS);
+        var p = ExactReplayDuplicateDetector.partition(List.of(r1, r2));
+        assertEquals(2, p.uniqueResults().size());
+        assertEquals(0, p.count());
+    }
+
+    @Test
+    void sameNameNullIdentityNotDuplicate() {
+        var r1 = resultWithoutIdentity("same.wotbreplay", ReplayProcessingStatus.SUCCESS);
+        var r2 = resultWithoutIdentity("same.wotbreplay", ReplayProcessingStatus.SUCCESS);
         var p = ExactReplayDuplicateDetector.partition(List.of(r1, r2));
         assertEquals(2, p.uniqueResults().size());
         assertEquals(0, p.count());
@@ -96,15 +113,6 @@ class ExactReplayDuplicateDetectorTest {
         var id = identity("h");
         var r1 = failedResult("a", id);
         var r2 = failedResult("b", id);
-        var p = ExactReplayDuplicateDetector.partition(List.of(r1, r2));
-        assertEquals(2, p.uniqueResults().size());
-        assertEquals(0, p.count());
-    }
-
-    @Test
-    void sameNameNoHashNotDuplicate() {
-        var r1 = result("same.wotbreplay", null, ReplayProcessingStatus.SUCCESS);
-        var r2 = result("same.wotbreplay", null, ReplayProcessingStatus.SUCCESS);
         var p = ExactReplayDuplicateDetector.partition(List.of(r1, r2));
         assertEquals(2, p.uniqueResults().size());
         assertEquals(0, p.count());
@@ -178,6 +186,21 @@ class ExactReplayDuplicateDetectorTest {
         return new ReplayProcessingResult(
                 name, status, new ReplayIdentity(hash, null, null, null, null, null),
                 null, null, null, ReplayProcessingCapabilities.NONE, null, null);
+    }
+
+    private static ReplayProcessingResult resultWithoutIdentity(
+            final String name,
+            final ReplayProcessingStatus status) {
+        return new ReplayProcessingResult(
+                name, status, null,
+                null, null, null, ReplayProcessingCapabilities.NONE, null, null);
+    }
+
+    private static ReplayProcessingResult resultWithHash(
+            final String name,
+            final String hash,
+            final ReplayProcessingStatus status) {
+        return result(name, hash, status);
     }
 
     private static ReplayProcessingResult failedResult(

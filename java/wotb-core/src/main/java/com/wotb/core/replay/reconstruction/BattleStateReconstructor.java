@@ -35,9 +35,6 @@ public class BattleStateReconstructor {
     private final int checkpointEventInterval;
     private final Float battleStartRawClockSec;
 
-    private float lastCheckpointClock = -Float.MAX_VALUE;
-    private int lastCheckpointEventIndex = 0;
-
     /**
      * 创建重建器。
      *
@@ -71,8 +68,9 @@ public class BattleStateReconstructor {
         final BattleState state = new BattleState();
         final List<ReplayEvent> processedEvents = new ArrayList<>();
         final List<BattleStateCheckpoint> checkpoints = new ArrayList<>();
+        float lastCheckpointClock = -Float.MAX_VALUE;
+        int lastCheckpointEventIndex = 0;
 
-        // 生成初始 checkpoint
         checkpoints.add(new BattleStateCheckpoint(0f, 0, BattleStateSnapshot.from(state)));
 
         for (final ReplayEvent event : events) {
@@ -138,8 +136,7 @@ public class BattleStateReconstructor {
         // 如果已经确认为 DESTROYED，低置信度（PARTIAL/UNKNOWN）位置更新不得覆盖，
         // 只接受高置信度（EXACT/INFERRED）数据。与 applyVehicleDestroyed/applyHealth 的处理一致。
         if (vs.lifeState() == LifeState.DESTROYED
-                && DecodeConfidenceHelper.ordinal(e.confidence()) >= DecodeConfidenceHelper.ordinal(
-                        DecodeConfidence.PARTIAL)) {
+                && DecodeConfidenceHelper.isLowConfidence(e.confidence())) {
             return;
         }
 
@@ -208,8 +205,7 @@ public class BattleStateReconstructor {
         vs.setLastObservedAt(e.timestamp().rawClockSec());
 
         if (e.currentHealth() != null) {
-            // 如果字段解析置信度不足，不得覆盖高置信度值
-            if (e.confidence() == DecodeConfidence.PARTIAL
+            if (DecodeConfidenceHelper.isLowConfidence(e.confidence())
                     && vs.currentHealth() != null
                     && vs.lifeState() == LifeState.DESTROYED) {
                 // 低置信度，不覆盖已确认阵亡状态
