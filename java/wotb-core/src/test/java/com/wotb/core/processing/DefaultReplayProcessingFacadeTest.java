@@ -31,7 +31,7 @@ class DefaultReplayProcessingFacadeTest {
         final ReplayProcessingResult one = r.results().get(0);
         assertEquals(ReplayProcessingStatus.FAILED, one.status());
         assertNotNull(one.capabilities());
-        assertFalse(one.capabilities().aiAnalyzable(), "garbage must not be AI-analyzable");
+        assertFalse(one.capabilities().recorderResultAvailable(), "garbage must not be AI-analyzable");
     }
 
     @Test
@@ -42,11 +42,10 @@ class DefaultReplayProcessingFacadeTest {
                 ReplayProcessingOptions.full());
 
         assertEquals(2, r.results().size());
-        // 第二个同内容文件按去重标记为 DUPLICATE_FILE，而不是重复解析/重建
         assertEquals("DUPLICATE_FILE", r.results().get(1).error().code());
         // 均不可分析 → 模式 NONE
         final long analyzable = r.results().stream()
-                .filter(x -> x.capabilities() != null && x.capabilities().aiAnalyzable())
+                .filter(x -> x.capabilities() != null && x.capabilities().recorderResultAvailable())
                 .count();
         assertEquals(0, analyzable);
         assertEquals(ReplayAnalysisMode.NONE, r.suggestedAnalysisMode());

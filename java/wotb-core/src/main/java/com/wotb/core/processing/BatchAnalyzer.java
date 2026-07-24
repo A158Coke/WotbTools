@@ -4,7 +4,6 @@ import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -95,8 +94,8 @@ public class BatchAnalyzer {
             }
         }
 
-        // 4. 按 BattleIdentity + perspectiveTeam 分组（跳过 FAILED 和 UNKNOWN scope）
-        final Map<ReplayPerspectiveGroupKey, List<ScopedResult>> groups = new HashMap<>();
+        // 4. 按 BattleGroupingKey + perspectiveTeam 分组（跳过 FAILED 和 UNKNOWN scope）
+        final Map<ReplayPerspectiveGroupKey, List<ScopedResult>> groups = new LinkedHashMap<>();
         for (final ScopedResult sr : uniqueResults) {
             if (sr.result().status() == ReplayProcessingStatus.FAILED) continue;
             if (sr.scope() == null) continue; // UNKNOWN 不参与分析分组
@@ -118,8 +117,9 @@ public class BatchAnalyzer {
                     sameTeamDupCount++;
                 }
             }
+            final var battleId = entry.getKey().battleKey().toBattleIdentity();
             perspectiveGroups.add(new ReplayPerspectiveGroup(
-                    entry.getKey(), representative.result(), teamDuplicates));
+                    entry.getKey(), battleId, representative.result(), teamDuplicates));
         }
 
         // 6. 验证录像者一致性（仅 PLAYER_FOCUSED + RANDOM）
@@ -145,7 +145,7 @@ public class BatchAnalyzer {
         final int effectiveUnits = perspectiveGroups.size();
         final int analyzableCount = (int) perspectiveGroups.stream()
                 .filter(g -> g.representative().capabilities() != null
-                        && g.representative().capabilities().aiAnalyzable())
+                        && isAiAnalyzable(g.representative(), dominantScope))
                 .count();
 
         final ReplayAnalysisMode mode = resolveMode(dominantScope, analyzableCount);
@@ -178,7 +178,7 @@ public class BatchAnalyzer {
     private static ReplayPerspectiveGroupKey resolveKey(final ScopedResult sr) {
         final ReplayProcessingResult r = sr.result();
         final var key = BattleGroupingKey.from(r.identity(), r.battle(), r.fileName());
-        return new ReplayPerspectiveGroupKey(key, key.toBattleIdentity(), resolvePerspectiveTeam(r));
+        return new ReplayPerspectiveGroupKey(key, resolvePerspectiveTeam(r));
     }
 
     private static int resolvePerspectiveTeam(final ReplayProcessingResult r) {
@@ -229,6 +229,26 @@ public class BatchAnalyzer {
             }
         }
         return null;
+    }
+
+    /** 基于 scope 的实际可分析判定（不在 Facade 中预计算）。 */
+    public static boolean isAiAnalyzable(final ReplayProcessingCapabilities caps, final ReplayAnalysisScope scope) {
+        if (caps == null || scope == null) return false;
+        return switch (scope) {
+            case PLAYER_FOCUSED -> caps.summaryAvailable() && caps.recorderResultAvailable();
+            case TEAM_PERSPECTIVE -> caps.summaryAvailable() && caps.reconstructionAvailable()
+                    && caps.perspectiveTeamResolved() && caps.teamFeatureExtractionPossible();
+        };
+    }
+
+    /** 从 ReplayProcessingResult 提取 capabilities。 */
+    public static boolean isAiAnalyzable(final ReplayProcessingResult result, final ReplayAnalysisScope scope) {
+        return isAiAnalyzable(result != null ? result.capabilities() : null, scope);
+    }
+
+    /** 简化重载：从 ScopedResult 取 scope。 */
+    public static boolean isAiAnalyzable(final ReplayProcessingResult result, final ScopedResult scoped) {
+        return isAiAnalyzable(result, scoped != null ? scoped.scope() : null);
     }
 
     private static ReplayAnalysisMode resolveMode(final ReplayAnalysisScope scope, final int analyzableCount) {

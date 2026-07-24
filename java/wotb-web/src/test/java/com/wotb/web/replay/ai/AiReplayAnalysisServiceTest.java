@@ -93,7 +93,7 @@ class AiReplayAnalysisServiceTest {
         battle.arenaId = "arena1"; battle.mapName = "m"; battle.arenaBonusType = 1;
         final var pr = new PlayerResult(); pr.accountId = 1000L; pr.nickname = "P"; pr.team = 1;
         battle.players = List.of(pr); battle.recorder = "P";
-        final var caps = ReplayProcessingCapabilities.of(true, true, false, false, false, false, false, ReplayAnalysisScope.PLAYER_FOCUSED);
+        final var caps = new ReplayProcessingCapabilities(true, true, false, false, false, false, false, false);
         return new ReplayProcessingResult("n.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new ReplayIdentity("h", null, null, null, 1000L, null),
                 battle, null, null, caps, null, null);
@@ -107,7 +107,7 @@ class AiReplayAnalysisServiceTest {
         battle.players = List.of(pr); battle.recorder = "P";
         final var recon = new ReplayReconstruction(null, null, 300f, null,
                 List.of(), List.of(), List.of(), null, null, null);
-        final var caps = ReplayProcessingCapabilities.of(true, true, true, false, false, false, false, ReplayAnalysisScope.PLAYER_FOCUSED);
+        final var caps = new ReplayProcessingCapabilities(true, true, true, false, false, false, false, false);
         return new ReplayProcessingResult("u.wotbreplay", ReplayProcessingStatus.SUCCESS,
                 new ReplayIdentity("h", null, null, null, 1000L, null),
                 battle, recon, null, caps, null, null);

@@ -3,17 +3,15 @@ package com.wotb.core.processing;
 import com.wotb.core.model.Battle;
 
 /**
- * 规范化战斗分组键，用于 HashMap equals/hashCode。
- * <p>
- * 规范规则：
- * <ol>
- *   <li>arenaUniqueId 非空 → 仅用 arenaUniqueId，其他字段置 null</li>
- *   <li>arenaUniqueId 为空 + map/version/startEpoch 完整 → 用三者</li>
- *   <li>上述信息不完整 → 用 uniqueFallback（contentHash），宁可独立不错误合并</li>
- * </ol>
- * </p>
+ * 规范化战斗分组键。三种互斥模式，使用 record 默认 equals/hashCode。
+ * <ul>
+ *   <li>ARENA — arenaUniqueId 非空，仅用它，其他字段 null</li>
+ *   <li>COMPOSITE — arena 缺失但 map+version+time 完整</li>
+ *   <li>FALLBACK — 以上都不满足，用 contentHash 或请求内稳定 ID</li>
+ * </ul>
  */
 public record BattleGroupingKey(
+        KeyType type,
         String arenaUniqueId,
         String mapCode,
         String clientVersion,
@@ -21,68 +19,42 @@ public record BattleGroupingKey(
         String uniqueFallback
 ) {
 
-    public static BattleGroupingKey from(final ReplayIdentity identity, final Battle battle, final String fileNameFallback) {
-        if (identity == null) return fromBattleOrFile(battle, fileNameFallback);
-        final String arenaId = blankToNull(identity.arenaUniqueId());
-        if (arenaId != null) return new BattleGroupingKey(arenaId, null, null, null, null);
-        // identity 无 arenaUniqueId 时降级到 Battle.arenaId
-        if (battle != null) {
-            final String battleArena = blankToNull(battle.arenaId);
-            if (battleArena != null) return new BattleGroupingKey(battleArena, null, null, null, null);
-        }
-        final String map = blankToNull(identity.mapCode());
-        final String clientVersion = blankToNull(identity.clientVersion());
-        final Long startEpoch = identity.battleTime() != null ? identity.battleTime().getEpochSecond() : null;
-        if (map != null && clientVersion != null && startEpoch != null)
-            return new BattleGroupingKey(null, map, clientVersion, startEpoch, null);
-        // 降级到 Battle.mapName
-        if (battle != null) {
-            final String battleMap = blankToNull(battle.mapName);
-            if (battleMap != null) return new BattleGroupingKey(null, battleMap, null, null, null);
-        }
-        return new BattleGroupingKey(null, null, null, null, identity.contentHash());
+    public enum KeyType { ARENA, COMPOSITE, FALLBACK }
+
+    public static BattleGroupingKey from(final ReplayIdentity identity, final Battle battle, final String requestFallback) {
+        final String arenaId = firstNonBlank(
+                identity != null ? blankToNull(identity.arenaUniqueId()) : null,
+                battle != null ? blankToNull(battle.arenaId) : null
+        );
+        if (arenaId != null) return new BattleGroupingKey(KeyType.ARENA, arenaId, null, null, null, null);
+
+        final String mapCode = firstNonBlank(
+                identity != null ? blankToNull(identity.mapCode()) : null,
+                battle != null ? blankToNull(battle.mapName) : null
+        );
+        final String clientVersion = identity != null ? blankToNull(identity.clientVersion()) : null;
+        final Long startEpoch = identity != null && identity.battleTime() != null
+                ? identity.battleTime().getEpochSecond() : null;
+
+        if (mapCode != null && clientVersion != null && startEpoch != null)
+            return new BattleGroupingKey(KeyType.COMPOSITE, null, mapCode, clientVersion, startEpoch, null);
+
+        final String fallback = identity != null ? blankToNull(identity.contentHash()) : null;
+        return new BattleGroupingKey(KeyType.FALLBACK, null, null, null, null,
+                fallback != null ? fallback : requestFallback);
     }
 
-    private static BattleGroupingKey fromBattleOrFile(final Battle battle, final String fileNameFallback) {
-        if (battle != null) {
-            final String arenaId = blankToNull(battle.arenaId);
-            if (arenaId != null) return new BattleGroupingKey(arenaId, null, null, null, null);
-            final String map = blankToNull(battle.mapName);
-            if (map != null) return new BattleGroupingKey(null, map, null, null, null);
-        }
-        return new BattleGroupingKey(null, null, null, null, fileNameFallback);
+    public BattleIdentity toBattleIdentity() {
+        return new BattleIdentity(arenaUniqueId, mapCode != null ? mapCode : "",
+                clientVersion != null ? clientVersion : "", battleStartEpochSecond);
+    }
+
+    private static String firstNonBlank(final String... values) {
+        for (final String v : values) { if (v != null) return v; }
+        return null;
     }
 
     private static String blankToNull(final String s) {
         return (s == null || s.isBlank()) ? null : s;
-    }
-
-    /** 构建用于 API 显示（不含 uniqueFallback 的简洁版本）。 */
-    public BattleIdentity toBattleIdentity() {
-        return new BattleIdentity(
-                arenaUniqueId,
-                mapCode != null ? mapCode : "",
-                clientVersion != null ? clientVersion : "",
-                battleStartEpochSecond
-        );
-    }
-
-    /** 用于 HashMap 的 equals/hashCode 基于 uniqueFallback 兜底。 */
-    @Override
-    public final boolean equals(final Object o) {
-        if (this == o) return true;
-        if (!(o instanceof BattleGroupingKey k)) return false;
-        if (arenaUniqueId != null) return arenaUniqueId.equals(k.arenaUniqueId);
-        if (k.arenaUniqueId != null) return false;
-        if (uniqueFallback != null) return uniqueFallback.equals(k.uniqueFallback);
-        if (k.uniqueFallback != null) return false;
-        return true;
-    }
-
-    @Override
-    public final int hashCode() {
-        if (arenaUniqueId != null) return arenaUniqueId.hashCode();
-        if (uniqueFallback != null) return uniqueFallback.hashCode();
-        return 0;
     }
 }
