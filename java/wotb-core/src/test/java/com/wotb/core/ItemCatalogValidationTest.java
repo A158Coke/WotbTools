@@ -65,58 +65,196 @@ class ItemCatalogValidationTest {
     }
 
     // ======== Schema helper unit tests ========
+    // Uses helpers: setEffect, numericEffect, assertInvalid, assertValid
 
-    @Test void setMissingValueFails() { assertThrows(AssertionError.class, () -> validateEffects(array(obj("operation", "SET", "stat", "x")), "t")); }
-    @Test void setNullValueFails() { assertThrows(AssertionError.class, () -> validateEffects(array(obj("operation", "SET", "value", NF.nullNode(), "stat", "x")), "t")); }
-    @Test void setObjectValueFails() { assertThrows(AssertionError.class, () -> validateEffects(array(obj("operation", "SET", "value", obj(), "stat", "x")), "t")); }
-    @Test void setArrayValueFails() { assertThrows(AssertionError.class, () -> validateEffects(array(obj("operation", "SET", "value", array(), "stat", "x")), "t")); }
-    @Test void setBlankStringValueFails() { assertThrows(AssertionError.class, () -> validateEffects(array(obj("operation", "SET", "value", "   ", "stat", "x")), "t")); }
-    @Test void setNonFiniteNumberFails() {
-        var v = NF.numberNode(Double.NaN);
-        assertThrows(AssertionError.class, () -> validateEffects(array(obj("operation", "SET", "value", v, "stat", "x")), "t"));
+    @Test
+    void setMissingValueFails() { assertInvalid(setEffect(null)); }
+
+    @Test
+    void setNullValueFails() { assertInvalid(setEffect(NF.nullNode())); }
+
+    @Test
+    void setObjectValueFails() { assertInvalid(setEffect(obj())); }
+
+    @Test
+    void setArrayValueFails() { assertInvalid(setEffect(array())); }
+
+    @Test
+    void setBlankStringValueFails() { assertInvalid(setEffect("   ")); }
+
+    @Test
+    void setNonFiniteNumberFails() { assertInvalid(setEffect(NF.numberNode(Double.NaN))); }
+
+    @Test
+    void setBinaryValueFails() { assertInvalid(setEffect(NF.binaryNode(new byte[]{1}))); }
+
+    @Test
+    void setPojoValueFails() { assertInvalid(setEffect(NF.pojoNode("x"))); }
+
+    @Test
+    void setMissingNodeValueFails() { assertInvalid(setEffect(null)); }
+
+    @Test
+    void setBooleanValuePasses() { assertValid(setEffect(true)); }
+
+    @Test
+    void setStringValuePasses() { assertValid(setEffect("x")); }
+
+    @Test
+    void setNumericValuePasses() { assertValid(setEffect(1)); }
+
+    @Test
+    void setDoubleValuePasses() { assertValid(setEffect(0.75)); }
+
+    @Test
+    void setNegativeValuePasses() { assertValid(setEffect(-2.5)); }
+
+    @Test
+    void addMissingStatFails() {
+        assertThrows(AssertionError.class,
+                () -> validateEffects(array(obj("operation", "ADD", "value", 10)), "t"));
     }
-    @Test void setBooleanValuePasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "SET", "value", true, "stat", "x")), "t")); }
-    @Test void setStringValuePasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "SET", "value", "x", "stat", "x")), "t")); }
-    @Test void setNumericValuePasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "SET", "value", 1, "stat", "x")), "t")); }
-    @Test void setDoubleValuePasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "SET", "value", 0.75, "stat", "x")), "t")); }
-    @Test void setNegativeValuePasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "SET", "value", -2.5)), "t")); }
-    @Test void addValuePasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "ADD", "value", 10)), "t")); }
-    @Test void multiplyValuePasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "MULTIPLY", "value", 0.95)), "t")); }
-    @Test void addPercentagePointsPasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "ADD_PERCENTAGE_POINTS", "value", 5)), "t")); }
 
-    @Test void instantWithNullDurationPasses() {
+    @Test
+    void multiplyMissingStatFails() {
+        assertThrows(AssertionError.class,
+                () -> validateEffects(array(obj("operation", "MULTIPLY", "value", 0.95)), "t"));
+    }
+
+    @Test
+    void setMissingStatFails() {
+        assertThrows(AssertionError.class,
+                () -> validateEffects(array(obj("operation", "SET", "value", true)), "t"));
+    }
+
+    @Test
+    void addPercentagePointsMissingStatFails() {
+        assertThrows(AssertionError.class,
+                () -> validateEffects(array(obj("operation", "ADD_PERCENTAGE_POINTS", "value", 5)), "t"));
+    }
+
+    @Test
+    void relativeRangeMissingStatFails() {
+        assertThrows(AssertionError.class,
+                () -> validateEffects(array(obj("operation", "SET_RELATIVE_RANGE",
+                        "minimumMultiplier", 0.5, "maximumMultiplier", 1.5)), "t"));
+    }
+
+    @Test
+    void statNullFails() {
+        assertThrows(AssertionError.class,
+                () -> validateEffects(array(obj("operation", "MULTIPLY", "value", 0.9, "stat", NF.nullNode())), "t"));
+    }
+
+    @Test
+    void statNonTextualFails() {
+        assertThrows(AssertionError.class,
+                () -> validateEffects(array(obj("operation", "MULTIPLY", "value", 0.9, "stat", NF.numberNode(1))), "t"));
+    }
+
+    @Test
+    void statBlankFails() {
+        assertThrows(AssertionError.class,
+                () -> validateEffects(array(obj("operation", "MULTIPLY", "value", 0.9, "stat", "   ")), "t"));
+    }
+
+    @Test
+    void addWithStatPasses() {
+        assertDoesNotThrow(() -> validateEffects(array(obj("operation", "ADD", "value", 10, "stat", "x")), "t"));
+    }
+
+    @Test
+    void multiplyWithStatPasses() {
+        assertDoesNotThrow(() -> validateEffects(array(obj("operation", "MULTIPLY", "value", 0.95, "stat", "x")), "t"));
+    }
+
+    @Test
+    void addValuePasses() {
+        assertDoesNotThrow(() -> validateEffects(array(obj("operation", "ADD", "value", 10, "stat", "x")), "t"));
+    }
+
+    @Test
+    void multiplyValuePasses() {
+        assertDoesNotThrow(() -> validateEffects(array(obj("operation", "MULTIPLY", "value", 0.95, "stat", "x")), "t"));
+    }
+
+    @Test
+    void addPercentagePointsPasses() {
+        assertDoesNotThrow(() -> validateEffects(array(obj("operation", "ADD_PERCENTAGE_POINTS", "value", 5, "stat", "x")), "t"));
+    }
+
+    @Test
+    void addPercentagePointsWithStatPasses() {
+        assertDoesNotThrow(() -> validateEffects(array(obj("operation", "ADD_PERCENTAGE_POINTS", "value", 5, "stat", "x")), "t"));
+    }
+
+    @Test
+    void relativeRangeWithStatPasses() {
+        assertDoesNotThrow(() -> validateEffects(array(obj("operation", "SET_RELATIVE_RANGE",
+                "minimumMultiplier", 0.5, "maximumMultiplier", 1.5, "stat", "x")), "t"));
+    }
+
+    @Test
+    void instantWithoutDurationPasses() {
         var item = obj("id", 1, "code", "X", "activationType", "INSTANT",
-                "cooldownSeconds", 10, "effects", array(obj("operation", "MULTIPLY", "value", 0.5)));
+                "cooldownSeconds", 10, "effects", array(obj("operation", "MULTIPLY", "value", 0.5, "stat", "x")));
+        assertDoesNotThrow(() -> validateConsumableItem(item, 0, new HashSet<>(), new HashSet<>()));
+    }
+
+    @Test
+    void instantWithNullDurationPasses() {
+        var item = obj("id", 1, "code", "X", "activationType", "INSTANT",
+                "cooldownSeconds", 10,         "effects", array(obj("operation", "MULTIPLY", "value", 0.5, "stat", "x")));
         item.set("durationSeconds", NF.nullNode());
         assertDoesNotThrow(() -> validateConsumableItem(item, 0, new HashSet<>(), new HashSet<>()));
     }
 
-    @Test void instantWithNonNullDurationFails() {
+    @Test
+    void instantWithNonNullDurationFails() {
         var item = obj("id", 1, "code", "X", "activationType", "INSTANT",
-                "cooldownSeconds", 10, "effects", array(obj("operation", "MULTIPLY", "value", 0.5)), "durationSeconds", 5);
+                "cooldownSeconds", 10, "effects", array(obj("operation", "MULTIPLY", "value", 0.5, "stat", "x")), "durationSeconds", 5);
         assertThrows(AssertionError.class,
                 () -> validateConsumableItem(item, 0, new HashSet<>(), new HashSet<>()));
     }
 
-    @Test void itemIsStringFails() { assertThrows(AssertionError.class, () -> requireNonBlankText(NF.textNode("x"), "f", "c")); }
-    @Test void itemIsArrayFails() { assertThrows(AssertionError.class, () -> requireNonBlankText(array(), "f", "c")); }
-    @Test void activationTypeMissingFails() {
+    @Test
+    void itemIsStringFails() {
+        assertThrows(AssertionError.class,
+                () -> requireNonBlankText(NF.textNode("x"), "f", "c"));
+    }
+
+    @Test
+    void itemIsArrayFails() {
+        assertThrows(AssertionError.class,
+                () -> requireNonBlankText(array(), "f", "c"));
+    }
+
+    @Test
+    void activationTypeMissingFails() {
         assertThrows(AssertionError.class,
                 () -> validateConsumableItem(obj("id", 1, "code", "X", "cooldownSeconds", 10, "effects",
-                        array(obj("operation", "MULTIPLY", "value", 0.5))),
+                        array(obj("operation", "MULTIPLY", "value", 0.5, "stat", "x"))),
                         0, new HashSet<>(), new HashSet<>()));
     }
-    @Test void sourceIdsNotArrayFails() {
+
+    @Test
+    void sourceIdsNotArrayFails() {
         assertThrows(AssertionError.class,
                 () -> validateProvisionItem(obj("id", "p", "code", "X", "sourceIds", "x", "effects",
-                        array(obj("operation", "MULTIPLY", "value", 0.5))),
+                        array(obj("operation", "MULTIPLY", "value", 0.5, "stat", "x"))),
                         0, new HashSet<>(), new HashSet<>(), new HashSet<>()));
     }
-    @Test void gridNotObjectFails() { assertThrows(AssertionError.class, () -> validateGrid(NF.textNode("x"), "t")); }
-    @Test void durationPositiveInt() {
+    @Test
+    void gridNotObjectFails() {
+        assertThrows(AssertionError.class,
+                () -> validateGrid(NF.textNode("x"), "t"));
+    }
+
+    @Test
+    void durationPositiveInt() {
         var item = obj("id", 1, "code", "X", "activationType", "DURATION",
                 "cooldownSeconds", 10, "durationSeconds", 30, "effects",
-                array(obj("operation", "MULTIPLY", "value", 0.5)));
+                array(obj("operation", "MULTIPLY", "value", 0.5, "stat", "x")));
         assertDoesNotThrow(() -> validateConsumableItem(item, 0, new HashSet<>(), new HashSet<>()));
     }
 
@@ -243,18 +381,24 @@ class ItemCatalogValidationTest {
             assertTrue(effect.isObject(), context + " effect must be object");
             final String operation = requireNonBlankText(effect, "operation", context + " effect");
             switch (operation) {
-                case "MULTIPLY", "ADD", "ADD_PERCENTAGE_POINTS" ->
-                    requireFiniteNumber(effect, "value", context + " " + operation);
-                case "SET" -> requireSetScalarValue(effect, "value", context + " SET");
-                case "INSTANT_ACTION" ->
-                    requireNonBlankText(effect, "action", context + " INSTANT_ACTION");
+                case "MULTIPLY", "ADD", "SET", "ADD_PERCENTAGE_POINTS" -> {
+                    requireNonBlankText(effect, "stat", context + " " + operation);
+                    if ("SET".equals(operation)) {
+                        requireSetScalarValue(effect, "value", context + " SET");
+                    } else {
+                        requireFiniteNumber(effect, "value", context + " " + operation);
+                    }
+                }
                 case "SET_RELATIVE_RANGE" -> {
+                    requireNonBlankText(effect, "stat", context + " SET_RELATIVE_RANGE");
                     requireFiniteNumber(effect, "minimumMultiplier", context + " SET_RELATIVE_RANGE");
                     requireFiniteNumber(effect, "maximumMultiplier", context + " SET_RELATIVE_RANGE");
                     final double min = effect.get("minimumMultiplier").doubleValue();
                     final double max = effect.get("maximumMultiplier").doubleValue();
                     assertTrue(min <= max, context + " minimumMultiplier must not exceed maximumMultiplier");
                 }
+                case "INSTANT_ACTION" ->
+                    requireNonBlankText(effect, "action", context + " INSTANT_ACTION");
                 default -> fail(context + " unknown operation: " + operation);
             }
         }
@@ -263,9 +407,8 @@ class ItemCatalogValidationTest {
     private static void requireSetScalarValue(final JsonNode object, final String field, final String context) {
         final JsonNode v = object.get(field);
         assertNotNull(v, context + " missing " + field);
-        assertFalse(v.isNull(), context + " " + field + " must not be null");
-        assertFalse(v.isObject(), context + " " + field + " must not be object");
-        assertFalse(v.isArray(), context + " " + field + " must not be array");
+        assertTrue(v.isBoolean() || v.isTextual() || v.isNumber(),
+                context + " " + field + " must be boolean, string, or number");
         if (v.isTextual()) {
             assertFalse(v.textValue().isBlank(), context + " " + field + " must not be blank string");
         }
@@ -300,5 +443,25 @@ class ItemCatalogValidationTest {
         var a = NF.arrayNode();
         for (var item : items) a.add(item);
         return a;
+    }
+
+    // ======== Effect test helpers ========
+
+    /** Create a SET effect with the given raw value node (converted to JsonNode via obj's logic). */
+    private static JsonNode setEffect(final Object rawValue) {
+        if (rawValue == null) {
+            return array(obj("operation", "SET", "stat", "x"));
+        }
+        return array(obj("operation", "SET", "value", rawValue, "stat", "x"));
+    }
+
+    /** Assert that an effect (as a single-element array) fails validateEffects. */
+    private static void assertInvalid(final JsonNode effect) {
+        assertThrows(AssertionError.class, () -> validateEffects(effect, "t"));
+    }
+
+    /** Assert that an effect (as a single-element array) passes validateEffects. */
+    private static void assertValid(final JsonNode effect) {
+        assertDoesNotThrow(() -> validateEffects(effect, "t"));
     }
 }

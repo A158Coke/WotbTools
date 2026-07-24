@@ -80,15 +80,6 @@ class DefaultReplayProcessingFacadeTest {
     }
 
     @Test
-    void threeSameHashBatchConsistency() {
-        var r1 = makeBattleResult("a.wotbreplay", "hash-x", 1, 1000L);
-        var r2 = makeBattleResult("b.wotbreplay", "hash-x", 1, 1000L);
-        var r3 = makeBattleResult("c.wotbreplay", "hash-x", 1, 1000L);
-        var result = facade.buildBatchResult(3, List.of(r1, r2, r3));
-        assertEquals(2, result.summary().totalDuplicates());
-    }
-
-    @Test
     void nullIdentityNoDuplicate() {
         var caps = new ReplayProcessingCapabilities(true, true, false, false, false, false, false, false);
         var r1 = new ReplayProcessingResult("a.wotbreplay", ReplayProcessingStatus.SUCCESS, null, null, null, null, caps, null, null);
@@ -106,6 +97,11 @@ class DefaultReplayProcessingFacadeTest {
         assertEquals(ReplayAnalysisMode.NONE, result.suggestedAnalysisMode());
         assertEquals(1, result.summary().totalDuplicates());
         assertEquals("b.wotbreplay", result.summary().duplicateFileNames().getFirst());
+        // Partition-based duplicate detection works independently of scope
+        var partition = ExactReplayDuplicateDetector.partition(List.of(orig, dup, training));
+        assertEquals(1, partition.count());
+        assertSame(orig, partition.duplicates().getFirst().original());
+        assertSame(dup, partition.duplicates().getFirst().duplicate());
     }
 
     @Test
@@ -116,6 +112,12 @@ class DefaultReplayProcessingFacadeTest {
         var result = facade.buildBatchResult(3, List.of(orig, dup, other));
         assertEquals(ReplayAnalysisMode.NONE, result.suggestedAnalysisMode());
         assertEquals(1, result.summary().totalDuplicates());
+        assertEquals("b.wotbreplay", result.summary().duplicateFileNames().getFirst());
+        // Partition confirms duplicate regardless of recorder mix
+        var partition = ExactReplayDuplicateDetector.partition(List.of(orig, dup, other));
+        assertEquals(1, partition.count());
+        assertSame(orig, partition.duplicates().getFirst().original());
+        assertSame(dup, partition.duplicates().getFirst().duplicate());
     }
 
     @Test

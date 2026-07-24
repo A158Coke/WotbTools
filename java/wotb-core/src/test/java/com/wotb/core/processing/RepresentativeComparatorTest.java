@@ -68,13 +68,31 @@ class RepresentativeComparatorTest {
         assertEquals(expectedName, selected.result().fileName());
     }
 
-    private BatchAnalyzer.ScopedResult scoped(String name, boolean recon, boolean complete, double ratio, int failed, int unknown, int resync) {
-        var caps = new ReplayProcessingCapabilities(true, true, recon, false, false, false, false, false);
-        var coverage = new ReplayCoverage(complete, 100, (int) (ratio * 100), 0, unknown, failed, ratio, Map.of());
-        var diag = new ReplayStreamDiagnostics(0, 0, 100, 100 - failed - unknown, 0, resync, 0, 0, 0f, 0f, 0, Map.of(), false, null, complete);
-        var processingDiag = new ReplayProcessingDiagnostics(true, complete, recon, diag);
-        var reconstruction = recon ? new ReplayReconstruction(null, null, 300f, null, List.of(), List.of(), List.of(), null, coverage, diag) : null;
-        var result = new ReplayProcessingResult(name, ReplayProcessingStatus.SUCCESS, null, null, reconstruction, processingDiag, caps, null, null);
-        return new BatchAnalyzer.ScopedResult(result, BattleCategory.RANDOM, ReplayAnalysisScope.PLAYER_FOCUSED);
+    private BatchAnalyzer.ScopedResult scoped(
+            final String name,
+            final boolean recon,
+            final boolean complete,
+            final double ratio,
+            final int failed,
+            final int unknown,
+            final int resync) {
+        var caps = new ReplayProcessingCapabilities(
+                true, true, recon, false, false, false, false, false);
+        var coverage = new ReplayCoverage(
+                complete, 100, (int) (ratio * 100), 0, unknown, failed, ratio, Map.of());
+        var diag = new ReplayStreamDiagnostics(
+                0, 0, 100, 100 - failed - unknown, 0, resync,
+                0, 0, 0f, 0f, 0, Map.of(), false, null, complete);
+        var processingDiag = new ReplayProcessingDiagnostics(
+                true, complete, recon, diag);
+        var reconstruction = recon
+                ? new ReplayReconstruction(null, null, 300f, null,
+                        List.of(), List.of(), List.of(), null, coverage, diag)
+                : null;
+        var result = new ReplayProcessingResult(
+                name, ReplayProcessingStatus.SUCCESS, null, null,
+                reconstruction, processingDiag, caps, null, null);
+        return new BatchAnalyzer.ScopedResult(
+                result, BattleCategory.RANDOM, ReplayAnalysisScope.PLAYER_FOCUSED);
     }
 }
