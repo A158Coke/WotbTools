@@ -66,12 +66,19 @@ class ItemCatalogValidationTest {
 
     // ======== Schema helper unit tests ========
 
-    @Test void setMissingValueFails() { assertThrows(AssertionError.class, () -> validateEffects(array(obj("operation", "SET")), "t")); }
-    @Test void setBooleanValuePasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "SET", "value", true)), "t")); }
-    @Test void setStringValuePasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "SET", "value", "x")), "t")); }
-    @Test void setObjectValuePasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "SET", "value", obj())), "t")); }
-    @Test void setNumericValuePasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "SET", "value", 1)), "t")); }
-    @Test void setDoubleValuePasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "SET", "value", 0.75)), "t")); }
+    @Test void setMissingValueFails() { assertThrows(AssertionError.class, () -> validateEffects(array(obj("operation", "SET", "stat", "x")), "t")); }
+    @Test void setNullValueFails() { assertThrows(AssertionError.class, () -> validateEffects(array(obj("operation", "SET", "value", NF.nullNode(), "stat", "x")), "t")); }
+    @Test void setObjectValueFails() { assertThrows(AssertionError.class, () -> validateEffects(array(obj("operation", "SET", "value", obj(), "stat", "x")), "t")); }
+    @Test void setArrayValueFails() { assertThrows(AssertionError.class, () -> validateEffects(array(obj("operation", "SET", "value", array(), "stat", "x")), "t")); }
+    @Test void setBlankStringValueFails() { assertThrows(AssertionError.class, () -> validateEffects(array(obj("operation", "SET", "value", "   ", "stat", "x")), "t")); }
+    @Test void setNonFiniteNumberFails() {
+        var v = NF.numberNode(Double.NaN);
+        assertThrows(AssertionError.class, () -> validateEffects(array(obj("operation", "SET", "value", v, "stat", "x")), "t"));
+    }
+    @Test void setBooleanValuePasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "SET", "value", true, "stat", "x")), "t")); }
+    @Test void setStringValuePasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "SET", "value", "x", "stat", "x")), "t")); }
+    @Test void setNumericValuePasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "SET", "value", 1, "stat", "x")), "t")); }
+    @Test void setDoubleValuePasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "SET", "value", 0.75, "stat", "x")), "t")); }
     @Test void setNegativeValuePasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "SET", "value", -2.5)), "t")); }
     @Test void addValuePasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "ADD", "value", 10)), "t")); }
     @Test void multiplyValuePasses() { assertDoesNotThrow(() -> validateEffects(array(obj("operation", "MULTIPLY", "value", 0.95)), "t")); }
@@ -238,19 +245,32 @@ class ItemCatalogValidationTest {
             switch (operation) {
                 case "MULTIPLY", "ADD", "ADD_PERCENTAGE_POINTS" ->
                     requireFiniteNumber(effect, "value", context + " " + operation);
-                case "SET" -> {
-                    final JsonNode v = effect.get("value");
-                    assertNotNull(v, context + " SET missing value");
-                }
+                case "SET" -> requireSetScalarValue(effect, "value", context + " SET");
                 case "INSTANT_ACTION" ->
                     requireNonBlankText(effect, "action", context + " INSTANT_ACTION");
                 case "SET_RELATIVE_RANGE" -> {
-                    final double min = requireFiniteNumber(effect, "minimumMultiplier", context + " SET_RELATIVE_RANGE");
-                    final double max = requireFiniteNumber(effect, "maximumMultiplier", context + " SET_RELATIVE_RANGE");
+                    requireFiniteNumber(effect, "minimumMultiplier", context + " SET_RELATIVE_RANGE");
+                    requireFiniteNumber(effect, "maximumMultiplier", context + " SET_RELATIVE_RANGE");
+                    final double min = effect.get("minimumMultiplier").doubleValue();
+                    final double max = effect.get("maximumMultiplier").doubleValue();
                     assertTrue(min <= max, context + " minimumMultiplier must not exceed maximumMultiplier");
                 }
                 default -> fail(context + " unknown operation: " + operation);
             }
+        }
+    }
+
+    private static void requireSetScalarValue(final JsonNode object, final String field, final String context) {
+        final JsonNode v = object.get(field);
+        assertNotNull(v, context + " missing " + field);
+        assertFalse(v.isNull(), context + " " + field + " must not be null");
+        assertFalse(v.isObject(), context + " " + field + " must not be object");
+        assertFalse(v.isArray(), context + " " + field + " must not be array");
+        if (v.isTextual()) {
+            assertFalse(v.textValue().isBlank(), context + " " + field + " must not be blank string");
+        }
+        if (v.isNumber()) {
+            assertTrue(Double.isFinite(v.doubleValue()), context + " " + field + " must be finite");
         }
     }
 
