@@ -65,7 +65,6 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
     @Override
     public ReplayBatchProcessingResult processBatch(final List<Source> inputs, final ReplayProcessingOptions options) {
         final List<ReplayProcessingResult> results = new ArrayList<>();
-
         for (final Source input : inputs) {
             try {
                 final ReplayFileValidationResult validation = validateFile(input);
@@ -78,28 +77,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
                 results.add(failedResult(input.name(), e));
             }
         }
-
-        // 只执行一次 BatchAnalyzer
-        final BatchAnalyzer.AnalysisPlan plan;
-        try {
-            plan = new BatchAnalyzer().analyze(results);
-        } catch (MixedAnalysisScopesException | MixedRandomBattleRecordersException e) {
-            // 处理接口仍然返回逐文件结果，但不能建议单一 AI 模式
-            final ReplayBatchSummary summary = buildSummary(inputs.size(), results, List.of());
-            return new ReplayBatchProcessingResult(
-                    ReplayAnalysisMode.NONE, inputs.size(),
-                    summary.totalSuccessful(), summary.totalPartial(), summary.totalFailed(),
-                    List.copyOf(results), summary);
-        }
-
-        final List<String> dupNames = plan.exactDuplicates().stream()
-                .map(d -> d.duplicate().fileName()).toList();
-        final ReplayBatchSummary summary = buildSummary(inputs.size(), results, dupNames);
-
-        return new ReplayBatchProcessingResult(
-                plan.mode(), inputs.size(),
-                summary.totalSuccessful(), summary.totalPartial(), summary.totalFailed(),
-                List.copyOf(results), summary);
+        return assembleBatchResult(inputs.size(), results);
     }
 
     /**
@@ -202,8 +180,20 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
      */
     public ReplayBatchProcessingResult buildBatchResult(
             final int totalInputs, final List<ReplayProcessingResult> results) {
-        final ReplayBatchSummary summary = buildSummary(totalInputs, results, List.of());
-        final var mode = ReplayAnalysisMode.NONE;
+        return assembleBatchResult(totalInputs, results);
+    }
+
+    /** 统一汇总入口：mode + duplicates + summary。processBatch 与 buildBatchResult 共享。 */
+    private ReplayBatchProcessingResult assembleBatchResult(
+            final int totalInputs, final List<ReplayProcessingResult> results) {
+        final var dupSummary = ExactReplayDuplicateDetector.detect(results);
+        ReplayAnalysisMode mode;
+        try {
+            mode = new BatchAnalyzer().analyze(results).mode();
+        } catch (MixedAnalysisScopesException | MixedRandomBattleRecordersException e) {
+            mode = ReplayAnalysisMode.NONE;
+        }
+        final ReplayBatchSummary summary = buildSummary(totalInputs, results, dupSummary.duplicateFileNames());
         return new ReplayBatchProcessingResult(
                 mode, totalInputs, summary.totalSuccessful(), summary.totalPartial(), summary.totalFailed(),
                 List.copyOf(results), summary);

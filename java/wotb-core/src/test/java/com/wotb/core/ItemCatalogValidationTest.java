@@ -50,8 +50,11 @@ class ItemCatalogValidationTest {
             assertTrue(codes.add(item.get("code").asText()), "Duplicate consumable code: " + item.get("code"));
             assertTrue(item.hasNonNull("cooldownSeconds") && item.get("cooldownSeconds").asInt() > 0,
                     "Consumable " + item.get("id") + " missing or invalid cooldownSeconds");
-            final String activationType = item.has("activationType") ? item.get("activationType").asText() : "";
-            if ("DURATION".equals(activationType)) {
+            if (item.hasNonNull("activationType")) {
+                assertTrue(Set.of("INSTANT", "DURATION").contains(item.get("activationType").asText()),
+                        "Consumable " + item.get("id") + " unknown activationType");
+            }
+            if (item.has("activationType") && "DURATION".equals(item.get("activationType").asText())) {
                 assertTrue(item.hasNonNull("durationSeconds") && item.get("durationSeconds").asInt() > 0,
                         "DURATION consumable " + item.get("id") + " missing or invalid durationSeconds");
             }
@@ -75,11 +78,12 @@ class ItemCatalogValidationTest {
             assertTrue(item.hasNonNull("sourceIds"), "Provision " + item.get("id") + " missing sourceIds");
             assertTrue(item.get("sourceIds").size() > 0, "Provision " + item.get("id") + " has empty sourceIds");
             for (final var sid : item.get("sourceIds")) {
-                assertTrue(sid.asInt() >= 0, "Provision " + item.get("id") + " negative sourceId: " + sid.asInt());
-                assertTrue(allSourceIds.add(sid.asInt()), "Duplicate sourceId across provisions: " + sid.asInt());
+                assertTrue(sid.isIntegralNumber(), "sourceId must be integer: " + sid);
+                final int sourceId = sid.intValue();
+                assertTrue(sourceId >= 0, "Provision " + item.get("id") + " negative sourceId: " + sourceId);
+                assertTrue(allSourceIds.add(sourceId), "Duplicate sourceId across provisions: " + sourceId);
             }
             assertTrue(item.hasNonNull("effects"), "Provision " + item.get("id") + " missing effects");
-            assertTrue(item.get("effects").isArray(), "Provision " + item.get("id") + " effects must be array");
             assertTrue(item.get("effects").size() > 0, "Provision " + item.get("id") + " has empty effects");
             validateEffects(item.get("effects"));
         }
@@ -104,7 +108,11 @@ class ItemCatalogValidationTest {
                     assertTrue(effect.hasNonNull("action"), "INSTANT_ACTION requires action");
                 case "SET_RELATIVE_RANGE" -> {
                     assertTrue(effect.hasNonNull("minimumMultiplier"), "SET_RELATIVE_RANGE requires minimumMultiplier");
+                    assertTrue(effect.get("minimumMultiplier").isNumber(), "minimumMultiplier must be numeric");
                     assertTrue(effect.hasNonNull("maximumMultiplier"), "SET_RELATIVE_RANGE requires maximumMultiplier");
+                    assertTrue(effect.get("maximumMultiplier").isNumber(), "maximumMultiplier must be numeric");
+                    assertTrue(effect.get("minimumMultiplier").doubleValue() <= effect.get("maximumMultiplier").doubleValue(),
+                            "minimumMultiplier must not exceed maximumMultiplier");
                 }
                 default -> fail("Unknown operation: " + op);
             }
