@@ -191,7 +191,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
             diagnostics = ReplayProcessingDiagnostics.empty();
         }
 
-        final boolean playerFs = reconOk && recorderEntityMapped;
+        final boolean playerFeaturePossible = reconOk && recorderEntityMapped;
         final boolean recorderResultAvailable = battle != null && battle.recorderResult() != null;
         // scope 默认 PLAYER_FOCUSED，后续由 BattleCategory 细化
         final ReplayAnalysisScope scope = ReplayAnalysisScope.PLAYER_FOCUSED;
@@ -200,7 +200,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
         final ReplayProcessingCapabilities capabilities = ReplayProcessingCapabilities.of(
                 summaryOk, recorderResultAvailable, reconOk,
                 recorderEntityMapped, perspectiveTeamResolved,
-                playerFs, teamFs, scope);
+                playerFeaturePossible, teamFs, scope);
 
         return new ReplayProcessingResult(
                 input.name(), status, identity,

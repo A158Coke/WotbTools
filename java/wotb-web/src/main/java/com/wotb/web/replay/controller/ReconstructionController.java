@@ -126,9 +126,18 @@ public class ReconstructionController {
             @RequestParam("files") final MultipartFile[] files) throws IOException {
 
         validateBatch(files);
-        final List<ReplayProcessingResult> allResults = processFiles(files);
+        final var uploads = toUploads(files);
+        final List<ReplayProcessingResult> allResults = new ArrayList<>();
+        for (final var upload : uploads) {
+            allResults.add(processingFacade.process(upload.source(), ReplayProcessingOptions.full()));
+        }
         final BatchAnalyzer.AnalysisPlan plan = new BatchAnalyzer().analyze(allResults);
 
+        // 先检查是否有成功解析的 Battle
+        final boolean hasParsedBattle = allResults.stream().anyMatch(r -> r.battle() != null);
+        if (!hasParsedBattle) throw new IllegalArgumentException("NO_BATTLE_DATA");
+
+        // 再检查 scope 是否支持
         if (plan.dominantScope() == null) throw new UnsupportedReplayAnalysisModeException("UNSUPPORTED_BATTLE_CATEGORY");
         final int total = files.length;
 
@@ -298,34 +307,37 @@ public class ReconstructionController {
 
     // ---- 辅助 ----
 
-    private List<ReplayProcessingResult> processFiles(final MultipartFile[] files) throws IOException {
-        final List<ReplayProcessingResult> results = new ArrayList<>();
-        for (final MultipartFile f : files) {
-            final String name = f.getOriginalFilename() != null ? f.getOriginalFilename() : "replay.wotbreplay";
-            results.add(processingFacade.process(
-                    new Source(name, f.getBytes()), ReplayProcessingOptions.full()));
+    /** 上传项：分配 uploadIndex 以处理同名文件。 */
+    private record ReplayUpload(int uploadIndex, String fileName, Source source) {}
+
+    private static List<ReplayUpload> toUploads(final MultipartFile[] files) throws IOException {
+        final List<ReplayUpload> uploads = new ArrayList<>();
+        for (int i = 0; i < files.length; i++) {
+            final String name = files[i].getOriginalFilename() != null
+                    ? files[i].getOriginalFilename() : "replay.wotbreplay";
+            uploads.add(new ReplayUpload(i, name, new Source(name, files[i].getBytes())));
         }
-        return results;
+        return uploads;
     }
 
     private static List<ReplayFileAnalysisStatus> buildFileStatuses(
             final List<ReplayProcessingResult> allResults,
             final BatchAnalyzer.AnalysisPlan plan) {
         final List<ReplayFileAnalysisStatus> statuses = new ArrayList<>();
-        final java.util.Set<String> indexed = new java.util.HashSet<>();
+        final java.util.IdentityHashMap<ReplayProcessingResult, Boolean> indexed = new java.util.IdentityHashMap<>();
         for (final var gp : plan.groups()) {
             final var rep = gp.representative();
             statuses.add(ReplayFileAnalysisStatus.primary(
                     rep.fileName(), rep.status(), BattleCategory.RANDOM, plan.dominantScope(),
                     rep.battle() != null ? rep.battle().arenaId : null,
                     gp.key().perspectiveTeam(), rep.capabilities()));
-            indexed.add(rep.fileName());
+            indexed.put(rep, Boolean.TRUE);
             for (final var dup : gp.duplicates()) {
                 statuses.add(ReplayFileAnalysisStatus.duplicate(
                         dup.fileName(), dup.status(),
                         ReplayFileRelation.SAME_TEAM_DUPLICATE_PERSPECTIVE,
                         rep.fileName()));
-                indexed.add(dup.fileName());
+                indexed.put(dup, Boolean.TRUE);
             }
         }
         for (final var dup : plan.exactDuplicates()) {
@@ -333,10 +345,10 @@ public class ReconstructionController {
                     dup.duplicate().fileName(), dup.duplicate().status(),
                     ReplayFileRelation.EXACT_DUPLICATE,
                     dup.original().fileName()));
-            indexed.add(dup.duplicate().fileName());
+            indexed.put(dup.duplicate(), Boolean.TRUE);
         }
         for (final ReplayProcessingResult r : allResults) {
-            if (r.status() == ReplayProcessingStatus.FAILED && !indexed.contains(r.fileName())) {
+            if (r.status() == ReplayProcessingStatus.FAILED && !indexed.containsKey(r)) {
                 statuses.add(ReplayFileAnalysisStatus.failed(
                         r.fileName(), r.error() != null ? r.error()
                                 : ReplayProcessingError.of("FAILED", "Processing failed")));

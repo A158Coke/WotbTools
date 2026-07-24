@@ -1,10 +1,12 @@
 package com.wotb.core.processing;
 
 /**
- * 单个回放"能做什么分析"的能力标记。
+ * 单个回放"能做什么分析"的能力标记（scope-independent 的事实）。
  * <p>
- * {@code aiAnalyzable} = 基于权威结算可进行个人分析，不要求 reconstruction 成功。
- * {@code fullFeatureAnalysisAvailable} = 同时具备完整重建特征（位置+实体映射+特征集）。
+ * {@code playerFeatureExtractionPossible} = 具备尝试提取个人特征的前置条件
+ * （reconstruction 成功 + entity 映射），不代表特征已提取或 hasFeatures=true。
+ * {@code aiAnalyzable} = 按 scope 统一计算，见 BatchAnalyzer.isAiAnalyzable()。
+ * {@code fullFeatureAnalysisPossible} = 可进行完整特征分析的潜力。
  * </p>
  */
 public record ReplayProcessingCapabilities(
@@ -13,10 +15,10 @@ public record ReplayProcessingCapabilities(
         boolean reconstructionAvailable,
         boolean recorderEntityMapped,
         boolean perspectiveTeamResolved,
-        boolean playerFeatureSetAvailable,
-        boolean teamFeatureSetAvailable,
+        boolean playerFeatureExtractionPossible,
+        boolean teamFeatureExtractionPossible,
         boolean aiAnalyzable,
-        boolean fullFeatureAnalysisAvailable
+        boolean fullFeatureAnalysisPossible
 ) {
 
     public static final ReplayProcessingCapabilities NONE =
@@ -29,7 +31,7 @@ public record ReplayProcessingCapabilities(
     }
 
     /**
-     * 按分析范围构建，自动计算 aiAnalyzable 与 fullFeatureAnalysisAvailable。
+     * 按分析范围构建，自动计算 aiAnalyzable 与 fullFeatureAnalysisPossible。
      */
     public static ReplayProcessingCapabilities of(
             boolean summaryAvailable,
@@ -37,22 +39,22 @@ public record ReplayProcessingCapabilities(
             boolean reconstructionAvailable,
             boolean recorderEntityMapped,
             boolean perspectiveTeamResolved,
-            boolean playerFeatureSetAvailable,
-            boolean teamFeatureSetAvailable,
+            boolean playerFeatureExtractionPossible,
+            boolean teamFeatureExtractionPossible,
             ReplayAnalysisScope scope) {
 
         final boolean aiOk = switch (scope) {
             case PLAYER_FOCUSED -> summaryAvailable && recorderResultAvailable;
             case TEAM_PERSPECTIVE -> summaryAvailable && reconstructionAvailable
-                    && perspectiveTeamResolved && teamFeatureSetAvailable;
+                    && perspectiveTeamResolved && teamFeatureExtractionPossible;
         };
         final boolean fullFeature = aiOk && reconstructionAvailable
-                && recorderEntityMapped && playerFeatureSetAvailable;
+                && recorderEntityMapped && playerFeatureExtractionPossible;
         return new ReplayProcessingCapabilities(
                 summaryAvailable, recorderResultAvailable,
                 reconstructionAvailable, recorderEntityMapped,
                 perspectiveTeamResolved,
-                playerFeatureSetAvailable, teamFeatureSetAvailable,
+                playerFeatureExtractionPossible, teamFeatureExtractionPossible,
                 aiOk, fullFeature);
     }
 }

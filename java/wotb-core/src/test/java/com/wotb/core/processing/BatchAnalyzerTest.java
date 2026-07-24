@@ -385,5 +385,17 @@ class BatchAnalyzerTest {
         assertEquals(2, analyzer.analyze(List.of(r1, r2)).groups().size());
     }
 
-
+    @Test
+    void missingMetadataDifferentHashesRemainDifferentBattles() {
+        final var id1 = new ReplayIdentity("hash-a", null, null, null, 1000L, null);
+        final var id2 = new ReplayIdentity("hash-b", null, null, null, 1000L, null);
+        final Battle b1 = new Battle(); b1.arenaId = ""; b1.mapName = ""; b1.arenaBonusType = 1;
+        final Battle b2 = new Battle(); b2.arenaId = ""; b2.mapName = ""; b2.arenaBonusType = 1;
+        final PlayerResult pr = new PlayerResult(); pr.accountId = 1000L; pr.nickname = "P"; pr.team = 1;
+        b1.players = List.of(pr); b1.recorder = "P"; b2.players = List.of(pr); b2.recorder = "P";
+        final var caps = ReplayProcessingCapabilities.of(true, true, true, true, false, true, false, ReplayAnalysisScope.PLAYER_FOCUSED);
+        final var r1 = new ReplayProcessingResult("a.wotbreplay", ReplayProcessingStatus.SUCCESS, id1, b1, null, null, caps, null, null);
+        final var r2 = new ReplayProcessingResult("b.wotbreplay", ReplayProcessingStatus.SUCCESS, id2, b2, null, null, caps, null, null);
+        assertEquals(2, analyzer.analyze(List.of(r1, r2)).groups().size());
+    }
 }
