@@ -1,7 +1,8 @@
 package com.wotb.web.replay.controller;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import com.wotb.core.stats.Rating;
 import com.wotb.web.replay.mapper.Mapper;
 import com.wotb.web.replay.service.ReplayService;
@@ -23,7 +24,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class ReplayControllerContractTest {
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = JsonMapper.builder().build();
     private MockMvc mvc;
 
     @BeforeEach
@@ -71,8 +72,8 @@ class ReplayControllerContractTest {
         assertTrue(response.get("killValue").asDouble() > 0);
         assertTrue(response.get("classFactor").isObject());
         assertFalse(response.get("classFactor").isEmpty());
-        response.get("classFactor").fieldNames().forEachRemaining(
-                key -> assertTrue(key.matches("[A-Z_]+"), "non-English class factor key: " + key));
+        response.get("classFactor").properties().forEach(
+                e -> assertTrue(e.getKey().matches("[A-Z_]+"), "non-English class factor key: " + e.getKey()));
     }
 
     private static Stream<JsonNode> stream(final JsonNode node) {

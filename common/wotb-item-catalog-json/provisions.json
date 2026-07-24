@@ -1,0 +1,326 @@
+{
+  "items": [
+    {
+      "id": "SMALL_FOOD",
+      "sourceIds": [
+        0,
+        8,
+        10,
+        12,
+        14,
+        16,
+        20,
+        99,
+        103,
+        105,
+        107,
+        109
+      ],
+      "code": "SMALL_FOOD",
+      "nameZh": "小型食品",
+      "nameEn": "Small Food",
+      "scope": "COMMON",
+      "special": false,
+      "persistent": true,
+      "effects": [
+        {
+          "stat": "crewMastery",
+          "operation": "ADD_PERCENTAGE_POINTS",
+          "value": 3.0,
+          "requiresCrewFormula": true
+        }
+      ],
+      "notes": [
+        "不同国家的小型食品名称和来源 ID 不同，但效果相同，因此合并为一个逻辑物资。",
+        "后端读取车辆可用物资时，应使用 sourceIds 匹配该逻辑物资。"
+      ]
+    },
+    {
+      "id": "LARGE_FOOD",
+      "sourceIds": [
+        2,
+        9,
+        11,
+        13,
+        15,
+        17,
+        21,
+        100,
+        104,
+        106,
+        108,
+        110
+      ],
+      "code": "LARGE_FOOD",
+      "nameZh": "大型食品",
+      "nameEn": "Large Food",
+      "scope": "COMMON",
+      "special": false,
+      "persistent": true,
+      "effects": [
+        {
+          "stat": "crewMastery",
+          "operation": "ADD_PERCENTAGE_POINTS",
+          "value": 10.0,
+          "requiresCrewFormula": true
+        }
+      ],
+      "notes": [
+        "不同国家的大型食品名称和来源 ID 不同，但效果相同，因此合并为一个逻辑物资。",
+        "后端读取车辆可用物资时，应使用 sourceIds 匹配该逻辑物资。"
+      ]
+    },
+    {
+      "id": "STANDARD_FUEL",
+      "sourceIds": [
+        18
+      ],
+      "code": "STANDARD_FUEL",
+      "nameZh": "标准燃料",
+      "nameEn": "Standard Fuel",
+      "scope": "COMMON",
+      "special": false,
+      "persistent": true,
+      "effects": [
+        {
+          "stat": "enginePower",
+          "operation": "MULTIPLY",
+          "value": 1.03
+        },
+        {
+          "stat": "hullTraverseSpeed",
+          "operation": "MULTIPLY",
+          "value": 1.03
+        },
+        {
+          "stat": "turretTraverseSpeed",
+          "operation": "MULTIPLY",
+          "value": 1.03
+        }
+      ]
+    },
+    {
+      "id": "IMPROVED_FUEL",
+      "sourceIds": [
+        19
+      ],
+      "code": "IMPROVED_FUEL",
+      "nameZh": "改进型燃料",
+      "nameEn": "Improved Fuel",
+      "scope": "COMMON",
+      "special": false,
+      "persistent": true,
+      "effects": [
+        {
+          "stat": "enginePower",
+          "operation": "MULTIPLY",
+          "value": 1.1
+        },
+        {
+          "stat": "hullTraverseSpeed",
+          "operation": "MULTIPLY",
+          "value": 1.1
+        },
+        {
+          "stat": "turretTraverseSpeed",
+          "operation": "MULTIPLY",
+          "value": 1.1
+        }
+      ]
+    },
+    {
+      "id": "PROTECTIVE_KIT",
+      "sourceIds": [
+        22
+      ],
+      "code": "PROTECTIVE_KIT",
+      "nameZh": "防护套装",
+      "nameEn": "Protective Kit",
+      "scope": "COMMON",
+      "special": false,
+      "persistent": true,
+      "effects": [
+        {
+          "stat": "crewInjuryChance",
+          "operation": "MULTIPLY",
+          "value": 0.85
+        },
+        {
+          "stat": "moduleRepairSpeed",
+          "operation": "MULTIPLY",
+          "value": 1.1
+        },
+        {
+          "stat": "engineFireChance",
+          "operation": "MULTIPLY",
+          "value": 0.8
+        },
+        {
+          "stat": "ammoRackHitPoints",
+          "operation": "MULTIPLY",
+          "value": 1.1
+        },
+        {
+          "stat": "fuelTankHitPoints",
+          "operation": "MULTIPLY",
+          "value": 1.1
+        }
+      ],
+      "notes": [
+        "ammoRackHitPoints 表示弹药架模块生命值。",
+        "弹药架模块生命值降至 0 时仍然必定殉爆。"
+      ]
+    },
+    {
+      "id": "SANDBAG_ARMOR",
+      "sourceIds": [
+        28
+      ],
+      "code": "SANDBAG_ARMOR",
+      "nameZh": "沙袋装甲",
+      "nameEn": "Sandbag Armor",
+      "scope": "VEHICLE_SPECIFIC",
+      "special": true,
+      "persistent": true,
+      "effects": [
+        {
+          "stat": "hitPoints",
+          "operation": "MULTIPLY",
+          "value": 1.03
+        }
+      ]
+    },
+    {
+      "id": "ENHANCED_SANDBAG_ARMOR",
+      "sourceIds": [
+        29
+      ],
+      "code": "ENHANCED_SANDBAG_ARMOR",
+      "nameZh": "强化沙袋装甲",
+      "nameEn": "Enhanced Sandbag Armor",
+      "scope": "VEHICLE_SPECIFIC",
+      "special": true,
+      "persistent": true,
+      "effects": [
+        {
+          "stat": "hitPoints",
+          "operation": "MULTIPLY",
+          "value": 1.06
+        }
+      ]
+    },
+    {
+      "id": "GEAR_OIL",
+      "sourceIds": [
+        44
+      ],
+      "code": "GEAR_OIL",
+      "nameZh": "齿轮油",
+      "nameEn": "Gear Oil",
+      "scope": "VEHICLE_SPECIFIC",
+      "special": true,
+      "persistent": true,
+      "effects": [
+        {
+          "stat": "enginePower",
+          "operation": "MULTIPLY",
+          "value": 1.03
+        },
+        {
+          "stat": "hullTraverseSpeed",
+          "operation": "MULTIPLY",
+          "value": 1.03
+        },
+        {
+          "stat": "forwardSpeedKph",
+          "operation": "ADD",
+          "value": 2.0
+        },
+        {
+          "stat": "reverseSpeedMagnitudeKph",
+          "operation": "ADD",
+          "value": 2.0
+        }
+      ]
+    },
+    {
+      "id": "IMPROVED_GEAR_OIL",
+      "sourceIds": [
+        45
+      ],
+      "code": "IMPROVED_GEAR_OIL",
+      "nameZh": "改进型齿轮油",
+      "nameEn": "Improved Gear Oil",
+      "scope": "VEHICLE_SPECIFIC",
+      "special": true,
+      "persistent": true,
+      "effects": [
+        {
+          "stat": "enginePower",
+          "operation": "MULTIPLY",
+          "value": 1.06
+        },
+        {
+          "stat": "hullTraverseSpeed",
+          "operation": "MULTIPLY",
+          "value": 1.06
+        },
+        {
+          "stat": "forwardSpeedKph",
+          "operation": "ADD",
+          "value": 4.0
+        },
+        {
+          "stat": "reverseSpeedMagnitudeKph",
+          "operation": "ADD",
+          "value": 4.0
+        }
+      ]
+    },
+    {
+      "id": "IMPROVED_GUNPOWDER",
+      "sourceIds": [
+        46
+      ],
+      "code": "IMPROVED_GUNPOWDER",
+      "nameZh": "改进型火药",
+      "nameEn": "Improved Gunpowder",
+      "scope": "VEHICLE_SPECIFIC",
+      "special": true,
+      "persistent": true,
+      "effects": [
+        {
+          "stat": "shellVelocity",
+          "operation": "MULTIPLY",
+          "value": 1.35
+        }
+      ]
+    },
+    {
+      "id": "SPALL_LINER",
+      "sourceIds": [
+        101
+      ],
+      "code": "SPALL_LINER",
+      "nameZh": "防破片内衬",
+      "nameEn": "Spall Liner",
+      "scope": "VEHICLE_SPECIFIC",
+      "special": true,
+      "persistent": true,
+      "effects": [
+        {
+          "stat": "damageReceived",
+          "operation": "MULTIPLY",
+          "value": 0.8,
+          "conditions": {
+            "shellTypes": [
+              "HE",
+              "HEP",
+              "HESH"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
