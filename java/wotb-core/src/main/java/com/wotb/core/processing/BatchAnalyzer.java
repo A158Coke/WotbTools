@@ -48,8 +48,11 @@ public class BatchAnalyzer {
      * @return 分析计划
      */
     public AnalysisPlan analyze(final List<ReplayProcessingResult> results) {
-        // 1. 确定每个文件的 category + scope
-        final List<ScopedResult> scoped = results.stream()
+        // 0. 精确重复去重（独立于 scope/recorder）
+        final var partition = ExactReplayDuplicateDetector.partition(results);
+
+        // 1. 确定每个文件的 category + scope（仅 unique 结果参与）
+        final List<ScopedResult> scoped = partition.uniqueResults().stream()
                 .map(this::toScopedResult)
                 .toList();
 
@@ -72,34 +75,13 @@ public class BatchAnalyzer {
                             + scopes.iterator().next());
         }
 
-        // 3. SHA-256 精确重复去重（跳过 FAILED 结果）
-        final Map<String, List<ScopedResult>> byHash = new LinkedHashMap<>();
-        for (final ScopedResult sr : scoped) {
-            if (sr.result().status() == ReplayProcessingStatus.FAILED) continue;
-            final String hash = sr.result().identity() != null
-                    ? sr.result().identity().contentHash() : null;
-            final String key = hash != null ? hash
-                    : "__no_hash_" + sr.result().fileName();
-            byHash.computeIfAbsent(key, k -> new ArrayList<>()).add(sr);
-        }
-
-        final List<ScopedResult> uniqueResults = new ArrayList<>();
-        final List<ExactDuplicate> exactDuplicates = new ArrayList<>();
-        for (final var entry : byHash.entrySet()) {
-            final List<ScopedResult> hashGroup = entry.getValue();
-            final ReplayProcessingResult original = hashGroup.getFirst().result();
-            uniqueResults.add(hashGroup.getFirst());
-            for (int i = 1; i < hashGroup.size(); i++) {
-                exactDuplicates.add(new ExactDuplicate(
-                        original, hashGroup.get(i).result()));
-            }
-        }
+        // 3. (dedup done in step 0 via ExactReplayDuplicateDetector)
 
         // 4. 按 BattleGroupingKey + perspectiveTeam 分组（跳过 FAILED 和 UNKNOWN scope）
         final Map<ReplayPerspectiveGroupKey, List<ScopedResult>> groups = new LinkedHashMap<>();
-        for (final ScopedResult sr : uniqueResults) {
+        for (final ScopedResult sr : scoped) {
             if (sr.result().status() == ReplayProcessingStatus.FAILED) continue;
-            if (sr.scope() == null) continue; // UNKNOWN 不参与分析分组
+            if (sr.scope() == null) continue;
             final ReplayPerspectiveGroupKey key = resolveKey(sr);
             groups.computeIfAbsent(key, k -> new ArrayList<>()).add(sr);
         }
@@ -150,6 +132,7 @@ public class BatchAnalyzer {
                 .count();
 
         final ReplayAnalysisMode mode = resolveMode(dominantScope, analyzableCount);
+        final var exactDuplicates = partition.duplicates();
 
         return new AnalysisPlan(mode, dominantScope, perspectiveGroups, effectiveUnits,
                 exactDuplicates, exactDuplicates.size(), sameTeamDupCount, analyzableCount);

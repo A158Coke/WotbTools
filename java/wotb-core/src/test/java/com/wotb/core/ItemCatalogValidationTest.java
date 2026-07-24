@@ -48,8 +48,9 @@ class ItemCatalogValidationTest {
         for (final var item : items) {
             assertTrue(ids.add(item.get("id").asInt()), "Duplicate consumable id: " + item.get("id"));
             assertTrue(codes.add(item.get("code").asText()), "Duplicate consumable code: " + item.get("code"));
-            assertTrue(item.hasNonNull("cooldownSeconds") && item.get("cooldownSeconds").asInt() > 0,
-                    "Consumable " + item.get("id") + " missing or invalid cooldownSeconds");
+            assertTrue(item.hasNonNull("cooldownSeconds") && item.get("cooldownSeconds").isIntegralNumber()
+                    && item.get("cooldownSeconds").canConvertToInt() && item.get("cooldownSeconds").intValue() > 0,
+                    "Consumable " + item.get("id") + " cooldownSeconds must be positive int");
             if (item.hasNonNull("activationType")) {
                 assertTrue(Set.of("INSTANT", "DURATION").contains(item.get("activationType").asText()),
                         "Consumable " + item.get("id") + " unknown activationType");
@@ -78,7 +79,7 @@ class ItemCatalogValidationTest {
             assertTrue(item.hasNonNull("sourceIds"), "Provision " + item.get("id") + " missing sourceIds");
             assertTrue(item.get("sourceIds").size() > 0, "Provision " + item.get("id") + " has empty sourceIds");
             for (final var sid : item.get("sourceIds")) {
-                assertTrue(sid.isIntegralNumber(), "sourceId must be integer: " + sid);
+                assertTrue(sid.isIntegralNumber() && sid.canConvertToInt(), "sourceId must be valid int: " + sid);
                 final int sourceId = sid.intValue();
                 assertTrue(sourceId >= 0, "Provision " + item.get("id") + " negative sourceId: " + sourceId);
                 assertTrue(allSourceIds.add(sourceId), "Duplicate sourceId across provisions: " + sourceId);
@@ -97,15 +98,18 @@ class ItemCatalogValidationTest {
 
     private static void validateEffects(final JsonNode effects) {
         assertNotNull(effects);
-        assertTrue(effects.size() > 0, "Effects must be non-empty");
+        assertTrue(effects.isArray(), "Effects must be an array");
         for (final var effect : effects) {
             assertTrue(effect.hasNonNull("operation"), "Effect missing operation");
             final String op = effect.get("operation").asText();
             switch (op) {
                 case "MULTIPLY", "ADD", "SET", "ADD_PERCENTAGE_POINTS" ->
                     assertTrue(effect.hasNonNull("value"), op + " requires value");
-                case "INSTANT_ACTION" ->
+                case "INSTANT_ACTION" -> {
                     assertTrue(effect.hasNonNull("action"), "INSTANT_ACTION requires action");
+                    assertTrue(effect.get("action").isTextual() && !effect.get("action").asText().isBlank(),
+                            "INSTANT_ACTION requires non-empty string action");
+                }
                 case "SET_RELATIVE_RANGE" -> {
                     assertTrue(effect.hasNonNull("minimumMultiplier"), "SET_RELATIVE_RANGE requires minimumMultiplier");
                     assertTrue(effect.get("minimumMultiplier").isNumber(), "minimumMultiplier must be numeric");
