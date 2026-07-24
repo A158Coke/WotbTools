@@ -2,6 +2,7 @@ package com.wotb.core.replay.reconstruction;
 
 import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.EntityCreatedEvent;
 import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.HealthChangedEvent;
@@ -138,7 +139,7 @@ public class BattleStateReconstructor {
         // 只接受高置信度（EXACT/INFERRED）数据。与 applyVehicleDestroyed/applyHealth 的处理一致。
         if (vs.lifeState() == LifeState.DESTROYED
                 && DecodeConfidenceHelper.ordinal(e.confidence()) >= DecodeConfidenceHelper.ordinal(
-                        com.wotb.core.replay.event.DecodeConfidence.PARTIAL)) {
+                        DecodeConfidence.PARTIAL)) {
             return;
         }
 
@@ -208,7 +209,7 @@ public class BattleStateReconstructor {
 
         if (e.currentHealth() != null) {
             // 如果字段解析置信度不足，不得覆盖高置信度值
-            if (e.confidence() == com.wotb.core.replay.event.DecodeConfidence.PARTIAL
+            if (e.confidence() == DecodeConfidence.PARTIAL
                     && vs.currentHealth() != null
                     && vs.lifeState() == LifeState.DESTROYED) {
                 // 低置信度，不覆盖已确认阵亡状态
@@ -323,30 +324,5 @@ public class BattleStateReconstructor {
         state.getEntityIdByAccountId().putAll(snapshot.entityIdByAccountId());
         state.getParticipants().addAll(snapshot.participants());
         return state;
-    }
-
-    /**
-     * 重建结果。
-     */
-    public record ReconstructionResult(
-            BattleState finalState,
-            BattleStateSnapshot finalSnapshot,
-            List<ReplayEvent> processedEvents,
-            List<BattleStateCheckpoint> checkpoints
-    ) {
-    }
-}
-
-// 辅助比较类（用于置信度比较，放在文件末尾以避免冲突）
-final class DecodeConfidenceHelper {
-    private DecodeConfidenceHelper() {}
-
-    static int ordinal(com.wotb.core.replay.event.DecodeConfidence c) {
-        return switch (c) {
-            case EXACT -> 0;
-            case INFERRED -> 1;
-            case PARTIAL -> 2;
-            case UNKNOWN -> 3;
-        };
     }
 }

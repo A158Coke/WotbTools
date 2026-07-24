@@ -116,7 +116,7 @@ public class ReplayReconstructionService {
 
         // 5. 重建战场状态
         final BattleStateReconstructor reconstructor = new BattleStateReconstructor();
-        final BattleStateReconstructor.ReconstructionResult reconstructionResult =
+        final ReconstructionResult reconstructionResult =
                 reconstructor.reconstruct(allEvents);
 
         // 6. 构建覆盖率

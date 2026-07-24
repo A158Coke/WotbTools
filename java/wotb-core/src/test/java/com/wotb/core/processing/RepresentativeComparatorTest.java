@@ -8,49 +8,54 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class RepresentativeComparatorTest {
 
-    private final BatchAnalyzer analyzer = new BatchAnalyzer();
-
-    @Test void reconstructionBeatsNone() {
+    @Test
+    void reconstructionBeatsNone() {
         var a = scoped("a", true, true, 0.95, 0, 0, 0);
         var b = scoped("b", false, true, 0.95, 0, 0, 0);
         assertSelected("a", a, b);
     }
 
-    @Test void streamCompleteBeatsIncomplete() {
+    @Test
+    void streamCompleteBeatsIncomplete() {
         var a = scoped("a", true, true, 0.95, 0, 0, 0);
         var b = scoped("b", true, false, 0.95, 0, 0, 0);
         assertSelected("a", a, b);
     }
 
-    @Test void higherDecodedRatioWins() {
+    @Test
+    void higherDecodedRatioWins() {
         var a = scoped("a", true, true, 0.95, 1, 1, 0);
         var b = scoped("b", true, true, 0.40, 1, 1, 0);
         assertSelected("a", a, b);
     }
 
-    @Test void fewerFailedPacketsWins() {
+    @Test
+    void fewerFailedPacketsWins() {
         var a = scoped("a", true, true, 0.95, 1, 5, 0);
         var b = scoped("b", true, true, 0.95, 5, 5, 0);
         assertSelected("a", a, b);
     }
 
-    @Test void fewerUnknownPacketsWins() {
+    @Test
+    void fewerUnknownPacketsWins() {
         var a = scoped("a", true, true, 0.95, 5, 1, 0);
         var b = scoped("b", true, true, 0.95, 5, 5, 0);
         assertSelected("a", a, b);
     }
 
-    @Test void fewerResyncsWins() {
+    @Test
+    void fewerResyncsWins() {
         var a = scoped("a", true, true, 0.95, 5, 5, 0);
         var b = scoped("b", true, true, 0.95, 5, 5, 3);
         assertSelected("a", a, b);
     }
 
-    @Test void allEqualFirstWins() {
+    @Test
+    void allEqualFirstWins() {
         var a = scoped("a", true, true, 0.95, 5, 5, 0);
         var b = scoped("b", true, true, 0.95, 5, 5, 0);
         assertSelected("a", a, b);
