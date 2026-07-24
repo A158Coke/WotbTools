@@ -1,6 +1,7 @@
 package com.wotb.web;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import com.wotb.web.admin.dto.AdminDeleteUserResponse;
 import com.wotb.web.boost.dto.BoostAssignmentDto;
 import com.wotb.web.boost.dto.BoosterApplicationSummaryDto;
@@ -22,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ApiContractTest {
 
-    private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+    private final ObjectMapper objectMapper = JsonMapper.builder().findAndAddModules().build();
 
     @Test
     void boostDtosShouldExposeRawKeysWithoutLocalizedLabels() throws Exception {

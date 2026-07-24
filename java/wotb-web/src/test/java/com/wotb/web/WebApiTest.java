@@ -1,7 +1,8 @@
 package com.wotb.web;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import com.wotb.web.boost.dto.BoosterApplicationSummaryDto;
 import com.wotb.web.boost.entity.BoosterApplication;
 import com.wotb.web.boost.repository.BoosterApplicationRepository;
@@ -75,7 +76,7 @@ public class WebApiTest {
     @Autowired
     BoosterApplicationRepository boosterApplicationRepository;
 
-    private final ObjectMapper om = new ObjectMapper();
+    private final ObjectMapper om = JsonMapper.builder().build();
 
     private MockMvc mvc() {
         return MockMvcBuilders.webAppContextSetup(ctx).build();

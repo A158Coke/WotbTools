@@ -48,7 +48,12 @@ public class SecurityConfig {
                 .requestMatchers("/api/leaderboard/**").permitAll()
 
                 // --- 管理员用户管理 (仅 wotbtools-admin) ---
-                .requestMatchers("/api/admin/users/**")
+                .requestMatchers("/api/admin/users/**",
+                        "/api/replay/reconstruct",
+                        "/api/replay/reconstruct-batch",
+                        "/api/replay/state-at",
+                        "/api/replay/process",
+                        "/api/replay/analyze")
                     .hasRole("wotbtools-admin")
 
                 // --- 打手管理（boost-manager 仅可访问该域） ---
@@ -84,15 +89,13 @@ public class SecurityConfig {
         final JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(jwt -> {
             final Object rawRealmAccess = jwt.getClaim("realm_access");
-            if (!(rawRealmAccess instanceof Map<?, ?>)) {
+            if (!(rawRealmAccess instanceof Map<?, ?> realmAccess)) {
                 return List.of();
             }
-            final Map<?, ?> realmAccess = (Map<?, ?>) rawRealmAccess;
             final Object rawRoles = realmAccess.get("roles");
-            if (!(rawRoles instanceof Collection<?>)) {
+            if (!(rawRoles instanceof Collection<?> roles)) {
                 return List.of();
             }
-            final Collection<?> roles = (Collection<?>) rawRoles;
             return roles.stream()
                     .filter(String.class::isInstance)
                     .map(String.class::cast)
