@@ -377,20 +377,40 @@ public class ReconstructionController {
             }
         }
 
-        // 显式校验每个 uploadIndex 恰好一次
-        if (statuses.size() != uploadResults.size()) {
+        // 显式校验每个 uploadIndex
+        final int uploadCount = uploadResults.size();
+        if (statuses.size() != uploadCount) {
             throw new IllegalStateException(
-                    "FILE_STATUS_COUNT_MISMATCH: " + statuses.size() + " != " + uploadResults.size());
+                    "FILE_STATUS_COUNT_MISMATCH: " + statuses.size() + " != " + uploadCount);
         }
         final var uploadIndices = statuses.stream()
                 .map(ReplayFileAnalysisStatus::uploadIndex)
                 .collect(java.util.stream.Collectors.toSet());
-        if (uploadIndices.size() != uploadResults.size()) {
+        if (uploadIndices.size() != uploadCount) {
             throw new IllegalStateException("DUPLICATE_UPLOAD_INDEX");
         }
-        for (int i = 0; i < uploadResults.size(); i++) {
+        for (int i = 0; i < uploadCount; i++) {
             if (!uploadIndices.contains(i)) {
                 throw new IllegalStateException("MISSING_UPLOAD_INDEX_" + i);
+            }
+        }
+        // 验证 duplicate 关联
+        for (final var s : statuses) {
+            if (s.uploadIndex() < 0 || s.uploadIndex() >= uploadCount) {
+                throw new IllegalStateException("INVALID_UPLOAD_INDEX_" + s.uploadIndex());
+            }
+            final boolean isDup = s.relation() == ReplayFileRelation.EXACT_DUPLICATE
+                    || s.relation() == ReplayFileRelation.SAME_TEAM_DUPLICATE_PERSPECTIVE;
+            if (isDup) {
+                final Integer origIdx = s.duplicateOfUploadIndex();
+                if (origIdx == null || origIdx < 0 || origIdx >= uploadCount) {
+                    throw new IllegalStateException("INVALID_DUPLICATE_OF_UPLOAD_INDEX");
+                }
+                if (origIdx == s.uploadIndex()) {
+                    throw new IllegalStateException("DUPLICATE_POINTS_TO_SELF");
+                }
+            } else if (s.duplicateOfUploadIndex() != null) {
+                throw new IllegalStateException("UNEXPECTED_DUPLICATE_OF_UPLOAD_INDEX");
             }
         }
         statuses.sort(java.util.Comparator.comparingInt(ReplayFileAnalysisStatus::uploadIndex));
