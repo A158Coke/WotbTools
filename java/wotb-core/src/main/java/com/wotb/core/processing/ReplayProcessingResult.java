@@ -25,6 +25,6 @@ public record ReplayProcessingResult(
 
     /** 该文件是否可用于 AI 分析（以战绩这一权威源是否可用为准）。 */
     public boolean analyzable() {
-        return capabilities != null && capabilities.aiAnalyzable();
+        return capabilities != null && capabilities.recorderResultAvailable();
     }
 }

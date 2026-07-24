@@ -5,6 +5,7 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.util.PlayerResultFormat;
+import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionContext;
@@ -146,6 +147,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
         ReplayReconstruction reconstruction = null;
         boolean streamOk = false;
         boolean reconOk = false;
+        boolean recorderParticipantResolved = false;
         boolean recorderEntityMapped = false;
         ReplayProcessingError reconstructionError = null;
         if (options.reconstructTimeline()) {
@@ -154,6 +156,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
                 reconstruction = reconstructionService.reconstruct(data, ctx);
                 streamOk = true;
                 reconOk = true;
+                recorderParticipantResolved = isRecorderParticipantResolved(reconstruction);
                 recorderEntityMapped = isRecorderEntityMapped(reconstruction);
             } catch (IllegalArgumentException e) {
                 // 时长超限等
@@ -193,14 +196,11 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
 
         final boolean playerFeaturePossible = reconOk && recorderEntityMapped;
         final boolean recorderResultAvailable = battle != null && battle.recorderResult() != null;
-        // scope 默认 PLAYER_FOCUSED，后续由 BattleCategory 细化
-        final ReplayAnalysisScope scope = ReplayAnalysisScope.PLAYER_FOCUSED;
         final boolean perspectiveTeamResolved = false; // TODO: 由 BattleCategory 驱动
-        final boolean teamFs = false;
-        final ReplayProcessingCapabilities capabilities = ReplayProcessingCapabilities.of(
+        final ReplayProcessingCapabilities capabilities = new ReplayProcessingCapabilities(
                 summaryOk, recorderResultAvailable, reconOk,
-                recorderEntityMapped, perspectiveTeamResolved,
-                playerFeaturePossible, teamFs, scope);
+                recorderParticipantResolved, recorderEntityMapped,
+                perspectiveTeamResolved, playerFeaturePossible, false);
 
         return new ReplayProcessingResult(
                 input.name(), status, identity,
@@ -249,10 +249,10 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
     /** 临时模式解析，后续由 BatchAnalyzer 接管。 */
     private static ReplayAnalysisMode resolveMode(final List<ReplayProcessingResult> results) {
         final long analyzable = results.stream()
-                .filter(r -> r.capabilities() != null && r.capabilities().aiAnalyzable())
+                .filter(r -> r.capabilities() != null
+                        && BatchAnalyzer.isAiAnalyzable(r, (ReplayAnalysisScope) null))
                 .count();
         if (analyzable <= 0) return ReplayAnalysisMode.NONE;
-        // 暂简化：返回默认单场模式
         return analyzable == 1 ? ReplayAnalysisMode.SINGLE_PLAYER_BATTLE : ReplayAnalysisMode.MULTI_PLAYER_BATTLE;
     }
 
@@ -332,11 +332,25 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
         );
     }
 
-    /** 基于重建 participants 判断录像者 entity 是否已映射。 */
-    private static boolean isRecorderEntityMapped(final ReplayReconstruction reconstruction) {
+    /** 重建 participants 中是否存在标记为录像者的 participant。 */
+    private static boolean isRecorderParticipantResolved(final ReplayReconstruction reconstruction) {
         return reconstruction != null
                 && reconstruction.participants().stream()
                         .anyMatch(BattleParticipant::recorder);
+    }
+
+    /** 基于 ParticipantMappingEvent 判断录像者 entity ID 是否已映射。 */
+    private static boolean isRecorderEntityMapped(final ReplayReconstruction reconstruction) {
+        if (reconstruction == null) return false;
+        final var recorderAccounts = reconstruction.participants().stream()
+                .filter(BattleParticipant::recorder)
+                .map(BattleParticipant::accountId)
+                .collect(java.util.stream.Collectors.toSet());
+        if (recorderAccounts.isEmpty()) return false;
+        return reconstruction.events().stream()
+                .filter(ParticipantMappingEvent.class::isInstance)
+                .map(ParticipantMappingEvent.class::cast)
+                .anyMatch(e -> recorderAccounts.contains(e.accountId()) && e.entityId() > 0);
     }
 
     private static String sha256(final byte[] data) {

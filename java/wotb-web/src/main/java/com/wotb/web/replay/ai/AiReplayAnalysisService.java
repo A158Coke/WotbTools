@@ -5,7 +5,9 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.processing.AnalysisUnitResult;
+import com.wotb.core.processing.BattleGroupingKey;
 import com.wotb.core.processing.RecorderEntityMapping;
+import com.wotb.core.processing.ReplayAnalysisScope;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.event.DecodeConfidence;
@@ -555,18 +557,42 @@ public class AiReplayAnalysisService {
     /**
      * 构建分析单元列表。
      */
-    public static List<AnalysisUnitResult> buildAnalysisUnits(final List<ReplayPerspectiveGroup> groups) {
+    public static List<AnalysisUnitResult> buildAnalysisUnits(
+            final List<ReplayPerspectiveGroup> groups,
+            final ReplayAnalysisScope scope) {
         return groups.stream()
                 .map(g -> new AnalysisUnitResult(
-                        "unit-" + g.key().battleIdentity().arenaUniqueId(),
-                        g.key().battleIdentity(),
-                        null,
+                        analysisUnitId(g),
+                        g.battleIdentity(),
+                        scope,
                         g.key().perspectiveTeam(),
                         g.representative().fileName(),
                         g.duplicates().stream().map(ReplayProcessingResult::fileName).toList(),
                         null, null
                 ))
                 .toList();
+    }
+
+    private static String analysisUnitId(final ReplayPerspectiveGroup group) {
+        final BattleGroupingKey key = group.key().battleKey();
+        final String battlePart = switch (key.type()) {
+            case ARENA -> "arena-" + key.arenaUniqueId();
+            case COMPOSITE -> {
+                final String raw = key.mapCode() + "|" + key.clientVersion() + "|" + key.battleStartEpochSecond();
+                yield "battle-" + sha256(raw).substring(0, 16);
+            }
+            case FALLBACK -> "hash-" + key.uniqueFallback().substring(0, Math.min(16, key.uniqueFallback().length()));
+        };
+        return battlePart + "-team-" + group.key().perspectiveTeam();
+    }
+
+    private static String sha256(final String input) {
+        try {
+            final var md = java.security.MessageDigest.getInstance("SHA-256");
+            return java.util.HexFormat.of().formatHex(md.digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 not available", e);
+        }
     }
 
     /**
