@@ -137,11 +137,15 @@ public class ReconstructionController {
         final boolean hasParsedBattle = allResults.stream().anyMatch(r -> r.battle() != null);
         if (!hasParsedBattle) throw new IllegalArgumentException("NO_BATTLE_DATA");
 
-        // 再检查 scope 是否支持
+        // 再检查 scope
         if (plan.dominantScope() == null) throw new UnsupportedReplayAnalysisModeException("UNSUPPORTED_BATTLE_CATEGORY");
+        // 团队 AI 尚未实现，立即返回 422
+        if (plan.dominantScope() == ReplayAnalysisScope.TEAM_PERSPECTIVE)
+            throw new UnsupportedReplayAnalysisModeException("TEAM_ANALYSIS_NOT_IMPLEMENTED");
+
         final int total = files.length;
 
-        // 只取真正可分析的单元
+        // 只取 PLAYER_FOCUSED 可分析单元
         final var analyzableGroups = plan.groups().stream()
                 .filter(g -> g.representative().capabilities() != null
                         && BatchAnalyzer.isAiAnalyzable(g.representative(), plan.dominantScope()))
@@ -184,9 +188,8 @@ public class ReconstructionController {
                         plan.exactDuplicateCount(), plan.sameTeamDuplicatePerspectiveCount(),
                         fileStatuses, units, aiResult.keyEvents());
             }
-            case SINGLE_TEAM_BATTLE, MULTI_TEAM_BATTLE ->
-                    throw new UnsupportedReplayAnalysisModeException("TEAM_ANALYSIS_NOT_IMPLEMENTED");
             case NONE -> throw new IllegalArgumentException("NO_BATTLE_DATA");
+            default -> throw new UnsupportedReplayAnalysisModeException("TEAM_ANALYSIS_NOT_IMPLEMENTED");
         };
     }
 
@@ -330,14 +333,14 @@ public class ReconstructionController {
     private static List<ReplayFileAnalysisStatus> buildFileStatuses(
             final List<ReplayUploadResult> uploadResults,
             final BatchAnalyzer.AnalysisPlan plan) {
-        final List<ReplayFileAnalysisStatus> statuses = new ArrayList<>();
-        // 构建 processingResult → uploadIndex 映射
-        final java.util.Map<ReplayProcessingResult, Integer> resultToIndex = new java.util.HashMap<>();
+        // 使用 IdentityHashMap 确保按对象身份而非结构 equality 映射
+        final java.util.IdentityHashMap<ReplayProcessingResult, Integer> resultToIndex = new java.util.IdentityHashMap<>();
         for (final var ur : uploadResults) {
             resultToIndex.put(ur.processingResult(), ur.uploadIndex());
         }
 
         final java.util.IdentityHashMap<ReplayProcessingResult, Boolean> indexed = new java.util.IdentityHashMap<>();
+        final List<ReplayFileAnalysisStatus> statuses = new ArrayList<>();
 
         for (final var gp : plan.groups()) {
             final var rep = gp.representative();
@@ -365,14 +368,20 @@ public class ReconstructionController {
                     dup.original().fileName(), dupIdx, origIdx));
             indexed.put(dup.duplicate(), Boolean.TRUE);
         }
-        for (final ReplayProcessingResult r : uploadResults.stream().map(ReplayUploadResult::processingResult).toList()) {
+        for (final var ur : uploadResults) {
+            final var r = ur.processingResult();
             if (r.status() == ReplayProcessingStatus.FAILED && !indexed.containsKey(r)) {
-                final int idx = resultToIndex.getOrDefault(r, -1);
                 statuses.add(ReplayFileAnalysisStatus.failed(
                         r.fileName(), r.error() != null ? r.error()
-                                : ReplayProcessingError.of("FAILED", "Processing failed"), idx));
+                                : ReplayProcessingError.of("FAILED", "Processing failed"), ur.uploadIndex()));
             }
         }
+
+        // 验证每个 uploadIndex 恰好一次
+        assert statuses.size() == uploadResults.size()
+                : "FILE_STATUS_COUNT_MISMATCH: " + statuses.size() + " != " + uploadResults.size();
+        // 按上传顺序排序
+        statuses.sort(java.util.Comparator.comparingInt(ReplayFileAnalysisStatus::uploadIndex));
         return statuses;
     }
 
