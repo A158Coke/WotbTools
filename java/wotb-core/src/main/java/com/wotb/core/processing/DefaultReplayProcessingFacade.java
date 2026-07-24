@@ -16,7 +16,6 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -67,48 +66,22 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
     @Override
     public ReplayBatchProcessingResult processBatch(final List<Source> inputs, final ReplayProcessingOptions options) {
         final List<ReplayProcessingResult> results = new ArrayList<>();
-        final Set<String> seenContentHashes = new HashSet<>();
-        final List<String> duplicateNames = new ArrayList<>();
 
         for (final Source input : inputs) {
             try {
-                // 0. 逐文件基础验证
                 final ReplayFileValidationResult validation = validateFile(input);
                 if (!validation.valid()) {
                     results.add(fileValidationFailed(input.name(), validation.errors()));
                     continue;
                 }
-
-                // 1. 计算内容 hash 用于去重
-                final String contentHash = sha256(input.bytes());
-
-                // 2. 检查是否重复
-                if (seenContentHashes.contains(contentHash)) {
-                    duplicateNames.add(input.name());
-                    results.add(new ReplayProcessingResult(
-                            input.name(),
-                            ReplayProcessingStatus.FAILED,
-                            new ReplayIdentity(contentHash, null, null, null, null, null),
-                            null, null, null,
-                            ReplayProcessingCapabilities.NONE,
-                            ReplayProcessingError.of("DUPLICATE_FILE",
-                                    "Duplicate file: " + input.name()),
-                            null));
-                    continue;
-                }
-                seenContentHashes.add(contentHash);
-
-                // 3. 处理文件
-                final ReplayProcessingResult result = processSingle(input, options);
-                results.add(result);
-
+                results.add(processSingle(input, options));
             } catch (Exception e) {
                 results.add(failedResult(input.name(), e));
             }
         }
 
-        // 统计
-        final ReplayBatchSummary summary = buildSummary(inputs.size(), results, duplicateNames);
+        final ReplayBatchSummary summary = buildSummary(inputs.size(), results, List.of());
+        // 使用 BatchAnalyzer 保证 mode 与实际处理语义一致
         final ReplayAnalysisMode mode = resolveMode(results);
 
         return new ReplayBatchProcessingResult(
@@ -236,24 +209,17 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
                 case FAILED -> failed++;
             }
         }
-        final List<String> dupNames = externalDupNames.isEmpty()
-                ? results.stream()
-                        .filter(r -> r.error() != null && "DUPLICATE_FILE".equals(r.error().code()))
-                        .map(ReplayProcessingResult::fileName)
-                        .toList()
-                : externalDupNames;
         return new ReplayBatchSummary(
-                totalInputs, success, partial, failed, dupNames.size(), dupNames);
+                totalInputs, success, partial, failed, 0, List.of());
     }
 
-    /** 临时模式解析，后续由 BatchAnalyzer 接管。 */
+    /** 使用 BatchAnalyzer 实现统一模式判定。 */
     private static ReplayAnalysisMode resolveMode(final List<ReplayProcessingResult> results) {
-        final long analyzable = results.stream()
-                .filter(r -> r.capabilities() != null
-                        && BatchAnalyzer.isAiAnalyzable(r, (ReplayAnalysisScope) null))
-                .count();
-        if (analyzable <= 0) return ReplayAnalysisMode.NONE;
-        return analyzable == 1 ? ReplayAnalysisMode.SINGLE_PLAYER_BATTLE : ReplayAnalysisMode.MULTI_PLAYER_BATTLE;
+        try {
+            return new BatchAnalyzer().analyze(results).mode();
+        } catch (MixedAnalysisScopesException | MixedRandomBattleRecordersException e) {
+            return ReplayAnalysisMode.NONE;
+        }
     }
 
     private static ReplayProcessingResult failedResult(final String fileName, final Exception e) {

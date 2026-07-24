@@ -8,6 +8,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * 处理门面的能力标记与模式判断（失败/去重侧，不依赖真实回放样本）。
@@ -35,14 +36,16 @@ class DefaultReplayProcessingFacadeTest {
     }
 
     @Test
-    void identicalContentIsDeduped() {
+    void identicalContentNotDedupedInFacade() {
+        // Facade 不再做 content-hash 去重，由 BatchAnalyzer 统一处理
         final byte[] same = {9, 8, 7, 6, 5};
         final ReplayBatchProcessingResult r = facade.processBatch(
                 List.of(new Source("a.wotbreplay", same), new Source("b.wotbreplay", same)),
                 ReplayProcessingOptions.full());
 
         assertEquals(2, r.results().size());
-        assertEquals("DUPLICATE_FILE", r.results().get(1).error().code());
+        // 不再标记为 DUPLICATE_FILE，两个都正常处理（均解析失败）
+        assertEquals("SUMMARY_PARSE_FAILED", r.results().get(1).error().code());
         // 均不可分析 → 模式 NONE
         final long analyzable = r.results().stream()
                 .filter(x -> x.capabilities() != null && x.capabilities().recorderResultAvailable())

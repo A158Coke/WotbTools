@@ -199,18 +199,50 @@ public class BatchAnalyzer {
     }
 
     /**
-     * 选择代表回放：优先 streamComplete → reconstruction → coverage → resync少 → 上传顺序前。
+     * 选择代表回放：按质量降序排列：reconstruction → streamComplete → decodedRatio → failedPackets → unknownPackets。
      */
     static ScopedResult selectRepresentative(final List<ScopedResult> group) {
         if (group.size() == 1) return group.getFirst();
+        return group.stream().min(representativeComparator()).orElse(group.getFirst());
+    }
 
-        return group.stream().min((a, b) -> {
-            final var capA = a.result().capabilities();
-            final var capB = b.result().capabilities();
-            final int reconA = capA != null && capA.reconstructionAvailable() ? 1 : 0;
-            final int reconB = capB != null && capB.reconstructionAvailable() ? 1 : 0;
-            return reconB - reconA;
-        }).orElse(group.getFirst());
+    private static java.util.Comparator<ScopedResult> representativeComparator() {
+        return java.util.Comparator
+                .<ScopedResult>comparingInt(s -> hasReconstruction(s) ? 1 : 0)
+                .reversed()
+                .thenComparingInt(s -> isStreamComplete(s) ? 1 : 0)
+                .reversed()
+                .thenComparingDouble(s -> decodedRatio(s))
+                .reversed()
+                .thenComparingInt(s -> failedPackets(s))
+                .thenComparingInt(s -> unknownPackets(s));
+    }
+
+    private static boolean hasReconstruction(final ScopedResult s) {
+        final var caps = s.result().capabilities();
+        return caps != null && caps.reconstructionAvailable();
+    }
+
+    private static boolean isStreamComplete(final ScopedResult s) {
+        final var diag = s.result().diagnostics();
+        return diag != null && diag.diagnostics() != null && diag.diagnostics().streamComplete();
+    }
+
+    private static double decodedRatio(final ScopedResult s) {
+        final var cov = s.result().reconstruction() != null ? s.result().reconstruction().coverage() : null;
+        return cov != null ? cov.decodedPacketRatio() : 0.0;
+    }
+
+    private static int failedPackets(final ScopedResult s) {
+        final var diag = s.result().diagnostics();
+        if (diag == null || diag.diagnostics() == null) return Integer.MAX_VALUE;
+        return diag.diagnostics().packetCount() - diag.diagnostics().normalPacketCount();
+    }
+
+    private static int unknownPackets(final ScopedResult s) {
+        final var diag = s.result().diagnostics();
+        if (diag == null || diag.diagnostics() == null) return Integer.MAX_VALUE;
+        return diag.diagnostics().packetCount() - diag.diagnostics().normalPacketCount() - diag.diagnostics().recoveredPacketCount();
     }
 
     private static Long extractRecorderAccountId(final ReplayProcessingResult result) {
