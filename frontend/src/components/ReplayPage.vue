@@ -8,7 +8,8 @@ import {
   getExportTarget,
   computeExportDimensions,
   exportPngFilename,
-  downloadBlob
+  downloadBlob,
+  maxFiniteDimension
 } from '../utils/exportReplayPng.js'
 import FileUploader from './FileUploader.vue'
 import ColumnPicker from './ColumnPicker.vue'
@@ -73,29 +74,50 @@ function expandExportTables(clone) {
 }
 
 function measureExportClone(clone) {
-  // Determine the full content width from all tablewrap and their tables
-  let maxContentW = clone.scrollWidth || 0
+  let maxContentW = maxFiniteDimension(
+    clone.scrollWidth,
+    clone.getBoundingClientRect().width
+  )
+
   for (const wrap of clone.querySelectorAll('.tablewrap')) {
-    const wrapsw = wrap.scrollWidth || 0
-    if (wrapsw > maxContentW) maxContentW = wrapsw
+    const wrapW = maxFiniteDimension(
+      wrap.scrollWidth,
+      wrap.getBoundingClientRect().width
+    )
+    if (wrapW > maxContentW) maxContentW = wrapW
     for (const tbl of wrap.querySelectorAll('table')) {
-      const tblsw = tbl.scrollWidth || 0
-      if (tblsw > maxContentW) maxContentW = tblsw
+      const tblW = maxFiniteDimension(
+        tbl.scrollWidth,
+        tbl.getBoundingClientRect().width
+      )
+      if (tblW > maxContentW) maxContentW = tblW
     }
   }
-  // Also consider child elements' scrollWidth for stat cards etc.
   for (const child of clone.children) {
-    const csw = child.scrollWidth || 0
+    const csw = maxFiniteDimension(
+      child.scrollWidth,
+      child.getBoundingClientRect().width
+    )
     if (csw > maxContentW) maxContentW = csw
   }
 
-  // Set the root width so html2canvas captures the full content
-  clone.style.width = maxContentW + 'px'
+  // Root padding is 16px left + 16px right = 32px; ensure it's included
+  clone.style.width = Math.ceil(maxContentW) + 'px'
 
-  // Now read final scroll dimensions after width is set
-  const w = clone.scrollWidth || clone.getBoundingClientRect().width || 800
-  const h = clone.scrollHeight || clone.getBoundingClientRect().height || 600
-  return { width: Math.ceil(w), height: Math.ceil(h) }
+  // After setting width, re-read layout for final dimensions
+  const finalW = maxFiniteDimension(
+    clone.scrollWidth,
+    clone.getBoundingClientRect().width
+  )
+  const finalH = maxFiniteDimension(
+    clone.scrollHeight,
+    clone.getBoundingClientRect().height
+  )
+
+  return {
+    width: Math.ceil(finalW),
+    height: Math.ceil(finalH)
+  }
 }
 
 function waitForLayout() {

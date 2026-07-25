@@ -19,19 +19,30 @@ export function getExportTarget(activeTab, aggregateRef, battleRefs) {
 }
 
 /**
- * Compute safe canvas dimensions and scale for the given element.
+ * Return the largest positive finite number from the given values, or 0.
+ * Ignores NaN, Infinity, negative numbers, and zero.
+ * @param {...number} values
+ * @returns {number}
+ */
+export function maxFiniteDimension(...values) {
+  let max = 0
+  for (const v of values) {
+    if (Number.isFinite(v) && v > 0 && v > max) max = v
+  }
+  return max
+}
+
+/**
+ * Compute safe canvas dimensions and scale for measured content.
  * Guarantees width * scale <= MAX_CANVAS_DIMENSION and height * scale <= MAX_CANVAS_DIMENSION.
  * Scale is computed as the minimum of MAX_SCALE, MAX_DIM / width, MAX_DIM / height,
  * then reduced by a relative safety factor to absorb floating-point rounding.
- * @param {{ scrollWidth: number, scrollHeight: number }} el
+ * @param {{ width: number, height: number }} dims - measured content dimensions
  * @returns {{ width: number, height: number, scale: number }}
  */
-export function computeExportDimensions(el) {
-  const rawW = el.scrollWidth
-  const rawH = el.scrollHeight
-
-  const contentW = Number.isFinite(rawW) && rawW > 0 ? rawW : 0
-  const contentH = Number.isFinite(rawH) && rawH > 0 ? rawH : 0
+export function computeExportDimensions(dims) {
+  const contentW = Number.isFinite(dims?.width) && dims.width > 0 ? dims.width : 0
+  const contentH = Number.isFinite(dims?.height) && dims.height > 0 ? dims.height : 0
 
   if (contentW <= 0 || contentH <= 0) {
     return { width: 800, height: 600, scale: 1 }
@@ -41,7 +52,6 @@ export function computeExportDimensions(el) {
   const sx = maxDim / contentW
   const sy = maxDim / contentH
   const safeScale = Math.min(MAX_SCALE, sx, sy)
-  // Relative safety factor: never goes to zero for any finite positive dimension
   const scale = safeScale * (1 - 1e-12)
 
   return { width: contentW, height: contentH, scale }
