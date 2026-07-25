@@ -84,7 +84,7 @@ vi.mock('../composables/useColumns.js', async () => {
 vi.mock('vue-i18n', async () => {
   const { ref } = await import('vue')
   return {
-    useI18n: () => ({ locale: ref('zh'), t: i18n.t })
+    useI18n: () => ({ locale: ref('en'), t: i18n.t })
   }
 })
 
@@ -404,7 +404,7 @@ describe('ReplayPage PNG export', () => {
       expect(anchors[0].outerHTML).toMatch(/wotb-replay-\d{8}-\d{6}-aggregate\.png/)
     })
 
-    it('b0: target contains Lagoon, filename is battle type', async () => {
+    it('b0: target contains Lagoon, filename contains Lagoon', async () => {
       setResp(makeResp())
       setActiveTab('b0')
       wrapper = mountPage()
@@ -421,12 +421,11 @@ describe('ReplayPage PNG export', () => {
         .map(c => c[0])
         .filter(el => el && el.nodeName === 'A' && el.href && el.href.startsWith('blob:'))
       expect(anchors.length).toBe(1)
-      // Filename must be a battle filename (not aggregate)
-      expect(anchors[0].outerHTML).toMatch(/wotb-replay-\d{8}-\d{6}-.+\.png/)
+      expect(anchors[0].outerHTML).toMatch(/Lagoon/)
       expect(anchors[0].outerHTML).not.toMatch(/aggregate/)
     })
 
-    it('b1: target contains Frozen, filename is battle type', async () => {
+    it('b1: target contains Frozen, filename contains Frozen', async () => {
       setResp(makeResp())
       setActiveTab('b1')
       wrapper = mountPage()
@@ -443,7 +442,7 @@ describe('ReplayPage PNG export', () => {
         .map(c => c[0])
         .filter(el => el && el.nodeName === 'A' && el.href && el.href.startsWith('blob:'))
       expect(anchors.length).toBe(1)
-      expect(anchors[0].outerHTML).toMatch(/wotb-replay-\d{8}-\d{6}-.+\.png/)
+      expect(anchors[0].outerHTML).toMatch(/Frozen/)
       expect(anchors[0].outerHTML).not.toMatch(/aggregate/)
     })
 
@@ -519,6 +518,37 @@ describe('ReplayPage PNG export', () => {
       expect(anchors.length).toBe(1)
       expect(anchors[0].outerHTML).not.toMatch(/aggregate/)
       expect(anchors[0].outerHTML).toMatch(/wotb-replay-\d{8}-\d{6}-.+\.png/)
+    })
+
+    it('response cleared during export: filename uses saved mapName, not fallback', async () => {
+      setResp(makeResp())
+      setActiveTab('b0')
+      wrapper = mountPage()
+      vi.spyOn(document.body, 'appendChild')
+
+      let resolveH2c
+      h2c.setImpl(() => new Promise(resolve => { resolveH2c = resolve }))
+      pngButton(wrapper).trigger('click')
+      await flushPromises()
+      await new Promise(r => setTimeout(r, 100))
+      await flushPromises()
+
+      expect(h2c.getCalls().length).toBe(1)
+
+      // Clear response mid-export (simulates user navigating away)
+      setResp(null)
+
+      resolveH2c(mockCanvas)
+      await flushPromises()
+      await new Promise(r => setTimeout(r, 200))
+      await flushPromises()
+
+      const anchors = document.body.appendChild.mock.calls
+        .map(c => c[0])
+        .filter(el => el && el.nodeName === 'A' && el.href && el.href.startsWith('blob:'))
+      expect(anchors.length).toBe(1)
+      // Must still contain Lagoon from saved context
+      expect(anchors[0].outerHTML).toMatch(/Lagoon/)
     })
 
     it('target null at start: no clone, no html2canvas', async () => {
