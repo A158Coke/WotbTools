@@ -4,6 +4,12 @@ import { useI18n } from 'vue-i18n'
 import { mapLabel } from '../utils/helpers.js'
 import { useReplay } from '../composables/useReplay.js'
 import { useColumns } from '../composables/useColumns.js'
+import {
+  getExportTarget,
+  computeExportDimensions,
+  exportPngFilename,
+  downloadBlob
+} from '../utils/exportReplayPng.js'
 import FileUploader from './FileUploader.vue'
 import ColumnPicker from './ColumnPicker.vue'
 import AggregateTable from './AggregateTable.vue'
@@ -21,23 +27,61 @@ const { visibleKeys, aggVisibleKeys, showColPicker, pickerScope,
   toggleColPicker, toggleCol, selectAllCols, resetCols, handleReorder } = cols
 
 const showRating = ref(false)
-const resultsRef = ref(null)
+const exportingPng = ref(false)
+const aggregateRef = ref(null)
+const battleRefs = ref([])
+
+function setBattleRef(el, index) {
+  if (el) battleRefs.value[index] = el
+}
 
 async function downloadResultPng() {
-  if (!resultsRef.value) return
+  if (exportingPng.value) return
+  const target = getExportTarget(activeTab.value, aggregateRef.value, battleRefs.value)
+  if (!target) return
+
+  exportingPng.value = true
+  error.value = ''
+
   try {
+    const dims = computeExportDimensions(target)
     const html2canvas = (await import('html2canvas')).default
-    const canvas = await html2canvas(resultsRef.value, {
-      scale: 2,
+
+    // Resolve color-mix() on clone before rendering
+    const canvas = await html2canvas(target, {
+      scale: dims.scale,
       useCORS: true,
-      backgroundColor: '#ffffff'
+      backgroundColor: '#ffffff',
+      width: dims.width,
+      height: dims.height,
+      onclone: (doc) => {
+        const all = doc.querySelectorAll('*')
+        for (const el of all) {
+          const cs = doc.defaultView.getComputedStyle(el)
+          for (const p of ['background', 'background-color', 'color',
+            'border-color', 'border-top-color', 'border-bottom-color',
+            'border-left-color', 'border-right-color']) {
+            const v = cs[p]
+            if (v && /color-mix|oklch|oklab|color\(/i.test(v)) {
+              el.style.setProperty(p, cs[p])
+            }
+          }
+        }
+      }
     })
-    const link = document.createElement('a')
-    link.download = `replay-result-${Date.now()}.png`
-    link.href = canvas.toDataURL('image/png')
-    link.click()
+
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
+    if (!blob) throw new Error('toBlob returned null')
+
+    const mapName = activeTab.value !== 'aggregate'
+      ? resp.value?.battles?.[parseInt(activeTab.value.replace('b', ''), 10)]?.mapName
+      : undefined
+    const filename = exportPngFilename(activeTab.value, 0, mapName)
+    await downloadBlob(blob, filename)
   } catch (e) {
-    error.value = t('replay.export_failed')
+    error.value = t('replay.png_export_failed')
+  } finally {
+    exportingPng.value = false
   }
 }
 
@@ -54,8 +98,7 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
     <p v-if="error" class="error">{{ error }}</p>
 
     <template v-if="resp">
-      <div ref="resultsRef">
-        <div v-if="resp.duplicates.length" class="warn">
+      <div v-if="resp.duplicates.length" class="warn">
         {{ $t('result.duplicates', { count: resp.duplicates.length }) }}
         <span v-for="(d, i) in resp.duplicates" :key="i">{{ d[0] }}</span>
       </div>
@@ -95,18 +138,22 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
           <button class="ghost sm" :disabled="loading" @click="exportXlsx('each')">
             <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_each') }}
           </button>
-          <button class="ghost sm" :disabled="loading" @click="downloadResultPng">
-            <svg class="ic" viewBox="0 0 24 24" width="16" height="16"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12"/></svg>{{ $t('action.download_png') }}
+          <button class="ghost sm" :disabled="exportingPng" @click="downloadResultPng">
+            <svg class="ic" viewBox="0 0 24 24" width="16" height="16"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12"/></svg>
+            {{ exportingPng ? $t('replay.png_exporting') : $t('action.download_png') }}
           </button>
         </div>
       </div>
-      <div v-show="activeTab === 'aggregate' && resp.aggregate.length">
+
+      <!-- Aggregate result: separate ref for export -->
+      <div v-show="activeTab === 'aggregate' && resp.aggregate.length" ref="aggregateRef" class="replay-export-root">
         <AggregateTable :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
       </div>
 
-      <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i">
+      <!-- Single battle: separate ref for export -->
+      <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i"
+           :ref="(el) => setBattleRef(el, i)" class="replay-export-root">
         <BattleTable :battle="b" :shown-cols="shownCols" />
-      </div>
       </div>
     </template>
 
