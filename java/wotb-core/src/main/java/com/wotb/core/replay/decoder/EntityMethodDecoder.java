@@ -7,7 +7,9 @@ import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.event.VehicleDestroyedEvent;
 import com.wotb.core.replay.stream.RawReplayPacket;
+import org.springframework.util.StringUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -161,10 +163,12 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 final var p = ProtobufDecoder.decode(playerBytes);
                 final int eid = (int) ProtobufDecoder.firstLong(p, 1, 0);
                 final long acc = ProtobufDecoder.firstLong(p, 7, 0);
-                if (eid != 0 && acc != 0) {
+                final String nickname = decodeUtf8(ProtobufDecoder.first(p, 3));
+                final int team = (int) ProtobufDecoder.firstLong(p, 4, 0);
+                if (eid != 0 && (acc != 0 || StringUtils.hasText(nickname))) {
                     mappings.add(new ParticipantMappingEvent(
                             packet.sequence(), ts, packet.type(),
-                            DecodeConfidence.EXACT, eid, acc));
+                            DecodeConfidence.EXACT, eid, acc, nickname, team));
                 }
             }
         } catch (Exception e) {
@@ -173,6 +177,11 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
 
         if (mappings.isEmpty()) return null;
         return new ParticipantMappingResult(mappings);
+    }
+
+    private static String decodeUtf8(final Object value) {
+        return value instanceof byte[] bytes
+                ? new String(bytes, StandardCharsets.UTF_8) : "";
     }
 
     // ---- 内部辅助类和工具方法 ----
