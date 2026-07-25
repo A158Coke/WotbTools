@@ -31,43 +31,41 @@ const exportingPng = ref(false)
 const aggregateRef = ref(null)
 const battleRefs = ref([])
 
-// Detect current theme for export: relies on data-theme attr set by useTheme
-function getExportThemeClass() {
-  const theme = document.documentElement.getAttribute('data-theme')
-  return theme === 'dark' ? 'replay-export-dark' : 'replay-export-light'
-}
-
-function getExportBgColor() {
-  return getExportThemeClass() === 'replay-export-dark' ? '#1e1e1e' : '#ffffff'
-}
-
 function setBattleRef(el, index) {
   if (el) battleRefs.value[index] = el
 }
 
-function prepareClone(doc) {
-  // 1. Resolve color-mix() etc to computed values
-  const all = doc.querySelectorAll('*')
-  for (const el of all) {
-    const cs = doc.defaultView.getComputedStyle(el)
-    for (const p of ['background', 'background-color', 'color',
-      'border-color', 'border-top-color', 'border-bottom-color',
-      'border-left-color', 'border-right-color']) {
-      const v = cs[p]
-      if (v && /color-mix|oklch|oklab|color\(/i.test(v)) {
-        el.style.setProperty(p, cs[p])
-      }
-    }
-  }
-  // 2. Expand table wrappers so all columns are visible
-  for (const wrap of doc.querySelectorAll('.tablewrap')) {
+function readTheme() {
+  return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
+}
+
+const EXPORT_THEME_CSS = {
+  light: 'replay-export-light',
+  dark: 'replay-export-dark'
+}
+
+const EXPORT_BG = {
+  light: '#ffffff',
+  dark: '#1e1e1e'
+}
+
+function prepareClone(doc, theme) {
+  const themeClass = EXPORT_THEME_CSS[theme]
+  const root = doc.querySelector('[data-png-export-target]')
+  if (!root) return
+  root.classList.add('replay-export-root', themeClass)
+
+  for (const wrap of root.querySelectorAll('.tablewrap')) {
     wrap.style.overflow = 'visible'
     wrap.style.maxWidth = 'none'
-    // If the parent is the scroll container, also expand it
-    if (wrap.parentElement?.classList.contains('replay-export-root')) {
-      wrap.parentElement.style.width = wrap.scrollWidth + 'px'
-    }
   }
+
+  let maxW = root.scrollWidth
+  for (const child of root.children) {
+    const cw = child.scrollWidth
+    if (cw > maxW) maxW = cw
+  }
+  root.style.width = maxW + 'px'
 }
 
 async function downloadResultPng() {
@@ -75,6 +73,7 @@ async function downloadResultPng() {
   const target = getExportTarget(activeTab.value, aggregateRef.value, battleRefs.value)
   if (!target) return
 
+  const theme = readTheme()
   exportingPng.value = true
   error.value = ''
 
@@ -84,10 +83,10 @@ async function downloadResultPng() {
     const canvas = await html2canvas(target, {
       scale: dims.scale,
       useCORS: true,
-      backgroundColor: getExportBgColor(),
+      backgroundColor: EXPORT_BG[theme],
       width: dims.width,
       height: dims.height,
-      onclone: prepareClone
+      onclone: (doc) => prepareClone(doc, theme)
     })
 
     const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
@@ -166,16 +165,14 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
         </div>
       </div>
 
-      <!-- Aggregate result: isolated ref, v-show hides when inactive -->
-      <div v-show="activeTab === 'aggregate' && resp.aggregate.length" ref="aggregateRef"
-           :class="['replay-export-root', getExportThemeClass()]">
+      <!-- Aggregate result: stable identifier for export target; no export classes on real page -->
+      <div v-show="activeTab === 'aggregate' && resp.aggregate.length" ref="aggregateRef" data-png-export-target>
         <AggregateTable :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
       </div>
 
-      <!-- Single battle: isolated ref for each battle -->
+      <!-- Single battle: stable identifier for export target -->
       <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i"
-           :ref="(el) => setBattleRef(el, i)"
-           :class="['replay-export-root', getExportThemeClass()]">
+           :ref="(el) => setBattleRef(el, i)" data-png-export-target>
         <BattleTable :battle="b" :shown-cols="shownCols" />
       </div>
     </template>
@@ -186,10 +183,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
 </template>
 
 <style scoped>
-/**
- * Export-specific styles for PNG capture.
- * Uses explicit colors — no color-mix(), oklch(), oklad(), color().
- */
 .replay-export-light {
   --exp-bg: #ffffff;
   --exp-card-bg: #f8f9fa;

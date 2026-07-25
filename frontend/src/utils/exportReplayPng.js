@@ -30,6 +30,7 @@ export function getExportTarget(activeTab, aggregateRef, battleRefs) {
 /**
  * Compute safe canvas dimensions and scale for the given element.
  * Always uses full scroll dimensions (not just visible area).
+ * Guarantees width * scale <= MAX_CANVAS_DIMENSION and height * scale <= MAX_CANVAS_DIMENSION.
  * @param {HTMLElement} el
  * @returns {{ width: number, height: number, scale: number }}
  */
@@ -42,21 +43,26 @@ export function computeExportDimensions(el) {
     return { width: 800, height: 600, scale: 1 }
   }
 
-  // Calculate scale that keeps both dimensions within the max canvas limit.
-  // Use floor to guarantee the result never exceeds the limit after rounding.
-  let scale = MAX_SCALE
-  if (contentW * scale > MAX_CANVAS_DIMENSION) {
-    scale = Math.floor((MAX_CANVAS_DIMENSION / contentW) * 100) / 100
+  // Calculate the strict upper bound scale so both dimensions fit MAX_CANVAS_DIMENSION.
+  const maxDim = MAX_CANVAS_DIMENSION
+  const scaleByW = Math.floor((maxDim / contentW) * 100) / 100
+  const scaleByH = Math.floor((maxDim / contentH) * 100) / 100
+  let scale = Math.min(scaleByW, scaleByH, MAX_SCALE)
+
+  // Clamp to MIN_SCALE only if it doesn't violate the max dimension constraint.
+  if (scale < MIN_SCALE && contentW * MIN_SCALE <= maxDim && contentH * MIN_SCALE <= maxDim) {
+    scale = MIN_SCALE
   }
-  if (contentH * scale > MAX_CANVAS_DIMENSION) {
-    scale = Math.min(scale, Math.floor((MAX_CANVAS_DIMENSION / contentH) * 100) / 100)
+
+  // Final sanity: ensure no rounding edge-case exceeds the limit
+  while (contentW * scale > maxDim || contentH * scale > maxDim) {
+    scale = Math.floor((scale * 100 - 1)) / 100
   }
-  scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale))
 
   return {
     width: contentW,
     height: contentH,
-    scale: Math.round(scale * 100) / 100 // round to 2 decimals
+    scale: Math.round(Math.max(0.01, scale) * 100) / 100
   }
 }
 
