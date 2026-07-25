@@ -1,7 +1,7 @@
 package com.wotb.core.ref;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import com.wotb.core.model.TankInfo;
 
 import java.io.InputStream;
@@ -22,9 +22,9 @@ public final class Tankopedia {
         final Map<String, JsonNode> map = new HashMap<>();
         try (InputStream in = Tankopedia.class.getResourceAsStream("/tankopedia.json")) {
             if (in != null) {
-                final JsonNode root = new ObjectMapper().readTree(in);
+                final JsonNode root = JsonMapper.builder().build().readTree(in);
                 final JsonNode d = root.has("data") ? root.get("data") : root;
-                d.fields().forEachRemaining(e -> map.put(e.getKey(), e.getValue()));
+                d.properties().forEach(e -> map.put(e.getKey(), e.getValue()));
             }
         } catch (Exception ignored) {
             // 缺库时降级为只显示车辆ID

@@ -1,0 +1,310 @@
+{
+  "items": [
+    {
+      "id": 1,
+      "code": "AUTOMATIC_FIRE_EXTINGUISHER",
+      "nameZh": "自动灭火器",
+      "nameEn": "Automatic Fire Extinguisher",
+      "scope": "COMMON",
+      "special": false,
+      "activationType": "INSTANT",
+      "durationSeconds": null,
+      "cooldownSeconds": 70,
+      "affectedByDurationEquipment": false,
+      "affectedByCooldownEquipment": true,
+      "effects": [
+        {
+          "action": "EXTINGUISH_FIRE",
+          "operation": "INSTANT_ACTION"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "code": "FIRST_AID_KIT",
+      "nameZh": "急救包",
+      "nameEn": "First Aid Kit",
+      "scope": "COMMON",
+      "special": false,
+      "activationType": "INSTANT",
+      "durationSeconds": null,
+      "cooldownSeconds": 75,
+      "affectedByDurationEquipment": false,
+      "affectedByCooldownEquipment": true,
+      "effects": [
+        {
+          "action": "HEAL_ALL_CREW",
+          "operation": "INSTANT_ACTION"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "code": "REPAIR_KIT",
+      "nameZh": "修理箱",
+      "nameEn": "Repair Kit",
+      "scope": "COMMON",
+      "special": false,
+      "activationType": "INSTANT",
+      "durationSeconds": null,
+      "cooldownSeconds": 75,
+      "affectedByDurationEquipment": false,
+      "affectedByCooldownEquipment": true,
+      "effects": [
+        {
+          "action": "REPAIR_ALL_MODULES",
+          "operation": "INSTANT_ACTION"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "code": "ENGINE_POWER_BOOST",
+      "nameZh": "发动机功率增压",
+      "nameEn": "Engine Power Boost",
+      "scope": "COMMON",
+      "special": false,
+      "activationType": "DURATION",
+      "durationSeconds": 12,
+      "cooldownSeconds": 65,
+      "affectedByDurationEquipment": true,
+      "affectedByCooldownEquipment": true,
+      "effects": [
+        {
+          "stat": "enginePower",
+          "operation": "MULTIPLY",
+          "value": 1.2
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "code": "ADRENALINE",
+      "nameZh": "肾上腺素",
+      "nameEn": "Adrenaline",
+      "scope": "COMMON",
+      "special": false,
+      "activationType": "DURATION",
+      "durationSeconds": 20,
+      "cooldownSeconds": 80,
+      "affectedByDurationEquipment": true,
+      "affectedByCooldownEquipment": true,
+      "effects": [
+        {
+          "stat": "reloadTime",
+          "operation": "MULTIPLY",
+          "value": 0.83
+        },
+        {
+          "stat": "moduleDamageChance",
+          "operation": "MULTIPLY",
+          "value": 1.1
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "code": "MULTI_PURPOSE_RESTORATION_PACK",
+      "nameZh": "多功能恢复包",
+      "nameEn": "Multi-Purpose Restoration Pack",
+      "scope": "COMMON",
+      "special": false,
+      "activationType": "INSTANT",
+      "durationSeconds": null,
+      "cooldownSeconds": 100,
+      "affectedByDurationEquipment": false,
+      "affectedByCooldownEquipment": true,
+      "effects": [
+        {
+          "action": "EXTINGUISH_FIRE",
+          "operation": "INSTANT_ACTION"
+        },
+        {
+          "action": "HEAL_ALL_CREW",
+          "operation": "INSTANT_ACTION"
+        },
+        {
+          "action": "REPAIR_ALL_MODULES",
+          "operation": "INSTANT_ACTION"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "code": "IMPROVED_ENGINE_POWER_BOOST",
+      "nameZh": "改进型发动机功率增压",
+      "nameEn": "Improved Engine Power Boost",
+      "scope": "VEHICLE_SPECIFIC",
+      "special": true,
+      "activationType": "DURATION",
+      "durationSeconds": 15,
+      "cooldownSeconds": 65,
+      "affectedByDurationEquipment": true,
+      "affectedByCooldownEquipment": true,
+      "effects": [
+        {
+          "stat": "enginePower",
+          "operation": "MULTIPLY",
+          "value": 1.35
+        },
+        {
+          "stat": "forwardSpeedKph",
+          "operation": "ADD",
+          "value": 4.0
+        },
+        {
+          "stat": "reverseSpeedMagnitudeKph",
+          "operation": "ADD",
+          "value": 8.0
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "code": "RETICLE_CALIBRATION",
+      "nameZh": "瞄准校准",
+      "nameEn": "Reticle Calibration",
+      "scope": "VEHICLE_SPECIFIC",
+      "special": true,
+      "activationType": "DURATION",
+      "durationSeconds": 20,
+      "cooldownSeconds": 55,
+      "affectedByDurationEquipment": true,
+      "affectedByCooldownEquipment": true,
+      "effects": [
+        {
+          "stat": "aimTime",
+          "operation": "MULTIPLY",
+          "value": 0.7
+        },
+        {
+          "stat": "baseDispersion",
+          "operation": "MULTIPLY",
+          "value": 0.7
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "code": "SHELL_RELOAD_BOOST",
+      "nameZh": "炮弹装填加速",
+      "nameEn": "Shell Reload Boost",
+      "scope": "MECHANISM_SPECIFIC",
+      "special": true,
+      "activationType": "DURATION",
+      "durationSeconds": 20,
+      "cooldownSeconds": 65,
+      "affectedByDurationEquipment": true,
+      "affectedByCooldownEquipment": true,
+      "effects": [
+        {
+          "stat": "intraClipReloadTime",
+          "operation": "MULTIPLY",
+          "value": 0.7
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "code": "REACTIVE_ARMOR",
+      "nameZh": "反应装甲",
+      "nameEn": "Reactive Armor",
+      "scope": "VEHICLE_SPECIFIC",
+      "special": true,
+      "activationType": "DURATION",
+      "durationSeconds": 10,
+      "cooldownSeconds": 65,
+      "affectedByDurationEquipment": true,
+      "affectedByCooldownEquipment": true,
+      "effects": [
+        {
+          "stat": "damageReceived",
+          "operation": "MULTIPLY",
+          "value": 0.73,
+          "conditions": {
+            "shellTypes": [
+              "AP",
+              "APCR",
+              "HEAT"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 45,
+      "code": "TUNGSTEN_SHELLS",
+      "nameZh": "钨芯炮弹",
+      "nameEn": "Tungsten Shells",
+      "scope": "VEHICLE_SPECIFIC",
+      "special": true,
+      "activationType": "DURATION",
+      "durationSeconds": 15,
+      "cooldownSeconds": 70,
+      "affectedByDurationEquipment": true,
+      "affectedByCooldownEquipment": true,
+      "effects": [
+        {
+          "stat": "damageRoll",
+          "operation": "SET_RELATIVE_RANGE",
+          "minimumMultiplier": 1.05,
+          "maximumMultiplier": 1.25,
+          "maximumRollCapUnchanged": true
+        }
+      ]
+    },
+    {
+      "id": 73,
+      "code": "DYNAMIC_ARMOUR_SYSTEM",
+      "nameZh": "动态装甲系统",
+      "nameEn": "Dynamic Armour System",
+      "scope": "VEHICLE_SPECIFIC",
+      "special": true,
+      "activationType": "DURATION",
+      "durationSeconds": 17,
+      "cooldownSeconds": 60,
+      "affectedByDurationEquipment": true,
+      "affectedByCooldownEquipment": true,
+      "effects": [
+        {
+          "stat": "damageReceived",
+          "operation": "MULTIPLY",
+          "value": 0.9,
+          "conditions": {
+            "shellTypes": [
+              "AP",
+              "APCR",
+              "HEAT"
+            ]
+          }
+        },
+        {
+          "stat": "armorState",
+          "operation": "SET",
+          "value": "DYNAMIC_ARMOR_ACTIVE",
+          "requiresVehicleSpecificArmorModel": true
+        }
+      ]
+    },
+    {
+      "id": 80,
+      "code": "REDUCED_ENGINE_POWER_BOOST",
+      "nameZh": "低功率发动机增压",
+      "nameEn": "Reduced Engine Power Boost",
+      "scope": "VEHICLE_SPECIFIC",
+      "special": true,
+      "activationType": "DURATION",
+      "durationSeconds": 10,
+      "cooldownSeconds": 70,
+      "affectedByDurationEquipment": true,
+      "affectedByCooldownEquipment": true,
+      "effects": [
+        {
+          "stat": "enginePower",
+          "operation": "MULTIPLY",
+          "value": 1.1
+        }
+      ]
+    }
+  ]
+}

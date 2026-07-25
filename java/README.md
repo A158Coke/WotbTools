@@ -136,6 +136,17 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 - `mode=aggregate`（默认）：返回 xlsx。仅一场战斗时为单场工作簿；多场时为按 `arenaUniqueId` 去重后的汇总工作簿。
 - `mode=each`：返回 zip（`逐场导出.zip`），内含每场各自的单场 xlsx；无法解析的文件会被跳过。
 
+### 回放重建（仅 wotbtools-admin）
+
+完整战斗重建：读取 `data.wotreplay` 全部事件包 → 解码为领域事件 → 重建战场状态。
+
+- `POST /api/replay/reconstruct` — 单文件重建，返回摘要。
+- `POST /api/replay/state-at?time=<秒>` — 查询回放任意时刻战场状态。
+- `POST /api/replay/reconstruct-batch` — 批量重建（最多 10 个文件），返回 `ReplayBatchProcessingResult`（含 `suggestedAnalysisMode`、逐文件 `ReplayProcessingResult`）。
+- `POST /api/replay/process?reconstruct=false` — 通用批量处理，可选开启重建。
+
+**策略**：逐文件错误隔离、SHA-256 去重、根据可分析文件数自动判定 NONE/SINGLE_BATTLE/MULTI_BATTLE。
+
 ### 排行榜
 
 每条记录 = 录像者本人在一场**随机战斗**（`arenaBonusType==1`，训练房/娱乐/联赛拒绝）中用某辆车打出的单场伤害；通过排行榜上传入口写入（去重键 `arena_id + account_id`）。

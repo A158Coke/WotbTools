@@ -98,24 +98,6 @@ function formatDamage(value) {
         <span class="tag avail">{{ $t('admin.cardBadge') }}</span>
       </a>
 
-      <div class="coming-soon">
-        <div class="card">
-          <span class="card-mark">--</span>
-          <h2>{{ $t('home.statsCardTitle') }}</h2>
-          <p>{{ $t('home.statsCardDesc') }}</p>
-          <span class="tag planned">{{ $t('home.planned') }}</span>
-        </div>
-      </div>
-
-      <div class="coming-soon">
-        <div class="card">
-          <span class="card-mark">--</span>
-          <h2>{{ $t('home.apiTitle') }}</h2>
-          <p>{{ $t('home.apiDesc') }}</p>
-          <span class="tag planned">{{ $t('home.planned') }}</span>
-        </div>
-      </div>
-
       <a class="card" href="/sponsor.html">
         <span class="card-mark">SP</span>
         <h2>{{ $t('home.sponsorTitle') }}</h2>

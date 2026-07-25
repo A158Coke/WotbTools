@@ -1,7 +1,8 @@
 package com.wotb.core.ref;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.TextNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.StringNode;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.InvocationTargetException;
@@ -25,9 +26,9 @@ class MapNamesTest {
     @Test
     void fallsBackFromBlankChineseLabelToEnglish() throws Exception {
         final Method resolveChineseLabel = MapNames.class.getDeclaredMethod(
-                "resolveChineseLabel", String.class, com.fasterxml.jackson.databind.JsonNode.class);
+                "resolveChineseLabel", String.class, JsonNode.class);
         resolveChineseLabel.setAccessible(true);
-        final ObjectMapper mapper = new ObjectMapper();
+        final JsonMapper mapper = JsonMapper.builder().build();
 
         assertEquals("Lagoon", invokeResolveChineseLabel(
                 resolveChineseLabel, "lagoon", mapper.readTree("{\"zh\":\"   \",\"en\":\"Lagoon\"}")));
@@ -36,16 +37,16 @@ class MapNamesTest {
     @Test
     void fallsBackToInternalNameWhenDirectLabelBlank() throws Exception {
         final Method resolveChineseLabel = MapNames.class.getDeclaredMethod(
-                "resolveChineseLabel", String.class, com.fasterxml.jackson.databind.JsonNode.class);
+                "resolveChineseLabel", String.class, JsonNode.class);
         resolveChineseLabel.setAccessible(true);
 
         assertEquals("lagoon", invokeResolveChineseLabel(
-                resolveChineseLabel, "lagoon", TextNode.valueOf("   ")));
+                resolveChineseLabel, "lagoon", StringNode.valueOf("   ")));
     }
 
     private static String invokeResolveChineseLabel(final Method resolveChineseLabel,
                                                     final String fallback,
-                                                    final com.fasterxml.jackson.databind.JsonNode node)
+                                                    final JsonNode node)
             throws InvocationTargetException, IllegalAccessException {
         return (String) resolveChineseLabel.invoke(null, fallback, node);
     }
