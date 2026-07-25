@@ -5,12 +5,6 @@ export const MAX_CANVAS_DIMENSION = 16384
 export const MAX_SCALE = 2
 
 /**
- * Safety epsilon to absorb floating-point rounding when computing scale.
- * Guarantees width * scale <= MAX_CANVAS_DIMENSION after multiplication.
- */
-const EPSILON = 1e-9
-
-/**
  * Return the DOM element to capture for the current active tab.
  * @param {string} activeTab - 'aggregate' or 'b{index}'
  * @param {HTMLElement|null} aggregateRef - aggregate container ref
@@ -28,15 +22,14 @@ export function getExportTarget(activeTab, aggregateRef, battleRefs) {
  * Compute safe canvas dimensions and scale for the given element.
  * Guarantees width * scale <= MAX_CANVAS_DIMENSION and height * scale <= MAX_CANVAS_DIMENSION.
  * Scale is computed as the minimum of MAX_SCALE, MAX_DIM / width, MAX_DIM / height,
- * reduced by an epsilon to absorb floating-point rounding.
- * @param {HTMLElement} el
+ * then reduced by a relative safety factor to absorb floating-point rounding.
+ * @param {{ scrollWidth: number, scrollHeight: number }} el
  * @returns {{ width: number, height: number, scale: number }}
  */
 export function computeExportDimensions(el) {
   const rawW = el.scrollWidth
   const rawH = el.scrollHeight
 
-  // Reject non-finite, zero, or negative dimensions
   const contentW = Number.isFinite(rawW) && rawW > 0 ? rawW : 0
   const contentH = Number.isFinite(rawH) && rawH > 0 ? rawH : 0
 
@@ -47,13 +40,11 @@ export function computeExportDimensions(el) {
   const maxDim = MAX_CANVAS_DIMENSION
   const sx = maxDim / contentW
   const sy = maxDim / contentH
-  const scale = Math.min(MAX_SCALE, sx, sy) - EPSILON
+  const safeScale = Math.min(MAX_SCALE, sx, sy)
+  // Relative safety factor: never goes to zero for any finite positive dimension
+  const scale = safeScale * (1 - 1e-12)
 
-  return {
-    width: contentW,
-    height: contentH,
-    scale: Math.max(scale, 0)
-  }
+  return { width: contentW, height: contentH, scale }
 }
 
 /**
@@ -95,7 +86,8 @@ export function sanitizeFilename(name) {
 
 /**
  * Download a Blob as a file using an <a> element.
- * Cleans up the object URL and DOM node after a brief delay.
+ * Guarantees cleanup (anchor removal and URL revoke) in all exit paths,
+ * including when a.click() throws.
  * @param {Blob} blob
  * @param {string} filename
  * @returns {Promise<void>}
@@ -109,12 +101,26 @@ export function downloadBlob(blob, filename) {
     a.href = url
     a.download = filename
     a.style.display = 'none'
-    document.body.appendChild(a)
-    a.click()
+    let appended = false
+
+    function cleanup() {
+      if (appended && a.parentNode) {
+        a.parentNode.removeChild(a)
+      }
+      URL.revokeObjectURL(url)
+    }
+
+    try {
+      document.body.appendChild(a)
+      appended = true
+      a.click()
+    } catch (e) {
+      cleanup()
+      return reject(e)
+    }
 
     setTimeout(() => {
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      cleanup()
       resolve()
     }, 150)
   })

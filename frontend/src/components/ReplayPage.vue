@@ -68,20 +68,40 @@ function expandExportTables(clone) {
   for (const wrap of clone.querySelectorAll('.tablewrap')) {
     wrap.style.overflow = 'visible'
     wrap.style.maxWidth = 'none'
+    wrap.style.width = 'max-content'
   }
+}
+
+function measureExportClone(clone) {
+  // Determine the full content width from all tablewrap and their tables
+  let maxContentW = clone.scrollWidth || 0
+  for (const wrap of clone.querySelectorAll('.tablewrap')) {
+    const wrapsw = wrap.scrollWidth || 0
+    if (wrapsw > maxContentW) maxContentW = wrapsw
+    for (const tbl of wrap.querySelectorAll('table')) {
+      const tblsw = tbl.scrollWidth || 0
+      if (tblsw > maxContentW) maxContentW = tblsw
+    }
+  }
+  // Also consider child elements' scrollWidth for stat cards etc.
+  for (const child of clone.children) {
+    const csw = child.scrollWidth || 0
+    if (csw > maxContentW) maxContentW = csw
+  }
+
+  // Set the root width so html2canvas captures the full content
+  clone.style.width = maxContentW + 'px'
+
+  // Now read final scroll dimensions after width is set
+  const w = clone.scrollWidth || clone.getBoundingClientRect().width || 800
+  const h = clone.scrollHeight || clone.getBoundingClientRect().height || 600
+  return { width: Math.ceil(w), height: Math.ceil(h) }
 }
 
 function waitForLayout() {
   return new Promise(resolve => {
     nextTick(() => requestAnimationFrame(resolve))
   })
-}
-
-function measureExportClone(clone) {
-  return {
-    width: clone.scrollWidth || clone.getBoundingClientRect().width || 800,
-    height: clone.scrollHeight || clone.getBoundingClientRect().height || 600
-  }
 }
 
 function cleanupExportClone(container) {
@@ -105,7 +125,8 @@ async function downloadResultPng() {
     cloneCtx = createExportClone(target, theme)
     expandExportTables(cloneCtx.clone)
     await waitForLayout()
-    const dims = computeExportDimensions(cloneCtx.clone)
+    const measured = measureExportClone(cloneCtx.clone)
+    const dims = computeExportDimensions(measured)
 
     const html2canvas = (await import('html2canvas')).default
     const canvas = await html2canvas(cloneCtx.clone, {
@@ -208,8 +229,8 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   </div>
 </template>
 
-<style scoped>
-.replay-export-light {
+<style>
+.replay-export-root.replay-export-light {
   --exp-bg: #ffffff;
   --exp-card-bg: #f8f9fa;
   --exp-text: #1a1a1a;
@@ -224,7 +245,7 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   --exp-destroyed: #dc3545;
 }
 
-.replay-export-dark {
+.replay-export-root.replay-export-dark {
   --exp-bg: #1e1e1e;
   --exp-card-bg: #2d2d2d;
   --exp-text: #e0e0e0;
@@ -245,7 +266,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   padding: 16px;
   font-size: 13px;
   line-height: 1.5;
-  width: max-content;
   max-width: none;
 }
 .replay-export-root .mcards {
