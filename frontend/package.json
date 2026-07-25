@@ -21,5 +21,10 @@
     "happy-dom": "^18.0.1",
     "vite": "^6.0.7",
     "vitest": "^3.2.4"
+  },
+  "optionalDependencies": {
+    "@esbuild/linux-x64": "^0.25.12",
+    "@rollup/rollup-linux-x64-gnu": "^4.62.2",
+    "fsevents": "^2.3.3"
   }
 }
