@@ -173,20 +173,9 @@ public class BatchAnalyzer {
     }
 
     private static int resolvePerspectiveTeam(final ReplayProcessingResult r) {
-        int team = 0;
-        if (r.battle() != null && r.battle().recorder != null) {
-            final String nick = r.battle().recorder;
-            for (final BattleParticipant p : (r.reconstruction() != null
-                    ? r.reconstruction().participants() : List.<BattleParticipant>of())) {
-                if (nick.equals(p.nickname())) { team = p.team(); break; }
-            }
-            if (team == 0 && r.battle().players != null) {
-                for (final var pr : r.battle().players) {
-                    if (nick.equals(pr.nickname)) { team = pr.team; break; }
-                }
-            }
-        }
-        return team;
+        final TeamPerspectiveResolution resolution =
+                TeamPerspectiveResolver.resolve(r.battle(), r.reconstruction());
+        return resolution.resolved() ? resolution.perspectiveTeam() : 0;
     }
 
     /**
@@ -267,8 +256,10 @@ public class BatchAnalyzer {
         if (caps == null || scope == null) return false;
         return switch (scope) {
             case PLAYER_FOCUSED -> caps.summaryAvailable() && caps.recorderResultAvailable();
-            case TEAM_PERSPECTIVE -> caps.summaryAvailable() && caps.reconstructionAvailable()
-                    && caps.perspectiveTeamResolved() && caps.teamFeatureExtractionPossible();
+            case TEAM_PERSPECTIVE -> caps.summaryAvailable()
+                    && caps.perspectiveTeamResolved()
+                    && (caps.recorderResultAvailable()
+                            || caps.teamFeatureExtractionPossible());
         };
     }
 
