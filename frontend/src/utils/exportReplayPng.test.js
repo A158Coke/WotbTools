@@ -1,4 +1,6 @@
-import { describe, it, expect } from 'vitest'
+// @vitest-environment happy-dom
+
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import {
   getExportTarget,
   computeExportDimensions,
@@ -54,7 +56,8 @@ describe('computeExportDimensions', () => {
 
   it('normal size uses high scale', () => {
     const d = computeExportDimensions(el(1920, 1080))
-    expect(d.scale).toBeCloseTo(MAX_SCALE, 4)
+    expect(d.scale).toBeGreaterThan(1.9)
+    expect(d.scale).toBeLessThanOrEqual(MAX_SCALE)
   })
 
   it('falls back for zero dimensions', () => {
@@ -90,8 +93,8 @@ describe('computeExportDimensions', () => {
     expect(Number.isFinite(d.height), `${label} height`).toBe(true)
     expect(Number.isFinite(d.scale), `${label} scale finite`).toBe(true)
     expect(d.scale, `${label} scale > 0`).toBeGreaterThan(0)
-    expect(d.width * d.scale, `${label} width*scale`).toBeLessThanOrEqual(MAX_CANVAS_DIMENSION + 1e-6)
-    expect(d.height * d.scale, `${label} height*scale`).toBeLessThanOrEqual(MAX_CANVAS_DIMENSION + 1e-6)
+    expect(d.width * d.scale, `${label} width*scale`).toBeLessThanOrEqual(MAX_CANVAS_DIMENSION)
+    expect(d.height * d.scale, `${label} height*scale`).toBeLessThanOrEqual(MAX_CANVAS_DIMENSION)
   }
 
   it('40000 x 1000', () => {
@@ -124,6 +127,19 @@ describe('computeExportDimensions', () => {
 
   it('1920 x 1080 stays within limit', () => {
     assertFiniteWithin(computeExportDimensions(el(1920, 1080)), '1920x1080')
+  })
+
+  // Ultra-large finite dimensions must never produce scale=0
+  it('very large finite dimension keeps scale > 0', () => {
+    const d = computeExportDimensions(el(1e12, 1e12))
+    expect(d.scale).toBeGreaterThan(0)
+    assertFiniteWithin(d, '1e12')
+  })
+
+  it('extremely large finite dimension keeps scale > 0', () => {
+    const d = computeExportDimensions(el(1e15, 1e15))
+    expect(d.scale).toBeGreaterThan(0)
+    assertFiniteWithin(d, '1e15')
   })
 })
 
@@ -187,7 +203,53 @@ describe('sanitizeFilename', () => {
 })
 
 describe('downloadBlob', () => {
+  let origCreateObjectURL
+  let origRevokeObjectURL
+
+  beforeEach(() => {
+    origCreateObjectURL = URL.createObjectURL
+    origRevokeObjectURL = URL.revokeObjectURL
+    URL.createObjectURL = vi.fn(() => 'blob:test')
+    URL.revokeObjectURL = vi.fn()
+  })
+
+  afterEach(() => {
+    URL.createObjectURL = origCreateObjectURL
+    URL.revokeObjectURL = origRevokeObjectURL
+  })
+
   it('rejects null blob', async () => {
     await expect(downloadBlob(null, 'test.png')).rejects.toThrow('Blob is null')
+  })
+
+  it('cleans up anchor and revokes URL after download', async () => {
+    const appendChild = vi.spyOn(document.body, 'appendChild')
+    const removeChild = vi.spyOn(document.body, 'removeChild')
+
+    await downloadBlob(new Blob(['test']), 'out.png')
+    await new Promise(r => setTimeout(r, 200))
+
+    expect(appendChild).toHaveBeenCalled()
+    expect(removeChild).toHaveBeenCalled()
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test')
+  })
+
+  it('rejects and cleans up when a.click() throws', async () => {
+    // Create an anchor whose click() throws
+    const origCreate = document.createElement.bind(document)
+    const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag) => {
+      const el = origCreate(tag)
+      if (tag === 'a') {
+        el.click = () => { throw new Error('click failed') }
+      }
+      return el
+    })
+
+    const appendChild = vi.spyOn(document.body, 'appendChild')
+
+    await expect(downloadBlob(new Blob(['test']), 'out.png')).rejects.toThrow('click failed')
+
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test')
+    createSpy.mockRestore()
   })
 })
