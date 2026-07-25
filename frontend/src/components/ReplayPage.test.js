@@ -513,6 +513,25 @@ describe('ReplayPage PNG export', () => {
       expect(document.querySelector('[style*="left: -9999px"]')).toBeNull()
     })
 
+    it('removes off-screen container after downloadBlob reject (click throws)', async () => {
+      const origCreate = document.createElement.bind(document)
+      vi.spyOn(document, 'createElement').mockImplementation((tag) => {
+        const el = origCreate(tag)
+        if (tag === 'a') {
+          el.click = () => { throw new Error('click failed') }
+        }
+        return el
+      })
+      setResp(makeResp())
+      wrapper = mountPage()
+
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+
+      expect(document.querySelector('[style*="left: -9999px"]')).toBeNull()
+      expect(pngButton(wrapper).attributes('disabled')).toBeUndefined()
+    })
+
     it('revokes object URL after download', async () => {
       setResp(makeResp())
       wrapper = mountPage()
