@@ -134,17 +134,26 @@ function cleanupExportClone(container) {
 
 async function downloadResultPng() {
   if (exportingPng.value || loading.value) return
-  const target = getExportTarget(activeTab.value, aggregateRef.value, battleRefs.value)
+
+  // Save immutable export context before any async operation
+  const exportTab = activeTab.value
+  const exportTheme = readTheme()
+  const exportLocale = locale.value
+  const exportBattleIdx = exportTab === 'aggregate' ? NaN : parseInt(exportTab.replace('b', ''), 10)
+  const exportMapName = !isNaN(exportBattleIdx) && resp.value?.battles?.[exportBattleIdx]?.mapName
+    ? mapLabel(resp.value.battles[exportBattleIdx].mapName, exportLocale)
+    : undefined
+
+  const target = getExportTarget(exportTab, aggregateRef.value, battleRefs.value)
   if (!target) return
 
-  const theme = readTheme()
   let cloneCtx = null
 
   exportingPng.value = true
   error.value = ''
 
   try {
-    cloneCtx = createExportClone(target, theme)
+    cloneCtx = createExportClone(target, exportTheme)
     expandExportTables(cloneCtx.clone)
     await waitForLayout()
     const measured = measureExportClone(cloneCtx.clone)
@@ -154,7 +163,7 @@ async function downloadResultPng() {
     const canvas = await html2canvas(cloneCtx.clone, {
       scale: dims.scale,
       useCORS: true,
-      backgroundColor: EXPORT_BG[theme],
+      backgroundColor: EXPORT_BG[exportTheme],
       width: dims.width,
       height: dims.height
     })
@@ -162,11 +171,7 @@ async function downloadResultPng() {
     const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
     if (!blob) throw new Error('toBlob returned null')
 
-    const battleIdx = parseInt(activeTab.value.replace('b', ''), 10)
-    const mapName = !isNaN(battleIdx) && resp.value?.battles?.[battleIdx]?.mapName
-      ? mapLabel(resp.value.battles[battleIdx].mapName, locale.value)
-      : undefined
-    const filename = exportPngFilename(activeTab.value, isNaN(battleIdx) ? 0 : battleIdx, mapName)
+    const filename = exportPngFilename(exportTab, isNaN(exportBattleIdx) ? 0 : exportBattleIdx, exportMapName)
     await downloadBlob(blob, filename)
   } catch (e) {
     error.value = t('replay.png_export_failed')
