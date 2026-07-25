@@ -120,7 +120,7 @@ function mountPage() {
         AggregateTable: {
           template: '<div class="agg-table-stub" data-export-role="aggregate">' +
             '<div class="mcards"><div class="mc"><div class="k">Battles</div><div class="v">2</div></div></div>' +
-            '<div class="tablewrap"><table><tbody>' +
+            '<div class="tablewrap"><table style="width:2000px"><tbody>' +
             '<tr class="t1"><td><span class="rbadge">1500</span></td></tr>' +
             '<tr class="t2"><td><span class="rbadge">1200</span></td></tr>' +
             '</tbody></table></div>' +
@@ -130,7 +130,7 @@ function mountPage() {
           props: ['battle'],
           template: '<div class="battle-table-stub" :data-export-role="\'battle-\' + battle.mapName">' +
             '<div class="mcards"><div class="mc"><div class="k">Map</div><div class="v">{{ battle.mapName }}</div></div></div>' +
-            '<div class="tablewrap"><table><tbody>' +
+            '<div class="tablewrap"><table style="width:2000px"><tbody>' +
             '<tr class="t1"><td><span class="rbadge">1500</span></td></tr>' +
             '<tr class="t2"><td><span class="rbadge">1200</span></td></tr>' +
             '</tbody></table></div>' +
@@ -320,6 +320,32 @@ describe('ReplayPage PNG export', () => {
       expect(clone.textContent).toContain('Frozen')
       expect(clone.textContent).not.toContain('Battles')
       expect(clone.textContent).not.toContain('Lagoon')
+    })
+
+    it('setScrollProps on real target propagates to clone measurement', async () => {
+      setResp(makeResp())
+      wrapper = mountPage()
+      // Set scroll dimensions on the real page element that will be cloned
+      const realTarget = wrapper.vm.aggregateRef
+      if (realTarget) {
+        setScrollProps(realTarget, 2200, 600)
+        for (const tbl of realTarget.querySelectorAll('table')) {
+          setScrollProps(tbl, 2000, 400)
+        }
+        for (const wrap of realTarget.querySelectorAll('.tablewrap')) {
+          setScrollProps(wrap, 2100, 500)
+        }
+      }
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+
+      const calls = h2c.getCalls()
+      expect(calls.length).toBe(1)
+      const opts = calls[0][1]
+      expect(opts.width).toBeGreaterThan(0)
+      expect(opts.scale).toBeGreaterThan(0)
+      expect(opts.width * opts.scale).toBeLessThanOrEqual(16384)
+      expect(opts.height * opts.scale).toBeLessThanOrEqual(16384)
     })
   })
 
