@@ -3,7 +3,7 @@ run-name: Deploy ${{ github.ref_name }} by @${{ github.actor }} to Production
 
 concurrency:
   group: production-maintenance
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 on:
   push:
