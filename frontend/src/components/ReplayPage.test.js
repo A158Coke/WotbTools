@@ -356,8 +356,9 @@ describe('ReplayPage PNG export', () => {
       // Must NOT return 800x600 fallback for valid content
       expect(opts.width).not.toBe(800)
       expect(opts.height).not.toBe(600)
-      expect(opts.width).toBeGreaterThan(0)
-      expect(opts.height).toBeGreaterThan(0)
+      // Exact dimensions from setScrollProps must be reflected
+      expect(opts.width).toBeGreaterThanOrEqual(2232)
+      expect(opts.height).toBeGreaterThanOrEqual(632)
       expect(opts.width * opts.scale).toBeLessThanOrEqual(16384)
       expect(opts.height * opts.scale).toBeLessThanOrEqual(16384)
     })
@@ -526,6 +527,7 @@ describe('ReplayPage PNG export', () => {
 
       // After full flow, cleanup must have happened
       expect(document.querySelector('[style*="left: -9999px"]')).toBeNull()
+      expect(URL.revokeObjectURL).toHaveBeenCalled()
       expect(pngButton(wrapper).attributes('disabled')).toBeUndefined()
     })
   })
