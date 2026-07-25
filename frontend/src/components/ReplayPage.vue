@@ -35,6 +35,31 @@ function setBattleRef(el, index) {
   if (el) battleRefs.value[index] = el
 }
 
+function prepareClone(doc) {
+  // 1. Resolve color-mix() etc to computed values
+  const all = doc.querySelectorAll('*')
+  for (const el of all) {
+    const cs = doc.defaultView.getComputedStyle(el)
+    for (const p of ['background', 'background-color', 'color',
+      'border-color', 'border-top-color', 'border-bottom-color',
+      'border-left-color', 'border-right-color']) {
+      const v = cs[p]
+      if (v && /color-mix|oklch|oklab|color\(/i.test(v)) {
+        el.style.setProperty(p, cs[p])
+      }
+    }
+  }
+  // 2. Expand table wrappers so all columns are visible
+  for (const wrap of doc.querySelectorAll('.tablewrap')) {
+    wrap.style.overflow = 'visible'
+    wrap.style.maxWidth = 'none'
+    // If the parent is the scroll container, also expand it
+    if (wrap.parentElement?.classList.contains('replay-export-root')) {
+      wrap.parentElement.style.width = wrap.scrollWidth + 'px'
+    }
+  }
+}
+
 async function downloadResultPng() {
   if (exportingPng.value) return
   const target = getExportTarget(activeTab.value, aggregateRef.value, battleRefs.value)
@@ -46,37 +71,23 @@ async function downloadResultPng() {
   try {
     const dims = computeExportDimensions(target)
     const html2canvas = (await import('html2canvas')).default
-
-    // Resolve color-mix() on clone before rendering
     const canvas = await html2canvas(target, {
       scale: dims.scale,
       useCORS: true,
       backgroundColor: '#ffffff',
       width: dims.width,
       height: dims.height,
-      onclone: (doc) => {
-        const all = doc.querySelectorAll('*')
-        for (const el of all) {
-          const cs = doc.defaultView.getComputedStyle(el)
-          for (const p of ['background', 'background-color', 'color',
-            'border-color', 'border-top-color', 'border-bottom-color',
-            'border-left-color', 'border-right-color']) {
-            const v = cs[p]
-            if (v && /color-mix|oklch|oklab|color\(/i.test(v)) {
-              el.style.setProperty(p, cs[p])
-            }
-          }
-        }
-      }
+      onclone: prepareClone
     })
 
     const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
     if (!blob) throw new Error('toBlob returned null')
 
-    const mapName = activeTab.value !== 'aggregate'
-      ? resp.value?.battles?.[parseInt(activeTab.value.replace('b', ''), 10)]?.mapName
+    const battleIdx = parseInt(activeTab.value.replace('b', ''), 10)
+    const mapName = !isNaN(battleIdx) && resp.value?.battles?.[battleIdx]?.mapName
+      ? mapLabel(resp.value.battles[battleIdx].mapName, locale.value)
       : undefined
-    const filename = exportPngFilename(activeTab.value, 0, mapName)
+    const filename = exportPngFilename(activeTab.value, isNaN(battleIdx) ? 0 : battleIdx, mapName)
     await downloadBlob(blob, filename)
   } catch (e) {
     error.value = t('replay.png_export_failed')
@@ -145,14 +156,14 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
         </div>
       </div>
 
-      <!-- Aggregate result: separate ref for export -->
-      <div v-show="activeTab === 'aggregate' && resp.aggregate.length" ref="aggregateRef" class="replay-export-root">
+      <!-- Aggregate result: isolated ref, v-show hides when inactive -->
+      <div v-show="activeTab === 'aggregate' && resp.aggregate.length" ref="aggregateRef" class="replay-export-root replay-export-light">
         <AggregateTable :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
       </div>
 
-      <!-- Single battle: separate ref for export -->
+      <!-- Single battle: isolated ref for each battle -->
       <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i"
-           :ref="(el) => setBattleRef(el, i)" class="replay-export-root">
+           :ref="(el) => setBattleRef(el, i)" class="replay-export-root replay-export-light">
         <BattleTable :battle="b" :shown-cols="shownCols" />
       </div>
     </template>
@@ -161,3 +172,69 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
     <RatingModal :show="showRating" @close="showRating = false" />
   </div>
 </template>
+
+<style scoped>
+/**
+ * Export-specific styles for PNG capture.
+ * Uses explicit colors — no color-mix(), oklch(), oklad(), color().
+ */
+.replay-export-light {
+  --exp-bg: #ffffff;
+  --exp-card-bg: #f8f9fa;
+  --exp-text: #1a1a1a;
+  --exp-text-sub: #666666;
+  --exp-border: #dee2e6;
+  --exp-header-bg: #e9ecef;
+  --exp-t1-bg: #e3f2fd;
+  --exp-t2-bg: #fce4ec;
+  --exp-badge-bg: #fff3cd;
+  --exp-badge-text: #856404;
+  --exp-warn-bg: #fff3cd;
+  --exp-error-bg: #f8d7da;
+  --exp-error-text: #721c24;
+  --exp-alive: #28a745;
+  --exp-destroyed: #dc3545;
+}
+
+.replay-export-root {
+  background: var(--exp-bg);
+  color: var(--exp-text);
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.replay-export-root :deep(table) {
+  border-collapse: collapse;
+  width: auto;
+  background: var(--exp-bg);
+}
+.replay-export-root :deep(th) {
+  background: var(--exp-header-bg);
+  color: var(--exp-text);
+  padding: 6px 10px;
+  border: 1px solid var(--exp-border);
+  white-space: nowrap;
+  font-weight: 600;
+}
+.replay-export-root :deep(td) {
+  padding: 5px 10px;
+  border: 1px solid var(--exp-border);
+  color: var(--exp-text);
+}
+.replay-export-root :deep(.tablewrap) {
+  overflow: visible;
+  max-width: none;
+}
+.replay-export-root :deep(tbody tr.t1 td) {
+  background: var(--exp-t1-bg);
+}
+.replay-export-root :deep(tbody tr.t2 td) {
+  background: var(--exp-t2-bg);
+}
+.replay-export-root :deep(.badge) {
+  background: var(--exp-badge-bg);
+  color: var(--exp-badge-text);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+</style>
