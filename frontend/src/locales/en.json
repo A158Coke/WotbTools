@@ -41,8 +41,9 @@
         "select_cols": "Columns",
         "picker_locked": "Column picker is open — click Done to switch tables",
         "export_aggregate": "Merge & Export",
-        "export_each": "Export Each"
-    },
+        "export_each": "Export Each",
+        "download_png": "Download as PNG"
+      },
     "result": {
         "aggregate_tab": "Aggregate ({count} players)",
         "scroll_hint": "← Scroll horizontally for more data →",

@@ -41,7 +41,8 @@
         "select_cols": "Колонки",
         "picker_locked": "Выбор колонок открыт — нажмите Готово для переключения таблиц",
         "export_aggregate": "Сводный экспорт",
-        "export_each": "Экспорт каждого боя"
+        "export_each": "Экспорт каждого боя",
+        "download_png": "Скачать как PNG"
     },
     "result": {
         "aggregate_tab": "Сводка ({count} игроков)",
