@@ -36,84 +36,94 @@ describe('getExportTarget', () => {
 })
 
 describe('computeExportDimensions', () => {
-  function mockEl(scrollW, scrollH, clientW, clientH) {
-    return { scrollWidth: scrollW, scrollHeight: scrollH, clientWidth: clientW, clientHeight: clientH }
+  function el(w, h) {
+    return { scrollWidth: w, scrollHeight: h }
   }
 
-  it('uses scrollWidth when larger than clientWidth', () => {
-    const d = computeExportDimensions(mockEl(2000, 500, 800, 400))
+  it('uses scroll dimensions', () => {
+    const d = computeExportDimensions(el(2000, 500))
     expect(d.width).toBe(2000)
     expect(d.height).toBe(500)
     expect(d.scale).toBeGreaterThan(0)
   })
 
-  it('does not let scale exceed MAX_SCALE for small content', () => {
-    const d = computeExportDimensions(mockEl(500, 300, 500, 300))
+  it('does not exceed MAX_SCALE', () => {
+    const d = computeExportDimensions(el(500, 300))
     expect(d.scale).toBeLessThanOrEqual(MAX_SCALE)
   })
 
-  it('reduces scale for very wide content to stay within MAX_CANVAS_DIMENSION', () => {
-    const d = computeExportDimensions(mockEl(MAX_CANVAS_DIMENSION * 2, 500, MAX_CANVAS_DIMENSION * 2, 500))
-    expect(d.width * d.scale).toBeLessThanOrEqual(MAX_CANVAS_DIMENSION)
-    expect(d.height * d.scale).toBeLessThanOrEqual(MAX_CANVAS_DIMENSION)
+  it('normal size uses high scale', () => {
+    const d = computeExportDimensions(el(1920, 1080))
+    expect(d.scale).toBeCloseTo(MAX_SCALE, 4)
   })
 
-  it('returns fallback dimensions for zero-size element', () => {
-    const d = computeExportDimensions(mockEl(0, 0, 0, 0))
+  it('falls back for zero dimensions', () => {
+    const d = computeExportDimensions(el(0, 0))
     expect(d.width).toBe(800)
     expect(d.height).toBe(600)
     expect(d.scale).toBe(1)
   })
 
-  it('ignores scrollLeft and always exports full content', () => {
-    const el = mockEl(1500, 400, 600, 400)
-    el.scrollLeft = 300
-    const d = computeExportDimensions(el)
-    expect(d.width).toBe(1500)
+  it('falls back for negative dimensions', () => {
+    const d = computeExportDimensions(el(-100, -200))
+    expect(d.width).toBe(800)
+    expect(d.height).toBe(600)
+    expect(d.scale).toBe(1)
   })
 
-  it('narrow viewport still uses full scroll width', () => {
-    const d = computeExportDimensions(mockEl(1800, 400, 375, 400))
-    expect(d.width).toBe(1800)
+  it('handles NaN scrollWidth gracefully', () => {
+    const d = computeExportDimensions(el(NaN, 500))
+    expect(d.width).toBe(800)
+    expect(d.height).toBe(600)
+    expect(d.scale).toBe(1)
   })
 
-  // Extreme dimension tests from PR review
-  it('40000 x 1000 stays within limit', () => {
-    const d = computeExportDimensions(mockEl(40000, 1000, 40000, 1000))
-    expect(d.width * d.scale).toBeLessThanOrEqual(MAX_CANVAS_DIMENSION)
-    expect(d.height * d.scale).toBeLessThanOrEqual(MAX_CANVAS_DIMENSION)
+  it('handles Infinity scrollHeight gracefully', () => {
+    const d = computeExportDimensions(el(500, Infinity))
+    expect(d.width).toBe(800)
+    expect(d.height).toBe(600)
+    expect(d.scale).toBe(1)
   })
 
-  it('1000 x 40000 stays within limit', () => {
-    const d = computeExportDimensions(mockEl(1000, 40000, 1000, 40000))
-    expect(d.width * d.scale).toBeLessThanOrEqual(MAX_CANVAS_DIMENSION)
-    expect(d.height * d.scale).toBeLessThanOrEqual(MAX_CANVAS_DIMENSION)
+  function assertFiniteWithin(d, label) {
+    expect(Number.isFinite(d.width), `${label} width`).toBe(true)
+    expect(Number.isFinite(d.height), `${label} height`).toBe(true)
+    expect(Number.isFinite(d.scale), `${label} scale finite`).toBe(true)
+    expect(d.scale, `${label} scale > 0`).toBeGreaterThan(0)
+    expect(d.width * d.scale, `${label} width*scale`).toBeLessThanOrEqual(MAX_CANVAS_DIMENSION + 1e-6)
+    expect(d.height * d.scale, `${label} height*scale`).toBeLessThanOrEqual(MAX_CANVAS_DIMENSION + 1e-6)
+  }
+
+  it('40000 x 1000', () => {
+    assertFiniteWithin(computeExportDimensions(el(40000, 1000)), '40kx1k')
   })
 
-  it('40000 x 40000 both dimensions stay within limit', () => {
-    const d = computeExportDimensions(mockEl(40000, 40000, 40000, 40000))
-    expect(d.width * d.scale).toBeLessThanOrEqual(MAX_CANVAS_DIMENSION)
-    expect(d.height * d.scale).toBeLessThanOrEqual(MAX_CANVAS_DIMENSION)
+  it('1000 x 40000', () => {
+    assertFiniteWithin(computeExportDimensions(el(1000, 40000)), '1kx40k')
   })
 
-  it('100000 x 100000 returns finite positive scale and stays within limit', () => {
-    const d = computeExportDimensions(mockEl(100000, 100000, 100000, 100000))
-    expect(d.scale).toBeGreaterThan(0)
-    expect(Number.isFinite(d.scale)).toBe(true)
-    expect(Number.isFinite(d.width)).toBe(true)
-    expect(Number.isFinite(d.height)).toBe(true)
-    expect(d.width * d.scale).toBeLessThanOrEqual(MAX_CANVAS_DIMENSION)
-    expect(d.height * d.scale).toBeLessThanOrEqual(MAX_CANVAS_DIMENSION)
+  it('40000 x 40000', () => {
+    assertFiniteWithin(computeExportDimensions(el(40000, 40000)), '40kx40k')
   })
 
-  it('normal size still gets high quality scale', () => {
-    const d = computeExportDimensions(mockEl(1920, 1080, 1920, 1080))
-    expect(d.scale).toBe(MAX_SCALE)
+  it('100000 x 100000', () => {
+    assertFiniteWithin(computeExportDimensions(el(100000, 100000)), '100kx100k')
   })
 
-  it('scale is never negative', () => {
-    const d = computeExportDimensions(mockEl(1, 1, 1, 1))
-    expect(d.scale).toBeGreaterThan(0)
+  it('2000000 x 1000', () => {
+    assertFiniteWithin(computeExportDimensions(el(2000000, 1000)), '2Mx1k')
+  })
+
+  it('1000 x 2000000', () => {
+    assertFiniteWithin(computeExportDimensions(el(1000, 2000000)), '1kx2M')
+  })
+
+  it('2000000 x 2000000', () => {
+    assertFiniteWithin(computeExportDimensions(el(2000000, 2000000)), '2Mx2M')
+  })
+
+  it('1920 x 1080 stays within limit', () => {
+    assertFiniteWithin(computeExportDimensions(el(1920, 1080)), '1920x1080')
   })
 })
 

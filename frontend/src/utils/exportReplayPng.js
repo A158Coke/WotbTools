@@ -1,17 +1,14 @@
-/**
- * Replay result PNG export utilities.
- * Pure functions for DOM target selection, dimension calculation,
- * safe scaling, filename generation, and blob download.
- */
-
 /** Chrome/Firefox/Safari safe upper limit for canvas width/height. */
 export const MAX_CANVAS_DIMENSION = 16384
 
 /** Maximum scale applied to content. */
 export const MAX_SCALE = 2
 
-/** Minimum scale for readable output. */
-export const MIN_SCALE = 0.5
+/**
+ * Safety epsilon to absorb floating-point rounding when computing scale.
+ * Guarantees width * scale <= MAX_CANVAS_DIMENSION after multiplication.
+ */
+const EPSILON = 1e-9
 
 /**
  * Return the DOM element to capture for the current active tab.
@@ -29,40 +26,33 @@ export function getExportTarget(activeTab, aggregateRef, battleRefs) {
 
 /**
  * Compute safe canvas dimensions and scale for the given element.
- * Always uses full scroll dimensions (not just visible area).
  * Guarantees width * scale <= MAX_CANVAS_DIMENSION and height * scale <= MAX_CANVAS_DIMENSION.
+ * Scale is computed as the minimum of MAX_SCALE, MAX_DIM / width, MAX_DIM / height,
+ * reduced by an epsilon to absorb floating-point rounding.
  * @param {HTMLElement} el
  * @returns {{ width: number, height: number, scale: number }}
  */
 export function computeExportDimensions(el) {
-  const contentW = el.scrollWidth || el.clientWidth || 0
-  const contentH = el.scrollHeight || el.clientHeight || 0
+  const rawW = el.scrollWidth
+  const rawH = el.scrollHeight
 
-  // Fallback for zero dimensions
+  // Reject non-finite, zero, or negative dimensions
+  const contentW = Number.isFinite(rawW) && rawW > 0 ? rawW : 0
+  const contentH = Number.isFinite(rawH) && rawH > 0 ? rawH : 0
+
   if (contentW <= 0 || contentH <= 0) {
     return { width: 800, height: 600, scale: 1 }
   }
 
-  // Calculate the strict upper bound scale so both dimensions fit MAX_CANVAS_DIMENSION.
   const maxDim = MAX_CANVAS_DIMENSION
-  const scaleByW = Math.floor((maxDim / contentW) * 100) / 100
-  const scaleByH = Math.floor((maxDim / contentH) * 100) / 100
-  let scale = Math.min(scaleByW, scaleByH, MAX_SCALE)
-
-  // Clamp to MIN_SCALE only if it doesn't violate the max dimension constraint.
-  if (scale < MIN_SCALE && contentW * MIN_SCALE <= maxDim && contentH * MIN_SCALE <= maxDim) {
-    scale = MIN_SCALE
-  }
-
-  // Final sanity: ensure no rounding edge-case exceeds the limit
-  while (contentW * scale > maxDim || contentH * scale > maxDim) {
-    scale = Math.floor((scale * 100 - 1)) / 100
-  }
+  const sx = maxDim / contentW
+  const sy = maxDim / contentH
+  const scale = Math.min(MAX_SCALE, sx, sy) - EPSILON
 
   return {
     width: contentW,
     height: contentH,
-    scale: Math.round(Math.max(0.01, scale) * 100) / 100
+    scale: Math.max(scale, 0)
   }
 }
 
@@ -122,7 +112,6 @@ export function downloadBlob(blob, filename) {
     document.body.appendChild(a)
     a.click()
 
-    // Cleanup after allowing the browser to start the download
     setTimeout(() => {
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
