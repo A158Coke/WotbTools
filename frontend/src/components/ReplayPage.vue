@@ -11,7 +11,7 @@ import BattleTable from './BattleTable.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import RatingModal from './RatingModal.vue'
 
-const { locale } = useI18n()
+const { locale, t } = useI18n()
 const replay = useReplay()
 const { files, loading, error, resp, activeTab, aggStats, pendingRemove,
   askRemoveBattle, askRemoveFile, cancelRemove, confirmRemove } = replay
@@ -21,6 +21,25 @@ const { visibleKeys, aggVisibleKeys, showColPicker, pickerScope,
   toggleColPicker, toggleCol, selectAllCols, resetCols, handleReorder } = cols
 
 const showRating = ref(false)
+const resultsRef = ref(null)
+
+async function downloadResultPng() {
+  if (!resultsRef.value) return
+  try {
+    const html2canvas = (await import('html2canvas')).default
+    const canvas = await html2canvas(resultsRef.value, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff'
+    })
+    const link = document.createElement('a')
+    link.download = `replay-result-${Date.now()}.png`
+    link.href = canvas.toDataURL('image/png')
+    link.click()
+  } catch (e) {
+    error.value = t('replay.export_failed')
+  }
+}
 
 async function preview() { await replay.doPreview(cols.initFromResponse) }
 async function exportXlsx(mode) { await replay.doExport(mode) }
@@ -35,7 +54,8 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
     <p v-if="error" class="error">{{ error }}</p>
 
     <template v-if="resp">
-      <div v-if="resp.duplicates.length" class="warn">
+      <div ref="resultsRef">
+        <div v-if="resp.duplicates.length" class="warn">
         {{ $t('result.duplicates', { count: resp.duplicates.length }) }}
         <span v-for="(d, i) in resp.duplicates" :key="i">{{ d[0] }}</span>
       </div>
@@ -75,15 +95,18 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
           <button class="ghost sm" :disabled="loading" @click="exportXlsx('each')">
             <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_each') }}
           </button>
+          <button class="ghost sm" :disabled="loading" @click="downloadResultPng">
+            <svg class="ic" viewBox="0 0 24 24" width="16" height="16"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12"/></svg>{{ $t('action.download_png') }}
+          </button>
         </div>
       </div>
-
       <div v-show="activeTab === 'aggregate' && resp.aggregate.length">
         <AggregateTable :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
       </div>
 
       <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i">
         <BattleTable :battle="b" :shown-cols="shownCols" />
+      </div>
       </div>
     </template>
 
