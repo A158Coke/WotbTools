@@ -9,7 +9,12 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * BatchAnalyzer 测试：视角分组、代表选择、模式判定。
@@ -62,6 +67,51 @@ class BatchAnalyzerTest {
                 fileName, ReplayProcessingStatus.FAILED, null, null, null,
                 null, ReplayProcessingCapabilities.NONE,
                 ReplayProcessingError.of("FAILED", "Test failure"), null);
+    }
+
+    private static ReplayProcessingResult makeTeamResult(
+            final String fileName,
+            final String arenaId,
+            final int arenaBonusType,
+            final long recorderAccountId,
+            final int team,
+            final boolean reconstructionAvailable
+    ) {
+        final Battle battle = new Battle();
+        battle.arenaId = arenaId;
+        battle.mapName = "team_map";
+        battle.arenaBonusType = arenaBonusType;
+        final PlayerResult recorder = new PlayerResult();
+        recorder.accountId = recorderAccountId;
+        recorder.nickname = "Player" + recorderAccountId;
+        recorder.team = team;
+        battle.players = List.of(recorder);
+        battle.recorder = recorder.nickname;
+
+        final ReplayReconstruction reconstruction = reconstructionAvailable
+                ? new ReplayReconstruction(null, null, 300f, null,
+                List.of(new BattleParticipant(
+                        recorderAccountId, recorder.nickname, team, 0, "", true)),
+                List.of(), List.of(), null, null, null)
+                : null;
+        final ReplayProcessingCapabilities capabilities = new ReplayProcessingCapabilities(
+                true, true, reconstructionAvailable,
+                reconstructionAvailable, false, true,
+                false, reconstructionAvailable);
+        final ReplayProcessingStatus status = reconstructionAvailable
+                ? ReplayProcessingStatus.SUCCESS
+                : ReplayProcessingStatus.PARTIAL_SUCCESS;
+        return new ReplayProcessingResult(
+                fileName,
+                status,
+                new ReplayIdentity(
+                        "hash-" + fileName, arenaId, null, "team_map", recorderAccountId, null),
+                battle,
+                reconstruction,
+                null,
+                capabilities,
+                null,
+                null);
     }
 
     // ======== 测试用例 ========
@@ -412,5 +462,113 @@ class BatchAnalyzerTest {
         var plan = new BatchAnalyzer().analyzePartition(partition);
         assertSame(partition.duplicates(), plan.exactDuplicates());
         assertEquals(partition.count(), plan.exactDuplicateCount());
+    }
+
+    // ======== Team perspective modes ========
+
+    @Test
+    void trainingBattleUsesSingleTeamMode() {
+        final var result = makeTeamResult(
+                "training.wotbreplay", "training-arena", 2, 1001L, 1, true);
+
+        final var plan = analyzer.analyze(List.of(result));
+
+        assertEquals(ReplayAnalysisScope.TEAM_PERSPECTIVE, plan.dominantScope());
+        assertEquals(ReplayAnalysisMode.SINGLE_TEAM_BATTLE, plan.mode());
+        assertEquals(1, plan.analyzableUnitCount());
+        assertEquals(1, plan.groups().getFirst().key().perspectiveTeam());
+    }
+
+    @Test
+    void tournamentBattleUsesSingleTeamMode() {
+        final var result = makeTeamResult(
+                "tournament.wotbreplay", "tournament-arena", 3, 1001L, 1, true);
+
+        final var plan = analyzer.analyze(List.of(result));
+
+        assertEquals(ReplayAnalysisScope.TEAM_PERSPECTIVE, plan.dominantScope());
+        assertEquals(ReplayAnalysisMode.SINGLE_TEAM_BATTLE, plan.mode());
+    }
+
+    @Test
+    void randomAndTrainingBattlesCannotShareAnAnalysisBatch() {
+        final var random = makeTeamResult(
+                "random.wotbreplay", "random-arena", 1, 1001L, 1, true);
+        final var training = makeTeamResult(
+                "training.wotbreplay", "training-arena", 2, 1002L, 1, true);
+
+        assertThrows(MixedAnalysisScopesException.class,
+                () -> analyzer.analyze(List.of(random, training)));
+    }
+
+    @Test
+    void sameBattleSameTeamPerspectivesAreDeduplicated() {
+        final var first = makeTeamResult(
+                "team-a.wotbreplay", "shared-arena", 2, 1001L, 1, true);
+        final var second = makeTeamResult(
+                "team-b.wotbreplay", "shared-arena", 2, 1002L, 1, true);
+
+        final var plan = analyzer.analyze(List.of(first, second));
+
+        assertEquals(1, plan.groups().size());
+        assertEquals(1, plan.sameTeamDuplicatePerspectiveCount());
+        assertEquals(ReplayAnalysisMode.SINGLE_TEAM_BATTLE, plan.mode());
+    }
+
+    @Test
+    void opposingTeamsRemainIndependentPerspectives() {
+        final var allied = makeTeamResult(
+                "allied.wotbreplay", "shared-arena", 2, 1001L, 1, true);
+        final var enemy = makeTeamResult(
+                "enemy.wotbreplay", "shared-arena", 2, 2001L, 2, true);
+
+        final var plan = analyzer.analyze(List.of(allied, enemy));
+
+        assertEquals(2, plan.groups().size());
+        assertEquals(List.of(1, 2), plan.groups().stream()
+                .map(group -> group.key().perspectiveTeam())
+                .sorted()
+                .toList());
+        assertEquals(ReplayAnalysisMode.MULTI_TEAM_BATTLE, plan.mode());
+    }
+
+    @Test
+    void teamSummaryFallbackIsAnalyzableWithoutReconstruction() {
+        final var result = makeTeamResult(
+                "fallback.wotbreplay", "fallback-arena", 2, 1001L, 1, false);
+
+        final var plan = analyzer.analyze(List.of(result));
+
+        assertEquals(ReplayAnalysisMode.SINGLE_TEAM_BATTLE, plan.mode());
+        assertEquals(1, plan.analyzableUnitCount());
+    }
+
+    @Test
+    void unresolvedTeamDoesNotBecomeTeamOne() {
+        final Battle battle = new Battle();
+        battle.arenaId = "observer-arena";
+        battle.mapName = "team_map";
+        battle.arenaBonusType = 2;
+        battle.recorder = "Observer";
+        battle.players = List.of();
+        final var capabilities = new ReplayProcessingCapabilities(
+                true, false, false, false, false, false, false, false);
+        final var result = new ReplayProcessingResult(
+                "observer.wotbreplay",
+                ReplayProcessingStatus.PARTIAL_SUCCESS,
+                new ReplayIdentity(
+                        "observer-hash", "observer-arena", null, "team_map", null, null),
+                battle,
+                null,
+                null,
+                capabilities,
+                null,
+                null);
+
+        final var plan = analyzer.analyze(List.of(result));
+
+        assertEquals(0, plan.groups().getFirst().key().perspectiveTeam());
+        assertEquals(0, plan.analyzableUnitCount());
+        assertEquals(ReplayAnalysisMode.NONE, plan.mode());
     }
 }

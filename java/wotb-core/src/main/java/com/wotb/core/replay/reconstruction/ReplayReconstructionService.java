@@ -14,6 +14,7 @@ import com.wotb.core.replay.stream.PacketTypeDiagnostics;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import com.wotb.core.replay.stream.ReplayPacketStreamReader;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
+import org.springframework.util.StringUtils;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -206,7 +207,7 @@ public class ReplayReconstructionService {
 
     private static Long parseLong(String s) {
         try {
-            if (s == null || s.isBlank()) return null;
+            if (!StringUtils.hasText(s)) return null;
             return Long.parseLong(s.trim());
         } catch (NumberFormatException e) {
             return null;
@@ -281,7 +282,7 @@ public class ReplayReconstructionService {
         // 从事件流中提取 entity→account 映射
         final Map<Long, Integer> entityByAccount = new HashMap<>();
         for (final ReplayEvent event : events) {
-            if (event instanceof ParticipantMappingEvent pm) {
+            if (event instanceof ParticipantMappingEvent pm && pm.accountId() > 0) {
                 entityByAccount.put(pm.accountId(), pm.entityId());
             }
         }

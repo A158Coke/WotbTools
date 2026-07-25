@@ -233,7 +233,9 @@ public class BattleStateReconstructor {
     }
 
     private void applyMapping(BattleState state, ParticipantMappingEvent e) {
-        state.registerMapping(e.entityId(), e.accountId());
+        if (e.accountId() > 0) {
+            state.registerMapping(e.entityId(), e.accountId());
+        }
     }
 
     /**

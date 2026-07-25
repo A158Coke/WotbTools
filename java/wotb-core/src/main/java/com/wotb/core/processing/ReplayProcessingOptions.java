@@ -7,7 +7,7 @@ package com.wotb.core.processing;
 public record ReplayProcessingOptions(
         boolean parseSummary,
         boolean reconstructTimeline,
-        boolean extractFeatures   // TODO: enable when BattleFeatureExtractor is implemented
+        boolean extractFeatures
 ) {
 
     /** 仅解析战后数据（当前普通 preview 模式）。 */
@@ -22,7 +22,7 @@ public record ReplayProcessingOptions(
 
     /**
      * 战后数据 + 完整重建 + 特征提取（AI 深度分析模式）。
-     * TODO: call this from AiReplayAnalysisService when BattleFeatureExtractor is ready
+     * 当前 AI 服务在构建各自上下文时提取特征；该选项保留给处理门面的统一流水线。
      */
     public static ReplayProcessingOptions fullWithFeatures() {
         return new ReplayProcessingOptions(true, true, true);

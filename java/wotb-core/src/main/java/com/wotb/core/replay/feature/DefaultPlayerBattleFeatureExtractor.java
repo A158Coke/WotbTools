@@ -104,7 +104,7 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
                     MovementType.STATIONARY,
                     new Vector3(positions.get(0).x(), positions.get(0).y(), positions.get(0).z()),
                     new Vector3(positions.get(0).x(), positions.get(0).y(), positions.get(0).z()),
-                    0f, 0f, com.wotb.core.replay.event.DecodeConfidence.EXACT));
+                    0f, 0f, positionConfidence(positions.subList(0, 1))));
         }
 
         final List<MovementSegment> result = new ArrayList<>();
@@ -135,10 +135,31 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
                     new Vector3(positions.get(start).x(), positions.get(start).y(), positions.get(start).z()),
                     new Vector3(positions.get(i).x(), positions.get(i).y(), positions.get(i).z()),
                     totalDist, segmentTime > 0 ? totalDist / segmentTime : 0f,
-                    com.wotb.core.replay.event.DecodeConfidence.EXACT));
+                    positionConfidence(positions.subList(start, i + 1))));
             start = i;
         }
         return result;
+    }
+
+    private static DecodeConfidence positionConfidence(
+            final List<PositionChangedEvent> positions
+    ) {
+        return positions.stream()
+                .map(PositionChangedEvent::confidence)
+                .map(confidence -> confidence == null
+                        ? DecodeConfidence.UNKNOWN : confidence)
+                .min(Comparator.comparingInt(
+                        DefaultPlayerBattleFeatureExtractor::confidenceRank))
+                .orElse(DecodeConfidence.UNKNOWN);
+    }
+
+    private static int confidenceRank(final DecodeConfidence confidence) {
+        return switch (confidence) {
+            case UNKNOWN -> 0;
+            case PARTIAL -> 1;
+            case INFERRED -> 2;
+            case EXACT -> 3;
+        };
     }
 
     static List<EngagementSummary> buildEngagements(final List<DamageEvent> damages, final int recorderEid) {

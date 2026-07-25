@@ -144,8 +144,13 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 - `POST /api/replay/state-at?time=<秒>` — 查询回放任意时刻战场状态。
 - `POST /api/replay/reconstruct-batch` — 批量重建（最多 10 个文件），返回 `ReplayBatchProcessingResult`（含 `suggestedAnalysisMode`、逐文件 `ReplayProcessingResult`）。
 - `POST /api/replay/process?reconstruct=false` — 通用批量处理，可选开启重建。
+- `POST /api/replay/analyze` — 上传 `files[]` 生成 AI 战术复盘；支持 `SINGLE/MULTI_PLAYER_BATTLE` 与 `SINGLE/MULTI_TEAM_BATTLE`。
 
-**策略**：逐文件错误隔离、SHA-256 去重、根据可分析文件数自动判定 NONE/SINGLE_BATTLE/MULTI_BATTLE。
+**策略**：上传文件先统一校验扩展名、空文件和单文件大小；通过预校验后，解析/重建错误才按文件隔离。系统执行 SHA-256 精确去重，并按 battle + perspective 分组。随机战斗分析录像者个人；训练房/联赛分析录像者所在整队，录像者只用于解析 `perspectiveTeam`。同场同队回放只选一个代表，同场双方保持独立；未点亮敌人仍未知，不能跨录像补全视野。
+
+团队总伤害、承伤、助攻、格挡、击杀、存活和死亡时刻来自 `battle_results.dat` 权威结算；事件流伤害只作为观测子集。重建可用时补充每名队员独立移动、阵型、交火和关键事件；重建不可用时仍可生成明确标注的权威结算 fallback。AI 输入不包含原始事件流，最多 15 名成员、每人 6 个移动段、20 个阵型阶段、20 个交火段、30 个关键事件、10 个 perspective 和 30,000 字符，截断时返回 `AI_INPUT_TRUNCATED` limitation。
+
+AI 上游与数据错误只向 API 返回稳定英文码，前端以 zh/en/ru 本地化。`/api/replay/**` 仅允许 `wotbtools-admin`；未配置 `AI_API_KEY` 时 `/analyze` 返回 `AI_NOT_CONFIGURED`，应用其余功能不受影响。
 
 ### 排行榜
 
