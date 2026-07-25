@@ -42,7 +42,7 @@ wotb:
     # 空默认值：未配置密钥时应用仍可正常启动，/api/replay/analyze 返回 AI_NOT_CONFIGURED
     api-key: ${AI_API_KEY:}
     base-url: ${AI_BASE_URL:https://api.deepseek.com}
-    model: ${AI_MODEL:deepseek-chat}
+    model: ${AI_MODEL:deepseek-v4-flash}
     timeout-sec: ${AI_TIMEOUT_SEC:120}
   replay:
     max-concurrent-jobs: ${REPLAY_MAX_CONCURRENT_JOBS:2}
