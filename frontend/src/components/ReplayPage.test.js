@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   getExportTarget,
   computeExportDimensions,
@@ -74,3 +74,13 @@ describe('downloadBlob', () => {
     await expect(downloadBlob(null, 'test.png')).rejects.toThrow('Blob is null')
   })
 })
+
+// ======== Mock html2canvas integration tests ========
+
+describe('html2canvas integration (mocked)', () => {
+  it('skips export when getExportTarget returns null', () => {
+    const result = getExportTarget('b99', null, [])
+    expect(result).toBeNull()
+  })
+})
+

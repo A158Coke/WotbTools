@@ -31,6 +31,16 @@ const exportingPng = ref(false)
 const aggregateRef = ref(null)
 const battleRefs = ref([])
 
+// Detect current theme for export: relies on data-theme attr set by useTheme
+function getExportThemeClass() {
+  const theme = document.documentElement.getAttribute('data-theme')
+  return theme === 'dark' ? 'replay-export-dark' : 'replay-export-light'
+}
+
+function getExportBgColor() {
+  return getExportThemeClass() === 'replay-export-dark' ? '#1e1e1e' : '#ffffff'
+}
+
 function setBattleRef(el, index) {
   if (el) battleRefs.value[index] = el
 }
@@ -74,7 +84,7 @@ async function downloadResultPng() {
     const canvas = await html2canvas(target, {
       scale: dims.scale,
       useCORS: true,
-      backgroundColor: '#ffffff',
+      backgroundColor: getExportBgColor(),
       width: dims.width,
       height: dims.height,
       onclone: prepareClone
@@ -157,13 +167,15 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
       </div>
 
       <!-- Aggregate result: isolated ref, v-show hides when inactive -->
-      <div v-show="activeTab === 'aggregate' && resp.aggregate.length" ref="aggregateRef" class="replay-export-root replay-export-light">
+      <div v-show="activeTab === 'aggregate' && resp.aggregate.length" ref="aggregateRef"
+           :class="['replay-export-root', getExportThemeClass()]">
         <AggregateTable :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
       </div>
 
       <!-- Single battle: isolated ref for each battle -->
       <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i"
-           :ref="(el) => setBattleRef(el, i)" class="replay-export-root replay-export-light">
+           :ref="(el) => setBattleRef(el, i)"
+           :class="['replay-export-root', getExportThemeClass()]">
         <BattleTable :battle="b" :shown-cols="shownCols" />
       </div>
     </template>
@@ -194,6 +206,24 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   --exp-error-text: #721c24;
   --exp-alive: #28a745;
   --exp-destroyed: #dc3545;
+}
+
+.replay-export-dark {
+  --exp-bg: #1e1e1e;
+  --exp-card-bg: #2d2d2d;
+  --exp-text: #e0e0e0;
+  --exp-text-sub: #999999;
+  --exp-border: #444444;
+  --exp-header-bg: #333333;
+  --exp-t1-bg: #1a3a5c;
+  --exp-t2-bg: #5c2a3a;
+  --exp-badge-bg: #5a4a10;
+  --exp-badge-text: #ffd700;
+  --exp-warn-bg: #5a4a10;
+  --exp-error-bg: #5a1a1a;
+  --exp-error-text: #ff8a80;
+  --exp-alive: #4caf50;
+  --exp-destroyed: #ef5350;
 }
 
 .replay-export-root {
