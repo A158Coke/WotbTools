@@ -4,12 +4,39 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import {
   getExportTarget,
   computeExportDimensions,
+  maxFiniteDimension,
   exportPngFilename,
   sanitizeFilename,
   downloadBlob,
   MAX_CANVAS_DIMENSION,
   MAX_SCALE
 } from './exportReplayPng.js'
+
+describe('maxFiniteDimension', () => {
+  it('returns largest positive finite number', () => {
+    expect(maxFiniteDimension(100, 200, 300)).toBe(300)
+  })
+
+  it('ignores NaN', () => {
+    expect(maxFiniteDimension(NaN, 100)).toBe(100)
+  })
+
+  it('ignores Infinity', () => {
+    expect(maxFiniteDimension(Infinity, 100)).toBe(100)
+  })
+
+  it('ignores negative numbers', () => {
+    expect(maxFiniteDimension(-10, 100)).toBe(100)
+  })
+
+  it('ignores zero', () => {
+    expect(maxFiniteDimension(0, 100, 200)).toBe(200)
+  })
+
+  it('returns 0 when all invalid', () => {
+    expect(maxFiniteDimension(NaN, Infinity, -1, 0)).toBe(0)
+  })
+})
 
 describe('getExportTarget', () => {
   it('returns aggregateRef for aggregate tab', () => {
@@ -38,56 +65,6 @@ describe('getExportTarget', () => {
 })
 
 describe('computeExportDimensions', () => {
-  function el(w, h) {
-    return { scrollWidth: w, scrollHeight: h }
-  }
-
-  it('uses scroll dimensions', () => {
-    const d = computeExportDimensions(el(2000, 500))
-    expect(d.width).toBe(2000)
-    expect(d.height).toBe(500)
-    expect(d.scale).toBeGreaterThan(0)
-  })
-
-  it('does not exceed MAX_SCALE', () => {
-    const d = computeExportDimensions(el(500, 300))
-    expect(d.scale).toBeLessThanOrEqual(MAX_SCALE)
-  })
-
-  it('normal size uses high scale', () => {
-    const d = computeExportDimensions(el(1920, 1080))
-    expect(d.scale).toBeGreaterThan(1.9)
-    expect(d.scale).toBeLessThanOrEqual(MAX_SCALE)
-  })
-
-  it('falls back for zero dimensions', () => {
-    const d = computeExportDimensions(el(0, 0))
-    expect(d.width).toBe(800)
-    expect(d.height).toBe(600)
-    expect(d.scale).toBe(1)
-  })
-
-  it('falls back for negative dimensions', () => {
-    const d = computeExportDimensions(el(-100, -200))
-    expect(d.width).toBe(800)
-    expect(d.height).toBe(600)
-    expect(d.scale).toBe(1)
-  })
-
-  it('handles NaN scrollWidth gracefully', () => {
-    const d = computeExportDimensions(el(NaN, 500))
-    expect(d.width).toBe(800)
-    expect(d.height).toBe(600)
-    expect(d.scale).toBe(1)
-  })
-
-  it('handles Infinity scrollHeight gracefully', () => {
-    const d = computeExportDimensions(el(500, Infinity))
-    expect(d.width).toBe(800)
-    expect(d.height).toBe(600)
-    expect(d.scale).toBe(1)
-  })
-
   function assertFiniteWithin(d, label) {
     expect(Number.isFinite(d.width), `${label} width`).toBe(true)
     expect(Number.isFinite(d.height), `${label} height`).toBe(true)
@@ -97,49 +74,117 @@ describe('computeExportDimensions', () => {
     expect(d.height * d.scale, `${label} height*scale`).toBeLessThanOrEqual(MAX_CANVAS_DIMENSION)
   }
 
+  it('1920 x 1080', () => {
+    const d = computeExportDimensions({ width: 1920, height: 1080 })
+    expect(d.width).toBe(1920)
+    expect(d.height).toBe(1080)
+    expect(d.scale).toBeGreaterThan(1.9)
+    assertFiniteWithin(d, '1920x1080')
+  })
+
+  it('2232 x 632', () => {
+    const d = computeExportDimensions({ width: 2232, height: 632 })
+    expect(d.width).toBe(2232)
+    expect(d.height).toBe(632)
+    expect(d.scale).toBeGreaterThan(0)
+    assertFiniteWithin(d, '2232x632')
+  })
+
   it('40000 x 1000', () => {
-    assertFiniteWithin(computeExportDimensions(el(40000, 1000)), '40kx1k')
+    const d = computeExportDimensions({ width: 40000, height: 1000 })
+    expect(d.width).toBe(40000)
+    expect(d.height).toBe(1000)
+    assertFiniteWithin(d, '40kx1k')
   })
 
   it('1000 x 40000', () => {
-    assertFiniteWithin(computeExportDimensions(el(1000, 40000)), '1kx40k')
+    const d = computeExportDimensions({ width: 1000, height: 40000 })
+    expect(d.width).toBe(1000)
+    expect(d.height).toBe(40000)
+    assertFiniteWithin(d, '1kx40k')
   })
 
   it('40000 x 40000', () => {
-    assertFiniteWithin(computeExportDimensions(el(40000, 40000)), '40kx40k')
-  })
-
-  it('100000 x 100000', () => {
-    assertFiniteWithin(computeExportDimensions(el(100000, 100000)), '100kx100k')
-  })
-
-  it('2000000 x 1000', () => {
-    assertFiniteWithin(computeExportDimensions(el(2000000, 1000)), '2Mx1k')
-  })
-
-  it('1000 x 2000000', () => {
-    assertFiniteWithin(computeExportDimensions(el(1000, 2000000)), '1kx2M')
+    const d = computeExportDimensions({ width: 40000, height: 40000 })
+    assertFiniteWithin(d, '40kx40k')
   })
 
   it('2000000 x 2000000', () => {
-    assertFiniteWithin(computeExportDimensions(el(2000000, 2000000)), '2Mx2M')
+    const d = computeExportDimensions({ width: 2000000, height: 2000000 })
+    assertFiniteWithin(d, '2Mx2M')
   })
 
-  it('1920 x 1080 stays within limit', () => {
-    assertFiniteWithin(computeExportDimensions(el(1920, 1080)), '1920x1080')
-  })
-
-  // Ultra-large finite dimensions must never produce scale=0
-  it('very large finite dimension keeps scale > 0', () => {
-    const d = computeExportDimensions(el(1e12, 1e12))
-    expect(d.scale).toBeGreaterThan(0)
-    assertFiniteWithin(d, '1e12')
-  })
-
-  it('extremely large finite dimension keeps scale > 0', () => {
-    const d = computeExportDimensions(el(1e15, 1e15))
+  it('1e15 x 1e15', () => {
+    const d = computeExportDimensions({ width: 1e15, height: 1e15 })
     expect(d.scale).toBeGreaterThan(0)
     assertFiniteWithin(d, '1e15')
+  })
+
+  it('preserves width/height for valid input', () => {
+    const d = computeExportDimensions({ width: 500, height: 300 })
+    expect(d.width).toBe(500)
+    expect(d.height).toBe(300)
+  })
+
+  it('does not exceed MAX_SCALE', () => {
+    const d = computeExportDimensions({ width: 500, height: 300 })
+    expect(d.scale).toBeLessThanOrEqual(MAX_SCALE)
+  })
+
+  it('returns fallback for width = 0', () => {
+    const d = computeExportDimensions({ width: 0, height: 500 })
+    expect(d.width).toBe(800)
+    expect(d.height).toBe(600)
+    expect(d.scale).toBe(1)
+  })
+
+  it('returns fallback for height = 0', () => {
+    const d = computeExportDimensions({ width: 500, height: 0 })
+    expect(d.width).toBe(800)
+    expect(d.height).toBe(600)
+    expect(d.scale).toBe(1)
+  })
+
+  it('returns fallback for NaN width', () => {
+    const d = computeExportDimensions({ width: NaN, height: 500 })
+    expect(d.width).toBe(800)
+    expect(d.height).toBe(600)
+    expect(d.scale).toBe(1)
+  })
+
+  it('returns fallback for Infinity height', () => {
+    const d = computeExportDimensions({ width: 500, height: Infinity })
+    expect(d.width).toBe(800)
+    expect(d.height).toBe(600)
+    expect(d.scale).toBe(1)
+  })
+
+  it('returns fallback for negative width', () => {
+    const d = computeExportDimensions({ width: -100, height: 500 })
+    expect(d.width).toBe(800)
+    expect(d.height).toBe(600)
+    expect(d.scale).toBe(1)
+  })
+
+  it('returns fallback for missing width', () => {
+    const d = computeExportDimensions({ height: 500 })
+    expect(d.width).toBe(800)
+    expect(d.height).toBe(600)
+    expect(d.scale).toBe(1)
+  })
+
+  it('returns fallback for missing height', () => {
+    const d = computeExportDimensions({ width: 500 })
+    expect(d.width).toBe(800)
+    expect(d.height).toBe(600)
+    expect(d.scale).toBe(1)
+  })
+
+  it('returns fallback for null input', () => {
+    const d = computeExportDimensions(null)
+    expect(d.width).toBe(800)
+    expect(d.height).toBe(600)
+    expect(d.scale).toBe(1)
   })
 })
 
@@ -230,14 +275,18 @@ describe('downloadBlob', () => {
     await new Promise(r => setTimeout(r, 200))
 
     expect(appendChild).toHaveBeenCalled()
-    expect(removeChild).toHaveBeenCalled()
+    const anchor = appendChild.mock.calls[0][0]
+    expect(anchor).toBeTruthy()
+    expect(anchor.nodeName).toBe('A')
+    expect(removeChild).toHaveBeenCalledWith(anchor)
+    expect(anchor.parentNode).toBeNull()
+    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1)
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test')
   })
 
   it('rejects and cleans up when a.click() throws', async () => {
-    // Create an anchor whose click() throws
     const origCreate = document.createElement.bind(document)
-    const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag) => {
+    vi.spyOn(document, 'createElement').mockImplementation((tag) => {
       const el = origCreate(tag)
       if (tag === 'a') {
         el.click = () => { throw new Error('click failed') }
@@ -249,7 +298,9 @@ describe('downloadBlob', () => {
 
     await expect(downloadBlob(new Blob(['test']), 'out.png')).rejects.toThrow('click failed')
 
+    const anchor = appendChild.mock.calls[0][0]
+    expect(anchor.parentNode).toBeNull()
+    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1)
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test')
-    createSpy.mockRestore()
   })
 })

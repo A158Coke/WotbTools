@@ -173,8 +173,8 @@ describe('ReplayPage PNG export', () => {
       toBlob: vi.fn(cb => cb(new Blob(['png'], { type: 'image/png' })))
     }
     h2cDefaultImpl = () => Promise.resolve(mockCanvas)
-      h2c.resetCalls()
-      h2c.setImpl(h2cDefaultImpl)
+    h2c.resetCalls()
+    h2c.setImpl(h2cDefaultImpl)
     origCreateObjectURL = URL.createObjectURL
     origRevokeObjectURL = URL.revokeObjectURL
     URL.createObjectURL = vi.fn(() => 'blob:test')
@@ -187,6 +187,7 @@ describe('ReplayPage PNG export', () => {
     URL.createObjectURL = origCreateObjectURL
     URL.revokeObjectURL = origRevokeObjectURL
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
     if (wrapper) wrapper.unmount()
     wrapper = null
     setResp(null)
@@ -245,8 +246,7 @@ describe('ReplayPage PNG export', () => {
       document.documentElement.removeAttribute('data-theme')
       await pngButton(wrapper).trigger('click')
       await flushPromises()
-      const calls = h2c.getCalls()
-      expect(calls[0][1].backgroundColor).toBe('#ffffff')
+      expect(h2c.getCalls()[0][1].backgroundColor).toBe('#ffffff')
     })
 
     it('uses dark theme when data-theme=dark', async () => {
@@ -255,8 +255,7 @@ describe('ReplayPage PNG export', () => {
       wrapper = mountPage()
       await pngButton(wrapper).trigger('click')
       await flushPromises()
-      const calls = h2c.getCalls()
-      expect(calls[0][1].backgroundColor).toBe('#1e1e1e')
+      expect(h2c.getCalls()[0][1].backgroundColor).toBe('#1e1e1e')
     })
 
     it('reads theme at click time on same component', async () => {
@@ -266,15 +265,13 @@ describe('ReplayPage PNG export', () => {
       document.documentElement.setAttribute('data-theme', 'dark')
       await pngButton(wrapper).trigger('click')
       await flushPromises()
-      const calls = h2c.getCalls()
-      expect(calls[0][1].backgroundColor).toBe('#1e1e1e')
+      expect(h2c.getCalls()[0][1].backgroundColor).toBe('#1e1e1e')
     })
   })
 
   describe('target isolation', () => {
     function getClone() {
-      const calls = h2c.getCalls()
-      return calls[0][0]
+      return h2c.getCalls()[0][0]
     }
 
     it('passes a clone not a real page node', async () => {
@@ -321,38 +318,98 @@ describe('ReplayPage PNG export', () => {
       expect(clone.textContent).not.toContain('Battles')
       expect(clone.textContent).not.toContain('Lagoon')
     })
+  })
 
-    it('setScrollProps on real target propagates to clone measurement', async () => {
+  describe('dimension measurement (regression guard)', () => {
+    function setCloneScrollProps() {
+      // Intercept appendChild to find the off-screen container's clone
+      const origAppendChild = document.body.appendChild.bind(document.body)
+      vi.spyOn(document.body, 'appendChild').mockImplementation((node) => {
+        const result = origAppendChild(node)
+        // Find the export clone inside the off-screen container
+        const clone = node.querySelector?.('.replay-export-root')
+        if (clone) {
+          setScrollProps(clone, 2232, 632)
+          for (const wrap of clone.querySelectorAll('.tablewrap')) {
+            setScrollProps(wrap, 2200, 500)
+          }
+          for (const tbl of clone.querySelectorAll('table')) {
+            setScrollProps(tbl, 2000, 400)
+          }
+        }
+        return result
+      })
+    }
+
+    it('aggregate export receives exact measured dimensions', async () => {
       setResp(makeResp())
+      setActiveTab('aggregate')
       wrapper = mountPage()
-      // Set scroll dimensions on the real page element that will be cloned
-      const realTarget = wrapper.vm.aggregateRef
-      if (realTarget) {
-        setScrollProps(realTarget, 2200, 600)
-        for (const tbl of realTarget.querySelectorAll('table')) {
-          setScrollProps(tbl, 2000, 400)
-        }
-        for (const wrap of realTarget.querySelectorAll('.tablewrap')) {
-          setScrollProps(wrap, 2100, 500)
-        }
-      }
+      setCloneScrollProps()
+
       await pngButton(wrapper).trigger('click')
       await flushPromises()
 
       const calls = h2c.getCalls()
       expect(calls.length).toBe(1)
       const opts = calls[0][1]
+      // Must NOT return 800x600 fallback for valid content
+      expect(opts.width).not.toBe(800)
+      expect(opts.height).not.toBe(600)
       expect(opts.width).toBeGreaterThan(0)
-      expect(opts.scale).toBeGreaterThan(0)
+      expect(opts.height).toBeGreaterThan(0)
       expect(opts.width * opts.scale).toBeLessThanOrEqual(16384)
       expect(opts.height * opts.scale).toBeLessThanOrEqual(16384)
+    })
+
+    it('battle-0 export receives different dimensions from aggregate', async () => {
+      setResp(makeResp())
+      setActiveTab('b0')
+      wrapper = mountPage()
+      setCloneScrollProps()
+
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+
+      const calls = h2c.getCalls()
+      expect(calls.length).toBe(1)
+      const opts = calls[0][1]
+      expect(opts.width).not.toBe(800)
+      expect(opts.height).not.toBe(600)
+      expect(opts.width * opts.scale).toBeLessThanOrEqual(16384)
+      expect(opts.height * opts.scale).toBeLessThanOrEqual(16384)
+    })
+
+    it('fallback only used for invalid dimensions', async () => {
+      setResp(makeResp())
+      wrapper = mountPage()
+      // Make the clone have zero scroll dimensions so fallback triggers
+      const origAppendChild = document.body.appendChild.bind(document.body)
+      vi.spyOn(document.body, 'appendChild').mockImplementation((node) => {
+        const result = origAppendChild(node)
+        const clone = node.querySelector?.('.replay-export-root')
+        if (clone) {
+          setScrollProps(clone, 0, 0)
+          for (const tbl of clone.querySelectorAll('table')) {
+            setScrollProps(tbl, 0, 0)
+          }
+        }
+        return result
+      })
+
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+
+      const opts = h2c.getCalls()[0][1]
+      expect(opts.width).toBe(800)
+      expect(opts.height).toBe(600)
+      expect(opts.scale).toBe(1)
     })
   })
 
   describe('html2canvas receives correct parameters', () => {
     function getOpts() {
-      const calls = h2c.getCalls()
-      return calls[0][1]
+      return h2c.getCalls()[0][1]
     }
 
     it('receives target, scale, width, height, backgroundColor', async () => {
@@ -385,16 +442,15 @@ describe('ReplayPage PNG export', () => {
       setResp(makeResp())
       wrapper = mountPage()
       vi.spyOn(document.body, 'appendChild')
-      vi.spyOn(document.body, 'removeChild')
 
       await pngButton(wrapper).trigger('click')
       await flushPromises()
       await new Promise(r => setTimeout(r, 200))
+      await flushPromises()
 
       expect(mockCanvas.toBlob).toHaveBeenCalled()
       expect(URL.createObjectURL).toHaveBeenCalled()
       expect(document.body.appendChild).toHaveBeenCalled()
-      expect(document.body.removeChild).toHaveBeenCalled()
     })
 
     it('download filename matches aggregate pattern', async () => {
@@ -405,6 +461,7 @@ describe('ReplayPage PNG export', () => {
       await pngButton(wrapper).trigger('click')
       await flushPromises()
       await new Promise(r => setTimeout(r, 300))
+      await flushPromises()
 
       const anchors = document.body.appendChild.mock.calls
         .map(c => c[0])
@@ -421,7 +478,7 @@ describe('ReplayPage PNG export', () => {
       await pngButton(wrapper).trigger('click')
       await flushPromises()
 
-      expect(i18n.t).toHaveBeenCalledWith('replay.png_export_failed')
+      expect(i18n.t.mock.calls.some(c => c[0] === 'replay.png_export_failed')).toBe(true)
     })
 
     it('shows error when html2canvas rejects', async () => {
@@ -432,7 +489,7 @@ describe('ReplayPage PNG export', () => {
       await pngButton(wrapper).trigger('click')
       await flushPromises()
 
-      expect(i18n.t).toHaveBeenCalledWith('replay.png_export_failed')
+      expect(i18n.t.mock.calls.some(c => c[0] === 'replay.png_export_failed')).toBe(true)
     })
 
     it('does not call html2canvas when target is null', async () => {
@@ -443,8 +500,7 @@ describe('ReplayPage PNG export', () => {
       await pngButton(wrapper).trigger('click')
       await flushPromises()
 
-      const calls = h2c.getCalls()
-      expect(calls.length).toBe(0)
+      expect(h2c.getCalls().length).toBe(0)
     })
 
     it('does not call html2canvas when already exporting', async () => {
@@ -460,8 +516,17 @@ describe('ReplayPage PNG export', () => {
       await flushPromises()
       if (resolveFn) resolveFn(mockCanvas)
 
+      // Complete the full export flow: toBlob + download timer
+      await flushPromises()
+      await new Promise(r => setTimeout(r, 200))
+      await flushPromises()
+
       const calls = h2c.getCalls()
       expect(calls.length).toBe(1)
+
+      // After full flow, cleanup must have happened
+      expect(document.querySelector('[style*="left: -9999px"]')).toBeNull()
+      expect(pngButton(wrapper).attributes('disabled')).toBeUndefined()
     })
   })
 
@@ -477,6 +542,7 @@ describe('ReplayPage PNG export', () => {
       await pngButton(wrapper).trigger('click')
       await flushPromises()
       await new Promise(r => setTimeout(r, 200))
+      await flushPromises()
       expectClean()
     })
 
@@ -484,10 +550,8 @@ describe('ReplayPage PNG export', () => {
       h2c.setImpl(() => Promise.reject(new Error('failed')))
       setResp(makeResp())
       wrapper = mountPage()
-
       await pngButton(wrapper).trigger('click')
       await flushPromises()
-
       expectClean()
     })
 
@@ -495,41 +559,23 @@ describe('ReplayPage PNG export', () => {
       mockCanvas.toBlob = vi.fn(cb => cb(null))
       setResp(makeResp())
       wrapper = mountPage()
-
       await pngButton(wrapper).trigger('click')
       await flushPromises()
-
       expectClean()
     })
 
-    it('removes off-screen container when html2canvas import fails', async () => {
-      h2c.setImpl(() => Promise.reject(new Error('import failed')))
-      setResp(makeResp())
-      wrapper = mountPage()
-
-      await pngButton(wrapper).trigger('click')
-      await flushPromises()
-
-      expect(document.querySelector('[style*="left: -9999px"]')).toBeNull()
-    })
-
-    it('removes off-screen container after downloadBlob reject (click throws)', async () => {
+    it('removes off-screen container after downloadBlob reject', async () => {
       const origCreate = document.createElement.bind(document)
       vi.spyOn(document, 'createElement').mockImplementation((tag) => {
         const el = origCreate(tag)
-        if (tag === 'a') {
-          el.click = () => { throw new Error('click failed') }
-        }
+        if (tag === 'a') { el.click = () => { throw new Error('click failed') } }
         return el
       })
       setResp(makeResp())
       wrapper = mountPage()
-
       await pngButton(wrapper).trigger('click')
       await flushPromises()
-
-      expect(document.querySelector('[style*="left: -9999px"]')).toBeNull()
-      expect(pngButton(wrapper).attributes('disabled')).toBeUndefined()
+      expectClean()
     })
 
     it('revokes object URL after download', async () => {
@@ -538,7 +584,7 @@ describe('ReplayPage PNG export', () => {
       await pngButton(wrapper).trigger('click')
       await flushPromises()
       await new Promise(r => setTimeout(r, 200))
-
+      await flushPromises()
       expect(URL.revokeObjectURL).toHaveBeenCalled()
     })
   })
