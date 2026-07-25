@@ -85,6 +85,19 @@ class SecurityConfigTest {
                 .andExpect(status().isOk());
         mvc.perform(get("/api/admin/other/probe").with(jwt().authorities(role)))
                 .andExpect(status().isOk());
+        mvc.perform(get("/api/replay/analyze").with(jwt().authorities(role)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void replayAnalysisShouldRejectNonAdminUsers() throws Exception {
+        mvc.perform(get("/api/replay/analyze"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/replay/analyze").with(jwt()))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/replay/analyze").with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_boost-manager"))))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -137,6 +150,7 @@ class SecurityConfigTest {
                 "/api/unmatched",
                 "/api/health",
                 "/api/users/probe",
+                "/api/replay/analyze",
                 "/static-probe"
         })
         String probe() {

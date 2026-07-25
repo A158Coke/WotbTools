@@ -1,5 +1,7 @@
 package com.wotb.core.replay.feature;
 
+import com.wotb.core.model.Battle;
+import com.wotb.core.processing.TeamPerspectiveResolution;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
 /**
@@ -9,7 +11,8 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 public interface TeamBattleFeatureExtractor {
 
     TeamBattleFeatureSet extract(
+            Battle battle,
             ReplayReconstruction reconstruction,
-            int perspectiveTeam
+            TeamPerspectiveResolution perspective
     );
 }
