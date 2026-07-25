@@ -328,7 +328,7 @@ jobs:
                   BOOST_AUTO_CONFIRM_SCAN_MS: "${{ vars.BOOST_AUTO_CONFIRM_SCAN_MS || '300000' }}"
                   AI_API_KEY: ${{ secrets.AI_API_KEY }}
                   AI_BASE_URL: "${{ vars.AI_BASE_URL || 'https://api.deepseek.com' }}"
-                  AI_MODEL: "${{ vars.AI_MODEL || 'deepseek-chat' }}"
+                  AI_MODEL: "${{ vars.AI_MODEL || 'deepseek-v4-flash' }}"
                 restart: unless-stopped
               wotb-frontend:
                 image: ghcr.io/a158coke/wotbtools-frontend:latest
