@@ -69,7 +69,7 @@ public class AiReplayAnalysisService {
     public AiReplayAnalysisService(
             @Value("${wotb.ai.api-key:}") String apiKey,
             @Value("${wotb.ai.base-url:https://api.deepseek.com}") String baseUrl,
-            @Value("${wotb.ai.model:deepseek-chat}") String model,
+            @Value("${wotb.ai.model:deepseek-v4-flash}") String model,
             @Value("${wotb.ai.timeout-sec:120}") int timeoutSec) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.model = model;
