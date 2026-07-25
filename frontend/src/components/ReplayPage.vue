@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { mapLabel } from '../utils/helpers.js'
 import { useReplay } from '../composables/useReplay.js'
@@ -49,44 +49,71 @@ const EXPORT_BG = {
   dark: '#1e1e1e'
 }
 
-function prepareClone(doc, theme) {
-  const themeClass = EXPORT_THEME_CSS[theme]
-  const root = doc.querySelector('[data-png-export-target]')
-  if (!root) return
-  root.classList.add('replay-export-root', themeClass)
+function createExportClone(target, theme) {
+  const clone = target.cloneNode(true)
+  clone.classList.add('replay-export-root', EXPORT_THEME_CSS[theme])
+  const container = document.createElement('div')
+  container.style.position = 'fixed'
+  container.style.left = '-9999px'
+  container.style.top = '0'
+  container.style.pointerEvents = 'none'
+  container.style.zIndex = '-1'
+  container.setAttribute('aria-hidden', 'true')
+  container.appendChild(clone)
+  document.body.appendChild(container)
+  return { clone, container }
+}
 
-  for (const wrap of root.querySelectorAll('.tablewrap')) {
+function expandExportTables(clone) {
+  for (const wrap of clone.querySelectorAll('.tablewrap')) {
     wrap.style.overflow = 'visible'
     wrap.style.maxWidth = 'none'
   }
+}
 
-  let maxW = root.scrollWidth
-  for (const child of root.children) {
-    const cw = child.scrollWidth
-    if (cw > maxW) maxW = cw
+function waitForLayout() {
+  return new Promise(resolve => {
+    nextTick(() => requestAnimationFrame(resolve))
+  })
+}
+
+function measureExportClone(clone) {
+  return {
+    width: clone.scrollWidth || clone.getBoundingClientRect().width || 800,
+    height: clone.scrollHeight || clone.getBoundingClientRect().height || 600
   }
-  root.style.width = maxW + 'px'
+}
+
+function cleanupExportClone(container) {
+  if (container && container.parentNode) {
+    container.parentNode.removeChild(container)
+  }
 }
 
 async function downloadResultPng() {
-  if (exportingPng.value) return
+  if (exportingPng.value || loading.value) return
   const target = getExportTarget(activeTab.value, aggregateRef.value, battleRefs.value)
   if (!target) return
 
   const theme = readTheme()
+  let cloneCtx = null
+
   exportingPng.value = true
   error.value = ''
 
   try {
-    const dims = computeExportDimensions(target)
+    cloneCtx = createExportClone(target, theme)
+    expandExportTables(cloneCtx.clone)
+    await waitForLayout()
+    const dims = computeExportDimensions(cloneCtx.clone)
+
     const html2canvas = (await import('html2canvas')).default
-    const canvas = await html2canvas(target, {
+    const canvas = await html2canvas(cloneCtx.clone, {
       scale: dims.scale,
       useCORS: true,
       backgroundColor: EXPORT_BG[theme],
       width: dims.width,
-      height: dims.height,
-      onclone: (doc) => prepareClone(doc, theme)
+      height: dims.height
     })
 
     const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
@@ -101,6 +128,7 @@ async function downloadResultPng() {
   } catch (e) {
     error.value = t('replay.png_export_failed')
   } finally {
+    if (cloneCtx) cleanupExportClone(cloneCtx.container)
     exportingPng.value = false
   }
 }
@@ -152,27 +180,25 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
               @close="showColPicker = false" @toggle="toggleCol"
               @select-all="selectAllCols" @reset="resetCols" @reorder="handleReorder" />
           </span>
-          <button class="sm" :disabled="loading" @click="exportXlsx('aggregate')">
+          <button class="sm" :disabled="loading || exportingPng" @click="exportXlsx('aggregate')">
             <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_aggregate') }}
           </button>
-          <button class="ghost sm" :disabled="loading" @click="exportXlsx('each')">
+          <button class="ghost sm" :disabled="loading || exportingPng" @click="exportXlsx('each')">
             <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12" /></svg>{{ $t('action.export_each') }}
           </button>
-          <button class="ghost sm" :disabled="exportingPng" @click="downloadResultPng">
+          <button class="ghost sm" :disabled="loading || exportingPng" @click="downloadResultPng">
             <svg class="ic" viewBox="0 0 24 24" width="16" height="16"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 13l4 4 4-4M12 5v12"/></svg>
             {{ exportingPng ? $t('replay.png_exporting') : $t('action.download_png') }}
           </button>
         </div>
       </div>
 
-      <!-- Aggregate result: stable identifier for export target; no export classes on real page -->
-      <div v-show="activeTab === 'aggregate' && resp.aggregate.length" ref="aggregateRef" data-png-export-target>
+      <div v-show="activeTab === 'aggregate' && resp.aggregate.length" ref="aggregateRef">
         <AggregateTable :aggregate="resp.aggregate" :shown-cols="shownAggCols" :agg-stats="aggStats" />
       </div>
 
-      <!-- Single battle: stable identifier for export target -->
       <div v-for="(b, i) in resp.battles" :key="i" v-show="activeTab === 'b' + i"
-           :ref="(el) => setBattleRef(el, i)" data-png-export-target>
+           :ref="(el) => setBattleRef(el, i)">
         <BattleTable :battle="b" :shown-cols="shownCols" />
       </div>
     </template>
@@ -194,9 +220,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   --exp-t2-bg: #fce4ec;
   --exp-badge-bg: #fff3cd;
   --exp-badge-text: #856404;
-  --exp-warn-bg: #fff3cd;
-  --exp-error-bg: #f8d7da;
-  --exp-error-text: #721c24;
   --exp-alive: #28a745;
   --exp-destroyed: #dc3545;
 }
@@ -212,9 +235,6 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   --exp-t2-bg: #5c2a3a;
   --exp-badge-bg: #5a4a10;
   --exp-badge-text: #ffd700;
-  --exp-warn-bg: #5a4a10;
-  --exp-error-bg: #5a1a1a;
-  --exp-error-text: #ff8a80;
   --exp-alive: #4caf50;
   --exp-destroyed: #ef5350;
 }
@@ -225,13 +245,45 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   padding: 16px;
   font-size: 13px;
   line-height: 1.5;
+  width: max-content;
+  max-width: none;
 }
-.replay-export-root :deep(table) {
+.replay-export-root .mcards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.replay-export-root .mc {
+  background: var(--exp-card-bg);
+  border: 1px solid var(--exp-border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  text-align: center;
+}
+.replay-export-root .mc .k {
+  font-size: .78rem;
+  color: var(--exp-text-sub);
+  margin-bottom: 4px;
+}
+.replay-export-root .mc .v {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--exp-text);
+  font-variant-numeric: tabular-nums;
+}
+.replay-export-root .tablewrap {
+  overflow: visible;
+  max-width: none;
+  border: 1px solid var(--exp-border);
+  border-radius: 8px;
+}
+.replay-export-root table {
   border-collapse: collapse;
   width: auto;
   background: var(--exp-bg);
 }
-.replay-export-root :deep(th) {
+.replay-export-root th {
   background: var(--exp-header-bg);
   color: var(--exp-text);
   padding: 6px 10px;
@@ -239,25 +291,56 @@ function onFileRemoveRequest(f) { askRemoveFile(f) }
   white-space: nowrap;
   font-weight: 600;
 }
-.replay-export-root :deep(td) {
+.replay-export-root td {
   padding: 5px 10px;
   border: 1px solid var(--exp-border);
   color: var(--exp-text);
 }
-.replay-export-root :deep(.tablewrap) {
-  overflow: visible;
-  max-width: none;
-}
-.replay-export-root :deep(tbody tr.t1 td) {
+.replay-export-root tbody tr.t1 td {
   background: var(--exp-t1-bg);
 }
-.replay-export-root :deep(tbody tr.t2 td) {
+.replay-export-root tbody tr.t2 td {
   background: var(--exp-t2-bg);
 }
-.replay-export-root :deep(.badge) {
+.replay-export-root .rbadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 44px;
+  min-height: 22px;
+  text-align: center;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 800;
   background: var(--exp-badge-bg);
   color: var(--exp-badge-text);
-  padding: 2px 6px;
-  border-radius: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.replay-export-root .alive {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--exp-alive);
+  color: var(--exp-bg);
+}
+.replay-export-root .dead {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--exp-destroyed);
+  color: var(--exp-bg);
+}
+.replay-export-root .scroll-hint {
+  display: none;
 }
 </style>

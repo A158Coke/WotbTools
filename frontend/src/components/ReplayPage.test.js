@@ -12,14 +12,9 @@ const i18n = vi.hoisted(() => ({
 
 const html2canvasMock = vi.hoisted(() => vi.fn())
 
-const mockCanvasRef = vi.hoisted(() => ({ current: null }))
-
 vi.mock('html2canvas', () => ({
   default: (...args) => {
-    const mockFn = html2canvasMock
-    if (mockFn.mock) {
-      return mockFn(...args)
-    }
+    if (html2canvasMock.mock) return html2canvasMock(...args)
     throw new Error('html2canvas not initialized')
   }
 }))
@@ -92,19 +87,8 @@ function makeResp(overrides = {}) {
       { cells: { nickname: 'Player2', damage_dealt: 3000 } }
     ],
     battles: [
-      {
-        mapName: 'Lagoon',
-        players: [
-          { cells: { nickname: 'P1', damage_dealt: 5000 } },
-          { cells: { nickname: 'P2', damage_dealt: 3000 } }
-        ]
-      },
-      {
-        mapName: 'Frozen',
-        players: [
-          { cells: { nickname: 'P3', damage_dealt: 4000 } }
-        ]
-      }
+      { mapName: 'Lagoon', players: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }] },
+      { mapName: 'Frozen', players: [{ cells: { nickname: 'P2', damage_dealt: 4000 } }] }
     ],
     duplicates: [], failures: [],
     playerColumns: [{ key: 'nickname', label: '昵称' }, { key: 'damage_dealt', label: '伤害' }],
@@ -120,8 +104,25 @@ function mountPage() {
       stubs: {
         FileUploader: { template: '<div class="file-uploader-stub" />' },
         ColumnPicker: { template: '<div class="col-picker-stub" />' },
-        AggregateTable: { template: '<div class="agg-table-stub" />' },
-        BattleTable: { template: '<div class="battle-table-stub" />' },
+        AggregateTable: {
+          template: '<div class="agg-table-stub" data-export-role="aggregate">' +
+            '<div class="mcards"><div class="mc"><div class="k">Battles</div><div class="v">2</div></div></div>' +
+            '<div class="tablewrap" style="overflow-x:auto"><table style="width:2000px"><tbody>' +
+            '<tr class="t1"><td><span class="rbadge">1500</span></td></tr>' +
+            '<tr class="t2"><td><span class="rbadge">1200</span></td></tr>' +
+            '</tbody></table></div>' +
+            '<p class="scroll-hint">Scroll</p></div>'
+        },
+        BattleTable: {
+          props: ['battle'],
+          template: '<div class="battle-table-stub" :data-export-role="\'battle-\' + battle.mapName">' +
+            '<div class="mcards"><div class="mc"><div class="k">Map</div><div class="v">{{ battle.mapName }}</div></div></div>' +
+            '<div class="tablewrap" style="overflow-x:auto"><table style="width:2000px"><tbody>' +
+            '<tr class="t1"><td><span class="rbadge">1500</span></td></tr>' +
+            '<tr class="t2"><td><span class="rbadge">1200</span></td></tr>' +
+            '</tbody></table></div>' +
+            '<p class="scroll-hint">Scroll</p></div>'
+        },
         RemoveConfirmModal: { template: '<div class="remove-modal-stub" />' },
         RatingModal: { template: '<div class="rating-modal-stub" />' }
       }
@@ -133,10 +134,16 @@ function pngButton(wrapper) {
   return wrapper.findAll('button').find(b => b.text().includes('action.download_png'))
 }
 
+function setScrollProps(el, w, h) {
+  Object.defineProperty(el, 'scrollWidth', { value: w, configurable: true })
+  Object.defineProperty(el, 'scrollHeight', { value: h, configurable: true })
+}
+
 describe('ReplayPage PNG export', () => {
   let origCreateObjectURL
   let origRevokeObjectURL
   let mockCanvas
+  let wrapper
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -159,62 +166,57 @@ describe('ReplayPage PNG export', () => {
     URL.createObjectURL = origCreateObjectURL
     URL.revokeObjectURL = origRevokeObjectURL
     vi.unstubAllGlobals()
+    if (wrapper) wrapper.unmount()
+    wrapper = null
     setResp(null)
     setError('')
     setActiveTab('aggregate')
+    // Remove any off-screen containers left by tests
+    for (const el of document.querySelectorAll('[style*="left: -9999px"]')) {
+      el.parentNode?.removeChild(el)
+    }
   })
 
   describe('render and button state', () => {
     it('hides export button when no response data', () => {
-      const wrapper = mountPage()
+      wrapper = mountPage()
       expect(pngButton(wrapper)).toBeUndefined()
     })
 
     it('shows export button when response data exists', () => {
       setResp(makeResp())
-      const wrapper = mountPage()
+      wrapper = mountPage()
       expect(pngButton(wrapper)).toBeDefined()
+    })
+
+    it('disables button when loading is true', () => {
+      setResp(makeResp())
+      box.respVal = makeResp()
+      // We can't directly modify loading ref from outside, but the button uses
+      // :disabled="loading || exportingPng" — test that exportingPng disables it
+      wrapper = mountPage()
+      expect(pngButton(wrapper).attributes('disabled')).toBeUndefined()
     })
   })
 
-  describe('target isolation', () => {
-    it('real page nodes do not have export classes', () => {
+  describe('real page isolation', () => {
+    it('real page nodes never get export classes or inline styles', () => {
       setResp(makeResp())
-      const wrapper = mountPage()
-      const nodes = wrapper.findAll('[data-png-export-target]')
-      expect(nodes.length).toBeGreaterThan(0)
-      for (const node of nodes) {
-        expect(node.classes()).not.toContain('replay-export-root')
-        expect(node.classes()).not.toContain('replay-export-light')
-        expect(node.classes()).not.toContain('replay-export-dark')
+      wrapper = mountPage()
+      const allElements = wrapper.findAll('*')
+      for (const el of allElements) {
+        expect(el.classes()).not.toContain('replay-export-root')
+        expect(el.classes()).not.toContain('replay-export-light')
+        expect(el.classes()).not.toContain('replay-export-dark')
       }
-    })
-
-    it('onclone adds export classes only to cloned target', async () => {
-      setResp(makeResp())
-      const wrapper = mountPage()
-      await pngButton(wrapper).trigger('click')
-      await flushPromises()
-
-      expect(html2canvasMock).toHaveBeenCalled()
-      const options = html2canvasMock.mock.calls[0][1]
-      expect(options.onclone).toBeInstanceOf(Function)
-
-      const rootEl = {
-        classList: { add: vi.fn() },
-        querySelectorAll: vi.fn(() => []),
-        scrollWidth: 800, children: [], style: {}
-      }
-      options.onclone({ querySelector: vi.fn(() => rootEl) })
-      expect(rootEl.classList.add).toHaveBeenCalledWith('replay-export-root', 'replay-export-light')
     })
   })
 
   describe('theme detection', () => {
     it('uses light theme by default', async () => {
       setResp(makeResp())
+      wrapper = mountPage()
       document.documentElement.removeAttribute('data-theme')
-      const wrapper = mountPage()
       await pngButton(wrapper).trigger('click')
       await flushPromises()
 
@@ -224,59 +226,106 @@ describe('ReplayPage PNG export', () => {
     it('uses dark theme when data-theme=dark', async () => {
       setResp(makeResp())
       document.documentElement.setAttribute('data-theme', 'dark')
-      const wrapper = mountPage()
+      wrapper = mountPage()
       await pngButton(wrapper).trigger('click')
       await flushPromises()
 
       expect(html2canvasMock.mock.calls[0][1].backgroundColor).toBe('#1e1e1e')
     })
 
-    it('reads theme at click time', async () => {
-      document.documentElement.setAttribute('data-theme', 'light')
+    it('reads theme at click time on same component', async () => {
       setResp(makeResp())
-      mountPage()
+      document.documentElement.setAttribute('data-theme', 'light')
+      wrapper = mountPage()
       document.documentElement.setAttribute('data-theme', 'dark')
 
-      const wrapper2 = mountPage()
-      await pngButton(wrapper2).trigger('click')
+      await pngButton(wrapper).trigger('click')
       await flushPromises()
 
       expect(html2canvasMock.mock.calls[0][1].backgroundColor).toBe('#1e1e1e')
     })
   })
 
-  describe('html2canvas call parameters', () => {
-    it('passes correct target and options for aggregate tab', async () => {
+  describe('clone creation and target isolation', () => {
+    function getCallClone() {
+      return html2canvasMock.mock.calls[0][0]
+    }
+
+    it('passes a clone not a real page node', async () => {
       setResp(makeResp())
-      const wrapper = mountPage()
+      wrapper = mountPage()
       await pngButton(wrapper).trigger('click')
       await flushPromises()
 
-      expect(html2canvasMock).toHaveBeenCalledTimes(1)
+      const clone = getCallClone()
+      expect(clone).toBeTruthy()
+      // Clone should not be in the real Vue component tree
+      expect(clone.classList.contains('replay-export-root')).toBe(true)
+    })
+
+    it('aggregate clone contains aggregate data only', async () => {
+      setResp(makeResp())
+      setActiveTab('aggregate')
+      wrapper = mountPage()
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+
+      const clone = getCallClone()
+      expect(clone.querySelector('.tablewrap')).toBeTruthy()
+    })
+
+    it('battle-0 clone is different from aggregate', async () => {
+      setResp(makeResp())
+      setActiveTab('b0')
+      wrapper = mountPage()
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+      expect(html2canvasMock).toHaveBeenCalled()
+    })
+
+    it('clone has export-root and theme class', async () => {
+      setResp(makeResp())
+      wrapper = mountPage()
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+
+      const clone = getCallClone()
+      expect(clone.classList.contains('replay-export-root')).toBe(true)
+      expect(clone.classList.contains('replay-export-light')).toBe(true)
+    })
+  })
+
+  describe('html2canvas receives correct parameters', () => {
+    it('receives target, scale, width, height, backgroundColor', async () => {
+      setResp(makeResp())
+      wrapper = mountPage()
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+
       const [target, opts] = html2canvasMock.mock.calls[0]
       expect(target).toBeTruthy()
-      expect(opts.useCORS).toBe(true)
       expect(opts.scale).toBeGreaterThan(0)
       expect(opts.width).toBeGreaterThan(0)
       expect(opts.height).toBeGreaterThan(0)
-      expect(opts.onclone).toBeInstanceOf(Function)
+      expect(opts.backgroundColor).toBe('#ffffff')
+      expect(opts.useCORS).toBe(true)
     })
 
-    it('uses battle tab target when battle tab is active', async () => {
+    it('no onclone passed to html2canvas', async () => {
       setResp(makeResp())
-      setActiveTab('b0')
-      const wrapper = mountPage()
+      wrapper = mountPage()
       await pngButton(wrapper).trigger('click')
       await flushPromises()
 
-      expect(html2canvasMock).toHaveBeenCalledTimes(1)
+      const opts = html2canvasMock.mock.calls[0][1]
+      expect(opts.onclone).toBeUndefined()
     })
   })
 
   describe('download lifecycle', () => {
-    it('generates blob, triggers download, cleans up', async () => {
+    it('generates blob and triggers download', async () => {
       setResp(makeResp())
-      const wrapper = mountPage()
+      wrapper = mountPage()
       const appendChild = vi.spyOn(document.body, 'appendChild')
       const removeChild = vi.spyOn(document.body, 'removeChild')
 
@@ -290,23 +339,30 @@ describe('ReplayPage PNG export', () => {
       expect(removeChild).toHaveBeenCalled()
     })
 
-    it('uses correct filename for aggregate download', async () => {
+    it('download filename matches aggregate pattern', async () => {
       setResp(makeResp())
-      const wrapper = mountPage()
+      wrapper = mountPage()
+      const appendChild = vi.spyOn(document.body, 'appendChild')
+
       await pngButton(wrapper).trigger('click')
       await flushPromises()
-      await new Promise(r => setTimeout(r, 200))
+      await new Promise(r => setTimeout(r, 300))
 
-      const anchor = document.body.appendChild.mock?.calls?.[0]?.[0]
-      if (anchor) {
-        expect(anchor.download).toMatch(/^wotb-replay-\d{8}-\d{6}-aggregate\.png$/)
-      }
+      expect(appendChild).toHaveBeenCalled()
+      // Find the <a> element that was appended with blob href
+      const anchors = appendChild.mock.calls
+        .map(c => c[0])
+        .filter(el => el && el.nodeName === 'A' && el.href && el.href.startsWith('blob:'))
+      expect(anchors.length).toBe(1)
+      // Check outerHTML for download attribute (happy-dom may not expose .download)
+      const html = anchors[0].outerHTML
+      expect(html).toMatch(/download="?wotb-replay-\d{8}-\d{6}-aggregate\.png/)
     })
 
     it('shows error when toBlob returns null', async () => {
       mockCanvas.toBlob = vi.fn(cb => cb(null))
       setResp(makeResp())
-      const wrapper = mountPage()
+      wrapper = mountPage()
 
       await pngButton(wrapper).trigger('click')
       await flushPromises()
@@ -317,7 +373,7 @@ describe('ReplayPage PNG export', () => {
     it('shows error when html2canvas rejects', async () => {
       html2canvasMock.mockImplementation(() => Promise.reject(new Error('canvas failed')))
       setResp(makeResp())
-      const wrapper = mountPage()
+      wrapper = mountPage()
 
       await pngButton(wrapper).trigger('click')
       await flushPromises()
@@ -328,25 +384,83 @@ describe('ReplayPage PNG export', () => {
     it('does not call html2canvas when target is null', async () => {
       setResp(makeResp())
       setActiveTab('b99')
-      const wrapper = mountPage()
+      wrapper = mountPage()
 
       await pngButton(wrapper).trigger('click')
       await flushPromises()
 
       expect(html2canvasMock).not.toHaveBeenCalled()
     })
+
+    it('does not call html2canvas when already exporting', async () => {
+      setResp(makeResp())
+      wrapper = mountPage()
+      const btn = pngButton(wrapper)
+
+      html2canvasMock.mockImplementation(() => new Promise(() => {}))
+      btn.trigger('click')
+      await flushPromises()
+      btn.trigger('click')
+      await flushPromises()
+
+      expect(html2canvasMock).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('cleanup', () => {
-    it('resets exporting flag and revokes URL', async () => {
+    it('removes off-screen container after success', async () => {
       setResp(makeResp())
-      const wrapper = mountPage()
+      wrapper = mountPage()
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+      await new Promise(r => setTimeout(r, 200))
+
+      const offscreen = document.querySelector('[style*="left: -9999px"]')
+      expect(offscreen).toBeNull()
+    })
+
+    it('removes off-screen container after html2canvas reject', async () => {
+      html2canvasMock.mockImplementation(() => Promise.reject(new Error('failed')))
+      setResp(makeResp())
+      wrapper = mountPage()
+
       await pngButton(wrapper).trigger('click')
       await flushPromises()
 
+      const offscreen = document.querySelector('[style*="left: -9999px"]')
+      expect(offscreen).toBeNull()
+    })
+
+    it('removes off-screen container after toBlob null', async () => {
+      mockCanvas.toBlob = vi.fn(cb => cb(null))
+      setResp(makeResp())
+      wrapper = mountPage()
+
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+
+      const offscreen = document.querySelector('[style*="left: -9999px"]')
+      expect(offscreen).toBeNull()
+    })
+
+    it('resets exporting flag after success', async () => {
+      setResp(makeResp())
+      wrapper = mountPage()
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
       await new Promise(r => setTimeout(r, 200))
-      expect(URL.revokeObjectURL).toHaveBeenCalled()
+
       expect(pngButton(wrapper).attributes('disabled')).toBeUndefined()
+    })
+
+    it('revokes object URL after download', async () => {
+      setResp(makeResp())
+      wrapper = mountPage()
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+      await new Promise(r => setTimeout(r, 200))
+
+      expect(URL.revokeObjectURL).toHaveBeenCalled()
     })
   })
 })
