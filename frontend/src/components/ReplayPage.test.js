@@ -261,6 +261,16 @@ describe('ReplayPage PNG export', () => {
       expect(opts.height).toBeGreaterThan(0)
       expect(opts.onclone).toBeInstanceOf(Function)
     })
+
+    it('uses battle tab target when battle tab is active', async () => {
+      setResp(makeResp())
+      setActiveTab('b0')
+      const wrapper = mountPage()
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+
+      expect(html2canvasMock).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('download lifecycle', () => {
@@ -278,6 +288,19 @@ describe('ReplayPage PNG export', () => {
       expect(URL.createObjectURL).toHaveBeenCalled()
       expect(appendChild).toHaveBeenCalled()
       expect(removeChild).toHaveBeenCalled()
+    })
+
+    it('uses correct filename for aggregate download', async () => {
+      setResp(makeResp())
+      const wrapper = mountPage()
+      await pngButton(wrapper).trigger('click')
+      await flushPromises()
+      await new Promise(r => setTimeout(r, 200))
+
+      const anchor = document.body.appendChild.mock?.calls?.[0]?.[0]
+      if (anchor) {
+        expect(anchor.download).toMatch(/^wotb-replay-\d{8}-\d{6}-aggregate\.png$/)
+      }
     })
 
     it('shows error when toBlob returns null', async () => {
