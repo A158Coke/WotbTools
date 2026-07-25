@@ -716,7 +716,7 @@ ReplayReconstruction 输出
 ### 状态查询
 
 ```java
-BattleStateSnapshot stateAt(float rawClockSec, List<ReplayEvent>, List<BattleStateCheckpoint>)
+BattleStateSnapshot stateAt(float rawClockSec, List<ReplayEvent>, List<BattleStateCheckpoint>);
 ```
 
 - 默认 checkpoint 间隔 1 秒 或 500 事件
@@ -782,9 +782,10 @@ Body: file=<单个 .wotbreplay>
 |------------------------|----------------------------------------------------------------------------------------------|---------------------------------|
 | 伤害 / 承伤 / 助攻 / 格挡 / 击杀 | `battle_results.dat` → `PlayerResult`                                                        | 游戏结算值，可靠                        |
 | 是否存活 / **死亡时刻** / 存活时间 | `battle_results.dat` → `PlayerResult.survived` / `deathTimeMillis`(#104) / `survivalTimeSec` | 可靠；死亡时间线据此生成                    |
-| 队伍 / 坦克 / 昵称 / 录像者     | `Battle` / `PlayerResult` / `Battle.recorderResult()`                                        | 可靠                              |
+| 队伍 / 坦克 / 昵称 / 录像者     | `Battle` / `PlayerResult` / `Battle.recorderResult()`                                        | 结算名册可靠；录像者队伍仍需多证据解析             |
 | 胜负 / 地图 / 时长 / 模式      | `Battle.winnerTeam` / `mapName` / `durationS` / `arenaBonusType`                             | 可靠                              |
-| 位置 / 走位时间线             | `data.wotreplay` type 10（重建）                                                                 | 可靠（几何坐标）                        |
+| 位置 / 走位时间线             | `data.wotreplay` type 10（重建）                                                                 | 仅对已可靠映射且实际观测到的 entity 可用           |
+| 事件流伤害                  | `DamageEvent`                                                                                | 观测子集，不能替代权威团队总伤害                  |
 | **逐帧血量 / 击毁事件**        | —（type 7/8 尚不可靠）                                                                             | **已知限制**：不作为血量/死亡来源，见 Type 7 小节 |
 
 ### AI 分析数据流（`/api/replay/analyze`，仅 `wotbtools-admin`）
@@ -817,35 +818,87 @@ files[]
        └─ 录像者一致性验证（PLAYER_FOCUSED）
   └─ mode 判定 → SINGLE/MULTI_PLAYER_BATTLE | SINGLE/MULTI_TEAM_BATTLE
   └─ scope 感知 AI 调用
+       ├─ PLAYER_FOCUSED → 个人 full feature 或权威结算 fallback
+       └─ TEAM_PERSPECTIVE
+            ├─ TeamPerspectiveResolver
+            ├─ TeamEntityMapper
+            ├─ DefaultTeamBattleFeatureExtractor
+            └─ AiReplayAnalysisService.analyzeTeamGroups()
 ```
 
 #### 视角规则
 
-| 战斗模式       | Scope            | 分析对象                                       | 必要条件                                                      |
-|------------|------------------|--------------------------------------------|-----------------------------------------------------------|
-| RANDOM     | PLAYER_FOCUSED   | 录像者个人                                      | `recorderResultAvailable=true`（结算有录像者战绩）                  |
-| TRAINING   | TEAM_PERSPECTIVE | 整支队伍                                       | `perspectiveTeamResolved=true && teamFeatureSetAvailable` |
-| TOURNAMENT | TEAM_PERSPECTIVE | 整支队伍                                       | `perspectiveTeamResolved=true && teamFeatureSetAvailable` |
-| UNKNOWN    | —                | 抛出 UnsupportedBattleCategoryException（422） | —                                                         |
+| 战斗模式       | Scope            | 分析对象 | 可分析条件 |
+|------------|------------------|------|------|
+| RANDOM     | PLAYER_FOCUSED   | 录像者个人 | `summaryAvailable && recorderResultAvailable` |
+| TRAINING   | TEAM_PERSPECTIVE | 录像者所在整队 | `summaryAvailable && perspectiveTeamResolved && (recorderResultAvailable \|\| teamFeatureExtractionPossible)` |
+| TOURNAMENT | TEAM_PERSPECTIVE | 录像者所在整队 | `summaryAvailable && perspectiveTeamResolved && (recorderResultAvailable \|\| teamFeatureExtractionPossible)` |
+| UNKNOWN    | —                | 不支持 | 返回 `UNSUPPORTED_BATTLE_CATEGORY` |
 
-`aiAnalyzable` = `summaryAvailable && recorderResultAvailable`，不要求 reconstruction。
-`fullFeatureAnalysisAvailable` =
-`aiAnalyzable && reconstructionAvailable && recorderEntityMapped && playerFeatureSetAvailable`。
+Team 模式中，录像者**只用于确定 `perspectiveTeam`**，不是特殊分析对象。解析按权威
+`recorderResult`、accountId、reconstruction participant、唯一 nickname fallback 交叉验证；
+nickname fallback 标记 `INFERRED`，证据冲突或 team=0 时不默认到队伍 1。
+updateArena2 会保留 entityId/accountId/nickname/team；accountId 缺失但昵称唯一且有车辆证据时，
+entity 可通过 nickname 连接，置信度为 `INFERRED`。同名、观战/非车辆实体和
+`PARTIAL`/`UNKNOWN` 映射不会归队。
+
+完整团队时序能力要求 reconstruction 可用且至少一名本队成员有可靠 entity 映射。
+如果重建、位置或 damage event 不可用，只要权威团队名册与队伍已解析，仍允许使用
+`battle_results.dat` 做 summary fallback；API 的 `TeamFeatureCoverage.fullFeaturesAvailable=false`
+和 `limitations` 会明确说明缺失内容。
 
 #### 去重与分组
 
 - **EXACT_DUPLICATE**：SHA-256 完全相同，只处理一次
-- **SAME_TEAM_DUPLICATE_PERSPECTIVE**：同一 `arenaUniqueId` + 相同队伍，只选代表
-- **INDEPENDENT_PERSPECTIVE**：同一场不同队伍，分别分析，禁止合并
+- **SAME_TEAM_DUPLICATE_PERSPECTIVE**：同一战斗 + 相同队伍，只选质量最高的代表，不拼接事件流
+- **独立 perspective**：同一场不同队伍分别分析；entityId、坐标、时钟和可见信息禁止跨视角补全
+- **不同战斗**：各自保持独立时间线；每个 perspective 的有效 accountId 覆盖率
+  `validAccountIds / authoritativeMemberCount` 必须不低于 0.75，且 roster
+  `Jaccard = |A ∩ B| / |A ∪ B|` 不低于 0.60，才允许描述为同一阵容的跨场趋势
+
+未点亮敌人的位置仍是未知。即使同时上传双方录像，也不能用对方录像补写某队当时未观察到的信息。
+
+#### 团队特征与 AI 输入
+
+`DefaultTeamBattleFeatureExtractor` 先按 team 过滤，再按 entity/member 分别压缩移动，避免两名队员坐标串成一条路径。输出分为：
+
+- `TeamAggregateResult`：结算权威团队聚合；
+- `TeamObservedAggregate`：事件流已归因的伤害观测子集，并单独记录 `unattributedDamageEventCount`；
+- `TeamMemberFeatureSet`：每名成员的独立移动、交火、关键事件和 limitations；
+- `TeamFormationPhase`：15 秒窗口的质心、平均离散度与 100 米连通簇；
+- `TeamFeatureCoverage`：重建、映射、位置、伤害覆盖与 full/fallback 状态；未归因 damage/position、
+  越界 position 和非法 timestamp 分别计数。
+
+确定性阈值如下：
+
+- 相邻伤害事件间隔 `<= 10s` 属于同一 engagement；
+- 同一目标在任意 `<= 5s` 滑动窗口内被至少 2 名己方成员命中，才是 focus-fire candidate；
+- 观测伤害严格超过对方 `1.25` 倍才判定交火优势/劣势，恰好 `1.25` 倍仍为均势；
+- 阵型按 `15s` 分窗，X/Z 距离 `<= 100m` 的成员属于同一连通簇；
+- 团队特征仅接受 `|x|, |z| <= 5000`、`|y| <= 200` 的位置，以及 finite、非负时间戳。
+
+发送给 AI 的是压缩特征，不是原始 event stream。确定性预算为：最多 15 名成员、每人
+6 个移动段、20 个阵型阶段、20 个交火段、30 个关键事件、10 个 perspective、30,000
+字符。超过预算时截断并追加 `AI_INPUT_TRUNCATED`。文件名、昵称、地图名和证据文本以
+JSON 字符串形式界定，并在 system prompt 中明确为不可信数据，而不是指令。
 
 #### 错误处理
 
-| 错误                            | 原因                 | 行为      |
-|-------------------------------|--------------------|---------|
-| NO_BATTLE_DATA                | 战绩解析失败             | 不可分析    |
-| AI_NOT_CONFIGURED             | 未配置 AI 密钥          | 返回 503  |
-| MIXED_REPLAY_RECORDERS        | 多场随机战斗不同录像者        | 返回 400  |
-| MIXED_ANALYSIS_SCOPES         | 同时包含随机/训练房/UNKNOWN | 返回 400  |
-| UNSUPPORTED_BATTLE_CATEGORY   | 战斗类型无法识别           | 返回 422  |
-| TEAM_ANALYSIS_NOT_IMPLEMENTED | 团队视角尚未实现           | 返回 422  |
-| 文件级错误（损坏/过大/空）                | 逐文件隔离              | 不影响其他文件 |
+| 错误 | 原因 | 行为 |
+|---|---|---|
+| `NO_BATTLE_DATA` | 战绩解析失败或无可分析数据 | 返回 400 |
+| `AI_NOT_CONFIGURED` | 未配置 AI 密钥 | 返回 503 |
+| `MIXED_RANDOM_BATTLE_RECORDERS` | 多场随机战斗录像者不同 | 返回 400 |
+| `MIXED_ANALYSIS_SCOPES` | 混合随机与训练/联赛，或混入 UNKNOWN | 返回 400 |
+| `UNSUPPORTED_BATTLE_CATEGORY` | 战斗类型无法识别 | 返回 422 |
+| `PERSPECTIVE_TEAM_UNRESOLVED` | 无法可靠确定录像者所在队 | 返回 422 |
+| `PERSPECTIVE_TEAM_CONFLICT` | 多个可靠证据给出不同队伍 | 返回 422 |
+| `AI_INVALID_REQUEST` / `AI_AUTHENTICATION_ERROR` / `AI_RATE_LIMITED` | 上游拒绝请求 | 返回 502 + 稳定码 |
+| `AI_CONTEXT_TOO_LARGE` / `AI_TIMEOUT` / `AI_UPSTREAM_UNAVAILABLE` | 上游容量、超时或服务异常 | 返回 502 + 稳定码 |
+| `AI_EMPTY_RESPONSE` / `AI_RESPONSE_INVALID` | 上游返回空白、畸形 JSON 或非法 envelope | 返回 502 + 稳定码 |
+| `NO_REPLAY_FILE(S)` / `INVALID_REPLAY_FILE_TYPE` / `FILE_TOO_LARGE` | 上传批次预校验失败 | 返回 400，整个 analyze 请求终止 |
+| 单个文件解析/重建失败 | 进入逐文件处理后的文件级错误 | 与其他已通过预校验的文件隔离 |
+
+上游日志只保留 provider/model/status、请求字符数、分析模式、correlation ID 和脱敏限长错误摘要；
+API Key、Authorization、完整 Prompt 与原始事件流不得写入日志。前端按稳定英文码提供
+zh/en/ru 文案，未知 Java/后端文本不直接展示。

@@ -166,7 +166,7 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
          ├── decoder/      包解码器
          ├── event/        领域事件模型
          ├── reconstruction/ 战场状态重建
-         └── feature/      战术特征提取 + AI 输入占位
+         └── feature/      玩家/团队战术特征与 AI context
         │
    wotb-web (Spring Boot)  controller(HTTP) → service(业务) → mapper(→DTO) → dto
         │
@@ -196,13 +196,18 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 | `Replays` | `wotb-core/.../Replays.java` | 多回放去重收集 |
 | `ReplayController` | `wotb-web/.../replay/controller/ReplayController.java` | REST API 映射 |
 | `ReconstructionController` | `wotb-web/.../replay/controller/ReconstructionController.java` | AI 分析 + 重建 REST API |
-| `ReplayProcessingCapabilities` | `wotb-core/.../processing/ReplayProcessingCapabilities.java` | 能力模型（`aiAnalyzable` / `fullFeatureAnalysisAvailable`） |
+| `ReplayProcessingCapabilities` | `wotb-core/.../processing/ReplayProcessingCapabilities.java` | scope-independent 能力事实；可分析规则由 `BatchAnalyzer` 计算 |
 | `RecorderEntityMapping` | `wotb-core/.../processing/RecorderEntityMapping.java` | 录像者 entity 映射结果 |
+| `TeamPerspectiveResolver` | `wotb-core/.../processing/TeamPerspectiveResolver.java` | 以权威战绩、accountId、participant、nickname 证据解析录像者所在队 |
+| `TeamEntityMapper` | `wotb-core/.../processing/TeamEntityMapper.java` | entity → account → team 映射，支持 re-entry 与置信度 |
 | `DefaultReplayProcessingFacade` | `wotb-core/.../processing/DefaultReplayProcessingFacade.java` | 统一处理门面（解析+重建+能力标记） |
 | `BatchAnalyzer` | `wotb-core/.../processing/BatchAnalyzer.java` | 视角分组+去重+模式判定 |
 | `DefaultPlayerBattleFeatureExtractor` | `wotb-core/.../feature/DefaultPlayerBattleFeatureExtractor.java` | 录像者个人特征提取（移动段/交火段） |
 | `PlayerBattleFeatureSet` | `wotb-core/.../feature/PlayerBattleFeatureSet.java` | 个人特征集（含 `hasFeatures` / `limitations`） |
-| `AiReplayAnalysisService` | `wotb-web/.../ai/AiReplayAnalysisService.java` | AI 调用入口 + Prompt 构建 |
+| `DefaultTeamBattleFeatureExtractor` | `wotb-core/.../feature/DefaultTeamBattleFeatureExtractor.java` | perspective team 的队员独立移动、阵型、交火、关键事件与权威聚合 |
+| `TeamBattleFeatureSet` | `wotb-core/.../feature/TeamBattleFeatureSet.java` | 团队特征、覆盖率、权威结算、观测子集与 limitations |
+| `AiReplayAnalysisService` | `wotb-web/.../ai/AiReplayAnalysisService.java` | 玩家/团队 AI 调用、上游错误分类与 context 编排 |
+| `TeamAiPromptBuilder` | `wotb-web/.../ai/TeamAiPromptBuilder.java` | 确定性团队输入压缩和字符/条目预算 |
 | `ReplayService` | `wotb-web/.../replay/service/ReplayService.java` | 业务编排 |
 | `ReplayCapacityLimiter` | `wotb-web/.../replay/service/ReplayCapacityLimiter.java` | 单实例回放解析并发闸门 |
 | `Mapper` | `wotb-web/.../replay/mapper/Mapper.java` | 核心模型 → DTO |
@@ -454,30 +459,83 @@ cd java && mvn -s settings.xml test
 cd frontend && npm test
 ```
 
-## AI 回放复盘（PR #29）
+## AI 回放复盘
 
 ### 视角分组与模式判定
 
 ```
 files → DefaultReplayProcessingFacade.processBatch()
   → 逐文件 validateFile(扩展名/大小) + parse + reconstruct
-  → ReplayProcessingCapabilities.of(summaryOk, recorderResultAvailable, …)
+  → ReplayProcessingCapabilities(summaryAvailable, reconstructionAvailable, …)
   → BatchAnalyzer.analyze()
-       ├─ BattleCategoryUtils.detectCategory()
+       ├─ BattleCategoryUtils.fromArenaBonusType()
        ├─ resolveScope() → PLAYER_FOCUSED / TEAM_PERSPECTIVE
        ├─ SHA-256 精确重复去重
        ├─ scope 一致性验证（不混合 + UNKNOWN 排除）
-       ├─ BattleIdentity + perspectiveTeam 分组
+       ├─ BattleIdentity + TeamPerspectiveResolver 结果分组
        ├─ 代表回放选择（reconstruction 成功优先）
        └─ 录像者一致性验证（PLAYER_FOCUSED + RANDOM）
   → resolveMode() → SINGLE/MULTI_PLAYER_BATTLE, SINGLE/MULTI_TEAM_BATTLE
-  → ReconstructionController.callPlayerContext()
-       ├─ reconstruction==null → aiService.analyze(fallback)
-       ├─ recorder.resolved() == false → aiService.analyze(fallback)
-       ├─ featureSet.hasFeatures() == false → aiService.analyze(fallback)
-       └─ full feature → aiService.analyzePlayerContext(context)
+  → ReconstructionController
+       ├─ PLAYER_FOCUSED → analyzePlayerOrFallback / analyzeMulti
+       └─ TEAM_PERSPECTIVE → analyzeTeamGroups
+            ├─ TeamPerspectiveResolver（录像者只决定 perspectiveTeam）
+            ├─ TeamEntityMapper（可靠映射，未知实体不归队）
+            ├─ DefaultTeamBattleFeatureExtractor
+            ├─ reconstruction 可用 → 完整团队时序特征
+            └─ reconstruction 不可用 → 权威团队结算 fallback
 ```
+
+### Team Perspective 语义
+
+- `RANDOM` 仍是录像者个人复盘；`TRAINING` / `TOURNAMENT` 是录像者所在整队复盘。
+- 录像者不获得特殊个人分析权重，只用于解析 `perspectiveTeam`。
+- 同场同队回放是 `SAME_TEAM_DUPLICATE_PERSPECTIVE`，只选质量最高的代表；禁止拼接原始事件流。
+- 同场不同队是两个独立 perspective，entityId、坐标和时钟不跨 perspective 合并。
+- 未点亮敌人的位置仍未知；不能用对方录像补写本队当时不可见的信息。
+- `battle_results.dat` 的团队总伤害、承伤、助攻、格挡、击杀、存活和死亡时刻是权威值；damage event 只标为观测子集。
+- 完整团队能力要求可靠 entity mapping；只有权威结算时仍可分析，但报告必须显示 fallback 与 limitations。
+- `ParticipantMappingEvent` 优先按 accountId 连接；accountId 缺失时保留 updateArena2 的 nickname/team，只允许唯一昵称匹配并降级为 `INFERRED`。同名冲突、非车辆实体和低置信度映射不归队。
+
+### Team Feature 判定阈值
+
+| 判定 | 规则 |
+|---|---|
+| 交火分段 | 相邻可靠伤害事件间隔 `<= 10s` 属于同一段 |
+| 集火候选 | 同一目标在任意 `<= 5s` 滑动窗口内被至少 2 名己方成员命中 |
+| 交火结果 | 一方观测伤害严格大于另一方的 `1.25` 倍才判优势/劣势；边界值算均势 |
+| 阵型采样 | `15s` 窗口，每名成员保留窗口内最后位置 |
+| 阵型连通簇 | X/Z 平面距离 `<= 100m` 视为连通 |
+| 坐标可信范围 | `|x|, |z| <= 5000` 且 `|y| <= 200`；越界点忽略并计入 coverage/limitation |
+| 时间戳 | 必须 finite 且 `>= 0`；非法事件不进入移动、阵型、交火或关键事件 |
+
+多场趋势还需要每个 perspective 的有效 accountId 覆盖率
+`validAccountIds / authoritativeMemberCount >= 0.75`，且 roster
+`Jaccard = |A ∩ B| / |A ∪ B| >= 0.60`；任一条件不满足时只比较上传样本，不声称固定阵容趋势。
+
+### Team AI 输入预算
+
+| 数据 | 上限 |
+|---|---:|
+| 队员 | 15 |
+| 每名队员移动段 | 6 |
+| 阵型阶段 | 20 |
+| 团队交火段 | 20 |
+| 关键事件 | 30 |
+| 多场 perspective | 10 |
+| 单次压缩上下文 | 30,000 字符 |
+
+超过预算会确定性截断，并在结果中加入 `AI_INPUT_TRUNCATED`。原始 `ReplayEvent` 和逐帧坐标流不得进入 Prompt。文件名、昵称、地图名和证据文本按 JSON 字符串编码，并在 system prompt 中声明为不可信数据，不能作为模型指令。
+
+### 错误与安全
+
+上游错误统一为稳定英文码：`AI_INVALID_REQUEST`、`AI_AUTHENTICATION_ERROR`、`AI_RATE_LIMITED`、`AI_CONTEXT_TOO_LARGE`、`AI_UPSTREAM_UNAVAILABLE`、`AI_TIMEOUT`、`AI_EMPTY_RESPONSE`、`AI_RESPONSE_INVALID`。HTTP 200 中的畸形 JSON、非法 completion envelope 均归为 `AI_RESPONSE_INVALID`。日志只能包含 provider/model/status、请求字符数、分析模式、correlation ID 与脱敏限长摘要，不得记录密钥、Authorization 或完整 Prompt。普通用户文案由前端 zh/en/ru 翻译。
 
 ### 测试
 
-wotb-core: 104 tests / wotb-web: 114 tests ≈ 218，0 failure（部分 skip 因缺少样本或 Docker）
+核心测试覆盖 `TeamPerspectiveResolverTest`、`TeamEntityMapperTest`、`DefaultTeamBattleFeatureExtractorTest` 与 `BatchAnalyzerTest`；Web 测试使用本地 fake HTTP server 和 MockMvc，前端使用 Vitest + Vue Test Utils。执行：
+
+```bash
+cd java && mvn -s settings.xml test
+cd frontend && npm ci && npm run test && npm run build
+```

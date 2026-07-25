@@ -11,7 +11,8 @@ import java.util.List;
 /**
  * AI 战术复盘响应。
  * 注意前端 `ReconstructionPage.vue` 依赖以下字段：
- * - mode (String: SINGLE_PLAYER_BATTLE / MULTI_PLAYER_BATTLE)
+ * - mode (String: SINGLE_PLAYER_BATTLE / MULTI_PLAYER_BATTLE /
+ *   SINGLE_TEAM_BATTLE / MULTI_TEAM_BATTLE)
  * - analysis (AI 复盘文本)
  * - battleCount (实际分析场次数)
  * - files (每文件状态)
