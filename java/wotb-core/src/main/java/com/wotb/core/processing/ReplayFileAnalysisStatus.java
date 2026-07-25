@@ -20,21 +20,30 @@ public record ReplayFileAnalysisStatus(
 ) {
 
     public static ReplayFileAnalysisStatus primary(
-            String fileName, ReplayProcessingStatus status,
-            BattleCategory category, ReplayAnalysisScope scope,
-            String arenaUniqueId, Integer perspectiveTeam,
-            int uploadIndex,
-            ReplayProcessingCapabilities capabilities) {
+            final String fileName,
+            final ReplayProcessingStatus status,
+            final BattleCategory category,
+            final ReplayAnalysisScope scope,
+            final String arenaUniqueId,
+            final Integer perspectiveTeam,
+            final boolean analysisIncluded,
+            final int uploadIndex,
+            final ReplayProcessingCapabilities capabilities
+    ) {
         return new ReplayFileAnalysisStatus(fileName, status,
                 ReplayFileRelation.PRIMARY_PERSPECTIVE,
                 category, scope, arenaUniqueId, perspectiveTeam,
-                true, null, uploadIndex, null, capabilities, null);
+                analysisIncluded, null, uploadIndex, null, capabilities, null);
     }
 
     public static ReplayFileAnalysisStatus duplicate(
-            String fileName, ReplayProcessingStatus originalStatus,
-            ReplayFileRelation relation, String duplicateOf,
-            int uploadIndex, Integer duplicateOfUploadIndex) {
+            final String fileName,
+            final ReplayProcessingStatus originalStatus,
+            final ReplayFileRelation relation,
+            final String duplicateOf,
+            final int uploadIndex,
+            final Integer duplicateOfUploadIndex
+    ) {
         return new ReplayFileAnalysisStatus(fileName,
                 originalStatus, relation,
                 BattleCategory.UNKNOWN, null, null, null,
@@ -43,8 +52,10 @@ public record ReplayFileAnalysisStatus(
     }
 
     public static ReplayFileAnalysisStatus failed(
-            String fileName, ReplayProcessingError error,
-            int uploadIndex) {
+            final String fileName,
+            final ReplayProcessingError error,
+            final int uploadIndex
+    ) {
         return new ReplayFileAnalysisStatus(fileName,
                 ReplayProcessingStatus.FAILED,
                 ReplayFileRelation.INDEPENDENT_BATTLE,

@@ -10,6 +10,7 @@ import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionContext;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
+import org.springframework.util.StringUtils;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -158,13 +159,19 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
             diagnostics = ReplayProcessingDiagnostics.empty();
         }
 
-        final boolean playerFeaturePossible = reconOk && recorderEntityMapped;
         final boolean recorderResultAvailable = battle != null && battle.recorderResult() != null;
-        final boolean perspectiveTeamResolved = false; // TODO: 由 BattleCategory 驱动
+        final TeamPerspectiveResolution teamResolution =
+                TeamPerspectiveResolver.resolve(battle, reconstruction);
+        final boolean perspectiveTeamResolved = teamResolution.resolved();
+        final TeamEntityMapping teamEntityMapping = TeamEntityMapper.resolve(battle, reconstruction);
+        final boolean playerFeaturePossible = reconOk && recorderEntityMapped;
+        final boolean teamFeaturePossible = reconOk
+                && perspectiveTeamResolved
+                && teamEntityMapping.mappedMembers(teamResolution.perspectiveTeam()) > 0;
         final ReplayProcessingCapabilities capabilities = new ReplayProcessingCapabilities(
                 summaryOk, recorderResultAvailable, reconOk,
                 recorderParticipantResolved, recorderEntityMapped,
-                perspectiveTeamResolved, playerFeaturePossible, false);
+                perspectiveTeamResolved, playerFeaturePossible, teamFeaturePossible);
 
         return new ReplayProcessingResult(
                 input.name(), status, identity,
@@ -229,7 +236,7 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
     private static ReplayFileValidationResult validateFile(final Source input) {
         final List<ReplayValidationError> errors = new ArrayList<>();
         final String name = input.name();
-        if (name == null || name.isBlank()) {
+        if (!StringUtils.hasText(name)) {
             errors.add(ReplayValidationError.of(
                     "INVALID_FILE_NAME", "File name is empty"));
         } else if (!name.toLowerCase().endsWith(".wotbreplay")) {
