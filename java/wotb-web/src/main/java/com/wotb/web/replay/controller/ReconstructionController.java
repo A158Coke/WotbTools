@@ -4,9 +4,11 @@ import com.wotb.core.model.Source;
 import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.processing.BatchAnalyzer;
 import com.wotb.core.processing.BattleCategory;
+import com.wotb.core.processing.BattleCategoryUtils;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.MixedAnalysisScopesException;
 import com.wotb.core.processing.MixedRandomBattleRecordersException;
+import com.wotb.core.processing.PerspectiveTeamNotResolvedException;
 import com.wotb.core.processing.ReplayAnalysisMode;
 import com.wotb.core.processing.ReplayAnalysisScope;
 import com.wotb.core.processing.ReplayBatchProcessingResult;
@@ -17,6 +19,7 @@ import com.wotb.core.processing.ReplayProcessingError;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
+import com.wotb.core.processing.TeamPerspectiveResolver;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
@@ -139,32 +142,44 @@ public class ReconstructionController {
 
         // 再检查 scope
         if (plan.dominantScope() == null) throw new UnsupportedReplayAnalysisModeException("UNSUPPORTED_BATTLE_CATEGORY");
-        // 团队 AI 尚未实现，立即返回 422
-        if (plan.dominantScope() == ReplayAnalysisScope.TEAM_PERSPECTIVE)
-            throw new UnsupportedReplayAnalysisModeException("TEAM_ANALYSIS_NOT_IMPLEMENTED");
-
         final int total = files.length;
 
-        // 只取 PLAYER_FOCUSED 可分析单元
+        // scope 感知地筛选可分析单元；Team 允许权威结算 fallback。
         final var analyzableGroups = plan.groups().stream()
                 .filter(g -> g.representative().capabilities() != null
                         && BatchAnalyzer.isAiAnalyzable(g.representative(), plan.dominantScope()))
                 .toList();
-        if (analyzableGroups.isEmpty()) throw new IllegalArgumentException("NO_BATTLE_DATA");
+        if (analyzableGroups.isEmpty()) {
+            if (plan.dominantScope() == ReplayAnalysisScope.TEAM_PERSPECTIVE) {
+                final boolean teamResolved = plan.groups().stream()
+                        .map(ReplayPerspectiveGroup::representative)
+                        .map(ReplayProcessingResult::capabilities)
+                        .anyMatch(capabilities -> capabilities != null
+                                && capabilities.perspectiveTeamResolved());
+                if (teamResolved) {
+                    throw new IllegalArgumentException("TEAM_FEATURES_UNAVAILABLE");
+                }
+                throw new PerspectiveTeamNotResolvedException(
+                        unresolvedTeamCode(plan.groups()));
+            }
+            throw new IllegalArgumentException("NO_BATTLE_DATA");
+        }
 
         final var fileStatuses = buildFileStatuses(uploadResults, plan);
         final int failedCount = countFailed(fileStatuses);
         final int analyzedUnitCount = analyzableGroups.size();
-        final var units = AiReplayAnalysisService.buildAnalysisUnits(analyzableGroups, plan.dominantScope());
+        final int validCount = (int) allResults.stream()
+                .filter(r -> r.capabilities() != null
+                        && BatchAnalyzer.isAiAnalyzable(r, plan.dominantScope()))
+                .count();
 
         // 按 plan.mode() 选择分析路径
         return switch (plan.mode()) {
             case SINGLE_PLAYER_BATTLE -> {
                 final var aiResult = aiService.analyzePlayerOrFallback(
                         analyzableGroups.getFirst().representative());
-                final int validCount = (int) allResults.stream()
-                        .filter(r -> r.capabilities() != null && BatchAnalyzer.isAiAnalyzable(r, plan.dominantScope()))
-                        .count();
+                final var units = AiReplayAnalysisService.buildAnalysisUnits(
+                        analyzableGroups, plan.dominantScope());
                 yield new AnalyzeResponse(ReplayAnalysisMode.SINGLE_PLAYER_BATTLE,
                         total, validCount,
                         plan.effectiveUnitCount(), 1, 1,
@@ -178,9 +193,8 @@ public class ReconstructionController {
                         .map(ReplayProcessingResult::battle)
                         .toList();
                 final var aiResult = aiService.analyzeMulti(battles);
-                final int validCount = (int) allResults.stream()
-                        .filter(r -> r.capabilities() != null && BatchAnalyzer.isAiAnalyzable(r, plan.dominantScope()))
-                        .count();
+                final var units = AiReplayAnalysisService.buildAnalysisUnits(
+                        analyzableGroups, plan.dominantScope());
                 yield new AnalyzeResponse(ReplayAnalysisMode.MULTI_PLAYER_BATTLE,
                         total, validCount,
                         plan.effectiveUnitCount(), analyzedUnitCount, analyzedUnitCount,
@@ -188,8 +202,17 @@ public class ReconstructionController {
                         plan.exactDuplicateCount(), plan.sameTeamDuplicatePerspectiveCount(),
                         fileStatuses, units, aiResult.keyEvents());
             }
+            case SINGLE_TEAM_BATTLE, MULTI_TEAM_BATTLE -> {
+                final var teamResult = aiService.analyzeTeamGroups(analyzableGroups);
+                final var aiResult = teamResult.analysis();
+                yield new AnalyzeResponse(plan.mode(),
+                        total, validCount,
+                        plan.effectiveUnitCount(), analyzedUnitCount, analyzedUnitCount,
+                        aiResult.analysis(), failedCount,
+                        plan.exactDuplicateCount(), plan.sameTeamDuplicatePerspectiveCount(),
+                        fileStatuses, teamResult.units(), aiResult.keyEvents());
+            }
             case NONE -> throw new IllegalArgumentException("NO_BATTLE_DATA");
-            default -> throw new UnsupportedReplayAnalysisModeException("TEAM_ANALYSIS_NOT_IMPLEMENTED");
         };
     }
 
@@ -249,14 +272,26 @@ public class ReconstructionController {
     public ResponseEntity<String> handleUpstream(final AiUpstreamException e) {
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .contentType(MediaType.TEXT_PLAIN)
+                .body(e.code());
+    }
+
+    /**
+     * 不支持的 AI 分析模式 → 422。
+     */
+    @ExceptionHandler(UnsupportedReplayAnalysisModeException.class)
+    public ResponseEntity<String> handleUnsupportedMode(final UnsupportedReplayAnalysisModeException e) {
+        return ResponseEntity.unprocessableContent()
+                .contentType(MediaType.TEXT_PLAIN)
                 .body(e.getMessage());
     }
 
     /**
-     * 不支持的 AI 分析模式（团队视角等）→ 422。
+     * 无法可靠确定训练房/联赛的 perspectiveTeam → 422。
      */
-    @ExceptionHandler(UnsupportedReplayAnalysisModeException.class)
-    public ResponseEntity<String> handleUnsupportedMode(final UnsupportedReplayAnalysisModeException e) {
+    @ExceptionHandler(PerspectiveTeamNotResolvedException.class)
+    public ResponseEntity<String> handlePerspectiveTeam(
+            final PerspectiveTeamNotResolvedException e
+    ) {
         return ResponseEntity.unprocessableContent()
                 .contentType(MediaType.TEXT_PLAIN)
                 .body(e.getMessage());
@@ -345,10 +380,15 @@ public class ReconstructionController {
         for (final var gp : plan.groups()) {
             final var rep = gp.representative();
             final int repIdx = resultToIndex.getOrDefault(rep, -1);
+            final BattleCategory category = rep.battle() != null
+                    ? BattleCategoryUtils.fromArenaBonusType(rep.battle().arenaBonusType)
+                    : BattleCategory.UNKNOWN;
             statuses.add(ReplayFileAnalysisStatus.primary(
-                    rep.fileName(), rep.status(), BattleCategory.RANDOM, plan.dominantScope(),
+                    rep.fileName(), rep.status(), category, plan.dominantScope(),
                     rep.battle() != null ? rep.battle().arenaId : null,
-                    gp.key().perspectiveTeam(), repIdx, rep.capabilities()));
+                    gp.key().perspectiveTeam(),
+                    BatchAnalyzer.isAiAnalyzable(rep, plan.dominantScope()),
+                    repIdx, rep.capabilities()));
             indexed.put(rep, Boolean.TRUE);
             for (final var dup : gp.duplicates()) {
                 final int dupIdx = resultToIndex.getOrDefault(dup, -1);
@@ -423,6 +463,21 @@ public class ReconstructionController {
                         && f.relation() == ReplayFileRelation.INDEPENDENT_BATTLE
                         && f.error() != null)
                 .count();
+    }
+
+    private static String unresolvedTeamCode(
+            final List<ReplayPerspectiveGroup> groups
+    ) {
+        final boolean conflict = groups.stream()
+                .map(ReplayPerspectiveGroup::representative)
+                .map(result -> TeamPerspectiveResolver.resolve(
+                        result.battle(), result.reconstruction()))
+                .anyMatch(resolution -> resolution.limitations().stream()
+                        .anyMatch(code -> "PERSPECTIVE_TEAM_CONFLICT".equals(code)
+                                || "RECORDER_IDENTITY_CONFLICT".equals(code)));
+        return conflict
+                ? "PERSPECTIVE_TEAM_CONFLICT"
+                : "PERSPECTIVE_TEAM_UNRESOLVED";
     }
 
     /**

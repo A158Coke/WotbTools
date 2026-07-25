@@ -4,14 +4,8 @@ import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
 /**
- * 战斗特征提取器接口（占位，后续实现具体战术特征）。
- *
- * TODO: implement concrete feature extraction logic in next phase (AI integration)
- * - Opening route analysis
- * - Engagement detection
- * - Damage exchange patterns
- * - Movement heatmap
- * - Survival analysis
+ * 战斗特征提取器接口。
+ * 默认实现负责移动、交火、战斗阶段和关键事件等战术特征。
  */
 public interface BattleFeatureExtractor {
 

@@ -1,7 +1,9 @@
 package com.wotb.core.processing;
 
 import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ReplayProcessingCapabilitiesTest {
 
@@ -49,14 +51,29 @@ class ReplayProcessingCapabilitiesTest {
     }
 
     @Test
-    void teamPerspectiveRequiresReconAndTeamResolved() {
+    void teamPerspectiveWithReconAndTeamResolvedIsAnalyzable() {
         final var caps = new ReplayProcessingCapabilities(true, false, true, false, false, true, false, true);
         assertTrue(BatchAnalyzer.isAiAnalyzable(caps, ReplayAnalysisScope.TEAM_PERSPECTIVE));
     }
 
     @Test
-    void teamPerspectiveWithoutReconNotAnalyzable() {
-        final var caps = new ReplayProcessingCapabilities(true, false, false, false, false, true, false, true);
+    void teamPerspectiveWithoutReconUsesAuthoritativeSummaryFallback() {
+        final var caps = new ReplayProcessingCapabilities(
+                true, true, false, false, false, true, false, false);
+        assertTrue(BatchAnalyzer.isAiAnalyzable(caps, ReplayAnalysisScope.TEAM_PERSPECTIVE));
+    }
+
+    @Test
+    void teamPerspectiveWithoutSummaryOrReconstructedFeaturesIsNotAnalyzable() {
+        final var caps = new ReplayProcessingCapabilities(
+                true, false, true, true, false, true, false, false);
+        assertFalse(BatchAnalyzer.isAiAnalyzable(
+                caps, ReplayAnalysisScope.TEAM_PERSPECTIVE));
+    }
+
+    @Test
+    void teamPerspectiveWithoutResolvedTeamIsNotAnalyzable() {
+        final var caps = new ReplayProcessingCapabilities(true, false, true, false, false, false, false, false);
         assertFalse(BatchAnalyzer.isAiAnalyzable(caps, ReplayAnalysisScope.TEAM_PERSPECTIVE));
     }
 

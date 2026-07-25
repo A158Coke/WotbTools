@@ -5,9 +5,8 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
 /**
- * 单场 AI 分析上下文（预留模型，后续实现 AiInputFactory 时使用）。
- *
- * TODO: implement SingleBattleAiInputFactory to construct this from ReplayProcessingResult
+ * 单场玩家视角 AI 分析上下文模型。
+ * 当前玩家分析路径直接构建兼容提示；该模型保留给后续统一输入工厂。
  */
 public record SingleBattleAnalysisContext(
         ReplayProcessingResult replay,

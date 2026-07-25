@@ -14,6 +14,8 @@ package com.wotb.core.replay.event;
  * @param confidence 解码置信度
  * @param entityId   实体 ID
  * @param accountId  账号 ID
+ * @param nickname   updateArena2 中的玩家昵称
+ * @param team       updateArena2 中的队伍编号
  */
 public record ParticipantMappingEvent(
         int sequence,
@@ -21,6 +23,19 @@ public record ParticipantMappingEvent(
         int packetType,
         DecodeConfidence confidence,
         int entityId,
-        long accountId
+        long accountId,
+        String nickname,
+        int team
 ) implements ReplayEvent {
+
+    public ParticipantMappingEvent(
+            final int sequence,
+            final ReplayTimestamp timestamp,
+            final int packetType,
+            final DecodeConfidence confidence,
+            final int entityId,
+            final long accountId
+    ) {
+        this(sequence, timestamp, packetType, confidence, entityId, accountId, null, 0);
+    }
 }
