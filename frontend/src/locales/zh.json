@@ -41,7 +41,8 @@
         "select_cols": "选择列",
         "picker_locked": "列选择器打开时不可切换表格，请先点「完成」",
         "export_aggregate": "合并汇总",
-        "export_each": "每场导出"
+        "export_each": "每场导出",
+        "download_png": "下载为 PNG"
     },
     "result": {
         "aggregate_tab": "汇总 ({count} 名选手)",
