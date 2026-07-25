@@ -363,11 +363,26 @@ describe('ReplayPage PNG export', () => {
       expect(opts.height * opts.scale).toBeLessThanOrEqual(16384)
     })
 
-    it('battle-0 export receives different dimensions from aggregate', async () => {
+    it('battle-0 export uses its own measurement (different size)', async () => {
       setResp(makeResp())
       setActiveTab('b0')
       wrapper = mountPage()
-      setCloneScrollProps()
+      // Use different dimensions to prove battle is measured independently
+      const origAppendChild = document.body.appendChild.bind(document.body)
+      vi.spyOn(document.body, 'appendChild').mockImplementation((node) => {
+        const result = origAppendChild(node)
+        const clone = node.querySelector?.('.replay-export-root')
+        if (clone) {
+          setScrollProps(clone, 1800, 450)
+          for (const wrap of clone.querySelectorAll('.tablewrap')) {
+            setScrollProps(wrap, 1750, 400)
+          }
+          for (const tbl of clone.querySelectorAll('table')) {
+            setScrollProps(tbl, 1700, 350)
+          }
+        }
+        return result
+      })
 
       await pngButton(wrapper).trigger('click')
       await flushPromises()
@@ -377,6 +392,9 @@ describe('ReplayPage PNG export', () => {
       const opts = calls[0][1]
       expect(opts.width).not.toBe(800)
       expect(opts.height).not.toBe(600)
+      // Should be close to the battle's own dimensions (1800x450)
+      expect(opts.width).toBeGreaterThanOrEqual(1800)
+      expect(opts.height).toBeGreaterThanOrEqual(450)
       expect(opts.width * opts.scale).toBeLessThanOrEqual(16384)
       expect(opts.height * opts.scale).toBeLessThanOrEqual(16384)
     })
