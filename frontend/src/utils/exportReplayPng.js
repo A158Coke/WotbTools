@@ -42,14 +42,16 @@ export function computeExportDimensions(el) {
     return { width: 800, height: 600, scale: 1 }
   }
 
-  // Calculate scale that keeps both dimensions within the max canvas limit
+  // Calculate scale that keeps both dimensions within the max canvas limit.
+  // Use floor to guarantee the result never exceeds the limit after rounding.
   let scale = MAX_SCALE
   if (contentW * scale > MAX_CANVAS_DIMENSION) {
-    scale = Math.max(MIN_SCALE, MAX_CANVAS_DIMENSION / contentW)
+    scale = Math.floor((MAX_CANVAS_DIMENSION / contentW) * 100) / 100
   }
   if (contentH * scale > MAX_CANVAS_DIMENSION) {
-    scale = Math.max(MIN_SCALE, Math.min(scale, MAX_CANVAS_DIMENSION / contentH))
+    scale = Math.min(scale, Math.floor((MAX_CANVAS_DIMENSION / contentH) * 100) / 100)
   }
+  scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale))
 
   return {
     width: contentW,
