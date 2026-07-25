@@ -345,7 +345,9 @@
     "replay": {
         "no_files": "Select replay files or a folder first",
         "preview_failed": "Preview failed",
-        "export_failed": "Export failed"
+        "export_failed": "Export failed",
+        "png_export_failed": "PNG export failed",
+        "png_exporting": "Exporting PNG…"
     },
     "extended": {
         "nav": "Rating V2",
