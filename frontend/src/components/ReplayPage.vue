@@ -74,50 +74,49 @@ function expandExportTables(clone) {
 }
 
 function measureExportClone(clone) {
-  let maxContentW = maxFiniteDimension(
+  // Read the clone's natural scroll width (includes padding in normal flow)
+  const naturalRootW = maxFiniteDimension(
     clone.scrollWidth,
     clone.getBoundingClientRect().width
   )
 
+  // Find the widest descendant content (tablewrap / table / direct children)
+  let maxDescendantW = 0
   for (const wrap of clone.querySelectorAll('.tablewrap')) {
-    const wrapW = maxFiniteDimension(
-      wrap.scrollWidth,
-      wrap.getBoundingClientRect().width
-    )
-    if (wrapW > maxContentW) maxContentW = wrapW
+    const wrapW = maxFiniteDimension(wrap.scrollWidth, wrap.getBoundingClientRect().width)
+    if (wrapW > maxDescendantW) maxDescendantW = wrapW
     for (const tbl of wrap.querySelectorAll('table')) {
-      const tblW = maxFiniteDimension(
-        tbl.scrollWidth,
-        tbl.getBoundingClientRect().width
-      )
-      if (tblW > maxContentW) maxContentW = tblW
+      const tblW = maxFiniteDimension(tbl.scrollWidth, tbl.getBoundingClientRect().width)
+      if (tblW > maxDescendantW) maxDescendantW = tblW
     }
   }
   for (const child of clone.children) {
-    const csw = maxFiniteDimension(
-      child.scrollWidth,
-      child.getBoundingClientRect().width
-    )
-    if (csw > maxContentW) maxContentW = csw
+    const csw = maxFiniteDimension(child.scrollWidth, child.getBoundingClientRect().width)
+    if (csw > maxDescendantW) maxDescendantW = csw
   }
 
-  // Root padding is 16px left + 16px right = 32px; ensure it's included
-  clone.style.width = Math.ceil(maxContentW) + 'px'
+  // When the required width comes from descendants (not root's own scroll),
+  // we must add the root's horizontal padding and border so they are not clipped.
+  const cs = clone.ownerDocument.defaultView.getComputedStyle(clone)
+  const padLeft = parseFloat(cs.paddingLeft) || 0
+  const padRight = parseFloat(cs.paddingRight) || 0
+  const borderLeft = parseFloat(cs.borderLeftWidth) || 0
+  const borderRight = parseFloat(cs.borderRightWidth) || 0
+  const hExtra = padLeft + padRight + borderLeft + borderRight
 
-  // After setting width, re-read layout for final dimensions
-  const finalW = maxFiniteDimension(
-    clone.scrollWidth,
-    clone.getBoundingClientRect().width
-  )
-  const finalH = maxFiniteDimension(
-    clone.scrollHeight,
-    clone.getBoundingClientRect().height
-  )
+  // naturalRootW already includes padding. When descendant dictates the width,
+  // add hExtra so padding+border are not clipped.
+  const requiredW = maxDescendantW > naturalRootW
+    ? maxDescendantW + hExtra
+    : naturalRootW
 
-  return {
-    width: Math.ceil(finalW),
-    height: Math.ceil(finalH)
-  }
+  clone.style.width = Math.ceil(requiredW) + 'px'
+
+  // Re-read final layout after width is set (height may have changed due to reflow)
+  const finalW = maxFiniteDimension(clone.scrollWidth, clone.getBoundingClientRect().width)
+  const finalH = maxFiniteDimension(clone.scrollHeight, clone.getBoundingClientRect().height)
+
+  return { width: Math.ceil(finalW), height: Math.ceil(finalH) }
 }
 
 function waitForLayout() {
