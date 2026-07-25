@@ -274,13 +274,17 @@ describe('ReplayPage PNG export', () => {
       expect(clone.querySelector('.tablewrap')).toBeTruthy()
     })
 
-    it('battle-0 clone is different from aggregate', async () => {
+    it('battle-0 clone contains battle data not aggregate', async () => {
       setResp(makeResp())
       setActiveTab('b0')
       wrapper = mountPage()
       await pngButton(wrapper).trigger('click')
       await flushPromises()
       expect(html2canvasMock).toHaveBeenCalled()
+
+      const clone = html2canvasMock.mock.calls[0][0]
+      expect(clone.textContent).toContain('Lagoon')
+      expect(clone.textContent).not.toContain('Battles')
     })
 
     it('clone has export-root and theme class', async () => {
