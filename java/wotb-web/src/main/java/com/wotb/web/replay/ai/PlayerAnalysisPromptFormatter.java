@@ -9,8 +9,8 @@ import com.wotb.core.processing.PlayerSideResolver.Side;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.List;
+import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * Formats player data for AI prompts using FRIENDLY / ENEMY / UNKNOWN labels
@@ -69,10 +69,10 @@ public final class PlayerAnalysisPromptFormatter {
 
     private static void appendGroup(final StringBuilder sb, final String heading,
                                     final Map<PlayerResult, Side> sides, final Side side) {
-        final var filtered = sides.entrySet().stream()
+        final List<PlayerResult> filtered = sides.entrySet().stream()
                 .filter(e -> e.getValue() == side)
                 .map(Map.Entry::getKey)
-                .collect(Collectors.toList());
+                .toList();
         if (filtered.isEmpty()) return;
         sb.append("=== ").append(heading).append(" ===\n");
         filtered.forEach(p -> sb.append(formatPlayerLine(p, side)).append('\n'));
