@@ -439,7 +439,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .orElse(0);
         return memberTeam == 0
                 ? List.of()
-                : buildEngagements(memberDamage, memberTeam, memberAccountId);
+                : buildEngagements(memberDamage, memberTeam, memberAccountId, memberNickname);
     }
 
     /** Match member by accountId (preferred) or fall back to nickname. */
@@ -456,24 +456,27 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     private static List<EngagementSummary> buildEngagements(
             final List<AttributedDamage> damages,
             final int perspectiveTeam,
-            final Long memberAccountId
+            final Long memberAccountId,
+            final String memberNickname
     ) {
         if (damages.isEmpty()) {
             return List.of();
         }
         final List<AttributedDamage> sorted = sortedDamageEvents(damages);
         final List<EngagementSummary> result = new ArrayList<>();
+        final MemberIdentity memberId = memberAccountId != null
+                ? new MemberIdentity(memberAccountId, memberNickname) : null;
         int segmentStart = 0;
         for (int index = 1; index < sorted.size(); index++) {
             if (damageGap(sorted.get(index - 1), sorted.get(index))
                     > ENGAGEMENT_GAP_SEC) {
                 result.add(buildEngagementSegment(
-                        sorted.subList(segmentStart, index), perspectiveTeam, memberAccountId));
+                        sorted.subList(segmentStart, index), perspectiveTeam, memberAccountId, memberId));
                 segmentStart = index;
             }
         }
         result.add(buildEngagementSegment(
-                sorted.subList(segmentStart, sorted.size()), perspectiveTeam, memberAccountId));
+                sorted.subList(segmentStart, sorted.size()), perspectiveTeam, memberAccountId, memberId));
         return List.copyOf(result);
     }
 
@@ -501,7 +504,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             final int perspectiveTeam
     ) {
         final EngagementSummary base =
-                buildEngagementSegment(events, perspectiveTeam, null);
+                buildEngagementSegment(events, perspectiveTeam, null, null);
         final Map<Long, List<AttributedDamage>> damageByTarget = new HashMap<>();
         final List<String> orderedTargets = new ArrayList<>();
         for (final AttributedDamage damage : events) {
@@ -568,7 +571,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     private static EngagementSummary buildEngagementSegment(
             final List<AttributedDamage> events,
             final int perspectiveTeam,
-            final Long memberAccountId
+            final Long memberAccountId,
+            final MemberIdentity memberIdentity
     ) {
         final Set<Long> allies = new LinkedHashSet<>();
         final Set<Long> enemies = new LinkedHashSet<>();
@@ -576,12 +580,12 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         int received = 0;
         DecodeConfidence confidence = DecodeConfidence.EXACT;
         for (final AttributedDamage damage : events) {
-            final boolean attackerIsSubject = memberAccountId == null
+            final boolean attackerIsSubject = memberIdentity == null
                     ? damage.attacker().team() == perspectiveTeam
-                    : damage.attacker().accountId() == memberAccountId;
-            final boolean victimIsSubject = memberAccountId == null
+                    : memberIdentity.matches(damage.attacker());
+            final boolean victimIsSubject = memberIdentity == null
                     ? damage.victim().team() == perspectiveTeam
-                    : damage.victim().accountId() == memberAccountId;
+                    : memberIdentity.matches(damage.victim());
             if (attackerIsSubject && damage.attacker().team() != damage.victim().team()) {
                 dealt += damage.event().damage();
             }
