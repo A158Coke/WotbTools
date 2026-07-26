@@ -6,17 +6,23 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.processing.BatchAnalyzer;
+import com.wotb.core.processing.PlayerSideResolver;
+import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.processing.ReplayIdentity;
+import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingCapabilities;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
+import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
+import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.feature.TeamAnalysisUnitReport;
 import com.wotb.core.replay.feature.TeamAggregateResult;
 import com.wotb.core.replay.feature.TeamBattleAnalysisSummary;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamFeatureCoverage;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
+import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -28,6 +34,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.IntStream;
 
@@ -292,101 +299,203 @@ class AiReplayAnalysisServiceTest {
         verify(service, never()).analyzePlayerContext(any());
     }
 
-    // ========== Player-focused request body contract tests (section 6) ==========
+    // ========== Full feature path (analyzePlayerContext) ==========
 
     @Test
-    void singlePlayerFallbackRequestBody_recorderTeam1_noRawTeam() throws IOException {
+    void fullFeaturePathRequestBody_recorderTeam1_usesFriendlyLabel() throws IOException {
+        final var service = startService(2);
+        final var ctx = buildPlayerContext(service, makePlayerBattle(1, 1));
+        service.analyzePlayerContext(ctx);
+
+        final String body = requestBody.get();
+        assertFalse(body.contains("队伍1"), "Full feature prompt must not contain 队伍1");
+        assertFalse(body.contains("队伍2"), "Full feature prompt must not contain 队伍2");
+        assertFalse(body.contains("队伍: 1"), "Full feature prompt must not contain raw team format");
+        assertFalse(body.contains("队伍: 2"), "Full feature prompt must not contain raw team format");
+        assertFalse(body.contains("Team 1"), "Full feature prompt must not contain Team 1");
+        assertFalse(body.contains("Team 2"), "Full feature prompt must not contain Team 2");
+        assertTrue(body.contains("侧=友方"), "Reconstruction supplement should show friendly side");
+        assertTrue(body.contains("敌方"), "Enemy team should be labeled as enemy");
+    }
+
+    @Test
+    void fullFeaturePathRequestBody_recorderTeam2_stillFriendly() throws IOException {
+        final var service = startService(2);
+        final var ctx = buildPlayerContext(service, makePlayerBattle(2, 2));
+        service.analyzePlayerContext(ctx);
+
+        final String body = requestBody.get();
+        assertFalse(body.contains("队伍1"), "Full feature prompt must not contain 队伍1");
+        assertFalse(body.contains("队伍2"), "Full feature prompt must not contain 队伍2");
+        assertTrue(body.contains("侧=友方"), "Recorder in team 2 should still show friendly side");
+    }
+
+    @Test
+    void fullFeaturePathRequestBody_invalidRecorderTeam_usesUnknown() throws IOException {
+        final var service = startService(2);
+        final var ctx = buildPlayerContext(service, makePlayerBattle(3, 1));
+        service.analyzePlayerContext(ctx);
+
+        final String body = requestBody.get();
+        assertFalse(body.contains("队伍1"), "Invalid team prompt must not contain 队伍1");
+        assertFalse(body.contains("队伍2"), "Invalid team prompt must not contain 队伍2");
+        assertTrue(body.contains("侧=未知") || body.contains("未知"),
+                "Invalid recorder team should show unknown side");
+    }
+
+    @Test
+    void fullFeaturePath_playerResultTeamUnchanged() throws IOException {
         final var service = startService(2);
         final Battle battle = makePlayerBattle(1, 1);
-        service.analyze(battle, null);
+        final int[] originalTeams = battle.players.stream().mapToInt(p -> p.team).toArray();
 
-        final String body = requestBody.get();
-        assertFalse(body.contains("队伍1"), "Fallback prompt must not contain 队伍1");
-        assertFalse(body.contains("队伍2"), "Fallback prompt must not contain 队伍2");
-        assertFalse(body.contains("队伍: 1"), "Fallback prompt must not contain raw team format");
-        assertFalse(body.contains("队伍: 2"), "Fallback prompt must not contain raw team format");
-        assertTrue(body.contains("友方") || body.contains("FRIENDLY"), "Should contain friendly label");
+        final var ctx = buildPlayerContext(service, battle);
+        service.analyzePlayerContext(ctx);
+
+        for (int i = 0; i < battle.players.size(); i++) {
+            assertEquals(originalTeams[i], battle.players.get(i).team,
+                    "PlayerResult.team must not be modified");
+        }
     }
 
-    @Test
-    void singlePlayerFallbackRequestBody_recorderTeam2_stillFriendly() throws IOException {
-        final var service = startService(2);
-        final Battle battle = makePlayerBattle(2, 2);
-        service.analyze(battle, null);
-
-        final String body = requestBody.get();
-        assertFalse(body.contains("队伍1"), "Fallback prompt must not contain 队伍1");
-        assertFalse(body.contains("队伍2"), "Fallback prompt must not contain 队伍2");
-        assertTrue(body.contains("友方"), "Recorder in team 2 should still be friendly, body: " + body);
-    }
+    // ========== Strong multi-player request body tests ==========
 
     @Test
-    void multiPlayerRequestBody_eachBattleIndependent_noRawTeam() throws IOException {
+    void multiPlayer_threeBattles_exactStats() throws IOException {
         final var service = startService(2);
-        // Two battles: first with recorder team=1, second with recorder team=2
-        final Battle battle1 = makePlayerBattle(1, 1);
-        battle1.winnerTeam = 1;
-        final Battle battle2 = makePlayerBattle(2, 2);
-        battle2.winnerTeam = 2;
-        final List<Battle> battles = List.of(battle1, battle2);
+        // Battle A: recorderTeam=1, winnerTeam=1 → friendly win
+        final Battle battleA = makePlayerBattle(1, 1);
+        battleA.winnerTeam = 1;
+        // Battle B: recorderTeam=2, winnerTeam=1 → enemy win (recorder in team 2 loses to team 1)
+        final Battle battleB = makePlayerBattle(2, 1);
+        battleB.winnerTeam = 1;
+        // Battle C: recorderTeam=2, winnerTeam=null → draw/unknown
+        final Battle battleC = makePlayerBattle(2, 1);
+        battleC.winnerTeam = null;
 
-        service.analyzeMulti(battles);
+        service.analyzeMulti(List.of(battleA, battleB, battleC));
 
         final String body = requestBody.get();
-        // No raw team numbers
         assertFalse(body.contains("队伍1"), "Multi prompt must not contain 队伍1");
         assertFalse(body.contains("队伍2"), "Multi prompt must not contain 队伍2");
-        assertFalse(body.contains("队伍: 1"), "Multi prompt must not contain 队伍: 1");
-        assertFalse(body.contains("队伍: 2"), "Multi prompt must not contain 队伍: 2");
-        // Three-state winner preserved
-        assertTrue(body.contains("友方获胜") || body.contains("FRIENDLY_WIN"),
-                "Should contain friendly win, body: " + body);
-        // Draw/unknown handling
-        assertTrue(body.contains("平局或未知") || body.contains("DRAW_OR_UNKNOWN")
-                        || body.contains("友方获胜") || body.contains("敌方获胜"),
-                "Should contain three-state winner, body: " + body);
+
+        // Each battle must show correct result
+        assertTrue(body.contains("友方获胜"), "Battle A should be friendly win");
+        assertTrue(body.contains("敌方获胜"), "Battle B should be enemy win");
+        assertTrue(body.contains("平局或未知"), "Battle C should be draw/unknown");
+
+        // Exact aggregation stats
+        assertTrue(body.contains("可统计场数: 3"), "Should have 3 stat-able battles");
+        assertTrue(body.contains("已知胜负场数: 2"), "Should have 2 decided battles");
+        assertTrue(body.contains("友方获胜场数: 1"), "Should have 1 friendly win");
+        assertTrue(body.contains("敌方获胜场数: 1"), "Should have 1 enemy win");
+        assertTrue(body.contains("平局或未知场数: 1"), "Should have 1 draw/unknown");
+        assertTrue(body.contains("胜率: 50%"), "Win rate should be 1/2 = 50%");
     }
 
     @Test
-    void multiPlayerRequestBody_drawNotShownAsLoss() throws IOException {
+    void multiPlayer_allDraw_winRateUncomputable() throws IOException {
         final var service = startService(2);
         final Battle battle = makePlayerBattle(1, 1);
-        battle.winnerTeam = null; // draw/unknown
-        final List<Battle> battles = List.of(battle);
+        battle.winnerTeam = null;
 
-        service.analyzeMulti(battles);
+        service.analyzeMulti(List.of(battle));
 
         final String body = requestBody.get();
-        assertTrue(body.contains("平局或未知") || body.contains("DRAW_OR_UNKNOWN"),
-                "Draw must be preserved as three-state, not collapsed to loss, body: " + body);
-        assertFalse(body.contains(" | 负"), "Must not output '负' for draw");
+        assertFalse(body.contains("队伍1"), "All-draw prompt must not contain 队伍1");
+        assertFalse(body.contains("队伍2"), "All-draw prompt must not contain 队伍2");
+        assertTrue(body.contains("平局或未知"), "Should output draw/unknown");
+        assertTrue(body.contains("已知胜负场数: 0"), "Should have 0 decided battles");
+        assertTrue(body.contains("友方获胜场数: 0"), "Should have 0 friendly wins");
+        assertTrue(body.contains("敌方获胜场数: 0"), "Should have 0 enemy wins");
+        assertTrue(body.contains("平局或未知场数: 1"), "Should have 1 draw/unknown");
+        assertTrue(body.contains("胜率: 无法计算"), "Win rate should be uncomputable");
     }
 
     @Test
-    void multiPlayerRequestBody_illegalWinnerTeam_stillSucceeds() throws IOException {
+    void multiPlayer_invalidWinnerTeam_minus1_drawOrUnknown() throws IOException {
         final var service = startService(2);
-        final Battle battle = makePlayerBattle(1, 3); // winnerTeam=3 is illegal
-        final List<Battle> battles = List.of(battle);
-
-        service.analyzeMulti(battles);
+        final Battle battle = makePlayerBattle(1, 1);
+        battle.winnerTeam = -1;
+        service.analyzeMulti(List.of(battle));
 
         final String body = requestBody.get();
-        assertTrue(body.contains("平局或未知") || body.contains("DRAW_OR_UNKNOWN"),
-                "Illegal winnerTeam must produce draw/unknown, body: " + body);
+        assertTrue(body.contains("平局或未知"), "winnerTeam=-1 must produce draw/unknown, body: " + body);
+        // The per-battle result must not be "敌方获胜"
+        assertTrue(body.contains("| 平局或未知 |"), "Battle result must be draw/unknown, not enemy win");
     }
 
     @Test
-    void multiPlayerRequestBody_illegalRecorderTeam_usesUnknown() throws IOException {
+    void multiPlayer_invalidWinnerTeam_0_drawOrUnknown() throws IOException {
         final var service = startService(2);
-        final Battle battle = makePlayerBattle(3, 1); // recorder team=3 is illegal
-        final List<Battle> battles = List.of(battle);
-
-        service.analyzeMulti(battles);
+        final Battle battle = makePlayerBattle(1, 1);
+        battle.winnerTeam = 0;
+        service.analyzeMulti(List.of(battle));
 
         final String body = requestBody.get();
-        // Should still produce output without crashing
-        assertNotNull(body);
-        assertFalse(body.isEmpty());
+        assertTrue(body.contains("| 平局或未知 |"), "winnerTeam=0 must produce draw/unknown");
+    }
+
+    @Test
+    void multiPlayer_invalidWinnerTeam_3_drawOrUnknown() throws IOException {
+        final var service = startService(2);
+        final Battle battle = makePlayerBattle(1, 1);
+        battle.winnerTeam = 3;
+        service.analyzeMulti(List.of(battle));
+
+        final String body = requestBody.get();
+        assertTrue(body.contains("| 平局或未知 |"), "winnerTeam=3 must produce draw/unknown");
+    }
+
+    @Test
+    void multiPlayer_invalidRecorderTeam_unknownSide() throws IOException {
+        final var service = startService(2);
+        for (final int invalidTeam : List.of(-1, 0, 3, Integer.MAX_VALUE)) {
+            final Battle battle = makePlayerBattle(1, 1);
+            // Override recorder team
+            battle.players.getFirst().team = invalidTeam;
+            battle.recorder = battle.players.getFirst().nickname;
+            service.analyzeMulti(List.of(battle));
+
+            final String body = requestBody.get();
+            assertTrue(body.contains("侧=未知") || body.contains("未知"),
+                    "Invalid recorderTeam=" + invalidTeam + " should show unknown side");
+            assertTrue(body.contains("平局或未知") || body.contains("DRAW_OR_UNKNOWN"),
+                    "Invalid recorderTeam should produce draw/unknown result");
+        }
+    }
+
+    @Test
+    void multiPlayer_playerResultTeamUnchanged() throws IOException {
+        final var service = startService(2);
+        final Battle battle = makePlayerBattle(1, 1);
+        final int[] originalTeams = battle.players.stream().mapToInt(p -> p.team).toArray();
+
+        service.analyzeMulti(List.of(battle));
+
+        for (int i = 0; i < battle.players.size(); i++) {
+            assertEquals(originalTeams[i], battle.players.get(i).team,
+                    "PlayerResult.team must not be modified by analyzeMulti");
+        }
+    }
+
+    // ========== Test helpers ==========
+
+    private static SinglePlayerBattleAnalysisContext buildPlayerContext(
+            final AiReplayAnalysisService service, final Battle battle) {
+        final PlayerResult rec = battle.recorderResult();
+        final PlayerBattleFeatureSet features = new PlayerBattleFeatureSet(
+                List.of(), List.of(), List.of(), List.of(), List.of(), true);
+        final RecorderEntityMapping recorderMapping = new RecorderEntityMapping(
+                rec != null ? rec.accountId : 0L,
+                null, null, null,
+                rec != null && PlayerSideResolver.isValidRawTeam(rec.team) ? rec.team : null,
+                null, DecodeConfidence.EXACT
+        );
+        final ReplayCoverage coverage = new ReplayCoverage(true, 100, 100, 0, 0, 0, 1.0, Map.of());
+        return new SinglePlayerBattleAnalysisContext(
+                null, battle, features, recorderMapping, coverage, List.of("TEST_LIMITATION")
+        );
     }
 
     // ========== Battle builder for player-focused tests ==========

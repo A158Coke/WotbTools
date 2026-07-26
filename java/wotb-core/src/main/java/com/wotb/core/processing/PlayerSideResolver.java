@@ -5,6 +5,7 @@ import com.wotb.core.model.PlayerResult;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Resolves player side (FRIENDLY / ENEMY / UNKNOWN) for random-battle
@@ -30,10 +31,6 @@ public final class PlayerSideResolver {
         return team == 1 || team == 2;
     }
 
-    /**
-     * Resolve the side of a player given the recorder's raw team number.
-     * Both teams must be 1 or 2; any other value returns UNKNOWN.
-     */
     public static Side resolve(final int recorderTeam, final int playerTeam) {
         if (!isValidRawTeam(recorderTeam) || !isValidRawTeam(playerTeam)) {
             return Side.UNKNOWN;
@@ -41,9 +38,6 @@ public final class PlayerSideResolver {
         return recorderTeam == playerTeam ? Side.FRIENDLY : Side.ENEMY;
     }
 
-    /**
-     * Resolve the side of a player given the battle and player result.
-     */
     public static Side resolve(final Battle battle, final PlayerResult player) {
         if (battle == null || player == null) return Side.UNKNOWN;
         final Integer rt = resolveRecorderTeam(battle);
@@ -51,29 +45,21 @@ public final class PlayerSideResolver {
         return resolve(rt, player.team);
     }
 
-    /**
-     * Resolve all players in a battle into sides relative to the recorder.
-     */
     public static Map<PlayerResult, Side> resolveAll(final Battle battle) {
-        final Map<PlayerResult, Side> result = new LinkedHashMap<>();
-        if (battle == null || battle.players == null) return result;
+        if (battle == null || battle.players == null) return new LinkedHashMap<>();
         final Integer rt = resolveRecorderTeam(battle);
         if (rt == null) {
-            for (final PlayerResult p : battle.players) {
-                result.put(p, Side.UNKNOWN);
-            }
-            return result;
+            return battle.players.stream()
+                    .collect(Collectors.toMap(
+                            p -> p, p -> Side.UNKNOWN,
+                            (a, b) -> a, LinkedHashMap::new));
         }
-        for (final PlayerResult p : battle.players) {
-            result.put(p, resolve(rt, p.team));
-        }
-        return result;
+        return battle.players.stream()
+                .collect(Collectors.toMap(
+                        p -> p, p -> resolve(rt, p.team),
+                        (a, b) -> a, LinkedHashMap::new));
     }
 
-    /**
-     * Get the recorder's authoritative team number from battle.
-     * Only returns 1 or 2; returns null for any invalid value.
-     */
     public static Integer resolveRecorderTeam(final Battle battle) {
         if (battle == null) return null;
         final PlayerResult rec = battle.recorderResult();

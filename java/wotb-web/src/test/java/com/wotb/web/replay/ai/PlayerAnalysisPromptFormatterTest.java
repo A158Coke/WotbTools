@@ -1,6 +1,7 @@
 package com.wotb.web.replay.ai;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
