@@ -208,6 +208,9 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 | `TeamBattleFeatureSet` | `wotb-core/.../feature/TeamBattleFeatureSet.java` | 团队特征、覆盖率、权威结算、观测子集与 limitations |
 | `AiReplayAnalysisService` | `wotb-web/.../ai/AiReplayAnalysisService.java` | 玩家/团队 AI 调用、上游错误分类与 context 编排 |
 | `TeamAiPromptBuilder` | `wotb-web/.../ai/TeamAiPromptBuilder.java` | 确定性团队输入压缩和字符/条目预算 |
+| `PlayerSideResolver` | `wotb-core/.../processing/PlayerSideResolver.java` | 随机战斗友方/敌方/未知解析（FRIENDLY/ENEMY/UNKNOWN），基于录像者权威 team |
+| `FriendlyEnemyResult` | `wotb-core/.../processing/FriendlyEnemyResult.java` | 三态胜负转换（FRIENDLY_WIN/ENEMY_WIN/DRAW_OR_UNKNOWN） |
+| `PlayerAnalysisPromptFormatter` | `wotb-web/.../ai/PlayerAnalysisPromptFormatter.java` | AI Prompt 格式化（友方/敌方标签，独立于 Excel 导出的 PlayerResultFormat） |
 | `ReplayService` | `wotb-web/.../replay/service/ReplayService.java` | 业务编排 |
 | `ReplayCapacityLimiter` | `wotb-web/.../replay/service/ReplayCapacityLimiter.java` | 单实例回放解析并发闸门 |
 | `Mapper` | `wotb-web/.../replay/mapper/Mapper.java` | 核心模型 → DTO |
@@ -233,6 +236,30 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 | `UserNotificationController` | `wotb-web/.../user/controller/UserNotificationController.java` | 当前用户站内通知查询、未读数与已读操作 |
 | `UserNotificationService` | `wotb-web/.../user/service/UserNotificationService.java` | 写入站内通知，API payload 保持英文 key + 数据 |
 | `UserNotification` | `wotb-web/.../user/entity/UserNotification.java` | 站内通知 JPA 实体（Flyway V10） |
+
+---
+
+## AI 分析范围边界
+
+AI 复盘区分两种 scope，互不混用：
+
+### TEAM_PERSPECTIVE（训练房 / 联赛）
+
+- 分析对象是录像者所在整支队伍。
+- 使用 dominant clan 语义，不输出"友方/敌方"。
+- 支持九宫格阵型、团队 cluster、地图映射、Tank ID 映射。
+
+### PLAYER_FOCUSED（随机战斗）
+
+- 分析对象是录像者个人。
+- 使用 FRIENDLY / ENEMY / UNKNOWN 标签，禁止输出"队伍1/队伍2"。
+- 录像者所属队伍 → 友方；另一队 → 敌方。
+- 录像者在原始 team 2 时仍正确识别为友方（`PlayerSideResolver`）。
+- 胜负使用完整三态（`FriendlyEnemyResult`）：友方获胜 / 敌方获胜 / 平局或未知。
+- 多人分析每场独立解析录像者视角。
+- 胜率只统计已知胜负场数，平局/未知不作为失败。
+- `PlayerResult.team` 原始编号不受影响（仅用于内部计算）。
+- AI Prompt 由 `PlayerAnalysisPromptFormatter` 格式化（独立于 `PlayerResultFormat`）。
 
 ---
 
