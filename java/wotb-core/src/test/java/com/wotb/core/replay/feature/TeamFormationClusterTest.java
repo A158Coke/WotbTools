@@ -13,7 +13,7 @@ class TeamFormationClusterTest {
     void validCluster() {
         final var c = new TeamFormationCluster(
                 10f, 20f, 250f, 250f, 5,
-                List.of("account:1001"), 1, DecodeConfidence.EXACT);
+                List.of("account:1001"), DecodeConfidence.EXACT);
         assertEquals(10f, c.startTime());
         assertEquals(20f, c.endTime());
         assertEquals(250f, c.centroidX());
@@ -25,55 +25,53 @@ class TeamFormationClusterTest {
     void nullConfidenceDefaultsToUnknown() {
         final var c = new TeamFormationCluster(
                 10f, 20f, 250f, 250f, 5,
-                List.of("account:1001"), 1, null);
+                List.of("account:1001"), null);
         assertEquals(DecodeConfidence.UNKNOWN, c.confidence());
     }
 
     @Test
-    void nullMemberIdentitiesBecomesEmpty() {
-        final var c = new TeamFormationCluster(
-                10f, 20f, 250f, 250f, 0,
-                null, 0, DecodeConfidence.EXACT);
-        assertTrue(c.memberIdentities().isEmpty());
+    void nullMemberIdentitiesThrows() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new TeamFormationCluster(10f, 20f, 250f, 250f, 5, null, DecodeConfidence.EXACT));
     }
 
     @Test
     void defensiveCopy() {
         final var mutable = new java.util.ArrayList<>(List.of("a"));
         final var c = new TeamFormationCluster(
-                10f, 20f, 250f, 250f, 5, mutable, 1, DecodeConfidence.EXACT);
-        mutable.add("b"); // should NOT affect cluster
+                10f, 20f, 250f, 250f, 5, mutable, DecodeConfidence.EXACT);
+        mutable.add("b");
         assertEquals(1, c.memberIdentities().size());
     }
 
     @Test
     void invalidTimeRangeThrows() {
         assertThrows(IllegalArgumentException.class, () ->
-                new TeamFormationCluster(20f, 10f, 250f, 250f, 5, List.of(), 0, null));
+                new TeamFormationCluster(20f, 10f, 250f, 250f, 5, List.of(), null));
     }
 
     @Test
     void nanTimeThrows() {
         assertThrows(IllegalArgumentException.class, () ->
-                new TeamFormationCluster(Float.NaN, 10f, 250f, 250f, 5, List.of(), 0, null));
+                new TeamFormationCluster(Float.NaN, 10f, 250f, 250f, 5, List.of(), null));
     }
 
     @Test
     void nanCentroidThrows() {
         assertThrows(IllegalArgumentException.class, () ->
-                new TeamFormationCluster(10f, 20f, Float.NaN, 250f, 5, List.of(), 0, null));
+                new TeamFormationCluster(10f, 20f, Float.NaN, 250f, 5, List.of(), null));
     }
 
     @Test
     void invalidRegionThrows() {
         assertThrows(IllegalArgumentException.class, () ->
-                new TeamFormationCluster(10f, 20f, 250f, 250f, 10, List.of(), 0, null));
+                new TeamFormationCluster(10f, 20f, 250f, 250f, 10, List.of(), null));
     }
 
     @Test
-    void memberCountMismatchThrows() {
+    void blankIdentityThrows() {
         assertThrows(IllegalArgumentException.class, () ->
                 new TeamFormationCluster(10f, 20f, 250f, 250f, 5,
-                        List.of("a", "b"), 3, DecodeConfidence.EXACT));
+                        List.of("a", ""), DecodeConfidence.EXACT));
     }
 }

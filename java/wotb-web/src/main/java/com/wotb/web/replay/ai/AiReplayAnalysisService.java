@@ -853,9 +853,9 @@ public class AiReplayAnalysisService {
         }
         // 2. Fallback regex redaction for non-JSON text
         String redacted = raw;
-        // Authorization header with scheme (e.g. "Bearer secret-value", "Basic encoded")
+        // Authorization header with scheme (e.g. "Bearer secret", "Digest response=")
         redacted = redacted.replaceAll(
-                "(?i)(authorization\\s*[:=]\\s*)\\w+\\s+\\S+",
+                "(?i)(authorization\\s*[:=]\\s*)\\S+",
                 "$1[REDACTED]");
         // JSON-like single-quoted values
         redacted = redacted.replaceAll(

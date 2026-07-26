@@ -3,6 +3,9 @@ package com.wotb.core.replay.feature;
 /**
  * Resolves 500×500 canonical map coordinates into 9 grid regions.
  * <p>
+ * This is a SCOPE-NEUTRAL utility shared by PLAYER_FOCUSED and
+ * TEAM_PERSPECTIVE analysis.
+ * <p>
  * Coordinate convention:
  * <ul>
  *   <li>X: horizontal axis</li>
@@ -13,6 +16,10 @@ package com.wotb.core.replay.feature;
  * Replay coordinates are approximately ±1000 for X/Z per docs/replay-data.md.
  * Linear mapping: ±1000 → 0…500.
  * <p>
+ * This is a coarse-grained semantic for AI analysis — NOT pixel-level
+ * map projection. Individual maps may have slightly different boundaries,
+ * but the ±1000 range is used as a consistent approximation.
+ * <p>
  * Region numbering (top-to-bottom, left-to-right):
  * <pre>
  * 1 | 2 | 3
@@ -20,9 +27,9 @@ package com.wotb.core.replay.feature;
  * 7 | 8 | 9
  * </pre>
  */
-public final class TeamMapRegionResolver {
+public final class MapRegionResolver {
 
-    private TeamMapRegionResolver() {}
+    private MapRegionResolver() {}
 
     /** Canonical map width/height. */
     public static final float MAP_SIZE = 500f;
@@ -42,6 +49,7 @@ public final class TeamMapRegionResolver {
     /**
      * Convert replay coordinates to canonical 500×500 coordinate system.
      * Maps ±1000 → 0…500 linearly.
+     * @return [canonicalX, canonicalZ]
      */
     public static float[] toCanonical(final float x, final float z) {
         final float scale = MAP_SIZE / REPLAY_RANGE;
@@ -52,7 +60,6 @@ public final class TeamMapRegionResolver {
 
     /**
      * Resolve the region number for a canonical (X, Z) coordinate.
-     *
      * @param cx canonical X
      * @param cz canonical Z (+Z = top)
      * @return region number 1-9, or 0 for invalid/unresolved
