@@ -135,6 +135,40 @@ class AiReplayAnalysisServiceTest {
         assertTrue(requestBody.get().contains("不可信数据"));
         assertFalse(requestBody.get().contains("ParticipantMappingEvent"));
         assertFalse(requestBody.get().contains("PositionEvent{"));
+        assertFalse(requestBody.get().contains("winnerTeam=1"));
+        assertFalse(requestBody.get().contains("winnerTeam=2"));
+        assertFalse(requestBody.get().contains("Team 1"));
+        assertFalse(requestBody.get().contains("Team 2"));
+        assertFalse(requestBody.get().contains("队伍1"));
+        assertFalse(requestBody.get().contains("队伍2"));
+    }
+
+    @Test
+    void singleTeamRequestContainsResultLabel() throws IOException {
+        final var service = startService(2);
+        final var context = service.buildSingleTeamContext(
+                teamGroups(List.of(teamResult(
+                        "result-test.wotbreplay", "arena-result", "Ally", 1001L, 1)))
+                        .getFirst());
+        final var result = service.analyzeSingleTeamContext(context);
+        assertEquals("team review", result.analysis());
+        assertTrue(requestBody.get().contains("result=TEAM_WIN")
+                || requestBody.get().contains("result=TEAM_LOSS")
+                || requestBody.get().contains("result=DRAW_OR_UNKNOWN"),
+                "Request body must contain result=TEAM_WIN/LOSS/DRAW_OR_UNKNOWN, not winnerTeam=");
+        assertFalse(requestBody.get().contains("winnerTeam="));
+    }
+
+    @Test
+    void playerRequestNoRawTeamLabels() throws IOException {
+        responseStatus = 200;
+        final var service = startService(2);
+        final var result = service.analyzePlayerOrFallback(randomResultWithoutReconstruction());
+        assertNotNull(result.analysis());
+        assertFalse(requestBody.get().contains("队伍1"));
+        assertFalse(requestBody.get().contains("队伍2"));
+        assertFalse(requestBody.get().contains("Team 1"));
+        assertFalse(requestBody.get().contains("Team 2"));
     }
 
     @Test
