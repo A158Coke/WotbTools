@@ -2,8 +2,10 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.ref.MapNames;
+import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MultiTeamBattleAnalysisContext;
@@ -24,6 +26,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import org.springframework.util.StringUtils;
 
 /**
  * 将 Team Context 压缩为确定性、长度受限的 AI 输入。
@@ -34,6 +37,7 @@ final class TeamAiPromptBuilder {
     static final int MAX_MEMBERS = 15;
     static final int MAX_MOVEMENTS_PER_MEMBER = 6;
     static final int MAX_FORMATION_PHASES = 20;
+    static final int MAX_BATTLE_PHASES = 20;
     static final int MAX_ENGAGEMENTS = 20;
     static final int MAX_KEY_EVENTS = 30;
     static final int MAX_PERSPECTIVES = 10;
@@ -124,6 +128,7 @@ final class TeamAiPromptBuilder {
         appendObserved(writer, features.observedAggregate());
         appendMembers(writer, features.members());
         appendFormation(writer, features.formationPhases());
+        appendBattlePhases(writer, features.battlePhases());
         appendEngagements(writer, features.engagements());
         appendKeyEvents(writer, features.keyEvents());
         writer.append("coverage=" + features.coverage() + "\n");
@@ -349,10 +354,10 @@ final class TeamAiPromptBuilder {
 
     /** Resolve map internal code to user-visible Chinese name. */
     private static String resolveMapName(final String mapCode) {
-        if (mapCode == null || mapCode.isBlank()) return "未知地图";
+        if (!StringUtils.hasText(mapCode)) return "未知地图";
         try {
             final String name = MapNames.cn(mapCode);
-            return name != null && !name.isBlank() ? name : "未知地图";
+            return StringUtils.hasText(name) ? name : "未知地图";
         } catch (final Exception e) {
             return "未知地图";
         }
@@ -360,15 +365,14 @@ final class TeamAiPromptBuilder {
 
     /**
      * Resolve team result as three-state label (no raw winnerTeam).
-     * TEAM_WIN  = current perspective won
-     * TEAM_LOSS = current perspective lost
-     * DRAW_OR_UNKNOWN = draw or unknown
+     * Only accepts raw teams 1 or 2; anything else returns DRAW_OR_UNKNOWN.
      */
     private static String resolveTeamResult(final Integer winnerTeam, final int perspectiveTeam) {
-        if (winnerTeam == null || winnerTeam <= 0 || perspectiveTeam <= 0) {
+        if (!PlayerSideResolver.isValidRawTeam(winnerTeam != null ? winnerTeam : 0)
+                || !PlayerSideResolver.isValidRawTeam(perspectiveTeam)) {
             return "DRAW_OR_UNKNOWN";
         }
-        if (winnerTeam == perspectiveTeam) return "TEAM_WIN";
+        if (winnerTeam.equals(perspectiveTeam)) return "TEAM_WIN";
         return "TEAM_LOSS";
     }
 
@@ -377,32 +381,20 @@ final class TeamAiPromptBuilder {
      */
     private static void appendBattlePhases(
             final BudgetWriter writer,
-            final List<TeamFormationPhase> phases
+            final List<BattlePhaseSummary> phases
     ) {
         writer.append("\n=== BATTLE_PHASES ===\n");
-        final int limit = Math.min(phases.size(), MAX_FORMATION_PHASES);
+        final int limit = Math.min(phases.size(), MAX_BATTLE_PHASES);
         if (phases.size() > limit) {
             writer.markTruncated();
         }
         for (int index = 0; index < limit; index++) {
-            final TeamFormationPhase phase = phases.get(index);
+            final BattlePhaseSummary phase = phases.get(index);
             writer.append("phase[" + format(phase.startTime())
                     + "-" + format(phase.endTime()) + "]"
-                    + " centroid=" + phase.centroid()
-                    + " dispersion=" + format(phase.averageDispersion())
-                    + " clusters=" + phase.clusterCount()
-                    + " members=" + phase.observedMemberCount()
+                    + " type=" + phase.type()
                     + " confidence=" + phase.confidence()
                     + "\n");
-            for (final TeamFormationCluster cluster : phase.clusters()) {
-                writer.append("  cluster region=" + cluster.region()
-                        + " centroidXZ=(" + format(cluster.centroidX())
-                        + "," + format(cluster.centroidZ()) + ")"
-                        + " members=" + cluster.memberIdentities()
-                        + " memberCount=" + cluster.memberCount()
-                        + " confidence=" + cluster.confidence()
-                        + "\n");
-            }
         }
     }
 
