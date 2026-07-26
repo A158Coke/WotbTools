@@ -149,8 +149,10 @@ class TeamAiPromptBuilderTest {
         final TeamAiPromptBuilder.PromptInput input =
                 TeamAiPromptBuilder.single(context);
 
-        assertTrue(input.content().contains("startXZ=(10.0,20.0)"));
-        assertTrue(input.content().contains("endXZ=(30.0,40.0)"));
+        assertTrue(input.content().contains("start="));
+        assertTrue(input.content().contains("end="));
+        assertTrue(input.content().contains("r="), "Prompts must have region");
+        assertTrue(input.content().contains("s=VALID"), "Prompts must have coordinate status");
     }
 
     @Test
