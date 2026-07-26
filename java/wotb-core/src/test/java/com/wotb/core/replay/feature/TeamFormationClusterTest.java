@@ -111,9 +111,16 @@ class TeamFormationClusterTest {
     @Test
     void clampedMemberPosCount() {
         final var c = fullCluster(10f, 20f, pos(250f, 250f),
-                MapCoordinateResolution.Status.CLAMPED, 5, 3, List.of("a", "b"), DecodeConfidence.EXACT);
+                MapCoordinateResolution.Status.CLAMPED, 5, 3, List.of("a", "b", "c"), DecodeConfidence.EXACT);
         assertEquals(3, c.clampedMemberPositionCount());
         assertEquals(MapCoordinateResolution.Status.CLAMPED, c.centroidStatus());
+    }
+
+    @Test
+    void clampedCountExceedsMemberCountThrows() {
+        assertThrows(IllegalArgumentException.class, () ->
+                fullCluster(10f, 20f, pos(250f, 250f),
+                        MapCoordinateResolution.Status.VALID, 5, 3, List.of("a", "b"), DecodeConfidence.EXACT));
     }
 
     @Test

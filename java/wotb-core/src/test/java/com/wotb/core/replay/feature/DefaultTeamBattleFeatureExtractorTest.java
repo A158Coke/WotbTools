@@ -274,8 +274,8 @@ class DefaultTeamBattleFeatureExtractorTest {
     void formationClusteringUsesOneHundredMetersAsAnInclusiveBoundary() {
         final Fixture fixture = fixture();
 
-        assertEquals(1, formationClusters(fixture, 100f));
-        assertEquals(2, formationClusters(fixture, 100.1f));
+        assertEquals(1, formationClusters(fixture, 400f));
+        assertEquals(2, formationClusters(fixture, 400.1f));
     }
 
     @Test
@@ -479,8 +479,8 @@ class DefaultTeamBattleFeatureExtractorTest {
                 mapping(3, 20, 200L),
                 position(4, 5f, 10, 0f, 0f),
                 position(5, 8f, 10, 10f, 0f),
-                position(6, 5f, 11, 300f, 0f),
-                position(7, 8f, 11, 310f, 0f),
+                position(6, 5f, 11, 500f, 0f),
+                position(7, 8f, 11, 510f, 0f),
                 position(8, 5f, 20, 1000f, 1000f),
                 damage(9, 20f, 10, 20, 200),
                 damage(10, 25f, 20, 11, 150),
