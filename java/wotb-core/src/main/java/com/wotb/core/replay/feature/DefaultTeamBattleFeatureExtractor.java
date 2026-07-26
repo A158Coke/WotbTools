@@ -40,7 +40,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     static final double ENGAGEMENT_OUTCOME_RATIO = 1.25;
     static final float FOCUS_FIRE_WINDOW_SEC = 5f;
     static final int MIN_FOCUS_FIRE_ATTACKERS = 2;
-    static final float MAX_ABSOLUTE_MAP_COORDINATE = 5000f;
+    static final float MAX_ABSOLUTE_MAP_COORDINATE = MapRegionResolver.MAX_RAW_COORDINATE;
     static final float MAX_ABSOLUTE_ELEVATION = 200f;
     static final int MAX_KEY_EVENTS = 40;
 
@@ -92,7 +92,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
 
         final List<TeamMemberFeatureSet> members = authoritativeMembers.stream()
                 .map(player -> buildMember(
-                        player, entityMapping, positionsByEntity, attributedDamage))
+                        player, entityMapping, positionsByEntity, attributedDamage, authoritativeMembers))
                 .sorted(Comparator.comparingLong(TeamMemberFeatureSet::accountId)
                         .thenComparing(TeamMemberFeatureSet::nickname,
                                 Comparator.nullsLast(String::compareTo)))
@@ -306,8 +306,14 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             final PlayerResult player,
             final TeamEntityMapping mapping,
             final Map<Integer, List<PositionChangedEvent>> positionsByEntity,
-            final List<AttributedDamage> damageEvents
+            final List<AttributedDamage> damageEvents,
+            final List<PlayerResult> authoritativeMembers
     ) {
+        final long memberAccountId = player.accountId;
+        final String memberNickname = player.nickname;
+        final boolean ambiguous = memberAccountId <= 0
+                && !MemberIdentity.isNicknameUniqueInRoster(memberNickname, authoritativeMembers);
+        final MemberIdentity memberId = new MemberIdentity(memberAccountId, memberNickname, ambiguous);
         final List<Integer> entityIds =
                 mapping.entityIds(player.accountId, player.nickname);
         final List<MovementSegment> movements = entityIds.stream()
@@ -723,10 +729,9 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             final float rawCz = (float) clusterIndices.stream()
                     .mapToDouble(i -> sorted.get(i).getValue().z())
                     .average().orElse(0.0);
-            final float[] canon = MapRegionResolver.toCanonical(rawCx, rawCz);
-            final float cx = canon[0];
-            final float cz = canon[1];
-            final int region = MapRegionResolver.resolveRegion(cx, cz);
+            final CanonicalMapPosition canon = MapRegionResolver.toCanonical(rawCx, rawCz);
+            if (canon == null) continue;
+            final int region = canon.region();
             final List<String> identities = clusterIndices.stream()
                     .map(i -> sorted.get(i).getKey())
                     .sorted()
@@ -736,7 +741,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                     .reduce(DecodeConfidence.EXACT, DefaultTeamBattleFeatureExtractor::lowerConfidence);
 
             result.add(new TeamFormationCluster(
-                    startTime, endTime, cx, cz, region, identities, clusterConfidence));
+                    startTime, endTime, canon, region, identities, clusterConfidence));
         }
 
         // Sort by startTime, region, centroidX, centroidZ, then member identities

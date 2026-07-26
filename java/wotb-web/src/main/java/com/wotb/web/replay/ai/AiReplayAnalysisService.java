@@ -1,6 +1,9 @@
 package com.wotb.web.replay.ai;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.AiNotConfiguredException;
@@ -27,6 +30,7 @@ import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
 import com.wotb.core.replay.feature.DefaultTeamBattleFeatureExtractor;
 import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.replay.feature.KeyBattleEvent;
+import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MultiPlayerBattleAnalysisContext;
 import com.wotb.core.replay.feature.MultiTeamBattleAnalysisContext;
@@ -50,10 +54,14 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.net.SocketTimeoutException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -61,6 +69,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 /**
@@ -153,7 +162,7 @@ public class AiReplayAnalysisService {
      * 基于完整 battle + reconstruction + feature set 生成单场个人复盘。
      * <p>这是真正的完整流程复盘入口，使用压缩后的移动段、交火段和阶段数据。</p>
      */
-    public AnalyzeResult analyzePlayerContext(SinglePlayerBattleAnalysisContext ctx) {
+    public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx) {
         if (!isConfigured()) throw new AiNotConfiguredException();
         final String summary = buildPlayerContextSummary(ctx);
         final Map<String, Object> body = new LinkedHashMap<>();
@@ -166,7 +175,7 @@ public class AiReplayAnalysisService {
         return new AnalyzeResult(content, model, ctx.features().keyEvents());
     }
 
-    public AnalyzeResult analyzeMultiPlayerContext(MultiPlayerBattleAnalysisContext ctx) {
+    public AnalyzeResult analyzeMultiPlayerContext(final MultiPlayerBattleAnalysisContext ctx) {
         if (!isConfigured()) throw new AiNotConfiguredException();
         final String summary = buildMultiPlayerContextSummary(ctx);
         final Map<String, Object> body = new LinkedHashMap<>();
@@ -431,7 +440,7 @@ public class AiReplayAnalysisService {
     ) {
         return summary.rosterAccountIds().stream()
                 .filter(accountId -> accountId != null && accountId > 0)
-                .collect(java.util.stream.Collectors.toCollection(
+                .collect(Collectors.toCollection(
                         LinkedHashSet::new));
     }
 
@@ -515,6 +524,12 @@ public class AiReplayAnalysisService {
             只能根据录像者个人的实战信息评价其决策，
             不可声称看到了未点亮的敌方位置。""";
 
+    private static String regionLabel(final float rawX, final float rawZ) {
+        final int region = MapRegionResolver.resolveRegionFromRaw(rawX, rawZ);
+        if (region == 0) return "未知区域";
+        return region + "区";
+    }
+
     private String buildPlayerContextSummary(final SinglePlayerBattleAnalysisContext ctx) {
         final StringBuilder sb = new StringBuilder(2048);
         final var battle = ctx.battle();
@@ -572,7 +587,14 @@ public class AiReplayAnalysisService {
                 }
                 sb.append("  [").append(String.format("%.1f-%.1f", seg.startTime(), seg.endTime())).append("s] ")
                         .append(seg.type()).append(" | 距离 ").append(String.format("%.1f", seg.distance()))
-                        .append("m 速度 ").append(String.format("%.1f", seg.averageSpeed())).append("m/s\n");
+                        .append("m 速度 ").append(String.format("%.1f", seg.averageSpeed())).append("m/s");
+                if (seg.startPosition() != null) {
+                    sb.append(" 从").append(regionLabel(seg.startPosition().x(), seg.startPosition().z()));
+                }
+                if (seg.endPosition() != null) {
+                    sb.append(" 到").append(regionLabel(seg.endPosition().x(), seg.endPosition().z()));
+                }
+                sb.append('\n');
             }
         }
 
@@ -636,7 +658,7 @@ public class AiReplayAnalysisService {
             4) 跨场景可执行的训练建议
             严格基于数据，不要混淆场次。""";
 
-    private String buildMultiPlayerContextSummary(MultiPlayerBattleAnalysisContext ctx) {
+    private String buildMultiPlayerContextSummary(final MultiPlayerBattleAnalysisContext ctx) {
         final StringBuilder sb = new StringBuilder(512);
         sb.append("分析场次: ").append(ctx.battleCount()).append('\n');
         sb.append("限制: ").append(String.join("; ", ctx.limitations())).append('\n');
@@ -841,7 +863,7 @@ public class AiReplayAnalysisService {
         }
         // 1. Try JSON tree redaction (preferred)
         try {
-            final var mapper = new tools.jackson.databind.json.JsonMapper();
+            final var mapper = new JsonMapper();
             final var root = mapper.readTree(raw);
             if (root != null && (root.isObject() || root.isArray())) {
                 redactJsonTree(root);
@@ -852,24 +874,24 @@ public class AiReplayAnalysisService {
             // Not valid JSON — fall through to regex
         }
         // 2. Fallback regex redaction for non-JSON text
-        String redacted = raw;
-        // Authorization header with scheme (e.g. "Bearer secret", "Digest response=")
-        redacted = redacted.replaceAll(
-                "(?i)(authorization\\s*[:=]\\s*)\\S+",
-                "$1[REDACTED]");
-        // JSON-like single-quoted values
-        redacted = redacted.replaceAll(
-                "(?i)(['\"])(authorization|api[_ -]?key|bearer|token|secret|password)(['\"])\\s*[:=]\\s*['\"][^'\"]*['\"]",
-                "$1$2$3=[REDACTED]");
-        // Header/key-value format (generic)
-        redacted = redacted.replaceAll(
-                "(?i)(authorization|api[_ -]?key|token|secret|password)\\s*[:=]\\s*[^\\s,;\"']+",
-                "$1=[REDACTED]");
-        return truncateSafe(redacted);
+        return truncateSafe(redactNonJson(raw));
     }
 
-    /** Recursively redact sensitive keys in a JSON tree (in-place). */
-    private static void redactJsonTree(final tools.jackson.databind.JsonNode node) {
+    /** Apply non-JSON regex redaction to plain text. */
+    private static String redactNonJson(final String raw) {
+        final String step1 = raw.replaceAll(
+                "(?i)(authorization\\s*[:=]\\s*).*",
+                "$1[REDACTED]");
+        final String step2 = step1.replaceAll(
+                "(?i)(['\"])(authorization|api[_ -]?key|bearer|token|secret|password)(['\"])\\s*[:=]\\s*['\"][^'\"]*['\"]",
+                "$1$2$3=[REDACTED]");
+        return step2.replaceAll(
+                "(?i)(authorization|api[_ -]?key|token|secret|password)\\s*[:=]\\s*[^\\s,;\"]+",
+                "$1=[REDACTED]");
+    }
+
+    /** Recursively redact sensitive keys and sensitive patterns in string values. */
+    private static void redactJsonTree(final JsonNode node) {
         if (node == null) return;
         if (node.isObject()) {
             final var fields = node.properties();
@@ -877,7 +899,12 @@ public class AiReplayAnalysisService {
                 final String key = entry.getKey().toLowerCase(Locale.ROOT);
                 final var value = entry.getValue();
                 if (SENSITIVE_KEYS.contains(key)) {
-                    ((tools.jackson.databind.node.ObjectNode) node).put(entry.getKey(), "[REDACTED]");
+                    ((ObjectNode) node).put(entry.getKey(), "[REDACTED]");
+                } else if (value.isTextual()) {
+                    final String redactedValue = redactNonJson(value.asText());
+                    if (!redactedValue.equals(value.asText())) {
+                        ((ObjectNode) node).put(entry.getKey(), redactedValue);
+                    }
                 } else if (value.isObject()) {
                     redactJsonTree(value);
                 } else if (value.isArray()) {
@@ -1162,9 +1189,9 @@ public class AiReplayAnalysisService {
 
     private static String sha256(final String input) {
         try {
-            final var md = java.security.MessageDigest.getInstance("SHA-256");
-            return java.util.HexFormat.of().formatHex(md.digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        } catch (java.security.NoSuchAlgorithmException e) {
+            final var md = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(md.digest(input.getBytes(StandardCharsets.UTF_8)));
+        } catch (final NoSuchAlgorithmException e) {
             throw new RuntimeException("SHA-256 not available", e);
         }
     }

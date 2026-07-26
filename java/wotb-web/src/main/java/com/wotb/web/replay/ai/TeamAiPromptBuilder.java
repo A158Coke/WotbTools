@@ -11,6 +11,7 @@ import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MultiTeamBattleAnalysisContext;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
+import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.TeamAggregateResult;
 import com.wotb.core.replay.feature.TeamBattleAnalysisSummary;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
@@ -211,13 +212,17 @@ final class TeamAiPromptBuilder {
             }
             for (int movementIndex = 0; movementIndex < movementLimit; movementIndex++) {
                 final MovementSegment movement = member.movements().get(movementIndex);
+                final String startRegion = regionFromPos(movement.startPosition());
+                final String endRegion = regionFromPos(movement.endPosition());
                 writer.append("  movement[" + format(movement.startTime())
                         + "-" + format(movement.endTime()) + "]"
                         + " type=" + movement.type()
                         + " distance=" + format(movement.distance())
                         + " avgSpeed=" + format(movement.averageSpeed())
                         + " startXZ=" + formatPosition(movement.startPosition())
+                        + " startRegion=" + startRegion
                         + " endXZ=" + formatPosition(movement.endPosition())
+                        + " endRegion=" + endRegion
                         + " confidence=" + movement.confidence()
                         + "\n");
             }
@@ -238,9 +243,11 @@ final class TeamAiPromptBuilder {
         }
         for (int index = 0; index < limit; index++) {
             final TeamFormationPhase phase = phases.get(index);
+            final String formationRegion = regionFromPos(phase.centroid());
             writer.append("formation[" + format(phase.startTime())
                     + "-" + format(phase.endTime()) + "]"
                     + " centroid=" + phase.centroid()
+                    + " region=" + formationRegion
                     + " dispersion=" + format(phase.averageDispersion())
                     + " clusters=" + phase.clusterCount()
                     + " members=" + phase.observedMemberCount()
@@ -413,6 +420,13 @@ final class TeamAiPromptBuilder {
         return position == null
                 ? "UNKNOWN"
                 : "(" + format(position.x()) + "," + format(position.z()) + ")";
+    }
+
+    private static String regionFromPos(final Vector3 position) {
+        if (position == null) return "UNKNOWN";
+        final int region = MapRegionResolver.resolveRegionFromRaw(position.x(), position.z());
+        if (region == 0) return "UNKNOWN";
+        return String.valueOf(region);
     }
 
     /** Resolve dominant clan label for a perspective team's players only. */
