@@ -349,17 +349,30 @@ public class AiReplayAnalysisService {
                                 .sorted()
                                 .toList(),
                         context.features(),
-                        context.battle() != null && context.battle().players != null
-                                ? TeamPerspectiveLabelResolver.resolve(context.battle().players)
-                                : "未知队伍"))
+                        resolveTeamLabel(
+                                context.battle(), context.perspectiveTeam())))
                 .toList();
+        final int uniqueBattleCount = (int) summaries.stream()
+                .map(TeamBattleAnalysisSummary::battleIdentity)
+                .filter(id -> id != null)
+                .distinct()
+                .count();
         final boolean rosterConsistent = hasConsistentRoster(summaries);
         final List<String> limitations = rosterConsistent
                 ? List.of("PERSPECTIVE_TIMELINES_ISOLATED")
                 : List.of("PERSPECTIVE_TIMELINES_ISOLATED",
                         "ROSTER_CONSISTENCY_UNCONFIRMED");
         return new MultiTeamBattleAnalysisContext(
-                summaries.size(), summaries, rosterConsistent, limitations);
+                summaries.size(), uniqueBattleCount, summaries, rosterConsistent, limitations);
+    }
+
+    static String resolveTeamLabel(final Battle battle, final int perspectiveTeam) {
+        if (battle == null || battle.players == null) return "未知队伍";
+        final List<PlayerResult> perspectivePlayers = battle.players.stream()
+                .filter(p -> p.team == perspectiveTeam)
+                .toList();
+        if (perspectivePlayers.isEmpty()) return "未知队伍";
+        return TeamPerspectiveLabelResolver.resolve(perspectivePlayers);
     }
 
     static boolean hasConsistentRoster(
