@@ -362,6 +362,33 @@ class AiReplayAnalysisServiceTest {
         assertFalse(body.contains(" | 负"), "Must not output '负' for draw");
     }
 
+    @Test
+    void multiPlayerRequestBody_illegalWinnerTeam_stillSucceeds() throws IOException {
+        final var service = startService(2);
+        final Battle battle = makePlayerBattle(1, 3); // winnerTeam=3 is illegal
+        final List<Battle> battles = List.of(battle);
+
+        service.analyzeMulti(battles);
+
+        final String body = requestBody.get();
+        assertTrue(body.contains("平局或未知") || body.contains("DRAW_OR_UNKNOWN"),
+                "Illegal winnerTeam must produce draw/unknown, body: " + body);
+    }
+
+    @Test
+    void multiPlayerRequestBody_illegalRecorderTeam_usesUnknown() throws IOException {
+        final var service = startService(2);
+        final Battle battle = makePlayerBattle(3, 1); // recorder team=3 is illegal
+        final List<Battle> battles = List.of(battle);
+
+        service.analyzeMulti(battles);
+
+        final String body = requestBody.get();
+        // Should still produce output without crashing
+        assertNotNull(body);
+        assertFalse(body.isEmpty());
+    }
+
     // ========== Battle builder for player-focused tests ==========
 
     private static Battle makePlayerBattle(final int recorderTeam, final int winnerTeam) {
