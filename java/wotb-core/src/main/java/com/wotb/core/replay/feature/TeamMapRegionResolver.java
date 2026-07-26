@@ -10,8 +10,8 @@ package com.wotb.core.replay.feature;
  *   <li>Y: height (NOT used for region or cluster plane distance)</li>
  * </ul>
  * Canonical map size: 500 × 500.
- * Replay coordinates are mapped from ±5000 (the PositionDecoder out-of-bounds
- * threshold) to 0…500.
+ * Replay coordinates are approximately ±1000 for X/Z per docs/replay-data.md.
+ * Linear mapping: ±1000 → 0…500.
  * <p>
  * Region numbering (top-to-bottom, left-to-right):
  * <pre>
@@ -28,13 +28,12 @@ public final class TeamMapRegionResolver {
     public static final float MAP_SIZE = 500f;
 
     /**
-     * Half the replay coordinate extent. Derived from the PositionDecoder
-     * out-of-bounds check ({@code abs(x|z) > 5000} → OUT_OF_BOUNDS warning).
-     * The canonical 500×500 space maps linearly from -5000…+5000.
+     * Half the replay coordinate extent. Based on docs/replay-data.md:
+     * position_x/z are approximately ±1000.
      */
-    static final float REPLAY_HALF_EXTENT = 5000f;
+    static final float REPLAY_HALF_EXTENT = 1000f;
 
-    /** Replay coordinate range (from -5000 to +5000). */
+    /** Replay coordinate range (from -1000 to +1000). */
     private static final float REPLAY_RANGE = 2f * REPLAY_HALF_EXTENT;
 
     /** One third of the map — the boundary between grid columns/rows. */
@@ -42,7 +41,7 @@ public final class TeamMapRegionResolver {
 
     /**
      * Convert replay coordinates to canonical 500×500 coordinate system.
-     * Maps ±5000 → 0…500 linearly.
+     * Maps ±1000 → 0…500 linearly.
      */
     public static float[] toCanonical(final float x, final float z) {
         final float scale = MAP_SIZE / REPLAY_RANGE;
@@ -63,13 +62,11 @@ public final class TeamMapRegionResolver {
         if (cx < 0 || cx > MAP_SIZE) return 0;
         if (cz < 0 || cz > MAP_SIZE) return 0;
 
-        // Column: X < 166.67 → 0, X < 333.33 → 1, X >= 333.33 → 2
         final int col;
         if (cx < THIRD) col = 0;
         else if (cx < 2f * THIRD) col = 1;
         else col = 2;
 
-        // Row: larger Z = top (row 0), smaller Z = bottom (row 2)
         final int row;
         if (cz > MAP_SIZE - THIRD) row = 0;        // Z > 333.33 → top
         else if (cz > MAP_SIZE - 2f * THIRD) row = 1; // Z > 166.67 → middle

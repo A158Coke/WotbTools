@@ -4,15 +4,10 @@ import com.wotb.core.processing.TeamEntityIdentity;
 import org.springframework.util.StringUtils;
 
 /**
- * Stable member identity for engagement matching and cluster membership.
+ * Stable member identity for engagement matching across the extraction chain.
  * Uses accountId > 0 as primary key; falls back to normalized nickname.
  */
 public record MemberIdentity(long accountId, String nickname) {
-
-    /** Build from a TeamEntityIdentity. */
-    public static MemberIdentity from(final TeamEntityIdentity identity) {
-        return new MemberIdentity(identity.accountId(), identity.nickname());
-    }
 
     /**
      * Check whether this identity matches a TeamEntityIdentity.
@@ -29,7 +24,6 @@ public record MemberIdentity(long accountId, String nickname) {
 
     /**
      * Check whether this identity matches a raw accountId + nickname.
-     * Used for matching against authoritative PlayerResult fields.
      */
     public boolean matches(final long otherAccountId, final String otherNickname) {
         if (accountId > 0) return accountId == otherAccountId;
@@ -37,12 +31,5 @@ public record MemberIdentity(long accountId, String nickname) {
             return false;
         }
         return nickname.trim().equalsIgnoreCase(otherNickname.trim());
-    }
-
-    /** Stable string representation for use as a key. */
-    public String toKey() {
-        if (accountId > 0) return "account:" + accountId;
-        if (StringUtils.hasText(nickname)) return "nickname:" + nickname.trim().toLowerCase();
-        return "unknown:" + System.identityHashCode(this);
     }
 }

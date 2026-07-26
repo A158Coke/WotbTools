@@ -70,14 +70,17 @@ public final class TeamPerspectiveLabelResolver {
 
         if (tiedCount > 1) return stableFallback(players);
 
-        // Return the most common original casing (first encountered on tie)
+        // Return the most common original casing; tie-break by lexicographic order
         final List<String> originals = normalizedToOriginals.get(winner);
-        return originals.stream()
-                .collect(Collectors.groupingBy(s -> s, Collectors.counting()))
+        final List<String> common = originals.stream()
+                .collect(Collectors.groupingBy(s -> s, LinkedHashMap::new, Collectors.counting()))
                 .entrySet().stream()
-                .max(Map.Entry.comparingByValue())
+                .sorted(Map.Entry.<String, Long>comparingByValue()
+                        .reversed()
+                        .thenComparing(Map.Entry.comparingByKey()))
                 .map(Map.Entry::getKey)
-                .orElse(winner);
+                .toList();
+        return common.isEmpty() ? winner : common.getFirst();
     }
 
     /**
