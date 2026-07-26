@@ -110,22 +110,25 @@ class TeamMapRegionResolverTest {
 
     @Test
     void canonicalConversion() {
-        // -2500 → 0, 2500 → 500
-        final float[] canon = TeamMapRegionResolver.toCanonical(-2500, -2500);
-        assertEquals(0f, canon[0], 0.01);
-        assertEquals(0f, canon[1], 0.01);
-        final float[] canon2 = TeamMapRegionResolver.toCanonical(2500, 2500);
-        assertEquals(500f, canon2[0], 0.01);
-        assertEquals(500f, canon2[1], 0.01);
+        // -5000 → 0, 0 → 250, 5000 → 500
+        final float[] c1 = TeamMapRegionResolver.toCanonical(-5000, -5000);
+        assertEquals(0f, c1[0], 0.01);
+        assertEquals(0f, c1[1], 0.01);
+        final float[] c2 = TeamMapRegionResolver.toCanonical(0, 0);
+        assertEquals(250f, c2[0], 0.01);
+        assertEquals(250f, c2[1], 0.01);
+        final float[] c3 = TeamMapRegionResolver.toCanonical(5000, 5000);
+        assertEquals(500f, c3[0], 0.01);
+        assertEquals(500f, c3[1], 0.01);
     }
 
     @Test
     void rawCoordinatesRoundTrip() {
-        // Center
+        // Center (0,0) → canonical (250,250) → region 5
         assertEquals(5, TeamMapRegionResolver.resolveRegionFromRaw(0, 0));
-        // Top-left
-        assertEquals(1, TeamMapRegionResolver.resolveRegionFromRaw(-2000, 2000));
-        // Bottom-right
-        assertEquals(9, TeamMapRegionResolver.resolveRegionFromRaw(2000, -2000));
+        // Top-left (-3000, 3000) → canonical (100, 400) → region 1
+        assertEquals(1, TeamMapRegionResolver.resolveRegionFromRaw(-3000, 3000));
+        // Bottom-right (3000, -3000) → canonical (400, 100) → region 9
+        assertEquals(9, TeamMapRegionResolver.resolveRegionFromRaw(3000, -3000));
     }
 }
