@@ -1,6 +1,7 @@
 package com.wotb.core.replay.feature;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wotb.core.processing.TeamEntityIdentity;
 import com.wotb.core.replay.event.DecodeConfidence;
