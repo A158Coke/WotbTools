@@ -64,6 +64,7 @@ final class TeamAiPromptBuilder {
         final Set<String> limitations = new LinkedHashSet<>(context.limitations());
         writer.append("=== MULTI_TEAM_CONTEXT ===\n");
         writer.append("perspectiveCount=" + context.perspectiveCount() + "\n");
+        writer.append("uniqueBattleCount=" + context.uniqueBattleCount() + "\n");
         writer.append("rosterConsistent=" + context.rosterConsistent() + "\n");
         final List<TeamBattleAnalysisSummary> perspectives = context.perspectives();
         final int perspectiveLimit = Math.min(perspectives.size(), MAX_PERSPECTIVES);

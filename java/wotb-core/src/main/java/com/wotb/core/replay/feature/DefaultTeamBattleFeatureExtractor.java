@@ -646,7 +646,9 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .reduce(DecodeConfidence.EXACT, DefaultTeamBattleFeatureExtractor::lowerConfidence);
 
         // Build structured clusters
-        final List<TeamFormationCluster> clusters = buildClusters(sorted);
+        final float windowStart = window * FORMATION_WINDOW_SEC;
+        final float windowEnd = (window + 1) * FORMATION_WINDOW_SEC;
+        final List<TeamFormationCluster> clusters = buildClusters(sorted, windowStart, windowEnd);
 
         return new TeamFormationPhase(
                 window * FORMATION_WINDOW_SEC,
@@ -662,12 +664,13 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
      * Build structured clusters from sorted (identityKey, position) entries using BFS.
      */
     private static List<TeamFormationCluster> buildClusters(
-            final List<Map.Entry<String, PositionChangedEvent>> sorted
+            final List<Map.Entry<String, PositionChangedEvent>> sorted,
+            final float startTime,
+            final float endTime
     ) {
         if (sorted.isEmpty()) return List.of();
         final boolean[] visited = new boolean[sorted.size()];
         final List<TeamFormationCluster> result = new ArrayList<>();
-        final float windowStart = 0; // filled by caller
 
         for (int start = 0; start < sorted.size(); start++) {
             if (visited[start]) continue;
@@ -708,7 +711,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                     .reduce(DecodeConfidence.EXACT, DefaultTeamBattleFeatureExtractor::lowerConfidence);
 
             result.add(new TeamFormationCluster(
-                    0, 0, cx, cz, region, identities, identities.size(), clusterConfidence));
+                    startTime, endTime, cx, cz, region, identities, identities.size(), clusterConfidence));
         }
 
         // Sort by startTime, region, centroidX, centroidZ, then member identities

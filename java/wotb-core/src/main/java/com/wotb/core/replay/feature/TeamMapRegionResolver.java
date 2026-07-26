@@ -37,20 +37,31 @@ public final class TeamMapRegionResolver {
 
     /** Upper bound of region 7/8/9 (bottom third of Z). Maps to region below Z_MID. */
 
+    /** Approximate replay coordinate range. */
+    private static final float REPLAY_COORDINATE_RANGE = 5000f;
+
     /**
-     * Convert replay coordinates to the canonical 500×500 coordinate system.
-     * The replay coordinate system uses a different scale; this method
-     * normalizes by scaling factor.
+     * Converts replay coordinates to canonical 500×500 coordinate system.
+     * <p>
+     * ASSUMPTION: The playable area spans approximately 5000 units from
+     * the origin in the replay coordinate system (based on the
+     * MAX_ABSOLUTE_MAP_COORDINATE = 5000 constant in
+     * DefaultTeamBattleFeatureExtractor). This maps to 500 canonical units.
+     * <p>
+     * This scaling is an approximation. It should be validated against
+     * actual replay data and adjusted if real maps use a different range.
+     *
      * @param x raw replay X coordinate
      * @param z raw replay Z coordinate
      * @return array of [canonicalX, canonicalZ]
      */
     public static float[] toCanonical(final float x, final float z) {
-        // The replay coordinate system uses a larger scale.
-        // The canonical map is 500x500. Scale factor derived from
-        // MAX_ABSOLUTE_MAP_COORDINATE = 5000 (see DefaultTeamBattleFeatureExtractor).
-        final float scale = 500f / 5000f;
-        return new float[]{x * scale, z * scale};
+        final float scale = MAP_SIZE / REPLAY_COORDINATE_RANGE;
+        final float offset = REPLAY_COORDINATE_RANGE / 2f;
+        return new float[]{
+                (x + offset) * scale,
+                (z + offset) * scale
+        };
     }
 
     /**
