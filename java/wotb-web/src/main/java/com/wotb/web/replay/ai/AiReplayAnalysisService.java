@@ -858,7 +858,7 @@ public class AiReplayAnalysisService {
             "authorization", "api_key", "api-key", "api key", "apikey",
             "token", "access_token", "secret", "password");
 
-    private static String safeProviderSummary(final String raw) {
+    static String safeProviderSummary(final String raw) {
         if (!StringUtils.hasText(raw)) {
             return "empty provider error body";
         }

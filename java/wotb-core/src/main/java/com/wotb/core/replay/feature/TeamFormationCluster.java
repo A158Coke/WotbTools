@@ -16,9 +16,13 @@ public record TeamFormationCluster(
             throw new IllegalArgumentException("memberIdentities must not be null");
         }
         memberIdentities = List.copyOf(memberIdentities);
+        final java.util.HashSet<String> uniqueIds = new java.util.HashSet<>();
         for (final String id : memberIdentities) {
             if (id == null || id.isBlank()) {
                 throw new IllegalArgumentException("memberIdentities contains null/blank");
+            }
+            if (!uniqueIds.add(id)) {
+                throw new IllegalArgumentException("memberIdentities contains duplicate: " + id);
             }
         }
         if (!Float.isFinite(startTime) || !Float.isFinite(endTime) || startTime > endTime) {
