@@ -834,15 +834,19 @@ public class AiReplayAnalysisService {
         if (!StringUtils.hasText(raw)) {
             return "empty provider error body";
         }
-        // Redact common secret patterns: Authorization, Bearer, api_key, token, secret
-        // Handles both JSON format ("key":"value") and HTTP header format (key: value)
-        final String redacted = raw
-                .replaceAll(
-                        "(?i)(\"?)(authorization|api[_ -]?key|bearer|token|secret)"
-                                + "(\"?)\\s*[:=]\\s*(\"?)[^\"]+?(\"?)",
-                        "$2=[REDACTED]")
-                .replaceAll("[\\r\\n\\t]+", " ")
-                .trim();
+        // Redact common secret patterns using a two-pass approach:
+        // 1. JSON format: "key":"value" or "key":"value-with-escaped-quotes"
+        // 2. HTTP header/key-value format: key: value or key=value
+        String redacted = raw;
+        // JSON format: match key and its string value
+        redacted = redacted.replaceAll(
+                "(?i)(\"(authorization|api[_ -]?key|bearer|token|secret)\")\\s*:\\s*\"[^\"]*\"",
+                "$1:[REDACTED]");
+        // Header/key-value format: match key and its value (up to comma, semicolon, or whitespace)
+        redacted = redacted.replaceAll(
+                "(?i)(authorization|api[_ -]?key|bearer|token|secret)\\s*[:=]\\s*[^\\s,;\"']+",
+                "$1=[REDACTED]");
+        redacted = redacted.replaceAll("[\\r\\n\\t]+", " ").trim();
         return redacted.length() <= MAX_SAFE_PROVIDER_SUMMARY_CHARS
                 ? redacted : redacted.substring(0, MAX_SAFE_PROVIDER_SUMMARY_CHARS);
     }
