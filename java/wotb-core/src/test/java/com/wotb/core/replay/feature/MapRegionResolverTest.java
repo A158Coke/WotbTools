@@ -1,6 +1,7 @@
 package com.wotb.core.replay.feature;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -100,5 +101,68 @@ class MapRegionResolverTest {
         assertEquals(7, MapRegionResolver.toCanonical(-600, -600).region());
         assertEquals(8, MapRegionResolver.toCanonical(0, -600).region());
         assertEquals(9, MapRegionResolver.toCanonical(600, -600).region());
+    }
+
+    // === MapCoordinateResolution VALID/CLAMPED/INVALID ===
+
+    @Test void validPosition() {
+        final MapCoordinateResolution r = MapRegionResolver.resolve(0, 0);
+        assertEquals(MapCoordinateResolution.Status.VALID, r.status());
+        assertEquals(5, r.region());
+        assertTrue(r.usable());
+    }
+
+    @Test void validAtBoundary() {
+        assertEquals(MapCoordinateResolution.Status.VALID, MapRegionResolver.resolve(-1000, -1000).status());
+        assertEquals(MapCoordinateResolution.Status.VALID, MapRegionResolver.resolve(1000, 1000).status());
+    }
+
+    @Test void clampedSlightOverflow() {
+        final MapCoordinateResolution r = MapRegionResolver.resolve(1010, -1010);
+        assertEquals(MapCoordinateResolution.Status.CLAMPED, r.status());
+        assertTrue(r.usable());
+        assertEquals(500f, r.position().x(), 0.01);
+        assertEquals(0f, r.position().z(), 0.01);
+    }
+
+    @Test void invalidLargeOverflow() {
+        assertEquals(MapCoordinateResolution.Status.INVALID, MapRegionResolver.resolve(5000, 0).status());
+        assertFalse(MapRegionResolver.resolve(5000, 0).usable());
+        assertEquals(0, MapRegionResolver.resolve(5000, 0).region());
+    }
+
+    @Test void invalidNan() {
+        assertEquals(MapCoordinateResolution.Status.INVALID, MapRegionResolver.resolve(Float.NaN, 0).status());
+    }
+
+    @Test void invalidInfinity() {
+        assertEquals(MapCoordinateResolution.Status.INVALID, MapRegionResolver.resolve(Float.POSITIVE_INFINITY, 0).status());
+    }
+
+    @Test void clampedExactlyAtTolerance() {
+        assertEquals(MapCoordinateResolution.Status.CLAMPED, MapRegionResolver.resolve(1050, -1050).status());
+        assertTrue(MapRegionResolver.resolve(1050, -1050).usable());
+    }
+
+    @Test void invalidBeyondTolerance() {
+        assertEquals(MapCoordinateResolution.Status.INVALID, MapRegionResolver.resolve(1051, 0).status());
+        assertEquals(MapCoordinateResolution.Status.INVALID, MapRegionResolver.resolve(-1051, 0).status());
+    }
+
+    @Test void sameResultForBothScopesViaResolve() {
+        final MapCoordinateResolution r = MapRegionResolver.resolve(-500, 500);
+        assertEquals(MapCoordinateResolution.Status.VALID, r.status());
+        assertEquals(1, r.region());
+    }
+
+    @Test void clampedProducesRegionOnEdge() {
+        final MapCoordinateResolution r = MapRegionResolver.resolve(1040, 0);
+        assertEquals(MapCoordinateResolution.Status.CLAMPED, r.status());
+        assertEquals(6, r.region());
+    }
+
+    @Test void invalidYieldsNoRegion() {
+        assertEquals(0, MapRegionResolver.resolve(5000, 0).region());
+        assertEquals(0, MapRegionResolver.resolve(Float.NaN, 0).region());
     }
 }
