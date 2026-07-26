@@ -18,7 +18,6 @@ import com.wotb.core.replay.feature.TeamEngagementSummary;
 import com.wotb.core.replay.feature.TeamFormationCluster;
 import com.wotb.core.replay.feature.TeamFormationPhase;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
-import com.wotb.core.replay.feature.TeamMapRegionResolver;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.reconstruction.Vector3;
 
@@ -249,7 +248,9 @@ final class TeamAiPromptBuilder {
                     + "\n");
             // Structured cluster output
             for (final TeamFormationCluster cluster : phase.clusters()) {
-                writer.append("  cluster region=" + cluster.region()
+                writer.append("  cluster[" + format(cluster.startTime())
+                        + "-" + format(cluster.endTime()) + "]"
+                        + " region=" + cluster.region()
                         + " centroidXZ=(" + format(cluster.centroidX())
                         + "," + format(cluster.centroidZ()) + ")"
                         + " members=" + cluster.memberIdentities()
@@ -425,20 +426,22 @@ final class TeamAiPromptBuilder {
         return TeamPerspectiveLabelResolver.resolve(perspectivePlayers);
     }
 
-    /** Resolve tank name via Tankopedia, falling back to unknown tank. */
+    /** Resolve tank name via Tankopedia (authoritative), falling back to unknown tank. */
     private static final Tankopedia TANKOPEDIA = Tankopedia.load();
 
     private static String resolveTankName(final long tankId, final String existingTankName) {
-        if (StringUtils.hasText(existingTankName)
-                && !existingTankName.startsWith("#")
-                && !existingTankName.startsWith("?")) {
-            return existingTankName;
-        }
+        // Tankopedia is the authoritative source for tank names
         if (tankId > 0) {
             final String name = TANKOPEDIA.info(tankId).name();
             if (StringUtils.hasText(name) && !name.startsWith("#")) {
                 return name;
             }
+        }
+        // Fall back to existing tank name if it looks reasonable
+        if (StringUtils.hasText(existingTankName)
+                && !existingTankName.startsWith("#")
+                && !existingTankName.startsWith("?")) {
+            return existingTankName;
         }
         return "未知坦克";
     }

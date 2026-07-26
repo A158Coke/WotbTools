@@ -38,7 +38,7 @@ import com.wotb.core.replay.feature.TeamBattleAnalysisSummary;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.util.PlayerResultFormat;
-import com.wotb.web.replay.ai.PlayerAnalysisPromptFormatter;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -57,6 +57,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -830,25 +831,63 @@ public class AiReplayAnalysisService {
                 summary);
     }
 
+    private static final Set<String> SENSITIVE_KEYS = Set.of(
+            "authorization", "api_key", "api-key", "api key", "apikey",
+            "token", "access_token", "secret", "password");
+
     private static String safeProviderSummary(final String raw) {
         if (!StringUtils.hasText(raw)) {
             return "empty provider error body";
         }
-        // Redact common secret patterns using a two-pass approach:
-        // 1. JSON format: "key":"value" or "key":"value-with-escaped-quotes"
-        // 2. HTTP header/key-value format: key: value or key=value
+        // 1. Try JSON tree redaction (preferred)
+        try {
+            final var mapper = new tools.jackson.databind.json.JsonMapper();
+            final var root = mapper.readTree(raw);
+            if (root != null && root.isObject()) {
+                redactJsonTree(root);
+                final String result = mapper.writeValueAsString(root);
+                return truncateSafe(result);
+            }
+        } catch (final Exception ignored) {
+            // Not valid JSON — fall through to regex
+        }
+        // 2. Fallback regex redaction for non-JSON text
         String redacted = raw;
-        // JSON format: match key and its string value
+        // JSON-like single-quoted values
         redacted = redacted.replaceAll(
-                "(?i)(\"(authorization|api[_ -]?key|bearer|token|secret)\")\\s*:\\s*\"[^\"]*\"",
-                "$1:[REDACTED]");
-        // Header/key-value format: match key and its value (up to comma, semicolon, or whitespace)
+                "(?i)(['\"])(authorization|api[_ -]?key|bearer|token|secret|password)(['\"])\\s*[:=]\\s*['\"][^'\"]*['\"]",
+                "$1$2$3=[REDACTED]");
+        // Header/key-value format
         redacted = redacted.replaceAll(
-                "(?i)(authorization|api[_ -]?key|bearer|token|secret)\\s*[:=]\\s*[^\\s,;\"']+",
+                "(?i)(authorization|api[_ -]?key|bearer|token|secret|password)\\s*[:=]\\s*[^\\s,;\"']+",
                 "$1=[REDACTED]");
-        redacted = redacted.replaceAll("[\\r\\n\\t]+", " ").trim();
-        return redacted.length() <= MAX_SAFE_PROVIDER_SUMMARY_CHARS
-                ? redacted : redacted.substring(0, MAX_SAFE_PROVIDER_SUMMARY_CHARS);
+        return truncateSafe(redacted);
+    }
+
+    /** Recursively redact sensitive keys in a JSON tree (in-place). */
+    private static void redactJsonTree(final tools.jackson.databind.JsonNode node) {
+        if (node == null || !node.isObject()) return;
+        final var fields = node.properties();
+        for (final var entry : fields) {
+            final String key = entry.getKey().toLowerCase(Locale.ROOT);
+            final var value = entry.getValue();
+            if (SENSITIVE_KEYS.contains(key)) {
+                // Replace value with [REDACTED]
+                ((tools.jackson.databind.node.ObjectNode) node).put(entry.getKey(), "[REDACTED]");
+            } else if (value.isObject()) {
+                redactJsonTree(value);
+            } else if (value.isArray()) {
+                for (final var element : value) {
+                    if (element.isObject()) redactJsonTree(element);
+                }
+            }
+        }
+    }
+
+    private static String truncateSafe(final String text) {
+        final String cleaned = text.replaceAll("[\\r\\n\\t]+", " ").trim();
+        return cleaned.length() <= MAX_SAFE_PROVIDER_SUMMARY_CHARS
+                ? cleaned : cleaned.substring(0, MAX_SAFE_PROVIDER_SUMMARY_CHARS);
     }
 
     /**

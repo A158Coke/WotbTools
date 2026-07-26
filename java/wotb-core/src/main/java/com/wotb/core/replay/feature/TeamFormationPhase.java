@@ -18,6 +18,10 @@ public record TeamFormationPhase(
         DecodeConfidence confidence,
         List<TeamFormationCluster> clusters
 ) {
+    public TeamFormationPhase {
+        clusters = clusters == null ? List.of() : List.copyOf(clusters);
+    }
+
     public int clusterCount() {
         return clusters.size();
     }

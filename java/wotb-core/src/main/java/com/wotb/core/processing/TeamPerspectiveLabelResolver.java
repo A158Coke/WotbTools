@@ -6,6 +6,7 @@ import org.springframework.util.StringUtils;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -44,7 +45,7 @@ public final class TeamPerspectiveLabelResolver {
                 .filter(clan -> StringUtils.hasText(clan))
                 .map(String::trim)
                 .collect(Collectors.groupingBy(
-                        clan -> clan.toLowerCase(),
+                        clan -> clan.toLowerCase(Locale.ROOT),
                         LinkedHashMap::new,
                         Collectors.toList()));
 
@@ -85,7 +86,10 @@ public final class TeamPerspectiveLabelResolver {
      */
     private static String stableFallback(final List<PlayerResult> players) {
         final String hash = players.stream()
-                .map(p -> StringUtils.hasText(p.nickname) ? p.nickname : "")
+                .map(p -> {
+                    final String nick = StringUtils.hasText(p.nickname) ? p.nickname : "";
+                    return p.accountId > 0 ? p.accountId + ":" + nick : nick;
+                })
                 .sorted()
                 .collect(Collectors.joining(","));
         final int code = Math.floorMod(hash.hashCode(), 10000);
