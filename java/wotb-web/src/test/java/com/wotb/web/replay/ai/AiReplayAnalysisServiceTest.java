@@ -128,7 +128,7 @@ class AiReplayAnalysisServiceTest {
         assertEquals("test-model", result.model());
         assertEquals("Bearer test-key", authorization.get());
         assertTrue(requestBody.get().contains("\"model\":\"test-model\""));
-        assertTrue(requestBody.get().contains("perspectiveTeam=1"));
+        assertTrue(requestBody.get().contains("teamLabel="));
         assertTrue(requestBody.get().contains("AUTHORITATIVE_TEAM_RESULT"));
         assertTrue(requestBody.get().contains("OBSERVED_EVENT_SUBSET_NOT_AUTHORITATIVE"));
         assertTrue(requestBody.get().contains("RECORDER_ENTITY_UNMAPPED"));
@@ -147,8 +147,10 @@ class AiReplayAnalysisServiceTest {
         assertEquals("team review", result.analysis().analysis());
         assertEquals(2, result.units().size());
         assertTrue(requestBody.get().contains("MULTI_TEAM_CONTEXT"));
-        assertTrue(requestBody.get().contains("perspectiveTeam=1"));
-        assertTrue(requestBody.get().contains("perspectiveTeam=2"));
+        assertTrue(requestBody.get().contains("teamLabel="));
+        // Two perspectives should have distinct team labels
+        assertTrue(requestBody.get().contains("PERSPECTIVE 1"));
+        assertTrue(requestBody.get().contains("PERSPECTIVE 2"));
     }
 
     @Test
@@ -623,6 +625,6 @@ class AiReplayAnalysisServiceTest {
                 TeamFeatureCoverage.empty(), List.of(), true);
         return new TeamBattleAnalysisSummary(
                 id, null, id + ".wotbreplay", "map",
-                null, null, 1, roster, features);
+                null, null, 1, roster, features, "test-team");
     }
 }

@@ -5,7 +5,11 @@ import com.wotb.core.processing.BattleIdentity;
 
 import java.util.List;
 
-/** 单场队伍视角分析摘要（多场趋势用）。 */
+/**
+ * Lightweight summary for a single team-perspective battle.
+ * {@code teamLabel} is a user-visible name derived from dominant clan
+ * (e.g., "CHRD") or a stable fallback.
+ */
 public record TeamBattleAnalysisSummary(
         String analysisUnitId,
         BattleIdentity battleIdentity,
@@ -15,9 +19,9 @@ public record TeamBattleAnalysisSummary(
         Double durationSec,
         int perspectiveTeam,
         List<Long> rosterAccountIds,
-        TeamBattleFeatureSet features
+        TeamBattleFeatureSet features,
+        String teamLabel
 ) {
-
     public TeamBattleAnalysisSummary {
         rosterAccountIds = rosterAccountIds == null ? List.of() : List.copyOf(rosterAccountIds);
     }

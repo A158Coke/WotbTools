@@ -17,6 +17,7 @@ import com.wotb.core.processing.FriendlyEnemyResult;
 import com.wotb.core.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.PlayerSideResolver.Side;
+import com.wotb.core.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.processing.TeamPerspectiveResolution;
 import com.wotb.core.processing.TeamPerspectiveResolver;
 import com.wotb.core.replay.event.DecodeConfidence;
@@ -347,7 +348,10 @@ public class AiReplayAnalysisService {
                                 .distinct()
                                 .sorted()
                                 .toList(),
-                        context.features()))
+                        context.features(),
+                        context.battle() != null && context.battle().players != null
+                                ? TeamPerspectiveLabelResolver.resolve(context.battle().players)
+                                : "未知队伍"))
                 .toList();
         final boolean rosterConsistent = hasConsistentRoster(summaries);
         final List<String> limitations = rosterConsistent

@@ -1,5 +1,7 @@
 package com.wotb.web.replay.ai;
 
+import com.wotb.core.processing.TeamPerspectiveLabelResolver;
+import com.wotb.core.ref.MapNames;
 import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MultiTeamBattleAnalysisContext;
@@ -8,8 +10,10 @@ import com.wotb.core.replay.feature.TeamAggregateResult;
 import com.wotb.core.replay.feature.TeamBattleAnalysisSummary;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamEngagementSummary;
+import com.wotb.core.replay.feature.TeamFormationCluster;
 import com.wotb.core.replay.feature.TeamFormationPhase;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
+import com.wotb.core.replay.feature.TeamMapRegionResolver;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.reconstruction.Vector3;
 
@@ -66,11 +70,11 @@ final class TeamAiPromptBuilder {
             writer.append("analysisUnitId=" + quoteData(perspective.analysisUnitId()) + "\n");
             writer.append("file=" + quoteData(perspective.fileName()) + "\n");
             writer.append("battleIdentity=" + quoteData(perspective.battleIdentity()) + "\n");
-            writer.append("map=" + quoteData(perspective.mapName()) + "\n");
+            writer.append("map=" + quoteData(resolveMapName(perspective.mapName())) + "\n");
             writer.append("category=" + perspective.battleCategory() + "\n");
             writer.append("durationSec=" + formatNullable(
                     perspective.durationSec()) + "\n");
-            writer.append("perspectiveTeam=" + perspective.perspectiveTeam() + "\n");
+            writer.append("teamLabel=" + quoteData(perspective.teamLabel()) + "\n");
             writer.append("rosterAccountIds=" + perspective.rosterAccountIds() + "\n");
             appendFeatureSet(writer, perspective.features());
             if (perspective.features() != null) {
@@ -93,12 +97,17 @@ final class TeamAiPromptBuilder {
         writer.append("file=" + quoteData(context.fileName()) + "\n");
         writer.append("battleIdentity=" + quoteData(context.battleId()) + "\n");
         writer.append("category=" + context.battleCategory() + "\n");
-        writer.append("perspectiveTeam=" + context.perspectiveTeam() + "\n");
         if (context.battle() != null) {
-            writer.append("map=" + quoteData(context.battle().mapName) + "\n");
+            final String teamLabel = context.battle().players != null
+                    ? TeamPerspectiveLabelResolver.resolve(context.battle().players)
+                    : "未知队伍";
+            writer.append("teamLabel=" + quoteData(teamLabel) + "\n");
+            writer.append("map=" + quoteData(resolveMapName(context.battle().mapName)) + "\n");
             writer.append("durationSec=" + formatNullable(
                     context.battle().durationS) + "\n");
-            writer.append("winnerTeam=" + formatScalar(context.battle().winnerTeam) + "\n");
+            final String result = resolveTeamResult(
+                    context.battle().winnerTeam, context.perspectiveTeam());
+            writer.append("result=" + result + "\n");
         }
     }
 
@@ -230,6 +239,16 @@ final class TeamAiPromptBuilder {
                     + " members=" + phase.observedMemberCount()
                     + " confidence=" + phase.confidence()
                     + "\n");
+            // Structured cluster output
+            for (final TeamFormationCluster cluster : phase.clusters()) {
+                writer.append("  cluster region=" + cluster.region()
+                        + " centroidXZ=(" + format(cluster.centroidX())
+                        + "," + format(cluster.centroidZ()) + ")"
+                        + " members=" + cluster.memberIdentities()
+                        + " memberCount=" + cluster.memberCount()
+                        + " confidence=" + cluster.confidence()
+                        + "\n");
+            }
         }
     }
 
@@ -323,7 +342,67 @@ final class TeamAiPromptBuilder {
                 }
             }
         }
-        return quoted.append('"').toString();
+        quoted.append('"');
+        return quoted.toString();
+    }
+
+    /** Resolve map internal code to user-visible Chinese name. */
+    private static String resolveMapName(final String mapCode) {
+        if (mapCode == null || mapCode.isBlank()) return "未知地图";
+        try {
+            final String name = MapNames.cn(mapCode);
+            return name != null && !name.isBlank() ? name : "未知地图";
+        } catch (final Exception e) {
+            return "未知地图";
+        }
+    }
+
+    /**
+     * Resolve team result as three-state label (no raw winnerTeam).
+     * TEAM_WIN  = current perspective won
+     * TEAM_LOSS = current perspective lost
+     * DRAW_OR_UNKNOWN = draw or unknown
+     */
+    private static String resolveTeamResult(final Integer winnerTeam, final int perspectiveTeam) {
+        if (winnerTeam == null || winnerTeam <= 0 || perspectiveTeam <= 0) {
+            return "DRAW_OR_UNKNOWN";
+        }
+        if (winnerTeam == perspectiveTeam) return "TEAM_WIN";
+        return "TEAM_LOSS";
+    }
+
+    /**
+     * Append battle phases to the prompt.
+     */
+    private static void appendBattlePhases(
+            final BudgetWriter writer,
+            final List<TeamFormationPhase> phases
+    ) {
+        writer.append("\n=== BATTLE_PHASES ===\n");
+        final int limit = Math.min(phases.size(), MAX_FORMATION_PHASES);
+        if (phases.size() > limit) {
+            writer.markTruncated();
+        }
+        for (int index = 0; index < limit; index++) {
+            final TeamFormationPhase phase = phases.get(index);
+            writer.append("phase[" + format(phase.startTime())
+                    + "-" + format(phase.endTime()) + "]"
+                    + " centroid=" + phase.centroid()
+                    + " dispersion=" + format(phase.averageDispersion())
+                    + " clusters=" + phase.clusterCount()
+                    + " members=" + phase.observedMemberCount()
+                    + " confidence=" + phase.confidence()
+                    + "\n");
+            for (final TeamFormationCluster cluster : phase.clusters()) {
+                writer.append("  cluster region=" + cluster.region()
+                        + " centroidXZ=(" + format(cluster.centroidX())
+                        + "," + format(cluster.centroidZ()) + ")"
+                        + " members=" + cluster.memberIdentities()
+                        + " memberCount=" + cluster.memberCount()
+                        + " confidence=" + cluster.confidence()
+                        + "\n");
+            }
+        }
     }
 
     private static String format(final double value) {
