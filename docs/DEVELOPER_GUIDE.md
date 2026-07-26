@@ -256,9 +256,9 @@ AI 复盘区分两种 scope，互不混用：
 - **battle phases**：通过 `BATTLE_PHASES` 输出 start/end time 和 phase type。
 - **uniqueBattleCount**：multi-perspective 中区分 perspective count 和 unique battle count，同一场战斗的 opposing perspective 只算一个 battle。
 - **MemberIdentity**：accountId > 0 时优先使用 accountId；accountId ≤ 0 时使用规范化 nickname（trim、Locale.ROOT、case-insensitive）。用于 engagement 匹配、cluster 成员标识和 key events 的全链路 identity。
-- **prompt 禁止 raw team**：AI prompt 中不出现 `perspectiveTeam=1/2`、`winnerTeam=1/2`、`Team 1/2`、`队伍1/2`。使用 `teamLabel=`、`result=TEAM_WIN/TEAM_LOSS/DRAW_OR_UNKNOWN`。
-- **secret redaction**：AI provider 错误摘要优先使用 Jackson tree JSON 递归隐藏敏感 key（authorization、api_key、token、secret、password）。非 JSON 文本使用正则 fallback，支持 `Authorization: Bearer/Basic` 整体隐藏。
-- **battle start resolution**：`BattleStartResolver.resolve(reconstructionBattleStart, diagnostics)` 返回 `BattleStartResolution`（IDENTIFIED / ZERO_CLOCK_INFERRED / ESTIMATED / UNRESOLVED）。准备阶段静止不进入战术 STATIONARY movement；formation 窗口使用 `battleRelative(rawClock)`；first contact / engagement / key events 使用统一的 battle-relative clock。`PRE_BATTLE_START_ESTIMATED` ∩ `PRE_BATTLE_START_UNRESOLVED` 作为 limitation 传播。
+- **prompt 禁止 raw team**：AI prompt 中不出现 `perspectiveTeam=1/2`、`winnerTeam=1/2`、`Team 1/2`、`队伍1/2`。使用 `teamLabel=`、`result=TEAM_WIN/TEAM_LOSS/DRAW_OR_UNKNOWN`。BATTLE_END key event 同样使用 `result=` 三态。
+- **secret redaction**：AI provider 错误摘要优先使用 Jackson tree JSON 递归隐藏敏感 key。`isSensitiveKey()` 归一化匹配覆盖 x-api-key、AWS Access Key、大小写/连字符/下划线变体。
+- **battle start resolution**：`BattleStartResolver.resolve(reconstructionBattleStart, diagnostics)` 返回 `BattleStartResolution`（IDENTIFIED / ZERO_CLOCK_INFERRED / ESTIMATED / UNRESOLVED）。仅通过静态 factories 构造。准备阶段静止不进入 STATIONARY；formation/first contact/engagement/key events 使用 `battleRelative(rawClock)`。`PRE_BATTLE_START_ESTIMATED`/`PRE_BATTLE_START_UNRESOLVED` limitation 传播。
 
 ### PLAYER_FOCUSED（随机战斗）
 
