@@ -11,6 +11,7 @@ import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MultiTeamBattleAnalysisContext;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
+import com.wotb.core.replay.feature.MapCoordinateResolution;
 import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.TeamAggregateResult;
 import com.wotb.core.replay.feature.TeamBattleAnalysisSummary;
@@ -424,9 +425,9 @@ final class TeamAiPromptBuilder {
 
     private static String regionFromPos(final Vector3 position) {
         if (position == null) return "UNKNOWN";
-        final int region = MapRegionResolver.resolveRegionFromRaw(position.x(), position.z());
-        if (region == 0) return "UNKNOWN";
-        return String.valueOf(region);
+        final MapCoordinateResolution res = MapRegionResolver.resolve(position.x(), position.z());
+        if (!res.usable()) return "UNKNOWN";
+        return String.valueOf(res.region());
     }
 
     /** Resolve dominant clan label for a perspective team's players only. */
