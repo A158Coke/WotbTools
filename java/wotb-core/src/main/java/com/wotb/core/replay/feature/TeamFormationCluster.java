@@ -1,6 +1,7 @@
 package com.wotb.core.replay.feature;
 
 import com.wotb.core.replay.event.DecodeConfidence;
+import java.util.HashSet;
 import java.util.List;
 
 public record TeamFormationCluster(
@@ -16,7 +17,7 @@ public record TeamFormationCluster(
             throw new IllegalArgumentException("memberIdentities must not be null");
         }
         memberIdentities = List.copyOf(memberIdentities);
-        final java.util.HashSet<String> uniqueIds = new java.util.HashSet<>();
+        final HashSet<String> uniqueIds = new HashSet<>();
         for (final String id : memberIdentities) {
             if (id == null || id.isBlank()) {
                 throw new IllegalArgumentException("memberIdentities contains null/blank");

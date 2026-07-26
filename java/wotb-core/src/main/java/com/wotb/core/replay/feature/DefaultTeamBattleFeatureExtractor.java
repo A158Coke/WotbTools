@@ -311,9 +311,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     ) {
         final long memberAccountId = player.accountId;
         final String memberNickname = player.nickname;
-        final boolean ambiguous = memberAccountId <= 0
-                && !MemberIdentity.isNicknameUniqueInRoster(memberNickname, authoritativeMembers);
-        final MemberIdentity memberId = new MemberIdentity(memberAccountId, memberNickname, ambiguous);
+        final MemberIdentity memberId = MemberIdentity.resolve(player, authoritativeMembers);
         final List<Integer> entityIds =
                 mapping.entityIds(player.accountId, player.nickname);
         final List<MovementSegment> movements = entityIds.stream()
@@ -329,7 +327,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .map(TeamEntityIdentity::confidence)
                 .reduce(DecodeConfidence.EXACT, DefaultTeamBattleFeatureExtractor::lowerConfidence);
         final List<EngagementSummary> engagements = buildMemberEngagements(
-                damageEvents, player.accountId, player.nickname);
+                damageEvents, memberId);
         final List<String> limitations = new ArrayList<>();
         if (entityIds.isEmpty()) {
             limitations.add("TEAM_MEMBER_ENTITY_UNMAPPED");
@@ -430,10 +428,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
 
     private static List<EngagementSummary> buildMemberEngagements(
             final List<AttributedDamage> damages,
-            final long memberAccountId,
-            final String memberNickname
+            final MemberIdentity memberId
     ) {
-        final MemberIdentity memberId = new MemberIdentity(memberAccountId, memberNickname, false);
         final List<AttributedDamage> memberDamage = damages.stream()
                 .filter(damage -> damage.attacker().team() != damage.victim().team())
                 .filter(damage -> memberId.matches(damage.attacker())
@@ -446,36 +442,32 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .orElse(0);
         return memberTeam == 0
                 ? List.of()
-                : buildEngagements(memberDamage, memberTeam, memberAccountId, memberNickname);
+                  : buildEngagements(memberDamage, memberTeam, memberId);
     }
 
     private static List<EngagementSummary> buildEngagements(
             final List<AttributedDamage> damages,
             final int perspectiveTeam,
-            final Long memberAccountId,
-            final String memberNickname
+            final MemberIdentity memberId
     ) {
         if (damages.isEmpty()) {
             return List.of();
         }
         final List<AttributedDamage> sorted = sortedDamageEvents(damages);
         final List<EngagementSummary> result = new ArrayList<>();
-        final MemberIdentity memberId = memberAccountId != null
-                ? new MemberIdentity(memberAccountId, memberNickname, false) : null;
         int segmentStart = 0;
         for (int index = 1; index < sorted.size(); index++) {
             if (damageGap(sorted.get(index - 1), sorted.get(index))
                     > ENGAGEMENT_GAP_SEC) {
                 result.add(buildEngagementSegment(
-                        sorted.subList(segmentStart, index), perspectiveTeam, memberAccountId, memberId));
+                        sorted.subList(segmentStart, index), perspectiveTeam, memberId.accountId(), memberId));
                 segmentStart = index;
             }
         }
         result.add(buildEngagementSegment(
-                sorted.subList(segmentStart, sorted.size()), perspectiveTeam, memberAccountId, memberId));
+                sorted.subList(segmentStart, sorted.size()), perspectiveTeam, memberId.accountId(), memberId));
         return List.copyOf(result);
     }
-
     private static List<AttributedDamage> sortedDamageEvents(
             final List<AttributedDamage> damages
     ) {
@@ -751,8 +743,6 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .thenComparingDouble(c -> c.centroidZ()));
         return List.copyOf(result);
     }
-
-
 
     private static float distance(
             final float leftX,
