@@ -743,4 +743,44 @@ class AiReplayAnalysisServiceTest {
         assertFalse(error.getMessage().contains("sk-live-xxx"));
         assertFalse(error.getMessage().contains("Bearer"));
     }
+
+    @Test void realLogCaptureDoesNotContainSecret() throws IOException {
+        final java.util.logging.Logger julLogger = java.util.logging.Logger.getLogger("com.wotb.web.replay.ai.AiReplayAnalysisService");
+        final java.util.logging.Level oldLevel = julLogger.getLevel();
+        julLogger.setLevel(java.util.logging.Level.ALL);
+        final java.util.List<java.util.logging.LogRecord> captured = new java.util.ArrayList<>();
+        final java.util.logging.Handler handler = new java.util.logging.Handler() {
+            { setLevel(java.util.logging.Level.ALL); }
+            public void publish(final java.util.logging.LogRecord record) { captured.add(record); }
+            public void flush() {}
+            public void close() {}
+        };
+        julLogger.addHandler(handler);
+        try {
+            responseStatus = 401;
+            responseBody = "{\"error\":\"x-api-key=my-secret-key-456\"}";
+            final var service = startService(1);
+            final var context = service.buildSingleTeamContext(
+                    teamGroups(List.of(teamResult("logtest.wotbreplay", "log-arena", "Ally", 1003L, 1)))
+                            .getFirst());
+            assertThrows(AiUpstreamException.class,
+                    () -> service.analyzeSingleTeamContext(context));
+            boolean foundWarning = false;
+            for (final java.util.logging.LogRecord record : captured) {
+                if (record.getLevel() == java.util.logging.Level.WARNING) {
+                    foundWarning = true;
+                    final String msg = record.getMessage();
+                    final String full = msg + " " + java.util.Arrays.toString(record.getParameters());
+                    assertTrue(full.contains("AI_AUTHENTICATION_ERROR"), "Log must contain error code: " + full);
+                    assertTrue(full.contains("401"), "Log must contain status: " + full);
+                    assertTrue(full.contains("correlationId="), "Log must contain correlationId: " + full);
+                    assertFalse(full.contains("my-secret-key-456"), "Log must not contain secret: " + full);
+                }
+            }
+            assertTrue(foundWarning, "Must have captured a WARNING log");
+        } finally {
+            julLogger.removeHandler(handler);
+            julLogger.setLevel(oldLevel);
+        }
+    }
 }
