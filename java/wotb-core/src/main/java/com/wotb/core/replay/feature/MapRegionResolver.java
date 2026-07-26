@@ -14,8 +14,9 @@ public final class MapRegionResolver {
     static final float REPLAY_RANGE = 2f * REPLAY_HALF_EXTENT;
 
     /**
-     * Clamp tolerance for OUT_OF_BOUNDS_CLAMPED positions.
-     * 5% of MAP_SIZE = 25 canonical meters = ~50 raw units.
+     * Clamp tolerance for CLAMPED positions (raw coordinate units).
+     * 2000 raw = 500 canonical, so 1 raw = 0.25 canonical.
+     * 50 raw = 12.5 canonical meters ≈ 2.5% of MAP_SIZE.
      * Accounts for: replay interpolation, floating-point error, spawn offsets,
      * map texture vs playable-boundary differences, coarse-scale rounding.
      * Positions beyond this tolerance are INVALID, not CLAMPED.
@@ -64,17 +65,6 @@ public final class MapRegionResolver {
         return new CanonicalMapPosition(cx, cz);
     }
 
-    /**
-     * Convert raw replay coordinates to CanonicalMapPosition (deprecated).
-     * Use {@link #resolve(float, float)} for full status semantics.
-     * @deprecated Use resolve().position() instead.
-     */
-    @Deprecated
-    public static CanonicalMapPosition toCanonical(final float x, final float z) {
-        final MapCoordinateResolution res = resolve(x, z);
-        return res.usable() ? res.position() : null;
-    }
-
     /** Resolve region from canonical (X, Z). */
     public static int resolveRegion(final float cx, final float cz) {
         if (!Float.isFinite(cx) || !Float.isFinite(cz)) return 0;
@@ -101,6 +91,6 @@ public final class MapRegionResolver {
         return res.region();
     }
 
-    /** Unified max allowed raw coordinate (before valid/clamped split). */
+    /** Unified max raw coordinate allowed before INVALID (REPLAY_HALF_EXTENT + tolerance). */
     public static final float MAX_RAW_ALLOWED = CLAMP_UPPER;
 }

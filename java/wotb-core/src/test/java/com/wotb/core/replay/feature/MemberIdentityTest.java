@@ -18,65 +18,65 @@ class MemberIdentityTest {
 
     @Test
     void accountIdMatch() {
-        final MemberIdentity id = new MemberIdentity(1001L, "PlayerA");
+        final MemberIdentity id = new MemberIdentity(1001L, "PlayerA", false);
         assertTrue(id.matches(identity(1001L, "PlayerA")));
     }
 
     @Test
     void accountIdMismatch() {
-        final MemberIdentity id = new MemberIdentity(1001L, "PlayerA");
+        final MemberIdentity id = new MemberIdentity(1001L, "PlayerA", false);
         assertFalse(id.matches(identity(2001L, "PlayerB")));
     }
 
     @Test
     void zeroAccountIdMatchByNickname() {
-        final MemberIdentity id = new MemberIdentity(0L, "PlayerA");
+        final MemberIdentity id = new MemberIdentity(0L, "PlayerA", false);
         assertTrue(id.matches(identity(0L, "PlayerA")));
     }
 
     @Test
     void zeroAccountIdCaseInsensitive() {
-        final MemberIdentity id = new MemberIdentity(0L, "PlayerA");
+        final MemberIdentity id = new MemberIdentity(0L, "PlayerA", false);
         assertTrue(id.matches(identity(0L, "playera")));
     }
 
     @Test
     void zeroAccountIdTrimmed() {
-        final MemberIdentity id = new MemberIdentity(0L, "  PlayerA  ");
+        final MemberIdentity id = new MemberIdentity(0L, "  PlayerA  ".trim(), false);
         assertTrue(id.matches(identity(0L, "PlayerA")));
     }
 
     @Test
     void zeroAccountIdDifferentNickname() {
-        final MemberIdentity id = new MemberIdentity(0L, "PlayerA");
+        final MemberIdentity id = new MemberIdentity(0L, "PlayerA", false);
         assertFalse(id.matches(identity(0L, "PlayerB")));
     }
 
     @Test
     void zeroAccountIdEmptyNicknameReturnsFalse() {
-        final MemberIdentity id = new MemberIdentity(0L, "");
+        final MemberIdentity id = new MemberIdentity(0L, "", false);
         assertFalse(id.matches(identity(0L, "PlayerA")));
     }
 
     @Test
     void differentAccountIdNotMerged() {
-        final MemberIdentity idA = new MemberIdentity(0L, "PlayerA");
-        final MemberIdentity idB = new MemberIdentity(0L, "PlayerB");
+        final MemberIdentity idA = new MemberIdentity(0L, "PlayerA", false);
+        final MemberIdentity idB = new MemberIdentity(0L, "PlayerB", false);
         assertFalse(idA.matches(identity(0L, "PlayerB")));
         assertFalse(idB.matches(identity(0L, "PlayerA")));
     }
 
     @Test
     void matchesRawAccount() {
-        assertTrue(new MemberIdentity(1001L, "").matches(1001L, "Any"));
-        assertFalse(new MemberIdentity(1001L, "").matches(2001L, "Any"));
+        assertTrue(new MemberIdentity(1001L, "", false).matches(1001L, "Any"));
+        assertFalse(new MemberIdentity(1001L, "", false).matches(2001L, "Any"));
     }
 
     @Test
     void matchesRawNickname() {
-        assertTrue(new MemberIdentity(0L, "PlayerA").matches(0L, "PlayerA"));
-        assertTrue(new MemberIdentity(0L, "PlayerA").matches(0L, "playera"));
-        assertFalse(new MemberIdentity(0L, "PlayerA").matches(0L, "PlayerB"));
+        assertTrue(new MemberIdentity(0L, "PlayerA", false).matches(0L, "PlayerA"));
+        assertTrue(new MemberIdentity(0L, "PlayerA", false).matches(0L, "playera"));
+        assertFalse(new MemberIdentity(0L, "PlayerA", false).matches(0L, "PlayerB"));
     }
 
     @Test
