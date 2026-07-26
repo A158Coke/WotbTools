@@ -35,7 +35,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
 
     static final int ENGAGEMENT_GAP_SEC = 10;
     static final float FORMATION_WINDOW_SEC = 15f;
-    static final float FORMATION_CLUSTER_DISTANCE = 100f;
+    static final float FORMATION_CLUSTER_DISTANCE = 400f; // 100 canonical meters (1cm=4raw, 2000raw=500cm)
     static final double ENGAGEMENT_OUTCOME_RATIO = 1.25;
     static final float FOCUS_FIRE_WINDOW_SEC = 5f;
     static final int MIN_FOCUS_FIRE_ATTACKERS = 2;
@@ -70,7 +70,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         final Map<Integer, List<PositionChangedEvent>> positionsByEntity =
                 teamPositionsByEntity(events, entityMapping, perspectiveTeam);
         final PositionEvidenceAudit positionAudit =
-                auditPositionEvidence(events, entityMapping);
+                auditPositionEvidence(events, entityMapping, perspectiveTeam);
         final int invalidTimestampEventCount = (int) events.stream()
                 .filter(event -> !hasUsableClock(event))
                 .count();
@@ -129,7 +129,9 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
 
         final int mappedMembers = entityMapping.mappedMembers(perspectiveTeam);
         final int positionEventCount = positionsByEntity.values().stream()
-                .mapToInt(List::size)
+                .flatMap(List::stream)
+                .filter(pos -> MapRegionResolver.resolve(pos.x(), pos.z()).usable())
+                .mapToInt(pos -> 1)
                 .sum();
         final boolean reconstructionAvailable = reconstruction != null;
         final boolean fullFeaturesAvailable = reconstructionAvailable
@@ -267,6 +269,16 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         return winnerTeam == perspectiveTeam;
     }
 
+    private static String buildResultLabel(final Battle battle, final int perspectiveTeam) {
+        if (battle == null || battle.winnerTeam == null) return "result=DRAW_OR_UNKNOWN";
+        if (!PlayerSideResolver.isValidRawTeam(battle.winnerTeam)
+                || !PlayerSideResolver.isValidRawTeam(perspectiveTeam)) {
+            return "result=DRAW_OR_UNKNOWN";
+        }
+        if (battle.winnerTeam == perspectiveTeam) return "result=TEAM_WIN";
+        return "result=TEAM_LOSS";
+    }
+
     private static Map<Integer, List<PositionChangedEvent>> teamPositionsByEntity(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping,
@@ -292,7 +304,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
 
     private static PositionEvidenceAudit auditPositionEvidence(
             final List<ReplayEvent> events,
-            final TeamEntityMapping mapping
+            final TeamEntityMapping mapping,
+            final int perspectiveTeam
     ) {
         int unattributedCount = 0;
         int clampedCount = 0;
@@ -302,8 +315,9 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 continue;
             }
             final TeamEntityIdentity identity = mapping.identity(position.entityId());
-            if (identity == null || !identity.usable()) {
+            if (identity == null || !identity.usable() || identity.team() != perspectiveTeam) {
                 unattributedCount++;
+                continue;
             }
             if (isOutOfBounds(position)) {
                 outOfBoundsCount++;
@@ -865,11 +879,11 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                         "DERIVED_POSITION",
                         List.of())));
         if (battleEnd.clockSec() != null) {
+            final String resultLabel = buildResultLabel(battle, perspectiveTeam);
             events.add(new KeyBattleEvent(
                     battleEnd.clockSec(),
                     "BATTLE_END",
-                    battle != null && battle.winnerTeam != null
-                            ? "winnerTeam=" + battle.winnerTeam : "winnerTeam=UNKNOWN",
+                    resultLabel,
                     battleEnd.confidence(),
                     battleEnd.source(),
                     List.of()));

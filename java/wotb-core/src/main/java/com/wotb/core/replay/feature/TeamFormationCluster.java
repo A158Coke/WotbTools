@@ -53,6 +53,11 @@ public record TeamFormationCluster(
         if (clampedMemberPositionCount < 0) {
             throw new IllegalArgumentException("clampedMemberPositionCount must not be negative");
         }
+        final int derivedCount = memberIdentities.size();
+        if (clampedMemberPositionCount > derivedCount) {
+            throw new IllegalArgumentException("clampedMemberPositionCount " + clampedMemberPositionCount
+                    + " > memberCount " + derivedCount);
+        }
         if (confidence == null) confidence = DecodeConfidence.UNKNOWN;
     }
 
