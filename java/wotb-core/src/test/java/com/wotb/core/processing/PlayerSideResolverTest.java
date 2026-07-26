@@ -17,6 +17,26 @@ import java.util.Map;
  */
 class PlayerSideResolverTest {
 
+    // ========== isValidRawTeam ==========
+
+    @Test
+    void isValidRawTeam_1() { assertTrue(PlayerSideResolver.isValidRawTeam(1)); }
+
+    @Test
+    void isValidRawTeam_2() { assertTrue(PlayerSideResolver.isValidRawTeam(2)); }
+
+    @Test
+    void isValidRawTeam_negative1() { assertFalse(PlayerSideResolver.isValidRawTeam(-1)); }
+
+    @Test
+    void isValidRawTeam_zero() { assertFalse(PlayerSideResolver.isValidRawTeam(0)); }
+
+    @Test
+    void isValidRawTeam_3() { assertFalse(PlayerSideResolver.isValidRawTeam(3)); }
+
+    @Test
+    void isValidRawTeam_maxInt() { assertFalse(PlayerSideResolver.isValidRawTeam(Integer.MAX_VALUE)); }
+
     // ========== 8.1 Recorder in raw team 1 ==========
 
     @Test
@@ -25,25 +45,8 @@ class PlayerSideResolverTest {
     }
 
     @Test
-    void recorderTeam1_team1IsFriendly() {
-        assertEquals(Side.FRIENDLY, PlayerSideResolver.resolve(1, 1));
-    }
-
-    @Test
     void recorderTeam1_team2IsEnemy() {
         assertEquals(Side.ENEMY, PlayerSideResolver.resolve(1, 2));
-    }
-
-    @Test
-    void recorderTeam1_promptContainsNoTeam1Team2() {
-        // Verify via battle integration
-        Battle battle = createBattle(1, List.of(
-                player(1, "Ally"),
-                player(2, "Enemy")
-        ));
-        Map<PlayerResult, Side> sides = PlayerSideResolver.resolveAll(battle);
-        assertEquals(Side.FRIENDLY, sides.get(battle.players.get(0)));
-        assertEquals(Side.ENEMY, sides.get(battle.players.get(1)));
     }
 
     // ========== 8.2 Recorder in raw team 2 ==========
@@ -54,29 +57,17 @@ class PlayerSideResolverTest {
     }
 
     @Test
-    void recorderTeam2_team2IsFriendly() {
-        Battle battle = createBattle(2, List.of(
-                player(2, "Teammate"),
-                player(1, "Foe")
-        ));
-        Map<PlayerResult, Side> sides = PlayerSideResolver.resolveAll(battle);
-        assertEquals(Side.FRIENDLY, sides.get(battle.players.get(0)));
-        assertEquals(Side.ENEMY, sides.get(battle.players.get(1)));
-    }
-
-    @Test
     void recorderTeam2_team1IsEnemy() {
         assertEquals(Side.ENEMY, PlayerSideResolver.resolve(2, 1));
     }
 
     @Test
     void recorderTeam2_notHardcodedTeam1AsFriendly() {
-        // Critical regression: must NOT assume team 1 = friendly
-        Battle battle = createBattle(2, List.of(
+        final Battle battle = createBattle(2, List.of(
                 player(1, "ActuallyEnemy"),
                 player(2, "ActuallyFriendly")
         ));
-        Map<PlayerResult, Side> sides = PlayerSideResolver.resolveAll(battle);
+        final Map<PlayerResult, Side> sides = PlayerSideResolver.resolveAll(battle);
         assertEquals(Side.ENEMY, sides.get(battle.players.get(0)));
         assertEquals(Side.FRIENDLY, sides.get(battle.players.get(1)));
     }
@@ -105,17 +96,29 @@ class PlayerSideResolverTest {
         assertEquals(Winner.DRAW_OR_UNKNOWN, FriendlyEnemyResult.resolve(0, 1));
     }
 
+    @Test
+    void winnerTeam3_drawOrUnknown() {
+        assertEquals(Winner.DRAW_OR_UNKNOWN, FriendlyEnemyResult.resolve(3, 1));
+        assertEquals(Winner.DRAW_OR_UNKNOWN, FriendlyEnemyResult.resolve(Integer.MAX_VALUE, 1));
+    }
+
     // ========== 8.4 Unknown cases ==========
 
     @Test
     void recorderResultMissing_unknown() {
-        Battle battle = new Battle();
+        final Battle battle = new Battle();
         assertNull(PlayerSideResolver.resolveRecorderTeam(battle));
     }
 
     @Test
     void recorderTeamZero_unknown() {
-        Battle battle = createBattle(0, List.of(player(1, "P1")));
+        final Battle battle = createBattle(0, List.of(player(1, "P1")));
+        assertNull(PlayerSideResolver.resolveRecorderTeam(battle));
+    }
+
+    @Test
+    void recorderTeam3_unknown() {
+        final Battle battle = createBattle(3, List.of(player(3, "P1")));
         assertNull(PlayerSideResolver.resolveRecorderTeam(battle));
     }
 
@@ -125,13 +128,18 @@ class PlayerSideResolverTest {
     }
 
     @Test
+    void playerTeam3_unknown() {
+        assertEquals(Side.UNKNOWN, PlayerSideResolver.resolve(1, 3));
+    }
+
+    @Test
     void nullBattle_unknown() {
         assertEquals(Side.UNKNOWN, PlayerSideResolver.resolve(null, new PlayerResult()));
     }
 
     @Test
     void nullPlayer_unknown() {
-        Battle battle = createBattle(1, List.of(player(1, "P1")));
+        final Battle battle = createBattle(1, List.of(player(1, "P1")));
         assertEquals(Side.UNKNOWN, PlayerSideResolver.resolve(battle, null));
     }
 
@@ -140,56 +148,65 @@ class PlayerSideResolverTest {
         assertEquals(Winner.DRAW_OR_UNKNOWN, FriendlyEnemyResult.resolve(-1, 1));
     }
 
-    // ========== 8.5 Multi-Player: each battle independent ==========
+    // ========== 8.5 Multi-Player ==========
 
     @Test
     void multiPlayer_eachBattleIndependent() {
-        // Battle A: recorderTeam=1
-        Battle battleA = createBattle(1, List.of(
+        final Battle battleA = createBattle(1, List.of(
                 player(1, "A_Friendly"),
                 player(2, "A_Enemy")
         ));
-        // Battle B: recorderTeam=2
-        Battle battleB = createBattle(2, List.of(
+        final Battle battleB = createBattle(2, List.of(
                 player(2, "B_Friendly"),
                 player(1, "B_Enemy")
         ));
 
-        // Both recorders must be FRIENDLY in their own battle
-        Map<PlayerResult, Side> sidesA = PlayerSideResolver.resolveAll(battleA);
-        Map<PlayerResult, Side> sidesB = PlayerSideResolver.resolveAll(battleB);
+        final Map<PlayerResult, Side> sidesA = PlayerSideResolver.resolveAll(battleA);
+        final Map<PlayerResult, Side> sidesB = PlayerSideResolver.resolveAll(battleB);
 
         assertEquals(Side.FRIENDLY, sidesA.get(battleA.players.get(0)), "Battle A team1 is friendly");
         assertEquals(Side.ENEMY, sidesA.get(battleA.players.get(1)), "Battle A team2 is enemy");
         assertEquals(Side.FRIENDLY, sidesB.get(battleB.players.get(0)), "Battle B team2 is friendly");
         assertEquals(Side.ENEMY, sidesB.get(battleB.players.get(1)), "Battle B team1 is enemy");
 
-        // Verify raw team numbers are preserved (PlayerResult.team not modified)
+        // Verify raw team numbers are preserved
         assertEquals(1, battleA.players.get(0).team);
         assertEquals(2, battleA.players.get(1).team);
         assertEquals(2, battleB.players.get(0).team);
         assertEquals(1, battleB.players.get(1).team);
     }
 
+    // ========== 5. Recorder team 2 correctness ==========
+
+    @Test
+    void recorderTeam2_friendlyWin() {
+        assertEquals(Winner.FRIENDLY_WIN, FriendlyEnemyResult.resolve(2, 2));
+        assertEquals(Winner.ENEMY_WIN, FriendlyEnemyResult.resolve(1, 2));
+    }
+
+    @Test
+    void recorderTeam1_friendlyWin() {
+        assertEquals(Winner.FRIENDLY_WIN, FriendlyEnemyResult.resolve(1, 1));
+        assertEquals(Winner.ENEMY_WIN, FriendlyEnemyResult.resolve(2, 1));
+    }
+
     // ========== Helpers ==========
 
-    private static Battle createBattle(int recorderTeam, List<PlayerResult> players) {
-        Battle battle = new Battle();
+    private static Battle createBattle(final int recorderTeam, final List<PlayerResult> players) {
+        final Battle battle = new Battle();
         battle.recorder = "Recorder";
         battle.players = players;
-        // Set the player with recorderTeam as the recorder
-        PlayerResult rec = players.stream()
+        final PlayerResult rec = players.stream()
                 .filter(p -> p.team == recorderTeam)
-                .findFirst()
-                .orElse(null);
+                .findFirst().orElse(null);
         if (rec != null) {
             rec.nickname = "Recorder";
         }
         return battle;
     }
 
-    private static PlayerResult player(int team, String nickname) {
-        PlayerResult p = new PlayerResult();
+    private static PlayerResult player(final int team, final String nickname) {
+        final PlayerResult p = new PlayerResult();
         p.team = team;
         p.nickname = nickname;
         return p;

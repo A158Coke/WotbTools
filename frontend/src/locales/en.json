@@ -109,11 +109,6 @@
         "2": "Team 2",
         "unknown": "Draw/Unknown"
     },
-    "side": {
-        "FRIENDLY": "Friendly",
-        "ENEMY": "Enemy",
-        "UNKNOWN": "Unknown"
-    },
     "survived": {
         "alive": "Alive",
         "dead": "Destroyed"
