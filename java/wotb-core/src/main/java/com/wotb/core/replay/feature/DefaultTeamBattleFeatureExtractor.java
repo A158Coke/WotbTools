@@ -716,14 +716,17 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 }
             }
 
-            // Compute cluster centroid
-            final float cx = (float) clusterIndices.stream()
+            // Compute cluster centroid and convert to canonical
+            final float rawCx = (float) clusterIndices.stream()
                     .mapToDouble(i -> sorted.get(i).getValue().x())
                     .average().orElse(0.0);
-            final float cz = (float) clusterIndices.stream()
+            final float rawCz = (float) clusterIndices.stream()
                     .mapToDouble(i -> sorted.get(i).getValue().z())
                     .average().orElse(0.0);
-            final int region = TeamMapRegionResolver.resolveRegionFromRaw(cx, cz);
+            final float[] canon = MapRegionResolver.toCanonical(rawCx, rawCz);
+            final float cx = canon[0];
+            final float cz = canon[1];
+            final int region = MapRegionResolver.resolveRegion(cx, cz);
             final List<String> identities = clusterIndices.stream()
                     .map(i -> sorted.get(i).getKey())
                     .sorted()
@@ -733,7 +736,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                     .reduce(DecodeConfidence.EXACT, DefaultTeamBattleFeatureExtractor::lowerConfidence);
 
             result.add(new TeamFormationCluster(
-                    startTime, endTime, cx, cz, region, identities, identities.size(), clusterConfidence));
+                    startTime, endTime, cx, cz, region, identities, clusterConfidence));
         }
 
         // Sort by startTime, region, centroidX, centroidZ, then member identities

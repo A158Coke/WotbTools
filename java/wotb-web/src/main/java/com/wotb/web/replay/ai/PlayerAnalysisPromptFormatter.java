@@ -6,6 +6,7 @@ import com.wotb.core.processing.FriendlyEnemyResult;
 import com.wotb.core.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.PlayerSideResolver.Side;
+import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.List;
@@ -80,5 +81,12 @@ public final class PlayerAnalysisPromptFormatter {
     public static String formatWinner(final Battle battle) {
         final Winner w = FriendlyEnemyResult.resolve(battle);
         return "结果: " + FriendlyEnemyResult.label(w);
+    }
+
+    /** Resolve a region label for a raw replay (X, Z) coordinate. */
+    public static String formatRegion(final float rawX, final float rawZ) {
+        final int region = MapRegionResolver.resolveRegionFromRaw(rawX, rawZ);
+        if (region == 0) return "未知区域";
+        return region + "区";
     }
 }
