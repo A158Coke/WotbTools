@@ -286,6 +286,31 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
 
     // ---- 关键事件 ----
 
+    static List<BattlePhaseSummary> buildRelativePhases(
+            final float firstContactRelative,
+            final float battleEndRelative
+    ) {
+        final List<BattlePhaseSummary> phases = new ArrayList<>();
+        if (battleEndRelative <= 0 || !Float.isFinite(battleEndRelative)) return phases;
+        final float openingEnd = (firstContactRelative > 0)
+                ? Math.min(firstContactRelative, 45f) : 45f;
+        phases.add(new BattlePhaseSummary(0f, openingEnd, BattlePhaseType.OPENING, DecodeConfidence.EXACT));
+        if (firstContactRelative > 0 && firstContactRelative <= openingEnd + 5) {
+            phases.add(new BattlePhaseSummary(firstContactRelative,
+                    Math.min(firstContactRelative + 10, battleEndRelative),
+                    BattlePhaseType.FIRST_CONTACT, DecodeConfidence.INFERRED));
+        }
+        if (battleEndRelative - openingEnd > 60) {
+            phases.add(new BattlePhaseSummary(openingEnd, battleEndRelative,
+                    BattlePhaseType.MID_GAME, DecodeConfidence.INFERRED));
+        }
+        phases.add(new BattlePhaseSummary(battleEndRelative, battleEndRelative,
+                BattlePhaseType.ENDGAME, DecodeConfidence.EXACT));
+        return phases;
+    }
+
+    // ---- 关键事件 ----
+
     static List<KeyBattleEvent> extractKeyEvents(
             final List<ReplayEvent> events, final Map<Integer, Long> entityToAccount) {
         final List<KeyBattleEvent> keyEvents = new ArrayList<>();
