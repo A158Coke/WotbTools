@@ -843,7 +843,7 @@ public class AiReplayAnalysisService {
         try {
             final var mapper = new tools.jackson.databind.json.JsonMapper();
             final var root = mapper.readTree(raw);
-            if (root != null && root.isObject()) {
+            if (root != null && (root.isObject() || root.isArray())) {
                 redactJsonTree(root);
                 final String result = mapper.writeValueAsString(root);
                 return truncateSafe(result);
@@ -853,33 +853,42 @@ public class AiReplayAnalysisService {
         }
         // 2. Fallback regex redaction for non-JSON text
         String redacted = raw;
+        // Authorization header with scheme (e.g. "Bearer secret-value", "Basic encoded")
+        redacted = redacted.replaceAll(
+                "(?i)(authorization\\s*[:=]\\s*)\\w+\\s+\\S+",
+                "$1[REDACTED]");
         // JSON-like single-quoted values
         redacted = redacted.replaceAll(
                 "(?i)(['\"])(authorization|api[_ -]?key|bearer|token|secret|password)(['\"])\\s*[:=]\\s*['\"][^'\"]*['\"]",
                 "$1$2$3=[REDACTED]");
-        // Header/key-value format
+        // Header/key-value format (generic)
         redacted = redacted.replaceAll(
-                "(?i)(authorization|api[_ -]?key|bearer|token|secret|password)\\s*[:=]\\s*[^\\s,;\"']+",
+                "(?i)(authorization|api[_ -]?key|token|secret|password)\\s*[:=]\\s*[^\\s,;\"']+",
                 "$1=[REDACTED]");
         return truncateSafe(redacted);
     }
 
     /** Recursively redact sensitive keys in a JSON tree (in-place). */
     private static void redactJsonTree(final tools.jackson.databind.JsonNode node) {
-        if (node == null || !node.isObject()) return;
-        final var fields = node.properties();
-        for (final var entry : fields) {
-            final String key = entry.getKey().toLowerCase(Locale.ROOT);
-            final var value = entry.getValue();
-            if (SENSITIVE_KEYS.contains(key)) {
-                // Replace value with [REDACTED]
-                ((tools.jackson.databind.node.ObjectNode) node).put(entry.getKey(), "[REDACTED]");
-            } else if (value.isObject()) {
-                redactJsonTree(value);
-            } else if (value.isArray()) {
-                for (final var element : value) {
-                    if (element.isObject()) redactJsonTree(element);
+        if (node == null) return;
+        if (node.isObject()) {
+            final var fields = node.properties();
+            for (final var entry : fields) {
+                final String key = entry.getKey().toLowerCase(Locale.ROOT);
+                final var value = entry.getValue();
+                if (SENSITIVE_KEYS.contains(key)) {
+                    ((tools.jackson.databind.node.ObjectNode) node).put(entry.getKey(), "[REDACTED]");
+                } else if (value.isObject()) {
+                    redactJsonTree(value);
+                } else if (value.isArray()) {
+                    for (final var element : value) {
+                        redactJsonTree(element);
+                    }
                 }
+            }
+        } else if (node.isArray()) {
+            for (final var element : node) {
+                redactJsonTree(element);
             }
         }
     }

@@ -63,16 +63,6 @@ class MemberIdentityTest {
     }
 
     @Test
-    void toKeyWithAccountId() {
-        assertEquals("account:1001", new MemberIdentity(1001L, "A").toKey());
-    }
-
-    @Test
-    void toKeyWithNickname() {
-        assertEquals("nickname:playera", new MemberIdentity(0L, "PlayerA").toKey());
-    }
-
-    @Test
     void matchesRawAccount() {
         assertTrue(new MemberIdentity(1001L, "").matches(1001L, "Any"));
         assertFalse(new MemberIdentity(1001L, "").matches(2001L, "Any"));

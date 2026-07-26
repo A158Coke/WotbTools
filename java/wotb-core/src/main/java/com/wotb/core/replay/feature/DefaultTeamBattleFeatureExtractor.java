@@ -427,30 +427,20 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             final long memberAccountId,
             final String memberNickname
     ) {
+        final MemberIdentity memberId = new MemberIdentity(memberAccountId, memberNickname);
         final List<AttributedDamage> memberDamage = damages.stream()
                 .filter(damage -> damage.attacker().team() != damage.victim().team())
-                .filter(damage -> matchesMember(damage.attacker(), memberAccountId, memberNickname)
-                        || matchesMember(damage.victim(), memberAccountId, memberNickname))
+                .filter(damage -> memberId.matches(damage.attacker())
+                        || memberId.matches(damage.victim()))
                 .toList();
         final int memberTeam = memberDamage.stream()
-                .map(damage -> matchesMember(damage.attacker(), memberAccountId, memberNickname)
+                .map(damage -> memberId.matches(damage.attacker())
                         ? damage.attacker().team() : damage.victim().team())
                 .findFirst()
                 .orElse(0);
         return memberTeam == 0
                 ? List.of()
                 : buildEngagements(memberDamage, memberTeam, memberAccountId, memberNickname);
-    }
-
-    /** Match member by accountId (preferred) or fall back to nickname. */
-    private static boolean matchesMember(
-            final TeamEntityIdentity identity,
-            final long memberAccountId,
-            final String memberNickname
-    ) {
-        if (memberAccountId > 0) return identity.accountId() == memberAccountId;
-        return StringUtils.hasText(memberNickname)
-                && memberNickname.equals(identity.nickname());
     }
 
     private static List<EngagementSummary> buildEngagements(
