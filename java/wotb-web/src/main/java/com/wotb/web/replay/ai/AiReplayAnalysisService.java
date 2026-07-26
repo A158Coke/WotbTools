@@ -13,6 +13,10 @@ import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.processing.ReplayAnalysisScope;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingResult;
+import com.wotb.core.processing.FriendlyEnemyResult;
+import com.wotb.core.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.processing.PlayerSideResolver;
+import com.wotb.core.processing.PlayerSideResolver.Side;
 import com.wotb.core.processing.TeamPerspectiveResolution;
 import com.wotb.core.processing.TeamPerspectiveResolver;
 import com.wotb.core.replay.event.DecodeConfidence;
@@ -33,6 +37,7 @@ import com.wotb.core.replay.feature.TeamBattleAnalysisSummary;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.util.PlayerResultFormat;
+import com.wotb.web.replay.ai.PlayerAnalysisPromptFormatter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -508,21 +513,17 @@ public class AiReplayAnalysisService {
             if (battle.durationS != null) {
                 sb.append("时长: ").append(String.format("%.1f", battle.durationS)).append("s\n");
             }
-            sb.append("胜方队伍: ").append(PlayerResultFormat.winnerTeamDisplay(battle)).append('\n');
+            sb.append(PlayerAnalysisPromptFormatter.formatWinner(battle)).append('\n');
 
             final PlayerResult rec = battle.recorderResult();
             if (rec != null) {
                 authoritativeDealt = rec.damageDealt;
                 authoritativeReceived = rec.damageReceived;
-                sb.append("\n录像者: ").append(PlayerResultFormat.safe(rec.nickname))
-                        .append(" | 队伍").append(rec.team)
-                        .append(" | ").append(PlayerResultFormat.safe(rec.tankName));
-                PlayerResultFormat.appendRecorderLine(sb, rec);
-                sb.append('\n');
+                var side = PlayerSideResolver.resolve(battle, rec);
+                sb.append("\n").append(PlayerAnalysisPromptFormatter.formatRecorderLine(rec, side)).append('\n');
             }
 
-            sb.append("\n全体玩家战绩 (队伍/昵称/坦克/输出/承伤/助攻/格挡/击杀/存活):\n");
-            PlayerResultFormat.appendAllPlayers(sb, battle.players);
+            sb.append("\n").append(PlayerAnalysisPromptFormatter.formatAllPlayersBySide(battle));
         } else {
             sb.append("=== 警告：无权威结算数据 ===\n");
         }
@@ -839,9 +840,12 @@ public class AiReplayAnalysisService {
             final PlayerResult rec = b.recorderResult();
             sb.append("场 ").append(i + 1).append(": 地图 ").append(PlayerResultFormat.safe(b.mapName));
             if (rec != null) {
-                final boolean win = b.winnerTeam != null && b.winnerTeam == rec.team;
+                Winner w = FriendlyEnemyResult.resolve(b);
+                boolean win = w == Winner.FRIENDLY_WIN;
+                var side = PlayerSideResolver.resolve(b, rec);
                 sb.append(" | ").append(PlayerResultFormat.safe(rec.tankName))
-                        .append(win ? " | 胜" : " | 负");
+                        .append(win ? " | 胜" : " | 负")
+                        .append(" | 侧=").append(PlayerAnalysisPromptFormatter.sideLabel(side));
                 PlayerResultFormat.appendRecorderLine(sb, rec);
                 withRec++;
                 if (win) wins++;
@@ -860,7 +864,7 @@ public class AiReplayAnalysisService {
             sb.append('\n');
         }
 
-        sb.append("\n=== 聚合统计（后端计算，录像者）===\n");
+        sb.append("\n=== 聚合统计（后端计算，录像者视角）===\n");
         if (withRec > 0) {
             sb.append("可统计场数: ").append(withRec).append('\n');
             sb.append("胜率: ").append(String.format("%.0f%%", 100.0 * wins / withRec)).append('\n');
@@ -897,15 +901,18 @@ public class AiReplayAnalysisService {
                     .sorted(Comparator.comparingDouble(PlayerResultFormat::deathSec))
                     .toList();
             for (final PlayerResult p : dead) {
+                var side = PlayerSideResolver.resolve(battle, p);
+                String sideStr = PlayerAnalysisPromptFormatter.sideLabel(side);
                 events.add(new KeyBattleEvent(
                         (float) PlayerResultFormat.deathSec(p), "VEHICLE_DESTROYED",
-                        "队伍" + p.team + " " + PlayerResultFormat.safe(p.nickname)
+                        sideStr + " " + PlayerResultFormat.safe(p.nickname)
                                 + " (" + PlayerResultFormat.safe(p.tankName) + ") 阵亡"));
             }
         }
         final float endSec = battle.durationS != null ? battle.durationS.floatValue() : 0f;
+        var winner = FriendlyEnemyResult.resolve(battle);
         events.add(new KeyBattleEvent(endSec, "BATTLE_END",
-                battle.winnerTeam != null ? "战斗结束，胜方队伍 " + battle.winnerTeam : "战斗结束"));
+                "战斗结束，" + FriendlyEnemyResult.label(winner)));
         return List.copyOf(events);
     }
 
@@ -921,21 +928,17 @@ public class AiReplayAnalysisService {
         if (battle.durationS != null) {
             sb.append("时长: ").append(String.format("%.1f", battle.durationS)).append("s\n");
         }
-        sb.append("胜方队伍: ").append(PlayerResultFormat.winnerTeamDisplay(battle)).append('\n');
+        sb.append(PlayerAnalysisPromptFormatter.formatWinner(battle)).append('\n');
 
         final PlayerResult rec = battle.recorderResult();
         if (rec != null) {
-            sb.append("\n录像者: ").append(PlayerResultFormat.safe(rec.nickname))
-                    .append(" | 队伍").append(rec.team)
-                    .append(" | ").append(PlayerResultFormat.safe(rec.tankName));
-            PlayerResultFormat.appendRecorderLine(sb, rec);
-            sb.append('\n');
+            var side = PlayerSideResolver.resolve(battle, rec);
+            sb.append("\n").append(PlayerAnalysisPromptFormatter.formatRecorderLine(rec, side)).append('\n');
         } else {
             sb.append("\n(未能定位录像者战绩)\n");
         }
 
-        sb.append("\n全体玩家战绩 (队伍/昵称/坦克/输出/承伤/助攻/格挡/击杀/存活):\n");
-        PlayerResultFormat.appendAllPlayers(sb, battle.players);
+        sb.append("\n").append(PlayerAnalysisPromptFormatter.formatAllPlayersBySide(battle));
 
         sb.append("\n死亡时间线:\n");
         for (final KeyBattleEvent e : keyEvents) {
