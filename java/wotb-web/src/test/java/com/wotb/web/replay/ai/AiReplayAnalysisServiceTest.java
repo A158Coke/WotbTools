@@ -82,14 +82,23 @@ class AiReplayAnalysisServiceTest {
         assertFalse(body.contains("team=2"), "Body must not contain team=2");
     }
 
-    // ========== PlayerResult.team unchanged helper ==========
+    // ========== PlayerResult.team snapshot helpers ==========
 
-    private static void assertPlayerResultTeamUnchanged(final Battle battle) {
-        final List<Integer> originalTeams = battle.players.stream()
-                .map(p -> p.team).toList();
-        final List<Integer> actualTeams = battle.players.stream()
-                .map(p -> p.team).toList();
-        assertEquals(originalTeams, actualTeams, "PlayerResult.team must not be modified");
+    private static List<Integer> playerTeams(final Battle battle) {
+        return battle.players.stream()
+                .map(player -> player.team)
+                .toList();
+    }
+
+    private static void assertPlayerResultTeams(
+            final List<Integer> expectedTeams,
+            final Battle battle
+    ) {
+        assertEquals(
+                expectedTeams,
+                playerTeams(battle),
+                "PlayerResult.team must not be modified"
+        );
     }
 
     // ========== Basic tests ==========
@@ -264,11 +273,13 @@ class AiReplayAnalysisServiceTest {
     void fullFeaturePath_recorderTeam1_resolvedEntityLine() throws IOException {
         final var service = startService(2);
         final Battle battle = makePlayerBattle(1, 1);
+        final List<Integer> originalTeams = playerTeams(battle);
         final var ctx = buildPlayerContext(battle);
         assertTrue(ctx.recorder().resolved(), "Recorder mapping must be resolved");
 
         service.analyzePlayerContext(ctx);
 
+        assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBody.get();
         assertNoRawTeamLabels(body);
         assertTrue(body.contains("录像者 entity 已映射, 特征集可用"),
@@ -279,25 +290,25 @@ class AiReplayAnalysisServiceTest {
         assertTrue(body.contains("- 友方 RecorderPlayer"), "RecorderPlayer should be friendly");
         assertTrue(body.contains("=== 敌方 ==="), "Should have enemy roster");
         assertTrue(body.contains("- 敌方 OtherPlayer"), "OtherPlayer should be enemy");
-        assertPlayerResultTeamUnchanged(battle);
     }
 
     @Test
     void fullFeaturePath_recorderTeam2_stillFriendly() throws IOException {
         final var service = startService(2);
         final Battle battle = makePlayerBattle(2, 2);
+        final List<Integer> originalTeams = playerTeams(battle);
         final var ctx = buildPlayerContext(battle);
         assertTrue(ctx.recorder().resolved(), "Recorder mapping must be resolved");
 
         service.analyzePlayerContext(ctx);
 
+        assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBody.get();
         assertNoRawTeamLabels(body);
         assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=友方 | 车辆 ID: 123"),
                 "Recorder in team 2 must still show friendly side");
         assertTrue(body.contains("- 友方 RecorderPlayer"), "RecorderPlayer should be friendly");
         assertTrue(body.contains("- 敌方 OtherPlayer"), "OtherPlayer(raw team 1) should be enemy");
-        assertPlayerResultTeamUnchanged(battle);
     }
 
     @ParameterizedTest
@@ -307,46 +318,57 @@ class AiReplayAnalysisServiceTest {
         final Battle battle = makePlayerBattle(1, 1);
         battle.players.getFirst().team = invalidTeam;
         battle.recorder = battle.players.getFirst().nickname;
+        final List<Integer> originalTeams = playerTeams(battle);
         final var ctx = buildPlayerContext(battle);
         assertTrue(ctx.recorder().resolved(), "Recorder mapping must still be resolved");
 
         service.analyzePlayerContext(ctx);
 
+        assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBody.get();
         assertNoRawTeamLabels(body);
         assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=未知 | 车辆 ID: 123"),
                 "Invalid team " + invalidTeam + " must show unknown side");
         assertTrue(body.contains("结果: 平局或未知"),
                 "Invalid team " + invalidTeam + " must produce draw/unknown winner");
-        // All players should be UNKNOWN when recorder team is invalid
         assertTrue(body.contains("=== 未知 ==="), "All players should be in unknown roster");
-        assertPlayerResultTeamUnchanged(battle);
     }
 
     // ========== Fallback path ==========
 
     @Test
-    void fallback_recorderTeam1_noRawTeam() throws IOException {
+    void fallback_recorderTeam1_hasExactRoster() throws IOException {
         final var service = startService(2);
         final Battle battle = makePlayerBattle(1, 1);
+        final List<Integer> originalTeams = playerTeams(battle);
+
         service.analyze(battle, null);
 
+        assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBody.get();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("友方"), "Should contain friendly label");
-        assertPlayerResultTeamUnchanged(battle);
+        assertTrue(body.contains("录像者: RecorderPlayer"), "Should contain recorder line");
+        assertTrue(body.contains("| 侧=友方"), "Recorder should show friendly side");
+        assertTrue(body.contains("=== 友方 ==="), "Should have friendly roster");
+        assertTrue(body.contains("- 友方 RecorderPlayer"), "RecorderPlayer should be friendly");
+        assertTrue(body.contains("=== 敌方 ==="), "Should have enemy roster");
+        assertTrue(body.contains("- 敌方 OtherPlayer"), "OtherPlayer should be enemy");
     }
 
     @Test
     void fallback_recorderTeam2_stillFriendly() throws IOException {
         final var service = startService(2);
         final Battle battle = makePlayerBattle(2, 2);
+        final List<Integer> originalTeams = playerTeams(battle);
+
         service.analyze(battle, null);
 
+        assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBody.get();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("友方"), "Recorder in team 2 should still be friendly");
-        assertPlayerResultTeamUnchanged(battle);
+        assertTrue(body.contains("| 侧=友方"), "Recorder in team 2 should still show friendly side");
+        assertTrue(body.contains("- 友方 RecorderPlayer"), "RecorderPlayer should be friendly");
+        assertTrue(body.contains("- 敌方 OtherPlayer"), "OtherPlayer(raw team 1) should be enemy");
     }
 
     // ========== Multi-player tests ==========
@@ -428,12 +450,11 @@ class AiReplayAnalysisServiceTest {
     void multiPlayer_playerResultTeamUnchanged() throws IOException {
         final var service = startService(2);
         final Battle battle = makePlayerBattle(1, 1);
-        final List<Integer> originalTeams = battle.players.stream().map(p -> p.team).toList();
+        final List<Integer> originalTeams = playerTeams(battle);
 
         service.analyzeMulti(List.of(battle));
 
-        final List<Integer> actualTeams = battle.players.stream().map(p -> p.team).toList();
-        assertEquals(originalTeams, actualTeams, "PlayerResult.team must not be modified by analyzeMulti");
+        assertPlayerResultTeams(originalTeams, battle);
     }
 
     // ========== Test helpers ==========

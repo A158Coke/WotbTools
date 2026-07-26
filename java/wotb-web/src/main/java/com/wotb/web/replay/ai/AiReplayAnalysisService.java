@@ -59,6 +59,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.IntStream;
 
 /**
  * 回放 AI 战术复盘服务。
@@ -875,17 +876,17 @@ public class AiReplayAnalysisService {
         sb.append("共 ").append(battles.size()).append(" 场。\n\n=== 各场摘要（录像者视角）===\n");
 
         // Compute stats via immutable Stream reduce (no mutable reassignment)
-        final MultiBattleStats stats = java.util.stream.IntStream.range(0, battles.size())
+        final MultiBattleStats stats = IntStream.range(0, battles.size())
                 .filter(i -> battles.get(i).recorderResult() != null)
                 .mapToObj(i -> MultiBattleStats.fromBattle(
                         battles.get(i), battles.get(i).recorderResult()))
                 .reduce(MultiBattleStats::combine)
                 .orElse(MultiBattleStats.ZERO);
 
-        for (int i = 0; i < battles.size(); i++) {
-            final Battle b = battles.get(i);
+        IntStream.range(0, battles.size()).forEachOrdered(index -> {
+            final Battle b = battles.get(index);
             final PlayerResult rec = b.recorderResult();
-            sb.append("场 ").append(i + 1).append(": 地图 ").append(PlayerResultFormat.safe(b.mapName));
+            sb.append("场 ").append(index + 1).append(": 地图 ").append(PlayerResultFormat.safe(b.mapName));
             if (rec != null) {
                 final Winner w = FriendlyEnemyResult.resolve(b);
                 final String resultLabel = FriendlyEnemyResult.label(w);
@@ -898,7 +899,7 @@ public class AiReplayAnalysisService {
                 sb.append(" | (未能定位录像者战绩)");
             }
             sb.append('\n');
-        }
+        });
 
         sb.append("\n=== 聚合统计（后端计算，录像者视角）===\n");
         if (stats.totalBattles > 0) {
