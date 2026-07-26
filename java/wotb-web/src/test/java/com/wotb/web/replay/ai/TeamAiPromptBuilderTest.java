@@ -172,6 +172,7 @@ class TeamAiPromptBuilderTest {
                 .toList();
         final var multi = new MultiTeamBattleAnalysisContext(
                 summaries.size(),
+                summaries.size(),
                 summaries,
                 true,
                 List.of("PERSPECTIVE_TIMELINES_ISOLATED"));

@@ -1,5 +1,7 @@
 package com.wotb.web.replay.ai;
 
+import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.ref.MapNames;
 import com.wotb.core.replay.feature.KeyBattleEvent;
@@ -98,9 +100,8 @@ final class TeamAiPromptBuilder {
         writer.append("battleIdentity=" + quoteData(context.battleId()) + "\n");
         writer.append("category=" + context.battleCategory() + "\n");
         if (context.battle() != null) {
-            final String teamLabel = context.battle().players != null
-                    ? TeamPerspectiveLabelResolver.resolve(context.battle().players)
-                    : "未知队伍";
+            final String teamLabel = resolvePerspectiveLabel(
+                    context.battle().players, context.perspectiveTeam());
             writer.append("teamLabel=" + quoteData(teamLabel) + "\n");
             writer.append("map=" + quoteData(resolveMapName(context.battle().mapName)) + "\n");
             writer.append("durationSec=" + formatNullable(
@@ -418,6 +419,17 @@ final class TeamAiPromptBuilder {
         return position == null
                 ? "UNKNOWN"
                 : "(" + format(position.x()) + "," + format(position.z()) + ")";
+    }
+
+    /** Resolve dominant clan label for a perspective team's players only. */
+    private static String resolvePerspectiveLabel(
+            final List<PlayerResult> players, final int perspectiveTeam) {
+        if (players == null) return "未知队伍";
+        final List<PlayerResult> perspectivePlayers = players.stream()
+                .filter(p -> p.team == perspectiveTeam)
+                .toList();
+        if (perspectivePlayers.isEmpty()) return "未知队伍";
+        return TeamPerspectiveLabelResolver.resolve(perspectivePlayers);
     }
 
     record PromptInput(String content, List<String> limitations) {
