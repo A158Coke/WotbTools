@@ -9,7 +9,6 @@ import com.wotb.core.processing.PlayerSideResolver.Side;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.List;
-import java.util.List;
 import java.util.Map;
 
 /**
