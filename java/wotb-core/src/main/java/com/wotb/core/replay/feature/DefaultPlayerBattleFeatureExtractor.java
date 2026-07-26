@@ -6,6 +6,8 @@ import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.processing.RecorderEntityMapping;
+import com.wotb.core.replay.feature.BattleStartResolution;
+import com.wotb.core.replay.feature.BattleStartResolver;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
 
@@ -32,7 +34,12 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         final int recorderEid = recorder.entityId();
         final List<ReplayEvent> events = reconstruction.events();
 
-        // 过滤 recorder 的位置事件
+        // 确定战斗开始时间（用于过滤准备阶段数据）
+        final BattleStartResolution battleStartRes = BattleStartResolver.resolve(
+                reconstruction.battleStartRawClockSec(),
+                reconstruction.diagnostics());
+
+        // 过滤 recorder 的位置事件（排除准备阶段）
         final List<PositionChangedEvent> positions = new ArrayList<>();
         final List<DamageEvent> damages = new ArrayList<>();
         // 记录首次伤害时间用于阶段划分
@@ -43,10 +50,18 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
             switch (event) {
                 case PositionChangedEvent p -> {
                     if (p.entityId() == recorderEid) {
+                        if (battleStartRes != null && battleStartRes.isPreBattle(
+                                ReplayTimestamp.safeClockSec(p.timestamp()))) {
+                            continue;
+                        }
                         positions.add(p);
                     }
                 }
                 case DamageEvent d -> {
+                    if (battleStartRes != null && battleStartRes.isPreBattle(
+                            ReplayTimestamp.safeClockSec(d.timestamp()))) {
+                        continue;
+                    }
                     // 只有当 recorder 是攻击者或受害者时才记录
                     final boolean recorderIsAttacker = d.attackerEid() == recorderEid;
                     final boolean recorderIsVictim = d.victimEid() == recorderEid;
@@ -73,7 +88,6 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         final List<EngagementSummary> engagements = buildEngagements(damages, recorder.entityId());
 
         // 战斗阶段
-        final float battleStart = findBattleStart(positions, damages);
         final List<BattlePhaseSummary> phases = DefaultBattleFeatureExtractor.dividePhases(
                 events, battleEndClock, firstContactTime);
 
@@ -220,11 +234,5 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
             totalEvents++;
         }
         return keyEvents;
-    }
-
-    private static float findBattleStart(final List<PositionChangedEvent> positions, final List<DamageEvent> damages) {
-        if (!positions.isEmpty()) return ReplayTimestamp.safeClockSec(positions.getFirst().timestamp());
-        if (!damages.isEmpty()) return ReplayTimestamp.safeClockSec(damages.getFirst().timestamp());
-        return 0f;
     }
 }
