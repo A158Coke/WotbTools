@@ -88,7 +88,7 @@ public final class TeamPerspectiveLabelResolver {
                 .map(p -> StringUtils.hasText(p.nickname) ? p.nickname : "")
                 .sorted()
                 .collect(Collectors.joining(","));
-        final int code = Math.abs(hash.hashCode()) % 10000;
+        final int code = Math.floorMod(hash.hashCode(), 10000);
         return "队伍-" + code;
     }
 }
