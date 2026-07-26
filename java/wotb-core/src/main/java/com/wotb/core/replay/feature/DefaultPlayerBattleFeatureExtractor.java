@@ -67,8 +67,9 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
                     final boolean recorderIsVictim = d.victimEid() == recorderEid;
                     if (recorderIsAttacker || recorderIsVictim) {
                         damages.add(d);
-                        if (firstContactTime < 0) {
+                    if (firstContactTime < 0) {
                             firstContactTime = ReplayTimestamp.safeClockSec(d.timestamp());
+                            firstContactTime = battleStartRes.battleRelative(firstContactTime);
                         }
                     }
                 }
@@ -81,8 +82,8 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
             }
         }
 
-        // 压缩移动段（只针对 recorder）
-        final List<MovementSegment> movements = compressMovements(positions);
+        // 压缩移动段（只针对 recorder，使用 battle-relative 时间）
+        final List<MovementSegment> movements = compressMovements(positions, battleStartRes);
 
         // 交火段
         final List<EngagementSummary> engagements = buildEngagements(damages, recorder.entityId());
@@ -110,11 +111,12 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
                 limitations, hasRealFeatures);
     }
 
-    static List<MovementSegment> compressMovements(final List<PositionChangedEvent> positions) {
+    static List<MovementSegment> compressMovements(final List<PositionChangedEvent> positions,
+                                                    final BattleStartResolution battleStartRes) {
         if (positions.isEmpty()) return List.of();
         if (positions.size() == 1) {
-            return List.of(new MovementSegment(ReplayTimestamp.safeClockSec(positions.get(0).timestamp()),
-                    ReplayTimestamp.safeClockSec(positions.get(0).timestamp()),
+            final float t = battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(positions.get(0).timestamp()));
+            return List.of(new MovementSegment(t, t,
                     MovementType.STATIONARY,
                     new Vector3(positions.get(0).x(), positions.get(0).y(), positions.get(0).z()),
                     new Vector3(positions.get(0).x(), positions.get(0).y(), positions.get(0).z()),
@@ -143,8 +145,8 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
             }
 
             result.add(new MovementSegment(
-                    ReplayTimestamp.safeClockSec(positions.get(start).timestamp()),
-                    ReplayTimestamp.safeClockSec(positions.get(i).timestamp()),
+                    battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(positions.get(start).timestamp())),
+                    battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(positions.get(i).timestamp())),
                     stationary ? MovementType.STATIONARY : MovementType.MOVING,
                     new Vector3(positions.get(start).x(), positions.get(start).y(), positions.get(start).z()),
                     new Vector3(positions.get(i).x(), positions.get(i).y(), positions.get(i).z()),

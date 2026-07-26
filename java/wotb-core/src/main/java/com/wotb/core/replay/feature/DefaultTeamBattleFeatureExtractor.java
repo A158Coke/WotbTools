@@ -98,7 +98,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
 
         final List<TeamMemberFeatureSet> members = authoritativeMembers.stream()
                 .map(player -> buildMember(
-                        player, entityMapping, positionsByEntity, attributedDamage, authoritativeMembers))
+                        player, entityMapping, positionsByEntity, attributedDamage, authoritativeMembers, battleStartRes))
                 .sorted(Comparator.comparingLong(TeamMemberFeatureSet::accountId)
                         .thenComparing(TeamMemberFeatureSet::nickname,
                                 Comparator.nullsLast(String::compareTo)))
@@ -323,7 +323,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             final TeamEntityMapping mapping,
             final Map<Integer, List<PositionChangedEvent>> positionsByEntity,
             final List<AttributedDamage> damageEvents,
-            final List<PlayerResult> authoritativeMembers
+            final List<PlayerResult> authoritativeMembers,
+            final BattleStartResolution battleStartRes
     ) {
         final long memberAccountId = player.accountId;
         final String memberNickname = player.nickname;
@@ -333,7 +334,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         final List<MovementSegment> movements = entityIds.stream()
                 .map(entityId -> positionsByEntity.getOrDefault(entityId, List.of()))
                 .flatMap(positions -> DefaultPlayerBattleFeatureExtractor
-                        .compressMovements(positions).stream())
+                        .compressMovements(positions, battleStartRes).stream())
                 .sorted(Comparator.comparingDouble(MovementSegment::startTime)
                         .thenComparingDouble(MovementSegment::endTime))
                 .toList();
