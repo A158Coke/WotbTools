@@ -110,15 +110,22 @@ class TeamMapRegionResolverTest {
 
     @Test
     void canonicalConversion() {
-        final float[] canon = TeamMapRegionResolver.toCanonical(2500, 2500);
-        assertEquals(250f, canon[0], 0.01);
-        assertEquals(250f, canon[1], 0.01);
+        // -2500 → 0, 2500 → 500
+        final float[] canon = TeamMapRegionResolver.toCanonical(-2500, -2500);
+        assertEquals(0f, canon[0], 0.01);
+        assertEquals(0f, canon[1], 0.01);
+        final float[] canon2 = TeamMapRegionResolver.toCanonical(2500, 2500);
+        assertEquals(500f, canon2[0], 0.01);
+        assertEquals(500f, canon2[1], 0.01);
     }
 
     @Test
     void rawCoordinatesRoundTrip() {
-        assertEquals(5, TeamMapRegionResolver.resolveRegionFromRaw(2500, 2500));
-        assertEquals(1, TeamMapRegionResolver.resolveRegionFromRaw(500, 4500));
-        assertEquals(9, TeamMapRegionResolver.resolveRegionFromRaw(4500, 500));
+        // Center
+        assertEquals(5, TeamMapRegionResolver.resolveRegionFromRaw(0, 0));
+        // Top-left
+        assertEquals(1, TeamMapRegionResolver.resolveRegionFromRaw(-2000, 2000));
+        // Bottom-right
+        assertEquals(9, TeamMapRegionResolver.resolveRegionFromRaw(2000, -2000));
     }
 }
