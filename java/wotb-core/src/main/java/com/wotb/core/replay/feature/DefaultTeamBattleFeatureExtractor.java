@@ -68,7 +68,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 battle, authoritativeMembers, perspectiveTeam);
 
         final Map<Integer, List<PositionChangedEvent>> positionsByEntity =
-                teamPositionsByEntity(events, entityMapping, perspectiveTeam);
+                teamPositionsByEntity(events, entityMapping, perspectiveTeam, battleStartRes);
         final PositionEvidenceAudit positionAudit =
                 auditPositionEvidence(events, entityMapping, perspectiveTeam);
         final int invalidTimestampEventCount = (int) events.stream()
@@ -282,13 +282,16 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     private static Map<Integer, List<PositionChangedEvent>> teamPositionsByEntity(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping,
-            final int perspectiveTeam
+            final int perspectiveTeam,
+            final BattleStartResolution battleStartRes
     ) {
         final Map<Integer, List<PositionChangedEvent>> result = new LinkedHashMap<>();
         events.stream()
                 .filter(PositionChangedEvent.class::isInstance)
                 .map(PositionChangedEvent.class::cast)
                 .filter(DefaultTeamBattleFeatureExtractor::usablePositionEvidence)
+                .filter(position -> !battleStartRes.isPreBattle(
+                        ReplayTimestamp.safeClockSec(position.timestamp())))
                 .filter(position -> {
                     final TeamEntityIdentity identity = mapping.identity(position.entityId());
                     return identity != null && identity.usable()
@@ -860,7 +863,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                                 ReplayTimestamp.safeClockSec(damage.event().timestamp()))
                         .thenComparingInt(damage -> damage.event().sequence()))
                 .ifPresent(damage -> events.add(new KeyBattleEvent(
-                        ReplayTimestamp.safeClockSec(damage.event().timestamp()),
+                        battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(damage.event().timestamp())),
                         "TEAM_FIRST_CONTACT",
                         "damage=" + damage.event().damage(),
                         lowestConfidence(damage),
