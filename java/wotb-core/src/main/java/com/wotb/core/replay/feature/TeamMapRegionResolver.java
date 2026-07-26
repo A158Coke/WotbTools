@@ -71,9 +71,9 @@ public final class TeamMapRegionResolver {
         else col = 2;
 
         final int row;
-        if (canonicalZ < Z_TOP) row = 0;
-        else if (canonicalZ < Z_MID) row = 1;
-        else row = 2;
+        if (canonicalZ > MAP_SIZE - Z_TOP) row = 0;       // Z > 333.33 → top row (1/2/3)
+        else if (canonicalZ > MAP_SIZE - Z_MID) row = 1;  // Z > 166.67 → middle row (4/5/6)
+        else row = 2;                                       // Z <= 166.67 → bottom row (7/8/9)
 
         return row * 3 + col + 1;
     }
