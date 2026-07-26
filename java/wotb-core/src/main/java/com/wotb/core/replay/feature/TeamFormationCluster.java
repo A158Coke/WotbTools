@@ -3,17 +3,10 @@ package com.wotb.core.replay.feature;
 import com.wotb.core.replay.event.DecodeConfidence;
 import java.util.List;
 
-/**
- * A single cluster within a formation phase.
- * Centroid is canonical 500×500 X/Z (Y excluded).
- * Region is derived from the canonical centroid via {@link MapRegionResolver}.
- * memberCount is derived from memberIdentities.size().
- */
 public record TeamFormationCluster(
         float startTime,
         float endTime,
-        float centroidX,
-        float centroidZ,
+        CanonicalMapPosition centroid,
         int region,
         List<String> memberIdentities,
         DecodeConfidence confidence
@@ -31,16 +24,28 @@ public record TeamFormationCluster(
         if (!Float.isFinite(startTime) || !Float.isFinite(endTime) || startTime > endTime) {
             throw new IllegalArgumentException("Invalid time range: " + startTime + "-" + endTime);
         }
-        if (!Float.isFinite(centroidX) || !Float.isFinite(centroidZ)) {
-            throw new IllegalArgumentException("Invalid centroid: " + centroidX + "," + centroidZ);
+        if (centroid == null) {
+            throw new IllegalArgumentException("centroid must not be null");
         }
         if (region < 0 || region > 9) {
             throw new IllegalArgumentException("Invalid region: " + region);
+        }
+        if (centroid.region() != region) {
+            throw new IllegalArgumentException(
+                    "Centroid region " + centroid.region() + " != declared region " + region);
         }
         if (confidence == null) confidence = DecodeConfidence.UNKNOWN;
     }
 
     public int memberCount() {
         return memberIdentities.size();
+    }
+
+    public float centroidX() {
+        return centroid.x();
+    }
+
+    public float centroidZ() {
+        return centroid.z();
     }
 }

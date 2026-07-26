@@ -324,8 +324,8 @@ class DefaultTeamBattleFeatureExtractorTest {
         final Fixture fixture = fixture();
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),
-                position(2, 5f, 10, 5000f, 0f),
-                position(3, 6f, 10, 5000.1f, 0f));
+                position(2, 5f, 10, 500f, 0f),
+                position(3, 6f, 10, 1500f, 0f));
 
         final TeamBattleFeatureSet features = extract(fixture, events);
 

@@ -1,7 +1,8 @@
 package com.wotb.core.replay.feature;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -56,17 +57,44 @@ class MapRegionResolverTest {
     }
 
     @Test void canonicalConversion() {
-        final float[] c1 = MapRegionResolver.toCanonical(-1000, -1000);
-        assertEquals(0f, c1[0], 0.01);
-        final float[] c2 = MapRegionResolver.toCanonical(0, 0);
-        assertEquals(250f, c2[0], 0.01);
-        final float[] c3 = MapRegionResolver.toCanonical(1000, 1000);
-        assertEquals(500f, c3[0], 0.01);
+        final CanonicalMapPosition c1 = MapRegionResolver.toCanonical(-1000, -1000);
+        assertNotNull(c1);
+        assertEquals(0f, c1.x(), 0.01);
+        final CanonicalMapPosition c2 = MapRegionResolver.toCanonical(0, 0);
+        assertNotNull(c2);
+        assertEquals(250f, c2.x(), 0.01);
+        final CanonicalMapPosition c3 = MapRegionResolver.toCanonical(1000, 1000);
+        assertNotNull(c3);
+        assertEquals(500f, c3.x(), 0.01);
     }
 
     @Test void rawCoordinatesRoundTrip() {
         assertEquals(5, MapRegionResolver.resolveRegionFromRaw(0, 0));
         assertEquals(1, MapRegionResolver.resolveRegionFromRaw(-600, 600));
         assertEquals(9, MapRegionResolver.resolveRegionFromRaw(600, -600));
+    }
+
+    @Test void nanInputReturnsNull() {
+        assertNull(MapRegionResolver.toCanonical(Float.NaN, 250));
+        assertNull(MapRegionResolver.toCanonical(Float.POSITIVE_INFINITY, 250));
+    }
+
+    @Test void outOfRangeRawClampedToCanonical() {
+        final CanonicalMapPosition pos = MapRegionResolver.toCanonical(5000, 5000);
+        assertNotNull(pos);
+        assertTrue(pos.x() >= 0 && pos.x() <= 500);
+        assertTrue(pos.z() >= 0 && pos.z() <= 500);
+    }
+
+    @Test void toCanonicalAllRegions() {
+        assertEquals(1, MapRegionResolver.toCanonical(-600, 600).region());
+        assertEquals(2, MapRegionResolver.toCanonical(0, 600).region());
+        assertEquals(3, MapRegionResolver.toCanonical(600, 600).region());
+        assertEquals(4, MapRegionResolver.toCanonical(-600, 0).region());
+        assertEquals(5, MapRegionResolver.toCanonical(0, 0).region());
+        assertEquals(6, MapRegionResolver.toCanonical(600, 0).region());
+        assertEquals(7, MapRegionResolver.toCanonical(-600, -600).region());
+        assertEquals(8, MapRegionResolver.toCanonical(0, -600).region());
+        assertEquals(9, MapRegionResolver.toCanonical(600, -600).region());
     }
 }
