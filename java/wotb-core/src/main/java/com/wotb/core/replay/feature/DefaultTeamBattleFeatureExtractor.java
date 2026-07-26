@@ -13,6 +13,9 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.feature.BattleStartResolution;
+import com.wotb.core.replay.feature.BattleStartResolver;
+import com.wotb.core.replay.feature.MapCoordinateResolution;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.util.PlayerResultFormat;
@@ -55,6 +58,9 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         }
 
         final int perspectiveTeam = perspective.perspectiveTeam();
+        final BattleStartResolution battleStartRes = BattleStartResolver.resolve(
+                reconstruction != null ? reconstruction.battleStartRawClockSec() : null,
+                reconstruction != null ? reconstruction.diagnostics() : null);
         final List<ReplayEvent> events = reconstruction != null && reconstruction.events() != null
                 ? reconstruction.events().stream()
                         .sorted(Comparator.comparingInt(ReplayEvent::sequence))
@@ -172,6 +178,9 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         if (positionAudit.outOfBoundsCount() > 0) {
             limitations.add("OUT_OF_BOUNDS_POSITION_EVENTS_IGNORED");
         }
+        if (positionAudit.clampedCount() > 0) {
+            limitations.add("MAP_COORDINATES_CLAMPED");
+        }
         if (invalidTimestampEventCount > 0) {
             limitations.add("INVALID_EVENT_TIMESTAMPS_IGNORED");
         }
@@ -286,6 +295,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             final TeamEntityMapping mapping
     ) {
         int unattributedCount = 0;
+        int clampedCount = 0;
         int outOfBoundsCount = 0;
         for (final ReplayEvent event : events) {
             if (!(event instanceof PositionChangedEvent position)) {
@@ -297,9 +307,11 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             }
             if (isOutOfBounds(position)) {
                 outOfBoundsCount++;
+            } else if (isClamped(position)) {
+                clampedCount++;
             }
         }
-        return new PositionEvidenceAudit(unattributedCount, outOfBoundsCount);
+        return new PositionEvidenceAudit(unattributedCount, clampedCount, outOfBoundsCount);
     }
 
     private static TeamMemberFeatureSet buildMember(
@@ -763,12 +775,16 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 && !isOutOfBounds(position);
     }
 
+    private static boolean isClamped(final PositionChangedEvent position) {
+        return MapRegionResolver.resolve(position.x(), position.z()).status()
+                == MapCoordinateResolution.Status.CLAMPED;
+    }
+
     private static boolean isOutOfBounds(
             final PositionChangedEvent position
     ) {
-        return Math.abs(position.x()) > MAX_ABSOLUTE_MAP_COORDINATE
-                || Math.abs(position.z()) > MAX_ABSOLUTE_MAP_COORDINATE
-                || Math.abs(position.y()) > MAX_ABSOLUTE_ELEVATION;
+        if (Math.abs(position.y()) > MAX_ABSOLUTE_ELEVATION) return true;
+        return !MapRegionResolver.resolve(position.x(), position.z()).usable();
     }
 
     private static boolean hasUsableClock(final ReplayEvent event) {
@@ -929,6 +945,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
 
     private record PositionEvidenceAudit(
             int unattributedCount,
+            int clampedCount,
             int outOfBoundsCount
     ) {
     }
