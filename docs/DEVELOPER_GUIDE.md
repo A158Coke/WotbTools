@@ -251,11 +251,13 @@ AI 复盘区分两种 scope，互不混用：
 - **dominant clan 队伍标签**（`TeamPerspectiveLabelResolver`）：根据 roster 中成员人数最多的军团生成用户可见名称，如 `CHRD`；军团人数并列或无军团时使用稳定 fallback `队伍-<hash>`。
 - **地图名称映射**（`MapNames.cn()`）：使用 `common/map_names.json` 单一数据源，AI prompt 中输出中文地图名。
 - **Tank ID 映射**：`PlayerResult.tankName` 已在解析阶段通过 `common/tankopedia.json` 填充，AI prompt 直接使用。
-- **500×500 九宫格区域**（`TeamMapRegionResolver`）：地图业务尺寸 500×500，+Z 为地图上方。区域编号：1|2|3（顶行）、4|5|6（中行）、7|8|9（底行）。Replay 坐标到 canonical 坐标采用线性映射，假设 playable area 跨度约 5000 单位（基于 `MAX_ABSOLUTE_MAP_COORDINATE` 常量）。
-- **结构化 cluster**（`TeamFormationCluster`）：每个 cluster 包含 centroidX/Z、region、memberIdentities、memberCount、confidence、startTime、endTime。`TeamFormationPhase.clusters` 派生 `clusterCount()`。
+- **500×500 九宫格区域**（`TeamMapRegionResolver`）：地图业务尺寸 500×500，+Z 为地图上方。Replay 坐标范围约 ±1000（基于 `docs/replay-data.md`），线性映射到 0…500。区域编号：1|2|3（顶行）、4|5|6（中行）、7|8|9（底行）。无法解析时返回 UNKNOWN/0。
+- **结构化 cluster**（`TeamFormationCluster`）：每个 cluster 包含 centroidX/Z（canonical 500×500）、region（基于 canonical centroid）、memberIdentities、memberCount、confidence、startTime、endTime。`TeamFormationPhase.clusters` 派生 `clusterCount()`。构造时验证时间合法性、region 0-9、memberCount 等于有效 identities 数。
 - **battle phases**：通过 `BATTLE_PHASES` 输出 start/end time 和 phase type。
 - **uniqueBattleCount**：multi-perspective 中区分 perspective count 和 unique battle count，同一场战斗的 opposing perspective 只算一个 battle。
+- **MemberIdentity**：accountId > 0 时优先使用 accountId；accountId ≤ 0 时使用规范化 nickname（trim、Locale.ROOT、case-insensitive）。用于 engagement 匹配、cluster 成员标识和 key events 的全链路 identity。
 - **prompt 禁止 raw team**：AI prompt 中不出现 `perspectiveTeam=1/2`、`winnerTeam=1/2`、`Team 1/2`、`队伍1/2`。使用 `teamLabel=`、`result=TEAM_WIN/TEAM_LOSS/DRAW_OR_UNKNOWN`。
+- **secret redaction**：AI provider 错误摘要优先使用 Jackson tree JSON 递归隐藏敏感 key（authorization、api_key、token、secret、password）。非 JSON 文本使用正则 fallback，支持 `Authorization: Bearer/Basic` 整体隐藏。
 
 ### PLAYER_FOCUSED（随机战斗）
 
