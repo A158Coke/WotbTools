@@ -18,6 +18,9 @@ public record MemberIdentity(long accountId, String nickname, boolean ambiguousN
 
     public MemberIdentity {
         if (nickname == null) nickname = "";
+        if (accountId <= 0 && !StringUtils.hasText(nickname)) {
+            ambiguousNickname = true;
+        }
     }
 
     public static MemberIdentity resolve(final PlayerResult player, final List<PlayerResult> roster) {

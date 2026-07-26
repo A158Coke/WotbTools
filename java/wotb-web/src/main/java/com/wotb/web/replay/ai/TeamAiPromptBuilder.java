@@ -222,8 +222,10 @@ final class TeamAiPromptBuilder {
                         + " avgSpeed=" + format(movement.averageSpeed())
                         + " startXZ=" + formatPosition(movement.startPosition())
                         + " startRegion=" + startRegion
+                        + " startStatus=" + coordStatus(movement.startPosition())
                         + " endXZ=" + formatPosition(movement.endPosition())
                         + " endRegion=" + endRegion
+                        + " endStatus=" + coordStatus(movement.endPosition())
                         + " confidence=" + movement.confidence()
                         + "\n");
             }
@@ -249,6 +251,7 @@ final class TeamAiPromptBuilder {
                     + "-" + format(phase.endTime()) + "]"
                     + " centroid=" + phase.centroid()
                     + " region=" + formationRegion
+                    + " centroidStatus=" + coordStatus(phase.centroid())
                     + " dispersion=" + format(phase.averageDispersion())
                     + " clusters=" + phase.clusterCount()
                     + " members=" + phase.observedMemberCount()
@@ -261,6 +264,7 @@ final class TeamAiPromptBuilder {
                         + " region=" + cluster.region()
                         + " centroidXZ=(" + format(cluster.centroidX())
                         + "," + format(cluster.centroidZ()) + ")"
+                        + " centroidStatus=" + "VALID"
                         + " members=" + cluster.memberIdentities()
                         + " memberCount=" + cluster.memberCount()
                         + " confidence=" + cluster.confidence()
@@ -428,6 +432,11 @@ final class TeamAiPromptBuilder {
         final MapCoordinateResolution res = MapRegionResolver.resolve(position.x(), position.z());
         if (!res.usable()) return "UNKNOWN";
         return String.valueOf(res.region());
+    }
+
+    private static String coordStatus(final Vector3 position) {
+        if (position == null) return "UNKNOWN";
+        return MapRegionResolver.resolve(position.x(), position.z()).status().name();
     }
 
     /** Resolve dominant clan label for a perspective team's players only. */
