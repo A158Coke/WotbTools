@@ -292,6 +292,93 @@ class AiReplayAnalysisServiceTest {
         verify(service, never()).analyzePlayerContext(any());
     }
 
+    // ========== Player-focused request body contract tests (section 6) ==========
+
+    @Test
+    void singlePlayerFallbackRequestBody_recorderTeam1_noRawTeam() throws IOException {
+        final var service = startService(2);
+        final Battle battle = makePlayerBattle(1, 1);
+        service.analyze(battle, null);
+
+        final String body = requestBody.get();
+        assertFalse(body.contains("队伍1"), "Fallback prompt must not contain 队伍1");
+        assertFalse(body.contains("队伍2"), "Fallback prompt must not contain 队伍2");
+        assertFalse(body.contains("队伍: 1"), "Fallback prompt must not contain raw team format");
+        assertFalse(body.contains("队伍: 2"), "Fallback prompt must not contain raw team format");
+        assertTrue(body.contains("友方") || body.contains("FRIENDLY"), "Should contain friendly label");
+    }
+
+    @Test
+    void singlePlayerFallbackRequestBody_recorderTeam2_stillFriendly() throws IOException {
+        final var service = startService(2);
+        final Battle battle = makePlayerBattle(2, 2);
+        service.analyze(battle, null);
+
+        final String body = requestBody.get();
+        assertFalse(body.contains("队伍1"), "Fallback prompt must not contain 队伍1");
+        assertFalse(body.contains("队伍2"), "Fallback prompt must not contain 队伍2");
+        assertTrue(body.contains("友方"), "Recorder in team 2 should still be friendly, body: " + body);
+    }
+
+    @Test
+    void multiPlayerRequestBody_eachBattleIndependent_noRawTeam() throws IOException {
+        final var service = startService(2);
+        // Two battles: first with recorder team=1, second with recorder team=2
+        final Battle battle1 = makePlayerBattle(1, 1);
+        battle1.winnerTeam = 1;
+        final Battle battle2 = makePlayerBattle(2, 2);
+        battle2.winnerTeam = 2;
+        final List<Battle> battles = List.of(battle1, battle2);
+
+        service.analyzeMulti(battles);
+
+        final String body = requestBody.get();
+        // No raw team numbers
+        assertFalse(body.contains("队伍1"), "Multi prompt must not contain 队伍1");
+        assertFalse(body.contains("队伍2"), "Multi prompt must not contain 队伍2");
+        assertFalse(body.contains("队伍: 1"), "Multi prompt must not contain 队伍: 1");
+        assertFalse(body.contains("队伍: 2"), "Multi prompt must not contain 队伍: 2");
+        // Three-state winner preserved
+        assertTrue(body.contains("友方获胜") || body.contains("FRIENDLY_WIN"),
+                "Should contain friendly win, body: " + body);
+        // Draw/unknown handling
+        assertTrue(body.contains("平局或未知") || body.contains("DRAW_OR_UNKNOWN")
+                        || body.contains("友方获胜") || body.contains("敌方获胜"),
+                "Should contain three-state winner, body: " + body);
+    }
+
+    @Test
+    void multiPlayerRequestBody_drawNotShownAsLoss() throws IOException {
+        final var service = startService(2);
+        final Battle battle = makePlayerBattle(1, 1);
+        battle.winnerTeam = null; // draw/unknown
+        final List<Battle> battles = List.of(battle);
+
+        service.analyzeMulti(battles);
+
+        final String body = requestBody.get();
+        assertTrue(body.contains("平局或未知") || body.contains("DRAW_OR_UNKNOWN"),
+                "Draw must be preserved as three-state, not collapsed to loss, body: " + body);
+        assertFalse(body.contains(" | 负"), "Must not output '负' for draw");
+    }
+
+    // ========== Battle builder for player-focused tests ==========
+
+    private static Battle makePlayerBattle(final int recorderTeam, final int winnerTeam) {
+        final Battle battle = new Battle();
+        battle.arenaId = "test-arena";
+        battle.mapName = "test_map";
+        battle.arenaBonusType = 1;
+        battle.durationS = 300.0;
+        battle.winnerTeam = winnerTeam;
+        final PlayerResult rec = player(1001L, "RecorderPlayer", recorderTeam, 2000);
+        final PlayerResult other = player(2001L, "OtherPlayer",
+                recorderTeam == 1 ? 2 : 1, 1500);
+        battle.players = List.of(rec, other);
+        battle.recorder = rec.nickname;
+        return battle;
+    }
+
     private AiReplayAnalysisService startService(final int timeoutSec) throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/chat/completions", this::handleRequest);
