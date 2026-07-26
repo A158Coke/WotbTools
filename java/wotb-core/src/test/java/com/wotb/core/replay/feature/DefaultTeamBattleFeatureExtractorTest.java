@@ -279,6 +279,15 @@ class DefaultTeamBattleFeatureExtractorTest {
     }
 
     @Test
+    void clampedPositionsUseCanonicalDistance() {
+        // raw X1=1050 (clamped to 1000), raw X2=649.9 → canonical distance ~87.5m → same cluster
+        final Fixture fixture = fixture();
+        assertEquals(1, formationClusters(fixture, 1050f, 649.9f));
+        // raw X1=1050 (clamped to 1000), raw X2=250 → canonical distance 187.5m → separate cluster
+        assertEquals(2, formationClusters(fixture, 1050f, 250f));
+    }
+
+    @Test
     void focusFireUsesAnIndependentFiveSecondInclusiveWindow() {
         final Fixture fixture = fixture();
         final List<ReplayEvent> inclusive = List.of(
@@ -440,6 +449,19 @@ class DefaultTeamBattleFeatureExtractorTest {
                 mapping(2, 11, 101L),
                 position(3, 5f, 10, 0f, 0f),
                 position(4, 5f, 11, distance, 0f));
+        return extract(fixture, events)
+                .formationPhases()
+                .getFirst()
+                .clusterCount();
+    }
+
+    /** Two-position version with separate raw X coordinates. */
+    private int formationClusters(final Fixture fixture, final float rawX1, final float rawX2) {
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 11, 101L),
+                position(3, 5f, 10, rawX1, 0f),
+                position(4, 5f, 11, rawX2, 0f));
         return extract(fixture, events)
                 .formationPhases()
                 .getFirst()

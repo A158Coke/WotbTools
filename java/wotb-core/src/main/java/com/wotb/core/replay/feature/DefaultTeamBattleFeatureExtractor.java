@@ -76,6 +76,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .count();
         final List<ReplayEvent> timedEvents = events.stream()
                 .filter(DefaultTeamBattleFeatureExtractor::hasUsableClock)
+                .filter(event -> !battleStartRes.isPreBattle(
+                        ReplayTimestamp.safeClockSec(event.timestamp())))
                 .toList();
         final List<AttributedDamage> attributedDamage = new ArrayList<>();
         int unattributedDamageCount = 0;
@@ -816,11 +818,17 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             final float rawX1, final float rawZ1,
             final float rawX2, final float rawZ2
     ) {
-        final float cx1 = rawToCanonical(rawX1);
-        final float cz1 = rawToCanonical(rawZ1);
-        final float cx2 = rawToCanonical(rawX2);
-        final float cz2 = rawToCanonical(rawZ2);
-        return distance(cx1, cz1, cx2, cz2);
+        final CanonicalMapPosition p1 = toCanonicalOrNull(rawX1, rawZ1);
+        final CanonicalMapPosition p2 = toCanonicalOrNull(rawX2, rawZ2);
+        if (p1 == null || p2 == null) return Float.MAX_VALUE;
+        return distance(p1.x(), p1.z(), p2.x(), p2.z());
+    }
+
+    /** Convert to canonical position, clamping out-of-range values within tolerance. */
+    private static CanonicalMapPosition toCanonicalOrNull(final float rawX, final float rawZ) {
+        final MapCoordinateResolution res = MapRegionResolver.resolve(rawX, rawZ);
+        if (!res.usable()) return null;
+        return res.position();
     }
 
     private static boolean usablePositionEvidence(
