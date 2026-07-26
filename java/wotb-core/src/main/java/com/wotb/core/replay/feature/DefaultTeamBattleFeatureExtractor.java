@@ -152,6 +152,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 attributedDamage.size(),
                 unattributedDamageCount,
                 positionAudit.unattributedCount(),
+                positionAudit.clampedCount(),
                 positionAudit.outOfBoundsCount(),
                 invalidTimestampEventCount,
                 decodedRatio,
