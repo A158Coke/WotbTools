@@ -80,10 +80,14 @@ class MapRegionResolverTest {
     }
 
     @Test void outOfRangeRawClampedToCanonical() {
-        final CanonicalMapPosition pos = MapRegionResolver.toCanonical(5000, 5000);
-        assertNotNull(pos);
-        assertTrue(pos.x() >= 0 && pos.x() <= 500);
-        assertTrue(pos.z() >= 0 && pos.z() <= 500);
+        assertNull(MapRegionResolver.toCanonical(5000, 5000));
+        final MapCoordinateResolution res = MapRegionResolver.resolve(1020, 1020);
+        assertEquals(MapCoordinateResolution.Status.CLAMPED, res.status());
+        assertNotNull(res.position());
+        assertTrue(res.position().x() >= 0 && res.position().x() <= 500);
+        assertTrue(res.position().z() >= 0 && res.position().z() <= 500);
+        assertEquals(500f, res.position().x(), 0.01);
+        assertEquals(500f, res.position().z(), 0.01);
     }
 
     @Test void toCanonicalAllRegions() {

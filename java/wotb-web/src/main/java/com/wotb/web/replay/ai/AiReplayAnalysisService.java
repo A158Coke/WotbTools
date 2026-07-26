@@ -30,6 +30,7 @@ import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
 import com.wotb.core.replay.feature.DefaultTeamBattleFeatureExtractor;
 import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.replay.feature.KeyBattleEvent;
+import com.wotb.core.replay.feature.MapCoordinateResolution;
 import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MultiPlayerBattleAnalysisContext;
@@ -525,9 +526,9 @@ public class AiReplayAnalysisService {
             不可声称看到了未点亮的敌方位置。""";
 
     private static String regionLabel(final float rawX, final float rawZ) {
-        final int region = MapRegionResolver.resolveRegionFromRaw(rawX, rawZ);
-        if (region == 0) return "未知区域";
-        return region + "区";
+        final MapCoordinateResolution res = MapRegionResolver.resolve(rawX, rawZ);
+        if (!res.usable()) return "未知区域";
+        return res.region() + "区";
     }
 
     private String buildPlayerContextSummary(final SinglePlayerBattleAnalysisContext ctx) {
