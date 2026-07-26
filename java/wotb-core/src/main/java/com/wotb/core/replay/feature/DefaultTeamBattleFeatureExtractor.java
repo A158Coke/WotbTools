@@ -35,7 +35,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
 
     static final int ENGAGEMENT_GAP_SEC = 10;
     static final float FORMATION_WINDOW_SEC = 15f;
-    static final float FORMATION_CLUSTER_DISTANCE = 400f; // 100 canonical meters (1cm=4raw, 2000raw=500cm)
+    static final float FORMATION_CLUSTER_DISTANCE_METERS = 100f; // canonical meters
     static final double ENGAGEMENT_OUTCOME_RATIO = 1.25;
     static final float FOCUS_FIRE_WINDOW_SEC = 5f;
     static final int MIN_FOCUS_FIRE_ATTACKERS = 2;
@@ -161,6 +161,9 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
 
         final Set<String> limitations = new LinkedHashSet<>(perspective.limitations());
         limitations.addAll(entityMapping.limitations());
+        if (battleStartRes.limitation() != null) {
+            limitations.add(battleStartRes.limitation());
+        }
         limitations.add("OBSERVED_DAMAGE_IS_PARTIAL");
         if (authoritativeAggregate == null) {
             limitations.add("AUTHORITATIVE_TEAM_RESULT_UNAVAILABLE");
@@ -318,9 +321,12 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 continue;
             }
             final TeamEntityIdentity identity = mapping.identity(position.entityId());
-            if (identity == null || !identity.usable() || identity.team() != perspectiveTeam) {
+            if (identity == null || !identity.usable()) {
                 unattributedCount++;
                 continue;
+            }
+            if (identity.team() != perspectiveTeam) {
+                continue; // enemy position, not counted in perspective coverage
             }
             if (isOutOfBounds(position)) {
                 outOfBoundsCount++;
@@ -743,11 +749,11 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 clusterIndices.add(current);
                 final PositionChangedEvent currentPos = sorted.get(current).getValue();
                 for (int candidate = 0; candidate < sorted.size(); candidate++) {
-                    if (!visited[candidate] && distance(
+                    if (!visited[candidate] && canonicalDistance(
                             currentPos.x(), currentPos.z(),
                             sorted.get(candidate).getValue().x(),
                             sorted.get(candidate).getValue().z())
-                            <= FORMATION_CLUSTER_DISTANCE) {
+                            <= FORMATION_CLUSTER_DISTANCE_METERS) {
                         visited[candidate] = true;
                         queue.add(candidate);
                     }
@@ -798,6 +804,23 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         final float deltaX = leftX - rightX;
         final float deltaZ = leftZ - rightZ;
         return (float) Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
+    }
+
+    /** Convert raw X/Z to canonical meters scale (2000 raw = 500 canonical). */
+    private static float rawToCanonical(final float raw) {
+        return raw * (MapRegionResolver.MAP_SIZE / MapRegionResolver.REPLAY_RANGE);
+    }
+
+    /** Canonical distance in meters. Converts raw coords to canonical before computing. */
+    private static float canonicalDistance(
+            final float rawX1, final float rawZ1,
+            final float rawX2, final float rawZ2
+    ) {
+        final float cx1 = rawToCanonical(rawX1);
+        final float cz1 = rawToCanonical(rawZ1);
+        final float cx2 = rawToCanonical(rawX2);
+        final float cz2 = rawToCanonical(rawZ2);
+        return distance(cx1, cz1, cx2, cz2);
     }
 
     private static boolean usablePositionEvidence(
