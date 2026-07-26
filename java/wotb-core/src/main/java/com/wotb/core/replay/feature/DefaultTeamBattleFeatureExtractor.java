@@ -2,6 +2,7 @@ package com.wotb.core.replay.feature;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.TeamEntityIdentity;
 import com.wotb.core.processing.TeamEntityMapper;
 import com.wotb.core.processing.TeamEntityMapping;
@@ -240,8 +241,21 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                         ? null : deathTimes.stream().mapToDouble(Double::doubleValue).average().orElse(0.0),
                 deathTimes.isEmpty() ? null : deathTimes.getFirst(),
                 deathTimes.isEmpty() ? null : deathTimes.getLast(),
-                battle.winnerTeam == null
-                        ? null : battle.winnerTeam == perspectiveTeam);
+                resolveAggregateWin(battle.winnerTeam, perspectiveTeam));
+    }
+
+    /**
+     * Resolve aggregate win as Boolean.
+     * Returns null for unknown (invalid teams), true for win, false for loss.
+     * Only raw teams 1 and 2 are valid; anything else returns null.
+     */
+    private static Boolean resolveAggregateWin(final Integer winnerTeam, final int perspectiveTeam) {
+        if (winnerTeam == null) return null;
+        if (!PlayerSideResolver.isValidRawTeam(winnerTeam)
+                || !PlayerSideResolver.isValidRawTeam(perspectiveTeam)) {
+            return null;
+        }
+        return winnerTeam == perspectiveTeam;
     }
 
     private static Map<Integer, List<PositionChangedEvent>> teamPositionsByEntity(
@@ -735,35 +749,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         return List.copyOf(result);
     }
 
-    private static int countClusters(final List<PositionChangedEvent> positions) {
-        if (positions.isEmpty()) {
-            return 0;
-        }
-        final boolean[] visited = new boolean[positions.size()];
-        int clusters = 0;
-        for (int start = 0; start < positions.size(); start++) {
-            if (visited[start]) {
-                continue;
-            }
-            clusters++;
-            final List<Integer> queue = new ArrayList<>();
-            queue.add(start);
-            visited[start] = true;
-            for (int cursor = 0; cursor < queue.size(); cursor++) {
-                final int current = queue.get(cursor);
-                for (int candidate = 0; candidate < positions.size(); candidate++) {
-                    if (!visited[candidate] && distance(
-                            positions.get(current).x(), positions.get(current).z(),
-                            positions.get(candidate).x(), positions.get(candidate).z())
-                            <= FORMATION_CLUSTER_DISTANCE) {
-                        visited[candidate] = true;
-                        queue.add(candidate);
-                    }
-                }
-            }
-        }
-        return clusters;
-    }
+
 
     private static float distance(
             final float leftX,

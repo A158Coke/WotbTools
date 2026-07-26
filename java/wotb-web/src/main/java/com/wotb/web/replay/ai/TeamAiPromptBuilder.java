@@ -5,6 +5,7 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.ref.MapNames;
+import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.MovementSegment;
@@ -193,7 +194,7 @@ final class TeamAiPromptBuilder {
             final TeamMemberFeatureSet member = members.get(index);
             writer.append("member accountId=" + member.accountId()
                     + " nickname=" + quoteData(member.nickname())
-                    + " tank=" + quoteData(member.tankName())
+                    + " tank=" + quoteData(resolveTankName(member.tankId(), member.tankName()))
                     + " entityIds=" + member.entityIds()
                     + " mapping=" + member.mappingConfidence()
                     + " finalDamage=" + member.finalDamage()
@@ -353,12 +354,11 @@ final class TeamAiPromptBuilder {
         return quoted.toString();
     }
 
-    /** Resolve map internal code to user-visible Chinese name. */
+    /** Resolve map internal code to user-visible Chinese name via MapNames. */
     private static String resolveMapName(final String mapCode) {
         if (!StringUtils.hasText(mapCode)) return "未知地图";
         try {
-            final String name = MapNames.cn(mapCode);
-            return StringUtils.hasText(name) ? name : "未知地图";
+            return MapNames.tryResolve(mapCode).orElse("未知地图");
         } catch (final Exception e) {
             return "未知地图";
         }
@@ -423,6 +423,24 @@ final class TeamAiPromptBuilder {
                 .toList();
         if (perspectivePlayers.isEmpty()) return "未知队伍";
         return TeamPerspectiveLabelResolver.resolve(perspectivePlayers);
+    }
+
+    /** Resolve tank name via Tankopedia, falling back to unknown tank. */
+    private static final Tankopedia TANKOPEDIA = Tankopedia.load();
+
+    private static String resolveTankName(final long tankId, final String existingTankName) {
+        if (StringUtils.hasText(existingTankName)
+                && !existingTankName.startsWith("#")
+                && !existingTankName.startsWith("?")) {
+            return existingTankName;
+        }
+        if (tankId > 0) {
+            final String name = TANKOPEDIA.info(tankId).name();
+            if (StringUtils.hasText(name) && !name.startsWith("#")) {
+                return name;
+            }
+        }
+        return "未知坦克";
     }
 
     record PromptInput(String content, List<String> limitations) {
