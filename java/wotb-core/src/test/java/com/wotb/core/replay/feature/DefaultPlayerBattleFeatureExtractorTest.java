@@ -1,9 +1,10 @@
 package com.wotb.core.replay.feature;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DamageEvent;
@@ -56,36 +57,34 @@ class DefaultPlayerBattleFeatureExtractorTest {
 
     @Test
     void preBattlePositionsExcludedFromMovement() {
-        final List<ReplayEvent> events = List.of(
-                mapping(1, 1, 1001L),
-                position(2, 5f, 1, 0f, 0f),
-                position(3, BATTLE_START_RAW, 1, 10f, 0f));
         final var features = new DefaultPlayerBattleFeatureExtractor()
-                .extract(recon(BATTLE_START_RAW, events), recorderMapping());
+                .extract(recon(BATTLE_START_RAW, List.of(
+                        mapping(1, 1, 1001L),
+                        position(2, 5f, 1, 0f, 0f),
+                        position(3, BATTLE_START_RAW, 1, 10f, 0f))), recorderMapping());
         assertEquals(1, features.movements().size());
         assertTrue(features.movements().getFirst().startTime() >= 0f);
     }
 
     @Test
     void preBattleDamageExcludedFromEngagement() {
-        final List<ReplayEvent> events = List.of(
-                mapping(1, 1, 1001L),
-                mapping(2, 2, 2001L),
-                damage(3, 5f, 1, 2, 100),
-                damage(4, BATTLE_START_RAW, 1, 2, 200));
         final var features = new DefaultPlayerBattleFeatureExtractor()
-                .extract(recon(BATTLE_START_RAW, events), recorderMapping());
+                .extract(recon(BATTLE_START_RAW, List.of(
+                        mapping(1, 1, 1001L),
+                        mapping(2, 2, 2001L),
+                        damage(3, 5f, 1, 2, 100),
+                        damage(4, BATTLE_START_RAW, 1, 2, 200))), recorderMapping());
         assertEquals(1, features.engagements().size());
+        assertEquals(0f, features.engagements().getFirst().startTime(), 0.01f);
     }
 
     @Test
     void movementTimesAreRelative() {
-        final List<ReplayEvent> events = List.of(
-                mapping(1, 1, 1001L),
-                position(2, BATTLE_START_RAW, 1, 0f, 0f),
-                position(3, BATTLE_START_RAW + 3f, 1, 30f, 0f));
         final var features = new DefaultPlayerBattleFeatureExtractor()
-                .extract(recon(BATTLE_START_RAW, events), recorderMapping());
+                .extract(recon(BATTLE_START_RAW, List.of(
+                        mapping(1, 1, 1001L),
+                        position(2, BATTLE_START_RAW, 1, 0f, 0f),
+                        position(3, BATTLE_START_RAW + 3f, 1, 30f, 0f))), recorderMapping());
         assertEquals(1, features.movements().size());
         assertEquals(0f, features.movements().getFirst().startTime(), 0.01f);
         assertEquals(3f, features.movements().getFirst().endTime(), 0.01f);
@@ -93,13 +92,12 @@ class DefaultPlayerBattleFeatureExtractorTest {
 
     @Test
     void engagementTimesAreRelative() {
-        final List<ReplayEvent> events = List.of(
-                mapping(1, 1, 1001L),
-                mapping(2, 2, 2001L),
-                damage(3, BATTLE_START_RAW + 5f, 1, 2, 100),
-                damage(4, BATTLE_START_RAW + 8f, 1, 2, 150));
         final var features = new DefaultPlayerBattleFeatureExtractor()
-                .extract(recon(BATTLE_START_RAW, events), recorderMapping());
+                .extract(recon(BATTLE_START_RAW, List.of(
+                        mapping(1, 1, 1001L),
+                        mapping(2, 2, 2001L),
+                        damage(3, BATTLE_START_RAW + 5f, 1, 2, 100),
+                        damage(4, BATTLE_START_RAW + 8f, 1, 2, 150))), recorderMapping());
         assertEquals(1, features.engagements().size());
         assertEquals(5f, features.engagements().getFirst().startTime(), 0.01f);
         assertEquals(8f, features.engagements().getFirst().endTime(), 0.01f);
@@ -107,34 +105,32 @@ class DefaultPlayerBattleFeatureExtractorTest {
 
     @Test
     void keyEventTimeIsRelative() {
-        final List<ReplayEvent> events = List.of(
-                mapping(1, 1, 1001L),
-                mapping(2, 2, 2001L),
-                damage(3, BATTLE_START_RAW + 3f, 1, 2, 100));
         final var features = new DefaultPlayerBattleFeatureExtractor()
-                .extract(recon(BATTLE_START_RAW, events), recorderMapping());
+                .extract(recon(BATTLE_START_RAW, List.of(
+                        mapping(1, 1, 1001L),
+                        mapping(2, 2, 2001L),
+                        damage(3, BATTLE_START_RAW + 3f, 1, 2, 100))), recorderMapping());
         assertFalse(features.keyEvents().isEmpty());
         assertEquals(3f, features.keyEvents().getFirst().clockSec(), 0.01f);
     }
 
     @Test
     void noNegativeTacticalTimes() {
-        final List<ReplayEvent> events = List.of(
-                mapping(1, 1, 1001L),
-                mapping(2, 2, 2001L),
-                position(3, BATTLE_START_RAW, 1, 0f, 0f),
-                damage(4, BATTLE_START_RAW + 2f, 1, 2, 100),
-                battleEnd(5, BATTLE_START_RAW + 30f));
         final var features = new DefaultPlayerBattleFeatureExtractor()
-                .extract(recon(BATTLE_START_RAW, events), recorderMapping());
+                .extract(recon(BATTLE_START_RAW, List.of(
+                        mapping(1, 1, 1001L),
+                        mapping(2, 2, 2001L),
+                        position(3, BATTLE_START_RAW, 1, 0f, 0f),
+                        damage(4, BATTLE_START_RAW + 2f, 1, 2, 100),
+                        battleEnd(5, BATTLE_START_RAW + 30f))), recorderMapping());
         for (final var m : features.movements()) {
-            assertTrue(m.startTime() >= 0f, "Movement start must not be negative: " + m.startTime());
+            assertTrue(m.startTime() >= 0f, "Movement start must not be negative");
         }
         for (final var e : features.engagements()) {
-            assertTrue(e.startTime() >= 0f, "Engagement start must not be negative: " + e.startTime());
+            assertTrue(e.startTime() >= 0f, "Engagement start must not be negative");
         }
         for (final var e : features.keyEvents()) {
-            assertTrue(e.clockSec() >= 0f, "Key event time must not be negative: " + e.clockSec());
+            assertTrue(e.clockSec() >= 0f, "Key event time must not be negative");
         }
     }
 
@@ -143,5 +139,29 @@ class DefaultPlayerBattleFeatureExtractorTest {
         final var features = new DefaultPlayerBattleFeatureExtractor()
                 .extract(recon(null, List.of()), recorderMapping());
         assertTrue(features.limitations().contains("PRE_BATTLE_START_UNRESOLVED"));
+    }
+
+    @Test
+    void firstContactIsRelative() {
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(BATTLE_START_RAW, List.of(
+                        mapping(1, 1, 1001L),
+                        mapping(2, 2, 2001L),
+                        position(3, BATTLE_START_RAW, 1, 0f, 0f),
+                        damage(4, BATTLE_START_RAW + 2f, 1, 2, 100))), recorderMapping());
+        assertFalse(features.keyEvents().isEmpty());
+        assertEquals(2f, features.keyEvents().getFirst().clockSec(), 0.01f);
+    }
+
+    @Test
+    void preBattleDamageNotInFirstContact() {
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(BATTLE_START_RAW, List.of(
+                        mapping(1, 1, 1001L),
+                        mapping(2, 2, 2001L),
+                        damage(3, 5f, 1, 2, 100),
+                        damage(4, BATTLE_START_RAW + 2f, 1, 2, 200))), recorderMapping());
+        assertFalse(features.keyEvents().isEmpty());
+        assertEquals(2f, features.keyEvents().getFirst().clockSec(), 0.01f);
     }
 }

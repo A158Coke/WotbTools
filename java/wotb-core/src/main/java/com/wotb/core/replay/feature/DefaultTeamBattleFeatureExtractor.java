@@ -679,6 +679,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         return windows.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> formationPhase(entry.getKey(), entry.getValue()))
+                .filter(phase -> phase != null)
                 .toList();
     }
 
@@ -689,27 +690,30 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         final List<Map.Entry<String, PositionChangedEvent>> sorted = positionsByMember.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .toList();
-        final List<PositionChangedEvent> positions = sorted.stream()
+        final List<CanonicalMapPosition> canonicalPositions = sorted.stream()
                 .map(Map.Entry::getValue)
+                .map(pos -> MapRegionResolver.resolve(pos.x(), pos.z()))
+                .filter(MapCoordinateResolution::usable)
+                .map(MapCoordinateResolution::position)
                 .toList();
-        final float centroidX = (float) positions.stream()
-                .mapToDouble(PositionChangedEvent::x)
+        if (canonicalPositions.isEmpty()) {
+            return null;
+        }
+        final float centroidX = (float) canonicalPositions.stream()
+                .mapToDouble(CanonicalMapPosition::x)
                 .average()
                 .orElse(0.0);
-        final float centroidY = (float) positions.stream()
-                .mapToDouble(PositionChangedEvent::y)
+        final float centroidZ = (float) canonicalPositions.stream()
+                .mapToDouble(CanonicalMapPosition::z)
                 .average()
                 .orElse(0.0);
-        final float centroidZ = (float) positions.stream()
-                .mapToDouble(PositionChangedEvent::z)
+        final float dispersion = (float) canonicalPositions.stream()
+                .mapToDouble(pos -> distance(
+                        pos.x(), pos.z(), centroidX, centroidZ))
                 .average()
                 .orElse(0.0);
-        final float dispersion = (float) positions.stream()
-                .mapToDouble(position -> distance(
-                        position.x(), position.z(), centroidX, centroidZ))
-                .average()
-                .orElse(0.0);
-        final DecodeConfidence confidence = positions.stream()
+        final DecodeConfidence confidence = sorted.stream()
+                .map(Map.Entry::getValue)
                 .map(PositionChangedEvent::confidence)
                 .reduce(DecodeConfidence.EXACT, DefaultTeamBattleFeatureExtractor::lowerConfidence);
 
@@ -721,9 +725,9 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         return new TeamFormationPhase(
                 window * FORMATION_WINDOW_SEC,
                 (window + 1) * FORMATION_WINDOW_SEC,
-                new Vector3(centroidX, centroidY, centroidZ),
+                new Vector3(centroidX, 0f, centroidZ),
                 dispersion,
-                positions.size(),
+                canonicalPositions.size(),
                 confidence,
                 clusters);
     }
