@@ -109,6 +109,11 @@
         "2": "队伍2",
         "unknown": "平局/未知"
     },
+    "side": {
+        "FRIENDLY": "友方",
+        "ENEMY": "敌方",
+        "UNKNOWN": "未知"
+    },
     "survived": {
         "alive": "存活",
         "dead": "阵亡"
