@@ -22,6 +22,8 @@
 - **回放结果导出 PNG**：回放解析页工具栏新增「Download as PNG」按钮，将当前标签页（汇总或单场）截图并自动下载为 PNG 图片格式；基于 html2canvas 实现，首次点击时懒加载。（2026-07）
 - **随机战斗 AI 复盘友方/敌方标签**：随机战斗 AI 战术复盘不再使用"队伍1/队伍2"称呼，改为"友方/敌方"；录像者在原始 team 2 时仍正确识别为友方；胜负结果明确区分为友方获胜、敌方获胜、平局或未知三态；同一录像者的多场随机战斗分析会对每场战斗独立解析录像者视角。
 - **训练房/联赛 AI 复盘用户可见队伍名称**：团队 AI 复盘现在使用 dominant clan 标签（如"CHRD"）替代 raw team number；地图名称映射为中文；member 车辆名称来自 tankopedia；阵型输出包含九宫格区域和结构化 cluster。不支持全景全知视角，同场双方各自独立分析。
+- **回放准备阶段语义**：AI 复盘不再把准备/倒计时阶段的静止解释为"犹豫""挂机"或"反应慢"；正式开战后战术时间从 0 秒起算；formation 15 秒窗口使用 battle-relative clock；player extractor 过滤准备阶段位置/伤害事件；坐标 VALID/CLAMPED/INVALID 三态进入 coverage 统计和 limitation。
+- **账号 identity 缺失保护**：回放中 accountId=0 或 nickname 为空的成员不再导致整场分析中断；唯一 nickname 可正常匹配；重复/空白 nickname 标记为 ambiguous 不产生错误 engagement；添加 `TEAM_MEMBER_IDENTITY_UNRESOLVED` limitation。
 
 ### Changed
 - **消息通知移至个人主页**：站内通知入口从陪练页移至个人中心，所有登录用户可在个人主页右侧栏查看最近通知、查看未读数量、标记已读；打手订单状态变化和资格审批结果仍会触发通知。
