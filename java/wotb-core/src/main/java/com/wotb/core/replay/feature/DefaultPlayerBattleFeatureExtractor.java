@@ -95,8 +95,8 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         final List<ReplayEvent> battleEvents = events.stream()
                 .filter(e -> ReplayTimestamp.safeClockSec(e.timestamp()) >= battleClockStart)
                 .toList();
-        final List<BattlePhaseSummary> phases = DefaultBattleFeatureExtractor.dividePhases(
-                battleEvents, battleEndClock, firstContactTime);
+        final List<BattlePhaseSummary> phases = DefaultBattleFeatureExtractor.buildRelativePhases(
+                        firstContactTime, battleEndClock);
 
         // 关键事件
         final List<KeyBattleEvent> keyEvents = extractRecorderKeyEvents(damages, recorder, battleStartRes);

@@ -70,7 +70,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         final Map<Integer, List<PositionChangedEvent>> positionsByEntity =
                 teamPositionsByEntity(events, entityMapping, perspectiveTeam, battleStartRes);
         final PositionEvidenceAudit positionAudit =
-                auditPositionEvidence(events, entityMapping, perspectiveTeam);
+                auditPositionEvidence(events, entityMapping, perspectiveTeam, battleStartRes);
         final int invalidTimestampEventCount = (int) events.stream()
                 .filter(event -> !hasUsableClock(event))
                 .count();
@@ -123,8 +123,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 ? battleEnd.clockSec() : lastObservedClock(events);
         final List<BattlePhaseSummary> battlePhases = timedEvents.isEmpty()
                 ? List.of()
-                : DefaultBattleFeatureExtractor.dividePhases(
-                        timedEvents, phaseEndClock, firstContactTime);
+                : DefaultBattleFeatureExtractor.buildRelativePhases(
+                        firstContactTime, phaseEndClock);
         final List<KeyBattleEvent> keyEvents = buildKeyEvents(
                 battle, authoritativeMembers, entityMapping, attributedDamage,
                 formationPhases, perspectiveTeam, battleEnd, battleStartRes);
@@ -313,7 +313,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     private static PositionEvidenceAudit auditPositionEvidence(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping,
-            final int perspectiveTeam
+            final int perspectiveTeam,
+            final BattleStartResolution battleStartRes
     ) {
         int unattributedCount = 0;
         int clampedCount = 0;
