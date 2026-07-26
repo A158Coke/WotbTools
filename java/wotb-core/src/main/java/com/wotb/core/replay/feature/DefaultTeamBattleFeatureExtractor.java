@@ -104,7 +104,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                                 Comparator.nullsLast(String::compareTo)))
                 .toList();
         final List<TeamEngagementSummary> engagements = buildTeamEngagements(
-                attributedDamage, perspectiveTeam);
+                attributedDamage, perspectiveTeam, battleStartRes);
         final TeamObservedAggregate observedAggregate = buildObservedAggregate(
                 attributedDamage, perspectiveTeam, unattributedDamageCount);
         final List<TeamFormationPhase> formationPhases = buildFormationPhases(
@@ -344,7 +344,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .map(TeamEntityIdentity::confidence)
                 .reduce(DecodeConfidence.EXACT, DefaultTeamBattleFeatureExtractor::lowerConfidence);
         final List<EngagementSummary> engagements = buildMemberEngagements(
-                damageEvents, memberId);
+                damageEvents, memberId, battleStartRes);
         final List<String> limitations = new ArrayList<>();
         if (memberId.ambiguousNickname()) {
             limitations.add("TEAM_MEMBER_IDENTITY_UNRESOLVED");
@@ -422,7 +422,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
 
     private static List<TeamEngagementSummary> buildTeamEngagements(
             final List<AttributedDamage> damages,
-            final int perspectiveTeam
+            final int perspectiveTeam,
+            final BattleStartResolution battleStartRes
     ) {
         final List<AttributedDamage> teamDamages = sortedDamageEvents(
                 damages.stream()
@@ -437,18 +438,19 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             if (damageGap(teamDamages.get(index - 1), teamDamages.get(index))
                     > ENGAGEMENT_GAP_SEC) {
                 result.add(buildTeamEngagementSegment(
-                        teamDamages.subList(segmentStart, index), perspectiveTeam));
+                        teamDamages.subList(segmentStart, index), perspectiveTeam, battleStartRes));
                 segmentStart = index;
             }
         }
         result.add(buildTeamEngagementSegment(
-                teamDamages.subList(segmentStart, teamDamages.size()), perspectiveTeam));
+                teamDamages.subList(segmentStart, teamDamages.size()), perspectiveTeam, battleStartRes));
         return List.copyOf(result);
     }
 
     private static List<EngagementSummary> buildMemberEngagements(
             final List<AttributedDamage> damages,
-            final MemberIdentity memberId
+            final MemberIdentity memberId,
+            final BattleStartResolution battleStartRes
     ) {
         final List<AttributedDamage> memberDamage = damages.stream()
                 .filter(damage -> damage.attacker().team() != damage.victim().team())
@@ -462,13 +464,14 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .orElse(0);
         return memberTeam == 0
                 ? List.of()
-                  : buildEngagements(memberDamage, memberTeam, memberId);
+                   : buildEngagements(memberDamage, memberTeam, memberId, battleStartRes);
     }
 
     private static List<EngagementSummary> buildEngagements(
             final List<AttributedDamage> damages,
             final int perspectiveTeam,
-            final MemberIdentity memberId
+            final MemberIdentity memberId,
+            final BattleStartResolution battleStartRes
     ) {
         if (damages.isEmpty()) {
             return List.of();
@@ -480,12 +483,12 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             if (damageGap(sorted.get(index - 1), sorted.get(index))
                     > ENGAGEMENT_GAP_SEC) {
                 result.add(buildEngagementSegment(
-                        sorted.subList(segmentStart, index), perspectiveTeam, memberId.accountId(), memberId));
+                        sorted.subList(segmentStart, index), perspectiveTeam, memberId.accountId(), memberId, battleStartRes));
                 segmentStart = index;
             }
         }
         result.add(buildEngagementSegment(
-                sorted.subList(segmentStart, sorted.size()), perspectiveTeam, memberId.accountId(), memberId));
+                sorted.subList(segmentStart, sorted.size()), perspectiveTeam, memberId.accountId(), memberId, battleStartRes));
         return List.copyOf(result);
     }
     private static List<AttributedDamage> sortedDamageEvents(
@@ -509,10 +512,11 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
 
     private static TeamEngagementSummary buildTeamEngagementSegment(
             final List<AttributedDamage> events,
-            final int perspectiveTeam
+            final int perspectiveTeam,
+            final BattleStartResolution battleStartRes
     ) {
         final EngagementSummary base =
-                buildEngagementSegment(events, perspectiveTeam, null, null);
+                buildEngagementSegment(events, perspectiveTeam, null, null, battleStartRes);
         final Map<Long, List<AttributedDamage>> damageByTarget = new HashMap<>();
         final List<String> orderedTargets = new ArrayList<>();
         for (final AttributedDamage damage : events) {
@@ -580,7 +584,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             final List<AttributedDamage> events,
             final int perspectiveTeam,
             final Long memberAccountId,
-            final MemberIdentity memberIdentity
+            final MemberIdentity memberIdentity,
+            final BattleStartResolution battleStartRes
     ) {
         final Set<Long> allies = new LinkedHashSet<>();
         final Set<Long> enemies = new LinkedHashSet<>();
@@ -617,8 +622,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 ? EngagementOutcome.UNFAVORABLE
                 : EngagementOutcome.EVEN;
         return new EngagementSummary(
-                ReplayTimestamp.safeClockSec(events.getFirst().event().timestamp()),
-                ReplayTimestamp.safeClockSec(events.getLast().event().timestamp()),
+                battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(events.getFirst().event().timestamp())),
+                battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(events.getLast().event().timestamp())),
                 allies.stream().sorted().toList(),
                 enemies.stream().sorted().toList(),
                 dealt,
