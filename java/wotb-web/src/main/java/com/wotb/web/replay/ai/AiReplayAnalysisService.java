@@ -854,9 +854,20 @@ public class AiReplayAnalysisService {
                 summary);
     }
 
-    private static final Set<String> SENSITIVE_KEYS = Set.of(
-            "authorization", "api_key", "api-key", "api key", "apikey",
-            "token", "access_token", "secret", "password");
+    private static boolean isSensitiveKey(final String rawKey) {
+        if (rawKey == null) return false;
+        final String normalized = rawKey.toLowerCase(Locale.ROOT)
+                .replace("-", "").replace("_", "").replace(" ", "");
+        return normalized.contains("authorization")
+                || normalized.contains("apikey")
+                || normalized.contains("bearer")
+                || normalized.contains("token")
+                || normalized.contains("secret")
+                || normalized.contains("password")
+                || normalized.contains("passwd")
+                || normalized.contains("aws")
+                || normalized.contains("security");
+    }
 
     static String safeProviderSummary(final String raw) {
         if (!StringUtils.hasText(raw)) {
@@ -884,10 +895,13 @@ public class AiReplayAnalysisService {
                 "(?i)(authorization\\s*[:=]\\s*).*",
                 "$1[REDACTED]");
         final String step2 = step1.replaceAll(
-                "(?i)(['\"])(authorization|api[_ -]?key|bearer|token|secret|password)(['\"])\\s*[:=]\\s*['\"][^'\"]*['\"]",
+                "(?i)(['\"])(authorization|api[_ -]?key|x-api-key|bearer|token|secret|password|passwd|aws_access_key_id|aws_secret_access_key|client_secret|security.?token)(['\"])\\s*[:=]\\s*['\"][^'\"]*['\"]",
                 "$1$2$3=[REDACTED]");
-        return step2.replaceAll(
-                "(?i)(authorization|api[_ -]?key|token|secret|password)\\s*[:=]\\s*[^\\s,;\"]+",
+        final String step3 = step2.replaceAll(
+                "(?i)(authorization|api[_ -]?key|x-api-key|bearer|token|secret|password|passwd|aws_access_key_id|aws_secret_access_key|client_secret|security.?token)\\s*[:=]\\s*[^\\s,;\"]+",
+                "$1=[REDACTED]");
+        return step3.replaceAll(
+                "(?i)(signedheader|x-amz-[a-z-]+|x-amz-date|credential|signature)=[^\\s,;\"]+",
                 "$1=[REDACTED]");
     }
 
@@ -899,7 +913,7 @@ public class AiReplayAnalysisService {
             for (final var entry : fields) {
                 final String key = entry.getKey().toLowerCase(Locale.ROOT);
                 final var value = entry.getValue();
-                if (SENSITIVE_KEYS.contains(key)) {
+                if (isSensitiveKey(key)) {
                     ((ObjectNode) node).put(entry.getKey(), "[REDACTED]");
                 } else if (value.isTextual()) {
                     final String redactedValue = redactNonJson(value.asText());

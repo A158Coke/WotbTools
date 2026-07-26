@@ -11,13 +11,13 @@ import java.util.Locale;
  * Stable member identity for engagement matching.
  * accountId > 0: exact accountId match.
  * accountId <= 0: normalized nickname match ONLY if unique in perspective roster.
+ * blank/null nickname with accountId <= 0 is always ambiguous.
  * Use {@link #resolve(PlayerResult, List)} for construction with uniqueness check.
  */
 public record MemberIdentity(long accountId, String nickname, boolean ambiguousNickname) {
 
     public MemberIdentity {
-        if (nickname == null) throw new IllegalArgumentException("nickname must not be null");
-        if (accountId <= 0 && nickname.isBlank()) throw new IllegalArgumentException("zero accountId requires non-blank nickname");
+        if (nickname == null) nickname = "";
     }
 
     public static MemberIdentity resolve(final PlayerResult player, final List<PlayerResult> roster) {
@@ -25,6 +25,9 @@ public record MemberIdentity(long accountId, String nickname, boolean ambiguousN
         final String rawNickname = player.nickname != null ? player.nickname.trim() : "";
         if (accountId > 0) {
             return new MemberIdentity(accountId, rawNickname, false);
+        }
+        if (!StringUtils.hasText(rawNickname)) {
+            return new MemberIdentity(0L, "", true);
         }
         final boolean ambiguous = !isNicknameUniqueInRoster(rawNickname, roster);
         return new MemberIdentity(0L, rawNickname, ambiguous);

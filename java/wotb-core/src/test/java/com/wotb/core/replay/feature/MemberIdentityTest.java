@@ -56,8 +56,16 @@ class MemberIdentityTest {
 
     @Test
     void zeroAccountIdEmptyNicknameReturnsFalse() {
-        assertThrows(IllegalArgumentException.class, () ->
-                new MemberIdentity(0L, "", false));
+        final MemberIdentity id = MemberIdentity.resolve(player(0L, ""), List.of(player(1L, "Any")));
+        assertFalse(id.matches(identity(0L, "PlayerA")));
+        assertTrue(id.ambiguousNickname());
+    }
+
+    @Test
+    void zeroAccountIdNullNicknameReturnsFalse() {
+        final MemberIdentity id = MemberIdentity.resolve(player(0L, null), List.of(player(1L, "Any")));
+        assertFalse(id.matches(identity(0L, "Any")));
+        assertTrue(id.ambiguousNickname());
     }
 
     @Test
