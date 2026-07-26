@@ -3,6 +3,7 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.BatchAnalyzer;
+import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.ReplayIdentity;
 import com.wotb.core.processing.ReplayProcessingCapabilities;
 import com.wotb.core.processing.ReplayProcessingResult;
@@ -16,6 +17,7 @@ import com.wotb.core.replay.feature.TeamAggregateResult;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamBattleAnalysisSummary;
 import com.wotb.core.replay.feature.TeamFeatureCoverage;
+import com.wotb.core.replay.feature.TeamFormationCluster;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.reconstruction.Vector3;
@@ -250,6 +252,95 @@ class TeamAiPromptBuilderTest {
                 .getFirst();
         return new AiReplayAnalysisService("", "", "", 1)
                 .buildSingleTeamContext(group);
+    }
+
+    // ========== TEAM_PERSPECTIVE contract tests ==========
+
+    @Test
+    void singlePromptNoRawTeamLabels() {
+        final var input = TeamAiPromptBuilder.single(contextWithMembers(3, 2));
+        final String c = input.content();
+        assertFalse(c.contains("Team 1"), "Must not contain Team 1");
+        assertFalse(c.contains("Team 2"), "Must not contain Team 2");
+        assertFalse(c.contains("perspectiveTeam=1"), "Must not contain perspectiveTeam=1");
+        assertFalse(c.contains("perspectiveTeam=2"), "Must not contain perspectiveTeam=2");
+        assertFalse(c.contains("队伍1"), "Must not contain 队伍1");
+        assertFalse(c.contains("队伍2"), "Must not contain 队伍2");
+    }
+
+    @Test
+    void singlePromptContainsMapField() {
+        final var input = TeamAiPromptBuilder.single(contextWithMembers(1, 1));
+        assertTrue(input.content().contains("map="),
+                "Prompt must contain map field");
+        assertFalse(input.content().contains("budget_map"),
+                "Prompt must not contain raw internal map code 'budget_map'");
+    }
+
+    @Test
+    void singlePromptContainsTeamResult() {
+        final var input = TeamAiPromptBuilder.single(contextWithMembers(1, 1));
+        assertTrue(input.content().contains("result="),
+                "Prompt must contain result field");
+    }
+
+    @Test
+    void singlePromptContainsFormationSection() {
+        final var input = TeamAiPromptBuilder.single(contextWithMembers(5, 3));
+        assertTrue(input.content().contains("FORMATION_PHASES"),
+                "Prompt must contain formation section");
+    }
+
+    @Test
+    void singlePromptContainsBattlePhases() {
+        final var input = TeamAiPromptBuilder.single(contextWithMembers(1, 1));
+        assertTrue(input.content().contains("BATTLE_PHASES"),
+                "Prompt must contain battle phases section");
+    }
+
+    @Test
+    void singlePromptContainsKeyEvents() {
+        final var input = TeamAiPromptBuilder.single(contextWithMembers(1, 1));
+        assertTrue(input.content().contains("KEY_EVENTS"),
+                "Prompt must contain key events");
+    }
+
+    @Test
+    void multiPromptContainsPerspectiveAndUniqueBattleCount() {
+        final var context = contextWithMembers(1, 1);
+        final var summaries = List.of(new TeamBattleAnalysisSummary(
+                "u1", null, "f1.wotbreplay", "map1", null, 300.0,
+                1, List.of(1001L),
+                context.features(), "TeamA"),
+                new TeamBattleAnalysisSummary(
+                        "u2", null, "f2.wotbreplay", "map1", null, 300.0,
+                        2, List.of(2001L),
+                        context.features(), "TeamB"));
+        final var multi = new MultiTeamBattleAnalysisContext(
+                2, 1, summaries, false,
+                List.of("PERSPECTIVE_TIMELINES_ISOLATED"));
+        final var input = TeamAiPromptBuilder.multi(multi);
+        assertTrue(input.content().contains("perspectiveCount=2"));
+        assertTrue(input.content().contains("uniqueBattleCount=1"));
+        assertTrue(input.content().contains("teamLabel="));
+    }
+
+    @Test
+    void multiPromptOpposingPerspectivesHaveDistinctLabels() {
+        final var context = contextWithMembers(1, 1);
+        final var summaries = List.of(
+                new TeamBattleAnalysisSummary(
+                        "u1", null, "f1.wotbreplay", "map1", null, 300.0,
+                        1, List.of(1001L), context.features(), "CHRD"),
+                new TeamBattleAnalysisSummary(
+                        "u2", null, "f2.wotbreplay", "map1", null, 300.0,
+                        2, List.of(2001L), context.features(), "KSR"));
+        final var multi = new MultiTeamBattleAnalysisContext(
+                2, 1, summaries, false,
+                List.of("PERSPECTIVE_TIMELINES_ISOLATED"));
+        final var input = TeamAiPromptBuilder.multi(multi);
+        assertTrue(input.content().contains("teamLabel=\"CHRD\""));
+        assertTrue(input.content().contains("teamLabel=\"KSR\""));
     }
 
     private static int occurrences(final String value, final String token) {
