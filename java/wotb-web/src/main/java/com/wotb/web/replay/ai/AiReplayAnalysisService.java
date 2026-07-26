@@ -139,7 +139,7 @@ public class AiReplayAnalysisService {
      * @throws AiNotConfiguredException 未配置密钥（消息 {@code AI_NOT_CONFIGURED}）
      * @throws AiUpstreamException      上游调用失败或返回异常
      */
-    public AnalyzeResult analyze(Battle battle, ReplayReconstruction recon) {
+    public AnalyzeResult analyze(final Battle battle, final ReplayReconstruction recon) {
         if (!isConfigured()) {
             throw new AiNotConfiguredException();
         }
@@ -699,7 +699,7 @@ public class AiReplayAnalysisService {
      *
      * @param battles 各场结算数据（均应含玩家名册；顺序保留）
      */
-    public AnalyzeResult analyzeMulti(List<Battle> battles) {
+    public AnalyzeResult analyzeMulti(final List<Battle> battles) {
         if (!isConfigured()) {
             throw new AiNotConfiguredException();
         }
