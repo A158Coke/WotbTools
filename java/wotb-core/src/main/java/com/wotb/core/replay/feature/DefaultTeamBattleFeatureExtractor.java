@@ -108,10 +108,13 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         final TeamObservedAggregate observedAggregate = buildObservedAggregate(
                 attributedDamage, perspectiveTeam, unattributedDamageCount);
         final List<TeamFormationPhase> formationPhases = buildFormationPhases(
-                positionsByEntity, entityMapping, perspectiveTeam);
+                positionsByEntity, entityMapping, perspectiveTeam, battleStartRes);
         final float firstContactTime = attributedDamage.stream()
                 .filter(damage -> involvesTeam(damage, perspectiveTeam))
-                .mapToDouble(damage -> ReplayTimestamp.safeClockSec(damage.event().timestamp()))
+                .mapToDouble(damage -> {
+                    final float raw = ReplayTimestamp.safeClockSec(damage.event().timestamp());
+                    return battleStartRes != null ? battleStartRes.battleRelative(raw) : raw;
+                })
                 .min()
                 .stream()
                 .mapToObj(value -> (float) value)
@@ -126,7 +129,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                         timedEvents, phaseEndClock, firstContactTime);
         final List<KeyBattleEvent> keyEvents = buildKeyEvents(
                 battle, authoritativeMembers, entityMapping, attributedDamage,
-                formationPhases, perspectiveTeam, battleEnd);
+                formationPhases, perspectiveTeam, battleEnd, battleStartRes);
 
         final int mappedMembers = entityMapping.mappedMembers(perspectiveTeam);
         final int positionEventCount = positionsByEntity.values().stream()
@@ -628,7 +631,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     private static List<TeamFormationPhase> buildFormationPhases(
             final Map<Integer, List<PositionChangedEvent>> positionsByEntity,
             final TeamEntityMapping mapping,
-            final int perspectiveTeam
+            final int perspectiveTeam,
+            final BattleStartResolution battleStartRes
     ) {
         final Map<Integer, Map<String, PositionChangedEvent>> windows = new HashMap<>();
         positionsByEntity.forEach((entityId, positions) -> {
@@ -637,8 +641,9 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 return;
             }
             for (final PositionChangedEvent position : positions) {
-                    final float clock = ReplayTimestamp.safeClockSec(position.timestamp());
-                    final int window = (int) Math.floor(clock / FORMATION_WINDOW_SEC);
+                    final float rawClock = ReplayTimestamp.safeClockSec(position.timestamp());
+                    final float activeClock = battleStartRes != null ? battleStartRes.battleRelative(rawClock) : rawClock;
+                    final int window = (int) Math.floor(activeClock / FORMATION_WINDOW_SEC);
                     windows.computeIfAbsent(window, ignored -> new HashMap<>())
                             .merge(identityKey(identity), position,
                                     (left, right) -> left.sequence() > right.sequence() ? left : right);
@@ -812,7 +817,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             final List<AttributedDamage> damages,
             final List<TeamFormationPhase> formationPhases,
             final int perspectiveTeam,
-            final BattleEndEvidence battleEnd
+            final BattleEndEvidence battleEnd,
+            final BattleStartResolution battleStartRes
     ) {
         final List<KeyBattleEvent> events = new ArrayList<>();
         members.stream()

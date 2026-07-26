@@ -213,19 +213,15 @@ final class TeamAiPromptBuilder {
             }
             for (int movementIndex = 0; movementIndex < movementLimit; movementIndex++) {
                 final MovementSegment movement = member.movements().get(movementIndex);
-                final String startRegion = regionFromPos(movement.startPosition());
-                final String endRegion = regionFromPos(movement.endPosition());
+                final String startInfo = formatPositionInfo(movement.startPosition());
+                final String endInfo = formatPositionInfo(movement.endPosition());
                 writer.append("  movement[" + format(movement.startTime())
                         + "-" + format(movement.endTime()) + "]"
                         + " type=" + movement.type()
                         + " distance=" + format(movement.distance())
                         + " avgSpeed=" + format(movement.averageSpeed())
-                        + " startXZ=" + formatPosition(movement.startPosition())
-                        + " startRegion=" + startRegion
-                        + " startStatus=" + coordStatus(movement.startPosition())
-                        + " endXZ=" + formatPosition(movement.endPosition())
-                        + " endRegion=" + endRegion
-                        + " endStatus=" + coordStatus(movement.endPosition())
+                        + " start=" + startInfo
+                        + " end=" + endInfo
                         + " confidence=" + movement.confidence()
                         + "\n");
             }
@@ -246,12 +242,10 @@ final class TeamAiPromptBuilder {
         }
         for (int index = 0; index < limit; index++) {
             final TeamFormationPhase phase = phases.get(index);
-            final String formationRegion = regionFromPos(phase.centroid());
+            final String phasePosInfo = formatPositionInfo(phase.centroid());
             writer.append("formation[" + format(phase.startTime())
                     + "-" + format(phase.endTime()) + "]"
-                    + " centroid=" + phase.centroid()
-                    + " region=" + formationRegion
-                    + " centroidStatus=" + coordStatus(phase.centroid())
+                    + " " + phasePosInfo
                     + " dispersion=" + format(phase.averageDispersion())
                     + " clusters=" + phase.clusterCount()
                     + " members=" + phase.observedMemberCount()
@@ -425,6 +419,15 @@ final class TeamAiPromptBuilder {
         return position == null
                 ? "UNKNOWN"
                 : "(" + format(position.x()) + "," + format(position.z()) + ")";
+    }
+
+    /** Format position as canonical XZ, region, and status from a single resolve call. */
+    private static String formatPositionInfo(final Vector3 position) {
+        if (position == null) return "UNKNOWN";
+        final MapCoordinateResolution res = MapRegionResolver.resolve(position.x(), position.z());
+        if (!res.usable()) return "UNKNOWN";
+        return "(" + format(res.position().x()) + "," + format(res.position().z())
+                + ") r=" + res.region() + " s=" + res.status().name();
     }
 
     private static String regionFromPos(final Vector3 position) {
