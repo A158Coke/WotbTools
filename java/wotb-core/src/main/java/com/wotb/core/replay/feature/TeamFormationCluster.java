@@ -8,6 +8,7 @@ public record TeamFormationCluster(
         float startTime,
         float endTime,
         CanonicalMapPosition centroid,
+        MapCoordinateResolution.Status centroidStatus,
         int region,
         List<String> memberIdentities,
         DecodeConfidence confidence
@@ -32,7 +33,13 @@ public record TeamFormationCluster(
         if (centroid == null) {
             throw new IllegalArgumentException("centroid must not be null");
         }
-        if (region < 0 || region > 9) {
+        if (centroidStatus == null) {
+            centroidStatus = MapCoordinateResolution.Status.VALID;
+        }
+        if (centroidStatus == MapCoordinateResolution.Status.INVALID) {
+            throw new IllegalArgumentException("centroidStatus must not be INVALID");
+        }
+        if (region < 1 || region > 9) {
             throw new IllegalArgumentException("Invalid region: " + region);
         }
         if (centroid.region() != region) {
