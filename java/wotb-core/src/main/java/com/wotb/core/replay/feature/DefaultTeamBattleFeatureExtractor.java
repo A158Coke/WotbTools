@@ -13,14 +13,9 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
-import com.wotb.core.replay.feature.BattleStartResolution;
-import com.wotb.core.replay.feature.BattleStartResolver;
-import com.wotb.core.replay.feature.MapCoordinateResolution;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.util.PlayerResultFormat;
-
-import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -29,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -340,7 +336,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .toList();
         final DecodeConfidence mappingConfidence = entityIds.stream()
                 .map(mapping::identity)
-                .filter(identity -> identity != null)
+                .filter(Objects::nonNull)
                 .map(TeamEntityIdentity::confidence)
                 .reduce(DecodeConfidence.EXACT, DefaultTeamBattleFeatureExtractor::lowerConfidence);
         final List<EngagementSummary> engagements = buildMemberEngagements(
@@ -770,9 +766,9 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         }
 
         // Sort by startTime, region, centroidX, centroidZ, then member identities
-        result.sort(Comparator.comparingInt((TeamFormationCluster c) -> c.region())
-                .thenComparingDouble(c -> c.centroidX())
-                .thenComparingDouble(c -> c.centroidZ()));
+        result.sort(Comparator.comparingInt(TeamFormationCluster::region)
+                .thenComparingDouble(TeamFormationCluster::centroidX)
+                .thenComparingDouble(TeamFormationCluster::centroidZ));
         return List.copyOf(result);
     }
 
@@ -915,7 +911,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     private static float lastObservedClock(final List<ReplayEvent> events) {
         return (float) events.stream()
                 .map(ReplayEvent::timestamp)
-                .filter(timestamp -> timestamp != null)
+                .filter(Objects::nonNull)
                 .mapToDouble(ReplayTimestamp::safeClockSec)
                 .filter(Double::isFinite)
                 .filter(clock -> clock >= 0.0)
@@ -978,8 +974,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     ) {
 
         private static BattleEndEvidence unknown() {
-            return new BattleEndEvidence(
-                    null, DecodeConfidence.UNKNOWN, "UNKNOWN");
+            return new BattleEndEvidence(null, DecodeConfidence.UNKNOWN, "UNKNOWN");
         }
     }
 }
