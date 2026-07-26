@@ -116,7 +116,7 @@ class TeamAiPromptBuilderTest {
                 TeamAiPromptBuilder.single(context);
 
         assertTrue(input.content().contains("durationSec=UNKNOWN"));
-        assertTrue(input.content().contains("winnerTeam=UNKNOWN"));
+        assertTrue(input.content().contains("result=DRAW_OR_UNKNOWN"));
         assertTrue(input.content().contains("win=UNKNOWN"));
     }
 
@@ -167,7 +167,8 @@ class TeamAiPromptBuilderTest {
                         context.features().members().stream()
                                 .map(member -> member.accountId())
                                 .toList(),
-                        context.features()))
+                        context.features(),
+                        "test-team"))
                 .toList();
         final var multi = new MultiTeamBattleAnalysisContext(
                 summaries.size(),

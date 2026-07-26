@@ -618,8 +618,10 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             final int window,
             final Map<String, PositionChangedEvent> positionsByMember
     ) {
-        final List<PositionChangedEvent> positions = positionsByMember.entrySet().stream()
+        final List<Map.Entry<String, PositionChangedEvent>> sorted = positionsByMember.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
+                .toList();
+        final List<PositionChangedEvent> positions = sorted.stream()
                 .map(Map.Entry::getValue)
                 .toList();
         final float centroidX = (float) positions.stream()
@@ -639,18 +641,81 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                         position.x(), position.z(), centroidX, centroidZ))
                 .average()
                 .orElse(0.0);
-        final int clusters = countClusters(positions);
         final DecodeConfidence confidence = positions.stream()
                 .map(PositionChangedEvent::confidence)
                 .reduce(DecodeConfidence.EXACT, DefaultTeamBattleFeatureExtractor::lowerConfidence);
+
+        // Build structured clusters
+        final List<TeamFormationCluster> clusters = buildClusters(sorted);
+
         return new TeamFormationPhase(
                 window * FORMATION_WINDOW_SEC,
                 (window + 1) * FORMATION_WINDOW_SEC,
                 new Vector3(centroidX, centroidY, centroidZ),
                 dispersion,
-                clusters,
                 positions.size(),
-                confidence);
+                confidence,
+                clusters);
+    }
+
+    /**
+     * Build structured clusters from sorted (identityKey, position) entries using BFS.
+     */
+    private static List<TeamFormationCluster> buildClusters(
+            final List<Map.Entry<String, PositionChangedEvent>> sorted
+    ) {
+        if (sorted.isEmpty()) return List.of();
+        final boolean[] visited = new boolean[sorted.size()];
+        final List<TeamFormationCluster> result = new ArrayList<>();
+        final float windowStart = 0; // filled by caller
+
+        for (int start = 0; start < sorted.size(); start++) {
+            if (visited[start]) continue;
+            final List<Integer> clusterIndices = new ArrayList<>();
+            final List<Integer> queue = new ArrayList<>();
+            queue.add(start);
+            visited[start] = true;
+            while (!queue.isEmpty()) {
+                final int current = queue.removeFirst();
+                clusterIndices.add(current);
+                final PositionChangedEvent currentPos = sorted.get(current).getValue();
+                for (int candidate = 0; candidate < sorted.size(); candidate++) {
+                    if (!visited[candidate] && distance(
+                            currentPos.x(), currentPos.z(),
+                            sorted.get(candidate).getValue().x(),
+                            sorted.get(candidate).getValue().z())
+                            <= FORMATION_CLUSTER_DISTANCE) {
+                        visited[candidate] = true;
+                        queue.add(candidate);
+                    }
+                }
+            }
+
+            // Compute cluster centroid
+            final float cx = (float) clusterIndices.stream()
+                    .mapToDouble(i -> sorted.get(i).getValue().x())
+                    .average().orElse(0.0);
+            final float cz = (float) clusterIndices.stream()
+                    .mapToDouble(i -> sorted.get(i).getValue().z())
+                    .average().orElse(0.0);
+            final int region = TeamMapRegionResolver.resolveRegionFromRaw(cx, cz);
+            final List<String> identities = clusterIndices.stream()
+                    .map(i -> sorted.get(i).getKey())
+                    .sorted()
+                    .toList();
+            final DecodeConfidence clusterConfidence = clusterIndices.stream()
+                    .map(i -> sorted.get(i).getValue().confidence())
+                    .reduce(DecodeConfidence.EXACT, DefaultTeamBattleFeatureExtractor::lowerConfidence);
+
+            result.add(new TeamFormationCluster(
+                    0, 0, cx, cz, region, identities, identities.size(), clusterConfidence));
+        }
+
+        // Sort by startTime, region, centroidX, centroidZ, then member identities
+        result.sort(Comparator.comparingInt((TeamFormationCluster c) -> c.region())
+                .thenComparingDouble(c -> c.centroidX())
+                .thenComparingDouble(c -> c.centroidZ()));
+        return List.copyOf(result);
     }
 
     private static int countClusters(final List<PositionChangedEvent> positions) {
