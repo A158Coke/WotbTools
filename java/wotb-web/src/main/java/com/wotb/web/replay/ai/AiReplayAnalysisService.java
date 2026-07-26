@@ -519,7 +519,7 @@ public class AiReplayAnalysisService {
             if (rec != null) {
                 authoritativeDealt = rec.damageDealt;
                 authoritativeReceived = rec.damageReceived;
-                var side = PlayerSideResolver.resolve(battle, rec);
+                final Side side = PlayerSideResolver.resolve(battle, rec);
                 sb.append("\n").append(PlayerAnalysisPromptFormatter.formatRecorderLine(rec, side)).append('\n');
             }
 
@@ -532,8 +532,12 @@ public class AiReplayAnalysisService {
         sb.append("\n=== 重建补充 ===\n");
         if (ctx.recorder() != null && ctx.recorder().resolved()) {
             sb.append("录像者 entity 已映射, 特征集可用\n");
+            final String sideStr = ctx.battle() != null
+                    ? PlayerAnalysisPromptFormatter.sideLabel(
+                            PlayerSideResolver.resolve(ctx.battle(), ctx.battle().recorderResult()))
+                    : PlayerAnalysisPromptFormatter.sideLabel(PlayerSideResolver.Side.UNKNOWN);
             sb.append("录像者 entity: 账号 ").append(ctx.recorder().accountId())
-                    .append(" | 队伍: ").append(ctx.recorder().team())
+                    .append(" | 侧=").append(sideStr)
                     .append(" | 车辆 ID: ").append(ctx.recorder().tankId()).append('\n');
         } else {
             sb.append("位置流存在, 但录像者实体无法可靠映射\n");
@@ -826,11 +830,11 @@ public class AiReplayAnalysisService {
     /**
      * 每场独立摘要 + 后端确定性聚合（录像者视角）。
      */
-    private static String buildMultiSummary(List<Battle> battles) {
+    private static String buildMultiSummary(final List<Battle> battles) {
         final StringBuilder sb = new StringBuilder(4096);
         sb.append("共 ").append(battles.size()).append(" 场。\n\n=== 各场摘要（录像者视角）===\n");
 
-        int wins = 0, withRec = 0;
+        int friendlyWins = 0, enemyWins = 0, draws = 0, withRec = 0;
         long sumDmg = 0, sumRecv = 0, sumAssist = 0;
         double sumSurvival = 0;
         int survivedCount = 0;
@@ -840,15 +844,19 @@ public class AiReplayAnalysisService {
             final PlayerResult rec = b.recorderResult();
             sb.append("场 ").append(i + 1).append(": 地图 ").append(PlayerResultFormat.safe(b.mapName));
             if (rec != null) {
-                Winner w = FriendlyEnemyResult.resolve(b);
-                boolean win = w == Winner.FRIENDLY_WIN;
-                var side = PlayerSideResolver.resolve(b, rec);
+                final Winner w = FriendlyEnemyResult.resolve(b);
+                final String resultLabel = FriendlyEnemyResult.label(w);
+                final Side side = PlayerSideResolver.resolve(b, rec);
                 sb.append(" | ").append(PlayerResultFormat.safe(rec.tankName))
-                        .append(win ? " | 胜" : " | 负")
+                        .append(" | ").append(resultLabel)
                         .append(" | 侧=").append(PlayerAnalysisPromptFormatter.sideLabel(side));
                 PlayerResultFormat.appendRecorderLine(sb, rec);
                 withRec++;
-                if (win) wins++;
+                switch (w) {
+                    case FRIENDLY_WIN -> friendlyWins++;
+                    case ENEMY_WIN -> enemyWins++;
+                    case DRAW_OR_UNKNOWN -> draws++;
+                }
                 sumDmg += rec.damageDealt;
                 sumRecv += rec.damageReceived;
                 sumAssist += rec.damageAssisted;
@@ -866,8 +874,17 @@ public class AiReplayAnalysisService {
 
         sb.append("\n=== 聚合统计（后端计算，录像者视角）===\n");
         if (withRec > 0) {
+            final int decidedCount = friendlyWins + enemyWins;
             sb.append("可统计场数: ").append(withRec).append('\n');
-            sb.append("胜率: ").append(String.format("%.0f%%", 100.0 * wins / withRec)).append('\n');
+            sb.append("已知胜负场数: ").append(decidedCount).append('\n');
+            sb.append("友方获胜场数: ").append(friendlyWins).append('\n');
+            sb.append("敌方获胜场数: ").append(enemyWins).append('\n');
+            sb.append("平局或未知场数: ").append(draws).append('\n');
+            if (decidedCount > 0) {
+                sb.append("胜率: ").append(String.format("%.0f%%", 100.0 * friendlyWins / decidedCount)).append('\n');
+            } else {
+                sb.append("胜率: 无法计算\n");
+            }
             sb.append("场均输出: ").append(sumDmg / withRec).append('\n');
             sb.append("场均承伤: ").append(sumRecv / withRec).append('\n');
             sb.append("场均助攻: ").append(sumAssist / withRec).append('\n');
@@ -901,8 +918,8 @@ public class AiReplayAnalysisService {
                     .sorted(Comparator.comparingDouble(PlayerResultFormat::deathSec))
                     .toList();
             for (final PlayerResult p : dead) {
-                var side = PlayerSideResolver.resolve(battle, p);
-                String sideStr = PlayerAnalysisPromptFormatter.sideLabel(side);
+                final Side side = PlayerSideResolver.resolve(battle, p);
+                final String sideStr = PlayerAnalysisPromptFormatter.sideLabel(side);
                 events.add(new KeyBattleEvent(
                         (float) PlayerResultFormat.deathSec(p), "VEHICLE_DESTROYED",
                         sideStr + " " + PlayerResultFormat.safe(p.nickname)
@@ -910,7 +927,7 @@ public class AiReplayAnalysisService {
             }
         }
         final float endSec = battle.durationS != null ? battle.durationS.floatValue() : 0f;
-        var winner = FriendlyEnemyResult.resolve(battle);
+        final Winner winner = FriendlyEnemyResult.resolve(battle);
         events.add(new KeyBattleEvent(endSec, "BATTLE_END",
                 "战斗结束，" + FriendlyEnemyResult.label(winner)));
         return List.copyOf(events);
@@ -932,7 +949,7 @@ public class AiReplayAnalysisService {
 
         final PlayerResult rec = battle.recorderResult();
         if (rec != null) {
-            var side = PlayerSideResolver.resolve(battle, rec);
+            final Side side = PlayerSideResolver.resolve(battle, rec);
             sb.append("\n").append(PlayerAnalysisPromptFormatter.formatRecorderLine(rec, side)).append('\n');
         } else {
             sb.append("\n(未能定位录像者战绩)\n");
