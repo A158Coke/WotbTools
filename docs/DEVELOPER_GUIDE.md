@@ -246,9 +246,14 @@ AI 复盘区分两种 scope，互不混用：
 ### TEAM_PERSPECTIVE（训练房 / 联赛）
 
 - 分析对象是录像者所在整支队伍。
-- 保持独立 `perspectiveTeam` 内部语义。
+- 保持独立 `perspectiveTeam` 内部语义（用于后端计算，不暴露给 AI）。
 - 不使用随机战斗的 FRIENDLY/ENEMY formatter（`PlayerAnalysisPromptFormatter`）。
-- dominant clan 标签、九宫格阵型、地图名称映射和 Tank ID 映射属于后续独立功能，尚未实现。
+- **dominant clan 队伍标签**（`TeamPerspectiveLabelResolver`）：根据 roster 中成员人数最多的军团生成用户可见名称，如 `CHRD`；军团人数并列或无军团时使用稳定 fallback `队伍-<hash>`。
+- **地图名称映射**（`MapNames.cn()`）：使用 `common/map_names.json` 单一数据源，AI prompt 中输出中文地图名。
+- **Tank ID 映射**：`PlayerResult.tankName` 已在解析阶段通过 `common/tankopedia.json` 填充，AI prompt 直接使用。
+- **500×500 九宫格区域**（`TeamMapRegionResolver`）：地图业务尺寸 500×500，+Z 为地图上方。区域编号：1|2|3（顶行）、4|5|6（中行）、7|8|9（底行）。
+- **结构化 cluster**（`TeamFormationCluster`）：每个 cluster 包含 centroidX/Z、region、memberIdentities、memberCount、confidence。`TeamFormationPhase.clusters` 派生 `clusterCount()`。
+- **prompt 禁止 raw team**：AI prompt 中不出现 `perspectiveTeam=1/2`、`winnerTeam=1/2`、`Team 1/2`、`队伍1/2`。使用 `teamLabel=`、`result=TEAM_WIN/TEAM_LOSS/DRAW_OR_UNKNOWN`。
 
 ### PLAYER_FOCUSED（随机战斗）
 
