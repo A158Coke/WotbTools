@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- **Team Perspective 用户可见名称、地图映射、坦克名称、九宫格区域与结构化聚类**：新增 `TeamPerspectiveLabelResolver`（dominant clan 队伍标签）、`TeamMapRegionResolver`（500×500 九宫格）、`TeamFormationCluster`（结构化 cluster）；Team AI Prompt 不再输出 `perspectiveTeam=`/`winnerTeam=` raw 数字，改为 `teamLabel=`/`result=` 三态；地图名称使用 `common/map_names.json` 映射；cluster 输出含 region、centroid 和成员列表；`TeamFormationPhase.clusters` 派生 `clusterCount()`；输出排序确定。
 - **随机战斗 AI 复盘友方/敌方语义**：新增 `PlayerSideResolver`（FRIENDLY/ENEMY/UNKNOWN）、`FriendlyEnemyResult`（FRIENDLY_WIN/ENEMY_WIN/DRAW_OR_UNKNOWN）与 `PlayerAnalysisPromptFormatter`；随机战斗 AI Prompt 不再使用"队伍1/队伍2"，改为"友方/敌方"；胜负使用完整三态，平局/未知不作为失败记录；胜率只统计已知胜负场数；录像者在 raw team 2 时仍正确识别为友方；同一录像者的多场随机战斗分析会对每场战斗独立解析 recorder；`PlayerResult.team` 原始编号不受影响。
 - **训练房 / 联赛 Team-Level AI 战术复盘**：`TRAINING` 与 `TOURNAMENT` 现按录像者可靠解析 `perspectiveTeam`，分析对象是该队整队而非录像者个人。新增 entity/account/nickname 映射（含 accountId 缺失时的唯一昵称降级连接）、re-entry 支持、队员独立移动、阵型窗口、独立 5 秒集火窗口、目标切换、交火段、关键掉车与团队聚合；敌队位置、未知实体和未点亮敌人不会混入本队事实。同场同队多回放只保留一个代表，同场双方保持两个独立 perspective；重建不可用时使用 `battle_results.dat` 权威团队结算降级分析。
 - **Team AI 上下文与测试闭环**：新增 `SingleTeamBattleAnalysisContext` / `MultiTeamBattleAnalysisContext` 与确定性 `TeamAiPromptBuilder`，严格区分权威结算和事件流观测子集，最多 15 名成员、每人 6 个移动段、20 个阵型阶段、20 个交火段、30 个关键事件、10 个 perspective、30,000 字符，截断时报告 `AI_INPUT_TRUNCATED`。新增真实的 resolver、entity mapper、feature extractor、batch、AI fake HTTP、MockMvc 和 Vue 组件测试；`DefaultTeamBattleFeatureExtractorTest` 不再只是变更记录中的缺失文件。

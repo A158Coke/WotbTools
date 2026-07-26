@@ -821,11 +821,13 @@ public class AiReplayAnalysisService {
         if (!StringUtils.hasText(raw)) {
             return "empty provider error body";
         }
+        // Redact common secret patterns: Authorization, Bearer, api_key, token, secret
+        // Handles both JSON format ("key":"value") and HTTP header format (key: value)
         final String redacted = raw
                 .replaceAll(
-                        "(?i)(authorization|api[_ -]?key|bearer|token|secret)"
-                                + "\\s*[:=]?\\s*[^\\s,;]+",
-                        "$1=[REDACTED]")
+                        "(?i)(\"?)(authorization|api[_ -]?key|bearer|token|secret)"
+                                + "(\"?)\\s*[:=]\\s*(\"?)[^\"]+?(\"?)",
+                        "$2=[REDACTED]")
                 .replaceAll("[\\r\\n\\t]+", " ")
                 .trim();
         return redacted.length() <= MAX_SAFE_PROVIDER_SUMMARY_CHARS
