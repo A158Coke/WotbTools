@@ -10,12 +10,16 @@ public record TeamFormationCluster(
         CanonicalMapPosition centroid,
         MapCoordinateResolution.Status centroidStatus,
         int region,
+        int clampedMemberPositionCount,
         List<String> memberIdentities,
         DecodeConfidence confidence
 ) {
     public TeamFormationCluster {
         if (memberIdentities == null) {
             throw new IllegalArgumentException("memberIdentities must not be null");
+        }
+        if (memberIdentities.isEmpty()) {
+            throw new IllegalArgumentException("memberIdentities must not be empty");
         }
         memberIdentities = List.copyOf(memberIdentities);
         final HashSet<String> uniqueIds = new HashSet<>();
@@ -34,7 +38,7 @@ public record TeamFormationCluster(
             throw new IllegalArgumentException("centroid must not be null");
         }
         if (centroidStatus == null) {
-            centroidStatus = MapCoordinateResolution.Status.VALID;
+            throw new IllegalArgumentException("centroidStatus must not be null");
         }
         if (centroidStatus == MapCoordinateResolution.Status.INVALID) {
             throw new IllegalArgumentException("centroidStatus must not be INVALID");
@@ -45,6 +49,9 @@ public record TeamFormationCluster(
         if (centroid.region() != region) {
             throw new IllegalArgumentException(
                     "Centroid region " + centroid.region() + " != declared region " + region);
+        }
+        if (clampedMemberPositionCount < 0) {
+            throw new IllegalArgumentException("clampedMemberPositionCount must not be negative");
         }
         if (confidence == null) confidence = DecodeConfidence.UNKNOWN;
     }

@@ -750,12 +750,17 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                     .map(i -> sorted.get(i).getKey())
                     .sorted()
                     .toList();
+            final int clampedPosCount = (int) clusterIndices.stream()
+                    .map(i -> sorted.get(i).getValue())
+                    .filter(pos -> MapRegionResolver.resolve(pos.x(), pos.z()).status()
+                            == MapCoordinateResolution.Status.CLAMPED)
+                    .count();
             final DecodeConfidence clusterConfidence = clusterIndices.stream()
                     .map(i -> sorted.get(i).getValue().confidence())
                     .reduce(DecodeConfidence.EXACT, DefaultTeamBattleFeatureExtractor::lowerConfidence);
 
             result.add(new TeamFormationCluster(
-                    startTime, endTime, canon, coordRes.status(), region, identities, clusterConfidence));
+                    startTime, endTime, canon, coordRes.status(), region, clampedPosCount, identities, clusterConfidence));
         }
 
         // Sort by startTime, region, centroidX, centroidZ, then member identities

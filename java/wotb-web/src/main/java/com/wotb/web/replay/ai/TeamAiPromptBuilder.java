@@ -259,6 +259,7 @@ final class TeamAiPromptBuilder {
                         + " centroidXZ=(" + format(cluster.centroidX())
                         + "," + format(cluster.centroidZ()) + ")"
                         + " centroidStatus=" + cluster.centroidStatus()
+                        + " clampedMemberPositions=" + cluster.clampedMemberPositionCount()
                         + " members=" + cluster.memberIdentities()
                         + " memberCount=" + cluster.memberCount()
                         + " confidence=" + cluster.confidence()
@@ -415,12 +416,6 @@ final class TeamAiPromptBuilder {
                 ? "UNKNOWN" : format(value);
     }
 
-    private static String formatPosition(final Vector3 position) {
-        return position == null
-                ? "UNKNOWN"
-                : "(" + format(position.x()) + "," + format(position.z()) + ")";
-    }
-
     /** Format position as canonical XZ, region, and status from a single resolve call. */
     private static String formatPositionInfo(final Vector3 position) {
         if (position == null) return "UNKNOWN";
@@ -428,18 +423,6 @@ final class TeamAiPromptBuilder {
         if (!res.usable()) return "UNKNOWN";
         return "(" + format(res.position().x()) + "," + format(res.position().z())
                 + ") r=" + res.region() + " s=" + res.status().name();
-    }
-
-    private static String regionFromPos(final Vector3 position) {
-        if (position == null) return "UNKNOWN";
-        final MapCoordinateResolution res = MapRegionResolver.resolve(position.x(), position.z());
-        if (!res.usable()) return "UNKNOWN";
-        return String.valueOf(res.region());
-    }
-
-    private static String coordStatus(final Vector3 position) {
-        if (position == null) return "UNKNOWN";
-        return MapRegionResolver.resolve(position.x(), position.z()).status().name();
     }
 
     /** Resolve dominant clan label for a perspective team's players only. */
