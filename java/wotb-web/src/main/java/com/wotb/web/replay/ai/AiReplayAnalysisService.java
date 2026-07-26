@@ -834,21 +834,38 @@ public class AiReplayAnalysisService {
             int totalBattles, int decidedCount, int friendlyWins, int enemyWins, int draws,
             long sumDmg, long sumRecv, long sumAssist, double sumSurvival, int survivedCount
     ) {
-        MultiBattleStats accumulate(final Battle battle, final PlayerResult rec) {
+        static final MultiBattleStats ZERO = new MultiBattleStats(0, 0, 0, 0, 0, 0L, 0L, 0L, 0.0, 0);
+
+        static MultiBattleStats fromBattle(final Battle battle, final PlayerResult rec) {
             final Winner w = FriendlyEnemyResult.resolve(battle);
             return new MultiBattleStats(
-                    totalBattles + 1,
-                    decidedCount + (w == Winner.DRAW_OR_UNKNOWN ? 0 : 1),
-                    friendlyWins + (w == Winner.FRIENDLY_WIN ? 1 : 0),
-                    enemyWins + (w == Winner.ENEMY_WIN ? 1 : 0),
-                    draws + (w == Winner.DRAW_OR_UNKNOWN ? 1 : 0),
-                    sumDmg + rec.damageDealt,
-                    sumRecv + rec.damageReceived,
-                    sumAssist + rec.damageAssisted,
-                    sumSurvival + (rec.survived
+                    1,
+                    w == Winner.DRAW_OR_UNKNOWN ? 0 : 1,
+                    w == Winner.FRIENDLY_WIN ? 1 : 0,
+                    w == Winner.ENEMY_WIN ? 1 : 0,
+                    w == Winner.DRAW_OR_UNKNOWN ? 1 : 0,
+                    rec.damageDealt,
+                    rec.damageReceived,
+                    rec.damageAssisted,
+                    rec.survived
                             ? (battle.durationS != null ? battle.durationS : 0.0)
-                            : PlayerResultFormat.deathSec(rec)),
-                    survivedCount + (rec.survived ? 1 : 0)
+                            : PlayerResultFormat.deathSec(rec),
+                    rec.survived ? 1 : 0
+            );
+        }
+
+        MultiBattleStats combine(final MultiBattleStats other) {
+            return new MultiBattleStats(
+                    totalBattles + other.totalBattles,
+                    decidedCount + other.decidedCount,
+                    friendlyWins + other.friendlyWins,
+                    enemyWins + other.enemyWins,
+                    draws + other.draws,
+                    sumDmg + other.sumDmg,
+                    sumRecv + other.sumRecv,
+                    sumAssist + other.sumAssist,
+                    sumSurvival + other.sumSurvival,
+                    survivedCount + other.survivedCount
             );
         }
     }
@@ -857,7 +874,13 @@ public class AiReplayAnalysisService {
         final StringBuilder sb = new StringBuilder(4096);
         sb.append("共 ").append(battles.size()).append(" 场。\n\n=== 各场摘要（录像者视角）===\n");
 
-        var stats = new MultiBattleStats(0, 0, 0, 0, 0, 0L, 0L, 0L, 0.0, 0);
+        // Compute stats via immutable Stream reduce (no mutable reassignment)
+        final MultiBattleStats stats = java.util.stream.IntStream.range(0, battles.size())
+                .filter(i -> battles.get(i).recorderResult() != null)
+                .mapToObj(i -> MultiBattleStats.fromBattle(
+                        battles.get(i), battles.get(i).recorderResult()))
+                .reduce(MultiBattleStats::combine)
+                .orElse(MultiBattleStats.ZERO);
 
         for (int i = 0; i < battles.size(); i++) {
             final Battle b = battles.get(i);
@@ -871,7 +894,6 @@ public class AiReplayAnalysisService {
                         .append(" | ").append(resultLabel)
                         .append(" | 侧=").append(PlayerAnalysisPromptFormatter.sideLabel(side));
                 PlayerResultFormat.appendRecorderLine(sb, rec);
-                stats = stats.accumulate(b, rec);
             } else {
                 sb.append(" | (未能定位录像者战绩)");
             }
