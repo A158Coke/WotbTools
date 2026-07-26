@@ -10,50 +10,65 @@ import org.junit.jupiter.api.Test;
 class BattleStartResolverTest {
 
     @Test
-    void negativeFirstClockUsesZero() {
-        assertEquals(0f, BattleStartResolver.inferFromFirstClock(-5f), 0.01f);
+    void negativeFirstClockUsesZeroInferred() {
+        final BattleStartResolution r = BattleStartResolver.inferFromFirstClock(-5f);
+        assertEquals(BattleStartResolution.Status.ZERO_CLOCK_INFERRED, r.status());
+        assertEquals(0f, r.battleStartRawClockSec(), 0.01f);
+        assertTrue(r.resolved());
     }
 
     @Test
-    void positiveFirstClockUsesItself() {
-        assertEquals(2.5f, BattleStartResolver.inferFromFirstClock(2.5f), 0.01f);
+    void positiveFirstClockIsEstimated() {
+        final BattleStartResolution r = BattleStartResolver.inferFromFirstClock(2.5f);
+        assertEquals(BattleStartResolution.Status.ESTIMATED, r.status());
+        assertEquals(2.5f, r.battleStartRawClockSec(), 0.01f);
     }
 
     @Test
-    void zeroFirstClockUsesZero() {
-        assertEquals(0f, BattleStartResolver.inferFromFirstClock(0f), 0.01f);
+    void zeroFirstClockUsesZeroEstimated() {
+        final BattleStartResolution r = BattleStartResolver.inferFromFirstClock(0f);
+        assertEquals(BattleStartResolution.Status.ESTIMATED, r.status());
+        assertEquals(0f, r.battleStartRawClockSec(), 0.01f);
     }
 
     @Test
-    void nanFirstClockReturnsNull() {
-        assertNull(BattleStartResolver.inferFromFirstClock(Float.NaN));
+    void nanFirstClockReturnsUnresolved() {
+        final BattleStartResolution r = BattleStartResolver.inferFromFirstClock(Float.NaN);
+        assertEquals(BattleStartResolution.Status.UNRESOLVED, r.status());
+        assertNull(r.battleStartRawClockSec());
+        assertFalse(r.resolved());
     }
 
     @Test
-    void infFirstClockReturnsNull() {
-        assertNull(BattleStartResolver.inferFromFirstClock(Float.POSITIVE_INFINITY));
+    void infFirstClockReturnsUnresolved() {
+        final BattleStartResolution r = BattleStartResolver.inferFromFirstClock(Float.POSITIVE_INFINITY);
+        assertEquals(BattleStartResolution.Status.UNRESOLVED, r.status());
+        assertNull(r.battleStartRawClockSec());
     }
 
     @Test
     void battleRelativeWithStart() {
-        assertEquals(5f, BattleStartResolver.battleRelative(10f, 5f), 0.01f);
-        assertEquals(0f, BattleStartResolver.battleRelative(0f, 0f), 0.01f);
+        final BattleStartResolution r = new BattleStartResolution(BattleStartResolution.Status.IDENTIFIED, 5f, null);
+        assertEquals(5f, r.battleRelative(10f), 0.01f);
+        assertEquals(0f, r.battleRelative(5f), 0.01f);
     }
 
     @Test
     void battleRelativeWithoutStartFallsBackToRaw() {
-        assertEquals(10f, BattleStartResolver.battleRelative(10f, null), 0.01f);
+        final BattleStartResolution r = BattleStartResolution.unresolved();
+        assertEquals(10f, r.battleRelative(10f), 0.01f);
     }
 
     @Test
-    void isPreBattleWithNullStart() {
-        assertFalse(BattleStartResolver.isPreBattle(5f, null));
+    void isPreBattleWithUnresolved() {
+        assertFalse(BattleStartResolution.unresolved().isPreBattle(5f));
     }
 
     @Test
     void isPreBattleWithStart() {
-        assertTrue(BattleStartResolver.isPreBattle(-2f, 0f));
-        assertFalse(BattleStartResolver.isPreBattle(3f, 0f));
-        assertFalse(BattleStartResolver.isPreBattle(0f, 0f));
+        final BattleStartResolution r = new BattleStartResolution(BattleStartResolution.Status.IDENTIFIED, 0f, null);
+        assertTrue(r.isPreBattle(-2f));
+        assertFalse(r.isPreBattle(3f));
+        assertFalse(r.isPreBattle(0f));
     }
 }

@@ -433,7 +433,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             final long memberAccountId,
             final String memberNickname
     ) {
-        final MemberIdentity memberId = new MemberIdentity(memberAccountId, memberNickname);
+        final MemberIdentity memberId = new MemberIdentity(memberAccountId, memberNickname, false);
         final List<AttributedDamage> memberDamage = damages.stream()
                 .filter(damage -> damage.attacker().team() != damage.victim().team())
                 .filter(damage -> memberId.matches(damage.attacker())
@@ -461,7 +461,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         final List<AttributedDamage> sorted = sortedDamageEvents(damages);
         final List<EngagementSummary> result = new ArrayList<>();
         final MemberIdentity memberId = memberAccountId != null
-                ? new MemberIdentity(memberAccountId, memberNickname) : null;
+                ? new MemberIdentity(memberAccountId, memberNickname, false) : null;
         int segmentStart = 0;
         for (int index = 1; index < sorted.size(); index++) {
             if (damageGap(sorted.get(index - 1), sorted.get(index))
@@ -729,8 +729,9 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             final float rawCz = (float) clusterIndices.stream()
                     .mapToDouble(i -> sorted.get(i).getValue().z())
                     .average().orElse(0.0);
-            final CanonicalMapPosition canon = MapRegionResolver.toCanonical(rawCx, rawCz);
-            if (canon == null) continue;
+            final MapCoordinateResolution coordRes = MapRegionResolver.resolve(rawCx, rawCz);
+            if (!coordRes.usable()) continue;
+            final CanonicalMapPosition canon = coordRes.position();
             final int region = canon.region();
             final List<String> identities = clusterIndices.stream()
                     .map(i -> sorted.get(i).getKey())

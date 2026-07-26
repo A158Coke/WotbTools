@@ -3,7 +3,6 @@ package com.wotb.core.replay.feature;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -58,15 +57,15 @@ class MapRegionResolverTest {
     }
 
     @Test void canonicalConversion() {
-        final CanonicalMapPosition c1 = MapRegionResolver.toCanonical(-1000, -1000);
-        assertNotNull(c1);
-        assertEquals(0f, c1.x(), 0.01);
-        final CanonicalMapPosition c2 = MapRegionResolver.toCanonical(0, 0);
-        assertNotNull(c2);
-        assertEquals(250f, c2.x(), 0.01);
-        final CanonicalMapPosition c3 = MapRegionResolver.toCanonical(1000, 1000);
-        assertNotNull(c3);
-        assertEquals(500f, c3.x(), 0.01);
+        final MapCoordinateResolution r1 = MapRegionResolver.resolve(-1000, -1000);
+        assertEquals(MapCoordinateResolution.Status.VALID, r1.status());
+        assertEquals(0f, r1.position().x(), 0.01);
+        final MapCoordinateResolution r2 = MapRegionResolver.resolve(0, 0);
+        assertEquals(MapCoordinateResolution.Status.VALID, r2.status());
+        assertEquals(250f, r2.position().x(), 0.01);
+        final MapCoordinateResolution r3 = MapRegionResolver.resolve(1000, 1000);
+        assertEquals(MapCoordinateResolution.Status.VALID, r3.status());
+        assertEquals(500f, r3.position().x(), 0.01);
     }
 
     @Test void rawCoordinatesRoundTrip() {
@@ -76,12 +75,12 @@ class MapRegionResolverTest {
     }
 
     @Test void nanInputReturnsNull() {
-        assertNull(MapRegionResolver.toCanonical(Float.NaN, 250));
-        assertNull(MapRegionResolver.toCanonical(Float.POSITIVE_INFINITY, 250));
+        assertEquals(MapCoordinateResolution.Status.INVALID, MapRegionResolver.resolve(Float.NaN, 250).status());
+        assertEquals(MapCoordinateResolution.Status.INVALID, MapRegionResolver.resolve(Float.POSITIVE_INFINITY, 250).status());
     }
 
     @Test void outOfRangeRawClampedToCanonical() {
-        assertNull(MapRegionResolver.toCanonical(5000, 5000));
+        assertEquals(MapCoordinateResolution.Status.INVALID, MapRegionResolver.resolve(5000, 5000).status());
         final MapCoordinateResolution res = MapRegionResolver.resolve(1020, 1020);
         assertEquals(MapCoordinateResolution.Status.CLAMPED, res.status());
         assertNotNull(res.position());
@@ -91,16 +90,16 @@ class MapRegionResolverTest {
         assertEquals(500f, res.position().z(), 0.01);
     }
 
-    @Test void toCanonicalAllRegions() {
-        assertEquals(1, MapRegionResolver.toCanonical(-600, 600).region());
-        assertEquals(2, MapRegionResolver.toCanonical(0, 600).region());
-        assertEquals(3, MapRegionResolver.toCanonical(600, 600).region());
-        assertEquals(4, MapRegionResolver.toCanonical(-600, 0).region());
-        assertEquals(5, MapRegionResolver.toCanonical(0, 0).region());
-        assertEquals(6, MapRegionResolver.toCanonical(600, 0).region());
-        assertEquals(7, MapRegionResolver.toCanonical(-600, -600).region());
-        assertEquals(8, MapRegionResolver.toCanonical(0, -600).region());
-        assertEquals(9, MapRegionResolver.toCanonical(600, -600).region());
+    @Test void resolveAllRegions() {
+        assertEquals(1, MapRegionResolver.resolve(-600, 600).region());
+        assertEquals(2, MapRegionResolver.resolve(0, 600).region());
+        assertEquals(3, MapRegionResolver.resolve(600, 600).region());
+        assertEquals(4, MapRegionResolver.resolve(-600, 0).region());
+        assertEquals(5, MapRegionResolver.resolve(0, 0).region());
+        assertEquals(6, MapRegionResolver.resolve(600, 0).region());
+        assertEquals(7, MapRegionResolver.resolve(-600, -600).region());
+        assertEquals(8, MapRegionResolver.resolve(0, -600).region());
+        assertEquals(9, MapRegionResolver.resolve(600, -600).region());
     }
 
     // === MapCoordinateResolution VALID/CLAMPED/INVALID ===
