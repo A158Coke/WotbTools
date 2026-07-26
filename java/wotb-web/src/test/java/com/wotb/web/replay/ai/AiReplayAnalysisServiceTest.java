@@ -627,4 +627,61 @@ class AiReplayAnalysisServiceTest {
                 id, null, id + ".wotbreplay", "map",
                 null, null, 1, roster, features, "test-team");
     }
+
+    // === Authorization redaction tests ===
+
+    @Test void redactionBearer() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("Authorization: Bearer my-secret");
+        assertFalse(r.contains("my-secret"));
+    }
+
+    @Test void redactionBasic() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("Authorization: Basic base64sec");
+        assertFalse(r.contains("base64sec"));
+    }
+
+    @Test void redactionCustomScheme() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("Authorization: Custom token123");
+        assertFalse(r.contains("token123"));
+    }
+
+    @Test void redactionDigest() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("Authorization: Digest response=abc");
+        assertFalse(r.contains("abc"));
+    }
+
+    @Test void redactionJsonObject() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("{\"api-key\":\"secret-123\"}");
+        assertFalse(r.contains("secret-123"));
+    }
+
+    @Test void redactionJsonArray() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("[{\"token\":\"t1\"},{\"token\":\"t2\"}]");
+        assertFalse(r.contains("t1"));
+    }
+
+    @Test void redactionJsonNested() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("{\"a\":{\"b\":{\"password\":\"p@ss\"}}}");
+        assertFalse(r.contains("p@ss"));
+    }
+
+    @Test void redactionMalformedJson() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("{bad token=secret-value}");
+        assertFalse(r.contains("secret-value"));
+    }
+
+    @Test void redactionMultipleSecrets() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("{\"api_key\":\"k1\",\"token\":\"k2\",\"password\":\"k3\"}");
+        assertFalse(r.contains("k1"));
+    }
+
+    @Test void redactionCaseInsensitive() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("{\"API-KEY\":\"secret\"}");
+        assertFalse(r.contains("secret"));
+    }
+
+    @Test void redactionAccessToken() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("{\"access_token\":\"my-token\"}");
+        assertFalse(r.contains("my-token"));
+    }
 }

@@ -79,4 +79,11 @@ class TeamFormationClusterTest {
                 new TeamFormationCluster(10f, 20f, pos(250f, 250f), 5,
                         List.of("a", ""), DecodeConfidence.EXACT));
     }
+
+    @Test
+    void duplicateIdentityThrows() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new TeamFormationCluster(10f, 20f, pos(250f, 250f), 5,
+                        List.of("a", "a"), DecodeConfidence.EXACT));
+    }
 }
