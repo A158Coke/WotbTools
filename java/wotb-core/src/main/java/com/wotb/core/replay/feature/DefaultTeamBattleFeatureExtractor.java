@@ -342,6 +342,9 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         final List<EngagementSummary> engagements = buildMemberEngagements(
                 damageEvents, memberId);
         final List<String> limitations = new ArrayList<>();
+        if (memberId.ambiguousNickname()) {
+            limitations.add("TEAM_MEMBER_IDENTITY_UNRESOLVED");
+        }
         if (entityIds.isEmpty()) {
             limitations.add("TEAM_MEMBER_ENTITY_UNMAPPED");
         }
@@ -747,7 +750,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                     .reduce(DecodeConfidence.EXACT, DefaultTeamBattleFeatureExtractor::lowerConfidence);
 
             result.add(new TeamFormationCluster(
-                    startTime, endTime, canon, region, identities, clusterConfidence));
+                    startTime, endTime, canon, coordRes.status(), region, identities, clusterConfidence));
         }
 
         // Sort by startTime, region, centroidX, centroidZ, then member identities

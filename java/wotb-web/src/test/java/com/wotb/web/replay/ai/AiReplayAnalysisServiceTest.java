@@ -712,4 +712,35 @@ class AiReplayAnalysisServiceTest {
         final String r = AiReplayAnalysisService.safeProviderSummary("{\"message\":\"Authorization: Bearer secret-value-here\"}");
         assertFalse(r.contains("secret-value-here"));
     }
+
+    @Test void logCaptureDoesNotContainSecret() throws IOException {
+        responseStatus = 401;
+        responseBody = "{\"error\":\"x-api-key=test-secret-123\"}";
+        final var service = startService(1);
+        final var context = service.buildSingleTeamContext(
+                teamGroups(List.of(teamResult("fail.wotbreplay", "fail-arena", "Ally", 1001L, 1)))
+                        .getFirst());
+        final var error = assertThrows(
+                AiUpstreamException.class,
+                () -> service.analyzeSingleTeamContext(context));
+        assertEquals("AI_AUTHENTICATION_ERROR", error.code());
+        assertEquals(401, error.providerStatus().intValue());
+        assertTrue(StringUtils.hasText(error.correlationId()));
+        assertFalse(error.getMessage().contains("test-secret-123"));
+    }
+
+    @Test void logCaptureWithBearerSecret() throws IOException {
+        responseStatus = 429;
+        responseBody = "{\"error\":\"Authorization: Bearer sk-live-xxx\"}";
+        final var service = startService(1);
+        final var context = service.buildSingleTeamContext(
+                teamGroups(List.of(teamResult("fail2.wotbreplay", "fail-arena2", "Ally", 1002L, 1)))
+                        .getFirst());
+        final var error = assertThrows(
+                AiUpstreamException.class,
+                () -> service.analyzeSingleTeamContext(context));
+        assertEquals("AI_RATE_LIMITED", error.code());
+        assertFalse(error.getMessage().contains("sk-live-xxx"));
+        assertFalse(error.getMessage().contains("Bearer"));
+    }
 }

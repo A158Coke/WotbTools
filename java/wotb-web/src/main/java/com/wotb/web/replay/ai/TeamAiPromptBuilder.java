@@ -264,7 +264,7 @@ final class TeamAiPromptBuilder {
                         + " region=" + cluster.region()
                         + " centroidXZ=(" + format(cluster.centroidX())
                         + "," + format(cluster.centroidZ()) + ")"
-                        + " centroidStatus=" + "VALID"
+                        + " centroidStatus=" + cluster.centroidStatus()
                         + " members=" + cluster.memberIdentities()
                         + " memberCount=" + cluster.memberCount()
                         + " confidence=" + cluster.confidence()
