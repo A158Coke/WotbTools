@@ -251,13 +251,14 @@ AI 复盘区分两种 scope，互不混用：
 - **dominant clan 队伍标签**（`TeamPerspectiveLabelResolver`）：根据 roster 中成员人数最多的军团生成用户可见名称，如 `CHRD`；军团人数并列或无军团时使用稳定 fallback `队伍-<hash>`。
 - **地图名称映射**（`MapNames.cn()`）：使用 `common/map_names.json` 单一数据源，AI prompt 中输出中文地图名。
 - **Tank ID 映射**：`PlayerResult.tankName` 已在解析阶段通过 `common/tankopedia.json` 填充，AI prompt 直接使用。
-- **500×500 九宫格区域**（`TeamMapRegionResolver`）：地图业务尺寸 500×500，+Z 为地图上方。Replay 坐标范围约 ±1000（基于 `docs/replay-data.md`），线性映射到 0…500。区域编号：1|2|3（顶行）、4|5|6（中行）、7|8|9（底行）。无法解析时返回 UNKNOWN/0。
+- **500×500 九宫格区域**（`MapRegionResolver`）：地图业务尺寸 500×500，+Z 为地图上方。Replay 坐标范围约 ±1000（基于 `docs/replay-data.md`），线性映射到 0…500。区域编号：1|2|3（顶行）、4|5|6（中行）、7|8|9（底行）。无法解析时返回 UNKNOWN/0。
 - **结构化 cluster**（`TeamFormationCluster`）：每个 cluster 包含 centroidX/Z（canonical 500×500）、region（基于 canonical centroid）、memberIdentities、memberCount、confidence、startTime、endTime。`TeamFormationPhase.clusters` 派生 `clusterCount()`。构造时验证时间合法性、region 0-9、memberCount 等于有效 identities 数。
 - **battle phases**：通过 `BATTLE_PHASES` 输出 start/end time 和 phase type。
 - **uniqueBattleCount**：multi-perspective 中区分 perspective count 和 unique battle count，同一场战斗的 opposing perspective 只算一个 battle。
 - **MemberIdentity**：accountId > 0 时优先使用 accountId；accountId ≤ 0 时使用规范化 nickname（trim、Locale.ROOT、case-insensitive）。用于 engagement 匹配、cluster 成员标识和 key events 的全链路 identity。
 - **prompt 禁止 raw team**：AI prompt 中不出现 `perspectiveTeam=1/2`、`winnerTeam=1/2`、`Team 1/2`、`队伍1/2`。使用 `teamLabel=`、`result=TEAM_WIN/TEAM_LOSS/DRAW_OR_UNKNOWN`。
 - **secret redaction**：AI provider 错误摘要优先使用 Jackson tree JSON 递归隐藏敏感 key（authorization、api_key、token、secret、password）。非 JSON 文本使用正则 fallback，支持 `Authorization: Bearer/Basic` 整体隐藏。
+- **battle start resolution**：`BattleStartResolver.resolve(reconstructionBattleStart, diagnostics)` 返回 `BattleStartResolution`（IDENTIFIED / ZERO_CLOCK_INFERRED / ESTIMATED / UNRESOLVED）。准备阶段静止不进入战术 STATIONARY movement；formation 窗口使用 `battleRelative(rawClock)`；first contact / engagement / key events 使用统一的 battle-relative clock。`PRE_BATTLE_START_ESTIMATED` ∩ `PRE_BATTLE_START_UNRESOLVED` 作为 limitation 传播。
 
 ### PLAYER_FOCUSED（随机战斗）
 
@@ -543,7 +544,7 @@ files → DefaultReplayProcessingFacade.processBatch()
 | 交火结果 | 一方观测伤害严格大于另一方的 `1.25` 倍才判优势/劣势；边界值算均势 |
 | 阵型采样 | `15s` 窗口，每名成员保留窗口内最后位置 |
 | 阵型连通簇 | X/Z 平面距离 `<= 100m` 视为连通 |
-| 坐标可信范围 | `|x|, |z| <= 5000` 且 `|y| <= 200`；越界点忽略并计入 coverage/limitation |
+| 坐标可信范围 | `|x|, |z| <= 1050 (1000 + 50 CLAMP_TOLERANCE_RAW)` 且 `|y| <= 200`；越界点忽略并计入 coverage/limitation |
 | 时间戳 | 必须 finite 且 `>= 0`；非法事件不进入移动、阵型、交火或关键事件 |
 
 多场趋势还需要每个 perspective 的有效 accountId 覆盖率
