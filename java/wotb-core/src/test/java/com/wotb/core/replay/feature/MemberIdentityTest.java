@@ -1,6 +1,8 @@
 package com.wotb.core.replay.feature;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wotb.core.model.PlayerResult;
@@ -54,8 +56,8 @@ class MemberIdentityTest {
 
     @Test
     void zeroAccountIdEmptyNicknameReturnsFalse() {
-        final MemberIdentity id = new MemberIdentity(0L, "", false);
-        assertFalse(id.matches(identity(0L, "PlayerA")));
+        assertThrows(IllegalArgumentException.class, () ->
+                new MemberIdentity(0L, "", false));
     }
 
     @Test
