@@ -16,6 +16,8 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.util.PlayerResultFormat;
 
+import org.springframework.util.StringUtils;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -307,7 +309,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .map(TeamEntityIdentity::confidence)
                 .reduce(DecodeConfidence.EXACT, DefaultTeamBattleFeatureExtractor::lowerConfidence);
         final List<EngagementSummary> engagements = buildMemberEngagements(
-                damageEvents, player.accountId);
+                damageEvents, player.accountId, player.nickname);
         final List<String> limitations = new ArrayList<>();
         if (entityIds.isEmpty()) {
             limitations.add("TEAM_MEMBER_ENTITY_UNMAPPED");
@@ -408,21 +410,33 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
 
     private static List<EngagementSummary> buildMemberEngagements(
             final List<AttributedDamage> damages,
-            final long memberAccountId
+            final long memberAccountId,
+            final String memberNickname
     ) {
         final List<AttributedDamage> memberDamage = damages.stream()
                 .filter(damage -> damage.attacker().team() != damage.victim().team())
-                .filter(damage -> damage.attacker().accountId() == memberAccountId
-                        || damage.victim().accountId() == memberAccountId)
+                .filter(damage -> matchesMember(damage.attacker(), memberAccountId, memberNickname)
+                        || matchesMember(damage.victim(), memberAccountId, memberNickname))
                 .toList();
         final int memberTeam = memberDamage.stream()
-                .map(damage -> damage.attacker().accountId() == memberAccountId
+                .map(damage -> matchesMember(damage.attacker(), memberAccountId, memberNickname)
                         ? damage.attacker().team() : damage.victim().team())
                 .findFirst()
                 .orElse(0);
         return memberTeam == 0
                 ? List.of()
                 : buildEngagements(memberDamage, memberTeam, memberAccountId);
+    }
+
+    /** Match member by accountId (preferred) or fall back to nickname. */
+    private static boolean matchesMember(
+            final TeamEntityIdentity identity,
+            final long memberAccountId,
+            final String memberNickname
+    ) {
+        if (memberAccountId > 0) return identity.accountId() == memberAccountId;
+        return StringUtils.hasText(memberNickname)
+                && memberNickname.equals(identity.nickname());
     }
 
     private static List<EngagementSummary> buildEngagements(
