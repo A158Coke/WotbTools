@@ -684,4 +684,32 @@ class AiReplayAnalysisServiceTest {
         final String r = AiReplayAnalysisService.safeProviderSummary("{\"access_token\":\"my-token\"}");
         assertFalse(r.contains("my-token"));
     }
+
+    @Test void redactionXApiKey() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("{\"x-api-key\":\"sk-live-123\"}");
+        assertFalse(r.contains("sk-live-123"));
+    }
+
+    @Test void redactionAwsKey() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("{\"aws_access_key_id\":\"AKIA123\",\"aws_secret_access_key\":\"secret123\"}");
+        assertFalse(r.contains("AKIA123"));
+        assertFalse(r.contains("secret123"));
+    }
+
+    @Test void redactionAwsSignature() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("Credential=AKID/20230101,Signature=abc123");
+        assertFalse(r.contains("AKID"));
+        assertFalse(r.contains("abc123"));
+    }
+
+    @Test void redactionMixedCaseKey() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("{\"X-Api-Key\":\"sensitive\",\"Authorization\":\"Bearer tok\"}");
+        assertFalse(r.contains("sensitive"));
+        assertFalse(r.contains("tok"));
+    }
+
+    @Test void redactionJsonStringValueContainingSecrets() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("{\"message\":\"Authorization: Bearer secret-value-here\"}");
+        assertFalse(r.contains("secret-value-here"));
+    }
 }

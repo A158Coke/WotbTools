@@ -17,10 +17,14 @@ public record BattleStartResolution(Status status, Float battleStartRawClockSec,
             case IDENTIFIED -> {
                 if (battleStartRawClockSec == null || !Float.isFinite(battleStartRawClockSec))
                     throw new IllegalArgumentException("IDENTIFIED requires finite clock");
+                if (limitation != null)
+                    throw new IllegalArgumentException("IDENTIFIED must have null limitation");
             }
             case ZERO_CLOCK_INFERRED -> {
                 if (battleStartRawClockSec == null || battleStartRawClockSec != 0f)
                     throw new IllegalArgumentException("ZERO_CLOCK_INFERRED requires clock=0");
+                if (limitation != null)
+                    throw new IllegalArgumentException("ZERO_CLOCK_INFERRED must have null limitation");
             }
             case ESTIMATED -> {
                 if (battleStartRawClockSec == null || !Float.isFinite(battleStartRawClockSec))
