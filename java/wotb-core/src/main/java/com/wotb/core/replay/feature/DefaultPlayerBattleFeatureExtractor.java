@@ -75,7 +75,8 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
                 }
                 case com.wotb.core.replay.event.BattleEndedEvent b -> {
                     if (Float.isNaN(battleEndClock)) {
-                        battleEndClock = ReplayTimestamp.safeClockSec(b.timestamp());
+                        battleEndClock = battleStartRes.battleRelative(
+                                ReplayTimestamp.safeClockSec(b.timestamp()));
                     }
                 }
                 default -> {}
@@ -86,14 +87,14 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         final List<MovementSegment> movements = compressMovements(positions, battleStartRes);
 
         // 交火段
-        final List<EngagementSummary> engagements = buildEngagements(damages, recorder.entityId());
+        final List<EngagementSummary> engagements = buildEngagements(damages, recorder.entityId(), battleStartRes);
 
         // 战斗阶段
         final List<BattlePhaseSummary> phases = DefaultBattleFeatureExtractor.dividePhases(
                 events, battleEndClock, firstContactTime);
 
         // 关键事件
-        final List<KeyBattleEvent> keyEvents = extractRecorderKeyEvents(damages, recorder);
+        final List<KeyBattleEvent> keyEvents = extractRecorderKeyEvents(damages, recorder, battleStartRes);
 
         final boolean hasRealFeatures = !movements.isEmpty()
                 || !engagements.isEmpty()
@@ -178,7 +179,8 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         };
     }
 
-    static List<EngagementSummary> buildEngagements(final List<DamageEvent> damages, final int recorderEid) {
+    static List<EngagementSummary> buildEngagements(final List<DamageEvent> damages, final int recorderEid,
+                                                     final BattleStartResolution battleStartRes) {
         if (damages.isEmpty()) return List.of();
         final List<DamageEvent> sorted = damages.stream()
                 .sorted(Comparator.comparingDouble(d -> ReplayTimestamp.safeClockSec(d.timestamp())))
@@ -187,17 +189,18 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         int segStart = 0;
         for (int i = 1; i < sorted.size(); i++) {
             if (ReplayTimestamp.safeClockSec(sorted.get(i).timestamp()) - ReplayTimestamp.safeClockSec(sorted.get(i - 1).timestamp()) > ENGAGEMENT_GAP_SEC) {
-                result.add(buildEngagementSegment(sorted.subList(segStart, i), recorderEid));
+                result.add(buildEngagementSegment(sorted.subList(segStart, i), recorderEid, battleStartRes));
                 segStart = i;
             }
         }
         if (segStart < sorted.size()) {
-            result.add(buildEngagementSegment(sorted.subList(segStart, sorted.size()), recorderEid));
+            result.add(buildEngagementSegment(sorted.subList(segStart, sorted.size()), recorderEid, battleStartRes));
         }
         return result;
     }
 
-    private static EngagementSummary buildEngagementSegment(final List<DamageEvent> events, final int recorderEid) {
+    private static EngagementSummary buildEngagementSegment(final List<DamageEvent> events, final int recorderEid,
+                                                             final BattleStartResolution battleStartRes) {
         int dealt = 0, received = 0;
         for (final DamageEvent d : events) {
             if (d.attackerEid() == recorderEid) dealt += d.damage();
@@ -210,14 +213,15 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
                 : EngagementOutcome.EVEN;
 
         return new EngagementSummary(
-                ReplayTimestamp.safeClockSec(events.getFirst().timestamp()),
-                ReplayTimestamp.safeClockSec(events.getLast().timestamp()),
+                battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(events.getFirst().timestamp())),
+                battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(events.getLast().timestamp())),
                 List.of(), List.of(), dealt, received,
                 null, null, outcome, com.wotb.core.replay.event.DecodeConfidence.INFERRED);
     }
 
     static List<KeyBattleEvent> extractRecorderKeyEvents(
-            final List<DamageEvent> damages, final RecorderEntityMapping recorder) {
+            final List<DamageEvent> damages, final RecorderEntityMapping recorder,
+            final BattleStartResolution battleStartRes) {
         final List<KeyBattleEvent> keyEvents = new ArrayList<>();
         boolean firstBlood = false;
         int totalEvents = 0;
@@ -226,10 +230,10 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
             if (totalEvents >= MAX_KEY_EVENTS) break;
             if (!firstBlood) {
                 firstBlood = true;
-                keyEvents.add(new KeyBattleEvent(ReplayTimestamp.safeClockSec(d.timestamp()), "RECORDER_FIRST_BLOOD",
-                        "录像者首次伤害 " + d.damage()));
+                keyEvents.add(new KeyBattleEvent(battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(d.timestamp())), "RECORDER_FIRST_BLOOD",
+                        "首次命中 " + d.damage()));
             } else {
-                keyEvents.add(new KeyBattleEvent(ReplayTimestamp.safeClockSec(d.timestamp()),
+                keyEvents.add(new KeyBattleEvent(battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(d.timestamp())),
                         d.attackerEid() == recorder.entityId() ? "RECORDER_DAMAGE_DEALT" : "RECORDER_DAMAGE_RECEIVED",
                         "录像者 " + d.damage()));
             }
