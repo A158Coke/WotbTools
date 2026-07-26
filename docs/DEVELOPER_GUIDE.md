@@ -246,8 +246,9 @@ AI 复盘区分两种 scope，互不混用：
 ### TEAM_PERSPECTIVE（训练房 / 联赛）
 
 - 分析对象是录像者所在整支队伍。
-- 使用 dominant clan 语义，不输出"友方/敌方"。
-- 支持九宫格阵型、团队 cluster、地图映射、Tank ID 映射。
+- 保持独立 `perspectiveTeam` 内部语义。
+- 不使用随机战斗的 FRIENDLY/ENEMY formatter（`PlayerAnalysisPromptFormatter`）。
+- dominant clan 标签、九宫格阵型、地图名称映射和 Tank ID 映射属于后续独立功能，尚未实现。
 
 ### PLAYER_FOCUSED（随机战斗）
 
@@ -256,7 +257,7 @@ AI 复盘区分两种 scope，互不混用：
 - 录像者所属队伍 → 友方；另一队 → 敌方。
 - 录像者在原始 team 2 时仍正确识别为友方（`PlayerSideResolver`）。
 - 胜负使用完整三态（`FriendlyEnemyResult`）：友方获胜 / 敌方获胜 / 平局或未知。
-- 多人分析每场独立解析录像者视角。
+- 同一录像者的多场随机战斗分析会对每场战斗独立解析录像者视角。
 - 胜率只统计已知胜负场数，平局/未知不作为失败。
 - `PlayerResult.team` 原始编号不受影响（仅用于内部计算）。
 - AI Prompt 由 `PlayerAnalysisPromptFormatter` 格式化（独立于 `PlayerResultFormat`）。

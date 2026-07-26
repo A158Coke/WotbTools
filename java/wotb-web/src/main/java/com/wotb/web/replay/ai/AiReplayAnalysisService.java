@@ -830,14 +830,34 @@ public class AiReplayAnalysisService {
     /**
      * 每场独立摘要 + 后端确定性聚合（录像者视角）。
      */
+    private record MultiBattleStats(
+            int totalBattles, int decidedCount, int friendlyWins, int enemyWins, int draws,
+            long sumDmg, long sumRecv, long sumAssist, double sumSurvival, int survivedCount
+    ) {
+        MultiBattleStats accumulate(final Battle battle, final PlayerResult rec) {
+            final Winner w = FriendlyEnemyResult.resolve(battle);
+            return new MultiBattleStats(
+                    totalBattles + 1,
+                    decidedCount + (w == Winner.DRAW_OR_UNKNOWN ? 0 : 1),
+                    friendlyWins + (w == Winner.FRIENDLY_WIN ? 1 : 0),
+                    enemyWins + (w == Winner.ENEMY_WIN ? 1 : 0),
+                    draws + (w == Winner.DRAW_OR_UNKNOWN ? 1 : 0),
+                    sumDmg + rec.damageDealt,
+                    sumRecv + rec.damageReceived,
+                    sumAssist + rec.damageAssisted,
+                    sumSurvival + (rec.survived
+                            ? (battle.durationS != null ? battle.durationS : 0.0)
+                            : PlayerResultFormat.deathSec(rec)),
+                    survivedCount + (rec.survived ? 1 : 0)
+            );
+        }
+    }
+
     private static String buildMultiSummary(final List<Battle> battles) {
         final StringBuilder sb = new StringBuilder(4096);
         sb.append("共 ").append(battles.size()).append(" 场。\n\n=== 各场摘要（录像者视角）===\n");
 
-        int friendlyWins = 0, enemyWins = 0, draws = 0, withRec = 0;
-        long sumDmg = 0, sumRecv = 0, sumAssist = 0;
-        double sumSurvival = 0;
-        int survivedCount = 0;
+        var stats = new MultiBattleStats(0, 0, 0, 0, 0, 0L, 0L, 0L, 0.0, 0);
 
         for (int i = 0; i < battles.size(); i++) {
             final Battle b = battles.get(i);
@@ -851,21 +871,7 @@ public class AiReplayAnalysisService {
                         .append(" | ").append(resultLabel)
                         .append(" | 侧=").append(PlayerAnalysisPromptFormatter.sideLabel(side));
                 PlayerResultFormat.appendRecorderLine(sb, rec);
-                withRec++;
-                switch (w) {
-                    case FRIENDLY_WIN -> friendlyWins++;
-                    case ENEMY_WIN -> enemyWins++;
-                    case DRAW_OR_UNKNOWN -> draws++;
-                }
-                sumDmg += rec.damageDealt;
-                sumRecv += rec.damageReceived;
-                sumAssist += rec.damageAssisted;
-                if (rec.survived) {
-                    survivedCount++;
-                    if (b.durationS != null) sumSurvival += b.durationS;
-                } else {
-                    sumSurvival += PlayerResultFormat.deathSec(rec);
-                }
+                stats = stats.accumulate(b, rec);
             } else {
                 sb.append(" | (未能定位录像者战绩)");
             }
@@ -873,23 +879,22 @@ public class AiReplayAnalysisService {
         }
 
         sb.append("\n=== 聚合统计（后端计算，录像者视角）===\n");
-        if (withRec > 0) {
-            final int decidedCount = friendlyWins + enemyWins;
-            sb.append("可统计场数: ").append(withRec).append('\n');
-            sb.append("已知胜负场数: ").append(decidedCount).append('\n');
-            sb.append("友方获胜场数: ").append(friendlyWins).append('\n');
-            sb.append("敌方获胜场数: ").append(enemyWins).append('\n');
-            sb.append("平局或未知场数: ").append(draws).append('\n');
-            if (decidedCount > 0) {
-                sb.append("胜率: ").append(String.format("%.0f%%", 100.0 * friendlyWins / decidedCount)).append('\n');
+        if (stats.totalBattles > 0) {
+            sb.append("可统计场数: ").append(stats.totalBattles).append('\n');
+            sb.append("已知胜负场数: ").append(stats.decidedCount).append('\n');
+            sb.append("友方获胜场数: ").append(stats.friendlyWins).append('\n');
+            sb.append("敌方获胜场数: ").append(stats.enemyWins).append('\n');
+            sb.append("平局或未知场数: ").append(stats.draws).append('\n');
+            if (stats.decidedCount > 0) {
+                sb.append("胜率: ").append(String.format("%.0f%%", 100.0 * stats.friendlyWins / stats.decidedCount)).append('\n');
             } else {
                 sb.append("胜率: 无法计算\n");
             }
-            sb.append("场均输出: ").append(sumDmg / withRec).append('\n');
-            sb.append("场均承伤: ").append(sumRecv / withRec).append('\n');
-            sb.append("场均助攻: ").append(sumAssist / withRec).append('\n');
-            sb.append("平均存活时间: ").append(String.format("%.1f", sumSurvival / withRec)).append("s\n");
-            sb.append("存活率: ").append(String.format("%.0f%%", 100.0 * survivedCount / withRec)).append('\n');
+            sb.append("场均输出: ").append(stats.sumDmg / stats.totalBattles).append('\n');
+            sb.append("场均承伤: ").append(stats.sumRecv / stats.totalBattles).append('\n');
+            sb.append("场均助攻: ").append(stats.sumAssist / stats.totalBattles).append('\n');
+            sb.append("平均存活时间: ").append(String.format("%.1f", stats.sumSurvival / stats.totalBattles)).append("s\n");
+            sb.append("存活率: ").append(String.format("%.0f%%", 100.0 * stats.survivedCount / stats.totalBattles)).append('\n');
         } else {
             sb.append("(无法定位任一场的录像者战绩，无法聚合)\n");
         }

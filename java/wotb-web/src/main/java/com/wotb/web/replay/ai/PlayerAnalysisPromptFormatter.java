@@ -8,7 +8,9 @@ import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.PlayerSideResolver.Side;
 import com.wotb.core.util.PlayerResultFormat;
 
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Formats player data for AI prompts using FRIENDLY / ENEMY / UNKNOWN labels
@@ -21,7 +23,6 @@ public final class PlayerAnalysisPromptFormatter {
 
     private PlayerAnalysisPromptFormatter() {}
 
-    /** Short Chinese label for each side. */
     public static String sideLabel(final Side side) {
         return switch (side) {
             case FRIENDLY -> "友方";
@@ -30,9 +31,6 @@ public final class PlayerAnalysisPromptFormatter {
         };
     }
 
-    /**
-     * Format a single player line with side label instead of raw team.
-     */
     public static String formatPlayerLine(final PlayerResult p, final Side side) {
         return "- " + sideLabel(side)
                 + " " + PlayerResultFormat.safe(p.nickname)
@@ -45,10 +43,6 @@ public final class PlayerAnalysisPromptFormatter {
                 + " " + PlayerResultFormat.deathDisplay(p);
     }
 
-    /**
-     * Format recorder line with side label.
-     * E.g. "录像者: PlayerA (T110E5) | 侧=友方 | 存活 | 输出5000..."
-     */
     public static String formatRecorderLine(final PlayerResult rec, final Side side) {
         return "录像者: " + PlayerResultFormat.safe(rec.nickname)
                 + " (" + PlayerResultFormat.safe(rec.tankName) + ")"
@@ -61,9 +55,6 @@ public final class PlayerAnalysisPromptFormatter {
                 + " | 击杀" + rec.kills;
     }
 
-    /**
-     * Append all players grouped by side (friendly first, enemy, unknown).
-     */
     public static String formatAllPlayersBySide(final Battle battle) {
         if (battle == null || battle.players == null) return "";
         final Map<PlayerResult, Side> sides = PlayerSideResolver.resolveAll(battle);
@@ -78,29 +69,17 @@ public final class PlayerAnalysisPromptFormatter {
 
     private static void appendGroup(final StringBuilder sb, final String heading,
                                     final Map<PlayerResult, Side> sides, final Side side) {
-        boolean first = true;
-        for (final Map.Entry<PlayerResult, Side> e : sides.entrySet()) {
-            if (e.getValue() == side) {
-                if (first) {
-                    sb.append("=== ").append(heading).append(" ===\n");
-                    first = false;
-                }
-                sb.append(formatPlayerLine(e.getKey(), side)).append('\n');
-            }
-        }
+        final var filtered = sides.entrySet().stream()
+                .filter(e -> e.getValue() == side)
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
+        if (filtered.isEmpty()) return;
+        sb.append("=== ").append(heading).append(" ===\n");
+        filtered.forEach(p -> sb.append(formatPlayerLine(p, side)).append('\n'));
     }
 
-    /**
-     * Format winner result as a human-readable string.
-     */
     public static String formatWinner(final Battle battle) {
         final Winner w = FriendlyEnemyResult.resolve(battle);
         return "结果: " + FriendlyEnemyResult.label(w);
-    }
-
-    /** Full three-state winner label for single-battle output. */
-    public static String winnerLabel(final Battle battle) {
-        final Winner w = FriendlyEnemyResult.resolve(battle);
-        return FriendlyEnemyResult.label(w);
     }
 }
