@@ -345,7 +345,9 @@
     "replay": {
         "no_files": "Сначала выберите реплеи или папку",
         "preview_failed": "Ошибка предпросмотра",
-        "export_failed": "Ошибка экспорта"
+        "export_failed": "Ошибка экспорта",
+        "png_export_failed": "Ошибка экспорта PNG",
+        "png_exporting": "Экспорт PNG…"
     },
     "extended": {
         "nav": "Rating V2",
