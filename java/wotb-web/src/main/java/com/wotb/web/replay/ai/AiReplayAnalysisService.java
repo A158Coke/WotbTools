@@ -288,25 +288,31 @@ public class AiReplayAnalysisService {
                 .map(this::buildSingleTeamContext)
                 .toList();
         final AnalyzeResult analysis;
+        final Map<String, AnalyzeResult> perUnitResults = new LinkedHashMap<>();
         final Set<String> analysisLimitations = new LinkedHashSet<>();
         if (contexts.size() == 1) {
             final TeamAiPromptBuilder.PromptInput input =
                     TeamAiPromptBuilder.single(contexts.getFirst());
             analysis = callSingleTeamContext(contexts.getFirst(), input);
+            perUnitResults.put(contexts.getFirst().analysisUnitId(), analysis);
             if (input.limitations().contains("AI_INPUT_TRUNCATED")) {
                 analysisLimitations.add("AI_INPUT_TRUNCATED");
             }
         } else if (hasOpposingPerspectives(contexts)) {
-            AnalyzeResult last = null;
+            AnalyzeResult first = null;
             for (final var context : contexts) {
                 final TeamAiPromptBuilder.PromptInput input =
                         TeamAiPromptBuilder.single(context);
-                last = callSingleTeamContext(context, input);
+                final AnalyzeResult result = callSingleTeamContext(context, input);
+                if (first == null) {
+                    first = result;
+                }
+                perUnitResults.put(context.analysisUnitId(), result);
                 if (input.limitations().contains("AI_INPUT_TRUNCATED")) {
                     analysisLimitations.add("AI_INPUT_TRUNCATED");
                 }
             }
-            analysis = last;
+            analysis = first;
         } else {
             final MultiTeamBattleAnalysisContext multiContext =
                     buildMultiTeamContext(contexts);
@@ -316,6 +322,9 @@ public class AiReplayAnalysisService {
                     .flatMap(ctx -> ctx.features().keyEvents().stream())
                     .toList();
             analysis = callMultiTeamContext(input, keyEvents);
+            for (final var context : contexts) {
+                perUnitResults.put(context.analysisUnitId(), analysis);
+            }
             analysisLimitations.addAll(multiContext.limitations());
             if (input.limitations().contains("AI_INPUT_TRUNCATED")) {
                 analysisLimitations.add("AI_INPUT_TRUNCATED");
@@ -324,7 +333,7 @@ public class AiReplayAnalysisService {
         return new TeamAnalyzeResult(
                 analysis,
                 buildTeamAnalysisUnits(
-                        groups, contexts, analysis.model(), analysisLimitations));
+                        groups, contexts, perUnitResults, analysisLimitations));
     }
 
     /**
@@ -513,31 +522,37 @@ public class AiReplayAnalysisService {
     private static List<AnalysisUnitResult> buildTeamAnalysisUnits(
             final List<ReplayPerspectiveGroup> groups,
             final List<SingleTeamBattleAnalysisContext> contexts,
-            final String model,
+            final Map<String, AnalyzeResult> perUnitResults,
             final Set<String> analysisLimitations
     ) {
         final List<AnalysisUnitResult> units = new ArrayList<>();
         for (int index = 0; index < groups.size(); index++) {
             final ReplayPerspectiveGroup group = groups.get(index);
-            final TeamBattleFeatureSet features = contexts.get(index).features();
+            final SingleTeamBattleAnalysisContext ctx = contexts.get(index);
+            final TeamBattleFeatureSet features = ctx.features();
             final Set<String> limitations =
                     new LinkedHashSet<>(features.limitations());
             limitations.addAll(analysisLimitations);
+            final AnalyzeResult unitResult = perUnitResults.get(ctx.analysisUnitId());
+            final String unitAnalysisText = unitResult != null ? unitResult.analysis() : null;
+            final String unitModel = unitResult != null ? unitResult.model() : null;
             units.add(new AnalysisUnitResult(
-                    contexts.get(index).analysisUnitId(),
+                    ctx.analysisUnitId(),
                     group.battleIdentity(),
                     ReplayAnalysisScope.TEAM_PERSPECTIVE,
-                    contexts.get(index).perspectiveTeam(),
+                    ctx.perspectiveTeam(),
                     group.representative().fileName(),
                     group.duplicates().stream()
                             .map(ReplayProcessingResult::fileName)
                             .toList(),
-                    model,
+                    unitModel,
                     new TeamAnalysisUnitReport(
                             features.authoritativeAggregate(),
                             features.observedAggregate(),
                             features.coverage(),
-                            List.copyOf(limitations))));
+                            List.copyOf(limitations),
+                            unitAnalysisText,
+                            unitModel)));
         }
         return List.copyOf(units);
     }

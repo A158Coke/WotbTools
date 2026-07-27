@@ -9,10 +9,21 @@ public record TeamAnalysisUnitReport(
         TeamAggregateResult authoritativeAggregate,
         TeamObservedAggregate observedAggregate,
         TeamFeatureCoverage coverage,
-        List<String> limitations
+        List<String> limitations,
+        String analysisText,
+        String model
 ) {
 
     public TeamAnalysisUnitReport {
         limitations = limitations == null ? List.of() : List.copyOf(limitations);
+    }
+
+    public TeamAnalysisUnitReport(
+            TeamAggregateResult authoritativeAggregate,
+            TeamObservedAggregate observedAggregate,
+            TeamFeatureCoverage coverage,
+            List<String> limitations
+    ) {
+        this(authoritativeAggregate, observedAggregate, coverage, limitations, null, null);
     }
 }
