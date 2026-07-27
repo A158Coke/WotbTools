@@ -907,7 +907,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             return EvidenceTime.INVALID_TIMESTAMP;
         }
         if (battleStartRes != null
-                && battleStartRes.isPreBattle(ReplayTimestamp.safeClockSec(event.timestamp()))) {
+                && battleStartRes.isPreBattle(event.timestamp().rawClockSec())) {
             return EvidenceTime.PRE_BATTLE;
         }
         return EvidenceTime.USABLE;
