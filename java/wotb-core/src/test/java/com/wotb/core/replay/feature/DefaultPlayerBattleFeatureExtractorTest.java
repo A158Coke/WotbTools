@@ -2,7 +2,6 @@ package com.wotb.core.replay.feature;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wotb.core.processing.RecorderEntityMapping;
@@ -76,6 +75,8 @@ class DefaultPlayerBattleFeatureExtractorTest {
                         damage(4, BATTLE_START_RAW, 1, 2, 200))), recorderMapping());
         assertEquals(1, features.engagements().size());
         assertEquals(0f, features.engagements().getFirst().startTime(), 0.01f);
+        assertEquals(200, features.engagements().getFirst().damageDealt());
+        assertFalse(features.engagements().getFirst().damageDealt() == 100);
     }
 
     @Test
@@ -131,6 +132,11 @@ class DefaultPlayerBattleFeatureExtractorTest {
         }
         for (final var e : features.keyEvents()) {
             assertTrue(e.clockSec() >= 0f, "Key event time must not be negative");
+        }
+        for (final var p : features.phases()) {
+            assertTrue(p.startTime() >= 0f, "Phase start must not be negative");
+            assertTrue(p.endTime() >= 0f, "Phase end must not be negative");
+            assertTrue(p.startTime() <= p.endTime(), "Phase start <= end: " + p.startTime() + " > " + p.endTime());
         }
     }
 
