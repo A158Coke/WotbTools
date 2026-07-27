@@ -103,7 +103,7 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         final List<EngagementSummary> engagements = buildEngagements(damages, recorder.entityId(), battleStartRes);
 
         // Phases (battle-relative)
-        final List<BattlePhaseSummary> phases = DefaultBattleFeatureExtractor.buildRelativePhases(
+        final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(
                         firstContactTime, battleEndClock);
 
         // 关键事件
@@ -154,8 +154,8 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
             final float totalDist = MapRegionResolver.canonicalDistanceMeters(
                     usable.get(start).x(), usable.get(start).z(),
                     usable.get(i).x(), usable.get(i).z());
-            final float segmentTime = ReplayTimestamp.safeClockSec(usable.get(i).timestamp())
-                    - ReplayTimestamp.safeClockSec(usable.get(start).timestamp());
+            final float segmentTime = usable.get(i).timestamp().rawClockSec()
+                    - usable.get(start).timestamp().rawClockSec();
 
             // Non-positive / reversed / zero time delta must not produce Infinity/NaN speed.
             if (segmentTime <= 0.1f) continue;
@@ -187,7 +187,7 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         if (position == null || position.timestamp() == null) {
             return false;
         }
-        return Float.isFinite(ReplayTimestamp.safeClockSec(position.timestamp()));
+        return Float.isFinite(position.timestamp().rawClockSec());
     }
 
     private static DecodeConfidence positionConfidence(
@@ -215,12 +215,12 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
                                                      final BattleStartResolution battleStartRes) {
         if (damages.isEmpty()) return List.of();
         final List<DamageEvent> sorted = damages.stream()
-                .sorted(Comparator.comparingDouble(d -> ReplayTimestamp.safeClockSec(d.timestamp())))
+                .sorted(Comparator.comparingDouble(d -> d.timestamp().rawClockSec()))
                 .toList();
         final List<EngagementSummary> result = new ArrayList<>();
         int segStart = 0;
         for (int i = 1; i < sorted.size(); i++) {
-            if (ReplayTimestamp.safeClockSec(sorted.get(i).timestamp()) - ReplayTimestamp.safeClockSec(sorted.get(i - 1).timestamp()) > ENGAGEMENT_GAP_SEC) {
+            if (sorted.get(i).timestamp().rawClockSec() - sorted.get(i - 1).timestamp().rawClockSec() > ENGAGEMENT_GAP_SEC) {
                 result.add(buildEngagementSegment(sorted.subList(segStart, i), recorderEid, battleStartRes));
                 segStart = i;
             }
