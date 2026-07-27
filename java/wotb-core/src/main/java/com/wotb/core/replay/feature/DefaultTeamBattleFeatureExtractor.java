@@ -17,7 +17,6 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -120,10 +119,12 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                     .toList();
             timedPositionsByEntity.put(entry.getKey(), timedList);
         }
-        final List<ReplayEvent> acceptedEvents = Collections.unmodifiableList(Stream.concat(
+        final List<ReplayEvent> acceptedEvents = Stream.<ReplayEvent>concat(
                 timedPositionsByEntity.values().stream().flatMap(List::stream).map(TimedTeamPosition::event),
-                timedDamages.stream().map(d -> d.event().event())
-        ).toList());
+                timedDamages.stream()
+                        .filter(td -> involvesTeam(td.event(), perspectiveTeam))
+                        .map(d -> d.event().event())
+        ).toList();
         final boolean hasUsableTimedEvent = !acceptedEvents.isEmpty();
 
         final List<TeamMemberFeatureSet> members = authoritativeMembers.stream()
