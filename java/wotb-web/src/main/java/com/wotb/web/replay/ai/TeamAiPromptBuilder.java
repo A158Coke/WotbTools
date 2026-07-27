@@ -97,12 +97,9 @@ final class TeamAiPromptBuilder {
             writer.append("teamLabel=" + quoteData(perspective.teamLabel()) + "\n");
             writer.append("rosterAccountIds=" + perspective.rosterAccountIds() + "\n");
             appendFeatureSet(writer, perspective.features());
-            if (perspective.features() != null) {
-                limitations.addAll(perspective.features().limitations());
-            }
             final List<String> perUnitLimits = evidenceLimitations.get(perspective.analysisUnitId());
-            if (perUnitLimits != null) {
-                limitations.addAll(perUnitLimits);
+            if (perUnitLimits != null && !perUnitLimits.isEmpty()) {
+                writer.append("unitLimitations=" + perUnitLimits + "\n");
             }
         }
         if (!context.rosterConsistent()) {
