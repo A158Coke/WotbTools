@@ -293,8 +293,12 @@ public class AiReplayAnalysisService {
         final List<SingleTeamBattleAnalysisContext> contexts = groups.stream()
                 .map(this::buildSingleTeamContext)
                 .toList();
+        final Map<String, RosterEvidence> evidenceByUnitId = new LinkedHashMap<>();
+        for (final SingleTeamBattleAnalysisContext ctx : contexts) {
+            evidenceByUnitId.put(ctx.analysisUnitId(), RosterEvidence.from(ctx));
+        }
         final List<List<SingleTeamBattleAnalysisContext>> partitions =
-                partitionContexts(contexts);
+                partitionContexts(contexts, evidenceByUnitId);
         final Map<String, AnalyzeResult> perUnitResults = new LinkedHashMap<>();
         final Map<String, Set<String>> limitationsByUnit = new LinkedHashMap<>();
         AnalyzeResult firstAnalysis = null;
@@ -311,15 +315,15 @@ public class AiReplayAnalysisService {
                             ctx.analysisUnitId(), k -> new LinkedHashSet<>())
                             .add("AI_INPUT_TRUNCATED");
                 }
-                final var rosterEvidence = RosterEvidence.from(ctx);
-                if (rosterEvidence.limitations().contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS")) {
+                final var rosterEvidence = evidenceByUnitId.get(ctx.analysisUnitId());
+                if (rosterEvidence != null && rosterEvidence.limitations().contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS")) {
                     limitationsByUnit.computeIfAbsent(
                             ctx.analysisUnitId(), k -> new LinkedHashSet<>())
                             .add("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
                 }
             } else {
                 final MultiTeamBattleAnalysisContext multiContext =
-                        buildMultiTeamContext(partition);
+                        buildMultiTeamContext(partition, evidenceByUnitId);
                 final TeamAiPromptBuilder.PromptInput input =
                         TeamAiPromptBuilder.multi(multiContext);
                 final List<KeyBattleEvent> keyEvents = partition.stream()
@@ -331,9 +335,13 @@ public class AiReplayAnalysisService {
                     perUnitResults.put(ctx.analysisUnitId(), result);
                 }
                 for (final var ctx : partition) {
-                    limitationsByUnit.computeIfAbsent(
-                            ctx.analysisUnitId(), k -> new LinkedHashSet<>())
-                            .addAll(multiContext.limitations());
+                    final Set<String> unitLimits = limitationsByUnit.computeIfAbsent(
+                            ctx.analysisUnitId(), k -> new LinkedHashSet<>());
+                    unitLimits.addAll(multiContext.limitations());
+                    final var rosterEvidence = evidenceByUnitId.get(ctx.analysisUnitId());
+                    if (rosterEvidence != null && rosterEvidence.limitations().contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS")) {
+                        unitLimits.add("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
+                    }
                 }
                 if (input.limitations().contains("AI_INPUT_TRUNCATED")) {
                     for (final var ctx : partition) {
@@ -359,8 +367,9 @@ public class AiReplayAnalysisService {
      * 分区内每个现有成员都兼容，消除非传递匹配。分区顺序按输入的 context 顺序。</p>
      */
     private static List<List<SingleTeamBattleAnalysisContext>> partitionContexts(
-            final List<SingleTeamBattleAnalysisContext> contexts) {
-        return buildPartitions(contexts);
+            final List<SingleTeamBattleAnalysisContext> contexts,
+            final Map<String, RosterEvidence> evidenceByUnitId) {
+        return buildPartitions(contexts, evidenceByUnitId);
     }
 
     /**
@@ -370,41 +379,49 @@ public class AiReplayAnalysisService {
      * matching entirely. Partitions are returned in input-stable order.</p>
      */
     private static List<List<SingleTeamBattleAnalysisContext>> buildPartitions(
-            final List<SingleTeamBattleAnalysisContext> contexts) {
+            final List<SingleTeamBattleAnalysisContext> contexts,
+            final Map<String, RosterEvidence> evidenceByUnitId) {
         if (contexts.size() <= 1) {
             return List.of(contexts);
         }
-        final List<SingleTeamBattleAnalysisContext> sorted = new ArrayList<>(contexts);
-        sorted.sort(Comparator.comparing((SingleTeamBattleAnalysisContext ctx) -> {
-            final BattleIdentity bid = ctx.battleId();
-            return (bid != null ? bid.toString() : "") + "|" + ctx.analysisUnitId();
+        final List<IndexedContext> indexed = new ArrayList<>();
+        for (int i = 0; i < contexts.size(); i++) {
+            indexed.add(new IndexedContext(contexts.get(i), i));
+        }
+        final List<IndexedContext> sorted = new ArrayList<>(indexed);
+        sorted.sort(Comparator.comparing((IndexedContext ic) -> {
+            final BattleIdentity bid = ic.ctx.battleId();
+            return (bid != null ? bid.toString() : "") + "|" + ic.ctx.analysisUnitId();
         }));
-        final List<List<SingleTeamBattleAnalysisContext>> partitions =
-                new ArrayList<>();
-        for (final var ctx : sorted) {
+        final List<List<IndexedContext>> indexedPartitions = new ArrayList<>();
+        for (final var ic : sorted) {
             boolean added = false;
-            for (final var partition : partitions) {
-                if (canJoinPartition(ctx, partition)) {
-                    partition.add(ctx);
+            for (final var ip : indexedPartitions) {
+                if (canJoinPartition(ic.ctx, ip.stream().map(p -> p.ctx).toList(), evidenceByUnitId)) {
+                    ip.add(ic);
                     added = true;
                     break;
                 }
             }
             if (!added) {
-                final List<SingleTeamBattleAnalysisContext> newPartition =
-                        new ArrayList<>();
-                newPartition.add(ctx);
-                partitions.add(newPartition);
+                final List<IndexedContext> newPartition = new ArrayList<>();
+                newPartition.add(ic);
+                indexedPartitions.add(newPartition);
             }
         }
-        final Map<SingleTeamBattleAnalysisContext, Integer> order = new HashMap<>();
-        for (int i = 0; i < contexts.size(); i++) {
-            order.put(contexts.get(i), i);
+        final List<List<SingleTeamBattleAnalysisContext>> result = new ArrayList<>();
+        final List<Integer> minIndices = new ArrayList<>();
+        for (final var ip : indexedPartitions) {
+            ip.sort(Comparator.comparingInt(IndexedContext::originalIndex));
+            minIndices.add(ip.getFirst().originalIndex());
+            result.add(ip.stream().map(IndexedContext::ctx).toList());
         }
-        for (final var partition : partitions) {
-            partition.sort(Comparator.comparing(order::get));
-        }
-        return partitions;
+        final List<List<SingleTeamBattleAnalysisContext>> sortedResult = new ArrayList<>();
+        IntStream.range(0, result.size())
+                .boxed()
+                .sorted(Comparator.comparingInt(minIndices::get))
+                .forEach(idx -> sortedResult.add(result.get(idx)));
+        return sortedResult;
     }
 
     /**
@@ -413,9 +430,10 @@ public class AiReplayAnalysisService {
      */
     private static boolean canJoinPartition(
             final SingleTeamBattleAnalysisContext ctx,
-            final List<SingleTeamBattleAnalysisContext> partition) {
+            final List<SingleTeamBattleAnalysisContext> partition,
+            final Map<String, RosterEvidence> evidenceByUnitId) {
         for (final var existing : partition) {
-            if (!contextsCompatible(ctx, existing)) {
+            if (!contextsCompatible(ctx, existing, evidenceByUnitId)) {
                 return false;
             }
         }
@@ -435,8 +453,11 @@ public class AiReplayAnalysisService {
      */
     private static boolean contextsCompatible(
             final SingleTeamBattleAnalysisContext a,
-            final SingleTeamBattleAnalysisContext b) {
-        if (!RosterEvidence.from(a).sufficientCoverage() || !RosterEvidence.from(b).sufficientCoverage()) {
+            final SingleTeamBattleAnalysisContext b,
+            final Map<String, RosterEvidence> evidenceByUnitId) {
+        final RosterEvidence evA = evidenceByUnitId.getOrDefault(a.analysisUnitId(), RosterEvidence.empty());
+        final RosterEvidence evB = evidenceByUnitId.getOrDefault(b.analysisUnitId(), RosterEvidence.empty());
+        if (!evA.sufficientCoverage() || !evB.sufficientCoverage()) {
             return false;
         }
         if (a.battleId().equals(b.battleId())
@@ -456,10 +477,10 @@ public class AiReplayAnalysisService {
             if (!clanA.equals(clanB)) {
                 return false;
             }
-            return jaccard(RosterEvidence.from(a).distinctValidAccountIds(), RosterEvidence.from(b).distinctValidAccountIds())
+            return jaccard(evA.distinctValidAccountIds(), evB.distinctValidAccountIds())
                     >= MIN_ROSTER_JACCARD;
         }
-        return jaccard(RosterEvidence.from(a).distinctValidAccountIds(), RosterEvidence.from(b).distinctValidAccountIds())
+        return jaccard(evA.distinctValidAccountIds(), evB.distinctValidAccountIds())
                 >= MIN_ROSTER_JACCARD;
     }
 
@@ -520,7 +541,8 @@ public class AiReplayAnalysisService {
     }
 
     private static MultiTeamBattleAnalysisContext buildMultiTeamContext(
-            final List<SingleTeamBattleAnalysisContext> contexts
+            final List<SingleTeamBattleAnalysisContext> contexts,
+            final Map<String, RosterEvidence> evidenceByUnitId
     ) {
         final List<TeamBattleAnalysisSummary> summaries = contexts.stream()
                 .map(context -> new TeamBattleAnalysisSummary(
@@ -552,12 +574,6 @@ public class AiReplayAnalysisService {
         limitations.add("PERSPECTIVE_TIMELINES_ISOLATED");
         if (!rosterConsistent) {
             limitations.add("ROSTER_CONSISTENCY_UNCONFIRMED");
-        }
-        for (final var ctx : contexts) {
-            if (RosterEvidence.from(ctx).limitations().contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS")) {
-                limitations.add("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
-                break;
-            }
         }
         return new MultiTeamBattleAnalysisContext(
                 summaries.size(), uniqueBattleCount, summaries, rosterConsistent, limitations);
@@ -674,6 +690,8 @@ public class AiReplayAnalysisService {
             return new RosterEvidence(0, Set.of(), 0.0, false, List.of());
         }
     }
+
+    private record IndexedContext(SingleTeamBattleAnalysisContext ctx, int originalIndex) {}
 
     private static String unresolvedTeamCode(
             final TeamPerspectiveResolution perspective
