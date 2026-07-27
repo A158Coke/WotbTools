@@ -55,7 +55,9 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         final int perspectiveTeam = perspective.perspectiveTeam();
         final BattleStartResolution battleStartRes = BattleStartResolver.resolve(
                 reconstruction != null ? reconstruction.battleStartRawClockSec() : null,
-                reconstruction != null ? reconstruction.diagnostics() : null);
+                reconstruction != null ? reconstruction.diagnostics() : null,
+                reconstruction != null && reconstruction.events() != null ? reconstruction.events() : List.of(),
+                battle);
         final List<ReplayEvent> events = reconstruction != null && reconstruction.events() != null
                 ? reconstruction.events().stream()
                         .sorted(Comparator.comparingInt(ReplayEvent::sequence))
@@ -72,6 +74,13 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent = new HashMap<>();
         for (final ResolvedEvent re : resolvedEvents) {
             resolutionByEvent.put(re.event(), re.resolution());
+        }
+        final Set<String> timeLimitations = new LinkedHashSet<>();
+        for (final ResolvedEvent re : resolvedEvents) {
+            final String limitation = re.resolution().limitation();
+            if (limitation != null) {
+                timeLimitations.add(limitation);
+            }
         }
 
         final List<ReplayEvent> tacticalEvents = events.stream()
@@ -92,7 +101,6 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                     final TacticalTimeResolution res = resolutionByEvent.get(e);
                     return res != null && res.isUsable();
                 });
-        final List<AttributedDamage> attributedDamage = new ArrayList<>();
         final List<TimedTeamDamage> timedDamages = new ArrayList<>();
         int unattributedDamageCount = 0;
         for (final ReplayEvent event : events) {
@@ -110,7 +118,6 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 continue;
             }
             final AttributedDamage ad = new AttributedDamage(damage, attacker, victim);
-            attributedDamage.add(ad);
             timedDamages.add(new TimedTeamDamage(ad, res.battleRelativeSec()));
         }
 
@@ -120,6 +127,20 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                     .map(pos -> new TimedTeamPosition(pos, resolutionByEvent.get(pos).battleRelativeSec()))
                     .toList();
             timedPositionsByEntity.put(entry.getKey(), timedList);
+        }
+        for (final TimedTeamDamage td : timedDamages) {
+            final String limitation = resolutionByEvent.get(td.event().event()).limitation();
+            if (limitation != null) {
+                timeLimitations.add(limitation);
+            }
+        }
+        for (final Map.Entry<Integer, List<TimedTeamPosition>> entry : timedPositionsByEntity.entrySet()) {
+            for (final TimedTeamPosition tp : entry.getValue()) {
+                final String limitation = resolutionByEvent.get(tp.event()).limitation();
+                if (limitation != null) {
+                    timeLimitations.add(limitation);
+                }
+            }
         }
 
         final List<TeamMemberFeatureSet> members = authoritativeMembers.stream()
@@ -226,6 +247,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         if (reconstructionAvailable && reconstruction.coverage() != null && !streamComplete) {
             limitations.add("REPLAY_STREAM_PARTIAL");
         }
+        limitations.addAll(timeLimitations);
 
         final boolean hasFeatures =
                 (authoritativeAggregate != null && !members.isEmpty())

@@ -72,25 +72,8 @@ public record BattleStartResolution(Status status, Float battleStartRawClockSec,
         return unresolved();
     }
 
-    /** @deprecated Only for backward compat; firstClockSec is the first packet timestamp, not a reliable battle-start signal. */
-    @Deprecated
-    public static BattleStartResolution inferFromFirstClock(final float firstClockSec) {
-        if (!Float.isFinite(firstClockSec)) return unresolved();
-        if (firstClockSec < 0) return zeroClockInferred();
-        return estimated(firstClockSec);
-    }
-
     public boolean resolved() {
         return battleStartRawClockSec != null;
-    }
-
-    /**
-     * Compute battle-relative time from a raw clock.
-     * Returns NaN if unresolved (caller must check resolved()).
-     */
-    public float battleRelative(final float rawClockSec) {
-        if (battleStartRawClockSec == null) return Float.NaN;
-        return rawClockSec - battleStartRawClockSec;
     }
 
     /** Tolerance for raw vs battle clock consistency check (in seconds). */
@@ -134,8 +117,4 @@ public record BattleStartResolution(Status status, Float battleStartRawClockSec,
         return TacticalTimeResolution.usable(raw - battleStartRawClockSec);
     }
 
-    public boolean isPreBattle(final float rawClockSec) {
-        if (battleStartRawClockSec == null) return false;
-        return rawClockSec < battleStartRawClockSec;
-    }
 }

@@ -41,7 +41,9 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         // 确定战斗开始时间（用于过滤准备阶段数据）
         final BattleStartResolution battleStartRes = BattleStartResolver.resolve(
                 reconstruction.battleStartRawClockSec(),
-                reconstruction.diagnostics());
+                reconstruction.diagnostics(),
+                reconstruction.events(),
+                null);
 
         // 过滤 recorder 的位置事件（排除准备阶段）
         final List<TimedPosition> positions = new ArrayList<>();
