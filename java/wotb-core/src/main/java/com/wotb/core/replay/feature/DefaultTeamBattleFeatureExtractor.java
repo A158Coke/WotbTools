@@ -991,7 +991,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     ) {
         if (battle != null && battle.durationS != null
                 && Double.isFinite(battle.durationS)
-                && battle.durationS >= 0.0) {
+                && battle.durationS > 0.0) {
             return new BattleEndEvidence(
                     battle.durationS.floatValue(),
                     DecodeConfidence.EXACT,

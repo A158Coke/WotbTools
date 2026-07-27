@@ -765,6 +765,7 @@
         "select_file": "Выбрать реплей",
         "invalid_file": "Выберите файл .wotbreplay",
         "no_file": "Файл не выбран",
+        "max_files_count": "{count} / 16",
         "reconstruct_btn": "Реконструировать",
         "time_placeholder": "Время (с)",
         "invalid_time": "Неверное время",
@@ -847,7 +848,7 @@
             "NO_REPLAY_FILES": "Файлы реплеев не выбраны.",
             "INVALID_REPLAY_FILE_TYPE": "Поддерживаются только файлы .wotbreplay.",
             "FILE_TOO_LARGE": "Файл реплея превышает допустимый размер.",
-            "TOO_MANY_REPLAY_FILES": "Можно загрузить не более 10 реплеев за раз.",
+            "REPLAY_FILE_COUNT_EXCEEDED": "Можно загрузить не более 16 реплеев за раз.",
             "TOTAL_REQUEST_TOO_LARGE": "Общий размер файлов превышает лимит."
         },
         "event_types": {

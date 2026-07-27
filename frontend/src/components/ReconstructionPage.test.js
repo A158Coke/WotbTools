@@ -31,6 +31,20 @@ vi.mock('vue-i18n', () => ({
 }))
 
 describe('ReconstructionPage team analysis', () => {
+  it('shows error when selecting more than 16 files', async () => {
+    const wrapper = mountedPage()
+    const input = wrapper.get('input[type="file"]')
+    const names = Array.from({ length: 17 }, (_, i) => `file${i}.wotbreplay`)
+    const files = names.map(name => new File(['replay'], name, {
+      type: 'application/octet-stream'
+    }))
+    Object.defineProperty(input.element, 'files', {
+      value: files,
+      configurable: true
+    })
+    await input.trigger('change')
+    expect(wrapper.text()).toContain('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
+  })
   beforeEach(() => {
     auth.ensureToken.mockResolvedValue(true)
     auth.login.mockReset()

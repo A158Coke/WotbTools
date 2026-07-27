@@ -190,8 +190,133 @@ class TeamAiPromptBuilderTest {
         assertEquals(
                 TeamAiPromptBuilder.MAX_PERSPECTIVES,
                 occurrences(input.content(), "=== PERSPECTIVE "));
-        assertTrue(input.limitations().contains("AI_INPUT_TRUNCATED"));
+        assertTrue(input.limitations().contains("PERSPECTIVES_OMITTED_COUNT_2"),
+                "Perspectives beyond MAX_PERSPECTIVES must be tracked as omitted");
         assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+    }
+
+    @Test
+    void multiTwoPhaseBudgetProtectsRequiredSections() {
+        final SingleTeamBattleAnalysisContext baseA = contextWithMembers(15, 1000);
+        final TeamBattleFeatureSet featuresA = new TeamBattleFeatureSet(
+                baseA.features().perspectiveTeam(),
+                baseA.features().members(),
+                baseA.features().authoritativeAggregate(),
+                baseA.features().observedAggregate(),
+                baseA.features().formationPhases(),
+                baseA.features().engagements(),
+                baseA.features().battlePhases(),
+                baseA.features().keyEvents(),
+                baseA.features().coverage(),
+                List.of("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
+                true);
+        final SingleTeamBattleAnalysisContext baseB = contextWithMembers(1, 1);
+        final TeamBattleFeatureSet featuresB = new TeamBattleFeatureSet(
+                baseB.features().perspectiveTeam(),
+                baseB.features().members(),
+                baseB.features().authoritativeAggregate(),
+                baseB.features().observedAggregate(),
+                baseB.features().formationPhases(),
+                baseB.features().engagements(),
+                baseB.features().battlePhases(),
+                baseB.features().keyEvents(),
+                baseB.features().coverage(),
+                List.of("LOW_CONFIDENCE_EVENTS"),
+                true);
+        final List<TeamBattleAnalysisSummary> summaries = List.of(
+                new TeamBattleAnalysisSummary(
+                        "unit-A", null, "a.wotbreplay", "map1", null, 300.0,
+                        1, List.of(10001L), featuresA, "TeamA"),
+                new TeamBattleAnalysisSummary(
+                        "unit-B", null, "b.wotbreplay", "map1", null, 300.0,
+                        2, List.of(20001L), featuresB, "TeamB"));
+        final var multi = new MultiTeamBattleAnalysisContext(
+                2, 1, summaries, true, List.of("PERSPECTIVE_TIMELINES_ISOLATED"));
+
+        final TeamAiPromptBuilder.PromptInput input =
+                TeamAiPromptBuilder.multi(multi);
+
+        assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+        assertTrue(input.content().contains("analysisUnitId=\"unit-B\""),
+                "B's required header must exist");
+        assertTrue(input.content().contains("unitLimitations="),
+                "B's unit limitation must exist");
+        assertTrue(input.content().contains("LOW_CONFIDENCE_EVENTS"),
+                "B's evidence limitation must exist");
+    }
+
+    @Test
+    void multiPerspectiveOmissionAddsExplicitLimitation() {
+        final SingleTeamBattleAnalysisContext base = contextWithMembers(1, 1);
+        final List<TeamBattleAnalysisSummary> summaries = IntStream.range(
+                        0, TeamAiPromptBuilder.MAX_PERSPECTIVES + 1)
+                .mapToObj(index -> new TeamBattleAnalysisSummary(
+                        base.analysisUnitId() + "-" + index,
+                        base.battleId(),
+                        "team-" + index + ".wotbreplay",
+                        base.battle().mapName,
+                        base.battleCategory(),
+                        base.battle().durationS,
+                        base.perspectiveTeam(),
+                        base.features().members().stream()
+                                .map(member -> member.accountId())
+                                .toList(),
+                        base.features(),
+                        "test-team"))
+                .toList();
+        final var multi = new MultiTeamBattleAnalysisContext(
+                summaries.size(),
+                summaries.size(),
+                summaries,
+                true,
+                List.of("PERSPECTIVE_TIMELINES_ISOLATED"));
+
+        final TeamAiPromptBuilder.PromptInput input =
+                TeamAiPromptBuilder.multi(multi);
+
+        assertTrue(input.content().contains("PERSPECTIVES_OMITTED_COUNT_"),
+                "Content must contain omission count");
+        assertTrue(input.limitations().contains("PERSPECTIVES_OMITTED_COUNT_1"),
+                "Limitations must contain omission count for 1 omitted perspective");
+        assertTrue(occurrences(input.content(), "=== PERSPECTIVE ") <= TeamAiPromptBuilder.MAX_PERSPECTIVES);
+        assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+    }
+
+    @Test
+    void multiPerspectiveOmissionIsDeterministic() {
+        final SingleTeamBattleAnalysisContext base = contextWithMembers(1, 1);
+        final List<TeamBattleAnalysisSummary> summaries = IntStream.range(
+                        0, TeamAiPromptBuilder.MAX_PERSPECTIVES + 1)
+                .mapToObj(index -> new TeamBattleAnalysisSummary(
+                        base.analysisUnitId() + "-" + index,
+                        base.battleId(),
+                        "team-" + index + ".wotbreplay",
+                        base.battle().mapName,
+                        base.battleCategory(),
+                        base.battle().durationS,
+                        base.perspectiveTeam(),
+                        base.features().members().stream()
+                                .map(member -> member.accountId())
+                                .toList(),
+                        base.features(),
+                        "test-team"))
+                .toList();
+        final var multi = new MultiTeamBattleAnalysisContext(
+                summaries.size(),
+                summaries.size(),
+                summaries,
+                true,
+                List.of("PERSPECTIVE_TIMELINES_ISOLATED"));
+
+        final TeamAiPromptBuilder.PromptInput first =
+                TeamAiPromptBuilder.multi(multi);
+        final TeamAiPromptBuilder.PromptInput second =
+                TeamAiPromptBuilder.multi(multi);
+
+        assertEquals(first.content(), second.content(),
+                "Same input must produce same output");
+        assertEquals(first.limitations(), second.limitations(),
+                "Same input must produce same limitations");
     }
 
     private static SingleTeamBattleAnalysisContext contextWithMembers(

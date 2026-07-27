@@ -573,7 +573,7 @@ files → DefaultReplayProcessingFacade.processBatch()
 
 所有入口（单队/多队/编排）使用相同的 evidence limitation 规则：`analyzeSingleTeamContext()` 和 `analyzeMultiTeamContext()` 内部派生 RosterEvidence，与 `analyzeTeamGroups()` 共享同一 `buildPartitions()` → builder 路径。per-unit limitations 在各自上下文头部作为 `unitLimitations=[...]` 优先输出，不混入 global `DATA_LIMITATIONS`。
 
-原始 `ReplayEvent` 和逐帧坐标流不得进入 Prompt。文件名、昵称、地图名和证据文本按 JSON 字符串编码，并在 system prompt 中声明为不可信数据，不能作为模型指令。PLAYER_FOCUSED 与 TEAM_PERSPECTIVE 使用相同的 JSON escaping：TEAM 通过 `TeamAiPromptBuilder.quoteData()`，PLAYER 通过共享 `PlayerResultFormat.quoteForPrompt()`（与 `quoteData()` 逻辑一致）。所有外部字符串必须通过 `quoteForPrompt()` 或 `quoteData()` 转义后才能写入 prompt body。
+原始 `ReplayEvent` 和逐帧坐标流不得进入 Prompt。文件名、昵称、地图名和证据文本按 JSON 字符串编码，并在 system prompt 中声明为不可信数据，不能作为模型指令。PLAYER_FOCUSED 与 TEAM_PERSPECTIVE 使用同一个 `PromptDataQuoter.quote(value, fallback)` 实现，分别传入 `"?"` 或 `"UNKNOWN"` 作为 fallback。`TeamAiPromptBuilder.quoteData()` 和 `PlayerResultFormat.quoteForPrompt()` 均为轻量委托，不含 escaping 逻辑。所有外部字符串必须通过 `PromptDataQuoter.quote()` 转义后才能写入 prompt body。
 
 ### 错误与安全
 

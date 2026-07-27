@@ -417,6 +417,43 @@ class DefaultPlayerBattleFeatureExtractorTest {
     }
 
     @Test
+    void durationZeroFallsBackToEvent() {
+        final Battle battle = new Battle();
+        battle.durationS = 0.0;
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(BATTLE_START_RAW, List.of(
+                        mapping(1, 1, 1001L),
+                        mapping(2, 2, 2001L),
+                        damage(3, BATTLE_START_RAW + 5f, 1, 2, 100),
+                        battleEnd(4, BATTLE_START_RAW + 80f))), recorderMapping(), battle);
+        assertFalse(features.phases().isEmpty());
+        assertEquals(80f, features.phases().getLast().endTime(), 0.01f);
+    }
+
+    @Test
+    void durationZeroWithoutEventFallsBackToLocal() {
+        final Battle battle = new Battle();
+        battle.durationS = 0.0;
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(BATTLE_START_RAW, List.of(
+                        mapping(1, 1, 1001L),
+                        mapping(2, 2, 2001L),
+                        damage(3, BATTLE_START_RAW + 50f, 1, 2, 100))), recorderMapping(), battle);
+        assertFalse(features.phases().isEmpty());
+        assertEquals(50f, features.phases().getLast().endTime(), 0.01f);
+    }
+
+    @Test
+    void unresolvedBattleEndHasExplicitLimitation() {
+        final Battle battle = new Battle();
+        battle.durationS = null;
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(BATTLE_START_RAW, List.of(mapping(1, 1, 1001L))), recorderMapping(), battle);
+        assertTrue(features.phases().isEmpty());
+        assertTrue(features.limitations().contains("BATTLE_END_UNRESOLVED"));
+    }
+
+    @Test
     void battleOnlyWithNaNPosition() {
         final var features = new DefaultPlayerBattleFeatureExtractor()
                 .extract(recon(null, List.of(

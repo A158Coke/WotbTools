@@ -18,6 +18,7 @@ const isAdmin = computed(() => {
 })
 
 // 支持多选：AI 分析可一次分析多场。reconstruct/state-at 为单文件工具，取第一个。
+const MAX_AI_REVIEW_REPLAY_FILES = 16
 const files = ref([])
 const file = computed(() => files.value[0] || null)
 const loading = ref(false)
@@ -39,6 +40,10 @@ function resetResults() {
 function addFile(e) {
   const picked = Array.from(e.target.files || [])
     .filter(f => f.name.toLowerCase().endsWith('.wotbreplay'))
+  if (picked.length > MAX_AI_REVIEW_REPLAY_FILES) {
+    error.value = t('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
+    return
+  }
   if (picked.length) {
     files.value = picked
     error.value = ''

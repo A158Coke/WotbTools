@@ -58,6 +58,21 @@ class ReconstructionControllerTeamAnalysisTest {
     }
 
     @Test
+    void uploadWith17FilesReturnsReplayFileCountExceeded() throws Exception {
+        final var files = new MockMultipartFile[17];
+        for (int i = 0; i < 17; i++) {
+            files[i] = replayFile("file" + i + ".wotbreplay");
+        }
+        var request = multipart("/api/replay/analyze");
+        for (final var f : files) {
+            request = request.file(f);
+        }
+        mvc.perform(request)
+                .andExpect(status().isBadRequest())
+                .andExpect(content().string("REPLAY_FILE_COUNT_EXCEEDED"));
+    }
+
+    @Test
     void trainingReplayUsesSingleTeamAnalysis() throws Exception {
         final ReplayProcessingResult result = teamResult(
                 "training.wotbreplay", "arena-one", "Ally", 1001L, 1);

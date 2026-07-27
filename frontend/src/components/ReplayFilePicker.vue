@@ -28,5 +28,6 @@ defineEmits(['add-file', 'clear'])
     >
       {{ selectedFile.name }}
     </span>
+    <span class="chip count-chip">{{ $t('recon.max_files_count', { count: files.length }) }}</span>
   </div>
 </template>

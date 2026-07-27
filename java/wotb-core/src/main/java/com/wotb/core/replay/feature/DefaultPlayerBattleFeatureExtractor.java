@@ -94,19 +94,18 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
             }
         }
 
-        // Battle-end resolution: authoritative duration first, then event, then last evidence
-        if (battle != null && battle.durationS != null && Double.isFinite(battle.durationS) && battle.durationS >= 0.0) {
-            battleEndClock = battle.durationS.floatValue();
-        } else if (!Float.isFinite(battleEndClock)) {
-            // Fallback: last recorder position or damage time
-            final float lastEvidence = (float) DoubleStream.concat(
-                            positions.stream().mapToDouble(t -> (double) t.battleRelativeSec()),
-                            damages.stream().mapToDouble(t -> (double) t.battleRelativeSec()))
-                    .max()
-                    .orElse(Float.NaN);
-            if (Float.isFinite(lastEvidence) && lastEvidence >= 0f) {
-                battleEndClock = lastEvidence;
-            }
+        // Battle-end resolution via shared resolver
+        final Float eventBasedEnd = Float.isFinite(battleEndClock) ? battleEndClock : null;
+        final float lastEvidenceMax = (float) DoubleStream.concat(
+                        positions.stream().mapToDouble(t -> (double) t.battleRelativeSec()),
+                        damages.stream().mapToDouble(t -> (double) t.battleRelativeSec()))
+                .max()
+                .orElse(Float.NaN);
+        final Float localEnd = Float.isFinite(lastEvidenceMax) && lastEvidenceMax >= 0f ? lastEvidenceMax : null;
+        final BattleEndResolver.BattleEndResult result = BattleEndResolver.resolve(battle, eventBasedEnd, localEnd);
+        final float phaseEndClock = result.resolved() ? result.battleEndRelativeSec() : Float.NaN;
+        if (result.limitation() != null) {
+            limitationSet.add(result.limitation());
         }
 
         // 压缩移动段（只针对 recorder，使用 battle-relative 时间）
@@ -117,7 +116,7 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
 
         // Phases (battle-relative)
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(
-                        firstContactTime, battleEndClock);
+                        firstContactTime, phaseEndClock);
 
         // 关键事件
         final List<KeyBattleEvent> keyEvents = extractRecorderKeyEvents(damages, recorder);

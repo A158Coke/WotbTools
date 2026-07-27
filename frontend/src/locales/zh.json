@@ -765,6 +765,7 @@
         "select_file": "选择回放文件",
         "invalid_file": "请选择 .wotbreplay 文件",
         "no_file": "未选择回放文件",
+        "max_files_count": "{count} / 16",
         "reconstruct_btn": "开始重建",
         "time_placeholder": "时间(秒)",
         "invalid_time": "无效的时间值",
@@ -847,7 +848,7 @@
             "NO_REPLAY_FILES": "未选择回放文件。",
             "INVALID_REPLAY_FILE_TYPE": "仅支持分析 .wotbreplay 文件。",
             "FILE_TOO_LARGE": "回放文件超过大小限制。",
-            "TOO_MANY_REPLAY_FILES": "一次最多上传 10 个回放文件。",
+            "REPLAY_FILE_COUNT_EXCEEDED": "一次最多上传 16 个回放文件。",
             "TOTAL_REQUEST_TOO_LARGE": "上传文件总大小超过限制。"
         },
         "event_types": {
