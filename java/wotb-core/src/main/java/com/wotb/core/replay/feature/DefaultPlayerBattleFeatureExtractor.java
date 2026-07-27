@@ -53,16 +53,22 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
             switch (event) {
                 case PositionChangedEvent p -> {
                     if (p.entityId() == recorderEid) {
-                        if (battleStartRes != null && battleStartRes.isPreBattle(
-                                ReplayTimestamp.safeClockSec(p.timestamp()))) {
+                        if (p.timestamp() == null || !Float.isFinite(p.timestamp().rawClockSec())) {
+                            continue;
+                        }
+                        if (battleStartRes.isPreBattle(
+                                p.timestamp().rawClockSec())) {
                             continue;
                         }
                         positions.add(p);
                     }
                 }
                 case DamageEvent d -> {
-                    if (battleStartRes != null && battleStartRes.isPreBattle(
-                            ReplayTimestamp.safeClockSec(d.timestamp()))) {
+                    if (d.timestamp() == null || !Float.isFinite(d.timestamp().rawClockSec())) {
+                        continue;
+                    }
+                    if (battleStartRes.isPreBattle(
+                            d.timestamp().rawClockSec())) {
                         continue;
                     }
                     // 只有当 recorder 是攻击者或受害者时才记录
@@ -78,8 +84,10 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
                 }
                 case com.wotb.core.replay.event.BattleEndedEvent b -> {
                     if (Float.isNaN(battleEndClock)) {
-                        battleEndClock = battleStartRes.battleRelative(
-                                ReplayTimestamp.safeClockSec(b.timestamp()));
+                        if (b.timestamp() != null && Float.isFinite(b.timestamp().rawClockSec())) {
+                            battleEndClock = battleStartRes.battleRelative(
+                                    b.timestamp().rawClockSec());
+                        }
                     }
                 }
                 default -> {}
