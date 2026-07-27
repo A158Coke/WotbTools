@@ -1,6 +1,7 @@
 package com.wotb.core.replay.feature;
 
 import com.wotb.core.replay.event.DecodeConfidence;
+import org.springframework.util.StringUtils;
 import java.util.HashSet;
 import java.util.List;
 
@@ -24,7 +25,7 @@ public record TeamFormationCluster(
         memberIdentities = List.copyOf(memberIdentities);
         final HashSet<String> uniqueIds = new HashSet<>();
         for (final String id : memberIdentities) {
-            if (id == null || id.isBlank()) {
+            if (id == null || !StringUtils.hasText(id)) {
                 throw new IllegalArgumentException("memberIdentities contains null/blank");
             }
             if (!uniqueIds.add(id)) {

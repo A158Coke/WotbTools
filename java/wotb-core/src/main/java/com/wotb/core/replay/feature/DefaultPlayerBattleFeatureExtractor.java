@@ -72,13 +72,13 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
                         damages.add(d);
                     if (firstContactTime < 0) {
                             firstContactTime = ReplayTimestamp.safeClockSec(d.timestamp());
-                            firstContactTime = battleStartRes.battleRelative(firstContactTime);
+                            firstContactTime = battleStartRes.battleRelativeOrRaw(firstContactTime);
                         }
                     }
                 }
                 case com.wotb.core.replay.event.BattleEndedEvent b -> {
                     if (Float.isNaN(battleEndClock)) {
-                        battleEndClock = battleStartRes.battleRelative(
+                        battleEndClock = battleStartRes.battleRelativeOrRaw(
                                 ReplayTimestamp.safeClockSec(b.timestamp()));
                     }
                 }
@@ -130,7 +130,7 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         if (usable.isEmpty()) return List.of();
         if (usable.size() == 1) {
             final PositionChangedEvent only = usable.get(0);
-            final float t = battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(only.timestamp()));
+            final float t = battleStartRes.battleRelativeOrRaw(ReplayTimestamp.safeClockSec(only.timestamp()));
             final Vector3 pos = new Vector3(only.x(), only.y(), only.z());
             return List.of(new MovementSegment(t, t,
                     MovementType.STATIONARY, pos, pos,
@@ -161,8 +161,8 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
             }
 
             result.add(new MovementSegment(
-                    battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(usable.get(start).timestamp())),
-                    battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(usable.get(i).timestamp())),
+                    battleStartRes.battleRelativeOrRaw(ReplayTimestamp.safeClockSec(usable.get(start).timestamp())),
+                    battleStartRes.battleRelativeOrRaw(ReplayTimestamp.safeClockSec(usable.get(i).timestamp())),
                     stationary ? MovementType.STATIONARY : MovementType.MOVING,
                     new Vector3(usable.get(start).x(), usable.get(start).y(), usable.get(start).z()),
                     new Vector3(usable.get(i).x(), usable.get(i).y(), usable.get(i).z()),
@@ -235,8 +235,8 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
                 : EngagementOutcome.EVEN;
 
         return new EngagementSummary(
-                battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(events.getFirst().timestamp())),
-                battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(events.getLast().timestamp())),
+                battleStartRes.battleRelativeOrRaw(ReplayTimestamp.safeClockSec(events.getFirst().timestamp())),
+                battleStartRes.battleRelativeOrRaw(ReplayTimestamp.safeClockSec(events.getLast().timestamp())),
                 List.of(), List.of(), dealt, received,
                 null, null, outcome, com.wotb.core.replay.event.DecodeConfidence.INFERRED);
     }
@@ -252,10 +252,10 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
             if (totalEvents >= MAX_KEY_EVENTS) break;
             if (!firstBlood) {
                 firstBlood = true;
-                keyEvents.add(new KeyBattleEvent(battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(d.timestamp())), "RECORDER_FIRST_BLOOD",
+                keyEvents.add(new KeyBattleEvent(battleStartRes.battleRelativeOrRaw(ReplayTimestamp.safeClockSec(d.timestamp())), "RECORDER_FIRST_BLOOD",
                         "首次命中 " + d.damage()));
             } else {
-                keyEvents.add(new KeyBattleEvent(battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(d.timestamp())),
+                keyEvents.add(new KeyBattleEvent(battleStartRes.battleRelativeOrRaw(ReplayTimestamp.safeClockSec(d.timestamp())),
                         d.attackerEid() == recorder.entityId() ? "RECORDER_DAMAGE_DEALT" : "RECORDER_DAMAGE_RECEIVED",
                         "录像者 " + d.damage()));
             }
