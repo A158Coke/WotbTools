@@ -138,7 +138,7 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         if (usable.isEmpty()) return List.of();
         if (usable.size() == 1) {
             final PositionChangedEvent only = usable.get(0);
-            final float t = battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(only.timestamp()));
+            final float t = battleStartRes.battleRelative(only.timestamp().rawClockSec());
             final Vector3 pos = new Vector3(only.x(), only.y(), only.z());
             return List.of(new MovementSegment(t, t,
                     MovementType.STATIONARY, pos, pos,
@@ -169,8 +169,8 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
             }
 
             result.add(new MovementSegment(
-                    battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(usable.get(start).timestamp())),
-                    battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(usable.get(i).timestamp())),
+                    battleStartRes.battleRelative(usable.get(start).timestamp().rawClockSec()),
+                    battleStartRes.battleRelative(usable.get(i).timestamp().rawClockSec()),
                     stationary ? MovementType.STATIONARY : MovementType.MOVING,
                     new Vector3(usable.get(start).x(), usable.get(start).y(), usable.get(start).z()),
                     new Vector3(usable.get(i).x(), usable.get(i).y(), usable.get(i).z()),
@@ -243,8 +243,8 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
                 : EngagementOutcome.EVEN;
 
         return new EngagementSummary(
-                battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(events.getFirst().timestamp())),
-                battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(events.getLast().timestamp())),
+                battleStartRes.battleRelative(events.getFirst().timestamp().rawClockSec()),
+                battleStartRes.battleRelative(events.getLast().timestamp().rawClockSec()),
                 List.of(), List.of(), dealt, received,
                 null, null, outcome, com.wotb.core.replay.event.DecodeConfidence.INFERRED);
     }
@@ -260,10 +260,10 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
             if (totalEvents >= MAX_KEY_EVENTS) break;
             if (!firstBlood) {
                 firstBlood = true;
-                keyEvents.add(new KeyBattleEvent(battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(d.timestamp())), "RECORDER_FIRST_BLOOD",
+                keyEvents.add(new KeyBattleEvent(battleStartRes.battleRelative(d.timestamp().rawClockSec()), "RECORDER_FIRST_BLOOD",
                         "首次命中 " + d.damage()));
             } else {
-                keyEvents.add(new KeyBattleEvent(battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(d.timestamp())),
+                keyEvents.add(new KeyBattleEvent(battleStartRes.battleRelative(d.timestamp().rawClockSec()),
                         d.attackerEid() == recorder.entityId() ? "RECORDER_DAMAGE_DEALT" : "RECORDER_DAMAGE_RECEIVED",
                         "录像者 " + d.damage()));
             }

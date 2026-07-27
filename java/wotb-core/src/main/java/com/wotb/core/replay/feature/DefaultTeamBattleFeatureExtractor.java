@@ -664,8 +664,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 ? EngagementOutcome.UNFAVORABLE
                 : EngagementOutcome.EVEN;
         return new EngagementSummary(
-                battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(events.getFirst().event().timestamp())),
-                battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(events.getLast().event().timestamp())),
+                battleStartRes.battleRelative(events.getFirst().event().timestamp().rawClockSec()),
+                battleStartRes.battleRelative(events.getLast().event().timestamp().rawClockSec()),
                 allies.stream().sorted().toList(),
                 enemies.stream().sorted().toList(),
                 dealt,
@@ -948,7 +948,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                                 ReplayTimestamp.safeClockSec(damage.event().timestamp()))
                         .thenComparingInt(damage -> damage.event().sequence()))
                 .ifPresent(damage -> events.add(new KeyBattleEvent(
-                        battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(damage.event().timestamp())),
+                        battleStartRes.battleRelative(damage.event().timestamp().rawClockSec()),
                         "TEAM_FIRST_CONTACT",
                         "damage=" + damage.event().damage(),
                         lowestConfidence(damage),
