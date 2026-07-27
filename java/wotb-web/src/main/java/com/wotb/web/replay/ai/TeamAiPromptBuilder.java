@@ -242,7 +242,7 @@ final class TeamAiPromptBuilder {
         }
         for (int index = 0; index < limit; index++) {
             final TeamFormationPhase phase = phases.get(index);
-            final String phasePosInfo = formatPositionInfo(phase.centroid());
+            final String phasePosInfo = formatCanonicalPos(phase.centroid());
             writer.append("formation[" + format(phase.startTime())
                     + "-" + format(phase.endTime()) + "]"
                     + " " + phasePosInfo
@@ -417,6 +417,11 @@ final class TeamAiPromptBuilder {
     }
 
     /** Format position as canonical XZ, region, and status from a single resolve call. */
+    private static String formatCanonicalPos(final Vector3 pos) {
+        if (pos == null) return "UNKNOWN";
+        return "(" + format(pos.x()) + "," + format(pos.z()) + ")";
+    }
+
     private static String formatPositionInfo(final Vector3 position) {
         if (position == null) return "UNKNOWN";
         final MapCoordinateResolution res = MapRegionResolver.resolve(position.x(), position.z());
