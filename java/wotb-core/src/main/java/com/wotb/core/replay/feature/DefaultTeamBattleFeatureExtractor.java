@@ -398,7 +398,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .map(entityId -> timedPositionsByEntity.getOrDefault(entityId, List.of()))
                 .flatMap(timedPositions ->
                     DefaultPlayerBattleFeatureExtractor
-                            .compressTimedTeamMovements(timedPositions).stream())
+                            .compressMovements(convertTimedPositions(timedPositions)).stream())
                 .sorted(Comparator.comparingDouble(MovementSegment::startTime)
                         .thenComparingDouble(MovementSegment::endTime))
                 .toList();
@@ -1082,4 +1082,11 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     private record TimedTeamDamage(AttributedDamage event, float battleRelativeSec) {}
 
     record TimedTeamPosition(PositionChangedEvent event, float battleRelativeSec) {}
+
+    private static List<DefaultPlayerBattleFeatureExtractor.TimedPosition> convertTimedPositions(
+            final List<TimedTeamPosition> timedPositions) {
+        return timedPositions.stream()
+                .map(tp -> new DefaultPlayerBattleFeatureExtractor.TimedPosition(tp.event(), tp.battleRelativeSec()))
+                .toList();
+    }
 }

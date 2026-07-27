@@ -180,11 +180,18 @@ class AiReplayAnalysisServiceTest {
         final var result = service.analyzeTeamGroups(groups);
         assertEquals("team review", result.analysis().analysis());
         assertEquals(2, result.units().size());
-        assertTrue(requestBody.get().contains("MULTI_TEAM_CONTEXT"));
-        assertTrue(requestBody.get().contains("teamLabel="));
-        // Two perspectives should have distinct team labels
-        assertTrue(requestBody.get().contains("PERSPECTIVE 1"));
-        assertTrue(requestBody.get().contains("PERSPECTIVE 2"));
+        // Opposing perspectives now use SEPARATE SINGLE_TEAM calls instead of one MULTI_TEAM call.
+        // Only the last call's body is captured by the test server.
+        assertTrue(requestBody.get().contains("SINGLE_TEAM_CONTEXT"),
+                "Must use SINGLE_TEAM_CONTEXT for opposing perspectives");
+        assertTrue(requestBody.get().contains("teamLabel="),
+                "Single-team context must contain teamLabel");
+        assertFalse(requestBody.get().contains("MULTI_TEAM_CONTEXT"),
+                "Must NOT use MULTI_TEAM_CONTEXT for opposing perspectives");
+        assertFalse(requestBody.get().contains("PERSPECTIVE 1"),
+                "Single-team context must not contain PERSPECTIVE labels");
+        assertFalse(requestBody.get().contains("PERSPECTIVE 2"),
+                "Single-team context must not contain PERSPECTIVE labels");
     }
 
     @Test

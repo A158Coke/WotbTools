@@ -175,12 +175,6 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         return result;
     }
 
-    static List<MovementSegment> compressTimedTeamMovements(final List<DefaultTeamBattleFeatureExtractor.TimedTeamPosition> timedPositions) {
-        return compressMovements(timedPositions.stream()
-                .map(tp -> new TimedPosition(tp.event(), tp.battleRelativeSec()))
-                .toList());
-    }
-
     private static DecodeConfidence positionConfidence(
             final List<TimedPosition> positions
     ) {
@@ -263,7 +257,7 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         return keyEvents;
     }
 
-    private record TimedPosition(PositionChangedEvent event, float battleRelativeSec) {}
+    record TimedPosition(PositionChangedEvent event, float battleRelativeSec) {}
 
     private record TimedDamage(DamageEvent event, float battleRelativeSec) {}
 
