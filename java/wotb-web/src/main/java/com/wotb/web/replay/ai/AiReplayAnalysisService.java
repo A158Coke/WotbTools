@@ -11,6 +11,7 @@ import com.wotb.core.processing.AnalysisUnitResult;
 import com.wotb.core.processing.BattleCategory;
 import com.wotb.core.processing.BattleCategoryUtils;
 import com.wotb.core.processing.BattleGroupingKey;
+import com.wotb.core.processing.BattleIdentity;
 import com.wotb.core.processing.PerspectiveTeamNotResolvedException;
 import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.processing.ReplayAnalysisScope;
@@ -256,19 +257,25 @@ public class AiReplayAnalysisService {
             throw new AiNotConfiguredException();
         }
         final TeamAiPromptBuilder.PromptInput input = TeamAiPromptBuilder.multi(context);
-        return callMultiTeamContext(input);
+        final List<KeyBattleEvent> keyEvents = context.perspectives().stream()
+                .flatMap(s -> s.features().keyEvents().stream())
+                .toList();
+        return callMultiTeamContext(input, keyEvents);
     }
 
     private AnalyzeResult callMultiTeamContext(
-            final TeamAiPromptBuilder.PromptInput input
+            final TeamAiPromptBuilder.PromptInput input,
+            final List<KeyBattleEvent> keyEvents
     ) {
         final Map<String, Object> body = requestBody(MULTI_TEAM_PROMPT, input.content());
         final String content = call(body, "MULTI_TEAM_BATTLE");
-        return new AnalyzeResult(content, model, List.of());
+        return new AnalyzeResult(content, model, keyEvents);
     }
 
     /**
      * 完整 Team 分析编排：每个 group 单独构建上下文，再按数量调用 single/multi 入口。
+     * <p>当存在对立视角（同一 battleIdentity、不同 perspectiveTeam）时，
+     * 强制为每个视角发起独立的 SINGLE_TEAM 请求，避免一方数据泄露给另一方。</p>
      */
     public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups) {
         if (!isConfigured()) {
@@ -289,12 +296,26 @@ public class AiReplayAnalysisService {
             if (input.limitations().contains("AI_INPUT_TRUNCATED")) {
                 analysisLimitations.add("AI_INPUT_TRUNCATED");
             }
+        } else if (hasOpposingPerspectives(contexts)) {
+            AnalyzeResult last = null;
+            for (final var context : contexts) {
+                final TeamAiPromptBuilder.PromptInput input =
+                        TeamAiPromptBuilder.single(context);
+                last = callSingleTeamContext(context, input);
+                if (input.limitations().contains("AI_INPUT_TRUNCATED")) {
+                    analysisLimitations.add("AI_INPUT_TRUNCATED");
+                }
+            }
+            analysis = last;
         } else {
             final MultiTeamBattleAnalysisContext multiContext =
                     buildMultiTeamContext(contexts);
             final TeamAiPromptBuilder.PromptInput input =
                     TeamAiPromptBuilder.multi(multiContext);
-            analysis = callMultiTeamContext(input);
+            final List<KeyBattleEvent> keyEvents = contexts.stream()
+                    .flatMap(ctx -> ctx.features().keyEvents().stream())
+                    .toList();
+            analysis = callMultiTeamContext(input, keyEvents);
             analysisLimitations.addAll(multiContext.limitations());
             if (input.limitations().contains("AI_INPUT_TRUNCATED")) {
                 analysisLimitations.add("AI_INPUT_TRUNCATED");
@@ -304,6 +325,28 @@ public class AiReplayAnalysisService {
                 analysis,
                 buildTeamAnalysisUnits(
                         groups, contexts, analysis.model(), analysisLimitations));
+    }
+
+    /**
+     * 检测是否存在对立视角：同一 battleIdentity 但具有不同的 perspectiveTeam。
+     */
+    private static boolean hasOpposingPerspectives(
+            final List<SingleTeamBattleAnalysisContext> contexts) {
+        final Map<BattleIdentity, List<SingleTeamBattleAnalysisContext>> byBattle = contexts
+                .stream()
+                .collect(Collectors.groupingBy(
+                        SingleTeamBattleAnalysisContext::battleId));
+        for (final var entry : byBattle.entrySet()) {
+            if (entry.getKey() != null && entry.getValue().size() > 1) {
+                final Set<Integer> teams = entry.getValue().stream()
+                        .map(SingleTeamBattleAnalysisContext::perspectiveTeam)
+                        .collect(Collectors.toSet());
+                if (teams.size() > 1) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -1202,7 +1245,8 @@ public class AiReplayAnalysisService {
             }
             case FALLBACK -> "hash-" + key.uniqueFallback().substring(0, Math.min(16, key.uniqueFallback().length()));
         };
-        return battlePart + "-team-" + group.key().perspectiveTeam();
+        final int teamHash = (battlePart + "-p" + group.key().perspectiveTeam()).hashCode() & 0xffff;
+        return battlePart + "-u" + Integer.toHexString(teamHash);
     }
 
     private static String sha256(final String input) {

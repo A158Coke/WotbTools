@@ -132,22 +132,6 @@ public record BattleStartResolution(Status status, Float battleStartRawClockSec,
         return TacticalTimeResolution.usable(raw - battleStartRawClockSec);
     }
 
-    /**
-     * Resolve tactical battle-relative time from a ReplayTimestamp.
-     *
-     * @deprecated Use {@link #tryRelative(ReplayTimestamp)} instead.
-     */
-    @Deprecated
-    public TacticalTimeResolution resolveTacticalTime(final ReplayTimestamp timestamp) {
-        return tryRelative(timestamp);
-    }
-
-    /** Raw clock from timestamp for pre-battle comparison. */
-    public static float rawClock(final ReplayTimestamp timestamp) {
-        if (timestamp == null) return Float.NaN;
-        return timestamp.rawClockSec();
-    }
-
     public boolean isPreBattle(final float rawClockSec) {
         if (battleStartRawClockSec == null) return false;
         return rawClockSec < battleStartRawClockSec;

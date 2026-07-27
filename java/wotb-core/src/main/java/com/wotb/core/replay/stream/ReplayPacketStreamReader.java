@@ -197,8 +197,8 @@ public final class ReplayPacketStreamReader {
                 Float.isNaN(lastClockSec) ? 0f : lastClockSec,
                 clockRegressionCount,
                 Collections.unmodifiableMap(diagTypes),
-                false,  // battleStartIdentified
-                null,   // battleStartRawClockSec
+                Float.isFinite(firstClockSec),  // battleStartIdentified
+                Float.isFinite(firstClockSec) ? (firstClockSec < 0f ? 0f : firstClockSec) : null,  // battleStartRawClockSec
                 reachedPhysicalEnd
         );
 

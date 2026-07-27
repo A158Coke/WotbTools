@@ -144,7 +144,7 @@ public class ReplayReconstructionService {
                 metadata,
                 streamResult.header(),
                 replayDuration,
-                null,
+                streamResult.diagnostics().battleStartRawClockSec(),
                 participants,
                 List.copyOf(allEvents),
                 reconstructionResult.checkpoints(),
