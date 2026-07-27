@@ -89,12 +89,7 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         // 交火段
         final List<EngagementSummary> engagements = buildEngagements(damages, recorder.entityId(), battleStartRes);
 
-        // 战斗阶段（过滤准备阶段事件，使时间域统一）
-        final float battleClockStart = battleStartRes.battleStartRawClockSec() != null
-                ? battleStartRes.battleStartRawClockSec() : Float.NEGATIVE_INFINITY;
-        final List<ReplayEvent> battleEvents = events.stream()
-                .filter(e -> ReplayTimestamp.safeClockSec(e.timestamp()) >= battleClockStart)
-                .toList();
+        // Phases (battle-relative)
         final List<BattlePhaseSummary> phases = DefaultBattleFeatureExtractor.buildRelativePhases(
                         firstContactTime, battleEndClock);
 
