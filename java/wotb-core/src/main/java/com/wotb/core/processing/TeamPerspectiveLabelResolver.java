@@ -3,7 +3,6 @@ package com.wotb.core.processing;
 import com.wotb.core.model.PlayerResult;
 import org.springframework.util.StringUtils;
 
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -39,7 +38,6 @@ public final class TeamPerspectiveLabelResolver {
     public static String resolve(final List<PlayerResult> players) {
         if (players == null || players.isEmpty()) return "未知队伍";
 
-        // Count trimmed, lowercased clan tags
         final Map<String, List<String>> normalizedToOriginals = players.stream()
                 .map(p -> p.clan)
                 .filter(clan -> StringUtils.hasText(clan))
@@ -53,24 +51,11 @@ public final class TeamPerspectiveLabelResolver {
             return stableFallback(players);
         }
 
-        // Find the normalized tag with the most members
-        final String winner = normalizedToOriginals.entrySet().stream()
-                .max(Map.Entry.comparingByValue(
-                        Comparator.comparingInt(List::size)))
-                .map(Map.Entry::getKey)
-                .orElse(null);
+        final String winner = resolveDominantClanTag(players);
+        if (winner.isEmpty()) {
+            return stableFallback(players);
+        }
 
-        if (winner == null) return stableFallback(players);
-
-        // Count how many normalized tags share the same max count
-        final int maxCount = normalizedToOriginals.get(winner).size();
-        final long tiedCount = normalizedToOriginals.values().stream()
-                .filter(list -> list.size() == maxCount)
-                .count();
-
-        if (tiedCount > 1) return stableFallback(players);
-
-        // Return the most common original casing; tie-break by lexicographic order
         final List<String> originals = normalizedToOriginals.get(winner);
         final List<String> common = originals.stream()
                 .collect(Collectors.groupingBy(s -> s, LinkedHashMap::new, Collectors.counting()))
@@ -81,6 +66,34 @@ public final class TeamPerspectiveLabelResolver {
                 .map(Map.Entry::getKey)
                 .toList();
         return common.isEmpty() ? winner : common.getFirst();
+    }
+
+    /**
+     * Returns the normalized (lowercased) dominant clan tag from the given players,
+     * or empty string if there is no unique dominant clan (tie or no clans present).
+     * <p>Shared helper used by both {@link #resolve} and partition compatibility logic
+     * in the web layer.</p>
+     */
+    public static String resolveDominantClanTag(final List<PlayerResult> players) {
+        if (players == null || players.isEmpty()) return "";
+        final Map<String, Long> counts = players.stream()
+                .map(p -> p.clan)
+                .filter(clan -> StringUtils.hasText(clan))
+                .map(String::trim)
+                .collect(Collectors.groupingBy(
+                        clan -> clan.toLowerCase(Locale.ROOT),
+                        LinkedHashMap::new,
+                        Collectors.counting()));
+        if (counts.isEmpty()) return "";
+        final long maxCount = counts.values().stream().max(Long::compare).orElse(0L);
+        if (maxCount == 0) return "";
+        final long uniqueMaxCount = counts.values().stream().filter(c -> c == maxCount).count();
+        if (uniqueMaxCount != 1) return "";
+        return counts.entrySet().stream()
+                .filter(e -> e.getValue() == maxCount)
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse("");
     }
 
     /**

@@ -51,13 +51,11 @@ public record BattlePhaseSummary(
                 && Float.isFinite(firstContactRelative)
                 && firstContactRelative < battleEndRelative;
 
-        // OPENING: [0, min(validContact ? contactTime : OPENING_DURATION, battleEnd)]
-        final float openingEnd = validContact
+        // OPENING: [0, min(validContact && contactTime < 45 ? contactTime : 45, battleEnd)]
+        final float openingEnd = validContact && firstContactRelative < OPENING_DURATION
                 ? Math.min(firstContactRelative, battleEndRelative)
                 : Math.min(OPENING_DURATION, battleEndRelative);
         phases.add(new BattlePhaseSummary(0f, openingEnd, BattlePhaseType.OPENING, DecodeConfidence.EXACT));
-
-        float lastEnd = openingEnd;
 
         // FIRST_CONTACT (if valid contact): [contactTime, min(contactTime + FIRST_CONTACT_DURATION, battleEnd)]
         if (validContact) {
@@ -65,13 +63,13 @@ public record BattlePhaseSummary(
             if (contactEnd > firstContactRelative) {
                 phases.add(new BattlePhaseSummary(firstContactRelative, contactEnd,
                         BattlePhaseType.FIRST_CONTACT, DecodeConfidence.INFERRED));
-                lastEnd = contactEnd;
             }
         }
 
         // MID_GAME: starts at the END of the previous phase, only if enough room
-        if (battleEndRelative - lastEnd > MID_GAME_MIN_DURATION) {
-            phases.add(new BattlePhaseSummary(lastEnd, battleEndRelative,
+        final float prevEnd = phases.get(phases.size() - 1).endTime();
+        if (battleEndRelative - prevEnd > MID_GAME_MIN_DURATION) {
+            phases.add(new BattlePhaseSummary(prevEnd, battleEndRelative,
                     BattlePhaseType.MID_GAME, DecodeConfidence.INFERRED));
         }
 

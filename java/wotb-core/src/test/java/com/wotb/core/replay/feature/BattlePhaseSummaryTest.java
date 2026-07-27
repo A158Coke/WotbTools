@@ -1,6 +1,8 @@
 package com.wotb.core.replay.feature;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 import java.util.List;
@@ -100,11 +102,51 @@ class BattlePhaseSummaryTest {
         for (final BattlePhaseSummary p : phases) {
             if (p.type() == BattlePhaseType.FIRST_CONTACT) foundFirstContact = true;
             if (p.type() == BattlePhaseType.MID_GAME && foundFirstContact) {
-                // MID_GAME must start after or at FIRST_CONTACT end
                 final BattlePhaseSummary fc = phases.stream()
                     .filter(ph -> ph.type() == BattlePhaseType.FIRST_CONTACT).findFirst().get();
                 assertTrue(p.startTime() >= fc.endTime(), "MID_GAME must start at or after FIRST_CONTACT end");
             }
         }
+    }
+
+    @Test void openingEndAtFortyFiveWhenLateContact() {
+        final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(50f, 120f);
+        assertValidPhases(phases);
+        final BattlePhaseSummary opening = phases.stream()
+            .filter(p -> p.type() == BattlePhaseType.OPENING).findFirst().get();
+        assertEquals(45f, opening.endTime(), 0.01f, "OPENING must end at 45 when contact > 45");
+    }
+
+    @Test void openingEndAtContactWhenEarly() {
+        final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(40f, 120f);
+        final BattlePhaseSummary opening = phases.stream()
+            .filter(p -> p.type() == BattlePhaseType.OPENING).findFirst().get();
+        assertEquals(40f, opening.endTime(), 0.01f, "OPENING must end at contact when contact < 45");
+    }
+
+    @Test void openingEndAtFortyFiveWhenContactAtFortyFive() {
+        final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(45f, 120f);
+        final BattlePhaseSummary opening = phases.stream()
+            .filter(p -> p.type() == BattlePhaseType.OPENING).findFirst().get();
+        assertEquals(45f, opening.endTime(), 0.01f, "OPENING must end at 45 when contact = 45");
+    }
+
+    @Test void openingEndAtFortyFiveWhenContactAtFiftyOne() {
+        final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(51f, 120f);
+        assertValidPhases(phases);
+        final BattlePhaseSummary opening = phases.stream()
+            .filter(p -> p.type() == BattlePhaseType.OPENING).findFirst().get();
+        assertEquals(45f, opening.endTime(), 0.01f, "OPENING must end at 45 when contact > 45");
+        assertTrue(phases.stream().anyMatch(p -> p.type() == BattlePhaseType.FIRST_CONTACT && p.startTime() == 51f),
+            "Late first contact must still be recorded");
+    }
+
+    @Test void openingEndAtFortyFiveWhenContactAtNinety() {
+        final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(90f, 120f);
+        assertValidPhases(phases);
+        final BattlePhaseSummary opening = phases.stream()
+            .filter(p -> p.type() == BattlePhaseType.OPENING).findFirst().get();
+        assertEquals(45f, opening.endTime(), 0.01f);
+        assertTrue(phases.stream().anyMatch(p -> p.type() == BattlePhaseType.FIRST_CONTACT && p.startTime() == 90f));
     }
 }
