@@ -17,6 +17,7 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -25,6 +26,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * 默认队伍特征提取器。
@@ -117,25 +120,10 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                     .toList();
             timedPositionsByEntity.put(entry.getKey(), timedList);
         }
-        for (final TimedTeamDamage td : timedDamages) {
-            final String limitation = resolutionByEvent.get(td.event().event()).limitation();
-            if (limitation != null) {
-                timeLimitations.add(limitation);
-            }
-        }
-        for (final Map.Entry<Integer, List<TimedTeamPosition>> entry : timedPositionsByEntity.entrySet()) {
-            for (final TimedTeamPosition tp : entry.getValue()) {
-                final String limitation = resolutionByEvent.get(tp.event()).limitation();
-                if (limitation != null) {
-                    timeLimitations.add(limitation);
-                }
-            }
-        }
-
-        final List<ReplayEvent> acceptedEvents = new ArrayList<>();
-        timedPositionsByEntity.values().stream().flatMap(List::stream)
-                .map(TimedTeamPosition::event).forEach(acceptedEvents::add);
-        timedDamages.stream().map(td -> td.event().event()).forEach(acceptedEvents::add);
+        final List<ReplayEvent> acceptedEvents = Collections.unmodifiableList(Stream.concat(
+                timedPositionsByEntity.values().stream().flatMap(List::stream).map(TimedTeamPosition::event),
+                timedDamages.stream().map(d -> d.event().event())
+        ).toList());
         final boolean hasUsableTimedEvent = !acceptedEvents.isEmpty();
 
         final List<TeamMemberFeatureSet> members = authoritativeMembers.stream()
@@ -339,8 +327,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             final int perspectiveTeam,
             final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent
     ) {
-        final Map<Integer, List<PositionChangedEvent>> result = new LinkedHashMap<>();
-        events.stream()
+        return events.stream()
                 .filter(PositionChangedEvent.class::isInstance)
                 .map(PositionChangedEvent.class::cast)
                 .filter(position -> {
@@ -353,12 +340,15 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                     return identity != null && identity.usable()
                             && identity.team() == perspectiveTeam;
                 })
-                .forEach(position -> result
-                        .computeIfAbsent(position.entityId(), ignored -> new ArrayList<>())
-                        .add(position));
-        result.values().forEach(positions ->
-                positions.sort(Comparator.comparingInt(PositionChangedEvent::sequence)));
-        return result;
+                .collect(Collectors.groupingBy(
+                        PositionChangedEvent::entityId,
+                        LinkedHashMap::new,
+                        Collectors.collectingAndThen(
+                                Collectors.toList(),
+                                list -> {
+                                    list.sort(Comparator.comparingInt(PositionChangedEvent::sequence));
+                                    return list;
+                                })));
     }
 
     /**
@@ -930,34 +920,34 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             final int perspectiveTeam,
             final BattleEndEvidence battleEnd
     ) {
-        final List<KeyBattleEvent> events = new ArrayList<>();
-        members.stream()
+        final Stream<KeyBattleEvent> deathEvents = members.stream()
                 .filter(member -> !member.survived)
                 .filter(member -> PlayerResultFormat.deathSec(member) > 0)
                 .sorted(Comparator.comparingDouble(PlayerResultFormat::deathSec))
-                .forEach(member -> events.add(new KeyBattleEvent(
+                .map(member -> new KeyBattleEvent(
                         (float) PlayerResultFormat.deathSec(member),
                         "TEAM_MEMBER_DESTROYED",
                         "accountId=" + member.accountId + ";nickname=" + member.nickname,
                         DecodeConfidence.EXACT,
                         "BATTLE_RESULTS",
-                        mapping.entityIds(member.accountId, member.nickname))));
-        timedDamages.stream()
+                        mapping.entityIds(member.accountId, member.nickname)));
+        final Stream<KeyBattleEvent> firstContact = timedDamages.stream()
                 .filter(td -> involvesTeam(td.event(), perspectiveTeam))
                 .min(Comparator
                         .comparingDouble(TimedTeamDamage::battleRelativeSec)
                         .thenComparingInt(td -> td.event().event().sequence()))
-                .ifPresent(td -> events.add(new KeyBattleEvent(
+                .map(td -> new KeyBattleEvent(
                         td.battleRelativeSec(),
                         "TEAM_FIRST_CONTACT",
                         "damage=" + td.event().event().damage(),
                         lowestConfidence(td.event()),
                         "REPLAY_EVENT",
-                        List.of(td.event().event().attackerEid(), td.event().event().victimEid()))));
-        formationPhases.stream()
+                        List.of(td.event().event().attackerEid(), td.event().event().victimEid())))
+                .stream();
+        final Stream<KeyBattleEvent> formationSplit = formationPhases.stream()
                 .filter(phase -> phase.observedMemberCount() > 1 && phase.clusterCount() > 1)
                 .findFirst()
-                .ifPresent(phase -> events.add(new KeyBattleEvent(
+                .map(phase -> new KeyBattleEvent(
                         phase.startTime(),
                         "TEAM_FORMATION_SPLIT",
                         "clusters=" + phase.clusterCount()
@@ -965,18 +955,19 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                                 phase.averageDispersion()),
                         phase.confidence(),
                         "DERIVED_POSITION",
-                        List.of())));
-        if (battleEnd.clockSec() != null) {
-            final String resultLabel = buildResultLabel(battle, perspectiveTeam);
-            events.add(new KeyBattleEvent(
-                    battleEnd.clockSec(),
-                    "BATTLE_END",
-                    resultLabel,
-                    battleEnd.confidence(),
-                    battleEnd.source(),
-                    List.of()));
-        }
-        return events.stream()
+                        List.of()))
+                .stream();
+        final Stream<KeyBattleEvent> battleEndEvent = battleEnd.clockSec() != null
+                ? Stream.of(new KeyBattleEvent(
+                        battleEnd.clockSec(),
+                        "BATTLE_END",
+                        buildResultLabel(battle, perspectiveTeam),
+                        battleEnd.confidence(),
+                        battleEnd.source(),
+                        List.of()))
+                : Stream.empty();
+        return Stream.of(deathEvents, firstContact, formationSplit, battleEndEvent)
+                .flatMap(s -> s)
                 .sorted(Comparator.comparingDouble(KeyBattleEvent::clockSec)
                         .thenComparing(KeyBattleEvent::type))
                 .limit(MAX_KEY_EVENTS)

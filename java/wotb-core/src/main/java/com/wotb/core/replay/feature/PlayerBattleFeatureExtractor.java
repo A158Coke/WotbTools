@@ -11,8 +11,8 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 public interface PlayerBattleFeatureExtractor {
 
     PlayerBattleFeatureSet extract(
-            ReplayReconstruction reconstruction,
-            RecorderEntityMapping recorder,
-            Battle battle
+            final ReplayReconstruction reconstruction,
+            final RecorderEntityMapping recorder,
+            final Battle battle
     );
 }

@@ -44,40 +44,38 @@ public record BattlePhaseSummary(
             final float firstContactRelative,
             final float battleEndRelative
     ) {
-        if (!Float.isFinite(battleEndRelative) || battleEndRelative < 0f) {
-            return List.of();
-        }
-
-        final boolean hasFirstContact = Float.isFinite(firstContactRelative)
-                && firstContactRelative >= 0f
-                && firstContactRelative <= battleEndRelative;
-
         final List<BattlePhaseSummary> phases = new ArrayList<>();
+        if (battleEndRelative <= 0 || !Float.isFinite(battleEndRelative)) return phases;
 
-        float openingEnd = Math.min(OPENING_DURATION, battleEndRelative);
-        if (hasFirstContact) {
-            openingEnd = Math.min(openingEnd, firstContactRelative);
+        final boolean hasContact = firstContactRelative >= 0 && Float.isFinite(firstContactRelative);
+        final float clampedContact = hasContact ? Math.min(firstContactRelative, battleEndRelative) : -1f;
+
+        // OPENING: [0, min(contact-or-45, battleEnd)]
+        final float openingEnd = hasContact && clampedContact >= 0
+                ? Math.min(Math.min(clampedContact, 45f), battleEndRelative)
+                : Math.min(45f, battleEndRelative);
+        phases.add(new BattlePhaseSummary(0f, openingEnd, BattlePhaseType.OPENING, DecodeConfidence.EXACT));
+
+        // FIRST_CONTACT: only if contact exists and is within openingEnd+5
+        if (hasContact && clampedContact >= 0 && clampedContact <= openingEnd + 5 && clampedContact < battleEndRelative) {
+            final float contactEnd = Math.min(clampedContact + 10, battleEndRelative);
+            if (contactEnd > clampedContact) {
+                phases.add(new BattlePhaseSummary(clampedContact, contactEnd,
+                        BattlePhaseType.FIRST_CONTACT, DecodeConfidence.INFERRED));
+            }
         }
-        phases.add(new BattlePhaseSummary(
-                0f, openingEnd, BattlePhaseType.OPENING, DecodeConfidence.EXACT));
 
-        if (hasFirstContact) {
-            final float contactEnd = Math.min(
-                    firstContactRelative + FIRST_CONTACT_DURATION, battleEndRelative);
-            phases.add(new BattlePhaseSummary(
-                    firstContactRelative, contactEnd,
-                    BattlePhaseType.FIRST_CONTACT, DecodeConfidence.INFERRED));
-        }
-
-        if (battleEndRelative - openingEnd > MID_GAME_MIN_DURATION) {
-            phases.add(new BattlePhaseSummary(
-                    openingEnd, battleEndRelative,
+        // MID_GAME: starts after OPENING/end of FIRST_CONTACT
+        final float midGameStart = openingEnd; // after opening
+        if (battleEndRelative - midGameStart > 60) {
+            phases.add(new BattlePhaseSummary(midGameStart, battleEndRelative,
                     BattlePhaseType.MID_GAME, DecodeConfidence.INFERRED));
         }
 
-        phases.add(new BattlePhaseSummary(
-                battleEndRelative, battleEndRelative,
+        // ENDGAME: zero-length marker at battle end
+        phases.add(new BattlePhaseSummary(battleEndRelative, battleEndRelative,
                 BattlePhaseType.ENDGAME, DecodeConfidence.EXACT));
+
         return phases;
     }
 }
