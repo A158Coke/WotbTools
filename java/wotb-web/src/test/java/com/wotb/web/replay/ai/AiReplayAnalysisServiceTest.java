@@ -247,6 +247,77 @@ class AiReplayAnalysisServiceTest {
     }
 
     @Test
+    void multiTeamWithSameClanCreatesOnePartition() throws IOException {
+        responseBody = "{\"choices\":[{\"message\":{\"content\":\"merged multi analysis\"}}]}";
+        final var service = startService(2);
+        final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
+                teamResultWithClan("battle-a.wotbreplay", "arena-a", "CHRD", true),
+                teamResultWithClan("battle-b.wotbreplay", "arena-b", "CHRD", false)));
+        final var result = service.analyzeTeamGroups(groups);
+        assertEquals(1, requestBodies.size(),
+                "Both battles must merge into one partition -> 1 AI call");
+        final String body = requestBodies.getFirst();
+        assertTrue(body.contains("MULTI_TEAM_CONTEXT"),
+                "Merged partition must use MULTI_TEAM_CONTEXT");
+        assertTrue(body.contains("battle-a"),
+                "Request body must contain battle-a analysisUnitId");
+        assertTrue(body.contains("battle-b"),
+                "Request body must contain battle-b analysisUnitId");
+        int unitACount = 0;
+        int unitBCount = 0;
+        boolean aHasDup = false;
+        boolean bNoDup = true;
+        final String[] perspectives = body.split("=== PERSPECTIVE ");
+        for (int i = 1; i < perspectives.length; i++) {
+            final String section = perspectives[i];
+            if (section.contains("battle-a")) {
+                unitACount++;
+                aHasDup = section.contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
+            }
+            if (section.contains("battle-b")) {
+                unitBCount++;
+                bNoDup = !section.contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
+            }
+        }
+        assertEquals(1, unitACount, "Exactly one PERSPECTIVE section for battle-a");
+        assertEquals(1, unitBCount, "Exactly one PERSPECTIVE section for battle-b");
+        assertTrue(aHasDup, "Perspective A (with duplicate) must have DUPLICATE limitation");
+        assertTrue(bNoDup, "Perspective B (no duplicate) must NOT have DUPLICATE limitation");
+        final int dataLimIdx = body.indexOf("=== DATA_LIMITATIONS ===");
+        assertTrue(dataLimIdx >= 0, "Must have DATA_LIMITATIONS section");
+        final String globalLimitations = body.substring(dataLimIdx);
+        assertFalse(globalLimitations.contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
+                "Global limitations must not contain unit-specific DUPLICATE");
+        assertEquals(2, result.units().size(), "Must have 2 analysis units");
+        final TeamAnalysisUnitReport reportA =
+                (TeamAnalysisUnitReport) result.units().get(0).report();
+        final TeamAnalysisUnitReport reportB =
+                (TeamAnalysisUnitReport) result.units().get(1).report();
+        assertTrue(reportA.limitations().contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
+                "Report A must contain DUPLICATE limitation");
+        assertFalse(reportB.limitations().contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
+                "Report B must NOT contain DUPLICATE limitation");
+    }
+
+    @Test
+    void directEntryUsesSameEvidenceContract() throws IOException {
+        responseBody = "{\"choices\":[{\"message\":{\"content\":\"test\"}}]}";
+        final var service = startService(2);
+        final var result = service.analyzeTeamGroups(teamGroups(List.of(
+                teamResultWithDuplicateIds(
+                        "dup-entry.wotbreplay", "dup-arena", "DupTeam", 1001L, 1))));
+        final String body = requestBodies.getLast();
+        assertTrue(body.contains("mandatory="),
+                "Body must contain mandatory= prefix. Body length: " + body.length());
+        assertTrue(body.contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
+                "Body must contain DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
+        final TeamAnalysisUnitReport report =
+                (TeamAnalysisUnitReport) result.units().getFirst().report();
+        assertTrue(report.limitations().contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
+                "Report must contain DUPLICATE limitation");
+    }
+
+    @Test
     void promptTruncationIsReportedInAnalysisUnit() throws IOException {
         final var service = startService(2);
         final var result = service.analyzeTeamGroups(
@@ -683,6 +754,38 @@ class AiReplayAnalysisServiceTest {
                 battle, null, null, capabilities, null, null);
     }
 
+    private static ReplayProcessingResult teamResultWithClan(
+            final String fileName, final String arenaId,
+            final String clan, final boolean withDuplicateId) {
+        final Battle battle = new Battle();
+        battle.arenaId = arenaId;
+        battle.mapName = "team_map";
+        battle.arenaBonusType = 2;
+        battle.durationS = 300.0;
+        battle.winnerTeam = 1;
+        battle.recorder = withDuplicateId ? "PlayerA" : "PlayerC";
+        final PlayerResult p1 = clanPlayer(1001L, "PlayerA", 1, 1500, clan);
+        final PlayerResult p2 = clanPlayer(1002L, "PlayerB", 1, 1200, clan);
+        final PlayerResult p3;
+        final PlayerResult p4;
+        if (withDuplicateId) {
+            p3 = clanPlayer(1001L, "PlayerDup", 1, 800, clan);
+            p4 = clanPlayer(1003L, "PlayerC", 1, 900, clan);
+        } else {
+            p3 = clanPlayer(1003L, "PlayerC", 1, 900, clan);
+            p4 = clanPlayer(1005L, "PlayerE", 1, 1000, clan);
+        }
+        final PlayerResult enemy = clanPlayer(9999L, "Enemy", 2, 500, "ENEMY_CLAN");
+        battle.players = List.of(p1, p2, p3, p4, enemy);
+        final var capabilities = new ReplayProcessingCapabilities(
+                true, true, false, false, false, true, false, false);
+        return new ReplayProcessingResult(
+                fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
+                new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",
+                        withDuplicateId ? 1001L : 1003L, null),
+                battle, null, null, capabilities, null, null);
+    }
+
     private static PlayerResult player(
             final long accountId, final String nickname,
             final int team, final int damage) {
@@ -697,6 +800,13 @@ class AiReplayAnalysisServiceTest {
         p.kills = team == 1 ? 2 : 1;
         p.survived = team == 1;
         p.deathTimeMillis = team == 1 ? 0 : 180_000;
+        return p;
+    }
+
+    private static PlayerResult clanPlayer(final long accountId, final String nickname,
+                                            final int team, final int damage, final String clan) {
+        final PlayerResult p = player(accountId, nickname, team, damage);
+        p.clan = clan;
         return p;
     }
 
