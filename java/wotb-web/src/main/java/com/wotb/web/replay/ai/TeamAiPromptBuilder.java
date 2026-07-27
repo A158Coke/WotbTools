@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.util.StringUtils;
 
@@ -51,6 +52,10 @@ final class TeamAiPromptBuilder {
     }
 
     static PromptInput single(final SingleTeamBattleAnalysisContext context) {
+        return single(context, List.of());
+    }
+
+    static PromptInput single(final SingleTeamBattleAnalysisContext context, final List<String> extraLimitations) {
         final BudgetWriter writer = new BudgetWriter(MAX_INPUT_CHARS);
         appendContextHeader(writer, context);
         appendFeatureSet(writer, context.features());
@@ -58,11 +63,16 @@ final class TeamAiPromptBuilder {
         if (context.features() != null) {
             limitations.addAll(context.features().limitations());
         }
+        limitations.addAll(extraLimitations);
         appendLimitations(writer, limitations);
         return writer.finish(limitations);
     }
 
     static PromptInput multi(final MultiTeamBattleAnalysisContext context) {
+        return multi(context, Map.of());
+    }
+
+    static PromptInput multi(final MultiTeamBattleAnalysisContext context, final Map<String, List<String>> evidenceLimitations) {
         final BudgetWriter writer = new BudgetWriter(MAX_INPUT_CHARS);
         final Set<String> limitations = new LinkedHashSet<>(context.limitations());
         writer.append("=== MULTI_TEAM_CONTEXT ===\n");
@@ -89,6 +99,10 @@ final class TeamAiPromptBuilder {
             appendFeatureSet(writer, perspective.features());
             if (perspective.features() != null) {
                 limitations.addAll(perspective.features().limitations());
+            }
+            final List<String> perUnitLimits = evidenceLimitations.get(perspective.analysisUnitId());
+            if (perUnitLimits != null) {
+                limitations.addAll(perUnitLimits);
             }
         }
         if (!context.rosterConsistent()) {

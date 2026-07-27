@@ -172,9 +172,7 @@ class BattlePhaseSummaryTest {
     }
 
     @Test void positiveInfinityBattleEnd() {
-        final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(50f, Float.POSITIVE_INFINITY);
-        assertValidPhases(phases, Float.POSITIVE_INFINITY);
-        assertFalse(phases.isEmpty());
+        assertTrue(BattlePhaseSummary.buildRelativePhases(50f, Float.POSITIVE_INFINITY).isEmpty());
     }
 
     @Test void negativeInfinityBattleEnd() {

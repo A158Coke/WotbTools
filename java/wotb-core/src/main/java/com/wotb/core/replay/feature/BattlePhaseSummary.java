@@ -45,7 +45,7 @@ public record BattlePhaseSummary(
             final float battleEndRelative
     ) {
         final List<BattlePhaseSummary> phases = new ArrayList<>();
-        if (battleEndRelative <= 0 || Float.isNaN(battleEndRelative)) return phases;
+        if (!Float.isFinite(battleEndRelative) || battleEndRelative <= 0f) return phases;
 
         final boolean validContact = firstContactRelative >= 0
                 && Float.isFinite(firstContactRelative)
@@ -66,18 +66,16 @@ public record BattlePhaseSummary(
             }
         }
 
-        // MID_GAME: starts at the END of the previous phase, only if enough room (finite battleEnd only)
-        if (Float.isFinite(battleEndRelative)) {
-            final float prevEnd = phases.get(phases.size() - 1).endTime();
-            if (battleEndRelative - prevEnd > MID_GAME_MIN_DURATION) {
-                phases.add(new BattlePhaseSummary(prevEnd, battleEndRelative,
-                        BattlePhaseType.MID_GAME, DecodeConfidence.INFERRED));
-            }
-
-            // ENDGAME: zero-length marker at battleEnd
-            phases.add(new BattlePhaseSummary(battleEndRelative, battleEndRelative,
-                    BattlePhaseType.ENDGAME, DecodeConfidence.EXACT));
+        // MID_GAME: starts at the END of the previous phase, only if enough room
+        final float prevEnd = phases.get(phases.size() - 1).endTime();
+        if (battleEndRelative - prevEnd > MID_GAME_MIN_DURATION) {
+            phases.add(new BattlePhaseSummary(prevEnd, battleEndRelative,
+                    BattlePhaseType.MID_GAME, DecodeConfidence.INFERRED));
         }
+
+        // ENDGAME: zero-length marker at battleEnd
+        phases.add(new BattlePhaseSummary(battleEndRelative, battleEndRelative,
+                BattlePhaseType.ENDGAME, DecodeConfidence.EXACT));
 
         return phases;
     }
