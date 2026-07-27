@@ -41,6 +41,7 @@ import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.feature.TeamAnalysisUnitReport;
 import com.wotb.core.replay.feature.TeamBattleAnalysisSummary;
+import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.util.PlayerResultFormat;
@@ -60,6 +61,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -274,9 +276,12 @@ public class AiReplayAnalysisService {
 
     /**
      * 完整 Team 分析编排：将 contexts 划分为兼容分区，每个分区发起一次 AI 请求。
-     * <p>分区规则：按 {@code (battleIdentity, perspectiveTeam)} 分组；
-     * 相同 perspectiveTeam 且阵容兼容（Jaccard ≥ 60%）的不同战斗可合并。
-     * 对立视角（同战斗、不同队伍）自然位于不同分区，各自独立请求。</p>
+     * <p>返回的 {@link TeamAnalyzeResult#analysis} 对应 {@code units} 中第一个分析单元
+     * 所属分区的 AI 输出（即第一个输入 group 所在分区的分析结果）。</p>
+     * <p>分区归属通过 canonical 排序（{@link #buildPartitions}）确定，以保证
+     * 对 permutation 稳定的分区行为：先按 {@code (battleIdentity, analysisUnitId)}
+     * 字典序排序，再执行 complete-link 分组。</p>
+     * <p>最终 {@code units} 的顺序保持原始输入 {@code groups} 的顺序不变。</p>
      */
     public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups) {
         if (!isConfigured()) {
@@ -305,6 +310,12 @@ public class AiReplayAnalysisService {
                     limitationsByUnit.computeIfAbsent(
                             ctx.analysisUnitId(), k -> new LinkedHashSet<>())
                             .add("AI_INPUT_TRUNCATED");
+                }
+                final var rosterEvidence = RosterEvidence.from(ctx);
+                if (rosterEvidence.limitations().contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS")) {
+                    limitationsByUnit.computeIfAbsent(
+                            ctx.analysisUnitId(), k -> new LinkedHashSet<>())
+                            .add("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
                 }
             } else {
                 final MultiTeamBattleAnalysisContext multiContext =
@@ -425,7 +436,7 @@ public class AiReplayAnalysisService {
     private static boolean contextsCompatible(
             final SingleTeamBattleAnalysisContext a,
             final SingleTeamBattleAnalysisContext b) {
-        if (!hasSufficientRosterCoverage(a) || !hasSufficientRosterCoverage(b)) {
+        if (!RosterEvidence.from(a).sufficientCoverage() || !RosterEvidence.from(b).sufficientCoverage()) {
             return false;
         }
         if (a.battleId().equals(b.battleId())
@@ -445,10 +456,10 @@ public class AiReplayAnalysisService {
             if (!clanA.equals(clanB)) {
                 return false;
             }
-            return jaccard(validAccountIds(a), validAccountIds(b))
+            return jaccard(RosterEvidence.from(a).distinctValidAccountIds(), RosterEvidence.from(b).distinctValidAccountIds())
                     >= MIN_ROSTER_JACCARD;
         }
-        return jaccard(validAccountIds(a), validAccountIds(b))
+        return jaccard(RosterEvidence.from(a).distinctValidAccountIds(), RosterEvidence.from(b).distinctValidAccountIds())
                 >= MIN_ROSTER_JACCARD;
     }
 
@@ -469,27 +480,7 @@ public class AiReplayAnalysisService {
         return TeamPerspectiveLabelResolver.resolveDominantClanTag(perspectivePlayers);
     }
 
-    /**
-     * 提取 context 中有效的阵容账号 ID 集合。
-     */
-    private static Set<Long> rosterAccounts(
-            final SingleTeamBattleAnalysisContext ctx) {
-        if (ctx.features() == null || ctx.features().members() == null) {
-            return Set.of();
-        }
-        return ctx.features().members().stream()
-                .map(member -> member.accountId())
-                .filter(id -> id > 0)
-                .collect(Collectors.toCollection(LinkedHashSet::new));
-    }
 
-    private static Set<Long> validAccountIds(final SingleTeamBattleAnalysisContext ctx) {
-        if (ctx.features() == null) return Set.of();
-        return ctx.features().members().stream()
-                .map(member -> member.accountId())
-                .filter(id -> id > 0)
-                .collect(Collectors.toCollection(LinkedHashSet::new));
-    }
 
     /**
      * 构建单个 Team Perspective 上下文；公开用于契约测试和后续离线分析。
@@ -557,10 +548,17 @@ public class AiReplayAnalysisService {
                 .distinct()
                 .count();
         final boolean rosterConsistent = hasConsistentRoster(summaries);
-        final List<String> limitations = rosterConsistent
-                ? List.of("PERSPECTIVE_TIMELINES_ISOLATED")
-                : List.of("PERSPECTIVE_TIMELINES_ISOLATED",
-                        "ROSTER_CONSISTENCY_UNCONFIRMED");
+        final List<String> limitations = new ArrayList<>();
+        limitations.add("PERSPECTIVE_TIMELINES_ISOLATED");
+        if (!rosterConsistent) {
+            limitations.add("ROSTER_CONSISTENCY_UNCONFIRMED");
+        }
+        for (final var ctx : contexts) {
+            if (RosterEvidence.from(ctx).limitations().contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS")) {
+                limitations.add("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
+                break;
+            }
+        }
         return new MultiTeamBattleAnalysisContext(
                 summaries.size(), uniqueBattleCount, summaries, rosterConsistent, limitations);
     }
@@ -633,27 +631,48 @@ public class AiReplayAnalysisService {
                         LinkedHashSet::new));
     }
 
-    private static boolean hasSufficientRosterCoverage(final SingleTeamBattleAnalysisContext ctx) {
-        final TeamBattleFeatureSet features = ctx.features();
-        if (features == null) return false;
-        final int expectedMembers = features.authoritativeAggregate() != null
-                ? features.authoritativeAggregate().memberCount()
-                : features.members().size();
-        if (expectedMembers <= 0) return false;
-        final long validAccounts = features.members().stream()
-                .map(member -> member.accountId())
-                .filter(id -> id > 0)
-                .count();
-        if (validAccounts == 0) return false;
-        return (double) validAccounts / expectedMembers >= MIN_ROSTER_ACCOUNT_COVERAGE;
-    }
-
     private static double jaccard(final Set<Long> left, final Set<Long> right) {
         final Set<Long> intersection = new HashSet<>(left);
         intersection.retainAll(right);
         final Set<Long> union = new HashSet<>(left);
         union.addAll(right);
         return union.isEmpty() ? 0.0 : (double) intersection.size() / union.size();
+    }
+
+    private record RosterEvidence(
+        int expectedMemberCount,
+        Set<Long> distinctValidAccountIds,
+        double coverageRatio,
+        boolean sufficientCoverage,
+        List<String> limitations
+    ) {
+        static RosterEvidence from(final SingleTeamBattleAnalysisContext ctx) {
+            final TeamBattleFeatureSet features = ctx.features();
+            if (features == null) return empty();
+            final int expected = features.authoritativeAggregate() != null
+                ? features.authoritativeAggregate().memberCount()
+                : features.members().size();
+            if (expected <= 0) return empty();
+            final Set<Long> distinctValid = features.members().stream()
+                .map(TeamMemberFeatureSet::accountId)
+                .filter(id -> id > 0)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+            final long totalPositive = features.members().stream()
+                .map(TeamMemberFeatureSet::accountId)
+                .filter(id -> id > 0)
+                .count();
+            final List<String> limits = new ArrayList<>();
+            if (totalPositive > distinctValid.size()) {
+                limits.add("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
+            }
+            final double ratio = Math.min((double) distinctValid.size() / expected, 1.0);
+            return new RosterEvidence(expected, Collections.unmodifiableSet(distinctValid),
+                ratio, ratio >= MIN_ROSTER_ACCOUNT_COVERAGE, Collections.unmodifiableList(limits));
+        }
+
+        static RosterEvidence empty() {
+            return new RosterEvidence(0, Set.of(), 0.0, false, List.of());
+        }
     }
 
     private static String unresolvedTeamCode(
