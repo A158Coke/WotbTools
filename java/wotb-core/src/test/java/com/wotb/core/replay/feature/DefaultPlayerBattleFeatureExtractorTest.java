@@ -243,4 +243,87 @@ class DefaultPlayerBattleFeatureExtractorTest {
                 0f, 1f, MovementType.MOVING, pos, pos, 0f, Float.POSITIVE_INFINITY,
                 DecodeConfidence.EXACT)); // infinite speed
     }
+
+    // ===== Dual-clock timestamp helpers =====
+
+    private static ReplayTimestamp ts(final float rawSec, final Float battleSec) {
+        return new ReplayTimestamp(rawSec, battleSec);
+    }
+
+    private static PositionChangedEvent position(final int seq, final float raw, final Float battle,
+                                                  final int eid, final float x, final float z) {
+        return new PositionChangedEvent(seq, ts(raw, battle), 10, DecodeConfidence.EXACT, eid, 0, 0,
+                x, 0, z, 0, 0, 0, 0, 0, 0, (byte) 0);
+    }
+
+    private static DamageEvent damage(final int seq, final float raw, final Float battle,
+                                       final int att, final int vic, final int dmg) {
+        return new DamageEvent(seq, ts(raw, battle), 8, DecodeConfidence.EXACT, att, vic, null, null, dmg, false);
+    }
+
+    // ===== Dual-clock tests =====
+
+    @Test
+    void dualClockMovementTimesAreRelative() {
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(60f, List.of(
+                        mapping(1, 1, 1001L),
+                        position(2, 65f, 5f, 1, 0f, 0f))), recorderMapping());
+        assertEquals(1, features.movements().size());
+        assertEquals(5f, features.movements().getFirst().startTime(), 0.01f);
+        assertEquals(5f, features.movements().getFirst().endTime(), 0.01f);
+    }
+
+    @Test
+    void dualClockEngagementTimesAreRelative() {
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(60f, List.of(
+                        mapping(1, 1, 1001L),
+                        mapping(2, 2, 2001L),
+                        damage(3, 65f, 5f, 1, 2, 100))), recorderMapping());
+        assertEquals(1, features.engagements().size());
+        assertEquals(5f, features.engagements().getFirst().startTime(), 0.01f);
+    }
+
+    @Test
+    void dualClockKeyEventTimeIsRelative() {
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(60f, List.of(
+                        mapping(1, 1, 1001L),
+                        mapping(2, 2, 2001L),
+                        damage(3, 65f, 5f, 1, 2, 100))), recorderMapping());
+        assertFalse(features.keyEvents().isEmpty());
+        assertEquals(5f, features.keyEvents().getFirst().clockSec(), 0.01f);
+    }
+
+    @Test
+    void unresolvedStartWithValidBattleClock() {
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(null, List.of(
+                        mapping(1, 1, 1001L),
+                        position(2, 120f, 20f, 1, 0f, 0f))), recorderMapping());
+        assertEquals(1, features.movements().size());
+        assertEquals(20f, features.movements().getFirst().startTime(), 0.01f);
+    }
+
+    @Test
+    void unresolvedStartWithRawOnlyNoNaN() {
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(null, List.of(
+                        mapping(1, 1, 1001L),
+                        position(2, 120f, null, 1, 0f, 0f),
+                        position(3, 130f, null, 1, 30f, 0f))), recorderMapping());
+        assertTrue(features.movements().isEmpty());
+    }
+
+    @Test
+    void battleOnlyWithNaNPosition() {
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(null, List.of(
+                        mapping(1, 1, 1001L),
+                        position(2, Float.NaN, 20f, 1, 0f, 0f),
+                        position(3, Float.NaN, 25f, 1, 30f, 0f))), recorderMapping());
+        assertEquals(1, features.movements().size());
+        assertEquals(20f, features.movements().getFirst().startTime(), 0.01f);
+    }
 }
