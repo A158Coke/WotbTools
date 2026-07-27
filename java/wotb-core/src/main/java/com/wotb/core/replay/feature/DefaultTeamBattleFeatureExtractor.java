@@ -12,7 +12,7 @@ import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
-import com.wotb.core.replay.event.ReplayTimestamp;
+
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.util.PlayerResultFormat;
@@ -113,10 +113,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 positionsByEntity, entityMapping, perspectiveTeam, battleStartRes);
         final float firstContactTime = attributedDamage.stream()
                 .filter(damage -> involvesTeam(damage, perspectiveTeam))
-                .mapToDouble(damage -> {
-                    final float raw = ReplayTimestamp.safeClockSec(damage.event().timestamp());
-                    return battleStartRes.battleRelative(raw);
-                })
+                .mapToDouble(damage ->
+                    battleStartRes.battleRelative(damage.event().timestamp().rawClockSec()))
                 .min()
                 .stream()
                 .mapToObj(value -> (float) value)
@@ -126,7 +124,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         final float phaseEndClock = battleEnd.clockSec() != null
                 ? battleEnd.clockSec() : lastObservedClock(events, battleStartRes);
         final List<BattlePhaseSummary> battlePhases = hasUsableTimedEvent
-                ? DefaultBattleFeatureExtractor.buildRelativePhases(
+                ? BattlePhaseSummary.buildRelativePhases(
                         firstContactTime, phaseEndClock)
                 : List.of();
         final List<KeyBattleEvent> keyEvents = buildKeyEvents(
@@ -540,7 +538,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         return damages.stream()
                 .sorted(Comparator
                         .comparingDouble((AttributedDamage damage) ->
-                                ReplayTimestamp.safeClockSec(damage.event().timestamp()))
+                                damage.event().timestamp().rawClockSec())
                         .thenComparingInt(damage -> damage.event().sequence()))
                 .toList();
     }
@@ -549,8 +547,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             final AttributedDamage previous,
             final AttributedDamage current
     ) {
-        return ReplayTimestamp.safeClockSec(current.event().timestamp())
-                - ReplayTimestamp.safeClockSec(previous.event().timestamp());
+        return current.event().timestamp().rawClockSec()
+                - previous.event().timestamp().rawClockSec();
     }
 
     private static TeamEngagementSummary buildTeamEngagementSegment(
@@ -606,11 +604,11 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         for (int start = 0; start < sorted.size(); start++) {
             final Set<String> attackers = new LinkedHashSet<>();
             final float startClock =
-                    ReplayTimestamp.safeClockSec(sorted.get(start).event().timestamp());
+                    sorted.get(start).event().timestamp().rawClockSec();
             for (int end = start; end < sorted.size(); end++) {
                 final AttributedDamage damage = sorted.get(end);
                 final float endClock =
-                        ReplayTimestamp.safeClockSec(damage.event().timestamp());
+                        damage.event().timestamp().rawClockSec();
                 if (endClock - startClock > FOCUS_FIRE_WINDOW_SEC) {
                     break;
                 }
@@ -690,8 +688,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 return;
             }
             for (final PositionChangedEvent position : positions) {
-                    final float rawClock = ReplayTimestamp.safeClockSec(position.timestamp());
-                    final float activeClock = battleStartRes.battleRelative(rawClock);
+                    final float activeClock = battleStartRes.battleRelative(position.timestamp().rawClockSec());
                     final int window = (int) Math.floor(activeClock / FORMATION_WINDOW_SEC);
                     windows.computeIfAbsent(window, ignored -> new HashMap<>())
                             .merge(identityKey(identity), position,
@@ -886,7 +883,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         if (event == null || event.timestamp() == null) {
             return false;
         }
-        final float clock = ReplayTimestamp.safeClockSec(event.timestamp());
+        final float clock = event.timestamp().rawClockSec();
         return Float.isFinite(clock) && clock >= 0f;
     }
 
@@ -945,7 +942,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .filter(damage -> involvesTeam(damage, perspectiveTeam))
                 .min(Comparator
                         .comparingDouble((AttributedDamage damage) ->
-                                ReplayTimestamp.safeClockSec(damage.event().timestamp()))
+                                damage.event().timestamp().rawClockSec())
                         .thenComparingInt(damage -> damage.event().sequence()))
                 .ifPresent(damage -> events.add(new KeyBattleEvent(
                         battleStartRes.battleRelative(damage.event().timestamp().rawClockSec()),
@@ -1010,8 +1007,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .map(BattleEndedEvent.class::cast)
                 .filter(DefaultTeamBattleFeatureExtractor::hasUsableClock)
                 .map(event -> new BattleEndEvidence(
-                        battleStartRes.battleRelative(
-                                ReplayTimestamp.safeClockSec(event.timestamp())),
+                        battleStartRes.battleRelative(event.timestamp().rawClockSec()),
                         event.confidence() == null
                                 ? DecodeConfidence.UNKNOWN : event.confidence(),
                         "REPLAY_EVENT"))
@@ -1032,7 +1028,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         final float lastRawClock = (float) events.stream()
                 .map(ReplayEvent::timestamp)
                 .filter(Objects::nonNull)
-                .mapToDouble(ReplayTimestamp::safeClockSec)
+                .mapToDouble(ts -> (double) ts.rawClockSec())
                 .filter(Double::isFinite)
                 .filter(clock -> clock >= 0.0)
                 .max()
