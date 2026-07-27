@@ -3,6 +3,8 @@ package com.wotb.core.util;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 
+import java.util.Locale;
+
 /**
  * 玩家战绩格式化和通用查询工具（共享于 wotb-core 和 wotb-web）。
  */
@@ -12,6 +14,40 @@ public final class PlayerResultFormat {
 
     public static String safe(final String s) {
         return (s == null || s.isBlank()) ? "?" : s;
+    }
+
+    /**
+     * JSON 转义并加引号，用于 AI Prompt 不可信数据边界。
+     * 与 {@code TeamAiPromptBuilder.quoteData} 逻辑一致，
+     * 但无参时返回 {@code "?"} 而非 {@code "UNKNOWN"}。
+     */
+    public static String quoteForPrompt(final String s) {
+        if (s == null || s.isBlank()) {
+            return "\"?\"";
+        }
+        final StringBuilder quoted = new StringBuilder(s.length() + 2);
+        quoted.append('"');
+        for (int index = 0; index < s.length(); index++) {
+            final char c = s.charAt(index);
+            switch (c) {
+                case '"' -> quoted.append("\\\"");
+                case '\\' -> quoted.append("\\\\");
+                case '\b' -> quoted.append("\\b");
+                case '\f' -> quoted.append("\\f");
+                case '\n' -> quoted.append("\\n");
+                case '\r' -> quoted.append("\\r");
+                case '\t' -> quoted.append("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        quoted.append(String.format(Locale.ROOT, "\\u%04x", (int) c));
+                    } else {
+                        quoted.append(c);
+                    }
+                }
+            }
+        }
+        quoted.append('"');
+        return quoted.toString();
     }
 
     /** 死亡时刻（秒）：优先 deathTimeMillis，回退 survivalTimeSec。 */

@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.stream.DoubleStream;
 
 /**
  * 默认录像者个人特征提取器。
@@ -93,6 +94,21 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
             }
         }
 
+        // Battle-end resolution: authoritative duration first, then event, then last evidence
+        if (battle != null && battle.durationS != null && Double.isFinite(battle.durationS) && battle.durationS >= 0.0) {
+            battleEndClock = battle.durationS.floatValue();
+        } else if (!Float.isFinite(battleEndClock)) {
+            // Fallback: last recorder position or damage time
+            final float lastEvidence = (float) DoubleStream.concat(
+                            positions.stream().mapToDouble(t -> (double) t.battleRelativeSec()),
+                            damages.stream().mapToDouble(t -> (double) t.battleRelativeSec()))
+                    .max()
+                    .orElse(Float.NaN);
+            if (Float.isFinite(lastEvidence) && lastEvidence >= 0f) {
+                battleEndClock = lastEvidence;
+            }
+        }
+
         // 压缩移动段（只针对 recorder，使用 battle-relative 时间）
         final List<MovementSegment> movements = compressMovements(positions);
 
@@ -113,6 +129,7 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         if (battleStartRes.limitation() != null) {
             limitations.add(battleStartRes.limitation());
         }
+        limitations.add("OBSERVED_DAMAGE_IS_PARTIAL");
         if (!hasRealFeatures) {
             limitations.add("Recorder entity has no position or damage events in event stream");
         }

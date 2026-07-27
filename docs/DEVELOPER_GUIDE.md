@@ -262,7 +262,7 @@ AI 复盘区分两种 scope，互不混用：
 - **MemberIdentity**：accountId > 0 时优先使用 accountId；accountId ≤ 0 时使用规范化 nickname（trim、Locale.ROOT、case-insensitive）。用于 engagement 匹配、cluster 成员标识和 key events 的全链路 identity。
 - **prompt 禁止 raw team**：AI prompt 中不出现 `perspectiveTeam=1/2`、`winnerTeam=1/2`、`Team 1/2`、`队伍1/2`。使用 `teamLabel=`、`result=TEAM_WIN/TEAM_LOSS/DRAW_OR_UNKNOWN`。BATTLE_END key event 同样使用 `result=` 三态。
 - **secret redaction**：AI provider 错误摘要优先使用 Jackson tree JSON 递归隐藏敏感 key。`isSensitiveKey()` 归一化匹配覆盖 x-api-key、AWS Access Key、大小写/连字符/下划线变体。
-- **battle start resolution**：`BattleStartResolver.resolve(reconstructionBattleStart, diagnostics)` 返回 `BattleStartResolution`（IDENTIFIED / ZERO_CLOCK_INFERRED / ESTIMATED / UNRESOLVED）。仅通过静态 factories 构造。准备阶段静止不进入 STATIONARY；formation/first contact/engagement/key events 使用 `battleRelative(rawClock)`。`PRE_BATTLE_START_ESTIMATED`/`PRE_BATTLE_START_UNRESOLVED` limitation 传播。
+- **battle start resolution**：`BattleStartResolver.resolve(reconstructionBattleStart, diagnostics)` 返回 `BattleStartResolution`（IDENTIFIED / ESTIMATED / UNRESOLVED）。仅通过静态 factories 构造。准备阶段静止不进入 STATIONARY；formation/first contact/engagement/key events 使用 `battleRelative(rawClock)`。`PRE_BATTLE_START_ESTIMATED`/`PRE_BATTLE_START_UNRESOLVED` limitation 传播。
 
 ### PLAYER_FOCUSED（随机战斗）
 
@@ -567,7 +567,13 @@ files → DefaultReplayProcessingFacade.processBatch()
 | 多场 perspective | 10 |
 | 单次压缩上下文 | 30,000 字符 |
 
-超过预算会确定性截断，并在结果中加入 `AI_INPUT_TRUNCATED`。原始 `ReplayEvent` 和逐帧坐标流不得进入 Prompt。文件名、昵称、地图名和证据文本按 JSON 字符串编码，并在 system prompt 中声明为不可信数据，不能作为模型指令。
+超过预算会确定性截断，并在结果中加入 `AI_INPUT_TRUNCATED`。截断策略采用两级输出：
+1. **Required contract section**（header + `unitLimitations=[...]`）必须完整写入，超出预算时 fail fast（`IllegalStateException`），不得静默丢失；
+2. **Truncatable feature section**（authoritative/observed/members/formation/phases/engagements/events）可以被截断，截断后追加 `LIMITATION: AI_INPUT_TRUNCATED`。
+
+所有入口（单队/多队/编排）使用相同的 evidence limitation 规则：`analyzeSingleTeamContext()` 和 `analyzeMultiTeamContext()` 内部派生 RosterEvidence，与 `analyzeTeamGroups()` 共享同一 `buildPartitions()` → builder 路径。per-unit limitations 在各自上下文头部作为 `unitLimitations=[...]` 优先输出，不混入 global `DATA_LIMITATIONS`。
+
+原始 `ReplayEvent` 和逐帧坐标流不得进入 Prompt。文件名、昵称、地图名和证据文本按 JSON 字符串编码，并在 system prompt 中声明为不可信数据，不能作为模型指令。PLAYER_FOCUSED 与 TEAM_PERSPECTIVE 使用相同的 JSON escaping：TEAM 通过 `TeamAiPromptBuilder.quoteData()`，PLAYER 通过共享 `PlayerResultFormat.quoteForPrompt()`（与 `quoteData()` 逻辑一致）。所有外部字符串必须通过 `quoteForPrompt()` 或 `quoteData()` 转义后才能写入 prompt body。
 
 ### 错误与安全
 

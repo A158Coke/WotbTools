@@ -6,7 +6,6 @@ public record BattleStartResolution(Status status, Float battleStartRawClockSec,
 
     public enum Status {
         IDENTIFIED,
-        ZERO_CLOCK_INFERRED,
         ESTIMATED,
         UNRESOLVED
     }
@@ -19,12 +18,6 @@ public record BattleStartResolution(Status status, Float battleStartRawClockSec,
                     throw new IllegalArgumentException("IDENTIFIED requires finite clock");
                 if (limitation != null)
                     throw new IllegalArgumentException("IDENTIFIED must have null limitation");
-            }
-            case ZERO_CLOCK_INFERRED -> {
-                if (battleStartRawClockSec == null || battleStartRawClockSec != 0f)
-                    throw new IllegalArgumentException("ZERO_CLOCK_INFERRED requires clock=0");
-                if (limitation != null)
-                    throw new IllegalArgumentException("ZERO_CLOCK_INFERRED must have null limitation");
             }
             case ESTIMATED -> {
                 if (battleStartRawClockSec == null || !Float.isFinite(battleStartRawClockSec))
@@ -43,10 +36,6 @@ public record BattleStartResolution(Status status, Float battleStartRawClockSec,
 
     public static BattleStartResolution identified(final float clockSec) {
         return new BattleStartResolution(Status.IDENTIFIED, clockSec, null);
-    }
-
-    public static BattleStartResolution zeroClockInferred() {
-        return new BattleStartResolution(Status.ZERO_CLOCK_INFERRED, 0f, null);
     }
 
     public static BattleStartResolution estimated(final float clockSec) {

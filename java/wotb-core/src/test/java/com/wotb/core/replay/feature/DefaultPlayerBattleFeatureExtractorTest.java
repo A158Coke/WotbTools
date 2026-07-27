@@ -16,6 +16,7 @@ import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
+import com.wotb.core.model.Battle;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import org.junit.jupiter.api.Test;
 
@@ -314,6 +315,105 @@ class DefaultPlayerBattleFeatureExtractorTest {
                         position(2, 120f, null, 1, 0f, 0f),
                         position(3, 130f, null, 1, 30f, 0f))), recorderMapping(), null);
         assertTrue(features.movements().isEmpty());
+    }
+
+    // ===== Battle-end resolution =====
+
+    @Test
+    void authoritativeDurationUsedWhenNoBattleEndEvent() {
+        final Battle battle = new Battle();
+        battle.durationS = 120.0;
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(BATTLE_START_RAW, List.of(
+                        mapping(1, 1, 1001L),
+                        mapping(2, 2, 2001L),
+                        damage(3, BATTLE_START_RAW + 5f, 1, 2, 100))), recorderMapping(), battle);
+        assertFalse(features.phases().isEmpty());
+        assertTrue(features.phases().getLast().endTime() <= 120f);
+    }
+
+    @Test
+    void authoritativeDurationTakesPriorityOverConflictingEvent() {
+        final Battle battle = new Battle();
+        battle.durationS = 120.0;
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(BATTLE_START_RAW, List.of(
+                        mapping(1, 1, 1001L),
+                        mapping(2, 2, 2001L),
+                        damage(3, BATTLE_START_RAW + 5f, 1, 2, 100),
+                        battleEnd(4, BATTLE_START_RAW + 50f))), recorderMapping(), battle);
+        assertFalse(features.phases().isEmpty());
+        assertEquals(120f, features.phases().getLast().endTime(), 0.01f);
+    }
+
+    @Test
+    void nullDurationProducesEmptyPhases() {
+        final Battle battle = new Battle();
+        battle.durationS = null;
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(BATTLE_START_RAW, List.of()), recorderMapping(), battle);
+        assertTrue(features.phases().isEmpty());
+    }
+
+    @Test
+    void nanDurationProducesEmptyPhases() {
+        final Battle battle = new Battle();
+        battle.durationS = Double.NaN;
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(BATTLE_START_RAW, List.of()), recorderMapping(), battle);
+        assertTrue(features.phases().isEmpty());
+    }
+
+    @Test
+    void negativeDurationProducesEmptyPhases() {
+        final Battle battle = new Battle();
+        battle.durationS = -1.0;
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(BATTLE_START_RAW, List.of()), recorderMapping(), battle);
+        assertTrue(features.phases().isEmpty());
+    }
+
+    @Test
+    void eventFallbackUsedWhenDurationNull() {
+        final Battle battle = new Battle();
+        battle.durationS = null;
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(BATTLE_START_RAW, List.of(
+                        mapping(1, 1, 1001L),
+                        mapping(2, 2, 2001L),
+                        damage(3, BATTLE_START_RAW + 5f, 1, 2, 100),
+                        battleEnd(4, BATTLE_START_RAW + 80f))), recorderMapping(), battle);
+        assertFalse(features.phases().isEmpty());
+        assertEquals(80f, features.phases().getLast().endTime(), 0.01f);
+    }
+
+    @Test
+    void lastEvidenceFallbackUsedWhenDurationAndEventUnavailable() {
+        final Battle battle = new Battle();
+        battle.durationS = null;
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(BATTLE_START_RAW, List.of(
+                        mapping(1, 1, 1001L),
+                        mapping(2, 2, 2001L),
+                        position(3, BATTLE_START_RAW, 1, 0f, 0f),
+                        position(4, BATTLE_START_RAW + 5f, 1, 10f, 0f),
+                        position(5, BATTLE_START_RAW + 10f, 1, 20f, 0f),
+                        damage(6, BATTLE_START_RAW + 90f, 1, 2, 100))), recorderMapping(), battle);
+        assertFalse(features.phases().isEmpty());
+        assertEquals(90f, features.phases().getLast().endTime(), 0.01f);
+    }
+
+    @Test
+    void otherPlayerEventsDoNotExtendPlayerPhase() {
+        final Battle battle = new Battle();
+        battle.durationS = null;
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(BATTLE_START_RAW, List.of(
+                        mapping(1, 1, 1001L),
+                        position(2, BATTLE_START_RAW + 200f, 2, 0f, 0f),
+                        position(3, BATTLE_START_RAW + 50f, 1, 100f, 0f))), recorderMapping(), battle);
+        assertFalse(features.phases().isEmpty());
+        assertEquals(50f, features.phases().getLast().endTime(), 0.01f);
     }
 
     @Test

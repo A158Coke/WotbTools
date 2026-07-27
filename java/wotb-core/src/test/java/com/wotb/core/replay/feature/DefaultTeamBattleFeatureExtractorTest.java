@@ -556,6 +556,98 @@ class DefaultTeamBattleFeatureExtractorTest {
         assertEquals(120f, battleEnd.clockSec(), 0.01f);
     }
 
+    // ===== Enemy-only damage does not affect team battle phases =====
+
+    @Test
+    void enemyOnlyDamageProducesEmptyPhases() {
+        final Fixture fixture = fixture();
+        fixture.battle().durationS = null;
+        final List<BattleParticipant> participants = new ArrayList<>(fixture.participants());
+        participants.add(new BattleParticipant(202L, "EnemyTwo", 2, 99, "e", false));
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 11, 101L),
+                mapping(3, 20, 200L),
+                mapping(4, 99, 202L),
+                damage(5, 50f, 20, 99, 200));
+        final TeamBattleFeatureSet features = extract(
+                new Fixture(fixture.battle(), participants, events), events);
+        assertTrue(features.battlePhases().isEmpty());
+    }
+
+    @Test
+    void enemyOnlyDamageDoesNotExtendFallbackPhaseEnd() {
+        final Fixture fixture = fixture();
+        fixture.battle().durationS = null;
+        final List<BattleParticipant> participants = new ArrayList<>(fixture.participants());
+        participants.add(new BattleParticipant(202L, "EnemyTwo", 2, 99, "e", false));
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 11, 101L),
+                mapping(3, 20, 200L),
+                mapping(4, 99, 202L),
+                position(5, 90f, 10, 0f, 0f),
+                damage(6, 150f, 20, 99, 200));
+        final TeamBattleFeatureSet features = extract(
+                new Fixture(fixture.battle(), participants, events), events);
+        assertFalse(features.battlePhases().isEmpty());
+        assertTrue(features.battlePhases().stream()
+                .noneMatch(phase -> phase.endTime() >= 150f));
+        assertTrue(features.battlePhases().stream()
+                .anyMatch(phase -> Math.abs(phase.endTime() - 90f) < 0.01f));
+    }
+
+    @Test
+    void enemyOnlyDamageDoesNotChangeFirstContact() {
+        final Fixture fixture = fixture();
+        final List<BattleParticipant> participants = new ArrayList<>(fixture.participants());
+        participants.add(new BattleParticipant(202L, "EnemyTwo", 2, 99, "e", false));
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 11, 101L),
+                mapping(3, 20, 200L),
+                mapping(4, 99, 202L),
+                damage(5, 20f, 20, 99, 200),
+                damage(6, 40f, 10, 20, 200));
+        final TeamBattleFeatureSet features = extract(
+                new Fixture(fixture.battle(), participants, events), events);
+        final KeyBattleEvent firstContact = features.keyEvents().stream()
+                .filter(event -> "TEAM_FIRST_CONTACT".equals(event.type()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(40f, firstContact.clockSec(), 0.01f);
+        final BattlePhaseSummary firstContactPhase = features.battlePhases().stream()
+                .filter(phase -> phase.type() == BattlePhaseType.FIRST_CONTACT)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(40f, firstContactPhase.startTime(), 0.01f);
+        assertTrue(features.keyEvents().stream()
+                .noneMatch(event -> "TEAM_FIRST_CONTACT".equals(event.type())
+                        && Math.abs(event.clockSec() - 20f) < 0.01f));
+    }
+
+    @Test
+    void authoritativeDurationStillRespectedWithEnemyOnlyDamage() {
+        final Fixture fixture = fixture();
+        fixture.battle().durationS = 120.0;
+        final List<BattleParticipant> participants = new ArrayList<>(fixture.participants());
+        participants.add(new BattleParticipant(202L, "EnemyTwo", 2, 99, "e", false));
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 11, 101L),
+                mapping(3, 20, 200L),
+                mapping(4, 99, 202L),
+                position(5, 5f, 10, 0f, 0f),
+                damage(6, 150f, 20, 99, 200));
+        final TeamBattleFeatureSet features = extract(
+                new Fixture(fixture.battle(), participants, events), events);
+        assertFalse(features.battlePhases().isEmpty());
+        assertTrue(features.battlePhases().stream()
+                .noneMatch(phase -> phase.endTime() >= 150f));
+        assertTrue(features.battlePhases().stream()
+                .allMatch(phase -> phase.endTime() <= 120f + 0.01f));
+    }
+
     // ===== Position audit clamped<=observed + pre-battle/invalid (Finding #5) =====
 
     @Test

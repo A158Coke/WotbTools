@@ -91,10 +91,11 @@ teamFeatureExtractionPossible = false;
 
 ```text
 analyzePlayerContext
-analyzeMultiPlayerContext
 analyzePlayerOrFallback
 analyzeMulti
 ```
+
+（`analyzeMultiPlayerContext` 已被删除——该路径使用 `boolean victory` 两态压缩且无生产调用方；生产 multi-player 统一使用 `analyzeMulti(List<Battle>)` + `FriendlyEnemyResult.Winner` 三态。）
 
 缺少 Team-Level 对应入口、摘要构建和 Prompt。
 

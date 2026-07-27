@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -382,5 +383,129 @@ class TeamAiPromptBuilderTest {
             index += token.length();
         }
         return count;
+    }
+
+    @Test
+    void truncationPreservesMandatoryLimitations() {
+        final SingleTeamBattleAnalysisContext base = contextWithMembers(20, 400);
+        final TeamBattleFeatureSet featuresWithLim = new TeamBattleFeatureSet(
+                base.features().perspectiveTeam(),
+                base.features().members(),
+                base.features().authoritativeAggregate(),
+                base.features().observedAggregate(),
+                base.features().formationPhases(),
+                base.features().engagements(),
+                base.features().battlePhases(),
+                base.features().keyEvents(),
+                base.features().coverage(),
+                List.of("OBSERVED_DAMAGE_IS_PARTIAL"),
+                true);
+        final SingleTeamBattleAnalysisContext context =
+                new SingleTeamBattleAnalysisContext(
+                        base.analysisUnitId(), base.battleId(), base.fileName(),
+                        base.battleCategory(), base.battle(), 1, featuresWithLim,
+                        base.coverage(), base.limitations());
+
+        final TeamAiPromptBuilder.PromptInput input =
+                TeamAiPromptBuilder.single(context);
+
+        assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+        assertTrue(input.limitations().contains("AI_INPUT_TRUNCATED"));
+        assertTrue(input.content().contains("unitLimitations="),
+                "Content must contain unitLimitations=");
+        final int unitLimPos = input.content().indexOf("unitLimitations=");
+        final int authPos = input.content().indexOf("AUTHORITATIVE_TEAM_RESULT");
+        assertTrue(unitLimPos >= 0 && authPos > unitLimPos,
+                "unitLimitations= must precede bulk feature data (AUTHORITATIVE_TEAM_RESULT)");
+        assertTrue(input.content().endsWith("LIMITATION: AI_INPUT_TRUNCATED\n"),
+                "Content must end with AI_INPUT_TRUNCATED");
+    }
+
+    @Test
+    void singleTruncationReportConsistentWithBody() {
+        final SingleTeamBattleAnalysisContext base = contextWithMembers(20, 400);
+        final TeamBattleFeatureSet featuresWithLim = new TeamBattleFeatureSet(
+                base.features().perspectiveTeam(),
+                base.features().members(),
+                base.features().authoritativeAggregate(),
+                base.features().observedAggregate(),
+                base.features().formationPhases(),
+                base.features().engagements(),
+                base.features().battlePhases(),
+                base.features().keyEvents(),
+                base.features().coverage(),
+                List.of("OBSERVED_DAMAGE_IS_PARTIAL"),
+                true);
+        final SingleTeamBattleAnalysisContext context =
+                new SingleTeamBattleAnalysisContext(
+                        base.analysisUnitId(), base.battleId(), base.fileName(),
+                        base.battleCategory(), base.battle(), 1, featuresWithLim,
+                        base.coverage(), base.limitations());
+
+        final TeamAiPromptBuilder.PromptInput input =
+                TeamAiPromptBuilder.single(context);
+
+        assertTrue(input.limitations().contains("AI_INPUT_TRUNCATED"));
+        assertTrue(input.content().contains("AI_INPUT_TRUNCATED"));
+        assertTrue(input.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL"));
+    }
+
+    @Test
+    void multiTruncationPreservesPerUnitLimitations() {
+        final SingleTeamBattleAnalysisContext baseA = contextWithMembers(20, 400);
+        // Use a unique limitation that is NOT in the standard feature set
+        final TeamBattleFeatureSet featuresA = new TeamBattleFeatureSet(
+                baseA.features().perspectiveTeam(),
+                baseA.features().members(),
+                baseA.features().authoritativeAggregate(),
+                baseA.features().observedAggregate(),
+                baseA.features().formationPhases(),
+                baseA.features().engagements(),
+                baseA.features().battlePhases(),
+                baseA.features().keyEvents(),
+                baseA.features().coverage(),
+                List.of("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
+                true);
+        final SingleTeamBattleAnalysisContext baseB = contextWithMembers(20, 400);
+        final List<TeamBattleAnalysisSummary> summaries = List.of(
+                new TeamBattleAnalysisSummary(
+                        "unit-A", null, "a.wotbreplay", "map1", null, 300.0,
+                        1, List.of(10001L), featuresA, "TeamA"),
+                new TeamBattleAnalysisSummary(
+                        "unit-B", null, "b.wotbreplay", "map1", null, 300.0,
+                        2, List.of(20001L), baseB.features(), "TeamB"));
+        final var multi = new MultiTeamBattleAnalysisContext(
+                2, 1, summaries, false,
+                List.of("PERSPECTIVE_TIMELINES_ISOLATED"));
+        final Map<String, List<String>> evidenceLimitations = Map.of(
+                "unit-A", List.of("EVIDENCE_PARTIAL"),
+                "unit-B", List.of("LOW_CONFIDENCE_EVENTS"));
+
+        final TeamAiPromptBuilder.PromptInput input =
+                TeamAiPromptBuilder.multi(multi, evidenceLimitations);
+
+        assertTrue(input.limitations().contains("AI_INPUT_TRUNCATED"));
+        assertTrue(input.content().contains("AI_INPUT_TRUNCATED"));
+        if (input.limitations().contains("AI_INPUT_TRUNCATED")) {
+            final String c = input.content();
+            final int pers1 = c.indexOf("=== PERSPECTIVE 1 ===");
+            final int pers2 = c.indexOf("=== PERSPECTIVE 2 ===");
+            assertTrue(pers1 >= 0, "Perspective 1 section must exist");
+            assertTrue(pers2 > pers1, "Perspective 2 section must exist after 1");
+            final String sec1 = c.substring(pers1, pers2);
+            final String sec2 = c.substring(pers2);
+            assertTrue(sec1.contains("unitLimitations="),
+                    "Perspective 1 must have unitLimitations");
+            assertTrue(sec1.contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
+                    "Perspective 1 must contain its feature limitation");
+            assertFalse(sec1.contains("LOW_CONFIDENCE_EVENTS"),
+                    "Perspective 1 must not contain B's evidence limitation");
+            assertTrue(sec2.contains("unitLimitations="),
+                    "Perspective 2 must have unitLimitations");
+            assertFalse(sec2.contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
+                    "A's limitation must not leak to B's section");
+            assertTrue(sec2.contains("LOW_CONFIDENCE_EVENTS"),
+                    "Perspective 2 must contain its evidence limitation");
+        }
     }
 }
