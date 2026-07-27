@@ -1,14 +1,13 @@
 package com.wotb.core.replay.feature;
 
 import com.wotb.core.replay.event.DecodeConfidence;
-import com.wotb.core.replay.reconstruction.Vector3;
 
 import java.util.List;
 
 public record TeamFormationPhase(
         float startTime,
         float endTime,
-        Vector3 centroid,
+        CanonicalMapPosition centroid,
         float averageDispersion,
         int observedMemberCount,
         DecodeConfidence confidence,

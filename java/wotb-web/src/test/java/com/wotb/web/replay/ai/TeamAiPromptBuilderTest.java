@@ -353,7 +353,7 @@ class TeamAiPromptBuilderTest {
         // as if it were a raw replay coordinate (which would move it to ~312.5).
         final SingleTeamBattleAnalysisContext base = contextWithNickname("Player");
         final TeamFormationPhase phase = new TeamFormationPhase(
-                0f, 15f, new com.wotb.core.replay.reconstruction.Vector3(250f, 0f, 250f), 0f, 1,
+                0f, 15f, new CanonicalMapPosition(250f, 250f), 0f, 1,
                 DecodeConfidence.EXACT, List.of());
         final TeamBattleFeatureSet features = new TeamBattleFeatureSet(
                 1, base.features().members(), base.features().authoritativeAggregate(),
