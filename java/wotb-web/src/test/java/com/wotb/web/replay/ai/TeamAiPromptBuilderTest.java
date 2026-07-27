@@ -17,7 +17,9 @@ import com.wotb.core.replay.feature.TeamAggregateResult;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamBattleAnalysisSummary;
 import com.wotb.core.replay.feature.TeamFeatureCoverage;
+import com.wotb.core.replay.feature.CanonicalMapPosition;
 import com.wotb.core.replay.feature.TeamFormationCluster;
+import com.wotb.core.replay.feature.TeamFormationPhase;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.reconstruction.Vector3;
@@ -343,6 +345,33 @@ class TeamAiPromptBuilderTest {
         final var input = TeamAiPromptBuilder.multi(multi);
         assertTrue(input.content().contains("teamLabel=\"CHRD\""));
         assertTrue(input.content().contains("teamLabel=\"KSR\""));
+    }
+
+    @Test
+    void formationCanonicalCentroidIsNotReMappedAndCarriesRegion() {
+        // Canonical centroid (250,250) must render as-is with region 5 — never resolved again
+        // as if it were a raw replay coordinate (which would move it to ~312.5).
+        final SingleTeamBattleAnalysisContext base = contextWithNickname("Player");
+        final TeamFormationPhase phase = new TeamFormationPhase(
+                0f, 15f, new CanonicalMapPosition(250f, 250f), 0f, 1,
+                DecodeConfidence.EXACT, List.of());
+        final TeamBattleFeatureSet features = new TeamBattleFeatureSet(
+                1, base.features().members(), base.features().authoritativeAggregate(),
+                TeamObservedAggregate.empty(), List.of(phase), List.of(),
+                List.of(), List.of(), TeamFeatureCoverage.empty(), List.of(), true);
+        final SingleTeamBattleAnalysisContext context =
+                new SingleTeamBattleAnalysisContext(
+                        base.analysisUnitId(), base.battleId(), base.fileName(),
+                        base.battleCategory(), base.battle(), 1, features,
+                        base.coverage(), base.limitations());
+
+        final TeamAiPromptBuilder.PromptInput input =
+                TeamAiPromptBuilder.single(context);
+
+        assertTrue(input.content().contains("(250.0,250.0) r=5"),
+                "Canonical centroid must render verbatim with backend region 5");
+        assertFalse(input.content().contains("(312.5"),
+                "Centroid must not be double-converted as if raw");
     }
 
     private static int occurrences(final String value, final String token) {

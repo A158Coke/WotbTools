@@ -7,6 +7,7 @@ import com.wotb.core.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.ref.MapNames;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
+import com.wotb.core.replay.feature.CanonicalMapPosition;
 import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MultiTeamBattleAnalysisContext;
@@ -213,8 +214,8 @@ final class TeamAiPromptBuilder {
             }
             for (int movementIndex = 0; movementIndex < movementLimit; movementIndex++) {
                 final MovementSegment movement = member.movements().get(movementIndex);
-                final String startInfo = formatPositionInfo(movement.startPosition());
-                final String endInfo = formatPositionInfo(movement.endPosition());
+                final String startInfo = formatRawPosition(movement.rawStartPosition());
+                final String endInfo = formatRawPosition(movement.rawEndPosition());
                 writer.append("  movement[" + format(movement.startTime())
                         + "-" + format(movement.endTime()) + "]"
                         + " type=" + movement.type()
@@ -242,7 +243,7 @@ final class TeamAiPromptBuilder {
         }
         for (int index = 0; index < limit; index++) {
             final TeamFormationPhase phase = phases.get(index);
-            final String phasePosInfo = formatCanonicalPos(phase.centroid());
+            final String phasePosInfo = formatCanonicalPosition(phase.centroid());
             writer.append("formation[" + format(phase.startTime())
                     + "-" + format(phase.endTime()) + "]"
                     + " " + phasePosInfo
@@ -416,13 +417,21 @@ final class TeamAiPromptBuilder {
                 ? "UNKNOWN" : format(value);
     }
 
-    /** Format position as canonical XZ, region, and status from a single resolve call. */
-    private static String formatCanonicalPos(final Vector3 pos) {
+    /**
+     * Format an already-canonical position: validate range (enforced by CanonicalMapPosition),
+     * derive region from canonical X/Z, and format. Performs NO raw→canonical mapping — the
+     * input has already been resolved exactly once upstream.
+     */
+    private static String formatCanonicalPosition(final CanonicalMapPosition pos) {
         if (pos == null) return "UNKNOWN";
-        return "(" + format(pos.x()) + "," + format(pos.z()) + ")";
+        return "(" + format(pos.x()) + "," + format(pos.z()) + ") r=" + pos.region();
     }
 
-    private static String formatPositionInfo(final Vector3 position) {
+    /**
+     * Format a RAW replay position: resolve raw replay coordinates through the single
+     * coordinate resolver into canonical XZ, region, and clamp status.
+     */
+    private static String formatRawPosition(final Vector3 position) {
         if (position == null) return "UNKNOWN";
         final MapCoordinateResolution res = MapRegionResolver.resolve(position.x(), position.z());
         if (!res.usable()) return "UNKNOWN";

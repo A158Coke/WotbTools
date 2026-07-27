@@ -6,8 +6,6 @@ import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.processing.RecorderEntityMapping;
-import com.wotb.core.replay.feature.BattleStartResolution;
-import com.wotb.core.replay.feature.BattleStartResolver;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
 
@@ -22,7 +20,12 @@ import java.util.List;
 public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureExtractor {
 
     static final int ENGAGEMENT_GAP_SEC = 15;
-    static final float STATIONARY_THRESHOLD = 3f;
+    /**
+     * Stationary threshold in <strong>canonical meters</strong> (500×500 map). Centrally
+     * defined here and shared by both PLAYER_FOCUSED movement and TEAM_PERSPECTIVE member
+     * movement (Team reuses {@link #compressMovements}), so both use identical units.
+     */
+    static final float STATIONARY_THRESHOLD_METERS = 3f;
     static final int MAX_KEY_EVENTS = 40;
 
     @Override
@@ -117,48 +120,64 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
 
     static List<MovementSegment> compressMovements(final List<PositionChangedEvent> positions,
                                                     final BattleStartResolution battleStartRes) {
-        if (positions.isEmpty()) return List.of();
-        if (positions.size() == 1) {
-            final float t = battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(positions.get(0).timestamp()));
+        // Keep only positions with a usable clock and a resolvable canonical coordinate.
+        // INVALID positions (non-finite / beyond clamp tolerance) and invalid-timestamp
+        // positions are unusable movement evidence and must not create fake distance/speed.
+        final List<PositionChangedEvent> usable = positions.stream()
+                .filter(DefaultPlayerBattleFeatureExtractor::hasUsableClock)
+                .filter(p -> MapRegionResolver.resolve(p.x(), p.z()).usable())
+                .toList();
+        if (usable.isEmpty()) return List.of();
+        if (usable.size() == 1) {
+            final PositionChangedEvent only = usable.get(0);
+            final float t = battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(only.timestamp()));
+            final Vector3 pos = new Vector3(only.x(), only.y(), only.z());
             return List.of(new MovementSegment(t, t,
-                    MovementType.STATIONARY,
-                    new Vector3(positions.get(0).x(), positions.get(0).y(), positions.get(0).z()),
-                    new Vector3(positions.get(0).x(), positions.get(0).y(), positions.get(0).z()),
-                    0f, 0f, positionConfidence(positions.subList(0, 1))));
+                    MovementType.STATIONARY, pos, pos,
+                    0f, 0f, positionConfidence(usable.subList(0, 1))));
         }
 
         final List<MovementSegment> result = new ArrayList<>();
         int start = 0;
-        for (int i = 1; i < positions.size(); i++) {
-            final float dx = positions.get(i).x() - positions.get(start).x();
-            final float dz = positions.get(i).z() - positions.get(start).z();
-            final float totalDist = (float) Math.sqrt(dx * dx + dz * dz);
-            final float segmentTime = ReplayTimestamp.safeClockSec(positions.get(i).timestamp())
-                    - ReplayTimestamp.safeClockSec(positions.get(start).timestamp());
+        for (int i = 1; i < usable.size(); i++) {
+            // Distance in canonical meters (each endpoint resolved/clamped to canonical first).
+            final float totalDist = MapRegionResolver.canonicalDistanceMeters(
+                    usable.get(start).x(), usable.get(start).z(),
+                    usable.get(i).x(), usable.get(i).z());
+            final float segmentTime = ReplayTimestamp.safeClockSec(usable.get(i).timestamp())
+                    - ReplayTimestamp.safeClockSec(usable.get(start).timestamp());
 
+            // Non-positive / reversed / zero time delta must not produce Infinity/NaN speed.
             if (segmentTime <= 0.1f) continue;
 
-            final boolean stationary = totalDist < STATIONARY_THRESHOLD;
-            if (i < positions.size() - 1) {
-                // 检查下一段是否同类型
-                final float nextDx = positions.get(i + 1).x() - positions.get(i).x();
-                final float nextDz = positions.get(i + 1).z() - positions.get(i).z();
-                final float nextDist = (float) Math.sqrt(nextDx * nextDx + nextDz * nextDz);
-                final boolean nextStationary = nextDist < STATIONARY_THRESHOLD;
+            final boolean stationary = totalDist < STATIONARY_THRESHOLD_METERS;
+            if (i < usable.size() - 1) {
+                // 检查下一段是否同类型（canonical meters）
+                final float nextDist = MapRegionResolver.canonicalDistanceMeters(
+                        usable.get(i).x(), usable.get(i).z(),
+                        usable.get(i + 1).x(), usable.get(i + 1).z());
+                final boolean nextStationary = nextDist < STATIONARY_THRESHOLD_METERS;
                 if (stationary == nextStationary && i - start > 1) continue;
             }
 
             result.add(new MovementSegment(
-                    battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(positions.get(start).timestamp())),
-                    battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(positions.get(i).timestamp())),
+                    battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(usable.get(start).timestamp())),
+                    battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(usable.get(i).timestamp())),
                     stationary ? MovementType.STATIONARY : MovementType.MOVING,
-                    new Vector3(positions.get(start).x(), positions.get(start).y(), positions.get(start).z()),
-                    new Vector3(positions.get(i).x(), positions.get(i).y(), positions.get(i).z()),
-                    totalDist, segmentTime > 0 ? totalDist / segmentTime : 0f,
-                    positionConfidence(positions.subList(start, i + 1))));
+                    new Vector3(usable.get(start).x(), usable.get(start).y(), usable.get(start).z()),
+                    new Vector3(usable.get(i).x(), usable.get(i).y(), usable.get(i).z()),
+                    totalDist, totalDist / segmentTime,
+                    positionConfidence(usable.subList(start, i + 1))));
             start = i;
         }
         return result;
+    }
+
+    private static boolean hasUsableClock(final PositionChangedEvent position) {
+        if (position == null || position.timestamp() == null) {
+            return false;
+        }
+        return Float.isFinite(ReplayTimestamp.safeClockSec(position.timestamp()));
     }
 
     private static DecodeConfidence positionConfidence(

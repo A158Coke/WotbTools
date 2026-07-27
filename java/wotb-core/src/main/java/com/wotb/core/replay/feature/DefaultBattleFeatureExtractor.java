@@ -38,7 +38,12 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
     static final int ENGAGEMENT_GAP_SEC = 15;  // 相邻伤害间隔 ≤15s 视为同一次交火
     static final float STATIONARY_THRESHOLD = 3f; // 移动 <3m 视为静止
     static final float OPENING_DURATION = 45f;   // 开局阶段 45 秒
+    static final float FIRST_CONTACT_DURATION = 10f; // FIRST_CONTACT 阶段时长
+    static final float MID_GAME_MIN_DURATION = 60f;  // 中期阶段最小时长
     static final int LATE_GAME_VEHICLES = 6;     // 存活 ≤6 辆进入后期
+
+    /** first-contact 未知的哨兵值：任何 &lt;0 或非有限值都视为“无接敌”。 */
+    static final float UNKNOWN_FIRST_CONTACT = -1f;
 
     @Override
     public BattleFeatureSet extract(final ReplayReconstruction reconstruction, final BattleStateSnapshot finalState) {
@@ -284,27 +289,64 @@ public class DefaultBattleFeatureExtractor implements BattleFeatureExtractor {
         return phases;
     }
 
-    // ---- 关键事件 ----
+    // ---- battle-relative 阶段划分 ----
 
+    /**
+     * 基于 battle-relative 时间轴构建战斗阶段。
+     * <p>
+     * 时间语义（全部为 battle-relative 秒，battle start = 0）：
+     * <ul>
+     *   <li>{@code firstContactRelative}：首次接敌相对时刻；{@code <0} 或非有限视为未知
+     *       （见 {@link #UNKNOWN_FIRST_CONTACT}）。{@code 0} 是合法的接敌时刻。</li>
+     *   <li>{@code battleEndRelative}：战斗结束相对时刻，必须 finite 且 {@code >=0}。</li>
+     * </ul>
+     * 保证返回的每个 phase 都满足：start/end 均 finite、{@code >=0}、{@code start<=end}、
+     * {@code end<=battleEndRelative}。无法构造可信时间轴（battleEnd 非有限或为负）时返回空列表，
+     * 绝不产生非法 phase，也不抛异常。
+     */
     static List<BattlePhaseSummary> buildRelativePhases(
             final float firstContactRelative,
             final float battleEndRelative
     ) {
+        // battleEnd 必须 finite 且非负，否则时间轴不可信 —— 返回稳定的空 fallback。
+        if (!Float.isFinite(battleEndRelative) || battleEndRelative < 0f) {
+            return List.of();
+        }
+
+        // 只有 first contact 有限、非负且不晚于战斗结束时才视为合法接敌（0 秒合法）。
+        final boolean hasFirstContact = Float.isFinite(firstContactRelative)
+                && firstContactRelative >= 0f
+                && firstContactRelative <= battleEndRelative;
+
         final List<BattlePhaseSummary> phases = new ArrayList<>();
-        if (battleEndRelative <= 0 || !Float.isFinite(battleEndRelative)) return phases;
-        final float openingEnd = (firstContactRelative > 0)
-                ? Math.min(firstContactRelative, 45f) : 45f;
-        phases.add(new BattlePhaseSummary(0f, openingEnd, BattlePhaseType.OPENING, DecodeConfidence.EXACT));
-        if (firstContactRelative > 0 && firstContactRelative <= openingEnd + 5) {
-            phases.add(new BattlePhaseSummary(firstContactRelative,
-                    Math.min(firstContactRelative + 10, battleEndRelative),
+
+        // OPENING: [0, openingEnd]，openingEnd 必须裁剪进战斗结束时间内。
+        float openingEnd = Math.min(OPENING_DURATION, battleEndRelative);
+        if (hasFirstContact) {
+            openingEnd = Math.min(openingEnd, firstContactRelative);
+        }
+        phases.add(new BattlePhaseSummary(
+                0f, openingEnd, BattlePhaseType.OPENING, DecodeConfidence.EXACT));
+
+        // FIRST_CONTACT: 仅在接敌合法时创建，end 裁剪进战斗结束时间内。
+        if (hasFirstContact) {
+            final float contactEnd = Math.min(
+                    firstContactRelative + FIRST_CONTACT_DURATION, battleEndRelative);
+            phases.add(new BattlePhaseSummary(
+                    firstContactRelative, contactEnd,
                     BattlePhaseType.FIRST_CONTACT, DecodeConfidence.INFERRED));
         }
-        if (battleEndRelative - openingEnd > 60) {
-            phases.add(new BattlePhaseSummary(openingEnd, battleEndRelative,
+
+        // MID_GAME: 仅当开局结束到战斗结束之间存在足够长的中期窗口。
+        if (battleEndRelative - openingEnd > MID_GAME_MIN_DURATION) {
+            phases.add(new BattlePhaseSummary(
+                    openingEnd, battleEndRelative,
                     BattlePhaseType.MID_GAME, DecodeConfidence.INFERRED));
         }
-        phases.add(new BattlePhaseSummary(battleEndRelative, battleEndRelative,
+
+        // ENDGAME: 战斗结束的瞬时点。
+        phases.add(new BattlePhaseSummary(
+                battleEndRelative, battleEndRelative,
                 BattlePhaseType.ENDGAME, DecodeConfidence.EXACT));
         return phases;
     }

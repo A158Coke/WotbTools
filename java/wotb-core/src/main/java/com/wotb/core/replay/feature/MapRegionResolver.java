@@ -91,6 +91,26 @@ public final class MapRegionResolver {
         return res.region();
     }
 
+    /**
+     * Canonical (500×500 meter) Euclidean distance between two raw replay XZ points.
+     * Each endpoint is resolved/clamped to canonical BEFORE the distance is computed, so the
+     * result is always expressed in canonical meters and never exceeds the map diagonal.
+     * Y (elevation) never participates. Returns a negative sentinel ({@code -1f}) when either
+     * endpoint is not resolvable (INVALID), so callers can reject unusable movement evidence.
+     */
+    public static float canonicalDistanceMeters(
+            final float rawX1, final float rawZ1,
+            final float rawX2, final float rawZ2) {
+        final MapCoordinateResolution a = resolve(rawX1, rawZ1);
+        final MapCoordinateResolution b = resolve(rawX2, rawZ2);
+        if (!a.usable() || !b.usable()) {
+            return -1f;
+        }
+        final float dx = a.position().x() - b.position().x();
+        final float dz = a.position().z() - b.position().z();
+        return (float) Math.sqrt(dx * dx + dz * dz);
+    }
+
     /** Unified max raw coordinate allowed before INVALID (REPLAY_HALF_EXTENT + tolerance). */
     public static final float MAX_RAW_ALLOWED = CLAMP_UPPER;
 }

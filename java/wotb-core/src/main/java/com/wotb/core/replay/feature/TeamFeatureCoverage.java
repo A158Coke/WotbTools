@@ -24,6 +24,37 @@ public record TeamFeatureCoverage(
         boolean fullFeaturesAvailable
 ) {
 
+    public TeamFeatureCoverage {
+        if (observedPositionEventCount < 0) {
+            throw new IllegalArgumentException(
+                    "observedPositionEventCount must be >= 0: " + observedPositionEventCount);
+        }
+        if (clampedPositionEventCount < 0) {
+            throw new IllegalArgumentException(
+                    "clampedPositionEventCount must be >= 0: " + clampedPositionEventCount);
+        }
+        // CLAMPED positions are a strict subset of observed positions.
+        if (clampedPositionEventCount > observedPositionEventCount) {
+            throw new IllegalArgumentException(
+                    "clampedPositionEventCount " + clampedPositionEventCount
+                            + " > observedPositionEventCount " + observedPositionEventCount);
+        }
+        if (unattributedPositionEventCount < 0) {
+            throw new IllegalArgumentException(
+                    "unattributedPositionEventCount must be >= 0: " + unattributedPositionEventCount);
+        }
+        if (ignoredOutOfBoundsPositionEventCount < 0) {
+            throw new IllegalArgumentException(
+                    "ignoredOutOfBoundsPositionEventCount must be >= 0: "
+                            + ignoredOutOfBoundsPositionEventCount);
+        }
+        if (ignoredInvalidTimestampEventCount < 0) {
+            throw new IllegalArgumentException(
+                    "ignoredInvalidTimestampEventCount must be >= 0: "
+                            + ignoredInvalidTimestampEventCount);
+        }
+    }
+
     public static TeamFeatureCoverage empty() {
         return new TeamFeatureCoverage(
                 false, false, false, 0, 0, 0, 0,

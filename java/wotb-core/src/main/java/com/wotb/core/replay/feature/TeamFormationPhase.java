@@ -1,18 +1,20 @@
 package com.wotb.core.replay.feature;
 
 import com.wotb.core.replay.event.DecodeConfidence;
-import com.wotb.core.replay.reconstruction.Vector3;
 
 import java.util.List;
 
 /**
- * 固定时间窗内的队形摘要。坐标只表达几何关系，不映射为地图地形名称。
- * {@code clusterCount} is derived from {@code clusters.size()}.
+ * 固定时间窗内的队形摘要。
+ * <p>
+ * {@code centroid} 是 <strong>canonical</strong>（500×500）坐标域的队形几何中心，已经过一次
+ * raw→canonical 解析，下游禁止再次执行 raw 坐标映射。{@code clusterCount} 由
+ * {@code clusters.size()} 派生。
  */
 public record TeamFormationPhase(
         float startTime,
         float endTime,
-        Vector3 centroid,
+        CanonicalMapPosition centroid,
         float averageDispersion,
         int observedMemberCount,
         DecodeConfidence confidence,
