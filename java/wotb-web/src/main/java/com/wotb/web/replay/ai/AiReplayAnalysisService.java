@@ -273,9 +273,10 @@ public class AiReplayAnalysisService {
     }
 
     /**
-     * 完整 Team 分析编排：每个 group 单独构建上下文，再按数量调用 single/multi 入口。
-     * <p>当存在对立视角（同一 battleIdentity、不同 perspectiveTeam）时，
-     * 强制为每个视角发起独立的 SINGLE_TEAM 请求，避免一方数据泄露给另一方。</p>
+     * 完整 Team 分析编排：将 contexts 划分为兼容分区，每个分区发起一次 AI 请求。
+     * <p>分区规则：按 {@code (battleIdentity, perspectiveTeam)} 分组；
+     * 相同 perspectiveTeam 且阵容兼容（Jaccard ≥ 60%）的不同战斗可合并。
+     * 对立视角（同战斗、不同队伍）自然位于不同分区，各自独立请求。</p>
      */
     public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups) {
         if (!isConfigured()) {
@@ -287,75 +288,115 @@ public class AiReplayAnalysisService {
         final List<SingleTeamBattleAnalysisContext> contexts = groups.stream()
                 .map(this::buildSingleTeamContext)
                 .toList();
-        final AnalyzeResult analysis;
+        final List<List<SingleTeamBattleAnalysisContext>> partitions =
+                partitionContexts(contexts);
         final Map<String, AnalyzeResult> perUnitResults = new LinkedHashMap<>();
         final Set<String> analysisLimitations = new LinkedHashSet<>();
-        if (contexts.size() == 1) {
-            final TeamAiPromptBuilder.PromptInput input =
-                    TeamAiPromptBuilder.single(contexts.getFirst());
-            analysis = callSingleTeamContext(contexts.getFirst(), input);
-            perUnitResults.put(contexts.getFirst().analysisUnitId(), analysis);
-            if (input.limitations().contains("AI_INPUT_TRUNCATED")) {
-                analysisLimitations.add("AI_INPUT_TRUNCATED");
-            }
-        } else if (hasOpposingPerspectives(contexts)) {
-            AnalyzeResult first = null;
-            for (final var context : contexts) {
+        AnalyzeResult firstAnalysis = null;
+        for (final var partition : partitions) {
+            if (partition.size() == 1) {
+                final var ctx = partition.getFirst();
                 final TeamAiPromptBuilder.PromptInput input =
-                        TeamAiPromptBuilder.single(context);
-                final AnalyzeResult result = callSingleTeamContext(context, input);
-                if (first == null) {
-                    first = result;
+                        TeamAiPromptBuilder.single(ctx);
+                final AnalyzeResult result = callSingleTeamContext(ctx, input);
+                if (firstAnalysis == null) firstAnalysis = result;
+                perUnitResults.put(ctx.analysisUnitId(), result);
+                if (input.limitations().contains("AI_INPUT_TRUNCATED")) {
+                    analysisLimitations.add("AI_INPUT_TRUNCATED");
                 }
-                perUnitResults.put(context.analysisUnitId(), result);
+            } else {
+                final MultiTeamBattleAnalysisContext multiContext =
+                        buildMultiTeamContext(partition);
+                final TeamAiPromptBuilder.PromptInput input =
+                        TeamAiPromptBuilder.multi(multiContext);
+                final List<KeyBattleEvent> keyEvents = partition.stream()
+                        .flatMap(ctx -> ctx.features().keyEvents().stream())
+                        .toList();
+                final AnalyzeResult result = callMultiTeamContext(input, keyEvents);
+                if (firstAnalysis == null) firstAnalysis = result;
+                for (final var ctx : partition) {
+                    perUnitResults.put(ctx.analysisUnitId(), result);
+                }
+                analysisLimitations.addAll(multiContext.limitations());
                 if (input.limitations().contains("AI_INPUT_TRUNCATED")) {
                     analysisLimitations.add("AI_INPUT_TRUNCATED");
                 }
             }
-            analysis = first;
-        } else {
-            final MultiTeamBattleAnalysisContext multiContext =
-                    buildMultiTeamContext(contexts);
-            final TeamAiPromptBuilder.PromptInput input =
-                    TeamAiPromptBuilder.multi(multiContext);
-            final List<KeyBattleEvent> keyEvents = contexts.stream()
-                    .flatMap(ctx -> ctx.features().keyEvents().stream())
-                    .toList();
-            analysis = callMultiTeamContext(input, keyEvents);
-            for (final var context : contexts) {
-                perUnitResults.put(context.analysisUnitId(), analysis);
-            }
-            analysisLimitations.addAll(multiContext.limitations());
-            if (input.limitations().contains("AI_INPUT_TRUNCATED")) {
-                analysisLimitations.add("AI_INPUT_TRUNCATED");
-            }
+        }
+        if (firstAnalysis == null) {
+            throw new IllegalStateException("NO_ANALYSIS_PRODUCED");
         }
         return new TeamAnalyzeResult(
-                analysis,
+                firstAnalysis,
                 buildTeamAnalysisUnits(
                         groups, contexts, perUnitResults, analysisLimitations));
     }
 
     /**
-     * 检测是否存在对立视角：同一 battleIdentity 但具有不同的 perspectiveTeam。
+     * 将 contexts 划分为兼容分区，每个分区产生一次 AI 请求。
+     * <p>按 {@code (battleIdentity, perspectiveTeam)} 分组后，尝试合并
+     * 相同 perspectiveTeam 且阵容 Jaccard 相似度 ≥ {@value #MIN_ROSTER_JACCARD}
+     * 的不同战斗，使之共享一次分析请求。</p>
      */
-    private static boolean hasOpposingPerspectives(
+    private static List<List<SingleTeamBattleAnalysisContext>> partitionContexts(
             final List<SingleTeamBattleAnalysisContext> contexts) {
-        final Map<BattleIdentity, List<SingleTeamBattleAnalysisContext>> byBattle = contexts
+        if (contexts.size() <= 1) {
+            return List.of(contexts);
+        }
+        final Map<List<?>, List<SingleTeamBattleAnalysisContext>> byKey = contexts
                 .stream()
                 .collect(Collectors.groupingBy(
-                        SingleTeamBattleAnalysisContext::battleId));
-        for (final var entry : byBattle.entrySet()) {
-            if (entry.getKey() != null && entry.getValue().size() > 1) {
-                final Set<Integer> teams = entry.getValue().stream()
-                        .map(SingleTeamBattleAnalysisContext::perspectiveTeam)
-                        .collect(Collectors.toSet());
-                if (teams.size() > 1) {
-                    return true;
+                        ctx -> List.of(ctx.battleId(), ctx.perspectiveTeam())));
+        final Map<Integer, List<Map.Entry<List<?>, List<SingleTeamBattleAnalysisContext>>>>
+                byTeam = byKey.entrySet().stream()
+                        .collect(Collectors.groupingBy(
+                                e -> (Integer) e.getKey().get(1)));
+        final List<List<SingleTeamBattleAnalysisContext>> partitions =
+                new ArrayList<>();
+        for (final var teamEntry : byTeam.entrySet()) {
+            final var entries = teamEntry.getValue();
+            if (entries.size() == 1) {
+                partitions.add(entries.getFirst().getValue());
+                continue;
+            }
+            final int n = entries.size();
+            final List<Set<Long>> rosters = new ArrayList<>(n);
+            for (int i = 0; i < n; i++) {
+                rosters.add(rosterAccounts(
+                        entries.get(i).getValue().getFirst()));
+            }
+            final boolean[] used = new boolean[n];
+            for (int i = 0; i < n; i++) {
+                if (used[i]) continue;
+                final var merged = new ArrayList<>(
+                        entries.get(i).getValue());
+                used[i] = true;
+                for (int j = i + 1; j < n; j++) {
+                    if (used[j]) continue;
+                    if (jaccard(rosters.get(i), rosters.get(j))
+                            >= MIN_ROSTER_JACCARD) {
+                        merged.addAll(entries.get(j).getValue());
+                        used[j] = true;
+                    }
                 }
+                partitions.add(merged);
             }
         }
-        return false;
+        return partitions;
+    }
+
+    /**
+     * 提取 context 中有效的阵容账号 ID 集合。
+     */
+    private static Set<Long> rosterAccounts(
+            final SingleTeamBattleAnalysisContext ctx) {
+        if (ctx.features() == null || ctx.features().members() == null) {
+            return Set.of();
+        }
+        return ctx.features().members().stream()
+                .map(member -> member.accountId())
+                .filter(id -> id > 0)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     /**
@@ -551,6 +592,7 @@ public class AiReplayAnalysisService {
                             features.observedAggregate(),
                             features.coverage(),
                             List.copyOf(limitations),
+                            features.keyEvents(),
                             unitAnalysisText,
                             unitModel)));
         }
