@@ -11,6 +11,7 @@ import com.wotb.core.replay.reconstruction.Vector3;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
@@ -43,52 +44,45 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
                 reconstruction.diagnostics());
 
         // 过滤 recorder 的位置事件（排除准备阶段）
-        final List<PositionChangedEvent> positions = new ArrayList<>();
-        final List<DamageEvent> damages = new ArrayList<>();
-        // 记录首次伤害时间用于阶段划分
+        final List<TimedPosition> positions = new ArrayList<>();
+        final List<TimedDamage> damages = new ArrayList<>();
+        final LinkedHashSet<String> limitationSet = new LinkedHashSet<>();
         float firstContactTime = -1f;
         float battleEndClock = Float.NaN;
 
         for (final ReplayEvent event : events) {
+            final var res = battleStartRes.tryRelative(event.timestamp());
             switch (event) {
                 case PositionChangedEvent p -> {
                     if (p.entityId() == recorderEid) {
-                        if (p.timestamp() == null || !Float.isFinite(p.timestamp().rawClockSec())) {
-                            continue;
+                        if (res.isUsable()) {
+                            positions.add(new TimedPosition(p, res.battleRelativeSec()));
+                        } else if (res.limitation() != null) {
+                            limitationSet.add(res.limitation());
                         }
-                        if (battleStartRes.isPreBattle(
-                                p.timestamp().rawClockSec())) {
-                            continue;
-                        }
-                        positions.add(p);
                     }
                 }
                 case DamageEvent d -> {
-                    if (d.timestamp() == null || !Float.isFinite(d.timestamp().rawClockSec())) {
-                        continue;
-                    }
-                    if (battleStartRes.isPreBattle(
-                            d.timestamp().rawClockSec())) {
-                        continue;
-                    }
                     // 只有当 recorder 是攻击者或受害者时才记录
                     final boolean recorderIsAttacker = d.attackerEid() == recorderEid;
                     final boolean recorderIsVictim = d.victimEid() == recorderEid;
                     if (recorderIsAttacker || recorderIsVictim) {
-                        damages.add(d);
-                    if (firstContactTime < 0) {
-                            final var rel = battleStartRes.tryRelative(d.timestamp());
-                            if (rel.isPresent() && rel.get() >= 0f) {
-                                firstContactTime = rel.get();
+                        if (res.isUsable()) {
+                            damages.add(new TimedDamage(d, res.battleRelativeSec()));
+                            if (firstContactTime < 0) {
+                                firstContactTime = res.battleRelativeSec();
                             }
+                        } else if (res.limitation() != null) {
+                            limitationSet.add(res.limitation());
                         }
                     }
                 }
                 case com.wotb.core.replay.event.BattleEndedEvent b -> {
                     if (Float.isNaN(battleEndClock)) {
-                        if (b.timestamp() != null && Float.isFinite(b.timestamp().rawClockSec())) {
-                            battleEndClock = battleStartRes.battleRelative(
-                                    b.timestamp().rawClockSec());
+                        if (res.isUsable()) {
+                            battleEndClock = res.battleRelativeSec();
+                        } else if (res.limitation() != null) {
+                            limitationSet.add(res.limitation());
                         }
                     }
                 }
@@ -97,22 +91,22 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         }
 
         // 压缩移动段（只针对 recorder，使用 battle-relative 时间）
-        final List<MovementSegment> movements = compressMovements(positions, battleStartRes);
+        final List<MovementSegment> movements = compressMovements(positions);
 
         // 交火段
-        final List<EngagementSummary> engagements = buildEngagements(damages, recorder.entityId(), battleStartRes);
+        final List<EngagementSummary> engagements = buildEngagements(damages, recorder.entityId());
 
         // Phases (battle-relative)
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhases(
                         firstContactTime, battleEndClock);
 
         // 关键事件
-        final List<KeyBattleEvent> keyEvents = extractRecorderKeyEvents(damages, recorder, battleStartRes);
+        final List<KeyBattleEvent> keyEvents = extractRecorderKeyEvents(damages, recorder);
 
         final boolean hasRealFeatures = !movements.isEmpty()
                 || !engagements.isEmpty()
                 || !keyEvents.isEmpty();
-        final List<String> limitations = new ArrayList<>();
+        final List<String> limitations = new ArrayList<>(limitationSet);
         if (battleStartRes.limitation() != null) {
             limitations.add(battleStartRes.limitation());
         }
@@ -128,20 +122,18 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
                 limitations, hasRealFeatures);
     }
 
-    static List<MovementSegment> compressMovements(final List<PositionChangedEvent> positions,
-                                                    final BattleStartResolution battleStartRes) {
-        // Keep only positions with a usable clock and a resolvable canonical coordinate.
-        // INVALID positions (non-finite / beyond clamp tolerance) and invalid-timestamp
-        // positions are unusable movement evidence and must not create fake distance/speed.
-        final List<PositionChangedEvent> usable = positions.stream()
-                .filter(DefaultPlayerBattleFeatureExtractor::hasUsableClock)
-                .filter(p -> MapRegionResolver.resolve(p.x(), p.z()).usable())
+    static List<MovementSegment> compressMovements(final List<TimedPosition> positions) {
+        // Keep only positions with a resolvable canonical coordinate.
+        // INVALID positions (non-finite / beyond clamp tolerance) are unusable movement
+        // evidence and must not create fake distance/speed.
+        final List<TimedPosition> usable = positions.stream()
+                .filter(tp -> MapRegionResolver.resolve(tp.event().x(), tp.event().z()).usable())
                 .toList();
         if (usable.isEmpty()) return List.of();
         if (usable.size() == 1) {
-            final PositionChangedEvent only = usable.get(0);
-            final float t = battleStartRes.battleRelative(only.timestamp().rawClockSec());
-            final Vector3 pos = new Vector3(only.x(), only.y(), only.z());
+            final TimedPosition only = usable.get(0);
+            final float t = only.battleRelativeSec();
+            final Vector3 pos = new Vector3(only.event().x(), only.event().y(), only.event().z());
             return List.of(new MovementSegment(t, t,
                     MovementType.STATIONARY, pos, pos,
                     0f, 0f, positionConfidence(usable.subList(0, 1))));
@@ -152,10 +144,10 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         for (int i = 1; i < usable.size(); i++) {
             // Distance in canonical meters (each endpoint resolved/clamped to canonical first).
             final float totalDist = MapRegionResolver.canonicalDistanceMeters(
-                    usable.get(start).x(), usable.get(start).z(),
-                    usable.get(i).x(), usable.get(i).z());
-            final float segmentTime = usable.get(i).timestamp().rawClockSec()
-                    - usable.get(start).timestamp().rawClockSec();
+                    usable.get(start).event().x(), usable.get(start).event().z(),
+                    usable.get(i).event().x(), usable.get(i).event().z());
+            final float segmentTime = usable.get(i).battleRelativeSec()
+                    - usable.get(start).battleRelativeSec();
 
             // Non-positive / reversed / zero time delta must not produce Infinity/NaN speed.
             if (segmentTime <= 0.1f) continue;
@@ -164,18 +156,18 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
             if (i < usable.size() - 1) {
                 // 检查下一段是否同类型（canonical meters）
                 final float nextDist = MapRegionResolver.canonicalDistanceMeters(
-                        usable.get(i).x(), usable.get(i).z(),
-                        usable.get(i + 1).x(), usable.get(i + 1).z());
+                        usable.get(i).event().x(), usable.get(i).event().z(),
+                        usable.get(i + 1).event().x(), usable.get(i + 1).event().z());
                 final boolean nextStationary = nextDist < STATIONARY_THRESHOLD_METERS;
                 if (stationary == nextStationary && i - start > 1) continue;
             }
 
             result.add(new MovementSegment(
-                    battleStartRes.battleRelative(usable.get(start).timestamp().rawClockSec()),
-                    battleStartRes.battleRelative(usable.get(i).timestamp().rawClockSec()),
+                    usable.get(start).battleRelativeSec(),
+                    usable.get(i).battleRelativeSec(),
                     stationary ? MovementType.STATIONARY : MovementType.MOVING,
-                    new Vector3(usable.get(start).x(), usable.get(start).y(), usable.get(start).z()),
-                    new Vector3(usable.get(i).x(), usable.get(i).y(), usable.get(i).z()),
+                    new Vector3(usable.get(start).event().x(), usable.get(start).event().y(), usable.get(start).event().z()),
+                    new Vector3(usable.get(i).event().x(), usable.get(i).event().y(), usable.get(i).event().z()),
                     totalDist, totalDist / segmentTime,
                     positionConfidence(usable.subList(start, i + 1))));
             start = i;
@@ -183,17 +175,18 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         return result;
     }
 
-    private static boolean hasUsableClock(final PositionChangedEvent position) {
-        if (position == null || position.timestamp() == null) {
-            return false;
-        }
-        return Float.isFinite(position.timestamp().rawClockSec());
+    static List<MovementSegment> compressMovements(final List<PositionChangedEvent> positions,
+                                                    final BattleStartResolution battleStartRes) {
+        return compressMovements(positions.stream()
+                .map(p -> new TimedPosition(p, battleStartRes.battleRelative(p.timestamp().rawClockSec())))
+                .toList());
     }
 
     private static DecodeConfidence positionConfidence(
-            final List<PositionChangedEvent> positions
+            final List<TimedPosition> positions
     ) {
         return positions.stream()
+                .map(TimedPosition::event)
                 .map(PositionChangedEvent::confidence)
                 .map(confidence -> confidence == null
                         ? DecodeConfidence.UNKNOWN : confidence)
@@ -211,32 +204,30 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         };
     }
 
-    static List<EngagementSummary> buildEngagements(final List<DamageEvent> damages, final int recorderEid,
-                                                     final BattleStartResolution battleStartRes) {
+    static List<EngagementSummary> buildEngagements(final List<TimedDamage> damages, final int recorderEid) {
         if (damages.isEmpty()) return List.of();
-        final List<DamageEvent> sorted = damages.stream()
-                .sorted(Comparator.comparingDouble(d -> d.timestamp().rawClockSec()))
+        final List<TimedDamage> sorted = damages.stream()
+                .sorted(Comparator.comparingDouble(d -> d.battleRelativeSec()))
                 .toList();
         final List<EngagementSummary> result = new ArrayList<>();
         int segStart = 0;
         for (int i = 1; i < sorted.size(); i++) {
-            if (sorted.get(i).timestamp().rawClockSec() - sorted.get(i - 1).timestamp().rawClockSec() > ENGAGEMENT_GAP_SEC) {
-                result.add(buildEngagementSegment(sorted.subList(segStart, i), recorderEid, battleStartRes));
+            if (sorted.get(i).battleRelativeSec() - sorted.get(i - 1).battleRelativeSec() > ENGAGEMENT_GAP_SEC) {
+                result.add(buildEngagementSegment(sorted.subList(segStart, i), recorderEid));
                 segStart = i;
             }
         }
         if (segStart < sorted.size()) {
-            result.add(buildEngagementSegment(sorted.subList(segStart, sorted.size()), recorderEid, battleStartRes));
+            result.add(buildEngagementSegment(sorted.subList(segStart, sorted.size()), recorderEid));
         }
         return result;
     }
 
-    private static EngagementSummary buildEngagementSegment(final List<DamageEvent> events, final int recorderEid,
-                                                             final BattleStartResolution battleStartRes) {
+    private static EngagementSummary buildEngagementSegment(final List<TimedDamage> events, final int recorderEid) {
         int dealt = 0, received = 0;
-        for (final DamageEvent d : events) {
-            if (d.attackerEid() == recorderEid) dealt += d.damage();
-            if (d.victimEid() == recorderEid) received += d.damage();
+        for (final TimedDamage d : events) {
+            if (d.event().attackerEid() == recorderEid) dealt += d.event().damage();
+            if (d.event().victimEid() == recorderEid) received += d.event().damage();
         }
         final EngagementOutcome outcome = (dealt > received * 1.25)
                 ? EngagementOutcome.FAVORABLE
@@ -245,32 +236,37 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
                 : EngagementOutcome.EVEN;
 
         return new EngagementSummary(
-                battleStartRes.battleRelative(events.getFirst().timestamp().rawClockSec()),
-                battleStartRes.battleRelative(events.getLast().timestamp().rawClockSec()),
+                events.getFirst().battleRelativeSec(),
+                events.getLast().battleRelativeSec(),
                 List.of(), List.of(), dealt, received,
                 null, null, outcome, com.wotb.core.replay.event.DecodeConfidence.INFERRED);
     }
 
     static List<KeyBattleEvent> extractRecorderKeyEvents(
-            final List<DamageEvent> damages, final RecorderEntityMapping recorder,
-            final BattleStartResolution battleStartRes) {
+            final List<TimedDamage> damages, final RecorderEntityMapping recorder) {
         final List<KeyBattleEvent> keyEvents = new ArrayList<>();
         boolean firstBlood = false;
         int totalEvents = 0;
 
-        for (final DamageEvent d : damages) {
+        for (final TimedDamage d : damages) {
             if (totalEvents >= MAX_KEY_EVENTS) break;
             if (!firstBlood) {
                 firstBlood = true;
-                keyEvents.add(new KeyBattleEvent(battleStartRes.battleRelative(d.timestamp().rawClockSec()), "RECORDER_FIRST_BLOOD",
-                        "首次命中 " + d.damage()));
+                keyEvents.add(new KeyBattleEvent(d.battleRelativeSec(), "RECORDER_FIRST_BLOOD",
+                        "首次命中 " + d.event().damage()));
             } else {
-                keyEvents.add(new KeyBattleEvent(battleStartRes.battleRelative(d.timestamp().rawClockSec()),
-                        d.attackerEid() == recorder.entityId() ? "RECORDER_DAMAGE_DEALT" : "RECORDER_DAMAGE_RECEIVED",
-                        "录像者 " + d.damage()));
+                keyEvents.add(new KeyBattleEvent(d.battleRelativeSec(),
+                        d.event().attackerEid() == recorder.entityId() ? "RECORDER_DAMAGE_DEALT" : "RECORDER_DAMAGE_RECEIVED",
+                        "录像者 " + d.event().damage()));
             }
             totalEvents++;
         }
         return keyEvents;
     }
+
+    private record TimedPosition(PositionChangedEvent event, float battleRelativeSec) {}
+
+    private record TimedDamage(DamageEvent event, float battleRelativeSec) {}
+
+    private record TimedBattleEnd(float battleRelativeSec) {}
 }
