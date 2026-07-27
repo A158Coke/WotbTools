@@ -35,7 +35,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -56,8 +56,8 @@ class AiReplayAnalysisServiceTest {
             "{\"choices\":[{\"message\":{\"content\":\"team review\"}}]}";
 
     private HttpServer server;
-    private final AtomicReference<String> requestBody = new AtomicReference<>("");
-    private final AtomicReference<String> authorization = new AtomicReference<>("");
+    private final List<String> requestBodies = new CopyOnWriteArrayList<>();
+    private final List<String> authorizationList = new CopyOnWriteArrayList<>();
     private int responseStatus = 200;
     private String responseBody = SUCCESS_RESPONSE;
     private long responseDelayMillis;
@@ -126,21 +126,21 @@ class AiReplayAnalysisServiceTest {
         final var result = service.analyzeSingleTeamContext(context);
         assertEquals("team review", result.analysis());
         assertEquals("test-model", result.model());
-        assertEquals("Bearer test-key", authorization.get());
-        assertTrue(requestBody.get().contains("\"model\":\"test-model\""));
-        assertTrue(requestBody.get().contains("teamLabel="));
-        assertTrue(requestBody.get().contains("AUTHORITATIVE_TEAM_RESULT"));
-        assertTrue(requestBody.get().contains("OBSERVED_EVENT_SUBSET_NOT_AUTHORITATIVE"));
-        assertTrue(requestBody.get().contains("RECORDER_ENTITY_UNMAPPED"));
-        assertTrue(requestBody.get().contains("不可信数据"));
-        assertFalse(requestBody.get().contains("ParticipantMappingEvent"));
-        assertFalse(requestBody.get().contains("PositionEvent{"));
-        assertFalse(requestBody.get().contains("winnerTeam=1"));
-        assertFalse(requestBody.get().contains("winnerTeam=2"));
-        assertFalse(requestBody.get().contains("Team 1"));
-        assertFalse(requestBody.get().contains("Team 2"));
-        assertFalse(requestBody.get().contains("队伍1"));
-        assertFalse(requestBody.get().contains("队伍2"));
+        assertEquals("Bearer test-key", authorizationList.getLast());
+        assertTrue(requestBodies.getLast().contains("\"model\":\"test-model\""));
+        assertTrue(requestBodies.getLast().contains("teamLabel="));
+        assertTrue(requestBodies.getLast().contains("AUTHORITATIVE_TEAM_RESULT"));
+        assertTrue(requestBodies.getLast().contains("OBSERVED_EVENT_SUBSET_NOT_AUTHORITATIVE"));
+        assertTrue(requestBodies.getLast().contains("RECORDER_ENTITY_UNMAPPED"));
+        assertTrue(requestBodies.getLast().contains("不可信数据"));
+        assertFalse(requestBodies.getLast().contains("ParticipantMappingEvent"));
+        assertFalse(requestBodies.getLast().contains("PositionEvent{"));
+        assertFalse(requestBodies.getLast().contains("winnerTeam=1"));
+        assertFalse(requestBodies.getLast().contains("winnerTeam=2"));
+        assertFalse(requestBodies.getLast().contains("Team 1"));
+        assertFalse(requestBodies.getLast().contains("Team 2"));
+        assertFalse(requestBodies.getLast().contains("队伍1"));
+        assertFalse(requestBodies.getLast().contains("队伍2"));
     }
 
     @Test
@@ -152,11 +152,11 @@ class AiReplayAnalysisServiceTest {
                         .getFirst());
         final var result = service.analyzeSingleTeamContext(context);
         assertEquals("team review", result.analysis());
-        assertTrue(requestBody.get().contains("result=TEAM_WIN")
-                || requestBody.get().contains("result=TEAM_LOSS")
-                || requestBody.get().contains("result=DRAW_OR_UNKNOWN"),
+        assertTrue(requestBodies.getLast().contains("result=TEAM_WIN")
+                || requestBodies.getLast().contains("result=TEAM_LOSS")
+                || requestBodies.getLast().contains("result=DRAW_OR_UNKNOWN"),
                 "Request body must contain result=TEAM_WIN/LOSS/DRAW_OR_UNKNOWN, not winnerTeam=");
-        assertFalse(requestBody.get().contains("winnerTeam="));
+        assertFalse(requestBodies.getLast().contains("winnerTeam="));
     }
 
     @Test
@@ -165,10 +165,10 @@ class AiReplayAnalysisServiceTest {
         final var service = startService(2);
         final var result = service.analyzePlayerOrFallback(randomResultWithoutReconstruction());
         assertNotNull(result.analysis());
-        assertFalse(requestBody.get().contains("队伍1"));
-        assertFalse(requestBody.get().contains("队伍2"));
-        assertFalse(requestBody.get().contains("Team 1"));
-        assertFalse(requestBody.get().contains("Team 2"));
+        assertFalse(requestBodies.getLast().contains("队伍1"));
+        assertFalse(requestBodies.getLast().contains("队伍2"));
+        assertFalse(requestBodies.getLast().contains("Team 1"));
+        assertFalse(requestBodies.getLast().contains("Team 2"));
     }
 
     @Test
@@ -181,17 +181,69 @@ class AiReplayAnalysisServiceTest {
         assertEquals("team review", result.analysis().analysis());
         assertEquals(2, result.units().size());
         // Opposing perspectives now use SEPARATE SINGLE_TEAM calls instead of one MULTI_TEAM call.
-        // Only the last call's body is captured by the test server.
-        assertTrue(requestBody.get().contains("SINGLE_TEAM_CONTEXT"),
+        // All request bodies are captured; verify the last call is a single-team context.
+        assertTrue(requestBodies.getLast().contains("SINGLE_TEAM_CONTEXT"),
                 "Must use SINGLE_TEAM_CONTEXT for opposing perspectives");
-        assertTrue(requestBody.get().contains("teamLabel="),
+        assertTrue(requestBodies.getLast().contains("teamLabel="),
                 "Single-team context must contain teamLabel");
-        assertFalse(requestBody.get().contains("MULTI_TEAM_CONTEXT"),
+        assertFalse(requestBodies.getLast().contains("MULTI_TEAM_CONTEXT"),
                 "Must NOT use MULTI_TEAM_CONTEXT for opposing perspectives");
-        assertFalse(requestBody.get().contains("PERSPECTIVE 1"),
+        assertFalse(requestBodies.getLast().contains("PERSPECTIVE 1"),
                 "Single-team context must not contain PERSPECTIVE labels");
-        assertFalse(requestBody.get().contains("PERSPECTIVE 2"),
+        assertFalse(requestBodies.getLast().contains("PERSPECTIVE 2"),
                 "Single-team context must not contain PERSPECTIVE labels");
+    }
+
+    @Test
+    void singletonDuplicateLimitationAppearsInRequestBody() throws IOException {
+        responseBody = "{\"choices\":[{\"message\":{\"content\":\"test analysis\"}}]}";
+        final var service = startService(2);
+        final var groups = teamGroups(List.of(
+                teamResultWithDuplicateIds("dup.wotbreplay", "dup-arena", "DupTeam", 1001L, 1)));
+        service.analyzeTeamGroups(groups);
+        final String body = requestBodies.getLast();
+        assertTrue(body.contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
+                "Request body must contain DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
+        assertTrue(body.contains("mandatory="),
+                "Mandatory limitation should use mandatory= prefix");
+    }
+
+    @Test
+    void multiDuplicateLimitationOnlyInAffectedUnit() throws IOException {
+        responseBody = "{\"choices\":[{\"message\":{\"content\":\"multi analysis\"}}]}";
+        final var service = startService(2);
+        final var groups = teamGroupsWithDuplicate(List.of(
+                teamResultWithDuplicateIds("unit-a.wotbreplay", "shared-arena", "TeamA", 1001L, 1),
+                teamResult("unit-b.wotbreplay", "shared-arena", "TeamB", 2001L, 2)));
+        service.analyzeTeamGroups(groups);
+        assertTrue(requestBodies.size() >= 1);
+        boolean foundUnitAWithDup = false;
+        boolean foundUnitBWithoutDup = true;
+        for (final String body : requestBodies) {
+            if (body.contains("unit-a")) {
+                foundUnitAWithDup = body.contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
+            }
+            if (body.contains("unit-b")) {
+                foundUnitBWithoutDup = !body.contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
+            }
+        }
+        assertTrue(foundUnitAWithDup, "Unit A request must contain DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
+        assertTrue(foundUnitBWithoutDup, "Unit B request must NOT contain DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
+    }
+
+    @Test
+    void opposingPerspectivesProduceTwoRequests() throws IOException {
+        responseBody = "{\"choices\":[{\"message\":{\"content\":\"opposing review\"}}]}";
+        final var service = startService(2);
+        final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
+                teamResult("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1),
+                teamResult("enemy.wotbreplay", "shared-arena", "Enemy", 2001L, 2)));
+        service.analyzeTeamGroups(groups);
+        assertEquals(2, requestBodies.size(), "Opposing perspectives must produce 2 requests");
+        assertFalse(requestBodies.get(0).contains("enemy.wotbreplay"),
+                "First request should only contain ally perspective");
+        assertFalse(requestBodies.get(1).contains("Ally"),
+                "Second request should only contain enemy perspective");
     }
 
     @Test
@@ -323,7 +375,7 @@ class AiReplayAnalysisServiceTest {
         service.analyzePlayerContext(ctx);
 
         assertPlayerResultTeams(originalTeams, battle);
-        final String body = requestBody.get();
+        final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
         assertTrue(body.contains("录像者 entity 已映射, 特征集可用"),
                 "Should enter resolved recorder branch");
@@ -346,7 +398,7 @@ class AiReplayAnalysisServiceTest {
         service.analyzePlayerContext(ctx);
 
         assertPlayerResultTeams(originalTeams, battle);
-        final String body = requestBody.get();
+        final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
         assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=友方 | 车辆 ID: 123"),
                 "Recorder in team 2 must still show friendly side");
@@ -368,7 +420,7 @@ class AiReplayAnalysisServiceTest {
         service.analyzePlayerContext(ctx);
 
         assertPlayerResultTeams(originalTeams, battle);
-        final String body = requestBody.get();
+        final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
         assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=未知 | 车辆 ID: 123"),
                 "Invalid team " + invalidTeam + " must show unknown side");
@@ -388,7 +440,7 @@ class AiReplayAnalysisServiceTest {
         service.analyze(battle, null);
 
         assertPlayerResultTeams(originalTeams, battle);
-        final String body = requestBody.get();
+        final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
         assertTrue(body.contains("录像者: RecorderPlayer"), "Should contain recorder line");
         assertTrue(body.contains("| 侧=友方"), "Recorder should show friendly side");
@@ -407,7 +459,7 @@ class AiReplayAnalysisServiceTest {
         service.analyze(battle, null);
 
         assertPlayerResultTeams(originalTeams, battle);
-        final String body = requestBody.get();
+        final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
         assertTrue(body.contains("| 侧=友方"), "Recorder in team 2 should still show friendly side");
         assertTrue(body.contains("- 友方 RecorderPlayer"), "RecorderPlayer should be friendly");
@@ -428,7 +480,7 @@ class AiReplayAnalysisServiceTest {
 
         service.analyzeMulti(List.of(battleA, battleB, battleC));
 
-        final String body = requestBody.get();
+        final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
         assertTrue(body.contains("友方获胜"), "Battle A should be friendly win");
         assertTrue(body.contains("敌方获胜"), "Battle B should be enemy win");
@@ -449,7 +501,7 @@ class AiReplayAnalysisServiceTest {
 
         service.analyzeMulti(List.of(battle));
 
-        final String body = requestBody.get();
+        final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
         assertTrue(body.contains("平局或未知"), "Should output draw/unknown");
         assertTrue(body.contains("已知胜负场数: 0"), "Should have 0 decided");
@@ -465,7 +517,7 @@ class AiReplayAnalysisServiceTest {
 
         service.analyzeMulti(List.of(battle));
 
-        final String body = requestBody.get();
+        final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
         assertTrue(body.contains("| 平局或未知 |"),
                 "Invalid winner=" + invalidWinner + " must produce draw/unknown per-battle");
@@ -483,7 +535,7 @@ class AiReplayAnalysisServiceTest {
 
         service.analyzeMulti(List.of(battle));
 
-        final String body = requestBody.get();
+        final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
         assertTrue(body.contains("侧=未知"), "Invalid recorder must show unknown side");
         assertTrue(body.contains("平局或未知"), "Invalid recorder must produce draw/unknown result");
@@ -548,9 +600,10 @@ class AiReplayAnalysisServiceTest {
     }
 
     private void handleRequest(final HttpExchange exchange) throws IOException {
-        requestBody.set(new String(
-                exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-        authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+        final String body = new String(
+                exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        requestBodies.add(body);
+        authorizationList.add(exchange.getRequestHeaders().getFirst("Authorization"));
         if (responseDelayMillis > 0) {
             try {
                 Thread.sleep(responseDelayMillis);
@@ -573,6 +626,11 @@ class AiReplayAnalysisServiceTest {
         return new BatchAnalyzer().analyze(results).groups();
     }
 
+    private static List<ReplayPerspectiveGroup> teamGroupsWithDuplicate(
+            final List<ReplayProcessingResult> results) {
+        return new BatchAnalyzer().analyze(results).groups();
+    }
+
     private static ReplayProcessingResult teamResult(
             final String fileName, final String arenaId,
             final String recorderNickname, final long recorderAccountId,
@@ -591,6 +649,31 @@ class AiReplayAnalysisServiceTest {
                 recorderTeam == 2 ? recorderAccountId : 2001L,
                 recorderTeam == 2 ? recorderNickname : "Enemy", 2, 900);
         battle.players = List.of(ally, enemy);
+        final var capabilities = new ReplayProcessingCapabilities(
+                true, true, false, false, false, true, false, false);
+        return new ReplayProcessingResult(
+                fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
+                new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",
+                        recorderAccountId, null),
+                battle, null, null, capabilities, null, null);
+    }
+
+    private static ReplayProcessingResult teamResultWithDuplicateIds(
+            final String fileName, final String arenaId,
+            final String recorderNickname, final long recorderAccountId,
+            final int recorderTeam) {
+        final Battle battle = new Battle();
+        battle.arenaId = arenaId;
+        battle.mapName = "team_map";
+        battle.arenaBonusType = 2;
+        battle.durationS = 300.0;
+        battle.winnerTeam = 1;
+        battle.recorder = recorderNickname;
+        final PlayerResult p1 = player(recorderTeam == 1 ? recorderAccountId : 1001L,
+                recorderTeam == 1 ? recorderNickname : "PlayerA", recorderTeam, 1500);
+        final PlayerResult p2 = player(recorderTeam == 1 ? recorderAccountId : 2001L,
+                "DuplicateId", recorderTeam, 800);
+        battle.players = List.of(p1, p2);
         final var capabilities = new ReplayProcessingCapabilities(
                 true, true, false, false, false, true, false, false);
         return new ReplayProcessingResult(

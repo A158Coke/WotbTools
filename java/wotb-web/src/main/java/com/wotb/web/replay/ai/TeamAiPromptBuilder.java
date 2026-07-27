@@ -57,13 +57,16 @@ final class TeamAiPromptBuilder {
 
     static PromptInput single(final SingleTeamBattleAnalysisContext context, final List<String> extraLimitations) {
         final BudgetWriter writer = new BudgetWriter(MAX_INPUT_CHARS);
-        appendContextHeader(writer, context);
-        appendFeatureSet(writer, context.features());
         final Set<String> limitations = new LinkedHashSet<>(context.limitations());
         if (context.features() != null) {
             limitations.addAll(context.features().limitations());
         }
-        limitations.addAll(extraLimitations);
+        appendContextHeader(writer, context);
+        for (final String lim : extraLimitations) {
+            limitations.add(lim);
+            writer.append("mandatory=" + quoteData(lim) + "\n");
+        }
+        appendFeatureSet(writer, context.features());
         appendLimitations(writer, limitations);
         return writer.finish(limitations);
     }
@@ -96,11 +99,11 @@ final class TeamAiPromptBuilder {
                     perspective.durationSec()) + "\n");
             writer.append("teamLabel=" + quoteData(perspective.teamLabel()) + "\n");
             writer.append("rosterAccountIds=" + perspective.rosterAccountIds() + "\n");
-            appendFeatureSet(writer, perspective.features());
             final List<String> perUnitLimits = evidenceLimitations.get(perspective.analysisUnitId());
             if (perUnitLimits != null && !perUnitLimits.isEmpty()) {
                 writer.append("unitLimitations=" + perUnitLimits + "\n");
             }
+            appendFeatureSet(writer, perspective.features());
         }
         if (!context.rosterConsistent()) {
             limitations.add("ROSTER_CONSISTENCY_UNCONFIRMED");
