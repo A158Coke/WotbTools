@@ -49,7 +49,7 @@ class PlayerBattleFeatureExtractorTest {
         );
         final var recon = buildRecon(events, RECORDER_EID);
         final var mapping = new RecorderEntityMapping(1000L, 1, RECORDER_EID, "Recorder", 1, 0, DecodeConfidence.EXACT);
-        final PlayerBattleFeatureSet fs = extractor.extract(recon, mapping);
+        final PlayerBattleFeatureSet fs = extractor.extract(recon, mapping, null);
         // 移动段不应包含 OTHER_EID 的位置
         for (final MovementSegment seg : fs.movements()) {
             // 所有段的坐标范围应在 0-10 之间（recorder 轨迹）
@@ -68,7 +68,7 @@ class PlayerBattleFeatureExtractorTest {
         );
         final var recon = buildRecon(events, RECORDER_EID);
         final var mapping = new RecorderEntityMapping(1000L, 1, RECORDER_EID, "Recorder", 1, 0, DecodeConfidence.EXACT);
-        final PlayerBattleFeatureSet fs = extractor.extract(recon, mapping);
+        final PlayerBattleFeatureSet fs = extractor.extract(recon, mapping, null);
 
         int totalDealt = 0, totalReceived = 0;
         for (final EngagementSummary eng : fs.engagements()) {
@@ -91,7 +91,7 @@ class PlayerBattleFeatureExtractorTest {
         );
         final var recon = buildRecon(events, EID);
         final var mapping = new RecorderEntityMapping(1000L, 1, EID, "Recorder", 1, 0, DecodeConfidence.EXACT);
-        final PlayerBattleFeatureSet fs = extractor.extract(recon, mapping);
+        final PlayerBattleFeatureSet fs = extractor.extract(recon, mapping, null);
         // 至少有一个 movement segment
         assertFalse(fs.movements().isEmpty());
         // 段数量应远少于位置事件数（压缩有效）
@@ -103,7 +103,7 @@ class PlayerBattleFeatureExtractorTest {
         final int EID = 10;
         final var events = List.of(pos(1, 10f, EID, 0, 0));
         final var recon = buildRecon(events, EID);
-        final PlayerBattleFeatureSet fs = extractor.extract(recon, null);
+        final PlayerBattleFeatureSet fs = extractor.extract(recon, null, null);
         assertNotNull(fs);
         assertTrue(fs.limitations().contains("recorder") || fs.movements().isEmpty());
     }

@@ -1,5 +1,6 @@
 package com.wotb.core.replay.feature;
 
+import com.wotb.core.model.Battle;
 import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
@@ -11,6 +12,7 @@ public interface PlayerBattleFeatureExtractor {
 
     PlayerBattleFeatureSet extract(
             ReplayReconstruction reconstruction,
-            RecorderEntityMapping recorder
+            RecorderEntityMapping recorder,
+            Battle battle
     );
 }

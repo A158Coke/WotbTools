@@ -291,7 +291,7 @@ public class AiReplayAnalysisService {
         final List<List<SingleTeamBattleAnalysisContext>> partitions =
                 partitionContexts(contexts);
         final Map<String, AnalyzeResult> perUnitResults = new LinkedHashMap<>();
-        final Set<String> analysisLimitations = new LinkedHashSet<>();
+        final Map<String, Set<String>> limitationsByUnit = new LinkedHashMap<>();
         AnalyzeResult firstAnalysis = null;
         for (final var partition : partitions) {
             if (partition.size() == 1) {
@@ -302,7 +302,9 @@ public class AiReplayAnalysisService {
                 if (firstAnalysis == null) firstAnalysis = result;
                 perUnitResults.put(ctx.analysisUnitId(), result);
                 if (input.limitations().contains("AI_INPUT_TRUNCATED")) {
-                    analysisLimitations.add("AI_INPUT_TRUNCATED");
+                    limitationsByUnit.computeIfAbsent(
+                            ctx.analysisUnitId(), k -> new LinkedHashSet<>())
+                            .add("AI_INPUT_TRUNCATED");
                 }
             } else {
                 final MultiTeamBattleAnalysisContext multiContext =
@@ -317,9 +319,17 @@ public class AiReplayAnalysisService {
                 for (final var ctx : partition) {
                     perUnitResults.put(ctx.analysisUnitId(), result);
                 }
-                analysisLimitations.addAll(multiContext.limitations());
+                for (final var ctx : partition) {
+                    limitationsByUnit.computeIfAbsent(
+                            ctx.analysisUnitId(), k -> new LinkedHashSet<>())
+                            .addAll(multiContext.limitations());
+                }
                 if (input.limitations().contains("AI_INPUT_TRUNCATED")) {
-                    analysisLimitations.add("AI_INPUT_TRUNCATED");
+                    for (final var ctx : partition) {
+                        limitationsByUnit.computeIfAbsent(
+                                ctx.analysisUnitId(), k -> new LinkedHashSet<>())
+                                .add("AI_INPUT_TRUNCATED");
+                    }
                 }
             }
         }
@@ -329,14 +339,28 @@ public class AiReplayAnalysisService {
         return new TeamAnalyzeResult(
                 firstAnalysis,
                 buildTeamAnalysisUnits(
-                        groups, contexts, perUnitResults, analysisLimitations));
+                        groups, contexts, perUnitResults, limitationsByUnit));
+    }
+
+    /**
+     * Team identity based on clan label and roster overlap, not raw team number.
+     */
+    private record TeamIdentity(String clanLabel, Set<Long> rosterAccounts) {
+        boolean matches(TeamIdentity other) {
+            if ("未知队伍".equals(clanLabel) && "未知队伍".equals(other.clanLabel)) {
+                return rosterAccounts.equals(other.rosterAccounts);
+            }
+            return clanLabel.equals(other.clanLabel)
+                    && jaccard(rosterAccounts, other.rosterAccounts) >= MIN_ROSTER_JACCARD;
+        }
     }
 
     /**
      * 将 contexts 划分为兼容分区，每个分区产生一次 AI 请求。
-     * <p>按 {@code (battleIdentity, perspectiveTeam)} 分组后，尝试合并
-     * 相同 perspectiveTeam 且阵容 Jaccard 相似度 ≥ {@value #MIN_ROSTER_JACCARD}
-     * 的不同战斗，使之共享一次分析请求。</p>
+     * <p>按 {@code (battleIdentity, teamIdentity)} 分组后，尝试合并
+     * 相同 {@link TeamIdentity}（相同 clan label + 阵容 Jaccard 相似度 ≥ {@value #MIN_ROSTER_JACCARD}，
+     * 或无 clan 时阵容完全一致）的不同战斗，使之共享一次分析请求。
+     * 原始 team 编号不作为身份依据。</p>
      */
     private static List<List<SingleTeamBattleAnalysisContext>> partitionContexts(
             final List<SingleTeamBattleAnalysisContext> contexts) {
@@ -345,42 +369,31 @@ public class AiReplayAnalysisService {
         }
         final Map<List<?>, List<SingleTeamBattleAnalysisContext>> byKey = contexts
                 .stream()
-                .collect(Collectors.groupingBy(
-                        ctx -> List.of(ctx.battleId(), ctx.perspectiveTeam())));
-        final Map<Integer, List<Map.Entry<List<?>, List<SingleTeamBattleAnalysisContext>>>>
-                byTeam = byKey.entrySet().stream()
-                        .collect(Collectors.groupingBy(
-                                e -> (Integer) e.getKey().get(1)));
+                .collect(Collectors.groupingBy(ctx -> {
+                    final String label = resolveTeamLabel(
+                            ctx.battle(), ctx.perspectiveTeam());
+                    final Set<Long> roster = rosterAccounts(ctx);
+                    return List.of(ctx.battleId(), new TeamIdentity(label, roster));
+                }));
+        final var entries = new ArrayList<>(byKey.entrySet());
+        final int n = entries.size();
+        final boolean[] used = new boolean[n];
         final List<List<SingleTeamBattleAnalysisContext>> partitions =
                 new ArrayList<>();
-        for (final var teamEntry : byTeam.entrySet()) {
-            final var entries = teamEntry.getValue();
-            if (entries.size() == 1) {
-                partitions.add(entries.getFirst().getValue());
-                continue;
-            }
-            final int n = entries.size();
-            final List<Set<Long>> rosters = new ArrayList<>(n);
-            for (int i = 0; i < n; i++) {
-                rosters.add(rosterAccounts(
-                        entries.get(i).getValue().getFirst()));
-            }
-            final boolean[] used = new boolean[n];
-            for (int i = 0; i < n; i++) {
-                if (used[i]) continue;
-                final var merged = new ArrayList<>(
-                        entries.get(i).getValue());
-                used[i] = true;
-                for (int j = i + 1; j < n; j++) {
-                    if (used[j]) continue;
-                    if (jaccard(rosters.get(i), rosters.get(j))
-                            >= MIN_ROSTER_JACCARD) {
-                        merged.addAll(entries.get(j).getValue());
-                        used[j] = true;
-                    }
+        for (int i = 0; i < n; i++) {
+            if (used[i]) continue;
+            final var merged = new ArrayList<>(entries.get(i).getValue());
+            used[i] = true;
+            final TeamIdentity ti = (TeamIdentity) entries.get(i).getKey().get(1);
+            for (int j = i + 1; j < n; j++) {
+                if (used[j]) continue;
+                final TeamIdentity tj = (TeamIdentity) entries.get(j).getKey().get(1);
+                if (ti.matches(tj)) {
+                    merged.addAll(entries.get(j).getValue());
+                    used[j] = true;
                 }
-                partitions.add(merged);
             }
+            partitions.add(merged);
         }
         return partitions;
     }
@@ -564,7 +577,7 @@ public class AiReplayAnalysisService {
             final List<ReplayPerspectiveGroup> groups,
             final List<SingleTeamBattleAnalysisContext> contexts,
             final Map<String, AnalyzeResult> perUnitResults,
-            final Set<String> analysisLimitations
+            final Map<String, Set<String>> limitationsByUnit
     ) {
         final List<AnalysisUnitResult> units = new ArrayList<>();
         for (int index = 0; index < groups.size(); index++) {
@@ -573,7 +586,8 @@ public class AiReplayAnalysisService {
             final TeamBattleFeatureSet features = ctx.features();
             final Set<String> limitations =
                     new LinkedHashSet<>(features.limitations());
-            limitations.addAll(analysisLimitations);
+            limitations.addAll(limitationsByUnit.getOrDefault(
+                    ctx.analysisUnitId(), Set.of()));
             final AnalyzeResult unitResult = perUnitResults.get(ctx.analysisUnitId());
             final String unitAnalysisText = unitResult != null ? unitResult.analysis() : null;
             final String unitModel = unitResult != null ? unitResult.model() : null;
@@ -1258,7 +1272,7 @@ public class AiReplayAnalysisService {
         final PlayerBattleFeatureSet features;
         try {
             features = new DefaultPlayerBattleFeatureExtractor()
-                    .extract(result.reconstruction(), recorder);
+                    .extract(result.reconstruction(), recorder, result.battle());
         } catch (RuntimeException e) {
             System.getLogger("AiReplayAnalysisService").log(
                     System.Logger.Level.WARNING,

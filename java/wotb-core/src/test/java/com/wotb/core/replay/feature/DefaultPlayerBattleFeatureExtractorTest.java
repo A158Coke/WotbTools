@@ -63,7 +63,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
                 .extract(recon(BATTLE_START_RAW, List.of(
                         mapping(1, 1, 1001L),
                         position(2, 5f, 1, 0f, 0f),
-                        position(3, BATTLE_START_RAW, 1, 10f, 0f))), recorderMapping());
+                        position(3, BATTLE_START_RAW, 1, 10f, 0f))), recorderMapping(), null);
         assertEquals(1, features.movements().size());
         assertTrue(features.movements().getFirst().startTime() >= 0f);
     }
@@ -75,7 +75,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
                         mapping(1, 1, 1001L),
                         mapping(2, 2, 2001L),
                         damage(3, 5f, 1, 2, 100),
-                        damage(4, BATTLE_START_RAW, 1, 2, 200))), recorderMapping());
+                        damage(4, BATTLE_START_RAW, 1, 2, 200))), recorderMapping(), null);
         assertEquals(1, features.engagements().size());
         assertEquals(0f, features.engagements().getFirst().startTime(), 0.01f);
         assertEquals(200, features.engagements().getFirst().damageDealt());
@@ -88,7 +88,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
                 .extract(recon(BATTLE_START_RAW, List.of(
                         mapping(1, 1, 1001L),
                         position(2, BATTLE_START_RAW, 1, 0f, 0f),
-                        position(3, BATTLE_START_RAW + 3f, 1, 30f, 0f))), recorderMapping());
+                        position(3, BATTLE_START_RAW + 3f, 1, 30f, 0f))), recorderMapping(), null);
         assertEquals(1, features.movements().size());
         assertEquals(0f, features.movements().getFirst().startTime(), 0.01f);
         assertEquals(3f, features.movements().getFirst().endTime(), 0.01f);
@@ -101,7 +101,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
                         mapping(1, 1, 1001L),
                         mapping(2, 2, 2001L),
                         damage(3, BATTLE_START_RAW + 5f, 1, 2, 100),
-                        damage(4, BATTLE_START_RAW + 8f, 1, 2, 150))), recorderMapping());
+                        damage(4, BATTLE_START_RAW + 8f, 1, 2, 150))), recorderMapping(), null);
         assertEquals(1, features.engagements().size());
         assertEquals(5f, features.engagements().getFirst().startTime(), 0.01f);
         assertEquals(8f, features.engagements().getFirst().endTime(), 0.01f);
@@ -113,7 +113,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
                 .extract(recon(BATTLE_START_RAW, List.of(
                         mapping(1, 1, 1001L),
                         mapping(2, 2, 2001L),
-                        damage(3, BATTLE_START_RAW + 3f, 1, 2, 100))), recorderMapping());
+                        damage(3, BATTLE_START_RAW + 3f, 1, 2, 100))), recorderMapping(), null);
         assertFalse(features.keyEvents().isEmpty());
         assertEquals(3f, features.keyEvents().getFirst().clockSec(), 0.01f);
     }
@@ -126,7 +126,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
                         mapping(2, 2, 2001L),
                         position(3, BATTLE_START_RAW, 1, 0f, 0f),
                         damage(4, BATTLE_START_RAW + 2f, 1, 2, 100),
-                        battleEnd(5, BATTLE_START_RAW + 30f))), recorderMapping());
+                        battleEnd(5, BATTLE_START_RAW + 30f))), recorderMapping(), null);
         for (final var m : features.movements()) {
             assertTrue(m.startTime() >= 0f, "Movement start must not be negative");
         }
@@ -146,7 +146,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
     @Test
     void unresolvedBattleStartPropagatesLimitation() {
         final var features = new DefaultPlayerBattleFeatureExtractor()
-                .extract(recon(null, List.of()), recorderMapping());
+                .extract(recon(null, List.of()), recorderMapping(), null);
         assertTrue(features.limitations().contains("PRE_BATTLE_START_UNRESOLVED"));
     }
 
@@ -157,7 +157,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
                         mapping(1, 1, 1001L),
                         mapping(2, 2, 2001L),
                         position(3, BATTLE_START_RAW, 1, 0f, 0f),
-                        damage(4, BATTLE_START_RAW + 2f, 1, 2, 100))), recorderMapping());
+                        damage(4, BATTLE_START_RAW + 2f, 1, 2, 100))), recorderMapping(), null);
         assertFalse(features.keyEvents().isEmpty());
         assertEquals(2f, features.keyEvents().getFirst().clockSec(), 0.01f);
     }
@@ -169,7 +169,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
                         mapping(1, 1, 1001L),
                         mapping(2, 2, 2001L),
                         damage(3, 5f, 1, 2, 100),
-                        damage(4, BATTLE_START_RAW + 2f, 1, 2, 200))), recorderMapping());
+                        damage(4, BATTLE_START_RAW + 2f, 1, 2, 200))), recorderMapping(), null);
         assertFalse(features.keyEvents().isEmpty());
         assertEquals(2f, features.keyEvents().getFirst().clockSec(), 0.01f);
     }
@@ -182,7 +182,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
                 .extract(recon(BATTLE_START_RAW, List.of(
                         mapping(1, 1, 1001L),
                         position(2, BATTLE_START_RAW, 1, 0f, 0f),
-                        position(3, BATTLE_START_RAW + 5f, 1, 400f, 0f))), recorderMapping());
+                        position(3, BATTLE_START_RAW + 5f, 1, 400f, 0f))), recorderMapping(), null);
         assertEquals(1, features.movements().size());
         final MovementSegment movement = features.movements().getFirst();
         // raw (0,0)->(400,0) == canonical (250,250)->(350,250) == 100 canonical meters over 5s.
@@ -198,7 +198,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
                 .extract(recon(BATTLE_START_RAW, List.of(
                         mapping(1, 1, 1001L),
                         position(2, BATTLE_START_RAW, 1, 0f, 0f),
-                        position(3, BATTLE_START_RAW + 5f, 1, 10f, 0f))), recorderMapping());
+                        position(3, BATTLE_START_RAW + 5f, 1, 10f, 0f))), recorderMapping(), null);
         assertEquals(1, features.movements().size());
         assertEquals(MovementType.STATIONARY, features.movements().getFirst().type());
     }
@@ -210,7 +210,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
                 .extract(recon(BATTLE_START_RAW, List.of(
                         mapping(1, 1, 1001L),
                         position(2, BATTLE_START_RAW, 1, 0f, 0f),
-                        position(3, BATTLE_START_RAW, 1, 400f, 0f))), recorderMapping());
+                        position(3, BATTLE_START_RAW, 1, 400f, 0f))), recorderMapping(), null);
         for (final MovementSegment movement : features.movements()) {
             assertTrue(Float.isFinite(movement.averageSpeed()), "speed must be finite");
             assertTrue(movement.averageSpeed() >= 0f, "speed must be non-negative");
@@ -226,7 +226,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
         final var features = new DefaultPlayerBattleFeatureExtractor()
                 .extract(recon(BATTLE_START_RAW, List.of(
                         mapping(1, 1, 1001L),
-                        position(2, BATTLE_START_RAW, 1, 5000f, 0f))), recorderMapping());
+                        position(2, BATTLE_START_RAW, 1, 5000f, 0f))), recorderMapping(), null);
         assertTrue(features.movements().isEmpty());
     }
 
@@ -268,7 +268,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
         final var features = new DefaultPlayerBattleFeatureExtractor()
                 .extract(recon(60f, List.of(
                         mapping(1, 1, 1001L),
-                        position(2, 65f, 5f, 1, 0f, 0f))), recorderMapping());
+                        position(2, 65f, 5f, 1, 0f, 0f))), recorderMapping(), null);
         assertEquals(1, features.movements().size());
         assertEquals(5f, features.movements().getFirst().startTime(), 0.01f);
         assertEquals(5f, features.movements().getFirst().endTime(), 0.01f);
@@ -280,7 +280,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
                 .extract(recon(60f, List.of(
                         mapping(1, 1, 1001L),
                         mapping(2, 2, 2001L),
-                        damage(3, 65f, 5f, 1, 2, 100))), recorderMapping());
+                        damage(3, 65f, 5f, 1, 2, 100))), recorderMapping(), null);
         assertEquals(1, features.engagements().size());
         assertEquals(5f, features.engagements().getFirst().startTime(), 0.01f);
     }
@@ -291,7 +291,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
                 .extract(recon(60f, List.of(
                         mapping(1, 1, 1001L),
                         mapping(2, 2, 2001L),
-                        damage(3, 65f, 5f, 1, 2, 100))), recorderMapping());
+                        damage(3, 65f, 5f, 1, 2, 100))), recorderMapping(), null);
         assertFalse(features.keyEvents().isEmpty());
         assertEquals(5f, features.keyEvents().getFirst().clockSec(), 0.01f);
     }
@@ -301,7 +301,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
         final var features = new DefaultPlayerBattleFeatureExtractor()
                 .extract(recon(null, List.of(
                         mapping(1, 1, 1001L),
-                        position(2, 120f, 20f, 1, 0f, 0f))), recorderMapping());
+                        position(2, 120f, 20f, 1, 0f, 0f))), recorderMapping(), null);
         assertEquals(1, features.movements().size());
         assertEquals(20f, features.movements().getFirst().startTime(), 0.01f);
     }
@@ -312,7 +312,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
                 .extract(recon(null, List.of(
                         mapping(1, 1, 1001L),
                         position(2, 120f, null, 1, 0f, 0f),
-                        position(3, 130f, null, 1, 30f, 0f))), recorderMapping());
+                        position(3, 130f, null, 1, 30f, 0f))), recorderMapping(), null);
         assertTrue(features.movements().isEmpty());
     }
 
@@ -322,7 +322,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
                 .extract(recon(null, List.of(
                         mapping(1, 1, 1001L),
                         position(2, Float.NaN, 20f, 1, 0f, 0f),
-                        position(3, Float.NaN, 25f, 1, 30f, 0f))), recorderMapping());
+                        position(3, Float.NaN, 25f, 1, 30f, 0f))), recorderMapping(), null);
         assertEquals(1, features.movements().size());
         assertEquals(20f, features.movements().getFirst().startTime(), 0.01f);
     }
