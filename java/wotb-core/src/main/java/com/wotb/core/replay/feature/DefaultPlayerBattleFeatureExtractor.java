@@ -175,10 +175,9 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         return result;
     }
 
-    static List<MovementSegment> compressMovements(final List<PositionChangedEvent> positions,
-                                                    final BattleStartResolution battleStartRes) {
-        return compressMovements(positions.stream()
-                .map(p -> new TimedPosition(p, battleStartRes.battleRelative(p.timestamp().rawClockSec())))
+    static List<MovementSegment> compressTimedTeamMovements(final List<DefaultTeamBattleFeatureExtractor.TimedTeamPosition> timedPositions) {
+        return compressMovements(timedPositions.stream()
+                .map(tp -> new TimedPosition(tp.event(), tp.battleRelativeSec()))
                 .toList());
     }
 
@@ -268,5 +267,4 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
 
     private record TimedDamage(DamageEvent event, float battleRelativeSec) {}
 
-    private record TimedBattleEnd(float battleRelativeSec) {}
 }

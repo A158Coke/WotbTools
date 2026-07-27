@@ -101,19 +101,14 @@ public record BattleStartResolution(Status status, Float battleStartRawClockSec,
 
         final Float battle = timestamp.battleClockSec();
         final float raw = timestamp.rawClockSec();
+        final boolean rawAvailable = Float.isFinite(raw) && raw >= 0f;
 
-        if (!Float.isFinite(raw)) {
-            return TacticalTimeResolution.invalidTimestamp();
-        }
-        if (raw < 0f) {
-            return TacticalTimeResolution.invalidTimestamp();
-        }
         if (battle != null && (!Float.isFinite(battle) || battle < 0f)) {
             return TacticalTimeResolution.invalidTimestamp();
         }
 
-        if (battle != null) {
-            if (resolved()) {
+        if (battle != null && Float.isFinite(battle) && battle >= 0f) {
+            if (rawAvailable && resolved()) {
                 final float expected = raw - battleStartRawClockSec;
                 if (expected < 0f) {
                     return TacticalTimeResolution.clockConflict();
@@ -125,6 +120,9 @@ public record BattleStartResolution(Status status, Float battleStartRawClockSec,
             return TacticalTimeResolution.usable(battle);
         }
 
+        if (!rawAvailable) {
+            return TacticalTimeResolution.invalidTimestamp();
+        }
         if (!resolved()) {
             return TacticalTimeResolution.unresolvedRawOnly();
         }
