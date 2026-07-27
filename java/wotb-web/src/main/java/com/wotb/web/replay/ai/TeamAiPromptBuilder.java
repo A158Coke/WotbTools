@@ -3,6 +3,7 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.PlayerSideResolver;
+import com.wotb.core.util.PromptDataQuoter;
 import com.wotb.core.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.ref.MapNames;
 import com.wotb.core.ref.Tankopedia;
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.util.StringUtils;
 
 /**
@@ -81,39 +83,33 @@ final class TeamAiPromptBuilder {
     }
 
     static PromptInput multi(final MultiTeamBattleAnalysisContext context, final Map<String, List<String>> evidenceLimitations) {
-        final BudgetWriter writer = new BudgetWriter(MAX_INPUT_CHARS);
         final Set<String> globalLimitations = new LinkedHashSet<>(context.limitations());
         final List<TeamBattleAnalysisSummary> perspectives = context.perspectives();
-        // Required: global header
-        writer.appendRequired("=== MULTI_TEAM_CONTEXT ===\n");
-        writer.appendRequired("perspectiveCount=" + context.perspectiveCount() + "\n");
-        writer.appendRequired("uniqueBattleCount=" + context.uniqueBattleCount() + "\n");
-        writer.appendRequired("rosterConsistent=" + context.rosterConsistent() + "\n");
+        // Build global header
+        final StringBuilder globalHeader = new StringBuilder();
+        globalHeader.append("=== MULTI_TEAM_CONTEXT ===\n");
+        globalHeader.append("perspectiveCount=").append(context.perspectiveCount()).append("\n");
+        globalHeader.append("uniqueBattleCount=").append(context.uniqueBattleCount()).append("\n");
+        globalHeader.append("rosterConsistent=").append(context.rosterConsistent()).append("\n");
         if (!context.rosterConsistent()) {
             globalLimitations.add("ROSTER_CONSISTENCY_UNCONFIRMED");
         }
-        // Required: global limitations BEFORE per-perspective sections
-        if (!globalLimitations.isEmpty()) {
-            writer.appendRequired("DATA_LIMITATIONS=" + globalLimitations + "\n");
-        }
         final int perspectiveLimit = Math.min(perspectives.size(), MAX_PERSPECTIVES);
-        if (perspectives.size() > perspectiveLimit) {
-            writer.markTruncated();
-        }
-        final Set<String> allLimitations = new LinkedHashSet<>(globalLimitations);
+        // Phase 1: build required sections for budget planning
+        final List<String> perspectiveRequiredBlocks = new ArrayList<>();
+        final List<Set<String>> perPerspectiveLimitations = new ArrayList<>();
         for (int index = 0; index < perspectiveLimit; index++) {
             final TeamBattleAnalysisSummary perspective = perspectives.get(index);
-            // Required per-perspective header
-            writer.appendRequired("\n=== PERSPECTIVE " + (index + 1) + " ===\n");
-            writer.appendRequired("analysisUnitId=" + quoteData(perspective.analysisUnitId()) + "\n");
-            writer.appendRequired("file=" + quoteData(perspective.fileName()) + "\n");
-            writer.appendRequired("battleIdentity=" + quoteData(perspective.battleIdentity()) + "\n");
-            writer.appendRequired("map=" + quoteData(resolveMapName(perspective.mapName())) + "\n");
-            writer.appendRequired("category=" + perspective.battleCategory() + "\n");
-            writer.appendRequired("durationSec=" + formatNullable(perspective.durationSec()) + "\n");
-            writer.appendRequired("teamLabel=" + quoteData(perspective.teamLabel()) + "\n");
-            writer.appendRequired("rosterAccountIds=" + perspective.rosterAccountIds() + "\n");
-            // Required: per-unit limitations merged from features + evidence (deduplicated)
+            final StringBuilder block = new StringBuilder();
+            block.append("\n=== PERSPECTIVE ").append(index + 1).append(" ===\n");
+            block.append("analysisUnitId=").append(quoteData(perspective.analysisUnitId())).append("\n");
+            block.append("file=").append(quoteData(perspective.fileName())).append("\n");
+            block.append("battleIdentity=").append(quoteData(perspective.battleIdentity())).append("\n");
+            block.append("map=").append(quoteData(resolveMapName(perspective.mapName()))).append("\n");
+            block.append("category=").append(perspective.battleCategory()).append("\n");
+            block.append("durationSec=").append(formatNullable(perspective.durationSec())).append("\n");
+            block.append("teamLabel=").append(quoteData(perspective.teamLabel())).append("\n");
+            block.append("rosterAccountIds=").append(perspective.rosterAccountIds()).append("\n");
             final Set<String> perUnitLimits = new LinkedHashSet<>();
             if (perspective.features() != null) {
                 perUnitLimits.addAll(perspective.features().limitations());
@@ -123,11 +119,55 @@ final class TeamAiPromptBuilder {
                 perUnitLimits.addAll(evLimits);
             }
             if (!perUnitLimits.isEmpty()) {
-                writer.appendRequired("unitLimitations=" + perUnitLimits + "\n");
+                block.append("unitLimitations=").append(perUnitLimits).append("\n");
             }
-            allLimitations.addAll(perUnitLimits);
-            // Truncatable: feature details
-            appendFeatureSet(writer, perspective.features());
+            perPerspectiveLimitations.add(perUnitLimits);
+            perspectiveRequiredBlocks.add(block.toString());
+        }
+        // Phase 1: budget planning
+        final int reserve = TRUNCATION_LINE.length();
+        final int available = MAX_INPUT_CHARS - reserve;
+        final int maxOmittedFromCap = perspectives.size() - perspectiveLimit;
+        int includedCount = perspectiveLimit;
+        while (includedCount > 0) {
+            final int budgetOmitted = perspectiveLimit - includedCount;
+            final int totalOmitted = budgetOmitted + maxOmittedFromCap;
+            final Set<String> budgetLim = new LinkedHashSet<>(globalLimitations);
+            if (totalOmitted > 0) {
+                budgetLim.add("PERSPECTIVES_OMITTED_COUNT_" + totalOmitted);
+            }
+            final String budgetLimLine = budgetLim.isEmpty() ? "" : "DATA_LIMITATIONS=" + budgetLim + "\n";
+            int totalRequired = globalHeader.length() + budgetLimLine.length();
+            for (int i = 0; i < includedCount; i++) {
+                totalRequired += perspectiveRequiredBlocks.get(i).length();
+            }
+            if (totalRequired <= available) {
+                break;
+            }
+            includedCount--;
+        }
+        if (includedCount == 0 && perspectiveLimit > 0) {
+            throw new AiUpstreamException("AI_PROMPT_TOO_LARGE", null, null);
+        }
+        // Phase 2: write with budget reservation for future required blocks
+        final BudgetWriter writer = new BudgetWriter(MAX_INPUT_CHARS);
+        final int totalOmitted = (perspectiveLimit - includedCount) + maxOmittedFromCap;
+        if (totalOmitted > 0) {
+            globalLimitations.add("PERSPECTIVES_OMITTED_COUNT_" + totalOmitted);
+        }
+        final String finalLimLine = globalLimitations.isEmpty() ? "" : "DATA_LIMITATIONS=" + globalLimitations + "\n";
+        final Set<String> allLimitations = new LinkedHashSet<>(globalLimitations);
+        // Reserve budget for all perspective required blocks
+        for (int i = 0; i < includedCount; i++) {
+            writer.reserve(perspectiveRequiredBlocks.get(i).length());
+        }
+        writer.append(globalHeader.toString());
+        writer.append(finalLimLine);
+        for (int index = 0; index < includedCount; index++) {
+            writer.release(perspectiveRequiredBlocks.get(index).length());
+            writer.append(perspectiveRequiredBlocks.get(index));
+            allLimitations.addAll(perPerspectiveLimitations.get(index));
+            appendFeatureSet(writer, perspectives.get(index).features());
         }
         return writer.finish(allLimitations);
     }
@@ -292,7 +332,9 @@ final class TeamAiPromptBuilder {
                         + "," + format(cluster.centroidZ()) + ")"
                         + " centroidStatus=" + cluster.centroidStatus()
                         + " clampedMemberPositions=" + cluster.clampedMemberPositionCount()
-                        + " members=" + cluster.memberIdentities()
+                        + " members=" + cluster.memberIdentities().stream()
+                                .map(id -> PromptDataQuoter.quote(id, "?"))
+                                .collect(Collectors.joining(",", "[", "]"))
                         + " memberCount=" + cluster.memberCount()
                         + " confidence=" + cluster.confidence()
                         + "\n");
@@ -358,31 +400,7 @@ final class TeamAiPromptBuilder {
     }
 
     private static String quoteData(final Object value) {
-        final String text = value == null ? "UNKNOWN" : String.valueOf(value);
-        final StringBuilder quoted = new StringBuilder(text.length() + 2);
-        quoted.append('"');
-        for (int index = 0; index < text.length(); index++) {
-            final char character = text.charAt(index);
-            switch (character) {
-                case '"' -> quoted.append("\\\"");
-                case '\\' -> quoted.append("\\\\");
-                case '\b' -> quoted.append("\\b");
-                case '\f' -> quoted.append("\\f");
-                case '\n' -> quoted.append("\\n");
-                case '\r' -> quoted.append("\\r");
-                case '\t' -> quoted.append("\\t");
-                default -> {
-                    if (character < 0x20) {
-                        quoted.append(String.format(
-                                Locale.ROOT, "\\u%04x", (int) character));
-                    } else {
-                        quoted.append(character);
-                    }
-                }
-            }
-        }
-        quoted.append('"');
-        return quoted.toString();
+        return PromptDataQuoter.quote(value, "UNKNOWN");
     }
 
     /** Resolve map internal code to user-visible Chinese name via MapNames. */
@@ -503,18 +521,27 @@ final class TeamAiPromptBuilder {
 
         private final int maxChars;
         private final StringBuilder content = new StringBuilder(4096);
+        private int reserved;
         private boolean truncated;
 
         private BudgetWriter(final int maxChars) {
             this.maxChars = maxChars;
         }
 
+        private void reserve(final int bytes) {
+            this.reserved += bytes;
+        }
+
+        private void release(final int bytes) {
+            this.reserved -= bytes;
+        }
+
         private void append(final String value) {
             if (value == null || value.isEmpty()) {
                 return;
             }
-            final int reserve = TRUNCATION_LINE.length();
-            final int remaining = maxChars - reserve - content.length();
+            final int truncationReserve = TRUNCATION_LINE.length();
+            final int remaining = maxChars - truncationReserve - reserved - content.length();
             if (remaining <= 0) {
                 truncated = true;
                 return;
@@ -530,11 +557,10 @@ final class TeamAiPromptBuilder {
             if (value == null || value.isEmpty()) {
                 return;
             }
-            final int reserve = TRUNCATION_LINE.length();
-            final int remaining = maxChars - reserve - content.length();
+            final int truncationReserve = TRUNCATION_LINE.length();
+            final int remaining = maxChars - truncationReserve - reserved - content.length();
             if (remaining <= 0 || value.length() > remaining) {
-                throw new IllegalStateException(
-                        "Required section exceeds budget of " + maxChars + " characters");
+                throw new AiUpstreamException("AI_PROMPT_TOO_LARGE", null, null);
             }
             content.append(value);
         }
@@ -547,10 +573,6 @@ final class TeamAiPromptBuilder {
             final Set<String> limitations = new LinkedHashSet<>(suppliedLimitations);
             if (truncated) {
                 limitations.add("AI_INPUT_TRUNCATED");
-                final int maximumBaseLength = Math.max(0, maxChars - TRUNCATION_LINE.length());
-                if (content.length() > maximumBaseLength) {
-                    content.setLength(maximumBaseLength);
-                }
                 content.append(TRUNCATION_LINE);
             }
             return new PromptInput(content.toString(), new ArrayList<>(limitations));

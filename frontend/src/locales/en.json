@@ -765,6 +765,7 @@
         "select_file": "Select Replay File",
         "invalid_file": "Please select a .wotbreplay file",
         "no_file": "No replay file selected",
+        "max_files_count": "{count} / 16",
         "reconstruct_btn": "Reconstruct",
         "time_placeholder": "Time (s)",
         "invalid_time": "Invalid time value",
@@ -847,7 +848,7 @@
             "NO_REPLAY_FILES": "No replay files were selected.",
             "INVALID_REPLAY_FILE_TYPE": "Only .wotbreplay files can be analyzed.",
             "FILE_TOO_LARGE": "The replay file exceeds the size limit.",
-            "TOO_MANY_REPLAY_FILES": "At most 10 replay files can be uploaded at once.",
+            "REPLAY_FILE_COUNT_EXCEEDED": "At most 16 replay files can be uploaded at once.",
             "TOTAL_REQUEST_TOO_LARGE": "The combined upload size exceeds the limit."
         },
         "event_types": {

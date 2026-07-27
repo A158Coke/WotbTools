@@ -1085,9 +1085,34 @@ class AiReplayAnalysisServiceTest {
         assertFalse(r.contains("base64sec"));
     }
 
-    @Test void redactionCustomScheme() {
+    @Test void redactionAuthorizationPrefixCustom() {
         final String r = AiReplayAnalysisService.safeProviderSummary("Authorization: Custom token123");
         assertFalse(r.contains("token123"));
+    }
+
+    @Test void redactionCustomScheme() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("CustomScheme secret-value");
+        assertFalse(r.contains("secret-value"));
+    }
+
+    @Test void redactionTokenV2() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("TokenV2 abc.def.ghi");
+        assertFalse(r.contains("abc.def.ghi"));
+    }
+
+    @Test void redactionApiAuth() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("ApiAuth my-secret-token");
+        assertFalse(r.contains("my-secret-token"));
+    }
+
+    @Test void redactionAuthorizationCustomScheme() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("Authorization: CustomScheme my-secret");
+        assertFalse(r.contains("my-secret"));
+    }
+
+    @Test void redactionJsonCustomScheme() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("{\"message\":\"CustomScheme my-secret\"}");
+        assertFalse(r.contains("my-secret"));
     }
 
     @Test void redactionDigest() {

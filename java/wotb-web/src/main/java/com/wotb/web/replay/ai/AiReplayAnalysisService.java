@@ -1124,10 +1124,10 @@ public class AiReplayAnalysisService {
                 "(?i)(signedheader|x-amz-[a-z-]+|x-amz-date|credential|signature)=[^\\s,;\"]+",
                 "$1=[REDACTED]");
         final String step5 = step4.replaceAll(
-                "(?i)\\b(bearer|basic|digest|custom)\\s+[^\\s,;\"'}]+",
+                "\\b((?i:bearer|basic|digest)|[A-Z][a-zA-Z0-9]+)\\s+[A-Za-z0-9._\\-+/]{6,}",
                 "$1 [REDACTED]");
         return step5.replaceAll(
-                "(?i)\\b(response|nonce|cnonce|opaque|realm|qop|nc)\\s*=\\s*[^\\s,;\"]+",
+                "(?i)\\b(response|nonce|cnonce|opaque|realm|qop|nc|uri|username)\\s*=\\s*[A-Za-z0-9._\\-+/]{4,}",
                 "$1=[REDACTED]");
     }
 

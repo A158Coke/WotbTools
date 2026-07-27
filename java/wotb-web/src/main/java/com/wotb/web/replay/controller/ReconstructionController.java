@@ -55,6 +55,8 @@ import java.util.List;
 @CrossOrigin(origins = "*")
 public class ReconstructionController {
 
+    public static final int MAX_AI_REVIEW_REPLAY_FILES = 16;
+
     private final DefaultReplayProcessingFacade processingFacade;
     private final ReplayReconstructionService reconstructionService;
     private final AiReplayAnalysisService aiService;
@@ -336,8 +338,8 @@ public class ReconstructionController {
         if (files == null || files.length == 0) {
             throw new IllegalArgumentException("NO_REPLAY_FILES");
         }
-        if (files.length > 10) {
-            throw new IllegalArgumentException("TOO_MANY_REPLAY_FILES");
+        if (files.length > MAX_AI_REVIEW_REPLAY_FILES) {
+            throw new IllegalArgumentException("REPLAY_FILE_COUNT_EXCEEDED");
         }
         long totalBytes = 0;
         for (final MultipartFile file : files) {
