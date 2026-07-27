@@ -243,7 +243,7 @@ final class TeamAiPromptBuilder {
         }
         for (int index = 0; index < limit; index++) {
             final TeamFormationPhase phase = phases.get(index);
-            final String phasePosInfo = formatCanonicalPosition(phase.centroid());
+            final String phasePosInfo = formatCanonicalPos(phase.centroid());
             writer.append("formation[" + format(phase.startTime())
                     + "-" + format(phase.endTime()) + "]"
                     + " " + phasePosInfo
@@ -424,7 +424,13 @@ final class TeamAiPromptBuilder {
      */
     private static String formatCanonicalPosition(final CanonicalMapPosition pos) {
         if (pos == null) return "UNKNOWN";
-        return "(" + format(pos.x()) + "," + format(pos.z()) + ") r=" + pos.region();
+        return "(" + format(pos.x()) + "," + format(pos.z()) + ")";
+    }
+
+    /** Overload for Vector3 that stores canonical X/Z (no double conversion). */
+    private static String formatCanonicalPos(final Vector3 pos) {
+        if (pos == null) return "UNKNOWN";
+        return "(" + format(pos.x()) + "," + format(pos.z()) + ")";
     }
 
     /**

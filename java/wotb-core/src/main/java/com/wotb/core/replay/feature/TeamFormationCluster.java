@@ -32,7 +32,8 @@ public record TeamFormationCluster(
                 throw new IllegalArgumentException("memberIdentities contains duplicate: " + id);
             }
         }
-        if (!Float.isFinite(startTime) || !Float.isFinite(endTime) || startTime > endTime) {
+        if (!Float.isFinite(startTime) || !Float.isFinite(endTime) || startTime > endTime
+                || startTime < 0 || endTime < 0) {
             throw new IllegalArgumentException("Invalid time range: " + startTime + "-" + endTime);
         }
         if (centroid == null) {

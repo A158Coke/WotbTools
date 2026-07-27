@@ -14,6 +14,7 @@ import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
@@ -748,7 +749,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 (window + 1) * FORMATION_WINDOW_SEC,
                 // Centroid is computed once in canonical space; stored as CanonicalMapPosition
                 // so downstream never re-runs raw→canonical mapping on it.
-                new CanonicalMapPosition(centroidX, centroidZ),
+                new Vector3(centroidX, 0f, centroidZ),
                 dispersion,
                 canonicalPositions.size(),
                 confidence,
