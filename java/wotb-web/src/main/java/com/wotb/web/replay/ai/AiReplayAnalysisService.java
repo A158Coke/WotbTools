@@ -59,10 +59,8 @@ import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
@@ -346,9 +344,8 @@ public class AiReplayAnalysisService {
 
     /**
      * 将 contexts 划分为兼容分区，每个分区产生一次 AI 请求。
-     * <p>按 {@code (battleId, normalizedClan, roster)} 分组后，构建阵容兼容图并
-     * 通过 BFS 寻找连通分量（传递闭包），消除非传递 Jaccard 匹配对遍历顺序的依赖。
-     * 分区顺序稳定（按各组首个 context 的输入顺序）。</p>
+     * <p>使用 pairwise complete-link 策略：新 context 加入分区要求与
+     * 分区内每个现有成员都兼容，消除非传递匹配。分区顺序按输入的 context 顺序。</p>
      */
     private static List<List<SingleTeamBattleAnalysisContext>> partitionContexts(
             final List<SingleTeamBattleAnalysisContext> contexts) {
@@ -356,97 +353,120 @@ public class AiReplayAnalysisService {
     }
 
     /**
-     * Build stable, deterministic partitions via transitive closure on
-     * roster compatibility.
-     * <p>Each partition is a connected component in a graph where nodes are
-     * {@code (battleId, normalizedClan, roster)} groups and edges represent
-     * roster compatibility (Jaccard ≥ {@value #MIN_ROSTER_JACCARD}, or exact
-     * roster equality for no-clan groups). Connected components are found via
-     * BFS, eliminating traversal-order dependency from non-transitive matching.
-     * Partitions are returned in input-stable order (first occurrence of each
-     * component's first group in original input order).</p>
+     * Build stable, deterministic partitions via pairwise complete-link.
+     * <p>A new context may join a partition only if it's compatible with
+     * EVERY existing member of that partition. This eliminates non-transitive
+     * matching entirely. Partitions are returned in input-stable order.</p>
      */
     private static List<List<SingleTeamBattleAnalysisContext>> buildPartitions(
             final List<SingleTeamBattleAnalysisContext> contexts) {
         if (contexts.size() <= 1) {
             return List.of(contexts);
         }
-        // 1. Group by (battleId, normalizedClan, roster) using LinkedHashMap
-        final Map<GroupKey, List<SingleTeamBattleAnalysisContext>> groups =
-                new LinkedHashMap<>();
-        for (final var ctx : contexts) {
-            final String clanLabel = resolveTeamLabel(
-                    ctx.battle(), ctx.perspectiveTeam());
-            final String normalizedClan = StringUtils.hasText(clanLabel)
-                    ? clanLabel.trim().toLowerCase(Locale.ROOT) : "";
-            final Set<Long> roster = rosterAccounts(ctx);
-            groups.computeIfAbsent(
-                    new GroupKey(ctx.battleId(), normalizedClan, roster),
-                    k -> new ArrayList<>()).add(ctx);
-        }
-        final var groupEntries = new ArrayList<>(groups.entrySet());
-        final int n = groupEntries.size();
-
-        // 2. Build adjacency list for the compatibility graph
-        final List<Set<Integer>> adj = new ArrayList<>(n);
-        for (int i = 0; i < n; i++) {
-            adj.add(new HashSet<>());
-        }
-        for (int i = 0; i < n; i++) {
-            final var ki = groupEntries.get(i).getKey();
-            for (int j = i + 1; j < n; j++) {
-                final var kj = groupEntries.get(j).getKey();
-                if (groupsCompatible(ki, kj)) {
-                    adj.get(i).add(j);
-                    adj.get(j).add(i);
-                }
-            }
-        }
-
-        // 3. Find connected components via BFS (transitive closure)
-        final boolean[] visited = new boolean[n];
         final List<List<SingleTeamBattleAnalysisContext>> partitions =
                 new ArrayList<>();
-        for (int i = 0; i < n; i++) {
-            if (visited[i]) continue;
-            final List<SingleTeamBattleAnalysisContext> component =
-                    new ArrayList<>();
-            final Deque<Integer> stack = new ArrayDeque<>();
-            stack.push(i);
-            visited[i] = true;
-            while (!stack.isEmpty()) {
-                final int node = stack.pop();
-                component.addAll(groupEntries.get(node).getValue());
-                for (final int neighbor : adj.get(node)) {
-                    if (!visited[neighbor]) {
-                        visited[neighbor] = true;
-                        stack.push(neighbor);
-                    }
+        for (final var ctx : contexts) {
+            boolean added = false;
+            for (final var partition : partitions) {
+                if (canJoinPartition(ctx, partition)) {
+                    partition.add(ctx);
+                    added = true;
+                    break;
                 }
             }
-            partitions.add(component);
+            if (!added) {
+                final List<SingleTeamBattleAnalysisContext> newPartition =
+                        new ArrayList<>();
+                newPartition.add(ctx);
+                partitions.add(newPartition);
+            }
         }
         return partitions;
     }
 
     /**
-     * Group key for the first partitioning step: (battleId, normalizedClan, roster).
+     * Group key representing a unique (battleId, perspectiveTeam, normalizedClan, displayLabel, roster).
      */
-    private record GroupKey(BattleIdentity battleId, String normalizedClan, Set<Long> roster) {
+    private record GroupKey(BattleIdentity battleId, int perspectiveTeam, String normalizedClan, String displayLabel, Set<Long> roster) {
     }
 
     /**
-     * Check whether two groups are compatible for merging.
+     * Check whether a context is compatible with every existing member of a partition
+     * (pairwise complete-link). Returns true only if all pairs pass {@link #contextsCompatible}.
+     */
+    private static boolean canJoinPartition(
+            final SingleTeamBattleAnalysisContext ctx,
+            final List<SingleTeamBattleAnalysisContext> partition) {
+        for (final var existing : partition) {
+            if (!contextsCompatible(ctx, existing)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Compatibility rule for two contexts:
      * <ul>
-     *   <li>Both without clan → exact roster equality required</li>
-     *   <li>Otherwise → Jaccard similarity ≥ {@value #MIN_ROSTER_JACCARD}</li>
+     *   <li>Same {@code battleIdentity} + different {@code perspectiveTeam} → ALWAYS incompatible
+     *       (opposing perspectives are isolated)</li>
+     *   <li>Both have a dominant clan (from actual roster data) AND they match → Jaccard check</li>
+     *   <li>Different dominant clans → incompatible</li>
+     *   <li>One has clan, other doesn't → incompatible</li>
+     *   <li>Neither has clan → Jaccard check</li>
      * </ul>
      */
-    private static boolean groupsCompatible(final GroupKey a, final GroupKey b) {
-        if (a.normalizedClan.isEmpty() && b.normalizedClan.isEmpty()) {
-            return a.roster.equals(b.roster);
+    private static boolean contextsCompatible(
+            final SingleTeamBattleAnalysisContext a,
+            final SingleTeamBattleAnalysisContext b) {
+        if (a.battleId().equals(b.battleId())
+                && a.perspectiveTeam() != b.perspectiveTeam()) {
+            return false;
         }
-        return jaccard(a.roster, b.roster) >= MIN_ROSTER_JACCARD;
+        final String clanA = normalizedDominantClan(
+                a.battle(), a.perspectiveTeam());
+        final String clanB = normalizedDominantClan(
+                b.battle(), b.perspectiveTeam());
+        final boolean aHasClan = StringUtils.hasText(clanA);
+        final boolean bHasClan = StringUtils.hasText(clanB);
+        if (aHasClan != bHasClan) {
+            return false;
+        }
+        if (aHasClan) {
+            if (!clanA.equals(clanB)) {
+                return false;
+            }
+            return jaccard(rosterAccounts(a), rosterAccounts(b))
+                    >= MIN_ROSTER_JACCARD;
+        }
+        return jaccard(rosterAccounts(a), rosterAccounts(b))
+                >= MIN_ROSTER_JACCARD;
+    }
+
+    /**
+     * Compute the normalized dominant clan directly from the roster data
+     * of the given perspective team, not from the display label.
+     * Returns the most common clan (lowercased) among players on that team,
+     * or empty string if no clan tags are present.
+     */
+    private static String normalizedDominantClan(
+            final Battle battle, final int perspectiveTeam) {
+        if (battle == null || battle.players == null) return "";
+        final Map<String, List<String>> counts = battle.players.stream()
+                .filter(p -> p.team == perspectiveTeam)
+                .map(p -> p.clan)
+                .filter(clan -> StringUtils.hasText(clan))
+                .map(String::trim)
+                .collect(Collectors.groupingBy(
+                        clan -> clan.toLowerCase(Locale.ROOT),
+                        LinkedHashMap::new,
+                        Collectors.toList()));
+        if (counts.isEmpty()) return "";
+        return counts.entrySet().stream()
+                .max(Map.Entry.comparingByValue(
+                        Comparator.comparingInt(List::size)))
+                .map(Map.Entry::getKey)
+                .orElse("");
     }
 
     /**

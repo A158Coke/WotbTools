@@ -47,32 +47,35 @@ public record BattlePhaseSummary(
         final List<BattlePhaseSummary> phases = new ArrayList<>();
         if (battleEndRelative <= 0 || !Float.isFinite(battleEndRelative)) return phases;
 
-        final boolean hasContact = firstContactRelative >= 0 && Float.isFinite(firstContactRelative);
-        final float clampedContact = hasContact ? Math.min(firstContactRelative, battleEndRelative) : -1f;
+        final boolean validContact = firstContactRelative >= 0
+                && Float.isFinite(firstContactRelative)
+                && firstContactRelative < battleEndRelative;
 
-        // OPENING: [0, min(contact-or-45, battleEnd)]
-        final float openingEnd = hasContact && clampedContact >= 0
-                ? Math.min(Math.min(clampedContact, 45f), battleEndRelative)
-                : Math.min(45f, battleEndRelative);
+        // OPENING: [0, min(validContact ? contactTime : OPENING_DURATION, battleEnd)]
+        final float openingEnd = validContact
+                ? Math.min(firstContactRelative, battleEndRelative)
+                : Math.min(OPENING_DURATION, battleEndRelative);
         phases.add(new BattlePhaseSummary(0f, openingEnd, BattlePhaseType.OPENING, DecodeConfidence.EXACT));
 
-        // FIRST_CONTACT: only if contact exists and is within openingEnd+5
-        if (hasContact && clampedContact >= 0 && clampedContact <= openingEnd + 5 && clampedContact < battleEndRelative) {
-            final float contactEnd = Math.min(clampedContact + 10, battleEndRelative);
-            if (contactEnd > clampedContact) {
-                phases.add(new BattlePhaseSummary(clampedContact, contactEnd,
+        float lastEnd = openingEnd;
+
+        // FIRST_CONTACT (if valid contact): [contactTime, min(contactTime + FIRST_CONTACT_DURATION, battleEnd)]
+        if (validContact) {
+            final float contactEnd = Math.min(firstContactRelative + FIRST_CONTACT_DURATION, battleEndRelative);
+            if (contactEnd > firstContactRelative) {
+                phases.add(new BattlePhaseSummary(firstContactRelative, contactEnd,
                         BattlePhaseType.FIRST_CONTACT, DecodeConfidence.INFERRED));
+                lastEnd = contactEnd;
             }
         }
 
-        // MID_GAME: starts after OPENING/end of FIRST_CONTACT
-        final float midGameStart = openingEnd; // after opening
-        if (battleEndRelative - midGameStart > 60) {
-            phases.add(new BattlePhaseSummary(midGameStart, battleEndRelative,
+        // MID_GAME: starts at the END of the previous phase, only if enough room
+        if (battleEndRelative - lastEnd > MID_GAME_MIN_DURATION) {
+            phases.add(new BattlePhaseSummary(lastEnd, battleEndRelative,
                     BattlePhaseType.MID_GAME, DecodeConfidence.INFERRED));
         }
 
-        // ENDGAME: zero-length marker at battle end
+        // ENDGAME: zero-length marker at battleEnd
         phases.add(new BattlePhaseSummary(battleEndRelative, battleEndRelative,
                 BattlePhaseType.ENDGAME, DecodeConfidence.EXACT));
 
