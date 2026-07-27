@@ -293,6 +293,12 @@ public class AiReplayAnalysisService {
         final List<SingleTeamBattleAnalysisContext> contexts = groups.stream()
                 .map(this::buildSingleTeamContext)
                 .toList();
+        final Set<String> unitIds = new HashSet<>();
+        for (final SingleTeamBattleAnalysisContext ctx : contexts) {
+            if (!unitIds.add(ctx.analysisUnitId())) {
+                throw new IllegalArgumentException("Duplicate analysisUnitId: " + ctx.analysisUnitId());
+            }
+        }
         final Map<String, RosterEvidence> evidenceByUnitId = new LinkedHashMap<>();
         for (final SingleTeamBattleAnalysisContext ctx : contexts) {
             evidenceByUnitId.put(ctx.analysisUnitId(), RosterEvidence.from(ctx));
@@ -305,8 +311,9 @@ public class AiReplayAnalysisService {
         for (final var partition : partitions) {
             if (partition.size() == 1) {
                 final var ctx = partition.getFirst();
+                final RosterEvidence evidence = evidenceByUnitId.get(ctx.analysisUnitId());
                 final TeamAiPromptBuilder.PromptInput input =
-                        TeamAiPromptBuilder.single(ctx);
+                        TeamAiPromptBuilder.single(ctx, evidence != null ? evidence.limitations() : List.of());
                 final AnalyzeResult result = callSingleTeamContext(ctx, input);
                 if (firstAnalysis == null) firstAnalysis = result;
                 perUnitResults.put(ctx.analysisUnitId(), result);
@@ -315,8 +322,7 @@ public class AiReplayAnalysisService {
                             ctx.analysisUnitId(), k -> new LinkedHashSet<>())
                             .add("AI_INPUT_TRUNCATED");
                 }
-                final var rosterEvidence = evidenceByUnitId.get(ctx.analysisUnitId());
-                if (rosterEvidence != null && rosterEvidence.limitations().contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS")) {
+                if (evidence != null && evidence.limitations().contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS")) {
                     limitationsByUnit.computeIfAbsent(
                             ctx.analysisUnitId(), k -> new LinkedHashSet<>())
                             .add("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
@@ -324,8 +330,15 @@ public class AiReplayAnalysisService {
             } else {
                 final MultiTeamBattleAnalysisContext multiContext =
                         buildMultiTeamContext(partition, evidenceByUnitId);
+                final Map<String, List<String>> partitionEvidenceLimits = new LinkedHashMap<>();
+                for (final var ctx : partition) {
+                    final RosterEvidence ev = evidenceByUnitId.get(ctx.analysisUnitId());
+                    if (ev != null) {
+                        partitionEvidenceLimits.put(ctx.analysisUnitId(), ev.limitations());
+                    }
+                }
                 final TeamAiPromptBuilder.PromptInput input =
-                        TeamAiPromptBuilder.multi(multiContext);
+                        TeamAiPromptBuilder.multi(multiContext, partitionEvidenceLimits);
                 final List<KeyBattleEvent> keyEvents = partition.stream()
                         .flatMap(ctx -> ctx.features().keyEvents().stream())
                         .toList();
@@ -386,7 +399,8 @@ public class AiReplayAnalysisService {
         }
         final List<IndexedContext> indexed = new ArrayList<>();
         for (int i = 0; i < contexts.size(); i++) {
-            indexed.add(new IndexedContext(contexts.get(i), i));
+            indexed.add(new IndexedContext(contexts.get(i), i,
+                    evidenceByUnitId.get(contexts.get(i).analysisUnitId())));
         }
         final List<IndexedContext> sorted = new ArrayList<>(indexed);
         sorted.sort(Comparator.comparing((IndexedContext ic) -> {
@@ -691,7 +705,7 @@ public class AiReplayAnalysisService {
         }
     }
 
-    private record IndexedContext(SingleTeamBattleAnalysisContext ctx, int originalIndex) {}
+    private record IndexedContext(SingleTeamBattleAnalysisContext ctx, int originalIndex, RosterEvidence evidence) {}
 
     private static String unresolvedTeamCode(
             final TeamPerspectiveResolution perspective
