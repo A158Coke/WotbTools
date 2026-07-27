@@ -34,8 +34,8 @@ public final class BattleStartResolver {
         if (reconstructionBattleStart != null && Float.isFinite(reconstructionBattleStart)) {
             return BattleStartResolution.fromReconstruction(reconstructionBattleStart);
         }
-        if (diagnostics != null) {
-            return BattleStartResolution.fromDiagnostics(diagnostics);
+        if (diagnostics != null && diagnostics.battleStartIdentified()) {
+            return BattleStartResolution.identified(diagnostics.battleStartRawClockSec());
         }
         if (battle != null && battle.durationS != null && Float.isFinite(battle.durationS.floatValue()) && battle.durationS > 0
                 && events != null) {
@@ -47,8 +47,8 @@ public final class BattleStartResolver {
                         if (Float.isFinite(battleStart) && battleStart >= 0) {
                             return BattleStartResolution.estimated(battleStart);
                         }
+                        break;
                     }
-                    break;
                 }
             }
         }

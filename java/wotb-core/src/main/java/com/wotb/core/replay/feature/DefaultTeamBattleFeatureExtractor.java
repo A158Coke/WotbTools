@@ -83,12 +83,6 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             }
         }
 
-        final List<ReplayEvent> tacticalEvents = events.stream()
-                .filter(e -> e instanceof PositionChangedEvent
-                        || e instanceof DamageEvent
-                        || e instanceof BattleEndedEvent)
-                .toList();
-
         final Map<Integer, List<PositionChangedEvent>> positionsByEntity =
                 teamPositionsByEntity(events, entityMapping, perspectiveTeam, resolutionByEvent);
         final PositionEvidenceAudit positionAudit =
@@ -96,11 +90,6 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         final int invalidTimestampEventCount = (int) resolvedEvents.stream()
                 .filter(re -> re.resolution().status() == TacticalTimeResolution.Status.INVALID_TIMESTAMP)
                 .count();
-        final boolean hasUsableTimedEvent = tacticalEvents.stream()
-                .anyMatch(e -> {
-                    final TacticalTimeResolution res = resolutionByEvent.get(e);
-                    return res != null && res.isUsable();
-                });
         final List<TimedTeamDamage> timedDamages = new ArrayList<>();
         int unattributedDamageCount = 0;
         for (final ReplayEvent event : events) {
@@ -143,6 +132,12 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             }
         }
 
+        final List<ReplayEvent> acceptedEvents = new ArrayList<>();
+        timedPositionsByEntity.values().stream().flatMap(List::stream)
+                .map(TimedTeamPosition::event).forEach(acceptedEvents::add);
+        timedDamages.stream().map(td -> td.event().event()).forEach(acceptedEvents::add);
+        final boolean hasUsableTimedEvent = !acceptedEvents.isEmpty();
+
         final List<TeamMemberFeatureSet> members = authoritativeMembers.stream()
                 .map(player -> buildMember(
                         player, entityMapping, timedPositionsByEntity, timedDamages, authoritativeMembers))
@@ -164,9 +159,9 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .mapToObj(value -> (float) value)
                 .findFirst()
                 .orElse(-1f);
-        final BattleEndEvidence battleEnd = findBattleEndEvidence(tacticalEvents, battle, resolutionByEvent);
+        final BattleEndEvidence battleEnd = findBattleEndEvidence(events, battle, resolutionByEvent);
         final float phaseEndClock = battleEnd.clockSec() != null
-                ? battleEnd.clockSec() : lastObservedClock(tacticalEvents, resolutionByEvent);
+                ? battleEnd.clockSec() : lastObservedClock(acceptedEvents, resolutionByEvent);
         final List<BattlePhaseSummary> battlePhases = hasUsableTimedEvent
                 ? BattlePhaseSummary.buildRelativePhases(
                         firstContactTime, phaseEndClock)

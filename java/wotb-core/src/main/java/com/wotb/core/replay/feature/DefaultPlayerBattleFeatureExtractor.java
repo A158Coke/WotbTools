@@ -1,5 +1,6 @@
 package com.wotb.core.replay.feature;
 
+import com.wotb.core.model.Battle;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.PositionChangedEvent;
@@ -30,7 +31,7 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
     static final int MAX_KEY_EVENTS = 40;
 
     @Override
-    public PlayerBattleFeatureSet extract(final ReplayReconstruction reconstruction, final RecorderEntityMapping recorder) {
+    public PlayerBattleFeatureSet extract(final ReplayReconstruction reconstruction, final RecorderEntityMapping recorder, final Battle battle) {
         if (recorder == null || !recorder.resolved() || reconstruction == null) {
             return PlayerBattleFeatureSet.empty();
         }
@@ -43,7 +44,7 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
                 reconstruction.battleStartRawClockSec(),
                 reconstruction.diagnostics(),
                 reconstruction.events(),
-                null);
+                battle);
 
         // 过滤 recorder 的位置事件（排除准备阶段）
         final List<TimedPosition> positions = new ArrayList<>();
