@@ -1,6 +1,8 @@
 package com.wotb.core.replay.feature;
 
+import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
+import java.util.Optional;
 
 public record BattleStartResolution(Status status, Float battleStartRawClockSec, String limitation) {
 
@@ -83,8 +85,8 @@ public record BattleStartResolution(Status status, Float battleStartRawClockSec,
     }
 
     /**
-     * Compute battle-relative time for a raw clock.
-     * @return relative clock, or NaN if unresolved (caller must check resolved())
+     * Compute battle-relative time from a raw clock.
+     * Returns NaN if unresolved (caller must check resolved()).
      */
     public float battleRelative(final float rawClockSec) {
         if (battleStartRawClockSec == null) return Float.NaN;
@@ -92,12 +94,31 @@ public record BattleStartResolution(Status status, Float battleStartRawClockSec,
     }
 
     /**
-     * Safe relative time: returns relative if resolved, else raw fallback.
-     * Callers should prefer resolved() check and only use this when fallback is acceptable.
+     * Resolve battle-relative time from a ReplayTimestamp.
+     * Priority: existing battleClockSec > raw - battleStart.
+     * Returns empty if neither source can produce a valid relative time.
      */
-    public float battleRelativeOrRaw(final float rawClockSec) {
-        if (battleStartRawClockSec == null) return rawClockSec;
-        return rawClockSec - battleStartRawClockSec;
+    public Optional<Float> tryRelative(final ReplayTimestamp timestamp) {
+        if (timestamp == null) return Optional.empty();
+        // 1. If battleClockSec already exists and is valid, use it directly
+        if (timestamp.battleClockSec() != null
+                && Float.isFinite(timestamp.battleClockSec())
+                && timestamp.battleClockSec() >= 0f) {
+            return Optional.of(timestamp.battleClockSec());
+        }
+        // 2. Otherwise compute from raw clock (requires resolved battle start)
+        if (!resolved()) return Optional.empty();
+        final float raw = timestamp.rawClockSec();
+        if (!Float.isFinite(raw)) return Optional.empty();
+        final float relative = raw - battleStartRawClockSec;
+        if (!Float.isFinite(relative) || relative < 0f) return Optional.empty();
+        return Optional.of(relative);
+    }
+
+    /** Raw clock from timestamp for pre-battle comparison. */
+    public static float rawClock(final ReplayTimestamp timestamp) {
+        if (timestamp == null) return Float.NaN;
+        return timestamp.rawClockSec();
     }
 
     public boolean isPreBattle(final float rawClockSec) {

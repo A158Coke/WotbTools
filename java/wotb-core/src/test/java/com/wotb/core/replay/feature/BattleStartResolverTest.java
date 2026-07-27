@@ -57,7 +57,7 @@ class BattleStartResolverTest {
     void battleRelativeWithoutStartReturnsNaN() {
         final BattleStartResolution r = BattleStartResolution.unresolved();
         assertTrue(Float.isNaN(r.battleRelative(10f)));
-        assertEquals(10f, r.battleRelativeOrRaw(10f), 0.01f);
+        assertTrue(Float.isNaN(r.battleRelative(10f)));
     }
 
     @Test

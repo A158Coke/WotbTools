@@ -114,7 +114,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .filter(damage -> involvesTeam(damage, perspectiveTeam))
                 .mapToDouble(damage -> {
                     final float raw = ReplayTimestamp.safeClockSec(damage.event().timestamp());
-                    return battleStartRes != null ? battleStartRes.battleRelativeOrRaw(raw) : raw;
+                    return battleStartRes.battleRelative(raw);
                 })
                 .min()
                 .stream()
@@ -664,8 +664,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 ? EngagementOutcome.UNFAVORABLE
                 : EngagementOutcome.EVEN;
         return new EngagementSummary(
-                battleStartRes.battleRelativeOrRaw(ReplayTimestamp.safeClockSec(events.getFirst().event().timestamp())),
-                battleStartRes.battleRelativeOrRaw(ReplayTimestamp.safeClockSec(events.getLast().event().timestamp())),
+                battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(events.getFirst().event().timestamp())),
+                battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(events.getLast().event().timestamp())),
                 allies.stream().sorted().toList(),
                 enemies.stream().sorted().toList(),
                 dealt,
@@ -690,7 +690,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             }
             for (final PositionChangedEvent position : positions) {
                     final float rawClock = ReplayTimestamp.safeClockSec(position.timestamp());
-                    final float activeClock = battleStartRes != null ? battleStartRes.battleRelativeOrRaw(rawClock) : rawClock;
+                    final float activeClock = battleStartRes.battleRelative(rawClock);
                     final int window = (int) Math.floor(activeClock / FORMATION_WINDOW_SEC);
                     windows.computeIfAbsent(window, ignored -> new HashMap<>())
                             .merge(identityKey(identity), position,
@@ -948,7 +948,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                                 ReplayTimestamp.safeClockSec(damage.event().timestamp()))
                         .thenComparingInt(damage -> damage.event().sequence()))
                 .ifPresent(damage -> events.add(new KeyBattleEvent(
-                        battleStartRes.battleRelativeOrRaw(ReplayTimestamp.safeClockSec(damage.event().timestamp())),
+                        battleStartRes.battleRelative(ReplayTimestamp.safeClockSec(damage.event().timestamp())),
                         "TEAM_FIRST_CONTACT",
                         "damage=" + damage.event().damage(),
                         lowestConfidence(damage),
@@ -1010,7 +1010,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .map(BattleEndedEvent.class::cast)
                 .filter(DefaultTeamBattleFeatureExtractor::hasUsableClock)
                 .map(event -> new BattleEndEvidence(
-                        battleStartRes.battleRelativeOrRaw(
+                        battleStartRes.battleRelative(
                                 ReplayTimestamp.safeClockSec(event.timestamp())),
                         event.confidence() == null
                                 ? DecodeConfidence.UNKNOWN : event.confidence(),
@@ -1037,7 +1037,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .filter(clock -> clock >= 0.0)
                 .max()
                 .orElse(0.0);
-        return battleStartRes.battleRelativeOrRaw(lastRawClock);
+        return battleStartRes.battleRelative(lastRawClock);
     }
 
     private static boolean involvesTeam(

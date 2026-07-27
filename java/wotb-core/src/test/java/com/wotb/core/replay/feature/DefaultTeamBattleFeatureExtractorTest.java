@@ -212,7 +212,7 @@ class DefaultTeamBattleFeatureExtractorTest {
                 position(4, 8f, 10, 10f, 0f),
                 damage(5, 20f, 10, 20, 100));
         final ReplayReconstruction reconstruction = new ReplayReconstruction(
-                null, null, 60f, null, participants, events,
+                null, null, 60f, 0f, participants, events,
                 List.of(), null,
                 new ReplayCoverage(true, events.size(), events.size(),
                         0, 0, 0, 1.0, Map.of()),
@@ -872,7 +872,7 @@ class DefaultTeamBattleFeatureExtractorTest {
                 true, events.size(), events.size(), 0, 0, 0,
                 1.0, Map.of());
         return new ReplayReconstruction(
-                null, null, 120f, null,
+                null, null, 120f, 0f,
                 fixture.participants(), List.copyOf(events), List.of(), null,
                 coverage, null);
     }
