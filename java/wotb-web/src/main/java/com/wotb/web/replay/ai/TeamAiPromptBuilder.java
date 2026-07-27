@@ -46,7 +46,7 @@ final class TeamAiPromptBuilder {
     static final int MAX_KEY_EVENTS = 30;
     static final int MAX_PERSPECTIVES = 10;
     static final int MAX_INPUT_CHARS = 30_000;
-    private static final String TRUNCATION_LINE = "\nLIMITATION: AI_INPUT_TRUNCATED\n";
+    static final String TRUNCATION_LINE = "\nLIMITATION: AI_INPUT_TRUNCATED\n";
 
     private TeamAiPromptBuilder() {
     }
@@ -57,18 +57,23 @@ final class TeamAiPromptBuilder {
 
     static PromptInput single(final SingleTeamBattleAnalysisContext context, final List<String> extraLimitations) {
         final BudgetWriter writer = new BudgetWriter(MAX_INPUT_CHARS);
+        final Set<String> limitations = collectLimitations(context, extraLimitations);
+        appendContextHeader(writer, context);
+        writer.appendRequired("unitLimitations=" + limitations + "\n");
+        appendFeatureSet(writer, context.features());
+        return writer.finish(limitations);
+    }
+
+    private static Set<String> collectLimitations(
+            final SingleTeamBattleAnalysisContext context,
+            final List<String> extraLimitations
+    ) {
         final Set<String> limitations = new LinkedHashSet<>(context.limitations());
         if (context.features() != null) {
             limitations.addAll(context.features().limitations());
         }
-        appendContextHeader(writer, context);
-        for (final String lim : extraLimitations) {
-            limitations.add(lim);
-            writer.append("mandatory=" + quoteData(lim) + "\n");
-        }
-        appendFeatureSet(writer, context.features());
-        appendLimitations(writer, limitations);
-        return writer.finish(limitations);
+        limitations.addAll(extraLimitations);
+        return limitations;
     }
 
     static PromptInput multi(final MultiTeamBattleAnalysisContext context) {
@@ -77,39 +82,54 @@ final class TeamAiPromptBuilder {
 
     static PromptInput multi(final MultiTeamBattleAnalysisContext context, final Map<String, List<String>> evidenceLimitations) {
         final BudgetWriter writer = new BudgetWriter(MAX_INPUT_CHARS);
-        final Set<String> limitations = new LinkedHashSet<>(context.limitations());
-        writer.append("=== MULTI_TEAM_CONTEXT ===\n");
-        writer.append("perspectiveCount=" + context.perspectiveCount() + "\n");
-        writer.append("uniqueBattleCount=" + context.uniqueBattleCount() + "\n");
-        writer.append("rosterConsistent=" + context.rosterConsistent() + "\n");
+        final Set<String> globalLimitations = new LinkedHashSet<>(context.limitations());
         final List<TeamBattleAnalysisSummary> perspectives = context.perspectives();
+        // Required: global header
+        writer.appendRequired("=== MULTI_TEAM_CONTEXT ===\n");
+        writer.appendRequired("perspectiveCount=" + context.perspectiveCount() + "\n");
+        writer.appendRequired("uniqueBattleCount=" + context.uniqueBattleCount() + "\n");
+        writer.appendRequired("rosterConsistent=" + context.rosterConsistent() + "\n");
+        if (!context.rosterConsistent()) {
+            globalLimitations.add("ROSTER_CONSISTENCY_UNCONFIRMED");
+        }
+        // Required: global limitations BEFORE per-perspective sections
+        if (!globalLimitations.isEmpty()) {
+            writer.appendRequired("DATA_LIMITATIONS=" + globalLimitations + "\n");
+        }
         final int perspectiveLimit = Math.min(perspectives.size(), MAX_PERSPECTIVES);
         if (perspectives.size() > perspectiveLimit) {
             writer.markTruncated();
         }
+        final Set<String> allLimitations = new LinkedHashSet<>(globalLimitations);
         for (int index = 0; index < perspectiveLimit; index++) {
             final TeamBattleAnalysisSummary perspective = perspectives.get(index);
-            writer.append("\n=== PERSPECTIVE " + (index + 1) + " ===\n");
-            writer.append("analysisUnitId=" + quoteData(perspective.analysisUnitId()) + "\n");
-            writer.append("file=" + quoteData(perspective.fileName()) + "\n");
-            writer.append("battleIdentity=" + quoteData(perspective.battleIdentity()) + "\n");
-            writer.append("map=" + quoteData(resolveMapName(perspective.mapName())) + "\n");
-            writer.append("category=" + perspective.battleCategory() + "\n");
-            writer.append("durationSec=" + formatNullable(
-                    perspective.durationSec()) + "\n");
-            writer.append("teamLabel=" + quoteData(perspective.teamLabel()) + "\n");
-            writer.append("rosterAccountIds=" + perspective.rosterAccountIds() + "\n");
-            final List<String> perUnitLimits = evidenceLimitations.get(perspective.analysisUnitId());
-            if (perUnitLimits != null && !perUnitLimits.isEmpty()) {
-                writer.append("unitLimitations=" + perUnitLimits + "\n");
+            // Required per-perspective header
+            writer.appendRequired("\n=== PERSPECTIVE " + (index + 1) + " ===\n");
+            writer.appendRequired("analysisUnitId=" + quoteData(perspective.analysisUnitId()) + "\n");
+            writer.appendRequired("file=" + quoteData(perspective.fileName()) + "\n");
+            writer.appendRequired("battleIdentity=" + quoteData(perspective.battleIdentity()) + "\n");
+            writer.appendRequired("map=" + quoteData(resolveMapName(perspective.mapName())) + "\n");
+            writer.appendRequired("category=" + perspective.battleCategory() + "\n");
+            writer.appendRequired("durationSec=" + formatNullable(perspective.durationSec()) + "\n");
+            writer.appendRequired("teamLabel=" + quoteData(perspective.teamLabel()) + "\n");
+            writer.appendRequired("rosterAccountIds=" + perspective.rosterAccountIds() + "\n");
+            // Required: per-unit limitations merged from features + evidence (deduplicated)
+            final Set<String> perUnitLimits = new LinkedHashSet<>();
+            if (perspective.features() != null) {
+                perUnitLimits.addAll(perspective.features().limitations());
             }
+            final List<String> evLimits = evidenceLimitations.get(perspective.analysisUnitId());
+            if (evLimits != null) {
+                perUnitLimits.addAll(evLimits);
+            }
+            if (!perUnitLimits.isEmpty()) {
+                writer.appendRequired("unitLimitations=" + perUnitLimits + "\n");
+            }
+            allLimitations.addAll(perUnitLimits);
+            // Truncatable: feature details
             appendFeatureSet(writer, perspective.features());
         }
-        if (!context.rosterConsistent()) {
-            limitations.add("ROSTER_CONSISTENCY_UNCONFIRMED");
-        }
-        appendLimitations(writer, limitations);
-        return writer.finish(limitations);
+        return writer.finish(allLimitations);
     }
 
     private static void appendContextHeader(
@@ -150,9 +170,6 @@ final class TeamAiPromptBuilder {
         appendEngagements(writer, features.engagements());
         appendKeyEvents(writer, features.keyEvents());
         writer.append("coverage=" + features.coverage() + "\n");
-        if (!features.limitations().isEmpty()) {
-            writer.append("featureLimitations=" + features.limitations() + "\n");
-        }
     }
 
     private static void appendAuthoritative(
@@ -327,15 +344,6 @@ final class TeamAiPromptBuilder {
                     + " entities=" + event.relatedEntityIds()
                     + "\n");
         }
-    }
-
-    private static void appendLimitations(
-            final BudgetWriter writer,
-            final Set<String> limitations
-    ) {
-        writer.append("\n=== DATA_LIMITATIONS ===\n");
-        limitations.forEach(limitation ->
-                writer.append("- " + quoteData(limitation) + "\n"));
     }
 
     private static String formatScalar(final Object value) {
@@ -514,6 +522,19 @@ final class TeamAiPromptBuilder {
             if (value.length() > remaining) {
                 truncated = true;
                 return;
+            }
+            content.append(value);
+        }
+
+        private void appendRequired(final String value) {
+            if (value == null || value.isEmpty()) {
+                return;
+            }
+            final int reserve = TRUNCATION_LINE.length();
+            final int remaining = maxChars - reserve - content.length();
+            if (remaining <= 0 || value.length() > remaining) {
+                throw new IllegalStateException(
+                        "Required section exceeds budget of " + maxChars + " characters");
             }
             content.append(value);
         }

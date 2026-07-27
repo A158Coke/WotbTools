@@ -32,8 +32,8 @@ public final class PlayerAnalysisPromptFormatter {
 
     public static String formatPlayerLine(final PlayerResult p, final Side side) {
         return "- " + sideLabel(side)
-                + " " + PlayerResultFormat.safe(p.nickname)
-                + " (" + PlayerResultFormat.safe(p.tankName) + ")"
+                + " " + PlayerResultFormat.quoteForPrompt(p.nickname)
+                + " (" + PlayerResultFormat.quoteForPrompt(p.tankName) + ")"
                 + " 输出" + p.damageDealt
                 + " 承伤" + p.damageReceived
                 + " 助攻" + p.damageAssisted
@@ -43,8 +43,8 @@ public final class PlayerAnalysisPromptFormatter {
     }
 
     public static String formatRecorderLine(final PlayerResult rec, final Side side) {
-        return "录像者: " + PlayerResultFormat.safe(rec.nickname)
-                + " (" + PlayerResultFormat.safe(rec.tankName) + ")"
+        return "录像者: " + PlayerResultFormat.quoteForPrompt(rec.nickname)
+                + " (" + PlayerResultFormat.quoteForPrompt(rec.tankName) + ")"
                 + " | 侧=" + sideLabel(side)
                 + " | " + PlayerResultFormat.deathDisplay(rec)
                 + " | 输出" + rec.damageDealt
