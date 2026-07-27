@@ -59,8 +59,10 @@ import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
@@ -343,59 +345,108 @@ public class AiReplayAnalysisService {
     }
 
     /**
-     * Team identity based on clan label and roster overlap, not raw team number.
+     * 将 contexts 划分为兼容分区，每个分区产生一次 AI 请求。
+     * <p>按 {@code (battleId, normalizedClan, roster)} 分组后，构建阵容兼容图并
+     * 通过 BFS 寻找连通分量（传递闭包），消除非传递 Jaccard 匹配对遍历顺序的依赖。
+     * 分区顺序稳定（按各组首个 context 的输入顺序）。</p>
      */
-    private record TeamIdentity(String clanLabel, Set<Long> rosterAccounts) {
-        boolean matches(TeamIdentity other) {
-            if ("未知队伍".equals(clanLabel) && "未知队伍".equals(other.clanLabel)) {
-                return rosterAccounts.equals(other.rosterAccounts);
-            }
-            return clanLabel.equals(other.clanLabel)
-                    && jaccard(rosterAccounts, other.rosterAccounts) >= MIN_ROSTER_JACCARD;
-        }
+    private static List<List<SingleTeamBattleAnalysisContext>> partitionContexts(
+            final List<SingleTeamBattleAnalysisContext> contexts) {
+        return buildPartitions(contexts);
     }
 
     /**
-     * 将 contexts 划分为兼容分区，每个分区产生一次 AI 请求。
-     * <p>按 {@code (battleIdentity, teamIdentity)} 分组后，尝试合并
-     * 相同 {@link TeamIdentity}（相同 clan label + 阵容 Jaccard 相似度 ≥ {@value #MIN_ROSTER_JACCARD}，
-     * 或无 clan 时阵容完全一致）的不同战斗，使之共享一次分析请求。
-     * 原始 team 编号不作为身份依据。</p>
+     * Build stable, deterministic partitions via transitive closure on
+     * roster compatibility.
+     * <p>Each partition is a connected component in a graph where nodes are
+     * {@code (battleId, normalizedClan, roster)} groups and edges represent
+     * roster compatibility (Jaccard ≥ {@value #MIN_ROSTER_JACCARD}, or exact
+     * roster equality for no-clan groups). Connected components are found via
+     * BFS, eliminating traversal-order dependency from non-transitive matching.
+     * Partitions are returned in input-stable order (first occurrence of each
+     * component's first group in original input order).</p>
      */
-    private static List<List<SingleTeamBattleAnalysisContext>> partitionContexts(
+    private static List<List<SingleTeamBattleAnalysisContext>> buildPartitions(
             final List<SingleTeamBattleAnalysisContext> contexts) {
         if (contexts.size() <= 1) {
             return List.of(contexts);
         }
-        final Map<List<?>, List<SingleTeamBattleAnalysisContext>> byKey = contexts
-                .stream()
-                .collect(Collectors.groupingBy(ctx -> {
-                    final String label = resolveTeamLabel(
-                            ctx.battle(), ctx.perspectiveTeam());
-                    final Set<Long> roster = rosterAccounts(ctx);
-                    return List.of(ctx.battleId(), new TeamIdentity(label, roster));
-                }));
-        final var entries = new ArrayList<>(byKey.entrySet());
-        final int n = entries.size();
-        final boolean[] used = new boolean[n];
+        // 1. Group by (battleId, normalizedClan, roster) using LinkedHashMap
+        final Map<GroupKey, List<SingleTeamBattleAnalysisContext>> groups =
+                new LinkedHashMap<>();
+        for (final var ctx : contexts) {
+            final String clanLabel = resolveTeamLabel(
+                    ctx.battle(), ctx.perspectiveTeam());
+            final String normalizedClan = StringUtils.hasText(clanLabel)
+                    ? clanLabel.trim().toLowerCase(Locale.ROOT) : "";
+            final Set<Long> roster = rosterAccounts(ctx);
+            groups.computeIfAbsent(
+                    new GroupKey(ctx.battleId(), normalizedClan, roster),
+                    k -> new ArrayList<>()).add(ctx);
+        }
+        final var groupEntries = new ArrayList<>(groups.entrySet());
+        final int n = groupEntries.size();
+
+        // 2. Build adjacency list for the compatibility graph
+        final List<Set<Integer>> adj = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            adj.add(new HashSet<>());
+        }
+        for (int i = 0; i < n; i++) {
+            final var ki = groupEntries.get(i).getKey();
+            for (int j = i + 1; j < n; j++) {
+                final var kj = groupEntries.get(j).getKey();
+                if (groupsCompatible(ki, kj)) {
+                    adj.get(i).add(j);
+                    adj.get(j).add(i);
+                }
+            }
+        }
+
+        // 3. Find connected components via BFS (transitive closure)
+        final boolean[] visited = new boolean[n];
         final List<List<SingleTeamBattleAnalysisContext>> partitions =
                 new ArrayList<>();
         for (int i = 0; i < n; i++) {
-            if (used[i]) continue;
-            final var merged = new ArrayList<>(entries.get(i).getValue());
-            used[i] = true;
-            final TeamIdentity ti = (TeamIdentity) entries.get(i).getKey().get(1);
-            for (int j = i + 1; j < n; j++) {
-                if (used[j]) continue;
-                final TeamIdentity tj = (TeamIdentity) entries.get(j).getKey().get(1);
-                if (ti.matches(tj)) {
-                    merged.addAll(entries.get(j).getValue());
-                    used[j] = true;
+            if (visited[i]) continue;
+            final List<SingleTeamBattleAnalysisContext> component =
+                    new ArrayList<>();
+            final Deque<Integer> stack = new ArrayDeque<>();
+            stack.push(i);
+            visited[i] = true;
+            while (!stack.isEmpty()) {
+                final int node = stack.pop();
+                component.addAll(groupEntries.get(node).getValue());
+                for (final int neighbor : adj.get(node)) {
+                    if (!visited[neighbor]) {
+                        visited[neighbor] = true;
+                        stack.push(neighbor);
+                    }
                 }
             }
-            partitions.add(merged);
+            partitions.add(component);
         }
         return partitions;
+    }
+
+    /**
+     * Group key for the first partitioning step: (battleId, normalizedClan, roster).
+     */
+    private record GroupKey(BattleIdentity battleId, String normalizedClan, Set<Long> roster) {
+    }
+
+    /**
+     * Check whether two groups are compatible for merging.
+     * <ul>
+     *   <li>Both without clan → exact roster equality required</li>
+     *   <li>Otherwise → Jaccard similarity ≥ {@value #MIN_ROSTER_JACCARD}</li>
+     * </ul>
+     */
+    private static boolean groupsCompatible(final GroupKey a, final GroupKey b) {
+        if (a.normalizedClan.isEmpty() && b.normalizedClan.isEmpty()) {
+            return a.roster.equals(b.roster);
+        }
+        return jaccard(a.roster, b.roster) >= MIN_ROSTER_JACCARD;
     }
 
     /**
@@ -1341,6 +1392,12 @@ public class AiReplayAnalysisService {
 
     /**
      * Team AI 文本与每个独立 perspective 的事实报告。
+     *
+     * @param analysis 首个分区（输入顺序的第一个分区）的 AI 复盘结果。
+     *                 当所有 context 被合并为单个分区时为该分区结果；
+     *                 多分区时取自第一个输入 context 所属分区。
+     *                 分区顺序 = 输入顺序，由 {@link #buildPartitions} 保证确定性。
+     * @param units    每个独立 perspective 的分析单元结果列表
      */
     public record TeamAnalyzeResult(
             AnalyzeResult analysis,
