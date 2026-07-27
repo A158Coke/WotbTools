@@ -94,22 +94,43 @@ public record BattleStartResolution(Status status, Float battleStartRawClockSec,
     }
 
     /**
+     * Tolerance for raw vs battle clock consistency check (in seconds).
+     * Based on replay timestamp precision: 100ms default tolerance.
+     */
+    static final float CLOCK_CONSISTENCY_TOLERANCE_SEC = 0.1f;
+
+    /**
      * Resolve battle-relative time from a ReplayTimestamp.
      * Priority: existing battleClockSec > raw - battleStart.
-     * Returns empty if neither source can produce a valid relative time.
+     * Returns empty if neither source can produce a valid relative time,
+     * or if raw and battle clock disagree beyond tolerance.
      */
     public Optional<Float> tryRelative(final ReplayTimestamp timestamp) {
         if (timestamp == null) return Optional.empty();
-        // 1. If battleClockSec already exists and is valid, use it directly
-        if (timestamp.battleClockSec() != null
-                && Float.isFinite(timestamp.battleClockSec())
-                && timestamp.battleClockSec() >= 0f) {
-            return Optional.of(timestamp.battleClockSec());
-        }
-        // 2. Otherwise compute from raw clock (requires resolved battle start)
-        if (!resolved()) return Optional.empty();
+        final Float battle = timestamp.battleClockSec();
         final float raw = timestamp.rawClockSec();
-        if (!Float.isFinite(raw)) return Optional.empty();
+        final boolean hasBattle = battle != null && Float.isFinite(battle) && battle >= 0f;
+        final boolean hasRaw = Float.isFinite(raw);
+
+        // 1. Prefer valid battleClockSec
+        if (hasBattle) {
+            if (hasRaw && resolved()) {
+                // Verify consistency: battleClockSec should match raw - start within tolerance
+                final float expected = raw - battleStartRawClockSec;
+                if (Float.isFinite(expected) && expected >= 0f) {
+                    final float diff = Math.abs(battle - expected);
+                    if (diff > CLOCK_CONSISTENCY_TOLERANCE_SEC) {
+                        // Conflict: clock fields disagree - don't trust either
+                        return Optional.empty();
+                    }
+                }
+            }
+            return Optional.of(battle);
+        }
+
+        // 2. No valid battleClockSec - compute from raw
+        if (!resolved()) return Optional.empty();
+        if (!hasRaw) return Optional.empty();
         final float relative = raw - battleStartRawClockSec;
         if (!Float.isFinite(relative) || relative < 0f) return Optional.empty();
         return Optional.of(relative);

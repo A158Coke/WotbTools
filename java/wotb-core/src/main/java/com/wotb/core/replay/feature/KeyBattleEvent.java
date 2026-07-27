@@ -19,7 +19,7 @@ public record KeyBattleEvent(
         if (!StringUtils.hasText(type)) throw new IllegalArgumentException("type must not be null/blank");
         if (!StringUtils.hasText(label)) throw new IllegalArgumentException("label must not be null/blank");
         if (confidence == null) confidence = DecodeConfidence.UNKNOWN;
-        if (source == null) source = "UNKNOWN";
+        if (!StringUtils.hasText(source)) source = "UNKNOWN";
         relatedEntityIds = relatedEntityIds == null ? List.of() : List.copyOf(relatedEntityIds);
     }
 
