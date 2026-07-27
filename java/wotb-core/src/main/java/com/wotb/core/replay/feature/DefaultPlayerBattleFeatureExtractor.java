@@ -77,8 +77,10 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
                     if (recorderIsAttacker || recorderIsVictim) {
                         damages.add(d);
                     if (firstContactTime < 0) {
-                            firstContactTime = ReplayTimestamp.safeClockSec(d.timestamp());
-                            firstContactTime = battleStartRes.battleRelative(firstContactTime);
+                            final var rel = battleStartRes.tryRelative(d.timestamp());
+                            if (rel.isPresent() && rel.get() >= 0f) {
+                                firstContactTime = rel.get();
+                            }
                         }
                     }
                 }
