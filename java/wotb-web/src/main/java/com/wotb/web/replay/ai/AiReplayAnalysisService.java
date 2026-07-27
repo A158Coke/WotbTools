@@ -363,9 +363,14 @@ public class AiReplayAnalysisService {
         if (contexts.size() <= 1) {
             return List.of(contexts);
         }
+        final List<SingleTeamBattleAnalysisContext> sorted = new ArrayList<>(contexts);
+        sorted.sort(Comparator.comparing((SingleTeamBattleAnalysisContext ctx) -> {
+            final BattleIdentity bid = ctx.battleId();
+            return (bid != null ? bid.toString() : "") + "|" + ctx.analysisUnitId();
+        }));
         final List<List<SingleTeamBattleAnalysisContext>> partitions =
                 new ArrayList<>();
-        for (final var ctx : contexts) {
+        for (final var ctx : sorted) {
             boolean added = false;
             for (final var partition : partitions) {
                 if (canJoinPartition(ctx, partition)) {
@@ -381,13 +386,14 @@ public class AiReplayAnalysisService {
                 partitions.add(newPartition);
             }
         }
+        final Map<SingleTeamBattleAnalysisContext, Integer> order = new HashMap<>();
+        for (int i = 0; i < contexts.size(); i++) {
+            order.put(contexts.get(i), i);
+        }
+        for (final var partition : partitions) {
+            partition.sort(Comparator.comparing(order::get));
+        }
         return partitions;
-    }
-
-    /**
-     * Group key representing a unique (battleId, perspectiveTeam, normalizedClan, displayLabel, roster).
-     */
-    private record GroupKey(BattleIdentity battleId, int perspectiveTeam, String normalizedClan, String displayLabel, Set<Long> roster) {
     }
 
     /**
@@ -419,6 +425,9 @@ public class AiReplayAnalysisService {
     private static boolean contextsCompatible(
             final SingleTeamBattleAnalysisContext a,
             final SingleTeamBattleAnalysisContext b) {
+        if (!hasSufficientRosterCoverage(a) || !hasSufficientRosterCoverage(b)) {
+            return false;
+        }
         if (a.battleId().equals(b.battleId())
                 && a.perspectiveTeam() != b.perspectiveTeam()) {
             return false;
@@ -436,10 +445,10 @@ public class AiReplayAnalysisService {
             if (!clanA.equals(clanB)) {
                 return false;
             }
-            return jaccard(rosterAccounts(a), rosterAccounts(b))
+            return jaccard(validAccountIds(a), validAccountIds(b))
                     >= MIN_ROSTER_JACCARD;
         }
-        return jaccard(rosterAccounts(a), rosterAccounts(b))
+        return jaccard(validAccountIds(a), validAccountIds(b))
                 >= MIN_ROSTER_JACCARD;
     }
 
@@ -447,26 +456,17 @@ public class AiReplayAnalysisService {
      * Compute the normalized dominant clan directly from the roster data
      * of the given perspective team, not from the display label.
      * Returns the most common clan (lowercased) among players on that team,
-     * or empty string if no clan tags are present.
+     * or empty string if no clan tags are present or if there is a tie.
+     * <p>Delegates to {@link TeamPerspectiveLabelResolver#resolveDominantClanTag}
+     * for tie-aware logic shared with the display resolver.</p>
      */
     private static String normalizedDominantClan(
             final Battle battle, final int perspectiveTeam) {
         if (battle == null || battle.players == null) return "";
-        final Map<String, List<String>> counts = battle.players.stream()
+        final List<PlayerResult> perspectivePlayers = battle.players.stream()
                 .filter(p -> p.team == perspectiveTeam)
-                .map(p -> p.clan)
-                .filter(clan -> StringUtils.hasText(clan))
-                .map(String::trim)
-                .collect(Collectors.groupingBy(
-                        clan -> clan.toLowerCase(Locale.ROOT),
-                        LinkedHashMap::new,
-                        Collectors.toList()));
-        if (counts.isEmpty()) return "";
-        return counts.entrySet().stream()
-                .max(Map.Entry.comparingByValue(
-                        Comparator.comparingInt(List::size)))
-                .map(Map.Entry::getKey)
-                .orElse("");
+                .toList();
+        return TeamPerspectiveLabelResolver.resolveDominantClanTag(perspectivePlayers);
     }
 
     /**
@@ -477,6 +477,14 @@ public class AiReplayAnalysisService {
         if (ctx.features() == null || ctx.features().members() == null) {
             return Set.of();
         }
+        return ctx.features().members().stream()
+                .map(member -> member.accountId())
+                .filter(id -> id > 0)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private static Set<Long> validAccountIds(final SingleTeamBattleAnalysisContext ctx) {
+        if (ctx.features() == null) return Set.of();
         return ctx.features().members().stream()
                 .map(member -> member.accountId())
                 .filter(id -> id > 0)
@@ -623,6 +631,21 @@ public class AiReplayAnalysisService {
                 .filter(accountId -> accountId != null && accountId > 0)
                 .collect(Collectors.toCollection(
                         LinkedHashSet::new));
+    }
+
+    private static boolean hasSufficientRosterCoverage(final SingleTeamBattleAnalysisContext ctx) {
+        final TeamBattleFeatureSet features = ctx.features();
+        if (features == null) return false;
+        final int expectedMembers = features.authoritativeAggregate() != null
+                ? features.authoritativeAggregate().memberCount()
+                : features.members().size();
+        if (expectedMembers <= 0) return false;
+        final long validAccounts = features.members().stream()
+                .map(member -> member.accountId())
+                .filter(id -> id > 0)
+                .count();
+        if (validAccounts == 0) return false;
+        return (double) validAccounts / expectedMembers >= MIN_ROSTER_ACCOUNT_COVERAGE;
     }
 
     private static double jaccard(final Set<Long> left, final Set<Long> right) {
