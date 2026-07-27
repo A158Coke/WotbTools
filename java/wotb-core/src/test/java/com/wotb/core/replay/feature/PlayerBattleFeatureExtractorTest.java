@@ -53,7 +53,7 @@ class PlayerBattleFeatureExtractorTest {
         // 移动段不应包含 OTHER_EID 的位置
         for (final MovementSegment seg : fs.movements()) {
             // 所有段的坐标范围应在 0-10 之间（recorder 轨迹）
-            assertTrue(seg.startPosition().x() <= 10 || seg.startPosition().x() == 0);
+            assertTrue(seg.rawStartPosition().x() <= 10 || seg.rawStartPosition().x() == 0);
         }
     }
 

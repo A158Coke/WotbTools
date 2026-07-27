@@ -592,11 +592,11 @@ public class AiReplayAnalysisService {
                 sb.append("  [").append(String.format("%.1f-%.1f", seg.startTime(), seg.endTime())).append("s] ")
                         .append(seg.type()).append(" | 距离 ").append(String.format("%.1f", seg.distance()))
                         .append("m 速度 ").append(String.format("%.1f", seg.averageSpeed())).append("m/s");
-                if (seg.startPosition() != null) {
-                    sb.append(" 从").append(regionLabel(seg.startPosition().x(), seg.startPosition().z()));
+                if (seg.rawStartPosition() != null) {
+                    sb.append(" 从").append(regionLabel(seg.rawStartPosition().x(), seg.rawStartPosition().z()));
                 }
-                if (seg.endPosition() != null) {
-                    sb.append(" 到").append(regionLabel(seg.endPosition().x(), seg.endPosition().z()));
+                if (seg.rawEndPosition() != null) {
+                    sb.append(" 到").append(regionLabel(seg.rawEndPosition().x(), seg.rawEndPosition().z()));
                 }
                 sb.append('\n');
             }

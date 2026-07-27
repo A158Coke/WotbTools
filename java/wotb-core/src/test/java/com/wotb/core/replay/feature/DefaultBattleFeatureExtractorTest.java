@@ -14,6 +14,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DefaultBattleFeatureExtractorTest {
@@ -72,5 +74,87 @@ class DefaultBattleFeatureExtractorTest {
 
         assertEquals(1, set.keyEvents().size());
         assertEquals("FIRST_BLOOD", set.keyEvents().get(0).type());
+    }
+
+    // ===== buildRelativePhases boundary regression (Finding #1) =====
+
+    @Test
+    void buildRelativePhasesClampsOpeningToBattleEndWhenNoFirstContact() {
+        // battleEnd=30, no first contact: OPENING must not extend to the default 45s.
+        final List<BattlePhaseSummary> phases =
+                DefaultBattleFeatureExtractor.buildRelativePhases(
+                        DefaultBattleFeatureExtractor.UNKNOWN_FIRST_CONTACT, 30f);
+        assertFalse(phases.isEmpty());
+        for (final BattlePhaseSummary phase : phases) {
+            assertTrue(phase.endTime() <= 30f,
+                    "phase end must not exceed battle end 30: " + phase.endTime());
+        }
+        assertAllPhasesValid(phases, 30f);
+    }
+
+    @Test
+    void buildRelativePhasesRejectsFirstContactAfterBattleEnd() {
+        // firstContact=40 > battleEnd=30 must NOT yield a [40,30] phase.
+        final List<BattlePhaseSummary> phases =
+                DefaultBattleFeatureExtractor.buildRelativePhases(40f, 30f);
+        assertTrue(phases.stream()
+                .noneMatch(phase -> phase.type() == BattlePhaseType.FIRST_CONTACT));
+        assertAllPhasesValid(phases, 30f);
+    }
+
+    @Test
+    void buildRelativePhasesTreatsZeroFirstContactAsValid() {
+        // firstContact=0 is a legal battle-relative contact time, not "unknown".
+        final List<BattlePhaseSummary> phases =
+                DefaultBattleFeatureExtractor.buildRelativePhases(0f, 30f);
+        final BattlePhaseSummary firstContact = phases.stream()
+                .filter(phase -> phase.type() == BattlePhaseType.FIRST_CONTACT)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(0f, firstContact.startTime());
+        assertAllPhasesValid(phases, 30f);
+    }
+
+    @Test
+    void buildRelativePhasesReturnsStableFallbackForNonFiniteOrNegativeEnd() {
+        assertTrue(DefaultBattleFeatureExtractor
+                .buildRelativePhases(10f, Float.NaN).isEmpty());
+        assertTrue(DefaultBattleFeatureExtractor
+                .buildRelativePhases(10f, Float.POSITIVE_INFINITY).isEmpty());
+        assertTrue(DefaultBattleFeatureExtractor
+                .buildRelativePhases(10f, -5f).isEmpty());
+    }
+
+    @Test
+    void buildRelativePhasesAlwaysProducesValidPhases() {
+        final float[][] cases = {
+                {-1f, 0f}, {0f, 0f}, {0f, 30f}, {40f, 30f}, {-1f, 30f},
+                {5f, 200f}, {Float.NaN, 200f}, {20f, 20f}, {200f, 20f}
+        };
+        for (final float[] c : cases) {
+            assertAllPhasesValid(
+                    DefaultBattleFeatureExtractor.buildRelativePhases(c[0], c[1]), c[1]);
+        }
+    }
+
+    @Test
+    void battlePhaseSummaryRejectsIllegalPhase() {
+        assertThrows(IllegalArgumentException.class, () -> new BattlePhaseSummary(
+                40f, 30f, BattlePhaseType.FIRST_CONTACT, DecodeConfidence.INFERRED));
+        assertThrows(IllegalArgumentException.class, () -> new BattlePhaseSummary(
+                Float.NaN, 30f, BattlePhaseType.OPENING, DecodeConfidence.EXACT));
+        assertThrows(IllegalArgumentException.class, () -> new BattlePhaseSummary(
+                -1f, 30f, BattlePhaseType.OPENING, DecodeConfidence.EXACT));
+    }
+
+    private static void assertAllPhasesValid(
+            final List<BattlePhaseSummary> phases, final float battleEnd) {
+        for (final BattlePhaseSummary phase : phases) {
+            assertTrue(Float.isFinite(phase.startTime()) && Float.isFinite(phase.endTime()));
+            assertTrue(phase.startTime() >= 0f, "start >= 0");
+            assertTrue(phase.endTime() >= 0f, "end >= 0");
+            assertTrue(phase.startTime() <= phase.endTime(), "start <= end");
+            assertTrue(phase.endTime() <= battleEnd + 0.0001f, "end <= battleEnd");
+        }
     }
 }

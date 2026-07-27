@@ -1331,6 +1331,42 @@ find java -type f \
 
 ---
 
+# 22b. 时间域、坐标域与证据边界契约（PR #39 修复）
+
+以下不变量在生产代码中强制成立，AI prompt 只消费满足这些契约的结构化语义：
+
+## 时间统一为 battle-relative
+
+- 所有 tactical 时间（movement、engagement、first contact、key event、battle phase）都以 **battle-relative 秒**表示，battle start = 0。
+- raw replay clock 只通过 `BattleStartResolution.battleRelative(rawClock)` 转换一次；`BattleStartResolution.isPreBattle(rawClock)` 判断准备阶段。
+- `battle.durationS` 本身就是 battle-relative duration，直接使用，**不再减去 battle start**。
+- replay `BattleEndedEvent.safeClockSec()` 和 `lastObservedClock(...)` 都是 raw replay clock，必须经 `battleRelative(...)` 转换后才能作为 phase end；转换结果非有限或为负则退回 unknown/limitation，raw absolute clock 绝不进入 prompt。
+- `buildRelativePhases(firstContactRelative, battleEndRelative)`：`battleEndRelative` 必须 finite 且 `>=0`，否则返回稳定空 fallback；`firstContactRelative < 0`（`UNKNOWN_FIRST_CONTACT = -1`）表示无接敌，`0` 是合法接敌时刻；`openingEnd` 裁剪进 battle end；FIRST_CONTACT 仅在 first contact finite、`>=0` 且 `<= battleEnd` 时创建。每个 phase 满足 `finite`、`start>=0`、`end>=0`、`start<=end`、`end<=battleEnd`（由 `BattlePhaseSummary` compact constructor 兜底）。
+
+## 坐标：raw replay vs canonical 500×500
+
+- canonical 地图固定为 **500×500 米**，X/Z 为水平轴，Y（高度）不参与九宫格。
+- 九宫格 region 1–9，从上到下、从左到右，边界集中定义于 `MapRegionResolver.resolveRegion(canonicalX, canonicalZ)`；Player 与 Team 共用同一 resolver，region 由后端确定性计算，AI 不依据裸坐标猜测。
+- raw replay 坐标只经过一次 `MapRegionResolver.resolve(...)`：越界但有限的坐标 clamp 到 `[0,500]` 并标记 `CLAMPED`；NaN/Infinity/结构损坏为 `INVALID`（不可用证据，非 CLAMPED）。
+- 强类型 `CanonicalMapPosition`（构造期校验 `[0,500]`）承载已解析的 canonical 坐标；`TeamFormationPhase.centroid` 与 `TeamFormationCluster.centroid` 均为 `CanonicalMapPosition`，下游 `TeamAiPromptBuilder.formatCanonicalPosition(...)` 只校验/取 region/格式化，**不再执行 raw→canonical 映射**；raw 坐标（movement start/end）经 `formatRawPosition(...)` 解析。
+- formation centroid、cluster centroid 都在 canonical 坐标域中计算一次：cluster 先对每个成员位置 resolve/clamp 到 canonical，再在 canonical 空间求平均（不是先平均 raw 再转换）。
+- movement distance/speed 使用 **canonical 米**：`MapRegionResolver.canonicalDistanceMeters(...)` 对每个端点先转 canonical 再求欧氏距离；speed = canonical 米 / battle-relative 秒；stationary 阈值 `STATIONARY_THRESHOLD_METERS`（canonical 米）集中定义于 `DefaultPlayerBattleFeatureExtractor`，Player 与 Team member movement 共用同一算法与单位；时间差 `<=0`、倒序或无效时间戳不产生 Infinity/NaN 速度。
+
+## 证据边界与 coverage 不变量
+
+- 单一共享时间分类器 `classifyTime(event)` → `USABLE / INVALID_TIMESTAMP / PRE_BATTLE`，被 damage 循环、`teamPositionsByEntity`、`auditPositionEvidence` 与 phase guard 复用，避免各路径维护漂移的时间规则。
+- `INVALID_TIMESTAMP`（NaN/Infinity/负）证据只计入 invalid-timestamp coverage，**不计入 unattributed tactical count**；只有战斗内、时间合法但身份不可归属的 damage 才算 unattributed。`PRE_BATTLE` 证据一律不进入任何战术统计：damage（attributed/unattributed、observed aggregate、engagement、first contact、focus fire、key event）、position（observed/clamped/movement/formation/cluster）。
+- `MovementSegment` compact constructor 强制不变量：所有 float 有限、时间/距离/速度非负、`start<=end`、`type`/位置/`confidence` 非空；`rawStartPosition`/`rawEndPosition` 字段名显式标注为 raw replay 坐标域。
+- position coverage：`observedPositionEventCount` 是真正参与分析的位置数；`clampedPositionEventCount` 是其严格子集（同一集合按 status 过滤），`TeamFeatureCoverage` compact constructor 强制 `0 <= clamped <= observed`；`auditPositionEvidence(...)` 使用 `BattleStartResolution` 排除 pre-battle 与无效时间戳，敌方/不可归属位置不计入本队 coverage、cluster、formation。
+- `INVALID` 与 `CLAMPED` 区分：INVALID 是不可用证据（丢弃并计入越界/无效计数），CLAMPED 是已观测、参与分析并附带 `MAP_COORDINATES_CLAMPED` limitation 的降级证据。
+- structured cluster 至少包含 canonical centroid、region、member identities、派生 memberCount、battle-relative start/end、confidence 与 clamped/limitation 信息；`memberCount` 与 identities 数量一致，region 与 canonical centroid 一致。
+
+## perspective 隔离
+
+- TEAM_PERSPECTIVE 只使用该 perspective 当时合法观察到的信息，不通过敌方录像补全本队未发现的信息，不构建全知视角；同队多录像共享视野仅作冗余证据，opposing perspectives 独立分析、不被错误统计为两场 battle。
+
+---
+
 # 23. 最终报告格式
 
 完成后输出：

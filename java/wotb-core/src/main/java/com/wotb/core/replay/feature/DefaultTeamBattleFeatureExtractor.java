@@ -14,7 +14,6 @@ import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
@@ -74,15 +73,19 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         final int invalidTimestampEventCount = (int) events.stream()
                 .filter(event -> !hasUsableClock(event))
                 .count();
-        final List<ReplayEvent> timedEvents = events.stream()
-                .filter(DefaultTeamBattleFeatureExtractor::hasUsableClock)
-                .filter(event -> !battleStartRes.isPreBattle(
-                        ReplayTimestamp.safeClockSec(event.timestamp())))
-                .toList();
+        final boolean hasUsableTimedEvent = events.stream()
+                .anyMatch(event -> classifyTime(event, battleStartRes) == EvidenceTime.USABLE);
         final List<AttributedDamage> attributedDamage = new ArrayList<>();
         int unattributedDamageCount = 0;
         for (final ReplayEvent event : events) {
             if (!(event instanceof DamageEvent damage) || damage.damage() <= 0) {
+                continue;
+            }
+            // Shared time gate: INVALID_TIMESTAMP damage is reported ONLY via
+            // invalidTimestampEventCount and PRE_BATTLE (preparation-phase) damage is excluded
+            // from every tactical statistic. Neither is counted as unattributed tactical damage;
+            // only genuinely attributable-but-unmapped in-battle damage is unattributed.
+            if (classifyTime(damage, battleStartRes) != EvidenceTime.USABLE) {
                 continue;
             }
             final TeamEntityIdentity attacker = entityMapping.identity(damage.attackerEid());
@@ -118,27 +121,33 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .mapToObj(value -> (float) value)
                 .findFirst()
                 .orElse(-1f);
-        final BattleEndEvidence battleEnd = findBattleEndEvidence(events, battle);
+        final BattleEndEvidence battleEnd = findBattleEndEvidence(events, battle, battleStartRes);
         final float phaseEndClock = battleEnd.clockSec() != null
-                ? battleEnd.clockSec() : lastObservedClock(events);
-        final List<BattlePhaseSummary> battlePhases = timedEvents.isEmpty()
-                ? List.of()
-                : DefaultBattleFeatureExtractor.buildRelativePhases(
-                        firstContactTime, phaseEndClock);
+                ? battleEnd.clockSec() : lastObservedClock(events, battleStartRes);
+        final List<BattlePhaseSummary> battlePhases = hasUsableTimedEvent
+                ? DefaultBattleFeatureExtractor.buildRelativePhases(
+                        firstContactTime, phaseEndClock)
+                : List.of();
         final List<KeyBattleEvent> keyEvents = buildKeyEvents(
                 battle, authoritativeMembers, entityMapping, attributedDamage,
                 formationPhases, perspectiveTeam, battleEnd, battleStartRes);
 
         final int mappedMembers = entityMapping.mappedMembers(perspectiveTeam);
-        final int positionEventCount = positionsByEntity.values().stream()
+        // observed = positions that actually feed movement/formation analysis
+        // (teamPositionsByEntity already excluded pre-battle, invalid clock, out-of-bounds,
+        // unusable identity and non-perspective entities). clamped is a strict subset of the
+        // same collection, so clampedPositionEventCount <= observedPositionEventCount holds.
+        final int observedPositionEventCount = (int) positionsByEntity.values().stream()
                 .flatMap(List::stream)
-                .filter(pos -> MapRegionResolver.resolve(pos.x(), pos.z()).usable())
-                .mapToInt(pos -> 1)
-                .sum();
+                .count();
+        final int clampedPositionEventCount = (int) positionsByEntity.values().stream()
+                .flatMap(List::stream)
+                .filter(DefaultTeamBattleFeatureExtractor::isClamped)
+                .count();
         final boolean reconstructionAvailable = reconstruction != null;
         final boolean fullFeaturesAvailable = reconstructionAvailable
                 && mappedMembers > 0
-                && (positionEventCount > 0 || !engagements.isEmpty());
+                && (observedPositionEventCount > 0 || !engagements.isEmpty());
         final boolean streamComplete = reconstructionAvailable
                 && reconstruction.coverage() != null
                 && reconstruction.coverage().streamComplete();
@@ -151,11 +160,11 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 streamComplete,
                 authoritativeMembers.size(),
                 mappedMembers,
-                positionEventCount,
+                observedPositionEventCount,
                 attributedDamage.size(),
                 unattributedDamageCount,
                 positionAudit.unattributedCount(),
-                positionAudit.clampedCount(),
+                clampedPositionEventCount,
                 positionAudit.outOfBoundsCount(),
                 invalidTimestampEventCount,
                 decodedRatio,
@@ -170,7 +179,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         if (authoritativeAggregate == null) {
             limitations.add("AUTHORITATIVE_TEAM_RESULT_UNAVAILABLE");
         }
-        if (!reconstructionAvailable || positionEventCount == 0) {
+        if (!reconstructionAvailable || observedPositionEventCount == 0) {
             limitations.add("POSITION_FORMATION_UNAVAILABLE");
         }
         if (!reconstructionAvailable || engagements.isEmpty()) {
@@ -185,7 +194,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         if (positionAudit.outOfBoundsCount() > 0) {
             limitations.add("OUT_OF_BOUNDS_POSITION_EVENTS_IGNORED");
         }
-        if (positionAudit.clampedCount() > 0) {
+        if (clampedPositionEventCount > 0) {
             limitations.add("MAP_COORDINATES_CLAMPED");
         }
         if (invalidTimestampEventCount > 0) {
@@ -294,9 +303,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         events.stream()
                 .filter(PositionChangedEvent.class::isInstance)
                 .map(PositionChangedEvent.class::cast)
-                .filter(DefaultTeamBattleFeatureExtractor::usablePositionEvidence)
-                .filter(position -> !battleStartRes.isPreBattle(
-                        ReplayTimestamp.safeClockSec(position.timestamp())))
+                .filter(position -> classifyTime(position, battleStartRes) == EvidenceTime.USABLE)
+                .filter(DefaultTeamBattleFeatureExtractor::usableSpatialEvidence)
                 .filter(position -> {
                     final TeamEntityIdentity identity = mapping.identity(position.entityId());
                     return identity != null && identity.usable()
@@ -310,6 +318,14 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         return result;
     }
 
+    /**
+     * Diagnostic audit for position evidence that does NOT feed analysis: unattributable
+     * positions and out-of-bounds positions. Observed and clamped counts are derived directly
+     * from the analyzed {@code positionsByEntity} collection (single source of truth), so this
+     * method deliberately does not recompute them. Uses {@code battleStartRes} to exclude
+     * pre-battle preparation positions; invalid-timestamp positions are excluded here and
+     * reported via {@code ignoredInvalidTimestampEventCount}.
+     */
     private static PositionEvidenceAudit auditPositionEvidence(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping,
@@ -317,10 +333,12 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             final BattleStartResolution battleStartRes
     ) {
         int unattributedCount = 0;
-        int clampedCount = 0;
         int outOfBoundsCount = 0;
         for (final ReplayEvent event : events) {
             if (!(event instanceof PositionChangedEvent position)) {
+                continue;
+            }
+            if (classifyTime(position, battleStartRes) != EvidenceTime.USABLE) {
                 continue;
             }
             final TeamEntityIdentity identity = mapping.identity(position.entityId());
@@ -333,11 +351,9 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             }
             if (isOutOfBounds(position)) {
                 outOfBoundsCount++;
-            } else if (isClamped(position)) {
-                clampedCount++;
             }
         }
-        return new PositionEvidenceAudit(unattributedCount, clampedCount, outOfBoundsCount);
+        return new PositionEvidenceAudit(unattributedCount, outOfBoundsCount);
     }
 
     private static TeamMemberFeatureSet buildMember(
@@ -409,6 +425,11 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 limitations);
     }
 
+    /**
+     * Evidence-quality + identity gate for damage (time is already gated by
+     * {@link #classifyTime}): confidence must be usable and both attacker and victim must map
+     * to a usable identity. In-battle damage that fails this is genuine unattributed damage.
+     */
     private static boolean usableDamageEvidence(
             final DamageEvent damage,
             final TeamEntityIdentity attacker,
@@ -416,7 +437,6 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     ) {
         return damage.confidence() != DecodeConfidence.UNKNOWN
                 && damage.confidence() != DecodeConfidence.PARTIAL
-                && hasUsableClock(damage)
                 && attacker != null && attacker.usable()
                 && victim != null && victim.usable();
     }
@@ -726,7 +746,9 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         return new TeamFormationPhase(
                 window * FORMATION_WINDOW_SEC,
                 (window + 1) * FORMATION_WINDOW_SEC,
-                new Vector3(centroidX, 0f, centroidZ),
+                // Centroid is computed once in canonical space; stored as CanonicalMapPosition
+                // so downstream never re-runs raw→canonical mapping on it.
+                new CanonicalMapPosition(centroidX, centroidZ),
                 dispersion,
                 canonicalPositions.size(),
                 confidence,
@@ -767,32 +789,41 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 }
             }
 
-            // Compute cluster centroid and convert to canonical
-            final float rawCx = (float) clusterIndices.stream()
-                    .mapToDouble(i -> sorted.get(i).getValue().x())
+            // Resolve/clamp EACH member position to canonical FIRST, then average in canonical
+            // space. Averaging raw coordinates before conversion would misplace clusters whose
+            // members are out-of-range-but-valid (clamped) — e.g. raw X {1050, 649.9} must map
+            // to canonical {500, 412.475} → centroid 456.2375, not resolve(mean(raw)).
+            final List<MapCoordinateResolution> memberResolutions = clusterIndices.stream()
+                    .map(i -> sorted.get(i).getValue())
+                    .map(pos -> MapRegionResolver.resolve(pos.x(), pos.z()))
+                    .filter(MapCoordinateResolution::usable)
+                    .toList();
+            if (memberResolutions.isEmpty()) continue;
+            final float centroidX = (float) memberResolutions.stream()
+                    .mapToDouble(res -> res.position().x())
                     .average().orElse(0.0);
-            final float rawCz = (float) clusterIndices.stream()
-                    .mapToDouble(i -> sorted.get(i).getValue().z())
+            final float centroidZ = (float) memberResolutions.stream()
+                    .mapToDouble(res -> res.position().z())
                     .average().orElse(0.0);
-            final MapCoordinateResolution coordRes = MapRegionResolver.resolve(rawCx, rawCz);
-            if (!coordRes.usable()) continue;
-            final CanonicalMapPosition canon = coordRes.position();
+            final CanonicalMapPosition canon = new CanonicalMapPosition(centroidX, centroidZ);
             final int region = canon.region();
+            final int clampedPosCount = (int) memberResolutions.stream()
+                    .filter(res -> res.status() == MapCoordinateResolution.Status.CLAMPED)
+                    .count();
+            // The centroid inherits CLAMPED whenever it is derived from any clamped member.
+            final MapCoordinateResolution.Status centroidStatus = clampedPosCount > 0
+                    ? MapCoordinateResolution.Status.CLAMPED
+                    : MapCoordinateResolution.Status.VALID;
             final List<String> identities = clusterIndices.stream()
                     .map(i -> sorted.get(i).getKey())
                     .sorted()
                     .toList();
-            final int clampedPosCount = (int) clusterIndices.stream()
-                    .map(i -> sorted.get(i).getValue())
-                    .filter(pos -> MapRegionResolver.resolve(pos.x(), pos.z()).status()
-                            == MapCoordinateResolution.Status.CLAMPED)
-                    .count();
             final DecodeConfidence clusterConfidence = clusterIndices.stream()
                     .map(i -> sorted.get(i).getValue().confidence())
                     .reduce(DecodeConfidence.EXACT, DefaultTeamBattleFeatureExtractor::lowerConfidence);
 
             result.add(new TeamFormationCluster(
-                    startTime, endTime, canon, coordRes.status(), region, clampedPosCount, identities, clusterConfidence));
+                    startTime, endTime, canon, centroidStatus, region, clampedPosCount, identities, clusterConfidence));
         }
 
         // Sort by startTime, region, centroidX, centroidZ, then member identities
@@ -813,34 +844,28 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         return (float) Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
     }
 
-    /** Convert raw X/Z to canonical meters scale (2000 raw = 500 canonical). */
-    private static float rawToCanonical(final float raw) {
-        return raw * (MapRegionResolver.MAP_SIZE / MapRegionResolver.REPLAY_RANGE);
-    }
-
-    /** Canonical distance in meters. Converts raw coords to canonical before computing. */
+    /**
+     * Canonical distance in meters for cluster connectivity. Delegates to the single shared
+     * {@link MapRegionResolver#canonicalDistanceMeters} helper; unresolvable endpoints map to
+     * {@link Float#MAX_VALUE} so they can never join a cluster.
+     */
     private static float canonicalDistance(
             final float rawX1, final float rawZ1,
             final float rawX2, final float rawZ2
     ) {
-        final CanonicalMapPosition p1 = toCanonicalOrNull(rawX1, rawZ1);
-        final CanonicalMapPosition p2 = toCanonicalOrNull(rawX2, rawZ2);
-        if (p1 == null || p2 == null) return Float.MAX_VALUE;
-        return distance(p1.x(), p1.z(), p2.x(), p2.z());
+        final float meters = MapRegionResolver.canonicalDistanceMeters(rawX1, rawZ1, rawX2, rawZ2);
+        return meters < 0f ? Float.MAX_VALUE : meters;
     }
 
-    /** Convert to canonical position, clamping out-of-range values within tolerance. */
-    private static CanonicalMapPosition toCanonicalOrNull(final float rawX, final float rawZ) {
-        final MapCoordinateResolution res = MapRegionResolver.resolve(rawX, rawZ);
-        if (!res.usable()) return null;
-        return res.position();
-    }
-
-    private static boolean usablePositionEvidence(
+    /**
+     * Evidence-quality + spatial gate for positions (time is already gated by
+     * {@link #classifyTime}): confidence must be usable and the coordinate must be within
+     * bounds / clampable.
+     */
+    private static boolean usableSpatialEvidence(
             final PositionChangedEvent position
     ) {
         return position.confidence() != DecodeConfidence.UNKNOWN
-                && hasUsableClock(position)
                 && !isOutOfBounds(position);
     }
 
@@ -862,6 +887,30 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         }
         final float clock = ReplayTimestamp.safeClockSec(event.timestamp());
         return Float.isFinite(clock) && clock >= 0f;
+    }
+
+    /** Temporal usability of an event's timestamp, shared by every tactical evidence path. */
+    private enum EvidenceTime { USABLE, INVALID_TIMESTAMP, PRE_BATTLE }
+
+    /**
+     * Single shared time classifier used by the damage loop, {@link #teamPositionsByEntity},
+     * {@link #auditPositionEvidence} and the phase guard — so no path maintains its own
+     * drifting time rule. {@code INVALID_TIMESTAMP} (NaN/Infinity/negative) is reported only
+     * via invalid-timestamp coverage; {@code PRE_BATTLE} is excluded from all tactical stats;
+     * only {@code USABLE} evidence participates in analysis.
+     */
+    private static EvidenceTime classifyTime(
+            final ReplayEvent event,
+            final BattleStartResolution battleStartRes
+    ) {
+        if (!hasUsableClock(event)) {
+            return EvidenceTime.INVALID_TIMESTAMP;
+        }
+        if (battleStartRes != null
+                && battleStartRes.isPreBattle(ReplayTimestamp.safeClockSec(event.timestamp()))) {
+            return EvidenceTime.PRE_BATTLE;
+        }
+        return EvidenceTime.USABLE;
     }
 
     private static String identityKey(final TeamEntityIdentity identity) {
@@ -934,9 +983,19 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .toList();
     }
 
+    /**
+     * Resolve battle-end evidence as a battle-relative clock.
+     * <p>
+     * {@code battle.durationS} is already a battle-relative duration and is used directly
+     * (never re-subtracting battle start). A replay {@link BattleEndedEvent} carries a raw
+     * replay clock and is converted to battle-relative via {@code battleStartRes}. Conversions
+     * that are non-finite or negative are rejected (evidence falls back to unknown), so raw
+     * replay absolute clocks never leak into phases or key events.
+     */
     private static BattleEndEvidence findBattleEndEvidence(
             final List<ReplayEvent> events,
-            final Battle battle
+            final Battle battle,
+            final BattleStartResolution battleStartRes
     ) {
         if (battle != null && battle.durationS != null
                 && Double.isFinite(battle.durationS)
@@ -949,20 +1008,28 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         return events.stream()
                 .filter(BattleEndedEvent.class::isInstance)
                 .map(BattleEndedEvent.class::cast)
-                .filter(event -> Float.isFinite(
-                        ReplayTimestamp.safeClockSec(event.timestamp())))
-                .filter(event -> ReplayTimestamp.safeClockSec(event.timestamp()) >= 0f)
-                .findFirst()
+                .filter(DefaultTeamBattleFeatureExtractor::hasUsableClock)
                 .map(event -> new BattleEndEvidence(
-                        ReplayTimestamp.safeClockSec(event.timestamp()),
+                        battleStartRes.battleRelative(
+                                ReplayTimestamp.safeClockSec(event.timestamp())),
                         event.confidence() == null
                                 ? DecodeConfidence.UNKNOWN : event.confidence(),
                         "REPLAY_EVENT"))
+                .filter(evidence -> Float.isFinite(evidence.clockSec())
+                        && evidence.clockSec() >= 0f)
+                .findFirst()
                 .orElse(BattleEndEvidence.unknown());
     }
 
-    private static float lastObservedClock(final List<ReplayEvent> events) {
-        return (float) events.stream()
+    /**
+     * Battle-relative fallback clock: the latest observed raw event clock converted through
+     * {@code battleStartRes}. Never mixes raw replay clock with battle-relative duration.
+     */
+    private static float lastObservedClock(
+            final List<ReplayEvent> events,
+            final BattleStartResolution battleStartRes
+    ) {
+        final float lastRawClock = (float) events.stream()
                 .map(ReplayEvent::timestamp)
                 .filter(Objects::nonNull)
                 .mapToDouble(ReplayTimestamp::safeClockSec)
@@ -970,6 +1037,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .filter(clock -> clock >= 0.0)
                 .max()
                 .orElse(0.0);
+        return battleStartRes.battleRelative(lastRawClock);
     }
 
     private static boolean involvesTeam(
@@ -1015,7 +1083,6 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
 
     private record PositionEvidenceAudit(
             int unattributedCount,
-            int clampedCount,
             int outOfBoundsCount
     ) {
     }
