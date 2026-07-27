@@ -82,7 +82,20 @@ public record BattleStartResolution(Status status, Float battleStartRawClockSec,
         return battleStartRawClockSec != null;
     }
 
+    /**
+     * Compute battle-relative time for a raw clock.
+     * @return relative clock, or NaN if unresolved (caller must check resolved())
+     */
     public float battleRelative(final float rawClockSec) {
+        if (battleStartRawClockSec == null) return Float.NaN;
+        return rawClockSec - battleStartRawClockSec;
+    }
+
+    /**
+     * Safe relative time: returns relative if resolved, else raw fallback.
+     * Callers should prefer resolved() check and only use this when fallback is acceptable.
+     */
+    public float battleRelativeOrRaw(final float rawClockSec) {
         if (battleStartRawClockSec == null) return rawClockSec;
         return rawClockSec - battleStartRawClockSec;
     }
