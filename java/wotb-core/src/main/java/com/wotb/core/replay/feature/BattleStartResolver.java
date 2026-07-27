@@ -20,6 +20,8 @@ public final class BattleStartResolver {
         return BattleStartResolution.unresolved();
     }
 
+    /** @deprecated Only for backward compat; use resolve() instead. */
+    @Deprecated
     public static BattleStartResolution inferFromFirstClock(final float firstClockSec) {
         return BattleStartResolution.inferFromFirstClock(firstClockSec);
     }

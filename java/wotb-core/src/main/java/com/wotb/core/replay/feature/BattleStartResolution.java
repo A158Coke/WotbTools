@@ -69,9 +69,11 @@ public record BattleStartResolution(Status status, Float battleStartRawClockSec,
         if (diagnostics.battleStartIdentified() && diagnostics.battleStartRawClockSec() != null) {
             return identified(diagnostics.battleStartRawClockSec());
         }
-        return inferFromFirstClock(diagnostics.firstClockSec());
+        return unresolved();
     }
 
+    /** @deprecated Only for backward compat; firstClockSec is the first packet timestamp, not a reliable battle-start signal. */
+    @Deprecated
     public static BattleStartResolution inferFromFirstClock(final float firstClockSec) {
         if (!Float.isFinite(firstClockSec)) return unresolved();
         if (firstClockSec < 0) return zeroClockInferred();
