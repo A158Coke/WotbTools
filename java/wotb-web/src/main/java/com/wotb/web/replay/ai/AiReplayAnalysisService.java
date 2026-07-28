@@ -76,6 +76,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -1087,36 +1088,6 @@ public class AiReplayAnalysisService {
         return truncateSafe(redactNonJson(raw));
     }
 
-    /** English words that should never be treated as credentials (avoid false positives). */
-    private static final Set<String> COMMON_WORDS = Set.of(
-            "the","and","for","are","but","not","you","all","can","had","her","was",
-            "one","our","out","has","have","been","this","that","with","from","what",
-            "when","your","some","which","there","would","could","should","about",
-            "their","other","after","where","while","still","only","over","also",
-            "more","very","just","than","then","each","such","much","many","well",
-            "down","back","even","into","upon","here","like","made","said","done",
-            "used","help","keep","know","find","need","take","make","come","want",
-            "give","tell","work","call","try","ask","look","seem","left","hand",
-            "high","long","show","play","turn","move","live","last","next","open",
-            "once","ever","away","hard","best","must","does","using","based","since",
-            "until","early","close","large","small","short","clear","black","white",
-            "great","right","wrong","human","legal","final","whole","valid","value",
-            "level","order","state","point","group","power","light","child","adult",
-            "world","class","range","scale","begin","bring","build","carry","cover",
-            "cross","drive","exist","fight","grow","issue","match","offer","often",
-            "raise","reach","refer","serve","share","stage","stand","start","total",
-            "track",
-            "error","failed","invalid","request","service","unavailable","overloaded",
-            "timeout","response","status","code","message","rate","limit","exceeded",
-            "maximum","minimum","average","current","expected","required","missing",
-            "unknown","empty","null","false","true","count","type","name",
-            "field","data","info","detail","reason","cause","source","target","result",
-            "length","size","partial","complete","simple","complex","single",
-            "double","triple","quick","brown","fox","jumps","lazy","dog",
-            "these","those",
-            "model","provider","upstream","downstream","gateway","proxy","server",
-            "client","user","admin","system","global","local","remote","native");
-
     /** Apply non-JSON regex redaction to plain text. */
     private static String redactNonJson(final String raw) {
         final String step1 = raw.replaceAll(
@@ -1135,27 +1106,27 @@ public class AiReplayAnalysisService {
         final String step5 = step4.replaceAll(
                 "(?i)\\b(bearer|basic|digest)\\s+[^\\s,;\"'}]+",
                 "$1 [REDACTED]");
-        // Step 6: Context-aware custom scheme redaction with false-positive protection.
-        // Credentials with non-alpha characters (tokens/keys) are always redacted.
-        // All-alpha credentials are redacted only when the word is not a common English word,
-        // avoiding false positives on phrases like "invalid request" or "service unavailable".
-        final var step6 = Pattern.compile(
-                "(?i)\\b([a-z][a-z0-9_.-]{2,30})\\s+([a-z0-9._\\-+/]{1,50})\\b")
+        // Step 6: Custom auth scheme — whole-line/value matching only.
+        // Matches only entire lines matching <RFC_TOKEN_SCHEME> <SINGLE_TOKEN>.
+        // Natural-language heuristics:
+        //   - credential with non-alpha → redact
+        //   - short all-alpha credential (< 5) → redact
+        //   - scheme with non-lowercase (uppercase/digit/special) → redact
+        //   - otherwise (lowercase scheme + ≥ 5 all-alpha credential) → skip (natural language)
+        final String step6 = Pattern.compile(
+                "(?im)^([a-z][a-z0-9!#$%&'*+\\-.^_`|~]+)\\s+([^\\s,;\"]+)$")
                 .matcher(step5)
                 .replaceAll(match -> {
                     final String scheme = match.group(1);
-                    final String credRaw = match.group(2);
-                    if (!credRaw.matches("[a-zA-Z]+")) {
-                        return scheme + " [REDACTED]";
-                    }
-                    if (COMMON_WORDS.contains(credRaw.toLowerCase(Locale.ROOT))) {
-                        return match.group();
-                    }
-                    return scheme + " [REDACTED]";
+                    final String cred = match.group(2);
+                    final String redacted = Matcher.quoteReplacement(scheme) + " [REDACTED]";
+                    if (!cred.matches("(?i)[a-z]{5,}")) return redacted;
+                    if (!scheme.matches("[a-z]+")) return redacted;
+                    return match.group();
                 });
-        // Step 7: Digest auth parameters
+        // Step 7: Digest auth parameters — hide any value length
         return step6.replaceAll(
-                "(?i)\\b(response|nonce|cnonce|opaque|realm|qop|nc|uri|username)\\s*=\\s*[a-z0-9._\\-+/]{1,}",
+                "(?i)\\b(response|nonce|cnonce|opaque|realm|qop|nc|uri|username)\\s*=\\s*[^\\s,;\"]+",
                 "$1=[REDACTED]");
     }
 

@@ -63,9 +63,50 @@ final class TeamAiPromptBuilder {
     static PromptInput single(final SingleTeamBattleAnalysisContext context, final List<String> extraLimitations) {
         final BudgetWriter writer = new BudgetWriter(MAX_INPUT_CHARS);
         final Set<String> limitations = collectLimitations(context, extraLimitations);
-        appendContextHeader(writer, context);
-        writer.appendRequired("unitLimitations=" + limitations + "\n");
-        appendFeatureSet(writer, context.features(), context.analysisUnitId());
+
+        // Pre-build header in a temp buffer to measure its size
+        final StringBuilder headerBuf = new StringBuilder();
+        headerBuf.append("=== SINGLE_TEAM_CONTEXT ===\n");
+        headerBuf.append("analysisUnitId=").append(quoteData(context.analysisUnitId())).append("\n");
+        headerBuf.append("file=").append(quoteData(context.fileName())).append("\n");
+        headerBuf.append("battleIdentity=").append(quoteData(context.battleId())).append("\n");
+        headerBuf.append("category=").append(context.battleCategory()).append("\n");
+        if (context.battle() != null) {
+            final String teamLabel = resolvePerspectiveLabel(
+                    context.battle().players, context.perspectiveTeam());
+            headerBuf.append("teamLabel=").append(quoteData(teamLabel)).append("\n");
+            headerBuf.append("map=").append(quoteData(resolveMapName(context.battle().mapName))).append("\n");
+            headerBuf.append("durationSec=").append(formatNullable(context.battle().durationS)).append("\n");
+            final String result = resolveTeamResult(
+                    context.battle().winnerTeam, context.perspectiveTeam());
+            headerBuf.append("result=").append(result).append("\n");
+        }
+        headerBuf.append("unitLimitations=").append(limitations).append("\n");
+        final String headerBlock = headerBuf.toString();
+
+        final BudgetWriter hpfTemp = new BudgetWriter(Integer.MAX_VALUE);
+        appendHighPriorityFacts(hpfTemp, context.features(), context.analysisUnitId());
+        final String hpfBlock = hpfTemp.content();
+        final boolean hpfTruncated = hpfTemp.isTruncated();
+
+        final BudgetWriter optTemp = new BudgetWriter(Integer.MAX_VALUE);
+        appendOptionalDetails(optTemp, context.features(), context.analysisUnitId());
+        final String optBlock = optTemp.content();
+        final boolean optTruncated = optTemp.isTruncated();
+
+        final int requiredSize = headerBlock.length() + hpfBlock.length() + TRUNCATION_LINE.length();
+        if (requiredSize > MAX_INPUT_CHARS) {
+            throw new AiPromptBudgetExceededException();
+        }
+        writer.appendRequired(headerBlock);
+        writer.appendRequiredBlock(hpfBlock);
+        if (hpfTruncated) {
+            writer.markTruncated();
+        }
+        writer.append(optBlock);
+        if (optTruncated) {
+            writer.markTruncated();
+        }
         return writer.finish(limitations, Set.of(context.analysisUnitId()), Set.of(),
                 Map.of(context.analysisUnitId(), List.copyOf(limitations)));
     }
@@ -100,20 +141,9 @@ final class TeamAiPromptBuilder {
         }
         final int perspectiveLimit = Math.min(perspectives.size(), MAX_PERSPECTIVES);
         // Phase 1: build required sections for budget planning
-        final List<String> perspectiveRequiredBlocks = new ArrayList<>();
-        final List<Set<String>> perPerspectiveLimitations = new ArrayList<>();
+        final List<PerspectivePromptSections> perspectiveSections = new ArrayList<>();
         for (int index = 0; index < perspectiveLimit; index++) {
             final TeamBattleAnalysisSummary perspective = perspectives.get(index);
-            final StringBuilder block = new StringBuilder();
-            block.append("\n=== PERSPECTIVE ").append(index + 1).append(" ===\n");
-            block.append("analysisUnitId=").append(quoteData(perspective.analysisUnitId())).append("\n");
-            block.append("file=").append(quoteData(perspective.fileName())).append("\n");
-            block.append("battleIdentity=").append(quoteData(perspective.battleIdentity())).append("\n");
-            block.append("map=").append(quoteData(resolveMapName(perspective.mapName()))).append("\n");
-            block.append("category=").append(perspective.battleCategory()).append("\n");
-            block.append("durationSec=").append(formatNullable(perspective.durationSec())).append("\n");
-            block.append("teamLabel=").append(quoteData(perspective.teamLabel())).append("\n");
-            block.append("rosterAccountIds=").append(perspective.rosterAccountIds()).append("\n");
             final Set<String> perUnitLimits = new LinkedHashSet<>();
             if (perspective.features() != null) {
                 perUnitLimits.addAll(perspective.features().limitations());
@@ -122,11 +152,7 @@ final class TeamAiPromptBuilder {
             if (evLimits != null) {
                 perUnitLimits.addAll(evLimits);
             }
-            if (!perUnitLimits.isEmpty()) {
-                block.append("unitLimitations=").append(perUnitLimits).append("\n");
-            }
-            perPerspectiveLimitations.add(perUnitLimits);
-            perspectiveRequiredBlocks.add(block.toString());
+            perspectiveSections.add(buildPerspectiveSections(perspective, perUnitLimits, index));
         }
         // Phase 1: budget planning
         final int reserve = TRUNCATION_LINE.length();
@@ -142,8 +168,8 @@ final class TeamAiPromptBuilder {
             final String budgetLimLine = budgetLim.isEmpty() ? "" : "DATA_LIMITATIONS=" + budgetLim + "\n";
             int totalRequired = globalHeader.length() + budgetLimLine.length() + reserve;
             for (int i = 0; i < includedCount; i++) {
-                totalRequired += perspectiveRequiredBlocks.get(i).length();
-                totalRequired += estimateMinimumFactsBytes(perspectives.get(i));
+                totalRequired += perspectiveSections.get(i).mandatoryBlock().length();
+                totalRequired += perspectiveSections.get(i).highPriorityBlock().length();
             }
             if (totalRequired <= MAX_INPUT_CHARS) {
                 break;
@@ -163,23 +189,29 @@ final class TeamAiPromptBuilder {
         final Set<String> allLimitations = new LinkedHashSet<>(globalLimitations);
         // Reserve budget for all perspective required blocks
         for (int i = 0; i < includedCount; i++) {
-            writer.reserve(perspectiveRequiredBlocks.get(i).length());
+            writer.reserve(perspectiveSections.get(i).mandatoryBlock().length());
         }
         writer.append(globalHeader.toString());
         writer.append(finalLimLine);
         // Phase 2: Write all mandatory perspective headers + unitLimitations
         for (int index = 0; index < includedCount; index++) {
-            writer.release(perspectiveRequiredBlocks.get(index).length());
-            writer.append(perspectiveRequiredBlocks.get(index));
-            allLimitations.addAll(perPerspectiveLimitations.get(index));
+            writer.release(perspectiveSections.get(index).mandatoryBlock().length());
+            writer.append(perspectiveSections.get(index).mandatoryBlock());
+            allLimitations.addAll(perspectiveSections.get(index).perUnitLimitations());
         }
         // Phase 3: Write all high-priority facts (P2) for all included perspectives
         for (int index = 0; index < includedCount; index++) {
-            appendHighPriorityFacts(writer, perspectives.get(index).features(), perspectives.get(index).analysisUnitId());
+            writer.appendRequiredBlock(perspectiveSections.get(index).highPriorityBlock());
+            if (perspectiveSections.get(index).hpfTruncated()) {
+                writer.markTruncated();
+            }
         }
         // Phase 4: Write all optional details (P3) for all included perspectives
         for (int index = 0; index < includedCount; index++) {
-            appendOptionalDetails(writer, perspectives.get(index).features(), perspectives.get(index).analysisUnitId());
+            writer.append(perspectiveSections.get(index).optionalBlock());
+            if (perspectiveSections.get(index).optionalTruncated()) {
+                writer.markTruncated();
+            }
         }
         final Set<String> includedIds = new LinkedHashSet<>();
         final Set<String> omittedIds = new LinkedHashSet<>();
@@ -187,7 +219,7 @@ final class TeamAiPromptBuilder {
         for (int i = 0; i < includedCount; i++) {
             final String id = perspectives.get(i).analysisUnitId();
             includedIds.add(id);
-            perUnitLimMap.put(id, List.copyOf(perPerspectiveLimitations.get(i)));
+            perUnitLimMap.put(id, perspectiveSections.get(i).perUnitLimitations());
         }
         for (int i = includedCount; i < perspectives.size(); i++) {
             omittedIds.add(perspectives.get(i).analysisUnitId());
@@ -215,15 +247,6 @@ final class TeamAiPromptBuilder {
                     context.battle().winnerTeam, context.perspectiveTeam());
             writer.appendRequired("result=" + result + "\n");
         }
-    }
-
-    private static void appendFeatureSet(
-            final BudgetWriter writer,
-            final TeamBattleFeatureSet features,
-            final String analysisUnitId
-    ) {
-        appendHighPriorityFacts(writer, features, analysisUnitId);
-        appendOptionalDetails(writer, features, analysisUnitId);
     }
 
     private static void appendHighPriorityFacts(
@@ -456,15 +479,53 @@ final class TeamAiPromptBuilder {
         }
     }
 
-    private static int estimateMinimumFactsBytes(final TeamBattleAnalysisSummary perspective) {
-        if (perspective.features() == null) return 100;
-        int total = 0;
-        total += "\n=== PERSPECTIVE_FACTS ===\nanalysisUnitId=\"\"\n".length()
-                + perspective.analysisUnitId().length() * 2;
-        total += 200;
-        total += 50 + perspective.features().members().size() * 80;
-        total += 100;
-        return total;
+    private static String buildHighPriorityBlock(final TeamBattleFeatureSet features, final String analysisUnitId) {
+        final BudgetWriter temp = new BudgetWriter(Integer.MAX_VALUE);
+        appendHighPriorityFacts(temp, features, analysisUnitId);
+        return temp.content();
+    }
+
+    private static String buildOptionalBlock(final TeamBattleFeatureSet features, final String analysisUnitId) {
+        final BudgetWriter temp = new BudgetWriter(Integer.MAX_VALUE);
+        appendOptionalDetails(temp, features, analysisUnitId);
+        return temp.content();
+    }
+
+    private static PerspectivePromptSections buildPerspectiveSections(
+            final TeamBattleAnalysisSummary perspective,
+            final Set<String> perUnitLimits,
+            final int index
+    ) {
+        final StringBuilder mandatory = new StringBuilder(512);
+        mandatory.append("\n=== PERSPECTIVE ").append(index + 1).append(" ===\n");
+        mandatory.append("analysisUnitId=").append(quoteData(perspective.analysisUnitId())).append("\n");
+        mandatory.append("file=").append(quoteData(perspective.fileName())).append("\n");
+        mandatory.append("battleIdentity=").append(quoteData(perspective.battleIdentity())).append("\n");
+        mandatory.append("map=").append(quoteData(resolveMapName(perspective.mapName()))).append("\n");
+        mandatory.append("category=").append(perspective.battleCategory()).append("\n");
+        mandatory.append("durationSec=").append(formatNullable(perspective.durationSec())).append("\n");
+        mandatory.append("teamLabel=").append(quoteData(perspective.teamLabel())).append("\n");
+        mandatory.append("rosterAccountIds=").append(perspective.rosterAccountIds()).append("\n");
+        if (!perUnitLimits.isEmpty()) {
+            mandatory.append("unitLimitations=").append(perUnitLimits).append("\n");
+        }
+        final BudgetWriter hpfTemp = new BudgetWriter(Integer.MAX_VALUE);
+        appendHighPriorityFacts(hpfTemp, perspective.features(), perspective.analysisUnitId());
+        final String hpfContent = hpfTemp.content();
+        final boolean hpfTruncated = hpfTemp.isTruncated();
+        final BudgetWriter optTemp = new BudgetWriter(Integer.MAX_VALUE);
+        appendOptionalDetails(optTemp, perspective.features(), perspective.analysisUnitId());
+        final String optContent = optTemp.content();
+        final boolean optTruncated = optTemp.isTruncated();
+        return new PerspectivePromptSections(
+                perspective.analysisUnitId(),
+                mandatory.toString(),
+                hpfContent,
+                hpfTruncated,
+                optContent,
+                optTruncated,
+                List.copyOf(perUnitLimits)
+        );
     }
 
     private static String formatScalar(final Object value) {
@@ -589,6 +650,16 @@ final class TeamAiPromptBuilder {
         return "未知坦克";
     }
 
+    private record PerspectivePromptSections(
+        String analysisUnitId,
+        String mandatoryBlock,
+        String highPriorityBlock,
+        boolean hpfTruncated,
+        String optionalBlock,
+        boolean optionalTruncated,
+        List<String> perUnitLimitations
+    ) {}
+
     record PromptInput(
         String content,
         Set<String> includedUnitIds,
@@ -651,6 +722,24 @@ final class TeamAiPromptBuilder {
                 throw new AiPromptBudgetExceededException();
             }
             content.append(value);
+        }
+
+        private void appendRequiredBlock(final String block) {
+            if (block == null || block.isEmpty()) return;
+            final int truncationReserve = TRUNCATION_LINE.length();
+            final int remaining = maxChars - truncationReserve - reserved - content.length();
+            if (remaining <= 0 || block.length() > remaining) {
+                throw new AiPromptBudgetExceededException();
+            }
+            content.append(block);
+        }
+
+        private String content() {
+            return content.toString();
+        }
+
+        private boolean isTruncated() {
+            return truncated;
         }
 
         private void markTruncated() {

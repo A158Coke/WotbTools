@@ -176,6 +176,114 @@ describe('ReconstructionPage team analysis', () => {
   })
 })
 
+describe('ReconstructionPage file management', () => {
+  beforeEach(() => {
+    auth.ensureToken.mockResolvedValue(true)
+    auth.login.mockReset()
+    i18n.t.mockClear()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('clears file count error after removing a file', async () => {
+    const wrapper = mountedPage()
+    const input = wrapper.get('input[type="file"]')
+
+    // Add 16 valid files (fills to max)
+    const names16 = Array.from({ length: 16 }, (_, i) => `file${i}.wotbreplay`)
+    const files16 = names16.map(name => new File(['replay'], name, { type: 'application/octet-stream' }))
+    Object.defineProperty(input.element, 'files', { value: files16, configurable: true })
+    await input.trigger('change')
+
+    // Try adding 1 more — triggers count exceeded error
+    const extra = [new File(['replay'], 'extra.wotbreplay', { type: 'application/octet-stream' })]
+    Object.defineProperty(input.element, 'files', { value: extra, configurable: true })
+    await input.trigger('change')
+
+    expect(wrapper.text()).toContain('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
+
+    // Remove one file
+    await wrapper.findAll('.chipx')[0].trigger('click')
+
+    expect(wrapper.text()).not.toContain('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
+  })
+
+  it('does not call fetch when file count exceeds limit', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountedPage()
+    const input = wrapper.get('input[type="file"]')
+
+    const names = Array.from({ length: 17 }, (_, i) => `file${i}.wotbreplay`)
+    const files = names.map(name => new File(['replay'], name, { type: 'application/octet-stream' }))
+    Object.defineProperty(input.element, 'files', { value: files, configurable: true })
+    await input.trigger('change')
+
+    expect(wrapper.text()).toContain('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('clears analysis result after removing a file', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      okResponse(teamResult('SINGLE_TEAM_BATTLE', [
+        teamUnit('unit-1', 1, ['REPLAY_STREAM_PARTIAL'])
+      ]))))
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['test.wotbreplay'])
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('team report')
+
+    await wrapper.findAll('.chipx')[0].trigger('click')
+
+    expect(wrapper.text()).not.toContain('team report')
+  })
+
+  it('allows adding files after clearing', async () => {
+    const wrapper = mountedPage()
+
+    const names = Array.from({ length: 16 }, (_, i) => `file${i}.wotbreplay`)
+    const files = names.map(name => new File(['replay'], name, { type: 'application/octet-stream' }))
+    Object.defineProperty(wrapper.get('input[type="file"]').element, 'files', { value: files, configurable: true })
+    await wrapper.get('input[type="file"]').trigger('change')
+
+    const clearBtn = wrapper.findAll('button').find(b => b.text() === 'upload.clear')
+    await clearBtn.trigger('click')
+
+    await selectReplays(wrapper, ['single.wotbreplay'])
+
+    expect(wrapper.text()).toContain('single.wotbreplay')
+  })
+
+  it('renders file count display', async () => {
+    const wrapper = mountedPage()
+    const names = Array.from({ length: 12 }, (_, i) => `file${i}.wotbreplay`)
+    const files = names.map(name => new File(['replay'], name, { type: 'application/octet-stream' }))
+    Object.defineProperty(wrapper.get('input[type="file"]').element, 'files', { value: files, configurable: true })
+    await wrapper.get('input[type="file"]').trigger('change')
+
+    expect(wrapper.text()).toContain('recon.max_files_count:12')
+  })
+
+  it('removes single file by index', async () => {
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['alpha.wotbreplay', 'beta.wotbreplay', 'gamma.wotbreplay'])
+
+    expect(wrapper.text()).toContain('alpha.wotbreplay')
+    expect(wrapper.text()).toContain('beta.wotbreplay')
+    expect(wrapper.text()).toContain('gamma.wotbreplay')
+
+    await wrapper.findAll('.chipx')[1].trigger('click')
+
+    expect(wrapper.text()).toContain('alpha.wotbreplay')
+    expect(wrapper.text()).not.toContain('beta.wotbreplay')
+    expect(wrapper.text()).toContain('gamma.wotbreplay')
+  })
+})
+
 function mountedPage() {
   return mount(ReconstructionPage, {
     global: {

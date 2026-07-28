@@ -59,9 +59,7 @@ function addFile(e) {
 function removeFile(index) {
   files.value = files.value.filter((_, i) => i !== index)
   resetResults()
-  if (files.value.length === 0) {
-    error.value = ''
-  }
+  error.value = ''
 }
 
 function clearFile() {
