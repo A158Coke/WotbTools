@@ -706,6 +706,16 @@ class AiReplayAnalysisServiceTest {
         final var teamResult = service.analyzeTeamGroups(groups);
         assertTrue(teamResult.analysisUnitCount() >= 2,
                 "Should have at least 2 analysis units");
+        // Hard omission assertions
+        assertTrue(teamResult.omittedAnalysisUnitCount() > 0,
+                "Must have at least one omitted unit");
+        final long omittedReports = teamResult.units().stream()
+                .map(unit -> (TeamAnalysisUnitReport) unit.report())
+                .filter(report -> report.limitations()
+                        .contains("AI_PERSPECTIVE_OMITTED_FROM_PROMPT"))
+                .count();
+        assertEquals(teamResult.omittedAnalysisUnitCount(), omittedReports,
+                "omittedAnalysisUnitCount must match report count");
         // Unit with arena "big-arena" has 17 members → HPF truncated
         final var unit0 = teamResult.units().stream()
                 .filter(u -> u.analysisUnitId() != null && u.analysisUnitId().contains("big-arena"))

@@ -989,6 +989,14 @@ class TeamAiPromptBuilderTest {
         assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
         assertFalse(input.omittedUnitIds().contains("unit-A"),
                 "unit-A should be included, not omitted");
+        // Structural order: all PERSPECTIVE_FACTS before any PERSPECTIVE_OPTIONAL
+        final int factsPos = input.content().lastIndexOf("=== PERSPECTIVE_FACTS ===");
+        final int optPos = input.content().indexOf("=== PERSPECTIVE_OPTIONAL ===");
+        assertTrue(factsPos >= 0, "Must have PERSPECTIVE_FACTS");
+        if (optPos > 0) {
+            assertTrue(optPos > factsPos,
+                    "All PERSPECTIVE_FACTS must appear before any PERSPECTIVE_OPTIONAL");
+        }
     }
 
     @Test
@@ -1028,10 +1036,18 @@ class TeamAiPromptBuilderTest {
         final var input = TeamAiPromptBuilder.multi(multi);
         assertEquals(Set.of("unit-A"), input.truncatedUnitIds(),
                 "Only unit-A (optional truncated) should be in truncatedUnitIds");
-        assertTrue(input.content().contains("analysisUnitId=\"unit-B\""),
-                "B's optional block should still be present");
-        assertTrue(input.content().contains("analysisUnitId=\"unit-C\""),
-                "C's optional block should still be present");
+        assertTrue(input.content().contains("=== PERSPECTIVE_OPTIONAL ===\nanalysisUnitId=\"unit-B\""),
+                "B's optional section should still be present");
+        assertTrue(input.content().contains("=== PERSPECTIVE_OPTIONAL ===\nanalysisUnitId=\"unit-C\""),
+                "C's optional section should still be present");
+        // Verify structural order: all PERSPECTIVE_FACTS before any PERSPECTIVE_OPTIONAL
+        final int lastFacts = input.content().lastIndexOf("=== PERSPECTIVE_FACTS ===");
+        final int firstOptional = input.content().indexOf("=== PERSPECTIVE_OPTIONAL ===");
+        assertTrue(lastFacts >= 0);
+        if (firstOptional > 0) {
+            assertTrue(firstOptional > lastFacts,
+                    "All PERSPECTIVE_FACTS must appear before any PERSPECTIVE_OPTIONAL");
+        }
     }
 
     @Test
@@ -1090,6 +1106,35 @@ class TeamAiPromptBuilderTest {
                 "No truncation should result in empty truncatedUnitIds");
         assertFalse(input.globalLimitations().contains("AI_INPUT_TRUNCATED"),
                 "Global limitations must NOT include AI_INPUT_TRUNCATED");
+        // Deterministic build
+        final var input2 = TeamAiPromptBuilder.multi(multi);
+        assertEquals(input.content(), input2.content(), "Repeated build must produce identical content");
+        assertEquals(input.includedUnitIds(), input2.includedUnitIds());
+        assertEquals(input.omittedUnitIds(), input2.omittedUnitIds());
+        assertEquals(input.truncatedUnitIds(), input2.truncatedUnitIds());
+        assertEquals(input.globalLimitations(), input2.globalLimitations());
+    }
+
+    @Test
+    void multiBuildIsDeterministic() {
+        final SingleTeamBattleAnalysisContext baseA = contextWithMembers(3, 5);
+        final SingleTeamBattleAnalysisContext baseB = contextWithMembers(5, 10);
+        final List<TeamBattleAnalysisSummary> summaries = List.of(
+                new TeamBattleAnalysisSummary(
+                        "unit-A", null, "a.wotbreplay", "map1", null, 300.0,
+                        1, List.of(10001L, 10002L), baseA.features(), "TeamA"),
+                new TeamBattleAnalysisSummary(
+                        "unit-B", null, "b.wotbreplay", "map1", null, 300.0,
+                        2, List.of(20001L), baseB.features(), "TeamB"));
+        final var multi = new MultiTeamBattleAnalysisContext(
+                2, 1, summaries, false, List.of());
+        final var first = TeamAiPromptBuilder.multi(multi);
+        final var second = TeamAiPromptBuilder.multi(multi);
+        assertEquals(first.content(), second.content());
+        assertEquals(first.includedUnitIds(), second.includedUnitIds());
+        assertEquals(first.omittedUnitIds(), second.omittedUnitIds());
+        assertEquals(first.truncatedUnitIds(), second.truncatedUnitIds());
+        assertEquals(first.globalLimitations(), second.globalLimitations());
     }
 
     @Test
