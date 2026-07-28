@@ -28,7 +28,7 @@ defineProps({
     type: Object,
     default: null
   },
-  isAdmin: {
+  canUseAiReview: {
     type: Boolean,
     required: true
   },
@@ -40,6 +40,7 @@ defineProps({
 
 defineEmits([
   'add-file',
+  'remove-file',
   'clear',
   'reconstruct',
   'state-at',
@@ -60,6 +61,7 @@ defineEmits([
     <ReplayFilePicker
       :files="files"
       @add-file="$emit('add-file', $event)"
+      @remove-file="$emit('remove-file', $event)"
       @clear="$emit('clear')"
     />
 
@@ -73,7 +75,7 @@ defineEmits([
     />
 
     <ReplayAnalysisAction
-      v-if="isAdmin && files.length"
+      v-if="canUseAiReview && files.length"
       :files="files"
       :analyzing="analyzing"
       :analysis-result="analysisResult"

@@ -9,15 +9,19 @@ import ReconstructionSummaryPanel from './ReconstructionSummaryPanel.vue'
 import ReplayInputPanel from './ReplayInputPanel.vue'
 
 const { t } = useI18n()
-const { tokenParsed, token, ensureToken, login } = useAuth()
+const { tokenParsed, token, ensureToken, login, authenticated } = useAuth()
 
-// AI 功能灰度：仅 wotbtools-admin 可见（后端 /api/replay/analyze 亦按该角色鉴权）
-const isAdmin = computed(() => {
+// AI Review 权限：已登录 + wotbtools-user 或 wotbtools-admin
+const canUseAiReview = computed(() => {
+  if (!authenticated.value) return false
   const roles = tokenParsed.value?.realm_access?.roles
-  return Array.isArray(roles) && roles.includes('wotbtools-admin')
+  return Array.isArray(roles) && (
+    roles.includes('wotbtools-user') || roles.includes('wotbtools-admin')
+  )
 })
 
 // 支持多选：AI 分析可一次分析多场。reconstruct/state-at 为单文件工具，取第一个。
+const MAX_AI_REVIEW_REPLAY_FILES = 16
 const files = ref([])
 const file = computed(() => files.value[0] || null)
 const loading = ref(false)
@@ -39,13 +43,26 @@ function resetResults() {
 function addFile(e) {
   const picked = Array.from(e.target.files || [])
     .filter(f => f.name.toLowerCase().endsWith('.wotbreplay'))
-  if (picked.length) {
-    files.value = picked
-    error.value = ''
-    resetResults()
-  } else if ((e.target.files || []).length) {
-    error.value = t('recon.invalid_file')
+  if (picked.length === 0) {
+    if ((e.target.files || []).length) {
+      error.value = t('recon.invalid_file')
+    }
+    return
   }
+  const totalAfterAdd = files.value.length + picked.length
+  if (totalAfterAdd > MAX_AI_REVIEW_REPLAY_FILES) {
+    error.value = t('recon.errors.REPLAY_FILE_COUNT_EXCEEDED', { max: MAX_AI_REVIEW_REPLAY_FILES })
+    return
+  }
+  files.value = [...files.value, ...picked]
+  error.value = ''
+  resetResults()
+}
+
+function removeFile(index) {
+  files.value = files.value.filter((_, i) => i !== index)
+  resetResults()
+  error.value = ''
 }
 
 function clearFile() {
@@ -143,8 +160,12 @@ async function runStateAt() {
 
 async function runAnalyze() {
   if (analyzing.value) return
-  if (!file.value) {
-    error.value = t('recon.no_file')
+  if (files.value.length === 0) {
+    error.value = t('recon.errors.NO_REPLAY_FILE')
+    return
+  }
+  if (files.value.length > MAX_AI_REVIEW_REPLAY_FILES) {
+    error.value = t('recon.errors.REPLAY_FILE_COUNT_EXCEEDED', { max: MAX_AI_REVIEW_REPLAY_FILES })
     return
   }
   analyzing.value = true
@@ -153,8 +174,19 @@ async function runAnalyze() {
   try {
     const r = await authedFetch('/api/replay/analyze', multiFormData())
     if (!r.ok) {
-      const text = (await r.text().catch(() => '')).trim()
-      throw new Error(localizeAiError(text, r.status, t))
+      const rawBody = await r.text().catch(() => '')
+      const trimmed = rawBody.trim()
+      let errorData = { code: trimmed, maxFiles: 16 }
+      // Try JSON parse for structured errors (REPLAY_FILE_COUNT_EXCEEDED etc.)
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        try {
+          const json = JSON.parse(trimmed)
+          errorData = { code: json.code || '', maxFiles: json.maxFiles || 16 }
+        } catch {
+          // Not valid JSON — keep trimmed as plain text code
+        }
+      }
+      throw new Error(localizeAiError(errorData, r.status, t))
     }
     const result = await r.json()
     if (!result || typeof result.analysis !== 'string' || !result.analysis.trim()) {
@@ -184,9 +216,10 @@ function toggleAnalysis() {
       :loading="loading"
       :analyzing="analyzing"
       :analysis-result="analysisResult"
-      :is-admin="isAdmin"
+      :can-use-ai-review="canUseAiReview"
       :show-analysis="showAnalysis"
       @add-file="addFile"
+      @remove-file="removeFile"
       @clear="clearFile"
       @reconstruct="runReconstruct"
       @state-at="runStateAt"

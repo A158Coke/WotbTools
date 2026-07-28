@@ -8,6 +8,7 @@ import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * 地图内部名 -> 多语显示名 (来自 meta.json 的 mapName 字段)。
@@ -75,5 +76,18 @@ public final class MapNames {
             return mapName;
         }
         return CN.getOrDefault(normalizeKey(mapName), mapName);
+    }
+
+    /**
+     * Try to resolve the Chinese map name.
+     * Returns {@code Optional.empty()} when the map code is unknown,
+     * allowing callers to distinguish "found" from "not found".
+     */
+    public static Optional<String> tryResolve(final String mapName) {
+        if (!StringUtils.hasText(mapName)) {
+            return Optional.empty();
+        }
+        final String resolved = CN.get(normalizeKey(mapName));
+        return resolved != null ? Optional.of(resolved) : Optional.empty();
     }
 }

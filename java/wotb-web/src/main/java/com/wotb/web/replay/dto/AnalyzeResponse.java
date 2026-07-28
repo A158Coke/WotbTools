@@ -24,6 +24,8 @@ public record AnalyzeResponse(
         @JsonProperty("validFileCount") int validFileCount,
         @JsonProperty("analysisUnitCount") int analysisUnitCount,
         @JsonProperty("analyzedUnitCount") int analyzedUnitCount,
+        @JsonProperty("omittedAnalysisUnitCount") int omittedAnalysisUnitCount,
+        @JsonProperty("unavailableAnalysisUnitCount") int unavailableAnalysisUnitCount,
         @JsonProperty("battleCount") int battleCount,
         @JsonProperty("analysis") String analysis,
         @JsonProperty("failedFileCount") int failedFileCount,
@@ -31,6 +33,7 @@ public record AnalyzeResponse(
         @JsonProperty("sameTeamDuplicatePerspectiveCount") int sameTeamDuplicatePerspectiveCount,
         @JsonProperty("files") List<ReplayFileAnalysisStatus> files,
         @JsonProperty("analyses") List<AnalysisUnitResult> analyses,
-        @JsonProperty("keyEvents") List<KeyBattleEvent> keyEvents
+        @JsonProperty("keyEvents") List<KeyBattleEvent> keyEvents,
+        @JsonProperty("limitations") List<String> limitations
 ) {
 }

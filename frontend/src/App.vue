@@ -14,11 +14,14 @@ import ReconstructionPage from './components/ReconstructionPage.vue'
 
 const { theme, handleTheme } = useTheme()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
-const { tokenParsed } = useAuth()
+const { tokenParsed, authenticated } = useAuth()
 
-const isAdmin = computed(() => {
+const canUseAiReview = computed(() => {
+  if (!authenticated.value) return false
   const roles = tokenParsed.value?.realm_access?.roles
-  return Array.isArray(roles) && roles.includes('wotbtools-admin')
+  return Array.isArray(roles) && (
+    roles.includes('wotbtools-user') || roles.includes('wotbtools-admin')
+  )
 })
 
 const languageOptions = [
@@ -33,7 +36,7 @@ const defaultView = isHomeHost ? 'home' : 'replay'
 const viewParam = params.get('view')
 const allowedViews = computed(() => {
   const base = ['home', 'replay', 'leaderboard', 'extended', 'profile', 'boost', 'admin-users']
-  if (isAdmin.value) base.push('reconstruction')
+  if (canUseAiReview.value) base.push('reconstruction')
   return base
 })
 const activeTool = ref('')
@@ -77,7 +80,7 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button :class="{ active: activeTool === 'leaderboard' }" @click="navigate('leaderboard')">{{ $t('leaderboard.btn') }}</button>
       <button :class="{ active: activeTool === 'extended' }" @click="navigate('extended')">{{ $t('extended.nav') }}</button>
       <button :class="{ active: activeTool === 'boost' }" @click="navigate('boost')">{{ $t('app.boost_tab') }}</button>
-      <button v-if="isAdmin" :class="{ active: activeTool === 'reconstruction' }" @click="navigate('reconstruction')">{{ $t('recon.nav') }}</button>
+      <button v-if="canUseAiReview" data-testid="ai-review-nav-button" :class="{ active: activeTool === 'reconstruction' }" @click="navigate('reconstruction')">{{ $t('recon.nav') }}</button>
     </nav>
     <div class="tb-spacer"></div>
     <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
@@ -98,7 +101,7 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
     <ExtendedPage v-else-if="activeTool === 'extended'" />
     <BoostPage v-else-if="activeTool === 'boost'" />
     <AdminUsersPage v-else-if="activeTool === 'admin-users'" />
-    <ReconstructionPage v-else-if="activeTool === 'reconstruction' && isAdmin" />
+    <ReconstructionPage v-else-if="activeTool === 'reconstruction' && canUseAiReview" />
     <ReplayPage v-else />
   </div>
 

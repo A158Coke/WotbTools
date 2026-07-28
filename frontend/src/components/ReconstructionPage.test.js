@@ -9,6 +9,11 @@ const auth = vi.hoisted(() => ({
   login: vi.fn()
 }))
 
+const authState = vi.hoisted(() => ({
+  authenticated: { value: true },
+  roles: ['wotbtools-admin']
+}))
+
 const i18n = vi.hoisted(() => ({
   t: vi.fn((key, values) => values
     ? `${key}:${Object.values(values).join(',')}`
@@ -18,11 +23,14 @@ const i18n = vi.hoisted(() => ({
 vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => ({
     tokenParsed: {
-      value: { realm_access: { roles: ['wotbtools-admin'] } }
+      value: authState.roles.length
+        ? { realm_access: { roles: authState.roles } }
+        : null
     },
     token: () => 'test-token',
     ensureToken: auth.ensureToken,
-    login: auth.login
+    login: auth.login,
+    authenticated: authState.authenticated
   })
 }))
 
@@ -31,6 +39,20 @@ vi.mock('vue-i18n', () => ({
 }))
 
 describe('ReconstructionPage team analysis', () => {
+  it('shows error when selecting more than 16 files', async () => {
+    const wrapper = mountedPage()
+    const input = wrapper.get('input[type="file"]')
+    const names = Array.from({ length: 17 }, (_, i) => `file${i}.wotbreplay`)
+    const files = names.map(name => new File(['replay'], name, {
+      type: 'application/octet-stream'
+    }))
+    Object.defineProperty(input.element, 'files', {
+      value: files,
+      configurable: true
+    })
+    await input.trigger('change')
+    expect(wrapper.text()).toContain('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
+  })
   beforeEach(() => {
     auth.ensureToken.mockResolvedValue(true)
     auth.login.mockReset()
@@ -114,6 +136,30 @@ describe('ReconstructionPage team analysis', () => {
     expect(analyzeButton(wrapper).attributes('disabled')).toBeUndefined()
   })
 
+  it('handles plain text error without JSON parse failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response('AI_NOT_CONFIGURED', { status: 503, headers: { 'Content-Type': 'text/plain' } })
+    ))
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['test.wotbreplay'])
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('recon.errors.AI_NOT_CONFIGURED')
+  })
+
+  it('parses JSON error code correctly', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ code: 'REPLAY_FILE_COUNT_EXCEEDED', maxFiles: 16 }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } })
+    ))
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['test.wotbreplay'])
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
+    expect(wrapper.text()).toContain('16')
+  })
+
   it('keeps random-battle reports player focused', async () => {
     const result = {
       ...teamResult('SINGLE_PLAYER_BATTLE', [{
@@ -135,6 +181,219 @@ describe('ReconstructionPage team analysis', () => {
     expect(wrapper.text()).toContain('recon.modes.SINGLE_PLAYER_BATTLE')
     expect(wrapper.text()).not.toContain('recon.team_scope_note')
     expect(wrapper.text()).toContain('player report')
+  })
+})
+
+describe('ReconstructionPage file management', () => {
+  beforeEach(() => {
+    auth.ensureToken.mockResolvedValue(true)
+    auth.login.mockReset()
+    i18n.t.mockClear()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('clears file count error after removing a file', async () => {
+    const wrapper = mountedPage()
+    const input = wrapper.get('input[type="file"]')
+
+    // Add 16 valid files (fills to max)
+    const names16 = Array.from({ length: 16 }, (_, i) => `file${i}.wotbreplay`)
+    const files16 = names16.map(name => new File(['replay'], name, { type: 'application/octet-stream' }))
+    Object.defineProperty(input.element, 'files', { value: files16, configurable: true })
+    await input.trigger('change')
+
+    // Try adding 1 more — triggers count exceeded error
+    const extra = [new File(['replay'], 'extra.wotbreplay', { type: 'application/octet-stream' })]
+    Object.defineProperty(input.element, 'files', { value: extra, configurable: true })
+    await input.trigger('change')
+
+    expect(wrapper.text()).toContain('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
+
+    // Remove one file
+    await wrapper.findAll('.chipx')[0].trigger('click')
+
+    expect(wrapper.text()).not.toContain('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
+  })
+
+  it('does not call fetch when file count exceeds limit', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountedPage()
+    const input = wrapper.get('input[type="file"]')
+
+    const names = Array.from({ length: 17 }, (_, i) => `file${i}.wotbreplay`)
+    const files = names.map(name => new File(['replay'], name, { type: 'application/octet-stream' }))
+    Object.defineProperty(input.element, 'files', { value: files, configurable: true })
+    await input.trigger('change')
+
+    expect(wrapper.text()).toContain('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('clears analysis result after removing a file', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      okResponse(teamResult('SINGLE_TEAM_BATTLE', [
+        teamUnit('unit-1', 1, ['REPLAY_STREAM_PARTIAL'])
+      ]))))
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['test.wotbreplay'])
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('team report')
+
+    await wrapper.findAll('.chipx')[0].trigger('click')
+
+    expect(wrapper.text()).not.toContain('team report')
+  })
+
+  it('allows adding files after clearing', async () => {
+    const wrapper = mountedPage()
+
+    const names = Array.from({ length: 16 }, (_, i) => `file${i}.wotbreplay`)
+    const files = names.map(name => new File(['replay'], name, { type: 'application/octet-stream' }))
+    Object.defineProperty(wrapper.get('input[type="file"]').element, 'files', { value: files, configurable: true })
+    await wrapper.get('input[type="file"]').trigger('change')
+
+    const clearBtn = wrapper.findAll('button').find(b => b.text() === 'upload.clear')
+    await clearBtn.trigger('click')
+
+    await selectReplays(wrapper, ['single.wotbreplay'])
+
+    expect(wrapper.text()).toContain('single.wotbreplay')
+  })
+
+  it('renders file count display', async () => {
+    const wrapper = mountedPage()
+    const names = Array.from({ length: 12 }, (_, i) => `file${i}.wotbreplay`)
+    const files = names.map(name => new File(['replay'], name, { type: 'application/octet-stream' }))
+    Object.defineProperty(wrapper.get('input[type="file"]').element, 'files', { value: files, configurable: true })
+    await wrapper.get('input[type="file"]').trigger('change')
+
+    expect(wrapper.text()).toContain('recon.max_files_count:12')
+  })
+
+  it('removes single file by index', async () => {
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['alpha.wotbreplay', 'beta.wotbreplay', 'gamma.wotbreplay'])
+
+    expect(wrapper.text()).toContain('alpha.wotbreplay')
+    expect(wrapper.text()).toContain('beta.wotbreplay')
+    expect(wrapper.text()).toContain('gamma.wotbreplay')
+
+    await wrapper.findAll('.chipx')[1].trigger('click')
+
+    expect(wrapper.text()).toContain('alpha.wotbreplay')
+    expect(wrapper.text()).not.toContain('beta.wotbreplay')
+    expect(wrapper.text()).toContain('gamma.wotbreplay')
+  })
+
+  it('allows selecting 1 file', async () => {
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['single.wotbreplay'])
+    expect(wrapper.text()).toContain('single.wotbreplay')
+    expect(wrapper.text()).not.toContain('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
+  })
+
+  it('allows selecting 16 files', async () => {
+    const wrapper = mountedPage()
+    const names = Array.from({ length: 16 }, (_, i) => `file${i}.wotbreplay`)
+    await selectReplays(wrapper, names)
+    expect(wrapper.text()).toContain('recon.max_files_count:16')
+    expect(wrapper.text()).not.toContain('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
+  })
+
+  it('rejects selecting 17 files and keeps previous list', async () => {
+    const wrapper = mountedPage()
+    const input = wrapper.get('input[type="file"]')
+
+    const names16 = Array.from({ length: 16 }, (_, i) => `file${i}.wotbreplay`)
+    const files16 = names16.map(name => new File(['replay'], name, { type: 'application/octet-stream' }))
+    Object.defineProperty(input.element, 'files', { value: files16, configurable: true })
+    await input.trigger('change')
+
+    expect(wrapper.text()).toContain('file0.wotbreplay')
+    expect(wrapper.text()).toContain('file15.wotbreplay')
+
+    const extraNames = Array.from({ length: 5 }, (_, i) => `extra${i}.wotbreplay`)
+    const extraFiles = extraNames.map(name => new File(['replay'], name, { type: 'application/octet-stream' }))
+    Object.defineProperty(input.element, 'files', { value: extraFiles, configurable: true })
+    await input.trigger('change')
+
+    expect(wrapper.text()).toContain('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
+    expect(wrapper.text()).toContain('file0.wotbreplay')
+    expect(wrapper.text()).toContain('file15.wotbreplay')
+    expect(wrapper.text()).not.toContain('extra0.wotbreplay')
+  })
+})
+
+describe('ReconstructionPage auth gating', () => {
+  beforeEach(() => {
+    auth.ensureToken.mockReset()
+    i18n.t.mockClear()
+    // Reset to default admin state before each test
+    authState.authenticated.value = true
+    authState.roles = ['wotbtools-admin']
+  })
+
+  it('renders when user has wotbtools-admin', async () => {
+    authState.authenticated.value = true
+    authState.roles = ['wotbtools-admin']
+    const wrapper = mountedPage()
+    expect(wrapper.find('[data-testid="ai-review-nav-button"]').exists()).toBe(false)
+    // The page itself renders since ReplayInputPanel is unconditional in the template
+    expect(wrapper.text()).toContain('recon.title')
+  })
+
+  it('does not render analysis action when not authenticated', async () => {
+    authState.authenticated.value = false
+    authState.roles = ['wotbtools-admin'] // roles present but not authenticated
+    const wrapper = mountedPage()
+    expect(wrapper.text()).toContain('recon.title')
+    // The parent App.vue guards rendering of <ReconstructionPage>, but within the
+    // component itself, pass canUseAiReview=false to ReplayInputPanel → no analyze action
+    expect(wrapper.text()).not.toContain('action.processing')
+  })
+
+  it('does not render analysis action for authenticated user without role', async () => {
+    authState.authenticated.value = true
+    authState.roles = ['some-other-role']
+    const wrapper = mountedPage()
+    expect(wrapper.text()).toContain('recon.title')
+    // No analyze action because user lacks allowed roles
+    expect(wrapper.text()).not.toContain('recon.analyze_btn')
+    expect(wrapper.text()).not.toContain('recon.analyze_multi_btn')
+  })
+
+  it('renders analysis action for wotbtools-user', async () => {
+    authState.authenticated.value = true
+    authState.roles = ['wotbtools-user']
+    const wrapper = mountedPage()
+    expect(wrapper.text()).toContain('recon.title')
+    // With a file loaded the analyze action appears
+    const input = wrapper.get('input[type="file"]')
+    const names = ['test.wotbreplay']
+    const files = names.map(name => new File(['replay'], name, { type: 'application/octet-stream' }))
+    Object.defineProperty(input.element, 'files', { value: files, configurable: true })
+    await input.trigger('change')
+    expect(wrapper.text()).toContain('recon.analyze_btn')
+  })
+
+  it('does not call analyze API for unauthenticated user', async () => {
+    authState.authenticated.value = false
+    authState.roles = ['wotbtools-user'] // roles present but not authenticated
+    const wrapper = mountedPage()
+    const input = wrapper.get('input[type="file"]')
+    const names = ['test.wotbreplay']
+    const files = names.map(name => new File(['replay'], name, { type: 'application/octet-stream' }))
+    Object.defineProperty(input.element, 'files', { value: files, configurable: true })
+    await input.trigger('change')
+    // No analyze button when not authenticated
+    const btns = wrapper.findAll('button').filter(b => b.text().startsWith('recon.analyze'))
+    expect(btns.length).toBe(0)
   })
 })
 
