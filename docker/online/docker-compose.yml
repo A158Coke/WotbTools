@@ -58,6 +58,8 @@ services:
       AI_API_KEY: ${AI_API_KEY:-}
       AI_BASE_URL: ${AI_BASE_URL:-https://api.deepseek.com}
       AI_MODEL: ${AI_MODEL:-deepseek-v4-flash}
+      REPLAY_COORDINATE_HALF_EXTENT: ${REPLAY_COORDINATE_HALF_EXTENT:-250}
+      REPLAY_COORDINATE_CLAMP_TOLERANCE: ${REPLAY_COORDINATE_CLAMP_TOLERANCE:-12.5}
     restart: unless-stopped
 
   wotb-frontend:
