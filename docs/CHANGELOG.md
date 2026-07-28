@@ -22,6 +22,14 @@
 - **AiReplayReviewService 不可绕过边界**：新建 `AiReplayReviewService` 封装 AI Review batch 校验；`validateBatchSize()` 在 processing/hash/parsing 前验证文件数；Controller 直接调用该 Service。
 - **JSON Error Contract 统一**：`REPLAY_FILE_COUNT_EXCEEDED` 返回 `{"code":"...","maxFiles":16,"actualFiles":N}`；前端 error handler 优先 JSON 解析从 `code` 提取错误码；`localizeAiError()` 接受结构化对象；三语 `remove_file_aria` locale key；文件变更时清除旧 analysis result。
 - **Provider 日志脱敏增强**：broad regex 匹配任何 scheme+credential 模式；redaction 在日志中可见（`[REDACTED]` 标记出现在 summary 中）。
+- **PR #39 最终轮修复（7 项）**：
+  - **F1: 预构建 section block + 原子 budget**：删除 `estimateMinimumFactsBytes()` 估算；multi-team budget 使用实际预构建的 mandatory + high-priority block 字节长度；high-priority block 通过 `appendRequiredBlock()` 原子写入；single-team 也预构建并校验 budget。
+  - **F2: AiReplayReviewService 完整 use-case**：`analyze()` 接管 validate → process → BatchAnalyzer → AI dispatch → file statuses → counts 全流程；Controller 精简为 `return reviewService.analyze(files)`。
+  - **F3: 稳定文件错误码**：`INVALID_FILE_EXTENSION` → `INVALID_REPLAY_FILE_TYPE`；`EMPTY_REPLAY_FILE` → `NO_REPLAY_FILE`；`TOTAL_SIZE_EXCEEDED` → `TOTAL_REQUEST_TOO_LARGE`。
+  - **F4: Global omission contract**：`AnalyzeResponse` 新增 `omittedAnalysisUnitCount` 字段；数学关系 `analysisUnitCount = analyzedUnitCount + omittedAnalysisUnitCount`。
+  - **F5: 上下文感知 RFC redaction**：删除 `COMMON_WORDS` 词典；step 6 改为全行匹配 `^<RFC_TOKEN_SCHEME> <CREDENTIAL>$` + 短 credential 启发式；完整 RFC token 字符集。
+  - **F6: 前端 stale error + 补齐测试**：`removeFile()` 始终清除文件错误；新增 6 个文件管理测试。
+  - **F7: 文档/规范清理**。
 - **Team Perspective 用户可见名称、地图映射、坦克名称、九宫格区域与结构化聚类**：新增 `TeamPerspectiveLabelResolver`（dominant clan 队伍标签）、`MapRegionResolver`（500×500 九宫格）、`CanonicalMapPosition`（不可变 canonical 坐标）、`MapCoordinateResolution`（VALID/CLAMPED/INVALID 三态）、`TeamFormationCluster`（结构化 cluster，含 `centroidStatus`）；Team AI Prompt 不再输出 `perspectiveTeam=`/`winnerTeam=` raw 数字，改为 `teamLabel=`/`result=` 三态；地图名称使用 `common/map_names.json` 映射；cluster 输出含 canonical centroid、region、centroidStatus、member identities、derived memberCount；`TeamFormationPhase.clusters` 派生 `clusterCount()`；movement/formation/cluster 使用 `formatPositionInfo()` 单次 `resolve()` 输出 canonical XZ region status；PLAYER_FOCUSED 与 TEAM_PERSPECTIVE 共用同一 `MapRegionResolver`。`TeamMapRegionResolver` 已删除。
 - **随机战斗 AI 复盘友方/敌方语义**：新增 `PlayerSideResolver`（FRIENDLY/ENEMY/UNKNOWN）、`FriendlyEnemyResult`（FRIENDLY_WIN/ENEMY_WIN/DRAW_OR_UNKNOWN）与 `PlayerAnalysisPromptFormatter`；随机战斗 AI Prompt 不再使用"队伍1/队伍2"，改为"友方/敌方"；胜负使用完整三态，平局/未知不作为失败记录；胜率只统计已知胜负场数；录像者在 raw team 2 时仍正确识别为友方；同一录像者的多场随机战斗分析会对每场战斗独立解析 recorder；`PlayerResult.team` 原始编号不受影响。
 - **训练房 / 联赛 Team-Level AI 战术复盘**：`TRAINING` 与 `TOURNAMENT` 现按录像者可靠解析 `perspectiveTeam`，分析对象是该队整队而非录像者个人。新增 entity/account/nickname 映射（含 accountId 缺失时的唯一昵称降级连接）、re-entry 支持、队员独立移动、阵型窗口、独立 5 秒集火窗口、目标切换、交火段、关键掉车与团队聚合；敌队位置、未知实体和未点亮敌人不会混入本队事实。同场同队多回放只保留一个代表，同场双方保持两个独立 perspective；重建不可用时使用 `battle_results.dat` 权威团队结算降级分析。

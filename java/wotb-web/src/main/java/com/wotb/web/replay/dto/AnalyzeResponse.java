@@ -24,6 +24,7 @@ public record AnalyzeResponse(
         @JsonProperty("validFileCount") int validFileCount,
         @JsonProperty("analysisUnitCount") int analysisUnitCount,
         @JsonProperty("analyzedUnitCount") int analyzedUnitCount,
+        @JsonProperty("omittedAnalysisUnitCount") int omittedAnalysisUnitCount,
         @JsonProperty("battleCount") int battleCount,
         @JsonProperty("analysis") String analysis,
         @JsonProperty("failedFileCount") int failedFileCount,

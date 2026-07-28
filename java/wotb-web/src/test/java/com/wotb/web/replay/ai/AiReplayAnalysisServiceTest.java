@@ -1328,6 +1328,52 @@ class AiReplayAnalysisServiceTest {
         assertTrue(r.contains("dog"));
     }
 
+    // === RFC token charset tests ===
+
+    @Test void redactionRfcTokenDollar() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("a$b supersecret");
+        assertFalse(r.contains("supersecret"));
+    }
+
+    @Test void redactionRfcTokenPlus() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("foo+bar abc");
+        assertFalse(r.contains("abc"));
+    }
+
+    @Test void redactionRfcTokenExclamation() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("x!auth secret");
+        assertFalse(r.contains("secret"));
+    }
+
+    @Test void redactionRfcTokenPipe() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("q|x token-value");
+        assertFalse(r.contains("token-value"));
+    }
+
+    @Test void redactionRfcTokenTilde() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("scheme~v2 a");
+        assertFalse(r.contains("scheme~v2 a"));
+    }
+
+    // === Whole-line only anti-false-positive ===
+
+    @Test void redactionNoFalsePositiveInvalidRequest() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("invalid request");
+        assertTrue(r.contains("invalid request"));
+    }
+
+    @Test void redactionNoFalsePositiveServiceUnavailable() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("service unavailable");
+        assertTrue(r.contains("service unavailable"));
+    }
+
+    // === JSON textual value with custom scheme ===
+
+    @Test void redactionJsonCustomSchemeLowercase() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("{\"message\":\"customscheme abc\"}");
+        assertFalse(r.contains("abc"));
+    }
+
     @Test void logCaptureDoesNotContainSecret() throws IOException {
         responseStatus = 401;
         responseBody = "{\"error\":\"x-api-key=test-secret-123\"}";

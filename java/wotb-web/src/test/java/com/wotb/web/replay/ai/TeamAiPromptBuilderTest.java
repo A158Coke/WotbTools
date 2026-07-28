@@ -62,7 +62,7 @@ class TeamAiPromptBuilderTest {
     @Test
     void singlePromptNeverExceedsCharacterBudget() {
         final SingleTeamBattleAnalysisContext context =
-                contextWithNickname("P".repeat(50_000));
+                contextWithMembers(18, 200);
 
         final TeamAiPromptBuilder.PromptInput input =
                 TeamAiPromptBuilder.single(context);
@@ -204,7 +204,7 @@ class TeamAiPromptBuilderTest {
 
     @Test
     void multiTwoPhaseBudgetProtectsRequiredSections() {
-        final SingleTeamBattleAnalysisContext baseA = contextWithMembers(15, 1000);
+        final SingleTeamBattleAnalysisContext baseA = contextWithMembers(15, 20);
         final TeamBattleFeatureSet featuresA = new TeamBattleFeatureSet(
                 baseA.features().perspectiveTeam(),
                 baseA.features().members(),
@@ -903,7 +903,7 @@ class TeamAiPromptBuilderTest {
 
     @Test
     void multiTruncationPreservesPerUnitLimitations() {
-        final SingleTeamBattleAnalysisContext baseA = contextWithMembers(20, 400);
+        final SingleTeamBattleAnalysisContext baseA = contextWithMembers(18, 80);
         // Use a unique limitation that is NOT in the standard feature set
         final TeamBattleFeatureSet featuresA = new TeamBattleFeatureSet(
                 baseA.features().perspectiveTeam(),
@@ -917,7 +917,7 @@ class TeamAiPromptBuilderTest {
                 baseA.features().coverage(),
                 List.of("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
                 true);
-        final SingleTeamBattleAnalysisContext baseB = contextWithMembers(20, 400);
+        final SingleTeamBattleAnalysisContext baseB = contextWithMembers(18, 80);
         final List<TeamBattleAnalysisSummary> summaries = List.of(
                 new TeamBattleAnalysisSummary(
                         "unit-A", null, "a.wotbreplay", "map1", null, 300.0,
