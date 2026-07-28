@@ -114,7 +114,7 @@ public class AiReplayAnalysisService {
     private final String apiKey;
     private static final Tankopedia tankopedia = Tankopedia.load();
     private final String model;
-    private final int singlePlayerMaxInputChars;
+    private final int singlePlayerMaxInputTokens;
     private final AiTokenEstimator tokenEstimator;
     private final int contextWindowTokens;
     private final int maxOutputTokens;
@@ -127,14 +127,14 @@ public class AiReplayAnalysisService {
                 properties.contextWindowTokens(), properties.maxOutputTokens(), properties.promptSafetyMarginTokens());
     }
 
-    // Test-only constructor; uses a default ConservativeDeepSeekTokenEstimator.
+    // Test-only constructor; uses a default ConservativeDeepSeekTokenEstimator with non-production defaults.
     AiReplayAnalysisService(
             final String apiKey,
             final String baseUrl,
             final String model,
             final int timeoutSec,
-            final int singlePlayerMaxInputChars) {
-        this(apiKey, baseUrl, model, timeoutSec, singlePlayerMaxInputChars, new ConservativeDeepSeekTokenEstimator(),
+            final int singlePlayerMaxInputTokens) {
+        this(apiKey, baseUrl, model, timeoutSec, singlePlayerMaxInputTokens, new ConservativeDeepSeekTokenEstimator(),
                 131072, 8192, 1000);
     }
 
@@ -143,14 +143,14 @@ public class AiReplayAnalysisService {
             final String baseUrl,
             final String model,
             final int timeoutSec,
-            final int singlePlayerMaxInputChars,
+            final int singlePlayerMaxInputTokens,
             final AiTokenEstimator tokenEstimator,
             final int contextWindowTokens,
             final int maxOutputTokens,
             final int promptSafetyMarginTokens) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.model = model;
-        this.singlePlayerMaxInputChars = singlePlayerMaxInputChars > 0 ? singlePlayerMaxInputChars : 100000;
+        this.singlePlayerMaxInputTokens = singlePlayerMaxInputTokens > 0 ? singlePlayerMaxInputTokens : 800000;
         this.tokenEstimator = tokenEstimator;
         this.contextWindowTokens = contextWindowTokens;
         this.maxOutputTokens = maxOutputTokens;
@@ -210,7 +210,7 @@ public class AiReplayAnalysisService {
                 Map.<String, Object>of("role", "system", "content", SINGLE_PLAYER_PROMPT),
                 Map.<String, Object>of("role", "user", "content", summary));
         final int estimatedTokens = tokenEstimator.estimateMessagesTokens(messages);
-        final int maxInputTokens = singlePlayerMaxInputChars;
+        final int maxInputTokens = singlePlayerMaxInputTokens;
         if (estimatedTokens > maxInputTokens) {
             throw new IllegalArgumentException(
                     "AI_TOKEN_BUDGET_EXCEEDED: estimatedInputTokens=" + estimatedTokens
@@ -912,7 +912,7 @@ public class AiReplayAnalysisService {
         appendDeathTimeline(sb, battle);
 
         // ====== 9. Event stream evidence ======
-        appendEventStreamEvidence(sb, ctx, battle, singlePlayerMaxInputChars);
+        appendEventStreamEvidence(sb, ctx, battle, singlePlayerMaxInputTokens);
 
         // ====== 10. Side-based limitations ======
         if (!unknowns.isEmpty()) {
@@ -1081,7 +1081,7 @@ public class AiReplayAnalysisService {
     private void appendEventStreamEvidence(final StringBuilder sb,
                                             final SinglePlayerBattleAnalysisContext ctx,
                                             final Battle battle,
-                                            final int maxInputChars) {
+                                            final int maxInputTokens) {
         final var features = ctx.features();
 
         // Entity mapping evidence
@@ -1153,7 +1153,7 @@ public class AiReplayAnalysisService {
             // Budget for detailed movement: remaining chars after mandatory sections
             // Use a generous heuristic since final token check happens before provider call
             final int mandatoryLen = sb.length();
-            final int remainingTotal = maxInputChars - SINGLE_PLAYER_PROMPT.length();
+            final int remainingTotal = maxInputTokens - SINGLE_PLAYER_PROMPT.length();
             final int movementBudget = Math.max(500, remainingTotal - mandatoryLen);
 
             // Score segments by tactical value
@@ -1246,7 +1246,7 @@ public class AiReplayAnalysisService {
             sb.append("注意: 事件流数值仅为观测子集, 不是整场权威总伤害.\n");
             final int totalEngage = features.engagements().size();
             final int usedSoFar = sb.length();
-            final int remainingTotal = maxInputChars - SINGLE_PLAYER_PROMPT.length();
+            final int remainingTotal = maxInputTokens - SINGLE_PLAYER_PROMPT.length();
             final int engagementBudget = Math.max(500, remainingTotal - usedSoFar);
             int writtenEngage = 0;
             int usedEngageChars = 0;
