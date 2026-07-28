@@ -86,7 +86,17 @@ export function analysisLimitations(result) {
 }
 
 export function localizeAiError(rawCode, status, t) {
-  const code = typeof rawCode === 'string' ? rawCode.trim() : ''
+  let code = ''
+  let maxFiles = 16
+  if (typeof rawCode === 'object' && rawCode !== null) {
+    code = rawCode.code || ''
+    maxFiles = rawCode.maxFiles || 16
+  } else if (typeof rawCode === 'string') {
+    code = rawCode.trim()
+  }
+  if (code === 'REPLAY_FILE_COUNT_EXCEEDED') {
+    return t('recon.errors.REPLAY_FILE_COUNT_EXCEEDED', { max: maxFiles })
+  }
   if (LOCALIZED_ERROR_CODES.has(code)) {
     return t(`recon.errors.${code}`)
   }

@@ -27,7 +27,7 @@ defineEmits(['add-file', 'remove-file', 'clear'])
       class="chip"
     >
       {{ selectedFile.name }}
-      <button class="chip-remove" @click="$emit('remove-file', index)">&times;</button>
+      <button type="button" class="chipx" :aria-label="$t('upload.remove_file_aria', { name: selectedFile.name })" @click="$emit('remove-file', index)">&times;</button>
     </span>
     <span class="chip count-chip">{{ $t('recon.max_files_count', { count: files.length }) }}</span>
   </div>

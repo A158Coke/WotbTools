@@ -44,7 +44,7 @@ import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.util.PlayerResultFormat;
-import com.wotb.web.replay.exception.ReplayFileCountExceededException;
+
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -135,13 +135,6 @@ public class AiReplayAnalysisService {
      */
     public boolean isConfigured() {
         return StringUtils.hasText(apiKey);
-    }
-
-    public void validateReviewBatchSize(int fileCount) {
-        if (fileCount > AiReplayBatchPolicy.MAX_FILES) {
-            throw new ReplayFileCountExceededException(
-                    AiReplayBatchPolicy.MAX_FILES, fileCount);
-        }
     }
 
     /**
@@ -361,12 +354,13 @@ public class AiReplayAnalysisService {
                 }
                 final TeamAiPromptBuilder.PromptInput input =
                         TeamAiPromptBuilder.multi(multiContext, partitionEvidenceLimits);
+                final Set<String> includedIds = input.includedUnitIds();
                 final List<KeyBattleEvent> keyEvents = partition.stream()
+                        .filter(ctx -> includedIds.contains(ctx.analysisUnitId()))
                         .flatMap(ctx -> ctx.features().keyEvents().stream())
                         .toList();
                 final AnalyzeResult result = callMultiTeamContext(input, keyEvents);
                 if (firstAnalysis == null) firstAnalysis = result;
-                final Set<String> includedIds = input.includedUnitIds();
                 final Set<String> omittedIds = input.omittedUnitIds();
                 for (final var ctx : partition) {
                     if (includedIds.contains(ctx.analysisUnitId())) {
@@ -1149,25 +1143,15 @@ public class AiReplayAnalysisService {
         final String step5 = step4.replaceAll(
                 "(?i)\\b(bearer|basic|digest)\\s+[^\\s,;\"'}]+",
                 "$1 [REDACTED]");
-        // Step 6a: PascalCase custom schemes (e.g. CustomScheme, TokenV2, ApiAuth)
-        // High confidence — these are unlikely to be natural English words
-        final String step6a = step5.replaceAll(
-                "\\b([A-Z][a-z]+[A-Z][a-zA-Z0-9]*)\\s+[A-Za-z0-9._\\-+/]{3,}",
+        // Step 6: Match any scheme-like word (letter+alnum, 2+ chars) followed by credential (1+ chars)
+        // Case-insensitive, any credential content. Accepts minimal false-positive risk
+        // since this runs on AI provider error response bodies only.
+        final String step6 = step5.replaceAll(
+                "(?i)\\b([a-z][a-z0-9_.-]{2,30})\\s+([a-z0-9._\\-+/]{1,50})\\b",
                 "$1 [REDACTED]");
-        // Step 6b: Schemes containing digits (e.g. tokenv2, auth2, hmac256)
-        // Very unlikely to be English words, even with short credentials
-        final String step6b = step6a.replaceAll(
-                "\\b([A-Za-z][A-Za-z0-9_-]*[0-9][A-Za-z0-9_-]*)\\s+[A-Za-z0-9._\\-+/]{3,}",
-                "$1 [REDACTED]");
-        // Step 7: Lowercase custom schemes — credential must contain non-alpha char
-        // (digit or punctuation) to confirm it's a real token, avoiding natural language false positives
-        // This handles: customscheme secret-value, CUSTOMSCHEME secret-value, etc.
-        final String step7 = step6b.replaceAll(
-                "(?i)\\b([a-z][a-z0-9_-]{2,})\\s+[A-Za-z0-9]*[0-9._\\-+/][A-Za-z0-9._\\-+/]{2,}",
-                "$1 [REDACTED]");
-        // Step 8: Digest auth parameters
-        return step7.replaceAll(
-                "(?i)\\b(response|nonce|cnonce|opaque|realm|qop|nc|uri|username)\\s*=\\s*[A-Za-z0-9._\\-+/]{4,}",
+        // Step 7: Digest auth parameters
+        return step6.replaceAll(
+                "(?i)\\b(response|nonce|cnonce|opaque|realm|qop|nc|uri|username)\\s*=\\s*[a-z0-9._\\-+/]{1,}",
                 "$1=[REDACTED]");
     }
 

@@ -49,6 +49,7 @@ final class TeamAiPromptBuilder {
     static final int MAX_KEY_EVENTS = 30;
     static final int MAX_PERSPECTIVES = 10;
     static final int MAX_INPUT_CHARS = 30_000;
+    static final int MIN_FACT_BYTES = 500;
     static final String TRUNCATION_LINE = "\nLIMITATION: AI_INPUT_TRUNCATED\n";
 
     private TeamAiPromptBuilder() {
@@ -128,7 +129,6 @@ final class TeamAiPromptBuilder {
         }
         // Phase 1: budget planning
         final int reserve = TRUNCATION_LINE.length();
-        final int available = MAX_INPUT_CHARS - reserve;
         final int maxOmittedFromCap = perspectives.size() - perspectiveLimit;
         int includedCount = perspectiveLimit;
         while (includedCount > 0) {
@@ -139,17 +139,18 @@ final class TeamAiPromptBuilder {
                 budgetLim.add("PERSPECTIVES_OMITTED_COUNT_" + totalOmitted);
             }
             final String budgetLimLine = budgetLim.isEmpty() ? "" : "DATA_LIMITATIONS=" + budgetLim + "\n";
-            int totalRequired = globalHeader.length() + budgetLimLine.length();
+            int totalRequired = globalHeader.length() + budgetLimLine.length() + reserve;
             for (int i = 0; i < includedCount; i++) {
                 totalRequired += perspectiveRequiredBlocks.get(i).length();
+                totalRequired += MIN_FACT_BYTES;
             }
-            if (totalRequired <= available) {
+            if (totalRequired <= MAX_INPUT_CHARS) {
                 break;
             }
             includedCount--;
         }
         if (includedCount == 0 && perspectiveLimit > 0) {
-            throw new IllegalStateException("MANDATORY_SECTION_EXCEEDS_BUDGET");
+            throw new AiPromptBudgetExceededException("MANDATORY_SECTION_EXCEEDS_BUDGET");
         }
         // Phase 2: write with budget reservation for future required blocks
         final BudgetWriter writer = new BudgetWriter(MAX_INPUT_CHARS);
@@ -165,11 +166,19 @@ final class TeamAiPromptBuilder {
         }
         writer.append(globalHeader.toString());
         writer.append(finalLimLine);
+        // Phase 2: Write all mandatory perspective headers + unitLimitations
         for (int index = 0; index < includedCount; index++) {
             writer.release(perspectiveRequiredBlocks.get(index).length());
             writer.append(perspectiveRequiredBlocks.get(index));
             allLimitations.addAll(perPerspectiveLimitations.get(index));
-            appendFeatureSet(writer, perspectives.get(index).features());
+        }
+        // Phase 3: Write all high-priority facts (P2) for all included perspectives
+        for (int index = 0; index < includedCount; index++) {
+            appendHighPriorityFacts(writer, perspectives.get(index).features());
+        }
+        // Phase 4: Write all optional details (P3) for all included perspectives
+        for (int index = 0; index < includedCount; index++) {
+            appendOptionalDetails(writer, perspectives.get(index).features());
         }
         final Set<String> includedIds = new LinkedHashSet<>();
         final Set<String> omittedIds = new LinkedHashSet<>();
@@ -211,16 +220,31 @@ final class TeamAiPromptBuilder {
             final BudgetWriter writer,
             final TeamBattleFeatureSet features
     ) {
+        appendHighPriorityFacts(writer, features);
+        appendOptionalDetails(writer, features);
+    }
+
+    private static void appendHighPriorityFacts(
+            final BudgetWriter writer,
+            final TeamBattleFeatureSet features
+    ) {
         if (features == null) {
             writer.append("features=UNAVAILABLE\n");
             return;
         }
-        // P2: High-priority facts
         appendAuthoritative(writer, features.authoritativeAggregate());
         appendObserved(writer, features.observedAggregate());
         appendMemberFacts(writer, features.members());
         writer.append("coverage=" + features.coverage() + "\n");
-        // P3: Optional/truncatable
+    }
+
+    private static void appendOptionalDetails(
+            final BudgetWriter writer,
+            final TeamBattleFeatureSet features
+    ) {
+        if (features == null) {
+            return;
+        }
         appendMemberMovements(writer, features.members());
         appendFormation(writer, features.formationPhases());
         appendBattlePhases(writer, features.battlePhases());
@@ -562,6 +586,12 @@ final class TeamAiPromptBuilder {
         }
     }
 
+    static final class AiPromptBudgetExceededException extends RuntimeException {
+        AiPromptBudgetExceededException(final String message) {
+            super(message);
+        }
+    }
+
     private static final class BudgetWriter {
 
         private final int maxChars;
@@ -605,7 +635,7 @@ final class TeamAiPromptBuilder {
             final int truncationReserve = TRUNCATION_LINE.length();
             final int remaining = maxChars - truncationReserve - reserved - content.length();
             if (remaining <= 0 || value.length() > remaining) {
-                throw new IllegalStateException("MANDATORY_SECTION_EXCEEDS_BUDGET");
+                throw new AiPromptBudgetExceededException("MANDATORY_SECTION_EXCEEDS_BUDGET");
             }
             content.append(value);
         }

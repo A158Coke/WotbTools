@@ -18,6 +18,7 @@ import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
+import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiUpstreamException;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,15 +49,17 @@ class ReconstructionControllerTeamAnalysisTest {
 
     private DefaultReplayProcessingFacade processingFacade;
     private AiReplayAnalysisService aiService;
+    private AiReplayReviewService reviewService;
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
         processingFacade = mock(DefaultReplayProcessingFacade.class);
         aiService = mock(AiReplayAnalysisService.class);
+        reviewService = mock(AiReplayReviewService.class);
         final var reconstructionService = mock(ReplayReconstructionService.class);
         final var controller = new ReconstructionController(
-                processingFacade, reconstructionService, aiService);
+                processingFacade, reconstructionService, aiService, reviewService);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -71,12 +74,12 @@ class ReconstructionControllerTeamAnalysisTest {
             request = request.file(f);
         }
         doThrow(new ReplayFileCountExceededException(16, 17))
-                .when(aiService).validateReviewBatchSize(17);
+                .when(reviewService).validateBatchSize(17);
 
         mvc.perform(request)
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.error").value("REPLAY_FILE_COUNT_EXCEEDED"))
+                .andExpect(jsonPath("$.code").value("REPLAY_FILE_COUNT_EXCEEDED"))
                 .andExpect(jsonPath("$.maxFiles").value(16))
                 .andExpect(jsonPath("$.actualFiles").value(17));
     }

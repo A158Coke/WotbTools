@@ -32,7 +32,8 @@
         "files_count": "{count} file(s)",
         "remove_title": "Remove this replay",
         "add_files_title": "Add replay files",
-        "add_folder_title": "Add folder"
+        "add_folder_title": "Add folder",
+        "remove_file_aria": "Remove replay file {name}"
     },
     "action": {
         "preview": "Parse & Preview",
@@ -848,7 +849,7 @@
             "NO_REPLAY_FILES": "No replay files were selected.",
             "INVALID_REPLAY_FILE_TYPE": "Only .wotbreplay files can be analyzed.",
             "FILE_TOO_LARGE": "The replay file exceeds the size limit.",
-            "REPLAY_FILE_COUNT_EXCEEDED": "At most 16 replay files can be uploaded at once.",
+            "REPLAY_FILE_COUNT_EXCEEDED": "At most {max} replay files can be uploaded at once.",
             "TOTAL_REQUEST_TOO_LARGE": "The combined upload size exceeds the limit."
         },
         "event_types": {

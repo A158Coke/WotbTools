@@ -32,7 +32,8 @@
         "files_count": "{count} файл(ов)",
         "remove_title": "Удалить этот реплей",
         "add_files_title": "Добавить файлы реплеев",
-        "add_folder_title": "Добавить папку"
+        "add_folder_title": "Добавить папку",
+        "remove_file_aria": "Удалить файл реплея {name}"
     },
     "action": {
         "preview": "Разобрать",
@@ -848,7 +849,7 @@
             "NO_REPLAY_FILES": "Файлы реплеев не выбраны.",
             "INVALID_REPLAY_FILE_TYPE": "Поддерживаются только файлы .wotbreplay.",
             "FILE_TOO_LARGE": "Файл реплея превышает допустимый размер.",
-            "REPLAY_FILE_COUNT_EXCEEDED": "Можно загрузить не более 16 реплеев за раз.",
+            "REPLAY_FILE_COUNT_EXCEEDED": "Можно загрузить не более {max} реплеев за раз.",
             "TOTAL_REQUEST_TOO_LARGE": "Общий размер файлов превышает лимит."
         },
         "event_types": {
