@@ -9,6 +9,11 @@ const auth = vi.hoisted(() => ({
   login: vi.fn()
 }))
 
+const authState = vi.hoisted(() => ({
+  authenticated: { value: true },
+  roles: ['wotbtools-admin']
+}))
+
 const i18n = vi.hoisted(() => ({
   t: vi.fn((key, values) => values
     ? `${key}:${Object.values(values).join(',')}`
@@ -18,11 +23,14 @@ const i18n = vi.hoisted(() => ({
 vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => ({
     tokenParsed: {
-      value: { realm_access: { roles: ['wotbtools-admin'] } }
+      value: authState.roles.length
+        ? { realm_access: { roles: authState.roles } }
+        : null
     },
     token: () => 'test-token',
     ensureToken: auth.ensureToken,
-    login: auth.login
+    login: auth.login,
+    authenticated: authState.authenticated
   })
 }))
 
@@ -319,6 +327,73 @@ describe('ReconstructionPage file management', () => {
     expect(wrapper.text()).toContain('file0.wotbreplay')
     expect(wrapper.text()).toContain('file15.wotbreplay')
     expect(wrapper.text()).not.toContain('extra0.wotbreplay')
+  })
+})
+
+describe('ReconstructionPage auth gating', () => {
+  beforeEach(() => {
+    auth.ensureToken.mockReset()
+    i18n.t.mockClear()
+    // Reset to default admin state before each test
+    authState.authenticated.value = true
+    authState.roles = ['wotbtools-admin']
+  })
+
+  it('renders when user has wotbtools-admin', async () => {
+    authState.authenticated.value = true
+    authState.roles = ['wotbtools-admin']
+    const wrapper = mountedPage()
+    expect(wrapper.find('[data-testid="ai-review-nav-button"]').exists()).toBe(false)
+    // The page itself renders since ReplayInputPanel is unconditional in the template
+    expect(wrapper.text()).toContain('recon.title')
+  })
+
+  it('does not render analysis action when not authenticated', async () => {
+    authState.authenticated.value = false
+    authState.roles = ['wotbtools-admin'] // roles present but not authenticated
+    const wrapper = mountedPage()
+    expect(wrapper.text()).toContain('recon.title')
+    // The parent App.vue guards rendering of <ReconstructionPage>, but within the
+    // component itself, pass canUseAiReview=false to ReplayInputPanel → no analyze action
+    expect(wrapper.text()).not.toContain('action.processing')
+  })
+
+  it('does not render analysis action for authenticated user without role', async () => {
+    authState.authenticated.value = true
+    authState.roles = ['some-other-role']
+    const wrapper = mountedPage()
+    expect(wrapper.text()).toContain('recon.title')
+    // No analyze action because user lacks allowed roles
+    expect(wrapper.text()).not.toContain('recon.analyze_btn')
+    expect(wrapper.text()).not.toContain('recon.analyze_multi_btn')
+  })
+
+  it('renders analysis action for wotbtools-user', async () => {
+    authState.authenticated.value = true
+    authState.roles = ['wotbtools-user']
+    const wrapper = mountedPage()
+    expect(wrapper.text()).toContain('recon.title')
+    // With a file loaded the analyze action appears
+    const input = wrapper.get('input[type="file"]')
+    const names = ['test.wotbreplay']
+    const files = names.map(name => new File(['replay'], name, { type: 'application/octet-stream' }))
+    Object.defineProperty(input.element, 'files', { value: files, configurable: true })
+    await input.trigger('change')
+    expect(wrapper.text()).toContain('recon.analyze_btn')
+  })
+
+  it('does not call analyze API for unauthenticated user', async () => {
+    authState.authenticated.value = false
+    authState.roles = ['wotbtools-user'] // roles present but not authenticated
+    const wrapper = mountedPage()
+    const input = wrapper.get('input[type="file"]')
+    const names = ['test.wotbreplay']
+    const files = names.map(name => new File(['replay'], name, { type: 'application/octet-stream' }))
+    Object.defineProperty(input.element, 'files', { value: files, configurable: true })
+    await input.trigger('change')
+    // No analyze button when not authenticated
+    const btns = wrapper.findAll('button').filter(b => b.text().startsWith('recon.analyze'))
+    expect(btns.length).toBe(0)
   })
 })
 

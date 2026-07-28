@@ -9,12 +9,15 @@ import ReconstructionSummaryPanel from './ReconstructionSummaryPanel.vue'
 import ReplayInputPanel from './ReplayInputPanel.vue'
 
 const { t } = useI18n()
-const { tokenParsed, token, ensureToken, login } = useAuth()
+const { tokenParsed, token, ensureToken, login, authenticated } = useAuth()
 
-// AI 功能灰度：仅 wotbtools-admin 可见（后端 /api/replay/analyze 亦按该角色鉴权）
-const isAdmin = computed(() => {
+// AI Review 权限：已登录 + wotbtools-user 或 wotbtools-admin
+const canUseAiReview = computed(() => {
+  if (!authenticated.value) return false
   const roles = tokenParsed.value?.realm_access?.roles
-  return Array.isArray(roles) && roles.includes('wotbtools-admin')
+  return Array.isArray(roles) && (
+    roles.includes('wotbtools-user') || roles.includes('wotbtools-admin')
+  )
 })
 
 // 支持多选：AI 分析可一次分析多场。reconstruct/state-at 为单文件工具，取第一个。
@@ -213,7 +216,7 @@ function toggleAnalysis() {
       :loading="loading"
       :analyzing="analyzing"
       :analysis-result="analysisResult"
-      :is-admin="isAdmin"
+      :can-use-ai-review="canUseAiReview"
       :show-analysis="showAnalysis"
       @add-file="addFile"
       @remove-file="removeFile"

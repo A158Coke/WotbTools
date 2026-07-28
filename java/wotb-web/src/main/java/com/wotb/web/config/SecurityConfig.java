@@ -47,13 +47,16 @@ public class SecurityConfig {
                         "/api/preview", "/api/export").permitAll()
                 .requestMatchers("/api/leaderboard/**").permitAll()
 
-                // --- 管理员用户管理 (仅 wotbtools-admin) ---
-                .requestMatchers("/api/admin/users/**",
-                        "/api/replay/reconstruct",
+                // --- AI Review 与 reconstruction (wotbtools-user / wotbtools-admin) ---
+                .requestMatchers("/api/replay/reconstruct",
                         "/api/replay/reconstruct-batch",
                         "/api/replay/state-at",
                         "/api/replay/process",
                         "/api/replay/analyze")
+                    .hasAnyRole("wotbtools-user", "wotbtools-admin")
+
+                // --- 管理员用户管理 (仅 wotbtools-admin) ---
+                .requestMatchers("/api/admin/users/**")
                     .hasRole("wotbtools-admin")
 
                 // --- 打手管理（boost-manager 仅可访问该域） ---

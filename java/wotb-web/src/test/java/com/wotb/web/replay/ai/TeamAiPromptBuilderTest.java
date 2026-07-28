@@ -3,23 +3,21 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.BatchAnalyzer;
-import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.ReplayIdentity;
 import com.wotb.core.processing.ReplayProcessingCapabilities;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.feature.CanonicalMapPosition;
+import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.feature.MultiTeamBattleAnalysisContext;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.feature.TeamAggregateResult;
-import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamBattleAnalysisSummary;
+import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamFeatureCoverage;
-import com.wotb.core.replay.feature.CanonicalMapPosition;
-import com.wotb.core.replay.feature.KeyBattleEvent;
-import com.wotb.core.replay.feature.TeamFormationCluster;
 import com.wotb.core.replay.feature.TeamFormationPhase;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
@@ -34,8 +32,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-
-
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -181,7 +177,7 @@ class TeamAiPromptBuilderTest {
                         context.battle().durationS,
                         context.perspectiveTeam(),
                         context.features().members().stream()
-                                .map(member -> member.accountId())
+                                .map(TeamMemberFeatureSet::accountId)
                                 .toList(),
                         context.features(),
                         "test-team"))
@@ -268,7 +264,7 @@ class TeamAiPromptBuilderTest {
                         base.battle().durationS,
                         base.perspectiveTeam(),
                         base.features().members().stream()
-                                .map(member -> member.accountId())
+                                .map(TeamMemberFeatureSet::accountId)
                                 .toList(),
                         base.features(),
                         "test-team"))
@@ -305,7 +301,7 @@ class TeamAiPromptBuilderTest {
                         base.battle().durationS,
                         base.perspectiveTeam(),
                         base.features().members().stream()
-                                .map(member -> member.accountId())
+                                .map(TeamMemberFeatureSet::accountId)
                                 .toList(),
                         base.features(),
                         "test-team"))
@@ -352,7 +348,7 @@ class TeamAiPromptBuilderTest {
                         base.battle().durationS,
                         base.perspectiveTeam(),
                         base.features().members().stream()
-                                .map(member -> member.accountId())
+                                .map(TeamMemberFeatureSet::accountId)
                                 .toList(),
                         base.features(),
                         "test-team"))
@@ -401,7 +397,7 @@ class TeamAiPromptBuilderTest {
                             base.battle().durationS,
                             base.perspectiveTeam(),
                             base.features().members().stream()
-                                    .map(member -> member.accountId())
+                                    .map(TeamMemberFeatureSet::accountId)
                                     .toList(),
                             base.features(),
                             "test-team");
@@ -767,9 +763,9 @@ class TeamAiPromptBuilderTest {
     void multiPromptContainsPerspectiveAndUniqueBattleCount() {
         final var context = contextWithMembers(1, 1);
         final var summaries = List.of(new TeamBattleAnalysisSummary(
-                "u1", null, "f1.wotbreplay", "map1", null, 300.0,
-                1, List.of(1001L),
-                context.features(), "TeamA"),
+                        "u1", null, "f1.wotbreplay", "map1", null, 300.0,
+                        1, List.of(1001L),
+                        context.features(), "TeamA"),
                 new TeamBattleAnalysisSummary(
                         "u2", null, "f2.wotbreplay", "map1", null, 300.0,
                         2, List.of(2001L),
@@ -1140,69 +1136,110 @@ class TeamAiPromptBuilderTest {
     @Test
     void criticalBudgetOptionalTruncatedAfterAllHPF() {
         // Fixture design:
-        // A: 1 member (small HPF ≈ 350 chars), 30 key events with 950-char labels (MAX_KEY_EVENTS = 30, within limit)
-        //    A optional ≈ 30 × (40 + 2 + 950 + 22) = 30 × 1014 ≈ 30,420 chars
-        // B: 8 members with 30-char nicknames (HPF ≈ 2000 chars)
-        // Total mandatory + A HPF + B HPF ≈ 400 + 350 + 2000 ≈ 2,750 chars — fits easily
-        // Old order (HPF A → optional A → HPF B): A optional consumes remaining budget, B HPF fails
-        // New order (HPF A → HPF B → optional A): both HPFs fit, A optional omitted by budget
+        //   A: 1 member (small HPF), 30 key events with 220-char labels
+        //      A optional fits before B HPF, NOT after
+        //   B: 15 members with 500-char nicknames (large HPF)
+        //   rosterConsistent=true (no DATA_LIMITATIONS line)
+        // Old order (HPF A → optional A → HPF B): A optional fits, then B HPF throws
+        // New order (HPF A → HPF B → optional A): both HPFs fit, A optional truncated by budget
+        //
+        // Relationships (verified below):
+        //   aOptionalLen <= remainingBeforeBHighPriority  → fits in old order
+        //   aOptionalLen >  remainingAfterBHighPriority   → doesn't fit in new order
+        final int eventLabelLen = 220;
         final var base = contextWithMembers(1, 1);
-        final int labelLen = 950;
-        final List<KeyBattleEvent> largeKeyEvents = IntStream.range(0, TeamAiPromptBuilder.MAX_KEY_EVENTS)
+        // A: 30 key events with controlled labels (within MAX_KEY_EVENTS = 30)
+        final List<KeyBattleEvent> aKeyEvents = IntStream.range(0, TeamAiPromptBuilder.MAX_KEY_EVENTS)
                 .mapToObj(i -> new KeyBattleEvent(
                         (float) i, "BATTLE_END",
-                        "X".repeat(labelLen), DecodeConfidence.EXACT, "TEST", List.of()))
+                        "X".repeat(eventLabelLen), DecodeConfidence.EXACT, "TEST", List.of()))
                 .toList();
         final TeamBattleFeatureSet featuresA = new TeamBattleFeatureSet(
                 1, base.features().members(),
                 base.features().authoritativeAggregate(),
                 base.features().observedAggregate(),
-                List.of(), List.of(), List.of(), largeKeyEvents,
+                List.of(), List.of(), List.of(), aKeyEvents,
                 base.features().coverage(), List.of(), true);
-        // B: 8 members with 30-char nicknames → large HPF
-        final var baseB = contextWithMembers(8, 30);
+        // B: 15 members with 500-char nicknames → large HPF
+        final var baseB = contextWithMembers(15, 500);
         final TeamBattleFeatureSet featuresB = baseB.features();
-        final List<TeamBattleAnalysisSummary> summaries = List.of(
-                new TeamBattleAnalysisSummary(
-                        "unit-A", null, "a.wotbreplay", "map1", null, 300.0,
-                        1, List.of(10001L), featuresA, "TeamA"),
-                new TeamBattleAnalysisSummary(
-                        "unit-B", null, "b.wotbreplay", "map1", null, 300.0,
-                        2, List.of(20001L, 20002L, 20003L), featuresB, "TeamB"));
-        final var multi = new MultiTeamBattleAnalysisContext(
-                2, 1, summaries, false, List.of());
-        final var input = assertDoesNotThrow(() -> TeamAiPromptBuilder.multi(multi),
-                "Must not throw — both HPFs fit within budget regardless of order");
-        final String content = input.content();
-        assertTrue(content.length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
-        // Both units included, none omitted
-        assertEquals(Set.of("unit-A", "unit-B"), input.includedUnitIds());
-        assertTrue(input.omittedUnitIds().isEmpty());
-        // B's HPF must be complete
+        final TeamBattleAnalysisSummary summaryA = new TeamBattleAnalysisSummary(
+                "unit-A", null, "a.wotbreplay", "map1", null, 300.0,
+                1, List.of(10001L), featuresA, "TeamA");
+        final TeamBattleAnalysisSummary summaryB = new TeamBattleAnalysisSummary(
+                "unit-B", null, "b.wotbreplay", "map1", null, 300.0,
+                2, List.of(20001L), featuresB, "TeamB");
+        // ===== A-only control: A optional must fit when B is absent =====
+        final var aOnlyMulti = new MultiTeamBattleAnalysisContext(
+                1, 1, List.of(summaryA), true, List.of());
+        final TeamAiPromptBuilder.PromptInput aOnly = TeamAiPromptBuilder.multi(aOnlyMulti);
+        assertTrue(aOnly.content().contains(
+                        "=== PERSPECTIVE_OPTIONAL ===\nanalysisUnitId=\"unit-A\""),
+                "A optional must fit when A is the only perspective");
+        // Extract actual optional block length from A-only output
+        final int aOptStart = aOnly.content().indexOf("=== PERSPECTIVE_OPTIONAL ===");
+        assertTrue(aOptStart >= 0);
+        final int aOptionalLen = aOnly.content().length() - aOptStart;
+        // Non-optional content in A-only = content up to PERSPECTIVE_OPTIONAL
+        // = globalHeader + finalLimLine + A_mandatory + A_HPF
+        // remainingBeforeBHighPriority: remaining budget after writing
+        // globalHeader + finalLimLine + A_mandatory + A_HPF (before any B content)
+        final int remainingBeforeBHighPriority = TeamAiPromptBuilder.MAX_INPUT_CHARS
+                - TeamAiPromptBuilder.TRUNCATION_LINE.length() - aOptStart;
+        // ===== Combined A+B =====
+        final var combinedMulti = new MultiTeamBattleAnalysisContext(
+                2, 1, List.of(summaryA, summaryB), true, List.of());
+        final TeamAiPromptBuilder.PromptInput combined =
+                assertDoesNotThrow(() -> TeamAiPromptBuilder.multi(combinedMulti),
+                        "Must not throw — both HPFs fit within budget");
+        final String content = combined.content();
+        // Compute B HPF length from combined output
         final int bFactsStart = content.indexOf(
                 "=== PERSPECTIVE_FACTS ===\nanalysisUnitId=\"unit-B\"");
         assertTrue(bFactsStart >= 0, "B's PERSPECTIVE_FACTS must exist");
+        final int bFactsEnd = content.indexOf("=== PERSPECTIVE_OPTIONAL ===", bFactsStart);
+        final int bHpfLen = bFactsEnd >= 0
+                ? bFactsEnd - bFactsStart
+                : content.length() - bFactsStart;
+        // Content before Phase 4 = all mandatory + all HPF blocks
+        final int firstOptional = content.indexOf("=== PERSPECTIVE_OPTIONAL ===");
+        final int contentBeforePhase4 = firstOptional >= 0 ? firstOptional : content.length();
+        // remainingAfterBHighPriority: remaining budget after ALL HPFs are written
+        final int remainingAfterBHighPriority = TeamAiPromptBuilder.MAX_INPUT_CHARS
+                - TeamAiPromptBuilder.TRUNCATION_LINE.length() - contentBeforePhase4;
+        // ===== Assert length relationships with actual measured values =====
+        assertTrue(aOptionalLen <= remainingBeforeBHighPriority,
+                "A optional (" + aOptionalLen + ") must fit before B HPF"
+                        + " (remainingBeforeBHPF=" + remainingBeforeBHighPriority + ")");
+        assertTrue(aOptionalLen > remainingAfterBHighPriority,
+                "A optional (" + aOptionalLen + ") must NOT fit after B HPF"
+                        + " (remainingAfterBHPF=" + remainingAfterBHighPriority + ")");
+        // ===== Standard contract assertions =====
+        assertTrue(content.length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+        assertEquals(Set.of("unit-A", "unit-B"), combined.includedUnitIds());
+        assertTrue(combined.omittedUnitIds().isEmpty());
+        // B's HPF must be complete
+        assertTrue(content.contains("=== PERSPECTIVE_FACTS ===\nanalysisUnitId=\"unit-B\""),
+                "B's PERSPECTIVE_FACTS must exist");
         final String bBlock = content.substring(bFactsStart);
         assertTrue(bBlock.contains("AUTHORITATIVE_TEAM_RESULT"),
                 "B's HPF must contain authoritative aggregate");
         assertTrue(bBlock.contains("TEAM_MEMBERS"),
                 "B's HPF must contain member facts");
-        // A's optional must be omitted by budget (not written at all)
+        // A's optional omitted by budget, B's optional present
         assertFalse(content.contains("=== PERSPECTIVE_OPTIONAL ===\nanalysisUnitId=\"unit-A\""),
                 "A's optional must be omitted by budget");
-        // B's optional must still exist (small enough to fit)
         assertTrue(content.contains("=== PERSPECTIVE_OPTIONAL ===\nanalysisUnitId=\"unit-B\""),
                 "B's optional must still be present");
-        // Truncation: only A
-        assertEquals(Set.of("unit-A"), input.truncatedUnitIds(),
+        // Truncation tracking
+        assertEquals(Set.of("unit-A"), combined.truncatedUnitIds(),
                 "Only unit-A should be in truncatedUnitIds");
-        assertTrue(input.globalLimitations().contains("AI_INPUT_TRUNCATED"),
+        assertTrue(combined.globalLimitations().contains("AI_INPUT_TRUNCATED"),
                 "Global limitations must contain AI_INPUT_TRUNCATED");
-        assertFalse(input.truncatedUnitIds().contains("unit-B"),
+        assertFalse(combined.truncatedUnitIds().contains("unit-B"),
                 "unit-B must NOT be in truncatedUnitIds");
         // Structural order: all PERSPECTIVE_FACTS before any PERSPECTIVE_OPTIONAL
         final int lastFacts = content.lastIndexOf("=== PERSPECTIVE_FACTS ===");
-        final int firstOptional = content.indexOf("=== PERSPECTIVE_OPTIONAL ===");
         assertTrue(lastFacts >= 0);
         assertTrue(firstOptional > lastFacts,
                 "All PERSPECTIVE_FACTS must appear before any PERSPECTIVE_OPTIONAL");

@@ -37,6 +37,7 @@ import org.springframework.util.StringUtils;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -1540,7 +1541,135 @@ class AiReplayAnalysisServiceTest {
         assertTrue(reportC.limitations().contains("AI_INPUT_TRUNCATED"));
     }
 
+    @Test
+    void samePartitionTruncatedCleanOmitted() throws IOException {
+        responseBody = "{\"choices\":[{\"message\":{\"content\":\"single partition test\"}}]}";
+        final var service = startService(2);
+        // 12 perspectives, all same clan CHRD, all perspective team 1.
+        // Partition 1 (CHRD 17-member): truncated unit 0
+        // Partition 2 (CHRD 4-member): 11 clean units → 10 analyzed + 1 omitted
+        // Jaccard between partitions = 4/17 ≈ 0.24 < 0.6 → different partitions
+        // This tests: truncated + clean + omitted units coexist globally
+        final List<ReplayProcessingResult> results = new ArrayList<>();
+        results.add(manyMemberTeamResultWithClan(
+                "trunc-0.wotbreplay", "trunc0", "CHRD"));
+        for (int i = 1; i <= 11; i++) {
+            results.add(teamResultWithClan(
+                    "clean-" + i + ".wotbreplay", "clean" + i, "CHRD", false));
+        }
+        final var groups = teamGroups(results);
+        final var teamResult = service.analyzeTeamGroups(groups);
+        assertEquals(2, requestBodies.size(),
+                "Two partitions → two provider requests");
+        assertEquals(12, teamResult.analysisUnitCount());
+        assertEquals(11, teamResult.analyzedUnitCount(),
+                "1 truncated + 10 clean (cap from 11)");
+        assertEquals(1, teamResult.omittedAnalysisUnitCount());
+        // Find the truncated unit by arenaId "trunc0"
+        final var truncatedUnit = teamResult.units().stream()
+                .filter(u -> u.analysisUnitId() != null
+                        && u.analysisUnitId().contains("trunc0"))
+                .findFirst().orElseThrow();
+        final var truncReport = (TeamAnalysisUnitReport) truncatedUnit.report();
+        assertNotNull(truncatedUnit.model(), "Truncated unit must have model");
+        assertNotNull(truncReport.analysisText(), "Truncated unit must have analysis");
+        assertTrue(truncReport.limitations().contains("AI_INPUT_TRUNCATED"),
+                "Truncated unit must have AI_INPUT_TRUNCATED");
+        assertFalse(truncReport.limitations().contains("AI_PERSPECTIVE_OMITTED_FROM_PROMPT"),
+                "Truncated unit must not have omission marker");
+        // Clean units: included, no truncation
+        final long cleanCount = teamResult.units().stream()
+                .filter(u -> u.analysisUnitId() != null
+                        && u.analysisUnitId().contains("clean"))
+                .filter(u -> u.model() != null)
+                .count();
+        assertTrue(cleanCount >= 9,
+                "At least 9 clean units must be included, got " + cleanCount);
+        for (final var u : teamResult.units()) {
+            if (u.analysisUnitId() != null && u.analysisUnitId().contains("clean")
+                    && u.model() != null) {
+                final var r = (TeamAnalysisUnitReport) u.report();
+                assertNotNull(r.analysisText(), "Clean unit must have analysis");
+                assertFalse(r.limitations().contains("AI_INPUT_TRUNCATED"),
+                        "Clean unit must NOT have AI_INPUT_TRUNCATED");
+                assertFalse(r.limitations().contains("AI_PERSPECTIVE_OMITTED_FROM_PROMPT"),
+                        "Clean unit must not have omission marker");
+            }
+        }
+        // Omitted units (from perspective cap in the 11-unit partition)
+        final long omittedReports = teamResult.units().stream()
+                .map(u -> (TeamAnalysisUnitReport) u.report())
+                .filter(r -> r.limitations()
+                        .contains("AI_PERSPECTIVE_OMITTED_FROM_PROMPT"))
+                .count();
+        assertEquals(teamResult.omittedAnalysisUnitCount(), omittedReports);
+        for (final var u : teamResult.units()) {
+            if (u.analysisUnitId() != null && u.analysisUnitId().contains("clean")) {
+                final var r = (TeamAnalysisUnitReport) u.report();
+                if (r.limitations().contains("AI_PERSPECTIVE_OMITTED_FROM_PROMPT")) {
+                    assertNull(u.model(), "Omitted unit must have null model");
+                    assertNull(r.analysisText(), "Omitted unit must have null analysis");
+                    assertFalse(r.limitations().contains("AI_INPUT_TRUNCATED"),
+                            "Omitted unit must NOT have AI_INPUT_TRUNCATED");
+                }
+            }
+        }
+        // Top-level key events: no omitted units' events
+        final var keyEvents = teamResult.analysis().keyEvents();
+        assertTrue(keyEvents == null || keyEvents.isEmpty()
+                        || keyEvents.size() <= 11,
+                "Key events must not include omitted units' events");
+    }
 
+
+
+    private static int countOccurrences(final String value, final String token) {
+        int count = 0;
+        int index = 0;
+        while ((index = value.indexOf(token, index)) >= 0) {
+            count++;
+            index += token.length();
+        }
+        return count;
+    }
+
+    /** Create a result with minimal member data to conserve prompt budget. */
+    private static ReplayProcessingResult minimalTeamResult(
+            final String fileName, final String arenaId, final String clan,
+            final int memberCount, final int firstId, final int lastId) {
+        final Battle battle = new Battle();
+        battle.arenaId = arenaId;
+        battle.mapName = "team_map";
+        battle.arenaBonusType = 2;
+        battle.durationS = 300.0;
+        battle.winnerTeam = 1;
+        battle.recorder = "P" + firstId;
+        final java.util.ArrayList<PlayerResult> players = new java.util.ArrayList<>();
+        for (int id = firstId; id <= lastId && players.size() < memberCount; id++) {
+            final PlayerResult p = new PlayerResult();
+            p.accountId = id;
+            p.nickname = "P" + id;
+            p.team = 1;
+            p.damageDealt = 1000;
+            p.damageReceived = 0;
+            p.damageAssisted = 0;
+            p.damageBlocked = 0;
+            p.kills = 0;
+            p.survived = true;
+            p.deathTimeMillis = 0;
+            p.clan = clan;
+            players.add(p);
+        }
+        players.add(clanPlayer(9999L, "Enemy", 2, 500, "ENEMY_CLAN"));
+        battle.players = players;
+        final var capabilities = new ReplayProcessingCapabilities(
+                true, true, false, false, false, true, false, false);
+        return new ReplayProcessingResult(
+                fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
+                new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",
+                        players.getFirst().accountId, null),
+                battle, null, null, capabilities, null, null);
+    }
 
     private static ReplayProcessingResult teamResultWithNMembers(
             final String fileName, final String arenaId, final String clan,
