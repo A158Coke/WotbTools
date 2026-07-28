@@ -141,11 +141,10 @@ public class AiReplayReviewService {
             case SINGLE_TEAM_BATTLE, MULTI_TEAM_BATTLE -> {
                 final var teamResult = aiAnalysisService.analyzeTeamGroups(analyzableGroups);
                 final var aiResult = teamResult.analysis();
-                final int unitCount = plan.effectiveUnitCount();
-                final int analyzedCount = teamResult.analyzedUnitCount();
+                final int planUnitCount = plan.effectiveUnitCount();
                 yield new AnalyzeResponse(plan.mode(),
                         files.length, validCount,
-                        unitCount, analyzedCount, unitCount - analyzedCount, analyzedCount,
+                        planUnitCount, teamResult.analyzedUnitCount(), teamResult.omittedAnalysisUnitCount(), teamResult.analyzedUnitCount(),
                         aiResult.analysis(), failedCount,
                         plan.exactDuplicateCount(), plan.sameTeamDuplicatePerspectiveCount(),
                         fileStatuses, teamResult.units(), aiResult.keyEvents(),

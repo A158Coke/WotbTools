@@ -882,6 +882,10 @@
             "AI_INPUT_TRUNCATED": "Вход AI сокращён по детерминированным лимитам.",
             "PERSPECTIVE_TIMELINES_ISOLATED": "Каждая единица анализа имеет отдельную временную шкалу и пространство сущностей.",
             "ROSTER_CONSISTENCY_UNCONFIRMED": "Постоянный состав не подтверждён; сравнивается только набор загруженных примеров."
-        }
+        },
+        "analysis_unit_count": "Выявленные единицы",
+        "omitted_analysis_unit_count": "Пропущенные единицы",
+        "AI_PERSPECTIVE_OMITTED_FROM_PROMPT": "Исключено из AI-анализа из-за ограничений ввода",
+        "PERSPECTIVES_OMITTED": "{count} единиц(ы) анализа пропущено по бюджетным ограничениям"
     }
 }

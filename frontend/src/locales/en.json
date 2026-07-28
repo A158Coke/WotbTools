@@ -882,6 +882,10 @@
             "AI_INPUT_TRUNCATED": "The AI input was truncated using deterministic limits.",
             "PERSPECTIVE_TIMELINES_ISOLATED": "Each analysis unit keeps an isolated timeline and entity namespace.",
             "ROSTER_CONSISTENCY_UNCONFIRMED": "A consistent roster could not be confirmed; only the uploaded sample set is compared."
-        }
+        },
+        "analysis_unit_count": "Identified Units",
+        "omitted_analysis_unit_count": "Omitted Units",
+        "AI_PERSPECTIVE_OMITTED_FROM_PROMPT": "Omitted from AI analysis due to input limits",
+        "PERSPECTIVES_OMITTED": "{count} analysis units omitted due to budget limits"
     }
 }

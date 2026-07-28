@@ -54,7 +54,7 @@ class TeamAiPromptBuilderTest {
         assertEquals(
                 TeamAiPromptBuilder.MAX_MEMBERS,
                 occurrences(input.content(), "member accountId="));
-        assertTrue(input.limitations().contains("AI_INPUT_TRUNCATED"));
+        assertTrue(input.globalLimitations().contains("AI_INPUT_TRUNCATED"));
         assertTrue(input.content().contains("LIMITATION: AI_INPUT_TRUNCATED"));
         assertFalse(input.content().contains("ReplayEvent{"));
     }
@@ -68,7 +68,7 @@ class TeamAiPromptBuilderTest {
                 TeamAiPromptBuilder.single(context);
 
         assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
-        assertTrue(input.limitations().contains("AI_INPUT_TRUNCATED"));
+        assertTrue(input.globalLimitations().contains("AI_INPUT_TRUNCATED"));
         assertTrue(input.content().endsWith(
                 "LIMITATION: AI_INPUT_TRUNCATED\n"));
     }
@@ -197,7 +197,7 @@ class TeamAiPromptBuilderTest {
         assertEquals(
                 TeamAiPromptBuilder.MAX_PERSPECTIVES,
                 occurrences(input.content(), "=== PERSPECTIVE "));
-        assertTrue(input.limitations().contains("PERSPECTIVES_OMITTED_COUNT_2"),
+        assertTrue(input.globalLimitations().contains("PERSPECTIVES_OMITTED_COUNT_2"),
                 "Perspectives beyond MAX_PERSPECTIVES must be tracked as omitted");
         assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
     }
@@ -283,7 +283,7 @@ class TeamAiPromptBuilderTest {
 
         assertTrue(input.content().contains("PERSPECTIVES_OMITTED_COUNT_"),
                 "Content must contain omission count");
-        assertTrue(input.limitations().contains("PERSPECTIVES_OMITTED_COUNT_1"),
+        assertTrue(input.globalLimitations().contains("PERSPECTIVES_OMITTED_COUNT_1"),
                 "Limitations must contain omission count for 1 omitted perspective");
         assertTrue(occurrences(input.content(), "=== PERSPECTIVE ") <= TeamAiPromptBuilder.MAX_PERSPECTIVES);
         assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
@@ -322,7 +322,7 @@ class TeamAiPromptBuilderTest {
 
         assertEquals(first.content(), second.content(),
                 "Same input must produce same output");
-        assertEquals(first.limitations(), second.limitations(),
+        assertEquals(first.globalLimitations(), second.globalLimitations(),
                 "Same input must produce same limitations");
     }
 
@@ -861,7 +861,7 @@ class TeamAiPromptBuilderTest {
                 TeamAiPromptBuilder.single(context);
 
         assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
-        assertTrue(input.limitations().contains("AI_INPUT_TRUNCATED"));
+        assertTrue(input.globalLimitations().contains("AI_INPUT_TRUNCATED"));
         assertTrue(input.content().contains("unitLimitations="),
                 "Content must contain unitLimitations=");
         final int unitLimPos = input.content().indexOf("unitLimitations=");
@@ -896,9 +896,9 @@ class TeamAiPromptBuilderTest {
         final TeamAiPromptBuilder.PromptInput input =
                 TeamAiPromptBuilder.single(context);
 
-        assertTrue(input.limitations().contains("AI_INPUT_TRUNCATED"));
+        assertTrue(input.globalLimitations().contains("AI_INPUT_TRUNCATED"));
         assertTrue(input.content().contains("AI_INPUT_TRUNCATED"));
-        assertTrue(input.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL"));
+        assertTrue(input.perUnitLimitations().getOrDefault(base.analysisUnitId(), List.of()).contains("OBSERVED_DAMAGE_IS_PARTIAL"));
     }
 
     @Test
@@ -935,9 +935,9 @@ class TeamAiPromptBuilderTest {
         final TeamAiPromptBuilder.PromptInput input =
                 TeamAiPromptBuilder.multi(multi, evidenceLimitations);
 
-        assertTrue(input.limitations().contains("AI_INPUT_TRUNCATED"));
+        assertTrue(input.globalLimitations().contains("AI_INPUT_TRUNCATED"));
         assertTrue(input.content().contains("AI_INPUT_TRUNCATED"));
-        if (input.limitations().contains("AI_INPUT_TRUNCATED")) {
+        if (input.globalLimitations().contains("AI_INPUT_TRUNCATED")) {
             final String c = input.content();
             final int pers1 = c.indexOf("=== PERSPECTIVE 1 ===");
             final int pers2 = c.indexOf("=== PERSPECTIVE 2 ===");

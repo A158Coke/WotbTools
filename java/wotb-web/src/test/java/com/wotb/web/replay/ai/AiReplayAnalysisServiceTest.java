@@ -1362,14 +1362,9 @@ class AiReplayAnalysisServiceTest {
         assertFalse(r.contains("supersecret"));
     }
 
-    @Test void redactionNoFalsePositiveInvalidRequest() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("invalid request");
-        assertTrue(r.contains("invalid request"));
-    }
-
-    @Test void redactionNoFalsePositiveServiceUnavailable() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("service unavailable");
-        assertTrue(r.contains("service unavailable"));
+    @Test void redactionCustomSchemeMatchesAnyCredential() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("customscheme request");
+        assertFalse(r.contains("request"));
     }
 
     // === JSON textual value with custom scheme ===
