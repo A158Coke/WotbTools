@@ -28,7 +28,7 @@ defineProps({
     type: Object,
     default: null
   },
-  isAdmin: {
+  canUseAiReview: {
     type: Boolean,
     required: true
   },
@@ -75,7 +75,7 @@ defineEmits([
     />
 
     <ReplayAnalysisAction
-      v-if="isAdmin && files.length"
+      v-if="canUseAiReview && files.length"
       :files="files"
       :analyzing="analyzing"
       :analysis-result="analysisResult"

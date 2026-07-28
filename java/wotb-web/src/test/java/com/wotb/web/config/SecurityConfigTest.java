@@ -90,14 +90,42 @@ class SecurityConfigTest {
     }
 
     @Test
-    void replayAnalysisShouldRejectNonAdminUsers() throws Exception {
+    void replayAnalysisShouldAcceptUserAndAdmin() throws Exception {
+        // anonymous → 401
         mvc.perform(get("/api/replay/analyze"))
                 .andExpect(status().isUnauthorized());
+
+        // wotbtools-user → 200 (new permission)
+        mvc.perform(get("/api/replay/analyze").with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_wotbtools-user"))))
+                .andExpect(status().isOk());
+
+        // wotbtools-admin → 200 (existing permission)
+        mvc.perform(get("/api/replay/analyze").with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+                .andExpect(status().isOk());
+
+        // authenticated but no allowed role → 403
         mvc.perform(get("/api/replay/analyze").with(jwt()))
                 .andExpect(status().isForbidden());
+
+        // boost-manager → 403 (not allowed)
         mvc.perform(get("/api/replay/analyze").with(jwt().authorities(
                         new SimpleGrantedAuthority("ROLE_boost-manager"))))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adminUsersShouldStillRequireAdminRole() throws Exception {
+        // wotbtools-user → 403 for /api/admin/users
+        mvc.perform(get("/api/admin/users/probe").with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_wotbtools-user"))))
+                .andExpect(status().isForbidden());
+
+        // wotbtools-admin → 200 for /api/admin/users
+        mvc.perform(get("/api/admin/users/probe").with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+                .andExpect(status().isOk());
     }
 
     @Test
