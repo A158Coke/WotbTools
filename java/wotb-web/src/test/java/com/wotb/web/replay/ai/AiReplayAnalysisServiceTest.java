@@ -1150,225 +1150,91 @@ class AiReplayAnalysisServiceTest {
                 null, null, 1, roster, features, "test-team");
     }
 
-    // === Authorization redaction tests ===
+    // === safeProviderSummary always returns placeholder for non-empty input ===
 
-    @Test void redactionBearer() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("Authorization: Bearer my-secret");
-        assertFalse(r.contains("my-secret"));
-    }
-
-    @Test void redactionBasic() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("Authorization: Basic base64sec");
-        assertFalse(r.contains("base64sec"));
-    }
-
-    @Test void redactionAuthorizationPrefixCustom() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("Authorization: Custom token123");
-        assertFalse(r.contains("token123"));
-    }
-
-    @Test void redactionCustomScheme() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("CustomScheme secret-value");
-        assertEquals("[PROVIDER_BODY_REDACTED]", r);
-    }
-
-    @Test void redactionTokenV2() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("TokenV2 abc.def.ghi");
-        assertEquals("[PROVIDER_BODY_REDACTED]", r);
-    }
-
-    @Test void redactionApiAuth() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("ApiAuth my-secret-token");
-        assertEquals("[PROVIDER_BODY_REDACTED]", r);
-    }
-
-    @Test void redactionAuthorizationCustomScheme() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("Authorization: CustomScheme my-secret");
-        assertFalse(r.contains("my-secret"));
-    }
-
-    @Test void redactionJsonCustomScheme() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("{\"message\":\"CustomScheme my-secret\"}");
-        assertTrue(r.contains("my-secret"));
-    }
-
-    @Test void redactionDigest() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("Authorization: Digest response=abc");
-        assertFalse(r.contains("abc"));
-    }
-
-    @Test void redactionJsonObject() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("{\"api-key\":\"secret-123\"}");
-        assertFalse(r.contains("secret-123"));
-    }
-
-    @Test void redactionJsonArray() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("[{\"token\":\"t1\"},{\"token\":\"t2\"}]");
-        assertFalse(r.contains("t1"));
-    }
-
-    @Test void redactionJsonNested() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("{\"a\":{\"b\":{\"password\":\"p@ss\"}}}");
-        assertFalse(r.contains("p@ss"));
-    }
-
-    @Test void redactionMalformedJson() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("{bad token=secret-value}");
-        assertFalse(r.contains("secret-value"));
-    }
-
-    @Test void redactionMultipleSecrets() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("{\"api_key\":\"k1\",\"token\":\"k2\",\"password\":\"k3\"}");
-        assertFalse(r.contains("k1"));
-    }
-
-    @Test void redactionCaseInsensitive() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("{\"API-KEY\":\"secret\"}");
-        assertFalse(r.contains("secret"));
-    }
-
-    @Test void redactionAccessToken() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("{\"access_token\":\"my-token\"}");
-        assertFalse(r.contains("my-token"));
-    }
-
-    @Test void redactionXApiKey() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("{\"x-api-key\":\"sk-live-123\"}");
-        assertFalse(r.contains("sk-live-123"));
-    }
-
-    @Test void redactionAwsKey() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("{\"aws_access_key_id\":\"AKIA123\",\"aws_secret_access_key\":\"secret123\"}");
-        assertFalse(r.contains("AKIA123"));
-        assertFalse(r.contains("secret123"));
-    }
-
-    @Test void redactionAwsSignature() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("Credential=AKID/20230101,Signature=abc123");
-        assertFalse(r.contains("AKID"));
-        assertFalse(r.contains("abc123"));
-    }
-
-    @Test void redactionMixedCaseKey() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("{\"X-Api-Key\":\"sensitive\",\"Authorization\":\"Bearer tok\"}");
-        assertFalse(r.contains("sensitive"));
-        assertFalse(r.contains("tok"));
-    }
-
-    @Test void redactionJsonStringValueContainingSecrets() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("{\"message\":\"Authorization: Bearer secret-value-here\"}");
-        assertFalse(r.contains("secret-value-here"));
-    }
-
-    @Test void redactionBearerSpaceSeparated() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("Bearer sk-live-123");
-        assertEquals("[PROVIDER_BODY_REDACTED]", r);
-    }
-
-    @Test void redactionBasicSpaceSeparated() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("Basic dXNlcjpwYXNz");
-        assertEquals("[PROVIDER_BODY_REDACTED]", r);
-    }
-
-    @Test void redactionDigestResponseEquals() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("Digest username=x,response=secret");
-        assertEquals("[PROVIDER_BODY_REDACTED]", r);
-    }
-
-    @Test void redactionJsonMessageContainsBearer() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("{\"message\":\"Bearer sk-live-123\"}");
-        assertFalse(r.contains("sk-live-123"));
-        assertTrue(r.contains("Bearer"));
-    }
-
-    @Test void redactionJsonMessageContainsBasic() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("{\"message\":\"Basic dXNlcjpwYXNz\"}");
-        assertFalse(r.contains("dXNlcjpwYXNz"));
-        assertTrue(r.contains("Basic"));
-    }
-
-    @Test void redactionMultilineAuthorization() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("line1\nAuthorization: Bearer my-secret\nline3");
-        assertFalse(r.contains("my-secret"));
-        assertTrue(r.contains("line1"));
-    }
-
-    // === Custom scheme case and short credential tests ===
-
-    @Test void redactionMixedCaseCustomScheme() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("cUsToMsChEmE abc");
-        assertEquals("[PROVIDER_BODY_REDACTED]", r);
-    }
-
-    @Test void redactionLowercaseCustomScheme() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("customscheme abc");
-        assertEquals("[PROVIDER_BODY_REDACTED]", r);
-    }
-
-    @Test void redactionUppercaseCustomScheme() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("CUSTOMSCHEME abc");
-        assertEquals("[PROVIDER_BODY_REDACTED]", r);
-    }
-
-    @Test void redactionCustomSchemeShortCredential() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("CustomScheme a");
-        assertEquals("[PROVIDER_BODY_REDACTED]", r);
-    }
-
-    @Test void redactionTokenV2ShortCredential() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("tokenv2 a");
-        assertEquals("[PROVIDER_BODY_REDACTED]", r);
-    }
-
-    @Test void redactionAntiFalsePositive() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("The quick brown fox jumps over the lazy dog");
-        assertEquals("[PROVIDER_BODY_REDACTED]", r);
-    }
-
-    // === RFC token charset tests ===
-
-    @Test void redactionRfcTokenDollar() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("a$b supersecret");
-        assertEquals("[PROVIDER_BODY_REDACTED]", r);
-    }
-
-    @Test void redactionRfcTokenPlus() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("foo+bar abc");
-        assertEquals("[PROVIDER_BODY_REDACTED]", r);
-    }
-
-    @Test void redactionRfcTokenExclamation() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("x!auth secret");
-        assertEquals("[PROVIDER_BODY_REDACTED]", r);
-    }
-
-    @Test void redactionRfcTokenPipe() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("q|x token-value");
-        assertEquals("[PROVIDER_BODY_REDACTED]", r);
-    }
-
-    @Test void redactionRfcTokenTilde() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("scheme~v2 a");
-        assertEquals("[PROVIDER_BODY_REDACTED]", r);
-    }
-
-    // === Whole-line only anti-false-positive ===
-
-    @Test void redactionCustomSchemeAllAlphaLongCredential() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("customscheme supersecret");
-        assertEquals("[PROVIDER_BODY_REDACTED]", r);
-    }
-
-    @Test void redactionCustomSchemeMatchesAnyCredential() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("customscheme request");
-        assertEquals("[PROVIDER_BODY_REDACTED]", r);
-    }
-
-    // === JSON textual value with custom scheme ===
-
-    @Test void redactionJsonCustomSchemeLowercase() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("{\"message\":\"customscheme abc\"}");
-        assertTrue(r.contains("abc"));
+    @Test void safeProviderSummaryAlwaysRedacts() {
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("Authorization: Bearer my-secret"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("Authorization: Basic base64sec"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("Authorization: Custom token123"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("CustomScheme secret-value"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("TokenV2 abc.def.ghi"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("ApiAuth my-secret-token"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("Authorization: CustomScheme my-secret"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("{\"message\":\"CustomScheme my-secret\"}"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("Authorization: Digest response=abc"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("{\"api-key\":\"secret-123\"}"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("[{\"token\":\"t1\"},{\"token\":\"t2\"}]"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("{\"a\":{\"b\":{\"password\":\"p@ss\"}}}"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("{bad token=secret-value}"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("{\"api_key\":\"k1\",\"token\":\"k2\",\"password\":\"k3\"}"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("{\"API-KEY\":\"secret\"}"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("{\"access_token\":\"my-token\"}"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("{\"x-api-key\":\"sk-live-123\"}"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("{\"aws_access_key_id\":\"AKIA123\",\"aws_secret_access_key\":\"secret123\"}"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("Credential=AKID/20230101,Signature=abc123"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("{\"X-Api-Key\":\"sensitive\",\"Authorization\":\"Bearer tok\"}"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("{\"message\":\"Authorization: Bearer secret-value-here\"}"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("Bearer sk-live-123"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("Basic dXNlcjpwYXNz"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("Digest username=x,response=secret"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("{\"message\":\"Bearer sk-live-123\"}"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("{\"message\":\"Basic dXNlcjpwYXNz\"}"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("line1\nAuthorization: Bearer my-secret\nline3"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("cUsToMsChEmE abc"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("customscheme abc"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("CUSTOMSCHEME abc"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("CustomScheme a"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("tokenv2 a"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("The quick brown fox jumps over the lazy dog"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("a$b supersecret"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("foo+bar abc"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("x!auth secret"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("q|x token-value"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("scheme~v2 a"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("customscheme supersecret"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("customscheme request"));
+        assertEquals("[PROVIDER_BODY_REDACTED]",
+                AiReplayAnalysisService.safeProviderSummary("{\"message\":\"customscheme abc\"}"));
     }
 
     @Test void logCaptureDoesNotContainSecret() throws IOException {
@@ -1432,6 +1298,9 @@ class AiReplayAnalysisServiceTest {
                     assertTrue(full.contains("AI_AUTHENTICATION_ERROR"), "Log must contain error code: " + full);
                     assertTrue(full.contains("401"), "Log must contain status: " + full);
                     assertTrue(full.contains("correlationId="), "Log must contain correlationId: " + full);
+                    assertTrue(full.contains("[PROVIDER_BODY_REDACTED]")
+                            || full.contains("empty provider error body"),
+                            "Log must contain redacted placeholder or empty body indicator: " + full);
                     assertFalse(full.contains("my-secret-key-456"), "Log must not contain secret: " + full);
                 }
             }
