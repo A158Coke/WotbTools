@@ -109,11 +109,13 @@ class AiReplayReviewServiceTest {
 
     @Test
     void totalSizeOverflowSafe() {
-        final var files = new MockMultipartFile[11];
+        final var files = new MultipartFile[11];
         for (int i = 0; i < 11; i++) {
-            files[i] = new MockMultipartFile(
-                    "files", "file" + i + ".wotbreplay",
-                    "application/octet-stream", new byte[20 * 1024 * 1024]);
+            final var f = mock(MultipartFile.class);
+            when(f.getOriginalFilename()).thenReturn("file" + i + ".wotbreplay");
+            when(f.isEmpty()).thenReturn(false);
+            when(f.getSize()).thenReturn(20L * 1024 * 1024);
+            files[i] = f;
         }
         final var ex = assertThrows(IllegalArgumentException.class,
                 () -> service.analyze(files));

@@ -1,9 +1,6 @@
 package com.wotb.web.replay.ai;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.AiNotConfiguredException;
@@ -96,8 +93,6 @@ public class AiReplayAnalysisService {
             System.getLogger(AiReplayAnalysisService.class.getName());
     private static final double MIN_ROSTER_JACCARD = 0.60;
     private static final double MIN_ROSTER_ACCOUNT_COVERAGE = 0.75;
-    private static final int MAX_SAFE_PROVIDER_SUMMARY_CHARS = 256;
-
     private static final String SYSTEM_PROMPT = """
             你是《坦克世界闪击战》(WoT Blitz) 的资深教练。
             下面给出一场战斗的结算数据（地图、胜负、每位玩家的伤害/承伤/助攻/格挡/击杀/存活与死亡时刻），
@@ -299,9 +294,11 @@ public class AiReplayAnalysisService {
                 if (firstAnalysis == null) firstAnalysis = result;
                 perUnitResults.put(ctx.analysisUnitId(), result);
                 if (input.globalLimitations().contains("AI_INPUT_TRUNCATED")) {
-                    limitationsByUnit.computeIfAbsent(
-                            ctx.analysisUnitId(), k -> new LinkedHashSet<>())
-                            .add("AI_INPUT_TRUNCATED");
+                    for (final String truncatedId : input.truncatedUnitIds()) {
+                        limitationsByUnit.computeIfAbsent(
+                                truncatedId, k -> new LinkedHashSet<>())
+                                .add("AI_INPUT_TRUNCATED");
+                    }
                 }
                 if (evidence != null && evidence.limitations().contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS")) {
                     limitationsByUnit.computeIfAbsent(
@@ -347,12 +344,10 @@ public class AiReplayAnalysisService {
                     }
                 }
                 if (input.globalLimitations().contains("AI_INPUT_TRUNCATED")) {
-                    for (final var ctx : partition) {
-                        if (includedIds.contains(ctx.analysisUnitId())) {
-                            limitationsByUnit.computeIfAbsent(
-                                    ctx.analysisUnitId(), k -> new LinkedHashSet<>())
-                                    .add("AI_INPUT_TRUNCATED");
-                        }
+                    for (final String truncatedId : input.truncatedUnitIds()) {
+                        limitationsByUnit.computeIfAbsent(
+                                truncatedId, k -> new LinkedHashSet<>())
+                                .add("AI_INPUT_TRUNCATED");
                     }
                 }
             }
@@ -1063,115 +1058,11 @@ public class AiReplayAnalysisService {
                 summary);
     }
 
-    private static boolean isSensitiveKey(final String rawKey) {
-        if (rawKey == null) return false;
-        final String normalized = rawKey.toLowerCase(Locale.ROOT)
-                .replace("-", "").replace("_", "").replace(" ", "");
-        return normalized.contains("authorization")
-                || normalized.contains("apikey")
-                || normalized.contains("bearer")
-                || normalized.contains("token")
-                || normalized.contains("secret")
-                || normalized.contains("password")
-                || normalized.contains("passwd")
-                || normalized.contains("aws")
-                || normalized.contains("security");
-    }
-
     static String safeProviderSummary(final String raw) {
         if (!StringUtils.hasText(raw)) {
             return "empty provider error body";
         }
-        // 1. For JSON bodies: tree-redact sensitive keys, keep structure for diagnostics
-        // but redact all textual values to prevent credential leakage
-        try {
-            final var mapper = new JsonMapper();
-            final var root = mapper.readTree(raw);
-            if (root != null && (root.isObject() || root.isArray())) {
-                redactJsonTree(root);
-                final String result = mapper.writeValueAsString(root);
-                return truncateSafe(result);
-            }
-        } catch (final Exception ignored) {
-            // Not valid JSON — fall through
-        }
-        // 2. For Authorization/header-like lines: redact credential
-        final String headerRedacted = raw.replaceAll(
-                "(?im)(authorization\\s*[:=]\\s*).*", "$1[REDACTED]");
-        if (!headerRedacted.equals(raw)) {
-            return truncateSafe(headerRedacted);
-        }
-        // 3. For anything else (plain text, malformed JSON, unknown format):
-        // return a fixed placeholder — do NOT log unknown provider body text
         return "[PROVIDER_BODY_REDACTED]";
-    }
-
-    /** Apply non-JSON regex redaction to plain text. */
-    private static String redactNonJson(final String raw) {
-        final String step1 = raw.replaceAll(
-                "(?i)(authorization\\s*[:=]\\s*).*",
-                "$1[REDACTED]");
-        final String step2 = step1.replaceAll(
-                "(?i)(['\"])(authorization|api[_ -]?key|x-api-key|bearer|token|secret|password|passwd|aws_access_key_id|aws_secret_access_key|client_secret|security.?token)(['\"])\\s*[:=]\\s*['\"][^'\"]*['\"]",
-                "$1$2$3=[REDACTED]");
-        final String step3 = step2.replaceAll(
-                "(?i)(authorization|api[_ -]?key|x-api-key|bearer|token|secret|password|passwd|aws_access_key_id|aws_secret_access_key|client_secret|security.?token)\\s*[:=]\\s*[^\\s,;\"]+",
-                "$1=[REDACTED]");
-        final String step4 = step3.replaceAll(
-                "(?i)(signedheader|x-amz-[a-z-]+|x-amz-date|credential|signature)=[^\\s,;\"]+",
-                "$1=[REDACTED]");
-        // Step 5: Known auth schemes — case-insensitive, any credential length
-        final String step5 = step4.replaceAll(
-                "(?i)\\b(bearer|basic|digest)\\s+[^\\s,;\"'}]+",
-                "$1 [REDACTED]");
-        // Step 6: For non-JSON, non-Authorization text — stop guessing at two-word patterns.
-        // Known schemes (bearer, basic, digest) already handled.
-        // Authorization context already handled by steps 1-4.
-        // Remaining text is treated as generic message — use placeholder.
-        // The `step5` variable at this point still contains the non-Authorization, non-sensitive text
-        // which may be AI provider error messages. These should not be parsed for custom auth schemes.
-        // Simply pass through with no additional redaction for generic text.
-        final String step6 = step5;
-        // Step 7: Digest auth parameters — hide any value length
-        return step6.replaceAll(
-                "(?i)\\b(response|nonce|cnonce|opaque|realm|qop|nc|uri|username)\\s*=\\s*[^\\s,;\"]+",
-                "$1=[REDACTED]");
-    }
-
-    /** Recursively redact sensitive keys and sensitive patterns in string values. */
-    private static void redactJsonTree(final JsonNode node) {
-        if (node == null) return;
-        if (node.isObject()) {
-            final var fields = node.properties();
-            for (final var entry : fields) {
-                final String key = entry.getKey().toLowerCase(Locale.ROOT);
-                final var value = entry.getValue();
-                if (isSensitiveKey(key)) {
-                    ((ObjectNode) node).put(entry.getKey(), "[REDACTED]");
-                } else if (value.isTextual()) {
-                    final String redactedValue = redactNonJson(value.asText());
-                    if (!redactedValue.equals(value.asText())) {
-                        ((ObjectNode) node).put(entry.getKey(), redactedValue);
-                    }
-                } else if (value.isObject()) {
-                    redactJsonTree(value);
-                } else if (value.isArray()) {
-                    for (final var element : value) {
-                        redactJsonTree(element);
-                    }
-                }
-            }
-        } else if (node.isArray()) {
-            for (final var element : node) {
-                redactJsonTree(element);
-            }
-        }
-    }
-
-    private static String truncateSafe(final String text) {
-        final String cleaned = text.replaceAll("[\\r\\n\\t]+", " ").trim();
-        return cleaned.length() <= MAX_SAFE_PROVIDER_SUMMARY_CHARS
-                ? cleaned : cleaned.substring(0, MAX_SAFE_PROVIDER_SUMMARY_CHARS);
     }
 
     /**

@@ -1,53 +1,72 @@
-# WotbTools：实现训练房 / 联赛 Team-Level AI 战术复盘
+# WotbTools：训练房 / 联赛 Team-Level AI 战术复盘 — 设计文档
 
-## 0. 任务性质与执行要求
+## 概述
 
-这是一个已批准的完整 Feature 开发任务，目标是实现：
+训练房和联赛回放现在可以通过 AI Review 进行 Team-Level 战术复盘。
 
-```text
-SINGLE_TEAM_BATTLE
-MULTI_TEAM_BATTLE
+分析对象是整支录像者所在队伍，而非录像者个人。
+
+## 产品语义
+
+- Recorder raw team 1 → team 1 为分析对象
+- Recorder raw team 2 → team 2 为分析对象
+- 未知 team → UNKNOWN
+- 胜负三态：TEAM_WIN / TEAM_LOSS / DRAW_OR_UNKNOWN
+- draw/unknown 不压缩为 loss
+
+## 系统架构
+
+```
+ReconstructionController.analyze()
+  → AiReplayReviewService.analyze(MultipartFile[])
+    → validateBatchSize() [16-file guard]
+    → file validation (extension/empty/size/total)
+    → DefaultReplayProcessingFacade.process()
+    → BatchAnalyzer.analyze()
+    → AiReplayAnalysisService.analyzeTeamGroups()
+      → buildSingleTeamContext()
+      → buildPartitions() [complete-link]
+      → TeamAiPromptBuilder.single()/multi()
+    → AnalyzeResponse
 ```
 
-适用范围：
+### 16 文件边界
 
-```text
-TRAINING
-TOURNAMENT
-```
+AI Review 单次最多接受 16 个原始回放文件。校验早于 getBytes/hash/parsing。
+空文件和重复文件计入原始数量。
+`/api/replay/process` 和 `/api/replay/reconstruct-batch` 不受此限制。
 
-当前 `main` 已支持随机战斗个人 AI 复盘，但训练房会返回：
+### Prompt 三层预算
 
-```text
-TEAM_ANALYSIS_NOT_IMPLEMENTED
-```
+P1 (Mandatory): context type / analysisUnitId / perspective isolation / unitLimitations / omission / truncation
+P2 (High-priority facts): authoritative aggregate / observed aggregate / memberFacts / coverage
+P3 (Optional): memberMovements / formation / battlePhases / engagements / keyEvents
 
-必须完成团队级数据提取、AI 上下文、后端调用、前端展示、测试和文档闭环。禁止仅删除异常判断或伪造空结果。
+- Budget planning uses actual pre-built block lengths
+- High-priority block is atomically written (all-or-nothing)
+- Optional details can be truncated per-unit
 
-本提示词已经定义批准后的实施范围。开始前仍需：
+### Unit 状态
 
-1. 阅读仓库根目录和 `.agents/` 下的全部适用规范；
-2. 检查最新代码，确认实际路径与本文一致；
-3. 输出简短实施计划和影响文件；
-4. 若未发现与本文冲突的重大问题，直接继续实施；
-5. 若发现会改变产品语义的冲突，停止并报告，不得自行猜测。
+- analysisUnitCount: 识别单元总数
+- analyzedUnitCount: 进入 prompt 并获得 AI 输出的单元
+- omittedAnalysisUnitCount: prompt cap/budget 导致的省略
+- unavailableAnalysisUnitCount: capability/data 不足无法分析的单元
 
----
+数学关系: total = analyzed + omitted + unavailable
 
-# 1. 已确认的当前问题
+### Limitation 契约
 
-## 1.1 Controller 主动阻止团队分析
+Global: `PERSPECTIVE_TIMELINES_ISOLATED`, `ROSTER_CONSISTENCY_UNCONFIRMED`, `PERSPECTIVES_OMITTED_COUNT_<N>`, `AI_INPUT_TRUNCATED`
+Per-unit: `DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS`, `BATTLE_END_UNRESOLVED`, `AI_PERSPECTIVE_OMITTED_FROM_PROMPT`, `AI_INPUT_TRUNCATED`
 
-当前 `ReconstructionController.analyze()` 包含：
+Global limitations 不出现在 unit report。Per-unit limitations 不出现在 global list。
 
-```java
-if (plan.dominantScope() == ReplayAnalysisScope.TEAM_PERSPECTIVE) {
-    throw new UnsupportedReplayAnalysisModeException(
-            "TEAM_ANALYSIS_NOT_IMPLEMENTED");
-}
-```
+### 安全
 
-switch 同样没有实现：
+Provider error body: 不记录原始 text。日志仅含 provider/model/status/code/requestChars/mode/correlationId/body length。
+Authorization header, Bearer/Basic/Digest: 内存分类使用，不写入日志。
+JSON textual value: 不保留任意不可信 provider message。
 
 ```text
 SINGLE_TEAM_BATTLE
