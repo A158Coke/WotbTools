@@ -173,13 +173,17 @@ async function runAnalyze() {
   try {
     const r = await authedFetch('/api/replay/analyze', multiFormData())
     if (!r.ok) {
-      let errorData = { code: '', maxFiles: 16 }
-      try {
-        const json = await r.json()
-        errorData = { code: json.code || '', maxFiles: json.maxFiles || 16 }
-      } catch {
-        const text = (await r.text().catch(() => '')).trim()
-        errorData.code = text
+      const rawBody = await r.text().catch(() => '')
+      const trimmed = rawBody.trim()
+      let errorData = { code: trimmed, maxFiles: 16 }
+      // Try JSON parse for structured errors (REPLAY_FILE_COUNT_EXCEEDED etc.)
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        try {
+          const json = JSON.parse(trimmed)
+          errorData = { code: json.code || '', maxFiles: json.maxFiles || 16 }
+        } catch {
+          // Not valid JSON — keep trimmed as plain text code
+        }
       }
       throw new Error(localizeAiError(errorData, r.status, t))
     }

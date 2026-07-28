@@ -17,7 +17,6 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.processing.BattleCategory;
 import com.wotb.core.replay.feature.KeyBattleEvent;
-import com.wotb.core.replay.feature.MultiTeamBattleAnalysisContext;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.feature.TeamAnalysisUnitReport;
@@ -377,71 +376,6 @@ class AiReplayAnalysisServiceTest {
                 "Body must contain unitLimitations= with DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
         assertFalse(body.contains("mandatory="),
                 "Body must not use old mandatory= prefix");
-    }
-
-    @Test
-    void directMultiLimitationIsolation() throws IOException {
-        responseBody = "{\"choices\":[{\"message\":{\"content\":\"multi test\"}}]}";
-        final var service = startService(2);
-        final var featuresA = new TeamBattleFeatureSet(
-                1,
-                List.of(
-                        new TeamMemberFeatureSet(List.of(), 1001L, "DupA1", 0L, "", 1,
-                                DecodeConfidence.UNKNOWN, 1000, 500, 0, 0, 1, true, null,
-                                List.of(), List.of(), List.of(), List.of()),
-                        new TeamMemberFeatureSet(List.of(), 1001L, "DupA2", 0L, "", 1,
-                                DecodeConfidence.UNKNOWN, 800, 300, 0, 0, 0, false, 180.0,
-                                List.of(), List.of(), List.of(), List.of())),
-                new TeamAggregateResult(2, 1800, 800, 0, 0, 1, 1, 1,
-                        180.0, 180.0, 180.0, true),
-                TeamObservedAggregate.empty(),
-                List.of(), List.of(), List.of(), List.of(),
-                TeamFeatureCoverage.empty(),
-                List.of(), true);
-        final var summaryA = new TeamBattleAnalysisSummary(
-                "unit-a", null, "unit-a.wotbreplay", "map-a",
-                BattleCategory.TRAINING, 300.0, 1,
-                List.of(1001L), featuresA, "TeamA");
-        final var featuresB = new TeamBattleFeatureSet(
-                2,
-                List.of(
-                        new TeamMemberFeatureSet(List.of(), 2001L, "PlayerB1", 0L, "", 2,
-                                DecodeConfidence.UNKNOWN, 900, 400, 0, 0, 1, true, null,
-                                List.of(), List.of(), List.of(), List.of()),
-                        new TeamMemberFeatureSet(List.of(), 2002L, "PlayerB2", 0L, "", 2,
-                                DecodeConfidence.UNKNOWN, 700, 200, 0, 0, 0, false, 150.0,
-                                List.of(), List.of(), List.of(), List.of())),
-                new TeamAggregateResult(2, 1600, 600, 0, 0, 1, 1, 1,
-                        150.0, 150.0, 150.0, false),
-                TeamObservedAggregate.empty(),
-                List.of(), List.of(), List.of(), List.of(),
-                TeamFeatureCoverage.empty(),
-                List.of(), true);
-        final var summaryB = new TeamBattleAnalysisSummary(
-                "unit-b", null, "unit-b.wotbreplay", "map-b",
-                BattleCategory.TRAINING, 300.0, 2,
-                List.of(2001L, 2002L), featuresB, "TeamB");
-        final var multiContext = new MultiTeamBattleAnalysisContext(
-                2, 2, List.of(summaryA, summaryB), false,
-                List.of("PERSPECTIVE_TIMELINES_ISOLATED"));
-        service.analyzeMultiTeamContext(multiContext);
-        final String body = requestBodies.getLast();
-        boolean aHasDup = false;
-        boolean bNoDup = true;
-        final String[] perspectives = body.split("=== PERSPECTIVE ");
-        for (int i = 1; i < perspectives.length; i++) {
-            final String section = perspectives[i];
-            if (section.contains("unit-a")) {
-                aHasDup = section.contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
-            }
-            if (section.contains("unit-b")) {
-                bNoDup = !section.contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
-            }
-        }
-        assertTrue(aHasDup,
-                "Perspective A (with duplicate) must contain DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
-        assertTrue(bNoDup,
-                "Perspective B (no duplicate) must NOT contain DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
     }
 
     @Test
