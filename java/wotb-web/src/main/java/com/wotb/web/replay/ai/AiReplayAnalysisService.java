@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.TankInfo;
+import com.wotb.core.ai.AiTokenEstimator;
+import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.processing.AnalysisUnitResult;
@@ -46,7 +48,8 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.util.PlayerResultFormat;
 
 
-import org.springframework.beans.factory.annotation.Value;
+import com.wotb.web.config.AiModelProperties;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
@@ -112,17 +115,46 @@ public class AiReplayAnalysisService {
     private static final Tankopedia tankopedia = Tankopedia.load();
     private final String model;
     private final int singlePlayerMaxInputChars;
+    private final AiTokenEstimator tokenEstimator;
+    private final int contextWindowTokens;
+    private final int maxOutputTokens;
+    private final int promptSafetyMarginTokens;
     private final RestClient restClient;
 
-    public AiReplayAnalysisService(
-            @Value("${wotb.ai.api-key:}") String apiKey,
-            @Value("${wotb.ai.base-url:https://api.deepseek.com}") String baseUrl,
-            @Value("${wotb.ai.model:deepseek-v4-flash}") String model,
-            @Value("${wotb.ai.timeout-sec:120}") int timeoutSec,
-            @Value("${wotb.ai.single-player-max-input-chars:100000}") int singlePlayerMaxInputChars) {
+    @Autowired
+    public AiReplayAnalysisService(final AiModelProperties properties, final AiTokenEstimator tokenEstimator) {
+        this(properties.apiKey(), properties.baseUrl(), properties.model(), properties.timeoutSec(), properties.singlePlayerMaxInputTokens(), tokenEstimator,
+                properties.contextWindowTokens(), properties.maxOutputTokens(), properties.promptSafetyMarginTokens());
+    }
+
+    // Test-only constructor; uses a default ConservativeDeepSeekTokenEstimator.
+    AiReplayAnalysisService(
+            final String apiKey,
+            final String baseUrl,
+            final String model,
+            final int timeoutSec,
+            final int singlePlayerMaxInputChars) {
+        this(apiKey, baseUrl, model, timeoutSec, singlePlayerMaxInputChars, new ConservativeDeepSeekTokenEstimator(),
+                131072, 8192, 1000);
+    }
+
+    private AiReplayAnalysisService(
+            final String apiKey,
+            final String baseUrl,
+            final String model,
+            final int timeoutSec,
+            final int singlePlayerMaxInputChars,
+            final AiTokenEstimator tokenEstimator,
+            final int contextWindowTokens,
+            final int maxOutputTokens,
+            final int promptSafetyMarginTokens) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.model = model;
         this.singlePlayerMaxInputChars = singlePlayerMaxInputChars > 0 ? singlePlayerMaxInputChars : 100000;
+        this.tokenEstimator = tokenEstimator;
+        this.contextWindowTokens = contextWindowTokens;
+        this.maxOutputTokens = maxOutputTokens;
+        this.promptSafetyMarginTokens = promptSafetyMarginTokens;
 
         final SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(10_000);
@@ -174,18 +206,29 @@ public class AiReplayAnalysisService {
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx) {
         if (!isConfigured()) throw new AiNotConfiguredException();
         final String summary = buildPlayerContextSummary(ctx);
-        final int totalChars = SINGLE_PLAYER_PROMPT.length() + summary.length() + PROMPT_SAFETY_MARGIN_CHARS;
-        if (totalChars > singlePlayerMaxInputChars) {
+        final List<Map<String, Object>> messages = List.of(
+                Map.<String, Object>of("role", "system", "content", SINGLE_PLAYER_PROMPT),
+                Map.<String, Object>of("role", "user", "content", summary));
+        final int estimatedTokens = tokenEstimator.estimateMessagesTokens(messages);
+        final int maxInputTokens = singlePlayerMaxInputChars;
+        if (estimatedTokens > maxInputTokens) {
             throw new IllegalArgumentException(
-                    "PLAYER_PROMPT_BUDGET_EXCEEDED: configuredMax="
-                    + singlePlayerMaxInputChars + " actual=" + totalChars);
+                    "AI_TOKEN_BUDGET_EXCEEDED: estimatedInputTokens=" + estimatedTokens
+                    + " maxInputTokens=" + maxInputTokens);
+        }
+        if (estimatedTokens + maxOutputTokens + promptSafetyMarginTokens > contextWindowTokens) {
+            throw new IllegalArgumentException(
+                    "AI_CONTEXT_WINDOW_EXCEEDED: estimatedInputTokens=" + estimatedTokens
+                    + " + maxOutputTokens=" + maxOutputTokens + " + safetyMargin=" + promptSafetyMarginTokens
+                    + " > contextWindow=" + contextWindowTokens);
         }
         final Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
         body.put("stream", false);
-        body.put("messages", List.of(
-                Map.of("role", "system", "content", SINGLE_PLAYER_PROMPT),
-                Map.of("role", "user", "content", summary)));
+        body.put("max_tokens", maxOutputTokens);
+        body.put("thinking", Map.of("type", "enabled"));
+        body.put("reasoning_effort", "high");
+        body.put("messages", messages);
         final String content = call(body, "SINGLE_PLAYER_BATTLE");
         return new AnalyzeResult(content, model, ctx.features().keyEvents());
     }
@@ -759,8 +802,6 @@ public class AiReplayAnalysisService {
         return body;
     }
 
-    private static final int PROMPT_SAFETY_MARGIN_CHARS = 1_000;
-
     private static final String SINGLE_PLAYER_PROMPT = """
             这是单场回放分析。你是《坦克世界闪击战》(WoT Blitz) 的资深教练，正在对一场随机战斗做个人复盘。
 
@@ -1109,10 +1150,11 @@ public class AiReplayAnalysisService {
         // ====== Movement details (char-budget-aware, value-based priority) ======
         if (!features.movements().isEmpty()) {
             final int totalSegs = features.movements().size();
-            // Compute movement budget: remaining chars after mandatory sections
-            final int mandatoryLen = sb.length() + "\n=== 移动段（压缩） ===\n".length();
-            final int remainingTotal = maxInputChars - PROMPT_SAFETY_MARGIN_CHARS - SINGLE_PLAYER_PROMPT.length();
-            final int movementBudget = Math.max(200, remainingTotal - mandatoryLen);
+            // Budget for detailed movement: remaining chars after mandatory sections
+            // Use a generous heuristic since final token check happens before provider call
+            final int mandatoryLen = sb.length();
+            final int remainingTotal = maxInputChars - SINGLE_PLAYER_PROMPT.length();
+            final int movementBudget = Math.max(500, remainingTotal - mandatoryLen);
 
             // Score segments by tactical value
             final java.util.List<java.util.Map.Entry<Integer, Double>> scored = new java.util.ArrayList<>();
@@ -1204,8 +1246,8 @@ public class AiReplayAnalysisService {
             sb.append("注意: 事件流数值仅为观测子集, 不是整场权威总伤害.\n");
             final int totalEngage = features.engagements().size();
             final int usedSoFar = sb.length();
-            final int remainingTotal = maxInputChars - PROMPT_SAFETY_MARGIN_CHARS - SINGLE_PLAYER_PROMPT.length();
-            final int engagementBudget = Math.max(200, remainingTotal - usedSoFar);
+            final int remainingTotal = maxInputChars - SINGLE_PLAYER_PROMPT.length();
+            final int engagementBudget = Math.max(500, remainingTotal - usedSoFar);
             int writtenEngage = 0;
             int usedEngageChars = 0;
             for (final EngagementSummary e : features.engagements()) {
@@ -1289,6 +1331,7 @@ public class AiReplayAnalysisService {
     ) {
         final String correlationId = UUID.randomUUID().toString();
         final int requestChars = requestBody.toString().length();
+        checkTokenBudget(requestBody);
         final ChatCompletionResponse response;
         try {
             response = restClient.post()
@@ -1335,6 +1378,19 @@ public class AiReplayAnalysisService {
             throw new AiUpstreamException("AI_EMPTY_RESPONSE", null, correlationId);
         }
         return content;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void checkTokenBudget(final Map<String, Object> requestBody) {
+        final Object messagesObj = requestBody.get("messages");
+        if (!(messagesObj instanceof List)) return;
+        final List<Map<String, Object>> messages = (List<Map<String, Object>>) messagesObj;
+        final int estimated = tokenEstimator.estimateMessagesTokens(messages);
+        final int budget = contextWindowTokens - promptSafetyMarginTokens - maxOutputTokens;
+        if (estimated > budget) {
+            throw new IllegalArgumentException(
+                    "AI_TOKEN_BUDGET_EXCEEDED: estimated=" + estimated + " budget=" + budget);
+        }
     }
 
     private static String classifyHttpError(
