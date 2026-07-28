@@ -20,6 +20,7 @@ import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiUpstreamException;
+import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -322,6 +323,20 @@ class ReconstructionControllerTeamAnalysisTest {
                 .andExpect(jsonPath("$.analyzedUnitCount").value(1))
                 .andExpect(jsonPath("$.files[0].analysisIncluded").value(true))
                 .andExpect(jsonPath("$.files[1].analysisIncluded").value(false));
+    }
+
+    @Test
+    void promptBudgetExceededReturnsCorrectHttpStatus() throws Exception {
+        when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
+                .thenReturn(teamResult(
+                        "budget.wotbreplay", "budget-arena", "Ally", 1001L, 1));
+        when(aiService.analyzeTeamGroups(any()))
+                .thenThrow(new AiPromptBudgetExceededException());
+
+        mvc.perform(multipart("/api/replay/analyze")
+                        .file(replayFile("budget.wotbreplay")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("AI_PROMPT_MANDATORY_SECTION_TOO_LARGE"));
     }
 
     @Test

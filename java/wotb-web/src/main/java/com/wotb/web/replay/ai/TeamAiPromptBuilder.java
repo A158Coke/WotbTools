@@ -25,6 +25,8 @@ import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.reconstruction.Vector3;
 
+import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -49,7 +51,6 @@ final class TeamAiPromptBuilder {
     static final int MAX_KEY_EVENTS = 30;
     static final int MAX_PERSPECTIVES = 10;
     static final int MAX_INPUT_CHARS = 30_000;
-    static final int MIN_FACT_BYTES = 500;
     static final String TRUNCATION_LINE = "\nLIMITATION: AI_INPUT_TRUNCATED\n";
 
     private TeamAiPromptBuilder() {
@@ -64,7 +65,7 @@ final class TeamAiPromptBuilder {
         final Set<String> limitations = collectLimitations(context, extraLimitations);
         appendContextHeader(writer, context);
         writer.appendRequired("unitLimitations=" + limitations + "\n");
-        appendFeatureSet(writer, context.features());
+        appendFeatureSet(writer, context.features(), context.analysisUnitId());
         return writer.finish(limitations, Set.of(context.analysisUnitId()), Set.of(),
                 Map.of(context.analysisUnitId(), List.copyOf(limitations)));
     }
@@ -142,7 +143,7 @@ final class TeamAiPromptBuilder {
             int totalRequired = globalHeader.length() + budgetLimLine.length() + reserve;
             for (int i = 0; i < includedCount; i++) {
                 totalRequired += perspectiveRequiredBlocks.get(i).length();
-                totalRequired += MIN_FACT_BYTES;
+                totalRequired += estimateMinimumFactsBytes(perspectives.get(i));
             }
             if (totalRequired <= MAX_INPUT_CHARS) {
                 break;
@@ -150,7 +151,7 @@ final class TeamAiPromptBuilder {
             includedCount--;
         }
         if (includedCount == 0 && perspectiveLimit > 0) {
-            throw new AiPromptBudgetExceededException("MANDATORY_SECTION_EXCEEDS_BUDGET");
+            throw new AiPromptBudgetExceededException();
         }
         // Phase 2: write with budget reservation for future required blocks
         final BudgetWriter writer = new BudgetWriter(MAX_INPUT_CHARS);
@@ -174,11 +175,11 @@ final class TeamAiPromptBuilder {
         }
         // Phase 3: Write all high-priority facts (P2) for all included perspectives
         for (int index = 0; index < includedCount; index++) {
-            appendHighPriorityFacts(writer, perspectives.get(index).features());
+            appendHighPriorityFacts(writer, perspectives.get(index).features(), perspectives.get(index).analysisUnitId());
         }
         // Phase 4: Write all optional details (P3) for all included perspectives
         for (int index = 0; index < includedCount; index++) {
-            appendOptionalDetails(writer, perspectives.get(index).features());
+            appendOptionalDetails(writer, perspectives.get(index).features(), perspectives.get(index).analysisUnitId());
         }
         final Set<String> includedIds = new LinkedHashSet<>();
         final Set<String> omittedIds = new LinkedHashSet<>();
@@ -218,16 +219,20 @@ final class TeamAiPromptBuilder {
 
     private static void appendFeatureSet(
             final BudgetWriter writer,
-            final TeamBattleFeatureSet features
+            final TeamBattleFeatureSet features,
+            final String analysisUnitId
     ) {
-        appendHighPriorityFacts(writer, features);
-        appendOptionalDetails(writer, features);
+        appendHighPriorityFacts(writer, features, analysisUnitId);
+        appendOptionalDetails(writer, features, analysisUnitId);
     }
 
     private static void appendHighPriorityFacts(
             final BudgetWriter writer,
-            final TeamBattleFeatureSet features
+            final TeamBattleFeatureSet features,
+            final String analysisUnitId
     ) {
+        writer.append("\n=== PERSPECTIVE_FACTS ===\n");
+        writer.append("analysisUnitId=" + quoteData(analysisUnitId) + "\n");
         if (features == null) {
             writer.append("features=UNAVAILABLE\n");
             return;
@@ -240,8 +245,11 @@ final class TeamAiPromptBuilder {
 
     private static void appendOptionalDetails(
             final BudgetWriter writer,
-            final TeamBattleFeatureSet features
+            final TeamBattleFeatureSet features,
+            final String analysisUnitId
     ) {
+        writer.append("\n=== PERSPECTIVE_OPTIONAL ===\n");
+        writer.append("analysisUnitId=" + quoteData(analysisUnitId) + "\n");
         if (features == null) {
             return;
         }
@@ -448,6 +456,17 @@ final class TeamAiPromptBuilder {
         }
     }
 
+    private static int estimateMinimumFactsBytes(final TeamBattleAnalysisSummary perspective) {
+        if (perspective.features() == null) return 100;
+        int total = 0;
+        total += "\n=== PERSPECTIVE_FACTS ===\nanalysisUnitId=\"\"\n".length()
+                + perspective.analysisUnitId().length() * 2;
+        total += 200;
+        total += 50 + perspective.features().members().size() * 80;
+        total += 100;
+        return total;
+    }
+
     private static String formatScalar(final Object value) {
         if (value == null) {
             return "UNKNOWN";
@@ -586,12 +605,6 @@ final class TeamAiPromptBuilder {
         }
     }
 
-    static final class AiPromptBudgetExceededException extends RuntimeException {
-        AiPromptBudgetExceededException(final String message) {
-            super(message);
-        }
-    }
-
     private static final class BudgetWriter {
 
         private final int maxChars;
@@ -635,7 +648,7 @@ final class TeamAiPromptBuilder {
             final int truncationReserve = TRUNCATION_LINE.length();
             final int remaining = maxChars - truncationReserve - reserved - content.length();
             if (remaining <= 0 || value.length() > remaining) {
-                throw new AiPromptBudgetExceededException("MANDATORY_SECTION_EXCEEDS_BUDGET");
+                throw new AiPromptBudgetExceededException();
             }
             content.append(value);
         }

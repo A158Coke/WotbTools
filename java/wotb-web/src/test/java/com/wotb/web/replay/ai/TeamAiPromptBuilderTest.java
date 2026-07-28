@@ -34,8 +34,11 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TeamAiPromptBuilderTest {
@@ -524,6 +527,122 @@ class TeamAiPromptBuilderTest {
                 "All three perspectives must have AUTHORITATIVE_TEAM_RESULT");
         assertEquals(3, occurrences(input.content(), "=== TEAM_MEMBERS ==="),
                 "All three perspectives must have TEAM_MEMBERS");
+    }
+
+    @Test
+    void multiPerspectiveFactsBelongToCorrectUnit() {
+        final TeamMemberFeatureSet memberA = new TeamMemberFeatureSet(
+                List.of(10001), 10001L, "Alpha", 1L, "Tank1", 1,
+                DecodeConfidence.EXACT, 5000, 1000, 500, 200, 2,
+                true, 60.0, List.of(), List.of(), List.of(), List.of());
+        final TeamAggregateResult aggA = new TeamAggregateResult(
+                1, 5000, 1000, 500, 200, 2, 1, 0, 60.0, 60.0, 60.0, true);
+        final TeamBattleFeatureSet featuresA = new TeamBattleFeatureSet(
+                1, List.of(memberA), aggA, TeamObservedAggregate.empty(),
+                List.of(), List.of(), List.of(), List.of(),
+                TeamFeatureCoverage.empty(), List.of(), true);
+        final TeamMemberFeatureSet memberB = new TeamMemberFeatureSet(
+                List.of(20001), 20001L, "Bravo", 2L, "Tank2", 2,
+                DecodeConfidence.EXACT, 6000, 2000, 300, 100, 1,
+                false, 45.0, List.of(), List.of(), List.of(), List.of());
+        final TeamAggregateResult aggB = new TeamAggregateResult(
+                1, 6000, 2000, 300, 100, 1, 0, 1, 45.0, 45.0, 45.0, false);
+        final TeamBattleFeatureSet featuresB = new TeamBattleFeatureSet(
+                2, List.of(memberB), aggB, TeamObservedAggregate.empty(),
+                List.of(), List.of(), List.of(), List.of(),
+                TeamFeatureCoverage.empty(), List.of(), true);
+        final TeamMemberFeatureSet memberC = new TeamMemberFeatureSet(
+                List.of(30001), 30001L, "Charlie", 3L, "Tank3", 1,
+                DecodeConfidence.EXACT, 7000, 500, 800, 300, 0,
+                true, null, List.of(), List.of(), List.of(), List.of());
+        final TeamAggregateResult aggC = new TeamAggregateResult(
+                1, 7000, 500, 800, 300, 0, 1, 0, null, null, null, true);
+        final TeamBattleFeatureSet featuresC = new TeamBattleFeatureSet(
+                1, List.of(memberC), aggC, TeamObservedAggregate.empty(),
+                List.of(), List.of(), List.of(), List.of(),
+                TeamFeatureCoverage.empty(), List.of(), true);
+        final List<TeamBattleAnalysisSummary> summaries = List.of(
+                new TeamBattleAnalysisSummary("unit-A", null, "a.wotbreplay", null, null, 300.0,
+                        1, List.of(10001L), featuresA, "TeamA"),
+                new TeamBattleAnalysisSummary("unit-B", null, "b.wotbreplay", null, null, 300.0,
+                        2, List.of(20001L), featuresB, "TeamB"),
+                new TeamBattleAnalysisSummary("unit-C", null, "c.wotbreplay", null, null, 300.0,
+                        1, List.of(30001L), featuresC, "TeamC"));
+        final var multi = new MultiTeamBattleAnalysisContext(
+                3, 1, summaries, false, List.of());
+        final var input = TeamAiPromptBuilder.multi(multi);
+        final String c = input.content();
+        assertTrue(c.contains("=== PERSPECTIVE 1 ==="));
+        assertTrue(c.contains("=== PERSPECTIVE 2 ==="));
+        assertTrue(c.contains("=== PERSPECTIVE 3 ==="));
+        // Facts are grouped by PERSPECTIVE_FACTS sections after all headers
+        final int facts1 = c.indexOf("\n=== PERSPECTIVE_FACTS ===\n");
+        final int facts2 = c.indexOf("\n=== PERSPECTIVE_FACTS ===\n", facts1 + 1);
+        final int facts3 = c.indexOf("\n=== PERSPECTIVE_FACTS ===\n", facts2 + 1);
+        assertTrue(facts1 >= 0 && facts2 > facts1 && facts3 > facts2,
+                "All 3 PERSPECTIVE_FACTS sections must exist in order");
+        final String blockA = c.substring(facts1, facts2);
+        assertTrue(blockA.contains("analysisUnitId=\"unit-A\""),
+                "Block A must contain unit-A analysisUnitId");
+        assertTrue(blockA.contains("Alpha"), "Block A must contain Alpha nickname");
+        assertTrue(blockA.contains("finalDamage=5000"), "Block A must contain A's damage");
+        assertFalse(blockA.contains("Bravo"), "Block A must not contain Bravo");
+        assertFalse(blockA.contains("Charlie"), "Block A must not contain Charlie");
+        final String blockB = c.substring(facts2, facts3);
+        assertTrue(blockB.contains("analysisUnitId=\"unit-B\""),
+                "Block B must contain unit-B analysisUnitId");
+        assertTrue(blockB.contains("Bravo"), "Block B must contain Bravo nickname");
+        assertTrue(blockB.contains("finalDamage=6000"), "Block B must contain B's damage");
+        assertFalse(blockB.contains("Alpha"), "Block B must not contain Alpha");
+        assertFalse(blockB.contains("Charlie"), "Block B must not contain Charlie");
+        final String blockC = c.substring(facts3);
+        assertTrue(blockC.contains("analysisUnitId=\"unit-C\""),
+                "Block C must contain unit-C analysisUnitId");
+        assertTrue(blockC.contains("Charlie"), "Block C must contain Charlie nickname");
+        assertTrue(blockC.contains("finalDamage=7000"), "Block C must contain C's damage");
+        assertFalse(blockC.contains("Alpha"), "Block C must not contain Alpha");
+        assertFalse(blockC.contains("Bravo"), "Block C must not contain Bravo");
+        assertEquals(3, occurrences(c, "=== PERSPECTIVE_FACTS ==="),
+                "All 3 perspectives must have PERSPECTIVE_FACTS section");
+        assertEquals(3, occurrences(c, "=== PERSPECTIVE_OPTIONAL ==="),
+                "All 3 perspectives must have PERSPECTIVE_OPTIONAL section");
+        // Each optional section has its analysisUnitId
+        assertTrue(c.contains("=== PERSPECTIVE_OPTIONAL ===\nanalysisUnitId=\"unit-A\""),
+                "Optional section A must have unit-A analysisUnitId");
+        assertTrue(c.contains("=== PERSPECTIVE_OPTIONAL ===\nanalysisUnitId=\"unit-B\""),
+                "Optional section B must have unit-B analysisUnitId");
+        assertTrue(c.contains("=== PERSPECTIVE_OPTIONAL ===\nanalysisUnitId=\"unit-C\""),
+                "Optional section C must have unit-C analysisUnitId");
+    }
+
+    @Test
+    void multiBudgetUsesRealMinimumFactsSize() {
+        final List<TeamBattleAnalysisSummary> summaries = new ArrayList<>();
+        for (int i = 0; i < TeamAiPromptBuilder.MAX_PERSPECTIVES; i++) {
+            final int memberCount = (i < 5) ? 1 : 15;
+            final List<TeamMemberFeatureSet> members = IntStream.range(0, memberCount)
+                    .mapToObj(j -> new TeamMemberFeatureSet(
+                            List.of(10000 + j), 10000L + j, "P" + j, 1L, "Tank", 1,
+                            DecodeConfidence.EXACT, 1000, 0, 0, 0, 0,
+                            true, null, List.of(), List.of(), List.of(), List.of()))
+                    .toList();
+            final TeamAggregateResult agg = new TeamAggregateResult(
+                    memberCount, memberCount * 1000, 0, 0, 0, 0,
+                    memberCount, 0, null, null, null, true);
+            final TeamBattleFeatureSet features = new TeamBattleFeatureSet(
+                    1, members, agg, TeamObservedAggregate.empty(),
+                    List.of(), List.of(), List.of(), List.of(),
+                    TeamFeatureCoverage.empty(), List.of(), true);
+            summaries.add(new TeamBattleAnalysisSummary(
+                    "unit-" + i, null, "f" + i + ".wotbreplay", null, null, 300.0,
+                    1, List.of(10000L), features, "Team" + i));
+        }
+        final var multi = new MultiTeamBattleAnalysisContext(
+                summaries.size(), 1, summaries, true, List.of());
+        final var input = TeamAiPromptBuilder.multi(multi);
+        assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+        assertTrue(input.includedUnitIds().size() <= TeamAiPromptBuilder.MAX_PERSPECTIVES);
+        assertNotNull(input.content());
     }
 
     private static SingleTeamBattleAnalysisContext contextWithMembers(

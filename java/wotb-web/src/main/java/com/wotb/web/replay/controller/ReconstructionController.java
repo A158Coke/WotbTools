@@ -31,6 +31,7 @@ import com.wotb.web.replay.ai.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.dto.ReconstructSummary;
 import com.wotb.web.replay.dto.StateAtResponse;
+import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -257,6 +258,13 @@ public class ReconstructionController {
     /**
      * 请求/数据错误（文件校验失败、NO_BATTLE_DATA 等）→ 400。
      */
+    @ExceptionHandler(AiPromptBudgetExceededException.class)
+    public ResponseEntity<Map<String, Object>> handlePromptBudgetExceeded(final AiPromptBudgetExceededException e) {
+        final Map<String, Object> body = new LinkedHashMap<>();
+        body.put("code", "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE");
+        return ResponseEntity.badRequest().body(body);
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<String> handleBadRequest(final IllegalArgumentException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)

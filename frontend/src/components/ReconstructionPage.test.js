@@ -128,6 +128,30 @@ describe('ReconstructionPage team analysis', () => {
     expect(analyzeButton(wrapper).attributes('disabled')).toBeUndefined()
   })
 
+  it('handles plain text error without JSON parse failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response('AI_NOT_CONFIGURED', { status: 503, headers: { 'Content-Type': 'text/plain' } })
+    ))
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['test.wotbreplay'])
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('recon.errors.AI_NOT_CONFIGURED')
+  })
+
+  it('parses JSON error code correctly', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ code: 'REPLAY_FILE_COUNT_EXCEEDED', maxFiles: 16 }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } })
+    ))
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['test.wotbreplay'])
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
+    expect(wrapper.text()).toContain('16')
+  })
+
   it('keeps random-battle reports player focused', async () => {
     const result = {
       ...teamResult('SINGLE_PLAYER_BATTLE', [{
