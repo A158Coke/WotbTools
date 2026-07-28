@@ -25,17 +25,21 @@ defineProps({
       <span>{{ $t('recon.analysis_mode') }}</span>
       <strong>{{ $t(`recon.modes.${result.mode}`) }}</strong>
     </div>
-    <div class="analysis-meta-item">
-      <span>{{ $t('recon.analysis_units') }}</span>
-      <strong>{{ result.analyzedUnitCount }}</strong>
-    </div>
     <div v-if="result.analysisUnitCount > 0" class="analysis-meta-item">
       <span>{{ $t('recon.analysis_unit_count') }}</span>
       <strong>{{ result.analysisUnitCount }}</strong>
     </div>
+    <div class="analysis-meta-item">
+      <span>{{ $t('recon.analyzed_unit_count') }}</span>
+      <strong>{{ result.analyzedUnitCount }}</strong>
+    </div>
     <div v-if="result.omittedAnalysisUnitCount > 0" class="analysis-meta-item">
       <span>{{ $t('recon.omitted_analysis_unit_count') }}</span>
       <strong>{{ result.omittedAnalysisUnitCount }}</strong>
+    </div>
+    <div v-if="result.unavailableAnalysisUnitCount > 0" class="analysis-meta-item">
+      <span>{{ $t('recon.unavailable_analysis_unit_count') }}</span>
+      <strong>{{ result.unavailableAnalysisUnitCount }}</strong>
     </div>
     <div v-if="teamAnalysis" class="analysis-meta-item">
       <span>{{ $t('recon.perspective_team') }}</span>

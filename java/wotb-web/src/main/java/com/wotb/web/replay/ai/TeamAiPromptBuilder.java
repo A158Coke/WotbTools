@@ -186,7 +186,6 @@ final class TeamAiPromptBuilder {
             globalLimitations.add("PERSPECTIVES_OMITTED_COUNT_" + totalOmitted);
         }
         final String finalLimLine = globalLimitations.isEmpty() ? "" : "DATA_LIMITATIONS=" + globalLimitations + "\n";
-        final Set<String> allLimitations = new LinkedHashSet<>(globalLimitations);
         // Reserve budget for all perspective required blocks
         for (int i = 0; i < includedCount; i++) {
             writer.reserve(perspectiveSections.get(i).mandatoryBlock().length());
@@ -197,7 +196,6 @@ final class TeamAiPromptBuilder {
         for (int index = 0; index < includedCount; index++) {
             writer.release(perspectiveSections.get(index).mandatoryBlock().length());
             writer.append(perspectiveSections.get(index).mandatoryBlock());
-            allLimitations.addAll(perspectiveSections.get(index).perUnitLimitations());
         }
         // Phase 3: Write all high-priority facts (P2) for all included perspectives
         for (int index = 0; index < includedCount; index++) {
