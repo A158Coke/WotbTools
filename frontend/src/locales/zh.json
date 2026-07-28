@@ -883,6 +883,8 @@
             "PERSPECTIVE_TIMELINES_ISOLATED": "各分析单元的时间线与实体命名空间保持独立。",
             "ROSTER_CONSISTENCY_UNCONFIRMED": "无法确认各场为同一固定队伍，仅进行样本集合比较。"
         },
+        "analyzed_unit_count": "已分析单元",
+        "unavailable_analysis_unit_count": "不可分析单元",
         "analysis_unit_count": "识别单元",
         "omitted_analysis_unit_count": "省略单元",
         "AI_PERSPECTIVE_OMITTED_FROM_PROMPT": "因输入限制未进入 AI 分析",

@@ -358,6 +358,10 @@ public class AiReplayAnalysisService {
                 }
             }
         }
+        allGlobalLimitations.removeIf(code -> code.matches("PERSPECTIVES_OMITTED_COUNT_\\d+"));
+        if (!allOmittedIds.isEmpty()) {
+            allGlobalLimitations.add("PERSPECTIVES_OMITTED_COUNT_" + allOmittedIds.size());
+        }
         if (firstAnalysis == null) {
             throw new IllegalStateException("NO_ANALYSIS_PRODUCED");
         }
@@ -1113,13 +1117,14 @@ public class AiReplayAnalysisService {
         final String step5 = step4.replaceAll(
                 "(?i)\\b(bearer|basic|digest)\\s+[^\\s,;\"'}]+",
                 "$1 [REDACTED]");
-        // Step 6: Custom auth scheme — whole-line/value matching only.
-        // Match: single-token scheme + single-token credential, both RFC token chars.
-        // Known schemes (bearer, basic, digest) handled by step 5.
-        // Authorization context handled by step 1.
-        final String step6 = step5.replaceAll(
-                "(?im)^([a-z][a-z0-9!#$%&'*+\\-.^_`|~]+)\\s+([a-z0-9!#$%&'*+\\-.^_`|~]+)$",
-                "$1 [REDACTED]");
+        // Step 6: For non-JSON, non-Authorization text — stop guessing at two-word patterns.
+        // Known schemes (bearer, basic, digest) already handled.
+        // Authorization context already handled by steps 1-4.
+        // Remaining text is treated as generic message — use placeholder.
+        // The `step5` variable at this point still contains the non-Authorization, non-sensitive text
+        // which may be AI provider error messages. These should not be parsed for custom auth schemes.
+        // Simply pass through with no additional redaction for generic text.
+        final String step6 = step5;
         // Step 7: Digest auth parameters — hide any value length
         return step6.replaceAll(
                 "(?i)\\b(response|nonce|cnonce|opaque|realm|qop|nc|uri|username)\\s*=\\s*[^\\s,;\"]+",

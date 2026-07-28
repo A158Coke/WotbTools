@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { limitationLabel } from '../utils/reconstruction-analysis.js'
+import { localizeLimitation } from '../utils/reconstruction-analysis.js'
 
 const props = defineProps({
   unit: {
@@ -49,7 +49,7 @@ const limitations = computed(() => props.unit.report?.limitations ?? [])
     </p>
     <ul v-if="limitations.length" class="limitation-list">
       <li v-for="code in limitations" :key="code">
-        {{ limitationLabel(code, t) }}
+        {{ localizeLimitation(code, $t) }}
       </li>
     </ul>
   </article>

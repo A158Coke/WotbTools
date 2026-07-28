@@ -114,9 +114,10 @@ public class AiReplayReviewService {
                 final var units = AiReplayAnalysisService.buildAnalysisUnits(
                         analyzableGroups, plan.dominantScope());
                 final int analyzedCount = 1;
+                final int unavailable = plan.effectiveUnitCount() - analyzedCount;
                 yield new AnalyzeResponse(ReplayAnalysisMode.SINGLE_PLAYER_BATTLE,
                         files.length, validCount,
-                        plan.effectiveUnitCount(), analyzedCount, plan.effectiveUnitCount() - analyzedCount, analyzedCount,
+                        plan.effectiveUnitCount(), analyzedCount, 0, unavailable, analyzedCount,
                         aiResult.analysis(), failedCount,
                         plan.exactDuplicateCount(), plan.sameTeamDuplicatePerspectiveCount(),
                         fileStatuses, units, aiResult.keyEvents(),
@@ -132,7 +133,7 @@ public class AiReplayReviewService {
                         analyzableGroups, plan.dominantScope());
                 yield new AnalyzeResponse(ReplayAnalysisMode.MULTI_PLAYER_BATTLE,
                         files.length, validCount,
-                        plan.effectiveUnitCount(), analyzedUnitCount, plan.effectiveUnitCount() - analyzedUnitCount, analyzedUnitCount,
+                        plan.effectiveUnitCount(), analyzedUnitCount, 0, plan.effectiveUnitCount() - analyzedUnitCount, analyzedUnitCount,
                         aiResult.analysis(), failedCount,
                         plan.exactDuplicateCount(), plan.sameTeamDuplicatePerspectiveCount(),
                         fileStatuses, units, aiResult.keyEvents(),
@@ -142,9 +143,12 @@ public class AiReplayReviewService {
                 final var teamResult = aiAnalysisService.analyzeTeamGroups(analyzableGroups);
                 final var aiResult = teamResult.analysis();
                 final int planUnitCount = plan.effectiveUnitCount();
+                final int analyzed = teamResult.analyzedUnitCount();
+                final int omitted = teamResult.omittedAnalysisUnitCount();
+                final int unavailable = planUnitCount - analyzed - omitted;
                 yield new AnalyzeResponse(plan.mode(),
                         files.length, validCount,
-                        planUnitCount, teamResult.analyzedUnitCount(), teamResult.omittedAnalysisUnitCount(), teamResult.analyzedUnitCount(),
+                        planUnitCount, analyzed, omitted, unavailable, analyzed,
                         aiResult.analysis(), failedCount,
                         plan.exactDuplicateCount(), plan.sameTeamDuplicatePerspectiveCount(),
                         fileStatuses, teamResult.units(), aiResult.keyEvents(),
