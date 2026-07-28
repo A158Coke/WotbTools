@@ -568,8 +568,9 @@ files → DefaultReplayProcessingFacade.processBatch()
 | 单次压缩上下文 | 30,000 字符 |
 
 超过预算会确定性截断，并在结果中加入 `AI_INPUT_TRUNCATED`。截断策略采用三层优先级输出：
-1. **Required contract section**（header + `unitLimitations=[...]`）必须完整写入，超出预算时 fail fast（`IllegalStateException`），不得静默丢失；
-2. **Truncatable feature section**（authoritative/observed/members/formation/phases/engagements/events）可以被截断，截断后追加 `LIMITATION: AI_INPUT_TRUNCATED`。
+1. **Mandatory contract**（context type、analysisUnitId、perspective header、unitLimitations、isolation/omission contract）必须完整写入，超出预算时抛 `AiPromptBudgetExceededException`（HTTP 400 映射），不得静默丢失；
+2. **High-priority facts**（authoritative aggregate、observed aggregate、member facts、coverage）必须原子完整写入，无法容纳时该 perspective 整体 omitted；
+3. **Optional details**（movements、formation、battle phases、engagements、key events）可按 unit 整块省略，被省略的 unit 加入 `truncatedUnitIds`，global `AI_INPUT_TRUNCATED` 添加。任意 unit 的截断不影响其他 unit 的 mandatory/high-priority facts。
 
 所有入口（单队/多队/编排）使用相同的 evidence limitation 规则：`AiReplayReviewService` 编排 `analyzeTeamGroups()` / `analyzeMulti()` / `analyzePlayerOrFallback()`，per-unit limitations 在各自上下文头部作为 `unitLimitations=[...]` 优先输出，不混入 global `DATA_LIMITATIONS`。
 
@@ -577,7 +578,7 @@ files → DefaultReplayProcessingFacade.processBatch()
 
 ### 错误与安全
 
-上游错误统一为稳定英文码：`AI_INVALID_REQUEST`、`AI_AUTHENTICATION_ERROR`、`AI_RATE_LIMITED`、`AI_CONTEXT_TOO_LARGE`、`AI_UPSTREAM_UNAVAILABLE`、`AI_TIMEOUT`、`AI_EMPTY_RESPONSE`、`AI_RESPONSE_INVALID`。HTTP 200 中的畸形 JSON、非法 completion envelope 均归为 `AI_RESPONSE_INVALID`。日志只能包含 provider/model/status、请求字符数、分析模式、correlation ID 与脱敏限长摘要，不得记录密钥、Authorization 或完整 Prompt。普通用户文案由前端 zh/en/ru 翻译。
+上游错误统一为稳定英文码：`AI_INVALID_REQUEST`、`AI_AUTHENTICATION_ERROR`、`AI_RATE_LIMITED`、`AI_CONTEXT_TOO_LARGE`、`AI_UPSTREAM_UNAVAILABLE`、`AI_TIMEOUT`、`AI_EMPTY_RESPONSE`、`AI_RESPONSE_INVALID`。HTTP 200 中的畸形 JSON、非法 completion envelope 均归为 `AI_RESPONSE_INVALID`。日志只能包含 provider/model/status、请求字符数、分析模式、correlation ID，provider body 原文不进入日志（统一替换为 `[PROVIDER_BODY_REDACTED]`），不得记录密钥、Authorization 或完整 Prompt。普通用户文案由前端 zh/en/ru 翻译。
 
 ### 测试
 

@@ -207,16 +207,13 @@ final class TeamAiPromptBuilder {
             }
         }
         // Phase 4: Write all optional details (P3) for all included perspectives
-        for (int index = 0; index < includedCount; index++) {
-            writer.append(perspectiveSections.get(index).optionalBlock());
-            if (perspectiveSections.get(index).optionalTruncated()) {
-                writer.markTruncated();
-            }
-        }
         final Set<String> truncatedIds = new LinkedHashSet<>();
-        for (int i = 0; i < includedCount; i++) {
-            if (perspectiveSections.get(i).optionalTruncated() || writer.isTruncated()) {
-                truncatedIds.add(perspectives.get(i).analysisUnitId());
+        for (int index = 0; index < includedCount; index++) {
+            final boolean optionalWritten = writer.append(
+                    perspectiveSections.get(index).optionalBlock());
+            if (!optionalWritten || perspectiveSections.get(index).optionalTruncated()) {
+                truncatedIds.add(perspectives.get(index).analysisUnitId());
+                writer.markTruncated();
             }
         }
         final Set<String> includedIds = new LinkedHashSet<>();
@@ -703,25 +700,26 @@ final class TeamAiPromptBuilder {
             this.reserved -= bytes;
         }
 
-        private void append(final String value) {
+        private boolean append(final String value) {
             if (value == null || value.isEmpty()) {
-                return;
+                return true;
             }
             final int truncationReserve = TRUNCATION_LINE.length();
             final int remaining = maxChars - truncationReserve - reserved - content.length();
             if (remaining <= 0) {
                 truncated = true;
-                return;
+                return false;
             }
             if (value.length() > remaining) {
                 truncated = true;
-                return;
+                return false;
             }
             content.append(value);
+            return true;
         }
 
         private void appendRequired(final String value) {
-            if (value == null || value.isEmpty()) {
+            if (!StringUtils.hasText(value)) {
                 return;
             }
             final int truncationReserve = TRUNCATION_LINE.length();
@@ -733,7 +731,7 @@ final class TeamAiPromptBuilder {
         }
 
         private void appendRequiredBlock(final String block) {
-            if (block == null || block.isEmpty()) return;
+            if (!StringUtils.hasText(block)) return;
             final int truncationReserve = TRUNCATION_LINE.length();
             final int remaining = maxChars - truncationReserve - reserved - content.length();
             if (remaining <= 0 || block.length() > remaining) {
