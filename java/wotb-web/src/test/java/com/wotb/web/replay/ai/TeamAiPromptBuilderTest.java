@@ -18,6 +18,7 @@ import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamBattleAnalysisSummary;
 import com.wotb.core.replay.feature.TeamFeatureCoverage;
 import com.wotb.core.replay.feature.CanonicalMapPosition;
+import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.TeamFormationCluster;
 import com.wotb.core.replay.feature.TeamFormationPhase;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
@@ -36,6 +37,7 @@ import java.util.stream.IntStream;
 
 
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -1088,5 +1090,62 @@ class TeamAiPromptBuilderTest {
                 "No truncation should result in empty truncatedUnitIds");
         assertFalse(input.globalLimitations().contains("AI_INPUT_TRUNCATED"),
                 "Global limitations must NOT include AI_INPUT_TRUNCATED");
+    }
+
+    @Test
+    void optionalBlockDoesNotStarveSubsequentHPF() {
+        // A: small HPF, large optional (key events with long labels) that fills most budget
+        // B: HPF that fits only if A's optional hasn't consumed the budget first
+        final var base = contextWithMembers(1, 1);
+        final List<KeyBattleEvent> hugeKeyEvents = IntStream.range(0, 200)
+                .mapToObj(i -> new KeyBattleEvent(
+                        (float) i, "BATTLE_END",
+                        "X".repeat(200), DecodeConfidence.EXACT, "TEST", List.of()))
+                .toList();
+        final TeamBattleFeatureSet featuresA = new TeamBattleFeatureSet(
+                1, base.features().members(),
+                base.features().authoritativeAggregate(),
+                base.features().observedAggregate(),
+                List.of(), List.of(), List.of(), hugeKeyEvents,
+                base.features().coverage(), List.of(), true);
+        // B has normal HPF with many members (fills space)
+        final var baseB = contextWithMembers(8, 30);
+        final List<TeamBattleAnalysisSummary> summaries = List.of(
+                new TeamBattleAnalysisSummary(
+                        "unit-A", null, "a.wotbreplay", "map1", null, 300.0,
+                        1, List.of(10001L), featuresA, "TeamA"),
+                new TeamBattleAnalysisSummary(
+                        "unit-B", null, "b.wotbreplay", "map1", null, 300.0,
+                        2, List.of(20001L, 20002L, 20003L), baseB.features(), "TeamB"));
+        final var multi = new MultiTeamBattleAnalysisContext(
+                2, 1, summaries, false, List.of());
+        final var input = assertDoesNotThrow(() -> TeamAiPromptBuilder.multi(multi),
+                "Must not throw AiPromptBudgetExceededException due to optional before HPF");
+        assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+        assertTrue(input.includedUnitIds().contains("unit-A"));
+        assertTrue(input.includedUnitIds().contains("unit-B"),
+                "unit-B must be included (not omitted by optional starvation)");
+        assertFalse(input.omittedUnitIds().contains("unit-B"),
+                "unit-B must not be omitted");
+        // B's HPF must exist
+        assertTrue(input.content().contains("analysisUnitId=\"unit-B\""),
+                "B's header must exist");
+        assertTrue(input.content().contains("PERSPECTIVE_FACTS"),
+                "B's PERSPECTIVE_FACTS must exist");
+        assertTrue(input.content().contains("AUTHORITATIVE_TEAM_RESULT"),
+                "B's AUTHORITATIVE_TEAM_RESULT must exist");
+        // Structural order: all PERSPECTIVE_FACTS before any PERSPECTIVE_OPTIONAL
+        final int lastFacts = input.content().lastIndexOf("=== PERSPECTIVE_FACTS ===");
+        final int firstOptional = input.content().indexOf("=== PERSPECTIVE_OPTIONAL ===");
+        assertTrue(lastFacts >= 0, "Must have at least one PERSPECTIVE_FACTS");
+        if (firstOptional > 0) {
+            assertTrue(firstOptional > lastFacts,
+                    "All PERSPECTIVE_FACTS must appear before any PERSPECTIVE_OPTIONAL");
+        }
+        // A's optional was truncated
+        assertTrue(input.truncatedUnitIds().contains("unit-A") || input.globalLimitations().contains("AI_INPUT_TRUNCATED"),
+                "unit-A optional should be truncated");
+        assertFalse(input.truncatedUnitIds().contains("unit-B"),
+                "unit-B must NOT be in truncatedUnitIds");
     }
 }

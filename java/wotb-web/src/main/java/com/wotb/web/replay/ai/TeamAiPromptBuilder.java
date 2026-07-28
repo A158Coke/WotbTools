@@ -199,16 +199,21 @@ final class TeamAiPromptBuilder {
             writer.release(perspectiveSections.get(index).mandatoryBlock().length());
             writer.append(perspectiveSections.get(index).mandatoryBlock());
         }
-        // Phase 3: Write all high-priority facts (P2) for all included perspectives
+        // Phase 3: Write ALL high-priority blocks (P2) for ALL included perspectives first
         final Set<String> truncatedIds = new LinkedHashSet<>();
         for (int index = 0; index < includedCount; index++) {
             final PerspectivePromptSections section = perspectiveSections.get(index);
             writer.appendRequiredBlock(section.highPriorityBlock());
+            if (section.hpfTruncated()) {
+                truncatedIds.add(section.analysisUnitId());
+                writer.markTruncated();
+            }
+        }
+        // Phase 4: Write ALL optional blocks (P3) with remaining budget
+        for (int index = 0; index < includedCount; index++) {
+            final PerspectivePromptSections section = perspectiveSections.get(index);
             final boolean optionalWritten = writer.append(section.optionalBlock());
-            final boolean unitTruncated = section.hpfTruncated()
-                    || section.optionalTruncated()
-                    || !optionalWritten;
-            if (unitTruncated) {
+            if (section.optionalTruncated() || !optionalWritten) {
                 truncatedIds.add(section.analysisUnitId());
                 writer.markTruncated();
             }
