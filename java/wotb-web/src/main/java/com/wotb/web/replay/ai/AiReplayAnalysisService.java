@@ -750,6 +750,9 @@ public class AiReplayAnalysisService {
         return body;
     }
 
+    private static final int MAX_SINGLE_PLAYER_PROMPT_CHARS = 30_000;
+    private static final int PROMPT_SAFETY_MARGIN_CHARS = 1_000;
+
     private static final String SINGLE_PLAYER_PROMPT = """
             这是单场回放分析。你是《坦克世界闪击战》(WoT Blitz) 的资深教练，正在对一场随机战斗做个人复盘。
 
@@ -1094,34 +1097,61 @@ public class AiReplayAnalysisService {
             }
         }
 
-        // ====== Movement details (semantic selection, not head-truncated) ======
+        // ====== Movement details (char-budget-aware, value-based priority) ======
         if (!features.movements().isEmpty()) {
-            sb.append("\n=== 移动段（压缩） ===\n");
             final int totalSegs = features.movements().size();
-            // Semantic priority: always include first, last, region-change, pre-death segments
-            final java.util.BitSet selected = new java.util.BitSet(totalSegs);
-            selected.set(0); // first
-            if (totalSegs > 1) selected.set(totalSegs - 1); // last
+            // Compute movement budget: remaining chars after mandatory sections
+            final int mandatoryLen = sb.length() + "\n=== 移动段（压缩） ===\n".length();
+            final int remainingTotal = MAX_SINGLE_PLAYER_PROMPT_CHARS - PROMPT_SAFETY_MARGIN_CHARS - SINGLE_PLAYER_PROMPT.length();
+            final int movementBudget = Math.max(200, remainingTotal - mandatoryLen);
+
+            // Score segments by tactical value
+            final java.util.List<java.util.Map.Entry<Integer, Double>> scored = new java.util.ArrayList<>();
             for (int i = 0; i < totalSegs; i++) {
                 final MovementSegment seg = features.movements().get(i);
+                double score = 0;
+                // first and last get high base score
+                if (i == 0) score += 100;
+                if (i == totalSegs - 1) score += 90;
+                // region change
                 if (seg.rawStartPosition() != null && seg.rawEndPosition() != null) {
                     final int sr = MapRegionResolver.resolveRegionFromRaw(seg.rawStartPosition().x(), seg.rawStartPosition().z());
                     final int er = MapRegionResolver.resolveRegionFromRaw(seg.rawEndPosition().x(), seg.rawEndPosition().z());
-                    if (sr != er) selected.set(i); // region change
+                    if (sr != er) score += 50;
+                }
+                // long distance
+                score += Math.min(seg.distance(), 200) / 5;
+                // long duration
+                score += Math.min(seg.endTime() - seg.startTime(), 100) / 10;
+                // high speed
+                if (seg.averageSpeed() > 10) score += 10;
+                if (seg.averageSpeed() > 30) score += 10;
+                scored.add(new java.util.AbstractMap.SimpleEntry<>(i, score));
+            }
+            scored.sort((a, b) -> Double.compare(b.getValue(), a.getValue()));
+
+            // Select segments fitting in budget
+            sb.append("\n=== 移动段（压缩） ===\n");
+            int used = 0;
+            final java.util.List<Integer> selectedIndices = new java.util.ArrayList<>();
+            for (final var entry : scored) {
+                final int idx = entry.getKey();
+                final MovementSegment seg = features.movements().get(idx);
+                final String line = "  [" + String.format("%.1f-%.1f", seg.startTime(), seg.endTime()) + "s] "
+                        + seg.type() + " | 距离 " + String.format("%.1f", seg.distance())
+                        + "m 速度 " + String.format("%.1f", seg.averageSpeed()) + "m/s"
+                        + (seg.rawStartPosition() != null ? " 从" + regionLabel(seg.rawStartPosition().x(), seg.rawStartPosition().z()) : "")
+                        + (seg.rawEndPosition() != null ? " 到" + regionLabel(seg.rawEndPosition().x(), seg.rawEndPosition().z()) : "")
+                        + "\n";
+                if (used + line.length() <= movementBudget) {
+                    selectedIndices.add(idx);
+                    used += line.length();
                 }
             }
-            final int selectedCount = selected.cardinality();
-            final int budget = 12;
-            int extra = Math.min(totalSegs - selectedCount, budget - selectedCount);
-            for (int i = 1; i < totalSegs - 1 && extra > 0; i++) {
-                if (!selected.get(i)) {
-                    selected.set(i);
-                    extra--;
-                }
-            }
-            for (int i = 0; i < totalSegs; i++) {
-                if (!selected.get(i)) continue;
-                final MovementSegment seg = features.movements().get(i);
+            // Sort selected by original index for chronological order
+            selectedIndices.sort(java.util.Comparator.naturalOrder());
+            for (final int idx : selectedIndices) {
+                final MovementSegment seg = features.movements().get(idx);
                 sb.append("  [").append(String.format("%.1f-%.1f", seg.startTime(), seg.endTime())).append("s] ")
                         .append(seg.type()).append(" | 距离 ").append(String.format("%.1f", seg.distance()))
                         .append("m 速度 ").append(String.format("%.1f", seg.averageSpeed())).append("m/s");
@@ -1133,9 +1163,14 @@ public class AiReplayAnalysisService {
                 }
                 sb.append('\n');
             }
-            final int omitted = totalSegs - selectedCount;
+            // only compute omitted after all work is done (fixes earlier wrong count)
+            final int included = selectedIndices.size();
+            final int omitted = totalSegs - included;
             if (omitted > 0) {
-                sb.append("  ... 另有 ").append(omitted).append(" 段低变化移动（完整路线见区域时间线）\n");
+                sb.append("详细移动段：总计 ").append(totalSegs)
+                        .append("，写入 ").append(included)
+                        .append("，因 Prompt 字符预算省略 ").append(omitted)
+                        .append("。完整区域变化仍保留在 RECORDER_REGION_TIMELINE_BACKEND_COMPUTED。\n");
             }
         }
 
@@ -1158,7 +1193,9 @@ public class AiReplayAnalysisService {
                     .append(" (").append(String.format("%.0f%%", finalAuthRecv > 0 ? 100.0 * observedReceived / finalAuthRecv : 0))
                     .append(")\n");
             sb.append("注意: 事件流数值仅为观测子集, 不是整场权威总伤害.\n");
-            for (int i = 0; i < features.engagements().size(); i++) {
+            final int totalEngage = features.engagements().size();
+            final int maxEngage = Math.min(totalEngage, 10);
+            for (int i = 0; i < maxEngage; i++) {
                 final EngagementSummary e = features.engagements().get(i);
                 sb.append("  #").append(i + 1).append(" [")
                         .append(String.format("%.1f-%.1f", e.startTime(), e.endTime())).append("s]")
@@ -1167,6 +1204,9 @@ public class AiReplayAnalysisService {
                         .append(" 结果: ").append(e.outcome())
                         .append(" 置信度: ").append(e.confidence())
                         .append('\n');
+            }
+            if (totalEngage > maxEngage) {
+                sb.append("  ... 另有 ").append(totalEngage - maxEngage).append(" 个交火段\n");
             }
         }
 
