@@ -805,7 +805,7 @@ AnalyzeResult analyzeSingleTeamContext(
         SingleTeamBattleAnalysisContext context
 );
 
-AnalyzeResult analyzeMultiTeamContext(
+AnalyzeResult analyzePlayerOrFallback(
         MultiTeamBattleAnalysisContext context
 );
 ```
@@ -929,8 +929,7 @@ case NONE
 
 ```text
 每个 perspective group 独立构建 summary
-→ MultiTeamBattleAnalysisContext
-→ aiService.analyzeMultiTeamContext()
+→ analyzeTeamGroups() → TeamAiPromptBuilder.multi()
 → AnalyzeResponse
 ```
 
