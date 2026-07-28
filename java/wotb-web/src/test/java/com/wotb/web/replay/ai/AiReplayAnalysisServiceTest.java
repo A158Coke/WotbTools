@@ -614,6 +614,147 @@ class AiReplayAnalysisServiceTest {
     }
 
     @Test
+    void teamTruncationOnlyAffectsTruncatedUnit() throws IOException {
+        responseBody = "{\"choices\":[{\"message\":{\"content\":\"truncation test\"}}]}";
+        final var service = startService(2);
+        final List<ReplayProcessingResult> results = List.of(
+                manyMemberTeamResultWithClan("large-a.wotbreplay", "big-arena", "CHRD"),
+                teamResultWithClan("normal-b.wotbreplay", "norm-b", "CHRD", false),
+                teamResultWithClan("normal-c.wotbreplay", "norm-c", "CHRD", false));
+        final var groups = teamGroups(results);
+        final var teamResult = service.analyzeTeamGroups(groups);
+        assertTrue(teamResult.limitations().contains("AI_INPUT_TRUNCATED"),
+                "Global limitations must contain AI_INPUT_TRUNCATED");
+        assertEquals(3, teamResult.units().size());
+        final var reportA = (TeamAnalysisUnitReport) teamResult.units().get(0).report();
+        final var reportB = (TeamAnalysisUnitReport) teamResult.units().get(1).report();
+        final var reportC = (TeamAnalysisUnitReport) teamResult.units().get(2).report();
+        assertTrue(reportA.limitations().contains("AI_INPUT_TRUNCATED"),
+                "Truncated unit must have AI_INPUT_TRUNCATED in report");
+        assertFalse(reportB.limitations().contains("AI_INPUT_TRUNCATED"),
+                "Non-truncated unit must NOT have AI_INPUT_TRUNCATED");
+        assertFalse(reportC.limitations().contains("AI_INPUT_TRUNCATED"),
+                "Non-truncated unit must NOT have AI_INPUT_TRUNCATED");
+    }
+
+    @Test
+    void teamATruncatedCTruncatedBClean() throws IOException {
+        responseBody = "{\"choices\":[{\"message\":{\"content\":\"truncation test\"}}]}";
+        final var service = startService(2);
+        final List<ReplayProcessingResult> results = List.of(
+                manyMemberTeamResultWithClan("large-a.wotbreplay", "big-a", "CHRD"),
+                teamResultWithClan("normal-b.wotbreplay", "norm-b", "CHRD", false),
+                manyMemberTeamResultWithClan("large-c.wotbreplay", "big-c", "CHRD"));
+        final var groups = teamGroups(results);
+        final var teamResult = service.analyzeTeamGroups(groups);
+        assertTrue(teamResult.limitations().contains("AI_INPUT_TRUNCATED"));
+        final var reportA = (TeamAnalysisUnitReport) teamResult.units().get(0).report();
+        final var reportB = (TeamAnalysisUnitReport) teamResult.units().get(1).report();
+        final var reportC = (TeamAnalysisUnitReport) teamResult.units().get(2).report();
+        assertTrue(reportA.limitations().contains("AI_INPUT_TRUNCATED"));
+        assertFalse(reportB.limitations().contains("AI_INPUT_TRUNCATED"));
+        assertTrue(reportC.limitations().contains("AI_INPUT_TRUNCATED"));
+    }
+
+    @Test
+    void globalLimitationNotCopiedToUnitReports() throws IOException {
+        final var service = startService(2);
+        final var groups = teamGroups(List.of(
+                teamResultWithClan("team-a.wotbreplay", "arena-a", "CLAN1", false),
+                teamResultWithClan("team-b.wotbreplay", "arena-b", "CLAN1", false)));
+        final var teamResult = service.analyzeTeamGroups(groups);
+        assertTrue(teamResult.limitations().contains("PERSPECTIVE_TIMELINES_ISOLATED"),
+                "Global limitations must contain PERSPECTIVE_TIMELINES_ISOLATED");
+        for (final var unit : teamResult.units()) {
+            final var report = (TeamAnalysisUnitReport) unit.report();
+            assertFalse(report.limitations().contains("PERSPECTIVE_TIMELINES_ISOLATED"),
+                    "Global limitation must not appear in per-unit report for " + unit.analysisUnitId());
+        }
+    }
+
+    @Test
+    void perUnitLimitationNotInGlobal() throws IOException {
+        final var service = startService(2);
+        final var groups = teamGroups(List.of(
+                teamResultWithDuplicateIds("dup-a.wotbreplay", "arena-a", "PlayerA", 1001L, 1),
+                teamResultWithClan("clean-b.wotbreplay", "arena-b", "CHRD", false)));
+        final var teamResult = service.analyzeTeamGroups(groups);
+        assertFalse(teamResult.limitations().contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
+                "Per-unit limitation DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS must not appear in global");
+        final var reportA = (TeamAnalysisUnitReport) teamResult.units().get(0).report();
+        final var reportB = (TeamAnalysisUnitReport) teamResult.units().get(1).report();
+        assertTrue(reportA.limitations().contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
+                "Unit A must have DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
+        assertFalse(reportB.limitations().contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
+                "Unit B must NOT have DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
+    }
+
+    @Test
+    void omittedUnitNotAffectedByOtherUnitTruncation() throws IOException {
+        responseBody = "{\"choices\":[{\"message\":{\"content\":\"omitted+truncated test\"}}]}";
+        final var service = startService(2);
+        // 12 CHRD perspectives, first one has 17 members (truncated)
+        // All share clan CHRD and same account IDs → single partition
+        final List<ReplayProcessingResult> results = IntStream.range(0, TeamAiPromptBuilder.MAX_PERSPECTIVES + 2)
+                .mapToObj(i -> i == 0
+                        ? manyMemberTeamResultWithClan("large.wotbreplay", "big-arena", "CHRD")
+                        : teamResultWithClan("battle-" + i + ".wotbreplay", "arena-" + i, "CHRD", false))
+                .toList();
+        // Partition 1 (CHRD): 11 teamResultWithClan units + 1 large team with different roster = 2 partitions
+        // Each partition is independently analyzed; no unit omitted by perspective cap
+        final var groups = teamGroups(results);
+        final var teamResult = service.analyzeTeamGroups(groups);
+        assertTrue(teamResult.analysisUnitCount() >= 2,
+                "Should have at least 2 analysis units");
+        // Unit with arena "big-arena" has 17 members → HPF truncated
+        final var unit0 = teamResult.units().stream()
+                .filter(u -> u.analysisUnitId() != null && u.analysisUnitId().contains("big-arena"))
+                .findFirst().orElseThrow();
+        final var report0 = (TeamAnalysisUnitReport) unit0.report();
+        assertTrue(report0.limitations().contains("AI_INPUT_TRUNCATED"),
+                "Unit with 17 members must have AI_INPUT_TRUNCATED");
+        // Omitted units (from perspective cap in the CHRD partition) must NOT have AI_INPUT_TRUNCATED
+        for (final var unit : teamResult.units()) {
+            final var report = (TeamAnalysisUnitReport) unit.report();
+            if (report.limitations().contains("AI_PERSPECTIVE_OMITTED_FROM_PROMPT")) {
+                assertNull(unit.model(), "Omitted unit must have null model");
+                assertNull(report.analysisText(), "Omitted unit must have null analysis");
+                assertFalse(report.limitations().contains("AI_INPUT_TRUNCATED"),
+                        "Omitted unit must NOT have AI_INPUT_TRUNCATED");
+            }
+        }
+    }
+
+    @Test
+    void multiPartitionTruncationIsIsolated() throws IOException {
+        responseBody = "{\"choices\":[{\"message\":{\"content\":\"multi partition test\"}}]}";
+        final var service = startService(2);
+        // Partition 1 (CLAN1): A truncated, B clean
+        // Partition 2 (CLAN2): C truncated, D clean
+        final var resultA = manyMemberTeamResultWithClan("large-a.wotbreplay", "big-a", "CLAN1");
+        final var resultB = teamResultWithClan("normal-b.wotbreplay", "norm-b", "CLAN1", false);
+        final var resultC = manyMemberTeamResultWithClan("large-c.wotbreplay", "big-c", "CLAN2");
+        final var resultD = teamResultWithClan("normal-d.wotbreplay", "norm-d", "CLAN2", false);
+        final var results = List.of(resultA, resultB, resultC, resultD);
+        final var groups = teamGroups(results);
+        final var teamResult = service.analyzeTeamGroups(groups);
+        assertTrue(teamResult.limitations().contains("AI_INPUT_TRUNCATED"),
+                "Global must contain AI_INPUT_TRUNCATED");
+        for (final var unit : teamResult.units()) {
+            final var report = (TeamAnalysisUnitReport) unit.report();
+            final String id = unit.analysisUnitId();
+            // Truncated units have arena "big-a" or "big-c"
+            if (id != null && (id.contains("big-a") || id.contains("big-c"))) {
+                assertTrue(report.limitations().contains("AI_INPUT_TRUNCATED"),
+                        "Truncated unit " + id + " must have truncation");
+            } else {
+                assertFalse(report.limitations().contains("AI_INPUT_TRUNCATED"),
+                        "Clean unit " + id + " must NOT have truncation");
+            }
+        }
+    }
+
+    @Test
     void rosterJaccardUsesPointSixAsInclusiveBoundary() {
         assertTrue(AiReplayAnalysisService.hasConsistentRoster(List.of(
                 rosterSummary("a", 5, List.of(1L, 2L, 3L, 4L)),
@@ -1132,6 +1273,30 @@ class AiReplayAnalysisServiceTest {
         return new ReplayProcessingResult(
                 "large-team.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new ReplayIdentity("large-team-hash", battle.arenaId, "11.0",
+                        battle.mapName, battle.players.getFirst().accountId, null),
+                battle, null, null, capabilities, null, null);
+    }
+
+    private static ReplayProcessingResult manyMemberTeamResultWithClan(
+            final String fileName, final String arenaId, final String clan) {
+        final Battle battle = new Battle();
+        battle.arenaId = arenaId;
+        battle.mapName = "team_map";
+        battle.arenaBonusType = 2;
+        battle.durationS = 300.0;
+        battle.winnerTeam = 1;
+        battle.recorder = "Member0";
+        battle.players = IntStream.range(0, TeamAiPromptBuilder.MAX_MEMBERS + 2)
+                .mapToObj(index -> clanPlayer(
+                        10_000L + index, "Member" + index, 1,
+                        500 + index, clan))
+                .toList();
+        battle.players.get(0).damageDealt = 500; // fix recorder damage
+        final var capabilities = new ReplayProcessingCapabilities(
+                true, true, false, false, false, true, false, false);
+        return new ReplayProcessingResult(
+                fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
+                new ReplayIdentity("hash-" + fileName, arenaId, "11.0",
                         battle.mapName, battle.players.getFirst().accountId, null),
                 battle, null, null, capabilities, null, null);
     }
