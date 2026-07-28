@@ -757,7 +757,9 @@ public class AiReplayAnalysisService {
             1. Battle result 区域中的事实（胜负、伤害、击杀、存活、阵容）是最终权威数据。
                事件流只能作为位置和时间证据。发生冲突时必须采用 Battle result，不得平均、覆盖或自行选择。
             2. 后端已经计算的统计（阵容车种分布、排名、区域序列）不得重新计算。
-            3. 位置数据已经过压缩（移动段），不要期待逐帧坐标。
+            3. RECORDER_REGION_TIMELINE 中的区域和时刻由后端确定性计算。必须使用后端提供的 region，禁止根据裸坐标重新划分区域。不得忽略路线中后段的区域变化。
+            4. KEY_EVENTS_BACKEND_COMPUTED 由后端计算，AI 不得重新识别或修改事件时间。
+            5. 位置数据已经过压缩（移动段），不要期待逐帧坐标。
 
             请用简体中文输出：
             1) 整体评价（车辆、地图适应性、战绩概述）
@@ -1042,13 +1044,63 @@ public class AiReplayAnalysisService {
             sb.append("位置流存在, 但录像者实体无法可靠映射\n");
         }
 
+        // ====== RECORDER_REGION_TIMELINE (all segments, deduplicated) ======
         if (!features.movements().isEmpty()) {
-            int n = 0;
+            sb.append("\n=== RECORDER_REGION_TIMELINE ===\n");
+            String lastRegion = null;
             for (final MovementSegment seg : features.movements()) {
-                if (n++ >= 5) {
-                    sb.append("  ... 还有 ").append(features.movements().size() - 5).append(" 段\n");
-                    break;
+                final int startRegion = seg.rawStartPosition() != null
+                        ? MapRegionResolver.resolveRegionFromRaw(seg.rawStartPosition().x(), seg.rawStartPosition().z()) : 0;
+                final int endRegion = seg.rawEndPosition() != null
+                        ? MapRegionResolver.resolveRegionFromRaw(seg.rawEndPosition().x(), seg.rawEndPosition().z()) : 0;
+                final String startStr = startRegion > 0 ? startRegion + "区" : "未知区域";
+                final String endStr = endRegion > 0 ? endRegion + "区" : "未知区域";
+                if (!startStr.equals(lastRegion)) {
+                    sb.append(String.format("%.1fs ", seg.startTime())).append(startStr).append('\n');
+                    lastRegion = startStr;
                 }
+                if (!endStr.equals(lastRegion)) {
+                    sb.append(String.format("%.1fs ", seg.endTime())).append(endStr).append('\n');
+                    lastRegion = endStr;
+                }
+            }
+            // Compact sequence
+            final java.util.LinkedHashSet<String> seq = new java.util.LinkedHashSet<>();
+            for (final MovementSegment seg : features.movements()) {
+                if (seg.rawStartPosition() != null) {
+                    final int r = MapRegionResolver.resolveRegionFromRaw(seg.rawStartPosition().x(), seg.rawStartPosition().z());
+                    if (r > 0) seq.add(String.valueOf(r));
+                }
+                if (seg.rawEndPosition() != null) {
+                    final int r = MapRegionResolver.resolveRegionFromRaw(seg.rawEndPosition().x(), seg.rawEndPosition().z());
+                    if (r > 0) seq.add(String.valueOf(r));
+                }
+            }
+            if (!seq.isEmpty()) {
+                sb.append("压缩区域序列: ").append(String.join(" → ", seq)).append('\n');
+            }
+        }
+
+        // ====== KEY_EVENTS_BACKEND_COMPUTED ======
+        if (features.keyEvents() != null && !features.keyEvents().isEmpty()) {
+            sb.append("\n=== KEY_EVENTS_BACKEND_COMPUTED ===\n");
+            for (final KeyBattleEvent ke : features.keyEvents()) {
+                sb.append(String.format("%.1fs ", ke.clockSec()))
+                        .append(ke.type());
+                if (ke.label() != null && !ke.label().isEmpty()) {
+                    sb.append(" ").append(PlayerResultFormat.quoteForPrompt(ke.label()));
+                }
+                sb.append('\n');
+            }
+        }
+
+        // ====== Movement details (compact, preserving critical segments) ======
+        if (!features.movements().isEmpty()) {
+            sb.append("\n=== 移动段（压缩） ===\n");
+            final int totalSegs = features.movements().size();
+            final int maxDetail = Math.min(totalSegs, 10);
+            for (int i = 0; i < maxDetail; i++) {
+                final MovementSegment seg = features.movements().get(i);
                 sb.append("  [").append(String.format("%.1f-%.1f", seg.startTime(), seg.endTime())).append("s] ")
                         .append(seg.type()).append(" | 距离 ").append(String.format("%.1f", seg.distance()))
                         .append("m 速度 ").append(String.format("%.1f", seg.averageSpeed())).append("m/s");
@@ -1059,6 +1111,9 @@ public class AiReplayAnalysisService {
                     sb.append(" 到").append(regionLabel(seg.rawEndPosition().x(), seg.rawEndPosition().z()));
                 }
                 sb.append('\n');
+            }
+            if (totalSegs > maxDetail) {
+                sb.append("  ... 还有 ").append(totalSegs - maxDetail).append(" 段（路线见区域时间线）\n");
             }
         }
 
