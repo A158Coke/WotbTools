@@ -27,7 +27,12 @@ import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamFeatureCoverage;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
+import com.wotb.core.replay.feature.EngagementOutcome;
+import com.wotb.core.replay.feature.EngagementSummary;
+import com.wotb.core.replay.feature.MovementSegment;
+import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.replay.reconstruction.Vector3;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -855,6 +860,109 @@ class AiReplayAnalysisServiceTest {
                 "Invalid team " + invalidTeam + " must show unknown side in entity line");
     }
 
+    @Test
+    void playerPromptIncludesFullRegionTimeline() throws IOException {
+        final var service = startService(2);
+        final Battle battle = makePlayerBattle(1, 1);
+        final Vector3 center = new Vector3(0f, 0f, 0f);
+        final Vector3 right = new Vector3(100f, 0f, 0f);
+        final Vector3 bottomRight = new Vector3(100f, 0f, -100f);
+        final List<MovementSegment> movements = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            movements.add(new MovementSegment(i * 10f, (i + 1) * 10f, MovementType.MOVING,
+                    center, center, 10f, 5f, DecodeConfidence.EXACT));
+        }
+        for (int i = 0; i < 2; i++) {
+            movements.add(new MovementSegment((5 + i) * 10f, (6 + i) * 10f, MovementType.MOVING,
+                    right, right, 10f, 5f, DecodeConfidence.EXACT));
+        }
+        movements.add(new MovementSegment(70f, 80f, MovementType.MOVING,
+                bottomRight, bottomRight, 10f, 5f, DecodeConfidence.EXACT));
+        final var ctx = buildContextWithFeatures(battle,
+                new PlayerBattleFeatureSet(movements, List.of(), List.of(), List.of(), List.of(), true));
+        service.analyzePlayerContext(ctx);
+        final String body = requestBodies.getLast();
+        assertTrue(body.contains("RECORDER_REGION_TIMELINE_BACKEND_COMPUTED"));
+        assertTrue(body.contains("压缩区域序列：5→6→9"));
+        assertTrue(body.contains("最终区域：9区"));
+    }
+
+    @Test
+    void playerPromptPreservesReturnRoute() throws IOException {
+        final var service = startService(2);
+        final Battle battle = makePlayerBattle(1, 1);
+        final Vector3 center = new Vector3(0f, 0f, 0f);
+        final Vector3 right = new Vector3(100f, 0f, 0f);
+        final Vector3 bottomRight = new Vector3(100f, 0f, -100f);
+        final List<MovementSegment> movements = List.of(
+                new MovementSegment(0f, 10f, MovementType.MOVING, center, center, 10f, 5f, DecodeConfidence.EXACT),
+                new MovementSegment(10f, 20f, MovementType.MOVING, right, right, 10f, 5f, DecodeConfidence.EXACT),
+                new MovementSegment(20f, 30f, MovementType.MOVING, bottomRight, bottomRight, 10f, 5f, DecodeConfidence.EXACT),
+                new MovementSegment(30f, 40f, MovementType.MOVING, right, right, 10f, 5f, DecodeConfidence.EXACT),
+                new MovementSegment(40f, 50f, MovementType.MOVING, bottomRight, bottomRight, 10f, 5f, DecodeConfidence.EXACT));
+        final var ctx = buildContextWithFeatures(battle,
+                new PlayerBattleFeatureSet(movements, List.of(), List.of(), List.of(), List.of(), true));
+        service.analyzePlayerContext(ctx);
+        final String body = requestBodies.getLast();
+        assertTrue(body.contains("压缩区域序列：5→6→9→6→9"));
+    }
+
+    @Test
+    void keyEventsInPromptBody() throws IOException {
+        final var service = startService(2);
+        final Battle battle = makePlayerBattle(1, 1);
+        final List<KeyBattleEvent> keyEvents = List.of(
+                new KeyBattleEvent(10f, "FIRST_CONTACT", "初次接触", DecodeConfidence.EXACT, "TEST", List.of()),
+                new KeyBattleEvent(20f, "REGION_CHANGE", "区域变换", DecodeConfidence.EXACT, "TEST", List.of()),
+                new KeyBattleEvent(30f, "PLAYER_DESTROYED", "被击毁", DecodeConfidence.EXACT, "TEST", List.of()));
+        final var ctx = buildContextWithFeatures(battle,
+                new PlayerBattleFeatureSet(List.of(), List.of(), List.of(), keyEvents, List.of(), true));
+        service.analyzePlayerContext(ctx);
+        final String body = requestBodies.getLast();
+        assertTrue(body.contains("KEY_EVENTS_BACKEND_COMPUTED"));
+        assertTrue(body.contains("FIRST_CONTACT"));
+        assertTrue(body.contains("REGION_CHANGE"));
+        assertTrue(body.contains("PLAYER_DESTROYED"));
+    }
+
+    @Test
+    void battleResultAuthoritative() throws IOException {
+        final var service = startService(2);
+        final Battle battle = makePlayerBattle(1, 1);
+        battle.players.getFirst().damageDealt = 3000;
+        final List<EngagementSummary> engagements = List.of(
+                new EngagementSummary(0f, 10f, List.of(), List.of(), 600, 0,
+                        new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
+                        EngagementOutcome.FAVORABLE, DecodeConfidence.EXACT),
+                new EngagementSummary(10f, 20f, List.of(), List.of(), 600, 0,
+                        new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
+                        EngagementOutcome.FAVORABLE, DecodeConfidence.EXACT));
+        final var ctx = buildContextWithFeatures(battle,
+                new PlayerBattleFeatureSet(List.of(), engagements, List.of(), List.of(), List.of(), true));
+        service.analyzePlayerContext(ctx);
+        final String body = requestBodies.getLast();
+        assertTrue(body.contains("权威结算总输出: 3000"));
+        assertTrue(body.contains("事件流观测输出子集: 1200"));
+    }
+
+    @Test
+    void tailEventsNotHeadTruncated() throws IOException {
+        final var service = startService(2);
+        final Battle battle = makePlayerBattle(1, 1);
+        final Vector3 center = new Vector3(0f, 0f, 0f);
+        final Vector3 bottomRight = new Vector3(100f, 0f, -100f);
+        final List<MovementSegment> movements = List.of(
+                new MovementSegment(0f, 10f, MovementType.MOVING, center, center, 10f, 5f, DecodeConfidence.EXACT),
+                new MovementSegment(10f, 20f, MovementType.MOVING, bottomRight, bottomRight, 10f, 5f, DecodeConfidence.EXACT));
+        final var ctx = buildContextWithFeatures(battle,
+                new PlayerBattleFeatureSet(movements, List.of(), List.of(), List.of(), List.of(), true));
+        service.analyzePlayerContext(ctx);
+        final String body = requestBodies.getLast();
+        assertTrue(body.contains("9区"));
+    }
+
+    // singleFileLimitStillEnforced: covered by ReconstructionControllerTeamAnalysisTest
+
     // ========== Fallback path ==========
 
     @Test
@@ -1095,6 +1203,19 @@ class AiReplayAnalysisServiceTest {
         battle.players = List.of(rec, other);
         battle.recorder = rec.nickname;
         return battle;
+    }
+
+    private static SinglePlayerBattleAnalysisContext buildContextWithFeatures(
+            final Battle battle, final PlayerBattleFeatureSet features) {
+        final PlayerResult rec = battle.recorderResult();
+        final RecorderEntityMapping recorderMapping = new RecorderEntityMapping(
+                rec != null ? rec.accountId : 0L, 501, 42, "RecorderPlayer",
+                rec != null && PlayerSideResolver.isValidRawTeam(rec.team) ? rec.team : null,
+                123, DecodeConfidence.EXACT);
+        final ReplayCoverage coverage = new ReplayCoverage(
+                true, 100, 100, 0, 0, 0, 1.0, Map.of());
+        return new SinglePlayerBattleAnalysisContext(
+                null, battle, features, recorderMapping, coverage, List.of("TEST_LIMITATION"));
     }
 
     private AiReplayAnalysisService startService(final int timeoutSec) throws IOException {
