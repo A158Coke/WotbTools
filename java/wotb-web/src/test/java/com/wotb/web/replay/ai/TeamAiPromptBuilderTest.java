@@ -959,4 +959,134 @@ class TeamAiPromptBuilderTest {
                     "Perspective 2 must contain its evidence limitation");
         }
     }
+
+    @Test
+    void hpfTruncatedUnitAddedToTruncatedIds() {
+        // A has 18 members (> MAX_MEMBERS=15 → HPF truncated)
+        final SingleTeamBattleAnalysisContext baseA = contextWithMembers(18, 5);
+        // B and C have 1 member each, no truncation
+        final SingleTeamBattleAnalysisContext baseB = contextWithMembers(1, 1);
+        final SingleTeamBattleAnalysisContext baseC = contextWithMembers(1, 1);
+        final List<TeamBattleAnalysisSummary> summaries = List.of(
+                new TeamBattleAnalysisSummary(
+                        "unit-A", null, "a.wotbreplay", "map1", null, 300.0,
+                        1, List.of(10001L), baseA.features(), "TeamA"),
+                new TeamBattleAnalysisSummary(
+                        "unit-B", null, "b.wotbreplay", "map1", null, 300.0,
+                        2, List.of(20001L), baseB.features(), "TeamB"),
+                new TeamBattleAnalysisSummary(
+                        "unit-C", null, "c.wotbreplay", "map1", null, 300.0,
+                        2, List.of(30001L), baseC.features(), "TeamC"));
+        final var multi = new MultiTeamBattleAnalysisContext(
+                3, 1, summaries, false, List.of());
+        final var input = TeamAiPromptBuilder.multi(multi);
+        assertEquals(Set.of("unit-A"), input.truncatedUnitIds(),
+                "Only unit-A (HPF truncated) should be in truncatedUnitIds");
+        assertTrue(input.globalLimitations().contains("AI_INPUT_TRUNCATED"),
+                "Global limitations must include AI_INPUT_TRUNCATED");
+        assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+        assertFalse(input.omittedUnitIds().contains("unit-A"),
+                "unit-A should be included, not omitted");
+    }
+
+    @Test
+    void optionalTruncatedUnitAddedToTruncatedIds() {
+        // A has huge optional (500 formations → optional truncated)
+        final SingleTeamBattleAnalysisContext base = contextWithMembers(1, 1);
+        final List<TeamFormationPhase> hugeFormations = IntStream.range(0, 500)
+                .mapToObj(i -> new TeamFormationPhase(
+                        (float) i, (float) i + 1.0f,
+                        new CanonicalMapPosition(250f, 250f), 0f, 1,
+                        DecodeConfidence.EXACT, List.of()))
+                .toList();
+        final TeamBattleFeatureSet featuresA = new TeamBattleFeatureSet(
+                1, base.features().members(),
+                base.features().authoritativeAggregate(),
+                base.features().observedAggregate(),
+                hugeFormations, List.of(), List.of(), List.of(),
+                base.features().coverage(), List.of(), true);
+        final SingleTeamBattleAnalysisContext baseB = contextWithMembers(1, 1);
+        final SingleTeamBattleAnalysisContext baseC = contextWithMembers(1, 1);
+        final SingleTeamBattleAnalysisContext ctxA = new SingleTeamBattleAnalysisContext(
+                base.analysisUnitId(), base.battleId(), base.fileName(),
+                base.battleCategory(), base.battle(), 1, featuresA,
+                base.coverage(), base.limitations());
+        final List<TeamBattleAnalysisSummary> summaries = List.of(
+                new TeamBattleAnalysisSummary(
+                        "unit-A", null, "a.wotbreplay", "map1", null, 300.0,
+                        1, List.of(10001L), ctxA.features(), "TeamA"),
+                new TeamBattleAnalysisSummary(
+                        "unit-B", null, "b.wotbreplay", "map1", null, 300.0,
+                        2, List.of(20001L), baseB.features(), "TeamB"),
+                new TeamBattleAnalysisSummary(
+                        "unit-C", null, "c.wotbreplay", "map1", null, 300.0,
+                        2, List.of(30001L), baseC.features(), "TeamC"));
+        final var multi = new MultiTeamBattleAnalysisContext(
+                3, 1, summaries, false, List.of());
+        final var input = TeamAiPromptBuilder.multi(multi);
+        assertEquals(Set.of("unit-A"), input.truncatedUnitIds(),
+                "Only unit-A (optional truncated) should be in truncatedUnitIds");
+        assertTrue(input.content().contains("analysisUnitId=\"unit-B\""),
+                "B's optional block should still be present");
+        assertTrue(input.content().contains("analysisUnitId=\"unit-C\""),
+                "C's optional block should still be present");
+    }
+
+    @Test
+    void aAndCTruncatedBIsClean() {
+        // A and C have huge optional, B is clean
+        final SingleTeamBattleAnalysisContext base = contextWithMembers(1, 1);
+        final List<TeamFormationPhase> hugeFormations = IntStream.range(0, 500)
+                .mapToObj(i -> new TeamFormationPhase(
+                        (float) i, (float) i + 1.0f,
+                        new CanonicalMapPosition(250f, 250f), 0f, 1,
+                        DecodeConfidence.EXACT, List.of()))
+                .toList();
+        final TeamBattleFeatureSet featuresHuge = new TeamBattleFeatureSet(
+                1, base.features().members(),
+                base.features().authoritativeAggregate(),
+                base.features().observedAggregate(),
+                hugeFormations, List.of(), List.of(), List.of(),
+                base.features().coverage(), List.of(), true);
+        final SingleTeamBattleAnalysisContext baseB = contextWithMembers(1, 1);
+        final List<TeamBattleAnalysisSummary> summaries = List.of(
+                new TeamBattleAnalysisSummary(
+                        "unit-A", null, "a.wotbreplay", "map1", null, 300.0,
+                        1, List.of(10001L), featuresHuge, "TeamA"),
+                new TeamBattleAnalysisSummary(
+                        "unit-B", null, "b.wotbreplay", "map1", null, 300.0,
+                        2, List.of(20001L), baseB.features(), "TeamB"),
+                new TeamBattleAnalysisSummary(
+                        "unit-C", null, "c.wotbreplay", "map1", null, 300.0,
+                        2, List.of(30001L), featuresHuge, "TeamC"));
+        final var multi = new MultiTeamBattleAnalysisContext(
+                3, 1, summaries, false, List.of());
+        final var input = TeamAiPromptBuilder.multi(multi);
+        assertEquals(Set.of("unit-A", "unit-C"), input.truncatedUnitIds(),
+                "unit-A and unit-C (optional truncated) should be in truncatedUnitIds");
+        assertTrue(input.includedUnitIds().contains("unit-B"),
+                "unit-B should be included");
+        assertFalse(input.truncatedUnitIds().contains("unit-B"),
+                "unit-B should NOT be in truncatedUnitIds");
+    }
+
+    @Test
+    void noTruncationTruncatedIdsEmpty() {
+        final SingleTeamBattleAnalysisContext baseA = contextWithMembers(1, 1);
+        final SingleTeamBattleAnalysisContext baseB = contextWithMembers(1, 1);
+        final List<TeamBattleAnalysisSummary> summaries = List.of(
+                new TeamBattleAnalysisSummary(
+                        "unit-A", null, "a.wotbreplay", "map1", null, 300.0,
+                        1, List.of(10001L), baseA.features(), "TeamA"),
+                new TeamBattleAnalysisSummary(
+                        "unit-B", null, "b.wotbreplay", "map1", null, 300.0,
+                        2, List.of(20001L), baseB.features(), "TeamB"));
+        final var multi = new MultiTeamBattleAnalysisContext(
+                2, 1, summaries, false, List.of());
+        final var input = TeamAiPromptBuilder.multi(multi);
+        assertTrue(input.truncatedUnitIds().isEmpty(),
+                "No truncation should result in empty truncatedUnitIds");
+        assertFalse(input.globalLimitations().contains("AI_INPUT_TRUNCATED"),
+                "Global limitations must NOT include AI_INPUT_TRUNCATED");
+    }
 }
