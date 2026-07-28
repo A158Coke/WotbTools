@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { localizeLimitation } from '../utils/reconstruction-analysis.js'
+import MarkdownContent from './MarkdownContent.vue'
 
 const props = defineProps({
   unit: {
@@ -52,5 +53,10 @@ const limitations = computed(() => props.unit.report?.limitations ?? [])
         {{ localizeLimitation(code, $t) }}
       </li>
     </ul>
+    <MarkdownContent
+      v-if="unit.report?.analysisText"
+      class="unit-analysis-text"
+      :content="unit.report.analysisText"
+    />
   </article>
 </template>
