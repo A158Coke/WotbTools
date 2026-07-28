@@ -44,8 +44,8 @@ class DefaultTeamBattleFeatureExtractorTest {
                 .allMatch(movement -> movement.distance() < 100));
         assertTrue(features.members().stream()
                 .flatMap(member -> member.movements().stream())
-                .noneMatch(movement -> movement.startPosition().x() >= 900
-                        || movement.endPosition().x() >= 900));
+                .noneMatch(movement -> movement.rawStartPosition().x() >= 900
+                        || movement.rawEndPosition().x() >= 900));
     }
 
     @Test
@@ -212,7 +212,7 @@ class DefaultTeamBattleFeatureExtractorTest {
                 position(4, 8f, 10, 10f, 0f),
                 damage(5, 20f, 10, 20, 100));
         final ReplayReconstruction reconstruction = new ReplayReconstruction(
-                null, null, 60f, null, participants, events,
+                null, null, 60f, 0f, participants, events,
                 List.of(), null,
                 new ReplayCoverage(true, events.size(), events.size(),
                         0, 0, 0, 1.0, Map.of()),
@@ -274,8 +274,17 @@ class DefaultTeamBattleFeatureExtractorTest {
     void formationClusteringUsesOneHundredMetersAsAnInclusiveBoundary() {
         final Fixture fixture = fixture();
 
-        assertEquals(1, formationClusters(fixture, 100f));
-        assertEquals(2, formationClusters(fixture, 100.1f));
+        assertEquals(1, formationClusters(fixture, 400f));
+        assertEquals(2, formationClusters(fixture, 400.1f));
+    }
+
+    @Test
+    void clampedPositionsUseCanonicalDistance() {
+        // raw X1=1050 (clamped to 1000), raw X2=649.9 → canonical distance ~87.5m → same cluster
+        final Fixture fixture = fixture();
+        assertEquals(1, formationClusters(fixture, 1050f, 649.9f));
+        // raw X1=1050 (clamped to 1000), raw X2=250 → canonical distance 187.5m → separate cluster
+        assertEquals(2, formationClusters(fixture, 1050f, 250f));
     }
 
     @Test
@@ -324,8 +333,8 @@ class DefaultTeamBattleFeatureExtractorTest {
         final Fixture fixture = fixture();
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),
-                position(2, 5f, 10, 5000f, 0f),
-                position(3, 6f, 10, 5000.1f, 0f));
+                position(2, 5f, 10, 500f, 0f),
+                position(3, 6f, 10, 1500f, 0f));
 
         final TeamBattleFeatureSet features = extract(fixture, events);
 
@@ -363,7 +372,9 @@ class DefaultTeamBattleFeatureExtractorTest {
         assertEquals(0, features.coverage().observedPositionEventCount());
         assertEquals(0, features.coverage().observedDamageEventCount());
         assertEquals(2, features.coverage().ignoredInvalidTimestampEventCount());
-        assertEquals(1, features.coverage().unattributedDamageEventCount());
+        // Invalid-timestamp damage is reported ONLY as invalid-timestamp coverage; it must NOT
+        // also inflate the unattributed tactical damage count (those two are distinct classes).
+        assertEquals(0, features.coverage().unattributedDamageEventCount());
         assertTrue(features.limitations().contains(
                 "INVALID_EVENT_TIMESTAMPS_IGNORED"));
     }
@@ -418,20 +429,394 @@ class DefaultTeamBattleFeatureExtractorTest {
     void replayBattleEndKeepsItsSourceAndConfidence() {
         final Fixture fixture = fixture();
         fixture.battle().durationS = null;
+        // Non-zero battle start (raw 30): BattleEndedEvent raw 120 must convert to relative 90,
+        // proving the conversion actually runs rather than being hidden by a zero clock.
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),
                 new BattleEndedEvent(
-                        2, new ReplayTimestamp(90f, null), 14,
+                        2, new ReplayTimestamp(120f, null), 14,
                         DecodeConfidence.INFERRED, 1));
 
-        final KeyBattleEvent battleEnd = extract(fixture, events).keyEvents().stream()
+        final KeyBattleEvent battleEnd = extractWithStart(fixture, events, 30f).keyEvents().stream()
                 .filter(event -> "BATTLE_END".equals(event.type()))
                 .findFirst()
                 .orElseThrow();
 
-        assertEquals(90f, battleEnd.clockSec());
+        assertEquals(90f, battleEnd.clockSec());   // 120 raw - 30 battle start
         assertEquals("REPLAY_EVENT", battleEnd.source());
         assertEquals(DecodeConfidence.INFERRED, battleEnd.confidence());
+    }
+
+    // ===== Pre-battle damage exclusion (Finding #3) =====
+
+    @Test
+    void preBattleDamageExcludedFromTeamTacticalStats() {
+        final Fixture fixture = fixture();
+        // battle start raw = 10; damage at raw 5 is pre-battle, at raw 12 is in-battle (relative 2).
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 20, 200L),
+                damage(3, 5f, 10, 20, 100),    // pre-battle -> excluded everywhere
+                damage(4, 12f, 10, 20, 200));  // in-battle -> exactly this counts
+
+        final TeamBattleFeatureSet features = extractWithStart(fixture, events, 10f);
+
+        // Observed damage is exactly the in-battle 200, never 300.
+        assertEquals(200, features.observedAggregate().damageDealt());
+        assertEquals(1, features.observedAggregate().attributedDamageEventCount());
+        assertEquals(0, features.observedAggregate().unattributedDamageEventCount());
+        // First contact is the in-battle damage at relative 2s (not pre-battle 100 at relative -5).
+        final KeyBattleEvent firstContact = features.keyEvents().stream()
+                .filter(event -> "TEAM_FIRST_CONTACT".equals(event.type()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(2f, firstContact.clockSec(), 0.01f);
+        assertEquals("damage=200", firstContact.label());
+        // Exactly one engagement, driven only by the in-battle damage, starting at relative 2s.
+        assertEquals(1, features.engagements().size());
+        assertEquals(2f, features.engagements().getFirst().startTime(), 0.01f);
+        assertEquals(200, features.engagements().getFirst().damageDealt());
+        // No tactical time is negative (pre-battle would have produced relative -5).
+        assertTrue(features.keyEvents().stream().allMatch(event -> event.clockSec() >= 0f));
+        assertTrue(features.engagements().stream().allMatch(engagement -> engagement.startTime() >= 0f));
+    }
+
+    @Test
+    void preBattleUnattributedDamageDoesNotIncreaseUnattributedCount() {
+        final Fixture fixture = fixture();
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 20, 200L),
+                damage(3, 50f, 98, 99, 100),    // pre-battle + unmapped -> excluded, NOT unattributed
+                damage(4, 150f, 10, 20, 200));
+
+        final TeamBattleFeatureSet features = extractWithStart(fixture, events, 100f);
+
+        assertEquals(0, features.observedAggregate().unattributedDamageEventCount());
+        assertEquals(200, features.observedAggregate().damageDealt());
+    }
+
+    // ===== Battle-end / fallback clock is battle-relative (Finding #4) =====
+
+    @Test
+    void replayBattleEndConvertedToBattleRelativeClock() {
+        final Fixture fixture = fixture();
+        fixture.battle().durationS = null;   // force replay-event battle end
+        // battle start raw = 60, BattleEndedEvent raw = 240 -> relative end 180.
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                new BattleEndedEvent(2, new ReplayTimestamp(240f, null), 14,
+                        DecodeConfidence.INFERRED, 1));
+
+        final TeamBattleFeatureSet features = extractWithStart(fixture, events, 60f);
+
+        final KeyBattleEvent battleEnd = features.keyEvents().stream()
+                .filter(event -> "BATTLE_END".equals(event.type()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(180f, battleEnd.clockSec(), 0.01f);
+        assertTrue(features.battlePhases().stream()
+                .noneMatch(phase -> phase.endTime() == 240f));
+        assertTrue(features.battlePhases().stream()
+                .allMatch(phase -> phase.endTime() <= 180f + 0.01f));
+    }
+
+    @Test
+    void lastObservedClockFallbackIsBattleRelative() {
+        final Fixture fixture = fixture();
+        fixture.battle().durationS = null;   // no authoritative duration, no BattleEndedEvent
+        // battle start raw = 60, last observed raw = 150 -> relative fallback 90.
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 20, 200L),
+                damage(3, 120f, 10, 20, 100),
+                position(4, 150f, 10, 0f, 0f));
+
+        final TeamBattleFeatureSet features = extractWithStart(fixture, events, 60f);
+
+        assertTrue(features.battlePhases().stream()
+                .anyMatch(phase -> Math.abs(phase.endTime() - 90f) < 0.01f));
+        assertTrue(features.battlePhases().stream()
+                .noneMatch(phase -> phase.endTime() >= 150f));
+    }
+
+    @Test
+    void authoritativeDurationIsNotReSubtractedByBattleStart() {
+        final Fixture fixture = fixture();
+        fixture.battle().durationS = 120.0;   // authoritative battle-relative duration
+        // Even with a resolved raw battle start of 60, durationS must be used as-is (120).
+        final List<ReplayEvent> events = List.of(mapping(1, 10, 100L));
+
+        final TeamBattleFeatureSet features = extractWithStart(fixture, events, 60f);
+
+        final KeyBattleEvent battleEnd = features.keyEvents().stream()
+                .filter(event -> "BATTLE_END".equals(event.type()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(120f, battleEnd.clockSec(), 0.01f);
+    }
+
+    // ===== Enemy-only damage does not affect team battle phases =====
+
+    @Test
+    void enemyOnlyDamageProducesEmptyPhases() {
+        final Fixture fixture = fixture();
+        fixture.battle().durationS = null;
+        final List<BattleParticipant> participants = new ArrayList<>(fixture.participants());
+        participants.add(new BattleParticipant(202L, "EnemyTwo", 2, 99, "e", false));
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 11, 101L),
+                mapping(3, 20, 200L),
+                mapping(4, 99, 202L),
+                damage(5, 50f, 20, 99, 200));
+        final TeamBattleFeatureSet features = extract(
+                new Fixture(fixture.battle(), participants, events), events);
+        assertTrue(features.battlePhases().isEmpty());
+    }
+
+    @Test
+    void enemyOnlyDamageDoesNotExtendFallbackPhaseEnd() {
+        final Fixture fixture = fixture();
+        fixture.battle().durationS = null;
+        final List<BattleParticipant> participants = new ArrayList<>(fixture.participants());
+        participants.add(new BattleParticipant(202L, "EnemyTwo", 2, 99, "e", false));
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 11, 101L),
+                mapping(3, 20, 200L),
+                mapping(4, 99, 202L),
+                position(5, 90f, 10, 0f, 0f),
+                damage(6, 150f, 20, 99, 200));
+        final TeamBattleFeatureSet features = extract(
+                new Fixture(fixture.battle(), participants, events), events);
+        assertFalse(features.battlePhases().isEmpty());
+        assertTrue(features.battlePhases().stream()
+                .noneMatch(phase -> phase.endTime() >= 150f));
+        assertTrue(features.battlePhases().stream()
+                .anyMatch(phase -> Math.abs(phase.endTime() - 90f) < 0.01f));
+    }
+
+    @Test
+    void enemyOnlyDamageDoesNotChangeFirstContact() {
+        final Fixture fixture = fixture();
+        final List<BattleParticipant> participants = new ArrayList<>(fixture.participants());
+        participants.add(new BattleParticipant(202L, "EnemyTwo", 2, 99, "e", false));
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 11, 101L),
+                mapping(3, 20, 200L),
+                mapping(4, 99, 202L),
+                damage(5, 20f, 20, 99, 200),
+                damage(6, 40f, 10, 20, 200));
+        final TeamBattleFeatureSet features = extract(
+                new Fixture(fixture.battle(), participants, events), events);
+        final KeyBattleEvent firstContact = features.keyEvents().stream()
+                .filter(event -> "TEAM_FIRST_CONTACT".equals(event.type()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(40f, firstContact.clockSec(), 0.01f);
+        final BattlePhaseSummary firstContactPhase = features.battlePhases().stream()
+                .filter(phase -> phase.type() == BattlePhaseType.FIRST_CONTACT)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(40f, firstContactPhase.startTime(), 0.01f);
+        assertTrue(features.keyEvents().stream()
+                .noneMatch(event -> "TEAM_FIRST_CONTACT".equals(event.type())
+                        && Math.abs(event.clockSec() - 20f) < 0.01f));
+    }
+
+    @Test
+    void authoritativeDurationStillRespectedWithEnemyOnlyDamage() {
+        final Fixture fixture = fixture();
+        fixture.battle().durationS = 120.0;
+        final List<BattleParticipant> participants = new ArrayList<>(fixture.participants());
+        participants.add(new BattleParticipant(202L, "EnemyTwo", 2, 99, "e", false));
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 11, 101L),
+                mapping(3, 20, 200L),
+                mapping(4, 99, 202L),
+                position(5, 5f, 10, 0f, 0f),
+                damage(6, 150f, 20, 99, 200));
+        final TeamBattleFeatureSet features = extract(
+                new Fixture(fixture.battle(), participants, events), events);
+        assertFalse(features.battlePhases().isEmpty());
+        assertTrue(features.battlePhases().stream()
+                .noneMatch(phase -> phase.endTime() >= 150f));
+        assertTrue(features.battlePhases().stream()
+                .allMatch(phase -> phase.endTime() <= 120f + 0.01f));
+    }
+
+    // ===== Position audit clamped<=observed + pre-battle/invalid (Finding #5) =====
+
+    @Test
+    void preBattleClampedPositionNotObservedNorClamped() {
+        final Fixture fixture = fixture();
+        // battle start raw = 100; position at raw clock 50 is pre-battle. raw X 1020 -> CLAMPED.
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                position(2, 50f, 10, 1020f, 0f));
+
+        final TeamFeatureCoverage coverage =
+                extractWithStart(fixture, events, 100f).coverage();
+
+        assertEquals(0, coverage.observedPositionEventCount());
+        assertEquals(0, coverage.clampedPositionEventCount());
+    }
+
+    @Test
+    void invalidTimestampClampedPositionNotObservedNorClamped() {
+        final Fixture fixture = fixture();
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                position(2, Float.NaN, 10, 1020f, 0f));   // clamped coord but invalid clock
+
+        final TeamFeatureCoverage coverage = extract(fixture, events).coverage();
+
+        assertEquals(0, coverage.observedPositionEventCount());
+        assertEquals(0, coverage.clampedPositionEventCount());
+        assertEquals(1, coverage.ignoredInvalidTimestampEventCount());
+    }
+
+    @Test
+    void inBattleClampedPositionIsObservedAndClamped() {
+        final Fixture fixture = fixture();
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                position(2, 5f, 10, 1020f, 0f));   // raw X 1020 -> clamped to 1000
+
+        final TeamFeatureCoverage coverage = extract(fixture, events).coverage();
+
+        assertEquals(1, coverage.observedPositionEventCount());
+        assertEquals(1, coverage.clampedPositionEventCount());
+        assertTrue(coverage.clampedPositionEventCount()
+                <= coverage.observedPositionEventCount());
+    }
+
+    @Test
+    void inBattleValidPositionIsObservedNotClamped() {
+        final Fixture fixture = fixture();
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                position(2, 5f, 10, 500f, 0f));   // in-bounds -> VALID
+
+        final TeamFeatureCoverage coverage = extract(fixture, events).coverage();
+
+        assertEquals(1, coverage.observedPositionEventCount());
+        assertEquals(0, coverage.clampedPositionEventCount());
+    }
+
+    @Test
+    void enemyPositionNotInPerspectiveCoverage() {
+        final Fixture fixture = fixture();
+        // entity 20 is enemy team 2; its position must not enter this perspective's coverage,
+        // and must not be counted as unattributed either.
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 20, 200L),
+                position(2, 5f, 20, 500f, 0f));
+
+        final TeamFeatureCoverage coverage = extract(fixture, events).coverage();
+
+        assertEquals(0, coverage.observedPositionEventCount());
+        assertEquals(0, coverage.clampedPositionEventCount());
+        assertEquals(0, coverage.unattributedPositionEventCount());
+        assertTrue(coverage.clampedPositionEventCount() <= coverage.observedPositionEventCount());
+    }
+
+    // ===== Cluster centroid averages canonical, not raw (Finding #8) =====
+
+    @Test
+    void clusterCentroidAveragesCanonicalNotRaw() {
+        final Fixture fixture = fixture();
+        // raw X {1050 -> canonical 500, 649.9 -> canonical 412.475}; correct centroid 456.2375.
+        // Averaging raw first (mean 849.95 -> canonical 462.4875) would be WRONG.
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 11, 101L),
+                position(3, 5f, 10, 1050f, 0f),
+                position(4, 5f, 11, 649.9f, 0f));
+
+        final TeamFormationCluster cluster = extract(fixture, events)
+                .formationPhases()
+                .getFirst()
+                .clusters()
+                .getFirst();
+
+        assertEquals(456.2375f, cluster.centroidX(), 0.01f);
+        assertEquals(250f, cluster.centroidZ(), 0.01f);
+        assertEquals(2, cluster.memberCount());
+        assertEquals(cluster.memberCount(), cluster.memberIdentities().size());
+        assertEquals(6, cluster.region());
+        // Exactly one member (raw 1050 -> clamped to 1000) is clamped; centroid derived from a
+        // clamped member is itself CLAMPED (not decided by whether the averaged coord is in range).
+        assertEquals(1, cluster.clampedMemberPositionCount());
+        assertEquals(MapCoordinateResolution.Status.CLAMPED, cluster.centroidStatus());
+    }
+
+    // ===== Team member movement uses canonical meters (Finding #9) =====
+
+    @Test
+    void teamEnemyOnlyDamageDoesNotSetPhaseEnd() {
+        final Fixture fixture = fixture();
+        fixture.battle().durationS = null;
+        final List<BattleParticipant> participants = new ArrayList<>(fixture.participants());
+        participants.add(new BattleParticipant(202L, "EnemyTwo", 2, 99, "e", false));
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                position(2, 90f, 10, 0f, 0f),
+                damage(3, 150f, 20, 99, 200));
+        final TeamBattleFeatureSet features = extract(
+                new Fixture(fixture.battle(), participants, events), events);
+        assertFalse(features.battlePhases().isEmpty());
+        assertTrue(features.battlePhases().stream()
+                .noneMatch(phase -> phase.endTime() >= 150f));
+        assertTrue(features.battlePhases().stream()
+                .anyMatch(phase -> Math.abs(phase.endTime() - 90f) < 0.01f));
+    }
+
+    @Test
+    void teamUnresolvedBattleEndHasLimitation() {
+        final Fixture fixture = fixture();
+        fixture.battle().durationS = null;
+        final TeamBattleFeatureSet features = extract(fixture, List.of());
+        assertTrue(features.limitations().contains("BATTLE_END_UNRESOLVED"));
+        assertTrue(features.battlePhases().isEmpty());
+    }
+
+    @Test
+    void teamMemberMovementUsesCanonicalMeters() {
+        final Fixture fixture = fixture();
+        // entity 10 raw (0,0)->(400,0): canonical (250,250)->(350,250) = 100 canonical meters / 5s.
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                position(2, 10f, 10, 0f, 0f),
+                position(3, 15f, 10, 400f, 0f));
+
+        final TeamMemberFeatureSet member = extract(fixture, events).members().stream()
+                .filter(candidate -> candidate.accountId() == 100L)
+                .findFirst()
+                .orElseThrow();
+
+        final MovementSegment movement = member.movements().getFirst();
+        assertEquals(100f, movement.distance(), 0.01f);      // canonical meters, not raw 400
+        assertEquals(20f, movement.averageSpeed(), 0.01f);   // 100m / 5s
+    }
+
+    private TeamBattleFeatureSet extractWithStart(
+            final Fixture fixture,
+            final List<? extends ReplayEvent> events,
+            final Float battleStartRaw
+    ) {
+        final ReplayCoverage coverage = new ReplayCoverage(
+                true, events.size(), events.size(), 0, 0, 0, 1.0, Map.of());
+        final ReplayReconstruction reconstruction = new ReplayReconstruction(
+                null, null, 300f, battleStartRaw,
+                fixture.participants(), List.copyOf(events), List.of(), null,
+                coverage, null);
+        final TeamPerspectiveResolution perspective =
+                TeamPerspectiveResolver.resolve(fixture.battle(), reconstruction);
+        return extractor.extract(fixture.battle(), reconstruction, perspective);
     }
 
     private int formationClusters(final Fixture fixture, final float distance) {
@@ -440,6 +825,19 @@ class DefaultTeamBattleFeatureExtractorTest {
                 mapping(2, 11, 101L),
                 position(3, 5f, 10, 0f, 0f),
                 position(4, 5f, 11, distance, 0f));
+        return extract(fixture, events)
+                .formationPhases()
+                .getFirst()
+                .clusterCount();
+    }
+
+    /** Two-position version with separate raw X coordinates. */
+    private int formationClusters(final Fixture fixture, final float rawX1, final float rawX2) {
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 11, 101L),
+                position(3, 5f, 10, rawX1, 0f),
+                position(4, 5f, 11, rawX2, 0f));
         return extract(fixture, events)
                 .formationPhases()
                 .getFirst()
@@ -479,8 +877,8 @@ class DefaultTeamBattleFeatureExtractorTest {
                 mapping(3, 20, 200L),
                 position(4, 5f, 10, 0f, 0f),
                 position(5, 8f, 10, 10f, 0f),
-                position(6, 5f, 11, 300f, 0f),
-                position(7, 8f, 11, 310f, 0f),
+                position(6, 5f, 11, 500f, 0f),
+                position(7, 8f, 11, 510f, 0f),
                 position(8, 5f, 20, 1000f, 1000f),
                 damage(9, 20f, 10, 20, 200),
                 damage(10, 25f, 20, 11, 150),
@@ -594,7 +992,7 @@ class DefaultTeamBattleFeatureExtractorTest {
                 true, events.size(), events.size(), 0, 0, 0,
                 1.0, Map.of());
         return new ReplayReconstruction(
-                null, null, 120f, null,
+                null, null, 120f, 0f,
                 fixture.participants(), List.copyOf(events), List.of(), null,
                 coverage, null);
     }

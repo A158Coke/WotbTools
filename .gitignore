@@ -14,7 +14,7 @@ target/
 
 frontend/node_modules/
 frontend/dist/
-java/.m2repo/
+**/.m2repo/
 
 node_modules/
 .env

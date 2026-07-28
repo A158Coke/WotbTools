@@ -32,7 +32,8 @@
         "files_count": "{count} file(s)",
         "remove_title": "Remove this replay",
         "add_files_title": "Add replay files",
-        "add_folder_title": "Add folder"
+        "add_folder_title": "Add folder",
+        "remove_file_aria": "Remove replay file {name}"
     },
     "action": {
         "preview": "Parse & Preview",
@@ -765,6 +766,7 @@
         "select_file": "Select Replay File",
         "invalid_file": "Please select a .wotbreplay file",
         "no_file": "No replay file selected",
+        "max_files_count": "{count} / 16",
         "reconstruct_btn": "Reconstruct",
         "time_placeholder": "Time (s)",
         "invalid_time": "Invalid time value",
@@ -847,7 +849,7 @@
             "NO_REPLAY_FILES": "No replay files were selected.",
             "INVALID_REPLAY_FILE_TYPE": "Only .wotbreplay files can be analyzed.",
             "FILE_TOO_LARGE": "The replay file exceeds the size limit.",
-            "TOO_MANY_REPLAY_FILES": "At most 10 replay files can be uploaded at once.",
+            "REPLAY_FILE_COUNT_EXCEEDED": "At most {max} replay files can be uploaded at once.",
             "TOTAL_REQUEST_TOO_LARGE": "The combined upload size exceeds the limit."
         },
         "event_types": {
@@ -879,7 +881,13 @@
             "TEAM_MEMBER_MOVEMENT_UNAVAILABLE": "No usable movement path is available for this member.",
             "AI_INPUT_TRUNCATED": "The AI input was truncated using deterministic limits.",
             "PERSPECTIVE_TIMELINES_ISOLATED": "Each analysis unit keeps an isolated timeline and entity namespace.",
-            "ROSTER_CONSISTENCY_UNCONFIRMED": "A consistent roster could not be confirmed; only the uploaded sample set is compared."
-        }
+            "ROSTER_CONSISTENCY_UNCONFIRMED": "A consistent roster could not be confirmed; only the uploaded sample set is compared.",
+            "AI_PERSPECTIVE_OMITTED_FROM_PROMPT": "Omitted from AI analysis due to input limits",
+            "PERSPECTIVES_OMITTED": "{count} analysis units omitted due to budget limits"
+        },
+        "analyzed_unit_count": "Analyzed Units",
+        "unavailable_analysis_unit_count": "Unavailable Units",
+        "analysis_unit_count": "Identified Units",
+        "omitted_analysis_unit_count": "Omitted Units"
     }
 }

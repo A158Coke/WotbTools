@@ -2,6 +2,7 @@ package com.wotb.core.replay.feature;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.TeamEntityIdentity;
 import com.wotb.core.processing.TeamEntityMapper;
 import com.wotb.core.processing.TeamEntityMapping;
@@ -11,9 +12,8 @@ import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
-import com.wotb.core.replay.event.ReplayTimestamp;
+
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
@@ -23,7 +23,10 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * 默认队伍特征提取器。
@@ -33,11 +36,11 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
 
     static final int ENGAGEMENT_GAP_SEC = 10;
     static final float FORMATION_WINDOW_SEC = 15f;
-    static final float FORMATION_CLUSTER_DISTANCE = 100f;
+    static final float FORMATION_CLUSTER_DISTANCE_METERS = 100f; // canonical meters
     static final double ENGAGEMENT_OUTCOME_RATIO = 1.25;
     static final float FOCUS_FIRE_WINDOW_SEC = 5f;
     static final int MIN_FOCUS_FIRE_ATTACKERS = 2;
-    static final float MAX_ABSOLUTE_MAP_COORDINATE = 5000f;
+    static final float MAX_ABSOLUTE_MAP_COORDINATE = MapRegionResolver.MAX_RAW_ALLOWED;
     static final float MAX_ABSOLUTE_ELEVATION = 200f;
     static final int MAX_KEY_EVENTS = 40;
 
@@ -52,6 +55,11 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         }
 
         final int perspectiveTeam = perspective.perspectiveTeam();
+        final BattleStartResolution battleStartRes = BattleStartResolver.resolve(
+                reconstruction != null ? reconstruction.battleStartRawClockSec() : null,
+                reconstruction != null ? reconstruction.diagnostics() : null,
+                reconstruction != null && reconstruction.events() != null ? reconstruction.events() : List.of(),
+                battle);
         final List<ReplayEvent> events = reconstruction != null && reconstruction.events() != null
                 ? reconstruction.events().stream()
                         .sorted(Comparator.comparingInt(ReplayEvent::sequence))
@@ -62,20 +70,36 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         final TeamAggregateResult authoritativeAggregate = buildAuthoritativeAggregate(
                 battle, authoritativeMembers, perspectiveTeam);
 
-        final Map<Integer, List<PositionChangedEvent>> positionsByEntity =
-                teamPositionsByEntity(events, entityMapping, perspectiveTeam);
-        final PositionEvidenceAudit positionAudit =
-                auditPositionEvidence(events, entityMapping);
-        final int invalidTimestampEventCount = (int) events.stream()
-                .filter(event -> !hasUsableClock(event))
-                .count();
-        final List<ReplayEvent> timedEvents = events.stream()
-                .filter(DefaultTeamBattleFeatureExtractor::hasUsableClock)
+        final List<ResolvedEvent> resolvedEvents = events.stream()
+                .map(event -> new ResolvedEvent(event, battleStartRes.tryRelative(event.timestamp())))
                 .toList();
-        final List<AttributedDamage> attributedDamage = new ArrayList<>();
+        final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent = new HashMap<>();
+        for (final ResolvedEvent re : resolvedEvents) {
+            resolutionByEvent.put(re.event(), re.resolution());
+        }
+        final Set<String> timeLimitations = new LinkedHashSet<>();
+        for (final ResolvedEvent re : resolvedEvents) {
+            final String limitation = re.resolution().limitation();
+            if (limitation != null) {
+                timeLimitations.add(limitation);
+            }
+        }
+
+        final Map<Integer, List<PositionChangedEvent>> positionsByEntity =
+                teamPositionsByEntity(events, entityMapping, perspectiveTeam, resolutionByEvent);
+        final PositionEvidenceAudit positionAudit =
+                auditPositionEvidence(events, entityMapping, perspectiveTeam, resolutionByEvent);
+        final int invalidTimestampEventCount = (int) resolvedEvents.stream()
+                .filter(re -> re.resolution().status() == TacticalTimeResolution.Status.INVALID_TIMESTAMP)
+                .count();
+        final List<TimedTeamDamage> timedDamages = new ArrayList<>();
         int unattributedDamageCount = 0;
         for (final ReplayEvent event : events) {
             if (!(event instanceof DamageEvent damage) || damage.damage() <= 0) {
+                continue;
+            }
+            final TacticalTimeResolution res = resolutionByEvent.get(event);
+            if (res == null || !res.isUsable()) {
                 continue;
             }
             final TeamEntityIdentity attacker = entityMapping.identity(damage.attackerEid());
@@ -84,49 +108,78 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 unattributedDamageCount++;
                 continue;
             }
-            attributedDamage.add(new AttributedDamage(damage, attacker, victim));
+            final AttributedDamage ad = new AttributedDamage(damage, attacker, victim);
+            timedDamages.add(new TimedTeamDamage(ad, res.battleRelativeSec()));
         }
+
+        final Map<Integer, List<TimedTeamPosition>> timedPositionsByEntity = new LinkedHashMap<>();
+        for (final Map.Entry<Integer, List<PositionChangedEvent>> entry : positionsByEntity.entrySet()) {
+            final List<TimedTeamPosition> timedList = entry.getValue().stream()
+                    .map(pos -> new TimedTeamPosition(pos, resolutionByEvent.get(pos).battleRelativeSec()))
+                    .toList();
+            timedPositionsByEntity.put(entry.getKey(), timedList);
+        }
+        final List<ReplayEvent> acceptedEvents = Stream.<ReplayEvent>concat(
+                timedPositionsByEntity.values().stream().flatMap(List::stream).map(TimedTeamPosition::event),
+                timedDamages.stream()
+                        .filter(td -> involvesTeam(td.event(), perspectiveTeam))
+                        .map(d -> d.event().event())
+        ).toList();
+        final boolean hasUsableTimedEvent = !acceptedEvents.isEmpty();
 
         final List<TeamMemberFeatureSet> members = authoritativeMembers.stream()
                 .map(player -> buildMember(
-                        player, entityMapping, positionsByEntity, attributedDamage))
+                        player, entityMapping, timedPositionsByEntity, timedDamages, authoritativeMembers))
                 .sorted(Comparator.comparingLong(TeamMemberFeatureSet::accountId)
                         .thenComparing(TeamMemberFeatureSet::nickname,
                                 Comparator.nullsLast(String::compareTo)))
                 .toList();
         final List<TeamEngagementSummary> engagements = buildTeamEngagements(
-                attributedDamage, perspectiveTeam);
+                timedDamages, perspectiveTeam);
         final TeamObservedAggregate observedAggregate = buildObservedAggregate(
-                attributedDamage, perspectiveTeam, unattributedDamageCount);
+                timedDamages, perspectiveTeam, unattributedDamageCount);
         final List<TeamFormationPhase> formationPhases = buildFormationPhases(
-                positionsByEntity, entityMapping, perspectiveTeam);
-        final float firstContactTime = attributedDamage.stream()
-                .filter(damage -> involvesTeam(damage, perspectiveTeam))
-                .mapToDouble(damage -> ReplayTimestamp.safeClockSec(damage.event().timestamp()))
+                timedPositionsByEntity, entityMapping, perspectiveTeam);
+        final float firstContactTime = timedDamages.stream()
+                .filter(td -> involvesTeam(td.event(), perspectiveTeam))
+                .mapToDouble(TimedTeamDamage::battleRelativeSec)
                 .min()
                 .stream()
                 .mapToObj(value -> (float) value)
                 .findFirst()
                 .orElse(-1f);
-        final BattleEndEvidence battleEnd = findBattleEndEvidence(events, battle);
-        final float phaseEndClock = battleEnd.clockSec() != null
-                ? battleEnd.clockSec() : lastObservedClock(events);
-        final List<BattlePhaseSummary> battlePhases = timedEvents.isEmpty()
-                ? List.of()
-                : DefaultBattleFeatureExtractor.dividePhases(
-                        timedEvents, phaseEndClock, firstContactTime);
+        final Float eventEnd = findEventEnd(events, resolutionByEvent);
+        final Float scopeLocalEnd = lastObservedClock(acceptedEvents, resolutionByEvent);
+        final BattleEndResolver.BattleEndResult battleEndResolved = BattleEndResolver.resolve(
+                battle, eventEnd, scopeLocalEnd);
+        final float phaseEndClock = battleEndResolved.battleEndRelativeSec() != null
+                ? battleEndResolved.battleEndRelativeSec() : Float.NaN;
+        final List<BattlePhaseSummary> battlePhases = hasUsableTimedEvent
+                ? BattlePhaseSummary.buildRelativePhases(
+                        firstContactTime, phaseEndClock)
+                : List.of();
+        final DecodeConfidence eventEndConfidence = findEventEndConfidence(events, resolutionByEvent);
         final List<KeyBattleEvent> keyEvents = buildKeyEvents(
-                battle, authoritativeMembers, entityMapping, attributedDamage,
-                formationPhases, perspectiveTeam, battleEnd);
+                battle, authoritativeMembers, entityMapping, timedDamages,
+                formationPhases, perspectiveTeam, battleEndResolved, eventEndConfidence);
 
         final int mappedMembers = entityMapping.mappedMembers(perspectiveTeam);
-        final int positionEventCount = positionsByEntity.values().stream()
-                .mapToInt(List::size)
-                .sum();
+        // observed = positions that actually feed movement/formation analysis
+        // (teamPositionsByEntity already excluded pre-battle, invalid clock, out-of-bounds,
+        // unusable identity and non-perspective entities). clamped is a strict subset of the
+        // same collection, so clampedPositionEventCount <= observedPositionEventCount holds.
+        final int observedPositionEventCount = (int) timedPositionsByEntity.values().stream()
+                .flatMap(List::stream)
+                .count();
+        final int clampedPositionEventCount = (int) timedPositionsByEntity.values().stream()
+                .flatMap(List::stream)
+                .map(TimedTeamPosition::event)
+                .filter(DefaultTeamBattleFeatureExtractor::isClamped)
+                .count();
         final boolean reconstructionAvailable = reconstruction != null;
         final boolean fullFeaturesAvailable = reconstructionAvailable
                 && mappedMembers > 0
-                && (positionEventCount > 0 || !engagements.isEmpty());
+                && (observedPositionEventCount > 0 || !engagements.isEmpty());
         final boolean streamComplete = reconstructionAvailable
                 && reconstruction.coverage() != null
                 && reconstruction.coverage().streamComplete();
@@ -139,10 +192,11 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 streamComplete,
                 authoritativeMembers.size(),
                 mappedMembers,
-                positionEventCount,
-                attributedDamage.size(),
+                observedPositionEventCount,
+                timedDamages.size(),
                 unattributedDamageCount,
                 positionAudit.unattributedCount(),
+                clampedPositionEventCount,
                 positionAudit.outOfBoundsCount(),
                 invalidTimestampEventCount,
                 decodedRatio,
@@ -150,11 +204,14 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
 
         final Set<String> limitations = new LinkedHashSet<>(perspective.limitations());
         limitations.addAll(entityMapping.limitations());
+        if (battleStartRes.limitation() != null) {
+            limitations.add(battleStartRes.limitation());
+        }
         limitations.add("OBSERVED_DAMAGE_IS_PARTIAL");
         if (authoritativeAggregate == null) {
             limitations.add("AUTHORITATIVE_TEAM_RESULT_UNAVAILABLE");
         }
-        if (!reconstructionAvailable || positionEventCount == 0) {
+        if (!reconstructionAvailable || observedPositionEventCount == 0) {
             limitations.add("POSITION_FORMATION_UNAVAILABLE");
         }
         if (!reconstructionAvailable || engagements.isEmpty()) {
@@ -169,11 +226,18 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         if (positionAudit.outOfBoundsCount() > 0) {
             limitations.add("OUT_OF_BOUNDS_POSITION_EVENTS_IGNORED");
         }
+        if (clampedPositionEventCount > 0) {
+            limitations.add("MAP_COORDINATES_CLAMPED");
+        }
         if (invalidTimestampEventCount > 0) {
             limitations.add("INVALID_EVENT_TIMESTAMPS_IGNORED");
         }
         if (reconstructionAvailable && reconstruction.coverage() != null && !streamComplete) {
             limitations.add("REPLAY_STREAM_PARTIAL");
+        }
+        limitations.addAll(timeLimitations);
+        if (battleEndResolved.limitation() != null) {
+            limitations.add(battleEndResolved.limitation());
         }
 
         final boolean hasFeatures =
@@ -238,36 +302,76 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                         ? null : deathTimes.stream().mapToDouble(Double::doubleValue).average().orElse(0.0),
                 deathTimes.isEmpty() ? null : deathTimes.getFirst(),
                 deathTimes.isEmpty() ? null : deathTimes.getLast(),
-                battle.winnerTeam == null
-                        ? null : battle.winnerTeam == perspectiveTeam);
+                resolveAggregateWin(battle.winnerTeam, perspectiveTeam));
+    }
+
+    /**
+     * Resolve aggregate win as Boolean.
+     * Returns null for unknown (invalid teams), true for win, false for loss.
+     * Only raw teams 1 and 2 are valid; anything else returns null.
+     */
+    private static Boolean resolveAggregateWin(final Integer winnerTeam, final int perspectiveTeam) {
+        if (winnerTeam == null) return null;
+        if (!PlayerSideResolver.isValidRawTeam(winnerTeam)
+                || !PlayerSideResolver.isValidRawTeam(perspectiveTeam)) {
+            return null;
+        }
+        return winnerTeam == perspectiveTeam;
+    }
+
+    private static String buildResultLabel(final Battle battle, final int perspectiveTeam) {
+        if (battle == null || battle.winnerTeam == null) return "result=DRAW_OR_UNKNOWN";
+        if (!PlayerSideResolver.isValidRawTeam(battle.winnerTeam)
+                || !PlayerSideResolver.isValidRawTeam(perspectiveTeam)) {
+            return "result=DRAW_OR_UNKNOWN";
+        }
+        if (battle.winnerTeam == perspectiveTeam) return "result=TEAM_WIN";
+        return "result=TEAM_LOSS";
     }
 
     private static Map<Integer, List<PositionChangedEvent>> teamPositionsByEntity(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping,
-            final int perspectiveTeam
+            final int perspectiveTeam,
+            final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent
     ) {
-        final Map<Integer, List<PositionChangedEvent>> result = new LinkedHashMap<>();
-        events.stream()
+        return events.stream()
                 .filter(PositionChangedEvent.class::isInstance)
                 .map(PositionChangedEvent.class::cast)
-                .filter(DefaultTeamBattleFeatureExtractor::usablePositionEvidence)
+                .filter(position -> {
+                    final TacticalTimeResolution res = resolutionByEvent.get(position);
+                    return res != null && res.isUsable();
+                })
+                .filter(DefaultTeamBattleFeatureExtractor::usableSpatialEvidence)
                 .filter(position -> {
                     final TeamEntityIdentity identity = mapping.identity(position.entityId());
                     return identity != null && identity.usable()
                             && identity.team() == perspectiveTeam;
                 })
-                .forEach(position -> result
-                        .computeIfAbsent(position.entityId(), ignored -> new ArrayList<>())
-                        .add(position));
-        result.values().forEach(positions ->
-                positions.sort(Comparator.comparingInt(PositionChangedEvent::sequence)));
-        return result;
+                .collect(Collectors.groupingBy(
+                        PositionChangedEvent::entityId,
+                        LinkedHashMap::new,
+                        Collectors.collectingAndThen(
+                                Collectors.toList(),
+                                list -> {
+                                    list.sort(Comparator.comparingInt(PositionChangedEvent::sequence));
+                                    return list;
+                                })));
     }
 
+    /**
+     * Diagnostic audit for position evidence that does NOT feed analysis: unattributable
+     * positions and out-of-bounds positions. Observed and clamped counts are derived directly
+     * from the analyzed {@code positionsByEntity} collection (single source of truth), so this
+     * method deliberately does not recompute them. Uses {@code battleStartRes} to exclude
+     * pre-battle preparation positions; invalid-timestamp positions are excluded here and
+     * reported via {@code ignoredInvalidTimestampEventCount}.
+     */
     private static PositionEvidenceAudit auditPositionEvidence(
             final List<ReplayEvent> events,
-            final TeamEntityMapping mapping
+            final TeamEntityMapping mapping,
+            final int perspectiveTeam,
+            final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent
     ) {
         int unattributedCount = 0;
         int outOfBoundsCount = 0;
@@ -275,9 +379,17 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             if (!(event instanceof PositionChangedEvent position)) {
                 continue;
             }
+            final TacticalTimeResolution res = resolutionByEvent.get(event);
+            if (res == null || !res.isUsable()) {
+                continue;
+            }
             final TeamEntityIdentity identity = mapping.identity(position.entityId());
             if (identity == null || !identity.usable()) {
                 unattributedCount++;
+                continue;
+            }
+            if (identity.team() != perspectiveTeam) {
+                continue; // enemy position, not counted in perspective coverage
             }
             if (isOutOfBounds(position)) {
                 outOfBoundsCount++;
@@ -289,26 +401,34 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     private static TeamMemberFeatureSet buildMember(
             final PlayerResult player,
             final TeamEntityMapping mapping,
-            final Map<Integer, List<PositionChangedEvent>> positionsByEntity,
-            final List<AttributedDamage> damageEvents
+            final Map<Integer, List<TimedTeamPosition>> timedPositionsByEntity,
+            final List<TimedTeamDamage> damageEvents,
+            final List<PlayerResult> authoritativeMembers
     ) {
+        final long memberAccountId = player.accountId;
+        final String memberNickname = player.nickname;
+        final MemberIdentity memberId = MemberIdentity.resolve(player, authoritativeMembers);
         final List<Integer> entityIds =
                 mapping.entityIds(player.accountId, player.nickname);
         final List<MovementSegment> movements = entityIds.stream()
-                .map(entityId -> positionsByEntity.getOrDefault(entityId, List.of()))
-                .flatMap(positions -> DefaultPlayerBattleFeatureExtractor
-                        .compressMovements(positions).stream())
+                .map(entityId -> timedPositionsByEntity.getOrDefault(entityId, List.of()))
+                .flatMap(timedPositions ->
+                    DefaultPlayerBattleFeatureExtractor
+                            .compressMovements(convertTimedPositions(timedPositions)).stream())
                 .sorted(Comparator.comparingDouble(MovementSegment::startTime)
                         .thenComparingDouble(MovementSegment::endTime))
                 .toList();
         final DecodeConfidence mappingConfidence = entityIds.stream()
                 .map(mapping::identity)
-                .filter(identity -> identity != null)
+                .filter(Objects::nonNull)
                 .map(TeamEntityIdentity::confidence)
                 .reduce(DecodeConfidence.EXACT, DefaultTeamBattleFeatureExtractor::lowerConfidence);
         final List<EngagementSummary> engagements = buildMemberEngagements(
-                damageEvents, player.accountId);
+                damageEvents, memberId);
         final List<String> limitations = new ArrayList<>();
+        if (memberId.ambiguousNickname()) {
+            limitations.add("TEAM_MEMBER_IDENTITY_UNRESOLVED");
+        }
         if (entityIds.isEmpty()) {
             limitations.add("TEAM_MEMBER_ENTITY_UNMAPPED");
         }
@@ -347,6 +467,11 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 limitations);
     }
 
+    /**
+     * Evidence-quality + identity gate for damage (time is already gated by
+     * {@link BattleStartResolution#tryRelative}): confidence must be usable and both attacker and victim must map
+     * to a usable identity. In-battle damage that fails this is genuine unattributed damage.
+     */
     private static boolean usableDamageEvidence(
             final DamageEvent damage,
             final TeamEntityIdentity attacker,
@@ -354,39 +479,38 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     ) {
         return damage.confidence() != DecodeConfidence.UNKNOWN
                 && damage.confidence() != DecodeConfidence.PARTIAL
-                && hasUsableClock(damage)
                 && attacker != null && attacker.usable()
                 && victim != null && victim.usable();
     }
 
     private static TeamObservedAggregate buildObservedAggregate(
-            final List<AttributedDamage> damages,
+            final List<TimedTeamDamage> timedDamages,
             final int perspectiveTeam,
             final int unattributedCount
     ) {
-        final int dealt = damages.stream()
-                .filter(damage -> damage.attacker().team() == perspectiveTeam
-                        && damage.victim().team() != perspectiveTeam)
-                .mapToInt(damage -> damage.event().damage())
+        final int dealt = timedDamages.stream()
+                .filter(td -> td.event().attacker().team() == perspectiveTeam
+                        && td.event().victim().team() != perspectiveTeam)
+                .mapToInt(td -> td.event().event().damage())
                 .sum();
-        final int received = damages.stream()
-                .filter(damage -> damage.victim().team() == perspectiveTeam
-                        && damage.attacker().team() != perspectiveTeam)
-                .mapToInt(damage -> damage.event().damage())
+        final int received = timedDamages.stream()
+                .filter(td -> td.event().victim().team() == perspectiveTeam
+                        && td.event().attacker().team() != perspectiveTeam)
+                .mapToInt(td -> td.event().event().damage())
                 .sum();
-        final int attributed = (int) damages.stream()
-                .filter(damage -> involvesTeam(damage, perspectiveTeam))
+        final int attributed = (int) timedDamages.stream()
+                .filter(td -> involvesTeam(td.event(), perspectiveTeam))
                 .count();
         return new TeamObservedAggregate(dealt, received, attributed, unattributedCount);
     }
 
     private static List<TeamEngagementSummary> buildTeamEngagements(
-            final List<AttributedDamage> damages,
+            final List<TimedTeamDamage> timedDamages,
             final int perspectiveTeam
     ) {
-        final List<AttributedDamage> teamDamages = sortedDamageEvents(
-                damages.stream()
-                        .filter(damage -> involvesTeam(damage, perspectiveTeam))
+        final List<TimedTeamDamage> teamDamages = sortedDamageEvents(
+                timedDamages.stream()
+                        .filter(td -> involvesTeam(td.event(), perspectiveTeam))
                         .toList());
         if (teamDamages.isEmpty()) {
             return List.of();
@@ -407,76 +531,74 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     }
 
     private static List<EngagementSummary> buildMemberEngagements(
-            final List<AttributedDamage> damages,
-            final long memberAccountId
+            final List<TimedTeamDamage> timedDamages,
+            final MemberIdentity memberId
     ) {
-        final List<AttributedDamage> memberDamage = damages.stream()
-                .filter(damage -> damage.attacker().team() != damage.victim().team())
-                .filter(damage -> damage.attacker().accountId() == memberAccountId
-                        || damage.victim().accountId() == memberAccountId)
+        final List<TimedTeamDamage> memberDamage = timedDamages.stream()
+                .filter(td -> td.event().attacker().team() != td.event().victim().team())
+                .filter(td -> memberId.matches(td.event().attacker())
+                        || memberId.matches(td.event().victim()))
                 .toList();
         final int memberTeam = memberDamage.stream()
-                .map(damage -> damage.attacker().accountId() == memberAccountId
-                        ? damage.attacker().team() : damage.victim().team())
+                .map(td -> memberId.matches(td.event().attacker())
+                        ? td.event().attacker().team() : td.event().victim().team())
                 .findFirst()
                 .orElse(0);
         return memberTeam == 0
                 ? List.of()
-                : buildEngagements(memberDamage, memberTeam, memberAccountId);
+                : buildEngagements(memberDamage, memberTeam, memberId);
     }
 
     private static List<EngagementSummary> buildEngagements(
-            final List<AttributedDamage> damages,
+            final List<TimedTeamDamage> timedDamages,
             final int perspectiveTeam,
-            final Long memberAccountId
+            final MemberIdentity memberId
     ) {
-        if (damages.isEmpty()) {
+        if (timedDamages.isEmpty()) {
             return List.of();
         }
-        final List<AttributedDamage> sorted = sortedDamageEvents(damages);
+        final List<TimedTeamDamage> sorted = sortedDamageEvents(timedDamages);
         final List<EngagementSummary> result = new ArrayList<>();
         int segmentStart = 0;
         for (int index = 1; index < sorted.size(); index++) {
             if (damageGap(sorted.get(index - 1), sorted.get(index))
                     > ENGAGEMENT_GAP_SEC) {
                 result.add(buildEngagementSegment(
-                        sorted.subList(segmentStart, index), perspectiveTeam, memberAccountId));
+                        sorted.subList(segmentStart, index), perspectiveTeam, memberId.accountId(), memberId));
                 segmentStart = index;
             }
         }
         result.add(buildEngagementSegment(
-                sorted.subList(segmentStart, sorted.size()), perspectiveTeam, memberAccountId));
+                sorted.subList(segmentStart, sorted.size()), perspectiveTeam, memberId.accountId(), memberId));
         return List.copyOf(result);
     }
-
-    private static List<AttributedDamage> sortedDamageEvents(
-            final List<AttributedDamage> damages
+    private static List<TimedTeamDamage> sortedDamageEvents(
+            final List<TimedTeamDamage> timedDamages
     ) {
-        return damages.stream()
+        return timedDamages.stream()
                 .sorted(Comparator
-                        .comparingDouble((AttributedDamage damage) ->
-                                ReplayTimestamp.safeClockSec(damage.event().timestamp()))
-                        .thenComparingInt(damage -> damage.event().sequence()))
+                        .comparingDouble(TimedTeamDamage::battleRelativeSec)
+                        .thenComparingInt(td -> td.event().event().sequence()))
                 .toList();
     }
 
     private static float damageGap(
-            final AttributedDamage previous,
-            final AttributedDamage current
+            final TimedTeamDamage previous,
+            final TimedTeamDamage current
     ) {
-        return ReplayTimestamp.safeClockSec(current.event().timestamp())
-                - ReplayTimestamp.safeClockSec(previous.event().timestamp());
+        return current.battleRelativeSec() - previous.battleRelativeSec();
     }
 
     private static TeamEngagementSummary buildTeamEngagementSegment(
-            final List<AttributedDamage> events,
+            final List<TimedTeamDamage> timedEvents,
             final int perspectiveTeam
     ) {
         final EngagementSummary base =
-                buildEngagementSegment(events, perspectiveTeam, null);
-        final Map<Long, List<AttributedDamage>> damageByTarget = new HashMap<>();
+                buildEngagementSegment(timedEvents, perspectiveTeam, null, null);
+        final Map<Long, List<TimedTeamDamage>> damageByTarget = new HashMap<>();
         final List<String> orderedTargets = new ArrayList<>();
-        for (final AttributedDamage damage : events) {
+        for (final TimedTeamDamage td : timedEvents) {
+            final AttributedDamage damage = td.event();
             if (damage.attacker().team() != perspectiveTeam
                     || damage.victim().team() == perspectiveTeam) {
                 continue;
@@ -485,7 +607,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                     .computeIfAbsent(
                             damage.victim().accountId(),
                             ignored -> new ArrayList<>())
-                    .add(damage);
+                    .add(td);
             orderedTargets.add(identityKey(damage.victim()));
         }
         final List<Long> focusedTargets = damageByTarget.entrySet().stream()
@@ -514,21 +636,19 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     }
 
     private static boolean isFocusFireCandidate(
-            final List<AttributedDamage> targetDamage
+            final List<TimedTeamDamage> targetDamage
     ) {
-        final List<AttributedDamage> sorted = sortedDamageEvents(targetDamage);
+        final List<TimedTeamDamage> sorted = sortedDamageEvents(targetDamage);
         for (int start = 0; start < sorted.size(); start++) {
             final Set<String> attackers = new LinkedHashSet<>();
-            final float startClock =
-                    ReplayTimestamp.safeClockSec(sorted.get(start).event().timestamp());
+            final float startClock = sorted.get(start).battleRelativeSec();
             for (int end = start; end < sorted.size(); end++) {
-                final AttributedDamage damage = sorted.get(end);
-                final float endClock =
-                        ReplayTimestamp.safeClockSec(damage.event().timestamp());
+                final TimedTeamDamage td = sorted.get(end);
+                final float endClock = td.battleRelativeSec();
                 if (endClock - startClock > FOCUS_FIRE_WINDOW_SEC) {
                     break;
                 }
-                attackers.add(identityKey(damage.attacker()));
+                attackers.add(identityKey(td.event().attacker()));
                 if (attackers.size() >= MIN_FOCUS_FIRE_ATTACKERS) {
                     return true;
                 }
@@ -538,22 +658,24 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     }
 
     private static EngagementSummary buildEngagementSegment(
-            final List<AttributedDamage> events,
+            final List<TimedTeamDamage> timedEvents,
             final int perspectiveTeam,
-            final Long memberAccountId
+            final Long memberAccountId,
+            final MemberIdentity memberIdentity
     ) {
         final Set<Long> allies = new LinkedHashSet<>();
         final Set<Long> enemies = new LinkedHashSet<>();
         int dealt = 0;
         int received = 0;
         DecodeConfidence confidence = DecodeConfidence.EXACT;
-        for (final AttributedDamage damage : events) {
-            final boolean attackerIsSubject = memberAccountId == null
+        for (final TimedTeamDamage td : timedEvents) {
+            final AttributedDamage damage = td.event();
+            final boolean attackerIsSubject = memberIdentity == null
                     ? damage.attacker().team() == perspectiveTeam
-                    : damage.attacker().accountId() == memberAccountId;
-            final boolean victimIsSubject = memberAccountId == null
+                    : memberIdentity.matches(damage.attacker());
+            final boolean victimIsSubject = memberIdentity == null
                     ? damage.victim().team() == perspectiveTeam
-                    : damage.victim().accountId() == memberAccountId;
+                    : memberIdentity.matches(damage.victim());
             if (attackerIsSubject && damage.attacker().team() != damage.victim().team()) {
                 dealt += damage.event().damage();
             }
@@ -577,8 +699,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 ? EngagementOutcome.UNFAVORABLE
                 : EngagementOutcome.EVEN;
         return new EngagementSummary(
-                ReplayTimestamp.safeClockSec(events.getFirst().event().timestamp()),
-                ReplayTimestamp.safeClockSec(events.getLast().event().timestamp()),
+                timedEvents.getFirst().battleRelativeSec(),
+                timedEvents.getLast().battleRelativeSec(),
                 allies.stream().sorted().toList(),
                 enemies.stream().sorted().toList(),
                 dealt,
@@ -590,27 +712,28 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     }
 
     private static List<TeamFormationPhase> buildFormationPhases(
-            final Map<Integer, List<PositionChangedEvent>> positionsByEntity,
+            final Map<Integer, List<TimedTeamPosition>> timedPositionsByEntity,
             final TeamEntityMapping mapping,
             final int perspectiveTeam
     ) {
         final Map<Integer, Map<String, PositionChangedEvent>> windows = new HashMap<>();
-        positionsByEntity.forEach((entityId, positions) -> {
+        timedPositionsByEntity.forEach((entityId, timedPositions) -> {
             final TeamEntityIdentity identity = mapping.identity(entityId);
             if (identity == null || identity.team() != perspectiveTeam) {
                 return;
             }
-            for (final PositionChangedEvent position : positions) {
-                    final float clock = ReplayTimestamp.safeClockSec(position.timestamp());
-                    final int window = (int) Math.floor(clock / FORMATION_WINDOW_SEC);
+            for (final TimedTeamPosition timedPos : timedPositions) {
+                    final float activeClock = timedPos.battleRelativeSec();
+                    final int window = (int) Math.floor(activeClock / FORMATION_WINDOW_SEC);
                     windows.computeIfAbsent(window, ignored -> new HashMap<>())
-                            .merge(identityKey(identity), position,
+                            .merge(identityKey(identity), timedPos.event(),
                                     (left, right) -> left.sequence() > right.sequence() ? left : right);
             }
         });
         return windows.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> formationPhase(entry.getKey(), entry.getValue()))
+                .filter(phase -> phase != null)
                 .toList();
     }
 
@@ -618,69 +741,127 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             final int window,
             final Map<String, PositionChangedEvent> positionsByMember
     ) {
-        final List<PositionChangedEvent> positions = positionsByMember.entrySet().stream()
+        final List<Map.Entry<String, PositionChangedEvent>> sorted = positionsByMember.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
-                .map(Map.Entry::getValue)
                 .toList();
-        final float centroidX = (float) positions.stream()
-                .mapToDouble(PositionChangedEvent::x)
+        final List<CanonicalMapPosition> canonicalPositions = sorted.stream()
+                .map(Map.Entry::getValue)
+                .map(pos -> MapRegionResolver.resolve(pos.x(), pos.z()))
+                .filter(MapCoordinateResolution::usable)
+                .map(MapCoordinateResolution::position)
+                .toList();
+        if (canonicalPositions.isEmpty()) {
+            return null;
+        }
+        final float centroidX = (float) canonicalPositions.stream()
+                .mapToDouble(CanonicalMapPosition::x)
                 .average()
                 .orElse(0.0);
-        final float centroidY = (float) positions.stream()
-                .mapToDouble(PositionChangedEvent::y)
+        final float centroidZ = (float) canonicalPositions.stream()
+                .mapToDouble(CanonicalMapPosition::z)
                 .average()
                 .orElse(0.0);
-        final float centroidZ = (float) positions.stream()
-                .mapToDouble(PositionChangedEvent::z)
+        final float dispersion = (float) canonicalPositions.stream()
+                .mapToDouble(pos -> distance(
+                        pos.x(), pos.z(), centroidX, centroidZ))
                 .average()
                 .orElse(0.0);
-        final float dispersion = (float) positions.stream()
-                .mapToDouble(position -> distance(
-                        position.x(), position.z(), centroidX, centroidZ))
-                .average()
-                .orElse(0.0);
-        final int clusters = countClusters(positions);
-        final DecodeConfidence confidence = positions.stream()
+        final DecodeConfidence confidence = sorted.stream()
+                .map(Map.Entry::getValue)
                 .map(PositionChangedEvent::confidence)
                 .reduce(DecodeConfidence.EXACT, DefaultTeamBattleFeatureExtractor::lowerConfidence);
+
+        // Build structured clusters
+        final float windowStart = window * FORMATION_WINDOW_SEC;
+        final float windowEnd = (window + 1) * FORMATION_WINDOW_SEC;
+        final List<TeamFormationCluster> clusters = buildClusters(sorted, windowStart, windowEnd);
+
         return new TeamFormationPhase(
                 window * FORMATION_WINDOW_SEC,
                 (window + 1) * FORMATION_WINDOW_SEC,
-                new Vector3(centroidX, centroidY, centroidZ),
+                new CanonicalMapPosition(centroidX, centroidZ),
                 dispersion,
-                clusters,
-                positions.size(),
-                confidence);
+                canonicalPositions.size(),
+                confidence,
+                clusters);
     }
 
-    private static int countClusters(final List<PositionChangedEvent> positions) {
-        if (positions.isEmpty()) {
-            return 0;
-        }
-        final boolean[] visited = new boolean[positions.size()];
-        int clusters = 0;
-        for (int start = 0; start < positions.size(); start++) {
-            if (visited[start]) {
-                continue;
-            }
-            clusters++;
+    /**
+     * Build structured clusters from sorted (identityKey, position) entries using BFS.
+     */
+    private static List<TeamFormationCluster> buildClusters(
+            final List<Map.Entry<String, PositionChangedEvent>> sorted,
+            final float startTime,
+            final float endTime
+    ) {
+        if (sorted.isEmpty()) return List.of();
+        final boolean[] visited = new boolean[sorted.size()];
+        final List<TeamFormationCluster> result = new ArrayList<>();
+
+        for (int start = 0; start < sorted.size(); start++) {
+            if (visited[start]) continue;
+            final List<Integer> clusterIndices = new ArrayList<>();
             final List<Integer> queue = new ArrayList<>();
             queue.add(start);
             visited[start] = true;
-            for (int cursor = 0; cursor < queue.size(); cursor++) {
-                final int current = queue.get(cursor);
-                for (int candidate = 0; candidate < positions.size(); candidate++) {
-                    if (!visited[candidate] && distance(
-                            positions.get(current).x(), positions.get(current).z(),
-                            positions.get(candidate).x(), positions.get(candidate).z())
-                            <= FORMATION_CLUSTER_DISTANCE) {
+            while (!queue.isEmpty()) {
+                final int current = queue.removeFirst();
+                clusterIndices.add(current);
+                final PositionChangedEvent currentPos = sorted.get(current).getValue();
+                for (int candidate = 0; candidate < sorted.size(); candidate++) {
+                    if (!visited[candidate] && canonicalDistance(
+                            currentPos.x(), currentPos.z(),
+                            sorted.get(candidate).getValue().x(),
+                            sorted.get(candidate).getValue().z())
+                            <= FORMATION_CLUSTER_DISTANCE_METERS) {
                         visited[candidate] = true;
                         queue.add(candidate);
                     }
                 }
             }
+
+            // Resolve/clamp EACH member position to canonical FIRST, then average in canonical
+            // space. Averaging raw coordinates before conversion would misplace clusters whose
+            // members are out-of-range-but-valid (clamped) — e.g. raw X {1050, 649.9} must map
+            // to canonical {500, 412.475} → centroid 456.2375, not resolve(mean(raw)).
+            final List<MapCoordinateResolution> memberResolutions = clusterIndices.stream()
+                    .map(i -> sorted.get(i).getValue())
+                    .map(pos -> MapRegionResolver.resolve(pos.x(), pos.z()))
+                    .filter(MapCoordinateResolution::usable)
+                    .toList();
+            if (memberResolutions.isEmpty()) continue;
+            final float centroidX = (float) memberResolutions.stream()
+                    .mapToDouble(res -> res.position().x())
+                    .average().orElse(0.0);
+            final float centroidZ = (float) memberResolutions.stream()
+                    .mapToDouble(res -> res.position().z())
+                    .average().orElse(0.0);
+            final CanonicalMapPosition canon = new CanonicalMapPosition(centroidX, centroidZ);
+            final int region = canon.region();
+            final int clampedPosCount = (int) memberResolutions.stream()
+                    .filter(res -> res.status() == MapCoordinateResolution.Status.CLAMPED)
+                    .count();
+            // The centroid inherits CLAMPED whenever it is derived from any clamped member.
+            final MapCoordinateResolution.Status centroidStatus = clampedPosCount > 0
+                    ? MapCoordinateResolution.Status.CLAMPED
+                    : MapCoordinateResolution.Status.VALID;
+            final List<String> identities = clusterIndices.stream()
+                    .map(i -> sorted.get(i).getKey())
+                    .sorted()
+                    .toList();
+            final DecodeConfidence clusterConfidence = clusterIndices.stream()
+                    .map(i -> sorted.get(i).getValue().confidence())
+                    .reduce(DecodeConfidence.EXACT, DefaultTeamBattleFeatureExtractor::lowerConfidence);
+
+            result.add(new TeamFormationCluster(
+                    startTime, endTime, canon, centroidStatus, region, clampedPosCount, identities, clusterConfidence));
         }
-        return clusters;
+
+        // Sort by startTime, region, centroidX, centroidZ, then member identities
+        result.sort(Comparator.comparingInt(TeamFormationCluster::region)
+                .thenComparingDouble(TeamFormationCluster::centroidX)
+                .thenComparingDouble(TeamFormationCluster::centroidZ));
+        return List.copyOf(result);
     }
 
     private static float distance(
@@ -694,29 +875,43 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
         return (float) Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
     }
 
-    private static boolean usablePositionEvidence(
+    /**
+     * Canonical distance in meters for cluster connectivity. Delegates to the single shared
+     * {@link MapRegionResolver#canonicalDistanceMeters} helper; unresolvable endpoints map to
+     * {@link Float#MAX_VALUE} so they can never join a cluster.
+     */
+    private static float canonicalDistance(
+            final float rawX1, final float rawZ1,
+            final float rawX2, final float rawZ2
+    ) {
+        final float meters = MapRegionResolver.canonicalDistanceMeters(rawX1, rawZ1, rawX2, rawZ2);
+        return meters < 0f ? Float.MAX_VALUE : meters;
+    }
+
+    /**
+     * Evidence-quality + spatial gate for positions (time is already gated by
+     * {@link BattleStartResolution#tryRelative}): confidence must be usable and the coordinate must be within
+     * bounds / clampable.
+     */
+    private static boolean usableSpatialEvidence(
             final PositionChangedEvent position
     ) {
         return position.confidence() != DecodeConfidence.UNKNOWN
-                && hasUsableClock(position)
                 && !isOutOfBounds(position);
+    }
+
+    private static boolean isClamped(final PositionChangedEvent position) {
+        return MapRegionResolver.resolve(position.x(), position.z()).status()
+                == MapCoordinateResolution.Status.CLAMPED;
     }
 
     private static boolean isOutOfBounds(
             final PositionChangedEvent position
     ) {
-        return Math.abs(position.x()) > MAX_ABSOLUTE_MAP_COORDINATE
-                || Math.abs(position.z()) > MAX_ABSOLUTE_MAP_COORDINATE
-                || Math.abs(position.y()) > MAX_ABSOLUTE_ELEVATION;
+        if (Math.abs(position.y()) > MAX_ABSOLUTE_ELEVATION) return true;
+        return !MapRegionResolver.resolve(position.x(), position.z()).usable();
     }
 
-    private static boolean hasUsableClock(final ReplayEvent event) {
-        if (event == null || event.timestamp() == null) {
-            return false;
-        }
-        final float clock = ReplayTimestamp.safeClockSec(event.timestamp());
-        return Float.isFinite(clock) && clock >= 0f;
-    }
 
     private static String identityKey(final TeamEntityIdentity identity) {
         return identity.accountId() > 0
@@ -728,40 +923,40 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             final Battle battle,
             final List<PlayerResult> members,
             final TeamEntityMapping mapping,
-            final List<AttributedDamage> damages,
+            final List<TimedTeamDamage> timedDamages,
             final List<TeamFormationPhase> formationPhases,
             final int perspectiveTeam,
-            final BattleEndEvidence battleEnd
+            final BattleEndResolver.BattleEndResult battleEndResolved,
+            final DecodeConfidence eventEndConfidence
     ) {
-        final List<KeyBattleEvent> events = new ArrayList<>();
-        members.stream()
+        final Stream<KeyBattleEvent> deathEvents = members.stream()
                 .filter(member -> !member.survived)
                 .filter(member -> PlayerResultFormat.deathSec(member) > 0)
                 .sorted(Comparator.comparingDouble(PlayerResultFormat::deathSec))
-                .forEach(member -> events.add(new KeyBattleEvent(
+                .map(member -> new KeyBattleEvent(
                         (float) PlayerResultFormat.deathSec(member),
                         "TEAM_MEMBER_DESTROYED",
                         "accountId=" + member.accountId + ";nickname=" + member.nickname,
                         DecodeConfidence.EXACT,
                         "BATTLE_RESULTS",
-                        mapping.entityIds(member.accountId, member.nickname))));
-        damages.stream()
-                .filter(damage -> involvesTeam(damage, perspectiveTeam))
+                        mapping.entityIds(member.accountId, member.nickname)));
+        final Stream<KeyBattleEvent> firstContact = timedDamages.stream()
+                .filter(td -> involvesTeam(td.event(), perspectiveTeam))
                 .min(Comparator
-                        .comparingDouble((AttributedDamage damage) ->
-                                ReplayTimestamp.safeClockSec(damage.event().timestamp()))
-                        .thenComparingInt(damage -> damage.event().sequence()))
-                .ifPresent(damage -> events.add(new KeyBattleEvent(
-                        ReplayTimestamp.safeClockSec(damage.event().timestamp()),
+                        .comparingDouble(TimedTeamDamage::battleRelativeSec)
+                        .thenComparingInt(td -> td.event().event().sequence()))
+                .map(td -> new KeyBattleEvent(
+                        td.battleRelativeSec(),
                         "TEAM_FIRST_CONTACT",
-                        "damage=" + damage.event().damage(),
-                        lowestConfidence(damage),
+                        "damage=" + td.event().event().damage(),
+                        lowestConfidence(td.event()),
                         "REPLAY_EVENT",
-                        List.of(damage.event().attackerEid(), damage.event().victimEid()))));
-        formationPhases.stream()
+                        List.of(td.event().event().attackerEid(), td.event().event().victimEid())))
+                .stream();
+        final Stream<KeyBattleEvent> formationSplit = formationPhases.stream()
                 .filter(phase -> phase.observedMemberCount() > 1 && phase.clusterCount() > 1)
                 .findFirst()
-                .ifPresent(phase -> events.add(new KeyBattleEvent(
+                .map(phase -> new KeyBattleEvent(
                         phase.startTime(),
                         "TEAM_FORMATION_SPLIT",
                         "clusters=" + phase.clusterCount()
@@ -769,60 +964,80 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                                 phase.averageDispersion()),
                         phase.confidence(),
                         "DERIVED_POSITION",
-                        List.of())));
-        if (battleEnd.clockSec() != null) {
-            events.add(new KeyBattleEvent(
-                    battleEnd.clockSec(),
-                    "BATTLE_END",
-                    battle != null && battle.winnerTeam != null
-                            ? "winnerTeam=" + battle.winnerTeam : "winnerTeam=UNKNOWN",
-                    battleEnd.confidence(),
-                    battleEnd.source(),
-                    List.of()));
-        }
-        return events.stream()
+                        List.of()))
+                .stream();
+        final DecodeConfidence endConfidence = switch (battleEndResolved.source()) {
+            case BATTLE_RESULTS -> DecodeConfidence.EXACT;
+            case REPLAY_EVENT -> eventEndConfidence != null ? eventEndConfidence : DecodeConfidence.UNKNOWN;
+            default -> null;
+        };
+        final Stream<KeyBattleEvent> battleEndEvent = battleEndResolved.resolved() && endConfidence != null
+                ? Stream.of(new KeyBattleEvent(
+                        battleEndResolved.battleEndRelativeSec(),
+                        "BATTLE_END",
+                        buildResultLabel(battle, perspectiveTeam),
+                        endConfidence,
+                        battleEndResolved.source().name(),
+                        List.of()))
+                : Stream.empty();
+        return Stream.of(deathEvents, firstContact, formationSplit, battleEndEvent)
+                .flatMap(s -> s)
                 .sorted(Comparator.comparingDouble(KeyBattleEvent::clockSec)
                         .thenComparing(KeyBattleEvent::type))
                 .limit(MAX_KEY_EVENTS)
                 .toList();
     }
 
-    private static BattleEndEvidence findBattleEndEvidence(
+
+
+    /**
+     * Battle-relative fallback clock: the latest observed raw event clock converted through
+     * {@code battleStartRes}. Never mixes raw replay clock with battle-relative duration.
+     */
+    private static Float lastObservedClock(
             final List<ReplayEvent> events,
-            final Battle battle
+            final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent
     ) {
-        if (battle != null && battle.durationS != null
-                && Double.isFinite(battle.durationS)
-                && battle.durationS >= 0.0) {
-            return new BattleEndEvidence(
-                    battle.durationS.floatValue(),
-                    DecodeConfidence.EXACT,
-                    "BATTLE_RESULTS");
-        }
+        return events.stream()
+                .map(resolutionByEvent::get)
+                .filter(Objects::nonNull)
+                .filter(TacticalTimeResolution::isUsable)
+                .map(TacticalTimeResolution::battleRelativeSec)
+                .max(Float::compare)
+                .orElse(null);
+    }
+
+    private static Float findEventEnd(
+            final List<ReplayEvent> events,
+            final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent
+    ) {
         return events.stream()
                 .filter(BattleEndedEvent.class::isInstance)
                 .map(BattleEndedEvent.class::cast)
-                .filter(event -> Float.isFinite(
-                        ReplayTimestamp.safeClockSec(event.timestamp())))
-                .filter(event -> ReplayTimestamp.safeClockSec(event.timestamp()) >= 0f)
+                .filter(event -> {
+                    final TacticalTimeResolution res = resolutionByEvent.get(event);
+                    return res != null && res.isUsable();
+                })
+                .map(event -> resolutionByEvent.get(event).battleRelativeSec())
+                .filter(clock -> Float.isFinite(clock) && clock >= 0f)
                 .findFirst()
-                .map(event -> new BattleEndEvidence(
-                        ReplayTimestamp.safeClockSec(event.timestamp()),
-                        event.confidence() == null
-                                ? DecodeConfidence.UNKNOWN : event.confidence(),
-                        "REPLAY_EVENT"))
-                .orElse(BattleEndEvidence.unknown());
+                .orElse(null);
     }
 
-    private static float lastObservedClock(final List<ReplayEvent> events) {
-        return (float) events.stream()
-                .map(ReplayEvent::timestamp)
-                .filter(timestamp -> timestamp != null)
-                .mapToDouble(ReplayTimestamp::safeClockSec)
-                .filter(Double::isFinite)
-                .filter(clock -> clock >= 0.0)
-                .max()
-                .orElse(0.0);
+    private static DecodeConfidence findEventEndConfidence(
+            final List<ReplayEvent> events,
+            final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent
+    ) {
+        return events.stream()
+                .filter(BattleEndedEvent.class::isInstance)
+                .map(BattleEndedEvent.class::cast)
+                .filter(event -> {
+                    final TacticalTimeResolution res = resolutionByEvent.get(event);
+                    return res != null && res.isUsable();
+                })
+                .findFirst()
+                .map(event -> event.confidence() != null ? event.confidence() : DecodeConfidence.UNKNOWN)
+                .orElse(DecodeConfidence.UNKNOWN);
     }
 
     private static boolean involvesTeam(
@@ -872,15 +1087,18 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     ) {
     }
 
-    private record BattleEndEvidence(
-            Float clockSec,
-            DecodeConfidence confidence,
-            String source
-    ) {
 
-        private static BattleEndEvidence unknown() {
-            return new BattleEndEvidence(
-                    null, DecodeConfidence.UNKNOWN, "UNKNOWN");
-        }
+
+    record ResolvedEvent(ReplayEvent event, TacticalTimeResolution resolution) {}
+
+    private record TimedTeamDamage(AttributedDamage event, float battleRelativeSec) {}
+
+    record TimedTeamPosition(PositionChangedEvent event, float battleRelativeSec) {}
+
+    private static List<DefaultPlayerBattleFeatureExtractor.TimedPosition> convertTimedPositions(
+            final List<TimedTeamPosition> timedPositions) {
+        return timedPositions.stream()
+                .map(tp -> new DefaultPlayerBattleFeatureExtractor.TimedPosition(tp.event(), tp.battleRelativeSec()))
+                .toList();
     }
 }

@@ -14,6 +14,15 @@ public final class PlayerResultFormat {
         return (s == null || s.isBlank()) ? "?" : s;
     }
 
+    /**
+     * JSON 转义并加引号，用于 AI Prompt 不可信数据边界。
+     * 委托给 {@link PromptDataQuoter#quote(String, String)}，
+     * fallback 为 {@code "?"}。
+     */
+    public static String quoteForPrompt(final String s) {
+        return PromptDataQuoter.quote(s, "?");
+    }
+
     /** 死亡时刻（秒）：优先 deathTimeMillis，回退 survivalTimeSec。 */
     public static double deathSec(final PlayerResult p) {
         if (p.deathTimeMillis > 0) return p.deathTimeMillis / 1000.0;

@@ -32,7 +32,8 @@
         "files_count": "{count} 个文件",
         "remove_title": "移除该回放",
         "add_files_title": "添加回放文件",
-        "add_folder_title": "添加文件夹"
+        "add_folder_title": "添加文件夹",
+        "remove_file_aria": "删除回放文件 {name}"
     },
     "action": {
         "preview": "解析预览",
@@ -765,6 +766,7 @@
         "select_file": "选择回放文件",
         "invalid_file": "请选择 .wotbreplay 文件",
         "no_file": "未选择回放文件",
+        "max_files_count": "{count} / 16",
         "reconstruct_btn": "开始重建",
         "time_placeholder": "时间(秒)",
         "invalid_time": "无效的时间值",
@@ -847,7 +849,7 @@
             "NO_REPLAY_FILES": "未选择回放文件。",
             "INVALID_REPLAY_FILE_TYPE": "仅支持分析 .wotbreplay 文件。",
             "FILE_TOO_LARGE": "回放文件超过大小限制。",
-            "TOO_MANY_REPLAY_FILES": "一次最多上传 10 个回放文件。",
+            "REPLAY_FILE_COUNT_EXCEEDED": "一次最多上传 {max} 个回放文件。",
             "TOTAL_REQUEST_TOO_LARGE": "上传文件总大小超过限制。"
         },
         "event_types": {
@@ -879,7 +881,13 @@
             "TEAM_MEMBER_MOVEMENT_UNAVAILABLE": "该队员没有可用移动轨迹。",
             "AI_INPUT_TRUNCATED": "AI 输入已按确定性预算截断。",
             "PERSPECTIVE_TIMELINES_ISOLATED": "各分析单元的时间线与实体命名空间保持独立。",
-            "ROSTER_CONSISTENCY_UNCONFIRMED": "无法确认各场为同一固定队伍，仅进行样本集合比较。"
-        }
+            "ROSTER_CONSISTENCY_UNCONFIRMED": "无法确认各场为同一固定队伍，仅进行样本集合比较。",
+            "AI_PERSPECTIVE_OMITTED_FROM_PROMPT": "因输入限制未进入 AI 分析",
+            "PERSPECTIVES_OMITTED": "因预算限制省略了 {count} 个分析单元"
+        },
+        "analyzed_unit_count": "已分析单元",
+        "unavailable_analysis_unit_count": "不可分析单元",
+        "analysis_unit_count": "识别单元",
+        "omitted_analysis_unit_count": "省略单元"
     }
 }

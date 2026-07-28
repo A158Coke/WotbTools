@@ -704,7 +704,7 @@ ReplayReconstruction 输出
 
 - `rawClockSec` — 来自 `data.wotreplay` 的原始时钟，永久保留
 - `battleClockSec` — 战斗相对时间（= raw - battleStartRawClockSec）
-- 战斗开始时刻识别：当前未实现，`battleClockSec` = null
+- 战斗开始时刻识别：由 `BattleStartResolver` 完成，返回 IDENTIFIED / ESTIMATED / UNRESOLVED；`battleClockSec` 通过 `battleRelative(rawClock)` 计算
 
 ### 450 秒限制
 
@@ -875,7 +875,7 @@ entity 可通过 nickname 连接，置信度为 `INFERRED`。同名、观战/非
 - 同一目标在任意 `<= 5s` 滑动窗口内被至少 2 名己方成员命中，才是 focus-fire candidate；
 - 观测伤害严格超过对方 `1.25` 倍才判定交火优势/劣势，恰好 `1.25` 倍仍为均势；
 - 阵型按 `15s` 分窗，X/Z 距离 `<= 100m` 的成员属于同一连通簇；
-- 团队特征仅接受 `|x|, |z| <= 5000`、`|y| <= 200` 的位置，以及 finite、非负时间戳。
+- 团队特征仅接受 `|x|, |z| <= 1050 (1000 + 50 CLAMP_TOLERANCE_RAW)`、`|y| <= 200` 的位置，以及 finite、非负时间戳。
 
 发送给 AI 的是压缩特征，不是原始 event stream。确定性预算为：最多 15 名成员、每人
 6 个移动段、20 个阵型阶段、20 个交火段、30 个关键事件、10 个 perspective、30,000

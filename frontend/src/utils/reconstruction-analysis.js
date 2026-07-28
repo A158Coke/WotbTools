@@ -24,6 +24,7 @@ const LOCALIZED_ERROR_CODES = new Set([
   'INVALID_REPLAY_FILE_TYPE',
   'FILE_TOO_LARGE',
   'TOO_MANY_REPLAY_FILES',
+  'REPLAY_FILE_COUNT_EXCEEDED',
   'TOTAL_REQUEST_TOO_LARGE'
 ])
 
@@ -57,7 +58,8 @@ const LOCALIZED_LIMITATIONS = new Set([
   'TEAM_MEMBER_MOVEMENT_UNAVAILABLE',
   'AI_INPUT_TRUNCATED',
   'PERSPECTIVE_TIMELINES_ISOLATED',
-  'ROSTER_CONSISTENCY_UNCONFIRMED'
+  'ROSTER_CONSISTENCY_UNCONFIRMED',
+  'AI_PERSPECTIVE_OMITTED_FROM_PROMPT'
 ])
 
 export function isTeamMode(mode) {
@@ -76,16 +78,29 @@ export function perspectiveTeams(result) {
 }
 
 export function analysisLimitations(result) {
-  const limitations = (result?.analyses || [])
-    .flatMap(unit => Array.isArray(unit?.report?.limitations)
-      ? unit.report.limitations
-      : [])
+  const limitations = [
+    ...(Array.isArray(result?.limitations) ? result.limitations : []),
+    ...(result?.analyses || [])
+      .flatMap(unit => Array.isArray(unit?.report?.limitations)
+        ? unit.report.limitations
+        : [])
+  ]
     .filter(value => typeof value === 'string' && value.length > 0)
   return [...new Set(limitations)]
 }
 
 export function localizeAiError(rawCode, status, t) {
-  const code = typeof rawCode === 'string' ? rawCode.trim() : ''
+  let code = ''
+  let maxFiles = 16
+  if (typeof rawCode === 'object' && rawCode !== null) {
+    code = rawCode.code || ''
+    maxFiles = rawCode.maxFiles || 16
+  } else if (typeof rawCode === 'string') {
+    code = rawCode.trim()
+  }
+  if (code === 'REPLAY_FILE_COUNT_EXCEEDED') {
+    return t('recon.errors.REPLAY_FILE_COUNT_EXCEEDED', { max: maxFiles })
+  }
   if (LOCALIZED_ERROR_CODES.has(code)) {
     return t(`recon.errors.${code}`)
   }
@@ -96,6 +111,14 @@ export function eventTypeLabel(type, t) {
   return LOCALIZED_EVENT_TYPES.has(type)
     ? t(`recon.event_types.${type}`)
     : type
+}
+
+export function localizeLimitation(code, t) {
+  const omittedMatch = code.match(/^PERSPECTIVES_OMITTED_COUNT_(\d+)$/)
+  if (omittedMatch) {
+    return t('recon.limitations.PERSPECTIVES_OMITTED', { count: omittedMatch[1] })
+  }
+  return limitationLabel(code, t)
 }
 
 export function limitationLabel(code, t) {

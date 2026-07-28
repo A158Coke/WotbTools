@@ -1,6 +1,5 @@
 <script setup>
-import { useI18n } from 'vue-i18n'
-import { limitationLabel } from '../utils/reconstruction-analysis.js'
+import { localizeLimitation } from '../utils/reconstruction-analysis.js'
 
 defineProps({
   codes: {
@@ -8,8 +7,6 @@ defineProps({
     required: true
   }
 })
-
-const { t } = useI18n()
 </script>
 
 <template>
@@ -17,7 +14,7 @@ const { t } = useI18n()
     <h3>{{ $t('recon.data_limitations') }}</h3>
     <ul class="limitation-list">
       <li v-for="code in codes" :key="code">
-        {{ limitationLabel(code, t) }}
+        {{ localizeLimitation(code, $t) }}
       </li>
     </ul>
   </section>
