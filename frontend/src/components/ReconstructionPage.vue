@@ -40,16 +40,26 @@ function resetResults() {
 function addFile(e) {
   const picked = Array.from(e.target.files || [])
     .filter(f => f.name.toLowerCase().endsWith('.wotbreplay'))
-  if (picked.length > MAX_AI_REVIEW_REPLAY_FILES) {
+  if (picked.length === 0) {
+    if ((e.target.files || []).length) {
+      error.value = t('recon.invalid_file')
+    }
+    return
+  }
+  const totalAfterAdd = files.value.length + picked.length
+  if (totalAfterAdd > MAX_AI_REVIEW_REPLAY_FILES) {
     error.value = t('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
     return
   }
-  if (picked.length) {
-    files.value = picked
-    error.value = ''
+  files.value = [...files.value, ...picked]
+  error.value = ''
+  resetResults()
+}
+
+function removeFile(index) {
+  files.value = files.value.filter((_, i) => i !== index)
+  if (files.value.length === 0) {
     resetResults()
-  } else if ((e.target.files || []).length) {
-    error.value = t('recon.invalid_file')
   }
 }
 
@@ -148,8 +158,12 @@ async function runStateAt() {
 
 async function runAnalyze() {
   if (analyzing.value) return
-  if (!file.value) {
-    error.value = t('recon.no_file')
+  if (files.value.length === 0) {
+    error.value = t('recon.errors.NO_REPLAY_FILE')
+    return
+  }
+  if (files.value.length > MAX_AI_REVIEW_REPLAY_FILES) {
+    error.value = t('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
     return
   }
   analyzing.value = true
@@ -192,6 +206,7 @@ function toggleAnalysis() {
       :is-admin="isAdmin"
       :show-analysis="showAnalysis"
       @add-file="addFile"
+      @remove-file="removeFile"
       @clear="clearFile"
       @reconstruct="runReconstruct"
       @state-at="runStateAt"

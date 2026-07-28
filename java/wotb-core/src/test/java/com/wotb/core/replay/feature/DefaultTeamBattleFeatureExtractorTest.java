@@ -757,6 +757,34 @@ class DefaultTeamBattleFeatureExtractorTest {
     // ===== Team member movement uses canonical meters (Finding #9) =====
 
     @Test
+    void teamEnemyOnlyDamageDoesNotSetPhaseEnd() {
+        final Fixture fixture = fixture();
+        fixture.battle().durationS = null;
+        final List<BattleParticipant> participants = new ArrayList<>(fixture.participants());
+        participants.add(new BattleParticipant(202L, "EnemyTwo", 2, 99, "e", false));
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                position(2, 90f, 10, 0f, 0f),
+                damage(3, 150f, 20, 99, 200));
+        final TeamBattleFeatureSet features = extract(
+                new Fixture(fixture.battle(), participants, events), events);
+        assertFalse(features.battlePhases().isEmpty());
+        assertTrue(features.battlePhases().stream()
+                .noneMatch(phase -> phase.endTime() >= 150f));
+        assertTrue(features.battlePhases().stream()
+                .anyMatch(phase -> Math.abs(phase.endTime() - 90f) < 0.01f));
+    }
+
+    @Test
+    void teamUnresolvedBattleEndHasLimitation() {
+        final Fixture fixture = fixture();
+        fixture.battle().durationS = null;
+        final TeamBattleFeatureSet features = extract(fixture, List.of());
+        assertTrue(features.limitations().contains("BATTLE_END_UNRESOLVED"));
+        assertTrue(features.battlePhases().isEmpty());
+    }
+
+    @Test
     void teamMemberMovementUsesCanonicalMeters() {
         final Fixture fixture = fixture();
         // entity 10 raw (0,0)->(400,0): canonical (250,250)->(350,250) = 100 canonical meters / 5s.

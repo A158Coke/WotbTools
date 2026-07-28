@@ -26,8 +26,12 @@ import com.wotb.core.replay.reconstruction.Vector3;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -317,6 +321,114 @@ class TeamAiPromptBuilderTest {
                 "Same input must produce same output");
         assertEquals(first.limitations(), second.limitations(),
                 "Same input must produce same limitations");
+    }
+
+    @Test
+    void singlePromptIncludesCurrentUnit() {
+        final SingleTeamBattleAnalysisContext context = contextWithMembers(1, 1);
+        final TeamAiPromptBuilder.PromptInput input = TeamAiPromptBuilder.single(context);
+        assertEquals(Set.of(context.analysisUnitId()), input.includedUnitIds());
+        assertTrue(input.omittedUnitIds().isEmpty());
+        assertEquals(1, input.perUnitLimitations().size());
+        assertTrue(input.perUnitLimitations().containsKey(context.analysisUnitId()));
+    }
+
+    @Test
+    void multiPromptReturnsIncludedAndOmittedIds() {
+        final SingleTeamBattleAnalysisContext base = contextWithMembers(1, 1);
+        final List<TeamBattleAnalysisSummary> summaries = IntStream.range(
+                        0, TeamAiPromptBuilder.MAX_PERSPECTIVES + 2)
+                .mapToObj(index -> new TeamBattleAnalysisSummary(
+                        base.analysisUnitId() + "-" + index,
+                        base.battleId(),
+                        "team-" + index + ".wotbreplay",
+                        base.battle().mapName,
+                        base.battleCategory(),
+                        base.battle().durationS,
+                        base.perspectiveTeam(),
+                        base.features().members().stream()
+                                .map(member -> member.accountId())
+                                .toList(),
+                        base.features(),
+                        "test-team"))
+                .toList();
+        final var multi = new MultiTeamBattleAnalysisContext(
+                summaries.size(),
+                summaries.size(),
+                summaries,
+                true,
+                List.of("PERSPECTIVE_TIMELINES_ISOLATED"));
+
+        final TeamAiPromptBuilder.PromptInput input = TeamAiPromptBuilder.multi(multi);
+
+        assertEquals(TeamAiPromptBuilder.MAX_PERSPECTIVES, input.includedUnitIds().size());
+        assertEquals(2, input.omittedUnitIds().size());
+
+        final Set<String> allAccounted = new LinkedHashSet<>();
+        allAccounted.addAll(input.includedUnitIds());
+        allAccounted.addAll(input.omittedUnitIds());
+        assertEquals(TeamAiPromptBuilder.MAX_PERSPECTIVES + 2, allAccounted.size(),
+                "Included and omitted must be disjoint and cover all 12 IDs");
+        for (final var summary : summaries) {
+            assertTrue(allAccounted.contains(summary.analysisUnitId()),
+                    "Every summary ID must appear in included or omitted");
+        }
+    }
+
+    @Test
+    void multiPromptBudgetOmissionTracksSpecificIds() {
+        final SingleTeamBattleAnalysisContext base = contextWithMembers(1, 1);
+        final String hugeLim = IntStream.range(0, 4000)
+                .mapToObj(i -> "X")
+                .collect(Collectors.joining());
+        final Map<String, List<String>> evidenceMap = new LinkedHashMap<>();
+        final List<TeamBattleAnalysisSummary> summaries = IntStream.range(
+                        0, TeamAiPromptBuilder.MAX_PERSPECTIVES)
+                .mapToObj(index -> {
+                    final String id = base.analysisUnitId() + "-" + index;
+                    evidenceMap.put(id, List.of(hugeLim));
+                    return new TeamBattleAnalysisSummary(
+                            id,
+                            base.battleId(),
+                            "team-" + index + ".wotbreplay",
+                            base.battle().mapName,
+                            base.battleCategory(),
+                            base.battle().durationS,
+                            base.perspectiveTeam(),
+                            base.features().members().stream()
+                                    .map(member -> member.accountId())
+                                    .toList(),
+                            base.features(),
+                            "test-team");
+                })
+                .toList();
+        final var multi = new MultiTeamBattleAnalysisContext(
+                summaries.size(),
+                summaries.size(),
+                summaries,
+                true,
+                List.of("PERSPECTIVE_TIMELINES_ISOLATED"));
+
+        final TeamAiPromptBuilder.PromptInput input =
+                TeamAiPromptBuilder.multi(multi, evidenceMap);
+
+        assertTrue(input.includedUnitIds().size() < TeamAiPromptBuilder.MAX_PERSPECTIVES,
+                "Large limitations should force at least 1 omission");
+        assertFalse(input.omittedUnitIds().isEmpty(),
+                "Some units must be omitted due to budget");
+
+        final Set<String> allAccounted = new LinkedHashSet<>();
+        allAccounted.addAll(input.includedUnitIds());
+        allAccounted.addAll(input.omittedUnitIds());
+        final Set<String> allSummaryIds = summaries.stream()
+                .map(TeamBattleAnalysisSummary::analysisUnitId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        assertEquals(allSummaryIds, allAccounted,
+                "All summary IDs must be covered by included or omitted");
+        for (final String id : input.includedUnitIds()) {
+            assertFalse(input.omittedUnitIds().contains(id),
+                    "ID must not appear in both included and omitted: " + id);
+        }
     }
 
     private static SingleTeamBattleAnalysisContext contextWithMembers(

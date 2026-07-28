@@ -44,6 +44,7 @@ import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.util.PlayerResultFormat;
+import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -134,6 +135,13 @@ public class AiReplayAnalysisService {
      */
     public boolean isConfigured() {
         return StringUtils.hasText(apiKey);
+    }
+
+    public void validateReviewBatchSize(int fileCount) {
+        if (fileCount > AiReplayBatchPolicy.MAX_FILES) {
+            throw new ReplayFileCountExceededException(
+                    AiReplayBatchPolicy.MAX_FILES, fileCount);
+        }
     }
 
     /**
@@ -358,13 +366,20 @@ public class AiReplayAnalysisService {
                         .toList();
                 final AnalyzeResult result = callMultiTeamContext(input, keyEvents);
                 if (firstAnalysis == null) firstAnalysis = result;
+                final Set<String> includedIds = input.includedUnitIds();
+                final Set<String> omittedIds = input.omittedUnitIds();
                 for (final var ctx : partition) {
-                    perUnitResults.put(ctx.analysisUnitId(), result);
+                    if (includedIds.contains(ctx.analysisUnitId())) {
+                        perUnitResults.put(ctx.analysisUnitId(), result);
+                    }
                 }
                 for (final var ctx : partition) {
                     final Set<String> unitLimits = limitationsByUnit.computeIfAbsent(
                             ctx.analysisUnitId(), k -> new LinkedHashSet<>());
                     unitLimits.addAll(multiContext.limitations());
+                    if (omittedIds.contains(ctx.analysisUnitId())) {
+                        unitLimits.add("AI_PERSPECTIVE_OMITTED_FROM_PROMPT");
+                    }
                     final var rosterEvidence = evidenceByUnitId.get(ctx.analysisUnitId());
                     if (rosterEvidence != null && rosterEvidence.limitations().contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS")) {
                         unitLimits.add("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
@@ -372,9 +387,11 @@ public class AiReplayAnalysisService {
                 }
                 if (input.limitations().contains("AI_INPUT_TRUNCATED")) {
                     for (final var ctx : partition) {
-                        limitationsByUnit.computeIfAbsent(
-                                ctx.analysisUnitId(), k -> new LinkedHashSet<>())
-                                .add("AI_INPUT_TRUNCATED");
+                        if (includedIds.contains(ctx.analysisUnitId())) {
+                            limitationsByUnit.computeIfAbsent(
+                                    ctx.analysisUnitId(), k -> new LinkedHashSet<>())
+                                    .add("AI_INPUT_TRUNCATED");
+                        }
                     }
                 }
             }
@@ -382,10 +399,15 @@ public class AiReplayAnalysisService {
         if (firstAnalysis == null) {
             throw new IllegalStateException("NO_ANALYSIS_PRODUCED");
         }
+        final int totalContexts = contexts.size();
+        final int analyzedCount = (int) contexts.stream()
+                .filter(ctx -> perUnitResults.containsKey(ctx.analysisUnitId()))
+                .count();
         return new TeamAnalyzeResult(
                 firstAnalysis,
                 buildTeamAnalysisUnits(
-                        groups, contexts, perUnitResults, limitationsByUnit));
+                        groups, contexts, perUnitResults, limitationsByUnit),
+                totalContexts, analyzedCount);
     }
 
     /**
@@ -1123,10 +1145,28 @@ public class AiReplayAnalysisService {
         final String step4 = step3.replaceAll(
                 "(?i)(signedheader|x-amz-[a-z-]+|x-amz-date|credential|signature)=[^\\s,;\"]+",
                 "$1=[REDACTED]");
+        // Step 5: Known auth schemes — case-insensitive, any credential length
         final String step5 = step4.replaceAll(
-                "\\b((?i:bearer|basic|digest)|[A-Z][a-zA-Z0-9]+)\\s+[A-Za-z0-9._\\-+/]{6,}",
+                "(?i)\\b(bearer|basic|digest)\\s+[^\\s,;\"'}]+",
                 "$1 [REDACTED]");
-        return step5.replaceAll(
+        // Step 6a: PascalCase custom schemes (e.g. CustomScheme, TokenV2, ApiAuth)
+        // High confidence — these are unlikely to be natural English words
+        final String step6a = step5.replaceAll(
+                "\\b([A-Z][a-z]+[A-Z][a-zA-Z0-9]*)\\s+[A-Za-z0-9._\\-+/]{3,}",
+                "$1 [REDACTED]");
+        // Step 6b: Schemes containing digits (e.g. tokenv2, auth2, hmac256)
+        // Very unlikely to be English words, even with short credentials
+        final String step6b = step6a.replaceAll(
+                "\\b([A-Za-z][A-Za-z0-9_-]*[0-9][A-Za-z0-9_-]*)\\s+[A-Za-z0-9._\\-+/]{3,}",
+                "$1 [REDACTED]");
+        // Step 7: Lowercase custom schemes — credential must contain non-alpha char
+        // (digit or punctuation) to confirm it's a real token, avoiding natural language false positives
+        // This handles: customscheme secret-value, CUSTOMSCHEME secret-value, etc.
+        final String step7 = step6b.replaceAll(
+                "(?i)\\b([a-z][a-z0-9_-]{2,})\\s+[A-Za-z0-9]*[0-9._\\-+/][A-Za-z0-9._\\-+/]{2,}",
+                "$1 [REDACTED]");
+        // Step 8: Digest auth parameters
+        return step7.replaceAll(
                 "(?i)\\b(response|nonce|cnonce|opaque|realm|qop|nc|uri|username)\\s*=\\s*[A-Za-z0-9._\\-+/]{4,}",
                 "$1=[REDACTED]");
     }
@@ -1459,7 +1499,9 @@ public class AiReplayAnalysisService {
      */
     public record TeamAnalyzeResult(
             AnalyzeResult analysis,
-            List<AnalysisUnitResult> units
+            List<AnalysisUnitResult> units,
+            int analysisUnitCount,
+            int analyzedUnitCount
     ) {
 
         public TeamAnalyzeResult {

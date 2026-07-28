@@ -25,10 +25,12 @@ import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
+import com.wotb.web.replay.ai.AiReplayBatchPolicy;
 import com.wotb.web.replay.ai.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.dto.ReconstructSummary;
 import com.wotb.web.replay.dto.StateAtResponse;
+import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -41,8 +43,11 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 回放重建 REST API（开发和验证用）。
@@ -54,8 +59,6 @@ import java.util.List;
 @RequestMapping("/api/replay")
 @CrossOrigin(origins = "*")
 public class ReconstructionController {
-
-    public static final int MAX_AI_REVIEW_REPLAY_FILES = 16;
 
     private final DefaultReplayProcessingFacade processingFacade;
     private final ReplayReconstructionService reconstructionService;
@@ -131,6 +134,7 @@ public class ReconstructionController {
     public AnalyzeResponse analyze(
             @RequestParam("files") final MultipartFile[] files) throws IOException {
 
+        aiService.validateReviewBatchSize(files.length);
         validateBatch(files);
         final var uploadResults = processFilesWithIndex(files);
         final var allResults = uploadResults.stream()
@@ -209,7 +213,7 @@ public class ReconstructionController {
                 final var aiResult = teamResult.analysis();
                 yield new AnalyzeResponse(plan.mode(),
                         total, validCount,
-                        plan.effectiveUnitCount(), analyzedUnitCount, analyzedUnitCount,
+                        plan.effectiveUnitCount(), teamResult.analyzedUnitCount(), teamResult.analyzedUnitCount(),
                         aiResult.analysis(), failedCount,
                         plan.exactDuplicateCount(), plan.sameTeamDuplicatePerspectiveCount(),
                         fileStatuses, teamResult.units(), aiResult.keyEvents());
@@ -255,6 +259,18 @@ public class ReconstructionController {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .contentType(MediaType.TEXT_PLAIN)
                 .body(e.getMessage());
+    }
+
+    @ExceptionHandler(ReplayFileCountExceededException.class)
+    public ResponseEntity<Map<String, Object>> handleFileCountExceeded(
+            final ReplayFileCountExceededException e
+    ) {
+        final Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "REPLAY_FILE_COUNT_EXCEEDED");
+        body.put("maxFiles", e.getMaxFiles());
+        body.put("actualFiles", e.getActualFiles());
+        body.put("timestamp", Instant.now().toString());
+        return ResponseEntity.badRequest().body(body);
     }
 
     /**
@@ -337,9 +353,6 @@ public class ReconstructionController {
     private static void validateBatch(final MultipartFile[] files) {
         if (files == null || files.length == 0) {
             throw new IllegalArgumentException("NO_REPLAY_FILES");
-        }
-        if (files.length > MAX_AI_REVIEW_REPLAY_FILES) {
-            throw new IllegalArgumentException("REPLAY_FILE_COUNT_EXCEEDED");
         }
         long totalBytes = 0;
         for (final MultipartFile file : files) {

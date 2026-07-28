@@ -6,7 +6,7 @@ defineProps({
   }
 })
 
-defineEmits(['add-file', 'clear'])
+defineEmits(['add-file', 'remove-file', 'clear'])
 </script>
 
 <template>
@@ -22,11 +22,12 @@ defineEmits(['add-file', 'clear'])
 
   <div v-if="files.length" class="fb-chips">
     <span
-      v-for="selectedFile in files"
+      v-for="(selectedFile, index) in files"
       :key="`${selectedFile.name}:${selectedFile.size}:${selectedFile.lastModified}`"
       class="chip"
     >
       {{ selectedFile.name }}
+      <button class="chip-remove" @click="$emit('remove-file', index)">&times;</button>
     </span>
     <span class="chip count-chip">{{ $t('recon.max_files_count', { count: files.length }) }}</span>
   </div>
