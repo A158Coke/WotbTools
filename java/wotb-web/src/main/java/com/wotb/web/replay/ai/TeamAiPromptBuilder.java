@@ -694,12 +694,12 @@ final class TeamAiPromptBuilder {
             this.maxChars = maxChars;
         }
 
-        private void reserve(final int bytes) {
-            this.reserved += bytes;
+        private void reserve(final int chars) {
+            this.reserved += chars;
         }
 
-        private void release(final int bytes) {
-            this.reserved -= bytes;
+        private void release(final int chars) {
+            this.reserved -= chars;
         }
 
         private boolean append(final String value) {
