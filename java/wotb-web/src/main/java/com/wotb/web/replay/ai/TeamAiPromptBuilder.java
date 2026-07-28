@@ -698,7 +698,7 @@ final class TeamAiPromptBuilder {
         }
 
         private boolean append(final String value) {
-            if (value == null || value.isEmpty()) {
+            if (!StringUtils.hasText(value)) {
                 return true;
             }
             final int truncationReserve = TRUNCATION_LINE.length();
