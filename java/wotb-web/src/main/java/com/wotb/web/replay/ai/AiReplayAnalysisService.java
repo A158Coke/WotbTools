@@ -811,13 +811,15 @@ public class AiReplayAnalysisService {
             sb.append("\n").append(PlayerAnalysisPromptFormatter.formatRecorderLine(rec, recSide)).append('\n');
         }
 
-        // ====== 3-4. FRIENDLY_LINEUP and ENEMY_LINEUP ======
+        // ====== 3-4. FRIENDLY_LINEUP, ENEMY_LINEUP, UNKNOWN_LINEUP ======
         final List<PlayerResult> allPlayers = battle.players != null ? battle.players : List.of();
         final Map<PlayerResult, Side> allSides = PlayerSideResolver.resolveAll(battle);
         final List<PlayerResult> friendlies = allPlayers.stream()
                 .filter(p -> allSides.getOrDefault(p, Side.UNKNOWN) == Side.FRIENDLY).toList();
         final List<PlayerResult> enemies = allPlayers.stream()
                 .filter(p -> allSides.getOrDefault(p, Side.UNKNOWN) == Side.ENEMY).toList();
+        final List<PlayerResult> unknowns = allPlayers.stream()
+                .filter(p -> allSides.getOrDefault(p, Side.UNKNOWN) == Side.UNKNOWN).toList();
 
         sb.append("\n=== FRIENDLY_LINEUP_AUTHORITATIVE ===\n");
         for (final PlayerResult p : friendlies) {
@@ -827,16 +829,26 @@ public class AiReplayAnalysisService {
         for (final PlayerResult p : enemies) {
             appendPlayerLine(sb, p, false);
         }
+        if (!unknowns.isEmpty()) {
+            sb.append("=== UNKNOWN_LINEUP_AUTHORITATIVE ===\n");
+            for (final PlayerResult p : unknowns) {
+                sb.append("未知 ").append(PlayerResultFormat.quoteForPrompt(p.nickname))
+                        .append(" 坦克: ").append(PlayerResultFormat.quoteForPrompt(ReplayDisplayNames.tankName(p.tankId, p.tankName)))
+                        .append(" 输出").append(p.damageDealt)
+                        .append(" 击杀").append(p.kills)
+                        .append('\n');
+            }
+        }
 
         // ====== 5. Class counts (backend-computed) ======
-        appendClassSummary(sb, allPlayers, battle);
+        appendClassSummary(sb, friendlies, enemies, unknowns, battle);
 
         // ====== 6. Backend-computed aggregates ======
-        appendAggregates(sb, allPlayers, battle);
+        appendAggregates(sb, friendlies, enemies, unknowns);
 
         // ====== 7. Recorder ranking ======
         if (rec != null && !friendlies.isEmpty()) {
-            appendRecorderRanking(sb, rec, friendlies);
+            appendRecorderRanking(sb, rec, friendlies, battle);
         }
 
         // ====== 8. Death timeline (authoritative) ======
@@ -845,6 +857,15 @@ public class AiReplayAnalysisService {
 
         // ====== 9. Event stream evidence ======
         appendEventStreamEvidence(sb, ctx, battle);
+
+        // ====== 10. Side-based limitations ======
+        if (!unknowns.isEmpty()) {
+            final boolean recUnresolved = rec == null || allSides.getOrDefault(rec, Side.UNKNOWN) == Side.UNKNOWN;
+            if (recUnresolved) {
+                sb.append("- RECORDER_TEAM_UNRESOLVED\n");
+            }
+            sb.append("- SIDE_AGGREGATES_UNAVAILABLE\n");
+        }
         return sb.toString();
     }
 
@@ -861,18 +882,20 @@ public class AiReplayAnalysisService {
                 .append('\n');
     }
 
-    private static void appendClassSummary(final StringBuilder sb, final List<PlayerResult> players,
+    private static void appendClassSummary(final StringBuilder sb,
+                                            final List<PlayerResult> friendlies,
+                                            final List<PlayerResult> enemies,
+                                            final List<PlayerResult> unknowns,
                                             final Battle battle) {
-        final Map<PlayerResult, Side> sides = PlayerSideResolver.resolveAll(battle);
-        final List<PlayerResult> friendlies = players.stream()
-                .filter(p -> sides.getOrDefault(p, Side.UNKNOWN) == Side.FRIENDLY).toList();
-        final List<PlayerResult> enemies = players.stream()
-                .filter(p -> sides.getOrDefault(p, Side.UNKNOWN) != Side.FRIENDLY).toList();
         sb.append("\n=== COMPOSITION_AUTHORITATIVE ===\n");
         sb.append("友方 ").append(friendlies.size()).append(" 辆:");
         appendClassCounts(sb, friendlies);
         sb.append(" | 敌方 ").append(enemies.size()).append(" 辆:");
         appendClassCounts(sb, enemies);
+        if (!unknowns.isEmpty()) {
+            sb.append(" | 未知 ").append(unknowns.size()).append(" 辆:");
+            appendClassCounts(sb, unknowns);
+        }
         sb.append('\n');
     }
 
@@ -896,22 +919,25 @@ public class AiReplayAnalysisService {
         if (unknown > 0) sb.append(" 未知").append(unknown);
     }
 
-    private static void appendAggregates(final StringBuilder sb, final List<PlayerResult> players,
-                                          final Battle battle) {
-        final Map<PlayerResult, Side> sides = PlayerSideResolver.resolveAll(battle);
-        final var friendly = players.stream()
-                .filter(p -> sides.getOrDefault(p, Side.UNKNOWN) == Side.FRIENDLY).toList();
-        final var enemy = players.stream()
-                .filter(p -> sides.getOrDefault(p, Side.UNKNOWN) != Side.FRIENDLY).toList();
+    private static void appendAggregates(final StringBuilder sb,
+                                          final List<PlayerResult> friendlies,
+                                          final List<PlayerResult> enemies,
+                                          final List<PlayerResult> unknowns) {
         sb.append("\n=== FRIENDLY_AUTHORITATIVE_RESULT ===\n");
-        appendTeamAggregate(sb, friendly);
+        appendTeamAggregate(sb, friendlies);
         sb.append("=== ENEMY_AUTHORITATIVE_RESULT ===\n");
-        appendTeamAggregate(sb, enemy);
+        appendTeamAggregate(sb, enemies);
+        if (!unknowns.isEmpty()) {
+            sb.append("=== UNKNOWN_AUTHORITATIVE_RESULT ===\n");
+            appendTeamAggregate(sb, unknowns);
+        }
     }
 
     private static void appendTeamAggregate(final StringBuilder sb, final List<PlayerResult> players) {
         final int totalDmg = players.stream().mapToInt(p -> p.damageDealt).sum();
         final int totalRecv = players.stream().mapToInt(p -> p.damageReceived).sum();
+        final int totalAssist = players.stream().mapToInt(p -> p.damageAssisted).sum();
+        final int totalBlocked = players.stream().mapToInt(p -> p.damageBlocked).sum();
         final int totalKills = players.stream().mapToInt(p -> p.kills).sum();
         final long survivors = players.stream().filter(p -> p.survived).count();
         final long deaths = players.stream().filter(p -> !p.survived).count();
@@ -925,6 +951,8 @@ public class AiReplayAnalysisService {
                 .max().orElse(-1);
         sb.append("总伤害: ").append(totalDmg)
                 .append(" 总承伤: ").append(totalRecv)
+                .append(" 总助攻: ").append(totalAssist)
+                .append(" 总格挡: ").append(totalBlocked)
                 .append(" 总击杀: ").append(totalKills)
                 .append(" 存活: ").append(survivors)
                 .append(" 阵亡: ").append(deaths);
@@ -936,7 +964,8 @@ public class AiReplayAnalysisService {
     }
 
     private static void appendRecorderRanking(final StringBuilder sb, final PlayerResult rec,
-                                               final List<PlayerResult> friendlies) {
+                                               final List<PlayerResult> friendlies,
+                                               final Battle battle) {
         final int totalFriendly = friendlies.size();
         final int dmgRank = (int) friendlies.stream()
                 .filter(p -> p.damageDealt > rec.damageDealt).count() + 1;
@@ -952,12 +981,24 @@ public class AiReplayAnalysisService {
 
         if (!rec.survived && rec.deathTimeMillis > 0) {
             final double deathSec = rec.deathTimeMillis / 1000.0;
-            final double duration = friendlies.stream()
-                    .filter(p -> !p.survived)
-                    .mapToDouble(PlayerResultFormat::deathSec)
-                    .min().orElse(deathSec);
-            final boolean earlyDeath = deathSec <= duration + 5;
-            if (earlyDeath) sb.append(" 过早阵亡: 是");
+            final int deathOrder = (int) friendlies.stream()
+                    .filter(p -> !p.survived && PlayerResultFormat.deathSec(p) < deathSec)
+                    .count() + 1;
+            final double battleDur = battle.durationS != null && battle.durationS > 0 ? battle.durationS : deathSec;
+            final double progressRatio = deathSec / battleDur;
+            final List<PlayerResult> allPlayers = battle.players != null ? battle.players : List.of();
+            final Map<PlayerResult, Side> sides = PlayerSideResolver.resolveAll(battle);
+            final long friendlyAlive = friendlies.stream()
+                    .filter(p -> p.survived || PlayerResultFormat.deathSec(p) > deathSec).count();
+            final long enemyAlive = allPlayers.stream()
+                    .filter(p -> sides.getOrDefault(p, Side.UNKNOWN) == Side.ENEMY)
+                    .filter(p -> p.survived || PlayerResultFormat.deathSec(p) > deathSec).count();
+
+            sb.append(" 死亡时间: ").append(String.format("%.1fs", deathSec));
+            sb.append(" 友方阵亡序位: ").append(deathOrder).append("/").append(totalFriendly);
+            sb.append(" 战斗进度: ").append(String.format("%.0f%%", progressRatio * 100));
+            sb.append(" 阵亡时友方存活: ").append(friendlyAlive);
+            sb.append(" 阵亡时敌方存活: ").append(enemyAlive);
         }
         sb.append('\n');
     }

@@ -31,15 +31,23 @@ public final class ReplayDisplayNames {
     public static String tankName(final long tankId, final String existingTankName) {
         if (tankId > 0) {
             final String name = TANKOPEDIA.info(tankId).name();
-            if (StringUtils.hasText(name) && !name.startsWith("#")) {
+            if (isValidDisplayName(name)) {
                 return name;
             }
         }
-        if (StringUtils.hasText(existingTankName)
-                && !existingTankName.startsWith("#")
-                && !existingTankName.startsWith("?")) {
+        if (isValidDisplayName(existingTankName)) {
             return existingTankName;
         }
         return "未知坦克";
+    }
+
+    private static boolean isValidDisplayName(final String name) {
+        if (!StringUtils.hasText(name)) return false;
+        if (name.startsWith("#")) return false;
+        if (name.startsWith("?")) return false;
+        if (name.startsWith("vehicle_")) return false;
+        if (name.startsWith("tankId=")) return false;
+        if (name.matches("\\d+")) return false;
+        return true;
     }
 }
