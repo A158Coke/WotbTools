@@ -1169,17 +1169,17 @@ class AiReplayAnalysisServiceTest {
 
     @Test void redactionCustomScheme() {
         final String r = AiReplayAnalysisService.safeProviderSummary("CustomScheme secret-value");
-        assertTrue(r.contains("secret-value"));
+        assertEquals("[PROVIDER_BODY_REDACTED]", r);
     }
 
     @Test void redactionTokenV2() {
         final String r = AiReplayAnalysisService.safeProviderSummary("TokenV2 abc.def.ghi");
-        assertTrue(r.contains("abc.def.ghi"));
+        assertEquals("[PROVIDER_BODY_REDACTED]", r);
     }
 
     @Test void redactionApiAuth() {
         final String r = AiReplayAnalysisService.safeProviderSummary("ApiAuth my-secret-token");
-        assertTrue(r.contains("my-secret-token"));
+        assertEquals("[PROVIDER_BODY_REDACTED]", r);
     }
 
     @Test void redactionAuthorizationCustomScheme() {
@@ -1262,20 +1262,17 @@ class AiReplayAnalysisServiceTest {
 
     @Test void redactionBearerSpaceSeparated() {
         final String r = AiReplayAnalysisService.safeProviderSummary("Bearer sk-live-123");
-        assertFalse(r.contains("sk-live-123"));
-        assertTrue(r.contains("Bearer"));
+        assertEquals("[PROVIDER_BODY_REDACTED]", r);
     }
 
     @Test void redactionBasicSpaceSeparated() {
         final String r = AiReplayAnalysisService.safeProviderSummary("Basic dXNlcjpwYXNz");
-        assertFalse(r.contains("dXNlcjpwYXNz"));
-        assertTrue(r.contains("Basic"));
+        assertEquals("[PROVIDER_BODY_REDACTED]", r);
     }
 
     @Test void redactionDigestResponseEquals() {
         final String r = AiReplayAnalysisService.safeProviderSummary("Digest username=x,response=secret");
-        assertFalse(r.contains("secret"));
-        assertTrue(r.contains("Digest"));
+        assertEquals("[PROVIDER_BODY_REDACTED]", r);
     }
 
     @Test void redactionJsonMessageContainsBearer() {
@@ -1300,71 +1297,71 @@ class AiReplayAnalysisServiceTest {
 
     @Test void redactionMixedCaseCustomScheme() {
         final String r = AiReplayAnalysisService.safeProviderSummary("cUsToMsChEmE abc");
-        assertTrue(r.contains("abc"));
+        assertEquals("[PROVIDER_BODY_REDACTED]", r);
     }
 
     @Test void redactionLowercaseCustomScheme() {
         final String r = AiReplayAnalysisService.safeProviderSummary("customscheme abc");
-        assertTrue(r.contains("abc"));
+        assertEquals("[PROVIDER_BODY_REDACTED]", r);
     }
 
     @Test void redactionUppercaseCustomScheme() {
         final String r = AiReplayAnalysisService.safeProviderSummary("CUSTOMSCHEME abc");
-        assertTrue(r.contains("abc"));
+        assertEquals("[PROVIDER_BODY_REDACTED]", r);
     }
 
     @Test void redactionCustomSchemeShortCredential() {
         final String r = AiReplayAnalysisService.safeProviderSummary("CustomScheme a");
-        assertTrue(r.contains("CustomScheme a"));
+        assertEquals("[PROVIDER_BODY_REDACTED]", r);
     }
 
     @Test void redactionTokenV2ShortCredential() {
         final String r = AiReplayAnalysisService.safeProviderSummary("tokenv2 a");
-        assertTrue(r.contains("tokenv2 a"));
+        assertEquals("[PROVIDER_BODY_REDACTED]", r);
     }
 
     @Test void redactionAntiFalsePositive() {
         final String r = AiReplayAnalysisService.safeProviderSummary("The quick brown fox jumps over the lazy dog");
-        assertTrue(r.contains("dog"));
+        assertEquals("[PROVIDER_BODY_REDACTED]", r);
     }
 
     // === RFC token charset tests ===
 
     @Test void redactionRfcTokenDollar() {
         final String r = AiReplayAnalysisService.safeProviderSummary("a$b supersecret");
-        assertTrue(r.contains("supersecret"));
+        assertEquals("[PROVIDER_BODY_REDACTED]", r);
     }
 
     @Test void redactionRfcTokenPlus() {
         final String r = AiReplayAnalysisService.safeProviderSummary("foo+bar abc");
-        assertTrue(r.contains("abc"));
+        assertEquals("[PROVIDER_BODY_REDACTED]", r);
     }
 
     @Test void redactionRfcTokenExclamation() {
         final String r = AiReplayAnalysisService.safeProviderSummary("x!auth secret");
-        assertTrue(r.contains("secret"));
+        assertEquals("[PROVIDER_BODY_REDACTED]", r);
     }
 
     @Test void redactionRfcTokenPipe() {
         final String r = AiReplayAnalysisService.safeProviderSummary("q|x token-value");
-        assertTrue(r.contains("token-value"));
+        assertEquals("[PROVIDER_BODY_REDACTED]", r);
     }
 
     @Test void redactionRfcTokenTilde() {
         final String r = AiReplayAnalysisService.safeProviderSummary("scheme~v2 a");
-        assertTrue(r.contains("scheme~v2 a"));
+        assertEquals("[PROVIDER_BODY_REDACTED]", r);
     }
 
     // === Whole-line only anti-false-positive ===
 
     @Test void redactionCustomSchemeAllAlphaLongCredential() {
         final String r = AiReplayAnalysisService.safeProviderSummary("customscheme supersecret");
-        assertTrue(r.contains("supersecret"));
+        assertEquals("[PROVIDER_BODY_REDACTED]", r);
     }
 
     @Test void redactionCustomSchemeMatchesAnyCredential() {
         final String r = AiReplayAnalysisService.safeProviderSummary("customscheme request");
-        assertTrue(r.contains("request"));
+        assertEquals("[PROVIDER_BODY_REDACTED]", r);
     }
 
     // === JSON textual value with custom scheme ===

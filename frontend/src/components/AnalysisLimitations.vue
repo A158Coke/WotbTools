@@ -1,5 +1,4 @@
 <script setup>
-import { useI18n } from 'vue-i18n'
 import { localizeLimitation } from '../utils/reconstruction-analysis.js'
 
 defineProps({
@@ -8,8 +7,6 @@ defineProps({
     required: true
   }
 })
-
-const { t } = useI18n()
 </script>
 
 <template>

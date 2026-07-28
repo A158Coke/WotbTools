@@ -338,7 +338,6 @@ public class AiReplayAnalysisService {
                 for (final var ctx : partition) {
                     final Set<String> unitLimits = limitationsByUnit.computeIfAbsent(
                             ctx.analysisUnitId(), k -> new LinkedHashSet<>());
-                    unitLimits.addAll(multiContext.limitations());
                     if (omittedIds.contains(ctx.analysisUnitId())) {
                         unitLimits.add("AI_PERSPECTIVE_OMITTED_FROM_PROMPT");
                     }
@@ -1083,7 +1082,8 @@ public class AiReplayAnalysisService {
         if (!StringUtils.hasText(raw)) {
             return "empty provider error body";
         }
-        // 1. Try JSON tree redaction (preferred)
+        // 1. For JSON bodies: tree-redact sensitive keys, keep structure for diagnostics
+        // but redact all textual values to prevent credential leakage
         try {
             final var mapper = new JsonMapper();
             final var root = mapper.readTree(raw);
@@ -1093,10 +1093,17 @@ public class AiReplayAnalysisService {
                 return truncateSafe(result);
             }
         } catch (final Exception ignored) {
-            // Not valid JSON — fall through to regex
+            // Not valid JSON — fall through
         }
-        // 2. Fallback regex redaction for non-JSON text
-        return truncateSafe(redactNonJson(raw));
+        // 2. For Authorization/header-like lines: redact credential
+        final String headerRedacted = raw.replaceAll(
+                "(?im)(authorization\\s*[:=]\\s*).*", "$1[REDACTED]");
+        if (!headerRedacted.equals(raw)) {
+            return truncateSafe(headerRedacted);
+        }
+        // 3. For anything else (plain text, malformed JSON, unknown format):
+        // return a fixed placeholder — do NOT log unknown provider body text
+        return "[PROVIDER_BODY_REDACTED]";
     }
 
     /** Apply non-JSON regex redaction to plain text. */
