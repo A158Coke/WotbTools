@@ -111,15 +111,18 @@ public class AiReplayAnalysisService {
     private final String apiKey;
     private static final Tankopedia tankopedia = Tankopedia.load();
     private final String model;
+    private final int singlePlayerMaxInputChars;
     private final RestClient restClient;
 
     public AiReplayAnalysisService(
             @Value("${wotb.ai.api-key:}") String apiKey,
             @Value("${wotb.ai.base-url:https://api.deepseek.com}") String baseUrl,
             @Value("${wotb.ai.model:deepseek-v4-flash}") String model,
-            @Value("${wotb.ai.timeout-sec:120}") int timeoutSec) {
+            @Value("${wotb.ai.timeout-sec:120}") int timeoutSec,
+            @Value("${wotb.ai.single-player-max-input-chars:100000}") int singlePlayerMaxInputChars) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.model = model;
+        this.singlePlayerMaxInputChars = singlePlayerMaxInputChars > 0 ? singlePlayerMaxInputChars : 100000;
 
         final SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(10_000);
@@ -171,6 +174,12 @@ public class AiReplayAnalysisService {
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx) {
         if (!isConfigured()) throw new AiNotConfiguredException();
         final String summary = buildPlayerContextSummary(ctx);
+        final int totalChars = SINGLE_PLAYER_PROMPT.length() + summary.length() + PROMPT_SAFETY_MARGIN_CHARS;
+        if (totalChars > singlePlayerMaxInputChars) {
+            throw new IllegalArgumentException(
+                    "PLAYER_PROMPT_BUDGET_EXCEEDED: configuredMax="
+                    + singlePlayerMaxInputChars + " actual=" + totalChars);
+        }
         final Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
         body.put("stream", false);
@@ -750,7 +759,6 @@ public class AiReplayAnalysisService {
         return body;
     }
 
-    private static final int MAX_SINGLE_PLAYER_PROMPT_CHARS = 30_000;
     private static final int PROMPT_SAFETY_MARGIN_CHARS = 1_000;
 
     private static final String SINGLE_PLAYER_PROMPT = """
@@ -863,7 +871,7 @@ public class AiReplayAnalysisService {
         appendDeathTimeline(sb, battle);
 
         // ====== 9. Event stream evidence ======
-        appendEventStreamEvidence(sb, ctx, battle);
+        appendEventStreamEvidence(sb, ctx, battle, singlePlayerMaxInputChars);
 
         // ====== 10. Side-based limitations ======
         if (!unknowns.isEmpty()) {
@@ -1029,9 +1037,10 @@ public class AiReplayAnalysisService {
         }
     }
 
-    private static void appendEventStreamEvidence(final StringBuilder sb,
-                                                   final SinglePlayerBattleAnalysisContext ctx,
-                                                   final Battle battle) {
+    private void appendEventStreamEvidence(final StringBuilder sb,
+                                            final SinglePlayerBattleAnalysisContext ctx,
+                                            final Battle battle,
+                                            final int maxInputChars) {
         final var features = ctx.features();
 
         // Entity mapping evidence
@@ -1102,7 +1111,7 @@ public class AiReplayAnalysisService {
             final int totalSegs = features.movements().size();
             // Compute movement budget: remaining chars after mandatory sections
             final int mandatoryLen = sb.length() + "\n=== 移动段（压缩） ===\n".length();
-            final int remainingTotal = MAX_SINGLE_PLAYER_PROMPT_CHARS - PROMPT_SAFETY_MARGIN_CHARS - SINGLE_PLAYER_PROMPT.length();
+            final int remainingTotal = maxInputChars - PROMPT_SAFETY_MARGIN_CHARS - SINGLE_PLAYER_PROMPT.length();
             final int movementBudget = Math.max(200, remainingTotal - mandatoryLen);
 
             // Score segments by tactical value
@@ -1194,19 +1203,27 @@ public class AiReplayAnalysisService {
                     .append(")\n");
             sb.append("注意: 事件流数值仅为观测子集, 不是整场权威总伤害.\n");
             final int totalEngage = features.engagements().size();
-            final int maxEngage = Math.min(totalEngage, 10);
-            for (int i = 0; i < maxEngage; i++) {
-                final EngagementSummary e = features.engagements().get(i);
-                sb.append("  #").append(i + 1).append(" [")
-                        .append(String.format("%.1f-%.1f", e.startTime(), e.endTime())).append("s]")
-                        .append(" 事件流输出: ").append(e.damageDealt())
-                        .append(" 事件流承伤: ").append(e.damageReceived())
-                        .append(" 结果: ").append(e.outcome())
-                        .append(" 置信度: ").append(e.confidence())
-                        .append('\n');
+            final int usedSoFar = sb.length();
+            final int remainingTotal = maxInputChars - PROMPT_SAFETY_MARGIN_CHARS - SINGLE_PLAYER_PROMPT.length();
+            final int engagementBudget = Math.max(200, remainingTotal - usedSoFar);
+            int writtenEngage = 0;
+            int usedEngageChars = 0;
+            for (final EngagementSummary e : features.engagements()) {
+                final String line = "  #" + (writtenEngage + 1) + " ["
+                        + String.format("%.1f-%.1f", e.startTime(), e.endTime()) + "s]"
+                        + " 事件流输出: " + e.damageDealt()
+                        + " 事件流承伤: " + e.damageReceived()
+                        + " 结果: " + e.outcome()
+                        + " 置信度: " + e.confidence()
+                        + '\n';
+                if (usedEngageChars + line.length() <= engagementBudget) {
+                    sb.append(line);
+                    writtenEngage++;
+                    usedEngageChars += line.length();
+                }
             }
-            if (totalEngage > maxEngage) {
-                sb.append("  ... 另有 ").append(totalEngage - maxEngage).append(" 个交火段\n");
+            if (totalEngage > writtenEngage) {
+                sb.append("  ... 另有 ").append(totalEngage - writtenEngage).append(" 个交火段因输入预算省略\n");
             }
         }
 

@@ -704,7 +704,7 @@ class TeamAiPromptBuilderTest {
         final var group = new BatchAnalyzer().analyze(List.of(result))
                 .groups()
                 .getFirst();
-        return new AiReplayAnalysisService("", "", "", 1)
+        return new AiReplayAnalysisService("", "", "", 1, 30000)
                 .buildSingleTeamContext(group);
     }
 

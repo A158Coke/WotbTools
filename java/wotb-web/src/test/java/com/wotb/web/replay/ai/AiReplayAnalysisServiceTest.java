@@ -116,7 +116,7 @@ class AiReplayAnalysisServiceTest {
 
     @Test
     void notConfiguredThrowsSpecificException() {
-        final var service = new AiReplayAnalysisService("", "", "", 5);
+        final var service = new AiReplayAnalysisService("", "", "", 5, 30000);
         assertThrows(AiNotConfiguredException.class,
                 () -> service.analyze(new Battle(), null));
     }
@@ -783,7 +783,7 @@ class AiReplayAnalysisServiceTest {
     @Test
     void playerSummaryFallbackStillCallsProviderOnce() {
         final var service = spy(new AiReplayAnalysisService(
-                "test-key", "https://fake.invalid", "test-model", 5));
+                "test-key", "https://fake.invalid", "test-model", 5, 30000));
         doReturn(new AiReplayAnalysisService.AnalyzeResult(
                 "summary analysis", "test-model", List.of()))
                 .when(service).analyze(any(), any());
@@ -1224,7 +1224,7 @@ class AiReplayAnalysisServiceTest {
         server.start();
         final String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
         return new AiReplayAnalysisService(
-                "test-key", baseUrl, "test-model", timeoutSec);
+                "test-key", baseUrl, "test-model", timeoutSec, 30000);
     }
 
     private void handleRequest(final HttpExchange exchange) throws IOException {
