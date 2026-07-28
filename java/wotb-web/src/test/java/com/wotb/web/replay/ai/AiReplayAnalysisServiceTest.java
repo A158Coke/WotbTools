@@ -1485,4 +1485,136 @@ class AiReplayAnalysisServiceTest {
             julLogger.setLevel(oldLevel);
         }
     }
+
+    @Test
+    void samePartitionOnlyATruncated() throws IOException {
+        responseBody = "{\"choices\":[{\"message\":{\"content\":\"single partition test\"}}]}";
+        final var service = startService(2);
+        // A: 17 members (IDs 1-17), B/C: 15 members (IDs 1-15)
+        // Same clan, Jaccard(A,B)=15/17=88%, B/C=100% → single partition
+        final var a = teamResultWithNMembers("trunc-a.wotbreplay", "arena-a", "CLAN", 17, 1, 17);
+        final var b = teamResultWithNMembers("clean-b.wotbreplay", "arena-b", "CLAN", 15, 1, 15);
+        final var c = teamResultWithNMembers("clean-c.wotbreplay", "arena-c", "CLAN", 15, 1, 15);
+        final var groups = teamGroups(List.of(a, b, c));
+        final var result = service.analyzeTeamGroups(groups);
+        assertEquals(1, requestBodies.size(),
+                "A/B/C must be in one partition → one provider request");
+        assertEquals(3, result.analysisUnitCount());
+        assertEquals(3, result.analyzedUnitCount());
+        assertEquals(0, result.omittedAnalysisUnitCount());
+        assertTrue(result.limitations().contains("AI_INPUT_TRUNCATED"),
+                "Global must contain AI_INPUT_TRUNCATED");
+        final var reportA = (TeamAnalysisUnitReport) result.units().get(0).report();
+        assertTrue(reportA.limitations().contains("AI_INPUT_TRUNCATED"),
+                "A (17 members) must have AI_INPUT_TRUNCATED");
+        assertNotNull(result.units().get(0).model(), "A must have model");
+        assertNotNull(reportA.analysisText(), "A must have analysis text");
+        for (int i = 1; i < 3; i++) {
+            final var report = (TeamAnalysisUnitReport) result.units().get(i).report();
+            assertFalse(report.limitations().contains("AI_INPUT_TRUNCATED"),
+                    "Unit " + i + " (15 members) must NOT have truncation");
+            assertNotNull(result.units().get(i).model(), "Unit " + i + " must have model");
+        }
+        final String body = requestBodies.getFirst();
+        assertTrue(body.contains("analysisUnitId=\\\"arena-arena-a"), "A must be in request");
+        assertTrue(body.contains("analysisUnitId=\\\"arena-arena-b"), "B must be in request");
+        assertTrue(body.contains("analysisUnitId=\\\"arena-arena-c"), "C must be in request");
+    }
+
+    @Test
+    void samePartitionACTruncatedBClean() throws IOException {
+        responseBody = "{\"choices\":[{\"message\":{\"content\":\"dual truncation test\"}}]}";
+        final var service = startService(2);
+        final var a = teamResultWithNMembers("trunc-a.wotbreplay", "arena-a", "CLAN", 17, 1, 17);
+        final var b = teamResultWithNMembers("clean-b.wotbreplay", "arena-b", "CLAN", 15, 1, 15);
+        final var c = teamResultWithNMembers("trunc-c.wotbreplay", "arena-c", "CLAN", 17, 1, 17);
+        final var groups = teamGroups(List.of(a, b, c));
+        final var result = service.analyzeTeamGroups(groups);
+        assertEquals(1, requestBodies.size(), "Single partition → one request");
+        assertEquals(3, result.analyzedUnitCount());
+        final var reportA = (TeamAnalysisUnitReport) result.units().get(0).report();
+        final var reportB = (TeamAnalysisUnitReport) result.units().get(1).report();
+        final var reportC = (TeamAnalysisUnitReport) result.units().get(2).report();
+        assertTrue(reportA.limitations().contains("AI_INPUT_TRUNCATED"));
+        assertFalse(reportB.limitations().contains("AI_INPUT_TRUNCATED"));
+        assertTrue(reportC.limitations().contains("AI_INPUT_TRUNCATED"));
+    }
+
+    @Test
+    void samePartitionTruncatedCleanAndOmitted() throws IOException {
+        responseBody = "{\"choices\":[{\"message\":{\"content\":\"omitted+truncated same partition\"}}]}";
+        final var service = startService(2);
+        // 12 compatible perspectives, first has 17 members (truncated), rest have 15 members
+        // All share account IDs 1-15 → single partition
+        // MAX_PERSPECTIVES=10 → first 10 included, last 2 omitted
+        final List<ReplayProcessingResult> results = IntStream.range(0, TeamAiPromptBuilder.MAX_PERSPECTIVES + 2)
+                .mapToObj(i -> teamResultWithNMembers(
+                        "battle-" + i + ".wotbreplay",
+                        "arena-" + i,
+                        "CHRD",
+                        i == 0 ? 17 : 15,
+                        1, 15))
+                .toList();
+        final var groups = teamGroups(results);
+        final var teamResult = service.analyzeTeamGroups(groups);
+        assertEquals(1, requestBodies.size(),
+                "All 12 must be in one partition → one request");
+        assertEquals(12, teamResult.analysisUnitCount());
+        assertTrue(teamResult.analyzedUnitCount() <= 10,
+                "At most 10 units analyzed (MAX_PERSPECTIVES)");
+        assertTrue(teamResult.omittedAnalysisUnitCount() > 0,
+                "Must have omitted units");
+        // Find at least one included + truncated unit
+        boolean foundTruncated = false;
+        boolean foundClean = false;
+        long omittedCount = 0;
+        for (final var unit : teamResult.units()) {
+            final var report = (TeamAnalysisUnitReport) unit.report();
+            if (report.limitations().contains("AI_PERSPECTIVE_OMITTED_FROM_PROMPT")) {
+                omittedCount++;
+                assertNull(unit.model(), "Omitted unit must have null model");
+                assertNull(report.analysisText(), "Omitted unit must have null analysis");
+                assertFalse(report.limitations().contains("AI_INPUT_TRUNCATED"),
+                        "Omitted unit must NOT have AI_INPUT_TRUNCATED");
+            } else if (report.limitations().contains("AI_INPUT_TRUNCATED")) {
+                foundTruncated = true;
+            } else {
+                foundClean = true;
+            }
+        }
+        assertTrue(foundTruncated, "Must have at least one included+truncated unit");
+        assertTrue(foundClean, "Must have at least one included+clean unit");
+        assertEquals(teamResult.omittedAnalysisUnitCount(), omittedCount);
+        // Provider request body: included units present, omitted absent
+        final String body = requestBodies.getFirst();
+        for (int i = 10; i < 12; i++) {
+            assertFalse(body.contains("analysisUnitId=\\\"arena-arena-" + i),
+                    "Omitted unit " + i + " must NOT be in request body");
+        }
+    }
+
+    private static ReplayProcessingResult teamResultWithNMembers(
+            final String fileName, final String arenaId, final String clan,
+            final int memberCount, final int firstId, final int lastId) {
+        final Battle battle = new Battle();
+        battle.arenaId = arenaId;
+        battle.mapName = "team_map";
+        battle.arenaBonusType = 2;
+        battle.durationS = 300.0;
+        battle.winnerTeam = 1;
+        battle.recorder = "Player" + firstId;
+        final java.util.ArrayList<PlayerResult> players = new java.util.ArrayList<>();
+        for (int id = firstId; id <= lastId && players.size() < memberCount; id++) {
+            players.add(clanPlayer(id, "Player" + id, 1, 500 + id, clan));
+        }
+        players.add(clanPlayer(9999L, "Enemy", 2, 500, "ENEMY_CLAN"));
+        battle.players = players;
+        final var capabilities = new ReplayProcessingCapabilities(
+                true, true, false, false, false, true, false, false);
+        return new ReplayProcessingResult(
+                fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
+                new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",
+                        players.getFirst().accountId, null),
+                battle, null, null, capabilities, null, null);
+    }
 }
