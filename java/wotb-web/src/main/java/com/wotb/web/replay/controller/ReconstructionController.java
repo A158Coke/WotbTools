@@ -12,7 +12,6 @@ import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
-import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
@@ -50,17 +49,14 @@ public class ReconstructionController {
 
     private final DefaultReplayProcessingFacade processingFacade;
     private final ReplayReconstructionService reconstructionService;
-    private final AiReplayAnalysisService aiService;
     private final AiReplayReviewService reviewService;
 
     public ReconstructionController(
             final DefaultReplayProcessingFacade processingFacade,
             final ReplayReconstructionService reconstructionService,
-            final AiReplayAnalysisService aiService,
             final AiReplayReviewService reviewService) {
         this.processingFacade = processingFacade;
         this.reconstructionService = reconstructionService;
-        this.aiService = aiService;
         this.reviewService = reviewService;
     }
 

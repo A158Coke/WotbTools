@@ -60,7 +60,7 @@ class ReconstructionControllerTeamAnalysisTest {
         reviewService = new AiReplayReviewService(processingFacade, aiService);
         final var reconstructionService = mock(ReplayReconstructionService.class);
         final var controller = new ReconstructionController(
-                processingFacade, reconstructionService, aiService, reviewService);
+                processingFacade, reconstructionService, reviewService);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -74,7 +74,7 @@ class ReconstructionControllerTeamAnalysisTest {
         for (final var f : files) {
             request = request.file(f);
         }
-        // Real reviewService.process() calls validateBatchSize which throws
+        // Real reviewService.analyze() calls validateBatchSize which throws
 
         mvc.perform(request)
                 .andExpect(status().isBadRequest())
@@ -216,7 +216,7 @@ class ReconstructionControllerTeamAnalysisTest {
                         new AiReplayAnalysisService.AnalyzeResult(
                                 "team review", "test-model", List.of()),
                         List.of(unit("arena-one-team-1", "arena-one", 1, "training.wotbreplay")),
-                        1, 1));
+                        1, 1, 0, List.of()));
 
         mvc.perform(multipart("/api/replay/analyze")
                         .file(replayFile("training.wotbreplay")))
@@ -401,7 +401,9 @@ class ReconstructionControllerTeamAnalysisTest {
                         analysis, "test-model", List.of()),
                 units,
                 units.size(),
-                units.size());
+                units.size(),
+                0,
+                List.of());
     }
 
     private static AnalysisUnitResult unit(

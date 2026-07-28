@@ -1357,6 +1357,11 @@ class AiReplayAnalysisServiceTest {
 
     // === Whole-line only anti-false-positive ===
 
+    @Test void redactionCustomSchemeAllAlphaLongCredential() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("customscheme supersecret");
+        assertFalse(r.contains("supersecret"));
+    }
+
     @Test void redactionNoFalsePositiveInvalidRequest() {
         final String r = AiReplayAnalysisService.safeProviderSummary("invalid request");
         assertTrue(r.contains("invalid request"));
