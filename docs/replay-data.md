@@ -704,7 +704,7 @@ ReplayReconstruction 输出
 
 - `rawClockSec` — 来自 `data.wotreplay` 的原始时钟，永久保留
 - `battleClockSec` — 战斗相对时间（= raw - battleStartRawClockSec）
-- 战斗开始时刻识别：当前未实现，`battleClockSec` = null
+- 战斗开始时刻识别：由 `BattleStartResolver` 完成，返回 IDENTIFIED / ESTIMATED / UNRESOLVED；`battleClockSec` 通过 `battleRelative(rawClock)` 计算
 
 ### 450 秒限制
 
