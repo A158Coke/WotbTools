@@ -64,7 +64,7 @@ Global limitations 不出现在 unit report。Per-unit limitations 不出现在 
 
 ### 安全
 
-Provider error body: 不记录原始 text。日志仅含 provider/model/status/code/requestChars/mode/correlationId/body length。
+Provider error body: 不记录原始 text。日志仅含 provider/model/status/code/requestChars/mode/correlationId；provider body 原文不进入日志（统一替换为 `[PROVIDER_BODY_REDACTED]`）。
 Authorization header, Bearer/Basic/Digest: 内存分类使用，不写入日志。
 JSON textual value: 不保留任意不可信 provider message。
 
@@ -89,7 +89,9 @@ teamFeatureExtractionPossible = false;
 
 必须改为依据真实解析结果计算，禁止直接写死为 `true`。
 
-## 1.3 当前 Team extractor 不能用于生产
+## 1.3 当前 Team extractor 不能用于生产（已修复）
+
+> ⚠️ 本节描述 PR #39 实施前的问题。以下所有问题已在 `improve-ai-review` 分支修复，`DefaultTeamBattleFeatureExtractor` 现可用于生产。
 
 当前 `DefaultTeamBattleFeatureExtractor`：
 
