@@ -103,7 +103,7 @@ Enemy-only damage 不得延长 Team phase。
 
 ### 预构建与原子写入
 
-- Budget planning 使用实际预构建的 mandatory/high-priority block bytes
+- Budget planning 使用预构建 mandatory/high-priority block 的 Java String 字符长度。当前 `MAX_INPUT_CHARS=30,000` 按 `String.length()` 计算，不是 UTF-8 byte length。
 - `appendRequiredBlock()` 保证 block 整体写入或抛出异常
 - 被截断的 unit 加入 `truncatedUnitIds`
 - `globalLimitations` 包含 `AI_INPUT_TRUNCATED`
