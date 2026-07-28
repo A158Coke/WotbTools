@@ -3,10 +3,9 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.PlayerSideResolver;
+import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.util.PromptDataQuoter;
 import com.wotb.core.processing.TeamPerspectiveLabelResolver;
-import com.wotb.core.ref.MapNames;
-import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.CanonicalMapPosition;
 import com.wotb.core.replay.feature.KeyBattleEvent;
@@ -548,14 +547,9 @@ final class TeamAiPromptBuilder {
         return PromptDataQuoter.quote(value, "UNKNOWN");
     }
 
-    /** Resolve map internal code to user-visible Chinese name via MapNames. */
+    /** Delegates to shared {@link ReplayDisplayNames#mapName}. */
     private static String resolveMapName(final String mapCode) {
-        if (!StringUtils.hasText(mapCode)) return "未知地图";
-        try {
-            return MapNames.tryResolve(mapCode).orElse("未知地图");
-        } catch (final Exception e) {
-            return "未知地图";
-        }
+        return ReplayDisplayNames.mapName(mapCode);
     }
 
     /**
@@ -635,24 +629,9 @@ final class TeamAiPromptBuilder {
         return TeamPerspectiveLabelResolver.resolve(perspectivePlayers);
     }
 
-    /** Resolve tank name via Tankopedia (authoritative), falling back to unknown tank. */
-    private static final Tankopedia TANKOPEDIA = Tankopedia.load();
-
+    /** Delegates to shared {@link ReplayDisplayNames#tankName}. */
     private static String resolveTankName(final long tankId, final String existingTankName) {
-        // Tankopedia is the authoritative source for tank names
-        if (tankId > 0) {
-            final String name = TANKOPEDIA.info(tankId).name();
-            if (StringUtils.hasText(name) && !name.startsWith("#")) {
-                return name;
-            }
-        }
-        // Fall back to existing tank name if it looks reasonable
-        if (StringUtils.hasText(existingTankName)
-                && !existingTankName.startsWith("#")
-                && !existingTankName.startsWith("?")) {
-            return existingTankName;
-        }
-        return "未知坦克";
+        return ReplayDisplayNames.tankName(tankId, existingTankName);
     }
 
     private record PerspectivePromptSections(

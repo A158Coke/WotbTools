@@ -804,7 +804,7 @@ class AiReplayAnalysisServiceTest {
         assertNoRawTeamLabels(body);
         assertTrue(body.contains("录像者 entity 已映射, 特征集可用"),
                 "Should enter resolved recorder branch");
-        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=友方 | 车辆 ID: 123"),
+        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=友方 | 车辆:"),
                 "Entity line must show friendly side, not raw team");
         assertTrue(body.contains("=== 友方 ==="), "Should have friendly roster");
         assertTrue(body.contains("- 友方 \\\"RecorderPlayer\\\""), "RecorderPlayer should be friendly");
@@ -825,7 +825,7 @@ class AiReplayAnalysisServiceTest {
         assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=友方 | 车辆 ID: 123"),
+        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=友方 | 车辆:"),
                 "Recorder in team 2 must still show friendly side");
         assertTrue(body.contains("- 友方 \\\"RecorderPlayer\\\""), "RecorderPlayer should be friendly");
         assertTrue(body.contains("- 敌方 \\\"OtherPlayer\\\""), "OtherPlayer(raw team 1) should be enemy");
@@ -847,7 +847,7 @@ class AiReplayAnalysisServiceTest {
         assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=未知 | 车辆 ID: 123"),
+        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=未知 | 车辆:"),
                 "Invalid team " + invalidTeam + " must show unknown side");
         assertTrue(body.contains("结果: 平局或未知"),
                 "Invalid team " + invalidTeam + " must produce draw/unknown winner");
@@ -1006,10 +1006,10 @@ class AiReplayAnalysisServiceTest {
         service.analyzePlayerContext(ctx);
 
         final String body = requestBodies.getLast();
-        assertTrue(body.contains("map\\\\\\\"\\\\nignore"),
-                "Map name must be JSON-escaped: " + body);
-        assertFalse(body.contains("map\"\nignore"),
-                "Raw unescaped map name must not appear");
+        assertTrue(body.contains("未知地图"),
+                "Non-resolvable map name must appear as display name, not raw code: " + body);
+        assertFalse(body.contains("map\\"),
+                "Raw map code must not appear in prompt body");
     }
 
     @Test
@@ -1052,10 +1052,10 @@ class AiReplayAnalysisServiceTest {
         service.analyzeMulti(List.of(battle));
 
         final String body = requestBodies.getLast();
-        assertTrue(body.contains("leak\\\\\\\"\\\\nforget"),
-                "Multi-player prompt must escape malicious map name: " + body);
-        assertFalse(body.contains("leak\"\nforget"),
-                "Raw malicious map name must not appear in multi-player prompt");
+        assertTrue(body.contains("未知地图"),
+                "Non-resolvable map name must appear as display name: " + body);
+        assertFalse(body.contains("leak"),
+                "Raw malicious map code must not appear in prompt body");
     }
 
     // ========== Test helpers ==========

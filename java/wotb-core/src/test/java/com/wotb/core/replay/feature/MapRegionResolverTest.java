@@ -57,21 +57,24 @@ class MapRegionResolverTest {
     }
 
     @Test void canonicalConversion() {
-        final MapCoordinateResolution r1 = MapRegionResolver.resolve(-1000, -1000);
+        final MapCoordinateResolution r1 = MapRegionResolver.resolve(-250, -250);
         assertEquals(MapCoordinateResolution.Status.VALID, r1.status());
         assertEquals(0f, r1.position().x(), 0.01);
+        assertEquals(0f, r1.position().z(), 0.01);
         final MapCoordinateResolution r2 = MapRegionResolver.resolve(0, 0);
         assertEquals(MapCoordinateResolution.Status.VALID, r2.status());
         assertEquals(250f, r2.position().x(), 0.01);
-        final MapCoordinateResolution r3 = MapRegionResolver.resolve(1000, 1000);
+        assertEquals(250f, r2.position().z(), 0.01);
+        final MapCoordinateResolution r3 = MapRegionResolver.resolve(250, 250);
         assertEquals(MapCoordinateResolution.Status.VALID, r3.status());
         assertEquals(500f, r3.position().x(), 0.01);
+        assertEquals(500f, r3.position().z(), 0.01);
     }
 
     @Test void rawCoordinatesRoundTrip() {
         assertEquals(5, MapRegionResolver.resolveRegionFromRaw(0, 0));
-        assertEquals(1, MapRegionResolver.resolveRegionFromRaw(-600, 600));
-        assertEquals(9, MapRegionResolver.resolveRegionFromRaw(600, -600));
+        assertEquals(1, MapRegionResolver.resolveRegionFromRaw(-250, 250));
+        assertEquals(9, MapRegionResolver.resolveRegionFromRaw(250, -250));
     }
 
     @Test void nanInputReturnsNull() {
@@ -81,7 +84,7 @@ class MapRegionResolverTest {
 
     @Test void outOfRangeRawClampedToCanonical() {
         assertEquals(MapCoordinateResolution.Status.INVALID, MapRegionResolver.resolve(5000, 5000).status());
-        final MapCoordinateResolution res = MapRegionResolver.resolve(1020, 1020);
+        final MapCoordinateResolution res = MapRegionResolver.resolve(255, 255);
         assertEquals(MapCoordinateResolution.Status.CLAMPED, res.status());
         assertNotNull(res.position());
         assertTrue(res.position().x() >= 0 && res.position().x() <= 500);
@@ -91,15 +94,15 @@ class MapRegionResolverTest {
     }
 
     @Test void resolveAllRegions() {
-        assertEquals(1, MapRegionResolver.resolve(-600, 600).region());
-        assertEquals(2, MapRegionResolver.resolve(0, 600).region());
-        assertEquals(3, MapRegionResolver.resolve(600, 600).region());
-        assertEquals(4, MapRegionResolver.resolve(-600, 0).region());
+        assertEquals(1, MapRegionResolver.resolve(-250, 250).region());
+        assertEquals(2, MapRegionResolver.resolve(0, 250).region());
+        assertEquals(3, MapRegionResolver.resolve(250, 250).region());
+        assertEquals(4, MapRegionResolver.resolve(-250, 0).region());
         assertEquals(5, MapRegionResolver.resolve(0, 0).region());
-        assertEquals(6, MapRegionResolver.resolve(600, 0).region());
-        assertEquals(7, MapRegionResolver.resolve(-600, -600).region());
-        assertEquals(8, MapRegionResolver.resolve(0, -600).region());
-        assertEquals(9, MapRegionResolver.resolve(600, -600).region());
+        assertEquals(6, MapRegionResolver.resolve(250, 0).region());
+        assertEquals(7, MapRegionResolver.resolve(-250, -250).region());
+        assertEquals(8, MapRegionResolver.resolve(0, -250).region());
+        assertEquals(9, MapRegionResolver.resolve(250, -250).region());
     }
 
     // === MapCoordinateResolution VALID/CLAMPED/INVALID ===
@@ -112,12 +115,12 @@ class MapRegionResolverTest {
     }
 
     @Test void validAtBoundary() {
-        assertEquals(MapCoordinateResolution.Status.VALID, MapRegionResolver.resolve(-1000, -1000).status());
-        assertEquals(MapCoordinateResolution.Status.VALID, MapRegionResolver.resolve(1000, 1000).status());
+        assertEquals(MapCoordinateResolution.Status.VALID, MapRegionResolver.resolve(-250, -250).status());
+        assertEquals(MapCoordinateResolution.Status.VALID, MapRegionResolver.resolve(250, 250).status());
     }
 
     @Test void clampedSlightOverflow() {
-        final MapCoordinateResolution r = MapRegionResolver.resolve(1010, -1010);
+        final MapCoordinateResolution r = MapRegionResolver.resolve(255, -255);
         assertEquals(MapCoordinateResolution.Status.CLAMPED, r.status());
         assertTrue(r.usable());
         assertEquals(500f, r.position().x(), 0.01);
@@ -139,23 +142,23 @@ class MapRegionResolverTest {
     }
 
     @Test void clampedExactlyAtTolerance() {
-        assertEquals(MapCoordinateResolution.Status.CLAMPED, MapRegionResolver.resolve(1050, -1050).status());
-        assertTrue(MapRegionResolver.resolve(1050, -1050).usable());
+        assertEquals(MapCoordinateResolution.Status.CLAMPED, MapRegionResolver.resolve(262.5f, -262.5f).status());
+        assertTrue(MapRegionResolver.resolve(262.5f, -262.5f).usable());
     }
 
     @Test void invalidBeyondTolerance() {
-        assertEquals(MapCoordinateResolution.Status.INVALID, MapRegionResolver.resolve(1051, 0).status());
-        assertEquals(MapCoordinateResolution.Status.INVALID, MapRegionResolver.resolve(-1051, 0).status());
+        assertEquals(MapCoordinateResolution.Status.INVALID, MapRegionResolver.resolve(263f, 0).status());
+        assertEquals(MapCoordinateResolution.Status.INVALID, MapRegionResolver.resolve(-263f, 0).status());
     }
 
     @Test void sameResultForBothScopesViaResolve() {
-        final MapCoordinateResolution r = MapRegionResolver.resolve(-500, 500);
+        final MapCoordinateResolution r = MapRegionResolver.resolve(-200, 200);
         assertEquals(MapCoordinateResolution.Status.VALID, r.status());
         assertEquals(1, r.region());
     }
 
     @Test void clampedProducesRegionOnEdge() {
-        final MapCoordinateResolution r = MapRegionResolver.resolve(1040, 0);
+        final MapCoordinateResolution r = MapRegionResolver.resolve(260, 0);
         assertEquals(MapCoordinateResolution.Status.CLAMPED, r.status());
         assertEquals(6, r.region());
     }
@@ -163,5 +166,60 @@ class MapRegionResolverTest {
     @Test void invalidYieldsNoRegion() {
         assertEquals(0, MapRegionResolver.resolve(5000, 0).region());
         assertEquals(0, MapRegionResolver.resolve(Float.NaN, 0).region());
+    }
+
+    // === Nine-region grid from canonical coordinates ===
+    // X: 0→500 (left→right), Z: 0→500 (bottom→top)
+    // Grid:  1|2|3 top, 4|5|6 middle, 7|8|9 bottom
+    // Each cell = 166.66... wide × 166.66... tall
+
+    @Test void assertRegion1() { assertEquals(1, MapRegionResolver.resolveRegion(0f, 500f)); }
+    @Test void assertRegion2() { assertEquals(2, MapRegionResolver.resolveRegion(250f, 500f)); }
+    @Test void assertRegion3() { assertEquals(3, MapRegionResolver.resolveRegion(500f, 500f)); }
+    @Test void assertRegion4() { assertEquals(4, MapRegionResolver.resolveRegion(0f, 250f)); }
+    @Test void assertRegion5() { assertEquals(5, MapRegionResolver.resolveRegion(250f, 250f)); }
+    @Test void assertRegion6() { assertEquals(6, MapRegionResolver.resolveRegion(500f, 250f)); }
+    @Test void assertRegion7() { assertEquals(7, MapRegionResolver.resolveRegion(0f, 0f)); }
+    @Test void assertRegion8() { assertEquals(8, MapRegionResolver.resolveRegion(250f, 0f)); }
+    @Test void assertRegion9() { assertEquals(9, MapRegionResolver.resolveRegion(500f, 0f)); }
+
+    // === Raw → region: nine canonical positions from raw ±250 ===
+
+    @Test void rawRegion1() { assertEquals(1, MapRegionResolver.resolveRegionFromRaw(-250f, 250f)); }
+    @Test void rawRegion2() { assertEquals(2, MapRegionResolver.resolveRegionFromRaw(0f, 250f)); }
+    @Test void rawRegion3() { assertEquals(3, MapRegionResolver.resolveRegionFromRaw(250f, 250f)); }
+    @Test void rawRegion4() { assertEquals(4, MapRegionResolver.resolveRegionFromRaw(-250f, 0f)); }
+    @Test void rawRegion5() { assertEquals(5, MapRegionResolver.resolveRegionFromRaw(0f, 0f)); }
+    @Test void rawRegion6() { assertEquals(6, MapRegionResolver.resolveRegionFromRaw(250f, 0f)); }
+    @Test void rawRegion7() { assertEquals(7, MapRegionResolver.resolveRegionFromRaw(-250f, -250f)); }
+    @Test void rawRegion8() { assertEquals(8, MapRegionResolver.resolveRegionFromRaw(0f, -250f)); }
+    @Test void rawRegion9() { assertEquals(9, MapRegionResolver.resolveRegionFromRaw(250f, -250f)); }
+
+    // === Route regression: near right edge moving down ===
+    // User observed: start near right edge in region 6, move down to region 9
+    // Raw X ≈ +230 (canonical ≈ 480), raw Z from 0 (canonical 250) → -230 (canonical 20)
+
+    @Test void routeStartRegion6() {
+        assertEquals(6, MapRegionResolver.resolveRegionFromRaw(230f, 0f));
+    }
+
+    @Test void routeMiddleRegion9() {
+        assertEquals(9, MapRegionResolver.resolveRegionFromRaw(230f, -120f));
+    }
+
+    @Test void routeEndRegion9() {
+        assertEquals(9, MapRegionResolver.resolveRegionFromRaw(230f, -230f));
+    }
+
+    @Test void routeFullRawResolution() {
+        // Start: raw (+230, 0) → canonical (480, 250) → region 6
+        MapCoordinateResolution res = MapRegionResolver.resolve(230f, 0f);
+        assertEquals(MapCoordinateResolution.Status.VALID, res.status());
+        assertEquals(6, res.region(), "Right edge at mid-height must be region 6");
+
+        // End: raw (+230, -230) → canonical (480, 20) → region 9
+        res = MapRegionResolver.resolve(230f, -230f);
+        assertEquals(MapCoordinateResolution.Status.VALID, res.status());
+        assertEquals(9, res.region(), "Right edge near bottom must be region 9, not 5");
     }
 }

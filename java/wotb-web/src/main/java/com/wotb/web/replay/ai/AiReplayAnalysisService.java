@@ -16,6 +16,7 @@ import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.FriendlyEnemyResult;
 import com.wotb.core.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.PlayerSideResolver.Side;
 import com.wotb.core.processing.TeamPerspectiveLabelResolver;
@@ -779,7 +780,7 @@ public class AiReplayAnalysisService {
         int authoritativeReceived = 0;
         if (battle != null) {
             sb.append("=== 战斗结算数据（权威） ===\n");
-            sb.append("地图: ").append(PlayerResultFormat.quoteForPrompt(battle.mapName)).append('\n');
+            sb.append("地图: ").append(PlayerResultFormat.quoteForPrompt(ReplayDisplayNames.mapName(battle.mapName))).append('\n');
             if (battle.arenaBonusType != null) {
                 sb.append("模式编号: ").append(battle.arenaBonusType).append('\n');
             }
@@ -811,7 +812,7 @@ public class AiReplayAnalysisService {
                     : PlayerAnalysisPromptFormatter.sideLabel(PlayerSideResolver.Side.UNKNOWN);
             sb.append("录像者 entity: 账号 ").append(ctx.recorder().accountId())
                     .append(" | 侧=").append(sideStr)
-                    .append(" | 车辆 ID: ").append(ctx.recorder().tankId()).append('\n');
+                    .append(" | 车辆: ").append(PlayerResultFormat.quoteForPrompt(ReplayDisplayNames.tankName(ctx.recorder().tankId(), null))).append('\n');
         } else {
             sb.append("位置流存在, 但录像者实体无法可靠映射\n");
         }
@@ -1123,12 +1124,12 @@ public class AiReplayAnalysisService {
         IntStream.range(0, battles.size()).forEachOrdered(index -> {
             final Battle b = battles.get(index);
             final PlayerResult rec = b.recorderResult();
-            sb.append("场 ").append(index + 1).append(": 地图 ").append(PlayerResultFormat.quoteForPrompt(b.mapName));
+            sb.append("场 ").append(index + 1).append(": 地图 ").append(PlayerResultFormat.quoteForPrompt(ReplayDisplayNames.mapName(b.mapName)));
             if (rec != null) {
                 final Winner w = FriendlyEnemyResult.resolve(b);
                 final String resultLabel = FriendlyEnemyResult.label(w);
                 final Side side = PlayerSideResolver.resolve(b, rec);
-                sb.append(" | ").append(PlayerResultFormat.quoteForPrompt(rec.tankName))
+                sb.append(" | ").append(PlayerResultFormat.quoteForPrompt(ReplayDisplayNames.tankName(rec.tankId, rec.tankName)))
                         .append(" | ").append(resultLabel)
                         .append(" | 侧=").append(PlayerAnalysisPromptFormatter.sideLabel(side));
                 PlayerResultFormat.appendRecorderLine(sb, rec);
@@ -1188,7 +1189,7 @@ public class AiReplayAnalysisService {
                 events.add(new KeyBattleEvent(
                         (float) PlayerResultFormat.deathSec(p), "VEHICLE_DESTROYED",
                         sideStr + " " + PlayerResultFormat.quoteForPrompt(p.nickname)
-                                + " (" + PlayerResultFormat.quoteForPrompt(p.tankName) + ") 阵亡"));
+                                + " (" + PlayerResultFormat.quoteForPrompt(ReplayDisplayNames.tankName(p.tankId, p.tankName)) + ") 阵亡"));
             }
         }
         final float endSec = battle.durationS != null ? battle.durationS.floatValue() : 0f;
@@ -1203,7 +1204,7 @@ public class AiReplayAnalysisService {
      */
     private static String buildSummary(final Battle battle, final ReplayReconstruction recon, final List<KeyBattleEvent> keyEvents) {
         final StringBuilder sb = new StringBuilder(2048);
-        sb.append("地图: ").append(PlayerResultFormat.quoteForPrompt(battle.mapName)).append('\n');
+        sb.append("地图: ").append(PlayerResultFormat.quoteForPrompt(ReplayDisplayNames.mapName(battle.mapName))).append('\n');
         if (battle.arenaBonusType != null) {
             sb.append("模式编号: ").append(battle.arenaBonusType).append('\n');
         }

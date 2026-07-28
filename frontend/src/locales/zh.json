@@ -766,7 +766,7 @@
         "select_file": "选择回放文件",
         "invalid_file": "请选择 .wotbreplay 文件",
         "no_file": "未选择回放文件",
-        "max_files_count": "{count} / 16",
+        "max_files_count": "{count} 个文件",
         "reconstruct_btn": "开始重建",
         "time_placeholder": "时间(秒)",
         "invalid_time": "无效的时间值",
@@ -820,7 +820,7 @@
         "ai_error": "AI 分析失败",
         "ai_error_http": "AI 分析失败（HTTP {status}）",
         "auth_required": "需要登录，正在跳转登录……",
-        "forbidden": "无权限：该功能仅限 wotbtools-admin",
+        "forbidden": "无权限：该功能需要 wotbtools-user 或 wotbtools-admin 角色",
         "modes": {
             "SINGLE_PLAYER_BATTLE": "单场个人复盘",
             "MULTI_PLAYER_BATTLE": "多场个人趋势复盘",
