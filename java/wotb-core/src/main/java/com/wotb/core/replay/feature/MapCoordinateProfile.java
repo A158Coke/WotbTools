@@ -2,8 +2,9 @@ package com.wotb.core.replay.feature;
 
 /**
  * Immutable coordinate calibration profile for raw→canonical map conversion.
- * Default values correspond to ±250 meter game-world coordinates observed in
- * current replay samples. Adjustable via environment variables at deployment.
+ * The default profile is an experimental production calibration value.
+ * It may be adjusted through deployment environment variables
+ * ({@code REPLAY_COORDINATE_HALF_EXTENT}, {@code REPLAY_COORDINATE_CLAMP_TOLERANCE}).
  *
  * @param halfExtent    raw coordinate half-extent (must be finite > 0)
  * @param clampTolerance raw units beyond halfExtent allowed before INVALID (must be finite >= 0)

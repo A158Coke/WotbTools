@@ -168,6 +168,65 @@ class MapRegionResolverTest {
         assertEquals(0, MapRegionResolver.resolve(Float.NaN, 0).region());
     }
 
+    // === Active-profile propagation tests ===
+
+    @Test
+    void convenienceMethodsUseActiveProfile() {
+        final MapCoordinateProfile original = MapRegionResolver.activeProfile();
+        try {
+            // halfExtent=500: raw ±500 maps to canonical 0-500
+            MapRegionResolver.configure(new MapCoordinateProfile(500f, 25f));
+            MapCoordinateResolution r = MapRegionResolver.resolve(0f, 0f);
+            assertEquals(MapCoordinateResolution.Status.VALID, r.status());
+            assertEquals(250f, r.position().x(), 0.01f);
+            assertEquals(5, MapRegionResolver.resolveRegionFromRaw(0f, 0f));
+
+            // halfExtent=1000: raw ±1000 maps to canonical 0-500
+            MapRegionResolver.configure(new MapCoordinateProfile(1000f, 50f));
+            r = MapRegionResolver.resolve(0f, 0f);
+            assertEquals(MapCoordinateResolution.Status.VALID, r.status());
+            assertEquals(250f, r.position().x(), 0.01f);
+            assertEquals(5, MapRegionResolver.resolveRegionFromRaw(0f, 0f));
+
+            // canonicalDistanceMeters also uses active profile
+            MapRegionResolver.configure(new MapCoordinateProfile(250f, 12.5f));
+            assertEquals(100f, MapRegionResolver.canonicalDistanceMeters(0f, 0f, 100f, 0f), 0.01f);
+        } finally {
+            MapRegionResolver.configure(original);
+        }
+    }
+
+    @Test
+    void activeProfileChangesCanonicalScale() {
+        final MapCoordinateProfile original = MapRegionResolver.activeProfile();
+        try {
+            // halfExtent=1000 → scale = 500/2000 = 0.25
+            // raw = +400 → canonical = (400+1000)*0.25 = 350
+            MapRegionResolver.configure(new MapCoordinateProfile(1000f, 50f));
+            MapCoordinateResolution r = MapRegionResolver.resolve(400f, 400f);
+            assertEquals(MapCoordinateResolution.Status.VALID, r.status());
+            assertEquals(350f, r.position().x(), 0.01f);
+            assertEquals(350f, r.position().z(), 0.01f);
+
+            // halfExtent=250 → scale = 500/500 = 1.0
+            // raw = +400 → canonical = 400+250 = 650 → clamped to 500
+            MapRegionResolver.configure(new MapCoordinateProfile(250f, 12.5f));
+            r = MapRegionResolver.resolve(400f, 400f);
+            // 400 > 262.5 → INVALID (beyond clamp tolerance)
+            assertEquals(MapCoordinateResolution.Status.INVALID, r.status());
+
+            // halfExtent=500 → scale = 500/1000 = 0.5
+            // raw = +400 → canonical = (400+500)*0.5 = 450
+            MapRegionResolver.configure(new MapCoordinateProfile(500f, 25f));
+            r = MapRegionResolver.resolve(400f, 400f);
+            assertEquals(MapCoordinateResolution.Status.VALID, r.status());
+            assertEquals(450f, r.position().x(), 0.01f);
+            assertEquals(450f, r.position().z(), 0.01f);
+        } finally {
+            MapRegionResolver.configure(original);
+        }
+    }
+
     // === Nine-region grid from canonical coordinates ===
     // X: 0→500 (left→right), Z: 0→500 (bottom→top)
     // Grid:  1|2|3 top, 4|5|6 middle, 7|8|9 bottom

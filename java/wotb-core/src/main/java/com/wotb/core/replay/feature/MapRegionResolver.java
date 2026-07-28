@@ -82,14 +82,14 @@ public final class MapRegionResolver {
         return row * 3 + col + 1;
     }
 
-    /** Convenience using default profile. */
+    /** Convenience using active profile. */
     public static MapCoordinateResolution resolve(final float rawX, final float rawZ) {
-        return resolve(rawX, rawZ, MapCoordinateProfile.DEFAULT);
+        return resolve(rawX, rawZ, activeProfile);
     }
 
-    /** Convenience: raw replay coordinates → region (default profile). */
+    /** Convenience: raw replay coordinates → region using active profile. */
     public static int resolveRegionFromRaw(final float rawX, final float rawZ) {
-        return resolveRegionFromRaw(rawX, rawZ, MapCoordinateProfile.DEFAULT);
+        return resolveRegionFromRaw(rawX, rawZ, activeProfile);
     }
 
     /** Profile-aware: raw replay coordinates → region. */
@@ -118,15 +118,15 @@ public final class MapRegionResolver {
         return (float) Math.sqrt(dx * dx + dz * dz);
     }
 
-    /** Convenience using default profile. */
+    /** Convenience using active profile. */
     public static float canonicalDistanceMeters(
             final float rawX1, final float rawZ1,
             final float rawX2, final float rawZ2) {
-        return canonicalDistanceMeters(rawX1, rawZ1, rawX2, rawZ2, MapCoordinateProfile.DEFAULT);
+        return canonicalDistanceMeters(rawX1, rawZ1, rawX2, rawZ2, activeProfile);
     }
 
-    /** Allowed raw coordinate limit for detection purposes (clampUpper). */
-    public static float maxRawAllowed(final MapCoordinateProfile profile) {
-        return profile.clampUpper();
+    /** Allowed raw coordinate limit for detection purposes (active profile clampUpper). */
+    public static float maxRawAllowed() {
+        return activeProfile.clampUpper();
     }
 }
