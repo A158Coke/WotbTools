@@ -80,4 +80,50 @@ class AiReplayReviewServiceTest {
         assertEquals("FILE_TOO_LARGE", ex.getMessage());
     }
 
+    @Test
+    void emptyArrayThrowsNoReplayFiles() {
+        final var ex = assertThrows(IllegalArgumentException.class,
+                () -> service.analyze(new MockMultipartFile[0]));
+        assertEquals("NO_REPLAY_FILES", ex.getMessage());
+    }
+
+    @Test
+    void nullElementThrowsNoReplayFile() {
+        final var files = new MockMultipartFile[]{
+                new MockMultipartFile("files", "valid.wotbreplay",
+                        "application/octet-stream", new byte[]{1}),
+                null
+        };
+        final var ex = assertThrows(IllegalArgumentException.class,
+                () -> service.analyze(files));
+        assertEquals("NO_REPLAY_FILE", ex.getMessage());
+    }
+
+    @Test
+    void totalSizeOverflowSafe() {
+        final var files = new MockMultipartFile[11];
+        for (int i = 0; i < 11; i++) {
+            files[i] = new MockMultipartFile(
+                    "files", "file" + i + ".wotbreplay",
+                    "application/octet-stream", new byte[20 * 1024 * 1024]);
+        }
+        final var ex = assertThrows(IllegalArgumentException.class,
+                () -> service.analyze(files));
+        assertEquals("TOTAL_REQUEST_TOO_LARGE", ex.getMessage());
+    }
+
+    @Test
+    void mixedNullElements() {
+        final var files = new MockMultipartFile[]{
+                new MockMultipartFile("files", "first.wotbreplay",
+                        "application/octet-stream", new byte[]{1}),
+                null,
+                new MockMultipartFile("files", "third.wotbreplay",
+                        "application/octet-stream", new byte[]{1})
+        };
+        final var ex = assertThrows(IllegalArgumentException.class,
+                () -> service.analyze(files));
+        assertEquals("NO_REPLAY_FILE", ex.getMessage());
+    }
+
 }

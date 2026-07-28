@@ -32,6 +32,7 @@ public record AnalyzeResponse(
         @JsonProperty("sameTeamDuplicatePerspectiveCount") int sameTeamDuplicatePerspectiveCount,
         @JsonProperty("files") List<ReplayFileAnalysisStatus> files,
         @JsonProperty("analyses") List<AnalysisUnitResult> analyses,
-        @JsonProperty("keyEvents") List<KeyBattleEvent> keyEvents
+        @JsonProperty("keyEvents") List<KeyBattleEvent> keyEvents,
+        @JsonProperty("limitations") List<String> limitations
 ) {
 }

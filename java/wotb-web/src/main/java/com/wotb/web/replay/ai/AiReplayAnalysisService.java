@@ -285,6 +285,7 @@ public class AiReplayAnalysisService {
                 buildPartitions(contexts, evidenceByUnitId);
         final Map<String, AnalyzeResult> perUnitResults = new LinkedHashMap<>();
         final Map<String, Set<String>> limitationsByUnit = new LinkedHashMap<>();
+        final Set<String> allGlobalLimitations = new LinkedHashSet<>();
         AnalyzeResult firstAnalysis = null;
         for (final var partition : partitions) {
             if (partition.size() == 1) {
@@ -292,6 +293,7 @@ public class AiReplayAnalysisService {
                 final RosterEvidence evidence = evidenceByUnitId.get(ctx.analysisUnitId());
                 final TeamAiPromptBuilder.PromptInput input =
                         TeamAiPromptBuilder.single(ctx, evidence != null ? evidence.limitations() : List.of());
+                allGlobalLimitations.addAll(input.limitations());
                 final AnalyzeResult result = callSingleTeamContext(ctx, input);
                 if (firstAnalysis == null) firstAnalysis = result;
                 perUnitResults.put(ctx.analysisUnitId(), result);
@@ -317,6 +319,7 @@ public class AiReplayAnalysisService {
                 }
                 final TeamAiPromptBuilder.PromptInput input =
                         TeamAiPromptBuilder.multi(multiContext, partitionEvidenceLimits);
+                allGlobalLimitations.addAll(input.limitations());
                 final Set<String> includedIds = input.includedUnitIds();
                 final List<KeyBattleEvent> keyEvents = partition.stream()
                         .filter(ctx -> includedIds.contains(ctx.analysisUnitId()))
@@ -364,7 +367,9 @@ public class AiReplayAnalysisService {
                 firstAnalysis,
                 buildTeamAnalysisUnits(
                         groups, contexts, perUnitResults, limitationsByUnit),
-                totalContexts, analyzedCount);
+                totalContexts, analyzedCount,
+                totalContexts - analyzedCount,
+                List.copyOf(allGlobalLimitations));
     }
 
     /**
@@ -1088,6 +1093,16 @@ public class AiReplayAnalysisService {
         return truncateSafe(redactNonJson(raw));
     }
 
+    /** Common English words that may appear as standalone credential-like values in error messages. */
+    private static final java.util.Set<String> COMMON_CREDENTIALS = java.util.Set.of(
+            "request", "service", "unavailable", "invalid", "failed", "error",
+            "timeout", "response", "status", "code", "message",
+            "overloaded", "exhausted", "depleted", "limited", "exceeded",
+            "maximum", "minimum", "average", "current", "expected", "required",
+            "missing", "unknown", "empty", "null", "false", "true",
+            "model", "provider", "upstream", "downstream", "gateway",
+            "server", "client", "user", "admin", "system", "global", "local");
+
     /** Apply non-JSON regex redaction to plain text. */
     private static String redactNonJson(final String raw) {
         final String step1 = raw.replaceAll(
@@ -1107,22 +1122,18 @@ public class AiReplayAnalysisService {
                 "(?i)\\b(bearer|basic|digest)\\s+[^\\s,;\"'}]+",
                 "$1 [REDACTED]");
         // Step 6: Custom auth scheme — whole-line/value matching only.
-        // Matches only entire lines matching <RFC_TOKEN_SCHEME> <SINGLE_TOKEN>.
-        // Natural-language heuristics:
-        //   - credential with non-alpha → redact
-        //   - short all-alpha credential (< 5) → redact
-        //   - scheme with non-lowercase (uppercase/digit/special) → redact
-        //   - otherwise (lowercase scheme + ≥ 5 all-alpha credential) → skip (natural language)
+        // Matches only entire lines matching <RFC_TOKEN_SCHEME> <RFC_TOKEN>.
+        // Skips redaction only when credential is a known common English word (prevents false
+        // positives like "invalid request" while still redacting "customscheme supersecret").
         final String step6 = Pattern.compile(
-                "(?im)^([a-z][a-z0-9!#$%&'*+\\-.^_`|~]+)\\s+([^\\s,;\"]+)$")
+                "(?im)^([a-z][a-z0-9!#$%&'*+\\-.^_`|~]+)\\s+([a-z0-9!#$%&'*+\\-.^_`|~]+)$")
                 .matcher(step5)
                 .replaceAll(match -> {
-                    final String scheme = match.group(1);
                     final String cred = match.group(2);
-                    final String redacted = Matcher.quoteReplacement(scheme) + " [REDACTED]";
-                    if (!cred.matches("(?i)[a-z]{5,}")) return redacted;
-                    if (!scheme.matches("[a-z]+")) return redacted;
-                    return match.group();
+                    if (COMMON_CREDENTIALS.contains(cred.toLowerCase(Locale.ROOT))) {
+                        return match.group();
+                    }
+                    return Matcher.quoteReplacement(match.group(1)) + " [REDACTED]";
                 });
         // Step 7: Digest auth parameters — hide any value length
         return step6.replaceAll(
@@ -1460,11 +1471,14 @@ public class AiReplayAnalysisService {
             AnalyzeResult analysis,
             List<AnalysisUnitResult> units,
             int analysisUnitCount,
-            int analyzedUnitCount
+            int analyzedUnitCount,
+            int omittedAnalysisUnitCount,
+            List<String> limitations
     ) {
 
         public TeamAnalyzeResult {
             units = units == null ? List.of() : List.copyOf(units);
+            limitations = limitations == null ? List.of() : List.copyOf(limitations);
         }
     }
 

@@ -43,62 +43,28 @@ public class AiReplayReviewService {
         this.aiAnalysisService = aiAnalysisService;
     }
 
-    public void validateBatchSize(final int fileCount) {
+    private void validateBatchSize(final int fileCount) {
         if (fileCount > AiReplayBatchPolicy.MAX_FILES) {
             throw new ReplayFileCountExceededException(AiReplayBatchPolicy.MAX_FILES, fileCount);
         }
     }
 
-    /**
-     * Process uploaded replay files for AI Review.
-     * Validates batch size, file types, sizes, then processes and analyzes.
-     */
-    public ReviewContext process(final MultipartFile[] files) throws IOException {
-        validateBatchSize(files.length);
-        long totalSize = 0;
-        for (final MultipartFile file : files) {
-            final String name = file.getOriginalFilename();
-            if (name == null || !name.toLowerCase(Locale.ROOT).endsWith(".wotbreplay")) {
-                throw new IllegalArgumentException("INVALID_REPLAY_FILE_TYPE");
-            }
-            if (file.isEmpty()) {
-                throw new IllegalArgumentException("NO_REPLAY_FILE");
-            }
-            if (file.getSize() > MAX_FILE_SIZE) {
-                throw new IllegalArgumentException("FILE_TOO_LARGE");
-            }
-            totalSize += file.getSize();
-            if (totalSize > MAX_TOTAL_SIZE) {
-                throw new IllegalArgumentException("TOTAL_REQUEST_TOO_LARGE");
-            }
-        }
-        // Process each file
-        final List<ReplayProcessingResult> allResults = new ArrayList<>();
-        for (int index = 0; index < files.length; index++) {
-            final MultipartFile file = files[index];
-            final String name = file.getOriginalFilename() != null
-                    ? file.getOriginalFilename() : "replay.wotbreplay";
-            final Source source = new Source(name, file.getBytes());
-            allResults.add(processingFacade.process(
-                    source, ReplayProcessingOptions.full()));
-        }
-        final BatchAnalyzer.AnalysisPlan plan = new BatchAnalyzer().analyze(allResults);
-        return new ReviewContext(files.length, allResults, plan);
-    }
-
     public AnalyzeResponse analyze(final MultipartFile[] files) throws IOException {
-        if (files == null) throw new IllegalArgumentException("NO_REPLAY_FILES");
+        if (files == null || files.length == 0) throw new IllegalArgumentException("NO_REPLAY_FILES");
         validateBatchSize(files.length);
         long totalSize = 0;
-        for (final MultipartFile file : files) {
+        for (int i = 0; i < files.length; i++) {
+            final MultipartFile file = files[i];
+            if (file == null) throw new IllegalArgumentException("NO_REPLAY_FILE");
             final String name = file.getOriginalFilename();
             if (!StringUtils.hasText(name) || !name.toLowerCase(Locale.ROOT).endsWith(".wotbreplay")) {
                 throw new IllegalArgumentException("INVALID_REPLAY_FILE_TYPE");
             }
             if (file.isEmpty()) throw new IllegalArgumentException("NO_REPLAY_FILE");
-            if (file.getSize() > MAX_FILE_SIZE) throw new IllegalArgumentException("FILE_TOO_LARGE");
-            totalSize += file.getSize();
-            if (totalSize > MAX_TOTAL_SIZE) throw new IllegalArgumentException("TOTAL_REQUEST_TOO_LARGE");
+            final long fileSize = file.getSize();
+            if (fileSize > MAX_FILE_SIZE) throw new IllegalArgumentException("FILE_TOO_LARGE");
+            if (fileSize > MAX_TOTAL_SIZE - totalSize) throw new IllegalArgumentException("TOTAL_REQUEST_TOO_LARGE");
+            totalSize += fileSize;
         }
         final List<ReplayProcessingResult> allResults = new ArrayList<>();
         for (int index = 0; index < files.length; index++) {
@@ -153,7 +119,8 @@ public class AiReplayReviewService {
                         plan.effectiveUnitCount(), analyzedCount, plan.effectiveUnitCount() - analyzedCount, analyzedCount,
                         aiResult.analysis(), failedCount,
                         plan.exactDuplicateCount(), plan.sameTeamDuplicatePerspectiveCount(),
-                        fileStatuses, units, aiResult.keyEvents());
+                        fileStatuses, units, aiResult.keyEvents(),
+                        List.<String>of());
             }
             case MULTI_PLAYER_BATTLE -> {
                 final var battles = analyzableGroups.stream()
@@ -168,7 +135,8 @@ public class AiReplayReviewService {
                         plan.effectiveUnitCount(), analyzedUnitCount, plan.effectiveUnitCount() - analyzedUnitCount, analyzedUnitCount,
                         aiResult.analysis(), failedCount,
                         plan.exactDuplicateCount(), plan.sameTeamDuplicatePerspectiveCount(),
-                        fileStatuses, units, aiResult.keyEvents());
+                        fileStatuses, units, aiResult.keyEvents(),
+                        List.<String>of());
             }
             case SINGLE_TEAM_BATTLE, MULTI_TEAM_BATTLE -> {
                 final var teamResult = aiAnalysisService.analyzeTeamGroups(analyzableGroups);
@@ -180,7 +148,8 @@ public class AiReplayReviewService {
                         unitCount, analyzedCount, unitCount - analyzedCount, analyzedCount,
                         aiResult.analysis(), failedCount,
                         plan.exactDuplicateCount(), plan.sameTeamDuplicatePerspectiveCount(),
-                        fileStatuses, teamResult.units(), aiResult.keyEvents());
+                        fileStatuses, teamResult.units(), aiResult.keyEvents(),
+                        teamResult.limitations());
             }
             case NONE -> throw new IllegalArgumentException("NO_BATTLE_DATA");
         };
@@ -293,9 +262,4 @@ public class AiReplayReviewService {
 
     private record ReplayUploadResult(int uploadIndex, String fileName, ReplayProcessingResult processingResult) {}
 
-    public record ReviewContext(
-            int totalFiles,
-            List<ReplayProcessingResult> allResults,
-            BatchAnalyzer.AnalysisPlan plan
-    ) {}
 }
