@@ -138,13 +138,16 @@ public class ReconstructionController {
     public AnalyzeResponse analyze(
             @RequestParam("files") final MultipartFile[] files) throws IOException {
 
-        reviewService.validateBatchSize(files.length);
-        validateBatch(files);
-        final var uploadResults = processFilesWithIndex(files);
-        final var allResults = uploadResults.stream()
-                .map(ReplayUploadResult::processingResult)
-                .toList();
-        final BatchAnalyzer.AnalysisPlan plan = new BatchAnalyzer().analyze(allResults);
+        final var ctx = reviewService.process(files);
+        final var allResults = ctx.allResults();
+        final var plan = ctx.plan();
+        final var total = ctx.totalFiles();
+        // Rebuild upload results for file status builder
+        final List<ReplayUploadResult> uploadResults = new ArrayList<>();
+        for (int index = 0; index < allResults.size(); index++) {
+            uploadResults.add(new ReplayUploadResult(
+                    index, allResults.get(index).fileName(), allResults.get(index)));
+        }
 
         // 先检查是否有成功解析的 Battle
         final boolean hasParsedBattle = allResults.stream().anyMatch(r -> r.battle() != null);
@@ -152,7 +155,6 @@ public class ReconstructionController {
 
         // 再检查 scope
         if (plan.dominantScope() == null) throw new UnsupportedReplayAnalysisModeException("UNSUPPORTED_BATTLE_CATEGORY");
-        final int total = files.length;
 
         // scope 感知地筛选可分析单元；Team 允许权威结算 fallback。
         final var analyzableGroups = plan.groups().stream()
