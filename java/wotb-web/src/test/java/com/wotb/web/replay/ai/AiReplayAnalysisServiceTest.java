@@ -806,10 +806,10 @@ class AiReplayAnalysisServiceTest {
                 "Should enter resolved recorder branch");
         assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=友方 | 车辆:"),
                 "Entity line must show friendly side, not raw team");
-        assertTrue(body.contains("=== 友方 ==="), "Should have friendly roster");
-        assertTrue(body.contains("- 友方 \\\"RecorderPlayer\\\""), "RecorderPlayer should be friendly");
-        assertTrue(body.contains("=== 敌方 ==="), "Should have enemy roster");
-        assertTrue(body.contains("- 敌方 \\\"OtherPlayer\\\""), "OtherPlayer should be enemy");
+        assertTrue(body.contains("FRIENDLY_LINEUP_AUTHORITATIVE"), "Should have friendly roster");
+        assertTrue(body.contains("友方 \\\"RecorderPlayer\\\""), "RecorderPlayer should be friendly");
+        assertTrue(body.contains("ENEMY_LINEUP_AUTHORITATIVE"), "Should have enemy roster");
+        assertTrue(body.contains("敌方 \\\"OtherPlayer\\\""), "OtherPlayer should be enemy");
     }
 
     @Test
@@ -827,8 +827,8 @@ class AiReplayAnalysisServiceTest {
         assertNoRawTeamLabels(body);
         assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=友方 | 车辆:"),
                 "Recorder in team 2 must still show friendly side");
-        assertTrue(body.contains("- 友方 \\\"RecorderPlayer\\\""), "RecorderPlayer should be friendly");
-        assertTrue(body.contains("- 敌方 \\\"OtherPlayer\\\""), "OtherPlayer(raw team 1) should be enemy");
+        assertTrue(body.contains("友方 \\\"RecorderPlayer\\\""), "RecorderPlayer should be friendly");
+        assertTrue(body.contains("敌方 \\\"OtherPlayer\\\""), "OtherPlayer(raw team 1) should be enemy");
     }
 
     @ParameterizedTest
@@ -851,7 +851,8 @@ class AiReplayAnalysisServiceTest {
                 "Invalid team " + invalidTeam + " must show unknown side");
         assertTrue(body.contains("结果: 平局或未知"),
                 "Invalid team " + invalidTeam + " must produce draw/unknown winner");
-        assertTrue(body.contains("=== 未知 ==="), "All players should be in unknown roster");
+        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=未知 | 车辆:"),
+                "Invalid team " + invalidTeam + " must show unknown side in entity line");
     }
 
     // ========== Fallback path ==========
