@@ -77,10 +77,13 @@ export function perspectiveTeams(result) {
 }
 
 export function analysisLimitations(result) {
-  const limitations = (result?.analyses || [])
-    .flatMap(unit => Array.isArray(unit?.report?.limitations)
-      ? unit.report.limitations
-      : [])
+  const limitations = [
+    ...(Array.isArray(result?.limitations) ? result.limitations : []),
+    ...(result?.analyses || [])
+      .flatMap(unit => Array.isArray(unit?.report?.limitations)
+        ? unit.report.limitations
+        : [])
+  ]
     .filter(value => typeof value === 'string' && value.length > 0)
   return [...new Set(limitations)]
 }
@@ -107,6 +110,14 @@ export function eventTypeLabel(type, t) {
   return LOCALIZED_EVENT_TYPES.has(type)
     ? t(`recon.event_types.${type}`)
     : type
+}
+
+export function localizeLimitation(code, t) {
+  const omittedMatch = code.match(/^PERSPECTIVES_OMITTED_COUNT_(\d+)$/)
+  if (omittedMatch) {
+    return t('recon.PERSPECTIVES_OMITTED', { count: omittedMatch[1] })
+  }
+  return limitationLabel(code, t)
 }
 
 export function limitationLabel(code, t) {

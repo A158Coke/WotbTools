@@ -107,7 +107,7 @@ final class TeamAiPromptBuilder {
         if (optTruncated) {
             writer.markTruncated();
         }
-        return writer.finish(limitations, Set.of(context.analysisUnitId()), Set.of(),
+        return writer.finish(Set.of(), Set.of(context.analysisUnitId()), Set.of(),
                 Map.of(context.analysisUnitId(), List.copyOf(limitations)));
     }
 
@@ -224,7 +224,7 @@ final class TeamAiPromptBuilder {
         for (int i = includedCount; i < perspectives.size(); i++) {
             omittedIds.add(perspectives.get(i).analysisUnitId());
         }
-        return writer.finish(allLimitations, includedIds, omittedIds, perUnitLimMap);
+        return writer.finish(globalLimitations, includedIds, omittedIds, perUnitLimMap);
     }
 
     private static void appendContextHeader(
@@ -665,14 +665,14 @@ final class TeamAiPromptBuilder {
         Set<String> includedUnitIds,
         Set<String> omittedUnitIds,
         Map<String, List<String>> perUnitLimitations,
-        List<String> limitations
+        List<String> globalLimitations
     ) {
 
         PromptInput {
             includedUnitIds = includedUnitIds == null ? Set.of() : Set.copyOf(includedUnitIds);
             omittedUnitIds = omittedUnitIds == null ? Set.of() : Set.copyOf(omittedUnitIds);
             perUnitLimitations = perUnitLimitations == null ? Map.of() : Map.copyOf(perUnitLimitations);
-            limitations = limitations == null ? List.of() : List.copyOf(limitations);
+            globalLimitations = globalLimitations == null ? List.of() : List.copyOf(globalLimitations);
         }
     }
 
@@ -746,13 +746,13 @@ final class TeamAiPromptBuilder {
             truncated = true;
         }
 
-        private PromptInput finish(final Set<String> suppliedLimitations, final Set<String> includedIds, final Set<String> omittedIds, final Map<String, List<String>> perUnitLimitations) {
-            final Set<String> limitations = new LinkedHashSet<>(suppliedLimitations);
+        private PromptInput finish(final Set<String> suppliedGlobalLimitations, final Set<String> includedIds, final Set<String> omittedIds, final Map<String, List<String>> perUnitLimitations) {
+            final Set<String> globalLimitations = new LinkedHashSet<>(suppliedGlobalLimitations);
             if (truncated) {
-                limitations.add("AI_INPUT_TRUNCATED");
+                globalLimitations.add("AI_INPUT_TRUNCATED");
                 content.append(TRUNCATION_LINE);
             }
-            return new PromptInput(content.toString(), includedIds, omittedIds, perUnitLimitations, new ArrayList<>(limitations));
+            return new PromptInput(content.toString(), includedIds, omittedIds, perUnitLimitations, new ArrayList<>(globalLimitations));
         }
     }
 }

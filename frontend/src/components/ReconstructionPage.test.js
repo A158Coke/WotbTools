@@ -282,6 +282,44 @@ describe('ReconstructionPage file management', () => {
     expect(wrapper.text()).not.toContain('beta.wotbreplay')
     expect(wrapper.text()).toContain('gamma.wotbreplay')
   })
+
+  it('allows selecting 1 file', async () => {
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['single.wotbreplay'])
+    expect(wrapper.text()).toContain('single.wotbreplay')
+    expect(wrapper.text()).not.toContain('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
+  })
+
+  it('allows selecting 16 files', async () => {
+    const wrapper = mountedPage()
+    const names = Array.from({ length: 16 }, (_, i) => `file${i}.wotbreplay`)
+    await selectReplays(wrapper, names)
+    expect(wrapper.text()).toContain('recon.max_files_count:16')
+    expect(wrapper.text()).not.toContain('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
+  })
+
+  it('rejects selecting 17 files and keeps previous list', async () => {
+    const wrapper = mountedPage()
+    const input = wrapper.get('input[type="file"]')
+
+    const names16 = Array.from({ length: 16 }, (_, i) => `file${i}.wotbreplay`)
+    const files16 = names16.map(name => new File(['replay'], name, { type: 'application/octet-stream' }))
+    Object.defineProperty(input.element, 'files', { value: files16, configurable: true })
+    await input.trigger('change')
+
+    expect(wrapper.text()).toContain('file0.wotbreplay')
+    expect(wrapper.text()).toContain('file15.wotbreplay')
+
+    const extraNames = Array.from({ length: 5 }, (_, i) => `extra${i}.wotbreplay`)
+    const extraFiles = extraNames.map(name => new File(['replay'], name, { type: 'application/octet-stream' }))
+    Object.defineProperty(input.element, 'files', { value: extraFiles, configurable: true })
+    await input.trigger('change')
+
+    expect(wrapper.text()).toContain('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
+    expect(wrapper.text()).toContain('file0.wotbreplay')
+    expect(wrapper.text()).toContain('file15.wotbreplay')
+    expect(wrapper.text()).not.toContain('extra0.wotbreplay')
+  })
 })
 
 function mountedPage() {

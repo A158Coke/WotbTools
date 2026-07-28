@@ -29,6 +29,14 @@ defineProps({
       <span>{{ $t('recon.analysis_units') }}</span>
       <strong>{{ result.analyzedUnitCount }}</strong>
     </div>
+    <div v-if="result.analysisUnitCount > 0" class="analysis-meta-item">
+      <span>{{ $t('recon.analysis_unit_count') }}</span>
+      <strong>{{ result.analysisUnitCount }}</strong>
+    </div>
+    <div v-if="result.omittedAnalysisUnitCount > 0" class="analysis-meta-item">
+      <span>{{ $t('recon.omitted_analysis_unit_count') }}</span>
+      <strong>{{ result.omittedAnalysisUnitCount }}</strong>
+    </div>
     <div v-if="teamAnalysis" class="analysis-meta-item">
       <span>{{ $t('recon.perspective_team') }}</span>
       <strong>{{ teams.length ? teams.join(', ') : $t('recon.unknown') }}</strong>
