@@ -57,7 +57,7 @@ class ReconstructionControllerTeamAnalysisTest {
     void setUp() {
         processingFacade = mock(DefaultReplayProcessingFacade.class);
         aiService = mock(AiReplayAnalysisService.class);
-        reviewService = mock(AiReplayReviewService.class);
+        reviewService = new AiReplayReviewService(processingFacade, aiService);
         final var reconstructionService = mock(ReplayReconstructionService.class);
         final var controller = new ReconstructionController(
                 processingFacade, reconstructionService, aiService, reviewService);
@@ -74,8 +74,7 @@ class ReconstructionControllerTeamAnalysisTest {
         for (final var f : files) {
             request = request.file(f);
         }
-        doThrow(new ReplayFileCountExceededException(16, 17))
-                .when(reviewService).validateBatchSize(17);
+        // Real reviewService.process() calls validateBatchSize which throws
 
         mvc.perform(request)
                 .andExpect(status().isBadRequest())
