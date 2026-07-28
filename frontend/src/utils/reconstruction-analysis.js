@@ -58,7 +58,8 @@ const LOCALIZED_LIMITATIONS = new Set([
   'TEAM_MEMBER_MOVEMENT_UNAVAILABLE',
   'AI_INPUT_TRUNCATED',
   'PERSPECTIVE_TIMELINES_ISOLATED',
-  'ROSTER_CONSISTENCY_UNCONFIRMED'
+  'ROSTER_CONSISTENCY_UNCONFIRMED',
+  'AI_PERSPECTIVE_OMITTED_FROM_PROMPT'
 ])
 
 export function isTeamMode(mode) {
@@ -115,7 +116,7 @@ export function eventTypeLabel(type, t) {
 export function localizeLimitation(code, t) {
   const omittedMatch = code.match(/^PERSPECTIVES_OMITTED_COUNT_(\d+)$/)
   if (omittedMatch) {
-    return t('recon.PERSPECTIVES_OMITTED', { count: omittedMatch[1] })
+    return t('recon.limitations.PERSPECTIVES_OMITTED', { count: omittedMatch[1] })
   }
   return limitationLabel(code, t)
 }
