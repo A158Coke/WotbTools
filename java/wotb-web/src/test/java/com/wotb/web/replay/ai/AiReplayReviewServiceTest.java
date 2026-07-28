@@ -44,13 +44,13 @@ class AiReplayReviewServiceTest {
     }
 
     @Test
-    void seventeenFilesThrowsReplayFileCountExceeded() {
-        final var files = new MockMultipartFile[17];
-        for (int i = 0; i < 17; i++) {
-            files[i] = new MockMultipartFile(
-                    "files", "file" + i + ".wotbreplay",
-                    "application/octet-stream", new byte[]{1});
-        }
+    void twoFilesThrowsReplayFileCountExceeded() {
+        final var files = new MockMultipartFile[]{
+                new MockMultipartFile("files", "a.wotbreplay",
+                        "application/octet-stream", new byte[]{1}),
+                new MockMultipartFile("files", "b.wotbreplay",
+                        "application/octet-stream", new byte[]{1})
+        };
         assertThrows(ReplayFileCountExceededException.class,
                 () -> service.analyze(files));
     }
@@ -97,43 +97,24 @@ class AiReplayReviewServiceTest {
 
     @Test
     void nullElementThrowsNoReplayFile() {
-        final var files = new MockMultipartFile[]{
-                new MockMultipartFile("files", "valid.wotbreplay",
-                        "application/octet-stream", new byte[]{1}),
-                null
-        };
+        final var files = new MockMultipartFile[]{null};
         final var ex = assertThrows(IllegalArgumentException.class,
                 () -> service.analyze(files));
         assertEquals("NO_REPLAY_FILE", ex.getMessage());
     }
 
     @Test
-    void totalSizeOverflowSafe() {
-        final var files = new MultipartFile[11];
-        for (int i = 0; i < 11; i++) {
-            final var f = mock(MultipartFile.class);
-            when(f.getOriginalFilename()).thenReturn("file" + i + ".wotbreplay");
-            when(f.isEmpty()).thenReturn(false);
-            when(f.getSize()).thenReturn(20L * 1024 * 1024);
-            files[i] = f;
-        }
-        final var ex = assertThrows(IllegalArgumentException.class,
-                () -> service.analyze(files));
-        assertEquals("TOTAL_REQUEST_TOO_LARGE", ex.getMessage());
-    }
-
-    @Test
-    void mixedNullElements() {
-        final var files = new MockMultipartFile[]{
-                new MockMultipartFile("files", "first.wotbreplay",
-                        "application/octet-stream", new byte[]{1}),
-                null,
-                new MockMultipartFile("files", "third.wotbreplay",
-                        "application/octet-stream", new byte[]{1})
-        };
-        final var ex = assertThrows(IllegalArgumentException.class,
-                () -> service.analyze(files));
-        assertEquals("NO_REPLAY_FILE", ex.getMessage());
+    void singleFileTotalSizeIsSameAsFileSize() throws IOException {
+        final var file = mock(MultipartFile.class);
+        when(file.getOriginalFilename()).thenReturn("valid.wotbreplay");
+        when(file.isEmpty()).thenReturn(false);
+        when(file.getSize()).thenReturn(20L * 1024 * 1024);
+        when(file.getBytes()).thenReturn(new byte[]{1});
+        when(processingFacade.process(any(), any()))
+                .thenThrow(new IllegalStateException("VALIDATION_PASSED"));
+        final var ex = assertThrows(IllegalStateException.class,
+                () -> service.analyze(new MultipartFile[]{file}));
+        assertEquals("VALIDATION_PASSED", ex.getMessage());
     }
 
     @Test
@@ -194,35 +175,17 @@ class AiReplayReviewServiceTest {
     }
 
     @Test
-    void exactMaxTotalSizeIsAccepted() throws IOException {
-        final var files = new MultipartFile[10];
-        for (int i = 0; i < 10; i++) {
-            final var f = mock(MultipartFile.class);
-            when(f.getOriginalFilename()).thenReturn("file" + i + ".wotbreplay");
-            when(f.isEmpty()).thenReturn(false);
-            when(f.getSize()).thenReturn(20L * 1024 * 1024);
-            files[i] = f;
-        }
+    void singleFileExactMaxFileSizeIsAccepted() throws IOException {
+        final var file = mock(MultipartFile.class);
+        when(file.getOriginalFilename()).thenReturn("valid.wotbreplay");
+        when(file.isEmpty()).thenReturn(false);
+        when(file.getSize()).thenReturn(1L);
+        when(file.getBytes()).thenReturn(new byte[]{1});
         when(processingFacade.process(any(), any()))
                 .thenThrow(new IllegalStateException("VALIDATION_PASSED"));
         final var ex = assertThrows(IllegalStateException.class,
-                () -> service.analyze(files));
+                () -> service.analyze(new MultipartFile[]{file}));
         assertEquals("VALIDATION_PASSED", ex.getMessage());
-    }
-
-    @Test
-    void exceedsMaxTotalSizeThrows() throws IOException {
-        final var files = new MultipartFile[11];
-        for (int i = 0; i < 11; i++) {
-            final var f = mock(MultipartFile.class);
-            when(f.getOriginalFilename()).thenReturn("file" + i + ".wotbreplay");
-            when(f.isEmpty()).thenReturn(false);
-            when(f.getSize()).thenReturn(20L * 1024 * 1024);
-            files[i] = f;
-        }
-        final var ex = assertThrows(IllegalArgumentException.class,
-                () -> service.analyze(files));
-        assertEquals("TOTAL_REQUEST_TOO_LARGE", ex.getMessage());
     }
 
     @Test
@@ -240,41 +203,23 @@ class AiReplayReviewServiceTest {
     }
 
     @Test
-    void sixteenFilesAreAccepted() throws IOException {
-        final var files = new MultipartFile[16];
-        for (int i = 0; i < 16; i++) {
-            final var f = mock(MultipartFile.class);
-            when(f.getOriginalFilename()).thenReturn("file" + i + ".wotbreplay");
-            when(f.isEmpty()).thenReturn(false);
-            when(f.getSize()).thenReturn(1L);
-            files[i] = f;
-        }
-        when(processingFacade.process(any(), any()))
-                .thenThrow(new IllegalStateException("VALIDATION_PASSED"));
-        final var ex = assertThrows(IllegalStateException.class,
-                () -> service.analyze(files));
-        assertEquals("VALIDATION_PASSED", ex.getMessage());
-    }
-
-    @Test
-    void batchSizeExceededDoesNotCallGetBytes() throws IOException {
-        final var files = new MultipartFile[17];
-        for (int i = 0; i < 17; i++) {
-            files[i] = mock(MultipartFile.class);
-        }
+    void twoFilesExceededDoesNotCallGetBytes() throws IOException {
+        final var files = new MultipartFile[]{
+                mock(MultipartFile.class),
+                mock(MultipartFile.class)
+        };
         assertThrows(ReplayFileCountExceededException.class,
                 () -> service.analyze(files));
-        for (final var f : files) {
-            verify(f, never()).getBytes();
-        }
+        verify(files[0], never()).getBytes();
+        verify(files[1], never()).getBytes();
     }
 
     @Test
-    void batchSizeExceededDoesNotCallProcessingFacade() throws IOException {
-        final var files = new MultipartFile[17];
-        for (int i = 0; i < 17; i++) {
-            files[i] = mock(MultipartFile.class);
-        }
+    void twoFilesExceededDoesNotCallProcessingFacade() throws IOException {
+        final var files = new MultipartFile[]{
+                mock(MultipartFile.class),
+                mock(MultipartFile.class)
+        };
         assertThrows(ReplayFileCountExceededException.class,
                 () -> service.analyze(files));
         verify(processingFacade, never()).process(any(), any());

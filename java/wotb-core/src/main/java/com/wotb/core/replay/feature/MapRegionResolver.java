@@ -7,21 +7,25 @@ public final class MapRegionResolver {
     /** Canonical map width/height. */
     public static final float MAP_SIZE = 500f;
 
-    /** Replay coordinate half-extent (±1000 per docs/replay-data.md). */
-    static final float REPLAY_HALF_EXTENT = 1000f;
+    /**
+     * Raw replay coordinates are game-world meters with origin at map center.
+     * Observed range: approximately -250 to +250 in X and Z.
+     * Since MAP_SIZE=500 and raw range=500, the conversion is:
+     *   canonical = raw + 250  (scale = 1.0, no compression).
+     */
+    static final float REPLAY_HALF_EXTENT = 250f;
 
-    /** Full replay coordinate range. */
-    static final float REPLAY_RANGE = 2f * REPLAY_HALF_EXTENT;
+    /** Full replay coordinate range (same as MAP_SIZE → scale = 1). */
+    static final float REPLAY_RANGE = MAP_SIZE;
 
     /**
-     * Clamp tolerance for CLAMPED positions (raw coordinate units).
-     * 2000 raw = 500 canonical, so 1 raw = 0.25 canonical.
-     * 50 raw = 12.5 canonical meters ≈ 2.5% of MAP_SIZE.
+     * Clamp tolerance in raw (meter) units. 12.5 canonical meters ≈ 2.5% of MAP_SIZE.
+     * With scale=1, raw tolerance = canonical tolerance.
      * Accounts for: replay interpolation, floating-point error, spawn offsets,
      * map texture vs playable-boundary differences, coarse-scale rounding.
      * Positions beyond this tolerance are INVALID, not CLAMPED.
      */
-    public static final float CLAMP_TOLERANCE_RAW = 50f;
+    public static final float CLAMP_TOLERANCE_RAW = 12.5f;
 
     private static final float MAX_RAW_COORDINATE = REPLAY_HALF_EXTENT;
     private static final float CLAMP_UPPER = MAX_RAW_COORDINATE + CLAMP_TOLERANCE_RAW;

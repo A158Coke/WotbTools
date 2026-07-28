@@ -6,6 +6,7 @@ import com.wotb.core.processing.FriendlyEnemyResult;
 import com.wotb.core.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.PlayerSideResolver.Side;
+import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.List;
@@ -33,7 +34,7 @@ public final class PlayerAnalysisPromptFormatter {
     public static String formatPlayerLine(final PlayerResult p, final Side side) {
         return "- " + sideLabel(side)
                 + " " + PlayerResultFormat.quoteForPrompt(p.nickname)
-                + " (" + PlayerResultFormat.quoteForPrompt(p.tankName) + ")"
+                + " (" + PlayerResultFormat.quoteForPrompt(resolveTank(p)) + ")"
                 + " 输出" + p.damageDealt
                 + " 承伤" + p.damageReceived
                 + " 助攻" + p.damageAssisted
@@ -44,7 +45,7 @@ public final class PlayerAnalysisPromptFormatter {
 
     public static String formatRecorderLine(final PlayerResult rec, final Side side) {
         return "录像者: " + PlayerResultFormat.quoteForPrompt(rec.nickname)
-                + " (" + PlayerResultFormat.quoteForPrompt(rec.tankName) + ")"
+                + " (" + PlayerResultFormat.quoteForPrompt(resolveTank(rec)) + ")"
                 + " | 侧=" + sideLabel(side)
                 + " | " + PlayerResultFormat.deathDisplay(rec)
                 + " | 输出" + rec.damageDealt
@@ -52,6 +53,10 @@ public final class PlayerAnalysisPromptFormatter {
                 + " | 助攻" + rec.damageAssisted
                 + " | 格挡" + rec.damageBlocked
                 + " | 击杀" + rec.kills;
+    }
+
+    private static String resolveTank(final PlayerResult p) {
+        return ReplayDisplayNames.tankName(p.tankId, p.tankName);
     }
 
     public static String formatAllPlayersBySide(final Battle battle) {
