@@ -48,7 +48,7 @@ function addFile(e) {
   }
   const totalAfterAdd = files.value.length + picked.length
   if (totalAfterAdd > MAX_AI_REVIEW_REPLAY_FILES) {
-    error.value = t('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
+    error.value = t('recon.errors.REPLAY_FILE_COUNT_EXCEEDED', { max: MAX_AI_REVIEW_REPLAY_FILES })
     return
   }
   files.value = [...files.value, ...picked]
@@ -58,8 +58,9 @@ function addFile(e) {
 
 function removeFile(index) {
   files.value = files.value.filter((_, i) => i !== index)
+  resetResults()
   if (files.value.length === 0) {
-    resetResults()
+    error.value = ''
   }
 }
 
@@ -163,7 +164,7 @@ async function runAnalyze() {
     return
   }
   if (files.value.length > MAX_AI_REVIEW_REPLAY_FILES) {
-    error.value = t('recon.errors.REPLAY_FILE_COUNT_EXCEEDED')
+    error.value = t('recon.errors.REPLAY_FILE_COUNT_EXCEEDED', { max: MAX_AI_REVIEW_REPLAY_FILES })
     return
   }
   analyzing.value = true
@@ -172,8 +173,15 @@ async function runAnalyze() {
   try {
     const r = await authedFetch('/api/replay/analyze', multiFormData())
     if (!r.ok) {
-      const text = (await r.text().catch(() => '')).trim()
-      throw new Error(localizeAiError(text, r.status, t))
+      let errorData = { code: '', maxFiles: 16 }
+      try {
+        const json = await r.json()
+        errorData = { code: json.code || '', maxFiles: json.maxFiles || 16 }
+      } catch {
+        const text = (await r.text().catch(() => '')).trim()
+        errorData.code = text
+      }
+      throw new Error(localizeAiError(errorData, r.status, t))
     }
     const result = await r.json()
     if (!result || typeof result.analysis !== 'string' || !result.analysis.trim()) {

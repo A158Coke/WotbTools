@@ -32,7 +32,8 @@
         "files_count": "{count} 个文件",
         "remove_title": "移除该回放",
         "add_files_title": "添加回放文件",
-        "add_folder_title": "添加文件夹"
+        "add_folder_title": "添加文件夹",
+        "remove_file_aria": "删除回放文件 {name}"
     },
     "action": {
         "preview": "解析预览",
@@ -848,7 +849,7 @@
             "NO_REPLAY_FILES": "未选择回放文件。",
             "INVALID_REPLAY_FILE_TYPE": "仅支持分析 .wotbreplay 文件。",
             "FILE_TOO_LARGE": "回放文件超过大小限制。",
-            "REPLAY_FILE_COUNT_EXCEEDED": "一次最多上传 16 个回放文件。",
+            "REPLAY_FILE_COUNT_EXCEEDED": "一次最多上传 {max} 个回放文件。",
             "TOTAL_REQUEST_TOO_LARGE": "上传文件总大小超过限制。"
         },
         "event_types": {

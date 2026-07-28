@@ -431,6 +431,101 @@ class TeamAiPromptBuilderTest {
         }
     }
 
+    @Test
+    void multiCrossPerspectiveStarvation() {
+        final SingleTeamBattleAnalysisContext base = contextWithMembers(1, 1);
+        final List<TeamFormationPhase> hugeFormations = IntStream.range(0, 500)
+                .mapToObj(i -> new TeamFormationPhase(
+                        (float) i, (float) i + 1.0f,
+                        new CanonicalMapPosition(250f, 250f), 0f, 1,
+                        DecodeConfidence.EXACT, List.of()))
+                .toList();
+        final TeamBattleFeatureSet featuresA = new TeamBattleFeatureSet(
+                1, base.features().members(),
+                base.features().authoritativeAggregate(),
+                base.features().observedAggregate(),
+                hugeFormations, List.of(), List.of(), List.of(),
+                base.features().coverage(), List.of(), true);
+        final TeamBattleFeatureSet featuresB = new TeamBattleFeatureSet(
+                2, base.features().members(),
+                base.features().authoritativeAggregate(),
+                base.features().observedAggregate(),
+                List.of(), List.of(), List.of(), List.of(),
+                base.features().coverage(), List.of(), true);
+        final List<TeamBattleAnalysisSummary> summaries = List.of(
+                new TeamBattleAnalysisSummary(
+                        "unit-A", null, "a.wotbreplay", "map1", null, 300.0,
+                        1, List.of(10001L), featuresA, "TeamA"),
+                new TeamBattleAnalysisSummary(
+                        "unit-B", null, "b.wotbreplay", "map1", null, 300.0,
+                        2, List.of(20001L), featuresB, "TeamB"));
+        final var multi = new MultiTeamBattleAnalysisContext(
+                2, 1, summaries, false, List.of());
+        final var input = TeamAiPromptBuilder.multi(multi);
+        assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+        assertTrue(input.content().contains("analysisUnitId=\"unit-A\""),
+                "A's required header must exist");
+        assertTrue(input.content().contains("analysisUnitId=\"unit-B\""),
+                "B's required header must exist");
+        assertEquals(2, occurrences(input.content(), "=== AUTHORITATIVE_TEAM_RESULT ==="),
+                "Both perspectives must have AUTHORITATIVE_TEAM_RESULT");
+        assertEquals(2, occurrences(input.content(), "=== TEAM_MEMBERS ==="),
+                "Both perspectives must have TEAM_MEMBERS");
+    }
+
+    @Test
+    void multiThreePerspectivesFactsSurvive() {
+        final SingleTeamBattleAnalysisContext base = contextWithMembers(1, 1);
+        final List<TeamFormationPhase> hugeFormations = IntStream.range(0, 500)
+                .mapToObj(i -> new TeamFormationPhase(
+                        (float) i, (float) i + 1.0f,
+                        new CanonicalMapPosition(250f, 250f), 0f, 1,
+                        DecodeConfidence.EXACT, List.of()))
+                .toList();
+        final TeamBattleFeatureSet featuresA = new TeamBattleFeatureSet(
+                1, base.features().members(),
+                base.features().authoritativeAggregate(),
+                base.features().observedAggregate(),
+                hugeFormations, List.of(), List.of(), List.of(),
+                base.features().coverage(), List.of(), true);
+        final TeamBattleFeatureSet featuresB = new TeamBattleFeatureSet(
+                2, base.features().members(),
+                base.features().authoritativeAggregate(),
+                base.features().observedAggregate(),
+                List.of(), List.of(), List.of(), List.of(),
+                base.features().coverage(), List.of(), true);
+        final TeamBattleFeatureSet featuresC = new TeamBattleFeatureSet(
+                2, base.features().members(),
+                base.features().authoritativeAggregate(),
+                base.features().observedAggregate(),
+                List.of(), List.of(), List.of(), List.of(),
+                base.features().coverage(), List.of(), true);
+        final List<TeamBattleAnalysisSummary> summaries = List.of(
+                new TeamBattleAnalysisSummary(
+                        "unit-A", null, "a.wotbreplay", "map1", null, 300.0,
+                        1, List.of(10001L), featuresA, "TeamA"),
+                new TeamBattleAnalysisSummary(
+                        "unit-B", null, "b.wotbreplay", "map1", null, 300.0,
+                        2, List.of(20001L), featuresB, "TeamB"),
+                new TeamBattleAnalysisSummary(
+                        "unit-C", null, "c.wotbreplay", "map1", null, 300.0,
+                        2, List.of(30001L), featuresC, "TeamC"));
+        final var multi = new MultiTeamBattleAnalysisContext(
+                3, 1, summaries, false, List.of());
+        final var input = TeamAiPromptBuilder.multi(multi);
+        assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+        assertTrue(input.content().contains("analysisUnitId=\"unit-A\""),
+                "A's required header must exist");
+        assertTrue(input.content().contains("analysisUnitId=\"unit-B\""),
+                "B's required header must exist");
+        assertTrue(input.content().contains("analysisUnitId=\"unit-C\""),
+                "C's required header must exist");
+        assertEquals(3, occurrences(input.content(), "=== AUTHORITATIVE_TEAM_RESULT ==="),
+                "All three perspectives must have AUTHORITATIVE_TEAM_RESULT");
+        assertEquals(3, occurrences(input.content(), "=== TEAM_MEMBERS ==="),
+                "All three perspectives must have TEAM_MEMBERS");
+    }
+
     private static SingleTeamBattleAnalysisContext contextWithMembers(
             final int memberCount,
             final int nicknameLength

@@ -26,6 +26,7 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.AiReplayBatchPolicy;
+import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.dto.ReconstructSummary;
@@ -43,7 +44,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -63,14 +63,17 @@ public class ReconstructionController {
     private final DefaultReplayProcessingFacade processingFacade;
     private final ReplayReconstructionService reconstructionService;
     private final AiReplayAnalysisService aiService;
+    private final AiReplayReviewService reviewService;
 
     public ReconstructionController(
             final DefaultReplayProcessingFacade processingFacade,
             final ReplayReconstructionService reconstructionService,
-            final AiReplayAnalysisService aiService) {
+            final AiReplayAnalysisService aiService,
+            final AiReplayReviewService reviewService) {
         this.processingFacade = processingFacade;
         this.reconstructionService = reconstructionService;
         this.aiService = aiService;
+        this.reviewService = reviewService;
     }
 
     /**
@@ -134,7 +137,7 @@ public class ReconstructionController {
     public AnalyzeResponse analyze(
             @RequestParam("files") final MultipartFile[] files) throws IOException {
 
-        aiService.validateReviewBatchSize(files.length);
+        reviewService.validateBatchSize(files.length);
         validateBatch(files);
         final var uploadResults = processFilesWithIndex(files);
         final var allResults = uploadResults.stream()
@@ -266,10 +269,9 @@ public class ReconstructionController {
             final ReplayFileCountExceededException e
     ) {
         final Map<String, Object> body = new LinkedHashMap<>();
-        body.put("error", "REPLAY_FILE_COUNT_EXCEEDED");
+        body.put("code", "REPLAY_FILE_COUNT_EXCEEDED");
         body.put("maxFiles", e.getMaxFiles());
         body.put("actualFiles", e.getActualFiles());
-        body.put("timestamp", Instant.now().toString());
         return ResponseEntity.badRequest().body(body);
     }
 

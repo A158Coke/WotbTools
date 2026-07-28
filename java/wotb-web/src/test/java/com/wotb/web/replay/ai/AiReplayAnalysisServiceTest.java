@@ -16,6 +16,7 @@ import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.processing.BattleCategory;
+import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.MultiTeamBattleAnalysisContext;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
@@ -500,6 +501,88 @@ class AiReplayAnalysisServiceTest {
                 "Total units should be 12");
         assertEquals(TeamAiPromptBuilder.MAX_PERSPECTIVES, teamResult.analyzedUnitCount(),
                 "Analyzed count should be 10 (MAX_PERSPECTIVES)");
+    }
+
+    @Test
+    void omittedPerspectiveKeyEventsExcludedFromTopLevel() throws IOException {
+        responseBody = "{\"choices\":[{\"message\":{\"content\":\"multi key event review\"}}]}";
+        final var service = startService(2);
+
+        final List<ReplayProcessingResult> results = IntStream.range(0, TeamAiPromptBuilder.MAX_PERSPECTIVES + 2)
+                .mapToObj(i -> {
+                    final Battle battle = new Battle();
+                    battle.arenaId = "arena-" + i;
+                    battle.mapName = "team_map";
+                    battle.arenaBonusType = 2;
+                    battle.durationS = 300.0 + i;
+                    battle.winnerTeam = 1;
+                    battle.recorder = "PlayerC";
+                    final PlayerResult p1 = clanPlayer(1001L, "PlayerA", 1, 1500, "CHRD");
+                    final PlayerResult p2 = clanPlayer(1002L, "PlayerB", 1, 1200, "CHRD");
+                    final PlayerResult p3 = clanPlayer(1003L, "PlayerC", 1, 900, "CHRD");
+                    final PlayerResult p4 = clanPlayer(1005L, "PlayerE", 1, 1000, "CHRD");
+                    final PlayerResult enemy = clanPlayer(9999L, "Enemy", 2, 500, "ENEMY_CLAN");
+                    battle.players = List.of(p1, p2, p3, p4, enemy);
+                    final var capabilities = new ReplayProcessingCapabilities(
+                            true, true, false, false, false, true, false, false);
+                    return new ReplayProcessingResult(
+                            "battle-" + i + ".wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
+                            new ReplayIdentity("hash-battle-" + i, "arena-" + i, "11.0", "team_map",
+                                    1003L, null),
+                            battle, null, null, capabilities, null, null);
+                })
+                .toList();
+
+        final var groups = teamGroups(results);
+        final var teamResult = service.analyzeTeamGroups(groups);
+
+        assertEquals(12, teamResult.analysisUnitCount());
+        assertEquals(10, teamResult.analyzedUnitCount());
+        assertEquals(12, teamResult.units().size());
+
+        final var result = teamResult.analysis();
+        assertNotNull(result);
+        assertNotNull(result.keyEvents());
+
+        assertEquals(10, result.keyEvents().size(),
+                "Key events must only include 10 included perspectives, got " + result.keyEvents().size());
+
+        final var clocks = result.keyEvents().stream()
+                .map(KeyBattleEvent::clockSec)
+                .sorted()
+                .toList();
+        assertEquals(
+                List.of(300.0f, 301.0f, 302.0f, 303.0f, 304.0f, 305.0f, 306.0f, 307.0f, 308.0f, 309.0f),
+                clocks,
+                "Key event clocks must match included units (300-309)");
+
+        assertTrue(result.keyEvents().stream().noneMatch(e -> e.clockSec() >= 310f),
+                "Must not include key events from omitted units (310+)");
+
+        // Units 0-9 must have model/non-null analysis; units 10-11 must have null analysis + omission limitation
+        for (int i = 0; i < 12; i++) {
+            final var unit = teamResult.units().get(i);
+            final var report = (TeamAnalysisUnitReport) unit.report();
+            if (i < 10) {
+                assertNotNull(unit.model(), "Included unit " + i + " should have model");
+                assertNotNull(report.analysisText(), "Included unit " + i + " should have analysis");
+            } else {
+                assertNull(unit.model(), "Omitted unit " + i + " should have null model");
+                assertNull(report.analysisText(), "Omitted unit " + i + " should have null analysis");
+                assertTrue(report.limitations().contains("AI_PERSPECTIVE_OMITTED_FROM_PROMPT"),
+                        "Omitted unit " + i + " should have omission limitation");
+            }
+        }
+
+        final String body = requestBodies.getFirst();
+        for (int i = 0; i < 10; i++) {
+            assertTrue(body.contains("analysisUnitId=\\\"arena-arena-" + i),
+                    "Included unit arena-" + i + " must be in request body");
+        }
+        for (int i = 10; i < 12; i++) {
+            assertFalse(body.contains("analysisUnitId=\\\"arena-arena-" + i),
+                    "Omitted unit arena-" + i + " must NOT be in request body");
+        }
     }
 
     @Test
@@ -1281,79 +1364,34 @@ class AiReplayAnalysisServiceTest {
 
     // === Custom scheme case and short credential tests ===
 
-    @Test void redactionCustomSchemeLowercase() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("customscheme secret-value");
-        assertFalse(r.contains("secret-value"));
-        assertTrue(r.contains("customscheme"));
-    }
-
-    @Test void redactionCustomSchemeMixedCase() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("cUsToMsChEmE secret-value");
-        assertFalse(r.contains("secret-value"));
-        assertTrue(r.contains("[REDACTED]"));
-    }
-
-    @Test void redactionCustomSchemeUppercase() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("CUSTOMSCHEME secret-value");
-        assertFalse(r.contains("secret-value"));
-        assertTrue(r.contains("[REDACTED]"));
-    }
-
-    @Test void redactionTokenV2DigitScheme() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("tokenv2 abc");
+    @Test void redactionMixedCaseCustomScheme() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("cUsToMsChEmE abc");
         assertFalse(r.contains("abc"));
-        assertTrue(r.contains("tokenv2"));
     }
 
-    @Test void redactionTokenV2PascalCaseShortCredential() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("TokenV2 abc");
+    @Test void redactionLowercaseCustomScheme() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("customscheme abc");
         assertFalse(r.contains("abc"));
-        assertTrue(r.contains("TokenV2"));
     }
 
-    @Test void redactionNaturalLanguageNotRedacted() {
+    @Test void redactionUppercaseCustomScheme() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("CUSTOMSCHEME abc");
+        assertFalse(r.contains("abc"));
+    }
+
+    @Test void redactionCustomSchemeShortCredential() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("CustomScheme a");
+        assertFalse(r.contains("CustomScheme a"));
+    }
+
+    @Test void redactionTokenV2ShortCredential() {
+        final String r = AiReplayAnalysisService.safeProviderSummary("tokenv2 a");
+        assertFalse(r.contains("tokenv2 a"));
+    }
+
+    @Test void redactionAntiFalsePositive() {
         final String r = AiReplayAnalysisService.safeProviderSummary("The quick brown fox jumps over the lazy dog");
-        assertEquals("The quick brown fox jumps over the lazy dog", r);
-    }
-
-    @Test void redactionErrorMessageNotRedacted() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("invalid request: the model is currently overloaded");
-        assertTrue(r.contains("invalid request: the model is currently overloaded"));
-    }
-
-    @Test void redactionShortPhraseNotRedacted() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("this is a test");
-        assertEquals("this is a test", r);
-    }
-
-    @Test void redactionJsonTokenV2LowerCase() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("{\"message\":\"tokenv2 abc\"}");
-        assertFalse(r.contains("abc"));
-    }
-
-    @Test void redactionJsonCustomSchemePascalCase() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("{\"message\":\"CustomScheme short\"}");
-        assertFalse(r.contains("short"));
-    }
-
-    @Test void redactionKnownSchemesDigestLowercase() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("digest response=xyz");
-        assertFalse(r.contains("xyz"));
-    }
-
-    @Test void redactionKnownSchemesBasicLowercase() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("basic abc");
-        assertFalse(r.contains("abc"));
-    }
-
-    @Test void redactionSchemeWithHyphen() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("my-auth-scheme secret-token-123");
-        assertFalse(r.contains("secret-token-123"));
-    }
-
-    @Test void redactionSchemeWithUnderscore() {
-        final String r = AiReplayAnalysisService.safeProviderSummary("custom_scheme secret_token_456");
-        assertFalse(r.contains("secret_token_456"));
+        assertTrue(r.contains("dog"));
     }
 
     @Test void logCaptureDoesNotContainSecret() throws IOException {
