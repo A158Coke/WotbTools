@@ -327,6 +327,7 @@ jobs:
                   AI_API_KEY: ${{ secrets.AI_API_KEY }}
                   AI_BASE_URL: "${{ vars.AI_BASE_URL || 'https://api.deepseek.com' }}"
                   AI_MODEL: "${{ vars.AI_MODEL || 'deepseek-v4-flash' }}"
+                  AI_SINGLE_PLAYER_MAX_INPUT_CHARS: "${{ vars.AI_SINGLE_PLAYER_MAX_INPUT_CHARS || '100000' }}"
                   REPLAY_COORDINATE_HALF_EXTENT: "${{ vars.REPLAY_COORDINATE_HALF_EXTENT || '250' }}"
                   REPLAY_COORDINATE_CLAMP_TOLERANCE: "${{ vars.REPLAY_COORDINATE_CLAMP_TOLERANCE || '12.5' }}"
                 restart: unless-stopped
