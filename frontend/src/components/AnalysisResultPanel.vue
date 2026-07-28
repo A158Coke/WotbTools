@@ -10,6 +10,7 @@ import AnalysisKeyEvents from './AnalysisKeyEvents.vue'
 import AnalysisLimitations from './AnalysisLimitations.vue'
 import AnalysisSummary from './AnalysisSummary.vue'
 import AnalysisUnitList from './AnalysisUnitList.vue'
+import MarkdownContent from './MarkdownContent.vue'
 
 const props = defineProps({
   result: {
@@ -38,7 +39,7 @@ const reportLimitations = computed(() => analysisLimitations(props.result))
       :multi-analysis="isMultiAnalysis"
       :teams="analysisTeams"
     />
-    <p class="analysis-text">{{ result.analysis }}</p>
+    <MarkdownContent class="analysis-text" :content="result.analysis" />
 
     <AnalysisUnitList
       v-if="result.analyses?.length"
