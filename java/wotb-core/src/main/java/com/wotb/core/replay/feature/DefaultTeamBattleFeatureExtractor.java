@@ -148,16 +148,20 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .mapToObj(value -> (float) value)
                 .findFirst()
                 .orElse(-1f);
-        final BattleEndEvidence battleEnd = findBattleEndEvidence(events, battle, resolutionByEvent);
-        final float phaseEndClock = battleEnd.clockSec() != null
-                ? battleEnd.clockSec() : lastObservedClock(acceptedEvents, resolutionByEvent);
+        final Float eventEnd = findEventEnd(events, resolutionByEvent);
+        final Float scopeLocalEnd = lastObservedClock(acceptedEvents, resolutionByEvent);
+        final BattleEndResolver.BattleEndResult battleEndResolved = BattleEndResolver.resolve(
+                battle, eventEnd, scopeLocalEnd);
+        final float phaseEndClock = battleEndResolved.battleEndRelativeSec() != null
+                ? battleEndResolved.battleEndRelativeSec() : Float.NaN;
         final List<BattlePhaseSummary> battlePhases = hasUsableTimedEvent
                 ? BattlePhaseSummary.buildRelativePhases(
                         firstContactTime, phaseEndClock)
                 : List.of();
+        final DecodeConfidence eventEndConfidence = findEventEndConfidence(events, resolutionByEvent);
         final List<KeyBattleEvent> keyEvents = buildKeyEvents(
                 battle, authoritativeMembers, entityMapping, timedDamages,
-                formationPhases, perspectiveTeam, battleEnd);
+                formationPhases, perspectiveTeam, battleEndResolved, eventEndConfidence);
 
         final int mappedMembers = entityMapping.mappedMembers(perspectiveTeam);
         // observed = positions that actually feed movement/formation analysis
@@ -232,6 +236,9 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             limitations.add("REPLAY_STREAM_PARTIAL");
         }
         limitations.addAll(timeLimitations);
+        if (battleEndResolved.limitation() != null) {
+            limitations.add(battleEndResolved.limitation());
+        }
 
         final boolean hasFeatures =
                 (authoritativeAggregate != null && !members.isEmpty())
@@ -919,7 +926,8 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
             final List<TimedTeamDamage> timedDamages,
             final List<TeamFormationPhase> formationPhases,
             final int perspectiveTeam,
-            final BattleEndEvidence battleEnd
+            final BattleEndResolver.BattleEndResult battleEndResolved,
+            final DecodeConfidence eventEndConfidence
     ) {
         final Stream<KeyBattleEvent> deathEvents = members.stream()
                 .filter(member -> !member.survived)
@@ -958,13 +966,18 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                         "DERIVED_POSITION",
                         List.of()))
                 .stream();
-        final Stream<KeyBattleEvent> battleEndEvent = battleEnd.clockSec() != null
+        final DecodeConfidence endConfidence = switch (battleEndResolved.source()) {
+            case BATTLE_RESULTS -> DecodeConfidence.EXACT;
+            case REPLAY_EVENT -> eventEndConfidence != null ? eventEndConfidence : DecodeConfidence.UNKNOWN;
+            default -> null;
+        };
+        final Stream<KeyBattleEvent> battleEndEvent = battleEndResolved.resolved() && endConfidence != null
                 ? Stream.of(new KeyBattleEvent(
-                        battleEnd.clockSec(),
+                        battleEndResolved.battleEndRelativeSec(),
                         "BATTLE_END",
                         buildResultLabel(battle, perspectiveTeam),
-                        battleEnd.confidence(),
-                        battleEnd.source(),
+                        endConfidence,
+                        battleEndResolved.source().name(),
                         List.of()))
                 : Stream.empty();
         return Stream.of(deathEvents, firstContact, formationSplit, battleEndEvent)
@@ -975,28 +988,29 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .toList();
     }
 
+
+
     /**
-     * Resolve battle-end evidence as a battle-relative clock.
-     * <p>
-     * {@code battle.durationS} is already a battle-relative duration and is used directly
-     * (never re-subtracting battle start). A replay {@link BattleEndedEvent} carries a raw
-     * replay clock and is converted to battle-relative via {@code battleStartRes}. Conversions
-     * that are non-finite or negative are rejected (evidence falls back to unknown), so raw
-     * replay absolute clocks never leak into phases or key events.
+     * Battle-relative fallback clock: the latest observed raw event clock converted through
+     * {@code battleStartRes}. Never mixes raw replay clock with battle-relative duration.
      */
-    private static BattleEndEvidence findBattleEndEvidence(
+    private static Float lastObservedClock(
             final List<ReplayEvent> events,
-            final Battle battle,
             final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent
     ) {
-        if (battle != null && battle.durationS != null
-                && Double.isFinite(battle.durationS)
-                && battle.durationS > 0.0) {
-            return new BattleEndEvidence(
-                    battle.durationS.floatValue(),
-                    DecodeConfidence.EXACT,
-                    "BATTLE_RESULTS");
-        }
+        return events.stream()
+                .map(resolutionByEvent::get)
+                .filter(Objects::nonNull)
+                .filter(TacticalTimeResolution::isUsable)
+                .map(TacticalTimeResolution::battleRelativeSec)
+                .max(Float::compare)
+                .orElse(null);
+    }
+
+    private static Float findEventEnd(
+            final List<ReplayEvent> events,
+            final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent
+    ) {
         return events.stream()
                 .filter(BattleEndedEvent.class::isInstance)
                 .map(BattleEndedEvent.class::cast)
@@ -1004,32 +1018,26 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                     final TacticalTimeResolution res = resolutionByEvent.get(event);
                     return res != null && res.isUsable();
                 })
-                .map(event -> new BattleEndEvidence(
-                        resolutionByEvent.get(event).battleRelativeSec(),
-                        event.confidence() == null
-                                ? DecodeConfidence.UNKNOWN : event.confidence(),
-                        "REPLAY_EVENT"))
-                .filter(evidence -> Float.isFinite(evidence.clockSec())
-                        && evidence.clockSec() >= 0f)
+                .map(event -> resolutionByEvent.get(event).battleRelativeSec())
+                .filter(clock -> Float.isFinite(clock) && clock >= 0f)
                 .findFirst()
-                .orElse(BattleEndEvidence.unknown());
+                .orElse(null);
     }
 
-    /**
-     * Battle-relative fallback clock: the latest observed raw event clock converted through
-     * {@code battleStartRes}. Never mixes raw replay clock with battle-relative duration.
-     */
-    private static float lastObservedClock(
+    private static DecodeConfidence findEventEndConfidence(
             final List<ReplayEvent> events,
             final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent
     ) {
-        return (float) events.stream()
-                .map(resolutionByEvent::get)
-                .filter(Objects::nonNull)
-                .filter(TacticalTimeResolution::isUsable)
-                .mapToDouble(res -> (double) res.battleRelativeSec())
-                .max()
-                .orElse(0.0);
+        return events.stream()
+                .filter(BattleEndedEvent.class::isInstance)
+                .map(BattleEndedEvent.class::cast)
+                .filter(event -> {
+                    final TacticalTimeResolution res = resolutionByEvent.get(event);
+                    return res != null && res.isUsable();
+                })
+                .findFirst()
+                .map(event -> event.confidence() != null ? event.confidence() : DecodeConfidence.UNKNOWN)
+                .orElse(DecodeConfidence.UNKNOWN);
     }
 
     private static boolean involvesTeam(
@@ -1079,16 +1087,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     ) {
     }
 
-    private record BattleEndEvidence(
-            Float clockSec,
-            DecodeConfidence confidence,
-            String source
-    ) {
 
-        private static BattleEndEvidence unknown() {
-            return new BattleEndEvidence(null, DecodeConfidence.UNKNOWN, "UNKNOWN");
-        }
-    }
 
     record ResolvedEvent(ReplayEvent event, TacticalTimeResolution resolution) {}
 

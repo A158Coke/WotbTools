@@ -40,6 +40,7 @@ defineProps({
 
 defineEmits([
   'add-file',
+  'remove-file',
   'clear',
   'reconstruct',
   'state-at',
@@ -60,6 +61,7 @@ defineEmits([
     <ReplayFilePicker
       :files="files"
       @add-file="$emit('add-file', $event)"
+      @remove-file="$emit('remove-file', $event)"
       @clear="$emit('clear')"
     />
 

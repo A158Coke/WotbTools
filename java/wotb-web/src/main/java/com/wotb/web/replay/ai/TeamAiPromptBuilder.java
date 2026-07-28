@@ -26,6 +26,7 @@ import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.reconstruction.Vector3;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -63,7 +64,8 @@ final class TeamAiPromptBuilder {
         appendContextHeader(writer, context);
         writer.appendRequired("unitLimitations=" + limitations + "\n");
         appendFeatureSet(writer, context.features());
-        return writer.finish(limitations);
+        return writer.finish(limitations, Set.of(context.analysisUnitId()), Set.of(),
+                Map.of(context.analysisUnitId(), List.copyOf(limitations)));
     }
 
     private static Set<String> collectLimitations(
@@ -147,7 +149,7 @@ final class TeamAiPromptBuilder {
             includedCount--;
         }
         if (includedCount == 0 && perspectiveLimit > 0) {
-            throw new AiUpstreamException("AI_PROMPT_TOO_LARGE", null, null);
+            throw new IllegalStateException("MANDATORY_SECTION_EXCEEDS_BUDGET");
         }
         // Phase 2: write with budget reservation for future required blocks
         final BudgetWriter writer = new BudgetWriter(MAX_INPUT_CHARS);
@@ -169,28 +171,39 @@ final class TeamAiPromptBuilder {
             allLimitations.addAll(perPerspectiveLimitations.get(index));
             appendFeatureSet(writer, perspectives.get(index).features());
         }
-        return writer.finish(allLimitations);
+        final Set<String> includedIds = new LinkedHashSet<>();
+        final Set<String> omittedIds = new LinkedHashSet<>();
+        final Map<String, List<String>> perUnitLimMap = new LinkedHashMap<>();
+        for (int i = 0; i < includedCount; i++) {
+            final String id = perspectives.get(i).analysisUnitId();
+            includedIds.add(id);
+            perUnitLimMap.put(id, List.copyOf(perPerspectiveLimitations.get(i)));
+        }
+        for (int i = includedCount; i < perspectives.size(); i++) {
+            omittedIds.add(perspectives.get(i).analysisUnitId());
+        }
+        return writer.finish(allLimitations, includedIds, omittedIds, perUnitLimMap);
     }
 
     private static void appendContextHeader(
             final BudgetWriter writer,
             final SingleTeamBattleAnalysisContext context
     ) {
-        writer.append("=== SINGLE_TEAM_CONTEXT ===\n");
-        writer.append("analysisUnitId=" + quoteData(context.analysisUnitId()) + "\n");
-        writer.append("file=" + quoteData(context.fileName()) + "\n");
-        writer.append("battleIdentity=" + quoteData(context.battleId()) + "\n");
-        writer.append("category=" + context.battleCategory() + "\n");
+        writer.appendRequired("=== SINGLE_TEAM_CONTEXT ===\n");
+        writer.appendRequired("analysisUnitId=" + quoteData(context.analysisUnitId()) + "\n");
+        writer.appendRequired("file=" + quoteData(context.fileName()) + "\n");
+        writer.appendRequired("battleIdentity=" + quoteData(context.battleId()) + "\n");
+        writer.appendRequired("category=" + context.battleCategory() + "\n");
         if (context.battle() != null) {
             final String teamLabel = resolvePerspectiveLabel(
                     context.battle().players, context.perspectiveTeam());
-            writer.append("teamLabel=" + quoteData(teamLabel) + "\n");
-            writer.append("map=" + quoteData(resolveMapName(context.battle().mapName)) + "\n");
-            writer.append("durationSec=" + formatNullable(
+            writer.appendRequired("teamLabel=" + quoteData(teamLabel) + "\n");
+            writer.appendRequired("map=" + quoteData(resolveMapName(context.battle().mapName)) + "\n");
+            writer.appendRequired("durationSec=" + formatNullable(
                     context.battle().durationS) + "\n");
             final String result = resolveTeamResult(
                     context.battle().winnerTeam, context.perspectiveTeam());
-            writer.append("result=" + result + "\n");
+            writer.appendRequired("result=" + result + "\n");
         }
     }
 
@@ -202,14 +215,17 @@ final class TeamAiPromptBuilder {
             writer.append("features=UNAVAILABLE\n");
             return;
         }
+        // P2: High-priority facts
         appendAuthoritative(writer, features.authoritativeAggregate());
         appendObserved(writer, features.observedAggregate());
-        appendMembers(writer, features.members());
+        appendMemberFacts(writer, features.members());
+        writer.append("coverage=" + features.coverage() + "\n");
+        // P3: Optional/truncatable
+        appendMemberMovements(writer, features.members());
         appendFormation(writer, features.formationPhases());
         appendBattlePhases(writer, features.battlePhases());
         appendEngagements(writer, features.engagements());
         appendKeyEvents(writer, features.keyEvents());
-        writer.append("coverage=" + features.coverage() + "\n");
     }
 
     private static void appendAuthoritative(
@@ -254,7 +270,7 @@ final class TeamAiPromptBuilder {
                 + aggregate.unattributedDamageEventCount() + "\n");
     }
 
-    private static void appendMembers(
+    private static void appendMemberFacts(
             final BudgetWriter writer,
             final List<TeamMemberFeatureSet> members
     ) {
@@ -278,6 +294,29 @@ final class TeamAiPromptBuilder {
                     + " survived=" + member.survived()
                     + " deathTimeSec=" + formatScalar(member.deathTimeSec())
                     + "\n");
+            if (!member.limitations().isEmpty()) {
+                writer.append("  memberLimitations=" + member.limitations() + "\n");
+            }
+        }
+    }
+
+    private static void appendMemberMovements(
+            final BudgetWriter writer,
+            final List<TeamMemberFeatureSet> members
+    ) {
+        final int memberLimit = Math.min(members.size(), MAX_MEMBERS);
+        boolean hasMovements = false;
+        for (int index = 0; index < memberLimit; index++) {
+            if (!members.get(index).movements().isEmpty()) {
+                hasMovements = true;
+                break;
+            }
+        }
+        if (!hasMovements) return;
+        writer.append("\n=== MEMBER_MOVEMENTS ===\n");
+        for (int index = 0; index < memberLimit; index++) {
+            final TeamMemberFeatureSet member = members.get(index);
+            if (member.movements().isEmpty()) continue;
             final int movementLimit = Math.min(
                     member.movements().size(), MAX_MOVEMENTS_PER_MEMBER);
             if (member.movements().size() > movementLimit) {
@@ -296,9 +335,6 @@ final class TeamAiPromptBuilder {
                         + " end=" + endInfo
                         + " confidence=" + movement.confidence()
                         + "\n");
-            }
-            if (!member.limitations().isEmpty()) {
-                writer.append("  memberLimitations=" + member.limitations() + "\n");
             }
         }
     }
@@ -510,9 +546,18 @@ final class TeamAiPromptBuilder {
         return "未知坦克";
     }
 
-    record PromptInput(String content, List<String> limitations) {
+    record PromptInput(
+        String content,
+        Set<String> includedUnitIds,
+        Set<String> omittedUnitIds,
+        Map<String, List<String>> perUnitLimitations,
+        List<String> limitations
+    ) {
 
         PromptInput {
+            includedUnitIds = includedUnitIds == null ? Set.of() : Set.copyOf(includedUnitIds);
+            omittedUnitIds = omittedUnitIds == null ? Set.of() : Set.copyOf(omittedUnitIds);
+            perUnitLimitations = perUnitLimitations == null ? Map.of() : Map.copyOf(perUnitLimitations);
             limitations = limitations == null ? List.of() : List.copyOf(limitations);
         }
     }
@@ -560,7 +605,7 @@ final class TeamAiPromptBuilder {
             final int truncationReserve = TRUNCATION_LINE.length();
             final int remaining = maxChars - truncationReserve - reserved - content.length();
             if (remaining <= 0 || value.length() > remaining) {
-                throw new AiUpstreamException("AI_PROMPT_TOO_LARGE", null, null);
+                throw new IllegalStateException("MANDATORY_SECTION_EXCEEDS_BUDGET");
             }
             content.append(value);
         }
@@ -569,13 +614,13 @@ final class TeamAiPromptBuilder {
             truncated = true;
         }
 
-        private PromptInput finish(final Set<String> suppliedLimitations) {
+        private PromptInput finish(final Set<String> suppliedLimitations, final Set<String> includedIds, final Set<String> omittedIds, final Map<String, List<String>> perUnitLimitations) {
             final Set<String> limitations = new LinkedHashSet<>(suppliedLimitations);
             if (truncated) {
                 limitations.add("AI_INPUT_TRUNCATED");
                 content.append(TRUNCATION_LINE);
             }
-            return new PromptInput(content.toString(), new ArrayList<>(limitations));
+            return new PromptInput(content.toString(), includedIds, omittedIds, perUnitLimitations, new ArrayList<>(limitations));
         }
     }
 }

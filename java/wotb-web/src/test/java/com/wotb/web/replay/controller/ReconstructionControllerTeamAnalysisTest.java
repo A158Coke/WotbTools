@@ -19,10 +19,12 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.AiUpstreamException;
+import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -31,6 +33,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -67,9 +70,15 @@ class ReconstructionControllerTeamAnalysisTest {
         for (final var f : files) {
             request = request.file(f);
         }
+        doThrow(new ReplayFileCountExceededException(16, 17))
+                .when(aiService).validateReviewBatchSize(17);
+
         mvc.perform(request)
                 .andExpect(status().isBadRequest())
-                .andExpect(content().string("REPLAY_FILE_COUNT_EXCEEDED"));
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.error").value("REPLAY_FILE_COUNT_EXCEEDED"))
+                .andExpect(jsonPath("$.maxFiles").value(16))
+                .andExpect(jsonPath("$.actualFiles").value(17));
     }
 
     @Test
@@ -191,6 +200,26 @@ class ReconstructionControllerTeamAnalysisTest {
                         .value(false))
                 .andExpect(jsonPath("$.files[0].capabilities.perspectiveTeamResolved")
                         .value(true));
+    }
+
+    @Test
+    void teamAnalyzedUnitCountMatchesIncluded() throws Exception {
+        final ReplayProcessingResult result = teamResult(
+                "training.wotbreplay", "arena-one", "Ally", 1001L, 1);
+        when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
+                .thenReturn(result);
+        when(aiService.analyzeTeamGroups(any()))
+                .thenReturn(new AiReplayAnalysisService.TeamAnalyzeResult(
+                        new AiReplayAnalysisService.AnalyzeResult(
+                                "team review", "test-model", List.of()),
+                        List.of(unit("arena-one-team-1", "arena-one", 1, "training.wotbreplay")),
+                        1, 1));
+
+        mvc.perform(multipart("/api/replay/analyze")
+                        .file(replayFile("training.wotbreplay")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.analysisUnitCount").value(1))
+                .andExpect(jsonPath("$.analyzedUnitCount").value(1));
     }
 
     @Test
@@ -353,7 +382,9 @@ class ReconstructionControllerTeamAnalysisTest {
         return new AiReplayAnalysisService.TeamAnalyzeResult(
                 new AiReplayAnalysisService.AnalyzeResult(
                         analysis, "test-model", List.of()),
-                units);
+                units,
+                units.size(),
+                units.size());
     }
 
     private static AnalysisUnitResult unit(
