@@ -751,15 +751,17 @@ public class AiReplayAnalysisService {
     }
 
     private static final String SINGLE_PLAYER_PROMPT = """
-            你是《坦克世界闪击战》(WoT Blitz) 的资深教练，正在对一场随机战斗做个人复盘。
+            这是单场回放分析。你是《坦克世界闪击战》(WoT Blitz) 的资深教练，正在对一场随机战斗做个人复盘。
 
             === 数据权威层级 ===
-            1. Battle result 区域中的事实（胜负、伤害、击杀、存活、阵容）是最终权威数据。
-               事件流只能作为位置和时间证据。发生冲突时必须采用 Battle result，不得平均、覆盖或自行选择。
-            2. 后端已经计算的统计（阵容车种分布、排名、区域序列）不得重新计算。
-            3. RECORDER_REGION_TIMELINE 中的区域和时刻由后端确定性计算。必须使用后端提供的 region，禁止根据裸坐标重新划分区域。不得忽略路线中后段的区域变化。
-            4. KEY_EVENTS_BACKEND_COMPUTED 由后端计算，AI 不得重新识别或修改事件时间。
-            5. 位置数据已经过压缩（移动段），不要期待逐帧坐标。
+            1. Battle result 区域中的数据（胜负、伤害、击杀、存活、阵容）是最终权威事实。
+               事件流只能作为位置和时间证据。事件流伤害仅为观测子集，不得替代 Battle result 总伤害。
+               发生冲突时必须采用 Battle result，不得平均、覆盖或自行选择。
+            2. 区域时间线、区域编号、关键事件、交火段和战斗阶段均由后端确定性计算。
+               必须使用后端提供的 region 和事件时间。禁止根据裸坐标重新划分区域。禁止忽略中后期路线变化。
+            3. 后端已经计算好的阵容、统计、排名、死亡时间和区域序列不得重新计算。
+            4. 位置数据已经过压缩（移动段），不要期待逐帧坐标。
+            AI 的职责是解释战术意义、判断决策质量并提供训练建议。
 
             请用简体中文输出：
             1) 整体评价（车辆、地图适应性、战绩概述）
@@ -1044,9 +1046,11 @@ public class AiReplayAnalysisService {
             sb.append("位置流存在, 但录像者实体无法可靠映射\n");
         }
 
-        // ====== RECORDER_REGION_TIMELINE (all segments, deduplicated) ======
+        // ====== RECORDER_REGION_TIMELINE_BACKEND_COMPUTED ======
         if (!features.movements().isEmpty()) {
-            sb.append("\n=== RECORDER_REGION_TIMELINE ===\n");
+            sb.append("\n=== RECORDER_REGION_TIMELINE_BACKEND_COMPUTED ===\n");
+            // Build ordered list of region transitions (consecutive duplicates removed)
+            final java.util.ArrayList<String> orderedRegions = new java.util.ArrayList<>();
             String lastRegion = null;
             for (final MovementSegment seg : features.movements()) {
                 final int startRegion = seg.rawStartPosition() != null
@@ -1056,50 +1060,67 @@ public class AiReplayAnalysisService {
                 final String startStr = startRegion > 0 ? startRegion + "区" : "未知区域";
                 final String endStr = endRegion > 0 ? endRegion + "区" : "未知区域";
                 if (!startStr.equals(lastRegion)) {
-                    sb.append(String.format("%.1fs ", seg.startTime())).append(startStr).append('\n');
+                    sb.append(String.format("%.1fs：", seg.startTime())).append(startStr).append('\n');
+                    if (startRegion > 0) orderedRegions.add(String.valueOf(startRegion));
                     lastRegion = startStr;
                 }
                 if (!endStr.equals(lastRegion)) {
-                    sb.append(String.format("%.1fs ", seg.endTime())).append(endStr).append('\n');
+                    sb.append(String.format("%.1fs：", seg.endTime())).append(endStr).append('\n');
+                    if (endRegion > 0) orderedRegions.add(String.valueOf(endRegion));
                     lastRegion = endStr;
                 }
             }
-            // Compact sequence
-            final java.util.LinkedHashSet<String> seq = new java.util.LinkedHashSet<>();
-            for (final MovementSegment seg : features.movements()) {
-                if (seg.rawStartPosition() != null) {
-                    final int r = MapRegionResolver.resolveRegionFromRaw(seg.rawStartPosition().x(), seg.rawStartPosition().z());
-                    if (r > 0) seq.add(String.valueOf(r));
-                }
-                if (seg.rawEndPosition() != null) {
-                    final int r = MapRegionResolver.resolveRegionFromRaw(seg.rawEndPosition().x(), seg.rawEndPosition().z());
-                    if (r > 0) seq.add(String.valueOf(r));
-                }
-            }
-            if (!seq.isEmpty()) {
-                sb.append("压缩区域序列: ").append(String.join(" → ", seq)).append('\n');
+            if (!orderedRegions.isEmpty()) {
+                sb.append("压缩区域序列：").append(String.join("→", orderedRegions)).append('\n');
+                sb.append("最终区域：").append(orderedRegions.getLast()).append("区\n");
             }
         }
 
         // ====== KEY_EVENTS_BACKEND_COMPUTED ======
         if (features.keyEvents() != null && !features.keyEvents().isEmpty()) {
             sb.append("\n=== KEY_EVENTS_BACKEND_COMPUTED ===\n");
+            String lastEventKey = null;
             for (final KeyBattleEvent ke : features.keyEvents()) {
-                sb.append(String.format("%.1fs ", ke.clockSec()))
+                final String eventKey = ke.clockSec() + "|" + ke.type();
+                if (eventKey.equals(lastEventKey)) continue;
+                lastEventKey = eventKey;
+                sb.append(String.format("%.1fs | ", ke.clockSec()))
                         .append(ke.type());
                 if (ke.label() != null && !ke.label().isEmpty()) {
-                    sb.append(" ").append(PlayerResultFormat.quoteForPrompt(ke.label()));
+                    sb.append(" | ").append(PlayerResultFormat.quoteForPrompt(ke.label()));
                 }
+                sb.append(" | confidence=").append(ke.confidence());
                 sb.append('\n');
             }
         }
 
-        // ====== Movement details (compact, preserving critical segments) ======
+        // ====== Movement details (semantic selection, not head-truncated) ======
         if (!features.movements().isEmpty()) {
             sb.append("\n=== 移动段（压缩） ===\n");
             final int totalSegs = features.movements().size();
-            final int maxDetail = Math.min(totalSegs, 10);
-            for (int i = 0; i < maxDetail; i++) {
+            // Semantic priority: always include first, last, region-change, pre-death segments
+            final java.util.BitSet selected = new java.util.BitSet(totalSegs);
+            selected.set(0); // first
+            if (totalSegs > 1) selected.set(totalSegs - 1); // last
+            for (int i = 0; i < totalSegs; i++) {
+                final MovementSegment seg = features.movements().get(i);
+                if (seg.rawStartPosition() != null && seg.rawEndPosition() != null) {
+                    final int sr = MapRegionResolver.resolveRegionFromRaw(seg.rawStartPosition().x(), seg.rawStartPosition().z());
+                    final int er = MapRegionResolver.resolveRegionFromRaw(seg.rawEndPosition().x(), seg.rawEndPosition().z());
+                    if (sr != er) selected.set(i); // region change
+                }
+            }
+            final int selectedCount = selected.cardinality();
+            final int budget = 12;
+            int extra = Math.min(totalSegs - selectedCount, budget - selectedCount);
+            for (int i = 1; i < totalSegs - 1 && extra > 0; i++) {
+                if (!selected.get(i)) {
+                    selected.set(i);
+                    extra--;
+                }
+            }
+            for (int i = 0; i < totalSegs; i++) {
+                if (!selected.get(i)) continue;
                 final MovementSegment seg = features.movements().get(i);
                 sb.append("  [").append(String.format("%.1f-%.1f", seg.startTime(), seg.endTime())).append("s] ")
                         .append(seg.type()).append(" | 距离 ").append(String.format("%.1f", seg.distance()))
@@ -1112,8 +1133,9 @@ public class AiReplayAnalysisService {
                 }
                 sb.append('\n');
             }
-            if (totalSegs > maxDetail) {
-                sb.append("  ... 还有 ").append(totalSegs - maxDetail).append(" 段（路线见区域时间线）\n");
+            final int omitted = totalSegs - selectedCount;
+            if (omitted > 0) {
+                sb.append("  ... 另有 ").append(omitted).append(" 段低变化移动（完整路线见区域时间线）\n");
             }
         }
 
