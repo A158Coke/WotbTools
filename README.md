@@ -9,7 +9,7 @@
 - `?view=extended`：进入 Rating V2 解析。
 - `?view=profile`：进入个人中心。
 - `?view=admin-users`：进入管理员用户管理（需 `wotbtools-admin` 角色）。
-- `?view=reconstruction`：进入完整重建与 AI 战术复盘（需 `wotbtools-admin` 角色）。
+- `?view=reconstruction`：进入 AI 复盘（入口随时可见；未登录自动跳转登录页，登录后回到本页）。
 
 《坦克世界闪击战》（World of Tanks Blitz）工具集。
 
@@ -63,7 +63,7 @@
 - 回放预览列选择器会把单场/汇总的列可见性与排序分别记到 `localStorage`，新增列会自动补到当前顺序末尾。
 - Java / Web 版提供 `/api/preview`、`/api/export`、`/api/columns`、`/api/rating`、`/api/health`。
 - **AI 战术复盘**：随机战斗提供录像者个人报告；训练房和联赛提供录像者所在整队的 Team Perspective 报告，支持单/多团队模式、同队视角去重、同场双方独立分析，以及无事件流时的权威结算 fallback。团队报告明确区分结算总量与事件流观测子集，不推断未点亮敌人的位置。
-- **团队报告三语界面**：回放重建页展示 perspective team、重复视角、完整/降级覆盖率和数据 limitations；稳定英文错误码由 zh/en/ru 词典本地化。
+- **团队报告三语界面**：AI 复盘页展示 perspective team、重复视角、完整/降级覆盖率和数据 limitations；稳定英文错误码由 zh/en/ru 词典本地化。
 - 回放上传限制为单文件 20 MiB、最多 100 个文件、请求合计 200 MiB；解析器还限制 ZIP 解压、pickle/protobuf 分配和单实例并发，容量满时返回 `REPLAY_BUSY`。
 - 排行榜：通过排行榜上传入口记录随机战斗录像者的单场伤害，`/api/leaderboard/top-damage` 等端点查询。
 - 工具集首页首屏展示排行榜当前最高单场伤害记录；排行榜暂无数据或接口不可用时显示 `--`。
@@ -155,6 +155,6 @@ npm run build
 
 - `meta.json`：地图、版本、开始时间、时长、录像者等基础信息。
 - `battle_results.dat`：pickle 包装的 `(arenaId, protobufBytes)`，其中 protobuf 包含玩家战绩。
-- `data.wotreplay`：BigWorld 事件流，用于存活时间推算，并为管理员回放重建/AI 复盘提供已支持的位置、映射、伤害和结束事件。
+- `data.wotreplay`：BigWorld 事件流，用于存活时间推算，并为 AI 复盘的内部回放重建提供已支持的位置、映射、伤害和结束事件。
 
 事件解码只覆盖已确认的 packet/字段，不会臆测逐帧血量、未点亮敌人位置、每发炮弹弹道、装填或装备。AI 只接收确定性压缩后的特征与覆盖率，不接收原始事件流。

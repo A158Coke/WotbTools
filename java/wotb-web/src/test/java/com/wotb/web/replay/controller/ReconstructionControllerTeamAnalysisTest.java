@@ -16,7 +16,6 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiUpstreamException;
@@ -58,9 +57,7 @@ class ReconstructionControllerTeamAnalysisTest {
         processingFacade = mock(DefaultReplayProcessingFacade.class);
         aiService = mock(AiReplayAnalysisService.class);
         reviewService = new AiReplayReviewService(processingFacade, aiService);
-        final var reconstructionService = mock(ReplayReconstructionService.class);
-        final var controller = new ReconstructionController(
-                processingFacade, reconstructionService, reviewService);
+        final var controller = new ReconstructionController(processingFacade, reviewService);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
