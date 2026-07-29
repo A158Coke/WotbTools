@@ -316,7 +316,7 @@ AI 复盘区分两种 scope，互不混用：
 - `?view=boost`：进入陪练、打手申请与管理员资格审批页。
 - `?view=profile`：进入个人中心。
 - `?view=admin-users`：进入管理员用户管理（仅 `wotbtools-admin` 角色可见）。
-- `?view=reconstruction`：进入回放战斗重建测试页（仅 `wotbtools-admin` 可见）。
+- `?view=reconstruction`：进入 AI 复盘页。入口（顶栏按钮 + 首页卡片）随时可见，不做角色门控；`ReconstructionPage` 挂载时检查登录，未登录自动 `login('reconstruction')` 跳转登录页并在登录后回到本页。页面只提供「选择回放文件 → 开始 AI 复盘 → 展示结果」，不再展示重建过程与任意时刻状态查询。
 - `wotbtools.com` / `www.wotbtools.com` 无参数时默认显示工具集首页。
 
 ### 前端组件
@@ -333,6 +333,7 @@ AI 复盘区分两种 scope，互不混用：
   - `utils/theme.js` — 纯函数（readTheme / saveTheme / resolveTheme / applyTheme），Cookie `.wotbtools.com` 域共享 + localStorage 回退
 - `utils/helpers.js` — 常量（DEFAULT_VISIBLE / EXTENDED_ONLY_PLAYER_KEYS / RATING_TIERS）+ 工具函数（按 locale 取地图名的 `mapLabel` / ratingTier / medal 等）
 - UI 组件在 `components/`：FileUploader / ColumnPicker / AggregateTable / BattleTable / RatingModal / RemoveConfirmModal / LeaderboardPage / ProfilePage（含站内通知面板）/ BoostPage / AdminUsersPage / HomePage / ExtendedPage / ReplayPage
+- AI 复盘页组件：`ReconstructionPage`（登录门控 + 编排）→ `ReplayInputPanel`（`ReplayFilePicker` 选文件 + `ReplayAnalysisAction` 触发分析）→ `AnalysisResultPanel`（结果常驻展示，含 AnalysisSummary / AnalysisUnitList / AnalysisLimitations / AnalysisKeyEvents / MarkdownContent）
 - 回放解析上传页由 `FileUploader.vue` 负责交互，`App.vue` 提供全局上传区样式；空态、拖拽态、已选文件态共用 `upload.*` 三语文案。
 - 开发时 Vite 代理 `/api → localhost:8087`。
 - 语言持久化 `localStorage('wotb-lang')`，主题持久化 Cookie `wotbtools-theme`（domain `.wotbtools.com`）+ localStorage 回退。

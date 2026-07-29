@@ -9,7 +9,7 @@
 - `?view=extended`: Enter the Rating V2 analysis.
 - `?view=profile`: Enter the user profile center.
 - `?view=admin-users`: Enter administrator user management (requires `wotbtools-admin` role).
-- `?view=reconstruction`: Enter full reconstruction and AI tactical review (requires `wotbtools-admin` role).
+- `?view=reconstruction`: Enter AI Review (entry always visible; guests are redirected to sign-in and returned to this page).
 
 A toolset for "World of Tanks Blitz".
 
@@ -63,7 +63,7 @@ Documentation Entries:
 - Replay preview column selector saves column visibility and sorting for single match/summary separately to `localStorage`; new columns are automatically appended to the end of the current order.
 - Java / Web version provides `/api/preview`, `/api/export`, `/api/columns`, `/api/rating`, and `/api/health`.
 - **AI Tactical Review**: Random battles provide individual reports for the recorder; training rooms and leagues provide a "Team Perspective" report for the recorder's entire team. Supports single/multi-team modes, same-team perspective deduplication, independent analysis for both sides of the match, and an authoritative settlement fallback when the event stream is missing. Team reports clearly distinguish between total settlement and event stream observed subsets; they do not infer locations of unspotted enemies.
-- **Tri-lingual Team Report Interface**: The replay reconstruction page displays perspective team, duplicate perspectives, complete/degraded coverage, and data limitations; stable English error codes are localized via the zh/en/ru dictionary.
+- **Tri-lingual Team Report Interface**: The AI Review page displays perspective team, duplicate perspectives, complete/degraded coverage, and data limitations; stable English error codes are localized via the zh/en/ru dictionary.
 - Replay upload limits: Single file 20 MiB, max 100 files, total request 200 MiB; the parser also limits ZIP decompression, pickle/protobuf allocation, and single-instance concurrency, returning `REPLAY_BUSY` when capacity is full.
 - Leaderboard: Records single-match damage of random battle recorders via the leaderboard upload entry; queried via endpoints like `/api/leaderboard/top-damage`.
 - The toolset home page hero section displays the current highest single-match damage record; shows `--` when no data is available or the interface is unavailable.
@@ -154,6 +154,6 @@ npm run build
 
 - `meta.json`: Basic info such as map, version, start time, duration, and recorder.
 - `battle_results.dat`: `(arenaId, protobufBytes)` wrapped in pickle, where protobuf contains player stats.
-- `data.wotreplay`: BigWorld event stream, used for survival time estimation and providing supported position, mapping, damage, and end events for admin replay reconstruction/AI review.
+- `data.wotreplay`: BigWorld event stream, used for survival time estimation and providing supported position, mapping, damage, and end events for the replay reconstruction performed internally by AI Review.
 
 Event decoding only covers confirmed packets/fields; it does not speculate on frame-by-frame HP, unspotted enemy positions, individual shell trajectories, reloading, or equipment. The AI only receives deterministic compressed features and coverage, not the raw event stream.

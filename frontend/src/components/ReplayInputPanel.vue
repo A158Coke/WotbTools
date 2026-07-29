@@ -1,38 +1,17 @@
 <script setup>
 import ReplayAnalysisAction from './ReplayAnalysisAction.vue'
 import ReplayFilePicker from './ReplayFilePicker.vue'
-import ReplayReconstructionActions from './ReplayReconstructionActions.vue'
 
 defineProps({
   files: {
     type: Array,
     required: true
   },
-  file: {
-    type: Object,
-    default: null
-  },
-  loading: {
-    type: Boolean,
-    required: true
-  },
-  queryTime: {
-    type: String,
-    required: true
-  },
   analyzing: {
     type: Boolean,
     required: true
   },
-  analysisResult: {
-    type: Object,
-    default: null
-  },
   canUseAiReview: {
-    type: Boolean,
-    required: true
-  },
-  showAnalysis: {
     type: Boolean,
     required: true
   }
@@ -42,11 +21,7 @@ defineEmits([
   'add-file',
   'remove-file',
   'clear',
-  'reconstruct',
-  'state-at',
-  'analyze',
-  'toggle-analysis',
-  'update:queryTime'
+  'analyze'
 ])
 </script>
 
@@ -65,23 +40,10 @@ defineEmits([
       @clear="$emit('clear')"
     />
 
-    <ReplayReconstructionActions
-      :file="file"
-      :loading="loading"
-      :query-time="queryTime"
-      @reconstruct="$emit('reconstruct')"
-      @state-at="$emit('state-at')"
-      @update:query-time="$emit('update:queryTime', $event)"
-    />
-
     <ReplayAnalysisAction
       v-if="canUseAiReview && files.length"
-      :files="files"
       :analyzing="analyzing"
-      :analysis-result="analysisResult"
-      :show-analysis="showAnalysis"
       @analyze="$emit('analyze')"
-      @toggle-analysis="$emit('toggle-analysis')"
     />
   </div>
 </template>
