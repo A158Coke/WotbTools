@@ -90,6 +90,60 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
     }
 
     @Test
+    void enemyLineupCarriesStructuredTierAndNation() {
+        final StringBuilder sb = new StringBuilder();
+        AiReplayAnalysisService.appendPlayerLine(sb, enemy(), false);
+        final String line = sb.toString();
+
+        // 等级/国家来自 tankopedia 的结构化字段
+        assertTrue(line.contains("等级: 10"), line);
+        assertTrue(line.contains("国家: 美国"), line);
+    }
+
+    @Test
+    void unknownTankOmitsTierAndNationInsteadOfGuessing() {
+        final PlayerResult p = enemy();
+        p.tankId = 999_999_999L;
+        final StringBuilder sb = new StringBuilder();
+        AiReplayAnalysisService.appendPlayerLine(sb, p, false);
+        final String line = sb.toString();
+
+        assertTrue(line.contains("车种: 未知"), line);
+        assertFalse(line.contains("等级:"), line);
+        assertFalse(line.contains("国家:"), line);
+    }
+
+    @Test
+    void killAttributionNamesBothDirections() {
+        final Battle battle = battleWithRecorderAndEnemy();
+        final PlayerResult recorder = battle.players.get(0);
+        final PlayerResult enemyPlayer = battle.players.get(1);
+        recorder.killVictims.add(new com.wotb.core.stats.PotentialDamage.KillVictim(ENEMY_ACCOUNT, 900, 3));
+        enemyPlayer.killVictims.add(new com.wotb.core.stats.PotentialDamage.KillVictim(RECORDER_ACCOUNT, 640, 2));
+
+        final StringBuilder sb = new StringBuilder();
+        final boolean written = AiReplayAnalysisService.appendKillAttribution(sb, battle, recorder);
+        final String evidence = sb.toString();
+
+        assertTrue(written);
+        assertTrue(evidence.contains("KILL_ATTRIBUTION_OBSERVED（击杀归因·事件流观测）"), evidence);
+        assertTrue(evidence.contains("录像者击杀 敌方 \"EnemyAce\" 坦克: \"SPHT\""), evidence);
+        assertTrue(evidence.contains("累计承受录像者900伤害"), evidence);
+        assertTrue(evidence.contains("击杀录像者 敌方 \"EnemyAce\" 坦克: \"SPHT\""), evidence);
+        assertTrue(evidence.contains("对录像者累计造成640伤害"), evidence);
+        assertFalse(evidence.contains("自行火炮"), evidence);
+    }
+
+    @Test
+    void killAttributionIsOmittedWithoutKillData() {
+        final Battle battle = battleWithRecorderAndEnemy();
+        final StringBuilder sb = new StringBuilder();
+
+        assertFalse(AiReplayAnalysisService.appendKillAttribution(sb, battle, battle.players.get(0)));
+        assertEquals("", sb.toString());
+    }
+
+    @Test
     void promptsRequirePerVehicleEnemyAnalysis() {
         allSystemPrompts().forEach(prompt ->
                 assertTrue(prompt.contains("必须逐车分析敌方阵容"), prompt));
@@ -255,6 +309,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
 
         final Battle battle = new Battle();
         battle.players = List.of(recorder, enemy());
+        battle.recorder = "Recorder";
         battle.winnerTeam = 1;
         return battle;
     }

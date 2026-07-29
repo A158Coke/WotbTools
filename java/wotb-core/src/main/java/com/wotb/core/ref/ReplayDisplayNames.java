@@ -63,6 +63,25 @@ public final class ReplayDisplayNames {
         return StringUtils.hasText(type) ? type : UNKNOWN_TANK_CLASS;
     }
 
+    /** 结构化车辆等级，仅取自 tankopedia 的 {@code tier}；缺失返回空串，不得由名称推断。 */
+    public static String tankTier(final long tankId) {
+        if (tankId <= 0) {
+            return "";
+        }
+        final Object tier = TANKOPEDIA.info(tankId).tier();
+        final String text = tier == null ? "" : String.valueOf(tier);
+        return text.isBlank() ? "" : text;
+    }
+
+    /** 结构化车辆国家，仅取自 tankopedia 的 {@code nation}；缺失返回空串，不得由名称推断。 */
+    public static String tankNation(final long tankId) {
+        if (tankId <= 0) {
+            return "";
+        }
+        final String nation = TANKOPEDIA.info(tankId).nation();
+        return StringUtils.hasText(nation) ? nation : "";
+    }
+
     private static boolean isValidDisplayName(final String name) {
         if (!StringUtils.hasText(name)) return false;
         if (name.startsWith("#")) return false;
