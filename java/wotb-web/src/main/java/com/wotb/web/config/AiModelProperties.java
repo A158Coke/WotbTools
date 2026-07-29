@@ -12,7 +12,7 @@ public record AiModelProperties(
         String model,
         @Positive int timeoutSec,
         @Positive int contextWindowTokens,
-        @Positive int singlePlayerMaxInputTokens,
+        @Positive int singleReplayMaxInputTokens,
         @Positive int maxOutputTokens,
         int promptSafetyMarginTokens,
         boolean thinkingEnabled,
@@ -20,10 +20,11 @@ public record AiModelProperties(
 ) {
     public AiModelProperties {
         if (promptSafetyMarginTokens < 0) throw new IllegalArgumentException("promptSafetyMarginTokens must be >= 0");
-        if (singlePlayerMaxInputTokens + maxOutputTokens + promptSafetyMarginTokens > contextWindowTokens) {
+        final long totalReserved = (long) singleReplayMaxInputTokens + maxOutputTokens + promptSafetyMarginTokens;
+        if (totalReserved > (long) contextWindowTokens) {
             throw new IllegalArgumentException(
-                "Budget exceeds context window: " + singlePlayerMaxInputTokens + " + " + maxOutputTokens
-                + " + " + promptSafetyMarginTokens + " > " + contextWindowTokens);
+                "Total budget exceeds context window: " + singleReplayMaxInputTokens + " + " + maxOutputTokens
+                + " + " + promptSafetyMarginTokens + " = " + totalReserved + " > " + contextWindowTokens);
         }
         if (thinkingEnabled && !"high".equals(reasoningEffort) && !"max".equals(reasoningEffort)) {
             throw new IllegalArgumentException("reasoningEffort must be 'high' or 'max' when thinking is enabled: " + reasoningEffort);

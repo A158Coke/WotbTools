@@ -45,9 +45,9 @@ wotb:
     model: ${AI_MODEL:deepseek-v4-flash}
     timeout-sec: ${AI_TIMEOUT_SEC:120}
     context-window-tokens: ${AI_CONTEXT_WINDOW_TOKENS:1000000}
-    single-player-max-input-tokens: ${AI_SINGLE_PLAYER_MAX_INPUT_TOKENS:800000}
+    single-replay-max-input-tokens: ${AI_SINGLE_REPLAY_MAX_INPUT_TOKENS:940000}
     max-output-tokens: ${AI_MAX_OUTPUT_TOKENS:32768}
-    prompt-safety-margin-tokens: ${AI_PROMPT_SAFETY_MARGIN_TOKENS:100000}
+    prompt-safety-margin-tokens: ${AI_PROMPT_SAFETY_MARGIN_TOKENS:16384}
     thinking-enabled: ${AI_THINKING_ENABLED:true}
     reasoning-effort: ${AI_REASONING_EFFORT:high}
   replay:
