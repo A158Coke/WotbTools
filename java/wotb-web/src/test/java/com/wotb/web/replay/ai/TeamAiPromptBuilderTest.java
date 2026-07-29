@@ -48,9 +48,9 @@ class TeamAiPromptBuilderTest {
         final TeamAiPromptBuilder.PromptInput input =
                 TeamAiPromptBuilder.single(context);
 
-        assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+        assertTrue(input.content().length() <= 200_000);
         assertEquals(
-                TeamAiPromptBuilder.MAX_MEMBERS,
+                15,
                 occurrences(input.content(), "member accountId="));
         assertTrue(input.globalLimitations().contains("AI_INPUT_TRUNCATED"));
         assertTrue(input.content().contains("LIMITATION: AI_INPUT_TRUNCATED"));
@@ -65,7 +65,7 @@ class TeamAiPromptBuilderTest {
         final TeamAiPromptBuilder.PromptInput input =
                 TeamAiPromptBuilder.single(context);
 
-        assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+        assertTrue(input.content().length() <= 200_000);
         assertTrue(input.globalLimitations().contains("AI_INPUT_TRUNCATED"));
         assertTrue(input.content().endsWith(
                 "LIMITATION: AI_INPUT_TRUNCATED\n"));
@@ -167,7 +167,7 @@ class TeamAiPromptBuilderTest {
     void multiPromptCapsIndependentPerspectives() {
         final SingleTeamBattleAnalysisContext context = contextWithMembers(2, 4);
         final List<TeamBattleAnalysisSummary> summaries = IntStream.range(
-                        0, TeamAiPromptBuilder.MAX_PERSPECTIVES + 2)
+                        0, 10 + 2)
                 .mapToObj(index -> new TeamBattleAnalysisSummary(
                         context.analysisUnitId() + "-" + index,
                         context.battleId(),
@@ -193,11 +193,11 @@ class TeamAiPromptBuilderTest {
                 TeamAiPromptBuilder.multi(multi);
 
         assertEquals(
-                TeamAiPromptBuilder.MAX_PERSPECTIVES,
+                10,
                 occurrences(input.content(), "=== PERSPECTIVE "));
         assertTrue(input.globalLimitations().contains("PERSPECTIVES_OMITTED_COUNT_2"),
                 "Perspectives beyond MAX_PERSPECTIVES must be tracked as omitted");
-        assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+        assertTrue(input.content().length() <= 200_000);
     }
 
     @Test
@@ -241,7 +241,7 @@ class TeamAiPromptBuilderTest {
         final TeamAiPromptBuilder.PromptInput input =
                 TeamAiPromptBuilder.multi(multi);
 
-        assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+        assertTrue(input.content().length() <= 200_000);
         assertTrue(input.content().contains("analysisUnitId=\"unit-B\""),
                 "B's required header must exist");
         assertTrue(input.content().contains("unitLimitations="),
@@ -254,7 +254,7 @@ class TeamAiPromptBuilderTest {
     void multiPerspectiveOmissionAddsExplicitLimitation() {
         final SingleTeamBattleAnalysisContext base = contextWithMembers(1, 1);
         final List<TeamBattleAnalysisSummary> summaries = IntStream.range(
-                        0, TeamAiPromptBuilder.MAX_PERSPECTIVES + 1)
+                        0, 10 + 1)
                 .mapToObj(index -> new TeamBattleAnalysisSummary(
                         base.analysisUnitId() + "-" + index,
                         base.battleId(),
@@ -283,15 +283,15 @@ class TeamAiPromptBuilderTest {
                 "Content must contain omission count");
         assertTrue(input.globalLimitations().contains("PERSPECTIVES_OMITTED_COUNT_1"),
                 "Limitations must contain omission count for 1 omitted perspective");
-        assertTrue(occurrences(input.content(), "=== PERSPECTIVE ") <= TeamAiPromptBuilder.MAX_PERSPECTIVES);
-        assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+        assertTrue(occurrences(input.content(), "=== PERSPECTIVE ") <= 10);
+        assertTrue(input.content().length() <= 200_000);
     }
 
     @Test
     void multiPerspectiveOmissionIsDeterministic() {
         final SingleTeamBattleAnalysisContext base = contextWithMembers(1, 1);
         final List<TeamBattleAnalysisSummary> summaries = IntStream.range(
-                        0, TeamAiPromptBuilder.MAX_PERSPECTIVES + 1)
+                        0, 10 + 1)
                 .mapToObj(index -> new TeamBattleAnalysisSummary(
                         base.analysisUnitId() + "-" + index,
                         base.battleId(),
@@ -338,7 +338,7 @@ class TeamAiPromptBuilderTest {
     void multiPromptReturnsIncludedAndOmittedIds() {
         final SingleTeamBattleAnalysisContext base = contextWithMembers(1, 1);
         final List<TeamBattleAnalysisSummary> summaries = IntStream.range(
-                        0, TeamAiPromptBuilder.MAX_PERSPECTIVES + 2)
+                        0, 10 + 2)
                 .mapToObj(index -> new TeamBattleAnalysisSummary(
                         base.analysisUnitId() + "-" + index,
                         base.battleId(),
@@ -362,13 +362,13 @@ class TeamAiPromptBuilderTest {
 
         final TeamAiPromptBuilder.PromptInput input = TeamAiPromptBuilder.multi(multi);
 
-        assertEquals(TeamAiPromptBuilder.MAX_PERSPECTIVES, input.includedUnitIds().size());
+        assertEquals(10, input.includedUnitIds().size());
         assertEquals(2, input.omittedUnitIds().size());
 
         final Set<String> allAccounted = new LinkedHashSet<>();
         allAccounted.addAll(input.includedUnitIds());
         allAccounted.addAll(input.omittedUnitIds());
-        assertEquals(TeamAiPromptBuilder.MAX_PERSPECTIVES + 2, allAccounted.size(),
+        assertEquals(10 + 2, allAccounted.size(),
                 "Included and omitted must be disjoint and cover all 12 IDs");
         for (final var summary : summaries) {
             assertTrue(allAccounted.contains(summary.analysisUnitId()),
@@ -384,7 +384,7 @@ class TeamAiPromptBuilderTest {
                 .collect(Collectors.joining());
         final Map<String, List<String>> evidenceMap = new LinkedHashMap<>();
         final List<TeamBattleAnalysisSummary> summaries = IntStream.range(
-                        0, TeamAiPromptBuilder.MAX_PERSPECTIVES)
+                        0, 10)
                 .mapToObj(index -> {
                     final String id = base.analysisUnitId() + "-" + index;
                     evidenceMap.put(id, List.of(hugeLim));
@@ -413,7 +413,7 @@ class TeamAiPromptBuilderTest {
         final TeamAiPromptBuilder.PromptInput input =
                 TeamAiPromptBuilder.multi(multi, evidenceMap);
 
-        assertTrue(input.includedUnitIds().size() < TeamAiPromptBuilder.MAX_PERSPECTIVES,
+        assertTrue(input.includedUnitIds().size() < 10,
                 "Large limitations should force at least 1 omission");
         assertFalse(input.omittedUnitIds().isEmpty(),
                 "Some units must be omitted due to budget");
@@ -463,7 +463,7 @@ class TeamAiPromptBuilderTest {
         final var multi = new MultiTeamBattleAnalysisContext(
                 2, 1, summaries, false, List.of());
         final var input = TeamAiPromptBuilder.multi(multi);
-        assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+        assertTrue(input.content().length() <= 200_000);
         assertTrue(input.content().contains("analysisUnitId=\"unit-A\""),
                 "A's required header must exist");
         assertTrue(input.content().contains("analysisUnitId=\"unit-B\""),
@@ -514,7 +514,7 @@ class TeamAiPromptBuilderTest {
         final var multi = new MultiTeamBattleAnalysisContext(
                 3, 1, summaries, false, List.of());
         final var input = TeamAiPromptBuilder.multi(multi);
-        assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+        assertTrue(input.content().length() <= 200_000);
         assertTrue(input.content().contains("analysisUnitId=\"unit-A\""),
                 "A's required header must exist");
         assertTrue(input.content().contains("analysisUnitId=\"unit-B\""),
@@ -616,7 +616,7 @@ class TeamAiPromptBuilderTest {
     @Test
     void multiBudgetUsesRealMinimumFactsSize() {
         final List<TeamBattleAnalysisSummary> summaries = new ArrayList<>();
-        for (int i = 0; i < TeamAiPromptBuilder.MAX_PERSPECTIVES; i++) {
+        for (int i = 0; i < 10; i++) {
             final int memberCount = (i < 5) ? 1 : 15;
             final List<TeamMemberFeatureSet> members = IntStream.range(0, memberCount)
                     .mapToObj(j -> new TeamMemberFeatureSet(
@@ -638,8 +638,8 @@ class TeamAiPromptBuilderTest {
         final var multi = new MultiTeamBattleAnalysisContext(
                 summaries.size(), 1, summaries, true, List.of());
         final var input = TeamAiPromptBuilder.multi(multi);
-        assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
-        assertTrue(input.includedUnitIds().size() <= TeamAiPromptBuilder.MAX_PERSPECTIVES);
+        assertTrue(input.content().length() <= 200_000);
+        assertTrue(input.includedUnitIds().size() <= 10);
         assertNotNull(input.content());
     }
 
@@ -858,7 +858,7 @@ class TeamAiPromptBuilderTest {
         final TeamAiPromptBuilder.PromptInput input =
                 TeamAiPromptBuilder.single(context);
 
-        assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+        assertTrue(input.content().length() <= 200_000);
         assertTrue(input.globalLimitations().contains("AI_INPUT_TRUNCATED"));
         assertTrue(input.content().contains("unitLimitations="),
                 "Content must contain unitLimitations=");
@@ -982,7 +982,7 @@ class TeamAiPromptBuilderTest {
                 "Only unit-A (HPF truncated) should be in truncatedUnitIds");
         assertTrue(input.globalLimitations().contains("AI_INPUT_TRUNCATED"),
                 "Global limitations must include AI_INPUT_TRUNCATED");
-        assertTrue(input.content().length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+        assertTrue(input.content().length() <= 200_000);
         assertFalse(input.omittedUnitIds().contains("unit-A"),
                 "unit-A should be included, not omitted");
         // Structural order: all PERSPECTIVE_FACTS before any PERSPECTIVE_OPTIONAL
@@ -1149,7 +1149,7 @@ class TeamAiPromptBuilderTest {
         final int eventLabelLen = 220;
         final var base = contextWithMembers(1, 1);
         // A: 30 key events with controlled labels (within MAX_KEY_EVENTS = 30)
-        final List<KeyBattleEvent> aKeyEvents = IntStream.range(0, TeamAiPromptBuilder.MAX_KEY_EVENTS)
+        final List<KeyBattleEvent> aKeyEvents = IntStream.range(0, 30)
                 .mapToObj(i -> new KeyBattleEvent(
                         (float) i, "BATTLE_END",
                         "X".repeat(eventLabelLen), DecodeConfidence.EXACT, "TEST", List.of()))
@@ -1184,8 +1184,8 @@ class TeamAiPromptBuilderTest {
         // = globalHeader + finalLimLine + A_mandatory + A_HPF
         // remainingBeforeBHighPriority: remaining budget after writing
         // globalHeader + finalLimLine + A_mandatory + A_HPF (before any B content)
-        final int remainingBeforeBHighPriority = TeamAiPromptBuilder.MAX_INPUT_CHARS
-                - TeamAiPromptBuilder.TRUNCATION_LINE.length() - aOptStart;
+        final int remainingBeforeBHighPriority = 200_000
+                - "\nLIMITATION: AI_INPUT_TRUNCATED\n".length() - aOptStart;
         // ===== Combined A+B =====
         final var combinedMulti = new MultiTeamBattleAnalysisContext(
                 2, 1, List.of(summaryA, summaryB), true, List.of());
@@ -1205,8 +1205,8 @@ class TeamAiPromptBuilderTest {
         final int firstOptional = content.indexOf("=== PERSPECTIVE_OPTIONAL ===");
         final int contentBeforePhase4 = firstOptional >= 0 ? firstOptional : content.length();
         // remainingAfterBHighPriority: remaining budget after ALL HPFs are written
-        final int remainingAfterBHighPriority = TeamAiPromptBuilder.MAX_INPUT_CHARS
-                - TeamAiPromptBuilder.TRUNCATION_LINE.length() - contentBeforePhase4;
+        final int remainingAfterBHighPriority = 200_000
+                - "\nLIMITATION: AI_INPUT_TRUNCATED\n".length() - contentBeforePhase4;
         // ===== Assert length relationships with actual measured values =====
         assertTrue(aOptionalLen <= remainingBeforeBHighPriority,
                 "A optional (" + aOptionalLen + ") must fit before B HPF"
@@ -1215,7 +1215,7 @@ class TeamAiPromptBuilderTest {
                 "A optional (" + aOptionalLen + ") must NOT fit after B HPF"
                         + " (remainingAfterBHPF=" + remainingAfterBHighPriority + ")");
         // ===== Standard contract assertions =====
-        assertTrue(content.length() <= TeamAiPromptBuilder.MAX_INPUT_CHARS);
+        assertTrue(content.length() <= 200_000);
         assertEquals(Set.of("unit-A", "unit-B"), combined.includedUnitIds());
         assertTrue(combined.omittedUnitIds().isEmpty());
         // B's HPF must be complete

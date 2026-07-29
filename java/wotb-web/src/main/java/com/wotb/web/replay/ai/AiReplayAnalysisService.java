@@ -119,15 +119,17 @@ public class AiReplayAnalysisService {
     private final int contextWindowTokens;
     private final int maxOutputTokens;
     private final int promptSafetyMarginTokens;
+    private final boolean thinkingEnabled;
+    private final String reasoningEffort;
     private final RestClient restClient;
 
     @Autowired
     public AiReplayAnalysisService(final AiModelProperties properties, final AiTokenEstimator tokenEstimator) {
         this(properties.apiKey(), properties.baseUrl(), properties.model(), properties.timeoutSec(), properties.singlePlayerMaxInputTokens(), tokenEstimator,
-                properties.contextWindowTokens(), properties.maxOutputTokens(), properties.promptSafetyMarginTokens());
+                properties.contextWindowTokens(), properties.maxOutputTokens(), properties.promptSafetyMarginTokens(),
+                properties.thinkingEnabled(), properties.reasoningEffort());
     }
 
-    // Test-only constructor; uses a default ConservativeDeepSeekTokenEstimator with non-production defaults.
     AiReplayAnalysisService(
             final String apiKey,
             final String baseUrl,
@@ -135,7 +137,7 @@ public class AiReplayAnalysisService {
             final int timeoutSec,
             final int singlePlayerMaxInputTokens) {
         this(apiKey, baseUrl, model, timeoutSec, singlePlayerMaxInputTokens, new ConservativeDeepSeekTokenEstimator(),
-                131072, 8192, 1000);
+                131072, 8192, 1000, true, "high");
     }
 
     private AiReplayAnalysisService(
@@ -147,7 +149,9 @@ public class AiReplayAnalysisService {
             final AiTokenEstimator tokenEstimator,
             final int contextWindowTokens,
             final int maxOutputTokens,
-            final int promptSafetyMarginTokens) {
+            final int promptSafetyMarginTokens,
+            final boolean thinkingEnabled,
+            final String reasoningEffort) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.model = model;
         this.singlePlayerMaxInputTokens = singlePlayerMaxInputTokens > 0 ? singlePlayerMaxInputTokens : 800000;
@@ -155,6 +159,8 @@ public class AiReplayAnalysisService {
         this.contextWindowTokens = contextWindowTokens;
         this.maxOutputTokens = maxOutputTokens;
         this.promptSafetyMarginTokens = promptSafetyMarginTokens;
+        this.thinkingEnabled = thinkingEnabled;
+        this.reasoningEffort = reasoningEffort;
 
         final SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(10_000);
@@ -191,6 +197,11 @@ public class AiReplayAnalysisService {
         final Map<String, Object> requestBody = new LinkedHashMap<>();
         requestBody.put("model", model);
         requestBody.put("stream", false);
+        requestBody.put("max_tokens", maxOutputTokens);
+        requestBody.put("thinking", Map.of("type", thinkingEnabled ? "enabled" : "disabled"));
+        if (thinkingEnabled) {
+            requestBody.put("reasoning_effort", reasoningEffort);
+        }
         requestBody.put("messages", List.of(
                 Map.of("role", "system", "content", SYSTEM_PROMPT),
                 Map.of("role", "user", "content", summary)));
@@ -226,8 +237,10 @@ public class AiReplayAnalysisService {
         body.put("model", model);
         body.put("stream", false);
         body.put("max_tokens", maxOutputTokens);
-        body.put("thinking", Map.of("type", "enabled"));
-        body.put("reasoning_effort", "high");
+        body.put("thinking", Map.of("type", thinkingEnabled ? "enabled" : "disabled"));
+        if (thinkingEnabled) {
+            body.put("reasoning_effort", reasoningEffort);
+        }
         body.put("messages", messages);
         final String content = call(body, "SINGLE_PLAYER_BATTLE");
         return new AnalyzeResult(content, model, ctx.features().keyEvents());
@@ -796,6 +809,11 @@ public class AiReplayAnalysisService {
         final Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
         body.put("stream", false);
+        body.put("max_tokens", maxOutputTokens);
+        body.put("thinking", Map.of("type", thinkingEnabled ? "enabled" : "disabled"));
+        if (thinkingEnabled) {
+            body.put("reasoning_effort", reasoningEffort);
+        }
         body.put("messages", List.of(
                 Map.of("role", "system", "content", systemPrompt),
                 Map.of("role", "user", "content", userContent)));
@@ -912,7 +930,7 @@ public class AiReplayAnalysisService {
         appendDeathTimeline(sb, battle);
 
         // ====== 9. Event stream evidence ======
-        appendEventStreamEvidence(sb, ctx, battle, singlePlayerMaxInputTokens);
+        appendEventStreamEvidence(sb, ctx, battle);
 
         // ====== 10. Side-based limitations ======
         if (!unknowns.isEmpty()) {
@@ -1080,8 +1098,7 @@ public class AiReplayAnalysisService {
 
     private void appendEventStreamEvidence(final StringBuilder sb,
                                             final SinglePlayerBattleAnalysisContext ctx,
-                                            final Battle battle,
-                                            final int maxInputTokens) {
+                                            final Battle battle) {
         final var features = ctx.features();
 
         // Entity mapping evidence
@@ -1147,62 +1164,12 @@ public class AiReplayAnalysisService {
             }
         }
 
-        // ====== Movement details (char-budget-aware, value-based priority) ======
+        // ====== Movement details ====
         if (!features.movements().isEmpty()) {
             final int totalSegs = features.movements().size();
-            // Budget for detailed movement: remaining chars after mandatory sections
-            // Use a generous heuristic since final token check happens before provider call
-            final int mandatoryLen = sb.length();
-            final int remainingTotal = maxInputTokens - SINGLE_PLAYER_PROMPT.length();
-            final int movementBudget = Math.max(500, remainingTotal - mandatoryLen);
-
-            // Score segments by tactical value
-            final java.util.List<java.util.Map.Entry<Integer, Double>> scored = new java.util.ArrayList<>();
+            sb.append("\n=== 移动段（压缩） ===\n");
             for (int i = 0; i < totalSegs; i++) {
                 final MovementSegment seg = features.movements().get(i);
-                double score = 0;
-                // first and last get high base score
-                if (i == 0) score += 100;
-                if (i == totalSegs - 1) score += 90;
-                // region change
-                if (seg.rawStartPosition() != null && seg.rawEndPosition() != null) {
-                    final int sr = MapRegionResolver.resolveRegionFromRaw(seg.rawStartPosition().x(), seg.rawStartPosition().z());
-                    final int er = MapRegionResolver.resolveRegionFromRaw(seg.rawEndPosition().x(), seg.rawEndPosition().z());
-                    if (sr != er) score += 50;
-                }
-                // long distance
-                score += Math.min(seg.distance(), 200) / 5;
-                // long duration
-                score += Math.min(seg.endTime() - seg.startTime(), 100) / 10;
-                // high speed
-                if (seg.averageSpeed() > 10) score += 10;
-                if (seg.averageSpeed() > 30) score += 10;
-                scored.add(new java.util.AbstractMap.SimpleEntry<>(i, score));
-            }
-            scored.sort((a, b) -> Double.compare(b.getValue(), a.getValue()));
-
-            // Select segments fitting in budget
-            sb.append("\n=== 移动段（压缩） ===\n");
-            int used = 0;
-            final java.util.List<Integer> selectedIndices = new java.util.ArrayList<>();
-            for (final var entry : scored) {
-                final int idx = entry.getKey();
-                final MovementSegment seg = features.movements().get(idx);
-                final String line = "  [" + String.format("%.1f-%.1f", seg.startTime(), seg.endTime()) + "s] "
-                        + seg.type() + " | 距离 " + String.format("%.1f", seg.distance())
-                        + "m 速度 " + String.format("%.1f", seg.averageSpeed()) + "m/s"
-                        + (seg.rawStartPosition() != null ? " 从" + regionLabel(seg.rawStartPosition().x(), seg.rawStartPosition().z()) : "")
-                        + (seg.rawEndPosition() != null ? " 到" + regionLabel(seg.rawEndPosition().x(), seg.rawEndPosition().z()) : "")
-                        + "\n";
-                if (used + line.length() <= movementBudget) {
-                    selectedIndices.add(idx);
-                    used += line.length();
-                }
-            }
-            // Sort selected by original index for chronological order
-            selectedIndices.sort(java.util.Comparator.naturalOrder());
-            for (final int idx : selectedIndices) {
-                final MovementSegment seg = features.movements().get(idx);
                 sb.append("  [").append(String.format("%.1f-%.1f", seg.startTime(), seg.endTime())).append("s] ")
                         .append(seg.type()).append(" | 距离 ").append(String.format("%.1f", seg.distance()))
                         .append("m 速度 ").append(String.format("%.1f", seg.averageSpeed())).append("m/s");
@@ -1214,17 +1181,7 @@ public class AiReplayAnalysisService {
                 }
                 sb.append('\n');
             }
-            // only compute omitted after all work is done (fixes earlier wrong count)
-            final int included = selectedIndices.size();
-            final int omitted = totalSegs - included;
-            if (omitted > 0) {
-                sb.append("详细移动段：总计 ").append(totalSegs)
-                        .append("，写入 ").append(included)
-                        .append("，因 Prompt 字符预算省略 ").append(omitted)
-                        .append("。完整区域变化仍保留在 RECORDER_REGION_TIMELINE_BACKEND_COMPUTED。\n");
-            }
         }
-
         int observedDealt = 0;
         int observedReceived = 0;
         if (!features.engagements().isEmpty()) {
@@ -1244,28 +1201,14 @@ public class AiReplayAnalysisService {
                     .append(" (").append(String.format("%.0f%%", finalAuthRecv > 0 ? 100.0 * observedReceived / finalAuthRecv : 0))
                     .append(")\n");
             sb.append("注意: 事件流数值仅为观测子集, 不是整场权威总伤害.\n");
-            final int totalEngage = features.engagements().size();
-            final int usedSoFar = sb.length();
-            final int remainingTotal = maxInputTokens - SINGLE_PLAYER_PROMPT.length();
-            final int engagementBudget = Math.max(500, remainingTotal - usedSoFar);
-            int writtenEngage = 0;
-            int usedEngageChars = 0;
             for (final EngagementSummary e : features.engagements()) {
-                final String line = "  #" + (writtenEngage + 1) + " ["
-                        + String.format("%.1f-%.1f", e.startTime(), e.endTime()) + "s]"
-                        + " 事件流输出: " + e.damageDealt()
-                        + " 事件流承伤: " + e.damageReceived()
-                        + " 结果: " + e.outcome()
-                        + " 置信度: " + e.confidence()
-                        + '\n';
-                if (usedEngageChars + line.length() <= engagementBudget) {
-                    sb.append(line);
-                    writtenEngage++;
-                    usedEngageChars += line.length();
-                }
-            }
-            if (totalEngage > writtenEngage) {
-                sb.append("  ... 另有 ").append(totalEngage - writtenEngage).append(" 个交火段因输入预算省略\n");
+                sb.append("  #" + " [")
+                        .append(String.format("%.1f-%.1f", e.startTime(), e.endTime())).append("s]")
+                        .append(" 事件流输出: ").append(e.damageDealt())
+                        .append(" 事件流承伤: ").append(e.damageReceived())
+                        .append(" 结果: ").append(e.outcome())
+                        .append(" 置信度: ").append(e.confidence())
+                        .append('\n');
             }
         }
 
@@ -1377,6 +1320,12 @@ public class AiReplayAnalysisService {
                     correlationId, "blank completion content");
             throw new AiUpstreamException("AI_EMPTY_RESPONSE", null, correlationId);
         }
+
+        // Log actual token usage from API response
+        if (response.usage() != null) {
+            logUsage(response.usage(), analysisMode);
+        }
+
         return content;
     }
 
@@ -1386,10 +1335,22 @@ public class AiReplayAnalysisService {
         if (!(messagesObj instanceof List)) return;
         final List<Map<String, Object>> messages = (List<Map<String, Object>>) messagesObj;
         final int estimated = tokenEstimator.estimateMessagesTokens(messages);
+
+        // Layer 1: Input only must not exceed singlePlayerMaxInputTokens
+        if (estimated > singlePlayerMaxInputTokens) {
+            throw new IllegalArgumentException(
+                    "AI_TOKEN_BUDGET_EXCEEDED: estimatedInputTokens=" + estimated
+                    + " > singlePlayerMaxInputTokens=" + singlePlayerMaxInputTokens);
+        }
+
+        // Layer 2: Total context (input + output + margin) must fit within contextWindowTokens
         final int budget = contextWindowTokens - promptSafetyMarginTokens - maxOutputTokens;
         if (estimated > budget) {
             throw new IllegalArgumentException(
-                    "AI_TOKEN_BUDGET_EXCEEDED: estimated=" + estimated + " budget=" + budget);
+                    "AI_CONTEXT_WINDOW_EXCEEDED: estimatedInputTokens=" + estimated
+                    + " + maxOutputTokens=" + maxOutputTokens
+                    + " + promptSafetyMarginTokens=" + promptSafetyMarginTokens
+                    + " > contextWindow=" + contextWindowTokens);
         }
     }
 
@@ -1471,6 +1432,20 @@ public class AiReplayAnalysisService {
                 analysisMode,
                 correlationId,
                 summary);
+    }
+
+    private void logUsage(final ChatCompletionResponse.Usage usage, final String analysisMode) {
+        if (usage == null) return;
+        LOGGER.log(System.Logger.Level.INFO,
+                "AI usage model={0} mode={1} prompt_tokens={2} completion_tokens={3} "
+                + "total_tokens={4} reasoning_tokens={5} cache_hit={6} cache_miss={7}",
+                model, analysisMode,
+                usage.promptTokens(),
+                usage.completionTokens(),
+                usage.totalTokens(),
+                usage.completionTokensDetails() != null ? usage.completionTokensDetails().reasoningTokens() : "N/A",
+                usage.promptCacheHitTokens() != null ? usage.promptCacheHitTokens() : 0,
+                usage.promptCacheMissTokens() != null ? usage.promptCacheMissTokens() : 0);
     }
 
     static String safeProviderSummary(final String raw) {
@@ -1789,7 +1764,10 @@ public class AiReplayAnalysisService {
      * DeepSeek /chat/completions 响应的最小映射（OpenAI 兼容）。忽略未知字段。
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record ChatCompletionResponse(List<Choice> choices) {
+    record ChatCompletionResponse(
+            List<Choice> choices,
+            Usage usage
+    ) {
 
         @JsonIgnoreProperties(ignoreUnknown = true)
         record Choice(Message message) {
@@ -1797,6 +1775,20 @@ public class AiReplayAnalysisService {
 
         @JsonIgnoreProperties(ignoreUnknown = true)
         record Message(String content) {
+        }
+
+        @JsonIgnoreProperties(ignoreUnknown = true)
+        record Usage(
+                int promptTokens,
+                int completionTokens,
+                int totalTokens,
+                CompletionTokensDetails completionTokensDetails,
+                Integer promptCacheHitTokens,
+                Integer promptCacheMissTokens
+        ) {
+            @JsonIgnoreProperties(ignoreUnknown = true)
+            record CompletionTokensDetails(Integer reasoningTokens) {
+            }
         }
     }
 }
