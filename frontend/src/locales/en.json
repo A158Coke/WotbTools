@@ -747,6 +747,7 @@
         "leaderboardDesc": "Damage leaderboard for random battles.",
         "ratingV2Title": "Rating V2 Analysis",
         "ratingV2Desc": "A composite rating from potential damage, assist, KAST, Impact, multi-damage rate and kills.",
+        "aiReviewDesc": "Upload a single replay to get an AI tactical review with improvement tips. Sign-in required.",
         "available": "Available",
         "planned": "Planned",
         "statsCardTitle": "Stats Card",
@@ -760,9 +761,11 @@
         "versionTitle": "Version History"
     },
     "recon": {
-        "nav": "Reconstruction",
-        "title": "Replay Battle Reconstruction",
-        "description": "Upload a single .wotbreplay to reconstruct the full battle timeline with entity states at any point in time.",
+        "nav": "AI Review",
+        "title": "AI Review",
+        "description": "Upload a single .wotbreplay to get an AI tactical review, with entity states at any point in time.",
+        "pleaseLogin": "Please sign in to use AI Review",
+        "auth_loading": "Checking sign-in status…",
         "select_file": "Select Replay File",
         "invalid_file": "Please select a .wotbreplay file",
         "no_file": "No replay file selected",

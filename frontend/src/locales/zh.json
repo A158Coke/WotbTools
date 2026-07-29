@@ -747,6 +747,7 @@
         "leaderboardDesc": "随机战斗的单场伤害排行 - 上传回放即可上榜。",
         "ratingV2Title": "Rating V2 解析",
         "ratingV2Desc": "基于潜在均伤、协助、KAST、Impact、多伤率与人头表现的复合评分解析。",
+        "aiReviewDesc": "上传单场回放，由 AI 生成战术复盘与改进建议。需登录。",
         "available": "可用",
         "planned": "规划中",
         "statsCardTitle": "战绩卡片",
@@ -760,9 +761,11 @@
         "versionTitle": "版本历史"
     },
     "recon": {
-        "nav": "回放重建",
-        "title": "回放战斗流程重建",
-        "description": "上传单个 .wotbreplay 文件，完整重建战斗时间线，支持查询任意时刻的战场状态。",
+        "nav": "AI复盘",
+        "title": "AI复盘",
+        "description": "上传单个 .wotbreplay 文件，由 AI 生成战术复盘，并可查询任意时刻的战场状态。",
+        "pleaseLogin": "请先登录后使用 AI 复盘",
+        "auth_loading": "正在检查登录状态…",
         "select_file": "选择回放文件",
         "invalid_file": "请选择 .wotbreplay 文件",
         "no_file": "未选择回放文件",
