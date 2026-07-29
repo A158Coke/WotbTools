@@ -197,17 +197,7 @@ public class AiReplayAnalysisService {
         final List<KeyBattleEvent> keyEvents = buildDeathTimeline(battle);
         final String summary = buildSummary(battle, recon, keyEvents);
 
-        final Map<String, Object> requestBody = new LinkedHashMap<>();
-        requestBody.put("model", model);
-        requestBody.put("stream", false);
-        requestBody.put("max_tokens", maxOutputTokens);
-        requestBody.put("thinking", Map.of("type", thinkingEnabled ? "enabled" : "disabled"));
-        if (thinkingEnabled) {
-            requestBody.put("reasoning_effort", reasoningEffort);
-        }
-        requestBody.put("messages", List.of(
-                Map.of("role", "system", "content", SYSTEM_PROMPT),
-                Map.of("role", "user", "content", summary)));
+        final Map<String, Object> requestBody = buildSingleReplayRequest(SYSTEM_PROMPT, summary);
 
         final String content = call(requestBody, "SINGLE_PLAYER_SUMMARY");
         return new AnalyzeResult(content, model, keyEvents);
@@ -236,14 +226,7 @@ public class AiReplayAnalysisService {
                     + " + maxOutputTokens=" + maxOutputTokens + " + safetyMargin=" + promptSafetyMarginTokens
                     + " > contextWindow=" + contextWindowTokens);
         }
-        final Map<String, Object> body = new LinkedHashMap<>();
-        body.put("model", model);
-        body.put("stream", false);
-        body.put("max_tokens", maxOutputTokens);
-        body.put("thinking", Map.of("type", thinkingEnabled ? "enabled" : "disabled"));
-        if (thinkingEnabled) {
-            body.put("reasoning_effort", reasoningEffort);
-        }
+        final Map<String, Object> body = buildSingleReplayRequest(SINGLE_PLAYER_PROMPT, summary);
         body.put("messages", messages);
         final String content = call(body, "SINGLE_PLAYER_BATTLE");
         return new AnalyzeResult(content, model, ctx.features().keyEvents());
@@ -285,14 +268,7 @@ public class AiReplayAnalysisService {
                     planned.density(), planned.estimatedInputTokens(),
                     planned.effectiveInputLimit(), planned.budgetSummary());
         }
-        final Map<String, Object> body = new LinkedHashMap<>();
-        body.put("model", model);
-        body.put("stream", false);
-        body.put("max_tokens", maxOutputTokens);
-        body.put("thinking", Map.of("type", thinkingEnabled ? "enabled" : "disabled"));
-        if (thinkingEnabled) {
-            body.put("reasoning_effort", reasoningEffort);
-        }
+        final Map<String, Object> body = buildSingleReplayRequest(SINGLE_PLAYER_PROMPT, baseSummary);
         body.put("messages", messages);
         final String content = call(body, "SINGLE_PLAYER_BATTLE");
         return new AnalyzeResult(content, model, ctx.features().keyEvents());
@@ -855,6 +831,14 @@ public class AiReplayAnalysisService {
     }
 
     private Map<String, Object> requestBody(
+            final String systemPrompt,
+            final String userContent
+    ) {
+        return buildSingleReplayRequest(systemPrompt, userContent);
+    }
+
+    /** Build unified DeepSeek single-replay request body. */
+    private Map<String, Object> buildSingleReplayRequest(
             final String systemPrompt,
             final String userContent
     ) {
