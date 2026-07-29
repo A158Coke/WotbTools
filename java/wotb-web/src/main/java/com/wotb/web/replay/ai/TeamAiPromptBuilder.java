@@ -110,6 +110,7 @@ final class TeamAiPromptBuilder {
         final BudgetWriter writer = new BudgetWriter();
         writer.appendRequired(headerBlock);
         writer.appendRequiredBlock(hpfBlock);
+        writer.markMandatoryEnd();
         writer.append(optBlock);
 
         return writer.finish(estimator, maxInputTokens,
@@ -192,6 +193,7 @@ final class TeamAiPromptBuilder {
 
             writer.appendRequired(section.mandatoryBlock());
             writer.appendRequiredBlock(section.highPriorityBlock());
+            writer.markMandatoryEnd();
             if (section.hpfTruncated()) {
                 truncatedIds.add(section.analysisUnitId());
                 writer.markTruncated();
@@ -605,6 +607,7 @@ final class TeamAiPromptBuilder {
 
         private final StringBuilder content = new StringBuilder(4096);
         private boolean truncated;
+        private int mandatoryEnd = -1;
 
         private BudgetWriter() {
         }
@@ -625,6 +628,10 @@ final class TeamAiPromptBuilder {
             if (StringUtils.hasText(block)) {
                 content.append(block);
             }
+        }
+
+        private void markMandatoryEnd() {
+            mandatoryEnd = content.length();
         }
 
         private String content() {
@@ -658,6 +665,9 @@ final class TeamAiPromptBuilder {
             }
             if (truncated) {
                 globalLimitations.add("AI_INPUT_TRUNCATED");
+                if (mandatoryEnd >= 0 && mandatoryEnd < content.length()) {
+                    content.setLength(mandatoryEnd);
+                }
                 content.append(TRUNCATION_LINE);
             }
             return new PromptInput(

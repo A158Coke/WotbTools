@@ -7,6 +7,9 @@ import com.wotb.core.replay.reconstruction.ObservationState;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.VehicleState;
 import com.wotb.core.replay.reconstruction.Vector3;
+import com.wotb.core.replay.feature.MapCoordinateProfile;
+import com.wotb.core.replay.feature.MapCoordinateResolution;
+import com.wotb.core.replay.feature.MapRegionResolver;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -35,9 +38,7 @@ public final class SingleReplayPromptPlanner {
 
     private static final double UPGRADE_THRESHOLD = 0.90;
     private static final int POSITION_SAMPLE_INTERVAL_SEC = 2;
-    private static final int MAX_OBSERVED_ENTITIES = 20;
     private static final int KEY_WINDOW_HALF_WIDTH_SEC = 5;
-    private static final int MAX_EVENT_WINDOW_EVENTS = 50;
 
     public SingleReplayPromptPlanner(
             final AiTokenEstimator tokenEstimator,
@@ -46,7 +47,7 @@ public final class SingleReplayPromptPlanner {
             final int maxOutputTokens,
             final int promptSafetyMarginTokens
     ) {
-        this.tokenEstimator = Objects.requireNonNull(tokenEstimator, "tokenEstimator must not be null");
+        this.tokenEstimator = tokenEstimator;
         if (singleReplayMaxInputTokens <= 0) {
             throw new IllegalArgumentException("singleReplayMaxInputTokens must be positive: " + singleReplayMaxInputTokens);
         }
@@ -119,9 +120,21 @@ public final class SingleReplayPromptPlanner {
         EvidenceDensity currentDensity = EvidenceDensity.LEVEL_1_COMPRESSED;
         final int upgradeThreshold = (int) (effectiveLimit * UPGRADE_THRESHOLD);
 
-        // LEVEL_2: 录像者位置采样
-        if (currentTokens < upgradeThreshold) {
-            final String level2Content = buildLevel2PositionSample(recon, ctx);
+        // 检查 battleStartRawClockSec 是否可用（用于统一特征 battle-relative time 与 checkpoint raw clock）
+        final Float battleStartRawClockSec = recon.battleStartRawClockSec();
+        final boolean battleStartAvailable = battleStartRawClockSec != null
+                && Float.isFinite(battleStartRawClockSec)
+                && battleStartRawClockSec > 0f;
+
+        if (!battleStartAvailable) {
+            // battleStart 不可用，跳过 Level 2-5
+            currentContent += "\n\n[LIMITATION] BATTLE_RELATIVE_TIME_UNAVAILABLE: Cannot align feature timestamps with raw clock; skipping detailed evidence levels.";
+            currentTokens = estimateTotalTokens(systemPrompt, currentContent);
+        }
+
+        // LEVEL_2: 录像者位置采样（统一时间域 + canonical 坐标）
+        if (battleStartAvailable && currentTokens < upgradeThreshold) {
+            final String level2Content = buildLevel2PositionSample(recon, ctx, battleStartRawClockSec);
             if (!level2Content.isEmpty()) {
                 final String candidate = currentContent + "\n\n" + level2Content;
                 final int candidateTokens = estimateTotalTokens(systemPrompt, candidate);
@@ -133,9 +146,9 @@ public final class SingleReplayPromptPlanner {
             }
         }
 
-        // LEVEL_3: 已观察对象的去重位置
-        if (currentTokens < upgradeThreshold && currentDensity.ordinal() >= EvidenceDensity.LEVEL_2_POSITION_SAMPLE.ordinal()) {
-            final String level3Content = buildLevel3ObservedTimeline(recon, ctx);
+        // LEVEL_3: 已观察对象的去重位置（统一时间域 + observationState + canonical 坐标）
+        if (battleStartAvailable && currentTokens < upgradeThreshold && currentDensity.ordinal() >= EvidenceDensity.LEVEL_2_POSITION_SAMPLE.ordinal()) {
+            final String level3Content = buildLevel3ObservedTimeline(recon, ctx, battleStartRawClockSec);
             if (!level3Content.isEmpty()) {
                 final String candidate = currentContent + "\n\n" + level3Content;
                 final int candidateTokens = estimateTotalTokens(systemPrompt, candidate);
@@ -147,9 +160,9 @@ public final class SingleReplayPromptPlanner {
             }
         }
 
-        // LEVEL_4: 关键窗口高精度采样
-        if (currentTokens < upgradeThreshold && currentDensity.ordinal() >= EvidenceDensity.LEVEL_3_OBSERVED_TIMELINE.ordinal()) {
-            final String level4Content = buildLevel4KeyWindowPrecision(recon, ctx);
+        // LEVEL_4: 关键窗口高精度采样（统一时间域 + observationState + canonical 坐标）
+        if (battleStartAvailable && currentTokens < upgradeThreshold && currentDensity.ordinal() >= EvidenceDensity.LEVEL_3_OBSERVED_TIMELINE.ordinal()) {
+            final String level4Content = buildLevel4KeyWindowPrecision(recon, ctx, battleStartRawClockSec);
             if (!level4Content.isEmpty()) {
                 final String candidate = currentContent + "\n\n" + level4Content;
                 final int candidateTokens = estimateTotalTokens(systemPrompt, candidate);
@@ -161,9 +174,9 @@ public final class SingleReplayPromptPlanner {
             }
         }
 
-        // LEVEL_5: 事件级证据
-        if (currentTokens < upgradeThreshold && currentDensity.ordinal() >= EvidenceDensity.LEVEL_4_KEY_WINDOW_HIGH_PRECISION.ordinal()) {
-            final String level5Content = buildLevel5EventLevel(recon, ctx);
+        // LEVEL_5: 事件级证据（统一时间域）
+        if (battleStartAvailable && currentTokens < upgradeThreshold && currentDensity.ordinal() >= EvidenceDensity.LEVEL_4_KEY_WINDOW_HIGH_PRECISION.ordinal()) {
+            final String level5Content = buildLevel5EventLevel(recon, ctx, battleStartRawClockSec);
             if (!level5Content.isEmpty()) {
                 final String candidate = currentContent + "\n\n" + level5Content;
                 final int candidateTokens = estimateTotalTokens(systemPrompt, candidate);
@@ -194,9 +207,13 @@ public final class SingleReplayPromptPlanner {
     // ========== 各级别证据生成 ==========
 
     /**
-     * LEVEL_2: 录像者位置采样（每约 2 秒）。
+     * LEVEL_2: 录像者位置采样（每约 2 秒，统一时间域 + canonical 坐标）。
      */
-    static String buildLevel2PositionSample(final ReplayReconstruction recon, final SinglePlayerBattleAnalysisContext ctx) {
+    static String buildLevel2PositionSample(
+            final ReplayReconstruction recon,
+            final SinglePlayerBattleAnalysisContext ctx,
+            final float battleStartRawClockSec
+    ) {
         if (recon == null || recon.checkpoints() == null || recon.checkpoints().isEmpty()) {
             return "";
         }
@@ -212,7 +229,7 @@ public final class SingleReplayPromptPlanner {
         // 按间隔采样
         final StringBuilder sb = new StringBuilder(1024);
         sb.append("=== RECORDER_POSITION_SAMPLES (LEVEL_2) ===\n");
-        sb.append("# 录像者位置采样（每约2秒一个点）\n");
+        sb.append("# 录像者位置采样（每约2秒一个点，统一时间域 + canonical坐标）\n");
 
         float lastSampleClock = -POSITION_SAMPLE_INTERVAL_SEC;
         int sampleCount = 0;
@@ -229,10 +246,17 @@ public final class SingleReplayPromptPlanner {
             if (vehicle == null || vehicle.position() == null) continue;
 
             final Vector3 pos = vehicle.position();
-            sb.append(String.format("  [%.1fs] (%.1f, %.1f, %.1f)%n",
-                    cp.rawClockSec(), pos.x(), pos.y(), pos.z()));
-            lastSampleClock = cp.rawClockSec();
-            sampleCount++;
+            // 转换 raw clock 到 battle-relative time
+            final float battleRelSec = cp.rawClockSec() - battleStartRawClockSec;
+            // 转换 raw XZ 到 canonical XZ
+            final MapCoordinateResolution coordRes = MapRegionResolver.resolve(pos.x(), pos.z(), MapCoordinateProfile.DEFAULT);
+
+            if (coordRes.usable()) {
+                sb.append(String.format("  t=%.1fs entity=RECORDER coordinateStatus=%s canonicalX=%.1f canonicalZ=%.1f%n",
+                        battleRelSec, coordRes.status(), coordRes.position().x(), coordRes.position().z()));
+                lastSampleClock = cp.rawClockSec();
+                sampleCount++;
+            }
         }
 
         if (sampleCount == 0) {
@@ -244,9 +268,13 @@ public final class SingleReplayPromptPlanner {
     }
 
     /**
-     * LEVEL_3: 已观察对象的去重位置时间线。
+     * LEVEL_3: 已观察对象的去重位置时间线（统一时间域 + observationState + canonical 坐标）。
      */
-    static String buildLevel3ObservedTimeline(final ReplayReconstruction recon, final SinglePlayerBattleAnalysisContext ctx) {
+    static String buildLevel3ObservedTimeline(
+            final ReplayReconstruction recon,
+            final SinglePlayerBattleAnalysisContext ctx,
+            final float battleStartRawClockSec
+    ) {
         if (recon == null || recon.checkpoints() == null || recon.checkpoints().isEmpty()) {
             return "";
         }
@@ -289,7 +317,7 @@ public final class SingleReplayPromptPlanner {
 
         final StringBuilder sb = new StringBuilder(2048);
         sb.append("=== OBSERVED_TIMELINE (LEVEL_3) ===\n");
-        sb.append("# 已观察对象的去重位置时间线\n");
+        sb.append("# 已观察对象的去重位置时间线（统一时间域 + canonical坐标）\n");
 
         for (final Map.Entry<Integer, String> entry : observedEntities.entrySet()) {
             final int entityId = entry.getKey();
@@ -297,24 +325,60 @@ public final class SingleReplayPromptPlanner {
 
             String lastPosKey = null;
             int dedupCount = 0;
+            boolean lastKnownPositionOutput = false;
 
             for (final BattleStateCheckpoint cp : sorted) {
                 final VehicleState vs = cp.stateSnapshot().vehicleByEntityId(entityId);
-                if (vs == null || vs.position() == null) continue;
+                if (vs == null) continue;
+
+                // 逐 checkpoint 检查 observationState
+                final ObservationState obsState = vs.observationState();
+                // REMOVED/UNKNOWN 时不得输出为当前位置
+                if (obsState == ObservationState.REMOVED || obsState == ObservationState.UNKNOWN) {
+                    // 如需最后已知位置，单独输出一次
+                    if (!lastKnownPositionOutput && vs.lastPositionAt() != null) {
+                        // 找到该 entity 的上一个可观测位置
+                        for (final BattleStateCheckpoint prev : sorted) {
+                            if (prev.rawClockSec() >= cp.rawClockSec()) break;
+                            final VehicleState prevVs = prev.stateSnapshot().vehicleByEntityId(entityId);
+                            if (prevVs == null || prevVs.position() == null) continue;
+                            if (prevVs.observationState() == ObservationState.OBSERVED) {
+                                final Vector3 pos = prevVs.position();
+                                final float relTime = prev.rawClockSec() - battleStartRawClockSec;
+                                final MapCoordinateResolution coordRes = MapRegionResolver.resolve(pos.x(), pos.z(), MapCoordinateProfile.DEFAULT);
+                                if (coordRes.usable()) {
+                                    sb.append(String.format("  t=%.1fs entity=%s coordinateStatus=%s canonicalX=%.1f canonicalZ=%.1f LAST_KNOWN_POSITION (lastObserved=%.1fs)%n",
+                                            relTime, entry.getValue(), coordRes.status(), coordRes.position().x(), coordRes.position().z(),
+                                            vs.lastObservedAt() - battleStartRawClockSec));
+                                    lastKnownPositionOutput = true;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    continue;
+                }
+
+                if (vs.position() == null) continue;
 
                 final Vector3 pos = vs.position();
-                final String posKey = String.format("%.0f_%.0f_%.0f", pos.x(), pos.y(), pos.z());
+                // 使用 canonical 坐标进行去重
+                final MapCoordinateResolution coordRes = MapRegionResolver.resolve(pos.x(), pos.z(), MapCoordinateProfile.DEFAULT);
+                if (!coordRes.usable()) continue;
 
-                // 去重：连续相同位置只输出一次
+                final String posKey = String.format("%.0f_%.0f", coordRes.position().x(), coordRes.position().z());
+
+                // 去重：连续相同 canonical 位置只输出一次
                 if (posKey.equals(lastPosKey)) continue;
                 lastPosKey = posKey;
 
-                sb.append(String.format("  [%.1fs] (%.1f, %.1f, %.1f)%n",
-                        cp.rawClockSec(), pos.x(), pos.y(), pos.z()));
+                final float battleRelSec = cp.rawClockSec() - battleStartRawClockSec;
+                sb.append(String.format("  t=%.1fs entity=%s coordinateStatus=%s canonicalX=%.1f canonicalZ=%.1f%n",
+                        battleRelSec, entry.getValue(), coordRes.status(), coordRes.position().x(), coordRes.position().z()));
                 dedupCount++;
             }
 
-            if (dedupCount == 0) {
+            if (dedupCount == 0 && !lastKnownPositionOutput) {
                 sb.append("  (no position data)\n");
             }
         }
@@ -324,27 +388,33 @@ public final class SingleReplayPromptPlanner {
 
     /**
      * LEVEL_4: 关键窗口高精度采样。
-     * 在关键事件（死亡时间线）前后高频率采样位置。
+     * 在关键事件（死亡时间线）前后高频率采样位置，统一时间域 + observationState + canonical 坐标。
      */
-    static String buildLevel4KeyWindowPrecision(final ReplayReconstruction recon, final SinglePlayerBattleAnalysisContext ctx) {
+    static String buildLevel4KeyWindowPrecision(
+            final ReplayReconstruction recon,
+            final SinglePlayerBattleAnalysisContext ctx,
+            final float battleStartRawClockSec
+    ) {
         if (recon == null || recon.checkpoints() == null || recon.checkpoints().isEmpty()) {
             return "";
         }
 
-        // 从 context features 中获取关键事件时间
+        // 从 context features 中获取关键事件时间（battle-relative）
         final PlayerBattleFeatureSet features = ctx.features();
         if (features == null || features.keyEvents() == null || features.keyEvents().isEmpty()) {
             return "";
         }
 
-        final List<Float> keyTimes = features.keyEvents().stream()
+        // 将 key event 的 battle-relative time 转换为 raw clock
+        final List<Float> rawKeyTimes = features.keyEvents().stream()
                 .map(ke -> (float) ke.clockSec())
                 .filter(t -> t > 0)
                 .distinct()
                 .sorted()
+                .map(t -> battleStartRawClockSec + t)
                 .toList();
 
-        if (keyTimes.isEmpty()) {
+        if (rawKeyTimes.isEmpty()) {
             return "";
         }
 
@@ -355,11 +425,11 @@ public final class SingleReplayPromptPlanner {
 
         final StringBuilder sb = new StringBuilder(2048);
         sb.append("=== KEY_WINDOW_HIGH_PRECISION (LEVEL_4) ===\n");
-        sb.append("# 关键事件窗口高精度采样（±5秒范围，全实体位置）\n");
+        sb.append("# 关键事件窗口高精度采样（±5秒范围，全实体位置，统一时间域 + canonical坐标）\n");
 
-        for (final float keyTime : keyTimes) {
-            final float windowStart = Math.max(0, keyTime - KEY_WINDOW_HALF_WIDTH_SEC);
-            final float windowEnd = keyTime + KEY_WINDOW_HALF_WIDTH_SEC;
+        for (final float rawKeyTime : rawKeyTimes) {
+            final float windowStart = Math.max(0, rawKeyTime - KEY_WINDOW_HALF_WIDTH_SEC);
+            final float windowEnd = rawKeyTime + KEY_WINDOW_HALF_WIDTH_SEC;
 
             final List<BattleStateCheckpoint> windowed = sorted.stream()
                     .filter(cp -> cp.rawClockSec() >= windowStart && cp.rawClockSec() <= windowEnd)
@@ -367,31 +437,45 @@ public final class SingleReplayPromptPlanner {
 
             if (windowed.isEmpty()) continue;
 
-            sb.append(String.format("--- [%.1fs] 关键窗口 ---%n", keyTime));
+            // 输出 rawKeyTime 的 battle-relative 版本用于显示
+            final float keyBattleRelSec = rawKeyTime - battleStartRawClockSec;
+            sb.append(String.format("--- [%.1fs] 关键窗口 ---%n", keyBattleRelSec));
 
             for (final BattleStateCheckpoint cp : windowed) {
-                sb.append(String.format("  t=%.1fs |", cp.rawClockSec()));
+                final float battleRelSec = cp.rawClockSec() - battleStartRawClockSec;
+                sb.append(String.format("  t=%.1fs |", battleRelSec));
 
                 final List<String> positions = new ArrayList<>();
-                for (final Map.Entry<Integer, VehicleState> entry : cp.stateSnapshot().vehiclesByEntityId().entrySet()) {
-                    final VehicleState vs = entry.getValue();
+                for (final Map.Entry<Integer, VehicleState> ve : cp.stateSnapshot().vehiclesByEntityId().entrySet()) {
+                    final VehicleState vs = ve.getValue();
+
+                    // 逐 checkpoint 检查 observationState
+                    if (vs.observationState() == ObservationState.REMOVED
+                            || vs.observationState() == ObservationState.UNKNOWN) {
+                        continue;
+                    }
+
                     if (vs.position() == null) continue;
 
                     final Long acctId = vs.accountId();
                     final boolean isRecorder = acctId != null && acctId == recorderAccountId;
                     final Vector3 pos = vs.position();
+                    final MapCoordinateResolution coordRes = MapRegionResolver.resolve(pos.x(), pos.z(), MapCoordinateProfile.DEFAULT);
+                    if (!coordRes.usable()) continue;
 
                     if (isRecorder) {
-                        positions.add(String.format(" RECORDER(%.1f,%.1f,%.1f)", pos.x(), pos.y(), pos.z()));
+                        positions.add(String.format("entity=RECORDER coordinateStatus=%s canonicalX=%.1f canonicalZ=%.1f",
+                                coordRes.status(), coordRes.position().x(), coordRes.position().z()));
                     } else if (acctId != null && acctId > 0) {
-                        positions.add(String.format(" E%d(%.0f,%.0f)", entry.getKey(), pos.x(), pos.z()));
+                        positions.add(String.format("entity=E%d coordinateStatus=%s canonicalX=%.1f canonicalZ=%.1f",
+                                ve.getKey(), coordRes.status(), coordRes.position().x(), coordRes.position().z()));
                     }
                 }
 
                 if (positions.isEmpty()) {
                     sb.append(" (no position data)\n");
                 } else {
-                    sb.append(String.join(";", positions)).append("\n");
+                    sb.append(" ").append(String.join(" ; ", positions)).append("\n");
                 }
             }
         }
@@ -401,9 +485,13 @@ public final class SingleReplayPromptPlanner {
 
     /**
      * LEVEL_5: 事件级证据。
-     * 包含关键事件周围的原始事件列表。
+     * 包含关键事件周围的原始事件列表，统一时间域。
      */
-    static String buildLevel5EventLevel(final ReplayReconstruction recon, final SinglePlayerBattleAnalysisContext ctx) {
+    static String buildLevel5EventLevel(
+            final ReplayReconstruction recon,
+            final SinglePlayerBattleAnalysisContext ctx,
+            final float battleStartRawClockSec
+    ) {
         if (recon == null || recon.events() == null || recon.events().isEmpty()) {
             return "";
         }
@@ -413,31 +501,33 @@ public final class SingleReplayPromptPlanner {
             return "";
         }
 
-        final List<Float> keyTimes = features.keyEvents().stream()
+        // 将 key event 的 battle-relative time 转换为 raw clock
+        final List<Float> rawKeyTimes = features.keyEvents().stream()
                 .map(ke -> (float) ke.clockSec())
                 .filter(t -> t > 0)
                 .distinct()
                 .sorted()
+                .map(t -> battleStartRawClockSec + t)
                 .toList();
 
-        if (keyTimes.isEmpty()) {
+        if (rawKeyTimes.isEmpty()) {
             return "";
         }
 
-        final int halfWindow = 25;
+        final int halfWindow = 25; // half-window in events for key event checkpoint matching (empirical)
 
         final StringBuilder sb = new StringBuilder(4096);
         sb.append("=== EVENT_LEVEL_EVIDENCE (LEVEL_5) ===\n");
-        sb.append("# 关键事件附近的事件级证据\n");
+        sb.append("# 关键事件附近的事件级证据（统一时间域）\n");
 
-        for (final float keyTime : keyTimes) {
-            // 找到最接近关键事件的事件索引
+        for (final float rawKeyTime : rawKeyTimes) {
+            // 找到最接近关键事件的事件索引（统一在 raw clock 域比较）
             int closestIdx = -1;
             float closestDiff = Float.MAX_VALUE;
 
             for (int i = 0; i < recon.events().size(); i++) {
                 final var event = recon.events().get(i);
-                final float diff = Math.abs(event.timestamp().rawClockSec() - keyTime);
+                final float diff = Math.abs(event.timestamp().rawClockSec() - rawKeyTime);
                 if (diff < closestDiff) {
                     closestDiff = diff;
                     closestIdx = i;
@@ -449,13 +539,15 @@ public final class SingleReplayPromptPlanner {
             final int startIdx = Math.max(0, closestIdx - halfWindow);
             final int endIdx = Math.min(recon.events().size(), closestIdx + halfWindow);
 
+            final float keyBattleRelSec = rawKeyTime - battleStartRawClockSec;
             sb.append(String.format("--- [%.1fs] 附近事件 (索引 %d..%d) ---%n",
-                    keyTime, startIdx, endIdx - 1));
+                    keyBattleRelSec, startIdx, endIdx - 1));
 
             for (int i = startIdx; i < endIdx; i++) {
                 final var event = recon.events().get(i);
+                final float eventBattleRelSec = event.timestamp().rawClockSec() - battleStartRawClockSec;
                 sb.append(String.format("  [%.1fs] %s%n",
-                        event.timestamp().rawClockSec(), event.getClass().getSimpleName()));
+                        eventBattleRelSec, event.getClass().getSimpleName()));
             }
         }
 
