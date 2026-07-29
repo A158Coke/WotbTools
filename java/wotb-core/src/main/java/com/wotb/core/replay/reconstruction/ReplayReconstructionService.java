@@ -154,21 +154,6 @@ public class ReplayReconstructionService {
         );
     }
 
-    /**
-     * 任意时刻状态查询（同步重建，不做缓存）。
-     */
-    public BattleStateSnapshot stateAt(byte[] replayBytes, float timeSec) throws IOException {
-        final ReplayReconstruction reconstruction = reconstruct(replayBytes);
-        final boolean hasClockRegression =
-                reconstruction.diagnostics() != null
-                && reconstruction.diagnostics().clockRegressionCount() > 0;
-        return BattleStateReconstructor.stateAt(
-                timeSec,
-                reconstruction.events(),
-                reconstruction.checkpoints(),
-                hasClockRegression);
-    }
-
     public ReplayPacketDecoderRegistry getDecoderRegistry() {
         return decoderRegistry;
     }

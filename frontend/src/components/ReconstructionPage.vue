@@ -4,8 +4,6 @@ import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { localizeAiError } from '../utils/reconstruction-analysis.js'
 import AnalysisResultPanel from './AnalysisResultPanel.vue'
-import BattleStatePanel from './BattleStatePanel.vue'
-import ReconstructionSummaryPanel from './ReconstructionSummaryPanel.vue'
 import ReplayInputPanel from './ReplayInputPanel.vue'
 
 const { t } = useI18n()
@@ -43,23 +41,15 @@ onMounted(async () => {
   login(LOGIN_VIEW)
 })
 
-// AI Review 当前只支持单场回放。
+// 本页只做一件事：上传单场回放 → 发起 AI 复盘 → 展示结果。
+// 回放重建由后端在 /api/replay/analyze 内部完成，前端不展示重建过程与详情。
 const files = ref([])
-const file = computed(() => files.value[0] || null)
-const loading = ref(false)
 const error = ref('')
-const reconResult = ref(null)
-const queryTime = ref('')
-const stateResult = ref(null)
 const analyzing = ref(false)
 const analysisResult = ref(null)
-const showAnalysis = ref(false)
 
 function resetResults() {
-  reconResult.value = null
-  stateResult.value = null
   analysisResult.value = null
-  showAnalysis.value = false
 }
 
 function addFile(e) {
@@ -86,17 +76,9 @@ function clearFile() {
   files.value = []
   error.value = ''
   resetResults()
-  queryTime.value = ''
 }
 
-/** 单文件表单（reconstruct / state-at 用第一个文件）。 */
-function singleFormData() {
-  const fd = new FormData()
-  if (file.value) fd.append('file', file.value)
-  return fd
-}
-
-/** 单文件表单（analyze 也用唯一的文件）。 */
+/** 单文件表单（analyze 使用唯一的文件）。 */
 function singleFileFormData() {
   const fd = new FormData()
   if (files.value.length > 0) fd.append('files', files.value[0])
@@ -122,57 +104,6 @@ async function authedFetch(url, body) {
     throw new Error(t('recon.forbidden'))
   }
   return r
-}
-
-async function runReconstruct() {
-  if (!file.value) {
-    error.value = t('recon.no_file')
-    return
-  }
-  loading.value = true
-  error.value = ''
-  stateResult.value = null
-  // 新的重建结果，作废上一份 AI 分析
-  analysisResult.value = null
-  showAnalysis.value = false
-  try {
-    const r = await authedFetch('/api/replay/reconstruct', singleFormData())
-    if (!r.ok) {
-      const text = await r.text().catch(() => '')
-      throw new Error(text || `HTTP ${r.status}`)
-    }
-    reconResult.value = await r.json()
-  } catch (e) {
-    error.value = e.message || String(e)
-  } finally {
-    loading.value = false
-  }
-}
-
-async function runStateAt() {
-  if (!file.value) {
-    error.value = t('recon.no_file')
-    return
-  }
-  const time = parseFloat(queryTime.value)
-  if (isNaN(time) || time < 0) {
-    error.value = t('recon.invalid_time')
-    return
-  }
-  loading.value = true
-  error.value = ''
-  try {
-    const r = await authedFetch(`/api/replay/state-at?time=${time}`, singleFormData())
-    if (!r.ok) {
-      const text = await r.text().catch(() => '')
-      throw new Error(text || `HTTP ${r.status}`)
-    }
-    stateResult.value = await r.json()
-  } catch (e) {
-    error.value = e.message || String(e)
-  } finally {
-    loading.value = false
-  }
 }
 
 async function runAnalyze() {
@@ -204,16 +135,11 @@ async function runAnalyze() {
       throw new Error(t('recon.errors.AI_RESPONSE_INVALID'))
     }
     analysisResult.value = result
-    showAnalysis.value = true
   } catch (e) {
     error.value = e.message || String(e)
   } finally {
     analyzing.value = false
   }
-}
-
-function toggleAnalysis() {
-  showAnalysis.value = !showAnalysis.value
 }
 
 </script>
@@ -232,34 +158,18 @@ function toggleAnalysis() {
 
     <template v-else>
       <ReplayInputPanel
-        v-model:query-time="queryTime"
         :files="files"
-        :file="file"
-        :loading="loading"
         :analyzing="analyzing"
-        :analysis-result="analysisResult"
         :can-use-ai-review="canUseAiReview"
-        :show-analysis="showAnalysis"
         @add-file="addFile"
         @remove-file="removeFile"
         @clear="clearFile"
-        @reconstruct="runReconstruct"
-        @state-at="runStateAt"
         @analyze="runAnalyze"
-        @toggle-analysis="toggleAnalysis"
       />
 
       <p v-if="error" class="error" style="margin:12px 0">{{ error }}</p>
 
-      <ReconstructionSummaryPanel v-if="reconResult" :result="reconResult" />
-
-      <AnalysisResultPanel
-        v-if="analysisResult && showAnalysis"
-        :result="analysisResult"
-        @close="showAnalysis = false"
-      />
-
-      <BattleStatePanel v-if="stateResult" :result="stateResult" />
+      <AnalysisResultPanel v-if="analysisResult" :result="analysisResult" />
     </template>
   </main>
 </template>
@@ -271,22 +181,6 @@ function toggleAnalysis() {
 .error { color: var(--error); font-size: .88rem; }
 .recon-auth { text-align: center; padding: 40px; color: var(--text-secondary); }
 
-.recon-page :deep(.time-action) {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.recon-page :deep(.time-input) {
-  width: 100px;
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--bg-upload);
-  color: var(--text);
-  font-size: .85rem;
-}
-.recon-page :deep(.time-input::placeholder) { color: var(--text-sub); }
-
 .recon-page :deep(.panel) {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -295,48 +189,9 @@ function toggleAnalysis() {
 }
 .recon-page :deep(.panel h2) { margin: 0 0 12px; font-size: 1rem; }
 
-.recon-page :deep(.recon-stats) {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-.recon-page :deep(.stat-item) {
-  background: var(--bg-card2);
-  border: 1px solid var(--border-light);
-  border-radius: 6px;
-  padding: 8px 14px;
-  min-width: 100px;
-}
-.recon-page :deep(.stat-label) { display: block; font-size: 11px; color: var(--text-sub); margin-bottom: 2px; text-transform: uppercase; letter-spacing: .3px; }
-.recon-page :deep(.stat-value) { display: block; font-size: 1.1rem; font-weight: 700; color: var(--text-heading); }
-
+/* AnalysisKeyEvents 使用 .recon-details 折叠原始事件 */
 .recon-page :deep(.recon-details) { margin-top: 8px; }
 .recon-page :deep(.recon-details summary) { cursor: pointer; font-size: .82rem; color: var(--accent); }
-.recon-page :deep(.json-block) {
-  background: var(--bg-card2);
-  border: 1px solid var(--border-light);
-  border-radius: 6px;
-  padding: 12px;
-  font-size: 11px;
-  line-height: 1.5;
-  overflow-x: auto;
-  max-height: 400px;
-  white-space: pre;
-  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
-  color: var(--text-code);
-  margin-top: 6px;
-}
-
-.recon-page :deep(.state-panel) { margin-top: 16px; }
-.recon-page :deep(.state-table) { margin-top: 10px; }
-.recon-page :deep(.tablewrap) { overflow-x: auto; }
-.recon-page :deep(.recon-table) { width: 100%; border-collapse: collapse; font-size: .82rem; }
-.recon-page :deep(.recon-table th) { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border-header); white-space: nowrap; color: var(--text-label); font-weight: 600; }
-.recon-page :deep(.recon-table td) { padding: 5px 8px; border-bottom: 1px solid var(--border-light); }
-.recon-page :deep(.recon-table .num) { text-align: right; font-variant-numeric: tabular-nums; }
-.recon-page :deep(.recon-table .mono) { font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace; font-size: 11px; }
-.recon-page :deep(.recon-table tbody tr:hover) { background: var(--bg-list-hover); }
 
 .recon-page :deep(.ai-action) { margin-top: 16px; }
 </style>

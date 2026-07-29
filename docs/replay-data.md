@@ -665,10 +665,13 @@ ReplayReconstruction 输出
 
 ### 修改文件 (wotb-web)
 
-- `config/SecurityConfig.java` — 放行 `/api/replay/reconstruct` 和 `/api/replay/state-at`
+- `config/SecurityConfig.java` — `/api/replay/analyze`、`/reconstruct-batch`、`/process` 需 `wotbtools-user` 或 `wotbtools-admin`
 - `replay/controller/ReconstructionController.java` — 新建 controller
-- `replay/dto/ReconstructSummary.java` — 重建摘要 DTO
-- `replay/dto/StateAtResponse.java` — 状态查询 DTO
+
+> 2026-07 更新：`POST /api/replay/reconstruct` 与 `POST /api/replay/state-at` 两个端点已随前端简化一并移除
+> （`ReconstructSummary` / `StateAtResponse` DTO 和 `ReplayReconstructionService.stateAt()` 同时删除）。
+> 重建能力保留在 core，由 `/api/replay/analyze` 在内部调用；`BattleStateReconstructor.stateAt(...)` 仍是 core 公共 API。
+> 下文对这两个端点的请求/响应示例仅作历史记录。
 
 ### 测试文件
 

@@ -19,8 +19,6 @@ const props = defineProps({
   }
 })
 
-defineEmits(['close'])
-
 const isTeamAnalysis = computed(() => isTeamMode(props.result.mode))
 const isMultiAnalysis = computed(() => isMultiMode(props.result.mode))
 const analysisTeams = computed(() => perspectiveTeams(props.result))
@@ -31,7 +29,6 @@ const reportLimitations = computed(() => analysisLimitations(props.result))
   <div class="panel analysis-panel">
     <div class="panel-head">
       <h2>{{ isTeamAnalysis ? $t('recon.analysis_title_team') : $t('recon.analysis_title_player') }}</h2>
-      <button class="close-x" :aria-label="$t('recon.close')" @click="$emit('close')">×</button>
     </div>
     <AnalysisSummary
       :result="result"
@@ -65,17 +62,6 @@ const reportLimitations = computed(() => analysisLimitations(props.result))
 }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .panel-head h2 { margin: 0 0 12px; }
-.close-x {
-  background: none;
-  border: none;
-  color: var(--text-sub);
-  font-size: 1.4rem;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0 4px;
-  margin-bottom: 8px;
-}
-.close-x:hover { color: var(--text); }
 .analysis-meta {
   display: flex;
   flex-wrap: wrap;
