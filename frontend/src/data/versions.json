@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.1.0",
+    "date": "2026-07-29",
+    "tag": "add",
+    "zh": "AI 复盘 · 首页新增入口卡片 · 登录即可使用 · 上传单场回放直接生成 AI 战术报告",
+    "en": "AI Review · New homepage card · Available once signed in · Upload one replay for an AI tactical report",
+    "ru": "AI-разбор · Карточка на главной · Доступно после входа · Один реплей — тактический отчёт ИИ"
+  },
+  {
     "v": "2.0.0",
     "date": "2026-06-29",
     "tag": "add",
