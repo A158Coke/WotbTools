@@ -1,6 +1,7 @@
 package com.wotb.web.replay.ai;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.TankInfo;
@@ -322,7 +323,7 @@ public class AiReplayAnalysisService {
         }
         final RosterEvidence evidence = RosterEvidence.from(context);
         final List<String> extraLimitations = evidence != null ? evidence.limitations() : List.of();
-        final TeamAiPromptBuilder.PromptInput input = TeamAiPromptBuilder.single(context, extraLimitations);
+        final TeamAiPromptBuilder.PromptInput input = TeamAiPromptBuilder.single(context, extraLimitations, tokenEstimator, singleReplayMaxInputTokens);
         return callSingleTeamContext(context, input);
     }
 
@@ -387,7 +388,7 @@ public class AiReplayAnalysisService {
                 final var ctx = partition.getFirst();
                 final RosterEvidence evidence = evidenceByUnitId.get(ctx.analysisUnitId());
                 final TeamAiPromptBuilder.PromptInput input =
-                        TeamAiPromptBuilder.single(ctx, evidence != null ? evidence.limitations() : List.of());
+                        TeamAiPromptBuilder.single(ctx, evidence != null ? evidence.limitations() : List.of(), tokenEstimator, singleReplayMaxInputTokens);
                 allGlobalLimitations.addAll(input.globalLimitations());
                 allOmittedIds.addAll(input.omittedUnitIds());
                 final AnalyzeResult result = callSingleTeamContext(ctx, input);
@@ -416,7 +417,7 @@ public class AiReplayAnalysisService {
                     }
                 }
                 final TeamAiPromptBuilder.PromptInput input =
-                        TeamAiPromptBuilder.multi(multiContext, partitionEvidenceLimits);
+                        TeamAiPromptBuilder.multi(multiContext, partitionEvidenceLimits, tokenEstimator, singleReplayMaxInputTokens);
                 allGlobalLimitations.addAll(input.globalLimitations());
                 allOmittedIds.addAll(input.omittedUnitIds());
                 final Set<String> includedIds = input.includedUnitIds();
@@ -1806,8 +1807,8 @@ public class AiReplayAnalysisService {
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     record ChatCompletionResponse(
-            List<Choice> choices,
-            Usage usage
+            @JsonProperty("choices") List<Choice> choices,
+            @JsonProperty("usage") Usage usage
     ) {
 
         @JsonIgnoreProperties(ignoreUnknown = true)
@@ -1820,15 +1821,15 @@ public class AiReplayAnalysisService {
 
         @JsonIgnoreProperties(ignoreUnknown = true)
         record Usage(
-                int promptTokens,
-                int completionTokens,
-                int totalTokens,
-                CompletionTokensDetails completionTokensDetails,
-                Integer promptCacheHitTokens,
-                Integer promptCacheMissTokens
+                @JsonProperty("prompt_tokens") int promptTokens,
+                @JsonProperty("completion_tokens") int completionTokens,
+                @JsonProperty("total_tokens") int totalTokens,
+                @JsonProperty("completion_tokens_details") CompletionTokensDetails completionTokensDetails,
+                @JsonProperty("prompt_cache_hit_tokens") Integer promptCacheHitTokens,
+                @JsonProperty("prompt_cache_miss_tokens") Integer promptCacheMissTokens
         ) {
             @JsonIgnoreProperties(ignoreUnknown = true)
-            record CompletionTokensDetails(Integer reasoningTokens) {
+            record CompletionTokensDetails(@JsonProperty("reasoning_tokens") Integer reasoningTokens) {
             }
         }
     }
