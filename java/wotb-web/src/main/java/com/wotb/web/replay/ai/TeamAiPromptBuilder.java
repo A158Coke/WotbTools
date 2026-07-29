@@ -35,6 +35,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import jakarta.annotation.Nonnull;
 import org.springframework.util.StringUtils;
 
 /**
@@ -359,15 +361,14 @@ final class TeamAiPromptBuilder {
             final List<TeamMemberFeatureSet> members
     ) {
         writer.append("\n=== TEAM_MEMBERS ===\n");
-        for (int index = 0; index < members.size(); index++) {
-            final TeamMemberFeatureSet member = members.get(index);
+        for (final TeamMemberFeatureSet member : members) {
             writer.append("member accountId=" + member.accountId()
                     + " nickname=" + quoteData(member.nickname())
                     + " tank=" + quoteData(resolveTankName(member.tankId(), member.tankName()))
                     // vehicleClass 只来自 tankopedia 的结构化 class 字段，不得由 tank 名称推断
                     + " vehicleClass=" + resolveTankClass(member.tankId())
                     + " entityIds=" + member.entityIds()
-                    + " mapping=" + member.mappingConfidence()
+                    + " mapping=" + PlayerAnalysisTerms.confidenceLabel(member.mappingConfidence())
                     + " finalDamage=" + member.finalDamage()
                     + " damageReceived=" + member.damageReceived()
                     + " assisted=" + member.assistedDamage()
@@ -387,29 +388,27 @@ final class TeamAiPromptBuilder {
             final List<TeamMemberFeatureSet> members
     ) {
         boolean hasMovements = false;
-        for (int index = 0; index < members.size(); index++) {
-            if (!members.get(index).movements().isEmpty()) {
+        for (final TeamMemberFeatureSet teamMemberFeatureSet : members) {
+            if (!teamMemberFeatureSet.movements().isEmpty()) {
                 hasMovements = true;
                 break;
             }
         }
         if (!hasMovements) return;
         writer.append("\n=== MEMBER_MOVEMENTS ===\n");
-        for (int index = 0; index < members.size(); index++) {
-            final TeamMemberFeatureSet member = members.get(index);
+        for (final TeamMemberFeatureSet member : members) {
             if (member.movements().isEmpty()) continue;
-            for (int movementIndex = 0; movementIndex < member.movements().size(); movementIndex++) {
-                final MovementSegment movement = member.movements().get(movementIndex);
+            for (final MovementSegment movement : member.movements()) {
                 final String startInfo = formatRawPosition(movement.rawStartPosition());
                 final String endInfo = formatRawPosition(movement.rawEndPosition());
                 writer.append("  movement[" + format(movement.startTime())
                         + "-" + format(movement.endTime()) + "]"
-                        + " type=" + movement.type()
+                        + " type=" + PlayerAnalysisTerms.movementLabel(movement.type())
                         + " distance=" + format(movement.distance())
                         + " avgSpeed=" + format(movement.averageSpeed())
                         + " start=" + startInfo
                         + " end=" + endInfo
-                        + " confidence=" + movement.confidence()
+                        + " confidence=" + PlayerAnalysisTerms.confidenceLabel(movement.confidence())
                         + "\n");
             }
         }
@@ -420,8 +419,7 @@ final class TeamAiPromptBuilder {
             final List<TeamFormationPhase> phases
     ) {
         writer.append("\n=== FORMATION_PHASES ===\n");
-        for (int index = 0; index < phases.size(); index++) {
-            final TeamFormationPhase phase = phases.get(index);
+        for (final TeamFormationPhase phase : phases) {
             final String phasePosInfo = formatCanonicalPosition(phase.centroid());
             writer.append("formation[" + format(phase.startTime())
                     + "-" + format(phase.endTime()) + "]"
@@ -429,7 +427,7 @@ final class TeamAiPromptBuilder {
                     + " dispersion=" + format(phase.averageDispersion())
                     + " clusters=" + phase.clusterCount()
                     + " members=" + phase.observedMemberCount()
-                    + " confidence=" + phase.confidence()
+                    + " confidence=" + PlayerAnalysisTerms.confidenceLabel(phase.confidence())
                     + "\n");
             // Structured cluster output
             for (final TeamFormationCluster cluster : phase.clusters()) {
@@ -441,10 +439,10 @@ final class TeamAiPromptBuilder {
                         + " centroidStatus=" + cluster.centroidStatus()
                         + " clampedMemberPositions=" + cluster.clampedMemberPositionCount()
                         + " members=" + cluster.memberIdentities().stream()
-                                .map(id -> PromptDataQuoter.quote(id, "?"))
-                                .collect(Collectors.joining(",", "[", "]"))
+                        .map(id -> PromptDataQuoter.quote(id, "?"))
+                        .collect(Collectors.joining(",", "[", "]"))
                         + " memberCount=" + cluster.memberCount()
-                        + " confidence=" + cluster.confidence()
+                        + " confidence=" + PlayerAnalysisTerms.confidenceLabel(cluster.confidence())
                         + "\n");
             }
         }
@@ -455,8 +453,7 @@ final class TeamAiPromptBuilder {
             final List<TeamEngagementSummary> engagements
     ) {
         writer.append("\n=== TEAM_ENGAGEMENTS_OBSERVED_SUBSET ===\n");
-        for (int index = 0; index < engagements.size(); index++) {
-            final TeamEngagementSummary engagement = engagements.get(index);
+        for (final TeamEngagementSummary engagement : engagements) {
             writer.append("engagement[" + format(engagement.startTime())
                     + "-" + format(engagement.endTime()) + "]"
                     + " allies=" + engagement.alliedAccountIds()
@@ -465,8 +462,8 @@ final class TeamAiPromptBuilder {
                     + " receivedSubset=" + engagement.damageReceived()
                     + " focusedTargets=" + engagement.focusedTargetAccountIds()
                     + " targetSwitches=" + engagement.targetSwitchCount()
-                    + " outcome=" + engagement.outcome()
-                    + " confidence=" + engagement.confidence()
+                    + " outcome=" + PlayerAnalysisTerms.outcomeLabel(engagement.outcome())
+                    + " confidence=" + PlayerAnalysisTerms.confidenceLabel(engagement.confidence())
                     + "\n");
         }
     }
@@ -476,13 +473,12 @@ final class TeamAiPromptBuilder {
             final List<KeyBattleEvent> events
     ) {
         writer.append("\n=== KEY_EVENTS ===\n");
-        for (int index = 0; index < events.size(); index++) {
-            final KeyBattleEvent event = events.get(index);
+        for (final KeyBattleEvent event : events) {
             writer.append("event[" + format(event.clockSec()) + "]"
-                    + " type=" + event.type()
+                    + " type=" + PlayerAnalysisTerms.keyEventLabel(event.type())
                     + " evidence=" + quoteData(event.label())
                     + " source=" + event.source()
-                    + " confidence=" + event.confidence()
+                    + " confidence=" + PlayerAnalysisTerms.confidenceLabel(event.confidence())
                     + " entities=" + event.relatedEntityIds()
                     + "\n");
         }
@@ -514,13 +510,13 @@ final class TeamAiPromptBuilder {
      * Resolve team result as three-state label (no raw winnerTeam).
      * Only accepts raw teams 1 or 2; anything else returns DRAW_OR_UNKNOWN.
      */
-    private static String resolveTeamResult(final Integer winnerTeam, final int perspectiveTeam) {
-        if (!PlayerSideResolver.isValidRawTeam(winnerTeam != null ? winnerTeam : 0)
+    private static String resolveTeamResult(@Nonnull final Integer winnerTeam, final int perspectiveTeam) {
+        if (!PlayerSideResolver.isValidRawTeam(winnerTeam)
                 || !PlayerSideResolver.isValidRawTeam(perspectiveTeam)) {
-            return "DRAW_OR_UNKNOWN";
+            return "DRAW_OR_UNKNOWN（平局或未知）";
         }
-        if (winnerTeam.equals(perspectiveTeam)) return "TEAM_WIN";
-        return "TEAM_LOSS";
+        if (winnerTeam.equals(perspectiveTeam)) return "TEAM_WIN（本队获胜）";
+        return "TEAM_LOSS（本队失利）";
     }
 
     /**
@@ -531,12 +527,11 @@ final class TeamAiPromptBuilder {
             final List<BattlePhaseSummary> phases
     ) {
         writer.append("\n=== BATTLE_PHASES ===\n");
-        for (int index = 0; index < phases.size(); index++) {
-            final BattlePhaseSummary phase = phases.get(index);
+        for (final BattlePhaseSummary phase : phases) {
             writer.append("phase[" + format(phase.startTime())
                     + "-" + format(phase.endTime()) + "]"
-                    + " type=" + phase.type()
-                    + " confidence=" + phase.confidence()
+                    + " type=" + PlayerAnalysisTerms.phaseLabel(phase.type())
+                    + " confidence=" + PlayerAnalysisTerms.confidenceLabel(phase.confidence())
                     + "\n");
         }
     }
