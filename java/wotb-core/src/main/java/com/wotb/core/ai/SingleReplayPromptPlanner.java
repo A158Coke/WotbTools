@@ -289,9 +289,12 @@ public final class SingleReplayPromptPlanner {
         final List<BattleStateCheckpoint> sorted = new ArrayList<>(recon.checkpoints());
         sorted.sort(Comparator.comparingDouble(BattleStateCheckpoint::rawClockSec));
 
+        // entityId → 阵营/昵称/权威坦克名/车种，来自权威名册；解析不到时回退为中性 E<id>
+        final Map<Integer, String> identityLabels =
+                EntityIdentityResolver.resolveLabels(recon, ctx.battle(), recorderAccountId);
+
         // 收集录像者观察到的其他实体（排除自己）
         final Map<Integer, String> observedEntities = new LinkedHashMap<>();
-        int entityCounter = 0;
 
         for (final BattleStateCheckpoint cp : sorted) {
             for (final Map.Entry<Integer, VehicleState> entry : cp.stateSnapshot().vehiclesByEntityId().entrySet()) {
@@ -306,8 +309,8 @@ public final class SingleReplayPromptPlanner {
                 if (vs.position() != null && vs.observationState() != null
                         && vs.observationState() == ObservationState.OBSERVED) {
                     if (!observedEntities.containsKey(entityId)) {
-                        entityCounter++;
-                        observedEntities.put(entityId, "Entity#" + entityId);
+                        observedEntities.put(entityId,
+                                identityLabels.getOrDefault(entityId, "E" + entityId));
                     }
                 }
             }
@@ -323,7 +326,9 @@ public final class SingleReplayPromptPlanner {
 
         for (final Map.Entry<Integer, String> entry : observedEntities.entrySet()) {
             final int entityId = entry.getKey();
-            sb.append("--- ").append(entry.getValue()).append(" ---\n");
+            // 块头给出完整身份（阵营/昵称/坦克/车种），逐行只用短标识以控制 token
+            final String shortEntity = "E" + entityId;
+            sb.append("--- ").append(shortEntity).append(" = ").append(entry.getValue()).append(" ---\n");
 
             String lastPosKey = null;
             int dedupCount = 0;
@@ -346,7 +351,7 @@ public final class SingleReplayPromptPlanner {
                         sb.append(String.format(
                                 "  t=%.1fs entity=%s coordinateStatus=%s canonicalX=%.1f canonicalZ=%.1f"
                                         + " LAST_KNOWN_POSITION (observationState=%s, POSITION_UNKNOWN_AFTER=%.1fs 此后位置未知)%n",
-                                lastObserved.relSec(), entry.getValue(), lastObserved.coord().status(),
+                                lastObserved.relSec(), shortEntity, lastObserved.coord().status(),
                                 lastObserved.coord().position().x(), lastObserved.coord().position().z(),
                                 stateLabel(obsState), battleRelSec));
                         lastKnownPositionOutput = true;
@@ -371,7 +376,7 @@ public final class SingleReplayPromptPlanner {
                 lastPosKey = posKey;
 
                 sb.append(String.format("  t=%.1fs entity=%s coordinateStatus=%s canonicalX=%.1f canonicalZ=%.1f%n",
-                        battleRelSec, entry.getValue(), coordRes.status(), coordRes.position().x(), coordRes.position().z()));
+                        battleRelSec, shortEntity, coordRes.status(), coordRes.position().x(), coordRes.position().z()));
                 dedupCount++;
             }
 
@@ -423,6 +428,9 @@ public final class SingleReplayPromptPlanner {
         final StringBuilder sb = new StringBuilder(2048);
         sb.append("=== KEY_WINDOW_HIGH_PRECISION (LEVEL_4) ===\n");
         sb.append("# 关键事件窗口高精度采样（±5秒范围，全实体位置，统一时间域 + canonical坐标）\n");
+        // 实体对照表：把 E<id> 映射到阵营/昵称/权威坦克名/车种，否则敌方位置无法归属到具体车辆
+        sb.append(EntityIdentityResolver.legend(
+                EntityIdentityResolver.resolveLabels(recon, ctx.battle(), recorderAccountId)));
 
         // 顺序遍历 checkpoint 时持续维护每个实体最近一次 OBSERVED 的时间与坐标；
         // lastKnownEmitted 保证每个实体的 LAST_KNOWN_POSITION 只输出一次

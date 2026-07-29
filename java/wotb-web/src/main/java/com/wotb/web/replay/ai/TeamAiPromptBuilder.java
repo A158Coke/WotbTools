@@ -36,7 +36,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import jakarta.annotation.Nonnull;
 import org.springframework.util.StringUtils;
 
 /**
@@ -90,9 +89,11 @@ final class TeamAiPromptBuilder {
         headerBuf.append("unitLimitations=").append(limitations).append("\n");
         final String headerBlock = headerBuf.toString();
 
-        // 构建所有 HPF（无固定截断）
+        // 构建所有 HPF（无固定截断）。对方阵容属权威结算且体量很小（≤7 行），
+        // 与本队事实同为 mandatory，不能被 optional 预算裁掉。
         final BudgetWriter hpfTemp = new BudgetWriter();
         appendHighPriorityFacts(hpfTemp, context.features(), context.analysisUnitId());
+        appendOpposingTeam(hpfTemp, context.battle(), context.perspectiveTeam());
         final String hpfBlock = hpfTemp.content();
 
         // 构建所有 optional details（无固定截断）
@@ -297,6 +298,84 @@ final class TeamAiPromptBuilder {
         writer.append("coverage=" + features.coverage() + "\n");
     }
 
+    /**
+     * 对方阵容（权威结算）。团队证据此前只描述录像者所在队伍，
+     * 对手完全缺失，AI 无从做威胁分析。名册来自权威结算 {@code battle.players}，
+     * 坦克名称与车种/等级/国家只由 tankId 查表得到，不解析名称文本。
+     *
+     * @return 是否输出了内容
+     */
+    private static boolean appendOpposingTeam(
+            final BudgetWriter writer,
+            final Battle battle,
+            final int perspectiveTeam
+    ) {
+        if (battle == null || battle.players == null
+                || !PlayerSideResolver.isValidRawTeam(perspectiveTeam)) {
+            return false;
+        }
+        final List<PlayerResult> opponents = battle.players.stream()
+                .filter(p -> PlayerSideResolver.isValidRawTeam(p.team) && p.team != perspectiveTeam)
+                .toList();
+        if (opponents.isEmpty()) {
+            return false;
+        }
+        writer.append("\n=== OPPOSING_TEAM_LINEUP_AUTHORITATIVE（对方阵容·权威结算） ===\n");
+        int damage = 0;
+        int received = 0;
+        int assisted = 0;
+        int blocked = 0;
+        int kills = 0;
+        int survivors = 0;
+        for (final PlayerResult p : opponents) {
+            writer.append("opponent accountId=" + p.accountId
+                    + " nickname=" + quoteData(p.nickname)
+                    + " tank=" + quoteData(resolveTankName(p.tankId, p.tankName))
+                    + " vehicleClass=" + resolveTankClass(p.tankId)
+                    + tierAndNation(p.tankId)
+                    + " finalDamage=" + p.damageDealt
+                    + " damageReceived=" + p.damageReceived
+                    + " assisted=" + p.damageAssisted
+                    + " blocked=" + p.damageBlocked
+                    + " kills=" + p.kills
+                    + " hits=" + p.nHitsDealt
+                    + " penetrations=" + p.nPenetrationsDealt
+                    + " enemiesDamaged=" + p.nEnemiesDamaged
+                    + " survived=" + p.survived
+                    + "\n");
+            damage += p.damageDealt;
+            received += p.damageReceived;
+            assisted += p.damageAssisted;
+            blocked += p.damageBlocked;
+            kills += p.kills;
+            if (p.survived) survivors++;
+        }
+        writer.append("\n=== OPPOSING_TEAM_AUTHORITATIVE_RESULT（对方合计·权威结算） ===\n");
+        writer.append("opponentCount=" + opponents.size()
+                + " finalDamage=" + damage
+                + " damageReceived=" + received
+                + " assisted=" + assisted
+                + " blocked=" + blocked
+                + " kills=" + kills
+                + " survivors=" + survivors
+                + "\n");
+        return true;
+    }
+
+    /** tankopedia 的结构化等级/国家；缺失即不输出，绝不由名称推断。 */
+    private static String tierAndNation(final long tankId) {
+        final StringBuilder sb = new StringBuilder(24);
+        final String tier = ReplayDisplayNames.tankTier(tankId);
+        if (!tier.isEmpty()) {
+            sb.append(" tier=").append(tier);
+        }
+        final String nation = ReplayDisplayNames.tankNation(tankId);
+        if (!nation.isEmpty()) {
+            sb.append(" nation=").append(nation);
+        }
+        return sb.toString();
+    }
+
     private static void appendOptionalDetails(
             final BudgetWriter writer,
             final TeamBattleFeatureSet features,
@@ -365,8 +444,9 @@ final class TeamAiPromptBuilder {
             writer.append("member accountId=" + member.accountId()
                     + " nickname=" + quoteData(member.nickname())
                     + " tank=" + quoteData(resolveTankName(member.tankId(), member.tankName()))
-                    // vehicleClass 只来自 tankopedia 的结构化 class 字段，不得由 tank 名称推断
+                    // vehicleClass / tier / nation 只来自 tankopedia 的结构化字段，不得由 tank 名称推断
                     + " vehicleClass=" + resolveTankClass(member.tankId())
+                    + tierAndNation(member.tankId())
                     + " entityIds=" + member.entityIds()
                     + " mapping=" + PlayerAnalysisTerms.confidenceLabel(member.mappingConfidence())
                     + " finalDamage=" + member.finalDamage()
@@ -398,6 +478,12 @@ final class TeamAiPromptBuilder {
         writer.append("\n=== MEMBER_MOVEMENTS ===\n");
         for (final TeamMemberFeatureSet member : members) {
             if (member.movements().isEmpty()) continue;
+            // 必须标出归属成员：否则所有成员的移动段被打成一个匿名平铺列表，AI 无法归属
+            writer.append("member accountId=" + member.accountId()
+                    + " nickname=" + quoteData(member.nickname())
+                    + " tank=" + quoteData(resolveTankName(member.tankId(), member.tankName()))
+                    + " vehicleClass=" + resolveTankClass(member.tankId())
+                    + "\n");
             for (final MovementSegment movement : member.movements()) {
                 final String startInfo = formatRawPosition(movement.rawStartPosition());
                 final String endInfo = formatRawPosition(movement.rawEndPosition());
@@ -510,8 +596,10 @@ final class TeamAiPromptBuilder {
      * Resolve team result as three-state label (no raw winnerTeam).
      * Only accepts raw teams 1 or 2; anything else returns DRAW_OR_UNKNOWN.
      */
-    private static String resolveTeamResult(@Nonnull final Integer winnerTeam, final int perspectiveTeam) {
-        if (!PlayerSideResolver.isValidRawTeam(winnerTeam)
+    private static String resolveTeamResult(final Integer winnerTeam, final int perspectiveTeam) {
+        // winnerTeam 合法可为 null（胜负未知/平局），不能标 @Nonnull，也不能直接拆箱
+        if (winnerTeam == null
+                || !PlayerSideResolver.isValidRawTeam(winnerTeam)
                 || !PlayerSideResolver.isValidRawTeam(perspectiveTeam)) {
             return "DRAW_OR_UNKNOWN（平局或未知）";
         }
