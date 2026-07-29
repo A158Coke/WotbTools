@@ -30,7 +30,9 @@ vi.mock('../composables/useAuth.js', () => ({
     token: () => 'test-token',
     ensureToken: auth.ensureToken,
     login: auth.login,
-    authenticated: authState.authenticated
+    authenticated: authState.authenticated,
+    // 组件挂载时用 initPromise 确认登录状态；未登录会自动跳转登录页
+    initPromise: Promise.resolve(authState.authenticated.value)
   })
 }))
 
@@ -260,14 +262,16 @@ describe('ReconstructionPage auth gating', () => {
     expect(wrapper.text()).toContain('recon.title')
   })
 
-  it('does not render analysis action when not authenticated', async () => {
+  it('redirects to login instead of rendering content when not authenticated', async () => {
     authState.authenticated.value = false
     authState.roles = ['wotbtools-admin'] // roles present but not authenticated
     const wrapper = mountedPage()
-    expect(wrapper.text()).toContain('recon.title')
-    // The parent App.vue guards rendering of <ReconstructionPage>, but within the
-    // component itself, pass canUseAiReview=false to ReplayInputPanel → no analyze action
+    await flushPromises()
+    // 入口随时可见，但未登录时不渲染任何可操作内容，并自动跳转登录页（回跳本页）
+    expect(wrapper.text()).toContain('recon.pleaseLogin')
+    expect(wrapper.text()).not.toContain('recon.title')
     expect(wrapper.text()).not.toContain('action.processing')
+    expect(auth.login).toHaveBeenCalledWith('reconstruction')
   })
 
   it('does not render analysis action for authenticated user without role', async () => {
@@ -294,16 +298,13 @@ describe('ReconstructionPage auth gating', () => {
     expect(wrapper.text()).toContain('recon.analyze_btn')
   })
 
-  it('does not call analyze API for unauthenticated user', async () => {
+  it('does not expose upload or analyze surface for unauthenticated user', async () => {
     authState.authenticated.value = false
     authState.roles = ['wotbtools-user'] // roles present but not authenticated
     const wrapper = mountedPage()
-    const input = wrapper.get('input[type="file"]')
-    const names = ['test.wotbreplay']
-    const files = names.map(name => new File(['replay'], name, { type: 'application/octet-stream' }))
-    Object.defineProperty(input.element, 'files', { value: files, configurable: true })
-    await input.trigger('change')
-    // No analyze button when not authenticated
+    await flushPromises()
+    // 未登录时整个上传/分析界面都不渲染，因此无从触发 analyze 请求
+    expect(wrapper.find('input[type="file"]').exists()).toBe(false)
     const btns = wrapper.findAll('button').filter(b => b.text().startsWith('recon.analyze'))
     expect(btns.length).toBe(0)
   })

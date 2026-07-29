@@ -20,9 +20,9 @@ function ensureKeycloak() {
   return keycloak
 }
 
-function profileRedirectUri() {
+function loginRedirectUri(view) {
   const url = new URL(window.location.origin + window.location.pathname)
-  url.searchParams.set('view', 'profile')
+  url.searchParams.set('view', view)
   return url.toString()
 }
 
@@ -54,10 +54,16 @@ async function initAuth() {
   return initPromise
 }
 
-async function login() {
+/**
+ * 跳转 Keycloak 登录页。
+ *
+ * @param view 登录完成后回跳的视图（对应 ?view=）。默认回个人中心，
+ *             调用方可传入自己的视图以便登录后停留在原页面。
+ */
+async function login(view = 'profile') {
   const kc = ensureKeycloak()
   await initAuth()
-  return kc.login({ redirectUri: profileRedirectUri() })
+  return kc.login({ redirectUri: loginRedirectUri(view) })
 }
 
 async function logout() {

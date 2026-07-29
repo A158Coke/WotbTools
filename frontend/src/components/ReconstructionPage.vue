@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { localizeAiError } from '../utils/reconstruction-analysis.js'
@@ -9,7 +9,10 @@ import ReconstructionSummaryPanel from './ReconstructionSummaryPanel.vue'
 import ReplayInputPanel from './ReplayInputPanel.vue'
 
 const { t } = useI18n()
-const { tokenParsed, token, ensureToken, login, authenticated } = useAuth()
+const { initPromise, tokenParsed, token, ensureToken, login, authenticated } = useAuth()
+
+/** 登录后回跳到本页而不是个人中心。 */
+const LOGIN_VIEW = 'reconstruction'
 
 // AI Review 权限：已登录 + wotbtools-user 或 wotbtools-admin
 const canUseAiReview = computed(() => {
@@ -18,6 +21,26 @@ const canUseAiReview = computed(() => {
   return Array.isArray(roles) && (
     roles.includes('wotbtools-user') || roles.includes('wotbtools-admin')
   )
+})
+
+// 入口随时可见，但进入本页后检查登录状态：未登录则自动跳转登录页。
+// 鉴权若已就绪（authenticated 为真）直接 ready，避免多余的加载闪屏；
+// 否则先 'init' 不渲染内容，等 initPromise 落定再决定 ready / login。
+const authPhase = ref(authenticated.value ? 'ready' : 'init')
+
+onMounted(async () => {
+  let loggedIn = false
+  try {
+    loggedIn = Boolean(await initPromise)
+  } catch {
+    loggedIn = false
+  }
+  if (loggedIn) {
+    authPhase.value = 'ready'
+    return
+  }
+  authPhase.value = 'login'
+  login(LOGIN_VIEW)
 })
 
 // AI Review 当前只支持单场回放。
@@ -85,14 +108,14 @@ function singleFileFormData() {
 async function authedFetch(url, body) {
   const valid = await ensureToken(30)
   if (!valid) {
-    login()
+    login(LOGIN_VIEW)
     throw new Error(t('recon.auth_required'))
   }
   const accessToken = token()
   const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
   const r = await fetch(url, { method: 'POST', headers, body })
   if (r.status === 401) {
-    login()
+    login(LOGIN_VIEW)
     throw new Error(t('recon.auth_required'))
   }
   if (r.status === 403) {
@@ -197,35 +220,47 @@ function toggleAnalysis() {
 
 <template>
   <main class="recon-page wrap">
-    <ReplayInputPanel
-      v-model:query-time="queryTime"
-      :files="files"
-      :file="file"
-      :loading="loading"
-      :analyzing="analyzing"
-      :analysis-result="analysisResult"
-      :can-use-ai-review="canUseAiReview"
-      :show-analysis="showAnalysis"
-      @add-file="addFile"
-      @remove-file="removeFile"
-      @clear="clearFile"
-      @reconstruct="runReconstruct"
-      @state-at="runStateAt"
-      @analyze="runAnalyze"
-      @toggle-analysis="toggleAnalysis"
-    />
+    <!-- 未登录：提示并已自动跳转登录页，按钮用于跳转失败时手动重试 -->
+    <div v-if="authPhase === 'login'" class="recon-auth">
+      <p>{{ $t('recon.pleaseLogin') }}</p>
+      <button class="btn-primary" @click="login(LOGIN_VIEW)">{{ $t('app.login') }}</button>
+    </div>
 
-    <p v-if="error" class="error" style="margin:12px 0">{{ error }}</p>
+    <div v-else-if="authPhase === 'init'" class="recon-auth">
+      <p>{{ $t('recon.auth_loading') }}</p>
+    </div>
 
-    <ReconstructionSummaryPanel v-if="reconResult" :result="reconResult" />
+    <template v-else>
+      <ReplayInputPanel
+        v-model:query-time="queryTime"
+        :files="files"
+        :file="file"
+        :loading="loading"
+        :analyzing="analyzing"
+        :analysis-result="analysisResult"
+        :can-use-ai-review="canUseAiReview"
+        :show-analysis="showAnalysis"
+        @add-file="addFile"
+        @remove-file="removeFile"
+        @clear="clearFile"
+        @reconstruct="runReconstruct"
+        @state-at="runStateAt"
+        @analyze="runAnalyze"
+        @toggle-analysis="toggleAnalysis"
+      />
 
-    <AnalysisResultPanel
-      v-if="analysisResult && showAnalysis"
-      :result="analysisResult"
-      @close="showAnalysis = false"
-    />
+      <p v-if="error" class="error" style="margin:12px 0">{{ error }}</p>
 
-    <BattleStatePanel v-if="stateResult" :result="stateResult" />
+      <ReconstructionSummaryPanel v-if="reconResult" :result="reconResult" />
+
+      <AnalysisResultPanel
+        v-if="analysisResult && showAnalysis"
+        :result="analysisResult"
+        @close="showAnalysis = false"
+      />
+
+      <BattleStatePanel v-if="stateResult" :result="stateResult" />
+    </template>
   </main>
 </template>
 
@@ -234,6 +269,7 @@ function toggleAnalysis() {
 .recon-page :deep(.fb-chips) { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 12px; }
 .recon-page :deep(.chip) { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 3px 8px; border-radius: 5px; background: var(--bg-chip); color: var(--text-label); }
 .error { color: var(--error); font-size: .88rem; }
+.recon-auth { text-align: center; padding: 40px; color: var(--text-secondary); }
 
 .recon-page :deep(.time-action) {
   display: flex;
