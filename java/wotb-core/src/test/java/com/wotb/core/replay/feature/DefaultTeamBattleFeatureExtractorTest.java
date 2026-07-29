@@ -274,17 +274,17 @@ class DefaultTeamBattleFeatureExtractorTest {
     void formationClusteringUsesOneHundredMetersAsAnInclusiveBoundary() {
         final Fixture fixture = fixture();
 
-        assertEquals(1, formationClusters(fixture, 400f));
-        assertEquals(2, formationClusters(fixture, 400.1f));
+        assertEquals(1, formationClusters(fixture, 100f));
+        assertEquals(2, formationClusters(fixture, 100.1f));
     }
 
     @Test
     void clampedPositionsUseCanonicalDistance() {
-        // raw X1=1050 (clamped to 1000), raw X2=649.9 → canonical distance ~87.5m → same cluster
+        // raw X1=255 (clamped to 250, cx=500), raw X2=200 (cx=450) → canonical distance 50m → same cluster
         final Fixture fixture = fixture();
-        assertEquals(1, formationClusters(fixture, 1050f, 649.9f));
-        // raw X1=1050 (clamped to 1000), raw X2=250 → canonical distance 187.5m → separate cluster
-        assertEquals(2, formationClusters(fixture, 1050f, 250f));
+        assertEquals(1, formationClusters(fixture, 255f, 200f));
+        // raw X1=255 (clamped to 250, cx=500), raw X2=100 (cx=350) → canonical distance 150m → separate cluster
+        assertEquals(2, formationClusters(fixture, 255f, 100f));
     }
 
     @Test
@@ -333,8 +333,8 @@ class DefaultTeamBattleFeatureExtractorTest {
         final Fixture fixture = fixture();
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),
-                position(2, 5f, 10, 500f, 0f),
-                position(3, 6f, 10, 1500f, 0f));
+                position(2, 5f, 10, 125f, 0f),
+                position(3, 6f, 10, 375f, 0f));
 
         final TeamBattleFeatureSet features = extract(fixture, events);
 
@@ -656,7 +656,7 @@ class DefaultTeamBattleFeatureExtractorTest {
         // battle start raw = 100; position at raw clock 50 is pre-battle. raw X 1020 -> CLAMPED.
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),
-                position(2, 50f, 10, 1020f, 0f));
+                position(2, 50f, 10, 255f, 0f));
 
         final TeamFeatureCoverage coverage =
                 extractWithStart(fixture, events, 100f).coverage();
@@ -670,7 +670,7 @@ class DefaultTeamBattleFeatureExtractorTest {
         final Fixture fixture = fixture();
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),
-                position(2, Float.NaN, 10, 1020f, 0f));   // clamped coord but invalid clock
+                position(2, Float.NaN, 10, 255f, 0f));   // clamped coord but invalid clock
 
         final TeamFeatureCoverage coverage = extract(fixture, events).coverage();
 
@@ -684,7 +684,7 @@ class DefaultTeamBattleFeatureExtractorTest {
         final Fixture fixture = fixture();
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),
-                position(2, 5f, 10, 1020f, 0f));   // raw X 1020 -> clamped to 1000
+                position(2, 5f, 10, 255f, 0f));   // raw X 1020 -> clamped to 1000
 
         final TeamFeatureCoverage coverage = extract(fixture, events).coverage();
 
@@ -699,7 +699,7 @@ class DefaultTeamBattleFeatureExtractorTest {
         final Fixture fixture = fixture();
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),
-                position(2, 5f, 10, 500f, 0f));   // in-bounds -> VALID
+                position(2, 5f, 10, 125f, 0f));   // in-bounds -> VALID
 
         final TeamFeatureCoverage coverage = extract(fixture, events).coverage();
 
@@ -729,13 +729,13 @@ class DefaultTeamBattleFeatureExtractorTest {
     @Test
     void clusterCentroidAveragesCanonicalNotRaw() {
         final Fixture fixture = fixture();
-        // raw X {1050 -> canonical 500, 649.9 -> canonical 412.475}; correct centroid 456.2375.
-        // Averaging raw first (mean 849.95 -> canonical 462.4875) would be WRONG.
+        // raw X {255 (clamped to 250) -> canonical 500, 162.475 -> canonical 412.475}; centroid 456.2375.
+        // Averaging raw first (mean 208.7375 -> canonical 458.7375) would be WRONG.
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),
                 mapping(2, 11, 101L),
-                position(3, 5f, 10, 1050f, 0f),
-                position(4, 5f, 11, 649.9f, 0f));
+                position(3, 5f, 10, 255f, 0f),
+                position(4, 5f, 11, 162.475f, 0f));
 
         final TeamFormationCluster cluster = extract(fixture, events)
                 .formationPhases()
@@ -791,7 +791,7 @@ class DefaultTeamBattleFeatureExtractorTest {
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),
                 position(2, 10f, 10, 0f, 0f),
-                position(3, 15f, 10, 400f, 0f));
+                position(3, 15f, 10, 100f, 0f));
 
         final TeamMemberFeatureSet member = extract(fixture, events).members().stream()
                 .filter(candidate -> candidate.accountId() == 100L)
@@ -876,10 +876,10 @@ class DefaultTeamBattleFeatureExtractorTest {
                 mapping(2, 11, 101L),
                 mapping(3, 20, 200L),
                 position(4, 5f, 10, 0f, 0f),
-                position(5, 8f, 10, 10f, 0f),
-                position(6, 5f, 11, 500f, 0f),
-                position(7, 8f, 11, 510f, 0f),
-                position(8, 5f, 20, 1000f, 1000f),
+                position(5, 8f, 10, 2.5f, 0f),
+                position(6, 5f, 11, 125f, 0f),
+                position(7, 8f, 11, 127.5f, 0f),
+                position(8, 5f, 20, 250f, 250f),
                 damage(9, 20f, 10, 20, 200),
                 damage(10, 25f, 20, 11, 150),
                 damage(11, 30f, 99, 98, 400));

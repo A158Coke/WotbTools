@@ -65,23 +65,44 @@ class ReconstructionControllerTeamAnalysisTest {
     }
 
     @Test
-    void uploadWith17FilesReturnsReplayFileCountExceeded() throws Exception {
-        final var files = new MockMultipartFile[17];
-        for (int i = 0; i < 17; i++) {
-            files[i] = replayFile("file" + i + ".wotbreplay");
-        }
-        var request = multipart("/api/replay/analyze");
-        for (final var f : files) {
-            request = request.file(f);
-        }
-        // Real reviewService.analyze() calls validateBatchSize which throws
+    void uploadWithTwoFilesReturnsReplayFileCountExceeded() throws Exception {
+        final var request = multipart("/api/replay/analyze")
+                .file(replayFile("a.wotbreplay"))
+                .file(replayFile("b.wotbreplay"));
 
         mvc.perform(request)
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.code").value("REPLAY_FILE_COUNT_EXCEEDED"))
-                .andExpect(jsonPath("$.maxFiles").value(16))
-                .andExpect(jsonPath("$.actualFiles").value(17));
+                .andExpect(jsonPath("$.maxFiles").value(1))
+                .andExpect(jsonPath("$.actualFiles").value(2));
+        // Processing facade and AI provider must not be called
+        verify(processingFacade, never()).process(any(Source.class), any(ReplayProcessingOptions.class));
+        verify(aiService, never()).analyzeTeamGroups(any());
+        verify(aiService, never()).analyzePlayerOrFallback(any());
+    }
+
+    @Test
+    void uploadWithTwoIdenticalFilesAlsoRejectedByCount() throws Exception {
+        final var file = replayFile("same.wotbreplay");
+        final var request = multipart("/api/replay/analyze")
+                .file(file)
+                .file(file);
+
+        mvc.perform(request)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("REPLAY_FILE_COUNT_EXCEEDED"))
+                .andExpect(jsonPath("$.maxFiles").value(1))
+                .andExpect(jsonPath("$.actualFiles").value(2));
+        verify(processingFacade, never()).process(any(Source.class), any(ReplayProcessingOptions.class));
+    }
+
+    @Test
+    void emptyFilesArrayReturnsNoReplayFiles() throws Exception {
+        mvc.perform(multipart("/api/replay/analyze"))
+                .andExpect(status().isBadRequest());
+        verify(processingFacade, never()).process(any(Source.class), any(ReplayProcessingOptions.class));
+        verify(aiService, never()).analyzeTeamGroups(any());
     }
 
     @Test
@@ -117,69 +138,53 @@ class ReconstructionControllerTeamAnalysisTest {
     }
 
     @Test
-    void sameBattleSameTeamUploadsCallAiOnce() throws Exception {
-        final ReplayProcessingResult first = teamResult(
-                "first.wotbreplay", "shared-arena", "Ally", 1001L, 1);
-        final ReplayProcessingResult second = teamResult(
-                "second.wotbreplay", "shared-arena", "OtherAlly", 1002L, 1);
+    void singleTeamUploadAnalyzesOnce() throws Exception {
+        final ReplayProcessingResult result = teamResult(
+                "single.wotbreplay", "test-arena", "Ally", 1001L, 1);
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
-                .thenReturn(first, second);
+                .thenReturn(result);
         when(aiService.analyzeTeamGroups(any()))
-                .thenReturn(teamAiResult("deduplicated review", List.of(
-                        unit("shared-arena-team-1", "shared-arena", 1, "first.wotbreplay"))));
+                .thenReturn(teamAiResult("single review", List.of(
+                        unit("test-arena-team-1", "test-arena", 1, "single.wotbreplay"))));
 
         mvc.perform(multipart("/api/replay/analyze")
-                        .file(replayFile("first.wotbreplay"))
-                        .file(replayFile("second.wotbreplay")))
+                        .file(replayFile("single.wotbreplay")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.mode").value("SINGLE_TEAM_BATTLE"))
-                .andExpect(jsonPath("$.submittedFileCount").value(2))
-                .andExpect(jsonPath("$.validFileCount").value(2))
+                .andExpect(jsonPath("$.submittedFileCount").value(1))
+                .andExpect(jsonPath("$.validFileCount").value(1))
                 .andExpect(jsonPath("$.analysisUnitCount").value(1))
-                .andExpect(jsonPath("$.analyzedUnitCount").value(1))
-                .andExpect(jsonPath("$.sameTeamDuplicatePerspectiveCount").value(1))
-                .andExpect(jsonPath("$.files[1].relation")
-                        .value("SAME_TEAM_DUPLICATE_PERSPECTIVE"))
-                .andExpect(jsonPath("$.files[1].duplicateOfUploadIndex").value(0));
+                .andExpect(jsonPath("$.analyzedUnitCount").value(1));
 
         final ArgumentCaptor<List<ReplayPerspectiveGroup>> captor =
                 teamGroupCaptor();
         verify(aiService, times(1)).analyzeTeamGroups(captor.capture());
         assertEquals(1, captor.getValue().size());
-        assertEquals(1, captor.getValue().getFirst().duplicates().size());
+        verify(aiService, never()).analyzePlayerOrFallback(any());
     }
 
     @Test
-    void opposingTeamsUseIndependentMultiTeamUnits() throws Exception {
-        final ReplayProcessingResult allied = teamResult(
-                "ally.wotbreplay", "shared-arena", "Ally", 1001L, 1);
-        final ReplayProcessingResult enemy = teamResult(
-                "enemy.wotbreplay", "shared-arena", "Enemy", 2001L, 2);
+    void singleTeamUsesMultiTeamAnalysis() throws Exception {
+        final ReplayProcessingResult result = teamResult(
+                "team.wotbreplay", "team-arena", "Player", 1001L, 1);
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
-                .thenReturn(allied, enemy);
+                .thenReturn(result);
         when(aiService.analyzeTeamGroups(any()))
-                .thenReturn(teamAiResult("comparison", List.of(
-                        unit("shared-arena-team-1", "shared-arena", 1, "ally.wotbreplay"),
-                        unit("shared-arena-team-2", "shared-arena", 2, "enemy.wotbreplay"))));
+                .thenReturn(teamAiResult("team review", List.of(
+                        unit("team-arena-team-1", "team-arena", 1, "team.wotbreplay"))));
 
         mvc.perform(multipart("/api/replay/analyze")
-                        .file(replayFile("ally.wotbreplay"))
-                        .file(replayFile("enemy.wotbreplay")))
+                        .file(replayFile("team.wotbreplay")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mode").value("MULTI_TEAM_BATTLE"))
-                .andExpect(jsonPath("$.analysisUnitCount").value(2))
-                .andExpect(jsonPath("$.analyzedUnitCount").value(2))
-                .andExpect(jsonPath("$.sameTeamDuplicatePerspectiveCount").value(0))
-                .andExpect(jsonPath("$.analyses[0].perspectiveTeam").value(1))
-                .andExpect(jsonPath("$.analyses[1].perspectiveTeam").value(2));
+                .andExpect(jsonPath("$.mode").value("SINGLE_TEAM_BATTLE"))
+                .andExpect(jsonPath("$.analysisUnitCount").value(1))
+                .andExpect(jsonPath("$.analyzedUnitCount").value(1));
 
         final ArgumentCaptor<List<ReplayPerspectiveGroup>> captor =
                 teamGroupCaptor();
         verify(aiService).analyzeTeamGroups(captor.capture());
-        assertEquals(List.of(1, 2), captor.getValue().stream()
-                .map(group -> group.key().perspectiveTeam())
-                .sorted()
-                .toList());
+        assertEquals(1, captor.getValue().size());
+        assertEquals(1, captor.getValue().getFirst().key().perspectiveTeam());
     }
 
     @Test
@@ -226,37 +231,23 @@ class ReconstructionControllerTeamAnalysisTest {
     }
 
     @Test
-    void multipleBattlesUseMultiTeamAnalysis() throws Exception {
-        final ReplayProcessingResult first = teamResult(
-                "first-battle.wotbreplay", "arena-one", "Ally", 1001L, 1);
-        final ReplayProcessingResult second = teamResult(
-                "second-battle.wotbreplay", "arena-two", "Ally", 1001L, 1);
+    void singleBattleTeamAnalysis() throws Exception {
+        final ReplayProcessingResult result = teamResult(
+                "battle.wotbreplay", "battle-arena", "Player", 1001L, 1);
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
-                .thenReturn(first, second);
+                .thenReturn(result);
         when(aiService.analyzeTeamGroups(any()))
-                .thenReturn(teamAiResult("trend review", List.of(
-                        unit("arena-one-team-1",
-                                "arena-one", 1, "first-battle.wotbreplay"),
-                        unit("arena-two-team-1",
-                                "arena-two", 1, "second-battle.wotbreplay"))));
+                .thenReturn(teamAiResult("team review", List.of(
+                        unit("battle-arena-team-1",
+                                "battle-arena", 1, "battle.wotbreplay"))));
 
         mvc.perform(multipart("/api/replay/analyze")
-                        .file(replayFile("first-battle.wotbreplay"))
-                        .file(replayFile("second-battle.wotbreplay")))
+                        .file(replayFile("battle.wotbreplay")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mode").value("MULTI_TEAM_BATTLE"))
-                .andExpect(jsonPath("$.analysisUnitCount").value(2))
-                .andExpect(jsonPath("$.analyzedUnitCount").value(2))
-                .andExpect(jsonPath("$.analysis").value("trend review"));
-
-        final ArgumentCaptor<List<ReplayPerspectiveGroup>> captor =
-                teamGroupCaptor();
-        verify(aiService).analyzeTeamGroups(captor.capture());
-        assertEquals(
-                List.of("arena-one", "arena-two"),
-                captor.getValue().stream()
-                        .map(group -> group.battleIdentity().arenaUniqueId())
-                        .toList());
+                .andExpect(jsonPath("$.mode").value("SINGLE_TEAM_BATTLE"))
+                .andExpect(jsonPath("$.analysisUnitCount").value(1))
+                .andExpect(jsonPath("$.analyzedUnitCount").value(1))
+                .andExpect(jsonPath("$.submittedFileCount").value(1));
     }
 
     @Test
@@ -300,28 +291,21 @@ class ReconstructionControllerTeamAnalysisTest {
     }
 
     @Test
-    void unresolvedUnitIsReportedButExcludedWhenAnotherTeamIsAnalyzable()
-            throws Exception {
-        final ReplayProcessingResult resolved = teamResult(
+    void resolvedTeamAnalysisReturnsOk() throws Exception {
+        final ReplayProcessingResult result = teamResult(
                 "resolved.wotbreplay", "resolved-arena", "Ally", 1001L, 1);
-        final ReplayProcessingResult unresolved = unresolvedTeamResult();
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
-                .thenReturn(resolved, unresolved);
+                .thenReturn(result);
         when(aiService.analyzeTeamGroups(any()))
-                .thenReturn(teamAiResult("partial batch review", List.of(
+                .thenReturn(teamAiResult("review", List.of(
                         unit("resolved-arena-team-1",
                                 "resolved-arena", 1, "resolved.wotbreplay"))));
 
         mvc.perform(multipart("/api/replay/analyze")
-                        .file(replayFile("resolved.wotbreplay"))
-                        .file(replayFile("observer.wotbreplay")))
+                        .file(replayFile("resolved.wotbreplay")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.mode").value("SINGLE_TEAM_BATTLE"))
-                .andExpect(jsonPath("$.validFileCount").value(1))
-                .andExpect(jsonPath("$.analysisUnitCount").value(2))
-                .andExpect(jsonPath("$.analyzedUnitCount").value(1))
-                .andExpect(jsonPath("$.files[0].analysisIncluded").value(true))
-                .andExpect(jsonPath("$.files[1].analysisIncluded").value(false));
+                .andExpect(jsonPath("$.validFileCount").value(1));
     }
 
     @Test

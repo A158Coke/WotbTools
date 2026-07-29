@@ -766,7 +766,7 @@
         "select_file": "Выбрать реплей",
         "invalid_file": "Выберите файл .wotbreplay",
         "no_file": "Файл не выбран",
-        "max_files_count": "{count} / 16",
+        "max_files_count": "{count} файл(ов)",
         "reconstruct_btn": "Реконструировать",
         "time_placeholder": "Время (с)",
         "invalid_time": "Неверное время",
@@ -820,7 +820,7 @@
         "ai_error": "Ошибка AI-анализа",
         "ai_error_http": "Ошибка AI-анализа (HTTP {status})",
         "auth_required": "Требуется вход, перенаправление…",
-        "forbidden": "Нет доступа: функция только для wotbtools-admin",
+        "forbidden": "Нет доступа: функция требует роли wotbtools-user или wotbtools-admin",
         "modes": {
             "SINGLE_PLAYER_BATTLE": "Разбор игрока в одном бою",
             "MULTI_PLAYER_BATTLE": "Тренды игрока по серии боёв",

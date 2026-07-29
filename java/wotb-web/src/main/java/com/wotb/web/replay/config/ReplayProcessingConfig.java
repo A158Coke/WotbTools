@@ -1,5 +1,7 @@
 package com.wotb.web.replay.config;
 
+import com.wotb.core.ai.AiTokenEstimator;
+import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import org.springframework.context.annotation.Bean;
@@ -20,5 +22,10 @@ public class ReplayProcessingConfig {
     @Bean
     public DefaultReplayProcessingFacade replayProcessingFacade(final ReplayReconstructionService reconstructionService) {
         return new DefaultReplayProcessingFacade(reconstructionService);
+    }
+
+    @Bean
+    public AiTokenEstimator aiTokenEstimator() {
+        return new ConservativeDeepSeekTokenEstimator();
     }
 }

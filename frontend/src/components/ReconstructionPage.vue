@@ -20,8 +20,7 @@ const canUseAiReview = computed(() => {
   )
 })
 
-// 支持多选：AI 分析可一次分析多场。reconstruct/state-at 为单文件工具，取第一个。
-const MAX_AI_REVIEW_REPLAY_FILES = 16
+// AI Review 当前只支持单场回放。
 const files = ref([])
 const file = computed(() => files.value[0] || null)
 const loading = ref(false)
@@ -49,12 +48,7 @@ function addFile(e) {
     }
     return
   }
-  const totalAfterAdd = files.value.length + picked.length
-  if (totalAfterAdd > MAX_AI_REVIEW_REPLAY_FILES) {
-    error.value = t('recon.errors.REPLAY_FILE_COUNT_EXCEEDED', { max: MAX_AI_REVIEW_REPLAY_FILES })
-    return
-  }
-  files.value = [...files.value, ...picked]
+  files.value = [picked[0]]
   error.value = ''
   resetResults()
 }
@@ -79,10 +73,10 @@ function singleFormData() {
   return fd
 }
 
-/** 多文件表单（analyze 用全部所选文件）。 */
-function multiFormData() {
+/** 单文件表单（analyze 也用唯一的文件）。 */
+function singleFileFormData() {
   const fd = new FormData()
-  for (const f of files.value) fd.append('files', f)
+  if (files.value.length > 0) fd.append('files', files.value[0])
   return fd
 }
 
@@ -164,26 +158,20 @@ async function runAnalyze() {
     error.value = t('recon.errors.NO_REPLAY_FILE')
     return
   }
-  if (files.value.length > MAX_AI_REVIEW_REPLAY_FILES) {
-    error.value = t('recon.errors.REPLAY_FILE_COUNT_EXCEEDED', { max: MAX_AI_REVIEW_REPLAY_FILES })
-    return
-  }
   analyzing.value = true
   error.value = ''
   analysisResult.value = null
   try {
-    const r = await authedFetch('/api/replay/analyze', multiFormData())
+    const r = await authedFetch('/api/replay/analyze', singleFileFormData())
     if (!r.ok) {
       const rawBody = await r.text().catch(() => '')
       const trimmed = rawBody.trim()
-      let errorData = { code: trimmed, maxFiles: 16 }
-      // Try JSON parse for structured errors (REPLAY_FILE_COUNT_EXCEEDED etc.)
+      let errorData = { code: trimmed, maxFiles: 1 }
       if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
         try {
           const json = JSON.parse(trimmed)
-          errorData = { code: json.code || '', maxFiles: json.maxFiles || 16 }
+          errorData = { code: json.code || '', maxFiles: json.maxFiles || 1 }
         } catch {
-          // Not valid JSON — keep trimmed as plain text code
         }
       }
       throw new Error(localizeAiError(errorData, r.status, t))
