@@ -41,7 +41,6 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     static final float FOCUS_FIRE_WINDOW_SEC = 5f;
     static final int MIN_FOCUS_FIRE_ATTACKERS = 2;
     static final float MAX_ABSOLUTE_ELEVATION = 200f;
-    static final int MAX_KEY_EVENTS = 40;
 
     @Override
     public TeamBattleFeatureSet extract(
@@ -983,7 +982,7 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
                 .flatMap(s -> s)
                 .sorted(Comparator.comparingDouble(KeyBattleEvent::clockSec)
                         .thenComparing(KeyBattleEvent::type))
-                .limit(MAX_KEY_EVENTS)
+
                 .toList();
     }
 
