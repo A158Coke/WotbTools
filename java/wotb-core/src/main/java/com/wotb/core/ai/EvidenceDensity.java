@@ -1,0 +1,9 @@
+package com.wotb.core.ai;
+
+public enum EvidenceDensity {
+    LEVEL_1_COMPRESSED,
+    LEVEL_2_POSITION_SAMPLE,
+    LEVEL_3_OBSERVED_TIMELINE,
+    LEVEL_4_KEY_WINDOW_HIGH_PRECISION,
+    LEVEL_5_EVENT_LEVEL
+}

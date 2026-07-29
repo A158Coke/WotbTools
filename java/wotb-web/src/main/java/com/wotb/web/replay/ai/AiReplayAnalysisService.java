@@ -6,6 +6,9 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.TankInfo;
 import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
+import com.wotb.core.ai.EvidenceDensity;
+import com.wotb.core.ai.PlannedPrompt;
+import com.wotb.core.ai.SingleReplayPromptPlanner;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.processing.AnalysisUnitResult;
@@ -232,6 +235,55 @@ public class AiReplayAnalysisService {
                     "AI_CONTEXT_WINDOW_EXCEEDED: estimatedInputTokens=" + estimatedTokens
                     + " + maxOutputTokens=" + maxOutputTokens + " + safetyMargin=" + promptSafetyMarginTokens
                     + " > contextWindow=" + contextWindowTokens);
+        }
+        final Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", model);
+        body.put("stream", false);
+        body.put("max_tokens", maxOutputTokens);
+        body.put("thinking", Map.of("type", thinkingEnabled ? "enabled" : "disabled"));
+        if (thinkingEnabled) {
+            body.put("reasoning_effort", reasoningEffort);
+        }
+        body.put("messages", messages);
+        final String content = call(body, "SINGLE_PLAYER_BATTLE");
+        return new AnalyzeResult(content, model, ctx.features().keyEvents());
+    }
+
+    public AnalyzeResult analyzePlayerContext(
+            final SinglePlayerBattleAnalysisContext ctx,
+            final ReplayReconstruction recon
+    ) {
+        if (!isConfigured()) throw new AiNotConfiguredException();
+        final String baseSummary = buildPlayerContextSummary(ctx);
+        if (recon == null) {
+            return analyzePlayerContext(ctx);
+        }
+        final SingleReplayPromptPlanner planner = new SingleReplayPromptPlanner(
+                tokenEstimator, singleReplayMaxInputTokens,
+                contextWindowTokens, maxOutputTokens, promptSafetyMarginTokens);
+        final PlannedPrompt planned = planner.plan(
+                SINGLE_PLAYER_PROMPT, baseSummary, ctx, recon);
+        final List<Map<String, Object>> messages = List.of(
+                Map.<String, Object>of("role", "system", "content", SINGLE_PLAYER_PROMPT),
+                Map.<String, Object>of("role", "user", "content", planned.userContent()));
+        final int estimatedTokens = tokenEstimator.estimateMessagesTokens(messages);
+        final int maxInputTokens = singleReplayMaxInputTokens;
+        if (estimatedTokens > maxInputTokens) {
+            throw new IllegalArgumentException(
+                    "AI_TOKEN_BUDGET_EXCEEDED: estimatedInputTokens=" + estimatedTokens
+                    + " maxInputTokens=" + maxInputTokens);
+        }
+        if (estimatedTokens + maxOutputTokens + promptSafetyMarginTokens > contextWindowTokens) {
+            throw new IllegalArgumentException(
+                    "AI_CONTEXT_WINDOW_EXCEEDED: estimatedInputTokens=" + estimatedTokens
+                    + " + maxOutputTokens=" + maxOutputTokens + " + safetyMargin=" + promptSafetyMarginTokens
+                    + " > contextWindow=" + contextWindowTokens);
+        }
+        if (planned.density() != EvidenceDensity.LEVEL_1_COMPRESSED) {
+            LOGGER.log(System.Logger.Level.INFO,
+                    "AI analysis density={0} tokens={1}/{2} budgetSummary={3}",
+                    planned.density(), planned.estimatedInputTokens(),
+                    planned.effectiveInputLimit(), planned.budgetSummary());
         }
         final Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
@@ -1681,7 +1733,8 @@ public class AiReplayAnalysisService {
 
         return analyzePlayerContext(new SinglePlayerBattleAnalysisContext(
                 null, result.battle(), features, recorder,
-                result.reconstruction().coverage(), features.limitations()));
+                result.reconstruction().coverage(), features.limitations()),
+                result.reconstruction());
     }
 
     /**
