@@ -277,7 +277,6 @@ public final class SingleReplayPromptPlanner {
                         && vs.observationState() == ObservationState.OBSERVED) {
                     if (!observedEntities.containsKey(entityId)) {
                         entityCounter++;
-                        if (entityCounter > MAX_OBSERVED_ENTITIES) continue;
                         observedEntities.put(entityId, "Entity#" + entityId);
                     }
                 }
@@ -425,7 +424,7 @@ public final class SingleReplayPromptPlanner {
             return "";
         }
 
-        final int halfWindow = MAX_EVENT_WINDOW_EVENTS / 2;
+        final int halfWindow = 25;
 
         final StringBuilder sb = new StringBuilder(4096);
         sb.append("=== EVENT_LEVEL_EVIDENCE (LEVEL_5) ===\n");

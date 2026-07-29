@@ -1032,7 +1032,7 @@ class TeamAiPromptBuilderTest {
         final int firstOptional = input.content().indexOf("=== PERSPECTIVE_OPTIONAL ===");
         assertTrue(lastFacts >= 0);
         if (firstOptional > 0) {
-            assertTrue(true, "Each perspective is self-contained");
+            assertTrue(input.content().contains("=== PERSPECTIVE_FACTS ==="), "Must have PERSPECTIVE_FACTS");
         }
     }
 
@@ -1231,7 +1231,7 @@ class TeamAiPromptBuilderTest {
         // Each perspective is self-contained
         final int lastFacts = content.lastIndexOf("=== PERSPECTIVE_FACTS ===");
         assertTrue(lastFacts >= 0);
-        assertTrue(true, "Each perspective is self-contained");
+        assertTrue(content.contains("=== PERSPECTIVE_FACTS ==="), "Must have PERSPECTIVE_FACTS");
     }
 }
 
