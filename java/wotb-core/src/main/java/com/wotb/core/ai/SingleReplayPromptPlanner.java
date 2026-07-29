@@ -13,10 +13,12 @@ import com.wotb.core.replay.feature.MapRegionResolver;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 单场回放提示规划器，根据可用上下文窗口逐级增加证据密度。
@@ -326,6 +328,8 @@ public final class SingleReplayPromptPlanner {
             String lastPosKey = null;
             int dedupCount = 0;
             boolean lastKnownPositionOutput = false;
+            // 顺序遍历 checkpoint 时持续维护最近一次 OBSERVED 的时间与坐标
+            ObservedSample lastObserved = null;
 
             for (final BattleStateCheckpoint cp : sorted) {
                 final VehicleState vs = cp.stateSnapshot().vehicleByEntityId(entityId);
@@ -333,28 +337,19 @@ public final class SingleReplayPromptPlanner {
 
                 // 逐 checkpoint 检查 observationState
                 final ObservationState obsState = vs.observationState();
-                // REMOVED/UNKNOWN 时不得输出为当前位置
-                if (obsState == ObservationState.REMOVED || obsState == ObservationState.UNKNOWN) {
-                    // 如需最后已知位置，单独输出一次
-                    if (!lastKnownPositionOutput && vs.lastPositionAt() != null) {
-                        // 找到该 entity 的上一个可观测位置
-                        for (final BattleStateCheckpoint prev : sorted) {
-                            if (prev.rawClockSec() >= cp.rawClockSec()) break;
-                            final VehicleState prevVs = prev.stateSnapshot().vehicleByEntityId(entityId);
-                            if (prevVs == null || prevVs.position() == null) continue;
-                            if (prevVs.observationState() == ObservationState.OBSERVED) {
-                                final Vector3 pos = prevVs.position();
-                                final float relTime = prev.rawClockSec() - battleStartRawClockSec;
-                                final MapCoordinateResolution coordRes = MapRegionResolver.resolve(pos.x(), pos.z(), MapCoordinateProfile.DEFAULT);
-                                if (coordRes.usable()) {
-                                    sb.append(String.format("  t=%.1fs entity=%s coordinateStatus=%s canonicalX=%.1f canonicalZ=%.1f LAST_KNOWN_POSITION (lastObserved=%.1fs)%n",
-                                            relTime, entry.getValue(), coordRes.status(), coordRes.position().x(), coordRes.position().z(),
-                                            vs.lastObservedAt() - battleStartRawClockSec));
-                                    lastKnownPositionOutput = true;
-                                }
-                                break;
-                            }
-                        }
+                final float battleRelSec = cp.rawClockSec() - battleStartRawClockSec;
+
+                // 只有 OBSERVED 才能作为当前位置输出；STALE/UNKNOWN/REMOVED 一律不得当作当前位置
+                if (obsState != ObservationState.OBSERVED) {
+                    // 首次进入 STALE/UNKNOWN/REMOVED 时，输出一次最近一次 OBSERVED 样本作为最后已知位置
+                    if (!lastKnownPositionOutput && lastObserved != null) {
+                        sb.append(String.format(
+                                "  t=%.1fs entity=%s coordinateStatus=%s canonicalX=%.1f canonicalZ=%.1f"
+                                        + " LAST_KNOWN_POSITION (observationState=%s, POSITION_UNKNOWN_AFTER=%.1fs 此后位置未知)%n",
+                                lastObserved.relSec(), entry.getValue(), lastObserved.coord().status(),
+                                lastObserved.coord().position().x(), lastObserved.coord().position().z(),
+                                stateLabel(obsState), battleRelSec));
+                        lastKnownPositionOutput = true;
                     }
                     continue;
                 }
@@ -366,13 +361,15 @@ public final class SingleReplayPromptPlanner {
                 final MapCoordinateResolution coordRes = MapRegionResolver.resolve(pos.x(), pos.z(), MapCoordinateProfile.DEFAULT);
                 if (!coordRes.usable()) continue;
 
+                // 覆盖旧值，保证最后已知位置取到的是最后一次而不是第一次 OBSERVED
+                lastObserved = new ObservedSample(battleRelSec, coordRes);
+
                 final String posKey = String.format("%.0f_%.0f", coordRes.position().x(), coordRes.position().z());
 
                 // 去重：连续相同 canonical 位置只输出一次
                 if (posKey.equals(lastPosKey)) continue;
                 lastPosKey = posKey;
 
-                final float battleRelSec = cp.rawClockSec() - battleStartRawClockSec;
                 sb.append(String.format("  t=%.1fs entity=%s coordinateStatus=%s canonicalX=%.1f canonicalZ=%.1f%n",
                         battleRelSec, entry.getValue(), coordRes.status(), coordRes.position().x(), coordRes.position().z()));
                 dedupCount++;
@@ -427,9 +424,24 @@ public final class SingleReplayPromptPlanner {
         sb.append("=== KEY_WINDOW_HIGH_PRECISION (LEVEL_4) ===\n");
         sb.append("# 关键事件窗口高精度采样（±5秒范围，全实体位置，统一时间域 + canonical坐标）\n");
 
+        // 顺序遍历 checkpoint 时持续维护每个实体最近一次 OBSERVED 的时间与坐标；
+        // lastKnownEmitted 保证每个实体的 LAST_KNOWN_POSITION 只输出一次
+        final Map<Integer, ObservedSample> lastObservedByEntity = new LinkedHashMap<>();
+        final Set<Integer> lastKnownEmitted = new HashSet<>();
+        int catchUpCursor = 0;
+
         for (final float rawKeyTime : rawKeyTimes) {
             final float windowStart = Math.max(0, rawKeyTime - KEY_WINDOW_HALF_WIDTH_SEC);
             final float windowEnd = rawKeyTime + KEY_WINDOW_HALF_WIDTH_SEC;
+
+            // 窗口之间的 checkpoint 不输出，但仍要顺序纳入维护，
+            // 否则最后已知位置可能取到比真正最后一次 OBSERVED 更早的样本
+            while (catchUpCursor < sorted.size()
+                    && sorted.get(catchUpCursor).rawClockSec() < windowStart) {
+                trackObservedEntities(sorted.get(catchUpCursor), battleStartRawClockSec,
+                        recorderAccountId, lastObservedByEntity);
+                catchUpCursor++;
+            }
 
             final List<BattleStateCheckpoint> windowed = sorted.stream()
                     .filter(cp -> cp.rawClockSec() >= windowStart && cp.rawClockSec() <= windowEnd)
@@ -447,29 +459,43 @@ public final class SingleReplayPromptPlanner {
 
                 final List<String> positions = new ArrayList<>();
                 for (final Map.Entry<Integer, VehicleState> ve : cp.stateSnapshot().vehiclesByEntityId().entrySet()) {
+                    final int entityId = ve.getKey();
                     final VehicleState vs = ve.getValue();
 
-                    // 逐 checkpoint 检查 observationState
-                    if (vs.observationState() == ObservationState.REMOVED
-                            || vs.observationState() == ObservationState.UNKNOWN) {
+                    final Long acctId = vs.accountId();
+                    final boolean isRecorder = acctId != null && acctId == recorderAccountId;
+                    if (!isRecorder && (acctId == null || acctId <= 0)) continue;
+                    final String entityLabel = isRecorder ? "RECORDER" : ("E" + entityId);
+
+                    // 逐 checkpoint 检查 observationState：
+                    // 只有 OBSERVED 才能作为当前位置输出
+                    final ObservationState obsState = vs.observationState();
+                    if (obsState != ObservationState.OBSERVED) {
+                        // 首次进入 STALE/UNKNOWN/REMOVED 时，输出一次最近一次 OBSERVED 样本
+                        final ObservedSample last = lastObservedByEntity.get(entityId);
+                        if (last != null && lastKnownEmitted.add(entityId)) {
+                            positions.add(String.format(
+                                    "entity=%s coordinateStatus=%s canonicalX=%.1f canonicalZ=%.1f"
+                                            + " LAST_KNOWN_POSITION (lastObserved=%.1fs, observationState=%s,"
+                                            + " POSITION_UNKNOWN_AFTER=%.1fs 此后位置未知)",
+                                    entityLabel, last.coord().status(),
+                                    last.coord().position().x(), last.coord().position().z(),
+                                    last.relSec(), stateLabel(obsState), battleRelSec));
+                        }
                         continue;
                     }
 
                     if (vs.position() == null) continue;
 
-                    final Long acctId = vs.accountId();
-                    final boolean isRecorder = acctId != null && acctId == recorderAccountId;
                     final Vector3 pos = vs.position();
                     final MapCoordinateResolution coordRes = MapRegionResolver.resolve(pos.x(), pos.z(), MapCoordinateProfile.DEFAULT);
                     if (!coordRes.usable()) continue;
 
-                    if (isRecorder) {
-                        positions.add(String.format("entity=RECORDER coordinateStatus=%s canonicalX=%.1f canonicalZ=%.1f",
-                                coordRes.status(), coordRes.position().x(), coordRes.position().z()));
-                    } else if (acctId != null && acctId > 0) {
-                        positions.add(String.format("entity=E%d coordinateStatus=%s canonicalX=%.1f canonicalZ=%.1f",
-                                ve.getKey(), coordRes.status(), coordRes.position().x(), coordRes.position().z()));
-                    }
+                    // 覆盖旧值，保证最后已知位置取到的是最后一次而不是第一次 OBSERVED
+                    trackObserved(lastObservedByEntity, entityId, battleRelSec, coordRes);
+
+                    positions.add(String.format("entity=%s coordinateStatus=%s canonicalX=%.1f canonicalZ=%.1f",
+                            entityLabel, coordRes.status(), coordRes.position().x(), coordRes.position().z()));
                 }
 
                 if (positions.isEmpty()) {
@@ -573,6 +599,63 @@ public final class SingleReplayPromptPlanner {
     private static long resolveRecorderAccountId(final SinglePlayerBattleAnalysisContext ctx) {
         if (ctx == null || ctx.recorder() == null) return -1;
         return ctx.recorder().accountId();
+    }
+
+    /**
+     * 最近一次 observationState == OBSERVED 的位置样本，用于 LAST_KNOWN_POSITION 输出。
+     *
+     * @param relSec 该样本所在 checkpoint 的 battle-relative 时间
+     * @param coord  该样本的 canonical 坐标解析结果
+     */
+    private record ObservedSample(float relSec, MapCoordinateResolution coord) {
+    }
+
+    /**
+     * 将一个 checkpoint 中所有可输出实体的 OBSERVED 位置纳入维护（不产生任何输出）。
+     * 用于 LEVEL_4 跳过窗口之间的 checkpoint 时仍保持"最近一次 OBSERVED"为最新。
+     */
+    private static void trackObservedEntities(
+            final BattleStateCheckpoint cp,
+            final float battleStartRawClockSec,
+            final long recorderAccountId,
+            final Map<Integer, ObservedSample> lastObservedByEntity
+    ) {
+        final float battleRelSec = cp.rawClockSec() - battleStartRawClockSec;
+        for (final Map.Entry<Integer, VehicleState> ve : cp.stateSnapshot().vehiclesByEntityId().entrySet()) {
+            final VehicleState vs = ve.getValue();
+            if (vs.observationState() != ObservationState.OBSERVED || vs.position() == null) continue;
+
+            final Long acctId = vs.accountId();
+            final boolean isRecorder = acctId != null && acctId == recorderAccountId;
+            if (!isRecorder && (acctId == null || acctId <= 0)) continue;
+
+            final Vector3 pos = vs.position();
+            final MapCoordinateResolution coordRes =
+                    MapRegionResolver.resolve(pos.x(), pos.z(), MapCoordinateProfile.DEFAULT);
+            if (!coordRes.usable()) continue;
+
+            trackObserved(lastObservedByEntity, ve.getKey(), battleRelSec, coordRes);
+        }
+    }
+
+    /**
+     * 记录实体最近一次 OBSERVED 样本。仅在样本时间不早于已记录值时覆盖，
+     * 因此重复遍历同一段 checkpoint 不会把结果退回到更早的样本。
+     */
+    private static void trackObserved(
+            final Map<Integer, ObservedSample> lastObservedByEntity,
+            final int entityId,
+            final float relSec,
+            final MapCoordinateResolution coord
+    ) {
+        final ObservedSample existing = lastObservedByEntity.get(entityId);
+        if (existing == null || relSec >= existing.relSec()) {
+            lastObservedByEntity.put(entityId, new ObservedSample(relSec, coord));
+        }
+    }
+
+    private static String stateLabel(final ObservationState state) {
+        return state == null ? ObservationState.UNKNOWN.name() : state.name();
     }
 
 }
