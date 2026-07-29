@@ -110,7 +110,6 @@ final class TeamAiPromptBuilder {
         final BudgetWriter writer = new BudgetWriter();
         writer.appendRequired(headerBlock);
         writer.appendRequiredBlock(hpfBlock);
-        writer.markMandatoryEnd();
         writer.append(optBlock);
 
         return writer.finish(estimator, maxInputTokens,
@@ -147,8 +146,8 @@ final class TeamAiPromptBuilder {
                              final Map<String, List<String>> evidenceLimitations,
                              final AiTokenEstimator estimator,
                              final int maxInputTokens) {
-        final Set<String> globalLimitations = new LinkedHashSet<>(context.limitations());
         final List<TeamBattleAnalysisSummary> perspectives = context.perspectives();
+        final Set<String> globalLimitations = new LinkedHashSet<>(context.limitations());
 
         // 构建 global header
         final StringBuilder globalHeader = new StringBuilder();
@@ -159,9 +158,10 @@ final class TeamAiPromptBuilder {
         if (!context.rosterConsistent()) {
             globalLimitations.add("ROSTER_CONSISTENCY_UNCONFIRMED");
         }
+        final String globalHeaderStr = globalHeader.toString();
 
-        // 构建所有 perspective sections（无固定上限，全部包含）
-        final List<PerspectivePromptSections> perspectiveSections = new ArrayList<>();
+        // 2. 构建所有 perspective 的 mandatory/HPF 内容（临时写入器，不写入 finally）
+        final List<PerspectivePromptSections> perspectiveSections = new ArrayList<>(perspectives.size());
         for (int index = 0; index < perspectives.size(); index++) {
             final TeamBattleAnalysisSummary perspective = perspectives.get(index);
             final Set<String> perUnitLimits = new LinkedHashSet<>();
@@ -175,30 +175,49 @@ final class TeamAiPromptBuilder {
             perspectiveSections.add(buildPerspectiveSections(perspective, perUnitLimits, index));
         }
 
-        // 写入所有内容
+        // 3-4. 估算所有 mandatory/HPF 总 token 数，超限则抛异常
+        if (estimator != null) {
+            final StringBuilder mandatoryBuf = new StringBuilder();
+            mandatoryBuf.append(globalHeaderStr);
+            for (final PerspectivePromptSections section : perspectiveSections) {
+                mandatoryBuf.append(section.mandatoryBlock());
+                mandatoryBuf.append(section.highPriorityBlock());
+            }
+            if (estimator.estimateTextTokens(mandatoryBuf.toString()) > maxInputTokens) {
+                throw new AiPromptBudgetExceededException();
+            }
+        }
+
+        // 5. 写入 mandatory 内容到最终 writer
         final BudgetWriter writer = new BudgetWriter();
-        writer.appendRequired(globalHeader.toString());
+        writer.appendRequired(globalHeaderStr);
 
         final Set<String> truncatedIds = new LinkedHashSet<>();
-        for (int index = 0; index < perspectives.size(); index++) {
-            final PerspectivePromptSections section = perspectiveSections.get(index);
-
-            // 检查 mandatory 预算
-            if (estimator != null) {
-                final String mandatoryContent = section.mandatoryBlock() + section.highPriorityBlock();
-                if (estimator.estimateTextTokens(mandatoryContent) > maxInputTokens) {
-                    throw new AiPromptBudgetExceededException();
-                }
-            }
-
+        for (final PerspectivePromptSections section : perspectiveSections) {
             writer.appendRequired(section.mandatoryBlock());
             writer.appendRequiredBlock(section.highPriorityBlock());
-            writer.markMandatoryEnd();
             if (section.hpfTruncated()) {
                 truncatedIds.add(section.analysisUnitId());
                 writer.markTruncated();
             }
-            writer.append(section.optionalBlock());
+        }
+
+        // 6-8. 按 perspective 逐个写入 optional block，检查预算
+        for (final PerspectivePromptSections section : perspectiveSections) {
+            final String optBlock = section.optionalBlock();
+            if (!StringUtils.hasText(optBlock)) {
+                continue;
+            }
+            // 检查下一个 block 是否会导致超限
+            if (estimator != null) {
+                final String projectedContent = writer.content() + optBlock;
+                if (estimator.estimateTextTokens(projectedContent) > maxInputTokens) {
+                    truncatedIds.add(section.analysisUnitId());
+                    writer.markTruncated();
+                    continue;
+                }
+            }
+            writer.append(optBlock);
             if (section.optionalTruncated()) {
                 truncatedIds.add(section.analysisUnitId());
                 writer.markTruncated();
@@ -213,6 +232,7 @@ final class TeamAiPromptBuilder {
             perUnitLimMap.put(id, perspectiveSections.get(i).perUnitLimitations());
         }
 
+        // 9. 最终重新估算并保证低于 budget
         return writer.finish(estimator, maxInputTokens,
                 globalLimitations, includedIds, Set.of(), truncatedIds, perUnitLimMap);
     }
@@ -607,7 +627,6 @@ final class TeamAiPromptBuilder {
 
         private final StringBuilder content = new StringBuilder(4096);
         private boolean truncated;
-        private int mandatoryEnd = -1;
 
         private BudgetWriter() {
         }
@@ -630,10 +649,6 @@ final class TeamAiPromptBuilder {
             }
         }
 
-        private void markMandatoryEnd() {
-            mandatoryEnd = content.length();
-        }
-
         private String content() {
             return content.toString();
         }
@@ -644,6 +659,10 @@ final class TeamAiPromptBuilder {
 
         private void markTruncated() {
             truncated = true;
+        }
+
+        private int estimateTokens(final AiTokenEstimator estimator) {
+            return estimator.estimateTextTokens(content.toString());
         }
 
         private PromptInput finish(
@@ -665,9 +684,6 @@ final class TeamAiPromptBuilder {
             }
             if (truncated) {
                 globalLimitations.add("AI_INPUT_TRUNCATED");
-                if (mandatoryEnd >= 0 && mandatoryEnd < content.length()) {
-                    content.setLength(mandatoryEnd);
-                }
                 content.append(TRUNCATION_LINE);
             }
             return new PromptInput(
