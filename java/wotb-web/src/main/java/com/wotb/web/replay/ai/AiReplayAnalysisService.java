@@ -114,7 +114,7 @@ public class AiReplayAnalysisService {
     private final String apiKey;
     private static final Tankopedia tankopedia = Tankopedia.load();
     private final String model;
-    private final int singlePlayerMaxInputTokens;
+    private final int singleReplayMaxInputTokens;
     private final AiTokenEstimator tokenEstimator;
     private final int contextWindowTokens;
     private final int maxOutputTokens;
@@ -125,7 +125,7 @@ public class AiReplayAnalysisService {
 
     @Autowired
     public AiReplayAnalysisService(final AiModelProperties properties, final AiTokenEstimator tokenEstimator) {
-        this(properties.apiKey(), properties.baseUrl(), properties.model(), properties.timeoutSec(), properties.singlePlayerMaxInputTokens(), tokenEstimator,
+        this(properties.apiKey(), properties.baseUrl(), properties.model(), properties.timeoutSec(), properties.singleReplayMaxInputTokens(), tokenEstimator,
                 properties.contextWindowTokens(), properties.maxOutputTokens(), properties.promptSafetyMarginTokens(),
                 properties.thinkingEnabled(), properties.reasoningEffort());
     }
@@ -135,8 +135,8 @@ public class AiReplayAnalysisService {
             final String baseUrl,
             final String model,
             final int timeoutSec,
-            final int singlePlayerMaxInputTokens) {
-        this(apiKey, baseUrl, model, timeoutSec, singlePlayerMaxInputTokens, new ConservativeDeepSeekTokenEstimator(),
+            final int singleReplayMaxInputTokens) {
+        this(apiKey, baseUrl, model, timeoutSec, singleReplayMaxInputTokens, new ConservativeDeepSeekTokenEstimator(),
                 131072, 8192, 1000, true, "high");
     }
 
@@ -145,7 +145,7 @@ public class AiReplayAnalysisService {
             final String baseUrl,
             final String model,
             final int timeoutSec,
-            final int singlePlayerMaxInputTokens,
+            final int singleReplayMaxInputTokens,
             final AiTokenEstimator tokenEstimator,
             final int contextWindowTokens,
             final int maxOutputTokens,
@@ -154,7 +154,7 @@ public class AiReplayAnalysisService {
             final String reasoningEffort) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.model = model;
-        this.singlePlayerMaxInputTokens = singlePlayerMaxInputTokens > 0 ? singlePlayerMaxInputTokens : 800000;
+        this.singleReplayMaxInputTokens = singleReplayMaxInputTokens > 0 ? singleReplayMaxInputTokens : 800000;
         this.tokenEstimator = tokenEstimator;
         this.contextWindowTokens = contextWindowTokens;
         this.maxOutputTokens = maxOutputTokens;
@@ -221,7 +221,7 @@ public class AiReplayAnalysisService {
                 Map.<String, Object>of("role", "system", "content", SINGLE_PLAYER_PROMPT),
                 Map.<String, Object>of("role", "user", "content", summary));
         final int estimatedTokens = tokenEstimator.estimateMessagesTokens(messages);
-        final int maxInputTokens = singlePlayerMaxInputTokens;
+        final int maxInputTokens = singleReplayMaxInputTokens;
         if (estimatedTokens > maxInputTokens) {
             throw new IllegalArgumentException(
                     "AI_TOKEN_BUDGET_EXCEEDED: estimatedInputTokens=" + estimatedTokens
@@ -1336,11 +1336,11 @@ public class AiReplayAnalysisService {
         final List<Map<String, Object>> messages = (List<Map<String, Object>>) messagesObj;
         final int estimated = tokenEstimator.estimateMessagesTokens(messages);
 
-        // Layer 1: Input only must not exceed singlePlayerMaxInputTokens
-        if (estimated > singlePlayerMaxInputTokens) {
+        // Layer 1: Input only must not exceed singleReplayMaxInputTokens
+        if (estimated > singleReplayMaxInputTokens) {
             throw new IllegalArgumentException(
                     "AI_TOKEN_BUDGET_EXCEEDED: estimatedInputTokens=" + estimated
-                    + " > singlePlayerMaxInputTokens=" + singlePlayerMaxInputTokens);
+                    + " > singleReplayMaxInputTokens=" + singleReplayMaxInputTokens);
         }
 
         // Layer 2: Total context (input + output + margin) must fit within contextWindowTokens

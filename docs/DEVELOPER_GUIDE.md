@@ -276,6 +276,23 @@ AI 复盘区分两种 scope，互不混用：
 - `PlayerResult.team` 原始编号不受影响（仅用于内部计算）。
 - AI Prompt 由 `PlayerAnalysisPromptFormatter` 格式化（独立于 `PlayerResultFormat`）。
 
+### AiModelProperties 配置
+
+| 属性 | 环境变量 | 默认值 | 说明 |
+|------|---------|--------|------|
+| `contextWindowTokens` | `AI_CONTEXT_WINDOW_TOKENS` | 1000000 | DeepSeek 上下文窗口大小 |
+| `singleReplayMaxInputTokens` | `AI_SINGLE_REPLAY_MAX_INPUT_TOKENS` | 940000 | 单回放输入硬上限 |
+| `maxOutputTokens` | `AI_MAX_OUTPUT_TOKENS` | 32768 | 单次请求最大输出 |
+| `promptSafetyMarginTokens` | `AI_PROMPT_SAFETY_MARGIN_TOKENS` | 16384 | 安全余量 |
+| `thinkingEnabled` | `AI_THINKING_ENABLED` | true | 是否启用思考模式 |
+| `reasoningEffort` | `AI_REASONING_EFFORT` | high | 推理力度（high/max） |
+
+启动时校验 `totalReserved <= contextWindowTokens`，不合规则 Spring Boot 启动失败。
+
+### Token 估算器
+
+`ConservativeDeepSeekTokenEstimator` 使用 `codePointCount * 1.25` 保守估算 token 数。精确 token 数通过 API 响应的 `usage` 字段获取。
+
 ---
 
 ## 前端架构
