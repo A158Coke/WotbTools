@@ -766,7 +766,7 @@
         "select_file": "Select Replay File",
         "invalid_file": "Please select a .wotbreplay file",
         "no_file": "No replay file selected",
-        "max_files_count": "{count} / 16",
+        "max_files_count": "{count} file(s)",
         "reconstruct_btn": "Reconstruct",
         "time_placeholder": "Time (s)",
         "invalid_time": "Invalid time value",
@@ -820,7 +820,7 @@
         "ai_error": "AI analysis failed",
         "ai_error_http": "AI analysis failed (HTTP {status})",
         "auth_required": "Sign-in required, redirecting to login…",
-        "forbidden": "Forbidden: this feature is restricted to wotbtools-admin",
+        "forbidden": "Forbidden: this feature requires wotbtools-user or wotbtools-admin role",
         "modes": {
             "SINGLE_PLAYER_BATTLE": "Single-battle player review",
             "MULTI_PLAYER_BATTLE": "Multi-battle player trend review",

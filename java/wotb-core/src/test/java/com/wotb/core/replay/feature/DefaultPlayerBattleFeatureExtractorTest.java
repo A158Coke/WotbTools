@@ -183,10 +183,10 @@ class DefaultPlayerBattleFeatureExtractorTest {
                 .extract(recon(BATTLE_START_RAW, List.of(
                         mapping(1, 1, 1001L),
                         position(2, BATTLE_START_RAW, 1, 0f, 0f),
-                        position(3, BATTLE_START_RAW + 5f, 1, 400f, 0f))), recorderMapping(), null);
+                        position(3, BATTLE_START_RAW + 5f, 1, 100f, 0f))), recorderMapping(), null);
         assertEquals(1, features.movements().size());
         final MovementSegment movement = features.movements().getFirst();
-        // raw (0,0)->(400,0) == canonical (250,250)->(350,250) == 100 canonical meters over 5s.
+        // raw (0,0)->(100,0) == canonical (250,250)->(350,250) == 100 canonical meters over 5s.
         assertEquals(100f, movement.distance(), 0.01f);
         assertEquals(20f, movement.averageSpeed(), 0.01f);
         assertEquals(MovementType.MOVING, movement.type());
@@ -194,12 +194,12 @@ class DefaultPlayerBattleFeatureExtractorTest {
 
     @Test
     void stationaryThresholdIsInCanonicalMeters() {
-        // raw delta 10 == canonical 2.5m < 3m threshold -> STATIONARY (MOVING if raw units used).
+        // raw delta 2.5 == canonical 2.5m < 3m threshold -> STATIONARY (MOVING if raw units used).
         final var features = new DefaultPlayerBattleFeatureExtractor()
                 .extract(recon(BATTLE_START_RAW, List.of(
                         mapping(1, 1, 1001L),
                         position(2, BATTLE_START_RAW, 1, 0f, 0f),
-                        position(3, BATTLE_START_RAW + 5f, 1, 10f, 0f))), recorderMapping(), null);
+                        position(3, BATTLE_START_RAW + 5f, 1, 2.5f, 0f))), recorderMapping(), null);
         assertEquals(1, features.movements().size());
         assertEquals(MovementType.STATIONARY, features.movements().getFirst().type());
     }
@@ -211,7 +211,7 @@ class DefaultPlayerBattleFeatureExtractorTest {
                 .extract(recon(BATTLE_START_RAW, List.of(
                         mapping(1, 1, 1001L),
                         position(2, BATTLE_START_RAW, 1, 0f, 0f),
-                        position(3, BATTLE_START_RAW, 1, 400f, 0f))), recorderMapping(), null);
+                        position(3, BATTLE_START_RAW, 1, 100f, 0f))), recorderMapping(), null);
         for (final MovementSegment movement : features.movements()) {
             assertTrue(Float.isFinite(movement.averageSpeed()), "speed must be finite");
             assertTrue(movement.averageSpeed() >= 0f, "speed must be non-negative");

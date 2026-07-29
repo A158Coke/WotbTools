@@ -29,7 +29,6 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
      * movement (Team reuses {@link #compressMovements}), so both use identical units.
      */
     static final float STATIONARY_THRESHOLD_METERS = 3f;
-    static final int MAX_KEY_EVENTS = 40;
 
     @Override
     public PlayerBattleFeatureSet extract(final ReplayReconstruction reconstruction, final RecorderEntityMapping recorder, final Battle battle) {
@@ -261,7 +260,6 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
         int totalEvents = 0;
 
         for (final TimedDamage d : damages) {
-            if (totalEvents >= MAX_KEY_EVENTS) break;
             if (!firstBlood) {
                 firstBlood = true;
                 keyEvents.add(new KeyBattleEvent(d.battleRelativeSec(), "RECORDER_FIRST_BLOOD",

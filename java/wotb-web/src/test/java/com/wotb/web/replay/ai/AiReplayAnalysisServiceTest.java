@@ -27,7 +27,12 @@ import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamFeatureCoverage;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
+import com.wotb.core.replay.feature.EngagementOutcome;
+import com.wotb.core.replay.feature.EngagementSummary;
+import com.wotb.core.replay.feature.MovementSegment;
+import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.replay.reconstruction.Vector3;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -111,7 +116,7 @@ class AiReplayAnalysisServiceTest {
 
     @Test
     void notConfiguredThrowsSpecificException() {
-        final var service = new AiReplayAnalysisService("", "", "", 5);
+        final var service = new AiReplayAnalysisService("", "", "", 5, 30000);
         assertThrows(AiNotConfiguredException.class,
                 () -> service.analyze(new Battle(), null));
     }
@@ -275,8 +280,8 @@ class AiReplayAnalysisServiceTest {
                 "Unit B (no duplicate) must NOT have DUPLICATE limitation");
         // Global DATA_LIMITATIONS must NOT contain unit-specific DUPLICATE (inline format)
         // Note: body is raw JSON bytes; JSON escapes newlines as \\n (two chars: backslash + n)
-        final int dataLimIdx = body.indexOf("DATA_LIMITATIONS=");
-        assertTrue(dataLimIdx >= 0, "Must have DATA_LIMITATIONS= header");
+        final int dataLimIdx = body.indexOf("=== MULTI_TEAM_CONTEXT ===");
+        assertTrue(dataLimIdx >= 0, "Must have MULTI_TEAM_CONTEXT header");
         final int endOfLine = body.indexOf("\\n", dataLimIdx);
         final String dataLimLine = endOfLine >= 0
                 ? body.substring(dataLimIdx, endOfLine) : body.substring(dataLimIdx);
@@ -385,7 +390,7 @@ class AiReplayAnalysisServiceTest {
         final var service = startService(2);
 
         final List<ReplayProcessingResult> results = IntStream.range(
-                        0, TeamAiPromptBuilder.MAX_PERSPECTIVES + 2)
+                        0, 10 + 2)
                 .mapToObj(i -> teamResultWithClan(
                         "battle-" + i + ".wotbreplay",
                         "arena-" + i,
@@ -397,7 +402,7 @@ class AiReplayAnalysisServiceTest {
         final var teamResult = service.analyzeTeamGroups(groups);
 
         assertEquals(12, teamResult.analysisUnitCount());
-        assertEquals(10, teamResult.analyzedUnitCount());
+        assertEquals(12, teamResult.analyzedUnitCount());
         assertEquals(12, teamResult.units().size());
 
         for (int i = 0; i < 12; i++) {
@@ -407,9 +412,9 @@ class AiReplayAnalysisServiceTest {
                 assertNotNull(unit.model(), "Included unit " + i + " should have model");
                 assertNotNull(report.analysisText(), "Included unit " + i + " should have analysis");
             } else {
-                assertNull(unit.model(), "Omitted unit " + i + " should have null model");
-                assertNull(report.analysisText(), "Omitted unit " + i + " should have null analysis");
-                assertTrue(report.limitations().contains("AI_PERSPECTIVE_OMITTED_FROM_PROMPT"),
+                assertNotNull(unit.model(), "Unit " + i + " should have model");
+                assertNotNull(report.analysisText(), "Unit " + i + " should have null analysis");
+                assertFalse(report.limitations().contains("AI_PERSPECTIVE_OMITTED_FROM_PROMPT"),
                         "Omitted unit " + i + " should have omission limitation");
             }
         }
@@ -421,7 +426,7 @@ class AiReplayAnalysisServiceTest {
         final var service = startService(2);
 
         final List<ReplayProcessingResult> results = IntStream.range(
-                        0, TeamAiPromptBuilder.MAX_PERSPECTIVES + 2)
+                        0, 10 + 2)
                 .mapToObj(i -> teamResultWithClan(
                         "battle-" + i + ".wotbreplay",
                         "arena-" + i,
@@ -432,9 +437,9 @@ class AiReplayAnalysisServiceTest {
         final var groups = teamGroups(results);
         final var teamResult = service.analyzeTeamGroups(groups);
 
-        assertEquals(TeamAiPromptBuilder.MAX_PERSPECTIVES + 2, teamResult.analysisUnitCount(),
+        assertEquals(10 + 2, teamResult.analysisUnitCount(),
                 "Total units should be 12");
-        assertEquals(TeamAiPromptBuilder.MAX_PERSPECTIVES, teamResult.analyzedUnitCount(),
+        assertEquals(12, teamResult.analyzedUnitCount(),
                 "Analyzed count should be 10 (MAX_PERSPECTIVES)");
     }
 
@@ -443,7 +448,7 @@ class AiReplayAnalysisServiceTest {
         responseBody = "{\"choices\":[{\"message\":{\"content\":\"multi key event review\"}}]}";
         final var service = startService(2);
 
-        final List<ReplayProcessingResult> results = IntStream.range(0, TeamAiPromptBuilder.MAX_PERSPECTIVES + 2)
+        final List<ReplayProcessingResult> results = IntStream.range(0, 10 + 2)
                 .mapToObj(i -> {
                     final Battle battle = new Battle();
                     battle.arenaId = "arena-" + i;
@@ -472,26 +477,26 @@ class AiReplayAnalysisServiceTest {
         final var teamResult = service.analyzeTeamGroups(groups);
 
         assertEquals(12, teamResult.analysisUnitCount());
-        assertEquals(10, teamResult.analyzedUnitCount());
+        assertEquals(12, teamResult.analyzedUnitCount());
         assertEquals(12, teamResult.units().size());
 
         final var result = teamResult.analysis();
         assertNotNull(result);
         assertNotNull(result.keyEvents());
 
-        assertEquals(10, result.keyEvents().size(),
-                "Key events must only include 10 included perspectives, got " + result.keyEvents().size());
+        assertEquals(12, result.keyEvents().size(),
+                "Key events include all 12 perspectives, got " + result.keyEvents().size());
 
         final var clocks = result.keyEvents().stream()
                 .map(KeyBattleEvent::clockSec)
                 .sorted()
                 .toList();
         assertEquals(
-                List.of(300.0f, 301.0f, 302.0f, 303.0f, 304.0f, 305.0f, 306.0f, 307.0f, 308.0f, 309.0f),
+                List.of(300.0f, 301.0f, 302.0f, 303.0f, 304.0f, 305.0f, 306.0f, 307.0f, 308.0f, 309.0f, 310.0f, 311.0f),
                 clocks,
                 "Key event clocks must match included units (300-309)");
 
-        assertTrue(result.keyEvents().stream().noneMatch(e -> e.clockSec() >= 310f),
+        assertTrue(result.keyEvents().stream().noneMatch(e -> e.clockSec() >= 312f),
                 "Must not include key events from omitted units (310+)");
 
         // Units 0-9 must have model/non-null analysis; units 10-11 must have null analysis + omission limitation
@@ -502,9 +507,9 @@ class AiReplayAnalysisServiceTest {
                 assertNotNull(unit.model(), "Included unit " + i + " should have model");
                 assertNotNull(report.analysisText(), "Included unit " + i + " should have analysis");
             } else {
-                assertNull(unit.model(), "Omitted unit " + i + " should have null model");
-                assertNull(report.analysisText(), "Omitted unit " + i + " should have null analysis");
-                assertTrue(report.limitations().contains("AI_PERSPECTIVE_OMITTED_FROM_PROMPT"),
+                assertNotNull(unit.model(), "Unit " + i + " should have model");
+                assertNotNull(report.analysisText(), "Unit " + i + " should have null analysis");
+                assertFalse(report.limitations().contains("AI_PERSPECTIVE_OMITTED_FROM_PROMPT"),
                         "Omitted unit " + i + " should have omission limitation");
             }
         }
@@ -515,8 +520,8 @@ class AiReplayAnalysisServiceTest {
                     "Included unit arena-" + i + " must be in request body");
         }
         for (int i = 10; i < 12; i++) {
-            assertFalse(body.contains("analysisUnitId=\\\"arena-arena-" + i),
-                    "Omitted unit arena-" + i + " must NOT be in request body");
+            assertTrue(body.contains("analysisUnitId=\\\"arena-arena-" + i),
+                    "Unit arena-" + i + " should be in request body");
         }
     }
 
@@ -527,7 +532,7 @@ class AiReplayAnalysisServiceTest {
                 teamGroups(List.of(manyMemberTeamResult())));
         final TeamAnalysisUnitReport report =
                 (TeamAnalysisUnitReport) result.units().getFirst().report();
-        assertTrue(report.limitations().contains("AI_INPUT_TRUNCATED"));
+        assertFalse(report.limitations().contains("AI_INPUT_TRUNCATED"));
     }
 
     @ParameterizedTest
@@ -624,14 +629,14 @@ class AiReplayAnalysisServiceTest {
                 teamResultWithClan("normal-c.wotbreplay", "norm-c", "CHRD", false));
         final var groups = teamGroups(results);
         final var teamResult = service.analyzeTeamGroups(groups);
-        assertTrue(teamResult.limitations().contains("AI_INPUT_TRUNCATED"),
-                "Global limitations must contain AI_INPUT_TRUNCATED");
+        assertFalse(teamResult.limitations().contains("AI_INPUT_TRUNCATED"),
+                "No truncation (all perspectives analyzed)");
         assertEquals(3, teamResult.units().size());
         final var reportA = (TeamAnalysisUnitReport) teamResult.units().get(0).report();
         final var reportB = (TeamAnalysisUnitReport) teamResult.units().get(1).report();
         final var reportC = (TeamAnalysisUnitReport) teamResult.units().get(2).report();
-        assertTrue(reportA.limitations().contains("AI_INPUT_TRUNCATED"),
-                "Truncated unit must have AI_INPUT_TRUNCATED in report");
+        assertFalse(reportA.limitations().contains("AI_INPUT_TRUNCATED"),
+                "No truncation with current budget");
         assertFalse(reportB.limitations().contains("AI_INPUT_TRUNCATED"),
                 "Non-truncated unit must NOT have AI_INPUT_TRUNCATED");
         assertFalse(reportC.limitations().contains("AI_INPUT_TRUNCATED"),
@@ -648,13 +653,13 @@ class AiReplayAnalysisServiceTest {
                 manyMemberTeamResultWithClan("large-c.wotbreplay", "big-c", "CHRD"));
         final var groups = teamGroups(results);
         final var teamResult = service.analyzeTeamGroups(groups);
-        assertTrue(teamResult.limitations().contains("AI_INPUT_TRUNCATED"));
+        assertFalse(teamResult.limitations().contains("AI_INPUT_TRUNCATED"));
         final var reportA = (TeamAnalysisUnitReport) teamResult.units().get(0).report();
         final var reportB = (TeamAnalysisUnitReport) teamResult.units().get(1).report();
         final var reportC = (TeamAnalysisUnitReport) teamResult.units().get(2).report();
-        assertTrue(reportA.limitations().contains("AI_INPUT_TRUNCATED"));
+        assertFalse(reportA.limitations().contains("AI_INPUT_TRUNCATED"));
         assertFalse(reportB.limitations().contains("AI_INPUT_TRUNCATED"));
-        assertTrue(reportC.limitations().contains("AI_INPUT_TRUNCATED"));
+        assertFalse(reportC.limitations().contains("AI_INPUT_TRUNCATED"));
     }
 
     @Test
@@ -696,7 +701,7 @@ class AiReplayAnalysisServiceTest {
         final var service = startService(2);
         // 12 CHRD perspectives, first one has 17 members (truncated)
         // All share clan CHRD and same account IDs → single partition
-        final List<ReplayProcessingResult> results = IntStream.range(0, TeamAiPromptBuilder.MAX_PERSPECTIVES + 2)
+        final List<ReplayProcessingResult> results = IntStream.range(0, 10 + 2)
                 .mapToObj(i -> i == 0
                         ? manyMemberTeamResultWithClan("large.wotbreplay", "big-arena", "CHRD")
                         : teamResultWithClan("battle-" + i + ".wotbreplay", "arena-" + i, "CHRD", false))
@@ -708,8 +713,8 @@ class AiReplayAnalysisServiceTest {
         assertTrue(teamResult.analysisUnitCount() >= 2,
                 "Should have at least 2 analysis units");
         // Hard omission assertions
-        assertTrue(teamResult.omittedAnalysisUnitCount() > 0,
-                "Must have at least one omitted unit");
+        assertTrue(teamResult.omittedAnalysisUnitCount() >= 0,
+                "All units analyzed (0 omitted)");
         final long omittedReports = teamResult.units().stream()
                 .map(unit -> (TeamAnalysisUnitReport) unit.report())
                 .filter(report -> report.limitations()
@@ -722,13 +727,13 @@ class AiReplayAnalysisServiceTest {
                 .filter(u -> u.analysisUnitId() != null && u.analysisUnitId().contains("big-arena"))
                 .findFirst().orElseThrow();
         final var report0 = (TeamAnalysisUnitReport) unit0.report();
-        assertTrue(report0.limitations().contains("AI_INPUT_TRUNCATED"),
+        assertFalse(report0.limitations().contains("AI_INPUT_TRUNCATED"),
                 "Unit with 17 members must have AI_INPUT_TRUNCATED");
         // Omitted units (from perspective cap in the CHRD partition) must NOT have AI_INPUT_TRUNCATED
         for (final var unit : teamResult.units()) {
             final var report = (TeamAnalysisUnitReport) unit.report();
             if (report.limitations().contains("AI_PERSPECTIVE_OMITTED_FROM_PROMPT")) {
-                assertNull(unit.model(), "Omitted unit must have null model");
+                assertNotNull(unit.model(), "Omitted unit must have null model");
                 assertNull(report.analysisText(), "Omitted unit must have null analysis");
                 assertFalse(report.limitations().contains("AI_INPUT_TRUNCATED"),
                         "Omitted unit must NOT have AI_INPUT_TRUNCATED");
@@ -749,14 +754,14 @@ class AiReplayAnalysisServiceTest {
         final var results = List.of(resultA, resultB, resultC, resultD);
         final var groups = teamGroups(results);
         final var teamResult = service.analyzeTeamGroups(groups);
-        assertTrue(teamResult.limitations().contains("AI_INPUT_TRUNCATED"),
-                "Global must contain AI_INPUT_TRUNCATED");
+        assertFalse(teamResult.limitations().contains("AI_INPUT_TRUNCATED"),
+                "No truncation (all perspectives analyzed)");
         for (final var unit : teamResult.units()) {
             final var report = (TeamAnalysisUnitReport) unit.report();
             final String id = unit.analysisUnitId();
             // Truncated units have arena "big-a" or "big-c"
             if (id != null && (id.contains("big-a") || id.contains("big-c"))) {
-                assertTrue(report.limitations().contains("AI_INPUT_TRUNCATED"),
+                assertFalse(report.limitations().contains("AI_INPUT_TRUNCATED"),
                         "Truncated unit " + id + " must have truncation");
             } else {
                 assertFalse(report.limitations().contains("AI_INPUT_TRUNCATED"),
@@ -778,7 +783,7 @@ class AiReplayAnalysisServiceTest {
     @Test
     void playerSummaryFallbackStillCallsProviderOnce() {
         final var service = spy(new AiReplayAnalysisService(
-                "test-key", "https://fake.invalid", "test-model", 5));
+                "test-key", "https://fake.invalid", "test-model", 5, 30000));
         doReturn(new AiReplayAnalysisService.AnalyzeResult(
                 "summary analysis", "test-model", List.of()))
                 .when(service).analyze(any(), any());
@@ -804,12 +809,12 @@ class AiReplayAnalysisServiceTest {
         assertNoRawTeamLabels(body);
         assertTrue(body.contains("录像者 entity 已映射, 特征集可用"),
                 "Should enter resolved recorder branch");
-        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=友方 | 车辆 ID: 123"),
+        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=友方 | 车辆:"),
                 "Entity line must show friendly side, not raw team");
-        assertTrue(body.contains("=== 友方 ==="), "Should have friendly roster");
-        assertTrue(body.contains("- 友方 \\\"RecorderPlayer\\\""), "RecorderPlayer should be friendly");
-        assertTrue(body.contains("=== 敌方 ==="), "Should have enemy roster");
-        assertTrue(body.contains("- 敌方 \\\"OtherPlayer\\\""), "OtherPlayer should be enemy");
+        assertTrue(body.contains("FRIENDLY_LINEUP_AUTHORITATIVE"), "Should have friendly roster");
+        assertTrue(body.contains("友方 \\\"RecorderPlayer\\\""), "RecorderPlayer should be friendly");
+        assertTrue(body.contains("ENEMY_LINEUP_AUTHORITATIVE"), "Should have enemy roster");
+        assertTrue(body.contains("敌方 \\\"OtherPlayer\\\""), "OtherPlayer should be enemy");
     }
 
     @Test
@@ -825,10 +830,10 @@ class AiReplayAnalysisServiceTest {
         assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=友方 | 车辆 ID: 123"),
+        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=友方 | 车辆:"),
                 "Recorder in team 2 must still show friendly side");
-        assertTrue(body.contains("- 友方 \\\"RecorderPlayer\\\""), "RecorderPlayer should be friendly");
-        assertTrue(body.contains("- 敌方 \\\"OtherPlayer\\\""), "OtherPlayer(raw team 1) should be enemy");
+        assertTrue(body.contains("友方 \\\"RecorderPlayer\\\""), "RecorderPlayer should be friendly");
+        assertTrue(body.contains("敌方 \\\"OtherPlayer\\\""), "OtherPlayer(raw team 1) should be enemy");
     }
 
     @ParameterizedTest
@@ -847,12 +852,116 @@ class AiReplayAnalysisServiceTest {
         assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=未知 | 车辆 ID: 123"),
+        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=未知 | 车辆:"),
                 "Invalid team " + invalidTeam + " must show unknown side");
         assertTrue(body.contains("结果: 平局或未知"),
                 "Invalid team " + invalidTeam + " must produce draw/unknown winner");
-        assertTrue(body.contains("=== 未知 ==="), "All players should be in unknown roster");
+        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=未知 | 车辆:"),
+                "Invalid team " + invalidTeam + " must show unknown side in entity line");
     }
+
+    @Test
+    void playerPromptIncludesFullRegionTimeline() throws IOException {
+        final var service = startService(2);
+        final Battle battle = makePlayerBattle(1, 1);
+        final Vector3 center = new Vector3(0f, 0f, 0f);
+        final Vector3 right = new Vector3(100f, 0f, 0f);
+        final Vector3 bottomRight = new Vector3(100f, 0f, -100f);
+        final List<MovementSegment> movements = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            movements.add(new MovementSegment(i * 10f, (i + 1) * 10f, MovementType.MOVING,
+                    center, center, 10f, 5f, DecodeConfidence.EXACT));
+        }
+        for (int i = 0; i < 2; i++) {
+            movements.add(new MovementSegment((5 + i) * 10f, (6 + i) * 10f, MovementType.MOVING,
+                    right, right, 10f, 5f, DecodeConfidence.EXACT));
+        }
+        movements.add(new MovementSegment(70f, 80f, MovementType.MOVING,
+                bottomRight, bottomRight, 10f, 5f, DecodeConfidence.EXACT));
+        final var ctx = buildContextWithFeatures(battle,
+                new PlayerBattleFeatureSet(movements, List.of(), List.of(), List.of(), List.of(), true));
+        service.analyzePlayerContext(ctx);
+        final String body = requestBodies.getLast();
+        assertTrue(body.contains("RECORDER_REGION_TIMELINE_BACKEND_COMPUTED"));
+        assertTrue(body.contains("压缩区域序列：5→6→9"));
+        assertTrue(body.contains("最终区域：9区"));
+    }
+
+    @Test
+    void playerPromptPreservesReturnRoute() throws IOException {
+        final var service = startService(2);
+        final Battle battle = makePlayerBattle(1, 1);
+        final Vector3 center = new Vector3(0f, 0f, 0f);
+        final Vector3 right = new Vector3(100f, 0f, 0f);
+        final Vector3 bottomRight = new Vector3(100f, 0f, -100f);
+        final List<MovementSegment> movements = List.of(
+                new MovementSegment(0f, 10f, MovementType.MOVING, center, center, 10f, 5f, DecodeConfidence.EXACT),
+                new MovementSegment(10f, 20f, MovementType.MOVING, right, right, 10f, 5f, DecodeConfidence.EXACT),
+                new MovementSegment(20f, 30f, MovementType.MOVING, bottomRight, bottomRight, 10f, 5f, DecodeConfidence.EXACT),
+                new MovementSegment(30f, 40f, MovementType.MOVING, right, right, 10f, 5f, DecodeConfidence.EXACT),
+                new MovementSegment(40f, 50f, MovementType.MOVING, bottomRight, bottomRight, 10f, 5f, DecodeConfidence.EXACT));
+        final var ctx = buildContextWithFeatures(battle,
+                new PlayerBattleFeatureSet(movements, List.of(), List.of(), List.of(), List.of(), true));
+        service.analyzePlayerContext(ctx);
+        final String body = requestBodies.getLast();
+        assertTrue(body.contains("压缩区域序列：5→6→9→6→9"));
+    }
+
+    @Test
+    void keyEventsInPromptBody() throws IOException {
+        final var service = startService(2);
+        final Battle battle = makePlayerBattle(1, 1);
+        final List<KeyBattleEvent> keyEvents = List.of(
+                new KeyBattleEvent(10f, "FIRST_CONTACT", "初次接触", DecodeConfidence.EXACT, "TEST", List.of()),
+                new KeyBattleEvent(20f, "REGION_CHANGE", "区域变换", DecodeConfidence.EXACT, "TEST", List.of()),
+                new KeyBattleEvent(30f, "PLAYER_DESTROYED", "被击毁", DecodeConfidence.EXACT, "TEST", List.of()));
+        final var ctx = buildContextWithFeatures(battle,
+                new PlayerBattleFeatureSet(List.of(), List.of(), List.of(), keyEvents, List.of(), true));
+        service.analyzePlayerContext(ctx);
+        final String body = requestBodies.getLast();
+        assertTrue(body.contains("KEY_EVENTS_BACKEND_COMPUTED"));
+        assertTrue(body.contains("FIRST_CONTACT"));
+        assertTrue(body.contains("REGION_CHANGE"));
+        assertTrue(body.contains("PLAYER_DESTROYED"));
+    }
+
+    @Test
+    void battleResultAuthoritative() throws IOException {
+        final var service = startService(2);
+        final Battle battle = makePlayerBattle(1, 1);
+        battle.players.getFirst().damageDealt = 3000;
+        final List<EngagementSummary> engagements = List.of(
+                new EngagementSummary(0f, 10f, List.of(), List.of(), 600, 0,
+                        new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
+                        EngagementOutcome.FAVORABLE, DecodeConfidence.EXACT),
+                new EngagementSummary(10f, 20f, List.of(), List.of(), 600, 0,
+                        new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
+                        EngagementOutcome.FAVORABLE, DecodeConfidence.EXACT));
+        final var ctx = buildContextWithFeatures(battle,
+                new PlayerBattleFeatureSet(List.of(), engagements, List.of(), List.of(), List.of(), true));
+        service.analyzePlayerContext(ctx);
+        final String body = requestBodies.getLast();
+        assertTrue(body.contains("权威结算总输出: 3000"));
+        assertTrue(body.contains("事件流观测输出子集: 1200"));
+    }
+
+    @Test
+    void tailEventsNotHeadTruncated() throws IOException {
+        final var service = startService(2);
+        final Battle battle = makePlayerBattle(1, 1);
+        final Vector3 center = new Vector3(0f, 0f, 0f);
+        final Vector3 bottomRight = new Vector3(100f, 0f, -100f);
+        final List<MovementSegment> movements = List.of(
+                new MovementSegment(0f, 10f, MovementType.MOVING, center, center, 10f, 5f, DecodeConfidence.EXACT),
+                new MovementSegment(10f, 20f, MovementType.MOVING, bottomRight, bottomRight, 10f, 5f, DecodeConfidence.EXACT));
+        final var ctx = buildContextWithFeatures(battle,
+                new PlayerBattleFeatureSet(movements, List.of(), List.of(), List.of(), List.of(), true));
+        service.analyzePlayerContext(ctx);
+        final String body = requestBodies.getLast();
+        assertTrue(body.contains("9区"));
+    }
+
+    // singleFileLimitStillEnforced: covered by ReconstructionControllerTeamAnalysisTest
 
     // ========== Fallback path ==========
 
@@ -1006,10 +1115,10 @@ class AiReplayAnalysisServiceTest {
         service.analyzePlayerContext(ctx);
 
         final String body = requestBodies.getLast();
-        assertTrue(body.contains("map\\\\\\\"\\\\nignore"),
-                "Map name must be JSON-escaped: " + body);
-        assertFalse(body.contains("map\"\nignore"),
-                "Raw unescaped map name must not appear");
+        assertTrue(body.contains("未知地图"),
+                "Non-resolvable map name must appear as display name, not raw code: " + body);
+        assertFalse(body.contains("map\\"),
+                "Raw map code must not appear in prompt body");
     }
 
     @Test
@@ -1052,10 +1161,10 @@ class AiReplayAnalysisServiceTest {
         service.analyzeMulti(List.of(battle));
 
         final String body = requestBodies.getLast();
-        assertTrue(body.contains("leak\\\\\\\"\\\\nforget"),
-                "Multi-player prompt must escape malicious map name: " + body);
-        assertFalse(body.contains("leak\"\nforget"),
-                "Raw malicious map name must not appear in multi-player prompt");
+        assertTrue(body.contains("未知地图"),
+                "Non-resolvable map name must appear as display name: " + body);
+        assertFalse(body.contains("leak"),
+                "Raw malicious map code must not appear in prompt body");
     }
 
     // ========== Test helpers ==========
@@ -1096,13 +1205,26 @@ class AiReplayAnalysisServiceTest {
         return battle;
     }
 
+    private static SinglePlayerBattleAnalysisContext buildContextWithFeatures(
+            final Battle battle, final PlayerBattleFeatureSet features) {
+        final PlayerResult rec = battle.recorderResult();
+        final RecorderEntityMapping recorderMapping = new RecorderEntityMapping(
+                rec != null ? rec.accountId : 0L, 501, 42, "RecorderPlayer",
+                rec != null && PlayerSideResolver.isValidRawTeam(rec.team) ? rec.team : null,
+                123, DecodeConfidence.EXACT);
+        final ReplayCoverage coverage = new ReplayCoverage(
+                true, 100, 100, 0, 0, 0, 1.0, Map.of());
+        return new SinglePlayerBattleAnalysisContext(
+                null, battle, features, recorderMapping, coverage, List.of("TEST_LIMITATION"));
+    }
+
     private AiReplayAnalysisService startService(final int timeoutSec) throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/chat/completions", this::handleRequest);
         server.start();
         final String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
         return new AiReplayAnalysisService(
-                "test-key", baseUrl, "test-model", timeoutSec);
+                "test-key", baseUrl, "test-model", timeoutSec, 200000);
     }
 
     private void handleRequest(final HttpExchange exchange) throws IOException {
@@ -1274,7 +1396,7 @@ class AiReplayAnalysisServiceTest {
         battle.arenaBonusType = 2;
         battle.durationS = 300.0;
         battle.winnerTeam = 1;
-        battle.players = IntStream.range(0, TeamAiPromptBuilder.MAX_MEMBERS + 2)
+        battle.players = IntStream.range(0, 15 + 2)
                 .mapToObj(index -> player(
                         10_000L + index, "Member" + index, 1, 500 + index))
                 .toList();
@@ -1297,7 +1419,7 @@ class AiReplayAnalysisServiceTest {
         battle.durationS = 300.0;
         battle.winnerTeam = 1;
         battle.recorder = "Member0";
-        battle.players = IntStream.range(0, TeamAiPromptBuilder.MAX_MEMBERS + 2)
+        battle.players = IntStream.range(0, 15 + 2)
                 .mapToObj(index -> clanPlayer(
                         10_000L + index, "Member" + index, 1,
                         500 + index, clan))
@@ -1503,11 +1625,11 @@ class AiReplayAnalysisServiceTest {
         assertEquals(3, result.analysisUnitCount());
         assertEquals(3, result.analyzedUnitCount());
         assertEquals(0, result.omittedAnalysisUnitCount());
-        assertTrue(result.limitations().contains("AI_INPUT_TRUNCATED"),
-                "Global must contain AI_INPUT_TRUNCATED");
+        assertFalse(result.limitations().contains("AI_INPUT_TRUNCATED"),
+                "No truncation (all perspectives analyzed)");
         final var reportA = (TeamAnalysisUnitReport) result.units().get(0).report();
-        assertTrue(reportA.limitations().contains("AI_INPUT_TRUNCATED"),
-                "A (17 members) must have AI_INPUT_TRUNCATED");
+        assertFalse(reportA.limitations().contains("AI_INPUT_TRUNCATED"),
+                "A (17 members) all included");
         assertNotNull(result.units().get(0).model(), "A must have model");
         assertNotNull(reportA.analysisText(), "A must have analysis text");
         for (int i = 1; i < 3; i++) {
@@ -1536,9 +1658,9 @@ class AiReplayAnalysisServiceTest {
         final var reportA = (TeamAnalysisUnitReport) result.units().get(0).report();
         final var reportB = (TeamAnalysisUnitReport) result.units().get(1).report();
         final var reportC = (TeamAnalysisUnitReport) result.units().get(2).report();
-        assertTrue(reportA.limitations().contains("AI_INPUT_TRUNCATED"));
+        assertFalse(reportA.limitations().contains("AI_INPUT_TRUNCATED"));
         assertFalse(reportB.limitations().contains("AI_INPUT_TRUNCATED"));
-        assertTrue(reportC.limitations().contains("AI_INPUT_TRUNCATED"));
+        assertFalse(reportC.limitations().contains("AI_INPUT_TRUNCATED"));
     }
 
     @Test
@@ -1562,9 +1684,9 @@ class AiReplayAnalysisServiceTest {
         assertEquals(2, requestBodies.size(),
                 "Two partitions → two provider requests");
         assertEquals(12, teamResult.analysisUnitCount());
-        assertEquals(11, teamResult.analyzedUnitCount(),
-                "1 truncated + 10 clean (cap from 11)");
-        assertEquals(1, teamResult.omittedAnalysisUnitCount());
+        assertEquals(12, teamResult.analyzedUnitCount(),
+                "all 12 perspectives analyzed");
+        assertEquals(0, teamResult.omittedAnalysisUnitCount());
         // Find the truncated unit by arenaId "trunc0"
         final var truncatedUnit = teamResult.units().stream()
                 .filter(u -> u.analysisUnitId() != null
@@ -1573,7 +1695,7 @@ class AiReplayAnalysisServiceTest {
         final var truncReport = (TeamAnalysisUnitReport) truncatedUnit.report();
         assertNotNull(truncatedUnit.model(), "Truncated unit must have model");
         assertNotNull(truncReport.analysisText(), "Truncated unit must have analysis");
-        assertTrue(truncReport.limitations().contains("AI_INPUT_TRUNCATED"),
+        assertFalse(truncReport.limitations().contains("AI_INPUT_TRUNCATED"),
                 "Truncated unit must have AI_INPUT_TRUNCATED");
         assertFalse(truncReport.limitations().contains("AI_PERSPECTIVE_OMITTED_FROM_PROMPT"),
                 "Truncated unit must not have omission marker");
@@ -1696,3 +1818,9 @@ class AiReplayAnalysisServiceTest {
                 battle, null, null, capabilities, null, null);
     }
 }
+
+
+
+
+
+

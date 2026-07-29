@@ -31,9 +31,7 @@ defineEmits(['analyze', 'toggle-analysis'])
     >
       {{ analyzing
         ? $t('action.processing')
-        : (files.length > 1
-          ? $t('recon.analyze_multi_btn', { n: files.length })
-          : $t('recon.analyze_btn')) }}
+        : $t('recon.analyze_btn') }}
     </button>
     <button v-else class="ghost" @click="$emit('toggle-analysis')">
       {{ showAnalysis ? $t('recon.hide_analysis') : $t('recon.show_analysis') }}
