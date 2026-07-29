@@ -9,14 +9,9 @@ import com.wotb.core.processing.PerspectiveTeamNotResolvedException;
 import com.wotb.core.processing.ReplayBatchProcessingResult;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
-import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
-import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import com.wotb.core.replay.reconstruction.ReplayReconstructionService;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
-import com.wotb.web.replay.dto.ReconstructSummary;
-import com.wotb.web.replay.dto.StateAtResponse;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.springframework.http.HttpStatus;
@@ -37,9 +32,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 回放重建 REST API（开发和验证用）。
+ * AI 复盘与批量处理 REST API。
  * <p>
- * 需要 wotbtools-admin 角色。
+ * 需要 wotbtools-user 或 wotbtools-admin 角色（见 {@code SecurityConfig}）。
+ * 回放重建不再单独暴露端点，由 {@code /analyze} 在内部完成。
  * </p>
  */
 @RestController
@@ -48,61 +44,13 @@ import java.util.Map;
 public class ReconstructionController {
 
     private final DefaultReplayProcessingFacade processingFacade;
-    private final ReplayReconstructionService reconstructionService;
     private final AiReplayReviewService reviewService;
 
     public ReconstructionController(
             final DefaultReplayProcessingFacade processingFacade,
-            final ReplayReconstructionService reconstructionService,
             final AiReplayReviewService reviewService) {
         this.processingFacade = processingFacade;
-        this.reconstructionService = reconstructionService;
         this.reviewService = reviewService;
-    }
-
-    /**
-     * 单文件完整重建并返回摘要。
-     * POST /api/replay/reconstruct
-     */
-    @PostMapping(value = "/reconstruct", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ReconstructSummary reconstruct(
-            @RequestParam("file") final MultipartFile file) throws IOException {
-
-        validateFile(file);
-
-        final byte[] replayBytes = file.getBytes();
-        final ReplayReconstruction result = reconstructionService.reconstruct(replayBytes);
-
-        return new ReconstructSummary(
-                result.replayDurationSec(),
-                result.battleStartRawClockSec(),
-                result.diagnostics().packetCount(),
-                result.coverage().decodedPackets(),
-                result.participants().size(),
-                result.finalState().entityCount(),
-                result.events().size(),
-                result.checkpoints().size(),
-                result.finalState(),
-                result.coverage(),
-                result.diagnostics()
-        );
-    }
-
-    /**
-     * 任意时间点状态查询。
-     * POST /api/replay/state-at
-     */
-    @PostMapping(value = "/state-at", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public StateAtResponse stateAt(
-            @RequestParam("file") final MultipartFile file,
-            @RequestParam("time") final float timeSec) throws IOException {
-
-        validateFile(file);
-
-        final byte[] replayBytes = file.getBytes();
-        final BattleStateSnapshot snapshot = reconstructionService.stateAt(replayBytes, timeSec);
-
-        return StateAtResponse.from(snapshot);
     }
 
     @PostMapping(value = "/analyze", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

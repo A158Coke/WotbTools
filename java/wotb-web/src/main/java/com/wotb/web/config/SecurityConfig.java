@@ -47,10 +47,8 @@ public class SecurityConfig {
                         "/api/preview", "/api/export").permitAll()
                 .requestMatchers("/api/leaderboard/**").permitAll()
 
-                // --- AI Review 与 reconstruction (wotbtools-user / wotbtools-admin) ---
-                .requestMatchers("/api/replay/reconstruct",
-                        "/api/replay/reconstruct-batch",
-                        "/api/replay/state-at",
+                // --- AI 复盘与批量处理 (wotbtools-user / wotbtools-admin) ---
+                .requestMatchers("/api/replay/reconstruct-batch",
                         "/api/replay/process",
                         "/api/replay/analyze")
                     .hasAnyRole("wotbtools-user", "wotbtools-admin")
