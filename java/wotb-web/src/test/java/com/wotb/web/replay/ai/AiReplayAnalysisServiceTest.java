@@ -390,7 +390,7 @@ class AiReplayAnalysisServiceTest {
         final var service = startService(2);
 
         final List<ReplayProcessingResult> results = IntStream.range(
-                        0, TeamAiPromptBuilder.MAX_PERSPECTIVES + 2)
+                        0, 10 + 2)
                 .mapToObj(i -> teamResultWithClan(
                         "battle-" + i + ".wotbreplay",
                         "arena-" + i,
@@ -426,7 +426,7 @@ class AiReplayAnalysisServiceTest {
         final var service = startService(2);
 
         final List<ReplayProcessingResult> results = IntStream.range(
-                        0, TeamAiPromptBuilder.MAX_PERSPECTIVES + 2)
+                        0, 10 + 2)
                 .mapToObj(i -> teamResultWithClan(
                         "battle-" + i + ".wotbreplay",
                         "arena-" + i,
@@ -437,9 +437,9 @@ class AiReplayAnalysisServiceTest {
         final var groups = teamGroups(results);
         final var teamResult = service.analyzeTeamGroups(groups);
 
-        assertEquals(TeamAiPromptBuilder.MAX_PERSPECTIVES + 2, teamResult.analysisUnitCount(),
+        assertEquals(10 + 2, teamResult.analysisUnitCount(),
                 "Total units should be 12");
-        assertEquals(TeamAiPromptBuilder.MAX_PERSPECTIVES, teamResult.analyzedUnitCount(),
+        assertEquals(10, teamResult.analyzedUnitCount(),
                 "Analyzed count should be 10 (MAX_PERSPECTIVES)");
     }
 
@@ -448,7 +448,7 @@ class AiReplayAnalysisServiceTest {
         responseBody = "{\"choices\":[{\"message\":{\"content\":\"multi key event review\"}}]}";
         final var service = startService(2);
 
-        final List<ReplayProcessingResult> results = IntStream.range(0, TeamAiPromptBuilder.MAX_PERSPECTIVES + 2)
+        final List<ReplayProcessingResult> results = IntStream.range(0, 10 + 2)
                 .mapToObj(i -> {
                     final Battle battle = new Battle();
                     battle.arenaId = "arena-" + i;
@@ -701,7 +701,7 @@ class AiReplayAnalysisServiceTest {
         final var service = startService(2);
         // 12 CHRD perspectives, first one has 17 members (truncated)
         // All share clan CHRD and same account IDs → single partition
-        final List<ReplayProcessingResult> results = IntStream.range(0, TeamAiPromptBuilder.MAX_PERSPECTIVES + 2)
+        final List<ReplayProcessingResult> results = IntStream.range(0, 10 + 2)
                 .mapToObj(i -> i == 0
                         ? manyMemberTeamResultWithClan("large.wotbreplay", "big-arena", "CHRD")
                         : teamResultWithClan("battle-" + i + ".wotbreplay", "arena-" + i, "CHRD", false))
@@ -1396,7 +1396,7 @@ class AiReplayAnalysisServiceTest {
         battle.arenaBonusType = 2;
         battle.durationS = 300.0;
         battle.winnerTeam = 1;
-        battle.players = IntStream.range(0, TeamAiPromptBuilder.MAX_MEMBERS + 2)
+        battle.players = IntStream.range(0, 15 + 2)
                 .mapToObj(index -> player(
                         10_000L + index, "Member" + index, 1, 500 + index))
                 .toList();
@@ -1419,7 +1419,7 @@ class AiReplayAnalysisServiceTest {
         battle.durationS = 300.0;
         battle.winnerTeam = 1;
         battle.recorder = "Member0";
-        battle.players = IntStream.range(0, TeamAiPromptBuilder.MAX_MEMBERS + 2)
+        battle.players = IntStream.range(0, 15 + 2)
                 .mapToObj(index -> clanPlayer(
                         10_000L + index, "Member" + index, 1,
                         500 + index, clan))
