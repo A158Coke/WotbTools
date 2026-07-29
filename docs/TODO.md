@@ -82,6 +82,22 @@
   - [x] 订单状态变更通知（需求更新、新的匹配提醒）
 - [x] **打手自助接单状态**：个人中心可直接暂停/恢复接收新订单，复用 `booster_profile.available`，不影响已有进行中订单。
 
+
+## P1：AI Review（DeepSeek 百万上下文）
+
+- [x] 删除 Player 30,000 字符限制
+- [x] 删除 Team 30,000 字符限制
+- [x] TeamAiPromptBuilder 重构
+- [x] AiModelProperties 统一配置
+- [x] DeepSeek usage 解析
+- [x] 双层 budget 检查
+- [x] 配置/部署变量同步
+- [ ] 统一请求构造器
+- [ ] 证据密度阶梯
+- [ ] 高精度位置证据
+- [ ] .env.example 文档
+- [ ] 新增测试
+
 ## P1：测试与质量
 
 - [x] Java 单元测试覆盖 parser 资源预算、Keycloak role 补偿、权限和上传边界。
