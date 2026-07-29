@@ -364,6 +364,8 @@ final class TeamAiPromptBuilder {
             writer.append("member accountId=" + member.accountId()
                     + " nickname=" + quoteData(member.nickname())
                     + " tank=" + quoteData(resolveTankName(member.tankId(), member.tankName()))
+                    // vehicleClass 只来自 tankopedia 的结构化 class 字段，不得由 tank 名称推断
+                    + " vehicleClass=" + resolveTankClass(member.tankId())
                     + " entityIds=" + member.entityIds()
                     + " mapping=" + member.mappingConfidence()
                     + " finalDamage=" + member.finalDamage()
@@ -584,6 +586,14 @@ final class TeamAiPromptBuilder {
     /** Delegates to shared {@link ReplayDisplayNames#tankName}. */
     private static String resolveTankName(final long tankId, final String existingTankName) {
         return ReplayDisplayNames.tankName(tankId, existingTankName);
+    }
+
+    /**
+     * Delegates to shared {@link ReplayDisplayNames#tankClass}.
+     * 结构化车辆类型只由 tankId 查表得到，绝不解析 tank 名称文本。
+     */
+    private static String resolveTankClass(final long tankId) {
+        return ReplayDisplayNames.tankClass(tankId);
     }
 
     // ---- 记录类型 ----
