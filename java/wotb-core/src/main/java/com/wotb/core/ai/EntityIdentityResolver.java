@@ -76,7 +76,8 @@ public final class EntityIdentityResolver {
             return "未知实体";
         }
         if (player.accountId == recorderAccountId) {
-            return "录像者";
+            // 随机战个人复盘直接面向玩家本人，统一用第二人称
+            return "你";
         }
         final Side side = PlayerSideResolver.resolve(battle, player);
         final StringBuilder sb = new StringBuilder(64);
@@ -106,7 +107,7 @@ public final class EntityIdentityResolver {
 
     private static String sideLabel(final Side side) {
         return switch (side) {
-            case FRIENDLY -> "友方";
+            case FRIENDLY -> "队友";
             case ENEMY -> "敌方";
             case UNKNOWN -> "未知阵营";
         };

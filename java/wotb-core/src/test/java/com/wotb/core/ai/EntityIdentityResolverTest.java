@@ -51,10 +51,29 @@ class EntityIdentityResolverTest {
     }
 
     @Test
-    void recorderEntityIsLabelledAsRecorderNotAsAnEnemy() {
+    void recorderEntityIsLabelledAsSecondPersonNotAsAnEnemy() {
         final Map<Integer, String> labels = EntityIdentityResolver.resolveLabels(
                 recon(), battle(), RECORDER_ACCOUNT);
-        assertEquals("录像者", labels.get(RECORDER_ENTITY));
+        // 复盘直接面向玩家本人，实体标签用「你」，不再出现「录像者」
+        assertEquals("你", labels.get(RECORDER_ENTITY));
+    }
+
+    @Test
+    void teammatesAreCalledTeammatesNotFriendly() {
+        final PlayerResult teammate = new PlayerResult();
+        teammate.accountId = 3L;
+        teammate.nickname = "Mate";
+        teammate.team = 1;
+        teammate.tankId = SPHT_TANK_ID;
+        final Battle battle = new Battle();
+        battle.players = List.of(recorder(), teammate);
+        battle.recorder = "Recorder";
+        battle.winnerTeam = 1;
+
+        final String label = EntityIdentityResolver.label(battle, teammate, RECORDER_ACCOUNT);
+
+        assertTrue(label.startsWith("队友 "), label);
+        assertFalse(label.contains("友方"), label);
     }
 
     @Test
@@ -64,7 +83,7 @@ class EntityIdentityResolverTest {
 
         assertTrue(legend.startsWith("# 实体对照: "), legend);
         assertTrue(legend.contains("E" + ENEMY_ENTITY + "=敌方 "), legend);
-        assertTrue(legend.contains("E" + RECORDER_ENTITY + "=录像者"), legend);
+        assertTrue(legend.contains("E" + RECORDER_ENTITY + "=你"), legend);
         assertTrue(legend.endsWith("\n"), legend);
     }
 

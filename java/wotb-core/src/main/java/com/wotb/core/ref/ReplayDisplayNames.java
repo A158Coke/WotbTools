@@ -60,7 +60,11 @@ public final class ReplayDisplayNames {
             return UNKNOWN_TANK_CLASS;
         }
         final String type = TANKOPEDIA.info(tankId).type();
-        return StringUtils.hasText(type) ? type : UNKNOWN_TANK_CLASS;
+        if (!StringUtils.hasText(type)) {
+            return UNKNOWN_TANK_CLASS;
+        }
+        // 车辆库把坦克歼击车记作英文缩写 TD；复盘正文要求全中文，这里统一展开
+        return "TD".equals(type) ? "坦克歼击车" : type;
     }
 
     /** 结构化车辆等级，仅取自 tankopedia 的 {@code tier}；缺失返回空串，不得由名称推断。 */

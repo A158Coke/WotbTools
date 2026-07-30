@@ -18,6 +18,15 @@ public final class PlayerAnalysisTerms {
     private PlayerAnalysisTerms() {
     }
 
+    /**
+     * 战斗相对秒数 → {@code X分XX秒}。复盘正文要求统一使用该格式，
+     * 证据里也直接给出，避免模型自行换算出错。负值按 0 处理。
+     */
+    public static String battleClock(final float relativeSeconds) {
+        final int total = Math.max(0, Math.round(relativeSeconds));
+        return (total / 60) + "分" + String.format("%02d", total % 60) + "秒";
+    }
+
     /** 战斗阶段。 */
     public static String phaseLabel(final BattlePhaseType type) {
         if (type == null) return "未知阶段";
@@ -65,14 +74,20 @@ public final class PlayerAnalysisTerms {
         };
     }
 
-    /** 关键事件类型。未知类型原样返回，避免凭空造词。 */
+    /**
+     * 关键事件类型。未知的全大写机器标签不得直接进入 prompt，
+     * 统一回退为「其他关键事件」；非机器标签（已是可读文本）原样返回。
+     */
     public static String keyEventLabel(final String type) {
-        if (type == null) return "未知事件";
+        if (type == null || type.isBlank()) return "其他关键事件";
         return switch (type) {
             case "VEHICLE_DESTROYED" -> "车辆被击毁";
             case "BATTLE_END" -> "战斗结束";
             case "FIRST_CONTACT" -> "首次接敌";
-            default -> type;
+            case "TEAM_MEMBER_DESTROYED" -> "队员阵亡";
+            case "TEAM_FIRST_CONTACT" -> "团队首次接敌";
+            case "TEAM_FORMATION_SPLIT" -> "队形分散";
+            default -> type.matches("[A-Z0-9_]+") ? "其他关键事件" : type;
         };
     }
 }

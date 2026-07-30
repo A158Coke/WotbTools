@@ -85,7 +85,7 @@ class TankNameProperNounTest {
     void everySystemPromptForbidsInferringClassFromName() {
         allSystemPrompts().forEach(prompt -> {
             assertTrue(prompt.contains("禁止根据坦克名称推断车辆类型"), prompt);
-            assertTrue(prompt.contains("只有证据显式给出"), prompt);
+            assertTrue(prompt.contains("只能来自 tankId 对应的结构化字段"), prompt);
             assertTrue(prompt.contains("证据未提供的坦克属性一律不得自行补充"), prompt);
         });
     }
@@ -148,10 +148,10 @@ class TankNameProperNounTest {
         AiReplayAnalysisService.appendRecorderDamageExchange(sb, battle, recorder);
         final String evidence = sb.toString();
 
-        assertTrue(evidence.contains("RECORDER_DAMAGE_EXCHANGE_OBSERVED"), evidence);
+        assertTrue(evidence.contains("DAMAGE_EXCHANGE_AGGREGATED_OBSERVED"), evidence);
         assertTrue(evidence.contains("坦克: \"SPHT\""), evidence);
         assertTrue(evidence.contains("车种: 重坦"), evidence);
-        assertTrue(evidence.contains("直接伤害780"), evidence);
+        assertTrue(evidence.contains("累计直接伤害780"), evidence);
         assertFalse(evidence.contains("自行火炮"), evidence);
         assertFalse(evidence.contains("SPG"), evidence);
     }
@@ -214,7 +214,7 @@ class TankNameProperNounTest {
 
     @Test
     void ruleTextIsGenericAndNotLimitedToSpht() {
-        final String rule = AiReplayAnalysisService.TANK_NAME_PROPER_NOUN_RULE;
+        final String rule = AiReplayAnalysisService.COMMON_TANK_PROPER_NOUN_RULE;
         // SPHT 只作为举例出现一次，规则主体覆盖「所有坦克名称」
         assertTrue(rule.contains("都是由 tankId 经权威车辆库映射得到的完整专有名词"), rule);
         assertEquals(1, countOccurrences(rule, "SPHT"), rule);
