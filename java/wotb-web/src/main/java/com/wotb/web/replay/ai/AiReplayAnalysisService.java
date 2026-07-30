@@ -1000,10 +1000,10 @@ public class AiReplayAnalysisService {
         final Side recSide = rec != null ? PlayerSideResolver.resolve(battle, rec) : Side.UNKNOWN;
 
         // ====== 2. Recorder authoritative stats ======
+        // 战绩本身在下面的 YOU_AUTHORITATIVE 段统一输出，这里不再重复一份
         if (rec != null) {
             authoritativeDealt = rec.damageDealt;
             authoritativeReceived = rec.damageReceived;
-            sb.append("\n").append(PlayerAnalysisPromptFormatter.formatRecorderLine(rec, recSide)).append('\n');
         }
 
         // ====== 3-4. FRIENDLY_LINEUP, ENEMY_LINEUP, UNKNOWN_LINEUP ======
@@ -1024,7 +1024,7 @@ public class AiReplayAnalysisService {
         sb.append("\n=== TEAMMATE_LINEUP_AUTHORITATIVE（你的队友阵容·权威结算，不含你本人） ===\n");
         boolean anyTeammate = false;
         for (final PlayerResult p : friendlies) {
-            if (rec != null && p.accountId == rec.accountId) continue;
+            if (PlayerAnalysisPromptFormatter.isSamePlayer(p, rec)) continue;
             appendPlayerLine(sb, p, true);
             anyTeammate = true;
         }
@@ -1304,7 +1304,7 @@ public class AiReplayAnalysisService {
                     + " 致死前累计承受你" + victim.damage() + "点伤害");
         }
         for (final PlayerResult other : battle.players) {
-            if (other.accountId == rec.accountId) continue;
+            if (PlayerAnalysisPromptFormatter.isSamePlayer(other, rec)) continue;
             for (final PotentialDamage.KillVictim victim : other.killVictims) {
                 if (victim.victimAccountId() != rec.accountId) continue;
                 killersOfRecorder.add(EntityIdentityResolver.label(battle, other, rec.accountId)
@@ -1448,7 +1448,7 @@ public class AiReplayAnalysisService {
         final int totalFriendlyDmg = friendlies.stream().mapToInt(p -> p.damageDealt).sum();
         final double dmgShare = totalFriendlyDmg > 0 ? 100.0 * rec.damageDealt / totalFriendlyDmg : 0.0;
 
-        sb.append("\n=== RECORDER_STATS_AUTHORITATIVE（你的战绩·权威结算） ===\n");
+        sb.append("\n=== RECORDER_STATS_AUTHORITATIVE（你在本队的排名·权威结算） ===\n");
         sb.append("你在本队的伤害排名: ").append(dmgRank).append("/").append(totalFriendly)
                 .append(" 击杀排名: ").append(killRank).append("/").append(totalFriendly)
                 .append(" 占本队总伤害: ").append(String.format("%.0f%%", dmgShare));
@@ -1487,10 +1487,9 @@ public class AiReplayAnalysisService {
             return;
         }
         final PlayerResult recorder = battle.recorderResult();
-        final long recorderAccountId = recorder != null ? recorder.accountId : Long.MIN_VALUE;
         for (final PlayerResult p : dead) {
             // 玩家本人写「你」，同队写「队友」，对方写「敌方」；本人绝不出现为「友方/队友」
-            final String who = p.accountId == recorderAccountId
+            final String who = PlayerAnalysisPromptFormatter.isSamePlayer(p, recorder)
                     ? "你"
                     : PlayerAnalysisPromptFormatter.sideLabel(PlayerSideResolver.resolve(battle, p))
                             + " " + PlayerResultFormat.quoteForPrompt(p.nickname);
@@ -1981,11 +1980,10 @@ public class AiReplayAnalysisService {
                     .sorted(Comparator.comparingDouble(PlayerResultFormat::deathSec))
                     .toList();
             final PlayerResult recorder = battle.recorderResult();
-            final long recorderAccountId = recorder != null ? recorder.accountId : Long.MIN_VALUE;
             for (final PlayerResult p : dead) {
                 final float deathSec = (float) PlayerResultFormat.deathSec(p);
                 // 玩家本人写「你」，同队写「队友」，对方写「敌方」；本人绝不出现为「友方」
-                final String who = p.accountId == recorderAccountId
+                final String who = PlayerAnalysisPromptFormatter.isSamePlayer(p, recorder)
                         ? "你"
                         : switch (PlayerSideResolver.resolve(battle, p)) {
                             case FRIENDLY -> "队友 " + PlayerResultFormat.quoteForPrompt(p.nickname);

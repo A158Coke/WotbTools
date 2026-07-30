@@ -309,7 +309,7 @@ class AiReplayAnalysisServiceTest {
         assertNotNull(sectionB, "Must find section for battle-b");
         assertTrue(sectionA.contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
                 "Unit A (with duplicate) must have DUPLICATE limitation");
-        assertFalse(sectionB.contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
+        assertFalse(unitLimitationsOf(sectionB).contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
                 "Unit B (no duplicate) must NOT have DUPLICATE limitation");
         // Global DATA_LIMITATIONS must NOT contain unit-specific DUPLICATE (inline format)
         // Note: body is raw JSON bytes; JSON escapes newlines as \\n (two chars: backslash + n)
@@ -840,12 +840,13 @@ class AiReplayAnalysisServiceTest {
         assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("录像者 entity 已映射, 特征集可用"),
+        assertTrue(body.contains("你的 entity 已映射, 特征集可用"),
                 "Should enter resolved recorder branch");
-        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=友方 | 车辆:"),
+        assertTrue(body.contains("你: 账号 1001 | 侧=队友 | 车辆:"),
                 "Entity line must show friendly side, not raw team");
         assertTrue(body.contains("FRIENDLY_LINEUP_AUTHORITATIVE"), "Should have friendly roster");
-        assertTrue(body.contains("友方 \\\"RecorderPlayer\\\""), "RecorderPlayer should be friendly");
+        assertTrue(body.contains("你 \\\"RecorderPlayer\\\""),
+                "The player must be listed as 你, never as 友方/队友");
         assertTrue(body.contains("ENEMY_LINEUP_AUTHORITATIVE"), "Should have enemy roster");
         assertTrue(body.contains("敌方 \\\"OtherPlayer\\\""), "OtherPlayer should be enemy");
     }
@@ -863,9 +864,10 @@ class AiReplayAnalysisServiceTest {
         assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=友方 | 车辆:"),
+        assertTrue(body.contains("你: 账号 1001 | 侧=队友 | 车辆:"),
                 "Recorder in team 2 must still show friendly side");
-        assertTrue(body.contains("友方 \\\"RecorderPlayer\\\""), "RecorderPlayer should be friendly");
+        assertTrue(body.contains("你 \\\"RecorderPlayer\\\""),
+                "The player must be listed as 你, never as 友方/队友");
         assertTrue(body.contains("敌方 \\\"OtherPlayer\\\""), "OtherPlayer(raw team 1) should be enemy");
     }
 
@@ -885,11 +887,11 @@ class AiReplayAnalysisServiceTest {
         assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=未知 | 车辆:"),
+        assertTrue(body.contains("你: 账号 1001 | 侧=未知 | 车辆:"),
                 "Invalid team " + invalidTeam + " must show unknown side");
         assertTrue(body.contains("结果: 平局或未知"),
                 "Invalid team " + invalidTeam + " must produce draw/unknown winner");
-        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=未知 | 车辆:"),
+        assertTrue(body.contains("你: 账号 1001 | 侧=未知 | 车辆:"),
                 "Invalid team " + invalidTeam + " must show unknown side in entity line");
     }
 
@@ -1009,10 +1011,12 @@ class AiReplayAnalysisServiceTest {
         assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("录像者: \\\"RecorderPlayer\\\""), "Should contain recorder line");
-        assertTrue(body.contains("| 侧=友方"), "Recorder should show friendly side");
-        assertTrue(body.contains("=== 友方 ==="), "Should have friendly roster");
-        assertTrue(body.contains("- 友方 \\\"RecorderPlayer\\\""), "RecorderPlayer should be friendly");
+        assertTrue(body.contains("你: \\\"RecorderPlayer\\\""), "Should contain the player line in 2nd person");
+        assertFalse(body.contains("| 侧=友方"), "The player must not carry a 友方 side label");
+        assertTrue(body.contains("=== 你 ==="), "Should have a dedicated section for the player");
+        assertTrue(body.contains("=== 队友 ==="), "Should have a teammate roster");
+        assertFalse(body.contains("- 队友 \\\"RecorderPlayer\\\""),
+                "The player must not be repeated inside the teammate roster");
         assertTrue(body.contains("=== 敌方 ==="), "Should have enemy roster");
         assertTrue(body.contains("- 敌方 \\\"OtherPlayer\\\""), "OtherPlayer should be enemy");
     }
@@ -1028,8 +1032,9 @@ class AiReplayAnalysisServiceTest {
         assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("| 侧=友方"), "Recorder in team 2 should still show friendly side");
-        assertTrue(body.contains("- 友方 \\\"RecorderPlayer\\\""), "RecorderPlayer should be friendly");
+        assertTrue(body.contains("=== 你 ==="), "Recorder in team 2 still gets the 你 section");
+        assertFalse(body.contains("- 队友 \\\"RecorderPlayer\\\""),
+                "The player must not be repeated inside the teammate roster");
         assertTrue(body.contains("- 敌方 \\\"OtherPlayer\\\""), "OtherPlayer(raw team 1) should be enemy");
     }
 
@@ -1285,6 +1290,19 @@ class AiReplayAnalysisServiceTest {
     private static List<ReplayPerspectiveGroup> teamGroups(
             final List<ReplayProcessingResult> results) {
         return new BatchAnalyzer().analyze(results).groups();
+    }
+
+    /**
+     * 取一个 perspective 段里 {@code unitLimitations=[...]} 的内容。
+     * <p>断言「某个 limitation 不属于该单元」时只应看这一行：整段里还可能出现
+     * 共享 partition 头、对方阵容等合法内容，拿整段做 assertFalse 过于严格。</p>
+     */
+    private static String unitLimitationsOf(final String section) {
+        if (section == null) return "";
+        final int start = section.indexOf("unitLimitations=[");
+        if (start < 0) return "";
+        final int end = section.indexOf(']', start);
+        return end < 0 ? section.substring(start) : section.substring(start, end + 1);
     }
 
     private static String extractSection(final String body, final String analysisUnitId) {

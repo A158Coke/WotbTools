@@ -53,6 +53,34 @@ class PlayerAnalysisPromptFormatterTest {
     }
 
     @Test
+    void fallbackNeverListsThePlayerAmongTeammates() {
+        // 降级路径（无特征集）：本人只出现在「你」段，不得再出现在队友段
+        final Battle battle = createBattle(1, List.of(player(1, "Recorder"), player(1, "Mate")));
+        final String output = PlayerAnalysisPromptFormatter.formatAllPlayersBySide(battle);
+
+        assertTrue(output.contains("=== 你 ==="), output);
+        assertTrue(output.contains("你: \"Recorder\""), output);
+        assertTrue(output.contains("=== 队友 ==="), output);
+        assertTrue(output.contains("队友 \"Mate\""), output);
+        // 队友段里绝不能再出现本人
+        final String teammateSection = output.substring(output.indexOf("=== 队友 ==="));
+        assertFalse(teammateSection.contains("Recorder"),
+                "The player must not be repeated as a teammate, got: " + teammateSection);
+    }
+
+    @Test
+    void missingAccountIdsDoNotCollapseTheWholeTeamIntoThePlayer() {
+        // 缺失 identity 的回放里所有 accountId 都是 0：
+        // 若按 accountId 判定本人，整队都会被当成本人而消失
+        final Battle battle = createBattle(1, List.of(
+                player(1, "Recorder"), player(1, "MateA"), player(1, "MateB")));
+        final String output = PlayerAnalysisPromptFormatter.formatAllPlayersBySide(battle);
+
+        assertTrue(output.contains("MateA"), output);
+        assertTrue(output.contains("MateB"), output);
+    }
+
+    @Test
     void formatAllPlayersBySide_noTeamNumbers() {
         final Battle battle = createBattle(1, List.of(
                 player(1, "Ally"),
@@ -61,10 +89,12 @@ class PlayerAnalysisPromptFormatterTest {
         final String output = PlayerAnalysisPromptFormatter.formatAllPlayersBySide(battle);
         assertFalse(output.contains("队伍1"), "Output must not contain 队伍1");
         assertFalse(output.contains("队伍2"), "Output must not contain 队伍2");
-        // 同队一律称「队友」，不再使用「友方」
-        assertTrue(output.contains("队友"), "Should contain teammate label, got: " + output);
-        assertFalse(output.contains("友方"), "友方 must not appear, got: " + output);
+        // 该 fixture 只有「本人 + 对手」：本人单独成段，对手在敌方段，无队友
+        assertTrue(output.contains("=== 你 ==="), "Should contain the player section, got: " + output);
         assertTrue(output.contains("敌方"), "Should contain enemy label, got: " + output);
+        assertFalse(output.contains("友方"), "友方 must not appear, got: " + output);
+        assertFalse(output.contains("=== 队友 ==="),
+                "No teammates in this fixture, got: " + output);
     }
 
     @Test
