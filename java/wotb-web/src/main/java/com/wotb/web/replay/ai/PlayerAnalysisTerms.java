@@ -27,6 +27,20 @@ public final class PlayerAnalysisTerms {
         return (total / 60) + "分" + String.format("%02d", total % 60) + "秒";
     }
 
+    /** 战斗时间范围，例如 {@code [0分10秒-0分25秒]}。 */
+    public static String battleRange(final float startSec, final float endSec) {
+        return "[" + battleClock(startSec) + "-" + battleClock(endSec) + "]";
+    }
+
+    /**
+     * AI prompt 专用的存活/阵亡显示。
+     * <p>不复用共享的 {@code PlayerResultFormat.deathDisplay()}：那个方法还服务于
+     * 非 AI 调用方（导出/前端），改它会波及无关输出。这里只负责 AI 侧的 {@code X分XX秒}。</p>
+     */
+    public static String survivalDisplay(final boolean survived, final double deathSec) {
+        return survived ? "存活" : "阵亡@" + battleClock((float) deathSec);
+    }
+
     /** 战斗阶段。 */
     public static String phaseLabel(final BattlePhaseType type) {
         if (type == null) return "未知阶段";
