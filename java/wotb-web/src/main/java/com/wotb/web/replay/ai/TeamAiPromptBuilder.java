@@ -4,17 +4,16 @@ import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.PlayerSideResolver;
-import com.wotb.core.ref.ReplayDisplayNames;
-import com.wotb.core.util.PromptDataQuoter;
 import com.wotb.core.processing.TeamPerspectiveLabelResolver;
+import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.CanonicalMapPosition;
 import com.wotb.core.replay.feature.KeyBattleEvent;
+import com.wotb.core.replay.feature.MapCoordinateResolution;
+import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MultiTeamBattleAnalysisContext;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
-import com.wotb.core.replay.feature.MapCoordinateResolution;
-import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.TeamAggregateResult;
 import com.wotb.core.replay.feature.TeamBattleAnalysisSummary;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
@@ -24,8 +23,9 @@ import com.wotb.core.replay.feature.TeamFormationPhase;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.reconstruction.Vector3;
-
+import com.wotb.core.util.PromptDataQuoter;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -35,12 +35,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.springframework.util.StringUtils;
 
 /**
  * 将 Team Context 压缩为确定性、长度受限的 AI 输入。
  * 不接收或输出原始 ReplayEvent/逐帧位置流。
- *
+ * <p>
  * 使用 AiTokenEstimator 进行 token 预算管理，不再使用固定字符限制或固定数量截断。
  */
 final class TeamAiPromptBuilder {
@@ -68,6 +67,17 @@ final class TeamAiPromptBuilder {
     ) {
         final Set<String> limitations = collectLimitations(context, extraLimitations);
 
+        // 先构建 HPF：对方阵容属权威结算且体量很小（≤7 行），与本队事实同为 mandatory，
+        // 不能被 optional 预算裁掉。构建结果决定是否需要补 OPPOSING_LINEUP_UNAVAILABLE，
+        // 因此必须在 header 写出 unitLimitations 之前完成。
+        final BudgetWriter hpfTemp = new BudgetWriter();
+        appendHighPriorityFacts(hpfTemp, context.features(), context.analysisUnitId());
+        if (!appendOpposingTeam(hpfTemp, context.battle(), context.perspectiveTeam())) {
+            // prompt 要求逐车分析对方；拿不到对方名册时必须显式告知，避免 AI 跳过或编造
+            limitations.add("OPPOSING_LINEUP_UNAVAILABLE");
+        }
+        final String hpfBlock = hpfTemp.content();
+
         // 构建 header
         final StringBuilder headerBuf = new StringBuilder();
         headerBuf.append("=== SINGLE_TEAM_CONTEXT ===\n");
@@ -87,11 +97,6 @@ final class TeamAiPromptBuilder {
         }
         headerBuf.append("unitLimitations=").append(limitations).append("\n");
         final String headerBlock = headerBuf.toString();
-
-        // 构建所有 HPF（无固定截断）
-        final BudgetWriter hpfTemp = new BudgetWriter();
-        appendHighPriorityFacts(hpfTemp, context.features(), context.analysisUnitId());
-        final String hpfBlock = hpfTemp.content();
 
         // 构建所有 optional details（无固定截断）
         final BudgetWriter optTemp = new BudgetWriter();
@@ -150,15 +155,13 @@ final class TeamAiPromptBuilder {
         final Set<String> globalLimitations = new LinkedHashSet<>(context.limitations());
 
         // 构建 global header
-        final StringBuilder globalHeader = new StringBuilder();
-        globalHeader.append("=== MULTI_TEAM_CONTEXT ===\n");
-        globalHeader.append("perspectiveCount=").append(context.perspectiveCount()).append("\n");
-        globalHeader.append("uniqueBattleCount=").append(context.uniqueBattleCount()).append("\n");
-        globalHeader.append("rosterConsistent=").append(context.rosterConsistent()).append("\n");
+        final String globalHeader = "=== MULTI_TEAM_CONTEXT ===\n" +
+                "perspectiveCount=" + context.perspectiveCount() + "\n" +
+                "uniqueBattleCount=" + context.uniqueBattleCount() + "\n" +
+                "rosterConsistent=" + context.rosterConsistent() + "\n";
         if (!context.rosterConsistent()) {
             globalLimitations.add("ROSTER_CONSISTENCY_UNCONFIRMED");
         }
-        final String globalHeaderStr = globalHeader.toString();
 
         // 2. 构建所有 perspective 的 mandatory/HPF 内容（临时写入器，不写入 finally）
         final List<PerspectivePromptSections> perspectiveSections = new ArrayList<>(perspectives.size());
@@ -178,7 +181,7 @@ final class TeamAiPromptBuilder {
         // 3-4. 估算所有 mandatory/HPF 总 token 数，超限则抛异常
         if (estimator != null) {
             final StringBuilder mandatoryBuf = new StringBuilder();
-            mandatoryBuf.append(globalHeaderStr);
+            mandatoryBuf.append(globalHeader);
             for (final PerspectivePromptSections section : perspectiveSections) {
                 mandatoryBuf.append(section.mandatoryBlock());
                 mandatoryBuf.append(section.highPriorityBlock());
@@ -190,7 +193,7 @@ final class TeamAiPromptBuilder {
 
         // 5. 写入 mandatory 内容到最终 writer
         final BudgetWriter writer = new BudgetWriter();
-        writer.appendRequired(globalHeaderStr);
+        writer.appendRequired(globalHeader);
 
         final Set<String> truncatedIds = new LinkedHashSet<>();
         for (final PerspectivePromptSections section : perspectiveSections) {
@@ -295,6 +298,86 @@ final class TeamAiPromptBuilder {
         writer.append("coverage=" + features.coverage() + "\n");
     }
 
+    /**
+     * 对方阵容（权威结算）。团队证据此前只描述录像者所在队伍，
+     * 对手完全缺失，AI 无从做威胁分析。名册来自权威结算 {@code battle.players}，
+     * 坦克名称与车种/等级/国家只由 tankId 查表得到，不解析名称文本。
+     *
+     * @return 是否输出了内容
+     */
+    private static boolean appendOpposingTeam(
+            final BudgetWriter writer,
+            final Battle battle,
+            final int perspectiveTeam
+    ) {
+        if (battle == null || battle.players == null
+                || !PlayerSideResolver.isValidRawTeam(perspectiveTeam)) {
+            return false;
+        }
+        final List<PlayerResult> opponents = battle.players.stream()
+                .filter(p -> PlayerSideResolver.isValidRawTeam(p.team) && p.team != perspectiveTeam)
+                .toList();
+        if (opponents.isEmpty()) {
+            return false;
+        }
+        writer.append("\n=== OPPOSING_TEAM_LINEUP_AUTHORITATIVE（对方阵容·权威结算） ===\n");
+        int damage = 0;
+        int received = 0;
+        int assisted = 0;
+        int blocked = 0;
+        int kills = 0;
+        int survivors = 0;
+        for (final PlayerResult p : opponents) {
+            writer.append("opponent accountId=" + p.accountId
+                    + " nickname=" + quoteData(p.nickname)
+                    + " tank=" + quoteData(resolveTankName(p.tankId, p.tankName))
+                    + " vehicleClass=" + resolveTankClass(p.tankId)
+                    + tierAndNation(p.tankId)
+                    + " finalDamage=" + p.damageDealt
+                    + " damageReceived=" + p.damageReceived
+                    + " assisted=" + p.damageAssisted
+                    + " blocked=" + p.damageBlocked
+                    + " kills=" + p.kills
+                    + " hits=" + p.nHitsDealt
+                    + " penetrations=" + p.nPenetrationsDealt
+                    + " enemiesDamaged=" + p.nEnemiesDamaged
+                    + " survived=" + p.survived
+                    + "\n");
+            damage += p.damageDealt;
+            received += p.damageReceived;
+            assisted += p.damageAssisted;
+            blocked += p.damageBlocked;
+            kills += p.kills;
+            if (p.survived) survivors++;
+        }
+        writer.append("\n=== OPPOSING_TEAM_AUTHORITATIVE_RESULT（对方合计·权威结算） ===\n");
+        writer.append("opponentCount=" + opponents.size()
+                + " finalDamage=" + damage
+                + " damageReceived=" + received
+                + " assisted=" + assisted
+                + " blocked=" + blocked
+                + " kills=" + kills
+                + " survivors=" + survivors
+                + "\n");
+        return true;
+    }
+
+    /**
+     * tankopedia 的结构化等级/国家；缺失即不输出，绝不由名称推断。
+     */
+    private static String tierAndNation(final long tankId) {
+        final StringBuilder sb = new StringBuilder(24);
+        final String tier = ReplayDisplayNames.tankTier(tankId);
+        if (!tier.isEmpty()) {
+            sb.append(" tier=").append(tier);
+        }
+        final String nation = ReplayDisplayNames.tankNation(tankId);
+        if (!nation.isEmpty()) {
+            sb.append(" nation=").append(nation);
+        }
+        return sb.toString();
+    }
+
     private static void appendOptionalDetails(
             final BudgetWriter writer,
             final TeamBattleFeatureSet features,
@@ -359,13 +442,15 @@ final class TeamAiPromptBuilder {
             final List<TeamMemberFeatureSet> members
     ) {
         writer.append("\n=== TEAM_MEMBERS ===\n");
-        for (int index = 0; index < members.size(); index++) {
-            final TeamMemberFeatureSet member = members.get(index);
+        for (final TeamMemberFeatureSet member : members) {
             writer.append("member accountId=" + member.accountId()
                     + " nickname=" + quoteData(member.nickname())
                     + " tank=" + quoteData(resolveTankName(member.tankId(), member.tankName()))
+                    // vehicleClass / tier / nation 只来自 tankopedia 的结构化字段，不得由 tank 名称推断
+                    + " vehicleClass=" + resolveTankClass(member.tankId())
+                    + tierAndNation(member.tankId())
                     + " entityIds=" + member.entityIds()
-                    + " mapping=" + member.mappingConfidence()
+                    + " mapping=" + PlayerAnalysisTerms.confidenceLabel(member.mappingConfidence())
                     + " finalDamage=" + member.finalDamage()
                     + " damageReceived=" + member.damageReceived()
                     + " assisted=" + member.assistedDamage()
@@ -385,29 +470,33 @@ final class TeamAiPromptBuilder {
             final List<TeamMemberFeatureSet> members
     ) {
         boolean hasMovements = false;
-        for (int index = 0; index < members.size(); index++) {
-            if (!members.get(index).movements().isEmpty()) {
+        for (final TeamMemberFeatureSet teamMemberFeatureSet : members) {
+            if (!teamMemberFeatureSet.movements().isEmpty()) {
                 hasMovements = true;
                 break;
             }
         }
         if (!hasMovements) return;
         writer.append("\n=== MEMBER_MOVEMENTS ===\n");
-        for (int index = 0; index < members.size(); index++) {
-            final TeamMemberFeatureSet member = members.get(index);
+        for (final TeamMemberFeatureSet member : members) {
             if (member.movements().isEmpty()) continue;
-            for (int movementIndex = 0; movementIndex < member.movements().size(); movementIndex++) {
-                final MovementSegment movement = member.movements().get(movementIndex);
+            // 必须标出归属成员：否则所有成员的移动段被打成一个匿名平铺列表，AI 无法归属
+            writer.append("member accountId=" + member.accountId()
+                    + " nickname=" + quoteData(member.nickname())
+                    + " tank=" + quoteData(resolveTankName(member.tankId(), member.tankName()))
+                    + " vehicleClass=" + resolveTankClass(member.tankId())
+                    + "\n");
+            for (final MovementSegment movement : member.movements()) {
                 final String startInfo = formatRawPosition(movement.rawStartPosition());
                 final String endInfo = formatRawPosition(movement.rawEndPosition());
                 writer.append("  movement[" + format(movement.startTime())
                         + "-" + format(movement.endTime()) + "]"
-                        + " type=" + movement.type()
+                        + " type=" + PlayerAnalysisTerms.movementLabel(movement.type())
                         + " distance=" + format(movement.distance())
                         + " avgSpeed=" + format(movement.averageSpeed())
                         + " start=" + startInfo
                         + " end=" + endInfo
-                        + " confidence=" + movement.confidence()
+                        + " confidence=" + PlayerAnalysisTerms.confidenceLabel(movement.confidence())
                         + "\n");
             }
         }
@@ -418,8 +507,7 @@ final class TeamAiPromptBuilder {
             final List<TeamFormationPhase> phases
     ) {
         writer.append("\n=== FORMATION_PHASES ===\n");
-        for (int index = 0; index < phases.size(); index++) {
-            final TeamFormationPhase phase = phases.get(index);
+        for (final TeamFormationPhase phase : phases) {
             final String phasePosInfo = formatCanonicalPosition(phase.centroid());
             writer.append("formation[" + format(phase.startTime())
                     + "-" + format(phase.endTime()) + "]"
@@ -427,7 +515,7 @@ final class TeamAiPromptBuilder {
                     + " dispersion=" + format(phase.averageDispersion())
                     + " clusters=" + phase.clusterCount()
                     + " members=" + phase.observedMemberCount()
-                    + " confidence=" + phase.confidence()
+                    + " confidence=" + PlayerAnalysisTerms.confidenceLabel(phase.confidence())
                     + "\n");
             // Structured cluster output
             for (final TeamFormationCluster cluster : phase.clusters()) {
@@ -439,10 +527,10 @@ final class TeamAiPromptBuilder {
                         + " centroidStatus=" + cluster.centroidStatus()
                         + " clampedMemberPositions=" + cluster.clampedMemberPositionCount()
                         + " members=" + cluster.memberIdentities().stream()
-                                .map(id -> PromptDataQuoter.quote(id, "?"))
-                                .collect(Collectors.joining(",", "[", "]"))
+                        .map(id -> PromptDataQuoter.quote(id, "?"))
+                        .collect(Collectors.joining(",", "[", "]"))
                         + " memberCount=" + cluster.memberCount()
-                        + " confidence=" + cluster.confidence()
+                        + " confidence=" + PlayerAnalysisTerms.confidenceLabel(cluster.confidence())
                         + "\n");
             }
         }
@@ -453,8 +541,7 @@ final class TeamAiPromptBuilder {
             final List<TeamEngagementSummary> engagements
     ) {
         writer.append("\n=== TEAM_ENGAGEMENTS_OBSERVED_SUBSET ===\n");
-        for (int index = 0; index < engagements.size(); index++) {
-            final TeamEngagementSummary engagement = engagements.get(index);
+        for (final TeamEngagementSummary engagement : engagements) {
             writer.append("engagement[" + format(engagement.startTime())
                     + "-" + format(engagement.endTime()) + "]"
                     + " allies=" + engagement.alliedAccountIds()
@@ -463,8 +550,8 @@ final class TeamAiPromptBuilder {
                     + " receivedSubset=" + engagement.damageReceived()
                     + " focusedTargets=" + engagement.focusedTargetAccountIds()
                     + " targetSwitches=" + engagement.targetSwitchCount()
-                    + " outcome=" + engagement.outcome()
-                    + " confidence=" + engagement.confidence()
+                    + " outcome=" + PlayerAnalysisTerms.outcomeLabel(engagement.outcome())
+                    + " confidence=" + PlayerAnalysisTerms.confidenceLabel(engagement.confidence())
                     + "\n");
         }
     }
@@ -474,13 +561,12 @@ final class TeamAiPromptBuilder {
             final List<KeyBattleEvent> events
     ) {
         writer.append("\n=== KEY_EVENTS ===\n");
-        for (int index = 0; index < events.size(); index++) {
-            final KeyBattleEvent event = events.get(index);
+        for (final KeyBattleEvent event : events) {
             writer.append("event[" + format(event.clockSec()) + "]"
-                    + " type=" + event.type()
+                    + " type=" + PlayerAnalysisTerms.keyEventLabel(event.type())
                     + " evidence=" + quoteData(event.label())
                     + " source=" + event.source()
-                    + " confidence=" + event.confidence()
+                    + " confidence=" + PlayerAnalysisTerms.confidenceLabel(event.confidence())
                     + " entities=" + event.relatedEntityIds()
                     + "\n");
         }
@@ -503,7 +589,9 @@ final class TeamAiPromptBuilder {
         return PromptDataQuoter.quote(value, "UNKNOWN");
     }
 
-    /** Delegates to shared {@link ReplayDisplayNames#mapName}. */
+    /**
+     * Delegates to shared {@link ReplayDisplayNames#mapName}.
+     */
     private static String resolveMapName(final String mapCode) {
         return ReplayDisplayNames.mapName(mapCode);
     }
@@ -513,12 +601,14 @@ final class TeamAiPromptBuilder {
      * Only accepts raw teams 1 or 2; anything else returns DRAW_OR_UNKNOWN.
      */
     private static String resolveTeamResult(final Integer winnerTeam, final int perspectiveTeam) {
-        if (!PlayerSideResolver.isValidRawTeam(winnerTeam != null ? winnerTeam : 0)
+        // winnerTeam 合法可为 null（胜负未知/平局），不能标 @Nonnull，也不能直接拆箱
+        if (winnerTeam == null
+                || !PlayerSideResolver.isValidRawTeam(winnerTeam)
                 || !PlayerSideResolver.isValidRawTeam(perspectiveTeam)) {
-            return "DRAW_OR_UNKNOWN";
+            return "平局或未知";
         }
-        if (winnerTeam.equals(perspectiveTeam)) return "TEAM_WIN";
-        return "TEAM_LOSS";
+        if (winnerTeam.equals(perspectiveTeam)) return "本队获胜";
+        return "本队失利";
     }
 
     /**
@@ -529,12 +619,11 @@ final class TeamAiPromptBuilder {
             final List<BattlePhaseSummary> phases
     ) {
         writer.append("\n=== BATTLE_PHASES ===\n");
-        for (int index = 0; index < phases.size(); index++) {
-            final BattlePhaseSummary phase = phases.get(index);
+        for (final BattlePhaseSummary phase : phases) {
             writer.append("phase[" + format(phase.startTime())
                     + "-" + format(phase.endTime()) + "]"
-                    + " type=" + phase.type()
-                    + " confidence=" + phase.confidence()
+                    + " type=" + PlayerAnalysisTerms.phaseLabel(phase.type())
+                    + " confidence=" + PlayerAnalysisTerms.confidenceLabel(phase.confidence())
                     + "\n");
         }
     }
@@ -570,7 +659,9 @@ final class TeamAiPromptBuilder {
                 + ") r=" + res.region() + " s=" + res.status().name();
     }
 
-    /** Resolve dominant clan label for a perspective team's players only. */
+    /**
+     * Resolve dominant clan label for a perspective team's players only.
+     */
     private static String resolvePerspectiveLabel(
             final List<PlayerResult> players, final int perspectiveTeam) {
         if (players == null) return "未知队伍";
@@ -581,30 +672,41 @@ final class TeamAiPromptBuilder {
         return TeamPerspectiveLabelResolver.resolve(perspectivePlayers);
     }
 
-    /** Delegates to shared {@link ReplayDisplayNames#tankName}. */
+    /**
+     * Delegates to shared {@link ReplayDisplayNames#tankName}.
+     */
     private static String resolveTankName(final long tankId, final String existingTankName) {
         return ReplayDisplayNames.tankName(tankId, existingTankName);
+    }
+
+    /**
+     * Delegates to shared {@link ReplayDisplayNames#tankClass}.
+     * 结构化车辆类型只由 tankId 查表得到，绝不解析 tank 名称文本。
+     */
+    private static String resolveTankClass(final long tankId) {
+        return ReplayDisplayNames.tankClass(tankId);
     }
 
     // ---- 记录类型 ----
 
     private record PerspectivePromptSections(
-        String analysisUnitId,
-        String mandatoryBlock,
-        String highPriorityBlock,
-        boolean hpfTruncated,
-        String optionalBlock,
-        boolean optionalTruncated,
-        List<String> perUnitLimitations
-    ) {}
+            String analysisUnitId,
+            String mandatoryBlock,
+            String highPriorityBlock,
+            boolean hpfTruncated,
+            String optionalBlock,
+            boolean optionalTruncated,
+            List<String> perUnitLimitations
+    ) {
+    }
 
     record PromptInput(
-        String content,
-        Set<String> includedUnitIds,
-        Set<String> omittedUnitIds,
-        Set<String> truncatedUnitIds,
-        Map<String, List<String>> perUnitLimitations,
-        List<String> globalLimitations
+            String content,
+            Set<String> includedUnitIds,
+            Set<String> omittedUnitIds,
+            Set<String> truncatedUnitIds,
+            Map<String, List<String>> perUnitLimitations,
+            List<String> globalLimitations
     ) {
 
         PromptInput {
