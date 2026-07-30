@@ -44,7 +44,7 @@ public final class PlayerAnalysisPromptFormatter {
                 + " 助攻" + p.damageAssisted
                 + " 格挡" + p.damageBlocked
                 + " 击杀" + p.kills
-                + " " + PlayerResultFormat.deathDisplay(p);
+                + " " + PlayerAnalysisTerms.survivalDisplay(p.survived, PlayerResultFormat.deathSec(p));
     }
 
     /**
@@ -55,7 +55,7 @@ public final class PlayerAnalysisPromptFormatter {
     public static String formatRecorderLine(final PlayerResult rec, final Side side) {
         return "你: " + PlayerResultFormat.quoteForPrompt(rec.nickname)
                 + " (" + PlayerResultFormat.quoteForPrompt(resolveTank(rec)) + ")"
-                + " | " + PlayerResultFormat.deathDisplay(rec)
+                + " | " + PlayerAnalysisTerms.survivalDisplay(rec.survived, PlayerResultFormat.deathSec(rec))
                 + " | 输出" + rec.damageDealt
                 + " | 承伤" + rec.damageReceived
                 + " | 助攻" + rec.damageAssisted

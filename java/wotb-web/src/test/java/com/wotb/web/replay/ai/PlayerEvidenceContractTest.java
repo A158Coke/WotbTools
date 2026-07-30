@@ -34,7 +34,10 @@ class PlayerEvidenceContractTest {
         final String evidence = fullFeatureEvidence(1);
 
         assertTrue(evidence.contains("你的 entity 已映射, 特征集可用"), evidence);
-        assertTrue(evidence.contains("你: 账号 1001 | 侧=队友 | 车辆:"), evidence);
+        assertTrue(evidence.contains("你: 账号 1001 | 车辆:"), evidence);
+        assertFalse(evidence.contains("侧=队友"), evidence);
+        assertFalse(evidence.contains("侧=友方"), evidence);
+        assertFalse(evidence.contains("侧=友军"), evidence);
         assertFalse(evidence.contains("录像者 entity"), evidence);
     }
 
@@ -42,16 +45,21 @@ class PlayerEvidenceContractTest {
     void recorderInTeam2IsStillAddressedAsYou() {
         final String evidence = fullFeatureEvidence(2);
 
-        assertTrue(evidence.contains("你: 账号 1001 | 侧=队友 | 车辆:"), evidence);
+        assertTrue(evidence.contains("你: 账号 1001 | 车辆:"), evidence);
+        assertFalse(evidence.contains("侧=队友"), evidence);
+        assertFalse(evidence.contains("侧=友方"), evidence);
+        assertFalse(evidence.contains("侧=友军"), evidence);
         assertFalse(evidence.contains("录像者 entity"), evidence);
     }
 
     @Test
-    void invalidRecorderTeamShowsUnknownSide() {
+    void invalidRecorderTeamStillAddressesThePlayerWithoutSideField() {
         for (final int invalidTeam : new int[]{-1, 0, 3, Integer.MAX_VALUE}) {
             final String evidence = fullFeatureEvidence(invalidTeam);
-            assertTrue(evidence.contains("你: 账号 1001 | 侧=未知 | 车辆:"),
-                    "invalid team " + invalidTeam + " must show unknown side, got: " + evidence);
+            assertTrue(evidence.contains("你: 账号 1001 | 车辆:"),
+                    "invalid team " + invalidTeam + " still addresses the player as 你, got: " + evidence);
+            assertFalse(evidence.contains("侧="),
+                    "the player line must carry no side field, got: " + evidence);
         }
     }
 
@@ -119,6 +127,49 @@ class PlayerEvidenceContractTest {
                 ? evidence.substring(evidence.indexOf("=== 队友 ==="), evidence.indexOf("=== 敌方 ==="))
                 : "";
         assertFalse(teammateSection.contains("You"), teammateSection);
+    }
+
+    // ---- 战斗时间统一为 X分XX秒 ----
+
+    @Test
+    void fullFeaturePromptCarriesNoRawSecondClocks() {
+        assertNoRawSecondClocks(fullFeatureEvidence(1, List.of(
+                new KeyBattleEvent(75f, "VEHICLE_DESTROYED", "被击毁",
+                        DecodeConfidence.EXACT, "TEST", List.of()))));
+    }
+
+    @Test
+    void fallbackPromptCarriesNoRawSecondClocks() {
+        final Battle battle = battle(1);
+        battle.players.get(2).survived = false;
+        battle.players.get(2).deathTimeMillis = 123_000L;
+        assertNoRawSecondClocks(AiReplayAnalysisService.buildSummary(battle, null, List.of(
+                new KeyBattleEvent(123f, "VEHICLE_DESTROYED", "被击毁",
+                        DecodeConfidence.EXACT, "TEST", List.of()))));
+    }
+
+    @Test
+    void deathTimeUsesMinuteSecondFormat() {
+        final Battle battle = battle(1);
+        battle.players.get(2).survived = false;
+        battle.players.get(2).deathTimeMillis = 123_000L;
+        final String evidence = AiReplayAnalysisService.buildSummary(battle, null, List.of());
+
+        assertTrue(evidence.contains("阵亡@2分03秒"), evidence);
+        assertFalse(evidence.contains("阵亡@123.0s"), evidence);
+    }
+
+    /**
+     * Prompt 里不得出现裸秒数：{@code 123.0s}、{@code [10.0-20.0s]}、{@code 阵亡@123.0s}。
+     * 距离与速度的 m / m/s 不属于战斗时刻，故只匹配以 s 结尾的秒数写法。
+     */
+    private static void assertNoRawSecondClocks(final String evidence) {
+        assertFalse(evidence.matches("(?s).*\\d+\\.\\ds\\b.*"),
+                "prompt must not contain raw second clocks like 123.0s, got: " + evidence);
+        assertFalse(evidence.contains("阵亡@") && evidence.matches("(?s).*阵亡@\\d+\\.\\d.*"),
+                "阵亡 time must use X分XX秒, got: " + evidence);
+        assertFalse(evidence.matches("(?s).*\\[\\d+\\.\\d-\\d+\\.\\ds?\\].*"),
+                "time ranges must use [X分XX秒-X分XX秒], got: " + evidence);
     }
 
     // ---- fixtures ----

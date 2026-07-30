@@ -847,9 +847,13 @@ class AiReplayAnalysisServiceTest {
         assertNoRawTeamLabels(body);
         assertTrue(body.contains("你的 entity 已映射, 特征集可用"),
                 "Should enter resolved recorder branch");
-        assertTrue(body.contains("你: 账号 1001 | 侧=队友 | 车辆:"),
-                "Entity line must show friendly side, not raw team");
-        assertTrue(body.contains("FRIENDLY_LINEUP_AUTHORITATIVE"), "Should have friendly roster");
+        // 玩家本人只称「你」，entity 行不带任何阵营字段
+        assertTrue(body.contains("你: 账号 1001 | 车辆:"), "Entity line must address the player as 你");
+        assertFalse(body.contains("侧=队友"), "The player must not be labelled 队友");
+        assertFalse(body.contains("侧=友方"), "The player must not be labelled 友方");
+        assertFalse(body.contains("侧=友军"), "The player must not be labelled 友军");
+        assertTrue(body.contains("TEAMMATE_LINEUP_AUTHORITATIVE"), "Should have teammate roster section");
+        assertTrue(body.contains("YOU_AUTHORITATIVE"), "Should have a dedicated section for the player");
         assertTrue(body.contains("你 \\\"RecorderPlayer\\\""),
                 "The player must be listed as 你, never as 友方/队友");
         assertTrue(body.contains("ENEMY_LINEUP_AUTHORITATIVE"), "Should have enemy roster");
@@ -869,8 +873,10 @@ class AiReplayAnalysisServiceTest {
         assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("你: 账号 1001 | 侧=队友 | 车辆:"),
-                "Recorder in team 2 must still show friendly side");
+        assertTrue(body.contains("你: 账号 1001 | 车辆:"),
+                "Recorder in team 2 is still addressed as 你");
+        assertFalse(body.contains("侧=队友"), "The player must not be labelled 队友");
+        assertFalse(body.contains("侧=友方"), "The player must not be labelled 友方");
         assertTrue(body.contains("你 \\\"RecorderPlayer\\\""),
                 "The player must be listed as 你, never as 友方/队友");
         assertTrue(body.contains("敌方 \\\"OtherPlayer\\\""), "OtherPlayer(raw team 1) should be enemy");
@@ -892,11 +898,11 @@ class AiReplayAnalysisServiceTest {
         assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("你: 账号 1001 | 侧=未知 | 车辆:"),
+        assertTrue(body.contains("你: 账号 1001 | 车辆:"),
                 "Invalid team " + invalidTeam + " must show unknown side");
         assertTrue(body.contains("结果: 平局或未知"),
                 "Invalid team " + invalidTeam + " must produce draw/unknown winner");
-        assertTrue(body.contains("你: 账号 1001 | 侧=未知 | 车辆:"),
+        assertTrue(body.contains("你: 账号 1001 | 车辆:"),
                 "Invalid team " + invalidTeam + " must show unknown side in entity line");
     }
 
@@ -1023,7 +1029,10 @@ class AiReplayAnalysisServiceTest {
         assertTrue(body.contains("你: \\\"RecorderPlayer\\\""), "Should contain the player line in 2nd person");
         assertFalse(body.contains("| 侧=友方"), "The player must not carry a 友方 side label");
         assertTrue(body.contains("=== 你 ==="), "Should have a dedicated section for the player");
-        assertTrue(body.contains("=== 队友 ==="), "Should have a teammate roster");
+        // 该 fixture 只有玩家本人与敌人，没有真实队友：不强制要求队友区块，
+        // 但必须保证本人没有被列进队友
+        assertFalse(body.contains("=== 队友 ==="),
+                "No real teammate in this fixture, so no teammate block is expected");
         assertFalse(body.contains("- 队友 \\\"RecorderPlayer\\\""),
                 "The player must not be repeated inside the teammate roster");
         assertTrue(body.contains("=== 敌方 ==="), "Should have enemy roster");
@@ -1118,7 +1127,8 @@ class AiReplayAnalysisServiceTest {
 
         final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("侧=未知"), "Invalid recorder must show unknown side");
+        // 玩家本人不再附加阵营字段；阵营无法解析时由结果标签与 limitation 表达
+        assertFalse(body.contains("侧="), "The player line must not carry any side field");
         assertTrue(body.contains("平局或未知"), "Invalid recorder must produce draw/unknown result");
     }
 
