@@ -411,8 +411,13 @@ class AiReplayAnalysisServiceTest {
                 features, null, List.of());
         service.analyzeSingleTeamContext(context);
         final String body = requestBodies.getLast();
-        assertTrue(body.contains("unitLimitations=[DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS]"),
-                "Body must contain unitLimitations= with DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
+        // 只断言该码出现在 unitLimitations= 里，不锁定整份列表：
+        // 同一单元可能合法地带上其他码（如 OPPOSING_LINEUP_UNAVAILABLE）
+        assertTrue(body.contains("unitLimitations=["),
+                "Body must use the unitLimitations= prefix");
+        assertTrue(unitLimitationsOf(body).contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
+                "unitLimitations must contain DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS, got: "
+                        + unitLimitationsOf(body));
         assertFalse(body.contains("mandatory="),
                 "Body must not use old mandatory= prefix");
     }
@@ -955,9 +960,13 @@ class AiReplayAnalysisServiceTest {
         service.analyzePlayerContext(ctx);
         final String body = requestBodies.getLast();
         assertTrue(body.contains("KEY_EVENTS_BACKEND_COMPUTED"));
-        assertTrue(body.contains("FIRST_CONTACT"));
-        assertTrue(body.contains("REGION_CHANGE"));
-        assertTrue(body.contains("PLAYER_DESTROYED"));
+        // 事件类型以中文呈现，全大写机器标签不再进入 prompt
+        assertTrue(body.contains("首次接敌"), body);
+        assertTrue(body.contains("区域变换"), body);
+        assertTrue(body.contains("玩家被击毁"), body);
+        assertFalse(body.contains("FIRST_CONTACT"), body);
+        assertFalse(body.contains("REGION_CHANGE"), body);
+        assertFalse(body.contains("PLAYER_DESTROYED"), body);
     }
 
     @Test

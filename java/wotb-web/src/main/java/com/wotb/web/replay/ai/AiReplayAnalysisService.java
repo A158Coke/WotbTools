@@ -973,7 +973,7 @@ public class AiReplayAnalysisService {
         return res.region() + "区";
     }
 
-    private String buildPlayerContextSummary(final SinglePlayerBattleAnalysisContext ctx) {
+    String buildPlayerContextSummary(final SinglePlayerBattleAnalysisContext ctx) {
         final StringBuilder sb = new StringBuilder(4096);
         final var battle = ctx.battle();
         final var features = ctx.features();
@@ -2006,7 +2006,7 @@ public class AiReplayAnalysisService {
     /**
      * 构建以结算数据为准的紧凑战局摘要。
      */
-    private static String buildSummary(final Battle battle, final ReplayReconstruction recon, final List<KeyBattleEvent> keyEvents) {
+    static String buildSummary(final Battle battle, final ReplayReconstruction recon, final List<KeyBattleEvent> keyEvents) {
         final StringBuilder sb = new StringBuilder(2048);
         sb.append("地图: ").append(PlayerResultFormat.quoteForPrompt(ReplayDisplayNames.mapName(battle.mapName))).append('\n');
         if (battle.arenaBonusType != null) {

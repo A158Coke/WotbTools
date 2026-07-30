@@ -87,6 +87,10 @@ public final class PlayerAnalysisTerms {
             case "TEAM_MEMBER_DESTROYED" -> "队员阵亡";
             case "TEAM_FIRST_CONTACT" -> "团队首次接敌";
             case "TEAM_FORMATION_SPLIT" -> "队形分散";
+            case "RECORDER_FIRST_BLOOD" -> "你拿下首杀";
+            case "REGION_CHANGE" -> "区域变换";
+            case "PLAYER_DESTROYED" -> "玩家被击毁";
+            // 只有真正未知的全大写机器标签才回退为通用中文
             default -> type.matches("[A-Z0-9_]+") ? "其他关键事件" : type;
         };
     }
