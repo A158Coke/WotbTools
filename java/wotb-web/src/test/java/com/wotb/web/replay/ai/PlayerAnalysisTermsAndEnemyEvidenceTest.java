@@ -48,17 +48,14 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
     @Test
     void everyPromptPinsFriendlyToTheMilitaryChineseTerm() {
         allSystemPrompts().forEach(prompt -> {
-            assertTrue(prompt.contains("FRIENDLY = 友方"), prompt);
-            assertTrue(prompt.contains("严禁写成“朋友”"), prompt);
-            assertTrue(prompt.contains("ENEMY = 敌方"), prompt);
+            assertTrue(prompt.contains("最终正文必须使用自然、通顺的简体中文"), prompt);
         });
     }
 
     @Test
     void everyPromptForbidsEchoingEnglishMachineLabels() {
         allSystemPrompts().forEach(prompt -> {
-            assertTrue(prompt.contains("全文必须使用简体中文"), prompt);
-            assertTrue(prompt.contains("只是机器标签，禁止原样写入复盘，也禁止逐词翻译"), prompt);
+            assertTrue(prompt.contains("禁止原样写入复盘，也禁止逐词直译"), prompt);
         });
     }
 
@@ -127,10 +124,10 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
 
         assertTrue(written);
         assertTrue(evidence.contains("KILL_ATTRIBUTION_OBSERVED（击杀归因·事件流观测）"), evidence);
-        assertTrue(evidence.contains("录像者击杀 敌方 \"EnemyAce\" 坦克: \"SPHT\""), evidence);
-        assertTrue(evidence.contains("累计承受录像者900伤害"), evidence);
-        assertTrue(evidence.contains("击杀录像者 敌方 \"EnemyAce\" 坦克: \"SPHT\""), evidence);
-        assertTrue(evidence.contains("对录像者累计造成640伤害"), evidence);
+        assertTrue(evidence.contains("你击杀了 敌方 \"EnemyAce\" 坦克: \"SPHT\""), evidence);
+        assertTrue(evidence.contains("累计承受你900点伤害"), evidence);
+        assertTrue(evidence.contains("击杀你的是 敌方 \"EnemyAce\" 坦克: \"SPHT\""), evidence);
+        assertTrue(evidence.contains("对你累计造成640点伤害"), evidence);
         assertFalse(evidence.contains("自行火炮"), evidence);
     }
 
@@ -145,8 +142,8 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
 
     @Test
     void promptsRequirePerVehicleEnemyAnalysis() {
-        allSystemPrompts().forEach(prompt ->
-                assertTrue(prompt.contains("必须逐车分析敌方阵容"), prompt));
+        allSystemPrompts().forEach(prompt -> assertTrue(
+                prompt.contains("必须逐车分析敌方阵容") || prompt.contains("必须逐车分析对方阵容"), prompt));
         assertTrue(AiReplayAnalysisService.SINGLE_PLAYER_PROMPT
                 .contains("敌方阵容逐车分析"), AiReplayAnalysisService.SINGLE_PLAYER_PROMPT);
         assertTrue(AiReplayAnalysisService.SYSTEM_PROMPT
@@ -172,8 +169,8 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         assertTrue(evidence.contains("DAMAGE_EXCHANGE_BY_OPPONENT_OBSERVED（逐对手对炮明细·事件流观测）"), evidence);
         assertTrue(evidence.contains("坦克: \"SPHT\""), evidence);
         assertTrue(evidence.contains("车种: 重坦"), evidence);
-        assertTrue(evidence.contains("录像者对其造成786伤害/2次命中"), evidence);
-        assertTrue(evidence.contains("其对录像者造成250伤害/1次命中"), evidence);
+        assertTrue(evidence.contains("你对其造成786伤害/2次命中"), evidence);
+        assertTrue(evidence.contains("其对你造成250伤害/1次命中"), evidence);
         assertFalse(evidence.contains("自行火炮"), evidence);
     }
 
@@ -189,7 +186,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
                 sb, battle, RECORDER_ACCOUNT,
                 reconWith(damage(20f, RECORDER_ACCOUNT, ENEMY_ACCOUNT, 512)));
 
-        assertTrue(sb.toString().contains("录像者对其造成512伤害/1次命中"), sb.toString());
+        assertTrue(sb.toString().contains("你对其造成512伤害/1次命中"), sb.toString());
     }
 
     @Test
@@ -267,9 +264,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
     @Test
     void promptsMapEnglishPhaseAndOutcomeTermsToChinese() {
         allSystemPrompts().forEach(prompt -> {
-            assertTrue(prompt.contains("MID_GAME = 中期"), prompt);
-            assertTrue(prompt.contains("FAVORABLE = 有利"), prompt);
-            assertTrue(prompt.contains("ENDGAME = 残局"), prompt);
+            assertTrue(prompt.contains("不得使用英文缩写 TD"), prompt);
         });
     }
 

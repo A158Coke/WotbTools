@@ -245,10 +245,43 @@ class AiReplayAnalysisServiceTest {
                 teamResult("enemy.wotbreplay", "shared-arena", "Enemy", 2001L, 2)));
         service.analyzeTeamGroups(groups);
         assertEquals(2, requestBodies.size(), "Opposing perspectives must produce 2 requests");
-        assertFalse(requestBodies.get(0).contains("enemy.wotbreplay"),
-                "First request should only contain ally perspective");
-        assertFalse(requestBodies.get(1).contains("Ally"),
-                "Second request should only contain enemy perspective");
+
+        final String first = requestBodies.get(0);
+        final String second = requestBodies.get(1);
+
+        // perspective 主体（file / analysisUnitId）不得串场
+        assertTrue(first.contains("ally.wotbreplay"), "First request must be the ally perspective");
+        assertFalse(first.contains("enemy.wotbreplay"),
+                "First request must not carry the opposing perspective's file");
+        assertTrue(second.contains("enemy.wotbreplay"), "Second request must be the enemy perspective");
+        assertFalse(second.contains("ally.wotbreplay"),
+                "Second request must not carry the opposing perspective's file");
+
+        // perspective 专属主体证据（TEAM_MEMBERS / movement / formation / engagement / timeline）
+        // 只能属于当前视角；另一队玩家仅允许作为对方阵容出现，因此判断串场时要排除对方阵容段。
+        assertFalse(perspectiveBodySection(first).contains("Enemy"),
+                "Ally perspective body must not contain the opposing team's members");
+        assertFalse(perspectiveBodySection(second).contains("Ally"),
+                "Enemy perspective body must not contain the opposing team's members");
+
+        // 对方阵容是本视角的合法证据，必须保留（出现另一队玩家不等于串场）
+        assertTrue(first.contains("OPPOSING_TEAM_LINEUP_AUTHORITATIVE"),
+                "Ally perspective must still describe the opposing lineup");
+        assertTrue(second.contains("OPPOSING_TEAM_LINEUP_AUTHORITATIVE"),
+                "Enemy perspective must still describe the opposing lineup");
+        assertTrue(first.contains("Enemy"),
+                "The opposing team's players are allowed as OPPOSING_TEAM_LINEUP evidence");
+        assertTrue(second.contains("Ally"),
+                "The opposing team's players are allowed as OPPOSING_TEAM_LINEUP evidence");
+    }
+
+    /**
+     * 取 perspective 主体证据（对方阵容段之前的部分）。
+     * 对方阵容按设计包含另一队玩家，判断「视角串场」时必须把它排除在外。
+     */
+    private static String perspectiveBodySection(final String body) {
+        final int idx = body.indexOf("OPPOSING_TEAM_LINEUP_AUTHORITATIVE");
+        return idx < 0 ? body : body.substring(0, idx);
     }
 
     @Test

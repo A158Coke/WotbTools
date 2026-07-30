@@ -4,17 +4,16 @@ import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.PlayerSideResolver;
-import com.wotb.core.ref.ReplayDisplayNames;
-import com.wotb.core.util.PromptDataQuoter;
 import com.wotb.core.processing.TeamPerspectiveLabelResolver;
+import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.CanonicalMapPosition;
 import com.wotb.core.replay.feature.KeyBattleEvent;
+import com.wotb.core.replay.feature.MapCoordinateResolution;
+import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MultiTeamBattleAnalysisContext;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
-import com.wotb.core.replay.feature.MapCoordinateResolution;
-import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.TeamAggregateResult;
 import com.wotb.core.replay.feature.TeamBattleAnalysisSummary;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
@@ -24,8 +23,9 @@ import com.wotb.core.replay.feature.TeamFormationPhase;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.reconstruction.Vector3;
-
+import com.wotb.core.util.PromptDataQuoter;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -36,12 +36,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.springframework.util.StringUtils;
-
 /**
  * 将 Team Context 压缩为确定性、长度受限的 AI 输入。
  * 不接收或输出原始 ReplayEvent/逐帧位置流。
- *
+ * <p>
  * 使用 AiTokenEstimator 进行 token 预算管理，不再使用固定字符限制或固定数量截断。
  */
 final class TeamAiPromptBuilder {
@@ -69,6 +67,17 @@ final class TeamAiPromptBuilder {
     ) {
         final Set<String> limitations = collectLimitations(context, extraLimitations);
 
+        // 先构建 HPF：对方阵容属权威结算且体量很小（≤7 行），与本队事实同为 mandatory，
+        // 不能被 optional 预算裁掉。构建结果决定是否需要补 OPPOSING_LINEUP_UNAVAILABLE，
+        // 因此必须在 header 写出 unitLimitations 之前完成。
+        final BudgetWriter hpfTemp = new BudgetWriter();
+        appendHighPriorityFacts(hpfTemp, context.features(), context.analysisUnitId());
+        if (!appendOpposingTeam(hpfTemp, context.battle(), context.perspectiveTeam())) {
+            // prompt 要求逐车分析对方；拿不到对方名册时必须显式告知，避免 AI 跳过或编造
+            limitations.add("OPPOSING_LINEUP_UNAVAILABLE");
+        }
+        final String hpfBlock = hpfTemp.content();
+
         // 构建 header
         final StringBuilder headerBuf = new StringBuilder();
         headerBuf.append("=== SINGLE_TEAM_CONTEXT ===\n");
@@ -88,13 +97,6 @@ final class TeamAiPromptBuilder {
         }
         headerBuf.append("unitLimitations=").append(limitations).append("\n");
         final String headerBlock = headerBuf.toString();
-
-        // 构建所有 HPF（无固定截断）。对方阵容属权威结算且体量很小（≤7 行），
-        // 与本队事实同为 mandatory，不能被 optional 预算裁掉。
-        final BudgetWriter hpfTemp = new BudgetWriter();
-        appendHighPriorityFacts(hpfTemp, context.features(), context.analysisUnitId());
-        appendOpposingTeam(hpfTemp, context.battle(), context.perspectiveTeam());
-        final String hpfBlock = hpfTemp.content();
 
         // 构建所有 optional details（无固定截断）
         final BudgetWriter optTemp = new BudgetWriter();
@@ -153,15 +155,13 @@ final class TeamAiPromptBuilder {
         final Set<String> globalLimitations = new LinkedHashSet<>(context.limitations());
 
         // 构建 global header
-        final StringBuilder globalHeader = new StringBuilder();
-        globalHeader.append("=== MULTI_TEAM_CONTEXT ===\n");
-        globalHeader.append("perspectiveCount=").append(context.perspectiveCount()).append("\n");
-        globalHeader.append("uniqueBattleCount=").append(context.uniqueBattleCount()).append("\n");
-        globalHeader.append("rosterConsistent=").append(context.rosterConsistent()).append("\n");
+        final String globalHeader = "=== MULTI_TEAM_CONTEXT ===\n" +
+                "perspectiveCount=" + context.perspectiveCount() + "\n" +
+                "uniqueBattleCount=" + context.uniqueBattleCount() + "\n" +
+                "rosterConsistent=" + context.rosterConsistent() + "\n";
         if (!context.rosterConsistent()) {
             globalLimitations.add("ROSTER_CONSISTENCY_UNCONFIRMED");
         }
-        final String globalHeaderStr = globalHeader.toString();
 
         // 2. 构建所有 perspective 的 mandatory/HPF 内容（临时写入器，不写入 finally）
         final List<PerspectivePromptSections> perspectiveSections = new ArrayList<>(perspectives.size());
@@ -181,7 +181,7 @@ final class TeamAiPromptBuilder {
         // 3-4. 估算所有 mandatory/HPF 总 token 数，超限则抛异常
         if (estimator != null) {
             final StringBuilder mandatoryBuf = new StringBuilder();
-            mandatoryBuf.append(globalHeaderStr);
+            mandatoryBuf.append(globalHeader);
             for (final PerspectivePromptSections section : perspectiveSections) {
                 mandatoryBuf.append(section.mandatoryBlock());
                 mandatoryBuf.append(section.highPriorityBlock());
@@ -193,7 +193,7 @@ final class TeamAiPromptBuilder {
 
         // 5. 写入 mandatory 内容到最终 writer
         final BudgetWriter writer = new BudgetWriter();
-        writer.appendRequired(globalHeaderStr);
+        writer.appendRequired(globalHeader);
 
         final Set<String> truncatedIds = new LinkedHashSet<>();
         for (final PerspectivePromptSections section : perspectiveSections) {
@@ -362,7 +362,9 @@ final class TeamAiPromptBuilder {
         return true;
     }
 
-    /** tankopedia 的结构化等级/国家；缺失即不输出，绝不由名称推断。 */
+    /**
+     * tankopedia 的结构化等级/国家；缺失即不输出，绝不由名称推断。
+     */
     private static String tierAndNation(final long tankId) {
         final StringBuilder sb = new StringBuilder(24);
         final String tier = ReplayDisplayNames.tankTier(tankId);
@@ -587,7 +589,9 @@ final class TeamAiPromptBuilder {
         return PromptDataQuoter.quote(value, "UNKNOWN");
     }
 
-    /** Delegates to shared {@link ReplayDisplayNames#mapName}. */
+    /**
+     * Delegates to shared {@link ReplayDisplayNames#mapName}.
+     */
     private static String resolveMapName(final String mapCode) {
         return ReplayDisplayNames.mapName(mapCode);
     }
@@ -601,10 +605,10 @@ final class TeamAiPromptBuilder {
         if (winnerTeam == null
                 || !PlayerSideResolver.isValidRawTeam(winnerTeam)
                 || !PlayerSideResolver.isValidRawTeam(perspectiveTeam)) {
-            return "DRAW_OR_UNKNOWN（平局或未知）";
+            return "平局或未知";
         }
-        if (winnerTeam.equals(perspectiveTeam)) return "TEAM_WIN（本队获胜）";
-        return "TEAM_LOSS（本队失利）";
+        if (winnerTeam.equals(perspectiveTeam)) return "本队获胜";
+        return "本队失利";
     }
 
     /**
@@ -655,7 +659,9 @@ final class TeamAiPromptBuilder {
                 + ") r=" + res.region() + " s=" + res.status().name();
     }
 
-    /** Resolve dominant clan label for a perspective team's players only. */
+    /**
+     * Resolve dominant clan label for a perspective team's players only.
+     */
     private static String resolvePerspectiveLabel(
             final List<PlayerResult> players, final int perspectiveTeam) {
         if (players == null) return "未知队伍";
@@ -666,7 +672,9 @@ final class TeamAiPromptBuilder {
         return TeamPerspectiveLabelResolver.resolve(perspectivePlayers);
     }
 
-    /** Delegates to shared {@link ReplayDisplayNames#tankName}. */
+    /**
+     * Delegates to shared {@link ReplayDisplayNames#tankName}.
+     */
     private static String resolveTankName(final long tankId, final String existingTankName) {
         return ReplayDisplayNames.tankName(tankId, existingTankName);
     }
@@ -682,22 +690,23 @@ final class TeamAiPromptBuilder {
     // ---- 记录类型 ----
 
     private record PerspectivePromptSections(
-        String analysisUnitId,
-        String mandatoryBlock,
-        String highPriorityBlock,
-        boolean hpfTruncated,
-        String optionalBlock,
-        boolean optionalTruncated,
-        List<String> perUnitLimitations
-    ) {}
+            String analysisUnitId,
+            String mandatoryBlock,
+            String highPriorityBlock,
+            boolean hpfTruncated,
+            String optionalBlock,
+            boolean optionalTruncated,
+            List<String> perUnitLimitations
+    ) {
+    }
 
     record PromptInput(
-        String content,
-        Set<String> includedUnitIds,
-        Set<String> omittedUnitIds,
-        Set<String> truncatedUnitIds,
-        Map<String, List<String>> perUnitLimitations,
-        List<String> globalLimitations
+            String content,
+            Set<String> includedUnitIds,
+            Set<String> omittedUnitIds,
+            Set<String> truncatedUnitIds,
+            Map<String, List<String>> perUnitLimitations,
+            List<String> globalLimitations
     ) {
 
         PromptInput {
