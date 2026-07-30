@@ -58,7 +58,7 @@ class SingleReplayPromptPlannerObservationBoundaryTest {
         // LAST_KNOWN_POSITION 取最后一次 OBSERVED（t=3.0s / 300.0,310.0），而不是第一次（150.0,150.0）
         assertTrue(out.contains(lastKnownCoords(300f, 310f)), out);
         assertFalse(out.contains(lastKnownCoords(150f, 150f)), out);
-        assertTrue(out.contains(String.format("t=%.1fs entity=Entity#%d", 3.0f, ENEMY_ENTITY_ID)
+        assertTrue(out.contains(String.format("t=%.1fs entity=E%d", 3.0f, ENEMY_ENTITY_ID)
                 + String.format(" coordinateStatus=VALID canonicalX=%.1f canonicalZ=%.1f LAST_KNOWN_POSITION", 300f, 310f)), out);
 
         // 明确此后位置未知，并标注触发的状态与时刻
@@ -152,7 +152,7 @@ class SingleReplayPromptPlannerObservationBoundaryTest {
 
     /** LEVEL_3 的当前位置输出行（不带 LAST_KNOWN_POSITION 标记）。 */
     private static String currentLine(final float relSec, final float canonicalX, final float canonicalZ) {
-        return String.format("t=%.1fs entity=Entity#%d coordinateStatus=VALID canonicalX=%.1f canonicalZ=%.1f%n",
+        return String.format("t=%.1fs entity=E%d coordinateStatus=VALID canonicalX=%.1f canonicalZ=%.1f%n",
                 relSec, ENEMY_ENTITY_ID, canonicalX, canonicalZ);
     }
 

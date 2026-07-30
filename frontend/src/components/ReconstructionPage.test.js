@@ -76,7 +76,7 @@ describe('ReconstructionPage team analysis', () => {
     expect(input.element.hasAttribute('multiple')).toBe(false)
   })
 
-  it('render a single-team perspective and its limitations', async () => {
+  it('shows only the AI review markdown, not internal diagnostics', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
       okResponse(teamResult('SINGLE_TEAM_BATTLE', [
         teamUnit('unit-1', 1, ['REPLAY_STREAM_PARTIAL'])
@@ -87,13 +87,16 @@ describe('ReconstructionPage team analysis', () => {
     await analyzeButton(wrapper).trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('recon.analysis_title_team')
-    expect(wrapper.text()).toContain('recon.modes.SINGLE_TEAM_BATTLE')
-    expect(wrapper.text()).toContain('recon.team_scope_note')
-    expect(wrapper.text()).toContain('recon.team_perspective:1')
-    expect(wrapper.text()).toContain(
-      'recon.limitations.REPLAY_STREAM_PARTIAL')
+    // 普通用户只看到 AI 复盘标题与正文
+    expect(wrapper.text()).toContain('recon.analysis_title_player')
     expect(wrapper.text()).toContain('team report')
+
+    // 内部统计 / mode / 分析单元 / limitation / 关键事件 一律不展示
+    expect(wrapper.text()).not.toContain('recon.modes.SINGLE_TEAM_BATTLE')
+    expect(wrapper.text()).not.toContain('recon.team_scope_note')
+    expect(wrapper.text()).not.toContain('recon.team_perspective:1')
+    expect(wrapper.text()).not.toContain('recon.limitations.REPLAY_STREAM_PARTIAL')
+    expect(wrapper.text()).not.toContain('recon.analysis_units')
   })
 
   it('shows loading and removes the previous report before a failed retry', async () => {
@@ -169,9 +172,10 @@ describe('ReconstructionPage team analysis', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('recon.analysis_title_player')
-    expect(wrapper.text()).toContain('recon.modes.SINGLE_PLAYER_BATTLE')
-    expect(wrapper.text()).not.toContain('recon.team_scope_note')
     expect(wrapper.text()).toContain('player report')
+    // mode 属内部字段，不再展示给普通用户
+    expect(wrapper.text()).not.toContain('recon.modes.SINGLE_PLAYER_BATTLE')
+    expect(wrapper.text()).not.toContain('recon.team_scope_note')
   })
 })
 

@@ -245,10 +245,43 @@ class AiReplayAnalysisServiceTest {
                 teamResult("enemy.wotbreplay", "shared-arena", "Enemy", 2001L, 2)));
         service.analyzeTeamGroups(groups);
         assertEquals(2, requestBodies.size(), "Opposing perspectives must produce 2 requests");
-        assertFalse(requestBodies.get(0).contains("enemy.wotbreplay"),
-                "First request should only contain ally perspective");
-        assertFalse(requestBodies.get(1).contains("Ally"),
-                "Second request should only contain enemy perspective");
+
+        final String first = requestBodies.get(0);
+        final String second = requestBodies.get(1);
+
+        // perspective 主体（file / analysisUnitId）不得串场
+        assertTrue(first.contains("ally.wotbreplay"), "First request must be the ally perspective");
+        assertFalse(first.contains("enemy.wotbreplay"),
+                "First request must not carry the opposing perspective's file");
+        assertTrue(second.contains("enemy.wotbreplay"), "Second request must be the enemy perspective");
+        assertFalse(second.contains("ally.wotbreplay"),
+                "Second request must not carry the opposing perspective's file");
+
+        // perspective 专属主体证据（TEAM_MEMBERS / movement / formation / engagement / timeline）
+        // 只能属于当前视角；另一队玩家仅允许作为对方阵容出现，因此判断串场时要排除对方阵容段。
+        assertFalse(perspectiveBodySection(first).contains("Enemy"),
+                "Ally perspective body must not contain the opposing team's members");
+        assertFalse(perspectiveBodySection(second).contains("Ally"),
+                "Enemy perspective body must not contain the opposing team's members");
+
+        // 对方阵容是本视角的合法证据，必须保留（出现另一队玩家不等于串场）
+        assertTrue(first.contains("OPPOSING_TEAM_LINEUP_AUTHORITATIVE"),
+                "Ally perspective must still describe the opposing lineup");
+        assertTrue(second.contains("OPPOSING_TEAM_LINEUP_AUTHORITATIVE"),
+                "Enemy perspective must still describe the opposing lineup");
+        assertTrue(first.contains("Enemy"),
+                "The opposing team's players are allowed as OPPOSING_TEAM_LINEUP evidence");
+        assertTrue(second.contains("Ally"),
+                "The opposing team's players are allowed as OPPOSING_TEAM_LINEUP evidence");
+    }
+
+    /**
+     * 取 perspective 主体证据（对方阵容段之前的部分）。
+     * 对方阵容按设计包含另一队玩家，判断「视角串场」时必须把它排除在外。
+     */
+    private static String perspectiveBodySection(final String body) {
+        final int idx = body.indexOf("OPPOSING_TEAM_LINEUP_AUTHORITATIVE");
+        return idx < 0 ? body : body.substring(0, idx);
     }
 
     @Test
@@ -276,7 +309,7 @@ class AiReplayAnalysisServiceTest {
         assertNotNull(sectionB, "Must find section for battle-b");
         assertTrue(sectionA.contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
                 "Unit A (with duplicate) must have DUPLICATE limitation");
-        assertFalse(sectionB.contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
+        assertFalse(unitLimitationsOf(sectionB).contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
                 "Unit B (no duplicate) must NOT have DUPLICATE limitation");
         // Global DATA_LIMITATIONS must NOT contain unit-specific DUPLICATE (inline format)
         // Note: body is raw JSON bytes; JSON escapes newlines as \\n (two chars: backslash + n)
@@ -378,8 +411,13 @@ class AiReplayAnalysisServiceTest {
                 features, null, List.of());
         service.analyzeSingleTeamContext(context);
         final String body = requestBodies.getLast();
-        assertTrue(body.contains("unitLimitations=[DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS]"),
-                "Body must contain unitLimitations= with DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
+        // 只断言该码出现在 unitLimitations= 里，不锁定整份列表：
+        // 同一单元可能合法地带上其他码（如 OPPOSING_LINEUP_UNAVAILABLE）
+        assertTrue(body.contains("unitLimitations=["),
+                "Body must use the unitLimitations= prefix");
+        assertTrue(unitLimitationsOf(body).contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
+                "unitLimitations must contain DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS, got: "
+                        + unitLimitationsOf(body));
         assertFalse(body.contains("mandatory="),
                 "Body must not use old mandatory= prefix");
     }
@@ -807,12 +845,17 @@ class AiReplayAnalysisServiceTest {
         assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("录像者 entity 已映射, 特征集可用"),
+        assertTrue(body.contains("你的 entity 已映射, 特征集可用"),
                 "Should enter resolved recorder branch");
-        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=友方 | 车辆:"),
-                "Entity line must show friendly side, not raw team");
-        assertTrue(body.contains("FRIENDLY_LINEUP_AUTHORITATIVE"), "Should have friendly roster");
-        assertTrue(body.contains("友方 \\\"RecorderPlayer\\\""), "RecorderPlayer should be friendly");
+        // 玩家本人只称「你」，entity 行不带任何阵营字段
+        assertTrue(body.contains("你: 账号 1001 | 车辆:"), "Entity line must address the player as 你");
+        assertFalse(body.contains("侧=队友"), "The player must not be labelled 队友");
+        assertFalse(body.contains("侧=友方"), "The player must not be labelled 友方");
+        assertFalse(body.contains("侧=友军"), "The player must not be labelled 友军");
+        assertTrue(body.contains("TEAMMATE_LINEUP_AUTHORITATIVE"), "Should have teammate roster section");
+        assertTrue(body.contains("YOU_AUTHORITATIVE"), "Should have a dedicated section for the player");
+        assertTrue(body.contains("你 \\\"RecorderPlayer\\\""),
+                "The player must be listed as 你, never as 友方/队友");
         assertTrue(body.contains("ENEMY_LINEUP_AUTHORITATIVE"), "Should have enemy roster");
         assertTrue(body.contains("敌方 \\\"OtherPlayer\\\""), "OtherPlayer should be enemy");
     }
@@ -830,9 +873,12 @@ class AiReplayAnalysisServiceTest {
         assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=友方 | 车辆:"),
-                "Recorder in team 2 must still show friendly side");
-        assertTrue(body.contains("友方 \\\"RecorderPlayer\\\""), "RecorderPlayer should be friendly");
+        assertTrue(body.contains("你: 账号 1001 | 车辆:"),
+                "Recorder in team 2 is still addressed as 你");
+        assertFalse(body.contains("侧=队友"), "The player must not be labelled 队友");
+        assertFalse(body.contains("侧=友方"), "The player must not be labelled 友方");
+        assertTrue(body.contains("你 \\\"RecorderPlayer\\\""),
+                "The player must be listed as 你, never as 友方/队友");
         assertTrue(body.contains("敌方 \\\"OtherPlayer\\\""), "OtherPlayer(raw team 1) should be enemy");
     }
 
@@ -852,11 +898,11 @@ class AiReplayAnalysisServiceTest {
         assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=未知 | 车辆:"),
+        assertTrue(body.contains("你: 账号 1001 | 车辆:"),
                 "Invalid team " + invalidTeam + " must show unknown side");
         assertTrue(body.contains("结果: 平局或未知"),
                 "Invalid team " + invalidTeam + " must produce draw/unknown winner");
-        assertTrue(body.contains("录像者 entity: 账号 1001 | 侧=未知 | 车辆:"),
+        assertTrue(body.contains("你: 账号 1001 | 车辆:"),
                 "Invalid team " + invalidTeam + " must show unknown side in entity line");
     }
 
@@ -920,9 +966,13 @@ class AiReplayAnalysisServiceTest {
         service.analyzePlayerContext(ctx);
         final String body = requestBodies.getLast();
         assertTrue(body.contains("KEY_EVENTS_BACKEND_COMPUTED"));
-        assertTrue(body.contains("FIRST_CONTACT"));
-        assertTrue(body.contains("REGION_CHANGE"));
-        assertTrue(body.contains("PLAYER_DESTROYED"));
+        // 事件类型以中文呈现，全大写机器标签不再进入 prompt
+        assertTrue(body.contains("首次接敌"), body);
+        assertTrue(body.contains("区域变换"), body);
+        assertTrue(body.contains("玩家被击毁"), body);
+        assertFalse(body.contains("FIRST_CONTACT"), body);
+        assertFalse(body.contains("REGION_CHANGE"), body);
+        assertFalse(body.contains("PLAYER_DESTROYED"), body);
     }
 
     @Test
@@ -976,10 +1026,15 @@ class AiReplayAnalysisServiceTest {
         assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("录像者: \\\"RecorderPlayer\\\""), "Should contain recorder line");
-        assertTrue(body.contains("| 侧=友方"), "Recorder should show friendly side");
-        assertTrue(body.contains("=== 友方 ==="), "Should have friendly roster");
-        assertTrue(body.contains("- 友方 \\\"RecorderPlayer\\\""), "RecorderPlayer should be friendly");
+        assertTrue(body.contains("你: \\\"RecorderPlayer\\\""), "Should contain the player line in 2nd person");
+        assertFalse(body.contains("| 侧=友方"), "The player must not carry a 友方 side label");
+        assertTrue(body.contains("=== 你 ==="), "Should have a dedicated section for the player");
+        // 该 fixture 只有玩家本人与敌人，没有真实队友：不强制要求队友区块，
+        // 但必须保证本人没有被列进队友
+        assertFalse(body.contains("=== 队友 ==="),
+                "No real teammate in this fixture, so no teammate block is expected");
+        assertFalse(body.contains("- 队友 \\\"RecorderPlayer\\\""),
+                "The player must not be repeated inside the teammate roster");
         assertTrue(body.contains("=== 敌方 ==="), "Should have enemy roster");
         assertTrue(body.contains("- 敌方 \\\"OtherPlayer\\\""), "OtherPlayer should be enemy");
     }
@@ -995,8 +1050,9 @@ class AiReplayAnalysisServiceTest {
         assertPlayerResultTeams(originalTeams, battle);
         final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("| 侧=友方"), "Recorder in team 2 should still show friendly side");
-        assertTrue(body.contains("- 友方 \\\"RecorderPlayer\\\""), "RecorderPlayer should be friendly");
+        assertTrue(body.contains("=== 你 ==="), "Recorder in team 2 still gets the 你 section");
+        assertFalse(body.contains("- 队友 \\\"RecorderPlayer\\\""),
+                "The player must not be repeated inside the teammate roster");
         assertTrue(body.contains("- 敌方 \\\"OtherPlayer\\\""), "OtherPlayer(raw team 1) should be enemy");
     }
 
@@ -1071,7 +1127,8 @@ class AiReplayAnalysisServiceTest {
 
         final String body = requestBodies.getLast();
         assertNoRawTeamLabels(body);
-        assertTrue(body.contains("侧=未知"), "Invalid recorder must show unknown side");
+        // 玩家本人不再附加阵营字段；阵营无法解析时由结果标签与 limitation 表达
+        assertFalse(body.contains("侧="), "The player line must not carry any side field");
         assertTrue(body.contains("平局或未知"), "Invalid recorder must produce draw/unknown result");
     }
 
@@ -1252,6 +1309,19 @@ class AiReplayAnalysisServiceTest {
     private static List<ReplayPerspectiveGroup> teamGroups(
             final List<ReplayProcessingResult> results) {
         return new BatchAnalyzer().analyze(results).groups();
+    }
+
+    /**
+     * 取一个 perspective 段里 {@code unitLimitations=[...]} 的内容。
+     * <p>断言「某个 limitation 不属于该单元」时只应看这一行：整段里还可能出现
+     * 共享 partition 头、对方阵容等合法内容，拿整段做 assertFalse 过于严格。</p>
+     */
+    private static String unitLimitationsOf(final String section) {
+        if (section == null) return "";
+        final int start = section.indexOf("unitLimitations=[");
+        if (start < 0) return "";
+        final int end = section.indexOf(']', start);
+        return end < 0 ? section.substring(start) : section.substring(start, end + 1);
     }
 
     private static String extractSection(final String body, final String analysisUnitId) {

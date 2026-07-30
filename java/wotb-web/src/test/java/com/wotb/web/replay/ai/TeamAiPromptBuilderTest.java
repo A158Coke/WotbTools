@@ -125,7 +125,9 @@ class TeamAiPromptBuilderTest {
                 TeamAiPromptBuilder.single(context);
 
         assertTrue(input.content().contains("durationSec=UNKNOWN"));
-        assertTrue(input.content().contains("result=DRAW_OR_UNKNOWN"));
+        // 胜负只输出中文，不再暴露 TEAM_WIN/TEAM_LOSS/DRAW_OR_UNKNOWN 机器码
+        assertTrue(input.content().contains("result=平局或未知"), input.content());
+        assertFalse(input.content().contains("DRAW_OR_UNKNOWN"), input.content());
         assertTrue(input.content().contains("win=UNKNOWN"));
     }
 
