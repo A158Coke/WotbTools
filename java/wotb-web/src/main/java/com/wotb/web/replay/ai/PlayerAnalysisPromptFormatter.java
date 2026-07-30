@@ -23,9 +23,13 @@ public final class PlayerAnalysisPromptFormatter {
 
     private PlayerAnalysisPromptFormatter() {}
 
+    /**
+     * 阵营称呼。随机战个人复盘直接面向玩家本人，同队一律称「队友」而非「友方」，
+     * 避免玩家本人被当作「友方」而不是「你」。
+     */
     public static String sideLabel(final Side side) {
         return switch (side) {
-            case FRIENDLY -> "友方";
+            case FRIENDLY -> "队友";
             case ENEMY -> "敌方";
             case UNKNOWN -> "未知";
         };
@@ -43,10 +47,14 @@ public final class PlayerAnalysisPromptFormatter {
                 + " " + PlayerResultFormat.deathDisplay(p);
     }
 
+    /**
+     * 玩家本人的战绩行。复盘直接面向本人，这里写「你」而不是「录像者」，
+     * 也不再标注阵营 —— 本人既不是「友方」也不是「队友」。
+     * {@code side} 仅用于保持调用方签名，不进入输出。
+     */
     public static String formatRecorderLine(final PlayerResult rec, final Side side) {
-        return "录像者: " + PlayerResultFormat.quoteForPrompt(rec.nickname)
+        return "你: " + PlayerResultFormat.quoteForPrompt(rec.nickname)
                 + " (" + PlayerResultFormat.quoteForPrompt(resolveTank(rec)) + ")"
-                + " | 侧=" + sideLabel(side)
                 + " | " + PlayerResultFormat.deathDisplay(rec)
                 + " | 输出" + rec.damageDealt
                 + " | 承伤" + rec.damageReceived
@@ -64,7 +72,7 @@ public final class PlayerAnalysisPromptFormatter {
         final Map<PlayerResult, Side> sides = PlayerSideResolver.resolveAll(battle);
         final StringBuilder sb = new StringBuilder(2048);
 
-        appendGroup(sb, "友方", sides, Side.FRIENDLY);
+        appendGroup(sb, "队友", sides, Side.FRIENDLY);
         appendGroup(sb, "敌方", sides, Side.ENEMY);
         appendGroup(sb, "未知", sides, Side.UNKNOWN);
 

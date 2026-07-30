@@ -19,26 +19,37 @@ import java.util.List;
 class PlayerAnalysisPromptFormatterTest {
 
     @Test
-    void formatRecorderLine_containsFriendlyLabel() {
+    void formatRecorderLine_addressesThePlayerAsSecondPerson() {
         final Battle battle = createBattle(1, List.of(player(1, "Recorder")));
         final PlayerResult rec = battle.recorderResult();
         final Side side = PlayerSideResolver.resolve(battle, rec);
         final String line = PlayerAnalysisPromptFormatter.formatRecorderLine(rec, side);
-        assertTrue(line.contains("侧=友方") || line.contains("侧=FRIENDLY"),
-                "Should contain side label, got: " + line);
+        // 复盘直接面向玩家本人：用「你」，且本人不带阵营标签
+        assertTrue(line.startsWith("你: "), "Should address the player as 你, got: " + line);
+        assertFalse(line.contains("录像者"), "Must not call the player 录像者, got: " + line);
+        assertFalse(line.contains("友方"), "The player must never be labelled 友方, got: " + line);
+        assertFalse(line.contains("侧="), "The player carries no side label, got: " + line);
         assertFalse(line.contains("队伍1"), "Must not contain raw team number");
         assertFalse(line.contains("队伍2"), "Must not contain raw team number");
-        // Verify proper separators
         assertTrue(line.contains(" | "), "Should use | separators");
     }
 
     @Test
-    void formatRecorderLine_team2StillFriendly() {
+    void formatRecorderLine_team2AlsoUsesSecondPerson() {
         final Battle battle = createBattle(2, List.of(player(2, "Recorder")));
         final PlayerResult rec = battle.recorderResult();
         final Side side = PlayerSideResolver.resolve(battle, rec);
         final String line = PlayerAnalysisPromptFormatter.formatRecorderLine(rec, side);
-        assertTrue(line.contains("侧=友方"), "Recorder in team 2 should also be friendly, got: " + line);
+        assertTrue(line.startsWith("你: "), "Recorder in team 2 is still 你, got: " + line);
+        assertFalse(line.contains("友方"), line);
+    }
+
+    @Test
+    void sameTeamPlayersAreLabelledTeammateNotFriendly() {
+        final Battle battle = createBattle(1, List.of(player(1, "Recorder"), player(1, "Mate")));
+        final String output = PlayerAnalysisPromptFormatter.formatAllPlayersBySide(battle);
+        assertTrue(output.contains("队友"), "Same-team players are 队友, got: " + output);
+        assertFalse(output.contains("友方"), "友方 must not appear, got: " + output);
     }
 
     @Test
@@ -50,8 +61,10 @@ class PlayerAnalysisPromptFormatterTest {
         final String output = PlayerAnalysisPromptFormatter.formatAllPlayersBySide(battle);
         assertFalse(output.contains("队伍1"), "Output must not contain 队伍1");
         assertFalse(output.contains("队伍2"), "Output must not contain 队伍2");
-        assertTrue(output.contains("友方") || output.contains("FRIENDLY"), "Should contain friendly label");
-        assertTrue(output.contains("敌方") || output.contains("ENEMY"), "Should contain enemy label");
+        // 同队一律称「队友」，不再使用「友方」
+        assertTrue(output.contains("队友"), "Should contain teammate label, got: " + output);
+        assertFalse(output.contains("友方"), "友方 must not appear, got: " + output);
+        assertTrue(output.contains("敌方"), "Should contain enemy label, got: " + output);
     }
 
     @Test

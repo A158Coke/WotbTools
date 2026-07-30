@@ -173,6 +173,41 @@ class PlayerSecondPersonAndPerHitDamageTest {
         assertTrue(evidence.contains("累计直接伤害780"), evidence);
     }
 
+    // ---- 阵亡时间线人称 / TD / 时间格式 ----
+
+    @Test
+    void deathTimelineUsesSecondPersonAndMinuteSecondClock() {
+        final Battle battle = battle();
+        battle.durationS = 420.0;
+        battle.players.get(0).survived = false;   // 你
+        battle.players.get(0).deathTimeMillis = 192_000L;
+        battle.players.get(1).survived = false;   // 敌方
+        battle.players.get(1).deathTimeMillis = 200_000L;
+        battle.players.get(2).survived = false;   // 队友
+        battle.players.get(2).deathTimeMillis = 210_000L;
+
+        final StringBuilder sb = new StringBuilder();
+        AiReplayAnalysisService.appendDeathTimeline(sb, battle);
+        final String timeline = sb.toString();
+
+        assertTrue(timeline.contains("你"), timeline);
+        assertTrue(timeline.contains("队友 \"Mate\""), timeline);
+        assertTrue(timeline.contains("敌方 \"EnemyAce\""), timeline);
+        // 玩家本人绝不出现为「友方」，也不出现「录像者」
+        assertFalse(timeline.contains("友方"), timeline);
+        assertFalse(timeline.contains("录像者"), timeline);
+        // 时间统一 X分XX秒，不再出现裸秒数
+        assertTrue(timeline.contains("分") && timeline.contains("秒"), timeline);
+        assertFalse(timeline.matches("(?s).*\\d+\\.\\ds.*"), timeline);
+    }
+
+    @Test
+    void tankDestroyerIsWrittenInChinese() {
+        // tankopedia 把坦克歼击车记作 TD，证据里必须展开为中文
+        assertEquals("坦克歼击车", com.wotb.core.ref.ReplayDisplayNames.tankClass(257L)); // SU-85
+        assertEquals("重坦", com.wotb.core.ref.ReplayDisplayNames.tankClass(SPHT_TANK_ID));
+    }
+
     // ---- 术语 ----
 
     @Test
