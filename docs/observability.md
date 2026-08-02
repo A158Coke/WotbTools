@@ -220,6 +220,7 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
    - Dashboard：
      - **WotBTools Backend Overview**（uid `wotbtools-backend-overview`）— 后端整体概览（HTTP/JVM/AI Review）
      - **WotBTools Replay Parser**（uid `wotbtools-replay-parser`）— 回放解析功能使用情况
+     - **WotBTools 使用统计**（uid `wotbtools-usage`）— 前端使用情况：回放解析使用次数 + AI Review 使用次数（按 HTTP 请求计数，非全链路内部调用）
 
 **WotBTools Replay Parser 面板清单**（uid `wotbtools-replay-parser`）
 
