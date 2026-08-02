@@ -19,6 +19,9 @@ import com.wotb.web.replay.dto.ExportResult;
 import com.wotb.web.replay.dto.PreviewResponse;
 import com.wotb.web.replay.dto.RatingResponse;
 import com.wotb.web.replay.mapper.Mapper;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -47,8 +50,32 @@ public class ReplayService {
     private final Tankopedia tankopedia = Tankopedia.load();
     private final ReplayCapacityLimiter capacityLimiter;
 
+    @Autowired(required = false)
+    private MeterRegistry meterRegistry;
+
     public ReplayService(final ReplayCapacityLimiter capacityLimiter) {
         this.capacityLimiter = capacityLimiter;
+    }
+
+    /** 执行并统计回放解析/处理耗时（成功与异常都停止计时；无 MeterRegistry 时原样执行）。 */
+    private <T> T timed(final String operation, final ThrowingSupplier<T> body) throws Exception {
+        if (meterRegistry == null) {
+            return body.get();
+        }
+        final Timer.Sample sample = Timer.start(meterRegistry);
+        try {
+            return body.get();
+        } finally {
+            sample.stop(Timer.builder("wotb_replay_parse_duration_seconds")
+                    .description("Replay 解析与处理耗时")
+                    .tag("operation", operation)
+                    .register(meterRegistry));
+        }
+    }
+
+    @FunctionalInterface
+    private interface ThrowingSupplier<T> {
+        T get() throws Exception;
     }
 
     /** 列定义 (前端构建表头/列选择/排序)。 */
@@ -71,7 +98,7 @@ public class ReplayService {
 
     /** 解析(并去重), 返回预览: 每场玩家数据 + 跨场汇总 + 去重/失败信息。 */
     public PreviewResponse preview(final MultipartFile[] files) throws Exception {
-        return capacityLimiter.execute(() -> previewWithinPermit(files));
+        return timed("preview", () -> capacityLimiter.execute(() -> previewWithinPermit(files)));
     }
 
     private PreviewResponse previewWithinPermit(final MultipartFile[] files) throws Exception {
@@ -93,7 +120,7 @@ public class ReplayService {
 
     /** 实时 rating: 只基于本次上传回放计算，不落库、不读取历史记录。 */
     public RatingResponse ratingLeaderboard(final MultipartFile[] files) throws Exception {
-        return capacityLimiter.execute(() -> ratingWithinPermit(files));
+        return timed("rating", () -> capacityLimiter.execute(() -> ratingWithinPermit(files)));
     }
 
     private RatingResponse ratingWithinPermit(final MultipartFile[] files) throws Exception {
@@ -107,7 +134,7 @@ public class ReplayService {
      * 无可导出内容时返回 null (由调用方转 400)。
      */
     public ExportResult export(final MultipartFile[] files, final String mode) throws Exception {
-        return capacityLimiter.execute(() -> exportWithinPermit(files, mode));
+        return timed("export", () -> capacityLimiter.execute(() -> exportWithinPermit(files, mode)));
     }
 
     private ExportResult exportWithinPermit(final MultipartFile[] files, final String mode) throws Exception {
