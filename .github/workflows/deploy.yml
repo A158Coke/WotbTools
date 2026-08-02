@@ -279,8 +279,29 @@ jobs:
             else
               echo "No existing deployment; skipping pre-deploy backup."
             fi
+            # Observability: Grafana 管理员凭据为必填（GitHub Secrets 未配置时展开为空）
+            if [ -z "${{ secrets.GRAFANA_ADMIN_PASSWORD }}" ]; then
+              echo "ERROR: GRAFANA_ADMIN_PASSWORD secret is not configured." >&2
+              exit 1
+            fi
+            if [ -z "${{ secrets.GRAFANA_ADMIN_USER }}" ]; then
+              echo "ERROR: GRAFANA_ADMIN_USER secret is not configured." >&2
+              exit 1
+            fi
             docker rm -f wotb wotb-backend wotb-frontend 2>/dev/null || true
+            # Observability: Grafana 凭据写入权限 600 的 .env（不落入 compose 文件本身）
+            umask 177
+            cat > .env <<'ENDENV'
+            GRAFANA_ADMIN_USER=${{ secrets.GRAFANA_ADMIN_USER }}
+            GRAFANA_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+            ENDENV
+            chmod 600 .env
             cat > docker-compose.yml <<'ENDCOMPOSE'
+            x-logging: &default-logging
+              driver: json-file
+              options:
+                max-size: "20m"
+                max-file: "3"
             services:
               postgres:
                 image: postgres:18-alpine
@@ -294,6 +315,7 @@ jobs:
                   - postgres_data:/var/lib/postgresql
                   - ./deploy/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
                 restart: unless-stopped
+                logging: *default-logging
               keycloak:
                 image: ghcr.io/a158coke/wotbtools-keycloak:latest
                 environment:
@@ -309,6 +331,7 @@ jobs:
                 depends_on:
                   - postgres
                 restart: unless-stopped
+                logging: *default-logging
               wotb-backend:
                 image: ghcr.io/a158coke/wotbtools-backend:latest
                 depends_on:
@@ -336,6 +359,7 @@ jobs:
                   REPLAY_COORDINATE_HALF_EXTENT: "${{ vars.REPLAY_COORDINATE_HALF_EXTENT || '250' }}"
                   REPLAY_COORDINATE_CLAMP_TOLERANCE: "${{ vars.REPLAY_COORDINATE_CLAMP_TOLERANCE || '12.5' }}"
                 restart: unless-stopped
+                logging: *default-logging
               wotb-frontend:
                 image: ghcr.io/a158coke/wotbtools-frontend:latest
                 ports:
@@ -347,8 +371,69 @@ jobs:
                   - wotb-backend
                   - keycloak
                 restart: unless-stopped
+                logging: *default-logging
+              # Observability stack: Prometheus / Loki / Alloy / Grafana (docker-internal only)
+              prometheus:
+                image: prom/prometheus:v2.55.1
+                command:
+                  - --config.file=/etc/prometheus/prometheus.yml
+                  - --storage.tsdb.retention.time=168h
+                  - --storage.tsdb.retention.size=2GB
+                volumes:
+                  - ./deploy/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+                  - prometheus_data:/prometheus
+                depends_on:
+                  - wotb-backend
+                restart: unless-stopped
+                logging: *default-logging
+                mem_limit: 384m
+              loki:
+                image: grafana/loki:3.3.2
+                command: -config.file=/etc/loki/loki-config.yml
+                volumes:
+                  - ./deploy/observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+                  - loki_data:/loki
+                restart: unless-stopped
+                logging: *default-logging
+                mem_limit: 256m
+              alloy:
+                image: grafana/alloy:v1.4.2
+                command:
+                  - run
+                  - --storage.path=/var/lib/alloy/data
+                  - /etc/alloy/config.alloy
+                volumes:
+                  - /var/run/docker.sock:/var/run/docker.sock
+                  - ./deploy/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+                depends_on:
+                  - loki
+                restart: unless-stopped
+                logging: *default-logging
+                mem_limit: 128m
+              grafana:
+                image: grafana/grafana:11.4.0
+                environment:
+                  GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER is required}
+                  GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
+                  GF_SERVER_ROOT_URL: "${{ vars.GRAFANA_ROOT_URL || 'https://monitor.wotbtools.com' }}"
+                  GF_AUTH_ANONYMOUS_ENABLED: "false"
+                  GF_USERS_ALLOW_SIGN_UP: "false"
+                  OBSERVABILITY_ENVIRONMENT: "${{ vars.OBSERVABILITY_ENVIRONMENT || 'production' }}"
+                volumes:
+                  - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+                  - ./deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+                  - grafana_data:/var/lib/grafana
+                depends_on:
+                  - prometheus
+                  - loki
+                restart: unless-stopped
+                logging: *default-logging
+                mem_limit: 256m
             volumes:
               postgres_data:
+              prometheus_data:
+              loki_data:
+              grafana_data:
             ENDCOMPOSE
             pull_succeeded=false
             for attempt in 1 2 3; do

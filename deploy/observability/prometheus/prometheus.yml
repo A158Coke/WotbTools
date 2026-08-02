@@ -1,0 +1,15 @@
+# Prometheus 配置 — WotBTools 观测栈
+# 仅抓取 Backend 的 /actuator/prometheus（Docker 内部网络，管理端口 8088）。
+# 数据保留 7 天，磁盘上限 2GiB（见 docker-compose 的 storage.tsdb.* 参数）。
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: wotb-backend
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - wotb-backend:8088
+        labels:
+          service: wotb-backend
