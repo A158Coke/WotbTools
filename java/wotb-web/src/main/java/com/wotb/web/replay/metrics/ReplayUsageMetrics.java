@@ -17,7 +17,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <ul>
  *   <li>{@code wotb_replay_requests_total{operation}} — 请求量</li>
  *   <li>{@code wotb_replay_files_total{operation}} — 解析文件数</li>
- *   <li>{@code wotb_replay_results_total{operation,result=success|failure}} — 成功/失败</li>
  *   <li>{@code wotb_replay_parse_duration_seconds{operation}} — 解析耗时（Timer，成功与异常都结束）</li>
  *   <li>{@code wotb_replay_in_flight} — 当前处理中的解析请求数（Gauge）</li>
  * </ul>
@@ -47,8 +46,10 @@ public class ReplayUsageMetrics {
     }
 
     /**
-     * 执行并统计一次回放解析：请求量+1、文件数累计、成功/失败、耗时。
+     * 执行并统计一次回放解析：请求量+1、文件数累计、耗时。
      * 成功与异常路径都会正确结束 Timer 与 in-flight 计数。
+     * 注意：不统计 success/failure——解析失败以 ReplayProcessingResult.status=FAILED 返回而非抛异常，
+     * 异常判定不可靠，见 docs/observability.md。
      */
     public <T> T timed(final String operation, final int fileCount, final Callable<T> body) throws Exception {
         if (meterRegistry == null) {
@@ -60,25 +61,17 @@ public class ReplayUsageMetrics {
             counter("wotb_replay_files_total", operation).increment(fileCount);
         }
         final Timer.Sample sample = Timer.start(meterRegistry);
-        String result = "success";
         try {
             return body.call();
-        } catch (final Exception e) {
-            result = "failure";
-            throw e;
         } finally {
+            // 成功与异常路径都结束 Timer 并递减 in-flight
             sample.stop(timer("wotb_replay_parse_duration_seconds", operation));
-            counter("wotb_replay_results_total", operation, "result", result).increment();
             inFlight.decrementAndGet();
         }
     }
 
     private Counter counter(final String name, final String operation) {
         return meterRegistry.counter(name, "operation", operation);
-    }
-
-    private Counter counter(final String name, final String operation, final String tagKey, final String tagValue) {
-        return meterRegistry.counter(name, "operation", operation, tagKey, tagValue);
     }
 
     private Timer timer(final String name, final String operation) {

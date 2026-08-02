@@ -38,7 +38,6 @@ class CustomTimerPrometheusTest {
         // 请求量与文件数计数
         assertTrue(scrape.contains("wotb_replay_requests_total{operation=\"preview\"} 1"));
         assertTrue(scrape.contains("wotb_replay_files_total{operation=\"preview\"} 2"));
-        assertTrue(scrape.contains("wotb_replay_results_total{operation=\"preview\",result=\"success\"} 1"));
     }
 
     @Test
@@ -56,9 +55,9 @@ class CustomTimerPrometheusTest {
         }
         assertTrue(thrown);
         final String scrape = registry.scrape();
-        assertTrue(scrape.contains("wotb_replay_results_total{operation=\"rating\",result=\"failure\"} 1"),
-                "failure result must be recorded: " + scrape);
-        // in-flight gauge 在异常后归零
+        // 异常路径也结束 Timer（duration count=1）且 in-flight 归零
+        assertTrue(scrape.contains("wotb_replay_parse_duration_seconds_count{operation=\"rating\"} 1"),
+                "timer must stop on failure: " + scrape);
         assertTrue(scrape.contains("wotb_replay_in_flight 0"),
                 "in-flight must return to 0 after failure: " + scrape);
     }
