@@ -1,4 +1,4 @@
-# 开发者本地构建：从源码编译镜像并启动四容器。
+# 开发者本地构建：从源码编译镜像并启动八服务（业务四件套 + 观测四件套）。
 # 用法：
 #   cd docker/online && docker compose up -d --build
 # Log rotation: 20MB per file, max 3 files (shared by all services)

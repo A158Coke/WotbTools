@@ -11,9 +11,9 @@
 | 模块/目录       | 说明                                                           |
 |-------------|--------------------------------------------------------------|
 | `wotb-core` | 核心库：解压回放、读取 pickle、解码 protobuf、车辆库映射、去重汇总、POI 导出 xlsx        |
-| `wotb-web`  | Spring Boot 4 REST API + PostgreSQL/Flyway/Keycloak，监听 `8087` |
+| `wotb-web`  | Spring Boot 4 REST API + PostgreSQL/Flyway/Keycloak，监听 `8087`（管理端口 `8088`，Actuator/Prometheus） |
 | `frontend`  | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
-| `docker/online/` | `docker-compose.yml`：`build:` 从源码编译运行四容器（postgres + keycloak + backend + frontend） |
+| `docker/online/` | `docker-compose.yml`：`build:` 从源码编译运行八服务（postgres + keycloak + backend + frontend + prometheus + loki + alloy + grafana） |
 
 > 车辆库 `common/tankopedia.json` 与地图名映射 `common/map_names.json`（仓库根的共享目录）都会在 `wotb-core` 构建时自动复制到 classpath，无需在模块内再放副本。
 
@@ -26,7 +26,7 @@ docker compose up -d --build
 
 访问 http://localhost:8088 （健康检查 `http://localhost:8088/api/health`）。
 
-`docker/online/docker-compose.yml` 启动**四容器**（`postgres:18` + `keycloak` + `wotb-backend` + `wotb-frontend`），后两者分别构建 `docker/Dockerfile.backend` 和 `docker/Dockerfile.frontend`。nginx 托管 Vue + 反代 `/api → wotb-backend:8087`，后端连接 PostgreSQL 并由 Flyway 管理 schema。
+`docker/online/docker-compose.yml` 启动**八服务**（`postgres:18` + `keycloak` + `wotb-backend` + `wotb-frontend` + `prometheus` + `loki` + `alloy` + `grafana`），后端与前端分别构建 `docker/Dockerfile.backend` 和 `docker/Dockerfile.frontend`，观测四件套使用固定版本镜像。nginx 托管 Vue + 反代 `/api → wotb-backend:8087`，后端连接 PostgreSQL 并由 Flyway 管理 schema。本地启动观测栈需在环境变量或 `docker/online/.env` 提供 `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`（compose required 语法校验）。
 
 赞助页从 `/sponsor-config.json` 读取运行时配置。生产配置保存在 `/opt/wotb/config/sponsor-config.json`，二维码保存在 `/opt/wotb/config/sponsor/`，以只读方式挂载到前端容器；仓库仅提供 disabled 示例配置，不包含个人收款二维码。
 
@@ -42,11 +42,11 @@ docker compose up -d --build
 
 线上 502 排查可手动运行 [`.github/workflows/prod-diagnostics.yml`](../.github/workflows/prod-diagnostics.yml)，读取 VPS compose 状态与后端/前端日志。
 
-> 四个容器：`postgres:18`（数据持久化，卷挂 `/var/lib/postgresql`）→ `keycloak`（认证，`auth.wotbtools.com`）→ `wotb-backend`（Spring Boot 8087）→ `wotb-frontend`（nginx + Vue，暴露 8088:80）。`paths` 过滤使纯文档 push 不触发部署。
+> 八个服务：`postgres:18`（数据持久化，卷挂 `/var/lib/postgresql`）→ `keycloak`（认证，`auth.wotbtools.com`）→ `wotb-backend`（Spring Boot 8087，管理端口 8088）→ `wotb-frontend`（nginx + Vue，暴露 8088:80）+ 观测四件套（`prometheus`/`loki`/`alloy`/`grafana`，仅 Docker 内部网络）。`paths` 过滤使纯文档 push 不触发部署。
 
 ## 本地开发
 
-后端需要 JDK 21；完整运行使用四容器开发环境，确保 PostgreSQL、Keycloak 与必要环境变量同时存在。
+后端需要 JDK 21；完整运行使用八服务开发环境，确保 PostgreSQL、Keycloak 与必要环境变量同时存在。
 
 ```bash
 cd java
@@ -215,6 +215,9 @@ npm run build
 ```yaml
 server:
   port: 8087
+management:
+  server:
+    port: 8088   # 独立管理端口：/actuator/health、/actuator/prometheus（仅 Docker 内部网络，不映射公网）
 spring:
   servlet:
     multipart:

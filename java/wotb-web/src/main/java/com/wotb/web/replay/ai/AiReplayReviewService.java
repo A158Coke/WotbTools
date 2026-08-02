@@ -1,6 +1,7 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Source;
+import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.processing.BatchAnalyzer;
 import com.wotb.core.processing.BattleCategory;
 import com.wotb.core.processing.BattleCategoryUtils;
@@ -17,7 +18,14 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.core.processing.TeamPerspectiveResolver;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
+import com.wotb.web.replay.metrics.ReplayUsageMetrics;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.wotb.web.replay.dto.AnalyzeResponse;
+import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -26,6 +34,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.Locale;
 
 @Service
@@ -33,6 +42,15 @@ public class AiReplayReviewService {
 
     private final DefaultReplayProcessingFacade processingFacade;
     private final AiReplayAnalysisService aiAnalysisService;
+
+    @Autowired(required = false)
+    private MeterRegistry meterRegistry;
+
+    @Autowired(required = false)
+    private ReplayUsageMetrics replayUsageMetrics;
+
+    private final AtomicInteger aiReviewInFlight = new AtomicInteger();
+    private Timer aiReviewDuration;
     private static final long MAX_FILE_SIZE = 20L * 1024 * 1024;
     private static final long MAX_TOTAL_SIZE = 200L * 1024 * 1024;
 
@@ -50,6 +68,68 @@ public class AiReplayReviewService {
     }
 
     public AnalyzeResponse analyze(final MultipartFile[] files) throws IOException {
+        final boolean metrics = meterRegistry != null;
+        final Timer.Sample sample = metrics ? Timer.start(meterRegistry) : null;
+        if (metrics) {
+            aiReviewInFlight.incrementAndGet();
+            meterRegistry.counter("wotb_ai_review_requests_total").increment();
+        }
+        String result = "success";
+        String errorType = null;
+        try {
+            return analyzeInternal(files);
+        } catch (final AiNotConfiguredException e) {
+            result = "rejected";
+            errorType = "AI_NOT_CONFIGURED";
+            throw e;
+        } catch (final AiPromptBudgetExceededException e) {
+            result = "rejected";
+            errorType = "AI_PROMPT_BUDGET_EXCEEDED";
+            throw e;
+        } catch (final UnsupportedReplayAnalysisModeException e) {
+            result = "rejected";
+            errorType = "UNSUPPORTED_BATTLE_CATEGORY";
+            throw e;
+        } catch (final PerspectiveTeamNotResolvedException e) {
+            result = "rejected";
+            errorType = "PERSPECTIVE_TEAM_UNRESOLVED";
+            throw e;
+        } catch (final ReplayFileCountExceededException e) {
+            result = "rejected";
+            errorType = "REPLAY_FILE_COUNT_EXCEEDED";
+            throw e;
+        } catch (final IllegalArgumentException e) {
+            // 文件校验 / NO_BATTLE_DATA / token budget 拒绝：均计入 rejected
+            result = "rejected";
+            throw e;
+        } catch (final AiUpstreamException e) {
+            result = "failure";
+            errorType = e.code();
+            throw e;
+        } catch (final RuntimeException e) {
+            // 未列出的运行时异常：计入 failure，避免虚增 success
+            result = "failure";
+            throw e;
+        } catch (final IOException e) {
+            result = "failure";
+            throw e;
+        } finally {
+            if (metrics) {
+                if (sample != null) {
+                    sample.stop(aiReviewDuration);
+                }
+                aiReviewInFlight.decrementAndGet();
+                meterRegistry.counter("wotb_ai_review_results_total",
+                        "result", result).increment();
+                if (errorType != null) {
+                    meterRegistry.counter("wotb_ai_review_errors_total",
+                            "type", errorType).increment();
+                }
+            }
+        }
+    }
+
+    private AnalyzeResponse analyzeInternal(final MultipartFile[] files) throws IOException {
         if (files == null || files.length == 0) throw new IllegalArgumentException("NO_REPLAY_FILES");
         validateBatchSize(files.length);
         long totalSize = 0;
@@ -72,7 +152,20 @@ public class AiReplayReviewService {
             final String name = file.getOriginalFilename() != null
                     ? file.getOriginalFilename() : "replay.wotbreplay";
             final Source source = new Source(name, file.getBytes());
-            allResults.add(processingFacade.process(source, ReplayProcessingOptions.full()));
+            if (replayUsageMetrics == null) {
+                allResults.add(processingFacade.process(source, ReplayProcessingOptions.full()));
+            } else {
+                try {
+                    allResults.add(replayUsageMetrics.timed(
+                            ReplayUsageMetrics.OP_AI_REVIEW, 1,
+                            () -> processingFacade.process(source, ReplayProcessingOptions.full())));
+                } catch (final RuntimeException e) {
+                    throw e;
+                } catch (final Exception e) {
+                    // process 不抛 checked；此处仅防御性包装
+                    throw new IOException(e);
+                }
+            }
         }
         final BatchAnalyzer.AnalysisPlan plan = new BatchAnalyzer().analyze(allResults);
         final List<ReplayUploadResult> uploadResults = new ArrayList<>();
@@ -265,4 +358,21 @@ public class AiReplayReviewService {
 
     private record ReplayUploadResult(int uploadIndex, String fileName, ReplayProcessingResult processingResult) {}
 
+
+    /**
+     * 初始化 AI Review 边界指标（仅当 MeterRegistry 可用时；单元测试中为 null 则跳过）。
+     */
+    @PostConstruct
+    void initMetrics() {
+        if (meterRegistry == null) {
+            return;
+        }
+        aiReviewDuration = Timer.builder("wotb_ai_review_duration_seconds")
+                .description("AI Review 完整总耗时")
+                .publishPercentileHistogram()
+                .register(meterRegistry);
+        Gauge.builder("wotb_ai_review_in_flight", aiReviewInFlight, AtomicInteger::get)
+                .description("当前正在处理的 AI Review 请求数")
+                .register(meterRegistry);
+    }
 }

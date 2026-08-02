@@ -17,6 +17,8 @@
 
 入口：[https://wotbtools.com](https://wotbtools.com)
 
+监控站（Grafana，运维用）：[https://monitor.wotbtools.com](https://monitor.wotbtools.com)（详见 [docs/observability.md](docs/observability.md)）
+
 ## 当前目标
 
 | 目标          | 技术方向                                           | 状态            |
@@ -42,6 +44,7 @@
 - [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)：维护上下文、架构、回放格式、i18n、测试策略。
 - [docs/replay-data.md](docs/replay-data.md)：data.wotreplay 事件流格式、protobuf 字段表、死亡时间推算。
 - [docs/rating-system.md](docs/rating-system.md)：评分算法、参数、展示。
+- [docs/observability.md](docs/observability.md)：可观测系统运维（Grafana `https://monitor.wotbtools.com`、日志/指标/保留策略/回滚）。
 
 ## 功能
 

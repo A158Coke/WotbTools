@@ -5,6 +5,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.MDC;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -19,8 +21,14 @@ import java.util.UUID;
  *   <li>响应头回写 {@code X-Request-ID}，便于前端与后端日志关联。</li>
  * </ul>
  * MDC 在 finally 中清理，避免线程池复用导致串扰。
+ *
+ * <p>顺序必须早于 Spring Security 过滤器链（{@code SecurityProperties.DEFAULT_FILTER_ORDER = -100}），
+ * 否则 401/403 等安全拒绝响应在进入本过滤器前就已返回，无法带上 {@code X-Request-ID}。
+ * 本过滤器不向 {@code SecurityFilterChain} 手动注册，仅作为普通 Servlet 过滤器按此顺序执行一次，
+ * 避免重复注册。</p>
  */
 @Component
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class RequestIdFilter extends OncePerRequestFilter {
 
     public static final String HEADER = "X-Request-ID";

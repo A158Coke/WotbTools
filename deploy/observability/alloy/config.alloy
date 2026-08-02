@@ -3,38 +3,40 @@
 // 需要挂载 /var/run/docker.sock（见 docker-compose）。
 
 discovery.docker "backend" {
-  host = "unix:///var/run/docker.sock"
-  filter {
-    name = "name"
-    values = [".*wotb-backend.*"]
-  }
+	host = "unix:///var/run/docker.sock"
+
+	filter {
+		name   = "name"
+		values = [".*wotb-backend.*"]
+	}
 }
 
 discovery.relabel "backend" {
-  targets = discovery.docker.backend.targets
-  rule {
-    source_labels = ["__meta_docker_container_name"]
-    regex         = ".*wotb-backend.*"
-    action        = "keep"
-  }
-  // 将容器名规范化为 wotb-backend（实际容器名形如 <project>-wotb-backend-1），
-  // 供 Loki 查询 {container_name="wotb-backend"}
-  rule {
-    source_labels = ["__meta_docker_container_name"]
-    regex         = ".*(wotb-backend).*"
-    target_label  = "container_name"
-    replacement   = "$1"
-  }
+	targets = discovery.docker.backend.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = ".*wotb-backend.*"
+		action        = "keep"
+	}
+	// 将容器名规范化为 wotb-backend（实际容器名形如 <project>-wotb-backend-1），
+	// 供 Loki 查询 {container_name="wotb-backend"}
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = ".*(wotb-backend).*"
+		target_label  = "container_name"
+		replacement   = "$1"
+	}
 }
 
 loki.source.docker "backend" {
-  host      = "unix:///var/run/docker.sock"
-  targets   = discovery.relabel.backend.output
-  forward_to = [loki.write.default.receiver]
+	host       = "unix:///var/run/docker.sock"
+	targets    = discovery.relabel.backend.output
+	forward_to = [loki.write.default.receiver]
 }
 
 loki.write "default" {
-  endpoint {
-    url = "http://loki:3100/loki/api/v1/push"
-  }
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+	}
 }
