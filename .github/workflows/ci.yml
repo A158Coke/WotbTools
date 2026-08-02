@@ -103,11 +103,15 @@ jobs:
           import json
           with open('/tmp/compose.json', encoding='utf-8') as f:
               svc = json.load(f)["services"]
-          forbidden = {9090, 3100, 3000, 12345, 8088}
+          # 观测服务端口禁止映射到宿主机；frontend 的 8088:80 是合法对外入口，不在禁止列
+          forbidden = {9090, 3100, 3000, 12345}
           for name, s in svc.items():
               for p in s.get("ports", []):
                   host = p.get("published", p.get("target"))
                   assert int(host) not in forbidden, (
                       "service " + name + " exposes port " + str(host) + " to host (forbidden)")
+          # backend 管理端口 8088（/actuator）不得映射到宿主机
+          backend_ports = [p.get("published", p.get("target")) for p in svc["wotb-backend"].get("ports", [])]
+          assert 8088 not in {int(x) for x in backend_ports}, "wotb-backend must not expose management port 8088"
           print("no host exposure of observability ports")
           PY
