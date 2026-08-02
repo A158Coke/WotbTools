@@ -101,7 +101,8 @@
 3. **GitHub Secrets**（生产部署 CI 使用）：在仓库 Settings → Secrets and variables → Actions 配置：
    - `GRAFANA_ADMIN_USER`：Grafana 管理员用户名（如 `admin`）
    - `GRAFANA_ADMIN_PASSWORD`：强密码
-   - 生成密码示例：`openssl rand -base64 24`（部署脚本在密码为空时会中断，见 `deploy.yml`）
+   - 生成密码示例：`openssl rand -base64 24`
+   - 部署时 CI 将凭据写入生产服务器 `/opt/wotb/.env`（`chmod 600`），compose 使用 `required` 语法引用，**Grafana 密码不落入 compose 文件本身**；密码为空时部署脚本中断（见 `deploy.yml`）。
 
 ---
 
@@ -163,6 +164,20 @@ docker compose start prometheus loki alloy grafana
 
 ## 5. 验证方法
 
+### CI 实际验证项（PR 时自动执行，见 `.github/workflows/ci.yml` `observability-config` job）
+
+| 验证项 | 命令 |
+|---|---|
+| 本地 compose 语法 | `docker compose config --quiet`（本地 + 生产 heredoc 渲染后） |
+| Prometheus 配置 | `promtool check config` |
+| Loki 配置 | `loki --verify-config` |
+| Alloy 配置 | `alloy fmt -t`（v1.4.2 实际支持的 test flag） |
+| Grafana provisioning + Dashboard JSON | `python` 解析全部 YAML/JSON |
+| 端口安全 | `docker compose config --format json` 校验 9090/3100/3000/12345/8088 无宿主机映射 |
+| Backend 测试 | `mvn test`（含 `RequestIdFilterTest`、`CustomTimerPrometheusTest`、`LogstashMdcTopLevelTest`） |
+
+### 手动验证命令（生产部署后执行）
+
 ```bash
 # compose 语法
 docker compose config --quiet
@@ -178,6 +193,15 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 # 或: alloy 容器内执行 alloy fmt --check /etc/alloy/config.alloy
 ```
 
+### 需生产环境手动验证（CI 无法覆盖）
+
+- 完整整栈启动（业务 + 观测 8 容器）
+- Loki 实际采集到 backend 日志、`requestId` 可过滤
+- `/actuator/prometheus` 实际输出（指标名与 Dashboard 面板匹配）
+- Volume 重启后数据持久化（7 天保留）
+- `docker stats` 实际资源占用（空闲约 1GB 目标）
+- 公网无法访问 8088/9090/3100/3000/12345
+
 ---
 
 ## 6. Grafana 登录与 Dashboard
@@ -186,7 +210,22 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 2. 使用 `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` 登录（匿名访问已禁用：`GF_AUTH_ANONYMOUS_ENABLED=false`）。
 3. 首次启动后，provisioning 自动创建：
    - Datasource：`Prometheus`（uid `prometheus`，`http://prometheus:9090`）、`Loki`（uid `loki`，`http://loki:3100`）
-   - Dashboard：**WotBTools Backend Overview**（uid `wotbtools-backend-overview`，位于 "Dashboards → Manage"）
+   - Dashboard：
+     - **WotBTools Backend Overview**（uid `wotbtools-backend-overview`）— 后端整体概览（HTTP/JVM/AI Review）
+     - **WotBTools Replay Parser**（uid `wotbtools-replay-parser`）— 回放解析功能使用情况
+
+**WotBTools Replay Parser 面板清单**（uid `wotbtools-replay-parser`）
+
+1. Backend Up
+2. 每分钟回放解析请求量（`sum(rate(wotb_replay_requests_total[1m]))*60`）
+3. 解析失败率（`wotb_replay_results_total{result="failure"}` 占比）
+4. 按操作请求量（preview/export/rating/process/reconstruct/ai_review）
+5. 解析文件数（按操作，`wotb_replay_files_total`）
+6. 解析耗时 P50/P95/P99（`wotb_replay_parse_duration_seconds`）
+7. 成功 / 失败（按操作）
+8. 当前处理中的解析请求数（`wotb_replay_in_flight`）
+9. 最近 Backend ERROR 日志（Loki）
+10. 变量：`operation`（按操作过滤）、`requestId`（日志排查）
 
 **Dashboard 面板清单**
 
@@ -203,19 +242,24 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 11. GC 暂停时间
 12. JVM 线程
 13. HikariCP 连接池
-14. AI Review 请求量（按 mode）
+14. AI Review 请求趋势
 15. AI Review 成功/失败/拒绝
 16. AI Review 耗时与并发（P95 + in-flight）
 17. Replay 解析耗时 P95（按操作）
-18. 最近 Backend ERROR 日志（Loki）
+18. 最近 Backend ERROR 日志（Loki，结构化 `level="ERROR"` + `requestId` 过滤）
+19. HTTP Method 分布（`sum by (method)`）
+20. 2xx / 4xx / 5xx 分布
+21. AI Review 成功率 / 失败率 / 拒绝率
+22. AI Review 完整耗时 P50 / P95 / P99
 
-> 面板全部基于真实指标，无空面板。Dashboard JSON 提交在 `deploy/observability/grafana/dashboards/`，volume 丢失后随 provisioning 自动重建。
+> Dashboard JSON 提交在 `deploy/observability/grafana/dashboards/`，volume 丢失后随 provisioning 自动重建。
+> 面板查询基于上述指标名编写；**每个面板是否有真实数据支撑，需在生产实际产生流量后确认**（CI 仅校验 JSON 结构与指标名存在，无法验证面板有数据）。
 
 ---
 
 ## 7. 日志查询与 requestId 排查
 
-Backend 日志为**结构化 JSON**（`logging.structured.format.console: logstash`），每行包含 `mdc.requestId` 字段。
+Backend 日志为**结构化 JSON**（`logging.structured.format.console: logstash`）。MDC 的 `requestId` 输出为**顶层 JSON 字段**（不是 `mdc.requestId` 子对象；由 Spring Boot 4 `LogstashStructuredLogFormatter` 的 `ContextPairs.flat` 保证，已由 `LogstashMdcTopLevelTest` 实证）。
 
 ### 查询 Backend ERROR
 
@@ -237,10 +281,10 @@ Grafana → Explore → 选 Loki：
 2. Loki 查询：
 
 ```logql
-{container_name="wotb-backend"} | json | mdc.requestId="<requestId>"
+{container_name="wotb-backend"} | json | requestId="<requestId>"
 ```
 
-3. 也可用 Dashboard 顶部 `requestId` 变量 + Loki 面板联动。
+3. 也可用 Dashboard 顶部 `requestId` 变量 + Loki 面板联动：变量默认 `.*`（查看全部 ERROR），输入具体 `requestId` 后只显示该请求日志（查询 `requestId=~"${requestId:.*}"`）。
 
 ### 查询 AI Review 错误
 
@@ -319,13 +363,22 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
 - **HTTP**：`http_server_requests_seconds_*`（Micrometer 自动，URI 已模板化，低基数；2xx/3xx/4xx/5xx 分布、P50/P95/P99 直方图）
 - **JVM**：`jvm_memory_used_bytes`、`process_cpu_usage`、`system_cpu_usage`、`jvm_gc_pause_seconds_*`、`jvm_threads_*`
 - **HikariCP**：`hikaricp_connections_active/idle/pending`
-- **AI Review**（自定义，`AiReplayAnalysisService`）：
-  - `wotb_ai_review_requests_total{mode}` — 请求量
-  - `wotb_ai_review_results_total{result=success|failure|rejected}` — 结果
-  - `wotb_ai_review_errors_total{type=<枚举>}` — 错误分类
-  - `wotb_ai_review_duration_seconds` / `wotb_ai_upstream_duration_seconds` — 总耗时 / 上游耗时（Timer，成功与异常都结束）
-  - `wotb_ai_review_in_flight` — 并发处理数（Gauge）
-- **Replay 解析**：`wotb_replay_parse_duration_seconds{operation=preview|rating|export}`（`ReplayService`，Timer）
+- **AI Review**（自定义，`AiReplayReviewService.analyze` 边界，**一次 HTTP = 一次 Review**）：
+  - `wotb_ai_review_requests_total` — Review 请求量（每次 analyze +1，与上游调用次数无关）
+  - `wotb_ai_review_results_total{result=success|failure|rejected}` — 结果（rejected 为整请求被拒：文件数超限/文件类型非法/AI 未配置/不支持战斗类型/perspective 未确定/token budget 拒绝；混合批次中单文件解析失败返回 FAILED 结果不抛异常，计入 success 的请求完成语义）
+  - `wotb_ai_review_errors_total{type=<固定枚举>}` — 错误分类
+  - `wotb_ai_review_duration_seconds` — Review 完整总耗时（Timer，histogram，成功与异常都结束，覆盖文件验证→解析→分析→AI 调用→响应处理）
+  - `wotb_ai_review_in_flight` — 当前处理中的 Review 数（Gauge）
+- **AI upstream**（自定义，`AiReplayAnalysisService.call`，每次上游调用）：
+  - `wotb_ai_upstream_requests_total{mode}` — 上游请求量
+  - `wotb_ai_upstream_errors_total{type=<枚举>}` — 上游错误分类
+  - `wotb_ai_upstream_duration_seconds` — 上游调用耗时（Timer，histogram，成功与异常都结束）
+- **Replay 解析**（自定义，`ReplayUsageMetrics`，operation=`preview|export|rating|process|reconstruct|ai_review`）：
+  - `wotb_replay_requests_total{operation}` — 请求量
+  - `wotb_replay_files_total{operation}` — 解析文件数
+  - `wotb_replay_results_total{operation,result=success|failure}` — 成功/失败
+  - `wotb_replay_parse_duration_seconds{operation}` — 解析耗时（Timer，histogram，成功与异常都结束；`ai_review` 覆盖 `/api/replay/analyze` 的 Replay processing，不重复统计）
+  - `wotb_replay_in_flight` — 当前处理中的解析请求数（Gauge）
 
 **Label 约束**：不使用用户 ID、Replay ID、文件名、IP、Prompt、异常文本、动态 URL 作为 label；URI 一律为 Spring MVC 模板（如 `/api/preview`）。不统计 Token Usage（DeepSeek 平台已提供）。
 

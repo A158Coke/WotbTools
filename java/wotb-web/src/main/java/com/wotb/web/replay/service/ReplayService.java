@@ -19,8 +19,7 @@ import com.wotb.web.replay.dto.ExportResult;
 import com.wotb.web.replay.dto.PreviewResponse;
 import com.wotb.web.replay.dto.RatingResponse;
 import com.wotb.web.replay.mapper.Mapper;
-import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Timer;
+import com.wotb.web.replay.metrics.ReplayUsageMetrics;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -51,26 +50,18 @@ public class ReplayService {
     private final ReplayCapacityLimiter capacityLimiter;
 
     @Autowired(required = false)
-    private MeterRegistry meterRegistry;
+    private ReplayUsageMetrics usageMetrics;
 
     public ReplayService(final ReplayCapacityLimiter capacityLimiter) {
         this.capacityLimiter = capacityLimiter;
     }
 
-    /** 执行并统计回放解析/处理耗时（成功与异常都停止计时；无 MeterRegistry 时原样执行）。 */
-    private <T> T timed(final String operation, final ThrowingSupplier<T> body) throws Exception {
-        if (meterRegistry == null) {
+    /** 执行并统计回放解析使用指标（成功与异常都记录；无 ReplayUsageMetrics 时原样执行）。 */
+    private <T> T timed(final String operation, final int fileCount, final ThrowingSupplier<T> body) throws Exception {
+        if (usageMetrics == null) {
             return body.get();
         }
-        final Timer.Sample sample = Timer.start(meterRegistry);
-        try {
-            return body.get();
-        } finally {
-            sample.stop(Timer.builder("wotb_replay_parse_duration_seconds")
-                    .description("Replay 解析与处理耗时")
-                    .tag("operation", operation)
-                    .register(meterRegistry));
-        }
+        return usageMetrics.timed(operation, fileCount, body::get);
     }
 
     @FunctionalInterface
@@ -98,7 +89,7 @@ public class ReplayService {
 
     /** 解析(并去重), 返回预览: 每场玩家数据 + 跨场汇总 + 去重/失败信息。 */
     public PreviewResponse preview(final MultipartFile[] files) throws Exception {
-        return timed("preview", () -> capacityLimiter.execute(() -> previewWithinPermit(files)));
+        return timed(ReplayUsageMetrics.OP_PREVIEW, files.length, () -> capacityLimiter.execute(() -> previewWithinPermit(files)));
     }
 
     private PreviewResponse previewWithinPermit(final MultipartFile[] files) throws Exception {
@@ -120,7 +111,7 @@ public class ReplayService {
 
     /** 实时 rating: 只基于本次上传回放计算，不落库、不读取历史记录。 */
     public RatingResponse ratingLeaderboard(final MultipartFile[] files) throws Exception {
-        return timed("rating", () -> capacityLimiter.execute(() -> ratingWithinPermit(files)));
+        return timed(ReplayUsageMetrics.OP_RATING, files.length, () -> capacityLimiter.execute(() -> ratingWithinPermit(files)));
     }
 
     private RatingResponse ratingWithinPermit(final MultipartFile[] files) throws Exception {
@@ -134,7 +125,7 @@ public class ReplayService {
      * 无可导出内容时返回 null (由调用方转 400)。
      */
     public ExportResult export(final MultipartFile[] files, final String mode) throws Exception {
-        return timed("export", () -> capacityLimiter.execute(() -> exportWithinPermit(files, mode)));
+        return timed(ReplayUsageMetrics.OP_EXPORT, files.length, () -> capacityLimiter.execute(() -> exportWithinPermit(files, mode)));
     }
 
     private ExportResult exportWithinPermit(final MultipartFile[] files, final String mode) throws Exception {

@@ -24,6 +24,7 @@ Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；
 | [`docs/replay-data.md`](docs/replay-data.md) | data.wotreplay 事件流格式、protobuf 字段表、死亡时间推算 | 深入回放格式时 |
 | [`docs/rating-system.md`](docs/rating-system.md) | 评分算法细节 | 碰评分时 |
 | [`docs/rating-progress.md`](docs/rating-progress.md) | rating 扩展目标、已完成项、缺口与下一步 | 接手 rating 扩展时 |
+| [`docs/observability.md`](docs/observability.md) | 可观测系统（日志/指标/Grafana/Prometheus/Loki/Alloy）运维与排障 | 动监控、查日志、调保留策略时 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本历史（对外） | 了解发布历史 |
 | [`README.md`](README.md) / [`java/README.md`](java/README.md) | 用户向 + 运行/接口/构建 | 跑起来时 |
 | [`TODO.md`](TODO.md) | 待办（含已完成收尾记录与下一步） | 找下一步做什么 |
@@ -52,7 +53,7 @@ cd java && JAVA_HOME=<jdk21> mvn -s settings.xml test
 # 前端测试 + 构建
 cd frontend && npm test && npm run build
 
-# 本地开发 — 四容器编译启动 (postgres + keycloak + backend + frontend)
+# 本地开发 — 八服务编译启动 (postgres + keycloak + backend + frontend + prometheus + loki + alloy + grafana)
 cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend + Dockerfile.frontend, 8088
 ```
 
@@ -96,9 +97,9 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 ├── docker/                       # Docker 构建 + 本地开发 compose
 │   ├── Dockerfile.backend        #   后端镜像：Maven → JRE（Spring Boot :8087）
 │   ├── Dockerfile.frontend       #   前端镜像：Node → nginx（:80）
-│   ├── nginx/                #   双 server（主页 + Vue SPA 反代 /api→wotb-backend:8087）
+│   ├── nginx/                #   三 server（monitor 反代 Grafana + auth + 主页/Vue SPA 反代 /api→wotb-backend:8087）
 │   ├── keycloak/                 #   Keycloak realm 导入文件
-│   └── online/                   #   开发者版 compose（build: 源码编译，四容器: pg+keycloak+backend+frontend）
+│   └── online/                   #   开发者版 compose（build: 源码编译，八服务: pg+keycloak+backend+frontend+观测四件套）
 ├── .dockerignore                 # 减少 Docker 构建上下文
 ├── frontend/                     # Vue 3 前端
 │   ├── src/

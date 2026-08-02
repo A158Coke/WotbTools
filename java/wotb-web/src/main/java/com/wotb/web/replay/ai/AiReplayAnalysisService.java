@@ -57,7 +57,6 @@ import com.wotb.core.util.PlayerResultFormat;
 
 
 import com.wotb.web.config.AiModelProperties;
-import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.PostConstruct;
@@ -91,7 +90,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -205,8 +203,6 @@ public class AiReplayAnalysisService {
     // ---- å¯è§‚æµ‹æ€§: AI Review æŒ‡æ ‡ (MeterRegistry å¯é€‰æ³¨å…¥, å•å…ƒæµ‹è¯•ä¸º null æ—¶è·³è¿‡) ----
     @Autowired(required = false)
     private MeterRegistry meterRegistry;
-    private final AtomicInteger aiReviewInFlight = new AtomicInteger();
-    private Timer aiReviewDuration;
     private Timer aiUpstreamDuration;
 
     @Autowired
@@ -1692,18 +1688,11 @@ public class AiReplayAnalysisService {
         final String correlationId = UUID.randomUUID().toString();
         final int requestChars = requestBody.toString().length();
         final boolean metrics = meterRegistry != null;
-        final Timer.Sample reviewSample = metrics ? Timer.start(meterRegistry) : null;
-        if (metrics) {
-            aiReviewInFlight.incrementAndGet();
-            meterRegistry.counter("wotb_ai_review_requests_total",
-                    "mode", analysisMode).increment();
-        }
-        String result = "success";
+        final Timer.Sample upstreamSample = metrics ? Timer.start(meterRegistry) : null;
         String errorType = null;
         try {
             checkTokenBudget(requestBody);
             final ChatCompletionResponse response;
-            final Timer.Sample upstreamSample = metrics ? Timer.start(meterRegistry) : null;
             try {
                 response = restClient.post()
                         .uri("/chat/completions")
@@ -1724,7 +1713,6 @@ public class AiReplayAnalysisService {
                 logProviderFailure(
                         null, e.code(), requestChars, analysisMode, correlationId,
                         "invalid completion envelope");
-                result = "failure";
                 errorType = e.code();
                 throw new AiUpstreamException(e.code(), null, correlationId);
             }
@@ -1732,7 +1720,6 @@ public class AiReplayAnalysisService {
                 logProviderFailure(
                         null, "AI_EMPTY_RESPONSE", requestChars, analysisMode,
                         correlationId, "blank completion content");
-                result = "failure";
                 errorType = "AI_EMPTY_RESPONSE";
                 throw new AiUpstreamException("AI_EMPTY_RESPONSE", null, correlationId);
             }
@@ -1749,7 +1736,6 @@ public class AiReplayAnalysisService {
             logProviderFailure(
                     status, code, requestChars, analysisMode, correlationId,
                     safeProviderSummary(e.getResponseBodyAsString()));
-            result = "failure";
             errorType = code;
             throw new AiUpstreamException(code, status, correlationId);
         } catch (final ResourceAccessException e) {
@@ -1757,7 +1743,6 @@ public class AiReplayAnalysisService {
             logProviderFailure(
                     null, code, requestChars, analysisMode, correlationId,
                     e.getClass().getSimpleName());
-            result = "failure";
             errorType = code;
             throw new AiUpstreamException(code, null, correlationId);
         } catch (final RestClientException e) {
@@ -1765,23 +1750,17 @@ public class AiReplayAnalysisService {
             logProviderFailure(
                     null, code, requestChars, analysisMode,
                     correlationId, e.getClass().getSimpleName());
-            result = "failure";
             errorType = code;
             throw new AiUpstreamException(code, null, correlationId);
         } catch (final IllegalArgumentException e) {
-            // Token é¢„ç®—æ‹’ç»: è¯·æ±‚æœªå‘å‡º
-            result = "rejected";
+            // Token budget rejected: request not sent to upstream
             throw e;
         } finally {
             if (metrics) {
-                if (reviewSample != null) {
-                    reviewSample.stop(aiReviewDuration);
-                }
-                aiReviewInFlight.decrementAndGet();
-                meterRegistry.counter("wotb_ai_review_results_total",
-                        "result", result).increment();
+                meterRegistry.counter("wotb_ai_upstream_requests_total",
+                        "mode", analysisMode).increment();
                 if (errorType != null) {
-                    meterRegistry.counter("wotb_ai_review_errors_total",
+                    meterRegistry.counter("wotb_ai_upstream_errors_total",
                             "type", errorType).increment();
                 }
             }
@@ -1796,16 +1775,9 @@ public class AiReplayAnalysisService {
         if (meterRegistry == null) {
             return;
         }
-        aiReviewDuration = Timer.builder("wotb_ai_review_duration_seconds")
-                .description("AI Review æ€»è€—æ—¶ï¼ˆå«ä¸Šæ¸¸è°ƒç”¨ï¼‰")
-                .register(meterRegistry);
         aiUpstreamDuration = Timer.builder("wotb_ai_upstream_duration_seconds")
-                .description("AI ä¸Šæ¸¸ API è°ƒç”¨è€—æ—¶")
-                .register(meterRegistry);
-        Gauge.builder(
-                        "wotb_ai_review_in_flight",
-                        aiReviewInFlight, AtomicInteger::get)
-                .description("å½“å‰æ­£åœ¨å¤„ç†çš„ AI Review æ•°é‡")
+                .description("AI upstream API call duration")
+                .publishPercentileHistogram()
                 .register(meterRegistry);
     }
 

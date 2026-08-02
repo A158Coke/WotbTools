@@ -47,3 +47,67 @@ jobs:
         run: npm run build
       - name: Alpine Docker build (verify lockfile + native deps)
         run: docker build -f docker/Dockerfile.frontend -t wotbtools-frontend:pr .
+
+
+  observability-config:
+    name: Observability config validation (compose/prometheus/loki/alloy/grafana)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: docker compose config (local, with required Grafana vars)
+        working-directory: docker/online
+        env:
+          GRAFANA_ADMIN_USER: ci-test-user
+          GRAFANA_ADMIN_PASSWORD: ci-test-password
+        run: docker compose config --quiet
+
+      - name: Prometheus promtool check config
+        run: >-
+          docker run --rm --entrypoint promtool
+          -v "$PWD/deploy/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+          prom/prometheus:v2.55.1 check config /etc/prometheus/prometheus.yml
+
+      - name: Loki config validation
+        run: >-
+          docker run --rm --entrypoint loki
+          -v "$PWD/deploy/observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro"
+          grafana/loki:3.3.2 --config.file=/etc/loki/loki-config.yml --verify-config
+
+      - name: Alloy config format check (fmt -t)
+        run: >-
+          docker run --rm --entrypoint alloy
+          -v "$PWD/deploy/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro"
+          grafana/alloy:v1.4.2 fmt -t /etc/alloy/config.alloy
+
+      - name: Validate Grafana provisioning + dashboard JSON
+        run: |
+          python - <<'PY'
+          import json, yaml, glob
+          for p in glob.glob("deploy/observability/grafana/provisioning/**/*.yml", recursive=True):
+              yaml.safe_load(open(p, encoding="utf-8"))
+          for p in glob.glob("deploy/observability/grafana/dashboards/*.json"):
+              d = json.load(open(p, encoding="utf-8"))
+              assert d.get("panels"), "empty dashboard " + p
+          print("provisioning yml + dashboards json OK")
+          PY
+
+      - name: No host port mappings for observability/backend management
+        working-directory: docker/online
+        env:
+          GRAFANA_ADMIN_USER: ci-test-user
+          GRAFANA_ADMIN_PASSWORD: ci-test-password
+        run: |
+          docker compose config --format json > /tmp/compose.json
+          python - <<'PY'
+          import json
+          with open('/tmp/compose.json', encoding='utf-8') as f:
+              svc = json.load(f)["services"]
+          forbidden = {9090, 3100, 3000, 12345, 8088}
+          for name, s in svc.items():
+              for p in s.get("ports", []):
+                  host = p.get("published", p.get("target"))
+                  assert int(host) not in forbidden, (
+                      "service " + name + " exposes port " + str(host) + " to host (forbidden)")
+          print("no host exposure of observability ports")
+          PY
