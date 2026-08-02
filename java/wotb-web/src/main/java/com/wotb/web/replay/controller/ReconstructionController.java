@@ -14,6 +14,8 @@ import com.wotb.web.replay.ai.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
+import com.wotb.web.replay.metrics.ReplayUsageMetrics;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -46,6 +48,9 @@ public class ReconstructionController {
     private final DefaultReplayProcessingFacade processingFacade;
     private final AiReplayReviewService reviewService;
 
+    @Autowired(required = false)
+    private ReplayUsageMetrics usageMetrics;
+
     public ReconstructionController(
             final DefaultReplayProcessingFacade processingFacade,
             final AiReplayReviewService reviewService) {
@@ -69,7 +74,7 @@ public class ReconstructionController {
 
         validateBatch(files);
         final List<Source> sources = toSources(files);
-        return processingFacade.processBatch(sources, ReplayProcessingOptions.full());
+        return timed(ReplayUsageMetrics.OP_RECONSTRUCT, files.length, () -> processingFacade.processBatch(sources, ReplayProcessingOptions.full()));
     }
 
     @PostMapping(value = "/process", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -83,7 +88,41 @@ public class ReconstructionController {
                 ? ReplayProcessingOptions.full()
                 : ReplayProcessingOptions.summaryOnly();
 
-        return processingFacade.processBatch(toSources(files), options);
+        return timed(ReplayUsageMetrics.OP_PROCESS, files.length, () -> processingFacade.processBatch(toSources(files), options));
+    }
+
+    /** 执行并统计回放解析使用指标（成功与异常都记录；无 ReplayUsageMetrics 时原样执行）。 */
+    private <T> T timed(final String operation, final int fileCount, final ThrowingSupplier<T> body) throws IOException {
+        if (usageMetrics == null) {
+            return invoke(body);
+        }
+        try {
+            return usageMetrics.timed(operation, fileCount, body::get);
+        } catch (final IOException e) {
+            throw e;
+        } catch (final RuntimeException e) {
+            // 保留 runtime 异常身份，使 @ExceptionHandler(IllegalArgumentException.class) 等映射仍生效
+            throw e;
+        } catch (final Exception e) {
+            throw new IOException(e);
+        }
+    }
+
+    private static <T> T invoke(final ThrowingSupplier<T> body) throws IOException {
+        try {
+            return body.get();
+        } catch (final IOException e) {
+            throw e;
+        } catch (final RuntimeException e) {
+            throw e;
+        } catch (final Exception e) {
+            throw new IOException(e);
+        }
+    }
+
+    @FunctionalInterface
+    private interface ThrowingSupplier<T> {
+        T get() throws Exception;
     }
 
     // ---- 异常映射（仅本控制器；返回稳定错误码文本，供前端本地化） ----

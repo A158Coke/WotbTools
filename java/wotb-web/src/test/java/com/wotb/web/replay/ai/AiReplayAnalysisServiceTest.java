@@ -1637,17 +1637,15 @@ class AiReplayAnalysisServiceTest {
     }
 
     @Test void realLogCaptureDoesNotContainSecret() throws IOException {
-        final java.util.logging.Logger julLogger = java.util.logging.Logger.getLogger("com.wotb.web.replay.ai.AiReplayAnalysisService");
-        final java.util.logging.Level oldLevel = julLogger.getLevel();
-        julLogger.setLevel(java.util.logging.Level.ALL);
-        final java.util.List<java.util.logging.LogRecord> captured = new java.util.ArrayList<>();
-        final java.util.logging.Handler handler = new java.util.logging.Handler() {
-            { setLevel(java.util.logging.Level.ALL); }
-            public void publish(final java.util.logging.LogRecord record) { captured.add(record); }
-            public void flush() {}
-            public void close() {}
-        };
-        julLogger.addHandler(handler);
+        final ch.qos.logback.classic.Logger logbackLogger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(
+                        "com.wotb.web.replay.ai.AiReplayAnalysisService");
+        final ch.qos.logback.classic.Level oldLevel = logbackLogger.getLevel();
+        logbackLogger.setLevel(ch.qos.logback.classic.Level.ALL);
+        final ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logbackLogger.addAppender(appender);
         try {
             responseStatus = 401;
             responseBody = "{\"error\":\"x-api-key=my-secret-key-456\"}";
@@ -1658,11 +1656,10 @@ class AiReplayAnalysisServiceTest {
             assertThrows(AiUpstreamException.class,
                     () -> service.analyzeSingleTeamContext(context));
             boolean foundWarning = false;
-            for (final java.util.logging.LogRecord record : captured) {
-                if (record.getLevel() == java.util.logging.Level.WARNING) {
+            for (final ch.qos.logback.classic.spi.ILoggingEvent event : appender.list) {
+                if (event.getLevel() == ch.qos.logback.classic.Level.WARN) {
                     foundWarning = true;
-                    final String msg = record.getMessage();
-                    final String full = msg + " " + java.util.Arrays.toString(record.getParameters());
+                    final String full = event.getFormattedMessage();
                     assertTrue(full.contains("AI_AUTHENTICATION_ERROR"), "Log must contain error code: " + full);
                     assertTrue(full.contains("401"), "Log must contain status: " + full);
                     assertTrue(full.contains("correlationId="), "Log must contain correlationId: " + full);
@@ -1674,8 +1671,8 @@ class AiReplayAnalysisServiceTest {
             }
             assertTrue(foundWarning, "Must have captured a WARNING log");
         } finally {
-            julLogger.removeHandler(handler);
-            julLogger.setLevel(oldLevel);
+            logbackLogger.detachAppender(appender);
+            logbackLogger.setLevel(oldLevel);
         }
     }
 
