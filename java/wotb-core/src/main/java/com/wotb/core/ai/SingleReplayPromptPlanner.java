@@ -591,9 +591,8 @@ public final class SingleReplayPromptPlanner {
     // ========== 辅助方法 ==========
 
     private int effectiveInputLimit() {
-        final int fromMaxInput = singleReplayMaxInputTokens;
         final int fromContextWindow = contextWindowTokens - maxOutputTokens - promptSafetyMarginTokens;
-        return Math.min(fromMaxInput, Math.max(0, fromContextWindow));
+        return Math.clamp(fromContextWindow, 0, singleReplayMaxInputTokens);
     }
 
     private int estimateTotalTokens(final String systemPrompt, final String userContent) {
