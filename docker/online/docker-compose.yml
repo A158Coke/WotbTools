@@ -1,6 +1,13 @@
 # 开发者本地构建：从源码编译镜像并启动四容器。
 # 用法：
 #   cd docker/online && docker compose up -d --build
+# Log rotation: 20MB per file, max 3 files (shared by all services)
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:18-alpine
@@ -17,6 +24,7 @@ services:
       timeout: 3s
       retries: 10
     restart: unless-stopped
+    logging: *default-logging
 
   keycloak:
     build:
@@ -35,6 +43,7 @@ services:
     ports:
       - "8080:8080"
     restart: unless-stopped
+    logging: *default-logging
 
   wotb-backend:
     build:
@@ -67,6 +76,7 @@ services:
       REPLAY_COORDINATE_HALF_EXTENT: ${REPLAY_COORDINATE_HALF_EXTENT:-250}
       REPLAY_COORDINATE_CLAMP_TOLERANCE: ${REPLAY_COORDINATE_CLAMP_TOLERANCE:-12.5}
     restart: unless-stopped
+    logging: *default-logging
 
   wotb-frontend:
     build:
@@ -81,6 +91,71 @@ services:
       - wotb-backend
       - keycloak
     restart: unless-stopped
+    logging: *default-logging
+
+  # Observability stack: Prometheus / Loki / Alloy / Grafana (docker-internal only)
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=168h
+      - --storage.tsdb.retention.size=2GB
+    volumes:
+      - ../../deploy/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      - wotb-backend
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 384m
+
+  loki:
+    image: grafana/loki:3.3.2
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ../../deploy/observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 256m
+
+  alloy:
+    image: grafana/alloy:v1.4.2
+    command:
+      - run
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../../deploy/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+    depends_on:
+      - loki
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 128m
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER is required}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-https://monitor.wotbtools.com}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      OBSERVABILITY_ENVIRONMENT: ${OBSERVABILITY_ENVIRONMENT:-production}
+    volumes:
+      - ../../deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 256m
 
 volumes:
   postgres_data:
+  prometheus_data:
+  loki_data:
+  grafana_data:

@@ -57,6 +57,12 @@ import com.wotb.core.util.PlayerResultFormat;
 
 
 import com.wotb.web.config.AiModelProperties;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -85,6 +91,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -103,8 +110,7 @@ import java.util.stream.IntStream;
 @Service
 public class AiReplayAnalysisService {
 
-    private static final System.Logger LOGGER =
-            System.getLogger(AiReplayAnalysisService.class.getName());
+    private static final Logger LOGGER = LoggerFactory.getLogger(AiReplayAnalysisService.class);
     private static final double MIN_ROSTER_JACCARD = 0.60;
     private static final double MIN_ROSTER_ACCOUNT_COVERAGE = 0.75;
 
@@ -195,6 +201,13 @@ public class AiReplayAnalysisService {
     private final boolean thinkingEnabled;
     private final String reasoningEffort;
     private final RestClient restClient;
+
+    // ---- å¯è§‚æµ‹æ€§: AI Review æŒ‡æ ‡ (MeterRegistry å¯é€‰æ³¨å…¥, å•å…ƒæµ‹è¯•ä¸º null æ—¶è·³è¿‡) ----
+    @Autowired(required = false)
+    private MeterRegistry meterRegistry;
+    private final AtomicInteger aiReviewInFlight = new AtomicInteger();
+    private Timer aiReviewDuration;
+    private Timer aiUpstreamDuration;
 
     @Autowired
     public AiReplayAnalysisService(final AiModelProperties properties, final AiTokenEstimator tokenEstimator) {
@@ -341,8 +354,8 @@ public class AiReplayAnalysisService {
                     + " > contextWindow=" + contextWindowTokens);
         }
         if (planned.density() != EvidenceDensity.LEVEL_1_COMPRESSED) {
-            LOGGER.log(System.Logger.Level.INFO,
-                    "AI analysis density={0} tokens={1}/{2} budgetSummary={3}",
+            LOGGER.info(
+                    "AI analysis density={} tokens={}/{} budgetSummary={}",
                     planned.density(), planned.estimatedInputTokens(),
                     planned.effectiveInputLimit(), planned.budgetSummary());
         }
@@ -1678,59 +1691,122 @@ public class AiReplayAnalysisService {
     ) {
         final String correlationId = UUID.randomUUID().toString();
         final int requestChars = requestBody.toString().length();
-        checkTokenBudget(requestBody);
-        final ChatCompletionResponse response;
+        final boolean metrics = meterRegistry != null;
+        final Timer.Sample reviewSample = metrics ? Timer.start(meterRegistry) : null;
+        if (metrics) {
+            aiReviewInFlight.incrementAndGet();
+            meterRegistry.counter("wotb_ai_review_requests_total",
+                    "mode", analysisMode).increment();
+        }
+        String result = "success";
+        String errorType = null;
         try {
-            response = restClient.post()
-                    .uri("/chat/completions")
-                    .header("Authorization", "Bearer " + apiKey)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(requestBody)
-                    .retrieve()
-                    .body(ChatCompletionResponse.class);
+            checkTokenBudget(requestBody);
+            final ChatCompletionResponse response;
+            final Timer.Sample upstreamSample = metrics ? Timer.start(meterRegistry) : null;
+            try {
+                response = restClient.post()
+                        .uri("/chat/completions")
+                        .header("Authorization", "Bearer " + apiKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(requestBody)
+                        .retrieve()
+                        .body(ChatCompletionResponse.class);
+            } finally {
+                if (upstreamSample != null) {
+                    upstreamSample.stop(aiUpstreamDuration);
+                }
+            }
+            final String content;
+            try {
+                content = extractContent(response);
+            } catch (final AiUpstreamException e) {
+                logProviderFailure(
+                        null, e.code(), requestChars, analysisMode, correlationId,
+                        "invalid completion envelope");
+                result = "failure";
+                errorType = e.code();
+                throw new AiUpstreamException(e.code(), null, correlationId);
+            }
+            if (!StringUtils.hasText(content)) {
+                logProviderFailure(
+                        null, "AI_EMPTY_RESPONSE", requestChars, analysisMode,
+                        correlationId, "blank completion content");
+                result = "failure";
+                errorType = "AI_EMPTY_RESPONSE";
+                throw new AiUpstreamException("AI_EMPTY_RESPONSE", null, correlationId);
+            }
+
+            // Log actual token usage from API response
+            if (response.usage() != null) {
+                logUsage(response.usage(), analysisMode);
+            }
+
+            return content;
         } catch (final RestClientResponseException e) {
             final int status = e.getStatusCode().value();
             final String code = classifyHttpError(status, e.getResponseBodyAsString());
             logProviderFailure(
                     status, code, requestChars, analysisMode, correlationId,
                     safeProviderSummary(e.getResponseBodyAsString()));
+            result = "failure";
+            errorType = code;
             throw new AiUpstreamException(code, status, correlationId);
         } catch (final ResourceAccessException e) {
             final String code = isTimeout(e) ? "AI_TIMEOUT" : "AI_UPSTREAM_UNAVAILABLE";
             logProviderFailure(
                     null, code, requestChars, analysisMode, correlationId,
                     e.getClass().getSimpleName());
+            result = "failure";
+            errorType = code;
             throw new AiUpstreamException(code, null, correlationId);
         } catch (final RestClientException e) {
             final String code = classifyClientFailure(e);
             logProviderFailure(
                     null, code, requestChars, analysisMode,
                     correlationId, e.getClass().getSimpleName());
+            result = "failure";
+            errorType = code;
             throw new AiUpstreamException(code, null, correlationId);
+        } catch (final IllegalArgumentException e) {
+            // Token é¢„ç®—æ‹’ç»: è¯·æ±‚æœªå‘å‡º
+            result = "rejected";
+            throw e;
+        } finally {
+            if (metrics) {
+                if (reviewSample != null) {
+                    reviewSample.stop(aiReviewDuration);
+                }
+                aiReviewInFlight.decrementAndGet();
+                meterRegistry.counter("wotb_ai_review_results_total",
+                        "result", result).increment();
+                if (errorType != null) {
+                    meterRegistry.counter("wotb_ai_review_errors_total",
+                            "type", errorType).increment();
+                }
+            }
         }
+    }
 
-        final String content;
-        try {
-            content = extractContent(response);
-        } catch (final AiUpstreamException e) {
-            logProviderFailure(
-                    null, e.code(), requestChars, analysisMode, correlationId,
-                    "invalid completion envelope");
-            throw new AiUpstreamException(e.code(), null, correlationId);
+    /**
+     * åˆå§‹åŒ–å¯è§‚æµ‹æ€§æŒ‡æ ‡ï¼ˆä»…å½“ MeterRegistry å¯ç”¨æ—¶ï¼›å•å…ƒæµ‹è¯•ä¸­ä¸º null åˆ™è·³è¿‡ï¼‰ã€‚
+     */
+    @PostConstruct
+    void initMetrics() {
+        if (meterRegistry == null) {
+            return;
         }
-        if (!StringUtils.hasText(content)) {
-            logProviderFailure(
-                    null, "AI_EMPTY_RESPONSE", requestChars, analysisMode,
-                    correlationId, "blank completion content");
-            throw new AiUpstreamException("AI_EMPTY_RESPONSE", null, correlationId);
-        }
-
-        // Log actual token usage from API response
-        if (response.usage() != null) {
-            logUsage(response.usage(), analysisMode);
-        }
-
-        return content;
+        aiReviewDuration = Timer.builder("wotb_ai_review_duration_seconds")
+                .description("AI Review æ€»è€—æ—¶ï¼ˆå«ä¸Šæ¸¸è°ƒç”¨ï¼‰")
+                .register(meterRegistry);
+        aiUpstreamDuration = Timer.builder("wotb_ai_upstream_duration_seconds")
+                .description("AI ä¸Šæ¸¸ API è°ƒç”¨è€—æ—¶")
+                .register(meterRegistry);
+        Gauge.builder(
+                        "wotb_ai_review_in_flight",
+                        aiReviewInFlight, AtomicInteger::get)
+                .description("å½“å‰æ­£åœ¨å¤„ç†çš„ AI Review æ•°é‡")
+                .register(meterRegistry);
     }
 
     @SuppressWarnings("unchecked")
@@ -1825,10 +1901,9 @@ public class AiReplayAnalysisService {
             final String correlationId,
             final String summary
     ) {
-        LOGGER.log(
-                System.Logger.Level.WARNING,
-                "AI provider failure provider=DeepSeek model={0} status={1} code={2} "
-                        + "requestChars={3} mode={4} correlationId={5} summary={6}",
+        LOGGER.warn(
+                "AI provider failure provider=DeepSeek model={} status={} code={} "
+                        + "requestChars={} mode={} correlationId={} summary={}",
                 model,
                 status == null ? "N/A" : status,
                 code,
@@ -1840,9 +1915,9 @@ public class AiReplayAnalysisService {
 
     private void logUsage(final ChatCompletionResponse.Usage usage, final String analysisMode) {
         if (usage == null) return;
-        LOGGER.log(System.Logger.Level.INFO,
-                "AI usage model={0} mode={1} prompt_tokens={2} completion_tokens={3} "
-                + "total_tokens={4} reasoning_tokens={5} cache_hit={6} cache_miss={7}",
+        LOGGER.info(
+                "AI usage model={} mode={} prompt_tokens={} completion_tokens={} "
+                + "total_tokens={} reasoning_tokens={} cache_hit={} cache_miss={}",
                 model, analysisMode,
                 usage.promptTokens(),
                 usage.completionTokens(),
@@ -2081,9 +2156,7 @@ public class AiReplayAnalysisService {
             features = new DefaultPlayerBattleFeatureExtractor()
                     .extract(result.reconstruction(), recorder, result.battle());
         } catch (RuntimeException e) {
-            System.getLogger("AiReplayAnalysisService").log(
-                    System.Logger.Level.WARNING,
-                    "Feature extraction failed, falling back: {0}", e.getMessage());
+            LOGGER.warn("Feature extraction failed, falling back: {}", e.getMessage());
             return analyze(result.battle(), result.reconstruction());
         }
 

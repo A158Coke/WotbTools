@@ -1,0 +1,13 @@
+# Grafana Dashboard provisioning — WotBTools 观测栈
+# Dashboard JSON 提交到仓库，容器重建后自动重新加载。
+apiVersion: 1
+
+providers:
+  - name: WotBTools
+    orgId: 1
+    folder: ""
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
