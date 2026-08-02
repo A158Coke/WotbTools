@@ -6,18 +6,22 @@ import com.wotb.web.admin.exception.AdminInternalException;
 import com.wotb.web.replay.exception.ReplayBusyException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.apache.catalina.connector.ClientAbortException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotWritableException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -37,6 +41,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(IOException.class)
     public ResponseEntity<Map<String, Object>> handleIOException(final IOException e) {
+        if (isClientDisconnect(e)) {
+            // client/proxy disconnected (Broken pipe, Connection reset): response may be committed,
+            // do not attempt to write error JSON; downgrade to WARN without stack trace.
+            log.warn("Client disconnected while writing response: {}", e.getMessage());
+            return null;
+        }
         log.warn("IO error: {}", e.getMessage());
         return ResponseEntity.badRequest().body(body("IO_ERROR"));
     }
@@ -111,12 +121,51 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneral(final Exception e) {
+        if (isClientDisconnect(e)) {
+            log.warn("Client disconnected while writing response: {}", e.getMessage());
+            return null;
+        }
         log.error("Unhandled exception", e);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(body("INTERNAL_ERROR"));
     }
 
     // ── 辅助 ────────────────────────────────────────────────────────
+
+    /**
+     * Traverse the cause chain to detect a client/proxy disconnect while writing the response.
+     *
+     * <p>Matches: ClientAbortException (Tomcat), HttpMessageNotWritableException,
+     * AsyncRequestNotUsableException; also any IOException whose message contains
+     * "broken pipe" / "connection reset" / "forcibly closed".</p>
+     *
+     * <p>Package-private static so unit tests can verify cause-chain detection directly.</p>
+     */
+    static boolean isClientDisconnect(final Throwable t) {
+        Throwable current = t;
+        while (current != null) {
+            if (current instanceof ClientAbortException
+                    || current instanceof HttpMessageNotWritableException
+                    || current instanceof AsyncRequestNotUsableException) {
+                return true;
+            }
+            if (current instanceof IOException && isResetMessage(current.getMessage())) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private static boolean isResetMessage(final String message) {
+        if (message == null) {
+            return false;
+        }
+        final String lower = message.toLowerCase(Locale.ROOT);
+        return lower.contains("broken pipe")
+                || lower.contains("connection reset")
+                || lower.contains("forcibly closed");
+    }
 
     /** 仅允许稳定英文错误码出现在 API 中，避免回显异常细节或本地化文案。 */
     private static String errorCode(final String value, final String fallback) {
