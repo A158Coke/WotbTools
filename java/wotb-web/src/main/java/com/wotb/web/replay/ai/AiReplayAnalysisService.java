@@ -200,7 +200,7 @@ public class AiReplayAnalysisService {
     private final String reasoningEffort;
     private final RestClient restClient;
 
-    // ---- å¯è§‚æµ‹æ€§: AI Review æŒ‡æ ‡ (MeterRegistry å¯é€‰æ³¨å…¥, å•å…ƒæµ‹è¯•ä¸º null æ—¶è·³è¿‡) ----
+    // ---- 可观测性: AI Review 指标 (MeterRegistry 可选注入, 单元测试为 null 时跳过) ----
     @Autowired(required = false)
     private MeterRegistry meterRegistry;
     private Timer aiUpstreamDuration;
@@ -1688,10 +1688,16 @@ public class AiReplayAnalysisService {
         final String correlationId = UUID.randomUUID().toString();
         final int requestChars = requestBody.toString().length();
         final boolean metrics = meterRegistry != null;
+        // Token budget 检查必须先于任何指标统计：被拒的请求不产生 upstream request/duration/error。
+        checkTokenBudget(requestBody);
+        // 只有检查通过、准备执行上游调用时，才启动 Timer 并计数。
         final Timer.Sample upstreamSample = metrics ? Timer.start(meterRegistry) : null;
+        if (metrics) {
+            meterRegistry.counter("wotb_ai_upstream_requests_total",
+                    "mode", analysisMode).increment();
+        }
         String errorType = null;
         try {
-            checkTokenBudget(requestBody);
             final ChatCompletionResponse response;
             try {
                 response = restClient.post()
@@ -1702,6 +1708,7 @@ public class AiReplayAnalysisService {
                         .retrieve()
                         .body(ChatCompletionResponse.class);
             } finally {
+                // 网络成功与异常都必须停止 Timer
                 if (upstreamSample != null) {
                     upstreamSample.stop(aiUpstreamDuration);
                 }
@@ -1752,23 +1759,16 @@ public class AiReplayAnalysisService {
                     correlationId, e.getClass().getSimpleName());
             errorType = code;
             throw new AiUpstreamException(code, null, correlationId);
-        } catch (final IllegalArgumentException e) {
-            // Token budget rejected: request not sent to upstream
-            throw e;
         } finally {
-            if (metrics) {
-                meterRegistry.counter("wotb_ai_upstream_requests_total",
-                        "mode", analysisMode).increment();
-                if (errorType != null) {
-                    meterRegistry.counter("wotb_ai_upstream_errors_total",
-                            "type", errorType).increment();
-                }
+            if (metrics && errorType != null) {
+                meterRegistry.counter("wotb_ai_upstream_errors_total",
+                        "type", errorType).increment();
             }
         }
     }
 
     /**
-     * åˆå§‹åŒ–å¯è§‚æµ‹æ€§æŒ‡æ ‡ï¼ˆä»…å½“ MeterRegistry å¯ç”¨æ—¶ï¼›å•å…ƒæµ‹è¯•ä¸­ä¸º null åˆ™è·³è¿‡ï¼‰ã€‚
+     * 初始化可观测性指标（仅当 MeterRegistry 可用时；单元测试中为 null 则跳过）。
      */
     @PostConstruct
     void initMetrics() {

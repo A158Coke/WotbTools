@@ -151,72 +151,6 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 0.05
-              },
-              {
-                "color": "red",
-                "value": 0.1
-              }
-            ]
-          },
-          "unit": "percentunit"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 0
-      },
-      "id": 3,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(rate(wotb_replay_results_total{result=\"failure\"}[5m])) / clamp_min(sum(rate(wotb_replay_requests_total[5m])), 0.0001)",
-          "refId": "A"
-        }
-      ],
-      "title": "解析失败率",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
             "mode": "palette-classic"
           },
           "custom": {
@@ -268,7 +202,7 @@
         "x": 0,
         "y": 4
       },
-      "id": 4,
+      "id": 3,
       "options": {
         "legend": {
           "calcs": [],
@@ -354,7 +288,7 @@
         "x": 12,
         "y": 4
       },
-      "id": 5,
+      "id": 4,
       "options": {
         "legend": {
           "calcs": [],
@@ -440,7 +374,7 @@
         "x": 0,
         "y": 12
       },
-      "id": 6,
+      "id": 5,
       "options": {
         "legend": {
           "calcs": [],
@@ -495,92 +429,6 @@
           "color": {
             "mode": "palette-classic"
           },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "req/s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 12
-      },
-      "id": 7,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum by (operation, result) (rate(wotb_replay_results_total[5m]))",
-          "legendFormat": "{{operation}} {{result}}",
-          "refId": "A"
-        }
-      ],
-      "title": "成功 / 失败 (按操作)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -601,7 +449,7 @@
         "x": 0,
         "y": 20
       },
-      "id": 8,
+      "id": 6,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -670,7 +518,7 @@
         "x": 0,
         "y": 28
       },
-      "id": 9,
+      "id": 7,
       "options": {
         "dedupStrategy": "none",
         "enableLogDetails": true,
@@ -687,7 +535,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{container_name=\"wotb-backend\"} | json | level=\"ERROR\" | requestId=~\"${requestId:.*}\"",
+          "expr": "{container_name=\"wotb-backend\"} | json | level=\"ERROR\" | requestId=~\"${requestId:raw}\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -705,17 +553,6 @@
   ],
   "templating": {
     "list": [
-      {
-        "current": {},
-        "hide": 0,
-        "label": "operation",
-        "name": "operation",
-        "options": [],
-        "query": "label_values(wotb_replay_requests_total, operation)",
-        "refresh": 2,
-        "skipUrlSync": false,
-        "type": "query"
-      },
       {
         "current": {
           "selected": true,

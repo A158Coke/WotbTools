@@ -1546,7 +1546,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{container_name=\"wotb-backend\"} | json | level=\"ERROR\" | requestId=~\"${requestId:.*}\"",
+          "expr": "{container_name=\"wotb-backend\"} | json | level=\"ERROR\" | requestId=~\"${requestId:raw}\"",
           "queryType": "range",
           "refId": "A"
         }
