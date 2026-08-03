@@ -12,17 +12,18 @@
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
+          "decimals": 0,
           "mappings": [],
           "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
       "id": 1,
       "options": {
         "colorMode": "value",
-        "graphMode": "area",
+        "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false },
@@ -31,18 +32,12 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(wotb_replay_requests_total{operation!=\"ai_review\"})",
-          "legendFormat": "累计",
+          "expr": "round(sum(increase(wotb_replay_requests_total{operation=\"preview\"}[$__range]))) or vector(0)",
+          "legendFormat": "回放预览",
           "refId": "A"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(increase(wotb_replay_requests_total{operation!=\"ai_review\"}[$__range]))",
-          "legendFormat": "区间",
-          "refId": "B"
         }
       ],
-      "title": "回放解析使用次数",
+      "title": "回放预览次数（所选区间）",
       "type": "stat"
     },
     {
@@ -50,17 +45,18 @@
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
+          "decimals": 0,
           "mappings": [],
           "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
       "id": 2,
       "options": {
         "colorMode": "value",
-        "graphMode": "area",
+        "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false },
@@ -69,18 +65,78 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(wotb_ai_review_requests_total)",
-          "legendFormat": "累计",
+          "expr": "round(sum(increase(wotb_ai_review_requests_total[$__range]))) or vector(0)",
+          "legendFormat": "AI Review",
           "refId": "A"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(increase(wotb_ai_review_requests_total[$__range]))",
-          "legendFormat": "区间",
-          "refId": "B"
         }
       ],
-      "title": "AI Review 使用次数",
+      "title": "AI Review 请求次数（所选区间）",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "round(sum(increase(wotb_ai_review_results_total{result=\"success\"}[$__range]))) or vector(0)",
+          "legendFormat": "成功",
+          "refId": "A"
+        }
+      ],
+      "title": "AI Review 成功次数（所选区间）",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "round(sum by (result) (increase(wotb_ai_review_results_total{result!=\"success\"}[$__range]))) or vector(0)",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ],
+      "title": "AI Review 未成功次数（所选区间）",
       "type": "stat"
     },
     {
@@ -106,14 +162,15 @@
             "stacking": { "group": "A", "mode": "none" },
             "thresholdsStyle": { "mode": "off" }
           },
+          "decimals": 0,
           "mappings": [],
           "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
-      "id": 3,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 5,
       "options": {
         "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "desc" }
@@ -121,12 +178,12 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (operation) (increase(wotb_replay_requests_total{operation!=\"ai_review\"}[$__range]))",
+          "expr": "round(sum by (operation) (increase(wotb_replay_requests_total[$__range])))",
           "legendFormat": "{{operation}}",
           "refId": "A"
         }
       ],
-      "title": "回放解析按操作分布（区间）",
+      "title": "回放解析请求按操作分布（所选区间）",
       "type": "timeseries"
     },
     {
@@ -158,8 +215,8 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
-      "id": 4,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "id": 6,
       "options": {
         "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "desc" }
@@ -185,6 +242,6 @@
   "timezone": "browser",
   "title": "WotBTools 使用统计",
   "uid": "wotbtools-usage",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
