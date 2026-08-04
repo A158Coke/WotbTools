@@ -288,11 +288,18 @@ jobs:
               echo "ERROR: GRAFANA_ADMIN_USER secret is not configured." >&2
               exit 1
             fi
+            if [ -z "${{ secrets.GRAFANA_MCP_TOKEN }}" ]; then
+              echo "ERROR: GRAFANA_MCP_TOKEN secret is not configured." >&2
+              exit 1
+            fi
             docker rm -f wotb wotb-backend wotb-frontend 2>/dev/null || true
+            # 清理手动 docker run 的 mcp-grafana 容器，避免与 compose 管理的 8000 端口冲突
+            docker rm -f wotb-mcp-grafana 2>/dev/null || true
             # Observability: Grafana 凭据写入权限 600 的 .env（不落入 compose 文件本身）
             umask 177
             cat > .env <<'ENDENV'
             GRAFANA_ADMIN_USER=${{ secrets.GRAFANA_ADMIN_USER }}
+            GRAFANA_MCP_TOKEN=${{ secrets.GRAFANA_MCP_TOKEN }}
             GRAFANA_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
             ENDENV
             chmod 600 .env
@@ -411,7 +418,7 @@ jobs:
                 logging: *default-logging
                 mem_limit: 128m
               grafana:
-                image: grafana/grafana:11.4.0
+                image: grafana/grafana:11.6.16
                 environment:
                   GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER is required}
                   GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
@@ -429,6 +436,25 @@ jobs:
                 restart: unless-stopped
                 logging: *default-logging
                 mem_limit: 256m
+              mcp-grafana:
+                image: grafana/mcp-grafana:latest
+                command:
+                  - --transport=sse
+                  - --address=0.0.0.0:8000
+                  - -t
+                  - streamable-http
+                  - -allowed-hosts
+                  - monitor.wotbtools.com
+                environment:
+                  GRAFANA_URL: http://grafana:3000
+                  GRAFANA_SERVICE_ACCOUNT_TOKEN: ${GRAFANA_MCP_TOKEN:?GRAFANA_MCP_TOKEN is required}
+                ports:
+                  - "127.0.0.1:8000:8000"
+                depends_on:
+                  - grafana
+                restart: unless-stopped
+                logging: *default-logging
+                mem_limit: 128m
             volumes:
               postgres_data:
               prometheus_data:
