@@ -54,7 +54,8 @@
 | Prometheus | `prom/prometheus:v2.55.1` | 每 15s 抓取 backend 指标，TSDB 保留 7 天 / 上限 2GiB |
 | Loki | `grafana/loki:3.3.2` | 接收 Alloy 推送的 backend 容器日志，保留 7 天 |
 | Alloy | `grafana/alloy:v1.4.2` | 通过 docker.sock 只采集 `wotb-backend` 容器 stdout/stderr → Loki |
-| Grafana | `grafana/grafana:11.4.0` | 可视化，provisioning 自动配置 Datasource + Dashboard |
+| Grafana | `grafana/grafana:11.6.16` | 可视化，provisioning 自动配置 Datasource + Dashboard |
+| Grafana MCP server | `grafana/mcp-grafana:latest` | 供 opencode/Claude 等 AI 客户端经 `https://monitor.wotbtools.com/mcp` 访问 Grafana（StreamableHTTP；SA Token 认证；仅绑 `127.0.0.1:8000`，Caddy 按 `/mcp*` 路径分流） |
 
 **关键安全边界**
 
@@ -101,6 +102,7 @@
 3. **GitHub Secrets**（生产部署 CI 使用）：在仓库 Settings → Secrets and variables → Actions 配置：
    - `GRAFANA_ADMIN_USER`：Grafana 管理员用户名（如 `admin`）
    - `GRAFANA_ADMIN_PASSWORD`：强密码
+   - `GRAFANA_MCP_TOKEN`：Grafana Service Account Token（供 `mcp-grafana` 容器使用，须有读取/查询权限）
    - 生成密码示例：`openssl rand -base64 24`
    - 部署时 CI 将凭据写入生产服务器 `/opt/wotb/.env`（`chmod 600`），compose 使用 `required` 语法引用，**Grafana 密码不落入 compose 文件本身**；密码为空时部署脚本中断（见 `deploy.yml`）。
 
