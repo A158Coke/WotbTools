@@ -880,10 +880,7 @@ entity 可通过 nickname 连接，置信度为 `INFERRED`。同名、观战/非
 - 阵型按 `15s` 分窗，X/Z 距离 `<= 100m` 的成员属于同一连通簇；
 - 团队特征仅接受 `|x|, |z| <= 1050 (1000 + 50 CLAMP_TOLERANCE_RAW)`、`|y| <= 200` 的位置，以及 finite、非负时间戳。
 
-发送给 AI 的是压缩特征，不是原始 event stream。确定性预算为：最多 15 名成员、每人
-6 个移动段、20 个阵型阶段、20 个交火段、30 个关键事件、10 个 perspective、30,000
-字符。超过预算时截断并追加 `AI_INPUT_TRUNCATED`。文件名、昵称、地图名和证据文本以
-JSON 字符串形式界定，并在 system prompt 中明确为不可信数据，而不是指令。
+发送给 AI 的是压缩特征，不是原始 event stream。prompt 长度由 token 估算器（`AiTokenEstimator`）按 `AiModelProperties` 预算控制（`singleReplayMaxInputTokens` 等），不再使用固定成员数/事件数/字符数截断（历史文档中的 15 名成员、30,000 字符等固定上限已移除）；超限时追加 `AI_INPUT_TRUNCATED` limitation。文件名、昵称、地图名和证据文本以 JSON 字符串形式界定，并在 system prompt 中明确为不可信数据，而不是指令。
 
 #### 错误处理
 

@@ -13,7 +13,7 @@
 
 《坦克世界闪击战》（World of Tanks Blitz）工具集。
 
-已上线工具：从 `.wotbreplay` 回放文件中提取战斗数据导出 Excel、在线伤害排行榜、Keycloak 认证。
+已上线工具：从 `.wotbreplay` 回放文件中提取战斗数据导出 Excel、在线伤害排行榜、实时评分（Rating V2）、AI 战术复盘、Keycloak 认证。
 
 入口：[https://wotbtools.com](https://wotbtools.com)
 
@@ -37,7 +37,7 @@
 文档入口：
 
 - 本文件：项目概览、Java 版使用与构建。
-- [HANDOVER.md](docs/HANDOVER.md)：**交接 / AI 工具迁移总入口**（环境坑、CI/CD、部署、约定一站式）。
+- [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)：维护上下文、架构、回放格式、i18n、测试策略、部署约定（接手维护或 AI 迁移前必读）。
 - [java/README.md](java/README.md)：Java / Web 版运行、接口、部署。
 - [CHANGELOG.md](docs/CHANGELOG.md)：版本历史（对外）。
 - [TODO.md](docs/TODO.md)：待办事项。
@@ -64,7 +64,7 @@
 - 空白元数据兜底：回放里仅含空格的录像者、昵称、版本号、地图翻译或时间戳会按缺失值处理，避免污染排行榜记录、汇总昵称和时间解析。
 - GUI 支持选择文件或文件夹、预览数据、合并汇总或逐场导出。
 - 回放预览列选择器会把单场/汇总的列可见性与排序分别记到 `localStorage`，新增列会自动补到当前顺序末尾。
-- Java / Web 版提供 `/api/preview`、`/api/export`、`/api/columns`、`/api/rating`、`/api/health`。
+- Java / Web 版提供 `/api/preview`、`/api/export`、`/api/columns`、`/api/rating`、`/api/health`，以及 AI 复盘相关 `/api/replay/analyze`、`/api/replay/reconstruct-batch`、`/api/replay/process`。
 - **AI 战术复盘**：随机战斗提供录像者个人报告；训练房和联赛提供录像者所在整队的 Team Perspective 报告，支持单/多团队模式、同队视角去重、同场双方独立分析，以及无事件流时的权威结算 fallback。团队报告明确区分结算总量与事件流观测子集，不推断未点亮敌人的位置。
 - **团队报告三语界面**：AI 复盘页展示 perspective team、重复视角、完整/降级覆盖率和数据 limitations；稳定英文错误码由 zh/en/ru 词典本地化。
 - 回放上传限制为单文件 20 MiB、最多 100 个文件、请求合计 200 MiB；解析器还限制 ZIP 解压、pickle/protobuf 分配和单实例并发，容量满时返回 `REPLAY_BUSY`。
@@ -147,9 +147,9 @@ npm run build
 | `java/wotb-web/`              | Spring Boot 4 应用：REST API + Leaderboard + Flyway |
 | `frontend/`                   | Vue 3 前端（含工具集主页 HomePage.vue、三语 locale、共享主题变量） |
 | `frontend/src/data/`          | 纯前端数据（版本历史 versions.json） |
-| `docker/online/`              | 开发者本地：`docker compose up -d --build` 编译启动（四容器含 keycloak） |
+| `docker/online/`              | 开发者本地：`docker compose up -d --build` 编译启动（八服务：postgres + keycloak + backend + frontend + prometheus + loki + alloy + grafana） |
 | `docker/`                     | Dockerfile.backend / Dockerfile.frontend / keycloak (realm) |
-| `deploy/`                     | nginx、初始化 SQL、PostgreSQL 双库备份/检查/恢复脚本 |
+| `deploy/`                     | nginx、初始化 SQL、PostgreSQL 双库备份/检查/恢复脚本；`deploy/observability/` 为 Prometheus/Loki/Alloy/Grafana 配置与看板 |
 | `.github/workflows/`          | 测试门禁、增量部署、每日数据库备份与线上诊断 |
 
 ## 数据来源与限制
