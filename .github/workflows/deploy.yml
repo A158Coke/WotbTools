@@ -289,10 +289,7 @@ jobs:
               echo "ERROR: GRAFANA_ADMIN_USER secret is not configured." >&2
               exit 1
             fi
-            # TEMP-DIAG: 输出 GRAFANA_MCP_TOKEN 长度用于定位（值本身不会打印）
-            MCP_TOKEN_VALUE="${{ secrets.GRAFANA_MCP_TOKEN }}"
-            echo "TEMP-DIAG MCP_TOKEN_LENGTH=${#MCP_TOKEN_VALUE}"
-            if [ -z "$MCP_TOKEN_VALUE" ]; then
+            if [ -z "${{ secrets.GRAFANA_MCP_TOKEN }}" ]; then
               echo "ERROR: GRAFANA_MCP_TOKEN secret is not configured." >&2
               exit 1
             fi
