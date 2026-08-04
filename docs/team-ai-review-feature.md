@@ -23,7 +23,7 @@
 ```
 ReconstructionController.analyze()
   -> AiReplayReviewService.analyze(MultipartFile[])
-    -> validateBatchSize() [16-file guard]
+    -> validateBatchSize() [1-file guard]
     -> file validation (extension/empty/size/total)
     -> DefaultReplayProcessingFacade.process()
     -> BatchAnalyzer.analyze()
@@ -38,11 +38,11 @@ Controller 只负责 HTTP binding + 委托 Service。Service 接管 validate / p
 
 ## 3. 上传边界
 
-- AI Review 单次最多 16 个原始回放文件
+- AI Review 单次最多 1 个原始回放文件
 - 原始数量检查早于 getBytes / hash / parsing
 - 空文件和重复文件计入原始数量
 - 单文件 <= 20MB，总请求 <= 200MB
-- `/api/replay/process` 和 `/api/replay/reconstruct-batch` 不受 16 文件限制
+- `/api/replay/process` 和 `/api/replay/reconstruct-batch` 不受 1 文件限制
 
 ## 4. Grouping 与 Partition
 
@@ -103,11 +103,11 @@ Enemy-only damage 不得延长 Team phase。
 
 ### 预构建与原子写入
 
-- Budget planning 使用预构建 mandatory/high-priority block 的 Java String 字符长度。当前 `MAX_INPUT_CHARS=30,000` 按 `String.length()` 计算，不是 UTF-8 byte length。
+- Budget planning 使用 `AiTokenEstimator` 估算 token（保守系数 `codePointCount * 1.25`），输入硬上限由 `AiModelProperties.singleReplayMaxInputTokens` 配置（默认 940,000）；不再使用固定字符数（历史 `MAX_INPUT_CHARS=30,000` 按 `String.length()` 计数的实现已移除）。
 - `appendRequiredBlock()` 保证 block 整体写入或抛出异常
 - 被截断的 unit 加入 `truncatedUnitIds`
 - `globalLimitations` 包含 `AI_INPUT_TRUNCATED`
-- Prompt 总长度 <= 30,000 字符
+- 总 token 预算由 `BudgetWriter.finish(estimator, maxInputTokens, ...)` 在写入时判定，超限标记 truncated
 - Optional 截断不影响其他 perspective 的 mandatory/high-priority facts
 
 ## 8. Result Contract
@@ -173,7 +173,7 @@ Enemy-only damage 不得延长 Team phase。
 - `AnalysisLimitations.vue`：显示 global limitations（通过 `localizeLimitation()` 本地化）
 - `AnalysisUnitItem.vue`：显示 per-unit limitations
 - 所有 limitation code 去重合并
-- 文件交互：最多 16 个，累计选择，超限拒绝，单文件删除，clear all
+- 文件交互：单文件选择（替换而非追加），超限拒绝，单文件删除，clear all
 - Fetch Response body 只读取一次（text -> JSON.parse）
 - JSON structured error 使用 `code`/`maxFiles`/`actualFiles`
 - zh/en/ru 三语
@@ -182,6 +182,6 @@ Enemy-only damage 不得延长 Team phase。
 
 - Custom auth scheme（非 Bearer/Basic/Digest）在 provider body 中不做特定脱敏——统一返回 `[PROVIDER_BODY_REDACTED]`
 - Player path 暂无 prompt omission（`omittedAnalysisUnitCount = 0`）
-- Multi-team 超过 `MAX_PERSPECTIVES`（10）时按 canonical 顺序省略后续 perspective
+- Multi-team 不再有固定 `MAX_PERSPECTIVES` 数量上限；perspective 是否省略由 token 预算（mandatory/high-priority 原子写入）与编排决定，省略单位进入 `truncatedUnitIds`/`omittedAnalysisUnitCount`
 - 不支持 drag-and-drop 文件上传
 - 不要求真实 `.wotbreplay` E2E fixture

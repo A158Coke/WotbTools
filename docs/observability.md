@@ -1,7 +1,7 @@
 # WotBTools 观测系统（Observability）运维文档
 
-> 第一阶段最小可观测系统：**Backend 结构化日志 + requestId、HTTP/AI/Replay 指标、Prometheus + Loki + Grafana + Alloy**。
-> 适用版本：`add-monitor` 分支（第一阶段）。
+> 可观测系统：**Backend 结构化日志 + requestId、HTTP/AI/Replay 指标、Prometheus + Loki + Grafana + Alloy**。
+> 本文件已随 `enhance-monitor` 分支（PR #43/#44）更新至当前实现：三个 Dashboard（Backend Overview / Replay Parser / 使用统计）、AI 指标在服务边界统计、日志安全与保留策略。
 
 ---
 

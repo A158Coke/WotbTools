@@ -7,7 +7,7 @@
 ## ✦ 给接手的一句话
 
 这是个单人维护的 WoT Blitz 回放分析工具（Java core + Spring Boot + Vue + Keycloak，Web 版）。
-动手前读 `AGENTS.md` 和本文件；跨层改动按 `.agents/wotb-sync.md` 的配方；
+动手前读 `.agents/AGENTS.md` 和本文件；跨层改动按 `.agents/wotb-sync.md` 的配方；
 Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；
 改完跑 `mvn -s settings.xml test`、`npm test` 和 `npm run build`；
 提交用中文信息、推 `github-personal`（账号 A158Coke），push main 即自动部署。
@@ -19,17 +19,17 @@ Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；
 | 文档 | 作用 | 何时读 |
 |---|---|---|
 | **本文件 `DEVELOPER_GUIDE.md`** | 开发指南（含环境、架构、部署、约定） | 最先 |
-| [`AGENTS.md`](AGENTS.md) | AI 硬性约定（RULES） | 动手前必读 |
-| [`.agents/wotb-sync.md`](.agents/wotb-sync.md) | 跨层改动检查单（配方 A–G） | 增删/改名数据列、改解析/导出/前端时 |
-| [`docs/replay-data.md`](docs/replay-data.md) | data.wotreplay 事件流格式、protobuf 字段表、死亡时间推算 | 深入回放格式时 |
-| [`docs/rating-system.md`](docs/rating-system.md) | 评分算法细节 | 碰评分时 |
-| [`docs/rating-progress.md`](docs/rating-progress.md) | rating 扩展目标、已完成项、缺口与下一步 | 接手 rating 扩展时 |
-| [`docs/observability.md`](docs/observability.md) | 可观测系统（日志/指标/Grafana/Prometheus/Loki/Alloy）运维与排障 | 动监控、查日志、调保留策略时 |
+| [`.agents/AGENTS.md`](../.agents/AGENTS.md) | AI 硬性约定（RULES） | 动手前必读 |
+| [`.agents/wotb-sync.md`](../.agents/wotb-sync.md) | 跨层改动检查单（配方 A–G） | 增删/改名数据列、改解析/导出/前端时 |
+| [`docs/replay-data.md`](replay-data.md) | data.wotreplay 事件流格式、protobuf 字段表、死亡时间推算 | 深入回放格式时 |
+| [`docs/rating-system.md`](rating-system.md) | 评分算法细节 | 碰评分时 |
+| [`docs/rating-progress.md`](rating-progress.md) | rating 扩展目标、已完成项、缺口与下一步 | 接手 rating 扩展时 |
+| [`docs/observability.md`](observability.md) | 可观测系统（日志/指标/Grafana/Prometheus/Loki/Alloy）运维与排障 | 动监控、查日志、调保留策略时 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本历史（对外） | 了解发布历史 |
-| [`README.md`](README.md) / [`java/README.md`](java/README.md) | 用户向 + 运行/接口/构建 | 跑起来时 |
+| [`README.md`](../README.md) / [`java/README.md`](../java/README.md) | 用户向 + 运行/接口/构建 | 跑起来时 |
 | [`TODO.md`](TODO.md) | 待办（含已完成收尾记录与下一步） | 找下一步做什么 |
 
-> `AGENTS.md` / `wotb-sync.md` 本就是写给"任意 AI/人"的，不绑定特定工具。
+> `.agents/AGENTS.md` / `wotb-sync.md` 本就是写给"任意 AI/人"的，不绑定特定工具。
 
 ---
 
@@ -93,7 +93,8 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 
 ```text
 .
-├── README.md  TODO.md  DEVELOPER_GUIDE.md  LICENSE  .gitignore  AGENTS.md  CHANGELOG.md
+├── README.md  LICENSE  .gitignore  .dockerignore  qodana.yaml
+├── docs/                       # 文档（TODO / DEVELOPER_GUIDE / CHANGELOG / replay-data / rating-system / observability / team-ai-review-feature）
 ├── docker/                       # Docker 构建 + 本地开发 compose
 │   ├── Dockerfile.backend        #   后端镜像：Maven → JRE（Spring Boot :8087）
 │   ├── Dockerfile.frontend       #   前端镜像：Node → nginx（:80）
@@ -116,7 +117,6 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 │   │   ├── sponsor.html
 │   │   └── sponsor-config.js
 │   ├── extended.html             #   Rating V2 独立入口
-│   └── ReplayController.java.java  ...（这个是错的，应该是 web 端点）
 ├── .github/
 │   ├── workflows/deploy.yml      # 测试门禁 + 增量构建/部署
 │   ├── workflows/database-backup.yml # 每日生产双库备份
@@ -143,7 +143,9 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 │   └── sponsor-config.example.json
 ├── .gitignore  .dockerignore  qodana.yaml
 ├── .agents/                      # AI 工具定义
-│   └── skills/ / wotb-sync.md
+│   ├── AGENTS.md                 #   AI 硬性约定（RULES）
+│   ├── wotb-sync.md              #   跨层改动检查单（配方 A–G）
+│   └── skills/                   #   审查类技能（grill-fix / code-smell / column-sync / wotb-sync）
 ```
 
 ### 架构速览
@@ -208,7 +210,7 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 | `DefaultTeamBattleFeatureExtractor` | `wotb-core/.../feature/DefaultTeamBattleFeatureExtractor.java` | perspective team 的队员独立移动、阵型、交火、关键事件与权威聚合 |
 | `TeamBattleFeatureSet` | `wotb-core/.../feature/TeamBattleFeatureSet.java` | 团队特征、覆盖率、权威结算、观测子集与 limitations |
 | `AiReplayAnalysisService` | `wotb-web/.../ai/AiReplayAnalysisService.java` | 玩家/团队 AI 调用、上游错误分类与 context 编排 |
-| `TeamAiPromptBuilder` | `wotb-web/.../ai/TeamAiPromptBuilder.java` | 确定性团队输入压缩和字符/条目预算 |
+| `TeamAiPromptBuilder` | `wotb-web/.../ai/TeamAiPromptBuilder.java` | 确定性团队输入压缩和 token 估算预算（`BudgetWriter` + `AiTokenEstimator`） |
 | `PlayerSideResolver` | `wotb-core/.../processing/PlayerSideResolver.java` | 随机战斗友方/敌方/未知解析（FRIENDLY/ENEMY/UNKNOWN），基于录像者权威 team |
 | `FriendlyEnemyResult` | `wotb-core/.../processing/FriendlyEnemyResult.java` | 三态胜负转换（FRIENDLY_WIN/ENEMY_WIN/DRAW_OR_UNKNOWN） |
 | `PlayerAnalysisPromptFormatter` | `wotb-web/.../ai/PlayerAnalysisPromptFormatter.java` | AI Prompt 格式化（友方/敌方标签，独立于 Excel 导出的 PlayerResultFormat） |
@@ -286,7 +288,7 @@ AI 复盘区分两种 scope，互不混用：
 | `maxOutputTokens` | `AI_MAX_OUTPUT_TOKENS` | 32768 | 单次请求最大输出 |
 | `promptSafetyMarginTokens` | `AI_PROMPT_SAFETY_MARGIN_TOKENS` | 16384 | 安全余量 |
 | `thinkingEnabled` | `AI_THINKING_ENABLED` | true | 是否启用思考模式 |
-| `reasoningEffort` | `AI_REASONING_EFFORT` | high | 推理力度（high/max） |
+| `reasoningEffort` | `AI_REASONING_EFFORT` | max | 推理力度（high/max） |
 
 启动时校验 `totalReserved <= contextWindowTokens`，不合规则 Spring Boot 启动失败。
 
@@ -427,7 +429,7 @@ API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + �
 MVP 只记录**录像者本人**在某场战斗中用某辆车打出的**单场伤害成绩**，不存全场 14 人，不存 replay 原文件。当前后端为单一在线配置，启动依赖 PostgreSQL。
 
 - **数据库配置**：`application.yml` 始终启用 DataSource/JPA/Flyway，`ddl-auto: validate`；本地开发需提供 PostgreSQL 与 `POSTGRES_PASSWORD`。
-- **Schema 来源**：Flyway 迁移 `wotb-web/.../resources/db/migration/V1__init_leaderboard.sql` → `V10__create_user_notifications.sql`。**改表结构必须新增迁移**（`V3__...`），不要改已应用的 V1/V2；实体列与迁移列**逐列对齐**，否则 `validate` 启动即失败。
+- **Schema 来源**：Flyway 迁移 `wotb-web/.../resources/db/migration/V1__init_leaderboard.sql` → `V11__add_boost_completion_confirmation.sql`。**改表结构必须新增迁移**（`V12__...`），不要改已应用的 V1–V11；实体列与迁移列**逐列对齐**，否则 `validate` 启动即失败。
 - **打手资格申请**：`booster_application` 保存玩家申请的 WoTB 账号、两张截图、申请等级、QQ/微信、可接单频率、日在线时间和审核状态；同一 Keycloak 用户只允许存在一个 `NEW`/`REVIEWING` 申请。审批通过由 `BoosterService` 先 flush `booster_profile`，再授予 Keycloak `booster` role；外层事务回滚会撤销新增 role。
 - **打手资料双状态**：`booster_profile.status` 控制资格是否有效；`booster_profile.available` 控制是否手动暂停接单；`boost_request_assignment` 活跃记录数控制是否忙碌。分配打手时必须同时满足 `ACTIVE`、`available=true`、活跃订单数为 0。`GET /api/booster/assignments` 默认返回打手工作台所需的活跃订单详情（需求状态、联系方式、可安排时间、备注）；`GET /api/booster/assignments?includeHistory=true` 供个人中心回看活跃 + 历史订单，服务端会把仍未释放的订单排在前面；`PATCH /api/boost/boosters/my/availability` 允许打手本人切换是否接收新订单；`PATCH /api/booster/assignments/{id}/accept|start|complete|decline` 只允许当前打手操作自己的活跃订单。
 - **仅随机战斗**：只有 `meta.json#arenaBonusType == 1`（随机）的战斗计入；训练房（==2）/娱乐/联赛等其他模式、以及模式未知（null）一律拒绝。`ReplayParser` 解析到 `Battle.arenaBonusType`，策略判断在 `LeaderboardService`。取值经真实样本核实（1=随机、2=训练房）。
@@ -576,15 +578,7 @@ files → DefaultReplayProcessingFacade.processBatch()
 
 ### Team AI 输入预算
 
-| 数据 | 上限 |
-|---|---:|
-| 队员 | 15 |
-| 每名队员移动段 | 6 |
-| 阵型阶段 | 20 |
-| 团队交火段 | 20 |
-| 关键事件 | 30 |
-| 多场 perspective | 10 |
-| 单次压缩上下文 | 30,000 字符 |
+> 已从「固定数量/字符截断」迁移到 **token 估算预算**：`TeamAiPromptBuilder` 使用 `AiTokenEstimator` 估算 token，`BudgetWriter.finish(estimator, maxInputTokens, ...)` 在写入时实时判定；输入硬上限由 `AiModelProperties` 配置（`singleReplayMaxInputTokens` 等，见上文表格）。不再有 `MAX_MEMBERS` / `MAX_KEY_EVENTS` / 30,000 字符等固定截断常量。
 
 超过预算会确定性截断，并在结果中加入 `AI_INPUT_TRUNCATED`。截断策略采用三层优先级输出：
 1. **Mandatory contract**（context type、analysisUnitId、perspective header、unitLimitations、isolation/omission contract）必须完整写入，超出预算时抛 `AiPromptBudgetExceededException`（HTTP 400 映射），不得静默丢失；
