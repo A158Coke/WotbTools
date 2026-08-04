@@ -92,11 +92,11 @@
 - [x] DeepSeek usage 解析
 - [x] 双层 budget 检查
 - [x] 配置/部署变量同步
-- [ ] 统一请求构造器
+- [x] 统一请求构造器（`AiReplayAnalysisService.buildSingleReplayRequest()` 统一所有入口请求体）
 - [x] 证据密度阶梯
 - [x] 高精度位置证据
 - [x] .env.example 文档
-- [ ] 新增测试
+- [x] 新增测试（`AiReplayAnalysisServiceTest`、`TeamAiPromptBuilderTest`、`AiReplayReviewServiceTest`、`AiReplayAnalysisServiceUpstreamMetricsTest` 等）
 
 ## P1：测试与质量
 
