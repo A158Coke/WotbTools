@@ -1,4 +1,5 @@
 name: Build & Deploy
+# GRAFANA_MCP_TOKEN secret 已配置；mcp-grafana 由 compose 自动托管（2026-08-04）
 run-name: Deploy ${{ github.ref_name }} by @${{ github.actor }} to Production
 
 concurrency:
