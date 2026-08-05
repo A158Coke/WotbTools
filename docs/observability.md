@@ -386,10 +386,14 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
   - `wotb_ai_review_errors_total{type=<固定枚举>}` — 错误分类
   - `wotb_ai_review_duration_seconds` — Review 完整总耗时（Timer，histogram，成功与异常都结束，覆盖文件验证→解析→分析→AI 调用→响应处理）
   - `wotb_ai_review_in_flight` — 当前处理中的 Review 数（Gauge）
-- **AI upstream**（自定义，`AiReplayAnalysisService.call`，每次上游调用）：
-  - `wotb_ai_upstream_requests_total{mode}` — 上游请求量（仅 token budget 检查通过、准备执行 `restClient.post()` 时 +1；被拒请求不计）
-  - `wotb_ai_upstream_errors_total{type=<枚举>}` — 上游错误分类
-  - `wotb_ai_upstream_duration_seconds` — 上游调用耗时（Timer，histogram，成功与异常都结束；网络调用开始才启动，token budget rejection 不计时长）
+- **AI upstream**（自定义，`SpringAiChatGateway.chat`，每次上游调用）：
+  - `wotb_ai_upstream_requests_total{mode}` — 上游请求量（每个 attempt +1，含 retry 重试；token budget 拒绝不进入 gateway，不计）
+  - `wotb_ai_upstream_success_total{mode}` — 成功调用数（一次逻辑调用 +1）
+  - `wotb_ai_upstream_errors_total{type=<枚举>}` — 失败调用数（重试耗尽后的最终失败 +1，不按 attempt 重复累计）
+  - `wotb_ai_upstream_duration_seconds` — 调用总耗时（Timer，histogram，含重试；成功与最终失败都结束，token budget rejection 不计时长）
+  - `wotb_ai_upstream_retries_total{mode}` — retry 重试次数
+  - `wotb_ai_upstream_retry_outcome_total{mode,outcome=no_retry|success_after_retry|failure_after_retry}` — 重试结果
+  - `wotb_ai_upstream_tokens_total{mode,token_type=input|output|total|reasoning|cache_hit|cache_miss}` — token 用量（usage 缺失时不记录）
 - **Replay 解析**（自定义，`ReplayUsageMetrics`，operation=`preview|export|rating|process|reconstruct|ai_review`）：
   - `wotb_replay_requests_total{operation}` — 请求量
   - `wotb_replay_files_total{operation}` — 解析文件数
@@ -399,7 +403,7 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
 > **不统计 `wotb_replay_results_total`**：解析失败以 `ReplayProcessingResult.status=FAILED` 返回而非抛异常，
 > 异常判定无法可靠区分 success/failure，故删除该指标（AI Review 自己的 `results_total` 不受影响）。
 
-**Label 约束**：不使用用户 ID、Replay ID、文件名、IP、Prompt、异常文本、动态 URL 作为 label；URI 一律为 Spring MVC 模板（如 `/api/preview`）。不统计 Token Usage（DeepSeek 平台已提供）。
+**Label 约束**：不使用用户 ID、Replay ID、文件名、IP、correlation ID、Prompt、Completion、异常正文作为 label；URI 一律为 Spring MVC 模板（如 `/api/preview`）。Token Usage 仅以低基数 `mode`/`token_type` 统计。
 
 ---
 
