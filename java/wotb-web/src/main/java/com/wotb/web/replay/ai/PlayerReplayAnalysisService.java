@@ -48,11 +48,11 @@ public class PlayerReplayAnalysisService {
      * 基于结算数据（权威）生成单场战术复盘（fallback 路径）。
      */
     public AnalyzeResult analyze(final Battle battle, final ReplayReconstruction recon) {
-        return analyze(battle, recon, OutputLanguage.ZH);
+        return analyze(battle, recon, AllowedLanguage.ZH);
     }
 
     public AnalyzeResult analyze(final Battle battle, final ReplayReconstruction recon,
-                                 final OutputLanguage language) {
+                                 final AllowedLanguage language) {
         if (!isConfigured()) {
             throw new AiNotConfiguredException();
         }
@@ -65,11 +65,11 @@ public class PlayerReplayAnalysisService {
      * 基于完整 battle + reconstruction + feature set 生成单场个人复盘（无重建时的入口）。
      */
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx) {
-        return analyzePlayerContext(ctx, OutputLanguage.ZH);
+        return analyzePlayerContext(ctx, AllowedLanguage.ZH);
     }
 
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx,
-                                              final OutputLanguage language) {
+                                              final AllowedLanguage language) {
         if (!isConfigured()) throw new AiNotConfiguredException();
         final PreparedAiPrompt prepared = PlayerReplayPromptBuilder.prepareFullNoRecon(
                 ctx, config.estimator(), config.singleReplayMaxInputTokens(),
@@ -83,12 +83,12 @@ public class PlayerReplayAnalysisService {
      */
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx,
                                              final ReplayReconstruction recon) {
-        return analyzePlayerContext(ctx, recon, OutputLanguage.ZH);
+        return analyzePlayerContext(ctx, recon, AllowedLanguage.ZH);
     }
 
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx,
                                               final ReplayReconstruction recon,
-                                              final OutputLanguage language) {
+                                              final AllowedLanguage language) {
         if (!isConfigured()) throw new AiNotConfiguredException();
         if (recon == null) {
             return analyzePlayerContext(ctx, language);
@@ -110,11 +110,11 @@ public class PlayerReplayAnalysisService {
      * 多场趋势复盘：每场独立摘要 + 后端确定性聚合，不拼接原始事件流。
      */
     public AnalyzeResult analyzeMulti(final List<Battle> battles) {
-        return analyzeMulti(battles, OutputLanguage.ZH);
+        return analyzeMulti(battles, AllowedLanguage.ZH);
     }
 
     public AnalyzeResult analyzeMulti(final List<Battle> battles,
-                                      final OutputLanguage language) {
+                                      final AllowedLanguage language) {
         if (!isConfigured()) {
             throw new AiNotConfiguredException();
         }
@@ -127,11 +127,11 @@ public class PlayerReplayAnalysisService {
      * <p>fallback 是延迟执行的控制流，不提前调用 AI。</p>
      */
     public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result) {
-        return analyzePlayerOrFallback(result, OutputLanguage.ZH);
+        return analyzePlayerOrFallback(result, AllowedLanguage.ZH);
     }
 
     public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result,
-                                                 final OutputLanguage language) {
+                                                 final AllowedLanguage language) {
         if (result.battle() == null) throw new IllegalArgumentException("NO_BATTLE_DATA");
         if (result.reconstruction() == null) return analyze(result.battle(), null, language);
 

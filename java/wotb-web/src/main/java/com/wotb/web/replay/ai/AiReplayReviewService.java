@@ -69,11 +69,11 @@ public class AiReplayReviewService {
     }
 
     public AnalyzeResponse analyze(final MultipartFile[] files) throws IOException {
-        return analyze(files, OutputLanguage.ZH);
+        return analyze(files, AllowedLanguage.ZH);
     }
 
     public AnalyzeResponse analyze(final MultipartFile[] files,
-                                   final OutputLanguage language) throws IOException {
+                                   final AllowedLanguage language) throws IOException {
         final boolean metrics = meterRegistry != null;
         final Timer.Sample sample = metrics ? Timer.start(meterRegistry) : null;
         if (metrics) {
@@ -136,7 +136,7 @@ public class AiReplayReviewService {
     }
 
     private AnalyzeResponse analyzeInternal(final MultipartFile[] files,
-                                            final OutputLanguage language) throws IOException {
+                                            final AllowedLanguage language) throws IOException {
         if (files == null || files.length == 0) throw new IllegalArgumentException("NO_REPLAY_FILES");
         validateBatchSize(files.length);
         long totalSize = 0;

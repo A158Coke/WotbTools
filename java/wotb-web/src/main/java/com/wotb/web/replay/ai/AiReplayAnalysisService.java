@@ -74,49 +74,49 @@ public class AiReplayAnalysisService {
     }
 
     public AnalyzeResult analyze(final Battle battle, final ReplayReconstruction recon) {
-        return analyze(battle, recon, OutputLanguage.ZH);
+        return analyze(battle, recon, AllowedLanguage.ZH);
     }
 
     public AnalyzeResult analyze(final Battle battle, final ReplayReconstruction recon,
-                                 final OutputLanguage language) {
+                                 final AllowedLanguage language) {
         return playerService.analyze(battle, recon, language);
     }
 
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx) {
-        return analyzePlayerContext(ctx, OutputLanguage.ZH);
+        return analyzePlayerContext(ctx, AllowedLanguage.ZH);
     }
 
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx,
-                                              final OutputLanguage language) {
+                                              final AllowedLanguage language) {
         return playerService.analyzePlayerContext(ctx, language);
     }
 
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx,
                                              final ReplayReconstruction recon) {
-        return analyzePlayerContext(ctx, recon, OutputLanguage.ZH);
+        return analyzePlayerContext(ctx, recon, AllowedLanguage.ZH);
     }
 
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx,
                                               final ReplayReconstruction recon,
-                                              final OutputLanguage language) {
+                                              final AllowedLanguage language) {
         return playerService.analyzePlayerContext(ctx, recon, language);
     }
 
     public AnalyzeResult analyzeMulti(final List<Battle> battles) {
-        return analyzeMulti(battles, OutputLanguage.ZH);
+        return analyzeMulti(battles, AllowedLanguage.ZH);
     }
 
     public AnalyzeResult analyzeMulti(final List<Battle> battles,
-                                      final OutputLanguage language) {
+                                      final AllowedLanguage language) {
         return playerService.analyzeMulti(battles, language);
     }
 
     public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result) {
-        return analyzePlayerOrFallback(result, OutputLanguage.ZH);
+        return analyzePlayerOrFallback(result, AllowedLanguage.ZH);
     }
 
     public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result,
-                                                 final OutputLanguage language) {
+                                                 final AllowedLanguage language) {
         return playerService.analyzePlayerOrFallback(result, language);
     }
 
@@ -126,20 +126,20 @@ public class AiReplayAnalysisService {
     }
 
     public AnalyzeResult analyzeSingleTeamContext(final SingleTeamBattleAnalysisContext context) {
-        return analyzeSingleTeamContext(context, OutputLanguage.ZH);
+        return analyzeSingleTeamContext(context, AllowedLanguage.ZH);
     }
 
     public AnalyzeResult analyzeSingleTeamContext(final SingleTeamBattleAnalysisContext context,
-                                                  final OutputLanguage language) {
+                                                  final AllowedLanguage language) {
         return teamService.analyzeSingleTeamContext(context, language);
     }
 
     public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups) {
-        return analyzeTeamGroups(groups, OutputLanguage.ZH);
+        return analyzeTeamGroups(groups, AllowedLanguage.ZH);
     }
 
     public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups,
-                                               final OutputLanguage language) {
+                                               final AllowedLanguage language) {
         return teamService.analyzeTeamGroups(groups, language);
     }
 

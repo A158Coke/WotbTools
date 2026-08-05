@@ -14,15 +14,17 @@ import com.wotb.core.processing.ReplayProcessingCapabilities;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
+import com.wotb.core.processing.ReplayAnalysisMode;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.AiReplayReviewService;
+import com.wotb.web.replay.ai.AllowedLanguage;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.ai.AnalyzeResult;
 import com.wotb.web.replay.ai.TeamAnalyzeResult;
+import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
-import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -36,9 +38,11 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doThrow;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -58,7 +62,7 @@ class ReconstructionControllerTeamAnalysisTest {
     void setUp() {
         processingFacade = mock(DefaultReplayProcessingFacade.class);
         aiService = mock(AiReplayAnalysisService.class);
-        reviewService = new AiReplayReviewService(processingFacade, aiService);
+        reviewService = spy(new AiReplayReviewService(processingFacade, aiService));
         final var controller = new ReconstructionController(processingFacade, reviewService);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
@@ -609,12 +613,21 @@ class ReconstructionControllerTeamAnalysisTest {
     }
 
     @Test
-    void missingLangReturnsUnknownLocale() throws Exception {
+    void missingLangIsRejectedAsRequiredParameter() throws Exception {
         mvc.perform(multipart("/api/replay/analyze")
                         .file(replayFile("a.wotbreplay")))
+                .andExpect(status().isBadRequest());
+        verify(aiService, never()).analyzePlayerOrFallback(any(), any());
+    }
+
+    @Test
+    void blankLangReturnsUnknownLocale() throws Exception {
+        mvc.perform(multipart("/api/replay/analyze")
+                        .file(replayFile("a.wotbreplay"))
+                        .param("lang", ""))
                 .andExpect(status().isBadRequest())
-        .andExpect(content().contentType(MediaType.TEXT_PLAIN))
-        .andExpect(content().string("UNKNOWN_LOCALE"));
+                .andExpect(content().contentType(MediaType.TEXT_PLAIN))
+                .andExpect(content().string("UNKNOWN_LOCALE"));
         verify(aiService, never()).analyzePlayerOrFallback(any(), any());
     }
 
@@ -625,7 +638,35 @@ class ReconstructionControllerTeamAnalysisTest {
                         .param("lang", "fr"))
                 .andExpect(status().isBadRequest())
         .andExpect(content().contentType(MediaType.TEXT_PLAIN))
-        .andExpect(content().string("UNKNOWN_LOCALE"));
+                .andExpect(content().string("UNKNOWN_LOCALE"));
         verify(aiService, never()).analyzePlayerOrFallback(any(), any());
+    }
+
+    @Test
+    void langEnIsForwardedToReviewService() throws Exception {
+        doReturn(minimalAnalyzeResponse())
+                .when(reviewService).analyze(any(), any(AllowedLanguage.class));
+        mvc.perform(multipart("/api/replay/analyze")
+                        .file(replayFile("a.wotbreplay"))
+                        .param("lang", "en"))
+                .andExpect(status().isOk());
+        verify(reviewService).analyze(any(), eq(AllowedLanguage.EN));
+    }
+
+    @Test
+    void langRuIsForwardedToReviewService() throws Exception {
+        doReturn(minimalAnalyzeResponse())
+                .when(reviewService).analyze(any(), any(AllowedLanguage.class));
+        mvc.perform(multipart("/api/replay/analyze")
+                        .file(replayFile("a.wotbreplay"))
+                        .param("lang", "ru"))
+                .andExpect(status().isOk());
+        verify(reviewService).analyze(any(), eq(AllowedLanguage.RU));
+    }
+
+    private static AnalyzeResponse minimalAnalyzeResponse() {
+        return new AnalyzeResponse(ReplayAnalysisMode.SINGLE_PLAYER_BATTLE,
+                1, 1, 1, 1, 0, 0, 1, "ok", 0, 0, 0,
+                List.of(), List.of(), List.of(), List.of());
     }
 }
