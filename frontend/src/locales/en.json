@@ -354,7 +354,23 @@
         "unbindConfirm": "Unbind game account?",
         "server": "Server",
         "records": "Leaderboard Records",
-        "noRecords": "No records yet. Upload replays to associate."
+        "noRecords": "No records yet. Upload replays to associate.",
+        "serverAsia": "Asia",
+        "serverCn": "China Mainland",
+        "accountSource": "Account source",
+        "sourceUserFilled": "User-filled",
+        "sourceWargaming": "Wargaming.net",
+        "verified": "Verification",
+        "verifiedBadge": "Verified"
+    },
+    "login": {
+        "title": "Sign in to WoTBTools",
+        "cnPlayers": "Mainland China players",
+        "qqLogin": "Sign in with QQ",
+        "asiaPlayers": "Asia server players",
+        "wgLogin": "Sign in with Wargaming.net",
+        "asiaOnlyNote": "Wargaming.net sign-in only applies to the international Asia server, not the mainland China NetEase server.",
+        "independentAccountNote": "Signing in with Wargaming.net creates a separate account; QQ-Wargaming account linking is under development."
     },
     "replay": {
         "no_files": "Select replay files or a folder first",
@@ -634,6 +650,10 @@
         "UNSUPPORTED_WOTB_SERVER": "This server is not supported",
         "WOTB_ACCOUNT_ID_REQUIRED": "Game account ID is required",
         "WOTB_NICKNAME_REQUIRED": "Game nickname is required",
+        "WOTB_CLAIMS_INVALID": "Wargaming login data is missing or invalid",
+        "ASIA_PROFILE_READONLY": "Asia account data is managed by Wargaming.net and cannot be edited or unlinked",
+        "PROFILE_REGION_MISMATCH": "Current account does not match the login source",
+        "WOTB_ACCOUNT_MISMATCH": "Cannot switch the Asia account to a different game account",
         "NOTIFICATION_NOT_FOUND": "Notification not found",
         "KEYCLOAK_USER_NOT_FOUND": "Keycloak user not found",
         "KEYCLOAK_USER_OR_ROLE_NOT_FOUND": "Keycloak user or role not found",

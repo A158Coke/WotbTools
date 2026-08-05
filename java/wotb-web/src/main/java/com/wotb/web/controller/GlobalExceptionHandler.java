@@ -56,7 +56,8 @@ public class GlobalExceptionHandler {
         final String error = errorCode(e.getMessage(), "INVALID_ARGUMENT");
         final HttpStatus status = switch (error) {
             case "PROFILE_ALREADY_EXISTS", "WOTB_ACCOUNT_ALREADY_USED", "ALREADY_BOOSTER",
-                 "BOOSTER_APPLICATION_ALREADY_OPEN" -> HttpStatus.CONFLICT;
+                 "BOOSTER_APPLICATION_ALREADY_OPEN", "PROFILE_REGION_MISMATCH",
+                 "WOTB_ACCOUNT_MISMATCH" -> HttpStatus.CONFLICT;
             case "PROFILE_NOT_FOUND", "USER_PROFILE_NOT_FOUND", "BOOSTER_NOT_FOUND",
                  "REQUEST_NOT_FOUND", "BOOSTER_APPLICATION_NOT_FOUND" -> HttpStatus.NOT_FOUND;
             default -> HttpStatus.BAD_REQUEST;

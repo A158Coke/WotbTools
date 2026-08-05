@@ -354,7 +354,23 @@
         "assignmentHistory": "历史订单",
         "noAssignmentHistory": "还没有历史订单",
         "assignmentClosedAt": "结束时间",
-        "assignmentNote": "备注"
+        "assignmentNote": "备注",
+        "serverAsia": "Asia",
+        "serverCn": "中国大陆",
+        "accountSource": "资料来源",
+        "sourceUserFilled": "用户填写",
+        "sourceWargaming": "Wargaming.net",
+        "verified": "验证状态",
+        "verifiedBadge": "账号已验证"
+    },
+    "login": {
+        "title": "登录 WoTBTools",
+        "cnPlayers": "中国大陆玩家",
+        "qqLogin": "使用 QQ 登录",
+        "asiaPlayers": "亚服玩家",
+        "wgLogin": "使用 Wargaming.net 登录",
+        "asiaOnlyNote": "Wargaming.net 登录仅适用于国际亚服，不适用于中国大陆网易服。",
+        "independentAccountNote": "Wargaming.net 登录会创建独立账号；QQ 与 WG 账号互通功能开发中。"
     },
     "replay": {
         "no_files": "请先选择回放文件或文件夹",
@@ -634,6 +650,10 @@
         "UNSUPPORTED_WOTB_SERVER": "暂不支持该服务器",
         "WOTB_ACCOUNT_ID_REQUIRED": "请填写游戏账号 ID",
         "WOTB_NICKNAME_REQUIRED": "请填写游戏昵称",
+        "WOTB_CLAIMS_INVALID": "Wargaming 登录信息缺失或无效",
+        "ASIA_PROFILE_READONLY": "亚服账号资料由 Wargaming.net 管理，不可手动修改或解绑",
+        "PROFILE_REGION_MISMATCH": "当前账号与登录来源不匹配",
+        "WOTB_ACCOUNT_MISMATCH": "不能将亚服账号切换到另一个游戏账号",
         "NOTIFICATION_NOT_FOUND": "通知不存在",
         "KEYCLOAK_USER_NOT_FOUND": "Keycloak 用户不存在",
         "KEYCLOAK_USER_OR_ROLE_NOT_FOUND": "Keycloak 用户或角色不存在",

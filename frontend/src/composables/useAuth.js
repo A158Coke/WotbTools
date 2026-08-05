@@ -9,6 +9,10 @@ const authenticated = ref(false)
 const tokenParsed = ref(null)
 const initError = ref(null)
 
+const WG_PROVIDER_BY_REGION = Object.freeze({
+  ASIA: 'wargaming-asia',
+})
+
 function ensureKeycloak() {
   if (!keycloak) {
     keycloak = new Keycloak({
@@ -66,6 +70,23 @@ async function login(view = 'profile') {
   return kc.login({ redirectUri: loginRedirectUri(view) })
 }
 
+/**
+ * 使用 Wargaming.net 登录（idpHint 指向 Keycloak 中手工配置的
+ * wargaming-asia Identity Provider）。前端绝不采集任何 WG 凭据。
+ *
+ * @param region 区服，当前仅支持 ASIA
+ * @param view   登录完成后回跳的视图
+ */
+async function loginWithWargaming(region = 'ASIA', view = 'profile') {
+  const provider = WG_PROVIDER_BY_REGION[region]
+  if (!provider) {
+    throw new Error('Unsupported Wargaming region')
+  }
+  const kc = ensureKeycloak()
+  await initAuth()
+  return kc.login({ idpHint: provider, redirectUri: loginRedirectUri(view) })
+}
+
 async function logout() {
   const kc = ensureKeycloak()
   return kc.logout({ redirectUri: window.location.origin + window.location.pathname })
@@ -109,6 +130,7 @@ export function useAuth() {
     initAuth,
     initPromise: initAuth(),
     login,
+    loginWithWargaming,
     logout,
     isAuthenticated,
     userName,

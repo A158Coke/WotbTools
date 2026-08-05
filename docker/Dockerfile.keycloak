@@ -1,11 +1,16 @@
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
 COPY java/settings-docker.xml settings.xml
+# Keycloak 自定义 Identity Providers：QQ（聚合登录）与 Wargaming.net ASIA 各构建一个 JAR
 COPY keycloak-juhe-qq-provider/pom.xml keycloak-juhe-qq-provider/pom.xml
 COPY keycloak-juhe-qq-provider/src keycloak-juhe-qq-provider/src
+COPY keycloak-wargaming-provider/pom.xml keycloak-wargaming-provider/pom.xml
+COPY keycloak-wargaming-provider/src keycloak-wargaming-provider/src
 RUN mvn -s settings.xml -f keycloak-juhe-qq-provider/pom.xml -DskipTests clean package -q
+RUN mvn -s settings.xml -f keycloak-wargaming-provider/pom.xml -DskipTests clean package -q
 
 FROM quay.io/keycloak/keycloak:26.6.4
 COPY --from=build /build/keycloak-juhe-qq-provider/target/keycloak-juhe-qq-provider.jar /opt/keycloak/providers/
+COPY --from=build /build/keycloak-wargaming-provider/target/keycloak-wargaming-provider.jar /opt/keycloak/providers/
 
 RUN /opt/keycloak/bin/kc.sh build

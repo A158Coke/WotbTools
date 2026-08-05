@@ -3,6 +3,7 @@ package com.wotb.web.user.service;
 import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.repository.UserProfileRepository;
+import com.wotb.web.util.JwtUtil;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -74,9 +75,63 @@ public class UserProfileService {
         profile.setKeycloakUserId(keycloakUserId);
         profile.setUsername(username);
         profile.setDisplayName(displayName);
-        profile.setWotbServer("CN");
+        if (hasTrustedWargamingClaims()) {
+            // WG ASIA 用户：首次创建即写入官方资料，来源 WARGAMING、验证时间=首次可信同步时间。
+            profile.setWotbServer("ASIA");
+            profile.setWotbAccountId(JwtUtil.currentWotbAccountId());
+            profile.setWotbNickname(JwtUtil.currentWotbNickname());
+            profile.setWotbAccountSource("WARGAMING");
+            profile.setWotbAccountVerifiedAt(OffsetDateTime.now());
+        } else {
+            profile.setWotbServer("CN");
+            profile.setWotbAccountSource("MANUAL");
+        }
         profile.setUpdatedAt(OffsetDateTime.now());
-        return mapper.toDto(repository.save(profile));
+        try {
+            return mapper.toDto(repository.save(profile));
+        } catch (final DataIntegrityViolationException e) {
+            throw new IllegalArgumentException("WOTB_ACCOUNT_ALREADY_USED");
+        }
+    }
+
+    /**
+     * 幂等同步接口：仅 ASIA 可信 claims 可调用。
+     * 允许刷新官方昵称；不刷新 verified_at；不允许 CN→ASIA 覆盖或切换 account_id。
+     */
+    @Transactional
+    public UserProfileDto syncFromLogin(final String keycloakUserId) {
+        if (!hasTrustedWargamingClaims()) {
+            throw new IllegalArgumentException("WOTB_CLAIMS_INVALID");
+        }
+        final Long accountId = JwtUtil.currentWotbAccountId();
+        final String nickname = JwtUtil.currentWotbNickname();
+
+        final UserProfile profile = repository.findByKeycloakUserId(keycloakUserId)
+                .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
+
+        if (!"ASIA".equals(profile.getWotbServer())) {
+            throw new IllegalArgumentException("PROFILE_REGION_MISMATCH");
+        }
+        if (!accountId.equals(profile.getWotbAccountId())) {
+            throw new IllegalArgumentException("WOTB_ACCOUNT_MISMATCH");
+        }
+        final boolean duplicate = repository.existsByWotbServerAndWotbAccountIdAndKeycloakUserIdNot(
+                "ASIA", accountId, keycloakUserId);
+        if (duplicate) {
+            throw new IllegalArgumentException("WOTB_ACCOUNT_ALREADY_USED");
+        }
+
+        try {
+            if (!nickname.equals(profile.getWotbNickname())) {
+                profile.setWotbNickname(nickname);
+                profile.setUpdatedAt(OffsetDateTime.now());
+                // 决策 D8：昵称刷新不更新 verified_at。
+            }
+            return mapper.toDto(repository.save(profile));
+        } catch (final DataIntegrityViolationException e) {
+            // 并发窗口内 (ASIA, account_id) 被其他用户占用：与手动绑定同一错误码。
+            throw new IllegalArgumentException("WOTB_ACCOUNT_ALREADY_USED");
+        }
     }
 
     /** 更新坦克世界账号绑定。 */
@@ -88,6 +143,9 @@ public class UserProfileService {
         final UserProfile profile = repository.findByKeycloakUserId(keycloakUserId)
                 .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
 
+        if ("ASIA".equals(profile.getWotbServer())) {
+            throw new IllegalArgumentException("ASIA_PROFILE_READONLY");
+        }
         if (wotbAccountId == null || wotbAccountId <= 0) {
             throw new IllegalArgumentException("INVALID_WOTB_ACCOUNT_ID");
         }
@@ -123,11 +181,24 @@ public class UserProfileService {
         final UserProfile profile = repository.findByKeycloakUserId(keycloakUserId)
                 .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
 
+        if ("ASIA".equals(profile.getWotbServer())) {
+            throw new IllegalArgumentException("ASIA_PROFILE_READONLY");
+        }
         profile.setWotbAccountId(null);
         profile.setWotbNickname(null);
         profile.setWotbServer("CN");
         profile.setUpdatedAt(OffsetDateTime.now());
         return mapper.toDto(repository.save(profile));
+    }
+
+    /** 可信 WG claims：verified == true && region == ASIA && accountId 有效 && 昵称非空。 */
+    private static boolean hasTrustedWargamingClaims() {
+        final Long accountId = JwtUtil.currentWotbAccountId();
+        final String nickname = JwtUtil.currentWotbNickname();
+        return JwtUtil.currentWotbVerified()
+                && "ASIA".equals(JwtUtil.currentWotbRegion())
+                && accountId != null
+                && StringUtils.hasText(nickname);
     }
 
 }

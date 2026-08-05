@@ -13,6 +13,7 @@
 | `wotb-core` | 核心库：解压回放、读取 pickle、解码 protobuf、车辆库映射、去重汇总、POI 导出 xlsx        |
 | `wotb-web`  | Spring Boot 4 REST API + PostgreSQL/Flyway/Keycloak，监听 `8087`（管理端口 `8088`，Actuator/Prometheus） |
 | `frontend`  | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
+| `keycloak-wargaming-provider` | Keycloak 26 自定义 Identity Provider：Wargaming.net ASIA 登录（`api.wotblitz.asia`） |
 | `docker/online/` | `docker-compose.yml`：`build:` 从源码编译运行八服务（postgres + keycloak + backend + frontend + prometheus + loki + alloy + grafana） |
 
 > 车辆库 `common/tankopedia.json` 与地图名映射 `common/map_names.json`（仓库根的共享目录）都会在 `wotb-core` 构建时自动复制到 classpath，无需在模块内再放副本。
@@ -170,6 +171,16 @@ AI 上游与数据错误只向 API 返回稳定英文码，前端以 zh/en/ru �
 `DELETE /api/admin/boost/boosters/{id}` 会保留资格申请并清空其 `approved_booster_id`；存在任意订单分配历史时以 `BOOSTER_HAS_DEPENDENCIES` 拒绝。管理员删除用户时会先复用该流程清理关联打手档案，再删除本地资料与 Keycloak 用户。
 
 `GET /api/users/notifications`、`GET /api/users/notifications/unread-count`、`PATCH /api/users/notifications/{id}/read` 和 `PATCH /api/users/notifications/read-all` 提供站内通知基础能力。通知 API 返回英文 `type` 与 `payload` 数据，具体文案由前端三语 i18n 渲染。
+
+### 用户资料（WoTB 账号）
+
+- `GET /api/users/profile` — 当前用户资料；未创建返回 404 `PROFILE_NOT_FOUND`。
+- `POST /api/users/profile` — 懒创建资料。JWT 带可信 WG claims（`wotb_verified=true` 且 `wotb_region=ASIA` 且账号/昵称有效）时自动创建 ASIA 资料（`wotb_account_source=WARGAMING`、`wotb_account_verified_at=首次同步时间`）；否则按 CN（`MANUAL`）创建。
+- `PATCH /api/users/wotb-account` — CN 手动绑定（仅允许 `wotbServer=CN`）；ASIA 资料返回 400 `ASIA_PROFILE_READONLY`。
+- `PUT /api/users/wotb-account/from-login` — WG 登录后的幂等同步（无 body，只读 JWT）；刷新官方昵称、不刷新 verified_at；CN→ASIA 覆盖返回 409 `PROFILE_REGION_MISMATCH`、换账号返回 409 `WOTB_ACCOUNT_MISMATCH`、账号被他人占用返回 409 `WOTB_ACCOUNT_ALREADY_USED`。
+- `DELETE /api/users/wotb-account` — 解绑；ASIA 资料返回 400 `ASIA_PROFILE_READONLY`。
+
+资料 DTO 含 `wotbAccountSource`（MANUAL/WARGAMING）与 `wotbAccountVerifiedAt`（ISO 时间或 null）。JWT claims 由 Keycloak realm 的 4 个 protocol mapper 提供（`region→wotb_region`、`wotb.account_id→wotb_account_id`、`wotb.nickname→wotb_nickname`、`wotb.verified→wotb_verified(boolean)`）；Keycloak 容器需注入 `WG_APPLICATION_ID`（WoT Blitz 应用 ID，缺失时仅 WG 登录报错）。详见 [docs/auth/wargaming-asia-login.md](../docs/auth/wargaming-asia-login.md) 与部署手册 [docs/auth/wargaming-asia-deployment.md](../docs/auth/wargaming-asia-deployment.md)。
 
 ## 测试
 
