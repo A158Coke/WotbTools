@@ -26,7 +26,7 @@ Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；
 | [`docs/rating-progress.md`](rating-progress.md) | rating 扩展目标、已完成项、缺口与下一步 | 接手 rating 扩展时 |
 | [`docs/observability.md`](observability.md) | 可观测系统（日志/指标/Grafana/Prometheus/Loki/Alloy）运维与排障 | 动监控、查日志、调保留策略时 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本历史（对外） | 了解发布历史 |
-| [`README.md`](../README.md) / [`java/README.md`](../java/README.md) | 用户向 + 运行/接口/构建 | 跑起来时 |
+| [`README.md`](../README.md) / [`java/README.md`](../java/README.md) | 用户向概览与文档索引；Java/Web 运行、接口、构建 | 跑起来时 |
 | [`TODO.md`](TODO.md) | 待办（含已完成收尾记录与下一步） | 找下一步做什么 |
 
 > `.agents/AGENTS.md` / `wotb-sync.md` 本就是写给"任意 AI/人"的，不绑定特定工具。
