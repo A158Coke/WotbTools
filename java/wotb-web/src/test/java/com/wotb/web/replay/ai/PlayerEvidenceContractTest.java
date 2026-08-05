@@ -101,7 +101,7 @@ class PlayerEvidenceContractTest {
 
     @Test
     void fallbackPathKeepsThePlayerOutOfTheTeammateRoster() {
-        final String evidence = AiReplayAnalysisService.buildSummary(battle(1), null, List.of());
+        final String evidence = PlayerReplayPromptBuilder.buildSummary(battle(1), null, List.of());
 
         assertTrue(evidence.contains("你: \"You\""), evidence);
         assertTrue(evidence.contains("=== 你 ==="), evidence);
@@ -119,7 +119,7 @@ class PlayerEvidenceContractTest {
 
     @Test
     void fallbackPathInTeam2AlsoSeparatesThePlayer() {
-        final String evidence = AiReplayAnalysisService.buildSummary(battle(2), null, List.of());
+        final String evidence = PlayerReplayPromptBuilder.buildSummary(battle(2), null, List.of());
 
         assertTrue(evidence.contains("=== 你 ==="), evidence);
         assertTrue(evidence.contains("你: \"You\""), evidence);
@@ -143,7 +143,7 @@ class PlayerEvidenceContractTest {
         final Battle battle = battle(1);
         battle.players.get(2).survived = false;
         battle.players.get(2).deathTimeMillis = 123_000L;
-        assertNoRawSecondClocks(AiReplayAnalysisService.buildSummary(battle, null, List.of(
+        assertNoRawSecondClocks(PlayerReplayPromptBuilder.buildSummary(battle, null, List.of(
                 new KeyBattleEvent(123f, "VEHICLE_DESTROYED", "被击毁",
                         DecodeConfidence.EXACT, "TEST", List.of()))));
     }
@@ -153,7 +153,7 @@ class PlayerEvidenceContractTest {
         final Battle battle = battle(1);
         battle.players.get(2).survived = false;
         battle.players.get(2).deathTimeMillis = 123_000L;
-        final String evidence = AiReplayAnalysisService.buildSummary(battle, null, List.of());
+        final String evidence = PlayerReplayPromptBuilder.buildSummary(battle, null, List.of());
 
         assertTrue(evidence.contains("阵亡@2分03秒"), evidence);
         assertFalse(evidence.contains("阵亡@123.0s"), evidence);
@@ -188,8 +188,7 @@ class PlayerEvidenceContractTest {
                 new RecorderEntityMapping(YOU, 1, 5, "You", recorderTeam, 1, DecodeConfidence.EXACT),
                 null,
                 List.of());
-        return new AiReplayAnalysisService("", "", "", 1, 200_000)
-                .buildPlayerContextSummary(ctx);
+        return PlayerReplayPromptBuilder.buildPlayerContextSummary(ctx);
     }
 
     /** 名册：你（recorderTeam）+ 同队 Mate + 对方 Foe。 */

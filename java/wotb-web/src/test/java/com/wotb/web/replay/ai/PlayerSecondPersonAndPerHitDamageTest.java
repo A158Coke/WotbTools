@@ -1,4 +1,6 @@
 package com.wotb.web.replay.ai;
+import com.wotb.web.replay.ai.TeamReplayAnalysisService;
+import com.wotb.web.replay.ai.PlayerReplayPromptBuilder;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
@@ -29,15 +31,15 @@ class PlayerSecondPersonAndPerHitDamageTest {
 
     private static Stream<String> playerPrompts() {
         return Stream.of(
-                AiReplayAnalysisService.SYSTEM_PROMPT,
-                AiReplayAnalysisService.SINGLE_PLAYER_PROMPT,
-                AiReplayAnalysisService.MULTI_SYSTEM_PROMPT);
+                PlayerReplayPromptBuilder.SYSTEM_PROMPT,
+                PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT,
+                PlayerReplayPromptBuilder.MULTI_SYSTEM_PROMPT);
     }
 
     private static Stream<String> teamPrompts() {
         return Stream.of(
-                AiReplayAnalysisService.SINGLE_TEAM_PROMPT,
-                AiReplayAnalysisService.MULTI_TEAM_PROMPT);
+                TeamReplayAnalysisService.SINGLE_TEAM_PROMPT,
+                TeamReplayAnalysisService.MULTI_TEAM_PROMPT);
     }
 
     // ---- 人称规则 ----
@@ -84,7 +86,7 @@ class PlayerSecondPersonAndPerHitDamageTest {
     @Test
     void thePlayerIsNeverListedAmongTeammates() {
         final StringBuilder sb = new StringBuilder();
-        AiReplayAnalysisService.appendPlayerLine(sb, you(), true, true);
+        PlayerReplayPromptBuilder.appendPlayerLine(sb, you(), true, true);
         final String yourLine = sb.toString();
 
         assertTrue(yourLine.startsWith("你 "), yourLine);
@@ -95,7 +97,7 @@ class PlayerSecondPersonAndPerHitDamageTest {
     @Test
     void teammatesAreLabelledTeammateNotFriendly() {
         final StringBuilder sb = new StringBuilder();
-        AiReplayAnalysisService.appendPlayerLine(sb, mate(), true);
+        PlayerReplayPromptBuilder.appendPlayerLine(sb, mate(), true);
         final String line = sb.toString();
 
         assertTrue(line.startsWith("队友 "), line);
@@ -107,7 +109,7 @@ class PlayerSecondPersonAndPerHitDamageTest {
     @Test
     void perHitEventsUseMinuteSecondClockAndKeepDirection() {
         final StringBuilder sb = new StringBuilder();
-        final boolean written = AiReplayAnalysisService.appendPerHitDamageEvents(
+        final boolean written = PlayerReplayPromptBuilder.appendPerHitDamageEvents(
                 sb, battle(), YOU,
                 recon(0f,
                         hit(192f, YOU, ENEMY, 418),
@@ -124,7 +126,7 @@ class PlayerSecondPersonAndPerHitDamageTest {
     @Test
     void perHitEventsAreSingleHitsNotAggregates() {
         final StringBuilder sb = new StringBuilder();
-        AiReplayAnalysisService.appendPerHitDamageEvents(
+        PlayerReplayPromptBuilder.appendPerHitDamageEvents(
                 sb, battle(), YOU,
                 recon(0f, hit(60f, YOU, ENEMY, 100), hit(70f, YOU, ENEMY, 200)));
         final String evidence = sb.toString();
@@ -139,7 +141,7 @@ class PlayerSecondPersonAndPerHitDamageTest {
     @Test
     void perHitEventsExcludePreBattleAndNonPositiveDamage() {
         final StringBuilder sb = new StringBuilder();
-        final boolean written = AiReplayAnalysisService.appendPerHitDamageEvents(
+        final boolean written = PlayerReplayPromptBuilder.appendPerHitDamageEvents(
                 sb, battle(), YOU,
                 recon(30f,
                         hit(10f, YOU, ENEMY, 500),   // 准备阶段
@@ -152,7 +154,7 @@ class PlayerSecondPersonAndPerHitDamageTest {
     @Test
     void perHitEventsIgnoreDamageNotInvolvingThePlayer() {
         final StringBuilder sb = new StringBuilder();
-        final boolean written = AiReplayAnalysisService.appendPerHitDamageEvents(
+        final boolean written = PlayerReplayPromptBuilder.appendPerHitDamageEvents(
                 sb, battle(), YOU, recon(0f, hit(50f, MATE, ENEMY, 300)));
 
         assertFalse(written);
@@ -165,7 +167,7 @@ class PlayerSecondPersonAndPerHitDamageTest {
         recorder.killVictims.add(new com.wotb.core.stats.PotentialDamage.KillVictim(ENEMY, 780, 2));
 
         final StringBuilder sb = new StringBuilder();
-        AiReplayAnalysisService.appendRecorderDamageExchange(sb, battle, recorder);
+        PlayerReplayPromptBuilder.appendRecorderDamageExchange(sb, battle, recorder);
         final String evidence = sb.toString();
 
         assertTrue(evidence.contains("DAMAGE_EXCHANGE_AGGREGATED_OBSERVED（逐对手聚合观测子集）"), evidence);
@@ -187,7 +189,7 @@ class PlayerSecondPersonAndPerHitDamageTest {
         battle.players.get(2).deathTimeMillis = 210_000L;
 
         final StringBuilder sb = new StringBuilder();
-        AiReplayAnalysisService.appendDeathTimeline(sb, battle);
+        PlayerReplayPromptBuilder.appendDeathTimeline(sb, battle);
         final String timeline = sb.toString();
 
         assertTrue(timeline.contains("你"), timeline);
