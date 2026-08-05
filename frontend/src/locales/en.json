@@ -45,7 +45,7 @@
         "export_aggregate": "Merge & Export",
         "export_each": "Export Each",
         "download_png": "Download as PNG"
-      },
+    },
     "result": {
         "aggregate_tab": "Aggregate ({count} players)",
         "scroll_hint": "← Scroll horizontally for more data →",
@@ -782,33 +782,10 @@
         "invalid_file": "Please select a .wotbreplay file",
         "analyze_btn": "AI Analysis",
         "analyze_multi_btn": "AI Multi-battle ({n})",
-        "multi_summary": "Multi-battle trend review · {n} battles",
-        "multi_team_summary": "Team-perspective set review · {n} independent analysis units",
         "analysis_title_player": "AI Review",
-        "analysis_title_team": "AI Review",
-        "analysis_mode": "Analysis mode",
-        "analysis_units": "Analysis units",
-        "perspective_team": "Perspective team",
-        "duplicate_perspectives": "Same-team duplicate perspectives",
-        "unknown": "Unknown",
-        "team_scope_note": "This report analyzes the recorder's entire team. The recorder only determines the team perspective and is not evaluated individually.",
-        "team_perspective": "Team {team} perspective",
-        "player_perspective": "Recorder player perspective",
-        "representative_file": "Representative replay",
-        "duplicate_files": "Deduplicated same-team replays",
-        "full_team_features": "Includes formation and engagement features with reliable entity mapping",
-        "authoritative_fallback": "Authoritative-result fallback; formation or engagement data is incomplete",
-        "data_limitations": "Data limitations",
-        "key_events": "Key events",
         "ai_error_http": "AI analysis failed (HTTP {status})",
         "auth_required": "Sign-in required, redirecting to login…",
         "forbidden": "Forbidden: this feature requires wotbtools-user or wotbtools-admin role",
-        "modes": {
-            "SINGLE_PLAYER_BATTLE": "Single-battle player review",
-            "MULTI_PLAYER_BATTLE": "Multi-battle player trend review",
-            "SINGLE_TEAM_BATTLE": "Single-battle team review",
-            "MULTI_TEAM_BATTLE": "Multi-perspective team review"
-        },
         "errors": {
             "AI_NOT_CONFIGURED": "AI is not configured. Please contact the administrator.",
             "AI_INVALID_REQUEST": "The AI provider rejected this request. Please try again later.",
@@ -834,43 +811,6 @@
             "REPLAY_FILE_COUNT_EXCEEDED": "At most {max} replay files can be uploaded at once.",
             "TOTAL_REQUEST_TOO_LARGE": "The combined upload size exceeds the limit.",
             "UNKNOWN_LOCALE": "Invalid language setting. Please refresh the page and try again."
-        },
-        "event_types": {
-            "TEAM_MEMBER_DESTROYED": "Team member destroyed",
-            "TEAM_FIRST_CONTACT": "First reliable contact",
-            "TEAM_FORMATION_SPLIT": "Formation split",
-            "BATTLE_END": "Battle ended"
-        },
-        "limitations": {
-            "RECORDER_ENTITY_UNMAPPED": "The recorder entity is unmapped; authoritative team results remain available.",
-            "RECORDER_ENTITY_REENTRY": "The recorder re-entered with another entity; all mappings were retained.",
-            "RECORDER_MATCHED_BY_NICKNAME": "The recorder was matched by nickname only, with lower confidence.",
-            "RECORDER_NICKNAME_AMBIGUOUS": "The recorder nickname matches multiple players; other consistent evidence was used, but identity remains ambiguous.",
-            "RECORDER_IDENTITY_CONFLICT": "Reliable recorder identity evidence conflicts.",
-            "TEAM_ENTITY_MAPPING_UNAVAILABLE": "No entity-to-participant mapping is available.",
-            "TEAM_ENTITY_MAPPING_CONFLICT": "Some entity mappings conflict; related events were not attributed.",
-            "TEAM_ENTITY_MAPPING_INSUFFICIENT": "Too few team member entities were mapped.",
-            "OBSERVED_DAMAGE_IS_PARTIAL": "Event-stream damage is an observed subset, not the authoritative total.",
-            "AUTHORITATIVE_TEAM_RESULT_UNAVAILABLE": "Authoritative team results are unavailable.",
-            "POSITION_FORMATION_UNAVAILABLE": "Position or formation analysis is unavailable.",
-            "TEAM_ENGAGEMENTS_UNAVAILABLE": "Team engagement summaries are unavailable.",
-            "UNATTRIBUTED_DAMAGE_EVENTS_PRESENT": "Some damage events could not be attributed reliably.",
-            "UNATTRIBUTED_POSITION_EVENTS_PRESENT": "Some position events could not be attributed reliably.",
-            "OUT_OF_BOUNDS_POSITION_EVENTS_IGNORED": "Implausible out-of-bounds positions were ignored.",
-            "INVALID_EVENT_TIMESTAMPS_IGNORED": "Events with invalid timestamps were ignored.",
-            "REPLAY_STREAM_PARTIAL": "The replay event stream is incomplete.",
-            "TEAM_FEATURES_UNAVAILABLE": "Team features are unavailable.",
-            "TEAM_MEMBER_ENTITY_UNMAPPED": "This team member has no mapped entity.",
-            "TEAM_MEMBER_MOVEMENT_UNAVAILABLE": "No usable movement path is available for this member.",
-            "AI_INPUT_TRUNCATED": "The AI input was truncated using deterministic limits.",
-            "PERSPECTIVE_TIMELINES_ISOLATED": "Each analysis unit keeps an isolated timeline and entity namespace.",
-            "ROSTER_CONSISTENCY_UNCONFIRMED": "A consistent roster could not be confirmed; only the uploaded sample set is compared.",
-            "AI_PERSPECTIVE_OMITTED_FROM_PROMPT": "Omitted from AI analysis due to input limits",
-            "PERSPECTIVES_OMITTED": "{count} analysis units omitted due to budget limits"
-        },
-        "analyzed_unit_count": "Analyzed Units",
-        "unavailable_analysis_unit_count": "Unavailable Units",
-        "analysis_unit_count": "Identified Units",
-        "omitted_analysis_unit_count": "Omitted Units"
+        }
     }
 }

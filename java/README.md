@@ -60,7 +60,7 @@ docker compose up -d --build
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 

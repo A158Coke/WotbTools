@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "vite",
     "test": "vitest run",
@@ -20,6 +23,7 @@
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.1",
     "@vue/test-utils": "^2.4.6",
+    "fallow": "^3.14.0",
     "happy-dom": "^18.0.1",
     "vite": "^6.0.7",
     "vitest": "^3.2.4"

@@ -123,9 +123,9 @@ Enemy-only damage 不得延长 Team phase。
 
 **不变量：** `analysisUnitCount = analyzedUnitCount + omittedAnalysisUnitCount + unavailableAnalysisUnitCount`
 
-### 四类计数在前端
+### 四类计数
 
-`AnalysisSummary.vue` 显示所有四个计数。每个使用独立三语 locale key。
+四类计数由上一节的不变量契约保证（后端返回）；当前前端 `AnalysisResultPanel` 仅渲染最终 Markdown 报告，不再逐单元展示计数明细。
 
 ## 9. Limitations
 
@@ -169,10 +169,10 @@ Enemy-only damage 不得延长 Team phase。
 
 ## 11. 前端展示
 
-- `AnalysisSummary.vue`：显示四个 count + 文件状态
-- `AnalysisLimitations.vue`：显示 global limitations（通过 `localizeLimitation()` 本地化）
-- `AnalysisUnitItem.vue`：显示 per-unit limitations
-- 所有 limitation code 去重合并
+- `ReconstructionPage`：登录门控 + 编排，触发分析并展示结果
+- `ReplayInputPanel`：单文件选择（替换而非追加），超限拒绝，单文件删除，clear all
+- `AnalysisResultPanel`：仅渲染最终 Markdown 报告（`MarkdownContent`）
+- limitation code 由后端合并去重写入报告；前端不再逐单元渲染 limitation 明细
 - 文件交互：单文件选择（替换而非追加），超限拒绝，单文件删除，clear all
 - Fetch Response body 只读取一次（text -> JSON.parse）
 - JSON structured error 使用 `code`/`maxFiles`/`actualFiles`

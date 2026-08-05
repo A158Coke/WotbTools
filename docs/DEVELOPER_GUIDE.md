@@ -39,7 +39,7 @@ Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；
   - bash: `JAVA_HOME="/c/Users/<user>/.jdks/jdk-21.0.1"`（本机实测路径，**不是** `C:\Program Files\Java`）
   - cmd: `set JAVA_HOME=%USERPROFILE%\.jdks\jdk-21.0.1`
 - **Maven 必须带 `-s java/settings.xml`**（该文件已跟踪，使用 aliyun 镜像 + `java/.m2repo`，干净 clone 可直接运行）。容器内用 `java/settings-docker.xml`。
-- **Node**：前端 `frontend`，开发端口 5173，构建用 `npm run build`。
+- **Node 24**（`frontend/.nvmrc` 钉住，`nvm use` 生效）：前端 `frontend`，开发端口 5173，依赖安装用 `npm ci`，构建用 `npm run build`。CI（`ci.yml`）、deploy（`deploy.yml`）与 `Dockerfile.frontend` 均统一 Node 24。
 - **Python 3 + Pillow**：仅用于 `common/python/update_tankopedia.py`（更新车辆库，需联网）和偶尔的图像处理。
 
 ---
@@ -361,7 +361,7 @@ AI 复盘区分两种 scope，互不混用：
   - `utils/theme.js` — 纯函数（readTheme / saveTheme / resolveTheme / applyTheme），Cookie `.wotbtools.com` 域共享 + localStorage 回退
 - `utils/helpers.js` — 常量（DEFAULT_VISIBLE / EXTENDED_ONLY_PLAYER_KEYS / RATING_TIERS）+ 工具函数（按 locale 取地图名的 `mapLabel` / ratingTier / medal 等）
 - UI 组件在 `components/`：FileUploader / ColumnPicker / AggregateTable / BattleTable / RatingModal / RemoveConfirmModal / LeaderboardPage / ProfilePage（含站内通知面板）/ BoostPage / AdminUsersPage / HomePage / ExtendedPage / ReplayPage
-- AI 复盘页组件：`ReconstructionPage`（登录门控 + 编排）→ `ReplayInputPanel`（`ReplayFilePicker` 选文件 + `ReplayAnalysisAction` 触发分析）→ `AnalysisResultPanel`（结果常驻展示，含 AnalysisSummary / AnalysisUnitList / AnalysisLimitations / AnalysisKeyEvents / MarkdownContent）
+- AI 复盘页组件：`ReconstructionPage`（登录门控 + 编排）→ `ReplayInputPanel`（`ReplayFilePicker` 选文件 + `ReplayAnalysisAction` 触发分析）→ `AnalysisResultPanel`（Markdown 正文常驻展示，`MarkdownContent` 渲染）
 - 回放解析上传页由 `FileUploader.vue` 负责交互，`App.vue` 提供全局上传区样式；空态、拖拽态、已选文件态共用 `upload.*` 三语文案。
 - 开发时 Vite 代理 `/api → localhost:8087`。
 - 语言持久化 `localStorage('wotb-lang')`，主题持久化 Cookie `wotbtools-theme`（domain `.wotbtools.com`）+ localStorage 回退。
