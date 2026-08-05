@@ -15,6 +15,7 @@
   "roles": {
     "realm": [
       { "name": "wotbtools-admin", "description": "WoTBTools admin" },
+      { "name": "wotbtools-user", "description": "WoTBTools user" },
       { "name": "boost-manager", "description": "Boost manager" },
       { "name": "booster", "description": "Booster" }
     ]
