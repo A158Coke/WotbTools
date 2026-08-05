@@ -34,8 +34,6 @@ import org.springframework.util.StringUtils;
 
 import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.web.config.AiModelProperties;
-import com.wotb.web.replay.ai.AiUpstreamException;
-
 /**
  * The only production AI transport adapter: maps {@link AiChatRequest} onto Spring AI
  * {@link OpenAiChatModel} (official OpenAI-compatible adapter) against

@@ -13,6 +13,7 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
 import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
+import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 

@@ -2,7 +2,6 @@ package com.wotb.web.replay.ai.gateway;
 
 import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.web.config.AiModelProperties;
-import com.wotb.web.replay.ai.AiReplayAnalysisConfig;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;

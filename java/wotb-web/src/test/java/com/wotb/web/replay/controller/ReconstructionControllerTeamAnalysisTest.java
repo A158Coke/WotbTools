@@ -18,7 +18,7 @@ import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.AiReplayReviewService;
-import com.wotb.web.replay.ai.AiUpstreamException;
+import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.ai.AnalyzeResult;
 import com.wotb.web.replay.ai.TeamAnalyzeResult;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;

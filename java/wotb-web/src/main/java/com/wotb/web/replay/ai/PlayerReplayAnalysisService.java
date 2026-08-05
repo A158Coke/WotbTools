@@ -14,6 +14,7 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
+import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;

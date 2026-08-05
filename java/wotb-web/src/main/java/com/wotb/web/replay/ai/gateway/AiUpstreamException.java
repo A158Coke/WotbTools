@@ -1,4 +1,4 @@
-package com.wotb.web.replay.ai;
+package com.wotb.web.replay.ai.gateway;
 
 /**
  * 调用上游 AI 服务（DeepSeek）失败时抛出。
