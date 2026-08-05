@@ -21,7 +21,6 @@ import com.wotb.core.processing.BattleCategory;
 import com.wotb.core.processing.BattleCategoryUtils;
 import com.wotb.core.processing.BattleIdentity;
 import com.wotb.core.processing.PerspectiveTeamNotResolvedException;
-import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.ReplayAnalysisScope;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingResult;
@@ -67,6 +66,53 @@ public class TeamReplayAnalysisService {
             录像者只用于确定 perspective（分析视角），不得围绕录像者个人组织团队复盘，也不得把他的个人表现当作队伍结论。
             禁止把整支队伍称为「你」，本文不使用第二人称。
             必须逐车分析对方阵容并指出对方主要威胁车辆；对方数据缺失时明确说明，不得猜测。""";
+
+    /** Team 专用：EN 团队规则（替换 TEAM_ANALYSIS_RULE）。 */
+    static final String TEAM_ANALYSIS_RULE_EN = """
+
+            === TEAM REVIEW RULES (mandatory, training room / clan battle team review only) ===
+            The subject of the review is the entire team identified by teamLabel, not any individual player.
+            Refer to the opponents as "the opposing team"/"the enemy team".
+            The recorder is used only to determine the perspective; do not organize the team review around the
+            recorder as an individual, and do not present his personal performance as team conclusions.
+            Never address the whole team as "you"; do not use the second person in this review.
+            Analyze the opposing lineup tank by tank and point out the opposing team's main threat vehicles;
+            when opposing data is missing, say so explicitly instead of guessing.""";
+
+    /** Team 专用：RU 团队规则（替换 TEAM_ANALYSIS_RULE）。 */
+    static final String TEAM_ANALYSIS_RULE_RU = """
+
+            === ПРАВИЛА КОМАНДНОГО РАЗБОРА (обязательно, только командный разбор тренировочного боя или клановой игры) ===
+            Объект разбора — вся команда, обозначенная teamLabel, а не отдельный игрок.
+            Противников называйте «команда противника»/«вражеская команда».
+            Рекордер используется только для определения перспективы; не стройте командный разбор вокруг рекордера
+            как личности и не выдавайте его личные действия за выводы о команде.
+            Не обращайтесь ко всей команде как к «вы»; в этом разборе не используйте второе лицо.
+            Разбирайте состав противника по машинам и указывайте основные угрозы команды противника;
+            при отсутствии данных о противнике прямо скажите об этом, не угадывая.""";
+
+    /**
+     * 组装团队 system prompt：ZH 返回原样；EN/RU 在中文基座上替换中文输出强制句
+     * （输出语言、时间格式、语言规则与团队规则）。
+     */
+    static String localizeTeamSystemPrompt(final String zhPrompt, final AllowedLanguage language) {
+        if (language == null || language == AllowedLanguage.ZH) {
+            return zhPrompt;
+        }
+        final boolean en = language == AllowedLanguage.EN;
+        return zhPrompt
+                .replace("请用简体中文输出：",
+                        en ? PlayerReplayPromptBuilder.EN_OUTPUT_INTRO
+                                : PlayerReplayPromptBuilder.RU_OUTPUT_INTRO)
+                .replace(PlayerReplayPromptBuilder.ZH_TIME_RULE,
+                        en ? PlayerReplayPromptBuilder.EN_TIME_RULE
+                                : PlayerReplayPromptBuilder.RU_TIME_RULE)
+                .replace(PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE,
+                        en ? PlayerReplayPromptBuilder.COMMON_LANGUAGE_RULE_EN
+                                : PlayerReplayPromptBuilder.COMMON_LANGUAGE_RULE_RU)
+                .replace(TEAM_ANALYSIS_RULE,
+                        en ? TEAM_ANALYSIS_RULE_EN : TEAM_ANALYSIS_RULE_RU);
+    }
 
     static final String SINGLE_TEAM_PROMPT = """
             你是《坦克世界闪击战》(WoT Blitz) 的资深团队教练，正在复盘训练房或联赛中的一个团队视角。
@@ -125,11 +171,11 @@ public class TeamReplayAnalysisService {
      * 单场团队上下文入口。使用与 orchestrated path (analyzeTeamGroups) 相同的 RosterEvidence contract。
      */
     public AnalyzeResult analyzeSingleTeamContext(final SingleTeamBattleAnalysisContext context) {
-        return analyzeSingleTeamContext(context, OutputLanguage.ZH);
+        return analyzeSingleTeamContext(context, AllowedLanguage.ZH);
     }
 
     public AnalyzeResult analyzeSingleTeamContext(final SingleTeamBattleAnalysisContext context,
-                                                  final OutputLanguage language) {
+                                                  final AllowedLanguage language) {
         if (!isConfigured()) {
             throw new AiNotConfiguredException();
         }
@@ -143,10 +189,11 @@ public class TeamReplayAnalysisService {
     private AnalyzeResult callSingleTeamContext(
             final SingleTeamBattleAnalysisContext context,
             final TeamAiPromptBuilder.PromptInput input,
-            final OutputLanguage language
+            final AllowedLanguage language
     ) {
         final String content = call(
-                SINGLE_TEAM_PROMPT + language.directive(), input.content(), "SINGLE_TEAM_BATTLE");
+                localizeTeamSystemPrompt(SINGLE_TEAM_PROMPT, language),
+                input.content(), "SINGLE_TEAM_BATTLE");
         return new AnalyzeResult(
                 content,
                 config.model(),
@@ -156,10 +203,11 @@ public class TeamReplayAnalysisService {
     private AnalyzeResult callMultiTeamContext(
             final TeamAiPromptBuilder.PromptInput input,
             final List<KeyBattleEvent> keyEvents,
-            final OutputLanguage language
+            final AllowedLanguage language
     ) {
         final String content = call(
-                MULTI_TEAM_PROMPT + language.directive(), input.content(), "MULTI_TEAM_BATTLE");
+                localizeTeamSystemPrompt(MULTI_TEAM_PROMPT, language),
+                input.content(), "MULTI_TEAM_BATTLE");
         return new AnalyzeResult(content, config.model(), keyEvents);
     }
 
@@ -173,11 +221,11 @@ public class TeamReplayAnalysisService {
      * <p>最终 {@code units} 的顺序保持原始输入 {@code groups} 的顺序不变。</p>
      */
     public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups) {
-        return analyzeTeamGroups(groups, OutputLanguage.ZH);
+        return analyzeTeamGroups(groups, AllowedLanguage.ZH);
     }
 
     public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups,
-                                               final OutputLanguage language) {
+                                               final AllowedLanguage language) {
         if (!isConfigured()) {
             throw new AiNotConfiguredException();
         }

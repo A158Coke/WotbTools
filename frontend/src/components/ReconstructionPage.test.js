@@ -20,6 +20,8 @@ const i18n = vi.hoisted(() => ({
     : key)
 }))
 
+const i18nLocale = vi.hoisted(() => ({ value: 'zh' }))
+
 vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => ({
     tokenParsed: {
@@ -37,7 +39,7 @@ vi.mock('../composables/useAuth.js', () => ({
 }))
 
 vi.mock('vue-i18n', () => ({
-  useI18n: () => ({ t: i18n.t, locale: { value: 'zh' } })
+  useI18n: () => ({ t: i18n.t, locale: i18nLocale })
 }))
 
 describe('ReconstructionPage team analysis', () => {
@@ -139,6 +141,32 @@ describe('ReconstructionPage team analysis', () => {
     await analyzeButton(wrapper).trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('recon.errors.AI_NOT_CONFIGURED')
+  })
+
+  it('sends the current page locale as the lang form field', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(
+      teamResult('SINGLE_PLAYER_BATTLE', [{
+        analysisUnitId: 'player-unit',
+        perspectiveTeam: null,
+        duplicateFileNames: [],
+        report: null
+      }])))
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      for (const locale of ['zh', 'en', 'ru']) {
+        i18nLocale.value = locale
+        const wrapper = mountedPage()
+        await selectReplays(wrapper, ['lang.wotbreplay'])
+        await analyzeButton(wrapper).trigger('click')
+        await flushPromises()
+
+        const requestBody = fetchMock.mock.calls.at(-1)[1].body
+        expect(requestBody.get('lang')).toBe(locale)
+      }
+    } finally {
+      i18nLocale.value = 'zh'
+    }
   })
 
   it('parses JSON error code correctly', async () => {
