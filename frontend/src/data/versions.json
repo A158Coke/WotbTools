@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.2.0",
+    "date": "2026-08-05",
+    "tag": "add",
+    "zh": "AI 复盘三语输出 · 训练房/联赛团队复盘 · 顶栏反馈入口 · 打手资格申请与订单管理 · AI 复盘稳定性与超时治理",
+    "en": "AI review in zh/en/ru · Team review for training/league · Topbar feedback button · Booster applications & orders · AI stability and timeout handling",
+    "ru": "AI-разбор на трёх языках · Командный разбор (тренировка/лига) · Кнопка обратной связи · Заявки и заказы тренера · Стабильность AI и тайм-ауты"
+  },
+  {
     "v": "2.1.0",
     "date": "2026-07-29",
     "tag": "add",

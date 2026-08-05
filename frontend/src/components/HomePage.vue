@@ -1,10 +1,7 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import * as api from '../utils/api.js'
-import versions from '../data/versions.json'
-const { locale, t } = useI18n()
 const { initPromise, tokenParsed } = useAuth()
 const isAdmin = ref(false)
 const topDamage = ref(null)
@@ -24,12 +21,6 @@ onMounted(() => {
     })
   loadTopDamageRecord()
 })
-
-function versionTagLabel(tag) {
-  if (tag === 'add') return t('version.added')
-  if (tag === 'fix') return t('version.fixed')
-  return t(`version.${tag}`)
-}
 
 async function loadTopDamageRecord() {
   try {
@@ -113,16 +104,6 @@ function formatDamage(value) {
       </a>
     </div>
 
-    <section class="version">
-      <h2 class="version-title">{{ $t('home.versionTitle') }}</h2>
-      <div class="ver" v-for="(ver, i) in versions" :key="i">
-        <span class="ver-num">v{{ ver.v }}</span>
-        <span class="ver-date">{{ ver.date }}</span>
-        <span class="ver-tag" :class="ver.tag">{{ versionTagLabel(ver.tag) }}</span>
-        <p>{{ ver[locale] || ver.zh }}</p>
-      </div>
-    </section>
-
     <footer>{{ $t('home.footer') }}</footer>
   </div>
 </template>
@@ -200,15 +181,6 @@ function formatDamage(value) {
 .support { background: var(--warn-bg); color: var(--warn-text); }
 .coming-soon .card { opacity: .45; cursor: default; pointer-events: none; }
 .coming-soon .card:hover { border-color: var(--border); box-shadow: none; }
-.version { margin-top: 32px; }
-.version-title { font-size: 1rem; color: var(--text-heading); margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
-.ver { margin-bottom: 10px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
-.ver-num { font-size: .8rem; font-weight: 600; color: var(--accent); min-width: 50px; }
-.ver-date { font-size: .75rem; color: var(--text-muted); }
-.ver-tag { font-size: .7rem; font-weight: 600; padding: 1px 6px; border-radius: 4px; }
-.ver-tag.add { background: var(--tag-bg); color: var(--accent-dark); }
-.ver-tag.fix { background: var(--status-err-bg); color: var(--status-err-fg); }
-.ver p { font-size: .8rem; color: var(--text-muted); margin: 2px 0 0; flex-basis: 100%; }
 footer { margin-top: 32px; text-align: center; font-size: .75rem; color: var(--text-muted); }
 @media (max-width: 820px) {
   .home-hero { grid-template-columns: 1fr; padding: 26px; }
