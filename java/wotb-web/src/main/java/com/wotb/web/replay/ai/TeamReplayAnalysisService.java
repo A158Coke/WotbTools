@@ -39,6 +39,7 @@ import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
+import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 

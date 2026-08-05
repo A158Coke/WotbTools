@@ -1,7 +1,5 @@
 package com.wotb.web.replay.ai.gateway;
 
-import com.wotb.web.replay.ai.AiUpstreamException;
-
 /**
  * 项目内部、供应商无关的 AI 聊天网关。
  * <p>Replay 业务服务通过此接口发起 AI 调用， Gateway 实现负责：

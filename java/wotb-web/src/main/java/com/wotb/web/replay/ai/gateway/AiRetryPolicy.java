@@ -1,7 +1,6 @@
 package com.wotb.web.replay.ai.gateway;
 
 import com.wotb.web.config.AiModelProperties;
-import com.wotb.web.replay.ai.AiUpstreamException;
 
 /**
  * å”¯ä¸€çš„ AI ä¸Šæ¸¸ retry å±‚ï¼šåœ¨ {@link SpringAiChatGateway} å†…éƒ¨æ‰§è¡Œï¼Œ

@@ -1,4 +1,4 @@
-package com.wotb.web.replay.ai;
+package com.wotb.web.replay.ai.gateway;
 
 import com.wotb.core.ai.AiTokenEstimator;
 

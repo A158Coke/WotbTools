@@ -28,8 +28,6 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 
-import com.wotb.web.replay.ai.AiUpstreamException;
-
 /**
  * Verifies the upstream metric surface: existing names stay compatible,
  * new low-cardinality metrics are recorded, and no high-cardinality or

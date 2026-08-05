@@ -46,8 +46,6 @@ import org.springframework.ai.openai.OpenAiChatOptions;
 
 import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.web.config.AiModelProperties;
-import com.wotb.web.replay.ai.AiUpstreamException;
-
 /**
  * SpringAiChatGateway æµ‹è¯•ï¼šé€šè¿‡ mock {@link ChatModel} å®Œå…¨é¿å…çœŸå®ž DeepSeek è°ƒç”¨ã€‚
  * æ ¸å¿ƒæ £æŸ¥ AiChatRequest â†’ Prompt/OpenAiChatOptions çš„æ˜ å°„ã€å“åº”æ‹†è§£ã€
