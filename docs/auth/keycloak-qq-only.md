@@ -1,5 +1,7 @@
 # Keycloak Authentication 设计
 
+> **2026-08-06 update**：本文档为 QQ IdP 时期的历史设计。现已提交 Wargaming.net ASIA 亚服登录（见 [wargaming-asia-login.md](wargaming-asia-login.md) 和 [wargaming-asia-deployment.md](wargaming-asia-deployment.md)）：顶层规则改为"每个 Keycloak 用户有 `region` 属性（CN/ASIA）"，QQ 与 WG 分别创建独立账号；本期不做 QQ→WG 绑定。
+
 ## 背景
 
 WotBTools 后续用户功能（leaderboard 记录归属、QQ 通知绑定、Blitz account 绑定、订阅、个人记录管理、风控）需认证系统。

@@ -15,6 +15,8 @@
 - [rating-system.md](docs/rating-system.md) — 评分算法与参数
 - [observability.md](docs/observability.md) — 监控 / 日志 / 备份等运维
 - [team-ai-review-feature.md](docs/team-ai-review-feature.md) — AI 团队复盘功能说明
+- [auth/wargaming-asia-login.md](docs/auth/wargaming-asia-login.md) — Wargaming.net 亚服登录需求与实现说明
+- [auth/wargaming-asia-deployment.md](docs/auth/wargaming-asia-deployment.md) — Wargaming 登录部署与手工配置（运维手册）
 
 ## 快速开始
 
@@ -24,4 +26,4 @@
 
 ## 已上线工具
 
-回放解析与 Excel 导出 · 在线排行榜 · 实时评分（Rating V2）· AI 战术复盘（个人 / 团队）· Keycloak 认证 · 陪练与打手管理
+回放解析与 Excel 导出 · 在线排行榜 · 实时评分（Rating V2）· AI 战术复盘（个人 / 团队）· Keycloak 认证（QQ + Wargaming.net 亚服）· 陪练与打手管理

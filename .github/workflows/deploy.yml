@@ -19,6 +19,7 @@ on:
       - "docker/Dockerfile.keycloak"
       - "docker/keycloak/**"
       - "keycloak-juhe-qq-provider/**"
+      - "keycloak-wargaming-provider/**"
       - "deploy/**"
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
@@ -77,7 +78,7 @@ jobs:
             if grep -Eq '^(frontend/|common/map_names\.json$|common/assets/|docker/Dockerfile\.frontend$|deploy/nginx/|\.dockerignore$)' <<< "$changed_files"; then
               frontend=true
             fi
-            if grep -Eq '^(docker/Dockerfile\.keycloak$|docker/keycloak/|keycloak-juhe-qq-provider/|java/settings-docker\.xml$|\.dockerignore$)' <<< "$changed_files"; then
+            if grep -Eq '^(docker/Dockerfile\.keycloak$|docker/keycloak/|keycloak-juhe-qq-provider/|keycloak-wargaming-provider/|java/settings-docker\.xml$|\.dockerignore$)' <<< "$changed_files"; then
               keycloak=true
             fi
             if grep -Eq '^(deploy/|\.github/workflows/deploy\.yml$)' <<< "$changed_files"; then
@@ -329,6 +330,7 @@ jobs:
                 environment:
                   KC_BOOTSTRAP_ADMIN_USERNAME: admin
                   KC_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.KC_ADMIN_PASSWORD }}
+                  WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
                   KC_DB: postgres
                   KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
                   KC_DB_USERNAME: wotb

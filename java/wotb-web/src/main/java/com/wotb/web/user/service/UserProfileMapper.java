@@ -13,7 +13,8 @@ public class UserProfileMapper implements Mapper<UserProfile, UserProfileDto> {
         return new UserProfileDto(
                 p.getId(), p.getKeycloakUserId(), p.getDisplayName(),
                 p.getUsername(),
-                p.getWotbAccountId(), p.getWotbNickname(), p.getWotbServer()
+                p.getWotbAccountId(), p.getWotbNickname(), p.getWotbServer(),
+                p.getWotbAccountSource(), p.getWotbAccountVerifiedAt()
         );
     }
 }

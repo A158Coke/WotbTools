@@ -129,6 +129,7 @@ public final class JuheQqEndpoint {
             context.setAuthenticationSession(authenticationSession);
 
             context.setUserAttribute("displayName", nickname);
+            context.setUserAttribute("region", "CN");
             context.setUserAttribute("juhe.provider", "qq");
             context.setUserAttribute("juhe.social_uid", socialUid);
             context.setUserAttribute("juhe.nickname", nickname);

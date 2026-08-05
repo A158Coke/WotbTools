@@ -204,7 +204,7 @@ class BoosterApplicationServiceTest {
 
     private static UserProfileDto profile(final Long wotbAccountId, final String wotbNickname) {
         return new UserProfileDto(11L, "kc-user", "Display", "username",
-                wotbAccountId, wotbNickname, "CN");
+                wotbAccountId, wotbNickname, "CN", "MANUAL", null);
     }
 
     private static BoosterApplication application() {

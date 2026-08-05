@@ -200,6 +200,11 @@ export async function deleteUserWotbAccount() {
   return boostHandle(await fetch('/api/users/wotb-account', { method: 'DELETE', headers: await boostHeaders() }))
 }
 
+/** WG ASIA 登录后的幂等同步：只读当前 JWT，昵称变化时刷新资料。 */
+export async function syncUserWotbAccountFromLogin() {
+  return boostHandle(await fetch('/api/users/wotb-account/from-login', { method: 'PUT', headers: await boostHeaders() }))
+}
+
 export async function getUserLeaderboardRecords() {
   return boostHandle(await fetch('/api/users/profile/records', { headers: await boostHeaders() }))
 }

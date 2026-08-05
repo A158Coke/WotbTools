@@ -1,5 +1,7 @@
 package com.wotb.web.user.dto;
 
+import java.time.OffsetDateTime;
+
 /** 用户资料响应。 */
 public record UserProfileDto(
     Long id,
@@ -8,5 +10,7 @@ public record UserProfileDto(
     String username,
     Long wotbAccountId,
     String wotbNickname,
-    String wotbServer
+    String wotbServer,
+    String wotbAccountSource,
+    OffsetDateTime wotbAccountVerifiedAt
 ) {}
