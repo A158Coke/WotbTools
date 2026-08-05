@@ -21,6 +21,7 @@
         <poi.version>5.3.0</poi.version>
         <javafx.version>21.0.4</javafx.version>
         <springboot.version>4.1.0</springboot.version>
+        <springai.version>2.0.0</springai.version>
     </properties>
 
     <dependencyManagement>
@@ -39,6 +40,13 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
                 <version>${springboot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${springai.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
