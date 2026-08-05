@@ -56,8 +56,6 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button :class="{ active: activeTool === 'extended' }" @click="navigate('extended')">{{ $t('extended.nav') }}</button>
       <button :class="{ active: activeTool === 'boost' }" @click="navigate('boost')">{{ $t('app.boost_tab') }}</button>
       <button data-testid="ai-review-nav-button" :class="{ active: activeTool === 'reconstruction' }" @click="navigate('reconstruction')">{{ $t('recon.nav') }}</button>
-      <button :class="{ active: activeTool === 'version' }" @click="navigate('version')">{{ $t('version.btn') }}</button>
-      <button :class="{ active: activeTool === 'contact' }" @click="navigate('contact')">{{ $t('contact.nav') }}</button>
     </nav>
     <div class="tb-spacer"></div>
     <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
@@ -68,6 +66,8 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">{{ $t('theme.light') }}</button>
       <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">{{ $t('theme.dark') }}</button>
     </div>
+    <button class="auth-btn ghost" :class="{ active: activeTool === 'version' }" @click="navigate('version')">{{ $t('version.btn') }}</button>
+    <button class="auth-btn ghost" :class="{ active: activeTool === 'contact' }" @click="navigate('contact')">{{ $t('contact.nav') }}</button>
     <a class="auth-btn ghost" href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }}</a>
     <a class="auth-btn ghost" @click.prevent="navigate('profile')" href="/?view=profile">{{$t('app.profile')}}</a>
   </div>
@@ -270,7 +270,9 @@ h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
   background: color-mix(in srgb, var(--bg-card) 92%, transparent);
   border-bottom: 1px solid var(--border-header);
   box-shadow: 0 10px 24px rgba(18, 22, 18, .08);
-  backdrop-filter: blur(14px); }
+  backdrop-filter: blur(14px);
+  overflow-x: auto; scrollbar-width: none; }
+.topbar::-webkit-scrollbar { display: none; }
 .tb-brand { display: flex; align-items: center; }
 .tb-logo { height: 28px; }
 .topbar nav { display: flex; gap: 4px; flex: 0 0 auto; min-width: 0; }
@@ -288,6 +290,7 @@ h2 { margin: 0 0 10px; font-size: 1.1rem; color: var(--text-heading); }
 .auth-btn { padding: 6px 14px; border: 1px solid var(--border-ghost); border-radius: 7px;
   background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-size: .82rem; font-family: inherit; white-space: nowrap; }
 .auth-btn:hover { background: var(--bg-blue-light); border-color: var(--accent); color: var(--accent-dark); text-decoration: none; }
+.auth-btn.active { background: var(--bg-blue); border-color: var(--accent); color: var(--accent-dark); font-weight: 700; }
 .tabs { display: flex; gap: 4px; margin-bottom: 12px; background: var(--bg-card2); border-radius: 9px; padding: 3px; }
 .tabs button { flex: 1; padding: 8px 0; border: none; border-radius: 7px;
   background: transparent; color: var(--text-sub); cursor: pointer; font-size: .85rem; font-family: inherit; font-weight: 500; }
@@ -485,6 +488,13 @@ tr:hover td { background: var(--bg-list-hover); }
   .chip { font-size: 11px; padding: 2px 4px; }
 }
 .scroll-hint { display: none; }
+@media (max-width: 1080px) {
+  .topbar { position: sticky; height: auto; padding: 8px 10px; gap: 6px; flex-wrap: wrap; }
+  .tb-content { padding-top: 0; }
+  .tb-spacer { display: none; }
+  .topbar nav { order: 3; width: 100%; gap: 2px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .topbar nav::-webkit-scrollbar { display: none; }
+}
 @media (max-width: 768px) {
   .scroll-hint { display: block; text-align: center; font-size: 11px; color: var(--text-sub); margin: 6px 0 0; padding-bottom: 4px; }
 }
