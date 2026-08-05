@@ -98,6 +98,7 @@ wotb:
     model: ${AI_MODEL:deepseek-v4-flash}
     connect-timeout-sec: ${AI_CONNECT_TIMEOUT_SEC:10}
     timeout-sec: ${AI_TIMEOUT_SEC:300}
+    # total budget for one AiChatGateway.chat() lifecycle (attempts + retries + backoff)
     call-timeout-sec: ${AI_CALL_TIMEOUT_SEC:315}
     retry-max-attempts: ${AI_RETRY_MAX_ATTEMPTS:3}
     retry-initial-backoff-millis: ${AI_RETRY_INITIAL_BACKOFF_MS:1000}
