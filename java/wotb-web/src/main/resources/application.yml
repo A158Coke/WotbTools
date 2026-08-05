@@ -75,6 +75,10 @@ management:
 logging:
   level:
     org.apache.poi: WARN
+    # Spring AI logs the full prompt at WARN when the provider returns empty
+    # choices; suppress prompt/completion output while keeping the rest of the
+    # application logs at their default levels.
+    org.springframework.ai.openai.OpenAiChatModel: ERROR
   structured:
     format:
       console: logstash

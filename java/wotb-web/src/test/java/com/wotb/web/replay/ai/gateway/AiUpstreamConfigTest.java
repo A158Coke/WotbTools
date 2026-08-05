@@ -40,6 +40,19 @@ class AiUpstreamConfigTest {
     }
 
     @Test
+    void springAiOpenAiChatModelLoggingIsSuppressed() throws Exception {
+        final List<PropertySource<?>> sources = new YamlPropertySourceLoader()
+                .load("application", new ClassPathResource("application.yml"));
+        final PropertySource<?> source = sources.getFirst();
+        // OpenAiChatModel logs the full prompt at WARN when the provider returns
+        // empty choices; the production config must keep that class at ERROR and
+        // must not silence the whole application via a global ERROR level.
+        assertEquals("ERROR", source.getProperty(
+                "logging.level.org.springframework.ai.openai.OpenAiChatModel"));
+        assertEquals("WARN", source.getProperty("logging.level.org.apache.poi"));
+    }
+
+    @Test
     void validDefaultsBind() {
         final AiModelProperties properties = properties(
                 10, 300, 315, 3, 1000, 8000, 2.0);

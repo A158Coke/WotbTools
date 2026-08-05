@@ -67,6 +67,7 @@ services:
       AI_API_KEY: ${AI_API_KEY:-}
       AI_BASE_URL: ${AI_BASE_URL:-https://api.deepseek.com}
       AI_MODEL: ${AI_MODEL:-deepseek-v4-flash}
+      AI_TIMEOUT_SEC: ${AI_TIMEOUT_SEC:-300}
       AI_CONNECT_TIMEOUT_SEC: ${AI_CONNECT_TIMEOUT_SEC:-10}
       AI_CALL_TIMEOUT_SEC: ${AI_CALL_TIMEOUT_SEC:-315}
       AI_RETRY_MAX_ATTEMPTS: ${AI_RETRY_MAX_ATTEMPTS:-3}

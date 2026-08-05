@@ -257,7 +257,11 @@ public class SpringAiChatGateway implements AiChatGateway {
                 || response.getResult().getMetadata() == null) {
             return null;
         }
-        return response.getResult().getMetadata().getFinishReason();
+        final String reason = response.getResult().getMetadata().getFinishReason();
+        // The SDK normalizes finish_reason to an enum name (e.g. "STOP"); the
+        // legacy gateway returned the raw provider value ("stop"). Keep the
+        // original casing contract by normalizing to lower case.
+        return reason != null ? reason.toLowerCase(Locale.ROOT) : null;
     }
 
     private AiUpstreamException providerFailure(
