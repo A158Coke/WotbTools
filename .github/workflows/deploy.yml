@@ -126,7 +126,7 @@ jobs:
           node-version: "24"
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Run frontend tests
         working-directory: frontend
         run: npm test
