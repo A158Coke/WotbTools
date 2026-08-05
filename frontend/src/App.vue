@@ -10,6 +10,8 @@ import BoostPage from './components/BoostPage.vue'
 import AdminUsersPage from './components/AdminUsersPage.vue'
 import ExtendedPage from './components/ExtendedPage.vue'
 import ReconstructionPage from './components/ReconstructionPage.vue'
+import VersionPage from './components/VersionPage.vue'
+import ContactPage from './components/ContactPage.vue'
 
 const { theme, handleTheme } = useTheme()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
@@ -28,7 +30,7 @@ const viewParam = params.get('view')
 // 由 ReconstructionPage 自行检查登录状态并跳转登录页。
 const ALLOWED_VIEWS = [
   'home', 'replay', 'leaderboard', 'extended',
-  'profile', 'boost', 'admin-users', 'reconstruction',
+  'profile', 'boost', 'admin-users', 'reconstruction', 'version', 'contact',
 ]
 const activeTool = ref(ALLOWED_VIEWS.includes(viewParam) ? viewParam : defaultView)
 
@@ -54,6 +56,8 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button :class="{ active: activeTool === 'extended' }" @click="navigate('extended')">{{ $t('extended.nav') }}</button>
       <button :class="{ active: activeTool === 'boost' }" @click="navigate('boost')">{{ $t('app.boost_tab') }}</button>
       <button data-testid="ai-review-nav-button" :class="{ active: activeTool === 'reconstruction' }" @click="navigate('reconstruction')">{{ $t('recon.nav') }}</button>
+      <button :class="{ active: activeTool === 'version' }" @click="navigate('version')">{{ $t('version.btn') }}</button>
+      <button :class="{ active: activeTool === 'contact' }" @click="navigate('contact')">{{ $t('contact.nav') }}</button>
     </nav>
     <div class="tb-spacer"></div>
     <select class="lang-select" v-model="$i18n.locale" @change="onLangChange">
@@ -76,6 +80,8 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
     <BoostPage v-else-if="activeTool === 'boost'" />
     <AdminUsersPage v-else-if="activeTool === 'admin-users'" />
     <ReconstructionPage v-else-if="activeTool === 'reconstruction'" />
+    <VersionPage v-else-if="activeTool === 'version'" />
+    <ContactPage v-else-if="activeTool === 'contact'" />
     <ReplayPage v-else />
   </div>
 

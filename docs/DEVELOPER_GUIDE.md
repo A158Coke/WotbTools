@@ -325,7 +325,7 @@ AI 复盘区分两种 scope，互不混用：
 
 ### Frontend Layout Note
 
-- `App.vue` 顶栏样式为全局样式：桌面端固定在顶部，移动端使用 sticky + flex-wrap，避免语言选择、主题切换、反馈入口和个人中心入口挤压回放/排行榜页面。顶栏反馈按钮为外链 `https://github.com/A158Coke/WotbTools/issues/new`（`target="_blank"`，三语文案 `app.feedback`）。
+- `App.vue` 顶栏样式为全局样式：桌面端固定在顶部，移动端使用 sticky + flex-wrap，避免语言选择、主题切换、反馈入口、版本历史、联系入口和个人中心入口挤压回放/排行榜页面。顶栏反馈按钮为外链 `https://github.com/A158Coke/WotbTools/issues/new`（`target="_blank"`，三语文案 `app.feedback`）；版本历史（`version.btn`）与联系页（`contact.nav`）为 SPA 内导航。
 - Vue SPA 主入口视觉变量集中在 `App.vue` 的 `:root` / `[data-theme="dark"]`；独立 `/extended` 入口通过 `frontend/src/styles/theme.css` 复用同一套变量。首页、上传区、排行榜和表格应优先复用这些变量，避免局部硬编码色板。
 - 评分徽章样式使用 `r-elite` / `r-great` / `r-good` / `r-mid` / `r-poor`；最高/最低标记由 `utils/helpers.js` 的 `medal(...)` 统一计算，最低评分允许为 `0`，全员同分不显示奖惩。
 - 公共首页可通过 `?view=home` 本地预览；线上 `wotbtools.com` / `www.wotbtools.com` 无参数仍默认进入首页。
@@ -343,6 +343,8 @@ AI 复盘区分两种 scope，互不混用：
 - `?view=profile`：进入个人中心。
 - `?view=admin-users`：进入管理员用户管理（仅 `wotbtools-admin` 角色可见）。
 - `?view=reconstruction`：进入 AI 复盘页。入口（顶栏按钮 + 首页卡片）随时可见，不做角色门控；`ReconstructionPage` 挂载时检查登录，未登录自动 `login('reconstruction')` 跳转登录页并在登录后回到本页。页面只提供「选择回放文件 → 开始 AI 复盘 → 展示结果」，不再展示重建过程与任意时刻状态查询。
+- `?view=version`：进入版本历史页（`VersionPage.vue`，读取 `frontend/src/data/versions.json` 渲染，顶栏「更新历史」入口）。
+- `?view=contact`：进入联系页（`ContactPage.vue`，展示 QQ / 微信 / Discord 联系方式，支持一键复制，顶栏「联系我」入口）。
 - `wotbtools.com` / `www.wotbtools.com` 无参数时默认显示工具集首页。
 
 ### 前端组件

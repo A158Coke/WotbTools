@@ -134,11 +134,23 @@
     },
     "version": {
         "btn": "Changelog",
+        "title": "Version History",
         "back": "Back",
         "added": "Added",
         "fixed": "Fixed",
         "changed": "Changed",
         "removed": "Removed"
+    },
+    "contact": {
+        "nav": "Contact",
+        "title": "Contact Me",
+        "subtitle": "Reach out with feedback, ideas, or collaboration, or just add me as a friend.",
+        "qq": "QQ",
+        "wechat": "WeChat",
+        "discord": "Discord",
+        "copy": "Copy",
+        "copied": "Copied",
+        "hint": "Copy the ID and add me in the corresponding app."
     },
     "col_groups": {
         "identity": "Identity",
@@ -758,8 +770,7 @@
         "sponsorTitle": "Sponsor",
         "sponsorDesc": "Voluntary sponsorship for server costs.",
         "sponsorTag": "Support",
-        "footer": "WoTBTools - Community tool, not a Wargaming product",
-        "versionTitle": "Version History"
+        "footer": "WoTBTools - Community tool, not a Wargaming product"
     },
     "recon": {
         "nav": "AI Review",

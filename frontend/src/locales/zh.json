@@ -134,11 +134,23 @@
     },
     "version": {
         "btn": "更新历史",
+        "title": "版本历史",
         "back": "返回",
         "added": "新增",
         "fixed": "修复",
         "changed": "变更",
         "removed": "移除"
+    },
+    "contact": {
+        "nav": "联系我",
+        "title": "联系我",
+        "subtitle": "欢迎反馈问题、建议或合作，也可以直接添加好友。",
+        "qq": "QQ",
+        "wechat": "微信",
+        "discord": "Discord",
+        "copy": "复制",
+        "copied": "已复制",
+        "hint": "复制号码/用户名后，到对应应用添加好友。"
     },
     "col_groups": {
         "identity": "身份",
@@ -758,8 +770,7 @@
         "sponsorTitle": "支持项目",
         "sponsorDesc": "自愿赞助，用于服务器和维护成本。",
         "sponsorTag": "赞助",
-        "footer": "WoTBTools - 社区工具，非 Wargaming 官方产品",
-        "versionTitle": "版本历史"
+        "footer": "WoTBTools - 社区工具，非 Wargaming 官方产品"
     },
     "recon": {
         "nav": "AI Review",
