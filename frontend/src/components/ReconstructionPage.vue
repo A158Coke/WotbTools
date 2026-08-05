@@ -6,7 +6,7 @@ import { localizeAiError } from '../utils/reconstruction-analysis.js'
 import AnalysisResultPanel from './AnalysisResultPanel.vue'
 import ReplayInputPanel from './ReplayInputPanel.vue'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { initPromise, tokenParsed, token, ensureToken, login, authenticated } = useAuth()
 
 /** 登录后回跳到本页而不是个人中心。 */
@@ -82,6 +82,7 @@ function clearFile() {
 function singleFileFormData() {
   const fd = new FormData()
   if (files.value.length > 0) fd.append('files', files.value[0])
+  fd.append('lang', locale.value)
   return fd
 }
 

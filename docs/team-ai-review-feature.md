@@ -22,12 +22,12 @@
 
 ```
 ReconstructionController.analyze()
-  -> AiReplayReviewService.analyze(MultipartFile[])
+  -> AiReplayReviewService.analyze(MultipartFile[], AllowedLanguage)
     -> validateBatchSize() [1-file guard]
     -> file validation (extension/empty/size/total)
     -> DefaultReplayProcessingFacade.process()
     -> BatchAnalyzer.analyze()
-    -> AiReplayAnalysisService.analyzeTeamGroups()
+    -> AiReplayAnalysisService.analyzeTeamGroups(groups, AllowedLanguage)
       -> buildSingleTeamContext()
       -> buildPartitions() [complete-link]
       -> TeamAiPromptBuilder.single()/multi()
