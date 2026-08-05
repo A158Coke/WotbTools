@@ -2,6 +2,17 @@ server:
   port: 8087
 
 spring:
+  autoconfigure:
+    exclude:
+      # Spring AI OpenAI auto-configurations create SDK model beans even without
+      # an API key and would fail startup. AiGatewayConfig builds the single
+      # SpringAiChatGateway / OpenAiChatModel explicitly instead.
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiChatAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiEmbeddingAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiImageAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioTranscriptionAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiModerationAutoConfiguration
   servlet:
     multipart:
       max-file-size: 20MB
@@ -26,9 +37,7 @@ spring:
         jwt:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:https://auth.wotbtools.com/realms/wotbtools}
 
-# ── 可观测性 ──────────────────────────────────────────────
-# 管理端口: 独立端口(8088)，仅 Docker 内部网络可达，不映射到宿主机/公网。
-# Prometheus 通过 Docker 网络抓取 http://wotb-backend:8088/actuator/prometheus。
+# observability: dedicated management port (8088), Docker-network only.
 management:
   server:
     port: 8088
@@ -66,7 +75,6 @@ management:
 logging:
   level:
     org.apache.poi: WARN
-  # 结构化 JSON 日志 (logstash 格式): Loki/Alloy 采集; MDC 字段自动包含 requestId
   structured:
     format:
       console: logstash
@@ -80,7 +88,7 @@ keycloak:
 
 wotb:
   ai:
-    # 空默认值：未配置密钥时应用仍可正常启动，/api/replay/analyze 返回 AI_NOT_CONFIGURED
+    # empty default: app still starts without a key; /api/replay/analyze returns AI_NOT_CONFIGURED
     api-key: ${AI_API_KEY:}
     base-url: ${AI_BASE_URL:https://api.deepseek.com}
     model: ${AI_MODEL:deepseek-v4-flash}
