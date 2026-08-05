@@ -19,6 +19,8 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiUpstreamException;
+import com.wotb.web.replay.ai.AnalyzeResult;
+import com.wotb.web.replay.ai.TeamAnalyzeResult;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.junit.jupiter.api.BeforeEach;
@@ -214,8 +216,8 @@ class ReconstructionControllerTeamAnalysisTest {
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(result);
         when(aiService.analyzeTeamGroups(any()))
-                .thenReturn(new AiReplayAnalysisService.TeamAnalyzeResult(
-                        new AiReplayAnalysisService.AnalyzeResult(
+                .thenReturn(new TeamAnalyzeResult(
+                        new AnalyzeResult(
                                 "team review", "test-model", List.of()),
                         List.of(unit("arena-one-team-1", "arena-one", 1, "training.wotbreplay")),
                         1, 1, 0, List.of()));
@@ -353,7 +355,7 @@ class ReconstructionControllerTeamAnalysisTest {
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(randomResult());
         when(aiService.analyzePlayerOrFallback(any()))
-                .thenReturn(new AiReplayAnalysisService.AnalyzeResult(
+                .thenReturn(new AnalyzeResult(
                         "player review", "test-model", List.of()));
 
         mvc.perform(multipart("/api/replay/analyze")
@@ -373,12 +375,12 @@ class ReconstructionControllerTeamAnalysisTest {
         return (ArgumentCaptor) ArgumentCaptor.forClass(List.class);
     }
 
-    private static AiReplayAnalysisService.TeamAnalyzeResult teamAiResult(
+    private static TeamAnalyzeResult teamAiResult(
             final String analysis,
             final List<AnalysisUnitResult> units
     ) {
-        return new AiReplayAnalysisService.TeamAnalyzeResult(
-                new AiReplayAnalysisService.AnalyzeResult(
+        return new TeamAnalyzeResult(
+                new AnalyzeResult(
                         analysis, "test-model", List.of()),
                 units,
                 units.size(),

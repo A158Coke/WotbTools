@@ -1,7 +1,10 @@
 package com.wotb.web.replay.ai;
+import com.wotb.web.replay.ai.TeamReplayAnalysisService;
+import com.wotb.web.replay.ai.PlayerReplayPromptBuilder;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.processing.BatchAnalyzer;
 import com.wotb.core.processing.ReplayIdentity;
 import com.wotb.core.processing.ReplayProcessingCapabilities;
@@ -9,6 +12,9 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
+import com.wotb.web.replay.ai.gateway.AiChatGateway;
+import com.wotb.web.replay.ai.gateway.AiChatRequest;
+import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -33,11 +39,11 @@ class TankNameProperNounTest {
 
     private static Stream<String> allSystemPrompts() {
         return Stream.of(
-                AiReplayAnalysisService.SYSTEM_PROMPT,
-                AiReplayAnalysisService.SINGLE_PLAYER_PROMPT,
-                AiReplayAnalysisService.SINGLE_TEAM_PROMPT,
-                AiReplayAnalysisService.MULTI_TEAM_PROMPT,
-                AiReplayAnalysisService.MULTI_SYSTEM_PROMPT);
+                PlayerReplayPromptBuilder.SYSTEM_PROMPT,
+                PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT,
+                TeamReplayAnalysisService.SINGLE_TEAM_PROMPT,
+                TeamReplayAnalysisService.MULTI_TEAM_PROMPT,
+                PlayerReplayPromptBuilder.MULTI_SYSTEM_PROMPT);
     }
 
     // ---- 1 & 2：Player 与 Team system prompt 都包含专有名词规则 ----
@@ -45,9 +51,9 @@ class TankNameProperNounTest {
     @Test
     void playerSystemPromptsRequireTankNamesToBeKeptVerbatim() {
         for (final String prompt : List.of(
-                AiReplayAnalysisService.SYSTEM_PROMPT,
-                AiReplayAnalysisService.SINGLE_PLAYER_PROMPT,
-                AiReplayAnalysisService.MULTI_SYSTEM_PROMPT)) {
+                PlayerReplayPromptBuilder.SYSTEM_PROMPT,
+                PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT,
+                PlayerReplayPromptBuilder.MULTI_SYSTEM_PROMPT)) {
             assertTrue(prompt.contains("专有名词"), prompt);
             assertTrue(prompt.contains("必须原样使用"), prompt);
             assertTrue(prompt.contains("禁止拆分、翻译、展开"), prompt);
@@ -57,8 +63,8 @@ class TankNameProperNounTest {
     @Test
     void teamSystemPromptsContainTheSameRule() {
         for (final String prompt : List.of(
-                AiReplayAnalysisService.SINGLE_TEAM_PROMPT,
-                AiReplayAnalysisService.MULTI_TEAM_PROMPT)) {
+                TeamReplayAnalysisService.SINGLE_TEAM_PROMPT,
+                TeamReplayAnalysisService.MULTI_TEAM_PROMPT)) {
             assertTrue(prompt.contains("专有名词"), prompt);
             assertTrue(prompt.contains("必须原样使用"), prompt);
             assertTrue(prompt.contains("vehicleClass"), prompt);
@@ -101,7 +107,7 @@ class TankNameProperNounTest {
     @Test
     void enemyLineupEvidenceEmitsSphtAsTankNameWithStructuredClass() {
         final StringBuilder sb = new StringBuilder();
-        AiReplayAnalysisService.appendPlayerLine(sb, spht("EnemyAce", 386), false);
+        PlayerReplayPromptBuilder.appendPlayerLine(sb, spht("EnemyAce", 386), false);
         final String evidence = sb.toString();
 
         assertTrue(evidence.contains("敌方 \"EnemyAce\""), evidence);
@@ -116,8 +122,8 @@ class TankNameProperNounTest {
     @Test
     void backendEvidenceNeverLabelsSphtAsArtilleryOrSpg() {
         final StringBuilder sb = new StringBuilder();
-        AiReplayAnalysisService.appendPlayerLine(sb, spht("EnemyAce", 386), false);
-        AiReplayAnalysisService.appendPlayerLine(sb, spht("FriendlyAce", 120), true);
+        PlayerReplayPromptBuilder.appendPlayerLine(sb, spht("EnemyAce", 386), false);
+        PlayerReplayPromptBuilder.appendPlayerLine(sb, spht("FriendlyAce", 120), true);
         final String evidence = sb.toString();
 
         assertFalse(evidence.contains("自行火炮"), evidence);
@@ -145,7 +151,7 @@ class TankNameProperNounTest {
         recorder.killVictims.add(new com.wotb.core.stats.PotentialDamage.KillVictim(2L, 780, 2));
 
         final StringBuilder sb = new StringBuilder();
-        AiReplayAnalysisService.appendRecorderDamageExchange(sb, battle, recorder);
+        PlayerReplayPromptBuilder.appendRecorderDamageExchange(sb, battle, recorder);
         final String evidence = sb.toString();
 
         assertTrue(evidence.contains("DAMAGE_EXCHANGE_AGGREGATED_OBSERVED"), evidence);
@@ -164,7 +170,7 @@ class TankNameProperNounTest {
         battle.players = List.of(recorder);
 
         final StringBuilder sb = new StringBuilder();
-        AiReplayAnalysisService.appendRecorderDamageExchange(sb, battle, recorder);
+        PlayerReplayPromptBuilder.appendRecorderDamageExchange(sb, battle, recorder);
 
         assertEquals("", sb.toString());
     }
@@ -193,7 +199,7 @@ class TankNameProperNounTest {
         p.survived = true;
 
         final StringBuilder sb = new StringBuilder();
-        AiReplayAnalysisService.appendPlayerLine(sb, p, false);
+        PlayerReplayPromptBuilder.appendPlayerLine(sb, p, false);
         final String evidence = sb.toString();
 
         // 名称原样保留；tankopedia 无类型数据时只输出「未知」，绝不由名称猜测
@@ -214,7 +220,7 @@ class TankNameProperNounTest {
 
     @Test
     void ruleTextIsGenericAndNotLimitedToSpht() {
-        final String rule = AiReplayAnalysisService.COMMON_TANK_PROPER_NOUN_RULE;
+        final String rule = PlayerReplayPromptBuilder.COMMON_TANK_PROPER_NOUN_RULE;
         // SPHT 只作为举例出现一次，规则主体覆盖「所有坦克名称」
         assertTrue(rule.contains("都是由 tankId 经权威车辆库映射得到的完整专有名词"), rule);
         assertEquals(1, countOccurrences(rule, "SPHT"), rule);
@@ -285,7 +291,11 @@ class TankNameProperNounTest {
         final var group = new BatchAnalyzer().analyze(List.of(result))
                 .groups()
                 .getFirst();
-        return new AiReplayAnalysisService("", "", "", 1, 30000)
+        return new AiReplayAnalysisService(
+                new AiChatGateway() {
+                    @Override public AiChatResponse chat(final AiChatRequest r) { return null; }
+                    @Override public boolean isConfigured() { return false; }
+                }, "", 30000, new ConservativeDeepSeekTokenEstimator())
                 .buildSingleTeamContext(group);
     }
 }
