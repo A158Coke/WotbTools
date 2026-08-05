@@ -73,6 +73,17 @@
   }
   .tb-brand { color: var(--heading); font-size: 15px; font-weight: 700; text-decoration: none; }
   .tb-brand:hover { color: var(--accent); }
+  .tb-back {
+    padding: 5px 12px;
+    border: 1px solid var(--card-border);
+    border-radius: 7px;
+    background: var(--card-bg);
+    color: var(--text);
+    cursor: pointer;
+    font: inherit;
+    font-size: .8rem;
+  }
+  .tb-back:hover { color: var(--accent); border-color: var(--accent); }
   .tb-spacer { flex: 1; }
   .sr-only {
     position: absolute;
@@ -136,6 +147,7 @@
 </head>
 <body>
 <nav class="topbar" aria-label="WoTBTools">
+  <button type="button" class="tb-back" id="back-btn" data-i18n="back">返回</button>
   <a class="tb-brand" href="/">WoTBTools</a>
   <div class="tb-spacer"></div>
   <label class="sr-only" for="lang-select" data-i18n="language_label">语言</label>
@@ -172,6 +184,7 @@
   "zh": {
     "title": "支持 WoTBTools",
     "language_label": "语言",
+    "back": "返回",
     "sponsor_title": "支持 WoTBTools",
     "sponsor_desc1": "WoTBTools 是个人维护的免费工具。如果这个项目帮到了你，可以自愿赞助，用于服务器和维护成本。",
     "sponsor_desc2": "赞助完全自愿，不设置固定金额，不影响任何功能使用，也不会解锁额外服务。",
@@ -187,6 +200,7 @@
   "en": {
     "title": "Support WoTBTools",
     "language_label": "Language",
+    "back": "Back",
     "sponsor_title": "Support WoTBTools",
     "sponsor_desc1": "WoTBTools is a free tool maintained by an individual. If it has helped you, voluntary sponsorship is appreciated to cover server and maintenance costs.",
     "sponsor_desc2": "Sponsorship is completely voluntary, with no fixed amount, no features locked, and no additional services unlocked.",
@@ -202,6 +216,7 @@
   "ru": {
     "title": "Поддержать WoTBTools",
     "language_label": "Язык",
+    "back": "Назад",
     "sponsor_title": "Поддержать WoTBTools",
     "sponsor_desc1": "WoTBTools — бесплатный инструмент, поддерживаемый одним человеком. Если он вам помог, вы можете добровольно поддержать расходы на сервер и обслуживание.",
     "sponsor_desc2": "Поддержка полностью добровольная, без фиксированной суммы, ограничений функций и дополнительных услуг.",
@@ -228,6 +243,7 @@ const dictionaries = JSON.parse(document.getElementById('sponsor-i18n').textCont
 const languageSelect = document.getElementById('lang-select')
 const methodsElement = document.getElementById('sponsor-methods')
 const unconfiguredElement = document.getElementById('sponsor-unconfigured')
+const backButton = document.getElementById('back-btn')
 const failedTypes = new Set()
 let activeLanguage = 'zh'
 let sponsorMethods = []
@@ -330,6 +346,13 @@ themeButtons.forEach((button) => button.addEventListener('click', () => {
   savePreference(themeKey, button.dataset.theme)
   refreshTheme()
 }))
+backButton.addEventListener('click', () => {
+  if (window.history.length > 1) {
+    window.history.back()
+  } else {
+    window.location.href = '/'
+  }
+})
 media.addEventListener('change', refreshTheme)
 languageSelect.addEventListener('change', () => {
   savePreference(languageKey, languageSelect.value)
