@@ -4,11 +4,11 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 /**
- * é›†ä¸­çš„ secret æ¶ˆæ¯’å™¨ã€‚
- * <p>ä¸åªä¾èµ–ä¸€æ¡æ­£åˆ™ï¼›è¦†ç›– header-like Authorizationã€JSON/å€¼å¯¹å½¢å¼çš„
- * api-key/api_key/apiKey/apikeyã€token/secret/password ç­‰å¯†é’¥å­—æ®µã€query parameter
- * ä»¥åŠ Bearer tokenã€‚æ‰€æœ‰é…åˆ™ä¸åŒºåˆ†å¤§å°å†™ï¼Œå¯¹ä»»ä½•å­—ç¬¦ä¸²ï¼ˆåŒ…æ‹¬åµŒå¥— JSON
- * ä¸Žå¼‚å¸¸æ¶ˆæ¯ï¼‰éƒ½å®‰å…¨ã€‚</p>
+ * Centralized secret redaction. Not a single regex: covers header-like
+ * Authorization, JSON/key-value api-key/api_key/apiKey/apikey, sensitive keys
+ * such as token/secret/password, query parameters and Bearer tokens. All
+ * patterns are case-insensitive and safe for arbitrary text (including nested
+ * JSON and exception messages).
  */
 public final class AiSecretRedactor {
 

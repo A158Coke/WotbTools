@@ -3,12 +3,16 @@ package com.wotb.web.replay.ai.gateway;
 import com.wotb.web.config.AiModelProperties;
 
 /**
- * å”¯ä¸€çš„ AI ä¸Šæ¸¸ retry å±‚ï¼šåœ¨ {@link SpringAiChatGateway} å†…éƒ¨æ‰§è¡Œï¼Œ
- * SDK æœ¬èº« maxRetries å›ºå®šä¸º 0ï¼Œä¸ä¼šäº§ç”Ÿ retry × retry çš„ä¹˜æ³•ã€‚
- * <p>å¯é‡è¯•ï¼š429ã€è¿žæŽ¥æ•…éšœä¸Žè¶…æ—¶ï¼ˆAI_TIMEOUTï¼‰ã€
- * æ— çŠ¶æ€æˆ– 500/502/503/504 çš„ AI_UPSTREAM_UNAVAILABLEã€‚</p>
- * <p>ä¸å¯é‡è¯•ï¼šè®¤è¯/æƒé™ã€invalid requestã€model not foundã€context too largeã€
- * ç©º/æ— æ•ˆ responseï¼ˆé¿å…å¯¹å·²å»ºå¸çš„å“åº”é‡å¤ä»˜è´¹ï¼‰ã€‚</p>
+ * The single AI upstream retry policy, executed inside
+ * {@link SpringAiChatGateway}. The SDK itself keeps {@code maxRetries} at 0,
+ * so there is no retry multiplication (retry x retry).
+ *
+ * <p>Retryable: 429, connection failures and timeouts (AI_TIMEOUT), and
+ * AI_UPSTREAM_UNAVAILABLE with no status or with 500/502/503/504.</p>
+ *
+ * <p>Never retried: authentication/permission failures, invalid request,
+ * model not found, context too large, and empty/invalid completions (avoids
+ * paying twice for an already billed response).</p>
  */
 public record AiRetryPolicy(
         int maxAttempts,
@@ -45,7 +49,8 @@ public record AiRetryPolicy(
     }
 
     /**
-     * ç¬¬ {@code retryNumber} æ¬¡é‡è¯•çš„ç­‰å¾…æ—¶é—´ï¼ˆ1-basedï¼‰ï¼ŒæŒ‰åŸºæ•° Ã— multiplier^(n-1) æ”¾å¤§å¹¶å°é¡¶ã€‚
+     * Wait time for the {@code retryNumber}-th retry (1-based), exponential
+     * (base * multiplier^(n-1)) and capped at {@code maxBackoffMillis}.
      */
     public long backoffMillis(final int retryNumber) {
         if (retryNumber < 1) {
@@ -59,7 +64,7 @@ public record AiRetryPolicy(
     }
 
     /**
-     * å”¯ä¸€çš„å¯é‡è¯•åˆ¤æ–­ï¼Œä¸Ž gateway çš„å®‰å…¨é”™è¯¯ç æ˜ å°„ä¿æŒä¸€è‡´ã€‚
+     * The single retryable check, aligned with the gateway's stable error codes.
      */
     public boolean isRetryable(final AiUpstreamException error) {
         if (error == null) {

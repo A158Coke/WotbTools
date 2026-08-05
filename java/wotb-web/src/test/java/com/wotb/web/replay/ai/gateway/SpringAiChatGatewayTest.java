@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import com.openai.core.JsonValue;
+import com.openai.core.http.Headers;
 import com.openai.errors.BadRequestException;
 import com.openai.errors.InternalServerException;
 import com.openai.errors.OpenAIInvalidDataException;
@@ -24,7 +25,6 @@ import com.openai.errors.OpenAIIoException;
 import com.openai.errors.RateLimitException;
 import com.openai.errors.UnauthorizedException;
 import com.openai.errors.UnexpectedStatusCodeException;
-import com.openai.core.http.Headers;
 import com.openai.models.ErrorObject;
 import com.openai.models.completions.CompletionUsage;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,10 +46,12 @@ import org.springframework.ai.openai.OpenAiChatOptions;
 
 import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.web.config.AiModelProperties;
+
 /**
- * SpringAiChatGateway æµ‹è¯•ï¼šé€šè¿‡ mock {@link ChatModel} å®Œå…¨é¿å…çœŸå®ž DeepSeek è°ƒç”¨ã€‚
- * æ ¸å¿ƒæ £æŸ¥ AiChatRequest â†’ Prompt/OpenAiChatOptions çš„æ˜ å°„ã€å“åº”æ‹†è§£ã€
- * thinking/reasoning_effort ä¼ é€’ä¸Žå¼‚å¸¸æ˜ å°„ã€‚
+ * Gateway unit tests: a mocked {@link ChatModel} completely avoids real
+ * DeepSeek calls. Verifies the AiChatRequest -> Prompt/OpenAiChatOptions
+ * mapping, response parsing, thinking/reasoning_effort forwarding and error
+ * mapping.
  */
 class SpringAiChatGatewayTest {
 
