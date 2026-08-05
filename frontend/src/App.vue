@@ -64,6 +64,7 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
       <button :class="{ active: theme === 'light' }" @click="handleTheme('light')">{{ $t('theme.light') }}</button>
       <button :class="{ active: theme === 'dark' }" @click="handleTheme('dark')">{{ $t('theme.dark') }}</button>
     </div>
+    <a class="auth-btn ghost" href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }}</a>
     <a class="auth-btn ghost" @click.prevent="navigate('profile')" href="/?view=profile">{{$t('app.profile')}}</a>
   </div>
 
