@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -60,7 +61,8 @@ class SpringAiChatGatewayTest {
     @BeforeEach
     void setUp() {
         chatModel = mock(ChatModel.class);
-        gateway = new SpringAiChatGateway(chatModel, "deepseek-v4-flash", null);
+        gateway = new SpringAiChatGateway(chatModel, "deepseek-v4-flash", null,
+                new AiRetryPolicy(3, 0, 0, 2.0));
     }
 
     @Test
@@ -259,6 +261,53 @@ class SpringAiChatGatewayTest {
     }
 
     @Test
+    void retriesTransientFailureUpToMaxAttempts() {
+        when(chatModel.call(any(Prompt.class))).thenThrow(
+                RateLimitException.builder()
+                        .headers(Headers.builder().build())
+                        .error(error("slow down"))
+                        .build());
+        final AiUpstreamException e = assertThrows(
+                AiUpstreamException.class, () -> gateway.chat(request()));
+        assertEquals("AI_RATE_LIMITED", e.code());
+        verify(chatModel, times(3)).call(any(Prompt.class));
+    }
+
+    @Test
+    void doesNotRetryNonRetryableErrors() {
+        when(chatModel.call(any(Prompt.class))).thenThrow(
+                UnauthorizedException.builder()
+                        .headers(Headers.builder().build())
+                        .error(error("bad key"))
+                        .build());
+        assertThrows(AiUpstreamException.class, () -> gateway.chat(request()));
+        verify(chatModel, times(1)).call(any(Prompt.class));
+    }
+
+    @Test
+    void retriesThenSucceeds() {
+        when(chatModel.call(any(Prompt.class)))
+                .thenThrow(RateLimitException.builder()
+                        .headers(Headers.builder().build())
+                        .error(error("slow down"))
+                        .build())
+                .thenReturn(okResponse("hello"));
+        final AiChatResponse result = gateway.chat(request());
+        assertEquals("hello", result.completionText());
+        verify(chatModel, times(2)).call(any(Prompt.class));
+    }
+
+    @Test
+    void doesNotRetryEmptyOrInvalidCompletion() {
+        when(chatModel.call(any(Prompt.class)))
+                .thenReturn(response(" ", "deepseek-v4-flash", null, "stop"));
+        final AiUpstreamException e = assertThrows(
+                AiUpstreamException.class, () -> gateway.chat(request()));
+        assertEquals("AI_EMPTY_RESPONSE", e.code());
+        verify(chatModel, times(1)).call(any(Prompt.class));
+    }
+
+    @Test
     void missingApiKeyProducesUnconfiguredGateway() {
         final SpringAiChatGateway unconfigured = SpringAiChatGateway.fromProperties(
                 properties("", "https://api.deepseek.com", "deepseek-v4-flash"), null);
@@ -276,6 +325,7 @@ class SpringAiChatGatewayTest {
         assertEquals("https://custom.example.com", model.getOptions().getBaseUrl());
         assertEquals("sk-test", model.getOptions().getApiKey());
         assertEquals("deepseek-v4-flash", model.getOptions().getModel());
+        assertEquals(0, model.getOptions().getMaxRetries());
     }
 
     @Test
@@ -299,7 +349,7 @@ class SpringAiChatGatewayTest {
 
     private static AiModelProperties properties(final String apiKey, final String baseUrl, final String model) {
         return new AiModelProperties(
-                apiKey, baseUrl, model, 300,
+                apiKey, baseUrl, model, 10, 300, 315, 3, 1000, 8000, 2.0,
                 1_000_000, 940_000, 32_768, 16_384, true, "max");
     }
 

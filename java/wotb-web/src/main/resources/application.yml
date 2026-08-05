@@ -92,7 +92,13 @@ wotb:
     api-key: ${AI_API_KEY:}
     base-url: ${AI_BASE_URL:https://api.deepseek.com}
     model: ${AI_MODEL:deepseek-v4-flash}
+    connect-timeout-sec: ${AI_CONNECT_TIMEOUT_SEC:10}
     timeout-sec: ${AI_TIMEOUT_SEC:300}
+    call-timeout-sec: ${AI_CALL_TIMEOUT_SEC:315}
+    retry-max-attempts: ${AI_RETRY_MAX_ATTEMPTS:3}
+    retry-initial-backoff-millis: ${AI_RETRY_INITIAL_BACKOFF_MS:1000}
+    retry-max-backoff-millis: ${AI_RETRY_MAX_BACKOFF_MS:8000}
+    retry-backoff-multiplier: ${AI_RETRY_BACKOFF_MULTIPLIER:2.0}
     context-window-tokens: ${AI_CONTEXT_WINDOW_TOKENS:1000000}
     single-replay-max-input-tokens: ${AI_SINGLE_REPLAY_MAX_INPUT_TOKENS:940000}
     max-output-tokens: ${AI_MAX_OUTPUT_TOKENS:32768}

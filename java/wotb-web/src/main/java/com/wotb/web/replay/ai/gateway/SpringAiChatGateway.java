@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.openai.core.JsonValue;
+import com.openai.core.Timeout;
 import com.openai.errors.OpenAIException;
 import com.openai.errors.OpenAIInvalidDataException;
 import com.openai.errors.OpenAIIoException;
@@ -16,6 +17,7 @@ import com.openai.errors.OpenAIServiceException;
 import com.openai.models.completions.CompletionUsage;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import io.micrometer.observation.ObservationRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.SystemMessage;
@@ -27,6 +29,7 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.openai.http.okhttp.OpenAiHttpClientBuilderCustomizer;
 import org.springframework.util.StringUtils;
 
 import com.wotb.core.processing.AiNotConfiguredException;
@@ -34,61 +37,84 @@ import com.wotb.web.config.AiModelProperties;
 import com.wotb.web.replay.ai.AiUpstreamException;
 
 /**
- * å”¯ä¸€ç”Ÿäº§ AI transport adapterï¼šå°† {@link AiChatRequest} æ˜ å°„åˆ° Spring AI
- * {@link OpenAiChatModel} ï¼ˆOpenAI-compatible å®˜æ–¹ adapterï¼‰å¹¶è¿žæŽ¥
- * {@code https://api.deepseek.com}ã€‚
- * <p>Spring AI 2.0.0 çš„ DeepSeek Starter æ— æ³•ä¼ é€� {@code thinking}/{@code reasoning_effort}
- * ï¼ˆ2.0.0 jar ä¸­ {@code DeepSeekChatOptions} æ²¡æœ‰è¿™ä¸¤ä¸ªå­—æ®µï¼‰ï¼Œæ•…ä½¿ç”¨å®˜æ–¹
- * OpenAI-compatible adapter çš„ {@code extraBody} æœºåˆ¶åŽŸæ ·ä¼ é€�è¿™ä¸¤ä¸ª DeepSeek æ‹©å±•å­—æ®µã€‚
- * </p>
- * <p>Spring AI / OpenAI SDK ç±»åž‹ä»…å­˜åœ¨æœ¬ adapter ä¸Ž {@link AiGatewayConfig}ï¼›
- * ä¸šåŠ¡å±‚ä¾ç„¶åª›é€šè¿‡ {@link AiChatGateway} æŽ¥å£ã€‚</p>
+ * The only production AI transport adapter: maps {@link AiChatRequest} onto Spring AI
+ * {@link OpenAiChatModel} (official OpenAI-compatible adapter) against
+ * {@code https://api.deepseek.com}.
+ *
+ * <p>Responsibility of this class (single source of truth):
+ * explicit connect/read/write/total timeouts, the single retry layer
+ * ({@link AiRetryPolicy}), stable error mapping, low-cardinality Micrometer
+ * metrics, correlation id and redacted logging. Prompts and completions are
+ * never logged and never enter metrics or Spring AI observation (the model is
+ * built with a NOOP {@link ObservationRegistry}).</p>
  */
 public class SpringAiChatGateway implements AiChatGateway {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SpringAiChatGateway.class);
     private static final String PROVIDER_NAME = "DeepSeek";
+    private static final String REQUESTS = "wotb_ai_upstream_requests_total";
+    private static final String SUCCESS = "wotb_ai_upstream_success_total";
+    private static final String ERRORS = "wotb_ai_upstream_errors_total";
+    private static final String DURATION = "wotb_ai_upstream_duration_seconds";
+    private static final String RETRIES = "wotb_ai_upstream_retries_total";
+    private static final String RETRY_OUTCOME = "wotb_ai_upstream_retry_outcome_total";
+    private static final String TOKENS = "wotb_ai_upstream_tokens_total";
 
     private final ChatModel chatModel;
     private final String defaultModel;
     private final MeterRegistry meterRegistry;
+    private final AiRetryPolicy retryPolicy;
     private Timer aiUpstreamDuration;
 
     public SpringAiChatGateway(final ChatModel chatModel,
                                final String defaultModel,
-                               final MeterRegistry meterRegistry) {
+                               final MeterRegistry meterRegistry,
+                               final AiRetryPolicy retryPolicy) {
         this.chatModel = chatModel;
         this.defaultModel = defaultModel;
         this.meterRegistry = meterRegistry;
+        this.retryPolicy = retryPolicy != null ? retryPolicy : AiRetryPolicy.DEFAULT;
         if (meterRegistry != null) {
-            aiUpstreamDuration = Timer.builder("wotb_ai_upstream_duration_seconds")
-                    .description("AI upstream API call duration")
+            aiUpstreamDuration = Timer.builder(DURATION)
+                    .description("AI upstream API call duration (including retries)")
                     .publishPercentileHistogram()
                     .register(meterRegistry);
         }
     }
 
     /**
-     * ä»Ž {@link AiModelProperties} æž„å»º gatewayã€‚ç¼ºå°‘ API Key æ—¶ä¸æž„å»º Spring AI clientï¼Œ
-     * gateway ä»ç„¶ç”Ÿæˆä½† {@code isConfigured()} è¿”å›ž {@code false}ã€
-     * {@link #chat} æŠ›å‡º {@link AiNotConfiguredException}ã€‚
+     * Builds the gateway from {@link AiModelProperties}. Without an API key the
+     * Spring AI client is not created: the gateway still exists,
+     * {@code isConfigured()} returns {@code false} and {@link #chat} throws
+     * {@link AiNotConfiguredException}.
      */
     public static SpringAiChatGateway fromProperties(final AiModelProperties properties,
                                                      final MeterRegistry meterRegistry) {
         if (!StringUtils.hasText(properties.apiKey())) {
-            return new SpringAiChatGateway(null, properties.model(), meterRegistry);
+            return new SpringAiChatGateway(null, properties.model(), meterRegistry,
+                    AiRetryPolicy.from(properties));
         }
         final OpenAiChatOptions.Builder connectionOptions = OpenAiChatOptions.builder();
         connectionOptions.baseUrl(properties.baseUrl());
         connectionOptions.apiKey(properties.apiKey());
         connectionOptions.model(properties.model());
-        connectionOptions.timeout(Duration.ofSeconds(properties.timeoutSec()));
-        // ä¿æŒä¸Žæ—§ RestClient ä¸€æ ·çš„é€¾æœŸè¡Œä¸ºï¼šä¸è¿›è¡Œ SDK é‡è¯•ã€‚
+        // Single retry layer lives in this gateway; the SDK must not retry itself.
         connectionOptions.maxRetries(0);
+        connectionOptions.timeout(Duration.ofSeconds(properties.timeoutSec()));
+        final OpenAiHttpClientBuilderCustomizer timeoutCustomizer = builder -> builder.timeout(
+                Timeout.builder()
+                        .connect(Duration.ofSeconds(properties.connectTimeoutSec()))
+                        .read(Duration.ofSeconds(properties.timeoutSec()))
+                        .write(Duration.ofSeconds(properties.timeoutSec()))
+                        .request(Duration.ofSeconds(properties.callTimeoutSec()))
+                        .build());
         final ChatModel model = OpenAiChatModel.builder()
                 .options(connectionOptions.build())
+                .observationRegistry(ObservationRegistry.NOOP)
+                .httpClientBuilderCustomizers(List.of(timeoutCustomizer))
                 .build();
-        return new SpringAiChatGateway(model, properties.model(), meterRegistry);
+        return new SpringAiChatGateway(model, properties.model(), meterRegistry,
+                AiRetryPolicy.from(properties));
     }
 
     @Override
@@ -97,7 +123,7 @@ public class SpringAiChatGateway implements AiChatGateway {
     }
 
     /**
-     * åŒ…çº§å­˜å–åº•å±‚ Spring AI ChatModelï¼ˆä¸»è¦ç”¨äºŽæµ‹è¯•æ ¡éªŒé…ç½®æ˜ å°„ï¼‰ã€‚
+     * Package-private access for tests that verify configuration mapping.
      */
     ChatModel chatModel() {
         return chatModel;
@@ -113,56 +139,82 @@ public class SpringAiChatGateway implements AiChatGateway {
         final String model = StringUtils.hasText(request.model()) ? request.model() : defaultModel;
         final boolean metrics = meterRegistry != null;
         final Timer.Sample upstreamSample = metrics ? Timer.start(meterRegistry) : null;
-        if (metrics) {
-            meterRegistry.counter("wotb_ai_upstream_requests_total",
-                    "mode", request.analysisMode()).increment();
-        }
-        String errorType = null;
+        final Prompt prompt = buildPrompt(request, model);
+        int retryCount = 0;
         try {
-            final Prompt prompt = buildPrompt(request, model);
-            final ChatResponse response = chatModel.call(prompt);
-            final String content = extractContent(response, request.analysisMode(), correlationId);
-            final ChatResponseMetadata metadata = response.getMetadata();
-            final Usage usage = metadata != null ? metadata.getUsage() : null;
-            logUsage(usage, model, request.analysisMode());
-            return new AiChatResponse(
-                    content,
-                    PROVIDER_NAME,
-                    metadata != null && StringUtils.hasText(metadata.getModel())
-                            ? metadata.getModel() : model,
-                    usage != null && usage.getPromptTokens() != null ? usage.getPromptTokens() : 0,
-                    usage != null && usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0,
-                    usage != null && usage.getTotalTokens() != null ? usage.getTotalTokens() : 0,
-                    reasoningTokens(usage),
-                    cacheHitTokens(usage),
-                    cacheMissTokens(usage),
-                    finishReason(response),
-                    Map.of("correlationId", correlationId));
-        } catch (final AiUpstreamException e) {
-            errorType = e.code();
-            throw e;
-        } catch (final IllegalArgumentException e) {
-            throw e;
-        } catch (final OpenAIException e) {
-            final String code = classify(e);
-            logProviderFailure(e, code, request.analysisMode(), correlationId);
-            errorType = code;
-            throw new AiUpstreamException(code, providerStatus(e), correlationId, e);
-        } catch (final RuntimeException e) {
-            final String code = "AI_UPSTREAM_UNAVAILABLE";
-            logProviderFailure(null, code, request.analysisMode(), correlationId,
-                    e.getClass().getSimpleName());
-            errorType = code;
-            throw new AiUpstreamException(code, null, correlationId, e);
-        } finally {
-            if (metrics && errorType != null) {
-                meterRegistry.counter("wotb_ai_upstream_errors_total",
-                        "type", errorType).increment();
+            while (true) {
+                if (metrics) {
+                    meterRegistry.counter(REQUESTS, "mode", request.analysisMode()).increment();
+                }
+                AiUpstreamException failure = null;
+                try {
+                    final ChatResponse response = chatModel.call(prompt);
+                    final AiChatResponse result = toResponse(response, request, model, correlationId);
+                    if (metrics) {
+                        meterRegistry.counter(SUCCESS, "mode", request.analysisMode()).increment();
+                        recordUsageMetrics(response, request.analysisMode());
+                        recordRetryOutcome(request.analysisMode(),
+                                retryCount == 0 ? "no_retry" : "success_after_retry");
+                    }
+                    return result;
+                } catch (final AiUpstreamException e) {
+                    failure = e;
+                } catch (final IllegalArgumentException e) {
+                    throw e;
+                } catch (final OpenAIException e) {
+                    failure = new AiUpstreamException(
+                            classify(e), providerStatus(e), correlationId, e);
+                    logProviderFailure(e, failure.code(), request.analysisMode(), correlationId);
+                } catch (final RuntimeException e) {
+                    failure = new AiUpstreamException(
+                            "AI_UPSTREAM_UNAVAILABLE", null, correlationId, e);
+                    logProviderFailure(null, failure.code(), request.analysisMode(),
+                            correlationId, e.getClass().getSimpleName());
+                }
+                final boolean lastAttempt = retryCount >= retryPolicy.maxAttempts() - 1;
+                if (!lastAttempt && retryPolicy.isRetryable(failure)) {
+                    retryCount++;
+                    if (metrics) {
+                        meterRegistry.counter(RETRIES, "mode", request.analysisMode()).increment();
+                    }
+                    sleepQuietly(retryPolicy.backoffMillis(retryCount), failure);
+                    continue;
+                }
+                if (metrics) {
+                    meterRegistry.counter(ERRORS, "type", failure.code()).increment();
+                    recordRetryOutcome(request.analysisMode(),
+                            retryCount == 0 ? "no_retry" : "failure_after_retry");
+                }
+                throw failure;
             }
+        } finally {
             if (upstreamSample != null) {
                 upstreamSample.stop(aiUpstreamDuration);
             }
         }
+    }
+
+    private AiChatResponse toResponse(final ChatResponse response,
+                                      final AiChatRequest request,
+                                      final String model,
+                                      final String correlationId) {
+        final String content = extractContent(response, request.analysisMode(), correlationId);
+        final ChatResponseMetadata metadata = response.getMetadata();
+        final Usage usage = metadata != null ? metadata.getUsage() : null;
+        logUsage(usage, model, request.analysisMode());
+        return new AiChatResponse(
+                content,
+                PROVIDER_NAME,
+                metadata != null && StringUtils.hasText(metadata.getModel())
+                        ? metadata.getModel() : model,
+                usage != null && usage.getPromptTokens() != null ? usage.getPromptTokens() : 0,
+                usage != null && usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0,
+                usage != null && usage.getTotalTokens() != null ? usage.getTotalTokens() : 0,
+                reasoningTokens(usage),
+                cacheHitTokens(usage),
+                cacheMissTokens(usage),
+                finishReason(response),
+                Map.of("correlationId", correlationId));
     }
 
     private static Prompt buildPrompt(final AiChatRequest request, final String model) {
@@ -261,8 +313,48 @@ public class SpringAiChatGateway implements AiChatGateway {
         }
     }
 
+    private void recordUsageMetrics(final ChatResponse response, final String mode) {
+        final Usage usage = response != null && response.getMetadata() != null
+                ? response.getMetadata().getUsage() : null;
+        if (usage == null) {
+            return;
+        }
+        recordTokens(mode, "input",
+                usage.getPromptTokens() != null ? usage.getPromptTokens() : 0);
+        recordTokens(mode, "output",
+                usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0);
+        recordTokens(mode, "total",
+                usage.getTotalTokens() != null ? usage.getTotalTokens() : 0);
+        recordTokens(mode, "reasoning", reasoningTokens(usage));
+        recordTokens(mode, "cache_hit", cacheHitTokens(usage));
+        recordTokens(mode, "cache_miss", cacheMissTokens(usage));
+    }
+
+    private void recordTokens(final String mode, final String tokenType, final int value) {
+        if (value > 0) {
+            meterRegistry.counter(TOKENS, "mode", mode, "token_type", tokenType)
+                    .increment(value);
+        }
+    }
+
+    private void recordRetryOutcome(final String mode, final String outcome) {
+        meterRegistry.counter(RETRY_OUTCOME, "mode", mode, "outcome", outcome).increment();
+    }
+
+    private static void sleepQuietly(final long millis, final AiUpstreamException pending) {
+        if (millis <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(millis);
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw pending;
+        }
+    }
+
     /**
-     * å°† Spring AI / OpenAI SDK å¼‚å¸¸æ˜ å°„ä¸ºç¨³å®šé”™è¯¯ç ã€‚
+     * Maps Spring AI / OpenAI SDK exceptions to stable error codes.
      */
     static String classify(final OpenAIException error) {
         if (error instanceof OpenAIServiceException serviceError) {
@@ -345,12 +437,12 @@ public class SpringAiChatGateway implements AiChatGateway {
                 code,
                 analysisMode,
                 correlationId,
-                summary);
+                AiSecretRedactor.redact(summary));
     }
 
-    private static void logUsage(final Usage usage,
-                                 final String model,
-                                 final String analysisMode) {
+    private void logUsage(final Usage usage,
+                          final String model,
+                          final String analysisMode) {
         if (usage == null) {
             return;
         }
@@ -372,4 +464,5 @@ public class SpringAiChatGateway implements AiChatGateway {
         }
         return "[PROVIDER_BODY_REDACTED]";
     }
+
 }
