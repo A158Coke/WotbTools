@@ -7,12 +7,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.LongSupplier;
 
 import com.openai.core.JsonValue;
@@ -25,6 +23,7 @@ import com.openai.models.completions.CompletionUsage;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.observation.ObservationRegistry;
+import jakarta.annotation.PreDestroy;
 import okhttp3.Call;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,15 +69,21 @@ public class SpringAiChatGateway implements AiChatGateway {
     private static final String RETRY_OUTCOME = "wotb_ai_upstream_retry_outcome_total";
     private static final String TOKENS = "wotb_ai_upstream_tokens_total";
 
-    private volatile ChatModel chatModel;
+    volatile ChatModel chatModel;
     private final String defaultModel;
     private final MeterRegistry meterRegistry;
     private final AiRetryPolicy retryPolicy;
     private final long callTimeoutNanos;
     private final LongSupplier nanoTimeSource;
     private final BudgetSleeper sleeper;
-    private final ThreadLocal<AtomicReference<Call>> activeCallRef =
-            ThreadLocal.withInitial(AtomicReference::new);
+    private final ThreadLocal<AttemptBudgetContext> activeContext = new ThreadLocal<>();
+    /**
+     * Test hook: runs right before each attempt's {@code chatModel.call(prompt)}
+     * so tests can deterministically simulate the watchdog firing before the
+     * interceptor captures the Call (package-private, no framework).
+     */
+    AttemptStartHook attemptStartHook = context -> {
+    };
     private volatile ScheduledExecutorService budgetWatchdog;
     private Timer aiUpstreamDuration;
 
@@ -130,8 +135,8 @@ public class SpringAiChatGateway implements AiChatGateway {
         return gateway;
     }
 
-    private static ChatModel buildModel(final AiModelProperties properties,
-                                        final SpringAiChatGateway gateway) {
+    static ChatModel buildModel(final AiModelProperties properties,
+                                final SpringAiChatGateway gateway) {
         final OpenAiChatOptions.Builder connectionOptions = OpenAiChatOptions.builder();
         connectionOptions.baseUrl(properties.baseUrl());
         connectionOptions.apiKey(properties.apiKey());
@@ -147,20 +152,24 @@ public class SpringAiChatGateway implements AiChatGateway {
                     .request(Duration.ofSeconds(properties.callTimeoutSec()))
                     .build());
             // Capture the in-flight okhttp Call so the total-budget watchdog can
-            // abort an attempt that exceeds the remaining deadline (Spring AI 2.0
-            // has no per-request timeout override).
+            // abort an attempt that exceeds the remaining deadline, including
+            // while the SDK is still reading/parsing the response body (Spring
+            // AI 2.0 has no per-request timeout override). The Call reference is
+            // deliberately NOT cleared here; it stays until the attempt's outer
+            // finally so the watchdog covers the full chatModel.call() lifecycle.
             builder.interceptor(chain -> {
-                final AtomicReference<Call> callRef = gateway.activeCallRef.get();
-                if (callRef == null) {
+                final AttemptBudgetContext context = gateway.activeContext.get();
+                if (context == null) {
                     return chain.proceed(chain.request());
                 }
                 final Call call = chain.call();
-                callRef.set(call);
-                try {
-                    return chain.proceed(chain.request());
-                } finally {
-                    callRef.compareAndSet(call, null);
+                context.capture(call);
+                if (context.isExpired()) {
+                    // Watchdog already fired before this interceptor captured the
+                    // Call: cancel so chain.proceed() fails fast without sending.
+                    call.cancel();
                 }
+                return chain.proceed(chain.request());
             });
         };
         return OpenAiChatModel.builder()
@@ -208,22 +217,28 @@ public class SpringAiChatGateway implements AiChatGateway {
                 if (metrics) {
                     meterRegistry.counter(REQUESTS, "mode", request.analysisMode()).increment();
                 }
-                final AtomicBoolean cancelledByBudget = new AtomicBoolean();
-                final AtomicReference<Call> callRef = new AtomicReference<>();
-                activeCallRef.set(callRef);
+                final AttemptBudgetContext context = new AttemptBudgetContext();
+                activeContext.set(context);
                 final ScheduledFuture<?> watchdog =
-                        scheduleBudgetWatchdog(remainingNanos, callRef, cancelledByBudget);
+                        scheduleBudgetWatchdog(context, remainingNanos);
                 AiUpstreamException failure = null;
                 try {
+                    attemptStartHook.beforeAttempt(context);
                     final ChatResponse response = chatModel.call(prompt);
                     final AiChatResponse result = toResponse(response, request, model, correlationId);
-                    if (metrics) {
-                        meterRegistry.counter(SUCCESS, "mode", request.analysisMode()).increment();
-                        recordUsageMetrics(response, request.analysisMode());
-                        recordRetryOutcome(request.analysisMode(),
-                                retryCount == 0 ? "no_retry" : "success_after_retry");
+                    if (context.isExpired() || nanoTimeSource.getAsLong() >= deadlineNanos) {
+                        // The deadline passed during response conversion: never
+                        // report success, never record usage, end as AI_TIMEOUT.
+                        failure = new AiUpstreamException("AI_TIMEOUT", null, correlationId);
+                    } else {
+                        if (metrics) {
+                            meterRegistry.counter(SUCCESS, "mode", request.analysisMode()).increment();
+                            recordUsageMetrics(response, request.analysisMode());
+                            recordRetryOutcome(request.analysisMode(),
+                                    retryCount == 0 ? "no_retry" : "success_after_retry");
+                        }
+                        return result;
                     }
-                    return result;
                 } catch (final AiUpstreamException e) {
                     failure = e;
                 } catch (final IllegalArgumentException e) {
@@ -239,23 +254,24 @@ public class SpringAiChatGateway implements AiChatGateway {
                             correlationId, e.getClass().getSimpleName());
                 } finally {
                     watchdog.cancel(false);
-                    activeCallRef.remove();
+                    context.clear();
+                    activeContext.remove();
                 }
-                if (cancelledByBudget.get()) {
+                if (context.isExpired()) {
                     // The in-flight request was aborted because the remaining
                     // total budget ran out: never retry, end as AI_TIMEOUT.
                     failure = new AiUpstreamException("AI_TIMEOUT", null, correlationId, failure);
                 }
                 final boolean lastAttempt = retryCount >= retryPolicy.maxAttempts() - 1;
                 final long remainingAfterNanos = deadlineNanos - nanoTimeSource.getAsLong();
-                if (!cancelledByBudget.get() && retryPolicy.isRetryable(failure)
+                if (!context.isExpired() && retryPolicy.isRetryable(failure)
                         && remainingAfterNanos <= 0) {
                     // The total budget is exhausted: the deadline is the binding
                     // constraint, so the call ends as AI_TIMEOUT even when the
                     // attempt cap was reached at the same moment.
                     failure = new AiUpstreamException("AI_TIMEOUT", null, correlationId, failure);
                 }
-                if (!lastAttempt && !cancelledByBudget.get()
+                if (!lastAttempt && !context.isExpired()
                         && retryPolicy.isRetryable(failure)) {
                     final long backoffMillis = retryPolicy.backoffMillis(retryCount + 1);
                     if (remainingAfterNanos <= backoffMillis * NANOS_PER_MILLI) {
@@ -296,17 +312,10 @@ public class SpringAiChatGateway implements AiChatGateway {
         return failure;
     }
 
-    private ScheduledFuture<?> scheduleBudgetWatchdog(final long remainingNanos,
-                                                      final AtomicReference<Call> callRef,
-                                                      final AtomicBoolean cancelledByBudget) {
-        return budgetWatchdog().schedule(() -> {
-            if (cancelledByBudget.compareAndSet(false, true)) {
-                final Call call = callRef.get();
-                if (call != null) {
-                    call.cancel();
-                }
-            }
-        }, remainingNanos, TimeUnit.NANOSECONDS);
+    private ScheduledFuture<?> scheduleBudgetWatchdog(final AttemptBudgetContext context,
+                                                      final long remainingNanos) {
+        return budgetWatchdog().schedule(
+                context::expireAndCancel, remainingNanos, TimeUnit.NANOSECONDS);
     }
 
     private ScheduledExecutorService budgetWatchdog() {
@@ -315,16 +324,29 @@ public class SpringAiChatGateway implements AiChatGateway {
             synchronized (this) {
                 current = budgetWatchdog;
                 if (current == null) {
-                    current = Executors.newSingleThreadScheduledExecutor(runnable -> {
+                    final ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(
+                            1, runnable -> {
                         final Thread thread = new Thread(runnable, "wotb-ai-budget-watchdog");
                         thread.setDaemon(true);
                         return thread;
                     });
+                    // Cancelled watchdog tasks must not stay queued forever.
+                    executor.setRemoveOnCancelPolicy(true);
+                    executor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+                    current = executor;
                     budgetWatchdog = current;
                 }
             }
         }
         return current;
+    }
+
+    @PreDestroy
+    void shutdownBudgetWatchdog() {
+        final ScheduledExecutorService current = budgetWatchdog;
+        if (current != null) {
+            current.shutdown();
+        }
     }
 
     private AiChatResponse toResponse(final ChatResponse response,
@@ -497,6 +519,16 @@ public class SpringAiChatGateway implements AiChatGateway {
     @FunctionalInterface
     interface BudgetSleeper {
         void sleep(long millis) throws InterruptedException;
+    }
+
+    /**
+     * Package-private test hook executed before each attempt, allowing tests to
+     * deterministically expire the budget before the interceptor captures the
+     * in-flight Call.
+     */
+    @FunctionalInterface
+    interface AttemptStartHook {
+        void beforeAttempt(AttemptBudgetContext context);
     }
 
     /**

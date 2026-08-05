@@ -193,6 +193,28 @@ class SpringAiChatGatewayDeadlineTest {
         assertEquals(1L, counter("wotb_ai_upstream_errors_total", "type", "AI_RATE_LIMITED"));
     }
 
+    @Test
+    void deadlinePassedDuringResponseConversionNeverReturnsSuccess() {
+        gateway(100, new AiRetryPolicy(3, 0, 0, 2.0));
+        when(chatModel.call(any(Prompt.class))).thenAnswer(invocation -> {
+            // The provider returned, but response conversion crosses the total
+            // deadline: the gateway must not report success afterwards.
+            now.addAndGet(200_000_000_000L);
+            return okResponse();
+        });
+
+        final AiUpstreamException e =
+                assertThrows(AiUpstreamException.class, () -> gateway.chat(request()));
+
+        assertEquals("AI_TIMEOUT", e.code());
+        assertEquals(1L, counter("wotb_ai_upstream_requests_total", "mode", "TEST_MODE"));
+        assertEquals(0L, counter("wotb_ai_upstream_success_total", "mode", "TEST_MODE"));
+        assertEquals(0L, counter("wotb_ai_upstream_tokens_total", "mode", "TEST_MODE"));
+        assertEquals(1L, counter("wotb_ai_upstream_errors_total", "type", "AI_TIMEOUT"));
+        assertEquals(1L, counter("wotb_ai_upstream_retry_outcome_total", "outcome", "no_retry"));
+        assertEquals(0L, counter("wotb_ai_upstream_retries_total", "mode", "TEST_MODE"));
+    }
+
     private void gateway(final long callTimeoutSec, final AiRetryPolicy policy) {
         gatewayCallTimeoutNanos = callTimeoutSec * 1_000_000_000L;
         gateway = new SpringAiChatGateway(chatModel, "test-model", registry, policy,

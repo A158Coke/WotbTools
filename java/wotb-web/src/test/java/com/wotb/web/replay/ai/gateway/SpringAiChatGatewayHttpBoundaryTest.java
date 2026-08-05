@@ -3,17 +3,26 @@ package com.wotb.web.replay.ai.gateway;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.InetAddress;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -112,12 +121,121 @@ class SpringAiChatGatewayHttpBoundaryTest {
                 "reasoning_effort must be omitted when thinking is disabled");
     }
 
+    @Test
+    void cancelsSlowResponseBodyAtTotalDeadline() throws Exception {
+        // Raw TCP server: sends a 200 header immediately, then drips one body
+        // byte every 50ms (~10s total). The 50ms drip is far below the 4s SDK
+        // idle read timeout, so only the total-deadline watchdog can stop the
+        // request while the response body is being read.
+        final ServerSocket serverSocket = new ServerSocket(0, 50,
+                InetAddress.getByName("127.0.0.1"));
+        final Thread serverThread = new Thread(() -> {
+            try (Socket socket = serverSocket.accept()) {
+                final InputStream in = socket.getInputStream();
+                final byte[] requestHead = new byte[4096];
+                int read = 0;
+                while (read < requestHead.length && !endsWithHeader(requestHead, read)) {
+                    final int n = in.read(requestHead, read, requestHead.length - read);
+                    if (n < 0) {
+                        break;
+                    }
+                    read += n;
+                }
+                final OutputStream out = socket.getOutputStream();
+                out.write(("HTTP/1.1 200 OK\r\n"
+                        + "Content-Type: application/json\r\n"
+                        + "Content-Length: 200\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                for (int i = 0; i < 200; i++) {
+                    out.write('x');
+                    out.flush();
+                    Thread.sleep(50);
+                }
+            } catch (final IOException | InterruptedException e) {
+                // Client cancelled the call at the total deadline; writes fail.
+            }
+        });
+        serverThread.setDaemon(true);
+        serverThread.start();
+        try {
+            final String baseUrl = "http://127.0.0.1:" + serverSocket.getLocalPort();
+            // The model's SDK read timeout is 60s and the gateway total budget is
+            // 5s: only the total-deadline watchdog can stop the slow body read.
+            final AiModelProperties modelProperties = new AiModelProperties(
+                    FAKE_API_KEY, baseUrl, "deepseek-v4-flash",
+                    1, 60, 61, 1, 0, 0, 2.0,
+                    1_000_000, 940_000, 32_768, 16_384, true, "max");
+            final SpringAiChatGateway gateway = new SpringAiChatGateway(
+                    null, "deepseek-v4-flash", new SimpleMeterRegistry(),
+                    new AiRetryPolicy(1, 0, 0, 2.0),
+                    5_000_000_000L, System::nanoTime, Thread::sleep);
+            gateway.chatModel = SpringAiChatGateway.buildModel(modelProperties, gateway);
+            final long startNanos = System.nanoTime();
+            final AiUpstreamException e = assertThrows(AiUpstreamException.class,
+                    () -> gateway.chat(request()));
+            final long elapsedMillis = (System.nanoTime() - startNanos) / 1_000_000;
+            assertEquals("AI_TIMEOUT", e.code());
+            assertTrue(elapsedMillis < 9_000,
+                    "must not wait for the full body drip (10s) or the SDK read timeout (60s): " + elapsedMillis);
+        } finally {
+            serverSocket.close();
+        }
+    }
+
+    private static boolean endsWithHeader(final byte[] buffer, final int length) {
+        if (length < 4) {
+            return false;
+        }
+        return buffer[length - 4] == '\r' && buffer[length - 3] == '\n'
+                && buffer[length - 2] == '\r' && buffer[length - 1] == '\n';
+    }
+
+    @Test
+    void watchdogFiringBeforeInterceptorCapturesCallCancelsRequest() throws Exception {
+        final AtomicInteger requestCount = new AtomicInteger();
+        final HttpServer countingServer = HttpServer.create(
+                new InetSocketAddress("127.0.0.1", 0), 0);
+        countingServer.setExecutor(Executors.newSingleThreadExecutor());
+        countingServer.createContext("/", exchange -> {
+            requestCount.incrementAndGet();
+            exchange.sendResponseHeaders(200, 0);
+            exchange.close();
+        });
+        countingServer.start();
+        try {
+            final String baseUrl = "http://127.0.0.1:" + countingServer.getAddress().getPort();
+            final SpringAiChatGateway gateway = SpringAiChatGateway.fromProperties(
+                    new AiModelProperties(FAKE_API_KEY, baseUrl, "deepseek-v4-flash",
+                            1, 2, 3, 1, 0, 0, 2.0,
+                            1_000_000, 940_000, 32_768, 16_384, true, "max"),
+                    new SimpleMeterRegistry());
+            // Deterministically fire the watchdog before the attempt starts, i.e.
+            // before the okhttp interceptor captures the Call.
+            gateway.attemptStartHook = AttemptBudgetContext::expireAndCancel;
+
+            final AiUpstreamException e = assertThrows(AiUpstreamException.class,
+                    () -> gateway.chat(request()));
+
+            assertEquals("AI_TIMEOUT", e.code());
+            assertEquals(0, requestCount.get(),
+                    "the cancelled request must never reach the provider");
+        } finally {
+            countingServer.stop(0);
+        }
+    }
+
     private SpringAiChatGateway gateway() {
         final String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
         return SpringAiChatGateway.fromProperties(new AiModelProperties(
                 FAKE_API_KEY, baseUrl, "deepseek-v4-flash",
                 10, 300, 315, 3, 0, 0, 2.0,
                 1_000_000, 940_000, 32_768, 16_384, true, "max"), null);
+    }
+
+    private static AiChatRequest request() {
+        return new AiChatRequest("system-instructions", "player-evidence",
+                "deepseek-v4-flash", null, 4096, true, "max",
+                "corr-boundary", "SINGLE_PLAYER_BATTLE", null);
     }
 
     private static String completionJson() {
