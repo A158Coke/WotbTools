@@ -125,9 +125,16 @@ public final class PlayerReplayPromptBuilder {
      */
     public static PreparedAiPrompt prepareFallback(final Battle battle,
                                                    final ReplayReconstruction recon) {
+        return prepareFallback(battle, recon, OutputLanguage.ZH);
+    }
+
+    public static PreparedAiPrompt prepareFallback(final Battle battle,
+                                                   final ReplayReconstruction recon,
+                                                   final OutputLanguage language) {
         final List<KeyBattleEvent> keyEvents = buildDeathTimeline(battle);
         final String summary = buildSummary(battle, recon, keyEvents);
-        return new PreparedAiPrompt(SYSTEM_PROMPT, summary, "SINGLE_PLAYER_SUMMARY",
+        final String systemPrompt = SYSTEM_PROMPT + language.directive();
+        return new PreparedAiPrompt(systemPrompt, summary, "SINGLE_PLAYER_SUMMARY",
                 keyEvents, EvidenceDensity.LEVEL_1_COMPRESSED, 0);
     }
 
@@ -141,14 +148,27 @@ public final class PlayerReplayPromptBuilder {
             final int contextWindowTokens,
             final int maxOutputTokens,
             final int promptSafetyMarginTokens) {
+        return prepareFullNoRecon(ctx, estimator, maxInputTokens, contextWindowTokens,
+                maxOutputTokens, promptSafetyMarginTokens, OutputLanguage.ZH);
+    }
+
+    public static PreparedAiPrompt prepareFullNoRecon(
+            final SinglePlayerBattleAnalysisContext ctx,
+            final AiTokenEstimator estimator,
+            final int maxInputTokens,
+            final int contextWindowTokens,
+            final int maxOutputTokens,
+            final int promptSafetyMarginTokens,
+            final OutputLanguage language) {
         final String summary = buildPlayerContextSummary(ctx);
+        final String systemPrompt = SINGLE_PLAYER_PROMPT + language.directive();
         final List<Map<String, Object>> messages = List.of(
-                Map.<String, Object>of("role", "system", "content", SINGLE_PLAYER_PROMPT),
+                Map.<String, Object>of("role", "system", "content", systemPrompt),
                 Map.<String, Object>of("role", "user", "content", summary));
         final int estimatedTokens = estimator.estimateMessagesTokens(messages);
         AiPromptBudgetGuard.enforce(estimatedTokens, maxInputTokens, contextWindowTokens,
                 maxOutputTokens, promptSafetyMarginTokens);
-        return new PreparedAiPrompt(SINGLE_PLAYER_PROMPT, summary, "SINGLE_PLAYER_BATTLE",
+        return new PreparedAiPrompt(systemPrompt, summary, "SINGLE_PLAYER_BATTLE",
                 ctx.features().keyEvents(), EvidenceDensity.LEVEL_1_COMPRESSED, estimatedTokens);
     }
 
@@ -164,6 +184,19 @@ public final class PlayerReplayPromptBuilder {
             final int contextWindowTokens,
             final int maxOutputTokens,
             final int promptSafetyMarginTokens) {
+        return prepareFull(ctx, recon, estimator, maxInputTokens, contextWindowTokens,
+                maxOutputTokens, promptSafetyMarginTokens, OutputLanguage.ZH);
+    }
+
+    public static PreparedAiPrompt prepareFull(
+            final SinglePlayerBattleAnalysisContext ctx,
+            final ReplayReconstruction recon,
+            final AiTokenEstimator estimator,
+            final int maxInputTokens,
+            final int contextWindowTokens,
+            final int maxOutputTokens,
+            final int promptSafetyMarginTokens,
+            final OutputLanguage language) {
         final long recorderAccountId = ctx.recorder() != null && ctx.recorder().accountId() != null
                 ? ctx.recorder().accountId() : -1L;
         final StringBuilder summaryBuilder = new StringBuilder(buildPlayerContextSummary(ctx));
@@ -172,18 +205,19 @@ public final class PlayerReplayPromptBuilder {
             summaryBuilder.append("- PER_HIT_DAMAGE_EVENTS_UNAVAILABLE\n");
         }
         final String baseSummary = summaryBuilder.toString();
+        final String systemPrompt = SINGLE_PLAYER_PROMPT + language.directive();
         final SingleReplayPromptPlanner planner = new SingleReplayPromptPlanner(
                 estimator, maxInputTokens,
                 contextWindowTokens, maxOutputTokens, promptSafetyMarginTokens);
         final PlannedPrompt planned = planner.plan(
-                SINGLE_PLAYER_PROMPT, baseSummary, ctx, recon);
+                systemPrompt, baseSummary, ctx, recon);
         final List<Map<String, Object>> messages = List.of(
-                Map.<String, Object>of("role", "system", "content", SINGLE_PLAYER_PROMPT),
+                Map.<String, Object>of("role", "system", "content", systemPrompt),
                 Map.<String, Object>of("role", "user", "content", planned.userContent()));
         final int estimatedTokens = estimator.estimateMessagesTokens(messages);
         AiPromptBudgetGuard.enforce(estimatedTokens, maxInputTokens, contextWindowTokens,
                 maxOutputTokens, promptSafetyMarginTokens);
-        return new PreparedAiPrompt(SINGLE_PLAYER_PROMPT, planned.userContent(),
+        return new PreparedAiPrompt(systemPrompt, planned.userContent(),
                 "SINGLE_PLAYER_BATTLE", ctx.features().keyEvents(),
                 planned.density(), estimatedTokens);
     }
@@ -192,8 +226,14 @@ public final class PlayerReplayPromptBuilder {
      * 多场趋势复盘 prompt。
      */
     public static PreparedAiPrompt prepareMulti(final List<Battle> battles) {
+        return prepareMulti(battles, OutputLanguage.ZH);
+    }
+
+    public static PreparedAiPrompt prepareMulti(final List<Battle> battles,
+                                                final OutputLanguage language) {
         final String summary = buildMultiSummary(battles);
-        return new PreparedAiPrompt(MULTI_SYSTEM_PROMPT, summary, "MULTI_PLAYER_SUMMARY",
+        final String systemPrompt = MULTI_SYSTEM_PROMPT + language.directive();
+        return new PreparedAiPrompt(systemPrompt, summary, "MULTI_PLAYER_SUMMARY",
                 List.of(), EvidenceDensity.LEVEL_1_COMPRESSED, 0);
     }
 

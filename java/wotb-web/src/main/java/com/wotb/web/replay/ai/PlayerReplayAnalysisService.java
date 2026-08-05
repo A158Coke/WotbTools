@@ -48,11 +48,16 @@ public class PlayerReplayAnalysisService {
      * 基于结算数据（权威）生成单场战术复盘（fallback 路径）。
      */
     public AnalyzeResult analyze(final Battle battle, final ReplayReconstruction recon) {
+        return analyze(battle, recon, OutputLanguage.ZH);
+    }
+
+    public AnalyzeResult analyze(final Battle battle, final ReplayReconstruction recon,
+                                 final OutputLanguage language) {
         if (!isConfigured()) {
             throw new AiNotConfiguredException();
         }
         final PreparedAiPrompt prepared =
-                PlayerReplayPromptBuilder.prepareFallback(battle, recon);
+                PlayerReplayPromptBuilder.prepareFallback(battle, recon, language);
         return new AnalyzeResult(chat(prepared), config.model(), prepared.keyEvents());
     }
 
@@ -60,11 +65,16 @@ public class PlayerReplayAnalysisService {
      * 基于完整 battle + reconstruction + feature set 生成单场个人复盘（无重建时的入口）。
      */
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx) {
+        return analyzePlayerContext(ctx, OutputLanguage.ZH);
+    }
+
+    public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx,
+                                              final OutputLanguage language) {
         if (!isConfigured()) throw new AiNotConfiguredException();
         final PreparedAiPrompt prepared = PlayerReplayPromptBuilder.prepareFullNoRecon(
                 ctx, config.estimator(), config.singleReplayMaxInputTokens(),
                 config.contextWindowTokens(), config.maxOutputTokens(),
-                config.promptSafetyMarginTokens());
+                config.promptSafetyMarginTokens(), language);
         return new AnalyzeResult(chat(prepared), config.model(), prepared.keyEvents());
     }
 
@@ -73,14 +83,20 @@ public class PlayerReplayAnalysisService {
      */
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx,
                                              final ReplayReconstruction recon) {
+        return analyzePlayerContext(ctx, recon, OutputLanguage.ZH);
+    }
+
+    public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx,
+                                              final ReplayReconstruction recon,
+                                              final OutputLanguage language) {
         if (!isConfigured()) throw new AiNotConfiguredException();
         if (recon == null) {
-            return analyzePlayerContext(ctx);
+            return analyzePlayerContext(ctx, language);
         }
         final PreparedAiPrompt prepared = PlayerReplayPromptBuilder.prepareFull(
                 ctx, recon, config.estimator(), config.singleReplayMaxInputTokens(),
                 config.contextWindowTokens(), config.maxOutputTokens(),
-                config.promptSafetyMarginTokens());
+                config.promptSafetyMarginTokens(), language);
         if (prepared.density() != EvidenceDensity.LEVEL_1_COMPRESSED) {
             LOGGER.info(
                     "AI analysis density={} tokens={}/{} analysisMode={}",
@@ -94,10 +110,15 @@ public class PlayerReplayAnalysisService {
      * 多场趋势复盘：每场独立摘要 + 后端确定性聚合，不拼接原始事件流。
      */
     public AnalyzeResult analyzeMulti(final List<Battle> battles) {
+        return analyzeMulti(battles, OutputLanguage.ZH);
+    }
+
+    public AnalyzeResult analyzeMulti(final List<Battle> battles,
+                                      final OutputLanguage language) {
         if (!isConfigured()) {
             throw new AiNotConfiguredException();
         }
-        final PreparedAiPrompt prepared = PlayerReplayPromptBuilder.prepareMulti(battles);
+        final PreparedAiPrompt prepared = PlayerReplayPromptBuilder.prepareMulti(battles, language);
         return new AnalyzeResult(chat(prepared), config.model(), List.of());
     }
 
@@ -106,11 +127,16 @@ public class PlayerReplayAnalysisService {
      * <p>fallback 是延迟执行的控制流，不提前调用 AI。</p>
      */
     public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result) {
+        return analyzePlayerOrFallback(result, OutputLanguage.ZH);
+    }
+
+    public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result,
+                                                 final OutputLanguage language) {
         if (result.battle() == null) throw new IllegalArgumentException("NO_BATTLE_DATA");
-        if (result.reconstruction() == null) return analyze(result.battle(), null);
+        if (result.reconstruction() == null) return analyze(result.battle(), null, language);
 
         final var recorder = AnalysisUnitAssembler.findRecorder(result);
-        if (!recorder.resolved()) return analyze(result.battle(), result.reconstruction());
+        if (!recorder.resolved()) return analyze(result.battle(), result.reconstruction(), language);
 
         final PlayerBattleFeatureSet features;
         try {
@@ -118,15 +144,15 @@ public class PlayerReplayAnalysisService {
                     .extract(result.reconstruction(), recorder, result.battle());
         } catch (RuntimeException e) {
             LOGGER.warn("Feature extraction failed, falling back: {}", e.getMessage());
-            return analyze(result.battle(), result.reconstruction());
+            return analyze(result.battle(), result.reconstruction(), language);
         }
 
-        if (!features.hasFeatures()) return analyze(result.battle(), result.reconstruction());
+        if (!features.hasFeatures()) return analyze(result.battle(), result.reconstruction(), language);
 
         return analyzePlayerContext(new SinglePlayerBattleAnalysisContext(
                 null, result.battle(), features, recorder,
                 result.reconstruction().coverage(), features.limitations()),
-                result.reconstruction());
+                result.reconstruction(), language);
     }
 
     /**

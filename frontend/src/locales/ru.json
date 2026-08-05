@@ -820,7 +820,8 @@
             "INVALID_REPLAY_FILE_TYPE": "Поддерживаются только файлы .wotbreplay.",
             "FILE_TOO_LARGE": "Файл реплея превышает допустимый размер.",
             "REPLAY_FILE_COUNT_EXCEEDED": "Можно загрузить не более {max} реплеев за раз.",
-            "TOTAL_REQUEST_TOO_LARGE": "Общий размер файлов превышает лимит."
+            "TOTAL_REQUEST_TOO_LARGE": "Общий размер файлов превышает лимит.",
+            "UNKNOWN_LOCALE": "Неверная настройка языка. Обновите страницу и попробуйте снова."
         },
         "event_types": {
             "TEAM_MEMBER_DESTROYED": "Союзник уничтожен",

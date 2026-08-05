@@ -781,9 +781,9 @@ class AiReplayAnalysisServiceTest {
                         30000, 131072, 8192, 1000, true, "high")));
         doReturn(new AnalyzeResult(
                 "summary analysis", "test-model", List.of()))
-                .when(service).analyze(any(), any());
+                .when(service).analyze(any(), any(), any(OutputLanguage.class));
         service.analyzePlayerOrFallback(randomResultWithoutReconstruction());
-        verify(service, times(1)).analyze(any(), any());
+        verify(service, times(1)).analyze(any(), any(), any(OutputLanguage.class));
         verify(service, never()).analyzePlayerContext(any());
     }
 
