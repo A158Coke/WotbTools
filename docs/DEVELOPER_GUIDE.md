@@ -317,6 +317,7 @@ AI 复盘区分两种 scope，互不混用：
 - 总调用边界：`AI_CALL_TIMEOUT_SEC` 使用单调时钟（`System.nanoTime`）覆盖一次 `chat()` 的整个生命周期（含响应体读取与 SDK 解析）；每轮尝试前检查剩余预算，backoff 不得超过剩余预算，in-flight 请求会在预算耗尽时被中止（okhttp interceptor 捕获 Call + 看门狗，覆盖连接→发送→等待→响应体读取→反序列化；成功返回前还会复检 deadline），因此单轮实际请求时间上限为 `min(AI_TIMEOUT_SEC, 剩余预算)`。预算耗尽统一返回稳定 `AI_TIMEOUT`，超时后绝不返回 success。
 - Prompt/completion 默认不记录、不进 metrics；Spring AI Observation 未启用（NOOP）。日志经 `AiSecretRedactor` 集中脱敏。
 - 测试不调用真实 AI API：`SpringAiChatGatewayTest`/`SpringAiChatGatewayMetricsTest` 使用 mock `ChatModel`。
+- **AI 输出语言跟随前端 locale**：`/api/replay/analyze` 新增 multipart 表单字段 `lang`（白名单 `zh`/`en`/`ru`，缺失或未知返回 400 `UNKNOWN_LOCALE`）。语言穿透 ReviewService → facade → Player/Team Service → Prompt Builder，在 system prompt 末尾追加「输出语言 + 时间格式」指令（zh 指令为空，现有中文输出字节不变；en 时间格式 `Xm Xs`，ru 为 `X мин X с`）。覆盖 player full/fallback/multi 与 team single/multi 全部路径；地图/坦克/clan/昵称等专有名词不翻译；`limitations` 与错误码仍为英文稳定码、由前端本地化。前端由 vue-i18n 当前 locale 携带 `lang`。
 
 ---
 

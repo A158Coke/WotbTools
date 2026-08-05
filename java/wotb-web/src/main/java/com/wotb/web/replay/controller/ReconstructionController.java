@@ -10,6 +10,7 @@ import com.wotb.core.processing.ReplayBatchProcessingResult;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.web.replay.ai.AiReplayReviewService;
+import com.wotb.web.replay.ai.OutputLanguage;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
@@ -60,8 +61,13 @@ public class ReconstructionController {
 
     @PostMapping(value = "/analyze", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public AnalyzeResponse analyze(
-            @RequestParam("files") final MultipartFile[] files) throws IOException {
-        return reviewService.analyze(files);
+            @RequestParam("files") final MultipartFile[] files,
+            @RequestParam(name = "lang", required = false) final String lang) throws IOException {
+        final OutputLanguage outputLanguage = OutputLanguage.fromCode(lang);
+        if (outputLanguage == null) {
+            throw new IllegalArgumentException("UNKNOWN_LOCALE");
+        }
+        return reviewService.analyze(files, outputLanguage);
     }
 
     /**

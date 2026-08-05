@@ -125,6 +125,11 @@ public class TeamReplayAnalysisService {
      * 单场团队上下文入口。使用与 orchestrated path (analyzeTeamGroups) 相同的 RosterEvidence contract。
      */
     public AnalyzeResult analyzeSingleTeamContext(final SingleTeamBattleAnalysisContext context) {
+        return analyzeSingleTeamContext(context, OutputLanguage.ZH);
+    }
+
+    public AnalyzeResult analyzeSingleTeamContext(final SingleTeamBattleAnalysisContext context,
+                                                  final OutputLanguage language) {
         if (!isConfigured()) {
             throw new AiNotConfiguredException();
         }
@@ -132,14 +137,16 @@ public class TeamReplayAnalysisService {
         final List<String> extraLimitations = evidence != null ? evidence.limitations() : List.of();
         final TeamAiPromptBuilder.PromptInput input = TeamAiPromptBuilder.single(
                 context, extraLimitations, config.estimator(), config.singleReplayMaxInputTokens());
-        return callSingleTeamContext(context, input);
+        return callSingleTeamContext(context, input, language);
     }
 
     private AnalyzeResult callSingleTeamContext(
             final SingleTeamBattleAnalysisContext context,
-            final TeamAiPromptBuilder.PromptInput input
+            final TeamAiPromptBuilder.PromptInput input,
+            final OutputLanguage language
     ) {
-        final String content = call(SINGLE_TEAM_PROMPT, input.content(), "SINGLE_TEAM_BATTLE");
+        final String content = call(
+                SINGLE_TEAM_PROMPT + language.directive(), input.content(), "SINGLE_TEAM_BATTLE");
         return new AnalyzeResult(
                 content,
                 config.model(),
@@ -148,9 +155,11 @@ public class TeamReplayAnalysisService {
 
     private AnalyzeResult callMultiTeamContext(
             final TeamAiPromptBuilder.PromptInput input,
-            final List<KeyBattleEvent> keyEvents
+            final List<KeyBattleEvent> keyEvents,
+            final OutputLanguage language
     ) {
-        final String content = call(MULTI_TEAM_PROMPT, input.content(), "MULTI_TEAM_BATTLE");
+        final String content = call(
+                MULTI_TEAM_PROMPT + language.directive(), input.content(), "MULTI_TEAM_BATTLE");
         return new AnalyzeResult(content, config.model(), keyEvents);
     }
 
@@ -164,6 +173,11 @@ public class TeamReplayAnalysisService {
      * <p>最终 {@code units} 的顺序保持原始输入 {@code groups} 的顺序不变。</p>
      */
     public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups) {
+        return analyzeTeamGroups(groups, OutputLanguage.ZH);
+    }
+
+    public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups,
+                                               final OutputLanguage language) {
         if (!isConfigured()) {
             throw new AiNotConfiguredException();
         }
@@ -198,7 +212,7 @@ public class TeamReplayAnalysisService {
                         TeamAiPromptBuilder.single(ctx, evidence != null ? evidence.limitations() : List.of(), config.estimator(), config.singleReplayMaxInputTokens());
                 allGlobalLimitations.addAll(input.globalLimitations());
                 allOmittedIds.addAll(input.omittedUnitIds());
-                final AnalyzeResult result = callSingleTeamContext(ctx, input);
+                final AnalyzeResult result = callSingleTeamContext(ctx, input, language);
                 if (firstAnalysis == null) firstAnalysis = result;
                 perUnitResults.put(ctx.analysisUnitId(), result);
                 if (input.globalLimitations().contains("AI_INPUT_TRUNCATED")) {
@@ -232,7 +246,7 @@ public class TeamReplayAnalysisService {
                         .filter(ctx -> includedIds.contains(ctx.analysisUnitId()))
                         .flatMap(ctx -> ctx.features().keyEvents().stream())
                         .toList();
-                final AnalyzeResult result = callMultiTeamContext(input, keyEvents);
+                final AnalyzeResult result = callMultiTeamContext(input, keyEvents, language);
                 if (firstAnalysis == null) firstAnalysis = result;
                 final Set<String> omittedIds = input.omittedUnitIds();
                 for (final var ctx : partition) {

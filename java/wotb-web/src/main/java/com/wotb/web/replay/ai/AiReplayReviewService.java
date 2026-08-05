@@ -69,6 +69,11 @@ public class AiReplayReviewService {
     }
 
     public AnalyzeResponse analyze(final MultipartFile[] files) throws IOException {
+        return analyze(files, OutputLanguage.ZH);
+    }
+
+    public AnalyzeResponse analyze(final MultipartFile[] files,
+                                   final OutputLanguage language) throws IOException {
         final boolean metrics = meterRegistry != null;
         final Timer.Sample sample = metrics ? Timer.start(meterRegistry) : null;
         if (metrics) {
@@ -78,7 +83,7 @@ public class AiReplayReviewService {
         String result = "success";
         String errorType = null;
         try {
-            return analyzeInternal(files);
+            return analyzeInternal(files, language);
         } catch (final AiNotConfiguredException e) {
             result = "rejected";
             errorType = "AI_NOT_CONFIGURED";
@@ -130,7 +135,8 @@ public class AiReplayReviewService {
         }
     }
 
-    private AnalyzeResponse analyzeInternal(final MultipartFile[] files) throws IOException {
+    private AnalyzeResponse analyzeInternal(final MultipartFile[] files,
+                                            final OutputLanguage language) throws IOException {
         if (files == null || files.length == 0) throw new IllegalArgumentException("NO_REPLAY_FILES");
         validateBatchSize(files.length);
         long totalSize = 0;
@@ -204,7 +210,7 @@ public class AiReplayReviewService {
         return switch (plan.mode()) {
             case SINGLE_PLAYER_BATTLE -> {
                 final var aiResult = aiAnalysisService.analyzePlayerOrFallback(
-                        analyzableGroups.getFirst().representative());
+                        analyzableGroups.getFirst().representative(), language);
                 final var units = AiReplayAnalysisService.buildAnalysisUnits(
                         analyzableGroups, plan.dominantScope());
                 final int analyzedCount = 1;
@@ -222,7 +228,7 @@ public class AiReplayReviewService {
                         .map(ReplayPerspectiveGroup::representative)
                         .map(ReplayProcessingResult::battle)
                         .toList();
-                final var aiResult = aiAnalysisService.analyzeMulti(battles);
+                final var aiResult = aiAnalysisService.analyzeMulti(battles, language);
                 final var units = AiReplayAnalysisService.buildAnalysisUnits(
                         analyzableGroups, plan.dominantScope());
                 yield new AnalyzeResponse(ReplayAnalysisMode.MULTI_PLAYER_BATTLE,
@@ -234,7 +240,7 @@ public class AiReplayReviewService {
                         List.<String>of());
             }
             case SINGLE_TEAM_BATTLE, MULTI_TEAM_BATTLE -> {
-                final var teamResult = aiAnalysisService.analyzeTeamGroups(analyzableGroups);
+                final var teamResult = aiAnalysisService.analyzeTeamGroups(analyzableGroups, language);
                 final var aiResult = teamResult.analysis();
                 final int planUnitCount = plan.effectiveUnitCount();
                 final int analyzed = teamResult.analyzedUnitCount();
