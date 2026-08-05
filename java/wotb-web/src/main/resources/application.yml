@@ -2,6 +2,17 @@ server:
   port: 8087
 
 spring:
+  autoconfigure:
+    exclude:
+      # Spring AI OpenAI auto-configurations create SDK model beans even without
+      # an API key and would fail startup. AiGatewayConfig builds the single
+      # SpringAiChatGateway / OpenAiChatModel explicitly instead.
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiChatAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiEmbeddingAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiImageAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioTranscriptionAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiModerationAutoConfiguration
   servlet:
     multipart:
       max-file-size: 20MB
@@ -26,9 +37,7 @@ spring:
         jwt:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:https://auth.wotbtools.com/realms/wotbtools}
 
-# ── 可观测性 ──────────────────────────────────────────────
-# 管理端口: 独立端口(8088)，仅 Docker 内部网络可达，不映射到宿主机/公网。
-# Prometheus 通过 Docker 网络抓取 http://wotb-backend:8088/actuator/prometheus。
+# observability: dedicated management port (8088), Docker-network only.
 management:
   server:
     port: 8088
@@ -66,7 +75,10 @@ management:
 logging:
   level:
     org.apache.poi: WARN
-  # 结构化 JSON 日志 (logstash 格式): Loki/Alloy 采集; MDC 字段自动包含 requestId
+    # Spring AI logs the full prompt at WARN when the provider returns empty
+    # choices; suppress prompt/completion output while keeping the rest of the
+    # application logs at their default levels.
+    org.springframework.ai.openai.OpenAiChatModel: ERROR
   structured:
     format:
       console: logstash
@@ -80,11 +92,18 @@ keycloak:
 
 wotb:
   ai:
-    # 空默认值：未配置密钥时应用仍可正常启动，/api/replay/analyze 返回 AI_NOT_CONFIGURED
+    # empty default: app still starts without a key; /api/replay/analyze returns AI_NOT_CONFIGURED
     api-key: ${AI_API_KEY:}
     base-url: ${AI_BASE_URL:https://api.deepseek.com}
     model: ${AI_MODEL:deepseek-v4-flash}
+    connect-timeout-sec: ${AI_CONNECT_TIMEOUT_SEC:10}
     timeout-sec: ${AI_TIMEOUT_SEC:300}
+    # total budget for one AiChatGateway.chat() lifecycle (attempts + retries + backoff)
+    call-timeout-sec: ${AI_CALL_TIMEOUT_SEC:315}
+    retry-max-attempts: ${AI_RETRY_MAX_ATTEMPTS:3}
+    retry-initial-backoff-millis: ${AI_RETRY_INITIAL_BACKOFF_MS:1000}
+    retry-max-backoff-millis: ${AI_RETRY_MAX_BACKOFF_MS:8000}
+    retry-backoff-multiplier: ${AI_RETRY_BACKOFF_MULTIPLIER:2.0}
     context-window-tokens: ${AI_CONTEXT_WINDOW_TOKENS:1000000}
     single-replay-max-input-tokens: ${AI_SINGLE_REPLAY_MAX_INPUT_TOKENS:940000}
     max-output-tokens: ${AI_MAX_OUTPUT_TOKENS:32768}

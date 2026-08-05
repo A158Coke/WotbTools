@@ -283,6 +283,16 @@ AI 复盘区分两种 scope，互不混用：
 
 | 属性 | 环境变量 | 默认值 | 说明 |
 |------|---------|--------|------|
+| `apiKey` | `AI_API_KEY` | 空 | DeepSeek API Key；为空时应用正常启动，AI 调用返回 `AI_NOT_CONFIGURED` |
+| `baseUrl` | `AI_BASE_URL` | `https://api.deepseek.com` | Provider Base URL |
+| `model` | `AI_MODEL` | `deepseek-v4-flash` | 模型字符串，原样传递给 Provider |
+| `connectTimeoutSec` | `AI_CONNECT_TIMEOUT_SEC` | 10 | 连接超时（秒） |
+| `timeoutSec` | `AI_TIMEOUT_SEC` | 300 | 单次 read/response 超时（秒） |
+| `callTimeoutSec` | `AI_CALL_TIMEOUT_SEC` | 315 | **整个 `AiChatGateway.chat()` 的总时间预算**（首次请求 + 全部 retry + 全部 backoff + 响应解析），必须 ≥ connect + read |
+| `retryMaxAttempts` | `AI_RETRY_MAX_ATTEMPTS` | 3 | 总预算允许范围内的最大尝试次数（含首次） |
+| `retryInitialBackoffMillis` | `AI_RETRY_INITIAL_BACKOFF_MS` | 1000 | 首次重试等待（毫秒） |
+| `retryMaxBackoffMillis` | `AI_RETRY_MAX_BACKOFF_MS` | 8000 | 重试等待上限（毫秒） |
+| `retryBackoffMultiplier` | `AI_RETRY_BACKOFF_MULTIPLIER` | 2.0 | 指数退避倍数 |
 | `contextWindowTokens` | `AI_CONTEXT_WINDOW_TOKENS` | 1000000 | DeepSeek 上下文窗口大小 |
 | `singleReplayMaxInputTokens` | `AI_SINGLE_REPLAY_MAX_INPUT_TOKENS` | 940000 | 单回放输入硬上限 |
 | `maxOutputTokens` | `AI_MAX_OUTPUT_TOKENS` | 32768 | 单次请求最大输出 |
@@ -295,6 +305,18 @@ AI 复盘区分两种 scope，互不混用：
 ### Token 估算器
 
 `ConservativeDeepSeekTokenEstimator` 使用 `codePointCount * 1.25` 保守估算 token 数。精确 token 数通过 API 响应的 `usage` 字段获取。
+
+---
+
+### Spring AI 集成
+
+- 项目使用 **Spring AI 2.0.0**（BOM 在父 POM dependencyManagement 管理），生产 transport adapter 为 `SpringAiChatGateway`：官方 **OpenAI-compatible adapter**（`spring-ai-starter-model-openai`）连接 `https://api.deepseek.com`。原因：2.0.0 的 DeepSeek Starter 无法传递 `thinking`/`reasoning_effort`，这两个字段经 OpenAI adapter 的 `extraBody` 机制原样发送。
+- 业务层只依赖项目内 `AiChatGateway` 接口；Spring AI / OpenAI SDK 类型只存在于 `gateway` 包。Replay 领域逻辑（`wotb-core`）不依赖 Spring AI。
+- 缺少 `AI_API_KEY` 时应用正常启动，`/api/replay/analyze` 返回 `AI_NOT_CONFIGURED`；其余功能不受影响。
+- timeout/retry 由 `AiRetryPolicy` 单层控制（SDK `maxRetries=0`，无双重重试）；可重试：429、连接失败/超时、500/502/503/504；不重试：认证/权限、invalid request、context too large、空/无效 completion。
+- 总调用边界：`AI_CALL_TIMEOUT_SEC` 使用单调时钟（`System.nanoTime`）覆盖一次 `chat()` 的整个生命周期（含响应体读取与 SDK 解析）；每轮尝试前检查剩余预算，backoff 不得超过剩余预算，in-flight 请求会在预算耗尽时被中止（okhttp interceptor 捕获 Call + 看门狗，覆盖连接→发送→等待→响应体读取→反序列化；成功返回前还会复检 deadline），因此单轮实际请求时间上限为 `min(AI_TIMEOUT_SEC, 剩余预算)`。预算耗尽统一返回稳定 `AI_TIMEOUT`，超时后绝不返回 success。
+- Prompt/completion 默认不记录、不进 metrics；Spring AI Observation 未启用（NOOP）。日志经 `AiSecretRedactor` 集中脱敏。
+- 测试不调用真实 AI API：`SpringAiChatGatewayTest`/`SpringAiChatGatewayMetricsTest` 使用 mock `ChatModel`。
 
 ---
 
@@ -585,7 +607,7 @@ files → DefaultReplayProcessingFacade.processBatch()
 2. **High-priority facts**（authoritative aggregate、observed aggregate、member facts、coverage）必须原子完整写入，无法容纳时该 perspective 整体 omitted；
 3. **Optional details**（movements、formation、battle phases、engagements、key events）可按 unit 整块省略，被省略的 unit 加入 `truncatedUnitIds`，global `AI_INPUT_TRUNCATED` 添加。任意 unit 的截断不影响其他 unit 的 mandatory/high-priority facts。
 
-所有入口（单队/多队/编排）使用相同的 evidence limitation 规则：`AiReplayReviewService` 编排 `analyzeTeamGroups()` / `analyzeMulti()` / `analyzePlayerOrFallback()`，per-unit limitations 在各自上下文头部作为 `unitLimitations=[...]` 优先输出，不混入 global `DATA_LIMITATIONS`。
+所有入口（单队/多队/编排）使用相同的 evidence limitation 规则：`AiReplayAnalysisService`（兼容 facade）委托 Player/Team Service 编排 `analyzeTeamGroups()` / `analyzeMulti()` / `analyzePlayerOrFallback()`，per-unit limitations 在各自上下文头部作为 `unitLimitations=[...]` 优先输出，不混入 global `DATA_LIMITATIONS`。
 
 原始 `ReplayEvent` 和逐帧坐标流不得进入 Prompt。文件名、昵称、地图名和证据文本按 JSON 字符串编码，并在 system prompt 中声明为不可信数据，不能作为模型指令。PLAYER_FOCUSED 与 TEAM_PERSPECTIVE 使用同一个 `PromptDataQuoter.quote(value, fallback)` 实现，分别传入 `"?"` 或 `"UNKNOWN"` 作为 fallback。`TeamAiPromptBuilder.quoteData()` 和 `PlayerResultFormat.quoteForPrompt()` 均为轻量委托，不含 escaping 逻辑。所有外部字符串必须通过 `PromptDataQuoter.quote()` 转义后才能写入 prompt body。
 
@@ -595,7 +617,7 @@ files → DefaultReplayProcessingFacade.processBatch()
 
 ### 测试
 
-核心测试覆盖 `TeamPerspectiveResolverTest`、`TeamEntityMapperTest`、`DefaultTeamBattleFeatureExtractorTest` 与 `BatchAnalyzerTest`；Web 测试使用本地 fake HTTP server 和 MockMvc，前端使用 Vitest + Vue Test Utils。执行：
+核心测试覆盖 `TeamPerspectiveResolverTest`、`TeamEntityMapperTest`、`DefaultTeamBattleFeatureExtractorTest` 与 `BatchAnalyzerTest`；Web/AI 测试使用 MockMvc 与 mock `ChatModel`（不调用真实 AI API），前端使用 Vitest + Vue Test Utils。执行：
 
 ```bash
 cd java && mvn -s settings.xml test

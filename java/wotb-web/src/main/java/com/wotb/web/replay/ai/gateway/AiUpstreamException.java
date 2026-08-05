@@ -1,4 +1,4 @@
-package com.wotb.web.replay.ai;
+package com.wotb.web.replay.ai.gateway;
 
 /**
  * 调用上游 AI 服务（DeepSeek）失败时抛出。
@@ -17,6 +17,18 @@ public class AiUpstreamException extends RuntimeException {
             final String correlationId
     ) {
         super(code);
+        this.code = code;
+        this.providerStatus = providerStatus;
+        this.correlationId = correlationId;
+    }
+
+    public AiUpstreamException(
+            final String code,
+            final Integer providerStatus,
+            final String correlationId,
+            final Throwable cause
+    ) {
+        super(code, cause);
         this.code = code;
         this.providerStatus = providerStatus;
         this.correlationId = correlationId;
