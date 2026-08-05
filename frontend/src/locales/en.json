@@ -820,7 +820,8 @@
             "INVALID_REPLAY_FILE_TYPE": "Only .wotbreplay files can be analyzed.",
             "FILE_TOO_LARGE": "The replay file exceeds the size limit.",
             "REPLAY_FILE_COUNT_EXCEEDED": "At most {max} replay files can be uploaded at once.",
-            "TOTAL_REQUEST_TOO_LARGE": "The combined upload size exceeds the limit."
+            "TOTAL_REQUEST_TOO_LARGE": "The combined upload size exceeds the limit.",
+            "UNKNOWN_LOCALE": "Invalid language setting. Please refresh the page and try again."
         },
         "event_types": {
             "TEAM_MEMBER_DESTROYED": "Team member destroyed",

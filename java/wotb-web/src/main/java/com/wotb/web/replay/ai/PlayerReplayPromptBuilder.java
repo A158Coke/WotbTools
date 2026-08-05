@@ -22,7 +22,6 @@ import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.MapCoordinateResolution;
 import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.MovementSegment;
-import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.stats.PotentialDamage;
@@ -33,7 +32,6 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.IntStream;
@@ -64,6 +62,15 @@ public final class PlayerReplayPromptBuilder {
             证据未提供的坦克属性一律不得自行补充。
             威胁分析只能基于已发生的事实：实际造成与承受的伤害、实际位置与路线、实际击毁、实际交火次数，以及证据中明确存在的结构化字段。
             本规则同时适用于阵容分析、伤害交换描述、威胁分析、战术建议与最终总结。""";
+
+    /** 坦克结构化字段缺失时的输出措辞（中文强制句，EN/RU 本地化时替换）。 */
+    static final String ZH_UNKNOWN_FIELD_RULE =
+            "该字段为「未知」或未给出时，只能写「未知」，不得补充或猜测。";
+    static final String EN_UNKNOWN_FIELD_RULE =
+            "If the structured field is unknown or absent, state “unknown”; do not infer it.";
+    static final String RU_UNKNOWN_FIELD_RULE =
+            "Если структурированное поле неизвестно или отсутствует, укажите «неизвестно»; "
+                    + "ничего не выводите по догадке.";
 
     /** 公共：最终正文使用自然简体中文，不得回写机器标签。 */
     static final String COMMON_CHINESE_LANGUAGE_RULE = """
@@ -99,6 +106,135 @@ public final class PlayerReplayPromptBuilder {
             逐次伤害是单次事件伤害，聚合摘要是整场累计的观测子集，两者不得混淆，
             不得把累计值说成单发伤害，也不得只给总量或含糊称「敌方火力」。""";
 
+    /** 中文时间格式强制句（fallback / full 基座末尾）。 */
+    static final String ZH_TIME_RULE =
+            "输出复盘中的所有战斗时间必须使用“XX分XX秒”格式，例如 75 秒写作“1分15秒”、180 秒写作“3分00秒”，禁止仅使用累计秒数或“1:15”格式。";
+
+    static final String EN_FALLBACK_OUTPUT_INTRO =
+            "Write a concise, professional, actionable tactical review in English:";
+    static final String EN_OUTPUT_INTRO = "Write the review in English:";
+    static final String RU_FALLBACK_OUTPUT_INTRO =
+            "Напишите краткий, профессиональный, практичный тактический разбор на русском языке:";
+    static final String RU_OUTPUT_INTRO = "Напишите разбор на русском языке:";
+
+    static final String EN_TIME_RULE =
+            "All battle times in the review must use the Xm Xs format (e.g., 75 seconds \u2192 1m 15s, "
+                    + "180 seconds \u2192 3m 0s, 192 seconds \u2192 3m 12s); "
+                    + "never use cumulative seconds or \"1:15\".";
+    static final String RU_TIME_RULE =
+            "Все боевые времена в разборе должны использовать формат X мин X с "
+                    + "(например, 75 секунд \u2192 1 мин 15 с, 180 секунд \u2192 3 мин 0 с, "
+                    + "192 секунды \u2192 3 мин 12 с); "
+                    + "нельзя использовать только суммарные секунды или «1:15».";
+
+    /** 公共：EN 最终正文输出语言与术语（替换 COMMON_CHINESE_LANGUAGE_RULE）。 */
+    static final String COMMON_LANGUAGE_RULE_EN = """
+
+            === OUTPUT LANGUAGE (mandatory) ===
+            Write the entire final review in natural, fluent English.
+            Do not echo evidence section markers or machine labels (e.g., OPPOSING_TEAM_LINEUP_AUTHORITATIVE) as prose;
+            describe them in natural English instead.
+            Vehicle classes may be written in natural English (e.g., heavy/medium/light tank, tank destroyer);
+            do not use the machine label TD in prose.
+            Stable error codes and data limitation codes (e.g., AI_INPUT_TRUNCATED) are internal fields;
+            they must not appear as review headings or prose.""";
+
+    /** 公共：RU 最终正文输出语言与术语（替换 COMMON_CHINESE_LANGUAGE_RULE）。 */
+    static final String COMMON_LANGUAGE_RULE_RU = """
+
+            === ПРАВИЛО ЯЗЫКА (обязательно) ===
+            Пишите весь итоговый разбор на естественном русском языке.
+            Не приводите дословно машинные метки из данных (например, OPPOSING_TEAM_LINEUP_AUTHORITATIVE) в тексте;
+            передавайте их смысл по-русски.
+            Классы машин можно называть по-русски (например, тяжёлый/средний/лёгкий танк, ПТ-САУ);
+            не используйте в тексте машинную аббревиатуру TD.
+            Стабильные коды ошибок и коды ограничений данных (например, AI_INPUT_TRUNCATED) — внутренние поля;
+            они не должны появляться в заголовках или тексте разбора.""";
+
+    /** Player 专用：EN 人称（替换 PLAYER_PERSON_RULE）。 */
+    static final String PLAYER_PERSON_RULE_EN = """
+
+            === PERSPECTIVE (mandatory, random-battle personal review only) ===
+            This review is written directly for the player who uploaded the replay.
+            Always call the uploading player "you"; call yourself, the coach, "I".
+            Call the player's teammates "your teammates"/"allies" and opponents "enemies".
+            Never use "user", "recorder", "ally" or "friendly player" for the player himself;
+            when the evidence says "recorder", rewrite it as "you".
+            Correct example: At 3m 12s you dealt 418 damage to the enemy E 75; I think the trade itself was good,
+            but staying in place increased the risk of being focus-fired.
+            Incorrect example: The recorder dealt damage to the enemy; the friendly player entered mid;
+            the recorder was destroyed.""";
+
+    /** Player 专用：RU 人称（替换 PLAYER_PERSON_RULE）。 */
+    static final String PLAYER_PERSON_RULE_RU = """
+
+            === ПЕРСПЕКТИВА (обязательно, только личный разбор случайного боя) ===
+            Разбор адресован напрямую игроку, который загрузил реплей.
+            Всегда называйте этого игрока «вы»; себя как тренера — «я».
+            Его союзников называйте «ваши союзники»/«союзники», противников — «противники».
+            Не используйте «пользователь», «рекордер», «союзник» или «дружественный игрок» для самого игрока;
+            если в данных написано «рекордер», переписывайте как «вы».
+            Верный пример: в 3 мин 12 с вы нанесли 418 урона вражескому E 75;
+            я считаю, что размен сам по себе был выгоден, но задержка на месте увеличила риск сосредоточенного огня.
+            Неверный пример: рекордер нанёс урон противнику; дружественный игрок пошёл в центр; рекордер был уничтожен.""";
+
+    /** Player 专用：EN 敌方逐车与逐次对炮（替换 PLAYER_ENEMY_DAMAGE_RULE）。 */
+    static final String PLAYER_ENEMY_DAMAGE_RULE_EN = """
+
+            === ENEMY LINEUP & PER-HIT DAMAGE (mandatory, random-battle personal review only) ===
+            Analyze the enemy lineup tank by tank, citing tank names and vehicle classes together with their output,
+            damage taken, assistance, blocked, kills, hits/pens and death time; state which enemy vehicles were the
+            main threats, in which phase, and the evidence.
+            When per-hit damage events exist, write concrete statements like
+            "At 3m 12s you dealt 418 damage to the enemy <tank name>" or
+            "The enemy <tank name> dealt N damage to you at 3m 12s".
+            Per-hit damage is a single event; aggregated summaries are whole-battle observed subsets.
+            Never mix them, never present cumulative values as single-shot damage, and never give only totals
+            or vague "enemy firepower".""";
+
+    /** Player 专用：RU 敌方逐车与逐次对炮（替换 PLAYER_ENEMY_DAMAGE_RULE）。 */
+    static final String PLAYER_ENEMY_DAMAGE_RULE_RU = """
+
+            === СОСТАВ ПРОТИВНИКА И ПОУРОННЫЙ ОБМЕН (обязательно, только личный разбор случайного боя) ===
+            Разбирайте состав противника по машинам, называя танки и классы вместе с их уроном, полученным уроном,
+            помощью, блокированным уроном, фрагами, попаданиями/пробитиями и временем уничтожения; укажите, какие
+            машины противника были главной угрозой, на каком этапе и на каком основании.
+            При наличии событий поурочного урона пишите конкретные фразы вроде
+            «в 3 мин 12 с вы нанесли 418 урона вражескому <название танка>» или
+            «вражеский <название танка> нанёс вам N урона в 3 мин 12 с».
+            Поурочный урон — это отдельное событие; агрегированные сводки — наблюдаемое подмножество всего боя.
+            Не смешивайте их, не выдавайте суммарные значения за урон одного выстрела и не ограничивайтесь
+            только итогами или расплывчатым «огнём противника».""";
+
+    /**
+     * 组装 system prompt：ZH 返回原样（字节级不变）；EN/RU 在中文基座上替换中文输出强制句
+     * （输出语言、时间格式、车种与称谓规则），保留业务事实约束与注入防护。
+     */
+    static String localizePlayerSystemPrompt(final String zhPrompt, final AllowedLanguage language) {
+        if (language == null || language == AllowedLanguage.ZH) {
+            return zhPrompt;
+        }
+        final boolean en = language == AllowedLanguage.EN;
+        final String timeRule = en ? EN_TIME_RULE : RU_TIME_RULE;
+        final String localized = zhPrompt
+                .replace("请用简体中文输出一份简洁、专业、可执行的战术复盘：",
+                        en ? EN_FALLBACK_OUTPUT_INTRO : RU_FALLBACK_OUTPUT_INTRO)
+                .replace("请用简体中文输出：", en ? EN_OUTPUT_INTRO : RU_OUTPUT_INTRO)
+                .replace(ZH_TIME_RULE, timeRule)
+                .replace(ZH_UNKNOWN_FIELD_RULE,
+                        en ? EN_UNKNOWN_FIELD_RULE : RU_UNKNOWN_FIELD_RULE)
+                .replace(COMMON_CHINESE_LANGUAGE_RULE,
+                        en ? COMMON_LANGUAGE_RULE_EN : COMMON_LANGUAGE_RULE_RU)
+                .replace(PLAYER_PERSON_RULE,
+                        en ? PLAYER_PERSON_RULE_EN : PLAYER_PERSON_RULE_RU)
+                .replace(PLAYER_ENEMY_DAMAGE_RULE,
+                        en ? PLAYER_ENEMY_DAMAGE_RULE_EN : PLAYER_ENEMY_DAMAGE_RULE_RU);
+        if (zhPrompt.contains(ZH_TIME_RULE)) {
+            return localized;
+        }
+        return localized + "\n\n" + timeRule;
+    }
+
 
     static final String SYSTEM_PROMPT = """
             你是《坦克世界闪击战》(WoT Blitz) 的资深教练。
@@ -125,9 +261,16 @@ public final class PlayerReplayPromptBuilder {
      */
     public static PreparedAiPrompt prepareFallback(final Battle battle,
                                                    final ReplayReconstruction recon) {
+        return prepareFallback(battle, recon, AllowedLanguage.ZH);
+    }
+
+    public static PreparedAiPrompt prepareFallback(final Battle battle,
+                                                   final ReplayReconstruction recon,
+                                                   final AllowedLanguage language) {
         final List<KeyBattleEvent> keyEvents = buildDeathTimeline(battle);
         final String summary = buildSummary(battle, recon, keyEvents);
-        return new PreparedAiPrompt(SYSTEM_PROMPT, summary, "SINGLE_PLAYER_SUMMARY",
+        final String systemPrompt = localizePlayerSystemPrompt(SYSTEM_PROMPT, language);
+        return new PreparedAiPrompt(systemPrompt, summary, "SINGLE_PLAYER_SUMMARY",
                 keyEvents, EvidenceDensity.LEVEL_1_COMPRESSED, 0);
     }
 
@@ -141,14 +284,27 @@ public final class PlayerReplayPromptBuilder {
             final int contextWindowTokens,
             final int maxOutputTokens,
             final int promptSafetyMarginTokens) {
+        return prepareFullNoRecon(ctx, estimator, maxInputTokens, contextWindowTokens,
+                maxOutputTokens, promptSafetyMarginTokens, AllowedLanguage.ZH);
+    }
+
+    public static PreparedAiPrompt prepareFullNoRecon(
+            final SinglePlayerBattleAnalysisContext ctx,
+            final AiTokenEstimator estimator,
+            final int maxInputTokens,
+            final int contextWindowTokens,
+            final int maxOutputTokens,
+            final int promptSafetyMarginTokens,
+            final AllowedLanguage language) {
         final String summary = buildPlayerContextSummary(ctx);
+        final String systemPrompt = localizePlayerSystemPrompt(SINGLE_PLAYER_PROMPT, language);
         final List<Map<String, Object>> messages = List.of(
-                Map.<String, Object>of("role", "system", "content", SINGLE_PLAYER_PROMPT),
+                Map.<String, Object>of("role", "system", "content", systemPrompt),
                 Map.<String, Object>of("role", "user", "content", summary));
         final int estimatedTokens = estimator.estimateMessagesTokens(messages);
         AiPromptBudgetGuard.enforce(estimatedTokens, maxInputTokens, contextWindowTokens,
                 maxOutputTokens, promptSafetyMarginTokens);
-        return new PreparedAiPrompt(SINGLE_PLAYER_PROMPT, summary, "SINGLE_PLAYER_BATTLE",
+        return new PreparedAiPrompt(systemPrompt, summary, "SINGLE_PLAYER_BATTLE",
                 ctx.features().keyEvents(), EvidenceDensity.LEVEL_1_COMPRESSED, estimatedTokens);
     }
 
@@ -164,6 +320,19 @@ public final class PlayerReplayPromptBuilder {
             final int contextWindowTokens,
             final int maxOutputTokens,
             final int promptSafetyMarginTokens) {
+        return prepareFull(ctx, recon, estimator, maxInputTokens, contextWindowTokens,
+                maxOutputTokens, promptSafetyMarginTokens, AllowedLanguage.ZH);
+    }
+
+    public static PreparedAiPrompt prepareFull(
+            final SinglePlayerBattleAnalysisContext ctx,
+            final ReplayReconstruction recon,
+            final AiTokenEstimator estimator,
+            final int maxInputTokens,
+            final int contextWindowTokens,
+            final int maxOutputTokens,
+            final int promptSafetyMarginTokens,
+            final AllowedLanguage language) {
         final long recorderAccountId = ctx.recorder() != null && ctx.recorder().accountId() != null
                 ? ctx.recorder().accountId() : -1L;
         final StringBuilder summaryBuilder = new StringBuilder(buildPlayerContextSummary(ctx));
@@ -172,18 +341,19 @@ public final class PlayerReplayPromptBuilder {
             summaryBuilder.append("- PER_HIT_DAMAGE_EVENTS_UNAVAILABLE\n");
         }
         final String baseSummary = summaryBuilder.toString();
+        final String systemPrompt = localizePlayerSystemPrompt(SINGLE_PLAYER_PROMPT, language);
         final SingleReplayPromptPlanner planner = new SingleReplayPromptPlanner(
                 estimator, maxInputTokens,
                 contextWindowTokens, maxOutputTokens, promptSafetyMarginTokens);
         final PlannedPrompt planned = planner.plan(
-                SINGLE_PLAYER_PROMPT, baseSummary, ctx, recon);
+                systemPrompt, baseSummary, ctx, recon);
         final List<Map<String, Object>> messages = List.of(
-                Map.<String, Object>of("role", "system", "content", SINGLE_PLAYER_PROMPT),
+                Map.<String, Object>of("role", "system", "content", systemPrompt),
                 Map.<String, Object>of("role", "user", "content", planned.userContent()));
         final int estimatedTokens = estimator.estimateMessagesTokens(messages);
         AiPromptBudgetGuard.enforce(estimatedTokens, maxInputTokens, contextWindowTokens,
                 maxOutputTokens, promptSafetyMarginTokens);
-        return new PreparedAiPrompt(SINGLE_PLAYER_PROMPT, planned.userContent(),
+        return new PreparedAiPrompt(systemPrompt, planned.userContent(),
                 "SINGLE_PLAYER_BATTLE", ctx.features().keyEvents(),
                 planned.density(), estimatedTokens);
     }
@@ -192,8 +362,14 @@ public final class PlayerReplayPromptBuilder {
      * 多场趋势复盘 prompt。
      */
     public static PreparedAiPrompt prepareMulti(final List<Battle> battles) {
+        return prepareMulti(battles, AllowedLanguage.ZH);
+    }
+
+    public static PreparedAiPrompt prepareMulti(final List<Battle> battles,
+                                                final AllowedLanguage language) {
         final String summary = buildMultiSummary(battles);
-        return new PreparedAiPrompt(MULTI_SYSTEM_PROMPT, summary, "MULTI_PLAYER_SUMMARY",
+        final String systemPrompt = localizePlayerSystemPrompt(MULTI_SYSTEM_PROMPT, language);
+        return new PreparedAiPrompt(systemPrompt, summary, "MULTI_PLAYER_SUMMARY",
                 List.of(), EvidenceDensity.LEVEL_1_COMPRESSED, 0);
     }
 

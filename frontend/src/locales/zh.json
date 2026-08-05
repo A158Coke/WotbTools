@@ -820,7 +820,8 @@
             "INVALID_REPLAY_FILE_TYPE": "仅支持分析 .wotbreplay 文件。",
             "FILE_TOO_LARGE": "回放文件超过大小限制。",
             "REPLAY_FILE_COUNT_EXCEEDED": "一次最多上传 {max} 个回放文件。",
-            "TOTAL_REQUEST_TOO_LARGE": "上传文件总大小超过限制。"
+            "TOTAL_REQUEST_TOO_LARGE": "上传文件总大小超过限制。",
+            "UNKNOWN_LOCALE": "无效的语言设置，请刷新页面后重试。"
         },
         "event_types": {
             "TEAM_MEMBER_DESTROYED": "本队成员阵亡",
