@@ -58,7 +58,10 @@ public class SpringAiChatGateway implements AiChatGateway {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SpringAiChatGateway.class);
     private static final String PROVIDER_NAME = "DeepSeek";
+    // Matches the default AI_CALL_TIMEOUT_SEC (300 read + 10 connect + 5 margin)
+    // used when tests construct the gateway without explicit properties.
     private static final long DEFAULT_CALL_TIMEOUT_NANOS = 315_000_000_000L;
+    private static final long NANOS_PER_MILLI = 1_000_000L;
     private static final String REQUESTS = "wotb_ai_upstream_requests_total";
     private static final String SUCCESS = "wotb_ai_upstream_success_total";
     private static final String ERRORS = "wotb_ai_upstream_errors_total";
@@ -67,7 +70,7 @@ public class SpringAiChatGateway implements AiChatGateway {
     private static final String RETRY_OUTCOME = "wotb_ai_upstream_retry_outcome_total";
     private static final String TOKENS = "wotb_ai_upstream_tokens_total";
 
-    private ChatModel chatModel;
+    private volatile ChatModel chatModel;
     private final String defaultModel;
     private final MeterRegistry meterRegistry;
     private final AiRetryPolicy retryPolicy;
@@ -76,7 +79,7 @@ public class SpringAiChatGateway implements AiChatGateway {
     private final BudgetSleeper sleeper;
     private final ThreadLocal<AtomicReference<Call>> activeCallRef =
             ThreadLocal.withInitial(AtomicReference::new);
-    private ScheduledExecutorService budgetWatchdog;
+    private volatile ScheduledExecutorService budgetWatchdog;
     private Timer aiUpstreamDuration;
 
     public SpringAiChatGateway(final ChatModel chatModel,
@@ -255,7 +258,7 @@ public class SpringAiChatGateway implements AiChatGateway {
                 if (!lastAttempt && !cancelledByBudget.get()
                         && retryPolicy.isRetryable(failure)) {
                     final long backoffMillis = retryPolicy.backoffMillis(retryCount + 1);
-                    if (remainingAfterNanos <= backoffMillis * 1_000_000L) {
+                    if (remainingAfterNanos <= backoffMillis * NANOS_PER_MILLI) {
                         // Not enough budget left for the backoff plus another
                         // attempt: stop without sleeping and without a new request.
                         failure = new AiUpstreamException("AI_TIMEOUT", null, correlationId, failure);
