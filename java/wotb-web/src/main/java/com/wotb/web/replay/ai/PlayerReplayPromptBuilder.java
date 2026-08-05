@@ -63,6 +63,15 @@ public final class PlayerReplayPromptBuilder {
             威胁分析只能基于已发生的事实：实际造成与承受的伤害、实际位置与路线、实际击毁、实际交火次数，以及证据中明确存在的结构化字段。
             本规则同时适用于阵容分析、伤害交换描述、威胁分析、战术建议与最终总结。""";
 
+    /** 坦克结构化字段缺失时的输出措辞（中文强制句，EN/RU 本地化时替换）。 */
+    static final String ZH_UNKNOWN_FIELD_RULE =
+            "该字段为「未知」或未给出时，只能写「未知」，不得补充或猜测。";
+    static final String EN_UNKNOWN_FIELD_RULE =
+            "If the structured field is unknown or absent, state “unknown”; do not infer it.";
+    static final String RU_UNKNOWN_FIELD_RULE =
+            "Если структурированное поле неизвестно или отсутствует, укажите «неизвестно»; "
+                    + "ничего не выводите по догадке.";
+
     /** 公共：最终正文使用自然简体中文，不得回写机器标签。 */
     static final String COMMON_CHINESE_LANGUAGE_RULE = """
 
@@ -110,10 +119,12 @@ public final class PlayerReplayPromptBuilder {
 
     static final String EN_TIME_RULE =
             "All battle times in the review must use the Xm Xs format (e.g., 75 seconds \u2192 1m 15s, "
-                    + "180 seconds \u2192 3m 0s); never use cumulative seconds or \"1:15\".";
+                    + "180 seconds \u2192 3m 0s, 192 seconds \u2192 3m 12s); "
+                    + "never use cumulative seconds or \"1:15\".";
     static final String RU_TIME_RULE =
             "Все боевые времена в разборе должны использовать формат X мин X с "
-                    + "(например, 75 секунд \u2192 1 мин 15 с, 180 секунд \u2192 3 мин 0 с); "
+                    + "(например, 75 секунд \u2192 1 мин 15 с, 180 секунд \u2192 3 мин 0 с, "
+                    + "192 секунды \u2192 3 мин 12 с); "
                     + "нельзя использовать только суммарные секунды или «1:15».";
 
     /** 公共：EN 最终正文输出语言与术语（替换 COMMON_CHINESE_LANGUAGE_RULE）。 */
@@ -163,7 +174,7 @@ public final class PlayerReplayPromptBuilder {
             Его союзников называйте «ваши союзники»/«союзники», противников — «противники».
             Не используйте «пользователь», «рекордер», «союзник» или «дружественный игрок» для самого игрока;
             если в данных написано «рекордер», переписывайте как «вы».
-            Верный пример: на 3-й минуте 12-й секунде вы нанесли 418 урона вражескому E 75;
+            Верный пример: в 3 мин 12 с вы нанесли 418 урона вражескому E 75;
             я считаю, что размен сам по себе был выгоден, но задержка на месте увеличила риск сосредоточенного огня.
             Неверный пример: рекордер нанёс урон противнику; дружественный игрок пошёл в центр; рекордер был уничтожен.""";
 
@@ -189,8 +200,8 @@ public final class PlayerReplayPromptBuilder {
             помощью, блокированным уроном, фрагами, попаданиями/пробитиями и временем уничтожения; укажите, какие
             машины противника были главной угрозой, на каком этапе и на каком основании.
             При наличии событий поурочного урона пишите конкретные фразы вроде
-            «на 3-й минуте 12-й секунде вы нанесли 418 урона вражескому <название танка>» или
-            «вражеский <название танка> нанёс вам N урона на 3-й минуте 12-й секунде».
+            «в 3 мин 12 с вы нанесли 418 урона вражескому <название танка>» или
+            «вражеский <название танка> нанёс вам N урона в 3 мин 12 с».
             Поурочный урон — это отдельное событие; агрегированные сводки — наблюдаемое подмножество всего боя.
             Не смешивайте их, не выдавайте суммарные значения за урон одного выстрела и не ограничивайтесь
             только итогами или расплывчатым «огнём противника».""";
@@ -210,6 +221,8 @@ public final class PlayerReplayPromptBuilder {
                         en ? EN_FALLBACK_OUTPUT_INTRO : RU_FALLBACK_OUTPUT_INTRO)
                 .replace("请用简体中文输出：", en ? EN_OUTPUT_INTRO : RU_OUTPUT_INTRO)
                 .replace(ZH_TIME_RULE, timeRule)
+                .replace(ZH_UNKNOWN_FIELD_RULE,
+                        en ? EN_UNKNOWN_FIELD_RULE : RU_UNKNOWN_FIELD_RULE)
                 .replace(COMMON_CHINESE_LANGUAGE_RULE,
                         en ? COMMON_LANGUAGE_RULE_EN : COMMON_LANGUAGE_RULE_RU)
                 .replace(PLAYER_PERSON_RULE,

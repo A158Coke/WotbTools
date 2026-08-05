@@ -38,6 +38,12 @@ class AllowedLanguagePromptTest {
             "XX分XX秒",
             "重坦 / 中坦 / 轻坦 / 坦克歼击车");
 
+    private static final List<String> LOCALIZED_OUTPUT_MANDATES = List.of(
+            "只能写「未知」",
+            "无法从当前回放数据确定",
+            "3-й минуте",
+            "12-й секунде");
+
     @Test
     void zhSystemPromptsRemainByteIdentical() {
         assertEquals(PlayerReplayPromptBuilder.SYSTEM_PROMPT,
@@ -64,10 +70,13 @@ class AllowedLanguagePromptTest {
         assertTrue(en.contains("natural, fluent English"));
         assertTrue(en.contains("1m 15s"));
         assertTrue(en.contains("3m 0s"));
+        assertTrue(en.contains("3m 12s"));
         assertTrue(en.contains("tank proper names")
                 || en.contains("坦克名称"), "business constraints must be preserved");
         assertFalse(containsAny(en, CHINESE_OUTPUT_MANDATES),
                 "EN prompt must not contain conflicting Chinese output mandates");
+        assertFalse(containsAny(en, LOCALIZED_OUTPUT_MANDATES),
+                "EN prompt must not contain forced Chinese or ordinal-time wording");
     }
 
     @ParameterizedTest
@@ -77,9 +86,12 @@ class AllowedLanguagePromptTest {
         assertTrue(ru.contains("естественном русском языке"));
         assertTrue(ru.contains("1 мин 15 с"));
         assertTrue(ru.contains("3 мин 0 с"));
+        assertTrue(ru.contains("3 мин 12 с"));
         assertTrue(ru.contains("坦克名称"), "business constraints must be preserved");
         assertFalse(containsAny(ru, CHINESE_OUTPUT_MANDATES),
                 "RU prompt must not contain conflicting Chinese output mandates");
+        assertFalse(containsAny(ru, LOCALIZED_OUTPUT_MANDATES),
+                "RU prompt must not contain forced Chinese or ordinal-time wording");
     }
 
     @ParameterizedTest
@@ -88,9 +100,13 @@ class AllowedLanguagePromptTest {
         final String en = TeamReplayAnalysisService.localizeTeamSystemPrompt(zhPrompt, AllowedLanguage.EN);
         assertTrue(en.contains("natural, fluent English"));
         assertTrue(en.contains("1m 15s"));
+        assertTrue(en.contains("3m 0s"));
+        assertTrue(en.contains("3m 12s"));
         assertTrue(en.contains("Never address the whole team as \"you\""));
         assertFalse(containsAny(en, CHINESE_OUTPUT_MANDATES),
                 "EN team prompt must not contain conflicting Chinese output mandates");
+        assertFalse(containsAny(en, LOCALIZED_OUTPUT_MANDATES),
+                "EN team prompt must not contain forced Chinese or ordinal-time wording");
     }
 
     @ParameterizedTest
@@ -99,9 +115,13 @@ class AllowedLanguagePromptTest {
         final String ru = TeamReplayAnalysisService.localizeTeamSystemPrompt(zhPrompt, AllowedLanguage.RU);
         assertTrue(ru.contains("естественном русском языке"));
         assertTrue(ru.contains("1 мин 15 с"));
+        assertTrue(ru.contains("3 мин 0 с"));
+        assertTrue(ru.contains("3 мин 12 с"));
         assertTrue(ru.contains("Не обращайтесь ко всей команде"));
         assertFalse(containsAny(ru, CHINESE_OUTPUT_MANDATES),
                 "RU team prompt must not contain conflicting Chinese output mandates");
+        assertFalse(containsAny(ru, LOCALIZED_OUTPUT_MANDATES),
+                "RU team prompt must not contain forced Chinese or ordinal-time wording");
     }
 
     @Test
@@ -133,14 +153,17 @@ class AllowedLanguagePromptTest {
         facade.analyzeSingleTeamContext(context, AllowedLanguage.EN);
         assertTrue(captured.get().systemPrompt().contains("natural, fluent English"));
         assertFalse(containsAny(captured.get().systemPrompt(), CHINESE_OUTPUT_MANDATES));
+        assertFalse(containsAny(captured.get().systemPrompt(), LOCALIZED_OUTPUT_MANDATES));
 
         facade.analyzeSingleTeamContext(context, AllowedLanguage.RU);
         assertTrue(captured.get().systemPrompt().contains("естественном русском языке"));
         assertFalse(containsAny(captured.get().systemPrompt(), CHINESE_OUTPUT_MANDATES));
+        assertFalse(containsAny(captured.get().systemPrompt(), LOCALIZED_OUTPUT_MANDATES));
 
         facade.analyzeTeamGroups(List.of(teamGroup()), AllowedLanguage.EN);
         assertTrue(captured.get().systemPrompt().contains("natural, fluent English"));
         assertFalse(containsAny(captured.get().systemPrompt(), CHINESE_OUTPUT_MANDATES));
+        assertFalse(containsAny(captured.get().systemPrompt(), LOCALIZED_OUTPUT_MANDATES));
     }
 
     private static Stream<Arguments> playerBases() {

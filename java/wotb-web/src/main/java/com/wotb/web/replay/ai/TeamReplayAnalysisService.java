@@ -91,6 +91,16 @@ public class TeamReplayAnalysisService {
             Разбирайте состав противника по машинам и указывайте основные угрозы команды противника;
             при отсутствии данных о противнике прямо скажите об этом, не угадывая.""";
 
+    /** 数据不足时的输出措辞（中文强制句，EN/RU 本地化时替换）。 */
+    static final String ZH_CANNOT_DETERMINE_RULE =
+            "无法从输入确定时必须写明“无法从当前回放数据确定”。";
+    static final String EN_CANNOT_DETERMINE_RULE =
+            "When the current replay data is insufficient, explicitly state that it cannot be "
+                    + "determined from the available replay data.";
+    static final String RU_CANNOT_DETERMINE_RULE =
+            "Если данных реплея недостаточно, прямо укажите, что это невозможно определить "
+                    + "по имеющимся данным реплея.";
+
     /**
      * 组装团队 system prompt：ZH 返回原样；EN/RU 在中文基座上替换中文输出强制句
      * （输出语言、时间格式、语言规则与团队规则）。
@@ -110,6 +120,11 @@ public class TeamReplayAnalysisService {
                 .replace(PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE,
                         en ? PlayerReplayPromptBuilder.COMMON_LANGUAGE_RULE_EN
                                 : PlayerReplayPromptBuilder.COMMON_LANGUAGE_RULE_RU)
+                .replace(PlayerReplayPromptBuilder.ZH_UNKNOWN_FIELD_RULE,
+                        en ? PlayerReplayPromptBuilder.EN_UNKNOWN_FIELD_RULE
+                                : PlayerReplayPromptBuilder.RU_UNKNOWN_FIELD_RULE)
+                .replace(ZH_CANNOT_DETERMINE_RULE,
+                        en ? EN_CANNOT_DETERMINE_RULE : RU_CANNOT_DETERMINE_RULE)
                 .replace(TEAM_ANALYSIS_RULE,
                         en ? TEAM_ANALYSIS_RULE_EN : TEAM_ANALYSIS_RULE_RU);
     }
