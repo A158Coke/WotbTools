@@ -2,6 +2,7 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.processing.BatchAnalyzer;
 import com.wotb.core.processing.ReplayIdentity;
 import com.wotb.core.processing.ReplayProcessingCapabilities;
@@ -19,6 +20,9 @@ import com.wotb.core.replay.feature.TeamBattleAnalysisSummary;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamFeatureCoverage;
 import com.wotb.core.replay.feature.TeamFormationPhase;
+import com.wotb.web.replay.ai.gateway.AiChatGateway;
+import com.wotb.web.replay.ai.gateway.AiChatRequest;
+import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.reconstruction.Vector3;
@@ -701,7 +705,11 @@ class TeamAiPromptBuilderTest {
         final var group = new BatchAnalyzer().analyze(List.of(result))
                 .groups()
                 .getFirst();
-        return new AiReplayAnalysisService("", "", "", 1, 30000)
+        return new AiReplayAnalysisService(
+                new AiChatGateway() {
+                    @Override public AiChatResponse chat(final AiChatRequest r) { return null; }
+                    @Override public boolean isConfigured() { return false; }
+                }, "", 30000, new ConservativeDeepSeekTokenEstimator())
                 .buildSingleTeamContext(group);
     }
 

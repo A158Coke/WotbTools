@@ -1,4 +1,6 @@
 package com.wotb.web.replay.ai;
+import com.wotb.web.replay.ai.TeamReplayAnalysisService;
+import com.wotb.web.replay.ai.PlayerReplayPromptBuilder;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
@@ -36,11 +38,11 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
 
     private static Stream<String> allSystemPrompts() {
         return Stream.of(
-                AiReplayAnalysisService.SYSTEM_PROMPT,
-                AiReplayAnalysisService.SINGLE_PLAYER_PROMPT,
-                AiReplayAnalysisService.SINGLE_TEAM_PROMPT,
-                AiReplayAnalysisService.MULTI_TEAM_PROMPT,
-                AiReplayAnalysisService.MULTI_SYSTEM_PROMPT);
+                PlayerReplayPromptBuilder.SYSTEM_PROMPT,
+                PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT,
+                TeamReplayAnalysisService.SINGLE_TEAM_PROMPT,
+                TeamReplayAnalysisService.MULTI_TEAM_PROMPT,
+                PlayerReplayPromptBuilder.MULTI_SYSTEM_PROMPT);
     }
 
     // ---- 1. friendly ≠ 朋友 ----
@@ -71,7 +73,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
     @Test
     void enemyLineupCarriesFullPerVehicleFacts() {
         final StringBuilder sb = new StringBuilder();
-        AiReplayAnalysisService.appendPlayerLine(sb, enemy(), false);
+        PlayerReplayPromptBuilder.appendPlayerLine(sb, enemy(), false);
         final String line = sb.toString();
 
         assertTrue(line.contains("坦克: \"SPHT\""), line);
@@ -89,7 +91,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
     @Test
     void enemyLineupCarriesStructuredTierAndNation() {
         final StringBuilder sb = new StringBuilder();
-        AiReplayAnalysisService.appendPlayerLine(sb, enemy(), false);
+        PlayerReplayPromptBuilder.appendPlayerLine(sb, enemy(), false);
         final String line = sb.toString();
 
         // 等级/国家来自 tankopedia 的结构化字段
@@ -102,7 +104,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         final PlayerResult p = enemy();
         p.tankId = 999_999_999L;
         final StringBuilder sb = new StringBuilder();
-        AiReplayAnalysisService.appendPlayerLine(sb, p, false);
+        PlayerReplayPromptBuilder.appendPlayerLine(sb, p, false);
         final String line = sb.toString();
 
         assertTrue(line.contains("车种: 未知"), line);
@@ -119,7 +121,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         enemyPlayer.killVictims.add(new com.wotb.core.stats.PotentialDamage.KillVictim(RECORDER_ACCOUNT, 640, 2));
 
         final StringBuilder sb = new StringBuilder();
-        final boolean written = AiReplayAnalysisService.appendKillAttribution(sb, battle, recorder);
+        final boolean written = PlayerReplayPromptBuilder.appendKillAttribution(sb, battle, recorder);
         final String evidence = sb.toString();
 
         assertTrue(written);
@@ -136,7 +138,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         final Battle battle = battleWithRecorderAndEnemy();
         final StringBuilder sb = new StringBuilder();
 
-        assertFalse(AiReplayAnalysisService.appendKillAttribution(sb, battle, battle.players.get(0)));
+        assertFalse(PlayerReplayPromptBuilder.appendKillAttribution(sb, battle, battle.players.get(0)));
         assertEquals("", sb.toString());
     }
 
@@ -144,10 +146,10 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
     void promptsRequirePerVehicleEnemyAnalysis() {
         allSystemPrompts().forEach(prompt -> assertTrue(
                 prompt.contains("必须逐车分析敌方阵容") || prompt.contains("必须逐车分析对方阵容"), prompt));
-        assertTrue(AiReplayAnalysisService.SINGLE_PLAYER_PROMPT
-                .contains("敌方阵容逐车分析"), AiReplayAnalysisService.SINGLE_PLAYER_PROMPT);
-        assertTrue(AiReplayAnalysisService.SYSTEM_PROMPT
-                .contains("逐车分析敌方阵容"), AiReplayAnalysisService.SYSTEM_PROMPT);
+        assertTrue(PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT
+                .contains("敌方阵容逐车分析"), PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT);
+        assertTrue(PlayerReplayPromptBuilder.SYSTEM_PROMPT
+                .contains("逐车分析敌方阵容"), PlayerReplayPromptBuilder.SYSTEM_PROMPT);
     }
 
     // ---- 3. 双方对炮明细 ----
@@ -157,7 +159,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         final Battle battle = battleWithRecorderAndEnemy();
         final StringBuilder sb = new StringBuilder();
 
-        final boolean written = AiReplayAnalysisService.appendDamageExchangeByOpponent(
+        final boolean written = PlayerReplayPromptBuilder.appendDamageExchangeByOpponent(
                 sb, battle, RECORDER_ACCOUNT,
                 reconWith(
                         damage(10f, RECORDER_ACCOUNT, ENEMY_ACCOUNT, 386),
@@ -182,7 +184,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         assertTrue(battle.players.get(0).killVictims.isEmpty());
 
         final StringBuilder sb = new StringBuilder();
-        AiReplayAnalysisService.appendDamageExchangeByOpponent(
+        PlayerReplayPromptBuilder.appendDamageExchangeByOpponent(
                 sb, battle, RECORDER_ACCOUNT,
                 reconWith(damage(20f, RECORDER_ACCOUNT, ENEMY_ACCOUNT, 512)));
 
@@ -195,7 +197,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         final StringBuilder sb = new StringBuilder();
 
         // battleStart=30s：20s 的伤害属准备阶段，必须被排除
-        final boolean written = AiReplayAnalysisService.appendDamageExchangeByOpponent(
+        final boolean written = PlayerReplayPromptBuilder.appendDamageExchangeByOpponent(
                 sb, battle, RECORDER_ACCOUNT,
                 reconWith(30f, damage(20f, RECORDER_ACCOUNT, ENEMY_ACCOUNT, 999)));
 
@@ -208,7 +210,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         final Battle battle = battleWithRecorderAndEnemy();
         final StringBuilder sb = new StringBuilder();
 
-        final boolean written = AiReplayAnalysisService.appendDamageExchangeByOpponent(
+        final boolean written = PlayerReplayPromptBuilder.appendDamageExchangeByOpponent(
                 sb, battle, RECORDER_ACCOUNT,
                 reconWith(damage(10f, 8L, 9L, 300)));
 
