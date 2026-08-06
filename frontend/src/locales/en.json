@@ -365,16 +365,6 @@
         "verified": "Verification",
         "verifiedBadge": "Verified"
     },
-    "login": {
-        "title": "Sign in to WoTBTools",
-        "cnPlayers": "Mainland China players",
-        "qqLogin": "Sign in with QQ",
-        "wgLogin": "Sign in with Wargaming.net",
-        "wgAsia": "Asia Server",
-        "wgEurope": "Europe Server",
-        "wgNorthAmerica": "North America Server",
-        "independentAccountNote": "Signing in with Wargaming.net creates a separate account; QQ-Wargaming account linking is under development."
-    },
     "replay": {
         "no_files": "Select replay files or a folder first",
         "preview_failed": "Preview failed",
