@@ -1,0 +1,66 @@
+name: Update Tankopedia
+
+# 手动触发：从 WG 官方百科刷新 common/tankopedia.json 并提交回 main。
+# 需要 GitHub Secret WG_APPLICATION_ID（与 Keycloak WG 登录共用同一个 application_id）。
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: "WG 区服"
+        type: choice
+        default: asia
+        options:
+          - asia
+          - eu
+          - com
+      min-tier:
+        description: "保留的最低等级（默认 7 = 只保留 7-10 级）"
+        type: number
+        default: 7
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check WG_APPLICATION_ID secret
+        env:
+          WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
+        run: |
+          if [ -z "$WG_APPLICATION_ID" ]; then
+            echo "::error::WG_APPLICATION_ID secret is not configured in repository settings."
+            exit 1
+          fi
+      - name: Sync tankopedia from WG official
+        env:
+          WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
+        run: |
+          python common/python/update_tankopedia.py \
+            --region "${{ inputs.region }}" \
+            --min-tier "${{ inputs.min-tier }}"
+      - name: Commit updated tankopedia.json
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execSync } = require('node:child_process');
+            const changed = execSync(
+              'git status --porcelain -- common/tankopedia.json',
+              { encoding: 'utf8' }
+            ).trim();
+            if (!changed) {
+              console.log('tankopedia.json unchanged; nothing to commit.');
+              return;
+            }
+            execSync('git config user.name "github-actions[bot]"');
+            execSync('git config user.email "41898282+github-actions[bot]@users.noreply.github.com"');
+            execSync('git add common/tankopedia.json');
+            execSync(
+              'git commit -m "chore(data): 同步 WG 官方车辆百科（region=${{ inputs.region }}, min-tier=${{ inputs.min-tier }}）"'
+            );
+            execSync('git push');
