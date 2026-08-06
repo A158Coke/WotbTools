@@ -145,7 +145,7 @@ docker compose ps prometheus loki alloy grafana
 
 ### 生产（CI 自动）
 
-合并到 `main` 触发 `deploy.yml`：SSH 到 `/opt/wotb` 重新生成 `docker-compose.yml`（含观测服务）、`docker compose pull` + `up -d --remove-orphans`。观测配置随 `deploy/` 一起 scp 到 `/opt/wotb/deploy/observability/`。
+合并到 `main` 触发 `deploy.yml`：SSH 到 `/opt/wotb` 重新生成 `docker-compose.yml`（含观测服务，三个 wotb 镜像钉住 `sha-<SHA>`）、`docker compose pull` + `up -d --remove-orphans`。观测配置随 `deploy/` 一起 scp 到 `/opt/wotb/deploy/observability/`。部署后三端健康检查（backend `/api/health`、frontend 经 nginx E2E、Keycloak realm）失败会自动回滚到上一份 compose（`docker-compose.prev.yml`）并复检；回滚事件可从 Actions 日志与 Loki 中的容器日志追溯。
 
 ### 停止观测系统（不影响主业务）
 
@@ -161,6 +161,8 @@ docker compose start prometheus loki alloy grafana
 ```
 
 > **禁止**使用 `docker compose down -v` 作为普通停止/回滚命令——它会删除所有 volume（含 PostgreSQL 数据）。
+
+> **应用回滚**由 `deploy.yml` 自动处理（恢复 `docker-compose.prev.yml`），不会触碰 `postgres_data` 等 volume；数据库 schema 迁移随新版本启动执行，回滚策略见 `DEVELOPER_GUIDE.md`「CI/CD 与部署」。
 
 ---
 

@@ -28,3 +28,9 @@ jobs:
           package-name: wotbtools-frontend
           package-type: container
           min-versions-to-keep: ${{ github.event.inputs.keep || '10' }}
+      - name: Prune keycloak versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: wotbtools-keycloak
+          package-type: container
+          min-versions-to-keep: ${{ github.event.inputs.keep || '10' }}
