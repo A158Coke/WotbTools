@@ -35,7 +35,7 @@ import java.util.Map;
  * </ul>
  * </p>
  */
-public class DefaultReplayProcessingFacade implements ReplayProcessingService {
+public class DefaultReplayProcessingFacade {
 
     private final ReplayReconstructionService reconstructionService;
 
@@ -47,7 +47,6 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
         this.reconstructionService = reconstructionService;
     }
 
-    @Override
     public ReplayProcessingResult process(final Source input, final ReplayProcessingOptions options) {
         final ReplayFileValidationResult validation = validateFile(input);
         if (!validation.valid()) {
@@ -63,7 +62,6 @@ public class DefaultReplayProcessingFacade implements ReplayProcessingService {
         return processSingle(input, options);
     }
 
-    @Override
     public ReplayBatchProcessingResult processBatch(final List<Source> inputs, final ReplayProcessingOptions options) {
         final List<ReplayProcessingResult> results = new ArrayList<>();
         for (final Source input : inputs) {

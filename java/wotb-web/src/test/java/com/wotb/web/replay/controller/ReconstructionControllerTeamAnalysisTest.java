@@ -4,17 +4,13 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
 import com.wotb.core.processing.AiNotConfiguredException;
-import com.wotb.core.processing.AnalysisUnitResult;
-import com.wotb.core.processing.BattleIdentity;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.processing.ReplayAnalysisScope;
 import com.wotb.core.processing.ReplayIdentity;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingCapabilities;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
-import com.wotb.core.processing.ReplayAnalysisMode;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
@@ -35,7 +31,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -119,23 +114,13 @@ class ReconstructionControllerTeamAnalysisTest {
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(result);
         when(aiService.analyzeTeamGroups(any(), any()))
-                .thenReturn(teamAiResult("team review", List.of(
-                        unit("arena-one-team-1", "arena-one", 1, "training.wotbreplay"))));
+                .thenReturn(teamAiResult("team review"));
 
         mvc.perform(multipart("/api/replay/analyze")
                         .param("lang", "zh")
                         .file(replayFile("training.wotbreplay")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mode").value("SINGLE_TEAM_BATTLE"))
-                .andExpect(jsonPath("$.submittedFileCount").value(1))
-                .andExpect(jsonPath("$.validFileCount").value(1))
-                .andExpect(jsonPath("$.analysisUnitCount").value(1))
-                .andExpect(jsonPath("$.analyzedUnitCount").value(1))
-                .andExpect(jsonPath("$.analysis").value("team review"))
-                .andExpect(jsonPath("$.files[0].battleCategory").value("TRAINING"))
-                .andExpect(jsonPath("$.files[0].analysisScope").value("TEAM_PERSPECTIVE"))
-                .andExpect(jsonPath("$.files[0].perspectiveTeam").value(1))
-                .andExpect(jsonPath("$.analyses[0].perspectiveTeam").value(1));
+                .andExpect(jsonPath("$.analysis").value("team review"));
 
         final ArgumentCaptor<List<ReplayPerspectiveGroup>> captor =
                 teamGroupCaptor();
@@ -152,18 +137,13 @@ class ReconstructionControllerTeamAnalysisTest {
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(result);
         when(aiService.analyzeTeamGroups(any(), any()))
-                .thenReturn(teamAiResult("single review", List.of(
-                        unit("test-arena-team-1", "test-arena", 1, "single.wotbreplay"))));
+                .thenReturn(teamAiResult("single review"));
 
         mvc.perform(multipart("/api/replay/analyze")
                         .param("lang", "zh")
                         .file(replayFile("single.wotbreplay")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mode").value("SINGLE_TEAM_BATTLE"))
-                .andExpect(jsonPath("$.submittedFileCount").value(1))
-                .andExpect(jsonPath("$.validFileCount").value(1))
-                .andExpect(jsonPath("$.analysisUnitCount").value(1))
-                .andExpect(jsonPath("$.analyzedUnitCount").value(1));
+                .andExpect(jsonPath("$.analysis").value("single review"));
 
         final ArgumentCaptor<List<ReplayPerspectiveGroup>> captor =
                 teamGroupCaptor();
@@ -179,16 +159,13 @@ class ReconstructionControllerTeamAnalysisTest {
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(result);
         when(aiService.analyzeTeamGroups(any(), any()))
-                .thenReturn(teamAiResult("team review", List.of(
-                        unit("team-arena-team-1", "team-arena", 1, "team.wotbreplay"))));
+                .thenReturn(teamAiResult("team review"));
 
         mvc.perform(multipart("/api/replay/analyze")
                         .param("lang", "zh")
                         .file(replayFile("team.wotbreplay")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mode").value("SINGLE_TEAM_BATTLE"))
-                .andExpect(jsonPath("$.analysisUnitCount").value(1))
-                .andExpect(jsonPath("$.analyzedUnitCount").value(1));
+                .andExpect(jsonPath("$.analysis").value("team review"));
 
         final ArgumentCaptor<List<ReplayPerspectiveGroup>> captor =
                 teamGroupCaptor();
@@ -205,41 +182,29 @@ class ReconstructionControllerTeamAnalysisTest {
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(fallback);
         when(aiService.analyzeTeamGroups(any(), any()))
-                .thenReturn(teamAiResult("fallback review", List.of(
-                        unit("fallback-arena-team-1",
-                                "fallback-arena", 1, "fallback.wotbreplay"))));
+                .thenReturn(teamAiResult("fallback review"));
 
         mvc.perform(multipart("/api/replay/analyze")
                         .param("lang", "zh")
                         .file(replayFile("fallback.wotbreplay")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mode").value("SINGLE_TEAM_BATTLE"))
-                .andExpect(jsonPath("$.analysis").value("fallback review"))
-                .andExpect(jsonPath("$.files[0].capabilities.reconstructionAvailable")
-                        .value(false))
-                .andExpect(jsonPath("$.files[0].capabilities.perspectiveTeamResolved")
-                        .value(true));
+                .andExpect(jsonPath("$.analysis").value("fallback review"));
     }
 
     @Test
-    void teamAnalyzedUnitCountMatchesIncluded() throws Exception {
+    void teamAnalysisResponseContainsOnlyText() throws Exception {
         final ReplayProcessingResult result = teamResult(
                 "training.wotbreplay", "arena-one", "Ally", 1001L, 1);
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(result);
         when(aiService.analyzeTeamGroups(any(), any()))
-                .thenReturn(new TeamAnalyzeResult(
-                        new AnalyzeResult(
-                                "team review", "test-model", List.of()),
-                        List.of(unit("arena-one-team-1", "arena-one", 1, "training.wotbreplay")),
-                        1, 1, 0, List.of()));
+                .thenReturn(new TeamAnalyzeResult(new AnalyzeResult("team review")));
 
         mvc.perform(multipart("/api/replay/analyze")
                         .param("lang", "zh")
                         .file(replayFile("training.wotbreplay")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.analysisUnitCount").value(1))
-                .andExpect(jsonPath("$.analyzedUnitCount").value(1));
+                .andExpect(jsonPath("$.analysis").value("team review"));
     }
 
     @Test
@@ -249,18 +214,13 @@ class ReconstructionControllerTeamAnalysisTest {
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(result);
         when(aiService.analyzeTeamGroups(any(), any()))
-                .thenReturn(teamAiResult("team review", List.of(
-                        unit("battle-arena-team-1",
-                                "battle-arena", 1, "battle.wotbreplay"))));
+                .thenReturn(teamAiResult("team review"));
 
         mvc.perform(multipart("/api/replay/analyze")
                         .param("lang", "zh")
                         .file(replayFile("battle.wotbreplay")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mode").value("SINGLE_TEAM_BATTLE"))
-                .andExpect(jsonPath("$.analysisUnitCount").value(1))
-                .andExpect(jsonPath("$.analyzedUnitCount").value(1))
-                .andExpect(jsonPath("$.submittedFileCount").value(1));
+                .andExpect(jsonPath("$.analysis").value("team review"));
     }
 
     @Test
@@ -313,16 +273,13 @@ class ReconstructionControllerTeamAnalysisTest {
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(result);
         when(aiService.analyzeTeamGroups(any(), any()))
-                .thenReturn(teamAiResult("review", List.of(
-                        unit("resolved-arena-team-1",
-                                "resolved-arena", 1, "resolved.wotbreplay"))));
+                .thenReturn(teamAiResult("review"));
 
         mvc.perform(multipart("/api/replay/analyze")
                         .param("lang", "zh")
                         .file(replayFile("resolved.wotbreplay")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mode").value("SINGLE_TEAM_BATTLE"))
-                .andExpect(jsonPath("$.validFileCount").value(1));
+                .andExpect(jsonPath("$.analysis").value("review"));
     }
 
     @Test
@@ -376,17 +333,13 @@ class ReconstructionControllerTeamAnalysisTest {
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(randomResult());
         when(aiService.analyzePlayerOrFallback(any(), any()))
-                .thenReturn(new AnalyzeResult(
-                        "player review", "test-model", List.of()));
+                .thenReturn(new AnalyzeResult("player review"));
 
         mvc.perform(multipart("/api/replay/analyze")
                         .param("lang", "zh")
                         .file(replayFile("random.wotbreplay")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mode").value("SINGLE_PLAYER_BATTLE"))
-                .andExpect(jsonPath("$.analysis").value("player review"))
-                .andExpect(jsonPath("$.files[0].battleCategory").value("RANDOM"))
-                .andExpect(jsonPath("$.files[0].analysisScope").value("PLAYER_FOCUSED"));
+                .andExpect(jsonPath("$.analysis").value("player review"));
 
         verify(aiService).analyzePlayerOrFallback(any(), any());
         verify(aiService, never()).analyzeTeamGroups(any(), any());
@@ -398,34 +351,9 @@ class ReconstructionControllerTeamAnalysisTest {
     }
 
     private static TeamAnalyzeResult teamAiResult(
-            final String analysis,
-            final List<AnalysisUnitResult> units
+            final String analysis
     ) {
-        return new TeamAnalyzeResult(
-                new AnalyzeResult(
-                        analysis, "test-model", List.of()),
-                units,
-                units.size(),
-                units.size(),
-                0,
-                List.of());
-    }
-
-    private static AnalysisUnitResult unit(
-            final String unitId,
-            final String arenaId,
-            final int perspectiveTeam,
-            final String fileName
-    ) {
-        return new AnalysisUnitResult(
-                unitId,
-                new BattleIdentity(arenaId, "team_map", "11.0", null),
-                ReplayAnalysisScope.TEAM_PERSPECTIVE,
-                perspectiveTeam,
-                fileName,
-                List.of(),
-                "test-model",
-                Map.of("fullFeaturesAvailable", false));
+        return new TeamAnalyzeResult(new AnalyzeResult(analysis));
     }
 
     private static MockMultipartFile replayFile(final String fileName) {
@@ -667,8 +595,6 @@ class ReconstructionControllerTeamAnalysisTest {
     }
 
     private static AnalyzeResponse minimalAnalyzeResponse() {
-        return new AnalyzeResponse(ReplayAnalysisMode.SINGLE_PLAYER_BATTLE,
-                1, 1, 1, 1, 0, 0, 1, "ok", 0, 0, 0,
-                List.of(), List.of(), List.of(), List.of());
+        return new AnalyzeResponse("ok");
     }
 }

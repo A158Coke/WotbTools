@@ -58,7 +58,7 @@ public class PlayerReplayAnalysisService {
         }
         final PreparedAiPrompt prepared =
                 PlayerReplayPromptBuilder.prepareFallback(battle, recon, language);
-        return new AnalyzeResult(chat(prepared), config.model(), prepared.keyEvents());
+        return new AnalyzeResult(chat(prepared));
     }
 
     /**
@@ -75,7 +75,7 @@ public class PlayerReplayAnalysisService {
                 ctx, config.estimator(), config.singleReplayMaxInputTokens(),
                 config.contextWindowTokens(), config.maxOutputTokens(),
                 config.promptSafetyMarginTokens(), language);
-        return new AnalyzeResult(chat(prepared), config.model(), prepared.keyEvents());
+        return new AnalyzeResult(chat(prepared));
     }
 
     /**
@@ -103,7 +103,7 @@ public class PlayerReplayAnalysisService {
                     prepared.density(), prepared.estimatedInputTokens(),
                     config.singleReplayMaxInputTokens(), prepared.analysisMode());
         }
-        return new AnalyzeResult(chat(prepared), config.model(), prepared.keyEvents());
+        return new AnalyzeResult(chat(prepared));
     }
 
     /**
@@ -119,7 +119,7 @@ public class PlayerReplayAnalysisService {
             throw new AiNotConfiguredException();
         }
         final PreparedAiPrompt prepared = PlayerReplayPromptBuilder.prepareMulti(battles, language);
-        return new AnalyzeResult(chat(prepared), config.model(), List.of());
+        return new AnalyzeResult(chat(prepared));
     }
 
     /**
@@ -179,8 +179,7 @@ public class PlayerReplayAnalysisService {
                 config.thinkingEnabled(),
                 config.reasoningEffort(),
                 null,
-                prepared.analysisMode(),
-                null);
+                prepared.analysisMode());
         return gateway.chat(request).completionText();
     }
 }

@@ -48,7 +48,7 @@ class PlayerGatewayPromptContractTest {
         public AiChatResponse chat(final AiChatRequest request) {
             requests.add(request);
             return new AiChatResponse(text, "DeepSeek", "test-model",
-                    0, 0, 0, 0, 0, 0, "stop", Map.of());
+                    0, 0, 0, 0, 0, 0, "stop");
         }
     }
 

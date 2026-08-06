@@ -20,7 +20,7 @@ import java.util.stream.DoubleStream;
  * 默认录像者个人特征提取器。
  * 只处理 recorder entity 的位置和伤害事件。
  */
-public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureExtractor {
+public class DefaultPlayerBattleFeatureExtractor {
 
     static final int ENGAGEMENT_GAP_SEC = 15;
     /**
@@ -30,7 +30,6 @@ public class DefaultPlayerBattleFeatureExtractor implements PlayerBattleFeatureE
      */
     static final float STATIONARY_THRESHOLD_METERS = 3f;
 
-    @Override
     public PlayerBattleFeatureSet extract(final ReplayReconstruction reconstruction, final RecorderEntityMapping recorder, final Battle battle) {
         if (recorder == null || !recorder.resolved() || reconstruction == null) {
             return PlayerBattleFeatureSet.empty();

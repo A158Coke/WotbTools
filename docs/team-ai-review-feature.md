@@ -112,31 +112,23 @@ Enemy-only damage 不得延长 Team phase。
 
 ## 8. Result Contract
 
-### 四类计数
-
-| 字段 | 含义 |
-|------|------|
-| `analysisUnitCount` | BatchAnalyzer 识别出的独立 analysis units 总数 |
-| `analyzedUnitCount` | 实际进入 provider prompt 并获得 AI 输出的 units |
-| `omittedAnalysisUnitCount` | 因 perspective cap 或 prompt budget 被省略的 units |
-| `unavailableAnalysisUnitCount` | 因 capability/data 不足无法分析的 units |
-
-**不变量：** `analysisUnitCount = analyzedUnitCount + omittedAnalysisUnitCount + unavailableAnalysisUnitCount`
-
-### 四类计数
-
-四类计数由上一节的不变量契约保证（后端返回）；当前前端 `AnalysisResultPanel` 仅渲染最终 Markdown 报告，不再逐单元展示计数明细。
+`POST /api/replay/analyze` 响应仅包含 `{ analysis }`（AI 复盘正文）。
+历史上响应的四类计数（`analysisUnitCount` / `analyzedUnitCount` /
+`omittedAnalysisUnitCount` / `unavailableAnalysisUnitCount`）、`files`、
+`analyses`、`keyEvents`、`limitations` 等统计/诊断字段均无消费者
+（前端只渲染 `analysis`），已作为提前性载荷删除；对应不变量只存在于
+prompt 构建内部（`TeamAiPromptBuilder` 的 included/omitted/truncated 集合）。
 
 ## 9. Limitations
 
-### Global（仅存在于 `AnalyzeResponse.limitations`）
+### Global（prompt 内容中的全局限制行）
 
 - `PERSPECTIVE_TIMELINES_ISOLATED`
 - `ROSTER_CONSISTENCY_UNCONFIRMED`
 - `PERSPECTIVES_OMITTED_COUNT_<TOTAL>`（多 partition 聚合）
 - `AI_INPUT_TRUNCATED`
 
-### Per-unit（仅存在于对应 `TeamAnalysisUnitReport.limitations`）
+### Per-unit（prompt 中 `unitLimitations=[...]` 头部）
 
 - `DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS`
 - `TEAM_MEMBER_ENTITY_UNMAPPED`
@@ -181,7 +173,7 @@ Enemy-only damage 不得延长 Team phase。
 ## 12. 已知限制
 
 - Custom auth scheme（非 Bearer/Basic/Digest）在 provider body 中不做特定脱敏——统一返回 `[PROVIDER_BODY_REDACTED]`
-- Player path 暂无 prompt omission（`omittedAnalysisUnitCount = 0`）
-- Multi-team 不再有固定 `MAX_PERSPECTIVES` 数量上限；perspective 是否省略由 token 预算（mandatory/high-priority 原子写入）与编排决定，省略单位进入 `truncatedUnitIds`/`omittedAnalysisUnitCount`
+- Player path 暂无 prompt omission（prompt 构建内部无省略单位）
+- Multi-team 不再有固定 `MAX_PERSPECTIVES` 数量上限；perspective 是否省略由 token 预算（mandatory/high-priority 原子写入）与编排决定，省略单位进入 `truncatedUnitIds`/`omittedUnitIds`（prompt 构建内部；响应不再暴露单元计数）
 - 不支持 drag-and-drop 文件上传
 - 不要求真实 `.wotbreplay` E2E fixture

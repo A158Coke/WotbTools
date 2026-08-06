@@ -235,7 +235,7 @@ class SpringAiChatGatewayDeadlineTest {
     private static AiChatRequest request() {
         return new AiChatRequest("system-prompt", "user-prompt",
                 "test-model", null, 4096, true, "max",
-                "corr-deadline", "TEST_MODE", null);
+                "corr-deadline", "TEST_MODE");
     }
 
     private long counter(final String name, final String... tags) {

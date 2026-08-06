@@ -35,7 +35,7 @@ public final class Tankopedia {
     public TankInfo info(final long tankId) {
         final JsonNode t = data.get(String.valueOf(tankId));
         if (t == null) {
-            return new TankInfo("#" + tankId, "", "", "", null, null);
+            return new TankInfo("#" + tankId, "", "", "", null, null, "");
         }
         final String name = t.hasNonNull("name") ? t.get("name").asText() : "#" + tankId;
         final Object tier = t.hasNonNull("tier") ? t.get("tier").asInt() : "";
@@ -43,7 +43,9 @@ public final class Tankopedia {
         final String nation = t.hasNonNull("nation") ? t.get("nation").asText() : "";
         final Integer alphaDamage = t.hasNonNull("alphaDamage") ? t.get("alphaDamage").asInt() : null;
         final Integer maxHp = firstInt(t, "maxHp", "hp", "health", "hitpoints", "hitPoints", "maxHealth");
-        return new TankInfo(name, tier, type, nation, alphaDamage, maxHp);
+        final String extraKnowledge = t.hasNonNull("extraKnowledge")
+                ? t.get("extraKnowledge").asText() : "";
+        return new TankInfo(name, tier, type, nation, alphaDamage, maxHp, extraKnowledge);
     }
 
     private static Integer firstInt(final JsonNode node, final String... keys) {

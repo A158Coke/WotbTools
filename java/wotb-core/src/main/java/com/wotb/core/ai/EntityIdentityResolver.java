@@ -5,7 +5,6 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.PlayerSideResolver.Side;
 import com.wotb.core.ref.ReplayDisplayNames;
-import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.VehicleState;
@@ -23,8 +22,6 @@ import java.util.Map;
  * 坦克名称与车种仍只由 {@code tankId} 查表得到，不解析名称文本、不猜测任何属性。</p>
  */
 public final class EntityIdentityResolver {
-
-    private static final Tankopedia TANKOPEDIA = Tankopedia.load();
 
     private EntityIdentityResolver() {
     }

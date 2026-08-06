@@ -15,7 +15,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -69,7 +68,6 @@ class AiReplayAnalysisServiceFacadeTest {
         final AnalyzeResult r = facade().analyze(battle, null);
         assertEquals(1, gateway.calls.get());
         assertEquals("ok", r.analysis());
-        assertEquals("test-model", r.model());
     }
 
     @Test
@@ -86,13 +84,8 @@ class AiReplayAnalysisServiceFacadeTest {
     }
 
     @Test
-    void buildAnalysisUnitsAndFindRecorderStaticDelegates() {
+    void findRecorderStaticDelegates() {
         final ReplayProcessingResult result = teamResultStub();
-        final var groups = new com.wotb.core.processing.BatchAnalyzer()
-                .analyze(List.of(result)).groups();
-        final var units = AiReplayAnalysisService.buildAnalysisUnits(
-                groups, ReplayAnalysisScope.TEAM_PERSPECTIVE);
-        assertEquals(groups.size(), units.size());
         assertNotNull(AiReplayAnalysisService.findRecorder(result));
     }
 
@@ -141,7 +134,7 @@ class AiReplayAnalysisServiceFacadeTest {
         public AiChatResponse chat(final AiChatRequest request) {
             calls.incrementAndGet();
             return new AiChatResponse("ok", "DeepSeek", "test-model",
-                    0, 0, 0, 0, 0, 0, "stop", Map.of());
+                    0, 0, 0, 0, 0, 0, "stop");
         }
     }
 }

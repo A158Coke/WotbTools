@@ -1,10 +1,5 @@
 package com.wotb.web.replay.ai;
 
-import java.util.List;
-import java.util.Map;
-
-import com.wotb.core.ai.AiTokenEstimator;
-
 /**
  * Token / context 预算的唯一事实来源。
  * <p>所有 Player/Team 编排与 Gateway 调用前都必须通过本组件检查，
@@ -50,17 +45,4 @@ public final class AiPromptBudgetGuard {
         }
     }
 
-    /**
-     * 用给定 estimator 估算 messages token 后执行 {@link #enforce}。
-     */
-    public static void enforceMessages(final AiTokenEstimator estimator,
-                                       final List<Map<String, Object>> messages,
-                                       final int singleReplayMaxInputTokens,
-                                       final int contextWindowTokens,
-                                       final int maxOutputTokens,
-                                       final int promptSafetyMarginTokens) {
-        enforce(estimator.estimateMessagesTokens(messages),
-                singleReplayMaxInputTokens, contextWindowTokens,
-                maxOutputTokens, promptSafetyMarginTokens);
-    }
 }

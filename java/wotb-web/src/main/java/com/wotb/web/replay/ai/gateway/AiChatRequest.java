@@ -1,6 +1,5 @@
 package com.wotb.web.replay.ai.gateway;
 
-import java.util.Map;
 
 /**
  * 供应商无关的 AI 聊天请求模型，由 Replay 业务层构造、交给 {@link AiChatGateway} 执行。
@@ -15,7 +14,6 @@ import java.util.Map;
  * @param reasoningEffort   推理强度（如 "high"），仅在 {@code thinkingEnabled} 时有意义；可为 {@code null}
  * @param correlationId     关联/请求 ID，{@code null} 时由 Gateway 生成
  * @param analysisMode      分析模式标签（用于指标分维），如 {@code SINGLE_PLAYER_BATTLE}
- * @param metadata          低风险附加元数据，不参与 Provider 请求体；可为 {@code null}
  */
 public record AiChatRequest(
         String systemPrompt,
@@ -26,12 +24,10 @@ public record AiChatRequest(
         boolean thinkingEnabled,
         String reasoningEffort,
         String correlationId,
-        String analysisMode,
-        Map<String, String> metadata
+        String analysisMode
 ) {
     public AiChatRequest {
         if (systemPrompt == null) throw new IllegalArgumentException("systemPrompt must not be null");
         if (userPrompt == null) throw new IllegalArgumentException("userPrompt must not be null");
-        metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
     }
 }
