@@ -125,8 +125,10 @@ final class WargamingApiClient {
      * 验证 token 有效性并刷新有效期，返回服务端绑定账号的结构化结果。
      *
      * <p>官方契约（wot/auth/prolongate）响应含 {@code access_token} /
-     * {@code account_id} / {@code expires_at}；其中的 {@code account_id} 是 WG
-     * 服务端在验证 token 后返回的所属账号，是登录身份绑定的唯一可信来源。</p>
+     * {@code account_id} / {@code expires_at}；部分生产响应把字段放在
+     * {@code data} 对象内，本方法优先读取 {@code data}，缺失时兼容根节点格式。
+     * 其中的 {@code account_id} 是 WG 服务端在验证 token 后返回的所属账号，
+     * 是登录身份绑定的唯一可信来源。</p>
      *
      * @throws WargamingApiException token 无效、响应缺失可信 account_id 或 WG 服务错误
      */
@@ -136,12 +138,13 @@ final class WargamingApiClient {
                         + "&access_token=" + encode(accessToken));
         final JsonNode json = parse(body);
         requireStatusOk(json);
-        final String token = json.path("access_token").asText("");
+        final JsonNode payload = responsePayload(json);
+        final String token = payload.path("access_token").asText("");
         if (token.isEmpty()) {
             throw new WargamingApiException("WG prolongate response missing access_token");
         }
-        final long accountId = requirePositiveAccountId(json.path("account_id"));
-        final long expiresAt = json.path("expires_at").asLong(0L);
+        final long accountId = requirePositiveAccountId(payload.path("account_id"));
+        final long expiresAt = payload.path("expires_at").asLong(0L);
         return new ProlongatedToken(token, accountId, expiresAt);
     }
 
@@ -248,6 +251,12 @@ final class WargamingApiClient {
             throw new WargamingApiException("WG prolongate response invalid account_id");
         }
         return value;
+    }
+
+    /** prolongate 响应字段优先读 {@code data} 对象；缺失时兼容根节点 payload。 */
+    private static JsonNode responsePayload(final JsonNode json) {
+        final JsonNode data = json.path("data");
+        return data.isObject() ? data : json;
     }
 
     /** 发送 HTTP 请求的接缝：默认走 {@link HttpClient}，测试可注入异常。 */

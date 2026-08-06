@@ -83,6 +83,32 @@ class WargamingEndpointTest {
     }
 
     @Test
+    void successWithProlongateDataPayloadBuildsIdentityAndLogsOut() {
+        stub.responses.put("/wot/auth/prolongate/",
+                "{\"status\":\"ok\",\"data\":{\"access_token\":\"tok-2\","
+                        + "\"account_id\":572253806,\"expires_at\":1787223082}}");
+        stub.responses.put("/wotb/account/info/",
+                "{\"status\":\"ok\",\"data\":{\"572253806\":{\"account_id\":572253806,"
+                        + "\"nickname\":\"Chrd_CokeCake\"}}}");
+        stub.responses.put("/wot/auth/logout/", "{\"status\":\"ok\"}");
+
+        final Response response = endpoint.handleCallback(
+                VALID_STATE, "ok", "tok-1", "Chrd_CokeCake", "572253806");
+
+        assertEquals(200, response.getStatus());
+        final BrokeredIdentityContext context = authFake.captured;
+        assertNotNull(context);
+        assertEquals("wg:asia:572253806", context.getBrokerUserId());
+        assertEquals("wg_asia_572253806", context.getUsername());
+        assertEquals("ASIA", context.getUserAttribute("region"));
+        assertEquals("572253806", context.getUserAttribute("wotb.account_id"));
+        assertEquals("Chrd_CokeCake", context.getUserAttribute("wotb.nickname"));
+        assertEquals(1, stub.logoutCalls());
+        assertTrue(stub.requestBodies.stream()
+                .anyMatch(body -> body.contains("access_token=tok-2")));
+    }
+
+    @Test
     void europeanRegionUsesGenericBrokerAndRegionAttribute() {
         okResponses();
         config.getConfig().put(WargamingIdentityProviderConfig.REGION_CONFIG_KEY, "EU");

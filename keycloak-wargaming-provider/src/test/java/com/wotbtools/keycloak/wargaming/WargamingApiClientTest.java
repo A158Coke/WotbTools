@@ -163,6 +163,40 @@ class WargamingApiClientTest {
     }
 
     @Test
+    void prolongateReadsDataPayloadWhenPresent() {
+        stub.responses.put("/wot/auth/prolongate/",
+                "{\"status\":\"ok\",\"data\":{\"access_token\":\"tok-2\","
+                        + "\"account_id\":572253806,\"expires_at\":1787223082}}");
+        final WargamingApiClient.ProlongatedToken result =
+                client.prolongate("app-1", "tok-1");
+        assertEquals("tok-2", result.accessToken());
+        assertEquals(572253806L, result.accountId());
+        assertEquals(1787223082L, result.expiresAt());
+    }
+
+    @Test
+    void prolongatePrefersDataPayloadOverRootFields() {
+        stub.responses.put("/wot/auth/prolongate/",
+                "{\"status\":\"ok\",\"access_token\":\"root-token\",\"account_id\":1,"
+                        + "\"data\":{\"access_token\":\"data-token\",\"account_id\":2,"
+                        + "\"expires_at\":3}}");
+        final WargamingApiClient.ProlongatedToken result =
+                client.prolongate("app-1", "tok-1");
+        assertEquals("data-token", result.accessToken());
+        assertEquals(2L, result.accountId());
+        assertEquals(3L, result.expiresAt());
+    }
+
+    @Test
+    void prolongateRejectsMissingAccessToken() {
+        stub.responses.put("/wot/auth/prolongate/",
+                "{\"status\":\"ok\",\"data\":{\"account_id\":572253806,\"expires_at\":3}}");
+        final WargamingApiException e = assertThrows(WargamingApiException.class,
+                () -> client.prolongate("app-1", "tok-1"));
+        assertEquals("WG prolongate response missing access_token", e.getMessage());
+    }
+
+    @Test
     void prolongateRejectsInvalidToken() {
         stub.responses.put("/wot/auth/prolongate/", "{\"status\":\"error\"}");
         assertThrows(WargamingApiException.class, () -> client.prolongate("app-1", "bad-token"));
