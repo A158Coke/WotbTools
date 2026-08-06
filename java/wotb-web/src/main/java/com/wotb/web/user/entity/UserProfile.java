@@ -44,6 +44,12 @@ public class UserProfile {
     @Column(name = "wotb_server", nullable = false, length = 32)
     private String wotbServer = "CN";
 
+    @Column(name = "wotb_account_source", nullable = false, length = 32)
+    private String wotbAccountSource = "MANUAL";
+
+    @Column(name = "wotb_account_verified_at")
+    private OffsetDateTime wotbAccountVerifiedAt;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
@@ -75,6 +81,16 @@ public class UserProfile {
 
     public String getWotbServer() { return wotbServer; }
     public void setWotbServer(final String wotbServer) { this.wotbServer = wotbServer; }
+
+    public String getWotbAccountSource() { return wotbAccountSource; }
+    public void setWotbAccountSource(final String wotbAccountSource) {
+        this.wotbAccountSource = wotbAccountSource;
+    }
+
+    public OffsetDateTime getWotbAccountVerifiedAt() { return wotbAccountVerifiedAt; }
+    public void setWotbAccountVerifiedAt(final OffsetDateTime wotbAccountVerifiedAt) {
+        this.wotbAccountVerifiedAt = wotbAccountVerifiedAt;
+    }
 
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }

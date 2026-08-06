@@ -20,6 +20,7 @@
       { "name": "booster", "description": "Booster" }
     ]
   },
+  "defaultRoles": ["wotbtools-user"],
   "clients": [
     {
       "clientId": "wotbtools-web",
@@ -51,6 +52,62 @@
             "claim.name": "displayName",
             "claim.value": "attribute_value",
             "jsonType.label": "String",
+            "id.token.claim": true,
+            "access.token.claim": true,
+            "userinfo.token.claim": true
+          }
+        },
+        {
+          "name": "wotb-region-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "region",
+            "claim.name": "wotb_region",
+            "claim.value": "attribute_value",
+            "jsonType.label": "String",
+            "id.token.claim": true,
+            "access.token.claim": true,
+            "userinfo.token.claim": true
+          }
+        },
+        {
+          "name": "wotb-account-id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "wotb.account_id",
+            "claim.name": "wotb_account_id",
+            "claim.value": "attribute_value",
+            "jsonType.label": "String",
+            "id.token.claim": true,
+            "access.token.claim": true,
+            "userinfo.token.claim": true
+          }
+        },
+        {
+          "name": "wotb-nickname-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "wotb.nickname",
+            "claim.name": "wotb_nickname",
+            "claim.value": "attribute_value",
+            "jsonType.label": "String",
+            "id.token.claim": true,
+            "access.token.claim": true,
+            "userinfo.token.claim": true
+          }
+        },
+        {
+          "name": "wotb-verified-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "wotb.verified",
+            "claim.name": "wotb_verified",
+            "claim.value": "attribute_value",
+            "jsonType.label": "boolean",
             "id.token.claim": true,
             "access.token.claim": true,
             "userinfo.token.claim": true
