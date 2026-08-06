@@ -11,7 +11,8 @@ import java.util.stream.Collectors;
 
 /**
  * 工厂：Provider id 为类型名 {@code wargaming}（一个 SPI 类型、多个区服实例），
- * 实例 alias 按区服命名（当前 {@code wargaming-asia}，与前端 idpHint 对齐）。
+ * 实例 alias 按区服命名（{@code wargaming-asia} / {@code wargaming-eu} / {@code wargaming-na}，
+ * 与前端 idpHint 对齐）。
  * 区服通过 Admin Console 的 {@code region} 下拉配置；应用 ID 走环境变量，
  * 不在 Admin Console 配置项中维护（避免密钥进 Realm 导入配置）。
  */
