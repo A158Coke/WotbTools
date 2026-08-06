@@ -652,6 +652,7 @@
         "WOTB_NICKNAME_REQUIRED": "Game nickname is required",
         "WOTB_CLAIMS_INVALID": "Wargaming login data is missing or invalid",
         "ASIA_PROFILE_READONLY": "Asia account data is managed by Wargaming.net and cannot be edited or unlinked",
+        "WARGAMING_PROFILE_READONLY": "Wargaming.net account data is managed by the official service and cannot be edited or unlinked",
         "PROFILE_REGION_MISMATCH": "Current account does not match the login source",
         "WOTB_ACCOUNT_MISMATCH": "Cannot switch the Asia account to a different game account",
         "NOTIFICATION_NOT_FOUND": "Notification not found",

@@ -652,6 +652,7 @@
         "WOTB_NICKNAME_REQUIRED": "请填写游戏昵称",
         "WOTB_CLAIMS_INVALID": "Wargaming 登录信息缺失或无效",
         "ASIA_PROFILE_READONLY": "亚服账号资料由 Wargaming.net 管理，不可手动修改或解绑",
+        "WARGAMING_PROFILE_READONLY": "Wargaming.net 登录账号资料由官方管理，不可手动修改或解绑",
         "PROFILE_REGION_MISMATCH": "当前账号与登录来源不匹配",
         "WOTB_ACCOUNT_MISMATCH": "不能将亚服账号切换到另一个游戏账号",
         "NOTIFICATION_NOT_FOUND": "通知不存在",

@@ -8,12 +8,12 @@
 |---|---|---|
 | D1 | 认证 API 域名 | 使用 WoT **Blitz** 认证接口（不是 `api.worldoftanks.*`，那是 WoT PC）。三个官方 Blitz host 已实测：`api.wotblitz.asia` / `api.wotblitz.eu` / `api.wotblitz.com` 均返回统一 `application_id` 要求，证明 application_id 按 Blitz 游戏注册、跨区通用；SPI 将区服参数化为枚举白名单 |
 | D2 | 用户名方案 | WG 用户 Keycloak `username` = `account_id`（纯数字，稳定、不随改名变化）；broker 身份为 `wg:{region}:{account_id}`（ASIA 实例即 `wg:asia:{account_id}`）；QQ 用户 username 维持现有 nickname-hash 方案 |
-| D3 | region 统一 | Keycloak 用户属性统一为 `region`，值统一大写 `CN` / `ASIA`；存量用户通过一次性迁移脚本补 `region=CN`；QQ Provider 对新用户也写 `region=CN`；已有值一律不覆盖 |
+| D3 | region 统一 | Keycloak 用户属性统一为 `region`，值统一大写 `CN` / `ASIA` / `EU` / `NA`（WG 区服由实例配置决定）；存量用户通过一次性迁移脚本补 `region=CN`；QQ Provider 对新用户也写 `region=CN`；已有值一律不覆盖 |
 | D4 | displayName | 沿用现有模式：user attribute `displayName`（QQ 已在写，realm 已有 mapper）；WG Provider 照写；存量缺 displayName 的用户如需回填，作为独立迁移另行执行（本期 region 迁移未包含） |
 | D5 | token↔account 绑定 | `POST /wot/auth/prolongate/` 响应包含服务端绑定的 `account_id`（官方契约字段：`access_token` / `account_id` / `expires_at`），它就是 token 归属账号的可信证明。最终身份必须来自 prolongate 的 `account_id`；浏览器回调的 `account_id`/`nickname`/`expires_at` 均为不可信输入，只能做一致性检查。公开 `account/info` 只用于取官方昵称，不单独证明 token 归属 |
 | D6 | QQ→WG 绑定（AIA） | **本期不做**，记录为后续任务。登录页文案不得承诺"先 QQ 登录再绑定"；WG 登录创建独立账号 |
-| D7 | WG 用户解绑 | 本期不允许：WG profile 的 server / account_id / source / verified 不可编辑，也不提供解绑/删除入口（后端拒绝 PATCH/DELETE on ASIA profile） |
-| D8 | `wotb_account_verified_at` | 定义为"后端首次可信同步时间"：首次创建 ASIA profile 时写 now，后续昵称刷新不更新。不新增 Keycloak claim |
+| D7 | WG 用户解绑 | 本期不允许：WG profile（ASIA/EU/NA）的 server / account_id / source / verified 不可编辑，也不提供解绑/删除入口（后端拒绝 PATCH/DELETE on WARGAMING source profile） |
+| D8 | `wotb_account_verified_at` | 定义为"后端首次可信同步时间"：首次创建 WG profile 时写 now，后续昵称刷新不更新。不新增 Keycloak claim |
 | D9 | 登录入口 | 新增极简前端登录选择页（中国大陆 QQ / 亚服 Wargaming 两个按钮 + 提示语，zh/en/ru 三语）；Keycloak 托管登录页留作兜底；不改 Keycloak 主题 |
 | D10 | 角色授予 | realm JSON 增加 `defaultRoles: ["wotbtools-user"]`；生产先核对现有 default role 是否已是 `wotbtools-user`（是则无需操作）。Provider 不写授角色代码 |
 | D11 | 重复登录属性刷新 | WG 改名后再次登录，Provider 必须显式更新 `displayName` / `wotb.nickname`（QQ Provider 无此逻辑，不可照抄） |
@@ -81,7 +81,7 @@ QQ 登录 → Keycloak 创建或找到用户 → WotBTools 懒创建 user_profil
 
 - 手动接口继续保留，但只允许 `wotbServer = CN`；不允许前端通过手动接口伪造 ASIA account_id / nickname / verified 状态。
 - 一个 WotBTools user_profile 对应一个主要 WoTB 游戏账号；不拆分多账号表，不为 EU/NA 过度设计。
-- 新增不变量：**每个 Keycloak 用户都有 `region` 属性**（CN 用户为 `CN`，WG 用户为 `ASIA`）。
+- 新增不变量：**每个 Keycloak 用户都有 `region` 属性**（CN 用户为 `CN`，WG 用户为实例配置区服 `ASIA`/`EU`/`NA`）。
 
 ---
 
@@ -89,7 +89,7 @@ QQ 登录 → Keycloak 创建或找到用户 → WotBTools 懒创建 user_profil
 
 ### 1. 属性约定
 
-- 用户属性名：`region`（不是 `wotb.region`），值统一大写 `CN` / `ASIA`。
+- 用户属性名：`region`（不是 `wotb.region`），值统一大写 `CN` / `ASIA` / `EU` / `NA`。
 - JWT claim：`region` → `wotb_region`（见第八节）。
 - 后端兜底：JWT 缺失 `wotb_region` 或 `wotb_verified` 时，一律按 CN 用户处理（保证迁移与上线顺序不影响登录）。
 
@@ -97,7 +97,7 @@ QQ 登录 → Keycloak 创建或找到用户 → WotBTools 懒创建 user_profil
 
 存量迁移由一次性脚本执行完毕（2026-08-06，见下方执行记录），脚本已从仓库与 VPS 删除。迁移策略：
 
-- 只给**缺失** `region` 的用户补 `["CN"]`；已有值（例如未来的 `ASIA`）一律跳过、不覆盖；
+- 只给**缺失** `region` 的用户补 `["CN"]`；已有值（例如 `ASIA`/`EU`/`NA`）一律跳过、不覆盖；
 - 幂等，可重复执行；保留用户其他属性；
 - displayName 回填不在迁移范围内（决策 D4）；
 - 迁移前后输出影响人数，写入交付记录。
@@ -343,15 +343,15 @@ WG 用户 JWT 示例：
 
 ### 1. CN/QQ 用户
 
-JWT 无可信 WG Claims（缺 `wotb_verified` 或非 `ASIA`）：`wotb_server = CN`，继续现有国服流程，不自动生成虚假 WG 数据。
+JWT 无可信 WG Claims（缺 `wotb_verified` 或 `wotb_region` 非 `ASIA`/`EU`/`NA`）：`wotb_server = CN`，继续现有国服流程，不自动生成虚假 WG 数据。
 
-### 2. WG ASIA 用户首次创建
+### 2. WG 用户（ASIA/EU/NA）首次创建
 
 仅当同时满足：
 
 ```text
 wotb_verified == true
-wotb_region == ASIA
+wotb_region ∈ { ASIA, EU, NA }
 wotb_account_id 有效
 wotb_nickname 有效
 ```
@@ -359,7 +359,7 @@ wotb_nickname 有效
 首次创建 Profile 时自动写入：
 
 ```text
-wotb_server              = ASIA
+wotb_server              = 可信 wotb_region（ASIA / EU / NA）
 wotb_account_id          = JWT wotb_account_id
 wotb_nickname            = JWT wotb_nickname
 wotb_account_source      = WARGAMING
@@ -375,12 +375,12 @@ PUT /api/users/wotb-account/from-login
 ```
 
 - 不接受 request body；只读当前已签名 JWT；
-- 要求 `wotb_verified == true`，只接受 `ASIA`；
+- 要求 `wotb_verified == true`，只接受 `ASIA` / `EU` / `NA`；
 - 按 JWT `sub` 查找 Profile；
-- Profile 属于同一 `(ASIA, account_id)` 时允许更新官方昵称（`wotb_nickname`），不刷新 `wotb_account_verified_at`；
-- 不允许把已有 CN Profile 静默覆盖为 ASIA；
-- 不允许把已有 ASIA Profile 切换到另一个 `account_id`；
-- `(ASIA, account_id)` 已属其他用户时返回明确冲突（错误码 `WOTB_ACCOUNT_ALREADY_USED`，作为兜底；直接登录场景由 broker 层拦截，决策 D12）；
+- Profile 属于同一 `(region, account_id)` 时允许更新官方昵称（`wotb_nickname`），不刷新 `wotb_account_verified_at`；
+- 不允许把已有 CN Profile 静默覆盖为 WG Profile；
+- 不允许把已有 WG Profile 切换到另一个 `account_id`；
+- `(region, account_id)` 已属其他用户时返回明确冲突（错误码 `WOTB_ACCOUNT_ALREADY_USED`，作为兜底；直接登录场景由 broker 层拦截，决策 D12）；
 - 不根据昵称/邮箱自动合并用户；
 - 前端触发时机：个人资料页每次加载后调用一次（幂等）。
 
@@ -395,9 +395,9 @@ PUT /api/users/wotb-account/from-login
 
 ## 十、数据库迁移
 
-新增 Flyway migration（当前最高 V11，新编号 V12），不修改已执行过的旧 migration：
+新增 Flyway migration（当前最高 V12，新编号 V13），不修改已执行过的旧 migration：
 
-- `CHECK (wotb_server IN ('CN'))` 扩展为 `IN ('CN','ASIA')`；
+- `CHECK (wotb_server IN ('CN'))` 经 V12 扩展为 `IN ('CN','ASIA')`，V13 再扩展为 `IN ('CN','ASIA','EU','NA')`；
 - 保留 `UNIQUE (wotb_server, wotb_account_id)`；
 - 增加最少必要字段：
 
@@ -587,11 +587,12 @@ keycloak-wargaming-provider
 ### 后端
 
 - CN 用户仍可正常创建 Profile、手动绑定国服资料；
-- 手动接口拒绝 ASIA，且不能伪造 source/verified；
-- WG 可信 Claims 创建 ASIA Profile（含 source=WARGAMING、verified_at=首次同步时间）；
-- 缺少 `wotb_verified` / 非 ASIA Claim 被拒绝或按 CN 兜底；
+- 手动接口拒绝 WG Profile（ASIA/EU/NA），且不能伪造 source/verified；
+- WG 可信 Claims 创建对应区服 Profile（ASIA/EU/NA，含 source=WARGAMING、verified_at=首次同步时间）；
+- 缺少 `wotb_verified` / 非 WG 区服 Claim 被拒绝或按 CN 兜底；
 - 重复同步幂等；WG 昵称可更新；verified_at 不被刷新；
-- 已存在其他 ASIA 账号不能被静默覆盖；`(ASIA, account_id)` 冲突返回 `WOTB_ACCOUNT_ALREADY_USED`；
+- 已存在其他账号的 `(region, account_id)` 不能被静默覆盖；冲突返回 `WOTB_ACCOUNT_ALREADY_USED`；
+- 手动绑定/解绑对 WARGAMING source Profile 返回只读错误（ASIA 为 `ASIA_PROFILE_READONLY`，EU/NA 为 `WARGAMING_PROFILE_READONLY`）；
 - 现有 CN 数据迁移后保持不变；
 - 迁移脚本：dry-run 计数正确、只补缺失值、幂等重跑 0 更新。
 
@@ -662,6 +663,6 @@ WG Token 不会泄漏
 ## 范围外 / 后续任务
 
 - QQ→WG 账号关联（Keycloak 26 client-initiated account linking）及其 CN Profile 迁移语义；
-- EU/NA 登录入口与后端 Profile 支持（SPI 已支持多区服实例；后端 `user_profile` 目前仅接受 CN/ASIA，EU/NA 需后续扩展 CHECK 约束、展示与多账号拆分）；
+- EU/NA 前端登录入口与个人中心展示（后端已支持：SPI 多区服实例、V13 CHECK 约束、创建/同步/只读逻辑；前端入口与展示属后续任务）；
 - 自定义 Keycloak 错误页（broker 冲突的可读文案）；
 - host 级 Caddy 访问日志脱敏落地（仓库外运维项）。

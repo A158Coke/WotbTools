@@ -53,7 +53,7 @@ public class UserProfileController {
                 body.wotbAccountId(), body.wotbNickname(), body.wotbServer());
     }
 
-    /** WG ASIA 登录后的幂等同步（只读 JWT，不接受 body）。 */
+    /** WG 登录（ASIA/EU/NA）后的幂等同步（只读 JWT，不接受 body）。 */
     @PutMapping("/wotb-account/from-login")
     public UserProfileDto syncFromLogin() {
         return service.syncFromLogin(JwtUtil.requireUserId());
