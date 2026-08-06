@@ -26,7 +26,7 @@ Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的
    - 重复登录刷新由 Provider 的 `updateBrokeredUser` 直接实现（决策 D11），与 Sync Mode 无关；首次登录 Flow / Post Login Flow 使用 realm 默认值即可
 4. Save。
 
-> 未来加欧服/美服：Admin Console 再建一个实例（如 alias `wargaming-eu`、Region 选 `EU`）即可，无需改代码。注意后端 `user_profile` 目前仅接受 `CN`/`ASIA`，EU/NA 登录的后端展示与约束扩展属于后续任务，上线 EU/NA 前必须同步扩展。
+> 未来加欧服/美服：Admin Console 再建一个实例（如 alias `wargaming-eu`、Region 选 `EU`）即可，无需改 Keycloak/后端代码——后端已支持 EU/NA（V13 CHECK 约束 + 创建/同步/只读逻辑）；上线 EU/NA 只需前端登录入口与个人中心展示（后续任务）。
 
 > QQ IdP（`juhe-qq`）与 `wotbtools-admin-api` client 若尚未配置，同样在 Admin Console 手工维护，本仓库 realm JSON 不声明任何带密钥的 IdP。
 

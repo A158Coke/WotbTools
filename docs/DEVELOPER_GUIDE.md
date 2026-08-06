@@ -382,14 +382,14 @@ AI 复盘区分两种 scope，互不混用：
 
 ### 认证与 Wargaming ASIA 登录
 
-- **region 不变量**：每个 Keycloak 用户都有 `region` 属性（`CN`/`ASIA` 大写）。存量用户已迁移补 `CN`（一次性脚本，dry-run 138 → 更新 138，执行后已删除）；QQ Provider（`JuheQqEndpoint`）对新增用户写 `region=CN`；WG Provider 写实例配置的区服（当前 ASIA）。
+- **region 不变量**：每个 Keycloak 用户都有 `region` 属性（`CN`/`ASIA`/`EU`/`NA` 大写）。存量用户已迁移补 `CN`（一次性脚本，dry-run 138 → 更新 138，执行后已删除）；QQ Provider（`JuheQqEndpoint`）对新增用户写 `region=CN`；WG Provider 写实例配置的区服（当前 ASIA，EU/NA 实例写对应值）。
 - **WG 身份**：broker 唯一标识 `wg:{region}:{account_id}`（ASIA 实例即 `wg:asia:{account_id}`），Keycloak `username = account_id`（纯数字、稳定）。`account_id` 一律来自 `POST /wot/auth/prolongate/` 服务端响应（官方契约字段 `account_id`，token↔账号服务端绑定）；浏览器回调的 `account_id`/`nickname`/`expires_at` 均不可信，仅作一致性检查。重复登录由 `WargamingIdentityProvider.updateBrokeredUser` 显式刷新 `displayName` / `wotb.nickname`，身份不变（决策 D11）。
 - **JWT claims**：`wotbtools-web` client 的 4 个只读 protocol mapper（realm JSON 已含）：`region→wotb_region`、`wotb.account_id→wotb_account_id`、`wotb.nickname→wotb_nickname`、`wotb.verified→wotb_verified`（`jsonType=boolean`）。后端缺失 `wotb_region` / `wotb_verified` 一律按 CN 兜底。
-- **数据库**：V12 扩展 `CHECK (wotb_server IN ('CN','ASIA'))`，新增 `wotb_account_source`（默认 `MANUAL`）与 `wotb_account_verified_at`（可空）；存量 CN 数据默认 `MANUAL` / NULL，平滑迁移。
-- **API**：`POST /api/users/profile` 按可信 WG claims 自动创建 ASIA 资料；`PUT /api/users/wotb-account/from-login` 幂等同步昵称（不刷新 verified_at）；`PATCH/DELETE /api/users/wotb-account` 对 ASIA 资料返回 `ASIA_PROFILE_READONLY`。错误码 `PROFILE_REGION_MISMATCH` / `WOTB_ACCOUNT_MISMATCH` / `WOTB_ACCOUNT_ALREADY_USED` 为 409，`WOTB_CLAIMS_INVALID` / `ASIA_PROFILE_READONLY` 为 400。
+- **数据库**：V12 扩展 `CHECK (wotb_server IN ('CN','ASIA'))` 并新增 `wotb_account_source`（默认 `MANUAL`）与 `wotb_account_verified_at`（可空）；V13 再扩展 `CHECK IN ('CN','ASIA','EU','NA')`；存量 CN 数据默认 `MANUAL` / NULL，平滑迁移。
+- **API**：`POST /api/users/profile` 按可信 WG claims 自动创建对应区服资料（ASIA/EU/NA）；`PUT /api/users/wotb-account/from-login` 幂等同步昵称（不刷新 verified_at）；`PATCH/DELETE /api/users/wotb-account` 对 WARGAMING source 资料返回只读错误（ASIA 为 `ASIA_PROFILE_READONLY`，EU/NA 为 `WARGAMING_PROFILE_READONLY`）。错误码 `PROFILE_REGION_MISMATCH` / `WOTB_ACCOUNT_MISMATCH` / `WOTB_ACCOUNT_ALREADY_USED` 为 409，`WOTB_CLAIMS_INVALID` / `ASIA_PROFILE_READONLY` / `WARGAMING_PROFILE_READONLY` 为 400。
 - **环境变量**：`WG_APPLICATION_ID`（WoT Blitz 应用 ID）注入 Keycloak 容器；缺失时 Keycloak 正常启动，仅 WG 登录返回"未配置"。
 - **IdP 载体（决策 D18）**：`wargaming` 类型 IdP（Provider ID `wargaming`，实例 alias `wargaming-asia`、region=ASIA；SPI 支持 ASIA/EU/NA 多区服实例）不进 realm JSON（避免密钥进导入配置），dev/prod 均在 Admin Console 手工创建；步骤见 `docs/auth/wargaming-asia-deployment.md`。
-- **测试**：WG Provider 用 JUnit 5 + JDK `HttpServer` stub（`keycloak-wargaming-provider/src/test`），CI 新增 `keycloak-providers` job 跑两个 provider 模块的 `mvn test`；后端用 Mockito 单测覆盖 create/syncFromLogin 的 CN/ASIA 分支与错误码。
+- **测试**：WG Provider 用 JUnit 5 + JDK `HttpServer` stub（`keycloak-wargaming-provider/src/test`），CI 新增 `keycloak-providers` job 跑两个 provider 模块的 `mvn test`；后端用 Mockito 单测覆盖 create/syncFromLogin 的 CN/ASIA/EU/NA 分支与错误码。
 
 ### 显示名（i18n）架构
 
