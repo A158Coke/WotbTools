@@ -18,8 +18,9 @@ import java.nio.charset.StandardCharsets;
 /**
  * Wargaming.net 自定义 Identity Provider（Keycloak 26.6.4）。
  *
- * <p>区服固定 {@code ASIA}；应用 ID 来自环境变量 {@code WG_APPLICATION_ID}，
- * 缺失时登录报错而不导致 Keycloak 启动失败（需求文档 D14）。</p>
+ * <p>区服来自实例配置 {@code region}（ASIA/EU/NA，默认 ASIA），一个 SPI 类型可创建
+ * 多个区服实例；应用 ID 来自环境变量 {@code WG_APPLICATION_ID}，缺失时登录报错而
+ * 不导致 Keycloak 启动失败（需求文档 D14）。</p>
  */
 public class WargamingIdentityProvider
         extends AbstractIdentityProvider<WargamingIdentityProviderConfig> {
@@ -34,7 +35,7 @@ public class WargamingIdentityProvider
 
     public WargamingIdentityProvider(final KeycloakSession session,
                                      final WargamingIdentityProviderConfig config) {
-        this(session, config, WargamingApiClient.defaultClient());
+        this(session, config, WargamingApiClient.defaultClient(config.region()));
     }
 
     WargamingIdentityProvider(final KeycloakSession session,
@@ -83,7 +84,7 @@ public class WargamingIdentityProvider
                            final AuthenticationCallback callback,
                            final EventBuilder event) {
         return new WargamingEndpoint(session, this, getConfig(), callback,
-                WargamingApiClient.defaultClient());
+                WargamingApiClient.defaultClient(getConfig().region()));
     }
 
     @Override
@@ -92,7 +93,7 @@ public class WargamingIdentityProvider
                                    final UserModel user,
                                    final BrokeredIdentityContext context) {
         // 重复登录（决策 D11）：显式刷新展示名与昵称等可变属性，稳定身份不变。
-        user.setSingleAttribute("region", "ASIA");
+        user.setSingleAttribute("region", getConfig().region().name());
         final String displayName = context.getUserAttribute("displayName");
         if (displayName != null) {
             user.setSingleAttribute("displayName", displayName);

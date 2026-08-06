@@ -4,7 +4,7 @@
 
 ## 1. 准备 `WG_APPLICATION_ID`
 
-Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的 application id（认证接口固定为 `https://api.wotblitz.asia/wot/auth/`）。
+Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的 application id。application_id 按 Blitz 游戏注册、**跨区通用**（三个官方 Blitz host `api.wotblitz.asia` / `api.wotblitz.eu` / `api.wotblitz.com` 均返回统一 `application_id` 要求），所以所有区服实例共用同一个 `WG_APPLICATION_ID`。
 
 - 获取：Wargaming.net Developer Portal → My Applications → 选择 WoT Blitz 应用 → Application ID。
 - 注入：Keycloak 容器环境变量 `WG_APPLICATION_ID`。
@@ -17,13 +17,16 @@ Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的
 生产 realm 不使用 `--import-realm`，`wargaming-asia` IdP 不进 realm JSON（决策 D18），需要在 Admin Console 手工创建：
 
 1. 进入 `auth.wotbtools.com/admin` → Realm `wotbtools` → Identity Providers → Add provider。
-2. Provider type 选择 `Wargaming.net Asia`（自定义 SPI，Provider ID `wargaming-asia`，与前端 idpHint 一致）。
+2. Provider type 选择 `Wargaming.net`（自定义 SPI，Provider ID `wargaming`，一个类型可建多个区服实例）。
 3. 配置：
    - Alias：`wargaming-asia`
    - Display name：`Wargaming.net Asia`
+   - Region：`ASIA`（下拉，默认 ASIA；EU/NA 实例选对应区服，host 自动走 `api.wotblitz.eu` / `api.wotblitz.com`）
    - Enabled：开
    - 重复登录刷新由 Provider 的 `updateBrokeredUser` 直接实现（决策 D11），与 Sync Mode 无关；首次登录 Flow / Post Login Flow 使用 realm 默认值即可
 4. Save。
+
+> 未来加欧服/美服：Admin Console 再建一个实例（如 alias `wargaming-eu`、Region 选 `EU`）即可，无需改代码。注意后端 `user_profile` 目前仅接受 `CN`/`ASIA`，EU/NA 登录的后端展示与约束扩展属于后续任务，上线 EU/NA 前必须同步扩展。
 
 > QQ IdP（`juhe-qq`）与 `wotbtools-admin-api` client 若尚未配置，同样在 Admin Console 手工维护，本仓库 realm JSON 不声明任何带密钥的 IdP。
 

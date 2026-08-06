@@ -39,6 +39,11 @@ class WargamingIdentityProviderTest {
             super(session, new WargamingIdentityProviderConfig());
         }
 
+        TestableProvider(final KeycloakSession session,
+                         final WargamingIdentityProviderConfig config) {
+            super(session, config);
+        }
+
         TestableProvider(final KeycloakSession session, final WargamingApiClient client) {
             super(session, new WargamingIdentityProviderConfig(), client);
         }
@@ -111,5 +116,25 @@ class WargamingIdentityProviderTest {
                 "wotb.account_id", "512345678",
                 "wotb.nickname", "NewNick",
                 "wotb.verified", "true"), userFake.attributes);
+    }
+
+    @Test
+    void updateBrokeredUserWritesRegionFromInstanceConfig() {
+        final KeycloakSession session = KeycloakFakes.sessionWith(KeycloakFakes.contextWith());
+        final WargamingIdentityProviderConfig config = new WargamingIdentityProviderConfig();
+        config.setEnabled(true);
+        config.getConfig().put(WargamingIdentityProviderConfig.REGION_CONFIG_KEY, "NA");
+        final WargamingIdentityProvider provider = new TestableProvider(session, config);
+        final KeycloakFakes.UserModelFake userFake = new KeycloakFakes.UserModelFake();
+        final UserModel user = userFake.user();
+
+        final BrokeredIdentityContext context =
+                new BrokeredIdentityContext("wg:na:512345678", config);
+        context.setUserAttribute("displayName", "NewNick");
+
+        provider.updateBrokeredUser(null, null, user, context);
+
+        assertEquals("NA", userFake.attributes.get("region"));
+        assertEquals("NewNick", userFake.attributes.get("displayName"));
     }
 }

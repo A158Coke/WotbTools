@@ -6,8 +6,8 @@
 
 | # | 原不确定点 | 最终决定 |
 |---|---|---|
-| D1 | 认证 API 域名 | 使用 WoT **Blitz** 认证接口：`https://api.wotblitz.asia/wot/auth/`（不是 `api.worldoftanks.asia`，那是 WoT PC）。Application ID 按 Blitz 游戏注册 |
-| D2 | 用户名方案 | WG 用户 Keycloak `username` = `account_id`（纯数字，稳定、不随改名变化）；broker 身份仍为 `wg:asia:{account_id}`；QQ 用户 username 维持现有 nickname-hash 方案 |
+| D1 | 认证 API 域名 | 使用 WoT **Blitz** 认证接口（不是 `api.worldoftanks.*`，那是 WoT PC）。三个官方 Blitz host 已实测：`api.wotblitz.asia` / `api.wotblitz.eu` / `api.wotblitz.com` 均返回统一 `application_id` 要求，证明 application_id 按 Blitz 游戏注册、跨区通用；SPI 将区服参数化为枚举白名单 |
+| D2 | 用户名方案 | WG 用户 Keycloak `username` = `account_id`（纯数字，稳定、不随改名变化）；broker 身份为 `wg:{region}:{account_id}`（ASIA 实例即 `wg:asia:{account_id}`）；QQ 用户 username 维持现有 nickname-hash 方案 |
 | D3 | region 统一 | Keycloak 用户属性统一为 `region`，值统一大写 `CN` / `ASIA`；存量用户通过一次性迁移脚本补 `region=CN`；QQ Provider 对新用户也写 `region=CN`；已有值一律不覆盖 |
 | D4 | displayName | 沿用现有模式：user attribute `displayName`（QQ 已在写，realm 已有 mapper）；WG Provider 照写；存量缺 displayName 的用户如需回填，作为独立迁移另行执行（本期 region 迁移未包含） |
 | D5 | token↔account 绑定 | WG 官方**没有**证明 token 归属的接口。验收以可实现方案为准：state/会话校验 + HTTPS 回调 + prolongate 验证 token 有效性 + `account/info` 核对官方昵称 + 立即 logout。删除"证明 token 属于该 account_id"的不可实现表述 |
@@ -23,7 +23,7 @@
 | D15 | `wotb_verified` claim 类型 | Protocol Mapper 配置 `jsonType=boolean`，JWT 输出真布尔；后端按 `Boolean` 解析；region / verified 缺失一律按 CN 兜底 |
 | D16 | 日志脱敏 | Keycloak 保持默认（不开启请求 URI 访问日志）；host 级 Caddy 访问日志脱敏为仓库外运维项，写入部署文档；已知限制：WG token 会短暂出现在浏览器地址栏（WG 回调机制固有） |
 | D17 | 存量 region 迁移 | 一次性脚本执行（dry-run 默认、只补缺失值、幂等），已于 2026-08-06 在生产执行完毕（138/138）后删除 |
-| D18 | IdP 配置载体 | 跟随 QQ 现状：`wargaming-asia` IdP 不进 realm JSON（避免硬编码密钥），dev/prod 均在 Admin Console 手工配置，步骤写进交付文档 |
+| D18 | IdP 配置载体 | 跟随 QQ 现状：`wargaming` 类型 IdP（实例 alias `wargaming-asia`，区服在 Admin Console 下拉选择）不进 realm JSON（避免硬编码密钥），dev/prod 均在 Admin Console 手工配置，步骤写进交付文档 |
 
 ---
 
@@ -131,27 +131,35 @@ region = CN
 
 新增独立模块 `keycloak-wargaming-provider`，实现适配 Keycloak 26.6.4 的自定义 Identity Provider SPI。不要把 WG 登录逻辑塞进 `keycloak-juhe-qq-provider`。
 
-### 1. 单 Provider 配置
+### 1. 实例配置（区服参数化）
 
 ```text
+Provider type: wargaming（自定义 SPI 类型，一个类型可建多个区服实例）
 alias:        wargaming-asia
 displayName:  Wargaming.net Asia
-region:       ASIA
+region:       ASIA（Admin Console 下拉：ASIA / EU / NA，默认 ASIA）
 ```
 
-### 2. API 白名单（固定，不接受用户/前端传入任何 URL）
+未来增加欧服/美服：在 Admin Console 新建实例（alias 如 `wargaming-eu`、`wargaming-na`）并选区服即可，无需改代码。
+
+### 2. API 白名单（枚举固定，不接受用户/前端传入任何 URL）
 
 ```text
-认证 API:      https://api.wotblitz.asia/wot/auth/
-WoTB 账号 API: https://api.wotblitz.asia/wotb/account/
+区服     认证 API                     WoTB 账号 API
+ASIA    https://api.wotblitz.asia/wot/auth/    https://api.wotblitz.asia/wotb/account/
+EU      https://api.wotblitz.eu/wot/auth/      https://api.wotblitz.eu/wotb/account/
+NA      https://api.wotblitz.com/wot/auth/     https://api.wotblitz.com/wotb/account/
 ```
+
+- host 与区服的映射写在 `WargamingRegion` 枚举白名单里，调用方不能传入任意 URL；
+- 三个 host 实测均返回统一错误 `{"status":"error","error":{"field":"application_id","message":"APPLICATION_ID_NOT_SPECIFIED","code":402}}`，确认是同一 Blitz API 家族、`application_id` 跨区通用（单个 `WG_APPLICATION_ID` 即可服务所有区服）。
 
 ### 3. Application ID
 
 - 环境变量：`WG_APPLICATION_ID`（Keycloak 容器 env 注入）。
 - Provider 在配置层通过 `System.getenv("WG_APPLICATION_ID")` 读取；缺失时 `performLogin` 返回明确错误（对齐 QQ Provider 的"未配置返回错误"模式），不导致 Keycloak 启动失败。
 - 禁止硬编码进源码、Realm JSON 或前端代码。
-- `wargaming-asia` IdP 不在 realm JSON 中声明（避免密钥进导入配置），dev/prod 均在 Admin Console 手工创建，步骤写入交付文档（决策 D18）。
+- `wargaming` 类型 IdP（实例 alias `wargaming-asia`）不在 realm JSON 中声明（避免密钥进导入配置），dev/prod 均在 Admin Console 手工创建，步骤写入交付文档（决策 D18）。
 
 ---
 
@@ -191,7 +199,7 @@ WG 成功回调可能包含 `status`、`access_token`、`nickname`、`account_id
 - `access_token` 存在；
 - `account_id` 存在且格式正确（纯数字）；
 - `expires_at` 未过期；
-- 区服固定 `ASIA`；
+- 区服来自实例配置 `region`（默认 `ASIA`；EU/NA 实例各自验证对应官方 host）；
 - 回调 `state` 有效。
 
 ### 2. 服务端验证 Token 有效性
@@ -231,7 +239,7 @@ Keycloak state/会话校验 + HTTPS 回调送达受控 redirect_uri
 
 ### 5. 构造稳定身份
 
-- broker 唯一标识：`wg:asia:{account_id}`（不使用昵称）。
+- broker 唯一标识：`wg:{region}:{account_id}`（如 ASIA 实例 `wg:asia:{account_id}`；不使用昵称）。
 - Keycloak `username`：`account_id`（决策 D2，纯数字、稳定）。
 - 首次登录创建用户；重复登录按 broker 身份找到同一用户。
 - **重复登录时显式刷新**（决策 D11）：更新 `displayName`、`wotb.nickname`；不修改 `username`、broker id 等稳定身份。
@@ -241,7 +249,7 @@ Keycloak state/会话校验 + HTTPS 回调送达受控 redirect_uri
 认证成功后写入/更新（只能由 Provider 或管理员写入，用户不可在 Account Console 修改）：
 
 ```text
-region           = ASIA
+region           = 实例配置区服（当前 ASIA；EU/NA 实例写 EU / NA）
 displayName      = 官方昵称
 wotb.account_id  = account_id
 wotb.nickname    = 官方昵称
@@ -419,6 +427,8 @@ async function loginWithWargaming(region = 'ASIA', view = 'profile') {
 }
 ```
 
+- 本期前端只暴露 ASIA 按钮；SPI 已支持多区服实例，未来加欧服/美服时在此映射中补 `EU` / `NA` 并加按钮即可。
+
 - 按当前 `useAuth.js` 真实结构调整，不机械复制；
 - Keycloak 托管登录页保留为兜底入口，不改 Keycloak 主题。
 
@@ -505,7 +515,7 @@ keycloak-wargaming-provider
 ### 4. Realm 配置载体（决策 D18）
 
 - realm JSON：增加 4 个 Protocol Mapper（第八节）与 `defaultRoles`（第七节第 7 条）；不声明 IdP；
-- `wargaming-asia` IdP 与 `wotbtools-admin-api` 等：dev/prod 均在 Admin Console 手工配置，步骤写入交付文档。
+- `wargaming` 类型 IdP（实例 alias `wargaming-asia`、region=ASIA）与 `wotbtools-admin-api` 等：dev/prod 均在 Admin Console 手工配置，步骤写入交付文档。
 
 ---
 
@@ -536,12 +546,14 @@ keycloak-wargaming-provider
 ### Keycloak Provider（决策 D13：JUnit 5 + JDK 内置 HttpServer stub）
 
 - 成功生成 ASIA WG 登录地址（正确域名 `api.wotblitz.asia/wot/auth/login/`、参数完整、含 state）；
+- 每个区服生成对应白名单 host 的登录地址（EU→`api.wotblitz.eu`、NA→`api.wotblitz.com`），未知区服不可构造；
 - 无效/缺失/过期/被篡改的 state 被拒绝；
 - WG 拒绝登录时安全返回；
 - 缺少 token 时拒绝；token 过期（prolongate 失败）时拒绝；
 - 官方昵称与回调不一致时拒绝；
 - `account/info` 失败时不创建用户；
 - 成功登录后生成稳定的 `wg:asia:{account_id}` 与 `username = account_id`；
+- 实例配置 region=EU/NA 时生成 `wg:eu:{account_id}` / `wg:na:{account_id}` 且 `region` 属性同步写入 EU / NA；
 - 重复登录返回同一 Keycloak 用户；
 - **WG 昵称变化后重复登录：同一用户，`displayName` / `wotb.nickname` 已更新，username 不变**（决策 D11）；
 - region / displayName / wotb.* 属性写入正确；
@@ -586,8 +598,8 @@ keycloak-wargaming-provider
 → 用户只在 WG 官方页面输入凭据
 → WG 回调 Keycloak（broker endpoint，state 校验通过）
 → 服务端 prolongate 验证 token 有效
-→ 调用 WoTB ASIA account/info 获取官方昵称并核对
-→ 创建或找到稳定 Keycloak 用户（username = account_id，broker = wg:asia:{account_id}）
+→ 调用 WoTB {region} account/info 获取官方昵称并核对（region 来自实例配置，当前 ASIA）
+→ 创建或找到稳定 Keycloak 用户（username = account_id，broker = wg:{region}:{account_id}）
 → 自动获得 wotbtools-user
 → 写入 region=ASIA / displayName / wotb.* 属性
 → JWT 包含 wotb_region / wotb_account_id / wotb_nickname / wotb_verified(boolean)
@@ -618,7 +630,7 @@ WG Token 不会泄漏
 3. 数据库迁移说明（V12：CHECK、新字段、存量数据平滑迁移）；
 4. 安全处理说明（state 校验、token 生命周期、日志策略、浏览器地址栏已知限制）；
 5. 测试和构建结果；
-6. 仍需在 Keycloak Admin Console 或生产环境手动完成的配置（wargaming-asia IdP、admin client、default role 核对、Caddy 日志脱敏）；
+6. 仍需在 Keycloak Admin Console 或生产环境手动完成的配置（`wargaming` 类型 IdP、实例 alias `wargaming-asia`、region=ASIA、admin client、default role 核对、Caddy 日志脱敏）；
 7. region 存量迁移脚本执行记录（dry-run 人数 + 实际更新人数）；
 8. ASIA 完整手工验收步骤。
 
@@ -627,6 +639,6 @@ WG Token 不会泄漏
 ## 范围外 / 后续任务
 
 - QQ→WG 账号关联（Keycloak 26 client-initiated account linking）及其 CN Profile 迁移语义；
-- EU/NA 区服与多账号拆分；
+- EU/NA 登录入口与后端 Profile 支持（SPI 已支持多区服实例；后端 `user_profile` 目前仅接受 CN/ASIA，EU/NA 需后续扩展 CHECK 约束、展示与多账号拆分）；
 - 自定义 Keycloak 错误页（broker 冲突的可读文案）；
 - host 级 Caddy 访问日志脱敏落地（仓库外运维项）。
