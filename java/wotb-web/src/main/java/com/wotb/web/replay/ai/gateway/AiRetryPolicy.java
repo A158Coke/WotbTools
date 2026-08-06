@@ -7,12 +7,14 @@ import com.wotb.web.config.AiModelProperties;
  * {@link SpringAiChatGateway}. The SDK itself keeps {@code maxRetries} at 0,
  * so there is no retry multiplication (retry x retry).
  *
- * <p>Retryable: 429, connection failures and timeouts (AI_TIMEOUT), and
- * AI_UPSTREAM_UNAVAILABLE with no status or with 500/502/503/504.</p>
+ * <p>Retryable: 429, connection failures, and AI_UPSTREAM_UNAVAILABLE with no
+ * status or with 500/502/503/504.</p>
  *
- * <p>Never retried: authentication/permission failures, invalid request,
- * model not found, context too large, and empty/invalid completions (avoids
- * paying twice for an already billed response).</p>
+ * <p>Never retried: read/response timeouts (AI_TIMEOUT - the upstream may have
+ * already processed and billed the request, so a retry would double-charge),
+ * authentication/permission failures, invalid request, model not found,
+ * context too large, and empty/invalid completions (avoids paying twice for an
+ * already billed response).</p>
  */
 public record AiRetryPolicy(
         int maxAttempts,
@@ -71,7 +73,7 @@ public record AiRetryPolicy(
             return false;
         }
         return switch (error.code()) {
-            case "AI_RATE_LIMITED", "AI_TIMEOUT" -> true;
+            case "AI_RATE_LIMITED" -> true;
             case "AI_UPSTREAM_UNAVAILABLE" ->
                     error.providerStatus() == null || retryableStatus(error.providerStatus());
             default -> false;

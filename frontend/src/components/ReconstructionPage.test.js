@@ -419,3 +419,84 @@ function errorResponse(status, code) {
     text: vi.fn().mockResolvedValue(code)
   }
 }
+
+describe('ReconstructionPage AI request lifecycle (timeout + cancel)', () => {
+  /** fetch 模拟：可被 AbortController 中止的挂起请求。 */
+  function pendingFetch() {
+    return vi.fn((url, opts = {}) => new Promise((resolve, reject) => {
+      opts.signal?.addEventListener('abort', () => {
+        const err = new Error('The operation was aborted.')
+        err.name = 'AbortError'
+        reject(err)
+      })
+    }))
+  }
+
+  beforeEach(() => {
+    auth.ensureToken.mockResolvedValue(true)
+    auth.login.mockReset()
+    i18n.t.mockClear()
+    authState.authenticated.value = true
+    authState.roles = ['wotbtools-admin']
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('aborts with a clean AI_TIMEOUT when the client safety timeout fires', async () => {
+    vi.useFakeTimers()
+    const fetchMock = pendingFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['slow.wotbreplay'])
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(analyzeButton(wrapper).attributes('disabled')).toBeDefined()
+    expect(analyzeButton(wrapper).text()).toBe('action.processing')
+
+    await vi.advanceTimersByTimeAsync(400_000)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('recon.errors.AI_TIMEOUT')
+    expect(analyzeButton(wrapper).attributes('disabled')).toBeUndefined()
+
+    // 超时后通知后端取消 in-flight 请求，避免上游继续计费
+    const cancelCall = fetchMock.mock.calls.find(
+      ([url]) => String(url).includes('/api/replay/analyze/cancel')
+    )
+    expect(cancelCall).toBeDefined()
+  })
+
+  it('cancel button aborts the request and notifies the backend', async () => {
+    const fetchMock = pendingFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['long.wotbreplay'])
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+
+    const cancelBtn = wrapper.findAll('button')
+      .find(b => b.text() === 'recon.cancel_btn')
+    expect(cancelBtn).toBeDefined()
+
+    const analyzeCall = fetchMock.mock.calls.find(
+      ([url]) => String(url) === '/api/replay/analyze'
+    )
+    const correlationId = analyzeCall[1].body.get('correlationId')
+    expect(correlationId).toBeTruthy()
+
+    await cancelBtn.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('recon.cancelled')
+    expect(analyzeButton(wrapper).attributes('disabled')).toBeUndefined()
+    const cancelCall = fetchMock.mock.calls.find(
+      ([url]) => String(url).includes('/api/replay/analyze/cancel')
+    )
+    expect(cancelCall).toBeDefined()
+    expect(String(cancelCall[0])).toContain(encodeURIComponent(correlationId))
+  })
+})

@@ -109,6 +109,13 @@ class SecurityConfigTest {
         mvc.perform(get("/api/replay/analyze").with(jwt()))
                 .andExpect(status().isForbidden());
 
+        // cancel uses the same role gate as analyze
+        mvc.perform(get("/api/replay/analyze/cancel").with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_wotbtools-user"))))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/replay/analyze/cancel"))
+                .andExpect(status().isUnauthorized());
+
         // boost-manager → 403 (not allowed)
         mvc.perform(get("/api/replay/analyze").with(jwt().authorities(
                         new SimpleGrantedAuthority("ROLE_boost-manager"))))
@@ -179,6 +186,7 @@ class SecurityConfigTest {
                 "/api/health",
                 "/api/users/probe",
                 "/api/replay/analyze",
+                "/api/replay/analyze/cancel",
                 "/static-probe"
         })
         String probe() {

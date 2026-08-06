@@ -164,9 +164,10 @@ public class SpringAiChatGateway implements AiChatGateway {
                 }
                 final Call call = chain.call();
                 context.capture(call);
-                if (context.isExpired()) {
-                    // Watchdog already fired before this interceptor captured the
-                    // Call: cancel so chain.proceed() fails fast without sending.
+                if (context.isStopped()) {
+                    // Watchdog or external cancellation already fired before this
+                    // interceptor captured the Call: cancel so chain.proceed()
+                    // fails fast without sending.
                     call.cancel();
                 }
                 return chain.proceed(chain.request());
@@ -197,7 +198,12 @@ public class SpringAiChatGateway implements AiChatGateway {
             throw new AiNotConfiguredException();
         }
         final String correlationId = StringUtils.hasText(request.correlationId())
-                ? request.correlationId() : UUID.randomUUID().toString();
+                ? request.correlationId()
+                : (StringUtils.hasText(AiRequestContext.correlationId())
+                        ? AiRequestContext.correlationId() : UUID.randomUUID().toString());
+        // Optional external cancellation (client abort): cancels the in-flight
+        // upstream call and stops the retry loop with AI_CANCELLED.
+        final AiCancellationToken cancellation = AiRequestContext.cancellationToken();
         final String model = StringUtils.hasText(request.model()) ? request.model() : defaultModel;
         final boolean metrics = meterRegistry != null;
         final Timer.Sample upstreamSample = metrics ? Timer.start(meterRegistry) : null;
@@ -214,10 +220,20 @@ public class SpringAiChatGateway implements AiChatGateway {
                             new AiUpstreamException("AI_TIMEOUT", null, correlationId),
                             retryCount, request, metrics);
                 }
+                if (cancellation != null && cancellation.isCancelled()) {
+                    // Client aborted before this attempt started: do not send a
+                    // new upstream request at all.
+                    throw finishFailure(
+                            new AiUpstreamException("AI_CANCELLED", null, correlationId),
+                            retryCount, request, metrics);
+                }
                 if (metrics) {
                     meterRegistry.counter(REQUESTS, "mode", request.analysisMode()).increment();
                 }
-                final AttemptBudgetContext context = new AttemptBudgetContext();
+                final AttemptBudgetContext context = new AttemptBudgetContext(cancellation);
+                if (cancellation != null) {
+                    cancellation.attach(context);
+                }
                 activeContext.set(context);
                 final ScheduledFuture<?> watchdog =
                         scheduleBudgetWatchdog(context, remainingNanos);
@@ -230,6 +246,10 @@ public class SpringAiChatGateway implements AiChatGateway {
                         // The deadline passed during response conversion: never
                         // report success, never record usage, end as AI_TIMEOUT.
                         failure = new AiUpstreamException("AI_TIMEOUT", null, correlationId);
+                    } else if (context.isCancelled()) {
+                        // Client aborted while the response was being converted:
+                        // never report success, never record usage.
+                        failure = new AiUpstreamException("AI_CANCELLED", null, correlationId);
                     } else {
                         if (metrics) {
                             meterRegistry.counter(SUCCESS, "mode", request.analysisMode()).increment();
@@ -254,24 +274,31 @@ public class SpringAiChatGateway implements AiChatGateway {
                             correlationId, e.getClass().getSimpleName());
                 } finally {
                     watchdog.cancel(false);
+                    if (cancellation != null) {
+                        cancellation.detach(context);
+                    }
                     context.clear();
                     activeContext.remove();
                 }
-                if (context.isExpired()) {
+                if (context.isCancelled()) {
+                    // Client abort is the binding constraint: never retry, end
+                    // as AI_CANCELLED so no further upstream request is sent.
+                    failure = new AiUpstreamException("AI_CANCELLED", null, correlationId, failure);
+                } else if (context.isExpired()) {
                     // The in-flight request was aborted because the remaining
                     // total budget ran out: never retry, end as AI_TIMEOUT.
                     failure = new AiUpstreamException("AI_TIMEOUT", null, correlationId, failure);
                 }
                 final boolean lastAttempt = retryCount >= retryPolicy.maxAttempts() - 1;
                 final long remainingAfterNanos = deadlineNanos - nanoTimeSource.getAsLong();
-                if (!context.isExpired() && retryPolicy.isRetryable(failure)
+                if (!context.isStopped() && retryPolicy.isRetryable(failure)
                         && remainingAfterNanos <= 0) {
                     // The total budget is exhausted: the deadline is the binding
                     // constraint, so the call ends as AI_TIMEOUT even when the
                     // attempt cap was reached at the same moment.
                     failure = new AiUpstreamException("AI_TIMEOUT", null, correlationId, failure);
                 }
-                if (!lastAttempt && !context.isExpired()
+                if (!lastAttempt && !context.isStopped()
                         && retryPolicy.isRetryable(failure)) {
                     final long backoffMillis = retryPolicy.backoffMillis(retryCount + 1);
                     if (remainingAfterNanos <= backoffMillis * NANOS_PER_MILLI) {

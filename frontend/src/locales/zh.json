@@ -799,10 +799,12 @@
         "invalid_file": "请选择 .wotbreplay 文件",
         "analyze_btn": "AI 战术复盘",
         "analyze_multi_btn": "AI 多场复盘 ({n})",
+        "cancel_btn": "取消分析",
         "analysis_title_player": "AI 复盘",
         "ai_error_http": "AI 分析失败（HTTP {status}）",
         "auth_required": "需要登录，正在跳转登录……",
         "forbidden": "无权限：该功能需要 wotbtools-user 或 wotbtools-admin 角色",
+        "cancelled": "已取消",
         "errors": {
             "AI_NOT_CONFIGURED": "AI 功能未配置，请联系管理员。",
             "AI_INVALID_REQUEST": "AI 服务拒绝了当前请求，请稍后重试。",

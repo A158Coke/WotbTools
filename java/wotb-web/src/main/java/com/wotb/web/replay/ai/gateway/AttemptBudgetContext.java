@@ -1,25 +1,31 @@
 package com.wotb.web.replay.ai.gateway;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
-
-import okhttp3.Call;
-
 /**
  * Per-attempt budget state shared between the okhttp interceptor, the total
- * budget watchdog and the gateway retry loop.
+ * budget watchdog, the external cancellation token and the gateway retry loop.
  *
- * <p>The {@link Call} reference stays set for the whole
+ * <p>The {@code okhttp3.Call} reference stays set for the whole
  * {@code chatModel.call(prompt)} lifecycle (connect, request send, response
  * wait, response body read and SDK JSON deserialization); it is only cleared
  * by the attempt's outer finally. The interceptor must not clear it.</p>
  */
 final class AttemptBudgetContext {
 
-    private final AtomicReference<Call> callRef = new AtomicReference<>();
-    private final AtomicBoolean expired = new AtomicBoolean();
+    private final AiCancellationToken cancellation;
+    private final java.util.concurrent.atomic.AtomicReference<okhttp3.Call> callRef =
+            new java.util.concurrent.atomic.AtomicReference<>();
+    private final java.util.concurrent.atomic.AtomicBoolean expired =
+            new java.util.concurrent.atomic.AtomicBoolean();
 
-    void capture(final Call call) {
+    AttemptBudgetContext(final AiCancellationToken cancellation) {
+        this.cancellation = cancellation;
+    }
+
+    AttemptBudgetContext() {
+        this(null);
+    }
+
+    void capture(final okhttp3.Call call) {
         callRef.set(call);
     }
 
@@ -27,18 +33,34 @@ final class AttemptBudgetContext {
         return expired.get();
     }
 
+    boolean isCancelled() {
+        return cancellation != null && cancellation.isCancelled();
+    }
+
+    boolean isStopped() {
+        return isExpired() || isCancelled();
+    }
+
     /**
-     * Marks the budget as expired and cancels the in-flight {@link Call} if one
+     * Marks the budget as expired and cancels the in-flight call if one
      * has been captured yet. Safe when the watchdog fires before the interceptor
-     * captures the Call: the interceptor re-checks {@link #isExpired()} and
+     * captures the call: the interceptor re-checks {@link #isStopped()} and
      * cancels immediately.
      */
     void expireAndCancel() {
         if (expired.compareAndSet(false, true)) {
-            final Call call = callRef.get();
-            if (call != null) {
-                call.cancel();
-            }
+            cancelCall();
+        }
+    }
+
+    /**
+     * Cancels the in-flight call without marking the budget as expired. Used by
+     * the external cancellation token when the client aborts mid-request.
+     */
+    void cancelCall() {
+        final okhttp3.Call call = callRef.get();
+        if (call != null) {
+            call.cancel();
         }
     }
 
