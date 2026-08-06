@@ -145,7 +145,7 @@ docker compose ps prometheus loki alloy grafana
 
 ### 生产（CI 自动）
 
-合并到 `main` 触发 `deploy.yml`：SSH 到 `/opt/wotb` 重新生成 `docker-compose.yml`（含观测服务，三个 wotb 镜像钉住 `sha-<SHA>`）、`docker compose pull` + `up -d --remove-orphans`。观测配置随 `deploy/` 一起 scp 到 `/opt/wotb/deploy/observability/`。部署后三端健康检查（backend `/api/health`、frontend 经 nginx E2E、Keycloak realm）失败会自动回滚到上一份 compose（`docker-compose.prev.yml`）并复检；回滚事件可从 Actions 日志与 Loki 中的容器日志追溯。
+合并到 `main` 触发 `deploy.yml`：SSH 到 `/opt/wotb` 先写入 `docker-compose.next.yml`（含观测服务，三个 wotb 镜像钉住 `sha-<SHA>`）、`docker compose -f docker-compose.next.yml pull`；`pull` 成功后才备份 `docker-compose.prev.yml` 并替换正式 compose，再 `up -d --remove-orphans`。观测配置随 `deploy/` 一起 scp 到 `/opt/wotb/deploy/observability/`。部署后三端健康检查（backend `/api/health`、frontend 经 nginx E2E、Keycloak realm）失败会自动回滚到上一份 compose 并复检；pull 失败不触碰正式 compose 与回滚目标。回滚事件可从 Actions 日志与 Loki 中的容器日志追溯。
 
 ### 停止观测系统（不影响主业务）
 
