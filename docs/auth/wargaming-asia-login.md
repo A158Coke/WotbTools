@@ -222,10 +222,19 @@ account_id    token 所属账号 ID（服务端验证后返回，登录身份的
 expires_at    token 过期时间
 ```
 
+生产实测部分成功响应把上述字段包在 `data` 对象内：
+
+```json
+{ "status": "ok", "data": { "access_token": "...", "account_id": 572253806, "expires_at": 1787223082 } }
+```
+
 实现要求：
 
+- 字段读取**优先 `data` 对象**，`data` 缺失时兼容根节点 payload（两种格式都解析）；
 - `account_id` 必须存在且为合法正数，缺失/非法一律拒绝登录；
 - 返回结构化结果（刷新后的 token + 可信 `account_id` + `expires_at`），不得只返回 token 字符串。
+
+回调失败诊断：`WargamingEndpoint` 用局部 `stage` 标记失败阶段（`prolongate` / `callback-account-check` / `account-info` / `callback-nickname-check` / `identity-callback`），WARN 日志形如 `Wargaming login rejected at stage=prolongate: WG API rejected request: code=404, message=...`；日志允许包含 stage、安全错误码/消息/字段与异常类名，**严禁**包含 token、`WG_APPLICATION_ID`、state、完整回调 URL、完整响应 JSON 与 `error.value`。
 
 ### 3. 查询 WoTB 官方账号资料
 
