@@ -34,10 +34,29 @@ class WargamingApiClientTest {
 
     @Test
     void buildLoginUrlUsesFixedWhitelistAndEncodesParams() {
-        final String url = WargamingApiClient.buildLoginUrl("app-123", "https://auth.wotbtools.com/endpoint?state=s 1");
+        final String url = WargamingApiClient.buildLoginUrl(
+                "app-123", "https://auth.wotbtools.com/endpoint?state=s 1", WargamingRegion.ASIA);
         assertTrue(url.startsWith("https://api.wotblitz.asia/wot/auth/login/?application_id=app-123&redirect_uri="));
         assertTrue(url.contains("redirect_uri=https%3A%2F%2Fauth.wotbtools.com%2Fendpoint%3Fstate%3Ds+1"));
         assertTrue(url.endsWith("&nofollow=1"));
+    }
+
+    @Test
+    void buildLoginUrlMapsEachRegionToItsOfficialWhitelistedHost() {
+        assertTrue(WargamingApiClient.buildLoginUrl("a", "c", WargamingRegion.ASIA)
+                .startsWith("https://api.wotblitz.asia/wot/auth/login/"));
+        assertTrue(WargamingApiClient.buildLoginUrl("a", "c", WargamingRegion.EU)
+                .startsWith("https://api.wotblitz.eu/wot/auth/login/"));
+        assertTrue(WargamingApiClient.buildLoginUrl("a", "c", WargamingRegion.NA)
+                .startsWith("https://api.wotblitz.com/wot/auth/login/"));
+    }
+
+    @Test
+    void defaultClientAndBuildLoginUrlRejectNullRegion() {
+        assertThrows(IllegalArgumentException.class,
+                () -> WargamingApiClient.defaultClient(null));
+        assertThrows(IllegalArgumentException.class,
+                () -> WargamingApiClient.buildLoginUrl("a", "c", null));
     }
 
     @Test

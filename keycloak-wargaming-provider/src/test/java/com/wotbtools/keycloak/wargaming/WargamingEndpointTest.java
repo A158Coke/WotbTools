@@ -24,6 +24,7 @@ class WargamingEndpointTest {
     private WargamingApiStub stub;
     private WargamingEndpoint endpoint;
     private KeycloakFakes.AuthCallbackFake authFake;
+    private WargamingIdentityProviderConfig config;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -35,7 +36,7 @@ class WargamingEndpointTest {
         final WargamingApiClient client = new WargamingApiClient(http, stub.authBase(), stub.accountBase());
         authFake = new KeycloakFakes.AuthCallbackFake(VALID_STATE);
         final KeycloakSession session = KeycloakFakes.sessionWith(KeycloakFakes.contextWith());
-        final WargamingIdentityProviderConfig config = new WargamingIdentityProviderConfig();
+        config = new WargamingIdentityProviderConfig();
         config.setEnabled(true);
         endpoint = new WargamingEndpoint(session, null,
                 config, authFake.callback(), client);
@@ -74,6 +75,24 @@ class WargamingEndpointTest {
         assertEquals("true", context.getUserAttribute("wotb.verified"));
         assertNull(context.getUserAttribute("access_token"));
         assertNull(context.getUserAttribute("wotb.token"));
+        assertEquals(1, stub.logoutCalls());
+    }
+
+    @Test
+    void europeanRegionUsesGenericBrokerAndRegionAttribute() {
+        okResponses();
+        config.getConfig().put(WargamingIdentityProviderConfig.REGION_CONFIG_KEY, "EU");
+
+        final Response response = endpoint.handleCallback(
+                VALID_STATE, "ok", "tok-1", "PlayerOne", "512345678", FUTURE_EXPIRY);
+
+        assertEquals(200, response.getStatus());
+        final BrokeredIdentityContext context = authFake.captured;
+        assertNotNull(context);
+        assertEquals("wg:eu:512345678", context.getBrokerUserId());
+        assertEquals("wg:eu:512345678", context.getId());
+        assertEquals("512345678", context.getUsername());
+        assertEquals("EU", context.getUserAttribute("region"));
         assertEquals(1, stub.logoutCalls());
     }
 

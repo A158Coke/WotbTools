@@ -13,7 +13,7 @@
 | `wotb-core` | 核心库：解压回放、读取 pickle、解码 protobuf、车辆库映射、去重汇总、POI 导出 xlsx        |
 | `wotb-web`  | Spring Boot 4 REST API + PostgreSQL/Flyway/Keycloak，监听 `8087`（管理端口 `8088`，Actuator/Prometheus） |
 | `frontend`  | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
-| `keycloak-wargaming-provider` | Keycloak 26 自定义 Identity Provider：Wargaming.net ASIA 登录（`api.wotblitz.asia`） |
+| `keycloak-wargaming-provider` | Keycloak 26 自定义 Identity Provider：Wargaming.net 登录 SPI（Provider ID `wargaming`，region 配置 ASIA/EU/NA → 官方 host 白名单；当前实例 ASIA） |
 | `docker/online/` | `docker-compose.yml`：`build:` 从源码编译运行八服务（postgres + keycloak + backend + frontend + prometheus + loki + alloy + grafana） |
 
 > 车辆库 `common/tankopedia.json` 与地图名映射 `common/map_names.json`（仓库根的共享目录）都会在 `wotb-core` 构建时自动复制到 classpath，无需在模块内再放副本。

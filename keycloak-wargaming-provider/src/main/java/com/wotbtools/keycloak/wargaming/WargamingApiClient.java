@@ -13,16 +13,14 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 /**
- * Wargaming.net API 客户端。Host 只来自固定白名单（认证 {@code api.wotblitz.asia/wot/auth/}、
- * 账号 {@code api.wotblitz.asia/wotb/account/}），不接受任何调用方传入的 URL。
+ * Wargaming.net API 客户端。Host 只来自 {@link WargamingRegion} 白名单
+ * （认证 {@code /wot/auth/}、账号 {@code /wotb/account/}），不接受任何调用方传入的 URL。
  *
  * <p>安全约定：连接超时 5 秒、总请求超时 10 秒；token 不进入异常正文与日志；
  * 错误正文不回显给浏览器。</p>
  */
 final class WargamingApiClient {
 
-    private static final URI AUTH_API_BASE = URI.create("https://api.wotblitz.asia/wot/auth/");
-    private static final URI ACCOUNT_API_BASE = URI.create("https://api.wotblitz.asia/wotb/account/");
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
 
@@ -38,12 +36,18 @@ final class WargamingApiClient {
         this.accountApiBase = accountApiBase;
     }
 
-    /** 生产实例：固定白名单 + 默认超时。 */
-    static WargamingApiClient defaultClient() {
+    /**
+     * 生产实例：按区服固定白名单 + 默认超时。区服必须来自 {@link WargamingRegion}，
+     * 未知区服在编译期即不可表达，杜绝任意 host 注入。
+     */
+    static WargamingApiClient defaultClient(final WargamingRegion region) {
+        if (region == null) {
+            throw new IllegalArgumentException("Wargaming region must not be null");
+        }
         final HttpClient http = HttpClient.newBuilder()
                 .connectTimeout(CONNECT_TIMEOUT)
                 .build();
-        return new WargamingApiClient(http, AUTH_API_BASE, ACCOUNT_API_BASE);
+        return new WargamingApiClient(http, region.authBase(), region.accountBase());
     }
 
     /**
@@ -51,9 +55,14 @@ final class WargamingApiClient {
      *
      * @param applicationId WG 应用 ID
      * @param callbackUrl   Keycloak broker endpoint（含 state）
+     * @param region        区服（决定白名单 host）
      */
-    static String buildLoginUrl(final String applicationId, final String callbackUrl) {
-        return AUTH_API_BASE.resolve("login/") + "?application_id=" + encode(applicationId)
+    static String buildLoginUrl(final String applicationId, final String callbackUrl,
+                                final WargamingRegion region) {
+        if (region == null) {
+            throw new IllegalArgumentException("Wargaming region must not be null");
+        }
+        return region.authBase().resolve("login/") + "?application_id=" + encode(applicationId)
                 + "&redirect_uri=" + encode(callbackUrl)
                 + "&nofollow=1";
     }

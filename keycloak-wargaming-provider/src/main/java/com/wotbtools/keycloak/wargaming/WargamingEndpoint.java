@@ -21,8 +21,6 @@ final class WargamingEndpoint {
 
     private static final Logger log = Logger.getLogger(WargamingEndpoint.class);
 
-    private static final String REGION = "ASIA";
-
     private final KeycloakSession session;
     private final WargamingIdentityProvider provider;
     private final WargamingIdentityProviderConfig config;
@@ -96,8 +94,9 @@ final class WargamingEndpoint {
                 return WargamingIdentityProvider.errorResponse();
             }
 
-            // ── 5. 构造稳定身份（username = account_id，broker = wg:asia:{id}） ──
-            final String externalId = "wg:asia:" + accountIdValue;
+            // ── 5. 构造稳定身份（username = account_id，broker = wg:{region}:{id}） ──
+            final WargamingRegion region = config.region();
+            final String externalId = "wg:" + region.key() + ":" + accountIdValue;
             final BrokeredIdentityContext context = new BrokeredIdentityContext(externalId, config);
             context.setId(externalId);
             context.setBrokerUserId(externalId);
@@ -107,7 +106,7 @@ final class WargamingEndpoint {
             context.setAuthenticationSession(authenticationSession);
 
             // 只写业务属性，绝不写 WG token。
-            context.setUserAttribute("region", REGION);
+            context.setUserAttribute("region", region.name());
             context.setUserAttribute("displayName", officialNickname);
             context.setUserAttribute("wotb.account_id", String.valueOf(accountIdValue));
             context.setUserAttribute("wotb.nickname", officialNickname);
