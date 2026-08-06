@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class PlayerAnalysisTermsAndEnemyEvidenceTest {
 
-    private static final long SPHT_TANK_ID = 29985L;   // tankopedia: SPHT / 重坦
+    private static final long HEAVY_TANK_ID = 10785L;   // tankopedia: T110E5 / 重坦 / 10 / 美国
     private static final long RECORDER_ACCOUNT = 1L;
     private static final long ENEMY_ACCOUNT = 2L;
 
@@ -76,7 +76,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         PlayerReplayPromptBuilder.appendPlayerLine(sb, enemy(), false);
         final String line = sb.toString();
 
-        assertTrue(line.contains("坦克: \"SPHT\""), line);
+        assertTrue(line.contains("坦克: \"T110E5\""), line);
         assertTrue(line.contains("车种: 重坦"), line);
         assertTrue(line.contains("输出2100"), line);
         assertTrue(line.contains("承伤1500"), line);
@@ -126,9 +126,9 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
 
         assertTrue(written);
         assertTrue(evidence.contains("KILL_ATTRIBUTION_OBSERVED（击杀归因·事件流观测）"), evidence);
-        assertTrue(evidence.contains("你击杀了 敌方 \"EnemyAce\" 坦克: \"SPHT\""), evidence);
+        assertTrue(evidence.contains("你击杀了 敌方 \"EnemyAce\" 坦克: \"T110E5\""), evidence);
         assertTrue(evidence.contains("累计承受你900点伤害"), evidence);
-        assertTrue(evidence.contains("击杀你的是 敌方 \"EnemyAce\" 坦克: \"SPHT\""), evidence);
+        assertTrue(evidence.contains("击杀你的是 敌方 \"EnemyAce\" 坦克: \"T110E5\""), evidence);
         assertTrue(evidence.contains("对你累计造成640点伤害"), evidence);
         assertFalse(evidence.contains("自行火炮"), evidence);
     }
@@ -169,7 +169,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         assertTrue(written);
         final String evidence = sb.toString();
         assertTrue(evidence.contains("DAMAGE_EXCHANGE_BY_OPPONENT_OBSERVED（逐对手对炮明细·事件流观测）"), evidence);
-        assertTrue(evidence.contains("坦克: \"SPHT\""), evidence);
+        assertTrue(evidence.contains("坦克: \"T110E5\""), evidence);
         assertTrue(evidence.contains("车种: 重坦"), evidence);
         assertTrue(evidence.contains("你对其造成786伤害/2次命中"), evidence);
         assertTrue(evidence.contains("其对你造成250伤害/1次命中"), evidence);
@@ -284,7 +284,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         p.accountId = ENEMY_ACCOUNT;
         p.nickname = "EnemyAce";
         p.team = 2;
-        p.tankId = SPHT_TANK_ID;
+        p.tankId = HEAVY_TANK_ID;
         p.damageDealt = 2_100;
         p.damageReceived = 1_500;
         p.damageAssisted = 300;

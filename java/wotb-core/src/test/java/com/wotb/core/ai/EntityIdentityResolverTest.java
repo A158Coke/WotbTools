@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class EntityIdentityResolverTest {
 
-    private static final long SPHT_TANK_ID = 29985L;   // tankopedia: SPHT / 重坦 / 10 / 美国
+    private static final long HEAVY_TANK_ID = 6145L;   // tankopedia: IS-4 / 重坦 / 10 / 苏联
     private static final long RECORDER_ACCOUNT = 1L;
     private static final long ENEMY_ACCOUNT = 2L;
     private static final int RECORDER_ENTITY = 5;
@@ -41,12 +41,12 @@ class EntityIdentityResolverTest {
         final String enemyLabel = labels.get(ENEMY_ENTITY);
         assertTrue(enemyLabel.startsWith("敌方 "), enemyLabel);
         assertTrue(enemyLabel.contains("\"EnemyAce\""), enemyLabel);
-        assertTrue(enemyLabel.contains("坦克: \"SPHT\""), enemyLabel);
+        assertTrue(enemyLabel.contains("坦克: \"IS-4\""), enemyLabel);
         assertTrue(enemyLabel.contains("车种: 重坦"), enemyLabel);
         // 结构化车辆事实来自 tankopedia，而不是名称推断
         assertTrue(enemyLabel.contains("等级: 10"), enemyLabel);
-        assertTrue(enemyLabel.contains("国家: 美国"), enemyLabel);
-        assertTrue(enemyLabel.contains("炮伤: 400"), enemyLabel);
+        assertTrue(enemyLabel.contains("国家: 苏联"), enemyLabel);
+        assertTrue(enemyLabel.contains("炮伤: 420"), enemyLabel);
         assertFalse(enemyLabel.contains("自行火炮"), enemyLabel);
         assertFalse(enemyLabel.contains("SPG"), enemyLabel);
     }
@@ -65,7 +65,7 @@ class EntityIdentityResolverTest {
         teammate.accountId = 3L;
         teammate.nickname = "Mate";
         teammate.team = 1;
-        teammate.tankId = SPHT_TANK_ID;
+        teammate.tankId = HEAVY_TANK_ID;
         final Battle battle = new Battle();
         battle.players = List.of(recorder(), teammate);
         battle.recorder = "Recorder";
@@ -91,7 +91,7 @@ class EntityIdentityResolverTest {
     @Test
     void unresolvableEntitiesAreOmittedSoCallersCanFallBack() {
         // 名册里没有该 accountId → 不产生标签，调用方回退为中性 E<id>
-        final VehicleState stranger = vehicle(99, 4242L, SPHT_TANK_ID);
+        final VehicleState stranger = vehicle(99, 4242L, HEAVY_TANK_ID);
         final ReplayReconstruction recon = reconWith(checkpoint(1.0f, stranger));
 
         final Map<Integer, String> labels =
@@ -143,7 +143,7 @@ class EntityIdentityResolverTest {
         p.accountId = ENEMY_ACCOUNT;
         p.nickname = "EnemyAce";
         p.team = 2;
-        p.tankId = SPHT_TANK_ID;
+        p.tankId = HEAVY_TANK_ID;
         p.damageDealt = 2_100;
         p.survived = true;
         return p;
@@ -196,7 +196,7 @@ class EntityIdentityResolverTest {
     private static ReplayReconstruction recon() {
         return reconWith(checkpoint(1.0f,
                 vehicle(RECORDER_ENTITY, RECORDER_ACCOUNT, 1L),
-                vehicle(ENEMY_ENTITY, ENEMY_ACCOUNT, SPHT_TANK_ID)));
+                vehicle(ENEMY_ENTITY, ENEMY_ACCOUNT, HEAVY_TANK_ID)));
     }
 
     private static ReplayReconstruction reconWith(final BattleStateCheckpoint... checkpoints) {

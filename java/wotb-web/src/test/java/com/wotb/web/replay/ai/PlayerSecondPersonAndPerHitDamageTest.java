@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class PlayerSecondPersonAndPerHitDamageTest {
 
-    private static final long SPHT_TANK_ID = 29985L;   // SPHT / 重坦
+    private static final long HEAVY_TANK_ID = 10785L;   // T110E5 / 重坦 / 10 / 美国
     private static final long IS_TANK_ID = 513L;       // IS / 重坦
     private static final long YOU = 1L;
     private static final long ENEMY = 2L;
@@ -119,8 +119,8 @@ class PlayerSecondPersonAndPerHitDamageTest {
         final String evidence = sb.toString();
         assertTrue(evidence.contains("PER_HIT_DAMAGE_EVENTS_OBSERVED"), evidence);
         // 3分12秒 = 192s，方向不得颠倒
-        assertTrue(evidence.contains("3分12秒：你驾驶的IS 对 敌方玩家\"EnemyAce\"驾驶的SPHT 造成了418点伤害"), evidence);
-        assertTrue(evidence.contains("3分18秒：敌方玩家\"EnemyAce\"驾驶的SPHT 对 你驾驶的IS 造成了376点伤害"), evidence);
+        assertTrue(evidence.contains("3分12秒：你驾驶的IS 对 敌方玩家\"EnemyAce\"驾驶的T110E5 造成了418点伤害"), evidence);
+        assertTrue(evidence.contains("3分18秒：敌方玩家\"EnemyAce\"驾驶的T110E5 对 你驾驶的IS 造成了376点伤害"), evidence);
     }
 
     @Test
@@ -206,8 +206,8 @@ class PlayerSecondPersonAndPerHitDamageTest {
     @Test
     void tankDestroyerIsWrittenInChinese() {
         // tankopedia 把坦克歼击车记作 TD，证据里必须展开为中文
-        assertEquals("坦克歼击车", com.wotb.core.ref.ReplayDisplayNames.tankClass(257L)); // SU-85
-        assertEquals("重坦", com.wotb.core.ref.ReplayDisplayNames.tankClass(SPHT_TANK_ID));
+        assertEquals("坦克歼击车", com.wotb.core.ref.ReplayDisplayNames.tankClass(8529L)); // AT 15
+        assertEquals("重坦", com.wotb.core.ref.ReplayDisplayNames.tankClass(HEAVY_TANK_ID));
     }
 
     // ---- 术语 ----
@@ -261,7 +261,7 @@ class PlayerSecondPersonAndPerHitDamageTest {
         p.accountId = ENEMY;
         p.nickname = "EnemyAce";
         p.team = 2;
-        p.tankId = SPHT_TANK_ID;
+        p.tankId = HEAVY_TANK_ID;
         p.survived = true;
         return p;
     }

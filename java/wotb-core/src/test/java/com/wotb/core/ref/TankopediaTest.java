@@ -10,10 +10,10 @@ class TankopediaTest {
     void loadsAlphaDamageForKnownTierTenTanks() {
         final Tankopedia tankopedia = Tankopedia.load();
 
-        assertEquals(340, tankopedia.info(28689).alphaDamage());
-        assertEquals(620, tankopedia.info(11825).alphaDamage());
+        assertEquals(350, tankopedia.info(385).alphaDamage());
+        assertEquals(370, tankopedia.info(14609).alphaDamage());
         assertEquals(570, tankopedia.info(20257).alphaDamage());
         assertEquals(420, tankopedia.info(6145).alphaDamage());
-        assertEquals(645, tankopedia.info(9489).alphaDamage());
+        assertEquals(460, tankopedia.info(9489).alphaDamage());
     }
 }
