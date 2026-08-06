@@ -123,7 +123,7 @@ class SpringAiChatGatewayCancellationTest {
     private static AiChatRequest request() {
         return new AiChatRequest("system-prompt", "user-prompt",
                 "test-model", null, 4096, true, "max",
-                "corr-cancel", "TEST_MODE", null);
+                "corr-cancel", "TEST_MODE");
     }
 
     private long counter(final String name, final String... tags) {

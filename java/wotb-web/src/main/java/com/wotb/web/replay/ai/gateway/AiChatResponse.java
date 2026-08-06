@@ -1,6 +1,5 @@
 package com.wotb.web.replay.ai.gateway;
 
-import java.util.Map;
 
 /**
  * 供应商无关的 AI 聊天响应模型，由 Gateway 实现从 Provider 响应映射而来。
@@ -17,7 +16,6 @@ import java.util.Map;
  * @param cacheHitTokens    命中缓存 token 数（Provider 未返回时为 0）
  * @param cacheMissTokens   未命中缓存 token 数（Provider 未返回时为 0）
  * @param finishReason      终止原因（如 {@code "stop"}），可为 {@code null}
- * @param metadata          低风险附加元数据，可为 {@code null}
  */
 public record AiChatResponse(
         String completionText,
@@ -29,13 +27,11 @@ public record AiChatResponse(
         int reasoningTokens,
         int cacheHitTokens,
         int cacheMissTokens,
-        String finishReason,
-        Map<String, String> metadata
+        String finishReason
 ) {
     public AiChatResponse {
         if (completionText == null) throw new IllegalArgumentException("completionText must not be null");
         provider = provider == null ? "" : provider;
         model = model == null ? "" : model;
-        metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
     }
 }

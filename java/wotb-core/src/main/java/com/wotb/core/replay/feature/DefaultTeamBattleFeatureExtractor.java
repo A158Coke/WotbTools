@@ -32,7 +32,7 @@ import java.util.stream.Stream;
  * 默认队伍特征提取器。
  * 所有位置与伤害归因都依赖 {@link TeamEntityMapper}，未知实体不会进入本队统计。
  */
-public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtractor {
+public class DefaultTeamBattleFeatureExtractor {
 
     static final int ENGAGEMENT_GAP_SEC = 10;
     static final float FORMATION_WINDOW_SEC = 15f;
@@ -42,7 +42,6 @@ public class DefaultTeamBattleFeatureExtractor implements TeamBattleFeatureExtra
     static final int MIN_FOCUS_FIRE_ATTACKERS = 2;
     static final float MAX_ABSOLUTE_ELEVATION = 200f;
 
-    @Override
     public TeamBattleFeatureSet extract(
             final Battle battle,
             final ReplayReconstruction reconstruction,

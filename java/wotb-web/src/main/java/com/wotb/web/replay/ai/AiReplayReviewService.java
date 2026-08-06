@@ -3,19 +3,12 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.model.Source;
 import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.processing.BatchAnalyzer;
-import com.wotb.core.processing.BattleCategory;
-import com.wotb.core.processing.BattleCategoryUtils;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.PerspectiveTeamNotResolvedException;
-import com.wotb.core.processing.ReplayAnalysisMode;
 import com.wotb.core.processing.ReplayAnalysisScope;
-import com.wotb.core.processing.ReplayFileAnalysisStatus;
-import com.wotb.core.processing.ReplayFileRelation;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
-import com.wotb.core.processing.ReplayProcessingError;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
-import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.core.processing.TeamPerspectiveResolver;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.web.replay.metrics.ReplayUsageMetrics;
@@ -175,10 +168,6 @@ public class AiReplayReviewService {
             }
         }
         final BatchAnalyzer.AnalysisPlan plan = new BatchAnalyzer().analyze(allResults);
-        final List<ReplayUploadResult> uploadResults = new ArrayList<>();
-        for (int i = 0; i < allResults.size(); i++) {
-            uploadResults.add(new ReplayUploadResult(i, allResults.get(i).fileName(), allResults.get(i)));
-        }
         final boolean hasParsedBattle = allResults.stream().anyMatch(r -> r.battle() != null);
         if (!hasParsedBattle) throw new IllegalArgumentException("NO_BATTLE_DATA");
         if (plan.dominantScope() == null) throw new UnsupportedReplayAnalysisModeException("UNSUPPORTED_BATTLE_CATEGORY");
@@ -200,70 +189,23 @@ public class AiReplayReviewService {
             }
             throw new IllegalArgumentException("NO_BATTLE_DATA");
         }
-        final var fileStatuses = buildFileStatuses(uploadResults, plan);
-        final int failedCount = countFailed(fileStatuses);
-        final int analyzedUnitCount = analyzableGroups.size();
-        final int validCount = (int) allResults.stream()
-                .filter(r -> r.capabilities() != null
-                        && BatchAnalyzer.isAiAnalyzable(r, plan.dominantScope()))
-                .count();
         return switch (plan.mode()) {
-            case SINGLE_PLAYER_BATTLE -> {
-                final var aiResult = aiAnalysisService.analyzePlayerOrFallback(
-                        analyzableGroups.getFirst().representative(), language);
-                final var units = AiReplayAnalysisService.buildAnalysisUnits(
-                        analyzableGroups, plan.dominantScope());
-                final int analyzedCount = 1;
-                final int unavailable = plan.effectiveUnitCount() - analyzedCount;
-                yield new AnalyzeResponse(ReplayAnalysisMode.SINGLE_PLAYER_BATTLE,
-                        files.length, validCount,
-                        plan.effectiveUnitCount(), analyzedCount, 0, unavailable, analyzedCount,
-                        aiResult.analysis(), failedCount,
-                        plan.exactDuplicateCount(), plan.sameTeamDuplicatePerspectiveCount(),
-                        fileStatuses, units, aiResult.keyEvents(),
-                        List.<String>of());
-            }
+            case SINGLE_PLAYER_BATTLE -> new AnalyzeResponse(
+                    aiAnalysisService.analyzePlayerOrFallback(
+                            analyzableGroups.getFirst().representative(), language).analysis());
             case MULTI_PLAYER_BATTLE -> {
                 final var battles = analyzableGroups.stream()
                         .map(ReplayPerspectiveGroup::representative)
                         .map(ReplayProcessingResult::battle)
                         .toList();
-                final var aiResult = aiAnalysisService.analyzeMulti(battles, language);
-                final var units = AiReplayAnalysisService.buildAnalysisUnits(
-                        analyzableGroups, plan.dominantScope());
-                yield new AnalyzeResponse(ReplayAnalysisMode.MULTI_PLAYER_BATTLE,
-                        files.length, validCount,
-                        plan.effectiveUnitCount(), analyzedUnitCount, 0, plan.effectiveUnitCount() - analyzedUnitCount, analyzedUnitCount,
-                        aiResult.analysis(), failedCount,
-                        plan.exactDuplicateCount(), plan.sameTeamDuplicatePerspectiveCount(),
-                        fileStatuses, units, aiResult.keyEvents(),
-                        List.<String>of());
+                yield new AnalyzeResponse(
+                        aiAnalysisService.analyzeMulti(battles, language).analysis());
             }
-            case SINGLE_TEAM_BATTLE, MULTI_TEAM_BATTLE -> {
-                final var teamResult = aiAnalysisService.analyzeTeamGroups(analyzableGroups, language);
-                final var aiResult = teamResult.analysis();
-                final int planUnitCount = plan.effectiveUnitCount();
-                final int analyzed = teamResult.analyzedUnitCount();
-                final int omitted = teamResult.omittedAnalysisUnitCount();
-                final int unavailable = planUnitCount - analyzed - omitted;
-                yield new AnalyzeResponse(plan.mode(),
-                        files.length, validCount,
-                        planUnitCount, analyzed, omitted, unavailable, analyzed,
-                        aiResult.analysis(), failedCount,
-                        plan.exactDuplicateCount(), plan.sameTeamDuplicatePerspectiveCount(),
-                        fileStatuses, teamResult.units(), aiResult.keyEvents(),
-                        teamResult.limitations());
-            }
+            case SINGLE_TEAM_BATTLE, MULTI_TEAM_BATTLE -> new AnalyzeResponse(
+                    aiAnalysisService.analyzeTeamGroups(analyzableGroups, language)
+                            .analysis().analysis());
             case NONE -> throw new IllegalArgumentException("NO_BATTLE_DATA");
         };
-    }
-
-    private static int countFailed(final List<ReplayFileAnalysisStatus> statuses) {
-        return (int) statuses.stream()
-                .filter(f -> f.status() == ReplayProcessingStatus.FAILED
-                        && f.relation() == ReplayFileRelation.INDEPENDENT_BATTLE
-                        && f.error() != null)
-                .count();
     }
 
     private static String unresolvedTeamCode(final List<ReplayPerspectiveGroup> groups) {
@@ -276,95 +218,6 @@ public class AiReplayReviewService {
                                 || "RECORDER_IDENTITY_CONFLICT".equals(code)));
         return conflict ? "PERSPECTIVE_TEAM_CONFLICT" : "PERSPECTIVE_TEAM_UNRESOLVED";
     }
-
-    private static List<ReplayFileAnalysisStatus> buildFileStatuses(
-            final List<ReplayUploadResult> uploadResults,
-            final BatchAnalyzer.AnalysisPlan plan) {
-        final java.util.IdentityHashMap<ReplayProcessingResult, Integer> resultToIndex = new java.util.IdentityHashMap<>();
-        for (final var ur : uploadResults) {
-            resultToIndex.put(ur.processingResult(), ur.uploadIndex());
-        }
-        final java.util.IdentityHashMap<ReplayProcessingResult, Boolean> indexed = new java.util.IdentityHashMap<>();
-        final List<ReplayFileAnalysisStatus> statuses = new ArrayList<>();
-        for (final var gp : plan.groups()) {
-            final var rep = gp.representative();
-            final int repIdx = resultToIndex.getOrDefault(rep, -1);
-            final BattleCategory category = rep.battle() != null
-                    ? BattleCategoryUtils.fromArenaBonusType(rep.battle().arenaBonusType)
-                    : BattleCategory.UNKNOWN;
-            statuses.add(ReplayFileAnalysisStatus.primary(
-                    rep.fileName(), rep.status(), category, plan.dominantScope(),
-                    rep.battle() != null ? rep.battle().arenaId : null,
-                    gp.key().perspectiveTeam(),
-                    BatchAnalyzer.isAiAnalyzable(rep, plan.dominantScope()),
-                    repIdx, rep.capabilities()));
-            indexed.put(rep, Boolean.TRUE);
-            for (final var dup : gp.duplicates()) {
-                final int dupIdx = resultToIndex.getOrDefault(dup, -1);
-                statuses.add(ReplayFileAnalysisStatus.duplicate(
-                        dup.fileName(), dup.status(),
-                        ReplayFileRelation.SAME_TEAM_DUPLICATE_PERSPECTIVE,
-                        rep.fileName(), dupIdx, repIdx));
-                indexed.put(dup, Boolean.TRUE);
-            }
-        }
-        for (final var dup : plan.exactDuplicates()) {
-            final int dupIdx = resultToIndex.getOrDefault(dup.duplicate(), -1);
-            final int origIdx = resultToIndex.getOrDefault(dup.original(), -1);
-            statuses.add(ReplayFileAnalysisStatus.duplicate(
-                    dup.duplicate().fileName(), dup.duplicate().status(),
-                    ReplayFileRelation.EXACT_DUPLICATE,
-                    dup.original().fileName(), dupIdx, origIdx));
-            indexed.put(dup.duplicate(), Boolean.TRUE);
-        }
-        for (final var ur : uploadResults) {
-            final var r = ur.processingResult();
-            if (r.status() == ReplayProcessingStatus.FAILED && !indexed.containsKey(r)) {
-                statuses.add(ReplayFileAnalysisStatus.failed(
-                        r.fileName(), r.error() != null ? r.error()
-                                : ReplayProcessingError.of("FAILED", "Processing failed"), ur.uploadIndex()));
-            }
-        }
-        final int uploadCount = uploadResults.size();
-        if (statuses.size() != uploadCount) {
-            throw new IllegalStateException(
-                    "FILE_STATUS_COUNT_MISMATCH: " + statuses.size() + " != " + uploadCount);
-        }
-        final var uploadIndices = statuses.stream()
-                .map(ReplayFileAnalysisStatus::uploadIndex)
-                .collect(java.util.stream.Collectors.toSet());
-        if (uploadIndices.size() != uploadCount) {
-            throw new IllegalStateException("DUPLICATE_UPLOAD_INDEX");
-        }
-        for (int i = 0; i < uploadCount; i++) {
-            if (!uploadIndices.contains(i)) {
-                throw new IllegalStateException("MISSING_UPLOAD_INDEX_" + i);
-            }
-        }
-        for (final var s : statuses) {
-            if (s.uploadIndex() < 0 || s.uploadIndex() >= uploadCount) {
-                throw new IllegalStateException("INVALID_UPLOAD_INDEX_" + s.uploadIndex());
-            }
-            final boolean isDup = s.relation() == ReplayFileRelation.EXACT_DUPLICATE
-                    || s.relation() == ReplayFileRelation.SAME_TEAM_DUPLICATE_PERSPECTIVE;
-            if (isDup) {
-                final Integer origIdx = s.duplicateOfUploadIndex();
-                if (origIdx == null || origIdx < 0 || origIdx >= uploadCount) {
-                    throw new IllegalStateException("INVALID_DUPLICATE_OF_UPLOAD_INDEX");
-                }
-                if (origIdx == s.uploadIndex()) {
-                    throw new IllegalStateException("DUPLICATE_POINTS_TO_SELF");
-                }
-            } else if (s.duplicateOfUploadIndex() != null) {
-                throw new IllegalStateException("UNEXPECTED_DUPLICATE_OF_UPLOAD_INDEX");
-            }
-        }
-        statuses.sort(java.util.Comparator.comparingInt(ReplayFileAnalysisStatus::uploadIndex));
-        return statuses;
-    }
-
-    private record ReplayUploadResult(int uploadIndex, String fileName, ReplayProcessingResult processingResult) {}
-
 
     /**
      * 初始化 AI Review 边界指标（仅当 MeterRegistry 可用时；单元测试中为 null 则跳过）。

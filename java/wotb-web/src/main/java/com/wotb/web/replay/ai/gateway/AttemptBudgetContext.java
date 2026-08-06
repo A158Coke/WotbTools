@@ -21,10 +21,6 @@ final class AttemptBudgetContext {
         this.cancellation = cancellation;
     }
 
-    AttemptBudgetContext() {
-        this(null);
-    }
-
     void capture(final okhttp3.Call call) {
         callRef.set(call);
     }

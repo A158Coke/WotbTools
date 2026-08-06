@@ -801,7 +801,7 @@ com.wotb.core.replay 包：
   event/       统一领域事件接口
   decoder/     包解码器注册中心（Type 4/7/8/10/14 等）
   reconstruction/ 战场状态重建 + checkpoint + stateAt(t)
-  feature/     战术特征提取（PlayerBattleFeatureExtractor / TeamBattleFeatureExtractor）
+  feature/     战术特征提取（DefaultPlayerBattleFeatureExtractor / DefaultTeamBattleFeatureExtractor）
 ```
 
 #### 处理流水线

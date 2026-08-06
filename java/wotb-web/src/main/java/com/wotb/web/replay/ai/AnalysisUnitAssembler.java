@@ -4,12 +4,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
-import java.util.List;
 import java.util.Map;
 
-import com.wotb.core.processing.AnalysisUnitResult;
 import com.wotb.core.processing.BattleGroupingKey;
-import com.wotb.core.processing.ReplayAnalysisScope;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.RecorderEntityMapping;
@@ -17,33 +14,14 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 
 /**
- * 分析单元映射与计数组装的唯一实现。
- * <p>负责把 {@link ReplayPerspectiveGroup} 映射为稳定的 {@code analysisUnitId}
- * 与不携带 AI 文本的 {@link AnalysisUnitResult}，并暴露给 Player/Team 编排复用。
- * 纯映射，不含业务判断；不发送 HTTP、不构建 Prompt。</p>
+ * 分析单元映射的唯一实现。
+ * <p>负责把 {@link ReplayPerspectiveGroup} 映射为稳定的 {@code analysisUnitId}，
+ * 并查找录像者 entity 映射，供 Player/Team 编排复用。纯映射，不含业务判断；
+ * 不发送 HTTP、不构建 Prompt。</p>
  */
 public final class AnalysisUnitAssembler {
 
     private AnalysisUnitAssembler() {
-    }
-
-    /**
-     * 构建分析单元列表（不含 AI 结果，用于 controller 响应的 units 字段）。
-     */
-    public static List<AnalysisUnitResult> buildAnalysisUnits(
-            final List<ReplayPerspectiveGroup> groups,
-            final ReplayAnalysisScope scope) {
-        return groups.stream()
-                .map(g -> new AnalysisUnitResult(
-                        analysisUnitId(g),
-                        g.battleIdentity(),
-                        scope,
-                        g.key().perspectiveTeam(),
-                        g.representative().fileName(),
-                        g.duplicates().stream().map(ReplayProcessingResult::fileName).toList(),
-                        null, null
-                ))
-                .toList();
     }
 
     /**

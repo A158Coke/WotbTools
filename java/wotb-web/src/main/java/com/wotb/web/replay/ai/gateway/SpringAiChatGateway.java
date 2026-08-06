@@ -395,8 +395,7 @@ public class SpringAiChatGateway implements AiChatGateway {
                 reasoningTokens(usage),
                 cacheHitTokens(usage),
                 cacheMissTokens(usage),
-                finishReason(response),
-                Map.of("correlationId", correlationId));
+                finishReason(response));
     }
 
     private static Prompt buildPrompt(final AiChatRequest request, final String model) {

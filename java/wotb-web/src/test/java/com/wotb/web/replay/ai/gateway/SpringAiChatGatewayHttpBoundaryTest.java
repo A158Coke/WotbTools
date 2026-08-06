@@ -72,7 +72,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
         final SpringAiChatGateway gateway = gateway();
         final AiChatResponse result = gateway.chat(new AiChatRequest(
                 "system-instructions", "player-evidence", "deepseek-v4-flash",
-                null, 4096, true, "max", "corr-boundary", "SINGLE_PLAYER_BATTLE", null));
+                null, 4096, true, "max", "corr-boundary", "SINGLE_PLAYER_BATTLE"));
 
         assertEquals(1, requests.size(), "exactly one upstream request expected");
         final CapturedRequest captured = requests.getFirst();
@@ -112,7 +112,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
         final SpringAiChatGateway gateway = gateway();
         gateway.chat(new AiChatRequest(
                 "system-instructions", "player-evidence", "deepseek-v4-flash",
-                null, 2048, false, "max", "corr-boundary-2", "SINGLE_PLAYER_BATTLE", null));
+                null, 2048, false, "max", "corr-boundary-2", "SINGLE_PLAYER_BATTLE"));
 
         final CapturedRequest captured = requests.getFirst();
         final JsonNode body = new ObjectMapper().readTree(captured.body());
@@ -235,7 +235,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
     private static AiChatRequest request() {
         return new AiChatRequest("system-instructions", "player-evidence",
                 "deepseek-v4-flash", null, 4096, true, "max",
-                "corr-boundary", "SINGLE_PLAYER_BATTLE", null);
+                "corr-boundary", "SINGLE_PLAYER_BATTLE");
     }
 
     private static String completionJson() {
