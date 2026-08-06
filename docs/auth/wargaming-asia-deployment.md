@@ -63,4 +63,5 @@ WG 首次登录自动获得 `wotbtools-user` 依赖 realm `defaultRoles`（决�
 3. 回跳 Keycloak broker endpoint（state 校验通过）→ 进入 WotBTools 个人中心。
 4. 个人中心显示：服务器 Asia、资料来源 Wargaming.net、账号已验证、官方昵称与 account_id；无编辑/解绑按钮。
 5. 同一玩家再次登录 → 同一 Keycloak 用户（username=account_id）；在 WG 改名后再次登录，昵称属性自动刷新。
-6. 中国大陆 QQ 登录路径不变，CN 手动绑定仍可用；存量用户 `region=CN` 已由迁移脚本补齐（138/138，2026-08-06）。
+6. 安全验证：登录身份只来自 `prolongate` 服务端返回的 `account_id`（浏览器回调参数不可信）；攻击者无法用账号 A 的有效 token 篡改回调登录成账号 B。
+7. 中国大陆 QQ 登录路径不变，CN 手动绑定仍可用；存量用户 `region=CN` 已由迁移脚本补齐（138/138，2026-08-06）。

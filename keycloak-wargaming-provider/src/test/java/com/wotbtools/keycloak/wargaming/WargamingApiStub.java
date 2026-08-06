@@ -18,6 +18,8 @@ final class WargamingApiStub implements AutoCloseable {
     private final HttpServer server;
     final Map<String, String> responses = new ConcurrentHashMap<>();
     final List<String> requests = new CopyOnWriteArrayList<>();
+    final Map<String, String> lastQueryByPath = new ConcurrentHashMap<>();
+    final List<String> requestBodies = new CopyOnWriteArrayList<>();
     private volatile String lastRequestQuery = "";
 
     private WargamingApiStub(final HttpServer server) {
@@ -30,8 +32,12 @@ final class WargamingApiStub implements AutoCloseable {
         server.createContext("/", exchange -> {
             final String path = exchange.getRequestURI().getPath();
             stub.requests.add(path);
-            stub.lastRequestQuery = exchange.getRequestURI().getRawQuery() == null
+            final String query = exchange.getRequestURI().getRawQuery() == null
                     ? "" : exchange.getRequestURI().getRawQuery();
+            stub.lastRequestQuery = query;
+            stub.lastQueryByPath.put(path, query);
+            final byte[] bodyBytes = exchange.getRequestBody().readAllBytes();
+            stub.requestBodies.add(new String(bodyBytes, StandardCharsets.UTF_8));
             final String body = stub.responses.getOrDefault(path, "{\"status\":\"error\"}");
             final byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, bytes.length);

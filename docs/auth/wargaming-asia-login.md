@@ -10,7 +10,7 @@
 | D2 | 用户名方案 | WG 用户 Keycloak `username` = `account_id`（纯数字，稳定、不随改名变化）；broker 身份为 `wg:{region}:{account_id}`（ASIA 实例即 `wg:asia:{account_id}`）；QQ 用户 username 维持现有 nickname-hash 方案 |
 | D3 | region 统一 | Keycloak 用户属性统一为 `region`，值统一大写 `CN` / `ASIA`；存量用户通过一次性迁移脚本补 `region=CN`；QQ Provider 对新用户也写 `region=CN`；已有值一律不覆盖 |
 | D4 | displayName | 沿用现有模式：user attribute `displayName`（QQ 已在写，realm 已有 mapper）；WG Provider 照写；存量缺 displayName 的用户如需回填，作为独立迁移另行执行（本期 region 迁移未包含） |
-| D5 | token↔account 绑定 | WG 官方**没有**证明 token 归属的接口。验收以可实现方案为准：state/会话校验 + HTTPS 回调 + prolongate 验证 token 有效性 + `account/info` 核对官方昵称 + 立即 logout。删除"证明 token 属于该 account_id"的不可实现表述 |
+| D5 | token↔account 绑定 | `POST /wot/auth/prolongate/` 响应包含服务端绑定的 `account_id`（官方契约字段：`access_token` / `account_id` / `expires_at`），它就是 token 归属账号的可信证明。最终身份必须来自 prolongate 的 `account_id`；浏览器回调的 `account_id`/`nickname`/`expires_at` 均为不可信输入，只能做一致性检查。公开 `account/info` 只用于取官方昵称，不单独证明 token 归属 |
 | D6 | QQ→WG 绑定（AIA） | **本期不做**，记录为后续任务。登录页文案不得承诺"先 QQ 登录再绑定"；WG 登录创建独立账号 |
 | D7 | WG 用户解绑 | 本期不允许：WG profile 的 server / account_id / source / verified 不可编辑，也不提供解绑/删除入口（后端拒绝 PATCH/DELETE on ASIA profile） |
 | D8 | `wotb_account_verified_at` | 定义为"后端首次可信同步时间"：首次创建 ASIA profile 时写 now，后续昵称刷新不更新。不新增 Keycloak claim |
@@ -197,8 +197,8 @@ WG 成功回调可能包含 `status`、`access_token`、`nickname`、`account_id
 
 - `status` 表示成功；
 - `access_token` 存在；
-- `account_id` 存在且格式正确（纯数字）；
-- `expires_at` 未过期；
+- 回调 `account_id` 若存在，必须格式正确（纯数字）且与 prolongate 返回的可信 `account_id` 一致，否则拒绝（缺失视为未提供，不参与判断）；
+- 回调 `expires_at`、`nickname` 一律视为不可信输入：`expires_at` 不参与判断（token 有效性以 prolongate 为准），`nickname` 仅作一致性比对；
 - 区服来自实例配置 `region`（默认 `ASIA`；EU/NA 实例各自验证对应官方 host）；
 - 回调 `state` 有效。
 
@@ -210,37 +210,56 @@ WG 成功回调可能包含 `status`、`access_token`、`nickname`、`account_id
 POST https://api.wotblitz.asia/wot/auth/prolongate/
 ```
 
-参数：`application_id`、`access_token`。用于确认 token 有效并刷新有效期。
+参数：`application_id`、`access_token`。
+
+官方响应契约（开发者门户 `wot/auth/prolongate` 方法文档）：
+
+```text
+access_token  刷新后的 token（后续 account/info、logout 一律使用它）
+account_id    token 所属账号 ID（服务端验证后返回，登录身份的**唯一可信来源**）
+expires_at    token 过期时间
+```
+
+实现要求：
+
+- `account_id` 必须存在且为合法正数，缺失/非法一律拒绝登录；
+- 返回结构化结果（刷新后的 token + 可信 `account_id` + `expires_at`），不得只返回 token 字符串。
 
 ### 3. 查询 WoTB 官方账号资料
 
 ```text
 GET https://api.wotblitz.asia/wotb/account/info/
      ?application_id={WG_APPLICATION_ID}
-     &account_id={回调 account_id}
+     &account_id={可信 account_id}
+     &access_token={刷新后的 token}
 ```
 
 确认：
 
 - API 返回成功；
-- 返回结果中存在该 `account_id`；
-- 获取官方当前昵称，并（可选）与回调 `nickname` 比对，不一致时告警/拒绝。
+- 返回结果中存在该 `account_id`，取官方当前昵称；
+- 公开 `account/info` 只用于获取/刷新官方昵称，**不能单独证明 token 归属**——归属证明只由第 2 步 prolongate 的 `account_id` 完成；
+- 回调 `nickname` 若存在且与官方昵称不一致则拒绝（身份仍以官方昵称为准）。
 
 ### 4. 身份一致性结论（决策 D5）
 
-WG 官方**不提供**"token 归属账号"的证明接口（`account/info` 的 `access_token` 仅用于访问私人数据，不校验归属；`prolongate` 不返回账号身份）。因此身份可信性由以下组合保证，验收以此为准：
+`prolongate` 在服务端验证 token 后返回其所属 `account_id`，实现 token↔account 服务端绑定。身份可信性由以下组合保证，验收以此为准：
 
 ```text
 Keycloak state/会话校验 + HTTPS 回调送达受控 redirect_uri
-+ prolongate 验证 token 有效 + account/info 获取官方昵称 + 立即 logout
++ prolongate 返回 token 绑定的可信 account_id
++ account/info 获取官方昵称（携带刷新后的 token）
++ 回调 account_id/nickname 仅作一致性检查
++ 立即 logout（使用刷新后的 token）
 ```
 
-任何一环失败都终止登录，不创建/关联 Keycloak 用户。
+任何一环失败都终止登录，不创建/关联 Keycloak 用户。禁止「有效 token + 任意公开 account_id 查询」来认定登录身份。
 
 ### 5. 构造稳定身份
 
-- broker 唯一标识：`wg:{region}:{account_id}`（如 ASIA 实例 `wg:asia:{account_id}`；不使用昵称）。
-- Keycloak `username`：`account_id`（决策 D2，纯数字、稳定）。
+- broker 唯一标识：`wg:{region}:{可信 account_id}`（如 ASIA 实例 `wg:asia:{account_id}`；不使用昵称、不使用浏览器回调值）。
+- Keycloak `username`：可信 `account_id`（决策 D2，纯数字、稳定）。
+- `BrokeredIdentityContext.id` / `brokerUserId` / `username` / `wotb.account_id` 全部来自 prolongate 的可信 `account_id`。
 - 首次登录创建用户；重复登录按 broker 身份找到同一用户。
 - **重复登录时显式刷新**（决策 D11）：更新 `displayName`、`wotb.nickname`；不修改 `username`、broker id 等稳定身份。
 
@@ -551,6 +570,9 @@ keycloak-wargaming-provider
 - WG 拒绝登录时安全返回；
 - 缺少 token 时拒绝；token 过期（prolongate 失败）时拒绝；
 - 官方昵称与回调不一致时拒绝；
+- **篡改攻击测试**：token 实际属于账号 A，回调 `account_id` 被改成账号 B，`account/info` 对 B 正常返回昵称 → 登录必须失败、`authenticated` 不得调用、不得创建 `wg:asia:B`、logout 仍执行；
+- 回调 `account_id` 与 prolongate 可信 `account_id` 一致 → 成功；回调缺失 → 成功（身份来自可信值）；回调存在但非法/不一致 → 拒绝；
+- prolongate 缺失或非法 `account_id` → 拒绝；
 - `account/info` 失败时不创建用户；
 - 成功登录后生成稳定的 `wg:asia:{account_id}` 与 `username = account_id`；
 - 实例配置 region=EU/NA 时生成 `wg:eu:{account_id}` / `wg:na:{account_id}` 且 `region` 属性同步写入 EU / NA；
@@ -558,7 +580,8 @@ keycloak-wargaming-provider
 - **WG 昵称变化后重复登录：同一用户，`displayName` / `wotb.nickname` 已更新，username 不变**（决策 D11）；
 - region / displayName / wotb.* 属性写入正确；
 - Token 不进用户属性和 JWT；
-- 成功或失败路径都会尽力 logout；
+- 成功或失败路径都会尽力 logout，且 logout 使用 prolongate 刷新后的 token；
+- `IOException` 不把 Keycloak 工作线程标记为 interrupted；`InterruptedException` 恢复中断标志（测试结束清除状态，不污染其他测试）；
 - `WG_APPLICATION_ID` 缺失时返回明确错误。
 
 ### 后端
@@ -597,16 +620,16 @@ keycloak-wargaming-provider
 → 跳转到 WG 官方页面（api.wotblitz.asia）
 → 用户只在 WG 官方页面输入凭据
 → WG 回调 Keycloak（broker endpoint，state 校验通过）
-→ 服务端 prolongate 验证 token 有效
-→ 调用 WoTB {region} account/info 获取官方昵称并核对（region 来自实例配置，当前 ASIA）
-→ 创建或找到稳定 Keycloak 用户（username = account_id，broker = wg:{region}:{account_id}）
+→ 服务端 prolongate 验证 token 并返回绑定的可信 account_id（浏览器回调 account_id/nickname 仅一致性检查）
+→ 携带刷新后的 token 调用 WoTB {region} account/info 获取官方昵称（region 来自实例配置，当前 ASIA）
+→ 创建或找到稳定 Keycloak 用户（username = 可信 account_id，broker = wg:{region}:{可信 account_id}）
 → 自动获得 wotbtools-user
 → 写入 region=ASIA / displayName / wotb.* 属性
 → JWT 包含 wotb_region / wotb_account_id / wotb_nickname / wotb_verified(boolean)
 → WotBTools 首次懒创建 ASIA user_profile（source=WARGAMING，verified_at=首次同步时间）
 → 自动填写 account_id 和 nickname
 → 用户进入个人资料页，显示"Wargaming.net 已验证"
-→ WG Token 已 logout 且没有被保存
+→ WG Token（刷新后的值）已 logout 且没有被保存
 → 同一玩家再次登录仍返回同一用户；改名后昵称属性更新、身份不变
 ```
 

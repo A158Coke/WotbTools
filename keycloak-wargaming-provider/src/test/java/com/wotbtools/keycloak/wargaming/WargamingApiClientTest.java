@@ -10,6 +10,7 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -70,8 +71,13 @@ class WargamingApiClientTest {
     @Test
     void prolongateReturnsRefreshedToken() {
         stub.responses.put("/wot/auth/prolongate/",
-                "{\"status\":\"ok\",\"access_token\":\"tok-2\",\"expires_at\":9999999999}");
-        assertEquals("tok-2", client.prolongate("app-1", "tok-1"));
+                "{\"status\":\"ok\",\"access_token\":\"tok-2\",\"account_id\":512345678,"
+                        + "\"expires_at\":9999999999}");
+        final WargamingApiClient.ProlongatedToken result =
+                client.prolongate("app-1", "tok-1");
+        assertEquals("tok-2", result.accessToken());
+        assertEquals(512345678L, result.accountId());
+        assertEquals(9999999999L, result.expiresAt());
     }
 
     @Test
@@ -81,10 +87,27 @@ class WargamingApiClientTest {
     }
 
     @Test
+    void prolongateRejectsResponseWithoutTrustedAccountId() {
+        stub.responses.put("/wot/auth/prolongate/",
+                "{\"status\":\"ok\",\"access_token\":\"tok-2\",\"expires_at\":9999999999}");
+        assertThrows(WargamingApiException.class, () -> client.prolongate("app-1", "tok-1"));
+    }
+
+    @Test
+    void prolongateRejectsInvalidAccountId() {
+        stub.responses.put("/wot/auth/prolongate/",
+                "{\"status\":\"ok\",\"access_token\":\"tok-2\",\"account_id\":0}");
+        assertThrows(WargamingApiException.class, () -> client.prolongate("app-1", "tok-1"));
+    }
+
+    @Test
     void fetchOfficialNicknameReturnsOfficialValue() {
         stub.responses.put("/wotb/account/info/",
                 "{\"status\":\"ok\",\"data\":{\"512345678\":{\"account_id\":512345678,\"nickname\":\"PlayerOne\"}}}");
-        assertEquals("PlayerOne", client.fetchOfficialNickname("app-1", 512345678L));
+        assertEquals("PlayerOne",
+                client.fetchOfficialNickname("app-1", 512345678L, "tok-2"));
+        assertTrue(stub.lastQueryByPath.get("/wotb/account/info/")
+                .contains("access_token=tok-2"));
     }
 
     @Test
@@ -92,7 +115,7 @@ class WargamingApiClientTest {
         stub.responses.put("/wotb/account/info/",
                 "{\"status\":\"ok\",\"data\":{\"999\":{\"nickname\":\"Other\"}}}");
         assertThrows(WargamingApiException.class,
-                () -> client.fetchOfficialNickname("app-1", 512345678L));
+                () -> client.fetchOfficialNickname("app-1", 512345678L, "tok-2"));
     }
 
     @Test
@@ -106,5 +129,43 @@ class WargamingApiClientTest {
     void logoutThrowsOnError() {
         stub.responses.put("/wot/auth/logout/", "{\"status\":\"error\"}");
         assertThrows(WargamingApiException.class, () -> client.logout("app-1", "tok-1"));
+    }
+
+    @Test
+    void interruptedRequestsRestoreInterruptFlagOnBothHttpPaths() {
+        final WargamingApiClient throwingClient = new WargamingApiClient(
+                stub.authBase(), stub.accountBase(), request -> {
+                    throw new InterruptedException("boom");
+                });
+        final Thread thread = Thread.currentThread();
+        try {
+            assertThrows(WargamingApiException.class,
+                    () -> throwingClient.fetchLoginRedirectUrl(
+                            "app-1", "https://auth.wotbtools.com/endpoint"));
+            assertTrue(thread.isInterrupted());
+            Thread.interrupted();
+
+            assertThrows(WargamingApiException.class,
+                    () -> throwingClient.fetchOfficialNickname("app-1", 512345678L, "tok"));
+            assertTrue(thread.isInterrupted());
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    void ioExceptionsDoNotMarkThreadInterruptedOnBothHttpPaths() {
+        final WargamingApiClient throwingClient = new WargamingApiClient(
+                stub.authBase(), stub.accountBase(), request -> {
+                    throw new IOException("boom");
+                });
+        assertThrows(WargamingApiException.class,
+                () -> throwingClient.fetchLoginRedirectUrl(
+                        "app-1", "https://auth.wotbtools.com/endpoint"));
+        assertFalse(Thread.currentThread().isInterrupted());
+
+        assertThrows(WargamingApiException.class,
+                () -> throwingClient.fetchOfficialNickname("app-1", 512345678L, "tok"));
+        assertFalse(Thread.currentThread().isInterrupted());
     }
 }
