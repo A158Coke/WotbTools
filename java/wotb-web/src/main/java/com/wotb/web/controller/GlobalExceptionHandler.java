@@ -24,6 +24,7 @@ import java.time.Instant;
 import java.util.Locale;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 @RestControllerAdvice
@@ -32,7 +33,7 @@ public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
     private static final Pattern ERROR_CODE_PATTERN = Pattern.compile("[A-Z][A-Z0-9_]*");
     /** WoTB 账号业务拒绝：记录安全错误码用于诊断（不含 token / JWT / 敏感值）。 */
-    private static final java.util.Set<String> WOTB_AUDIT_ERRORS = java.util.Set.of(
+    private static final Set<String> WOTB_AUDIT_ERRORS = Set.of(
             "WOTB_CLAIMS_INVALID",
             "PROFILE_REGION_MISMATCH",
             "WOTB_ACCOUNT_MISMATCH",
