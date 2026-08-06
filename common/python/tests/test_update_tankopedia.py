@@ -78,9 +78,11 @@ class KnowledgePreservationTest(unittest.TestCase):
         self.assertNotIn("extraKnowledge", merged["3"])
 
     def test_new_vehicle_has_no_fabricated_knowledge(self):
-        vehicles = {"42": {"name": "X", "tier": 10, "type": "lightTank", "nation": "china", "hp": 1500}}
+        vehicles = {"42": {"name": "X", "tier": 10, "type": "lightTank", "nation": "china",
+                           "default_profile": {"hp": 1500}}}
         data = ut.transform(vehicles, "first", {})
         self.assertNotIn("extraKnowledge", data["42"])
+        self.assertEqual(data["42"]["hp"], 1500)
 
     def test_removed_vehicle_disappears(self):
         old = {"1": {"extraKnowledge": "知识"}, "2": {"extraKnowledge": "旧车知识"}}
@@ -118,7 +120,10 @@ class PathSeparationTest(unittest.TestCase):
                 old_bytes_before = f.read()
             vehicles = {
                 "1": {"name": "T1", "tier": 10, "type": "heavyTank", "nation": "germany",
-                      "hp": 2000, "gun": {"damage": [320, 45]}},
+                      "default_profile": {"hp": 2000, "shells": [
+                          {"type": "ARMOR_PIERCING", "damage": 320},
+                          {"type": "HIGH_EXPLOSIVE", "damage": 45},
+                      ]}},
             }
             env_patch = mock.patch.dict(os.environ, {"WG_APPLICATION_ID": "test-id"})
             fetch_patch = mock.patch.object(ut, "fetch_vehicles", return_value=(vehicles, 1))
@@ -139,6 +144,15 @@ class PathSeparationTest(unittest.TestCase):
 
 
 class PaginationTest(unittest.TestCase):
+    def test_single_full_response_terminates(self):
+        # 真实契约：接口忽略 limit/offset，单次响应返回完整数据集（meta.count 即全集）
+        payload = {"status": "ok", "meta": {"count": 529},
+                   "data": {str(i): {} for i in range(529)}}
+        opener = FakeOpener([payload])
+        data, pages = ut.fetch_vehicles("app", "asia", "fields", "zh-cn", opener=opener)
+        self.assertEqual(pages, 1)
+        self.assertEqual(len(data), 529)
+
     def test_second_page_accumulates(self):
         opener = FakeOpener([full_page(0), page_with_ids([200, 201, 202])])
         data, pages = ut.fetch_vehicles("app", "asia", "fields", "zh-cn", opener=opener)
@@ -171,15 +185,22 @@ class PaginationTest(unittest.TestCase):
 
 class AlphaDamageTest(unittest.TestCase):
     def test_alpha_takes_first_not_max(self):
-        gun = {"damage": [320, 45, 400]}
-        self.assertEqual(ut.alpha_from_gun(gun, "first"), 320)  # 不是 max=400
-        self.assertIsNone(ut.alpha_from_gun(gun, "conservative"))
+        profile = {"shells": [
+            {"type": "ARMOR_PIERCING", "damage": 320},
+            {"type": "HOLLOW_CHARGE", "damage": 45},
+            {"type": "HIGH_EXPLOSIVE", "damage": 400},
+        ]}
+        self.assertEqual(ut.alpha_from_profile(profile, "first"), 320)  # 不是 max=400
+        self.assertIsNone(ut.alpha_from_profile(profile, "conservative"))
 
     def test_conservative_keeps_old_value(self):
         old = {"9": {"alphaDamage": 400}}
         vehicles = {
             "9": {"name": "T", "tier": 10, "type": "heavyTank", "nation": "germany",
-                  "gun": {"damage": [320, 45]}},
+                  "default_profile": {"shells": [
+                      {"type": "ARMOR_PIERCING", "damage": 320},
+                      {"type": "HIGH_EXPLOSIVE", "damage": 45},
+                  ]}},
         }
         data = ut.transform(vehicles, "conservative", old)
         self.assertEqual(data["9"]["alphaDamage"], 400)
@@ -187,10 +208,22 @@ class AlphaDamageTest(unittest.TestCase):
     def test_conservative_new_vehicle_missing_alpha(self):
         vehicles = {
             "9": {"name": "T", "tier": 10, "type": "heavyTank", "nation": "germany",
-                  "gun": {"damage": [320, 45]}},
+                  "default_profile": {"shells": [
+                      {"type": "ARMOR_PIERCING", "damage": 320},
+                      {"type": "HIGH_EXPLOSIVE", "damage": 45},
+                  ]}},
         }
         data = ut.transform(vehicles, "conservative", {})
         self.assertNotIn("alphaDamage", data["9"])
+
+    def test_alpha_uses_first_standard_shell_of_real_shape(self):
+        # IS-4 真实响应形状：首发 AP 420，HE 500 在后——取 420 而非 500
+        profile = {"shells": [
+            {"type": "ARMOR_PIERCING", "damage": 420},
+            {"type": "HOLLOW_CHARGE", "damage": 360},
+            {"type": "HIGH_EXPLOSIVE", "damage": 500},
+        ]}
+        self.assertEqual(ut.alpha_from_profile(profile, "first"), 420)
 
 
 class ApiErrorLogTest(unittest.TestCase):

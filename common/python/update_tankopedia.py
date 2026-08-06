@@ -12,7 +12,9 @@
   （默认同路径）；生产 Workflow 必须使用不同路径，避免读取与写入互相覆盖。
 - 手工维护的 ``extraKnowledge`` 会被保留：刷新后新数据中仍存在的 tank_id 继续沿用旧知识点，
   被 WG 官方删除的车型一并消失；若某个仍存在 tank_id 的知识点丢失，脚本直接失败。
-- alphaDamage 规则：取官方 gun.damage 数组第一项（标准弹伤害），禁止使用 max。
+- alphaDamage 规则：取官方 ``default_profile.shells`` 第一发（标准弹）伤害，禁止使用 max。
+  （真实响应验证：shells 按弹种顺序排列，第一发为该车标准弹，如 IS-4 首发 AP 420、
+  KV-2 首发 HE 450；HE 往往伤害更高，max 会错取 HE。）
 - 日志不输出 application_id、完整 URL 或完整响应。
 - 脚本无第三方依赖（仅标准库 urllib）。
 """
@@ -26,7 +28,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 API_HOST = "https://api.wotblitz.{region}/wotb/encyclopedia/vehicles/"
-DEFAULT_FIELDS = "name,tier,type,nation,hp,gun.damage"
+DEFAULT_FIELDS = "name,tier,type,nation,default_profile.hp,default_profile.shells"
 DEFAULT_LANGUAGE = "zh-cn"
 PAGE_LIMIT = 100
 MAX_PAGES = 100
@@ -134,7 +136,10 @@ def merge_extra_knowledge(new_data, old_data):
 
 
 def http_get_vehicles(url, region, opener=None):
-    """GET 并解析 WG vehicles 响应。错误日志不含 application_id / 完整 URL / 完整响应。"""
+    """GET 并解析 WG vehicles 响应，返回 (data, total)。
+
+    错误日志不含 application_id / 完整 URL / 完整响应。
+    """
     try:
         if opener is not None:
             with opener.open(url, timeout=60) as resp:
@@ -149,13 +154,18 @@ def http_get_vehicles(url, region, opener=None):
         message = error.get("message") or payload.get("status")
         raise RuntimeError("WG_API_ERROR region=%s message=%s" % (region, message))
     batch = payload.get("data")
-    return batch if isinstance(batch, dict) else {}
+    meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+    total = meta.get("count")
+    return (batch if isinstance(batch, dict) else {}), total
 
 
 def fetch_vehicles(app_id, region, fields, language, opener=None):
     """分页拉取全部车辆，返回 (data, pages)。
 
-    契约：WG vehicles 接口支持 limit/offset；每页累计数量必须增长，否则视为死循环。
+    真实契约（2026-08-06 实测）：Blitz encyclopedia/vehicles 忽略 limit/offset，
+    单次响应即返回完整数据集（meta.count 即全集），因此第一页就会终止。
+    保留 MAX_PAGES 与无进展检测作为未来契约变化的防御：
+    每页累计数量必须增长，否则视为死循环。
     日志只输出 region / offset / page / batch size / 累计车辆数，不输出 application_id。
     """
     data = {}
@@ -174,7 +184,7 @@ def fetch_vehicles(app_id, region, fields, language, opener=None):
         })
         url = API_HOST.format(region=region) + "?" + query
         print("GET region=%s offset=%d" % (region, offset))
-        batch = http_get_vehicles(url, region, opener=opener)
+        batch, total = http_get_vehicles(url, region, opener=opener)
         if not batch:
             break
         previous_count = len(data)
@@ -185,40 +195,49 @@ def fetch_vehicles(app_id, region, fields, language, opener=None):
             "page=%d offset=%d batch_size=%d cumulative=%d"
             % (pages, offset, len(batch), len(data))
         )
-        if len(batch) < PAGE_LIMIT:
+        if len(batch) < PAGE_LIMIT or (total is not None and len(data) >= total):
             break
         offset += PAGE_LIMIT
     return data, pages
 
 
-def log_gun_damage_samples(vehicles, count=5):
-    """打印前几辆车的 gun.damage 数组（脱敏，无 application_id / 完整响应），用于人工确认弹序。"""
-    print("gun.damage samples (first %d vehicles):" % count)
+def log_shell_samples(vehicles, count=5):
+    """打印前几辆车的 default_profile.shells（脱敏，无 application_id / 完整响应），用于人工确认弹序。"""
+    print("shell samples (first %d vehicles):" % count)
     for tank_id, vehicle in list(vehicles.items())[:count]:
-        gun = vehicle.get("gun") if isinstance(vehicle, dict) else None
-        damages = gun.get("damage") if isinstance(gun, dict) else None
+        profile = vehicle.get("default_profile") if isinstance(vehicle, dict) else None
+        shells = profile.get("shells") if isinstance(profile, dict) else None
+        sample = [(shell.get("type"), shell.get("damage")) for shell in shells] \
+            if isinstance(shells, list) else None
         print(
-            "  tank=%s name=%s gun.damage=%s"
-            % (tank_id, vehicle.get("name"), json.dumps(damages, ensure_ascii=False))
+            "  tank=%s name=%s shells=%s"
+            % (tank_id, vehicle.get("name"), json.dumps(sample, ensure_ascii=False))
         )
 
 
-def alpha_from_gun(gun, rule):
-    """从 gun.damage 取炮伤。
+def alpha_from_profile(profile, rule):
+    """从 default_profile.shells 取炮伤。
 
-    rule="first"：取数组第一项（标准弹伤害，已通过真实响应验证，不使用 max）。
+    rule="first"：取第一发（标准弹）伤害。真实响应验证：shells 按弹种顺序排列，第一发为该车
+    标准弹（如 IS-4 首发 AP 420 / KV-2 首发 HE 450 / T49 ATM 首发 HEAT 560），
+    而 HE 往往伤害更高，因此禁止使用 max。
     rule="conservative"：返回 None，由调用方保留旧值或让新车辆缺失该字段。
     """
-    if not isinstance(gun, dict):
+    if not isinstance(profile, dict):
         return None
-    damages = gun.get("damage")
-    if isinstance(damages, list):
-        if not damages:
-            return None
-        if rule == "first":
-            return as_int(damages[0])
+    shells = profile.get("shells")
+    if not isinstance(shells, list) or not shells:
         return None
-    return as_int(damages)
+    if rule == "first" and isinstance(shells[0], dict):
+        return as_int(shells[0].get("damage"))
+    return None
+
+
+def hp_from_profile(profile):
+    """从 default_profile.hp 取车辆血量；缺失返回 None。"""
+    if not isinstance(profile, dict):
+        return None
+    return as_int(profile.get("hp"))
 
 
 def transform(vehicles, alpha_rule, old_data):
@@ -227,8 +246,9 @@ def transform(vehicles, alpha_rule, old_data):
     out = {}
     for tank_id, vehicle in vehicles.items():
         tier = as_int(vehicle.get("tier"))
+        profile = vehicle.get("default_profile")
         if alpha_rule == "first":
-            alpha = alpha_from_gun(vehicle.get("gun"), "first")
+            alpha = alpha_from_profile(profile, "first")
         else:
             old_entry = old_data.get(tank_id)
             alpha = as_int(old_entry.get("alphaDamage")) if isinstance(old_entry, dict) else None
@@ -240,7 +260,7 @@ def transform(vehicles, alpha_rule, old_data):
         }
         if alpha and alpha > 0:
             entry["alphaDamage"] = alpha
-        hp = as_int(vehicle.get("hp"))
+        hp = hp_from_profile(profile)
         if hp and hp > 0:
             entry["hp"] = hp
         out[str(tank_id)] = entry
@@ -276,7 +296,7 @@ def main(argv=None):
     parser.add_argument("--output", default=REPO_TANKOPEDIA,
                         help="新数据写入路径（默认仓库 common/tankopedia.json）")
     parser.add_argument("--alpha-rule", choices=["first", "conservative"], default="first",
-                        help="alphaDamage 规则：first=gun.damage 第一项（标准弹，已验证）；"
+                        help="alphaDamage 规则：first=default_profile.shells 第一发标准弹（已验证）；"
                              "conservative=保留旧值/新车辆缺失")
     args = parser.parse_args(argv)
 
@@ -288,7 +308,7 @@ def main(argv=None):
     old_data = load_existing_data(args.existing)
     vehicles, pages = fetch_vehicles(app_id, args.region, DEFAULT_FIELDS, args.language)
     print("fetched_vehicles=%d pages=%d" % (len(vehicles), pages))
-    log_gun_damage_samples(vehicles)
+    log_shell_samples(vehicles)
 
     data = transform(vehicles, args.alpha_rule, old_data)
     data = filter_by_min_tier(data, args.min_tier)

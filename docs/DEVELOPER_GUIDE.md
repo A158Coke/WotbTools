@@ -423,7 +423,7 @@ API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + �
 
 `ReplayParser` 仍解析 `xp`、`credits` 到 `PlayerResult`，但这两个值受经济/加成/首胜等因素影响，不作为玩家战绩展示字段、导出列或 rating 输入。
 
-`Tankopedia` 读取 `alphaDamage` / 车辆血量（`maxHp` / `hp` / `health` / `hitpoints` / `hitPoints` / `maxHealth`）与手工 `extraKnowledge`。`common/python/update_tankopedia.py` 从 Wargaming 官方 WoT Blitz 百科同步（`WG_APPLICATION_ID`，默认只保留 7–10 级），`alphaDamage` 取官方 `gun.damage` 数组第一项（标准弹伤害，已用真实响应验证；不使用 `max`，避免误取高伤弹种）、`hp` 取官方 `hp`；刷新时旧数据只经 `--existing` 读取、新数据只写 `--output`（Workflow 两者路径分离），并按 tank_id 保留合并旧文件中的 `extraKnowledge`，若仍存在的车辆知识点丢失会直接失败。`average_hp` 的目标口径是"敌方 7 台车实际进场总血量 / 7"，但回放里的每台车实际进场血量 / 双方总血量字段尚未确认解析；当前实现为：车辆库有 HP 时用车辆库，否则未知单车 HP 暂定 2400。
+`Tankopedia` 读取 `alphaDamage` / 车辆血量（`maxHp` / `hp` / `health` / `hitpoints` / `hitPoints` / `maxHealth`）与手工 `extraKnowledge`。`common/python/update_tankopedia.py` 从 Wargaming 官方 WoT Blitz 百科同步（`WG_APPLICATION_ID`，默认只保留 7–10 级），`alphaDamage` 取官方 `default_profile.shells` 第一发（标准弹，已用真实响应验证——shells 按弹种顺序排列，如 IS-4 首发 AP 420、KV-2 首发 HE 450，HE 往往伤害更高故禁止 `max`）、`hp` 取官方 `default_profile.hp`；刷新时旧数据只经 `--existing` 读取、新数据只写 `--output`（Workflow 两者路径分离），并按 tank_id 保留合并旧文件中的 `extraKnowledge`，若仍存在的车辆知识点丢失会直接失败。`average_hp` 的目标口径是"敌方 7 台车实际进场总血量 / 7"，但回放里的每台车实际进场血量 / 双方总血量字段尚未确认解析；当前实现为：车辆库有 HP 时用车辆库，否则未知单车 HP 暂定 2400。
 
 `ReplayParser` 会从 `data.wotreplay` 的 Type 8 / subtype 8 / sub=3 direct HP damage 事件解析攻击者、受害者和伤害值；当阵亡玩家的累计 direct damage 达到 `damageReceived` 阈值时，当前攻击者被推断为击杀者，并把该击杀者对受害者的累计 direct damage / penetrations 写入 `PlayerResult.killVictims`。
 
