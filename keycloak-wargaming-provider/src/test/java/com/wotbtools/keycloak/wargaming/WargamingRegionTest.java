@@ -19,12 +19,24 @@ class WargamingRegionTest {
 
     @Test
     void eachRegionMapsToItsOfficialApiHost() {
-        assertEquals("https://api.wotblitz.asia/wot/auth/",
+        assertEquals("api.worldoftanks.asia", WargamingRegion.ASIA.authHost());
+        assertEquals("api.wotblitz.asia", WargamingRegion.ASIA.accountHost());
+        assertEquals("https://api.worldoftanks.asia/wot/auth/",
                 WargamingRegion.ASIA.authBase().toString());
         assertEquals("https://api.wotblitz.asia/wotb/account/",
                 WargamingRegion.ASIA.accountBase().toString());
-        assertEquals("https://api.wotblitz.eu/wot/auth/",
+
+        assertEquals("api.worldoftanks.eu", WargamingRegion.EU.authHost());
+        assertEquals("api.wotblitz.eu", WargamingRegion.EU.accountHost());
+        assertEquals("https://api.worldoftanks.eu/wot/auth/",
                 WargamingRegion.EU.authBase().toString());
+        assertEquals("https://api.wotblitz.eu/wotb/account/",
+                WargamingRegion.EU.accountBase().toString());
+
+        assertEquals("api.worldoftanks.com", WargamingRegion.NA.authHost());
+        assertEquals("api.wotblitz.com", WargamingRegion.NA.accountHost());
+        assertEquals("https://api.worldoftanks.com/wot/auth/",
+                WargamingRegion.NA.authBase().toString());
         assertEquals("https://api.wotblitz.com/wotb/account/",
                 WargamingRegion.NA.accountBase().toString());
     }

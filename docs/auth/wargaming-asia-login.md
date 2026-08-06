@@ -6,7 +6,7 @@
 
 | # | 原不确定点 | 最终决定 |
 |---|---|---|
-| D1 | 认证 API 域名 | 使用 WoT **Blitz** 认证接口（不是 `api.worldoftanks.*`，那是 WoT PC）。三个官方 Blitz host 已实测：`api.wotblitz.asia` / `api.wotblitz.eu` / `api.wotblitz.com` 均返回统一 `application_id` 要求，证明 application_id 按 Blitz 游戏注册、跨区通用；SPI 将区服参数化为枚举白名单 |
+| D1 | API 域名 | 认证接口（login/prolongate/logout）由 Wargaming.net ID 认证服务承载，Host 为 `api.worldoftanks.{asia|eu|com}/wot/auth/`；WoT Blitz 账号资料接口（account/info）为 `api.wotblitz.{asia|eu|com}/wotb/account/`。生产实测 `api.wotblitz.*` 不提供 `/wot/auth/*`（返回 `METHOD_NOT_FOUND`），认证与账号 Host 必须分离；`application_id` 按 Blitz 游戏注册、跨区通用，SPI 将区服参数化为枚举白名单 |
 | D2 | 用户名方案 | WG 用户 Keycloak `username` = `wg_{region}_{account_id}`（区服隔离，如 `wg_asia_512345678`；防跨区服 account_id 冲突），broker 身份仍为 `wg:{region}:{account_id}`；游戏账号 ID 只以纯数字存 `wotb.account_id`；QQ 用户 username 维持现有 nickname-hash 方案 |
 | D3 | region 统一 | Keycloak 用户属性统一为 `region`，值统一大写 `CN` / `ASIA` / `EU` / `NA`（WG 区服由实例配置决定）；存量用户通过一次性迁移脚本补 `region=CN`；QQ Provider 对新用户也写 `region=CN`；已有值一律不覆盖 |
 | D4 | displayName | 沿用现有模式：user attribute `displayName`（QQ 已在写，realm 已有 mapper）；WG Provider 照写；存量缺 displayName 的用户如需回填，作为独立迁移另行执行（本期 region 迁移未包含） |
@@ -145,14 +145,14 @@ NA:   alias wargaming-na   / displayName Wargaming.net North America / region NA
 ### 2. API 白名单（枚举固定，不接受用户/前端传入任何 URL）
 
 ```text
-区服     认证 API                     WoTB 账号 API
-ASIA    https://api.wotblitz.asia/wot/auth/    https://api.wotblitz.asia/wotb/account/
-EU      https://api.wotblitz.eu/wot/auth/      https://api.wotblitz.eu/wotb/account/
-NA      https://api.wotblitz.com/wot/auth/     https://api.wotblitz.com/wotb/account/
+区服   认证 API（worldoftanks）              WoTB 账号 API（wotblitz）
+ASIA   https://api.worldoftanks.asia/wot/auth/   https://api.wotblitz.asia/wotb/account/
+EU     https://api.worldoftanks.eu/wot/auth/     https://api.wotblitz.eu/wotb/account/
+NA     https://api.worldoftanks.com/wot/auth/    https://api.wotblitz.com/wotb/account/
 ```
 
 - host 与区服的映射写在 `WargamingRegion` 枚举白名单里，调用方不能传入任意 URL；
-- 三个 host 实测均返回统一错误 `{"status":"error","error":{"field":"application_id","message":"APPLICATION_ID_NOT_SPECIFIED","code":402}}`，确认是同一 Blitz API 家族、`application_id` 跨区通用（单个 `WG_APPLICATION_ID` 即可服务所有区服）。
+- 生产实测：`api.wotblitz.*` 的 `/wot/auth/login/` 返回 `{"status":"error","error":{"field":null,"message":"METHOD_NOT_FOUND","code":404}}`；认证必须走 `api.worldoftanks.*/wot/auth/`。`api.worldoftanks.*/wot/auth/*` 与 `api.wotblitz.*/wotb/account/*` 均按 Blitz 游戏校验 `application_id`（跨区通用，单个 `WG_APPLICATION_ID` 即可服务所有区服）。
 
 ### 3. Application ID
 
@@ -168,7 +168,7 @@ NA      https://api.wotblitz.com/wot/auth/     https://api.wotblitz.com/wotb/acc
 Keycloak 发起登录时构造：
 
 ```text
-GET https://api.wotblitz.asia/wot/auth/login/
+GET https://api.worldoftanks.asia/wot/auth/login/
      ?application_id={WG_APPLICATION_ID}
      &redirect_uri={Keycloak broker endpoint}
      &nofollow=1
@@ -209,7 +209,7 @@ WG 成功回调可能包含 `status`、`access_token`、`nickname`、`account_id
 调用：
 
 ```text
-POST https://api.wotblitz.asia/wot/auth/prolongate/
+POST https://api.worldoftanks.asia/wot/auth/prolongate/
 ```
 
 参数：`application_id`、`access_token`。
@@ -293,7 +293,7 @@ WG 首次登录创建用户后自动获得 `wotbtools-user`：
 完成验证后（成功或失败路径都要尽最大努力）调用：
 
 ```text
-POST https://api.wotblitz.asia/wot/auth/logout/
+POST https://api.worldoftanks.asia/wot/auth/logout/
 ```
 
 WG Access Token 绝对不能：
@@ -535,8 +535,11 @@ keycloak-wargaming-provider
 
 ### Keycloak Provider（决策 D13：JUnit 5 + JDK 内置 HttpServer stub）
 
-- 成功生成 ASIA WG 登录地址（正确域名 `api.wotblitz.asia/wot/auth/login/`、参数完整、含 state）；
-- 每个区服生成对应白名单 host 的登录地址（EU→`api.wotblitz.eu`、NA→`api.wotblitz.com`），未知区服不可构造；
+- 成功生成 ASIA WG 登录地址（正确认证域名 `api.worldoftanks.asia/wot/auth/login/`、参数完整、含 state）；
+- 每个区服生成对应白名单 host 的登录地址（EU→`api.worldoftanks.eu`、NA→`api.worldoftanks.com`），未知区服不可构造；
+- 认证端点（login/prolongate/logout）实际请求走 `api.worldoftanks.*/wot/auth/`，账号端点（account/info）实际请求走 `api.wotblitz.*/wotb/account/`（三区服 × 四端点契约测试）；
+- 登录成功响应从 `data.location` 读取（兼容旧 `url` 字段），缺失时拒绝 `WG login response missing data.location`；
+- WG `status=error` 时抛安全异常消息（含 code/message/field，不含 error.value / application_id / token / 完整响应正文），`performLogin` 捕获后返回安全错误响应而非 Keycloak generic unexpected error；
 - 无效/缺失/过期/被篡改的 state 被拒绝；
 - WG 拒绝登录时安全返回；
 - 缺少 token 时拒绝；token 过期（prolongate 失败）时拒绝；

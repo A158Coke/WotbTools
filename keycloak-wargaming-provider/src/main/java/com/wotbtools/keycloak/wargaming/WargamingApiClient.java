@@ -13,11 +13,12 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 /**
- * Wargaming.net API 客户端。Host 只来自 {@link WargamingRegion} 白名单
- * （认证 {@code /wot/auth/}、账号 {@code /wotb/account/}），不接受任何调用方传入的 URL。
+ * Wargaming.net API 客户端。Host 只来自 {@link WargamingRegion} 白名单：
+ * 认证（login/prolongate/logout）走 {@code api.worldoftanks.* /wot/auth/}，
+ * 账号（account/info）走 {@code api.wotblitz.* /wotb/account/}，不接受调用方传入 URL。
  *
  * <p>安全约定：连接超时 5 秒、总请求超时 10 秒；token 不进入异常正文与日志；
- * 错误正文不回显给浏览器。</p>
+ * 错误正文不回显给浏览器；日志仅含错误码/消息/字段，不含 {@code error.value}。</p>
  */
 final class WargamingApiClient {
 
@@ -75,7 +76,7 @@ final class WargamingApiClient {
     }
 
     /**
-     * 拉取 WG 登录跳转地址（nofollow=1 时 WG 返回 JSON {@code url}，兼容 302 响应）。
+     * 拉取 WG 登录跳转地址（nofollow=1 时 WG 返回 JSON {@code data.location}，兼容 302 响应）。
      *
      * @throws WargamingApiException WG 拒绝或响应不可解析
      */
@@ -102,11 +103,16 @@ final class WargamingApiClient {
             }
             final JsonNode json = parse(response.body());
             requireStatusOk(json);
-            final String url = json.path("url").asText("");
-            if (url.isEmpty()) {
-                throw new WargamingApiException("WG login response missing url");
+            final String location = json.path("data").path("location").asText("");
+            if (!location.isEmpty()) {
+                return location;
             }
-            return url;
+            // 短期兼容旧测试/旧响应格式；主契约以 data.location 为准。
+            final String legacyUrl = json.path("url").asText("");
+            if (legacyUrl.isEmpty()) {
+                throw new WargamingApiException("WG login response missing data.location");
+            }
+            return legacyUrl;
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new WargamingApiException("WG login request interrupted", e);
@@ -211,9 +217,22 @@ final class WargamingApiClient {
     }
 
     private static void requireStatusOk(final JsonNode json) {
-        if (!"ok".equals(json.path("status").asText(""))) {
-            throw new WargamingApiException("WG API rejected the request");
+        if ("ok".equals(json.path("status").asText(""))) {
+            return;
         }
+
+        final JsonNode error = json.path("error");
+        final int code = error.path("code").asInt(0);
+        final String message = error.path("message").asText("UNKNOWN");
+        final String field = error.path("field").asText("");
+
+        // 安全错误信息：不含 error.value / application_id / access_token / 完整响应 JSON。
+        final String safeMessage = field.isBlank()
+                ? "WG API rejected request: code=" + code + ", message=" + message
+                : "WG API rejected request: code=" + code
+                        + ", message=" + message
+                        + ", field=" + field;
+        throw new WargamingApiException(safeMessage);
     }
 
     private static String encode(final String value) {
