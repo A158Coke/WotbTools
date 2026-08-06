@@ -26,14 +26,21 @@ final class WargamingApiClient {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private final HttpClient http;
     private final URI authApiBase;
     private final URI accountApiBase;
+    private final HttpSender sender;
 
     WargamingApiClient(final HttpClient http, final URI authApiBase, final URI accountApiBase) {
-        this.http = http;
+        this(authApiBase, accountApiBase,
+                request -> http.send(request, HttpResponse.BodyHandlers.ofString()));
+    }
+
+    /** 测试钩子：注入可控 sender 以确定性模拟 IOException / InterruptedException。 */
+    WargamingApiClient(final URI authApiBase, final URI accountApiBase,
+                       final HttpSender sender) {
         this.authApiBase = authApiBase;
         this.accountApiBase = accountApiBase;
+        this.sender = sender;
     }
 
     /**
@@ -81,8 +88,7 @@ final class WargamingApiClient {
                 .timeout(REQUEST_TIMEOUT)
                 .build();
         try {
-            final HttpResponse<String> response =
-                    http.send(request, HttpResponse.BodyHandlers.ofString());
+            final HttpResponse<String> response = sender.send(request);
             if (response.statusCode() == 302) {
                 final String location = response.headers().firstValue("Location").orElse("");
                 if (!location.isEmpty()) {
@@ -101,18 +107,24 @@ final class WargamingApiClient {
                 throw new WargamingApiException("WG login response missing url");
             }
             return url;
-        } catch (final IOException | InterruptedException e) {
+        } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
+            throw new WargamingApiException("WG login request interrupted", e);
+        } catch (final IOException e) {
             throw new WargamingApiException("WG login request failed", e);
         }
     }
 
     /**
-     * 验证 token 有效性并刷新有效期，返回刷新后的 token。
+     * 验证 token 有效性并刷新有效期，返回服务端绑定账号的结构化结果。
      *
-     * @throws WargamingApiException token 无效或 WG 服务错误
+     * <p>官方契约（wot/auth/prolongate）响应含 {@code access_token} /
+     * {@code account_id} / {@code expires_at}；其中的 {@code account_id} 是 WG
+     * 服务端在验证 token 后返回的所属账号，是登录身份绑定的唯一可信来源。</p>
+     *
+     * @throws WargamingApiException token 无效、响应缺失可信 account_id 或 WG 服务错误
      */
-    String prolongate(final String applicationId, final String accessToken) {
+    ProlongatedToken prolongate(final String applicationId, final String accessToken) {
         final String body = postForm(authApiBase.resolve("prolongate/"),
                 "application_id=" + encode(applicationId)
                         + "&access_token=" + encode(accessToken));
@@ -122,18 +134,24 @@ final class WargamingApiClient {
         if (token.isEmpty()) {
             throw new WargamingApiException("WG prolongate response missing access_token");
         }
-        return token;
+        final long accountId = requirePositiveAccountId(json.path("account_id"));
+        final long expiresAt = json.path("expires_at").asLong(0L);
+        return new ProlongatedToken(token, accountId, expiresAt);
     }
 
     /**
-     * 查询 WoTB 官方账号资料，返回官方当前昵称。
+     * 查询 WoTB 官方账号资料，返回官方当前昵称。请求携带 access_token，
+     * 但昵称是公开字段；本方法只用于取官方昵称，**不**单独作为身份绑定证明
+     * （身份绑定由 {@link #prolongate} 返回的可信 account_id 完成）。
      *
      * @throws WargamingApiException 接口失败或返回结果中没有该账号
      */
-    String fetchOfficialNickname(final String applicationId, final long accountId) {
+    String fetchOfficialNickname(final String applicationId, final long accountId,
+                                 final String accessToken) {
         final String accountIdText = Long.toString(accountId);
         final URI uri = URI.create(accountApiBase.resolve("info/") + "?application_id="
-                + encode(applicationId) + "&account_id=" + accountIdText);
+                + encode(applicationId) + "&account_id=" + accountIdText
+                + "&access_token=" + encode(accessToken));
         final HttpRequest request = HttpRequest.newBuilder()
                 .uri(uri)
                 .GET()
@@ -171,14 +189,15 @@ final class WargamingApiClient {
 
     private String send(final HttpRequest request) {
         try {
-            final HttpResponse<String> response =
-                    http.send(request, HttpResponse.BodyHandlers.ofString());
+            final HttpResponse<String> response = sender.send(request);
             if (response.statusCode() != 200) {
                 throw new WargamingApiException("WG API returned HTTP " + response.statusCode());
             }
             return response.body();
-        } catch (final IOException | InterruptedException e) {
+        } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
+            throw new WargamingApiException("WG API request interrupted", e);
+        } catch (final IOException e) {
             throw new WargamingApiException("WG API request failed", e);
         }
     }
@@ -199,6 +218,30 @@ final class WargamingApiClient {
 
     private static String encode(final String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private static long requirePositiveAccountId(final JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull() || !node.canConvertToLong()) {
+            throw new WargamingApiException("WG prolongate response missing account_id");
+        }
+        final long value = node.asLong();
+        if (value <= 0) {
+            throw new WargamingApiException("WG prolongate response invalid account_id");
+        }
+        return value;
+    }
+
+    /** 发送 HTTP 请求的接缝：默认走 {@link HttpClient}，测试可注入异常。 */
+    @FunctionalInterface
+    interface HttpSender {
+        HttpResponse<String> send(HttpRequest request) throws IOException, InterruptedException;
+    }
+
+    /**
+     * WG 服务端对 access_token 验证后的结构化结果：刷新后的 token、
+     * token 所属的可信 account_id、过期时间（官方契约字段）。
+     */
+    record ProlongatedToken(String accessToken, long accountId, long expiresAt) {
     }
 
     /** WG API 调用失败（消息不含 token / 原始正文）。 */

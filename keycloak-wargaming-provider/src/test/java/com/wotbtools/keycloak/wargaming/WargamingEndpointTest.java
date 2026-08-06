@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class WargamingEndpointTest {
 
     private static final String VALID_STATE = "state-valid";
-    private static final String FUTURE_EXPIRY = "9999999999";
 
     private WargamingApiStub stub;
     private WargamingEndpoint endpoint;
@@ -50,7 +49,8 @@ class WargamingEndpointTest {
 
     private void okResponses() {
         stub.responses.put("/wot/auth/prolongate/",
-                "{\"status\":\"ok\",\"access_token\":\"tok-2\",\"expires_at\":9999999999}");
+                "{\"status\":\"ok\",\"access_token\":\"tok-2\",\"account_id\":512345678,"
+                        + "\"expires_at\":9999999999}");
         stub.responses.put("/wotb/account/info/",
                 "{\"status\":\"ok\",\"data\":{\"512345678\":{\"account_id\":512345678,\"nickname\":\"PlayerOne\"}}}");
         stub.responses.put("/wot/auth/logout/", "{\"status\":\"ok\"}");
@@ -60,7 +60,7 @@ class WargamingEndpointTest {
     void successCreatesStableIdentityWithAttributesAndLogsOut() {
         okResponses();
         final Response response = endpoint.handleCallback(
-                VALID_STATE, "ok", "tok-1", "PlayerOne", "512345678", FUTURE_EXPIRY);
+                VALID_STATE, "ok", "tok-1", "PlayerOne", "512345678");
 
         assertEquals(200, response.getStatus());
         final BrokeredIdentityContext context = authFake.captured;
@@ -76,6 +76,10 @@ class WargamingEndpointTest {
         assertNull(context.getUserAttribute("access_token"));
         assertNull(context.getUserAttribute("wotb.token"));
         assertEquals(1, stub.logoutCalls());
+        assertTrue(stub.requestBodies.stream()
+                .anyMatch(body -> body.contains("access_token=tok-2")));
+        assertTrue(stub.lastQueryByPath.get("/wotb/account/info/")
+                .contains("access_token=tok-2"));
     }
 
     @Test
@@ -84,7 +88,7 @@ class WargamingEndpointTest {
         config.getConfig().put(WargamingIdentityProviderConfig.REGION_CONFIG_KEY, "EU");
 
         final Response response = endpoint.handleCallback(
-                VALID_STATE, "ok", "tok-1", "PlayerOne", "512345678", FUTURE_EXPIRY);
+                VALID_STATE, "ok", "tok-1", "PlayerOne", "512345678");
 
         assertEquals(200, response.getStatus());
         final BrokeredIdentityContext context = authFake.captured;
@@ -98,32 +102,40 @@ class WargamingEndpointTest {
 
     @Test
     void missingStateRejected() {
-        assertEquals(500, endpoint.handleCallback(null, "ok", "t", "P", "1", FUTURE_EXPIRY).getStatus());
+        assertEquals(500, endpoint.handleCallback(null, "ok", "t", "P", "1").getStatus());
     }
 
     @Test
     void invalidStateRejected() {
-        assertEquals(500, endpoint.handleCallback("state-wrong", "ok", "t", "P", "1", FUTURE_EXPIRY).getStatus());
+        assertEquals(500, endpoint.handleCallback("state-wrong", "ok", "t", "P", "1").getStatus());
     }
 
     @Test
     void wargamingDeniedLoginRejected() {
-        assertEquals(500, endpoint.handleCallback(VALID_STATE, "error", "t", "P", "1", FUTURE_EXPIRY).getStatus());
+        assertEquals(500, endpoint.handleCallback(VALID_STATE, "error", "t", "P", "1").getStatus());
     }
 
     @Test
     void missingTokenRejected() {
-        assertEquals(500, endpoint.handleCallback(VALID_STATE, "ok", null, "P", "1", FUTURE_EXPIRY).getStatus());
+        assertEquals(500, endpoint.handleCallback(VALID_STATE, "ok", null, "P", "1").getStatus());
     }
 
     @Test
     void invalidAccountIdRejected() {
-        assertEquals(500, endpoint.handleCallback(VALID_STATE, "ok", "t", "P", "abc", FUTURE_EXPIRY).getStatus());
+        assertEquals(500, endpoint.handleCallback(VALID_STATE, "ok", "t", "P", "abc").getStatus());
     }
 
     @Test
-    void expiredTokenRejected() {
-        assertEquals(500, endpoint.handleCallback(VALID_STATE, "ok", "t", "P", "1", "1").getStatus());
+    void missingCallbackAccountIdAllowedWhenTokenResponseIsTrusted() {
+        okResponses();
+        final Response response = endpoint.handleCallback(
+                VALID_STATE, "ok", "tok-1", "PlayerOne", null);
+        assertEquals(200, response.getStatus());
+        final BrokeredIdentityContext context = authFake.captured;
+        assertNotNull(context);
+        assertEquals("wg:asia:512345678", context.getBrokerUserId());
+        assertEquals("512345678", context.getUsername());
+        assertEquals("512345678", context.getUserAttribute("wotb.account_id"));
     }
 
     @Test
@@ -131,7 +143,38 @@ class WargamingEndpointTest {
         stub.responses.put("/wot/auth/prolongate/", "{\"status\":\"error\"}");
         stub.responses.put("/wot/auth/logout/", "{\"status\":\"ok\"}");
         assertEquals(500, endpoint.handleCallback(
-                VALID_STATE, "ok", "tok-1", "P", "512345678", FUTURE_EXPIRY).getStatus());
+                VALID_STATE, "ok", "tok-1", "P", "512345678").getStatus());
+        assertNull(authFake.captured);
+        assertEquals(1, stub.logoutCalls());
+    }
+
+    @Test
+    void tokenAccountMismatchRejectsAttackerCallbackAccountId() {
+        stub.responses.put("/wot/auth/prolongate/",
+                "{\"status\":\"ok\",\"access_token\":\"tok-2\",\"account_id\":111111111,"
+                        + "\"expires_at\":9999999999}");
+        stub.responses.put("/wotb/account/info/",
+                "{\"status\":\"ok\",\"data\":{\"512345678\":{\"account_id\":512345678,"
+                        + "\"nickname\":\"PlayerOne\"}}}");
+        stub.responses.put("/wot/auth/logout/", "{\"status\":\"ok\"}");
+
+        final Response response = endpoint.handleCallback(
+                VALID_STATE, "ok", "tok-1", "PlayerOne", "512345678");
+
+        assertEquals(500, response.getStatus());
+        assertNull(authFake.captured);
+        assertEquals(0, stub.requests.stream()
+                .filter("/wotb/account/info/"::equals).count());
+        assertEquals(1, stub.logoutCalls());
+    }
+
+    @Test
+    void prolongateWithoutTrustedAccountIdRejected() {
+        stub.responses.put("/wot/auth/prolongate/",
+                "{\"status\":\"ok\",\"access_token\":\"tok-2\",\"expires_at\":9999999999}");
+        stub.responses.put("/wot/auth/logout/", "{\"status\":\"ok\"}");
+        assertEquals(500, endpoint.handleCallback(
+                VALID_STATE, "ok", "tok-1", "PlayerOne", "512345678").getStatus());
         assertNull(authFake.captured);
         assertEquals(1, stub.logoutCalls());
     }
@@ -139,10 +182,11 @@ class WargamingEndpointTest {
     @Test
     void accountInfoFailureRejected() {
         stub.responses.put("/wot/auth/prolongate/",
-                "{\"status\":\"ok\",\"access_token\":\"tok-2\",\"expires_at\":9999999999}");
+                "{\"status\":\"ok\",\"access_token\":\"tok-2\",\"account_id\":512345678,"
+                        + "\"expires_at\":9999999999}");
         stub.responses.put("/wotb/account/info/", "{\"status\":\"error\"}");
         assertEquals(500, endpoint.handleCallback(
-                VALID_STATE, "ok", "tok-1", "P", "512345678", FUTURE_EXPIRY).getStatus());
+                VALID_STATE, "ok", "tok-1", "P", "512345678").getStatus());
         assertNull(authFake.captured);
     }
 
@@ -150,7 +194,7 @@ class WargamingEndpointTest {
     void nicknameMismatchRejected() {
         okResponses();
         assertEquals(500, endpoint.handleCallback(
-                VALID_STATE, "ok", "tok-1", "FakeName", "512345678", FUTURE_EXPIRY).getStatus());
+                VALID_STATE, "ok", "tok-1", "FakeName", "512345678").getStatus());
         assertNull(authFake.captured);
     }
 
@@ -158,7 +202,7 @@ class WargamingEndpointTest {
     void missingApplicationIdRejected() {
         WargamingIdentityProvider.applicationIdOverride = null;
         assertEquals(500, endpoint.handleCallback(
-                VALID_STATE, "ok", "tok-1", "PlayerOne", "512345678", FUTURE_EXPIRY).getStatus());
+                VALID_STATE, "ok", "tok-1", "PlayerOne", "512345678").getStatus());
         assertNull(authFake.captured);
     }
 
@@ -167,7 +211,7 @@ class WargamingEndpointTest {
         okResponses();
         stub.responses.put("/wot/auth/logout/", "{\"status\":\"error\"}");
         final Response response = endpoint.handleCallback(
-                VALID_STATE, "ok", "tok-1", "PlayerOne", "512345678", FUTURE_EXPIRY);
+                VALID_STATE, "ok", "tok-1", "PlayerOne", "512345678");
         assertEquals(200, response.getStatus());
         assertNotNull(authFake.captured);
         assertEquals(1, stub.logoutCalls());
