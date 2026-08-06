@@ -42,7 +42,7 @@ Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的
 说明：
 
 - API host 由服务端 Region 白名单决定，无需在 Admin Console 填 URL：ASIA→`api.wotblitz.asia`、EU→`api.wotblitz.eu`、NA→`api.wotblitz.com`。
-- 三个 alias 必须与前端 `useAuth.js` 的固定映射完全一致（`wargaming-asia` / `wargaming-eu` / `wargaming-na`）。
+- 三个 alias 决定各自的回调路径；前端未登录时直接跳转 Keycloak 登录页，由 Keycloak 按 IdP Display name 显示按钮（`Wargaming.net Asia` / `Europe` / `North America` + QQ），前端不再硬编码 alias。
 - 重复登录刷新由 Provider 的 `updateBrokeredUser` 直接实现（决策 D11），与 Sync Mode 无关；Sync mode 仍按表格设 FORCE。
 - **只使用一个 Keycloak Client：`wotbtools-web`**。不要创建 `wotbtools-asia` / `wotbtools-eu` / `wotbtools-na`。
 - 自定义 Provider **不使用** Client ID / Client Secret / Authorization URL / Token URL；出现这些字段即配置错了类型。
@@ -77,8 +77,8 @@ Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的
 
 ## 6. 上线后手工验收（三个区服各一遍）
 
-1. 打开 `https://wotbtools.com/?view=profile`（未登录）→ 应显示前端登录选择页（QQ + 三个 Wargaming 区服按钮）。
-2. 点击对应区服按钮 → 跳转该区服官方 host（ASIA→`api.wotblitz.asia`、EU→`api.wotblitz.eu`、NA→`api.wotblitz.com`）→ 登录授权。
+1. 打开 `https://wotbtools.com/?view=profile`（未登录）→ 应自动跳转 Keycloak 登录页，页面列出 QQ + 三个 Wargaming IdP 按钮。
+2. 点击对应区服 IdP 按钮 → 跳转该区服官方 host（ASIA→`api.wotblitz.asia`、EU→`api.wotblitz.eu`、NA→`api.wotblitz.com`）→ 登录授权。
 3. 回跳 Keycloak broker endpoint（state 校验通过）→ 进入 WotBTools 个人中心。
 4. 个人中心显示：对应服务器标签（Asia / Europe / North America）、资料来源 Wargaming.net、账号已验证、官方昵称与 account_id；无编辑/解绑按钮。
 5. 同一玩家再次登录 → 同一 Keycloak 用户（username=`wg_{region}_{account_id}`，如 `wg_asia_512345678`）；在 WG 改名后再次登录，昵称属性自动刷新。

@@ -365,16 +365,6 @@
         "verified": "Статус проверки",
         "verifiedBadge": "Аккаунт подтверждён"
     },
-    "login": {
-        "title": "Вход в WoTBTools",
-        "cnPlayers": "Игроки из материкового Китая",
-        "qqLogin": "Войти через QQ",
-        "wgLogin": "Войти через Wargaming.net",
-        "wgAsia": "Азиатский сервер",
-        "wgEurope": "Европейский сервер",
-        "wgNorthAmerica": "Североамериканский сервер",
-        "independentAccountNote": "Вход через Wargaming.net создаёт отдельный аккаунт; связывание QQ и Wargaming находится в разработке."
-    },
     "replay": {
         "no_files": "Сначала выберите реплеи или папку",
         "preview_failed": "Ошибка предпросмотра",
