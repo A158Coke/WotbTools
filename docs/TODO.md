@@ -71,6 +71,7 @@
 - [x] 后端 Maven、前端 Vitest/Vite 构建成为镜像构建前置门禁。
 - [x] 增量检测使用完整 push range，并覆盖 `rating.json`、`map_names.json`、公共资源与部署脚本。
 - [x] 生产 `wotb` + `keycloak` 双库部署前/每日备份、7 日保留、校验与手动恢复闭环。
+- [x] 生产部署钉住 `sha-<SHA>` + 失败自动回滚：保留上一版 compose / `DEPLOYED_SHA`，三端健康检查失败自动恢复并复检，回滚失败保留现场人工介入；镜像清理移到检查通过之后。
 - [ ] 优化 deploy.yml，利用 GHCR 标签判断增量构建。
 
 ## P1：打手视角订单系统

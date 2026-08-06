@@ -501,8 +501,8 @@ MVP 只记录**录像者本人**在某场战斗中用某辆车打出的**单场�
 **流水线**：`.github/workflows/deploy.yml` —— push 到 `main` 命中 `java/**`、`frontend/**`、`common/**`、Dockerfile、Keycloak 或 `deploy/**` 时触发，也支持手动 `workflow_dispatch`：
 1. 用完整 push range 判断 backend/frontend/keycloak/deployment 哪些范围变化。
 2. 后端 Maven 全测、前端 Vitest + Vite build 通过后，才按需构建三类镜像。
-3. SSH 部署前备份 `wotb` 与 `keycloak`，再更新 `/opt/wotb` compose、`pull` + `up -d`。
-4. 后端健康检查失败会输出日志并让 workflow 失败。
+3. SSH 部署前备份 `wotb` 与 `keycloak`，把当前 compose 备份为 `docker-compose.prev.yml`，再更新 `/opt/wotb` compose（三个 wotb 镜像钉住本次 `sha-<SHA>` 标签）、`pull` + `up -d`。
+4. 部署后三端健康检查（后端 `/api/health`、前端经 nginx E2E、Keycloak realm 可用性）：失败自动回滚到上一份 compose 并重新验证；回滚也失败时保留现场、输出日志并让 workflow 失败，人工介入。
 
 **必须配置的 GitHub Secrets**（迁移/换仓库时容易漏）：
 - `VPS_HOST` / `VPS_USER` / `VPS_PORT` / `VPS_SSH_KEY` —— VPS SSH。
@@ -510,12 +510,13 @@ MVP 只记录**录像者本人**在某场战斗中用某辆车打出的**单场�
 - `KEYCLOAK_ADMIN_CLIENT_SECRET` —— 后端 Keycloak Admin API 服务账号 secret。
 
 **已知坑 & 现有对策**（改 workflow/Dockerfile 时别踩回去）：
-- backend/frontend/keycloak 镜像各推 `sha-<SHA>` + `latest`；当前 VPS compose 使用 `latest`，需要回滚时手工改为对应 sha 标签。
+- backend/frontend/keycloak 镜像各推 `sha-<SHA>` + `latest`；**生产 compose 钉住 `sha-<SHA>`，不使用 `latest`**（`latest` 仅作镜像仓库入口）。部署失败自动回滚：`/opt/wotb` 保留 `docker-compose.prev.yml` 与 `DEPLOYED_SHA` 标记，健康检查失败时恢复上一份 compose、`pull` + `up -d` 并复检；回滚成功也会更新 `DEPLOYED_SHA`。
+- **镜像清理时机**：`docker image prune -af` 只在健康检查通过（或回滚成功）后执行，避免失败时旧镜像被提前清掉；GHCR 保留最近 5 个版本（`deploy.yml` 成功后才清理），回滚目标始终可拉取。
 - **VPS 上可能有遗留旧容器占端口** → 部署脚本会先 `docker rm -f wotb-backend wotb-frontend` 腾出 8088，`up -d` 带 `--remove-orphans`。
 - **SSH 脚本必须 `set -e`** → 否则 `docker compose up` 失败仍退出 0，Actions「假绿」而站点不更新（本会话真实发生过）。
 - **构建上下文是仓库根**（前端 `utils/helpers.js` 跨目录 `import ../../../common/map_names.json`，后端要 `common/*.json`）。仓库根 `.dockerignore` 排除 `**/node_modules`、`**/target`、`**/dist`、`common/data` 等。
 - 镜像层用 GitHub Actions 缓存（`type=gha`）加速。
-- deploy 与 database-backup 共用 `production-maintenance` concurrency，且 `cancel-in-progress: false`，避免部署与备份互相中断。
+- deploy 与 database-backup 共用 `production-maintenance` concurrency，且 `cancel-in-progress: false`，避免部署（含回滚阶段）与备份互相中断。
 
 **数据库保护**：`.github/workflows/database-backup.yml` 每日香港时间 03:15 备份两库；归档在 `/opt/wotb/backups/{wotb,keycloak}/`，完整读取校验后分库保留 7 天。恢复只允许 SSH 手动执行 `deploy/postgres-restore.sh`，必须传对应目录文件和 `--confirm RESTORE-<database>`；脚本先做安全备份，失败时依赖服务保持停止。
 
