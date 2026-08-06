@@ -520,10 +520,15 @@ jobs:
               exit 1
             fi
 
-            # pull 成功后才备份当前正式 compose（回滚目标）并提升 next 为正式
-            if [ -f docker-compose.yml ]; then
+            # pull 成功后才备份当前正式 compose（回滚目标）并提升 next 为正式。
+            # 只有当前 compose 引用的镜像本地存在（即上一次部署真实可运行）才覆盖 prev，
+            # 避免把历史失败部署留下的坏 compose 存成回滚目标。
+            if [ -f docker-compose.yml ] && docker compose -f docker-compose.yml config --images 2>/dev/null \
+                | xargs -r docker image inspect >/dev/null 2>&1; then
               cp -f docker-compose.yml docker-compose.prev.yml
               echo "Previous compose saved (PREV_SHA=${PREV_SHA:-unknown})."
+            elif [ -f docker-compose.yml ]; then
+              echo "Current docker-compose.yml references images unavailable locally; keeping existing docker-compose.prev.yml as rollback target."
             else
               echo "No previous compose found; first deployment."
             fi
