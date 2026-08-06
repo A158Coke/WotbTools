@@ -21,7 +21,6 @@ import {
 } from '../utils/api-boost.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel, enumLabel } from '../utils/display.js'
-import LoginPage from './LoginPage.vue'
 
 const { locale, t, te } = useI18n()
 const { initPromise, login, logout, isAuthenticated, initError, tokenParsed } = useAuth()
@@ -67,7 +66,8 @@ onMounted(async () => {
     } else if (initError.value) {
       phase.value = 'error'
     } else {
-      phase.value = 'login'
+      // 未登录：直接跳转 Keycloak 托管登录页（IdP 选择由 Keycloak 页面提供）。
+      doLogin()
     }
   } catch {
     phase.value = 'error'
@@ -328,8 +328,6 @@ function notificationMessage(notification) {
       <p class="text-error">{{ $t('profile.error') }}</p>
       <button class="btn-primary" @click="doLogin">{{ $t('profile.retry') }}</button>
     </div>
-
-    <LoginPage v-else-if="phase === 'login'" />
 
     <div v-else-if="profile" class="profile-main">
       <div class="profile-card profile-hero">

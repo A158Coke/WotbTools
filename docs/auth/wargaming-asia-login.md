@@ -14,7 +14,7 @@
 | D6 | QQ→WG 绑定（AIA） | **本期不做**，记录为后续任务。登录页文案不得承诺"先 QQ 登录再绑定"；WG 登录创建独立账号 |
 | D7 | WG 用户解绑 | 本期不允许：WG profile（ASIA/EU/NA）的 server / account_id / source / verified 不可编辑，也不提供解绑/删除入口（后端拒绝 PATCH/DELETE on WARGAMING source profile） |
 | D8 | `wotb_account_verified_at` | 定义为"后端首次可信同步时间"：首次创建 WG profile 时写 now，后续昵称刷新不更新。不新增 Keycloak claim |
-| D9 | 登录入口 | 新增极简前端登录选择页（中国大陆 QQ + Wargaming ASIA / EU / NA 三个区服按钮 + 提示语，zh/en/ru 三语）；Keycloak 托管登录页留作兜底；不改 Keycloak 主题 |
+| D9 | 登录入口 | 不自定义前端登录页：未登录访问需鉴权页面时直接跳转 Keycloak 托管登录页，页面列出所有启用的 IdP（QQ + Wargaming ASIA / EU / NA），按 IdP Display name 显示；不改 Keycloak 主题 |
 | D10 | 角色授予 | realm JSON 增加 `defaultRoles: ["wotbtools-user"]`；生产先核对现有 default role 是否已是 `wotbtools-user`（是则无需操作）。Provider 不写授角色代码 |
 | D11 | 重复登录属性刷新 | WG 改名后再次登录，Provider 必须显式更新 `displayName` / `wotb.nickname`（QQ Provider 无此逻辑，不可照抄） |
 | D12 | 冲突可见性 | 不做自定义 Keycloak 错误页。broker 层默认拦截；后端 `from-login` 冲突检查作兜底，返回 `WOTB_ACCOUNT_ALREADY_USED` |
@@ -50,7 +50,7 @@
 - `docker/Dockerfile.keycloak`（构建两个 Provider 的镜像）
 - `docker/keycloak/wotbtools-realm.json`（当前只有 roles + `wotbtools-web` client + display-name mapper；**没有** identityProviders）
 - Keycloak 生产部署配置（生产 realm 为 Admin Console 手工配置，不使用 `--import-realm`）
-- `frontend/src/composables/useAuth.js`（当前无 WG 相关代码）
+- `frontend/src/composables/useAuth.js`（登录统一走 `kc.login` 跳转 Keycloak 托管登录页，无 idpHint 白名单）
 - 登录页与个人资料页（当前**没有**前端登录页，`ProfilePage` 未登录时直接跳 Keycloak）
 - `UserProfileController` / `UserProfileService` / `UserProfile` Entity、Repository、DTO（`create()` 当前硬编码 `wotbServer=CN`）
 - `JwtUtil`（读 `sub` / `preferred_username` / `displayName`）
@@ -416,45 +416,15 @@ wotb_account_verified_at TIMESTAMPTZ
 
 ---
 
-## 十一、前端登录入口
+## 十一、登录入口（Keycloak 托管）
 
-### 1. 新增前端登录选择页（决策 D9）
+### 1. 未登录直接跳转 Keycloak 登录页（决策 D9）
 
-未登录用户访问需鉴权页面时，跳转到前端登录选择页（当前 `ProfilePage` 是直接跳 Keycloak，需改为先进入本页）：
+不自定义前端登录页。未登录用户访问需鉴权页面（`ProfilePage` / `ReconstructionPage` 等）时，前端直接调用 `kc.login({ redirectUri })` 跳转 Keycloak 托管登录页：
 
-```text
-中国大陆玩家
-[使用 QQ 登录]
-
-Wargaming.net 玩家（选择你的区服）
-[亚洲服务器]  [欧洲服务器]  [北美服务器]
-```
-
-- 三语 i18n（zh/en/ru）同步；
-- `useAuth.js` 增加：
-
-```js
-const WG_PROVIDER_BY_REGION = Object.freeze({
-  ASIA: 'wargaming-asia',
-  EU: 'wargaming-eu',
-  NA: 'wargaming-na',
-})
-
-async function loginWithWargaming(region = 'ASIA', view = 'profile') {
-  const provider = WG_PROVIDER_BY_REGION[region]
-  if (!provider) {
-    throw new Error('Unsupported Wargaming region')
-  }
-  const kc = ensureKeycloak()
-  await initAuth()
-  return kc.login({ idpHint: provider, redirectUri: loginRedirectUri(view) })
-}
-```
-
-- 登录页展示三个区服按钮（Asia / Europe / North America），分别调用 `loginWithWargaming('ASIA'|'EU'|'NA', 'profile')`；idpHint 只来自上述固定白名单，不从 URL / 用户输入动态拼接任意 alias。
-
-- 按当前 `useAuth.js` 真实结构调整，不机械复制；
-- Keycloak 托管登录页保留为兜底入口，不改 Keycloak 主题。
+- Keycloak 登录页自动列出所有 **Enabled** 的 IdP：QQ（`juhe-qq`）+ Wargaming ASIA / EU / NA（`wargaming-asia` / `wargaming-eu` / `wargaming-na`），按钮文案取各 IdP 的 Display name；
+- 前端**不再硬编码** idpHint / alias 白名单；alias 只由 Keycloak 实例决定（决定回调路径），与部署文档保持一致；
+- 不改 Keycloak 主题，不新增前端登录路由（`view=login` 已移除）。
 
 ### 2. 禁止采集 WG 凭据
 
@@ -462,11 +432,7 @@ async function loginWithWargaming(region = 'ASIA', view = 'profile') {
 
 ### 3. 文案约定（决策 D6）
 
-登录页/个人资料页**不得**出现"请先 QQ 登录，再绑定 Wargaming.net 账号"的承诺文案。本期文案：
-
-```text
-Wargaming.net 登录会创建独立账号；QQ 与 WG 账号互通功能开发中。
-```
+个人资料页**不得**出现"请先 QQ 登录，再绑定 Wargaming.net 账号"的承诺文案；Keycloak 登录页不配置任何绑定承诺文案。WG 登录始终创建独立账号。
 
 ---
 
@@ -605,12 +571,11 @@ keycloak-wargaming-provider
 ### 前端
 
 - QQ 登录入口仍然存在；
-- WG 三区服登录正确传递固定 `idpHint`（ASIA→`wargaming-asia`、EU→`wargaming-eu`、NA→`wargaming-na`），未知区服直接拒绝；
-- 不要求用户输入 WG 凭据；
-- 登录页提供 QQ + 三个 Wargaming 区服按钮，三语文案齐全；
+- 未登录访问需鉴权页面自动跳转 Keycloak 登录页（`kc.login` 不带 idpHint），Keycloak 页面列出 QQ + 三个 WG IdP；
+- 前端无自定义登录页（`LoginPage` / `view=login` 已移除），无 WG 凭据输入入口；
 - 个人中心按 `wotbAccountSource=WARGAMING` 判定只读（ASIA/EU/NA 均无编辑/解绑），CN MANUAL 仍可编辑；四个服务器标签（CN/ASIA/EU/NA）展示正确，EU/NA 不显示为 CN；
 - ASIA 官方字段不可手动修改，无解绑入口；
-- 登录选择页文案不含"绑定"承诺。
+- 个人资料页不含"绑定"承诺文案。
 
 ### 构建与部署
 
@@ -624,7 +589,8 @@ keycloak-wargaming-provider
 ## 十七、验收标准
 
 ```text
-亚服玩家点击"使用 Wargaming.net 登录"
+未登录访问需鉴权页面 → 自动跳转 Keycloak 登录页
+→ 玩家在 Keycloak 页面选择对应区服 IdP（Wargaming.net Asia / Europe / North America）
 → 跳转到 WG 官方页面（api.wotblitz.asia）
 → 用户只在 WG 官方页面输入凭据
 → WG 回调 Keycloak（broker endpoint，state 校验通过）
@@ -632,7 +598,7 @@ keycloak-wargaming-provider
 → 携带刷新后的 token 调用 WoTB {region} account/info 获取官方昵称（region 来自实例配置，当前 ASIA）
 → 创建或找到稳定 Keycloak 用户（username = wg_{region}_{可信 account_id}，broker = wg:{region}:{可信 account_id}）
 → 自动获得 wotbtools-user
-→ 写入 region=ASIA / displayName / wotb.* 属性
+→ 写入 region={区服} / displayName / wotb.* 属性
 → JWT 包含 wotb_region / wotb_account_id / wotb_nickname / wotb_verified(boolean)
 → WotBTools 首次懒创建 ASIA user_profile（source=WARGAMING，verified_at=首次同步时间）
 → 自动填写 account_id 和 nickname

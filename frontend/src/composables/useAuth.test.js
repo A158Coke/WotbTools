@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 const kcLogin = vi.fn(() => Promise.resolve(undefined))
 const kcInit = vi.fn(() => Promise.resolve(true))
@@ -19,38 +19,23 @@ vi.mock('keycloak-js', () => ({
 
 import { useAuth } from './useAuth.js'
 
-describe('useAuth loginWithWargaming', () => {
-  beforeEach(() => {
-    kcLogin.mockClear()
-    kcInit.mockClear()
-  })
-
-  it('maps ASIA/EU/NA to the fixed idpHint aliases', async () => {
+describe('useAuth', () => {
+  it('login() redirects to the Keycloak login page with the profile view', async () => {
     const auth = useAuth()
     await auth.initPromise
 
-    await auth.loginWithWargaming('ASIA', 'profile')
-    expect(kcLogin).toHaveBeenLastCalledWith(
-      expect.objectContaining({ idpHint: 'wargaming-asia' }))
+    await auth.login('profile')
 
-    await auth.loginWithWargaming('EU', 'profile')
-    expect(kcLogin).toHaveBeenLastCalledWith(
-      expect.objectContaining({ idpHint: 'wargaming-eu' }))
-
-    await auth.loginWithWargaming('NA', 'profile')
-    expect(kcLogin).toHaveBeenLastCalledWith(
-      expect.objectContaining({ idpHint: 'wargaming-na' }))
-
-    expect(kcLogin).toHaveBeenCalledTimes(3)
+    expect(kcLogin).toHaveBeenCalledWith(expect.objectContaining({
+      redirectUri: expect.stringContaining('view=profile')
+    }))
+    expect(kcLogin).not.toHaveBeenCalledWith(
+      expect.objectContaining({ idpHint: expect.any(String) }))
   })
 
-  it('rejects regions outside the fixed whitelist without calling keycloak', async () => {
+  it('logout() delegates to keycloak', async () => {
     const auth = useAuth()
-    await auth.initPromise
-
-    await expect(auth.loginWithWargaming('SA', 'profile'))
-      .rejects.toThrow('Unsupported Wargaming region')
-    await expect(auth.loginWithWargaming('apac', 'profile')).rejects.toThrow()
-    expect(kcLogin).not.toHaveBeenCalled()
+    await auth.logout()
+    expect(kcLogout).toHaveBeenCalled()
   })
 })

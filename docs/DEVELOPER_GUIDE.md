@@ -357,7 +357,7 @@ AI 复盘区分两种 scope，互不混用：
   - `composables/useReplay.js` — 文件/预览/导出/战斗移除状态管理
   - `composables/useColumns.js` — 列可见性/排序/选择器状态；`localStorage` 持久化单场/汇总两套列配置，并在后端新增列时自动补齐顺序
   - `composables/useTheme.js` — 主题切换（auto/light/dark），数据持久化调用 `utils/theme.js`
-  - `composables/useAuth.js` — Keycloak 认证适配器（check-sso 游客模式；`loginWithWargaming(region, view)` 用固定白名单映射发起 WG 登录：ASIA→`wargaming-asia`、EU→`wargaming-eu`、NA→`wargaming-na`）
+  - `composables/useAuth.js` — Keycloak 认证适配器（check-sso 游客模式；未登录时 `login(view)` 直接跳转 Keycloak 托管登录页，IdP 选择（QQ + 三个 WG 区服）由 Keycloak 页面提供，前端不硬编码 idpHint）
   - `utils/api.js` / `utils/api-boost.js` — 集中式 API 层；非 2xx 统一转换为稳定 `ApiError`
   - `utils/display.js` — raw enum、成功码和错误码的三语显示
   - `utils/latest-debounce.js` — 丢弃过期异步搜索结果
@@ -372,7 +372,7 @@ AI 复盘区分两种 scope，互不混用：
 - 回放预览列配置持久化使用 `localStorage`：`wotb-replay-player-visible-cols`、`wotb-replay-player-order`、`wotb-replay-agg-visible-cols`、`wotb-replay-agg-order`。读取缓存时需按当前响应列集合清洗，避免旧缓存吃掉新列。
 - 内联 SVG 图标统一使用全局 `.ic` 描边样式；上传按钮使用 `.filebtn input { display:none; }` 隐藏原生文件控件，避免浏览器默认控件破坏布局。
 - `BoostPage.vue` 的打手管理页同时展示两套状态：`booster_profile.status` 是资格状态（`ACTIVE/INACTIVE/BANNED`），接单状态由 `booster_profile.available + activeAssignmentCount` 推导（可接单/忙碌/暂停接单）。分配弹窗按资格、接单状态、活跃订单数、等级和擅长内容排序推荐打手；改动任一含义时，务必同步三语 locale。
-- `ProfilePage.vue` 是个人主页，展示用户身份、WoTB 账号绑定、排行榜记录和站内通知面板；若当前用户是打手，还会显示接单状态与进行中/历史订单。未登录时渲染 `LoginPage`（QQ + Wargaming ASIA/EU/NA 三个区服入口），不再直接跳 Keycloak。Wargaming 官方账号（`wotbAccountSource=WARGAMING`，覆盖 ASIA/EU/NA）显示来源 Wargaming.net 与已验证状态，资料只读（无编辑/解绑按钮），服务器标签按实际区服展示（中国/亚洲/欧洲/北美），页面加载后调用一次 `PUT /api/users/wotb-account/from-login` 幂等同步昵称。通知面板在右侧栏顶部，点击展开通知列表（最近 30 条），支持单条已读和全部已读，未读数字小红点提示。打手接单状态通过 `PATCH /api/boost/boosters/my/availability` 让打手本人暂停/恢复接收新订单；这个开关只影响新订单，不会隐藏已有进行中订单。
+- `ProfilePage.vue` 是个人主页，展示用户身份、WoTB 账号绑定、排行榜记录和站内通知面板；若当前用户是打手，还会显示接单状态与进行中/历史订单。未登录时直接跳转 Keycloak 托管登录页（无自定义登录页）。Wargaming 官方账号（`wotbAccountSource=WARGAMING`，覆盖 ASIA/EU/NA）显示来源 Wargaming.net 与已验证状态，资料只读（无编辑/解绑按钮），服务器标签按实际区服展示（中国/亚洲/欧洲/北美），页面加载后调用一次 `PUT /api/users/wotb-account/from-login` 幂等同步昵称。通知面板在右侧栏顶部，点击展开通知列表（最近 30 条），支持单条已读和全部已读，未读数字小红点提示。打手接单状态通过 `PATCH /api/boost/boosters/my/availability` 让打手本人暂停/恢复接收新订单；这个开关只影响新订单，不会隐藏已有进行中订单。
 - 陪练订单生命周期由 `boost_request.status` 表示：`NEW/REVIEWING/MATCHED/ACCEPTED/IN_PROGRESS/PENDING_CONFIRM/CLOSED/EXCEPTION/REJECTED/CANCELLED`。打手单次接单生命周期由 `boost_request_assignment.status` 表示：`ASSIGNED/ACCEPTED/IN_PROGRESS/PENDING_CONFIRM/DECLINED/CANCELLED/COMPLETED/EXCEPTION`。订单完成、取消、拒绝或拒单时设置 `unassigned_at` 释放打手忙碌状态。
 - 站内通知由 `user_notification` 保存，boost domain 只调用 `UserNotificationService` 写事件；API 返回 `type + payload` 英文 key，前端 `frontend/src/locales/{zh,en,ru}.json` 负责渲染文案。
 - Boost DTO 不返回 `*Label`、`message` 或本地化 `warning`；选项只返回 `value + enabled`，状态使用 raw enum，成功/失败/警告分别使用 `code`、`error`、`warningCode`。新增任何 code 必须同步三语 `api_codes` / `api_errors`。
