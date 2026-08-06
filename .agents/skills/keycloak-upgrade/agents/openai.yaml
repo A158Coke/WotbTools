@@ -1,0 +1,4 @@
+interface:
+  display_name: "Keycloak Upgrade"
+  short_description: "Keycloak version upgrade with custom SPI compatibility checks"
+  default_prompt: "Use $keycloak-upgrade to upgrade Keycloak and check custom SPI compatibility and edge cases."
