@@ -11,6 +11,9 @@ import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AllowedLanguage;
+import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
+import com.wotb.web.replay.ai.gateway.AiCancellationToken;
+import com.wotb.web.replay.ai.gateway.AiRequestContext;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
@@ -33,6 +36,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * AI 复盘与批量处理 REST API。
@@ -48,26 +52,56 @@ public class ReconstructionController {
 
     private final DefaultReplayProcessingFacade processingFacade;
     private final AiReplayReviewService reviewService;
+    private final AiCancellationRegistry cancellationRegistry;
 
     @Autowired(required = false)
     private ReplayUsageMetrics usageMetrics;
 
     public ReconstructionController(
             final DefaultReplayProcessingFacade processingFacade,
-            final AiReplayReviewService reviewService) {
+            final AiReplayReviewService reviewService,
+            final AiCancellationRegistry cancellationRegistry) {
         this.processingFacade = processingFacade;
         this.reviewService = reviewService;
+        this.cancellationRegistry = cancellationRegistry;
     }
 
     @PostMapping(value = "/analyze", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public AnalyzeResponse analyze(
             @RequestParam("files") final MultipartFile[] files,
-            @RequestParam(name = "lang", required = true) final String lang) throws IOException {
+            @RequestParam(name = "lang", required = true) final String lang,
+            @RequestParam(name = "correlationId", required = false) final String correlationId)
+            throws IOException {
         final AllowedLanguage allowedLanguage = AllowedLanguage.fromCode(lang);
         if (allowedLanguage == null) {
             throw new IllegalArgumentException("UNKNOWN_LOCALE");
         }
-        return reviewService.analyze(files, allowedLanguage);
+        // Client-provided id (frontend cancel button / navigation) or a fresh
+        // one; both are safe random opaque ids, never logged with the request.
+        final String requestId = correlationId != null && !correlationId.isBlank()
+                ? correlationId : UUID.randomUUID().toString();
+        final AiCancellationToken cancellation = cancellationRegistry.register(requestId);
+        AiRequestContext.set(requestId, cancellation);
+        try {
+            return reviewService.analyze(files, allowedLanguage);
+        } finally {
+            AiRequestContext.clear();
+            cancellationRegistry.unregister(requestId);
+        }
+    }
+
+    /**
+     * Cancels an in-flight AI Review request by correlation id, so the upstream
+     * call is aborted instead of running to completion for a client that no
+     * longer waits for it.
+     */
+    @PostMapping(value = "/analyze/cancel")
+    public ResponseEntity<Void> cancelAnalyze(
+            @RequestParam("correlationId") final String correlationId) {
+        if (!cancellationRegistry.cancel(correlationId)) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.noContent().build();
     }
 
     /**

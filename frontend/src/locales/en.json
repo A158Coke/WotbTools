@@ -799,10 +799,12 @@
         "invalid_file": "Please select a .wotbreplay file",
         "analyze_btn": "AI Analysis",
         "analyze_multi_btn": "AI Multi-battle ({n})",
+        "cancel_btn": "Cancel Analysis",
         "analysis_title_player": "AI Review",
         "ai_error_http": "AI analysis failed (HTTP {status})",
         "auth_required": "Sign-in required, redirecting to login…",
         "forbidden": "Forbidden: this feature requires wotbtools-user or wotbtools-admin role",
+        "cancelled": "Cancelled",
         "errors": {
             "AI_NOT_CONFIGURED": "AI is not configured. Please contact the administrator.",
             "AI_INVALID_REQUEST": "The AI provider rejected this request. Please try again later.",

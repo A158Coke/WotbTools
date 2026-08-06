@@ -50,7 +50,8 @@ public class SecurityConfig {
                 // --- AI 复盘与批量处理 (wotbtools-user / wotbtools-admin) ---
                 .requestMatchers("/api/replay/reconstruct-batch",
                         "/api/replay/process",
-                        "/api/replay/analyze")
+                        "/api/replay/analyze",
+                        "/api/replay/analyze/cancel")
                     .hasAnyRole("wotbtools-user", "wotbtools-admin")
 
                 // --- 管理员用户管理 (仅 wotbtools-admin) ---

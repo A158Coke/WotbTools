@@ -45,8 +45,6 @@ class AiRetryPolicyTest {
     void retryableErrors() {
         final AiRetryPolicy policy = new AiRetryPolicy(3, 1000, 8000, 2.0);
         assertTrue(policy.isRetryable(upstream("AI_RATE_LIMITED", 429)));
-        assertTrue(policy.isRetryable(upstream("AI_TIMEOUT", 408)));
-        assertTrue(policy.isRetryable(upstream("AI_TIMEOUT", null)));
         assertTrue(policy.isRetryable(upstream("AI_UPSTREAM_UNAVAILABLE", null)));
         assertTrue(policy.isRetryable(upstream("AI_UPSTREAM_UNAVAILABLE", 500)));
         assertTrue(policy.isRetryable(upstream("AI_UPSTREAM_UNAVAILABLE", 502)));
@@ -64,6 +62,11 @@ class AiRetryPolicyTest {
         assertFalse(policy.isRetryable(upstream("AI_CONTEXT_TOO_LARGE", 413)));
         assertFalse(policy.isRetryable(upstream("AI_EMPTY_RESPONSE", null)));
         assertFalse(policy.isRetryable(upstream("AI_RESPONSE_INVALID", null)));
+        // A timed-out request may already have been processed and billed
+        // upstream; retrying it would double-charge.
+        assertFalse(policy.isRetryable(upstream("AI_TIMEOUT", 408)));
+        assertFalse(policy.isRetryable(upstream("AI_TIMEOUT", null)));
+        assertFalse(policy.isRetryable(upstream("AI_CANCELLED", null)));
         assertFalse(policy.isRetryable(upstream("AI_UPSTREAM_UNAVAILABLE", 501)));
         assertFalse(policy.isRetryable(upstream("AI_UPSTREAM_UNAVAILABLE", 505)));
         assertFalse(policy.isRetryable(null));

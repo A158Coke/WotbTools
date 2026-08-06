@@ -21,7 +21,8 @@ defineEmits([
   'add-file',
   'remove-file',
   'clear',
-  'analyze'
+  'analyze',
+  'cancel'
 ])
 </script>
 
@@ -44,6 +45,7 @@ defineEmits([
       v-if="canUseAiReview && files.length"
       :analyzing="analyzing"
       @analyze="$emit('analyze')"
+      @cancel="$emit('cancel')"
     />
   </div>
 </template>
