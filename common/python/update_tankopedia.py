@@ -10,7 +10,7 @@
 - 默认只保留 7-10 级车辆（--min-tier 7；--min-tier 1 保留全部）。
 - 手工维护的 ``extraKnowledge`` 字段会被保留：刷新后已存在的 tank_id 继续沿用旧知识点，
   新车型没有 extraKnowledge，删除的车型一并消失——官方数据与个人知识点共存于同一个 json。
-- 输出字段：name / tier / class(中文) / nation(中文) / premium / alphaDamage / hp / extraKnowledge。
+- 输出字段：name / tier / class(中文) / nation(中文) / alphaDamage / hp / extraKnowledge。
 - 脚本无第三方依赖（仅标准库 urllib）。
 """
 
@@ -23,7 +23,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 API_HOST = "https://api.wotblitz.{region}/wotb/encyclopedia/vehicles/"
-DEFAULT_FIELDS = "name,tier,type,nation,hp,premium,gun.damage"
+DEFAULT_FIELDS = "name,tier,type,nation,hp,gun.damage"
 
 # WG type 代码 -> 中文车种（与前端 replay_values / prompt 措辞一致）
 TYPE_TO_ZH = {
@@ -56,7 +56,7 @@ def fetch_vehicles(app_id, region, fields, language):
     """分页拉取全部车辆，返回 {tank_id: {...}}。"""
     data = {}
     offset = 0
-    limit = 200
+    limit = 100
     while True:
         query = urllib.parse.urlencode({
             "application_id": app_id,
@@ -66,7 +66,7 @@ def fetch_vehicles(app_id, region, fields, language):
             "offset": str(offset),
         })
         url = API_HOST.format(region=region) + "?" + query
-        print("GET", url[:120] + "...")
+        print("GET", API_HOST.format(region=region), "limit=%d offset=%d" % (limit, offset))
         with urllib.request.urlopen(url, timeout=60) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
         if payload.get("status") != "ok":
@@ -75,9 +75,9 @@ def fetch_vehicles(app_id, region, fields, language):
         if not batch:
             break
         data.update(batch)
-        offset += limit
         if len(batch) < limit:
             break
+        offset += limit
     return data
 
 
@@ -106,7 +106,6 @@ def transform(vehicles):
             "tier": tier,
             "class": TYPE_TO_ZH.get(v.get("type", ""), v.get("type") or "未知"),
             "nation": NATION_TO_ZH.get(v.get("nation", ""), v.get("nation") or "未知"),
-            "premium": bool(v.get("premium")),
         }
         if alpha and alpha > 0:
             entry["alphaDamage"] = alpha

@@ -88,7 +88,7 @@ public final class EntityIdentityResolver {
     }
 
     /**
-     * 追加 tankopedia 的结构化车辆事实（等级 / 国家）。
+     * 追加 tankopedia 的结构化车辆事实（等级 / 国家 / 炮伤 / 血量 / 知识）。
      * 只输出车辆库真实提供的字段，缺失即不输出，绝不由名称推断。
      */
     public static void appendStructuredTankFacts(final StringBuilder sb, final long tankId) {
