@@ -100,6 +100,18 @@ public final class EntityIdentityResolver {
         if (!nation.isEmpty()) {
             sb.append(" 国家: ").append(nation);
         }
+        final String alpha = ReplayDisplayNames.tankAlphaDamage(tankId);
+        if (!alpha.isEmpty()) {
+            sb.append(" 炮伤: ").append(alpha);
+        }
+        final String hp = ReplayDisplayNames.tankMaxHp(tankId);
+        if (!hp.isEmpty()) {
+            sb.append(" 血量: ").append(hp);
+        }
+        final String knowledge = ReplayDisplayNames.tankExtraKnowledge(tankId);
+        if (!knowledge.isEmpty()) {
+            sb.append(" 知识: ").append(PromptDataQuoter.quote(knowledge, "\"\""));
+        }
     }
 
     private static String sideLabel(final Side side) {

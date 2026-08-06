@@ -46,6 +46,7 @@ class EntityIdentityResolverTest {
         // 结构化车辆事实来自 tankopedia，而不是名称推断
         assertTrue(enemyLabel.contains("等级: 10"), enemyLabel);
         assertTrue(enemyLabel.contains("国家: 美国"), enemyLabel);
+        assertTrue(enemyLabel.contains("炮伤: 400"), enemyLabel);
         assertFalse(enemyLabel.contains("自行火炮"), enemyLabel);
         assertFalse(enemyLabel.contains("SPG"), enemyLabel);
     }

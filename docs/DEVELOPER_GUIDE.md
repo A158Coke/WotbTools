@@ -75,6 +75,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
   - 前端：`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`（**三语都改**）。
   - 导出：`Columns.java`（单场 xlsx）、`AggregateSheets.java`（汇总 xlsx，仅中文）。
 - **单一数据源**：`common/tankopedia.json`（车辆库）、`common/rating.json`（评分参数）、`common/map_names.json`（地图三语名）。构建时由 `wotb-core/pom.xml` 复制到 classpath；**勿在模块内放副本**。
+- **车辆库更新（WG 官方数据）**：`common/python/update_tankopedia.py` 从 Wargaming 官方 WoT Blitz 百科同步（需 `WG_APPLICATION_ID`；默认只保留 7–10 级，`--min-tier 1` 保留全部，`--region` 可换区服）。字段：`name/tier/class/nation/premium/alphaDamage/hp` + 手工维护的 `extraKnowledge`（每辆车的个人知识点——刷新脚本按 tank_id 保留合并、不会覆盖）。AI prompt 会注入结构化事实（车种/等级/国家/炮伤/血量/知识），prompt 规则白名单已放行这些字段。
 - **代码风格**：不可变模型用 `record`；可变模型用公有字段 POJO（**不引入 Lombok**）；局部变量/参数尽量 `final`。
 - **分层**：controller 只做 HTTP；业务在 service；core 按功能分包。新 endpoint 的逻辑写进 service。
 - 跨层联动改动（加列/改解析/改评分/改地图名…）务必按 `.agents/wotb-sync.md` 的配方走。

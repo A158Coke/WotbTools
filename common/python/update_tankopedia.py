@@ -1,187 +1,177 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-从 blitzkit 拉取最新车辆库 (tanks.pb) 并转换为本工具用的 tankopedia.json。
-游戏出新车后运行本脚本即可。
+从 Wargaming.net 官方 WoT Blitz 车辆百科拉取数据，写入仓库根 common/tankopedia.json。
 
-    python update_tankopedia.py
+用法：
+    WG_APPLICATION_ID=<application_id> python update_tankopedia.py [--region asia] [--min-tier 7]
+
+设计约定：
+- 默认只保留 7-10 级车辆（--min-tier 7；--min-tier 1 保留全部）。
+- 手工维护的 ``extraKnowledge`` 字段会被保留：刷新后已存在的 tank_id 继续沿用旧知识点，
+  新车型没有 extraKnowledge，删除的车型一并消失——官方数据与个人知识点共存于同一个 json。
+- 输出字段：name / tier / class(中文) / nation(中文) / premium / alphaDamage / hp / extraKnowledge。
+- 脚本无第三方依赖（仅标准库 urllib）。
 """
+
+import argparse
 import json
 import os
+import sys
+import urllib.parse
 import urllib.request
-import struct
+from datetime import datetime, timezone
 
-# ---- protobuf helpers (self-contained; this script has no other deps) ----
+API_HOST = "https://api.wotblitz.{region}/wotb/encyclopedia/vehicles/"
+DEFAULT_FIELDS = "name,tier,type,nation,hp,premium,gun.damage"
 
-def _read_varint(buf, i):
-    shift = 0
-    result = 0
-    while True:
-        b = buf[i]
-        i += 1
-        result |= (b & 0x7F) << shift
-        if not (b & 0x80):
-            break
-        shift += 7
-    return result, i
-
-
-def decode_protobuf(buf):
-    fields = {}
-    i = 0
-    n = len(buf)
-    while i < n:
-        try:
-            tag, i = _read_varint(buf, i)
-        except IndexError:
-            break
-        field = tag >> 3
-        wt = tag & 7
-        if field == 0:
-            break
-        try:
-            if wt == 0:
-                val, i = _read_varint(buf, i)
-            elif wt == 1:
-                val = struct.unpack("<Q", buf[i:i + 8])[0]
-                i += 8
-            elif wt == 5:
-                val = struct.unpack("<I", buf[i:i + 4])[0]
-                i += 4
-            elif wt == 2:
-                ln, i = _read_varint(buf, i)
-                val = buf[i:i + ln]
-                i += ln
-            else:
-                break
-        except (IndexError, struct.error):
-            break
-        fields.setdefault(field, []).append(val)
-    return fields
-
-
-def as_str(raw):
-    if isinstance(raw, str):
-        return raw
-    if not isinstance(raw, (bytes, bytearray)):
-        return raw
-    for enc in ("utf-8", "latin1"):
-        try:
-            return raw.decode(enc)
-        except UnicodeDecodeError:
-            continue
-    return raw.hex()
-
-
-def f1(fields, num, default=None):
-    v = fields.get(num)
-    if not v:
-        return default
-    return v[0]
-
-
-def as_int(raw, default=None):
-    if isinstance(raw, int):
-        return raw
-    return default
-
-
-def shell_damage(raw):
-    if not isinstance(raw, (bytes, bytearray)):
-        return None
-    shell = decode_protobuf(raw)
-    return as_int(f1(shell, FIELD_SHELL_DAMAGE))
-
-
-def collect_gun_candidates(fields, fallback_tier=0):
-    candidates = []
-    shells = fields.get(FIELD_SHELLS, [])
-    if shells:
-        damages = [shell_damage(shell) for shell in shells]
-        damages = [damage for damage in damages if damage and damage > 0]
-        if damages:
-            tier = as_int(f1(fields, FIELD_GUN_TIER), fallback_tier)
-            candidates.append((tier, damages[0]))
-
-    child_tier = as_int(f1(fields, FIELD_MODULE_TIER), fallback_tier)
-    for values in fields.values():
-        for value in values:
-            if isinstance(value, (bytes, bytearray)):
-                candidates.extend(collect_gun_candidates(decode_protobuf(value), child_tier))
-    return candidates
-
-
-def alpha_damage(td):
-    candidates = []
-    for raw in td.get(FIELD_GUN_MODULES, []):
-        if isinstance(raw, (bytes, bytearray)):
-            candidates.extend(collect_gun_candidates(decode_protobuf(raw)))
-    if not candidates:
-        return None
-    max_tier = max(tier for tier, _ in candidates)
-    return max(damage for tier, damage in candidates if tier == max_tier)
-
-URL = "https://assets.blitzkit.app/definitions/tanks.pb"
-FIELD_GUN_MODULES = 20
-FIELD_SHELLS = 10
-FIELD_SHELL_DAMAGE = 4
-FIELD_GUN_TIER = 9
-FIELD_MODULE_TIER = 7
-CLASS = {0: "轻坦", 1: "中坦", 2: "重坦", 3: "TD"}
-NATION = {
-    "ussr": "苏联", "germany": "德国", "usa": "美国", "china": "中国",
-    "france": "法国", "uk": "英国", "japan": "日本", "european": "欧洲", "other": "其他",
+# WG type 代码 -> 中文车种（与前端 replay_values / prompt 措辞一致）
+TYPE_TO_ZH = {
+    "lightTank": "轻坦",
+    "mediumTank": "中坦",
+    "heavyTank": "重坦",
+    "AT-SPG": "坦克歼击车",
 }
 
+# WG nation 代码 -> 中文国家
+NATION_TO_ZH = {
+    "ussr": "苏联",
+    "usa": "美国",
+    "germany": "德国",
+    "france": "法国",
+    "uk": "英国",
+    "japan": "日本",
+    "china": "中国",
+    "czech": "捷克斯洛伐克",
+    "european": "欧洲",
+    "italy": "意大利",
+    "poland": "波兰",
+    "sweden": "瑞典",
+}
 
-def i18n_en(raw):
-    """从 I18nString(map<string,string>) 取英文名, 没有则取第一个。"""
-    best = None
-    for e in decode_protobuf(raw).get(1, []):
-        kv = decode_protobuf(e)
-        loc = as_str(f1(kv, 1, b""))
-        val = as_str(f1(kv, 2, b""))
-        if loc == "en":
-            return val
-        if best is None:
-            best = val
-    return best
+OUTPUT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "tankopedia.json")
+
+
+def fetch_vehicles(app_id, region, fields, language):
+    """分页拉取全部车辆，返回 {tank_id: {...}}。"""
+    data = {}
+    offset = 0
+    limit = 200
+    while True:
+        query = urllib.parse.urlencode({
+            "application_id": app_id,
+            "fields": fields,
+            "language": language,
+            "limit": str(limit),
+            "offset": str(offset),
+        })
+        url = API_HOST.format(region=region) + "?" + query
+        print("GET", url[:120] + "...")
+        with urllib.request.urlopen(url, timeout=60) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        if payload.get("status") != "ok":
+            raise RuntimeError("WG API error: %s" % json.dumps(payload, ensure_ascii=False)[:500])
+        batch = payload.get("data") or {}
+        if not batch:
+            break
+        data.update(batch)
+        offset += limit
+        if len(batch) < limit:
+            break
+    return data
+
+
+def as_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def transform(vehicles):
+    """WG 原始字段 -> tankopedia.json 条目（中文车种/国家 + alphaDamage/hp）。"""
+    out = {}
+    for tank_id, v in vehicles.items():
+        tier = as_int(v.get("tier"))
+        alpha = None
+        gun = v.get("gun")
+        if isinstance(gun, dict):
+            damages = gun.get("damage")
+            if isinstance(damages, list) and damages:
+                alpha = max(as_int(d) or 0 for d in damages)
+            elif damages is not None:
+                alpha = as_int(damages)
+        entry = {
+            "name": v.get("name") or "#" + tank_id,
+            "tier": tier,
+            "class": TYPE_TO_ZH.get(v.get("type", ""), v.get("type") or "未知"),
+            "nation": NATION_TO_ZH.get(v.get("nation", ""), v.get("nation") or "未知"),
+            "premium": bool(v.get("premium")),
+        }
+        if alpha and alpha > 0:
+            entry["alphaDamage"] = alpha
+        hp = as_int(v.get("hp"))
+        if hp and hp > 0:
+            entry["hp"] = hp
+        out[str(tank_id)] = entry
+    return out
+
+
+def merge_extra_knowledge(new_data, old_data):
+    """刷新后保留旧文件中同名 tank_id 的手工 extraKnowledge。"""
+    for tank_id, entry in new_data.items():
+        old = (old_data or {}).get(tank_id)
+        if old and old.get("extraKnowledge"):
+            entry["extraKnowledge"] = old["extraKnowledge"]
+    return new_data
 
 
 def main():
-    print(f"下载 {URL} ...")
-    raw = urllib.request.urlopen(URL, timeout=60).read()
-    entries = decode_protobuf(raw).get(1, [])
-    data = {}
-    for e in entries:
-        kv = decode_protobuf(e)
-        tank_id = f1(kv, 1)
-        td = decode_protobuf(f1(kv, 2, b""))
-        nation = as_str(f1(td, 11, b""))
-        data[str(tank_id)] = {
-            "name": i18n_en(f1(td, 12, b"")),
-            "tier": f1(td, 16),
-            # 注意: protobuf 默认值 0 不序列化, 轻坦(TankClass=0)的 #17 字段会缺失,
-            # 因此缺失时按轻坦(0)处理。
-            "class": CLASS.get(f1(td, 17, 0), ""),
-            "nation": NATION.get(nation, nation),
-            "premium": (f1(td, 13) == 1),
-            "alphaDamage": alpha_damage(td),
-        }
-    obj = {
+    parser = argparse.ArgumentParser(description="Sync WG official vehicle encyclopedia into tankopedia.json")
+    parser.add_argument("--region", default="asia", choices=["asia", "eu", "com"])
+    parser.add_argument("--min-tier", type=int, default=7, help="只保留该等级及以上的车辆（默认 7）")
+    parser.add_argument("--language", default="zh-cn")
+    parser.add_argument("--app-id", default=None, help="WG application_id（默认读环境变量 WG_APPLICATION_ID）")
+    args = parser.parse_args()
+
+    app_id = args.app_id or os.environ.get("WG_APPLICATION_ID", "").strip()
+    if not app_id:
+        print("ERROR: missing WG application_id; set WG_APPLICATION_ID or pass --app-id.", file=sys.stderr)
+        sys.exit(1)
+
+    old_data = {}
+    if os.path.exists(OUTPUT):
+        with open(OUTPUT, encoding="utf-8") as f:
+            old = json.load(f)
+        old_data = old.get("data", old) if isinstance(old, dict) else {}
+
+    vehicles = fetch_vehicles(app_id, args.region, DEFAULT_FIELDS, args.language)
+    print("fetched vehicles:", len(vehicles))
+
+    data = transform(vehicles)
+    if args.min_tier > 1:
+        before = len(data)
+        data = {tid: e for tid, e in data.items() if (e.get("tier") or 0) >= args.min_tier}
+        print("tier >= %d: %d -> %d" % (args.min_tier, before, len(data)))
+
+    data = merge_extra_knowledge(data, old_data)
+    data = dict(sorted(data.items(), key=lambda kv: int(kv[0])))
+
+    output = {
         "meta": {
+            "source": "wargaming-official",
+            "region": args.region,
+            "min_tier": args.min_tier,
+            "language": args.language,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "count": len(data),
-            "source": "blitzkit (assets.blitzkit.app/definitions/tanks.pb)",
         },
         "data": data,
     }
-    # 车辆库是 Python 与 Java 两侧共用的单一来源, 写到仓库的 common/tankopedia.json。
-    here = os.path.dirname(os.path.abspath(__file__))
-    out_path = os.path.normpath(os.path.join(here, "..", "tankopedia.json"))
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    with open(out_path, "w", encoding="utf-8") as fp:
-        json.dump(obj, fp, ensure_ascii=False, indent=2)
-    print(f"已写入 {out_path}: {len(data)} 辆车")
+    with open(OUTPUT, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(output, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    print("wrote", OUTPUT, "entries:", len(data))
 
 
 if __name__ == "__main__":
