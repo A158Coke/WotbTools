@@ -28,14 +28,12 @@ env:
   GHCR_IMAGE_PREFIX: ghcr.io/a158coke/wotbtools
 
 jobs:
-  # ── 路径检测：判断哪些组件需要构建 ──────────────────────────────
+  # ── 路径检测：仅用于测试门禁与 tag 计算；镜像三件套每次生产部署统一构建 ──
   changes:
     runs-on: ubuntu-latest
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
-      keycloak: ${{ steps.filter.outputs.keycloak }}
-      deployment: ${{ steps.filter.outputs.deployment }}
       tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
@@ -58,8 +56,6 @@ jobs:
           if [[ "$EVENT_NAME" == "workflow_dispatch" || -z "$BEFORE_SHA" || "$BEFORE_SHA" == "$zero_sha" ]]; then
             backend=true
             frontend=true
-            keycloak=true
-            deployment=true
           else
             if ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
               git fetch --no-tags --depth=1 origin "$BEFORE_SHA"
@@ -69,8 +65,6 @@ jobs:
 
             backend=false
             frontend=false
-            keycloak=false
-            deployment=false
 
             if grep -Eq '^(java/|common/(tankopedia|rating|map_names)\.json$|docker/Dockerfile\.backend$|\.dockerignore$)' <<< "$changed_files"; then
               backend=true
@@ -78,19 +72,11 @@ jobs:
             if grep -Eq '^(frontend/|common/map_names\.json$|common/assets/|docker/Dockerfile\.frontend$|deploy/nginx/|\.dockerignore$)' <<< "$changed_files"; then
               frontend=true
             fi
-            if grep -Eq '^(docker/Dockerfile\.keycloak$|docker/keycloak/|keycloak-juhe-qq-provider/|keycloak-wargaming-provider/|java/settings-docker\.xml$|\.dockerignore$)' <<< "$changed_files"; then
-              keycloak=true
-            fi
-            if grep -Eq '^(deploy/|\.github/workflows/deploy\.yml$)' <<< "$changed_files"; then
-              deployment=true
-            fi
           fi
 
           {
             echo "backend=$backend"
             echo "frontend=$frontend"
-            echo "keycloak=$keycloak"
-            echo "deployment=$deployment"
           } >> "$GITHUB_OUTPUT"
 
   test-backend:
@@ -138,7 +124,10 @@ jobs:
   # ── 构建后端 ────────────────────────────────────────────────────
   build-backend:
     needs: [changes, test-backend]
-    if: always() && needs.changes.outputs.backend == 'true' && needs.test-backend.result == 'success'
+    # 生产部署统一构建三件套 SHA 镜像：只要 workflow 运行（即生产部署），backend 必建；
+    # 未改动时测试 job 为 skipped，构建仍须放行。
+    if: always() && needs.changes.result == 'success' &&
+        (needs.test-backend.result == 'success' || needs.test-backend.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -167,7 +156,8 @@ jobs:
   # ── 构建前端 ────────────────────────────────────────────────────
   build-frontend:
     needs: [changes, test-frontend]
-    if: always() && needs.changes.outputs.frontend == 'true' && needs.test-frontend.result == 'success'
+    if: always() && needs.changes.result == 'success' &&
+        (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -196,7 +186,7 @@ jobs:
   # ── 构建 Keycloak ───────────────────────────────────────────────
   build-keycloak:
     needs: changes
-    if: needs.changes.outputs.keycloak == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.changes.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -224,18 +214,14 @@ jobs:
         env:
           KEYCLOAK_BUILD_FILE: ${{ github.workspace }}/keycloak-juhe-qq-provider
 
-  # ── 部署：等全部构建完成后（至少有一个构建），统一 pull + restart ──
+  # ── 部署：三个 SHA 镜像已全部构建，统一 pull + restart ──
   deploy:
     needs: [changes, test-backend, test-frontend, build-backend, build-frontend, build-keycloak]
     if: >-
       always() &&
       needs.changes.result == 'success' &&
       !contains(needs.*.result, 'failure') &&
-      !contains(needs.*.result, 'cancelled') &&
-      (needs.changes.outputs.deployment == 'true' ||
-       needs.build-backend.result != 'skipped' ||
-       needs.build-frontend.result != 'skipped' ||
-       needs.build-keycloak.result != 'skipped')
+      !contains(needs.*.result, 'cancelled')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -299,12 +285,6 @@ jobs:
             if [ -f DEPLOYED_SHA ]; then
               PREV_SHA=$(cat DEPLOYED_SHA)
             fi
-            if [ -f docker-compose.yml ]; then
-              cp -f docker-compose.yml docker-compose.prev.yml
-              echo "Previous compose saved (PREV_SHA=${PREV_SHA:-unknown})."
-            else
-              echo "No previous compose found; first deployment."
-            fi
             docker rm -f wotb wotb-backend wotb-frontend 2>/dev/null || true
             # 清理手动 docker run 的 mcp-grafana 容器，避免与 compose 管理的 8000 端口冲突
             docker rm -f wotb-mcp-grafana 2>/dev/null || true
@@ -316,7 +296,9 @@ jobs:
             GRAFANA_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
             ENDENV
             chmod 600 .env
-            cat > docker-compose.yml <<'ENDCOMPOSE'
+            # 新 compose 先写入 next 文件：pull 成功后才替换正式 docker-compose.yml，
+            # pull 失败时服务器上的正式 compose 保持旧版本（旧栈不受影响）。
+            cat > docker-compose.next.yml <<'ENDCOMPOSE'
             x-logging: &default-logging
               driver: json-file
               options:
@@ -484,12 +466,13 @@ jobs:
             ENDCOMPOSE
 
             pull_compose() {
+              local compose_file="$1"
               for attempt in 1 2 3; do
-                if docker compose pull; then
+                if docker compose -f "$compose_file" pull; then
                   return 0
                 fi
                 if [ "$attempt" -lt 3 ]; then
-                  echo "docker compose pull failed (attempt $attempt), retrying in 10s..."
+                  echo "docker compose pull failed (${compose_file}, attempt $attempt), retrying in 10s..."
                   sleep 10
                 fi
               done
@@ -531,10 +514,20 @@ jobs:
               docker compose logs --tail 80 keycloak || true
             }
 
-            if ! pull_compose; then
-              echo "ERROR: docker compose pull failed after 3 attempts." >&2
+            if ! pull_compose docker-compose.next.yml; then
+              echo "ERROR: docker compose pull failed after 3 attempts (docker-compose.next.yml)." >&2
+              echo "The running stack and docker-compose.yml are untouched; fix the images before the next deploy." >&2
               exit 1
             fi
+
+            # pull 成功后才备份当前正式 compose（回滚目标）并提升 next 为正式
+            if [ -f docker-compose.yml ]; then
+              cp -f docker-compose.yml docker-compose.prev.yml
+              echo "Previous compose saved (PREV_SHA=${PREV_SHA:-unknown})."
+            else
+              echo "No previous compose found; first deployment."
+            fi
+            mv -f docker-compose.next.yml docker-compose.yml
 
             rollback_needed=false
             if ! docker compose up -d --remove-orphans; then
@@ -556,7 +549,8 @@ jobs:
               echo "== DEPLOY FAILED: rolling back to previous deployment =="
               if [ -f docker-compose.prev.yml ]; then
                 cp -f docker-compose.prev.yml docker-compose.yml
-                if pull_compose && docker compose up -d --remove-orphans; then
+                rm -f docker-compose.next.yml
+                if pull_compose docker-compose.yml && docker compose up -d --remove-orphans; then
                   if wait_healthy; then
                     if [ -n "$PREV_SHA" ]; then
                       echo "$PREV_SHA" > DEPLOYED_SHA

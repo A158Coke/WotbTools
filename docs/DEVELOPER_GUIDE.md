@@ -502,9 +502,9 @@ MVP 只记录**录像者本人**在某场战斗中用某辆车打出的**单场�
 ## CI/CD 与部署
 
 **流水线**：`.github/workflows/deploy.yml` —— push 到 `main` 命中 `java/**`、`frontend/**`、`common/**`、Dockerfile、Keycloak 或 `deploy/**` 时触发，也支持手动 `workflow_dispatch`：
-1. 用完整 push range 判断 backend/frontend/keycloak/deployment 哪些范围变化。
-2. 后端 Maven 全测、前端 Vitest + Vite build 通过后，才按需构建三类镜像。
-3. SSH 部署前备份 `wotb` 与 `keycloak`，把当前 compose 备份为 `docker-compose.prev.yml`，再更新 `/opt/wotb` compose（三个 wotb 镜像钉住本次 `sha-<SHA>` 标签）、`pull` + `up -d`。
+1. 用完整 push range 判断 backend/frontend 哪些范围变化（仅用于测试门禁与 tag 计算）。
+2. 后端 Maven 全测、前端 Vitest + Vite build 通过后，**统一构建 backend/frontend/keycloak 三个 SHA 镜像**——生产部署不按路径增量构建，避免 compose 引用不存在的镜像导致 pull 失败。
+3. SSH 部署前备份 `wotb` 与 `keycloak`；新 compose 先写入 `docker-compose.next.yml`（三个 wotb 镜像钉住本次 `sha-<SHA>` 标签），`docker compose -f docker-compose.next.yml pull` 成功后才把当前正式 compose 备份为 `docker-compose.prev.yml` 并替换，再 `up -d`。
 4. 部署后三端健康检查（后端 `/api/health`、前端经 nginx E2E、Keycloak realm 可用性）：失败自动回滚到上一份 compose 并重新验证；回滚也失败时保留现场、输出日志并让 workflow 失败，人工介入。
 
 **必须配置的 GitHub Secrets**（迁移/换仓库时容易漏）：
@@ -513,7 +513,7 @@ MVP 只记录**录像者本人**在某场战斗中用某辆车打出的**单场�
 - `KEYCLOAK_ADMIN_CLIENT_SECRET` —— 后端 Keycloak Admin API 服务账号 secret。
 
 **已知坑 & 现有对策**（改 workflow/Dockerfile 时别踩回去）：
-- backend/frontend/keycloak 镜像各推 `sha-<SHA>` + `latest`；**生产 compose 钉住 `sha-<SHA>`，不使用 `latest`**（`latest` 仅作镜像仓库入口）。部署失败自动回滚：`/opt/wotb` 保留 `docker-compose.prev.yml` 与 `DEPLOYED_SHA` 标记，健康检查失败时恢复上一份 compose、`pull` + `up -d` 并复检；回滚成功也会更新 `DEPLOYED_SHA`。
+- backend/frontend/keycloak 镜像各推 `sha-<SHA>` + `latest`；**生产 compose 钉住 `sha-<SHA>`，不使用 `latest`**（`latest` 仅作镜像仓库入口）。**每次生产部署三件套镜像全部构建**（`build-backend`/`build-frontend`/`build-keycloak` 无条件执行；`changes` 路径检测只保留测试门禁）。部署失败自动回滚：新 compose 以 `docker-compose.next.yml` 暂存、`pull` 成功后才备份 `docker-compose.prev.yml` 并替换正式文件（pull 失败不污染正式 compose 与回滚目标），健康检查失败时恢复上一份 compose、`pull` + `up -d` 并复检；`DEPLOYED_SHA` 只在成功/回滚成功时更新。
 - **镜像清理时机**：`docker image prune -af` 只在健康检查通过（或回滚成功）后执行，避免失败时旧镜像被提前清掉；GHCR 保留最近 5 个版本（`deploy.yml` 成功后才清理），回滚目标始终可拉取。
 - **VPS 上可能有遗留旧容器占端口** → 部署脚本会先 `docker rm -f wotb-backend wotb-frontend` 腾出 8088，`up -d` 带 `--remove-orphans`。
 - **SSH 脚本必须 `set -e`** → 否则 `docker compose up` 失败仍退出 0，Actions「假绿」而站点不更新（本会话真实发生过）。
