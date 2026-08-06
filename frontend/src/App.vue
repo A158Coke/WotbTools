@@ -12,7 +12,6 @@ import ExtendedPage from './components/ExtendedPage.vue'
 import ReconstructionPage from './components/ReconstructionPage.vue'
 import VersionPage from './components/VersionPage.vue'
 import ContactPage from './components/ContactPage.vue'
-import LoginPage from './components/LoginPage.vue'
 
 const { theme, handleTheme } = useTheme()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
@@ -32,7 +31,6 @@ const viewParam = params.get('view')
 const ALLOWED_VIEWS = [
   'home', 'replay', 'leaderboard', 'extended',
   'profile', 'boost', 'admin-users', 'reconstruction', 'version', 'contact',
-  'login',
 ]
 const activeTool = ref(ALLOWED_VIEWS.includes(viewParam) ? viewParam : defaultView)
 
@@ -77,7 +75,6 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
   <div class="tb-content">
     <HomePage v-if="activeTool === 'home'" />
     <ProfilePage v-else-if="activeTool === 'profile'" />
-    <LoginPage v-else-if="activeTool === 'login'" />
     <LeaderboardPage v-else-if="activeTool === 'leaderboard'" />
     <ExtendedPage v-else-if="activeTool === 'extended'" />
     <BoostPage v-else-if="activeTool === 'boost'" />
