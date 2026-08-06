@@ -3,9 +3,9 @@
     "v": "2.3.0",
     "date": "2026-08-06",
     "tag": "add",
-    "zh": "Wargaming.net 亚服登录 · 登录页新增 Wargaming 入口 · 亚服账号自动验证并填写资料 · 昵称随官方改名自动刷新",
-    "en": "Wargaming.net Asia login · New Wargaming entry on login page · Auto-verified Asia account profile · Nickname auto-refresh",
-    "ru": "Вход через Wargaming.net (Азия) · Новый вход на странице логина · Автопроверка азиатского аккаунта · Автообновление ника"
+    "zh": "Wargaming.net 三服登录（亚洲/欧洲/北美）· 登录页新增三个区服入口 · 官方账号自动验证并填写资料 · 昵称随官方改名自动刷新",
+    "en": "Wargaming.net login (Asia/Europe/NA) · Three region entries on login page · Auto-verified official account profile · Nickname auto-refresh",
+    "ru": "Вход через Wargaming.net (Азия/Европа/Сев. Америка) · Три входа на странице логина · Автопроверка официального аккаунта · Автообновление ника"
   },
   {
     "v": "2.2.0",

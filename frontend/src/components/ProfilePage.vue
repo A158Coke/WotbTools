@@ -97,7 +97,7 @@ async function loadProfile() {
   }
 }
 
-/** WG ASIA 幂等同步：昵称变化时刷新，失败静默（非 ASIA 用户属正常情况）。 */
+/** WG 幂等同步（ASIA/EU/NA）：昵称变化时刷新，失败静默（CN 用户属正常情况）。 */
 async function syncFromLogin() {
   try {
     const synced = await syncUserWotbAccountFromLogin()
@@ -122,7 +122,24 @@ const heroSubtitle = computed(() =>
     : t('profile.notBoundWotbAccount')
 )
 
-const isAsiaProfile = computed(() => profile.value?.wotbServer === 'ASIA')
+/** WARGAMING source = WG 官方账号（ASIA/EU/NA），资料只读；CN MANUAL 用户可编辑。 */
+const isWargamingProfile = computed(
+  () => profile.value?.wotbAccountSource === 'WARGAMING'
+)
+
+const SERVER_LABEL_BY_VALUE = Object.freeze({
+  CN: 'profile.serverCn',
+  ASIA: 'profile.serverAsia',
+  EU: 'profile.serverEu',
+  NA: 'profile.serverNa',
+})
+
+const serverLabel = computed(() => {
+  const key = profile.value?.wotbServer
+    ? SERVER_LABEL_BY_VALUE[profile.value.wotbServer]
+    : null
+  return key ? t(key) : '--'
+})
 
 const isBoosterUser = computed(() => {
   const roles = [
@@ -346,7 +363,7 @@ function notificationMessage(notification) {
             <div class="section-head">
               <h3 class="card-title">{{ $t('profile.wotbTitle') }}</h3>
               <div class="section-actions">
-                <template v-if="!isAsiaProfile">
+                <template v-if="!isWargamingProfile">
                   <button v-if="!editingAccount && !profile.wotbAccountId" class="btn-primary btn-sm" @click="startEditAccount">{{ $t('profile.setAccount') }}</button>
                   <button v-if="!editingAccount && profile.wotbAccountId" class="btn-ghost btn-sm" @click="startEditAccount">{{ $t('profile.edit') }}</button>
                   <button v-if="!editingAccount && profile.wotbAccountId" class="btn-ghost btn-sm" @click="removeAccount">{{ $t('profile.unbind') }}</button>
@@ -354,7 +371,7 @@ function notificationMessage(notification) {
               </div>
             </div>
 
-            <div v-if="editingAccount && !isAsiaProfile" class="edit-form">
+            <div v-if="editingAccount && !isWargamingProfile" class="edit-form">
               <div class="edit-row">
                 <label>{{ $t('profile.accountId') }}</label>
                 <input v-model.number="editAccountId" type="number" class="edit-input" />
@@ -370,8 +387,8 @@ function notificationMessage(notification) {
               </div>
             </div>
 
-            <div v-else-if="isAsiaProfile && profile.wotbAccountId" class="account-bound">
-              <div class="account-row"><span>{{ $t('profile.server') }}</span><span class="badge-ok">{{ $t('profile.serverAsia') }}</span></div>
+            <div v-else-if="isWargamingProfile && profile.wotbAccountId" class="account-bound">
+              <div class="account-row"><span>{{ $t('profile.server') }}</span><span class="badge-ok">{{ serverLabel }}</span></div>
               <div class="account-row"><span>{{ $t('profile.accountSource') }}</span><strong>{{ $t('profile.sourceWargaming') }}</strong></div>
               <div class="account-row"><span>{{ $t('profile.verified') }}</span><span class="badge-ok">{{ $t('profile.verifiedBadge') }}</span></div>
               <div class="account-row"><span>{{ $t('profile.nickname') }}</span><strong>{{ profile.wotbNickname || '--' }}</strong></div>
@@ -380,7 +397,7 @@ function notificationMessage(notification) {
             <div v-else-if="profile.wotbAccountId" class="account-bound">
               <div class="account-row"><span>{{ $t('profile.accountId') }}</span><code>{{ profile.wotbAccountId }}</code></div>
               <div class="account-row"><span>{{ $t('profile.nickname') }}</span><strong>{{ profile.wotbNickname || '--' }}</strong></div>
-              <div class="account-row"><span>{{ $t('profile.server') }}</span><span class="badge-ok">{{ $t('profile.serverCn') }}</span></div>
+              <div class="account-row"><span>{{ $t('profile.server') }}</span><span class="badge-ok">{{ serverLabel }}</span></div>
               <div class="account-row"><span>{{ $t('profile.accountSource') }}</span><strong>{{ $t('profile.sourceUserFilled') }}</strong></div>
             </div>
             <p v-else class="profile-empty">{{ $t('profile.wotbNotBound') }}</p>

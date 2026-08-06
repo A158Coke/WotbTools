@@ -6,10 +6,6 @@ const { login, loginWithWargaming } = useAuth()
 function loginWithQq() {
   login('profile')
 }
-
-function loginWithWargamingAsia() {
-  loginWithWargaming('ASIA', 'profile')
-}
 </script>
 
 <template>
@@ -25,13 +21,18 @@ function loginWithWargamingAsia() {
       </section>
 
       <section class="login-section">
-        <h3 class="login-heading">{{ $t('login.asiaPlayers') }}</h3>
-        <button class="btn-primary login-btn" @click="loginWithWargamingAsia">
-          {{ $t('login.wgLogin') }}
+        <h3 class="login-heading">{{ $t('login.wgLogin') }}</h3>
+        <button class="btn-primary login-btn" @click="loginWithWargaming('ASIA', 'profile')">
+          {{ $t('login.wgAsia') }}
+        </button>
+        <button class="btn-primary login-btn" @click="loginWithWargaming('EU', 'profile')">
+          {{ $t('login.wgEurope') }}
+        </button>
+        <button class="btn-primary login-btn" @click="loginWithWargaming('NA', 'profile')">
+          {{ $t('login.wgNorthAmerica') }}
         </button>
       </section>
 
-      <p class="login-note">{{ $t('login.asiaOnlyNote') }}</p>
       <p class="login-note">{{ $t('login.independentAccountNote') }}</p>
     </div>
   </div>

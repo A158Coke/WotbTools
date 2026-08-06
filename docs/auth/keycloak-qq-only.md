@@ -1,6 +1,6 @@
 # Keycloak Authentication 设计
 
-> **2026-08-06 update**：本文档为 QQ IdP 时期的历史设计。现已提交 Wargaming.net ASIA 亚服登录（见 [wargaming-asia-login.md](wargaming-asia-login.md) 和 [wargaming-asia-deployment.md](wargaming-asia-deployment.md)）：顶层规则改为"每个 Keycloak 用户有 `region` 属性（CN/ASIA）"，QQ 与 WG 分别创建独立账号；本期不做 QQ→WG 绑定。
+> **2026-08-06 update**：本文档为 QQ IdP 时期的历史设计。现已提交 Wargaming.net ASIA / EU / NA 三服登录（见 [wargaming-asia-login.md](wargaming-asia-login.md) 和 [wargaming-asia-deployment.md](wargaming-asia-deployment.md)）：顶层规则改为"每个 Keycloak 用户有 `region` 属性（CN/ASIA/EU/NA）"，QQ 与 WG 分别创建独立账号；本期不做 QQ→WG 绑定。
 
 ## 背景
 

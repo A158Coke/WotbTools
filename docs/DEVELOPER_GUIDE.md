@@ -25,7 +25,7 @@ Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；
 | [`docs/rating-system.md`](rating-system.md) | 评分算法细节 | 碰评分时 |
 | [`docs/rating-progress.md`](rating-progress.md) | rating 扩展目标、已完成项、缺口与下一步 | 接手 rating 扩展时 |
 | [`docs/observability.md`](observability.md) | 可观测系统（日志/指标/Grafana/Prometheus/Loki/Alloy）运维与排障 | 动监控、查日志、调保留策略时 |
-| [`docs/auth/wargaming-asia-login.md`](auth/wargaming-asia-login.md) | Wargaming.net 亚服登录需求与实现（决策 D1–D18） | 改认证/账号绑定/登录页时 |
+| [`docs/auth/wargaming-asia-login.md`](auth/wargaming-asia-login.md) | Wargaming.net ASIA / EU / NA 登录需求与实现（决策 D1–D18） | 改认证/账号绑定/登录页时 |
 | [`docs/auth/wargaming-asia-deployment.md`](auth/wargaming-asia-deployment.md) | WG 登录部署与 Admin Console 手工配置（运维手册） | 上线/排障 WG 登录时 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本历史（对外） | 了解发布历史 |
 | [`README.md`](../README.md) / [`java/README.md`](../java/README.md) | 用户向概览与文档索引；Java/Web 运行、接口、构建 | 跑起来时 |
@@ -357,7 +357,7 @@ AI 复盘区分两种 scope，互不混用：
   - `composables/useReplay.js` — 文件/预览/导出/战斗移除状态管理
   - `composables/useColumns.js` — 列可见性/排序/选择器状态；`localStorage` 持久化单场/汇总两套列配置，并在后端新增列时自动补齐顺序
   - `composables/useTheme.js` — 主题切换（auto/light/dark），数据持久化调用 `utils/theme.js`
-  - `composables/useAuth.js` — Keycloak 认证适配器（check-sso 游客模式；`loginWithWargaming(region, view)` 以 `idpHint=wargaming-asia` 发起 WG 登录）
+  - `composables/useAuth.js` — Keycloak 认证适配器（check-sso 游客模式；`loginWithWargaming(region, view)` 用固定白名单映射发起 WG 登录：ASIA→`wargaming-asia`、EU→`wargaming-eu`、NA→`wargaming-na`）
   - `utils/api.js` / `utils/api-boost.js` — 集中式 API 层；非 2xx 统一转换为稳定 `ApiError`
   - `utils/display.js` — raw enum、成功码和错误码的三语显示
   - `utils/latest-debounce.js` — 丢弃过期异步搜索结果
@@ -372,7 +372,7 @@ AI 复盘区分两种 scope，互不混用：
 - 回放预览列配置持久化使用 `localStorage`：`wotb-replay-player-visible-cols`、`wotb-replay-player-order`、`wotb-replay-agg-visible-cols`、`wotb-replay-agg-order`。读取缓存时需按当前响应列集合清洗，避免旧缓存吃掉新列。
 - 内联 SVG 图标统一使用全局 `.ic` 描边样式；上传按钮使用 `.filebtn input { display:none; }` 隐藏原生文件控件，避免浏览器默认控件破坏布局。
 - `BoostPage.vue` 的打手管理页同时展示两套状态：`booster_profile.status` 是资格状态（`ACTIVE/INACTIVE/BANNED`），接单状态由 `booster_profile.available + activeAssignmentCount` 推导（可接单/忙碌/暂停接单）。分配弹窗按资格、接单状态、活跃订单数、等级和擅长内容排序推荐打手；改动任一含义时，务必同步三语 locale。
-- `ProfilePage.vue` 是个人主页，展示用户身份、WoTB 账号绑定、排行榜记录和站内通知面板；若当前用户是打手，还会显示接单状态与进行中/历史订单。未登录时渲染 `LoginPage`（QQ / Wargaming 两个入口），不再直接跳 Keycloak。Wargaming ASIA 用户（`wotbServer=ASIA`）显示来源 Wargaming.net 与已验证状态，资料只读（无编辑/解绑按钮），页面加载后调用一次 `PUT /api/users/wotb-account/from-login` 幂等同步昵称。通知面板在右侧栏顶部，点击展开通知列表（最近 30 条），支持单条已读和全部已读，未读数字小红点提示。打手接单状态通过 `PATCH /api/boost/boosters/my/availability` 让打手本人暂停/恢复接收新订单；这个开关只影响新订单，不会隐藏已有进行中订单。
+- `ProfilePage.vue` 是个人主页，展示用户身份、WoTB 账号绑定、排行榜记录和站内通知面板；若当前用户是打手，还会显示接单状态与进行中/历史订单。未登录时渲染 `LoginPage`（QQ + Wargaming ASIA/EU/NA 三个区服入口），不再直接跳 Keycloak。Wargaming 官方账号（`wotbAccountSource=WARGAMING`，覆盖 ASIA/EU/NA）显示来源 Wargaming.net 与已验证状态，资料只读（无编辑/解绑按钮），服务器标签按实际区服展示（中国/亚洲/欧洲/北美），页面加载后调用一次 `PUT /api/users/wotb-account/from-login` 幂等同步昵称。通知面板在右侧栏顶部，点击展开通知列表（最近 30 条），支持单条已读和全部已读，未读数字小红点提示。打手接单状态通过 `PATCH /api/boost/boosters/my/availability` 让打手本人暂停/恢复接收新订单；这个开关只影响新订单，不会隐藏已有进行中订单。
 - 陪练订单生命周期由 `boost_request.status` 表示：`NEW/REVIEWING/MATCHED/ACCEPTED/IN_PROGRESS/PENDING_CONFIRM/CLOSED/EXCEPTION/REJECTED/CANCELLED`。打手单次接单生命周期由 `boost_request_assignment.status` 表示：`ASSIGNED/ACCEPTED/IN_PROGRESS/PENDING_CONFIRM/DECLINED/CANCELLED/COMPLETED/EXCEPTION`。订单完成、取消、拒绝或拒单时设置 `unassigned_at` 释放打手忙碌状态。
 - 站内通知由 `user_notification` 保存，boost domain 只调用 `UserNotificationService` 写事件；API 返回 `type + payload` 英文 key，前端 `frontend/src/locales/{zh,en,ru}.json` 负责渲染文案。
 - Boost DTO 不返回 `*Label`、`message` 或本地化 `warning`；选项只返回 `value + enabled`，状态使用 raw enum，成功/失败/警告分别使用 `code`、`error`、`warningCode`。新增任何 code 必须同步三语 `api_codes` / `api_errors`。
@@ -383,12 +383,12 @@ AI 复盘区分两种 scope，互不混用：
 ### 认证与 Wargaming ASIA 登录
 
 - **region 不变量**：每个 Keycloak 用户都有 `region` 属性（`CN`/`ASIA`/`EU`/`NA` 大写）。存量用户已迁移补 `CN`（一次性脚本，dry-run 138 → 更新 138，执行后已删除）；QQ Provider（`JuheQqEndpoint`）对新增用户写 `region=CN`；WG Provider 写实例配置的区服（当前 ASIA，EU/NA 实例写对应值）。
-- **WG 身份**：broker 唯一标识 `wg:{region}:{account_id}`（ASIA 实例即 `wg:asia:{account_id}`），Keycloak `username = account_id`（纯数字、稳定）。`account_id` 一律来自 `POST /wot/auth/prolongate/` 服务端响应（官方契约字段 `account_id`，token↔账号服务端绑定）；浏览器回调的 `account_id`/`nickname`/`expires_at` 均不可信，仅作一致性检查。重复登录由 `WargamingIdentityProvider.updateBrokeredUser` 显式刷新 `displayName` / `wotb.nickname`，身份不变（决策 D11）。
+- **WG 身份**：broker 唯一标识 `wg:{region}:{account_id}`（ASIA 实例即 `wg:asia:{account_id}`），Keycloak `username = wg_{region}_{account_id}`（区服隔离，如 `wg_asia_512345678`，防跨区服 account_id 冲突；游戏账号 ID 保持纯数字存 `wotb.account_id`）。`account_id` 一律来自 `POST /wot/auth/prolongate/` 服务端响应（官方契约字段 `account_id`，token↔账号服务端绑定）；浏览器回调的 `account_id`/`nickname`/`expires_at` 均不可信，仅作一致性检查。重复登录由 `WargamingIdentityProvider.updateBrokeredUser` 显式刷新 `displayName` / `wotb.nickname`，身份不变（决策 D11）。
 - **JWT claims**：`wotbtools-web` client 的 4 个只读 protocol mapper（realm JSON 已含）：`region→wotb_region`、`wotb.account_id→wotb_account_id`、`wotb.nickname→wotb_nickname`、`wotb.verified→wotb_verified`（`jsonType=boolean`）。后端缺失 `wotb_region` / `wotb_verified` 一律按 CN 兜底。
 - **数据库**：V12 扩展 `CHECK (wotb_server IN ('CN','ASIA'))` 并新增 `wotb_account_source`（默认 `MANUAL`）与 `wotb_account_verified_at`（可空）；V13 再扩展 `CHECK IN ('CN','ASIA','EU','NA')`；存量 CN 数据默认 `MANUAL` / NULL，平滑迁移。
 - **API**：`POST /api/users/profile` 按可信 WG claims 自动创建对应区服资料（ASIA/EU/NA）；`PUT /api/users/wotb-account/from-login` 幂等同步昵称（不刷新 verified_at）；`PATCH/DELETE /api/users/wotb-account` 对 WARGAMING source 资料返回只读错误（ASIA 为 `ASIA_PROFILE_READONLY`，EU/NA 为 `WARGAMING_PROFILE_READONLY`）。错误码 `PROFILE_REGION_MISMATCH` / `WOTB_ACCOUNT_MISMATCH` / `WOTB_ACCOUNT_ALREADY_USED` 为 409，`WOTB_CLAIMS_INVALID` / `ASIA_PROFILE_READONLY` / `WARGAMING_PROFILE_READONLY` 为 400。
 - **环境变量**：`WG_APPLICATION_ID`（WoT Blitz 应用 ID）注入 Keycloak 容器；缺失时 Keycloak 正常启动，仅 WG 登录返回"未配置"。
-- **IdP 载体（决策 D18）**：`wargaming` 类型 IdP（Provider ID `wargaming`，实例 alias `wargaming-asia`、region=ASIA；SPI 支持 ASIA/EU/NA 多区服实例）不进 realm JSON（避免密钥进导入配置），dev/prod 均在 Admin Console 手工创建；步骤见 `docs/auth/wargaming-asia-deployment.md`。
+- **IdP 载体（决策 D18）**：`wargaming` 类型 IdP（Provider ID `wargaming`）的 ASIA / EU / NA 三个实例（alias `wargaming-asia` / `wargaming-eu` / `wargaming-na`）不进 realm JSON（避免密钥进导入配置），共用 `WG_APPLICATION_ID` 与 `wotbtools-web` client，dev/prod 均在 Admin Console 手工创建；步骤见 `docs/auth/wargaming-asia-deployment.md`。
 - **测试**：WG Provider 用 JUnit 5 + JDK `HttpServer` stub（`keycloak-wargaming-provider/src/test`），CI 新增 `keycloak-providers` job 跑两个 provider 模块的 `mvn test`；后端用 Mockito 单测覆盖 create/syncFromLogin 的 CN/ASIA/EU/NA 分支与错误码。
 
 ### 显示名（i18n）架构
