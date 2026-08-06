@@ -480,10 +480,10 @@ Wargaming.net 登录会创建独立账号；QQ 与 WG 账号互通功能开发�
 [编辑游戏资料]
 ```
 
-### WG ASIA 用户
+### WG 用户（ASIA / EU / NA）
 
 ```text
-服务器：Asia
+服务器：{wotb_server}
 资料来源：Wargaming.net
 账号已验证
 玩家昵称：{wotb_nickname}
@@ -492,8 +492,8 @@ Wargaming.net 登录会创建独立账号；QQ 与 WG 账号互通功能开发�
 
 要求：
 
-- ASIA 账号的 `server` / `account_id` / `verified` / `source` 不可手动编辑；
-- **本期不允许 WG 用户解绑/删除账号**（决策 D7）：前端隐藏"解绑"按钮，后端对 ASIA profile 的 `PATCH/DELETE /api/users/wotb-account` 返回拒绝；
+- WG 账号（ASIA/EU/NA）的 `server` / `account_id` / `verified` / `source` 不可手动编辑；
+- **本期不允许 WG 用户解绑/删除账号**（决策 D7）：前端隐藏"解绑"按钮，后端对 WARGAMING source profile（ASIA/EU/NA）的 `PATCH/DELETE /api/users/wotb-account` 返回拒绝；
 - 昵称以 WG 官方数据为准，在重新登录或可信同步时刷新；
 - 新增展示文案三语 i18n 同步。
 
@@ -539,7 +539,7 @@ keycloak-wargaming-provider
 ### 4. Realm 配置载体（决策 D18）
 
 - realm JSON：增加 4 个 Protocol Mapper（第八节）与 `defaultRoles`（第七节第 7 条）；不声明 IdP；
-- `wargaming` 类型 IdP（实例 alias `wargaming-asia`、region=ASIA）与 `wotbtools-admin-api` 等：dev/prod 均在 Admin Console 手工配置，步骤写入交付文档。
+- `wargaming` 类型 IdP 的 ASIA / EU / NA 三个实例（alias `wargaming-asia` / `wargaming-eu` / `wargaming-na`、region 对应选择）与 `wotbtools-admin-api` 等：dev/prod 均在 Admin Console 手工配置，步骤写入交付文档。
 
 ---
 
@@ -648,7 +648,7 @@ keycloak-wargaming-provider
 现有 CN 用户数据不丢失
 现有 CN 手动绑定正常
 所有存量用户已补 region=CN（迁移脚本执行记录）
-前端不能手动伪造 ASIA 账号
+前端不能手动伪造 WG 账号（ASIA/EU/NA）
 WG Token 不会泄漏
 ```
 
