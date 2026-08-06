@@ -173,7 +173,7 @@ prompt 构建内部（`TeamAiPromptBuilder` 的 included/omitted/truncated 集�
 ## 12. 已知限制
 
 - Custom auth scheme（非 Bearer/Basic/Digest）在 provider body 中不做特定脱敏——统一返回 `[PROVIDER_BODY_REDACTED]`
-- Player path 暂无 prompt omission（`omittedAnalysisUnitCount = 0`）
-- Multi-team 不再有固定 `MAX_PERSPECTIVES` 数量上限；perspective 是否省略由 token 预算（mandatory/high-priority 原子写入）与编排决定，省略单位进入 `truncatedUnitIds`/`omittedAnalysisUnitCount`
+- Player path 暂无 prompt omission（prompt 构建内部无省略单位）
+- Multi-team 不再有固定 `MAX_PERSPECTIVES` 数量上限；perspective 是否省略由 token 预算（mandatory/high-priority 原子写入）与编排决定，省略单位进入 `truncatedUnitIds`/`omittedUnitIds`（prompt 构建内部；响应不再暴露单元计数）
 - 不支持 drag-and-drop 文件上传
 - 不要求真实 `.wotbreplay` E2E fixture
