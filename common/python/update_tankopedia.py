@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-从 Wargaming.net 官方 WoT Blitz 车辆百科拉取数据，写入仓库根 common/tankopedia.json。
+"""从 Wargaming.net 官方 WoT Blitz 车辆百科拉取数据，写入仓库根 common/tankopedia.json。
 
 用法：
     WG_APPLICATION_ID=<application_id> python update_tankopedia.py [--region asia] [--min-tier 7]
+    WG_APPLICATION_ID=<application_id> python update_tankopedia.py --existing old.json --output new.json
 
 设计约定：
 - 默认只保留 7-10 级车辆（--min-tier 7；--min-tier 1 保留全部）。
-- 手工维护的 ``extraKnowledge`` 字段会被保留：刷新后已存在的 tank_id 继续沿用旧知识点，
-  新车型没有 extraKnowledge，删除的车型一并消失——官方数据与个人知识点共存于同一个 json。
-- 输出字段：name / tier / class(中文) / nation(中文) / alphaDamage / hp / extraKnowledge。
+- 旧数据只通过 --existing 读取（默认仓库 common/tankopedia.json），新数据只写 --output
+  （默认同路径）；生产 Workflow 必须使用不同路径，避免读取与写入互相覆盖。
+- 手工维护的 ``extraKnowledge`` 会被保留：刷新后新数据中仍存在的 tank_id 继续沿用旧知识点，
+  被 WG 官方删除的车型一并消失；若某个仍存在 tank_id 的知识点丢失，脚本直接失败。
+- alphaDamage 规则：取官方 gun.damage 数组第一项（标准弹伤害），禁止使用 max。
+- 日志不输出 application_id、完整 URL 或完整响应。
 - 脚本无第三方依赖（仅标准库 urllib）。
 """
 
@@ -24,6 +27,14 @@ from datetime import datetime, timezone
 
 API_HOST = "https://api.wotblitz.{region}/wotb/encyclopedia/vehicles/"
 DEFAULT_FIELDS = "name,tier,type,nation,hp,gun.damage"
+DEFAULT_LANGUAGE = "zh-cn"
+PAGE_LIMIT = 100
+MAX_PAGES = 100
+
+REPO_TANKOPEDIA = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "tankopedia.json",
+)
 
 # WG type 代码 -> 中文车种（与前端 replay_values / prompt 措辞一致）
 TYPE_TO_ZH = {
@@ -49,37 +60,6 @@ NATION_TO_ZH = {
     "sweden": "瑞典",
 }
 
-OUTPUT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "tankopedia.json")
-
-
-def fetch_vehicles(app_id, region, fields, language):
-    """分页拉取全部车辆，返回 {tank_id: {...}}。"""
-    data = {}
-    offset = 0
-    limit = 100
-    while True:
-        query = urllib.parse.urlencode({
-            "application_id": app_id,
-            "fields": fields,
-            "language": language,
-            "limit": str(limit),
-            "offset": str(offset),
-        })
-        url = API_HOST.format(region=region) + "?" + query
-        print("GET", API_HOST.format(region=region), "limit=%d offset=%d" % (limit, offset))
-        with urllib.request.urlopen(url, timeout=60) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-        if payload.get("status") != "ok":
-            raise RuntimeError("WG API error: %s" % json.dumps(payload, ensure_ascii=False)[:500])
-        batch = payload.get("data") or {}
-        if not batch:
-            break
-        data.update(batch)
-        if len(batch) < limit:
-            break
-        offset += limit
-    return data
-
 
 def as_int(value):
     try:
@@ -88,73 +68,230 @@ def as_int(value):
         return None
 
 
-def transform(vehicles):
+def load_existing_data(path):
+    """读取旧数据，返回 {tank_id: entry}；路径缺失/格式错误时返回 {}。"""
+    if not path or not os.path.exists(path):
+        return {}
+
+    with open(path, encoding="utf-8") as file:
+        value = json.load(file)
+
+    if not isinstance(value, dict):
+        return {}
+
+    data = value.get("data", value)
+    return data if isinstance(data, dict) else {}
+
+
+def count_knowledge(data):
+    """统计非空 extraKnowledge 的车辆数。"""
+    return sum(
+        1 for entry in data.values()
+        if isinstance(entry, dict) and bool(entry.get("extraKnowledge"))
+    )
+
+
+def verify_knowledge_preservation(old_data, new_data):
+    """检查新数据中仍存在的 tank_id，其非空 extraKnowledge 是否与旧数据一致。
+
+    只比较新旧共有的 tank_id；被 WG 官方删除的车辆不参与比较。
+    返回 (ok, old_knowledge_count, preserved_knowledge_count)。
+    """
+    old_count = count_knowledge(old_data)
+    preserved = 0
+    for tank_id, old_entry in old_data.items():
+        if not isinstance(old_entry, dict) or not old_entry.get("extraKnowledge"):
+            continue
+        new_entry = new_data.get(tank_id)
+        if new_entry is None:
+            continue
+        if (
+            not isinstance(new_entry, dict)
+            or new_entry.get("extraKnowledge") != old_entry.get("extraKnowledge")
+        ):
+            return False, old_count, preserved
+        preserved += 1
+    return True, old_count, preserved
+
+
+def merge_extra_knowledge(new_data, old_data):
+    """把旧文件中仍存在 tank_id 的非空 extraKnowledge 合并进新数据。
+
+    合并后必须通过 verify_knowledge_preservation，否则抛异常（防止知识意外减少）。
+    """
+    for tank_id, entry in new_data.items():
+        if not isinstance(entry, dict):
+            continue
+        old_entry = (old_data or {}).get(tank_id)
+        if isinstance(old_entry, dict) and old_entry.get("extraKnowledge"):
+            entry["extraKnowledge"] = old_entry["extraKnowledge"]
+    ok, _, _ = verify_knowledge_preservation(old_data or {}, new_data)
+    if not ok:
+        raise RuntimeError(
+            "TANKOPEDIA_KNOWLEDGE_LOST: extraKnowledge for an existing tank_id was not preserved"
+        )
+    return new_data
+
+
+def http_get_vehicles(url, region, opener=None):
+    """GET 并解析 WG vehicles 响应。错误日志不含 application_id / 完整 URL / 完整响应。"""
+    try:
+        if opener is not None:
+            with opener.open(url, timeout=60) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+        else:
+            with urllib.request.urlopen(url, timeout=60) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError("WG_API_REQUEST_FAILED region=%s error=%s" % (region, exc)) from exc
+    if payload.get("status") != "ok":
+        error = payload.get("error") if isinstance(payload.get("error"), dict) else {}
+        message = error.get("message") or payload.get("status")
+        raise RuntimeError("WG_API_ERROR region=%s message=%s" % (region, message))
+    batch = payload.get("data")
+    return batch if isinstance(batch, dict) else {}
+
+
+def fetch_vehicles(app_id, region, fields, language, opener=None):
+    """分页拉取全部车辆，返回 (data, pages)。
+
+    契约：WG vehicles 接口支持 limit/offset；每页累计数量必须增长，否则视为死循环。
+    日志只输出 region / offset / page / batch size / 累计车辆数，不输出 application_id。
+    """
+    data = {}
+    offset = 0
+    pages = 0
+    while True:
+        pages += 1
+        if pages > MAX_PAGES:
+            raise RuntimeError("WG_PAGINATION_PAGE_LIMIT_EXCEEDED")
+        query = urllib.parse.urlencode({
+            "application_id": app_id,
+            "fields": fields,
+            "language": language,
+            "limit": str(PAGE_LIMIT),
+            "offset": str(offset),
+        })
+        url = API_HOST.format(region=region) + "?" + query
+        print("GET region=%s offset=%d" % (region, offset))
+        batch = http_get_vehicles(url, region, opener=opener)
+        if not batch:
+            break
+        previous_count = len(data)
+        data.update(batch)
+        if len(data) == previous_count:
+            raise RuntimeError("WG_PAGINATION_NO_PROGRESS")
+        print(
+            "page=%d offset=%d batch_size=%d cumulative=%d"
+            % (pages, offset, len(batch), len(data))
+        )
+        if len(batch) < PAGE_LIMIT:
+            break
+        offset += PAGE_LIMIT
+    return data, pages
+
+
+def log_gun_damage_samples(vehicles, count=5):
+    """打印前几辆车的 gun.damage 数组（脱敏，无 application_id / 完整响应），用于人工确认弹序。"""
+    print("gun.damage samples (first %d vehicles):" % count)
+    for tank_id, vehicle in list(vehicles.items())[:count]:
+        gun = vehicle.get("gun") if isinstance(vehicle, dict) else None
+        damages = gun.get("damage") if isinstance(gun, dict) else None
+        print(
+            "  tank=%s name=%s gun.damage=%s"
+            % (tank_id, vehicle.get("name"), json.dumps(damages, ensure_ascii=False))
+        )
+
+
+def alpha_from_gun(gun, rule):
+    """从 gun.damage 取炮伤。
+
+    rule="first"：取数组第一项（标准弹伤害，已通过真实响应验证，不使用 max）。
+    rule="conservative"：返回 None，由调用方保留旧值或让新车辆缺失该字段。
+    """
+    if not isinstance(gun, dict):
+        return None
+    damages = gun.get("damage")
+    if isinstance(damages, list):
+        if not damages:
+            return None
+        if rule == "first":
+            return as_int(damages[0])
+        return None
+    return as_int(damages)
+
+
+def transform(vehicles, alpha_rule, old_data):
     """WG 原始字段 -> tankopedia.json 条目（中文车种/国家 + alphaDamage/hp）。"""
+    old_data = old_data or {}
     out = {}
-    for tank_id, v in vehicles.items():
-        tier = as_int(v.get("tier"))
-        alpha = None
-        gun = v.get("gun")
-        if isinstance(gun, dict):
-            damages = gun.get("damage")
-            if isinstance(damages, list) and damages:
-                alpha = max(as_int(d) or 0 for d in damages)
-            elif damages is not None:
-                alpha = as_int(damages)
+    for tank_id, vehicle in vehicles.items():
+        tier = as_int(vehicle.get("tier"))
+        if alpha_rule == "first":
+            alpha = alpha_from_gun(vehicle.get("gun"), "first")
+        else:
+            old_entry = old_data.get(tank_id)
+            alpha = as_int(old_entry.get("alphaDamage")) if isinstance(old_entry, dict) else None
         entry = {
-            "name": v.get("name") or "#" + tank_id,
+            "name": vehicle.get("name") or "#" + tank_id,
             "tier": tier,
-            "class": TYPE_TO_ZH.get(v.get("type", ""), v.get("type") or "未知"),
-            "nation": NATION_TO_ZH.get(v.get("nation", ""), v.get("nation") or "未知"),
+            "class": TYPE_TO_ZH.get(vehicle.get("type", ""), vehicle.get("type") or "未知"),
+            "nation": NATION_TO_ZH.get(vehicle.get("nation", ""), vehicle.get("nation") or "未知"),
         }
         if alpha and alpha > 0:
             entry["alphaDamage"] = alpha
-        hp = as_int(v.get("hp"))
+        hp = as_int(vehicle.get("hp"))
         if hp and hp > 0:
             entry["hp"] = hp
         out[str(tank_id)] = entry
     return out
 
 
-def merge_extra_knowledge(new_data, old_data):
-    """刷新后保留旧文件中同名 tank_id 的手工 extraKnowledge。"""
-    for tank_id, entry in new_data.items():
-        old = (old_data or {}).get(tank_id)
-        if old and old.get("extraKnowledge"):
-            entry["extraKnowledge"] = old["extraKnowledge"]
-    return new_data
+def filter_by_min_tier(data, min_tier):
+    """只保留 tier >= min_tier 的车辆；min_tier <= 1 表示保留全部。"""
+    if not min_tier or min_tier <= 1:
+        return data
+    return {
+        tank_id: entry for tank_id, entry in data.items()
+        if (entry.get("tier") or 0) >= min_tier
+    }
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Sync WG official vehicle encyclopedia into tankopedia.json")
+def write_json(path, payload):
+    with open(path, "w", encoding="utf-8", newline="\n") as file:
+        json.dump(payload, file, ensure_ascii=False, indent=2)
+        file.write("\n")
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Sync WG official vehicle encyclopedia into tankopedia.json"
+    )
     parser.add_argument("--region", default="asia", choices=["asia", "eu", "com"])
-    parser.add_argument("--min-tier", type=int, default=7, help="只保留该等级及以上的车辆（默认 7）")
-    parser.add_argument("--language", default="zh-cn")
-    parser.add_argument("--app-id", default=None, help="WG application_id（默认读环境变量 WG_APPLICATION_ID）")
-    parser.add_argument("--output", default=OUTPUT,
-                        help="输出 json 路径（默认仓库根 common/tankopedia.json；VPS 同步时传 /tmp 下路径）")
-    args = parser.parse_args()
+    parser.add_argument("--min-tier", type=int, default=7,
+                        help="只保留该等级及以上的车辆（默认 7；1 = 全部）")
+    parser.add_argument("--language", default=DEFAULT_LANGUAGE)
+    parser.add_argument("--existing", default=REPO_TANKOPEDIA,
+                        help="旧数据读取路径（默认仓库 common/tankopedia.json；Workflow 必须与 --output 不同）")
+    parser.add_argument("--output", default=REPO_TANKOPEDIA,
+                        help="新数据写入路径（默认仓库 common/tankopedia.json）")
+    parser.add_argument("--alpha-rule", choices=["first", "conservative"], default="first",
+                        help="alphaDamage 规则：first=gun.damage 第一项（标准弹，已验证）；"
+                             "conservative=保留旧值/新车辆缺失")
+    args = parser.parse_args(argv)
 
-    app_id = args.app_id or os.environ.get("WG_APPLICATION_ID", "").strip()
+    app_id = os.environ.get("WG_APPLICATION_ID", "").strip()
     if not app_id:
-        print("ERROR: missing WG application_id; set WG_APPLICATION_ID or pass --app-id.", file=sys.stderr)
-        sys.exit(1)
+        print("ERROR: missing WG application_id; set WG_APPLICATION_ID.", file=sys.stderr)
+        return 1
 
-    old_data = {}
-    if os.path.exists(OUTPUT):
-        with open(OUTPUT, encoding="utf-8") as f:
-            old = json.load(f)
-        old_data = old.get("data", old) if isinstance(old, dict) else {}
+    old_data = load_existing_data(args.existing)
+    vehicles, pages = fetch_vehicles(app_id, args.region, DEFAULT_FIELDS, args.language)
+    print("fetched_vehicles=%d pages=%d" % (len(vehicles), pages))
+    log_gun_damage_samples(vehicles)
 
-    vehicles = fetch_vehicles(app_id, args.region, DEFAULT_FIELDS, args.language)
-    print("fetched vehicles:", len(vehicles))
-
-    data = transform(vehicles)
-    if args.min_tier > 1:
-        before = len(data)
-        data = {tid: e for tid, e in data.items() if (e.get("tier") or 0) >= args.min_tier}
-        print("tier >= %d: %d -> %d" % (args.min_tier, before, len(data)))
-
+    data = transform(vehicles, args.alpha_rule, old_data)
+    data = filter_by_min_tier(data, args.min_tier)
     data = merge_extra_knowledge(data, old_data)
     data = dict(sorted(data.items(), key=lambda kv: int(kv[0])))
 
@@ -169,11 +306,22 @@ def main():
         },
         "data": data,
     }
-    with open(args.output, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(output, f, ensure_ascii=False, indent=2)
-        f.write("\n")
-    print("wrote", args.output, "entries:", len(data))
+    write_json(args.output, output)
+
+    ok, old_knowledge, preserved_knowledge = verify_knowledge_preservation(old_data, data)
+    print(
+        "SAFE_RESULTS region=%s pages=%d fetched=%d tier_ge_%d=%d "
+        "existing_knowledge=%d preserved_knowledge=%d alpha_rule=%s"
+        % (
+            args.region, pages, len(vehicles), args.min_tier, len(data),
+            old_knowledge, preserved_knowledge, args.alpha_rule,
+        )
+    )
+    if not ok:
+        print("ERROR: extraKnowledge preservation failed.", file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
