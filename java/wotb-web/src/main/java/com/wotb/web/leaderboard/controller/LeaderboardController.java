@@ -3,6 +3,7 @@ package com.wotb.web.leaderboard.controller;
 import com.wotb.web.leaderboard.dto.LeaderboardPageDto;
 import com.wotb.web.leaderboard.service.LeaderboardService;
 import com.wotb.web.leaderboard.service.LeaderboardUploadService;
+import com.wotb.web.config.ApiPaths;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -18,7 +19,7 @@ import java.util.Map;
  * 排行榜 REST API (只做 HTTP 映射, 业务在 LeaderboardService)。
  */
 @RestController
-@RequestMapping("/api/leaderboard")
+@RequestMapping(ApiPaths.LEADERBOARD)
 @CrossOrigin(origins = "*")
 public class LeaderboardController {
 

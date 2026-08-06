@@ -215,6 +215,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 | `TeamBattleFeatureSet` | `wotb-core/.../feature/TeamBattleFeatureSet.java` | 团队特征、覆盖率、权威结算、观测子集与 limitations |
 | `AiReplayAnalysisService` | `wotb-web/.../ai/AiReplayAnalysisService.java` | 玩家/团队 AI 调用、上游错误分类与 context 编排 |
 | `AiCancellationRegistry` | `wotb-web/.../ai/gateway/AiCancellationRegistry.java` | in-flight AI 请求取消注册表（客户端取消 → 中断上游调用，稳定错误码 `AI_CANCELLED`） |
+| `ApiPaths` | `wotb-web/.../config/ApiPaths.java` | API URL 常量单一来源（SecurityConfig 匹配器与 Controller 映射共用） |
 | `TeamAiPromptBuilder` | `wotb-web/.../ai/TeamAiPromptBuilder.java` | 确定性团队输入压缩和 token 估算预算（`BudgetWriter` + `AiTokenEstimator`） |
 | `PlayerSideResolver` | `wotb-core/.../processing/PlayerSideResolver.java` | 随机战斗友方/敌方/未知解析（FRIENDLY/ENEMY/UNKNOWN），基于录像者权威 team |
 | `FriendlyEnemyResult` | `wotb-core/.../processing/FriendlyEnemyResult.java` | 三态胜负转换（FRIENDLY_WIN/ENEMY_WIN/DRAW_OR_UNKNOWN） |

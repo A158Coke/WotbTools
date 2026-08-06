@@ -1,20 +1,20 @@
 package com.wotb.web;
 
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.json.JsonMapper;
 import com.wotb.web.admin.dto.AdminDeleteUserResponse;
 import com.wotb.web.boost.dto.BoostAssignmentDto;
 import com.wotb.web.boost.dto.BoosterApplicationSummaryDto;
 import com.wotb.web.boost.dto.BoosterDto;
+import com.wotb.web.boost.dto.ConfirmBoostRequestResponse;
 import com.wotb.web.boost.dto.CreateBoostRequestResponse;
 import com.wotb.web.boost.dto.CreateBoosterApplicationResponse;
-import com.wotb.web.boost.dto.ConfirmBoostRequestResponse;
 import com.wotb.web.boost.service.BoostOptionsMapper;
 import com.wotb.web.boost.service.BoostOptionsService;
 import com.wotb.web.controller.GlobalExceptionHandler;
 import com.wotb.web.replay.exception.ReplayBusyException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.time.OffsetDateTime;
 import java.util.Map;
@@ -131,9 +131,9 @@ class ApiContractTest {
     }
 
     @Test
-    void adminDeleteResponseShouldNotExposeUnusedMessageFields() throws Exception {
+    void adminDeleteResponseShouldNotExposeUnusedMessageFields() {
         final String json = objectMapper.writeValueAsString(
-                new AdminDeleteUserResponse(true, "kc-user", true, true)
+                new AdminDeleteUserResponse("kc-user")
         );
 
         assertThat(json)

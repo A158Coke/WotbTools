@@ -5,6 +5,7 @@ import com.wotb.web.boost.dto.CreateBoosterRequest;
 import com.wotb.web.boost.dto.UpdateBoosterAvailabilityRequest;
 import com.wotb.web.boost.dto.UpdateBoosterRequest;
 import com.wotb.web.boost.service.BoosterService;
+import com.wotb.web.config.ApiPaths;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -22,7 +23,7 @@ import java.util.Map;
 
 /** 管理员侧打手管理接口。 */
 @RestController
-@RequestMapping("/api/admin/boost/boosters")
+@RequestMapping(ApiPaths.ADMIN_BOOST_BOOSTERS)
 @CrossOrigin(origins = "*")
 public class AdminBoosterController {
 

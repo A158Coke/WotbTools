@@ -6,6 +6,7 @@ import com.wotb.web.user.dto.UpdateWotbAccountRequest;
 import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.service.UserProfileService;
 import com.wotb.web.util.JwtUtil;
+import com.wotb.web.config.ApiPaths;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -19,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/users")
+@RequestMapping(ApiPaths.USERS)
 @CrossOrigin(origins = "*")
 public class UserProfileController {
 

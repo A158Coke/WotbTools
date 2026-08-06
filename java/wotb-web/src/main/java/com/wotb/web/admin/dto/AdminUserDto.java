@@ -1,7 +1,7 @@
 package com.wotb.web.admin.dto;
 
 /** 管理员用户搜索列表 DTO。 */
-public class AdminUserDto {
+public class    AdminUserDto {
 
     private String keycloakUserId;
     private Long profileId;

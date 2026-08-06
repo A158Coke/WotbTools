@@ -10,8 +10,6 @@ public class AdminUserDetailDto {
     private KeycloakDto keycloak;
     private List<String> warnings;
 
-    public AdminUserDetailDto() {}
-
     public AdminUserDetailDto(final String keycloakUserId, final ProfileDto profile,
                               final KeycloakDto keycloak, final List<String> warnings) {
         this.keycloakUserId = keycloakUserId;

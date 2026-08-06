@@ -6,6 +6,7 @@ import com.wotb.web.boost.dto.UpdateMyAssignmentRequest;
 import com.wotb.web.boost.service.BoostAssignmentService;
 import com.wotb.web.boost.service.BoosterService;
 import com.wotb.web.util.JwtUtil;
+import com.wotb.web.config.ApiPaths;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,7 +23,7 @@ import java.util.Optional;
 
 /** 打手视角接口：查看自己的分配订单。 */
 @RestController
-@RequestMapping("/api/booster")
+@RequestMapping(ApiPaths.BOOSTER)
 @CrossOrigin(origins = "*")
 public class MyAssignmentController {
 
