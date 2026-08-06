@@ -17,6 +17,7 @@
 - [team-ai-review-feature.md](docs/team-ai-review-feature.md) — AI 团队复盘功能说明
 - [auth/wargaming-asia-login.md](docs/auth/wargaming-asia-login.md) — Wargaming.net ASIA / EU / NA 登录需求与实现说明
 - [auth/wargaming-asia-deployment.md](docs/auth/wargaming-asia-deployment.md) — Wargaming 登录部署与手工配置（运维手册）
+- [auth/keycloak-mapper-guide.md](docs/auth/keycloak-mapper-guide.md) — Keycloak Protocol Mapper / Client Scope 机制与生产补 mapper 指南
 
 ## 快速开始
 

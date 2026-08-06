@@ -27,6 +27,7 @@ Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；
 | [`docs/observability.md`](observability.md) | 可观测系统（日志/指标/Grafana/Prometheus/Loki/Alloy）运维与排障 | 动监控、查日志、调保留策略时 |
 | [`docs/auth/wargaming-asia-login.md`](auth/wargaming-asia-login.md) | Wargaming.net ASIA / EU / NA 登录需求与实现（决策 D1–D18） | 改认证/账号绑定/登录页时 |
 | [`docs/auth/wargaming-asia-deployment.md`](auth/wargaming-asia-deployment.md) | WG 登录部署与 Admin Console 手工配置（运维手册） | 上线/排障 WG 登录时 |
+| [`docs/auth/keycloak-mapper-guide.md`](auth/keycloak-mapper-guide.md) | Keycloak Protocol Mapper / Client Scope 机制与生产补 mapper 指南 | JWT 缺 claim / 改 claims / 加 client scope 时 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本历史（对外） | 了解发布历史 |
 | [`README.md`](../README.md) / [`java/README.md`](../java/README.md) | 用户向概览与文档索引；Java/Web 运行、接口、构建 | 跑起来时 |
 | [`TODO.md`](TODO.md) | 待办（含已完成收尾记录与下一步） | 找下一步做什么 |
