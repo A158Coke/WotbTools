@@ -19,6 +19,29 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
+import static com.wotb.web.config.ApiPaths.ADMIN_BOOST_PATTERN;
+import static com.wotb.web.config.ApiPaths.ADMIN_PATTERN;
+import static com.wotb.web.config.ApiPaths.ADMIN_USERS_PATTERN;
+import static com.wotb.web.config.ApiPaths.API_PATTERN;
+import static com.wotb.web.config.ApiPaths.BOOSTER_PATTERN;
+import static com.wotb.web.config.ApiPaths.BOOST_BOOSTER_APPLICATIONS_PATTERN;
+import static com.wotb.web.config.ApiPaths.BOOST_BOOSTERS_PATTERN;
+import static com.wotb.web.config.ApiPaths.BOOST_LEGACY;
+import static com.wotb.web.config.ApiPaths.BOOST_LEGACY_PATTERN;
+import static com.wotb.web.config.ApiPaths.BOOST_OPTIONS;
+import static com.wotb.web.config.ApiPaths.BOOST_REQUESTS_PATTERN;
+import static com.wotb.web.config.ApiPaths.COLUMNS;
+import static com.wotb.web.config.ApiPaths.EXPORT;
+import static com.wotb.web.config.ApiPaths.HEALTH;
+import static com.wotb.web.config.ApiPaths.LEADERBOARD_PATTERN;
+import static com.wotb.web.config.ApiPaths.PREVIEW;
+import static com.wotb.web.config.ApiPaths.RATING;
+import static com.wotb.web.config.ApiPaths.REPLAY_ANALYZE;
+import static com.wotb.web.config.ApiPaths.REPLAY_ANALYZE_CANCEL;
+import static com.wotb.web.config.ApiPaths.REPLAY_PROCESS;
+import static com.wotb.web.config.ApiPaths.REPLAY_RECONSTRUCT_BATCH;
+import static com.wotb.web.config.ApiPaths.USERS_PATTERN;
+
 /**
  * 安全配置: Keycloak JWT 认证 + 角色授权。
  * 权限层级:
@@ -42,41 +65,41 @@ public class SecurityConfig {
             ))
             .authorizeHttpRequests(auth -> auth
                 // --- 公开接口 ---
-                .requestMatchers("/api/boost/options").permitAll()
-                .requestMatchers("/api/health", "/api/columns", "/api/rating",
-                        "/api/preview", "/api/export").permitAll()
-                .requestMatchers("/api/leaderboard/**").permitAll()
+                .requestMatchers(BOOST_OPTIONS).permitAll()
+                .requestMatchers(HEALTH, COLUMNS, RATING,
+                        PREVIEW, EXPORT).permitAll()
+                .requestMatchers(LEADERBOARD_PATTERN).permitAll()
 
                 // --- AI 复盘与批量处理 (wotbtools-user / wotbtools-admin) ---
-                .requestMatchers("/api/replay/reconstruct-batch",
-                        "/api/replay/process",
-                        "/api/replay/analyze",
-                        "/api/replay/analyze/cancel")
+                .requestMatchers(REPLAY_RECONSTRUCT_BATCH,
+                        REPLAY_PROCESS,
+                        REPLAY_ANALYZE,
+                        REPLAY_ANALYZE_CANCEL)
                     .hasAnyRole("wotbtools-user", "wotbtools-admin")
 
                 // --- 管理员用户管理 (仅 wotbtools-admin) ---
-                .requestMatchers("/api/admin/users/**")
+                .requestMatchers(ADMIN_USERS_PATTERN)
                     .hasRole("wotbtools-admin")
 
                 // --- 打手管理（boost-manager 仅可访问该域） ---
-                .requestMatchers("/api/admin/boost/**")
+                .requestMatchers(ADMIN_BOOST_PATTERN)
                     .hasAnyRole("wotbtools-admin", "boost-manager")
 
                 // --- 其他管理员接口仅超级管理员 ---
-                .requestMatchers("/api/admin/**")
+                .requestMatchers(ADMIN_PATTERN)
                     .hasRole("wotbtools-admin")
 
                 // --- 需登录接口 (wotbtools-admin 也是已登录用户，自动通过) ---
-                .requestMatchers("/api/users/**",
-                        "/api/boost/requests/**",
-                        "/api/boost/boosters/**",
-                        "/api/boost/booster-applications/**",
-                        "/api/booster/**",
-                        "/boost", "/boost/**")
+                .requestMatchers(USERS_PATTERN,
+                        BOOST_REQUESTS_PATTERN,
+                        BOOST_BOOSTERS_PATTERN,
+                        BOOST_BOOSTER_APPLICATIONS_PATTERN,
+                        BOOSTER_PATTERN,
+                        BOOST_LEGACY, BOOST_LEGACY_PATTERN)
                     .authenticated()
 
                 // --- 未显式声明的 API 默认拒绝；静态资源放行 ---
-                .requestMatchers("/api/**").denyAll()
+                .requestMatchers(API_PATTERN).denyAll()
                 .anyRequest().permitAll()
             );
         return http.build();

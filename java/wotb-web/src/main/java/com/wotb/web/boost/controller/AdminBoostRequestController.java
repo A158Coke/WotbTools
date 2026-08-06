@@ -2,6 +2,7 @@ package com.wotb.web.boost.controller;
 
 import com.wotb.web.boost.dto.AdminBoostRequestDto;
 import com.wotb.web.boost.service.AdminBoostRequestService;
+import com.wotb.web.config.ApiPaths;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
@@ -18,7 +19,7 @@ import java.util.Map;
 
 /** 管理员侧需求审核 + 分配操作。只需要 boost-manager role。 */
 @RestController
-@RequestMapping("/api/admin/boost/requests")
+@RequestMapping(ApiPaths.ADMIN_BOOST_REQUESTS)
 public class AdminBoostRequestController {
 
     private final AdminBoostRequestService service;

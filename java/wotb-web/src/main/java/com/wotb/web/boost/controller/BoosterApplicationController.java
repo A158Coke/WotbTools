@@ -5,6 +5,7 @@ import com.wotb.web.boost.dto.CreateBoosterApplicationRequest;
 import com.wotb.web.boost.dto.CreateBoosterApplicationResponse;
 import com.wotb.web.boost.service.BoosterApplicationService;
 import com.wotb.web.util.JwtUtil;
+import com.wotb.web.config.ApiPaths;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -15,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/boost/booster-applications")
+@RequestMapping(ApiPaths.BOOST_BOOSTER_APPLICATIONS)
 @CrossOrigin(origins = "*")
 public class BoosterApplicationController {
 

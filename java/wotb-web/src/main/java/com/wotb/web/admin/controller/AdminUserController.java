@@ -4,6 +4,7 @@ import com.wotb.web.admin.dto.AdminDeleteUserResponse;
 import com.wotb.web.admin.dto.AdminUserDetailDto;
 import com.wotb.web.admin.dto.AdminUserDto;
 import com.wotb.web.admin.service.AdminUserService;
+import com.wotb.web.config.ApiPaths;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -17,7 +18,7 @@ import java.util.List;
 
 /** 管理员用户管理 API。需要 wotbtools-admin 角色。 */
 @RestController
-@RequestMapping("/api/admin/users")
+@RequestMapping(ApiPaths.ADMIN_USERS)
 public class AdminUserController {
 
     private final AdminUserService adminUserService;

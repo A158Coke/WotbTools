@@ -144,10 +144,8 @@ public class AdminUserService {
             }
         }
 
-        final boolean keycloakDeleted;
         try {
             keycloakAdminUserService.deleteUser(targetKeycloakUserId);
-            keycloakDeleted = true;
         } catch (final Exception e) {
             log.markFailedKeycloakDelete(ErrorCode.FAILED_KEYCLOAK_DELETE.name(), false, e.getMessage());
             logPersister.save(log);
@@ -155,9 +153,9 @@ public class AdminUserService {
                     ErrorCode.FAILED_KEYCLOAK_DELETE.getDefaultMessage());
         }
 
-        log.markSuccess(localDeleted, keycloakDeleted);
+        log.markSuccess(localDeleted, true);
         logPersister.save(log);
 
-        return new AdminDeleteUserResponse(true, targetKeycloakUserId, localDeleted, keycloakDeleted);
+        return new AdminDeleteUserResponse(targetKeycloakUserId);
     }
 }

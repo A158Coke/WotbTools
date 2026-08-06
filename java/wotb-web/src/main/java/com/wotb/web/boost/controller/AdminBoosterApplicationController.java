@@ -5,6 +5,7 @@ import com.wotb.web.boost.dto.BoosterApplicationSummaryDto;
 import com.wotb.web.boost.dto.ReviewBoosterApplicationRequest;
 import com.wotb.web.boost.service.BoosterApplicationService;
 import com.wotb.web.util.JwtUtil;
+import com.wotb.web.config.ApiPaths;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/admin/boost/booster-applications")
+@RequestMapping(ApiPaths.ADMIN_BOOST_BOOSTER_APPLICATIONS)
 public class AdminBoosterApplicationController {
 
     private final BoosterApplicationService service;

@@ -15,6 +15,7 @@ import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.ai.gateway.AiCancellationToken;
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
+import com.wotb.web.config.ApiPaths;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
@@ -26,7 +27,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -46,7 +46,6 @@ import java.util.UUID;
  * </p>
  */
 @RestController
-@RequestMapping("/api/replay")
 @CrossOrigin(origins = "*")
 public class ReconstructionController {
 
@@ -66,7 +65,7 @@ public class ReconstructionController {
         this.cancellationRegistry = cancellationRegistry;
     }
 
-    @PostMapping(value = "/analyze", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping(value = ApiPaths.REPLAY_ANALYZE, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public AnalyzeResponse analyze(
             @RequestParam("files") final MultipartFile[] files,
             @RequestParam(name = "lang", required = true) final String lang,
@@ -95,7 +94,7 @@ public class ReconstructionController {
      * call is aborted instead of running to completion for a client that no
      * longer waits for it.
      */
-    @PostMapping(value = "/analyze/cancel")
+    @PostMapping(value = ApiPaths.REPLAY_ANALYZE_CANCEL)
     public ResponseEntity<Void> cancelAnalyze(
             @RequestParam("correlationId") final String correlationId) {
         if (!cancellationRegistry.cancel(correlationId)) {
@@ -108,7 +107,7 @@ public class ReconstructionController {
      * 批量重建（公开给 admin 使用的新 pipeline）。
      * POST /api/replay/reconstruct-batch
      */
-    @PostMapping(value = "/reconstruct-batch", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping(value = ApiPaths.REPLAY_RECONSTRUCT_BATCH, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ReplayBatchProcessingResult reconstructBatch(
             @RequestParam("files") final MultipartFile[] files) throws IOException {
 
@@ -117,7 +116,7 @@ public class ReconstructionController {
         return timed(ReplayUsageMetrics.OP_RECONSTRUCT, files.length, () -> processingFacade.processBatch(sources, ReplayProcessingOptions.full()));
     }
 
-    @PostMapping(value = "/process", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping(value = ApiPaths.REPLAY_PROCESS, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ReplayBatchProcessingResult process(
             @RequestParam("files") final MultipartFile[] files,
             @RequestParam(name = "reconstruct", defaultValue = "false") final boolean doReconstruct) throws IOException {
@@ -151,9 +150,7 @@ public class ReconstructionController {
     private static <T> T invoke(final ThrowingSupplier<T> body) throws IOException {
         try {
             return body.get();
-        } catch (final IOException e) {
-            throw e;
-        } catch (final RuntimeException e) {
+        } catch (final IOException | RuntimeException e) {
             throw e;
         } catch (final Exception e) {
             throw new IOException(e);

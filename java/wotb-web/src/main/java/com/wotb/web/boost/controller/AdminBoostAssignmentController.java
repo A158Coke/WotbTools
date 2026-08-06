@@ -4,6 +4,7 @@ import com.wotb.web.boost.dto.AssignBoosterRequest;
 import com.wotb.web.boost.dto.BoostAssignmentDto;
 import com.wotb.web.boost.dto.UnassignBoosterRequest;
 import com.wotb.web.boost.service.BoostAssignmentService;
+import com.wotb.web.config.ApiPaths;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -19,7 +20,7 @@ import java.util.Map;
 
 /** 管理员侧分配接口。 */
 @RestController
-@RequestMapping("/api/admin/boost/requests/{id}/assignments")
+@RequestMapping(ApiPaths.ADMIN_BOOST_REQUEST_ASSIGNMENTS)
 @CrossOrigin(origins = "*")
 public class AdminBoostAssignmentController {
 
