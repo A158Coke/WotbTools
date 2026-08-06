@@ -382,7 +382,7 @@ AI 复盘区分两种 scope，互不混用：
 
 ### 认证与 Wargaming ASIA 登录
 
-- **region 不变量**：每个 Keycloak 用户都有 `region` 属性（`CN`/`ASIA` 大写）。存量用户已迁移补 `CN`（脚本 `deploy/keycloak-add-region-attribute.py`，dry-run 138 → 更新 138）；QQ Provider（`JuheQqEndpoint`）对新增用户写 `region=CN`；WG Provider 写 `region=ASIA`。
+- **region 不变量**：每个 Keycloak 用户都有 `region` 属性（`CN`/`ASIA` 大写）。存量用户已迁移补 `CN`（一次性脚本，dry-run 138 → 更新 138，执行后已删除）；QQ Provider（`JuheQqEndpoint`）对新增用户写 `region=CN`；WG Provider 写 `region=ASIA`。
 - **WG 身份**：broker 唯一标识 `wg:asia:{account_id}`，Keycloak `username = account_id`（纯数字、稳定）；重复登录由 `WargamingIdentityProvider.updateBrokeredUser` 显式刷新 `displayName` / `wotb.nickname`，身份不变（决策 D11）。
 - **JWT claims**：`wotbtools-web` client 的 4 个只读 protocol mapper（realm JSON 已含）：`region→wotb_region`、`wotb.account_id→wotb_account_id`、`wotb.nickname→wotb_nickname`、`wotb.verified→wotb_verified`（`jsonType=boolean`）。后端缺失 `wotb_region` / `wotb_verified` 一律按 CN 兜底。
 - **数据库**：V12 扩展 `CHECK (wotb_server IN ('CN','ASIA'))`，新增 `wotb_account_source`（默认 `MANUAL`）与 `wotb_account_verified_at`（可空）；存量 CN 数据默认 `MANUAL` / NULL，平滑迁移。

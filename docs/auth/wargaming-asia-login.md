@@ -22,7 +22,7 @@
 | D14 | `WG_APPLICATION_ID` 读取 | Keycloak 容器 env 注入；Provider 在配置层 `System.getenv("WG_APPLICATION_ID")` 读取，缺失时登录报错（不导致启动失败）；不硬编码进源码 / Realm JSON / 前端 |
 | D15 | `wotb_verified` claim 类型 | Protocol Mapper 配置 `jsonType=boolean`，JWT 输出真布尔；后端按 `Boolean` 解析；region / verified 缺失一律按 CN 兜底 |
 | D16 | 日志脱敏 | Keycloak 保持默认（不开启请求 URI 访问日志）；host 级 Caddy 访问日志脱敏为仓库外运维项，写入部署文档；已知限制：WG token 会短暂出现在浏览器地址栏（WG 回调机制固有） |
-| D17 | 存量 region 迁移 | 使用 `deploy/keycloak-add-region-attribute.py`：dry-run 默认、`--apply` 才写、只补缺失值、幂等 |
+| D17 | 存量 region 迁移 | 一次性脚本执行（dry-run 默认、只补缺失值、幂等），已于 2026-08-06 在生产执行完毕（138/138）后删除 |
 | D18 | IdP 配置载体 | 跟随 QQ 现状：`wargaming-asia` IdP 不进 realm JSON（避免硬编码密钥），dev/prod 均在 Admin Console 手工配置，步骤写进交付文档 |
 
 ---
@@ -58,7 +58,7 @@
 - Spring Security JWT 配置（`SecurityConfig`，role 来自 `realm_access.roles`）
 - GitHub Actions 与部署路径检测（`deploy.yml`）
 - `.env.example`、`docker/online/docker-compose.yml`、生产 Compose（由 `deploy.yml` 内联生成）
-- `deploy/keycloak-add-region-attribute.py`（存量 region 迁移脚本，已存在并验证）
+- 存量 region 迁移执行记录（2026-08-06，见第四节）
 
 开始修改前，先简要说明：
 
@@ -93,26 +93,18 @@ QQ 登录 → Keycloak 创建或找到用户 → WotBTools 懒创建 user_profil
 - JWT claim：`region` → `wotb_region`（见第八节）。
 - 后端兜底：JWT 缺失 `wotb_region` 或 `wotb_verified` 时，一律按 CN 用户处理（保证迁移与上线顺序不影响登录）。
 
-### 2. 存量用户迁移（已执行）
+### 2. 存量用户迁移（已完成）
 
-使用 `deploy/keycloak-add-region-attribute.py`：
-
-```bash
-export KEYCLOAK_ADMIN_CLIENT_SECRET='...'
-python3 deploy/keycloak-add-region-attribute.py --dry-run   # 先看影响范围
-python3 deploy/keycloak-add-region-attribute.py --apply     # 确认后执行
-```
-
-要求：
+存量迁移由一次性脚本执行完毕（2026-08-06，见下方执行记录），脚本已从仓库与 VPS 删除。迁移策略：
 
 - 只给**缺失** `region` 的用户补 `["CN"]`；已有值（例如未来的 `ASIA`）一律跳过、不覆盖；
 - 幂等，可重复执行；保留用户其他属性；
-- displayName 回填**不在本脚本范围内**（脚本只处理 `--attribute` 指定的属性）；如需回填，作为独立迁移另行执行（决策 D4）；
+- displayName 回填不在迁移范围内（决策 D4）；
 - 迁移前后输出影响人数，写入交付记录。
 
 ### 3. 执行记录（2026-08-06 生产环境）
 
-目标：生产 realm `wotbtools`（auth.wotbtools.com），脚本 `deploy/keycloak-add-region-attribute.py`。
+目标：生产 realm `wotbtools`（auth.wotbtools.com），一次性迁移脚本（已删除）。
 
 | 阶段 | 结果 |
 |---|---|
@@ -121,7 +113,7 @@ python3 deploy/keycloak-add-region-attribute.py --apply     # 确认后执行
 | 重跑 dry-run（幂等验证） | total examined 138，already set 138，would update 0 |
 
 - 只补写了 `region=["CN"]`，未覆盖任何已有属性；displayName 未在本次迁移中回填（见 D4）。
-- 脚本保留在 VPS `/opt/wotb/deploy/keycloak-add-region-attribute.py`，与仓库内版本一致。
+- 一次性脚本在执行完毕后已从仓库与 VPS 删除（2026-08-06）。
 
 ### 4. 新 CN/QQ 用户
 
