@@ -86,7 +86,7 @@ class AiReplayAnalysisServiceTest {
                 throw nextError;
             }
             return new AiChatResponse(nextCompletionText, "DeepSeek", "test-model",
-                    0, 0, 0, 0, 0, 0, "stop", Map.of());
+                    0, 0, 0, 0, 0, 0, "stop");
         }
     }
 

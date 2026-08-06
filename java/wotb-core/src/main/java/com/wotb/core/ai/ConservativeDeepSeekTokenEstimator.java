@@ -8,7 +8,6 @@ import java.util.Map;
  * Uses character-based estimation as an approximation:
  *   estimatedTokens = ceil(codePoints * 1.25)
  * plus fixed per-message envelope overhead.
- *
  * This is a CONSERVATIVE estimate, NOT exact token counting.
  * May overestimate for English/Latin text, near-accurate for CJK.
  * Always paired with a safety margin to prevent context overflow.

@@ -15,7 +15,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -141,7 +140,7 @@ class AiReplayAnalysisServiceFacadeTest {
         public AiChatResponse chat(final AiChatRequest request) {
             calls.incrementAndGet();
             return new AiChatResponse("ok", "DeepSeek", "test-model",
-                    0, 0, 0, 0, 0, 0, "stop", Map.of());
+                    0, 0, 0, 0, 0, 0, "stop");
         }
     }
 }

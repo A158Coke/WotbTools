@@ -108,7 +108,6 @@ class SpringAiChatGatewayTest {
         assertEquals(22, result.outputTokens());
         assertEquals(33, result.totalTokens());
         assertEquals("stop", result.finishReason());
-        assertEquals("corr-1", result.metadata().get("correlationId"));
     }
 
     @Test
@@ -333,7 +332,7 @@ class SpringAiChatGatewayTest {
         when(chatModel.call(any(Prompt.class))).thenReturn(okResponse("hello"));
         gateway.chat(new AiChatRequest("system-prompt", "user-prompt",
                 "deepseek-v4-flash", null, 4096, true, "max",
-                "corr-1", "SINGLE_PLAYER_BATTLE", null));
+                "corr-1", "SINGLE_PLAYER_BATTLE"));
         assertEquals("deepseek-v4-flash", capturedOptions().getModel());
     }
 
@@ -344,7 +343,7 @@ class SpringAiChatGatewayTest {
     private static AiChatRequest request(final boolean thinkingEnabled, final String reasoningEffort) {
         return new AiChatRequest("system-prompt", "user-prompt",
                 "deepseek-v4-flash", 0.7, 4096, thinkingEnabled, reasoningEffort,
-                "corr-1", "SINGLE_PLAYER_BATTLE", null);
+                "corr-1", "SINGLE_PLAYER_BATTLE");
     }
 
     private static AiModelProperties properties(final String apiKey, final String baseUrl, final String model) {

@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
@@ -189,7 +188,7 @@ class AllowedLanguagePromptTest {
             public AiChatResponse chat(final AiChatRequest request) {
                 captured.set(request);
                 return new AiChatResponse("ok", "DeepSeek", "test-model",
-                        0, 0, 0, 0, 0, 0, "stop", Map.of());
+                        0, 0, 0, 0, 0, 0, "stop");
             }
 
             @Override
