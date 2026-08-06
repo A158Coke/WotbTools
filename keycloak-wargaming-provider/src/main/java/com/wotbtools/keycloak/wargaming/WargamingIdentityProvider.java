@@ -1,6 +1,7 @@
 package com.wotbtools.keycloak.wargaming;
 
 import jakarta.ws.rs.core.Response;
+import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.AuthenticationRequest;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
@@ -24,6 +25,8 @@ import java.nio.charset.StandardCharsets;
  */
 public class WargamingIdentityProvider
         extends AbstractIdentityProvider<WargamingIdentityProviderConfig> {
+
+    private static final Logger log = Logger.getLogger(WargamingIdentityProvider.class);
 
     /**
      * 测试钩子：非空时优先返回，绕开只读的 {@link System#getenv()}。
@@ -58,7 +61,22 @@ public class WargamingIdentityProvider
         if (isBlank(state)) {
             return errorResponse();
         }
-        return buildLoginResponse(applicationId, state);
+        return buildLoginResponseSafely(applicationId, state);
+    }
+
+    /**
+     * 初始化阶段安全包装：WG API 错误转为通用错误响应并记录安全日志，
+     * 避免 Keycloak 只显示 generic unexpected error。
+     */
+    Response buildLoginResponseSafely(final String applicationId, final String state) {
+        try {
+            return buildLoginResponse(applicationId, state);
+        } catch (final WargamingApiClient.WargamingApiException e) {
+            // 只记录安全错误信息（code/message/field），不含 token / application_id /
+            // 完整响应正文 / error.value / 跳转 URL。
+            log.warnf("Wargaming login initialization failed: %s", e.getMessage());
+            return errorResponse();
+        }
     }
 
     /**
