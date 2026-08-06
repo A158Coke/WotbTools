@@ -43,7 +43,7 @@ Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；
   - cmd: `set JAVA_HOME=%USERPROFILE%\.jdks\jdk-21.0.1`
 - **Maven 必须带 `-s java/settings.xml`**（该文件已跟踪，使用 aliyun 镜像 + `java/.m2repo`，干净 clone 可直接运行）。容器内用 `java/settings-docker.xml`。
 - **Node 24**（`frontend/.nvmrc` 钉住，`nvm use` 生效）：前端 `frontend`，开发端口 5173，依赖安装用 `npm ci`，构建用 `npm run build`。CI（`ci.yml`）、deploy（`deploy.yml`）与 `Dockerfile.frontend` 均统一 Node 24。
-- **Python 3 + Pillow**：仅用于 `common/python/update_tankopedia.py`（更新车辆库，需联网）和偶尔的图像处理。
+- **Python 3**：`common/python/update_tankopedia.py` 仅用标准库（urllib，从 WG 官方百科同步车辆库，需联网）；Pillow 仅用于偶尔的图像处理。
 
 ---
 
@@ -75,7 +75,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
   - 前端：`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`（**三语都改**）。
   - 导出：`Columns.java`（单场 xlsx）、`AggregateSheets.java`（汇总 xlsx，仅中文）。
 - **单一数据源**：`common/tankopedia.json`（车辆库）、`common/rating.json`（评分参数）、`common/map_names.json`（地图三语名）。构建时由 `wotb-core/pom.xml` 复制到 classpath；**勿在模块内放副本**。
-- **车辆库更新（WG 官方数据）**：推荐手动触发 GitHub Actions **`Update Tankopedia`**——workflow 把脚本传到 VPS（IP 已在 WG application_id 白名单）执行，拉回 `tankopedia.json` 并自动提交回 main（需要 `WG_APPLICATION_ID` + `VPS_*` secrets）。本地跑 `common/python/update_tankopedia.py` 需先把本机出口 IP 加入 WG 开发者后台的应用白名单（家宽 IP 动态，变了要更新）。两种方式都默认只保留 7–10 级（`--min-tier 1` / workflow 输入可调），`--region` 可换区服。字段：`name/tier/class/nation/premium/alphaDamage/hp` + 手工维护的 `extraKnowledge`（每辆车的个人知识点——刷新脚本按 tank_id 保留合并、不会覆盖）。AI prompt 会注入结构化事实（车种/等级/国家/炮伤/血量/知识），prompt 规则白名单已放行这些字段。
+- **车辆库更新（WG 官方数据）**：推荐手动触发 GitHub Actions **`Update Tankopedia`**——workflow 把脚本传到 VPS（IP 已在 WG application_id 白名单）执行，拉回 `tankopedia.json` 并自动提交回 main（需要 `WG_APPLICATION_ID` + `VPS_*` secrets）。本地跑 `common/python/update_tankopedia.py` 需先把本机出口 IP 加入 WG 开发者后台的应用白名单（家宽 IP 动态，变了要更新）。两种方式都默认只保留 7–10 级（`--min-tier 1` / workflow 输入可调），`--region` 可换区服。字段：`name/tier/class/nation/alphaDamage/hp` + 手工维护的 `extraKnowledge`（每辆车的个人知识点——刷新脚本按 tank_id 保留合并、不会覆盖）。AI prompt 会注入结构化事实（车种/等级/国家/炮伤/血量/知识），prompt 规则白名单已放行这些字段。
 - **代码风格**：不可变模型用 `record`；可变模型用公有字段 POJO（**不引入 Lombok**）；局部变量/参数尽量 `final`。
 - **分层**：controller 只做 HTTP；业务在 service；core 按功能分包。新 endpoint 的逻辑写进 service。
 - 跨层联动改动（加列/改解析/改评分/改地图名…）务必按 `.agents/wotb-sync.md` 的配方走。
@@ -423,7 +423,7 @@ API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + �
 
 `ReplayParser` 仍解析 `xp`、`credits` 到 `PlayerResult`，但这两个值受经济/加成/首胜等因素影响，不作为玩家战绩展示字段、导出列或 rating 输入。
 
-`Tankopedia` 已支持读取 `alphaDamage` 和车辆血量字段（`maxHp` / `hp` / `health` / `hitpoints` / `hitPoints` / `maxHealth`）。`common/python/update_tankopedia.py` 会从 BlitzKit `tanks.pb` 的炮/弹模块解析 `alphaDamage`：取最高等级炮候选中的首发弹伤害。当前本地 `common/tankopedia.json` 和更新脚本都没有 HP 字段。`average_hp` 的目标口径是"敌方 7 台车实际进场总血量 / 7"，但回放里的每台车实际进场血量 / 双方总血量字段尚未确认解析；当前实现为：车辆库有 HP 时用车辆库，否则未知单车 HP 暂定 2400。
+`Tankopedia` 读取 `alphaDamage` / 车辆血量（`maxHp` / `hp` / `health` / `hitpoints` / `hitPoints` / `maxHealth`）与手工 `extraKnowledge`。`common/python/update_tankopedia.py` 从 Wargaming 官方 WoT Blitz 百科同步（`WG_APPLICATION_ID`，默认只保留 7–10 级），`alphaDamage` 取官方 `gun.damage` 最大值、`hp` 取官方 `hp`；刷新时按 tank_id 保留合并旧文件中的 `extraKnowledge`。`average_hp` 的目标口径是"敌方 7 台车实际进场总血量 / 7"，但回放里的每台车实际进场血量 / 双方总血量字段尚未确认解析；当前实现为：车辆库有 HP 时用车辆库，否则未知单车 HP 暂定 2400。
 
 `ReplayParser` 会从 `data.wotreplay` 的 Type 8 / subtype 8 / sub=3 direct HP damage 事件解析攻击者、受害者和伤害值；当阵亡玩家的累计 direct damage 达到 `damageReceived` 阈值时，当前攻击者被推断为击杀者，并把该击杀者对受害者的累计 direct damage / penetrations 写入 `PlayerResult.killVictims`。
 

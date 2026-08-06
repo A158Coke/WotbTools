@@ -27,6 +27,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: update-tankopedia
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
