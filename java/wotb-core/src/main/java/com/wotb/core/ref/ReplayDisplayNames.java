@@ -86,6 +86,33 @@ public final class ReplayDisplayNames {
         return StringUtils.hasText(nation) ? nation : "";
     }
 
+    /** 结构化车辆炮伤，仅取自 tankopedia 的 {@code alphaDamage}；缺失或 ≤0 返回空串。 */
+    public static String tankAlphaDamage(final long tankId) {
+        if (tankId <= 0) {
+            return "";
+        }
+        final Integer alpha = TANKOPEDIA.info(tankId).alphaDamage();
+        return alpha != null && alpha > 0 ? String.valueOf(alpha) : "";
+    }
+
+    /** 结构化车辆血量，仅取自 tankopedia 的 {@code hp/maxHp}；缺失或 ≤0 返回空串。 */
+    public static String tankMaxHp(final long tankId) {
+        if (tankId <= 0) {
+            return "";
+        }
+        final Integer hp = TANKOPEDIA.info(tankId).maxHp();
+        return hp != null && hp > 0 ? String.valueOf(hp) : "";
+    }
+
+    /** 手工维护的每辆车知识点，取自 tankopedia 的 {@code extraKnowledge}；空串时不输出。 */
+    public static String tankExtraKnowledge(final long tankId) {
+        if (tankId <= 0) {
+            return "";
+        }
+        final String knowledge = TANKOPEDIA.info(tankId).extraKnowledge();
+        return StringUtils.hasText(knowledge) ? knowledge.trim() : "";
+    }
+
     private static boolean isValidDisplayName(final String name) {
         if (!StringUtils.hasText(name)) return false;
         if (name.startsWith("#")) return false;
