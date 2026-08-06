@@ -80,9 +80,7 @@ describe('ReconstructionPage team analysis', () => {
 
   it('shows only the AI review markdown, not internal diagnostics', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
-      okResponse(teamResult('SINGLE_TEAM_BATTLE', [
-        teamUnit('unit-1', 1, ['REPLAY_STREAM_PARTIAL'])
-      ]))))
+      okResponse(teamResult())))
     const wrapper = mountedPage()
     await selectReplays(wrapper, ['training.wotbreplay'])
 
@@ -103,9 +101,7 @@ describe('ReconstructionPage team analysis', () => {
 
   it('shows loading and removes the previous report before a failed retry', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
-      okResponse(teamResult('SINGLE_TEAM_BATTLE', [
-        teamUnit('old-unit', 1, [])
-      ])))
+      okResponse(teamResult()))
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mountedPage()
     await selectReplays(wrapper, ['old.wotbreplay'])
@@ -145,12 +141,7 @@ describe('ReconstructionPage team analysis', () => {
 
   it('sends the current page locale as the lang form field', async () => {
     const fetchMock = vi.fn().mockResolvedValue(okResponse(
-      teamResult('SINGLE_PLAYER_BATTLE', [{
-        analysisUnitId: 'player-unit',
-        perspectiveTeam: null,
-        duplicateFileNames: [],
-        report: null
-      }])))
+      teamResult()))
     vi.stubGlobal('fetch', fetchMock)
 
     try {
@@ -184,12 +175,7 @@ describe('ReconstructionPage team analysis', () => {
 
   it('keeps random-battle reports player focused', async () => {
     const result = {
-      ...teamResult('SINGLE_PLAYER_BATTLE', [{
-        analysisUnitId: 'player-unit',
-        perspectiveTeam: null,
-        duplicateFileNames: [],
-        report: null
-      }]),
+      ...teamResult(),
       analysis: 'player report'
     }
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(result)))
@@ -220,9 +206,7 @@ describe('ReconstructionPage file management', () => {
 
   it('clears analysis result after removing a file', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
-      okResponse(teamResult('SINGLE_TEAM_BATTLE', [
-        teamUnit('unit-1', 1, ['REPLAY_STREAM_PARTIAL'])
-      ]))))
+      okResponse(teamResult())))
     const wrapper = mountedPage()
     await selectReplays(wrapper, ['test.wotbreplay'])
     await analyzeButton(wrapper).trigger('click')
@@ -371,34 +355,9 @@ function analyzeButton(wrapper) {
   })
 }
 
-function teamResult(mode, analyses) {
+function teamResult() {
   return {
-    mode,
-    submittedFileCount: 1,
-    validFileCount: 1,
-    analysisUnitCount: analyses.length,
-    analyzedUnitCount: analyses.length,
-    battleCount: analyses.length,
-    analysis: 'team report',
-    failedFileCount: 0,
-    exactDuplicateCount: 0,
-    sameTeamDuplicatePerspectiveCount: 0,
-    files: [],
-    analyses,
-    keyEvents: []
-  }
-}
-
-function teamUnit(analysisUnitId, perspectiveTeam, limitations) {
-  return {
-    analysisUnitId,
-    perspectiveTeam,
-    representativeFileName: `${analysisUnitId}.wotbreplay`,
-    duplicateFileNames: [],
-    report: {
-      coverage: { fullFeaturesAvailable: false },
-      limitations
-    }
+    analysis: 'team report'
   }
 }
 

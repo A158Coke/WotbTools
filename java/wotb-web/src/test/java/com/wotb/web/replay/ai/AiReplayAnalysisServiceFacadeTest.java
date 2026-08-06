@@ -68,7 +68,6 @@ class AiReplayAnalysisServiceFacadeTest {
         final AnalyzeResult r = facade().analyze(battle, null);
         assertEquals(1, gateway.calls.get());
         assertEquals("ok", r.analysis());
-        assertEquals("test-model", r.model());
     }
 
     @Test
@@ -85,13 +84,8 @@ class AiReplayAnalysisServiceFacadeTest {
     }
 
     @Test
-    void buildAnalysisUnitsAndFindRecorderStaticDelegates() {
+    void findRecorderStaticDelegates() {
         final ReplayProcessingResult result = teamResultStub();
-        final var groups = new com.wotb.core.processing.BatchAnalyzer()
-                .analyze(List.of(result)).groups();
-        final var units = AiReplayAnalysisService.buildAnalysisUnits(
-                groups, ReplayAnalysisScope.TEAM_PERSPECTIVE);
-        assertEquals(groups.size(), units.size());
         assertNotNull(AiReplayAnalysisService.findRecorder(result));
     }
 

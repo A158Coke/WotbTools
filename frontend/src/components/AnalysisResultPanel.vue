@@ -2,8 +2,7 @@
 import MarkdownContent from './MarkdownContent.vue'
 
 // 普通用户页面只展示 AI 复盘正文。
-// 后端仍然返回 mode / analyses / limitations / keyEvents 等字段（日志与内部诊断继续使用），
-// 这里刻意不渲染，避免把内部统计、错误码和 reconstruction 派生的结构化细节暴露给玩家。
+// 后端 /api/replay/analyze 仅返回 { analysis }；不渲染任何内部统计/结构化细节。
 defineProps({
   result: {
     type: Object,
