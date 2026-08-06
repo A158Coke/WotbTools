@@ -1,23 +1,27 @@
 ---
 name: grill-with-docs
 description: >
-  代码变更后审查代码质量 + 文档同步。在 grill-fix 基础上增加文档检查：
-  CHANGELOG / DEVELOPER_GUIDE / README / API 文档 / i18n / 代码注释。
-  Trigger: 任何影响界面/导出/数据/构建/API/配置的代码变更完成后。
+  代码变更后审查代码质量 + 文档同步 + AI 死代码清理。在 grill-fix 基础上增加文档检查：
+  CHANGELOG / DEVELOPER_GUIDE / README / API 文档 / i18n / 代码注释；并清理
+  AI 生成的提前性/投机死代码（单实现抽象、从不覆盖的字段/参数、占位空壳等）。
+  Trigger: 任何影响界面/导出/数据/构建/API/配置的代码变更完成后；或需要清理
+  AI 生成代码中的死代码/过度设计时。
 ---
 
 # grill-with-docs
 
 > **前置条件**：grill-fix 6 项代码审查已完成。
-> **扩展**：本文档同步检查是 grill-fix 的补充层，聚焦"改了什么文档就跟什么"。
+> **扩展**：本文档同步检查是 grill-fix 的补充层，聚焦"改了什么文档就跟什么"；
+> 同时负责清理 AI 生成代码中的提前性/投机死代码。
 
 ## 流程
 
 1. **完成 grill-fix** — 先走 `.agents/skills/grill-fix/SKILL.md` 的 6 项代码审查
-2. **文档自查** — 按下方检查单逐项检查文档同步
-3. **spawn docs verifier** — `type: verifier`，审查文档是否与代码一致
-4. **修复** → **重审** → 循环直到零问题
-5. **出具报告** — 包含 grill-fix 报告 + 文档审查报告
+2. **AI 死代码清理** — 按下方案 7 检查并安全删除 AI 提前性/投机死代码
+3. **文档自查** — 按下方检查单逐项检查文档同步
+4. **spawn docs verifier** — `type: verifier`，审查文档是否与代码一致
+5. **修复** → **重审** → 循环直到零问题
+6. **出具报告** — 包含 grill-fix 报告 + AI 死代码清理报告 + 文档审查报告
 
 ## 文档检查单
 
@@ -53,6 +57,17 @@ description: >
 - [ ] 环境变量变更是否同步到 `application.yml` 注释
 - [ ] Docker 构建变更是否同步到相关 Dockerfile 注释
 
+### 7. AI 死代码 / 提前性代码清理
+> 定位：grill-fix 管"对不对"，code-smell 管"好不好的品味"，本节负责**执行清理**——
+> 针对 AI 生成代码常见的"为未来准备却没换来灵活性"的提前性死代码。
+
+- [ ] **识别模式**：单实现接口/工厂/策略/观察者；从不覆盖的字段与参数（含恒为 `null` 的元数据字段）；为"可测性"引入的抽象层；无引用构造器/空壳实现；仅测试引用的方法
+- [ ] **扫描证明**：全仓 `rg` 零引用（含 `src/test`、`scripts`、`docs`、`deploy`、`frontend/src/locales`、Grafana dashboards）；前端可执行 `cd frontend && npx fallow check dead-code`
+- [ ] **三分类**：真死（零引用且非契约/反射）→ 删除并连带专属测试；假死 → 保留并在报告中记录；待定（引用本身可疑）→ 报告人工确认，不删
+- [ ] **删除粒度**：先方法/字段，后类/文件；一个主题一个 commit；删除后 `mvn -s settings.xml test` + `npm test` + `npm run build` 全绿
+- [ ] **安全边界（绝不能删）**：前端消费的 JSON 字段/DTO/错误码；Flyway 迁移与实体列；Spring bean 装配/Jackson 反序列化/反射引用；Prometheus/Grafana 指标名（dashboards 引用）；i18n keys（三语 locale）；文档承诺的功能；测试夹具仍需要的行为
+- [ ] **品味判断**引用 `.agents/skills/code-smell/SKILL.md`（不复制其清单）
+
 ## 文档 verifier brief 模板
 
 ```
@@ -60,7 +75,7 @@ QUESTION: 审查以下代码变更对应的文档是否全部同步
 SCOPE: [变更文件列表 + 对应文档路径]
 ALREADY_KNOWN: [已自查并更新的文档]
 EFFORT: medium
-STOP_CONDITION: 完成全部 6 项文档检查，报告缺失项
+STOP_CONDITION: 完成全部 7 项检查（6 项文档 + AI 死代码清理），报告缺失项
 OUTPUT:
   VERDICT: 文档齐全 / 有遗漏（列出数量）
   EVIDENCE: 逐项列出（文档:章节 → 缺失内容）
@@ -78,6 +93,7 @@ OUTPUT:
 | 发现问题 | N | N |
 | 已修复 | N | N |
 | 文档同步 | — | [齐全 / 缺 N 项] |
+| AI 死代码清理 | — | [扫描 N / 删除 N / 保留 N（假死）] |
 
 #### 文档缺失清单
 1. CHANGELOG 缺少 [变更描述]
