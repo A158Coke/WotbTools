@@ -8,12 +8,14 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.UserModel;
 
 import java.net.URLEncoder;
+import java.io.IOException;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -71,7 +73,8 @@ class WargamingIdentityProviderTest {
         WargamingIdentityProvider.applicationIdOverride = "app-123";
         try (WargamingApiStub stub = WargamingApiStub.start()) {
             stub.responses.put("/wot/auth/login/",
-                    "{\"status\":\"ok\",\"url\":\"https://wargaming.net/id/login?token=abc\"}");
+                    "{\"status\":\"ok\",\"meta\":{\"count\":1},\"data\":{"
+                            + "\"location\":\"https://wargaming.net/id/login?token=abc\"}}");
             final HttpClient http = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(2))
                     .build();
@@ -91,6 +94,54 @@ class WargamingIdentityProviderTest {
             assertTrue(query.contains("redirect_uri=" + URLEncoder.encode(
                     "https://auth.wotbtools.com/realms/wotbtools/broker/wargaming-asia/endpoint?state=state-42",
                     StandardCharsets.UTF_8)));
+        }
+    }
+
+    @Test
+    void loginInitializationErrorReturnsSafeErrorResponse() {
+        WargamingIdentityProvider.applicationIdOverride = "app-123";
+        final WargamingApiClient failingClient = new WargamingApiClient(
+                WargamingRegion.ASIA.authBase(), WargamingRegion.ASIA.accountBase(), request -> {
+                    throw new WargamingApiClient.WargamingApiException(
+                            "WG API rejected request: code=404, message=METHOD_NOT_FOUND");
+                });
+
+        final Response response = providerWithClient(failingClient)
+                .buildLoginResponseSafely("app-123", "state-42");
+
+        assertEquals(500, response.getStatus());
+    }
+
+    @Test
+    void loginIoErrorReturnsSafeErrorResponseWithoutInterruptFlag() {
+        WargamingIdentityProvider.applicationIdOverride = "app-123";
+        final WargamingApiClient failingClient = new WargamingApiClient(
+                WargamingRegion.ASIA.authBase(), WargamingRegion.ASIA.accountBase(), request -> {
+                    throw new IOException("boom");
+                });
+
+        final Response response = providerWithClient(failingClient)
+                .buildLoginResponseSafely("app-123", "state-42");
+
+        assertEquals(500, response.getStatus());
+        assertFalse(Thread.currentThread().isInterrupted());
+    }
+
+    @Test
+    void loginInterruptRestoresFlagAndReturnsSafeErrorResponse() {
+        WargamingIdentityProvider.applicationIdOverride = "app-123";
+        final WargamingApiClient failingClient = new WargamingApiClient(
+                WargamingRegion.ASIA.authBase(), WargamingRegion.ASIA.accountBase(), request -> {
+                    throw new InterruptedException("boom");
+                });
+        final Thread thread = Thread.currentThread();
+        try {
+            final Response response = providerWithClient(failingClient)
+                    .buildLoginResponseSafely("app-123", "state-42");
+            assertEquals(500, response.getStatus());
+            assertTrue(thread.isInterrupted());
+        } finally {
+            Thread.interrupted();
         }
     }
 

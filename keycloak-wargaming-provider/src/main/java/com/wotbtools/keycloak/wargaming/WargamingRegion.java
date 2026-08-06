@@ -4,25 +4,30 @@ import java.net.URI;
 import java.util.Locale;
 
 /**
- * Wargaming.net WoT Blitz 区服白名单。
+ * Wargaming.net 区服白名单（认证 Host 与 WoT Blitz 账号 Host 分离）。
  *
- * <p>三个官方 host（asia/eu/com）均已实测返回统一 {@code application_id} 要求，
- * 证明 WoT Blitz 的 {@code application_id} 按游戏注册、跨区通用；本枚举把区服
- * 显式映射到固定 host，不接受任何调用方传入的 URL（安全要求：白名单固定）。
- * 后续新增区服只需扩展本枚举与 Admin Console 的 region 选项。</p>
+ * <p>真实生产契约：认证接口（login/prolongate/logout）由 Wargaming.net ID
+ * 认证服务承载，Host 为 {@code api.worldoftanks.{asia|eu|com}/wot/auth/}；
+ * WoT Blitz 账号资料接口（account/info）Host 为 {@code api.wotblitz.{asia|eu|com}/wotb/account/}。
+ * {@code api.wotblitz.*} 不提供 {@code /wot/auth/*}（真实返回 METHOD_NOT_FOUND），
+ * 因此两个 Host 必须分开维护。application_id 按 Blitz 游戏注册、跨区通用。</p>
+ *
+ * <p>本枚举只接受固定白名单，不接受任何调用方传入的 URL（安全要求）。</p>
  */
 enum WargamingRegion {
 
-    ASIA("asia", "api.wotblitz.asia"),
-    EU("eu", "api.wotblitz.eu"),
-    NA("na", "api.wotblitz.com");
+    ASIA("asia", "api.worldoftanks.asia", "api.wotblitz.asia"),
+    EU("eu", "api.worldoftanks.eu", "api.wotblitz.eu"),
+    NA("na", "api.worldoftanks.com", "api.wotblitz.com");
 
     private final String key;
-    private final String host;
+    private final String authHost;
+    private final String accountHost;
 
-    WargamingRegion(final String key, final String host) {
+    WargamingRegion(final String key, final String authHost, final String accountHost) {
         this.key = key;
-        this.host = host;
+        this.authHost = authHost;
+        this.accountHost = accountHost;
     }
 
     /** broker id 使用的小写区服段，如 {@code asia} / {@code eu} / {@code na}。 */
@@ -30,17 +35,22 @@ enum WargamingRegion {
         return key;
     }
 
-    /** 官方 API host，仅来自白名单。 */
-    String host() {
-        return host;
+    /** 认证 API host（login/prolongate/logout），仅来自白名单。 */
+    String authHost() {
+        return authHost;
+    }
+
+    /** WoT Blitz 账号 API host（account/info），仅来自白名单。 */
+    String accountHost() {
+        return accountHost;
     }
 
     URI authBase() {
-        return URI.create("https://" + host + "/wot/auth/");
+        return URI.create("https://" + authHost + "/wot/auth/");
     }
 
     URI accountBase() {
-        return URI.create("https://" + host + "/wotb/account/");
+        return URI.create("https://" + accountHost + "/wotb/account/");
     }
 
     /**

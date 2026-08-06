@@ -4,7 +4,14 @@
 
 ## 1. 准备 `WG_APPLICATION_ID`
 
-Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的 application id。application_id 按 Blitz 游戏注册、**跨区通用**（三个官方 Blitz host `api.wotblitz.asia` / `api.wotblitz.eu` / `api.wotblitz.com` 均返回统一 `application_id` 要求），所以 **ASIA / EU / NA 三个 IdP 实例共用同一个 `WG_APPLICATION_ID`**。
+Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的 application id。application_id 按 Blitz 游戏注册、**跨区通用**，所以 **ASIA / EU / NA 三个 IdP 实例共用同一个 `WG_APPLICATION_ID`**。
+
+接口 Host 分两类（均由服务端 `WargamingRegion` 白名单决定，无需在 Admin Console 配置）：
+
+- **认证接口**（login / prolongate / logout）：`api.worldoftanks.{asia|eu|com}/wot/auth/`（Wargaming.net ID 认证服务承载）；
+- **WoT Blitz 账号资料接口**（account/info）：`api.wotblitz.{asia|eu|com}/wotb/account/`。
+
+> 生产实测：`api.wotblitz.*` 不提供 `/wot/auth/*`（返回 `METHOD_NOT_FOUND`），认证与账号 Host 必须分离。
 
 - 获取：Wargaming.net Developer Portal → My Applications → 选择 WoT Blitz 应用 → Application ID。
 - 注入：Keycloak 容器环境变量 `WG_APPLICATION_ID`（只配置一次）。
@@ -41,7 +48,8 @@ Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的
 
 说明：
 
-- API host 由服务端 Region 白名单决定，无需在 Admin Console 填 URL：ASIA→`api.wotblitz.asia`、EU→`api.wotblitz.eu`、NA→`api.wotblitz.com`。
+- API host 由服务端 Region 白名单决定，无需在 Admin Console 填 URL：认证 ASIA→`api.worldoftanks.asia/wot/auth/`（EU/NA 同理）；账号 ASIA→`api.wotblitz.asia/wotb/account/`（EU/NA 同理）。
+- **本次修复无需删除/重建 IdP**：三个 IdP 实例的 Alias 与 Region 配置保持不变，部署时只重新构建并发布 Keycloak 镜像即可。
 - 三个 alias 决定各自的回调路径；前端未登录时直接跳转 Keycloak 登录页，由 Keycloak 按 IdP Display name 显示按钮（`Wargaming.net Asia` / `Europe` / `North America` + QQ），前端不再硬编码 alias。
 - 重复登录刷新由 Provider 的 `updateBrokeredUser` 直接实现（决策 D11），与 Sync Mode 无关；Sync mode 仍按表格设 FORCE。
 - **只使用一个 Keycloak Client：`wotbtools-web`**。不要创建 `wotbtools-asia` / `wotbtools-eu` / `wotbtools-na`。
@@ -78,7 +86,7 @@ Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的
 ## 6. 上线后手工验收（三个区服各一遍）
 
 1. 打开 `https://wotbtools.com/?view=profile`（未登录）→ 应自动跳转 Keycloak 登录页，页面列出 QQ + 三个 Wargaming IdP 按钮。
-2. 点击对应区服 IdP 按钮 → 跳转该区服官方 host（ASIA→`api.wotblitz.asia`、EU→`api.wotblitz.eu`、NA→`api.wotblitz.com`）→ 登录授权。
+2. 点击对应区服 IdP 按钮 → 跳转该区服认证 host（ASIA→`api.worldoftanks.asia/wot/auth/`、EU→`api.worldoftanks.eu`、NA→`api.worldoftanks.com`）→ 登录授权。
 3. 回跳 Keycloak broker endpoint（state 校验通过）→ 进入 WotBTools 个人中心。
 4. 个人中心显示：对应服务器标签（Asia / Europe / North America）、资料来源 Wargaming.net、账号已验证、官方昵称与 account_id；无编辑/解绑按钮。
 5. 同一玩家再次登录 → 同一 Keycloak 用户（username=`wg_{region}_{account_id}`，如 `wg_asia_512345678`）；在 WG 改名后再次登录，昵称属性自动刷新。
