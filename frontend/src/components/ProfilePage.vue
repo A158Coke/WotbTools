@@ -16,10 +16,12 @@ import {
   getUnreadNotificationCount,
   listNotifications,
   markAllNotificationsRead,
-  markNotificationRead
+  markNotificationRead,
+  syncUserWotbAccountFromLogin
 } from '../utils/api-boost.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel, enumLabel } from '../utils/display.js'
+import LoginPage from './LoginPage.vue'
 
 const { locale, t, te } = useI18n()
 const { initPromise, login, logout, isAuthenticated, initError, tokenParsed } = useAuth()
@@ -66,7 +68,6 @@ onMounted(async () => {
       phase.value = 'error'
     } else {
       phase.value = 'login'
-      login()
     }
   } catch {
     phase.value = 'error'
@@ -85,6 +86,7 @@ async function loadProfile() {
       return
     }
   }
+  await syncFromLogin()
   if (profile.value?.wotbAccountId) {
     loadRecords()
   }
@@ -92,6 +94,18 @@ async function loadProfile() {
   loadUnreadNotificationCount()
   if (isBoosterUser.value) {
     await loadBoosterAssignments()
+  }
+}
+
+/** WG 幂等同步（ASIA/EU/NA）：昵称变化时刷新，失败静默（CN 用户属正常情况）。 */
+async function syncFromLogin() {
+  try {
+    const synced = await syncUserWotbAccountFromLogin()
+    if (synced) {
+      profile.value = synced
+    }
+  } catch {
+    // 幂等同步：WOTB_CLAIMS_INVALID / PROFILE_REGION_MISMATCH 均忽略。
   }
 }
 
@@ -107,6 +121,25 @@ const heroSubtitle = computed(() =>
     ? profile.value.wotbNickname
     : t('profile.notBoundWotbAccount')
 )
+
+/** WARGAMING source = WG 官方账号（ASIA/EU/NA），资料只读；CN MANUAL 用户可编辑。 */
+const isWargamingProfile = computed(
+  () => profile.value?.wotbAccountSource === 'WARGAMING'
+)
+
+const SERVER_LABEL_BY_VALUE = Object.freeze({
+  CN: 'profile.serverCn',
+  ASIA: 'profile.serverAsia',
+  EU: 'profile.serverEu',
+  NA: 'profile.serverNa',
+})
+
+const serverLabel = computed(() => {
+  const key = profile.value?.wotbServer
+    ? SERVER_LABEL_BY_VALUE[profile.value.wotbServer]
+    : null
+  return key ? t(key) : '--'
+})
 
 const isBoosterUser = computed(() => {
   const roles = [
@@ -296,10 +329,7 @@ function notificationMessage(notification) {
       <button class="btn-primary" @click="doLogin">{{ $t('profile.retry') }}</button>
     </div>
 
-    <div v-else-if="phase === 'login'" class="profile-card profile-message">
-      <p>{{ $t('profile.redirecting') }}</p>
-      <button class="btn-primary" @click="doLogin">{{ $t('profile.manualLogin') }}</button>
-    </div>
+    <LoginPage v-else-if="phase === 'login'" />
 
     <div v-else-if="profile" class="profile-main">
       <div class="profile-card profile-hero">
@@ -333,13 +363,15 @@ function notificationMessage(notification) {
             <div class="section-head">
               <h3 class="card-title">{{ $t('profile.wotbTitle') }}</h3>
               <div class="section-actions">
-                <button v-if="!editingAccount && !profile.wotbAccountId" class="btn-primary btn-sm" @click="startEditAccount">{{ $t('profile.setAccount') }}</button>
-                <button v-if="!editingAccount && profile.wotbAccountId" class="btn-ghost btn-sm" @click="startEditAccount">{{ $t('profile.edit') }}</button>
-                <button v-if="!editingAccount && profile.wotbAccountId" class="btn-ghost btn-sm" @click="removeAccount">{{ $t('profile.unbind') }}</button>
+                <template v-if="!isWargamingProfile">
+                  <button v-if="!editingAccount && !profile.wotbAccountId" class="btn-primary btn-sm" @click="startEditAccount">{{ $t('profile.setAccount') }}</button>
+                  <button v-if="!editingAccount && profile.wotbAccountId" class="btn-ghost btn-sm" @click="startEditAccount">{{ $t('profile.edit') }}</button>
+                  <button v-if="!editingAccount && profile.wotbAccountId" class="btn-ghost btn-sm" @click="removeAccount">{{ $t('profile.unbind') }}</button>
+                </template>
               </div>
             </div>
 
-            <div v-if="editingAccount" class="edit-form">
+            <div v-if="editingAccount && !isWargamingProfile" class="edit-form">
               <div class="edit-row">
                 <label>{{ $t('profile.accountId') }}</label>
                 <input v-model.number="editAccountId" type="number" class="edit-input" />
@@ -355,10 +387,18 @@ function notificationMessage(notification) {
               </div>
             </div>
 
+            <div v-else-if="isWargamingProfile && profile.wotbAccountId" class="account-bound">
+              <div class="account-row"><span>{{ $t('profile.server') }}</span><span class="badge-ok">{{ serverLabel }}</span></div>
+              <div class="account-row"><span>{{ $t('profile.accountSource') }}</span><strong>{{ $t('profile.sourceWargaming') }}</strong></div>
+              <div class="account-row"><span>{{ $t('profile.verified') }}</span><span class="badge-ok">{{ $t('profile.verifiedBadge') }}</span></div>
+              <div class="account-row"><span>{{ $t('profile.nickname') }}</span><strong>{{ profile.wotbNickname || '--' }}</strong></div>
+              <div class="account-row"><span>{{ $t('profile.accountId') }}</span><code>{{ profile.wotbAccountId }}</code></div>
+            </div>
             <div v-else-if="profile.wotbAccountId" class="account-bound">
               <div class="account-row"><span>{{ $t('profile.accountId') }}</span><code>{{ profile.wotbAccountId }}</code></div>
               <div class="account-row"><span>{{ $t('profile.nickname') }}</span><strong>{{ profile.wotbNickname || '--' }}</strong></div>
-              <div class="account-row"><span>{{ $t('profile.server') }}</span><span class="badge-ok">{{ profile.wotbServer }}</span></div>
+              <div class="account-row"><span>{{ $t('profile.server') }}</span><span class="badge-ok">{{ serverLabel }}</span></div>
+              <div class="account-row"><span>{{ $t('profile.accountSource') }}</span><strong>{{ $t('profile.sourceUserFilled') }}</strong></div>
             </div>
             <p v-else class="profile-empty">{{ $t('profile.wotbNotBound') }}</p>
           </div>

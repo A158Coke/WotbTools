@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -50,6 +51,12 @@ public class UserProfileController {
     public UserProfileDto updateWotbAccount(@RequestBody final UpdateWotbAccountRequest body) {
         return service.updateWotbAccount(JwtUtil.requireUserId(),
                 body.wotbAccountId(), body.wotbNickname(), body.wotbServer());
+    }
+
+    /** WG 登录（ASIA/EU/NA）后的幂等同步（只读 JWT，不接受 body）。 */
+    @PutMapping("/wotb-account/from-login")
+    public UserProfileDto syncFromLogin() {
+        return service.syncFromLogin(JwtUtil.requireUserId());
     }
 
     @DeleteMapping("/wotb-account")
