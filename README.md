@@ -23,7 +23,7 @@
 
 - 本地运行 / 构建：见 [java/README.md](java/README.md)（本地八服务 `docker/online/`）
 - 测试与质量门禁：见 [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
-- 更新车辆库：本地 `cd common/python && WG_APPLICATION_ID=... python update_tankopedia.py`，或手动触发 GitHub Actions `Update Tankopedia`（自动提交回 main；均需 WG 官方 application_id，详见 DEVELOPER_GUIDE）
+- 更新车辆库：手动触发 GitHub Actions `Update Tankopedia`（在 VPS 上跑 WG 官方同步并自动提交回 main）；本地跑 `cd common/python && WG_APPLICATION_ID=... python update_tankopedia.py` 需先把本机 IP 加入 WG 开发者后台白名单（详见 DEVELOPER_GUIDE）
 
 ## 已上线工具
 

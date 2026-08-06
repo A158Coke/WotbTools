@@ -1,7 +1,13 @@
 name: Update Tankopedia
 
-# 手动触发：从 WG 官方百科刷新 common/tankopedia.json 并提交回 main。
-# 需要 GitHub Secret WG_APPLICATION_ID（与 Keycloak WG 登录共用同一个 application_id）。
+# 手动触发：在 VPS（WG 白名单 IP）上跑 WG 官方百科同步，把生成的 tankopedia.json
+# 拉回 runner 并提交回 main。
+#
+# 为什么走 VPS：WG application_id 有 IP 白名单（上限 10 个），GitHub Actions runner
+# 的 IP 是动态池无法白名单；VPS 因运行 WG 登录已在使用同一个 application_id 且 IP
+# 已白名单。本地手动跑需把本机出口 IP 加入 WG 开发者后台白名单。
+#
+# 需要的 GitHub Secrets：WG_APPLICATION_ID、VPS_HOST / VPS_USER / VPS_PORT / VPS_SSH_KEY。
 on:
   workflow_dispatch:
     inputs:
@@ -26,24 +32,66 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Check WG_APPLICATION_ID secret
+
+      - name: Check required secrets
         env:
           WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
         run: |
-          if [ -z "$WG_APPLICATION_ID" ]; then
-            echo "::error::WG_APPLICATION_ID secret is not configured in repository settings."
+          if [ -z "$WG_APPLICATION_ID" ] || [ -z "$VPS_HOST" ]; then
+            echo "::error::WG_APPLICATION_ID and VPS_* secrets are required."
             exit 1
           fi
-      - name: Sync tankopedia from WG official
+
+      - name: Copy sync script to VPS
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "common/python/update_tankopedia.py"
+          target: /tmp/wotb-tankopedia
+
+      - name: Sync tankopedia on VPS
+        uses: appleboy/ssh-action@v1
+        envs: WG_APPLICATION_ID,REGION,MIN_TIER
         env:
           WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
+          REGION: ${{ inputs.region }}
+          MIN_TIER: ${{ inputs.min-tier }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd /tmp/wotb-tankopedia
+            docker run --rm \
+              -e WG_APPLICATION_ID="$WG_APPLICATION_ID" \
+              -v "$PWD:/sync" \
+              python:3.12-alpine \
+              python /sync/update_tankopedia.py \
+                --region "$REGION" \
+                --min-tier "$MIN_TIER" \
+                --output /sync/tankopedia.json
+
+      - name: Fetch updated tankopedia.json
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
-          python common/python/update_tankopedia.py \
-            --region "${{ inputs.region }}" \
-            --min-tier "${{ inputs.min-tier }}"
+          set -e
+          mkdir -p ~/.ssh
+          echo "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          scp -o StrictHostKeyChecking=no -P "$VPS_PORT" \
+            "$VPS_USER@$VPS_HOST:/tmp/wotb-tankopedia/tankopedia.json" \
+            "$GITHUB_WORKSPACE/common/tankopedia.json"
+
       - name: Commit updated tankopedia.json
         uses: actions/github-script@v7
         with:

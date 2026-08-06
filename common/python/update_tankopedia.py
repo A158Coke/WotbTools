@@ -132,6 +132,8 @@ def main():
     parser.add_argument("--min-tier", type=int, default=7, help="只保留该等级及以上的车辆（默认 7）")
     parser.add_argument("--language", default="zh-cn")
     parser.add_argument("--app-id", default=None, help="WG application_id（默认读环境变量 WG_APPLICATION_ID）")
+    parser.add_argument("--output", default=OUTPUT,
+                        help="输出 json 路径（默认仓库根 common/tankopedia.json；VPS 同步时传 /tmp 下路径）")
     args = parser.parse_args()
 
     app_id = args.app_id or os.environ.get("WG_APPLICATION_ID", "").strip()
@@ -168,10 +170,10 @@ def main():
         },
         "data": data,
     }
-    with open(OUTPUT, "w", encoding="utf-8", newline="\n") as f:
+    with open(args.output, "w", encoding="utf-8", newline="\n") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
         f.write("\n")
-    print("wrote", OUTPUT, "entries:", len(data))
+    print("wrote", args.output, "entries:", len(data))
 
 
 if __name__ == "__main__":
