@@ -179,8 +179,7 @@ public class PlayerReplayAnalysisService {
                 config.thinkingEnabled(),
                 config.reasoningEffort(),
                 null,
-                prepared.analysisMode(),
-                null);
+                prepared.analysisMode());
         return gateway.chat(request).completionText();
     }
 }

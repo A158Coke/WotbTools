@@ -740,8 +740,7 @@ public class TeamReplayAnalysisService {
                 config.thinkingEnabled(),
                 config.reasoningEffort(),
                 null,
-                analysisMode,
-                null);
+                analysisMode);
         return gateway.chat(request).completionText();
     }
 }

@@ -126,7 +126,7 @@ class SpringAiChatGatewayMetricsTest {
     private static AiChatRequest request() {
         return new AiChatRequest("system-prompt", "user-prompt",
                 "test-model", null, 4096, true, "max",
-                "corr-1", "TEST_MODE", null);
+                "corr-1", "TEST_MODE");
     }
 
     private static ChatResponse okResponse() {
