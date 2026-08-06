@@ -363,7 +363,10 @@
         "sourceUserFilled": "User-filled",
         "sourceWargaming": "Wargaming.net",
         "verified": "Verification",
-        "verifiedBadge": "Verified"
+        "verifiedBadge": "Verified",
+        "wgSyncFailed": "Wargaming account sync failed. Please refresh or sign in again.",
+        "wgSyncRetry": "Retry sync",
+        "wgSyncing": "Syncing Wargaming account"
     },
     "replay": {
         "no_files": "Select replay files or a folder first",

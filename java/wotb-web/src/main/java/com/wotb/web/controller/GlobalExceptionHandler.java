@@ -31,6 +31,14 @@ public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
     private static final Pattern ERROR_CODE_PATTERN = Pattern.compile("[A-Z][A-Z0-9_]*");
+    /** WoTB 账号业务拒绝：记录安全错误码用于诊断（不含 token / JWT / 敏感值）。 */
+    private static final java.util.Set<String> WOTB_AUDIT_ERRORS = java.util.Set.of(
+            "WOTB_CLAIMS_INVALID",
+            "PROFILE_REGION_MISMATCH",
+            "WOTB_ACCOUNT_MISMATCH",
+            "WOTB_ACCOUNT_ALREADY_USED",
+            "ASIA_PROFILE_READONLY",
+            "WARGAMING_PROFILE_READONLY");
 
     private static Map<String, Object> body(final String error) {
         final Map<String, Object> m = new LinkedHashMap<>();
@@ -62,6 +70,10 @@ public class GlobalExceptionHandler {
                  "REQUEST_NOT_FOUND", "BOOSTER_APPLICATION_NOT_FOUND" -> HttpStatus.NOT_FOUND;
             default -> HttpStatus.BAD_REQUEST;
         };
+        if (WOTB_AUDIT_ERRORS.contains(error)) {
+            // 安全诊断：仅业务错误码，不记录请求体 / Bearer Token / JWT。
+            log.warn("WoTB account operation rejected: {}", error);
+        }
         return ResponseEntity.status(status).body(body(error));
     }
 

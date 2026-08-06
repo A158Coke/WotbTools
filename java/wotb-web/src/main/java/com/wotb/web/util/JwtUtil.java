@@ -59,6 +59,7 @@ public final class JwtUtil {
 
     /**
      * 从当前 JWT 提取 verified claim（Keycloak 映射为真布尔 {@code wotb_verified}）。
+     * 兼容 boolean 与字符串 {@code "true"}（部分生产 realm 的 mapper 可能输出字符串）；
      * 缺失或非 true 一律视为 false。
      */
     public static boolean currentWotbVerified() {
@@ -67,7 +68,10 @@ public final class JwtUtil {
             return false;
         }
         final Object raw = jwt.getClaim("wotb_verified");
-        return raw instanceof final Boolean verified && verified;
+        if (raw instanceof final Boolean verified) {
+            return verified;
+        }
+        return "true".equals(raw);
     }
 
     /**

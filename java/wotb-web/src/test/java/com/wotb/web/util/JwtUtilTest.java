@@ -66,9 +66,9 @@ class JwtUtilTest {
     }
 
     @Test
-    void stringVerifiedClaimIsNotTrusted() {
+    void stringVerifiedClaimIsTrusted() {
         login(jwtWith(Map.of("wotb_verified", "true")));
-        assertFalse(JwtUtil.currentWotbVerified());
+        assertTrue(JwtUtil.currentWotbVerified());
     }
 
     @Test
