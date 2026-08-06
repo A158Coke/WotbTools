@@ -763,10 +763,6 @@ final class TeamAiPromptBuilder {
             truncated = true;
         }
 
-        private int estimateTokens(final AiTokenEstimator estimator) {
-            return estimator.estimateTextTokens(content.toString());
-        }
-
         private PromptInput finish(
                 final AiTokenEstimator estimator,
                 final int maxInputTokens,
