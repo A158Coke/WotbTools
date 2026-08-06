@@ -107,7 +107,8 @@ final class WargamingEndpoint {
             context.setId(externalId);
             context.setBrokerUserId(externalId);
             context.setBrokerSessionId(externalId);
-            context.setUsername(String.valueOf(trustedAccountId));
+            // username 带区服前缀避免跨区服 account_id 冲突；游戏账号 ID 保持纯数字存 wotb.account_id。
+            context.setUsername("wg_" + region.key() + "_" + trustedAccountId);
             context.setIdp(provider);
             context.setAuthenticationSession(authenticationSession);
 

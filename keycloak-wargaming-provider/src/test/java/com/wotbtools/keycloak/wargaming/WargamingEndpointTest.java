@@ -67,7 +67,7 @@ class WargamingEndpointTest {
         assertNotNull(context);
         assertEquals("wg:asia:512345678", context.getBrokerUserId());
         assertEquals("wg:asia:512345678", context.getId());
-        assertEquals("512345678", context.getUsername());
+        assertEquals("wg_asia_512345678", context.getUsername());
         assertEquals("ASIA", context.getUserAttribute("region"));
         assertEquals("PlayerOne", context.getUserAttribute("displayName"));
         assertEquals("512345678", context.getUserAttribute("wotb.account_id"));
@@ -95,9 +95,58 @@ class WargamingEndpointTest {
         assertNotNull(context);
         assertEquals("wg:eu:512345678", context.getBrokerUserId());
         assertEquals("wg:eu:512345678", context.getId());
-        assertEquals("512345678", context.getUsername());
+        assertEquals("wg_eu_512345678", context.getUsername());
         assertEquals("EU", context.getUserAttribute("region"));
+        assertEquals("512345678", context.getUserAttribute("wotb.account_id"));
         assertEquals(1, stub.logoutCalls());
+    }
+
+    @Test
+    void northAmericanRegionUsesIsolatedUsernameAndBroker() {
+        okResponses();
+        config.getConfig().put(WargamingIdentityProviderConfig.REGION_CONFIG_KEY, "NA");
+
+        final Response response = endpoint.handleCallback(
+                VALID_STATE, "ok", "tok-1", "PlayerOne", "512345678");
+
+        assertEquals(200, response.getStatus());
+        final BrokeredIdentityContext context = authFake.captured;
+        assertNotNull(context);
+        assertEquals("wg:na:512345678", context.getBrokerUserId());
+        assertEquals("wg:na:512345678", context.getId());
+        assertEquals("wg_na_512345678", context.getUsername());
+        assertEquals("NA", context.getUserAttribute("region"));
+        assertEquals("512345678", context.getUserAttribute("wotb.account_id"));
+        assertEquals(1, stub.logoutCalls());
+    }
+
+    @Test
+    void sameAccountIdYieldsDistinctUsernamesAcrossRegions() {
+        for (final WargamingRegion region : WargamingRegion.values()) {
+            stub.responses.put("/wot/auth/prolongate/",
+                    "{\"status\":\"ok\",\"access_token\":\"tok-2\",\"account_id\":123,"
+                            + "\"expires_at\":9999999999}");
+            stub.responses.put("/wotb/account/info/",
+                    "{\"status\":\"ok\",\"data\":{\"123\":{\"account_id\":123,"
+                            + "\"nickname\":\"PlayerOne\"}}}");
+            stub.responses.put("/wot/auth/logout/", "{\"status\":\"ok\"}");
+            config.getConfig().put(WargamingIdentityProviderConfig.REGION_CONFIG_KEY,
+                    region.name());
+
+            final Response response = endpoint.handleCallback(
+                    VALID_STATE, "ok", "tok-1", "PlayerOne", "123");
+
+            assertEquals(200, response.getStatus(), "region " + region);
+            final BrokeredIdentityContext context = authFake.captured;
+            assertNotNull(context, "region " + region);
+            assertEquals("wg:" + region.key() + ":123", context.getBrokerUserId());
+            assertEquals("wg_" + region.key() + "_123", context.getUsername());
+            assertEquals("123", context.getUserAttribute("wotb.account_id"));
+            stub.requests.clear();
+            stub.requestBodies.clear();
+            stub.lastQueryByPath.clear();
+            authFake.captured = null;
+        }
     }
 
     @Test
@@ -134,7 +183,7 @@ class WargamingEndpointTest {
         final BrokeredIdentityContext context = authFake.captured;
         assertNotNull(context);
         assertEquals("wg:asia:512345678", context.getBrokerUserId());
-        assertEquals("512345678", context.getUsername());
+        assertEquals("wg_asia_512345678", context.getUsername());
         assertEquals("512345678", context.getUserAttribute("wotb.account_id"));
     }
 
