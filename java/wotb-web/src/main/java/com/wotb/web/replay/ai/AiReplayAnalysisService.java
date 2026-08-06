@@ -4,7 +4,6 @@ import java.util.List;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.processing.RecorderEntityMapping;
-import com.wotb.core.processing.ReplayAnalysisScope;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
@@ -22,8 +21,8 @@ import org.springframework.stereotype.Service;
  * 委托给 {@link PlayerReplayAnalysisService} 与 {@link TeamReplayAnalysisService}。
  * <p>本类不构建 Prompt、不发送 HTTP、不处理 Provider DTO、不含大型业务算法。
  * 所有真实编排已移出；统计/分区/预算/拼装均下沉到对应组件。</p>
- * <p>静态方法 {@link #buildAnalysisUnits}、{@link #findRecorder} 委托给
- * {@link AnalysisUnitAssembler} 以保持原有公共契约。</p>
+ * <p>静态方法 {@link #findRecorder} 委托给 {@link AnalysisUnitAssembler}
+ * 以保持原有公共契约。</p>
  */
 @Service
 public class AiReplayAnalysisService {
@@ -144,13 +143,6 @@ public class AiReplayAnalysisService {
     }
 
     /**
-     * 委托 {@link AnalysisUnitAssembler#buildAnalysisUnits} 以保持原有静态公共契约。
-     */
-    public static List<com.wotb.core.processing.AnalysisUnitResult> buildAnalysisUnits(
-            final List<ReplayPerspectiveGroup> groups,
-            final ReplayAnalysisScope scope) {
-        return AnalysisUnitAssembler.buildAnalysisUnits(groups, scope);
-    }
 
     /**
      * 委托 {@link AnalysisUnitAssembler#findRecorder} 以保持原有静态公共契约。

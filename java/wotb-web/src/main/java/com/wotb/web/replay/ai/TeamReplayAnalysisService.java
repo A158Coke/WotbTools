@@ -16,22 +16,18 @@ import java.util.stream.IntStream;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.AiNotConfiguredException;
-import com.wotb.core.processing.AnalysisUnitResult;
 import com.wotb.core.processing.BattleCategory;
 import com.wotb.core.processing.BattleCategoryUtils;
 import com.wotb.core.processing.BattleIdentity;
 import com.wotb.core.processing.PerspectiveTeamNotResolvedException;
-import com.wotb.core.processing.ReplayAnalysisScope;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.processing.TeamPerspectiveResolution;
 import com.wotb.core.processing.TeamPerspectiveResolver;
 import com.wotb.core.replay.feature.DefaultTeamBattleFeatureExtractor;
-import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.MultiTeamBattleAnalysisContext;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
-import com.wotb.core.replay.feature.TeamAnalysisUnitReport;
 import com.wotb.core.replay.feature.TeamBattleAnalysisSummary;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
@@ -209,31 +205,26 @@ public class TeamReplayAnalysisService {
         final String content = call(
                 localizeTeamSystemPrompt(SINGLE_TEAM_PROMPT, language),
                 input.content(), "SINGLE_TEAM_BATTLE");
-        return new AnalyzeResult(
-                content,
-                config.model(),
-                context.features() != null ? context.features().keyEvents() : List.of());
+        return new AnalyzeResult(content);
     }
 
     private AnalyzeResult callMultiTeamContext(
             final TeamAiPromptBuilder.PromptInput input,
-            final List<KeyBattleEvent> keyEvents,
             final AllowedLanguage language
     ) {
         final String content = call(
                 localizeTeamSystemPrompt(MULTI_TEAM_PROMPT, language),
                 input.content(), "MULTI_TEAM_BATTLE");
-        return new AnalyzeResult(content, config.model(), keyEvents);
+        return new AnalyzeResult(content);
     }
 
     /**
      * 完整 Team 分析编排：将 contexts 划分为兼容分区，每个分区发起一次 AI 请求。
-     * <p>返回的 {@link TeamAnalyzeResult#analysis} 对应 {@code units} 中第一个分析单元
-     * 所属分区的 AI 输出（即第一个输入 group 所在分区的分析结果）。</p>
+     * <p>返回的 {@link TeamAnalyzeResult#analysis} 是第一个分区的 AI 输出
+     * （即第一个输入 group 所在分区的分析结果）。</p>
      * <p>分区归属通过 canonical 排序（{@link #buildPartitions}）确定，以保证
      * 对 permutation 稳定的分区行为：先按 {@code (battleIdentity, analysisUnitId)}
      * 字典序排序，再执行 complete-link 分组。</p>
-     * <p>最终 {@code units} 的顺序保持原始输入 {@code groups} 的顺序不变。</p>
      */
     public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups) {
         return analyzeTeamGroups(groups, AllowedLanguage.ZH);
@@ -262,10 +253,6 @@ public class TeamReplayAnalysisService {
         }
         final List<List<SingleTeamBattleAnalysisContext>> partitions =
                 buildPartitions(contexts, evidenceByUnitId);
-        final Map<String, AnalyzeResult> perUnitResults = new LinkedHashMap<>();
-        final Map<String, Set<String>> limitationsByUnit = new LinkedHashMap<>();
-        final Set<String> allGlobalLimitations = new LinkedHashSet<>();
-        final Set<String> allOmittedIds = new HashSet<>();
         AnalyzeResult firstAnalysis = null;
         for (final var partition : partitions) {
             if (partition.size() == 1) {
@@ -273,23 +260,8 @@ public class TeamReplayAnalysisService {
                 final RosterEvidence evidence = evidenceByUnitId.get(ctx.analysisUnitId());
                 final TeamAiPromptBuilder.PromptInput input =
                         TeamAiPromptBuilder.single(ctx, evidence != null ? evidence.limitations() : List.of(), config.estimator(), config.singleReplayMaxInputTokens());
-                allGlobalLimitations.addAll(input.globalLimitations());
-                allOmittedIds.addAll(input.omittedUnitIds());
                 final AnalyzeResult result = callSingleTeamContext(ctx, input, language);
                 if (firstAnalysis == null) firstAnalysis = result;
-                perUnitResults.put(ctx.analysisUnitId(), result);
-                if (input.globalLimitations().contains("AI_INPUT_TRUNCATED")) {
-                    for (final String truncatedId : input.truncatedUnitIds()) {
-                        limitationsByUnit.computeIfAbsent(
-                                truncatedId, k -> new LinkedHashSet<>())
-                                .add("AI_INPUT_TRUNCATED");
-                    }
-                }
-                if (evidence != null && evidence.limitations().contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS")) {
-                    limitationsByUnit.computeIfAbsent(
-                            ctx.analysisUnitId(), k -> new LinkedHashSet<>())
-                            .add("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
-                }
             } else {
                 final MultiTeamBattleAnalysisContext multiContext =
                         buildMultiTeamContext(partition, evidenceByUnitId);
@@ -302,59 +274,14 @@ public class TeamReplayAnalysisService {
                 }
                 final TeamAiPromptBuilder.PromptInput input =
                         TeamAiPromptBuilder.multi(multiContext, partitionEvidenceLimits, config.estimator(), config.singleReplayMaxInputTokens());
-                allGlobalLimitations.addAll(input.globalLimitations());
-                allOmittedIds.addAll(input.omittedUnitIds());
-                final Set<String> includedIds = input.includedUnitIds();
-                final List<KeyBattleEvent> keyEvents = partition.stream()
-                        .filter(ctx -> includedIds.contains(ctx.analysisUnitId()))
-                        .flatMap(ctx -> ctx.features().keyEvents().stream())
-                        .toList();
-                final AnalyzeResult result = callMultiTeamContext(input, keyEvents, language);
+                final AnalyzeResult result = callMultiTeamContext(input, language);
                 if (firstAnalysis == null) firstAnalysis = result;
-                final Set<String> omittedIds = input.omittedUnitIds();
-                for (final var ctx : partition) {
-                    if (includedIds.contains(ctx.analysisUnitId())) {
-                        perUnitResults.put(ctx.analysisUnitId(), result);
-                    }
-                }
-                for (final var ctx : partition) {
-                    final Set<String> unitLimits = limitationsByUnit.computeIfAbsent(
-                            ctx.analysisUnitId(), k -> new LinkedHashSet<>());
-                    if (omittedIds.contains(ctx.analysisUnitId())) {
-                        unitLimits.add("AI_PERSPECTIVE_OMITTED_FROM_PROMPT");
-                    }
-                    final var rosterEvidence = evidenceByUnitId.get(ctx.analysisUnitId());
-                    if (rosterEvidence != null && rosterEvidence.limitations().contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS")) {
-                        unitLimits.add("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS");
-                    }
-                }
-                if (input.globalLimitations().contains("AI_INPUT_TRUNCATED")) {
-                    for (final String truncatedId : input.truncatedUnitIds()) {
-                        limitationsByUnit.computeIfAbsent(
-                                truncatedId, k -> new LinkedHashSet<>())
-                                .add("AI_INPUT_TRUNCATED");
-                    }
-                }
             }
-        }
-        allGlobalLimitations.removeIf(code -> code.matches("PERSPECTIVES_OMITTED_COUNT_\\d+"));
-        if (!allOmittedIds.isEmpty()) {
-            allGlobalLimitations.add("PERSPECTIVES_OMITTED_COUNT_" + allOmittedIds.size());
         }
         if (firstAnalysis == null) {
             throw new IllegalStateException("NO_ANALYSIS_PRODUCED");
         }
-        final int totalContexts = contexts.size();
-        final int analyzedCount = (int) contexts.stream()
-                .filter(ctx -> perUnitResults.containsKey(ctx.analysisUnitId()))
-                .count();
-        return new TeamAnalyzeResult(
-                firstAnalysis,
-                buildTeamAnalysisUnits(
-                        groups, contexts, perUnitResults, limitationsByUnit),
-                totalContexts, analyzedCount,
-                allOmittedIds.size(),
-                List.copyOf(allGlobalLimitations));
+        return new TeamAnalyzeResult(firstAnalysis);
     }
 
     /**
@@ -670,46 +597,6 @@ public class TeamReplayAnalysisService {
         return conflict
                 ? "PERSPECTIVE_TEAM_CONFLICT"
                 : "PERSPECTIVE_TEAM_UNRESOLVED";
-    }
-
-    private static List<AnalysisUnitResult> buildTeamAnalysisUnits(
-            final List<ReplayPerspectiveGroup> groups,
-            final List<SingleTeamBattleAnalysisContext> contexts,
-            final Map<String, AnalyzeResult> perUnitResults,
-            final Map<String, Set<String>> limitationsByUnit
-    ) {
-        final List<AnalysisUnitResult> units = new ArrayList<>();
-        for (int index = 0; index < groups.size(); index++) {
-            final ReplayPerspectiveGroup group = groups.get(index);
-            final SingleTeamBattleAnalysisContext ctx = contexts.get(index);
-            final TeamBattleFeatureSet features = ctx.features();
-            final Set<String> limitations =
-                    new LinkedHashSet<>(features.limitations());
-            limitations.addAll(limitationsByUnit.getOrDefault(
-                    ctx.analysisUnitId(), Set.of()));
-            final AnalyzeResult unitResult = perUnitResults.get(ctx.analysisUnitId());
-            final String unitAnalysisText = unitResult != null ? unitResult.analysis() : null;
-            final String unitModel = unitResult != null ? unitResult.model() : null;
-            units.add(new AnalysisUnitResult(
-                    ctx.analysisUnitId(),
-                    group.battleIdentity(),
-                    ReplayAnalysisScope.TEAM_PERSPECTIVE,
-                    ctx.perspectiveTeam(),
-                    group.representative().fileName(),
-                    group.duplicates().stream()
-                            .map(ReplayProcessingResult::fileName)
-                            .toList(),
-                    unitModel,
-                    new TeamAnalysisUnitReport(
-                            features.authoritativeAggregate(),
-                            features.observedAggregate(),
-                            features.coverage(),
-                            List.copyOf(limitations),
-                            features.keyEvents(),
-                            unitAnalysisText,
-                            unitModel)));
-        }
-        return List.copyOf(units);
     }
 
     /**

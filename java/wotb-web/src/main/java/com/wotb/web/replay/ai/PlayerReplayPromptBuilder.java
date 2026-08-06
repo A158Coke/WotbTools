@@ -271,7 +271,7 @@ public final class PlayerReplayPromptBuilder {
         final String summary = buildSummary(battle, recon, keyEvents);
         final String systemPrompt = localizePlayerSystemPrompt(SYSTEM_PROMPT, language);
         return new PreparedAiPrompt(systemPrompt, summary, "SINGLE_PLAYER_SUMMARY",
-                keyEvents, EvidenceDensity.LEVEL_1_COMPRESSED, 0);
+                EvidenceDensity.LEVEL_1_COMPRESSED, 0);
     }
 
     /**
@@ -305,7 +305,7 @@ public final class PlayerReplayPromptBuilder {
         AiPromptBudgetGuard.enforce(estimatedTokens, maxInputTokens, contextWindowTokens,
                 maxOutputTokens, promptSafetyMarginTokens);
         return new PreparedAiPrompt(systemPrompt, summary, "SINGLE_PLAYER_BATTLE",
-                ctx.features().keyEvents(), EvidenceDensity.LEVEL_1_COMPRESSED, estimatedTokens);
+                EvidenceDensity.LEVEL_1_COMPRESSED, estimatedTokens);
     }
 
     /**
@@ -354,8 +354,7 @@ public final class PlayerReplayPromptBuilder {
         AiPromptBudgetGuard.enforce(estimatedTokens, maxInputTokens, contextWindowTokens,
                 maxOutputTokens, promptSafetyMarginTokens);
         return new PreparedAiPrompt(systemPrompt, planned.userContent(),
-                "SINGLE_PLAYER_BATTLE", ctx.features().keyEvents(),
-                planned.density(), estimatedTokens);
+                "SINGLE_PLAYER_BATTLE", planned.density(), estimatedTokens);
     }
 
     /**
@@ -370,7 +369,7 @@ public final class PlayerReplayPromptBuilder {
         final String summary = buildMultiSummary(battles);
         final String systemPrompt = localizePlayerSystemPrompt(MULTI_SYSTEM_PROMPT, language);
         return new PreparedAiPrompt(systemPrompt, summary, "MULTI_PLAYER_SUMMARY",
-                List.of(), EvidenceDensity.LEVEL_1_COMPRESSED, 0);
+                EvidenceDensity.LEVEL_1_COMPRESSED, 0);
     }
 
     static final String SINGLE_PLAYER_PROMPT = """
