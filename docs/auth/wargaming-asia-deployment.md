@@ -66,7 +66,7 @@ Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的
 
 ## 4. 核对 JWT Protocol Mapper
 
-生产 realm 若没有随 realm JSON 导入，需在 Admin Console 为 `wotbtools-web` client 手工添加 4 个 mapper（与 `docker/keycloak/wotbtools-realm.json` 一致，ID/Access/UserInfo 三个 token 均启用）：
+生产 realm 若没有随 realm JSON 导入（生产使用 Admin Console 手工配置、不使用 `--import-realm`），需在 Admin Console 为 `wotbtools-web` client 核对/添加 4 个 mapper（与 `docker/keycloak/wotbtools-realm.json` 一致，ID/Access/UserInfo 三个 token 均启用）。**该步骤可重复执行**：realm JSON 只对全新 realm 生效，已有生产 realm 不会自动获得 mapper，每次核对以本表为准：
 
 | Mapper 名 | User Attribute | Claim | JSON 类型 |
 |---|---|---|---|
@@ -76,6 +76,12 @@ Wargaming.net 按游戏注册 application_id，本项目使用 **WoT Blitz** 的
 | wotb-verified-mapper | `wotb.verified` | `wotb_verified` | boolean |
 
 `displayName` 的 display-name-mapper 已存在，保持不变。
+
+核对要点：
+
+- `wotb-verified-mapper` 的 **JSON 类型必须为 boolean**（若为 String，后端已兼容字符串 `"true"`，但应修正为 boolean）；
+- 三个 token 开关（id.token.claim / access.token.claim / userinfo.token.claim）必须均为 On；
+- 若生产 realm 缺失任意 mapper，后端将收不到 WG claims，WG 登录会退化为 CN 手动流程——这是 WG 登录后仍显示「设置游戏账号」的常见根因之一。
 
 ## 5. Caddy 访问日志脱敏（仓库外运维项，决策 D16）
 

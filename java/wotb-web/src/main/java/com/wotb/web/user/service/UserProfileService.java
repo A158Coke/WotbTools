@@ -101,7 +101,9 @@ public class UserProfileService {
 
     /**
      * 幂等同步接口：仅 WG 可信 claims（ASIA/EU/NA）可调用。
-     * 允许刷新官方昵称；不刷新 verified_at；不允许 CN→WG 覆盖或切换 account_id。
+     * Profile 不存在时创建 WARGAMING Profile；空 Profile（未绑定任何账号）升级为
+     * WARGAMING；已绑定同 (region, account_id) 时幂等刷新官方昵称（不刷新 verified_at）；
+     * 已绑定其他账号（MANUAL 或跨区服/跨账号）返回 409；账号被他人占用返回 409。
      */
     @Transactional
     public UserProfileDto syncFromLogin(final String keycloakUserId) {
@@ -112,15 +114,6 @@ public class UserProfileService {
         final Long accountId = JwtUtil.currentWotbAccountId();
         final String nickname = JwtUtil.currentWotbNickname();
 
-        final UserProfile profile = repository.findByKeycloakUserId(keycloakUserId)
-                .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
-
-        if (!trustedRegion.equals(profile.getWotbServer())) {
-            throw new IllegalArgumentException("PROFILE_REGION_MISMATCH");
-        }
-        if (!accountId.equals(profile.getWotbAccountId())) {
-            throw new IllegalArgumentException("WOTB_ACCOUNT_MISMATCH");
-        }
         final boolean duplicate = repository.existsByWotbServerAndWotbAccountIdAndKeycloakUserIdNot(
                 trustedRegion, accountId, keycloakUserId);
         if (duplicate) {
@@ -128,11 +121,44 @@ public class UserProfileService {
         }
 
         try {
-            if (!nickname.equals(profile.getWotbNickname())) {
-                profile.setWotbNickname(nickname);
-                profile.setUpdatedAt(OffsetDateTime.now());
-                // 决策 D8：昵称刷新不更新 verified_at。
+            final UserProfile profile = repository.findByKeycloakUserId(keycloakUserId)
+                    .orElse(null);
+            if (profile == null) {
+                // Profile 不存在：原子创建 WARGAMING Profile。
+                final UserProfile created = new UserProfile();
+                created.setKeycloakUserId(keycloakUserId);
+                created.setUsername(JwtUtil.currentUsername());
+                created.setDisplayName(JwtUtil.currentDisplayName());
+                created.setWotbServer(trustedRegion);
+                created.setWotbAccountId(accountId);
+                created.setWotbNickname(nickname);
+                created.setWotbAccountSource("WARGAMING");
+                created.setWotbAccountVerifiedAt(OffsetDateTime.now());
+                created.setUpdatedAt(OffsetDateTime.now());
+                return mapper.toDto(repository.save(created));
             }
+            if (profile.getWotbAccountId() == null) {
+                // 空 Profile（尚未绑定任何账号）：升级为 WARGAMING。
+                profile.setWotbServer(trustedRegion);
+                profile.setWotbAccountId(accountId);
+                profile.setWotbNickname(nickname);
+                profile.setWotbAccountSource("WARGAMING");
+                profile.setWotbAccountVerifiedAt(OffsetDateTime.now());
+            } else {
+                // 已绑定账号：必须同 source/region/account_id，否则明确冲突。
+                if (!"WARGAMING".equals(profile.getWotbAccountSource())
+                        || !trustedRegion.equals(profile.getWotbServer())) {
+                    throw new IllegalArgumentException("PROFILE_REGION_MISMATCH");
+                }
+                if (!accountId.equals(profile.getWotbAccountId())) {
+                    throw new IllegalArgumentException("WOTB_ACCOUNT_MISMATCH");
+                }
+                if (!nickname.equals(profile.getWotbNickname())) {
+                    profile.setWotbNickname(nickname);
+                    // 决策 D8：昵称刷新不更新 verified_at。
+                }
+            }
+            profile.setUpdatedAt(OffsetDateTime.now());
             return mapper.toDto(repository.save(profile));
         } catch (final DataIntegrityViolationException e) {
             // 并发窗口内 (region, account_id) 被其他用户占用：与手动绑定同一错误码。
@@ -149,7 +175,9 @@ public class UserProfileService {
         final UserProfile profile = repository.findByKeycloakUserId(keycloakUserId)
                 .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
 
-        if ("WARGAMING".equals(profile.getWotbAccountSource())) {
+        // 最终保护：JWT 明确是 WG 身份时（即使 DB 同步异常仍为空/MANUAL）也禁止 MANUAL 绑定。
+        if (trustedWgRegionOrNull() != null
+                || "WARGAMING".equals(profile.getWotbAccountSource())) {
             throw new IllegalArgumentException(readOnlyErrorCode(profile.getWotbServer()));
         }
         if (wotbAccountId == null || wotbAccountId <= 0) {
@@ -187,7 +215,9 @@ public class UserProfileService {
         final UserProfile profile = repository.findByKeycloakUserId(keycloakUserId)
                 .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
 
-        if ("WARGAMING".equals(profile.getWotbAccountSource())) {
+        // 最终保护：JWT 明确是 WG 身份时禁止解绑（与手动绑定同一规则）。
+        if (trustedWgRegionOrNull() != null
+                || "WARGAMING".equals(profile.getWotbAccountSource())) {
             throw new IllegalArgumentException(readOnlyErrorCode(profile.getWotbServer()));
         }
         profile.setWotbAccountId(null);

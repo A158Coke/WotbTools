@@ -33,6 +33,8 @@ const editingAccount = ref(false)
 const editAccountId = ref(null)
 const editNickname = ref('')
 const editError = ref('')
+const syncFromLoginPending = ref(false)
+const syncFromLoginError = ref(null)
 const records = ref([])
 const recordsError = ref('')
 const boosterInfo = ref(null)
@@ -97,15 +99,21 @@ async function loadProfile() {
   }
 }
 
-/** WG 幂等同步（ASIA/EU/NA）：昵称变化时刷新，失败静默（CN 用户属正常情况）。 */
+/** WG 幂等同步（ASIA/EU/NA）：昵称变化时刷新；失败不再静默，保留错误状态供重试。 */
 async function syncFromLogin() {
+  if (!isWargamingLogin.value) return
+  syncFromLoginPending.value = true
+  syncFromLoginError.value = null
   try {
     const synced = await syncUserWotbAccountFromLogin()
     if (synced) {
       profile.value = synced
     }
-  } catch {
-    // 幂等同步：WOTB_CLAIMS_INVALID / PROFILE_REGION_MISMATCH 均忽略。
+  } catch (e) {
+    // 保留后端业务错误码：同步失败时绝不回退为 CN 手动入口。
+    syncFromLoginError.value = e
+  } finally {
+    syncFromLoginPending.value = false
   }
 }
 
@@ -119,12 +127,25 @@ const displayName = computed(() =>
 const heroSubtitle = computed(() =>
   profile.value?.wotbNickname
     ? profile.value.wotbNickname
-    : t('profile.notBoundWotbAccount')
+    : isWargamingLogin.value
+      ? t('profile.wgSyncing')
+      : t('profile.notBoundWotbAccount')
 )
 
-/** WARGAMING source = WG 官方账号（ASIA/EU/NA），资料只读；CN MANUAL 用户可编辑。 */
+/** JWT 明确是 WG 登录（ASIA/EU/NA + 可信 verified + account_id），即使同步失败也据此只读。 */
+const isWargamingLogin = computed(() => {
+  const region = tokenParsed.value?.wotb_region
+  const accountId = tokenParsed.value?.wotb_account_id
+  const verified = tokenParsed.value?.wotb_verified
+  return ['ASIA', 'EU', 'NA'].includes(region)
+    && Boolean(accountId)
+    && (verified === true || verified === 'true')
+})
+
+/** WARGAMING source 或 JWT WG 身份 = 资料只读；CN MANUAL 用户可编辑。 */
 const isWargamingProfile = computed(
   () => profile.value?.wotbAccountSource === 'WARGAMING'
+    || isWargamingLogin.value
 )
 
 const SERVER_LABEL_BY_VALUE = Object.freeze({
@@ -391,6 +412,14 @@ function notificationMessage(notification) {
               <div class="account-row"><span>{{ $t('profile.verified') }}</span><span class="badge-ok">{{ $t('profile.verifiedBadge') }}</span></div>
               <div class="account-row"><span>{{ $t('profile.nickname') }}</span><strong>{{ profile.wotbNickname || '--' }}</strong></div>
               <div class="account-row"><span>{{ $t('profile.accountId') }}</span><code>{{ profile.wotbAccountId }}</code></div>
+            </div>
+            <div v-else-if="isWargamingProfile" class="account-bound">
+              <p class="error">{{ $t('profile.wgSyncFailed') }}</p>
+              <div class="edit-row">
+                <button class="btn-ghost btn-sm" :disabled="syncFromLoginPending" @click="syncFromLogin">
+                  {{ syncFromLoginPending ? $t('profile.wgSyncing') : $t('profile.wgSyncRetry') }}
+                </button>
+              </div>
             </div>
             <div v-else-if="profile.wotbAccountId" class="account-bound">
               <div class="account-row"><span>{{ $t('profile.accountId') }}</span><code>{{ profile.wotbAccountId }}</code></div>

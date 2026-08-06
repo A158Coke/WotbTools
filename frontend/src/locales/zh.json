@@ -363,7 +363,10 @@
         "sourceUserFilled": "用户填写",
         "sourceWargaming": "Wargaming.net",
         "verified": "验证状态",
-        "verifiedBadge": "账号已验证"
+        "verifiedBadge": "账号已验证",
+        "wgSyncFailed": "Wargaming 账号同步失败，请刷新或重新登录",
+        "wgSyncRetry": "重试同步",
+        "wgSyncing": "正在同步 Wargaming 账号"
     },
     "replay": {
         "no_files": "请先选择回放文件或文件夹",

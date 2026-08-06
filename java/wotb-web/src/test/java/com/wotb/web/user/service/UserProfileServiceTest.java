@@ -183,12 +183,51 @@ class UserProfileServiceTest {
     }
 
     @Test
-    void syncFromLoginRefusesCnProfile() {
+    void syncFromLoginUpgradesEmptyProfileToWargaming() {
         loginWithWgClaims("ASIA", true, 512345678L);
         final UserProfile profile = new UserProfile();
         profile.setKeycloakUserId("kc-user");
         profile.setWotbServer("CN");
         when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.of(profile));
+        when(repository.existsByWotbServerAndWotbAccountIdAndKeycloakUserIdNot(
+                "ASIA", 512345678L, "kc-user")).thenReturn(false);
+
+        final UserProfileDto dto = service.syncFromLogin("kc-user");
+
+        assertEquals("ASIA", dto.wotbServer());
+        assertEquals(512345678L, dto.wotbAccountId());
+        assertEquals("PlayerOne", dto.wotbNickname());
+        assertEquals("WARGAMING", dto.wotbAccountSource());
+        assertNotNull(dto.wotbAccountVerifiedAt());
+    }
+
+    @Test
+    void syncFromLoginCreatesWargamingProfileWhenMissing() {
+        loginWithWgClaims("NA", true, 572253806L);
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.empty());
+        when(repository.existsByWotbServerAndWotbAccountIdAndKeycloakUserIdNot(
+                "NA", 572253806L, "kc-user")).thenReturn(false);
+
+        final UserProfileDto dto = service.syncFromLogin("kc-user");
+
+        assertEquals("NA", dto.wotbServer());
+        assertEquals(572253806L, dto.wotbAccountId());
+        assertEquals("PlayerOne", dto.wotbNickname());
+        assertEquals("WARGAMING", dto.wotbAccountSource());
+        assertNotNull(dto.wotbAccountVerifiedAt());
+    }
+
+    @Test
+    void syncFromLoginRefusesAlreadyBoundCnProfile() {
+        loginWithWgClaims("ASIA", true, 512345678L);
+        final UserProfile profile = new UserProfile();
+        profile.setKeycloakUserId("kc-user");
+        profile.setWotbServer("CN");
+        profile.setWotbAccountId(1001L);
+        profile.setWotbAccountSource("MANUAL");
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.of(profile));
+        when(repository.existsByWotbServerAndWotbAccountIdAndKeycloakUserIdNot(
+                "ASIA", 512345678L, "kc-user")).thenReturn(false);
 
         final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> service.syncFromLogin("kc-user"));
@@ -254,6 +293,20 @@ class UserProfileServiceTest {
     }
 
     @Test
+    void updateWotbAccountRejectsWgJwtEvenWhenDbProfileIsManual() {
+        loginWithWgClaims("ASIA", true, 572253806L);
+        final UserProfile profile = new UserProfile();
+        profile.setKeycloakUserId("kc-user");
+        profile.setWotbServer("CN");
+        profile.setWotbAccountSource("MANUAL");
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.of(profile));
+
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> service.updateWotbAccount("kc-user", 1001L, "CNName", "CN"));
+        assertEquals("WARGAMING_PROFILE_READONLY", e.getMessage());
+    }
+
+    @Test
     void deleteWotbAccountRejectsAsiaProfile() {
         when(repository.findByKeycloakUserId("kc-user")).thenReturn(
                 Optional.of(wgProfile("ASIA", 512345678L, "PlayerOne", OffsetDateTime.now())));
@@ -267,6 +320,20 @@ class UserProfileServiceTest {
     void deleteWotbAccountRejectsNaProfileWithGenericReadonlyCode() {
         when(repository.findByKeycloakUserId("kc-user")).thenReturn(
                 Optional.of(wgProfile("NA", 512345678L, "PlayerOne", OffsetDateTime.now())));
+
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> service.deleteWotbAccount("kc-user"));
+        assertEquals("WARGAMING_PROFILE_READONLY", e.getMessage());
+    }
+
+    @Test
+    void deleteWotbAccountRejectsWgJwtEvenWhenDbProfileIsManual() {
+        loginWithWgClaims("EU", true, 572253806L);
+        final UserProfile profile = new UserProfile();
+        profile.setKeycloakUserId("kc-user");
+        profile.setWotbServer("CN");
+        profile.setWotbAccountSource("MANUAL");
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.of(profile));
 
         final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> service.deleteWotbAccount("kc-user"));

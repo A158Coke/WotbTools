@@ -363,7 +363,10 @@
         "sourceUserFilled": "Указано пользователем",
         "sourceWargaming": "Wargaming.net",
         "verified": "Статус проверки",
-        "verifiedBadge": "Аккаунт подтверждён"
+        "verifiedBadge": "Аккаунт подтверждён",
+        "wgSyncFailed": "Не удалось синхронизировать аккаунт Wargaming. Обновите страницу или войдите снова.",
+        "wgSyncRetry": "Повторить синхронизацию",
+        "wgSyncing": "Синхронизация аккаунта Wargaming"
     },
     "replay": {
         "no_files": "Сначала выберите реплеи или папку",

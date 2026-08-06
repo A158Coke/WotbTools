@@ -391,12 +391,17 @@ PUT /api/users/wotb-account/from-login
 - 不接受 request body；只读当前已签名 JWT；
 - 要求 `wotb_verified == true`，只接受 `ASIA` / `EU` / `NA`；
 - 按 JWT `sub` 查找 Profile；
+- Profile 不存在时**原子创建 WARGAMING Profile**（server/account_id/nickname/source/verified_at 一次写入）；
+- 空 Profile（`wotb_account_id` 为空，即从未绑定任何账号）**升级为 WARGAMING**，不要求先手动创建；
 - Profile 属于同一 `(region, account_id)` 时允许更新官方昵称（`wotb_nickname`），不刷新 `wotb_account_verified_at`；
-- 不允许把已有 CN Profile 静默覆盖为 WG Profile；
+- 不允许把**已绑定** CN Profile（`wotb_account_id` 非空）静默覆盖为 WG Profile（返回 409 `PROFILE_REGION_MISMATCH`）；
 - 不允许把已有 WG Profile 切换到另一个 `account_id`；
 - `(region, account_id)` 已属其他用户时返回明确冲突（错误码 `WOTB_ACCOUNT_ALREADY_USED`，作为兜底；直接登录场景由 broker 层拦截，决策 D12）；
+- Claims 缺失/无效返回 400 `WOTB_CLAIMS_INVALID`，不写入任何数据；
 - 不根据昵称/邮箱自动合并用户；
-- 前端触发时机：个人资料页每次加载后调用一次（幂等）。
+- 前端触发时机：个人资料页每次加载后调用一次（幂等）；**失败不静默**——前端保留业务错误码并显示「同步失败 + 重试」，且 WG 登录用户（按 JWT claims 判断）即使同步失败也绝不显示手动绑定入口。
+
+后端最终保护：`PATCH/DELETE /api/users/wotb-account` 在 JWT 明确为 WG 身份（`wotb_region ∈ {ASIA,EU,NA}` + `wotb_verified=true` + account_id 有效）时，即使数据库 Profile 因同步异常仍为空/MANUAL，也一律返回只读错误（`WARGAMING_PROFILE_READONLY`），杜绝同步异常窗口内的手动绑定绕过。
 
 避免在多个接口中复制同一套 Claim 校验和同步逻辑：创建与同步共用 service 层统一校验。
 
@@ -573,6 +578,9 @@ keycloak-wargaming-provider
 - CN 用户仍可正常创建 Profile、手动绑定国服资料；
 - 手动接口拒绝 WG Profile（ASIA/EU/NA），且不能伪造 source/verified；
 - WG 可信 Claims 创建对应区服 Profile（ASIA/EU/NA，含 source=WARGAMING、verified_at=首次同步时间）；
+- `from-login`：Profile 不存在时创建、空 Profile 升级为 WARGAMING、已绑定 MANUAL 返回 409、同 (region, account_id) 幂等刷新昵称；
+- JWT 为 WG 身份但 DB 仍 MANUAL/空时，`PATCH/DELETE` 仍返回 `WARGAMING_PROFILE_READONLY`（同步异常窗口保护）；
+- `wotb_verified` 兼容 boolean 与字符串 `"true"`；
 - 缺少 `wotb_verified` / 非 WG 区服 Claim 被拒绝或按 CN 兜底；
 - 重复同步幂等；WG 昵称可更新；verified_at 不被刷新；
 - 已存在其他账号的 `(region, account_id)` 不能被静默覆盖；冲突返回 `WOTB_ACCOUNT_ALREADY_USED`；
@@ -586,6 +594,7 @@ keycloak-wargaming-provider
 - 未登录访问需鉴权页面自动跳转 Keycloak 登录页（`kc.login` 不带 idpHint），Keycloak 页面列出 QQ + 三个 WG IdP；
 - 前端无自定义登录页（`LoginPage` / `view=login` 已移除），无 WG 凭据输入入口；
 - 个人中心按 `wotbAccountSource=WARGAMING` 判定只读（ASIA/EU/NA 均无编辑/解绑），CN MANUAL 仍可编辑；四个服务器标签（CN/ASIA/EU/NA）展示正确，EU/NA 不显示为 CN；
+- JWT 为 WG 身份（`wotb_region`/`wotb_account_id`/`wotb_verified`）但同步失败时：不显示「设置游戏账号/编辑/解绑」，显示「同步失败 + 重试」，不退化为 CN MANUAL 表单；
 - ASIA 官方字段不可手动修改，无解绑入口；
 - 个人资料页不含"绑定"承诺文案。
 

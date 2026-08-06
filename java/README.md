@@ -177,7 +177,7 @@ AI 上游与数据错误只向 API 返回稳定英文码，前端以 zh/en/ru �
 - `GET /api/users/profile` — 当前用户资料；未创建返回 404 `PROFILE_NOT_FOUND`。
 - `POST /api/users/profile` — 懒创建资料。JWT 带可信 WG claims（`wotb_verified=true` 且 `wotb_region ∈ {ASIA,EU,NA}` 且账号/昵称有效）时自动创建对应区服资料（`wotb_account_source=WARGAMING`、`wotb_account_verified_at=首次同步时间`）；否则按 CN（`MANUAL`）创建。
 - `PATCH /api/users/wotb-account` — CN 手动绑定（仅允许 `wotbServer=CN`）；WARGAMING source 资料返回只读错误（ASIA 为 400 `ASIA_PROFILE_READONLY`，EU/NA 为 400 `WARGAMING_PROFILE_READONLY`）。
-- `PUT /api/users/wotb-account/from-login` — WG 登录后的幂等同步（无 body，只读 JWT）；刷新官方昵称、不刷新 verified_at；CN→WG 覆盖或跨区服返回 409 `PROFILE_REGION_MISMATCH`、换账号返回 409 `WOTB_ACCOUNT_MISMATCH`、账号被他人占用返回 409 `WOTB_ACCOUNT_ALREADY_USED`。
+- `PUT /api/users/wotb-account/from-login` — WG 登录后的幂等同步（无 body，只读 JWT）；Profile 不存在时原子创建 WARGAMING、空 Profile 升级为 WARGAMING、同 (region, account_id) 刷新官方昵称（不刷新 verified_at）；已绑定 CN 覆盖或跨区服返回 409 `PROFILE_REGION_MISMATCH`、换账号返回 409 `WOTB_ACCOUNT_MISMATCH`、账号被他人占用返回 409 `WOTB_ACCOUNT_ALREADY_USED`、Claims 缺失返回 400 `WOTB_CLAIMS_INVALID`。
 - `DELETE /api/users/wotb-account` — 解绑；WARGAMING source 资料返回只读错误（ASIA 为 400 `ASIA_PROFILE_READONLY`，EU/NA 为 400 `WARGAMING_PROFILE_READONLY`）。
 
 资料 DTO 含 `wotbAccountSource`（MANUAL/WARGAMING）与 `wotbAccountVerifiedAt`（ISO 时间或 null）。JWT claims 由 Keycloak realm 的 4 个 protocol mapper 提供（`region→wotb_region`、`wotb.account_id→wotb_account_id`、`wotb.nickname→wotb_nickname`、`wotb.verified→wotb_verified(boolean)`）；Keycloak 容器需注入 `WG_APPLICATION_ID`（WoT Blitz 应用 ID，缺失时仅 WG 登录报错）。详见 [docs/auth/wargaming-asia-login.md](../docs/auth/wargaming-asia-login.md) 与部署手册 [docs/auth/wargaming-asia-deployment.md](../docs/auth/wargaming-asia-deployment.md)。
