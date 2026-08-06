@@ -23,7 +23,7 @@
 
 - 本地运行 / 构建：见 [java/README.md](java/README.md)（本地八服务 `docker/online/`）
 - 测试与质量门禁：见 [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
-- 更新车辆库：`cd common/python && WG_APPLICATION_ID=... python update_tankopedia.py`（WG 官方数据，默认 7–10 级；详见 DEVELOPER_GUIDE）
+- 更新车辆库：本地 `cd common/python && WG_APPLICATION_ID=... python update_tankopedia.py`，或手动触发 GitHub Actions `Update Tankopedia`（自动提交回 main；均需 WG 官方 application_id，详见 DEVELOPER_GUIDE）
 
 ## 已上线工具
 
