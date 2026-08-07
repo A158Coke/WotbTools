@@ -8,23 +8,29 @@ import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
 
-/** 车辆库 (tank_id -> 名称/等级/车种/国家), 来自 blitzkit。 */
+/** 车辆库 (tank_id -> 车辆信息), 来自 blitzkit（vehicles 数组）。 */
 public final class Tankopedia {
 
-    private final Map<String, JsonNode> data;
+    private final Map<Long, JsonNode> vehicles;
 
-    private Tankopedia(final Map<String, JsonNode> data) {
-        this.data = data;
+    private Tankopedia(final Map<Long, JsonNode> vehicles) {
+        this.vehicles = vehicles;
     }
 
     /** 从 classpath 的 tankopedia.json 加载。 */
     public static Tankopedia load() {
-        final Map<String, JsonNode> map = new HashMap<>();
+        final Map<Long, JsonNode> map = new HashMap<>();
         try (InputStream in = Tankopedia.class.getResourceAsStream("/tankopedia.json")) {
             if (in != null) {
                 final JsonNode root = JsonMapper.builder().build().readTree(in);
-                final JsonNode d = root.has("data") ? root.get("data") : root;
-                d.properties().forEach(e -> map.put(e.getKey(), e.getValue()));
+                final JsonNode list = root.get("vehicles");
+                if (list != null && list.isArray()) {
+                    for (final JsonNode vehicle : list) {
+                        if (vehicle != null && vehicle.hasNonNull("id") && vehicle.get("id").canConvertToLong()) {
+                            map.put(vehicle.get("id").longValue(), vehicle);
+                        }
+                    }
+                }
             }
         } catch (Exception ignored) {
             // 缺库时降级为只显示车辆ID
@@ -33,31 +39,51 @@ public final class Tankopedia {
     }
 
     public TankInfo info(final long tankId) {
-        final JsonNode t = data.get(String.valueOf(tankId));
-        if (t == null) {
+        final JsonNode vehicle = vehicles.get(tankId);
+        if (vehicle == null) {
             return new TankInfo("#" + tankId, "", "", "", null, null, "");
         }
-        final String name = t.hasNonNull("name") ? t.get("name").asText() : "#" + tankId;
-        final Object tier = t.hasNonNull("tier") ? t.get("tier").asInt() : "";
-        final String type = t.hasNonNull("class") ? t.get("class").asText() : "";
-        final String nation = t.hasNonNull("nation") ? t.get("nation").asText() : "";
-        final Integer alphaDamage = t.hasNonNull("alphaDamage") ? t.get("alphaDamage").asInt() : null;
-        final Integer maxHp = firstInt(t, "maxHp", "hp", "health", "hitpoints", "hitPoints", "maxHealth");
-        final String extraKnowledge = t.hasNonNull("extraKnowledge")
-                ? t.get("extraKnowledge").asText() : "";
-        return new TankInfo(name, tier, type, nation, alphaDamage, maxHp, extraKnowledge);
+        final String name = vehicle.hasNonNull("name") ? vehicle.get("name").asText() : "#" + tankId;
+        final Object tier = vehicle.hasNonNull("tier") ? vehicle.get("tier").asInt() : "";
+        final String type = vehicle.hasNonNull("class") ? vehicle.get("class").asText() : "";
+        final String nation = vehicle.hasNonNull("nation") ? vehicle.get("nation").asText() : "";
+        final Integer alphaDamage = defaultGunInt(vehicle, "alphaDamage");
+        final Integer maxHp = firstInt(vehicle, "hp");
+        final String extraInfo = vehicle.hasNonNull("extraInfo")
+                ? vehicle.get("extraInfo").asText() : "";
+        return new TankInfo(name, tier, type, nation, alphaDamage, maxHp, extraInfo);
     }
 
-    private static Integer firstInt(final JsonNode node, final String... keys) {
-        for (final String key : keys) {
-            if (node.hasNonNull(key) && node.get(key).canConvertToInt()) {
-                return node.get(key).asInt();
+    /** 默认炮（isDefault=true，否则第一把）的整数字段。 */
+    private static Integer defaultGunInt(final JsonNode vehicle, final String field) {
+        final JsonNode guns = vehicle.get("guns");
+        if (guns == null || !guns.isArray() || guns.isEmpty()) {
+            return null;
+        }
+        JsonNode gun = null;
+        for (final JsonNode g : guns) {
+            if (g != null && g.hasNonNull("isDefault") && g.get("isDefault").asBoolean()) {
+                gun = g;
+                break;
             }
+        }
+        if (gun == null) {
+            gun = guns.get(0);
+        }
+        if (gun != null && gun.hasNonNull(field) && gun.get(field).canConvertToInt()) {
+            return gun.get(field).asInt();
+        }
+        return null;
+    }
+
+    private static Integer firstInt(final JsonNode node, final String key) {
+        if (node != null && node.hasNonNull(key) && node.get(key).canConvertToInt()) {
+            return node.get(key).asInt();
         }
         return null;
     }
 
     public int size() {
-        return data.size();
+        return vehicles.size();
     }
 }

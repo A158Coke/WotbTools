@@ -57,7 +57,7 @@ public final class PlayerReplayPromptBuilder {
             禁止拆分、翻译、展开、按字母还原缩写，或把相似写法当作其他术语。
             例如 SPHT 就是完整的坦克名称，它不是 SPG，也不代表自行火炮；《坦克世界闪击战》中不存在自行火炮车种。
             禁止根据坦克名称推断车辆类型、国家、定位、装甲、火力或玩法。
-            车辆事实只能来自 tankId 对应的结构化字段（车种 / vehicleClass、等级 / tier、国家 / nation、炮伤 / alphaDamage、血量 / hp、知识 / extraKnowledge）；
+            车辆事实只能来自 tankId 对应的结构化字段（车种 / vehicleClass、等级 / tier、国家 / nation、炮伤 / alphaDamage、血量 / hp、知识 / extraInfo）；
             该字段为「未知」或未给出时，只能写「未知」，不得补充或猜测。
             证据未提供的坦克属性一律不得自行补充。
             威胁分析只能基于已发生的事实：实际造成与承受的伤害、实际位置与路线、实际击毁、实际交火次数，以及证据中明确存在的结构化字段。
@@ -813,10 +813,10 @@ public final class PlayerReplayPromptBuilder {
             final TankInfo info = tankopedia.info(p.tankId);
             final String type = info != null && info.type() != null ? info.type() : "";
             switch (type) {
-                case "重坦" -> heavy++;
-                case "中坦" -> medium++;
-                case "轻坦" -> light++;
-                case "TD" -> td++;
+                case "Heavy tank" -> heavy++;
+                case "Medium tank" -> medium++;
+                case "Light tank" -> light++;
+                case "Tank destroyer" -> td++;
                 default -> unknown++;
             }
         }

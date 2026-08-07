@@ -1,28 +1,48 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""从 blitzkit（游戏客户端数据 tanks.pb）生成车辆库 common/tankopedia.json。
+"""从 blitzkit（游戏客户端数据）生成车辆库 common/tankopedia.json。
 
 用法：
     python update_tankopedia.py [--min-tier 7]
 
+输出格式（全部字段与 value 均为英文/数字）：
+    {
+      "meta": { "source", "min_tier", "generated_at", "count" },
+      "vehicles": [
+        {
+          "name": "Type 59",            // 英文名（i18n_en）
+          "id": 49,                     // tank_id（blitzkit 与游戏/WG 同空间）
+          "tier": 8,
+          "class": "Medium tank",       // Light/Medium/Heavy/Tank destroyer
+          "nation": "China",            // 英文国家
+          "hp": 1370,                   // 车体 + 顶配炮塔
+          "forwardSpeed": 56,           // km/h（TankDefinition.speed_forwards）
+          "reverseSpeed": 20,           // km/h（speed_backwards）
+          "turretRotationSpeed": 42.0,  // deg/s（顶配炮塔 traverse）
+          "hullRotationSpeed": 46.0,    // deg/s（顶配履带 traverse）
+          "powerToWeightRatio": 31.6,   // hp/t（顶配引擎功率 / 车重）
+          "guns": [
+            { "gunId", "isDefault", "alphaDamage", "shells": [{type,damage,penetration}] }
+          ],                            // 7-9 级只有顶配炮一把；10 级顶配炮塔全部炮
+          "allowedProvision": [...],    // catalog 逻辑物资 id（SMALL_FOOD 等）
+          "allowedConsumables": [...],  // catalog 消耗品 code（AUTOMATIC_FIRE_EXTINGUISHER 等）
+          "extraInfo": "",              // 手工知识点（原 extraKnowledge，按 tank_id 保留合并）
+          "priority": 0                 // 手工维护，数字越低优先级越高，>=0
+        }
+      ]
+    }
+
 设计约定：
-- 数据源为 blitzkit（assets.blitzkit.app/definitions/tanks.pb，游戏客户端直出，
-  含最新车辆，如 11.19 的 SPHT；WG 百科会滞后游戏版本，故不再依赖 WG API）。
-- 车辆名称用英文（i18n_en）。
-- 取**顶配**（精英配置）：炮塔取最高 tier（平局取 hp 高者）上的全部炮。
-- hp = TankData.field10（车体）+ 顶配炮塔 hp。
-- shells 每发含 {type, damage, penetration}，type 归一化为 ap/apcr/heat/he；
-  数组顺序即游戏内弹序（0=标准弹，1=premium，2=第三发），数量随车辆而变（1~3）。
-- alphaDamage = 标准弹（shells[0]）伤害。
-- 10 级车如果顶配炮塔有多把炮，按炮拆成多条记录：
-  - 主记录 key 仍是 ``"<tank_id>"``，取炮列表中的第一把（与 WG 官方默认配置一致，
-    已用 WG API 默认配置核对一致，例如 E 100 默认 12,8cm、Atlas 默认单发 V1）；
-  - 其余炮生成变体记录，key 为 ``"<tank_id>_<gun_id>"``；
-  - 每条记录带 ``gunId``（blitzkit 模块 id）与 ``isDefault`` 标记。
-- 手工维护的 ``extraKnowledge`` 按 tank_id 保留合并到该车全部记录；
-  仍存在车辆的知识点丢失会直接失败。
+- 数据源为 blitzkit（tanks.pb + consumables.pb + provisions.pb，游戏客户端直出，
+  含最新车辆如 11.19 的 SPHT / AC Atlas；WG 百科滞后游戏版本，故不依赖 WG API）。
+- 每辆车一条记录（不再按炮拆分记录）；10 级多炮车用 guns 数组区分，
+  第一把炮为 isDefault（与 WG 默认配置一致，已用 WG API 核对）。
+- 每车可用物资：由 blitzkit 的 include/exclude 过滤器（tier/ids/categories/nations）
+  判定，再映射到 common/wotb-item-catalog-json 的逻辑 id / code；
+  catalog 未收录的道具（多为活动/娱乐模式专属）不输出。
+- extraInfo 按 tank_id 保留合并；仍存在车辆的知识点丢失会直接失败。
 - 默认只保留 7-10 级（--min-tier 7；--min-tier 1 保留全部）。
-- 脚本无第三方依赖（仅标准库 urllib / struct）。
+- 脚本无第三方依赖（仅标准库 urllib / struct / json）。
 """
 
 import argparse
@@ -34,13 +54,20 @@ import urllib.request
 from datetime import datetime, timezone
 
 PB_URL = "https://assets.blitzkit.app/definitions/tanks.pb"
+CONSUMABLES_URL = "https://assets.blitzkit.app/definitions/consumables.pb"
+PROVISIONS_URL = "https://assets.blitzkit.app/definitions/provisions.pb"
 
 REPO_TANKOPEDIA = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "tankopedia.json",
 )
+CATALOG_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "common",
+    "wotb-item-catalog-json",
+)
 
-# ---- tanks.pb 字段号（已用 WG 官方数据 529/529 交叉验证） ----
+# ---- tanks.pb 字段号（TankDefinition） ----
 FIELD_TANK_ID = 1
 FIELD_TANK_DATA = 2
 FIELD_TANK_HULL_HP = 10
@@ -49,34 +76,57 @@ FIELD_TANK_NAME = 12
 FIELD_TANK_TIER = 16
 FIELD_TANK_CLASS = 17
 FIELD_TANK_TURRETS = 20
+FIELD_TANK_ENGINES = 21
+FIELD_TANK_TRACKS = 22
+FIELD_TANK_SPEED_FORWARD = 25
+FIELD_TANK_SPEED_BACKWARD = 26
+FIELD_TANK_WEIGHT = 31
+
+# ---- 炮塔 / 炮 / 引擎 / 履带 / 弹 ----
 FIELD_TURRET_HP = 2
+FIELD_TURRET_TRAVERSE = 4
 FIELD_TURRET_TIER = 7
 FIELD_TURRET_GUN = 9
 FIELD_GUN_ID = 4
 FIELD_GUN_SHELLS = 10
+FIELD_ENGINE_TIER = 4
+FIELD_ENGINE_POWER = 6
+FIELD_TRACK_TIER = 2
+FIELD_TRACK_TRAVERSE = 5
 FIELD_SHELL_TYPE = 7
 FIELD_SHELL_DAMAGE = 4
 FIELD_SHELL_PEN = 8
 FIELD_PEN_VALUE = 1
 
-# blitzkit TankClass 枚举 -> 中文车种（与前端 replay_values / prompt 措辞一致）
-CLASS_TO_ZH = {
-    0: "轻坦",
-    1: "中坦",
-    2: "重坦",
-    3: "坦克歼击车",
+# ---- consumables.pb / provisions.pb（map 条目 + 过滤器） ----
+FIELD_MAP_KEY = 1
+FIELD_MAP_VALUE = 2
+FIELD_ITEM_NAME = 2
+FIELD_ITEM_INCLUDE = 6
+FIELD_ITEM_EXCLUDE = 7
+FILTER_TIERS = 1
+FILTER_IDS = 2
+FILTER_CATEGORIES = 3
+FILTER_NATIONS = 4
+FILTER_CATEGORY_CLIP = 0
+
+CLASS_TO_EN = {
+    0: "Light tank",
+    1: "Medium tank",
+    2: "Heavy tank",
+    3: "Tank destroyer",
 }
 
-NATION_TO_ZH = {
-    "ussr": "苏联",
-    "germany": "德国",
-    "usa": "美国",
-    "china": "中国",
-    "france": "法国",
-    "uk": "英国",
-    "japan": "日本",
-    "european": "欧洲",
-    "other": "其他",
+NATION_TO_EN = {
+    "ussr": "USSR",
+    "germany": "Germany",
+    "usa": "USA",
+    "china": "China",
+    "france": "France",
+    "uk": "UK",
+    "japan": "Japan",
+    "european": "European",
+    "other": "Other",
 }
 
 # blitzkit 弹型字符串 -> 归一化类型
@@ -212,6 +262,8 @@ def shell_entry(raw_shell):
     return {"type": shell_type, "damage": damage, "penetration": penetration}
 
 
+# ---- tanks.pb -> vehicles ----
+
 def top_turret(td):
     """取顶配炮塔：最高 tier（平局取 hp 高者），返回 (turret_fields, 总血量)。"""
     hull_hp = as_int(f1(td, FIELD_TANK_HULL_HP))
@@ -231,8 +283,9 @@ def top_turret(td):
 
 
 def guns_of_turret(turret):
-    """炮塔 field9 直接条目（游戏内炮列表，按序），返回 [{'gunId': id, 'shells': [...]}]。
+    """炮塔 field9 直接条目（游戏内炮列表，按序），返回 [{'gunId', 'shells', 'clip'}]。
 
+    clip = 该炮是弹夹/自动装填（oneof 2/3），用于 consumable 的 CLIP 类别过滤。
     只读直接条目，避免把嵌套消息误判成炮；shells 为空或 gunId 缺失的条目跳过。
     """
     guns = []
@@ -248,131 +301,288 @@ def guns_of_turret(turret):
                 shells.append(entry)
         if not shells:
             continue
-        guns.append({"gunId": gun_id, "shells": shells})
+        clip = any(f1(gun, field) is not None for field in (2, 3))
+        guns.append({"gunId": gun_id, "shells": shells, "clip": clip})
     return guns
 
 
-def parse_tanks(pb_bytes):
-    """tanks.pb -> {record_key: entry}。
+def top_engine(td):
+    """顶配引擎（最高 tier，平局取功率高者）-> power（hp，uint32）。"""
+    best = None  # (tier, power)
+    for raw_engine in td.get(FIELD_TANK_ENGINES, []):
+        engine = decode_protobuf(raw_engine)
+        tier = as_int(f1(engine, FIELD_ENGINE_TIER, 0), 0)
+        power = as_int(f1(engine, FIELD_ENGINE_POWER))
+        if not power:
+            continue
+        if best is None or tier > best[0] or (tier == best[0] and power > best[1]):
+            best = (tier, power)
+    return best[1] if best else None
 
-    10 级多炮车按炮拆分为多条记录：主记录 key 为 tank_id（第一把炮），
-    其余为 ``"<tank_id>_<gun_id>"``；10 级以下只保留顶配炮塔的第一把炮。
-    """
-    data = {}
-    for entry in decode_protobuf(pb_bytes).get(1, []):
+
+def top_track_traverse(td):
+    """顶配履带（最高 tier，平局取转速高者）-> traverse（deg/s）。"""
+    best = None  # (tier, traverse)
+    for raw_track in td.get(FIELD_TANK_TRACKS, []):
+        track = decode_protobuf(raw_track)
+        tier = as_int(f1(track, FIELD_TRACK_TIER, 0), 0)
+        traverse = f32(f1(track, FIELD_TRACK_TRAVERSE))
+        if traverse is None:
+            continue
+        if best is None or tier > best[0] or (tier == best[0] and traverse > best[1]):
+            best = (tier, traverse)
+    return best[1] if best else None
+
+
+def parse_tanks(pb_bytes):
+    """tanks.pb -> {tank_id: vehicle dict}（不含 extraInfo/priority/物资列表）。"""
+    vehicles = {}
+    for entry in decode_protobuf(pb_bytes).get(FIELD_TANK_ID, []):
         kv = decode_protobuf(entry)
-        tank_id = f1(kv, FIELD_TANK_ID)
+        tank_id = as_int(f1(kv, FIELD_TANK_ID))
         if tank_id is None:
             continue
         td = decode_protobuf(f1(kv, FIELD_TANK_DATA, b""))
         if not td:
             continue
-        tier = as_int(f1(td, FIELD_TANK_TIER))
         nation = as_str(f1(td, FIELD_TANK_NATION, b""))
-        base = {
-            "name": i18n_en(f1(td, FIELD_TANK_NAME, b"")),
-            "tier": tier,
-            "class": CLASS_TO_ZH.get(as_int(f1(td, FIELD_TANK_CLASS, 0)), "未知"),
-            "nation": NATION_TO_ZH.get(nation, nation or "未知"),
-        }
         turret, hp = top_turret(td)
-        if hp and hp > 0:
-            base["hp"] = hp
         guns = guns_of_turret(turret) if turret else []
-        if not guns:
-            data[str(tank_id)] = base
+        tier = as_int(f1(td, FIELD_TANK_TIER))
+        item = {
+            "name": i18n_en(f1(td, FIELD_TANK_NAME, b"")),
+            "id": tank_id,
+            "tier": tier,
+            "class": CLASS_TO_EN.get(as_int(f1(td, FIELD_TANK_CLASS, 0)), "Unknown"),
+            "nation": NATION_TO_EN.get(nation, nation or "Other"),
+        }
+        if hp and hp > 0:
+            item["hp"] = hp
+        item["forwardSpeed"] = round(f32(f1(td, FIELD_TANK_SPEED_FORWARD)) or 0)
+        item["reverseSpeed"] = round(f32(f1(td, FIELD_TANK_SPEED_BACKWARD)) or 0)
+        if turret:
+            item["turretRotationSpeed"] = round(f32(f1(turret, FIELD_TURRET_TRAVERSE)) or 0, 1)
+        track_traverse = top_track_traverse(td)
+        if track_traverse is not None:
+            item["hullRotationSpeed"] = round(track_traverse, 1)
+        engine_power = top_engine(td)
+        weight_kg = as_int(f1(td, FIELD_TANK_WEIGHT))
+        if engine_power and weight_kg:
+            item["powerToWeightRatio"] = round(engine_power / (weight_kg / 1000.0), 1)
+        item["guns"] = []
+        for index, gun in enumerate(guns):
+            item["guns"].append({
+                "gunId": gun["gunId"],
+                "isDefault": index == 0,
+                "alphaDamage": gun["shells"][0]["damage"],
+                "shells": gun["shells"],
+                "clip": gun["clip"],
+            })
+        vehicles[str(tank_id)] = item
+    return vehicles
+
+
+# ---- consumables.pb / provisions.pb -> 每车可用物资 ----
+
+def parse_item_defs(pb_bytes):
+    """解析 map<uint32, Item> 定义 -> [{id, name, include, exclude}]。"""
+    items = []
+    for entry in decode_protobuf(pb_bytes).get(FIELD_MAP_KEY, []):
+        kv = decode_protobuf(entry)
+        item_id = as_int(f1(kv, FIELD_MAP_KEY))
+        if item_id is None:
             continue
+        msg = decode_protobuf(f1(kv, FIELD_MAP_VALUE, b""))
+        name = i18n_en(f1(msg, FIELD_ITEM_NAME, b""))
+        if not name:
+            continue  # 占位条目（空名）跳过
+        items.append({
+            "id": item_id,
+            "name": name,
+            "include": parse_filters(msg.get(FIELD_ITEM_INCLUDE, [])),
+            "exclude": parse_filters(msg.get(FIELD_ITEM_EXCLUDE, [])),
+        })
+    return items
 
-        def record_for(gun, is_default):
-            item = dict(base)
-            item["gunId"] = gun["gunId"]
-            item["isDefault"] = is_default
-            item["alphaDamage"] = gun["shells"][0]["damage"]
-            item["shells"] = gun["shells"]
-            return item
 
-        key = str(tank_id)
-        if tier == 10 and len(guns) > 1:
-            data[key] = record_for(guns[0], True)
-            for gun in guns[1:]:
-                data["%s_%s" % (key, gun["gunId"])] = record_for(gun, False)
-        else:
-            data[key] = record_for(guns[0], True)
-    return data
+def parse_filters(raw_filters):
+    """ConsumableTankFilter 列表 -> [(kind, payload)]。
 
+    kind: tiers=(min,max) / ids=[...] / categories=[...] / nations=[...]
+    """
+    filters = []
+    for raw_filter in raw_filters:
+        fm = decode_protobuf(raw_filter)
+        for field, values in fm.items():
+            if field == FILTER_TIERS:
+                inner = decode_protobuf(f1(fm, field, b""))
+                filters.append(("tiers", (as_int(f1(inner, 1)), as_int(f1(inner, 2)))))
+            elif field == FILTER_IDS:
+                inner = decode_protobuf(f1(fm, field, b""))
+                filters.append(("ids", [as_int(v) for v in inner.get(1, [])]))
+            elif field == FILTER_CATEGORIES:
+                inner = decode_protobuf(f1(fm, field, b""))
+                filters.append(("categories", [as_int(v) for v in inner.get(1, [])]))
+            elif field == FILTER_NATIONS:
+                inner = decode_protobuf(f1(fm, field, b""))
+                filters.append(("nations", [as_str(v) for v in inner.get(1, [])]))
+    return filters
+
+
+def vehicle_matches_filter(vehicle, filters):
+    """include 过滤器：全部命中才匹配（AND）；空列表 = 无限制。"""
+    if not filters:
+        return True
+    tier = vehicle.get("tier") or 0
+    tank_id = vehicle.get("id")
+    clip = any(g.get("clip") for g in vehicle.get("guns", []))
+    for kind, payload in filters:
+        if kind == "tiers":
+            lo, hi = payload
+            if not ((lo is None or tier >= lo) and (hi is None or tier <= hi)):
+                return False
+        elif kind == "ids":
+            if tank_id not in payload:
+                return False
+        elif kind == "categories":
+            if not (FILTER_CATEGORY_CLIP in payload and clip):
+                return False
+        elif kind == "nations":
+            if vehicle.get("nation").lower() not in payload:
+                return False
+    return True
+
+
+def vehicle_matches_any(vehicle, filters):
+    """exclude 过滤器：任一命中即排除（OR）。"""
+    tier = vehicle.get("tier") or 0
+    tank_id = vehicle.get("id")
+    clip = any(g.get("clip") for g in vehicle.get("guns", []))
+    for kind, payload in filters:
+        if kind == "tiers":
+            lo, hi = payload
+            if (lo is None or tier >= lo) and (hi is None or tier <= hi):
+                return True
+        elif kind == "ids":
+            if tank_id in payload:
+                return True
+        elif kind == "categories":
+            if FILTER_CATEGORY_CLIP in payload and clip:
+                return True
+        elif kind == "nations":
+            if vehicle.get("nation").lower() in payload:
+                return True
+    return False
+
+
+def item_allowed(vehicle, item):
+    """item（含 include/exclude）对该车是否可用。"""
+    if not vehicle_matches_filter(vehicle, item["include"]):
+        return False
+    if vehicle_matches_any(vehicle, item["exclude"]):
+        return False
+    return True
+
+
+def load_catalog():
+    """读取 common/wotb-item-catalog-json -> (provision_source_map, consumable_code_map)。"""
+    provision_map = {}
+    with open(os.path.join(CATALOG_DIR, "provisions.json"), encoding="utf-8") as f:
+        for item in json.load(f).get("items", []):
+            for source_id in item.get("sourceIds", []):
+                provision_map[source_id] = item["id"]
+    consumable_map = {}
+    with open(os.path.join(CATALOG_DIR, "consumables.json"), encoding="utf-8") as f:
+        for item in json.load(f).get("items", []):
+            consumable_map[item["id"]] = item["code"]
+    return provision_map, consumable_map
+
+
+def apply_items(vehicles, provision_defs, consumable_defs, provision_map, consumable_map):
+    """按过滤规则 + catalog 映射填充 allowedProvision / allowedConsumables。"""
+    for vehicle in vehicles.values():
+        provisions = sorted({
+            provision_map[item["id"]]
+            for item in provision_defs
+            if item["id"] in provision_map and item_allowed(vehicle, item)
+        })
+        consumables = sorted({
+            consumable_map[item["id"]]
+            for item in consumable_defs
+            if item["id"] in consumable_map and item_allowed(vehicle, item)
+        })
+        vehicle["allowedProvision"] = provisions
+        vehicle["allowedConsumables"] = consumables
+    return vehicles
+
+
+# ---- 旧数据读取 / extraInfo 保留 ----
 
 def load_existing_data(path):
-    """读取旧数据，返回 {tank_id: entry}；路径缺失/格式错误时返回 {}。"""
+    """读取旧数据，返回 {tank_id: entry}；兼容新旧两种格式，路径缺失时返回 {}。"""
     if not path or not os.path.exists(path):
         return {}
-
     with open(path, encoding="utf-8") as file:
         value = json.load(file)
-
     if not isinstance(value, dict):
         return {}
-
+    vehicles = value.get("vehicles")
+    if isinstance(vehicles, list):
+        return {
+            str(v.get("id")): v
+            for v in vehicles if isinstance(v, dict) and v.get("id") is not None
+        }
     data = value.get("data", value)
     return data if isinstance(data, dict) else {}
 
 
-def base_tank_key(record_key):
-    """记录 key -> 车 tank_id：``"<tank_id>_<gun_id>"`` 变体归并到 ``"<tank_id>"``。"""
-    return str(record_key).split("_", 1)[0]
-
-
 def count_knowledge(data):
-    """统计非空 extraKnowledge 的车辆数。"""
+    """统计非空 extraInfo（兼容旧 extraKnowledge）的车辆数。"""
     return sum(
         1 for entry in data.values()
-        if isinstance(entry, dict) and bool(entry.get("extraKnowledge"))
+        if isinstance(entry, dict) and bool(entry.get("extraInfo") or entry.get("extraKnowledge"))
     )
 
 
 def verify_knowledge_preservation(old_data, new_data):
-    """检查新数据中仍存在的 tank_id，其全部记录的非空 extraKnowledge 是否与旧数据一致。
+    """检查新数据中仍存在的 tank_id，其 extraInfo 是否与旧数据一致。
 
-    只比较新旧共有的 tank_id；该车的全部记录（主记录 + 炮变体）都必须带同一份知识。
-    被移除的车辆不参与比较。
+    只比较新旧共有的 tank_id；被移除的车辆不参与比较。
     返回 (ok, old_knowledge_count, preserved_knowledge_count)。
     """
     old_count = count_knowledge(old_data)
     preserved = 0
     for tank_id, old_entry in old_data.items():
-        if not isinstance(old_entry, dict) or not old_entry.get("extraKnowledge"):
+        old_knowledge = old_entry.get("extraInfo") or old_entry.get("extraKnowledge")
+        if not isinstance(old_entry, dict) or not old_knowledge:
             continue
-        matched = False
-        for record_key, new_entry in new_data.items():
-            if base_tank_key(record_key) != tank_id:
-                continue
-            matched = True
-            if (
-                not isinstance(new_entry, dict)
-                or new_entry.get("extraKnowledge") != old_entry.get("extraKnowledge")
-            ):
-                return False, old_count, preserved
-            preserved += 1
-        # 旧车在新数据中已不存在（如 WG/客户端真实删除）时，不参与比较
-        if not matched:
+        new_entry = new_data.get(tank_id)
+        if new_entry is None:
             continue
+        if not isinstance(new_entry, dict) or new_entry.get("extraInfo") != old_knowledge:
+            return False, old_count, preserved
+        preserved += 1
     return True, old_count, preserved
 
 
-def merge_extra_knowledge(new_data, old_data):
-    """把旧文件中仍存在 tank_id 的非空 extraKnowledge 合并进该车全部记录。
-
-    合并后必须通过 verify_knowledge_preservation，否则抛异常（防止知识意外减少）。
-    """
+def merge_extra_info(new_data, old_data):
+    """把旧文件中仍存在 tank_id 的非空知识点合并进新数据（extraInfo）。"""
     for tank_id, entry in new_data.items():
         if not isinstance(entry, dict):
             continue
-        old_entry = (old_data or {}).get(base_tank_key(tank_id))
-        if isinstance(old_entry, dict) and old_entry.get("extraKnowledge"):
-            entry["extraKnowledge"] = old_entry["extraKnowledge"]
+        old_entry = (old_data or {}).get(tank_id)
+        old_knowledge = None
+        if isinstance(old_entry, dict):
+            old_knowledge = old_entry.get("extraInfo") or old_entry.get("extraKnowledge")
+        if old_knowledge:
+            entry["extraInfo"] = old_knowledge
+        else:
+            entry["extraInfo"] = ""
+        entry["priority"] = 0
     ok, _, _ = verify_knowledge_preservation(old_data or {}, new_data)
     if not ok:
         raise RuntimeError(
-            "TANKOPEDIA_KNOWLEDGE_LOST: extraKnowledge for an existing tank_id was not preserved"
+            "TANKOPEDIA_KNOWLEDGE_LOST: extraInfo for an existing tank_id was not preserved"
         )
     return new_data
 
@@ -393,6 +603,21 @@ def write_json(path, payload):
         file.write("\n")
 
 
+def vehicle_output(vehicle):
+    """输出用 vehicle：剥掉内部 clip 标志，guns 只留公开字段。"""
+    out = dict(vehicle)
+    out["guns"] = [
+        {
+            "gunId": gun["gunId"],
+            "isDefault": gun["isDefault"],
+            "alphaDamage": gun["alphaDamage"],
+            "shells": gun["shells"],
+        }
+        for gun in vehicle["guns"]
+    ]
+    return out
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Sync blitzkit (game client) vehicle encyclopedia into tankopedia.json"
@@ -400,43 +625,56 @@ def main(argv=None):
     parser.add_argument("--min-tier", type=int, default=7,
                         help="只保留该等级及以上的车辆（默认 7；1 = 全部）")
     parser.add_argument("--existing", default=REPO_TANKOPEDIA,
-                        help="旧数据读取路径（默认仓库 common/tankopedia.json；用于保留 extraKnowledge）")
+                        help="旧数据读取路径（默认仓库 common/tankopedia.json；用于保留 extraInfo）")
     parser.add_argument("--output", default=REPO_TANKOPEDIA,
                         help="新数据写入路径（默认仓库 common/tankopedia.json；Workflow 与 --existing 分离）")
     args = parser.parse_args(argv)
 
     print("download %s ..." % PB_URL)
     with urllib.request.urlopen(PB_URL, timeout=60) as resp:
-        pb_bytes = resp.read()
-    print("pb bytes:", len(pb_bytes))
+        tanks_pb = resp.read()
+    with urllib.request.urlopen(CONSUMABLES_URL, timeout=60) as resp:
+        consumables_pb = resp.read()
+    with urllib.request.urlopen(PROVISIONS_URL, timeout=60) as resp:
+        provisions_pb = resp.read()
+    print("pb bytes: tanks=%d consumables=%d provisions=%d"
+          % (len(tanks_pb), len(consumables_pb), len(provisions_pb)))
 
     old_data = load_existing_data(args.existing)
-    data = parse_tanks(pb_bytes)
-    total = len(data)
-    data = filter_by_min_tier(data, args.min_tier)
-    data = merge_extra_knowledge(data, old_data)
-    data = dict(sorted(data.items(), key=lambda kv: int(kv[0])))
+    vehicles = parse_tanks(tanks_pb)
+    total = len(vehicles)
+    vehicles = filter_by_min_tier(vehicles, args.min_tier)
+    provision_map, consumable_map = load_catalog()
+    vehicles = apply_items(
+        vehicles,
+        parse_item_defs(provisions_pb),
+        parse_item_defs(consumables_pb),
+        provision_map,
+        consumable_map,
+    )
+    vehicles = merge_extra_info(vehicles, old_data)
+    vehicles = [vehicle_output(vehicles[key]) for key in sorted(vehicles, key=lambda k: int(k))]
 
     output = {
         "meta": {
             "source": "blitzkit (assets.blitzkit.app/definitions/tanks.pb)",
             "min_tier": args.min_tier,
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "count": len(data),
-            "tank_count": len({base_tank_key(k) for k in data}),
+            "count": len(vehicles),
         },
-        "data": data,
+        "vehicles": vehicles,
     }
     write_json(args.output, output)
 
-    ok, old_knowledge, preserved_knowledge = verify_knowledge_preservation(old_data, data)
+    new_data = {str(v["id"]): v for v in vehicles}
+    ok, old_knowledge, preserved_knowledge = verify_knowledge_preservation(old_data, new_data)
     print(
         "SAFE_RESULTS source=blitzkit fetched=%d tier_ge_%d=%d "
         "existing_knowledge=%d preserved_knowledge=%d"
-        % (total, args.min_tier, len(data), old_knowledge, preserved_knowledge)
+        % (total, args.min_tier, len(vehicles), old_knowledge, preserved_knowledge)
     )
     if not ok:
-        print("ERROR: extraKnowledge preservation failed.", file=sys.stderr)
+        print("ERROR: extraInfo preservation failed.", file=sys.stderr)
         return 1
     return 0
 
