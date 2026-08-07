@@ -51,9 +51,10 @@ public final class ReplayDisplayNames {
     }
 
     /**
-     * 结构化车辆类型（重坦 / 中坦 / 轻坦 / TD），仅取自 tankopedia 的 {@code class} 字段。
-     * <p>Blitz 不存在自行火炮车种；tankopedia 未提供时返回 {@link #UNKNOWN_TANK_CLASS}，
-     * 调用方必须原样输出「未知」，不得由坦克名称推断。</p>
+     * 结构化车辆类型（重坦 / 中坦 / 轻坦 / 坦克歼击车），仅取自 tankopedia 的 {@code class} 字段。
+     * <p>tankopedia 存英文（Heavy tank 等），复盘正文要求中文，这里统一映射；
+     * 未识别值原样返回。Blitz 不存在自行火炮车种；tankopedia 未提供时返回
+     * {@link #UNKNOWN_TANK_CLASS}，调用方必须原样输出「未知」，不得由坦克名称推断。</p>
      */
     public static String tankClass(final long tankId) {
         if (tankId <= 0) {
@@ -63,8 +64,13 @@ public final class ReplayDisplayNames {
         if (!StringUtils.hasText(type)) {
             return UNKNOWN_TANK_CLASS;
         }
-        // 车辆库把坦克歼击车记作英文缩写 TD；复盘正文要求全中文，这里统一展开
-        return "TD".equals(type) ? "坦克歼击车" : type;
+        return switch (type) {
+            case "Heavy tank" -> "重坦";
+            case "Medium tank" -> "中坦";
+            case "Light tank" -> "轻坦";
+            case "Tank destroyer" -> "坦克歼击车";
+            default -> type;
+        };
     }
 
     /** 结构化车辆等级，仅取自 tankopedia 的 {@code tier}；缺失返回空串，不得由名称推断。 */
@@ -77,13 +83,30 @@ public final class ReplayDisplayNames {
         return text.isBlank() ? "" : text;
     }
 
-    /** 结构化车辆国家，仅取自 tankopedia 的 {@code nation}；缺失返回空串，不得由名称推断。 */
+    /**
+     * 结构化车辆国家，仅取自 tankopedia 的 {@code nation}；tankopedia 存英文，
+     * 复盘正文要求中文，这里统一映射；缺失或未识别返回原值。
+     */
     public static String tankNation(final long tankId) {
         if (tankId <= 0) {
             return "";
         }
         final String nation = TANKOPEDIA.info(tankId).nation();
-        return StringUtils.hasText(nation) ? nation : "";
+        if (!StringUtils.hasText(nation)) {
+            return "";
+        }
+        return switch (nation) {
+            case "USSR" -> "苏联";
+            case "Germany" -> "德国";
+            case "USA" -> "美国";
+            case "China" -> "中国";
+            case "France" -> "法国";
+            case "UK" -> "英国";
+            case "Japan" -> "日本";
+            case "European" -> "欧洲";
+            case "Other" -> "其他";
+            default -> nation;
+        };
     }
 
     /** 结构化车辆炮伤，仅取自 tankopedia 的 {@code alphaDamage}；缺失或 ≤0 返回空串。 */
@@ -104,12 +127,12 @@ public final class ReplayDisplayNames {
         return hp != null && hp > 0 ? String.valueOf(hp) : "";
     }
 
-    /** 手工维护的每辆车知识点，取自 tankopedia 的 {@code extraKnowledge}；空串时不输出。 */
-    public static String tankExtraKnowledge(final long tankId) {
+    /** 手工维护的每辆车知识点，取自 tankopedia 的 {@code extraInfo}；空串时不输出。 */
+    public static String tankExtraInfo(final long tankId) {
         if (tankId <= 0) {
             return "";
         }
-        final String knowledge = TANKOPEDIA.info(tankId).extraKnowledge();
+        final String knowledge = TANKOPEDIA.info(tankId).extraInfo();
         return StringUtils.hasText(knowledge) ? knowledge.trim() : "";
     }
 

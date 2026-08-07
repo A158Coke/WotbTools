@@ -108,7 +108,7 @@ public final class EntityIdentityResolver {
         if (!hp.isEmpty()) {
             sb.append(" 血量: ").append(hp);
         }
-        final String knowledge = ReplayDisplayNames.tankExtraKnowledge(tankId);
+        final String knowledge = ReplayDisplayNames.tankExtraInfo(tankId);
         if (!knowledge.isEmpty()) {
             sb.append(" 知识: ").append(PromptDataQuoter.quote(knowledge, "\"\""));
         }
