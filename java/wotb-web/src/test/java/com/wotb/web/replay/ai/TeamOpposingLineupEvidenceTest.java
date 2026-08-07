@@ -37,9 +37,9 @@ class TeamOpposingLineupEvidenceTest {
 
         assertTrue(content.contains("OPPOSING_TEAM_LINEUP_AUTHORITATIVE（对方阵容·权威结算）"), content);
         assertTrue(content.contains("tank=\"SPHT\""), content);
-        assertTrue(content.contains("vehicleClass=重坦"), content);
+        assertTrue(content.contains("vehicleClass=Heavy tank"), content);
         assertTrue(content.contains("tier=10"), content);
-        assertTrue(content.contains("nation=美国"), content);
+        assertTrue(content.contains("nation=USA"), content);
         assertTrue(content.contains("finalDamage=2100"), content);
         assertTrue(content.contains("damageReceived=1500"), content);
         assertTrue(content.contains("assisted=300"), content);

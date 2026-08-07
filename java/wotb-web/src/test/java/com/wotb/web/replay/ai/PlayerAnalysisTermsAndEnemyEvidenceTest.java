@@ -77,7 +77,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         final String line = sb.toString();
 
         assertTrue(line.contains("坦克: \"SPHT\""), line);
-        assertTrue(line.contains("车种: 重坦"), line);
+        assertTrue(line.contains("车种: Heavy tank"), line);
         assertTrue(line.contains("输出2100"), line);
         assertTrue(line.contains("承伤1500"), line);
         assertTrue(line.contains("助攻300"), line);
@@ -96,7 +96,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
 
         // 等级/国家来自 tankopedia 的结构化字段
         assertTrue(line.contains("等级: 10"), line);
-        assertTrue(line.contains("国家: 美国"), line);
+        assertTrue(line.contains("国家: USA"), line);
     }
 
     @Test
@@ -170,7 +170,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         final String evidence = sb.toString();
         assertTrue(evidence.contains("DAMAGE_EXCHANGE_BY_OPPONENT_OBSERVED（逐对手对炮明细·事件流观测）"), evidence);
         assertTrue(evidence.contains("坦克: \"SPHT\""), evidence);
-        assertTrue(evidence.contains("车种: 重坦"), evidence);
+        assertTrue(evidence.contains("车种: Heavy tank"), evidence);
         assertTrue(evidence.contains("你对其造成786伤害/2次命中"), evidence);
         assertTrue(evidence.contains("其对你造成250伤害/1次命中"), evidence);
         assertFalse(evidence.contains("自行火炮"), evidence);

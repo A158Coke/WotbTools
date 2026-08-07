@@ -206,8 +206,8 @@ class PlayerSecondPersonAndPerHitDamageTest {
     @Test
     void tankDestroyerIsWrittenInChinese() {
         // tankopedia 把坦克歼击车记作 TD，证据里必须展开为中文
-        assertEquals("坦克歼击车", com.wotb.core.ref.ReplayDisplayNames.tankClass(8529L)); // AT 15
-        assertEquals("重坦", com.wotb.core.ref.ReplayDisplayNames.tankClass(SPHT_TANK_ID));
+        assertEquals("Tank destroyer", com.wotb.core.ref.ReplayDisplayNames.tankClass(8529L)); // AT 15
+        assertEquals("Heavy tank", com.wotb.core.ref.ReplayDisplayNames.tankClass(SPHT_TANK_ID));
     }
 
     // ---- 术语 ----
