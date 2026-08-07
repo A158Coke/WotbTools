@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class TeamOpposingLineupEvidenceTest {
 
-    private static final long HEAVY_TANK_ID = 10785L;   // tankopedia: T110E5 / 重坦 / 10 / 美国
+    private static final long SPHT_TANK_ID = 29985L;   // tankopedia: SPHT / 重坦 / 10 / 美国
     private static final long IS_TANK_ID = 513L;       // tankopedia: IS / 重坦 / 7 / 苏联
 
     @Test
@@ -36,7 +36,7 @@ class TeamOpposingLineupEvidenceTest {
         final String content = TeamAiPromptBuilder.single(context()).content();
 
         assertTrue(content.contains("OPPOSING_TEAM_LINEUP_AUTHORITATIVE（对方阵容·权威结算）"), content);
-        assertTrue(content.contains("tank=\"T110E5\""), content);
+        assertTrue(content.contains("tank=\"SPHT\""), content);
         assertTrue(content.contains("vehicleClass=重坦"), content);
         assertTrue(content.contains("tier=10"), content);
         assertTrue(content.contains("nation=美国"), content);
@@ -123,7 +123,7 @@ class TeamOpposingLineupEvidenceTest {
         enemyAce.accountId = 20_001L;
         enemyAce.nickname = "EnemyAce";
         enemyAce.team = 2;
-        enemyAce.tankId = HEAVY_TANK_ID;
+        enemyAce.tankId = SPHT_TANK_ID;
         enemyAce.damageDealt = 2_100;
         enemyAce.damageReceived = 1_500;
         enemyAce.damageAssisted = 300;

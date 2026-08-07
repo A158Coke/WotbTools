@@ -1,11 +1,13 @@
 {
   "meta": {
     "source": "wargaming-official",
+    "fallback_source": "blitzkit (game client data, 补 WG 百科未收录的新车)",
+    "fallback_count": 155,
     "region": "asia",
     "min_tier": 7,
     "language": "zh-cn",
-    "generated_at": "2026-08-06T21:32:52.847268+00:00",
-    "count": 302
+    "generated_at": "2026-08-07T06:37:38.315706+00:00",
+    "count": 457
   },
   "data": {
     "49": {
@@ -336,6 +338,13 @@
       "alphaDamage": 225,
       "hp": 1350
     },
+    "3889": {
+      "name": "WZ-132",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "中国",
+      "alphaDamage": 300
+    },
     "3905": {
       "name": "AMX 50 120",
       "tier": 9,
@@ -536,6 +545,13 @@
       "alphaDamage": 400,
       "hp": 1700
     },
+    "5425": {
+      "name": "WZ-113",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "中国",
+      "alphaDamage": 410
+    },
     "5441": {
       "name": "AMX 30 1er prototype",
       "tier": 9,
@@ -672,6 +688,13 @@
       "alphaDamage": 400,
       "hp": 2400
     },
+    "6241": {
+      "name": "Chi-Se",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "日本",
+      "alphaDamage": 310
+    },
     "6257": {
       "name": "M4/FL10",
       "tier": 7,
@@ -696,6 +719,13 @@
       "alphaDamage": 650,
       "hp": 1920
     },
+    "6497": {
+      "name": "Type 68",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "日本",
+      "alphaDamage": 420
+    },
     "6657": {
       "name": "T-43",
       "tier": 7,
@@ -711,6 +741,13 @@
       "nation": "美国",
       "alphaDamage": 560,
       "hp": 1000
+    },
+    "6753": {
+      "name": "Type 71",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "日本",
+      "alphaDamage": 420
     },
     "6785": {
       "name": "Škoda T 27",
@@ -760,6 +797,13 @@
       "alphaDamage": 350,
       "hp": 1650
     },
+    "7169": {
+      "name": "IS-7",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "苏联",
+      "alphaDamage": 460
+    },
     "7217": {
       "name": "WZ-112-2",
       "tier": 8,
@@ -783,6 +827,13 @@
       "nation": "other",
       "alphaDamage": 400,
       "hp": 1400
+    },
+    "7297": {
+      "name": "60TP Lewandowskiego",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "欧洲",
+      "alphaDamage": 630
     },
     "7425": {
       "name": "ISU-152",
@@ -808,6 +859,13 @@
       "alphaDamage": 280,
       "hp": 1000
     },
+    "7521": {
+      "name": "Type 5 Ka-Ri",
+      "tier": 8,
+      "class": "TD",
+      "nation": "日本",
+      "alphaDamage": 440
+    },
     "7553": {
       "name": "50TP Tyszkiewicza",
       "tier": 9,
@@ -823,6 +881,13 @@
       "nation": "德国",
       "alphaDamage": 220,
       "hp": 1400
+    },
+    "7777": {
+      "name": "Type 63",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "日本",
+      "alphaDamage": 320
     },
     "7793": {
       "name": "Annihilator",
@@ -872,6 +937,13 @@
       "alphaDamage": 225,
       "hp": 1500
     },
+    "8033": {
+      "name": "Type 5 Heavy",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "日本",
+      "alphaDamage": 700
+    },
     "8193": {
       "name": "Object 704",
       "tier": 9,
@@ -895,6 +967,13 @@
       "nation": "中国",
       "alphaDamage": 460,
       "hp": 1500
+    },
+    "8289": {
+      "name": "Type 95 Ji-Ro",
+      "tier": 8,
+      "class": "TD",
+      "nation": "日本",
+      "alphaDamage": 320
     },
     "8305": {
       "name": "Titan H-Nd",
@@ -984,6 +1063,13 @@
       "alphaDamage": 225,
       "hp": 1550
     },
+    "9057": {
+      "name": "Type 5 H Zetsu",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "日本",
+      "alphaDamage": 520
+    },
     "9073": {
       "name": "Titan-54d",
       "tier": 8,
@@ -1072,6 +1158,13 @@
       "alphaDamage": 220,
       "hp": 2150
     },
+    "9777": {
+      "name": "WZ-114",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "中国",
+      "alphaDamage": 470
+    },
     "9857": {
       "name": "Škoda T 45",
       "tier": 7,
@@ -1087,6 +1180,13 @@
       "nation": "苏联",
       "alphaDamage": 280,
       "hp": 1280
+    },
+    "10033": {
+      "name": "WZ-132A",
+      "tier": 9,
+      "class": "轻坦",
+      "nation": "中国",
+      "alphaDamage": 330
     },
     "10065": {
       "name": "AT 7",
@@ -1120,6 +1220,20 @@
       "alphaDamage": 220,
       "hp": 1600
     },
+    "10289": {
+      "name": "WZ-132-1",
+      "tier": 10,
+      "class": "轻坦",
+      "nation": "中国",
+      "alphaDamage": 360
+    },
+    "10337": {
+      "name": "Kame",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "日本",
+      "alphaDamage": 320
+    },
     "10353": {
       "name": "Pharaoh",
       "tier": 7,
@@ -1143,6 +1257,13 @@
       "nation": "德国",
       "alphaDamage": 220,
       "hp": 1630
+    },
+    "10609": {
+      "name": "Magnate",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "其他",
+      "alphaDamage": 240
     },
     "10625": {
       "name": "Controcarro 1 Mk. 2",
@@ -1184,6 +1305,13 @@
       "alphaDamage": 225,
       "hp": 1100
     },
+    "10865": {
+      "name": "Fixer",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "其他",
+      "alphaDamage": 310
+    },
     "10881": {
       "name": "Semovente Controcarro mod. 1964",
       "tier": 8,
@@ -1216,6 +1344,13 @@
       "alphaDamage": 240,
       "hp": 1020
     },
+    "11057": {
+      "name": "114 SP2",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "中国",
+      "alphaDamage": 620
+    },
     "11073": {
       "name": "AMX 50 Foch",
       "tier": 9,
@@ -1223,6 +1358,13 @@
       "nation": "法国",
       "alphaDamage": 400,
       "hp": 1500
+    },
+    "11121": {
+      "name": "Regressor",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 450
     },
     "11137": {
       "name": "Semovente Controcarro mod. 1956",
@@ -1248,6 +1390,20 @@
       "alphaDamage": 240,
       "hp": 1450
     },
+    "11313": {
+      "name": "Type 58 50-08",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "中国",
+      "alphaDamage": 210
+    },
+    "11377": {
+      "name": "Basilisk",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "其他",
+      "alphaDamage": 225
+    },
     "11521": {
       "name": "IS-8",
       "tier": 9,
@@ -1264,6 +1420,20 @@
       "alphaDamage": 220,
       "hp": 1150
     },
+    "11569": {
+      "name": "BZ-58-2",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "中国",
+      "alphaDamage": 450
+    },
+    "11633": {
+      "name": "Forest Witch",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 240
+    },
     "11809": {
       "name": "T23E3",
       "tier": 7,
@@ -1271,6 +1441,20 @@
       "nation": "美国",
       "alphaDamage": 160,
       "hp": 1250
+    },
+    "11825": {
+      "name": "BZ-75",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "中国",
+      "alphaDamage": 620
+    },
+    "11889": {
+      "name": "Nebulon",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "其他",
+      "alphaDamage": 280
     },
     "12033": {
       "name": "SU-122-54",
@@ -1296,6 +1480,13 @@
       "alphaDamage": 225,
       "hp": 1450
     },
+    "12081": {
+      "name": "BZ-68",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "中国",
+      "alphaDamage": 530
+    },
     "12097": {
       "name": "AMX AC mle. 48",
       "tier": 8,
@@ -1303,6 +1494,13 @@
       "nation": "法国",
       "alphaDamage": 225,
       "hp": 1300
+    },
+    "12145": {
+      "name": "Glacier",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "其他",
+      "alphaDamage": 350
     },
     "12161": {
       "name": "Strv K",
@@ -1320,6 +1518,20 @@
       "alphaDamage": 360,
       "hp": 1900
     },
+    "12337": {
+      "name": "BZ-58",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "中国",
+      "alphaDamage": 280
+    },
+    "12417": {
+      "name": "Bisonte C45",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "欧洲",
+      "alphaDamage": 310
+    },
     "12545": {
       "name": "K-91",
       "tier": 9,
@@ -1328,6 +1540,48 @@
       "alphaDamage": 350,
       "hp": 2050
     },
+    "12593": {
+      "name": "BZ-166",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "中国",
+      "alphaDamage": 400
+    },
+    "12657": {
+      "name": "Titan Charioteer",
+      "tier": 8,
+      "class": "TD",
+      "nation": "其他",
+      "alphaDamage": 360
+    },
+    "12673": {
+      "name": "Tornvagn",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "欧洲",
+      "alphaDamage": 420
+    },
+    "12849": {
+      "name": "116-F3",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "中国",
+      "alphaDamage": 490
+    },
+    "12913": {
+      "name": "Groundtank",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 440
+    },
+    "12929": {
+      "name": "TNH T Vz. 51",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "欧洲",
+      "alphaDamage": 420
+    },
     "13089": {
       "name": "T110E4",
       "tier": 10,
@@ -1335,6 +1589,20 @@
       "nation": "美国",
       "alphaDamage": 630,
       "hp": 2000
+    },
+    "13105": {
+      "name": "BZ-176",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "中国",
+      "alphaDamage": 560
+    },
+    "13185": {
+      "name": "Vz. 55",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "欧洲",
+      "alphaDamage": 460
     },
     "13345": {
       "name": "T26E4 SuperPershing",
@@ -1351,6 +1619,20 @@
       "nation": "苏联",
       "alphaDamage": 670,
       "hp": 1800
+    },
+    "13617": {
+      "name": "Type 59 spc",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "中国",
+      "alphaDamage": 300
+    },
+    "13697": {
+      "name": "TNH 105/1000",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "欧洲",
+      "alphaDamage": 310
     },
     "13825": {
       "name": "T-62A",
@@ -1376,6 +1658,13 @@
       "alphaDamage": 680,
       "hp": 1950
     },
+    "13873": {
+      "name": "BZ-74-1",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "中国",
+      "alphaDamage": 460
+    },
     "13889": {
       "name": "AMX 50 Foch (155)",
       "tier": 10,
@@ -1383,6 +1672,20 @@
       "nation": "法国",
       "alphaDamage": 620,
       "hp": 1850
+    },
+    "13937": {
+      "name": "AC Rebelde",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 330
+    },
+    "13953": {
+      "name": "Vz. 44-1",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "欧洲",
+      "alphaDamage": 300
     },
     "14113": {
       "name": "M48 Patton",
@@ -1392,6 +1695,20 @@
       "alphaDamage": 340,
       "hp": 1850
     },
+    "14129": {
+      "name": "BZT-70",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "中国",
+      "alphaDamage": 910
+    },
+    "14193": {
+      "name": "Silencer",
+      "tier": 7,
+      "class": "TD",
+      "nation": "其他",
+      "alphaDamage": 310
+    },
     "14337": {
       "name": "Object 263",
       "tier": 10,
@@ -1399,6 +1716,20 @@
       "nation": "苏联",
       "alphaDamage": 460,
       "hp": 1850
+    },
+    "14385": {
+      "name": "WZ-120G FT",
+      "tier": 9,
+      "class": "TD",
+      "nation": "中国",
+      "alphaDamage": 480
+    },
+    "14449": {
+      "name": "Swindler",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "其他",
+      "alphaDamage": 240
     },
     "14609": {
       "name": "Leopard 1",
@@ -1416,6 +1747,20 @@
       "alphaDamage": 160,
       "hp": 1400
     },
+    "14705": {
+      "name": "Fänrik",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 410
+    },
+    "14721": {
+      "name": "Strv 81",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "欧洲",
+      "alphaDamage": 200
+    },
     "14865": {
       "name": "Leopard Prototyp A",
       "tier": 9,
@@ -1432,6 +1777,27 @@
       "alphaDamage": 375,
       "hp": 2400
     },
+    "14961": {
+      "name": "Mutant",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "其他",
+      "alphaDamage": 470
+    },
+    "14977": {
+      "name": "CS-63",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "欧洲",
+      "alphaDamage": 340
+    },
+    "15233": {
+      "name": "CS-59",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "欧洲",
+      "alphaDamage": 330
+    },
     "15393": {
       "name": "T54E1",
       "tier": 9,
@@ -1447,6 +1813,20 @@
       "nation": "英国",
       "alphaDamage": 225,
       "hp": 1800
+    },
+    "15473": {
+      "name": "Endurance",
+      "tier": 7,
+      "class": "轻坦",
+      "nation": "其他",
+      "alphaDamage": 110
+    },
+    "15489": {
+      "name": "CS-53",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "欧洲",
+      "alphaDamage": 290
     },
     "15617": {
       "name": "Object 907",
@@ -1472,6 +1852,20 @@
       "alphaDamage": 400,
       "hp": 2400
     },
+    "15729": {
+      "name": "TSL-7 Defender",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "其他",
+      "alphaDamage": 225
+    },
+    "15745": {
+      "name": "CS-44",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "欧洲",
+      "alphaDamage": 290
+    },
     "15905": {
       "name": "M60",
       "tier": 10,
@@ -1488,6 +1882,13 @@
       "alphaDamage": 160,
       "hp": 1500
     },
+    "15985": {
+      "name": "Toxique",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "其他",
+      "alphaDamage": 390
+    },
     "16193": {
       "name": "M4A1 Revalorisé",
       "tier": 8,
@@ -1495,6 +1896,13 @@
       "nation": "法国",
       "alphaDamage": 350,
       "hp": 1400
+    },
+    "16241": {
+      "name": "Rammer",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 350
     },
     "16401": {
       "name": "Waffenträger auf Pz. IV",
@@ -1512,6 +1920,20 @@
       "alphaDamage": 90,
       "hp": 1100
     },
+    "16497": {
+      "name": "E-10",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 400
+    },
+    "16513": {
+      "name": "ShPTK-TVP 100",
+      "tier": 8,
+      "class": "TD",
+      "nation": "欧洲",
+      "alphaDamage": 310
+    },
     "16657": {
       "name": "Rhm.-Borsig Waffenträger",
       "tier": 8,
@@ -1528,6 +1950,20 @@
       "alphaDamage": 310,
       "hp": 1800
     },
+    "16753": {
+      "name": "DTH-STR",
+      "tier": 8,
+      "class": "TD",
+      "nation": "其他",
+      "alphaDamage": 310
+    },
+    "16769": {
+      "name": "SMV Vipera",
+      "tier": 8,
+      "class": "TD",
+      "nation": "欧洲",
+      "alphaDamage": 400
+    },
     "16897": {
       "name": "Object 140",
       "tier": 10,
@@ -1536,6 +1972,20 @@
       "alphaDamage": 310,
       "hp": 1800
     },
+    "17009": {
+      "name": "KV-JR",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 630
+    },
+    "17025": {
+      "name": "Progetto CC55 mod. 54",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "欧洲",
+      "alphaDamage": 300
+    },
     "17233": {
       "name": "FV4004 Conway",
       "tier": 9,
@@ -1543,6 +1993,20 @@
       "nation": "英国",
       "alphaDamage": 400,
       "hp": 1600
+    },
+    "17265": {
+      "name": "Souleater",
+      "tier": 8,
+      "class": "TD",
+      "nation": "其他",
+      "alphaDamage": 270
+    },
+    "17281": {
+      "name": "Progetto C50 mod. 66",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "欧洲",
+      "alphaDamage": 400
     },
     "17473": {
       "name": "AMX Defender",
@@ -1560,6 +2024,20 @@
       "alphaDamage": 225,
       "hp": 1100
     },
+    "17521": {
+      "name": "Lightbringer",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 270
+    },
+    "17537": {
+      "name": "Carro d'assalto P.88",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "欧洲",
+      "alphaDamage": 225
+    },
     "17729": {
       "name": "Somua SM",
       "tier": 9,
@@ -1575,6 +2053,20 @@
       "nation": "英国",
       "alphaDamage": 460,
       "hp": 2000
+    },
+    "17777": {
+      "name": "Titan Strife",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 340
+    },
+    "17793": {
+      "name": "Rinoceronte",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "欧洲",
+      "alphaDamage": 420
     },
     "17953": {
       "name": "M41 Walker Bulldog",
@@ -1592,6 +2084,20 @@
       "alphaDamage": 650,
       "hp": 1700
     },
+    "18033": {
+      "name": "Hazard I",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "其他",
+      "alphaDamage": 280
+    },
+    "18049": {
+      "name": "Lion",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "欧洲",
+      "alphaDamage": 340
+    },
     "18177": {
       "name": "T-54 ltwt.",
       "tier": 8,
@@ -1608,6 +2114,13 @@
       "alphaDamage": 225,
       "hp": 1100
     },
+    "18241": {
+      "name": "B-C Bourrasque",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "法国",
+      "alphaDamage": 320
+    },
     "18257": {
       "name": "Challenger",
       "tier": 7,
@@ -1615,6 +2128,13 @@
       "nation": "英国",
       "alphaDamage": 200,
       "hp": 940
+    },
+    "18289": {
+      "name": "Quetzal",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 340
     },
     "18433": {
       "name": "LTTB",
@@ -1648,6 +2168,13 @@
       "alphaDamage": 440,
       "hp": 1400
     },
+    "18545": {
+      "name": "Argonaut",
+      "tier": 9,
+      "class": "TD",
+      "nation": "其他",
+      "alphaDamage": 430
+    },
     "18753": {
       "name": "AMX Canon d'assaut 105",
       "tier": 8,
@@ -1663,6 +2190,20 @@
       "nation": "英国",
       "alphaDamage": 190,
       "hp": 1750
+    },
+    "18801": {
+      "name": "mau5Tank",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "其他",
+      "alphaDamage": 374
+    },
+    "18817": {
+      "name": "SDP 57 Gowika",
+      "tier": 7,
+      "class": "TD",
+      "nation": "欧洲",
+      "alphaDamage": 360
     },
     "18945": {
       "name": "ISU-130",
@@ -1696,6 +2237,20 @@
       "alphaDamage": 190,
       "hp": 1450
     },
+    "19057": {
+      "name": "Destiny",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 410
+    },
+    "19073": {
+      "name": "SDP 58 Kilana",
+      "tier": 8,
+      "class": "TD",
+      "nation": "欧洲",
+      "alphaDamage": 340
+    },
     "19217": {
       "name": "Grille 15",
       "tier": 10,
@@ -1720,6 +2275,20 @@
       "alphaDamage": 400,
       "hp": 2450
     },
+    "19313": {
+      "name": "Prowler",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 420
+    },
+    "19329": {
+      "name": "SDP 60 Gonkiewicza",
+      "tier": 9,
+      "class": "TD",
+      "nation": "欧洲",
+      "alphaDamage": 435
+    },
     "19489": {
       "name": "T28 Defender",
       "tier": 8,
@@ -1727,6 +2296,13 @@
       "nation": "美国",
       "alphaDamage": 400,
       "hp": 1450
+    },
+    "19521": {
+      "name": "B-C 25 t Avenir",
+      "tier": 9,
+      "class": "轻坦",
+      "nation": "法国",
+      "alphaDamage": 310
     },
     "19537": {
       "name": "Vickers Light 105",
@@ -1736,6 +2312,20 @@
       "alphaDamage": 300,
       "hp": 1750
     },
+    "19569": {
+      "name": "AC Sterope",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 480
+    },
+    "19585": {
+      "name": "NC 70 Błyskawica",
+      "tier": 10,
+      "class": "TD",
+      "nation": "欧洲",
+      "alphaDamage": 500
+    },
     "19745": {
       "name": "T26E5",
       "tier": 8,
@@ -1744,6 +2334,13 @@
       "alphaDamage": 240,
       "hp": 1800
     },
+    "19777": {
+      "name": "A.P. AMX 30",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "法国",
+      "alphaDamage": 280
+    },
     "19793": {
       "name": "Vickers Cruiser",
       "tier": 9,
@@ -1751,6 +2348,20 @@
       "nation": "英国",
       "alphaDamage": 225,
       "hp": 1550
+    },
+    "19825": {
+      "name": "AC Atlas",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 480
+    },
+    "19841": {
+      "name": "SDP wz 66 Grom",
+      "tier": 8,
+      "class": "TD",
+      "nation": "欧洲",
+      "alphaDamage": 370
     },
     "19969": {
       "name": "T-22 medium",
@@ -1776,6 +2387,13 @@
       "alphaDamage": 350,
       "hp": 1500
     },
+    "20033": {
+      "name": "Char Futur 4",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "法国",
+      "alphaDamage": 340
+    },
     "20049": {
       "name": "FV301",
       "tier": 8,
@@ -1783,6 +2401,20 @@
       "nation": "英国",
       "alphaDamage": 160,
       "hp": 1200
+    },
+    "20081": {
+      "name": "AC Celeno",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 440
+    },
+    "20097": {
+      "name": "Felice",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "欧洲",
+      "alphaDamage": 440
     },
     "20257": {
       "name": "XM551 Sheridan",
@@ -1799,6 +2431,13 @@
       "nation": "英国",
       "alphaDamage": 190,
       "hp": 1450
+    },
+    "20337": {
+      "name": "AC Taygete",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 440
     },
     "20481": {
       "name": "Object 252U",
@@ -1832,6 +2471,13 @@
       "alphaDamage": 330,
       "hp": 1400
     },
+    "20593": {
+      "name": "AC Pleione",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 240
+    },
     "20737": {
       "name": "SU-130PM",
       "tier": 8,
@@ -1855,6 +2501,20 @@
       "nation": "美国",
       "alphaDamage": 225,
       "hp": 1390
+    },
+    "20801": {
+      "name": "Lorraine 50 t",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "法国",
+      "alphaDamage": 380
+    },
+    "20849": {
+      "name": "FVE Defender",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "其他",
+      "alphaDamage": 50
     },
     "20993": {
       "name": "T-2020",
@@ -1880,6 +2540,20 @@
       "alphaDamage": 225,
       "hp": 1200
     },
+    "21057": {
+      "name": "Projet Murat",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "法国",
+      "alphaDamage": 390
+    },
+    "21105": {
+      "name": "AC-07V Merope",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 270
+    },
     "21265": {
       "name": "VK 168.01 (P)",
       "tier": 9,
@@ -1888,6 +2562,13 @@
       "alphaDamage": 460,
       "hp": 2350
     },
+    "21313": {
+      "name": "AMX 13 M24",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "法国",
+      "alphaDamage": 220
+    },
     "21329": {
       "name": "GSOR 1008",
       "tier": 8,
@@ -1895,6 +2576,13 @@
       "nation": "英国",
       "alphaDamage": 350,
       "hp": 1150
+    },
+    "21361": {
+      "name": "Herdbreaker",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "其他",
+      "alphaDamage": 360
     },
     "21505": {
       "name": "T-44-85",
@@ -1911,6 +2599,20 @@
       "nation": "德国",
       "alphaDamage": 340,
       "hp": 2300
+    },
+    "21569": {
+      "name": "ERAC 105 Proto",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "法国",
+      "alphaDamage": 300
+    },
+    "21617": {
+      "name": "Biter",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "其他",
+      "alphaDamage": 150
     },
     "21761": {
       "name": "STG",
@@ -1936,6 +2638,13 @@
       "alphaDamage": 560,
       "hp": 1800
     },
+    "21825": {
+      "name": "Projet Louis",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "法国",
+      "alphaDamage": 330
+    },
     "21841": {
       "name": "Caliban",
       "tier": 8,
@@ -1943,6 +2652,34 @@
       "nation": "英国",
       "alphaDamage": 580,
       "hp": 1700
+    },
+    "21889": {
+      "name": "56TP",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "欧洲",
+      "alphaDamage": 360
+    },
+    "22081": {
+      "name": "ELC AMX-901",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "法国",
+      "alphaDamage": 220
+    },
+    "22129": {
+      "name": "AC Teichos",
+      "tier": 10,
+      "class": "中坦",
+      "nation": "其他",
+      "alphaDamage": 340
+    },
+    "22145": {
+      "name": "Bofors Triton",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "欧洲",
+      "alphaDamage": 300
     },
     "22273": {
       "name": "Object 260",
@@ -1959,6 +2696,27 @@
       "nation": "美国",
       "alphaDamage": 400,
       "hp": 2050
+    },
+    "22337": {
+      "name": "Sentinelle",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "法国",
+      "alphaDamage": 350
+    },
+    "22385": {
+      "name": "Titan JPanther II",
+      "tier": 8,
+      "class": "TD",
+      "nation": "其他",
+      "alphaDamage": 420
+    },
+    "22401": {
+      "name": "Ambassador",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "欧洲",
+      "alphaDamage": 360
     },
     "22529": {
       "name": "LT-432",
@@ -1984,6 +2742,27 @@
       "alphaDamage": 400,
       "hp": 1400
     },
+    "22609": {
+      "name": "Caernarvon Defender",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "英国",
+      "alphaDamage": 280
+    },
+    "22641": {
+      "name": "Convoyer",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "其他",
+      "alphaDamage": 120
+    },
+    "22657": {
+      "name": "Toro",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "欧洲",
+      "alphaDamage": 370
+    },
     "22817": {
       "name": "M-VI-Yoh",
       "tier": 10,
@@ -1991,6 +2770,20 @@
       "nation": "美国",
       "alphaDamage": 300,
       "hp": 2300
+    },
+    "22849": {
+      "name": "Brennos",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "法国",
+      "alphaDamage": 340
+    },
+    "22865": {
+      "name": "Charlemagne",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "英国",
+      "alphaDamage": 390
     },
     "23057": {
       "name": "Kunze Panzer",
@@ -2008,6 +2801,13 @@
       "alphaDamage": 300,
       "hp": 2050
     },
+    "23121": {
+      "name": "Cobra",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "英国",
+      "alphaDamage": 400
+    },
     "23313": {
       "name": "Kampfpanzer 50 t",
       "tier": 10,
@@ -2023,6 +2823,13 @@
       "nation": "美国",
       "alphaDamage": 310,
       "hp": 1600
+    },
+    "23377": {
+      "name": "FV1066 Senlac",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "英国",
+      "alphaDamage": 200
     },
     "23585": {
       "name": "M-VII-Yoh",
@@ -2056,6 +2863,13 @@
       "alphaDamage": 240,
       "hp": 1100
     },
+    "23889": {
+      "name": "FV4201 Chieftain Proto",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "英国",
+      "alphaDamage": 400
+    },
     "24065": {
       "name": "LTG",
       "tier": 7,
@@ -2063,6 +2877,13 @@
       "nation": "苏联",
       "alphaDamage": 200,
       "hp": 1100
+    },
+    "24145": {
+      "name": "GSOR Fearless",
+      "tier": 8,
+      "class": "TD",
+      "nation": "英国",
+      "alphaDamage": 330
     },
     "24321": {
       "name": "T-100 LT",
@@ -2079,6 +2900,13 @@
       "nation": "德国",
       "alphaDamage": 225,
       "hp": 1450
+    },
+    "24401": {
+      "name": "Vickers MBT",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "英国",
+      "alphaDamage": 320
     },
     "24577": {
       "name": "Object 268 Version 4",
@@ -2104,6 +2932,13 @@
       "alphaDamage": 380,
       "hp": 2350
     },
+    "24657": {
+      "name": "A46 Different",
+      "tier": 7,
+      "class": "轻坦",
+      "nation": "英国",
+      "alphaDamage": 160
+    },
     "24865": {
       "name": "Scepter",
       "tier": 8,
@@ -2112,6 +2947,13 @@
       "alphaDamage": 310,
       "hp": 1700
     },
+    "24913": {
+      "name": "Nemesis",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "英国",
+      "alphaDamage": 350
+    },
     "25089": {
       "name": "Object 752",
       "tier": 9,
@@ -2119,6 +2961,20 @@
       "nation": "苏联",
       "alphaDamage": 430,
       "hp": 2050
+    },
+    "25121": {
+      "name": "M46 Jaguar",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "美国",
+      "alphaDamage": 290
+    },
+    "25169": {
+      "name": "GSOR the TANK",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "英国",
+      "alphaDamage": 320
     },
     "25345": {
       "name": "Object 274a",
@@ -2144,6 +3000,13 @@
       "alphaDamage": 380,
       "hp": 1750
     },
+    "25601": {
+      "name": "IS-2 shielded",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "苏联",
+      "alphaDamage": 400
+    },
     "25617": {
       "name": "HWK 30",
       "tier": 8,
@@ -2160,6 +3023,55 @@
       "alphaDamage": 310,
       "hp": 1850
     },
+    "25857": {
+      "name": "Obj. 777 II",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "苏联",
+      "alphaDamage": 430
+    },
+    "25873": {
+      "name": "Elefant",
+      "tier": 8,
+      "class": "TD",
+      "nation": "德国",
+      "alphaDamage": 350
+    },
+    "26113": {
+      "name": "Object 452K",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "苏联",
+      "alphaDamage": 460
+    },
+    "26369": {
+      "name": "ST-62 Ver. 2",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "苏联",
+      "alphaDamage": 280
+    },
+    "26385": {
+      "name": "Tiger Frontline",
+      "tier": 7,
+      "class": "重坦",
+      "nation": "德国",
+      "alphaDamage": 230
+    },
+    "26625": {
+      "name": "T-34-85 Breakthrough",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "苏联",
+      "alphaDamage": 190
+    },
+    "26641": {
+      "name": "Kpz 07 RH",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "德国",
+      "alphaDamage": 240
+    },
     "26657": {
       "name": "ASTRON Rex 105 mm",
       "tier": 8,
@@ -2167,6 +3079,181 @@
       "nation": "美国",
       "alphaDamage": 290,
       "hp": 1450
+    },
+    "26881": {
+      "name": "Obj. 590",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "苏联",
+      "alphaDamage": 280
+    },
+    "26897": {
+      "name": "Kpz. Pr.68 (P)",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "德国",
+      "alphaDamage": 380
+    },
+    "27137": {
+      "name": "K-2",
+      "tier": 8,
+      "class": "重坦",
+      "nation": "苏联",
+      "alphaDamage": 400
+    },
+    "27153": {
+      "name": "Aufkl. Panther",
+      "tier": 7,
+      "class": "轻坦",
+      "nation": "德国",
+      "alphaDamage": 160
+    },
+    "27393": {
+      "name": "Obj. Kust",
+      "tier": 8,
+      "class": "TD",
+      "nation": "苏联",
+      "alphaDamage": 440
+    },
+    "27409": {
+      "name": "Projekt Kpz. 07P(E)",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "德国",
+      "alphaDamage": 380
+    },
+    "27425": {
+      "name": "TL-7-120",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "美国",
+      "alphaDamage": 400
+    },
+    "27665": {
+      "name": "Schwarzpanzer 58",
+      "tier": 8,
+      "class": "中坦",
+      "nation": "德国",
+      "alphaDamage": 230
+    },
+    "27921": {
+      "name": "Erich Konzept I",
+      "tier": 9,
+      "class": "中坦",
+      "nation": "德国",
+      "alphaDamage": 500
+    },
+    "27937": {
+      "name": "T49 Fearless",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "美国",
+      "alphaDamage": 560
+    },
+    "28177": {
+      "name": "LKpz.70 K",
+      "tier": 9,
+      "class": "轻坦",
+      "nation": "德国",
+      "alphaDamage": 340
+    },
+    "28193": {
+      "name": "TS-60",
+      "tier": 9,
+      "class": "TD",
+      "nation": "美国",
+      "alphaDamage": 380
+    },
+    "28433": {
+      "name": "HWK 12",
+      "tier": 9,
+      "class": "轻坦",
+      "nation": "德国",
+      "alphaDamage": 240
+    },
+    "28449": {
+      "name": "T42",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "美国",
+      "alphaDamage": 200
+    },
+    "28689": {
+      "name": "Rhm. Pzw.",
+      "tier": 10,
+      "class": "轻坦",
+      "nation": "德国",
+      "alphaDamage": 340
+    },
+    "28705": {
+      "name": "XM66F",
+      "tier": 10,
+      "class": "TD",
+      "nation": "美国",
+      "alphaDamage": 410
+    },
+    "28945": {
+      "name": "Waffen F1.0",
+      "tier": 10,
+      "class": "TD",
+      "nation": "德国",
+      "alphaDamage": 570
+    },
+    "28961": {
+      "name": "Sherman Easy 8",
+      "tier": 7,
+      "class": "中坦",
+      "nation": "美国",
+      "alphaDamage": 150
+    },
+    "29201": {
+      "name": "Tiger-Maus",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "德国",
+      "alphaDamage": 410
+    },
+    "29217": {
+      "name": "MBT-B",
+      "tier": 9,
+      "class": "重坦",
+      "nation": "美国",
+      "alphaDamage": 390
+    },
+    "29457": {
+      "name": "VK 19.02“闪送宝”",
+      "tier": 8,
+      "class": "轻坦",
+      "nation": "德国",
+      "alphaDamage": 60
+    },
+    "29473": {
+      "name": "ATAC",
+      "tier": 9,
+      "class": "轻坦",
+      "nation": "美国",
+      "alphaDamage": 160
+    },
+    "29713": {
+      "name": "KJPZ TIII Jäger",
+      "tier": 9,
+      "class": "TD",
+      "nation": "德国",
+      "alphaDamage": 400
+    },
+    "29985": {
+      "name": "SPHT",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "美国",
+      "alphaDamage": 400
+    },
+    "30481": {
+      "name": "Kpz 70 Missile",
+      "tier": 10,
+      "class": "重坦",
+      "nation": "德国",
+      "alphaDamage": 540
     },
     "52513": {
       "name": "M6A2E1",
