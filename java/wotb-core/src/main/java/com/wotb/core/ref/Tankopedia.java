@@ -8,8 +8,15 @@ import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
 
-/** 车辆库 (tank_id -> 车辆信息), 来自 blitzkit（vehicles 数组）。 */
+/** 车辆库 (tank_id -> 车辆信息), 来自 blitzkit（按等级拆分的 4 个 tier 文件）。 */
 public final class Tankopedia {
+
+    private static final String[] TIER_RESOURCES = {
+            "/tankopedia-tier7.json",
+            "/tankopedia-tier8.json",
+            "/tankopedia-tier9.json",
+            "/tankopedia-tier10.json",
+    };
 
     private final Map<Long, JsonNode> vehicles;
 
@@ -17,23 +24,25 @@ public final class Tankopedia {
         this.vehicles = vehicles;
     }
 
-    /** 从 classpath 的 tankopedia.json 加载。 */
+    /** 从 classpath 的 4 个等级文件加载（tankopedia-tier{7,8,9,10}.json）。 */
     public static Tankopedia load() {
         final Map<Long, JsonNode> map = new HashMap<>();
-        try (InputStream in = Tankopedia.class.getResourceAsStream("/tankopedia.json")) {
-            if (in != null) {
-                final JsonNode root = JsonMapper.builder().build().readTree(in);
-                final JsonNode list = root.get("vehicles");
-                if (list != null && list.isArray()) {
-                    for (final JsonNode vehicle : list) {
-                        if (vehicle != null && vehicle.hasNonNull("id") && vehicle.get("id").canConvertToLong()) {
-                            map.put(vehicle.get("id").longValue(), vehicle);
+        for (final String resource : TIER_RESOURCES) {
+            try (InputStream in = Tankopedia.class.getResourceAsStream(resource)) {
+                if (in != null) {
+                    final JsonNode root = JsonMapper.builder().build().readTree(in);
+                    final JsonNode list = root.get("vehicles");
+                    if (list != null && list.isArray()) {
+                        for (final JsonNode vehicle : list) {
+                            if (vehicle != null && vehicle.hasNonNull("id") && vehicle.get("id").canConvertToLong()) {
+                                map.put(vehicle.get("id").longValue(), vehicle);
+                            }
                         }
                     }
                 }
+            } catch (Exception ignored) {
+                // 缺库时降级为只显示车辆ID
             }
-        } catch (Exception ignored) {
-            // 缺库时降级为只显示车辆ID
         }
         return new Tankopedia(map);
     }

@@ -1,0 +1,7809 @@
+{
+  "meta": {
+    "source": "blitzkit (assets.blitzkit.app/definitions/tanks.pb)",
+    "tier": 9,
+    "generated_at": "2026-08-07T23:15:41.614508+00:00",
+    "count": 102
+  },
+  "vehicles": [
+    {
+      "name": "Standard B",
+      "id": 641,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "European",
+      "hp": 1650,
+      "forwardSpeed": 58,
+      "reverseSpeed": 23,
+      "turretRotationSpeed": 34.0,
+      "hullRotationSpeed": 44.0,
+      "powerToWeightRatio": 38.4,
+      "guns": [
+        {
+          "gunId": 897,
+          "isDefault": true,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 212
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 259
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 45
+            }
+          ]
+        },
+        {
+          "gunId": 641,
+          "isDefault": false,
+          "alphaDamage": 350,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 350,
+              "penetration": 240
+            },
+            {
+              "type": "heat",
+              "damage": 300,
+              "penetration": 295
+            },
+            {
+              "type": "he",
+              "damage": 400,
+              "penetration": 105
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "WZ-120",
+      "id": 1841,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "China",
+      "hp": 1650,
+      "forwardSpeed": 56,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 42.0,
+      "hullRotationSpeed": 46.0,
+      "powerToWeightRatio": 36.5,
+      "guns": [
+        {
+          "gunId": 2609,
+          "isDefault": true,
+          "alphaDamage": 280,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 280,
+              "penetration": 181
+            },
+            {
+              "type": "apcr",
+              "damage": 240,
+              "penetration": 241
+            },
+            {
+              "type": "he",
+              "damage": 350,
+              "penetration": 50
+            }
+          ]
+        },
+        {
+          "gunId": 2865,
+          "isDefault": false,
+          "alphaDamage": 280,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 280,
+              "penetration": 189
+            },
+            {
+              "type": "apcr",
+              "damage": 240,
+              "penetration": 244
+            },
+            {
+              "type": "he",
+              "damage": 350,
+              "penetration": 50
+            }
+          ]
+        },
+        {
+          "gunId": 3377,
+          "isDefault": false,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 215
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 265
+            },
+            {
+              "type": "he",
+              "damage": 420,
+              "penetration": 50
+            }
+          ]
+        },
+        {
+          "gunId": 3633,
+          "isDefault": false,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 220
+            },
+            {
+              "type": "heat",
+              "damage": 340,
+              "penetration": 280
+            },
+            {
+              "type": "he",
+              "damage": 500,
+              "penetration": 68
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "IMPROVED_GUNPOWDER",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "TUNGSTEN_SHELLS"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "B-C 25 t AP",
+      "id": 1857,
+      "tier": 9,
+      "class": "Light tank",
+      "nation": "France",
+      "hp": 1600,
+      "forwardSpeed": 65,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 36.0,
+      "hullRotationSpeed": 49.0,
+      "powerToWeightRatio": 59.3,
+      "guns": [
+        {
+          "gunId": 16705,
+          "isDefault": true,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 220
+            },
+            {
+              "type": "heat",
+              "damage": 190,
+              "penetration": 270
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 53
+            }
+          ]
+        },
+        {
+          "gunId": 4929,
+          "isDefault": false,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 232
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 263
+            },
+            {
+              "type": "he",
+              "damage": 350,
+              "penetration": 50
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "SPALL_LINER",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "SHELL_RELOAD_BOOST"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "WZ-111 1-4",
+      "id": 2097,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "China",
+      "hp": 2100,
+      "forwardSpeed": 45,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 23.0,
+      "hullRotationSpeed": 24.0,
+      "powerToWeightRatio": 31.9,
+      "guns": [
+        {
+          "gunId": 3377,
+          "isDefault": true,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 215
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 265
+            },
+            {
+              "type": "he",
+              "damage": 420,
+              "penetration": 50
+            }
+          ]
+        },
+        {
+          "gunId": 3889,
+          "isDefault": false,
+          "alphaDamage": 460,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 460,
+              "penetration": 246
+            },
+            {
+              "type": "heat",
+              "damage": 390,
+              "penetration": 320
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "T30",
+      "id": 2593,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "USA",
+      "hp": 1800,
+      "forwardSpeed": 38,
+      "reverseSpeed": 10,
+      "turretRotationSpeed": 16.0,
+      "hullRotationSpeed": 21.0,
+      "powerToWeightRatio": 25.5,
+      "guns": [
+        {
+          "gunId": 11553,
+          "isDefault": true,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 198
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 245
+            },
+            {
+              "type": "he",
+              "damage": 400,
+              "penetration": 53
+            }
+          ]
+        },
+        {
+          "gunId": 11809,
+          "isDefault": false,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 248
+            },
+            {
+              "type": "apcr",
+              "damage": 340,
+              "penetration": 297
+            },
+            {
+              "type": "he",
+              "damage": 515,
+              "penetration": 60
+            }
+          ]
+        },
+        {
+          "gunId": 270113,
+          "isDefault": false,
+          "alphaDamage": 640,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 640,
+              "penetration": 259
+            },
+            {
+              "type": "apcr",
+              "damage": 545,
+              "penetration": 310
+            },
+            {
+              "type": "he",
+              "damage": 960,
+              "penetration": 90
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "50TP prototyp",
+      "id": 3201,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "European",
+      "hp": 2100,
+      "forwardSpeed": 45,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 25.0,
+      "hullRotationSpeed": 30.0,
+      "powerToWeightRatio": 30.9,
+      "guns": [
+        {
+          "gunId": 4993,
+          "isDefault": true,
+          "alphaDamage": 440,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 440,
+              "penetration": 246
+            },
+            {
+              "type": "apcr",
+              "damage": 380,
+              "penetration": 320
+            },
+            {
+              "type": "he",
+              "damage": 560,
+              "penetration": 68
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "GEAR_OIL",
+        "IMPROVED_FUEL",
+        "IMPROVED_GEAR_OIL",
+        "IMPROVED_GUNPOWDER",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "TUNGSTEN_SHELLS"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Type 61",
+      "id": 3425,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "Japan",
+      "hp": 1620,
+      "forwardSpeed": 48,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 42.0,
+      "hullRotationSpeed": 48.0,
+      "powerToWeightRatio": 54.4,
+      "guns": [
+        {
+          "gunId": 5473,
+          "isDefault": true,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 219
+            },
+            {
+              "type": "heat",
+              "damage": 190,
+              "penetration": 275
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 45
+            }
+          ]
+        },
+        {
+          "gunId": 5729,
+          "isDefault": false,
+          "alphaDamage": 330,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 330,
+              "penetration": 245
+            },
+            {
+              "type": "ap",
+              "damage": 320,
+              "penetration": 300
+            },
+            {
+              "type": "he",
+              "damage": 380,
+              "penetration": 53
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "AMX 50 120",
+      "id": 3905,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "France",
+      "hp": 2100,
+      "forwardSpeed": 50,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 36.0,
+      "hullRotationSpeed": 20.0,
+      "powerToWeightRatio": 34.5,
+      "guns": [
+        {
+          "gunId": 24641,
+          "isDefault": true,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 232
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 263
+            },
+            {
+              "type": "he",
+              "damage": 350,
+              "penetration": 50
+            }
+          ]
+        },
+        {
+          "gunId": 4929,
+          "isDefault": false,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 232
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 263
+            },
+            {
+              "type": "he",
+              "damage": 350,
+              "penetration": 50
+            }
+          ]
+        },
+        {
+          "gunId": 23105,
+          "isDefault": false,
+          "alphaDamage": 380,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 380,
+              "penetration": 250
+            },
+            {
+              "type": "apcr",
+              "damage": 320,
+              "penetration": 330
+            },
+            {
+              "type": "he",
+              "damage": 500,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REACTIVE_ARMOR",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "T 55A",
+      "id": 3953,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "Other",
+      "hp": 1650,
+      "forwardSpeed": 56,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 44.0,
+      "hullRotationSpeed": 48.0,
+      "powerToWeightRatio": 45.5,
+      "guns": [
+        {
+          "gunId": 16753,
+          "isDefault": true,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 219
+            },
+            {
+              "type": "heat",
+              "damage": 260,
+              "penetration": 270
+            },
+            {
+              "type": "he",
+              "damage": 420,
+              "penetration": 50
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Ho-Ri T.II",
+      "id": 4193,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "Japan",
+      "hp": 1500,
+      "forwardSpeed": 37,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 20.0,
+      "hullRotationSpeed": 18.0,
+      "powerToWeightRatio": 17.9,
+      "guns": [
+        {
+          "gunId": 7009,
+          "isDefault": true,
+          "alphaDamage": 460,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 460,
+              "penetration": 246
+            },
+            {
+              "type": "ap",
+              "damage": 390,
+              "penetration": 310
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 65
+            }
+          ]
+        },
+        {
+          "gunId": 7265,
+          "isDefault": false,
+          "alphaDamage": 560,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 560,
+              "penetration": 290
+            },
+            {
+              "type": "ap",
+              "damage": 545,
+              "penetration": 340
+            },
+            {
+              "type": "he",
+              "damage": 640,
+              "penetration": 85
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "ENHANCED_SANDBAG_ARMOR",
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SANDBAG_ARMOR",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REACTIVE_ARMOR",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Emil II",
+      "id": 4225,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "European",
+      "hp": 2100,
+      "forwardSpeed": 30,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 16.0,
+      "hullRotationSpeed": 21.0,
+      "powerToWeightRatio": 35.8,
+      "guns": [
+        {
+          "gunId": 5249,
+          "isDefault": true,
+          "alphaDamage": 320,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 320,
+              "penetration": 217
+            },
+            {
+              "type": "apcr",
+              "damage": 270,
+              "penetration": 242
+            },
+            {
+              "type": "he",
+              "damage": 400,
+              "penetration": 53
+            }
+          ]
+        },
+        {
+          "gunId": 6529,
+          "isDefault": false,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 400,
+              "penetration": 248
+            },
+            {
+              "type": "heat",
+              "damage": 340,
+              "penetration": 300
+            },
+            {
+              "type": "he",
+              "damage": 515,
+              "penetration": 60
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "ENHANCED_SANDBAG_ARMOR",
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SANDBAG_ARMOR",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "IMPROVED_ENGINE_POWER_BOOST",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "RETICLE_CALIBRATION"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Conqueror",
+      "id": 4433,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "UK",
+      "hp": 2050,
+      "forwardSpeed": 37,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 25.0,
+      "hullRotationSpeed": 24.0,
+      "powerToWeightRatio": 26.9,
+      "guns": [
+        {
+          "gunId": 7249,
+          "isDefault": true,
+          "alphaDamage": 190,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 190,
+              "penetration": 225
+            },
+            {
+              "type": "apcr",
+              "damage": 160,
+              "penetration": 258
+            },
+            {
+              "type": "he",
+              "damage": 250,
+              "penetration": 42
+            }
+          ]
+        },
+        {
+          "gunId": 8273,
+          "isDefault": false,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 226
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 258
+            },
+            {
+              "type": "he",
+              "damage": 300,
+              "penetration": 42
+            }
+          ]
+        },
+        {
+          "gunId": 7505,
+          "isDefault": false,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 259
+            },
+            {
+              "type": "apcr",
+              "damage": 340,
+              "penetration": 326
+            },
+            {
+              "type": "he",
+              "damage": 515,
+              "penetration": 170
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "ENHANCED_SANDBAG_ARMOR",
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SANDBAG_ARMOR",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "IMPROVED_ENGINE_POWER_BOOST",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "AMX 30 1er prot.",
+      "id": 5441,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "France",
+      "hp": 1650,
+      "forwardSpeed": 60,
+      "reverseSpeed": 23,
+      "turretRotationSpeed": 40.0,
+      "hullRotationSpeed": 54.0,
+      "powerToWeightRatio": 58.2,
+      "guns": [
+        {
+          "gunId": 2625,
+          "isDefault": true,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 232
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 263
+            },
+            {
+              "type": "he",
+              "damage": 350,
+              "penetration": 50
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Centurion 7/1",
+      "id": 5713,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "UK",
+      "hp": 1670,
+      "forwardSpeed": 50,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 40.0,
+      "hullRotationSpeed": 32.0,
+      "powerToWeightRatio": 34.3,
+      "guns": [
+        {
+          "gunId": 268113,
+          "isDefault": true,
+          "alphaDamage": 190,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 190,
+              "penetration": 225
+            },
+            {
+              "type": "apcr",
+              "damage": 160,
+              "penetration": 258
+            },
+            {
+              "type": "he",
+              "damage": 250,
+              "penetration": 42
+            }
+          ]
+        },
+        {
+          "gunId": 8273,
+          "isDefault": false,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 226
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 258
+            },
+            {
+              "type": "he",
+              "damage": 300,
+              "penetration": 42
+            }
+          ]
+        },
+        {
+          "gunId": 267601,
+          "isDefault": false,
+          "alphaDamage": 350,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 350,
+              "penetration": 245
+            },
+            {
+              "type": "heat",
+              "damage": 300,
+              "penetration": 300
+            },
+            {
+              "type": "he",
+              "damage": 440,
+              "penetration": 65
+            }
+          ]
+        },
+        {
+          "gunId": 267857,
+          "isDefault": false,
+          "alphaDamage": 350,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 350,
+              "penetration": 245
+            },
+            {
+              "type": "he",
+              "damage": 440,
+              "penetration": 210
+            },
+            {
+              "type": "he",
+              "damage": 440,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Škoda T 50",
+      "id": 5761,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "European",
+      "hp": 1650,
+      "forwardSpeed": 60,
+      "reverseSpeed": 17,
+      "turretRotationSpeed": 42.0,
+      "hullRotationSpeed": 42.0,
+      "powerToWeightRatio": 62.8,
+      "guns": [
+        {
+          "gunId": 8065,
+          "isDefault": true,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 230
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 269
+            },
+            {
+              "type": "he",
+              "damage": 420,
+              "penetration": 50
+            }
+          ]
+        },
+        {
+          "gunId": 10113,
+          "isDefault": false,
+          "alphaDamage": 300,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 300,
+              "penetration": 242
+            },
+            {
+              "type": "heat",
+              "damage": 250,
+              "penetration": 290
+            },
+            {
+              "type": "he",
+              "damage": 410,
+              "penetration": 50
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "59-Patton",
+      "id": 5937,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "China",
+      "hp": 1650,
+      "forwardSpeed": 55,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 40.0,
+      "hullRotationSpeed": 46.0,
+      "powerToWeightRatio": 33.1,
+      "guns": [
+        {
+          "gunId": 8497,
+          "isDefault": true,
+          "alphaDamage": 250,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 250,
+              "penetration": 232
+            },
+            {
+              "type": "heat",
+              "damage": 215,
+              "penetration": 290
+            },
+            {
+              "type": "he",
+              "damage": 310,
+              "penetration": 60
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "T-34-3",
+      "id": 6193,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "China",
+      "hp": 1700,
+      "forwardSpeed": 50,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 46.0,
+      "hullRotationSpeed": 44.0,
+      "powerToWeightRatio": 70.5,
+      "guns": [
+        {
+          "gunId": 8753,
+          "isDefault": true,
+          "alphaDamage": 420,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 420,
+              "penetration": 228
+            },
+            {
+              "type": "heat",
+              "damage": 350,
+              "penetration": 285
+            },
+            {
+              "type": "he",
+              "damage": 550,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Type 68",
+      "id": 6497,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "Japan",
+      "hp": 2250,
+      "forwardSpeed": 37,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 16.0,
+      "hullRotationSpeed": 19.5,
+      "powerToWeightRatio": 17.8,
+      "guns": [
+        {
+          "gunId": 10081,
+          "isDefault": true,
+          "alphaDamage": 420,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 420,
+              "penetration": 245
+            },
+            {
+              "type": "apcr",
+              "damage": 360,
+              "penetration": 320
+            },
+            {
+              "type": "he",
+              "damage": 530,
+              "penetration": 60
+            }
+          ]
+        },
+        {
+          "gunId": 10337,
+          "isDefault": false,
+          "alphaDamage": 420,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 420,
+              "penetration": 250
+            },
+            {
+              "type": "heat",
+              "damage": 360,
+              "penetration": 340
+            },
+            {
+              "type": "he",
+              "damage": 530,
+              "penetration": 60
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Škoda T 27",
+      "id": 6785,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "European",
+      "hp": 1620,
+      "forwardSpeed": 56,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 38.0,
+      "hullRotationSpeed": 48.0,
+      "powerToWeightRatio": 56.9,
+      "guns": [
+        {
+          "gunId": 9857,
+          "isDefault": true,
+          "alphaDamage": 250,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 250,
+              "penetration": 226
+            },
+            {
+              "type": "apcr",
+              "damage": 215,
+              "penetration": 275
+            },
+            {
+              "type": "he",
+              "damage": 305,
+              "penetration": 58
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "VK 45.02 B",
+      "id": 7441,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "Germany",
+      "hp": 2300,
+      "forwardSpeed": 30,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 16.0,
+      "hullRotationSpeed": 18.0,
+      "powerToWeightRatio": 22.7,
+      "guns": [
+        {
+          "gunId": 2321,
+          "isDefault": true,
+          "alphaDamage": 220,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 220,
+              "penetration": 203
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 237
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 44
+            }
+          ]
+        },
+        {
+          "gunId": 10513,
+          "isDefault": false,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 215
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 265
+            },
+            {
+              "type": "he",
+              "damage": 420,
+              "penetration": 60
+            }
+          ]
+        },
+        {
+          "gunId": 10769,
+          "isDefault": false,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 225
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 285
+            },
+            {
+              "type": "he",
+              "damage": 420,
+              "penetration": 60
+            }
+          ]
+        },
+        {
+          "gunId": 9489,
+          "isDefault": false,
+          "alphaDamage": 460,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 460,
+              "penetration": 250
+            },
+            {
+              "type": "apcr",
+              "damage": 390,
+              "penetration": 311
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "ENHANCED_SANDBAG_ARMOR",
+        "IMPROVED_FUEL",
+        "IMPROVED_GUNPOWDER",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SANDBAG_ARMOR",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "TUNGSTEN_SHELLS"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "50TP Tyszkiewicza",
+      "id": 7553,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "European",
+      "hp": 2100,
+      "forwardSpeed": 36,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 26.0,
+      "hullRotationSpeed": 26.0,
+      "powerToWeightRatio": 33.1,
+      "guns": [
+        {
+          "gunId": 10881,
+          "isDefault": true,
+          "alphaDamage": 420,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 420,
+              "penetration": 225
+            },
+            {
+              "type": "apcr",
+              "damage": 360,
+              "penetration": 265
+            },
+            {
+              "type": "he",
+              "damage": 550,
+              "penetration": 61
+            }
+          ]
+        },
+        {
+          "gunId": 11137,
+          "isDefault": false,
+          "alphaDamage": 460,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 460,
+              "penetration": 250
+            },
+            {
+              "type": "apcr",
+              "damage": 390,
+              "penetration": 303
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 68
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "GEAR_OIL",
+        "IMPROVED_FUEL",
+        "IMPROVED_GEAR_OIL",
+        "IMPROVED_GUNPOWDER",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "TUNGSTEN_SHELLS"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "T-54",
+      "id": 7937,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "USSR",
+      "hp": 1600,
+      "forwardSpeed": 56,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 44.0,
+      "hullRotationSpeed": 48.0,
+      "powerToWeightRatio": 50.4,
+      "guns": [
+        {
+          "gunId": 19457,
+          "isDefault": true,
+          "alphaDamage": 280,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 280,
+              "penetration": 175
+            },
+            {
+              "type": "apcr",
+              "damage": 240,
+              "penetration": 235
+            },
+            {
+              "type": "he",
+              "damage": 350,
+              "penetration": 50
+            }
+          ]
+        },
+        {
+          "gunId": 19713,
+          "isDefault": false,
+          "alphaDamage": 280,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 280,
+              "penetration": 180
+            },
+            {
+              "type": "apcr",
+              "damage": 240,
+              "penetration": 235
+            },
+            {
+              "type": "he",
+              "damage": 350,
+              "penetration": 50
+            }
+          ]
+        },
+        {
+          "gunId": 19969,
+          "isDefault": false,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 219
+            },
+            {
+              "type": "heat",
+              "damage": 260,
+              "penetration": 270
+            },
+            {
+              "type": "he",
+              "damage": 420,
+              "penetration": 50
+            }
+          ]
+        },
+        {
+          "gunId": 27393,
+          "isDefault": false,
+          "alphaDamage": 330,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 330,
+              "penetration": 201
+            },
+            {
+              "type": "heat",
+              "damage": 280,
+              "penetration": 270
+            },
+            {
+              "type": "he",
+              "damage": 440,
+              "penetration": 50
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Jagdtiger",
+      "id": 7953,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "Germany",
+      "hp": 1800,
+      "forwardSpeed": 38,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 26.0,
+      "hullRotationSpeed": 26.0,
+      "powerToWeightRatio": 17.9,
+      "guns": [
+        {
+          "gunId": 10257,
+          "isDefault": true,
+          "alphaDamage": 460,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 460,
+              "penetration": 246
+            },
+            {
+              "type": "apcr",
+              "damage": 390,
+              "penetration": 311
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 65
+            }
+          ]
+        },
+        {
+          "gunId": 11537,
+          "isDefault": false,
+          "alphaDamage": 460,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 460,
+              "penetration": 276
+            },
+            {
+              "type": "apcr",
+              "damage": 390,
+              "penetration": 352
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "TUNGSTEN_SHELLS"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Obj. 704",
+      "id": 8193,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "USSR",
+      "hp": 1750,
+      "forwardSpeed": 37,
+      "reverseSpeed": 13,
+      "turretRotationSpeed": 26.0,
+      "hullRotationSpeed": 28.0,
+      "powerToWeightRatio": 22.6,
+      "guns": [
+        {
+          "gunId": 20481,
+          "isDefault": true,
+          "alphaDamage": 640,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 640,
+              "penetration": 135
+            },
+            {
+              "type": "heat",
+              "damage": 545,
+              "penetration": 250
+            },
+            {
+              "type": "he",
+              "damage": 960,
+              "penetration": 86
+            }
+          ]
+        },
+        {
+          "gunId": 17921,
+          "isDefault": false,
+          "alphaDamage": 640,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 640,
+              "penetration": 286
+            },
+            {
+              "type": "apcr",
+              "damage": 545,
+              "penetration": 329
+            },
+            {
+              "type": "he",
+              "damage": 960,
+              "penetration": 90
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "WZ-111G FT",
+      "id": 8241,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "China",
+      "hp": 1500,
+      "forwardSpeed": 35,
+      "reverseSpeed": 16,
+      "turretRotationSpeed": 26.0,
+      "hullRotationSpeed": 25.0,
+      "powerToWeightRatio": 17.0,
+      "guns": [
+        {
+          "gunId": 11569,
+          "isDefault": true,
+          "alphaDamage": 460,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 460,
+              "penetration": 245
+            },
+            {
+              "type": "heat",
+              "damage": 390,
+              "penetration": 325
+            },
+            {
+              "type": "he",
+              "damage": 660,
+              "penetration": 65
+            }
+          ]
+        },
+        {
+          "gunId": 9265,
+          "isDefault": false,
+          "alphaDamage": 640,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 640,
+              "penetration": 290
+            },
+            {
+              "type": "heat",
+              "damage": 550,
+              "penetration": 375
+            },
+            {
+              "type": "he",
+              "damage": 960,
+              "penetration": 90
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "ENHANCED_SANDBAG_ARMOR",
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SANDBAG_ARMOR",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REACTIVE_ARMOR",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "RETICLE_CALIBRATION"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "T95",
+      "id": 8737,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "USA",
+      "hp": 1600,
+      "forwardSpeed": 20,
+      "reverseSpeed": 10,
+      "turretRotationSpeed": 26.0,
+      "hullRotationSpeed": 15.0,
+      "powerToWeightRatio": 12.5,
+      "guns": [
+        {
+          "gunId": 11553,
+          "isDefault": true,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 198
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 245
+            },
+            {
+              "type": "he",
+              "damage": 400,
+              "penetration": 53
+            }
+          ]
+        },
+        {
+          "gunId": 11809,
+          "isDefault": false,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 248
+            },
+            {
+              "type": "apcr",
+              "damage": 340,
+              "penetration": 297
+            },
+            {
+              "type": "he",
+              "damage": 515,
+              "penetration": 60
+            }
+          ]
+        },
+        {
+          "gunId": 12321,
+          "isDefault": false,
+          "alphaDamage": 640,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 640,
+              "penetration": 276
+            },
+            {
+              "type": "apcr",
+              "damage": 545,
+              "penetration": 320
+            },
+            {
+              "type": "he",
+              "damage": 960,
+              "penetration": 90
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "IMPROVED_ENGINE_POWER_BOOST",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "M46 Patton",
+      "id": 8993,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "USA",
+      "hp": 1650,
+      "forwardSpeed": 48,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 40.0,
+      "hullRotationSpeed": 35.0,
+      "powerToWeightRatio": 40.9,
+      "guns": [
+        {
+          "gunId": 14369,
+          "isDefault": true,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 172
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 262
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 45
+            }
+          ]
+        },
+        {
+          "gunId": 7969,
+          "isDefault": false,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 180
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 268
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 45
+            }
+          ]
+        },
+        {
+          "gunId": 10273,
+          "isDefault": false,
+          "alphaDamage": 350,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 350,
+              "penetration": 224
+            },
+            {
+              "type": "apcr",
+              "damage": 300,
+              "penetration": 265
+            },
+            {
+              "type": "he",
+              "damage": 440,
+              "penetration": 53
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "M103",
+      "id": 9505,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "USA",
+      "hp": 2050,
+      "forwardSpeed": 35,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 20.0,
+      "hullRotationSpeed": 28.0,
+      "powerToWeightRatio": 27.7,
+      "guns": [
+        {
+          "gunId": 4385,
+          "isDefault": true,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 198
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 245
+            },
+            {
+              "type": "he",
+              "damage": 400,
+              "penetration": 53
+            }
+          ]
+        },
+        {
+          "gunId": 13857,
+          "isDefault": false,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 242
+            },
+            {
+              "type": "heat",
+              "damage": 340,
+              "penetration": 340
+            },
+            {
+              "type": "he",
+              "damage": 515,
+              "penetration": 60
+            }
+          ]
+        },
+        {
+          "gunId": 14113,
+          "isDefault": false,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 258
+            },
+            {
+              "type": "heat",
+              "damage": 340,
+              "penetration": 340
+            },
+            {
+              "type": "he",
+              "damage": 515,
+              "penetration": 60
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "ENHANCED_SANDBAG_ARMOR",
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SANDBAG_ARMOR",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "E 75",
+      "id": 9745,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "Germany",
+      "hp": 2300,
+      "forwardSpeed": 40,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 16.0,
+      "hullRotationSpeed": 24.0,
+      "powerToWeightRatio": 18.9,
+      "guns": [
+        {
+          "gunId": 2321,
+          "isDefault": true,
+          "alphaDamage": 220,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 220,
+              "penetration": 203
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 237
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 44
+            }
+          ]
+        },
+        {
+          "gunId": 10513,
+          "isDefault": false,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 215
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 265
+            },
+            {
+              "type": "he",
+              "damage": 420,
+              "penetration": 60
+            }
+          ]
+        },
+        {
+          "gunId": 10769,
+          "isDefault": false,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 225
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 285
+            },
+            {
+              "type": "he",
+              "damage": 420,
+              "penetration": 60
+            }
+          ]
+        },
+        {
+          "gunId": 9489,
+          "isDefault": false,
+          "alphaDamage": 460,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 460,
+              "penetration": 250
+            },
+            {
+              "type": "apcr",
+              "damage": 390,
+              "penetration": 311
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "WZ-114",
+      "id": 9777,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "China",
+      "hp": 2250,
+      "forwardSpeed": 32,
+      "reverseSpeed": 14,
+      "turretRotationSpeed": 18.0,
+      "hullRotationSpeed": 21.0,
+      "powerToWeightRatio": 23.8,
+      "guns": [
+        {
+          "gunId": 13617,
+          "isDefault": true,
+          "alphaDamage": 470,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 470,
+              "penetration": 252
+            },
+            {
+              "type": "heat",
+              "damage": 390,
+              "penetration": 308
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "ENHANCED_SANDBAG_ARMOR",
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SANDBAG_ARMOR",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REACTIVE_ARMOR",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "WZ-132A",
+      "id": 10033,
+      "tier": 9,
+      "class": "Light tank",
+      "nation": "China",
+      "hp": 1600,
+      "forwardSpeed": 65,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 38.0,
+      "hullRotationSpeed": 47.0,
+      "powerToWeightRatio": 47.2,
+      "guns": [
+        {
+          "gunId": 13873,
+          "isDefault": true,
+          "alphaDamage": 330,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 330,
+              "penetration": 207
+            },
+            {
+              "type": "apcr",
+              "damage": 280,
+              "penetration": 265
+            },
+            {
+              "type": "he",
+              "damage": 420,
+              "penetration": 55
+            }
+          ]
+        },
+        {
+          "gunId": 15921,
+          "isDefault": false,
+          "alphaDamage": 330,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 330,
+              "penetration": 227
+            },
+            {
+              "type": "apcr",
+              "damage": 280,
+              "penetration": 285
+            },
+            {
+              "type": "he",
+              "damage": 420,
+              "penetration": 55
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "E 50",
+      "id": 10257,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "Germany",
+      "hp": 1700,
+      "forwardSpeed": 60,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 30.0,
+      "hullRotationSpeed": 40.0,
+      "powerToWeightRatio": 27.7,
+      "guns": [
+        {
+          "gunId": 2321,
+          "isDefault": true,
+          "alphaDamage": 220,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 220,
+              "penetration": 203
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 237
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 44
+            }
+          ]
+        },
+        {
+          "gunId": 14609,
+          "isDefault": false,
+          "alphaDamage": 220,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 220,
+              "penetration": 223
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 261
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 44
+            }
+          ]
+        },
+        {
+          "gunId": 12049,
+          "isDefault": false,
+          "alphaDamage": 350,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 350,
+              "penetration": 220
+            },
+            {
+              "type": "apcr",
+              "damage": 300,
+              "penetration": 270
+            },
+            {
+              "type": "he",
+              "damage": 450,
+              "penetration": 60
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Kame",
+      "id": 10337,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "Japan",
+      "hp": 1700,
+      "forwardSpeed": 50,
+      "reverseSpeed": 17,
+      "turretRotationSpeed": 36.0,
+      "hullRotationSpeed": 33.0,
+      "powerToWeightRatio": 33.6,
+      "guns": [
+        {
+          "gunId": 16993,
+          "isDefault": true,
+          "alphaDamage": 320,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 320,
+              "penetration": 220
+            },
+            {
+              "type": "ap",
+              "damage": 300,
+              "penetration": 263
+            },
+            {
+              "type": "he",
+              "damage": 400,
+              "penetration": 53
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "CC 1 Mk. 2",
+      "id": 10625,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "European",
+      "hp": 1800,
+      "forwardSpeed": 35,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 14.0,
+      "hullRotationSpeed": 18.0,
+      "powerToWeightRatio": 23.9,
+      "guns": [
+        {
+          "gunId": 14721,
+          "isDefault": true,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 235
+            },
+            {
+              "type": "heat",
+              "damage": 340,
+              "penetration": 285
+            },
+            {
+              "type": "he",
+              "damage": 515,
+              "penetration": 60
+            }
+          ]
+        },
+        {
+          "gunId": 14977,
+          "isDefault": false,
+          "alphaDamage": 450,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 450,
+              "penetration": 259
+            },
+            {
+              "type": "heat",
+              "damage": 390,
+              "penetration": 326
+            },
+            {
+              "type": "he",
+              "damage": 640,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "ST-I",
+      "id": 10753,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "USSR",
+      "hp": 2200,
+      "forwardSpeed": 38,
+      "reverseSpeed": 13,
+      "turretRotationSpeed": 16.0,
+      "hullRotationSpeed": 20.0,
+      "powerToWeightRatio": 23.3,
+      "guns": [
+        {
+          "gunId": 3841,
+          "isDefault": true,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 175
+            },
+            {
+              "type": "apcr",
+              "damage": 340,
+              "penetration": 217
+            },
+            {
+              "type": "he",
+              "damage": 500,
+              "penetration": 61
+            }
+          ]
+        },
+        {
+          "gunId": 11777,
+          "isDefault": false,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 225
+            },
+            {
+              "type": "apcr",
+              "damage": 340,
+              "penetration": 265
+            },
+            {
+              "type": "he",
+              "damage": 500,
+              "penetration": 68
+            }
+          ]
+        },
+        {
+          "gunId": 23809,
+          "isDefault": false,
+          "alphaDamage": 420,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 420,
+              "penetration": 248
+            },
+            {
+              "type": "heat",
+              "damage": 360,
+              "penetration": 320
+            },
+            {
+              "type": "he",
+              "damage": 500,
+              "penetration": 68
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "IMPROVED_ENGINE_POWER_BOOST",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Foch",
+      "id": 11073,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "France",
+      "hp": 1500,
+      "forwardSpeed": 50,
+      "reverseSpeed": 13,
+      "turretRotationSpeed": 26.0,
+      "hullRotationSpeed": 25.0,
+      "powerToWeightRatio": 27.2,
+      "guns": [
+        {
+          "gunId": 12097,
+          "isDefault": true,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 260
+            },
+            {
+              "type": "apcr",
+              "damage": 340,
+              "penetration": 320
+            },
+            {
+              "type": "he",
+              "damage": 515,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "GEAR_OIL",
+        "IMPROVED_FUEL",
+        "IMPROVED_GEAR_OIL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "IMPROVED_ENGINE_POWER_BOOST",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "TUNGSTEN_SHELLS"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Regressor",
+      "id": 11121,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "Other",
+      "hp": 2050,
+      "forwardSpeed": 45,
+      "reverseSpeed": 14,
+      "turretRotationSpeed": 28.0,
+      "hullRotationSpeed": 35.0,
+      "powerToWeightRatio": 35.3,
+      "guns": [
+        {
+          "gunId": 24945,
+          "isDefault": true,
+          "alphaDamage": 380,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 380,
+              "penetration": 238
+            },
+            {
+              "type": "apcr",
+              "damage": 340,
+              "penetration": 275
+            },
+            {
+              "type": "he",
+              "damage": 510,
+              "penetration": 55
+            }
+          ]
+        },
+        {
+          "gunId": 25457,
+          "isDefault": false,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 240
+            },
+            {
+              "type": "apcr",
+              "damage": 350,
+              "penetration": 290
+            },
+            {
+              "type": "he",
+              "damage": 540,
+              "penetration": 58
+            }
+          ]
+        },
+        {
+          "gunId": 25713,
+          "isDefault": false,
+          "alphaDamage": 420,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 420,
+              "penetration": 242
+            },
+            {
+              "type": "apcr",
+              "damage": 360,
+              "penetration": 300
+            },
+            {
+              "type": "he",
+              "damage": 550,
+              "penetration": 62
+            }
+          ]
+        },
+        {
+          "gunId": 25201,
+          "isDefault": false,
+          "alphaDamage": 450,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 450,
+              "penetration": 248
+            },
+            {
+              "type": "apcr",
+              "damage": 390,
+              "penetration": 320
+            },
+            {
+              "type": "he",
+              "damage": 560,
+              "penetration": 68
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "IS-8",
+      "id": 11521,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "USSR",
+      "hp": 2250,
+      "forwardSpeed": 41,
+      "reverseSpeed": 13,
+      "turretRotationSpeed": 19.0,
+      "hullRotationSpeed": 28.0,
+      "powerToWeightRatio": 25.0,
+      "guns": [
+        {
+          "gunId": 3841,
+          "isDefault": true,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 175
+            },
+            {
+              "type": "apcr",
+              "damage": 340,
+              "penetration": 217
+            },
+            {
+              "type": "he",
+              "damage": 500,
+              "penetration": 61
+            }
+          ]
+        },
+        {
+          "gunId": 11777,
+          "isDefault": false,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 225
+            },
+            {
+              "type": "apcr",
+              "damage": 340,
+              "penetration": 265
+            },
+            {
+              "type": "he",
+              "damage": 500,
+              "penetration": 68
+            }
+          ]
+        },
+        {
+          "gunId": 23809,
+          "isDefault": false,
+          "alphaDamage": 420,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 420,
+              "penetration": 248
+            },
+            {
+              "type": "heat",
+              "damage": 360,
+              "penetration": 320
+            },
+            {
+              "type": "he",
+              "damage": 500,
+              "penetration": 68
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "TUNGSTEN_SHELLS"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "BZ-58-2",
+      "id": 11569,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "China",
+      "hp": 2100,
+      "forwardSpeed": 40,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 21.0,
+      "hullRotationSpeed": 26.0,
+      "powerToWeightRatio": 30.3,
+      "guns": [
+        {
+          "gunId": 17713,
+          "isDefault": true,
+          "alphaDamage": 450,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 450,
+              "penetration": 248
+            },
+            {
+              "type": "apcr",
+              "damage": 385,
+              "penetration": 310
+            },
+            {
+              "type": "he",
+              "damage": 590,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "IMPROVED_GUNPOWDER",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "IMPROVED_ENGINE_POWER_BOOST",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "SU-122-54",
+      "id": 12033,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "USSR",
+      "hp": 1600,
+      "forwardSpeed": 48,
+      "reverseSpeed": 14,
+      "turretRotationSpeed": 26.0,
+      "hullRotationSpeed": 33.0,
+      "powerToWeightRatio": 28.1,
+      "guns": [
+        {
+          "gunId": 24065,
+          "isDefault": true,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 175
+            },
+            {
+              "type": "apcr",
+              "damage": 340,
+              "penetration": 217
+            },
+            {
+              "type": "he",
+              "damage": 500,
+              "penetration": 61
+            }
+          ]
+        },
+        {
+          "gunId": 21505,
+          "isDefault": false,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 219
+            },
+            {
+              "type": "heat",
+              "damage": 260,
+              "penetration": 330
+            },
+            {
+              "type": "he",
+              "damage": 420,
+              "penetration": 50
+            }
+          ]
+        },
+        {
+          "gunId": 28161,
+          "isDefault": false,
+          "alphaDamage": 420,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 420,
+              "penetration": 258
+            },
+            {
+              "type": "heat",
+              "damage": 360,
+              "penetration": 340
+            },
+            {
+              "type": "he",
+              "damage": 500,
+              "penetration": 68
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "BZ-68",
+      "id": 12081,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "China",
+      "hp": 2100,
+      "forwardSpeed": 40,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 18.0,
+      "hullRotationSpeed": 28.0,
+      "powerToWeightRatio": 24.8,
+      "guns": [
+        {
+          "gunId": 18225,
+          "isDefault": true,
+          "alphaDamage": 460,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 460,
+              "penetration": 250
+            },
+            {
+              "type": "heat",
+              "damage": 390,
+              "penetration": 315
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 60
+            }
+          ]
+        },
+        {
+          "gunId": 19505,
+          "isDefault": false,
+          "alphaDamage": 530,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 530,
+              "penetration": 242
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 160
+            },
+            {
+              "type": "he",
+              "damage": 750,
+              "penetration": 60
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Glacier",
+      "id": 12145,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "Other",
+      "hp": 1650,
+      "forwardSpeed": 45,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 32.0,
+      "hullRotationSpeed": 34.0,
+      "powerToWeightRatio": 26.8,
+      "guns": [
+        {
+          "gunId": 29297,
+          "isDefault": true,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 229
+            },
+            {
+              "type": "heat",
+              "damage": 260,
+              "penetration": 274
+            },
+            {
+              "type": "he",
+              "damage": 360,
+              "penetration": 46
+            }
+          ]
+        },
+        {
+          "gunId": 29553,
+          "isDefault": false,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 231
+            },
+            {
+              "type": "heat",
+              "damage": 260,
+              "penetration": 276
+            },
+            {
+              "type": "he",
+              "damage": 360,
+              "penetration": 48
+            }
+          ]
+        },
+        {
+          "gunId": 29809,
+          "isDefault": false,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 233
+            },
+            {
+              "type": "heat",
+              "damage": 260,
+              "penetration": 278
+            },
+            {
+              "type": "he",
+              "damage": 360,
+              "penetration": 50
+            }
+          ]
+        },
+        {
+          "gunId": 30065,
+          "isDefault": false,
+          "alphaDamage": 350,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 350,
+              "penetration": 235
+            },
+            {
+              "type": "heat",
+              "damage": 300,
+              "penetration": 280
+            },
+            {
+              "type": "he",
+              "damage": 440,
+              "penetration": 52
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "K-91",
+      "id": 12545,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "USSR",
+      "hp": 2050,
+      "forwardSpeed": 40,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 18.0,
+      "hullRotationSpeed": 28.0,
+      "powerToWeightRatio": 25.6,
+      "guns": [
+        {
+          "gunId": 7681,
+          "isDefault": true,
+          "alphaDamage": 350,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 350,
+              "penetration": 248
+            },
+            {
+              "type": "heat",
+              "damage": 300,
+              "penetration": 310
+            },
+            {
+              "type": "he",
+              "damage": 420,
+              "penetration": 50
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Tornvagn",
+      "id": 12673,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "European",
+      "hp": 2050,
+      "forwardSpeed": 37,
+      "reverseSpeed": 14,
+      "turretRotationSpeed": 21.0,
+      "hullRotationSpeed": 28.0,
+      "powerToWeightRatio": 26.2,
+      "guns": [
+        {
+          "gunId": 19073,
+          "isDefault": true,
+          "alphaDamage": 420,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 420,
+              "penetration": 240
+            },
+            {
+              "type": "apcr",
+              "damage": 360,
+              "penetration": 298
+            },
+            {
+              "type": "he",
+              "damage": 525,
+              "penetration": 62
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "TNH T Vz. 51",
+      "id": 12929,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "European",
+      "hp": 2100,
+      "forwardSpeed": 38,
+      "reverseSpeed": 14,
+      "turretRotationSpeed": 18.0,
+      "hullRotationSpeed": 30.0,
+      "powerToWeightRatio": 29.0,
+      "guns": [
+        {
+          "gunId": 19585,
+          "isDefault": true,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 227
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 280
+            },
+            {
+              "type": "he",
+              "damage": 420,
+              "penetration": 63
+            }
+          ]
+        },
+        {
+          "gunId": 20097,
+          "isDefault": false,
+          "alphaDamage": 330,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 330,
+              "penetration": 234
+            },
+            {
+              "type": "apcr",
+              "damage": 280,
+              "penetration": 300
+            },
+            {
+              "type": "he",
+              "damage": 430,
+              "penetration": 65
+            }
+          ]
+        },
+        {
+          "gunId": 19329,
+          "isDefault": false,
+          "alphaDamage": 420,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 420,
+              "penetration": 247
+            },
+            {
+              "type": "apcr",
+              "damage": 360,
+              "penetration": 310
+            },
+            {
+              "type": "he",
+              "damage": 540,
+              "penetration": 68
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "BZ-176",
+      "id": 13105,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "China",
+      "hp": 2100,
+      "forwardSpeed": 33,
+      "reverseSpeed": 14,
+      "turretRotationSpeed": 21.0,
+      "hullRotationSpeed": 23.0,
+      "powerToWeightRatio": 21.2,
+      "guns": [
+        {
+          "gunId": 20017,
+          "isDefault": true,
+          "alphaDamage": 560,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 560,
+              "penetration": 240
+            },
+            {
+              "type": "heat",
+              "damage": 490,
+              "penetration": 305
+            },
+            {
+              "type": "he",
+              "damage": 690,
+              "penetration": 62
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "IMPROVED_GUNPOWDER",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "BZ-74-1",
+      "id": 13873,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "China",
+      "hp": 2100,
+      "forwardSpeed": 45,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 24.0,
+      "hullRotationSpeed": 32.0,
+      "powerToWeightRatio": 25.1,
+      "guns": [
+        {
+          "gunId": 20529,
+          "isDefault": true,
+          "alphaDamage": 460,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 460,
+              "penetration": 242
+            },
+            {
+              "type": "heat",
+              "damage": 390,
+              "penetration": 305
+            },
+            {
+              "type": "he",
+              "damage": 580,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "WZ-120G FT",
+      "id": 14385,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "China",
+      "hp": 1800,
+      "forwardSpeed": 32,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 25.0,
+      "hullRotationSpeed": 30.0,
+      "powerToWeightRatio": 23.1,
+      "guns": [
+        {
+          "gunId": 21297,
+          "isDefault": true,
+          "alphaDamage": 480,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 480,
+              "penetration": 288
+            },
+            {
+              "type": "heat",
+              "damage": 410,
+              "penetration": 360
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 70
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Fänrik",
+      "id": 14705,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "Other",
+      "hp": 2050,
+      "forwardSpeed": 37,
+      "reverseSpeed": 14,
+      "turretRotationSpeed": 19.0,
+      "hullRotationSpeed": 26.0,
+      "powerToWeightRatio": 19.4,
+      "guns": [
+        {
+          "gunId": 35185,
+          "isDefault": true,
+          "alphaDamage": 370,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 370,
+              "penetration": 240
+            },
+            {
+              "type": "heat",
+              "damage": 310,
+              "penetration": 300
+            },
+            {
+              "type": "he",
+              "damage": 480,
+              "penetration": 60
+            }
+          ]
+        },
+        {
+          "gunId": 35441,
+          "isDefault": false,
+          "alphaDamage": 380,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 380,
+              "penetration": 242
+            },
+            {
+              "type": "heat",
+              "damage": 330,
+              "penetration": 310
+            },
+            {
+              "type": "he",
+              "damage": 490,
+              "penetration": 62
+            }
+          ]
+        },
+        {
+          "gunId": 35697,
+          "isDefault": false,
+          "alphaDamage": 390,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 390,
+              "penetration": 244
+            },
+            {
+              "type": "heat",
+              "damage": 330,
+              "penetration": 320
+            },
+            {
+              "type": "he",
+              "damage": 500,
+              "penetration": 64
+            }
+          ]
+        },
+        {
+          "gunId": 35953,
+          "isDefault": false,
+          "alphaDamage": 410,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 410,
+              "penetration": 247
+            },
+            {
+              "type": "heat",
+              "damage": 350,
+              "penetration": 330
+            },
+            {
+              "type": "he",
+              "damage": 520,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Leopard PT A",
+      "id": 14865,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "Germany",
+      "hp": 1600,
+      "forwardSpeed": 65,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 36.0,
+      "hullRotationSpeed": 42.0,
+      "powerToWeightRatio": 48.3,
+      "guns": [
+        {
+          "gunId": 19985,
+          "isDefault": true,
+          "alphaDamage": 240,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 240,
+              "penetration": 212
+            },
+            {
+              "type": "apcr",
+              "damage": 200,
+              "penetration": 259
+            },
+            {
+              "type": "he",
+              "damage": 290,
+              "penetration": 45
+            }
+          ]
+        },
+        {
+          "gunId": 20753,
+          "isDefault": false,
+          "alphaDamage": 360,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 360,
+              "penetration": 245
+            },
+            {
+              "type": "heat",
+              "damage": 300,
+              "penetration": 290
+            },
+            {
+              "type": "he",
+              "damage": 400,
+              "penetration": 53
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "IMPROVED_GUNPOWDER",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "RETICLE_CALIBRATION"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "CS-59",
+      "id": 15233,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "European",
+      "hp": 1650,
+      "forwardSpeed": 54,
+      "reverseSpeed": 23,
+      "turretRotationSpeed": 36.0,
+      "hullRotationSpeed": 43.0,
+      "powerToWeightRatio": 37.6,
+      "guns": [
+        {
+          "gunId": 23937,
+          "isDefault": true,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 230
+            },
+            {
+              "type": "heat",
+              "damage": 260,
+              "penetration": 280
+            },
+            {
+              "type": "he",
+              "damage": 360,
+              "penetration": 50
+            }
+          ]
+        },
+        {
+          "gunId": 24193,
+          "isDefault": false,
+          "alphaDamage": 320,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 320,
+              "penetration": 235
+            },
+            {
+              "type": "heat",
+              "damage": 270,
+              "penetration": 285
+            },
+            {
+              "type": "he",
+              "damage": 370,
+              "penetration": 51
+            }
+          ]
+        },
+        {
+          "gunId": 24449,
+          "isDefault": false,
+          "alphaDamage": 330,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 330,
+              "penetration": 240
+            },
+            {
+              "type": "apcr",
+              "damage": 280,
+              "penetration": 280
+            },
+            {
+              "type": "he",
+              "damage": 380,
+              "penetration": 51
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "GEAR_OIL",
+        "IMPROVED_FUEL",
+        "IMPROVED_GEAR_OIL",
+        "IMPROVED_GUNPOWDER",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "TUNGSTEN_SHELLS"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "T54E1",
+      "id": 15393,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "USA",
+      "hp": 1650,
+      "forwardSpeed": 45,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 36.0,
+      "hullRotationSpeed": 46.0,
+      "powerToWeightRatio": 34.9,
+      "guns": [
+        {
+          "gunId": 20257,
+          "isDefault": true,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 180
+            },
+            {
+              "type": "heat",
+              "damage": 190,
+              "penetration": 250
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 45
+            }
+          ]
+        },
+        {
+          "gunId": 20769,
+          "isDefault": false,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 230
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 270
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "IMPROVED_GUNPOWDER",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "SHELL_RELOAD_BOOST"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "WT auf Pz. IV",
+      "id": 16401,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "Germany",
+      "hp": 1600,
+      "forwardSpeed": 40,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 18.0,
+      "hullRotationSpeed": 33.0,
+      "powerToWeightRatio": 65.3,
+      "guns": [
+        {
+          "gunId": 22801,
+          "isDefault": true,
+          "alphaDamage": 460,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 460,
+              "penetration": 246
+            },
+            {
+              "type": "apcr",
+              "damage": 390,
+              "penetration": 311
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 65
+            }
+          ]
+        },
+        {
+          "gunId": 23057,
+          "isDefault": false,
+          "alphaDamage": 460,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 460,
+              "penetration": 276
+            },
+            {
+              "type": "apcr",
+              "damage": 390,
+              "penetration": 352
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "GEAR_OIL",
+        "IMPROVED_FUEL",
+        "IMPROVED_GEAR_OIL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "SPALL_LINER",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "RETICLE_CALIBRATION"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "KV-JR",
+      "id": 17009,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "Other",
+      "hp": 2200,
+      "forwardSpeed": 38,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 24.0,
+      "hullRotationSpeed": 28.0,
+      "powerToWeightRatio": 26.9,
+      "guns": [
+        {
+          "gunId": 38769,
+          "isDefault": true,
+          "alphaDamage": 600,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 600,
+              "penetration": 230
+            },
+            {
+              "type": "heat",
+              "damage": 515,
+              "penetration": 290
+            },
+            {
+              "type": "he",
+              "damage": 930,
+              "penetration": 69
+            }
+          ]
+        },
+        {
+          "gunId": 39537,
+          "isDefault": false,
+          "alphaDamage": 610,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 610,
+              "penetration": 233
+            },
+            {
+              "type": "heat",
+              "damage": 525,
+              "penetration": 300
+            },
+            {
+              "type": "he",
+              "damage": 940,
+              "penetration": 71
+            }
+          ]
+        },
+        {
+          "gunId": 39281,
+          "isDefault": false,
+          "alphaDamage": 620,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 620,
+              "penetration": 236
+            },
+            {
+              "type": "heat",
+              "damage": 535,
+              "penetration": 310
+            },
+            {
+              "type": "he",
+              "damage": 950,
+              "penetration": 73
+            }
+          ]
+        },
+        {
+          "gunId": 39025,
+          "isDefault": false,
+          "alphaDamage": 630,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 630,
+              "penetration": 240
+            },
+            {
+              "type": "heat",
+              "damage": 545,
+              "penetration": 320
+            },
+            {
+              "type": "he",
+              "damage": 960,
+              "penetration": 75
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Conway",
+      "id": 17233,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "UK",
+      "hp": 1600,
+      "forwardSpeed": 40,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 18.0,
+      "hullRotationSpeed": 18.0,
+      "powerToWeightRatio": 26.9,
+      "guns": [
+        {
+          "gunId": 10833,
+          "isDefault": true,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 259
+            },
+            {
+              "type": "apcr",
+              "damage": 340,
+              "penetration": 326
+            },
+            {
+              "type": "he",
+              "damage": 515,
+              "penetration": 120
+            }
+          ]
+        },
+        {
+          "gunId": 259665,
+          "isDefault": false,
+          "alphaDamage": 600,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 600,
+              "penetration": 260
+            },
+            {
+              "type": "he",
+              "damage": 670,
+              "penetration": 200
+            },
+            {
+              "type": "he",
+              "damage": 770,
+              "penetration": 70
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "SPALL_LINER",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "IMPROVED_ENGINE_POWER_BOOST",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Progetto C50 mod. 66",
+      "id": 17281,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "European",
+      "hp": 2050,
+      "forwardSpeed": 38,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 19.0,
+      "hullRotationSpeed": 29.0,
+      "powerToWeightRatio": 25.0,
+      "guns": [
+        {
+          "gunId": 30337,
+          "isDefault": true,
+          "alphaDamage": 350,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 350,
+              "penetration": 226
+            },
+            {
+              "type": "apcr",
+              "damage": 300,
+              "penetration": 260
+            },
+            {
+              "type": "he",
+              "damage": 440,
+              "penetration": 60
+            }
+          ]
+        },
+        {
+          "gunId": 28801,
+          "isDefault": false,
+          "alphaDamage": 350,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 350,
+              "penetration": 235
+            },
+            {
+              "type": "heat",
+              "damage": 300,
+              "penetration": 285
+            },
+            {
+              "type": "he",
+              "damage": 440,
+              "penetration": 62
+            }
+          ]
+        },
+        {
+          "gunId": 29057,
+          "isDefault": false,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 251
+            },
+            {
+              "type": "heat",
+              "damage": 340,
+              "penetration": 326
+            },
+            {
+              "type": "he",
+              "damage": 515,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Somua SM",
+      "id": 17729,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "France",
+      "hp": 2150,
+      "forwardSpeed": 40,
+      "reverseSpeed": 18,
+      "turretRotationSpeed": 28.0,
+      "hullRotationSpeed": 27.0,
+      "powerToWeightRatio": 26.6,
+      "guns": [
+        {
+          "gunId": 20545,
+          "isDefault": true,
+          "alphaDamage": 340,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 340,
+              "penetration": 252
+            },
+            {
+              "type": "apcr",
+              "damage": 290,
+              "penetration": 325
+            },
+            {
+              "type": "he",
+              "damage": 420,
+              "penetration": 62
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "SHELL_RELOAD_BOOST"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Argonaut",
+      "id": 18545,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "Other",
+      "hp": 1650,
+      "forwardSpeed": 42,
+      "reverseSpeed": 11,
+      "turretRotationSpeed": 38.0,
+      "hullRotationSpeed": 32.0,
+      "powerToWeightRatio": 31.1,
+      "guns": [
+        {
+          "gunId": 42609,
+          "isDefault": true,
+          "alphaDamage": 390,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 390,
+              "penetration": 244
+            },
+            {
+              "type": "heat",
+              "damage": 330,
+              "penetration": 350
+            },
+            {
+              "type": "he",
+              "damage": 470,
+              "penetration": 64
+            }
+          ]
+        },
+        {
+          "gunId": 42865,
+          "isDefault": false,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 248
+            },
+            {
+              "type": "heat",
+              "damage": 340,
+              "penetration": 355
+            },
+            {
+              "type": "he",
+              "damage": 480,
+              "penetration": 66
+            }
+          ]
+        },
+        {
+          "gunId": 43121,
+          "isDefault": false,
+          "alphaDamage": 410,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 410,
+              "penetration": 250
+            },
+            {
+              "type": "heat",
+              "damage": 350,
+              "penetration": 360
+            },
+            {
+              "type": "he",
+              "damage": 490,
+              "penetration": 68
+            }
+          ]
+        },
+        {
+          "gunId": 43377,
+          "isDefault": false,
+          "alphaDamage": 420,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 420,
+              "penetration": 252
+            },
+            {
+              "type": "heat",
+              "damage": 360,
+              "penetration": 365
+            },
+            {
+              "type": "he",
+              "damage": 500,
+              "penetration": 70
+            }
+          ]
+        },
+        {
+          "gunId": 43633,
+          "isDefault": false,
+          "alphaDamage": 430,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 430,
+              "penetration": 256
+            },
+            {
+              "type": "heat",
+              "damage": 370,
+              "penetration": 370
+            },
+            {
+              "type": "he",
+              "damage": 510,
+              "penetration": 72
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "mau5Tank",
+      "id": 18801,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "Other",
+      "hp": 1660,
+      "forwardSpeed": 50,
+      "reverseSpeed": 21,
+      "turretRotationSpeed": 41.0,
+      "hullRotationSpeed": 46.0,
+      "powerToWeightRatio": 26.9,
+      "guns": [
+        {
+          "gunId": 44913,
+          "isDefault": true,
+          "alphaDamage": 374,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 374,
+              "penetration": 229
+            },
+            {
+              "type": "heat",
+              "damage": 310,
+              "penetration": 291
+            },
+            {
+              "type": "he",
+              "damage": 472,
+              "penetration": 60
+            }
+          ]
+        },
+        {
+          "gunId": 45681,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 233
+            },
+            {
+              "type": "heat",
+              "damage": 125,
+              "penetration": 291
+            },
+            {
+              "type": "he",
+              "damage": 210,
+              "penetration": 60
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "IMPROVED_ENGINE_POWER_BOOST",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REACTIVE_ARMOR",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "RETICLE_CALIBRATION",
+        "TUNGSTEN_SHELLS"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Destiny",
+      "id": 19057,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "Other",
+      "hp": 2200,
+      "forwardSpeed": 42,
+      "reverseSpeed": 10,
+      "turretRotationSpeed": 18.0,
+      "hullRotationSpeed": 28.0,
+      "powerToWeightRatio": 26.4,
+      "guns": [
+        {
+          "gunId": 45169,
+          "isDefault": true,
+          "alphaDamage": 370,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 370,
+              "penetration": 220
+            },
+            {
+              "type": "he",
+              "damage": 430,
+              "penetration": 155
+            },
+            {
+              "type": "he",
+              "damage": 480,
+              "penetration": 59
+            }
+          ]
+        },
+        {
+          "gunId": 46193,
+          "isDefault": false,
+          "alphaDamage": 380,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 380,
+              "penetration": 228
+            },
+            {
+              "type": "he",
+              "damage": 440,
+              "penetration": 160
+            },
+            {
+              "type": "he",
+              "damage": 495,
+              "penetration": 61
+            }
+          ]
+        },
+        {
+          "gunId": 46449,
+          "isDefault": false,
+          "alphaDamage": 395,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 395,
+              "penetration": 236
+            },
+            {
+              "type": "he",
+              "damage": 450,
+              "penetration": 165
+            },
+            {
+              "type": "he",
+              "damage": 510,
+              "penetration": 63
+            }
+          ]
+        },
+        {
+          "gunId": 45937,
+          "isDefault": false,
+          "alphaDamage": 410,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 410,
+              "penetration": 245
+            },
+            {
+              "type": "he",
+              "damage": 460,
+              "penetration": 170
+            },
+            {
+              "type": "he",
+              "damage": 530,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REACTIVE_ARMOR",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "TUNGSTEN_SHELLS"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "SDP 60 Gonkiewicza",
+      "id": 19329,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "European",
+      "hp": 1650,
+      "forwardSpeed": 36,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 40.0,
+      "hullRotationSpeed": 29.0,
+      "powerToWeightRatio": 16.2,
+      "guns": [
+        {
+          "gunId": 32641,
+          "isDefault": true,
+          "alphaDamage": 340,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 340,
+              "penetration": 272
+            },
+            {
+              "type": "apcr",
+              "damage": 290,
+              "penetration": 330
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 61
+            }
+          ]
+        },
+        {
+          "gunId": 32897,
+          "isDefault": false,
+          "alphaDamage": 435,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 435,
+              "penetration": 285
+            },
+            {
+              "type": "apcr",
+              "damage": 370,
+              "penetration": 350
+            },
+            {
+              "type": "he",
+              "damage": 750,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "B-C 25 t Avenir",
+      "id": 19521,
+      "tier": 9,
+      "class": "Light tank",
+      "nation": "France",
+      "hp": 1650,
+      "forwardSpeed": 62,
+      "reverseSpeed": 22,
+      "turretRotationSpeed": 32.0,
+      "hullRotationSpeed": 49.0,
+      "powerToWeightRatio": 55.0,
+      "guns": [
+        {
+          "gunId": 22849,
+          "isDefault": true,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 225
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 266
+            },
+            {
+              "type": "he",
+              "damage": 440,
+              "penetration": 53
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "AC Sterope",
+      "id": 19569,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "Other",
+      "hp": 2100,
+      "forwardSpeed": 39,
+      "reverseSpeed": 14,
+      "turretRotationSpeed": 19.0,
+      "hullRotationSpeed": 24.0,
+      "powerToWeightRatio": 18.1,
+      "guns": [
+        {
+          "gunId": 46705,
+          "isDefault": true,
+          "alphaDamage": 480,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 480,
+              "penetration": 255
+            },
+            {
+              "type": "heat",
+              "damage": 410,
+              "penetration": 320
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 67
+            }
+          ]
+        },
+        {
+          "gunId": 50033,
+          "isDefault": false,
+          "alphaDamage": 120,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 120,
+              "penetration": 255
+            },
+            {
+              "type": "heat",
+              "damage": 100,
+              "penetration": 320
+            },
+            {
+              "type": "he",
+              "damage": 180,
+              "penetration": 67
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Vickers CR",
+      "id": 19793,
+      "tier": 9,
+      "class": "Light tank",
+      "nation": "UK",
+      "hp": 1550,
+      "forwardSpeed": 65,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 45.0,
+      "hullRotationSpeed": 48.0,
+      "powerToWeightRatio": 51.8,
+      "guns": [
+        {
+          "gunId": 8273,
+          "isDefault": true,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 226
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 258
+            },
+            {
+              "type": "he",
+              "damage": 300,
+              "penetration": 42
+            }
+          ]
+        },
+        {
+          "gunId": 262737,
+          "isDefault": false,
+          "alphaDamage": 300,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 300,
+              "penetration": 240
+            },
+            {
+              "type": "heat",
+              "damage": 260,
+              "penetration": 290
+            },
+            {
+              "type": "he",
+              "damage": 380,
+              "penetration": 105
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "RETICLE_CALIBRATION"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "T92E1",
+      "id": 20001,
+      "tier": 9,
+      "class": "Light tank",
+      "nation": "USA",
+      "hp": 1500,
+      "forwardSpeed": 65,
+      "reverseSpeed": 22,
+      "turretRotationSpeed": 36.0,
+      "hullRotationSpeed": 49.0,
+      "powerToWeightRatio": 59.3,
+      "guns": [
+        {
+          "gunId": 259617,
+          "isDefault": true,
+          "alphaDamage": 350,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 350,
+              "penetration": 220
+            },
+            {
+              "type": "heat",
+              "damage": 300,
+              "penetration": 270
+            },
+            {
+              "type": "he",
+              "damage": 400,
+              "penetration": 50
+            }
+          ]
+        },
+        {
+          "gunId": 259873,
+          "isDefault": false,
+          "alphaDamage": 560,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 560,
+              "penetration": 210
+            },
+            {
+              "type": "heat",
+              "damage": 490,
+              "penetration": 310
+            },
+            {
+              "type": "he",
+              "damage": 680,
+              "penetration": 90
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Char Futur 4",
+      "id": 20033,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "France",
+      "hp": 1600,
+      "forwardSpeed": 60,
+      "reverseSpeed": 22,
+      "turretRotationSpeed": 36.0,
+      "hullRotationSpeed": 46.0,
+      "powerToWeightRatio": 44.9,
+      "guns": [
+        {
+          "gunId": 23617,
+          "isDefault": true,
+          "alphaDamage": 340,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 340,
+              "penetration": 244
+            },
+            {
+              "type": "heat",
+              "damage": 290,
+              "penetration": 290
+            },
+            {
+              "type": "he",
+              "damage": 450,
+              "penetration": 55
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "AC Celeno",
+      "id": 20081,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "Other",
+      "hp": 2200,
+      "forwardSpeed": 37,
+      "reverseSpeed": 14,
+      "turretRotationSpeed": 20.0,
+      "hullRotationSpeed": 24.0,
+      "powerToWeightRatio": 17.8,
+      "guns": [
+        {
+          "gunId": 47217,
+          "isDefault": true,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 230
+            },
+            {
+              "type": "apcr",
+              "damage": 350,
+              "penetration": 293
+            },
+            {
+              "type": "he",
+              "damage": 500,
+              "penetration": 61
+            }
+          ]
+        },
+        {
+          "gunId": 48497,
+          "isDefault": false,
+          "alphaDamage": 440,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 440,
+              "penetration": 250
+            },
+            {
+              "type": "apcr",
+              "damage": 380,
+              "penetration": 325
+            },
+            {
+              "type": "he",
+              "damage": 550,
+              "penetration": 67
+            }
+          ]
+        },
+        {
+          "gunId": 52849,
+          "isDefault": false,
+          "alphaDamage": 110,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 110,
+              "penetration": 250
+            },
+            {
+              "type": "apcr",
+              "damage": 95,
+              "penetration": 325
+            },
+            {
+              "type": "he",
+              "damage": 165,
+              "penetration": 67
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Mäuschen",
+      "id": 20753,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "Germany",
+      "hp": 2400,
+      "forwardSpeed": 25,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 15.0,
+      "hullRotationSpeed": 16.0,
+      "powerToWeightRatio": 18.6,
+      "guns": [
+        {
+          "gunId": 258065,
+          "isDefault": true,
+          "alphaDamage": 460,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 460,
+              "penetration": 220
+            },
+            {
+              "type": "apcr",
+              "damage": 390,
+              "penetration": 260
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 65
+            }
+          ]
+        },
+        {
+          "gunId": 9489,
+          "isDefault": false,
+          "alphaDamage": 460,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 460,
+              "penetration": 250
+            },
+            {
+              "type": "apcr",
+              "damage": 390,
+              "penetration": 311
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "ENHANCED_SANDBAG_ARMOR",
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SANDBAG_ARMOR",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Lorraine 50 t",
+      "id": 20801,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "France",
+      "hp": 2100,
+      "forwardSpeed": 43,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 22.0,
+      "hullRotationSpeed": 32.0,
+      "powerToWeightRatio": 30.8,
+      "guns": [
+        {
+          "gunId": 25665,
+          "isDefault": true,
+          "alphaDamage": 380,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 380,
+              "penetration": 254
+            },
+            {
+              "type": "heat",
+              "damage": 320,
+              "penetration": 320
+            },
+            {
+              "type": "he",
+              "damage": 515,
+              "penetration": 60
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "TUNGSTEN_SHELLS"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "FVE Defender",
+      "id": 20849,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "Other",
+      "hp": 1700,
+      "forwardSpeed": 43,
+      "reverseSpeed": 17,
+      "turretRotationSpeed": 24.0,
+      "hullRotationSpeed": 34.0,
+      "powerToWeightRatio": 26.6,
+      "guns": [
+        {
+          "gunId": 47985,
+          "isDefault": true,
+          "alphaDamage": 50,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 50,
+              "penetration": 215
+            },
+            {
+              "type": "heat",
+              "damage": 40,
+              "penetration": 285
+            },
+            {
+              "type": "he",
+              "damage": 60,
+              "penetration": 55
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "IMPROVED_ENGINE_POWER_BOOST",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "T-2020",
+      "id": 20993,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "USSR",
+      "hp": 2150,
+      "forwardSpeed": 40,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 20.0,
+      "hullRotationSpeed": 27.0,
+      "powerToWeightRatio": 23.3,
+      "guns": [
+        {
+          "gunId": 260865,
+          "isDefault": true,
+          "alphaDamage": 430,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 430,
+              "penetration": 248
+            },
+            {
+              "type": "heat",
+              "damage": 370,
+              "penetration": 330
+            },
+            {
+              "type": "he",
+              "damage": 540,
+              "penetration": 68
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "VK 168.01 (P)",
+      "id": 21265,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "Germany",
+      "hp": 2350,
+      "forwardSpeed": 25,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 18.0,
+      "hullRotationSpeed": 22.0,
+      "powerToWeightRatio": 17.4,
+      "guns": [
+        {
+          "gunId": 259857,
+          "isDefault": true,
+          "alphaDamage": 460,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 460,
+              "penetration": 248
+            },
+            {
+              "type": "apcr",
+              "damage": 390,
+              "penetration": 312
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 67
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Herdbreaker",
+      "id": 21361,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "Other",
+      "hp": 1670,
+      "forwardSpeed": 45,
+      "reverseSpeed": 17,
+      "turretRotationSpeed": 34.0,
+      "hullRotationSpeed": 42.0,
+      "powerToWeightRatio": 22.8,
+      "guns": [
+        {
+          "gunId": 49521,
+          "isDefault": true,
+          "alphaDamage": 360,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 360,
+              "penetration": 231
+            },
+            {
+              "type": "heat",
+              "damage": 310,
+              "penetration": 295
+            },
+            {
+              "type": "he",
+              "damage": 460,
+              "penetration": 70
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "TUNGSTEN_SHELLS"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "E 75 TS",
+      "id": 21521,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "Germany",
+      "hp": 2300,
+      "forwardSpeed": 38,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 20.0,
+      "hullRotationSpeed": 21.0,
+      "powerToWeightRatio": 17.9,
+      "guns": [
+        {
+          "gunId": 260369,
+          "isDefault": true,
+          "alphaDamage": 340,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 340,
+              "penetration": 240
+            },
+            {
+              "type": "apcr",
+              "damage": 290,
+              "penetration": 303
+            },
+            {
+              "type": "he",
+              "damage": 465,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Projet Louis",
+      "id": 21825,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "France",
+      "hp": 1620,
+      "forwardSpeed": 62,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 38.0,
+      "hullRotationSpeed": 42.0,
+      "powerToWeightRatio": 30.0,
+      "guns": [
+        {
+          "gunId": 27201,
+          "isDefault": true,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 221
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 260
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 52
+            }
+          ]
+        },
+        {
+          "gunId": 27457,
+          "isDefault": false,
+          "alphaDamage": 330,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 330,
+              "penetration": 238
+            },
+            {
+              "type": "heat",
+              "damage": 280,
+              "penetration": 290
+            },
+            {
+              "type": "he",
+              "damage": 430,
+              "penetration": 53
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "AE Phase I",
+      "id": 22305,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "USA",
+      "hp": 2050,
+      "forwardSpeed": 40,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 20.0,
+      "hullRotationSpeed": 28.0,
+      "powerToWeightRatio": 27.4,
+      "guns": [
+        {
+          "gunId": 262433,
+          "isDefault": true,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 250
+            },
+            {
+              "type": "heat",
+              "damage": 340,
+              "penetration": 330
+            },
+            {
+              "type": "he",
+              "damage": 515,
+              "penetration": 60
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Ambassador",
+      "id": 22401,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "European",
+      "hp": 1600,
+      "forwardSpeed": 58,
+      "reverseSpeed": 18,
+      "turretRotationSpeed": 34.0,
+      "hullRotationSpeed": 44.0,
+      "powerToWeightRatio": 38.9,
+      "guns": [
+        {
+          "gunId": 37761,
+          "isDefault": true,
+          "alphaDamage": 360,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 360,
+              "penetration": 230
+            },
+            {
+              "type": "heat",
+              "damage": 310,
+              "penetration": 285
+            },
+            {
+              "type": "he",
+              "damage": 450,
+              "penetration": 53
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "TUNGSTEN_SHELLS"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Kanonenjagdpanzer",
+      "id": 22545,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "Germany",
+      "hp": 1500,
+      "forwardSpeed": 57,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 22.0,
+      "hullRotationSpeed": 40.0,
+      "powerToWeightRatio": 30.5,
+      "guns": [
+        {
+          "gunId": 272657,
+          "isDefault": true,
+          "alphaDamage": 350,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 350,
+              "penetration": 270
+            },
+            {
+              "type": "heat",
+              "damage": 300,
+              "penetration": 340
+            },
+            {
+              "type": "he",
+              "damage": 440,
+              "penetration": 90
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "IMPROVED_ENGINE_POWER_BOOST",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "RETICLE_CALIBRATION",
+        "TUNGSTEN_SHELLS"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Toro",
+      "id": 22657,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "European",
+      "hp": 2150,
+      "forwardSpeed": 42,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 26.0,
+      "hullRotationSpeed": 21.0,
+      "powerToWeightRatio": 22.5,
+      "guns": [
+        {
+          "gunId": 38017,
+          "isDefault": true,
+          "alphaDamage": 370,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 370,
+              "penetration": 245
+            },
+            {
+              "type": "heat",
+              "damage": 310,
+              "penetration": 317
+            },
+            {
+              "type": "he",
+              "damage": 460,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Donnola",
+      "id": 22913,
+      "tier": 9,
+      "class": "Light tank",
+      "nation": "European",
+      "hp": 1600,
+      "forwardSpeed": 63,
+      "reverseSpeed": 22,
+      "turretRotationSpeed": 39.0,
+      "hullRotationSpeed": 57.0,
+      "powerToWeightRatio": 36.3,
+      "guns": [
+        {
+          "gunId": 38273,
+          "isDefault": true,
+          "alphaDamage": 135,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 135,
+              "penetration": 228
+            },
+            {
+              "type": "apcr",
+              "damage": 110,
+              "penetration": 277
+            },
+            {
+              "type": "he",
+              "damage": 150,
+              "penetration": 45
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "IMPROVED_GUNPOWDER",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "M-V-Yoh",
+      "id": 23073,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "USA",
+      "hp": 2050,
+      "forwardSpeed": 32,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 20.0,
+      "hullRotationSpeed": 17.0,
+      "powerToWeightRatio": 37.3,
+      "guns": [
+        {
+          "gunId": 263201,
+          "isDefault": true,
+          "alphaDamage": 300,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 300,
+              "penetration": 212
+            },
+            {
+              "type": "heat",
+              "damage": 240,
+              "penetration": 300
+            },
+            {
+              "type": "he",
+              "damage": 400,
+              "penetration": 53
+            }
+          ]
+        },
+        {
+          "gunId": 264993,
+          "isDefault": false,
+          "alphaDamage": 300,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 300,
+              "penetration": 252
+            },
+            {
+              "type": "heat",
+              "damage": 240,
+              "penetration": 320
+            },
+            {
+              "type": "he",
+              "damage": 400,
+              "penetration": 53
+            }
+          ]
+        },
+        {
+          "gunId": 264481,
+          "isDefault": false,
+          "alphaDamage": 450,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 450,
+              "penetration": 246
+            },
+            {
+              "type": "heat",
+              "damage": 380,
+              "penetration": 320
+            },
+            {
+              "type": "he",
+              "damage": 515,
+              "penetration": 60
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "IMPROVED_GUNPOWDER",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "RETICLE_CALIBRATION",
+        "SHELL_RELOAD_BOOST"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Cobra",
+      "id": 23121,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "UK",
+      "hp": 1700,
+      "forwardSpeed": 45,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 32.0,
+      "hullRotationSpeed": 39.0,
+      "powerToWeightRatio": 32.7,
+      "guns": [
+        {
+          "gunId": 266577,
+          "isDefault": true,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "heat",
+              "damage": 400,
+              "penetration": 235
+            },
+            {
+              "type": "he",
+              "damage": 500,
+              "penetration": 200
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Husarz",
+      "id": 23169,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "European",
+      "hp": 2200,
+      "forwardSpeed": 35,
+      "reverseSpeed": 13,
+      "turretRotationSpeed": 23.0,
+      "hullRotationSpeed": 28.0,
+      "powerToWeightRatio": 20.2,
+      "guns": [
+        {
+          "gunId": 38529,
+          "isDefault": true,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 400,
+              "penetration": 248
+            },
+            {
+              "type": "apcr",
+              "damage": 340,
+              "penetration": 307
+            },
+            {
+              "type": "he",
+              "damage": 700,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Object 84",
+      "id": 23809,
+      "tier": 9,
+      "class": "Light tank",
+      "nation": "USSR",
+      "hp": 1600,
+      "forwardSpeed": 65,
+      "reverseSpeed": 25,
+      "turretRotationSpeed": 44.0,
+      "hullRotationSpeed": 42.0,
+      "powerToWeightRatio": 50.2,
+      "guns": [
+        {
+          "gunId": 19457,
+          "isDefault": true,
+          "alphaDamage": 280,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 280,
+              "penetration": 175
+            },
+            {
+              "type": "apcr",
+              "damage": 240,
+              "penetration": 235
+            },
+            {
+              "type": "he",
+              "damage": 350,
+              "penetration": 50
+            }
+          ]
+        },
+        {
+          "gunId": 19969,
+          "isDefault": false,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 219
+            },
+            {
+              "type": "heat",
+              "damage": 260,
+              "penetration": 270
+            },
+            {
+              "type": "he",
+              "damage": 420,
+              "penetration": 50
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "FV4201 Chieftain Proto",
+      "id": 23889,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "UK",
+      "hp": 2050,
+      "forwardSpeed": 42,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 24.0,
+      "hullRotationSpeed": 27.0,
+      "powerToWeightRatio": 27.4,
+      "guns": [
+        {
+          "gunId": 268881,
+          "isDefault": true,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 400,
+              "penetration": 260
+            },
+            {
+              "type": "apcr",
+              "damage": 340,
+              "penetration": 310
+            },
+            {
+              "type": "he",
+              "damage": 515,
+              "penetration": 110
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Vickers MBT",
+      "id": 24401,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "UK",
+      "hp": 1700,
+      "forwardSpeed": 57,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 34.0,
+      "hullRotationSpeed": 44.0,
+      "powerToWeightRatio": 29.6,
+      "guns": [
+        {
+          "gunId": 269393,
+          "isDefault": true,
+          "alphaDamage": 320,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 320,
+              "penetration": 225
+            },
+            {
+              "type": "apcr",
+              "damage": 270,
+              "penetration": 286
+            },
+            {
+              "type": "he",
+              "damage": 400,
+              "penetration": 68
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "星际猎人",
+      "id": 24689,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "Other",
+      "hp": 1600,
+      "forwardSpeed": 40,
+      "reverseSpeed": 13,
+      "turretRotationSpeed": 24.0,
+      "hullRotationSpeed": 33.0,
+      "powerToWeightRatio": 25.1,
+      "guns": [
+        {
+          "gunId": 55921,
+          "isDefault": true,
+          "alphaDamage": 450,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 450,
+              "penetration": 275
+            },
+            {
+              "type": "heat",
+              "damage": 380,
+              "penetration": 340
+            },
+            {
+              "type": "he",
+              "damage": 590,
+              "penetration": 72
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "RETICLE_CALIBRATION"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Object 752",
+      "id": 25089,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "USSR",
+      "hp": 2050,
+      "forwardSpeed": 38,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 22.0,
+      "hullRotationSpeed": 24.0,
+      "powerToWeightRatio": 25.0,
+      "guns": [
+        {
+          "gunId": 265473,
+          "isDefault": true,
+          "alphaDamage": 430,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 430,
+              "penetration": 245
+            },
+            {
+              "type": "heat",
+              "damage": 370,
+              "penetration": 340
+            },
+            {
+              "type": "he",
+              "damage": 530,
+              "penetration": 68
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "M46 Jaguar",
+      "id": 25121,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "USA",
+      "hp": 1650,
+      "forwardSpeed": 56,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 40.0,
+      "hullRotationSpeed": 45.0,
+      "powerToWeightRatio": 46.9,
+      "guns": [
+        {
+          "gunId": 266017,
+          "isDefault": true,
+          "alphaDamage": 290,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 290,
+              "penetration": 240
+            },
+            {
+              "type": "heat",
+              "damage": 250,
+              "penetration": 290
+            },
+            {
+              "type": "he",
+              "damage": 370,
+              "penetration": 56
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "IMPROVED_GUNPOWDER",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "WT Ritter",
+      "id": 25361,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "Germany",
+      "hp": 1600,
+      "forwardSpeed": 40,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 18.0,
+      "hullRotationSpeed": 33.0,
+      "powerToWeightRatio": 49.9,
+      "guns": [
+        {
+          "gunId": 264465,
+          "isDefault": true,
+          "alphaDamage": 460,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 460,
+              "penetration": 276
+            },
+            {
+              "type": "apcr",
+              "damage": 390,
+              "penetration": 352
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "SPALL_LINER",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Object 452K",
+      "id": 26113,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "USSR",
+      "hp": 2100,
+      "forwardSpeed": 40,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 20.0,
+      "hullRotationSpeed": 25.0,
+      "powerToWeightRatio": 31.7,
+      "guns": [
+        {
+          "gunId": 267009,
+          "isDefault": true,
+          "alphaDamage": 460,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 460,
+              "penetration": 246
+            },
+            {
+              "type": "heat",
+              "damage": 390,
+              "penetration": 320
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Projekt Kpz. 07P(E)",
+      "id": 27409,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "Germany",
+      "hp": 2050,
+      "forwardSpeed": 42,
+      "reverseSpeed": 18,
+      "turretRotationSpeed": 25.0,
+      "hullRotationSpeed": 24.0,
+      "powerToWeightRatio": 21.0,
+      "guns": [
+        {
+          "gunId": 266769,
+          "isDefault": true,
+          "alphaDamage": 380,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 380,
+              "penetration": 250
+            },
+            {
+              "type": "heat",
+              "damage": 320,
+              "penetration": 330
+            },
+            {
+              "type": "he",
+              "damage": 480,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "TL-7-120",
+      "id": 27425,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "USA",
+      "hp": 2050,
+      "forwardSpeed": 36,
+      "reverseSpeed": 10,
+      "turretRotationSpeed": 22.0,
+      "hullRotationSpeed": 28.0,
+      "powerToWeightRatio": 22.2,
+      "guns": [
+        {
+          "gunId": 268577,
+          "isDefault": true,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 249
+            },
+            {
+              "type": "heat",
+              "damage": 340,
+              "penetration": 330
+            },
+            {
+              "type": "he",
+              "damage": 515,
+              "penetration": 60
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "IMPROVED_ENGINE_POWER_BOOST",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Erich Konzept I",
+      "id": 27921,
+      "tier": 9,
+      "class": "Medium tank",
+      "nation": "Germany",
+      "hp": 1650,
+      "forwardSpeed": 55,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 38.0,
+      "hullRotationSpeed": 52.0,
+      "powerToWeightRatio": 28.2,
+      "guns": [
+        {
+          "gunId": 267281,
+          "isDefault": true,
+          "alphaDamage": 380,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 380,
+              "penetration": 230
+            },
+            {
+              "type": "heat",
+              "damage": 320,
+              "penetration": 285
+            },
+            {
+              "type": "he",
+              "damage": 480,
+              "penetration": 62
+            }
+          ]
+        },
+        {
+          "gunId": 270609,
+          "isDefault": false,
+          "alphaDamage": 500,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 500,
+              "penetration": 220
+            },
+            {
+              "type": "heat",
+              "damage": 420,
+              "penetration": 270
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 60
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "LKpz.70 K",
+      "id": 28177,
+      "tier": 9,
+      "class": "Light tank",
+      "nation": "Germany",
+      "hp": 1550,
+      "forwardSpeed": 60,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 42.0,
+      "hullRotationSpeed": 48.0,
+      "powerToWeightRatio": 51.2,
+      "guns": [
+        {
+          "gunId": 267793,
+          "isDefault": true,
+          "alphaDamage": 340,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 340,
+              "penetration": 232
+            },
+            {
+              "type": "heat",
+              "damage": 290,
+              "penetration": 282
+            },
+            {
+              "type": "he",
+              "damage": 430,
+              "penetration": 55
+            }
+          ]
+        },
+        {
+          "gunId": 270353,
+          "isDefault": false,
+          "alphaDamage": 260,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 260,
+              "penetration": 221
+            },
+            {
+              "type": "heat",
+              "damage": 220,
+              "penetration": 270
+            },
+            {
+              "type": "he",
+              "damage": 300,
+              "penetration": 50
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "TS-60",
+      "id": 28193,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "USA",
+      "hp": 1650,
+      "forwardSpeed": 33,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 23.0,
+      "hullRotationSpeed": 24.0,
+      "powerToWeightRatio": 24.9,
+      "guns": [
+        {
+          "gunId": 269601,
+          "isDefault": true,
+          "alphaDamage": 380,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 380,
+              "penetration": 268
+            },
+            {
+              "type": "heat",
+              "damage": 320,
+              "penetration": 330
+            },
+            {
+              "type": "he",
+              "damage": 480,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "HWK 12",
+      "id": 28433,
+      "tier": 9,
+      "class": "Light tank",
+      "nation": "Germany",
+      "hp": 1580,
+      "forwardSpeed": 63,
+      "reverseSpeed": 22,
+      "turretRotationSpeed": 40.0,
+      "hullRotationSpeed": 55.0,
+      "powerToWeightRatio": 47.2,
+      "guns": [
+        {
+          "gunId": 268049,
+          "isDefault": true,
+          "alphaDamage": 230,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 230,
+              "penetration": 215
+            },
+            {
+              "type": "heat",
+              "damage": 190,
+              "penetration": 270
+            },
+            {
+              "type": "he",
+              "damage": 260,
+              "penetration": 42
+            }
+          ]
+        },
+        {
+          "gunId": 268817,
+          "isDefault": false,
+          "alphaDamage": 240,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 240,
+              "penetration": 225
+            },
+            {
+              "type": "heat",
+              "damage": 200,
+              "penetration": 280
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 45
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "ENHANCED_SANDBAG_ARMOR",
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SANDBAG_ARMOR",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "IMPROVED_ENGINE_POWER_BOOST",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REACTIVE_ARMOR",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "RETICLE_CALIBRATION",
+        "TUNGSTEN_SHELLS"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Tiger-Maus",
+      "id": 29201,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "Germany",
+      "hp": 2350,
+      "forwardSpeed": 27,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 14.0,
+      "hullRotationSpeed": 15.0,
+      "powerToWeightRatio": 18.2,
+      "guns": [
+        {
+          "gunId": 269841,
+          "isDefault": true,
+          "alphaDamage": 410,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 410,
+              "penetration": 240
+            },
+            {
+              "type": "heat",
+              "damage": 350,
+              "penetration": 327
+            },
+            {
+              "type": "he",
+              "damage": 520,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "ENHANCED_SANDBAG_ARMOR",
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SANDBAG_ARMOR",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "MBT-B",
+      "id": 29217,
+      "tier": 9,
+      "class": "Heavy tank",
+      "nation": "USA",
+      "hp": 2100,
+      "forwardSpeed": 38,
+      "reverseSpeed": 18,
+      "turretRotationSpeed": 20.0,
+      "hullRotationSpeed": 29.0,
+      "powerToWeightRatio": 21.2,
+      "guns": [
+        {
+          "gunId": 271649,
+          "isDefault": true,
+          "alphaDamage": 390,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 390,
+              "penetration": 248
+            },
+            {
+              "type": "heat",
+              "damage": 330,
+              "penetration": 335
+            },
+            {
+              "type": "he",
+              "damage": 500,
+              "penetration": 64
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "ATAC",
+      "id": 29473,
+      "tier": 9,
+      "class": "Light tank",
+      "nation": "USA",
+      "hp": 1550,
+      "forwardSpeed": 65,
+      "reverseSpeed": 21,
+      "turretRotationSpeed": 40.0,
+      "hullRotationSpeed": 48.0,
+      "powerToWeightRatio": 60.0,
+      "guns": [
+        {
+          "gunId": 272161,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 235
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 155
+            },
+            {
+              "type": "he",
+              "damage": 240,
+              "penetration": 45
+            }
+          ]
+        },
+        {
+          "gunId": 271905,
+          "isDefault": false,
+          "alphaDamage": 90,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 90,
+              "penetration": 235
+            },
+            {
+              "type": "he",
+              "damage": 115,
+              "penetration": 155
+            },
+            {
+              "type": "he",
+              "damage": 140,
+              "penetration": 45
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT",
+        "RETICLE_CALIBRATION"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "KJPZ TIII Jäger",
+      "id": 29713,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "Germany",
+      "hp": 1500,
+      "forwardSpeed": 45,
+      "reverseSpeed": 14,
+      "turretRotationSpeed": 18.0,
+      "hullRotationSpeed": 32.0,
+      "powerToWeightRatio": 32.5,
+      "guns": [
+        {
+          "gunId": 270865,
+          "isDefault": true,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 400,
+              "penetration": 270
+            },
+            {
+              "type": "heat",
+              "damage": 350,
+              "penetration": 335
+            },
+            {
+              "type": "he",
+              "damage": 500,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    },
+    {
+      "name": "Tortoise",
+      "id": 52561,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "UK",
+      "hp": 1800,
+      "forwardSpeed": 20,
+      "reverseSpeed": 10,
+      "turretRotationSpeed": 26.0,
+      "hullRotationSpeed": 22.0,
+      "powerToWeightRatio": 15.4,
+      "guns": [
+        {
+          "gunId": 337,
+          "isDefault": true,
+          "alphaDamage": 300,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 300,
+              "penetration": 230
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 242
+            },
+            {
+              "type": "he",
+              "damage": 350,
+              "penetration": 50
+            }
+          ]
+        },
+        {
+          "gunId": 10577,
+          "isDefault": false,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 226
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 258
+            },
+            {
+              "type": "he",
+              "damage": 300,
+              "penetration": 42
+            }
+          ]
+        },
+        {
+          "gunId": 10833,
+          "isDefault": false,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 259
+            },
+            {
+              "type": "apcr",
+              "damage": 340,
+              "penetration": 326
+            },
+            {
+              "type": "he",
+              "damage": 515,
+              "penetration": 120
+            }
+          ]
+        }
+      ],
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "extraInfo": "",
+      "priority": 0
+    }
+  ]
+}

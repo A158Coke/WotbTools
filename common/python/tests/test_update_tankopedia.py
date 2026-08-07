@@ -163,6 +163,16 @@ class LoadExistingDataTest(unittest.TestCase):
                 json.dump({"meta": {}, "data": {"1": {"name": "A"}}}, f)
             self.assertEqual(ut.load_existing_data(path), {"1": {"name": "A"}})
 
+    def test_load_existing_dir_reads_all_tier_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "tankopedia-tier7.json"), "w", encoding="utf-8") as f:
+                json.dump({"vehicles": [{"id": 7, "extraInfo": "七级"}]}, f)
+            with open(os.path.join(tmp, "tankopedia-tier10.json"), "w", encoding="utf-8") as f:
+                json.dump({"vehicles": [{"id": 10, "extraInfo": "十级"}]}, f)
+            data = ut.load_existing_data_dir(tmp)
+            self.assertEqual(data["7"]["extraInfo"], "七级")
+            self.assertEqual(data["10"]["extraInfo"], "十级")
+
 
 class KnowledgePreservationTest(unittest.TestCase):
     def test_old_extra_info_preserved(self):
@@ -197,13 +207,6 @@ class KnowledgePreservationTest(unittest.TestCase):
         new = {"1": "not-a-dict"}
         with self.assertRaisesRegex(RuntimeError, "TANKOPEDIA_KNOWLEDGE_LOST"):
             ut.merge_extra_info(new, old)
-
-
-class MinTierTest(unittest.TestCase):
-    def test_min_tier_filters(self):
-        data = {"1": {"tier": 5}, "2": {"tier": 7}, "3": {"tier": 10}}
-        self.assertEqual(set(ut.filter_by_min_tier(data, 7)), {"2", "3"})
-        self.assertEqual(set(ut.filter_by_min_tier(data, 1)), set(data))
 
 
 class ParseTanksTest(unittest.TestCase):
@@ -395,8 +398,11 @@ class MainPathTest(unittest.TestCase):
             raise AssertionError("unexpected url: " + url)
 
         with tempfile.TemporaryDirectory() as tmp:
-            old_path = os.path.join(tmp, "old.json")
-            new_path = os.path.join(tmp, "new.json")
+            old_dir = os.path.join(tmp, "old")
+            new_dir = os.path.join(tmp, "new")
+            os.makedirs(old_dir)
+            os.makedirs(new_dir)
+            old_path = os.path.join(old_dir, "tankopedia-tier10.json")
             with open(old_path, "w", encoding="utf-8") as f:
                 json.dump({"meta": {}, "vehicles": [
                     {"id": 1, "extraInfo": "保留我"},
@@ -405,14 +411,19 @@ class MainPathTest(unittest.TestCase):
                 old_bytes_before = f.read()
 
             with mock.patch.object(ut.urllib.request, "urlopen", side_effect=fake_urlopen):
-                rc = ut.main(["--existing", old_path, "--output", new_path, "--min-tier", "1"])
+                rc = ut.main(["--existing-dir", old_dir, "--output-dir", new_dir])
 
             self.assertEqual(rc, 0)
             with open(old_path, "rb") as f:
                 self.assertEqual(f.read(), old_bytes_before)  # 旧文件未被修改
-            with open(new_path, encoding="utf-8") as f:
+            self.assertEqual(
+                sorted(os.listdir(new_dir)),
+                sorted(ut.TIER_FILES.values()),
+            )
+            with open(os.path.join(new_dir, "tankopedia-tier10.json"), encoding="utf-8") as f:
                 payload = json.load(f)
             self.assertEqual(payload["meta"]["count"], 1)
+            self.assertEqual(payload["meta"]["tier"], 10)
             vehicle = payload["vehicles"][0]
             self.assertEqual(vehicle["id"], 1)
             self.assertEqual(vehicle["extraInfo"], "保留我")

@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""从 blitzkit（游戏客户端数据）生成车辆库 common/tankopedia.json。
+"""从 blitzkit（游戏客户端数据）生成车辆库 common/tankopedia-tier{7,8,9,10}.json。
 
 用法：
-    python update_tankopedia.py [--min-tier 7]
+    python update_tankopedia.py [--existing-dir common] [--output-dir common]
+
+输出为按等级拆分的 4 个文件（meta + vehicles 数组）：
+    common/tankopedia-tier7.json   // 7 级车辆
+    common/tankopedia-tier8.json   // 8 级车辆
+    common/tankopedia-tier9.json   // 9 级车辆
+    common/tankopedia-tier10.json  // 10 级车辆
 
 输出格式（全部字段与 value 均为英文/数字）：
     {
@@ -41,7 +47,7 @@
   判定，再映射到 common/wotb-item-catalog-json 的逻辑 id / code；
   catalog 未收录的道具（多为活动/娱乐模式专属）不输出。
 - extraInfo 按 tank_id 保留合并；仍存在车辆的知识点丢失会直接失败。
-- 默认只保留 7-10 级（--min-tier 7；--min-tier 1 保留全部）。
+- 只输出 7-10 级四个等级文件（业务范围：个人随机 7-10、团队联赛 10 级）。
 - 脚本无第三方依赖（仅标准库 urllib / struct / json）。
 """
 
@@ -57,10 +63,16 @@ PB_URL = "https://assets.blitzkit.app/definitions/tanks.pb"
 CONSUMABLES_URL = "https://assets.blitzkit.app/definitions/consumables.pb"
 PROVISIONS_URL = "https://assets.blitzkit.app/definitions/provisions.pb"
 
-REPO_TANKOPEDIA = os.path.join(
+REPO_COMMON_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "tankopedia.json",
+    "common",
 )
+TIER_FILES = {
+    7: "tankopedia-tier7.json",
+    8: "tankopedia-tier8.json",
+    9: "tankopedia-tier9.json",
+    10: "tankopedia-tier10.json",
+}
 CATALOG_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "common",
@@ -536,6 +548,16 @@ def load_existing_data(path):
     return data if isinstance(data, dict) else {}
 
 
+def load_existing_data_dir(directory):
+    """读取目录下已有的 tier 文件，返回 {tank_id: entry}（用于保留 extraInfo）。"""
+    result = {}
+    if not directory or not os.path.isdir(directory):
+        return result
+    for tier, filename in TIER_FILES.items():
+        result.update(load_existing_data(os.path.join(directory, filename)))
+    return result
+
+
 def count_knowledge(data):
     """统计非空 extraInfo（兼容旧 extraKnowledge）的车辆数。"""
     return sum(
@@ -587,16 +609,6 @@ def merge_extra_info(new_data, old_data):
     return new_data
 
 
-def filter_by_min_tier(data, min_tier):
-    """只保留 tier >= min_tier 的车辆；min_tier <= 1 表示保留全部。"""
-    if not min_tier or min_tier <= 1:
-        return data
-    return {
-        tank_id: entry for tank_id, entry in data.items()
-        if (entry.get("tier") or 0) >= min_tier
-    }
-
-
 def write_json(path, payload):
     with open(path, "w", encoding="utf-8", newline="\n") as file:
         json.dump(payload, file, ensure_ascii=False, indent=2)
@@ -620,14 +632,12 @@ def vehicle_output(vehicle):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Sync blitzkit (game client) vehicle encyclopedia into tankopedia.json"
+        description="Sync blitzkit (game client) vehicle encyclopedia into per-tier tankopedia files"
     )
-    parser.add_argument("--min-tier", type=int, default=7,
-                        help="只保留该等级及以上的车辆（默认 7；1 = 全部）")
-    parser.add_argument("--existing", default=REPO_TANKOPEDIA,
-                        help="旧数据读取路径（默认仓库 common/tankopedia.json；用于保留 extraInfo）")
-    parser.add_argument("--output", default=REPO_TANKOPEDIA,
-                        help="新数据写入路径（默认仓库 common/tankopedia.json；Workflow 与 --existing 分离）")
+    parser.add_argument("--existing-dir", default=REPO_COMMON_DIR,
+                        help="旧数据所在目录（读取 tankopedia-tier*.json 保留 extraInfo；默认仓库 common/）")
+    parser.add_argument("--output-dir", default=REPO_COMMON_DIR,
+                        help="新数据写入目录（写 4 个 tankopedia-tier*.json；Workflow 与 --existing-dir 分离）")
     args = parser.parse_args(argv)
 
     print("download %s ..." % PB_URL)
@@ -640,10 +650,9 @@ def main(argv=None):
     print("pb bytes: tanks=%d consumables=%d provisions=%d"
           % (len(tanks_pb), len(consumables_pb), len(provisions_pb)))
 
-    old_data = load_existing_data(args.existing)
+    old_data = load_existing_data_dir(args.existing_dir)
     vehicles = parse_tanks(tanks_pb)
     total = len(vehicles)
-    vehicles = filter_by_min_tier(vehicles, args.min_tier)
     provision_map, consumable_map = load_catalog()
     vehicles = apply_items(
         vehicles,
@@ -653,25 +662,36 @@ def main(argv=None):
         consumable_map,
     )
     vehicles = merge_extra_info(vehicles, old_data)
-    vehicles = [vehicle_output(vehicles[key]) for key in sorted(vehicles, key=lambda k: int(k))]
+    generated_at = datetime.now(timezone.utc).isoformat()
+    new_data = {}
+    per_tier = {}
+    for tier in sorted(TIER_FILES):
+        tier_vehicles = [
+            vehicle_output(vehicles[key])
+            for key in sorted(vehicles, key=lambda k: int(k))
+            if vehicles[key].get("tier") == tier
+        ]
+        per_tier[tier] = tier_vehicles
+        for vehicle in tier_vehicles:
+            new_data[str(vehicle["id"])] = vehicle
+        write_json(os.path.join(args.output_dir, TIER_FILES[tier]), {
+            "meta": {
+                "source": "blitzkit (assets.blitzkit.app/definitions/tanks.pb)",
+                "tier": tier,
+                "generated_at": generated_at,
+                "count": len(tier_vehicles),
+            },
+            "vehicles": tier_vehicles,
+        })
 
-    output = {
-        "meta": {
-            "source": "blitzkit (assets.blitzkit.app/definitions/tanks.pb)",
-            "min_tier": args.min_tier,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "count": len(vehicles),
-        },
-        "vehicles": vehicles,
-    }
-    write_json(args.output, output)
-
-    new_data = {str(v["id"]): v for v in vehicles}
     ok, old_knowledge, preserved_knowledge = verify_knowledge_preservation(old_data, new_data)
+    per_tier_summary = " ".join(
+        "tier%d=%d" % (tier, len(per_tier[tier])) for tier in sorted(per_tier)
+    )
     print(
-        "SAFE_RESULTS source=blitzkit fetched=%d tier_ge_%d=%d "
+        "SAFE_RESULTS source=blitzkit fetched=%d %s "
         "existing_knowledge=%d preserved_knowledge=%d"
-        % (total, args.min_tier, len(vehicles), old_knowledge, preserved_knowledge)
+        % (total, per_tier_summary, old_knowledge, preserved_knowledge)
     )
     if not ok:
         print("ERROR: extraInfo preservation failed.", file=sys.stderr)

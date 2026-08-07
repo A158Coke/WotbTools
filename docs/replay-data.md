@@ -798,7 +798,7 @@ Body: file=<单个 .wotbreplay>
 同样只有 tank_id；`data.wotreplay` 各包中未发现可稳定编码的模块/炮 id（type 13 战斗尾包的 zlib
 解压流中出现的少量模块 id 命中为字节巧合，跨车样本无法复现；开源解析器均不解析 Blitz 车辆模块）。
 因此**无法从回放可靠读取玩家实际使用的炮**：10 级多炮车（如 E 100 的 12,8cm/15cm、AC Atlas 的
-V1/V2）在 `common/tankopedia.json` 的 `vehicles[].guns` 数组中按炮区分，AI 分析当前使用默认炮
+V1/V2）在 `common/tankopedia-tier10.json` 的 `vehicles[].guns` 数组中按炮区分，AI 分析当前使用默认炮
 （`isDefault=true`，第一把炮，与 WG 默认配置一致）。待拿到客户端属性定义或新的回放字段后再接入。
 
 ### AI 分析数据流（`/api/replay/analyze`，仅 `wotbtools-admin`）
