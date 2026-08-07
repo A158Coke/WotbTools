@@ -24,7 +24,7 @@ on:
         type: number
         default: 7
       alpha-rule:
-        description: "alphaDamage 规则（first=gun.damage 第一项；conservative=保留旧值）"
+        description: "alphaDamage 规则（first=default_profile.shells 第一发；conservative=保留旧值）"
         type: choice
         default: first
         options:
@@ -73,9 +73,13 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh -o StrictHostKeyChecking=no -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
             "rm -rf /tmp/wotb-tankopedia && mkdir -p /tmp/wotb-tankopedia"
+          # 命名契约：tankopedia-current.json = 旧数据输入，tankopedia-new.json = 新数据输出
           scp -o StrictHostKeyChecking=no -P "$VPS_PORT" \
-            common/python/update_tankopedia.py common/tankopedia.json \
-            "$VPS_USER@$VPS_HOST:/tmp/wotb-tankopedia/"
+            common/python/update_tankopedia.py \
+            "$VPS_USER@$VPS_HOST:/tmp/wotb-tankopedia/update_tankopedia.py"
+          scp -o StrictHostKeyChecking=no -P "$VPS_PORT" \
+            common/tankopedia.json \
+            "$VPS_USER@$VPS_HOST:/tmp/wotb-tankopedia/tankopedia-current.json"
 
       - name: Sync tankopedia on VPS
         uses: appleboy/ssh-action@v1
@@ -93,6 +97,8 @@ jobs:
           script: |
             set -e
             cd /tmp/wotb-tankopedia
+            test -f update_tankopedia.py
+            test -f tankopedia-current.json
             docker run --rm \
               -e WG_APPLICATION_ID="$WG_APPLICATION_ID" \
               -v "$PWD:/sync" \
