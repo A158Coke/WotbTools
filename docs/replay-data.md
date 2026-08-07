@@ -245,7 +245,7 @@ EntityLeave 假阳性（临时离场而非阵亡）和 Position 在部分模式�
 | 7  | `mapName`               | string | —      | `"lagoon"`              | 地图内部名                                                           | 是 → `Battle.mapName`                   |
 | 8  | `arenaUniqueId`         | string | —      | `"1161909687528274499"` | 战斗唯一 ID（去重用）                                                    | 否（pickle tuple[0] 作为 `Battle.arenaId`） |
 | 9  | `battleDuration`        | number | 秒      | `306.19186`             | 战斗持续时长（浮点数）                                                     | 是 → `Battle.durationS`                 |
-| 10 | `vehicleCompDescriptor` | int    | —      | `4481`                  | 车辆组件描述符（== tankId）                                              | 否                                      |
+| 10 | `vehicleCompDescriptor` | int    | —      | `4481`                  | 车辆组件描述符（== tankId，**不含炮/模块配置**）                                | 否                                      |
 | 11 | `camouflageId`          | int    | —      | `406`                   | 涂装 ID                                                           | 否                                      |
 | 12 | `mapId`                 | int    | —      | `26`                    | 地图数字 ID                                                         | 否（已移除）                                 |
 | 13 | `arenaBonusType`        | int    | —      | `1`                     | 模式类型（**1=随机；2=训练房**；其他=娱乐/联赛等。经真实样本核实，早期"2=随机"系误标——当时分析的是训练房回放） | 是 → `Battle.arenaBonusType`（排行榜仅收 ==1） |
@@ -790,6 +790,16 @@ Body: file=<单个 .wotbreplay>
 | 位置 / 走位时间线             | `data.wotreplay` type 10（重建）                                                                 | 仅对已可靠映射且实际观测到的 entity 可用           |
 | 事件流伤害                  | `DamageEvent`                                                                                | 观测子集，不能替代权威团队总伤害                  |
 | **逐帧血量 / 击毁事件**        | —（type 7/8 尚不可靠）                                                                             | **已知限制**：不作为血量/死亡来源，见 Type 7 小节 |
+| **车辆炮/模块配置（所选炮）**   | —（meta 只有 tankId；事件流无可靠模块 id）                                                              | **已知限制**：无法从回放读取所选炮，见下文          |
+
+### 车辆所选炮不可读（已知限制）
+
+11.18 样本回放的 `meta.json` 只有 `vehicleCompDescriptor`（== tankId），`battle_results.dat` 战绩
+同样只有 tank_id；`data.wotreplay` 各包中未发现可稳定编码的模块/炮 id（type 13 战斗尾包的 zlib
+解压流中出现的少量模块 id 命中为字节巧合，跨车样本无法复现；开源解析器均不解析 Blitz 车辆模块）。
+因此**无法从回放可靠读取玩家实际使用的炮**：10 级多炮车（如 E 100 的 12,8cm/15cm、AC Atlas 的
+V1/V2）在 `common/tankopedia.json` 中按炮拆分为多条记录（`<tank_id>` 主记录 + `<tank_id>_<gun_id>`
+变体），AI 分析当前使用主记录（第一把炮，与 WG 默认配置一致）。待拿到客户端属性定义或新的回放字段后再接入。
 
 ### AI 分析数据流（`/api/replay/analyze`，仅 `wotbtools-admin`）
 
