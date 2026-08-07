@@ -43,7 +43,7 @@ Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；
   - cmd: `set JAVA_HOME=%USERPROFILE%\.jdks\jdk-21.0.1`
 - **Maven 必须带 `-s java/settings.xml`**（该文件已跟踪，使用 aliyun 镜像 + `java/.m2repo`，干净 clone 可直接运行）。容器内用 `java/settings-docker.xml`。
 - **Node 24**（`frontend/.nvmrc` 钉住，`nvm use` 生效）：前端 `frontend`，开发端口 5173，依赖安装用 `npm ci`，构建用 `npm run build`。CI（`ci.yml`）、deploy（`deploy.yml`）与 `Dockerfile.frontend` 均统一 Node 24。
-- **Python 3**：`common/python/update_tankopedia.py` 仅用标准库（urllib，从 WG 官方百科同步车辆库，需联网）；Pillow 仅用于偶尔的图像处理。
+- **Python 3**：`common/python/update_tankopedia.py` 仅用标准库（urllib，从 blitzkit 游戏客户端数据同步车辆库，需联网）；Pillow 仅用于偶尔的图像处理。
 
 ---
 
@@ -75,7 +75,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
   - 前端：`frontend/src/locales/{zh,en,ru}.json` 的 `player_labels` / `agg_labels`（**三语都改**）。
   - 导出：`Columns.java`（单场 xlsx）、`AggregateSheets.java`（汇总 xlsx，仅中文）。
 - **单一数据源**：`common/tankopedia.json`（车辆库）、`common/rating.json`（评分参数）、`common/map_names.json`（地图三语名）。构建时由 `wotb-core/pom.xml` 复制到 classpath；**勿在模块内放副本**。
-- **车辆库更新（WG 官方数据 + blitzkit 兜底）**：推荐手动触发 GitHub Actions **`Update Tankopedia`**——workflow 把脚本、当前 `tankopedia.json` 与 `common/python/blitzkit_fallback.json` 传到 VPS（IP 已在 WG application_id 白名单）执行，只拉回新生成的 `tankopedia.json` 并自动提交回 main（需要 `WG_APPLICATION_ID` + `VPS_*` secrets，五个缺一即中止）。本地跑 `common/python/update_tankopedia.py` 需先把本机出口 IP 加入 WG 开发者后台的应用白名单（家宽 IP 动态，变了要更新）。两种方式都默认只保留 7–10 级（`--min-tier 1` / workflow 输入可调），`--region` 可换区服；脚本旧数据只经 `--existing` 读取、新数据只写 `--output`（workflow 路径分离，输入输出互不覆盖）。WG 百科滞后于游戏版本（如 11.19 新增的 SPHT/Viper 等）：WG 缺失的 tank_id 由 `--fallback`（blitzkit 游戏客户端数据）补全，WG 有则用 WG，meta 记录 `fallback_count`。字段：`name/tier/class/nation/alphaDamage/hp` + 手工维护的 `extraKnowledge`（每辆车的个人知识点——刷新脚本按 tank_id 保留合并、不会覆盖，仍存在车辆的知识点丢失会直接失败）。AI prompt 会注入结构化事实（车种/等级/国家/炮伤/血量/知识），prompt 规则白名单已放行这些字段。
+- **车辆库更新（blitzkit 单一来源）**：推荐手动触发 GitHub Actions **`Update Tankopedia`**——runner 直接从 `assets.blitzkit.app/definitions/tanks.pb`（游戏客户端数据，公开 CDN，无 IP 白名单，无需任何 secret）同步并自动提交回 main。本地跑 `cd common/python && python update_tankopedia.py --min-tier 7` 即可。数据源为什么不用 WG 百科：WG 滞后于游戏版本（11.19 的 SPHT / AC Atlas 等缺失）且 application_id 有 IP 白名单限制。脚本旧数据只经 `--existing` 读取、新数据只写 `--output`（workflow 两者路径分离，输入输出互不覆盖），默认只保留 7–10 级（`--min-tier 1` 保留全部）。字段：`name/tier/class/nation/hp/gunId/isDefault/alphaDamage/shells` + 手工维护的 `extraKnowledge`（每辆车的个人知识点——刷新脚本按 tank_id 保留合并到该车全部记录，仍存在车辆的知识点丢失会直接失败）。`shells` 为每发弹 `{type, damage, penetration}`，type 归一化 ap/apcr/heat/he；10 级顶配炮塔多炮车按炮拆分为多条记录（主记录 key = tank_id 取第一把炮、与 WG 默认配置一致，变体 key = `<tank_id>_<gun_id>`），每条带 `gunId` 与 `isDefault`。AI prompt 会注入结构化事实（车种/等级/国家/炮伤/血量/知识），prompt 规则白名单已放行这些字段。
 - **代码风格**：不可变模型用 `record`；可变模型用公有字段 POJO（**不引入 Lombok**）；局部变量/参数尽量 `final`。
 - **分层**：controller 只做 HTTP；业务在 service；core 按功能分包。新 endpoint 的逻辑写进 service。
 - 跨层联动改动（加列/改解析/改评分/改地图名…）务必按 `.agents/wotb-sync.md` 的配方走。
@@ -423,7 +423,7 @@ API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + �
 
 `ReplayParser` 仍解析 `xp`、`credits` 到 `PlayerResult`，但这两个值受经济/加成/首胜等因素影响，不作为玩家战绩展示字段、导出列或 rating 输入。
 
-`Tankopedia` 读取 `alphaDamage` / 车辆血量（`maxHp` / `hp` / `health` / `hitpoints` / `hitPoints` / `maxHealth`）与手工 `extraKnowledge`。`common/python/update_tankopedia.py` 从 Wargaming 官方 WoT Blitz 百科同步（`WG_APPLICATION_ID`，默认只保留 7–10 级），`alphaDamage` 取官方 `default_profile.shells` 第一发（标准弹，已用真实响应验证——shells 按弹种顺序排列，如 IS-4 首发 AP 420、KV-2 首发 HE 450，HE 往往伤害更高故禁止 `max`）、`hp` 取官方 `default_profile.hp`；刷新时旧数据只经 `--existing` 读取、新数据只写 `--output`（Workflow 两者路径分离），并按 tank_id 保留合并旧文件中的 `extraKnowledge`，若仍存在的车辆知识点丢失会直接失败。WG 百科未收录的新车（如 11.19 的 SPHT / Rhm. Pzw. / BZ-75）由 blitzkit 兜底（`--fallback`，WG 优先、缺车才补，meta 记录 `fallback_count`），这类车暂无官方 `hp`，`average_hp` 按未知单车暂定 2400。`average_hp` 的目标口径是"敌方 7 台车实际进场总血量 / 7"，但回放里的每台车实际进场血量 / 双方总血量字段尚未确认解析；当前实现为：车辆库有 HP 时用车辆库，否则未知单车 HP 暂定 2400。
+`Tankopedia` 读取 `alphaDamage` / 车辆血量（`maxHp` / `hp` / `health` / `hitpoints` / `hitPoints` / `maxHealth`）与手工 `extraKnowledge`。`common/python/update_tankopedia.py` 从 blitzkit（`assets.blitzkit.app/definitions/tanks.pb`，游戏客户端数据，默认只保留 7–10 级）同步：车辆名取英文（i18n_en），`hp` = 车体 + 顶配炮塔，`alphaDamage` 取标准弹（`shells[0]`，已用真实数据验证；HE 往往伤害更高故禁止 `max`），`shells` 每发含 `{type, damage, penetration}`（type 归一化 ap/apcr/heat/he，顺序即游戏内弹序 0=标准弹/1=premium/2=第三发）；**10 级顶配炮塔多炮车按炮拆分为多条记录**——主记录 key = tank_id（第一把炮，已用 WG API 默认配置逐辆核对一致，如 E 100 默认 12,8cm、AC Atlas 默认单发 V1），变体 key = `<tank_id>_<gun_id>`，每条带 `gunId`（blitzkit 模块 id）与 `isDefault`。刷新时旧数据只经 `--existing` 读取、新数据只写 `--output`（Workflow 两者路径分离），并按 tank_id 保留合并旧文件中的 `extraKnowledge`（该车全部记录都带同一份知识），若仍存在的车辆知识点丢失会直接失败。`average_hp` 的目标口径是"敌方 7 台车实际进场总血量 / 7"，但回放里的每台车实际进场血量 / 双方总血量字段尚未确认解析；当前实现为：车辆库有 HP 时用车辆库，否则未知单车 HP 暂定 2400。
 
 `ReplayParser` 会从 `data.wotreplay` 的 Type 8 / subtype 8 / sub=3 direct HP damage 事件解析攻击者、受害者和伤害值；当阵亡玩家的累计 direct damage 达到 `damageReceived` 阈值时，当前攻击者被推断为击杀者，并把该击杀者对受害者的累计 direct damage / penetrations 写入 `PlayerResult.killVictims`。
 
