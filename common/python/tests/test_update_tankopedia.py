@@ -255,5 +255,42 @@ class MinTierTest(unittest.TestCase):
         self.assertEqual(set(ut.filter_by_min_tier(data, 1)), set(data))
 
 
+class FallbackTest(unittest.TestCase):
+    def test_fallback_fills_missing_vehicle(self):
+        wg = {"1": {"name": "A", "tier": 10}}
+        fallback = {"29985": {"name": "SPHT", "tier": 10, "class": "重坦", "nation": "美国",
+                              "premium": False, "alphaDamage": 400}}
+        merged, fallback_ids = ut.merge_fallback(wg, fallback)
+        self.assertIn("29985", merged)
+        self.assertIn("29985", fallback_ids)
+        self.assertEqual(merged["29985"]["alphaDamage"], 400)
+        self.assertNotIn("premium", merged["29985"])  # 不消费字段不进入输出
+
+    def test_wg_overrides_fallback(self):
+        wg = {"29985": {"name": "SPHT", "tier": 10, "alphaDamage": 999}}
+        fallback = {"29985": {"name": "SPHT", "tier": 10, "alphaDamage": 400}}
+        merged, fallback_ids = ut.merge_fallback(wg, fallback)
+        self.assertEqual(merged["29985"]["alphaDamage"], 999)  # WG 优先
+        self.assertNotIn("29985", fallback_ids)
+
+    def test_fallback_respects_min_tier(self):
+        wg = {"1": {"name": "A", "tier": 10}}
+        fallback = {"29985": {"name": "SPHT", "tier": 10, "class": "重坦", "nation": "美国"},
+                    "257": {"name": "SU-85", "tier": 5, "class": "坦克歼击车", "nation": "苏联"}}
+        merged, _ = ut.merge_fallback(wg, fallback)
+        filtered = ut.filter_by_min_tier(merged, 7)
+        self.assertIn("29985", filtered)
+        self.assertNotIn("257", filtered)  # 5 级兜底条目同样被 min-tier 过滤
+
+    def test_fallback_knowledge_preserved(self):
+        old = {"29985": {"extraKnowledge": "SPHT 个人知识点"}}
+        vehicles = {"1": {"name": "A", "tier": 10}}
+        fallback = {"29985": {"name": "SPHT", "tier": 10, "class": "重坦", "nation": "美国"}}
+        data = ut.transform(vehicles, "first", old)
+        data, _ = ut.merge_fallback(data, fallback)
+        data = ut.merge_extra_knowledge(data, old)
+        self.assertEqual(data["29985"]["extraKnowledge"], "SPHT 个人知识点")
+
+
 if __name__ == "__main__":
     unittest.main()

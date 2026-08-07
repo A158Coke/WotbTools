@@ -60,7 +60,7 @@ jobs:
             fi
           done
 
-      - name: Prepare VPS temp dir and upload script + current tankopedia
+      - name: Prepare VPS temp dir and upload script + current tankopedia + fallback
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -80,6 +80,9 @@ jobs:
           scp -o StrictHostKeyChecking=no -P "$VPS_PORT" \
             common/tankopedia.json \
             "$VPS_USER@$VPS_HOST:/tmp/wotb-tankopedia/tankopedia-current.json"
+          scp -o StrictHostKeyChecking=no -P "$VPS_PORT" \
+            common/python/blitzkit_fallback.json \
+            "$VPS_USER@$VPS_HOST:/tmp/wotb-tankopedia/blitzkit-fallback.json"
 
       - name: Sync tankopedia on VPS
         uses: appleboy/ssh-action@v1
@@ -99,6 +102,7 @@ jobs:
             cd /tmp/wotb-tankopedia
             test -f update_tankopedia.py
             test -f tankopedia-current.json
+            test -f blitzkit-fallback.json
             docker run --rm \
               -e WG_APPLICATION_ID="$WG_APPLICATION_ID" \
               -v "$PWD:/sync" \
@@ -107,6 +111,7 @@ jobs:
                 --region "$REGION" \
                 --min-tier "$MIN_TIER" \
                 --alpha-rule "$ALPHA_RULE" \
+                --fallback /sync/blitzkit-fallback.json \
                 --existing /sync/tankopedia-current.json \
                 --output /sync/tankopedia-new.json
 

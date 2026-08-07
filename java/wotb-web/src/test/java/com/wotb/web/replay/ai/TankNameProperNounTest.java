@@ -27,13 +27,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 坦克名称必须作为不可推断的专有名词。
  * <p>断言真实生成的 system prompt 与真实生成的证据内容，而不是只验证常量存在。
- * T110E5（tankId 10785，tankopedia 中为 tier 10 美系重坦）只是暴露问题的样例，
+ * SPHT（tankId 29985，tankopedia 中为 tier 10 美系重坦）只是暴露问题的样例，
  * 规则和实现都必须是通用的。</p>
  */
 class TankNameProperNounTest {
 
-    /** tankopedia.json: {"name":"T110E5","tier":10,"class":"重坦","nation":"美国"} */
-    private static final long HEAVY_TANK_ID = 10785L;
+    /** tankopedia.json: {"name":"SPHT","tier":10,"class":"重坦","nation":"美国"} */
+    private static final long SPHT_TANK_ID = 29985L;
     /** tankopedia 中不存在的 tankId，用于验证「无类型数据」路径。 */
     private static final long UNKNOWN_TANK_ID = 999_999_999L;
 
@@ -107,11 +107,11 @@ class TankNameProperNounTest {
     @Test
     void enemyLineupEvidenceEmitsSphtAsTankNameWithStructuredClass() {
         final StringBuilder sb = new StringBuilder();
-        PlayerReplayPromptBuilder.appendPlayerLine(sb, heavyTank("EnemyAce", 386), false);
+        PlayerReplayPromptBuilder.appendPlayerLine(sb, spht("EnemyAce", 386), false);
         final String evidence = sb.toString();
 
         assertTrue(evidence.contains("敌方 \"EnemyAce\""), evidence);
-        assertTrue(evidence.contains("坦克: \"T110E5\""), evidence);
+        assertTrue(evidence.contains("坦克: \"SPHT\""), evidence);
         // 车种来自 tankopedia 的 class 字段，而不是名称推断
         assertTrue(evidence.contains("车种: 重坦"), evidence);
         assertTrue(evidence.contains("输出386"), evidence);
@@ -122,15 +122,15 @@ class TankNameProperNounTest {
     @Test
     void backendEvidenceNeverLabelsSphtAsArtilleryOrSpg() {
         final StringBuilder sb = new StringBuilder();
-        PlayerReplayPromptBuilder.appendPlayerLine(sb, heavyTank("EnemyAce", 386), false);
-        PlayerReplayPromptBuilder.appendPlayerLine(sb, heavyTank("FriendlyAce", 120), true);
+        PlayerReplayPromptBuilder.appendPlayerLine(sb, spht("EnemyAce", 386), false);
+        PlayerReplayPromptBuilder.appendPlayerLine(sb, spht("FriendlyAce", 120), true);
         final String evidence = sb.toString();
 
         assertFalse(evidence.contains("自行火炮"), evidence);
         assertFalse(evidence.contains("SPG"), evidence);
-        assertFalse(evidence.contains("火炮 T110E5"), evidence);
+        assertFalse(evidence.contains("火炮 SPHT"), evidence);
         // 名称原样保留，未被拆分或展开
-        assertEquals(2, countOccurrences(evidence, "\"T110E5\""), evidence);
+        assertEquals(2, countOccurrences(evidence, "\"SPHT\""), evidence);
     }
 
     // ---- 7：伤害交换证据可支撑「你对敌方 SPHT 造成了 X 点伤害」 ----
@@ -143,7 +143,7 @@ class TankNameProperNounTest {
         recorder.nickname = "Recorder";
         recorder.team = 1;
         recorder.survived = true;
-        final PlayerResult victim = heavyTank("EnemyAce", 0);
+        final PlayerResult victim = spht("EnemyAce", 0);
         victim.accountId = 2L;
         victim.team = 2;
         battle.players = List.of(recorder, victim);
@@ -155,7 +155,7 @@ class TankNameProperNounTest {
         final String evidence = sb.toString();
 
         assertTrue(evidence.contains("DAMAGE_EXCHANGE_AGGREGATED_OBSERVED"), evidence);
-        assertTrue(evidence.contains("坦克: \"T110E5\""), evidence);
+        assertTrue(evidence.contains("坦克: \"SPHT\""), evidence);
         assertTrue(evidence.contains("车种: 重坦"), evidence);
         assertTrue(evidence.contains("累计直接伤害780"), evidence);
         assertFalse(evidence.contains("自行火炮"), evidence);
@@ -179,9 +179,9 @@ class TankNameProperNounTest {
 
     @Test
     void teamMemberEvidenceEmitsTankNameAndStructuredVehicleClass() {
-        final String content = TeamAiPromptBuilder.single(teamContextWithTank(HEAVY_TANK_ID)).content();
+        final String content = TeamAiPromptBuilder.single(teamContextWithTank(SPHT_TANK_ID)).content();
 
-        assertTrue(content.contains("tank=\"T110E5\""), content);
+        assertTrue(content.contains("tank=\"SPHT\""), content);
         assertTrue(content.contains("vehicleClass=重坦"), content);
         assertFalse(content.contains("自行火炮"), content);
         assertFalse(content.contains("SPG"), content);
@@ -211,7 +211,7 @@ class TankNameProperNounTest {
     @Test
     void tankClassResolutionIsDrivenByTankIdNotByNameText() {
         // 同一个名称文本配不同 tankId → 车种完全由结构化查表决定
-        assertEquals("重坦", ReplayDisplayNames.tankClass(HEAVY_TANK_ID));
+        assertEquals("重坦", ReplayDisplayNames.tankClass(SPHT_TANK_ID));
         assertEquals(ReplayDisplayNames.UNKNOWN_TANK_CLASS,
                 ReplayDisplayNames.tankClass(UNKNOWN_TANK_ID));
         assertEquals(ReplayDisplayNames.UNKNOWN_TANK_CLASS, ReplayDisplayNames.tankClass(0L));
@@ -230,9 +230,9 @@ class TankNameProperNounTest {
 
     @Test
     void existingTankNameMappingStillResolvesFromTankopedia() {
-        assertEquals("T110E5", ReplayDisplayNames.tankName(HEAVY_TANK_ID, null));
+        assertEquals("SPHT", ReplayDisplayNames.tankName(SPHT_TANK_ID, null));
         // tankopedia 命中时优先于回放自带名称，名称原样返回
-        assertEquals("T110E5", ReplayDisplayNames.tankName(HEAVY_TANK_ID, "ignored"));
+        assertEquals("SPHT", ReplayDisplayNames.tankName(SPHT_TANK_ID, "ignored"));
         // 无映射时回落到回放名称，仍不做任何解释
         assertEquals("SPHT-LIKE-NAME",
                 ReplayDisplayNames.tankName(UNKNOWN_TANK_ID, "SPHT-LIKE-NAME"));
@@ -241,10 +241,10 @@ class TankNameProperNounTest {
 
     // ---- helpers ----
 
-    private static PlayerResult heavyTank(final String nickname, final int damageDealt) {
+    private static PlayerResult spht(final String nickname, final int damageDealt) {
         final PlayerResult p = new PlayerResult();
         p.nickname = nickname;
-        p.tankId = HEAVY_TANK_ID;
+        p.tankId = SPHT_TANK_ID;
         p.damageDealt = damageDealt;
         p.survived = true;
         return p;

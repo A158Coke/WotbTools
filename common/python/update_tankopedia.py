@@ -15,6 +15,9 @@
 - alphaDamage 规则：取官方 ``default_profile.shells`` 第一发（标准弹）伤害，禁止使用 max。
   （真实响应验证：shells 按弹种顺序排列，第一发为该车标准弹，如 IS-4 首发 AP 420、
   KV-2 首发 HE 450；HE 往往伤害更高，max 会错取 HE。）
+- WG 百科滞后于游戏版本（11.19 新车上线后百科未收录）：缺失的 tank_id 用 blitzkit
+  （游戏客户端数据）兜底——WG 有则用 WG，WG 没有才补 blitzkit 条目；兜底条目不携带
+  premium 等不消费字段，且同样受 --min-tier 过滤。meta 记录 fallback_count。
 - 日志不输出 application_id、完整 URL 或完整响应。
 - 脚本无第三方依赖（仅标准库 urllib）。
 """
@@ -37,6 +40,7 @@ REPO_TANKOPEDIA = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "tankopedia.json",
 )
+FALLBACK_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "blitzkit_fallback.json")
 
 # WG type 代码 -> 中文车种（与前端 replay_values / prompt 措辞一致）
 TYPE_TO_ZH = {
@@ -277,6 +281,32 @@ def filter_by_min_tier(data, min_tier):
     }
 
 
+def merge_fallback(new_data, fallback_data):
+    """WG 缺失的 tank_id 用 blitzkit 兜底，返回 (merged, fallback_ids)。
+
+    WG 优先：相同 tank_id 不覆盖；兜底条目只复制受支持字段
+    （name/tier/class/nation/alphaDamage/hp），不携带 premium 等不消费字段。
+    """
+    fallback_data = fallback_data or {}
+    fallback_ids = set()
+    for tank_id, entry in fallback_data.items():
+        if tank_id in new_data or not isinstance(entry, dict):
+            continue
+        clean = {
+            "name": entry.get("name") or "#" + tank_id,
+            "tier": entry.get("tier"),
+            "class": entry.get("class"),
+            "nation": entry.get("nation"),
+        }
+        for field in ("alphaDamage", "hp"):
+            value = entry.get(field)
+            if value not in (None, ""):
+                clean[field] = value
+        new_data[tank_id] = clean
+        fallback_ids.add(tank_id)
+    return new_data, fallback_ids
+
+
 def write_json(path, payload):
     with open(path, "w", encoding="utf-8", newline="\n") as file:
         json.dump(payload, file, ensure_ascii=False, indent=2)
@@ -293,6 +323,9 @@ def main(argv=None):
     parser.add_argument("--language", default=DEFAULT_LANGUAGE)
     parser.add_argument("--existing", default=REPO_TANKOPEDIA,
                         help="旧数据读取路径（默认仓库 common/tankopedia.json；Workflow 必须与 --output 不同）")
+    parser.add_argument("--fallback", default=FALLBACK_PATH,
+                        help="blitzkit 兜底数据路径（默认 common/python/blitzkit_fallback.json；"
+                             "WG 百科缺失的新车由此补全）")
     parser.add_argument("--output", default=REPO_TANKOPEDIA,
                         help="新数据写入路径（默认仓库 common/tankopedia.json）")
     parser.add_argument("--alpha-rule", choices=["first", "conservative"], default="first",
@@ -306,18 +339,23 @@ def main(argv=None):
         return 1
 
     old_data = load_existing_data(args.existing)
+    fallback_data = load_existing_data(args.fallback)
     vehicles, pages = fetch_vehicles(app_id, args.region, DEFAULT_FIELDS, args.language)
     print("fetched_vehicles=%d pages=%d" % (len(vehicles), pages))
     log_shell_samples(vehicles)
 
     data = transform(vehicles, args.alpha_rule, old_data)
+    data, fallback_ids = merge_fallback(data, fallback_data)
     data = filter_by_min_tier(data, args.min_tier)
     data = merge_extra_knowledge(data, old_data)
     data = dict(sorted(data.items(), key=lambda kv: int(kv[0])))
+    fallback_count = sum(1 for tank_id in data if tank_id in fallback_ids)
 
     output = {
         "meta": {
             "source": "wargaming-official",
+            "fallback_source": "blitzkit (game client data, 补 WG 百科未收录的新车)",
+            "fallback_count": fallback_count,
             "region": args.region,
             "min_tier": args.min_tier,
             "language": args.language,
@@ -331,10 +369,10 @@ def main(argv=None):
     ok, old_knowledge, preserved_knowledge = verify_knowledge_preservation(old_data, data)
     print(
         "SAFE_RESULTS region=%s pages=%d fetched=%d tier_ge_%d=%d "
-        "existing_knowledge=%d preserved_knowledge=%d alpha_rule=%s"
+        "existing_knowledge=%d preserved_knowledge=%d fallback=%d alpha_rule=%s"
         % (
             args.region, pages, len(vehicles), args.min_tier, len(data),
-            old_knowledge, preserved_knowledge, args.alpha_rule,
+            old_knowledge, preserved_knowledge, fallback_count, args.alpha_rule,
         )
     )
     if not ok:
