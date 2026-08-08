@@ -471,6 +471,58 @@ class ItemFilterTest(unittest.TestCase):
                          ["AUTOMATIC_FIRE_EXTINGUISHER"])
 
 
+class IntegrityGateTest(unittest.TestCase):
+    @staticmethod
+    def vehicle(tank_id, tier=7, **overrides):
+        vehicle = {"id": tank_id, "tier": tier, "name": "Tank",
+                   "hp": 1000, "guns": [{"gunId": 1}]}
+        vehicle.update(overrides)
+        return vehicle
+
+    def test_empty_fails(self):
+        with self.assertRaisesRegex(RuntimeError, "TANKOPEDIA_EMPTY"):
+            ut.validate_integrity({}, {})
+
+    def test_duplicate_id_fails(self):
+        data = {"1": self.vehicle(1), "2": self.vehicle(1)}
+        with self.assertRaisesRegex(RuntimeError, "TANKOPEDIA_DUPLICATE_ID"):
+            ut.validate_integrity(data, {})
+
+    def test_missing_fields_fail(self):
+        with self.assertRaisesRegex(RuntimeError, "TANKOPEDIA_MISSING_ID"):
+            ut.validate_integrity({"1": self.vehicle(None)}, {})
+        with self.assertRaisesRegex(RuntimeError, "TANKOPEDIA_MISSING_NAME"):
+            ut.validate_integrity({"1": self.vehicle(1, name="")}, {})
+        with self.assertRaisesRegex(RuntimeError, "TANKOPEDIA_MISSING_HP"):
+            ut.validate_integrity({"1": self.vehicle(1, hp=None)}, {})
+        with self.assertRaisesRegex(RuntimeError, "TANKOPEDIA_MISSING_GUN"):
+            ut.validate_integrity({"1": self.vehicle(1, guns=[])}, {})
+
+    def test_tier_out_of_range_fails(self):
+        with self.assertRaisesRegex(RuntimeError, "TANKOPEDIA_TIER_OUT_OF_RANGE"):
+            ut.validate_integrity({"1": self.vehicle(1, tier=6)}, {})
+
+    def test_total_count_drop_fails(self):
+        old = {str(i): self.vehicle(i) for i in range(1, 101)}
+        new = {str(i): self.vehicle(i) for i in range(1, 11)}
+        with self.assertRaisesRegex(RuntimeError, "TANKOPEDIA_COUNT_DROP"):
+            ut.validate_integrity(new, old)
+
+    def test_per_tier_drop_fails(self):
+        # 总量 100 -> 80（允许），但 tier7 50 -> 30（跌破 0.8 阈值）必须失败
+        old = {str(i): self.vehicle(i, tier=7) for i in range(1, 51)}
+        old.update({str(i): self.vehicle(i, tier=8) for i in range(51, 101)})
+        new = {str(i): self.vehicle(i, tier=7) for i in range(1, 31)}
+        new.update({str(i): self.vehicle(i, tier=8) for i in range(51, 101)})
+        with self.assertRaisesRegex(RuntimeError, "TANKOPEDIA_TIER_DROP"):
+            ut.validate_integrity(new, old)
+
+    def test_normal_and_small_real_deletion_pass(self):
+        old = {str(i): self.vehicle(i) for i in range(1, 101)}
+        new = {str(i): self.vehicle(i) for i in range(1, 91)}  # 10% 真实删除可接受
+        self.assertTrue(ut.validate_integrity(new, old))
+
+
 class MainPathTest(unittest.TestCase):
     def test_existing_output_different_paths_and_knowledge_preserved(self):
         tanks_pb = root(tank_data(

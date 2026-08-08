@@ -83,6 +83,7 @@ TIER_FILES = {
     9: "tankopedia-tier9.json",
     10: "tankopedia-tier10.json",
 }
+MIN_TIER_COUNT_RATIO = 0.8
 CATALOG_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "common",
@@ -671,6 +672,57 @@ def verify_knowledge_preservation(old_data, new_data):
     return True, old_count, preserved
 
 
+def validate_integrity(new_data, old_data):
+    """数据完整性门禁：异常/残缺数据必须失败，禁止写入或提交。
+
+    检查项：
+    - 解析结果为空必须失败；
+    - 总车辆数或单个 tier 数量相对已有数据异常大幅下降必须失败
+      （允许正常新增与少量真实删除，阈值为 MIN_TIER_COUNT_RATIO=0.8）；
+    - tank ID 不得重复；
+    - 车辆 tier 必须在 {7,8,9,10}（与输出文件等级一致）；
+    - 车辆必须有有效 id、name、hp 和至少一把 gun。
+    """
+    if not new_data:
+        raise RuntimeError("TANKOPEDIA_EMPTY: parsed vehicle data is empty")
+    seen_ids = set()
+    for tank_id, entry in new_data.items():
+        if not isinstance(entry, dict):
+            raise RuntimeError("TANKOPEDIA_INVALID_ENTRY: %s is not an object" % tank_id)
+        vehicle_id = entry.get("id")
+        if vehicle_id is None:
+            raise RuntimeError("TANKOPEDIA_MISSING_ID: vehicle %s has no id" % tank_id)
+        if vehicle_id in seen_ids:
+            raise RuntimeError("TANKOPEDIA_DUPLICATE_ID: duplicate tank id %s" % vehicle_id)
+        seen_ids.add(vehicle_id)
+        if not entry.get("name"):
+            raise RuntimeError("TANKOPEDIA_MISSING_NAME: vehicle %s has no name" % tank_id)
+        if not entry.get("hp"):
+            raise RuntimeError("TANKOPEDIA_MISSING_HP: vehicle %s has no hp" % tank_id)
+        if not entry.get("guns"):
+            raise RuntimeError("TANKOPEDIA_MISSING_GUN: vehicle %s has no guns" % tank_id)
+        if entry.get("tier") not in TIER_FILES:
+            raise RuntimeError(
+                "TANKOPEDIA_TIER_OUT_OF_RANGE: vehicle %s tier %s not in 7-10"
+                % (tank_id, entry.get("tier")))
+    if old_data:
+        old_total = len(old_data)
+        new_total = len(new_data)
+        if new_total < old_total * MIN_TIER_COUNT_RATIO:
+            raise RuntimeError(
+                "TANKOPEDIA_COUNT_DROP: total %d -> %d exceeds allowed decline"
+                % (old_total, new_total))
+        for tier in TIER_FILES:
+            old_tier = sum(1 for e in old_data.values()
+                           if isinstance(e, dict) and e.get("tier") == tier)
+            new_tier = sum(1 for e in new_data.values() if e.get("tier") == tier)
+            if old_tier and new_tier < old_tier * MIN_TIER_COUNT_RATIO:
+                raise RuntimeError(
+                    "TANKOPEDIA_TIER_DROP: tier %d %d -> %d exceeds allowed decline"
+                    % (tier, old_tier, new_tier))
+    return True
+
+
 def merge_extra_info(new_data, old_data):
     """把旧文件中仍存在 tank_id 的非空知识点合并进新数据（extraInfo）。"""
     for tank_id, entry in new_data.items():
@@ -750,6 +802,11 @@ def main(argv=None):
     equipment_presets, _ = parse_equipment_defs(equipment_pb)
     vehicles = apply_equipment(vehicles, equipment_presets, load_equipment_catalog())
     vehicles = merge_extra_info(vehicles, old_data)
+    try:
+        validate_integrity(vehicles, old_data)
+    except RuntimeError as error:
+        print("ERROR: %s" % error, file=sys.stderr)
+        return 1
     generated_at = datetime.now(timezone.utc).isoformat()
     new_data = {}
     per_tier = {}
