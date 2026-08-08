@@ -602,6 +602,96 @@ class MainPathTest(unittest.TestCase):
                 "IMPROVED_SUSPENSION", "IMPROVED_VERTICAL_STABILIZER",
             ])
 
+    def test_main_filters_out_of_scope_tiers_before_integrity_gate(self):
+        # 回归：真实 tanks.pb 含 1-10 级车辆，业务范围过滤必须在 validate_integrity 之前，
+        # 否则 tier 5 T-34 会触发 TANKOPEDIA_TIER_OUT_OF_RANGE 导致 workflow 失败。
+        tanks_pb = root(
+            tank_data(1, 5, 1, 496, turret(124,
+                gun(100, [shell("ap", 140, 85)])),
+                name="T-34", nation="ussr"),
+            tank_data(1585, 8, 1, 1300, turret(360,
+                gun(817, [shell("ap", 200, 100)], tier=6),
+                gun(1073, [shell("ap", 200, 100)], tier=6),
+                gun(1329, [shell("ap", 280, 100)], tier=7),
+                gun(2353, [shell("ap", 400, 100)], tier=8),
+                gun(2609, [shell("ap", 280, 100)], tier=8)),
+                name="T-34-2", nation="china"),
+            tank_data(29985, 10, 2, 3400, turret(1000,
+                gun(272929, [shell("ap", 400, 252)])),
+                name="SPHT", nation="usa"),
+        )
+        provisions_pb = item_root(item_def(0, "Field Rations", include=[filter_nations(["other"])]))
+        consumables_pb = item_root(item_def(1, "Automatic Fire Extinguisher"))
+        equipment_pb = equipment_root(
+            equipment_preset("defaultPreset", [(100, 103)]),
+            equipment_item(100, "Gun Rammer"),
+            equipment_item(103, "Calibrated Shells"),
+        )
+
+        class FakeResp:
+            def __init__(self, data):
+                self._data = data
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return self._data
+
+        def fake_urlopen(url, timeout=60):
+            if "tanks.pb" in url:
+                return FakeResp(tanks_pb)
+            if "provisions.pb" in url:
+                return FakeResp(provisions_pb)
+            if "consumables.pb" in url:
+                return FakeResp(consumables_pb)
+            if "equipment.pb" in url:
+                return FakeResp(equipment_pb)
+            raise AssertionError("unexpected url: " + url)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            old_dir = os.path.join(tmp, "old")
+            new_dir = os.path.join(tmp, "new")
+            os.makedirs(old_dir)
+            os.makedirs(new_dir)
+            # 旧 tier8 数据只有 T-34-2，带 extraInfo
+            with open(os.path.join(old_dir, "tankopedia-tier8.json"), "w", encoding="utf-8") as f:
+                json.dump({"meta": {}, "vehicles": [
+                    {"id": 1585, "extraInfo": "保留我"},
+                ]}, f)
+
+            with mock.patch.object(ut.urllib.request, "urlopen", side_effect=fake_urlopen):
+                rc = ut.main(["--existing-dir", old_dir, "--output-dir", new_dir])
+
+            self.assertEqual(rc, 0)
+            # 4 个 tier 文件正常生成
+            self.assertEqual(
+                sorted(os.listdir(new_dir)),
+                sorted(ut.TIER_FILES.values()),
+            )
+            files = {}
+            for name in ut.TIER_FILES.values():
+                with open(os.path.join(new_dir, name), encoding="utf-8") as f:
+                    files[name] = json.load(f)
+            all_ids = {v["id"] for payload in files.values() for v in payload["vehicles"]}
+            # tier 5 T-34 不进入任何最终 JSON，且不触发 TANKOPEDIA_TIER_OUT_OF_RANGE
+            self.assertNotIn(1, all_ids)
+            # tier 8 T-34-2 正常生成：alphaDamage=400、extraInfo 保留
+            tier8_vehicles = files["tankopedia-tier8.json"]["vehicles"]
+            t82 = next(v for v in tier8_vehicles if v["id"] == 1585)
+            self.assertEqual(t82["alphaDamage"], 400)
+            self.assertEqual(t82["extraInfo"], "保留我")
+            self.assertEqual(len(t82["guns"]), 5)
+            # tier 10 SPHT 单炮仍为 400
+            spht = next(v for v in files["tankopedia-tier10.json"]["vehicles"] if v["id"] == 29985)
+            self.assertEqual(spht["alphaDamage"], 400)
+            # 无 7/9 级车辆时对应文件存在且为空
+            self.assertEqual(files["tankopedia-tier7.json"]["meta"]["count"], 0)
+            self.assertEqual(files["tankopedia-tier9.json"]["meta"]["count"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
