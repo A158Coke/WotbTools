@@ -2,7 +2,7 @@
   "meta": {
     "source": "blitzkit (assets.blitzkit.app/definitions/tanks.pb)",
     "tier": 9,
-    "generated_at": "2026-08-08T10:08:57.477583+00:00",
+    "generated_at": "2026-08-08T10:36:23.675084+00:00",
     "count": 102
   },
   "vehicles": [
@@ -21,7 +21,7 @@
       "guns": [
         {
           "gunId": 897,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 225,
           "shells": [
             {
@@ -43,7 +43,7 @@
         },
         {
           "gunId": 641,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 350,
           "shells": [
             {
@@ -64,6 +64,7 @@
           ]
         }
       ],
+      "alphaDamage": 350,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -116,7 +117,7 @@
       "guns": [
         {
           "gunId": 2609,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 280,
           "shells": [
             {
@@ -182,7 +183,7 @@
         },
         {
           "gunId": 3633,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 400,
           "shells": [
             {
@@ -203,6 +204,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "IMPROVED_GUNPOWDER",
@@ -258,7 +260,7 @@
       "guns": [
         {
           "gunId": 16705,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 225,
           "shells": [
             {
@@ -280,7 +282,7 @@
         },
         {
           "gunId": 4929,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 310,
           "shells": [
             {
@@ -301,6 +303,7 @@
           ]
         }
       ],
+      "alphaDamage": 310,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -355,7 +358,7 @@
       "guns": [
         {
           "gunId": 3377,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 310,
           "shells": [
             {
@@ -377,7 +380,7 @@
         },
         {
           "gunId": 3889,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 460,
           "shells": [
             {
@@ -398,6 +401,7 @@
           ]
         }
       ],
+      "alphaDamage": 460,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -451,7 +455,7 @@
       "guns": [
         {
           "gunId": 11553,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 310,
           "shells": [
             {
@@ -495,7 +499,7 @@
         },
         {
           "gunId": 270113,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 640,
           "shells": [
             {
@@ -516,6 +520,7 @@
           ]
         }
       ],
+      "alphaDamage": 640,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -590,6 +595,7 @@
           ]
         }
       ],
+      "alphaDamage": 440,
       "allowedProvision": [
         "GEAR_OIL",
         "IMPROVED_FUEL",
@@ -647,7 +653,7 @@
       "guns": [
         {
           "gunId": 5473,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 225,
           "shells": [
             {
@@ -669,7 +675,7 @@
         },
         {
           "gunId": 5729,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 330,
           "shells": [
             {
@@ -690,6 +696,7 @@
           ]
         }
       ],
+      "alphaDamage": 330,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -743,7 +750,7 @@
       "guns": [
         {
           "gunId": 24641,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 310,
           "shells": [
             {
@@ -787,7 +794,7 @@
         },
         {
           "gunId": 23105,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 380,
           "shells": [
             {
@@ -808,6 +815,7 @@
           ]
         }
       ],
+      "alphaDamage": 380,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -882,6 +890,7 @@
           ]
         }
       ],
+      "alphaDamage": 310,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -935,7 +944,7 @@
       "guns": [
         {
           "gunId": 7009,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 460,
           "shells": [
             {
@@ -957,7 +966,7 @@
         },
         {
           "gunId": 7265,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 560,
           "shells": [
             {
@@ -978,6 +987,7 @@
           ]
         }
       ],
+      "alphaDamage": 560,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -1034,7 +1044,7 @@
       "guns": [
         {
           "gunId": 5249,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 320,
           "shells": [
             {
@@ -1056,7 +1066,7 @@
         },
         {
           "gunId": 6529,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 400,
           "shells": [
             {
@@ -1077,6 +1087,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -1133,7 +1144,7 @@
       "guns": [
         {
           "gunId": 7249,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 190,
           "shells": [
             {
@@ -1177,7 +1188,7 @@
         },
         {
           "gunId": 7505,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 400,
           "shells": [
             {
@@ -1198,6 +1209,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -1275,6 +1287,7 @@
           ]
         }
       ],
+      "alphaDamage": 310,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -1328,7 +1341,7 @@
       "guns": [
         {
           "gunId": 268113,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 190,
           "shells": [
             {
@@ -1372,7 +1385,7 @@
         },
         {
           "gunId": 267601,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 350,
           "shells": [
             {
@@ -1415,6 +1428,7 @@
           ]
         }
       ],
+      "alphaDamage": 350,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -1468,7 +1482,7 @@
       "guns": [
         {
           "gunId": 8065,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 310,
           "shells": [
             {
@@ -1490,7 +1504,7 @@
         },
         {
           "gunId": 10113,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 300,
           "shells": [
             {
@@ -1511,6 +1525,7 @@
           ]
         }
       ],
+      "alphaDamage": 300,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -1584,6 +1599,7 @@
           ]
         }
       ],
+      "alphaDamage": 250,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -1658,6 +1674,7 @@
           ]
         }
       ],
+      "alphaDamage": 420,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -1711,7 +1728,7 @@
       "guns": [
         {
           "gunId": 10081,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 420,
           "shells": [
             {
@@ -1733,7 +1750,7 @@
         },
         {
           "gunId": 10337,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 420,
           "shells": [
             {
@@ -1754,6 +1771,7 @@
           ]
         }
       ],
+      "alphaDamage": 420,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -1828,6 +1846,7 @@
           ]
         }
       ],
+      "alphaDamage": 250,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -1880,7 +1899,7 @@
       "guns": [
         {
           "gunId": 2321,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 220,
           "shells": [
             {
@@ -1946,7 +1965,7 @@
         },
         {
           "gunId": 9489,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 460,
           "shells": [
             {
@@ -1967,6 +1986,7 @@
           ]
         }
       ],
+      "alphaDamage": 460,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -2024,7 +2044,7 @@
       "guns": [
         {
           "gunId": 10881,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 420,
           "shells": [
             {
@@ -2046,7 +2066,7 @@
         },
         {
           "gunId": 11137,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 460,
           "shells": [
             {
@@ -2067,6 +2087,7 @@
           ]
         }
       ],
+      "alphaDamage": 460,
       "allowedProvision": [
         "GEAR_OIL",
         "IMPROVED_FUEL",
@@ -2124,7 +2145,7 @@
       "guns": [
         {
           "gunId": 19457,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 280,
           "shells": [
             {
@@ -2190,7 +2211,7 @@
         },
         {
           "gunId": 27393,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 330,
           "shells": [
             {
@@ -2211,6 +2232,7 @@
           ]
         }
       ],
+      "alphaDamage": 330,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -2307,6 +2329,7 @@
           ]
         }
       ],
+      "alphaDamage": 460,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -2361,7 +2384,7 @@
       "guns": [
         {
           "gunId": 20481,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 640,
           "shells": [
             {
@@ -2383,7 +2406,7 @@
         },
         {
           "gunId": 17921,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 640,
           "shells": [
             {
@@ -2404,6 +2427,7 @@
           ]
         }
       ],
+      "alphaDamage": 640,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -2457,7 +2481,7 @@
       "guns": [
         {
           "gunId": 11569,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 460,
           "shells": [
             {
@@ -2479,7 +2503,7 @@
         },
         {
           "gunId": 9265,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 640,
           "shells": [
             {
@@ -2500,6 +2524,7 @@
           ]
         }
       ],
+      "alphaDamage": 640,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -2557,7 +2582,7 @@
       "guns": [
         {
           "gunId": 11553,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 310,
           "shells": [
             {
@@ -2601,7 +2626,7 @@
         },
         {
           "gunId": 12321,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 640,
           "shells": [
             {
@@ -2622,6 +2647,7 @@
           ]
         }
       ],
+      "alphaDamage": 640,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -2676,7 +2702,7 @@
       "guns": [
         {
           "gunId": 14369,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 225,
           "shells": [
             {
@@ -2720,7 +2746,7 @@
         },
         {
           "gunId": 10273,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 350,
           "shells": [
             {
@@ -2741,6 +2767,7 @@
           ]
         }
       ],
+      "alphaDamage": 350,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -2794,7 +2821,7 @@
       "guns": [
         {
           "gunId": 4385,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 310,
           "shells": [
             {
@@ -2838,7 +2865,7 @@
         },
         {
           "gunId": 14113,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 400,
           "shells": [
             {
@@ -2859,6 +2886,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -2914,7 +2942,7 @@
       "guns": [
         {
           "gunId": 2321,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 220,
           "shells": [
             {
@@ -2980,7 +3008,7 @@
         },
         {
           "gunId": 9489,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 460,
           "shells": [
             {
@@ -3001,6 +3029,7 @@
           ]
         }
       ],
+      "alphaDamage": 460,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -3075,6 +3104,7 @@
           ]
         }
       ],
+      "alphaDamage": 470,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -3174,6 +3204,7 @@
           ]
         }
       ],
+      "alphaDamage": 330,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -3227,7 +3258,7 @@
       "guns": [
         {
           "gunId": 2321,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 220,
           "shells": [
             {
@@ -3271,7 +3302,7 @@
         },
         {
           "gunId": 12049,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 350,
           "shells": [
             {
@@ -3292,6 +3323,7 @@
           ]
         }
       ],
+      "alphaDamage": 350,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -3366,6 +3398,7 @@
           ]
         }
       ],
+      "alphaDamage": 320,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -3418,7 +3451,7 @@
       "guns": [
         {
           "gunId": 14721,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 400,
           "shells": [
             {
@@ -3440,7 +3473,7 @@
         },
         {
           "gunId": 14977,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 450,
           "shells": [
             {
@@ -3461,6 +3494,7 @@
           ]
         }
       ],
+      "alphaDamage": 450,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -3513,7 +3547,7 @@
       "guns": [
         {
           "gunId": 3841,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 400,
           "shells": [
             {
@@ -3557,7 +3591,7 @@
         },
         {
           "gunId": 23809,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 420,
           "shells": [
             {
@@ -3578,6 +3612,7 @@
           ]
         }
       ],
+      "alphaDamage": 420,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -3653,6 +3688,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "GEAR_OIL",
         "IMPROVED_FUEL",
@@ -3709,7 +3745,7 @@
       "guns": [
         {
           "gunId": 24945,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 380,
           "shells": [
             {
@@ -3775,7 +3811,7 @@
         },
         {
           "gunId": 25201,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 450,
           "shells": [
             {
@@ -3796,6 +3832,7 @@
           ]
         }
       ],
+      "alphaDamage": 450,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -3849,7 +3886,7 @@
       "guns": [
         {
           "gunId": 3841,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 400,
           "shells": [
             {
@@ -3893,7 +3930,7 @@
         },
         {
           "gunId": 23809,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 420,
           "shells": [
             {
@@ -3914,6 +3951,7 @@
           ]
         }
       ],
+      "alphaDamage": 420,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -3989,6 +4027,7 @@
           ]
         }
       ],
+      "alphaDamage": 450,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "IMPROVED_GUNPOWDER",
@@ -4044,7 +4083,7 @@
       "guns": [
         {
           "gunId": 24065,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 400,
           "shells": [
             {
@@ -4088,7 +4127,7 @@
         },
         {
           "gunId": 28161,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 420,
           "shells": [
             {
@@ -4109,6 +4148,7 @@
           ]
         }
       ],
+      "alphaDamage": 420,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -4162,7 +4202,7 @@
       "guns": [
         {
           "gunId": 18225,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 460,
           "shells": [
             {
@@ -4184,7 +4224,7 @@
         },
         {
           "gunId": 19505,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 530,
           "shells": [
             {
@@ -4205,6 +4245,7 @@
           ]
         }
       ],
+      "alphaDamage": 530,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -4258,7 +4299,7 @@
       "guns": [
         {
           "gunId": 29297,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 310,
           "shells": [
             {
@@ -4324,7 +4365,7 @@
         },
         {
           "gunId": 30065,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 350,
           "shells": [
             {
@@ -4345,6 +4386,7 @@
           ]
         }
       ],
+      "alphaDamage": 350,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -4419,6 +4461,7 @@
           ]
         }
       ],
+      "alphaDamage": 350,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -4492,6 +4535,7 @@
           ]
         }
       ],
+      "alphaDamage": 420,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -4544,7 +4588,7 @@
       "guns": [
         {
           "gunId": 19585,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 310,
           "shells": [
             {
@@ -4588,7 +4632,7 @@
         },
         {
           "gunId": 19329,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 420,
           "shells": [
             {
@@ -4609,6 +4653,7 @@
           ]
         }
       ],
+      "alphaDamage": 420,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -4683,6 +4728,7 @@
           ]
         }
       ],
+      "alphaDamage": 560,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "IMPROVED_GUNPOWDER",
@@ -4757,6 +4803,7 @@
           ]
         }
       ],
+      "alphaDamage": 460,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -4831,6 +4878,7 @@
           ]
         }
       ],
+      "alphaDamage": 480,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -4884,7 +4932,7 @@
       "guns": [
         {
           "gunId": 35185,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 370,
           "shells": [
             {
@@ -4950,7 +4998,7 @@
         },
         {
           "gunId": 35953,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 410,
           "shells": [
             {
@@ -4971,6 +5019,7 @@
           ]
         }
       ],
+      "alphaDamage": 410,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -5023,7 +5072,7 @@
       "guns": [
         {
           "gunId": 19985,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 240,
           "shells": [
             {
@@ -5045,7 +5094,7 @@
         },
         {
           "gunId": 20753,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 360,
           "shells": [
             {
@@ -5066,6 +5115,7 @@
           ]
         }
       ],
+      "alphaDamage": 360,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "IMPROVED_GUNPOWDER",
@@ -5121,7 +5171,7 @@
       "guns": [
         {
           "gunId": 23937,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 310,
           "shells": [
             {
@@ -5165,7 +5215,7 @@
         },
         {
           "gunId": 24449,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 330,
           "shells": [
             {
@@ -5186,6 +5236,7 @@
           ]
         }
       ],
+      "alphaDamage": 330,
       "allowedProvision": [
         "GEAR_OIL",
         "IMPROVED_FUEL",
@@ -5243,7 +5294,7 @@
       "guns": [
         {
           "gunId": 20257,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 225,
           "shells": [
             {
@@ -5265,7 +5316,7 @@
         },
         {
           "gunId": 20769,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 310,
           "shells": [
             {
@@ -5281,6 +5332,7 @@
           ]
         }
       ],
+      "alphaDamage": 310,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "IMPROVED_GUNPOWDER",
@@ -5378,6 +5430,7 @@
           ]
         }
       ],
+      "alphaDamage": 460,
       "allowedProvision": [
         "GEAR_OIL",
         "IMPROVED_FUEL",
@@ -5435,7 +5488,7 @@
       "guns": [
         {
           "gunId": 38769,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 600,
           "shells": [
             {
@@ -5501,7 +5554,7 @@
         },
         {
           "gunId": 39025,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 630,
           "shells": [
             {
@@ -5522,6 +5575,7 @@
           ]
         }
       ],
+      "alphaDamage": 630,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -5575,7 +5629,7 @@
       "guns": [
         {
           "gunId": 10833,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 400,
           "shells": [
             {
@@ -5597,7 +5651,7 @@
         },
         {
           "gunId": 259665,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 600,
           "shells": [
             {
@@ -5618,6 +5672,7 @@
           ]
         }
       ],
+      "alphaDamage": 600,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -5673,7 +5728,7 @@
       "guns": [
         {
           "gunId": 30337,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 350,
           "shells": [
             {
@@ -5717,7 +5772,7 @@
         },
         {
           "gunId": 29057,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 400,
           "shells": [
             {
@@ -5738,6 +5793,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -5811,6 +5867,7 @@
           ]
         }
       ],
+      "alphaDamage": 340,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -5864,7 +5921,7 @@
       "guns": [
         {
           "gunId": 42609,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 390,
           "shells": [
             {
@@ -5952,7 +6009,7 @@
         },
         {
           "gunId": 43633,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 430,
           "shells": [
             {
@@ -5973,6 +6030,7 @@
           ]
         }
       ],
+      "alphaDamage": 430,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -6069,6 +6127,7 @@
           ]
         }
       ],
+      "alphaDamage": 374,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -6125,7 +6184,7 @@
       "guns": [
         {
           "gunId": 45169,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 370,
           "shells": [
             {
@@ -6191,7 +6250,7 @@
         },
         {
           "gunId": 45937,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 410,
           "shells": [
             {
@@ -6212,6 +6271,7 @@
           ]
         }
       ],
+      "alphaDamage": 410,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -6267,7 +6327,7 @@
       "guns": [
         {
           "gunId": 32641,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 340,
           "shells": [
             {
@@ -6289,7 +6349,7 @@
         },
         {
           "gunId": 32897,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 435,
           "shells": [
             {
@@ -6310,6 +6370,7 @@
           ]
         }
       ],
+      "alphaDamage": 435,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -6384,6 +6445,7 @@
           ]
         }
       ],
+      "alphaDamage": 310,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -6479,6 +6541,7 @@
           ]
         }
       ],
+      "alphaDamage": 480,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -6531,7 +6594,7 @@
       "guns": [
         {
           "gunId": 8273,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 225,
           "shells": [
             {
@@ -6553,7 +6616,7 @@
         },
         {
           "gunId": 262737,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 300,
           "shells": [
             {
@@ -6574,6 +6637,7 @@
           ]
         }
       ],
+      "alphaDamage": 300,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -6628,7 +6692,7 @@
       "guns": [
         {
           "gunId": 259617,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 350,
           "shells": [
             {
@@ -6650,7 +6714,7 @@
         },
         {
           "gunId": 259873,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 560,
           "shells": [
             {
@@ -6671,6 +6735,7 @@
           ]
         }
       ],
+      "alphaDamage": 560,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -6745,6 +6810,7 @@
           ]
         }
       ],
+      "alphaDamage": 340,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -6798,7 +6864,7 @@
       "guns": [
         {
           "gunId": 47217,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 400,
           "shells": [
             {
@@ -6820,7 +6886,7 @@
         },
         {
           "gunId": 48497,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 440,
           "shells": [
             {
@@ -6863,6 +6929,7 @@
           ]
         }
       ],
+      "alphaDamage": 440,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -6915,7 +6982,7 @@
       "guns": [
         {
           "gunId": 258065,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 460,
           "shells": [
             {
@@ -6937,7 +7004,7 @@
         },
         {
           "gunId": 9489,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 460,
           "shells": [
             {
@@ -6958,6 +7025,7 @@
           ]
         }
       ],
+      "alphaDamage": 460,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -7034,6 +7102,7 @@
           ]
         }
       ],
+      "alphaDamage": 380,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -7109,6 +7178,7 @@
           ]
         }
       ],
+      "alphaDamage": 50,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -7183,6 +7253,7 @@
           ]
         }
       ],
+      "alphaDamage": 430,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -7257,6 +7328,7 @@
           ]
         }
       ],
+      "alphaDamage": 460,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -7331,6 +7403,7 @@
           ]
         }
       ],
+      "alphaDamage": 360,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -7406,6 +7479,7 @@
           ]
         }
       ],
+      "alphaDamage": 340,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -7459,7 +7533,7 @@
       "guns": [
         {
           "gunId": 27201,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 225,
           "shells": [
             {
@@ -7481,7 +7555,7 @@
         },
         {
           "gunId": 27457,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 330,
           "shells": [
             {
@@ -7502,6 +7576,7 @@
           ]
         }
       ],
+      "alphaDamage": 330,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -7575,6 +7650,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -7649,6 +7725,7 @@
           ]
         }
       ],
+      "alphaDamage": 360,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -7724,6 +7801,7 @@
           ]
         }
       ],
+      "alphaDamage": 350,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -7801,6 +7879,7 @@
           ]
         }
       ],
+      "alphaDamage": 370,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -7874,6 +7953,7 @@
           ]
         }
       ],
+      "alphaDamage": 135,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "IMPROVED_GUNPOWDER",
@@ -7927,7 +8007,7 @@
       "guns": [
         {
           "gunId": 263201,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 300,
           "shells": [
             {
@@ -7971,7 +8051,7 @@
         },
         {
           "gunId": 264481,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 450,
           "shells": [
             {
@@ -7992,6 +8072,7 @@
           ]
         }
       ],
+      "alphaDamage": 450,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "IMPROVED_GUNPOWDER",
@@ -8063,6 +8144,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -8137,6 +8219,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -8190,7 +8273,7 @@
       "guns": [
         {
           "gunId": 19457,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 280,
           "shells": [
             {
@@ -8212,7 +8295,7 @@
         },
         {
           "gunId": 19969,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 310,
           "shells": [
             {
@@ -8233,6 +8316,7 @@
           ]
         }
       ],
+      "alphaDamage": 310,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -8307,6 +8391,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -8381,6 +8466,7 @@
           ]
         }
       ],
+      "alphaDamage": 320,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -8455,6 +8541,7 @@
           ]
         }
       ],
+      "alphaDamage": 450,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -8530,6 +8617,7 @@
           ]
         }
       ],
+      "alphaDamage": 430,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -8603,6 +8691,7 @@
           ]
         }
       ],
+      "alphaDamage": 290,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "IMPROVED_GUNPOWDER",
@@ -8678,6 +8767,7 @@
           ]
         }
       ],
+      "alphaDamage": 460,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -8753,6 +8843,7 @@
           ]
         }
       ],
+      "alphaDamage": 460,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -8827,6 +8918,7 @@
           ]
         }
       ],
+      "alphaDamage": 380,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -8901,6 +8993,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -8955,7 +9048,7 @@
       "guns": [
         {
           "gunId": 267281,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 380,
           "shells": [
             {
@@ -8977,7 +9070,7 @@
         },
         {
           "gunId": 270609,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 500,
           "shells": [
             {
@@ -8998,6 +9091,7 @@
           ]
         }
       ],
+      "alphaDamage": 500,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -9093,6 +9187,7 @@
           ]
         }
       ],
+      "alphaDamage": 340,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -9166,6 +9261,7 @@
           ]
         }
       ],
+      "alphaDamage": 380,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -9219,7 +9315,7 @@
       "guns": [
         {
           "gunId": 268049,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 230,
           "shells": [
             {
@@ -9241,7 +9337,7 @@
         },
         {
           "gunId": 268817,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 240,
           "shells": [
             {
@@ -9262,6 +9358,7 @@
           ]
         }
       ],
+      "alphaDamage": 240,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -9342,6 +9439,7 @@
           ]
         }
       ],
+      "alphaDamage": 410,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -9418,6 +9516,7 @@
           ]
         }
       ],
+      "alphaDamage": 390,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -9513,6 +9612,7 @@
           ]
         }
       ],
+      "alphaDamage": 160,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -9587,6 +9687,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -9640,7 +9741,7 @@
       "guns": [
         {
           "gunId": 337,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 300,
           "shells": [
             {
@@ -9684,7 +9785,7 @@
         },
         {
           "gunId": 10833,
-          "isDefault": false,
+          "isDefault": true,
           "alphaDamage": 400,
           "shells": [
             {
@@ -9705,6 +9806,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",

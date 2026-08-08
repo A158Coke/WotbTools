@@ -57,8 +57,9 @@ def shell(shell_type, damage, pen):
     return (f_bytes(7, shell_type.encode()) + f_varint(4, damage) + f_bytes(8, pen_msg))
 
 
-def gun(gun_id, shells, clip=False):
+def gun(gun_id, shells, clip=False, tier=10):
     out = f_varint(4, gun_id)
+    out += f_varint(9, tier)
     # GunDefinition oneof：field 1 = regular，field 2 = auto_loader（弹夹）
     out += f_bytes(2 if clip else 1, b"")
     for s in shells:
@@ -251,6 +252,7 @@ class ParseTanksTest(unittest.TestCase):
         self.assertEqual(v["guns"][0]["gunId"], 100)
         self.assertTrue(v["guns"][0]["isDefault"])
         self.assertEqual(v["guns"][0]["alphaDamage"], 140)
+        self.assertEqual(v["alphaDamage"], 140)
         self.assertEqual(v["guns"][0]["shells"], [
             {"type": "ap", "damage": 140, "penetration": 85},
             {"type": "heat", "damage": 120, "penetration": 115},
@@ -270,11 +272,43 @@ class ParseTanksTest(unittest.TestCase):
         v = vehicles["9489"]
         self.assertEqual(len(v["guns"]), 2)
         self.assertEqual(v["guns"][0]["gunId"], 269329)
-        self.assertTrue(v["guns"][0]["isDefault"])
+        # 10 级多终局炮：不标默认、不输出权威 alphaDamage（回放无可靠实际炮）
+        self.assertFalse(v["guns"][0]["isDefault"])
+        self.assertFalse(v["guns"][1]["isDefault"])
+        self.assertNotIn("alphaDamage", v)
         self.assertEqual(v["guns"][0]["alphaDamage"], 460)
         self.assertEqual(v["guns"][1]["gunId"], 269073)
-        self.assertFalse(v["guns"][1]["isDefault"])
         self.assertEqual(v["guns"][1]["alphaDamage"], 645)
+
+    def test_tier7_9_top_gun_selected_as_default(self):
+        # T-34-2 回归：5 把炮（200/200/280/400/280），顶配炮塔最高 tier=8，
+        # 同 tier 取最高 alpha -> 122mm 400 为默认，不能把数组第一把 200 当默认
+        pb = root(tank_data(
+            1585, 8, 1, 1300,
+            turret(360,
+                gun(817, [shell("ap", 200, 100)], tier=6),
+                gun(1073, [shell("ap", 200, 100)], tier=6),
+                gun(1329, [shell("ap", 280, 100)], tier=7),
+                gun(2353, [shell("ap", 400, 100)], tier=8),
+                gun(2609, [shell("ap", 280, 100)], tier=8)),
+            name="T-34-2", nation="china",
+        ))
+        v = ut.parse_tanks(pb)["1585"]
+        self.assertEqual(v["alphaDamage"], 400)
+        defaults = [g["gunId"] for g in v["guns"] if g["isDefault"]]
+        self.assertEqual(defaults, [2353])
+        self.assertFalse(v["guns"][0]["isDefault"])  # 第一把 200 不再是默认
+
+    def test_tier10_single_gun_still_authoritative(self):
+        # SPHT 形状：10 级单炮 -> 正常输出 alphaDamage
+        pb = root(tank_data(
+            29985, 10, 2, 3400, turret(1000,
+                gun(272929, [shell("ap", 400, 252)])),
+            name="SPHT", nation="usa",
+        ))
+        v = ut.parse_tanks(pb)["29985"]
+        self.assertEqual(v["alphaDamage"], 400)
+        self.assertTrue(v["guns"][0]["isDefault"])
 
     def test_clip_flag_on_autoloader(self):
         pb = root(tank_data(
@@ -509,6 +543,7 @@ class MainPathTest(unittest.TestCase):
             self.assertEqual(vehicle["id"], 1)
             self.assertEqual(vehicle["extraInfo"], "保留我")
             self.assertEqual(vehicle["hp"], 2650)
+            self.assertEqual(vehicle["alphaDamage"], 420)  # 单炮车权威炮伤
             self.assertEqual(vehicle["guns"][0]["shells"][0]["penetration"], 258)
             self.assertEqual(vehicle["allowedEquipment"], [
                 "CALIBRATED_SHELLS", "GUN_RAMMER",
