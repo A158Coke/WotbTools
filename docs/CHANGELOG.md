@@ -31,6 +31,7 @@
 - **AI Replay 测试重构**：`AiReplayAnalysisServiceTest` 由本地 HttpServer 切换为 `FakeAiChatGateway` 契约断言；HTTP/脱敏/metrics 测试移入 `gateway` 子包新增的 `DeepSeekRestAiChatGatewayTest`/`DeepSeekRestAiChatGatewayMetricsTest`；新增 `PlayerGatewayPromptContractTest` 捕获 `AiChatRequest` 的 system/user/model/analysisMode。
 
 ### Added
+- **Tankopedia 同步流程顺序修复（业务范围过滤先于完整性门禁）**：`main()` 改为 `parse_tanks → filter_to_business_tiers(tier 7-10) → apply items/equipment → merge_extra_info → validate_integrity → write 4 tier files`；真实 blitzkit 全量 `tanks.pb` 中的 1–6 级车辆不再触发 `TANKOPEDIA_TIER_OUT_OF_RANGE`，`Update Tankopedia` workflow 可正常生成 tier 7–10 四个文件。新增 tier 5/8/10 混合回归测试（tier 5 不进入任何 JSON、T-34-2 仍为 400、extraInfo 保留）。
 - **Team AI prompt 补齐结构化车辆事实**：`TEAM_MEMBERS` 与 `OPPOSING_TEAM_LINEUP_AUTHORITATIVE` 两条路径新增 `alphaDamage` / `hp` / `extraInfo`（仅 Tankopedia 提供时输出；10 级多炮车无权威 alphaDamage 时省略，不猜测；`extraInfo` 按不可信数据 JSON 引用/转义）。新增 SPHT/Kranvagn/E 100 与 extraInfo 转义的 Team prompt 测试。
 - **Tankopedia 更新完整性门禁**：`update_tankopedia.py` 在写入前校验——解析为空、总车辆数或单 tier 数量相对已有数据下降超 20%（允许少量真实删除）、tank ID 重复、tier 不在 7–10、车辆缺 id/name/hp/gun 均失败，失败不写文件、不提交。新增 8 个 Python 完整性测试。
 - **Python 测试进入 CI**：`ci.yml` 新增 `python` job，运行 `python3 -m unittest discover -s common/python/tests -p 'test_*.py'`。
