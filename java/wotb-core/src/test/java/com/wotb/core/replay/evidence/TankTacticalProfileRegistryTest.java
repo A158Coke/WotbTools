@@ -46,5 +46,9 @@ class TankTacticalProfileRegistryTest {
         assertEquals("TANK_DESTROYER", TankTacticalProfileRegistry.normalizeClass("TD"));
         assertEquals("LIGHT", TankTacticalProfileRegistry.normalizeClass("轻坦"));
         assertEquals("UNKNOWN", TankTacticalProfileRegistry.normalizeClass(null));
+        assertEquals("HEAVY", TankTacticalProfileRegistry.normalizeClass("Heavy tank"));
+        assertEquals("MEDIUM", TankTacticalProfileRegistry.normalizeClass("Medium tank"));
+        assertEquals("LIGHT", TankTacticalProfileRegistry.normalizeClass("Light tank"));
+        assertEquals("TANK_DESTROYER", TankTacticalProfileRegistry.normalizeClass("Tank destroyer"));
     }
 }

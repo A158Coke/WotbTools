@@ -1,6 +1,9 @@
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
-COPY common/tankopedia.json common/tankopedia.json
+COPY common/tankopedia-tier7.json common/tankopedia-tier7.json
+COPY common/tankopedia-tier8.json common/tankopedia-tier8.json
+COPY common/tankopedia-tier9.json common/tankopedia-tier9.json
+COPY common/tankopedia-tier10.json common/tankopedia-tier10.json
 COPY common/rating.json common/rating.json
 COPY common/map_names.json common/map_names.json
 COPY common/tank_tactical_profiles.json common/tank_tactical_profiles.json

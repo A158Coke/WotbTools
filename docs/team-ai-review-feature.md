@@ -84,7 +84,7 @@ Enemy-only damage 不得延长 Team phase。
 ## 6. 地图和时间
 
 - 地图名通过 `common/map_names.json` 映射为中/英/俄
-- Tank 名通过 `common/tankopedia.json` 解析（单一数据源）
+- Tank 名通过 `common/tankopedia-tier{7,8,9,10}.json` 解析（单一数据源，按等级拆分）
 - 地图坐标 500x500 canonical 米
 - X/Z 为水平轴，Y 仅作高度
 - 九宫格 region 1-9（对随机战斗和团队赛共用）

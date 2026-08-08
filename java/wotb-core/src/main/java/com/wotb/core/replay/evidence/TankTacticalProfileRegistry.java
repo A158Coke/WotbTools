@@ -130,16 +130,16 @@ public final class TankTacticalProfileRegistry {
         };
     }
 
-    /** 归一化车种：中文 / 英文 → 语义枚举。 */
+    /** 归一化车种：中文 / 英文（含 blitzkit 新格式 "Heavy tank" 等）→ 语义枚举。 */
     static String normalizeClass(final String type) {
         if (!StringUtils.hasText(type)) {
             return UNKNOWN_CLASS;
         }
-        return switch (type.trim()) {
-            case "重坦", "HEAVY", "HT" -> "HEAVY";
-            case "中坦", "MEDIUM", "MT" -> "MEDIUM";
-            case "轻坦", "LIGHT", "LT" -> "LIGHT";
-            case "TD", "坦克歼击车", "TANK_DESTROYER" -> "TANK_DESTROYER";
+        return switch (type.trim().toLowerCase(Locale.ROOT)) {
+            case "重坦", "heavy", "heavy tank", "ht" -> "HEAVY";
+            case "中坦", "medium", "medium tank", "mt" -> "MEDIUM";
+            case "轻坦", "light", "light tank", "lt" -> "LIGHT";
+            case "td", "坦克歼击车", "tank destroyer", "tank_destroyer" -> "TANK_DESTROYER";
             default -> UNKNOWN_CLASS;
         };
     }

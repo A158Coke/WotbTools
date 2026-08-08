@@ -1,0 +1,78 @@
+name: Update Tankopedia
+
+# 手动触发：直接从 blitzkit（assets.blitzkit.app/definitions/tanks.pb + consumables.pb +
+# provisions.pb，游戏客户端数据）同步车辆库，把生成的 4 个等级文件
+# common/tankopedia-tier{7,8,9,10}.json 提交回当前分支（merge 后为 main）。
+#
+# 为什么不再走 VPS / WG API：数据源已全面切换为 blitzkit（WG 百科滞后游戏版本，
+# 如 11.19 的 SPHT / AC Atlas 缺失，且 application_id 有 IP 白名单限制）；
+# blitzkit 是公开 CDN，GitHub Actions runner 可直接访问，无需任何 secret。
+#
+# 额外知识保护：脚本 --existing-dir / --output-dir 路径分离，提交前再次用
+# verify_knowledge_preservation 校验，仍存在的车辆 extraInfo 丢失会中止提交。
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-tankopedia
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync tankopedia from blitzkit
+        run: |
+          set -e
+          mkdir -p /tmp/wotb-tankopedia-out
+          python3 common/python/update_tankopedia.py \
+            --existing-dir common \
+            --output-dir /tmp/wotb-tankopedia-out
+
+      - name: Verify extraInfo preservation before commit
+        run: |
+          set -e
+          python3 - <<'PY'
+          import sys
+          sys.path.insert(0, "common/python")
+          from update_tankopedia import load_existing_data_dir, verify_knowledge_preservation
+          old = load_existing_data_dir("common")
+          new = load_existing_data_dir("/tmp/wotb-tankopedia-out")
+          ok, old_count, preserved = verify_knowledge_preservation(old, new)
+          print("existing_knowledge=%d preserved_knowledge=%d" % (old_count, preserved))
+          if not ok:
+              print("::error::extraInfo preservation check failed; aborting commit.")
+              sys.exit(1)
+          PY
+
+      - name: Replace tier files
+        run: |
+          set -e
+          cp /tmp/wotb-tankopedia-out/tankopedia-tier7.json common/tankopedia-tier7.json
+          cp /tmp/wotb-tankopedia-out/tankopedia-tier8.json common/tankopedia-tier8.json
+          cp /tmp/wotb-tankopedia-out/tankopedia-tier9.json common/tankopedia-tier9.json
+          cp /tmp/wotb-tankopedia-out/tankopedia-tier10.json common/tankopedia-tier10.json
+
+      - name: Commit updated tankopedia files
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execSync } = require('node:child_process');
+            const changed = execSync(
+              'git status --porcelain -- common/tankopedia-tier*.json',
+              { encoding: 'utf8' }
+            ).trim();
+            if (!changed) {
+              console.log('tankopedia tier files unchanged; nothing to commit.');
+              return;
+            }
+            execSync('git config user.name "github-actions[bot]"');
+            execSync('git config user.email "41898282+github-actions[bot]@users.noreply.github.com"');
+            execSync('git add common/tankopedia-tier7.json common/tankopedia-tier8.json common/tankopedia-tier9.json common/tankopedia-tier10.json');
+            execSync('git commit -m "chore(data): 同步 blitzkit 车辆库（tier 7-10）"');
+            execSync('git push');

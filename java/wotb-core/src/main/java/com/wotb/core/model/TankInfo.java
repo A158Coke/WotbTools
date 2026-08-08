@@ -3,7 +3,7 @@ package com.wotb.core.model;
 /**
  * 单辆车的信息 (tank_id -> 名称/等级/车种/国家)。
  *
- * @param type 车种(轻坦/中坦/重坦/TD)
+ * @param type 车种(英文: Light/Medium/Heavy/Tank destroyer)
  */
 public record TankInfo(
         String name,
@@ -12,6 +12,6 @@ public record TankInfo(
         String nation,
         Integer alphaDamage,
         Integer maxHp,
-        String extraKnowledge
+        String extraInfo
 ) {
 }

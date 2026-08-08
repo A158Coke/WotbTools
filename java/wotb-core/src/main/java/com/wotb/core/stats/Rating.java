@@ -139,6 +139,16 @@ public final class Rating {
     /** 车型分桶键; 无车型信息归入"其他"。 */
     private static String classKey(final Tankopedia tp, final PlayerResult p) {
         final String type = tp.info(p.tankId).type();
-        return StringUtils.hasText(type) ? type : "其他";
+        if (!StringUtils.hasText(type)) {
+            return "其他";
+        }
+        // tankopedia 现在存英文车种，评分配置 classFactor 仍用中文键
+        return switch (type) {
+            case "Heavy tank" -> "重坦";
+            case "Medium tank" -> "中坦";
+            case "Light tank" -> "轻坦";
+            case "Tank destroyer" -> "TD";
+            default -> type;
+        };
     }
 }
