@@ -75,7 +75,8 @@ def turret(turret_hp, *gun_msgs, traverse=42.0, tier=10):
 
 def tank_data(tank_id, tier, tank_class, hull_hp, turret_msg, name="T-34",
               nation="ussr", speed_fwd=56, speed_bwd=20, weight=10000,
-              engine_power=400, engine_tier=10, track_traverse=46.0, track_tier=10):
+              engine_power=400, engine_tier=10, track_traverse=46.0, track_tier=10,
+              equipment_preset="defaultPreset"):
     td = b""
     td += f_varint(16, tier)
     td += f_varint(17, tank_class)
@@ -88,6 +89,7 @@ def tank_data(tank_id, tier, tank_class, hull_hp, turret_msg, name="T-34",
     td += f_float(25, float(speed_fwd))
     td += f_float(26, float(speed_bwd))
     td += f_varint(31, weight)
+    td += f_bytes(30, equipment_preset.encode())
     entry = f_varint(1, tank_id) + f_bytes(2, td)
     return f_bytes(1, entry)
 
@@ -130,6 +132,22 @@ def item_def(item_id, name, include=None, exclude=None):
 
 def item_root(*items):
     return b"".join(items)
+
+
+# ---- equipment.pb fixture ----
+
+def equipment_preset(name, slots):
+    slots_msg = b"".join(f_bytes(1, f_varint(1, left) + f_varint(2, right))
+                         for left, right in slots)
+    return f_bytes(1, f_bytes(1, name.encode()) + f_bytes(2, slots_msg))
+
+
+def equipment_item(equipment_id, name):
+    return f_bytes(2, f_varint(1, equipment_id) + f_bytes(2, i18n([("en", name)])))
+
+
+def equipment_root(*entries):
+    return b"".join(entries)
 
 
 class LoadExistingDataTest(unittest.TestCase):
@@ -182,7 +200,6 @@ class KnowledgePreservationTest(unittest.TestCase):
         self.assertEqual(merged["1"]["extraInfo"], "点灯位")
         self.assertEqual(merged["2"]["extraInfo"], "炮塔弱点")
         self.assertEqual(merged["3"]["extraInfo"], "")
-        self.assertEqual(merged["1"]["priority"], 0)
 
     def test_removed_vehicle_disappears(self):
         old = {"1": {"extraInfo": "知识"}, "2": {"extraInfo": "旧车知识"}}
@@ -280,6 +297,61 @@ class ParseTanksTest(unittest.TestCase):
         self.assertEqual(v["guns"], [])
 
 
+class EquipmentTest(unittest.TestCase):
+    def test_allowed_equipment_from_preset(self):
+        # VK 72.01 形状：特殊预设带 俯角/履带齿 专属装备（122/123）
+        tanks_pb = root(tank_data(
+            58641, 10, 2, 2100, turret(600,
+                gun(100, [shell("ap", 460, 250)])),
+            name="VK 72.01", nation="germany",
+            equipment_preset="DrumGunPitchLimitsPreset",
+        ))
+        equipment_pb = equipment_root(
+            equipment_preset("DrumGunPitchLimitsPreset", [(102, 103), (122, 123)]),
+            equipment_preset("defaultPreset", [(100, 103)]),
+            equipment_item(100, "Gun Rammer"),
+            equipment_item(102, "Improved Ventilation"),
+            equipment_item(103, "Calibrated Shells"),
+            equipment_item(122, "Improved Vertical Stabilizer"),
+            equipment_item(123, "Improved Suspension"),
+        )
+        presets, _ = ut.parse_equipment_defs(equipment_pb)
+        self.assertEqual(presets["DrumGunPitchLimitsPreset"], {102, 103, 122, 123})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            catalog = os.path.join(tmp, "catalog")
+            os.makedirs(catalog)
+            with open(os.path.join(catalog, "equipment.json"), "w", encoding="utf-8") as f:
+                json.dump({"items": [
+                    {"id": 100, "code": "GUN_RAMMER"},
+                    {"id": 102, "code": "IMPROVED_VENTILATION"},
+                    {"id": 103, "code": "CALIBRATED_SHELLS"},
+                    {"id": 122, "code": "IMPROVED_VERTICAL_STABILIZER"},
+                    {"id": 123, "code": "IMPROVED_SUSPENSION"},
+                ]}, f)
+            with mock.patch.object(ut, "CATALOG_DIR", catalog):
+                equipment_map = ut.load_equipment_catalog()
+
+        vehicles = ut.apply_equipment(ut.parse_tanks(tanks_pb), presets, equipment_map)
+        vehicle = vehicles["58641"]
+        self.assertEqual(vehicle["allowedEquipment"], [
+            "CALIBRATED_SHELLS", "IMPROVED_SUSPENSION",
+            "IMPROVED_VENTILATION", "IMPROVED_VERTICAL_STABILIZER",
+        ])
+        out = ut.vehicle_output(vehicle)
+        self.assertNotIn("_equipmentPreset", out)
+        self.assertNotIn("priority", out)
+
+    def test_unknown_preset_yields_empty_equipment(self):
+        tanks_pb = root(tank_data(
+            9489, 10, 2, 2070, turret(680,
+                gun(269329, [shell("ap", 460, 256)])),
+            name="E 100", nation="germany", equipment_preset="no-such-preset",
+        ))
+        vehicles = ut.apply_equipment(ut.parse_tanks(tanks_pb), {}, {})
+        self.assertEqual(vehicles["9489"]["allowedEquipment"], [])
+
+
 class ItemFilterTest(unittest.TestCase):
     @staticmethod
     def vehicle(tier=8, tank_id=49, nation="china", clip=False):
@@ -374,6 +446,13 @@ class MainPathTest(unittest.TestCase):
         ))
         provisions_pb = item_root(item_def(0, "Field Rations", include=[filter_nations(["other"])]))
         consumables_pb = item_root(item_def(1, "Automatic Fire Extinguisher"))
+        equipment_pb = equipment_root(
+            equipment_preset("defaultPreset", [(100, 103), (122, 123)]),
+            equipment_item(100, "Gun Rammer"),
+            equipment_item(103, "Calibrated Shells"),
+            equipment_item(122, "Improved Vertical Stabilizer"),
+            equipment_item(123, "Improved Suspension"),
+        )
 
         class FakeResp:
             def __init__(self, data):
@@ -395,6 +474,8 @@ class MainPathTest(unittest.TestCase):
                 return FakeResp(provisions_pb)
             if "consumables.pb" in url:
                 return FakeResp(consumables_pb)
+            if "equipment.pb" in url:
+                return FakeResp(equipment_pb)
             raise AssertionError("unexpected url: " + url)
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -429,7 +510,10 @@ class MainPathTest(unittest.TestCase):
             self.assertEqual(vehicle["extraInfo"], "保留我")
             self.assertEqual(vehicle["hp"], 2650)
             self.assertEqual(vehicle["guns"][0]["shells"][0]["penetration"], 258)
-            self.assertEqual(vehicle["priority"], 0)
+            self.assertEqual(vehicle["allowedEquipment"], [
+                "CALIBRATED_SHELLS", "GUN_RAMMER",
+                "IMPROVED_SUSPENSION", "IMPROVED_VERTICAL_STABILIZER",
+            ])
 
 
 if __name__ == "__main__":
