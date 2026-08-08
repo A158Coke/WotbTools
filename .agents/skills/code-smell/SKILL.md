@@ -2,14 +2,14 @@
 name: code-smell
 description: >
   审查代码异味：无用、过度装饰、过度设计、无意义、不可达、废弃残留、架构复杂化。
-  与 grill-fix 互补使用，grill-fix 负责标准代码质量，code-smell 负责"是否过度"的品味判断。
-  Trigger: 任何代码变更后、grill-fix 闭环后执行。
+  与 review-fix 互补使用，review-fix 负责标准代码质量，code-smell 负责"是否过度"的品味判断。
+  Trigger: 任何代码变更后、review-fix 闭环后执行。
 ---
 
 # code-smell
 
-> **定位**：grill-fix 检查"对不对"，code-smell 检查"好不好"。
-> **执行时机**：grill-fix 闭环之后、测试之前。
+> **定位**：review-fix 检查"对不对"，code-smell 检查"好不好"。
+> **执行时机**：review-fix 闭环之后、测试之前。
 > **哲学**：Less is enough. 每一行代码都应该证明它的存在价值。
 
 ## 检查清单
@@ -84,11 +84,11 @@ description: >
 
 ## 使用方式
 
-与 grill-fix 链式调用：
+与 review-fix 链式调用：
 
 ```
 1. 代码变更
-2. grill-fix（标准质量）
+2. review-fix（标准质量）
 3. code-smell（品味审查）
 4. 跑测试
 5. 出报告

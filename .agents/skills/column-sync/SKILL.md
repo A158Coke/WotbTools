@@ -53,4 +53,4 @@ description: >
 |----------|------|------|
 | core-sync | implementer | 步骤 1-3（Java core + Web DTO + 导出） |
 | ui-sync | implementer | 步骤 4-5（前端 i18n + 映射） |
-| verify-sync | verifier | 步骤 6-7（测试 + 文档），最后 grill-fix |
+| verify-sync | verifier | 步骤 6-7（测试 + 文档），最后 review-fix |

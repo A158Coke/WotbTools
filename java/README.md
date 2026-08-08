@@ -18,6 +18,10 @@
 
 > 车辆库 `common/tankopedia.json` 与地图名映射 `common/map_names.json`（仓库根的共享目录）都会在 `wotb-core` 构建时自动复制到 classpath，无需在模块内再放副本。
 
+## AI Review Harness（双 Call V1）
+
+随机战个人复盘（ZH）在重建与特征可用时走 `TacticalReviewHarness`：Call #1 用双方阵容 + `common/tank_tactical_profiles.json` 建立赛前战略基线（不含任何战斗结果），Backend Evidence Skills（HpMomentum / EngagementTrade / LocalSupport / DeathCascade / Route / CriticalWindow）输出确定性战术证据，Call #2 按 Priority Bookends 对照「预期 vs 实际」输出复盘。任何前提不满足自动降级旧单 Call 路径；EN/RU 保持旧路径。地图语义 V1 不可用，区域统一为九宫格编号 `GRID_REGION_1~9`。
+
 ## Web 版（Docker + PostgreSQL）
 
 ```bash

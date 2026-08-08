@@ -1,102 +1,45 @@
 ---
 name: grill-with-docs
 description: >
-  代码变更后审查代码质量 + 文档同步 + AI 死代码清理。在 grill-fix 基础上增加文档检查：
-  CHANGELOG / DEVELOPER_GUIDE / README / API 文档 / i18n / 代码注释；并清理
-  AI 生成的提前性/投机死代码（单实现抽象、从不覆盖的字段/参数、占位空壳等）。
-  Trigger: 任何影响界面/导出/数据/构建/API/配置的代码变更完成后；或需要清理
-  AI 生成代码中的死代码/过度设计时。
+  开发前结合项目文档与代码，从实现角度 grill 需求与方案：核对可落地性、架构一致性、
+  跨层影响（解析/模型/API/前端 locale/导出/测试/文档/构建部署）、成本与风险，
+  输出分步开发方案与验收路径并写入 docs/current-plan.md。
+  Trigger: 需求已明确（或已走 grill-me）但尚未产出 Plan，或用户要求"先 grill 方案/文档再开发"时；
+  发生在编码之前，与 review-with-docs（变更后文档同步审查）互补。
 ---
 
-# grill-with-docs
+# Grill-With-Docs（需求/方案实现 grill）
 
-> **前置条件**：grill-fix 6 项代码审查已完成。
-> **扩展**：本文档同步检查是 grill-fix 的补充层，聚焦"改了什么文档就跟什么"；
-> 同时负责清理 AI 生成代码中的提前性/投机死代码。
+> 定位：把"要做什么"变成"怎么做、影响什么、如何验收"。前置：需求边界已清楚（grill-me 的《需求确认单》或用户明确表述）。
+
+## 输入
+
+- 需求（《需求确认单》或用户明确表述）
+- 项目事实源：
+  - `.agents/AGENTS.md` — 硬性约定（RULES）
+  - `.agents/wotb-sync.md` — 跨层改动检查单
+  - `docs/DEVELOPER_GUIDE.md` — 架构、数据格式、类表
+  - `docs/CHANGELOG.md` — 历史决策与改名记录
+  - `docs/current-plan.md` — 现有计划与任务状态（grill 结果写入此文件）
+  - 相关代码路径（用 `rg` / `rg --files` 定位）
 
 ## 流程
 
-1. **完成 grill-fix** — 先走 `.agents/skills/grill-fix/SKILL.md` 的 6 项代码审查
-2. **AI 死代码清理** — 按下方案 7 检查并安全删除 AI 提前性/投机死代码
-3. **文档自查** — 按下方检查单逐项检查文档同步
-4. **spawn docs verifier** — `type: verifier`，审查文档是否与代码一致
-5. **修复** → **重审** → 循环直到零问题
-6. **出具报告** — 包含 grill-fix 报告 + AI 死代码清理报告 + 文档审查报告
+1. **可落地性核对**：需求与现有架构/约定是否冲突？用 `rg` / `rg --files` 找现有实现与引用，必须引用具体 `文件:路径` 与 `文档:章节`，禁止凭印象。
+2. **影响面扫描**（按 wotb-sync 检查单逐层过）：解析 → 模型 → API → 前端 locale → 导出（`Columns.java` / `AggregateSheets.java`）→ 测试 → 文档 → 构建/部署。逐项标 ✓ / ✗。
+3. **方案设计**：分步实现，每步可独立验证；明确**不做清单**（防过度设计）；给出验收标准与测试路径。
+4. **风险与默认决策**：列出不确定点；能从文档/代码推断的直接决策并注明依据；剩余影响用户可见行为/成本/破坏兼容的关键决策列给用户确认。
+5. **输出《开发方案单》并写入 `docs/current-plan.md`**（与 k3-planner 计划格式兼容：业务目标 / 阶段任务 / 状态表；保留已有进行中任务）：
+   - 目标 / 方案概要
+   - 分步计划（每步：文件清单 + 改动要点 + 验证方式）
+   - 影响面清单
+   - 不做清单
+   - 验收标准
+   - 待确认项
+6. **交给 Plan**：方案单写入计划文件后即 Plan 素材，等待用户批准后才进入编码。
 
-## 文档检查单
+## 规则
 
-### 1. CHANGELOG
-- [ ] 是否记录了本次变更（Added / Changed / Fixed / Removed）
-- [ ] 变更描述是否准确（不含实现细节，面向用户）
-- [ ] 是否在 `[Unreleased]` 下（未发布版本）
-
-### 2. DEVELOPER_GUIDE
-- [ ] 新增字段/API 是否更新字段表
-- [ ] 解析逻辑变更是否更新回放格式说明
-- [ ] 架构变动是否更新核心类表
-- [ ] 构建/部署流程变更是否同步
-
-### 3. README / java/README
-- [ ] 功能增删是否同步功能列表
-- [ ] 版本号/状态标识是否正确
-- [ ] 新增模块是否在目录结构中体现
-
-### 4. API 文档 / i18n
-- [ ] 新增列 → `frontend/src/locales/{zh,en,ru}.json` 三语同步
-- [ ] 新增列 → `Columns.java` / `AggregateSheets.java` 导出标签同步
-- [ ] API 端点变更 → 对应 DTO 和文档注释更新
-
-### 5. 代码注释
-- [ ] 新增类/方法是否有 Javadoc / JSDoc
-- [ ] 复杂逻辑是否有解释性注释
-- [ ] 过期注释是否已清理或更新
-- [ ] TODO/FIXME 是否已处理或跟踪
-
-### 6. 配置/依赖文档
-- [ ] `pom.xml` 新增依赖是否有注释说明用途
-- [ ] 环境变量变更是否同步到 `application.yml` 注释
-- [ ] Docker 构建变更是否同步到相关 Dockerfile 注释
-
-### 7. AI 死代码 / 提前性代码清理
-> 定位：grill-fix 管"对不对"，code-smell 管"好不好的品味"，本节负责**执行清理**——
-> 针对 AI 生成代码常见的"为未来准备却没换来灵活性"的提前性死代码。
-
-- [ ] **识别模式**：单实现接口/工厂/策略/观察者；从不覆盖的字段与参数（含恒为 `null` 的元数据字段）；为"可测性"引入的抽象层；无引用构造器/空壳实现；仅测试引用的方法
-- [ ] **扫描证明**：全仓 `rg` 零引用（含 `src/test`、`scripts`、`docs`、`deploy`、`frontend/src/locales`、Grafana dashboards）；前端可执行 `cd frontend && npx fallow check dead-code`
-- [ ] **三分类**：真死（零引用且非契约/反射）→ 删除并连带专属测试；假死 → 保留并在报告中记录；待定（引用本身可疑）→ 报告人工确认，不删
-- [ ] **删除粒度**：先方法/字段，后类/文件；一个主题一个 commit；删除后 `mvn -s settings.xml test` + `npm test` + `npm run build` 全绿
-- [ ] **安全边界（绝不能删）**：前端消费的 JSON 字段/DTO/错误码；Flyway 迁移与实体列；Spring bean 装配/Jackson 反序列化/反射引用；Prometheus/Grafana 指标名（dashboards 引用）；i18n keys（三语 locale）；文档承诺的功能；测试夹具仍需要的行为
-- [ ] **品味判断**引用 `.agents/skills/code-smell/SKILL.md`（不复制其清单）
-
-## 文档 verifier brief 模板
-
-```
-QUESTION: 审查以下代码变更对应的文档是否全部同步
-SCOPE: [变更文件列表 + 对应文档路径]
-ALREADY_KNOWN: [已自查并更新的文档]
-EFFORT: medium
-STOP_CONDITION: 完成全部 7 项检查（6 项文档 + AI 死代码清理），报告缺失项
-OUTPUT:
-  VERDICT: 文档齐全 / 有遗漏（列出数量）
-  EVIDENCE: 逐项列出（文档:章节 → 缺失内容）
-  GAPS: 待确认项
-  NEXT: 建议补充的文档位置
-```
-
-## 报告模板
-
-```
-### Grill-With-Docs 审查报告
-
-| 项目 | grill-fix | docs |
-|------|-----------|------|
-| 发现问题 | N | N |
-| 已修复 | N | N |
-| 文档同步 | — | [齐全 / 缺 N 项] |
-| AI 死代码清理 | — | [扫描 N / 删除 N / 保留 N（假死）] |
-
-#### 文档缺失清单
-1. CHANGELOG 缺少 [变更描述]
-2. locale/zh.json 缺少 key [xxx]
-3. DEVELOPER_GUIDE 字段表缺少 [字段名]
-```
+- 只用证据说话：引用 `文档:章节` 与 `文件:路径`；无法从事实源确认的写"待确认"，不猜。
+- 不写实现代码；方案获批准后才开发。
+- 与 `review-with-docs` 的分工：本技能开发前（需求/方案 grill），`review-with-docs` 开发后（变更审查 + 文档同步）。

@@ -3,7 +3,7 @@ name: fallow
 description: >
   Codebase intelligence for TypeScript and JavaScript.
   可检测未使用代码、重复代码、循环依赖、复杂度热点、架构漂移。
-  Trigger: 前端代码审查时使用，补充 grill-fix。
+  Trigger: 前端代码审查时使用，补充 review-fix。
 ---
 
 # fallow
@@ -33,9 +33,9 @@ npx fallow check duplication
 npx fallow check complexity
 ```
 
-## 集成到 Grill-Fix
+## 集成到 Review-Fix
 
-在前端代码变更后的 grill-fix 阶段，可选执行：
+在前端代码变更后的 review-fix 阶段，可选执行：
 
 ```bash
 cd frontend && npx fallow check dead-code

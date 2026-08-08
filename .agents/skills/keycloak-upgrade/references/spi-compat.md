@@ -48,4 +48,4 @@ fully supported API 的 minor 向后兼容。升级后第一步永远是重编�
 - 只改签名适配，不改业务逻辑；最小 diff。
 - 不要打包 Keycloak 自己的依赖进 jar（pom 中 `provided` scope 保持现状，避免 classpath 冲突）。
 - 不要在 provider 里显式开事务（26.6.3+ 会拒绝重复 start），保持现有无事务风格。
-- 改完走 `grill-fix` + `grill-with-docs`。
+- 改完走 `review-fix` + `review-with-docs`。
