@@ -36,6 +36,7 @@ public class AiReplayReviewService {
 
     private final DefaultReplayProcessingFacade processingFacade;
     private final AiReplayAnalysisService aiAnalysisService;
+    private final TacticalReviewHarness tacticalReviewHarness;
 
     @Autowired(required = false)
     private MeterRegistry meterRegistry;
@@ -51,8 +52,17 @@ public class AiReplayReviewService {
     public AiReplayReviewService(
             final DefaultReplayProcessingFacade processingFacade,
             final AiReplayAnalysisService aiAnalysisService) {
+        this(processingFacade, aiAnalysisService, null);
+    }
+
+    @Autowired
+    public AiReplayReviewService(
+            final DefaultReplayProcessingFacade processingFacade,
+            final AiReplayAnalysisService aiAnalysisService,
+            final TacticalReviewHarness tacticalReviewHarness) {
         this.processingFacade = processingFacade;
         this.aiAnalysisService = aiAnalysisService;
+        this.tacticalReviewHarness = tacticalReviewHarness;
     }
 
     private void validateBatchSize(final int fileCount) {
@@ -191,7 +201,7 @@ public class AiReplayReviewService {
         }
         return switch (plan.mode()) {
             case SINGLE_PLAYER_BATTLE -> new AnalyzeResponse(
-                    aiAnalysisService.analyzePlayerOrFallback(
+                    harnessOrFallback(
                             analyzableGroups.getFirst().representative(), language).analysis());
             case MULTI_PLAYER_BATTLE -> {
                 final var battles = analyzableGroups.stream()
@@ -206,6 +216,14 @@ public class AiReplayReviewService {
                             .analysis().analysis());
             case NONE -> throw new IllegalArgumentException("NO_BATTLE_DATA");
         };
+    }
+
+    private AnalyzeResult harnessOrFallback(final ReplayProcessingResult representative,
+                                            final AllowedLanguage language) {
+        if (tacticalReviewHarness != null) {
+            return tacticalReviewHarness.analyze(representative, language);
+        }
+        return aiAnalysisService.analyzePlayerOrFallback(representative, language);
     }
 
     private static String unresolvedTeamCode(final List<ReplayPerspectiveGroup> groups) {

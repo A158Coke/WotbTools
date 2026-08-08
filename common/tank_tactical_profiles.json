@@ -1,0 +1,194 @@
+{
+  "Kranvagn": {
+    "tier": 10, "vehicleClass": "HEAVY",
+    "roles": ["hull_down_heavy", "burst_trader"],
+    "strengths": ["strong_turret", "hull_down", "burst_damage"],
+    "weaknesses": ["sustained_dpm", "hull_exposure"],
+    "mobility": "MEDIUM", "burstPotential": "HIGH", "sustainedDpm": "LOW",
+    "hullDownAbility": "HIGH", "armorReliability": "MEDIUM"
+  },
+  "T110E5": {
+    "tier": 10, "vehicleClass": "HEAVY",
+    "roles": ["all_round_heavy", "hull_down_heavy"],
+    "strengths": ["strong_turret", "flexible_gun", "reliable_armor"],
+    "weaknesses": ["low_alpha", "cupola_weakness"],
+    "mobility": "MEDIUM", "burstPotential": "LOW", "sustainedDpm": "HIGH",
+    "hullDownAbility": "HIGH", "armorReliability": "HIGH"
+  },
+  "E 100": {
+    "tier": 10, "vehicleClass": "HEAVY",
+    "roles": ["armored_frontline", "corner_trader"],
+    "strengths": ["high_alpha", "armor_reliability", "trade_power"],
+    "weaknesses": ["slow_rotation", "large_profile", "artillery_magnet"],
+    "mobility": "LOW", "burstPotential": "HIGH", "sustainedDpm": "MEDIUM",
+    "hullDownAbility": "LOW", "armorReliability": "HIGH"
+  },
+  "IS-7": {
+    "tier": 10, "vehicleClass": "HEAVY",
+    "roles": ["armored_rush", "close_range_trader"],
+    "strengths": ["turret_armor", "high_alpha", "mobility_for_heavy"],
+    "weaknesses": ["pike_nose", "low_gun_depression", "gold_dependent"],
+    "mobility": "MEDIUM", "burstPotential": "HIGH", "sustainedDpm": "MEDIUM",
+    "hullDownAbility": "MEDIUM", "armorReliability": "HIGH"
+  },
+  "Super Conqueror": {
+    "tier": 10, "vehicleClass": "HEAVY",
+    "roles": ["hull_down_heavy", "sustained_trader"],
+    "strengths": ["strong_turret", "high_dpm", "gun_depression"],
+    "weaknesses": ["hull_weakness", "large_profile"],
+    "mobility": "MEDIUM", "burstPotential": "LOW", "sustainedDpm": "HIGH",
+    "hullDownAbility": "HIGH", "armorReliability": "MEDIUM"
+  },
+  "AMX 50 B": {
+    "tier": 10, "vehicleClass": "HEAVY",
+    "roles": ["burst_heavy", "aggressive_flank"],
+    "strengths": ["clip_burst", "mobility", "flexibility"],
+    "weaknesses": ["clip_reload", "paper_armor"],
+    "mobility": "HIGH", "burstPotential": "HIGH", "sustainedDpm": "LOW",
+    "hullDownAbility": "LOW", "armorReliability": "LOW"
+  },
+  "WZ-111 5A": {
+    "tier": 10, "vehicleClass": "HEAVY",
+    "roles": ["all_round_heavy", "flexible_trader"],
+    "strengths": ["flexible_gun", "mobility", "decent_armor"],
+    "weaknesses": ["turret_weakspot", "ammo_rack"],
+    "mobility": "MEDIUM", "burstPotential": "MEDIUM", "sustainedDpm": "HIGH",
+    "hullDownAbility": "MEDIUM", "armorReliability": "MEDIUM"
+  },
+  "60TP Lewandowskiego": {
+    "tier": 10, "vehicleClass": "HEAVY",
+    "roles": ["armored_frontline", "hard_hitter"],
+    "strengths": ["very_high_alpha", "armor_reliability"],
+    "weaknesses": ["slow_rotation", "poor_gun_depression"],
+    "mobility": "LOW", "burstPotential": "HIGH", "sustainedDpm": "MEDIUM",
+    "hullDownAbility": "LOW", "armorReliability": "HIGH"
+  },
+  "T57 Heavy": {
+    "tier": 10, "vehicleClass": "HEAVY",
+    "roles": ["clip_trader", "close_range_burst"],
+    "strengths": ["clip_burst", "dpm"],
+    "weaknesses": ["clip_reload", "hull_weakness", "low_accuracy_snap"],
+    "mobility": "MEDIUM", "burstPotential": "HIGH", "sustainedDpm": "HIGH",
+    "hullDownAbility": "LOW", "armorReliability": "LOW"
+  },
+  "Maus": {
+    "tier": 10, "vehicleClass": "HEAVY",
+    "roles": ["super_heavy", "absolute_frontline"],
+    "strengths": ["extreme_armor", "hp_pool", "hull_down_immunity"],
+    "weaknesses": ["extremely_slow", "large_profile"],
+    "mobility": "LOW", "burstPotential": "LOW", "sustainedDpm": "MEDIUM",
+    "hullDownAbility": "MEDIUM", "armorReliability": "HIGH"
+  },
+  "Leopard 1": {
+    "tier": 10, "vehicleClass": "MEDIUM",
+    "roles": ["sniper_support", "mobile_flanker"],
+    "strengths": ["gun_accuracy", "mobility", "vision"],
+    "weaknesses": ["paper_armor", "no_trading_power"],
+    "mobility": "HIGH", "burstPotential": "MEDIUM", "sustainedDpm": "HIGH",
+    "hullDownAbility": "MEDIUM", "armorReliability": "LOW"
+  },
+  "E 50 M": {
+    "tier": 10, "vehicleClass": "MEDIUM",
+    "roles": ["armored_medium", "ramming_flanker"],
+    "strengths": ["armor_for_medium", "ram_power", "gun_depression"],
+    "weaknesses": ["large_profile", "low_alpha"],
+    "mobility": "HIGH", "burstPotential": "LOW", "sustainedDpm": "HIGH",
+    "hullDownAbility": "MEDIUM", "armorReliability": "MEDIUM"
+  },
+  "T-62A": {
+    "tier": 10, "vehicleClass": "MEDIUM",
+    "roles": ["flexible_support", "brawling_medium"],
+    "strengths": ["dpm", "small_profile", "turret_armor"],
+    "weaknesses": ["low_alpha", "poor_gun_depression"],
+    "mobility": "HIGH", "burstPotential": "LOW", "sustainedDpm": "HIGH",
+    "hullDownAbility": "MEDIUM", "armorReliability": "MEDIUM"
+  },
+  "Obj. 140": {
+    "tier": 10, "vehicleClass": "MEDIUM",
+    "roles": ["flexible_support", "brawling_medium"],
+    "strengths": ["dpm", "mobility", "gun_depression"],
+    "weaknesses": ["low_alpha", "turret_weakspot"],
+    "mobility": "HIGH", "burstPotential": "LOW", "sustainedDpm": "HIGH",
+    "hullDownAbility": "MEDIUM", "armorReliability": "MEDIUM"
+  },
+  "STB-1": {
+    "tier": 10, "vehicleClass": "MEDIUM",
+    "roles": ["ridge_fighter", "flexible_support"],
+    "strengths": ["gun_depression", "dpm", "hull_down"],
+    "weaknesses": ["hull_weakness", "mobility_medium"],
+    "mobility": "MEDIUM", "burstPotential": "LOW", "sustainedDpm": "HIGH",
+    "hullDownAbility": "HIGH", "armorReliability": "MEDIUM"
+  },
+  "TVP T 50/51": {
+    "tier": 10, "vehicleClass": "MEDIUM",
+    "roles": ["clip_medium", "opportunistic_flanker"],
+    "strengths": ["clip_burst", "mobility"],
+    "weaknesses": ["clip_reload", "paper_armor", "poor_gun_depression"],
+    "mobility": "HIGH", "burstPotential": "HIGH", "sustainedDpm": "MEDIUM",
+    "hullDownAbility": "LOW", "armorReliability": "LOW"
+  },
+  "M48 Patton": {
+    "tier": 10, "vehicleClass": "MEDIUM",
+    "roles": ["ridge_fighter", "all_round_medium"],
+    "strengths": ["vision", "gun_depression", "turret_armor"],
+    "weaknesses": ["large_profile", "mobility_medium"],
+    "mobility": "MEDIUM", "burstPotential": "LOW", "sustainedDpm": "HIGH",
+    "hullDownAbility": "HIGH", "armorReliability": "MEDIUM"
+  },
+  "Progetto 65": {
+    "tier": 10, "vehicleClass": "MEDIUM",
+    "roles": ["auto_reloader", "flexible_support"],
+    "strengths": ["flexible_clip", "mobility", "gun_depression"],
+    "weaknesses": ["magazine_management", "paper_armor"],
+    "mobility": "HIGH", "burstPotential": "HIGH", "sustainedDpm": "MEDIUM",
+    "hullDownAbility": "MEDIUM", "armorReliability": "LOW"
+  },
+  "T110E4": {
+    "tier": 10, "vehicleClass": "TANK_DESTROYER",
+    "roles": ["armored_td", "close_range_ambush"],
+    "strengths": ["high_alpha", "armor", "turreted"],
+    "weaknesses": ["poor_gun_depression", "slow_rotation"],
+    "mobility": "LOW", "burstPotential": "HIGH", "sustainedDpm": "MEDIUM",
+    "hullDownAbility": "MEDIUM", "armorReliability": "HIGH"
+  },
+  "Grille 15": {
+    "tier": 10, "vehicleClass": "TANK_DESTROYER",
+    "roles": ["long_range_sniper"],
+    "strengths": ["accuracy", "high_alpha", "mobility_for_td"],
+    "weaknesses": ["no_armor", "turret_limitation", "exposed"],
+    "mobility": "MEDIUM", "burstPotential": "HIGH", "sustainedDpm": "MEDIUM",
+    "hullDownAbility": "LOW", "armorReliability": "LOW"
+  },
+  "Jg.Pz. E 100": {
+    "tier": 10, "vehicleClass": "TANK_DESTROYER",
+    "roles": ["super_heavy_td", "frontline_ambush"],
+    "strengths": ["extreme_alpha", "armor"],
+    "weaknesses": ["extremely_slow", "large_profile", "casemate"],
+    "mobility": "LOW", "burstPotential": "HIGH", "sustainedDpm": "MEDIUM",
+    "hullDownAbility": "LOW", "armorReliability": "HIGH"
+  },
+  "FV4005": {
+    "tier": 10, "vehicleClass": "TANK_DESTROYER",
+    "roles": ["burst_td", "ambush"],
+    "strengths": ["huge_alpha", "clip_burst"],
+    "weaknesses": ["no_armor", "long_reload", "turret_limitation"],
+    "mobility": "LOW", "burstPotential": "HIGH", "sustainedDpm": "LOW",
+    "hullDownAbility": "LOW", "armorReliability": "LOW"
+  },
+  "T-100 LT": {
+    "tier": 10, "vehicleClass": "LIGHT",
+    "roles": ["scout", "aggressive_flanker"],
+    "strengths": ["mobility", "small_profile", "view_range"],
+    "weaknesses": ["low_alpha", "paper_armor"],
+    "mobility": "HIGH", "burstPotential": "LOW", "sustainedDpm": "MEDIUM",
+    "hullDownAbility": "LOW", "armorReliability": "LOW"
+  },
+  "B-C 25 t": {
+    "tier": 10, "vehicleClass": "LIGHT",
+    "roles": ["clip_scout", "opportunistic_burst"],
+    "strengths": ["clip_burst", "mobility"],
+    "weaknesses": ["clip_reload", "paper_armor", "gun_handling"],
+    "mobility": "HIGH", "burstPotential": "HIGH", "sustainedDpm": "LOW",
+    "hullDownAbility": "LOW", "armorReliability": "LOW"
+  }
+}

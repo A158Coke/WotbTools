@@ -98,7 +98,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 ```text
 .
 ├── README.md  LICENSE  .gitignore  .dockerignore  qodana.yaml
-├── docs/                       # 文档（TODO / DEVELOPER_GUIDE / CHANGELOG / replay-data / rating-system / observability / team-ai-review-feature）
+├── docs/                       # 文档（TODO / current-plan / DEVELOPER_GUIDE / CHANGELOG / replay-data / rating-system / observability / team-ai-review-feature）
 ├── docker/                       # Docker 构建 + 本地开发 compose
 │   ├── Dockerfile.backend        #   后端镜像：Maven → JRE（Spring Boot :8087）
 │   ├── Dockerfile.frontend       #   前端镜像：Node → nginx（:80）
@@ -149,7 +149,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 ├── .agents/                      # AI 工具定义
 │   ├── AGENTS.md                 #   AI 硬性约定（RULES）
 │   ├── wotb-sync.md              #   跨层改动检查单（配方 A–G）
-│   └── skills/                   #   审查类技能（grill-fix / code-smell / column-sync / wotb-sync）
+│   └── skills/                   #   技能库（开发前：grill-me / grill-with-docs；开发后：review-fix / review-with-docs / code-smell / column-sync / wotb-sync）
 ```
 
 ### 架构速览
@@ -220,6 +220,11 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 | `PlayerSideResolver` | `wotb-core/.../processing/PlayerSideResolver.java` | 随机战斗友方/敌方/未知解析（FRIENDLY/ENEMY/UNKNOWN），基于录像者权威 team |
 | `FriendlyEnemyResult` | `wotb-core/.../processing/FriendlyEnemyResult.java` | 三态胜负转换（FRIENDLY_WIN/ENEMY_WIN/DRAW_OR_UNKNOWN） |
 | `PlayerAnalysisPromptFormatter` | `wotb-web/.../ai/PlayerAnalysisPromptFormatter.java` | AI Prompt 格式化（友方/敌方标签，独立于 Excel 导出的 PlayerResultFormat） |
+| `TacticalReviewHarness` | `wotb-web/.../ai/TacticalReviewHarness.java` | 双 Call Harness 编排与降级阶梯（随机战个人复盘 ZH） |
+| `PreBattleStrategicService` | `wotb-web/.../ai/PreBattleStrategicService.java` | Call #1：roster-only 赛前战略基线（结构化 JSON，≤4k tokens） |
+| `TacticalReviewPromptBuilder` | `wotb-web/.../ai/TacticalReviewPromptBuilder.java` | Call #2：Priority Bookends Prompt + 相关性预算裁剪 |
+| `EvidenceSkillEngine` | `wotb-core/.../replay/evidence/EvidenceSkillEngine.java` | 6 个 Backend Skill 编排（确定性证据编译，不裁决） |
+| `TankTacticalProfileRegistry` | `wotb-core/.../replay/evidence/TankTacticalProfileRegistry.java` | 坦克战术语义层（`common/tank_tactical_profiles.json` + 车型 fallback） |
 | `ReplayService` | `wotb-web/.../replay/service/ReplayService.java` | 业务编排 |
 | `ReplayCapacityLimiter` | `wotb-web/.../replay/service/ReplayCapacityLimiter.java` | 单实例回放解析并发闸门 |
 | `Mapper` | `wotb-web/.../replay/mapper/Mapper.java` | 核心模型 → DTO |
@@ -247,6 +252,21 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 | `UserNotification` | `wotb-web/.../user/entity/UserNotification.java` | 站内通知 JPA 实体（Flyway V10） |
 
 ---
+
+## AI Review Harness（双 Call V1）
+
+随机战个人复盘在满足条件时走两 Call Harness（`TacticalReviewHarness`），否则自动降级到旧单 Call 路径：
+
+1. **Call #1（Pre-Battle Strategic Prior）**：`PreBattleStrategicService` 只输入地图名 + 双方阵容（坦克名/车种/等级/国家）+ `common/tank_tactical_profiles.json` 战术 Profile，严格剥离战绩字段（伤害/击杀/存活/胜负/阵亡顺序）；结构化 JSON 输出由 `PreBattleStrategicParser` 解析，失败返回 null 降级。
+2. **Backend Evidence Skills**（`com.wotb.core.replay.evidence`）：`HpMomentumSkill` / `EngagementTradeSkill` / `LocalSupportSkill` / `DeathCascadeSkill` / `RouteSkill` / `CriticalWindowSkill`，输出确定性 `AiEvidence`（含 confidence / provenance / priority），只描述「发生了什么」，不做战术裁决。
+3. **Call #2（Tactical Review）**：`TacticalReviewPromptBuilder` 按 Priority Bookends 组织 Prompt（BATTLE SNAPSHOT → STRATEGIC PRIOR → TOP PIVOTAL WINDOWS → PHASE → EVIDENCE → CRITICAL DECISION WINDOWS → TASK），预算不足时按相关性裁剪，书签段永不裁剪。
+
+关键约束：
+
+- **地图语义 V1 不可用**：区域一律用九宫格 `GRID_REGION_1~9`（`MapRegionResolver`），禁止 LLM 编造具体点位/区域名；TEAM_A=队伍1、TEAM_B=队伍2 固定映射。
+- **观察性**：HP 动量带 `observedCoverage`，覆盖率低时置信度降为 PARTIAL；局部支援只统计 `OBSERVED` 位置，STALE/UNKNOWN 不计入。
+- **降级阶梯**：非 ZH / 无重建 / 录像者未解析 / 特征不可用 / Call #1 失败 / 无证据 → 旧单 Call 路径；对外 API 与响应结构不变。
+- **新增共享资源**：`common/tank_tactical_profiles.json`（精选 Tier X + 车型级默认 fallback），`wotb-core/pom.xml` 与 `docker/Dockerfile.backend` 已同步复制。
 
 ## AI 分析范围边界
 
