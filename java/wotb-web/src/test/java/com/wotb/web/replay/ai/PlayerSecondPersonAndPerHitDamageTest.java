@@ -23,8 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class PlayerSecondPersonAndPerHitDamageTest {
 
-    private static final long SPHT_TANK_ID = 29985L;   // SPHT / 重坦
-    private static final long IS_TANK_ID = 513L;       // IS / 重坦
+    private static final long SPHT_TANK_ID = 29985L;   // SPHT / Heavy tank / 10 / USA
+    private static final long IS_TANK_ID = 513L;       // IS / Heavy tank
     private static final long YOU = 1L;
     private static final long ENEMY = 2L;
     private static final long MATE = 3L;
@@ -206,8 +206,8 @@ class PlayerSecondPersonAndPerHitDamageTest {
     @Test
     void tankDestroyerIsWrittenInChinese() {
         // tankopedia 把坦克歼击车记作 TD，证据里必须展开为中文
-        assertEquals("坦克歼击车", com.wotb.core.ref.ReplayDisplayNames.tankClass(257L)); // SU-85
-        assertEquals("重坦", com.wotb.core.ref.ReplayDisplayNames.tankClass(SPHT_TANK_ID));
+        assertEquals("Tank destroyer", com.wotb.core.ref.ReplayDisplayNames.tankClass(8529L)); // AT 15
+        assertEquals("Heavy tank", com.wotb.core.ref.ReplayDisplayNames.tankClass(SPHT_TANK_ID));
     }
 
     // ---- 术语 ----

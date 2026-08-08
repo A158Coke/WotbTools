@@ -21,7 +21,7 @@
 
 - [x] `ParityTest` / `PotentialDamageTest` 已移入 Maven 标准测试目录，并覆盖字段不变量与导出一致性。
 - [x] ZIP/pickle/protobuf 已增加压缩、解压、长度、栈、opcode、字段数与截断输入的安全预算和恶意输入测试。
-- [x] 车辆库同步：已统一为单一来源 `common/tankopedia.json`，`wotb-core` 构建时自动复制到 classpath。
+- [x] 车辆库同步：已统一为单一来源 `common/tankopedia-tier{7,8,9,10}.json`，`wotb-core` 构建时自动复制到 classpath。
 - [x] **存活时间(survivalTimeSec)推算已改善。** 新增 Damage 层 fallback（Type 8 sub=3事件，优先于 EntityLeave/Position）：
   - 3 层 fallback：deathTimeMillis → Damage (sub=3 累计) → hybrid EntityLeave/Position
   - 解决 EntityLeave 假阳性（临时离场）和 Position 在部分模式实体不停止的问题
