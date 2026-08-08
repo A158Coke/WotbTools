@@ -56,33 +56,14 @@ public final class Tankopedia {
         final Object tier = vehicle.hasNonNull("tier") ? vehicle.get("tier").asInt() : "";
         final String type = vehicle.hasNonNull("class") ? vehicle.get("class").asText() : "";
         final String nation = vehicle.hasNonNull("nation") ? vehicle.get("nation").asText() : "";
-        final Integer alphaDamage = defaultGunInt(vehicle, "alphaDamage");
+        // 权威炮伤只在数据层有唯一依据时输出（单炮车 / 7-9 顶配炮）；
+        // 10 级多炮车不输出 vehicle 级 alphaDamage，这里返回 null，
+        // AI structured facts 会省略炮伤，而不是把不确定值伪装成本场实际炮伤。
+        final Integer alphaDamage = firstInt(vehicle, "alphaDamage");
         final Integer maxHp = firstInt(vehicle, "hp");
         final String extraInfo = vehicle.hasNonNull("extraInfo")
                 ? vehicle.get("extraInfo").asText() : "";
         return new TankInfo(name, tier, type, nation, alphaDamage, maxHp, extraInfo);
-    }
-
-    /** 默认炮（isDefault=true，否则第一把）的整数字段。 */
-    private static Integer defaultGunInt(final JsonNode vehicle, final String field) {
-        final JsonNode guns = vehicle.get("guns");
-        if (guns == null || !guns.isArray() || guns.isEmpty()) {
-            return null;
-        }
-        JsonNode gun = null;
-        for (final JsonNode g : guns) {
-            if (g != null && g.hasNonNull("isDefault") && g.get("isDefault").asBoolean()) {
-                gun = g;
-                break;
-            }
-        }
-        if (gun == null) {
-            gun = guns.get(0);
-        }
-        if (gun != null && gun.hasNonNull(field) && gun.get(field).canConvertToInt()) {
-            return gun.get(field).asInt();
-        }
-        return null;
     }
 
     private static Integer firstInt(final JsonNode node, final String key) {

@@ -29,21 +29,29 @@
           "powerToWeightRatio": 31.6,   // hp/t（顶配引擎功率 / 车重）
           "guns": [
             { "gunId", "isDefault", "alphaDamage", "shells": [{type,damage,penetration}] }
-          ],                            // 7-9 级只有顶配炮一把；10 级顶配炮塔全部炮
-                                        // 多炮时用 isDefault 判断默认炮（第一把）
+          ],                            // 顶配炮塔上的全部炮（含 7-9 级多炮如 T-34-2 的 5 把）
+                                        // isDefault = 权威默认炮：
+                                        //   7-9 级 = 顶配炮（最高 tier，同 tier 取最高 alpha）
+                                        //   10 级多炮车 = 全部 false（回放无可靠实际炮，不伪装）
           "allowedProvision": [...],    // catalog 逻辑物资 id（SMALL_FOOD 等）
           "allowedConsumables": [...],  // catalog 消耗品 code（AUTOMATIC_FIRE_EXTINGUISHER 等）
           "allowedEquipment": [...],    // catalog 装备 code（含 VK 72.01 俯角 / 履带齿等专属装备）
+          "alphaDamage": 420,           // 仅唯一权威时输出：单炮车 / 7-9 顶配炮；
+                                        // 10 级多炮车省略（避免把不确定炮伤伪装成权威事实）
           "extraInfo": ""               // 手工知识点（原 extraKnowledge，按 tank_id 保留合并）
         }
       ]
     }
 
 设计约定：
-- 数据源为 blitzkit（tanks.pb + consumables.pb + provisions.pb，游戏客户端直出，
+- 数据源为 blitzkit（tanks.pb + consumables.pb + provisions.pb + equipment.pb，游戏客户端直出，
   含最新车辆如 11.19 的 SPHT / AC Atlas；WG 百科滞后游戏版本，故不依赖 WG API）。
-- 每辆车一条记录（不再按炮拆分记录）；10 级多炮车用 guns 数组区分，
-  第一把炮为 isDefault（与 WG 默认配置一致，已用 WG API 核对）。
+- 每辆车一条记录，guns 数组含顶配炮塔上的全部炮；isDefault 标记权威默认炮：
+  - 7-9 级：顶配炮 = 最高 tier，同 tier 取最高 alpha（已用 origin/main 全量 454/457 验证；
+    T-34-2 取 122mm 400，不能用数组顺序猜）。
+  - 10 级多炮车：存在多个合法终局炮，回放无可靠实际 gunId，全部 isDefault=false、
+    不输出 vehicle 级 alphaDamage，运行时 AI 结构化事实省略炮伤（不输出虚假唯一炮伤）。
+  - 10 级单炮车：正常输出 alphaDamage。
 - 每车可用物资：由 blitzkit 的 include/exclude 过滤器（tier/ids/categories/nations）
   判定，再映射到 common/wotb-item-catalog-json 的逻辑 id / code；
   catalog 未收录的道具（多为活动/娱乐模式专属）不输出。
@@ -103,6 +111,7 @@ FIELD_TURRET_TRAVERSE = 4
 FIELD_TURRET_TIER = 7
 FIELD_TURRET_GUN = 9
 FIELD_GUN_ID = 4
+FIELD_GUN_TIER = 9
 FIELD_GUN_SHELLS = 10
 FIELD_ENGINE_TIER = 4
 FIELD_ENGINE_POWER = 6
@@ -298,9 +307,10 @@ def top_turret(td):
 
 
 def guns_of_turret(turret):
-    """炮塔 field9 直接条目（游戏内炮列表，按序），返回 [{'gunId', 'shells', 'clip'}]。
+    """炮塔 field9 直接条目（游戏内炮列表，按序），返回 [{'gunId', 'tier', 'shells', 'clip'}]。
 
     clip = 该炮是弹夹/自动装填（oneof 2/3），用于 consumable 的 CLIP 类别过滤。
+    tier = GunDefinition.field9（炮等级），用于挑选顶配炮。
     只读直接条目，避免把嵌套消息误判成炮；shells 为空或 gunId 缺失的条目跳过。
     """
     guns = []
@@ -317,7 +327,8 @@ def guns_of_turret(turret):
         if not shells:
             continue
         clip = any(f1(gun, field) is not None for field in (2, 3))
-        guns.append({"gunId": gun_id, "shells": shells, "clip": clip})
+        tier = as_int(f1(gun, FIELD_GUN_TIER, 0), 0)
+        guns.append({"gunId": gun_id, "tier": tier, "shells": shells, "clip": clip})
     return guns
 
 
@@ -385,15 +396,30 @@ def parse_tanks(pb_bytes):
         if engine_power and weight_kg:
             item["powerToWeightRatio"] = round(engine_power / (weight_kg / 1000.0), 1)
         item["_equipmentPreset"] = as_str(f1(td, FIELD_TANK_EQUIPMENT_PRESET, b""))
+        # 权威默认炮：
+        # - 7-9 级：顶配炮 = 最高 tier，同 tier 取最高 alpha（T-34-2 取 122mm 400，
+        #   与旧 main 规则一致，不能用数组顺序猜）。
+        # - 10 级多炮车：存在多个合法终局炮且回放无可靠实际 gunId，
+        #   不标 isDefault、不输出 vehicle 级 alphaDamage（避免把不确定值伪装成权威事实）。
+        authoritative_gun_id = None
+        if guns and not (tier == 10 and len(guns) > 1):
+            max_tier = max(g["tier"] for g in guns)
+            top_guns = [g for g in guns if g["tier"] == max_tier]
+            if top_guns:
+                authoritative_gun_id = max(top_guns, key=lambda g: g["shells"][0]["damage"])["gunId"]
         item["guns"] = []
-        for index, gun in enumerate(guns):
+        for gun in guns:
             item["guns"].append({
                 "gunId": gun["gunId"],
-                "isDefault": index == 0,
+                "isDefault": gun["gunId"] == authoritative_gun_id,
                 "alphaDamage": gun["shells"][0]["damage"],
                 "shells": gun["shells"],
                 "clip": gun["clip"],
             })
+        if authoritative_gun_id is not None:
+            item["alphaDamage"] = next(
+                g["shells"][0]["damage"] for g in guns if g["gunId"] == authoritative_gun_id
+            )
         vehicles[str(tank_id)] = item
     return vehicles
 

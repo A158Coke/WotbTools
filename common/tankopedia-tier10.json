@@ -2,7 +2,7 @@
   "meta": {
     "source": "blitzkit (assets.blitzkit.app/definitions/tanks.pb)",
     "tier": 10,
-    "generated_at": "2026-08-08T10:08:57.477583+00:00",
+    "generated_at": "2026-08-08T10:36:23.675084+00:00",
     "count": 84
   },
   "vehicles": [
@@ -42,6 +42,7 @@
           ]
         }
       ],
+      "alphaDamage": 350,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -94,7 +95,7 @@
       "guns": [
         {
           "gunId": 25409,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 250,
           "shells": [
             {
@@ -212,6 +213,7 @@
           ]
         }
       ],
+      "alphaDamage": 330,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -286,6 +288,7 @@
           ]
         }
       ],
+      "alphaDamage": 560,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -361,6 +364,7 @@
           ]
         }
       ],
+      "alphaDamage": 440,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "IMPROVED_GUNPOWDER",
@@ -438,6 +442,7 @@
           ]
         }
       ],
+      "alphaDamage": 450,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -514,6 +519,7 @@
           ]
         }
       ],
+      "alphaDamage": 410,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -591,6 +597,7 @@
           ]
         }
       ],
+      "alphaDamage": 410,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -665,6 +672,7 @@
           ]
         }
       ],
+      "alphaDamage": 320,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -738,6 +746,7 @@
           ]
         }
       ],
+      "alphaDamage": 380,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "IMPROVED_GUNPOWDER",
@@ -814,6 +823,7 @@
           ]
         }
       ],
+      "alphaDamage": 420,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -889,6 +899,7 @@
           ]
         }
       ],
+      "alphaDamage": 415,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -962,6 +973,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -1039,6 +1051,7 @@
           ]
         }
       ],
+      "alphaDamage": 650,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -1115,6 +1128,7 @@
           ]
         }
       ],
+      "alphaDamage": 420,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -1189,6 +1203,7 @@
           ]
         }
       ],
+      "alphaDamage": 460,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -1265,6 +1280,7 @@
           ]
         }
       ],
+      "alphaDamage": 460,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -1319,7 +1335,7 @@
       "guns": [
         {
           "gunId": 8529,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 350,
           "shells": [
             {
@@ -1436,6 +1452,7 @@
           ]
         }
       ],
+      "alphaDamage": 630,
       "allowedProvision": [
         "GEAR_OIL",
         "IMPROVED_FUEL",
@@ -1514,6 +1531,7 @@
           ]
         }
       ],
+      "alphaDamage": 700,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -1588,6 +1606,7 @@
           ]
         }
       ],
+      "alphaDamage": 440,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -1662,6 +1681,7 @@
           ]
         }
       ],
+      "alphaDamage": 350,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -1738,6 +1758,7 @@
           ]
         }
       ],
+      "alphaDamage": 520,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -1812,6 +1833,7 @@
           ]
         }
       ],
+      "alphaDamage": 950,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -1865,7 +1887,7 @@
       "guns": [
         {
           "gunId": 269329,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 460,
           "shells": [
             {
@@ -1982,6 +2004,7 @@
           ]
         }
       ],
+      "alphaDamage": 360,
       "allowedProvision": [
         "GEAR_OIL",
         "IMPROVED_FUEL",
@@ -2058,6 +2081,7 @@
           ]
         }
       ],
+      "alphaDamage": 360,
       "allowedProvision": [
         "GEAR_OIL",
         "IMPROVED_FUEL",
@@ -2134,6 +2158,7 @@
           ]
         }
       ],
+      "alphaDamage": 490,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -2207,6 +2232,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -2283,6 +2309,7 @@
           ]
         }
       ],
+      "alphaDamage": 620,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -2357,6 +2384,7 @@
           ]
         }
       ],
+      "alphaDamage": 560,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -2411,7 +2439,7 @@
       "guns": [
         {
           "gunId": 17969,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 460,
           "shells": [
             {
@@ -2528,6 +2556,7 @@
           ]
         }
       ],
+      "alphaDamage": 800,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -2602,6 +2631,7 @@
           ]
         }
       ],
+      "alphaDamage": 350,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -2678,6 +2708,7 @@
           ]
         }
       ],
+      "alphaDamage": 360,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -2731,7 +2762,7 @@
       "guns": [
         {
           "gunId": 19761,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 490,
           "shells": [
             {
@@ -2847,6 +2878,7 @@
           ]
         }
       ],
+      "alphaDamage": 630,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -2923,6 +2955,7 @@
           ]
         }
       ],
+      "alphaDamage": 460,
       "allowedProvision": [
         "GEAR_OIL",
         "IMPROVED_FUEL",
@@ -2998,6 +3031,7 @@
           ]
         }
       ],
+      "alphaDamage": 670,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -3072,6 +3106,7 @@
           ]
         }
       ],
+      "alphaDamage": 330,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -3147,6 +3182,7 @@
           ]
         }
       ],
+      "alphaDamage": 680,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -3201,7 +3237,7 @@
       "guns": [
         {
           "gunId": 14913,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 620,
           "shells": [
             {
@@ -3321,6 +3357,7 @@
           ]
         }
       ],
+      "alphaDamage": 340,
       "allowedProvision": [
         "GEAR_OIL",
         "IMPROVED_FUEL",
@@ -3397,6 +3434,7 @@
           ]
         }
       ],
+      "alphaDamage": 910,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -3471,6 +3509,7 @@
           ]
         }
       ],
+      "alphaDamage": 460,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -3545,6 +3584,7 @@
           ]
         }
       ],
+      "alphaDamage": 370,
       "allowedProvision": [
         "GEAR_OIL",
         "IMPROVED_FUEL",
@@ -3623,6 +3663,7 @@
           ]
         }
       ],
+      "alphaDamage": 375,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "IMPROVED_GUNPOWDER",
@@ -3698,6 +3739,7 @@
           ]
         }
       ],
+      "alphaDamage": 340,
       "allowedProvision": [
         "GEAR_OIL",
         "IMPROVED_FUEL",
@@ -3777,6 +3819,7 @@
           ]
         }
       ],
+      "alphaDamage": 320,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "IMPROVED_GUNPOWDER",
@@ -3853,6 +3896,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "GEAR_OIL",
         "IMPROVED_FUEL",
@@ -3930,6 +3974,7 @@
           ]
         }
       ],
+      "alphaDamage": 350,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -4007,6 +4052,7 @@
           ]
         }
       ],
+      "alphaDamage": 310,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -4081,6 +4127,7 @@
           ]
         }
       ],
+      "alphaDamage": 460,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -4157,6 +4204,7 @@
           ]
         }
       ],
+      "alphaDamage": 420,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -4230,6 +4278,7 @@
           ]
         }
       ],
+      "alphaDamage": 650,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -4306,6 +4355,7 @@
           ]
         }
       ],
+      "alphaDamage": 340,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -4380,6 +4430,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -4454,6 +4505,7 @@
           ]
         }
       ],
+      "alphaDamage": 580,
       "allowedProvision": [
         "GEAR_OIL",
         "IMPROVED_FUEL",
@@ -4532,6 +4584,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -4606,6 +4659,7 @@
           ]
         }
       ],
+      "alphaDamage": 300,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -4681,6 +4735,7 @@
           ]
         }
       ],
+      "alphaDamage": 500,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -4734,7 +4789,7 @@
       "guns": [
         {
           "gunId": 46961,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 480,
           "shells": [
             {
@@ -4850,6 +4905,7 @@
           ]
         }
       ],
+      "alphaDamage": 310,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -4925,6 +4981,7 @@
           ]
         }
       ],
+      "alphaDamage": 440,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -4998,6 +5055,7 @@
           ]
         }
       ],
+      "alphaDamage": 570,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -5072,6 +5130,7 @@
           ]
         }
       ],
+      "alphaDamage": 390,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -5145,6 +5204,7 @@
           ]
         }
       ],
+      "alphaDamage": 460,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -5219,6 +5279,7 @@
           ]
         }
       ],
+      "alphaDamage": 560,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -5293,6 +5354,7 @@
           ]
         }
       ],
+      "alphaDamage": 340,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -5367,6 +5429,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -5420,7 +5483,7 @@
       "guns": [
         {
           "gunId": 263457,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 300,
           "shells": [
             {
@@ -5539,6 +5602,7 @@
           ]
         }
       ],
+      "alphaDamage": 350,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -5613,6 +5677,7 @@
           ]
         }
       ],
+      "alphaDamage": 320,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "IMPROVED_GUNPOWDER",
@@ -5689,6 +5754,7 @@
           ]
         }
       ],
+      "alphaDamage": 310,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -5763,6 +5829,7 @@
           ]
         }
       ],
+      "alphaDamage": 670,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -5838,6 +5905,7 @@
           ]
         }
       ],
+      "alphaDamage": 380,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -5911,6 +5979,7 @@
           ]
         }
       ],
+      "alphaDamage": 320,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -5985,6 +6054,7 @@
           ]
         }
       ],
+      "alphaDamage": 430,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -6061,6 +6131,7 @@
           ]
         }
       ],
+      "alphaDamage": 340,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -6141,6 +6212,7 @@
           ]
         }
       ],
+      "alphaDamage": 410,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -6194,7 +6266,7 @@
       "guns": [
         {
           "gunId": 268561,
-          "isDefault": true,
+          "isDefault": false,
           "alphaDamage": 340,
           "shells": [
             {
@@ -6312,6 +6384,7 @@
           ]
         }
       ],
+      "alphaDamage": 400,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",
@@ -6386,6 +6459,7 @@
           ]
         }
       ],
+      "alphaDamage": 540,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
@@ -6463,6 +6537,7 @@
           ]
         }
       ],
+      "alphaDamage": 600,
       "allowedProvision": [
         "ENHANCED_SANDBAG_ARMOR",
         "IMPROVED_FUEL",
