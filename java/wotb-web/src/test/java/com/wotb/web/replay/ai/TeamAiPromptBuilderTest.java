@@ -25,6 +25,7 @@ import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
+import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.replay.reconstruction.Vector3;
 import org.junit.jupiter.api.Test;
 
@@ -671,6 +672,89 @@ class TeamAiPromptBuilderTest {
         player.damageDealt = 1_000;
         player.survived = true;
         return buildContext(List.of(player));
+    }
+
+    private static PlayerResult player(
+            final long accountId,
+            final String nickname,
+            final int team,
+            final long tankId
+    ) {
+        final PlayerResult result = new PlayerResult();
+        result.accountId = accountId;
+        result.nickname = nickname;
+        result.team = team;
+        result.tankId = tankId;
+        result.damageDealt = 1_000;
+        result.survived = true;
+        return result;
+    }
+
+    @Test
+    void teamPromptIncludesStructuredTankFactsInMembersAndOpponents() {
+        // 本队成员：SPHT（29985，单炮 400 / hp 3400）；
+        // 对方：Kranvagn（4481，单炮 410 / hp 2400）+ E 100（9489，多终局炮，无权威 alphaDamage）
+        final Battle battle = new Battle();
+        battle.arenaId = "team-facts-arena";
+        battle.mapName = "map1";
+        battle.arenaBonusType = 2;
+        battle.durationS = 300.0;
+        battle.winnerTeam = 1;
+        battle.players = List.of(
+                player(10_001L, "SPHTDriver", 1, 29985L),
+                player(20_001L, "KranDriver", 2, 4481L),
+                player(20_002L, "E100Driver", 2, 9489L));
+
+        final TeamMemberFeatureSet member = new TeamMemberFeatureSet(
+                List.of(7), 10_001L, "SPHTDriver", 29985L, "SPHT", 1,
+                DecodeConfidence.EXACT, 1000, 0, 0, 0, 0,
+                true, null, List.of(), List.of(), List.of(), List.of());
+        final TeamAggregateResult aggregate = new TeamAggregateResult(
+                1, 1000, 0, 0, 0, 0, 1, 0, null, null, null, true);
+        final TeamBattleFeatureSet features = new TeamBattleFeatureSet(
+                1, List.of(member), aggregate, TeamObservedAggregate.empty(),
+                List.of(), List.of(), List.of(), List.of(),
+                TeamFeatureCoverage.empty(), List.of(), true);
+        final SingleTeamBattleAnalysisContext context = new SingleTeamBattleAnalysisContext(
+                "unit-A", null, "f.wotbreplay", null, battle, 1, features,
+                new ReplayCoverage(false, 0, 0, 0, 0, 0, 0.0, Map.of()), List.of());
+
+        final String content = TeamAiPromptBuilder.single(context).content();
+
+        // TEAM_MEMBERS 路径：SPHT 事实进入 prompt
+        assertTrue(content.contains("=== TEAM_MEMBERS ==="), content);
+        assertTrue(content.contains("alphaDamage=400"), content);
+        assertTrue(content.contains("hp=3400"), content);
+        // OPPOSING_TEAM_LINEUP_AUTHORITATIVE 路径：Kranvagn 事实进入 prompt
+        assertTrue(content.contains("OPPOSING_TEAM_LINEUP_AUTHORITATIVE"), content);
+        assertTrue(content.contains("alphaDamage=410"), content);
+        assertTrue(content.contains("hp=2400"), content);
+        // E 100 无权威 alphaDamage：不得出现其任意一门炮的伤害
+        assertFalse(content.contains("alphaDamage=645"), content);
+        assertFalse(content.contains("alphaDamage=460"), content);
+    }
+
+    @Test
+    void structuredTankFactsOmitsUnavailableAlphaDamage() {
+        final String sphtFacts = TeamAiPromptBuilder.structuredTankFacts(29985L);
+        assertTrue(sphtFacts.contains("alphaDamage=400"), sphtFacts);
+        assertTrue(sphtFacts.contains("hp=3400"), sphtFacts);
+
+        final String e100Facts = TeamAiPromptBuilder.structuredTankFacts(9489L);
+        assertTrue(e100Facts.contains("tier=10"), e100Facts);
+        assertTrue(e100Facts.contains("nation=Germany"), e100Facts);
+        assertFalse(e100Facts.contains("alphaDamage="), e100Facts);
+    }
+
+    @Test
+    void extraInfoFactIsQuotedAndWiredOnlyWhenPresent() {
+        // 空串不输出；非空必须 JSON 引用/转义（不可信数据）
+        assertEquals("", TeamAiPromptBuilder.extraInfoFact(""));
+        assertEquals(
+                " extraInfo=\"炮塔弱点\\\"注入\\\"\"",
+                TeamAiPromptBuilder.extraInfoFact("炮塔弱点\"注入\""));
+        // 真实数据当前无 extraInfo：事实行不含 extraInfo=
+        assertFalse(TeamAiPromptBuilder.structuredTankFacts(29985L).contains("extraInfo="));
     }
 
     private static SingleTeamBattleAnalysisContext buildContext(
