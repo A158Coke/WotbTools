@@ -51,9 +51,10 @@ public final class ReplayDisplayNames {
     }
 
     /**
-     * 结构化车辆类型（重坦 / 中坦 / 轻坦 / TD），仅取自 tankopedia 的 {@code class} 字段。
+     * 结构化车辆类型，仅取自 tankopedia 的 {@code class} 字段（英文，如 Heavy tank）。
      * <p>Blitz 不存在自行火炮车种；tankopedia 未提供时返回 {@link #UNKNOWN_TANK_CLASS}，
-     * 调用方必须原样输出「未知」，不得由坦克名称推断。</p>
+     * 调用方必须原样输出「未知」，不得由坦克名称推断。AI 复盘正文语言由前端 {@code lang}
+     * 参数控制，后端不在此处做中文本地化。</p>
      */
     public static String tankClass(final long tankId) {
         if (tankId <= 0) {
@@ -63,8 +64,7 @@ public final class ReplayDisplayNames {
         if (!StringUtils.hasText(type)) {
             return UNKNOWN_TANK_CLASS;
         }
-        // 车辆库把坦克歼击车记作英文缩写 TD；复盘正文要求全中文，这里统一展开
-        return "TD".equals(type) ? "坦克歼击车" : type;
+        return type;
     }
 
     /** 结构化车辆等级，仅取自 tankopedia 的 {@code tier}；缺失返回空串，不得由名称推断。 */
@@ -77,13 +77,40 @@ public final class ReplayDisplayNames {
         return text.isBlank() ? "" : text;
     }
 
-    /** 结构化车辆国家，仅取自 tankopedia 的 {@code nation}；缺失返回空串，不得由名称推断。 */
+    /** 结构化车辆国家，仅取自 tankopedia 的 {@code nation}（英文，如 USA）；缺失返回空串。 */
     public static String tankNation(final long tankId) {
         if (tankId <= 0) {
             return "";
         }
         final String nation = TANKOPEDIA.info(tankId).nation();
         return StringUtils.hasText(nation) ? nation : "";
+    }
+
+    /** 结构化车辆炮伤，仅取自 tankopedia 的 {@code alphaDamage}；缺失或 ≤0 返回空串。 */
+    public static String tankAlphaDamage(final long tankId) {
+        if (tankId <= 0) {
+            return "";
+        }
+        final Integer alpha = TANKOPEDIA.info(tankId).alphaDamage();
+        return alpha != null && alpha > 0 ? String.valueOf(alpha) : "";
+    }
+
+    /** 结构化车辆血量，仅取自 tankopedia 的 {@code hp/maxHp}；缺失或 ≤0 返回空串。 */
+    public static String tankMaxHp(final long tankId) {
+        if (tankId <= 0) {
+            return "";
+        }
+        final Integer hp = TANKOPEDIA.info(tankId).maxHp();
+        return hp != null && hp > 0 ? String.valueOf(hp) : "";
+    }
+
+    /** 手工维护的每辆车知识点，取自 tankopedia 的 {@code extraInfo}；空串时不输出。 */
+    public static String tankExtraInfo(final long tankId) {
+        if (tankId <= 0) {
+            return "";
+        }
+        final String knowledge = TANKOPEDIA.info(tankId).extraInfo();
+        return StringUtils.hasText(knowledge) ? knowledge.trim() : "";
     }
 
     private static boolean isValidDisplayName(final String name) {

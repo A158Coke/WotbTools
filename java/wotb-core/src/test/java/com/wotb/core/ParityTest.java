@@ -65,11 +65,12 @@ class ParityTest {
     @Test
     void tankopediaResolves() {
         final Tankopedia tp = Tankopedia.load();
-        assertTrue(tp.size() > 600, "车辆库应非空");
+        // WG 官方 asia 数据默认只保留 7-10 级（302 辆），断言下限放宽到 200
+        assertTrue(tp.size() > 200, "车辆库应非空");
         assertEquals("Kranvagn", tp.info(4481).name());
-        assertEquals("重坦", tp.info(4481).type());
+        assertEquals("Heavy tank", tp.info(4481).type());
         // 轻坦车种回归(枚举0被省略时仍应解析)
-        assertEquals("轻坦", tp.info(24321).type(), "T-100 LT(24321) 应为轻坦");
+        assertEquals("Light tank", tp.info(24321).type(), "T-100 LT(24321) 应为轻坦");
     }
 
     @Test

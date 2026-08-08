@@ -20,7 +20,7 @@ Entry: [https://wotbtools.com](https://wotbtools.com) · Repository: [https://gi
 
 - Local run / build: see [java/README.md](java/README.md) (local eight-service stack via `docker/online/`)
 - Testing and quality gates: see [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
-- Updating the tank database: `cd common/python && python update_tankopedia.py` (see DEVELOPER_GUIDE)
+- Updating the tank database: `cd common/python && python update_tankopedia.py` — generates the four per-tier files (see DEVELOPER_GUIDE)
 
 ## Live Tools
 

@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class EntityIdentityResolverTest {
 
-    private static final long SPHT_TANK_ID = 29985L;   // tankopedia: SPHT / 重坦 / 10 / 美国
+    private static final long SPHT_TANK_ID = 29985L;   // tankopedia: SPHT / Heavy tank / 10 / USA
     private static final long RECORDER_ACCOUNT = 1L;
     private static final long ENEMY_ACCOUNT = 2L;
     private static final int RECORDER_ENTITY = 5;
@@ -42,10 +42,11 @@ class EntityIdentityResolverTest {
         assertTrue(enemyLabel.startsWith("敌方 "), enemyLabel);
         assertTrue(enemyLabel.contains("\"EnemyAce\""), enemyLabel);
         assertTrue(enemyLabel.contains("坦克: \"SPHT\""), enemyLabel);
-        assertTrue(enemyLabel.contains("车种: 重坦"), enemyLabel);
+        assertTrue(enemyLabel.contains("车种: Heavy tank"), enemyLabel);
         // 结构化车辆事实来自 tankopedia，而不是名称推断
         assertTrue(enemyLabel.contains("等级: 10"), enemyLabel);
-        assertTrue(enemyLabel.contains("国家: 美国"), enemyLabel);
+        assertTrue(enemyLabel.contains("国家: USA"), enemyLabel);
+        assertTrue(enemyLabel.contains("炮伤: 400"), enemyLabel);
         assertFalse(enemyLabel.contains("自行火炮"), enemyLabel);
         assertFalse(enemyLabel.contains("SPG"), enemyLabel);
     }

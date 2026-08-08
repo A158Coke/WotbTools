@@ -332,7 +332,7 @@ final class TeamAiPromptBuilder {
                     + " nickname=" + quoteData(p.nickname)
                     + " tank=" + quoteData(resolveTankName(p.tankId, p.tankName))
                     + " vehicleClass=" + resolveTankClass(p.tankId)
-                    + tierAndNation(p.tankId)
+                    + structuredTankFacts(p.tankId)
                     + " finalDamage=" + p.damageDealt
                     + " damageReceived=" + p.damageReceived
                     + " assisted=" + p.damageAssisted
@@ -363,19 +363,29 @@ final class TeamAiPromptBuilder {
     }
 
     /**
-     * tankopedia 的结构化等级/国家；缺失即不输出，绝不由名称推断。
+     * tankopedia 的结构化车辆事实（tier / nation / alphaDamage / hp / extraInfo）。
+     * 只在 Tankopedia 确实提供字段时输出；10 级多炮车没有 vehicle 级 alphaDamage 时
+     * 自动省略，绝不猜测；extraInfo 是手工维护的不可信数据，必须 JSON 引用/转义。
      */
-    private static String tierAndNation(final long tankId) {
-        final StringBuilder sb = new StringBuilder(24);
-        final String tier = ReplayDisplayNames.tankTier(tankId);
-        if (!tier.isEmpty()) {
-            sb.append(" tier=").append(tier);
-        }
-        final String nation = ReplayDisplayNames.tankNation(tankId);
-        if (!nation.isEmpty()) {
-            sb.append(" nation=").append(nation);
-        }
+    static String structuredTankFacts(final long tankId) {
+        final StringBuilder sb = new StringBuilder(80);
+        appendFact(sb, "tier", ReplayDisplayNames.tankTier(tankId));
+        appendFact(sb, "nation", ReplayDisplayNames.tankNation(tankId));
+        appendFact(sb, "alphaDamage", ReplayDisplayNames.tankAlphaDamage(tankId));
+        appendFact(sb, "hp", ReplayDisplayNames.tankMaxHp(tankId));
+        sb.append(extraInfoFact(ReplayDisplayNames.tankExtraInfo(tankId)));
         return sb.toString();
+    }
+
+    private static void appendFact(final StringBuilder sb, final String key, final String value) {
+        if (!value.isEmpty()) {
+            sb.append(' ').append(key).append('=').append(value);
+        }
+    }
+
+    /** extraInfo 事实片段；空串返回空串，非空必须 JSON 引用/转义（不可信数据）。 */
+    static String extraInfoFact(final String extraInfo) {
+        return extraInfo.isEmpty() ? "" : " extraInfo=" + quoteData(extraInfo);
     }
 
     private static void appendOptionalDetails(
@@ -448,7 +458,7 @@ final class TeamAiPromptBuilder {
                     + " tank=" + quoteData(resolveTankName(member.tankId(), member.tankName()))
                     // vehicleClass / tier / nation 只来自 tankopedia 的结构化字段，不得由 tank 名称推断
                     + " vehicleClass=" + resolveTankClass(member.tankId())
-                    + tierAndNation(member.tankId())
+                    + structuredTankFacts(member.tankId())
                     + " entityIds=" + member.entityIds()
                     + " mapping=" + PlayerAnalysisTerms.confidenceLabel(member.mappingConfidence())
                     + " finalDamage=" + member.finalDamage()

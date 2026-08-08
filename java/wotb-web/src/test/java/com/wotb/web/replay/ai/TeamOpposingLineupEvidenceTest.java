@@ -28,8 +28,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class TeamOpposingLineupEvidenceTest {
 
-    private static final long SPHT_TANK_ID = 29985L;   // tankopedia: SPHT / 重坦 / 10 / 美国
-    private static final long IS_TANK_ID = 513L;       // tankopedia: IS / 重坦 / 7 / 苏联
+    private static final long SPHT_TANK_ID = 29985L;   // tankopedia: SPHT / Heavy tank / 10 / USA
+    private static final long IS_TANK_ID = 513L;       // tankopedia: IS / Heavy tank / 7 / USSR
 
     @Test
     void opposingTeamLineupIsPresentWithAuthoritativePerVehicleFacts() {
@@ -37,9 +37,9 @@ class TeamOpposingLineupEvidenceTest {
 
         assertTrue(content.contains("OPPOSING_TEAM_LINEUP_AUTHORITATIVE（对方阵容·权威结算）"), content);
         assertTrue(content.contains("tank=\"SPHT\""), content);
-        assertTrue(content.contains("vehicleClass=重坦"), content);
+        assertTrue(content.contains("vehicleClass=Heavy tank"), content);
         assertTrue(content.contains("tier=10"), content);
-        assertTrue(content.contains("nation=美国"), content);
+        assertTrue(content.contains("nation=USA"), content);
         assertTrue(content.contains("finalDamage=2100"), content);
         assertTrue(content.contains("damageReceived=1500"), content);
         assertTrue(content.contains("assisted=300"), content);

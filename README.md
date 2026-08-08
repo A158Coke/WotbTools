@@ -23,7 +23,7 @@
 
 - 本地运行 / 构建：见 [java/README.md](java/README.md)（本地八服务 `docker/online/`）
 - 测试与质量门禁：见 [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
-- 更新车辆库：`cd common/python && python update_tankopedia.py`（详见 DEVELOPER_GUIDE）
+- 更新车辆库：手动触发 GitHub Actions `Update Tankopedia`（从 blitzkit 游戏客户端数据同步 4 个等级文件并自动提交回 main）；本地跑 `cd common/python && python update_tankopedia.py` 即可（详见 DEVELOPER_GUIDE）
 
 ## 已上线工具
 
