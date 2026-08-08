@@ -30,10 +30,11 @@
           "guns": [
             { "gunId", "isDefault", "alphaDamage", "shells": [{type,damage,penetration}] }
           ],                            // 7-9 级只有顶配炮一把；10 级顶配炮塔全部炮
+                                        // 多炮时用 isDefault 判断默认炮（第一把）
           "allowedProvision": [...],    // catalog 逻辑物资 id（SMALL_FOOD 等）
           "allowedConsumables": [...],  // catalog 消耗品 code（AUTOMATIC_FIRE_EXTINGUISHER 等）
-          "extraInfo": "",              // 手工知识点（原 extraKnowledge，按 tank_id 保留合并）
-          "priority": 0                 // 手工维护，数字越低优先级越高，>=0
+          "allowedEquipment": [...],    // catalog 装备 code（含 VK 72.01 俯角 / 履带齿等专属装备）
+          "extraInfo": ""               // 手工知识点（原 extraKnowledge，按 tank_id 保留合并）
         }
       ]
     }
@@ -62,6 +63,7 @@ from datetime import datetime, timezone
 PB_URL = "https://assets.blitzkit.app/definitions/tanks.pb"
 CONSUMABLES_URL = "https://assets.blitzkit.app/definitions/consumables.pb"
 PROVISIONS_URL = "https://assets.blitzkit.app/definitions/provisions.pb"
+EQUIPMENT_URL = "https://assets.blitzkit.app/definitions/equipment.pb"
 
 REPO_COMMON_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -93,6 +95,7 @@ FIELD_TANK_TRACKS = 22
 FIELD_TANK_SPEED_FORWARD = 25
 FIELD_TANK_SPEED_BACKWARD = 26
 FIELD_TANK_WEIGHT = 31
+FIELD_TANK_EQUIPMENT_PRESET = 30
 
 # ---- 炮塔 / 炮 / 引擎 / 履带 / 弹 ----
 FIELD_TURRET_HP = 2
@@ -347,7 +350,7 @@ def top_track_traverse(td):
 
 
 def parse_tanks(pb_bytes):
-    """tanks.pb -> {tank_id: vehicle dict}（不含 extraInfo/priority/物资列表）。"""
+    """tanks.pb -> {tank_id: vehicle dict}（不含 extraInfo/物资/装备列表）。"""
     vehicles = {}
     for entry in decode_protobuf(pb_bytes).get(FIELD_TANK_ID, []):
         kv = decode_protobuf(entry)
@@ -381,6 +384,7 @@ def parse_tanks(pb_bytes):
         weight_kg = as_int(f1(td, FIELD_TANK_WEIGHT))
         if engine_power and weight_kg:
             item["powerToWeightRatio"] = round(engine_power / (weight_kg / 1000.0), 1)
+        item["_equipmentPreset"] = as_str(f1(td, FIELD_TANK_EQUIPMENT_PRESET, b""))
         item["guns"] = []
         for index, gun in enumerate(guns):
             item["guns"].append({
@@ -528,6 +532,60 @@ def apply_items(vehicles, provision_defs, consumable_defs, provision_map, consum
     return vehicles
 
 
+def parse_equipment_defs(pb_bytes):
+    """equipment.pb -> (presets: {name: set(equipment_id)}, equipments: {id: name})。
+
+    EquipmentDefinitions.presets = map<string, EquipmentPreset>，每个 preset 的
+    slots = [{left, right}]，车辆可用装备 = 全部槽位 left/right 装备 id 的并集。
+    """
+    presets = {}
+    equipments = {}
+    root = decode_protobuf(pb_bytes)
+    for raw_preset in root.get(1, []):
+        kv = decode_protobuf(raw_preset)
+        name = as_str(f1(kv, 1, b""))
+        preset = decode_protobuf(f1(kv, 2, b""))
+        ids = set()
+        for raw_slot in preset.get(1, []):
+            slot = decode_protobuf(raw_slot)
+            left = as_int(f1(slot, 1))
+            right = as_int(f1(slot, 2))
+            if left:
+                ids.add(left)
+            if right:
+                ids.add(right)
+        presets[name] = ids
+    for raw_equipment in root.get(2, []):
+        kv = decode_protobuf(raw_equipment)
+        equipment_id = as_int(f1(kv, 1))
+        if equipment_id is not None:
+            equip = decode_protobuf(f1(kv, 2, b""))
+            equipments[equipment_id] = i18n_en(f1(equip, 1, b""))
+    return presets, equipments
+
+
+def load_equipment_catalog():
+    """读取 catalog equipment.json -> {equipment_id: code}。"""
+    equipment_map = {}
+    with open(os.path.join(CATALOG_DIR, "equipment.json"), encoding="utf-8") as f:
+        for item in json.load(f).get("items", []):
+            equipment_map[item["id"]] = item["code"]
+    return equipment_map
+
+
+def apply_equipment(vehicles, presets, equipment_map):
+    """按车辆 equipment_preset 的槽位装备并映射 catalog code，填充 allowedEquipment。"""
+    for vehicle in vehicles.values():
+        preset_name = vehicle.get("_equipmentPreset")
+        ids = presets.get(preset_name, set()) if preset_name else set()
+        vehicle["allowedEquipment"] = sorted({
+            equipment_map[equipment_id]
+            for equipment_id in ids
+            if equipment_id in equipment_map
+        })
+    return vehicles
+
+
 # ---- 旧数据读取 / extraInfo 保留 ----
 
 def load_existing_data(path):
@@ -600,7 +658,6 @@ def merge_extra_info(new_data, old_data):
             entry["extraInfo"] = old_knowledge
         else:
             entry["extraInfo"] = ""
-        entry["priority"] = 0
     ok, _, _ = verify_knowledge_preservation(old_data or {}, new_data)
     if not ok:
         raise RuntimeError(
@@ -616,8 +673,9 @@ def write_json(path, payload):
 
 
 def vehicle_output(vehicle):
-    """输出用 vehicle：剥掉内部 clip 标志，guns 只留公开字段。"""
+    """输出用 vehicle：剥掉内部 clip / _equipmentPreset 标志。"""
     out = dict(vehicle)
+    out.pop("_equipmentPreset", None)
     out["guns"] = [
         {
             "gunId": gun["gunId"],
@@ -647,8 +705,10 @@ def main(argv=None):
         consumables_pb = resp.read()
     with urllib.request.urlopen(PROVISIONS_URL, timeout=60) as resp:
         provisions_pb = resp.read()
-    print("pb bytes: tanks=%d consumables=%d provisions=%d"
-          % (len(tanks_pb), len(consumables_pb), len(provisions_pb)))
+    with urllib.request.urlopen(EQUIPMENT_URL, timeout=60) as resp:
+        equipment_pb = resp.read()
+    print("pb bytes: tanks=%d consumables=%d provisions=%d equipment=%d"
+          % (len(tanks_pb), len(consumables_pb), len(provisions_pb), len(equipment_pb)))
 
     old_data = load_existing_data_dir(args.existing_dir)
     vehicles = parse_tanks(tanks_pb)
@@ -661,6 +721,8 @@ def main(argv=None):
         provision_map,
         consumable_map,
     )
+    equipment_presets, _ = parse_equipment_defs(equipment_pb)
+    vehicles = apply_equipment(vehicles, equipment_presets, load_equipment_catalog())
     vehicles = merge_extra_info(vehicles, old_data)
     generated_at = datetime.now(timezone.utc).isoformat()
     new_data = {}

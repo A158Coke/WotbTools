@@ -2,7 +2,7 @@
   "meta": {
     "source": "blitzkit (assets.blitzkit.app/definitions/tanks.pb)",
     "tier": 9,
-    "generated_at": "2026-08-07T23:15:41.614508+00:00",
+    "generated_at": "2026-08-08T10:08:57.477583+00:00",
     "count": 102
   },
   "vehicles": [
@@ -79,8 +79,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "WZ-120",
@@ -202,8 +221,27 @@
         "REPAIR_KIT",
         "TUNGSTEN_SHELLS"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "B-C 25 t AP",
@@ -280,8 +318,27 @@
         "REPAIR_KIT",
         "SHELL_RELOAD_BOOST"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "WZ-111 1-4",
@@ -357,8 +414,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "T30",
@@ -456,8 +532,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "50TP prototyp",
@@ -515,8 +610,27 @@
         "REPAIR_KIT",
         "TUNGSTEN_SHELLS"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Type 61",
@@ -592,8 +706,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "AMX 50 120",
@@ -691,8 +824,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "T 55A",
@@ -746,8 +898,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Ho-Ri T.II",
@@ -826,8 +997,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Emil II",
@@ -906,8 +1096,27 @@
         "REPAIR_KIT",
         "RETICLE_CALIBRATION"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Conqueror",
@@ -1008,8 +1217,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "AMX 30 1er prot.",
@@ -1063,8 +1291,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Centurion 7/1",
@@ -1184,8 +1431,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Škoda T 50",
@@ -1260,8 +1526,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "59-Patton",
@@ -1315,8 +1600,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "T-34-3",
@@ -1370,8 +1674,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Type 68",
@@ -1447,8 +1770,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_SUSPENSION",
+        "IMPROVED_VERTICAL_STABILIZER",
+        "SUPERCHARGER",
+        "TOOLBOX"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Škoda T 27",
@@ -1501,8 +1843,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "VK 45.02 B",
@@ -1626,8 +1987,27 @@
         "REPAIR_KIT",
         "TUNGSTEN_SHELLS"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_SUSPENSION",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "50TP Tyszkiewicza",
@@ -1707,8 +2087,27 @@
         "REPAIR_KIT",
         "TUNGSTEN_SHELLS"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "T-54",
@@ -1828,8 +2227,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Jagdtiger",
@@ -1906,8 +2324,27 @@
         "REPAIR_KIT",
         "TUNGSTEN_SHELLS"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Obj. 704",
@@ -1983,8 +2420,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "WZ-111G FT",
@@ -2064,8 +2520,27 @@
         "REPAIR_KIT",
         "RETICLE_CALIBRATION"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "T95",
@@ -2164,8 +2639,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "M46 Patton",
@@ -2263,8 +2757,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "M103",
@@ -2364,8 +2877,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "E 75",
@@ -2485,8 +3017,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "WZ-114",
@@ -2543,8 +3094,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "WZ-132A",
@@ -2620,8 +3190,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "E 50",
@@ -2719,8 +3308,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Kame",
@@ -2773,8 +3381,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "CC 1 Mk. 2",
@@ -2849,8 +3476,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "ST-I",
@@ -2949,8 +3595,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Foch",
@@ -3007,8 +3672,27 @@
         "REPAIR_KIT",
         "TUNGSTEN_SHELLS"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Regressor",
@@ -3128,8 +3812,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "IS-8",
@@ -3228,8 +3931,27 @@
         "REPAIR_KIT",
         "TUNGSTEN_SHELLS"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "BZ-58-2",
@@ -3285,8 +4007,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "SU-122-54",
@@ -3384,8 +4125,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "BZ-68",
@@ -3461,8 +4221,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Glacier",
@@ -3582,8 +4361,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "K-91",
@@ -3636,8 +4434,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Tornvagn",
@@ -3690,8 +4507,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "TNH T Vz. 51",
@@ -3789,8 +4625,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "BZ-176",
@@ -3844,8 +4699,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "BZ-74-1",
@@ -3899,8 +4773,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "WZ-120G FT",
@@ -3954,8 +4847,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_SUSPENSION",
+        "IMPROVED_VERTICAL_STABILIZER",
+        "SUPERCHARGER",
+        "TOOLBOX"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Fänrik",
@@ -4074,8 +4986,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Leopard PT A",
@@ -4153,8 +5084,27 @@
         "REPAIR_KIT",
         "RETICLE_CALIBRATION"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "CS-59",
@@ -4256,8 +5206,27 @@
         "REPAIR_KIT",
         "TUNGSTEN_SHELLS"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "T54E1",
@@ -4329,8 +5298,27 @@
         "REPAIR_KIT",
         "SHELL_RELOAD_BOOST"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "WT auf Pz. IV",
@@ -4410,8 +5398,27 @@
         "REPAIR_KIT",
         "RETICLE_CALIBRATION"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "KV-JR",
@@ -4531,8 +5538,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Conway",
@@ -4610,8 +5636,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Progetto C50 mod. 66",
@@ -4708,8 +5753,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Somua SM",
@@ -4763,8 +5827,27 @@
         "REPAIR_KIT",
         "SHELL_RELOAD_BOOST"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Argonaut",
@@ -4906,8 +5989,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "mau5Tank",
@@ -4986,8 +6088,27 @@
         "RETICLE_CALIBRATION",
         "TUNGSTEN_SHELLS"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Destiny",
@@ -5109,8 +6230,27 @@
         "REPAIR_KIT",
         "TUNGSTEN_SHELLS"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "SDP 60 Gonkiewicza",
@@ -5186,8 +6326,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "B-C 25 t Avenir",
@@ -5240,8 +6399,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "AC Sterope",
@@ -5316,8 +6494,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Vickers CR",
@@ -5394,8 +6591,27 @@
         "REPAIR_KIT",
         "RETICLE_CALIBRATION"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "T92E1",
@@ -5471,8 +6687,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Char Futur 4",
@@ -5526,8 +6761,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "AC Celeno",
@@ -5624,8 +6878,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Mäuschen",
@@ -5703,8 +6976,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Lorraine 50 t",
@@ -5759,8 +7051,27 @@
         "REPAIR_KIT",
         "TUNGSTEN_SHELLS"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "FVE Defender",
@@ -5814,8 +7125,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "T-2020",
@@ -5869,8 +7199,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "VK 168.01 (P)",
@@ -5924,8 +7273,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Herdbreaker",
@@ -5980,8 +7348,27 @@
         "REPAIR_KIT",
         "TUNGSTEN_SHELLS"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "E 75 TS",
@@ -6035,8 +7422,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Projet Louis",
@@ -6111,8 +7517,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "AE Phase I",
@@ -6166,8 +7591,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Ambassador",
@@ -6222,8 +7666,27 @@
         "REPAIR_KIT",
         "TUNGSTEN_SHELLS"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Kanonenjagdpanzer",
@@ -6280,8 +7743,27 @@
         "RETICLE_CALIBRATION",
         "TUNGSTEN_SHELLS"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Toro",
@@ -6334,8 +7816,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Donnola",
@@ -6389,8 +7890,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "M-V-Yoh",
@@ -6490,8 +8010,27 @@
         "RETICLE_CALIBRATION",
         "SHELL_RELOAD_BOOST"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Cobra",
@@ -6540,8 +8079,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Husarz",
@@ -6595,8 +8153,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Object 84",
@@ -6672,8 +8249,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "FV4201 Chieftain Proto",
@@ -6727,8 +8323,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Vickers MBT",
@@ -6782,8 +8397,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "星际猎人",
@@ -6838,8 +8472,27 @@
         "REPAIR_KIT",
         "RETICLE_CALIBRATION"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Object 752",
@@ -6892,8 +8545,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "M46 Jaguar",
@@ -6948,8 +8620,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "WT Ritter",
@@ -7004,8 +8695,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Object 452K",
@@ -7059,8 +8769,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Projekt Kpz. 07P(E)",
@@ -7114,8 +8843,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_SUSPENSION",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "TL-7-120",
@@ -7170,8 +8918,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Erich Konzept I",
@@ -7246,8 +9013,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "LKpz.70 K",
@@ -7322,8 +9108,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "TS-60",
@@ -7377,8 +9182,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "HWK 12",
@@ -7460,8 +9284,27 @@
         "RETICLE_CALIBRATION",
         "TUNGSTEN_SHELLS"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Tiger-Maus",
@@ -7517,8 +9360,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "MBT-B",
@@ -7571,8 +9433,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "ATAC",
@@ -7648,8 +9529,27 @@
         "REPAIR_KIT",
         "RETICLE_CALIBRATION"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "KJPZ TIII Jäger",
@@ -7703,8 +9603,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     },
     {
       "name": "Tortoise",
@@ -7802,8 +9721,27 @@
         "REDUCED_ENGINE_POWER_BOOST",
         "REPAIR_KIT"
       ],
-      "extraInfo": "",
-      "priority": 0
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
     }
   ]
 }
