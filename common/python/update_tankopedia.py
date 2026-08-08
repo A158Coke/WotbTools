@@ -425,6 +425,19 @@ def parse_tanks(pb_bytes):
     return vehicles
 
 
+def filter_to_business_tiers(vehicles):
+    """只保留业务范围 tier 7-10（TIER_FILES）；1-6 级不进入最终数据。
+
+    必须在 validate_integrity 之前调用：完整性门禁只校验最终准备写入
+    tankopedia-tier{7,8,9,10}.json 的数据，解析出的低等级车辆不应触发
+    TANKOPEDIA_TIER_OUT_OF_RANGE。
+    """
+    return {
+        tank_id: entry for tank_id, entry in vehicles.items()
+        if isinstance(entry, dict) and entry.get("tier") in TIER_FILES
+    }
+
+
 # ---- consumables.pb / provisions.pb -> 每车可用物资 ----
 
 def parse_item_defs(pb_bytes):
@@ -791,6 +804,7 @@ def main(argv=None):
     old_data = load_existing_data_dir(args.existing_dir)
     vehicles = parse_tanks(tanks_pb)
     total = len(vehicles)
+    vehicles = filter_to_business_tiers(vehicles)
     provision_map, consumable_map = load_catalog()
     vehicles = apply_items(
         vehicles,
