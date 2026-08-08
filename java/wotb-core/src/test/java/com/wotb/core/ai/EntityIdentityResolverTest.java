@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class EntityIdentityResolverTest {
 
-    private static final long SPHT_TANK_ID = 29985L;   // tankopedia: SPHT / 重坦 / 10 / 美国
+    private static final long SPHT_TANK_ID = 29985L;   // tankopedia: SPHT / Heavy tank / 10 / USA
     private static final long RECORDER_ACCOUNT = 1L;
     private static final long ENEMY_ACCOUNT = 2L;
     private static final int RECORDER_ENTITY = 5;

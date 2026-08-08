@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 坦克名称必须作为不可推断的专有名词。
  * <p>断言真实生成的 system prompt 与真实生成的证据内容，而不是只验证常量存在。
- * SPHT（tankId 29985，tankopedia 中为 tier 10 美系重坦）只是暴露问题的样例，
+ * SPHT（tankId 29985，tankopedia 中为 tier 10 / Heavy tank / USA）只是暴露问题的样例，
  * 规则和实现都必须是通用的。</p>
  */
 class TankNameProperNounTest {

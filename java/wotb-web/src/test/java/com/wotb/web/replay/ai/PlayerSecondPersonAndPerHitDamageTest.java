@@ -23,8 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class PlayerSecondPersonAndPerHitDamageTest {
 
-    private static final long SPHT_TANK_ID = 29985L;   // SPHT / 重坦 / 10 / 美国
-    private static final long IS_TANK_ID = 513L;       // IS / 重坦
+    private static final long SPHT_TANK_ID = 29985L;   // SPHT / Heavy tank / 10 / USA
+    private static final long IS_TANK_ID = 513L;       // IS / Heavy tank
     private static final long YOU = 1L;
     private static final long ENEMY = 2L;
     private static final long MATE = 3L;
