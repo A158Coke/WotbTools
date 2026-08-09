@@ -76,13 +76,13 @@ class TeamAutopsyPromptBuilderTest {
 
     @Test
     void systemPromptBansHindsightAndRequiresPlayerKeys() {
-        assertTrue(TeamAutopsyPromptBuilder.AUTOPSY_SYSTEM_PROMPT.contains("严禁事后诸葛亮"));
-        assertTrue(TeamAutopsyPromptBuilder.AUTOPSY_SYSTEM_PROMPT.contains("战犯"));
-        assertTrue(TeamAutopsyPromptBuilder.AUTOPSY_SYSTEM_PROMPT.contains("biggestLiabilities"));
-        assertTrue(TeamAutopsyPromptBuilder.AUTOPSY_SYSTEM_PROMPT.contains("playerKey"));
-        assertTrue(TeamAutopsyPromptBuilder.AUTOPSY_SYSTEM_PROMPT
-                .contains("禁止用昵称或坦克名称做身份键"));
         final String settlement = TeamAutopsyPromptBuilder.AUTOPSY_SYSTEM_PROMPT_SETTLEMENT_ONLY;
+        assertTrue(settlement.contains("严禁事后诸葛亮"));
+        assertTrue(settlement.contains("战犯"));
+        assertTrue(settlement.contains("biggestLiabilities"));
+        assertTrue(settlement.contains("playerKey"));
+        assertTrue(settlement
+                .contains("禁止用昵称或坦克名称做身份键"));
         assertTrue(settlement.contains("结算级团队剖析"));
         assertTrue(settlement.contains("没有关键窗口、没有赛前职责基线、没有逐人 Route/走位证据"));
         assertTrue(settlement.contains("置信度必须 PARTIAL 或 UNKNOWN"));

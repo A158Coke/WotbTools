@@ -2,7 +2,6 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.processing.FriendlyEnemyResult.Winner;
-import com.wotb.core.replay.evidence.EvidenceSkillResult;
 import com.wotb.core.replay.feature.TeamAutopsyStats;
 import com.wotb.core.replay.feature.TeamAutopsyStatsBuilder;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
@@ -21,9 +20,10 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Team Autopsy（第 3 次调用）：判负 → 战犯（≥1），判胜 → MVP（≥1）。
- * <p>输入 = 权威结算 + Call #1 职责基线 + 关键窗口；stage budget 由 Harness 按整体剩余预算
- * 计算（上限 30s），失败/解析失败返回 {@code null}，由 Harness 决定不输出团队剖析段，不影响主复盘。
+ * Team Autopsy（team perspective 结算级 TEAM_AUTOPSY）：判负 → 战犯（≥1），判胜 → MVP（≥1）。
+ * <p>输入 = 权威逐人结算（无 Call #1 Strategic Prior / Critical Window / Route 证据），
+ * 使用结算级 system prompt，置信度 PARTIAL/UNKNOWN；stage budget 由编排器按整体剩余预算
+ * 计算（上限 30s），失败/解析失败返回 {@code null}，不影响团队复盘。
  * {@code AI_CANCELLED} 必须重新抛出（不能被吞掉）。</p>
  */
 @Service
@@ -54,9 +54,6 @@ public class TeamAutopsyService {
      * @return 结构化结果 + 本方 roster；DRAW / 非法队伍 / 非 ZH / 预算不足 / 调用或解析失败 → null
      */
     public TeamAutopsyOutcome analyze(final Battle battle,
-                                      final PreBattleStrategicPrior prior,
-                                      final EvidenceSkillResult evidence,
-                                      final Long recorderAccountId,
                                       final int recorderTeam,
                                       final AllowedLanguage language,
                                       final Winner winner,
@@ -74,23 +71,19 @@ public class TeamAutopsyService {
         }
         final List<TeamAutopsyStats> allStats = new TeamAutopsyStatsBuilder().build(
                 battle,
-                evidence != null ? evidence.criticalWindows() : List.of(),
+                List.of(),
                 recorderTeam,
-                recorderAccountId);
+                null);
         if (allStats.isEmpty()) {
             LOGGER.info("Team autopsy skipped: no friendly roster data");
             count("roster_incomplete");
             return null;
         }
 
-        // team perspective 为结算级评估（无 prior/window/Route）：使用对应 Prompt，
-        // team perspective 为结算级评估：无窗口/基线证据，使用结算级 Prompt。
-        final String systemPrompt = evidence == null
-                ? TeamAutopsyPromptBuilder.AUTOPSY_SYSTEM_PROMPT_SETTLEMENT_ONLY
-                : TeamAutopsyPromptBuilder.AUTOPSY_SYSTEM_PROMPT;
+        final String systemPrompt = TeamAutopsyPromptBuilder.AUTOPSY_SYSTEM_PROMPT_SETTLEMENT_ONLY;
         final String userContent = TeamAutopsyPromptBuilder.buildUserContent(
-                allStats, prior,
-                evidence != null ? evidence.criticalWindows() : List.of(),
+                allStats, null,
+                List.of(),
                 winner);
         final List<Map<String, Object>> messages = List.of(
                 Map.<String, Object>of("role", "system", "content", systemPrompt),

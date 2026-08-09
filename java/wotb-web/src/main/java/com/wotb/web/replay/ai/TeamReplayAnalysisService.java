@@ -697,9 +697,6 @@ public class TeamReplayAnalysisService {
         }
         final TeamAutopsyOutcome outcome = teamAutopsyService.analyze(
                 context.battle(),
-                null,
-                null,
-                null,
                 context.perspectiveTeam(),
                 AllowedLanguage.ZH,
                 winner,

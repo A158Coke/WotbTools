@@ -88,7 +88,7 @@ class TeamAutopsyServiceTest {
     void successReturnsOutcomeWithRosterAndDistinctPlayerKeys() {
         final TeamAutopsyService service = new TeamAutopsyService(gateway(AUTOPSY_JSON), config());
         final TeamAutopsyOutcome outcome = service.analyze(
-                battle(), null, null, 1001L, 1, AllowedLanguage.ZH,
+                battle(), 1, AllowedLanguage.ZH,
                 Winner.ENEMY_WIN, 30);
         assertNotNull(outcome);
         assertEquals(1, outcome.result().mvps().size());
@@ -104,7 +104,7 @@ class TeamAutopsyServiceTest {
     @Test
     void upstreamFailureReturnsNull() {
         final TeamAutopsyService service = new TeamAutopsyService(gateway("not json"), config());
-        assertNull(service.analyze(battle(), null, null, 1001L, 1, AllowedLanguage.ZH,
+        assertNull(service.analyze(battle(), 1, AllowedLanguage.ZH,
                 Winner.ENEMY_WIN, 30));
     }
 
@@ -112,7 +112,7 @@ class TeamAutopsyServiceTest {
     void cancellationIsRethrownNotSwallowed() {
         final TeamAutopsyService service = new TeamAutopsyService(gateway("cancelled"), config());
         final AiUpstreamException e = assertThrows(AiUpstreamException.class,
-                () -> service.analyze(battle(), null, null, 1001L, 1, AllowedLanguage.ZH,
+                () -> service.analyze(battle(), 1, AllowedLanguage.ZH,
                         Winner.ENEMY_WIN, 30));
         assertEquals("AI_CANCELLED", e.code());
     }
@@ -120,13 +120,13 @@ class TeamAutopsyServiceTest {
     @Test
     void drawNonZhInvalidTeamAndZeroBudgetReturnNull() {
         final TeamAutopsyService service = new TeamAutopsyService(gateway(AUTOPSY_JSON), config());
-        assertNull(service.analyze(battle(), null, null, 1001L, 1, AllowedLanguage.ZH,
+        assertNull(service.analyze(battle(), 1, AllowedLanguage.ZH,
                 Winner.DRAW_OR_UNKNOWN, 30));
-        assertNull(service.analyze(battle(), null, null, 1001L, 1, AllowedLanguage.EN,
+        assertNull(service.analyze(battle(), 1, AllowedLanguage.EN,
                 Winner.ENEMY_WIN, 30));
-        assertNull(service.analyze(battle(), null, null, 1001L, 3, AllowedLanguage.ZH,
+        assertNull(service.analyze(battle(), 3, AllowedLanguage.ZH,
                 Winner.ENEMY_WIN, 30));
-        assertNull(service.analyze(battle(), null, null, 1001L, 1, AllowedLanguage.ZH,
+        assertNull(service.analyze(battle(), 1, AllowedLanguage.ZH,
                 Winner.ENEMY_WIN, 0));
     }
 
@@ -135,7 +135,7 @@ class TeamAutopsyServiceTest {
         final Battle battle = battle();
         battle.players.removeIf(p -> p.team == 1); // 无本方玩家
         final TeamAutopsyService service = new TeamAutopsyService(gateway(AUTOPSY_JSON), config());
-        assertNull(service.analyze(battle, null, null, 1001L, 1, AllowedLanguage.ZH,
+        assertNull(service.analyze(battle, 1, AllowedLanguage.ZH,
                 Winner.ENEMY_WIN, 30));
     }
 
@@ -155,7 +155,7 @@ class TeamAutopsyServiceTest {
             }
         };
         final TeamAutopsyService service = new TeamAutopsyService(capturing, config());
-        assertNotNull(service.analyze(battle(), null, null, 1001L, 1, AllowedLanguage.ZH,
+        assertNotNull(service.analyze(battle(), 1, AllowedLanguage.ZH,
                 Winner.ENEMY_WIN, 30));
         assertNotNull(captured[0]);
         assertEquals("TEAM_AUTOPSY", captured[0].analysisMode());
