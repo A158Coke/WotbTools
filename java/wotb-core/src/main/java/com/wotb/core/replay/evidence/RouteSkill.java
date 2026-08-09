@@ -49,11 +49,12 @@ public final class RouteSkill {
         }
         final Set<Integer> regions = new LinkedHashSet<>();
         float end = 0f;
+        final String mapCode = ctx.battle().mapName;
         for (final MovementSegment seg : opening) {
             regions.add(MapRegionResolver.resolveRegionFromRaw(
-                    seg.rawStartPosition().x(), seg.rawStartPosition().z()));
+                    seg.rawStartPosition().x(), seg.rawStartPosition().z(), mapCode));
             regions.add(MapRegionResolver.resolveRegionFromRaw(
-                    seg.rawEndPosition().x(), seg.rawEndPosition().z()));
+                    seg.rawEndPosition().x(), seg.rawEndPosition().z(), mapCode));
             end = Math.max(end, seg.endTime());
         }
         final List<Integer> ordered = regions.stream().filter(r -> r > 0).toList();
@@ -105,7 +106,7 @@ public final class RouteSkill {
             final float rel = cp.rawClockSec() - startRaw;
             final float distance = MapRegionResolver.canonicalDistanceMeters(
                     recorder.position().x(), recorder.position().z(),
-                    centroid[0], centroid[1]);
+                    centroid[0], centroid[1], ctx.battle().mapName);
             if (distance >= DETACHMENT_RADIUS_M) {
                 if (current == null) {
                     current = new DetachedSpan(rel, rel);

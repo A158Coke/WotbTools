@@ -77,7 +77,7 @@
           -235.1109,
           48.357
         ],
-        "team": 2,
+        "team": 1,
         "pointNumber": 1,
         "preferredVehicleType": 3,
         "confidence": "EXACT_SCENE_DATA"
@@ -90,7 +90,7 @@
           -220.3258,
           47.3121
         ],
-        "team": 2,
+        "team": 1,
         "pointNumber": 1,
         "preferredVehicleType": 3,
         "confidence": "EXACT_SCENE_DATA"
@@ -103,7 +103,7 @@
           -223.3788,
           46.9778
         ],
-        "team": 2,
+        "team": 1,
         "pointNumber": 1,
         "preferredVehicleType": 3,
         "confidence": "EXACT_SCENE_DATA"
@@ -116,7 +116,7 @@
           -238.3248,
           48.0299
         ],
-        "team": 2,
+        "team": 1,
         "pointNumber": 1,
         "preferredVehicleType": 3,
         "confidence": "EXACT_SCENE_DATA"
@@ -129,7 +129,7 @@
           -240.8316,
           47.8698
         ],
-        "team": 2,
+        "team": 1,
         "pointNumber": 1,
         "preferredVehicleType": 3,
         "confidence": "EXACT_SCENE_DATA"
@@ -142,7 +142,7 @@
           -254.1118,
           49.4315
         ],
-        "team": 2,
+        "team": 1,
         "pointNumber": 1,
         "preferredVehicleType": 4,
         "confidence": "EXACT_SCENE_DATA"
@@ -155,7 +155,7 @@
           -252.0046,
           50.0287
         ],
-        "team": 2,
+        "team": 1,
         "pointNumber": 1,
         "preferredVehicleType": 4,
         "confidence": "EXACT_SCENE_DATA"
@@ -168,7 +168,7 @@
           -259.0763,
           46.6355
         ],
-        "team": 2,
+        "team": 1,
         "pointNumber": 2,
         "preferredVehicleType": 4,
         "confidence": "EXACT_SCENE_DATA"
@@ -181,7 +181,7 @@
           -258.2143,
           44.4694
         ],
-        "team": 2,
+        "team": 1,
         "pointNumber": 2,
         "preferredVehicleType": 4,
         "confidence": "EXACT_SCENE_DATA"
@@ -194,7 +194,7 @@
           -244.7313,
           46.1782
         ],
-        "team": 2,
+        "team": 1,
         "pointNumber": 2,
         "preferredVehicleType": 2,
         "confidence": "EXACT_SCENE_DATA"
@@ -207,7 +207,7 @@
           -245.9579,
           48.3931
         ],
-        "team": 2,
+        "team": 1,
         "pointNumber": 2,
         "preferredVehicleType": 2,
         "confidence": "EXACT_SCENE_DATA"
@@ -220,7 +220,7 @@
           -243.3583,
           42.8014
         ],
-        "team": 2,
+        "team": 1,
         "pointNumber": 2,
         "preferredVehicleType": 2,
         "confidence": "EXACT_SCENE_DATA"
@@ -233,7 +233,7 @@
           -243.8239,
           43.4259
         ],
-        "team": 2,
+        "team": 1,
         "pointNumber": 2,
         "preferredVehicleType": 2,
         "confidence": "EXACT_SCENE_DATA"
@@ -246,7 +246,7 @@
           -243.172,
           41.9836
         ],
-        "team": 2,
+        "team": 1,
         "pointNumber": 2,
         "preferredVehicleType": 2,
         "confidence": "EXACT_SCENE_DATA"
@@ -259,7 +259,7 @@
           222.9614,
           48.1217
         ],
-        "team": 1,
+        "team": 2,
         "pointNumber": 1,
         "preferredVehicleType": 3,
         "confidence": "EXACT_SCENE_DATA"
@@ -272,7 +272,7 @@
           236.4238,
           47.1506
         ],
-        "team": 1,
+        "team": 2,
         "pointNumber": 1,
         "preferredVehicleType": 3,
         "confidence": "EXACT_SCENE_DATA"
@@ -285,7 +285,7 @@
           240.2945,
           47.1966
         ],
-        "team": 1,
+        "team": 2,
         "pointNumber": 1,
         "preferredVehicleType": 3,
         "confidence": "EXACT_SCENE_DATA"
@@ -298,7 +298,7 @@
           226.7076,
           47.853
         ],
-        "team": 1,
+        "team": 2,
         "pointNumber": 1,
         "preferredVehicleType": 3,
         "confidence": "EXACT_SCENE_DATA"
@@ -311,7 +311,7 @@
           245.0972,
           47.281
         ],
-        "team": 1,
+        "team": 2,
         "pointNumber": 1,
         "preferredVehicleType": 3,
         "confidence": "EXACT_SCENE_DATA"
@@ -324,7 +324,7 @@
           260.0112,
           46.8091
         ],
-        "team": 1,
+        "team": 2,
         "pointNumber": 1,
         "preferredVehicleType": 4,
         "confidence": "EXACT_SCENE_DATA"
@@ -337,7 +337,7 @@
           255.9749,
           46.9838
         ],
-        "team": 1,
+        "team": 2,
         "pointNumber": 1,
         "preferredVehicleType": 4,
         "confidence": "EXACT_SCENE_DATA"
@@ -350,7 +350,7 @@
           258.1879,
           42.799
         ],
-        "team": 1,
+        "team": 2,
         "pointNumber": 2,
         "preferredVehicleType": 4,
         "confidence": "EXACT_SCENE_DATA"
@@ -363,7 +363,7 @@
           258.4586,
           41.5843
         ],
-        "team": 1,
+        "team": 2,
         "pointNumber": 2,
         "preferredVehicleType": 4,
         "confidence": "EXACT_SCENE_DATA"
@@ -376,7 +376,7 @@
           242.3003,
           42.4744
         ],
-        "team": 1,
+        "team": 2,
         "pointNumber": 2,
         "preferredVehicleType": 2,
         "confidence": "EXACT_SCENE_DATA"
@@ -389,7 +389,7 @@
           239.907,
           37.741
         ],
-        "team": 1,
+        "team": 2,
         "pointNumber": 2,
         "preferredVehicleType": 2,
         "confidence": "EXACT_SCENE_DATA"
@@ -402,7 +402,7 @@
           242.5184,
           44.194
         ],
-        "team": 1,
+        "team": 2,
         "pointNumber": 2,
         "preferredVehicleType": 2,
         "confidence": "EXACT_SCENE_DATA"
@@ -415,7 +415,7 @@
           240.2356,
           40.0224
         ],
-        "team": 1,
+        "team": 2,
         "pointNumber": 2,
         "preferredVehicleType": 2,
         "confidence": "EXACT_SCENE_DATA"
@@ -428,7 +428,7 @@
           239.9549,
           39.0834
         ],
-        "team": 1,
+        "team": 2,
         "pointNumber": 2,
         "preferredVehicleType": 2,
         "confidence": "EXACT_SCENE_DATA"

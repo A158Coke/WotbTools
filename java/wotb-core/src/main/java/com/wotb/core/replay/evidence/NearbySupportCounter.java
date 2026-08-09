@@ -120,12 +120,12 @@ public final class NearbySupportCounter {
             }
             if (team == recorder.team()) {
                 observedFriendly++;
-                if (inRadius(recorder, vs)) {
+                if (inRadius(recorder, vs, battle.mapName)) {
                     friendly++;
                 }
             } else {
                 observedEnemy++;
-                if (inRadius(recorder, vs)) {
+                if (inRadius(recorder, vs, battle.mapName)) {
                     enemy++;
                 }
             }
@@ -135,7 +135,7 @@ public final class NearbySupportCounter {
         final DecodeConfidence confidence = friendlyFully && enemyFully
                 ? DecodeConfidence.EXACT : DecodeConfidence.PARTIAL;
         final int recorderRegion = MapRegionResolver.resolveRegionFromRaw(
-                recorder.position().x(), recorder.position().z());
+                recorder.position().x(), recorder.position().z(), battle.mapName);
         return new Counts(battleRelSec, friendly, enemy, observedFriendly, observedEnemy,
                 totals[0], totals[1], recorderRegion, confidence);
     }
@@ -169,10 +169,11 @@ public final class NearbySupportCounter {
         return PlayerResultFormat.deathSec(p) > battleRelSec;
     }
 
-    private static boolean inRadius(final VehicleState recorder, final VehicleState other) {
+    private static boolean inRadius(final VehicleState recorder, final VehicleState other,
+                                    final String mapCode) {
         final float distance = MapRegionResolver.canonicalDistanceMeters(
                 recorder.position().x(), recorder.position().z(),
-                other.position().x(), other.position().z());
+                other.position().x(), other.position().z(), mapCode);
         return distance >= 0f && distance <= SUPPORT_RADIUS_M;
     }
 

@@ -1,5 +1,7 @@
 package com.wotb.core.replay.feature;
 
+import com.wotb.core.replay.map.MapCoordinateProfileRegistry;
+
 public final class MapRegionResolver {
 
     private static volatile MapCoordinateProfile activeProfile = MapCoordinateProfile.DEFAULT;
@@ -24,15 +26,13 @@ public final class MapRegionResolver {
         if (!Float.isFinite(rawX) || !Float.isFinite(rawZ)) {
             return MapCoordinateResolution.invalid();
         }
-        final float clampUpper = profile.clampUpper();
-        final float clampLower = profile.clampLower();
-        if (rawX > clampUpper || rawX < clampLower
-                || rawZ > clampUpper || rawZ < clampLower) {
+        if (rawX > profile.clampUpperX() || rawX < profile.clampLowerX()
+                || rawZ > profile.clampUpperZ() || rawZ < profile.clampLowerZ()) {
             return MapCoordinateResolution.invalid();
         }
         final float half = profile.halfExtent();
-        final float clampedX = clampRaw(rawX, half);
-        final float clampedZ = clampRaw(rawZ, half);
+        final float clampedX = clampRaw(rawX, profile.centerX(), half);
+        final float clampedZ = clampRaw(rawZ, profile.centerZ(), half);
         final boolean wasClamped = clampedX != rawX || clampedZ != rawZ;
         final CanonicalMapPosition pos = toCanonicalPos(clampedX, clampedZ, profile);
         if (wasClamped) {
@@ -41,9 +41,9 @@ public final class MapRegionResolver {
         return MapCoordinateResolution.valid(pos);
     }
 
-    private static float clampRaw(final float v, final float halfExtent) {
-        if (v > halfExtent) return halfExtent;
-        if (v < -halfExtent) return -halfExtent;
+    private static float clampRaw(final float v, final float center, final float halfExtent) {
+        if (v > center + halfExtent) return center + halfExtent;
+        if (v < center - halfExtent) return center - halfExtent;
         return v;
     }
 
@@ -52,8 +52,8 @@ public final class MapRegionResolver {
         final float scale = profile.scale();
         final float half = profile.halfExtent();
         final float mapSize = MapCoordinateProfile.MAP_SIZE;
-        float cx = (safeX + half) * scale;
-        float cz = (safeZ + half) * scale;
+        float cx = (safeX - profile.centerX() + half) * scale;
+        float cz = (safeZ - profile.centerZ() + half) * scale;
         if (cx < 0) cx = 0;
         if (cx > mapSize) cx = mapSize;
         if (cz < 0) cz = 0;
@@ -87,6 +87,12 @@ public final class MapRegionResolver {
         return resolve(rawX, rawZ, activeProfile);
     }
 
+    /** Per-map resolution: profile selected by map code (falls back to DEFAULT). */
+    public static MapCoordinateResolution resolve(final float rawX, final float rawZ,
+                                                  final String mapCode) {
+        return resolve(rawX, rawZ, MapCoordinateProfileRegistry.profileFor(mapCode));
+    }
+
     /** Convenience: raw replay coordinates → region using active profile. */
     public static int resolveRegionFromRaw(final float rawX, final float rawZ) {
         return resolveRegionFromRaw(rawX, rawZ, activeProfile);
@@ -98,6 +104,13 @@ public final class MapRegionResolver {
         final MapCoordinateResolution res = resolve(rawX, rawZ, profile);
         if (!res.usable()) return 0;
         return res.region();
+    }
+
+    /** Per-map convenience: raw replay coordinates → region. */
+    public static int resolveRegionFromRaw(final float rawX, final float rawZ,
+                                           final String mapCode) {
+        return resolveRegionFromRaw(rawX, rawZ,
+                MapCoordinateProfileRegistry.profileFor(mapCode));
     }
 
     /**
@@ -116,6 +129,15 @@ public final class MapRegionResolver {
         final float dx = a.position().x() - b.position().x();
         final float dz = a.position().z() - b.position().z();
         return (float) Math.sqrt(dx * dx + dz * dz);
+    }
+
+    /** Per-map convenience: canonical distance using the map's profile. */
+    public static float canonicalDistanceMeters(
+            final float rawX1, final float rawZ1,
+            final float rawX2, final float rawZ2,
+            final String mapCode) {
+        return canonicalDistanceMeters(rawX1, rawZ1, rawX2, rawZ2,
+                MapCoordinateProfileRegistry.profileFor(mapCode));
     }
 
     /** Convenience using active profile. */
