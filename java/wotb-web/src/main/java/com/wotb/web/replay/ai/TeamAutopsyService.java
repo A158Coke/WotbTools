@@ -21,9 +21,12 @@ import java.util.stream.Collectors;
 
 /**
  * Team Autopsy（team perspective 结算级 TEAM_AUTOPSY）：判负 → 战犯（≥1），判胜 → MVP（≥1）。
- * <p>输入 = 权威逐人结算（无 Call #1 Strategic Prior / Critical Window / Route 证据），
- * 使用结算级 system prompt，置信度 PARTIAL/UNKNOWN；stage budget 由编排器按整体剩余预算
- * 计算（上限 30s），失败/解析失败返回 {@code null}，不影响团队复盘。
+ * <p>输入 = 权威逐人结算（无 Strategic Prior / Critical Window / Route 证据），
+ * 使用结算级 system prompt，LLM 判断的 confidence 仅允许 PARTIAL/UNKNOWN；
+ * 仅当 recorderTeam 恰好存在 7 名有效本方玩家时才生成 P1..P7 并调用 Gateway，
+ * 0..6 人或超过 7 人时跳过并记录 roster_incomplete。
+ * TEAM_AUTOPSY stage budget 上限 30s，实际值由 {@link TeamReplayAnalysisService}
+ * 按整体剩余预算裁剪；失败/解析失败返回 {@code null}，不影响团队复盘。
  * {@code AI_CANCELLED} 必须重新抛出（不能被吞掉）。</p>
  */
 @Service
@@ -31,8 +34,8 @@ public class TeamAutopsyService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TeamAutopsyService.class);
 
-    /** Team Autopsy 输入很小（7 人结算 + 基线 + 窗口摘要）；stage budget 上限，
-     *  实际值由 Harness 按整体剩余预算裁剪（min(30s, 剩余 - margin)）。 */
+    /** Team Autopsy 输入为 7 人权威结算；TEAM_AUTOPSY stage budget 上限（秒），
+     *  实际值由编排器按整体剩余预算裁剪（min(30s, 剩余 - margin)）。 */
     static final int AUTOPSY_CALL_TIMEOUT_SEC = 30;
     static final int AUTOPSY_MAX_OUTPUT_TOKENS = 2048;
 
@@ -50,7 +53,7 @@ public class TeamAutopsyService {
 
     /**
      * @param winner           通过显式 recorderTeam 计算的胜负（Prompt 与渲染共用同一值）
-     * @param callTimeoutSec   Call #3 的 stage budget（已由 Harness 按整体剩余预算裁剪）
+     * @param callTimeoutSec   TEAM_AUTOPSY 的 stage budget（已由编排器按整体剩余预算裁剪）
      * @return 结构化结果 + 本方 roster；DRAW / 非法队伍 / 非 ZH / 预算不足 / 调用或解析失败 → null
      */
     public TeamAutopsyOutcome analyze(final Battle battle,
@@ -74,8 +77,9 @@ public class TeamAutopsyService {
                 List.of(),
                 recorderTeam,
                 null);
-        if (allStats.isEmpty()) {
-            LOGGER.info("Team autopsy skipped: no friendly roster data");
+        if (allStats.size() != 7) {
+            LOGGER.info("Team autopsy skipped: friendly roster has {} players, expected 7",
+                    allStats.size());
             count("roster_incomplete");
             return null;
         }

@@ -11,10 +11,10 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * Team Autopsy（第 3 次调用）Prompt 构造与中文段落渲染。
+ * Team Autopsy（team perspective 结算级 TEAM_AUTOPSY）Prompt 构造与中文段落渲染。
  * <p>身份使用 playerKey（P1..P7）引用，nickname/tankName 只作展示；
  * 死亡时间线仅包含本方 TEAM_A 玩家；渲染时按 playerKey 回查后端 roster，
- * 不信任 LLM 返回的名称。</p>
+ * 不信任 LLM 返回的名称。settlement-only：LLM 判断的 confidence 仅 PARTIAL/UNKNOWN。</p>
  */
 public final class TeamAutopsyPromptBuilder {
 
@@ -47,18 +47,19 @@ public final class TeamAutopsyPromptBuilder {
             === 输出 JSON 契约 ===
             {
               "players": [
-                { "playerKey": "P1", "contribution": "HIGH|MEDIUM|LOW|UNKNOWN", "confidence": "EXACT|INFERRED|PARTIAL|UNKNOWN" }
+                { "playerKey": "P1", "contribution": "HIGH|MEDIUM|LOW|UNKNOWN", "confidence": "PARTIAL|UNKNOWN" }
               ],
               "mvps": [
-                { "playerKey": "P1", "reason": "≤80字", "evidence": ["≤60字"], "confidence": "..." }
+                { "playerKey": "P1", "reason": "≤80字", "evidence": ["≤60字"], "confidence": "PARTIAL|UNKNOWN" }
               ],
               "biggestLiabilities": [
-                { "playerKey": "P1", "reason": "≤80字", "evidence": ["≤60字"], "confidence": "..." }
+                { "playerKey": "P1", "reason": "≤80字", "evidence": ["≤60字"], "confidence": "PARTIAL|UNKNOWN" }
               ],
               "limitations": ["≤60字"]
             }
             要求：players 覆盖下方名单全部玩家且 playerKey 必须来自名单；mvps ≤3；biggestLiabilities ≤3；
-            每条 verdict 至少 1 条 evidence 且 playerKey 有效。""";
+            每条 verdict 至少 1 条 evidence 且 playerKey 有效；confidence 只能写 PARTIAL 或 UNKNOWN，
+            结算级评估不得使用 EXACT/INFERRED。""";
 
     static String buildUserContent(
             final List<TeamAutopsyStats> stats,

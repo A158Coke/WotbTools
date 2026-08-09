@@ -63,10 +63,16 @@ import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 
 class AiReplayAnalysisServiceTest {
 
-    private static final String AUTOPSY_JSON =
-            "{\"players\":[{\"playerKey\":\"P1\",\"contribution\":\"HIGH\",\"confidence\":\"EXACT\"}],"
-                    + "\"mvps\":[{\"playerKey\":\"P1\",\"reason\":\"r\",\"evidence\":[\"e\"],"
-                    + "\"confidence\":\"EXACT\"}],\"limitations\":[\"l\"]}";
+    private static final String AUTOPSY_JSON = "{\"players\":["
+            + "{\"playerKey\":\"P1\",\"contribution\":\"HIGH\",\"confidence\":\"PARTIAL\"},"
+            + "{\"playerKey\":\"P2\",\"contribution\":\"LOW\",\"confidence\":\"UNKNOWN\"},"
+            + "{\"playerKey\":\"P3\",\"contribution\":\"MEDIUM\",\"confidence\":\"PARTIAL\"},"
+            + "{\"playerKey\":\"P4\",\"contribution\":\"UNKNOWN\",\"confidence\":\"UNKNOWN\"},"
+            + "{\"playerKey\":\"P5\",\"contribution\":\"HIGH\",\"confidence\":\"PARTIAL\"},"
+            + "{\"playerKey\":\"P6\",\"contribution\":\"MEDIUM\",\"confidence\":\"UNKNOWN\"},"
+            + "{\"playerKey\":\"P7\",\"contribution\":\"LOW\",\"confidence\":\"PARTIAL\"}],"
+            + "\"mvps\":[{\"playerKey\":\"P1\",\"reason\":\"r\",\"evidence\":[\"e\"],"
+            + "\"confidence\":\"PARTIAL\"}],\"limitations\":[\"l\"]}";
 
     /**
      * 契约测试用 Gateway 替身：捕获传给 Gateway 的完整 {@link AiChatRequest}，
@@ -246,7 +252,7 @@ class AiReplayAnalysisServiceTest {
         gateway.autopsyCompletionText = AUTOPSY_JSON;
         final var service = startService();
         final var context = service.buildSingleTeamContext(
-                teamGroups(List.of(teamResult(
+                teamGroups(List.of(sevenTeamResult(
                         "autopsy.wotbreplay", "arena-autopsy", "Ally", 1001L, 1)))
                         .getFirst());
         final var result = service.analyzeSingleTeamContext(context);
@@ -1005,6 +1011,39 @@ class AiReplayAnalysisServiceTest {
                 recorderTeam == 2 ? recorderAccountId : 2001L,
                 recorderTeam == 2 ? recorderNickname : "Enemy", 2, 900);
         battle.players = List.of(ally, enemy);
+        final var capabilities = new ReplayProcessingCapabilities(
+                true, true, false, false, false, true, false, false);
+        return new ReplayProcessingResult(
+                fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
+                new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",
+                        recorderAccountId, null),
+                  battle, null, null, capabilities, null, null);
+      }
+
+    /** 完整 7 名本方玩家 + 1 名敌方的团队回放（Team Autopsy 成功 fixture）。 */
+    private static ReplayProcessingResult sevenTeamResult(
+            final String fileName, final String arenaId,
+            final String recorderNickname, final long recorderAccountId,
+            final int recorderTeam) {
+        final Battle battle = new Battle();
+        battle.arenaId = arenaId;
+        battle.mapName = "team_map";
+        battle.arenaBonusType = 2;
+        battle.durationS = 300.0;
+        battle.winnerTeam = 1;
+        battle.recorder = recorderNickname;
+        final List<PlayerResult> players = new ArrayList<>();
+        for (int i = 0; i < 7; i++) {
+            final long accountId = 1001L + i;
+            players.add(player(
+                    recorderTeam == 1 && accountId == recorderAccountId
+                            ? recorderAccountId : accountId,
+                    recorderTeam == 1 && accountId == recorderAccountId
+                            ? recorderNickname : "Ally" + i,
+                    recorderTeam, 1_000 + i));
+        }
+        players.add(player(2001L, "Enemy", recorderTeam == 1 ? 2 : 1, 900));
+        battle.players = players;
         final var capabilities = new ReplayProcessingCapabilities(
                 true, true, false, false, false, true, false, false);
         return new ReplayProcessingResult(

@@ -11,10 +11,10 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * 解析并严格验证 Team Autopsy 的 JSON 输出。
- * <p>容忍 markdown 代码围栏；但任何契约不成立（虚构/重复 playerKey、非法枚举、
- * verdict 引用无效 playerKey、evidence 为空、空对象、判胜无 MVP / 判负无战犯）
- * 时整段返回 {@code null}，由 Harness 决定不输出团队剖析段。</p>
+ * 解析并严格验证 Team Autopsy（settlement-only）的 JSON 输出。
+ * <p>容忍 markdown 代码围栏；但任何契约不成立（roster 不足 7 个 key、虚构/重复
+ * playerKey、LLM 判断出现 EXACT/INFERRED、verdict 引用无效 playerKey、evidence 为空、
+ * 空对象、判胜无 MVP / 判负无战犯）时整段返回 {@code null}，由编排器决定不输出团队剖析段。</p>
  */
 public final class TeamAutopsyParser {
 
@@ -24,8 +24,9 @@ public final class TeamAutopsyParser {
 
     private static final Set<String> CONTRIBUTION_VALUES =
             Set.of("HIGH", "MEDIUM", "LOW", "UNKNOWN");
-    private static final Set<String> CONFIDENCE_VALUES =
-            Set.of("EXACT", "INFERRED", "PARTIAL", "UNKNOWN");
+    /** settlement-only 模式：LLM 判断（contribution / verdict）不是权威结算事实，只能 PARTIAL/UNKNOWN。 */
+    private static final Set<String> SETTLEMENT_CONFIDENCE_VALUES =
+            Set.of("PARTIAL", "UNKNOWN");
 
     private static final JsonMapper MAPPER = JsonMapper.builder().build();
 
@@ -33,7 +34,7 @@ public final class TeamAutopsyParser {
     }
 
     /**
-     * @param rosterPlayerKeys 本方 roster 的合法 playerKey（P1..P7）
+     * @param rosterPlayerKeys 本方 roster 的合法 playerKey（必须恰好 7 个有效唯一 key）
      * @param winner           通过显式 recorderTeam 计算的胜负；FRIENDLY_WIN 要求 mvps 非空、
      *                         ENEMY_WIN 要求 biggestLiabilities 非空
      */
@@ -41,7 +42,7 @@ public final class TeamAutopsyParser {
                                           final Set<String> rosterPlayerKeys,
                                           final Winner winner) {
         if (output == null || output.isBlank()
-                || rosterPlayerKeys == null || rosterPlayerKeys.isEmpty()
+                || rosterPlayerKeys == null || rosterPlayerKeys.size() != 7
                 || winner == null || winner == Winner.DRAW_OR_UNKNOWN) {
             return null;
         }
@@ -96,7 +97,7 @@ public final class TeamAutopsyParser {
             if (!rosterPlayerKeys.contains(playerKey)
                     || !seen.add(playerKey)
                     || !CONTRIBUTION_VALUES.contains(contribution)
-                    || !CONFIDENCE_VALUES.contains(confidence)) {
+                    || !SETTLEMENT_CONFIDENCE_VALUES.contains(confidence)) {
                 return null;
             }
             result.add(new TeamAutopsyResult.AutopsyPlayer(playerKey, contribution, confidence));
@@ -131,7 +132,7 @@ public final class TeamAutopsyParser {
             if (!rosterPlayerKeys.contains(playerKey)
                     || !seen.add(playerKey)
                     || reason.isBlank()
-                    || !CONFIDENCE_VALUES.contains(confidence)
+                    || !SETTLEMENT_CONFIDENCE_VALUES.contains(confidence)
                     || evidence.isEmpty()) {
                 return null;
             }
