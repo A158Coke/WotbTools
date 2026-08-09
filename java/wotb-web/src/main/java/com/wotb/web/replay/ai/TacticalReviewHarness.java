@@ -107,11 +107,16 @@ public class TacticalReviewHarness {
         final PreBattleStrategicPrior prior = preBattleService.analyze(result.battle());
         if (prior == null) {
             if (remainingSeconds(startNanos) < FALLBACK_MIN_REMAINING_SEC) {
+                LOGGER.info("Harness prior unavailable and budget insufficient, aborting with AI_TIMEOUT");
                 throw new AiUpstreamException(
                         "AI_TIMEOUT", null, AiRequestContext.correlationId());
             }
             return fallback(result, language, "PRE_BATTLE_UNAVAILABLE");
         }
+        LOGGER.info("Harness prior obtained: hypotheses={} matchups={} winConditions={}",
+                prior.hypotheses().size(),
+                prior.keyMatchups().size(),
+                prior.strategicWinConditions().size());
 
         final EvidenceSkillResult evidence = skillEngine.run(new EvidenceSkillContext(
                 result.battle(), result.reconstruction(), features, recorder));
@@ -159,6 +164,7 @@ public class TacticalReviewHarness {
     private AnalyzeResult fallback(final ReplayProcessingResult result,
                                    final AllowedLanguage language,
                                    final String reason) {
+        LOGGER.info("Harness fell back to old path: {}", reason);
         count(reason);
         return playerService.analyzePlayerOrFallback(result, language);
     }
