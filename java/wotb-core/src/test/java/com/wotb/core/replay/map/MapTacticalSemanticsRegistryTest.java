@@ -19,6 +19,10 @@ class MapTacticalSemanticsRegistryTest {
         assertTrue(semantics.hasSemantics());
         assertTrue(semantics.areas().containsKey("HARD_COVER_ZONE_01"));
         assertFalse(semantics.areas().get("HARD_COVER_ZONE_01").favors().isEmpty());
+        assertTrue(semantics.areas().get("HARD_COVER_ZONE_01").gridRegions()
+                .contains("GRID_REGION_3"));
+        assertTrue(semantics.areas().get("LINEAR_CORRIDOR_01").gridRegions()
+                .contains("GRID_REGION_5"));
     }
 
     @Test

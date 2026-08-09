@@ -33,7 +33,8 @@ public final class PreBattlePromptBuilder {
               地图无语义数据时，区域一律 UNKNOWN，禁止编造具体点位、区域名或坐标；
               出生点语义未提供时输出 UNKNOWN；
               禁止声称 CONTROLS / ENABLES_PRESSURE_AGAINST / 交叉火力 / 视线 / 通行路线等未提供的关系；
-               GRID_REGION_1~9 只是九宫格位置编号，不是战术区域名。
+              GRID_REGION_1~9 与下方 AREA 标注的九宫格编号一致（按客户端数据推导）；
+              无语义数据时 GRID_REGION_1~9 仍只是位置编号，不是战术区域名。
             4. 坦克名称必须原样使用提供方名称，禁止改写、翻译或缩写。
             5. 战略基线只是 baseline，不是真理：真实战况可能让任何计划失效，输出中不得使用"必然/绝对"措辞。
             6. 双方分别用 TEAM_A（队伍1）与 TEAM_B（队伍2）表示，全程保持该映射。
@@ -104,6 +105,9 @@ public final class PreBattlePromptBuilder {
             }
             if (!area.types().isEmpty()) {
                 sb.append(" 类型=").append(String.join(",", area.types()));
+            }
+            if (!area.gridRegions().isEmpty()) {
+                sb.append(" 九宫格=").append(String.join(",", area.gridRegions()));
             }
             sb.append('\n');
             if (!area.characteristics().isEmpty()) {

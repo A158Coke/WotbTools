@@ -34,6 +34,15 @@ from typing import Any, Iterable, Sequence
 SCHEMA_VERSION = 1
 DVPL_FOOTER = struct.Struct("<III4s4s")
 
+# Backend nine-grid convention (keep in sync with
+# java/wotb-core/.../replay/feature/MapRegionResolver.java +
+# MapCoordinateProfile.DEFAULT): replay raw coords ±250 m map linearly to a
+# 500×500 canonical space split into 3×3 regions; row 1|2|3 = north/top,
+# 7|8|9 = south/bottom, columns run west → east. The semanticizer y axis is
+# north-positive and x is east-positive, matching replay (x, z).
+NINE_GRID_HALF_EXTENT = 250.0
+NINE_GRID_SIZE = 500.0
+
 
 class SemanticizerError(RuntimeError):
     """An actionable input or parsing error."""
@@ -720,6 +729,9 @@ def build_cells(
                     "row": row,
                     "column": column,
                     "bounds": rect,
+                    "nineGridRegion": nine_grid_region(
+                        (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2
+                    ),
                     "meanElevationMeters": mean_elevation,
                     "minElevationMeters": min(elevations),
                     "maxElevationMeters": max(elevations),
@@ -857,6 +869,27 @@ def area_characteristics(area: dict[str, Any]) -> list[str]:
     return result
 
 
+def nine_grid_region(x_mid: float, y_mid: float) -> int:
+    """GRID_REGION_1~9 for a semantic-grid cell center, using the backend
+    MapRegionResolver convention (canonical 0..500 = raw ±250 m)."""
+    cx = min(max(x_mid + NINE_GRID_HALF_EXTENT, 0.0), NINE_GRID_SIZE)
+    cy = min(max(y_mid + NINE_GRID_HALF_EXTENT, 0.0), NINE_GRID_SIZE)
+    third = NINE_GRID_SIZE / 3.0
+    if cx < third:
+        column = 0
+    elif cx < 2.0 * third:
+        column = 1
+    else:
+        column = 2
+    if cy > NINE_GRID_SIZE - third:
+        row = 0
+    elif cy > NINE_GRID_SIZE - 2.0 * third:
+        row = 1
+    else:
+        row = 2
+    return row * 3 + column + 1
+
+
 def area_affordances(types: set[str]) -> tuple[list[str], list[str]]:
     """Rule-derived candidates, deliberately separate from exact facts."""
     favors: list[str] = []
@@ -986,6 +1019,9 @@ def build_areas(
             "label": direction_label(center_x, center_y, playable) + CLASS_LABELS[dominant],
             "types": all_tags,
             "gridCells": grid_cells,
+            "gridRegions": sorted(
+                {cell["nineGridRegion"] for cell in component_cells}
+            ),
             "boundsMeters": {
                 "xMin": round(x_min, 2),
                 "yMin": round(y_min, 2),
@@ -1187,6 +1223,7 @@ def infer_map_id(scene_path: pathlib.Path) -> str:
 def round_cell_for_json(cell: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": cell["id"],
+        "nineGridRegion": cell["nineGridRegion"],
         "boundsMeters": {
             "xMin": round(cell["bounds"][0], 2),
             "yMin": round(cell["bounds"][1], 2),
@@ -1243,6 +1280,9 @@ def render_llm_text(document: dict[str, Any]) -> str:
             [
                 f"{area_id}｜{area['label']}",
                 f"- 网格：{', '.join(area['gridCells'])}",
+                "- 九宫格：" + ", ".join(
+                    f"GRID_REGION_{n}" for n in area.get("gridRegions", [])
+                ) or "- 九宫格：UNKNOWN",
                 f"- 类型：{', '.join(area['types'])}",
             ]
         )
