@@ -18,6 +18,7 @@ import java.util.Map;
  * @param spawnSemantics 队伍 → 出生点语义（status / 区域）
  * @param verified       是否完成人工地图核验（false = 尚未核验）
  * @param source         语义数据来源（如 CLIENT_RESOURCE_DERIVED）
+ * @param displayName    人类可读地图名（map_names.json 的 en 名；未收录时回退 mapId）
  */
 public record MapTacticalSemantics(
         String mapId,
@@ -25,7 +26,8 @@ public record MapTacticalSemantics(
         Map<String, AreaRelationships> relationships,
         Map<String, SpawnSemantics> spawnSemantics,
         boolean verified,
-        String source
+        String source,
+        String displayName
 ) {
     public MapTacticalSemantics {
         mapId = mapId == null ? "" : mapId.toLowerCase(Locale.ROOT);
@@ -33,11 +35,12 @@ public record MapTacticalSemantics(
         relationships = relationships == null ? Map.of() : Map.copyOf(relationships);
         spawnSemantics = spawnSemantics == null ? Map.of() : Map.copyOf(spawnSemantics);
         source = source == null ? "" : source;
+        displayName = displayName == null ? "" : displayName;
     }
 
     /** 无语义数据时返回的空语义；{@link #hasSemantics()} 为 false。 */
     public static final MapTacticalSemantics UNKNOWN =
-            new MapTacticalSemantics("", Map.of(), Map.of(), Map.of(), false, "");
+            new MapTacticalSemantics("", Map.of(), Map.of(), Map.of(), false, "", "");
 
     public boolean hasSemantics() {
         return !areas.isEmpty();

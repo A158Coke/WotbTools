@@ -50,7 +50,7 @@ python .\map_semanticizer.py `
   --map-names-file "..\..\common\map_names.json"
 ```
 
-`--variant` 默认 `auto`：从 SC2 标签中选取战斗点最多的变体（如 `cn0` / `mlb1`）；无标签的夜战/重制地图（如 `faust_fa_night`）仍按精确场景数据输出出生点语义。`--map-names-file` 指向 `common/map_names.json`，批处理按 token 边界为每张图推导 `mapCodes`（客户端目录名与 meta.json mapName 不一致时在脚本 `MAP_ID_CODE_ALIASES` 中登记，如 `24_milibase_mlb` → `milbase`）；`map_names.json` 未收录的新图（如 `rudniki` / `grossberg` / `moon` / `iceworld`）`mapCodes` 留空，待补充显示名后可显式 `--map-code` 重新生成。
+`--variant` 默认 `auto`：从 SC2 标签中选取战斗点最多的变体（如 `cn0` / `mlb1`）；无标签的夜战/重制地图（如 `faust_fa_night`）仍按精确场景数据输出出生点语义。`--map-names-file` 指向 `common/map_names.json`，批处理按 token 边界为每张图推导 `mapCodes`（客户端目录名与 meta.json mapName 不一致时在脚本 `MAP_ID_CODE_ALIASES` 中登记，如 `24_milibase_mlb` → `milbase`），并自动用 `map_names.json` 的 en 名填充 `displayName`（未收录的新图回退 mapId），保证语义数据里的地图名可读且与 `map_names.json` 一致；`map_names.json` 未收录的新图（如 `rudniki` / `grossberg` / `moon` / `iceworld`）`mapCodes` 留空，待补充显示名后可显式 `--map-code` 重新生成。
 
 后端 `MapTacticalSemanticsRegistry` 会加载 `classpath:/map-semantics/*.semantic.json`，按 `mapCodes` / `mapId` 查询，并对 `NN_<code>_<variant>` 形式的 mapId 做 token 边界别名匹配；没有语义数据的地图保持 UNKNOWN，禁止 LLM 编造。
 

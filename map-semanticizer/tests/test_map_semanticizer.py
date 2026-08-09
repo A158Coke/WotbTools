@@ -113,6 +113,14 @@ class MapCodeDerivationTest(unittest.TestCase):
             ["milbase"],
         )
 
+    def test_resolve_display_name_uses_map_names_en(self):
+        names = json.loads(MAP_NAMES_FILE.read_text(encoding="utf-8"))
+        self.assertEqual(ms.resolve_display_name("03_erlenberg_er", names), "Middleburg")
+        self.assertEqual(ms.resolve_display_name("18_canal_cn", names), "Canal")
+        self.assertEqual(ms.resolve_display_name("24_milibase_mlb", names), "Yamato Harbor")
+        self.assertIsNone(ms.resolve_display_name("40_moon_mn", names))
+        self.assertIsNone(ms.resolve_display_name("03_erlenberg_er", None))
+
 
 class DataIntegrityTest(unittest.TestCase):
     def test_all_semantic_files_parse_and_have_required_sections(self):
@@ -206,6 +214,16 @@ class DataIntegrityTest(unittest.TestCase):
         }
         self.assertFalse(ms.coordinate_validation_passed(bad_p90))
         self.assertFalse(ms.coordinate_validation_passed({}))
+
+    def test_display_names_match_map_names_en_or_fallback_to_map_id(self):
+        names = json.loads(MAP_NAMES_FILE.read_text(encoding="utf-8"))
+        for path, doc in semantic_documents():
+            codes = doc.get("mapCodes", [])
+            if codes:
+                expected = names[codes[0]]["en"]
+                self.assertEqual(doc.get("displayName"), expected, path.name)
+            else:
+                self.assertEqual(doc.get("displayName"), doc["mapId"], path.name)
 
 
 if __name__ == "__main__":
