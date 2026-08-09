@@ -234,6 +234,10 @@ public final class TacticalReviewPromptBuilder {
         sb.append(PlayerReplayPromptBuilder.buildSummary(
                 battle, recon,
                 features != null && features.keyEvents() != null ? features.keyEvents() : List.of()));
+        // 走位/区域时间线（RECORDER_REGION_TIMELINE + 压缩移动段）：fallback 有、Harness 之前缺失
+        if (features != null) {
+            PlayerReplayPromptBuilder.appendRecorderMovementEvidence(sb, features.movements());
+        }
         final String teamLabel = recorder != null && recorder.team() != null
                 ? (recorder.team() == 1 ? "TEAM_A" : "TEAM_B") : "UNKNOWN";
         final String tank = recorder != null && recorder.tankId() != null

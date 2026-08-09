@@ -1001,34 +1001,7 @@ public final class PlayerReplayPromptBuilder {
         }
 
         // ====== RECORDER_REGION_TIMELINE_BACKEND_COMPUTED（你的区域时间线·后端计算） ======
-        if (!features.movements().isEmpty()) {
-            sb.append("\n=== RECORDER_REGION_TIMELINE_BACKEND_COMPUTED（你的区域时间线·后端计算） ===\n");
-            // Build ordered list of region transitions (consecutive duplicates removed)
-            final java.util.ArrayList<String> orderedRegions = new java.util.ArrayList<>();
-            String lastRegion = null;
-            for (final MovementSegment seg : features.movements()) {
-                final int startRegion = seg.rawStartPosition() != null
-                        ? MapRegionResolver.resolveRegionFromRaw(seg.rawStartPosition().x(), seg.rawStartPosition().z()) : 0;
-                final int endRegion = seg.rawEndPosition() != null
-                        ? MapRegionResolver.resolveRegionFromRaw(seg.rawEndPosition().x(), seg.rawEndPosition().z()) : 0;
-                final String startStr = startRegion > 0 ? startRegion + "区" : "未知区域";
-                final String endStr = endRegion > 0 ? endRegion + "区" : "未知区域";
-                if (!startStr.equals(lastRegion)) {
-                    sb.append(PlayerAnalysisTerms.battleClock(seg.startTime())).append("：").append(startStr).append('\n');
-                    if (startRegion > 0) orderedRegions.add(String.valueOf(startRegion));
-                    lastRegion = startStr;
-                }
-                if (!endStr.equals(lastRegion)) {
-                    sb.append(PlayerAnalysisTerms.battleClock(seg.endTime())).append("：").append(endStr).append('\n');
-                    if (endRegion > 0) orderedRegions.add(String.valueOf(endRegion));
-                    lastRegion = endStr;
-                }
-            }
-            if (!orderedRegions.isEmpty()) {
-                sb.append("压缩区域序列：").append(String.join("→", orderedRegions)).append('\n');
-                sb.append("最终区域：").append(orderedRegions.getLast()).append("区\n");
-            }
-        }
+        appendRecorderMovementEvidence(sb, features.movements());
 
         // ====== KEY_EVENTS_BACKEND_COMPUTED ======
         if (features.keyEvents() != null && !features.keyEvents().isEmpty()) {
@@ -1048,24 +1021,6 @@ public final class PlayerReplayPromptBuilder {
             }
         }
 
-        // ====== Movement details ====
-        if (!features.movements().isEmpty()) {
-            final int totalSegs = features.movements().size();
-            sb.append("\n=== 移动段（压缩） ===\n");
-            for (int i = 0; i < totalSegs; i++) {
-                final MovementSegment seg = features.movements().get(i);
-                sb.append("  ").append(PlayerAnalysisTerms.battleRange(seg.startTime(), seg.endTime())).append(" ")
-                        .append(PlayerAnalysisTerms.movementLabel(seg.type())).append(" | 距离 ").append(String.format("%.1f", seg.distance()))
-                        .append("m 速度 ").append(String.format("%.1f", seg.averageSpeed())).append("m/s");
-                if (seg.rawStartPosition() != null) {
-                    sb.append(" 从").append(regionLabel(seg.rawStartPosition().x(), seg.rawStartPosition().z()));
-                }
-                if (seg.rawEndPosition() != null) {
-                    sb.append(" 到").append(regionLabel(seg.rawEndPosition().x(), seg.rawEndPosition().z()));
-                }
-                sb.append('\n');
-            }
-        }
         int observedDealt = 0;
         int observedReceived = 0;
         if (!features.engagements().isEmpty()) {
@@ -1114,6 +1069,57 @@ public final class PlayerReplayPromptBuilder {
             }
         }
     }
+
+    /**
+     * 个人走位/区域时间线（RECORDER_REGION_TIMELINE + 压缩移动段）。
+     * 随机战 Harness（Call #2）与 fallback 路径共用；无移动段时不输出。
+     */
+    static void appendRecorderMovementEvidence(final StringBuilder sb,
+                                               final List<MovementSegment> movements) {
+        if (movements == null || movements.isEmpty()) {
+            return;
+        }
+        sb.append("\n=== RECORDER_REGION_TIMELINE_BACKEND_COMPUTED（你的区域时间线·后端计算） ===\n");
+        final java.util.ArrayList<String> orderedRegions = new java.util.ArrayList<>();
+        String lastRegion = null;
+        for (final MovementSegment seg : movements) {
+            final int startRegion = seg.rawStartPosition() != null
+                    ? MapRegionResolver.resolveRegionFromRaw(seg.rawStartPosition().x(), seg.rawStartPosition().z()) : 0;
+            final int endRegion = seg.rawEndPosition() != null
+                    ? MapRegionResolver.resolveRegionFromRaw(seg.rawEndPosition().x(), seg.rawEndPosition().z()) : 0;
+            final String startStr = startRegion > 0 ? startRegion + "区" : "未知区域";
+            final String endStr = endRegion > 0 ? endRegion + "区" : "未知区域";
+            if (!startStr.equals(lastRegion)) {
+                sb.append(PlayerAnalysisTerms.battleClock(seg.startTime())).append("：").append(startStr).append('\n');
+                if (startRegion > 0) orderedRegions.add(String.valueOf(startRegion));
+                lastRegion = startStr;
+            }
+            if (!endStr.equals(lastRegion)) {
+                sb.append(PlayerAnalysisTerms.battleClock(seg.endTime())).append("：").append(endStr).append('\n');
+                if (endRegion > 0) orderedRegions.add(String.valueOf(endRegion));
+                lastRegion = endStr;
+            }
+        }
+        if (!orderedRegions.isEmpty()) {
+            sb.append("压缩区域序列：").append(String.join("→", orderedRegions)).append('\n');
+            sb.append("最终区域：").append(orderedRegions.getLast()).append("区\n");
+        }
+        sb.append("\n=== 移动段（压缩） ===\n");
+        for (final MovementSegment seg : movements) {
+            sb.append("  ").append(PlayerAnalysisTerms.battleRange(seg.startTime(), seg.endTime())).append(" ")
+                    .append(PlayerAnalysisTerms.movementLabel(seg.type())).append(" | 距离 ")
+                    .append(String.format("%.1f", seg.distance()))
+                    .append("m 速度 ").append(String.format("%.1f", seg.averageSpeed())).append("m/s");
+            if (seg.rawStartPosition() != null) {
+                sb.append(" 从").append(regionLabel(seg.rawStartPosition().x(), seg.rawStartPosition().z()));
+            }
+            if (seg.rawEndPosition() != null) {
+                sb.append(" 到").append(regionLabel(seg.rawEndPosition().x(), seg.rawEndPosition().z()));
+            }
+            sb.append('\n');
+        }
+    }
+
     static final String MULTI_SYSTEM_PROMPT = """
             你是《坦克世界闪击战》(WoT Blitz) 的资深教练，正在对同一玩家的多场战斗做趋势复盘。
             下面给出每场的结算摘要（以你的视角）与已由后端确定性计算好的聚合统计。

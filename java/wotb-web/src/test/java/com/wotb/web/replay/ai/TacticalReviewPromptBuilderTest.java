@@ -17,7 +17,10 @@ import com.wotb.core.replay.evidence.EvidenceType;
 import com.wotb.core.replay.evidence.HpMomentumSkill;
 import com.wotb.core.replay.feature.EngagementOutcome;
 import com.wotb.core.replay.feature.EngagementSummary;
+import com.wotb.core.replay.feature.MovementSegment;
+import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
+import com.wotb.core.replay.reconstruction.Vector3;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -165,6 +168,39 @@ class TacticalReviewPromptBuilderTest {
                 "opponent nickname must be resolved from battle players");
         assertTrue(prepared.userContent().contains("你输出 800 / 损失 300"),
                 "engagement dealt/received must be rendered");
+    }
+
+    @Test
+    void recorderRegionTimelineAndMovementsRenderInSnapshot() {
+        final MovementSegment movement = new MovementSegment(
+                10f, 30f,
+                MovementType.MOVING,
+                new Vector3(-150f, 0f, -150f),
+                new Vector3(150f, 0f, 150f),
+                500f, 25f,
+                DecodeConfidence.EXACT);
+        final PlayerBattleFeatureSet features = new PlayerBattleFeatureSet(
+                List.of(movement),
+                List.of(),
+                List.of(), List.of(), List.of(), true);
+        final var prepared = TacticalReviewPromptBuilder.prepare(
+                prior(),
+                evidence(),
+                battle(),
+                null,
+                features,
+                new RecorderEntityMapping(1001L, 4481, 1, "rec1", 1, 4481, DecodeConfidence.EXACT),
+                ESTIMATOR,
+                100_000,
+                131_072,
+                8192,
+                1000);
+        assertTrue(prepared.userContent().contains("RECORDER_REGION_TIMELINE"),
+                "recorder region timeline must be rendered into the harness snapshot");
+        assertTrue(prepared.userContent().contains("移动段（压缩）"),
+                "compressed movement segments must be rendered into the harness snapshot");
+        assertTrue(prepared.userContent().contains("压缩区域序列"),
+                "compressed region sequence must be present");
     }
 
     @Test
