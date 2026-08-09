@@ -418,11 +418,19 @@ def world_bounds(entities: Sequence[dict[str, Any]]) -> tuple[float, float, floa
     raise SemanticizerError("Landscape world bounds are missing from SC2")
 
 
+def matches_variant(labels: Sequence[str], variant: str | None) -> bool:
+    """Variant filter: labeled points must carry the active variant; unlabeled
+    scene data (night/reskin maps such as faust_night) is still exact scene data."""
+    if variant is None:
+        return not labels
+    return variant in labels
+
+
 def map_border(
-    entities: Sequence[dict[str, Any]], variant: str
+    entities: Sequence[dict[str, Any]], variant: str | None
 ) -> tuple[float, float, float, float] | None:
     for entity in entities:
-        if variant not in entity_labels(entity):
+        if not matches_variant(entity_labels(entity), variant):
             continue
         border = entity_component(entity, "MapBorderComponent")
         rect = decode_bytes(border.get("mbc.rect")) if border else None
@@ -431,11 +439,11 @@ def map_border(
     return None
 
 
-def battle_points(entities: Sequence[dict[str, Any]], variant: str) -> list[dict[str, Any]]:
+def battle_points(entities: Sequence[dict[str, Any]], variant: str | None) -> list[dict[str, Any]]:
     result = []
     for entity in entities:
         labels = entity_labels(entity)
-        if variant not in labels:
+        if not matches_variant(labels, variant):
             continue
         props = entity_properties(entity)
         point_type = props.get("type")
@@ -456,6 +464,48 @@ def battle_points(entities: Sequence[dict[str, Any]], variant: str) -> list[dict
             }
         )
     return result
+
+
+def detect_variant(entities: Sequence[dict[str, Any]]) -> str | None:
+    """Pick the variant label with the most battle points (the standard layout
+    usually carries the full 32-point set; secondary modes carry fewer)."""
+    counter: Counter[str] = Counter()
+    for entity in entities:
+        props = entity_properties(entity)
+        if props.get("type") in ("spawnpoint", "controlpoint", "strategicpoint", "botspawn"):
+            counter.update(entity_labels(entity))
+    if not counter:
+        return None
+    return counter.most_common(1)[0][0]
+
+
+# Client folder names that differ from the internal meta.json mapName.
+# Identity mapping only; keeps batch --map-names-file reproducible.
+MAP_ID_CODE_ALIASES: dict[str, tuple[str, ...]] = {
+    "24_milibase_mlb": ("milbase",),
+}
+
+
+def derive_map_codes(map_id: str, known_codes: Sequence[str]) -> list[str]:
+    """Match internal codes (map_names.json keys) to a client map id at token
+    boundaries: single-token codes must appear as a token; multi-token codes
+    must appear as a contiguous token subsequence."""
+    tokens = map_id.split("_")
+    result = set(MAP_ID_CODE_ALIASES.get(map_id, ()))
+    for code in known_codes:
+        code = code.strip().lower()
+        if not code:
+            continue
+        code_tokens = code.split("_")
+        if len(code_tokens) == 1:
+            if code in tokens:
+                result.add(code)
+            continue
+        for start in range(len(tokens) - len(code_tokens) + 1):
+            if tokens[start:start + len(code_tokens)] == code_tokens:
+                result.add(code)
+                break
+    return sorted(result)
 
 
 def classify_feature(name: str) -> str | None:
@@ -1245,15 +1295,18 @@ def render_llm_text(document: dict[str, Any]) -> str:
 def semanticize(
     input_root: pathlib.Path,
     output_dir: pathlib.Path,
-    variant: str,
+    variant: str | None,
     grid_size: int,
     explicit_map_id: str | None,
     display_name: str | None,
     map_codes: Sequence[str] | None = None,
+    known_map_codes: Sequence[str] | None = None,
 ) -> tuple[pathlib.Path, pathlib.Path]:
     scene_path, heightmap_path = discover_map_resources(input_root)
     scene = read_sc2(read_resource(scene_path))
     entities = scene_entities(scene)
+    if variant == "auto":
+        variant = detect_variant(entities)
     bounds = world_bounds(entities)
     playable = map_border(entities, variant)
     warnings = []
@@ -1285,14 +1338,18 @@ def semanticize(
     playable_heights = window_values(terrain.heights, terrain.size, playable_window)
     playable_slopes = window_values(terrain.slopes, terrain.size, playable_window)
     map_id = explicit_map_id or infer_map_id(scene_path)
+    if not map_codes and known_map_codes:
+        map_codes = derive_map_codes(map_id, known_map_codes)
     document = {
         "schemaVersion": SCHEMA_VERSION,
         "mapId": map_id,
-        "mapCodes": sorted({code.strip() for code in map_codes if code and code.strip()}),
+        "mapCodes": sorted(
+            {code.strip() for code in (map_codes or []) if code and code.strip()}
+        ),
         "displayName": display_name or map_id,
         "verified": False,
         "source": "CLIENT_RESOURCE_DERIVED",
-        "battleVariant": variant,
+        "battleVariant": variant or "UNKNOWN",
         "warnings": warnings,
         "sourceFiles": {
             "scene": str(scene_path.relative_to(input_root)),
@@ -1391,13 +1448,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-dir", type=pathlib.Path, default=pathlib.Path("semantic-output")
     )
-    parser.add_argument("--variant", default="dt1", help="Battle variant label; default: dt1")
+    parser.add_argument(
+        "--variant",
+        default="auto",
+        help="Battle variant label (e.g. dt1/cn0); default: auto-detect from SC2 labels",
+    )
     parser.add_argument("--grid-size", type=int, default=6, help="Grid cells per axis; default: 6")
     parser.add_argument("--map-id", help="Override the map id inferred from the SC2 filename")
     parser.add_argument(
         "--map-code",
         action="append",
         help="WotBTools internal map code (meta.json mapName, e.g. desert_train); repeatable",
+    )
+    parser.add_argument(
+        "--map-names-file",
+        type=pathlib.Path,
+        help="common/map_names.json: derive mapCodes for each generated map in batch mode",
     )
     parser.add_argument("--display-name", help="Human-readable map name")
     parser.add_argument(
@@ -1423,6 +1489,7 @@ def main() -> int:
                 raise SemanticizerError(
                     "--map-id, --display-name and --map-code cannot be used with --batch"
                 )
+            known_codes = load_known_map_codes(args.map_names_file)
             candidates = sorted(path for path in source.iterdir() if path.is_dir())
             processed = []
             failures = []
@@ -1436,6 +1503,7 @@ def main() -> int:
                         None,
                         None,
                         None,
+                        known_codes,
                     )
                     processed.append((json_path, text_path))
                     print(f"OK: {candidate.name} -> {text_path.name}")
@@ -1455,6 +1523,7 @@ def main() -> int:
                 args.map_id,
                 args.display_name,
                 args.map_code,
+                None,
             )
         elif source.is_file() and source.suffix.lower() == ".zip":
             with tempfile.TemporaryDirectory(prefix="wotb-map-") as temporary:
@@ -1469,6 +1538,7 @@ def main() -> int:
                     args.map_id,
                     args.display_name,
                     args.map_code,
+                    None,
                 )
         else:
             raise SemanticizerError(f"Input must be a map directory or ZIP: {source}")
@@ -1478,6 +1548,16 @@ def main() -> int:
     print(f"JSON: {json_path}")
     print(f"LLM text: {text_path}")
     return 0
+
+
+def load_known_map_codes(path: pathlib.Path | None) -> list[str]:
+    if path is None:
+        return []
+    with path.open(encoding="utf-8") as handle:
+        data = json.load(handle)
+    if not isinstance(data, dict):
+        raise SemanticizerError(f"--map-names-file must be a JSON object: {path}")
+    return [str(key) for key in data.keys()]
 
 
 if __name__ == "__main__":

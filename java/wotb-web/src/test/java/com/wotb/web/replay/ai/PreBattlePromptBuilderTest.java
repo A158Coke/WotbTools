@@ -68,7 +68,7 @@ class PreBattlePromptBuilderTest {
         assertTrue(content.contains("Leopard 1"));
         assertTrue(content.contains("roles="));
         assertTrue(content.contains("=== 地图战术语义 ==="));
-        assertTrue(content.contains("UNKNOWN（该地图暂无语义数据，禁止编造区域名与点位）"));
+        assertTrue(content.contains("数据来源: Wot Blitz 客户端 SC2 + heightmap"));
         assertFalse(content.contains("地图语义数据当前不可用"));
     }
 
