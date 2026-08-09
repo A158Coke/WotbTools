@@ -11,7 +11,9 @@ import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 class PreBattlePromptBuilderTest {
 
@@ -68,8 +70,51 @@ class PreBattlePromptBuilderTest {
         assertTrue(content.contains("Leopard 1"));
         assertTrue(content.contains("roles="));
         assertTrue(content.contains("=== 地图战术语义 ==="));
-        assertTrue(content.contains("数据来源: Wot Blitz 客户端 SC2 + heightmap"));
+        assertTrue(content.contains("数据来源: CLIENT_RESOURCE_DERIVED"));
         assertFalse(content.contains("地图语义数据当前不可用"));
+    }
+
+    @Test
+    void mapSemanticsPromptPreservesConfidenceBoundaries() {
+        final String content = PreBattlePromptBuilder.buildUserContent(
+                battleWithFullResults(), TankTacticalProfileRegistry.load(),
+                MapTacticalSemanticsRegistry.load().semanticsFor("desert_train"));
+        assertTrue(content.contains("=== 可信度图例 ==="));
+        assertTrue(content.contains("EXACT_CLIENT_DATA / EXACT_SCENE_DATA: 客户端直接事实"));
+        assertTrue(content.contains(
+                "NAME_HEURISTIC: 对象位置精确；建筑/植被/铁路等类别由资源名推断"));
+        assertTrue(content.contains(
+                "GRID_RULE_DERIVED: 区域名称、区域边界与区域合并结果是确定性规则候选"));
+        assertTrue(content.contains("RULE_DERIVED_CANDIDATE: favors/risks 只是战术假设候选"));
+        assertTrue(content.contains("人工地图核验: 未完成（verified=false"));
+        assertTrue(content.contains("本图区域置信度（与下方可信度图例对应）"));
+        assertTrue(content.contains("areaBoundary=GRID_RULE_DERIVED"));
+        assertTrue(content.contains("objectCategories=NAME_HEURISTIC"));
+        assertFalse(content.contains("区域边界是已验证的客户端事实"));
+        assertFalse(content.contains("建筑/植被/铁路等类别已经验证"));
+    }
+
+    @Test
+    void areaConfidenceDiffIsRenderedWhenDifferentFromDominant() {
+        final Map<String, MapTacticalSemantics.TacticalArea> areas = new LinkedHashMap<>();
+        areas.put("AREA_COMMON", new MapTacticalSemantics.TacticalArea(
+                "AREA_COMMON", "常规区", List.of("LOW_GROUND"), List.of("GRID_REGION_1"),
+                List.of(), List.of(), List.of(),
+                new MapTacticalSemantics.AreaConfidence(
+                        "EXACT_CLIENT_DATA", "EXACT_CLIENT_DATA", "NAME_HEURISTIC",
+                        "GRID_RULE_DERIVED", "RULE_DERIVED_CANDIDATE")));
+        areas.put("AREA_ODD", new MapTacticalSemantics.TacticalArea(
+                "AREA_ODD", "异常区", List.of("LOW_GROUND"), List.of("GRID_REGION_9"),
+                List.of(), List.of(), List.of(),
+                new MapTacticalSemantics.AreaConfidence(
+                        "EXACT_SCENE_DATA", "EXACT_CLIENT_DATA", "NAME_HEURISTIC",
+                        "GRID_RULE_DERIVED", "RULE_DERIVED_CANDIDATE")));
+        final MapTacticalSemantics custom = new MapTacticalSemantics(
+                "desert_train", areas, Map.of(), Map.of(), false, "CLIENT_RESOURCE_DERIVED");
+        final String content =
+                PreBattlePromptBuilder.buildMapSemanticsSection("desert_train", custom);
+        assertTrue(content.contains("置信度差异: geometry=EXACT_SCENE_DATA"));
+        assertFalse(content.contains("置信度差异: objectCategories"));
     }
 
     @Test

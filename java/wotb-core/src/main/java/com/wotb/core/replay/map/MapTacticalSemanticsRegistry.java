@@ -102,7 +102,13 @@ public final class MapTacticalSemanticsRegistry {
                 parseRelationships(root.get("relationships"));
         final Map<String, MapTacticalSemantics.SpawnSemantics> spawnSemantics =
                 parseSpawnSemantics(root.get("spawnSemantics"));
-        return new MapTacticalSemantics(mapId, areas, relationships, spawnSemantics);
+        return new MapTacticalSemantics(
+                mapId,
+                areas,
+                relationships,
+                spawnSemantics,
+                root.path("verified").asBoolean(false),
+                text(root, "source"));
     }
 
     private static MapTacticalSemantics.TacticalArea parseArea(
@@ -114,7 +120,18 @@ public final class MapTacticalSemanticsRegistry {
                 nineGridRegions(node.get("gridRegions")),
                 stringList(node, "characteristics"),
                 stringList(node, "favors"),
-                stringList(node, "risks"));
+                stringList(node, "risks"),
+                parseAreaConfidence(node.get("confidence")));
+    }
+
+    private static MapTacticalSemantics.AreaConfidence parseAreaConfidence(
+            final JsonNode node) {
+        return new MapTacticalSemantics.AreaConfidence(
+                text(node, "geometry"),
+                text(node, "objectPositions"),
+                text(node, "objectCategories"),
+                text(node, "areaBoundary"),
+                text(node, "favorsAndRisks"));
     }
 
     /** 语义化器按后端 MapRegionResolver 约定输出 1~9，渲染为 GRID_REGION_N。 */
