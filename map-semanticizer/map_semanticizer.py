@@ -28,7 +28,7 @@ import zlib
 from array import array
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 
 SCHEMA_VERSION = 1
