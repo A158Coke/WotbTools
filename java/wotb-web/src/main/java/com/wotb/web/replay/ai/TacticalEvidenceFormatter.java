@@ -28,7 +28,7 @@ final class TacticalEvidenceFormatter {
                 ? series : series.subList(series.size() - maxLines, series.size());
         for (final HpMomentumSkill.HpMomentumSample s : samples) {
             sb.append("  ").append(PlayerAnalysisTerms.battleClock(s.battleRelSec()))
-                    .append(" 领先 ").append(String.format("%.0f", s.lead()))
+                    .append(" 可观察 HP 差 ").append(String.format("%.0f", s.lead()))
                     .append("（覆盖 ").append(String.format("%.0f%%", s.observedCoverage() * 100)).append("）\n");
         }
         return sb.toString();

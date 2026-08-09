@@ -209,8 +209,12 @@ public class SpringAiChatGateway implements AiChatGateway {
         final Timer.Sample upstreamSample = metrics ? Timer.start(meterRegistry) : null;
         final Prompt prompt = buildPrompt(request, model);
         // Monotonic total deadline for the whole AiChatGateway.chat() lifecycle
-        // (first attempt + retries + backoff + response parsing).
-        final long deadlineNanos = nanoTimeSource.getAsLong() + callTimeoutNanos;
+        // (first attempt + retries + backoff + response parsing). A per-request
+        // stage budget (e.g. harness Call #1) must never exceed the configured total.
+        final long requestCallTimeoutNanos = request.callTimeoutSec() != null
+                ? Math.min(request.callTimeoutSec() * 1_000_000_000L, callTimeoutNanos)
+                : callTimeoutNanos;
+        final long deadlineNanos = nanoTimeSource.getAsLong() + requestCallTimeoutNanos;
         int retryCount = 0;
         try {
             while (true) {

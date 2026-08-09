@@ -3,6 +3,7 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.model.Battle;
 import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.replay.evidence.TankTacticalProfileRegistry;
+import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
@@ -29,9 +30,13 @@ public class PreBattleStrategicService {
     /** Call #1 是结构化 JSON，输出预算独立且远小于 Call #2。 */
     static final int PRE_BATTLE_MAX_OUTPUT_TOKENS = 4096;
 
+    /** Call #1 是小型 roster/map JSON 分析，必须有独立、明显更短的调用预算。 */
+    static final int PRE_BATTLE_CALL_TIMEOUT_SEC = 45;
+
     private final AiChatGateway gateway;
     private final AiReplayAnalysisConfig config;
     private final TankTacticalProfileRegistry profileRegistry;
+    private final MapTacticalSemanticsRegistry mapSemanticsRegistry;
 
     @Autowired(required = false)
     private MeterRegistry meterRegistry;
@@ -41,6 +46,7 @@ public class PreBattleStrategicService {
         this.gateway = gateway;
         this.config = config;
         this.profileRegistry = TankTacticalProfileRegistry.load();
+        this.mapSemanticsRegistry = MapTacticalSemanticsRegistry.load();
     }
 
     public boolean isConfigured() {
@@ -58,7 +64,9 @@ public class PreBattleStrategicService {
             return null;
         }
         final String systemPrompt = PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT;
-        final String userContent = PreBattlePromptBuilder.buildUserContent(battle, profileRegistry);
+        final String userContent = PreBattlePromptBuilder.buildUserContent(
+                battle, profileRegistry,
+                mapSemanticsRegistry.semanticsFor(battle.mapName));
         final List<Map<String, Object>> messages = List.of(
                 Map.<String, Object>of("role", "system", "content", systemPrompt),
                 Map.<String, Object>of("role", "user", "content", userContent));
@@ -83,7 +91,8 @@ public class PreBattleStrategicService {
                 config.thinkingEnabled(),
                 config.reasoningEffort(),
                 null,
-                "PRE_BATTLE_STRATEGIC_PRIOR");
+                "PRE_BATTLE_STRATEGIC_PRIOR",
+                PRE_BATTLE_CALL_TIMEOUT_SEC);
         final PreBattleStrategicPrior prior;
         try {
             prior = PreBattleStrategicParser.parse(gateway.chat(request).completionText());

@@ -85,12 +85,66 @@ class HpMomentumSkillTest {
                 EvidenceTestFixtures.cp(1020f,
                         hp(1, 1001, 1, 1000), hp(2, 1002, 1, 1000),
                         hp(3, 1003, 1, 1000), hp(4, 1004, 1, 1000),
-                        hp(5, 2001, 2, 1), hp(6, 2002, 2, 1)));
+                        hp(5, 2001, 2, 1), hp(6, 2002, 2, 1),
+                        hp(7, 2003, 2, 1)));
         final HpMomentumSkill skill = new HpMomentumSkill();
         final List<AiEvidence> windows = skill.detect(skill.sample(recon, battle));
         assertEquals(1, windows.size());
         assertEquals(DecodeConfidence.PARTIAL, windows.getFirst().confidence());
-        assertTrue(windows.getFirst().numbers().get("observedCoverage") <= 0.75 + 1e-9);
+        assertTrue(windows.getFirst().numbers().get("observedCoverage") <= 0.875 + 1e-9);
+    }
+
+    @Test
+    void unspottedEnemyDoesNotCreateFakeSwing() {
+        final List<PlayerResult> players = new ArrayList<>();
+        players.add(EvidenceTestFixtures.player(1001, 1, 4481, "Kranvagn", true, 300));
+        for (int i = 1; i <= 4; i++) {
+            players.add(EvidenceTestFixtures.player(2000 + i, 2, 19217, "E 100", true, 300));
+        }
+        final Battle battle = EvidenceTestFixtures.battle(players);
+        final ReplayReconstruction recon = EvidenceTestFixtures.recon(
+                EvidenceTestFixtures.cp(1000f,
+                        hp(1, 1001, 1, 1000),
+                        hp(5, 2001, 2, 1800), hp(6, 2002, 2, 1800),
+                        hp(7, 2003, 2, 1800), hp(8, 2004, 2, 1800)),
+                EvidenceTestFixtures.cp(1020f,
+                        hp(1, 1001, 1, 1000),
+                        EvidenceTestFixtures.hiddenVehicle(5, 2001, 2),
+                        EvidenceTestFixtures.hiddenVehicle(6, 2002, 2),
+                        EvidenceTestFixtures.hiddenVehicle(7, 2003, 2),
+                        EvidenceTestFixtures.hiddenVehicle(8, 2004, 2)));
+        final HpMomentumSkill skill = new HpMomentumSkill();
+        final List<AiEvidence> windows = skill.detect(skill.sample(recon, battle));
+        assertTrue(windows.isEmpty(),
+                "敌人从 OBSERVED 变为不可观察（unspot）不得制造假的 HP swing");
+    }
+
+    @Test
+    void realDamageOnCommonEntitiesProducesSwing() {
+        final List<PlayerResult> players = new ArrayList<>();
+        players.add(EvidenceTestFixtures.player(1001, 1, 4481, "Kranvagn", true, 300));
+        for (int i = 1; i <= 4; i++) {
+            players.add(EvidenceTestFixtures.player(2000 + i, 2, 19217, "E 100", true, 300));
+        }
+        final Battle battle = EvidenceTestFixtures.battle(players);
+        final ReplayReconstruction recon = EvidenceTestFixtures.recon(
+                EvidenceTestFixtures.cp(1000f,
+                        hp(1, 1001, 1, 1000),
+                        hp(5, 2001, 2, 1800), hp(6, 2002, 2, 1800),
+                        hp(7, 2003, 2, 1800), hp(8, 2004, 2, 1800)),
+                EvidenceTestFixtures.cp(1020f,
+                        hp(1, 1001, 1, 1000),
+                        hp(5, 2001, 2, 1000), hp(6, 2002, 2, 1000),
+                        hp(7, 2003, 2, 1000), hp(8, 2004, 2, 1000)));
+        final HpMomentumSkill skill = new HpMomentumSkill();
+        final List<AiEvidence> windows = skill.detect(skill.sample(recon, battle));
+        assertEquals(1, windows.size());
+        final AiEvidence window = windows.getFirst();
+        assertEquals(3200.0, window.numbers().get("hpSwing"));
+        assertEquals(-6200.0, window.numbers().get("hpLeadBefore"));
+        assertEquals(-3000.0, window.numbers().get("hpLeadAfter"));
+        assertEquals(5.0, window.numbers().get("commonEntityCount"));
+        assertEquals(DecodeConfidence.INFERRED, window.confidence());
     }
 
     @Test

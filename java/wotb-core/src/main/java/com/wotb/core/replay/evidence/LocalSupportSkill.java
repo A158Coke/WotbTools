@@ -10,8 +10,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 局部支援变化 Skill（文档 §14 示例）：在录像者交火窗口前后统计附近友军/敌军数量，
- * 只在支援结构发生明显变化（数量差 ≥ {@value #MIN_SUPPORT_DELTA}）时产出证据。
+ * 局部支援变化 Skill（文档 §14 示例）：在录像者交火窗口前后统计附近友军/敌军数量。
+ * <p>只统计两侧都完整覆盖（全知）时的变化：敌军一侧未全部观察到时，数量变化可能是
+ * 点亮/隐藏造成，不得当作真实的支援结构变化（避免制造假的 local-number flip）；
+ * 表达统一使用"至少观察到 N 个附近敌军"的 observed 语义。</p>
  */
 public final class LocalSupportSkill {
 
@@ -39,8 +41,16 @@ public final class LocalSupportSkill {
             }
             final int friendlyDelta = after.friendlyCount() - before.friendlyCount();
             final int enemyDelta = after.enemyCount() - before.enemyCount();
-            if (Math.abs(friendlyDelta) < MIN_SUPPORT_DELTA
-                    && Math.abs(enemyDelta) < MIN_SUPPORT_DELTA) {
+            // 只有完整覆盖的变化才可信：未覆盖一侧的数量变化可能是点亮/隐藏造成
+            final boolean friendlyReliable = before.friendlyFullyObserved()
+                    && after.friendlyFullyObserved();
+            final boolean enemyReliable = before.enemyFullyObserved()
+                    && after.enemyFullyObserved();
+            final boolean friendlyChanged = friendlyReliable
+                    && Math.abs(friendlyDelta) >= MIN_SUPPORT_DELTA;
+            final boolean enemyChanged = enemyReliable
+                    && Math.abs(enemyDelta) >= MIN_SUPPORT_DELTA;
+            if (!friendlyChanged && !enemyChanged) {
                 continue;
             }
             index++;
@@ -53,16 +63,18 @@ public final class LocalSupportSkill {
             numbers.put("enemyDelta", (double) enemyDelta);
             final Map<String, String> labels = new HashMap<>();
             labels.put("recorderRegion", "GRID_REGION_" + before.recorderRegion());
-            labels.put("localNumbersBefore", before.friendlyCount() + "v" + before.enemyCount());
-            labels.put("localNumbersAfter", after.friendlyCount() + "v" + after.enemyCount());
-            final DecodeConfidence confidence = before.confidence() == DecodeConfidence.PARTIAL
-                    || after.confidence() == DecodeConfidence.PARTIAL
-                    ? DecodeConfidence.PARTIAL : DecodeConfidence.EXACT;
-            final boolean flipped = enemyDelta >= MIN_SUPPORT_DELTA && friendlyDelta <= -MIN_SUPPORT_DELTA;
+            labels.put("localNumbersBefore", before.numbersLabel());
+            labels.put("localNumbersAfter", after.numbersLabel());
+            final boolean fullyKnown = before.confidence() == DecodeConfidence.EXACT
+                    && after.confidence() == DecodeConfidence.EXACT;
+            final boolean flipped = enemyReliable && friendlyReliable
+                    && enemyDelta >= MIN_SUPPORT_DELTA && friendlyDelta <= -MIN_SUPPORT_DELTA;
+            final String observedSuffix = fullyKnown ? "" : "（观察子集）";
             final String summary = String.format(
-                    "局部支援变化：友军 %d→%d，敌军 %d→%d（%s）",
-                    before.friendlyCount(), after.friendlyCount(),
-                    before.enemyCount(), after.enemyCount(), labels.get("recorderRegion"));
+                    "局部支援变化：友军 %s→%s，敌军 %s→%s（%s%s）",
+                    before.friendlyLabel(), after.friendlyLabel(),
+                    before.enemyLabel(), after.enemyLabel(),
+                    labels.get("recorderRegion"), observedSuffix);
             result.add(new AiEvidence(
                     String.format("LS_%02d", index),
                     EvidenceType.LOCAL_SUPPORT,
@@ -71,7 +83,7 @@ public final class LocalSupportSkill {
                     List.of(),
                     numbers,
                     labels,
-                    confidence,
+                    fullyKnown ? DecodeConfidence.EXACT : DecodeConfidence.PARTIAL,
                     flipped ? EvidencePriority.CRITICAL : EvidencePriority.IMPORTANT,
                     EvidenceProvenance.BACKEND_SKILL,
                     summary));

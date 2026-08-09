@@ -11,13 +11,17 @@ import com.wotb.core.replay.reconstruction.VehicleState;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * HP 动量 Skill（文档 §17）：计算双方可观察 HP 差随时间变化，找出明显 Swing 窗口。
- * <p>严格遵守观察性约束：只有 {@code observationState == OBSERVED} 且血量已知的实体才计入，
- * 并输出 {@code observedCoverage}；覆盖率低时置信度降为 PARTIAL。</p>
+ * <p>严格遵守观察性约束：只有 {@code observationState == OBSERVED} 且血量可靠的实体才计入；
+ * 两个采样点之间只使用<strong>两端共同观察的实体</strong>计算 HP delta——
+ * 任何在较早采样点观察到的实体在较晚采样点消失（unspot / STALE / REMOVED）时，
+ * 无法区分"掉血"与"失去观察"，该窗口跳过，绝不把 unspot 当作 damage。</p>
  */
 public final class HpMomentumSkill {
 
@@ -29,14 +33,29 @@ public final class HpMomentumSkill {
     public static final int MAX_WINDOWS = 3;
     static final double MIN_SWING_HP = 2000;
 
-    /** 单个采样点：battle-relative 时间、双方可观察 HP、HP 差、覆盖率。 */
+    /**
+     * 单个采样点：battle-relative 时间、逐实体可观察 HP 与队伍、双方可观察 HP 和、HP 差、覆盖率。
+     * <p>{@code hpByEntityId} 只包含 {@code OBSERVED} 且血量可靠的实体；
+     * {@code lead} 只是当前观察集合的展示值，不代表"全队 HP 优势"。</p>
+     */
     public record HpMomentumSample(
             float battleRelSec,
+            Map<Integer, Integer> hpByEntityId,
+            Map<Integer, Integer> teamByEntityId,
             double team1Hp,
             double team2Hp,
             double lead,
-            double observedCoverage
+            double observedCoverage,
+            int totalPlayers
     ) {
+        public HpMomentumSample {
+            hpByEntityId = hpByEntityId == null ? Map.of() : Map.copyOf(hpByEntityId);
+            teamByEntityId = teamByEntityId == null ? Map.of() : Map.copyOf(teamByEntityId);
+        }
+
+        public Set<Integer> observedEntities() {
+            return hpByEntityId.keySet();
+        }
     }
 
     /**
@@ -69,6 +88,8 @@ public final class HpMomentumSkill {
             if (!result.isEmpty() && sampleRel <= result.getLast().battleRelSec()) {
                 continue;
             }
+            final Map<Integer, Integer> hpByEntityId = new HashMap<>();
+            final Map<Integer, Integer> teamByEntityId = new HashMap<>();
             double team1Hp = 0;
             double team2Hp = 0;
             int known = 0;
@@ -81,6 +102,8 @@ public final class HpMomentumSkill {
                 if (team == null) {
                     continue;
                 }
+                hpByEntityId.put(vs.entityId(), vs.currentHealth());
+                teamByEntityId.put(vs.entityId(), team);
                 if (team == 1) {
                     team1Hp += vs.currentHealth();
                 } else {
@@ -90,7 +113,9 @@ public final class HpMomentumSkill {
             }
             final int total = battle.nPlayers();
             final double coverage = total > 0 ? (double) known / total : 0;
-            result.add(new HpMomentumSample(sampleRel, team1Hp, team2Hp, team1Hp - team2Hp, coverage));
+            result.add(new HpMomentumSample(
+                    sampleRel, hpByEntityId, teamByEntityId,
+                    team1Hp, team2Hp, team1Hp - team2Hp, coverage, total));
         }
         return result;
     }
@@ -114,11 +139,11 @@ public final class HpMomentumSkill {
                 if (b.battleRelSec() - a.battleRelSec() > MAX_SWING_SPAN_SEC) {
                     continue;
                 }
-                final double swing = Math.abs(b.lead() - a.lead());
-                if (swing >= threshold) {
-                    candidates.add(new Swing(a.battleRelSec(), b.battleRelSec(),
-                            a.lead(), b.lead(), swing, Math.min(a.observedCoverage(), b.observedCoverage())));
+                final Swing swing = commonEntitySwing(a, b);
+                if (swing == null || swing.swing() < threshold) {
+                    continue;
                 }
+                candidates.add(swing);
             }
         }
         if (candidates.isEmpty()) {
@@ -135,7 +160,9 @@ public final class HpMomentumSkill {
                 final double after = c.endSec() >= last.endSec() ? c.after() : last.after();
                 final double maxSwing = Math.max(last.swing(), c.swing());
                 final double coverage = Math.min(last.coverage(), c.coverage());
-                merged.add(new Swing(start, end, before, after, maxSwing, coverage));
+                final int commonEntities = Math.min(
+                        last.commonEntityCount(), c.commonEntityCount());
+                merged.add(new Swing(start, end, before, after, maxSwing, coverage, commonEntities));
             } else {
                 merged.add(c);
             }
@@ -157,8 +184,10 @@ public final class HpMomentumSkill {
             numbers.put("hpSwing", s.swing());
             numbers.put("poolEstimate", pool);
             numbers.put("observedCoverage", s.coverage());
-            final String summary = String.format("HP 优势 %.0f → %.0f（摆动 %.0f，覆盖率 %.2f）",
-                    s.before(), s.after(), s.swing(), s.coverage());
+            numbers.put("commonEntityCount", (double) s.commonEntityCount());
+            final String summary = String.format(
+                    "可观察 HP 差 %.0f → %.0f（共同观察实体 %d 个，摆动 %.0f，覆盖率 %.2f）",
+                    s.before(), s.after(), s.commonEntityCount(), s.swing(), s.coverage());
             result.add(new AiEvidence(
                     String.format("HM_%02d", index),
                     EvidenceType.HP_MOMENTUM,
@@ -175,8 +204,57 @@ public final class HpMomentumSkill {
         return result;
     }
 
+    /**
+     * 只在两端都可靠观察的共同实体上计算 HP delta（可证明不会把 unspot 当 damage）。
+     * <p>任何在 a 中观察到的实体在 b 中不可观察 → 无法可靠比较，返回 {@code null}（跳过该窗口）。</p>
+     */
+    private static Swing commonEntitySwing(final HpMomentumSample a, final HpMomentumSample b) {
+        final Set<Integer> common = new HashSet<>(a.observedEntities());
+        if (common.isEmpty()) {
+            return null;
+        }
+        if (!b.observedEntities().containsAll(common)) {
+            return null;
+        }
+        double team1Delta = 0;
+        double team2Delta = 0;
+        for (final int entityId : common) {
+            final double hpBefore = a.hpByEntityId().get(entityId);
+            final double hpAfter = b.hpByEntityId().get(entityId);
+            // 只计负向变化（伤害）；正向视为数据伪影，不累计
+            final double delta = Math.min(0.0, hpAfter - hpBefore);
+            if (a.teamByEntityId().getOrDefault(entityId, 0) == 1) {
+                team1Delta += delta;
+            } else {
+                team2Delta += delta;
+            }
+        }
+        final double before = leadOver(a, common);
+        final double after = leadOver(b, common);
+        final double coverage = a.totalPlayers() > 0
+                ? (double) common.size() / a.totalPlayers() : 0;
+        return new Swing(a.battleRelSec(), b.battleRelSec(),
+                before, after, Math.abs(team1Delta - team2Delta), coverage, common.size());
+    }
+
+    /** 在指定实体集合上计算队伍 1 与队伍 2 的 HP 差。 */
+    private static double leadOver(final HpMomentumSample sample, final Set<Integer> entities) {
+        double t1 = 0;
+        double t2 = 0;
+        for (final int entityId : entities) {
+            final int team = sample.teamByEntityId().getOrDefault(entityId, 0);
+            final double hp = sample.hpByEntityId().get(entityId);
+            if (team == 1) {
+                t1 += hp;
+            } else {
+                t2 += hp;
+            }
+        }
+        return t1 - t2;
+    }
+
     private record Swing(float startSec, float endSec, double before, double after,
-                         double swing, double coverage) {
+                         double swing, double coverage, int commonEntityCount) {
     }
 
     private static BattleStateCheckpoint closestCheckpoint(

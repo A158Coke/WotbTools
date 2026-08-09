@@ -7,6 +7,7 @@ COPY common/tankopedia-tier10.json common/tankopedia-tier10.json
 COPY common/rating.json common/rating.json
 COPY common/map_names.json common/map_names.json
 COPY common/tank_tactical_profiles.json common/tank_tactical_profiles.json
+COPY common/map_tactical_semantics.json common/map_tactical_semantics.json
 COPY java/pom.xml java/settings-docker.xml java/
 COPY java/wotb-core/pom.xml java/wotb-core/pom.xml
 COPY java/wotb-web/pom.xml java/wotb-web/pom.xml

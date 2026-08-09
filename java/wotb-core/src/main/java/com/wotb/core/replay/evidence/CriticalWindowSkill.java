@@ -58,7 +58,6 @@ public final class CriticalWindowSkill {
             if (signal.priority() == EvidencePriority.NORMAL) {
                 continue;
             }
-            final String summary = signal.summary();
             windows.add(new AiEvidence(
                     "CW_%02d".formatted(windows.size() + 1),
                     EvidenceType.CRITICAL_WINDOW,
@@ -70,7 +69,7 @@ public final class CriticalWindowSkill {
                     signal.confidence(),
                     signal.priority(),
                     EvidenceProvenance.BACKEND_SKILL,
-                    summary));
+                    signal.summary()));
         }
         windows.sort(Comparator.comparing((AiEvidence w) -> w.priority().ordinal())
                 .thenComparingDouble(AiEvidence::startSec));
@@ -109,6 +108,11 @@ public final class CriticalWindowSkill {
             int friendlyAfter = -1;
             int enemyBefore = -1;
             int enemyAfter = -1;
+            String localNumbersBefore = null;
+            String localNumbersAfter = null;
+            // HP 信号的最早/最晚边界：聚合时 before 取最早 HP 信号、after 取最晚 HP 信号
+            AiEvidence earliestHp = null;
+            AiEvidence latestHp = null;
 
             for (final AiEvidence e : group) {
                 start = Math.min(start, e.startSec());
@@ -122,18 +126,20 @@ public final class CriticalWindowSkill {
                     case ENGAGEMENT_TRADE -> {
                         recorderDamageDealt += e.numbers().getOrDefault("damageDealt", 0.0).intValue();
                         recorderDamageReceived += e.numbers().getOrDefault("damageReceived", 0.0).intValue();
-                        if (Double.isNaN(hpLeadBefore)) {
-                            hpLeadBefore = e.numbers().getOrDefault("teamHpLeadBefore", Double.NaN);
-                            hpLeadAfter = e.numbers().getOrDefault("teamHpLeadAfter", Double.NaN);
-                            pool = e.numbers().getOrDefault("poolEstimate", 0.0);
+                        // 无 HP_MOMENTUM 信号时用换血证据的 HP 差兜底
+                        if (Double.isNaN(hpLeadBefore)
+                                && !Double.isNaN(e.numbers().getOrDefault("teamHpLeadBefore", Double.NaN))) {
+                            hpLeadBefore = e.numbers().get("teamHpLeadBefore");
+                            hpLeadAfter = e.numbers().get("teamHpLeadAfter");
                         }
+                        pool = Math.max(pool, e.numbers().getOrDefault("poolEstimate", 0.0));
                     }
                     case HP_MOMENTUM -> {
-                        if (Double.isNaN(hpLeadBefore) || e.startSec() < start) {
-                            hpLeadBefore = e.numbers().getOrDefault("hpLeadBefore", Double.NaN);
+                        if (earliestHp == null || e.startSec() < earliestHp.startSec()) {
+                            earliestHp = e;
                         }
-                        if (Double.isNaN(hpLeadAfter) || e.endSec() > end) {
-                            hpLeadAfter = e.numbers().getOrDefault("hpLeadAfter", Double.NaN);
+                        if (latestHp == null || e.endSec() > latestHp.endSec()) {
+                            latestHp = e;
                         }
                         pool = Math.max(pool, e.numbers().getOrDefault("poolEstimate", 0.0));
                     }
@@ -144,11 +150,26 @@ public final class CriticalWindowSkill {
                         enemyAfter = e.numbers().getOrDefault("nearbyEnemyAfter", -1.0).intValue();
                         friendlyDelta = e.numbers().getOrDefault("friendlyDelta", 0.0).intValue();
                         enemyDelta = e.numbers().getOrDefault("enemyDelta", 0.0).intValue();
+                        // 使用 LS 证据的 observed 标签（含 ≥ / ?），避免重建全知 XvY
+                        if (e.labels().containsKey("localNumbersBefore")) {
+                            localNumbersBefore = e.labels().get("localNumbersBefore");
+                        }
+                        if (e.labels().containsKey("localNumbersAfter")) {
+                            localNumbersAfter = e.labels().get("localNumbersAfter");
+                        }
                     }
                     default -> {
                         // ROUTE 仅作为候选定位，不贡献聚合数值
                     }
                 }
+            }
+
+            // HP 聚合边界：before 取最早 HP 信号的 before，after 取最晚 HP 信号的 after
+            if (earliestHp != null) {
+                hpLeadBefore = earliestHp.numbers().getOrDefault("hpLeadBefore", hpLeadBefore);
+            }
+            if (latestHp != null) {
+                hpLeadAfter = latestHp.numbers().getOrDefault("hpLeadAfter", hpLeadAfter);
             }
 
             final double hpSwing = Double.isNaN(hpLeadBefore) || Double.isNaN(hpLeadAfter)
@@ -185,7 +206,11 @@ public final class CriticalWindowSkill {
                 numbers.put("observedCoverage", coverage);
             }
             final Map<String, String> labels = new HashMap<>();
-            if (friendlyBefore >= 0) {
+            if (localNumbersBefore != null) {
+                labels.put("localNumbersBefore", localNumbersBefore);
+                labels.put("localNumbersAfter", localNumbersAfter);
+            } else if (friendlyBefore >= 0) {
+                // 仅测试构造无标签证据时的兜底
                 labels.put("localNumbersBefore", friendlyBefore + "v" + enemyBefore);
                 labels.put("localNumbersAfter", friendlyAfter + "v" + enemyAfter);
             }
@@ -194,13 +219,16 @@ public final class CriticalWindowSkill {
                     ? DecodeConfidence.INFERRED : DecodeConfidence.PARTIAL;
             final StringBuilder sb = new StringBuilder("战局变化窗口");
             if (!Double.isNaN(hpLeadBefore)) {
-                sb.append("：HP 优势 ").append(Math.round(hpLeadBefore))
+                sb.append("：可观察 HP 差 ").append(Math.round(hpLeadBefore))
                         .append("→").append(Math.round(hpLeadAfter));
             }
             if (totalDeaths > 0) {
                 sb.append("，阵亡 ").append(totalDeaths).append(" 辆");
             }
-            if (friendlyBefore >= 0) {
+            if (localNumbersBefore != null) {
+                sb.append("，局部 ").append(localNumbersBefore)
+                        .append("→").append(localNumbersAfter);
+            } else if (friendlyBefore >= 0) {
                 sb.append("，局部 ").append(friendlyBefore).append("v").append(enemyBefore)
                         .append("→").append(friendlyAfter).append("v").append(enemyAfter);
             }

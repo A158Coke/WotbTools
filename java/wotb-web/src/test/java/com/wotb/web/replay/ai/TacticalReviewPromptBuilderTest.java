@@ -88,9 +88,9 @@ class TacticalReviewPromptBuilderTest {
                 DecodeConfidence.EXACT, EvidencePriority.IMPORTANT,
                 EvidenceProvenance.BACKEND_SKILL, "换血：输出 300 / 承伤 100");
         final List<HpMomentumSkill.HpMomentumSample> series = List.of(
-                new HpMomentumSkill.HpMomentumSample(0f, 4000, 4000, 0, 1.0),
-                new HpMomentumSkill.HpMomentumSample(60f, 4000, 3600, 400, 1.0),
-                new HpMomentumSkill.HpMomentumSample(120f, 4000, 2000, 2000, 1.0));
+                new HpMomentumSkill.HpMomentumSample(0f, Map.of(), Map.of(), 4000, 4000, 0, 1.0, 8),
+                new HpMomentumSkill.HpMomentumSample(60f, Map.of(), Map.of(), 4000, 3600, 400, 1.0, 8),
+                new HpMomentumSkill.HpMomentumSample(120f, Map.of(), Map.of(), 4000, 2000, 2000, 1.0, 8));
         return new EvidenceSkillResult(List.of(trade), List.of(window), series);
     }
 
