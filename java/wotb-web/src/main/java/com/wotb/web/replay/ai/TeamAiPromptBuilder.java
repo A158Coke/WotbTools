@@ -50,11 +50,11 @@ final class TeamAiPromptBuilder {
     // ---- 向后兼容的重载（无 token 估算，适用于测试等） ----
 
     static PromptInput single(final SingleTeamBattleAnalysisContext context) {
-        return single(context, List.of(), null, Integer.MAX_VALUE);
+        return single(context, List.of(), null, null, Integer.MAX_VALUE);
     }
 
     static PromptInput single(final SingleTeamBattleAnalysisContext context, final List<String> extraLimitations) {
-        return single(context, extraLimitations, null, Integer.MAX_VALUE);
+        return single(context, extraLimitations, null, null, Integer.MAX_VALUE);
     }
 
     // ---- 主入口（带 token 预算） ----
@@ -62,6 +62,7 @@ final class TeamAiPromptBuilder {
     static PromptInput single(
             final SingleTeamBattleAnalysisContext context,
             final List<String> extraLimitations,
+            final PreBattleStrategicPrior prior,
             final AiTokenEstimator estimator,
             final int maxInputTokens
     ) {
@@ -77,6 +78,11 @@ final class TeamAiPromptBuilder {
             limitations.add("OPPOSING_LINEUP_UNAVAILABLE");
         }
         final String hpfBlock = hpfTemp.content();
+        final String priorBlock = priorSection(
+                prior, context.perspectiveTeam(),
+                context.battle() != null
+                        ? resolvePerspectiveLabel(context.battle().players, context.perspectiveTeam())
+                        : "");
 
         // 构建 header
         final StringBuilder headerBuf = new StringBuilder();
@@ -103,9 +109,9 @@ final class TeamAiPromptBuilder {
         appendOptionalDetails(optTemp, context.features(), context.analysisUnitId());
         final String optBlock = optTemp.content();
 
-        // 如果 mandatory（header + HPF）超出 token 预算，直接抛出异常
+        // 如果 mandatory（header + HPF + prior）超出 token 预算，直接抛出异常
         if (estimator != null) {
-            final String mandatoryContent = headerBlock + hpfBlock;
+            final String mandatoryContent = headerBlock + priorBlock + hpfBlock;
             if (estimator.estimateTextTokens(mandatoryContent) > maxInputTokens) {
                 throw new AiPromptBudgetExceededException();
             }
@@ -114,6 +120,7 @@ final class TeamAiPromptBuilder {
         // 写入所有内容
         final BudgetWriter writer = new BudgetWriter();
         writer.appendRequired(headerBlock);
+        writer.appendRequired(priorBlock);
         writer.appendRequiredBlock(hpfBlock);
         writer.append(optBlock);
 
@@ -137,18 +144,27 @@ final class TeamAiPromptBuilder {
     // ---- 向后兼容的 multi 重载 ----
 
     static PromptInput multi(final MultiTeamBattleAnalysisContext context) {
-        return multi(context, Map.of(), null, Integer.MAX_VALUE);
+        return multi(context, Map.of(), Map.of(), Map.of(), null, Integer.MAX_VALUE);
     }
 
     static PromptInput multi(final MultiTeamBattleAnalysisContext context,
                              final Map<String, List<String>> evidenceLimitations) {
-        return multi(context, evidenceLimitations, null, Integer.MAX_VALUE);
+        return multi(context, evidenceLimitations, Map.of(), Map.of(), null, Integer.MAX_VALUE);
+    }
+
+    static PromptInput multi(final MultiTeamBattleAnalysisContext context,
+                             final Map<String, List<String>> evidenceLimitations,
+                             final AiTokenEstimator estimator,
+                             final int maxInputTokens) {
+        return multi(context, evidenceLimitations, Map.of(), Map.of(), estimator, maxInputTokens);
     }
 
     // ---- 主入口（带 token 预算） ----
 
     static PromptInput multi(final MultiTeamBattleAnalysisContext context,
                              final Map<String, List<String>> evidenceLimitations,
+                             final Map<String, PreBattleStrategicPrior> priorsByUnitId,
+                             final Map<String, Integer> perspectiveTeamByUnitId,
                              final AiTokenEstimator estimator,
                              final int maxInputTokens) {
         final List<TeamBattleAnalysisSummary> perspectives = context.perspectives();
@@ -175,7 +191,12 @@ final class TeamAiPromptBuilder {
             if (evLimits != null) {
                 perUnitLimits.addAll(evLimits);
             }
-            perspectiveSections.add(buildPerspectiveSections(perspective, perUnitLimits, index));
+            perspectiveSections.add(buildPerspectiveSections(
+                    perspective,
+                    perUnitLimits,
+                    index,
+                    priorsByUnitId.get(perspective.analysisUnitId()),
+                    perspectiveTeamByUnitId.getOrDefault(perspective.analysisUnitId(), 1)));
         }
 
         // 3-4. 估算所有 mandatory/HPF 总 token 数，超限则抛异常
@@ -183,6 +204,7 @@ final class TeamAiPromptBuilder {
             final StringBuilder mandatoryBuf = new StringBuilder();
             mandatoryBuf.append(globalHeader);
             for (final PerspectivePromptSections section : perspectiveSections) {
+                mandatoryBuf.append(section.priorBlock());
                 mandatoryBuf.append(section.mandatoryBlock());
                 mandatoryBuf.append(section.highPriorityBlock());
             }
@@ -197,6 +219,7 @@ final class TeamAiPromptBuilder {
 
         final Set<String> truncatedIds = new LinkedHashSet<>();
         for (final PerspectivePromptSections section : perspectiveSections) {
+            writer.appendRequired(section.priorBlock());
             writer.appendRequired(section.mandatoryBlock());
             writer.appendRequiredBlock(section.highPriorityBlock());
             if (section.hpfTruncated()) {
@@ -245,8 +268,11 @@ final class TeamAiPromptBuilder {
     private static PerspectivePromptSections buildPerspectiveSections(
             final TeamBattleAnalysisSummary perspective,
             final Set<String> perUnitLimits,
-            final int index
+            final int index,
+            final PreBattleStrategicPrior prior,
+            final int perspectiveTeam
     ) {
+        final String priorBlock = priorSection(prior, perspectiveTeam, perspective.teamLabel());
         final StringBuilder mandatory = new StringBuilder(512);
         mandatory.append("\n=== PERSPECTIVE ").append(index + 1).append(" ===\n");
         mandatory.append("analysisUnitId=").append(quoteData(perspective.analysisUnitId())).append("\n");
@@ -270,6 +296,7 @@ final class TeamAiPromptBuilder {
         final boolean optTruncated = optTemp.isTruncated();
         return new PerspectivePromptSections(
                 perspective.analysisUnitId(),
+                priorBlock,
                 mandatory.toString(),
                 hpfContent,
                 hpfTruncated,
@@ -280,6 +307,91 @@ final class TeamAiPromptBuilder {
     }
 
     // ---- 内容构建方法 ----
+
+    /**
+     * 渲染 Call #1 赛前战略基线（视角相对标签）：
+     * TEAM_A=你的队伍（teamLabel）、TEAM_B=对方队伍；视角队伍为 2 时交换 Call #1 的 TEAM_A/TEAM_B。
+     */
+    private static String priorSection(final PreBattleStrategicPrior prior,
+                                       final int perspectiveTeam,
+                                       final String teamLabel) {
+        final StringBuilder sb = new StringBuilder(2048);
+        sb.append("=== PRE-BATTLE STRATEGIC PRIOR（Call #1 赛前战略基线，仅基于地图与双方阵容，未读取任何战斗结果） ===\n");
+        if (prior == null || !prior.hasContent()) {
+            sb.append("（本次赛前战略基线不可用：Call #1 未产出有效结果）\n");
+            return sb.toString();
+        }
+        final boolean swapped = perspectiveTeam == 2;
+        final PreBattleStrategicPrior.TeamProfile teamAProfile = swapped
+                ? prior.teamB() : prior.teamA();
+        final PreBattleStrategicPrior.TeamProfile teamBProfile = swapped
+                ? prior.teamA() : prior.teamB();
+        final String teamALabel = "TEAM_A（你的队伍"
+                + (StringUtils.hasText(teamLabel) ? " " + teamLabel : "") + "）";
+        appendTeamProfile(sb, teamALabel, teamAProfile);
+        appendTeamProfile(sb, "TEAM_B（对方队伍）", teamBProfile);
+        if (!prior.keyMatchups().isEmpty()) {
+            sb.append("\n关键对阵:\n");
+            for (final PreBattleStrategicPrior.KeyMatchup m : prior.keyMatchups()) {
+                sb.append("  - 区域 ").append(quoteData(m.area()))
+                        .append(" | 优势 ").append(quoteData(swapped ? swapTeamToken(m.advantage()) : m.advantage()))
+                        .append(" | ").append(quoteData(m.reason())).append('\n');
+            }
+        }
+        if (!prior.strategicWinConditions().isEmpty()) {
+            sb.append("\n战略胜机:\n");
+            for (final PreBattleStrategicPrior.StrategicWinCondition w : prior.strategicWinConditions()) {
+                sb.append("  - ").append(quoteData(swapped ? swapTeamToken(w.team()) : w.team()))
+                        .append(": ").append(quoteData(w.condition())).append('\n');
+            }
+        }
+        if (!prior.hypotheses().isEmpty()) {
+            sb.append("\n战略假设（复盘需逐条判定状态）:\n");
+            for (final PreBattleStrategicPrior.StrategicHypothesis h : prior.hypotheses()) {
+                sb.append("  [").append(hypothesisIdLabel(h.id())).append("] ")
+                        .append(quoteData(swapped ? swapTeamToken(h.claim()) : h.claim()))
+                        .append("（理由: ").append(quoteData(swapped ? swapTeamToken(h.reason()) : h.reason()))
+                        .append("）\n");
+            }
+        }
+        return sb.toString();
+    }
+
+    private static void appendTeamProfile(final StringBuilder sb,
+                                          final String label,
+                                          final PreBattleStrategicPrior.TeamProfile profile) {
+        if (profile == null) {
+            return;
+        }
+        sb.append('\n').append(label).append(":\n");
+        if (!profile.strengths().isEmpty()) {
+            sb.append("  优势: ").append(String.join("；", profile.strengths())).append('\n');
+        }
+        if (!profile.weaknesses().isEmpty()) {
+            sb.append("  劣势: ").append(String.join("；", profile.weaknesses())).append('\n');
+        }
+        if (!profile.preferredPlans().isEmpty()) {
+            sb.append("  首选方案: ").append(String.join("；", profile.preferredPlans())).append('\n');
+        }
+    }
+
+    private static String hypothesisIdLabel(final String id) {
+        if (id == null) {
+            return "H?";
+        }
+        final String sanitized = id.replaceAll("[\\[\\]\\n\\r]", " ").trim();
+        return sanitized.isBlank() ? "H?" : sanitized;
+    }
+
+    /** 视角队伍为 2 时，把 Call #1 输出中的 TEAM_A/TEAM_B 对调（单遍替换）。 */
+    private static String swapTeamToken(final String text) {
+        if (text == null || text.isBlank()) {
+            return text == null ? "" : text;
+        }
+        return text.replace("TEAM_A", "\u0000A")
+                .replace("TEAM_B", "TEAM_A")
+                .replace("\u0000A", "TEAM_B");
+    }
 
     private static void appendHighPriorityFacts(
             final BudgetWriter writer,
@@ -701,6 +813,7 @@ final class TeamAiPromptBuilder {
 
     private record PerspectivePromptSections(
             String analysisUnitId,
+            String priorBlock,
             String mandatoryBlock,
             String highPriorityBlock,
             boolean hpfTruncated,

@@ -66,7 +66,9 @@ public class AiReplayAnalysisService {
                 thinkingEnabled, reasoningEffort, 315);
         this.playerService = new PlayerReplayAnalysisService(gateway, config);
         this.teamService = new TeamReplayAnalysisService(
-                gateway, config, new TeamAutopsyService(gateway, config));
+                gateway, config,
+                new PreBattleStrategicService(gateway, config),
+                new TeamAutopsyService(gateway, config));
     }
 
     public boolean isConfigured() {

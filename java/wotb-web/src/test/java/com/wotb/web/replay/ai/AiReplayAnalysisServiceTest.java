@@ -63,6 +63,15 @@ import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 
 class AiReplayAnalysisServiceTest {
 
+    private static final String PRIOR_JSON = """
+            {
+              "teamA": {"composition": {"mobility": "HIGH"}, "strengths": ["重坦正面推进"], "weaknesses": ["w1"], "preferredPlans": ["左路集结"]},
+              "teamB": {"composition": {"mobility": "MEDIUM"}, "strengths": ["中坦机动拉扯"], "weaknesses": ["w2"], "preferredPlans": ["中路控制"]},
+              "keyMatchups": [{"area": "GRID_REGION_5", "advantage": "TEAM_A", "reason": "r"}],
+              "strategicWinConditions": [{"team": "TEAM_A", "condition": "c"}],
+              "hypotheses": [{"id": "H1", "claim": "开局左路集结", "reason": "rs"}]
+            }""";
+
     private static final String AUTOPSY_JSON = "{\"players\":["
             + "{\"playerKey\":\"P1\",\"contribution\":\"HIGH\",\"confidence\":\"PARTIAL\"},"
             + "{\"playerKey\":\"P2\",\"contribution\":\"LOW\",\"confidence\":\"UNKNOWN\"},"
@@ -81,6 +90,7 @@ class AiReplayAnalysisServiceTest {
     static final class FakeAiChatGateway implements AiChatGateway {
         final List<AiChatRequest> requests = new CopyOnWriteArrayList<>();
         volatile String nextCompletionText = "team review";
+        volatile String preBattleCompletionText;
         volatile String autopsyCompletionText;
         volatile RuntimeException nextError;
         volatile boolean configured = true;
@@ -95,6 +105,11 @@ class AiReplayAnalysisServiceTest {
             requests.add(request);
             if (nextError != null) {
                 throw nextError;
+            }
+            if ("PRE_BATTLE_STRATEGIC_PRIOR".equals(request.analysisMode())
+                    && preBattleCompletionText != null) {
+                return new AiChatResponse(preBattleCompletionText, "DeepSeek", "test-model",
+                        0, 0, 0, 0, 0, 0, "stop");
             }
             if ("TEAM_AUTOPSY".equals(request.analysisMode()) && autopsyCompletionText != null) {
                 return new AiChatResponse(autopsyCompletionText, "DeepSeek", "test-model",
@@ -268,6 +283,43 @@ class AiReplayAnalysisServiceTest {
     }
 
     @Test
+    void teamPerspectiveInjectsCall1Prior() {
+        gateway.nextCompletionText = "team review";
+        gateway.preBattleCompletionText = PRIOR_JSON;
+        final var service = startService();
+        final var context = service.buildSingleTeamContext(
+                teamGroups(List.of(sevenTeamResult(
+                        "prior.wotbreplay", "arena-prior", "Ally", 1001L, 1)))
+                        .getFirst());
+        final var result = service.analyzeSingleTeamContext(context);
+        assertEquals("team review", result.analysis());
+        final String body = teamLastBody();
+        assertTrue(body.contains("PRE-BATTLE STRATEGIC PRIOR"),
+                "Team review prompt must contain the Call #1 strategic prior");
+        assertTrue(body.contains("TEAM_A（你的队伍"),
+                "Prior must be relabeled to the perspective team");
+        assertTrue(body.contains("开局左路集结"),
+                "Prior hypotheses must be rendered");
+        assertTrue(body.contains("战略假设（复盘需逐条判定状态）"),
+                "Prior hypotheses section must ask for per-hypothesis verdicts");
+    }
+
+    @Test
+    void teamPerspectivePriorFailureStillReturnsReview() {
+        gateway.nextCompletionText = "team review";
+        gateway.preBattleCompletionText = "not a json object";
+        final var service = startService();
+        final var context = service.buildSingleTeamContext(
+                teamGroups(List.of(sevenTeamResult(
+                        "prior-fail.wotbreplay", "arena-prior-fail", "Ally", 1001L, 1)))
+                        .getFirst());
+        final var result = service.analyzeSingleTeamContext(context);
+        assertEquals("team review", result.analysis());
+        assertTrue(teamLastBody().contains("赛前战略基线不可用"),
+                "Prior failure must degrade gracefully with an explicit unavailable marker");
+    }
+
+    @Test
     void playerRequestNoRawTeamLabels() {
         final var service = startService();
         final var result = service.analyzePlayerOrFallback(randomResultWithoutReconstruction());
@@ -383,9 +435,9 @@ class AiReplayAnalysisServiceTest {
                 teamResultWithClan("battle-a.wotbreplay", "arena-a", "CHRD", true),
                 teamResultWithClan("battle-b.wotbreplay", "arena-b", "CHRD", false)));
         final var result = service.analyzeTeamGroups(groups);
-        assertEquals(1, gateway.requests.size(),
-                "Both battles must merge into one partition -> 1 AI call");
-        final String body = gateway.requests.getFirst().userPrompt();
+        assertEquals(1, teamRequests().size(),
+                "Both battles must merge into one partition -> 1 team AI call (plus per-battle Call #1)");
+        final String body = teamRequests().getFirst().userPrompt();
         assertTrue(body.contains("MULTI_TEAM_CONTEXT"),
                 "Merged partition must use MULTI_TEAM_CONTEXT");
         assertTrue(body.contains("analysisUnitId=\"arena-arena-a"),
@@ -417,9 +469,9 @@ class AiReplayAnalysisServiceTest {
                 teamResultWithClan("battle-b.wotbreplay", "arena-b", "CHRD", false),
                 teamResultWithClan("battle-a.wotbreplay", "arena-a", "CHRD", true)));
         final var result = service.analyzeTeamGroups(groups);
-        assertEquals(1, gateway.requests.size(),
-                "Same clan battles must merge regardless of input order -> 1 AI call");
-        final String body = gateway.requests.getFirst().userPrompt();
+        assertEquals(1, teamRequests().size(),
+                "Same clan battles must merge regardless of input order -> 1 team AI call (plus per-battle Call #1)");
+        final String body = teamRequests().getFirst().userPrompt();
         assertTrue(body.contains("MULTI_TEAM_CONTEXT"),
                 "Merged partition must use MULTI_TEAM_CONTEXT");
         assertTrue(body.contains("analysisUnitId=\"arena-arena-a"),
