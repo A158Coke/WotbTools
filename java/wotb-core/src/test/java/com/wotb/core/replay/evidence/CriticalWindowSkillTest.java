@@ -56,4 +56,27 @@ class CriticalWindowSkillTest {
                 EvidencePriority.NORMAL);
         assertTrue(new CriticalWindowSkill().detect(List.of(route)).isEmpty());
     }
+
+    @Test
+    void mergedHpSignalsUseEarliestBeforeAndLatestAfter() {
+        final AiEvidence hp1 = evidence(EvidenceType.HP_MOMENTUM, 0f, 10f,
+                Map.of("hpLeadBefore", 100.0, "hpLeadAfter", 90.0,
+                        "hpSwing", 10.0, "poolEstimate", 300.0, "observedCoverage", 1.0),
+                EvidencePriority.IMPORTANT);
+        final AiEvidence hp2 = evidence(EvidenceType.HP_MOMENTUM, 30f, 40f,
+                Map.of("hpLeadBefore", 80.0, "hpLeadAfter", 50.0,
+                        "hpSwing", 30.0, "poolEstimate", 300.0, "observedCoverage", 1.0),
+                EvidencePriority.IMPORTANT);
+
+        final List<AiEvidence> windows = new CriticalWindowSkill().detect(List.of(hp1, hp2));
+        assertEquals(1, windows.size());
+        final AiEvidence window = windows.getFirst();
+        assertEquals(0f, window.startSec());
+        assertEquals(40f, window.endSec());
+        assertEquals(100.0, window.numbers().get("teamHpLeadBefore"),
+                "before 必须取最早 HP 信号的 before");
+        assertEquals(50.0, window.numbers().get("teamHpLeadAfter"),
+                "after 必须取最晚 HP 信号的 after");
+        assertEquals(50.0, window.numbers().get("teamHpSwing"));
+    }
 }

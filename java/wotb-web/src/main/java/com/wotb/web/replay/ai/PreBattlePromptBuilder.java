@@ -5,6 +5,7 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.evidence.TankTacticalProfile;
 import com.wotb.core.replay.evidence.TankTacticalProfileRegistry;
+import com.wotb.core.replay.map.MapTacticalSemantics;
 import com.wotb.core.util.PromptDataQuoter;
 
 import java.util.Comparator;
@@ -27,8 +28,9 @@ public final class PreBattlePromptBuilder {
             === 强制规则 ===
             1. 严禁引用、猜测或假设任何战斗结果：胜负、伤害、击杀、阵亡、路线、HP、交火都不存在。
             2. 坦克事实只能来自下方提供的结构化战术属性；未提供或标注"车型默认"的属性不得自行补充。
-            3. 地图语义数据当前不可用：禁止编造具体点位、区域名（如山、城、中路）或坐标；
-               如需引用位置，只能使用 GRID_REGION_1~9 的抽象编号，或不做位置引用。
+            3. 地图战术语义只使用下方提供的数据（AREA 名称/类型/特征/适合/风险/关系）；
+               地图无语义数据时，区域一律 UNKNOWN，禁止编造具体点位、区域名或坐标；
+               GRID_REGION_1~9 只是九宫格位置编号，不是战术区域名。
             4. 坦克名称必须原样使用提供方名称，禁止改写、翻译或缩写。
             5. 战略基线只是 baseline，不是真理：真实战况可能让任何计划失效，输出中不得使用"必然/绝对"措辞。
             6. 双方分别用 TEAM_A（队伍1）与 TEAM_B（队伍2）表示，全程保持该映射。
@@ -44,7 +46,7 @@ public final class PreBattlePromptBuilder {
               },
               "teamB": { 同上 },
               "keyMatchups": [
-                { "area": "GRID_REGION_N 或抽象描述", "advantage": "TEAM_A|TEAM_B", "reason": "≤80字" }
+                { "area": "地图语义中的 AREA 名（如 AREA_A）或 GRID_REGION_N；无语义时用抽象描述", "advantage": "TEAM_A|TEAM_B", "reason": "≤80字" }
               ],
               "strategicWinConditions": [
                 { "team": "TEAM_A|TEAM_B", "condition": "≤80字" }
@@ -61,19 +63,73 @@ public final class PreBattlePromptBuilder {
             地图: %s
             模式: %s
             最高等级: %d
-            注意：地图语义数据不可用，禁止编造区域名与点位。""";
+            注意：地图战术语义见下方；未提供则为 UNKNOWN，禁止编造区域名与点位。""";
 
-    static String buildUserContent(final Battle battle, final TankTacticalProfileRegistry profiles) {
-        final StringBuilder sb = new StringBuilder(2048);
+    static String buildUserContent(final Battle battle,
+                                   final TankTacticalProfileRegistry profiles,
+                                   final MapTacticalSemantics mapSemantics) {
+        final StringBuilder sb = new StringBuilder(3072);
         sb.append(PRE_BATTLE_USER_HEADER.formatted(
                 PromptDataQuoter.quote(ReplayDisplayNames.mapName(battle.mapName), "未知地图"),
                 modeLabel(battle),
                 maxTier(battle)));
+        sb.append('\n').append(buildMapSemanticsSection(battle.mapName, mapSemantics));
         sb.append("\n\n=== TEAM_A（队伍1）阵容 ===\n");
         appendTeam(sb, battle, 1, profiles);
         sb.append("\n=== TEAM_B（队伍2）阵容 ===\n");
         appendTeam(sb, battle, 2, profiles);
         sb.append("\n请按输出契约给出 JSON。");
+        return sb.toString();
+    }
+
+    /** 渲染地图战术语义段；无语义数据时明确 UNKNOWN。 */
+    static String buildMapSemanticsSection(final String mapCode,
+                                           final MapTacticalSemantics mapSemantics) {
+        final StringBuilder sb = new StringBuilder(1024);
+        sb.append("=== 地图战术语义 ===\n");
+        sb.append("地图 code: ").append(PromptDataQuoter.quote(mapCode, "未知")).append('\n');
+        if (mapSemantics == null || !mapSemantics.hasSemantics()) {
+            sb.append("战术语义: UNKNOWN（该地图暂无语义数据，禁止编造区域名与点位）\n");
+            return sb.toString();
+        }
+        sb.append("区域:\n");
+        mapSemantics.areas().forEach((id, area) -> {
+            sb.append("- ").append(id);
+            if (!area.label().isBlank()) {
+                sb.append(" [").append(area.label()).append(']');
+            }
+            if (!area.types().isEmpty()) {
+                sb.append(" 类型=").append(String.join(",", area.types()));
+            }
+            sb.append('\n');
+            if (!area.characteristics().isEmpty()) {
+                sb.append("    特征: ").append(String.join("; ", area.characteristics())).append('\n');
+            }
+            if (!area.favors().isEmpty()) {
+                sb.append("    适合: ").append(String.join(", ", area.favors())).append('\n');
+            }
+            if (!area.risks().isEmpty()) {
+                sb.append("    风险: ").append(String.join("; ", area.risks())).append('\n');
+            }
+        });
+        if (!mapSemantics.relationships().isEmpty()) {
+            sb.append("区域关系:\n");
+            mapSemantics.relationships().forEach((id, rel) -> {
+                if (!rel.controls().isEmpty()) {
+                    sb.append("- ").append(id).append(" controls: ")
+                            .append(String.join(", ", rel.controls())).append('\n');
+                }
+                if (!rel.connects().isEmpty()) {
+                    sb.append("- ").append(id).append(" connects: ")
+                            .append(String.join(", ", rel.connects())).append('\n');
+                }
+                if (!rel.enablesPressureAgainst().isEmpty()) {
+                    sb.append("- ").append(id).append(" enablesPressureAgainst: ")
+                            .append(String.join(", ", rel.enablesPressureAgainst())).append('\n');
+                }
+            });
+        }
+        sb.append("出生点关系: UNKNOWN（当前无法可靠确定）\n");
         return sb.toString();
     }
 

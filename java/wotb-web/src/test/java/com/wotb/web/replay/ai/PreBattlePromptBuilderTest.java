@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.evidence.TankTacticalProfileRegistry;
+import com.wotb.core.replay.map.MapTacticalSemantics;
+import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -20,7 +22,7 @@ class PreBattlePromptBuilderTest {
         players.add(resultPlayer(2001, 2, 14609, "Leopard 1"));
         players.add(resultPlayer(2002, 2, 12305, "E 50 M"));
         final Battle b = new Battle();
-        b.mapName = "middleburg";
+        b.mapName = "erlenberg";
         b.arenaBonusType = 1;
         b.players = players;
         return b;
@@ -46,7 +48,8 @@ class PreBattlePromptBuilderTest {
     @Test
     void userContentLeaksNoBattleResult() {
         final String content = PreBattlePromptBuilder.buildUserContent(
-                battleWithFullResults(), TankTacticalProfileRegistry.load());
+                battleWithFullResults(), TankTacticalProfileRegistry.load(),
+                MapTacticalSemanticsRegistry.load().semanticsFor("erlenberg"));
         assertFalse(content.contains("77777"), "damageDealt must not leak");
         assertFalse(content.contains("88888"), "damageReceived must not leak");
         assertFalse(content.contains("66"), "kills must not leak");
@@ -57,13 +60,27 @@ class PreBattlePromptBuilderTest {
     @Test
     void userContentContainsRosterAndProfiles() {
         final String content = PreBattlePromptBuilder.buildUserContent(
-                battleWithFullResults(), TankTacticalProfileRegistry.load());
+                battleWithFullResults(), TankTacticalProfileRegistry.load(),
+                MapTacticalSemanticsRegistry.load().semanticsFor("erlenberg"));
         assertTrue(content.contains("TEAM_A（队伍1）阵容"));
         assertTrue(content.contains("TEAM_B（队伍2）阵容"));
         assertTrue(content.contains("Kranvagn"));
         assertTrue(content.contains("Leopard 1"));
         assertTrue(content.contains("roles="));
-        assertTrue(content.contains("地图语义数据不可用"));
+        assertTrue(content.contains("=== 地图战术语义 ==="));
+        assertTrue(content.contains("UNKNOWN（该地图暂无语义数据，禁止编造区域名与点位）"));
+        assertFalse(content.contains("地图语义数据当前不可用"));
+    }
+
+    @Test
+    void unknownMapRendersExplicitUnknownInsteadOfFabrication() {
+        final Battle battle = battleWithFullResults();
+        battle.mapName = "not_a_real_map";
+        final String content = PreBattlePromptBuilder.buildUserContent(
+                battle, TankTacticalProfileRegistry.load(),
+                MapTacticalSemantics.UNKNOWN);
+        assertTrue(content.contains("UNKNOWN（该地图暂无语义数据，禁止编造区域名与点位）"));
+        assertFalse(content.contains("HILL"));
     }
 
     @Test
@@ -71,5 +88,9 @@ class PreBattlePromptBuilderTest {
         assertTrue(PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT.contains("严禁引用"));
         assertTrue(PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT.contains("JSON"));
         assertTrue(PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT.contains("TEAM_A"));
+        assertTrue(PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT
+                .contains("地图战术语义只使用下方提供的数据"));
+        assertFalse(PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT
+                .contains("地图语义数据当前不可用"));
     }
 }

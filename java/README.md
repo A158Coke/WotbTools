@@ -1,4 +1,4 @@
-﻿# WoT Blitz Tools - Java 主线
+# WoT Blitz Tools - Java 主线
 
 `java/` 是项目主线。基于同一套 Java 核心能力交付：
 
@@ -20,7 +20,7 @@
 
 ## AI Review Harness（双 Call V1）
 
-随机战个人复盘（ZH）在重建与特征可用时走 `TacticalReviewHarness`：Call #1 用双方阵容 + `common/tank_tactical_profiles.json` 建立赛前战略基线（不含任何战斗结果），Backend Evidence Skills（HpMomentum / EngagementTrade / LocalSupport / DeathCascade / Route / CriticalWindow）输出确定性战术证据，Call #2 按 Priority Bookends 对照「预期 vs 实际」输出复盘。任何前提不满足自动降级旧单 Call 路径；EN/RU 保持旧路径。地图语义 V1 不可用，区域统一为九宫格编号 `GRID_REGION_1~9`。
+随机战个人复盘（ZH）在重建与特征可用时走 `TacticalReviewHarness`：Call #1 用双方阵容 + `common/tank_tactical_profiles.json` 建立赛前战略基线（不含任何战斗结果），Backend Evidence Skills（HpMomentum / EngagementTrade / LocalSupport / DeathCascade / Route / CriticalWindow）输出确定性战术证据，Call #2 按 Priority Bookends 对照「预期 vs 实际」输出复盘。任何前提不满足自动降级旧单 Call 路径；EN/RU 保持旧路径。地图战术语义层（`common/map_tactical_semantics.json` + `MapTacticalSemanticsRegistry`）：V1 语义库为空，所有地图明确 UNKNOWN（禁止编造区域语义），待真实数据源填充；Call #1 有独立 45s stage 预算，Call #2 使用剩余预算并留安全余量，整体不超过 `AI_CALL_TIMEOUT_SEC`。
 
 ## Web 版（Docker + PostgreSQL）
 

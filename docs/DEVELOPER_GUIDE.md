@@ -229,6 +229,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 | `TacticalReviewPromptBuilder` | `wotb-web/.../ai/TacticalReviewPromptBuilder.java` | Call #2：Priority Bookends Prompt + 相关性预算裁剪 |
 | `EvidenceSkillEngine` | `wotb-core/.../replay/evidence/EvidenceSkillEngine.java` | 6 个 Backend Skill 编排（确定性证据编译，不裁决） |
 | `TankTacticalProfileRegistry` | `wotb-core/.../replay/evidence/TankTacticalProfileRegistry.java` | 坦克战术语义层（`common/tank_tactical_profiles.json` + 车型 fallback） |
+| `MapTacticalSemanticsRegistry` | `wotb-core/.../replay/map/MapTacticalSemanticsRegistry.java` | 地图战术语义层（`common/map_tactical_semantics.json`，未收录 → UNKNOWN） |
 | `ReplayService` | `wotb-web/.../replay/service/ReplayService.java` | 业务编排 |
 | `ReplayCapacityLimiter` | `wotb-web/.../replay/service/ReplayCapacityLimiter.java` | 单实例回放解析并发闸门 |
 | `Mapper` | `wotb-web/.../replay/mapper/Mapper.java` | 核心模型 → DTO |
@@ -267,7 +268,9 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 
 关键约束：
 
-- **地图语义 V1 不可用**：区域一律用九宫格 `GRID_REGION_1~9`（`MapRegionResolver`），禁止 LLM 编造具体点位/区域名；TEAM_A=队伍1、TEAM_B=队伍2 固定映射。
+- **地图战术语义层**：schema 与 `MapTacticalSemanticsRegistry` 已就绪；V1 语义库为空，所有地图明确 UNKNOWN，禁止编造区域语义（待真实数据源）；GRID_REGION_1~9 只是位置编号；TEAM_A=队伍1、TEAM_B=队伍2 固定映射。
+- **双 Call 预算**：Call #1 独立 45s stage budget（`AiChatRequest.callTimeoutSec`），Call #2 使用剩余预算并留 10s 安全余量；Call #1 失败后剩余 < 60s 时不启动旧路径 fallback；总 deadline = `AI_CALL_TIMEOUT_SEC`。
+- **观察性语义**：HP 动量只按两端共同观察实体计算 delta（unspot 不伪造 HP swing）；局部支援敌军数量表达为"至少观察到 N"，仅两侧完整覆盖才 EXACT；隐藏/点亮不制造 local-number flip。
 - **观察性**：HP 动量带 `observedCoverage`，覆盖率低时置信度降为 PARTIAL；局部支援只统计 `OBSERVED` 位置，STALE/UNKNOWN 不计入。
 - **降级阶梯**：非 ZH / 无重建 / 录像者未解析 / 特征不可用 / Call #1 失败 / 无证据 → 旧单 Call 路径；对外 API 与响应结构不变。
 - **新增共享资源**：`common/tank_tactical_profiles.json`（精选 Tier X + 车型级默认 fallback），`wotb-core/pom.xml` 与 `docker/Dockerfile.backend` 已同步复制。

@@ -51,6 +51,7 @@
                     <include>rating.json</include>
                     <include>map_names.json</include>
                     <include>tank_tactical_profiles.json</include>
+                    <include>map_tactical_semantics.json</include>
                 </includes>
             </resource>
         </resources>

@@ -475,7 +475,7 @@ class AiReplayAnalysisServiceTest {
         final var service = spy(new PlayerReplayAnalysisService(
                 gateway, new AiReplayAnalysisConfig(
                         new ConservativeDeepSeekTokenEstimator(), "test-model",
-                        30000, 131072, 8192, 1000, true, "high")));
+                        30000, 131072, 8192, 1000, true, "high", 315)));
         doReturn(new AnalyzeResult("summary analysis"))
                 .when(service).analyze(any(), any(), any(AllowedLanguage.class));
         service.analyzePlayerOrFallback(randomResultWithoutReconstruction());

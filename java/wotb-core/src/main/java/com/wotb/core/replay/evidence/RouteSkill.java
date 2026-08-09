@@ -183,8 +183,8 @@ public final class RouteSkill {
                     counts.confidence(),
                     EvidencePriority.IMPORTANT,
                     EvidenceProvenance.BACKEND_SKILL,
-                    String.format("进入敌方人数优势区域（%dv%d，%s）",
-                            counts.friendlyCount(), counts.enemyCount(),
+                    String.format("进入观察到敌方人数优势区域（友军 %s / 敌军 %s，%s）",
+                            counts.friendlyLabel(), counts.enemyLabel(),
                             "GRID_REGION_" + counts.recorderRegion())));
         }
         return result;

@@ -8,31 +8,65 @@ import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
 import com.wotb.core.replay.reconstruction.ObservationState;
 import com.wotb.core.replay.reconstruction.VehicleState;
 
-import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * 局部支援计数（文档 §14 LOCAL_SUPPORT 的确定性基础）。
  * <p>只统计 {@code observationState == OBSERVED} 且位置已知的实体；
- * STALE / UNKNOWN / REMOVED 一律不计入，避免把未知位置当成"不在附近"。</p>
+ * STALE / UNKNOWN / REMOVED 一律不计入。敌军数量表达为"至少观察到 N 个附近敌军"，
+ * 只有该侧全部实体都被观察到时才可表达为完整数量；两侧都完整覆盖时才允许 EXACT。</p>
  */
 public final class NearbySupportCounter {
 
     public static final float SUPPORT_RADIUS_M = 150f;
 
-    /** 某时刻录像者附近的友军 / 敌军数量。 */
+    /** 某时刻录像者附近的友军 / 敌军观察数量。 */
     public record Counts(
             float battleRelSec,
             int friendlyCount,
             int enemyCount,
             int observedFriendlyTotal,
             int observedEnemyTotal,
+            int friendlyTotal,
+            int enemyTotal,
             int recorderRegion,
             DecodeConfidence confidence
     ) {
+        /** 友军一侧是否全部被观察到（可表达完整数量）。 */
+        public boolean friendlyFullyObserved() {
+            return friendlyTotal > 0 && observedFriendlyTotal == friendlyTotal;
+        }
+
+        /** 敌军一侧是否全部被观察到（可表达完整数量）。 */
+        public boolean enemyFullyObserved() {
+            return enemyTotal > 0 && observedEnemyTotal == enemyTotal;
+        }
+
+        /** 友军数量标签：完整覆盖时 "N"，否则 "≥N"（N=0 时 "?"）。 */
+        public String friendlyLabel() {
+            return label(friendlyCount, friendlyFullyObserved());
+        }
+
+        /** 敌军数量标签：完整覆盖时 "N"，否则 "≥N"（N=0 时 "?"）。 */
+        public String enemyLabel() {
+            return label(enemyCount, enemyFullyObserved());
+        }
+
+        /** "友军v敌军" 形式标签，避免把观察子集伪装成全知兵力。 */
+        public String numbersLabel() {
+            return friendlyLabel() + "v" + enemyLabel();
+        }
+
+        private static String label(final int count, final boolean fullyObserved) {
+            if (fullyObserved) {
+                return String.valueOf(count);
+            }
+            return count > 0 ? "≥" + count : "?";
+        }
     }
 
     private NearbySupportCounter() {
@@ -66,6 +100,7 @@ public final class NearbySupportCounter {
             return null;
         }
         final Map<Long, Integer> teamByAccountId = teamByAccountId(battle);
+        final int[] totals = sideTotals(battle, recorder.team());
         int friendly = 0;
         int enemy = 0;
         int observedFriendly = 0;
@@ -93,12 +128,31 @@ public final class NearbySupportCounter {
                 }
             }
         }
+        final boolean friendlyFully = totals[0] > 0 && observedFriendly == totals[0];
+        final boolean enemyFully = totals[1] > 0 && observedEnemy == totals[1];
+        final DecodeConfidence confidence = friendlyFully && enemyFully
+                ? DecodeConfidence.EXACT : DecodeConfidence.PARTIAL;
         final int recorderRegion = MapRegionResolver.resolveRegionFromRaw(
                 recorder.position().x(), recorder.position().z());
-        final DecodeConfidence confidence = observedEnemy >= 2
-                ? DecodeConfidence.EXACT : DecodeConfidence.PARTIAL;
         return new Counts(battleRelSec, friendly, enemy, observedFriendly, observedEnemy,
-                recorderRegion, confidence);
+                totals[0], totals[1], recorderRegion, confidence);
+    }
+
+    /** 权威队伍人数（来自 battle 结算）：[友军(不含录像者), 敌军]。 */
+    private static int[] sideTotals(final Battle battle, final int recorderTeam) {
+        int friendly = 0;
+        int enemy = 0;
+        if (battle.players != null) {
+            for (final PlayerResult p : battle.players) {
+                if (p.team == recorderTeam) {
+                    friendly++;
+                } else {
+                    enemy++;
+                }
+            }
+        }
+        // 录像者本人恒不进入附近计数，友军侧应排除他
+        return new int[]{Math.max(0, friendly - 1), enemy};
     }
 
     private static boolean inRadius(final VehicleState recorder, final VehicleState other) {
