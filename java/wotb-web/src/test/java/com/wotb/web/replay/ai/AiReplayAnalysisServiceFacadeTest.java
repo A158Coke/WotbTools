@@ -79,7 +79,8 @@ class AiReplayAnalysisServiceFacadeTest {
         final var ctx = facade().buildSingleTeamContext(group);
         assertNotNull(ctx.analysisUnitId());
         final AnalyzeResult r = facade().analyzeSingleTeamContext(ctx);
-        assertEquals(1, gateway.calls.get());
+        // 团队流程 = Call #1（PRE_BATTLE）+ 团队复盘（SINGLE_TEAM_BATTLE）
+        assertEquals(2, gateway.calls.get());
         assertSame("ok", r.analysis());
     }
 

@@ -800,6 +800,81 @@ class TeamAiPromptBuilderTest {
     // ========== TEAM_PERSPECTIVE contract tests ==========
 
     @Test
+    void priorSectionRelabelsToPerspectiveTeam() {
+        final Battle battle = new Battle();
+        battle.mapName = "map1";
+        battle.arenaBonusType = 2;
+        battle.durationS = 300.0;
+        battle.winnerTeam = 1;
+        battle.players = List.of(
+                player(10_001L, "AllyA", 1, 4481L),
+                player(10_002L, "AllyB", 1, 4481L),
+                player(20_001L, "EnemyA", 2, 29985L),
+                player(20_002L, "EnemyB", 2, 29985L));
+        final PreBattleStrategicPrior prior = new PreBattleStrategicPrior(
+                new PreBattleStrategicPrior.TeamProfile(
+                        Map.of(), List.of("重坦正面推进"), List.of(), List.of("左路集结")),
+                new PreBattleStrategicPrior.TeamProfile(
+                        Map.of(), List.of("中坦机动拉扯"), List.of(), List.of("中路控制")),
+                List.of(new PreBattleStrategicPrior.KeyMatchup("GRID_REGION_5", "TEAM_A", "r")),
+                List.of(new PreBattleStrategicPrior.StrategicWinCondition("TEAM_A", "c")),
+                List.of(new PreBattleStrategicPrior.StrategicHypothesis("H1", "开局左路集结", "rs")));
+
+        final String p1 = singleWithPrior(battle, 1, prior);
+        assertTrue(p1.contains("PRE-BATTLE STRATEGIC PRIOR"));
+        assertTrue(between(p1, "TEAM_A（你的队伍", "TEAM_B（对方队伍）").contains("重坦正面推进"),
+                "perspective team 1 must see teamA as TEAM_A");
+        assertFalse(p1.contains("队伍1"), "team prompt must not expose raw team numbers");
+
+        final String p2 = singleWithPrior(battle, 2, prior);
+        assertTrue(between(p2, "TEAM_A（你的队伍", "TEAM_B（对方队伍）").contains("中坦机动拉扯"),
+                "perspective team 2 must see teamB as TEAM_A (swapped)");
+        assertTrue(p2.substring(p2.indexOf("优势 "), p2.indexOf("优势 ") + 12).contains("TEAM_B"),
+                "perspective team 2 must swap TEAM_A/TEAM_B tokens in matchups");
+        assertFalse(p2.contains("队伍1"), "team prompt must not expose raw team numbers");
+    }
+
+    @Test
+    void priorSectionUnavailableMarker() {
+        final Battle battle = new Battle();
+        battle.mapName = "map1";
+        battle.arenaBonusType = 2;
+        battle.players = List.of(
+                player(10_001L, "AllyA", 1, 4481L),
+                player(20_001L, "EnemyA", 2, 29985L));
+        final String content = singleWithPrior(battle, 1, null);
+        assertTrue(content.contains("PRE-BATTLE STRATEGIC PRIOR"));
+        assertTrue(content.contains("赛前战略基线不可用"),
+                "missing prior must render an explicit unavailable marker");
+    }
+
+    private static String singleWithPrior(final Battle battle,
+                                          final int perspectiveTeam,
+                                          final PreBattleStrategicPrior prior) {
+        final TeamMemberFeatureSet member = new TeamMemberFeatureSet(
+                List.of(perspectiveTeam), 10_000L + perspectiveTeam, "P", 4481L, "Kranvagn", perspectiveTeam,
+                DecodeConfidence.EXACT, 1000, 0, 0, 0, 0,
+                true, null, List.of(), List.of(), List.of(), List.of());
+        final TeamAggregateResult aggregate = new TeamAggregateResult(
+                perspectiveTeam, 1000, 0, 0, 0, 0, 1, 0, null, null, null, true);
+        final TeamBattleFeatureSet features = new TeamBattleFeatureSet(
+                perspectiveTeam, List.of(member), aggregate, TeamObservedAggregate.empty(),
+                List.of(), List.of(), List.of(), List.of(),
+                TeamFeatureCoverage.empty(), List.of(), true);
+        final SingleTeamBattleAnalysisContext context = new SingleTeamBattleAnalysisContext(
+                "unit-A", null, "f.wotbreplay", null, battle, perspectiveTeam, features,
+                null, List.of());
+        return TeamAiPromptBuilder.single(
+                context, List.of(), prior, null, Integer.MAX_VALUE).content();
+    }
+
+    private static String between(final String content, final String from, final String to) {
+        final int start = content.indexOf(from);
+        final int end = content.indexOf(to, start + from.length());
+        return end < 0 ? content.substring(start) : content.substring(start, end);
+    }
+
+    @Test
     void singlePromptNoRawTeamLabels() {
         final var input = TeamAiPromptBuilder.single(contextWithMembers(3, 2));
         final String c = input.content();

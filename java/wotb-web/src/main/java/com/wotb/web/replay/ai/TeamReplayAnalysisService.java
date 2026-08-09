@@ -38,6 +38,8 @@ import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -52,13 +54,17 @@ import java.util.function.LongSupplier;
  * 出，HTTP/DTO/异常分类由 {@link AiChatGateway} 负责，预算由
  * {@link AiPromptBudgetGuard} 守，{@code analysisUnitId} 由
  * {@link AnalysisUnitAssembler} 提供稳定实现。</p>
- * <p>团队复盘在单团队单元后追加 Team Autopsy（判负战犯 / 判胜 MVP）——这是
- * <b>结算级</b>独立 TEAM_AUTOPSY 调用：本链路没有 Call #1 Strategic Prior、
- * Critical Window 或 Route 证据，输入只有权威逐人结算；Prompt/文档如实声明，
- * 相关结论置信度 PARTIAL/UNKNOWN。随机战斗个人复盘不输出战犯/MVP。</p>
+ * <p>团队复盘与随机战一样先执行 Call #1（Pre-Battle Strategic Prior：基于地图
+ * 与双方阵容的赛前先验，含开局/分路假设），按视角队伍重标 TEAM_A 后注入团队
+ * Prompt；Call #1 失败不阻断团队复盘（仅缺 prior 段）。单团队单元后追加
+ * Team Autopsy（判负战犯 / 判胜 MVP）——这是<b>结算级</b>独立 TEAM_AUTOPSY
+ * 调用：Autopsy 输入只有权威逐人结算（无 Call #1 prior / Critical Window /
+ * Route 证据），相关结论置信度 PARTIAL/UNKNOWN。随机战斗个人复盘不输出战犯/MVP。</p>
  */
 @Service
 public class TeamReplayAnalysisService {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(TeamReplayAnalysisService.class);
 
     static final double MIN_ROSTER_JACCARD = 0.60;
     static final double MIN_ROSTER_ACCOUNT_COVERAGE = 0.75;
@@ -100,6 +106,34 @@ public class TeamReplayAnalysisService {
             Разбирайте состав противника по машинам и указывайте основные угрозы команды противника;
             при отсутствии данных о противнике прямо скажите об этом, не угадывая.""";
 
+    /** Team 专用：Call #1 赛前战略基线的使用规则（强制；EN/RU 本地化时替换）。 */
+    static final String TEAM_PRIOR_RULE = """
+
+            === 赛前战略基线（Call #1）使用规则（强制） ===
+            输入可能包含 PRE-BATTLE STRATEGIC PRIOR：仅基于地图与双方阵容的赛前先验判断，未读取任何战斗结果。
+            其中 TEAM_A=你的队伍（teamLabel）、TEAM_B=对方队伍；没有该段时不得编造基线。
+            开局分路与队形分析必须对照基线执行：对每条战略假设给出
+            CONFIRMED / VIOLATED / NOT_OBSERVABLE / IRRELEVANT_AFTER_STATE_CHANGE 判定并说明依据，
+            不得仅因胜负倒推。""";
+
+    static final String TEAM_PRIOR_RULE_EN = """
+
+            === PRE-BATTLE STRATEGIC PRIOR (Call #1) USAGE RULE (mandatory) ===
+            The input may include a PRE-BATTLE STRATEGIC PRIOR: a pre-battle judgment based only on the map and both lineups, with no battle results read.
+            In it, TEAM_A = your team (teamLabel) and TEAM_B = the opposing team; if the section is absent, never fabricate a baseline.
+            Opening routes and formations must be checked against this baseline: give every strategic hypothesis a
+            CONFIRMED / VIOLATED / NOT_OBSERVABLE / IRRELEVANT_AFTER_STATE_CHANGE verdict with evidence;
+            never reason backwards from the result alone.""";
+
+    static final String TEAM_PRIOR_RULE_RU = """
+
+            === ПРАВИЛО ПРЕДБОЕВОЙ БАЗЫ (Call #1) (обязательно) ===
+            Во входе может быть PRE-BATTLE STRATEGIC PRIOR — предбоевое суждение только по карте и составам, без чтения результатов боя.
+            В нём TEAM_A = ваша команда (teamLabel), TEAM_B = команда противника; если секции нет, базу выдумывать нельзя.
+            Анализ стартовых направлений и построения сверяйте с базой: по каждой стратегической гипотезе дайте
+            вердикт CONFIRMED / VIOLATED / NOT_OBSERVABLE / IRRELEVANT_AFTER_STATE_CHANGE с обоснованием;
+            не делайте выводов только из счёта.""";
+
     /** 数据不足时的输出措辞（中文强制句，EN/RU 本地化时替换）。 */
     static final String ZH_CANNOT_DETERMINE_RULE =
             "无法从输入确定时必须写明“无法从当前回放数据确定”。";
@@ -138,7 +172,9 @@ public class TeamReplayAnalysisService {
                         en ? TEAM_ANALYSIS_RULE_EN : TEAM_ANALYSIS_RULE_RU)
                 .replace(PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE,
                         en ? PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE_EN
-                                : PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE_RU);
+                                : PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE_RU)
+                .replace(TEAM_PRIOR_RULE,
+                        en ? TEAM_PRIOR_RULE_EN : TEAM_PRIOR_RULE_RU);
     }
 
     static final String SINGLE_TEAM_PROMPT = """
@@ -166,7 +202,7 @@ public class TeamReplayAnalysisService {
             11) 明确列出数据限制。
             不得推断未点亮敌人的位置、装填/弹药/装备、地形名称或玩家主观意图。
             无法从输入确定时必须写明“无法从当前回放数据确定”。
-            输出复盘中的所有战斗时间必须使用“XX分XX秒”格式，例如 75 秒写作“1分15秒”、180 秒写作“3分00秒”，禁止仅使用累计秒数或“1:15”格式。""" + PlayerReplayPromptBuilder.COMMON_TANK_PROPER_NOUN_RULE + PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE;
+            输出复盘中的所有战斗时间必须使用“XX分XX秒”格式，例如 75 秒写作“1分15秒”、180 秒写作“3分00秒”，禁止仅使用累计秒数或“1:15”格式。""" + PlayerReplayPromptBuilder.COMMON_TANK_PROPER_NOUN_RULE + PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE + TEAM_PRIOR_RULE;
 
     static final String MULTI_TEAM_PROMPT = """
             你是《坦克世界闪击战》(WoT Blitz) 的资深团队教练，正在比较多个训练房/联赛团队视角。
@@ -179,10 +215,11 @@ public class TeamReplayAnalysisService {
             请引用具体 analysisUnitId、teamLabel 和时间证据，避免根据单次事件概括长期行为。
             不得用对方回放补全本队当时未发现的敌人信息，无法判断时必须明确说明。
             输出应包含：各 perspective 摘要、可比较的团队行为、关键差异、数据限制和 3-5 条训练建议。
-            输出复盘中的所有战斗时间必须使用“XX分XX秒”格式，例如 75 秒写作“1分15秒”、180 秒写作“3分00秒”，禁止仅使用累计秒数或“1:15”格式。""" + PlayerReplayPromptBuilder.COMMON_TANK_PROPER_NOUN_RULE + PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE;
+            输出复盘中的所有战斗时间必须使用“XX分XX秒”格式，例如 75 秒写作“1分15秒”、180 秒写作“3分00秒”，禁止仅使用累计秒数或“1:15”格式。""" + PlayerReplayPromptBuilder.COMMON_TANK_PROPER_NOUN_RULE + PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE + TEAM_PRIOR_RULE;
 
     private final AiChatGateway gateway;
     private final AiReplayAnalysisConfig config;
+    private final PreBattleStrategicService preBattleService;
     private final TeamAutopsyService teamAutopsyService;
     private final LongSupplier nanoTimeSource;
 
@@ -192,16 +229,19 @@ public class TeamReplayAnalysisService {
     @Autowired
     public TeamReplayAnalysisService(final AiChatGateway gateway,
                                      final AiReplayAnalysisConfig config,
+                                     final PreBattleStrategicService preBattleService,
                                      final TeamAutopsyService teamAutopsyService) {
-        this(gateway, config, teamAutopsyService, System::nanoTime);
+        this(gateway, config, preBattleService, teamAutopsyService, System::nanoTime);
     }
 
     TeamReplayAnalysisService(final AiChatGateway gateway,
                               final AiReplayAnalysisConfig config,
+                              final PreBattleStrategicService preBattleService,
                               final TeamAutopsyService teamAutopsyService,
                               final LongSupplier nanoTimeSource) {
         this.gateway = gateway;
         this.config = config;
+        this.preBattleService = preBattleService;
         this.teamAutopsyService = teamAutopsyService;
         this.nanoTimeSource = nanoTimeSource;
     }
@@ -222,11 +262,13 @@ public class TeamReplayAnalysisService {
         if (!isConfigured()) {
             throw new AiNotConfiguredException();
         }
+        final long startNanos = nanoTimeSource.getAsLong();
+        final PreBattleStrategicPrior prior = call1Prior(context.battle());
         final RosterEvidence evidence = RosterEvidence.from(context);
         final List<String> extraLimitations = evidence != null ? evidence.limitations() : List.of();
         final TeamAiPromptBuilder.PromptInput input = TeamAiPromptBuilder.single(
-                context, extraLimitations, config.estimator(), config.singleReplayMaxInputTokens());
-        return callSingleTeamContext(context, input, language, nanoTimeSource.getAsLong());
+                context, extraLimitations, prior, config.estimator(), config.singleReplayMaxInputTokens());
+        return callSingleTeamContext(context, input, language, startNanos);
     }
 
     private AnalyzeResult callSingleTeamContext(
@@ -287,16 +329,27 @@ public class TeamReplayAnalysisService {
         for (final SingleTeamBattleAnalysisContext ctx : contexts) {
             evidenceByUnitId.put(ctx.analysisUnitId(), RosterEvidence.from(ctx));
         }
+        final long startNanos = nanoTimeSource.getAsLong();
+        final Map<String, PreBattleStrategicPrior> priorsByUnitId = new LinkedHashMap<>();
+        final Map<String, Integer> perspectiveTeamByUnitId = new LinkedHashMap<>();
+        for (final SingleTeamBattleAnalysisContext ctx : contexts) {
+            perspectiveTeamByUnitId.put(ctx.analysisUnitId(), ctx.perspectiveTeam());
+            priorsByUnitId.put(ctx.analysisUnitId(), call1Prior(ctx.battle()));
+        }
         final List<List<SingleTeamBattleAnalysisContext>> partitions =
                 buildPartitions(contexts, evidenceByUnitId);
-        final long startNanos = nanoTimeSource.getAsLong();
         AnalyzeResult firstAnalysis = null;
         for (final var partition : partitions) {
             if (partition.size() == 1) {
                 final var ctx = partition.getFirst();
                 final RosterEvidence evidence = evidenceByUnitId.get(ctx.analysisUnitId());
                 final TeamAiPromptBuilder.PromptInput input =
-                        TeamAiPromptBuilder.single(ctx, evidence != null ? evidence.limitations() : List.of(), config.estimator(), config.singleReplayMaxInputTokens());
+                        TeamAiPromptBuilder.single(
+                                ctx,
+                                evidence != null ? evidence.limitations() : List.of(),
+                                priorsByUnitId.get(ctx.analysisUnitId()),
+                                config.estimator(),
+                                config.singleReplayMaxInputTokens());
                 final AnalyzeResult result =
                         callSingleTeamContext(ctx, input, language, startNanos);
                 if (firstAnalysis == null) firstAnalysis = result;
@@ -311,7 +364,13 @@ public class TeamReplayAnalysisService {
                     }
                 }
                 final TeamAiPromptBuilder.PromptInput input =
-                        TeamAiPromptBuilder.multi(multiContext, partitionEvidenceLimits, config.estimator(), config.singleReplayMaxInputTokens());
+                        TeamAiPromptBuilder.multi(
+                                multiContext,
+                                partitionEvidenceLimits,
+                                priorsByUnitId,
+                                perspectiveTeamByUnitId,
+                                config.estimator(),
+                                config.singleReplayMaxInputTokens());
                 final AnalyzeResult result =
                         callMultiTeamContext(input, language, startNanos);
                 if (firstAnalysis == null) firstAnalysis = result;
@@ -321,6 +380,16 @@ public class TeamReplayAnalysisService {
             throw new IllegalStateException("NO_ANALYSIS_PRODUCED");
         }
         return new TeamAnalyzeResult(firstAnalysis);
+    }
+
+    /** 团队视角也应用 Call #1（地图 + 阵容先验）；失败不阻断团队复盘，仅无 prior 段。 */
+    private PreBattleStrategicPrior call1Prior(final Battle battle) {
+        try {
+            return preBattleService.analyze(battle);
+        } catch (final RuntimeException e) {
+            LOGGER.warn("Team Call #1 failed, continuing without prior: {}", e.getMessage());
+            return null;
+        }
     }
 
     /**
