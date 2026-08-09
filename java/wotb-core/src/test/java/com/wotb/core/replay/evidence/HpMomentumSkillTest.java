@@ -200,6 +200,47 @@ class HpMomentumSkillTest {
     }
 
     @Test
+    void mergedWindowsUseSingleRepresentativeCohort() {
+        final List<PlayerResult> players = new ArrayList<>();
+        players.add(EvidenceTestFixtures.player(1001, 1, 4481, "Kranvagn", true, 300));
+        players.add(EvidenceTestFixtures.player(2001, 2, 19217, "E 100", true, 300));
+        players.add(EvidenceTestFixtures.player(2002, 2, 19217, "E 100", true, 300));
+        players.add(EvidenceTestFixtures.player(2003, 2, 19217, "E 100", true, 300));
+        players.add(EvidenceTestFixtures.player(2004, 2, 19217, "E 100", true, 300));
+        final Battle battle = EvidenceTestFixtures.battle(players);
+        final ReplayReconstruction recon = EvidenceTestFixtures.recon(
+                EvidenceTestFixtures.cp(1000f,
+                        hp(1, 1001, 1, 1000),
+                        hp(5, 2001, 2, 1700), hp(6, 2002, 2, 1700)),
+                EvidenceTestFixtures.cp(1010f,
+                        hp(1, 1001, 1, 1000),
+                        EvidenceTestFixtures.destroyedVehicle(5, 2001, 2),
+                        EvidenceTestFixtures.destroyedVehicle(6, 2002, 2)),
+                EvidenceTestFixtures.cp(1020f,
+                        hp(1, 1001, 1, 1000),
+                        EvidenceTestFixtures.destroyedVehicle(5, 2001, 2),
+                        EvidenceTestFixtures.destroyedVehicle(6, 2002, 2),
+                        hp(7, 2003, 2, 2500), hp(8, 2004, 2, 2500)),
+                EvidenceTestFixtures.cp(1030f,
+                        hp(1, 1001, 1, 1000),
+                        EvidenceTestFixtures.destroyedVehicle(5, 2001, 2),
+                        EvidenceTestFixtures.destroyedVehicle(6, 2002, 2),
+                        EvidenceTestFixtures.destroyedVehicle(7, 2003, 2),
+                        EvidenceTestFixtures.destroyedVehicle(8, 2004, 2)));
+        final HpMomentumSkill skill = new HpMomentumSkill();
+        final List<AiEvidence> windows = skill.detect(skill.sample(recon, battle));
+        assertEquals(1, windows.size());
+        final AiEvidence window = windows.getFirst();
+        // 代表 = swing 最大的单个候选（cohort {rec,a,b,c,d}，-4000 → 1000），
+        // 不得拼接其它 cohort 的 before/after
+        assertEquals(-4000.0, window.numbers().get("hpLeadBefore"));
+        assertEquals(1000.0, window.numbers().get("hpLeadAfter"));
+        assertEquals(5000.0, window.numbers().get("hpSwing"));
+        assertEquals(5.0, window.numbers().get("commonEntityCount"));
+        assertEquals(1.0, window.numbers().get("observedCoverage"));
+    }
+
+    @Test
     void noSwingYieldsNoWindow() {
         final Battle battle = EvidenceTestFixtures.battle(eightPlayers());
         final ReplayReconstruction recon = EvidenceTestFixtures.recon(

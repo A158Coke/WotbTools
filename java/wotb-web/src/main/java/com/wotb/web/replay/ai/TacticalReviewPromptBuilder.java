@@ -25,8 +25,6 @@ public final class TacticalReviewPromptBuilder {
 
     static final int MAX_TOP_WINDOWS = 3;
     static final int MAX_WINDOW_DETAIL = 3;
-    static final int MAX_MOMENTUM_LINES = 12;
-    static final int MIN_MOMENTUM_LINES = 8;
 
     private static final String HARNESS_RULES = """
 
@@ -83,7 +81,6 @@ public final class TacticalReviewPromptBuilder {
 
         final String baseContent = sb.toString();
         final List<AiEvidence> windows = evidence != null ? evidence.criticalWindows() : List.of();
-        int momentumLines = MAX_MOMENTUM_LINES;
         int windowDetail = Math.min(MAX_WINDOW_DETAIL, windows.size());
         boolean includeEvidence = evidence != null && evidence.hasContent();
         boolean includePhases = features != null && features.phases() != null && !features.phases().isEmpty();
@@ -95,7 +92,7 @@ public final class TacticalReviewPromptBuilder {
                 0, singleReplayMaxInputTokens);
 
         String content = assemble(baseContent, evidence, features, windows,
-                momentumLines, windowDetail, includeEvidence, includePhases, includeTop, includeWindowDetail);
+                windowDetail, includeEvidence, includePhases, includeTop, includeWindowDetail);
         int estimated = estimate(estimator, TACTICAL_SYSTEM_PROMPT, content);
         boolean truncated = false;
 
@@ -103,8 +100,6 @@ public final class TacticalReviewPromptBuilder {
         while (estimated > effectiveLimit) {
             if (windowDetail > Math.min(1, windows.size())) {
                 windowDetail = Math.min(1, windows.size());
-            } else if (momentumLines > MIN_MOMENTUM_LINES) {
-                momentumLines = MIN_MOMENTUM_LINES;
             } else if (includeEvidence) {
                 includeEvidence = false;
             } else if (includePhases) {
@@ -118,14 +113,14 @@ public final class TacticalReviewPromptBuilder {
             }
             truncated = true;
             content = assemble(baseContent, evidence, features, windows,
-                    momentumLines, windowDetail, includeEvidence, includePhases, includeTop, includeWindowDetail);
+                    windowDetail, includeEvidence, includePhases, includeTop, includeWindowDetail);
             estimated = estimate(estimator, TACTICAL_SYSTEM_PROMPT, content);
         }
 
         final String budgetSummary = String.format(
-                "tokens=%d/%d windows=%d evidence=%s phases=%s momentumLines=%d truncated=%s",
+                "tokens=%d/%d windows=%d evidence=%s phases=%s truncated=%s",
                 estimated, effectiveLimit, windowDetail, includeEvidence, includePhases,
-                momentumLines, truncated);
+                truncated);
         return new PreparedHarnessPrompt(
                 TACTICAL_SYSTEM_PROMPT, content, estimated, truncated, budgetSummary);
     }
@@ -135,7 +130,6 @@ public final class TacticalReviewPromptBuilder {
             final EvidenceSkillResult evidence,
             final PlayerBattleFeatureSet features,
             final List<AiEvidence> windows,
-            final int momentumLines,
             final int windowDetail,
             final boolean includeEvidence,
             final boolean includePhases,
@@ -161,12 +155,9 @@ public final class TacticalReviewPromptBuilder {
         }
         if (includeEvidence && evidence != null) {
             sb.append("\n======================== TACTICAL EVIDENCE（Backend 确定性证据） ========================\n");
-            final String series = TacticalEvidenceFormatter.renderMomentumSeries(
-                    evidence.momentumSeries(), momentumLines);
-            if (!series.isBlank()) {
-                sb.append("HP 动量（双方可观察 HP 差，事件流观察子集，非权威结算；仅共同观察实体口径）：\n")
-                        .append(series);
-            }
+            // 注意：raw momentumSeries（逐采样点的可观察 HP 差）观察集合可能不同，
+            // 直接展示会把 observation membership change 伪装成 HP momentum。
+            // 这里只输出 HpMomentumSkill.detect() 安全比较后生成的 HP_MOMENTUM AiEvidence。
             final String sections = TacticalEvidenceFormatter.renderEvidenceSections(evidence);
             if (!sections.isBlank()) {
                 sb.append(sections);

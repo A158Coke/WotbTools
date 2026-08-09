@@ -159,15 +159,15 @@ public final class HpMomentumSkill {
         for (final Swing c : candidates) {
             if (!merged.isEmpty() && c.startSec() <= merged.getLast().endSec()) {
                 final Swing last = merged.removeLast();
+                // 代表性 HP 数值必须来自同一个 comparison cohort：
+                // 取该 merge group 中 hpSwing 最大的单个可靠候选，before/after/swing/coverage/commonEntityCount 一起取
+                final Swing representative = last.swing() >= c.swing() ? last : c;
                 final float start = Math.min(last.startSec(), c.startSec());
                 final float end = Math.max(last.endSec(), c.endSec());
-                final double before = c.startSec() <= last.startSec() ? c.before() : last.before();
-                final double after = c.endSec() >= last.endSec() ? c.after() : last.after();
-                final double maxSwing = Math.max(last.swing(), c.swing());
-                final double coverage = Math.min(last.coverage(), c.coverage());
-                final int commonEntities = Math.min(
-                        last.commonEntityCount(), c.commonEntityCount());
-                merged.add(new Swing(start, end, before, after, maxSwing, coverage, commonEntities));
+                merged.add(new Swing(start, end,
+                        representative.before(), representative.after(),
+                        representative.swing(), representative.coverage(),
+                        representative.commonEntityCount()));
             } else {
                 merged.add(c);
             }

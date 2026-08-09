@@ -110,9 +110,9 @@ public final class CriticalWindowSkill {
             int enemyAfter = -1;
             String localNumbersBefore = null;
             String localNumbersAfter = null;
-            // HP 信号的最早/最晚边界：聚合时 before 取最早 HP 信号、after 取最晚 HP 信号
-            AiEvidence earliestHp = null;
-            AiEvidence latestHp = null;
+            // HP 代表信号：hpSwing 最大的单个可靠 HP_MOMENTUM，
+            // before/after/swing/poolEstimate 全部取自同一 signal，禁止跨 cohort 拼接
+            AiEvidence representativeHp = null;
 
             for (final AiEvidence e : group) {
                 start = Math.min(start, e.startSec());
@@ -135,11 +135,10 @@ public final class CriticalWindowSkill {
                         pool = Math.max(pool, e.numbers().getOrDefault("poolEstimate", 0.0));
                     }
                     case HP_MOMENTUM -> {
-                        if (earliestHp == null || e.startSec() < earliestHp.startSec()) {
-                            earliestHp = e;
-                        }
-                        if (latestHp == null || e.endSec() > latestHp.endSec()) {
-                            latestHp = e;
+                        if (representativeHp == null
+                                || e.numbers().getOrDefault("hpSwing", 0.0)
+                                > representativeHp.numbers().getOrDefault("hpSwing", 0.0)) {
+                            representativeHp = e;
                         }
                         pool = Math.max(pool, e.numbers().getOrDefault("poolEstimate", 0.0));
                     }
@@ -164,16 +163,17 @@ public final class CriticalWindowSkill {
                 }
             }
 
-            // HP 聚合边界：before 取最早 HP 信号的 before，after 取最晚 HP 信号的 after
-            if (earliestHp != null) {
-                hpLeadBefore = earliestHp.numbers().getOrDefault("hpLeadBefore", hpLeadBefore);
+            double hpSwing = 0;
+            if (representativeHp != null) {
+                hpLeadBefore = representativeHp.numbers().getOrDefault("hpLeadBefore", Double.NaN);
+                hpLeadAfter = representativeHp.numbers().getOrDefault("hpLeadAfter", Double.NaN);
+                hpSwing = representativeHp.numbers().getOrDefault("hpSwing", Double.NaN);
+                pool = Math.max(pool,
+                        representativeHp.numbers().getOrDefault("poolEstimate", 0.0));
+            } else if (!Double.isNaN(hpLeadBefore) && !Double.isNaN(hpLeadAfter)) {
+                // 无 HP_MOMENTUM 时，仅用 ENGAGEMENT_TRADE 兜底的同一对 HP 差
+                hpSwing = Math.abs(hpLeadAfter - hpLeadBefore);
             }
-            if (latestHp != null) {
-                hpLeadAfter = latestHp.numbers().getOrDefault("hpLeadAfter", hpLeadAfter);
-            }
-
-            final double hpSwing = Double.isNaN(hpLeadBefore) || Double.isNaN(hpLeadAfter)
-                    ? 0 : Math.abs(hpLeadAfter - hpLeadBefore);
             final int totalDeaths = friendlyDeaths + enemyDeaths;
             final int localFlip = Math.abs(friendlyDelta) + Math.abs(enemyDelta);
             final boolean hasHpSignal = pool > 0 && hpSwing > 0;

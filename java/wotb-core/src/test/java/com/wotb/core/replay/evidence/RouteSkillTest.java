@@ -74,6 +74,35 @@ class RouteSkillTest {
         final PlayerBattleFeatureSet features = new PlayerBattleFeatureSet(
                 List.of(EvidenceTestFixtures.movement(0f, 10f, new Vector3(0, 0, 0), new Vector3(50, 0, 0))),
                 List.of(), List.of(), List.of(), List.of(), true);
+        // 友军侧完整覆盖（1002/1003 都被观察到，但远离录像者），observedEnemy=2 是真实敌军下界
+        final EvidenceSkillContext ctx = new EvidenceSkillContext(
+                routeBattle(),
+                EvidenceTestFixtures.recon(
+                        EvidenceTestFixtures.cp(1000f,
+                                EvidenceTestFixtures.vehicle(1, 1001, 1, 4481, 0f, 0f, 1000),
+                                EvidenceTestFixtures.vehicle(2, 1002, 1, 4481, 500f, 0f, 1000),
+                                EvidenceTestFixtures.vehicle(3, 1003, 1, 4481, 550f, 0f, 1000),
+                                EvidenceTestFixtures.vehicle(4, 2001, 2, 10785, 50f, 0f, 1000),
+                                EvidenceTestFixtures.vehicle(5, 2002, 2, 10785, 60f, 0f, 1000)),
+                        EvidenceTestFixtures.cp(1010f,
+                                EvidenceTestFixtures.vehicle(1, 1001, 1, 4481, 50f, 0f, 1000),
+                                EvidenceTestFixtures.vehicle(2, 1002, 1, 4481, 500f, 0f, 1000),
+                                EvidenceTestFixtures.vehicle(3, 1003, 1, 4481, 550f, 0f, 1000),
+                                EvidenceTestFixtures.vehicle(4, 2001, 2, 10785, 90f, 0f, 1000),
+                                EvidenceTestFixtures.vehicle(5, 2002, 2, 10785, 100f, 0f, 1000))),
+                features,
+                EvidenceTestFixtures.recorder());
+        final List<AiEvidence> entries = RouteSkill.enemyMajorityEntries(ctx);
+        assertEquals(1, entries.size());
+        assertTrue(entries.getFirst().summary().contains("敌方人数优势"));
+    }
+
+    @Test
+    void friendlyPartialCoverageNeverClaimsEnemyMajority() {
+        final PlayerBattleFeatureSet features = new PlayerBattleFeatureSet(
+                List.of(EvidenceTestFixtures.movement(0f, 10f, new Vector3(0, 0, 0), new Vector3(50, 0, 0))),
+                List.of(), List.of(), List.of(), List.of(), true);
+        // 友军侧只观察到 0/2（1002/1003 未点亮），即使观察到 2 名敌军也不能声称"敌方人数优势"
         final EvidenceSkillContext ctx = new EvidenceSkillContext(
                 routeBattle(),
                 EvidenceTestFixtures.recon(
@@ -87,8 +116,7 @@ class RouteSkillTest {
                                 EvidenceTestFixtures.vehicle(5, 2002, 2, 10785, 100f, 0f, 1000))),
                 features,
                 EvidenceTestFixtures.recorder());
-        final List<AiEvidence> entries = RouteSkill.enemyMajorityEntries(ctx);
-        assertEquals(1, entries.size());
-        assertTrue(entries.getFirst().summary().contains("敌方人数优势"));
+        assertTrue(RouteSkill.enemyMajorityEntries(ctx).isEmpty(),
+                "友军侧未完整覆盖时不得断言敌方人数优势");
     }
 }
