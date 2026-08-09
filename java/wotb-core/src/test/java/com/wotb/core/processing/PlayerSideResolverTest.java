@@ -7,7 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.processing.FriendlyEnemyResult.WinnerSource;
 import com.wotb.core.processing.PlayerSideResolver.Side;
 import org.junit.jupiter.api.Test;
 
@@ -193,6 +195,105 @@ class PlayerSideResolverTest {
         assertEquals(Winner.ENEMY_WIN, FriendlyEnemyResult.resolve(2, 1));
     }
 
+    // ========== 9. Supremacy team-battle winner (FriendlyEnemyResult.resolveTeamBattle) ==========
+
+    @Test
+    void supremacy_winnerFromBattleResults_isAuthoritative() {
+        final Battle battle = new Battle();
+        battle.winnerTeam = 1;
+        battle.players = List.of(
+                player(1, "A1", true, 100),
+                player(1, "A2", true, 100),
+                player(2, "B1", false, 50));
+        final TeamBattleWinner w = FriendlyEnemyResult.resolveTeamBattle(battle, 1);
+        assertEquals(Winner.FRIENDLY_WIN, w.winner());
+        assertEquals(WinnerSource.BATTLE_RESULTS, w.source());
+        assertFalse(w.pointsDecided(), "enemy team fully destroyed -> not a points victory");
+    }
+
+    @Test
+    void supremacy_winnerPresentButNoFullWipe_isPointsDecided() {
+        final Battle battle = new Battle();
+        battle.winnerTeam = 2;
+        battle.players = List.of(
+                player(1, "A1", true, 100),
+                player(2, "B1", true, 500));
+        final TeamBattleWinner w = FriendlyEnemyResult.resolveTeamBattle(battle, 1);
+        assertEquals(Winner.ENEMY_WIN, w.winner());
+        assertEquals(WinnerSource.BATTLE_RESULTS, w.source());
+        assertTrue(w.pointsDecided(), "neither team fully destroyed -> supremacy points victory");
+    }
+
+    @Test
+    void supremacy_winnerMissing_enemyWiped_friendlyWinsBySettlement() {
+        final Battle battle = new Battle();
+        battle.winnerTeam = null;
+        battle.players = List.of(
+                player(1, "A1", true, 0),
+                player(1, "A2", true, 0),
+                player(2, "B1", false, 999),
+                player(2, "B2", false, 999));
+        final TeamBattleWinner w = FriendlyEnemyResult.resolveTeamBattle(battle, 1);
+        assertEquals(Winner.FRIENDLY_WIN, w.winner());
+        assertEquals(WinnerSource.SURVIVOR_SETTLEMENT, w.source());
+        assertFalse(w.pointsDecided());
+    }
+
+    @Test
+    void supremacy_winnerMissing_friendlyWiped_enemyWinsBySettlement() {
+        final Battle battle = new Battle();
+        battle.winnerTeam = null;
+        battle.players = List.of(
+                player(1, "A1", false, 200),
+                player(2, "B1", true, 100));
+        final TeamBattleWinner w = FriendlyEnemyResult.resolveTeamBattle(battle, 1);
+        assertEquals(Winner.ENEMY_WIN, w.winner());
+        assertEquals(WinnerSource.SURVIVOR_SETTLEMENT, w.source());
+    }
+
+    @Test
+    void supremacy_winnerMissing_noFullWipe_pointsLeadWins() {
+        final Battle battle = new Battle();
+        battle.winnerTeam = null;
+        battle.players = List.of(
+                player(1, "A1", true, 300),
+                player(1, "A2", true, 300),
+                player(2, "B1", true, 700),
+                player(2, "B2", true, 0));
+        final TeamBattleWinner w = FriendlyEnemyResult.resolveTeamBattle(battle, 1);
+        assertEquals(Winner.ENEMY_WIN, w.winner());
+        assertEquals(WinnerSource.POINTS_INFERENCE, w.source());
+        assertTrue(w.pointsDecided());
+    }
+
+    @Test
+    void supremacy_winnerMissing_equalPoints_remainsUnknown() {
+        final Battle battle = new Battle();
+        battle.winnerTeam = null;
+        battle.players = List.of(
+                player(1, "A1", true, 100),
+                player(2, "B1", true, 100));
+        final TeamBattleWinner w = FriendlyEnemyResult.resolveTeamBattle(battle, 1);
+        assertEquals(Winner.DRAW_OR_UNKNOWN, w.winner());
+        assertEquals(WinnerSource.UNKNOWN, w.source());
+        assertTrue(w.pointsDecided(), "both alive -> supremacy points mode, but score tie");
+    }
+
+    @Test
+    void supremacy_invalidRecorderOrMissingRoster_unknown() {
+        final Battle battle = new Battle();
+        battle.winnerTeam = null;
+        battle.players = List.of(player(1, "A1", true, 100));
+        assertEquals(Winner.DRAW_OR_UNKNOWN,
+                FriendlyEnemyResult.resolveTeamBattle(battle, 3).winner());
+        assertEquals(Winner.DRAW_OR_UNKNOWN,
+                FriendlyEnemyResult.resolveTeamBattle(null, 1).winner());
+        final Battle noPlayers = new Battle();
+        noPlayers.winnerTeam = null;
+        assertEquals(Winner.DRAW_OR_UNKNOWN,
+                FriendlyEnemyResult.resolveTeamBattle(noPlayers, 1).winner());
+    }
+
     // ========== Helpers ==========
 
     private static Battle createBattle(final int recorderTeam, final List<PlayerResult> players) {
@@ -212,6 +313,14 @@ class PlayerSideResolverTest {
         final PlayerResult p = new PlayerResult();
         p.team = team;
         p.nickname = nickname;
+        return p;
+    }
+
+    private static PlayerResult player(final int team, final String nickname,
+                                       final boolean survived, final int points) {
+        final PlayerResult p = player(team, nickname);
+        p.survived = survived;
+        p.victoryPointsEarned = points;
         return p;
     }
 }

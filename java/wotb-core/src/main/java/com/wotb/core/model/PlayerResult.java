@@ -23,6 +23,10 @@ public class PlayerResult {
     public int nEnemiesDamaged;
     public int kills;
     public int damageBlocked;
+    /** 占点得分（protobuf #32，supremacy 争霸赛逐人统计）。 */
+    public int victoryPointsEarned;
+    /** 占点占领分（protobuf #33，supremacy 争霸赛逐人统计）。 */
+    public int victoryPointsSeized;
     public boolean survived;
     public int xp;
     public int credits;

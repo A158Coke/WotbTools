@@ -47,6 +47,7 @@ public final class ReplayParser {
     static final int F_SHOTS = 4, F_HITS = 5, F_PENS = 7, F_DAMAGE = 8;
     static final int F_RECEIVED = 11, F_HITS_RECV = 12, F_PENS_RECV = 15;
     static final int F_ENEMIES_DMG = 17, F_KILLS = 18, F_BLOCKED = 117;
+    static final int F_POINTS_EARNED = 32, F_POINTS_SEIZED = 33;
     static final int F_XP = 23, F_CREDITS = 106;
     static final int[] F_ASSIST = {9, 10};
     static final int F_SURVIVED = 105;          // == -1 表示存活
@@ -146,6 +147,8 @@ public final class ReplayParser {
             pr.nEnemiesDamaged = (int) Protobuf.firstLong(info, F_ENEMIES_DMG, 0);
             pr.kills = (int) Protobuf.firstLong(info, F_KILLS, 0);
             pr.damageBlocked = (int) Protobuf.firstLong(info, F_BLOCKED, 0);
+            pr.victoryPointsEarned = (int) Protobuf.firstLong(info, F_POINTS_EARNED, 0);
+            pr.victoryPointsSeized = (int) Protobuf.firstLong(info, F_POINTS_SEIZED, 0);
             pr.xp = (int) Protobuf.firstLong(info, F_XP, 0);
             pr.credits = (int) Protobuf.firstLong(info, F_CREDITS, 0);
             final Object killer = Protobuf.first(info, F_SURVIVED);
