@@ -45,11 +45,16 @@ class MapTacticalSemanticsRegistryTest {
     }
 
     @Test
+    void battleMapsWithSemanticizerDataResolve() {
+        for (final String code : List.of(
+                "desert_train", "erlenberg", "himmelsdorf", "canyon", "lagoon",
+                "canal", "faust", "milbase", "port", "savanna")) {
+            assertTrue(registry.semanticsFor(code).hasSemantics(), code + " should resolve");
+        }
+    }
+
+    @Test
     void mapsWithoutSemanticDataReturnUnknown() {
-        assertFalse(registry.semanticsFor("erlenberg").hasSemantics());
-        assertFalse(registry.semanticsFor("himmelsdorf").hasSemantics());
-        assertFalse(registry.semanticsFor("canyon").hasSemantics());
-        assertFalse(registry.semanticsFor("lagoon").hasSemantics());
         assertFalse(registry.semanticsFor("not_a_real_map").hasSemantics());
         assertFalse(registry.semanticsFor(null).hasSemantics());
         assertFalse(registry.semanticsFor("").hasSemantics());
