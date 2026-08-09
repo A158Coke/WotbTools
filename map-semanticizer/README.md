@@ -87,6 +87,8 @@ python .\map_semanticizer.py `
 - `GRID_RULE_DERIVED`：由 6×6 网格和确定性阈值合并出的区域候选；
 - `RULE_DERIVED_CANDIDATE`：`favors` 和 `risks`，仅供 LLM 提出假设。
 
+每份文档还带 `verified`（默认 `false`）：表示尚未完成人工地图核验，区域名称/类型/边界/favors/risks 不得被描述为已验证事实。后端 Call #1 Prompt 会原样渲染该状态与区域 `confidence` 五字段（geometry / objectPositions / objectCategories / areaBoundary / favorsAndRisks）。
+
 当前版本不会自动生成：
 
 - `CONTROLS`；
@@ -96,6 +98,16 @@ python .\map_semanticizer.py `
 - 已验证的可通行路线。
 
 这些需要继续解析碰撞体、导航数据并执行视线/车辆尺度通行计算。缺少证据时输出 `UNKNOWN`，不猜地图战术。
+
+## 测试（手动维护，不接入 CI）
+
+```powershell
+python -m unittest discover -s map-semanticizer/tests -p 'test_*.py'
+```
+
+覆盖：heightmap 16×16 分块还原、`--variant auto` 与无标签地图、mapId→mapCodes token 边界匹配、区域置信度保留、关系引用有效性、禁止关系类型（CONTROLS / ENABLES_PRESSURE_AGAINST / CROSS_FIRE / 保证通行 / 保证视线）、全部 `common/map-semantics/*.semantic.json` 可解析、`map_names.json` 每个生产 map code 恰好一份语义文件覆盖、`gridRegions` 仅 1–9、Z 轴校验规则。
+
+Z 轴校验规则以 P90 绝对偏差为准（稳健）：如 `24_milibase_mlb` 的 MAE=1.45m 由少量高架出生点拉高，但 P90=0.08m，heightmap 本身正常，不判失败；仅当 P90 > 0.5m 或无样本时才判失败。
 
 ## 输出结构
 

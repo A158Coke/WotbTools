@@ -8,8 +8,11 @@ import com.wotb.core.replay.evidence.TankTacticalProfileRegistry;
 import com.wotb.core.replay.map.MapTacticalSemantics;
 import com.wotb.core.util.PromptDataQuoter;
 
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Call #1 Prompt 构造器：只提供地图名 + 双方阵容 + 坦克战术 Profile，
@@ -28,13 +31,17 @@ public final class PreBattlePromptBuilder {
             === 强制规则 ===
             1. 严禁引用、猜测或假设任何战斗结果：胜负、伤害、击杀、阵亡、路线、HP、交火都不存在。
             2. 坦克事实只能来自下方提供的结构化战术属性；未提供或标注"车型默认"的属性不得自行补充。
-            3. 地图战术语义只使用下方提供的数据（AREA 名称/类型/特征/适合/风险/关系/出生点语义）；
-               favors/risks 是规则候选（RULE_DERIVED_CANDIDATE），只能作为假设依据，不得当作已验证结论；
-              地图无语义数据时，区域一律 UNKNOWN，禁止编造具体点位、区域名或坐标；
-              出生点语义未提供时输出 UNKNOWN；
-              禁止声称 CONTROLS / ENABLES_PRESSURE_AGAINST / 交叉火力 / 视线 / 通行路线等未提供的关系；
-              GRID_REGION_1~9 与下方 AREA 标注的九宫格编号一致（按客户端数据推导）；
-              无语义数据时 GRID_REGION_1~9 仍只是位置编号，不是战术区域名。
+            3. 地图战术语义只使用下方提供的数据（AREA 名称/类型/特征/适合/风险/关系/出生点语义/置信度）；
+               可信度必须按下方的可信度图例理解：EXACT_CLIENT_DATA/EXACT_SCENE_DATA 是客户端直接事实；
+               NAME_HEURISTIC 表示对象位置精确但建筑/植被/铁路等类别由资源名推断；
+               GRID_RULE_DERIVED 表示区域名称、区域边界与区域合并结果只是确定性规则候选；
+               RULE_DERIVED_CANDIDATE 表示 favors/risks 只是战术假设候选，只能作为假设依据；
+               verified=false 表示尚未完成人工地图核验，不得把区域候选描述为已验证事实；
+               地图无语义数据时，区域一律 UNKNOWN，禁止编造具体点位、区域名或坐标；
+               出生点语义未提供时输出 UNKNOWN；
+               禁止声称 CONTROLS / ENABLES_PRESSURE_AGAINST / 交叉火力 / 视线 / 通行路线等未提供的关系；
+               GRID_REGION_1~9 与下方 AREA 标注的九宫格编号一致（按客户端数据推导）；
+               无语义数据时 GRID_REGION_1~9 仍只是位置编号，不是战术区域名。
             4. 坦克名称必须原样使用提供方名称，禁止改写、翻译或缩写。
             5. 战略基线只是 baseline，不是真理：真实战况可能让任何计划失效，输出中不得使用"必然/绝对"措辞。
             6. 双方分别用 TEAM_A（队伍1）与 TEAM_B（队伍2）表示，全程保持该映射。
@@ -69,6 +76,14 @@ public final class PreBattlePromptBuilder {
             最高等级: %d
             注意：地图战术语义见下方；未提供则为 UNKNOWN，禁止编造区域名与点位。""";
 
+    static final String CONFIDENCE_LEGEND = """
+            === 可信度图例 ===
+            - EXACT_CLIENT_DATA / EXACT_SCENE_DATA: 客户端直接事实（坐标/高程/出生点/占领点）
+            - NAME_HEURISTIC: 对象位置精确；建筑/植被/铁路等类别由资源名推断
+            - GRID_RULE_DERIVED: 区域名称、区域边界与区域合并结果是确定性规则候选
+            - RULE_DERIVED_CANDIDATE: favors/risks 只是战术假设候选
+            """;
+
     static String buildUserContent(final Battle battle,
                                    final TankTacticalProfileRegistry profiles,
                                    final MapTacticalSemantics mapSemantics) {
@@ -96,7 +111,23 @@ public final class PreBattlePromptBuilder {
             sb.append("战术语义: UNKNOWN（该地图暂无语义数据，禁止编造区域名与点位）\n");
             return sb.toString();
         }
-        sb.append("数据来源: Wot Blitz 客户端 SC2 + heightmap（CLIENT_RESOURCE_DERIVED，非 LLM 猜测）\n");
+        sb.append("数据来源: ")
+                .append(mapSemantics.source().isBlank()
+                        ? "Wot Blitz 客户端 SC2 + heightmap（CLIENT_RESOURCE_DERIVED）"
+                        : mapSemantics.source())
+                .append("（客户端资源解码，非 LLM 猜测）\n");
+        sb.append("人工地图核验: ")
+                .append(mapSemantics.verified()
+                        ? "已完成"
+                        : "未完成（verified=false，区域名称/类型/边界/favors/risks 未经人工确认）")
+                .append('\n');
+        sb.append(CONFIDENCE_LEGEND);
+        final Map<String, String> dominantConfidence = dominantConfidence(mapSemantics.areas());
+        if (!dominantConfidence.isEmpty()) {
+            sb.append("本图区域置信度（与下方可信度图例对应）: ");
+            sb.append(String.join("；", dominantConfidence.values()));
+            sb.append('\n');
+        }
         sb.append("区域:\n");
         mapSemantics.areas().forEach((id, area) -> {
             sb.append("- ").append(id);
@@ -119,6 +150,7 @@ public final class PreBattlePromptBuilder {
             if (!area.risks().isEmpty()) {
                 sb.append("    风险(规则候选): ").append(String.join("; ", area.risks())).append('\n');
             }
+            appendConfidenceDiff(sb, area, dominantConfidence);
         });
         if (!mapSemantics.relationships().isEmpty()) {
             sb.append("区域关系:\n");
@@ -164,6 +196,70 @@ public final class PreBattlePromptBuilder {
         sb.append("不是已验证结论；CONTROLS / ENABLES_PRESSURE_AGAINST / 交叉火力 / ");
         sb.append("视线 / 通行路线未提供，禁止声称。\n");
         return sb.toString();
+    }
+
+    /** 聚合各区域置信度字段的众数，供全局一行展示（避免逐区域重复）。 */
+    private static Map<String, String> dominantConfidence(
+            final Map<String, MapTacticalSemantics.TacticalArea> areas) {
+        final String[] fields = {
+                "geometry", "objectPositions", "objectCategories",
+                "areaBoundary", "favorsAndRisks"
+        };
+        final Map<String, Map<String, Integer>> counts = new LinkedHashMap<>();
+        final Map<String, String> dominant = new LinkedHashMap<>();
+        for (final MapTacticalSemantics.TacticalArea area : areas.values()) {
+            final MapTacticalSemantics.AreaConfidence c = area.confidence();
+            final String[] values = {
+                    c.geometry(), c.objectPositions(), c.objectCategories(),
+                    c.areaBoundary(), c.favorsAndRisks()
+            };
+            for (int i = 0; i < fields.length; i++) {
+                if (values[i].isBlank()) {
+                    continue;
+                }
+                counts.computeIfAbsent(fields[i], k -> new LinkedHashMap<>())
+                        .merge(values[i], 1, Integer::sum);
+            }
+        }
+        for (final String field : fields) {
+            final Map<String, Integer> perField = counts.get(field);
+            if (perField == null || perField.isEmpty()) {
+                continue;
+            }
+            final String top = perField.entrySet().stream()
+                    .max(Map.Entry.comparingByValue())
+                    .map(Map.Entry::getKey)
+                    .orElse("");
+            dominant.put(field, field + "=" + top);
+        }
+        return dominant;
+    }
+
+    /** 仅标注与该图全局置信度不一致的区域字段，避免 30+ 区域逐行重复。 */
+    private static void appendConfidenceDiff(
+            final StringBuilder sb,
+            final MapTacticalSemantics.TacticalArea area,
+            final Map<String, String> dominant) {
+        final MapTacticalSemantics.AreaConfidence c = area.confidence();
+        final Map<String, String> expected = new LinkedHashMap<>();
+        expected.put("geometry", c.geometry());
+        expected.put("objectPositions", c.objectPositions());
+        expected.put("objectCategories", c.objectCategories());
+        expected.put("areaBoundary", c.areaBoundary());
+        expected.put("favorsAndRisks", c.favorsAndRisks());
+        final List<String> diffs = new ArrayList<>();
+        expected.forEach((field, value) -> {
+            if (value.isBlank()) {
+                return;
+            }
+            final String dominantValue = dominant.get(field);
+            if (dominantValue == null || !dominantValue.endsWith("=" + value)) {
+                diffs.add(field + "=" + value);
+            }
+        });
+        if (!diffs.isEmpty()) {
+            sb.append("    置信度差异: ").append(String.join("; ", diffs)).append('\n');
+        }
     }
 
     private static String teamLabel(final String spawnKey) {

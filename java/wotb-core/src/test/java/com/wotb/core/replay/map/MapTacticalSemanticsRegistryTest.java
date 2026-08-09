@@ -26,6 +26,20 @@ class MapTacticalSemanticsRegistryTest {
     }
 
     @Test
+    void verifiedSourceAndAreaConfidenceArePreserved() {
+        final MapTacticalSemantics semantics = registry.semanticsFor("desert_train");
+        assertFalse(semantics.verified(), "client-derived data is not yet human-verified");
+        assertEquals("CLIENT_RESOURCE_DERIVED", semantics.source());
+        final MapTacticalSemantics.AreaConfidence confidence =
+                semantics.areas().get("HARD_COVER_ZONE_01").confidence();
+        assertEquals("EXACT_CLIENT_DATA", confidence.geometry());
+        assertEquals("EXACT_CLIENT_DATA", confidence.objectPositions());
+        assertEquals("NAME_HEURISTIC", confidence.objectCategories());
+        assertEquals("GRID_RULE_DERIVED", confidence.areaBoundary());
+        assertEquals("RULE_DERIVED_CANDIDATE", confidence.favorsAndRisks());
+    }
+
+    @Test
     void mapIdItselfAndTokenBoundaryAliasBothResolve() {
         assertTrue(registry.semanticsFor("02_desert_train_dt").hasSemantics());
         assertTrue(registry.semanticsFor("desert_train").hasSemantics());

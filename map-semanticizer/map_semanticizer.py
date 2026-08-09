@@ -1174,6 +1174,21 @@ def build_spawn_semantics(
     return result
 
 
+def coordinate_validation_passed(terrain: dict[str, Any]) -> bool:
+    """Robust Z-axis validation rule for generated documents.
+
+    Uses the P90 absolute delta (resilient to a few elevated spawn/control
+    points), not the mean: e.g. 24_milibase_mlb has MAE=1.45 m while its
+    P90 is 0.08 m — the heightmap itself is fine and must not be rejected.
+    """
+    validation = terrain.get("coordinateValidation", {})
+    sample_count = validation.get("sampleCount", 0)
+    p90 = validation.get("p90AbsoluteDeltaMeters")
+    if not sample_count or p90 is None:
+        return False
+    return float(p90) <= 0.5
+
+
 # ---------------------------------------------------------------------------
 # Input, output, and CLI
 # ---------------------------------------------------------------------------
