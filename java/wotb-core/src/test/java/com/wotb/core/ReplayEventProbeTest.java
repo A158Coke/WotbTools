@@ -26,9 +26,8 @@ import java.util.zip.ZipInputStream;
  * 运行方式 {@code mvn -pl wotb-core test -Dtest=ReplayEventProbeTest -Dprobe.replay=<file>}。
  * 输出：包类型直方图、type 7 逐 propId 伤害相关性、type 39/31/35/32 结构样本。
  *
- * <p>当前逆向结论（2026-08-09，基于 4 个训练房样本）：type 7 propId=3 为「受击时同步
- * 的健康值」（首条更新精确出现在首次受击时刻、阵亡到 0、存活不到 0），但数值与权威
- * maxHp/damageReceived 存在 100–500 偏移，编码未确认，禁止直接当 HP 解码；type 31 为
+ * <p>当前逆向结论（2026-08-09，基于 4 个训练房样本交叉验证）：type 7 propId=3 为当前血量
+ * （u16 LE，含装备加成；受击时同步、阵亡到 0、存活不到 0）；type 31 为
  * 4 字节 float（疑似速度），type 39 为 28 字节 float 密集（疑似位置+状态），待客户端
  * 资源对照。</p>
  */
@@ -80,6 +79,65 @@ class ReplayEventProbeTest {
         final Map<Integer, Long> e2a = EventStreamReader.extractEntityToAccountMap(es.packets);
         final ReplayProcessingResult result = new DefaultReplayProcessingFacade()
                 .process(new Source(f.getFileName().toString(), bytes), ReplayProcessingOptions.full());
+        if (result.reconstruction() != null) {
+            System.out.println("-- reconstruction currentHealth sample (per damaged entity) --");
+            final int[] targets = {12_529_749, 12_529_750, 12_529_751, 12_529_753};
+            for (final int eid : targets) {
+                int hits = 0;
+                String sample = "none";
+                for (final var cp : result.reconstruction().checkpoints()) {
+                    final var vs = cp.stateSnapshot().vehiclesByEntityId().get(eid);
+                    if (vs != null && vs.currentHealth() != null) {
+                        hits++;
+                        if (hits == 1 || hits % 20 == 0) {
+                            sample = String.format("%.1fs hp=%d", cp.rawClockSec(), vs.currentHealth());
+                            System.out.println("    eid=" + eid + " @" + sample);
+                        }
+                    }
+                }
+                System.out.println("    eid=" + eid + " hpSyncs=" + hits);
+            }
+        }
+
+        // ---- winner / supremacy / destruction probe ----
+        System.out.println("-- winner / supremacy probe --");
+        if (result.battle() != null) {
+            final var b = result.battle();
+            System.out.println("  winnerTeam=" + b.winnerTeam
+                    + " arenaBonusType=" + b.arenaBonusType
+                    + " durationS=" + b.durationS
+                    + " map=" + b.mapName
+                    + " recorder=" + b.recorder);
+            final long[] teamAlive = new long[3];
+            final long[] teamTotal = new long[3];
+            final long[] teamPts32 = new long[3];
+            final long[] teamPts33 = new long[3];
+            final long[] teamDamage = new long[3];
+            for (final var p : b.players) {
+                final int t = p.team >= 1 && p.team <= 2 ? p.team : 0;
+                if (p.survived) teamAlive[t]++;
+                teamTotal[t]++;
+                teamDamage[t] += p.damageDealt;
+                if (p.raw != null) {
+                    teamPts32[t] += firstInt(p.raw, 32);
+                    teamPts33[t] += firstInt(p.raw, 33);
+                }
+            }
+            for (final int t : new int[]{1, 2}) {
+                System.out.println("  team=" + t + " survived=" + teamAlive[t]
+                        + "/" + teamTotal[t] + " damage=" + teamDamage[t]
+                        + " pts32(sum)=" + teamPts32[t] + " pts33(sum)=" + teamPts33[t]);
+            }
+        }
+        final List<String> type14 = new ArrayList<>();
+        for (final RawReplayPacket p : stream.packets()) {
+            if (p.type() == 14 && type14.size() < 6) {
+                type14.add(String.format("%.1fs len=%d first16=%s",
+                        p.rawClockSec(), p.payload().length, hex(slice(p.payload(), 0, 16))));
+            }
+        }
+        System.out.println("-- type14 samples --");
+        type14.forEach(s -> System.out.println("  " + s));
 
         // type 7 per-propId damage correlation
         final Map<Integer, List<String[]>> props = new TreeMap<>(); // eid -> [clock, propId, valueHex]
@@ -118,7 +176,7 @@ class ReplayEventProbeTest {
                     float firstClock = -1;
                     for (final String[] r : p3) {
                         if (firstClock < 0) firstClock = Float.parseFloat(r[0]);
-                        final int v = Integer.parseInt(r[2].substring(0, Math.min(4, r[2].length())), 16);
+                        final int v = le16(r[2].substring(0, Math.min(4, r[2].length())));
                         if (start < 0) start = v;
                         min = Math.min(min, v);
                     }
@@ -154,10 +212,14 @@ class ReplayEventProbeTest {
                             for (int i = 0; i < seq.size(); i++) {
                                 final float pc = Float.parseFloat(seq.get(i)[0]);
                                 if (pc <= dc + 0.05f) before = seq.get(i)[2];
-                                if (pc >= dc - 0.05f && "?".equals(after)) after = seq.get(i)[2];
+                                if (pc > dc + 0.05f && "?".equals(after)) after = seq.get(i)[2];
                             }
+                            final int b = before.equals("?") ? -1 : le16(before.substring(0, 4));
+                            final int a = after.equals("?") ? -1 : le16(after.substring(0, 4));
+                            final int drop = (b >= 0 && a >= 0) ? (b - a) : Integer.MIN_VALUE;
                             System.out.println("    p" + propId + " dmg@" + dmg[0] + "(" + dmg[1] + ")"
-                                    + " before=" + before + " after=" + after);
+                                    + " before=" + before + " after=" + after
+                                    + " drop=" + (drop == Integer.MIN_VALUE ? "?" : drop));
                         }
                     }
                 });
@@ -199,6 +261,12 @@ class ReplayEventProbeTest {
                 .orElse("?");
     }
 
+    private static long firstInt(final Map<Integer, List<Object>> raw, final int field) {
+        final List<Object> values = raw.get(field);
+        if (values == null || values.isEmpty()) return 0;
+        return values.get(0) instanceof Number n ? n.longValue() : 0;
+    }
+
     private static byte[] slice(final byte[] src, final int from, final int len) {
         final int n = Math.min(len, Math.max(0, src.length - from));
         final byte[] out = new byte[n];
@@ -223,5 +291,12 @@ class ReplayEventProbeTest {
         final StringBuilder sb = new StringBuilder();
         for (final byte x : b) sb.append(String.format("%02x", x));
         return sb.toString();
+    }
+
+    /** 前 4 个 hex 字符按 LE u16 解析（两个字节）。 */
+    private static int le16(final String hex4) {
+        final int lo = Integer.parseInt(hex4.substring(0, 2), 16);
+        final int hi = Integer.parseInt(hex4.substring(2, 4), 16);
+        return lo | (hi << 8);
     }
 }

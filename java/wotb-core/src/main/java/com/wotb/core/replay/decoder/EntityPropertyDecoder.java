@@ -1,6 +1,7 @@
 package com.wotb.core.replay.decoder;
 
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.stream.RawReplayPacket;
@@ -21,10 +22,17 @@ import java.util.List;
  * entityId(i32) + propertyCount(i32) + 若干个 property block。
  * 每个 property block 的格式和语义需要进一步逆向工程。
  * </p>
+ *
+ * <p>已逆向（2026-08-09，4 个训练房样本交叉验证）：payload = entityId(u32) +
+ * propId(u32) + valueLen(u32) + value；propId=3 的 value 为当前血量（u16 LE，
+ * 含装备加成；受击时同步、阵亡到 0、存活不到 0）。其它 propId 语义未确认，
+ * 仍输出 UnknownReplayEvent。</p>
  */
 public class EntityPropertyDecoder implements ReplayPacketDecoder {
 
     static final int TYPE_ENTITY_PROPERTY = 7;
+    /** propId=3：当前血量（u16 LE，含装备加成；受击时同步）。 */
+    static final int PROP_CURRENT_HP = 3;
 
     @Override
     public boolean supports(ReplayDecodeContext context, RawReplayPacket packet) {
@@ -56,16 +64,26 @@ public class EntityPropertyDecoder implements ReplayPacketDecoder {
                             + " at entity " + entityId));
         }
 
-        // 结构已知，但 propId → 语义（尤其血量）的映射尚未可靠逆向：
-        // 单靠回放样本无法确定 value 的位布局（详见 docs/replay-data.md 的已知限制）。
-        // 因此这里只保留结构信息、不臆断血量/存活，避免向上层/AI 提供伪造数据。
-        // 可靠的血量/伤害/击杀/存活/死亡时刻请以 battle_results.dat（Battle/PlayerResult）为准。
         final List<com.wotb.core.replay.event.ReplayEvent> events = new ArrayList<>();
+        if (propId == PROP_CURRENT_HP && valueLen >= 2 && 12 + 2 <= payload.length) {
+            // 当前血量：u16 LE（含装备加成）。受击时客户端同步，阵亡到 0、存活不到 0。
+            final int currentHp = (payload[12] & 0xFF) | ((payload[13] & 0xFF) << 8);
+            events.add(new HealthChangedEvent(
+                    packet.sequence(), ts, packet.type(),
+                    DecodeConfidence.EXACT,
+                    entityId,
+                    currentHp,
+                    null,
+                    currentHp > 0));
+            return new ReplayDecodeResult(
+                    warnings.isEmpty() ? DecodeStatus.SUCCESS : DecodeStatus.PARTIAL,
+                    events, warnings);
+        }
+        // 其它 propId 语义未确认：只保留结构信息，不臆断语义，避免向上层/AI 提供伪造数据。
         events.add(new UnknownReplayEvent(
                 packet.sequence(), ts, packet.type(),
                 payload.length, "ENTITY_PROPERTY_prop" + propId + "_len" + valueLen,
                 DecodeConfidence.UNKNOWN));
-
         return new ReplayDecodeResult(DecodeStatus.PARTIAL, events, warnings);
     }
 
