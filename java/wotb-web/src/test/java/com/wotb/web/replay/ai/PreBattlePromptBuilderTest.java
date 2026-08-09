@@ -84,6 +84,26 @@ class PreBattlePromptBuilderTest {
     }
 
     @Test
+    void mapWithSemanticizerDataRendersRealAreasRelationshipsAndSpawns() {
+        final Battle battle = battleWithFullResults();
+        battle.mapName = "desert_train";
+        final String content = PreBattlePromptBuilder.buildUserContent(
+                battle, TankTacticalProfileRegistry.load(),
+                MapTacticalSemanticsRegistry.load().semanticsFor("desert_train"));
+        assertTrue(content.contains("=== 地图战术语义 ==="));
+        assertTrue(content.contains("HARD_COVER_ZONE_01"));
+        assertTrue(content.contains("适合(规则候选)"));
+        assertTrue(content.contains("区域关系:"));
+        assertTrue(content.contains("higherThan:"));
+        assertTrue(content.contains("14 个出生点"));
+        assertTrue(content.contains("（状态 EXACT_SCENE_DATA）"));
+        assertTrue(content.contains("TEAM_A（队伍1）"));
+        assertTrue(content.contains("TEAM_B（队伍2）"));
+        assertFalse(content.contains("战术语义: UNKNOWN（该地图暂无语义数据"));
+        assertFalse(content.contains("出生点语义: UNKNOWN（当前无法可靠确定）"));
+    }
+
+    @Test
     void systemPromptBansResultReferenceAndRequiresJson() {
         assertTrue(PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT.contains("严禁引用"));
         assertTrue(PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT.contains("JSON"));

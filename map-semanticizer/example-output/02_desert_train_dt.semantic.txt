@@ -1,0 +1,209 @@
+地图：Desert Sands（02_desert_train_dt）
+战斗变体：dt1
+来源：Wot Blitz 客户端 SC2 + heightmap；未调用 LLM。
+
+【可信边界】
+- 坐标、高程、出生点、占领点：客户端直接数据。
+- 对象坐标：客户端直接数据；建筑/铁路/植被等类别由资源名规则识别。
+- 区域边界、favors、risks：规则推导候选，不是战术真理。
+- 未解析碰撞体、视线和导航前，不生成 CONTROLS 或 ENABLES_PRESSURE_AGAINST。
+
+【全图事实】
+- 可玩边界：x=-256.00..260.00 m，y=-251.00..254.30 m。
+- 高程：3.42..17.25 m；平均坡度 6.50°，P90 13.67°。
+- Z 轴交叉校验：32 个点，MAE 0.0085 m，P90 0.0148 m。
+
+【区域语义】
+LOW_TERRAIN_01｜西南侧低地区域
+- 网格：E1, F1
+- 类型：LOW_GROUND, FLAT
+- 事实：覆盖网格 E1, F1
+- 事实：平均高程 6.73 米，平均坡度 5.66°，90 分位坡度 13.34°
+- 事实：区域平均高程处于可玩区低位分组
+- favors（规则候选）：UNKNOWN
+- risks：UNKNOWN
+- 对象证据：vegetation=6
+
+VEGETATED_TERRAIN_01｜西南侧植被密集区
+- 网格：F2
+- 类型：LOW_GROUND, ROLLING, VEGETATION_DENSE
+- 事实：覆盖网格 F2
+- 事实：平均高程 8.75 米，平均坡度 7.11°，90 分位坡度 12.72°
+- 事实：区域平均高程处于可玩区低位分组
+- 事实：客户端场景中植被对象相对密集
+- favors（规则候选）：CAMOUFLAGE_DEPENDENT_SUPPORT
+- risk（规则候选）：植被不等于实体防护，无法阻挡炮弹
+- 对象证据：vegetation=5
+
+MIXED_TERRAIN_01｜南侧混合地形连接区
+- 网格：F3
+- 类型：MID_ELEVATION, ROLLING, OPEN_GROUND_CANDIDATE
+- 事实：覆盖网格 F3
+- 事实：平均高程 9.98 米，平均坡度 8.39°，90 分位坡度 15.04°
+- 事实：已识别的建筑、障碍物与植被对象较少，属于开放地候选
+- favors（规则候选）：MOBILE_VEHICLE
+- risk（规则候选）：缺乏已识别掩体；暴露风险需要视线计算进一步确认
+- 对象证据：none
+
+LINEAR_CORRIDOR_01｜中央线性通道
+- 网格：A4, B4, C4, D4, E4, F4
+- 类型：ELEVATED, ROLLING, HARD_COVER_PRESENT, LINEAR_CORRIDOR
+- 事实：覆盖网格 A4, B4, C4, D4, E4, F4
+- 事实：平均高程 11.59 米，平均坡度 8.04°，90 分位坡度 24.44°
+- 事实：客户端场景对象名称显示该区域存在建筑、围墙或障碍物
+- 事实：线性基础设施对象连续出现，构成通道候选
+- 事实：区域平均高程处于可玩区高位分组
+- favors（规则候选）：MOBILE_VEHICLE
+- risks：UNKNOWN
+- 对象证据：bridge=7, building=7, obstacle=55, railway=30, soft_cover=1, vegetation=23, wall=5
+
+HARD_COVER_ZONE_01｜东侧硬掩体密集区
+- 网格：A5, B5, B6, C6, D6, E5, E6, F5
+- 类型：MID_ELEVATION, FLAT, HARD_COVER_DENSE, URBAN_CANDIDATE, VEGETATION_DENSE
+- 事实：覆盖网格 A5, B5, B6, C6, D6, E5, E6, F5
+- 事实：平均高程 10.20 米，平均坡度 3.13°，90 分位坡度 10.47°
+- 事实：客户端场景对象名称显示该区域建筑/围墙型硬掩体密集
+- 事实：客户端场景中植被对象相对密集
+- favors（规则候选）：ARMORED_HEAVY, SIDESCRAPE_VEHICLE, HIGH_ALPHA_TRADER
+- risk（规则候选）：建筑密集可能限制横向机动和转场速度
+- 对象证据：building=89, obstacle=72, soft_cover=37, vegetation=46, wall=54
+
+ELEVATED_TERRAIN_01｜东南侧高地区域
+- 网格：F6
+- 类型：ELEVATED, ROLLING, RIDGE_CANDIDATE, HARD_COVER_PRESENT, VEGETATION_DENSE
+- 事实：覆盖网格 F6
+- 事实：平均高程 12.18 米，平均坡度 6.45°，90 分位坡度 11.47°
+- 事实：客户端场景对象名称显示该区域存在建筑、围墙或障碍物
+- 事实：区域平均高程处于可玩区高位分组
+- 事实：高程与局部起伏同时较高，存在山脊地形候选
+- 事实：客户端场景中植被对象相对密集
+- favors（规则候选）：MOBILE_VEHICLE, HULL_DOWN_VEHICLE, CAMOUFLAGE_DEPENDENT_SUPPORT
+- risk（规则候选）：低机动车辆进入高地区域的成本可能更高
+- risk（规则候选）：植被不等于实体防护，无法阻挡炮弹
+- 对象证据：building=2, soft_cover=2, vegetation=7, wall=5
+
+MIXED_TERRAIN_02｜西南侧混合地形连接区
+- 网格：E2
+- 类型：MID_ELEVATION, ROLLING
+- 事实：覆盖网格 E2
+- 事实：平均高程 10.84 米，平均坡度 10.57°，90 分位坡度 15.55°
+- favors（规则候选）：UNKNOWN
+- risks：UNKNOWN
+- 对象证据：vegetation=4
+
+ELEVATED_TERRAIN_02｜中央高地区域
+- 网格：B3, C3, D2, D3, E3
+- 类型：ELEVATED, ROLLING, RIDGE_CANDIDATE
+- 事实：覆盖网格 B3, C3, D2, D3, E3
+- 事实：平均高程 11.85 米，平均坡度 8.00°，90 分位坡度 16.73°
+- 事实：区域平均高程处于可玩区高位分组
+- 事实：高程与局部起伏同时较高，存在山脊地形候选
+- favors（规则候选）：MOBILE_VEHICLE, HULL_DOWN_VEHICLE
+- risk（规则候选）：低机动车辆进入高地区域的成本可能更高
+- 对象证据：building=1, obstacle=7, railway=1, soft_cover=1, vegetation=11
+
+VEGETATED_TERRAIN_02｜西侧植被密集区
+- 网格：B1, C1, C2, D1
+- 类型：LOW_GROUND, ROLLING, VEGETATION_DENSE
+- 事实：覆盖网格 B1, C1, C2, D1
+- 事实：平均高程 8.26 米，平均坡度 8.65°，90 分位坡度 16.46°
+- 事实：区域平均高程处于可玩区低位分组
+- 事实：客户端场景中植被对象相对密集
+- favors（规则候选）：CAMOUFLAGE_DEPENDENT_SUPPORT
+- risk（规则候选）：植被不等于实体防护，无法阻挡炮弹
+- 对象证据：obstacle=1, soft_cover=2, vegetation=30
+
+VEGETATED_TERRAIN_03｜东侧植被密集区
+- 网格：C5, D5
+- 类型：MID_ELEVATION, FLAT, HARD_COVER_PRESENT, VEGETATION_DENSE
+- 事实：覆盖网格 C5, D5
+- 事实：平均高程 11.17 米，平均坡度 3.80°，90 分位坡度 7.97°
+- 事实：客户端场景对象名称显示该区域存在建筑、围墙或障碍物
+- 事实：客户端场景中植被对象相对密集
+- favors（规则候选）：CAMOUFLAGE_DEPENDENT_SUPPORT
+- risk（规则候选）：植被不等于实体防护，无法阻挡炮弹
+- 对象证据：building=14, obstacle=31, soft_cover=15, vegetation=13
+
+MIXED_TERRAIN_03｜西北侧混合地形连接区
+- 网格：B2
+- 类型：MID_ELEVATION, ROLLING
+- 事实：覆盖网格 B2
+- 事实：平均高程 9.73 米，平均坡度 7.27°，90 分位坡度 12.49°
+- favors（规则候选）：UNKNOWN
+- risks：UNKNOWN
+- 对象证据：vegetation=4
+
+LOW_TERRAIN_02｜西北侧低地区域
+- 网格：A1, A2
+- 类型：LOW_GROUND, FLAT, OPEN_GROUND_CANDIDATE
+- 事实：覆盖网格 A1, A2
+- 事实：平均高程 6.39 米，平均坡度 6.81°，90 分位坡度 14.78°
+- 事实：区域平均高程处于可玩区低位分组
+- 事实：已识别的建筑、障碍物与植被对象较少，属于开放地候选
+- favors（规则候选）：MOBILE_VEHICLE
+- risk（规则候选）：缺乏已识别掩体；暴露风险需要视线计算进一步确认
+- 对象证据：soft_cover=3
+
+MIXED_TERRAIN_04｜北侧混合地形连接区
+- 网格：A3
+- 类型：MID_ELEVATION, ROLLING, OPEN_GROUND_CANDIDATE
+- 事实：覆盖网格 A3
+- 事实：平均高程 9.54 米，平均坡度 7.12°，90 分位坡度 13.04°
+- 事实：已识别的建筑、障碍物与植被对象较少，属于开放地候选
+- favors（规则候选）：MOBILE_VEHICLE
+- risk（规则候选）：缺乏已识别掩体；暴露风险需要视线计算进一步确认
+- 对象证据：none
+
+ELEVATED_TERRAIN_03｜东北侧高地区域
+- 网格：A6
+- 类型：ELEVATED, ROLLING, RIDGE_CANDIDATE, HARD_COVER_PRESENT
+- 事实：覆盖网格 A6
+- 事实：平均高程 12.70 米，平均坡度 6.48°，90 分位坡度 11.55°
+- 事实：客户端场景对象名称显示该区域存在建筑、围墙或障碍物
+- 事实：区域平均高程处于可玩区高位分组
+- 事实：高程与局部起伏同时较高，存在山脊地形候选
+- favors（规则候选）：MOBILE_VEHICLE, HULL_DOWN_VEHICLE
+- risk（规则候选）：低机动车辆进入高地区域的成本可能更高
+- 对象证据：building=2, vegetation=3, wall=1
+
+【区域关系】
+- ELEVATED_TERRAIN_01 -> ADJACENT_TO -> HARD_COVER_ZONE_01；依据：两个区域在 2 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- ELEVATED_TERRAIN_02 -> ADJACENT_TO -> LINEAR_CORRIDOR_01；依据：两个区域在 4 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- ELEVATED_TERRAIN_02 -> ADJACENT_TO -> MIXED_TERRAIN_01；依据：两个区域在 1 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- ELEVATED_TERRAIN_02 -> ADJACENT_TO -> MIXED_TERRAIN_02；依据：两个区域在 2 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- ELEVATED_TERRAIN_02 -> ADJACENT_TO -> MIXED_TERRAIN_03；依据：两个区域在 1 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- ELEVATED_TERRAIN_02 -> ADJACENT_TO -> MIXED_TERRAIN_04；依据：两个区域在 1 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- ELEVATED_TERRAIN_02 -> ADJACENT_TO -> VEGETATED_TERRAIN_02；依据：两个区域在 3 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- ELEVATED_TERRAIN_02 -> HIGHER_THAN -> VEGETATED_TERRAIN_02；依据：相邻区域平均高程差 3.59 米；置信度：NUMERIC_TERRAIN_DERIVATION
+- ELEVATED_TERRAIN_03 -> ADJACENT_TO -> HARD_COVER_ZONE_01；依据：两个区域在 2 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- ELEVATED_TERRAIN_03 -> HIGHER_THAN -> HARD_COVER_ZONE_01；依据：相邻区域平均高程差 2.50 米；置信度：NUMERIC_TERRAIN_DERIVATION
+- HARD_COVER_ZONE_01 -> ADJACENT_TO -> LINEAR_CORRIDOR_01；依据：两个区域在 4 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- HARD_COVER_ZONE_01 -> ADJACENT_TO -> VEGETATED_TERRAIN_03；依据：两个区域在 4 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- LINEAR_CORRIDOR_01 -> ADJACENT_TO -> MIXED_TERRAIN_01；依据：两个区域在 1 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- LINEAR_CORRIDOR_01 -> ADJACENT_TO -> MIXED_TERRAIN_04；依据：两个区域在 1 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- LINEAR_CORRIDOR_01 -> ADJACENT_TO -> VEGETATED_TERRAIN_03；依据：两个区域在 2 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- LOW_TERRAIN_01 -> ADJACENT_TO -> MIXED_TERRAIN_02；依据：两个区域在 1 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- MIXED_TERRAIN_02 -> HIGHER_THAN -> LOW_TERRAIN_01；依据：相邻区域平均高程差 4.11 米；置信度：NUMERIC_TERRAIN_DERIVATION
+- LOW_TERRAIN_01 -> ADJACENT_TO -> VEGETATED_TERRAIN_01；依据：两个区域在 1 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- LOW_TERRAIN_01 -> ADJACENT_TO -> VEGETATED_TERRAIN_02；依据：两个区域在 1 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- LOW_TERRAIN_02 -> ADJACENT_TO -> MIXED_TERRAIN_03；依据：两个区域在 1 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- MIXED_TERRAIN_03 -> HIGHER_THAN -> LOW_TERRAIN_02；依据：相邻区域平均高程差 3.34 米；置信度：NUMERIC_TERRAIN_DERIVATION
+- LOW_TERRAIN_02 -> ADJACENT_TO -> MIXED_TERRAIN_04；依据：两个区域在 1 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- MIXED_TERRAIN_04 -> HIGHER_THAN -> LOW_TERRAIN_02；依据：相邻区域平均高程差 3.15 米；置信度：NUMERIC_TERRAIN_DERIVATION
+- LOW_TERRAIN_02 -> ADJACENT_TO -> VEGETATED_TERRAIN_02；依据：两个区域在 1 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- MIXED_TERRAIN_01 -> ADJACENT_TO -> VEGETATED_TERRAIN_01；依据：两个区域在 1 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- MIXED_TERRAIN_02 -> ADJACENT_TO -> VEGETATED_TERRAIN_01；依据：两个区域在 1 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- MIXED_TERRAIN_03 -> ADJACENT_TO -> VEGETATED_TERRAIN_02；依据：两个区域在 2 条分析网格边上直接相邻；置信度：EXACT_GRID_TOPOLOGY
+- VEGETATED_TERRAIN_03 -> CONTAINS_CONTROL_POINT -> Control1；依据：Control1 的 SC2 坐标位于网格 D5；置信度：EXACT_SCENE_DATA
+- ELEVATED_TERRAIN_02 -> CONTAINS_STRATEGIC_POINT -> 1.sc2；依据：1.sc2 的 SC2 坐标位于网格 D2；置信度：EXACT_SCENE_DATA
+- VEGETATED_TERRAIN_03 -> CONTAINS_STRATEGIC_POINT -> 2.sc2；依据：2.sc2 的 SC2 坐标位于网格 D5；置信度：EXACT_SCENE_DATA
+- HARD_COVER_ZONE_01 -> CONTAINS_STRATEGIC_POINT -> 3.sc2；依据：3.sc2 的 SC2 坐标位于网格 D6；置信度：EXACT_SCENE_DATA
+
+【出生点语义】
+- TEAM_1: 14 个出生点；网格 A3, A5；区域 HARD_COVER_ZONE_01, MIXED_TERRAIN_04
+- TEAM_2: 14 个出生点；网格 F3, F5, F6；区域 ELEVATED_TERRAIN_01, HARD_COVER_ZONE_01, MIXED_TERRAIN_01
+
+【给战术推理模型的约束】
+- 可以结合 Tank Tactical Profiles 从以上事实提出战术假设。
+- 不得把 RULE_DERIVED_CANDIDATE 当作已验证结论。
+- 不得仅凭本文件声称某区域必然控制另一战线、必然存在交叉火力或必然可通行。

@@ -1,26 +1,66 @@
 package com.wotb.core.replay.map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 class MapTacticalSemanticsRegistryTest {
 
     private final MapTacticalSemanticsRegistry registry = MapTacticalSemanticsRegistry.load();
 
     @Test
-    void v1RegistryHasNoCuratedMapData() {
-        // V1 语义库为空：没有经过验证的地图数据，任何地图都必须返回 UNKNOWN
+    void desertTrainResolvesFromSemanticizerData() {
+        // map-semanticizer 生成的 Desert Sands 语义（common/map-semantics/02_desert_train_dt.semantic.json）
+        final MapTacticalSemantics semantics = registry.semanticsFor("desert_train");
+        assertTrue(semantics.hasSemantics());
+        assertTrue(semantics.areas().containsKey("HARD_COVER_ZONE_01"));
+        assertFalse(semantics.areas().get("HARD_COVER_ZONE_01").favors().isEmpty());
+    }
+
+    @Test
+    void mapIdItselfAndTokenBoundaryAliasBothResolve() {
+        assertTrue(registry.semanticsFor("02_desert_train_dt").hasSemantics());
+        assertTrue(registry.semanticsFor("desert_train").hasSemantics());
+        // 短 token（train）不得被当作内部地图 code
+        assertFalse(registry.semanticsFor("train").hasSemantics());
+        assertFalse(registry.semanticsFor("02").hasSemantics());
+    }
+
+    @Test
+    void relationshipsAndSpawnSemanticsAreMapped() {
+        final MapTacticalSemantics semantics = registry.semanticsFor("desert_train");
+        final MapTacticalSemantics.AreaRelationships relationships =
+                semantics.relationships().get("ELEVATED_TERRAIN_02");
+        assertTrue(relationships.connects().contains("VEGETATED_TERRAIN_02"));
+        assertTrue(relationships.higherThan().contains("VEGETATED_TERRAIN_02"));
+        assertTrue(semantics.relationships().values().stream()
+                .anyMatch(rel -> !rel.containsPoints().isEmpty()));
+        final MapTacticalSemantics.SpawnSemantics team1 = semantics.spawnSemantics().get("TEAM_1");
+        assertTrue(team1.areas().contains("MIXED_TERRAIN_04"));
+        assertEquals("EXACT_SCENE_DATA", team1.status());
+    }
+
+    @Test
+    void mapsWithoutSemanticDataReturnUnknown() {
         assertFalse(registry.semanticsFor("erlenberg").hasSemantics());
         assertFalse(registry.semanticsFor("himmelsdorf").hasSemantics());
         assertFalse(registry.semanticsFor("canyon").hasSemantics());
         assertFalse(registry.semanticsFor("lagoon").hasSemantics());
-    }
-
-    @Test
-    void unknownOrBlankMapCodeReturnsUnknown() {
         assertFalse(registry.semanticsFor("not_a_real_map").hasSemantics());
         assertFalse(registry.semanticsFor(null).hasSemantics());
         assertFalse(registry.semanticsFor("").hasSemantics());
+    }
+
+    @Test
+    void boundedTokenAliasesSkipShortSingleTokens() {
+        assertEquals(List.of(
+                        "02_desert", "desert_train", "train_dt",
+                        "02_desert_train", "desert_train_dt",
+                        "02_desert_train_dt"),
+                MapTacticalSemanticsRegistry.boundedTokenAliases("02_desert_train_dt"));
     }
 }
