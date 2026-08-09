@@ -54,6 +54,16 @@ python .\map_semanticizer.py `
 
 后端 `MapTacticalSemanticsRegistry` 会加载 `classpath:/map-semantics/*.semantic.json`，按 `mapCodes` / `mapId` 查询，并对 `NN_<code>_<variant>` 形式的 mapId 做 token 边界别名匹配；没有语义数据的地图保持 UNKNOWN，禁止 LLM 编造。
 
+## 九宫格 GRID_REGION_1~9 对齐
+
+每个语义网格 cell 输出 `nineGridRegion`（1–9），每个 area 汇总 `gridRegions`，与后端 `MapRegionResolver` 使用同一约定：
+
+- 回放 raw 坐标 ±250 m 线性映射到 500×500 canonical 空间（`MapCoordinateProfile.DEFAULT`）；
+- 行：北/上为 1|2|3，中为 4|5|6，南/下为 7|8|9；列自西向东；
+- 语义化器 `x` 东正、`y` 北正，与回放 `(x, z)` 同向，`GRID_REGION = resolveRegion(x+250, y+250)`。
+
+若部署端调整 `REPLAY_COORDINATE_HALF_EXTENT`，需同步修改脚本 `NINE_GRID_HALF_EXTENT` 并重新生成语义数据。
+
 ## 批量处理地图目录
 
 脚本可以直接输入整个 `Maps` 根目录：

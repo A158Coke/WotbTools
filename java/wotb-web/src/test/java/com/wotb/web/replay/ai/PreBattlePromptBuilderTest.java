@@ -92,6 +92,7 @@ class PreBattlePromptBuilderTest {
                 MapTacticalSemanticsRegistry.load().semanticsFor("desert_train"));
         assertTrue(content.contains("=== 地图战术语义 ==="));
         assertTrue(content.contains("HARD_COVER_ZONE_01"));
+        assertTrue(content.contains("九宫格=GRID_REGION_3,GRID_REGION_6,GRID_REGION_9"));
         assertTrue(content.contains("适合(规则候选)"));
         assertTrue(content.contains("区域关系:"));
         assertTrue(content.contains("higherThan:"));

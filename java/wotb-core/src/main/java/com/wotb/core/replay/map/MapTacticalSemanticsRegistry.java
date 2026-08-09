@@ -111,9 +111,23 @@ public final class MapTacticalSemanticsRegistry {
                 id,
                 text(node, "label"),
                 stringList(node, "types"),
+                nineGridRegions(node.get("gridRegions")),
                 stringList(node, "characteristics"),
                 stringList(node, "favors"),
                 stringList(node, "risks"));
+    }
+
+    /** 语义化器按后端 MapRegionResolver 约定输出 1~9，渲染为 GRID_REGION_N。 */
+    private static List<String> nineGridRegions(final JsonNode node) {
+        final List<String> result = new ArrayList<>();
+        if (node != null && node.isArray()) {
+            node.forEach(item -> {
+                if (item.isIntegralNumber()) {
+                    result.add("GRID_REGION_" + item.asInt());
+                }
+            });
+        }
+        return result;
     }
 
     /** 语义化器把关系输出为扁平数组（{from, type, to, reason, confidence}），按 from 分组。 */

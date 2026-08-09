@@ -506,6 +506,7 @@
     "cells": [
       {
         "id": "F1",
+        "nineGridRegion": 7,
         "boundsMeters": {
           "xMin": -287.0,
           "yMin": -275.4,
@@ -528,6 +529,7 @@
       },
       {
         "id": "F2",
+        "nineGridRegion": 7,
         "boundsMeters": {
           "xMin": -193.5,
           "yMin": -275.4,
@@ -550,6 +552,7 @@
       },
       {
         "id": "F3",
+        "nineGridRegion": 8,
         "boundsMeters": {
           "xMin": -100.0,
           "yMin": -275.4,
@@ -572,6 +575,7 @@
       },
       {
         "id": "F4",
+        "nineGridRegion": 8,
         "boundsMeters": {
           "xMin": -6.5,
           "yMin": -275.4,
@@ -594,6 +598,7 @@
       },
       {
         "id": "F5",
+        "nineGridRegion": 9,
         "boundsMeters": {
           "xMin": 87.0,
           "yMin": -275.4,
@@ -616,6 +621,7 @@
       },
       {
         "id": "F6",
+        "nineGridRegion": 9,
         "boundsMeters": {
           "xMin": 180.5,
           "yMin": -275.4,
@@ -639,6 +645,7 @@
       },
       {
         "id": "E1",
+        "nineGridRegion": 7,
         "boundsMeters": {
           "xMin": -287.0,
           "yMin": -183.4,
@@ -661,6 +668,7 @@
       },
       {
         "id": "E2",
+        "nineGridRegion": 7,
         "boundsMeters": {
           "xMin": -193.5,
           "yMin": -183.4,
@@ -683,6 +691,7 @@
       },
       {
         "id": "E3",
+        "nineGridRegion": 8,
         "boundsMeters": {
           "xMin": -100.0,
           "yMin": -183.4,
@@ -705,6 +714,7 @@
       },
       {
         "id": "E4",
+        "nineGridRegion": 8,
         "boundsMeters": {
           "xMin": -6.5,
           "yMin": -183.4,
@@ -727,6 +737,7 @@
       },
       {
         "id": "E5",
+        "nineGridRegion": 9,
         "boundsMeters": {
           "xMin": 87.0,
           "yMin": -183.4,
@@ -753,6 +764,7 @@
       },
       {
         "id": "E6",
+        "nineGridRegion": 9,
         "boundsMeters": {
           "xMin": 180.5,
           "yMin": -183.4,
@@ -776,6 +788,7 @@
       },
       {
         "id": "D1",
+        "nineGridRegion": 4,
         "boundsMeters": {
           "xMin": -287.0,
           "yMin": -91.4,
@@ -798,6 +811,7 @@
       },
       {
         "id": "D2",
+        "nineGridRegion": 4,
         "boundsMeters": {
           "xMin": -193.5,
           "yMin": -91.4,
@@ -823,6 +837,7 @@
       },
       {
         "id": "D3",
+        "nineGridRegion": 5,
         "boundsMeters": {
           "xMin": -100.0,
           "yMin": -91.4,
@@ -845,6 +860,7 @@
       },
       {
         "id": "D4",
+        "nineGridRegion": 5,
         "boundsMeters": {
           "xMin": -6.5,
           "yMin": -91.4,
@@ -876,6 +892,7 @@
       },
       {
         "id": "D5",
+        "nineGridRegion": 6,
         "boundsMeters": {
           "xMin": 87.0,
           "yMin": -91.4,
@@ -899,6 +916,7 @@
       },
       {
         "id": "D6",
+        "nineGridRegion": 6,
         "boundsMeters": {
           "xMin": 180.5,
           "yMin": -91.4,
@@ -922,6 +940,7 @@
       },
       {
         "id": "C1",
+        "nineGridRegion": 4,
         "boundsMeters": {
           "xMin": -287.0,
           "yMin": 0.6,
@@ -944,6 +963,7 @@
       },
       {
         "id": "C2",
+        "nineGridRegion": 4,
         "boundsMeters": {
           "xMin": -193.5,
           "yMin": 0.6,
@@ -969,6 +989,7 @@
       },
       {
         "id": "C3",
+        "nineGridRegion": 5,
         "boundsMeters": {
           "xMin": -100.0,
           "yMin": 0.6,
@@ -994,6 +1015,7 @@
       },
       {
         "id": "C4",
+        "nineGridRegion": 5,
         "boundsMeters": {
           "xMin": -6.5,
           "yMin": 0.6,
@@ -1017,6 +1039,7 @@
       },
       {
         "id": "C5",
+        "nineGridRegion": 6,
         "boundsMeters": {
           "xMin": 87.0,
           "yMin": 0.6,
@@ -1043,6 +1066,7 @@
       },
       {
         "id": "C6",
+        "nineGridRegion": 6,
         "boundsMeters": {
           "xMin": 180.5,
           "yMin": 0.6,
@@ -1066,6 +1090,7 @@
       },
       {
         "id": "B1",
+        "nineGridRegion": 1,
         "boundsMeters": {
           "xMin": -287.0,
           "yMin": 92.6,
@@ -1088,6 +1113,7 @@
       },
       {
         "id": "B2",
+        "nineGridRegion": 1,
         "boundsMeters": {
           "xMin": -193.5,
           "yMin": 92.6,
@@ -1110,6 +1136,7 @@
       },
       {
         "id": "B3",
+        "nineGridRegion": 2,
         "boundsMeters": {
           "xMin": -100.0,
           "yMin": 92.6,
@@ -1132,6 +1159,7 @@
       },
       {
         "id": "B4",
+        "nineGridRegion": 2,
         "boundsMeters": {
           "xMin": -6.5,
           "yMin": 92.6,
@@ -1154,6 +1182,7 @@
       },
       {
         "id": "B5",
+        "nineGridRegion": 3,
         "boundsMeters": {
           "xMin": 87.0,
           "yMin": 92.6,
@@ -1180,6 +1209,7 @@
       },
       {
         "id": "B6",
+        "nineGridRegion": 3,
         "boundsMeters": {
           "xMin": 180.5,
           "yMin": 92.6,
@@ -1203,6 +1233,7 @@
       },
       {
         "id": "A1",
+        "nineGridRegion": 1,
         "boundsMeters": {
           "xMin": -287.0,
           "yMin": 184.6,
@@ -1225,6 +1256,7 @@
       },
       {
         "id": "A2",
+        "nineGridRegion": 1,
         "boundsMeters": {
           "xMin": -193.5,
           "yMin": 184.6,
@@ -1247,6 +1279,7 @@
       },
       {
         "id": "A3",
+        "nineGridRegion": 2,
         "boundsMeters": {
           "xMin": -100.0,
           "yMin": 184.6,
@@ -1269,6 +1302,7 @@
       },
       {
         "id": "A4",
+        "nineGridRegion": 2,
         "boundsMeters": {
           "xMin": -6.5,
           "yMin": 184.6,
@@ -1291,6 +1325,7 @@
       },
       {
         "id": "A5",
+        "nineGridRegion": 3,
         "boundsMeters": {
           "xMin": 87.0,
           "yMin": 184.6,
@@ -1313,6 +1348,7 @@
       },
       {
         "id": "A6",
+        "nineGridRegion": 3,
         "boundsMeters": {
           "xMin": 180.5,
           "yMin": 184.6,
@@ -1357,6 +1393,11 @@
         "E2",
         "F1",
         "F2"
+      ],
+      "gridRegions": [
+        1,
+        4,
+        7
       ],
       "boundsMeters": {
         "xMin": -287.0,
@@ -1416,6 +1457,13 @@
         "F4",
         "F5"
       ],
+      "gridRegions": [
+        2,
+        3,
+        5,
+        8,
+        9
+      ],
       "boundsMeters": {
         "xMin": -100.0,
         "yMin": -275.4,
@@ -1472,6 +1520,12 @@
         "E6",
         "F6"
       ],
+      "gridRegions": [
+        3,
+        5,
+        6,
+        9
+      ],
       "boundsMeters": {
         "xMin": -6.5,
         "yMin": -275.4,
@@ -1523,6 +1577,9 @@
       ],
       "gridCells": [
         "D4"
+      ],
+      "gridRegions": [
+        5
       ],
       "boundsMeters": {
         "xMin": -6.5,

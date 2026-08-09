@@ -42,6 +42,7 @@ public record MapTacticalSemantics(
             String id,
             String label,
             List<String> types,
+            List<String> gridRegions,
             List<String> characteristics,
             List<String> favors,
             List<String> risks
@@ -50,6 +51,7 @@ public record MapTacticalSemantics(
             id = id == null ? "" : id;
             label = label == null ? "" : label;
             types = types == null ? List.of() : List.copyOf(types);
+            gridRegions = gridRegions == null ? List.of() : List.copyOf(gridRegions);
             characteristics = characteristics == null ? List.of() : List.copyOf(characteristics);
             favors = favors == null ? List.of() : List.copyOf(favors);
             risks = risks == null ? List.of() : List.copyOf(risks);
