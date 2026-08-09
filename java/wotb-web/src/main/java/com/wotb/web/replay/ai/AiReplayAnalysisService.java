@@ -65,7 +65,8 @@ public class AiReplayAnalysisService {
                 contextWindowTokens, maxOutputTokens, promptSafetyMarginTokens,
                 thinkingEnabled, reasoningEffort, 315);
         this.playerService = new PlayerReplayAnalysisService(gateway, config);
-        this.teamService = new TeamReplayAnalysisService(gateway, config);
+        this.teamService = new TeamReplayAnalysisService(
+                gateway, config, new TeamAutopsyService(gateway, config));
     }
 
     public boolean isConfigured() {
