@@ -1,6 +1,7 @@
 package com.wotb.core.parse;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
@@ -48,6 +49,35 @@ class ReplayParserTest {
         assertEquals("42", battle.arenaId);
         assertEquals(1, battle.winnerTeam);
         assertTrue(battle.players.isEmpty());
+    }
+
+    @Test
+    void parsesSupremacyVictoryPointsFromBattleResults() throws IOException {
+        // info: #32 earned=300, #33 seized=120, #101 account=42, #102 team=1
+        final ByteArrayOutputStream info = new ByteArrayOutputStream();
+        writeField(info, 32, 300);
+        writeField(info, 33, 120);
+        writeField(info, 101, 42);
+        writeField(info, 102, 1);
+        // playerResults entry: #2 = info
+        final ByteArrayOutputStream entry = new ByteArrayOutputStream();
+        writeBytesField(entry, 2, info.toByteArray());
+        // root: winner #3 = 1, players #301 = entry
+        final ByteArrayOutputStream root = new ByteArrayOutputStream();
+        writeField(root, 3, 1);
+        writeBytesField(root, 301, entry.toByteArray());
+
+        final Map<String, byte[]> entries = new LinkedHashMap<>();
+        entries.put("meta.json", "{}".getBytes(StandardCharsets.UTF_8));
+        entries.put("battle_results.dat", pickle(root.toByteArray()));
+
+        final Battle battle = ReplayParser.parse(zip(entries));
+        assertEquals(1, battle.players.size());
+        final PlayerResult p = battle.players.get(0);
+        assertEquals(42, p.accountId);
+        assertEquals(1, p.team);
+        assertEquals(300, p.victoryPointsEarned);
+        assertEquals(120, p.victoryPointsSeized);
     }
 
     @Test
@@ -228,6 +258,19 @@ class ReplayParserTest {
             remaining >>>= 7;
         }
         output.write(remaining);
+    }
+
+    private static void writeField(final ByteArrayOutputStream output,
+                                   final int field, final int value) {
+        writeVarint(output, field << 3);
+        writeVarint(output, value);
+    }
+
+    private static void writeBytesField(final ByteArrayOutputStream output,
+                                        final int field, final byte[] value) {
+        writeVarint(output, (field << 3) | 2);
+        writeVarint(output, value.length);
+        output.writeBytes(value);
     }
 
     private static int replaceAllAscii(final byte[] data, final String target, final String replacement) {
