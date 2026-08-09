@@ -281,4 +281,32 @@ class MapRegionResolverTest {
         assertEquals(MapCoordinateResolution.Status.VALID, res.status());
         assertEquals(9, res.region(), "Right edge near bottom must be region 9, not 5");
     }
+
+    // === Per-map profile: asymmetric maps must not be clamped by the +/-250 default ===
+
+    @Test
+    void perMapNeptuneUsesCenteredProfile() {
+        // neptune playableBounds x[-287.0,274.0] y[-275.4,276.6]
+        final MapCoordinateResolution res = MapRegionResolver.resolve(-280f, -270f, "neptune");
+        assertTrue(res.usable(), "neptune left edge (-280) must be in-range with per-map profile");
+        final MapCoordinateResolution def = MapRegionResolver.resolve(-280f, -270f, "no_such_map");
+        assertFalse(def.usable(), "default profile must reject -280 (outside +/-250+tolerance)");
+    }
+
+    @Test
+    void perMapHimmelsdorfLeftEdgeUsable() {
+        final MapCoordinateResolution res = MapRegionResolver.resolve(-259f, 0f, "himmelsdorf");
+        assertTrue(res.usable());
+        assertTrue(res.position().x() < 250f, "left edge must map to left half of canonical map");
+    }
+
+    @Test
+    void perMapDistanceUsesSameProfile() {
+        final float d = MapRegionResolver.canonicalDistanceMeters(
+                -280f, -270f, 274f, 276f, "neptune");
+        assertTrue(d > 500f, "neptune full width must be ~554m canonical, got " + d);
+        final float dDefault = MapRegionResolver.canonicalDistanceMeters(
+                -280f, -270f, 274f, 276f, "no_such_map");
+        assertTrue(dDefault < 0f, "default profile must reject out-of-range endpoints");
+    }
 }

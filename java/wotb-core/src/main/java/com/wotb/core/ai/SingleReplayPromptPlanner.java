@@ -216,6 +216,7 @@ public final class SingleReplayPromptPlanner {
             final SinglePlayerBattleAnalysisContext ctx,
             final float battleStartRawClockSec
     ) {
+        final String mapCode = ctx.battle() == null ? null : ctx.battle().mapName;
         if (recon == null || recon.checkpoints() == null || recon.checkpoints().isEmpty()) {
             return "";
         }
@@ -251,7 +252,7 @@ public final class SingleReplayPromptPlanner {
             // 转换 raw clock 到 battle-relative time
             final float battleRelSec = cp.rawClockSec() - battleStartRawClockSec;
             // 转换 raw XZ 到 canonical XZ
-            final MapCoordinateResolution coordRes = MapRegionResolver.resolve(pos.x(), pos.z(), MapCoordinateProfile.DEFAULT);
+            final MapCoordinateResolution coordRes = MapRegionResolver.resolve(pos.x(), pos.z(), mapCode);
 
             if (coordRes.usable()) {
                 sb.append(String.format("  t=%.1fs entity=RECORDER coordinateStatus=%s canonicalX=%.1f canonicalZ=%.1f%n",
@@ -277,6 +278,7 @@ public final class SingleReplayPromptPlanner {
             final SinglePlayerBattleAnalysisContext ctx,
             final float battleStartRawClockSec
     ) {
+        final String mapCode = ctx.battle() == null ? null : ctx.battle().mapName;
         if (recon == null || recon.checkpoints() == null || recon.checkpoints().isEmpty()) {
             return "";
         }
@@ -363,7 +365,7 @@ public final class SingleReplayPromptPlanner {
 
                 final Vector3 pos = vs.position();
                 // 使用 canonical 坐标进行去重
-                final MapCoordinateResolution coordRes = MapRegionResolver.resolve(pos.x(), pos.z(), MapCoordinateProfile.DEFAULT);
+                final MapCoordinateResolution coordRes = MapRegionResolver.resolve(pos.x(), pos.z(), mapCode);
                 if (!coordRes.usable()) continue;
 
                 // 覆盖旧值，保证最后已知位置取到的是最后一次而不是第一次 OBSERVED
@@ -397,6 +399,7 @@ public final class SingleReplayPromptPlanner {
             final SinglePlayerBattleAnalysisContext ctx,
             final float battleStartRawClockSec
     ) {
+        final String mapCode = ctx.battle() == null ? null : ctx.battle().mapName;
         if (recon == null || recon.checkpoints() == null || recon.checkpoints().isEmpty()) {
             return "";
         }
@@ -447,7 +450,7 @@ public final class SingleReplayPromptPlanner {
             while (catchUpCursor < sorted.size()
                     && sorted.get(catchUpCursor).rawClockSec() < windowStart) {
                 trackObservedEntities(sorted.get(catchUpCursor), battleStartRawClockSec,
-                        recorderAccountId, lastObservedByEntity);
+                        recorderAccountId, lastObservedByEntity, mapCode);
                 catchUpCursor++;
             }
 
@@ -496,7 +499,7 @@ public final class SingleReplayPromptPlanner {
                     if (vs.position() == null) continue;
 
                     final Vector3 pos = vs.position();
-                    final MapCoordinateResolution coordRes = MapRegionResolver.resolve(pos.x(), pos.z(), MapCoordinateProfile.DEFAULT);
+                final MapCoordinateResolution coordRes = MapRegionResolver.resolve(pos.x(), pos.z(), mapCode);
                     if (!coordRes.usable()) continue;
 
                     // 覆盖旧值，保证最后已知位置取到的是最后一次而不是第一次 OBSERVED
@@ -625,7 +628,8 @@ public final class SingleReplayPromptPlanner {
             final BattleStateCheckpoint cp,
             final float battleStartRawClockSec,
             final long recorderAccountId,
-            final Map<Integer, ObservedSample> lastObservedByEntity
+            final Map<Integer, ObservedSample> lastObservedByEntity,
+            final String mapCode
     ) {
         final float battleRelSec = cp.rawClockSec() - battleStartRawClockSec;
         for (final Map.Entry<Integer, VehicleState> ve : cp.stateSnapshot().vehiclesByEntityId().entrySet()) {
@@ -638,7 +642,7 @@ public final class SingleReplayPromptPlanner {
 
             final Vector3 pos = vs.position();
             final MapCoordinateResolution coordRes =
-                    MapRegionResolver.resolve(pos.x(), pos.z(), MapCoordinateProfile.DEFAULT);
+                    MapRegionResolver.resolve(pos.x(), pos.z(), mapCode);
             if (!coordRes.usable()) continue;
 
             trackObserved(lastObservedByEntity, ve.getKey(), battleRelSec, coordRes);

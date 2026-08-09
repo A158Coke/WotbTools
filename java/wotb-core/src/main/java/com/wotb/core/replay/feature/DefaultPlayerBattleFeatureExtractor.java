@@ -107,7 +107,8 @@ public class DefaultPlayerBattleFeatureExtractor {
         }
 
         // 压缩移动段（只针对 recorder，使用 battle-relative 时间）
-        final List<MovementSegment> movements = compressMovements(positions);
+        final List<MovementSegment> movements = compressMovements(
+                positions, battle == null ? null : battle.mapName);
 
         // 交火段
         final List<EngagementSummary> engagements = buildEngagements(damages, recorder.entityId());
@@ -139,12 +140,13 @@ public class DefaultPlayerBattleFeatureExtractor {
                 limitations, hasRealFeatures);
     }
 
-    static List<MovementSegment> compressMovements(final List<TimedPosition> positions) {
+    static List<MovementSegment> compressMovements(final List<TimedPosition> positions,
+                                                   final String mapCode) {
         // Keep only positions with a resolvable canonical coordinate.
         // INVALID positions (non-finite / beyond clamp tolerance) are unusable movement
         // evidence and must not create fake distance/speed.
         final List<TimedPosition> usable = positions.stream()
-                .filter(tp -> MapRegionResolver.resolve(tp.event().x(), tp.event().z()).usable())
+                .filter(tp -> MapRegionResolver.resolve(tp.event().x(), tp.event().z(), mapCode).usable())
                 .toList();
         if (usable.isEmpty()) return List.of();
         if (usable.size() == 1) {
@@ -162,7 +164,7 @@ public class DefaultPlayerBattleFeatureExtractor {
             // Distance in canonical meters (each endpoint resolved/clamped to canonical first).
             final float totalDist = MapRegionResolver.canonicalDistanceMeters(
                     usable.get(start).event().x(), usable.get(start).event().z(),
-                    usable.get(i).event().x(), usable.get(i).event().z());
+                    usable.get(i).event().x(), usable.get(i).event().z(), mapCode);
             final float segmentTime = usable.get(i).battleRelativeSec()
                     - usable.get(start).battleRelativeSec();
 
@@ -174,7 +176,7 @@ public class DefaultPlayerBattleFeatureExtractor {
                 // 检查下一段是否同类型（canonical meters）
                 final float nextDist = MapRegionResolver.canonicalDistanceMeters(
                         usable.get(i).event().x(), usable.get(i).event().z(),
-                        usable.get(i + 1).event().x(), usable.get(i + 1).event().z());
+                        usable.get(i + 1).event().x(), usable.get(i + 1).event().z(), mapCode);
                 final boolean nextStationary = nextDist < STATIONARY_THRESHOLD_METERS;
                 if (stationary == nextStationary && i - start > 1) continue;
             }

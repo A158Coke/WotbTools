@@ -236,7 +236,8 @@ public final class TacticalReviewPromptBuilder {
                 features != null && features.keyEvents() != null ? features.keyEvents() : List.of()));
         // 走位/区域时间线（RECORDER_REGION_TIMELINE + 压缩移动段）：fallback 有、Harness 之前缺失
         if (features != null) {
-            PlayerReplayPromptBuilder.appendRecorderMovementEvidence(sb, features.movements());
+            PlayerReplayPromptBuilder.appendRecorderMovementEvidence(
+                    sb, features.movements(), battle == null ? null : battle.mapName);
         }
         final String teamLabel = recorder != null && recorder.team() != null
                 ? (recorder.team() == 1 ? "TEAM_A" : "TEAM_B") : "UNKNOWN";
