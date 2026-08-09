@@ -1,6 +1,7 @@
 package com.wotb.web.replay.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -83,6 +84,7 @@ class TacticalReviewHarnessTest {
     private static final class RecordingGateway implements AiChatGateway {
         private final String preBattleReply;
         private final Runnable preBattleAdvance;
+        AiChatRequest lastPreBattleRequest;
         AiChatRequest lastHarnessRequest;
 
         RecordingGateway(final String preBattleReply, final Runnable preBattleAdvance) {
@@ -93,6 +95,7 @@ class TacticalReviewHarnessTest {
         @Override
         public AiChatResponse chat(final AiChatRequest request) {
             if (request.userPrompt().contains("TEAM_A（队伍1）阵容")) {
+                lastPreBattleRequest = request;
                 if (preBattleAdvance != null) {
                     preBattleAdvance.run();
                 }
@@ -236,6 +239,19 @@ class TacticalReviewHarnessTest {
         final AnalyzeResult result = harness(gateway("not a json object"))
                 .analyze(result(recon()), AllowedLanguage.ZH);
         assertEquals("old-path-text", result.analysis());
+    }
+
+    @Test
+    void structuredCall1DisablesThinking() {
+        final RecordingGateway gateway = recordingGateway(PRIOR_JSON, null);
+        harness(gateway).analyze(result(recon()), AllowedLanguage.ZH);
+        assertNotNull(gateway.lastPreBattleRequest, "Call #1 must reach the gateway");
+        assertEquals("PRE_BATTLE_STRATEGIC_PRIOR",
+                gateway.lastPreBattleRequest.analysisMode());
+        assertFalse(gateway.lastPreBattleRequest.thinkingEnabled(),
+                "structured JSON call must disable thinking to avoid blank completions");
+        assertNull(gateway.lastPreBattleRequest.reasoningEffort(),
+                "reasoning effort is meaningless when thinking is disabled");
     }
 
     @Test

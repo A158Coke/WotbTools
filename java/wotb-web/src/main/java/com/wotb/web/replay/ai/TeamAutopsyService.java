@@ -27,7 +27,10 @@ import java.util.stream.Collectors;
  * 0..6 人或超过 7 人时跳过并记录 roster_incomplete。
  * TEAM_AUTOPSY stage budget 上限 30s，实际值由 {@link TeamReplayAnalysisService}
  * 按整体剩余预算裁剪；失败/解析失败返回 {@code null}，不影响团队复盘。
- * {@code AI_CANCELLED} 必须重新抛出（不能被吞掉）。</p>
+ * {@code AI_CANCELLED} 必须重新抛出（不能被吞掉）。
+ * 结构化 JSON 小调用强制关闭 thinking：DeepSeek thinking 模式（effort=max）会把
+ * 整个输出预算消耗在 reasoning 上并返回空正文（线上实测 AI_EMPTY_RESPONSE），
+ * 关闭后直接输出契约 JSON（finish_reason=stop）。</p>
  */
 @Service
 public class TeamAutopsyService {
@@ -111,8 +114,10 @@ public class TeamAutopsyService {
                 config.model(),
                 null,
                 AUTOPSY_MAX_OUTPUT_TOKENS,
-                config.thinkingEnabled(),
-                config.reasoningEffort(),
+                // 结构化 JSON 任务：关闭 thinking，避免 reasoning 吃光 2048 输出预算
+                // 导致空正文（AI_EMPTY_RESPONSE），见类 Javadoc。
+                false,
+                null,
                 null,
                 "TEAM_AUTOPSY",
                 callTimeoutSec);

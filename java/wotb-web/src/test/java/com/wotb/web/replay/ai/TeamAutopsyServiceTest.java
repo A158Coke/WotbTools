@@ -1,6 +1,7 @@
 package com.wotb.web.replay.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -193,5 +194,9 @@ class TeamAutopsyServiceTest {
         assertNotNull(captured[0]);
         assertEquals("TEAM_AUTOPSY", captured[0].analysisMode());
         assertTrue(captured[0].callTimeoutSec() <= 30);
+        assertFalse(captured[0].thinkingEnabled(),
+                "structured JSON call must disable thinking to avoid blank completions");
+        assertNull(captured[0].reasoningEffort(),
+                "reasoning effort is meaningless when thinking is disabled");
     }
 }
