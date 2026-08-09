@@ -61,7 +61,9 @@ public final class HpMomentumSkill {
     }
 
     /**
-     * 生成 HP 动量采样序列（供 Prompt 渲染紧凑曲线）。
+     * 生成 HP 动量采样序列（仅供 Skill 内部安全比较与引擎输出使用；
+     * 不再直接渲染进 LLM Prompt——raw 逐采样 HP 曲线会把 observation membership change
+     * 伪装成 HP momentum）。
      * battleStartRawClockSec 不可用或检查点为空时返回空列表。
      */
     public List<HpMomentumSample> sample(final ReplayReconstruction recon, final Battle battle) {
