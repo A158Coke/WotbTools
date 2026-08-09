@@ -517,6 +517,22 @@ def derive_map_codes(map_id: str, known_codes: Sequence[str]) -> list[str]:
     return sorted(result)
 
 
+def resolve_display_name(
+    map_id: str, known_map_names: dict[str, dict[str, str]] | None
+) -> str | None:
+    """Human-readable map name from map_names.json (en), keyed by the derived
+    internal code; returns None for maps not covered by map_names.json."""
+    if not known_map_names:
+        return None
+    codes = derive_map_codes(map_id, known_map_names.keys())
+    if not codes:
+        return None
+    entry = known_map_names.get(codes[0])
+    if not isinstance(entry, dict) or not entry.get("en"):
+        return None
+    return str(entry["en"])
+
+
 def classify_feature(name: str) -> str | None:
     value = name.lower().replace("\\", "/")
     if value.startswith("snd_") or "_fx" in value or "dust" in value:
@@ -1356,6 +1372,7 @@ def semanticize(
     display_name: str | None,
     map_codes: Sequence[str] | None = None,
     known_map_codes: Sequence[str] | None = None,
+    known_map_names: dict[str, dict[str, str]] | None = None,
 ) -> tuple[pathlib.Path, pathlib.Path]:
     scene_path, heightmap_path = discover_map_resources(input_root)
     scene = read_sc2(read_resource(scene_path))
@@ -1395,6 +1412,8 @@ def semanticize(
     map_id = explicit_map_id or infer_map_id(scene_path)
     if not map_codes and known_map_codes:
         map_codes = derive_map_codes(map_id, known_map_codes)
+    if not display_name and known_map_names:
+        display_name = resolve_display_name(map_id, known_map_names)
     document = {
         "schemaVersion": SCHEMA_VERSION,
         "mapId": map_id,
@@ -1544,7 +1563,8 @@ def main() -> int:
                 raise SemanticizerError(
                     "--map-id, --display-name and --map-code cannot be used with --batch"
                 )
-            known_codes = load_known_map_codes(args.map_names_file)
+            known_map_names = load_map_names(args.map_names_file)
+            known_codes = list(known_map_names.keys())
             candidates = sorted(path for path in source.iterdir() if path.is_dir())
             processed = []
             failures = []
@@ -1559,6 +1579,7 @@ def main() -> int:
                         None,
                         None,
                         known_codes,
+                        known_map_names,
                     )
                     processed.append((json_path, text_path))
                     print(f"OK: {candidate.name} -> {text_path.name}")
@@ -1579,6 +1600,7 @@ def main() -> int:
                 args.display_name,
                 args.map_code,
                 None,
+                None,
             )
         elif source.is_file() and source.suffix.lower() == ".zip":
             with tempfile.TemporaryDirectory(prefix="wotb-map-") as temporary:
@@ -1594,6 +1616,7 @@ def main() -> int:
                     args.display_name,
                     args.map_code,
                     None,
+                    None,
                 )
         else:
             raise SemanticizerError(f"Input must be a map directory or ZIP: {source}")
@@ -1605,14 +1628,14 @@ def main() -> int:
     return 0
 
 
-def load_known_map_codes(path: pathlib.Path | None) -> list[str]:
+def load_map_names(path: pathlib.Path | None) -> dict[str, dict[str, str]]:
     if path is None:
-        return []
+        return {}
     with path.open(encoding="utf-8") as handle:
         data = json.load(handle)
     if not isinstance(data, dict):
         raise SemanticizerError(f"--map-names-file must be a JSON object: {path}")
-    return [str(key) for key in data.keys()]
+    return {str(key): value for key, value in data.items() if isinstance(value, dict)}
 
 
 if __name__ == "__main__":

@@ -116,11 +116,22 @@ class PreBattlePromptBuilderTest {
                         "EXACT_SCENE_DATA", "EXACT_CLIENT_DATA", "NAME_HEURISTIC",
                         "GRID_RULE_DERIVED", "RULE_DERIVED_CANDIDATE")));
         final MapTacticalSemantics custom = new MapTacticalSemantics(
-                "desert_train", areas, Map.of(), Map.of(), false, "CLIENT_RESOURCE_DERIVED");
+                "desert_train", areas, Map.of(), Map.of(), false,
+                "CLIENT_RESOURCE_DERIVED", "Desert Sands");
         final String content =
                 PreBattlePromptBuilder.buildMapSemanticsSection("desert_train", custom);
         assertTrue(content.contains("置信度差异: geometry=EXACT_SCENE_DATA"));
         assertFalse(content.contains("置信度差异: objectCategories"));
+    }
+
+    @Test
+    void mapSemanticsSectionShowsReadableMapNameAndInternalCode() {
+        final Battle battle = battleWithFullResults();
+        battle.mapName = "desert_train";
+        final String content = PreBattlePromptBuilder.buildUserContent(
+                battle, TankTacticalProfileRegistry.load(),
+                MapTacticalSemanticsRegistry.load().semanticsFor("desert_train"));
+        assertTrue(content.contains("地图: \"Desert Sands\"（内部 code: \"desert_train\"）"));
     }
 
     @Test

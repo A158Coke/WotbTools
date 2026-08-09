@@ -106,11 +106,16 @@ public final class PreBattlePromptBuilder {
                                            final MapTacticalSemantics mapSemantics) {
         final StringBuilder sb = new StringBuilder(3072);
         sb.append("=== 地图战术语义 ===\n");
-        sb.append("地图 code: ").append(PromptDataQuoter.quote(mapCode, "未知")).append('\n');
         if (mapSemantics == null || !mapSemantics.hasSemantics()) {
+            sb.append("地图 code: ").append(PromptDataQuoter.quote(mapCode, "未知")).append('\n');
             sb.append("战术语义: UNKNOWN（该地图暂无语义数据，禁止编造区域名与点位）\n");
             return sb.toString();
         }
+        final String displayName = mapSemantics.displayName().isBlank()
+                ? mapCode : mapSemantics.displayName();
+        sb.append("地图: ").append(PromptDataQuoter.quote(displayName, mapCode))
+                .append("（内部 code: ").append(PromptDataQuoter.quote(mapCode, "未知"))
+                .append("）\n");
         sb.append("数据来源: ")
                 .append(mapSemantics.source().isBlank()
                         ? "Wot Blitz 客户端 SC2 + heightmap（CLIENT_RESOURCE_DERIVED）"

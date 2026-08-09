@@ -108,7 +108,8 @@ public final class MapTacticalSemanticsRegistry {
                 relationships,
                 spawnSemantics,
                 root.path("verified").asBoolean(false),
-                text(root, "source"));
+                text(root, "source"),
+                text(root, "displayName"));
     }
 
     private static MapTacticalSemantics.TacticalArea parseArea(
