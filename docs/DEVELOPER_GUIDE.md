@@ -230,6 +230,8 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 | `EvidenceSkillEngine` | `wotb-core/.../replay/evidence/EvidenceSkillEngine.java` | 6 个 Backend Skill 编排（确定性证据编译，不裁决） |
 | `TankTacticalProfileRegistry` | `wotb-core/.../replay/evidence/TankTacticalProfileRegistry.java` | 坦克战术语义层（`common/tank_tactical_profiles.json` + 车型 fallback） |
 | `MapTacticalSemanticsRegistry` | `wotb-core/.../replay/map/MapTacticalSemanticsRegistry.java` | 地图战术语义层（`common/map-semantics/*.semantic.json`，`map-semanticizer` 客户端资源解码；未收录 → UNKNOWN） |
+| `TeamAutopsyStatsBuilder` | `wotb-core/.../replay/feature/TeamAutopsyStatsBuilder.java` | 团队剖析逐人确定性数据（结算 + 早死/输出不足/窗口内阵亡 flag） |
+| `TeamAutopsyService` | `wotb-web/.../ai/TeamAutopsyService.java` | 第 3 次调用：判负→主要战犯 / 判胜→MVP（30s stage budget，失败不影响主复盘） |
 | `ReplayService` | `wotb-web/.../replay/service/ReplayService.java` | 业务编排 |
 | `ReplayCapacityLimiter` | `wotb-web/.../replay/service/ReplayCapacityLimiter.java` | 单实例回放解析并发闸门 |
 | `Mapper` | `wotb-web/.../replay/mapper/Mapper.java` | 核心模型 → DTO |
@@ -273,6 +275,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 - **观察性语义**：HP 动量只按两端共同可靠观察实体计算 delta（unspot / STALE 不伪造 HP swing；confirmed DESTROYED 按 0 HP 计入 lethal loss）；Call #2 只输出安全比较后的 HP_MOMENTUM 证据、不输出 raw 逐采样 HP 曲线，HP before/after/swing/coverage 必须来自同一 comparison cohort（禁止跨 cohort 拼接）；局部支援 denominator 使用当前时刻存活名单（已阵亡车辆不污染覆盖、存活敌军全部观察可重新 EXACT），敌军数量表达为"至少观察到 N"，仅两侧完整覆盖才 EXACT；隐藏/点亮不制造 local-number flip；Route 敌方人数优势需友军侧完整覆盖（observedEnemy 作为真实敌军下界）。
 - **观察性**：HP 动量带 `observedCoverage`，覆盖率低时置信度降为 PARTIAL；局部支援只统计 `OBSERVED` 位置，STALE/UNKNOWN 不计入。
 - **降级阶梯**：非 ZH / 无重建 / 录像者未解析 / 特征不可用 / Call #1 失败 / 无证据 → 旧单 Call 路径；对外 API 与响应结构不变。
+- **Team Autopsy（第 3 次调用，独立 feature）**：判负 → 主要战犯（≥1，可多人，证据类别：短窗口掉血过多 / 过早阵亡 / 缺乏输出 / 脱节）；判胜 → MVP（≥1）；输入权威结算 + Strategic Prior 职责基线 + 关键窗口；30s 独立 stage budget；失败/解析失败不输出该段、不影响主复盘；展示追加到 `analysis` 文本尾部（`AnalyzeResponse` 不变，前端零改动）。
 - **新增共享资源**：`common/tank_tactical_profiles.json`（精选 Tier X + 车型级默认 fallback），`wotb-core/pom.xml` 与 `docker/Dockerfile.backend` 已同步复制。
 
 ## AI 分析范围边界
