@@ -227,7 +227,9 @@ public final class PreBattlePromptBuilder {
                 continue;
             }
             final String top = perField.entrySet().stream()
-                    .max(Map.Entry.comparingByValue())
+                    // Map.copyOf 不保证迭代顺序，并列众数必须 tie-break 保持确定性
+                    .max(Map.Entry.<String, Integer>comparingByValue()
+                            .thenComparing(Map.Entry.comparingByKey()))
                     .map(Map.Entry::getKey)
                     .orElse("");
             dominant.put(field, field + "=" + top);

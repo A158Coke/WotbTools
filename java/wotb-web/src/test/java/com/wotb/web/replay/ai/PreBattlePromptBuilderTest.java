@@ -97,8 +97,14 @@ class PreBattlePromptBuilderTest {
     @Test
     void areaConfidenceDiffIsRenderedWhenDifferentFromDominant() {
         final Map<String, MapTacticalSemantics.TacticalArea> areas = new LinkedHashMap<>();
-        areas.put("AREA_COMMON", new MapTacticalSemantics.TacticalArea(
-                "AREA_COMMON", "常规区", List.of("LOW_GROUND"), List.of("GRID_REGION_1"),
+        areas.put("AREA_A", new MapTacticalSemantics.TacticalArea(
+                "AREA_A", "常规区", List.of("LOW_GROUND"), List.of("GRID_REGION_1"),
+                List.of(), List.of(), List.of(),
+                new MapTacticalSemantics.AreaConfidence(
+                        "EXACT_CLIENT_DATA", "EXACT_CLIENT_DATA", "NAME_HEURISTIC",
+                        "GRID_RULE_DERIVED", "RULE_DERIVED_CANDIDATE")));
+        areas.put("AREA_B", new MapTacticalSemantics.TacticalArea(
+                "AREA_B", "常规区", List.of("LOW_GROUND"), List.of("GRID_REGION_2"),
                 List.of(), List.of(), List.of(),
                 new MapTacticalSemantics.AreaConfidence(
                         "EXACT_CLIENT_DATA", "EXACT_CLIENT_DATA", "NAME_HEURISTIC",
