@@ -58,14 +58,17 @@ class CriticalWindowSkillTest {
     }
 
     @Test
-    void mergedHpSignalsUseEarliestBeforeAndLatestAfter() {
+    void mergedHpSignalsNeverMixDifferentComparisonCohorts() {
+        // 两个时间接近、但 comparison cohort 不同的 HP signal：
+        // A: before=+1000 after=+3000 swing=2000
+        // B: before=-2000 after=-4500 swing=2500（更大 → 代表）
         final AiEvidence hp1 = evidence(EvidenceType.HP_MOMENTUM, 0f, 10f,
-                Map.of("hpLeadBefore", 100.0, "hpLeadAfter", 90.0,
-                        "hpSwing", 10.0, "poolEstimate", 300.0, "observedCoverage", 1.0),
+                Map.of("hpLeadBefore", 1000.0, "hpLeadAfter", 3000.0,
+                        "hpSwing", 2000.0, "poolEstimate", 3000.0, "observedCoverage", 1.0),
                 EvidencePriority.IMPORTANT);
         final AiEvidence hp2 = evidence(EvidenceType.HP_MOMENTUM, 30f, 40f,
-                Map.of("hpLeadBefore", 80.0, "hpLeadAfter", 50.0,
-                        "hpSwing", 30.0, "poolEstimate", 300.0, "observedCoverage", 1.0),
+                Map.of("hpLeadBefore", -2000.0, "hpLeadAfter", -4500.0,
+                        "hpSwing", 2500.0, "poolEstimate", 3000.0, "observedCoverage", 1.0),
                 EvidencePriority.IMPORTANT);
 
         final List<AiEvidence> windows = new CriticalWindowSkill().detect(List.of(hp1, hp2));
@@ -73,10 +76,10 @@ class CriticalWindowSkillTest {
         final AiEvidence window = windows.getFirst();
         assertEquals(0f, window.startSec());
         assertEquals(40f, window.endSec());
-        assertEquals(100.0, window.numbers().get("teamHpLeadBefore"),
-                "before 必须取最早 HP 信号的 before");
-        assertEquals(50.0, window.numbers().get("teamHpLeadAfter"),
-                "after 必须取最晚 HP 信号的 after");
-        assertEquals(50.0, window.numbers().get("teamHpSwing"));
+        // HP 数值必须全部来自 hpSwing 最大的单个真实 signal（B），不得拼接 A.before + B.after
+        assertEquals(-2000.0, window.numbers().get("teamHpLeadBefore"));
+        assertEquals(-4500.0, window.numbers().get("teamHpLeadAfter"));
+        assertEquals(2500.0, window.numbers().get("teamHpSwing"),
+                "不得产生 1000 → -4500 / 5500 之类的跨 cohort swing");
     }
 }

@@ -1,5 +1,6 @@
 package com.wotb.web.replay.ai;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wotb.core.ai.AiTokenEstimator;
@@ -96,9 +97,15 @@ class TacticalReviewPromptBuilderTest {
 
     private static TacticalReviewPromptBuilder.PreparedHarnessPrompt prepare(
             final int contextWindow, final int maxOutput, final int safety) {
+        return prepare(evidence(), contextWindow, maxOutput, safety);
+    }
+
+    private static TacticalReviewPromptBuilder.PreparedHarnessPrompt prepare(
+            final EvidenceSkillResult evidence,
+            final int contextWindow, final int maxOutput, final int safety) {
         return TacticalReviewPromptBuilder.prepare(
                 prior(),
-                evidence(),
+                evidence,
                 battle(),
                 null,
                 new PlayerBattleFeatureSet(
@@ -122,7 +129,19 @@ class TacticalReviewPromptBuilderTest {
         assertTrue(prepared.userContent().contains("TASK"));
         assertTrue(prepared.userContent().contains("[H1]"));
         assertTrue(prepared.userContent().contains("战局变化窗口"));
-        assertTrue(prepared.userContent().contains("HP 动量"));
+    }
+
+    @Test
+    void rawMomentumSeriesIsNeverRenderedIntoPrompt() {
+        // 逐采样点的可观察 HP 差观察集合可能不同，不能直接进 Prompt（unspot 会伪装成 HP momentum）
+        final List<HpMomentumSkill.HpMomentumSample> fakeSeries = List.of(
+                new HpMomentumSkill.HpMomentumSample(0f, Map.of(), Map.of(), 4000, 4000, 0, 1.0, 8),
+                new HpMomentumSkill.HpMomentumSample(60f, Map.of(), Map.of(), 4000, 2200, 987654, 1.0, 8));
+        final EvidenceSkillResult evidence = new EvidenceSkillResult(
+                List.of(), List.of(), fakeSeries);
+        final var prepared = prepare(evidence, 131_072, 8192, 1000);
+        assertFalse(prepared.userContent().contains("987654"),
+                "raw per-sample HP lead 不得出现在 Call #2 userPrompt");
     }
 
     @Test

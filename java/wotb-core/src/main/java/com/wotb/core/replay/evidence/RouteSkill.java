@@ -146,7 +146,8 @@ public final class RouteSkill {
         return result;
     }
 
-    /** 进入敌方人数优势区域（敌军 ≥ 2 且比友军多 ≥ 2）的移动段。 */
+    /** 进入敌方人数优势区域（需友军侧完整覆盖：observedEnemy 是真实敌军下界，
+     * 只有 observedEnemy ≥ 精确友军 + 2 才能证明敌方人数优势）的移动段。 */
     static List<AiEvidence> enemyMajorityEntries(final EvidenceSkillContext ctx) {
         if (ctx.features() == null || ctx.features().movements() == null
                 || ctx.recon() == null || ctx.recon().checkpoints() == null
@@ -166,7 +167,8 @@ public final class RouteSkill {
                     seg.endTime(),
                     ctx.recorder().entityId(),
                     ctx.battle());
-            if (counts == null || counts.enemyCount() < 2
+            if (counts == null || !counts.friendlyFullyObserved()
+                    || counts.enemyCount() < 2
                     || counts.enemyCount() < counts.friendlyCount() + 2) {
                 continue;
             }

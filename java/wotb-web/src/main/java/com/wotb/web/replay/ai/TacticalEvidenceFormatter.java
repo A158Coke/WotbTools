@@ -3,7 +3,6 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.replay.evidence.AiEvidence;
 import com.wotb.core.replay.evidence.EntityRef;
 import com.wotb.core.replay.evidence.EvidenceSkillResult;
-import com.wotb.core.replay.evidence.HpMomentumSkill;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -17,21 +16,6 @@ import java.util.Map;
 final class TacticalEvidenceFormatter {
 
     private TacticalEvidenceFormatter() {
-    }
-
-    static String renderMomentumSeries(final List<HpMomentumSkill.HpMomentumSample> series, final int maxLines) {
-        if (series == null || series.isEmpty()) {
-            return "";
-        }
-        final StringBuilder sb = new StringBuilder(1024);
-        final List<HpMomentumSkill.HpMomentumSample> samples = series.size() <= maxLines
-                ? series : series.subList(series.size() - maxLines, series.size());
-        for (final HpMomentumSkill.HpMomentumSample s : samples) {
-            sb.append("  ").append(PlayerAnalysisTerms.battleClock(s.battleRelSec()))
-                    .append(" 可观察 HP 差 ").append(String.format("%.0f", s.lead()))
-                    .append("（覆盖 ").append(String.format("%.0f%%", s.observedCoverage() * 100)).append("）\n");
-        }
-        return sb.toString();
     }
 
     static String renderEvidenceSections(final EvidenceSkillResult result) {
