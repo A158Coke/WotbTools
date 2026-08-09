@@ -1,9 +1,5 @@
 package com.wotb.web.replay.ai;
 
-import com.wotb.core.model.Battle;
-import com.wotb.core.processing.FriendlyEnemyResult;
-import com.wotb.core.processing.FriendlyEnemyResult.Winner;
-import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.evidence.EvidenceSkillContext;
@@ -25,13 +21,11 @@ import org.springframework.stereotype.Service;
 import java.util.function.LongSupplier;
 
 /**
- * AI Review Harness 三阶段编排器（文档 §25/§30）：
- * Call #1（赛前战略基线）→ Backend Evidence Skills → Call #2（Tactical Review）
- * → Call #3（Team Autopsy，判负战犯/判胜 MVP）。
- * <p>Team Autopsy 输入 = 当前请求已生成的 Strategic Prior + EvidenceSkillResult +
- * recorder accountId/team + 同一 recorderTeam 计算的 Winner；Call #3 预算按整体
- * 剩余时间裁剪（min(30s, 剩余 - safety margin)），不足安全余量不启动并记录
- * AUTOPSY_BUDGET_EXHAUSTED；普通失败/解析失败不影响主复盘，AI_CANCELLED 重新抛出。</p>
+ * AI Review Harness 双 Call 编排器（文档 §25/§30）：
+ * Call #1（赛前战略基线）→ Backend Evidence Skills → Call #2（Tactical Review）。
+ * <p>随机战斗个人复盘不评判 MVP/战犯；Team Autopsy（战犯/MVP）只应用于
+ * team perspective（训练房/联赛团队复盘），由 {@link TeamReplayAnalysisService}
+ * 以结算级独立 TEAM_AUTOPSY 调用执行。</p>
  * <p>降级阶梯（保持现有单 Call 路径为兜底，用户可感知行为不倒退）：
  * 非 ZH / 无重建 / 录像者未解析 / 特征不可用 / Call #1 失败 / 无证据 → 旧路径。</p>
  */
@@ -53,7 +47,6 @@ public class TacticalReviewHarness {
     private final PreBattleStrategicService preBattleService;
     private final AiChatGateway gateway;
     private final AiReplayAnalysisConfig config;
-    private final TeamAutopsyService teamAutopsyService;
     private final LongSupplier nanoTimeSource;
     private final EvidenceSkillEngine skillEngine = new EvidenceSkillEngine();
 
@@ -64,27 +57,23 @@ public class TacticalReviewHarness {
     public TacticalReviewHarness(final PlayerReplayAnalysisService playerService,
                                  final PreBattleStrategicService preBattleService,
                                  final AiChatGateway gateway,
-                                 final AiReplayAnalysisConfig config,
-                                 final TeamAutopsyService teamAutopsyService) {
-        this(playerService, preBattleService, gateway, config,
-                teamAutopsyService, System::nanoTime);
+                                 final AiReplayAnalysisConfig config) {
+        this(playerService, preBattleService, gateway, config, System::nanoTime);
     }
 
     TacticalReviewHarness(final PlayerReplayAnalysisService playerService,
                           final PreBattleStrategicService preBattleService,
                           final AiChatGateway gateway,
                           final AiReplayAnalysisConfig config,
-                          final TeamAutopsyService teamAutopsyService,
                           final LongSupplier nanoTimeSource) {
         this.playerService = playerService;
         this.preBattleService = preBattleService;
         this.gateway = gateway;
         this.config = config;
-        this.teamAutopsyService = teamAutopsyService;
         this.nanoTimeSource = nanoTimeSource;
     }
 
-    /** 运行三阶段 Harness；不满足前提时回退到旧单 Call 路径。 */
+    /** 运行双 Call Harness；不满足前提时回退到旧单 Call 路径。 */
     public AnalyzeResult analyze(final ReplayProcessingResult result, final AllowedLanguage language) {
         final long startNanos = nanoTimeSource.getAsLong();
         if (language != AllowedLanguage.ZH) {
@@ -164,8 +153,7 @@ public class TacticalReviewHarness {
         final String text = gateway.chat(request).completionText();
         count("used");
         LOGGER.info("Harness review used: {}", prepared.budgetSummary());
-        return new AnalyzeResult(appendTeamAutopsy(
-                text, result.battle(), prior, evidence, recorder, startNanos));
+        return new AnalyzeResult(text);
     }
 
     private AnalyzeResult fallback(final ReplayProcessingResult result,
@@ -179,52 +167,6 @@ public class TacticalReviewHarness {
         if (meterRegistry != null) {
             meterRegistry.counter("wotb_ai_review_harness_total", "result", reason).increment();
         }
-    }
-
-    /**
-     * Call #2 成功后追加「团队剖析」段（判负 → 战犯，判胜 → MVP）。
-     * <p>输入使用当前请求已生成的 prior/evidence/recorder 信息；整体预算由 startNanos
-     * 起算，Call #3 timeout = min(30s, 整体剩余 - safety margin)，不足安全余量时记录
-     * AUTOPSY_BUDGET_EXHAUSTED 并直接返回 Call #2 主复盘；recorder.team 非法/胜负未知
-     * 时同样跳过。普通失败/解析失败不影响主复盘；AI_CANCELLED 由 Service 重新抛出。</p>
-     */
-    private String appendTeamAutopsy(final String reviewText,
-                                     final Battle battle,
-                                     final PreBattleStrategicPrior prior,
-                                     final EvidenceSkillResult evidence,
-                                     final RecorderEntityMapping recorder,
-                                     final long startNanos) {
-        final Integer recorderTeam = recorder != null ? recorder.team() : null;
-        if (recorderTeam == null || !PlayerSideResolver.isValidRawTeam(recorderTeam)) {
-            count("RECORDER_TEAM_INVALID");
-            return reviewText;
-        }
-        final Winner winner = FriendlyEnemyResult.resolve(battle.winnerTeam, recorderTeam);
-        if (winner == Winner.DRAW_OR_UNKNOWN) {
-            return reviewText;
-        }
-        final long remainingAfterCall2 = remainingSeconds(startNanos);
-        final long autopsyBudget = Math.min(
-                TeamAutopsyService.AUTOPSY_CALL_TIMEOUT_SEC,
-                remainingAfterCall2 - SAFETY_MARGIN_SEC);
-        if (autopsyBudget <= 0) {
-            count("AUTOPSY_BUDGET_EXHAUSTED");
-            return reviewText;
-        }
-        final TeamAutopsyOutcome outcome = teamAutopsyService.analyze(
-                battle,
-                prior,
-                evidence,
-                recorder != null ? recorder.accountId() : null,
-                recorderTeam,
-                AllowedLanguage.ZH,
-                winner,
-                (int) Math.min(autopsyBudget, Integer.MAX_VALUE));
-        if (outcome == null) {
-            return reviewText;
-        }
-        return reviewText + TeamAutopsyPromptBuilder.renderSection(
-                outcome.result(), winner, outcome.roster());
     }
 
     /** 剩余请求预算（秒）：整体 deadline = 配置的 callTimeoutSec。 */

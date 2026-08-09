@@ -63,6 +63,11 @@ import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 
 class AiReplayAnalysisServiceTest {
 
+    private static final String AUTOPSY_JSON =
+            "{\"players\":[{\"playerKey\":\"P1\",\"contribution\":\"HIGH\",\"confidence\":\"EXACT\"}],"
+                    + "\"mvps\":[{\"playerKey\":\"P1\",\"reason\":\"r\",\"evidence\":[\"e\"],"
+                    + "\"confidence\":\"EXACT\"}],\"limitations\":[\"l\"]}";
+
     /**
      * 契约测试用 Gateway 替身：捕获传给 Gateway 的完整 {@link AiChatRequest}，
      * 返回可配置的 {@link AiChatResponse}；从不发起真实 HTTP。
@@ -70,6 +75,7 @@ class AiReplayAnalysisServiceTest {
     static final class FakeAiChatGateway implements AiChatGateway {
         final List<AiChatRequest> requests = new CopyOnWriteArrayList<>();
         volatile String nextCompletionText = "team review";
+        volatile String autopsyCompletionText;
         volatile RuntimeException nextError;
         volatile boolean configured = true;
 
@@ -83,6 +89,10 @@ class AiReplayAnalysisServiceTest {
             requests.add(request);
             if (nextError != null) {
                 throw nextError;
+            }
+            if ("TEAM_AUTOPSY".equals(request.analysisMode()) && autopsyCompletionText != null) {
+                return new AiChatResponse(autopsyCompletionText, "DeepSeek", "test-model",
+                        0, 0, 0, 0, 0, 0, "stop");
             }
             return new AiChatResponse(nextCompletionText, "DeepSeek", "test-model",
                     0, 0, 0, 0, 0, 0, "stop");
@@ -228,6 +238,27 @@ class AiReplayAnalysisServiceTest {
                 || teamLastBody().contains("result=DRAW_OR_UNKNOWN"),
                 "Request body must contain result=TEAM_WIN/LOSS/DRAW_OR_UNKNOWN, not winnerTeam=");
         assertFalse(teamLastBody().contains("winnerTeam="));
+    }
+
+    @Test
+    void teamPerspectiveAppendsSettlementAutopsySection() {
+        gateway.nextCompletionText = "team review";
+        gateway.autopsyCompletionText = AUTOPSY_JSON;
+        final var service = startService();
+        final var context = service.buildSingleTeamContext(
+                teamGroups(List.of(teamResult(
+                        "autopsy.wotbreplay", "arena-autopsy", "Ally", 1001L, 1)))
+                        .getFirst());
+        final var result = service.analyzeSingleTeamContext(context);
+        assertTrue(result.analysis().startsWith("team review"));
+        assertTrue(result.analysis().contains("团队剖析"));
+        final var autopsyRequest = gateway.requests.stream()
+                .filter(r -> "TEAM_AUTOPSY".equals(r.analysisMode()))
+                .findFirst().orElseThrow();
+        assertTrue(autopsyRequest.systemPrompt().contains("结算级团队剖析"),
+                "team perspective must use the settlement-only system prompt");
+        assertFalse(autopsyRequest.userPrompt().contains("赛前职责基线"),
+                "team perspective autopsy must not claim Strategic Prior evidence");
     }
 
     @Test

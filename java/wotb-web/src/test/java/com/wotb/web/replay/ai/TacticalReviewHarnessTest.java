@@ -1,7 +1,6 @@
 package com.wotb.web.replay.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -36,7 +35,6 @@ import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
@@ -55,18 +53,6 @@ class TacticalReviewHarnessTest {
               "hypotheses": [{"id": "H1", "claim": "cl", "reason": "rs"}]
             }""";
 
-    private static final String AUTOPSY_JSON = "{\"players\":["
-            + "{\"playerKey\":\"P1\",\"contribution\":\"HIGH\",\"confidence\":\"EXACT\"},"
-            + "{\"playerKey\":\"P2\",\"contribution\":\"LOW\",\"confidence\":\"PARTIAL\"},"
-            + "{\"playerKey\":\"P3\",\"contribution\":\"MEDIUM\",\"confidence\":\"INFERRED\"},"
-            + "{\"playerKey\":\"P4\",\"contribution\":\"UNKNOWN\",\"confidence\":\"UNKNOWN\"},"
-            + "{\"playerKey\":\"P5\",\"contribution\":\"HIGH\",\"confidence\":\"EXACT\"},"
-            + "{\"playerKey\":\"P6\",\"contribution\":\"MEDIUM\",\"confidence\":\"PARTIAL\"},"
-            + "{\"playerKey\":\"P7\",\"contribution\":\"LOW\",\"confidence\":\"INFERRED\"}],"
-            + "\"mvps\":[{\"playerKey\":\"P1\",\"reason\":\"关键窗口输出\",\"evidence\":[\"e1\"],\"confidence\":\"EXACT\"}],"
-            + "\"biggestLiabilities\":[{\"playerKey\":\"P2\",\"reason\":\"过早阵亡\",\"evidence\":[\"e2\"],\"confidence\":\"PARTIAL\"}],"
-            + "\"limitations\":[\"l\"]}";
-
     private static AiReplayAnalysisConfig config() {
         return new AiReplayAnalysisConfig(
                 ESTIMATOR, "test-model", 100_000, 131_072, 8192, 1000, false, null, 315);
@@ -80,55 +66,32 @@ class TacticalReviewHarnessTest {
                                                  final LongSupplier clock) {
         final PlayerReplayAnalysisService playerService = new PlayerReplayAnalysisService(gateway, config());
         final PreBattleStrategicService preBattleService = new PreBattleStrategicService(gateway, config());
-        final TeamAutopsyService autopsyService = new TeamAutopsyService(gateway, config());
         return new TacticalReviewHarness(
-                playerService, preBattleService, gateway, config(), autopsyService, clock);
+                playerService, preBattleService, gateway, config(), clock);
     }
 
     private static AiChatGateway gateway(final String preBattleReply) {
-        return recordingGateway(preBattleReply, null, AUTOPSY_JSON);
+        return new RecordingGateway(preBattleReply, null);
     }
 
     private static RecordingGateway recordingGateway(final String preBattleReply,
                                                      final Runnable preBattleAdvance) {
-        return recordingGateway(preBattleReply, preBattleAdvance, AUTOPSY_JSON);
-    }
-
-    private static RecordingGateway recordingGateway(final String preBattleReply,
-                                                     final Runnable preBattleAdvance,
-                                                     final String autopsyReply) {
-        return recordingGateway(preBattleReply, preBattleAdvance, autopsyReply, null);
-    }
-
-    private static RecordingGateway recordingGateway(final String preBattleReply,
-                                                     final Runnable preBattleAdvance,
-                                                     final String autopsyReply,
-                                                     final Runnable harnessReplyAdvance) {
-        return new RecordingGateway(
-                preBattleReply, preBattleAdvance, autopsyReply, harnessReplyAdvance);
+        return new RecordingGateway(preBattleReply, preBattleAdvance);
     }
 
     /** 可记录请求、可在 Call #1 返回前推进假时钟的测试网关。 */
     private static final class RecordingGateway implements AiChatGateway {
         private final String preBattleReply;
         private final Runnable preBattleAdvance;
-        private final String autopsyReply;
-        private final Runnable harnessReplyAdvance;
-        final List<AiChatRequest> requests = new ArrayList<>();
         AiChatRequest lastHarnessRequest;
-        AiChatRequest lastAutopsyRequest;
 
-        RecordingGateway(final String preBattleReply, final Runnable preBattleAdvance,
-                         final String autopsyReply, final Runnable harnessReplyAdvance) {
+        RecordingGateway(final String preBattleReply, final Runnable preBattleAdvance) {
             this.preBattleReply = preBattleReply;
             this.preBattleAdvance = preBattleAdvance;
-            this.autopsyReply = autopsyReply;
-            this.harnessReplyAdvance = harnessReplyAdvance;
         }
 
         @Override
         public AiChatResponse chat(final AiChatRequest request) {
-            requests.add(request);
             if (request.userPrompt().contains("TEAM_A（队伍1）阵容")) {
                 if (preBattleAdvance != null) {
                     preBattleAdvance.run();
@@ -137,18 +100,7 @@ class TacticalReviewHarnessTest {
             }
             if ("TACTICAL_REVIEW_HARNESS".equals(request.analysisMode())) {
                 lastHarnessRequest = request;
-                if (harnessReplyAdvance != null) {
-                    harnessReplyAdvance.run();
-                }
                 return new AiChatResponse("harness-review-text", "", "", 0, 0, 0, 0, 0, 0, "stop");
-            }
-            if ("TEAM_AUTOPSY".equals(request.analysisMode())) {
-                lastAutopsyRequest = request;
-                if ("cancelled".equals(autopsyReply)) {
-                    throw new com.wotb.web.replay.ai.gateway.AiUpstreamException(
-                            "AI_CANCELLED", null, "autopsy-test");
-                }
-                return new AiChatResponse(autopsyReply, "", "", 0, 0, 0, 0, 0, 0, "stop");
             }
             return new AiChatResponse("old-path-text", "", "", 0, 0, 0, 0, 0, 0, "stop");
         }
@@ -168,10 +120,6 @@ class TacticalReviewHarnessTest {
                 resultPlayer(1001, 1, 4481, "Kranvagn", "rec1", true, 0),
                 resultPlayer(1002, 1, 10785, "T110E5", "", false, 100),
                 resultPlayer(1003, 1, 10785, "T110E5", "", false, 108),
-                resultPlayer(1004, 1, 14609, "Leopard 1", "", true, 0),
-                resultPlayer(1005, 1, 12305, "E 50 M", "", true, 0),
-                resultPlayer(1006, 1, 4481, "Kranvagn", "", true, 0),
-                resultPlayer(1007, 1, 10785, "T110E5", "", true, 0),
                 resultPlayer(2001, 2, 14609, "Leopard 1", "", true, 0),
                 resultPlayer(2002, 2, 12305, "E 50 M", "", true, 0));
         final Battle b = new Battle();
@@ -324,106 +272,9 @@ class TacticalReviewHarnessTest {
     }
 
     @Test
-    void winningBattleAppendsTeamAutopsyMvpSection() {
-        final AnalyzeResult result = harness(gateway(PRIOR_JSON))
-                .analyze(result(battleWithWinner(1), recon()), AllowedLanguage.ZH);
-        final String analysis = result.analysis();
-        assertTrue(analysis.startsWith("harness-review-text"));
-        assertTrue(analysis.contains("======================== 团队剖析"));
-        assertTrue(analysis.contains("MVP"));
-        assertTrue(analysis.contains("判胜（TEAM_A）"));
-        assertTrue(analysis.contains("P1（"));
-    }
-
-    @Test
-    void losingBattleAppendsTeamAutopsyLiabilitySection() {
-        final AnalyzeResult result = harness(gateway(PRIOR_JSON))
-                .analyze(result(battleWithWinner(2), recon()), AllowedLanguage.ZH);
-        final String analysis = result.analysis();
-        assertTrue(analysis.contains("======================== 团队剖析"));
-        assertTrue(analysis.contains("主要战犯"));
-        assertTrue(analysis.contains("判负（TEAM_A）"));
-    }
-
-    @Test
-    void threeCallsRunInOrderAndAutopsyCarriesPriorAndWindows() {
-        final RecordingGateway gateway = recordingGateway(PRIOR_JSON, null);
-        final AnalyzeResult result = harness(gateway)
-                .analyze(result(battleWithWinner(2), recon()), AllowedLanguage.ZH);
-        assertEquals(List.of("PRE_BATTLE_STRATEGIC_PRIOR",
-                        "TACTICAL_REVIEW_HARNESS", "TEAM_AUTOPSY"),
-                gateway.requests.stream().map(AiChatRequest::analysisMode).toList(),
-                "Call order must be PRE_BATTLE_STRATEGIC -> TACTICAL_REVIEW_HARNESS -> TEAM_AUTOPSY");
-        assertNotNull(gateway.lastAutopsyRequest);
-        final String autopsyBody = gateway.lastAutopsyRequest.userPrompt();
-        assertTrue(autopsyBody.contains("赛前职责基线"),
-                "Call #3 must carry the Strategic Prior");
-        assertTrue(autopsyBody.contains("关键窗口"),
-                "Call #3 must carry the Critical Window evidence");
-        assertTrue(result.analysis().contains("团队剖析"));
-    }
-
-    @Test
-    void autopsyUnparsableKeepsReviewIntact() {
-        final RecordingGateway gateway = recordingGateway(PRIOR_JSON, null, "not json");
-        final AnalyzeResult result = harness(gateway)
-                .analyze(result(battleWithWinner(2), recon()), AllowedLanguage.ZH);
-        assertEquals("harness-review-text", result.analysis());
-        assertFalse(result.analysis().contains("团队剖析"));
-    }
-
-    @Test
-    void drawSkipsTeamAutopsySection() {
-        final AnalyzeResult result = harness(gateway(PRIOR_JSON))
-                .analyze(result(battle(), recon()), AllowedLanguage.ZH);
-        assertEquals("harness-review-text", result.analysis());
-        assertFalse(result.analysis().contains("团队剖析"));
-    }
-
-    @Test
-    void insufficientRemainingBudgetSkipsCall3WithoutGatewayCall() {
-        final AtomicLong clock = new AtomicLong(0L);
-        final RecordingGateway gateway = recordingGateway(
-                PRIOR_JSON, null, AUTOPSY_JSON, () -> clock.addAndGet(306_000_000_000L));
-        final AnalyzeResult result = harness(gateway, clock::get)
-                .analyze(result(battleWithWinner(1), recon()), AllowedLanguage.ZH);
-        assertEquals("harness-review-text", result.analysis());
-        assertNull(gateway.lastAutopsyRequest,
-                "Call #3 must not start when the remaining budget is below the safety margin");
-    }
-
-    @Test
-    void autopsyCancellationPropagatesToCaller() {
-        final RecordingGateway gateway = recordingGateway(PRIOR_JSON, null, "cancelled");
-        final com.wotb.web.replay.ai.gateway.AiUpstreamException e = assertThrows(
-                com.wotb.web.replay.ai.gateway.AiUpstreamException.class,
-                () -> harness(gateway).analyze(
-                        result(battleWithWinner(2), recon()), AllowedLanguage.ZH));
-        assertEquals("AI_CANCELLED", e.code());
-    }
-
-    @Test
-    void call3UsesOverallRemainingBudget() {
-        final RecordingGateway gateway = recordingGateway(PRIOR_JSON, null);
-        final AtomicLong clock = new AtomicLong(0L);
-        harness(gateway, clock::get)
-                .analyze(result(battleWithWinner(1), recon()), AllowedLanguage.ZH);
-        assertNotNull(gateway.lastAutopsyRequest);
-        assertTrue(gateway.lastAutopsyRequest.callTimeoutSec() <= 30,
-                "Call #3 budget must be capped at 30s");
-        assertTrue(gateway.lastAutopsyRequest.callTimeoutSec()
-                        <= config().callTimeoutSec() - TacticalReviewHarness.SAFETY_MARGIN_SEC,
-                "Call #3 budget must leave the overall safety margin");
-    }
-
-    @Test
     void sequentialTheoreticalTimeoutNeverExceedsEndpointDeadline() {
         // Call #1(45s) + 旧路径 fallback(≤315s) 的理论最坏值必须低于前端/nginx 的 400s
         assertTrue(TacticalReviewHarness.CALL_1_BUDGET_SEC + config().callTimeoutSec()
-                < TacticalReviewHarness.ENDPOINT_DEADLINE_SEC);
-        // 三阶段：每个后续 call 按 remaining-margin 裁剪，Call #3 无无条件 +30s，
-        // 理论总耗时 ≤ callTimeoutSec - margin，仍低于 endpoint deadline。
-        assertTrue(config().callTimeoutSec() - TacticalReviewHarness.SAFETY_MARGIN_SEC
                 < TacticalReviewHarness.ENDPOINT_DEADLINE_SEC);
     }
 }

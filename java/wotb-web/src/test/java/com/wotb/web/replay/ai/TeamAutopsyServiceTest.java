@@ -131,9 +131,9 @@ class TeamAutopsyServiceTest {
     }
 
     @Test
-    void incompleteRosterSkipsCall3() {
+    void emptyRosterSkipsAutopsy() {
         final Battle battle = battle();
-        battle.players.remove(battle.players.size() - 1); // 只剩 6 名本方玩家
+        battle.players.removeIf(p -> p.team == 1); // 无本方玩家
         final TeamAutopsyService service = new TeamAutopsyService(gateway(AUTOPSY_JSON), config());
         assertNull(service.analyze(battle, null, null, 1001L, 1, AllowedLanguage.ZH,
                 Winner.ENEMY_WIN, 30));

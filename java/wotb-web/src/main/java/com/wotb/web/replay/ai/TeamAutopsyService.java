@@ -77,13 +77,17 @@ public class TeamAutopsyService {
                 evidence != null ? evidence.criticalWindows() : List.of(),
                 recorderTeam,
                 recorderAccountId);
-        if (allStats.size() != 7) {
-            LOGGER.info("Team autopsy skipped: incomplete friendly roster ({} players)", allStats.size());
+        if (allStats.isEmpty()) {
+            LOGGER.info("Team autopsy skipped: no friendly roster data");
             count("roster_incomplete");
             return null;
         }
 
-        final String systemPrompt = TeamAutopsyPromptBuilder.AUTOPSY_SYSTEM_PROMPT;
+        // team perspective 为结算级评估（无 prior/window/Route）：使用对应 Prompt，
+        // team perspective 为结算级评估：无窗口/基线证据，使用结算级 Prompt。
+        final String systemPrompt = evidence == null
+                ? TeamAutopsyPromptBuilder.AUTOPSY_SYSTEM_PROMPT_SETTLEMENT_ONLY
+                : TeamAutopsyPromptBuilder.AUTOPSY_SYSTEM_PROMPT;
         final String userContent = TeamAutopsyPromptBuilder.buildUserContent(
                 allStats, prior,
                 evidence != null ? evidence.criticalWindows() : List.of(),
