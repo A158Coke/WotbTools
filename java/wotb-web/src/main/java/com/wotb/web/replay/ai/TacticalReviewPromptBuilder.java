@@ -80,7 +80,6 @@ public final class TacticalReviewPromptBuilder {
         final StringBuilder sb = new StringBuilder(8192);
         sb.append(snapshot(battle, recon, features, recorder));
         sb.append("\n\n").append(priorSection(prior));
-        sb.append("\n\n").append(taskSection());
 
         final String baseContent = sb.toString();
         final List<AiEvidence> windows = evidence != null ? evidence.criticalWindows() : List.of();
@@ -181,6 +180,8 @@ public final class TacticalReviewPromptBuilder {
                         .append(TacticalEvidenceFormatter.renderWindow(windows.get(i), true));
             }
         }
+        // TASK 必须是 user prompt 最后一个业务 section：证据之后再给最终推理指令
+        sb.append("\n\n").append(taskSection());
         return sb.toString();
     }
 

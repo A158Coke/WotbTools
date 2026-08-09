@@ -134,10 +134,35 @@ class TacticalReviewPromptBuilderTest {
     }
 
     @Test
+    void taskIsTheLastBusinessSection() {
+        final var prepared = prepare(131_072, 8192, 1000);
+        final String content = prepared.userContent();
+        assertTrue(content.indexOf("======================== TASK")
+                        > content.indexOf("======================== CRITICAL DECISION WINDOWS"),
+                "TASK 必须位于 CRITICAL DECISION WINDOWS 之后");
+        assertTrue(content.lastIndexOf("======================== TASK")
+                        > content.lastIndexOf("======================== TOP PIVOTAL WINDOWS"));
+        assertTrue(content.lastIndexOf("======================== TASK")
+                        > content.lastIndexOf("======================== BATTLE PHASE SUMMARY"));
+        assertTrue(content.lastIndexOf("======================== TASK")
+                        > content.lastIndexOf("======================== TACTICAL EVIDENCE"));
+        assertTrue(content.lastIndexOf("======================== TASK")
+                        > content.lastIndexOf("======================== CRITICAL DECISION WINDOWS"));
+    }
+
+    @Test
     void tinyBudgetTrimsOptionalSectionsButKeepsBookends() {
         final var prepared = prepare(2000, 500, 100);
+        final String content = prepared.userContent();
         assertTrue(prepared.truncated());
-        assertTrue(prepared.userContent().contains("TASK"));
-        assertTrue(prepared.userContent().contains("PRE-BATTLE STRATEGIC PRIOR"));
+        assertTrue(content.contains("BATTLE SNAPSHOT"), "Snapshot 永远不能被裁剪");
+        assertTrue(content.contains("PRE-BATTLE STRATEGIC PRIOR"), "Prior 永远不能被裁剪");
+        assertTrue(content.contains("======================== TASK"), "TASK 永远不能被裁剪");
+        assertTrue(content.indexOf("======================== TASK")
+                        > content.indexOf("======================== PRE-BATTLE STRATEGIC PRIOR"),
+                "tiny budget 下 TASK 仍必须位于 Prior 之后");
+        assertTrue(content.lastIndexOf("======================== TASK")
+                        > content.lastIndexOf("======================== BATTLE SNAPSHOT"),
+                "tiny budget 下 TASK 必须是最后一个业务 section");
     }
 }
