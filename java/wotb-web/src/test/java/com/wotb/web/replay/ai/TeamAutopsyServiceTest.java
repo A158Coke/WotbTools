@@ -20,23 +20,24 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 class TeamAutopsyServiceTest {
 
     private static final AiTokenEstimator ESTIMATOR = new ConservativeDeepSeekTokenEstimator();
 
     private static final String AUTOPSY_JSON = "{\"players\":["
-            + "{\"playerKey\":\"P1\",\"contribution\":\"HIGH\",\"confidence\":\"EXACT\"},"
+            + "{\"playerKey\":\"P1\",\"contribution\":\"HIGH\",\"confidence\":\"PARTIAL\"},"
             + "{\"playerKey\":\"P2\",\"contribution\":\"LOW\",\"confidence\":\"PARTIAL\"},"
-            + "{\"playerKey\":\"P3\",\"contribution\":\"MEDIUM\",\"confidence\":\"INFERRED\"},"
+            + "{\"playerKey\":\"P3\",\"contribution\":\"MEDIUM\",\"confidence\":\"UNKNOWN\"},"
             + "{\"playerKey\":\"P4\",\"contribution\":\"UNKNOWN\",\"confidence\":\"UNKNOWN\"},"
-            + "{\"playerKey\":\"P5\",\"contribution\":\"HIGH\",\"confidence\":\"EXACT\"},"
+            + "{\"playerKey\":\"P5\",\"contribution\":\"HIGH\",\"confidence\":\"PARTIAL\"},"
             + "{\"playerKey\":\"P6\",\"contribution\":\"MEDIUM\",\"confidence\":\"PARTIAL\"},"
-            + "{\"playerKey\":\"P7\",\"contribution\":\"LOW\",\"confidence\":\"INFERRED\"}],"
+            + "{\"playerKey\":\"P7\",\"contribution\":\"LOW\",\"confidence\":\"UNKNOWN\"}],"
                     + "\"mvps\":[{\"playerKey\":\"P1\",\"reason\":\"r\",\"evidence\":[\"e\"],"
-                    + "\"confidence\":\"EXACT\"}],"
+                    + "\"confidence\":\"UNKNOWN\"}],"
                     + "\"biggestLiabilities\":[{\"playerKey\":\"P2\",\"reason\":\"r2\","
-                    + "\"evidence\":[\"e2\"],\"confidence\":\"PARTIAL\"}],"
+                    + "\"evidence\":[\"e2\"],\"confidence\":\"UNKNOWN\"}],"
                     + "\"limitations\":[\"l\"]}";
 
     private static AiReplayAnalysisConfig config() {
@@ -137,6 +138,38 @@ class TeamAutopsyServiceTest {
         final TeamAutopsyService service = new TeamAutopsyService(gateway(AUTOPSY_JSON), config());
         assertNull(service.analyze(battle, 1, AllowedLanguage.ZH,
                 Winner.ENEMY_WIN, 30));
+    }
+
+    @Test
+    void incompleteOrOversizedRosterNeverCallsGateway() {
+        for (final int friendlyCount : new int[]{0, 1, 6, 8}) {
+            final Battle battle = battle();
+            final List<PlayerResult> team1 = battle.players.stream()
+                    .filter(p -> p.team == 1).toList();
+            battle.players.removeIf(p -> p.team == 1);
+            for (int i = 0; i < friendlyCount; i++) {
+                battle.players.add(team1.get(i % team1.size()));
+            }
+            final AtomicInteger calls = new AtomicInteger();
+            final AiChatGateway counting = new AiChatGateway() {
+                @Override
+                public AiChatResponse chat(final AiChatRequest request) {
+                    calls.incrementAndGet();
+                    return new AiChatResponse(AUTOPSY_JSON, "", "", 0, 0, 0, 0, 0, 0, "stop");
+                }
+
+                @Override
+                public boolean isConfigured() {
+                    return true;
+                }
+            };
+            final TeamAutopsyService service = new TeamAutopsyService(counting, config());
+            assertNull(service.analyze(battle, 1, AllowedLanguage.ZH,
+                    Winner.ENEMY_WIN, 30),
+                    friendlyCount + " friendly players must skip autopsy");
+            assertEquals(0, calls.get(),
+                    "gateway must not be called for " + friendlyCount + " friendly players");
+        }
     }
 
     @Test
