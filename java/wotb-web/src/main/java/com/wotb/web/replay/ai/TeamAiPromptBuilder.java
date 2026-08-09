@@ -53,10 +53,6 @@ final class TeamAiPromptBuilder {
         return single(context, List.of(), null, null, Integer.MAX_VALUE);
     }
 
-    static PromptInput single(final SingleTeamBattleAnalysisContext context, final List<String> extraLimitations) {
-        return single(context, extraLimitations, null, null, Integer.MAX_VALUE);
-    }
-
     // ---- 主入口（带 token 预算） ----
 
     static PromptInput single(
@@ -150,13 +146,6 @@ final class TeamAiPromptBuilder {
     static PromptInput multi(final MultiTeamBattleAnalysisContext context,
                              final Map<String, List<String>> evidenceLimitations) {
         return multi(context, evidenceLimitations, Map.of(), Map.of(), null, Integer.MAX_VALUE);
-    }
-
-    static PromptInput multi(final MultiTeamBattleAnalysisContext context,
-                             final Map<String, List<String>> evidenceLimitations,
-                             final AiTokenEstimator estimator,
-                             final int maxInputTokens) {
-        return multi(context, evidenceLimitations, Map.of(), Map.of(), estimator, maxInputTokens);
     }
 
     // ---- 主入口（带 token 预算） ----
