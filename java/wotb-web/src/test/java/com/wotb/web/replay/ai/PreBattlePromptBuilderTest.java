@@ -116,7 +116,7 @@ class PreBattlePromptBuilderTest {
                         "EXACT_SCENE_DATA", "EXACT_CLIENT_DATA", "NAME_HEURISTIC",
                         "GRID_RULE_DERIVED", "RULE_DERIVED_CANDIDATE")));
         final MapTacticalSemantics custom = new MapTacticalSemantics(
-                "desert_train", areas, Map.of(), Map.of(), false,
+                "desert_train", areas, List.of(), Map.of(), false,
                 "CLIENT_RESOURCE_DERIVED", "Desert Sands");
         final String content =
                 PreBattlePromptBuilder.buildMapSemanticsSection("desert_train", custom);
@@ -154,17 +154,38 @@ class PreBattlePromptBuilderTest {
                 MapTacticalSemanticsRegistry.load().semanticsFor("desert_train"));
         assertTrue(content.contains("=== 地图战术语义 ==="));
         assertTrue(content.contains("HARD_COVER_ZONE_01"));
-        assertTrue(content.contains("九宫格=GRID_REGION_3,GRID_REGION_6,GRID_REGION_9"));
-        assertTrue(content.contains("适合(规则候选)"));
-        assertTrue(content.contains("区域关系:"));
-        assertTrue(content.contains("higherThan:"));
-        assertTrue(content.contains("14 个出生点"));
+          assertTrue(content.contains("九宫格=GRID_REGION_3,GRID_REGION_6,GRID_REGION_9"));
+          assertTrue(content.contains("适合(规则候选)"));
+          assertTrue(content.contains("区域关系（原始语义"));
+          assertTrue(content.contains(" ADJACENT_TO "));
+          assertTrue(content.contains("confidence=EXACT_GRID_TOPOLOGY"));
+          assertTrue(content.contains("reason="));
+          assertTrue(content.contains("14 个出生点"));
         assertTrue(content.contains("（状态 EXACT_SCENE_DATA）"));
         assertTrue(content.contains("TEAM_A（队伍1）"));
         assertTrue(content.contains("TEAM_B（队伍2）"));
         assertFalse(content.contains("战术语义: UNKNOWN（该地图暂无语义数据"));
-        assertFalse(content.contains("出生点语义: UNKNOWN（当前无法可靠确定）"));
-    }
+          assertFalse(content.contains("出生点语义: UNKNOWN（当前无法可靠确定）"));
+      }
+
+      @Test
+      void mapRelationshipsKeepRawSemanticsAndAdjacencyBoundary() {
+          final String content = PreBattlePromptBuilder.buildUserContent(
+                  battleWithFullResults(), TankTacticalProfileRegistry.load(),
+                  MapTacticalSemanticsRegistry.load().semanticsFor("desert_train"));
+          assertTrue(content.contains("CONTAINS_CONTROL_POINT"));
+          assertTrue(content.contains("CONTAINS_STRATEGIC_POINT"));
+          assertTrue(content.contains("confidence=EXACT_SCENE_DATA"));
+          assertFalse(content.contains(" connects:"));
+          assertFalse(content.contains(" higherThan:"));
+          assertFalse(content.contains(" containsPoints:"));
+          assertTrue(PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT
+                  .contains("ADJACENT_TO 只表示确定性分析网格相邻"));
+          assertTrue(PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT
+                  .contains("不代表存在可通行路线"));
+          assertTrue(PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT
+                  .contains("不得据此声称 CONTROLS 或 ENABLES_PRESSURE_AGAINST"));
+      }
 
     @Test
     void systemPromptBansResultReferenceAndRequiresJson() {

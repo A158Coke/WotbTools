@@ -14,7 +14,7 @@ import java.util.Map;
  *
  * @param mapId          内部地图 code（meta.json 的 mapName，全小写）
  * @param areas          区域 id → 战术区域
- * @param relationships  区域关系（controls / connects / enablesPressureAgainst / higherThan / containsPoints）
+ * @param relationships  区域关系（原始语义：from / type / to / reason / confidence）
  * @param spawnSemantics 队伍 → 出生点语义（status / 区域）
  * @param verified       是否完成人工地图核验（false = 尚未核验）
  * @param source         语义数据来源（如 CLIENT_RESOURCE_DERIVED）
@@ -23,7 +23,7 @@ import java.util.Map;
 public record MapTacticalSemantics(
         String mapId,
         Map<String, TacticalArea> areas,
-        Map<String, AreaRelationships> relationships,
+        List<TacticalRelationship> relationships,
         Map<String, SpawnSemantics> spawnSemantics,
         boolean verified,
         String source,
@@ -32,7 +32,7 @@ public record MapTacticalSemantics(
     public MapTacticalSemantics {
         mapId = mapId == null ? "" : mapId.toLowerCase(Locale.ROOT);
         areas = areas == null ? Map.of() : Map.copyOf(areas);
-        relationships = relationships == null ? Map.of() : Map.copyOf(relationships);
+        relationships = relationships == null ? List.of() : List.copyOf(relationships);
         spawnSemantics = spawnSemantics == null ? Map.of() : Map.copyOf(spawnSemantics);
         source = source == null ? "" : source;
         displayName = displayName == null ? "" : displayName;
@@ -40,7 +40,7 @@ public record MapTacticalSemantics(
 
     /** 无语义数据时返回的空语义；{@link #hasSemantics()} 为 false。 */
     public static final MapTacticalSemantics UNKNOWN =
-            new MapTacticalSemantics("", Map.of(), Map.of(), Map.of(), false, "", "");
+            new MapTacticalSemantics("", Map.of(), List.of(), Map.of(), false, "", "");
 
     public boolean hasSemantics() {
         return !areas.isEmpty();
@@ -95,21 +95,24 @@ public record MapTacticalSemantics(
                 new AreaConfidence("", "", "", "", "");
     }
 
-    /** 区域之间的战术关系（空列表表示该类型未提供，不得由 LLM 补全）。 */
-    public record AreaRelationships(
-            List<String> controls,
-            List<String> connects,
-            List<String> enablesPressureAgainst,
-            List<String> higherThan,
-            List<String> containsPoints
+    /**
+     * 区域关系（与 semantic.json 原始语义一致，不做有损分组/改名）。
+     * type 可能为 ADJACENT_TO / HIGHER_THAN / CONTAINS_CONTROL_POINT /
+     * CONTAINS_STRATEGIC_POINT；reason 与 confidence 必须原样保留。
+     */
+    public record TacticalRelationship(
+            String from,
+            String type,
+            String to,
+            String reason,
+            String confidence
     ) {
-        public AreaRelationships {
-            controls = controls == null ? List.of() : List.copyOf(controls);
-            connects = connects == null ? List.of() : List.copyOf(connects);
-            enablesPressureAgainst = enablesPressureAgainst == null
-                    ? List.of() : List.copyOf(enablesPressureAgainst);
-            higherThan = higherThan == null ? List.of() : List.copyOf(higherThan);
-            containsPoints = containsPoints == null ? List.of() : List.copyOf(containsPoints);
+        public TacticalRelationship {
+            from = from == null ? "" : from;
+            type = type == null ? "" : type;
+            to = to == null ? "" : to;
+            reason = reason == null ? "" : reason;
+            confidence = confidence == null ? "" : confidence;
         }
     }
 

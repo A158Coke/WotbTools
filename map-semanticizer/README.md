@@ -99,6 +99,8 @@ python .\map_semanticizer.py `
 
 这些需要继续解析碰撞体、导航数据并执行视线/车辆尺度通行计算。缺少证据时输出 `UNKNOWN`，不猜地图战术。
 
+后端 `MapTacticalSemanticsRegistry` 对 `relationships` 做**无损保留**：`from / type / to / reason / confidence` 原样进入 `List<TacticalRelationship>`，不做分组或改名（ADJACENT_TO 不会被改成 connects，CONTAINS_CONTROL_POINT 与 CONTAINS_STRATEGIC_POINT 不合并）；Call #1 Prompt 按原始类型渲染并明确「ADJACENT_TO 仅表示分析网格相邻，不代表可通行路线/视线/交叉火力」。
+
 ## 测试（手动维护，不接入 CI）
 
 ```powershell

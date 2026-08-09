@@ -37,6 +37,8 @@ public final class PreBattlePromptBuilder {
                GRID_RULE_DERIVED 表示区域名称、区域边界与区域合并结果只是确定性规则候选；
                RULE_DERIVED_CANDIDATE 表示 favors/risks 只是战术假设候选，只能作为假设依据；
                verified=false 表示尚未完成人工地图核验，不得把区域候选描述为已验证事实；
+               ADJACENT_TO 只表示确定性分析网格相邻：不代表存在可通行路线、不代表具备视线、
+               不代表能够建立交叉火力，不得据此声称 CONTROLS 或 ENABLES_PRESSURE_AGAINST；
                地图无语义数据时，区域一律 UNKNOWN，禁止编造具体点位、区域名或坐标；
                出生点语义未提供时输出 UNKNOWN；
                禁止声称 CONTROLS / ENABLES_PRESSURE_AGAINST / 交叉火力 / 视线 / 通行路线等未提供的关系；
@@ -158,27 +160,16 @@ public final class PreBattlePromptBuilder {
             appendConfidenceDiff(sb, area, dominantConfidence);
         });
         if (!mapSemantics.relationships().isEmpty()) {
-            sb.append("区域关系:\n");
-            mapSemantics.relationships().forEach((id, rel) -> {
-                if (!rel.controls().isEmpty()) {
-                    sb.append("- ").append(id).append(" controls: ")
-                            .append(String.join(", ", rel.controls())).append('\n');
+            sb.append("区域关系（原始语义；ADJACENT_TO 仅表示确定性分析网格相邻，");
+            sb.append("不代表可通行路线/视线/交叉火力）:\n");
+            mapSemantics.relationships().forEach(rel -> {
+                sb.append("- ").append(rel.from()).append(' ').append(rel.type())
+                        .append(' ').append(rel.to()).append('\n');
+                if (!rel.reason().isBlank()) {
+                    sb.append("    reason=").append(rel.reason()).append('\n');
                 }
-                if (!rel.connects().isEmpty()) {
-                    sb.append("- ").append(id).append(" connects: ")
-                            .append(String.join(", ", rel.connects())).append('\n');
-                }
-                if (!rel.enablesPressureAgainst().isEmpty()) {
-                    sb.append("- ").append(id).append(" enablesPressureAgainst: ")
-                            .append(String.join(", ", rel.enablesPressureAgainst())).append('\n');
-                }
-                if (!rel.higherThan().isEmpty()) {
-                    sb.append("- ").append(id).append(" higherThan: ")
-                            .append(String.join(", ", rel.higherThan())).append('\n');
-                }
-                if (!rel.containsPoints().isEmpty()) {
-                    sb.append("- ").append(id).append(" containsPoints: ")
-                            .append(String.join(", ", rel.containsPoints())).append('\n');
+                if (!rel.confidence().isBlank()) {
+                    sb.append("    confidence=").append(rel.confidence()).append('\n');
                 }
             });
         }
