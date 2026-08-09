@@ -1,0 +1,4 @@
+interface:
+  display_name: "Plan Executer"
+  short_description: "按 docs/current-plan.md 逐项执行开发计划"
+  default_prompt: "Use $plan-executer to execute docs/current-plan.md."
