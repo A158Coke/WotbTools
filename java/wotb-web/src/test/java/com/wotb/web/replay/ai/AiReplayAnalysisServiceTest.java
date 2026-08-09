@@ -63,6 +63,17 @@ import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 
 class AiReplayAnalysisServiceTest {
 
+    private static final String AUTOPSY_JSON = "{\"players\":["
+            + "{\"playerKey\":\"P1\",\"contribution\":\"HIGH\",\"confidence\":\"PARTIAL\"},"
+            + "{\"playerKey\":\"P2\",\"contribution\":\"LOW\",\"confidence\":\"UNKNOWN\"},"
+            + "{\"playerKey\":\"P3\",\"contribution\":\"MEDIUM\",\"confidence\":\"PARTIAL\"},"
+            + "{\"playerKey\":\"P4\",\"contribution\":\"UNKNOWN\",\"confidence\":\"UNKNOWN\"},"
+            + "{\"playerKey\":\"P5\",\"contribution\":\"HIGH\",\"confidence\":\"PARTIAL\"},"
+            + "{\"playerKey\":\"P6\",\"contribution\":\"MEDIUM\",\"confidence\":\"UNKNOWN\"},"
+            + "{\"playerKey\":\"P7\",\"contribution\":\"LOW\",\"confidence\":\"PARTIAL\"}],"
+            + "\"mvps\":[{\"playerKey\":\"P1\",\"reason\":\"r\",\"evidence\":[\"e\"],"
+            + "\"confidence\":\"PARTIAL\"}],\"limitations\":[\"l\"]}";
+
     /**
      * 契约测试用 Gateway 替身：捕获传给 Gateway 的完整 {@link AiChatRequest}，
      * 返回可配置的 {@link AiChatResponse}；从不发起真实 HTTP。
@@ -70,6 +81,7 @@ class AiReplayAnalysisServiceTest {
     static final class FakeAiChatGateway implements AiChatGateway {
         final List<AiChatRequest> requests = new CopyOnWriteArrayList<>();
         volatile String nextCompletionText = "team review";
+        volatile String autopsyCompletionText;
         volatile RuntimeException nextError;
         volatile boolean configured = true;
 
@@ -83,6 +95,10 @@ class AiReplayAnalysisServiceTest {
             requests.add(request);
             if (nextError != null) {
                 throw nextError;
+            }
+            if ("TEAM_AUTOPSY".equals(request.analysisMode()) && autopsyCompletionText != null) {
+                return new AiChatResponse(autopsyCompletionText, "DeepSeek", "test-model",
+                        0, 0, 0, 0, 0, 0, "stop");
             }
             return new AiChatResponse(nextCompletionText, "DeepSeek", "test-model",
                     0, 0, 0, 0, 0, 0, "stop");
@@ -104,6 +120,17 @@ class AiReplayAnalysisServiceTest {
     /** 传给 Gateway 的最后一个请求的 user prompt（即原 HTTP body 的 user message 内容）。 */
     private String lastBody() {
         return gateway.requests.getLast().userPrompt();
+    }
+
+    private List<AiChatRequest> teamRequests() {
+        return gateway.requests.stream()
+                .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode())
+                        || "MULTI_TEAM_BATTLE".equals(r.analysisMode()))
+                .toList();
+    }
+
+    private String teamLastBody() {
+        return teamRequests().getLast().userPrompt();
     }
 
     // ========== Raw team forbidden labels helper ==========
@@ -184,23 +211,23 @@ class AiReplayAnalysisServiceTest {
                         .getFirst());
         final var result = service.analyzeSingleTeamContext(context);
         assertEquals("team review", result.analysis());
-        final AiChatRequest req = gateway.requests.getLast();
+        final AiChatRequest req = teamRequests().getLast();
         assertEquals("test-model", req.model());
         assertEquals("SINGLE_TEAM_BATTLE", req.analysisMode());
         assertTrue(req.systemPrompt().contains("资深团队教练"));
         assertTrue(req.systemPrompt().contains("不可信数据"));
-        assertTrue(lastBody().contains("teamLabel="));
-        assertTrue(lastBody().contains("AUTHORITATIVE_TEAM_RESULT"));
-        assertTrue(lastBody().contains("OBSERVED_EVENT_SUBSET_NOT_AUTHORITATIVE"));
-        assertTrue(lastBody().contains("RECORDER_ENTITY_UNMAPPED"));
-        assertFalse(lastBody().contains("ParticipantMappingEvent"));
-        assertFalse(lastBody().contains("PositionEvent{"));
-        assertFalse(lastBody().contains("winnerTeam=1"));
-        assertFalse(lastBody().contains("winnerTeam=2"));
-        assertFalse(lastBody().contains("Team 1"));
-        assertFalse(lastBody().contains("Team 2"));
-        assertFalse(lastBody().contains("队伍1"));
-        assertFalse(lastBody().contains("队伍2"));
+        assertTrue(teamLastBody().contains("teamLabel="));
+        assertTrue(teamLastBody().contains("AUTHORITATIVE_TEAM_RESULT"));
+        assertTrue(teamLastBody().contains("OBSERVED_EVENT_SUBSET_NOT_AUTHORITATIVE"));
+        assertTrue(teamLastBody().contains("RECORDER_ENTITY_UNMAPPED"));
+        assertFalse(teamLastBody().contains("ParticipantMappingEvent"));
+        assertFalse(teamLastBody().contains("PositionEvent{"));
+        assertFalse(teamLastBody().contains("winnerTeam=1"));
+        assertFalse(teamLastBody().contains("winnerTeam=2"));
+        assertFalse(teamLastBody().contains("Team 1"));
+        assertFalse(teamLastBody().contains("Team 2"));
+        assertFalse(teamLastBody().contains("队伍1"));
+        assertFalse(teamLastBody().contains("队伍2"));
     }
 
     @Test
@@ -212,11 +239,32 @@ class AiReplayAnalysisServiceTest {
                         .getFirst());
         final var result = service.analyzeSingleTeamContext(context);
         assertEquals("team review", result.analysis());
-        assertTrue(lastBody().contains("result=TEAM_WIN")
-                || lastBody().contains("result=TEAM_LOSS")
-                || lastBody().contains("result=DRAW_OR_UNKNOWN"),
+        assertTrue(teamLastBody().contains("result=TEAM_WIN")
+                || teamLastBody().contains("result=TEAM_LOSS")
+                || teamLastBody().contains("result=DRAW_OR_UNKNOWN"),
                 "Request body must contain result=TEAM_WIN/LOSS/DRAW_OR_UNKNOWN, not winnerTeam=");
-        assertFalse(lastBody().contains("winnerTeam="));
+        assertFalse(teamLastBody().contains("winnerTeam="));
+    }
+
+    @Test
+    void teamPerspectiveAppendsSettlementAutopsySection() {
+        gateway.nextCompletionText = "team review";
+        gateway.autopsyCompletionText = AUTOPSY_JSON;
+        final var service = startService();
+        final var context = service.buildSingleTeamContext(
+                teamGroups(List.of(sevenTeamResult(
+                        "autopsy.wotbreplay", "arena-autopsy", "Ally", 1001L, 1)))
+                        .getFirst());
+        final var result = service.analyzeSingleTeamContext(context);
+        assertTrue(result.analysis().startsWith("team review"));
+        assertTrue(result.analysis().contains("团队剖析"));
+        final var autopsyRequest = gateway.requests.stream()
+                .filter(r -> "TEAM_AUTOPSY".equals(r.analysisMode()))
+                .findFirst().orElseThrow();
+        assertTrue(autopsyRequest.systemPrompt().contains("结算级团队剖析"),
+                "team perspective must use the settlement-only system prompt");
+        assertFalse(autopsyRequest.userPrompt().contains("赛前职责基线"),
+                "team perspective autopsy must not claim Strategic Prior evidence");
     }
 
     @Test
@@ -239,15 +287,15 @@ class AiReplayAnalysisServiceTest {
         final var result = service.analyzeTeamGroups(groups);
         assertEquals("team review", result.analysis().analysis());
         // Opposing perspectives now use SEPARATE SINGLE_TEAM calls instead of one MULTI_TEAM call.
-        assertTrue(lastBody().contains("SINGLE_TEAM_CONTEXT"),
+        assertTrue(teamLastBody().contains("SINGLE_TEAM_CONTEXT"),
                 "Must use SINGLE_TEAM_CONTEXT for opposing perspectives");
-        assertTrue(lastBody().contains("teamLabel="),
+        assertTrue(teamLastBody().contains("teamLabel="),
                 "Single-team context must contain teamLabel");
-        assertFalse(lastBody().contains("MULTI_TEAM_CONTEXT"),
+        assertFalse(teamLastBody().contains("MULTI_TEAM_CONTEXT"),
                 "Must NOT use MULTI_TEAM_CONTEXT for opposing perspectives");
-        assertFalse(lastBody().contains("PERSPECTIVE 1"),
+        assertFalse(teamLastBody().contains("PERSPECTIVE 1"),
                 "Single-team context must not contain PERSPECTIVE labels");
-        assertFalse(lastBody().contains("PERSPECTIVE 2"),
+        assertFalse(teamLastBody().contains("PERSPECTIVE 2"),
                 "Single-team context must not contain PERSPECTIVE labels");
     }
 
@@ -290,10 +338,12 @@ class AiReplayAnalysisServiceTest {
                 teamResult("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1),
                 teamResult("enemy.wotbreplay", "shared-arena", "Enemy", 2001L, 2)));
         service.analyzeTeamGroups(groups);
-        assertEquals(2, gateway.requests.size(), "Opposing perspectives must produce 2 requests");
+        final List<AiChatRequest> teamRequests = teamRequests();
+        assertEquals(2, teamRequests.size(),
+                "Opposing perspectives must produce 2 team requests");
 
-        final String first = gateway.requests.get(0).userPrompt();
-        final String second = gateway.requests.get(1).userPrompt();
+        final String first = teamRequests.get(0).userPrompt();
+        final String second = teamRequests.get(1).userPrompt();
 
         assertTrue(first.contains("ally.wotbreplay"), "First request must be the ally perspective");
         assertFalse(first.contains("enemy.wotbreplay"),
@@ -475,7 +525,7 @@ class AiReplayAnalysisServiceTest {
         final var service = spy(new PlayerReplayAnalysisService(
                 gateway, new AiReplayAnalysisConfig(
                         new ConservativeDeepSeekTokenEstimator(), "test-model",
-                        30000, 131072, 8192, 1000, true, "high")));
+                        30000, 131072, 8192, 1000, true, "high", 315)));
         doReturn(new AnalyzeResult("summary analysis"))
                 .when(service).analyze(any(), any(), any(AllowedLanguage.class));
         service.analyzePlayerOrFallback(randomResultWithoutReconstruction());
@@ -961,6 +1011,39 @@ class AiReplayAnalysisServiceTest {
                 recorderTeam == 2 ? recorderAccountId : 2001L,
                 recorderTeam == 2 ? recorderNickname : "Enemy", 2, 900);
         battle.players = List.of(ally, enemy);
+        final var capabilities = new ReplayProcessingCapabilities(
+                true, true, false, false, false, true, false, false);
+        return new ReplayProcessingResult(
+                fileName, ReplayProcessingStatus.PARTIAL_SUCCESS,
+                new ReplayIdentity("hash-" + fileName, arenaId, "11.0", "team_map",
+                        recorderAccountId, null),
+                  battle, null, null, capabilities, null, null);
+      }
+
+    /** 完整 7 名本方玩家 + 1 名敌方的团队回放（Team Autopsy 成功 fixture）。 */
+    private static ReplayProcessingResult sevenTeamResult(
+            final String fileName, final String arenaId,
+            final String recorderNickname, final long recorderAccountId,
+            final int recorderTeam) {
+        final Battle battle = new Battle();
+        battle.arenaId = arenaId;
+        battle.mapName = "team_map";
+        battle.arenaBonusType = 2;
+        battle.durationS = 300.0;
+        battle.winnerTeam = 1;
+        battle.recorder = recorderNickname;
+        final List<PlayerResult> players = new ArrayList<>();
+        for (int i = 0; i < 7; i++) {
+            final long accountId = 1001L + i;
+            players.add(player(
+                    recorderTeam == 1 && accountId == recorderAccountId
+                            ? recorderAccountId : accountId,
+                    recorderTeam == 1 && accountId == recorderAccountId
+                            ? recorderNickname : "Ally" + i,
+                    recorderTeam, 1_000 + i));
+        }
+        players.add(player(2001L, "Enemy", recorderTeam == 1 ? 2 : 1, 900));
+        battle.players = players;
         final var capabilities = new ReplayProcessingCapabilities(
                 true, true, false, false, false, true, false, false);
         return new ReplayProcessingResult(

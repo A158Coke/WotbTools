@@ -77,7 +77,7 @@ description: >
 ### Phase 6 — 收尾
 
 - 更新 `CHANGELOG.md`、`java/README.md`、`docs/auth/*`、`frontend/src/data/versions.json`（若涉及界面/版本说明）。
-- 走 `grill-with-docs`（影响构建/认证/文档时）+ `grill-fix` 闭环。
+- 走 `review-with-docs`（影响构建/认证/文档时）+ `review-fix` 闭环。
 
 ## 边界情况必查清单（Edge Cases）
 

@@ -95,7 +95,7 @@ class AiReplayAnalysisServiceFacadeTest {
         battle.mapName = "team_map";
         battle.arenaBonusType = 2;
         battle.durationS = 300.0;
-        battle.winnerTeam = 1;
+        battle.winnerTeam = null;
         battle.recorder = "Ally";
         final var ally = player(1001L, "Ally", 1, 1500);
         final var enemy = player(2001L, "Enemy", 2, 900);

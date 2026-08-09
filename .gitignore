@@ -36,3 +36,5 @@ node_modules/
 .deepseek
 .codewhale
 .opencode
+
+docs/current-plan.md
