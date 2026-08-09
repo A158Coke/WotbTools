@@ -1,8 +1,12 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.AiNotConfiguredException;
+import com.wotb.core.ref.ReplayDisplayNames;
+import com.wotb.core.replay.evidence.TankTacticalProfile;
 import com.wotb.core.replay.evidence.TankTacticalProfileRegistry;
+import com.wotb.core.replay.map.MapTacticalSemantics;
 import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
@@ -67,9 +71,11 @@ public class PreBattleStrategicService {
             return null;
         }
         final String systemPrompt = PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT;
+        final MapTacticalSemantics semantics =
+                mapSemanticsRegistry.semanticsFor(battle.mapName);
         final String userContent = PreBattlePromptBuilder.buildUserContent(
-                battle, profileRegistry,
-                mapSemanticsRegistry.semanticsFor(battle.mapName));
+                battle, profileRegistry, semantics);
+        logInputCoverage(battle, semantics);
         final List<Map<String, Object>> messages = List.of(
                 Map.<String, Object>of("role", "system", "content", systemPrompt),
                 Map.<String, Object>of("role", "user", "content", userContent));
@@ -115,9 +121,69 @@ public class PreBattleStrategicService {
             }
             return null;
         }
+        LOGGER.info("Pre-battle Call #1 success: hypotheses={} matchups={} winConditions={} "
+                        + "teamA(strengths={},plans={}) teamB(strengths={},plans={})",
+                prior.hypotheses().size(),
+                prior.keyMatchups().size(),
+                prior.strategicWinConditions().size(),
+                prior.teamA() == null ? 0 : prior.teamA().strengths().size(),
+                prior.teamA() == null ? 0 : prior.teamA().preferredPlans().size(),
+                prior.teamB() == null ? 0 : prior.teamB().strengths().size(),
+                prior.teamB() == null ? 0 : prior.teamB().preferredPlans().size());
         if (meterRegistry != null) {
             meterRegistry.counter("wotb_ai_review_prebattle_total", "result", "success").increment();
         }
         return prior;
+    }
+
+    /** 可观测：记录 Call #1 输入覆盖（地图语义状态 + 车辆战术 Profile 覆盖率），供 Loki/Grafana 验证。 */
+    private void logInputCoverage(final Battle battle,
+                                  final MapTacticalSemantics semantics) {
+        final boolean found = semantics != null && semantics.hasSemantics();
+        int team1 = 0;
+        int team2 = 0;
+        int curatedProfiles = 0;
+        int fallbackProfiles = 0;
+        if (battle.players != null) {
+            for (final PlayerResult p : battle.players) {
+                if (p == null) {
+                    continue;
+                }
+                if (p.team == 1) {
+                    team1++;
+                } else if (p.team == 2) {
+                    team2++;
+                }
+                final TankTacticalProfile profile = profileRegistry.profileFor(
+                        p.tankId,
+                        p.tankName,
+                        ReplayDisplayNames.tankClass(p.tankId),
+                        ReplayDisplayNames.tankTier(p.tankId));
+                if (profile.curated()) {
+                    curatedProfiles++;
+                } else {
+                    fallbackProfiles++;
+                }
+            }
+        }
+        LOGGER.info("Pre-battle Call #1 input: map={} mapSemantics={} verified={} areas={} "
+                        + "relationships={} spawnSemantics={} source={} displayName={} "
+                        + "team1={} team2={} curatedProfiles={} fallbackProfiles={}",
+                battle.mapName,
+                found ? "found" : "UNKNOWN",
+                found && semantics.verified(),
+                found ? semantics.areas().size() : 0,
+                found ? semantics.relationships().size() : 0,
+                found ? semantics.spawnSemantics().size() : 0,
+                found && !semantics.source().isBlank() ? semantics.source() : "",
+                found && !semantics.displayName().isBlank() ? semantics.displayName() : "",
+                team1,
+                team2,
+                curatedProfiles,
+                fallbackProfiles);
+        if (meterRegistry != null) {
+            meterRegistry.counter("wotb_ai_review_map_semantics_total",
+                    "status", found ? "found" : "unknown").increment();
+        }
     }
 }

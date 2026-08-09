@@ -131,6 +131,8 @@ public class TeamAutopsyService {
                 count("unparsable");
                 return null;
             }
+            LOGGER.info("Team autopsy success: liabilities={} mvps={}",
+                    result.biggestLiabilities().size(), result.mvps().size());
             count("success");
             return new TeamAutopsyOutcome(result, allStats);
         } catch (final AiUpstreamException e) {
