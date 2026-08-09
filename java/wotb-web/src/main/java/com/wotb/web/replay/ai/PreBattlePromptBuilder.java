@@ -28,8 +28,11 @@ public final class PreBattlePromptBuilder {
             === 强制规则 ===
             1. 严禁引用、猜测或假设任何战斗结果：胜负、伤害、击杀、阵亡、路线、HP、交火都不存在。
             2. 坦克事实只能来自下方提供的结构化战术属性；未提供或标注"车型默认"的属性不得自行补充。
-            3. 地图战术语义只使用下方提供的数据（AREA 名称/类型/特征/适合/风险/关系）；
-               地图无语义数据时，区域一律 UNKNOWN，禁止编造具体点位、区域名或坐标；
+            3. 地图战术语义只使用下方提供的数据（AREA 名称/类型/特征/适合/风险/关系/出生点语义）；
+               favors/risks 是规则候选（RULE_DERIVED_CANDIDATE），只能作为假设依据，不得当作已验证结论；
+              地图无语义数据时，区域一律 UNKNOWN，禁止编造具体点位、区域名或坐标；
+              出生点语义未提供时输出 UNKNOWN；
+              禁止声称 CONTROLS / ENABLES_PRESSURE_AGAINST / 交叉火力 / 视线 / 通行路线等未提供的关系；
                GRID_REGION_1~9 只是九宫格位置编号，不是战术区域名。
             4. 坦克名称必须原样使用提供方名称，禁止改写、翻译或缩写。
             5. 战略基线只是 baseline，不是真理：真实战况可能让任何计划失效，输出中不得使用"必然/绝对"措辞。
@@ -82,16 +85,17 @@ public final class PreBattlePromptBuilder {
         return sb.toString();
     }
 
-    /** 渲染地图战术语义段；无语义数据时明确 UNKNOWN。 */
+    /** 渲染地图战术语义段；无语义数据时明确 UNKNOWN，禁止编造。 */
     static String buildMapSemanticsSection(final String mapCode,
                                            final MapTacticalSemantics mapSemantics) {
-        final StringBuilder sb = new StringBuilder(1024);
+        final StringBuilder sb = new StringBuilder(3072);
         sb.append("=== 地图战术语义 ===\n");
         sb.append("地图 code: ").append(PromptDataQuoter.quote(mapCode, "未知")).append('\n');
         if (mapSemantics == null || !mapSemantics.hasSemantics()) {
             sb.append("战术语义: UNKNOWN（该地图暂无语义数据，禁止编造区域名与点位）\n");
             return sb.toString();
         }
+        sb.append("数据来源: Wot Blitz 客户端 SC2 + heightmap（CLIENT_RESOURCE_DERIVED，非 LLM 猜测）\n");
         sb.append("区域:\n");
         mapSemantics.areas().forEach((id, area) -> {
             sb.append("- ").append(id);
@@ -106,10 +110,10 @@ public final class PreBattlePromptBuilder {
                 sb.append("    特征: ").append(String.join("; ", area.characteristics())).append('\n');
             }
             if (!area.favors().isEmpty()) {
-                sb.append("    适合: ").append(String.join(", ", area.favors())).append('\n');
+                sb.append("    适合(规则候选): ").append(String.join(", ", area.favors())).append('\n');
             }
             if (!area.risks().isEmpty()) {
-                sb.append("    风险: ").append(String.join("; ", area.risks())).append('\n');
+                sb.append("    风险(规则候选): ").append(String.join("; ", area.risks())).append('\n');
             }
         });
         if (!mapSemantics.relationships().isEmpty()) {
@@ -127,10 +131,43 @@ public final class PreBattlePromptBuilder {
                     sb.append("- ").append(id).append(" enablesPressureAgainst: ")
                             .append(String.join(", ", rel.enablesPressureAgainst())).append('\n');
                 }
+                if (!rel.higherThan().isEmpty()) {
+                    sb.append("- ").append(id).append(" higherThan: ")
+                            .append(String.join(", ", rel.higherThan())).append('\n');
+                }
+                if (!rel.containsPoints().isEmpty()) {
+                    sb.append("- ").append(id).append(" containsPoints: ")
+                            .append(String.join(", ", rel.containsPoints())).append('\n');
+                }
             });
         }
-        sb.append("出生点关系: UNKNOWN（当前无法可靠确定）\n");
+        if (!mapSemantics.spawnSemantics().isEmpty()) {
+            sb.append("出生点语义:\n");
+            mapSemantics.spawnSemantics().forEach((team, spawn) -> {
+                sb.append("- ").append(teamLabel(team)).append(": ");
+                if (spawn.status().equalsIgnoreCase("UNKNOWN") || spawn.areas().isEmpty()) {
+                    sb.append("UNKNOWN（出生点无法可靠确定）\n");
+                } else {
+                    sb.append(spawn.spawnCount()).append(" 个出生点，区域 ")
+                            .append(String.join(", ", spawn.areas()))
+                            .append("（状态 ").append(spawn.status()).append("）\n");
+                }
+            });
+        } else {
+            sb.append("出生点语义: UNKNOWN（当前无法可靠确定）\n");
+        }
+        sb.append("置信度边界: favors/risks 是 RULE_DERIVED_CANDIDATE（规则候选），");
+        sb.append("不是已验证结论；CONTROLS / ENABLES_PRESSURE_AGAINST / 交叉火力 / ");
+        sb.append("视线 / 通行路线未提供，禁止声称。\n");
         return sb.toString();
+    }
+
+    private static String teamLabel(final String spawnKey) {
+        return switch (spawnKey == null ? "" : spawnKey.trim().toUpperCase()) {
+            case "TEAM_1" -> "TEAM_A（队伍1）";
+            case "TEAM_2" -> "TEAM_B（队伍2）";
+            default -> spawnKey == null ? "UNKNOWN" : spawnKey;
+        };
     }
 
     private static void appendTeam(
