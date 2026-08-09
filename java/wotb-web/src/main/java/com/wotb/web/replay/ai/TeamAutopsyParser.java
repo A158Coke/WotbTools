@@ -18,8 +18,7 @@ import java.util.Set;
  */
 public final class TeamAutopsyParser {
 
-    static final int MAX_PLAYERS = 7;
-    static final int MAX_VERDICTS = 5;
+    static final int MAX_VERDICTS = 3;
     static final int MAX_LIMITATIONS = 8;
     static final int MAX_TEXT_LENGTH = 120;
 
@@ -57,7 +56,7 @@ public final class TeamAutopsyParser {
                     parseVerdicts(root.get("mvps"), rosterPlayerKeys);
             final List<TeamAutopsyResult.AutopsyVerdict> liabilities =
                     parseVerdicts(root.get("biggestLiabilities"), rosterPlayerKeys);
-            if (players.isEmpty()) {
+            if (players == null || mvps == null || liabilities == null) {
                 return null;
             }
             if (winner == Winner.FRIENDLY_WIN && mvps.isEmpty()) {
@@ -76,19 +75,18 @@ public final class TeamAutopsyParser {
         }
     }
 
+    /** players 的 playerKey 集合必须与 roster 完全相等；超长/缺失/额外/重复均拒绝。 */
     private static List<TeamAutopsyResult.AutopsyPlayer> parsePlayers(
             final JsonNode node, final Set<String> rosterPlayerKeys) {
+        if (node == null || !node.isArray()
+                || node.size() != rosterPlayerKeys.size()) {
+            return null;
+        }
         final List<TeamAutopsyResult.AutopsyPlayer> result = new ArrayList<>();
         final Set<String> seen = new HashSet<>();
-        if (node == null || !node.isArray()) {
-            return result;
-        }
         for (final JsonNode item : node) {
-            if (result.size() >= MAX_PLAYERS) {
-                return result;
-            }
             if (item == null || !item.isObject()) {
-                return List.of();
+                return null;
             }
             final String playerKey = cap(item.path("playerKey").asText(""), 8);
             final String contribution =
@@ -99,38 +97,47 @@ public final class TeamAutopsyParser {
                     || !seen.add(playerKey)
                     || !CONTRIBUTION_VALUES.contains(contribution)
                     || !CONFIDENCE_VALUES.contains(confidence)) {
-                return List.of();
+                return null;
             }
             result.add(new TeamAutopsyResult.AutopsyPlayer(playerKey, contribution, confidence));
+        }
+        if (!result.stream().map(TeamAutopsyResult.AutopsyPlayer::playerKey)
+                .collect(java.util.stream.Collectors.toSet()).equals(rosterPlayerKeys)) {
+            return null;
         }
         return result;
     }
 
+    /** verdict 列表 ≤3；每条必须引用有效 playerKey、列表内不重复、reason 非空、evidence 非空。 */
     private static List<TeamAutopsyResult.AutopsyVerdict> parseVerdicts(
             final JsonNode node, final Set<String> rosterPlayerKeys) {
-        final List<TeamAutopsyResult.AutopsyVerdict> result = new ArrayList<>();
         if (node == null || !node.isArray()) {
-            return result;
+            return List.of();
         }
+        if (node.size() > MAX_VERDICTS) {
+            return null;
+        }
+        final List<TeamAutopsyResult.AutopsyVerdict> result = new ArrayList<>();
+        final Set<String> seen = new HashSet<>();
         for (final JsonNode item : node) {
-            if (result.size() >= MAX_VERDICTS) {
-                return result;
-            }
             if (item == null || !item.isObject()) {
-                return List.of();
+                return null;
             }
             final String playerKey = cap(item.path("playerKey").asText(""), 8);
+            final String reason = cap(item.path("reason").asText(""), MAX_TEXT_LENGTH);
             final String confidence =
                     cap(item.path("confidence").asText(""), 20).toUpperCase(Locale.ROOT);
             final List<String> evidence = capList(item.get("evidence"), 5);
             if (!rosterPlayerKeys.contains(playerKey)
+                    || !seen.add(playerKey)
+                    || reason.isBlank()
                     || !CONFIDENCE_VALUES.contains(confidence)
                     || evidence.isEmpty()) {
-                return List.of();
+                return null;
             }
             result.add(new TeamAutopsyResult.AutopsyVerdict(
                     playerKey,
-                    cap(item.path("reason").asText(""), MAX_TEXT_LENGTH),
+                    reason,
                     evidence,
                     confidence));
         }

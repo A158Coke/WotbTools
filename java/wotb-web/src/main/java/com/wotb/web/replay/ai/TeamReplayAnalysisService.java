@@ -19,8 +19,6 @@ import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.processing.BattleCategory;
 import com.wotb.core.processing.BattleCategoryUtils;
 import com.wotb.core.processing.BattleIdentity;
-import com.wotb.core.processing.FriendlyEnemyResult;
-import com.wotb.core.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.processing.PerspectiveTeamNotResolvedException;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingResult;
@@ -37,12 +35,8 @@ import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
-import io.micrometer.core.instrument.MeterRegistry;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
-
-import java.util.function.LongSupplier;
 
 /**
  * 单/多团队 AI 复盘编排（team perspective：训练房/联赛）。
@@ -52,18 +46,12 @@ import java.util.function.LongSupplier;
  * 出，HTTP/DTO/异常分类由 {@link AiChatGateway} 负责，预算由
  * {@link AiPromptBudgetGuard} 守，{@code analysisUnitId} 由
  * {@link AnalysisUnitAssembler} 提供稳定实现。</p>
- * <p>Team Autopsy（判负战犯 / 判胜 MVP）只在此 team perspective 路径执行（单团队单元），
- * 随机战斗个人复盘不输出战犯/MVP；后续 AI 调用按整体剩余时间裁剪，
- * Team Autopsy 使用 min(30s, 剩余 - safety margin)，不足安全余量时不启动。</p>
  */
 @Service
 public class TeamReplayAnalysisService {
 
     static final double MIN_ROSTER_JACCARD = 0.60;
     static final double MIN_ROSTER_ACCOUNT_COVERAGE = 0.75;
-
-    /** 团队复盘整体安全余量（秒）：后续调用保留，避免撞 endpoint deadline。 */
-    static final int SAFETY_MARGIN_SEC = 10;
 
     /** Team 专用：分析主体是整支队伍，不是录像者个人。 */
     static final String TEAM_ANALYSIS_RULE = """
@@ -179,27 +167,11 @@ public class TeamReplayAnalysisService {
 
     private final AiChatGateway gateway;
     private final AiReplayAnalysisConfig config;
-    private final TeamAutopsyService teamAutopsyService;
-    private final LongSupplier nanoTimeSource;
 
-    @Autowired(required = false)
-    private MeterRegistry meterRegistry;
-
-    @Autowired
     public TeamReplayAnalysisService(final AiChatGateway gateway,
-                                     final AiReplayAnalysisConfig config,
-                                     final TeamAutopsyService teamAutopsyService) {
-        this(gateway, config, teamAutopsyService, System::nanoTime);
-    }
-
-    TeamReplayAnalysisService(final AiChatGateway gateway,
-                              final AiReplayAnalysisConfig config,
-                              final TeamAutopsyService teamAutopsyService,
-                              final LongSupplier nanoTimeSource) {
+                                     final AiReplayAnalysisConfig config) {
         this.gateway = gateway;
         this.config = config;
-        this.teamAutopsyService = teamAutopsyService;
-        this.nanoTimeSource = nanoTimeSource;
     }
 
     public boolean isConfigured() {
@@ -222,31 +194,27 @@ public class TeamReplayAnalysisService {
         final List<String> extraLimitations = evidence != null ? evidence.limitations() : List.of();
         final TeamAiPromptBuilder.PromptInput input = TeamAiPromptBuilder.single(
                 context, extraLimitations, config.estimator(), config.singleReplayMaxInputTokens());
-        return callSingleTeamContext(context, input, language, nanoTimeSource.getAsLong());
+        return callSingleTeamContext(context, input, language);
     }
 
     private AnalyzeResult callSingleTeamContext(
             final SingleTeamBattleAnalysisContext context,
             final TeamAiPromptBuilder.PromptInput input,
-            final AllowedLanguage language,
-            final long startNanos
+            final AllowedLanguage language
     ) {
         final String content = call(
                 localizeTeamSystemPrompt(SINGLE_TEAM_PROMPT, language),
-                input.content(), "SINGLE_TEAM_BATTLE",
-                remainingBudget(startNanos));
-        return new AnalyzeResult(appendTeamAutopsy(context, content, language, startNanos));
+                input.content(), "SINGLE_TEAM_BATTLE");
+        return new AnalyzeResult(content);
     }
 
     private AnalyzeResult callMultiTeamContext(
             final TeamAiPromptBuilder.PromptInput input,
-            final AllowedLanguage language,
-            final long startNanos
+            final AllowedLanguage language
     ) {
         final String content = call(
                 localizeTeamSystemPrompt(MULTI_TEAM_PROMPT, language),
-                input.content(), "MULTI_TEAM_BATTLE",
-                remainingBudget(startNanos));
+                input.content(), "MULTI_TEAM_BATTLE");
         return new AnalyzeResult(content);
     }
 
@@ -285,7 +253,6 @@ public class TeamReplayAnalysisService {
         }
         final List<List<SingleTeamBattleAnalysisContext>> partitions =
                 buildPartitions(contexts, evidenceByUnitId);
-        final long startNanos = nanoTimeSource.getAsLong();
         AnalyzeResult firstAnalysis = null;
         for (final var partition : partitions) {
             if (partition.size() == 1) {
@@ -293,8 +260,7 @@ public class TeamReplayAnalysisService {
                 final RosterEvidence evidence = evidenceByUnitId.get(ctx.analysisUnitId());
                 final TeamAiPromptBuilder.PromptInput input =
                         TeamAiPromptBuilder.single(ctx, evidence != null ? evidence.limitations() : List.of(), config.estimator(), config.singleReplayMaxInputTokens());
-                final AnalyzeResult result =
-                        callSingleTeamContext(ctx, input, language, startNanos);
+                final AnalyzeResult result = callSingleTeamContext(ctx, input, language);
                 if (firstAnalysis == null) firstAnalysis = result;
             } else {
                 final MultiTeamBattleAnalysisContext multiContext =
@@ -308,8 +274,7 @@ public class TeamReplayAnalysisService {
                 }
                 final TeamAiPromptBuilder.PromptInput input =
                         TeamAiPromptBuilder.multi(multiContext, partitionEvidenceLimits, config.estimator(), config.singleReplayMaxInputTokens());
-                final AnalyzeResult result =
-                        callMultiTeamContext(input, language, startNanos);
+                final AnalyzeResult result = callMultiTeamContext(input, language);
                 if (firstAnalysis == null) firstAnalysis = result;
             }
         }
@@ -642,8 +607,7 @@ public class TeamReplayAnalysisService {
     private String call(
             final String systemPrompt,
             final String userContent,
-            final String analysisMode,
-            final long callTimeoutSec
+            final String analysisMode
     ) {
         final List<Map<String, Object>> messages = List.of(
                 Map.<String, Object>of("role", "system", "content", systemPrompt),
@@ -663,65 +627,7 @@ public class TeamReplayAnalysisService {
                 config.thinkingEnabled(),
                 config.reasoningEffort(),
                 null,
-                analysisMode,
-                (int) Math.min(Math.max(1L, callTimeoutSec), Integer.MAX_VALUE));
+                analysisMode);
         return gateway.chat(request).completionText();
-    }
-
-    /**
-     * 团队复盘单场视角成功后追加「团队剖析」段（判负 → 战犯，判胜 → MVP）。
-     * Team Autopsy 只用于 team perspective；预算按整体剩余时间裁剪，
-     * 不足安全余量时记录 budget_exhausted 并返回团队复盘原文。
-     */
-    private String appendTeamAutopsy(final SingleTeamBattleAnalysisContext context,
-                                     final String reviewText,
-                                     final AllowedLanguage language,
-                                     final long startNanos) {
-        if (language != AllowedLanguage.ZH || context == null || context.battle() == null) {
-            return reviewText;
-        }
-        final Winner winner = FriendlyEnemyResult.resolve(
-                context.battle().winnerTeam, context.perspectiveTeam());
-        if (winner == Winner.DRAW_OR_UNKNOWN) {
-            return reviewText;
-        }
-        final long remaining = remainingSeconds(startNanos);
-        final long autopsyBudget = Math.min(
-                TeamAutopsyService.AUTOPSY_CALL_TIMEOUT_SEC,
-                remaining - SAFETY_MARGIN_SEC);
-        if (autopsyBudget <= 0) {
-            count("budget_exhausted");
-            return reviewText;
-        }
-        final TeamAutopsyOutcome outcome = teamAutopsyService.analyze(
-                context.battle(),
-                null,
-                null,
-                null,
-                context.perspectiveTeam(),
-                AllowedLanguage.ZH,
-                winner,
-                (int) Math.min(autopsyBudget, Integer.MAX_VALUE));
-        if (outcome == null) {
-            return reviewText;
-        }
-        return reviewText + TeamAutopsyPromptBuilder.renderSection(
-                outcome.result(), winner, outcome.roster());
-    }
-
-    private long remainingSeconds(final long startNanos) {
-        final long elapsedNanos = nanoTimeSource.getAsLong() - startNanos;
-        return Math.max(0L, config.callTimeoutSec() - elapsedNanos / 1_000_000_000L);
-    }
-
-    private long remainingBudget(final long startNanos) {
-        return Math.max(0L, remainingSeconds(startNanos) - SAFETY_MARGIN_SEC);
-    }
-
-    private void count(final String reason) {
-        if (meterRegistry != null) {
-            meterRegistry.counter("wotb_ai_review_team_autopsy_total", "result", reason)
-                    .increment();
-        }
     }
 }

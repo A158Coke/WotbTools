@@ -31,7 +31,8 @@ public class TeamAutopsyService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TeamAutopsyService.class);
 
-    /** Team Autopsy 输入很小（7 人结算 + 基线 + 窗口摘要），独立 stage budget。 */
+    /** Team Autopsy 输入很小（7 人结算 + 基线 + 窗口摘要）；stage budget 上限，
+     *  实际值由 Harness 按整体剩余预算裁剪（min(30s, 剩余 - margin)）。 */
     static final int AUTOPSY_CALL_TIMEOUT_SEC = 30;
     static final int AUTOPSY_MAX_OUTPUT_TOKENS = 2048;
 
@@ -76,7 +77,9 @@ public class TeamAutopsyService {
                 evidence != null ? evidence.criticalWindows() : List.of(),
                 recorderTeam,
                 recorderAccountId);
-        if (allStats.isEmpty()) {
+        if (allStats.size() != 7) {
+            LOGGER.info("Team autopsy skipped: incomplete friendly roster ({} players)", allStats.size());
+            count("roster_incomplete");
             return null;
         }
 

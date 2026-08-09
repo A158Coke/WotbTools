@@ -25,9 +25,14 @@ class TeamAutopsyServiceTest {
 
     private static final AiTokenEstimator ESTIMATOR = new ConservativeDeepSeekTokenEstimator();
 
-    private static final String AUTOPSY_JSON =
-            "{\"players\":[{\"playerKey\":\"P1\",\"contribution\":\"HIGH\",\"confidence\":\"EXACT\"},"
-                    + "{\"playerKey\":\"P2\",\"contribution\":\"LOW\",\"confidence\":\"PARTIAL\"}],"
+    private static final String AUTOPSY_JSON = "{\"players\":["
+            + "{\"playerKey\":\"P1\",\"contribution\":\"HIGH\",\"confidence\":\"EXACT\"},"
+            + "{\"playerKey\":\"P2\",\"contribution\":\"LOW\",\"confidence\":\"PARTIAL\"},"
+            + "{\"playerKey\":\"P3\",\"contribution\":\"MEDIUM\",\"confidence\":\"INFERRED\"},"
+            + "{\"playerKey\":\"P4\",\"contribution\":\"UNKNOWN\",\"confidence\":\"UNKNOWN\"},"
+            + "{\"playerKey\":\"P5\",\"contribution\":\"HIGH\",\"confidence\":\"EXACT\"},"
+            + "{\"playerKey\":\"P6\",\"contribution\":\"MEDIUM\",\"confidence\":\"PARTIAL\"},"
+            + "{\"playerKey\":\"P7\",\"contribution\":\"LOW\",\"confidence\":\"INFERRED\"}],"
                     + "\"mvps\":[{\"playerKey\":\"P1\",\"reason\":\"r\",\"evidence\":[\"e\"],"
                     + "\"confidence\":\"EXACT\"}],"
                     + "\"biggestLiabilities\":[{\"playerKey\":\"P2\",\"reason\":\"r2\","
@@ -123,6 +128,15 @@ class TeamAutopsyServiceTest {
                 Winner.ENEMY_WIN, 30));
         assertNull(service.analyze(battle(), null, null, 1001L, 1, AllowedLanguage.ZH,
                 Winner.ENEMY_WIN, 0));
+    }
+
+    @Test
+    void incompleteRosterSkipsCall3() {
+        final Battle battle = battle();
+        battle.players.remove(battle.players.size() - 1); // 只剩 6 名本方玩家
+        final TeamAutopsyService service = new TeamAutopsyService(gateway(AUTOPSY_JSON), config());
+        assertNull(service.analyze(battle, null, null, 1001L, 1, AllowedLanguage.ZH,
+                Winner.ENEMY_WIN, 30));
     }
 
     @Test
