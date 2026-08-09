@@ -260,7 +260,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 
 ---
 
-## AI Review Harness（双 Call V1）
+## AI Review Harness（随机战双 Call / 团队复盘 + Team Autopsy）
 
 随机战个人复盘在满足条件时走两 Call Harness（`TacticalReviewHarness`），否则自动降级到旧单 Call 路径：
 
