@@ -20,7 +20,10 @@ import java.util.Map;
  * Call #1 编排：构造 roster-only Prompt → 预算守卫 → 独立小输出上限的 LLM 调用
  * → 解析结构化 {@link PreBattleStrategicPrior}。
  * <p>任何失败（未配置 / 上游异常 / 解析失败）都返回 {@code null}，
- * 由 {@link TacticalReviewHarness} 决定降级，不让 Call #1 拖垮整场复盘。</p>
+ * 由 {@link TacticalReviewHarness} 决定降级，不让 Call #1 拖垮整场复盘。
+ * 结构化 JSON 小调用强制关闭 thinking：DeepSeek thinking 模式（effort=max）会把
+ * 整个输出预算消耗在 reasoning 上并返回空正文（线上实测 AI_EMPTY_RESPONSE），
+ * 关闭后直接输出契约 JSON（finish_reason=stop）。</p>
  */
 @Service
 public class PreBattleStrategicService {
@@ -88,8 +91,10 @@ public class PreBattleStrategicService {
                 config.model(),
                 null,
                 PRE_BATTLE_MAX_OUTPUT_TOKENS,
-                config.thinkingEnabled(),
-                config.reasoningEffort(),
+                // 结构化 JSON 任务：关闭 thinking，避免 reasoning 吃光 4096 输出预算
+                // 导致空正文（AI_EMPTY_RESPONSE），见类 Javadoc。
+                false,
+                null,
                 null,
                 "PRE_BATTLE_STRATEGIC_PRIOR",
                 PRE_BATTLE_CALL_TIMEOUT_SEC);
