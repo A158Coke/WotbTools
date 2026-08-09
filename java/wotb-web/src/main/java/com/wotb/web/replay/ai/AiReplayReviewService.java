@@ -11,11 +11,14 @@ import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.TeamPerspectiveResolver;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
+import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.web.replay.metrics.ReplayUsageMetrics;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
@@ -33,6 +36,8 @@ import java.util.Locale;
 
 @Service
 public class AiReplayReviewService {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(AiReplayReviewService.class);
 
     private final DefaultReplayProcessingFacade processingFacade;
     private final AiReplayAnalysisService aiAnalysisService;
@@ -175,6 +180,21 @@ public class AiReplayReviewService {
                     // process 不抛 checked；此处仅防御性包装
                     throw new IOException(e);
                 }
+            }
+        }
+        for (final ReplayProcessingResult r : allResults) {
+            if (r.reconstruction() != null && r.reconstruction().coverage() != null) {
+                final ReplayCoverage cov = r.reconstruction().coverage();
+                LOGGER.info("Replay event-stream parsed: file={} map={} packets={} decoded={} "
+                                + "partial={} unknown={} failed={} decodedRatio={}",
+                        r.fileName(),
+                        r.battle() != null ? r.battle().mapName : null,
+                        cov.totalPackets(),
+                        cov.decodedPackets(),
+                        cov.partiallyDecodedPackets(),
+                        cov.unknownPackets(),
+                        cov.failedPackets(),
+                        String.format(Locale.ROOT, "%.3f", cov.decodedPacketRatio()));
             }
         }
         final BatchAnalyzer.AnalysisPlan plan = new BatchAnalyzer().analyze(allResults);
