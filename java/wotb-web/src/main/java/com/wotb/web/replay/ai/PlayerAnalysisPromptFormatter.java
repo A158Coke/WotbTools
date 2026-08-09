@@ -40,7 +40,7 @@ public final class PlayerAnalysisPromptFormatter {
                 + " " + PlayerResultFormat.quoteForPrompt(p.nickname)
                 + " (" + PlayerResultFormat.quoteForPrompt(resolveTank(p)) + ")"
                 + " 输出" + p.damageDealt
-                + " 承伤" + p.damageReceived
+                + " 损失血量" + p.damageReceived
                 + " 助攻" + p.damageAssisted
                 + " 格挡" + p.damageBlocked
                 + " 击杀" + p.kills
@@ -57,7 +57,7 @@ public final class PlayerAnalysisPromptFormatter {
                 + " (" + PlayerResultFormat.quoteForPrompt(resolveTank(rec)) + ")"
                 + " | " + PlayerAnalysisTerms.survivalDisplay(rec.survived, PlayerResultFormat.deathSec(rec))
                 + " | 输出" + rec.damageDealt
-                + " | 承伤" + rec.damageReceived
+                + " | 损失血量" + rec.damageReceived
                 + " | 助攻" + rec.damageAssisted
                 + " | 格挡" + rec.damageBlocked
                 + " | 击杀" + rec.kills;
