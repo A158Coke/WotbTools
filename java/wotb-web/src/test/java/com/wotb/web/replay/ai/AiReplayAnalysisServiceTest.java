@@ -300,8 +300,8 @@ class AiReplayAnalysisServiceTest {
                 "Prior must be relabeled to the perspective team");
         assertTrue(body.contains("开局左路集结"),
                 "Prior hypotheses must be rendered");
-        assertTrue(body.contains("战略假设（复盘需逐条判定状态）"),
-                "Prior hypotheses section must ask for per-hypothesis verdicts");
+        assertTrue(body.contains("战略假设（复盘对照：预期 vs 实际，考虑一波流等特殊战局）"),
+                "Prior hypotheses section must ask for expectation-vs-actual comparison");
     }
 
     @Test

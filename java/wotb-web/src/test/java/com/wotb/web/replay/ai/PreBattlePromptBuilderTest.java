@@ -75,6 +75,26 @@ class PreBattlePromptBuilderTest {
     }
 
     @Test
+    void userContentContainsTotalHpAndPerVehicleHp() {
+        final String content = PreBattlePromptBuilder.buildUserContent(
+                battleWithFullResults(), TankTacticalProfileRegistry.load(),
+                MapTacticalSemanticsRegistry.load().semanticsFor("erlenberg"));
+        assertTrue(content.contains("双方总血量（tankopedia maxHp 求和"));
+        assertTrue(content.contains("TEAM_A 总血量="));
+        assertTrue(content.contains("TEAM_B 总血量="));
+        assertTrue(content.contains("血量=2400"), "Kranvagn tankopedia maxHp must be rendered");
+        assertTrue(content.contains("血量="), "per-vehicle hp must be rendered");
+    }
+
+    @Test
+    void systemPromptAllowsPreBattleHpAndRequiresStagedPlans() {
+        final String system = PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT;
+        assertTrue(system.contains("车辆基础血量（tankopedia maxHp）与双方总血量为赛前车辆属性"));
+        assertTrue(system.contains("【开局】【中期】【残局】"),
+                "preferredPlans must be staged (opening/midgame/lategame)");
+    }
+
+    @Test
     void mapSemanticsPromptPreservesConfidenceBoundaries() {
         final String content = PreBattlePromptBuilder.buildUserContent(
                 battleWithFullResults(), TankTacticalProfileRegistry.load(),

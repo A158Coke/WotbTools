@@ -1,6 +1,7 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.replay.evidence.AiEvidence;
 import com.wotb.core.replay.feature.TeamAutopsyStats;
 import com.wotb.core.util.PromptDataQuoter;
@@ -67,10 +68,15 @@ public final class TeamAutopsyPromptBuilder {
             final List<TeamAutopsyStats> stats,
             final PreBattleStrategicPrior prior,
             final List<AiEvidence> criticalWindows,
-            final Winner winner) {
+            final TeamBattleWinner winner,
+            final String teamLabel) {
         final StringBuilder sb = new StringBuilder(3072);
         sb.append("=== 结果 ===\n");
-        sb.append(winnerLabel(winner)).append('\n');
+        sb.append(winnerLabel(winner, teamLabel)).append('\n');
+        if (winner != null && winner.pointsDecided()) {
+            sb.append("本局为争霸赛点数胜利（结束时刻双方均未全员阵亡），"
+                    + "不要描述成敌方全歼。\n");
+        }
         sb.append("本方 7 人（TEAM_A）:\n");
         for (final TeamAutopsyStats s : stats) {
             sb.append("- ").append(s.playerKey()).append(" 昵称=")
@@ -137,8 +143,9 @@ public final class TeamAutopsyPromptBuilder {
 
     /** 把结构化结果渲染为追加到复盘尾部的中文「团队剖析」段；按 playerKey 回查 roster。 */
     static String renderSection(final TeamAutopsyResult result,
-                                final Winner winner,
-                                final List<TeamAutopsyStats> roster) {
+                                final TeamBattleWinner winner,
+                                final List<TeamAutopsyStats> roster,
+                                final String teamLabel) {
         if (result == null) {
             return "";
         }
@@ -147,13 +154,13 @@ public final class TeamAutopsyPromptBuilder {
                         TeamAutopsyStats::playerKey, Function.identity()));
         final StringBuilder sb = new StringBuilder(1024);
         sb.append("\n\n======================== 团队剖析 ========================\n");
-        sb.append("胜负: ").append(winnerLabel(winner)).append('\n');
+        sb.append("胜负: ").append(winnerLabel(winner, teamLabel)).append('\n');
         if (!result.biggestLiabilities().isEmpty()) {
             sb.append("主要战犯:\n");
             for (final TeamAutopsyResult.AutopsyVerdict v : result.biggestLiabilities()) {
                 sb.append("- ").append(renderPlayer(v.playerKey(), byKey))
                         .append("（置信度: ")
-                        .append(v.confidence() == null ? "未知" : v.confidence())
+                        .append(confidenceLabel(v.confidence()))
                         .append("）: ").append(v.reason() == null ? "" : v.reason()).append('\n');
                 if (v.evidence() != null && !v.evidence().isEmpty()) {
                     sb.append("    证据: ").append(String.join("；", v.evidence())).append('\n');
@@ -165,7 +172,7 @@ public final class TeamAutopsyPromptBuilder {
             for (final TeamAutopsyResult.AutopsyVerdict v : result.mvps()) {
                 sb.append("- ").append(renderPlayer(v.playerKey(), byKey))
                         .append("（置信度: ")
-                        .append(v.confidence() == null ? "未知" : v.confidence())
+                        .append(confidenceLabel(v.confidence()))
                         .append("）: ").append(v.reason() == null ? "" : v.reason()).append('\n');
                 if (v.evidence() != null && !v.evidence().isEmpty()) {
                     sb.append("    证据: ").append(String.join("；", v.evidence())).append('\n');
@@ -177,9 +184,9 @@ public final class TeamAutopsyPromptBuilder {
             for (final TeamAutopsyResult.AutopsyPlayer p : result.players()) {
                 sb.append("- ").append(renderPlayer(p.playerKey(), byKey))
                         .append(": ")
-                        .append(p.contribution() == null ? "UNKNOWN" : p.contribution())
+                        .append(contributionLabel(p.contribution()))
                         .append("（")
-                        .append(p.confidence() == null ? "未知" : p.confidence())
+                        .append(confidenceLabel(p.confidence()))
                         .append("）\n");
             }
         }
@@ -202,11 +209,42 @@ public final class TeamAutopsyPromptBuilder {
         return playerKey + "（" + PromptDataQuoter.quote(label, stat.tankName()) + "）";
     }
 
-    static String winnerLabel(final Winner winner) {
-        return switch (winner) {
-            case FRIENDLY_WIN -> "判胜（TEAM_A）";
-            case ENEMY_WIN -> "判负（TEAM_A）";
+    /** 团队赛胜负标签；使用实际队名（teamLabel），点数判定时附加说明。 */
+    static String winnerLabel(final TeamBattleWinner winner, final String teamLabel) {
+        if (winner == null) {
+            return "未知";
+        }
+        final String label = teamLabel == null || teamLabel.isBlank() ? "TEAM_A" : teamLabel;
+        final String base = switch (winner.winner()) {
+            case FRIENDLY_WIN -> label + "获胜";
+            case ENEMY_WIN -> label + "落败";
             case DRAW_OR_UNKNOWN -> "未知";
+        };
+        return winner.pointsDecided() ? base + "（点数判定）" : base;
+    }
+
+    /** 渲染层中文映射：LLM JSON 契约保持英文枚举，仅展示时翻译（MVP 保留英文）。 */
+    static String confidenceLabel(final String confidence) {
+        if (confidence == null) {
+            return "未知";
+        }
+        return switch (confidence.toUpperCase(java.util.Locale.ROOT)) {
+            case "EXACT" -> "精确";
+            case "INFERRED" -> "推断";
+            case "PARTIAL" -> "部分";
+            default -> "未知";
+        };
+    }
+
+    static String contributionLabel(final String contribution) {
+        if (contribution == null) {
+            return "未知";
+        }
+        return switch (contribution.toUpperCase(java.util.Locale.ROOT)) {
+            case "HIGH" -> "高";
+            case "MEDIUM" -> "中";
+            case "LOW" -> "低";
+            default -> "未知";
         };
     }
 }

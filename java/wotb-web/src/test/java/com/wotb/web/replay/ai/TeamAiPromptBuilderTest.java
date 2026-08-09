@@ -137,6 +137,29 @@ class TeamAiPromptBuilderTest {
     }
 
     @Test
+    void supremacyPointsVictoryLabelWhenWinnerMissing() {
+        final SingleTeamBattleAnalysisContext context =
+                contextWithNickname("Ally");
+        context.battle().winnerTeam = null;
+        final PlayerResult enemy = new PlayerResult();
+        enemy.accountId = 20_001L;
+        enemy.nickname = "Enemy";
+        enemy.team = 2;
+        enemy.survived = true;
+        context.battle().players.get(0).victoryPointsEarned = 300;
+        enemy.victoryPointsEarned = 700;
+        context.battle().players = List.of(
+                context.battle().players.get(0), enemy);
+
+        final TeamAiPromptBuilder.PromptInput input =
+                TeamAiPromptBuilder.single(context);
+
+        assertTrue(input.content().matches("(?s).*result=.*落败（点数判定）.*"),
+                input.content());
+        assertFalse(input.content().contains("平局或未知"));
+    }
+
+    @Test
     void movementEvidenceIncludesStartAndEndCoordinates() {
         final SingleTeamBattleAnalysisContext base =
                 contextWithNickname("Player");

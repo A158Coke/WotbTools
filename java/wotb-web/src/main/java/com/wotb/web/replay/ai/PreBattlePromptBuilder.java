@@ -29,7 +29,9 @@ public final class PreBattlePromptBuilder {
             你的任务是为这场战斗建立"理论上的战略基线"，供第二阶段对照真实执行情况复盘。
 
             === 强制规则 ===
-            1. 严禁引用、猜测或假设任何战斗结果：胜负、伤害、击杀、阵亡、路线、HP、交火都不存在。
+            1. 严禁引用、猜测或假设任何战斗结果：胜负、伤害、击杀、阵亡、路线、交火都不存在。
+               车辆基础血量（tankopedia maxHp）与双方总血量为赛前车辆属性，允许用于血池/换血能力判断；
+               禁止推断战斗中的实际血量变化或承伤。
             2. 坦克事实只能来自下方提供的结构化战术属性；未提供或标注"车型默认"的属性不得自行补充。
             3. 地图战术语义只使用下方提供的数据（AREA 名称/类型/特征/适合/风险/关系/出生点语义/置信度）；
                可信度必须按下方的可信度图例理解：EXACT_CLIENT_DATA/EXACT_SCENE_DATA 是客户端直接事实；
@@ -55,7 +57,7 @@ public final class PreBattlePromptBuilder {
                 "composition": { "mobility": "HIGH|MEDIUM|LOW|UNKNOWN", "closeRangeTrading": "HIGH|MEDIUM|LOW|UNKNOWN", "hullDownCapability": "HIGH|MEDIUM|LOW|UNKNOWN", "burstPotential": "HIGH|MEDIUM|LOW|UNKNOWN" },
                 "strengths": ["最多6条，每条≤60字"],
                 "weaknesses": ["最多6条，每条≤60字"],
-                "preferredPlans": ["最多4条，每条≤80字"]
+                "preferredPlans": ["最多4条，每条≤80字，必须分阶段给出：开局（前30秒站位/分路）、中期（主攻方向/集火目标/侧翼）、残局（血量/人数优势利用），每条以【开局】【中期】【残局】开头"]
               },
               "teamB": { 同上 },
               "keyMatchups": [
@@ -99,6 +101,9 @@ public final class PreBattlePromptBuilder {
         appendTeam(sb, battle, 1, profiles);
         sb.append("\n=== TEAM_B（队伍2）阵容 ===\n");
         appendTeam(sb, battle, 2, profiles);
+        sb.append("\n=== 双方总血量（tankopedia maxHp 求和，基础值不含装备） ===\n");
+        sb.append("TEAM_A 总血量=").append(totalHp(battle, 1)).append('\n');
+        sb.append("TEAM_B 总血量=").append(totalHp(battle, 2)).append('\n');
         sb.append("\n请按输出契约给出 JSON。");
         return sb.toString();
     }
@@ -298,6 +303,8 @@ public final class PreBattlePromptBuilder {
                     .append(" 车种=").append(PromptDataQuoter.quote(vehicleClass, "未知"))
                     .append(" 等级=").append(tier.isBlank() ? "未知" : tier)
                     .append(" 国家=").append(nation.isBlank() ? "未知" : nation)
+                    .append(" 血量=").append(ReplayDisplayNames.tankMaxHp(p.tankId).isBlank()
+                            ? "未知" : ReplayDisplayNames.tankMaxHp(p.tankId))
                     .append('\n');
             sb.append("    战术属性");
             if (!profile.curated()) {
@@ -342,5 +349,27 @@ public final class PreBattlePromptBuilder {
             }
         }
         return max;
+    }
+
+    /** 双方总血量：tankopedia maxHp 求和（基础值，缺失的车辆按 0 计）。 */
+    private static int totalHp(final Battle battle, final int team) {
+        if (battle.players == null) {
+            return 0;
+        }
+        int total = 0;
+        for (final PlayerResult p : battle.players) {
+            if (p.team != team) {
+                continue;
+            }
+            final String hp = ReplayDisplayNames.tankMaxHp(p.tankId);
+            if (!hp.isBlank()) {
+                try {
+                    total += Integer.parseInt(hp);
+                } catch (final NumberFormatException ignored) {
+                    // 非数字血量忽略
+                }
+            }
+        }
+        return total;
     }
 }
