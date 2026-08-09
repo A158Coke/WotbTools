@@ -98,7 +98,7 @@ public final class MapTacticalSemanticsRegistry {
                     entry.getKey(),
                     parseArea(entry.getKey(), entry.getValue())));
         }
-        final Map<String, MapTacticalSemantics.AreaRelationships> relationships =
+        final List<MapTacticalSemantics.TacticalRelationship> relationships =
                 parseRelationships(root.get("relationships"));
         final Map<String, MapTacticalSemantics.SpawnSemantics> spawnSemantics =
                 parseSpawnSemantics(root.get("spawnSemantics"));
@@ -148,52 +148,27 @@ public final class MapTacticalSemanticsRegistry {
         return result;
     }
 
-    /** 语义化器把关系输出为扁平数组（{from, type, to, reason, confidence}），按 from 分组。 */
-    private static Map<String, MapTacticalSemantics.AreaRelationships> parseRelationships(
+    /** 关系数组原样解析，保留 from/type/to/reason/confidence，不做分组或改名。 */
+    private static List<MapTacticalSemantics.TacticalRelationship> parseRelationships(
             final JsonNode node) {
-        final Map<String, List<String>> controls = new LinkedHashMap<>();
-        final Map<String, List<String>> connects = new LinkedHashMap<>();
-        final Map<String, List<String>> pressure = new LinkedHashMap<>();
-        final Map<String, List<String>> higherThan = new LinkedHashMap<>();
-        final Map<String, List<String>> containsPoints = new LinkedHashMap<>();
+        final List<MapTacticalSemantics.TacticalRelationship> result = new ArrayList<>();
         if (node != null && node.isArray()) {
             node.forEach(relation -> {
                 if (relation == null || !relation.isObject()) {
                     return;
                 }
                 final String from = relation.path("from").asText().trim();
-                final String type = relation.path("type").asText();
-                final String to = relation.path("to").asText();
-                if (from.isEmpty() || to.isBlank()) {
+                if (from.isEmpty()) {
                     return;
                 }
-                switch (type) {
-                    case "CONTROLS" -> controls.computeIfAbsent(from, k -> new ArrayList<>()).add(to);
-                    case "ADJACENT_TO" -> connects.computeIfAbsent(from, k -> new ArrayList<>()).add(to);
-                    case "ENABLES_PRESSURE_AGAINST" ->
-                            pressure.computeIfAbsent(from, k -> new ArrayList<>()).add(to);
-                    case "HIGHER_THAN" -> higherThan.computeIfAbsent(from, k -> new ArrayList<>()).add(to);
-                    case "CONTAINS_CONTROL_POINT", "CONTAINS_STRATEGIC_POINT" ->
-                            containsPoints.computeIfAbsent(from, k -> new ArrayList<>()).add(to);
-                    default -> {
-                        // 未知关系类型不猜测
-                    }
-                }
+                result.add(new MapTacticalSemantics.TacticalRelationship(
+                        from,
+                        relation.path("type").asText(),
+                        relation.path("to").asText(),
+                        relation.path("reason").asText(),
+                        relation.path("confidence").asText()));
             });
         }
-        final Map<String, MapTacticalSemantics.AreaRelationships> result = new LinkedHashMap<>();
-        final Set<String> keys = new LinkedHashSet<>();
-        keys.addAll(controls.keySet());
-        keys.addAll(connects.keySet());
-        keys.addAll(pressure.keySet());
-        keys.addAll(higherThan.keySet());
-        keys.addAll(containsPoints.keySet());
-        keys.forEach(key -> result.put(key, new MapTacticalSemantics.AreaRelationships(
-                controls.getOrDefault(key, List.of()),
-                connects.getOrDefault(key, List.of()),
-                pressure.getOrDefault(key, List.of()),
-                higherThan.getOrDefault(key, List.of()),
-                containsPoints.getOrDefault(key, List.of()))));
         return result;
     }
 

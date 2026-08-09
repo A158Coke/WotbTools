@@ -52,12 +52,36 @@ class MapTacticalSemanticsRegistryTest {
     @Test
     void relationshipsAndSpawnSemanticsAreMapped() {
         final MapTacticalSemantics semantics = registry.semanticsFor("desert_train");
-        final MapTacticalSemantics.AreaRelationships relationships =
-                semantics.relationships().get("ELEVATED_TERRAIN_02");
-        assertTrue(relationships.connects().contains("VEGETATED_TERRAIN_02"));
-        assertTrue(relationships.higherThan().contains("VEGETATED_TERRAIN_02"));
-        assertTrue(semantics.relationships().values().stream()
-                .anyMatch(rel -> !rel.containsPoints().isEmpty()));
+        final List<MapTacticalSemantics.TacticalRelationship> relationships =
+                semantics.relationships();
+        // ADJACENT_TO 原样保留（不改成 connects），reason/confidence 完整
+        assertTrue(relationships.stream().anyMatch(rel ->
+                rel.from().equals("ELEVATED_TERRAIN_02")
+                        && rel.type().equals("ADJACENT_TO")
+                        && rel.to().equals("VEGETATED_TERRAIN_02")
+                        && rel.reason().contains("相邻")
+                        && rel.confidence().equals("EXACT_GRID_TOPOLOGY")));
+        // HIGHER_THAN 原样保留
+        assertTrue(relationships.stream().anyMatch(rel ->
+                rel.from().equals("ELEVATED_TERRAIN_02")
+                        && rel.type().equals("HIGHER_THAN")
+                        && rel.to().equals("VEGETATED_TERRAIN_02")));
+        // CONTAINS_CONTROL_POINT 与 CONTAINS_STRATEGIC_POINT 不混合
+        final List<String> controlPointTos = relationships.stream()
+                .filter(rel -> rel.type().equals("CONTAINS_CONTROL_POINT"))
+                .map(MapTacticalSemantics.TacticalRelationship::to)
+                .toList();
+        final List<String> strategicPointTos = relationships.stream()
+                .filter(rel -> rel.type().equals("CONTAINS_STRATEGIC_POINT"))
+                .map(MapTacticalSemantics.TacticalRelationship::to)
+                .toList();
+        assertTrue(controlPointTos.contains("Control1"));
+        assertTrue(strategicPointTos.contains("1.sc2"));
+        assertFalse(controlPointTos.contains("1.sc2"));
+        assertFalse(strategicPointTos.contains("Control1"));
+        // 每条关系 reason/confidence 均完整
+        assertTrue(relationships.stream().allMatch(rel ->
+                !rel.reason().isBlank() && !rel.confidence().isBlank()));
         final MapTacticalSemantics.SpawnSemantics team1 = semantics.spawnSemantics().get("TEAM_1");
         assertTrue(team1.areas().contains("MIXED_TERRAIN_04"));
         assertEquals("EXACT_SCENE_DATA", team1.status());
