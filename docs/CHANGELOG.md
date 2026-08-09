@@ -83,6 +83,7 @@
 - **AI 复盘页重建 UI**：删除 `ReplayReconstructionActions.vue`、`ReconstructionSummaryPanel.vue`、`BattleStatePanel.vue`；`ReplayInputPanel` props 8 → 3、emits 8 → 4；`AnalysisResultPanel` 去掉 `close` 事件与关闭按钮；三语各删 33 个不再引用的 `recon.*` key（29 个因本次简化失效，4 个为历史遗留）。
 
 ### Changed
+- **随机战 Call #2 数据增量 + 口语化**：`TacticalReviewPromptBuilder` 关键窗口上限 3→8（TOP PIVOTAL WINDOWS 索引与 CRITICAL DECISION WINDOWS 完整证据同步放宽），新增「对炮明细（ENGAGEMENTS·后端确定性）」段——逐次交火的时间区间、对方昵称（按 battle players 回查）、你输出/损失、结果与置信度；三语语言规则新增语气约束（像资深教练当面复盘：自然口语化、避免模板化套话与机械罗列、数据充分时直接下判断、不处处免责）。940k input 预算下随机战 Call #2 实际 prompt 用量从 ~4.5k tokens 明显提升；仍由 effectiveLimit 兜底裁剪。
 - **团队复盘应用 Call #1（赛前战略基线）**：训练房/联赛团队复盘与随机战一样先执行 `PreBattleStrategicService`（地图 + 双方阵容先验，含开局/分路假设），按视角队伍把 prior 重标为 TEAM_A=你的队伍（teamLabel）/ TEAM_B=对方队伍 后注入团队 Prompt（视角队伍为 2 时交换 Call #1 的 TEAM_A/TEAM_B 标签），系统 prompt 新增战略假设逐条判定规则（CONFIRMED / VIOLATED / NOT_OBSERVABLE / IRRELEVANT_AFTER_STATE_CHANGE，ZH/EN/RU）；单队与多队（per-perspective）路径都覆盖。Call #1 失败不阻断团队复盘（仅缺 prior 段）；Team Autopsy 保持结算级（无 prior）。预算沿用整体 deadline（Call #1 45s + 团队复盘剩余预算 + Autopsy min(30s, 剩余-margin)）。
 - **Grafana 升级 11.4.0 → 11.6.16**：生产与本地 compose、`docs/observability.md` 组件表同步镜像版本；升级前已备份 `grafana_data` 卷（`/opt/wotb/backups/grafana/`）。11.6 无影响本项目的 breaking changes（未使用 API key；provisioning/dashboard schema 兼容）。
 - **AI Review 未成功次数零值回退修复（PR #44）**：`wotbtools-usage` Dashboard「未成功次数」面板改为两个独立 Target （failure / rejected，各带 `or vector(0)` 与固定 legend），修复原 `sum by (result) ... or vector(0)` 因标签集合不匹配 在无数据时产生无标签 0 序列的问题；无数据时明确显示 failure 0 / rejected 0，两类结果保持独立。

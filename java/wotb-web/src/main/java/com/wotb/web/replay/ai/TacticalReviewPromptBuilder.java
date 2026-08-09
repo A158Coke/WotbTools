@@ -2,13 +2,16 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.evidence.AiEvidence;
 import com.wotb.core.replay.evidence.EvidenceSkillResult;
-import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
+import com.wotb.core.replay.feature.EngagementSummary;
+import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.util.PlayerResultFormat;
 import com.wotb.core.util.PromptDataQuoter;
 
 import java.util.ArrayList;
@@ -23,8 +26,10 @@ import java.util.Map;
  */
 public final class TacticalReviewPromptBuilder {
 
-    static final int MAX_TOP_WINDOWS = 3;
-    static final int MAX_WINDOW_DETAIL = 3;
+    // 940k input budget 下窗口上限可以远高于 3：把关键决策窗口/对炮明细尽量喂全，
+    // 由 effectiveLimit 兜底裁剪（实际用量远低于预算时不会触发）。
+    static final int MAX_TOP_WINDOWS = 8;
+    static final int MAX_WINDOW_DETAIL = 8;
 
     private static final String HARNESS_RULES = """
 
@@ -83,6 +88,8 @@ public final class TacticalReviewPromptBuilder {
         final List<AiEvidence> windows = evidence != null ? evidence.criticalWindows() : List.of();
         int windowDetail = Math.min(MAX_WINDOW_DETAIL, windows.size());
         boolean includeEvidence = evidence != null && evidence.hasContent();
+        boolean includeEngagements = features != null
+                && features.engagements() != null && !features.engagements().isEmpty();
         boolean includePhases = features != null && features.phases() != null && !features.phases().isEmpty();
         boolean includeTop = !windows.isEmpty();
         boolean includeWindowDetail = !windows.isEmpty();
@@ -92,7 +99,8 @@ public final class TacticalReviewPromptBuilder {
                 0, singleReplayMaxInputTokens);
 
         String content = assemble(baseContent, evidence, features, windows,
-                windowDetail, includeEvidence, includePhases, includeTop, includeWindowDetail);
+                windowDetail, includeEvidence, includeEngagements,
+                includePhases, includeTop, includeWindowDetail, battle);
         int estimated = estimate(estimator, TACTICAL_SYSTEM_PROMPT, content);
         boolean truncated = false;
 
@@ -102,6 +110,8 @@ public final class TacticalReviewPromptBuilder {
                 windowDetail = Math.min(1, windows.size());
             } else if (includeEvidence) {
                 includeEvidence = false;
+            } else if (includeEngagements) {
+                includeEngagements = false;
             } else if (includePhases) {
                 includePhases = false;
             } else if (includeWindowDetail) {
@@ -113,7 +123,8 @@ public final class TacticalReviewPromptBuilder {
             }
             truncated = true;
             content = assemble(baseContent, evidence, features, windows,
-                    windowDetail, includeEvidence, includePhases, includeTop, includeWindowDetail);
+                    windowDetail, includeEvidence, includeEngagements,
+                    includePhases, includeTop, includeWindowDetail, battle);
             estimated = estimate(estimator, TACTICAL_SYSTEM_PROMPT, content);
         }
 
@@ -132,9 +143,11 @@ public final class TacticalReviewPromptBuilder {
             final List<AiEvidence> windows,
             final int windowDetail,
             final boolean includeEvidence,
+            final boolean includeEngagements,
             final boolean includePhases,
             final boolean includeTop,
-            final boolean includeWindowDetail
+            final boolean includeWindowDetail,
+            final Battle battle
     ) {
         final StringBuilder sb = new StringBuilder(baseContent);
         if (includeTop && !windows.isEmpty()) {
@@ -151,6 +164,19 @@ public final class TacticalReviewPromptBuilder {
             for (final BattlePhaseSummary phase : features.phases()) {
                 sb.append("  ").append(PlayerAnalysisTerms.battleRange(phase.startTime(), phase.endTime()))
                         .append(" ").append(PlayerAnalysisTerms.phaseLabel(phase.type())).append('\n');
+            }
+        }
+        if (includeEngagements && features != null
+                && features.engagements() != null && !features.engagements().isEmpty()) {
+            sb.append("\n======================== 对炮明细（ENGAGEMENTS·后端确定性） ========================\n");
+            for (final EngagementSummary e : features.engagements()) {
+                sb.append("- ").append(PlayerAnalysisTerms.battleRange(e.startTime(), e.endTime()))
+                        .append(" 对方: ").append(opponentNames(e.enemyAccountIds(), battle))
+                        .append(" | 你输出 ").append(e.damageDealt())
+                        .append(" / 损失 ").append(e.damageReceived())
+                        .append(" | 结果: ").append(PlayerAnalysisTerms.outcomeLabel(e.outcome()))
+                        .append(" | 置信度: ").append(PlayerAnalysisTerms.confidenceLabel(e.confidence()))
+                        .append('\n');
             }
         }
         if (includeEvidence && evidence != null) {
@@ -174,6 +200,28 @@ public final class TacticalReviewPromptBuilder {
         // TASK 必须是 user prompt 最后一个业务 section：证据之后再给最终推理指令
         sb.append("\n\n").append(taskSection());
         return sb.toString();
+    }
+
+    /** 对炮明细的对方玩家：优先昵称，缺失时回退 accountId。 */
+    private static String opponentNames(final List<Long> accountIds, final Battle battle) {
+        if (accountIds == null || accountIds.isEmpty()) {
+            return "未知";
+        }
+        final List<String> names = new ArrayList<>();
+        for (final Long id : accountIds) {
+            String name = String.valueOf(id);
+            if (battle != null && battle.players != null) {
+                for (final PlayerResult p : battle.players) {
+                    if (p != null && Long.valueOf(p.accountId).equals(id)
+                            && p.nickname != null && !p.nickname.isBlank()) {
+                        name = p.nickname;
+                        break;
+                    }
+                }
+            }
+            names.add(PlayerResultFormat.quoteForPrompt(name));
+        }
+        return String.join("、", names);
     }
 
     private static String snapshot(

@@ -80,7 +80,9 @@ public final class PlayerReplayPromptBuilder {
             证据中的英文段头（如 OPPOSING_TEAM_LINEUP_AUTHORITATIVE）和全大写枚举名只是机器标签，
             禁止原样写入复盘，也禁止逐词直译。
             车种统一写作 重坦 / 中坦 / 轻坦 / 坦克歼击车，正文不得使用英文缩写 TD。
-            稳定错误码与数据限制代码（如 AI_INPUT_TRUNCATED）只是内部字段，不得作为复盘标题或正文术语出现。""";
+            稳定错误码与数据限制代码（如 AI_INPUT_TRUNCATED）只是内部字段，不得作为复盘标题或正文术语出现。
+            语气像资深教练当面复盘：自然、口语化、有重点，避免模板化套话与机械罗列；
+            数据充分时直接给判断，只有确实不足才写「无法确定」，不要处处免责。""";
 
     /** Player 专用：第二人称。 */
     static final String PLAYER_PERSON_RULE = """
@@ -149,6 +151,9 @@ public final class PlayerReplayPromptBuilder {
             Vehicle classes may be written in natural English (e.g., heavy/medium/light tank, tank destroyer);
             do not use the machine label TD in prose.
             Stable error codes and data limitation codes (e.g., AI_INPUT_TRUNCATED) are internal fields;
+            Sound like an experienced coach talking directly to the player: natural, conversational, and focused;
+            avoid templated filler and mechanical enumeration. Give direct judgments when the data supports them,
+            and use "cannot be determined" only when the data is genuinely insufficient — do not hedge everywhere.
             they must not appear as review headings or prose.""";
 
     /** 公共：RU 最终正文输出语言与术语（替换 COMMON_CHINESE_LANGUAGE_RULE）。 */
@@ -161,6 +166,9 @@ public final class PlayerReplayPromptBuilder {
             Классы машин можно называть по-русски (например, тяжёлый/средний/лёгкий танк, ПТ-САУ);
             не используйте в тексте машинную аббревиатуру TD.
             Стабильные коды ошибок и коды ограничений данных (например, AI_INPUT_TRUNCATED) — внутренние поля;
+            Пишите как опытный тренер, говорящий с игроком напрямую: естественно, разговорно и по делу;
+            избегайте шаблонных фраз и механического перечисления. Давайте прямые выводы, когда данных достаточно,
+            и пишите «невозможно определить» только при реальной нехватке данных — не оговаривайтесь на каждом шагу.
             они не должны появляться в заголовках или тексте разбора.""";
 
     /** Player 专用：EN 人称（替换 PLAYER_PERSON_RULE）。 */
