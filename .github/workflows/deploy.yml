@@ -66,7 +66,7 @@ jobs:
             backend=false
             frontend=false
 
-            if grep -Eq '^(java/|common/(tankopedia-tier(7|8|9|10)\.json|rating\.json|map_names\.json)$|docker/Dockerfile\.backend$|\.dockerignore$)' <<< "$changed_files"; then
+            if grep -Eq '^(java/|common/(tankopedia-tier(7|8|9|10)\.json|rating\.json|map_names\.json|map-semantics/)|docker/Dockerfile\.backend$|\.dockerignore$)' <<< "$changed_files"; then
               backend=true
             fi
             if grep -Eq '^(frontend/|common/map_names\.json$|common/assets/|docker/Dockerfile\.frontend$|deploy/nginx/|\.dockerignore$)' <<< "$changed_files"; then
