@@ -597,6 +597,24 @@ final class TeamAiPromptBuilder {
                     + " tank=" + quoteData(resolveTankName(member.tankId(), member.tankName()))
                     + " vehicleClass=" + resolveTankClass(member.tankId())
                     + "\n");
+            // 压缩区域序列（1-9 区，与回放九宫格一致）：让 AI 一眼看到该成员的整场路线
+            final List<String> regionSequence = new ArrayList<>();
+            String lastRegion = null;
+            for (final MovementSegment movement : member.movements()) {
+                final String startRegion = regionOf(movement.rawStartPosition());
+                if (startRegion != null && !startRegion.equals(lastRegion)) {
+                    regionSequence.add(startRegion);
+                    lastRegion = startRegion;
+                }
+                final String endRegion = regionOf(movement.rawEndPosition());
+                if (endRegion != null && !endRegion.equals(lastRegion)) {
+                    regionSequence.add(endRegion);
+                    lastRegion = endRegion;
+                }
+            }
+            if (!regionSequence.isEmpty()) {
+                writer.append("  regionSequence=" + String.join("→", regionSequence) + "\n");
+            }
             for (final MovementSegment movement : member.movements()) {
                 final String startInfo = formatRawPosition(movement.rawStartPosition());
                 final String endInfo = formatRawPosition(movement.rawEndPosition());
@@ -768,6 +786,13 @@ final class TeamAiPromptBuilder {
         if (!res.usable()) return "UNKNOWN";
         return "(" + format(res.position().x()) + "," + format(res.position().z())
                 + ") r=" + res.region() + " s=" + res.status().name();
+    }
+
+    /** raw 坐标 → 九宫格区域（1-9）；不可用返回 null。 */
+    private static String regionOf(final Vector3 position) {
+        if (position == null) return null;
+        final int region = MapRegionResolver.resolveRegionFromRaw(position.x(), position.z());
+        return region > 0 ? String.valueOf(region) : null;
     }
 
     /**
