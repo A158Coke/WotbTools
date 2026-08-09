@@ -426,6 +426,30 @@ class DefaultTeamBattleFeatureExtractorTest {
     }
 
     @Test
+    void supremacyMissingWinner_neitherTeamWiped_pointsLeadWins() {
+        final Fixture fixture = fixture();
+        fixture.battle().winnerTeam = null;
+        // allyOne(1) 存活, allyTwo(1) 阵亡, enemy(2) 存活 → 双方均未全灭 → 点数判定
+        fixture.battle().players.get(0).victoryPointsEarned = 400;
+        fixture.battle().players.get(2).victoryPointsEarned = 100;
+
+        final TeamBattleFeatureSet features = extract(fixture, List.of());
+
+        assertEquals(Boolean.TRUE, features.authoritativeAggregate().win());
+    }
+
+    @Test
+    void supremacyMissingWinner_enemyWiped_friendlyWinsBySettlement() {
+        final Fixture fixture = fixture();
+        fixture.battle().winnerTeam = null;
+        fixture.battle().players.get(2).survived = false; // 敌方全灭
+
+        final TeamBattleFeatureSet features = extract(fixture, List.of());
+
+        assertEquals(Boolean.TRUE, features.authoritativeAggregate().win());
+    }
+
+    @Test
     void replayBattleEndKeepsItsSourceAndConfidence() {
         final Fixture fixture = fixture();
         fixture.battle().durationS = null;

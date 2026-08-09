@@ -3,6 +3,7 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.processing.FriendlyEnemyResult;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.ref.ReplayDisplayNames;
@@ -94,7 +95,7 @@ final class TeamAiPromptBuilder {
             headerBuf.append("map=").append(quoteData(resolveMapName(context.battle().mapName))).append("\n");
             headerBuf.append("durationSec=").append(formatNullable(context.battle().durationS)).append("\n");
             final String result = resolveTeamResult(
-                    context.battle().winnerTeam, context.perspectiveTeam());
+                    context.battle(), context.perspectiveTeam(), teamLabel);
             headerBuf.append("result=").append(result).append("\n");
         }
         headerBuf.append("unitLimitations=").append(limitations).append("\n");
@@ -102,7 +103,8 @@ final class TeamAiPromptBuilder {
 
         // 构建所有 optional details（无固定截断）
         final BudgetWriter optTemp = new BudgetWriter();
-        appendOptionalDetails(optTemp, context.features(), context.analysisUnitId());
+        appendOptionalDetails(optTemp, context.features(), context.analysisUnitId(),
+                context.battle() == null ? null : context.battle().mapName);
         final String optBlock = optTemp.content();
 
         // 如果 mandatory（header + HPF + prior）超出 token 预算，直接抛出异常
@@ -280,7 +282,8 @@ final class TeamAiPromptBuilder {
         final String hpfContent = hpfTemp.content();
         final boolean hpfTruncated = hpfTemp.isTruncated();
         final BudgetWriter optTemp = new BudgetWriter();
-        appendOptionalDetails(optTemp, perspective.features(), perspective.analysisUnitId());
+        appendOptionalDetails(optTemp, perspective.features(), perspective.analysisUnitId(),
+                perspective.mapName());
         final String optContent = optTemp.content();
         final boolean optTruncated = optTemp.isTruncated();
         return new PerspectivePromptSections(
@@ -335,7 +338,7 @@ final class TeamAiPromptBuilder {
             }
         }
         if (!prior.hypotheses().isEmpty()) {
-            sb.append("\n战略假设（复盘需逐条判定状态）:\n");
+            sb.append("\n战略假设（复盘对照：预期 vs 实际，考虑一波流等特殊战局）:\n");
             for (final PreBattleStrategicPrior.StrategicHypothesis h : prior.hypotheses()) {
                 sb.append("  [").append(hypothesisIdLabel(h.id())).append("] ")
                         .append(quoteData(swapped ? swapTeamToken(h.claim()) : h.claim()))
@@ -360,7 +363,7 @@ final class TeamAiPromptBuilder {
             sb.append("  劣势: ").append(String.join("；", profile.weaknesses())).append('\n');
         }
         if (!profile.preferredPlans().isEmpty()) {
-            sb.append("  首选方案: ").append(String.join("；", profile.preferredPlans())).append('\n');
+            sb.append("  预期最优打法（分阶段）: ").append(String.join("；", profile.preferredPlans())).append('\n');
         }
     }
 
@@ -492,14 +495,15 @@ final class TeamAiPromptBuilder {
     private static void appendOptionalDetails(
             final BudgetWriter writer,
             final TeamBattleFeatureSet features,
-            final String analysisUnitId
+            final String analysisUnitId,
+            final String mapCode
     ) {
         writer.append("\n=== PERSPECTIVE_OPTIONAL ===\n");
         writer.append("analysisUnitId=" + quoteData(analysisUnitId) + "\n");
         if (features == null) {
             return;
         }
-        appendMemberMovements(writer, features.members());
+        appendMemberMovements(writer, features.members(), mapCode);
         appendFormation(writer, features.formationPhases());
         appendBattlePhases(writer, features.battlePhases());
         appendEngagements(writer, features.engagements());
@@ -570,6 +574,13 @@ final class TeamAiPromptBuilder {
                     + " survived=" + member.survived()
                     + " deathTimeSec=" + formatScalar(member.deathTimeSec())
                     + "\n");
+            final TeamMemberFeatureSet.DeathProximity prox = member.deathProximity();
+            if (prox != null) {
+                writer.append("  deathProximityMeters=" + format(prox.distanceMeters())
+                        + " observedDeltaSec=" + format(prox.observedDeltaSec())
+                        + " confidence=" + PlayerAnalysisTerms.confidenceLabel(prox.confidence())
+                        + "\n");
+            }
             if (!member.limitations().isEmpty()) {
                 writer.append("  memberLimitations=" + member.limitations() + "\n");
             }
@@ -578,7 +589,8 @@ final class TeamAiPromptBuilder {
 
     private static void appendMemberMovements(
             final BudgetWriter writer,
-            final List<TeamMemberFeatureSet> members
+            final List<TeamMemberFeatureSet> members,
+            final String mapCode
     ) {
         boolean hasMovements = false;
         for (final TeamMemberFeatureSet teamMemberFeatureSet : members) {
@@ -601,12 +613,12 @@ final class TeamAiPromptBuilder {
             final List<String> regionSequence = new ArrayList<>();
             String lastRegion = null;
             for (final MovementSegment movement : member.movements()) {
-                final String startRegion = regionOf(movement.rawStartPosition());
+                final String startRegion = regionOf(movement.rawStartPosition(), mapCode);
                 if (startRegion != null && !startRegion.equals(lastRegion)) {
                     regionSequence.add(startRegion);
                     lastRegion = startRegion;
                 }
-                final String endRegion = regionOf(movement.rawEndPosition());
+                final String endRegion = regionOf(movement.rawEndPosition(), mapCode);
                 if (endRegion != null && !endRegion.equals(lastRegion)) {
                     regionSequence.add(endRegion);
                     lastRegion = endRegion;
@@ -616,8 +628,8 @@ final class TeamAiPromptBuilder {
                 writer.append("  regionSequence=" + String.join("→", regionSequence) + "\n");
             }
             for (final MovementSegment movement : member.movements()) {
-                final String startInfo = formatRawPosition(movement.rawStartPosition());
-                final String endInfo = formatRawPosition(movement.rawEndPosition());
+                final String startInfo = formatRawPosition(movement.rawStartPosition(), mapCode);
+                final String endInfo = formatRawPosition(movement.rawEndPosition(), mapCode);
                 writer.append("  movement[" + format(movement.startTime())
                         + "-" + format(movement.endTime()) + "]"
                         + " type=" + PlayerAnalysisTerms.movementLabel(movement.type())
@@ -726,18 +738,19 @@ final class TeamAiPromptBuilder {
     }
 
     /**
-     * Resolve team result as three-state label (no raw winnerTeam).
-     * Only accepts raw teams 1 or 2; anything else returns DRAW_OR_UNKNOWN.
+     * Resolve team result as Chinese label（team perspective / supremacy 规则）。
+     * 结算 winnerTeam 缺失时按 supremacy 推导：一方全灭或点数领先即可定胜负；
+     * 双方均未全灭时标注「点数判定」，避免模型误以为是全歼取胜。
      */
-    private static String resolveTeamResult(final Integer winnerTeam, final int perspectiveTeam) {
-        // winnerTeam 合法可为 null（胜负未知/平局），不能标 @Nonnull，也不能直接拆箱
-        if (winnerTeam == null
-                || !PlayerSideResolver.isValidRawTeam(winnerTeam)
-                || !PlayerSideResolver.isValidRawTeam(perspectiveTeam)) {
-            return "平局或未知";
-        }
-        if (winnerTeam.equals(perspectiveTeam)) return "本队获胜";
-        return "本队失利";
+    private static String resolveTeamResult(final Battle battle, final int perspectiveTeam,
+                                            final String teamLabel) {
+        final var winner = FriendlyEnemyResult.resolveTeamBattle(battle, perspectiveTeam);
+        final String label = StringUtils.hasText(teamLabel) ? teamLabel : "本队";
+        return switch (winner.winner()) {
+            case FRIENDLY_WIN -> winner.pointsDecided() ? label + "获胜（点数判定）" : label + "获胜";
+            case ENEMY_WIN -> winner.pointsDecided() ? label + "落败（点数判定）" : label + "落败";
+            case DRAW_OR_UNKNOWN -> "平局或未知";
+        };
     }
 
     /**
@@ -780,18 +793,18 @@ final class TeamAiPromptBuilder {
      * Format a RAW replay position: resolve raw replay coordinates through the single
      * coordinate resolver into canonical XZ, region, and clamp status.
      */
-    private static String formatRawPosition(final Vector3 position) {
+    private static String formatRawPosition(final Vector3 position, final String mapCode) {
         if (position == null) return "UNKNOWN";
-        final MapCoordinateResolution res = MapRegionResolver.resolve(position.x(), position.z());
+        final MapCoordinateResolution res = MapRegionResolver.resolve(position.x(), position.z(), mapCode);
         if (!res.usable()) return "UNKNOWN";
         return "(" + format(res.position().x()) + "," + format(res.position().z())
                 + ") r=" + res.region() + " s=" + res.status().name();
     }
 
     /** raw 坐标 → 九宫格区域（1-9）；不可用返回 null。 */
-    private static String regionOf(final Vector3 position) {
+    private static String regionOf(final Vector3 position, final String mapCode) {
         if (position == null) return null;
-        final int region = MapRegionResolver.resolveRegionFromRaw(position.x(), position.z());
+        final int region = MapRegionResolver.resolveRegionFromRaw(position.x(), position.z(), mapCode);
         return region > 0 ? String.valueOf(region) : null;
     }
 

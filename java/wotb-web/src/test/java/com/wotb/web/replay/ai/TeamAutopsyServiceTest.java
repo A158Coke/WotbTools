@@ -11,7 +11,9 @@ import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.processing.FriendlyEnemyResult.WinnerSource;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
@@ -26,6 +28,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 class TeamAutopsyServiceTest {
 
     private static final AiTokenEstimator ESTIMATOR = new ConservativeDeepSeekTokenEstimator();
+
+    private static TeamBattleWinner win(final Winner winner) {
+        return new TeamBattleWinner(winner, WinnerSource.BATTLE_RESULTS, false);
+    }
 
     private static final String AUTOPSY_JSON = "{\"players\":["
             + "{\"playerKey\":\"P1\",\"contribution\":\"HIGH\",\"confidence\":\"PARTIAL\"},"
@@ -91,7 +97,7 @@ class TeamAutopsyServiceTest {
         final TeamAutopsyService service = new TeamAutopsyService(gateway(AUTOPSY_JSON), config());
         final TeamAutopsyOutcome outcome = service.analyze(
                 battle(), 1, AllowedLanguage.ZH,
-                Winner.ENEMY_WIN, 30);
+                win(Winner.ENEMY_WIN), "CHRD", 30);
         assertNotNull(outcome);
         assertEquals(1, outcome.result().mvps().size());
         assertEquals(1, outcome.result().biggestLiabilities().size());
@@ -107,7 +113,7 @@ class TeamAutopsyServiceTest {
     void upstreamFailureReturnsNull() {
         final TeamAutopsyService service = new TeamAutopsyService(gateway("not json"), config());
         assertNull(service.analyze(battle(), 1, AllowedLanguage.ZH,
-                Winner.ENEMY_WIN, 30));
+                win(Winner.ENEMY_WIN), "CHRD", 30));
     }
 
     @Test
@@ -115,7 +121,7 @@ class TeamAutopsyServiceTest {
         final TeamAutopsyService service = new TeamAutopsyService(gateway("cancelled"), config());
         final AiUpstreamException e = assertThrows(AiUpstreamException.class,
                 () -> service.analyze(battle(), 1, AllowedLanguage.ZH,
-                        Winner.ENEMY_WIN, 30));
+                        win(Winner.ENEMY_WIN), "CHRD", 30));
         assertEquals("AI_CANCELLED", e.code());
     }
 
@@ -123,13 +129,13 @@ class TeamAutopsyServiceTest {
     void drawNonZhInvalidTeamAndZeroBudgetReturnNull() {
         final TeamAutopsyService service = new TeamAutopsyService(gateway(AUTOPSY_JSON), config());
         assertNull(service.analyze(battle(), 1, AllowedLanguage.ZH,
-                Winner.DRAW_OR_UNKNOWN, 30));
+                win(Winner.DRAW_OR_UNKNOWN), "CHRD", 30));
         assertNull(service.analyze(battle(), 1, AllowedLanguage.EN,
-                Winner.ENEMY_WIN, 30));
+                win(Winner.ENEMY_WIN), "CHRD", 30));
         assertNull(service.analyze(battle(), 3, AllowedLanguage.ZH,
-                Winner.ENEMY_WIN, 30));
+                win(Winner.ENEMY_WIN), "CHRD", 30));
         assertNull(service.analyze(battle(), 1, AllowedLanguage.ZH,
-                Winner.ENEMY_WIN, 0));
+                win(Winner.ENEMY_WIN), "CHRD", 0));
     }
 
     @Test
@@ -138,7 +144,7 @@ class TeamAutopsyServiceTest {
         battle.players.removeIf(p -> p.team == 1); // 无本方玩家
         final TeamAutopsyService service = new TeamAutopsyService(gateway(AUTOPSY_JSON), config());
         assertNull(service.analyze(battle, 1, AllowedLanguage.ZH,
-                Winner.ENEMY_WIN, 30));
+                win(Winner.ENEMY_WIN), "CHRD", 30));
     }
 
     @Test
@@ -166,7 +172,7 @@ class TeamAutopsyServiceTest {
             };
             final TeamAutopsyService service = new TeamAutopsyService(counting, config());
             assertNull(service.analyze(battle, 1, AllowedLanguage.ZH,
-                    Winner.ENEMY_WIN, 30),
+                    win(Winner.ENEMY_WIN), "CHRD", 30),
                     friendlyCount + " friendly players must skip autopsy");
             assertEquals(0, calls.get(),
                     "gateway must not be called for " + friendlyCount + " friendly players");
@@ -190,7 +196,7 @@ class TeamAutopsyServiceTest {
         };
         final TeamAutopsyService service = new TeamAutopsyService(capturing, config());
         assertNotNull(service.analyze(battle(), 1, AllowedLanguage.ZH,
-                Winner.ENEMY_WIN, 30));
+                win(Winner.ENEMY_WIN), "CHRD", 30));
         assertNotNull(captured[0]);
         assertEquals("TEAM_AUTOPSY", captured[0].analysisMode());
         assertTrue(captured[0].callTimeoutSec() <= 30);

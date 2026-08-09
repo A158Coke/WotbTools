@@ -57,7 +57,7 @@ public record PreBattleStrategicPrior(
     public record StrategicWinCondition(String team, String condition) {
     }
 
-    /** 战略假设，Call #2 需要逐条输出 CONFIRMED / VIOLATED / NOT_OBSERVABLE / IRRELEVANT_AFTER_STATE_CHANGE。 */
+    /** 战略假设：团队复盘在 Call #2 中与实际情况对照（预期 vs 实际，考虑一波流等特殊战局）；随机战 harness 仍支持逐条状态判定。 */
     public record StrategicHypothesis(String id, String claim, String reason) {
     }
 }

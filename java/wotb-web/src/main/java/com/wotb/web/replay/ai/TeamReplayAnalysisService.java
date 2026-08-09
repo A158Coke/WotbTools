@@ -20,6 +20,7 @@ import com.wotb.core.processing.BattleCategory;
 import com.wotb.core.processing.BattleCategoryUtils;
 import com.wotb.core.processing.BattleIdentity;
 import com.wotb.core.processing.FriendlyEnemyResult;
+import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.processing.PerspectiveTeamNotResolvedException;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
@@ -92,7 +93,7 @@ public class TeamReplayAnalysisService {
             recorder as an individual, and do not present his personal performance as team conclusions.
             Never address the whole team as "you"; do not use the second person in this review.
             Analyze the opposing lineup tank by tank and point out the opposing team's main threat vehicles;
-            when opposing data is missing, say so explicitly instead of guessing.""";
+            when opposing data is missing, say so explicitly instead of guessing."""; 
 
     /** Team 专用：RU 团队规则（替换 TEAM_ANALYSIS_RULE）。 */
     static final String TEAM_ANALYSIS_RULE_RU = """
@@ -104,35 +105,67 @@ public class TeamReplayAnalysisService {
             как личности и не выдавайте его личные действия за выводы о команде.
             Не обращайтесь ко всей команде как к «вы»; в этом разборе не используйте второе лицо.
             Разбирайте состав противника по машинам и указывайте основные угрозы команды противника;
-            при отсутствии данных о противнике прямо скажите об этом, не угадывая.""";
+            при отсутствии данных о противнике прямо скажите об этом, не угадывая."""; 
 
     /** Team 专用：Call #1 赛前战略基线的使用规则（强制；EN/RU 本地化时替换）。 */
     static final String TEAM_PRIOR_RULE = """
 
             === 赛前战略基线（Call #1）使用规则（强制） ===
-            输入可能包含 PRE-BATTLE STRATEGIC PRIOR：仅基于地图与双方阵容的赛前先验判断，未读取任何战斗结果。
+            输入可能包含 PRE-BATTLE STRATEGIC PRIOR：仅基于地图、双方阵容、双方总血量与坦克战术属性的
+            赛前先验判断（含分阶段预期打法），未读取任何战斗结果。
             其中 TEAM_A=你的队伍（teamLabel）、TEAM_B=对方队伍；没有该段时不得编造基线。
-            开局分路与队形分析必须对照基线执行：对每条战略假设给出
-            CONFIRMED / VIOLATED / NOT_OBSERVABLE / IRRELEVANT_AFTER_STATE_CHANGE 判定并说明依据，
-            不得仅因胜负倒推。""";
+            复盘必须对照基线：先识别本场实际战局类型（常规推进 / 一波流 / 蹲坑僵持 / 其他特殊战局），
+            再逐条对照"预期打法 vs 实际执行"的差异与原因；实际战局偏离预期不等于失误，
+            一波流等特殊战局可能让任何阶段计划失效，必须基于实际事件判断，不得仅因胜负倒推。""";
 
     static final String TEAM_PRIOR_RULE_EN = """
 
             === PRE-BATTLE STRATEGIC PRIOR (Call #1) USAGE RULE (mandatory) ===
-            The input may include a PRE-BATTLE STRATEGIC PRIOR: a pre-battle judgment based only on the map and both lineups, with no battle results read.
+            The input may include a PRE-BATTLE STRATEGIC PRIOR: a pre-battle judgment based only on the map,
+            both lineups, total HP and tank tactical attributes (including staged expected play), with no battle results read.
             In it, TEAM_A = your team (teamLabel) and TEAM_B = the opposing team; if the section is absent, never fabricate a baseline.
-            Opening routes and formations must be checked against this baseline: give every strategic hypothesis a
-            CONFIRMED / VIOLATED / NOT_OBSERVABLE / IRRELEVANT_AFTER_STATE_CHANGE verdict with evidence;
-            never reason backwards from the result alone.""";
+            The review must be checked against this baseline: first identify the actual battle pattern
+            (normal push / one-lane rush / camped stalemate / other special pattern), then compare
+            "expected play vs actual execution" item by item with reasons. Deviation from the expectation
+            is not automatically a mistake; special patterns such as a one-lane rush can invalidate any
+            staged plan, so judge from actual events, never reason backwards from the result alone.""";
 
     static final String TEAM_PRIOR_RULE_RU = """
 
             === ПРАВИЛО ПРЕДБОЕВОЙ БАЗЫ (Call #1) (обязательно) ===
-            Во входе может быть PRE-BATTLE STRATEGIC PRIOR — предбоевое суждение только по карте и составам, без чтения результатов боя.
+            Во входе может быть PRE-BATTLE STRATEGIC PRIOR — предбоевое суждение только по карте, составам,
+            суммарному HP и тактическим атрибутам машин (включая поэтапный ожидаемый план), без чтения результатов боя.
             В нём TEAM_A = ваша команда (teamLabel), TEAM_B = команда противника; если секции нет, базу выдумывать нельзя.
-            Анализ стартовых направлений и построения сверяйте с базой: по каждой стратегической гипотезе дайте
-            вердикт CONFIRMED / VIOLATED / NOT_OBSERVABLE / IRRELEVANT_AFTER_STATE_CHANGE с обоснованием;
-            не делайте выводов только из счёта.""";
+            Разбор сверяйте с базой: сначала определите фактический паттерн боя (обычное продвижение /
+            рывок одной линией / окопное противостояние / другой особый паттерн), затем по пунктам сравните
+            «ожидаемый план vs фактическое исполнение» с причинами. Отклонение от ожиданий — не автоматически
+            ошибка; особые паттерны (например, рывок одной линией) могут обесценить любой поэтапный план,
+            судите по фактическим событиям, а не только по счёту.""";
+
+    /** Team 专用：九宫格 region 与真实距离的关系规则（强制；EN/RU 本地化时替换）。 */
+    static final String TEAM_REGION_RULE = """
+
+            === 九宫格 region 与距离规则（强制） ===
+            九宫格 region（1-9）只用于描述方位，region 相邻或编号差不代表实际距离；
+            脱节/距离/掩护判断必须使用后端提供的 canonical 距离（米，
+            如 deathProximityMeters 阵亡时刻与主力质心距离），禁止用 region 编号差推断距离。""";
+
+    static final String TEAM_REGION_RULE_EN = """
+
+            === NINE-GRID REGION VS DISTANCE RULE (mandatory) ===
+            Nine-grid regions (1-9) describe direction only; adjacent regions or a region-number
+            difference do NOT imply actual distance. Detachment/distance/cover judgments must use
+            the backend-provided canonical distance in meters (e.g. deathProximityMeters, the
+            distance to the main-body centroid at death); never infer distance from region numbers.""";
+
+    static final String TEAM_REGION_RULE_RU = """
+
+            === ПРАВИЛО ОБЛАСТЕЙ СЕТКИ И РАССТОЯНИЙ (обязательно) ===
+            Области сетки 1–9 описывают только направление; соседство областей или разница номеров
+            НЕ означает реальное расстояние. Оценки отрыва/дистанции/прикрытия должны использовать
+            предоставленное бэкендом каноническое расстояние в метрах (например, deathProximityMeters —
+            дистанция до центра масс своей группы в момент гибели); запрещено делать вывод о дистанции
+            по номерам областей.""";
 
     /** 数据不足时的输出措辞（中文强制句，EN/RU 本地化时替换）。 */
     static final String ZH_CANNOT_DETERMINE_RULE =
@@ -174,7 +207,9 @@ public class TeamReplayAnalysisService {
                         en ? PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE_EN
                                 : PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE_RU)
                 .replace(TEAM_PRIOR_RULE,
-                        en ? TEAM_PRIOR_RULE_EN : TEAM_PRIOR_RULE_RU);
+                        en ? TEAM_PRIOR_RULE_EN : TEAM_PRIOR_RULE_RU)
+                .replace(TEAM_REGION_RULE,
+                        en ? TEAM_REGION_RULE_EN : TEAM_REGION_RULE_RU);
     }
 
     static final String SINGLE_TEAM_PROMPT = """
@@ -191,18 +226,18 @@ public class TeamReplayAnalysisService {
             1) 战局、阵容和胜负概述；
             2) 对方阵容逐车分析（OPPOSING_TEAM_LINEUP_AUTHORITATIVE：坦克名称、车种、等级、输出/损失血量/助攻/格挡/击杀），
                指出对方主要威胁车辆及依据；对方数据缺失时明确说明；
-            3) 开局分路与队形（只描述几何关系，不臆造地图区域名称）；
+            3) 开局分路与队形（只描述几何关系，不臆造地图区域名称；
+               从首次显著分路约 30 秒后开始描述；出生点同区是必然，不得当作观察结论或优点）；
             4) 首次接敌；
             5) 团队交火、交换与可证实的集火迹象；
             6) 关键掉车和转折；
             7) 转场与协同；
             8) 做得好的团队行为；
             9) 团队级失误；
-            10) 3-5 条可执行训练建议；
-            11) 明确列出数据限制。
+            10) 3-5 条可执行训练建议。
             不得推断未点亮敌人的位置、装填/弹药/装备、地形名称或玩家主观意图。
             无法从输入确定时必须写明“无法从当前回放数据确定”。
-            输出复盘中的所有战斗时间必须使用“XX分XX秒”格式，例如 75 秒写作“1分15秒”、180 秒写作“3分00秒”，禁止仅使用累计秒数或“1:15”格式。""" + PlayerReplayPromptBuilder.COMMON_TANK_PROPER_NOUN_RULE + PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE + TEAM_PRIOR_RULE;
+            输出复盘中的所有战斗时间必须使用“XX分XX秒”格式，例如 75 秒写作“1分15秒”、180 秒写作“3分00秒”，禁止仅使用累计秒数或“1:15”格式。""" + PlayerReplayPromptBuilder.COMMON_TANK_PROPER_NOUN_RULE + PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE + TEAM_PRIOR_RULE + TEAM_REGION_RULE;
 
     static final String MULTI_TEAM_PROMPT = """
             你是《坦克世界闪击战》(WoT Blitz) 的资深团队教练，正在比较多个训练房/联赛团队视角。
@@ -214,8 +249,8 @@ public class TeamReplayAnalysisService {
             否则只能做上传样本集合比较，不得声称是固定队伍的长期习惯。
             请引用具体 analysisUnitId、teamLabel 和时间证据，避免根据单次事件概括长期行为。
             不得用对方回放补全本队当时未发现的敌人信息，无法判断时必须明确说明。
-            输出应包含：各 perspective 摘要、可比较的团队行为、关键差异、数据限制和 3-5 条训练建议。
-            输出复盘中的所有战斗时间必须使用“XX分XX秒”格式，例如 75 秒写作“1分15秒”、180 秒写作“3分00秒”，禁止仅使用累计秒数或“1:15”格式。""" + PlayerReplayPromptBuilder.COMMON_TANK_PROPER_NOUN_RULE + PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE + TEAM_PRIOR_RULE;
+            输出应包含：各 perspective 摘要、可比较的团队行为、关键差异和 3-5 条训练建议。
+            输出复盘中的所有战斗时间必须使用“XX分XX秒”格式，例如 75 秒写作“1分15秒”、180 秒写作“3分00秒”，禁止仅使用累计秒数或“1:15”格式。""" + PlayerReplayPromptBuilder.COMMON_TANK_PROPER_NOUN_RULE + PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE + TEAM_PRIOR_RULE + TEAM_REGION_RULE;
 
     private final AiChatGateway gateway;
     private final AiReplayAnalysisConfig config;
@@ -754,9 +789,11 @@ public class TeamReplayAnalysisService {
         if (language != AllowedLanguage.ZH || context == null || context.battle() == null) {
             return reviewText;
         }
-        final Winner winner = FriendlyEnemyResult.resolve(
-                context.battle().winnerTeam, context.perspectiveTeam());
-        if (winner == Winner.DRAW_OR_UNKNOWN) {
+        // 团队赛恒为争霸赛（supremacy）：结算 winnerTeam 缺失时，
+        // 一方全灭 → 结算推导；双方均未全灭 → 点数胜利（比较占点得分推断）。
+        final TeamBattleWinner winner = FriendlyEnemyResult.resolveTeamBattle(
+                context.battle(), context.perspectiveTeam());
+        if (!winner.resolved()) {
             return reviewText;
         }
         final long remaining = remainingSeconds(startNanos);
@@ -767,17 +804,22 @@ public class TeamReplayAnalysisService {
             count("budget_exhausted");
             return reviewText;
         }
+        final String teamLabel = context.battle().players == null ? null
+                : TeamPerspectiveLabelResolver.resolve(context.battle().players.stream()
+                        .filter(p -> p.team == context.perspectiveTeam())
+                        .toList());
         final TeamAutopsyOutcome outcome = teamAutopsyService.analyze(
                 context.battle(),
                 context.perspectiveTeam(),
                 AllowedLanguage.ZH,
                 winner,
+                teamLabel,
                 (int) Math.min(autopsyBudget, Integer.MAX_VALUE));
         if (outcome == null) {
             return reviewText;
         }
         return reviewText + TeamAutopsyPromptBuilder.renderSection(
-                outcome.result(), winner, outcome.roster());
+                outcome.result(), winner, outcome.roster(), teamLabel);
     }
 
     private long remainingSeconds(final long startNanos) {

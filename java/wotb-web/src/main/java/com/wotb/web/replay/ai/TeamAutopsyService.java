@@ -1,6 +1,7 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.replay.feature.TeamAutopsyStats;
 import com.wotb.core.replay.feature.TeamAutopsyStatsBuilder;
@@ -62,12 +63,13 @@ public class TeamAutopsyService {
     public TeamAutopsyOutcome analyze(final Battle battle,
                                       final int recorderTeam,
                                       final AllowedLanguage language,
-                                      final Winner winner,
+                                      final TeamBattleWinner winner,
+                                      final String teamLabel,
                                       final int callTimeoutSec) {
         if (language != AllowedLanguage.ZH) {
             return null;
         }
-        if (winner == null || winner == Winner.DRAW_OR_UNKNOWN
+        if (winner == null || winner.winner() == Winner.DRAW_OR_UNKNOWN
                 || !com.wotb.core.processing.PlayerSideResolver.isValidRawTeam(recorderTeam)) {
             return null;
         }
@@ -91,7 +93,8 @@ public class TeamAutopsyService {
         final String userContent = TeamAutopsyPromptBuilder.buildUserContent(
                 allStats, null,
                 List.of(),
-                winner);
+                winner,
+                teamLabel);
         final List<Map<String, Object>> messages = List.of(
                 Map.<String, Object>of("role", "system", "content", systemPrompt),
                 Map.<String, Object>of("role", "user", "content", userContent));
@@ -126,7 +129,7 @@ public class TeamAutopsyService {
                     TeamAutopsyParser.parse(
                             gateway.chat(request).completionText(),
                             playerKeys(allStats),
-                            winner);
+                            winner.winner());
             if (result == null) {
                 count("unparsable");
                 return null;

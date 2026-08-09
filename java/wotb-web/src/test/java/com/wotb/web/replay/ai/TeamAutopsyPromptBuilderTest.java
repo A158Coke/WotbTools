@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wotb.core.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
+import com.wotb.core.processing.FriendlyEnemyResult.WinnerSource;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.TeamAutopsyStats;
 import org.junit.jupiter.api.Test;
@@ -13,6 +15,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 class TeamAutopsyPromptBuilderTest {
+
+    private static TeamBattleWinner win(final Winner winner) {
+        return new TeamBattleWinner(winner, WinnerSource.BATTLE_RESULTS, false);
+    }
 
     private static List<TeamAutopsyStats> sevenStats() {
         final List<TeamAutopsyStats> stats = new ArrayList<>();
@@ -54,8 +60,8 @@ class TeamAutopsyPromptBuilderTest {
                                 List.of("s1"), List.of("w1"), List.of("p1")),
                         null, List.of(), List.of(),
                         List.of(new PreBattleStrategicPrior.StrategicHypothesis("H1", "cl", "rs"))),
-                List.of(), Winner.ENEMY_WIN);
-        assertTrue(content.contains("判负（TEAM_A）"));
+                List.of(), win(Winner.ENEMY_WIN), "CHRD");
+        assertTrue(content.contains("CHRD落败"));
         assertFalse(content.contains("队伍1"));
         assertFalse(content.contains("队伍2"));
         assertTrue(content.contains("本方 7 人（TEAM_A）"));
@@ -98,9 +104,11 @@ class TeamAutopsyPromptBuilderTest {
                         "P2", "过早阵亡", List.of("e2"), "PARTIAL")),
                 List.of("l"));
         final String section = TeamAutopsyPromptBuilder.renderSection(
-                result, Winner.ENEMY_WIN, sevenStats());
+                result, win(Winner.ENEMY_WIN), sevenStats(), "CHRD");
         assertTrue(section.contains("团队剖析"));
-        assertTrue(section.contains("判负（TEAM_A）"));
+        assertTrue(section.contains("CHRD落败"));
+        assertTrue(section.contains("置信度: 精确"), "EXACT must render as 精确");
+        assertTrue(section.contains(": 高（"), "HIGH contribution must render as 高");
         assertTrue(section.contains("主要战犯"));
         assertTrue(section.contains("P2（\"nick2 / Kranvagn 2\"）"));
         assertTrue(section.contains("P1（\"nick1 / Kranvagn 1\"）"));
@@ -109,9 +117,39 @@ class TeamAutopsyPromptBuilderTest {
     }
 
     @Test
+    void pointsDecidedWinnerAddsSupremacyNoteAndLabel() {
+        final TeamBattleWinner points = new TeamBattleWinner(
+                Winner.ENEMY_WIN, WinnerSource.POINTS_INFERENCE, true);
+        final String content = TeamAutopsyPromptBuilder.buildUserContent(
+                sevenStats(), null, List.of(), points, "CHRD");
+        assertTrue(content.contains("CHRD落败（点数判定）"));
+        assertTrue(content.contains("点数胜利"));
+        assertTrue(content.contains("不要描述成敌方全歼"));
+
+        final TeamAutopsyResult empty =
+                new TeamAutopsyResult(List.of(), List.of(), List.of(), List.of());
+        final String section = TeamAutopsyPromptBuilder.renderSection(
+                empty, points, sevenStats(), "CHRD");
+        assertTrue(section.contains("CHRD落败（点数判定）"));
+    }
+
+    @Test
+    void winnerLabelPlainWinnerStaysStable() {
+        assertEquals("CHRD获胜", TeamAutopsyPromptBuilder.winnerLabel(
+                new TeamBattleWinner(Winner.FRIENDLY_WIN, WinnerSource.BATTLE_RESULTS, false), "CHRD"));
+        assertEquals("CHRD落败", TeamAutopsyPromptBuilder.winnerLabel(
+                new TeamBattleWinner(Winner.ENEMY_WIN, WinnerSource.BATTLE_RESULTS, false), "CHRD"));
+        assertEquals("未知", TeamAutopsyPromptBuilder.winnerLabel(
+                new TeamBattleWinner(Winner.DRAW_OR_UNKNOWN, WinnerSource.UNKNOWN, false), "CHRD"));
+        assertEquals("未知", TeamAutopsyPromptBuilder.winnerLabel(null, "CHRD"));
+    }
+
+    @Test
     void winnerLabelsDoNotExposeRawTeamNumbers() {
-        assertEquals("判胜（TEAM_A）", TeamAutopsyPromptBuilder.winnerLabel(Winner.FRIENDLY_WIN));
-        assertEquals("判负（TEAM_A）", TeamAutopsyPromptBuilder.winnerLabel(Winner.ENEMY_WIN));
-        assertEquals("未知", TeamAutopsyPromptBuilder.winnerLabel(Winner.DRAW_OR_UNKNOWN));
+        final String label = TeamAutopsyPromptBuilder.winnerLabel(
+                new TeamBattleWinner(Winner.FRIENDLY_WIN, WinnerSource.BATTLE_RESULTS, false), "CHRD");
+        assertFalse(label.contains("TEAM_A"));
+        assertFalse(label.contains("1"));
+        assertFalse(label.contains("2"));
     }
 }
