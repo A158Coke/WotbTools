@@ -15,6 +15,8 @@ import com.wotb.core.replay.evidence.EvidenceProvenance;
 import com.wotb.core.replay.evidence.EvidenceSkillResult;
 import com.wotb.core.replay.evidence.EvidenceType;
 import com.wotb.core.replay.evidence.HpMomentumSkill;
+import com.wotb.core.replay.feature.EngagementOutcome;
+import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import org.junit.jupiter.api.Test;
 
@@ -129,6 +131,40 @@ class TacticalReviewPromptBuilderTest {
         assertTrue(prepared.userContent().contains("TASK"));
         assertTrue(prepared.userContent().contains("[H1]"));
         assertTrue(prepared.userContent().contains("战局变化窗口"));
+    }
+
+    @Test
+    void engagementsSectionRendersOpponentTrades() {
+        final EngagementSummary engagement = new EngagementSummary(
+                10f, 20f,
+                List.of(1001L),
+                List.of(2001L),
+                800, 300,
+                null, null,
+                EngagementOutcome.FAVORABLE,
+                DecodeConfidence.EXACT);
+        final PlayerBattleFeatureSet features = new PlayerBattleFeatureSet(
+                List.of(),
+                List.of(engagement),
+                List.of(), List.of(), List.of(), true);
+        final var prepared = TacticalReviewPromptBuilder.prepare(
+                prior(),
+                evidence(),
+                battle(),
+                null,
+                features,
+                new RecorderEntityMapping(1001L, 4481, 1, "rec1", 1, 4481, DecodeConfidence.EXACT),
+                ESTIMATOR,
+                100_000,
+                131_072,
+                8192,
+                1000);
+        assertTrue(prepared.userContent().contains("对炮明细（ENGAGEMENTS"),
+                "engagements must be rendered into the harness prompt");
+        assertTrue(prepared.userContent().contains("Leopard 1"),
+                "opponent nickname must be resolved from battle players");
+        assertTrue(prepared.userContent().contains("你输出 800 / 损失 300"),
+                "engagement dealt/received must be rendered");
     }
 
     @Test

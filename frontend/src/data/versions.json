@@ -3,9 +3,9 @@
     "v": "2.4.0",
     "date": "2026-08-09",
     "tag": "add",
-    "zh": "AI 复盘地图语义化（33 张地图真实战术区域/关系/出生点，九宫格对齐）· 赛前战略基线 + 关键决策窗口（随机战与团队复盘通用）· 团队复盘战犯/MVP 判定 · AI 伤害语义区分（损失血量 vs 格挡伤害）· AI 结构化输出稳定性修复",
-    "en": "AI review map semantics (33 maps: tactical areas/relations/spawns, 3x3 grid) · Pre-battle strategic baseline + key decision windows (random & team reviews) · Team review liabilities/MVP verdicts · AI damage semantics (HP lost vs blocked) · AI structured-output stability fix",
-    "ru": "Семантика карт в AI-разборе (33 карты: зоны/связи/спавны, сетка 3×3) · Стратегическая база до боя + ключевые окна решений (личный и командный разбор) · Вердикты «виновники»/MVP в командном разборе · Семантика урона AI (потерянные ОЗ vs заблокированный урон) · Стабильность структурированного вывода AI"
+    "zh": "AI 复盘地图语义化（33 张地图真实战术区域/关系/出生点，九宫格对齐）· 赛前战略基线 + 关键决策窗口（随机战与团队复盘通用）· 随机战对炮明细与更多关键窗口证据 · 团队复盘战犯/MVP 判定 · AI 伤害语义区分（损失血量 vs 格挡伤害）· 复盘语气自然口语化 · AI 结构化输出稳定性修复",
+    "en": "AI review map semantics (33 maps: tactical areas/relations/spawns, 3x3 grid) · Pre-battle strategic baseline + key decision windows (random & team reviews) · Per-opponent trades & more critical window evidence · Team review liabilities/MVP verdicts · AI damage semantics (HP lost vs blocked) · Natural conversational tone · AI structured-output stability fix",
+    "ru": "Семантика карт в AI-разборе (33 карты: зоны/связи/спавны, сетка 3×3) · Стратегическая база до боя + ключевые окна решений (личный и командный разбор) · Размены с противниками и больше окон с полными доказательствами · Вердикты «виновники»/MVP в командном разборе · Семантика урона AI (потерянные ОЗ vs заблокированный урон) · Естественный разговорный тон · Стабильность структурированного вывода AI"
   },
   {
     "v": "2.3.0",
