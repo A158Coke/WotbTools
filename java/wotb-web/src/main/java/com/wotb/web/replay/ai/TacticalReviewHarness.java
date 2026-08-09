@@ -1,5 +1,6 @@
 package com.wotb.web.replay.ai;
 
+import com.wotb.core.model.Battle;
 import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.evidence.EvidenceSkillContext;
@@ -44,6 +45,7 @@ public class TacticalReviewHarness {
     private final PreBattleStrategicService preBattleService;
     private final AiChatGateway gateway;
     private final AiReplayAnalysisConfig config;
+    private final TeamAutopsyService teamAutopsyService;
     private final LongSupplier nanoTimeSource;
     private final EvidenceSkillEngine skillEngine = new EvidenceSkillEngine();
 
@@ -54,19 +56,22 @@ public class TacticalReviewHarness {
     public TacticalReviewHarness(final PlayerReplayAnalysisService playerService,
                                  final PreBattleStrategicService preBattleService,
                                  final AiChatGateway gateway,
-                                 final AiReplayAnalysisConfig config) {
-        this(playerService, preBattleService, gateway, config, System::nanoTime);
+                                 final AiReplayAnalysisConfig config,
+                                 final TeamAutopsyService teamAutopsyService) {
+        this(playerService, preBattleService, gateway, config, teamAutopsyService, System::nanoTime);
     }
 
     TacticalReviewHarness(final PlayerReplayAnalysisService playerService,
                           final PreBattleStrategicService preBattleService,
                           final AiChatGateway gateway,
                           final AiReplayAnalysisConfig config,
+                          final TeamAutopsyService teamAutopsyService,
                           final LongSupplier nanoTimeSource) {
         this.playerService = playerService;
         this.preBattleService = preBattleService;
         this.gateway = gateway;
         this.config = config;
+        this.teamAutopsyService = teamAutopsyService;
         this.nanoTimeSource = nanoTimeSource;
     }
 
@@ -150,9 +155,10 @@ public class TacticalReviewHarness {
                 (int) Math.min(Math.max(1L, remainingSeconds(startNanos) - SAFETY_MARGIN_SEC),
                         Integer.MAX_VALUE));
         final String text = gateway.chat(request).completionText();
+        final String analysis = appendTeamAutopsy(text, result.battle(), prior, evidence, recorder);
         count("used");
         LOGGER.info("Harness review used: {}", prepared.budgetSummary());
-        return new AnalyzeResult(text);
+        return new AnalyzeResult(analysis);
     }
 
     private AnalyzeResult fallback(final ReplayProcessingResult result,
@@ -166,6 +172,29 @@ public class TacticalReviewHarness {
         if (meterRegistry != null) {
             meterRegistry.counter("wotb_ai_review_harness_total", "result", reason).increment();
         }
+    }
+
+    /**
+     * Call #2 成功后追加「团队剖析」段（判负 → 战犯，判胜 → MVP）；
+     * Team Autopsy 失败/解析失败时原复盘文本保持不变。
+     */
+    private String appendTeamAutopsy(final String reviewText,
+                                     final Battle battle,
+                                     final PreBattleStrategicPrior prior,
+                                     final EvidenceSkillResult evidence,
+                                     final RecorderEntityMapping recorder) {
+        final TeamAutopsyResult autopsy = teamAutopsyService.analyze(
+                battle,
+                prior,
+                evidence,
+                recorder != null ? recorder.accountId() : null,
+                recorder != null && recorder.team() != null ? recorder.team() : 1,
+                AllowedLanguage.ZH);
+        if (autopsy == null) {
+            return reviewText;
+        }
+        return reviewText + TeamAutopsyPromptBuilder.renderSection(
+                autopsy, com.wotb.core.processing.FriendlyEnemyResult.resolve(battle));
     }
 
     /** 剩余请求预算（秒）：整体 deadline = 配置的 callTimeoutSec。 */
