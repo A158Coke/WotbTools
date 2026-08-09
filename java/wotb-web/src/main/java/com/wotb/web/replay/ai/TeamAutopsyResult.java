@@ -5,7 +5,8 @@ import java.util.List;
 /**
  * Team Autopsy（第 3 次调用）的结构化输出契约。
  * <p>判负 → {@code biggestLiabilities}（战犯，≥1，可多人）；判胜 → {@code mvps}（≥1）。
- * 每条结论必须带 evidence 与 confidence；无法可靠归因时 confidence 为 PARTIAL/UNKNOWN。</p>
+ * 所有玩家与 verdict 通过 {@code playerKey}（P1..P7）引用后端 roster，禁止使用坦克/昵称做身份键；
+ * 最终渲染由后端按 playerKey 回查权威 nickname/tankName，不信任 LLM 返回的名称。</p>
  */
 public record TeamAutopsyResult(
         List<AutopsyPlayer> players,
@@ -21,11 +22,11 @@ public record TeamAutopsyResult(
         limitations = limitations == null ? List.of() : List.copyOf(limitations);
     }
 
-    public record AutopsyPlayer(String tank, String contribution, String confidence) {
+    public record AutopsyPlayer(String playerKey, String contribution, String confidence) {
     }
 
     public record AutopsyVerdict(
-            String tank,
+            String playerKey,
             String reason,
             List<String> evidence,
             String confidence

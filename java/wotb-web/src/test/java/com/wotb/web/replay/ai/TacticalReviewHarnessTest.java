@@ -1,7 +1,6 @@
 package com.wotb.web.replay.ai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -54,11 +53,6 @@ class TacticalReviewHarnessTest {
               "hypotheses": [{"id": "H1", "claim": "cl", "reason": "rs"}]
             }""";
 
-    private static final String AUTOPSY_JSON = "{\"players\":[{\"tank\":\"Kranvagn\",\"contribution\":\"HIGH\",\"confidence\":\"EXACT\"}],"
-            + "\"mvps\":[{\"tank\":\"Kranvagn\",\"reason\":\"关键窗口输出\",\"evidence\":[\"e1\"],\"confidence\":\"EXACT\"}],"
-            + "\"biggestLiabilities\":[{\"tank\":\"T110E5\",\"reason\":\"过早阵亡\",\"evidence\":[\"e2\"],\"confidence\":\"PARTIAL\"}],"
-            + "\"limitations\":[\"l\"]}";
-
     private static AiReplayAnalysisConfig config() {
         return new AiReplayAnalysisConfig(
                 ESTIMATOR, "test-model", 100_000, 131_072, 8192, 1000, false, null, 315);
@@ -72,39 +66,28 @@ class TacticalReviewHarnessTest {
                                                  final LongSupplier clock) {
         final PlayerReplayAnalysisService playerService = new PlayerReplayAnalysisService(gateway, config());
         final PreBattleStrategicService preBattleService = new PreBattleStrategicService(gateway, config());
-        final TeamAutopsyService autopsyService = new TeamAutopsyService(gateway, config());
-        return new TacticalReviewHarness(playerService, preBattleService, gateway, config(),
-                autopsyService, clock);
+        return new TacticalReviewHarness(
+                playerService, preBattleService, gateway, config(), clock);
     }
 
     private static AiChatGateway gateway(final String preBattleReply) {
-        return recordingGateway(preBattleReply, null);
+        return new RecordingGateway(preBattleReply, null);
     }
 
     private static RecordingGateway recordingGateway(final String preBattleReply,
                                                      final Runnable preBattleAdvance) {
-        return new RecordingGateway(preBattleReply, preBattleAdvance, AUTOPSY_JSON);
-    }
-
-    private static RecordingGateway recordingGateway(final String preBattleReply,
-                                                     final Runnable preBattleAdvance,
-                                                     final String autopsyReply) {
-        return new RecordingGateway(preBattleReply, preBattleAdvance, autopsyReply);
+        return new RecordingGateway(preBattleReply, preBattleAdvance);
     }
 
     /** 可记录请求、可在 Call #1 返回前推进假时钟的测试网关。 */
     private static final class RecordingGateway implements AiChatGateway {
         private final String preBattleReply;
         private final Runnable preBattleAdvance;
-        private final String autopsyReply;
         AiChatRequest lastHarnessRequest;
-        AiChatRequest lastAutopsyRequest;
 
-        RecordingGateway(final String preBattleReply, final Runnable preBattleAdvance,
-                         final String autopsyReply) {
+        RecordingGateway(final String preBattleReply, final Runnable preBattleAdvance) {
             this.preBattleReply = preBattleReply;
             this.preBattleAdvance = preBattleAdvance;
-            this.autopsyReply = autopsyReply;
         }
 
         @Override
@@ -118,10 +101,6 @@ class TacticalReviewHarnessTest {
             if ("TACTICAL_REVIEW_HARNESS".equals(request.analysisMode())) {
                 lastHarnessRequest = request;
                 return new AiChatResponse("harness-review-text", "", "", 0, 0, 0, 0, 0, 0, "stop");
-            }
-            if ("TEAM_AUTOPSY".equals(request.analysisMode())) {
-                lastAutopsyRequest = request;
-                return new AiChatResponse(autopsyReply, "", "", 0, 0, 0, 0, 0, 0, "stop");
             }
             return new AiChatResponse("old-path-text", "", "", 0, 0, 0, 0, 0, 0, "stop");
         }
@@ -257,44 +236,6 @@ class TacticalReviewHarnessTest {
         final AnalyzeResult result = harness(gateway("not a json object"))
                 .analyze(result(recon()), AllowedLanguage.ZH);
         assertEquals("old-path-text", result.analysis());
-    }
-
-    @Test
-    void winningBattleAppendsTeamAutopsyMvpSection() {
-        final AnalyzeResult result = harness(gateway(PRIOR_JSON))
-                .analyze(result(battleWithWinner(1), recon()), AllowedLanguage.ZH);
-        final String analysis = result.analysis();
-        assertTrue(analysis.startsWith("harness-review-text"));
-        assertTrue(analysis.contains("======================== 团队剖析"));
-        assertTrue(analysis.contains("MVP"));
-        assertTrue(analysis.contains("判胜"));
-    }
-
-    @Test
-    void losingBattleAppendsTeamAutopsyLiabilitySection() {
-        final AnalyzeResult result = harness(gateway(PRIOR_JSON))
-                .analyze(result(battleWithWinner(2), recon()), AllowedLanguage.ZH);
-        final String analysis = result.analysis();
-        assertTrue(analysis.contains("======================== 团队剖析"));
-        assertTrue(analysis.contains("主要战犯"));
-        assertTrue(analysis.contains("判负"));
-    }
-
-    @Test
-    void autopsyUnparsableKeepsReviewIntact() {
-        final RecordingGateway gateway = recordingGateway(PRIOR_JSON, null, "not json");
-        final AnalyzeResult result = harness(gateway)
-                .analyze(result(battleWithWinner(2), recon()), AllowedLanguage.ZH);
-        assertEquals("harness-review-text", result.analysis());
-        assertFalse(result.analysis().contains("团队剖析"));
-    }
-
-    @Test
-    void drawSkipsTeamAutopsySection() {
-        final AnalyzeResult result = harness(gateway(PRIOR_JSON))
-                .analyze(result(battle(), recon()), AllowedLanguage.ZH);
-        assertEquals("harness-review-text", result.analysis());
-        assertFalse(result.analysis().contains("团队剖析"));
     }
 
     @Test
