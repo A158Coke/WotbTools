@@ -28,7 +28,7 @@ public final class TeamAutopsyStatsBuilder {
     public static final double WEAK_OUTPUT_MEAN_RATIO = 0.5;
 
     /**
-     * @param recorderTeam     录像者队伍（1/2）；非法时返回空列表（调用方应跳过 Call #3）
+     * @param recorderTeam     录像者队伍（1/2）；非法时返回空列表（调用方应跳过 TEAM_AUTOPSY）
      * @param recorderAccountId 录像者 accountId；null 表示未知，全部玩家按结算级代理处理
      */
     public List<TeamAutopsyStats> build(final Battle battle,
