@@ -1,0 +1,2502 @@
+{
+  "schemaVersion": 1,
+  "mapId": "06_rudniki_rd",
+  "mapCodes": [],
+  "displayName": "06_rudniki_rd",
+  "verified": false,
+  "source": "CLIENT_RESOURCE_DERIVED",
+  "battleVariant": "rd0",
+  "warnings": [],
+  "sourceFiles": {
+    "scene": "06_rudniki_rd.sc2.dvpl",
+    "heightmap": "landscape\\rudniki_hm_test.heightmap.dvpl"
+  },
+  "coordinateSystem": {
+    "units": "meters",
+    "axes": {
+      "x": "map horizontal",
+      "y": "map vertical",
+      "z": "elevation"
+    },
+    "worldBounds": {
+      "xMin": -300.0,
+      "yMin": -300.0,
+      "zMin": 0.0,
+      "xMax": 300.0,
+      "yMax": 300.0,
+      "zMax": 135.0
+    }
+  },
+  "playableBoundsMeters": {
+    "xMin": -239.9,
+    "yMin": -239.8,
+    "xMax": 234.5,
+    "yMax": 247.8
+  },
+  "terrain": {
+    "samplesPerAxis": 512,
+    "storageTileSize": 16,
+    "sampleSpacingMeters": 1.1719,
+    "playableElevationMeters": {
+      "min": 20.344,
+      "p25": 26.05,
+      "median": 31.048,
+      "p75": 35.337,
+      "max": 128.35
+    },
+    "playableSlopeDegrees": {
+      "mean": 12.987,
+      "p90": 40.887,
+      "max": 71.569
+    },
+    "coordinateValidation": {
+      "method": "SC2 point Z versus bilinear heightmap sampling",
+      "sampleCount": 29,
+      "meanAbsoluteDeltaMeters": 0.0056,
+      "p90AbsoluteDeltaMeters": 0.0213
+    }
+  },
+  "sceneEvidence": {
+    "sceneVersion": 48,
+    "sceneEntityCount": 1651,
+    "featureCounts": {
+      "building": 52,
+      "soft_cover": 3,
+      "vegetation": 205,
+      "wall": 395
+    },
+    "battlePoints": [
+      {
+        "name": "Spawn11",
+        "type": "spawnpoint",
+        "position": [
+          25.1636,
+          -185.7416,
+          34.1089
+        ],
+        "team": 1,
+        "pointNumber": 2,
+        "preferredVehicleType": 2,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn12",
+        "type": "spawnpoint",
+        "position": [
+          34.9124,
+          -178.0795,
+          34.1005
+        ],
+        "team": 1,
+        "pointNumber": 2,
+        "preferredVehicleType": 2,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn13",
+        "type": "spawnpoint",
+        "position": [
+          29.9319,
+          -198.2444,
+          34.1172
+        ],
+        "team": 1,
+        "pointNumber": 2,
+        "preferredVehicleType": 2,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn14",
+        "type": "spawnpoint",
+        "position": [
+          38.2775,
+          -192.0812,
+          34.1172
+        ],
+        "team": 1,
+        "pointNumber": 2,
+        "preferredVehicleType": 2,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn15",
+        "type": "spawnpoint",
+        "position": [
+          49.1306,
+          -183.7308,
+          34.1172
+        ],
+        "team": 1,
+        "pointNumber": 2,
+        "preferredVehicleType": 2,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn16",
+        "type": "spawnpoint",
+        "position": [
+          103.1486,
+          -124.3729,
+          31.2786
+        ],
+        "team": 1,
+        "pointNumber": 1,
+        "preferredVehicleType": 3,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn17",
+        "type": "spawnpoint",
+        "position": [
+          114.1136,
+          -122.5542,
+          30.4814
+        ],
+        "team": 1,
+        "pointNumber": 1,
+        "preferredVehicleType": 3,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn18",
+        "type": "spawnpoint",
+        "position": [
+          121.9621,
+          -132.6764,
+          31.1849
+        ],
+        "team": 1,
+        "pointNumber": 1,
+        "preferredVehicleType": 3,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn19",
+        "type": "spawnpoint",
+        "position": [
+          99.3846,
+          -140.2329,
+          33.2077
+        ],
+        "team": 1,
+        "pointNumber": 1,
+        "preferredVehicleType": 3,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn110",
+        "type": "spawnpoint",
+        "position": [
+          109.6707,
+          -137.5412,
+          32.1463
+        ],
+        "team": 1,
+        "pointNumber": 1,
+        "preferredVehicleType": 3,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn111",
+        "type": "spawnpoint",
+        "position": [
+          73.9394,
+          -207.6846,
+          34.1089
+        ],
+        "team": 1,
+        "pointNumber": 2,
+        "preferredVehicleType": 4,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn112",
+        "type": "spawnpoint",
+        "position": [
+          81.5143,
+          -200.3787,
+          34.1172
+        ],
+        "team": 1,
+        "pointNumber": 2,
+        "preferredVehicleType": 4,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn113",
+        "type": "spawnpoint",
+        "position": [
+          97.5376,
+          -189.4935,
+          34.1172
+        ],
+        "team": 1,
+        "pointNumber": null,
+        "preferredVehicleType": 4,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn114",
+        "type": "spawnpoint",
+        "position": [
+          88.7127,
+          -194.9833,
+          34.1172
+        ],
+        "team": 1,
+        "pointNumber": null,
+        "preferredVehicleType": 4,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn21",
+        "type": "spawnpoint",
+        "position": [
+          57.8088,
+          201.9387,
+          28.6472
+        ],
+        "team": 2,
+        "pointNumber": 1,
+        "preferredVehicleType": 3,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn22",
+        "type": "spawnpoint",
+        "position": [
+          49.6249,
+          186.0102,
+          28.7145
+        ],
+        "team": 2,
+        "pointNumber": 1,
+        "preferredVehicleType": 3,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn23",
+        "type": "spawnpoint",
+        "position": [
+          43.2118,
+          208.2155,
+          28.6983
+        ],
+        "team": 2,
+        "pointNumber": 1,
+        "preferredVehicleType": 3,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn24",
+        "type": "spawnpoint",
+        "position": [
+          51.0585,
+          216.1494,
+          28.7445
+        ],
+        "team": 2,
+        "pointNumber": 1,
+        "preferredVehicleType": 3,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn25",
+        "type": "spawnpoint",
+        "position": [
+          35.2585,
+          203.6644,
+          28.6794
+        ],
+        "team": 2,
+        "pointNumber": 1,
+        "preferredVehicleType": 3,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn26",
+        "type": "spawnpoint",
+        "position": [
+          -104.1946,
+          164.275,
+          27.0962
+        ],
+        "team": 2,
+        "pointNumber": 2,
+        "preferredVehicleType": 2,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn27",
+        "type": "spawnpoint",
+        "position": [
+          -115.8648,
+          152.5505,
+          26.395
+        ],
+        "team": 2,
+        "pointNumber": 2,
+        "preferredVehicleType": 2,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn28",
+        "type": "spawnpoint",
+        "position": [
+          -135.0451,
+          167.0834,
+          26.1728
+        ],
+        "team": 2,
+        "pointNumber": 2,
+        "preferredVehicleType": 2,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn29",
+        "type": "spawnpoint",
+        "position": [
+          -118.1311,
+          182.2833,
+          26.7245
+        ],
+        "team": 2,
+        "pointNumber": 2,
+        "preferredVehicleType": 2,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn210",
+        "type": "spawnpoint",
+        "position": [
+          -118.6055,
+          168.8388,
+          26.3568
+        ],
+        "team": 2,
+        "pointNumber": 2,
+        "preferredVehicleType": 2,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn211",
+        "type": "spawnpoint",
+        "position": [
+          -123.5215,
+          210.3176,
+          26.7996
+        ],
+        "team": 2,
+        "pointNumber": null,
+        "preferredVehicleType": 4,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn212",
+        "type": "spawnpoint",
+        "position": [
+          -129.9785,
+          202.0071,
+          26.258
+        ],
+        "team": 2,
+        "pointNumber": null,
+        "preferredVehicleType": 4,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn213",
+        "type": "spawnpoint",
+        "position": [
+          -144.2878,
+          188.9504,
+          25.9362
+        ],
+        "team": 2,
+        "pointNumber": null,
+        "preferredVehicleType": 4,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "Spawn214",
+        "type": "spawnpoint",
+        "position": [
+          -136.3349,
+          195.6414,
+          26.0368
+        ],
+        "team": 2,
+        "pointNumber": null,
+        "preferredVehicleType": 4,
+        "confidence": "EXACT_SCENE_DATA"
+      },
+      {
+        "name": "ControlPoint",
+        "type": "controlpoint",
+        "position": [
+          176.8276,
+          68.7917,
+          34.1254
+        ],
+        "team": 1,
+        "pointNumber": null,
+        "preferredVehicleType": null,
+        "confidence": "EXACT_SCENE_DATA"
+      }
+    ]
+  },
+  "analysisGrid": {
+    "size": "6x6",
+    "orientation": "A is north/top; 1 is west/left",
+    "cells": [
+      {
+        "id": "F1",
+        "nineGridRegion": 7,
+        "boundsMeters": {
+          "xMin": -239.9,
+          "yMin": -239.8,
+          "xMax": -160.83,
+          "yMax": -158.53
+        },
+        "meanElevationMeters": 22.402,
+        "minElevationMeters": 20.344,
+        "maxElevationMeters": 25.649,
+        "meanSlopeDegrees": 3.609,
+        "p90SlopeDegrees": 8.452,
+        "featureCounts": {
+          "vegetation": 6
+        },
+        "semanticTags": [
+          "LOW_GROUND",
+          "FLAT",
+          "VEGETATION_DENSE"
+        ],
+        "dominantClass": "VEGETATED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "F2",
+        "nineGridRegion": 7,
+        "boundsMeters": {
+          "xMin": -160.83,
+          "yMin": -239.8,
+          "xMax": -81.77,
+          "yMax": -158.53
+        },
+        "meanElevationMeters": 22.684,
+        "minElevationMeters": 20.418,
+        "maxElevationMeters": 42.062,
+        "meanSlopeDegrees": 9.802,
+        "p90SlopeDegrees": 30.947,
+        "featureCounts": {
+          "vegetation": 3
+        },
+        "semanticTags": [
+          "LOW_GROUND",
+          "STEEP"
+        ],
+        "dominantClass": "LOW_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "F3",
+        "nineGridRegion": 8,
+        "boundsMeters": {
+          "xMin": -81.77,
+          "yMin": -239.8,
+          "xMax": -2.7,
+          "yMax": -158.53
+        },
+        "meanElevationMeters": 31.031,
+        "minElevationMeters": 23.525,
+        "maxElevationMeters": 41.018,
+        "meanSlopeDegrees": 13.301,
+        "p90SlopeDegrees": 39.152,
+        "featureCounts": {
+          "building": 1,
+          "vegetation": 6
+        },
+        "semanticTags": [
+          "MID_ELEVATION",
+          "STEEP",
+          "HARD_COVER_PRESENT",
+          "VEGETATION_DENSE"
+        ],
+        "dominantClass": "VEGETATED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "F4",
+        "nineGridRegion": 8,
+        "boundsMeters": {
+          "xMin": -2.7,
+          "yMin": -239.8,
+          "xMax": 76.37,
+          "yMax": -158.53
+        },
+        "meanElevationMeters": 36.535,
+        "minElevationMeters": 31.06,
+        "maxElevationMeters": 54.902,
+        "meanSlopeDegrees": 13.108,
+        "p90SlopeDegrees": 40.075,
+        "featureCounts": {
+          "building": 1,
+          "vegetation": 8
+        },
+        "semanticTags": [
+          "ELEVATED",
+          "STEEP",
+          "RIDGE_CANDIDATE",
+          "HARD_COVER_PRESENT",
+          "VEGETATION_DENSE"
+        ],
+        "dominantClass": "ELEVATED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "F5",
+        "nineGridRegion": 9,
+        "boundsMeters": {
+          "xMin": 76.37,
+          "yMin": -239.8,
+          "xMax": 155.43,
+          "yMax": -158.53
+        },
+        "meanElevationMeters": 35.111,
+        "minElevationMeters": 33.499,
+        "maxElevationMeters": 47.915,
+        "meanSlopeDegrees": 7.9,
+        "p90SlopeDegrees": 36.705,
+        "featureCounts": {
+          "building": 3,
+          "vegetation": 5
+        },
+        "semanticTags": [
+          "ELEVATED",
+          "STEEP",
+          "RIDGE_CANDIDATE",
+          "HARD_COVER_PRESENT"
+        ],
+        "dominantClass": "ELEVATED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "F6",
+        "nineGridRegion": 9,
+        "boundsMeters": {
+          "xMin": 155.43,
+          "yMin": -239.8,
+          "xMax": 234.5,
+          "yMax": -158.53
+        },
+        "meanElevationMeters": 66.016,
+        "minElevationMeters": 34.088,
+        "maxElevationMeters": 103.005,
+        "meanSlopeDegrees": 37.879,
+        "p90SlopeDegrees": 53.486,
+        "featureCounts": {},
+        "semanticTags": [
+          "ELEVATED",
+          "STEEP",
+          "RIDGE_CANDIDATE",
+          "OPEN_GROUND_CANDIDATE"
+        ],
+        "dominantClass": "ELEVATED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "E1",
+        "nineGridRegion": 7,
+        "boundsMeters": {
+          "xMin": -239.9,
+          "yMin": -158.53,
+          "xMax": -160.83,
+          "yMax": -77.27
+        },
+        "meanElevationMeters": 22.159,
+        "minElevationMeters": 20.39,
+        "maxElevationMeters": 30.31,
+        "meanSlopeDegrees": 7.456,
+        "p90SlopeDegrees": 18.816,
+        "featureCounts": {
+          "vegetation": 7
+        },
+        "semanticTags": [
+          "LOW_GROUND",
+          "ROLLING",
+          "VEGETATION_DENSE"
+        ],
+        "dominantClass": "VEGETATED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "E2",
+        "nineGridRegion": 7,
+        "boundsMeters": {
+          "xMin": -160.83,
+          "yMin": -158.53,
+          "xMax": -81.77,
+          "yMax": -77.27
+        },
+        "meanElevationMeters": 22.486,
+        "minElevationMeters": 20.542,
+        "maxElevationMeters": 28.798,
+        "meanSlopeDegrees": 6.951,
+        "p90SlopeDegrees": 11.378,
+        "featureCounts": {
+          "vegetation": 4
+        },
+        "semanticTags": [
+          "LOW_GROUND",
+          "ROLLING"
+        ],
+        "dominantClass": "LOW_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "E3",
+        "nineGridRegion": 8,
+        "boundsMeters": {
+          "xMin": -81.77,
+          "yMin": -158.53,
+          "xMax": -2.7,
+          "yMax": -77.27
+        },
+        "meanElevationMeters": 27.611,
+        "minElevationMeters": 24.042,
+        "maxElevationMeters": 32.103,
+        "meanSlopeDegrees": 4.799,
+        "p90SlopeDegrees": 8.302,
+        "featureCounts": {
+          "building": 1,
+          "vegetation": 5
+        },
+        "semanticTags": [
+          "LOW_GROUND",
+          "FLAT",
+          "HARD_COVER_PRESENT"
+        ],
+        "dominantClass": "LOW_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "E4",
+        "nineGridRegion": 8,
+        "boundsMeters": {
+          "xMin": -2.7,
+          "yMin": -158.53,
+          "xMax": 76.37,
+          "yMax": -77.27
+        },
+        "meanElevationMeters": 29.618,
+        "minElevationMeters": 26.549,
+        "maxElevationMeters": 40.822,
+        "meanSlopeDegrees": 10.508,
+        "p90SlopeDegrees": 29.098,
+        "featureCounts": {
+          "building": 1,
+          "vegetation": 6,
+          "wall": 1
+        },
+        "semanticTags": [
+          "MID_ELEVATION",
+          "STEEP",
+          "HARD_COVER_PRESENT",
+          "VEGETATION_DENSE"
+        ],
+        "dominantClass": "VEGETATED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "E5",
+        "nineGridRegion": 9,
+        "boundsMeters": {
+          "xMin": 76.37,
+          "yMin": -158.53,
+          "xMax": 155.43,
+          "yMax": -77.27
+        },
+        "meanElevationMeters": 33.759,
+        "minElevationMeters": 27.894,
+        "maxElevationMeters": 53.019,
+        "meanSlopeDegrees": 14.585,
+        "p90SlopeDegrees": 45.062,
+        "featureCounts": {
+          "building": 4,
+          "vegetation": 7,
+          "wall": 22
+        },
+        "semanticTags": [
+          "MID_ELEVATION",
+          "STEEP",
+          "HARD_COVER_DENSE",
+          "URBAN_CANDIDATE",
+          "VEGETATION_DENSE"
+        ],
+        "dominantClass": "HARD_COVER_ZONE",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "E6",
+        "nineGridRegion": 9,
+        "boundsMeters": {
+          "xMin": 155.43,
+          "yMin": -158.53,
+          "xMax": 234.5,
+          "yMax": -77.27
+        },
+        "meanElevationMeters": 61.209,
+        "minElevationMeters": 45.488,
+        "maxElevationMeters": 80.135,
+        "meanSlopeDegrees": 26.47,
+        "p90SlopeDegrees": 39.496,
+        "featureCounts": {},
+        "semanticTags": [
+          "ELEVATED",
+          "STEEP",
+          "RIDGE_CANDIDATE",
+          "OPEN_GROUND_CANDIDATE"
+        ],
+        "dominantClass": "ELEVATED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "D1",
+        "nineGridRegion": 4,
+        "boundsMeters": {
+          "xMin": -239.9,
+          "yMin": -77.27,
+          "xMax": -160.83,
+          "yMax": 4.0
+        },
+        "meanElevationMeters": 25.338,
+        "minElevationMeters": 20.554,
+        "maxElevationMeters": 34.478,
+        "meanSlopeDegrees": 10.532,
+        "p90SlopeDegrees": 28.297,
+        "featureCounts": {
+          "vegetation": 5
+        },
+        "semanticTags": [
+          "LOW_GROUND",
+          "STEEP"
+        ],
+        "dominantClass": "LOW_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "D2",
+        "nineGridRegion": 4,
+        "boundsMeters": {
+          "xMin": -160.83,
+          "yMin": -77.27,
+          "xMax": -81.77,
+          "yMax": 4.0
+        },
+        "meanElevationMeters": 24.162,
+        "minElevationMeters": 20.53,
+        "maxElevationMeters": 40.147,
+        "meanSlopeDegrees": 10.948,
+        "p90SlopeDegrees": 39.71,
+        "featureCounts": {
+          "vegetation": 6
+        },
+        "semanticTags": [
+          "LOW_GROUND",
+          "STEEP",
+          "VEGETATION_DENSE"
+        ],
+        "dominantClass": "VEGETATED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "D3",
+        "nineGridRegion": 5,
+        "boundsMeters": {
+          "xMin": -81.77,
+          "yMin": -77.27,
+          "xMax": -2.7,
+          "yMax": 4.0
+        },
+        "meanElevationMeters": 33.031,
+        "minElevationMeters": 23.986,
+        "maxElevationMeters": 48.125,
+        "meanSlopeDegrees": 10.511,
+        "p90SlopeDegrees": 30.485,
+        "featureCounts": {
+          "vegetation": 5
+        },
+        "semanticTags": [
+          "MID_ELEVATION",
+          "STEEP"
+        ],
+        "dominantClass": "MIXED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "D4",
+        "nineGridRegion": 5,
+        "boundsMeters": {
+          "xMin": -2.7,
+          "yMin": -77.27,
+          "xMax": 76.37,
+          "yMax": 4.0
+        },
+        "meanElevationMeters": 35.968,
+        "minElevationMeters": 27.377,
+        "maxElevationMeters": 48.158,
+        "meanSlopeDegrees": 14.143,
+        "p90SlopeDegrees": 44.053,
+        "featureCounts": {
+          "soft_cover": 3,
+          "vegetation": 10,
+          "wall": 5
+        },
+        "semanticTags": [
+          "ELEVATED",
+          "STEEP",
+          "RIDGE_CANDIDATE",
+          "HARD_COVER_PRESENT",
+          "VEGETATION_DENSE"
+        ],
+        "dominantClass": "ELEVATED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "D5",
+        "nineGridRegion": 6,
+        "boundsMeters": {
+          "xMin": 76.37,
+          "yMin": -77.27,
+          "xMax": 155.43,
+          "yMax": 4.0
+        },
+        "meanElevationMeters": 31.407,
+        "minElevationMeters": 27.808,
+        "maxElevationMeters": 46.378,
+        "meanSlopeDegrees": 8.021,
+        "p90SlopeDegrees": 17.369,
+        "featureCounts": {
+          "building": 2,
+          "vegetation": 10,
+          "wall": 37
+        },
+        "semanticTags": [
+          "MID_ELEVATION",
+          "ROLLING",
+          "HARD_COVER_DENSE",
+          "URBAN_CANDIDATE",
+          "VEGETATION_DENSE"
+        ],
+        "dominantClass": "HARD_COVER_ZONE",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "D6",
+        "nineGridRegion": 6,
+        "boundsMeters": {
+          "xMin": 155.43,
+          "yMin": -77.27,
+          "xMax": 234.5,
+          "yMax": 4.0
+        },
+        "meanElevationMeters": 50.504,
+        "minElevationMeters": 31.39,
+        "maxElevationMeters": 69.728,
+        "meanSlopeDegrees": 27.227,
+        "p90SlopeDegrees": 47.397,
+        "featureCounts": {
+          "building": 1,
+          "vegetation": 1,
+          "wall": 14
+        },
+        "semanticTags": [
+          "ELEVATED",
+          "STEEP",
+          "RIDGE_CANDIDATE",
+          "HARD_COVER_PRESENT"
+        ],
+        "dominantClass": "ELEVATED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "C1",
+        "nineGridRegion": 4,
+        "boundsMeters": {
+          "xMin": -239.9,
+          "yMin": 4.0,
+          "xMax": -160.83,
+          "yMax": 85.27
+        },
+        "meanElevationMeters": 27.166,
+        "minElevationMeters": 20.769,
+        "maxElevationMeters": 35.763,
+        "meanSlopeDegrees": 10.418,
+        "p90SlopeDegrees": 29.825,
+        "featureCounts": {
+          "building": 1,
+          "vegetation": 8
+        },
+        "semanticTags": [
+          "LOW_GROUND",
+          "STEEP",
+          "HARD_COVER_PRESENT",
+          "VEGETATION_DENSE"
+        ],
+        "dominantClass": "VEGETATED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "C2",
+        "nineGridRegion": 4,
+        "boundsMeters": {
+          "xMin": -160.83,
+          "yMin": 4.0,
+          "xMax": -81.77,
+          "yMax": 85.27
+        },
+        "meanElevationMeters": 24.875,
+        "minElevationMeters": 20.501,
+        "maxElevationMeters": 43.027,
+        "meanSlopeDegrees": 14.721,
+        "p90SlopeDegrees": 44.082,
+        "featureCounts": {
+          "vegetation": 4,
+          "wall": 1
+        },
+        "semanticTags": [
+          "LOW_GROUND",
+          "STEEP",
+          "HARD_COVER_PRESENT"
+        ],
+        "dominantClass": "LOW_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "C3",
+        "nineGridRegion": 5,
+        "boundsMeters": {
+          "xMin": -81.77,
+          "yMin": 4.0,
+          "xMax": -2.7,
+          "yMax": 85.27
+        },
+        "meanElevationMeters": 34.994,
+        "minElevationMeters": 29.116,
+        "maxElevationMeters": 47.556,
+        "meanSlopeDegrees": 10.153,
+        "p90SlopeDegrees": 32.619,
+        "featureCounts": {
+          "vegetation": 5,
+          "wall": 4
+        },
+        "semanticTags": [
+          "ELEVATED",
+          "STEEP",
+          "RIDGE_CANDIDATE",
+          "HARD_COVER_PRESENT"
+        ],
+        "dominantClass": "ELEVATED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "C4",
+        "nineGridRegion": 5,
+        "boundsMeters": {
+          "xMin": -2.7,
+          "yMin": 4.0,
+          "xMax": 76.37,
+          "yMax": 85.27
+        },
+        "meanElevationMeters": 39.513,
+        "minElevationMeters": 31.241,
+        "maxElevationMeters": 48.553,
+        "meanSlopeDegrees": 17.768,
+        "p90SlopeDegrees": 47.609,
+        "featureCounts": {
+          "building": 4,
+          "vegetation": 6,
+          "wall": 5
+        },
+        "semanticTags": [
+          "ELEVATED",
+          "STEEP",
+          "RIDGE_CANDIDATE",
+          "HARD_COVER_PRESENT",
+          "VEGETATION_DENSE"
+        ],
+        "dominantClass": "ELEVATED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "C5",
+        "nineGridRegion": 6,
+        "boundsMeters": {
+          "xMin": 76.37,
+          "yMin": 4.0,
+          "xMax": 155.43,
+          "yMax": 85.27
+        },
+        "meanElevationMeters": 34.231,
+        "minElevationMeters": 32.618,
+        "maxElevationMeters": 43.649,
+        "meanSlopeDegrees": 4.805,
+        "p90SlopeDegrees": 6.599,
+        "featureCounts": {
+          "building": 7,
+          "vegetation": 12,
+          "wall": 59
+        },
+        "semanticTags": [
+          "ELEVATED",
+          "FLAT",
+          "RIDGE_CANDIDATE",
+          "HARD_COVER_DENSE",
+          "URBAN_CANDIDATE",
+          "VEGETATION_DENSE"
+        ],
+        "dominantClass": "HARD_COVER_ZONE",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "C6",
+        "nineGridRegion": 6,
+        "boundsMeters": {
+          "xMin": 155.43,
+          "yMin": 4.0,
+          "xMax": 234.5,
+          "yMax": 85.27
+        },
+        "meanElevationMeters": 34.929,
+        "minElevationMeters": 32.939,
+        "maxElevationMeters": 59.018,
+        "meanSlopeDegrees": 6.287,
+        "p90SlopeDegrees": 26.713,
+        "featureCounts": {
+          "building": 5,
+          "vegetation": 8,
+          "wall": 68
+        },
+        "semanticTags": [
+          "ELEVATED",
+          "STEEP",
+          "RIDGE_CANDIDATE",
+          "HARD_COVER_DENSE",
+          "URBAN_CANDIDATE",
+          "VEGETATION_DENSE"
+        ],
+        "dominantClass": "HARD_COVER_ZONE",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "B1",
+        "nineGridRegion": 1,
+        "boundsMeters": {
+          "xMin": -239.9,
+          "yMin": 85.27,
+          "xMax": -160.83,
+          "yMax": 166.53
+        },
+        "meanElevationMeters": 22.344,
+        "minElevationMeters": 20.406,
+        "maxElevationMeters": 33.118,
+        "meanSlopeDegrees": 6.977,
+        "p90SlopeDegrees": 19.313,
+        "featureCounts": {
+          "vegetation": 3
+        },
+        "semanticTags": [
+          "LOW_GROUND",
+          "ROLLING"
+        ],
+        "dominantClass": "LOW_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "B2",
+        "nineGridRegion": 1,
+        "boundsMeters": {
+          "xMin": -160.83,
+          "yMin": 85.27,
+          "xMax": -81.77,
+          "yMax": 166.53
+        },
+        "meanElevationMeters": 24.296,
+        "minElevationMeters": 20.534,
+        "maxElevationMeters": 32.156,
+        "meanSlopeDegrees": 7.68,
+        "p90SlopeDegrees": 13.66,
+        "featureCounts": {
+          "building": 1,
+          "vegetation": 2,
+          "wall": 11
+        },
+        "semanticTags": [
+          "LOW_GROUND",
+          "ROLLING",
+          "HARD_COVER_PRESENT"
+        ],
+        "dominantClass": "LOW_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "B3",
+        "nineGridRegion": 2,
+        "boundsMeters": {
+          "xMin": -81.77,
+          "yMin": 85.27,
+          "xMax": -2.7,
+          "yMax": 166.53
+        },
+        "meanElevationMeters": 29.586,
+        "minElevationMeters": 23.929,
+        "maxElevationMeters": 37.343,
+        "meanSlopeDegrees": 5.999,
+        "p90SlopeDegrees": 11.443,
+        "featureCounts": {
+          "building": 3,
+          "vegetation": 6,
+          "wall": 47
+        },
+        "semanticTags": [
+          "MID_ELEVATION",
+          "FLAT",
+          "HARD_COVER_DENSE",
+          "URBAN_CANDIDATE",
+          "VEGETATION_DENSE"
+        ],
+        "dominantClass": "HARD_COVER_ZONE",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "B4",
+        "nineGridRegion": 2,
+        "boundsMeters": {
+          "xMin": -2.7,
+          "yMin": 85.27,
+          "xMax": 76.37,
+          "yMax": 166.53
+        },
+        "meanElevationMeters": 30.328,
+        "minElevationMeters": 27.752,
+        "maxElevationMeters": 36.19,
+        "meanSlopeDegrees": 3.676,
+        "p90SlopeDegrees": 5.854,
+        "featureCounts": {
+          "building": 3,
+          "vegetation": 6,
+          "wall": 19
+        },
+        "semanticTags": [
+          "MID_ELEVATION",
+          "FLAT",
+          "HARD_COVER_DENSE",
+          "URBAN_CANDIDATE",
+          "VEGETATION_DENSE"
+        ],
+        "dominantClass": "HARD_COVER_ZONE",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "B5",
+        "nineGridRegion": 3,
+        "boundsMeters": {
+          "xMin": 76.37,
+          "yMin": 85.27,
+          "xMax": 155.43,
+          "yMax": 166.53
+        },
+        "meanElevationMeters": 35.712,
+        "minElevationMeters": 29.173,
+        "maxElevationMeters": 61.502,
+        "meanSlopeDegrees": 11.798,
+        "p90SlopeDegrees": 37.297,
+        "featureCounts": {
+          "building": 5,
+          "vegetation": 8,
+          "wall": 25
+        },
+        "semanticTags": [
+          "ELEVATED",
+          "STEEP",
+          "RIDGE_CANDIDATE",
+          "HARD_COVER_DENSE",
+          "URBAN_CANDIDATE",
+          "VEGETATION_DENSE"
+        ],
+        "dominantClass": "HARD_COVER_ZONE",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "B6",
+        "nineGridRegion": 3,
+        "boundsMeters": {
+          "xMin": 155.43,
+          "yMin": 85.27,
+          "xMax": 234.5,
+          "yMax": 166.53
+        },
+        "meanElevationMeters": 53.302,
+        "minElevationMeters": 34.101,
+        "maxElevationMeters": 104.022,
+        "meanSlopeDegrees": 31.49,
+        "p90SlopeDegrees": 55.671,
+        "featureCounts": {
+          "building": 2,
+          "vegetation": 2,
+          "wall": 15
+        },
+        "semanticTags": [
+          "ELEVATED",
+          "STEEP",
+          "RIDGE_CANDIDATE",
+          "HARD_COVER_PRESENT"
+        ],
+        "dominantClass": "ELEVATED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "A1",
+        "nineGridRegion": 1,
+        "boundsMeters": {
+          "xMin": -239.9,
+          "yMin": 166.53,
+          "xMax": -160.83,
+          "yMax": 247.8
+        },
+        "meanElevationMeters": 24.069,
+        "minElevationMeters": 20.369,
+        "maxElevationMeters": 34.972,
+        "meanSlopeDegrees": 10.167,
+        "p90SlopeDegrees": 31.005,
+        "featureCounts": {
+          "vegetation": 6
+        },
+        "semanticTags": [
+          "LOW_GROUND",
+          "STEEP",
+          "VEGETATION_DENSE"
+        ],
+        "dominantClass": "VEGETATED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "A2",
+        "nineGridRegion": 1,
+        "boundsMeters": {
+          "xMin": -160.83,
+          "yMin": 166.53,
+          "xMax": -81.77,
+          "yMax": 247.8
+        },
+        "meanElevationMeters": 28.037,
+        "minElevationMeters": 24.959,
+        "maxElevationMeters": 33.349,
+        "meanSlopeDegrees": 5.536,
+        "p90SlopeDegrees": 13.798,
+        "featureCounts": {
+          "vegetation": 6
+        },
+        "semanticTags": [
+          "MID_ELEVATION",
+          "FLAT",
+          "VEGETATION_DENSE"
+        ],
+        "dominantClass": "VEGETATED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "A3",
+        "nineGridRegion": 2,
+        "boundsMeters": {
+          "xMin": -81.77,
+          "yMin": 166.53,
+          "xMax": -2.7,
+          "yMax": 247.8
+        },
+        "meanElevationMeters": 29.609,
+        "minElevationMeters": 27.043,
+        "maxElevationMeters": 34.966,
+        "meanSlopeDegrees": 6.656,
+        "p90SlopeDegrees": 22.066,
+        "featureCounts": {
+          "building": 3,
+          "vegetation": 8,
+          "wall": 41
+        },
+        "semanticTags": [
+          "MID_ELEVATION",
+          "ROLLING",
+          "HARD_COVER_DENSE",
+          "URBAN_CANDIDATE",
+          "VEGETATION_DENSE"
+        ],
+        "dominantClass": "HARD_COVER_ZONE",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "A4",
+        "nineGridRegion": 2,
+        "boundsMeters": {
+          "xMin": -2.7,
+          "yMin": 166.53,
+          "xMax": 76.37,
+          "yMax": 247.8
+        },
+        "meanElevationMeters": 30.1,
+        "minElevationMeters": 27.385,
+        "maxElevationMeters": 48.776,
+        "meanSlopeDegrees": 7.761,
+        "p90SlopeDegrees": 27.528,
+        "featureCounts": {
+          "building": 2,
+          "vegetation": 5,
+          "wall": 21
+        },
+        "semanticTags": [
+          "MID_ELEVATION",
+          "STEEP",
+          "HARD_COVER_DENSE",
+          "URBAN_CANDIDATE"
+        ],
+        "dominantClass": "HARD_COVER_ZONE",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "A5",
+        "nineGridRegion": 3,
+        "boundsMeters": {
+          "xMin": 76.37,
+          "yMin": 166.53,
+          "xMax": 155.43,
+          "yMax": 247.8
+        },
+        "meanElevationMeters": 52.503,
+        "minElevationMeters": 28.778,
+        "maxElevationMeters": 82.009,
+        "meanSlopeDegrees": 31.376,
+        "p90SlopeDegrees": 50.166,
+        "featureCounts": {
+          "vegetation": 1
+        },
+        "semanticTags": [
+          "ELEVATED",
+          "STEEP",
+          "RIDGE_CANDIDATE",
+          "OPEN_GROUND_CANDIDATE"
+        ],
+        "dominantClass": "ELEVATED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      },
+      {
+        "id": "A6",
+        "nineGridRegion": 3,
+        "boundsMeters": {
+          "xMin": 155.43,
+          "yMin": 166.53,
+          "xMax": 234.5,
+          "yMax": 247.8
+        },
+        "meanElevationMeters": 86.36,
+        "minElevationMeters": 56.245,
+        "maxElevationMeters": 128.35,
+        "meanSlopeDegrees": 35.227,
+        "p90SlopeDegrees": 49.714,
+        "featureCounts": {},
+        "semanticTags": [
+          "ELEVATED",
+          "STEEP",
+          "RIDGE_CANDIDATE",
+          "OPEN_GROUND_CANDIDATE"
+        ],
+        "dominantClass": "ELEVATED_TERRAIN",
+        "confidence": "GRID_RULE_DERIVED"
+      }
+    ]
+  },
+  "areas": {
+    "VEGETATED_TERRAIN_01": {
+      "label": "西南侧植被密集区",
+      "types": [
+        "LOW_GROUND",
+        "FLAT",
+        "VEGETATION_DENSE"
+      ],
+      "gridCells": [
+        "E1",
+        "F1"
+      ],
+      "gridRegions": [
+        7
+      ],
+      "boundsMeters": {
+        "xMin": -239.9,
+        "yMin": -239.8,
+        "xMax": -160.83,
+        "yMax": -77.27
+      },
+      "evidence": {
+        "meanElevationMeters": 22.281,
+        "minElevationMeters": 20.344,
+        "maxElevationMeters": 30.31,
+        "meanSlopeDegrees": 5.533,
+        "p90SlopeDegrees": 18.816,
+        "featureCounts": {
+          "vegetation": 13
+        }
+      },
+      "characteristics": [
+        "覆盖网格 E1, F1",
+        "平均高程 22.28 米，平均坡度 5.53°，90 分位坡度 18.82°",
+        "区域平均高程处于可玩区低位分组",
+        "客户端场景中植被对象相对密集"
+      ],
+      "favors": [
+        "CAMOUFLAGE_DEPENDENT_SUPPORT"
+      ],
+      "risks": [
+        "植被不等于实体防护，无法阻挡炮弹"
+      ],
+      "confidence": {
+        "geometry": "EXACT_CLIENT_DATA",
+        "objectPositions": "EXACT_CLIENT_DATA",
+        "objectCategories": "NAME_HEURISTIC",
+        "areaBoundary": "GRID_RULE_DERIVED",
+        "favorsAndRisks": "RULE_DERIVED_CANDIDATE"
+      }
+    },
+    "LOW_TERRAIN_01": {
+      "label": "西南侧低地区域",
+      "types": [
+        "LOW_GROUND",
+        "FLAT"
+      ],
+      "gridCells": [
+        "E2",
+        "E3",
+        "F2"
+      ],
+      "gridRegions": [
+        7,
+        8
+      ],
+      "boundsMeters": {
+        "xMin": -160.83,
+        "yMin": -239.8,
+        "xMax": -2.7,
+        "yMax": -77.27
+      },
+      "evidence": {
+        "meanElevationMeters": 24.26,
+        "minElevationMeters": 20.418,
+        "maxElevationMeters": 42.062,
+        "meanSlopeDegrees": 7.184,
+        "p90SlopeDegrees": 30.947,
+        "featureCounts": {
+          "building": 1,
+          "vegetation": 12
+        }
+      },
+      "characteristics": [
+        "覆盖网格 E2, E3, F2",
+        "平均高程 24.26 米，平均坡度 7.18°，90 分位坡度 30.95°",
+        "区域平均高程处于可玩区低位分组"
+      ],
+      "favors": [],
+      "risks": [],
+      "confidence": {
+        "geometry": "EXACT_CLIENT_DATA",
+        "objectPositions": "EXACT_CLIENT_DATA",
+        "objectCategories": "NAME_HEURISTIC",
+        "areaBoundary": "GRID_RULE_DERIVED",
+        "favorsAndRisks": "RULE_DERIVED_CANDIDATE"
+      }
+    },
+    "VEGETATED_TERRAIN_02": {
+      "label": "南侧植被密集区",
+      "types": [
+        "MID_ELEVATION",
+        "STEEP",
+        "HARD_COVER_PRESENT",
+        "VEGETATION_DENSE"
+      ],
+      "gridCells": [
+        "F3"
+      ],
+      "gridRegions": [
+        8
+      ],
+      "boundsMeters": {
+        "xMin": -81.77,
+        "yMin": -239.8,
+        "xMax": -2.7,
+        "yMax": -158.53
+      },
+      "evidence": {
+        "meanElevationMeters": 31.031,
+        "minElevationMeters": 23.525,
+        "maxElevationMeters": 41.018,
+        "meanSlopeDegrees": 13.301,
+        "p90SlopeDegrees": 39.152,
+        "featureCounts": {
+          "building": 1,
+          "vegetation": 6
+        }
+      },
+      "characteristics": [
+        "覆盖网格 F3",
+        "平均高程 31.03 米，平均坡度 13.30°，90 分位坡度 39.15°",
+        "客户端场景对象名称显示该区域存在建筑、围墙或障碍物",
+        "客户端场景中植被对象相对密集"
+      ],
+      "favors": [
+        "CAMOUFLAGE_DEPENDENT_SUPPORT"
+      ],
+      "risks": [
+        "植被不等于实体防护，无法阻挡炮弹",
+        "局部陡坡可能限制低机动或俯仰能力较差的车辆"
+      ],
+      "confidence": {
+        "geometry": "EXACT_CLIENT_DATA",
+        "objectPositions": "EXACT_CLIENT_DATA",
+        "objectCategories": "NAME_HEURISTIC",
+        "areaBoundary": "GRID_RULE_DERIVED",
+        "favorsAndRisks": "RULE_DERIVED_CANDIDATE"
+      }
+    },
+    "ELEVATED_TERRAIN_01": {
+      "label": "东南侧高地区域",
+      "types": [
+        "ELEVATED",
+        "STEEP",
+        "RIDGE_CANDIDATE",
+        "HARD_COVER_PRESENT"
+      ],
+      "gridCells": [
+        "D6",
+        "E6",
+        "F4",
+        "F5",
+        "F6"
+      ],
+      "gridRegions": [
+        6,
+        8,
+        9
+      ],
+      "boundsMeters": {
+        "xMin": -2.7,
+        "yMin": -239.8,
+        "xMax": 234.5,
+        "yMax": 4.0
+      },
+      "evidence": {
+        "meanElevationMeters": 49.875,
+        "minElevationMeters": 31.06,
+        "maxElevationMeters": 103.005,
+        "meanSlopeDegrees": 22.517,
+        "p90SlopeDegrees": 53.486,
+        "featureCounts": {
+          "building": 5,
+          "vegetation": 14,
+          "wall": 14
+        }
+      },
+      "characteristics": [
+        "覆盖网格 D6, E6, F4, F5, F6",
+        "平均高程 49.88 米，平均坡度 22.52°，90 分位坡度 53.49°",
+        "客户端场景对象名称显示该区域存在建筑、围墙或障碍物",
+        "区域平均高程处于可玩区高位分组",
+        "高程与局部起伏同时较高，存在山脊地形候选"
+      ],
+      "favors": [
+        "HULL_DOWN_VEHICLE"
+      ],
+      "risks": [
+        "低机动车辆进入高地区域的成本可能更高",
+        "局部陡坡可能限制低机动或俯仰能力较差的车辆"
+      ],
+      "confidence": {
+        "geometry": "EXACT_CLIENT_DATA",
+        "objectPositions": "EXACT_CLIENT_DATA",
+        "objectCategories": "NAME_HEURISTIC",
+        "areaBoundary": "GRID_RULE_DERIVED",
+        "favorsAndRisks": "RULE_DERIVED_CANDIDATE"
+      }
+    },
+    "VEGETATED_TERRAIN_03": {
+      "label": "南侧植被密集区",
+      "types": [
+        "MID_ELEVATION",
+        "STEEP",
+        "HARD_COVER_PRESENT",
+        "VEGETATION_DENSE"
+      ],
+      "gridCells": [
+        "E4"
+      ],
+      "gridRegions": [
+        8
+      ],
+      "boundsMeters": {
+        "xMin": -2.7,
+        "yMin": -158.53,
+        "xMax": 76.37,
+        "yMax": -77.27
+      },
+      "evidence": {
+        "meanElevationMeters": 29.618,
+        "minElevationMeters": 26.549,
+        "maxElevationMeters": 40.822,
+        "meanSlopeDegrees": 10.508,
+        "p90SlopeDegrees": 29.098,
+        "featureCounts": {
+          "building": 1,
+          "vegetation": 6,
+          "wall": 1
+        }
+      },
+      "characteristics": [
+        "覆盖网格 E4",
+        "平均高程 29.62 米，平均坡度 10.51°，90 分位坡度 29.10°",
+        "客户端场景对象名称显示该区域存在建筑、围墙或障碍物",
+        "客户端场景中植被对象相对密集"
+      ],
+      "favors": [
+        "CAMOUFLAGE_DEPENDENT_SUPPORT"
+      ],
+      "risks": [
+        "植被不等于实体防护，无法阻挡炮弹",
+        "局部陡坡可能限制低机动或俯仰能力较差的车辆"
+      ],
+      "confidence": {
+        "geometry": "EXACT_CLIENT_DATA",
+        "objectPositions": "EXACT_CLIENT_DATA",
+        "objectCategories": "NAME_HEURISTIC",
+        "areaBoundary": "GRID_RULE_DERIVED",
+        "favorsAndRisks": "RULE_DERIVED_CANDIDATE"
+      }
+    },
+    "HARD_COVER_ZONE_01": {
+      "label": "中央硬掩体密集区",
+      "types": [
+        "MID_ELEVATION",
+        "STEEP",
+        "HARD_COVER_DENSE",
+        "URBAN_CANDIDATE",
+        "VEGETATION_DENSE"
+      ],
+      "gridCells": [
+        "A3",
+        "A4",
+        "B3",
+        "B4",
+        "B5",
+        "C5",
+        "C6",
+        "D5",
+        "E5"
+      ],
+      "gridRegions": [
+        2,
+        3,
+        6,
+        9
+      ],
+      "boundsMeters": {
+        "xMin": -81.77,
+        "yMin": -158.53,
+        "xMax": 234.5,
+        "yMax": 247.8
+      },
+      "evidence": {
+        "meanElevationMeters": 32.185,
+        "minElevationMeters": 23.929,
+        "maxElevationMeters": 61.502,
+        "meanSlopeDegrees": 7.732,
+        "p90SlopeDegrees": 45.062,
+        "featureCounts": {
+          "building": 34,
+          "vegetation": 70,
+          "wall": 339
+        }
+      },
+      "characteristics": [
+        "覆盖网格 A3, A4, B3, B4, B5, C5, C6, D5, E5",
+        "平均高程 32.19 米，平均坡度 7.73°，90 分位坡度 45.06°",
+        "客户端场景对象名称显示该区域建筑/围墙型硬掩体密集",
+        "客户端场景中植被对象相对密集"
+      ],
+      "favors": [
+        "ARMORED_HEAVY",
+        "SIDESCRAPE_VEHICLE",
+        "HIGH_ALPHA_TRADER"
+      ],
+      "risks": [
+        "建筑密集可能限制横向机动和转场速度",
+        "局部陡坡可能限制低机动或俯仰能力较差的车辆"
+      ],
+      "confidence": {
+        "geometry": "EXACT_CLIENT_DATA",
+        "objectPositions": "EXACT_CLIENT_DATA",
+        "objectCategories": "NAME_HEURISTIC",
+        "areaBoundary": "GRID_RULE_DERIVED",
+        "favorsAndRisks": "RULE_DERIVED_CANDIDATE"
+      }
+    },
+    "LOW_TERRAIN_02": {
+      "label": "西侧低地区域",
+      "types": [
+        "LOW_GROUND",
+        "STEEP"
+      ],
+      "gridCells": [
+        "D1"
+      ],
+      "gridRegions": [
+        4
+      ],
+      "boundsMeters": {
+        "xMin": -239.9,
+        "yMin": -77.27,
+        "xMax": -160.83,
+        "yMax": 4.0
+      },
+      "evidence": {
+        "meanElevationMeters": 25.338,
+        "minElevationMeters": 20.554,
+        "maxElevationMeters": 34.478,
+        "meanSlopeDegrees": 10.532,
+        "p90SlopeDegrees": 28.297,
+        "featureCounts": {
+          "vegetation": 5
+        }
+      },
+      "characteristics": [
+        "覆盖网格 D1",
+        "平均高程 25.34 米，平均坡度 10.53°，90 分位坡度 28.30°",
+        "区域平均高程处于可玩区低位分组"
+      ],
+      "favors": [],
+      "risks": [
+        "局部陡坡可能限制低机动或俯仰能力较差的车辆"
+      ],
+      "confidence": {
+        "geometry": "EXACT_CLIENT_DATA",
+        "objectPositions": "EXACT_CLIENT_DATA",
+        "objectCategories": "NAME_HEURISTIC",
+        "areaBoundary": "GRID_RULE_DERIVED",
+        "favorsAndRisks": "RULE_DERIVED_CANDIDATE"
+      }
+    },
+    "VEGETATED_TERRAIN_04": {
+      "label": "西侧植被密集区",
+      "types": [
+        "LOW_GROUND",
+        "STEEP",
+        "VEGETATION_DENSE"
+      ],
+      "gridCells": [
+        "D2"
+      ],
+      "gridRegions": [
+        4
+      ],
+      "boundsMeters": {
+        "xMin": -160.83,
+        "yMin": -77.27,
+        "xMax": -81.77,
+        "yMax": 4.0
+      },
+      "evidence": {
+        "meanElevationMeters": 24.162,
+        "minElevationMeters": 20.53,
+        "maxElevationMeters": 40.147,
+        "meanSlopeDegrees": 10.948,
+        "p90SlopeDegrees": 39.71,
+        "featureCounts": {
+          "vegetation": 6
+        }
+      },
+      "characteristics": [
+        "覆盖网格 D2",
+        "平均高程 24.16 米，平均坡度 10.95°，90 分位坡度 39.71°",
+        "区域平均高程处于可玩区低位分组",
+        "客户端场景中植被对象相对密集"
+      ],
+      "favors": [
+        "CAMOUFLAGE_DEPENDENT_SUPPORT"
+      ],
+      "risks": [
+        "植被不等于实体防护，无法阻挡炮弹",
+        "局部陡坡可能限制低机动或俯仰能力较差的车辆"
+      ],
+      "confidence": {
+        "geometry": "EXACT_CLIENT_DATA",
+        "objectPositions": "EXACT_CLIENT_DATA",
+        "objectCategories": "NAME_HEURISTIC",
+        "areaBoundary": "GRID_RULE_DERIVED",
+        "favorsAndRisks": "RULE_DERIVED_CANDIDATE"
+      }
+    },
+    "MIXED_TERRAIN_01": {
+      "label": "中央混合地形连接区",
+      "types": [
+        "MID_ELEVATION",
+        "STEEP"
+      ],
+      "gridCells": [
+        "D3"
+      ],
+      "gridRegions": [
+        5
+      ],
+      "boundsMeters": {
+        "xMin": -81.77,
+        "yMin": -77.27,
+        "xMax": -2.7,
+        "yMax": 4.0
+      },
+      "evidence": {
+        "meanElevationMeters": 33.031,
+        "minElevationMeters": 23.986,
+        "maxElevationMeters": 48.125,
+        "meanSlopeDegrees": 10.511,
+        "p90SlopeDegrees": 30.485,
+        "featureCounts": {
+          "vegetation": 5
+        }
+      },
+      "characteristics": [
+        "覆盖网格 D3",
+        "平均高程 33.03 米，平均坡度 10.51°，90 分位坡度 30.48°"
+      ],
+      "favors": [],
+      "risks": [
+        "局部陡坡可能限制低机动或俯仰能力较差的车辆"
+      ],
+      "confidence": {
+        "geometry": "EXACT_CLIENT_DATA",
+        "objectPositions": "EXACT_CLIENT_DATA",
+        "objectCategories": "NAME_HEURISTIC",
+        "areaBoundary": "GRID_RULE_DERIVED",
+        "favorsAndRisks": "RULE_DERIVED_CANDIDATE"
+      }
+    },
+    "ELEVATED_TERRAIN_02": {
+      "label": "中央高地区域",
+      "types": [
+        "ELEVATED",
+        "STEEP",
+        "RIDGE_CANDIDATE",
+        "HARD_COVER_PRESENT",
+        "VEGETATION_DENSE"
+      ],
+      "gridCells": [
+        "C3",
+        "C4",
+        "D4"
+      ],
+      "gridRegions": [
+        5
+      ],
+      "boundsMeters": {
+        "xMin": -81.77,
+        "yMin": -77.27,
+        "xMax": 76.37,
+        "yMax": 85.27
+      },
+      "evidence": {
+        "meanElevationMeters": 36.825,
+        "minElevationMeters": 27.377,
+        "maxElevationMeters": 48.553,
+        "meanSlopeDegrees": 14.021,
+        "p90SlopeDegrees": 47.609,
+        "featureCounts": {
+          "building": 4,
+          "soft_cover": 3,
+          "vegetation": 21,
+          "wall": 14
+        }
+      },
+      "characteristics": [
+        "覆盖网格 C3, C4, D4",
+        "平均高程 36.83 米，平均坡度 14.02°，90 分位坡度 47.61°",
+        "客户端场景对象名称显示该区域存在建筑、围墙或障碍物",
+        "区域平均高程处于可玩区高位分组",
+        "高程与局部起伏同时较高，存在山脊地形候选",
+        "客户端场景中植被对象相对密集"
+      ],
+      "favors": [
+        "HULL_DOWN_VEHICLE",
+        "CAMOUFLAGE_DEPENDENT_SUPPORT"
+      ],
+      "risks": [
+        "低机动车辆进入高地区域的成本可能更高",
+        "植被不等于实体防护，无法阻挡炮弹",
+        "局部陡坡可能限制低机动或俯仰能力较差的车辆"
+      ],
+      "confidence": {
+        "geometry": "EXACT_CLIENT_DATA",
+        "objectPositions": "EXACT_CLIENT_DATA",
+        "objectCategories": "NAME_HEURISTIC",
+        "areaBoundary": "GRID_RULE_DERIVED",
+        "favorsAndRisks": "RULE_DERIVED_CANDIDATE"
+      }
+    },
+    "VEGETATED_TERRAIN_05": {
+      "label": "西侧植被密集区",
+      "types": [
+        "LOW_GROUND",
+        "STEEP",
+        "HARD_COVER_PRESENT",
+        "VEGETATION_DENSE"
+      ],
+      "gridCells": [
+        "C1"
+      ],
+      "gridRegions": [
+        4
+      ],
+      "boundsMeters": {
+        "xMin": -239.9,
+        "yMin": 4.0,
+        "xMax": -160.83,
+        "yMax": 85.27
+      },
+      "evidence": {
+        "meanElevationMeters": 27.166,
+        "minElevationMeters": 20.769,
+        "maxElevationMeters": 35.763,
+        "meanSlopeDegrees": 10.418,
+        "p90SlopeDegrees": 29.825,
+        "featureCounts": {
+          "building": 1,
+          "vegetation": 8
+        }
+      },
+      "characteristics": [
+        "覆盖网格 C1",
+        "平均高程 27.17 米，平均坡度 10.42°，90 分位坡度 29.82°",
+        "客户端场景对象名称显示该区域存在建筑、围墙或障碍物",
+        "区域平均高程处于可玩区低位分组",
+        "客户端场景中植被对象相对密集"
+      ],
+      "favors": [
+        "CAMOUFLAGE_DEPENDENT_SUPPORT"
+      ],
+      "risks": [
+        "植被不等于实体防护，无法阻挡炮弹",
+        "局部陡坡可能限制低机动或俯仰能力较差的车辆"
+      ],
+      "confidence": {
+        "geometry": "EXACT_CLIENT_DATA",
+        "objectPositions": "EXACT_CLIENT_DATA",
+        "objectCategories": "NAME_HEURISTIC",
+        "areaBoundary": "GRID_RULE_DERIVED",
+        "favorsAndRisks": "RULE_DERIVED_CANDIDATE"
+      }
+    },
+    "LOW_TERRAIN_03": {
+      "label": "西北侧低地区域",
+      "types": [
+        "LOW_GROUND",
+        "ROLLING",
+        "HARD_COVER_PRESENT"
+      ],
+      "gridCells": [
+        "B1",
+        "B2",
+        "C2"
+      ],
+      "gridRegions": [
+        1,
+        4
+      ],
+      "boundsMeters": {
+        "xMin": -239.9,
+        "yMin": 4.0,
+        "xMax": -81.77,
+        "yMax": 166.53
+      },
+      "evidence": {
+        "meanElevationMeters": 23.839,
+        "minElevationMeters": 20.406,
+        "maxElevationMeters": 43.027,
+        "meanSlopeDegrees": 9.793,
+        "p90SlopeDegrees": 44.082,
+        "featureCounts": {
+          "building": 1,
+          "vegetation": 9,
+          "wall": 12
+        }
+      },
+      "characteristics": [
+        "覆盖网格 B1, B2, C2",
+        "平均高程 23.84 米，平均坡度 9.79°，90 分位坡度 44.08°",
+        "客户端场景对象名称显示该区域存在建筑、围墙或障碍物",
+        "区域平均高程处于可玩区低位分组"
+      ],
+      "favors": [],
+      "risks": [],
+      "confidence": {
+        "geometry": "EXACT_CLIENT_DATA",
+        "objectPositions": "EXACT_CLIENT_DATA",
+        "objectCategories": "NAME_HEURISTIC",
+        "areaBoundary": "GRID_RULE_DERIVED",
+        "favorsAndRisks": "RULE_DERIVED_CANDIDATE"
+      }
+    },
+    "ELEVATED_TERRAIN_03": {
+      "label": "东北侧高地区域",
+      "types": [
+        "ELEVATED",
+        "STEEP",
+        "RIDGE_CANDIDATE",
+        "OPEN_GROUND_CANDIDATE"
+      ],
+      "gridCells": [
+        "A5",
+        "A6",
+        "B6"
+      ],
+      "gridRegions": [
+        3
+      ],
+      "boundsMeters": {
+        "xMin": 76.37,
+        "yMin": 85.27,
+        "xMax": 234.5,
+        "yMax": 247.8
+      },
+      "evidence": {
+        "meanElevationMeters": 64.055,
+        "minElevationMeters": 28.778,
+        "maxElevationMeters": 128.35,
+        "meanSlopeDegrees": 32.698,
+        "p90SlopeDegrees": 55.671,
+        "featureCounts": {
+          "building": 2,
+          "vegetation": 3,
+          "wall": 15
+        }
+      },
+      "characteristics": [
+        "覆盖网格 A5, A6, B6",
+        "平均高程 64.06 米，平均坡度 32.70°，90 分位坡度 55.67°",
+        "区域平均高程处于可玩区高位分组",
+        "高程与局部起伏同时较高，存在山脊地形候选",
+        "已识别的建筑、障碍物与植被对象较少，属于开放地候选"
+      ],
+      "favors": [
+        "HULL_DOWN_VEHICLE",
+        "MOBILE_VEHICLE"
+      ],
+      "risks": [
+        "低机动车辆进入高地区域的成本可能更高",
+        "缺乏已识别掩体；暴露风险需要视线计算进一步确认",
+        "局部陡坡可能限制低机动或俯仰能力较差的车辆"
+      ],
+      "confidence": {
+        "geometry": "EXACT_CLIENT_DATA",
+        "objectPositions": "EXACT_CLIENT_DATA",
+        "objectCategories": "NAME_HEURISTIC",
+        "areaBoundary": "GRID_RULE_DERIVED",
+        "favorsAndRisks": "RULE_DERIVED_CANDIDATE"
+      }
+    },
+    "VEGETATED_TERRAIN_06": {
+      "label": "西北侧植被密集区",
+      "types": [
+        "MID_ELEVATION",
+        "FLAT",
+        "VEGETATION_DENSE"
+      ],
+      "gridCells": [
+        "A1",
+        "A2"
+      ],
+      "gridRegions": [
+        1
+      ],
+      "boundsMeters": {
+        "xMin": -239.9,
+        "yMin": 166.53,
+        "xMax": -81.77,
+        "yMax": 247.8
+      },
+      "evidence": {
+        "meanElevationMeters": 26.053,
+        "minElevationMeters": 20.369,
+        "maxElevationMeters": 34.972,
+        "meanSlopeDegrees": 7.851,
+        "p90SlopeDegrees": 31.005,
+        "featureCounts": {
+          "vegetation": 12
+        }
+      },
+      "characteristics": [
+        "覆盖网格 A1, A2",
+        "平均高程 26.05 米，平均坡度 7.85°，90 分位坡度 31.00°",
+        "客户端场景中植被对象相对密集"
+      ],
+      "favors": [
+        "CAMOUFLAGE_DEPENDENT_SUPPORT"
+      ],
+      "risks": [
+        "植被不等于实体防护，无法阻挡炮弹"
+      ],
+      "confidence": {
+        "geometry": "EXACT_CLIENT_DATA",
+        "objectPositions": "EXACT_CLIENT_DATA",
+        "objectCategories": "NAME_HEURISTIC",
+        "areaBoundary": "GRID_RULE_DERIVED",
+        "favorsAndRisks": "RULE_DERIVED_CANDIDATE"
+      }
+    }
+  },
+  "relationships": [
+    {
+      "from": "ELEVATED_TERRAIN_01",
+      "type": "ADJACENT_TO",
+      "to": "HARD_COVER_ZONE_01",
+      "reason": "两个区域在 4 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "ELEVATED_TERRAIN_01",
+      "type": "HIGHER_THAN",
+      "to": "HARD_COVER_ZONE_01",
+      "reason": "相邻区域平均高程差 17.69 米",
+      "confidence": "NUMERIC_TERRAIN_DERIVATION"
+    },
+    {
+      "from": "ELEVATED_TERRAIN_01",
+      "type": "ADJACENT_TO",
+      "to": "VEGETATED_TERRAIN_02",
+      "reason": "两个区域在 1 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "ELEVATED_TERRAIN_01",
+      "type": "HIGHER_THAN",
+      "to": "VEGETATED_TERRAIN_02",
+      "reason": "相邻区域平均高程差 18.84 米",
+      "confidence": "NUMERIC_TERRAIN_DERIVATION"
+    },
+    {
+      "from": "ELEVATED_TERRAIN_01",
+      "type": "ADJACENT_TO",
+      "to": "VEGETATED_TERRAIN_03",
+      "reason": "两个区域在 1 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "ELEVATED_TERRAIN_01",
+      "type": "HIGHER_THAN",
+      "to": "VEGETATED_TERRAIN_03",
+      "reason": "相邻区域平均高程差 20.26 米",
+      "confidence": "NUMERIC_TERRAIN_DERIVATION"
+    },
+    {
+      "from": "ELEVATED_TERRAIN_02",
+      "type": "ADJACENT_TO",
+      "to": "HARD_COVER_ZONE_01",
+      "reason": "两个区域在 4 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "ELEVATED_TERRAIN_02",
+      "type": "HIGHER_THAN",
+      "to": "HARD_COVER_ZONE_01",
+      "reason": "相邻区域平均高程差 4.64 米",
+      "confidence": "NUMERIC_TERRAIN_DERIVATION"
+    },
+    {
+      "from": "ELEVATED_TERRAIN_02",
+      "type": "ADJACENT_TO",
+      "to": "LOW_TERRAIN_03",
+      "reason": "两个区域在 1 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "ELEVATED_TERRAIN_02",
+      "type": "HIGHER_THAN",
+      "to": "LOW_TERRAIN_03",
+      "reason": "相邻区域平均高程差 12.99 米",
+      "confidence": "NUMERIC_TERRAIN_DERIVATION"
+    },
+    {
+      "from": "ELEVATED_TERRAIN_02",
+      "type": "ADJACENT_TO",
+      "to": "MIXED_TERRAIN_01",
+      "reason": "两个区域在 2 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "ELEVATED_TERRAIN_02",
+      "type": "HIGHER_THAN",
+      "to": "MIXED_TERRAIN_01",
+      "reason": "相邻区域平均高程差 3.79 米",
+      "confidence": "NUMERIC_TERRAIN_DERIVATION"
+    },
+    {
+      "from": "ELEVATED_TERRAIN_02",
+      "type": "ADJACENT_TO",
+      "to": "VEGETATED_TERRAIN_03",
+      "reason": "两个区域在 1 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "ELEVATED_TERRAIN_02",
+      "type": "HIGHER_THAN",
+      "to": "VEGETATED_TERRAIN_03",
+      "reason": "相邻区域平均高程差 7.21 米",
+      "confidence": "NUMERIC_TERRAIN_DERIVATION"
+    },
+    {
+      "from": "ELEVATED_TERRAIN_03",
+      "type": "ADJACENT_TO",
+      "to": "HARD_COVER_ZONE_01",
+      "reason": "两个区域在 4 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "ELEVATED_TERRAIN_03",
+      "type": "HIGHER_THAN",
+      "to": "HARD_COVER_ZONE_01",
+      "reason": "相邻区域平均高程差 31.87 米",
+      "confidence": "NUMERIC_TERRAIN_DERIVATION"
+    },
+    {
+      "from": "HARD_COVER_ZONE_01",
+      "type": "ADJACENT_TO",
+      "to": "LOW_TERRAIN_03",
+      "reason": "两个区域在 1 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "HARD_COVER_ZONE_01",
+      "type": "HIGHER_THAN",
+      "to": "LOW_TERRAIN_03",
+      "reason": "相邻区域平均高程差 8.35 米",
+      "confidence": "NUMERIC_TERRAIN_DERIVATION"
+    },
+    {
+      "from": "HARD_COVER_ZONE_01",
+      "type": "ADJACENT_TO",
+      "to": "VEGETATED_TERRAIN_03",
+      "reason": "两个区域在 1 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "HARD_COVER_ZONE_01",
+      "type": "HIGHER_THAN",
+      "to": "VEGETATED_TERRAIN_03",
+      "reason": "相邻区域平均高程差 2.57 米",
+      "confidence": "NUMERIC_TERRAIN_DERIVATION"
+    },
+    {
+      "from": "HARD_COVER_ZONE_01",
+      "type": "ADJACENT_TO",
+      "to": "VEGETATED_TERRAIN_06",
+      "reason": "两个区域在 1 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "HARD_COVER_ZONE_01",
+      "type": "HIGHER_THAN",
+      "to": "VEGETATED_TERRAIN_06",
+      "reason": "相邻区域平均高程差 6.13 米",
+      "confidence": "NUMERIC_TERRAIN_DERIVATION"
+    },
+    {
+      "from": "LOW_TERRAIN_01",
+      "type": "ADJACENT_TO",
+      "to": "MIXED_TERRAIN_01",
+      "reason": "两个区域在 1 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "MIXED_TERRAIN_01",
+      "type": "HIGHER_THAN",
+      "to": "LOW_TERRAIN_01",
+      "reason": "相邻区域平均高程差 8.77 米",
+      "confidence": "NUMERIC_TERRAIN_DERIVATION"
+    },
+    {
+      "from": "LOW_TERRAIN_01",
+      "type": "ADJACENT_TO",
+      "to": "VEGETATED_TERRAIN_01",
+      "reason": "两个区域在 2 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "LOW_TERRAIN_01",
+      "type": "ADJACENT_TO",
+      "to": "VEGETATED_TERRAIN_02",
+      "reason": "两个区域在 2 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "VEGETATED_TERRAIN_02",
+      "type": "HIGHER_THAN",
+      "to": "LOW_TERRAIN_01",
+      "reason": "相邻区域平均高程差 6.77 米",
+      "confidence": "NUMERIC_TERRAIN_DERIVATION"
+    },
+    {
+      "from": "LOW_TERRAIN_01",
+      "type": "ADJACENT_TO",
+      "to": "VEGETATED_TERRAIN_03",
+      "reason": "两个区域在 1 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "VEGETATED_TERRAIN_03",
+      "type": "HIGHER_THAN",
+      "to": "LOW_TERRAIN_01",
+      "reason": "相邻区域平均高程差 5.36 米",
+      "confidence": "NUMERIC_TERRAIN_DERIVATION"
+    },
+    {
+      "from": "LOW_TERRAIN_01",
+      "type": "ADJACENT_TO",
+      "to": "VEGETATED_TERRAIN_04",
+      "reason": "两个区域在 1 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "LOW_TERRAIN_02",
+      "type": "ADJACENT_TO",
+      "to": "VEGETATED_TERRAIN_01",
+      "reason": "两个区域在 1 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "LOW_TERRAIN_02",
+      "type": "HIGHER_THAN",
+      "to": "VEGETATED_TERRAIN_01",
+      "reason": "相邻区域平均高程差 3.06 米",
+      "confidence": "NUMERIC_TERRAIN_DERIVATION"
+    },
+    {
+      "from": "LOW_TERRAIN_02",
+      "type": "ADJACENT_TO",
+      "to": "VEGETATED_TERRAIN_04",
+      "reason": "两个区域在 1 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "LOW_TERRAIN_02",
+      "type": "ADJACENT_TO",
+      "to": "VEGETATED_TERRAIN_05",
+      "reason": "两个区域在 1 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "LOW_TERRAIN_03",
+      "type": "ADJACENT_TO",
+      "to": "VEGETATED_TERRAIN_04",
+      "reason": "两个区域在 1 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "LOW_TERRAIN_03",
+      "type": "ADJACENT_TO",
+      "to": "VEGETATED_TERRAIN_05",
+      "reason": "两个区域在 2 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "VEGETATED_TERRAIN_05",
+      "type": "HIGHER_THAN",
+      "to": "LOW_TERRAIN_03",
+      "reason": "相邻区域平均高程差 3.33 米",
+      "confidence": "NUMERIC_TERRAIN_DERIVATION"
+    },
+    {
+      "from": "LOW_TERRAIN_03",
+      "type": "ADJACENT_TO",
+      "to": "VEGETATED_TERRAIN_06",
+      "reason": "两个区域在 2 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "MIXED_TERRAIN_01",
+      "type": "ADJACENT_TO",
+      "to": "VEGETATED_TERRAIN_04",
+      "reason": "两个区域在 1 条分析网格边上直接相邻",
+      "confidence": "EXACT_GRID_TOPOLOGY"
+    },
+    {
+      "from": "MIXED_TERRAIN_01",
+      "type": "HIGHER_THAN",
+      "to": "VEGETATED_TERRAIN_04",
+      "reason": "相邻区域平均高程差 8.87 米",
+      "confidence": "NUMERIC_TERRAIN_DERIVATION"
+    },
+    {
+      "from": "HARD_COVER_ZONE_01",
+      "type": "CONTAINS_CONTROL_POINT",
+      "to": "ControlPoint",
+      "reason": "ControlPoint 的 SC2 坐标位于网格 C6",
+      "confidence": "EXACT_SCENE_DATA"
+    }
+  ],
+  "spawnSemantics": {
+    "TEAM_1": {
+      "status": "EXACT_SCENE_DATA",
+      "spawnCount": 14,
+      "centroidMeters": {
+        "x": 76.243,
+        "y": -170.557,
+        "z": 33.237
+      },
+      "gridCells": [
+        "E5",
+        "F4",
+        "F5"
+      ],
+      "areas": [
+        "ELEVATED_TERRAIN_01",
+        "HARD_COVER_ZONE_01"
+      ]
+    },
+    "TEAM_2": {
+      "status": "EXACT_SCENE_DATA",
+      "spawnCount": 14,
+      "centroidMeters": {
+        "x": -63.5,
+        "y": 189.138,
+        "z": 27.233
+      },
+      "gridCells": [
+        "A2",
+        "A4",
+        "B2"
+      ],
+      "areas": [
+        "HARD_COVER_ZONE_01",
+        "LOW_TERRAIN_03",
+        "VEGETATED_TERRAIN_06"
+      ]
+    }
+  },
+  "confidenceLegend": {
+    "EXACT_CLIENT_DATA": "Direct numeric data decoded from client resources.",
+    "EXACT_SCENE_DATA": "Direct property or point decoded from SC2.",
+    "EXACT_GRID_TOPOLOGY": "Adjacency derived exactly from the declared analysis grid.",
+    "NUMERIC_TERRAIN_DERIVATION": "Relationship derived from decoded numeric terrain.",
+    "NAME_HEURISTIC": "Category inferred from an asset/entity name; position remains exact.",
+    "GRID_RULE_DERIVED": "Area candidate produced by deterministic grid rules.",
+    "RULE_DERIVED_CANDIDATE": "Vehicle affordance or risk candidate; requires later validation."
+  },
+  "notGeneratedWithoutFurtherEvidence": [
+    "CONTROLS",
+    "ENABLES_PRESSURE_AGAINST",
+    "CROSS_FIRE",
+    "GUARANTEED_LINE_OF_SIGHT",
+    "GUARANTEED_TRAVERSABLE_ROUTE"
+  ]
+}

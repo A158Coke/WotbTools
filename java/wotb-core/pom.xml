@@ -40,7 +40,7 @@
 
     <build>
         <resources>
-            <!-- 共享资源单一来源在仓库根 common/: 车辆库 + 评分配置, 构建时复制到 classpath -->
+            <!-- 共享资源单一来源在仓库根 common/: 车辆库 + 评分配置 + 地图语义, 构建时复制到 classpath -->
             <resource>
                 <directory>${project.basedir}/../../common</directory>
                 <includes>
@@ -50,6 +50,8 @@
                     <include>tankopedia-tier10.json</include>
                     <include>rating.json</include>
                     <include>map_names.json</include>
+                    <include>tank_tactical_profiles.json</include>
+                    <include>map-semantics/*.semantic.json</include>
                 </includes>
             </resource>
         </resources>

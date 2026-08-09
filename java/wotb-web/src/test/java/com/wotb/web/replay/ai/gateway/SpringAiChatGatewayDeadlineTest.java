@@ -215,6 +215,38 @@ class SpringAiChatGatewayDeadlineTest {
         assertEquals(0L, counter("wotb_ai_upstream_retries_total", "mode", "TEST_MODE"));
     }
 
+    @Test
+    void requestLevelStageBudgetOverridesConfigDeadline() {
+        gateway(315, new AiRetryPolicy(3, 1000, 8000, 2.0));
+        when(chatModel.call(any(Prompt.class))).thenAnswer(invocation -> {
+            now.addAndGet(10_000_000_000L); // exceeds the 5s stage budget
+            throw upstream("AI_TIMEOUT", null);
+        });
+
+        final AiUpstreamException e = assertThrows(AiUpstreamException.class,
+                () -> gateway.chat(requestWithStageBudget(5)));
+
+        assertEquals("AI_TIMEOUT", e.code());
+        assertEquals(1L, counter("wotb_ai_upstream_requests_total", "mode", "TEST_MODE"));
+        assertEquals(0L, counter("wotb_ai_upstream_retries_total", "mode", "TEST_MODE"));
+        assertTrue(sleeps.isEmpty(), "no retry may start after the stage budget is exhausted");
+    }
+
+    @Test
+    void requestLevelStageBudgetIsCappedByConfigTotal() {
+        gateway(5, new AiRetryPolicy(3, 1000, 8000, 2.0));
+        when(chatModel.call(any(Prompt.class))).thenAnswer(invocation -> {
+            now.addAndGet(10_000_000_000L);
+            throw upstream("AI_TIMEOUT", null);
+        });
+
+        final AiUpstreamException e = assertThrows(AiUpstreamException.class,
+                () -> gateway.chat(requestWithStageBudget(315)));
+
+        assertEquals("AI_TIMEOUT", e.code());
+        assertEquals(1L, counter("wotb_ai_upstream_requests_total", "mode", "TEST_MODE"));
+    }
+
     private void gateway(final long callTimeoutSec, final AiRetryPolicy policy) {
         gatewayCallTimeoutNanos = callTimeoutSec * 1_000_000_000L;
         gateway = new SpringAiChatGateway(chatModel, "test-model", registry, policy,
@@ -236,6 +268,12 @@ class SpringAiChatGatewayDeadlineTest {
         return new AiChatRequest("system-prompt", "user-prompt",
                 "test-model", null, 4096, true, "max",
                 "corr-deadline", "TEST_MODE");
+    }
+
+    private static AiChatRequest requestWithStageBudget(final int seconds) {
+        return new AiChatRequest("system-prompt", "user-prompt",
+                "test-model", null, 4096, true, "max",
+                "corr-deadline", "TEST_MODE", seconds);
     }
 
     private long counter(final String name, final String... tags) {

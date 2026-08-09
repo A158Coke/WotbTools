@@ -18,7 +18,8 @@ public record AiReplayAnalysisConfig(
         int maxOutputTokens,
         int promptSafetyMarginTokens,
         boolean thinkingEnabled,
-        String reasoningEffort
+        String reasoningEffort,
+        int callTimeoutSec
 ) {
     public AiReplayAnalysisConfig {
         if (estimator == null) throw new IllegalArgumentException("estimator must not be null");
@@ -31,6 +32,9 @@ public record AiReplayAnalysisConfig(
         }
         if (maxOutputTokens < 0) {
             throw new IllegalArgumentException("maxOutputTokens must be >= 0");
+        }
+        if (callTimeoutSec <= 0) {
+            throw new IllegalArgumentException("callTimeoutSec must be > 0");
         }
     }
 }
