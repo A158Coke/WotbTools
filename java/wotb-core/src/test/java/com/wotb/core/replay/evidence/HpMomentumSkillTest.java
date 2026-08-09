@@ -148,6 +148,58 @@ class HpMomentumSkillTest {
     }
 
     @Test
+    void confirmedDestroyedContributesLethalHpLoss() {
+        final List<PlayerResult> players = new ArrayList<>();
+        players.add(EvidenceTestFixtures.player(1001, 1, 4481, "Kranvagn", true, 300));
+        players.add(EvidenceTestFixtures.player(2001, 2, 19217, "E 100", true, 300));
+        players.add(EvidenceTestFixtures.player(2002, 2, 19217, "E 100", true, 300));
+        final Battle battle = EvidenceTestFixtures.battle(players);
+        final ReplayReconstruction recon = EvidenceTestFixtures.recon(
+                EvidenceTestFixtures.cp(1000f,
+                        hp(1, 1001, 1, 1000),
+                        hp(5, 2001, 2, 1700), hp(6, 2002, 2, 1700)),
+                EvidenceTestFixtures.cp(1020f,
+                        hp(1, 1001, 1, 1000),
+                        EvidenceTestFixtures.destroyedVehicle(5, 2001, 2),
+                        EvidenceTestFixtures.destroyedVehicle(6, 2002, 2)));
+        final HpMomentumSkill skill = new HpMomentumSkill();
+        final List<AiEvidence> windows = skill.detect(skill.sample(recon, battle));
+        assertEquals(1, windows.size());
+        final AiEvidence window = windows.getFirst();
+        assertEquals(3400.0, window.numbers().get("hpSwing"),
+                "confirmed destroyed 必须贡献 1700×2 lethal HP loss");
+        assertEquals(3.0, window.numbers().get("commonEntityCount"));
+    }
+
+    @Test
+    void destroyedCountsButUnspotNeverCountsAsDamage() {
+        final List<PlayerResult> players = new ArrayList<>();
+        players.add(EvidenceTestFixtures.player(1001, 1, 4481, "Kranvagn", true, 300));
+        players.add(EvidenceTestFixtures.player(2001, 2, 19217, "E 100", true, 300));
+        players.add(EvidenceTestFixtures.player(2002, 2, 10785, "T110E5", true, 300));
+        players.add(EvidenceTestFixtures.player(2003, 2, 19217, "E 100", true, 300));
+        final Battle battle = EvidenceTestFixtures.battle(players);
+        final ReplayReconstruction recon = EvidenceTestFixtures.recon(
+                EvidenceTestFixtures.cp(1000f,
+                        hp(1, 1001, 1, 1000),
+                        hp(5, 2001, 2, 1700), hp(6, 2002, 2, 1500),
+                        hp(7, 2003, 2, 1700)),
+                EvidenceTestFixtures.cp(1020f,
+                        hp(1, 1001, 1, 1000),
+                        EvidenceTestFixtures.destroyedVehicle(5, 2001, 2),
+                        EvidenceTestFixtures.hiddenVehicle(6, 2002, 2),
+                        EvidenceTestFixtures.destroyedVehicle(7, 2003, 2)));
+        final HpMomentumSkill skill = new HpMomentumSkill();
+        final List<AiEvidence> windows = skill.detect(skill.sample(recon, battle));
+        assertEquals(1, windows.size());
+        final AiEvidence window = windows.getFirst();
+        assertEquals(3400.0, window.numbers().get("hpSwing"),
+                "E100 lethal 计入（1700×2），IS-7 消失（1500）不得计入");
+        assertEquals(3.0, window.numbers().get("commonEntityCount"),
+                "共同可靠实体 = 录像者 + 2 辆被击毁敌车");
+    }
+
+    @Test
     void noSwingYieldsNoWindow() {
         final Battle battle = EvidenceTestFixtures.battle(eightPlayers());
         final ReplayReconstruction recon = EvidenceTestFixtures.recon(

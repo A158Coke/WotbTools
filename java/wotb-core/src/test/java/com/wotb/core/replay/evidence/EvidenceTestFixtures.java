@@ -82,6 +82,17 @@ final class EvidenceTestFixtures {
         return vs;
     }
 
+    /** confirmed DESTROYED（LifeState.DESTROYED + REMOVED，0 HP）——可靠终态。 */
+    static VehicleState destroyedVehicle(final int entityId, final long accountId, final int team) {
+        final VehicleState vs = new VehicleState(entityId, 0f);
+        vs.setAccountId(accountId);
+        vs.setTeam(team);
+        vs.setLifeState(LifeState.DESTROYED);
+        vs.setObservationState(ObservationState.REMOVED);
+        vs.setCurrentHealth(0);
+        return vs;
+    }
+
     static BattleStateCheckpoint cp(final float raw, final VehicleState... vehicles) {
         final Map<Integer, VehicleState> map = new HashMap<>();
         for (final VehicleState vs : vehicles) {

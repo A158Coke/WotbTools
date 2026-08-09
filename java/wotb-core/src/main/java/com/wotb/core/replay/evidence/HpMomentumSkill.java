@@ -4,6 +4,7 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
+import com.wotb.core.replay.reconstruction.LifeState;
 import com.wotb.core.replay.reconstruction.ObservationState;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.VehicleState;
@@ -19,9 +20,10 @@ import java.util.Set;
 /**
  * HP 动量 Skill（文档 §17）：计算双方可观察 HP 差随时间变化，找出明显 Swing 窗口。
  * <p>严格遵守观察性约束：只有 {@code observationState == OBSERVED} 且血量可靠的实体才计入；
- * 两个采样点之间只使用<strong>两端共同观察的实体</strong>计算 HP delta——
- * 任何在较早采样点观察到的实体在较晚采样点消失（unspot / STALE / REMOVED）时，
- * 无法区分"掉血"与"失去观察"，该窗口跳过，绝不把 unspot 当作 damage。</p>
+ * {@code LifeState.DESTROYED} 是可靠终态，按 0 HP 计入；
+ * 两个采样点之间只使用<strong>两端共同可靠观察的实体</strong>计算 HP delta——
+ * 较早采样点观察到的实体在较晚采样点消失（unspot / STALE / 普通 REMOVED）时，
+ * 该实体无法可靠比较，直接排除、不贡献任何 delta，绝不把 unspot 当作 damage。</p>
  */
 public final class HpMomentumSkill {
 
@@ -94,20 +96,23 @@ public final class HpMomentumSkill {
             double team2Hp = 0;
             int known = 0;
             for (final VehicleState vs : cp.stateSnapshot().vehiclesByEntityId().values()) {
-                if (vs.observationState() != ObservationState.OBSERVED
-                        || vs.currentHealth() == null || vs.currentHealth() <= 0) {
+                final boolean confirmedDestroyed = vs.lifeState() == LifeState.DESTROYED;
+                final boolean observedWithHp = vs.observationState() == ObservationState.OBSERVED
+                        && vs.currentHealth() != null && vs.currentHealth() > 0;
+                if (!confirmedDestroyed && !observedWithHp) {
                     continue;
                 }
                 final Integer team = teamOf(vs, teamByAccountId);
                 if (team == null) {
                     continue;
                 }
-                hpByEntityId.put(vs.entityId(), vs.currentHealth());
+                final int hp = confirmedDestroyed ? 0 : vs.currentHealth();
+                hpByEntityId.put(vs.entityId(), hp);
                 teamByEntityId.put(vs.entityId(), team);
                 if (team == 1) {
-                    team1Hp += vs.currentHealth();
+                    team1Hp += hp;
                 } else {
-                    team2Hp += vs.currentHealth();
+                    team2Hp += hp;
                 }
                 known++;
             }
@@ -205,15 +210,15 @@ public final class HpMomentumSkill {
     }
 
     /**
-     * 只在两端都可靠观察的共同实体上计算 HP delta（可证明不会把 unspot 当 damage）。
-     * <p>任何在 a 中观察到的实体在 b 中不可观察 → 无法可靠比较，返回 {@code null}（跳过该窗口）。</p>
+     * 只在两端共同可靠观察的实体上计算 HP delta（可证明不会把 unspot 当 damage）。
+     * <p>共同实体 = a 的观察集与 b 的观察集（含 confirmed DESTROYED 的 0 HP）的交集；
+     * 在 a 中观察但 b 中消失（unspot / STALE / 普通 REMOVED）的实体直接排除、
+     * 不贡献任何 delta。交集为空时返回 {@code null}（无可可靠比较实体）。</p>
      */
     private static Swing commonEntitySwing(final HpMomentumSample a, final HpMomentumSample b) {
         final Set<Integer> common = new HashSet<>(a.observedEntities());
+        common.retainAll(b.observedEntities());
         if (common.isEmpty()) {
-            return null;
-        }
-        if (!b.observedEntities().containsAll(common)) {
             return null;
         }
         double team1Delta = 0;

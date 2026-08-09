@@ -7,6 +7,7 @@ import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
 import com.wotb.core.replay.reconstruction.ObservationState;
 import com.wotb.core.replay.reconstruction.VehicleState;
+import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -100,7 +101,8 @@ public final class NearbySupportCounter {
             return null;
         }
         final Map<Long, Integer> teamByAccountId = teamByAccountId(battle);
-        final int[] totals = sideTotals(battle, recorder.team());
+        // denominator 使用当前时间点的存活名单：已阵亡车辆不污染观察覆盖
+        final int[] totals = sideTotals(battle, recorder.team(), battleRelSec);
         int friendly = 0;
         int enemy = 0;
         int observedFriendly = 0;
@@ -138,12 +140,16 @@ public final class NearbySupportCounter {
                 totals[0], totals[1], recorderRegion, confidence);
     }
 
-    /** 权威队伍人数（来自 battle 结算）：[友军(不含录像者), 敌军]。 */
-    private static int[] sideTotals(final Battle battle, final int recorderTeam) {
+    /** 当前时间点存活队伍人数（来自 battle 结算）：[友军(不含录像者), 敌军]。 */
+    private static int[] sideTotals(final Battle battle, final int recorderTeam,
+                                    final float battleRelSec) {
         int friendly = 0;
         int enemy = 0;
         if (battle.players != null) {
             for (final PlayerResult p : battle.players) {
+                if (!aliveAt(p, battleRelSec)) {
+                    continue;
+                }
                 if (p.team == recorderTeam) {
                     friendly++;
                 } else {
@@ -153,6 +159,14 @@ public final class NearbySupportCounter {
         }
         // 录像者本人恒不进入附近计数，友军侧应排除他
         return new int[]{Math.max(0, friendly - 1), enemy};
+    }
+
+    /** 权威存活判定：survived，或阵亡时间晚于当前 battle-relative 时刻。 */
+    private static boolean aliveAt(final PlayerResult p, final float battleRelSec) {
+        if (p.survived) {
+            return true;
+        }
+        return PlayerResultFormat.deathSec(p) > battleRelSec;
     }
 
     private static boolean inRadius(final VehicleState recorder, final VehicleState other) {
