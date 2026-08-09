@@ -34,8 +34,10 @@ public final class TeamAutopsyPromptBuilder {
             2. 判负：biggestLiabilities（战犯）必须至少 1 条，可多人（建议 ≤3）；判胜：mvps 必须至少 1 条。
                同一人可同时出现在两类中（需说明）。
             3. 本输入是结算级数据：没有关键窗口、没有赛前职责基线、没有逐人 Route/走位证据。
-               战犯证据类别仅限：承伤明显偏高且存活时长/输出不匹配、过早阵亡（阵亡时刻显著早于合理线）、
-               缺乏输出（输出车 damageDealt 显著低于本方均值/职责期望）。
+               战犯证据类别仅限：损失血量明显偏高且与车型职责/存活时长/输出不匹配
+               （薄皮输出车无价值掉血、过早阵亡前的大量掉血；重坦抗线掉血不直接作为战犯依据）、
+               过早阵亡（阵亡时刻显著早于合理线）、缺乏输出（输出车 damageDealt 显著低于本方均值/职责期望）。
+               严格区分「损失血量」与「格挡伤害」：格挡伤害越高越好，损失血量本身中性，评价必须结合车型与场景。
             4. 所有玩家都是结算级代理：无逐人窗口证据，任何窗口类/精确归因结论置信度必须 PARTIAL 或 UNKNOWN，
                不得声称精确归因。
             5. 措辞中性：用"主要负面贡献者（战犯）"表达，禁止情绪化、人身化、侮辱性语言。
@@ -59,7 +61,7 @@ public final class TeamAutopsyPromptBuilder {
             }
             要求：players 覆盖下方名单全部玩家且 playerKey 必须来自名单；mvps ≤3；biggestLiabilities ≤3；
             每条 verdict 至少 1 条 evidence 且 playerKey 有效；confidence 只能写 PARTIAL 或 UNKNOWN，
-            结算级评估不得使用 EXACT/INFERRED。""";
+            结算级评估不得使用 EXACT/INFERRED。""" + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE;
 
     static String buildUserContent(
             final List<TeamAutopsyStats> stats,
@@ -78,7 +80,7 @@ public final class TeamAutopsyPromptBuilder {
                     .append(' ').append(PromptDataQuoter.quote(s.tankClass(), "未知"))
                     .append(' ').append(s.tankTier().isBlank() ? "未知" : s.tankTier()).append("级")
                     .append(" | 输出").append(s.damageDealt())
-                    .append(" 承伤").append(s.damageReceived())
+                    .append(" 损失血量").append(s.damageReceived())
                     .append(" 助攻").append(s.damageAssisted())
                     .append(" 格挡").append(s.damageBlocked())
                     .append(" 击杀").append(s.kills())

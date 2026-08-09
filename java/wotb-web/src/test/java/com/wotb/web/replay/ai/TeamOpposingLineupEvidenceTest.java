@@ -54,7 +54,7 @@ class TeamOpposingLineupEvidenceTest {
         final String content = TeamAiPromptBuilder.single(context()).content();
 
         assertTrue(content.contains("OPPOSING_TEAM_AUTHORITATIVE_RESULT（对方合计·权威结算）"), content);
-        // 两名对手：2100+800 输出、1500+600 承伤、2+1 击杀、1 名存活
+        // 两名对手：2100+800 输出、1500+600 损失血量、2+1 击杀、1 名存活
         assertTrue(content.contains("opponentCount=2"), content);
         assertTrue(content.contains("finalDamage=2900"), content);
         assertTrue(content.contains("damageReceived=2100"), content);

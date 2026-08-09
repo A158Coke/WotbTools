@@ -87,7 +87,7 @@ class TacticalReviewPromptBuilderTest {
                 Map.of("damageDealt", 300.0, "damageReceived", 100.0),
                 Map.of("localNumbersBefore", "4v3", "localNumbersAfter", "2v4"),
                 DecodeConfidence.EXACT, EvidencePriority.IMPORTANT,
-                EvidenceProvenance.BACKEND_SKILL, "换血：输出 300 / 承伤 100");
+                EvidenceProvenance.BACKEND_SKILL, "换血：输出 300 / 损失血量 100");
         final List<HpMomentumSkill.HpMomentumSample> series = List.of(
                 new HpMomentumSkill.HpMomentumSample(0f, Map.of(), Map.of(), 4000, 4000, 0, 1.0, 8),
                 new HpMomentumSkill.HpMomentumSample(60f, Map.of(), Map.of(), 4000, 3600, 400, 1.0, 8),

@@ -82,7 +82,7 @@ public final class EngagementTradeSkill {
 
             final DecodeConfidence confidence = worst(e.confidence(), before, after);
             final boolean material = e.damageDealt() + e.damageReceived() >= MATERIAL_TRADE_DAMAGE;
-            final String summary = String.format("换血：输出 %d / 承伤 %d，局部 %s → %s",
+            final String summary = String.format("换血：输出 %d / 损失血量 %d，局部 %s → %s",
                     e.damageDealt(), e.damageReceived(),
                     labels.get("localNumbersBefore"), labels.get("localNumbersAfter"));
             result.add(new AiEvidence(

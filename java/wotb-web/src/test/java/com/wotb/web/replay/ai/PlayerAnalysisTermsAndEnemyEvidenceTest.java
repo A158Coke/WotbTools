@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 四类输出缺陷的回归测试：
  * <ol>
  *   <li>friendly 被理解成「朋友」——证据里的英文段头必须带中文注解，prompt 必须钉死 FRIENDLY = 友方；</li>
- *   <li>敌方阵容信息缺失——逐车证据必须含承伤/助攻/格挡/命中，prompt 必须要求逐车分析；</li>
+ *   <li>敌方阵容信息缺失——逐车证据必须含损失血量/助攻/格挡/命中，prompt 必须要求逐车分析；</li>
  *   <li>双方对炮明细——必须来自事件流逐次伤害，覆盖未被击杀的对手，并带权威坦克名称；</li>
  *   <li>英文术语泄漏（favourable / MID GAME 等）——证据里的枚举必须以中文呈现。</li>
  * </ol>
@@ -79,7 +79,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         assertTrue(line.contains("坦克: \"SPHT\""), line);
         assertTrue(line.contains("车种: Heavy tank"), line);
         assertTrue(line.contains("输出2100"), line);
-        assertTrue(line.contains("承伤1500"), line);
+        assertTrue(line.contains("损失血量1500"), line);
         assertTrue(line.contains("助攻300"), line);
         assertTrue(line.contains("格挡900"), line);
         assertTrue(line.contains("击杀2"), line);
