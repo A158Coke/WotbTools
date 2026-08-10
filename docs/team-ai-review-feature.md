@@ -112,7 +112,26 @@ Enemy-only damage 不得延长 Team phase。
 
 ## 8. Result Contract
 
-`POST /api/replay/analyze` 响应仅包含 `{ analysis }`（AI 复盘正文）。
+`POST /api/replay/analyze` 已由同步 JSON 改为 **SSE 流式**（`text/event-stream`，旧同步端点不保留），
+`ReplaySseWriter` 序列化（自定 JSON event，`data` 为 JSON）：
+
+| event | data | 说明 |
+|-------|------|------|
+| `call1_start` | `{}` | Call #1（赛前战略基线）开始 |
+| `call1_done` | `{}` | Call #1 结束（真实发起调用时必发，无论成败） |
+| `evidence_done` | `{}` | 后端证据分析完成 |
+| `call2_token` | `{"delta":"..."}` | 主复盘 token 增量 |
+| `autopsy_start` | `{}` | Team Autopsy 开始 |
+| `autopsy_done` | `{}` | Team Autopsy 结束 |
+| `done` | `{"analysis":"...","preBattleSection":"..."}` | 全部完成；`preBattleSection` 为 null 时输出 JSON null |
+| `error` | `{"code":"AI_..."}` | 流中途失败（稳定错误码） |
+
+异常传达规则：流开始前（未发送任何事件）的失败由 `@ExceptionHandler` 映射稳定
+HTTP 错误码（400/422/502/503）；流开始后经 `error` 事件传达，客户端断开时终止
+上游调用不向已断开的连接写入。`AiChatGateway.stream` 单次尝试不流内重试，
+`AI_TIMEOUT` / `AI_CANCELLED`（`correlationId` cancel）语义与同步 `chat()` 一致；
+同步测试路径委托流式实现（`AiReviewStreamListener.NOOP`）。
+
 历史上响应的四类计数（`analysisUnitCount` / `analyzedUnitCount` /
 `omittedAnalysisUnitCount` / `unavailableAnalysisUnitCount`）、`files`、
 `analyses`、`keyEvents`、`limitations` 等统计/诊断字段均无消费者

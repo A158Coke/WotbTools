@@ -11,6 +11,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.LongSupplier;
 
 import com.openai.core.JsonValue;
@@ -27,12 +28,14 @@ import jakarta.annotation.PreDestroy;
 import okhttp3.Call;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
@@ -329,6 +332,190 @@ public class SpringAiChatGateway implements AiChatGateway {
                 upstreamSample.stop(aiUpstreamDuration);
             }
         }
+    }
+
+    @Override
+    public AiChatResponse stream(final AiChatRequest request, final StreamConsumer consumer) {
+        if (chatModel == null) {
+            throw new AiNotConfiguredException();
+        }
+        final String correlationId = StringUtils.hasText(request.correlationId())
+                ? request.correlationId()
+                : (StringUtils.hasText(AiRequestContext.correlationId())
+                        ? AiRequestContext.correlationId() : UUID.randomUUID().toString());
+        // Optional external cancellation (client abort): cancels the in-flight
+        // upstream stream and ends the flow with AI_CANCELLED.
+        final AiCancellationToken cancellation = AiRequestContext.cancellationToken();
+        final String model = StringUtils.hasText(request.model()) ? request.model() : defaultModel;
+        final boolean metrics = meterRegistry != null;
+        final Timer.Sample upstreamSample = metrics ? Timer.start(meterRegistry) : null;
+        final Prompt prompt = buildPrompt(request, model);
+        final long requestCallTimeoutNanos = request.callTimeoutSec() != null
+                ? Math.min(request.callTimeoutSec() * 1_000_000_000L, callTimeoutNanos)
+                : callTimeoutNanos;
+        final long deadlineNanos = nanoTimeSource.getAsLong() + requestCallTimeoutNanos;
+        // Streaming is a single attempt by design: no in-stream retry, a failure
+        // ends the stream and keeps whatever has already been emitted.
+        int retryCount = 0;
+        try {
+            final long remainingNanos = deadlineNanos - nanoTimeSource.getAsLong();
+            if (remainingNanos <= 0) {
+                throw finishFailure(
+                        new AiUpstreamException("AI_TIMEOUT", null, correlationId),
+                        retryCount, request, metrics);
+            }
+            if (cancellation != null && cancellation.isCancelled()) {
+                // Client aborted before the stream started: do not send a new
+                // upstream request at all.
+                throw finishFailure(
+                        new AiUpstreamException("AI_CANCELLED", null, correlationId),
+                        retryCount, request, metrics);
+            }
+            if (metrics) {
+                meterRegistry.counter(REQUESTS, "mode", request.analysisMode()).increment();
+            }
+            final AttemptBudgetContext context = new AttemptBudgetContext(cancellation);
+            if (cancellation != null) {
+                cancellation.attach(context);
+            }
+            activeContext.set(context);
+            final ScheduledFuture<?> watchdog =
+                    scheduleBudgetWatchdog(context, remainingNanos);
+            try {
+                attemptStartHook.beforeAttempt(context);
+                final StringBuilder text = new StringBuilder();
+                final AtomicReference<ChatResponse> lastResponse = new AtomicReference<>();
+                chatModel.stream(prompt)
+                        .doOnNext(response -> {
+                            if (context.isExpired()
+                                    || nanoTimeSource.getAsLong() >= deadlineNanos) {
+                                throw new StreamInterruptedMarker("AI_TIMEOUT");
+                            }
+                            if (context.isCancelled()) {
+                                throw new StreamInterruptedMarker("AI_CANCELLED");
+                            }
+                            final String delta = streamDelta(response);
+                            if (StringUtils.hasText(delta)) {
+                                text.append(delta);
+                                try {
+                                    consumer.onDelta(delta);
+                                } catch (final RuntimeException sinkError) {
+                                    throw new ConsumerAbortException(sinkError);
+                                }
+                            }
+                            lastResponse.set(response);
+                        })
+                        .blockLast();
+                if (context.isExpired() || nanoTimeSource.getAsLong() >= deadlineNanos) {
+                    // Deadline passed while the stream was being drained: never
+                    // report success, never record usage, end as AI_TIMEOUT.
+                    throw new AiUpstreamException("AI_TIMEOUT", null, correlationId);
+                }
+                if (context.isCancelled()) {
+                    // Client aborted while the stream was being drained.
+                    throw new AiUpstreamException("AI_CANCELLED", null, correlationId);
+                }
+                if (text.isEmpty()) {
+                    throw providerFailure(null, "AI_EMPTY_RESPONSE", request.analysisMode(),
+                            correlationId, "blank streaming completion content");
+                }
+                final ChatResponse aggregated =
+                        toAggregatedResponse(text.toString(), lastResponse.get(), model);
+                if (metrics) {
+                    meterRegistry.counter(SUCCESS, "mode", request.analysisMode()).increment();
+                    recordUsageMetrics(aggregated, request.analysisMode());
+                    recordRetryOutcome(request.analysisMode(), "no_retry");
+                }
+                return toResponse(aggregated, request, model, correlationId);
+            } catch (final AiUpstreamException e) {
+                throw finishFailure(e, retryCount, request, metrics);
+            } catch (final StreamInterruptedMarker marker) {
+                throw finishFailure(new AiUpstreamException(
+                        marker.code, null, correlationId, marker), retryCount, request, metrics);
+            } catch (final ConsumerAbortException abort) {
+                // The consumer (SSE sink) aborted the stream: propagate its
+                // exception untouched so the caller can react to it.
+                throw abort.getCause();
+            } catch (final OpenAIException e) {
+                final AiUpstreamException failure = new AiUpstreamException(
+                        classify(e), providerStatus(e), correlationId, e);
+                logProviderFailure(e, failure.code(), request.analysisMode(), correlationId);
+                throw finishFailure(resolveStopped(failure, context, correlationId),
+                        retryCount, request, metrics);
+            } catch (final RuntimeException e) {
+                if (context.isCancelled()) {
+                    throw finishFailure(new AiUpstreamException(
+                            "AI_CANCELLED", null, correlationId, e), retryCount, request, metrics);
+                }
+                if (context.isExpired()) {
+                    throw finishFailure(new AiUpstreamException(
+                            "AI_TIMEOUT", null, correlationId, e), retryCount, request, metrics);
+                }
+                throw finishFailure(new AiUpstreamException(
+                        "AI_UPSTREAM_UNAVAILABLE", null, correlationId, e),
+                        retryCount, request, metrics);
+            } finally {
+                watchdog.cancel(false);
+                if (cancellation != null) {
+                    cancellation.detach(context);
+                }
+                context.clear();
+                activeContext.remove();
+            }
+        } finally {
+            if (upstreamSample != null) {
+                upstreamSample.stop(aiUpstreamDuration);
+            }
+        }
+    }
+
+    /**
+     * A client abort or budget expiry that happens to coincide with an upstream
+     * failure is the binding constraint: never report the raw provider error.
+     */
+    private static AiUpstreamException resolveStopped(final AiUpstreamException failure,
+                                                      final AttemptBudgetContext context,
+                                                      final String correlationId) {
+        if (context.isCancelled()) {
+            return new AiUpstreamException("AI_CANCELLED", null, correlationId, failure);
+        }
+        if (context.isExpired()) {
+            return new AiUpstreamException("AI_TIMEOUT", null, correlationId, failure);
+        }
+        return failure;
+    }
+
+    private static String streamDelta(final ChatResponse response) {
+        if (response == null || response.getResult() == null
+                || response.getResult().getOutput() == null) {
+            return "";
+        }
+        final String delta = response.getResult().getOutput().getText();
+        return delta != null ? delta : "";
+    }
+
+    /**
+     * Aggregates a drained stream into a single Spring AI response: the full
+     * text plus the usage / model / finish reason of the last chunk (DeepSeek
+     * returns usage and finish reason only on the final streaming chunk).
+     */
+    private ChatResponse toAggregatedResponse(final String text,
+                                              final ChatResponse last,
+                                              final String model) {
+        final ChatResponseMetadata metadata = last != null ? last.getMetadata() : null;
+        final Generation generation;
+        if (last != null && last.getResult() != null
+                && last.getResult().getMetadata() != null) {
+            generation = new Generation(
+                    new AssistantMessage(text), last.getResult().getMetadata());
+        } else {
+            generation = new Generation(new AssistantMessage(text));
+        }
+        return ChatResponse.builder()
+                .generations(List.of(generation))
+                .metadata(metadata != null ? metadata
+                        : ChatResponseMetadata.builder().model(model).build())
+                .build();
     }
 
     private AiUpstreamException finishFailure(final AiUpstreamException failure,
@@ -671,6 +858,35 @@ public class SpringAiChatGateway implements AiChatGateway {
             return "empty provider error body";
         }
         return "[PROVIDER_BODY_REDACTED]";
+    }
+
+    /**
+     * Internal signal raised inside the stream drain loop when the total budget
+     * expired or the client cancelled mid-stream, so the stream terminates
+     * immediately instead of waiting for the next upstream chunk.
+     */
+    private static final class StreamInterruptedMarker extends RuntimeException {
+        private final String code;
+
+        StreamInterruptedMarker(final String code) {
+            super(code);
+            this.code = code;
+        }
+    }
+
+    /**
+     * Wraps an exception thrown by the {@link StreamConsumer} so the stream
+     * drain loop can distinguish "caller aborted" from upstream failures.
+     */
+    private static final class ConsumerAbortException extends RuntimeException {
+        ConsumerAbortException(final RuntimeException cause) {
+            super(cause);
+        }
+
+        @Override
+        public RuntimeException getCause() {
+            return (RuntimeException) super.getCause();
+        }
     }
 
 }

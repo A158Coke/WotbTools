@@ -767,6 +767,18 @@
         "analyze_multi_btn": "AI 多场复盘 ({n})",
         "cancel_btn": "取消分析",
         "analysis_title_player": "AI 复盘",
+        "prebattle": {
+            "title": "赛前预测",
+            "collapse": "收起",
+            "expand": "展开"
+        },
+        "stages": {
+            "call1": "赛前预测中…",
+            "evidence": "证据分析中…",
+            "call2": "战术复盘生成中…",
+            "autopsy": "团队剖析中…",
+            "done": "完成"
+        },
         "ai_error_http": "AI 分析失败（HTTP {status}）",
         "auth_required": "需要登录，正在跳转登录……",
         "forbidden": "无权限：该功能需要 wotbtools-user 或 wotbtools-admin 角色",

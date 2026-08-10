@@ -110,7 +110,13 @@ public class AiReplayAnalysisService {
 
     public AnalyzeResult analyzeMulti(final List<Battle> battles,
                                       final AllowedLanguage language) {
-        return playerService.analyzeMulti(battles, language);
+        return analyzeMulti(battles, language, AiReviewStreamListener.NOOP);
+    }
+
+    public AnalyzeResult analyzeMulti(final List<Battle> battles,
+                                      final AllowedLanguage language,
+                                      final AiReviewStreamListener listener) {
+        return playerService.analyzeMulti(battles, language, listener);
     }
 
     public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result) {
@@ -120,6 +126,12 @@ public class AiReplayAnalysisService {
     public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result,
                                                  final AllowedLanguage language) {
         return playerService.analyzePlayerOrFallback(result, language);
+    }
+
+    public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result,
+                                                 final AllowedLanguage language,
+                                                 final AiReviewStreamListener listener) {
+        return playerService.analyzePlayerOrFallback(result, language, listener);
     }
 
     public SingleTeamBattleAnalysisContext buildSingleTeamContext(
@@ -142,10 +154,14 @@ public class AiReplayAnalysisService {
 
     public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups,
                                                final AllowedLanguage language) {
-        return teamService.analyzeTeamGroups(groups, language);
+        return analyzeTeamGroups(groups, language, AiReviewStreamListener.NOOP);
     }
 
-    /**
+    public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups,
+                                               final AllowedLanguage language,
+                                               final AiReviewStreamListener listener) {
+        return teamService.analyzeTeamGroups(groups, language, listener);
+    }
 
     /**
      * 委托 {@link AnalysisUnitAssembler#findRecorder} 以保持原有静态公共契约。

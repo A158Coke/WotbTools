@@ -124,7 +124,7 @@ class TeamAiPromptBuilderTest {
                 new SingleTeamBattleAnalysisContext(
                         base.analysisUnitId(), base.battleId(), base.fileName(),
                         base.battleCategory(), base.battle(), 1, features,
-                        base.coverage(), base.limitations());
+                        base.coverage(), base.limitations(), null);
 
         final TeamAiPromptBuilder.PromptInput input =
                 TeamAiPromptBuilder.single(context);
@@ -181,7 +181,7 @@ class TeamAiPromptBuilderTest {
                 new SingleTeamBattleAnalysisContext(
                         base.analysisUnitId(), base.battleId(), base.fileName(),
                         base.battleCategory(), base.battle(), 1, features,
-                        base.coverage(), base.limitations());
+                        base.coverage(), base.limitations(), null);
 
         final TeamAiPromptBuilder.PromptInput input =
                 TeamAiPromptBuilder.single(context);
@@ -740,7 +740,7 @@ class TeamAiPromptBuilderTest {
                 TeamFeatureCoverage.empty(), List.of(), true);
         final SingleTeamBattleAnalysisContext context = new SingleTeamBattleAnalysisContext(
                 "unit-A", null, "f.wotbreplay", null, battle, 1, features,
-                new ReplayCoverage(false, 0, 0, 0, 0, 0, 0.0, Map.of()), List.of());
+                new ReplayCoverage(false, 0, 0, 0, 0, 0, 0.0, Map.of()), List.of(), null);
 
         final String content = TeamAiPromptBuilder.single(context).content();
 
@@ -886,7 +886,7 @@ class TeamAiPromptBuilderTest {
                 TeamFeatureCoverage.empty(), List.of(), true);
         final SingleTeamBattleAnalysisContext context = new SingleTeamBattleAnalysisContext(
                 "unit-A", null, "f.wotbreplay", null, battle, perspectiveTeam, features,
-                null, List.of());
+                null, List.of(), null);
         return TeamAiPromptBuilder.single(
                 context, List.of(), prior, null, Integer.MAX_VALUE).content();
     }
@@ -1000,7 +1000,7 @@ class TeamAiPromptBuilderTest {
                 new SingleTeamBattleAnalysisContext(
                         base.analysisUnitId(), base.battleId(), base.fileName(),
                         base.battleCategory(), base.battle(), 1, features,
-                        base.coverage(), base.limitations());
+                        base.coverage(), base.limitations(), null);
 
         final TeamAiPromptBuilder.PromptInput input =
                 TeamAiPromptBuilder.single(context);
@@ -1040,7 +1040,7 @@ class TeamAiPromptBuilderTest {
                 new SingleTeamBattleAnalysisContext(
                         base.analysisUnitId(), base.battleId(), base.fileName(),
                         base.battleCategory(), base.battle(), 1, featuresWithLim,
-                        base.coverage(), base.limitations());
+                        base.coverage(), base.limitations(), null);
 
         final TeamAiPromptBuilder.PromptInput input =
                 TeamAiPromptBuilder.single(context);
@@ -1076,7 +1076,7 @@ class TeamAiPromptBuilderTest {
                 new SingleTeamBattleAnalysisContext(
                         base.analysisUnitId(), base.battleId(), base.fileName(),
                         base.battleCategory(), base.battle(), 1, featuresWithLim,
-                        base.coverage(), base.limitations());
+                        base.coverage(), base.limitations(), null);
 
         final TeamAiPromptBuilder.PromptInput input =
                 TeamAiPromptBuilder.single(context);
@@ -1199,7 +1199,7 @@ class TeamAiPromptBuilderTest {
         final SingleTeamBattleAnalysisContext ctxA = new SingleTeamBattleAnalysisContext(
                 base.analysisUnitId(), base.battleId(), base.fileName(),
                 base.battleCategory(), base.battle(), 1, featuresA,
-                base.coverage(), base.limitations());
+                base.coverage(), base.limitations(), null);
         final List<TeamBattleAnalysisSummary> summaries = List.of(
                 new TeamBattleAnalysisSummary(
                         "unit-A", null, "a.wotbreplay", "map1", null, 300.0,

@@ -767,6 +767,18 @@
         "analyze_multi_btn": "AI по сериям ({n})",
         "cancel_btn": "Отменить анализ",
         "analysis_title_player": "AI Review",
+        "prebattle": {
+            "title": "Прогноз до боя",
+            "collapse": "Свернуть",
+            "expand": "Развернуть"
+        },
+        "stages": {
+            "call1": "Предбоевой прогноз…",
+            "evidence": "Анализ улик…",
+            "call2": "Генерация тактического разбора…",
+            "autopsy": "Разбор команды…",
+            "done": "Готово"
+        },
         "ai_error_http": "Ошибка AI-анализа (HTTP {status})",
         "auth_required": "Требуется вход, перенаправление…",
         "forbidden": "Нет доступа: функция требует роли wotbtools-user или wotbtools-admin",

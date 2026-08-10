@@ -166,8 +166,9 @@ public class DefaultTeamBattleFeatureExtractor {
         final float phaseEndClock = battleEndResolved.battleEndRelativeSec() != null
                 ? battleEndResolved.battleEndRelativeSec() : Float.NaN;
         final List<BattlePhaseSummary> battlePhases = hasUsableTimedEvent
-                ? BattlePhaseSummary.buildRelativePhases(
-                        firstContactTime, phaseEndClock)
+                ? BattlePhaseSummary.buildRelativePhasesWithSurvival(
+                        firstContactTime, phaseEndClock,
+                        BattlePhaseSummary.SurvivalTimeline.fromBattleResults(battle, perspectiveTeam))
                 : List.of();
         final DecodeConfidence eventEndConfidence = findEventEndConfidence(events, resolutionByEvent);
         final List<KeyBattleEvent> keyEvents = buildKeyEvents(

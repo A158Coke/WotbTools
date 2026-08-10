@@ -352,6 +352,35 @@ class AiReplayAnalysisServiceTest {
     }
 
     @Test
+    void teamAnalyzeGroupsExposesRenderedPreBattleSectionWhenPriorAvailable() {
+        gateway.preBattleCompletionText = PRIOR_JSON;
+        final var service = startService();
+        final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
+                teamResult("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
+        final var result = service.analyzeTeamGroups(groups);
+        assertEquals("team review", result.analysis().analysis(),
+                "analysis must be unaffected by preBattleSection");
+        final String section = result.preBattleSection();
+        assertNotNull(section, "Call #1 prior must be rendered when available");
+        assertTrue(section.contains("赛前预测"), "section must be user-visible Chinese");
+        assertTrue(section.contains("我方（队伍-"), "perspective team must be rendered as 我方 with team label");
+        assertTrue(section.contains("重坦正面推进"), "teamA strengths must be readable");
+        assertTrue(section.contains("关键对阵"), "key matchups must be present");
+        assertFalse(section.contains("PRE-BATTLE"), "machine section header must be removed");
+    }
+
+    @Test
+    void teamAnalyzeGroupsNullSectionWhenPriorUnavailable() {
+        final var service = startService();
+        final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
+                teamResult("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
+        final var result = service.analyzeTeamGroups(groups);
+        assertEquals("team review", result.analysis().analysis());
+        assertNull(result.preBattleSection(),
+                "failed Call #1 must not block the review, section stays null");
+    }
+
+    @Test
     void singletonDuplicateLimitationAppearsInRequestBody() {
         gateway.nextCompletionText = "test analysis";
         final var service = startService();
@@ -373,7 +402,7 @@ class AiReplayAnalysisServiceTest {
         final var context = new SingleTeamBattleAnalysisContext(
                 "dup-test", null, "dup-test.wotbreplay",
                 BattleCategory.TRAINING, new Battle(), 1,
-                features, null, List.of());
+                features, null, List.of(), null);
         service.analyzeSingleTeamContext(context);
         final String body = lastBody();
         assertTrue(body.contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
@@ -506,7 +535,7 @@ class AiReplayAnalysisServiceTest {
         final var context = new SingleTeamBattleAnalysisContext(
                 "dup-entry", null, "dup-entry.wotbreplay",
                 BattleCategory.TRAINING, new Battle(), 1,
-                features, null, List.of());
+                features, null, List.of(), null);
         service.analyzeSingleTeamContext(context);
         final String body = lastBody();
         assertTrue(body.contains("unitLimitations="),
@@ -537,7 +566,7 @@ class AiReplayAnalysisServiceTest {
         final var context = new SingleTeamBattleAnalysisContext(
                 "dup-test", null, "dup-test.wotbreplay",
                 BattleCategory.TRAINING, new Battle(), 1,
-                features, null, List.of());
+                features, null, List.of(), null);
         service.analyzeSingleTeamContext(context);
         final String body = lastBody();
         assertTrue(body.contains("unitLimitations=["),
@@ -579,9 +608,9 @@ class AiReplayAnalysisServiceTest {
                         new ConservativeDeepSeekTokenEstimator(), "test-model",
                         30000, 131072, 8192, 1000, true, "high", 315)));
         doReturn(new AnalyzeResult("summary analysis"))
-                .when(service).analyze(any(), any(), any(AllowedLanguage.class));
+                .when(service).analyze(any(), any(), any(AllowedLanguage.class), any());
         service.analyzePlayerOrFallback(randomResultWithoutReconstruction());
-        verify(service, times(1)).analyze(any(), any(), any(AllowedLanguage.class));
+        verify(service, times(1)).analyze(any(), any(), any(AllowedLanguage.class), any());
         verify(service, never()).analyzePlayerContext(any());
     }
 

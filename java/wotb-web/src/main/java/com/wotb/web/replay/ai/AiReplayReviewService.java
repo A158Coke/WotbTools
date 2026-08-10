@@ -82,6 +82,18 @@ public class AiReplayReviewService {
 
     public AnalyzeResponse analyze(final MultipartFile[] files,
                                    final AllowedLanguage language) throws IOException {
+        return analyzeStreaming(files, language, AiReviewStreamListener.NOOP);
+    }
+
+    /**
+     * 流式变体：与 {@link #analyze(MultipartFile[], AllowedLanguage)} 完全相同的
+     * 校验/指标/异常语义，额外通过 {@code listener} 广播阶段事件与主复盘 token
+     * 增量。同步路径委托本方法（NOOP listener），保证单一实现不回归。
+     */
+    public AnalyzeResponse analyzeStreaming(final MultipartFile[] files,
+                                            final AllowedLanguage language,
+                                            final AiReviewStreamListener listener)
+            throws IOException {
         final boolean metrics = meterRegistry != null;
         final Timer.Sample sample = metrics ? Timer.start(meterRegistry) : null;
         if (metrics) {
@@ -91,7 +103,7 @@ public class AiReplayReviewService {
         String result = "success";
         String errorType = null;
         try {
-            return analyzeInternal(files, language);
+            return analyzeInternal(files, language, listener);
         } catch (final AiNotConfiguredException e) {
             result = "rejected";
             errorType = "AI_NOT_CONFIGURED";
@@ -144,7 +156,8 @@ public class AiReplayReviewService {
     }
 
     private AnalyzeResponse analyzeInternal(final MultipartFile[] files,
-                                            final AllowedLanguage language) throws IOException {
+                                            final AllowedLanguage language,
+                                            final AiReviewStreamListener listener) throws IOException {
         if (files == null || files.length == 0) throw new IllegalArgumentException("NO_REPLAY_FILES");
         validateBatchSize(files.length);
         long totalSize = 0;
@@ -220,30 +233,41 @@ public class AiReplayReviewService {
             throw new IllegalArgumentException("NO_BATTLE_DATA");
         }
         return switch (plan.mode()) {
-            case SINGLE_PLAYER_BATTLE -> new AnalyzeResponse(
-                    harnessOrFallback(
-                            analyzableGroups.getFirst().representative(), language).analysis());
+            case SINGLE_PLAYER_BATTLE -> {
+                final TacticalReviewHarness.HarnessOutcome outcome = harnessOrFallback(
+                        analyzableGroups.getFirst().representative(), language, listener);
+                yield new AnalyzeResponse(
+                        outcome.result().analysis(),
+                        PreBattleSectionRenderer.render(outcome.preBattlePrior()));
+            }
             case MULTI_PLAYER_BATTLE -> {
                 final var battles = analyzableGroups.stream()
                         .map(ReplayPerspectiveGroup::representative)
                         .map(ReplayProcessingResult::battle)
                         .toList();
                 yield new AnalyzeResponse(
-                        aiAnalysisService.analyzeMulti(battles, language).analysis());
+                        aiAnalysisService.analyzeMulti(battles, language, listener).analysis());
             }
-            case SINGLE_TEAM_BATTLE, MULTI_TEAM_BATTLE -> new AnalyzeResponse(
-                    aiAnalysisService.analyzeTeamGroups(analyzableGroups, language)
-                            .analysis().analysis());
+            case SINGLE_TEAM_BATTLE, MULTI_TEAM_BATTLE -> {
+                final TeamAnalyzeResult teamResult = aiAnalysisService
+                        .analyzeTeamGroups(analyzableGroups, language, listener);
+                yield new AnalyzeResponse(
+                        teamResult.analysis().analysis(),
+                        teamResult.preBattleSection());
+            }
             case NONE -> throw new IllegalArgumentException("NO_BATTLE_DATA");
         };
     }
 
-    private AnalyzeResult harnessOrFallback(final ReplayProcessingResult representative,
-                                            final AllowedLanguage language) {
+    private TacticalReviewHarness.HarnessOutcome harnessOrFallback(
+            final ReplayProcessingResult representative,
+            final AllowedLanguage language,
+            final AiReviewStreamListener listener) {
         if (tacticalReviewHarness != null) {
-            return tacticalReviewHarness.analyze(representative, language);
+            return tacticalReviewHarness.analyzeWithPrior(representative, language, listener);
         }
-        return aiAnalysisService.analyzePlayerOrFallback(representative, language);
+        return new TacticalReviewHarness.HarnessOutcome(
+                aiAnalysisService.analyzePlayerOrFallback(representative, language, listener), null);
     }
 
     private static String unresolvedTeamCode(final List<ReplayPerspectiveGroup> groups) {

@@ -148,7 +148,7 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 - `POST /api/replay/reconstruct-batch` — 批量重建（单文件 ≤ 20 MiB、请求合计 ≤ 200 MiB），返回 `ReplayBatchProcessingResult`（含 `suggestedAnalysisMode`、逐文件 `ReplayProcessingResult`）。
 - `POST /api/replay/process?reconstruct=false` — 通用批量处理，可选开启重建。
-- `POST /api/replay/analyze` — 上传 `files[]` 生成 AI 战术复盘；支持 `SINGLE/MULTI_PLAYER_BATTLE` 与 `SINGLE/MULTI_TEAM_BATTLE`。表单字段 `lang`（必填，白名单 `zh`/`en`/`ru`）控制 AI 复盘输出语言；缺失时返回 `400`，空白或未知值返回 `400 UNKNOWN_LOCALE`。可选表单字段 `correlationId` 用于客户端取消；`POST /api/replay/analyze/cancel?correlationId=...` 中断 in-flight 上游调用（返回 `204`，未注册返回 `404`），被取消请求稳定返回 `AI_CANCELLED`。
+- `POST /api/replay/analyze` — 上传 `files[]` 生成 AI 战术复盘；支持 `SINGLE/MULTI_PLAYER_BATTLE` 与 `SINGLE/MULTI_TEAM_BATTLE`。表单字段 `lang`（必填，白名单 `zh`/`en`/`ru`）控制 AI 复盘输出语言；缺失时返回 `400`，空白或未知值返回 `400 UNKNOWN_LOCALE`。可选表单字段 `correlationId` 用于客户端取消；`POST /api/replay/analyze/cancel?correlationId=...` 中断 in-flight 上游调用（返回 `204`，未注册返回 `404`），被取消请求稳定返回 `AI_CANCELLED`。**响应为 SSE 流式（breaking change，旧同步 JSON 端点不保留）**：事件 `call1_start` / `call1_done` / `evidence_done` / `call2_token`（`{"delta"}`）/ `autopsy_start` / `autopsy_done` / `done`（`{"analysis","preBattleSection"}`）/ `error`（`{"code"}`，流中途失败）；流开始前的失败由 HTTP 状态码 + 稳定错误码文本返回（400/422/502/503 语义不变）。完整协议见 `docs/team-ai-review-feature.md` §8。
 
 **策略**：上传文件先统一校验扩展名、空文件和单文件大小；通过预校验后，解析/重建错误才按文件隔离。系统执行 SHA-256 精确去重，并按 battle + perspective 分组。随机战斗分析录像者个人；训练房/联赛分析录像者所在整队，录像者只用于解析 `perspectiveTeam`。同场同队回放只选一个代表，同场双方保持独立；未点亮敌人仍未知，不能跨录像补全视野。
 

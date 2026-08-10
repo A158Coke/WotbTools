@@ -10,6 +10,7 @@ import com.wotb.core.processing.ReplayBatchProcessingResult;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.web.replay.ai.AiReplayReviewService;
+import com.wotb.web.replay.ai.AiReviewStreamListener;
 import com.wotb.web.replay.ai.AllowedLanguage;
 import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.ai.gateway.AiCancellationToken;
@@ -30,6 +31,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -53,6 +55,12 @@ public class ReconstructionController {
     private final AiReplayReviewService reviewService;
     private final AiCancellationRegistry cancellationRegistry;
 
+    /**
+     * SSE 连接超时：对齐 nginx analyze 420s read timeout，避免服务端在代理之前
+     * 提前关闭长流。
+     */
+    static final long SSE_TIMEOUT_MS = 420_000L;
+
     @Autowired(required = false)
     private ReplayUsageMetrics usageMetrics;
 
@@ -65,8 +73,16 @@ public class ReconstructionController {
         this.cancellationRegistry = cancellationRegistry;
     }
 
+    /**
+     * AI 复盘（SSE 流式）：阶段事件 + 主复盘 token 逐段到达，{@code done} 事件
+     * 携带最终 {@code analysis} / {@code preBattleSection}（阶段 3 双字段契约）。
+     * <p>异常传达规则：流开始前（未发送任何事件）的失败抛出原异常，由
+     * {@code @ExceptionHandler} 映射为稳定 HTTP 错误码（400/422/502/503）；
+     * 流开始后的失败通过 {@code error} 事件携带稳定错误码传达。客户端断开时
+     * 立即调用 cancel 端点语义（取消上游调用），不向已断开的连接写入。</p>
+     */
     @PostMapping(value = ApiPaths.REPLAY_ANALYZE, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public AnalyzeResponse analyze(
+    public SseEmitter analyze(
             @RequestParam("files") final MultipartFile[] files,
             @RequestParam(name = "lang", required = true) final String lang,
             @RequestParam(name = "correlationId", required = false) final String correlationId)
@@ -81,11 +97,128 @@ public class ReconstructionController {
                 ? correlationId : UUID.randomUUID().toString();
         final AiCancellationToken cancellation = cancellationRegistry.register(requestId);
         AiRequestContext.set(requestId, cancellation);
+        final SseEmitter emitter = newAnalyzeEmitter();
+        final ReplaySseWriter writer = new ReplaySseWriter(emitter);
         try {
-            return reviewService.analyze(files, allowedLanguage);
+            final AnalyzeResponse response = reviewService.analyzeStreaming(
+                    files, allowedLanguage, new AiReviewStreamListener() {
+                        @Override
+                        public void onStage(final String stage) {
+                            try {
+                                writer.stage(stage);
+                            } catch (final IOException e) {
+                                throw new ClientDisconnectedException(e);
+                            }
+                        }
+
+                        @Override
+                        public void onToken(final String delta) {
+                            try {
+                                writer.token(delta);
+                            } catch (final IOException e) {
+                                throw new ClientDisconnectedException(e);
+                            }
+                        }
+                    });
+            writer.done(response);
+            emitter.complete();
+            return emitter;
+        } catch (final ClientDisconnectedException e) {
+            // 客户端已断开：终止上游调用（cancel 端点语义），不向已断开的连接写入。
+            cancellationRegistry.cancel(requestId);
+            quietComplete(emitter);
+            return emitter;
+        } catch (final RuntimeException e) {
+            if (writer.eventSent()) {
+                // 流已开始：用 error 事件传达稳定错误码（客户端断开时静默）。
+                try {
+                    writer.error(errorCodeOf(e));
+                } catch (final IOException ignored) {
+                    // 客户端同时断开：无意义，静默。
+                }
+                quietComplete(emitter);
+                return emitter;
+            }
+            // 流尚未开始：交给 @ExceptionHandler 映射稳定 HTTP 错误码。
+            throw e;
+        } catch (final IOException e) {
+            if (writer.eventSent()) {
+                try {
+                    writer.error(errorCodeOf(e));
+                } catch (final IOException ignored) {
+                    // 客户端同时断开：无意义，静默。
+                }
+                quietComplete(emitter);
+                return emitter;
+            }
+            throw e;
         } finally {
             AiRequestContext.clear();
             cancellationRegistry.unregister(requestId);
+        }
+    }
+
+    /**
+     * Package-private factory so tests can substitute a spy emitter; production
+     * timeout aligns with the nginx 420s read timeout.
+     */
+    SseEmitter newAnalyzeEmitter() {
+        return new SseEmitter(SSE_TIMEOUT_MS);
+    }
+
+    private static void quietComplete(final SseEmitter emitter) {
+        try {
+            emitter.complete();
+        } catch (final RuntimeException ignored) {
+            // 已 complete / 客户端已断开：静默。
+        }
+    }
+
+    /** 稳定错误码提取（与 {@code @ExceptionHandler} 映射一致）。 */
+    private static String errorCodeOf(final Throwable e) {
+        if (e instanceof AiUpstreamException upstream) {
+            return upstream.code();
+        }
+        if (e instanceof AiNotConfiguredException) {
+            return "AI_NOT_CONFIGURED";
+        }
+        if (e instanceof AiPromptBudgetExceededException) {
+            return "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE";
+        }
+        if (e instanceof UnsupportedReplayAnalysisModeException) {
+            return "UNSUPPORTED_BATTLE_CATEGORY";
+        }
+        if (e instanceof PerspectiveTeamNotResolvedException) {
+            return "PERSPECTIVE_TEAM_UNRESOLVED";
+        }
+        if (e instanceof ReplayFileCountExceededException) {
+            return "REPLAY_FILE_COUNT_EXCEEDED";
+        }
+        if (e instanceof MixedAnalysisScopesException) {
+            return "MIXED_ANALYSIS_SCOPES";
+        }
+        if (e instanceof MixedRandomBattleRecordersException) {
+            return "MIXED_RANDOM_BATTLE_RECORDERS";
+        }
+        if (e instanceof IllegalArgumentException) {
+            final String message = e.getMessage();
+            return message != null && !message.isBlank() ? message : "BAD_REQUEST";
+        }
+        return "AI_UPSTREAM_UNAVAILABLE";
+    }
+
+    /**
+     * 客户端断开信号：SSE 写入失败（IOException）在流式回调中包装为
+     * RuntimeException 以中断编排层，由 {@link #analyze} 统一处理。
+     */
+    private static final class ClientDisconnectedException extends RuntimeException {
+        ClientDisconnectedException(final IOException cause) {
+            super(cause);
+        }
+
+        @Override
+        public IOException getCause() {
+            return (IOException) super.getCause();
         }
     }
 

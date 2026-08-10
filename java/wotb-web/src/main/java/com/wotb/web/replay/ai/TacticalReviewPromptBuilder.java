@@ -7,7 +7,6 @@ import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.evidence.AiEvidence;
 import com.wotb.core.replay.evidence.EvidenceSkillResult;
-import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
@@ -90,6 +89,9 @@ public final class TacticalReviewPromptBuilder {
         boolean includeEvidence = evidence != null && evidence.hasContent();
         boolean includeEngagements = features != null
                 && features.engagements() != null && !features.engagements().isEmpty();
+        final String enemyPositionsSection =
+                EnemyLastKnownPositionsSection.renderPlayerSection(battle, recon);
+        boolean includeEnemyPositions = !enemyPositionsSection.isEmpty();
         boolean includePhases = features != null && features.phases() != null && !features.phases().isEmpty();
         boolean includeTop = !windows.isEmpty();
         boolean includeWindowDetail = !windows.isEmpty();
@@ -100,6 +102,7 @@ public final class TacticalReviewPromptBuilder {
 
         String content = assemble(baseContent, evidence, features, windows,
                 windowDetail, includeEvidence, includeEngagements,
+                includeEnemyPositions, enemyPositionsSection,
                 includePhases, includeTop, includeWindowDetail, battle);
         int estimated = estimate(estimator, TACTICAL_SYSTEM_PROMPT, content);
         boolean truncated = false;
@@ -112,6 +115,8 @@ public final class TacticalReviewPromptBuilder {
                 includeEvidence = false;
             } else if (includeEngagements) {
                 includeEngagements = false;
+            } else if (includeEnemyPositions) {
+                includeEnemyPositions = false;
             } else if (includePhases) {
                 includePhases = false;
             } else if (includeWindowDetail) {
@@ -124,6 +129,7 @@ public final class TacticalReviewPromptBuilder {
             truncated = true;
             content = assemble(baseContent, evidence, features, windows,
                     windowDetail, includeEvidence, includeEngagements,
+                    includeEnemyPositions, enemyPositionsSection,
                     includePhases, includeTop, includeWindowDetail, battle);
             estimated = estimate(estimator, TACTICAL_SYSTEM_PROMPT, content);
         }
@@ -144,6 +150,8 @@ public final class TacticalReviewPromptBuilder {
             final int windowDetail,
             final boolean includeEvidence,
             final boolean includeEngagements,
+            final boolean includeEnemyPositions,
+            final String enemyPositionsSection,
             final boolean includePhases,
             final boolean includeTop,
             final boolean includeWindowDetail,
@@ -160,11 +168,9 @@ public final class TacticalReviewPromptBuilder {
             }
         }
         if (includePhases && features != null && features.phases() != null && !features.phases().isEmpty()) {
-            sb.append("\n======================== BATTLE PHASE SUMMARY ========================\n");
-            for (final BattlePhaseSummary phase : features.phases()) {
-                sb.append("  ").append(PlayerAnalysisTerms.battleRange(phase.startTime(), phase.endTime()))
-                        .append(" ").append(PlayerAnalysisTerms.phaseLabel(phase.type())).append('\n');
-            }
+            sb.append("\n======================== BATTLE PHASE SUMMARY（阶段时间线·人数来自 battle_results 权威结算） ========================\n");
+            sb.append(BattlePhaseTimelineSection.AUTHORITATIVE_NOTE);
+            sb.append(BattlePhaseTimelineSection.renderPlayerRows(features.phases()));
         }
         if (includeEngagements && features != null
                 && features.engagements() != null && !features.engagements().isEmpty()) {
@@ -178,6 +184,9 @@ public final class TacticalReviewPromptBuilder {
                         .append(" | 置信度: ").append(PlayerAnalysisTerms.confidenceLabel(e.confidence()))
                         .append('\n');
             }
+        }
+        if (includeEnemyPositions && !enemyPositionsSection.isEmpty()) {
+            sb.append("\n\n").append(enemyPositionsSection);
         }
         if (includeEvidence && evidence != null) {
             sb.append("\n======================== TACTICAL EVIDENCE（Backend 确定性证据） ========================\n");
