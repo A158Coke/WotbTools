@@ -11,6 +11,7 @@ import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiReviewStreamListener;
+import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
 import com.wotb.web.replay.ai.AllowedLanguage;
 import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.ai.gateway.AiCancellationToken;
@@ -54,6 +55,7 @@ public class ReconstructionController {
     private final DefaultReplayProcessingFacade processingFacade;
     private final AiReplayReviewService reviewService;
     private final AiCancellationRegistry cancellationRegistry;
+    private final AiReviewWorkerExecutor workerExecutor;
 
     /**
      * SSE 连接超时：对齐 nginx analyze 420s read timeout，避免服务端在代理之前
@@ -67,26 +69,34 @@ public class ReconstructionController {
     public ReconstructionController(
             final DefaultReplayProcessingFacade processingFacade,
             final AiReplayReviewService reviewService,
-            final AiCancellationRegistry cancellationRegistry) {
+            final AiCancellationRegistry cancellationRegistry,
+            final AiReviewWorkerExecutor workerExecutor) {
         this.processingFacade = processingFacade;
         this.reviewService = reviewService;
         this.cancellationRegistry = cancellationRegistry;
+        this.workerExecutor = workerExecutor;
     }
 
     /**
      * AI 复盘（SSE 流式）：阶段事件 + 主复盘 token 逐段到达，{@code done} 事件
      * 携带最终 {@code analysis} / {@code preBattleSection}（阶段 3 双字段契约）。
-     * <p>异常传达规则：流开始前（未发送任何事件）的失败抛出原异常，由
-     * {@code @ExceptionHandler} 映射为稳定 HTTP 错误码（400/422/502/503）；
-     * 流开始后的失败通过 {@code error} 事件携带稳定错误码传达。客户端断开时
-     * 立即调用 cancel 端点语义（取消上游调用），不向已断开的连接写入。</p>
+     * <p>异步模型：request 线程只做白名单/文件参数校验，然后注册 cancellation、
+     * 创建 {@link SseEmitter}、注册生命周期回调并把完整 AI 复盘提交到
+     * {@link AiReviewWorkerExecutor}，立即返回 emitter——servlet request 线程
+     * 不被整个 AI Review 生命周期占住。真正的分析（含回放解析与上游流式调用）
+     * 在 worker 线程执行，{@link com.wotb.web.replay.ai.gateway.AiRequestContext}
+     * 在 worker 线程内 set/clear，cancellation 在 worker 真正结束后才 unregister，
+     * 保证 cancel 端点在整个流式期间都能找到并取消进行中的请求。</p>
+     * <p>异常传达规则（异步化后统一走 SSE 事件）：任何在 worker 内发生的失败
+     * 都以 {@code error} 事件携带稳定错误码传达（无论是否已发送过事件），前端
+     * 在收到事件前无法感知失败；客户端断开时立即调用 cancel 语义（取消上游调用），
+     * 不向已断开的连接写入。</p>
      */
     @PostMapping(value = ApiPaths.REPLAY_ANALYZE, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public SseEmitter analyze(
             @RequestParam("files") final MultipartFile[] files,
             @RequestParam(name = "lang", required = true) final String lang,
-            @RequestParam(name = "correlationId", required = false) final String correlationId)
-            throws IOException {
+            @RequestParam(name = "correlationId", required = false) final String correlationId) {
         final AllowedLanguage allowedLanguage = AllowedLanguage.fromCode(lang);
         if (allowedLanguage == null) {
             throw new IllegalArgumentException("UNKNOWN_LOCALE");
@@ -96,17 +106,40 @@ public class ReconstructionController {
         final String requestId = correlationId != null && !correlationId.isBlank()
                 ? correlationId : UUID.randomUUID().toString();
         final AiCancellationToken cancellation = cancellationRegistry.register(requestId);
-        AiRequestContext.set(requestId, cancellation);
         final SseEmitter emitter = newAnalyzeEmitter();
         final ReplaySseWriter writer = new ReplaySseWriter(emitter);
+        // 生命周期回调：timeout / error / 客户端断开都翻转 cancellation token
+        // （经 registry 走 cancel 端点语义），与显式 cancel 端点幂等（token 是
+        // CAS 一次性翻转，重复 cancel 无副作用）。
+        emitter.onTimeout(() -> cancellationRegistry.cancel(requestId));
+        emitter.onError(error -> cancellationRegistry.cancel(requestId));
+        workerExecutor.execute(() -> runAnalysis(requestId, cancellation, emitter, writer, files, allowedLanguage));
+        return emitter;
+    }
+
+    /**
+     * worker 线程内的完整 AI 复盘生命周期：set AiRequestContext → 流式分析 →
+     * done + complete → finally 清理上下文并 unregister cancellation。
+     * <p>所有失败（含流尚未开始的校验失败）统一以 {@code error} 事件传达稳定
+     * 错误码；客户端断开（SSE 写入失败：IOException 或 emitter 已终止的
+     * IllegalStateException）时翻转 cancellation 并静默 complete，不向已断开的
+     * 连接写入。</p>
+     */
+    private void runAnalysis(final String requestId,
+                             final AiCancellationToken cancellation,
+                             final SseEmitter emitter,
+                             final ReplaySseWriter writer,
+                             final MultipartFile[] files,
+                             final AllowedLanguage language) {
+        AiRequestContext.set(requestId, cancellation);
         try {
             final AnalyzeResponse response = reviewService.analyzeStreaming(
-                    files, allowedLanguage, new AiReviewStreamListener() {
+                    files, language, new AiReviewStreamListener() {
                         @Override
                         public void onStage(final String stage) {
                             try {
                                 writer.stage(stage);
-                            } catch (final IOException e) {
+                            } catch (final IOException | IllegalStateException e) {
                                 throw new ClientDisconnectedException(e);
                             }
                         }
@@ -115,44 +148,29 @@ public class ReconstructionController {
                         public void onToken(final String delta) {
                             try {
                                 writer.token(delta);
-                            } catch (final IOException e) {
+                            } catch (final IOException | IllegalStateException e) {
                                 throw new ClientDisconnectedException(e);
                             }
                         }
                     });
             writer.done(response);
             emitter.complete();
-            return emitter;
         } catch (final ClientDisconnectedException e) {
             // 客户端已断开：终止上游调用（cancel 端点语义），不向已断开的连接写入。
             cancellationRegistry.cancel(requestId);
             quietComplete(emitter);
-            return emitter;
-        } catch (final RuntimeException e) {
-            if (writer.eventSent()) {
-                // 流已开始：用 error 事件传达稳定错误码（客户端断开时静默）。
-                try {
-                    writer.error(errorCodeOf(e));
-                } catch (final IOException ignored) {
-                    // 客户端同时断开：无意义，静默。
-                }
-                quietComplete(emitter);
-                return emitter;
+        } catch (final RuntimeException | IOException e) {
+            // 流中途失败（含流尚未开始的数据校验失败）：一律以 error 事件传达
+            // 稳定错误码（客户端断开时静默），HTTP 层面已返回 200 + SseEmitter。
+            try {
+                writer.error(errorCodeOf(e));
+            } catch (final IOException | IllegalStateException ignored) {
+                // 客户端同时断开（写入失败 / emitter 已终止）：无意义，静默。
             }
-            // 流尚未开始：交给 @ExceptionHandler 映射稳定 HTTP 错误码。
-            throw e;
-        } catch (final IOException e) {
-            if (writer.eventSent()) {
-                try {
-                    writer.error(errorCodeOf(e));
-                } catch (final IOException ignored) {
-                    // 客户端同时断开：无意义，静默。
-                }
-                quietComplete(emitter);
-                return emitter;
-            }
-            throw e;
+            quietComplete(emitter);
         } finally {
+            // AiRequestContext 是 ThreadLocal：必须在真正执行 AI 的 worker 线程
+            // 内清理，绝不能在 request 线程执行（否则一 return 就失效）。
             AiRequestContext.clear();
             cancellationRegistry.unregister(requestId);
         }
@@ -188,8 +206,11 @@ public class ReconstructionController {
         if (e instanceof UnsupportedReplayAnalysisModeException) {
             return "UNSUPPORTED_BATTLE_CATEGORY";
         }
-        if (e instanceof PerspectiveTeamNotResolvedException) {
-            return "PERSPECTIVE_TEAM_UNRESOLVED";
+        if (e instanceof PerspectiveTeamNotResolvedException pte) {
+            // 异常 message 即稳定错误码（PERSPECTIVE_TEAM_CONFLICT / PERSPECTIVE_TEAM_UNRESOLVED）。
+            final String message = pte.getMessage();
+            return message != null && !message.isBlank()
+                    ? message : "PERSPECTIVE_TEAM_UNRESOLVED";
         }
         if (e instanceof ReplayFileCountExceededException) {
             return "REPLAY_FILE_COUNT_EXCEEDED";
@@ -208,17 +229,13 @@ public class ReconstructionController {
     }
 
     /**
-     * 客户端断开信号：SSE 写入失败（IOException）在流式回调中包装为
-     * RuntimeException 以中断编排层，由 {@link #analyze} 统一处理。
+     * 客户端断开信号：SSE 写入失败（{@link IOException} 或 emitter 已终止时的
+     * {@link IllegalStateException}）在流式回调中包装为 RuntimeException 以中断
+     * 编排层，由 {@link #analyze} 统一处理。
      */
     private static final class ClientDisconnectedException extends RuntimeException {
-        ClientDisconnectedException(final IOException cause) {
+        ClientDisconnectedException(final Throwable cause) {
             super(cause);
-        }
-
-        @Override
-        public IOException getCause() {
-            return (IOException) super.getCause();
         }
     }
 

@@ -9,6 +9,7 @@ import com.wotb.core.processing.ReplayAnalysisScope;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
+import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.processing.TeamPerspectiveResolver;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
@@ -238,7 +239,9 @@ public class AiReplayReviewService {
                         analyzableGroups.getFirst().representative(), language, listener);
                 yield new AnalyzeResponse(
                         outcome.result().analysis(),
-                        PreBattleSectionRenderer.render(outcome.preBattlePrior()));
+                        renderRandomBattleSection(
+                                analyzableGroups.getFirst().representative(),
+                                outcome.preBattlePrior(), language));
             }
             case MULTI_PLAYER_BATTLE -> {
                 final var battles = analyzableGroups.stream()
@@ -268,6 +271,27 @@ public class AiReplayReviewService {
         }
         return new TacticalReviewHarness.HarnessOutcome(
                 aiAnalysisService.analyzePlayerOrFallback(representative, language, listener), null);
+    }
+
+    /**
+     * 随机战 Call #1 prior 的用户可见渲染：按录像者 perspective 队伍映射为
+     * 「友军/敌军」——录像者所属 team → 友军，另一方 → 敌军。Call #1 内部保持
+     * TEAM_A/TEAM_B 客观标签不受影响（只有用户 UI 渲染做映射），随机战用户界面
+     * 不允许出现「队伍1/队伍2」。录像者 team 无法确定时走中性防御路径。
+     */
+    private static String renderRandomBattleSection(
+            final ReplayProcessingResult representative,
+            final PreBattleStrategicPrior prior,
+            final AllowedLanguage language) {
+        if (prior == null) {
+            return null;
+        }
+        final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(representative);
+        final int recorderTeam = recorder != null && recorder.team() != null
+                ? recorder.team() : 0;
+        final String recorderName = recorder != null ? recorder.nickname() : null;
+        return PreBattleSectionRenderer.renderRandomBattle(
+                prior, recorderTeam, recorderName, language);
     }
 
     private static String unresolvedTeamCode(final List<ReplayPerspectiveGroup> groups) {
