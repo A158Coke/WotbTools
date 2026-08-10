@@ -10,6 +10,7 @@ import com.wotb.core.processing.ReplayBatchProcessingResult;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.web.replay.ai.AiReplayReviewService;
+import com.wotb.web.replay.ai.AiReplayBatchPolicy;
 import com.wotb.web.replay.ai.AiReviewStreamListener;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
 import com.wotb.web.replay.ai.AllowedLanguage;
@@ -20,6 +21,7 @@ import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.config.ApiPaths;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
+import com.wotb.web.replay.exception.AiReviewBusyException;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import com.wotb.web.replay.metrics.ReplayUsageMetrics;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,6 +42,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.RejectedExecutionException;
 
 /**
  * AI 复盘与批量处理 REST API。
@@ -101,6 +104,10 @@ public class ReconstructionController {
         if (allowedLanguage == null) {
             throw new IllegalArgumentException("UNKNOWN_LOCALE");
         }
+        // HTTP request-envelope validation（request 线程同步执行）：文件参数校验
+        // 在提交 worker 前完成，非法请求直接 HTTP 400（经 @ExceptionHandler），
+        // 不进入 SSE 流。worker 内 analyzeInternal 保留相同校验作为防御。
+        validateAnalyzeRequest(files);
         // Client-provided id (frontend cancel button / navigation) or a fresh
         // one; both are safe random opaque ids, never logged with the request.
         final String requestId = correlationId != null && !correlationId.isBlank()
@@ -113,7 +120,15 @@ public class ReconstructionController {
         // CAS 一次性翻转，重复 cancel 无副作用）。
         emitter.onTimeout(() -> cancellationRegistry.cancel(requestId));
         emitter.onError(error -> cancellationRegistry.cancel(requestId));
-        workerExecutor.execute(() -> runAnalysis(requestId, cancellation, emitter, writer, files, allowedLanguage));
+        try {
+            workerExecutor.execute(() -> runAnalysis(requestId, cancellation, emitter, writer, files, allowedLanguage));
+        } catch (final RejectedExecutionException e) {
+            // Worker 池满（workers + queue 全占用）：清理已注册的 cancellation token
+            // （不留泄漏），不把永远无 worker 执行的 emitter 返回给客户端，直接抛
+            // AiReviewBusyException → @ExceptionHandler 映射 503 AI_REVIEW_BUSY。
+            cancellationRegistry.unregister(requestId);
+            throw new AiReviewBusyException();
+        }
         return emitter;
     }
 
@@ -133,6 +148,13 @@ public class ReconstructionController {
                              final AllowedLanguage language) {
         AiRequestContext.set(requestId, cancellation);
         try {
+            // queued cancellation check：任务在队列中等待期间被取消（客户端断开 /
+            // cancel 端点）后获取 worker 时，不调 Replay processing、不调 AI Gateway、
+            // 不向已断开的客户端输出 error，直接 complete 并清理。
+            if (cancellation.isCancelled()) {
+                quietComplete(emitter);
+                return;
+            }
             final AnalyzeResponse response = reviewService.analyzeStreaming(
                     files, language, new AiReviewStreamListener() {
                         @Override
@@ -343,6 +365,16 @@ public class ReconstructionController {
     }
 
     /**
+     * AI Review worker 池满（workers + queue 全占用）→ 503 AI_REVIEW_BUSY。
+     */
+    @ExceptionHandler(AiReviewBusyException.class)
+    public ResponseEntity<Map<String, Object>> handleAiReviewBusy(final AiReviewBusyException e) {
+        final Map<String, Object> body = new LinkedHashMap<>();
+        body.put("code", "AI_REVIEW_BUSY");
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
+    /**
      * AI 未配置密钥 → 503 AI_NOT_CONFIGURED。
      */
     @ExceptionHandler(AiNotConfiguredException.class)
@@ -411,7 +443,7 @@ public class ReconstructionController {
             throw new IllegalArgumentException("NO_REPLAY_FILE");
         }
         final String name = file.getOriginalFilename();
-        if (name != null && !name.toLowerCase().endsWith(".wotbreplay")) {
+        if (name == null || name.isBlank() || !name.toLowerCase().endsWith(".wotbreplay")) {
             throw new IllegalArgumentException("INVALID_REPLAY_FILE_TYPE");
         }
         if (file.getSize() > 20L * 1024 * 1024) {
@@ -430,6 +462,20 @@ public class ReconstructionController {
         }
         if (totalBytes > 200L * 1024 * 1024) {
             throw new IllegalArgumentException("TOTAL_REQUEST_TOO_LARGE");
+        }
+    }
+
+    /**
+     * analyze 端点的 request-envelope 校验（servlet request 线程同步执行）：
+     * 文件非空 / 数量 ≤ {@link AiReplayBatchPolicy#MAX_FILES} / 每个文件合法 /
+     * 总大小 ≤ 上限。失败直接 HTTP 400，不进入 SSE 流。worker 内
+     * {@code analyzeInternal} 保留相同校验作为防御。
+     */
+    private static void validateAnalyzeRequest(final MultipartFile[] files) {
+        validateBatch(files);
+        if (files.length > AiReplayBatchPolicy.MAX_FILES) {
+            throw new ReplayFileCountExceededException(
+                    AiReplayBatchPolicy.MAX_FILES, files.length);
         }
     }
 

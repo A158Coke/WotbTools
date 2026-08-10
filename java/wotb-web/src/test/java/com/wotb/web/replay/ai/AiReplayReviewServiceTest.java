@@ -10,6 +10,8 @@ import com.wotb.core.processing.ReplayIdentity;
 import com.wotb.core.processing.ReplayProcessingCapabilities;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
+import com.wotb.core.replay.reconstruction.BattleParticipant;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.junit.jupiter.api.BeforeEach;
@@ -401,6 +403,56 @@ class AiReplayReviewServiceTest {
                 events.toString(), "stage and token events must be forwarded in order");
         assertEquals("harness-text", response.analysis());
         assertNotNull(response.preBattleSection());
+    }
+
+    @Test
+    void randomBattleWithResolvedRecorderTeamDoesNotShowNicknameAsTeamLabel() throws IOException {
+        // 随机战 recorder team 已解析为 1（reconstruction 有 recorder participant）：
+        // 渲染为「友军画像/敌军画像」，不附加录像者 nickname 作为 team label。
+        final TacticalReviewHarness harness = mock(TacticalReviewHarness.class);
+        when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.ZH), any())).thenReturn(
+                new TacticalReviewHarness.HarnessOutcome(
+                        new AnalyzeResult("harness-text"), PRIOR));
+        service = new AiReplayReviewService(processingFacade, aiAnalysisService, harness);
+        when(processingFacade.process(any(), any())).thenReturn(randomResultWithReconstruction());
+
+        final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
+
+        assertEquals("harness-text", response.analysis());
+        final String section = response.preBattleSection();
+        assertNotNull(section, "preBattleSection must be rendered when prior is available");
+        assertTrue(section.contains("友军画像"),
+                "random battle with recorderTeam=1 must show 友军画像 without recorder nickname");
+        assertTrue(section.contains("敌军画像"));
+        assertFalse(section.contains("Player123"),
+                "recorder nickname must not appear as team label in random battle");
+    }
+
+    private static ReplayProcessingResult randomResultWithReconstruction() {
+        final Battle battle = new Battle();
+        battle.arenaId = "random-arena";
+        battle.mapName = "random_map";
+        battle.arenaBonusType = 1;
+        battle.durationS = 300.0;
+        battle.winnerTeam = 1;
+        battle.recorder = "Player123";
+        final PlayerResult recorder = new PlayerResult();
+        recorder.accountId = 1001L;
+        recorder.nickname = "Player123";
+        recorder.team = 1;
+        recorder.damageDealt = 1_000;
+        recorder.survived = true;
+        battle.players = List.of(recorder);
+        final ReplayReconstruction reconstruction = new ReplayReconstruction(
+                null, null, 300f, null,
+                List.of(new BattleParticipant(1001L, "Player123", 1, 1, "tank", true)),
+                List.of(), List.of(), null, null, null);
+        final var capabilities = new ReplayProcessingCapabilities(
+                true, true, false, false, false, false, false, false);
+        return new ReplayProcessingResult(
+                "random.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
+                new ReplayIdentity("h", "random-arena", "11.0", "random_map", 1001L, null),
+                battle, reconstruction, null, capabilities, null, null);
     }
 
 }

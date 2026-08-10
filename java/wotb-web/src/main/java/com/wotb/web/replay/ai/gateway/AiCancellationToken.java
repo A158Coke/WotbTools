@@ -17,7 +17,7 @@ public final class AiCancellationToken {
     private final AtomicBoolean cancelled = new AtomicBoolean();
     private final AtomicReference<AttemptBudgetContext> activeContext = new AtomicReference<>();
 
-    boolean isCancelled() {
+    public boolean isCancelled() {
         return cancelled.get();
     }
 

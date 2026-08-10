@@ -13,6 +13,8 @@ describe('reconstruction analysis presentation', () => {
       .toBe('recon.errors.INVALID_REPLAY_FILE_TYPE')
     expect(localizeAiError('FILE_TOO_LARGE', 400, t))
       .toBe('recon.errors.FILE_TOO_LARGE')
+    expect(localizeAiError('AI_REVIEW_BUSY', 503, t))
+      .toBe('recon.errors.AI_REVIEW_BUSY')
     expect(localizeAiError('java.lang.IllegalStateException', 500, t))
       .toBe('recon.ai_error_http:500')
   })

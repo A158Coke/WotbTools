@@ -62,12 +62,14 @@ public final class PreBattleSectionRenderer {
      * 随机战：按录像者 perspective 队伍映射为「友军/敌军」。recorderTeam 必须是
      * 1 或 2（录像者所属 team → 友军，另一方 → 敌军）；其他值走中性标签防御路径。
      * 内部 Call #1 的 TEAM_A/TEAM_B 客观语义不受此映射影响。
+     * <p>随机战 <b>不</b>附加录像者 nickname 作为 team label——只显示「友军画像/
+     * 敌军画像」，不显示「友军（Player123）画像」。团队复盘才保留真实 clan/team
+     * label（走 {@link #render(PreBattleStrategicPrior, int, String, AllowedLanguage)}）。</p>
      */
     public static String renderRandomBattle(final PreBattleStrategicPrior prior,
                                             final int recorderTeam,
-                                            final String recorderName,
                                             final AllowedLanguage language) {
-        return renderInternal(prior, recorderTeam, recorderName,
+        return renderInternal(prior, recorderTeam, null,
                 texts(language, true));
     }
 

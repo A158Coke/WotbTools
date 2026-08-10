@@ -236,13 +236,18 @@ class ReconstructionControllerStreamingTest {
 
     @Test
     void cancellationIsUnregisteredOnlyAfterWorkerCompletes() throws Exception {
+        final CountDownLatch workerStarted = new CountDownLatch(1);
         doAnswer(invocation -> {
+            workerStarted.countDown();
             final AiReviewStreamListener listener = invocation.getArgument(2);
             listener.onStage("call1_start");
             return new AnalyzeResponse("full", null);
         }).when(reviewService).analyzeStreaming(any(), any(), any());
 
         final RecordingEmitter emitter = analyzeDirect("zh", "corr-unregister");
+        // 等待 worker 真正启动（通过 worker-entry cancellation check）再 cancel。
+        assertTrue(workerStarted.await(5, TimeUnit.SECONDS),
+                "worker must start before cancel to test unregister-after-completion");
         // 流式进行中（worker 尚未结束）：cancel 端点必须能找到 request。
         assertTrue(cancellationRegistry.cancel("corr-unregister"),
                 "request must stay registered while the worker is running");
@@ -309,12 +314,17 @@ class ReconstructionControllerStreamingTest {
     @Test
     void cancelEndpointLifecycleSemantics() throws Exception {
         final CountDownLatch release = new CountDownLatch(1);
+        final CountDownLatch workerStarted = new CountDownLatch(1);
         doAnswer(invocation -> {
+            workerStarted.countDown();
             release.await(10, TimeUnit.SECONDS);
             return new AnalyzeResponse("full", null);
         }).when(reviewService).analyzeStreaming(any(), any(), any());
 
         final RecordingEmitter emitter = analyzeDirect("zh", "corr-endpoint");
+        // 等待 worker 真正启动（进入 analyzeStreaming，被 release latch 阻塞）再 cancel。
+        assertTrue(workerStarted.await(5, TimeUnit.SECONDS),
+                "worker must start and block before cancel");
         // 进行中：cancel 端点命中。
         assertEquals(204, controller.cancelAnalyze("corr-endpoint").getStatusCode().value());
         // 未注册的 id：404。
@@ -326,7 +336,9 @@ class ReconstructionControllerStreamingTest {
 
     @Test
     void concurrentCancellationAndCompletionIsIdempotent() throws Exception {
+        final CountDownLatch workerStarted = new CountDownLatch(1);
         doAnswer(invocation -> {
+            workerStarted.countDown();
             final AiReviewStreamListener listener = invocation.getArgument(2);
             listener.onStage("call1_start");
             listener.onToken("token");
@@ -334,6 +346,9 @@ class ReconstructionControllerStreamingTest {
         }).when(reviewService).analyzeStreaming(any(), any(), any());
 
         final RecordingEmitter emitter = analyzeDirect("zh", "corr-idempotent");
+        // 等待 worker 真正启动（通过 worker-entry cancellation check）再 cancel。
+        assertTrue(workerStarted.await(5, TimeUnit.SECONDS),
+                "worker must start before cancel to test idempotent concurrent ops");
 
         // 模拟 cancel 端点 / SSE IOException / timeout 回调在正常完成前后同时发生：
         // 全部幂等，不抛异常。

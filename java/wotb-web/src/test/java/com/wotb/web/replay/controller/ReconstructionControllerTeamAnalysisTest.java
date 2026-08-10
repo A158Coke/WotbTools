@@ -23,6 +23,7 @@ import com.wotb.web.replay.ai.AnalyzeResult;
 import com.wotb.web.replay.ai.TeamAnalyzeResult;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
+import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -76,31 +77,37 @@ class ReconstructionControllerTeamAnalysisTest {
     }
 
     @Test
-    void uploadWithTwoFilesConveysReplayFileCountExceededAsErrorEvent() throws Exception {
-        final String body = analyzeConveyingError(
-                new MockMultipartFile[]{replayFile("a.wotbreplay"), replayFile("b.wotbreplay")});
-        assertTrue(body.contains("\"code\":\"REPLAY_FILE_COUNT_EXCEEDED\""), body);
+    void uploadWithTwoFilesThrowsReplayFileCountExceededBeforeStreamStarts() throws Exception {
+        // HTTP request-envelope validation：2 文件超 MAX_FILES=1 → 提交 worker 前抛
+        // ReplayFileCountExceededException → @ExceptionHandler 映射 400 结构化
+        // {code, maxFiles, actualFiles}，不进入 SSE 流。
+        assertThrows(ReplayFileCountExceededException.class,
+                () -> controller.analyze(
+                        new MultipartFile[]{replayFile("a.wotbreplay"), replayFile("b.wotbreplay")},
+                        "zh", null));
         // Processing facade and AI provider must not be called
         verify(processingFacade, never()).process(any(Source.class), any(ReplayProcessingOptions.class));
         verify(aiService, never()).analyzeTeamGroups(any(), any(), any());
         verify(aiService, never()).analyzePlayerOrFallback(any(), any(), any());
+        verify(reviewService, never()).analyzeStreaming(any(), any(), any());
     }
 
     @Test
-    void uploadWithTwoIdenticalFilesAlsoRejectedByCount() throws Exception {
+    void uploadWithTwoIdenticalFilesAlsoRejectedByCountBeforeStreamStarts() throws Exception {
         final var file = replayFile("same.wotbreplay");
-        final String body = analyzeConveyingError(
-                new MockMultipartFile[]{file, file});
-        assertTrue(body.contains("\"code\":\"REPLAY_FILE_COUNT_EXCEEDED\""), body);
+        assertThrows(ReplayFileCountExceededException.class,
+                () -> controller.analyze(new MultipartFile[]{file, file}, "zh", null));
         verify(processingFacade, never()).process(any(Source.class), any(ReplayProcessingOptions.class));
+        verify(reviewService, never()).analyzeStreaming(any(), any(), any());
     }
 
     @Test
-    void emptyFilesArrayConveysNoReplayFilesAsErrorEvent() throws Exception {
-        final String body = analyzeConveyingError(new MockMultipartFile[0]);
-        assertTrue(body.contains("\"code\":\"NO_REPLAY_FILES\""), body);
+    void emptyFilesArrayThrowsNoReplayFilesBeforeStreamStarts() throws Exception {
+        assertThrows(IllegalArgumentException.class,
+                () -> controller.analyze(new MultipartFile[0], "zh", null));
         verify(processingFacade, never()).process(any(Source.class), any(ReplayProcessingOptions.class));
         verify(aiService, never()).analyzeTeamGroups(any(), any(), any());
+        verify(reviewService, never()).analyzeStreaming(any(), any(), any());
     }
 
     @Test
@@ -554,17 +561,6 @@ class ReconstructionControllerTeamAnalysisTest {
     /** 断言 worker 通过 error 事件传达稳定错误码（而非 HTTP 状态码）。 */
     private String analyzeConveyingError(final MockMultipartFile file) throws InterruptedException {
         final String body = drainUntilMarker(analyzeDirect(file), "event:error");
-        assertTrue(body.contains("event:error"), body);
-        assertTrue(!body.contains("event:done"), "failed stream must not emit done: " + body);
-        return body;
-    }
-
-    private String analyzeConveyingError(final MockMultipartFile[] files) throws InterruptedException {
-        final ReconstructionControllerTestEmitter emitter = new ReconstructionControllerTestEmitter();
-        final ReconstructionController controllerSpy = spy(controller);
-        doReturn(emitter).when(controllerSpy).newAnalyzeEmitter();
-        controllerSpy.analyze(files, "zh", null);
-        final String body = drainUntilMarker(emitter, "event:error");
         assertTrue(body.contains("event:error"), body);
         assertTrue(!body.contains("event:done"), "failed stream must not emit done: " + body);
         return body;
