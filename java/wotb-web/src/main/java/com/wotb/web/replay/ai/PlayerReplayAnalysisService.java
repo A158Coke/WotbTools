@@ -53,12 +53,18 @@ public class PlayerReplayAnalysisService {
 
     public AnalyzeResult analyze(final Battle battle, final ReplayReconstruction recon,
                                  final AllowedLanguage language) {
+        return analyze(battle, recon, language, AiReviewStreamListener.NOOP);
+    }
+
+    public AnalyzeResult analyze(final Battle battle, final ReplayReconstruction recon,
+                                 final AllowedLanguage language,
+                                 final AiReviewStreamListener listener) {
         if (!isConfigured()) {
             throw new AiNotConfiguredException();
         }
         final PreparedAiPrompt prepared =
                 PlayerReplayPromptBuilder.prepareFallback(battle, recon, language);
-        return new AnalyzeResult(chat(prepared));
+        return new AnalyzeResult(chat(prepared, listener));
     }
 
     /**
@@ -75,7 +81,7 @@ public class PlayerReplayAnalysisService {
                 ctx, config.estimator(), config.singleReplayMaxInputTokens(),
                 config.contextWindowTokens(), config.maxOutputTokens(),
                 config.promptSafetyMarginTokens(), language);
-        return new AnalyzeResult(chat(prepared));
+        return new AnalyzeResult(chat(prepared, AiReviewStreamListener.NOOP));
     }
 
     /**
@@ -89,6 +95,13 @@ public class PlayerReplayAnalysisService {
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx,
                                               final ReplayReconstruction recon,
                                               final AllowedLanguage language) {
+        return analyzePlayerContext(ctx, recon, language, AiReviewStreamListener.NOOP);
+    }
+
+    public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx,
+                                              final ReplayReconstruction recon,
+                                              final AllowedLanguage language,
+                                              final AiReviewStreamListener listener) {
         if (!isConfigured()) throw new AiNotConfiguredException();
         if (recon == null) {
             return analyzePlayerContext(ctx, language);
@@ -103,7 +116,7 @@ public class PlayerReplayAnalysisService {
                     prepared.density(), prepared.estimatedInputTokens(),
                     config.singleReplayMaxInputTokens(), prepared.analysisMode());
         }
-        return new AnalyzeResult(chat(prepared));
+        return new AnalyzeResult(chat(prepared, listener));
     }
 
     /**
@@ -115,11 +128,17 @@ public class PlayerReplayAnalysisService {
 
     public AnalyzeResult analyzeMulti(final List<Battle> battles,
                                       final AllowedLanguage language) {
+        return analyzeMulti(battles, language, AiReviewStreamListener.NOOP);
+    }
+
+    public AnalyzeResult analyzeMulti(final List<Battle> battles,
+                                      final AllowedLanguage language,
+                                      final AiReviewStreamListener listener) {
         if (!isConfigured()) {
             throw new AiNotConfiguredException();
         }
         final PreparedAiPrompt prepared = PlayerReplayPromptBuilder.prepareMulti(battles, language);
-        return new AnalyzeResult(chat(prepared));
+        return new AnalyzeResult(chat(prepared, listener));
     }
 
     /**
@@ -132,11 +151,21 @@ public class PlayerReplayAnalysisService {
 
     public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result,
                                                  final AllowedLanguage language) {
+        return analyzePlayerOrFallback(result, language, AiReviewStreamListener.NOOP);
+    }
+
+    public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result,
+                                                 final AllowedLanguage language,
+                                                 final AiReviewStreamListener listener) {
         if (result.battle() == null) throw new IllegalArgumentException("NO_BATTLE_DATA");
-        if (result.reconstruction() == null) return analyze(result.battle(), null, language);
+        if (result.reconstruction() == null) {
+            return analyze(result.battle(), null, language, listener);
+        }
 
         final var recorder = AnalysisUnitAssembler.findRecorder(result);
-        if (!recorder.resolved()) return analyze(result.battle(), result.reconstruction(), language);
+        if (!recorder.resolved()) {
+            return analyze(result.battle(), result.reconstruction(), language, listener);
+        }
 
         final PlayerBattleFeatureSet features;
         try {
@@ -144,15 +173,17 @@ public class PlayerReplayAnalysisService {
                     .extract(result.reconstruction(), recorder, result.battle());
         } catch (RuntimeException e) {
             LOGGER.warn("Feature extraction failed, falling back: {}", e.getMessage());
-            return analyze(result.battle(), result.reconstruction(), language);
+            return analyze(result.battle(), result.reconstruction(), language, listener);
         }
 
-        if (!features.hasFeatures()) return analyze(result.battle(), result.reconstruction(), language);
+        if (!features.hasFeatures()) {
+            return analyze(result.battle(), result.reconstruction(), language, listener);
+        }
 
         return analyzePlayerContext(new SinglePlayerBattleAnalysisContext(
                 null, result.battle(), features, recorder,
                 result.reconstruction().coverage(), features.limitations()),
-                result.reconstruction(), language);
+                result.reconstruction(), language, listener);
     }
 
     /**
@@ -160,7 +191,8 @@ public class PlayerReplayAnalysisService {
      * <p>Builder 内部已做一次预算检查；此处再由 {@link AiPromptBudgetGuard} 复核一次，
      * 保证任何路径在 Gateway 调用前都被守一次。</p>
      */
-    private String chat(final PreparedAiPrompt prepared) {
+    private String chat(final PreparedAiPrompt prepared,
+                        final AiReviewStreamListener listener) {
         final List<Map<String, Object>> messages = List.of(
                 Map.<String, Object>of("role", "system", "content", prepared.systemPrompt()),
                 Map.<String, Object>of("role", "user", "content", prepared.userPrompt()));
@@ -180,6 +212,6 @@ public class PlayerReplayAnalysisService {
                 config.reasoningEffort(),
                 null,
                 prepared.analysisMode());
-        return gateway.chat(request).completionText();
+        return gateway.stream(request, listener::onToken).completionText();
     }
 }

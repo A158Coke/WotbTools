@@ -690,6 +690,7 @@
         "FILE_TOO_LARGE": "File is too large",
         "REQUEST_TOO_LARGE": "The upload is too large",
         "REPLAY_BUSY": "Replay processing is busy. Try again later.",
+        "AI_REVIEW_BUSY": "AI review service is busy. Try again later.",
         "MULTIPART_ERROR": "Invalid upload request",
         "MISSING_PARAM": "A required parameter is missing",
         "IO_ERROR": "Unable to read the file",
@@ -767,6 +768,18 @@
         "analyze_multi_btn": "AI Multi-battle ({n})",
         "cancel_btn": "Cancel Analysis",
         "analysis_title_player": "AI Review",
+        "prebattle": {
+            "title": "Pre-Battle Prediction",
+            "collapse": "Collapse",
+            "expand": "Expand"
+        },
+        "stages": {
+            "call1": "Pre-battle prediction…",
+            "evidence": "Analyzing evidence…",
+            "call2": "Generating tactical review…",
+            "autopsy": "Team autopsy…",
+            "done": "Done"
+        },
         "ai_error_http": "AI analysis failed (HTTP {status})",
         "auth_required": "Sign-in required, redirecting to login…",
         "forbidden": "Forbidden: this feature requires wotbtools-user or wotbtools-admin role",
@@ -795,7 +808,8 @@
             "FILE_TOO_LARGE": "The replay file exceeds the size limit.",
             "REPLAY_FILE_COUNT_EXCEEDED": "At most {max} replay files can be uploaded at once.",
             "TOTAL_REQUEST_TOO_LARGE": "The combined upload size exceeds the limit.",
-            "UNKNOWN_LOCALE": "Invalid language setting. Please refresh the page and try again."
+            "UNKNOWN_LOCALE": "Invalid language setting. Please refresh the page and try again.",
+            "AI_REVIEW_BUSY": "AI review service is currently busy. Please try again later."
         }
     }
 }

@@ -4,6 +4,7 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.processing.BattleCategory;
 import com.wotb.core.processing.BattleIdentity;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
 import java.util.List;
 
@@ -19,7 +20,8 @@ public record SingleTeamBattleAnalysisContext(
         int perspectiveTeam,
         TeamBattleFeatureSet features,
         ReplayCoverage coverage,
-        List<String> limitations
+        List<String> limitations,
+        ReplayReconstruction reconstruction
 ) {
 
     public SingleTeamBattleAnalysisContext {

@@ -366,6 +366,8 @@ jobs:
                   AI_PROMPT_SAFETY_MARGIN_TOKENS: "${{ vars.AI_PROMPT_SAFETY_MARGIN_TOKENS || '16384' }}"
                   AI_THINKING_ENABLED: "${{ vars.AI_THINKING_ENABLED || 'true' }}"
                   AI_REASONING_EFFORT: "${{ vars.AI_REASONING_EFFORT || 'max' }}"
+                  AI_REVIEW_WORKER_MAX_CONCURRENT: "${{ vars.AI_REVIEW_WORKER_MAX_CONCURRENT || '4' }}"
+                  AI_REVIEW_WORKER_QUEUE_CAPACITY: "${{ vars.AI_REVIEW_WORKER_QUEUE_CAPACITY || '4' }}"
                   REPLAY_COORDINATE_HALF_EXTENT: "${{ vars.REPLAY_COORDINATE_HALF_EXTENT || '250' }}"
                   REPLAY_COORDINATE_CLAMP_TOLERANCE: "${{ vars.REPLAY_COORDINATE_CLAMP_TOLERANCE || '12.5' }}"
                 restart: unless-stopped

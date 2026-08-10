@@ -361,13 +361,43 @@ function teamResult() {
   }
 }
 
-function okResponse(body) {
+/**
+ * SSE 响应 mock：把事件序列编码为 ReadableStream。
+ * @param {Array<{event: string, data: object}>} events
+ */
+function sseResponse(events) {
+  const payload = events
+    .map(e => `event:${e.event}\ndata:${JSON.stringify(e.data)}\n\n`)
+    .join('')
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(payload))
+      controller.close()
+    }
+  })
   return {
     ok: true,
     status: 200,
-    json: vi.fn().mockResolvedValue(body),
+    body: stream,
     text: vi.fn().mockResolvedValue('')
   }
+}
+
+/** 兼容旧契约：单 done 事件携带完整 result（analysis + preBattleSection）。 */
+function okResponse(body) {
+  return sseResponse([{ event: 'done', data: body }])
+}
+
+/** 多阶段流：call1 → evidence → call2 token 滚动 → done。 */
+function sseStreamingResponse({ analysis = 'team report', preBattleSection = null } = {}) {
+  return sseResponse([
+    { event: 'call1_start', data: {} },
+    { event: 'call1_done', data: {} },
+    { event: 'evidence_done', data: {} },
+    { event: 'call2_token', data: { delta: 'team ' } },
+    { event: 'call2_token', data: { delta: 'report' } },
+    { event: 'done', data: { analysis, preBattleSection } }
+  ])
 }
 
 function errorResponse(status, code) {
@@ -378,6 +408,176 @@ function errorResponse(status, code) {
     text: vi.fn().mockResolvedValue(code)
   }
 }
+
+describe('ReconstructionPage SSE streaming', () => {
+  beforeEach(() => {
+    auth.ensureToken.mockResolvedValue(true)
+    auth.login.mockReset()
+    i18n.t.mockClear()
+    authState.authenticated.value = true
+    authState.roles = ['wotbtools-admin']
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  /** 可分段写入的 SSE 流，用于验证流中间状态。 */
+  function chunkedSse() {
+    let controllerRef
+    const stream = new ReadableStream({
+      start(controller) {
+        controllerRef = controller
+      }
+    })
+    return {
+      stream,
+      enqueue: text => controllerRef.enqueue(new TextEncoder().encode(text)),
+      close: () => controllerRef.close()
+    }
+  }
+
+  it('shows stage status and token scrolling mid-stream before done', async () => {
+    const sse = chunkedSse()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: sse.stream,
+      text: vi.fn().mockResolvedValue('')
+    }))
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['stream.wotbreplay'])
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+
+    sse.enqueue('event:call1_start\ndata:{}\n\n')
+    sse.enqueue('event:call1_done\ndata:{}\n\n')
+    sse.enqueue('event:evidence_done\ndata:{}\n\n')
+    sse.enqueue('event:call2_token\ndata:{"delta":"hello"}\n\n')
+    sse.enqueue('event:call2_token\ndata:{"delta":" world"}\n\n')
+    await flushPromises()
+
+    // 生成中：阶段状态 + 已到达 token 可见，完整结果尚未设置
+    expect(wrapper.text()).toContain('recon.stages.call2')
+    expect(wrapper.text()).toContain('hello world')
+    expect(wrapper.text()).not.toContain('recon.analysis_title_player')
+
+    sse.enqueue('event:done\ndata:{"analysis":"hello world","preBattleSection":null}\n\n')
+    sse.close()
+    await flushPromises()
+
+    // done 后切换到完整结果面板
+    expect(wrapper.text()).toContain('recon.analysis_title_player')
+    expect(wrapper.text()).toContain('hello world')
+    expect(wrapper.text()).not.toContain('recon.stages.call2')
+  })
+
+  it('shows autopsy stage status for team flow', async () => {
+    const sse = chunkedSse()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: sse.stream,
+      text: vi.fn().mockResolvedValue('')
+    }))
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['team.wotbreplay'])
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+
+    sse.enqueue('event:call2_token\ndata:{"delta":"team"}\n\n')
+    sse.enqueue('event:autopsy_start\ndata:{}\n\n')
+    await flushPromises()
+    expect(wrapper.text()).toContain('recon.stages.autopsy')
+
+    sse.enqueue('event:autopsy_done\ndata:{}\n\n')
+    sse.enqueue('event:done\ndata:{"analysis":"team","preBattleSection":null}\n\n')
+    sse.close()
+    await flushPromises()
+    expect(wrapper.text()).toContain('recon.analysis_title_player')
+  })
+
+  it('shows localized error from an error event mid-stream', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse([
+      { event: 'call1_start', data: {} },
+      { event: 'error', data: { code: 'AI_RATE_LIMITED' } }
+    ])))
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['fail.wotbreplay'])
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('recon.errors.AI_RATE_LIMITED')
+    expect(analyzeButton(wrapper).attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('recon.analysis_title_player')
+  })
+
+  it('treats premature stream end without done as invalid response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse([
+      { event: 'call1_start', data: {} },
+      { event: 'call2_token', data: { delta: 'partial' } }
+    ])))
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['cut.wotbreplay'])
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('recon.errors.AI_RESPONSE_INVALID')
+  })
+
+  it('passes preBattleSection from the done event to the result panel', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse([
+      { event: 'done', data: { analysis: 'a', preBattleSection: '## 赛前预测' } }
+    ])))
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['pre.wotbreplay'])
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('recon.prebattle.title')
+    expect(wrapper.text()).toContain('recon.prebattle.collapse')
+  })
+
+  it('moves to call2 stage on first call2_token without evidence_done (fallback stream)', async () => {
+    // fallback 路径（NON_ZH/NO_RECONSTRUCTION/RECORDER_UNRESOLVED/
+    // FEATURES_UNAVAILABLE/PRE_BATTLE_UNAVAILABLE）直接进入旧 PlayerReplay 流：
+    // 只发 call2_token，无 call1/evidence 阶段事件。
+    const sse = chunkedSse()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: sse.stream,
+      text: vi.fn().mockResolvedValue('')
+    }))
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['fallback.wotbreplay'])
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+
+    // token 到达前：停留在初始 call1 阶段，不显示证据分析
+    expect(wrapper.text()).toContain('recon.stages.call1')
+    expect(wrapper.text()).not.toContain('recon.stages.evidence')
+
+    sse.enqueue('event:call2_token\ndata:{"delta":"fallback "}\n\n')
+    sse.enqueue('event:call2_token\ndata:{"delta":"review"}\n\n')
+    await flushPromises()
+
+    // 收到首个 call2_token：阶段强制进入 call2（不再依赖 evidence_done），token 正常滚动
+    expect(wrapper.text()).toContain('recon.stages.call2')
+    expect(wrapper.text()).not.toContain('recon.stages.call1')
+    expect(wrapper.text()).not.toContain('recon.stages.evidence')
+    expect(wrapper.text()).toContain('fallback review')
+
+    sse.enqueue('event:done\ndata:{"analysis":"fallback review","preBattleSection":null}\n\n')
+    sse.close()
+    await flushPromises()
+
+    // done 后切换到完整结果面板
+    expect(wrapper.text()).toContain('recon.analysis_title_player')
+    expect(wrapper.text()).toContain('fallback review')
+    expect(wrapper.text()).not.toContain('recon.stages.call2')
+  })
+})
 
 describe('ReconstructionPage AI request lifecycle (timeout + cancel)', () => {
   /** fetch 模拟：可被 AbortController 中止的挂起请求。 */

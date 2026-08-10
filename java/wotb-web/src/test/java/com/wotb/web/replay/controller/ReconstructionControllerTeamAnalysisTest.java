@@ -15,6 +15,7 @@ import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.AiReplayReviewService;
+import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
 import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.ai.AllowedLanguage;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
@@ -22,17 +23,20 @@ import com.wotb.web.replay.ai.AnalyzeResult;
 import com.wotb.web.replay.ai.TeamAnalyzeResult;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
+import com.wotb.web.replay.exception.ReplayFileCountExceededException;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
@@ -42,69 +46,68 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+/**
+ * 团队复盘（训练房/联赛）契约：异步 worker 下成功路径 done 事件携带 analysis；
+ * request-envelope 校验（文件数/空文件等）在提交 worker 前失败 → HTTP 400，
+ * 不进入 SSE 流；worker 内的运行时/业务失败（视角未解析/视角冲突/特征不可用/
+ * 预算/未配置/上游失败）→ SSE {@code error} 事件携带稳定错误码（HTTP 已 200）。
+ */
 class ReconstructionControllerTeamAnalysisTest {
 
     private DefaultReplayProcessingFacade processingFacade;
     private AiReplayAnalysisService aiService;
     private AiReplayReviewService reviewService;
-    private MockMvc mvc;
+    private AiReviewWorkerExecutor workerExecutor;
+    private ReconstructionController controller;
 
     @BeforeEach
     void setUp() {
         processingFacade = mock(DefaultReplayProcessingFacade.class);
         aiService = mock(AiReplayAnalysisService.class);
         reviewService = spy(new AiReplayReviewService(processingFacade, aiService));
-        final var controller = new ReconstructionController(
-                processingFacade, reviewService, new AiCancellationRegistry());
-        mvc = MockMvcBuilders.standaloneSetup(controller).build();
+        workerExecutor = new AiReviewWorkerExecutor();
+        controller = new ReconstructionController(
+                processingFacade, reviewService, new AiCancellationRegistry(), workerExecutor);
+    }
+
+    @AfterEach
+    void tearDown() {
+        workerExecutor.close();
     }
 
     @Test
-    void uploadWithTwoFilesReturnsReplayFileCountExceeded() throws Exception {
-        final var request = multipart("/api/replay/analyze")
-                .param("lang", "zh")
-                .file(replayFile("a.wotbreplay"))
-                .file(replayFile("b.wotbreplay"));
-
-        mvc.perform(request)
-                .andExpect(status().isBadRequest())
-                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.code").value("REPLAY_FILE_COUNT_EXCEEDED"))
-                .andExpect(jsonPath("$.maxFiles").value(1))
-                .andExpect(jsonPath("$.actualFiles").value(2));
+    void uploadWithTwoFilesThrowsReplayFileCountExceededBeforeStreamStarts() throws Exception {
+        // HTTP request-envelope validation：2 文件超 MAX_FILES=1 → 提交 worker 前抛
+        // ReplayFileCountExceededException → @ExceptionHandler 映射 400 结构化
+        // {code, maxFiles, actualFiles}，不进入 SSE 流。
+        assertThrows(ReplayFileCountExceededException.class,
+                () -> controller.analyze(
+                        new MultipartFile[]{replayFile("a.wotbreplay"), replayFile("b.wotbreplay")},
+                        "zh", null));
         // Processing facade and AI provider must not be called
         verify(processingFacade, never()).process(any(Source.class), any(ReplayProcessingOptions.class));
-        verify(aiService, never()).analyzeTeamGroups(any(), any());
-        verify(aiService, never()).analyzePlayerOrFallback(any(), any());
+        verify(aiService, never()).analyzeTeamGroups(any(), any(), any());
+        verify(aiService, never()).analyzePlayerOrFallback(any(), any(), any());
+        verify(reviewService, never()).analyzeStreaming(any(), any(), any());
     }
 
     @Test
-    void uploadWithTwoIdenticalFilesAlsoRejectedByCount() throws Exception {
+    void uploadWithTwoIdenticalFilesAlsoRejectedByCountBeforeStreamStarts() throws Exception {
         final var file = replayFile("same.wotbreplay");
-        final var request = multipart("/api/replay/analyze")
-                .param("lang", "zh")
-                .file(file)
-                .file(file);
-
-        mvc.perform(request)
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("REPLAY_FILE_COUNT_EXCEEDED"))
-                .andExpect(jsonPath("$.maxFiles").value(1))
-                .andExpect(jsonPath("$.actualFiles").value(2));
+        assertThrows(ReplayFileCountExceededException.class,
+                () -> controller.analyze(new MultipartFile[]{file, file}, "zh", null));
         verify(processingFacade, never()).process(any(Source.class), any(ReplayProcessingOptions.class));
+        verify(reviewService, never()).analyzeStreaming(any(), any(), any());
     }
 
     @Test
-    void emptyFilesArrayReturnsNoReplayFiles() throws Exception {
-        mvc.perform(multipart("/api/replay/analyze").param("lang", "zh"))
-                .andExpect(status().isBadRequest());
+    void emptyFilesArrayThrowsNoReplayFilesBeforeStreamStarts() throws Exception {
+        assertThrows(IllegalArgumentException.class,
+                () -> controller.analyze(new MultipartFile[0], "zh", null));
         verify(processingFacade, never()).process(any(Source.class), any(ReplayProcessingOptions.class));
-        verify(aiService, never()).analyzeTeamGroups(any(), any());
+        verify(aiService, never()).analyzeTeamGroups(any(), any(), any());
+        verify(reviewService, never()).analyzeStreaming(any(), any(), any());
     }
 
     @Test
@@ -113,21 +116,19 @@ class ReconstructionControllerTeamAnalysisTest {
                 "training.wotbreplay", "arena-one", "Ally", 1001L, 1);
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(result);
-        when(aiService.analyzeTeamGroups(any(), any()))
+        when(aiService.analyzeTeamGroups(any(), any(), any()))
                 .thenReturn(teamAiResult("team review"));
 
-        mvc.perform(multipart("/api/replay/analyze")
-                        .param("lang", "zh")
-                        .file(replayFile("training.wotbreplay")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.analysis").value("team review"));
+        final String body = drainUntilDone(analyzeDirect(replayFile("training.wotbreplay")));
+
+        assertTrue(body.contains("\"analysis\":\"team review\""), body);
 
         final ArgumentCaptor<List<ReplayPerspectiveGroup>> captor =
                 teamGroupCaptor();
-        verify(aiService).analyzeTeamGroups(captor.capture(), any());
+        verify(aiService).analyzeTeamGroups(captor.capture(), any(), any());
         assertEquals(1, captor.getValue().size());
         assertEquals(1, captor.getValue().getFirst().key().perspectiveTeam());
-        verify(aiService, never()).analyzePlayerOrFallback(any(), any());
+        verify(aiService, never()).analyzePlayerOrFallback(any(), any(), any());
     }
 
     @Test
@@ -136,20 +137,16 @@ class ReconstructionControllerTeamAnalysisTest {
                 "single.wotbreplay", "test-arena", "Ally", 1001L, 1);
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(result);
-        when(aiService.analyzeTeamGroups(any(), any()))
+        when(aiService.analyzeTeamGroups(any(), any(), any()))
                 .thenReturn(teamAiResult("single review"));
 
-        mvc.perform(multipart("/api/replay/analyze")
-                        .param("lang", "zh")
-                        .file(replayFile("single.wotbreplay")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.analysis").value("single review"));
+        drainUntilDone(analyzeDirect(replayFile("single.wotbreplay")));
 
         final ArgumentCaptor<List<ReplayPerspectiveGroup>> captor =
                 teamGroupCaptor();
-        verify(aiService, times(1)).analyzeTeamGroups(captor.capture(), any());
+        verify(aiService, times(1)).analyzeTeamGroups(captor.capture(), any(), any());
         assertEquals(1, captor.getValue().size());
-        verify(aiService, never()).analyzePlayerOrFallback(any(), any());
+        verify(aiService, never()).analyzePlayerOrFallback(any(), any(), any());
     }
 
     @Test
@@ -158,18 +155,14 @@ class ReconstructionControllerTeamAnalysisTest {
                 "team.wotbreplay", "team-arena", "Player", 1001L, 1);
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(result);
-        when(aiService.analyzeTeamGroups(any(), any()))
+        when(aiService.analyzeTeamGroups(any(), any(), any()))
                 .thenReturn(teamAiResult("team review"));
 
-        mvc.perform(multipart("/api/replay/analyze")
-                        .param("lang", "zh")
-                        .file(replayFile("team.wotbreplay")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.analysis").value("team review"));
+        drainUntilDone(analyzeDirect(replayFile("team.wotbreplay")));
 
         final ArgumentCaptor<List<ReplayPerspectiveGroup>> captor =
                 teamGroupCaptor();
-        verify(aiService).analyzeTeamGroups(captor.capture(), any());
+        verify(aiService).analyzeTeamGroups(captor.capture(), any(), any());
         assertEquals(1, captor.getValue().size());
         assertEquals(1, captor.getValue().getFirst().key().perspectiveTeam());
     }
@@ -181,14 +174,12 @@ class ReconstructionControllerTeamAnalysisTest {
                 "fallback.wotbreplay", "fallback-arena", "Ally", 1001L, 1);
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(fallback);
-        when(aiService.analyzeTeamGroups(any(), any()))
+        when(aiService.analyzeTeamGroups(any(), any(), any()))
                 .thenReturn(teamAiResult("fallback review"));
 
-        mvc.perform(multipart("/api/replay/analyze")
-                        .param("lang", "zh")
-                        .file(replayFile("fallback.wotbreplay")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.analysis").value("fallback review"));
+        final String body = drainUntilDone(analyzeDirect(replayFile("fallback.wotbreplay")));
+
+        assertTrue(body.contains("\"analysis\":\"fallback review\""), body);
     }
 
     @Test
@@ -197,14 +188,12 @@ class ReconstructionControllerTeamAnalysisTest {
                 "training.wotbreplay", "arena-one", "Ally", 1001L, 1);
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(result);
-        when(aiService.analyzeTeamGroups(any(), any()))
+        when(aiService.analyzeTeamGroups(any(), any(), any()))
                 .thenReturn(new TeamAnalyzeResult(new AnalyzeResult("team review")));
 
-        mvc.perform(multipart("/api/replay/analyze")
-                        .param("lang", "zh")
-                        .file(replayFile("training.wotbreplay")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.analysis").value("team review"));
+        final String body = drainUntilDone(analyzeDirect(replayFile("training.wotbreplay")));
+
+        assertTrue(body.contains("\"analysis\":\"team review\""), body);
     }
 
     @Test
@@ -213,57 +202,46 @@ class ReconstructionControllerTeamAnalysisTest {
                 "battle.wotbreplay", "battle-arena", "Player", 1001L, 1);
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(result);
-        when(aiService.analyzeTeamGroups(any(), any()))
+        when(aiService.analyzeTeamGroups(any(), any(), any()))
                 .thenReturn(teamAiResult("team review"));
 
-        mvc.perform(multipart("/api/replay/analyze")
-                        .param("lang", "zh")
-                        .file(replayFile("battle.wotbreplay")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.analysis").value("team review"));
+        final String body = drainUntilDone(analyzeDirect(replayFile("battle.wotbreplay")));
+
+        assertTrue(body.contains("\"analysis\":\"team review\""), body);
     }
 
     @Test
-    void unresolvedPerspectiveReturnsStable422Error() throws Exception {
+    void unresolvedPerspectiveConveysStableErrorEvent() throws Exception {
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(unresolvedTeamResult());
 
-        mvc.perform(multipart("/api/replay/analyze")
-                        .param("lang", "zh")
-                        .file(replayFile("observer.wotbreplay")))
-                .andExpect(status().isUnprocessableEntity())
-                .andExpect(content().string("PERSPECTIVE_TEAM_UNRESOLVED"));
+        final String body = analyzeConveyingError(replayFile("observer.wotbreplay"));
 
-        verify(aiService, never()).analyzeTeamGroups(any(), any());
+        assertTrue(body.contains("\"code\":\"PERSPECTIVE_TEAM_UNRESOLVED\""), body);
+        verify(aiService, never()).analyzeTeamGroups(any(), any(), any());
     }
 
     @Test
-    void conflictingPerspectiveReturnsSpecificStable422Error() throws Exception {
+    void conflictingPerspectiveConveysSpecificStableErrorEvent() throws Exception {
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(conflictingTeamResult());
 
-        mvc.perform(multipart("/api/replay/analyze")
-                        .param("lang", "zh")
-                        .file(replayFile("conflict.wotbreplay")))
-                .andExpect(status().isUnprocessableEntity())
-                .andExpect(content().string("PERSPECTIVE_TEAM_CONFLICT"));
+        final String body = analyzeConveyingError(replayFile("conflict.wotbreplay"));
 
-        verify(aiService, never()).analyzeTeamGroups(any(), any());
+        assertTrue(body.contains("\"code\":\"PERSPECTIVE_TEAM_CONFLICT\""), body);
+        verify(aiService, never()).analyzeTeamGroups(any(), any(), any());
     }
 
     @Test
-    void resolvedTeamWithoutSummaryOrMappedFeaturesReturnsStable400Error()
+    void resolvedTeamWithoutSummaryOrMappedFeaturesConveysStableErrorEvent()
             throws Exception {
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(resolvedTeamWithoutFeatures());
 
-        mvc.perform(multipart("/api/replay/analyze")
-                        .param("lang", "zh")
-                        .file(replayFile("no-features.wotbreplay")))
-                .andExpect(status().isBadRequest())
-                .andExpect(content().string("TEAM_FEATURES_UNAVAILABLE"));
+        final String body = analyzeConveyingError(replayFile("no-features.wotbreplay"));
 
-        verify(aiService, never()).analyzeTeamGroups(any(), any());
+        assertTrue(body.contains("\"code\":\"TEAM_FEATURES_UNAVAILABLE\""), body);
+        verify(aiService, never()).analyzeTeamGroups(any(), any(), any());
     }
 
     @Test
@@ -272,77 +250,99 @@ class ReconstructionControllerTeamAnalysisTest {
                 "resolved.wotbreplay", "resolved-arena", "Ally", 1001L, 1);
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(result);
-        when(aiService.analyzeTeamGroups(any(), any()))
+        when(aiService.analyzeTeamGroups(any(), any(), any()))
                 .thenReturn(teamAiResult("review"));
 
-        mvc.perform(multipart("/api/replay/analyze")
-                        .param("lang", "zh")
-                        .file(replayFile("resolved.wotbreplay")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.analysis").value("review"));
+        final String body = drainUntilDone(analyzeDirect(replayFile("resolved.wotbreplay")));
+
+        assertTrue(body.contains("\"analysis\":\"review\""), body);
     }
 
     @Test
-    void promptBudgetExceededReturnsCorrectHttpStatus() throws Exception {
+    void promptBudgetExceededConveysStableErrorEvent() throws Exception {
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(teamResult(
                         "budget.wotbreplay", "budget-arena", "Ally", 1001L, 1));
-        when(aiService.analyzeTeamGroups(any(), any()))
+        when(aiService.analyzeTeamGroups(any(), any(), any()))
                 .thenThrow(new AiPromptBudgetExceededException());
 
-        mvc.perform(multipart("/api/replay/analyze")
-                        .param("lang", "zh")
-                        .file(replayFile("budget.wotbreplay")))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("AI_PROMPT_MANDATORY_SECTION_TOO_LARGE"));
+        final String body = analyzeConveyingError(replayFile("budget.wotbreplay"));
+
+        assertTrue(body.contains("\"code\":\"AI_PROMPT_MANDATORY_SECTION_TOO_LARGE\""), body);
     }
 
     @Test
-    void missingAiConfigurationReturnsStable503Error() throws Exception {
+    void missingAiConfigurationConveysStableErrorEvent() throws Exception {
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(teamResult(
                         "config.wotbreplay", "config-arena", "Ally", 1001L, 1));
-        when(aiService.analyzeTeamGroups(any(), any()))
+        when(aiService.analyzeTeamGroups(any(), any(), any()))
                 .thenThrow(new AiNotConfiguredException());
 
-        mvc.perform(multipart("/api/replay/analyze")
-                        .param("lang", "zh")
-                        .file(replayFile("config.wotbreplay")))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(content().string("AI_NOT_CONFIGURED"));
+        final String body = analyzeConveyingError(replayFile("config.wotbreplay"));
+
+        assertTrue(body.contains("\"code\":\"AI_NOT_CONFIGURED\""), body);
     }
 
     @Test
-    void upstreamFailureReturnsOnlyStableCode() throws Exception {
+    void upstreamFailureConveysOnlyStableCode() throws Exception {
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(teamResult(
                         "rate.wotbreplay", "rate-arena", "Ally", 1001L, 1));
-        when(aiService.analyzeTeamGroups(any(), any()))
+        when(aiService.analyzeTeamGroups(any(), any(), any()))
                 .thenThrow(new AiUpstreamException(
                         "AI_RATE_LIMITED", 429, "private-correlation-id"));
 
-        mvc.perform(multipart("/api/replay/analyze")
-                        .param("lang", "zh")
-                        .file(replayFile("rate.wotbreplay")))
-                .andExpect(status().isBadGateway())
-                .andExpect(content().string("AI_RATE_LIMITED"));
+        final String body = analyzeConveyingError(replayFile("rate.wotbreplay"));
+
+        assertTrue(body.contains("\"code\":\"AI_RATE_LIMITED\""), body);
     }
 
     @Test
     void randomBattleKeepsPlayerFocusedPath() throws Exception {
         when(processingFacade.process(any(Source.class), any(ReplayProcessingOptions.class)))
                 .thenReturn(randomResult());
-        when(aiService.analyzePlayerOrFallback(any(), any()))
+        when(aiService.analyzePlayerOrFallback(any(), any(), any()))
                 .thenReturn(new AnalyzeResult("player review"));
 
-        mvc.perform(multipart("/api/replay/analyze")
-                        .param("lang", "zh")
-                        .file(replayFile("random.wotbreplay")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.analysis").value("player review"));
+        final String body = drainUntilDone(analyzeDirect(replayFile("random.wotbreplay")));
 
-        verify(aiService).analyzePlayerOrFallback(any(), any());
-        verify(aiService, never()).analyzeTeamGroups(any(), any());
+        assertTrue(body.contains("\"analysis\":\"player review\""), body);
+
+        verify(aiService).analyzePlayerOrFallback(any(), any(), any());
+        verify(aiService, never()).analyzeTeamGroups(any(), any(), any());
+    }
+
+    @Test
+    void blankLangThrowsUnknownLocaleBeforeStreamStarts() {
+        assertThrows(IllegalArgumentException.class,
+                () -> controller.analyze(
+                        new MultipartFile[]{replayFile("a.wotbreplay")}, "", null));
+        verify(aiService, never()).analyzePlayerOrFallback(any(), any(), any());
+    }
+
+    @Test
+    void unknownLangThrowsUnknownLocaleBeforeStreamStarts() {
+        assertThrows(IllegalArgumentException.class,
+                () -> controller.analyze(
+                        new MultipartFile[]{replayFile("a.wotbreplay")}, "fr", null));
+        verify(aiService, never()).analyzePlayerOrFallback(any(), any(), any());
+    }
+
+    @Test
+    void langEnIsForwardedToReviewService() throws Exception {
+        doReturn(new AnalyzeResponse("ok"))
+                .when(reviewService).analyzeStreaming(any(), any(AllowedLanguage.class), any());
+        drainUntilDone(analyzeDirect(replayFile("a.wotbreplay"), "en"));
+        verify(reviewService).analyzeStreaming(any(), eq(AllowedLanguage.EN), any());
+    }
+
+    @Test
+    void langRuIsForwardedToReviewService() throws Exception {
+        doReturn(new AnalyzeResponse("ok"))
+                .when(reviewService).analyzeStreaming(any(), any(AllowedLanguage.class), any());
+        drainUntilDone(analyzeDirect(replayFile("a.wotbreplay"), "ru"));
+        verify(reviewService).analyzeStreaming(any(), eq(AllowedLanguage.RU), any());
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -542,59 +542,63 @@ class ReconstructionControllerTeamAnalysisTest {
         return player;
     }
 
-    @Test
-    void missingLangIsRejectedAsRequiredParameter() throws Exception {
-        mvc.perform(multipart("/api/replay/analyze")
-                        .file(replayFile("a.wotbreplay")))
-                .andExpect(status().isBadRequest());
-        verify(aiService, never()).analyzePlayerOrFallback(any(), any());
+    // ---- helpers ----
+
+    private ReconstructionControllerTestEmitter analyzeDirect(final MockMultipartFile file) {
+        return analyzeDirect(file, "zh");
     }
 
-    @Test
-    void blankLangReturnsUnknownLocale() throws Exception {
-        mvc.perform(multipart("/api/replay/analyze")
-                        .file(replayFile("a.wotbreplay"))
-                        .param("lang", ""))
-                .andExpect(status().isBadRequest())
-                .andExpect(content().contentType(MediaType.TEXT_PLAIN))
-                .andExpect(content().string("UNKNOWN_LOCALE"));
-        verify(aiService, never()).analyzePlayerOrFallback(any(), any());
+    private ReconstructionControllerTestEmitter analyzeDirect(final MockMultipartFile file,
+                                                              final String lang) {
+        final ReconstructionControllerTestEmitter emitter =
+                new ReconstructionControllerTestEmitter();
+        final ReconstructionController controllerSpy = spy(controller);
+        doReturn(emitter).when(controllerSpy).newAnalyzeEmitter();
+        controllerSpy.analyze(new MultipartFile[]{file}, lang, null);
+        return emitter;
     }
 
-    @Test
-    void unknownLangReturnsUnknownLocale() throws Exception {
-        mvc.perform(multipart("/api/replay/analyze")
-                        .file(replayFile("a.wotbreplay"))
-                        .param("lang", "fr"))
-                .andExpect(status().isBadRequest())
-        .andExpect(content().contentType(MediaType.TEXT_PLAIN))
-                .andExpect(content().string("UNKNOWN_LOCALE"));
-        verify(aiService, never()).analyzePlayerOrFallback(any(), any());
+    /** 断言 worker 通过 error 事件传达稳定错误码（而非 HTTP 状态码）。 */
+    private String analyzeConveyingError(final MockMultipartFile file) throws InterruptedException {
+        final String body = drainUntilMarker(analyzeDirect(file), "event:error");
+        assertTrue(body.contains("event:error"), body);
+        assertTrue(!body.contains("event:done"), "failed stream must not emit done: " + body);
+        return body;
     }
 
-    @Test
-    void langEnIsForwardedToReviewService() throws Exception {
-        doReturn(minimalAnalyzeResponse())
-                .when(reviewService).analyze(any(), any(AllowedLanguage.class));
-        mvc.perform(multipart("/api/replay/analyze")
-                        .file(replayFile("a.wotbreplay"))
-                        .param("lang", "en"))
-                .andExpect(status().isOk());
-        verify(reviewService).analyze(any(), eq(AllowedLanguage.EN));
+    private String drainUntilDone(final ReconstructionControllerTestEmitter emitter)
+            throws InterruptedException {
+        final String body = drainUntilMarker(emitter, "event:done");
+        assertTrue(body.contains("event:done"),
+                "stream must complete with done: " + body);
+        return body;
     }
 
-    @Test
-    void langRuIsForwardedToReviewService() throws Exception {
-        doReturn(minimalAnalyzeResponse())
-                .when(reviewService).analyze(any(), any(AllowedLanguage.class));
-        mvc.perform(multipart("/api/replay/analyze")
-                        .file(replayFile("a.wotbreplay"))
-                        .param("lang", "ru"))
-                .andExpect(status().isOk());
-        verify(reviewService).analyze(any(), eq(AllowedLanguage.RU));
+    /** 轮询事件队列直到包含 marker（或超时），返回已收集的事件文本。 */
+    private String drainUntilMarker(final ReconstructionControllerTestEmitter emitter,
+                                    final String marker) throws InterruptedException {
+        final StringBuilder body = new StringBuilder();
+        final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            final String event = emitter.awaitEvent(
+                    Math.max(1, (deadline - System.nanoTime()) / 1_000_000),
+                    TimeUnit.MILLISECONDS);
+            if (event == null) {
+                break;
+            }
+            body.append(event);
+            if (event.contains(marker)) {
+                break;
+            }
+        }
+        return body.toString();
     }
 
-    private static AnalyzeResponse minimalAnalyzeResponse() {
-        return new AnalyzeResponse("ok");
+    private static final class ReconstructionControllerTestEmitter
+            extends ReconstructionControllerStreamingTest.RecordingEmitter {
+
+        ReconstructionControllerTestEmitter() {
+            super(ReconstructionController.SSE_TIMEOUT_MS);
+        }
     }
 }

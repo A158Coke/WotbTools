@@ -9,6 +9,7 @@ import com.wotb.core.processing.ReplayAnalysisScope;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
+import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.processing.TeamPerspectiveResolver;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
@@ -82,6 +83,18 @@ public class AiReplayReviewService {
 
     public AnalyzeResponse analyze(final MultipartFile[] files,
                                    final AllowedLanguage language) throws IOException {
+        return analyzeStreaming(files, language, AiReviewStreamListener.NOOP);
+    }
+
+    /**
+     * 流式变体：与 {@link #analyze(MultipartFile[], AllowedLanguage)} 完全相同的
+     * 校验/指标/异常语义，额外通过 {@code listener} 广播阶段事件与主复盘 token
+     * 增量。同步路径委托本方法（NOOP listener），保证单一实现不回归。
+     */
+    public AnalyzeResponse analyzeStreaming(final MultipartFile[] files,
+                                            final AllowedLanguage language,
+                                            final AiReviewStreamListener listener)
+            throws IOException {
         final boolean metrics = meterRegistry != null;
         final Timer.Sample sample = metrics ? Timer.start(meterRegistry) : null;
         if (metrics) {
@@ -91,7 +104,7 @@ public class AiReplayReviewService {
         String result = "success";
         String errorType = null;
         try {
-            return analyzeInternal(files, language);
+            return analyzeInternal(files, language, listener);
         } catch (final AiNotConfiguredException e) {
             result = "rejected";
             errorType = "AI_NOT_CONFIGURED";
@@ -144,7 +157,8 @@ public class AiReplayReviewService {
     }
 
     private AnalyzeResponse analyzeInternal(final MultipartFile[] files,
-                                            final AllowedLanguage language) throws IOException {
+                                            final AllowedLanguage language,
+                                            final AiReviewStreamListener listener) throws IOException {
         if (files == null || files.length == 0) throw new IllegalArgumentException("NO_REPLAY_FILES");
         validateBatchSize(files.length);
         long totalSize = 0;
@@ -220,30 +234,65 @@ public class AiReplayReviewService {
             throw new IllegalArgumentException("NO_BATTLE_DATA");
         }
         return switch (plan.mode()) {
-            case SINGLE_PLAYER_BATTLE -> new AnalyzeResponse(
-                    harnessOrFallback(
-                            analyzableGroups.getFirst().representative(), language).analysis());
+            case SINGLE_PLAYER_BATTLE -> {
+                final TacticalReviewHarness.HarnessOutcome outcome = harnessOrFallback(
+                        analyzableGroups.getFirst().representative(), language, listener);
+                yield new AnalyzeResponse(
+                        outcome.result().analysis(),
+                        renderRandomBattleSection(
+                                analyzableGroups.getFirst().representative(),
+                                outcome.preBattlePrior(), language));
+            }
             case MULTI_PLAYER_BATTLE -> {
                 final var battles = analyzableGroups.stream()
                         .map(ReplayPerspectiveGroup::representative)
                         .map(ReplayProcessingResult::battle)
                         .toList();
                 yield new AnalyzeResponse(
-                        aiAnalysisService.analyzeMulti(battles, language).analysis());
+                        aiAnalysisService.analyzeMulti(battles, language, listener).analysis());
             }
-            case SINGLE_TEAM_BATTLE, MULTI_TEAM_BATTLE -> new AnalyzeResponse(
-                    aiAnalysisService.analyzeTeamGroups(analyzableGroups, language)
-                            .analysis().analysis());
+            case SINGLE_TEAM_BATTLE, MULTI_TEAM_BATTLE -> {
+                final TeamAnalyzeResult teamResult = aiAnalysisService
+                        .analyzeTeamGroups(analyzableGroups, language, listener);
+                yield new AnalyzeResponse(
+                        teamResult.analysis().analysis(),
+                        teamResult.preBattleSection());
+            }
             case NONE -> throw new IllegalArgumentException("NO_BATTLE_DATA");
         };
     }
 
-    private AnalyzeResult harnessOrFallback(final ReplayProcessingResult representative,
-                                            final AllowedLanguage language) {
+    private TacticalReviewHarness.HarnessOutcome harnessOrFallback(
+            final ReplayProcessingResult representative,
+            final AllowedLanguage language,
+            final AiReviewStreamListener listener) {
         if (tacticalReviewHarness != null) {
-            return tacticalReviewHarness.analyze(representative, language);
+            return tacticalReviewHarness.analyzeWithPrior(representative, language, listener);
         }
-        return aiAnalysisService.analyzePlayerOrFallback(representative, language);
+        return new TacticalReviewHarness.HarnessOutcome(
+                aiAnalysisService.analyzePlayerOrFallback(representative, language, listener), null);
+    }
+
+    /**
+     * 随机战 Call #1 prior 的用户可见渲染：按录像者 perspective 队伍映射为
+     * 「友军/敌军」——录像者所属 team → 友军，另一方 → 敌军。Call #1 内部保持
+     * TEAM_A/TEAM_B 客观标签不受影响（只有用户 UI 渲染做映射），随机战用户界面
+     * 不允许出现「队伍1/队伍2」。录像者 team 无法确定时走中性防御路径。
+     * <p>随机战 <b>不</b>把录像者 nickname 作为 team label（避免「友军（Player123）
+     * 画像」），只显示「友军画像/敌军画像」；团队复盘保留真实 clan/team label。</p>
+     */
+    private static String renderRandomBattleSection(
+            final ReplayProcessingResult representative,
+            final PreBattleStrategicPrior prior,
+            final AllowedLanguage language) {
+        if (prior == null) {
+            return null;
+        }
+        final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(representative);
+        final int recorderTeam = recorder != null && recorder.team() != null
+                ? recorder.team() : 0;
+        return PreBattleSectionRenderer.renderRandomBattle(
+                prior, recorderTeam, language);
     }
 
     private static String unresolvedTeamCode(final List<ReplayPerspectiveGroup> groups) {

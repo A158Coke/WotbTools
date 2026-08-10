@@ -112,7 +112,31 @@ Enemy-only damage 不得延长 Team phase。
 
 ## 8. Result Contract
 
-`POST /api/replay/analyze` 响应仅包含 `{ analysis }`（AI 复盘正文）。
+`POST /api/replay/analyze` 已由同步 JSON 改为 **SSE 流式**（`text/event-stream`，旧同步端点不保留），
+`ReplaySseWriter` 序列化（自定 JSON event，`data` 为 JSON）：
+
+| event | data | 说明 |
+|-------|------|------|
+| `call1_start` | `{}` | Call #1（赛前战略基线）开始 |
+| `call1_done` | `{}` | Call #1 结束（真实发起调用时必发，无论成败） |
+| `evidence_done` | `{}` | 后端证据分析完成 |
+| `call2_token` | `{"delta":"..."}` | 主复盘 token 增量 |
+| `autopsy_start` | `{}` | Team Autopsy 开始 |
+| `autopsy_done` | `{}` | Team Autopsy 结束 |
+| `done` | `{"analysis":"...","preBattleSection":"..."}` | 全部完成；`preBattleSection` 为 null 时输出 JSON null |
+| `error` | `{"code":"AI_..."}` | 流中途失败（稳定错误码） |
+
+异常传达规则：request-envelope 校验（`UNKNOWN_LOCALE` / `NO_REPLAY_FILES` /
+`NO_REPLAY_FILE` / `REPLAY_FILE_COUNT_EXCEEDED` / `INVALID_REPLAY_FILE_TYPE` /
+`FILE_TOO_LARGE` / `TOTAL_REQUEST_TOO_LARGE`）与 worker 池饱和
+（`AI_REVIEW_BUSY`）在返回 `SseEmitter` 前由 `@ExceptionHandler` 映射 HTTP
+400 / 503；worker 启动后的运行时/业务失败（`NO_BATTLE_DATA` /
+`PERSPECTIVE_TEAM_*` / `TEAM_FEATURES_UNAVAILABLE` / `AI_NOT_CONFIGURED` /
+`AI_*` 等）经 `error` 事件传达（HTTP 已 200），客户端断开时终止上游调用不向
+已断开的连接写入。`AiChatGateway.stream` 单次尝试不流内重试，
+`AI_TIMEOUT` / `AI_CANCELLED`（`correlationId` cancel）语义与同步 `chat()` 一致；
+同步测试路径委托流式实现（`AiReviewStreamListener.NOOP`）。
+
 历史上响应的四类计数（`analysisUnitCount` / `analyzedUnitCount` /
 `omittedAnalysisUnitCount` / `unavailableAnalysisUnitCount`）、`files`、
 `analyses`、`keyEvents`、`limitations` 等统计/诊断字段均无消费者

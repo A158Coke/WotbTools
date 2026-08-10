@@ -43,6 +43,14 @@ public class TacticalReviewHarness {
     /** 前端/nginx 的现有请求生命周期上限（秒），用于理论最坏时间断言。 */
     static final int ENDPOINT_DEADLINE_SEC = 400;
 
+    /**
+     * Harness 运行结果：复盘文本 + 本次执行实际使用的 Call #1 prior。
+     * <p>{@code preBattlePrior} 仅在 ZH + 全部前置满足 + Call #1 成功时非 null
+     * （fallback / 非 ZH / 失败均为 null），供上层渲染用户可见的赛前预测区块。</p>
+     */
+    public record HarnessOutcome(AnalyzeResult result, PreBattleStrategicPrior preBattlePrior) {
+    }
+
     private final PlayerReplayAnalysisService playerService;
     private final PreBattleStrategicService preBattleService;
     private final AiChatGateway gateway;
@@ -75,22 +83,34 @@ public class TacticalReviewHarness {
 
     /** 运行双 Call Harness；不满足前提时回退到旧单 Call 路径。 */
     public AnalyzeResult analyze(final ReplayProcessingResult result, final AllowedLanguage language) {
+        return analyzeWithPrior(result, language, AiReviewStreamListener.NOOP).result();
+    }
+
+    /**
+     * 运行双 Call Harness 并暴露本次执行实际使用的 Call #1 prior
+     * （仅 ZH 全路径成功时非 null，供上层渲染用户可见赛前预测区块）；
+     * 通过 {@code listener} 广播阶段事件（call1_start/call1_done/evidence_done）
+     * 与 Call #2 主复盘 token 增量（call2_token）。
+     */
+    public HarnessOutcome analyzeWithPrior(final ReplayProcessingResult result,
+                                           final AllowedLanguage language,
+                                           final AiReviewStreamListener listener) {
         final long startNanos = nanoTimeSource.getAsLong();
         if (language != AllowedLanguage.ZH) {
-            return fallback(result, language, "NON_ZH");
+            return new HarnessOutcome(fallback(result, language, "NON_ZH", listener), null);
         }
         if (result == null || result.battle() == null) {
             throw new IllegalArgumentException("NO_BATTLE_DATA");
         }
         if (!preBattleService.isConfigured()) {
-            return fallback(result, language, "AI_NOT_CONFIGURED");
+            return new HarnessOutcome(fallback(result, language, "AI_NOT_CONFIGURED", listener), null);
         }
         if (result.reconstruction() == null) {
-            return fallback(result, language, "NO_RECONSTRUCTION");
+            return new HarnessOutcome(fallback(result, language, "NO_RECONSTRUCTION", listener), null);
         }
         final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(result);
         if (!recorder.resolved()) {
-            return fallback(result, language, "RECORDER_UNRESOLVED");
+            return new HarnessOutcome(fallback(result, language, "RECORDER_UNRESOLVED", listener), null);
         }
         final PlayerBattleFeatureSet features;
         try {
@@ -98,20 +118,20 @@ public class TacticalReviewHarness {
                     result.reconstruction(), recorder, result.battle());
         } catch (final RuntimeException e) {
             LOGGER.info("Harness feature extraction failed, falling back: {}", e.getMessage());
-            return fallback(result, language, "FEATURES_FAILED");
+            return new HarnessOutcome(fallback(result, language, "FEATURES_FAILED", listener), null);
         }
         if (!features.hasFeatures()) {
-            return fallback(result, language, "FEATURES_UNAVAILABLE");
+            return new HarnessOutcome(fallback(result, language, "FEATURES_UNAVAILABLE", listener), null);
         }
 
-        final PreBattleStrategicPrior prior = preBattleService.analyze(result.battle());
+        final PreBattleStrategicPrior prior = preBattleService.analyze(result.battle(), listener);
         if (prior == null) {
             if (remainingSeconds(startNanos) < FALLBACK_MIN_REMAINING_SEC) {
                 LOGGER.info("Harness prior unavailable and budget insufficient, aborting with AI_TIMEOUT");
                 throw new AiUpstreamException(
                         "AI_TIMEOUT", null, AiRequestContext.correlationId());
             }
-            return fallback(result, language, "PRE_BATTLE_UNAVAILABLE");
+            return new HarnessOutcome(fallback(result, language, "PRE_BATTLE_UNAVAILABLE", listener), null);
         }
         LOGGER.info("Harness prior obtained: hypotheses={} matchups={} winConditions={}",
                 prior.hypotheses().size(),
@@ -120,8 +140,9 @@ public class TacticalReviewHarness {
 
         final EvidenceSkillResult evidence = skillEngine.run(new EvidenceSkillContext(
                 result.battle(), result.reconstruction(), features, recorder));
+        listener.onStage("evidence_done");
         if (!evidence.hasContent()) {
-            return fallback(result, language, "NO_EVIDENCE");
+            return new HarnessOutcome(fallback(result, language, "NO_EVIDENCE", listener), null);
         }
 
         final TacticalReviewPromptBuilder.PreparedHarnessPrompt prepared =
@@ -155,18 +176,19 @@ public class TacticalReviewHarness {
                 "TACTICAL_REVIEW_HARNESS",
                 (int) Math.min(Math.max(1L, remainingSeconds(startNanos) - SAFETY_MARGIN_SEC),
                         Integer.MAX_VALUE));
-        final String text = gateway.chat(request).completionText();
+        final String text = gateway.stream(request, listener::onToken).completionText();
         count("used");
         LOGGER.info("Harness review used: {}", prepared.budgetSummary());
-        return new AnalyzeResult(text);
+        return new HarnessOutcome(new AnalyzeResult(text), prior);
     }
 
     private AnalyzeResult fallback(final ReplayProcessingResult result,
                                    final AllowedLanguage language,
-                                   final String reason) {
+                                   final String reason,
+                                   final AiReviewStreamListener listener) {
         LOGGER.info("Harness fell back to old path: {}", reason);
         count(reason);
-        return playerService.analyzePlayerOrFallback(result, language);
+        return playerService.analyzePlayerOrFallback(result, language, listener);
     }
 
     private void count(final String reason) {
