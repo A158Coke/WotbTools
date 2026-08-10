@@ -8,6 +8,7 @@ const LOCALIZED_ERROR_CODES = new Set([
   'AI_TIMEOUT',
   'AI_EMPTY_RESPONSE',
   'AI_RESPONSE_INVALID',
+  'AI_REVIEW_BUSY',
   'NO_BATTLE_DATA',
   'UNSUPPORTED_BATTLE_CATEGORY',
   'PERSPECTIVE_TEAM_UNRESOLVED',
@@ -28,10 +29,10 @@ const LOCALIZED_ERROR_CODES = new Set([
 
 export function localizeAiError(rawCode, status, t) {
   let code = ''
-  let maxFiles = 16
+  let maxFiles = 1
   if (typeof rawCode === 'object' && rawCode !== null) {
     code = rawCode.code || ''
-    maxFiles = rawCode.maxFiles || 16
+    maxFiles = rawCode.maxFiles || 1
   } else if (typeof rawCode === 'string') {
     code = rawCode.trim()
   }

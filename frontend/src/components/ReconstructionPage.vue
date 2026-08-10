@@ -58,6 +58,11 @@ const error = ref('')
 const analyzing = ref(false)
 const analysisResult = ref(null)
 
+// 流式状态：当前阶段（call1 赛前预测 / evidence 证据分析 / call2 生成中 / autopsy 团队剖析）
+// 与主复盘已到达文本（token 滚动）。
+const progressStage = ref('')
+const partialAnalysis = ref('')
+
 // AI 复盘请求生命周期：客户端安全超时 + 取消（AbortController + 后端 cancel 端点）。
 // 超时链对齐：后端 AI_CALL_TIMEOUT_SEC=315 + 解析余量 < nginx analyze 420s；
 // 前端 400s 在 nginx 之前给出干净 AI_TIMEOUT，而不是等到代理 504。
@@ -70,6 +75,8 @@ let currentCorrelationId = ''
 
 function resetResults() {
   analysisResult.value = null
+  progressStage.value = ''
+  partialAnalysis.value = ''
 }
 
 function addFile(e) {
@@ -163,6 +170,8 @@ async function runAnalyze() {
   analyzing.value = true
   error.value = ''
   analysisResult.value = null
+  progressStage.value = 'call1'
+  partialAnalysis.value = ''
   cancelRequested = false
   timedOut = false
   currentCorrelationId = newCorrelationId()
@@ -192,14 +201,18 @@ async function runAnalyze() {
       }
       throw new Error(localizeAiError(errorData, r.status, t))
     }
-    const result = await r.json()
-    if (!result || typeof result.analysis !== 'string' || !result.analysis.trim()) {
+    // SSE 流式解析：阶段事件 + call2_token 主复盘增量 + done 收尾。
+    const receivedDone = await readAnalyzeStream(r, controller.signal)
+    if (!receivedDone && !cancelRequested) {
+      // 流异常中断（未收到 done 且未取消）：视为无效响应。
       throw new Error(t('recon.errors.AI_RESPONSE_INVALID'))
     }
-    analysisResult.value = result
   } catch (e) {
     if (e && e.name === 'AbortError') {
       error.value = timedOut ? t('recon.errors.AI_TIMEOUT') : t('recon.cancelled')
+    } else if (cancelRequested) {
+      // 用户主动取消：保持「已取消」语义，忽略后端 error 事件。
+      error.value = t('recon.cancelled')
     } else {
       error.value = e.message || String(e)
     }
@@ -210,6 +223,122 @@ async function runAnalyze() {
     currentCorrelationId = ''
     analyzing.value = false
   }
+}
+
+/**
+ * 读取 SSE 响应体并分发事件：
+ * call1_start/call1_done/evidence_done → 阶段状态；
+ * call2_token → 主复盘文本累积（token 滚动）；
+ * autopsy_start/autopsy_done → 团队剖析阶段；
+ * done → 设置最终结果并返回 true；
+ * error → 抛出本地化错误。
+ * @returns {Promise<boolean>} 是否收到 done 事件
+ */
+async function readAnalyzeStream(r, signal) {
+  const reader = r.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  let currentEvent = ''
+  let currentData = ''
+  let receivedDone = false
+
+  const dispatch = () => {
+    if (!currentEvent) return
+    let data = {}
+    if (currentData) {
+      try {
+        data = JSON.parse(currentData)
+      } catch {
+        data = {}
+      }
+    }
+    handleStreamEvent(currentEvent, data)
+    currentEvent = ''
+    currentData = ''
+  }
+
+  const handleStreamEvent = (event, data) => {
+    switch (event) {
+      case 'call1_start':
+        progressStage.value = 'call1'
+        break
+      case 'call1_done':
+        progressStage.value = 'evidence'
+        break
+      case 'evidence_done':
+        progressStage.value = 'call2'
+        break
+      case 'call2_token':
+        // fallback 路径（NON_ZH/NO_RECONSTRUCTION/RECORDER_UNRESOLVED/
+        // FEATURES_UNAVAILABLE/PRE_BATTLE_UNAVAILABLE 等）会直接进入旧
+        // PlayerReplay 流，不发送 evidence_done/call2 阶段事件；token 到达即
+        // 说明已在生成主复盘，阶段强制进入 call2，避免停留在「赛前预测/证据分析」。
+        if (progressStage.value !== 'call2') {
+          progressStage.value = 'call2'
+        }
+        if (typeof data.delta === 'string') {
+          partialAnalysis.value += data.delta
+        }
+        break
+      case 'autopsy_start':
+        progressStage.value = 'autopsy'
+        break
+      case 'autopsy_done':
+        progressStage.value = 'call2'
+        break
+      case 'done':
+        if (typeof data.analysis === 'string' && data.analysis.trim()) {
+          analysisResult.value = {
+            analysis: data.analysis,
+            preBattleSection: data.preBattleSection
+          }
+          progressStage.value = 'done'
+          receivedDone = true
+        }
+        break
+      case 'error':
+        // 流中途失败：以稳定错误码本地化后终止流。
+        const localized = new Error(localizeAiError({ code: data.code || '' }, 502, t))
+        localized.isLocalized = true
+        throw localized
+      default:
+        break
+    }
+  }
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let newlineIndex
+      while ((newlineIndex = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, newlineIndex).replace(/\r$/, '')
+        buffer = buffer.slice(newlineIndex + 1)
+        if (line === '') {
+          dispatch()
+        } else if (line.startsWith('event:')) {
+          currentEvent = line.slice(6).trim()
+        } else if (line.startsWith('data:')) {
+          currentData = line.slice(5).trim()
+        }
+      }
+      if (receivedDone) break
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') {
+      // 用户取消/超时：保持取消语义，不当作流异常。
+      throw e
+    }
+    if (e && e.isLocalized) {
+      // error 事件已生成本地化消息：原样传播。
+      throw e
+    }
+    throw new Error(t('recon.errors.AI_RESPONSE_INVALID'))
+  } finally {
+    reader.releaseLock?.()
+  }
+  return receivedDone
 }
 
 function onPageLeave() {
@@ -246,6 +375,16 @@ function onPageLeave() {
 
       <p v-if="error" class="error" style="margin:12px 0">{{ error }}</p>
 
+      <div v-if="analyzing" class="panel streaming-panel">
+        <div class="stream-status">
+          <span class="stream-spinner" aria-hidden="true"></span>
+          <span class="stream-stage">
+            {{ $t(`recon.stages.${progressStage || 'call1'}`) }}
+          </span>
+        </div>
+        <div v-if="partialAnalysis" class="stream-text">{{ partialAnalysis }}</div>
+      </div>
+
       <AnalysisResultPanel v-if="analysisResult" :result="analysisResult" />
     </template>
   </main>
@@ -271,4 +410,36 @@ function onPageLeave() {
 .recon-page :deep(.recon-details summary) { cursor: pointer; font-size: .82rem; color: var(--accent); }
 
 .recon-page :deep(.ai-action) { margin-top: 16px; }
+
+/* 流式生成面板：阶段状态 + 主复盘 token 滚动预览 */
+.streaming-panel { margin-top: 16px; }
+.stream-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .88rem;
+  color: var(--text-label);
+  margin-bottom: 8px;
+}
+.stream-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: stream-spin 0.9s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes stream-spin {
+  to { transform: rotate(360deg); }
+}
+.stream-text {
+  white-space: pre-wrap;
+  line-height: 1.6;
+  font-size: .9rem;
+  color: var(--text);
+  max-height: 320px;
+  overflow-y: auto;
+  word-break: break-word;
+}
 </style>

@@ -314,10 +314,28 @@ public final class PlayerReplayPromptBuilder {
                                                    final ReplayReconstruction recon,
                                                    final AllowedLanguage language) {
         final List<KeyBattleEvent> keyEvents = buildDeathTimeline(battle);
-        final String summary = buildSummary(battle, recon, keyEvents);
+        final String enemySection = EnemyLastKnownPositionsSection.renderPlayerSection(battle, recon);
+        final String phaseSection = BattlePhaseTimelineSection.renderPlayerSection(
+                buildFallbackPhases(battle));
+        final String summary = buildSummary(battle, recon, keyEvents)
+                + (phaseSection.isEmpty() ? "" : "\n" + phaseSection)
+                + (enemySection.isEmpty() ? "" : "\n" + enemySection);
         final String systemPrompt = localizePlayerSystemPrompt(SYSTEM_PROMPT, language);
         return new PreparedAiPrompt(systemPrompt, summary, "SINGLE_PLAYER_SUMMARY",
                 EvidenceDensity.LEVEL_1_COMPRESSED, 0);
+    }
+
+    /**
+     * Fallback 路径的阶段时间线：无事件流分析，首次接敌未知（-1），
+     * 阶段边界只用 battle_results 的结束时刻 + 死亡时间线，人数来自权威结算。
+     */
+    private static List<BattlePhaseSummary> buildFallbackPhases(final Battle battle) {
+        final float battleEnd = battle != null && battle.durationS != null
+                ? battle.durationS.floatValue() : Float.NaN;
+        return BattlePhaseSummary.buildRelativePhasesWithSurvival(
+                BattlePhaseSummary.UNKNOWN_FIRST_CONTACT, battleEnd,
+                BattlePhaseSummary.SurvivalTimeline.fromBattleResults(
+                        battle, PlayerSideResolver.resolveRecorderTeam(battle)));
     }
 
     /**
@@ -386,6 +404,7 @@ public final class PlayerReplayPromptBuilder {
         if (!appendPerHitDamageEvents(summaryBuilder, ctx.battle(), recorderAccountId, recon)) {
             summaryBuilder.append("- PER_HIT_DAMAGE_EVENTS_UNAVAILABLE\n");
         }
+        appendEnemyLastKnownPositions(summaryBuilder, ctx.battle(), recon);
         final String baseSummary = summaryBuilder.toString();
         final String systemPrompt = localizePlayerSystemPrompt(SINGLE_PLAYER_PROMPT, language);
         final SingleReplayPromptPlanner planner = new SingleReplayPromptPlanner(
@@ -730,6 +749,20 @@ public final class PlayerReplayPromptBuilder {
         return true;
     }
 
+    /**
+     * 敌方最后已知位置段（观测子集）。与 fallback 路径共用同一渲染器；
+     * 无 OBSERVED 敌方记录或视角未解析时静默跳过，不输出噪音标记。
+     */
+    static void appendEnemyLastKnownPositions(final StringBuilder sb,
+                                              final Battle battle,
+                                              final ReplayReconstruction recon) {
+        final String section = EnemyLastKnownPositionsSection.renderPlayerSection(battle, recon);
+        if (section.isEmpty()) {
+            return;
+        }
+        sb.append('\n').append(section);
+    }
+
     /** 逐次伤害里的攻防双方称呼：玩家本人写「你」，其余写「阵营 + 昵称 + 驾驶的 <坦克名>」。 */
     private static String damageActorText(final Battle battle,
                                           final PlayerResult player,
@@ -1052,12 +1085,9 @@ public final class PlayerReplayPromptBuilder {
             }
         }
 
-        if (!features.phases().isEmpty()) {
-            sb.append("\n=== 战斗阶段 ===\n");
-            for (final BattlePhaseSummary p : features.phases()) {
-                sb.append("  ").append(PlayerAnalysisTerms.battleRange(p.startTime(), p.endTime())).append(" ")
-                        .append(PlayerAnalysisTerms.phaseLabel(p.type())).append('\n');
-            }
+        final String phaseSection = BattlePhaseTimelineSection.renderPlayerSection(features.phases());
+        if (!phaseSection.isEmpty()) {
+            sb.append("\n").append(phaseSection);
         }
 
         sb.append("\n覆盖: ").append(ctx.coverage() != null ? ctx.coverage().decodedPacketRatio() : "N/A").append('\n');

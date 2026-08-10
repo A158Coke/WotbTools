@@ -386,12 +386,12 @@ docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana
 - **HTTP**：`http_server_requests_seconds_*`（Micrometer 自动，URI 已模板化，低基数；2xx/3xx/4xx/5xx 分布、P50/P95/P99 直方图）
 - **JVM**：`jvm_memory_used_bytes`、`process_cpu_usage`、`system_cpu_usage`、`jvm_gc_pause_seconds_*`、`jvm_threads_*`
 - **HikariCP**：`hikaricp_connections_active/idle/pending`
-- **AI Review**（自定义，`AiReplayReviewService.analyze` 边界，**一次 HTTP = 一次 Review**）：
+- **AI Review**（自定义，`AiReplayReviewService.analyze` 边界，**一次进入 worker 的请求 = 一次 Review**）：
   - `wotb_ai_review_requests_total` — Review 请求量（每次 analyze +1，与上游调用次数无关）
-  - `wotb_ai_review_results_total{result=success|failure|rejected}` — 结果（rejected 为整请求被拒：文件数超限/文件类型非法/AI 未配置/不支持战斗类型/perspective 未确定/token budget 拒绝；混合批次中单文件解析失败返回 FAILED 结果不抛异常，计入 success 的请求完成语义）
-  - `wotb_ai_review_errors_total{type=<固定枚举>}` — 错误分类
+  - `wotb_ai_review_results_total{result=success|failure|rejected}` — 结果（rejected 为流内拒绝：AI 未配置/不支持战斗类型/perspective 未确定/token budget 拒绝；混合批次中单文件解析失败返回 FAILED 结果不抛异常，计入 success 的请求完成语义）。**注意**：SSE worker 池饱和（503 `AI_REVIEW_BUSY`）与 request-envelope 预校验失败（文件数超限 `REPLAY_FILE_COUNT_EXCEEDED` / 文件类型非法 / 文件过大 / 总大小超限 / 未知 locale）由 `@ExceptionHandler` 在提交 worker 前同步返回 HTTP 400/503，**不进入 `analyze`，不计入这些 AI Review 计数器**——只能在 `http_server_requests_seconds_*`（按 status 4xx/5xx）与 nginx access log 中观察；监控告警须结合两者，不能只看 `wotb_ai_review_*`。
+  - `wotb_ai_review_errors_total{type=<固定枚举>}` — 错误分类（仅流内失败，与 `failure` 一致；HTTP 4xx 预校验失败不在此处计数）
   - `wotb_ai_review_duration_seconds` — Review 完整总耗时（Timer，histogram，成功与异常都结束，覆盖文件验证→解析→分析→AI 调用→响应处理）
-  - `wotb_ai_review_in_flight` — 当前处理中的 Review 数（Gauge）
+  - `wotb_ai_review_in_flight` — 当前处理中的 Review 数（Gauge，即"已进入 worker、尚未完成"的请求数；不含队列中等待的请求，也不含被 `AI_REVIEW_BUSY` 回绝的请求）
 - **AI upstream**（自定义，`SpringAiChatGateway.chat`，每次上游调用）：
   - `wotb_ai_upstream_requests_total{mode}` — 上游请求量（每个 attempt +1，含 retry 重试；token budget 拒绝不进入 gateway，不计）
   - `wotb_ai_upstream_success_total{mode}` — 成功调用数（一次逻辑调用 +1）

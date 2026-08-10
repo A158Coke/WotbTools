@@ -21,7 +21,6 @@ import com.wotb.core.processing.BattleCategoryUtils;
 import com.wotb.core.processing.BattleIdentity;
 import com.wotb.core.processing.FriendlyEnemyResult;
 import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
-import com.wotb.core.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.processing.PerspectiveTeamNotResolvedException;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingResult;
@@ -294,47 +293,56 @@ public class TeamReplayAnalysisService {
 
     public AnalyzeResult analyzeSingleTeamContext(final SingleTeamBattleAnalysisContext context,
                                                   final AllowedLanguage language) {
+        return analyzeSingleTeamContext(context, language, AiReviewStreamListener.NOOP);
+    }
+
+    public AnalyzeResult analyzeSingleTeamContext(final SingleTeamBattleAnalysisContext context,
+                                                  final AllowedLanguage language,
+                                                  final AiReviewStreamListener listener) {
         if (!isConfigured()) {
             throw new AiNotConfiguredException();
         }
         final long startNanos = nanoTimeSource.getAsLong();
-        final PreBattleStrategicPrior prior = call1Prior(context.battle());
+        final PreBattleStrategicPrior prior = call1Prior(context.battle(), listener);
         final RosterEvidence evidence = RosterEvidence.from(context);
         final List<String> extraLimitations = evidence != null ? evidence.limitations() : List.of();
         final TeamAiPromptBuilder.PromptInput input = TeamAiPromptBuilder.single(
                 context, extraLimitations, prior, config.estimator(), config.singleReplayMaxInputTokens());
-        return callSingleTeamContext(context, input, language, startNanos);
+        return callSingleTeamContext(context, input, language, startNanos, listener);
     }
 
     private AnalyzeResult callSingleTeamContext(
             final SingleTeamBattleAnalysisContext context,
             final TeamAiPromptBuilder.PromptInput input,
             final AllowedLanguage language,
-            final long startNanos
+            final long startNanos,
+            final AiReviewStreamListener listener
     ) {
         final String content = call(
                 localizeTeamSystemPrompt(SINGLE_TEAM_PROMPT, language),
                 input.content(), "SINGLE_TEAM_BATTLE",
-                remainingBudget(startNanos));
-        return new AnalyzeResult(appendTeamAutopsy(context, content, language, startNanos));
+                remainingBudget(startNanos), listener);
+        return new AnalyzeResult(appendTeamAutopsy(context, content, language, startNanos, listener));
     }
 
     private AnalyzeResult callMultiTeamContext(
             final TeamAiPromptBuilder.PromptInput input,
             final AllowedLanguage language,
-            final long startNanos
+            final long startNanos,
+            final AiReviewStreamListener listener
     ) {
         final String content = call(
                 localizeTeamSystemPrompt(MULTI_TEAM_PROMPT, language),
                 input.content(), "MULTI_TEAM_BATTLE",
-                remainingBudget(startNanos));
+                remainingBudget(startNanos), listener);
         return new AnalyzeResult(content);
     }
 
     /**
      * 完整 Team 分析编排：将 contexts 划分为兼容分区，每个分区发起一次 AI 请求。
      * <p>返回的 {@link TeamAnalyzeResult#analysis} 是第一个分区的 AI 输出
-     * （即第一个输入 group 所在分区的分析结果）。</p>
+     * （即第一个输入 group 所在分区的分析结果）；{@link TeamAnalyzeResult#preBattleSection}
+     * 是对应同一分区的 Call #1 prior 用户可见渲染（失败/降级为 null）。</p>
      * <p>分区归属通过 canonical 排序（{@link #buildPartitions}）确定，以保证
      * 对 permutation 稳定的分区行为：先按 {@code (battleIdentity, analysisUnitId)}
      * 字典序排序，再执行 complete-link 分组。</p>
@@ -345,6 +353,12 @@ public class TeamReplayAnalysisService {
 
     public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups,
                                                final AllowedLanguage language) {
+        return analyzeTeamGroups(groups, language, AiReviewStreamListener.NOOP);
+    }
+
+    public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups,
+                                               final AllowedLanguage language,
+                                               final AiReviewStreamListener listener) {
         if (!isConfigured()) {
             throw new AiNotConfiguredException();
         }
@@ -369,11 +383,12 @@ public class TeamReplayAnalysisService {
         final Map<String, Integer> perspectiveTeamByUnitId = new LinkedHashMap<>();
         for (final SingleTeamBattleAnalysisContext ctx : contexts) {
             perspectiveTeamByUnitId.put(ctx.analysisUnitId(), ctx.perspectiveTeam());
-            priorsByUnitId.put(ctx.analysisUnitId(), call1Prior(ctx.battle()));
+            priorsByUnitId.put(ctx.analysisUnitId(), call1Prior(ctx.battle(), listener));
         }
         final List<List<SingleTeamBattleAnalysisContext>> partitions =
                 buildPartitions(contexts, evidenceByUnitId);
         AnalyzeResult firstAnalysis = null;
+        SingleTeamBattleAnalysisContext firstContext = null;
         for (final var partition : partitions) {
             if (partition.size() == 1) {
                 final var ctx = partition.getFirst();
@@ -386,8 +401,11 @@ public class TeamReplayAnalysisService {
                                 config.estimator(),
                                 config.singleReplayMaxInputTokens());
                 final AnalyzeResult result =
-                        callSingleTeamContext(ctx, input, language, startNanos);
-                if (firstAnalysis == null) firstAnalysis = result;
+                        callSingleTeamContext(ctx, input, language, startNanos, listener);
+                if (firstAnalysis == null) {
+                    firstAnalysis = result;
+                    firstContext = ctx;
+                }
             } else {
                 final MultiTeamBattleAnalysisContext multiContext =
                         buildMultiTeamContext(partition, evidenceByUnitId);
@@ -407,20 +425,30 @@ public class TeamReplayAnalysisService {
                                 config.estimator(),
                                 config.singleReplayMaxInputTokens());
                 final AnalyzeResult result =
-                        callMultiTeamContext(input, language, startNanos);
-                if (firstAnalysis == null) firstAnalysis = result;
+                        callMultiTeamContext(input, language, startNanos, listener);
+                if (firstAnalysis == null) {
+                    firstAnalysis = result;
+                    firstContext = partition.getFirst();
+                }
             }
         }
         if (firstAnalysis == null) {
             throw new IllegalStateException("NO_ANALYSIS_PRODUCED");
         }
-        return new TeamAnalyzeResult(firstAnalysis);
+        final String preBattleSection = firstContext == null ? null
+                : PreBattleSectionRenderer.render(
+                        priorsByUnitId.get(firstContext.analysisUnitId()),
+                        perspectiveTeamByUnitId.getOrDefault(firstContext.analysisUnitId(), 0),
+                        resolveTeamLabel(firstContext.battle(), firstContext.perspectiveTeam()),
+                        language);
+        return new TeamAnalyzeResult(firstAnalysis, preBattleSection);
     }
 
     /** 团队视角也应用 Call #1（地图 + 阵容先验）；失败不阻断团队复盘，仅无 prior 段。 */
-    private PreBattleStrategicPrior call1Prior(final Battle battle) {
+    private PreBattleStrategicPrior call1Prior(final Battle battle,
+                                               final AiReviewStreamListener listener) {
         try {
-            return preBattleService.analyze(battle);
+            return preBattleService.analyze(battle, listener);
         } catch (final RuntimeException e) {
             LOGGER.warn("Team Call #1 failed, continuing without prior: {}", e.getMessage());
             return null;
@@ -575,7 +603,8 @@ public class TeamReplayAnalysisService {
                 features,
                 representative.reconstruction() != null
                         ? representative.reconstruction().coverage() : null,
-                features.limitations());
+                features.limitations(),
+                representative.reconstruction());
     }
 
     private static MultiTeamBattleAnalysisContext buildMultiTeamContext(
@@ -743,7 +772,8 @@ public class TeamReplayAnalysisService {
     }
 
     /**
-     * 通过 {@link AiChatGateway} 发送一次聊天请求并取回文本。
+     * 通过 {@link AiChatGateway} 发送一次聊天请求并取回文本（流式：token 增量
+     * 经 {@code listener.onToken} 转发）。
      * <p>Gateway 调用前由 {@link AiPromptBudgetGuard} 统一守预算；HTTP 传输、错误分类、
      * 脱敏、token usage、可观测性指标均由 Gateway 实现负责。</p>
      */
@@ -751,7 +781,8 @@ public class TeamReplayAnalysisService {
             final String systemPrompt,
             final String userContent,
             final String analysisMode,
-            final long callTimeoutSec
+            final long callTimeoutSec,
+            final AiReviewStreamListener listener
     ) {
         final List<Map<String, Object>> messages = List.of(
                 Map.<String, Object>of("role", "system", "content", systemPrompt),
@@ -773,7 +804,7 @@ public class TeamReplayAnalysisService {
                 null,
                 analysisMode,
                 (int) Math.min(Math.max(1L, callTimeoutSec), Integer.MAX_VALUE));
-        return gateway.chat(request).completionText();
+        return gateway.stream(request, listener::onToken).completionText();
     }
 
     /**
@@ -785,7 +816,8 @@ public class TeamReplayAnalysisService {
     private String appendTeamAutopsy(final SingleTeamBattleAnalysisContext context,
                                      final String reviewText,
                                      final AllowedLanguage language,
-                                     final long startNanos) {
+                                     final long startNanos,
+                                     final AiReviewStreamListener listener) {
         if (language != AllowedLanguage.ZH || context == null || context.battle() == null) {
             return reviewText;
         }
@@ -814,7 +846,8 @@ public class TeamReplayAnalysisService {
                 AllowedLanguage.ZH,
                 winner,
                 teamLabel,
-                (int) Math.min(autopsyBudget, Integer.MAX_VALUE));
+                (int) Math.min(autopsyBudget, Integer.MAX_VALUE),
+                listener);
         if (outcome == null) {
             return reviewText;
         }

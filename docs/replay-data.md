@@ -897,17 +897,18 @@ entity 可通过 nickname 连接，置信度为 `INFERRED`。同名、观战/非
 
 | 错误 | 原因 | 行为 |
 |---|---|---|
-| `NO_BATTLE_DATA` | 战绩解析失败或无可分析数据 | 返回 400 |
-| `AI_NOT_CONFIGURED` | 未配置 AI 密钥 | 返回 503 |
-| `MIXED_RANDOM_BATTLE_RECORDERS` | 多场随机战斗录像者不同 | 返回 400 |
-| `MIXED_ANALYSIS_SCOPES` | 混合随机与训练/联赛，或混入 UNKNOWN | 返回 400 |
-| `UNSUPPORTED_BATTLE_CATEGORY` | 战斗类型无法识别 | 返回 422 |
-| `PERSPECTIVE_TEAM_UNRESOLVED` | 无法可靠确定录像者所在队 | 返回 422 |
-| `PERSPECTIVE_TEAM_CONFLICT` | 多个可靠证据给出不同队伍 | 返回 422 |
-| `AI_INVALID_REQUEST` / `AI_AUTHENTICATION_ERROR` / `AI_RATE_LIMITED` | 上游拒绝请求 | 返回 502 + 稳定码 |
-| `AI_CONTEXT_TOO_LARGE` / `AI_TIMEOUT` / `AI_UPSTREAM_UNAVAILABLE` | 上游容量、超时或服务异常 | 返回 502 + 稳定码 |
-| `AI_EMPTY_RESPONSE` / `AI_RESPONSE_INVALID` | 上游返回空白、畸形 JSON 或非法 envelope | 返回 502 + 稳定码 |
-| `NO_REPLAY_FILE(S)` / `INVALID_REPLAY_FILE_TYPE` / `FILE_TOO_LARGE` | 上传批次预校验失败 | 返回 400，整个 analyze 请求终止 |
+| `NO_BATTLE_DATA` | 战绩解析失败或无可分析数据 | SSE `error` 事件（HTTP 200） |
+| `AI_NOT_CONFIGURED` | 未配置 AI 密钥 | SSE `error` 事件（HTTP 200） |
+| `MIXED_RANDOM_BATTLE_RECORDERS` | 多场随机战斗录像者不同 | SSE `error` 事件（HTTP 200） |
+| `MIXED_ANALYSIS_SCOPES` | 混合随机与训练/联赛，或混入 UNKNOWN | SSE `error` 事件（HTTP 200） |
+| `UNSUPPORTED_BATTLE_CATEGORY` | 战斗类型无法识别 | SSE `error` 事件（HTTP 200） |
+| `PERSPECTIVE_TEAM_UNRESOLVED` | 无法可靠确定录像者所在队 | SSE `error` 事件（HTTP 200） |
+| `PERSPECTIVE_TEAM_CONFLICT` | 多个可靠证据给出不同队伍 | SSE `error` 事件（HTTP 200） |
+| `AI_INVALID_REQUEST` / `AI_AUTHENTICATION_ERROR` / `AI_RATE_LIMITED` | 上游拒绝请求 | SSE `error` 事件（HTTP 200） |
+| `AI_CONTEXT_TOO_LARGE` / `AI_TIMEOUT` / `AI_UPSTREAM_UNAVAILABLE` | 上游容量、超时或服务异常 | SSE `error` 事件（HTTP 200） |
+| `AI_EMPTY_RESPONSE` / `AI_RESPONSE_INVALID` | 上游返回空白、畸形 JSON 或非法 envelope | SSE `error` 事件（HTTP 200） |
+| `AI_REVIEW_BUSY` | AI Review worker 池饱和（workers + queue 全占用） | 返回 503 + `{"code":"AI_REVIEW_BUSY"}`，流尚未开始（worker 提交失败） |
+| `NO_REPLAY_FILE(S)` / `INVALID_REPLAY_FILE_TYPE` / `FILE_TOO_LARGE` / `REPLAY_FILE_COUNT_EXCEEDED` / `TOTAL_REQUEST_TOO_LARGE` / `UNKNOWN_LOCALE` | request-envelope 预校验失败（提交 worker 前同步执行） | 返回 400 结构化错误码，不进入 SSE 流 |
 | 单个文件解析/重建失败 | 进入逐文件处理后的文件级错误 | 与其他已通过预校验的文件隔离 |
 
 上游日志只保留 provider/model/status、请求字符数、分析模式、correlation ID 和脱敏限长错误摘要；

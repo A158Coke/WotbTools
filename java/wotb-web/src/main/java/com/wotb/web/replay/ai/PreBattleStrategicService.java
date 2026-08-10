@@ -61,9 +61,13 @@ public class PreBattleStrategicService {
     }
 
     /**
+     * 执行赛前战略基线 Call #1，真实发起调用前/后广播 {@code call1_start} /
+     * {@code call1_done} 阶段事件。
+     *
      * @return 解析成功的赛前战略基线；未配置 / 上游失败 / 解析失败返回 null。
      */
-    public PreBattleStrategicPrior analyze(final Battle battle) {
+    public PreBattleStrategicPrior analyze(final Battle battle,
+                                           final AiReviewStreamListener listener) {
         if (!isConfigured()) {
             throw new AiNotConfiguredException();
         }
@@ -104,6 +108,7 @@ public class PreBattleStrategicService {
                 null,
                 "PRE_BATTLE_STRATEGIC_PRIOR",
                 PRE_BATTLE_CALL_TIMEOUT_SEC);
+        listener.onStage("call1_start");
         final PreBattleStrategicPrior prior;
         try {
             prior = PreBattleStrategicParser.parse(gateway.chat(request).completionText());
@@ -113,6 +118,8 @@ public class PreBattleStrategicService {
                 meterRegistry.counter("wotb_ai_review_prebattle_total", "result", "failure").increment();
             }
             return null;
+        } finally {
+            listener.onStage("call1_done");
         }
         if (prior == null || !prior.hasContent()) {
             LOGGER.info("Pre-battle Call #1 returned unparsable/empty prior, skipping");
