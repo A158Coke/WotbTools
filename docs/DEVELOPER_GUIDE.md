@@ -341,6 +341,13 @@ AI 复盘区分两种 scope，互不混用：
 
 启动时校验 `totalReserved <= contextWindowTokens`，不合规则 Spring Boot 启动失败。
 
+#### `AiReviewWorkerExecutor` 配置（SSE worker 池）
+
+| 属性 | 环境变量 | 默认值 | 说明 |
+|------|---------|--------|------|
+| `wotb.ai.review-worker.max-concurrent` | `AI_REVIEW_WORKER_MAX_CONCURRENT` | 4 | AI Review SSE worker 池线程数（core = max，固定不弹性伸缩），必须 ≥ 1；V1 VPS 2C4G 默认 4 |
+| `wotb.ai.review-worker.queue-capacity` | `AI_REVIEW_WORKER_QUEUE_CAPACITY` | 4 | worker 池有界队列容量，必须 ≥ 1；满载（workers + queue 全占用）时第 N+1 个请求立即返回 `503 AI_REVIEW_BUSY`（`AbortPolicy`，绝不使用 `CallerRunsPolicy`） |
+
 ### Token 估算器
 
 `ConservativeDeepSeekTokenEstimator` 使用 `codePointCount * 1.25` 保守估算 token 数。精确 token 数通过 API 响应的 `usage` 字段获取。
@@ -356,6 +363,7 @@ AI 复盘区分两种 scope，互不混用：
 - 总调用边界：`AI_CALL_TIMEOUT_SEC` 使用单调时钟（`System.nanoTime`）覆盖一次 `chat()` 的整个生命周期（含响应体读取与 SDK 解析）；每轮尝试前检查剩余预算，backoff 不得超过剩余预算，in-flight 请求会在预算耗尽时被中止（okhttp interceptor 捕获 Call + 看门狗，覆盖连接→发送→等待→响应体读取→反序列化；成功返回前还会复检 deadline），因此单轮实际请求时间上限为 `min(AI_TIMEOUT_SEC, 剩余预算)`。预算耗尽统一返回稳定 `AI_TIMEOUT`，超时后绝不返回 success。
 - **全链路超时对齐**（改 nginx/Dockerfile/前端时必须保持）：后端 AI 单次调用预算 `AI_CALL_TIMEOUT_SEC=315s`（connect 10 + read 300 + 重试/backoff/解析余量）；回放解析可能额外占用数十秒；容器 nginx 对 `/api/replay/analyze` 的 `proxy_read/send_timeout` 为 **420s**（余量防 504）；前端 analyze 请求安全超时 **400s**（`ReconstructionPage.vue` 的 `AI_ANALYZE_TIMEOUT_MS`），在代理 504 之前给出干净 `AI_TIMEOUT`。host 级 Caddy/Nginx 反代也必须允许 ≥420s，否则会提前 504。
 - **SSE 流式协议（breaking change，analyze 已无同步 JSON 响应）**：`POST /api/replay/analyze` 返回 `text/event-stream`，`ReplaySseWriter` 序列化事件（自定 JSON event，`data` 为 JSON）：`call1_start` / `call1_done`（Call #1 开始/结束，真实发起调用时必发，无论成败）、`evidence_done`（证据分析完成）、`call2_token`（`{"delta":"..."}` 主复盘 token 增量）、`autopsy_start` / `autopsy_done`（Team Autopsy）、`done`（`{"analysis":"...","preBattleSection":"..."}`，前置字段为 null 时输出 JSON null）、`error`（`{"code":"AI_..."}` 稳定错误码）。**异常传达规则**：流开始前（未发送任何事件）的失败由 `@ExceptionHandler` 映射稳定 HTTP 错误码（400/422/502/503 语义不变）；流开始后的失败经 `error` 事件传达，客户端断开时终止上游调用（cancel 端点语义）不向已断开连接写入。`AiChatGateway.stream(request, consumer)` 为单次尝试（不流内重试），失败即断流并保留已输出部分；总预算 watchdog 与 `correlationId` cancel 语义与 `chat()` 一致（`AI_TIMEOUT` / `AI_CANCELLED`）。同步测试路径委托流式实现（`AiReviewStreamListener.NOOP`）。nginx 该 location 已配置 `proxy_buffering off` + `X-Accel-Buffering: no` + HTTP/1.1 + 清空 `Connection` 头（chunked 流式反代必需）；**任何 host 级反代改动必须保留上述三项**，否则阶段事件/token 无法实时到达。
+- **SSE worker 池配置（`AiReviewWorkerExecutor`）**：analyze 端点的整段 AI 复盘在 worker 线程执行，servlet request 线程提交完即返回 `SseEmitter`。worker 池为**有界**（core=max fixed thread pool + bounded queue + `AbortPolicy`），**绝不使用 `CallerRunsPolicy`**——后者会让 request 线程同步执行整段 AI 复盘，重新引入 SSE blocking bug。默认 **4 concurrent workers + 4 queued**（V1 VPS 2C4G，最多 8 active/pending），第 9 个请求被立即拒绝并返回 **`503 AI_REVIEW_BUSY`**（`AiReviewBusyException` → `@ExceptionHandler`）。容量经环境变量 **`AI_REVIEW_WORKER_MAX_CONCURRENT`** / **`AI_REVIEW_WORKER_QUEUE_CAPACITY`** 可调（无需 rebuild）。线程为 daemon，命名 `wotb-ai-review-worker-N`，`@PreDestroy` 关闭池。**request-envelope 校验前置**：`files` 为空 / 文件超 `AiReplayBatchPolicy.MAX_FILES` / 类型/大小非法等请求在提交 worker 前就抛 `IllegalArgumentException` / `ReplayFileCountExceededException` → `@ExceptionHandler` 映射 HTTP 400 结构化错误码，不再进入 SSE 流后以 `error` 事件传达（worker 内 `analyzeInternal` 保留相同校验作防御）。**queued cancellation**：任务在队列中等待期间若被取消（客户端断开 / cancel 端点），worker 启动后第一时间检查 `AiCancellationToken.isCancelled()`，命中即 `complete()` emitter 并清理、不调回放解析与 AI Gateway、不向已断开连接写入。`emitter.onTimeout` / `emitter.onError`（客户端断开）亦翻 cancellation token 并静默 complete，与显式 cancel 端点幂等。
 - **客户端取消 → 上游中断**：analyze 请求携带 `correlationId`；前端取消按钮 / 页面离开（`beforeunload` keepalive）/ 前端超时会调用 `POST /api/replay/analyze/cancel`，后端 `AiCancellationRegistry` 命中后取消 in-flight okhttp Call 并停止重试（稳定错误码 `AI_CANCELLED`），避免为无人等待的响应继续计费。
 - Prompt/completion 默认不记录、不进 metrics；Spring AI Observation 未启用（NOOP）。日志经 `AiSecretRedactor` 集中脱敏。
 - **Call #1 覆盖可观测性**：`PreBattleStrategicService` 每次调用前输出 `Pre-battle Call #1 input`（map、mapSemantics=found/UNKNOWN、verified、areas/relationships/spawnSemantics 数量、source、displayName、team1/team2 人数、curatedProfiles/fallbackProfiles 车辆 Profile 覆盖），成功后输出 `Pre-battle Call #1 success`（hypotheses/matchups/winConditions/双方 strengths·plans 数量）；`TacticalReviewHarness` 输出 `Harness prior obtained`（prior 已注入 Call #2）与 `Harness fell back to old path: <reason>`；`TeamAutopsyService` 成功输出 `Team autopsy success`（liabilities/mvps 数量）。新增指标 `wotb_ai_review_map_semantics_total{status=found|unknown}`。按 requestId 可在 Loki 逐请求验证地图/车辆语义是否进入 Call #1 并注入 Call #2。
@@ -673,7 +681,7 @@ files → DefaultReplayProcessingFacade.processBatch()
 
 ### 错误与安全
 
-上游错误统一为稳定英文码：`AI_INVALID_REQUEST`、`AI_AUTHENTICATION_ERROR`、`AI_RATE_LIMITED`、`AI_CONTEXT_TOO_LARGE`、`AI_UPSTREAM_UNAVAILABLE`、`AI_TIMEOUT`、`AI_CANCELLED`（客户端取消）、`AI_EMPTY_RESPONSE`、`AI_RESPONSE_INVALID`。HTTP 200 中的畸形 JSON、非法 completion envelope 均归为 `AI_RESPONSE_INVALID`。日志只能包含 provider/model/status、请求字符数、分析模式、correlation ID，provider body 原文不进入日志（统一替换为 `[PROVIDER_BODY_REDACTED]`），不得记录密钥、Authorization 或完整 Prompt。普通用户文案由前端 zh/en/ru 翻译。
+上游错误统一为稳定英文码：`AI_INVALID_REQUEST`、`AI_AUTHENTICATION_ERROR`、`AI_RATE_LIMITED`、`AI_CONTEXT_TOO_LARGE`、`AI_UPSTREAM_UNAVAILABLE`、`AI_TIMEOUT`、`AI_CANCELLED`（客户端取消）、`AI_EMPTY_RESPONSE`、`AI_RESPONSE_INVALID`。**HTTP request-envelope 层**：`NO_REPLAY_FILES`、`INVALID_REPLAY_FILE_TYPE`、`FILE_TOO_LARGE`、`TOTAL_REQUEST_TOO_LARGE`、`UNKNOWN_LOCALE`、`REPLAY_FILE_COUNT_EXCEEDED`（`@ExceptionHandler` 映射 400）；**worker 池饱和** `AI_REVIEW_BUSY`（`AiReviewBusyException` → 503）。HTTP 200 中的畸形 JSON、非法 completion envelope 均归为 `AI_RESPONSE_INVALID`。日志只能包含 provider/model/status、请求字符数、分析模式、correlation ID，provider body 原文不进入日志（统一替换为 `[PROVIDER_BODY_REDACTED]`），不得记录密钥、Authorization 或完整 Prompt。普通用户文案由前端 zh/en/ru 翻译。
 
 ### 测试
 

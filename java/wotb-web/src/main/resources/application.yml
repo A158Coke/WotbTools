@@ -110,6 +110,12 @@ wotb:
     prompt-safety-margin-tokens: ${AI_PROMPT_SAFETY_MARGIN_TOKENS:16384}
     thinking-enabled: ${AI_THINKING_ENABLED:true}
     reasoning-effort: ${AI_REASONING_EFFORT:max}
+    review-worker:
+      # AI Review SSE worker pool: fixed workers + bounded queue.
+      # V1 (2C4G VPS): 4 concurrent + 4 queued = 8 max active/pending;
+      # the 9th request is rejected with 503 AI_REVIEW_BUSY.
+      max-concurrent: ${AI_REVIEW_WORKER_MAX_CONCURRENT:4}
+      queue-capacity: ${AI_REVIEW_WORKER_QUEUE_CAPACITY:4}
   replay:
     max-concurrent-jobs: ${REPLAY_MAX_CONCURRENT_JOBS:2}
     coordinate:

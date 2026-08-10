@@ -278,6 +278,8 @@ public class AiReplayReviewService {
      * 「友军/敌军」——录像者所属 team → 友军，另一方 → 敌军。Call #1 内部保持
      * TEAM_A/TEAM_B 客观标签不受影响（只有用户 UI 渲染做映射），随机战用户界面
      * 不允许出现「队伍1/队伍2」。录像者 team 无法确定时走中性防御路径。
+     * <p>随机战 <b>不</b>把录像者 nickname 作为 team label（避免「友军（Player123）
+     * 画像」），只显示「友军画像/敌军画像」；团队复盘保留真实 clan/team label。</p>
      */
     private static String renderRandomBattleSection(
             final ReplayProcessingResult representative,
@@ -289,9 +291,8 @@ public class AiReplayReviewService {
         final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(representative);
         final int recorderTeam = recorder != null && recorder.team() != null
                 ? recorder.team() : 0;
-        final String recorderName = recorder != null ? recorder.nickname() : null;
         return PreBattleSectionRenderer.renderRandomBattle(
-                prior, recorderTeam, recorderName, language);
+                prior, recorderTeam, language);
     }
 
     private static String unresolvedTeamCode(final List<ReplayPerspectiveGroup> groups) {

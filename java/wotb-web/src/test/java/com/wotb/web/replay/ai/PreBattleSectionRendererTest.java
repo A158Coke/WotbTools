@@ -70,6 +70,35 @@ class PreBattleSectionRendererTest {
     }
 
     @Test
+    void randomBattlePerspectiveOneShowsFriendlyEnemyWithoutRecorderName() {
+        final String section = PreBattleSectionRenderer.renderRandomBattle(
+                PRIOR, 1, AllowedLanguage.ZH);
+        assertNotNull(section);
+        assertTrue(section.contains("友军画像"), "friendly label without recorder nickname");
+        assertTrue(section.contains("敌军画像"), "enemy label without recorder nickname");
+        assertFalse(section.contains("TEAM_A"));
+        assertFalse(section.contains("TEAM_B"));
+    }
+
+    @Test
+    void randomBattlePerspectiveTwoSwapsToFriendlyEnemy() {
+        final String section = PreBattleSectionRenderer.renderRandomBattle(
+                PRIOR, 2, AllowedLanguage.ZH);
+        assertNotNull(section);
+        assertTrue(section.contains("友军画像"));
+        assertTrue(section.contains("敌军画像"));
+    }
+
+    @Test
+    void randomBattleEnPerspectiveOneShowsFriendlyEnemy() {
+        final String section = PreBattleSectionRenderer.renderRandomBattle(
+                PRIOR, 1, AllowedLanguage.EN);
+        assertNotNull(section);
+        assertTrue(section.contains("Friendly Profile"));
+        assertTrue(section.contains("Enemy Profile"));
+    }
+
+    @Test
     void teamViewPerspectiveOneKeepsPriorTeamAAsOurs() {
         final String section = PreBattleSectionRenderer.render(PRIOR, 1, "CLAN1");
         assertNotNull(section);

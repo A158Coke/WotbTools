@@ -690,6 +690,7 @@
         "FILE_TOO_LARGE": "文件过大",
         "REQUEST_TOO_LARGE": "本次上传总大小过大",
         "REPLAY_BUSY": "回放处理繁忙，请稍后重试",
+        "AI_REVIEW_BUSY": "AI 复盘服务繁忙，请稍后重试",
         "MULTIPART_ERROR": "上传请求格式错误",
         "MISSING_PARAM": "缺少必要参数",
         "IO_ERROR": "文件读取失败",
@@ -807,7 +808,8 @@
             "FILE_TOO_LARGE": "回放文件超过大小限制。",
             "REPLAY_FILE_COUNT_EXCEEDED": "一次最多上传 {max} 个回放文件。",
             "TOTAL_REQUEST_TOO_LARGE": "上传文件总大小超过限制。",
-            "UNKNOWN_LOCALE": "无效的语言设置，请刷新页面后重试。"
+            "UNKNOWN_LOCALE": "无效的语言设置，请刷新页面后重试。",
+            "AI_REVIEW_BUSY": "AI 复盘服务当前繁忙，请稍后重试。"
         }
     }
 }
