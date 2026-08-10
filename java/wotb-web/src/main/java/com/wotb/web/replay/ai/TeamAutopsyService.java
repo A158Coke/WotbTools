@@ -66,6 +66,21 @@ public class TeamAutopsyService {
                                       final TeamBattleWinner winner,
                                       final String teamLabel,
                                       final int callTimeoutSec) {
+        return analyze(battle, recorderTeam, language, winner, teamLabel, callTimeoutSec,
+                AiReviewStreamListener.NOOP);
+    }
+
+    /**
+     * 同 {@link #analyze}，但真实发起 TEAM_AUTOPSY 调用前/后广播
+     * {@code autopsy_start} / {@code autopsy_done} 阶段事件。
+     */
+    public TeamAutopsyOutcome analyze(final Battle battle,
+                                      final int recorderTeam,
+                                      final AllowedLanguage language,
+                                      final TeamBattleWinner winner,
+                                      final String teamLabel,
+                                      final int callTimeoutSec,
+                                      final AiReviewStreamListener listener) {
         if (language != AllowedLanguage.ZH) {
             return null;
         }
@@ -124,6 +139,7 @@ public class TeamAutopsyService {
                 null,
                 "TEAM_AUTOPSY",
                 callTimeoutSec);
+        listener.onStage("autopsy_start");
         try {
             final TeamAutopsyResult result =
                     TeamAutopsyParser.parse(
@@ -149,6 +165,8 @@ public class TeamAutopsyService {
             LOGGER.warn("Team autopsy call failed, skipping section: {}", e.getMessage());
             count("failure");
             return null;
+        } finally {
+            listener.onStage("autopsy_done");
         }
     }
 

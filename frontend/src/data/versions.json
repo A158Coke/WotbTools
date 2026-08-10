@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.5.0",
+    "date": "2026-08-10",
+    "tag": "add",
+    "zh": "AI 复盘实时流式展示（阶段进度 + 正文逐段生成）· 赛前预测对照折叠区块 · 敌方最后已知位置（区域/距离/观察时间）· 阶段存活人数（每阶段我方/敌方存活 + 密集击杀标注）",
+    "en": "AI review real-time streaming (stage progress + live text) · Collapsible pre-battle prediction block · Enemy last-known positions (region/distance/observed time) · Phase survival counts (per-phase alive + dense-kill markers)",
+    "ru": "Потоковый вывод AI-разбора (этапы + живой текст) · Сворачиваемый блок предбоевого прогноза · Последние известные позиции противников (регион/дистанция/время) · Выжившие по фазам (обе стороны + метки массовых потерь)"
+  },
+  {
     "v": "2.4.0",
     "date": "2026-08-09",
     "tag": "add",

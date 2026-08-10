@@ -105,6 +105,12 @@ final class TeamAiPromptBuilder {
         final BudgetWriter optTemp = new BudgetWriter();
         appendOptionalDetails(optTemp, context.features(), context.analysisUnitId(),
                 context.battle() == null ? null : context.battle().mapName);
+        // 敌方最后已知位置（观测子集）：与其它 optional 证据同级，超预算时整体被裁剪
+        final String enemyPositions = EnemyLastKnownPositionsSection.renderTeamSection(
+                context.reconstruction(), context.battle(), context.perspectiveTeam());
+        if (!enemyPositions.isEmpty()) {
+            optTemp.append("\n" + enemyPositions);
+        }
         final String optBlock = optTemp.content();
 
         // 如果 mandatory（header + HPF + prior）超出 token 预算，直接抛出异常
@@ -755,18 +761,16 @@ final class TeamAiPromptBuilder {
 
     /**
      * Append battle phases to the prompt.
+     * 每阶段输出双方存活人数（battle_results 权威结算）；人数不可算时写 UNKNOWN，不猜测。
      */
     private static void appendBattlePhases(
             final BudgetWriter writer,
             final List<BattlePhaseSummary> phases
     ) {
         writer.append("\n=== BATTLE_PHASES ===\n");
-        for (final BattlePhaseSummary phase : phases) {
-            writer.append("phase[" + format(phase.startTime())
-                    + "-" + format(phase.endTime()) + "]"
-                    + " type=" + PlayerAnalysisTerms.phaseLabel(phase.type())
-                    + " confidence=" + PlayerAnalysisTerms.confidenceLabel(phase.confidence())
-                    + "\n");
+        if (phases != null && !phases.isEmpty()) {
+            writer.append(BattlePhaseTimelineSection.AUTHORITATIVE_NOTE);
+            writer.append(BattlePhaseTimelineSection.renderTeamRows(phases));
         }
     }
 

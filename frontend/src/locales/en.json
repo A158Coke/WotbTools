@@ -767,6 +767,18 @@
         "analyze_multi_btn": "AI Multi-battle ({n})",
         "cancel_btn": "Cancel Analysis",
         "analysis_title_player": "AI Review",
+        "prebattle": {
+            "title": "Pre-Battle Prediction",
+            "collapse": "Collapse",
+            "expand": "Expand"
+        },
+        "stages": {
+            "call1": "Pre-battle prediction…",
+            "evidence": "Analyzing evidence…",
+            "call2": "Generating tactical review…",
+            "autopsy": "Team autopsy…",
+            "done": "Done"
+        },
         "ai_error_http": "AI analysis failed (HTTP {status})",
         "auth_required": "Sign-in required, redirecting to login…",
         "forbidden": "Forbidden: this feature requires wotbtools-user or wotbtools-admin role",
