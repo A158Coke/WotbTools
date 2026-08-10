@@ -237,10 +237,14 @@ class ReconstructionControllerStreamingTest {
     @Test
     void cancellationIsUnregisteredOnlyAfterWorkerCompletes() throws Exception {
         final CountDownLatch workerStarted = new CountDownLatch(1);
+        final CountDownLatch releaseWorker = new CountDownLatch(1);
         doAnswer(invocation -> {
             workerStarted.countDown();
             final AiReviewStreamListener listener = invocation.getArgument(2);
             listener.onStage("call1_start");
+            // 保持 worker 处于 in-flight 状态，直到主线程完成 cancel 断言，
+            // 避免 worker 提前完成并在 finally 中 unregister 造成竞态。
+            releaseWorker.await(10, TimeUnit.SECONDS);
             return new AnalyzeResponse("full", null);
         }).when(reviewService).analyzeStreaming(any(), any(), any());
 
@@ -251,6 +255,7 @@ class ReconstructionControllerStreamingTest {
         // 流式进行中（worker 尚未结束）：cancel 端点必须能找到 request。
         assertTrue(cancellationRegistry.cancel("corr-unregister"),
                 "request must stay registered while the worker is running");
+        releaseWorker.countDown();
 
         final String doneEvent = emitter.awaitEventContaining("event:done", 5, TimeUnit.SECONDS);
         assertNotNull(doneEvent, "done must arrive");
