@@ -137,8 +137,8 @@ public class ReconstructionController {
      * done + complete → finally 清理上下文并 unregister cancellation。
      * <p>所有失败（含流尚未开始的校验失败）统一以 {@code error} 事件传达稳定
      * 错误码；客户端断开（SSE 写入失败：IOException 或 emitter 已终止的
-     * IllegalStateException）时翻转 cancellation 并静默 complete，不向已断开的
-     * 连接写入。</p>
+     * IllegalStateException）时翻转 cancellation（emitter 已由容器以 error
+     * 终止，无需再主动 complete），不向已断开的连接写入。</p>
      */
     private void runAnalysis(final String requestId,
                              final AiCancellationToken cancellation,
@@ -178,9 +178,9 @@ public class ReconstructionController {
             writer.done(response);
             emitter.complete();
         } catch (final ClientDisconnectedException e) {
-            // 客户端已断开：终止上游调用（cancel 端点语义），不向已断开的连接写入。
+            // 客户端已断开：终止上游调用（cancel 端点语义）；emitter 已由容器以
+            // error 终止，无需再主动 complete（finally 完成上下文与 registry 清理）。
             cancellationRegistry.cancel(requestId);
-            quietComplete(emitter);
         } catch (final RuntimeException | IOException e) {
             // 流中途失败（含流尚未开始的数据校验失败）：一律以 error 事件传达
             // 稳定错误码（客户端断开时静默），HTTP 层面已返回 200 + SseEmitter。
@@ -253,7 +253,7 @@ public class ReconstructionController {
     /**
      * 客户端断开信号：SSE 写入失败（{@link IOException} 或 emitter 已终止时的
      * {@link IllegalStateException}）在流式回调中包装为 RuntimeException 以中断
-     * 编排层，由 {@link #analyze} 统一处理。
+     * 编排层，由 {@link #runAnalysis} 内的 catch 分支统一处理。
      */
     private static final class ClientDisconnectedException extends RuntimeException {
         ClientDisconnectedException(final Throwable cause) {

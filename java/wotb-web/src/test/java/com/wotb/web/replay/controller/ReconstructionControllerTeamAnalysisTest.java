@@ -49,9 +49,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 团队复盘（训练房/联赛）契约：异步 worker 下成功路径 done 事件携带 analysis，
- * 数据校验失败（文件数/视角未解析/视角冲突/特征不可用/预算/未配置/上游失败）统一
- * 以 error 事件携带稳定错误码传达（异步化后 HTTP 已 200，语义与前端一致）。
+ * 团队复盘（训练房/联赛）契约：异步 worker 下成功路径 done 事件携带 analysis；
+ * request-envelope 校验（文件数/空文件等）在提交 worker 前失败 → HTTP 400，
+ * 不进入 SSE 流；worker 内的运行时/业务失败（视角未解析/视角冲突/特征不可用/
+ * 预算/未配置/上游失败）→ SSE {@code error} 事件携带稳定错误码（HTTP 已 200）。
  */
 class ReconstructionControllerTeamAnalysisTest {
 

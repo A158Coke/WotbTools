@@ -50,7 +50,7 @@ class PreBattleSectionRendererTest {
     }
 
     @Test
-    void randomBattleRendersNeutralTeamLabels() {
+    void neutralRendererUsesTeamOneAndTeamTwoLabels() {
         final String section = PreBattleSectionRenderer.render(PRIOR);
         assertNotNull(section);
         assertTrue(section.contains("赛前预测"));
