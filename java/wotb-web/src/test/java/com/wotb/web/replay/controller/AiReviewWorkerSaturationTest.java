@@ -70,7 +70,7 @@ class AiReviewWorkerSaturationTest {
     // ---- #10 worker saturation ----
 
     @Test
-    void ninthRequestIsRejectedWithAiReviewBusyAndNeverRunsInCallerThread() throws Exception {
+    void thirdRequestIsRejectedWhenOneWorkerAndOneQueueSlotAreFull() throws Exception {
         // workers=1, queue=1: max 2 tasks (1 running + 1 queued), 3rd rejected.
         workerExecutor = new AiReviewWorkerExecutor(1, 1);
         controller = new ReconstructionController(

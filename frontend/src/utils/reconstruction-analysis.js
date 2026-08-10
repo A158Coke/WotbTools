@@ -29,10 +29,10 @@ const LOCALIZED_ERROR_CODES = new Set([
 
 export function localizeAiError(rawCode, status, t) {
   let code = ''
-  let maxFiles = 16
+  let maxFiles = 1
   if (typeof rawCode === 'object' && rawCode !== null) {
     code = rawCode.code || ''
-    maxFiles = rawCode.maxFiles || 16
+    maxFiles = rawCode.maxFiles || 1
   } else if (typeof rawCode === 'string') {
     code = rawCode.trim()
   }

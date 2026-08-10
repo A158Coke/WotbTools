@@ -126,9 +126,14 @@ Enemy-only damage 不得延长 Team phase。
 | `done` | `{"analysis":"...","preBattleSection":"..."}` | 全部完成；`preBattleSection` 为 null 时输出 JSON null |
 | `error` | `{"code":"AI_..."}` | 流中途失败（稳定错误码） |
 
-异常传达规则：流开始前（未发送任何事件）的失败由 `@ExceptionHandler` 映射稳定
-HTTP 错误码（400/422/502/503）；流开始后经 `error` 事件传达，客户端断开时终止
-上游调用不向已断开的连接写入。`AiChatGateway.stream` 单次尝试不流内重试，
+异常传达规则：request-envelope 校验（`UNKNOWN_LOCALE` / `NO_REPLAY_FILES` /
+`NO_REPLAY_FILE` / `REPLAY_FILE_COUNT_EXCEEDED` / `INVALID_REPLAY_FILE_TYPE` /
+`FILE_TOO_LARGE` / `TOTAL_REQUEST_TOO_LARGE`）与 worker 池饱和
+（`AI_REVIEW_BUSY`）在返回 `SseEmitter` 前由 `@ExceptionHandler` 映射 HTTP
+400 / 503；worker 启动后的运行时/业务失败（`NO_BATTLE_DATA` /
+`PERSPECTIVE_TEAM_*` / `TEAM_FEATURES_UNAVAILABLE` / `AI_NOT_CONFIGURED` /
+`AI_*` 等）经 `error` 事件传达（HTTP 已 200），客户端断开时终止上游调用不向
+已断开的连接写入。`AiChatGateway.stream` 单次尝试不流内重试，
 `AI_TIMEOUT` / `AI_CANCELLED`（`correlationId` cancel）语义与同步 `chat()` 一致；
 同步测试路径委托流式实现（`AiReviewStreamListener.NOOP`）。
 
