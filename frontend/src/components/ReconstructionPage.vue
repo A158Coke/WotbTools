@@ -269,6 +269,13 @@ async function readAnalyzeStream(r, signal) {
         progressStage.value = 'call2'
         break
       case 'call2_token':
+        // fallback 路径（NON_ZH/NO_RECONSTRUCTION/RECORDER_UNRESOLVED/
+        // FEATURES_UNAVAILABLE/PRE_BATTLE_UNAVAILABLE 等）会直接进入旧
+        // PlayerReplay 流，不发送 evidence_done/call2 阶段事件；token 到达即
+        // 说明已在生成主复盘，阶段强制进入 call2，避免停留在「赛前预测/证据分析」。
+        if (progressStage.value !== 'call2') {
+          progressStage.value = 'call2'
+        }
         if (typeof data.delta === 'string') {
           partialAnalysis.value += data.delta
         }

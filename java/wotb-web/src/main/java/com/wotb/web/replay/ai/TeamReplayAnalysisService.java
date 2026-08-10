@@ -440,7 +440,8 @@ public class TeamReplayAnalysisService {
                 : PreBattleSectionRenderer.render(
                         priorsByUnitId.get(firstContext.analysisUnitId()),
                         perspectiveTeamByUnitId.getOrDefault(firstContext.analysisUnitId(), 0),
-                        resolveTeamLabel(firstContext.battle(), firstContext.perspectiveTeam()));
+                        resolveTeamLabel(firstContext.battle(), firstContext.perspectiveTeam()),
+                        language);
         return new TeamAnalyzeResult(firstAnalysis, preBattleSection);
     }
 

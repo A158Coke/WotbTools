@@ -537,6 +537,46 @@ describe('ReconstructionPage SSE streaming', () => {
     expect(wrapper.text()).toContain('recon.prebattle.title')
     expect(wrapper.text()).toContain('recon.prebattle.collapse')
   })
+
+  it('moves to call2 stage on first call2_token without evidence_done (fallback stream)', async () => {
+    // fallback 路径（NON_ZH/NO_RECONSTRUCTION/RECORDER_UNRESOLVED/
+    // FEATURES_UNAVAILABLE/PRE_BATTLE_UNAVAILABLE）直接进入旧 PlayerReplay 流：
+    // 只发 call2_token，无 call1/evidence 阶段事件。
+    const sse = chunkedSse()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: sse.stream,
+      text: vi.fn().mockResolvedValue('')
+    }))
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['fallback.wotbreplay'])
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+
+    // token 到达前：停留在初始 call1 阶段，不显示证据分析
+    expect(wrapper.text()).toContain('recon.stages.call1')
+    expect(wrapper.text()).not.toContain('recon.stages.evidence')
+
+    sse.enqueue('event:call2_token\ndata:{"delta":"fallback "}\n\n')
+    sse.enqueue('event:call2_token\ndata:{"delta":"review"}\n\n')
+    await flushPromises()
+
+    // 收到首个 call2_token：阶段强制进入 call2（不再依赖 evidence_done），token 正常滚动
+    expect(wrapper.text()).toContain('recon.stages.call2')
+    expect(wrapper.text()).not.toContain('recon.stages.call1')
+    expect(wrapper.text()).not.toContain('recon.stages.evidence')
+    expect(wrapper.text()).toContain('fallback review')
+
+    sse.enqueue('event:done\ndata:{"analysis":"fallback review","preBattleSection":null}\n\n')
+    sse.close()
+    await flushPromises()
+
+    // done 后切换到完整结果面板
+    expect(wrapper.text()).toContain('recon.analysis_title_player')
+    expect(wrapper.text()).toContain('fallback review')
+    expect(wrapper.text()).not.toContain('recon.stages.call2')
+  })
 })
 
 describe('ReconstructionPage AI request lifecycle (timeout + cancel)', () => {

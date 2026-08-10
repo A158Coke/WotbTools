@@ -64,7 +64,8 @@ class PreBattleSectionRendererTest {
         assertFalse(section.contains("PRE-BATTLE"));
         assertFalse(section.contains("TEAM_A"), "internal team tokens must be replaced");
         assertFalse(section.contains("TEAM_B"), "internal team tokens must be replaced");
-        assertTrue(section.contains("区域 GRID_REGION_5"));
+        assertTrue(section.contains("区域 5区"), "GRID_REGION_5 must render as 5区");
+        assertFalse(section.contains("GRID_REGION"), "machine region token must not leak");
         assertTrue(section.contains("H1：开局左路集结"));
     }
 
