@@ -32,9 +32,13 @@
 ## 关键结论
 
 - 两种战斗模式（7v7 团队 / 30 人随机）类型集一致，频率也一致 → type 31/35/39 是**全局/录像者流**，不是按实体广播。
-- 本方静止无 type-10 位置、移动后才有 → 协议行为（本地模拟），非解码缺陷；开局初始状态候选在 type 0/7/13。
+- **位置覆盖（2026-08-11 修正 team 标签后）**：本方（录像者队伍，本样本 CHRD=team 2）7 车全部从 1.1s 有 type-10 位置；**敌方（BSK-T=team 1）开局 0~30-50s 无位置包**（各车首包 30.5~51.9s≈首次移动时刻）。此前「本方开局缺失」是把 team 1/2 弄反——正确结论：**本方位置开局完整；敌方静止时不上报 type-10 位置**（移动/交火后才出现）。回放为服务器下发完整实体流（与点亮无关）。
 - type 0 pickle 的 `accountDatabaseIds` / `clanTags` / `teamTitles` 可作**权威名册与队名来源**（优于 updateArena2 映射）；已落地：`PickleDecoder`（协议 2 精简解码器）+ `EventStreamReader.extractArenaInfo` + 真实载荷单测。
 - HP 仍未定位；候选：type 39 某 float、type 8 field 18（初始满血比例）、type 13 玩家统计块、battle_results。
+
+## 已知修正记录
+
+- 2026-08-11：team 标签曾误判（以 AI 复盘中的「CHRD=A 队」为前提），经 type-0 pickle（`teamTitles{2:'chrd'}`）+ updateArena2 field 4 验证后修正：CHRD=team 2=录像者队伍；位置覆盖结论随之反转（本方完整、敌方开局缺失）。附带发现：pickle `wins{1:1,2:0}` 显示本样本胜方为 team 1（BSK-T），与早前「CHRD 7-3 获胜」的说法冲突，待用 battle_results 核验。
 
 ## 下一步
 

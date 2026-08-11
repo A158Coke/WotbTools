@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -93,6 +94,215 @@ class PacketReverseProbeTest {
         type39Stream(byType);
         type39VehicleCorrelation(es, byType);
         findRecorder(es);
+        recorderAffine(es, byType);
+        teamCoverage(es);
+    }
+
+    /** Per-entity first/last position time + count + team (from updateArena2 field 4). */
+    private static void teamCoverage(final EventStreamReader.EventStream es) {
+        final Map<Integer, Integer> eidTeam = new HashMap<>();
+        for (final EventStreamReader.ParsedPacket pkt : es.packets) {
+            if (pkt.type != 8 || pkt.payload.length < 8) {
+                continue;
+            }
+            final int subType = readU32LE(pkt.payload, 4);
+            if (subType != 48) {
+                continue;
+            }
+            final byte[] body = new byte[pkt.payload.length - 8];
+            System.arraycopy(pkt.payload, 8, body, 0, body.length);
+            final byte[] proto = unwrap(body);
+            if (proto == null) {
+                continue;
+            }
+            try {
+                final Map<Integer, List<Object>> root = Protobuf.decode(proto);
+                final Object wrapperRaw = Protobuf.first(root, 1);
+                if (!(wrapperRaw instanceof byte[])) {
+                    continue;
+                }
+                final Map<Integer, List<Object>> wrapper = Protobuf.decode((byte[]) wrapperRaw);
+                final List<Object> players = wrapper.get(1);
+                if (players == null) {
+                    continue;
+                }
+                for (final Object pRaw : players) {
+                    if (!(pRaw instanceof byte[])) {
+                        continue;
+                    }
+                    final Map<Integer, List<Object>> p = Protobuf.decode((byte[]) pRaw);
+                    final int eid = (int) Protobuf.firstLong(p, 1, 0);
+                    final int team = (int) Protobuf.firstLong(p, 4, -1);
+                    if (eid != 0) {
+                        eidTeam.put(eid, team);
+                    }
+                }
+            } catch (RuntimeException ignored) {
+                // skip malformed
+            }
+        }
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final Map<Integer, List<EventStreamReader.PositionData>> byEntity = new TreeMap<>();
+        for (final EventStreamReader.PositionData p : positions) {
+            byEntity.computeIfAbsent(p.entityId, k -> new ArrayList<>()).add(p);
+        }
+        System.out.println("== per-entity position coverage with team ==");
+        for (final Map.Entry<Integer, List<EventStreamReader.PositionData>> e : byEntity.entrySet()) {
+            final List<EventStreamReader.PositionData> ps = e.getValue();
+            final float first = ps.stream().min(Comparator.comparingDouble(p -> p.clockSecs))
+                    .orElseThrow().clockSecs;
+            final float last = ps.stream().max(Comparator.comparingDouble(p -> p.clockSecs))
+                    .orElseThrow().clockSecs;
+            System.out.printf(Locale.ROOT, "  eid=%d team=%d n=%d first=%.1fs last=%.1fs%n",
+                    e.getKey(), eidTeam.getOrDefault(e.getKey(), -1), ps.size(), first, last);
+        }
+    }
+
+    /** Find the recorder vehicle eid by nickname, then fit type39 (f0,f2) -> its (x,z). */
+    private static void recorderAffine(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final int recorderEid = findEidByName(es, "CHRD-A158布丁");
+        System.out.println("== recorder vehicle eid by name: " + recorderEid + " ==");
+        if (recorderEid < 0) {
+            return;
+        }
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final List<EventStreamReader.PositionData> rec = positions.stream()
+                .filter(p -> p.entityId == recorderEid)
+                .sorted(Comparator.comparingDouble(p -> p.clockSecs))
+                .toList();
+        System.out.println("  recorder type-10 positions: " + rec.size()
+                + " clock[" + (rec.isEmpty() ? "-" : String.format(Locale.ROOT, "%.1f..%.1f",
+                rec.get(0).clockSecs, rec.get(rec.size() - 1).clockSecs)) + "]");
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        final java.util.List<double[]> pairs = new ArrayList<>();
+        for (final EventStreamReader.ParsedPacket p : p39) {
+            if (p.payload.length < 24) {
+                continue;
+            }
+            EventStreamReader.PositionData near = null;
+            float bestDt = Float.MAX_VALUE;
+            for (final EventStreamReader.PositionData pos : rec) {
+                final float dt = Math.abs(pos.clockSecs - p.clockSecs);
+                if (dt < 0.5f && dt < bestDt) {
+                    bestDt = dt;
+                    near = pos;
+                }
+            }
+            if (near == null) {
+                continue;
+            }
+            pairs.add(new double[]{f(p.payload, 0), f(p.payload, 8), near.x, near.z, p.clockSecs});
+        }
+        System.out.println("  matched pairs: " + pairs.size());
+        if (pairs.size() < 30) {
+            return;
+        }
+        // least-squares affine (a,b,c,d,e,f): u = a*x + b*z + c ; v = d*x + e*z + f
+        double sx = 0, sz = 0, su = 0, sv = 0, sxx = 0, szz = 0, sxz = 0, sux = 0, suz = 0, svx = 0, svz = 0;
+        for (final double[] q : pairs) {
+            final double u = q[0], v = q[1], x = q[2], z = q[3];
+            sx += x; sz += z; su += u; sv += v;
+            sxx += x * x; szz += z * z; sxz += x * z;
+            sux += u * x; suz += u * z; svx += v * x; svz += v * z;
+        }
+        final int n = pairs.size();
+        final double[][] m = {{sxx, sxz, sx}, {sxz, szz, sz}, {sx, sz, n}};
+        final double[] bu = {sux, suz, su};
+        final double[] bv = {svx, svz, sv};
+        final double[] au = solve3(m, bu);
+        final double[] av = solve3(m, bv);
+        double resid = 0;
+        for (final double[] q : pairs) {
+            final double estU = au[0] * q[2] + au[1] * q[3] + au[2];
+            final double estV = av[0] * q[2] + av[1] * q[3] + av[2];
+            resid += Math.pow(estU - q[0], 2) + Math.pow(estV - q[1], 2);
+        }
+        final double std = Math.sqrt(resid / n);
+        System.out.printf(Locale.ROOT,
+                "  affine fit u=a*x+b*z+c, v=d*x+e*z+f: a=%.4f b=%.4f c=%.2f d=%.4f e=%.4f f=%.2f std=%.2fm%n",
+                au[0], au[1], au[2], av[0], av[1], av[2], std);
+    }
+
+    private static int findEidByName(final EventStreamReader.EventStream es, final String name) {
+        for (final EventStreamReader.ParsedPacket pkt : es.packets) {
+            if (pkt.type != 8 || pkt.payload.length < 8) {
+                continue;
+            }
+            final int subType = readU32LE(pkt.payload, 4);
+            if (subType != 48) {
+                continue;
+            }
+            final byte[] body = new byte[pkt.payload.length - 8];
+            System.arraycopy(pkt.payload, 8, body, 0, body.length);
+            final byte[] proto = unwrap(body);
+            if (proto == null) {
+                continue;
+            }
+            try {
+                final Map<Integer, List<Object>> root = Protobuf.decode(proto);
+                final Object wrapperRaw = Protobuf.first(root, 1);
+                if (!(wrapperRaw instanceof byte[])) {
+                    continue;
+                }
+                final Map<Integer, List<Object>> wrapper = Protobuf.decode((byte[]) wrapperRaw);
+                final List<Object> players = wrapper.get(1);
+                if (players == null) {
+                    continue;
+                }
+                for (final Object pRaw : players) {
+                    if (!(pRaw instanceof byte[])) {
+                        continue;
+                    }
+                    final Map<Integer, List<Object>> p = Protobuf.decode((byte[]) pRaw);
+                    final int eid = (int) Protobuf.firstLong(p, 1, 0);
+                    final Object nameRaw = Protobuf.first(p, 3);
+                    if (nameRaw instanceof byte[] b && name.equals(
+                            new String(b, java.nio.charset.StandardCharsets.UTF_8))) {
+                        return eid;
+                    }
+                }
+            } catch (RuntimeException ignored) {
+                // skip malformed packet
+            }
+        }
+        return -1;
+    }
+
+    private static double[] solve3(final double[][] m, final double[] b) {
+        final double[][] a = {{m[0][0], m[0][1], m[0][2]}, {m[1][0], m[1][1], m[1][2]}, {m[2][0], m[2][1], m[2][2]}};
+        final double[] bb = {b[0], b[1], b[2]};
+        for (int col = 0; col < 3; col++) {
+            int pivot = col;
+            for (int r = col + 1; r < 3; r++) {
+                if (Math.abs(a[r][col]) > Math.abs(a[pivot][col])) {
+                    pivot = r;
+                }
+            }
+            final double[] tmp = a[col];
+            a[col] = a[pivot];
+            a[pivot] = tmp;
+            final double t = bb[col];
+            bb[col] = bb[pivot];
+            bb[pivot] = t;
+            for (int r = col + 1; r < 3; r++) {
+                final double f = a[r][col] / a[col][col];
+                for (int c = col; c < 3; c++) {
+                    a[r][c] -= f * a[col][c];
+                }
+                bb[r] -= f * bb[col];
+            }
+        }
+        final double[] x = new double[3];
+        for (int r = 2; r >= 0; r--) {
+            double s = bb[r];
+            for (int c = r + 1; c < 3; c++) {
+                s -= a[r][c] * x[c];
+            }
+            x[r] = s / a[r][r];
+        }
+        return x;
     }
 
     /** Find the recorder's vehicle eid by nickname in updateArena2 protobuf. */
