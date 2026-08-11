@@ -102,6 +102,7 @@
   - 运维文档：`docs/observability.md`。
 
 ### Removed
+- **生产 Grafana MCP server（P0 安全下线）**：`mcp-grafana` 公网 `/mcp` 存在匿名访问漏洞——SA Token 只是访问 Grafana 的后端凭据、并非调用者认证，未设置 `MCP_GRAFANA_SERVER_TOKEN`/`--server-auth-token` 时匿名 MCP initialize 返回 200 并建立 session。因使用频率低选择彻底下线：生产与本地 compose 移除 `mcp-grafana`；部署链路（`deploy.yml` / `deploy.sh` / `.env`）停止传递 `GRAFANA_MCP_TOKEN`；CI deploy-smoke 新增「生产 compose 不得含 MCP 服务 / 8000 端口」回归断言。宿主 Caddy `/mcp*` 路由与 Grafana MCP Service Account/Token 清理为人工步骤（见 `docs/observability.md`）。
 - **`/api/replay/reconstruct` 与 `/api/replay/state-at` 端点**：前端简化后已无调用方，一并移除 `ReconstructSummary`/`StateAtResponse` DTO、`ReplayReconstructionService.stateAt()` 与 `SecurityConfig` 对应 matcher。重建能力保留在 core（`BattleStateReconstructor.stateAt(...)` 仍是公共 API），由 `/api/replay/analyze` 内部调用。
 - **AI 复盘页重建 UI**：删除 `ReplayReconstructionActions.vue`、`ReconstructionSummaryPanel.vue`、`BattleStatePanel.vue`；`ReplayInputPanel` props 8 → 3、emits 8 → 4；`AnalysisResultPanel` 去掉 `close` 事件与关闭按钮；三语各删 33 个不再引用的 `recon.*` key（29 个因本次简化失效，4 个为历史遗留）。
 

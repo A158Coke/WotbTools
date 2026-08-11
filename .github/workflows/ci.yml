@@ -157,8 +157,30 @@ jobs:
           AI_API_KEY: ci
           GRAFANA_ADMIN_USER: ci
           GRAFANA_ADMIN_PASSWORD: ci
-          GRAFANA_MCP_TOKEN: ci
         run: docker compose -f deploy/docker-compose.prod.yml config --quiet
+
+      - name: Production compose must not expose Grafana MCP (P0 regression)
+        env:
+          TAG: sha-ci
+          DB_PASSWORD: ci
+          KC_ADMIN_PASSWORD: ci
+          WG_APPLICATION_ID: ci
+          KEYCLOAK_ADMIN_CLIENT_SECRET: ci
+          AI_API_KEY: ci
+          GRAFANA_ADMIN_USER: ci
+          GRAFANA_ADMIN_PASSWORD: ci
+        run: |
+          docker compose -f deploy/docker-compose.prod.yml config --format json > /tmp/compose.json
+          python - <<'PY'
+          import json
+          with open('/tmp/compose.json', encoding='utf-8') as f:
+              svc = json.load(f)["services"]
+          assert "mcp-grafana" not in svc, "mcp-grafana must be removed from production compose"
+          for name, s in svc.items():
+              for p in s.get("ports", []):
+                  assert "8000" not in str(p), f"service {name} must not publish port 8000: {p}"
+          print("no Grafana MCP service / port 8000 in production compose")
+          PY
 
       - name: Deploy/rollback smoke (fake docker, sandboxed)
         run: bash deploy/test-deploy-rollback.sh

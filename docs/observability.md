@@ -55,13 +55,26 @@
 | Loki | `grafana/loki:3.3.2` | 接收 Alloy 推送的 backend 容器日志，保留 7 天 |
 | Alloy | `grafana/alloy:v1.4.2` | 通过 docker.sock 只采集 `wotb-backend` 容器 stdout/stderr → Loki |
 | Grafana | `grafana/grafana:11.6.16` | 可视化，provisioning 自动配置 Datasource + Dashboard |
-| Grafana MCP server | `grafana/mcp-grafana:latest` | 供 opencode/Claude 等 AI 客户端经 `https://monitor.wotbtools.com/mcp` 访问 Grafana（StreamableHTTP；SA Token 认证；仅绑 `127.0.0.1:8000`，Caddy 按 `/mcp*` 路径分流） |
+| Grafana MCP server（已下线） | 已移除 | 2026-08-11 因公网匿名访问风险（MCP 缺少调用者认证）且使用频率低，已从生产与本地 compose 移除；宿主 Caddy `/mcp*` 路由与 Grafana MCP Service Account 由人工清理 |
 
 **关键安全边界**
 
 - Grafana `3000`、Prometheus `9090`、Loki `3100`、Alloy `12345`、Backend 管理端口 `8088` **均不映射到宿主机端口**，只在 Docker 内部网络可达。
 - 公网只能通过 `monitor.wotbtools.com`（host 层 TLS 反代 → frontend nginx → `grafana:3000`）访问 Grafana，且 Grafana 禁止匿名访问。
 - `/actuator/**` 不通过公网域名暴露（nginx 只代理 `/api/` 与 `monitor.*` 到 Grafana）。
+
+**Grafana MCP 下线记录（2026-08-11，P0）**
+
+生产 `mcp-grafana` 曾把 Grafana Service Account Token 当作调用者认证使用，实际该 Token 仅是访问 Grafana 的后端凭据：未设置 `MCP_GRAFANA_SERVER_TOKEN`/`--server-auth-token` 时，公网 `/mcp` 的匿名 MCP initialize 返回 200 并建立 session。因使用频率低，选择**彻底下线**而非加固：
+
+- 仓库侧（已完成）：生产与本地 compose 移除 `mcp-grafana`；部署链路不再传递 `GRAFANA_MCP_TOKEN`；CI 增加「生产 compose 不得含 MCP 服务 / 8000 端口」回归断言。
+- 人工清理（生产服务器 / Grafana / GitHub，仓库外）：
+  1. 宿主 Caddy：删除 `/mcp*` 路由并 reload（临时止血期间应已删除；确认 `https://monitor.wotbtools.com/mcp` 返回 404/拒绝）。
+  2. Grafana：删除或禁用 MCP 专用 Service Account（若保留则降为 Viewer 只读），并吊销/删除其 Token。
+  3. GitHub 仓库 Settings → Secrets：删除 `GRAFANA_MCP_TOKEN`（代码已停止引用）。
+  4. 下次生产部署后确认 `docker ps` 无 `mcp-grafana` 容器（compose `--remove-orphans` 会自动清理）。
+
+如需恢复 MCP，必须：固定 release + digest、设置 `MCP_GRAFANA_SERVER_TOKEN`/`--server-auth-token`（匿名 401）、启用 `--disable-write` 只读、Service Account 仅 Viewer 权限。
 
 ---
 
@@ -102,7 +115,7 @@
 3. **GitHub Secrets**（生产部署 CI 使用）：在仓库 Settings → Secrets and variables → Actions 配置：
    - `GRAFANA_ADMIN_USER`：Grafana 管理员用户名（如 `admin`）
    - `GRAFANA_ADMIN_PASSWORD`：强密码
-   - `GRAFANA_MCP_TOKEN`：Grafana Service Account Token（供 `mcp-grafana` 容器使用，须有读取/查询权限）
+   - `GRAFANA_MCP_TOKEN`：已随 Grafana MCP 下线不再使用（2026-08-11）；见上方「Grafana MCP 下线记录」人工清理步骤
    - 生成密码示例：`openssl rand -base64 24`
    - 部署时 CI 将凭据写入生产服务器 `/opt/wotb/.env`（`chmod 600`），compose 使用 `required` 语法引用，**Grafana 密码不落入 compose 文件本身**；密码为空时部署脚本中断（见 `deploy.yml`）。
 
