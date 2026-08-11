@@ -17,7 +17,7 @@ public record AiReplayAnalysisConfig(
         int contextWindowTokens,
         int maxOutputTokens,
         int promptSafetyMarginTokens,
-        boolean thinkingEnabled,
+        boolean call2ThinkingEnabled,
         String reasoningEffort,
         int callTimeoutSec
 ) {

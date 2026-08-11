@@ -113,7 +113,7 @@ public class DefaultPlayerBattleFeatureExtractor {
         // 交火段
         final List<EngagementSummary> engagements = buildEngagements(damages, recorder.entityId());
 
-        // Phases (battle-relative) + 双方存活人数（battle_results 权威死亡时刻）
+        // Phases (battle-relative) + 双方存活人数（battle_results deathTimeMillis，缺失时事件流估算）
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhasesWithSurvival(
                         firstContactTime, phaseEndClock,
                         BattlePhaseSummary.SurvivalTimeline.fromBattleResults(battle, recorder.team()));
@@ -128,7 +128,21 @@ public class DefaultPlayerBattleFeatureExtractor {
         if (battleStartRes.limitation() != null) {
             limitations.add(battleStartRes.limitation());
         }
-        limitations.add("OBSERVED_DAMAGE_IS_PARTIAL");
+        // 事件流观测子集与权威结算一致时才不算 PARTIAL；覆盖未达 100% 时标记，
+        // 触发 prompt 层抑制观测数字，强制以权威结算为唯一可信口径。
+        final var recorderResult = battle != null ? battle.recorderResult() : null;
+        final int observedDealt = engagements.stream()
+                .mapToInt(EngagementSummary::damageDealt)
+                .sum();
+        final int observedReceived = engagements.stream()
+                .mapToInt(EngagementSummary::damageReceived)
+                .sum();
+        final boolean observedMatchesAuthoritative = recorderResult != null
+                && observedDealt == recorderResult.damageDealt
+                && observedReceived == recorderResult.damageReceived;
+        if (!observedMatchesAuthoritative) {
+            limitations.add("OBSERVED_DAMAGE_IS_PARTIAL");
+        }
         if (!hasRealFeatures) {
             limitations.add("Recorder entity has no position or damage events in event stream");
         }

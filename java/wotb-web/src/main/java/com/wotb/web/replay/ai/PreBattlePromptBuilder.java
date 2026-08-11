@@ -61,7 +61,7 @@ public final class PreBattlePromptBuilder {
               },
               "teamB": { 同上 },
               "keyMatchups": [
-                { "area": "地图语义中的 AREA 名（如 AREA_A）或 GRID_REGION_N；无语义时用抽象描述", "advantage": "TEAM_A|TEAM_B", "reason": "≤80字" }
+                { "area": "地图语义中的 AREA 名 + 其九宫格编号（如 ELEVATED_TERRAIN_01(5区) 或 GRID_REGION_5）；无语义时用抽象描述且不得编造编号", "advantage": "TEAM_A|TEAM_B", "reason": "≤80字" }
               ],
               "strategicWinConditions": [
                 { "team": "TEAM_A|TEAM_B", "condition": "≤80字" }

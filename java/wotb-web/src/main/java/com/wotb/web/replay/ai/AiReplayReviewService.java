@@ -238,7 +238,7 @@ public class AiReplayReviewService {
                 final TacticalReviewHarness.HarnessOutcome outcome = harnessOrFallback(
                         analyzableGroups.getFirst().representative(), language, listener);
                 yield new AnalyzeResponse(
-                        outcome.result().analysis(),
+                        withDisclaimerFooter(outcome.result().analysis(), language),
                         renderRandomBattleSection(
                                 analyzableGroups.getFirst().representative(),
                                 outcome.preBattlePrior(), language));
@@ -249,17 +249,32 @@ public class AiReplayReviewService {
                         .map(ReplayProcessingResult::battle)
                         .toList();
                 yield new AnalyzeResponse(
-                        aiAnalysisService.analyzeMulti(battles, language, listener).analysis());
+                        withDisclaimerFooter(
+                                aiAnalysisService.analyzeMulti(battles, language, listener).analysis(),
+                                language));
             }
             case SINGLE_TEAM_BATTLE, MULTI_TEAM_BATTLE -> {
                 final TeamAnalyzeResult teamResult = aiAnalysisService
                         .analyzeTeamGroups(analyzableGroups, language, listener);
                 yield new AnalyzeResponse(
-                        teamResult.analysis().analysis(),
+                        withDisclaimerFooter(teamResult.analysis().analysis(), language),
                         teamResult.preBattleSection());
             }
             case NONE -> throw new IllegalArgumentException("NO_BATTLE_DATA");
         };
+    }
+
+    /** 复盘固定结尾免责句（三语），追加在 analysis 末尾。 */
+    private static String withDisclaimerFooter(final String analysis, final AllowedLanguage language) {
+        if (analysis == null || analysis.isBlank()) {
+            return analysis;
+        }
+        final String footer = switch (language == null ? AllowedLanguage.ZH : language) {
+            case ZH -> "\n\nAI复盘仅供参考";
+            case EN -> "\n\nThis AI review is for reference only";
+            case RU -> "\n\nРазбор ИИ приведён только для справки";
+        };
+        return analysis + footer;
     }
 
     private TacticalReviewHarness.HarnessOutcome harnessOrFallback(
@@ -292,7 +307,8 @@ public class AiReplayReviewService {
         final int recorderTeam = recorder != null && recorder.team() != null
                 ? recorder.team() : 0;
         return PreBattleSectionRenderer.renderRandomBattle(
-                prior, recorderTeam, language);
+                prior, recorderTeam, language,
+                representative.battle() == null ? null : representative.battle().mapName);
     }
 
     private static String unresolvedTeamCode(final List<ReplayPerspectiveGroup> groups) {

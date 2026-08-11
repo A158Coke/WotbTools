@@ -7,6 +7,7 @@ import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.evidence.AiEvidence;
 import com.wotb.core.replay.evidence.EvidenceSkillResult;
+import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
@@ -168,8 +169,11 @@ public final class TacticalReviewPromptBuilder {
             }
         }
         if (includePhases && features != null && features.phases() != null && !features.phases().isEmpty()) {
-            sb.append("\n======================== BATTLE PHASE SUMMARY（阶段时间线·人数来自 battle_results 权威结算） ========================\n");
-            sb.append(BattlePhaseTimelineSection.AUTHORITATIVE_NOTE);
+            sb.append("\n======================== BATTLE PHASE SUMMARY（阶段时间线·双方存活人数） ========================\n");
+            sb.append(BattlePhaseTimelineSection.PHASE_SEMANTICS_NOTE);
+            if (battle != null) {
+                sb.append("DEATH_SOURCE=").append(BattlePhaseSummary.deathSourceLabel(battle)).append('\n');
+            }
             sb.append(BattlePhaseTimelineSection.renderPlayerRows(features.phases()));
         }
         if (includeEngagements && features != null

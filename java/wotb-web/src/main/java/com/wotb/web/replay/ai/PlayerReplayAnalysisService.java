@@ -208,8 +208,8 @@ public class PlayerReplayAnalysisService {
                 config.model(),
                 null,
                 config.maxOutputTokens(),
-                config.thinkingEnabled(),
-                config.reasoningEffort(),
+                config.call2ThinkingEnabled(),
+                config.call2ThinkingEnabled() ? config.reasoningEffort() : null,
                 null,
                 prepared.analysisMode());
         return gateway.stream(request, listener::onToken).completionText();

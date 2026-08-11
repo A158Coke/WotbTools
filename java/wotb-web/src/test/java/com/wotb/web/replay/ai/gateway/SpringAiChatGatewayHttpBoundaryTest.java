@@ -164,7 +164,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
             final AiModelProperties modelProperties = new AiModelProperties(
                     FAKE_API_KEY, baseUrl, "deepseek-v4-flash",
                     1, 60, 61, 1, 0, 0, 2.0,
-                    1_000_000, 940_000, 32_768, 16_384, true, "max");
+                1_000_000, 940_000, 32_768, 16_384, true, "max", false);
             final SpringAiChatGateway gateway = new SpringAiChatGateway(
                     null, "deepseek-v4-flash", new SimpleMeterRegistry(),
                     new AiRetryPolicy(1, 0, 0, 2.0),
@@ -207,7 +207,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
             final SpringAiChatGateway gateway = SpringAiChatGateway.fromProperties(
                     new AiModelProperties(FAKE_API_KEY, baseUrl, "deepseek-v4-flash",
                             1, 2, 3, 1, 0, 0, 2.0,
-                            1_000_000, 940_000, 32_768, 16_384, true, "max"),
+                1_000_000, 940_000, 32_768, 16_384, true, "max", false),
                     new SimpleMeterRegistry());
             // Deterministically fire the watchdog before the attempt starts, i.e.
             // before the okhttp interceptor captures the Call.
@@ -229,7 +229,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
         return SpringAiChatGateway.fromProperties(new AiModelProperties(
                 FAKE_API_KEY, baseUrl, "deepseek-v4-flash",
                 10, 300, 315, 3, 0, 0, 2.0,
-                1_000_000, 940_000, 32_768, 16_384, true, "max"), null);
+                1_000_000, 940_000, 32_768, 16_384, true, "max", false), null);
     }
 
     private static AiChatRequest request() {

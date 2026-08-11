@@ -33,7 +33,7 @@ public class AiGatewayConfig {
                 properties.contextWindowTokens(),
                 properties.maxOutputTokens(),
                 properties.promptSafetyMarginTokens(),
-                properties.thinkingEnabled(),
+                properties.call2ThinkingEnabled(),
                 properties.reasoningEffort(),
                 properties.callTimeoutSec());
     }

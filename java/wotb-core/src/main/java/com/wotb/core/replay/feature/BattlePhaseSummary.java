@@ -57,6 +57,33 @@ public record BattlePhaseSummary(
     public static final int MIN_DENSE_KILLS = 3;
 
     /**
+     * 死亡时刻来源标签（数据口径诚实）：全部阵亡玩家都有 battle_results 的
+     * deathTimeMillis（>0）时返回「权威结算」；结算缺少死亡时刻字段、但事件流
+     * fallback 最终估出时间（deathSec>0）时返回「事件流估算」；存在任意阵亡玩家
+     * 最终 deathSec<=0（时刻未知）时返回「未知」。无阵亡玩家时返回「权威结算」。
+     */
+    public static String deathSourceLabel(final Battle battle) {
+        if (battle == null || battle.players == null) {
+            return "未知";
+        }
+        boolean anyDead = false;
+        boolean anyNonAuthoritative = false;
+        for (final PlayerResult p : battle.players) {
+            if (!PlayerSideResolver.isValidRawTeam(p.team) || p.survived) {
+                continue;
+            }
+            anyDead = true;
+            if (p.deathTimeMillis <= 0) {
+                anyNonAuthoritative = true;
+                if (PlayerResultFormat.deathSec(p) <= 0) {
+                    return "未知";
+                }
+            }
+        }
+        return !anyDead || !anyNonAuthoritative ? "权威结算" : "事件流估算";
+    }
+
+    /**
      * Build battle-relative phases.
      * <p>
      * Time semantics (all battle-relative seconds, battle start = 0):
@@ -76,12 +103,13 @@ public record BattlePhaseSummary(
     }
 
     /**
-     * Build battle-relative phases with authoritative survival counts.
+     * Build battle-relative phases with survival counts.
      * <p>与 {@link #buildRelativePhases} 完全相同的阶段边界，附加每阶段结束时的
      * 双方存活人数（{@code friendlyAlive/enemyAlive}）与密集击杀段标记（{@code denseKills}）。
-     * 人数只来自 {@link SurvivalTimeline}（battle_results 权威死亡时刻）；
-     * 某侧人数不可算（无名册/视角未知/存在未知死亡时刻）时为 null，调用方渲染为「未知」，
-     * 绝不猜测。</p>
+     * 人数来自 {@link SurvivalTimeline}——死亡时刻优先 battle_results 的 deathTimeMillis，
+     * 缺失时回退事件流估算（{@link PlayerResultFormat#deathSec}），来源由
+     * {@link #deathSourceLabel} 标注；某侧人数不可算（无名册/视角未知/存在未知死亡时刻）
+     * 时为 null，调用方渲染为「未知」，绝不猜测。</p>
      */
     public static List<BattlePhaseSummary> buildRelativePhasesWithSurvival(
             final float firstContactRelative,
@@ -205,7 +233,8 @@ public record BattlePhaseSummary(
     }
 
     /**
-     * 双方权威存活时间线（来自 battle_results 的死亡时刻）。
+     * 双方存活时间线（死亡时刻优先 battle_results 的 deathTimeMillis，缺失时回退
+     * 事件流估算；来源由 {@link #deathSourceLabel} 标注）。
      * <p>{@code friendlyDeathTimes/enemyDeathTimes} 只包含死亡时刻已知（>0）的阵亡玩家；
      * {@code *UnknownDeaths} 是死亡时刻缺失（deathSec <= 0）的阵亡玩家数 —— 这类玩家无法
      * 归入任何时间窗，整侧存活人数不可算，渲染为「未知」而非猜测。</p>
