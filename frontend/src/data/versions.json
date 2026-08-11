@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.7.0",
+    "date": "2026-08-11",
+    "tag": "add",
+    "zh": "首页与 README 叙事升级（架构图 / AI 证据链 / 工程取舍）",
+    "en": "Homepage & README narrative upgrade (architecture diagram / AI evidence chain / engineering trade-offs)",
+    "ru": "Обновление нарратива главной и README (схема архитектуры / цепочка доказательств ИИ / инженерные компромиссы)"
+  },
+  {
     "v": "2.6.0",
     "date": "2026-08-11",
     "tag": "add",

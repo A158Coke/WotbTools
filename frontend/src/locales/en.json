@@ -1,7 +1,7 @@
 {
     "app": {
         "title": "WoTBTools",
-        "subtitle": "World of Tanks Blitz Tool Suite",
+        "subtitle": "Replay parsing · Leaderboards · Live rating · AI tactical review",
         "replay_tab": "Replay",
         "theme": "Theme",
         "login": "Login",

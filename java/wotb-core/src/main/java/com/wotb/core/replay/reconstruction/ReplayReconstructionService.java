@@ -5,6 +5,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.parse.ReplayArchiveReader;
 import com.wotb.core.replay.decoder.ReplayDecodeContext;
 import com.wotb.core.replay.decoder.ReplayDecodeResult;
 import com.wotb.core.replay.decoder.ReplayPacketDecoderRegistry;
@@ -16,18 +17,11 @@ import com.wotb.core.replay.stream.ReplayPacketStreamReader;
 import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
 import org.springframework.util.StringUtils;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 /**
  * 回放重建服务 —— 协调完整重建流程的主入口。
@@ -35,11 +29,6 @@ import java.util.zip.ZipInputStream;
 public class ReplayReconstructionService {
 
     private static final ObjectMapper MAPPER = JsonMapper.builder().build();
-    private static final int MAX_ARCHIVE_BYTES = 20 * 1024 * 1024;
-    private static final int MAX_META_JSON_BYTES = 1024 * 1024;
-    private static final int MAX_BATTLE_RESULTS_BYTES = 8 * 1024 * 1024;
-    private static final int MAX_DATA_WOTREPLAY_BYTES = 20 * 1024 * 1024;
-    private static final int MAX_TOTAL_UNCOMPRESSED_BYTES = 24 * 1024 * 1024;
 
     private final float maxClockSec;
     private final float clockToleranceSec;
@@ -295,60 +284,7 @@ public class ReplayReconstructionService {
     }
 
     private static Map<String, byte[]> unzip(byte[] data) throws IOException {
-        if (data == null) throw new IOException("Replay archive is null");
-        if (data.length > MAX_ARCHIVE_BYTES)
-            throw new IOException("Replay archive exceeds compressed size limit");
-
-        final Map<String, byte[]> out = new HashMap<>();
-        final Map<String, Integer> ENTRY_SIZE_LIMITS = Map.of(
-                "meta.json", MAX_META_JSON_BYTES,
-                "battle_results.dat", MAX_BATTLE_RESULTS_BYTES,
-                "data.wotreplay", MAX_DATA_WOTREPLAY_BYTES);
-        final Set<String> seenEntryNames = new HashSet<>();
-
-        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(data))) {
-            ZipEntry entry;
-            byte[] tmp = new byte[8192];
-            int entryCount = 0;
-            int totalUncompressedBytes = 0;
-
-            while ((entry = zis.getNextEntry()) != null) {
-                entryCount++;
-                if (entryCount > ENTRY_SIZE_LIMITS.size()) {
-                    throw new IOException("Replay archive contains too many entries");
-                }
-
-                String entryName = entry.getName();
-                if (entry.isDirectory() || !ENTRY_SIZE_LIMITS.containsKey(entryName)) {
-                    throw new IOException("Unexpected replay entry: " + entryName);
-                }
-                if (!seenEntryNames.add(entryName)) {
-                    throw new IOException("Duplicate replay entry: " + entryName);
-                }
-
-                int entryLimit = ENTRY_SIZE_LIMITS.get(entryName);
-                long declaredSize = entry.getSize();
-                if (declaredSize < -1 || declaredSize > entryLimit)
-                    throw new IOException("Replay entry too large: " + entryName);
-
-                ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                int read;
-                int entryBytes = 0;
-                while ((read = zis.read(tmp)) != -1) {
-                    if (read == 0) continue;
-                    if ((long) entryBytes + read > entryLimit)
-                        throw new IOException("Replay entry too large: " + entryName);
-                    if ((long) totalUncompressedBytes + read > MAX_TOTAL_UNCOMPRESSED_BYTES)
-                        throw new IOException("Replay uncompressed data exceeds total size limit");
-                    bos.write(tmp, 0, read);
-                    entryBytes += read;
-                    totalUncompressedBytes += read;
-                }
-                out.put(entryName, bos.toByteArray());
-                zis.closeEntry();
-            }
-        }
-        return out;
+        return ReplayArchiveReader.read(data);
     }
 
     private static final class TypeDecodeStats {
