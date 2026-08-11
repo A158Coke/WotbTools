@@ -108,11 +108,18 @@ public class ReconstructionController {
         // 在提交 worker 前完成，非法请求直接 HTTP 400（经 @ExceptionHandler），
         // 不进入 SSE 流。worker 内 analyzeInternal 保留相同校验作为防御。
         validateAnalyzeRequest(files);
+        if (correlationId != null && !correlationId.isBlank()
+                && !AiCancellationRegistry.isValidCorrelationId(correlationId)) {
+            throw new IllegalArgumentException("INVALID_CORRELATION_ID");
+        }
         // Client-provided id (frontend cancel button / navigation) or a fresh
         // one; both are safe random opaque ids, never logged with the request.
         final String requestId = correlationId != null && !correlationId.isBlank()
                 ? correlationId : UUID.randomUUID().toString();
         final AiCancellationToken cancellation = cancellationRegistry.register(requestId);
+        if (cancellation == null) {
+            throw new IllegalArgumentException("DUPLICATE_CORRELATION_ID");
+        }
         final SseEmitter emitter = newAnalyzeEmitter();
         final ReplaySseWriter writer = new ReplaySseWriter(emitter);
         // 生命周期回调：timeout / error / 客户端断开都翻转 cancellation token
@@ -126,7 +133,7 @@ public class ReconstructionController {
             // Worker 池满（workers + queue 全占用）：清理已注册的 cancellation token
             // （不留泄漏），不把永远无 worker 执行的 emitter 返回给客户端，直接抛
             // AiReviewBusyException → @ExceptionHandler 映射 503 AI_REVIEW_BUSY。
-            cancellationRegistry.unregister(requestId);
+            cancellationRegistry.unregister(requestId, cancellation);
             throw new AiReviewBusyException();
         }
         return emitter;
@@ -194,7 +201,7 @@ public class ReconstructionController {
             // AiRequestContext 是 ThreadLocal：必须在真正执行 AI 的 worker 线程
             // 内清理，绝不能在 request 线程执行（否则一 return 就失效）。
             AiRequestContext.clear();
-            cancellationRegistry.unregister(requestId);
+            cancellationRegistry.unregister(requestId, cancellation);
         }
     }
 
@@ -269,6 +276,9 @@ public class ReconstructionController {
     @PostMapping(value = ApiPaths.REPLAY_ANALYZE_CANCEL)
     public ResponseEntity<Void> cancelAnalyze(
             @RequestParam("correlationId") final String correlationId) {
+        if (!AiCancellationRegistry.isValidCorrelationId(correlationId)) {
+            throw new IllegalArgumentException("INVALID_CORRELATION_ID");
+        }
         if (!cancellationRegistry.cancel(correlationId)) {
             return ResponseEntity.notFound().build();
         }
