@@ -1,7 +1,5 @@
 package com.wotb.web.replay.ai;
 
-import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.BattleIdentity;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 

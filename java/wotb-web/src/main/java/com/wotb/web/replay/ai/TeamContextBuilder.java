@@ -1,6 +1,5 @@
 package com.wotb.web.replay.ai;
 
-import com.wotb.core.model.Battle;
 import com.wotb.core.processing.BattleCategory;
 import com.wotb.core.processing.BattleCategoryUtils;
 import com.wotb.core.processing.PerspectiveTeamNotResolvedException;
