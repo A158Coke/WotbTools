@@ -107,7 +107,7 @@ public class ReconstructionController {
         // HTTP request-envelope validation（request 线程同步执行）：文件参数校验
         // 在提交 worker 前完成，非法请求直接 HTTP 400（经 @ExceptionHandler），
         // 不进入 SSE 流。worker 内 analyzeInternal 保留相同校验作为防御。
-        ReplayUploadValidator.validate(files);
+        ReplayUploadValidator.validateAiReview(files);
         if (correlationId != null && !correlationId.isBlank()
                 && !AiCancellationRegistry.isValidCorrelationId(correlationId)) {
             throw new IllegalArgumentException("INVALID_CORRELATION_ID");

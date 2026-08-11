@@ -32,6 +32,8 @@ import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiReviewStreamListener;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
+import com.wotb.web.replay.ReplayUploadValidator;
+import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
@@ -395,6 +397,42 @@ class ReconstructionControllerStreamingTest {
                 () -> controller.cancelAnalyze("not-a-uuid"));
     }
 
+    @Test
+    void analyzeRejectsMultipleFilesWithFileCountExceeded() {
+        assertThrows(ReplayFileCountExceededException.class,
+                () -> controller.analyze(replayFiles2(), "zh", null));
+    }
+
+    @Test
+    void reconstructBatchAllowsMultipleFiles() throws Exception {
+        // 文件数量不受 AI 单文件策略限制（B4 回归：通用校验不检查 MAX_FILES）
+        controller.reconstructBatch(replayFiles2());
+    }
+
+    @Test
+    void processAllowsMultipleFiles() throws Exception {
+        controller.process(replayFiles2(), false);
+    }
+
+    @Test
+    void genericUploadValidationErrorCodesAreStable() throws Exception {
+        final IllegalArgumentException type = assertThrows(IllegalArgumentException.class,
+                () -> controller.process(new MultipartFile[]{
+                        new MockMultipartFile("files", "x.txt", "text/plain", new byte[]{1})}, false));
+        assertEquals("INVALID_REPLAY_FILE_TYPE", type.getMessage());
+
+        final IllegalArgumentException empty = assertThrows(IllegalArgumentException.class,
+                () -> controller.process(new MultipartFile[]{
+                        new MockMultipartFile("files", "empty.wotbreplay", "application/octet-stream", new byte[0])}, false));
+        assertEquals("NO_REPLAY_FILE", empty.getMessage());
+
+        final IllegalArgumentException tooLarge = assertThrows(IllegalArgumentException.class,
+                () -> controller.process(new MultipartFile[]{
+                        new MockMultipartFile("files", "big.wotbreplay", "application/octet-stream",
+                                new byte[(int) ReplayUploadValidator.MAX_FILE_SIZE + 1])}, false));
+        assertEquals("FILE_TOO_LARGE", tooLarge.getMessage());
+    }
+
     // ---- helpers ----
 
     private RecordingEmitter analyzeDirect(final String lang, final String correlationId) {
@@ -429,6 +467,12 @@ class ReconstructionControllerStreamingTest {
     private static MultipartFile[] replayFiles() {
         return new MultipartFile[]{new MockMultipartFile(
                 "files", "stream.wotbreplay", "application/octet-stream", new byte[]{1})};
+    }
+
+    private static MultipartFile[] replayFiles2() {
+        final MockMultipartFile file = new MockMultipartFile(
+                "files", "stream.wotbreplay", "application/octet-stream", new byte[]{1});
+        return new MultipartFile[]{file, file};
     }
 
     /** 收集 SSE 事件的 SseEmitter（send 不写真实 response，仅入队）。 */
