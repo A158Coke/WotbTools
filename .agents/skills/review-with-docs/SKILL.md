@@ -29,6 +29,7 @@ description: >
 - [ ] 是否记录了本次变更（Added / Changed / Fixed / Removed）
 - [ ] 变更描述是否准确（不含实现细节，面向读者）
 - [ ] 是否在 `[Unreleased]` 下（未发布版本）
+- [ ] 用户可见功能变更是否同步 `frontend/src/data/versions.json`（三语新版本条目，最新在前）
 
 ### 2. DEVELOPER_GUIDE
 - [ ] 新增字段/API 是否更新字段表
