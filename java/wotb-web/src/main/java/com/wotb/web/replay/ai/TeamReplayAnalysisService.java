@@ -187,27 +187,27 @@ public class TeamReplayAnalysisService {
         final boolean en = language == AllowedLanguage.EN;
         return zhPrompt
                 .replace("请用简体中文输出：",
-                        en ? PlayerReplayPromptBuilder.EN_OUTPUT_INTRO
-                                : PlayerReplayPromptBuilder.RU_OUTPUT_INTRO)
-                .replace(PlayerReplayPromptBuilder.ZH_TIME_RULE,
-                        en ? PlayerReplayPromptBuilder.EN_TIME_RULE
-                                : PlayerReplayPromptBuilder.RU_TIME_RULE)
-                .replace(PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE,
-                        en ? PlayerReplayPromptBuilder.COMMON_LANGUAGE_RULE_EN
-                                : PlayerReplayPromptBuilder.COMMON_LANGUAGE_RULE_RU)
-                .replace(PlayerReplayPromptBuilder.ZH_UNKNOWN_FIELD_RULE,
-                        en ? PlayerReplayPromptBuilder.EN_UNKNOWN_FIELD_RULE
-                                : PlayerReplayPromptBuilder.RU_UNKNOWN_FIELD_RULE)
+                        en ? PlayerPromptRules.EN_OUTPUT_INTRO
+                                : PlayerPromptRules.RU_OUTPUT_INTRO)
+                .replace(PlayerPromptRules.ZH_TIME_RULE,
+                        en ? PlayerPromptRules.EN_TIME_RULE
+                                : PlayerPromptRules.RU_TIME_RULE)
+                .replace(PlayerPromptRules.COMMON_CHINESE_LANGUAGE_RULE,
+                        en ? PlayerPromptRules.COMMON_LANGUAGE_RULE_EN
+                                : PlayerPromptRules.COMMON_LANGUAGE_RULE_RU)
+                .replace(PlayerPromptRules.ZH_UNKNOWN_FIELD_RULE,
+                        en ? PlayerPromptRules.EN_UNKNOWN_FIELD_RULE
+                                : PlayerPromptRules.RU_UNKNOWN_FIELD_RULE)
                 .replace(ZH_CANNOT_DETERMINE_RULE,
                         en ? EN_CANNOT_DETERMINE_RULE : RU_CANNOT_DETERMINE_RULE)
                 .replace(TEAM_ANALYSIS_RULE,
                         en ? TEAM_ANALYSIS_RULE_EN : TEAM_ANALYSIS_RULE_RU)
-                .replace(PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE,
-                        en ? PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE_EN
-                                : PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE_RU)
-                .replace(PlayerReplayPromptBuilder.COMMON_EVIDENCE_LOGIC_RULE,
-                        en ? PlayerReplayPromptBuilder.COMMON_EVIDENCE_LOGIC_RULE_EN
-                                : PlayerReplayPromptBuilder.COMMON_EVIDENCE_LOGIC_RULE_RU)
+                .replace(PlayerPromptRules.COMMON_DAMAGE_SEMANTICS_RULE,
+                        en ? PlayerPromptRules.COMMON_DAMAGE_SEMANTICS_RULE_EN
+                                : PlayerPromptRules.COMMON_DAMAGE_SEMANTICS_RULE_RU)
+                .replace(PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE,
+                        en ? PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE_EN
+                                : PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE_RU)
                 .replace(TEAM_PRIOR_RULE,
                         en ? TEAM_PRIOR_RULE_EN : TEAM_PRIOR_RULE_RU)
                 .replace(TEAM_REGION_RULE,
@@ -239,7 +239,7 @@ public class TeamReplayAnalysisService {
             10) 3-5 条可执行训练建议。
             不得推断未点亮敌人的位置、装填/弹药/装备、地形名称或玩家主观意图。
             无法从输入确定时必须写明“无法从当前回放数据确定”。
-             """ + PlayerReplayPromptBuilder.ZH_TIME_RULE + PlayerReplayPromptBuilder.COMMON_TANK_PROPER_NOUN_RULE + PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE + PlayerReplayPromptBuilder.COMMON_EVIDENCE_LOGIC_RULE + TEAM_PRIOR_RULE + TEAM_REGION_RULE;
+             """ + PlayerPromptRules.ZH_TIME_RULE + PlayerPromptRules.COMMON_TANK_PROPER_NOUN_RULE + PlayerPromptRules.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerPromptRules.COMMON_DAMAGE_SEMANTICS_RULE + PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE + TEAM_PRIOR_RULE + TEAM_REGION_RULE;
 
     static final String MULTI_TEAM_PROMPT = """
             你是《坦克世界闪击战》(WoT Blitz) 的资深团队教练，正在比较多个训练房/联赛团队视角。
@@ -252,7 +252,7 @@ public class TeamReplayAnalysisService {
             请引用具体 analysisUnitId、teamLabel 和时间证据，避免根据单次事件概括长期行为。
             不得用对方回放补全本队当时未发现的敌人信息，无法判断时必须明确说明。
             输出应包含：各 perspective 摘要、可比较的团队行为、关键差异和 3-5 条训练建议。
-             """ + PlayerReplayPromptBuilder.ZH_TIME_RULE + PlayerReplayPromptBuilder.COMMON_TANK_PROPER_NOUN_RULE + PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE + PlayerReplayPromptBuilder.COMMON_EVIDENCE_LOGIC_RULE + TEAM_PRIOR_RULE + TEAM_REGION_RULE;
+             """ + PlayerPromptRules.ZH_TIME_RULE + PlayerPromptRules.COMMON_TANK_PROPER_NOUN_RULE + PlayerPromptRules.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerPromptRules.COMMON_DAMAGE_SEMANTICS_RULE + PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE + TEAM_PRIOR_RULE + TEAM_REGION_RULE;
 
     private final AiChatGateway gateway;
     private final AiReplayAnalysisConfig config;
