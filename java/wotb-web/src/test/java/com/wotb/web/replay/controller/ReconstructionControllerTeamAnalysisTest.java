@@ -67,8 +67,7 @@ class ReconstructionControllerTeamAnalysisTest {
         aiService = mock(AiReplayAnalysisService.class);
         reviewService = spy(new AiReplayReviewService(processingFacade, aiService));
         workerExecutor = new AiReviewWorkerExecutor();
-        controller = new ReconstructionController(
-                processingFacade, reviewService, new AiCancellationRegistry(), workerExecutor);
+        controller = new ReconstructionController(processingFacade, reviewService, new AiCancellationRegistry(), workerExecutor, null);
     }
 
     @AfterEach

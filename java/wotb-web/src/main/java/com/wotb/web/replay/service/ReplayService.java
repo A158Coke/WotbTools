@@ -48,12 +48,13 @@ public class ReplayService {
 
     private final Tankopedia tankopedia = Tankopedia.load();
     private final ReplayCapacityLimiter capacityLimiter;
+    private final ReplayUsageMetrics usageMetrics;
 
-    @Autowired(required = false)
-    private ReplayUsageMetrics usageMetrics;
-
-    public ReplayService(final ReplayCapacityLimiter capacityLimiter) {
+    @Autowired
+    public ReplayService(final ReplayCapacityLimiter capacityLimiter,
+                         @Autowired(required = false) final ReplayUsageMetrics usageMetrics) {
         this.capacityLimiter = capacityLimiter;
+        this.usageMetrics = usageMetrics;
     }
 
     /** 执行并统计回放解析使用指标（成功与异常都记录；无 ReplayUsageMetrics 时原样执行）。 */

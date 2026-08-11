@@ -75,8 +75,7 @@ class AiReviewWorkerSaturationTest {
     void thirdRequestIsRejectedWhenOneWorkerAndOneQueueSlotAreFull() throws Exception {
         // workers=1, queue=1: max 2 tasks (1 running + 1 queued), 3rd rejected.
         workerExecutor = new AiReviewWorkerExecutor(1, 1);
-        controller = new ReconstructionController(
-                processingFacade, reviewService, cancellationRegistry, workerExecutor);
+        controller = new ReconstructionController(processingFacade, reviewService, cancellationRegistry, workerExecutor, null);
 
         // Task A occupies the single worker (blocking latch).
         final CountDownLatch taskAStarted = new CountDownLatch(1);
@@ -141,8 +140,7 @@ class AiReviewWorkerSaturationTest {
         // This is implicitly verified by the saturation test above; here we verify
         // the executor type directly by checking that a 1/1 pool rejects the 3rd task.
         workerExecutor = new AiReviewWorkerExecutor(1, 1);
-        controller = new ReconstructionController(
-                processingFacade, reviewService, cancellationRegistry, workerExecutor);
+        controller = new ReconstructionController(processingFacade, reviewService, cancellationRegistry, workerExecutor, null);
 
         final CountDownLatch holdWorker = new CountDownLatch(1);
         doAnswer(invocation -> {
@@ -177,8 +175,7 @@ class AiReviewWorkerSaturationTest {
     void cancelledQueuedTaskDoesNotCallAnalyzeStreamingWhenPickedUp() throws Exception {
         // worker=1, queue=2: Task A occupies worker, Task B sits in queue.
         workerExecutor = new AiReviewWorkerExecutor(1, 2);
-        controller = new ReconstructionController(
-                processingFacade, reviewService, cancellationRegistry, workerExecutor);
+        controller = new ReconstructionController(processingFacade, reviewService, cancellationRegistry, workerExecutor, null);
 
         // Task A occupies the worker until released.
         final CountDownLatch taskAStarted = new CountDownLatch(1);

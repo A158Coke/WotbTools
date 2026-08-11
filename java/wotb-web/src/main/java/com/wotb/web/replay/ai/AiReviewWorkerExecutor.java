@@ -44,11 +44,9 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
     static final int DEFAULT_QUEUE_CAPACITY = 4;
     static final long DEFAULT_OVERALL_DEADLINE_SEC = 400;
 
-    private final ThreadPoolExecutor executor;
+private final ThreadPoolExecutor executor;
     private final long overallDeadlineNanos;
-
-    @Autowired(required = false)
-    private MeterRegistry meterRegistry;
+    private final MeterRegistry meterRegistry;
 
     /**
      * Spring 构造器：从 {@code wotb.ai.review-worker.max-concurrent} /
@@ -59,12 +57,14 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
      * @param maxConcurrent    worker 线程数（core = max，固定不弹性伸缩），必须 ≥ 1
      * @param queueCapacity    有界队列容量，必须 ≥ 1
      * @param overallDeadlineSec  请求整体 deadline（秒），必须 ≥ 1
+     * @param meterRegistry    可选 Micrometer 注册表（运行时缺失时为 {@code null}，跳过指标记录）
      */
     @Autowired
     public AiReviewWorkerExecutor(
             @Value("${wotb.ai.review-worker.max-concurrent:4}") final int maxConcurrent,
             @Value("${wotb.ai.review-worker.queue-capacity:4}") final int queueCapacity,
-            @Value("${wotb.ai.review-worker.overall-deadline-sec:400}") final long overallDeadlineSec) {
+            @Value("${wotb.ai.review-worker.overall-deadline-sec:400}") final long overallDeadlineSec,
+            @Autowired(required = false) final MeterRegistry meterRegistry) {
         if (maxConcurrent < 1) {
             throw new IllegalArgumentException(
                     "maxConcurrent must be >= 1: " + maxConcurrent);
@@ -86,16 +86,17 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
                 new ArrayBlockingQueue<>(queueCapacity),
                 new NamedDaemonThreadFactory(),
                 new ThreadPoolExecutor.AbortPolicy());
+        this.meterRegistry = meterRegistry;
     }
 
     /** 测试便利构造器：使用默认 4/4/400。 */
     public AiReviewWorkerExecutor() {
-        this(DEFAULT_MAX_CONCURRENT, DEFAULT_QUEUE_CAPACITY, DEFAULT_OVERALL_DEADLINE_SEC);
+        this(DEFAULT_MAX_CONCURRENT, DEFAULT_QUEUE_CAPACITY, DEFAULT_OVERALL_DEADLINE_SEC, null);
     }
 
     /** 测试便利构造器：指定 workers/queue，整体 deadline 用默认 400s。 */
     public AiReviewWorkerExecutor(final int maxConcurrent, final int queueCapacity) {
-        this(maxConcurrent, queueCapacity, DEFAULT_OVERALL_DEADLINE_SEC);
+        this(maxConcurrent, queueCapacity, DEFAULT_OVERALL_DEADLINE_SEC, null);
     }
 
     /**

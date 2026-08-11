@@ -67,8 +67,10 @@ public class AiReplayAnalysisService {
         this.playerService = new PlayerReplayAnalysisService(gateway, config);
         this.teamService = new TeamReplayAnalysisService(
                 gateway, config,
-                new PreBattleStrategicService(gateway, config),
-                new TeamAutopsyService(gateway, config));
+                new PreBattleStrategicService(gateway, config, null),
+                new TeamAutopsyService(gateway, config, null),
+                System::nanoTime,
+                null);
     }
 
     public boolean isConfigured() {

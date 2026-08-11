@@ -57,28 +57,29 @@ public class TeamReplayAnalysisService {
     private final PreBattleStrategicService preBattleService;
     private final TeamAutopsyService teamAutopsyService;
     private final LongSupplier nanoTimeSource;
-
-    @Autowired(required = false)
-    private MeterRegistry meterRegistry;
+    private final MeterRegistry meterRegistry;
 
     @Autowired
     public TeamReplayAnalysisService(final AiChatGateway gateway,
                                      final AiReplayAnalysisConfig config,
                                      final PreBattleStrategicService preBattleService,
-                                     final TeamAutopsyService teamAutopsyService) {
-        this(gateway, config, preBattleService, teamAutopsyService, System::nanoTime);
+                                     final TeamAutopsyService teamAutopsyService,
+                                     @Autowired(required = false) final MeterRegistry meterRegistry) {
+        this(gateway, config, preBattleService, teamAutopsyService, System::nanoTime, meterRegistry);
     }
 
     TeamReplayAnalysisService(final AiChatGateway gateway,
                               final AiReplayAnalysisConfig config,
                               final PreBattleStrategicService preBattleService,
                               final TeamAutopsyService teamAutopsyService,
-                              final LongSupplier nanoTimeSource) {
+                              final LongSupplier nanoTimeSource,
+                              final MeterRegistry meterRegistry) {
         this.gateway = gateway;
         this.config = config;
         this.preBattleService = preBattleService;
         this.teamAutopsyService = teamAutopsyService;
         this.nanoTimeSource = nanoTimeSource;
+        this.meterRegistry = meterRegistry;
     }
 
     public boolean isConfigured() {

@@ -67,9 +67,9 @@ class TacticalReviewHarnessTest {
     private static TacticalReviewHarness harness(final AiChatGateway gateway,
                                                  final LongSupplier clock) {
         final PlayerReplayAnalysisService playerService = new PlayerReplayAnalysisService(gateway, config());
-        final PreBattleStrategicService preBattleService = new PreBattleStrategicService(gateway, config());
+        final PreBattleStrategicService preBattleService = new PreBattleStrategicService(gateway, config(), null);
         return new TacticalReviewHarness(
-                playerService, preBattleService, gateway, config(), clock);
+                playerService, preBattleService, gateway, config(), clock, null);
     }
 
     private static AiChatGateway gateway(final String preBattleReply) {

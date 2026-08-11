@@ -74,8 +74,7 @@ class ReconstructionControllerStreamingTest {
         reviewService = spy(new AiReplayReviewService(processingFacade, aiService));
         cancellationRegistry = spy(new AiCancellationRegistry());
         workerExecutor = new AiReviewWorkerExecutor();
-        controller = new ReconstructionController(
-                processingFacade, reviewService, cancellationRegistry, workerExecutor);
+        controller = new ReconstructionController(processingFacade, reviewService, cancellationRegistry, workerExecutor, null);
     }
 
     @AfterEach
