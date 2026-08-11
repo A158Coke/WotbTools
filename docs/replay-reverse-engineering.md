@@ -16,18 +16,18 @@
 | 1/2 | 实体创建（录像者 avatar cell 等） | type 1 含昵称 + 竞技场 pickle；结构待全解 |
 | 4 | EntityLeave | entity_id(i32)（已消费） |
 | 5 | 实体 enterWorld | eid + 数据块，部分含昵称；未解 |
-| 7 | **属性包** | `(eid u32, propId u32, valueLen u32, value 1-4B)`；本方移动后 ~10Hz；propId 0=标志、2=角度（平滑，疑炮塔/车体朝向）、3=伤害时刻变化、4=双态（疑弹药/炮状态）、8=标志；**HP 未出现在已见 propId** |
+| 7 | **属性包** | `(eid u32, propId u32, valueLen u32, value 1-4B)`；本方移动后 ~10Hz；propId 0=标志、2=平滑变化值（与 type-10 yaw/pitch 均不匹配，误差 80°/148°，疑炮塔朝向，缺炮塔数据源无法定案）、3=伤害时刻变化、4=双态（疑弹药/炮状态）、8=标志；**HP 未出现在已见 propId** |
 | 8 | EntityMethod | subtype 47/48 updateArena protobuf（名册/账号映射）、8 伤害（已消费）；玩家 protobuf 字段 1-24 已全量列出，field 18=float 1.0（疑初始满血比例） |
 | 10 | Position | 49B BigWorld 格式（已消费） |
 | 11 | 空间信息 | 含字符串 `spaces/neptune` 等 |
-| 13 | **赛后结果 dump（zlib 压缩）** | 解压 53KB：竞技场 ID 字符串 + protobuf（地图池、14 玩家档案：账号/昵称/team/clanTag/头像 URL/锦标赛统计） |
+| 13 | **赛后玩家档案 dump** | 容器已全解：zlib 压缩到 pickle(arenaId, 53KB protobuf)（pickle=tuple：INT(arenaId)+BINSTRING(protobuf)）；protobuf：field 8=元信息、field 25=14 玩家档案（1=账号 2=昵称 3=team 5=战队 7=头像 URL，含锦标赛统计 key） |
 | 14/29/36 | 低频结束/标记包 | 未深解 |
 | 23/26/28 | 4B 小包 | 值多为时间相关（疑 tick/状态）；未解 |
-| 31 | 全局 ~30Hz 单 float | 值 13-54；非按实体（7v7 与随机战频率一致）；疑录像者本地状态；未归属 |
+| 31 | 全局 ~30Hz 单 float | 值 13-54；已排除：录像者车速（\|Δ\|=23.8）、yaw（84°）、任一辆车 HP%（最佳误差 25%）；语义未定 |
 | 32 | 11-27B | 422 个；未解 |
 | 33 | 12B 固定 | 134 个；未解 |
 | 35 | **单字节递增 tick 计数** | ~10Hz，两种模式一致，疑全局心跳/帧计数 |
-| 39 | **全局固定 120Hz × 7 floats** | 中位间隔 8.3ms（99.5% 一致）；与 type-10 位置零匹配（六种轴变换仅换轴后 6.6% 命中）；非按实体；疑录像者瞄准/输入/物理状态；**未破解** |
+| 39 | **全局固定 120Hz × 7 floats** | 中位间隔 8.3ms（99.5% 一致）；与 type-10 位置零匹配（六种轴变换 + 仿射拟合 std≈128m 均排除车辆位置）；非按实体；疑录像者瞄准/输入/相机状态；**未破解** |
 
 ## 关键结论
 
