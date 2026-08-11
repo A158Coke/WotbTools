@@ -138,8 +138,9 @@ public class DefaultPlayerBattleFeatureExtractor {
                 .mapToInt(EngagementSummary::damageReceived)
                 .sum();
         final boolean observedMatchesAuthoritative = recorderResult != null
-                && observedDealt == recorderResult.damageDealt
-                && observedReceived == recorderResult.damageReceived;
+                && ObservedDamageCoverage.matches(
+                        observedDealt, observedReceived,
+                        recorderResult.damageDealt, recorderResult.damageReceived);
         if (!observedMatchesAuthoritative) {
             limitations.add("OBSERVED_DAMAGE_IS_PARTIAL");
         }

@@ -83,13 +83,30 @@ public class WebApiTest {
     }
 
     private static List<Path> replays() throws Exception {
-        final Path dir = Path.of(System.getProperty("user.dir"), "..", "..", "common", "data").normalize();
-        Assumptions.assumeTrue(Files.isDirectory(dir), "common/data 样本目录不存在, 跳过真实回放 API 回归");
-        try (Stream<Path> s = Files.list(dir)) {
-            final List<Path> files = s.filter(p -> p.toString().toLowerCase().endsWith(".wotbreplay")).sorted().toList();
-            Assumptions.assumeTrue(!files.isEmpty(), "common/data 中没有 .wotbreplay, 跳过真实回放 API 回归");
-            return files;
+        final List<Path> result = new ArrayList<>();
+        final Path committed = Path.of(
+                System.getProperty("user.dir"), "..", "..", "common", "fixtures", "replays")
+                .normalize();
+        if (Files.isDirectory(committed)) {
+            try (Stream<Path> s = Files.list(committed)) {
+                s.filter(p -> p.toString().toLowerCase().endsWith(".wotbreplay"))
+                        .sorted()
+                        .forEach(result::add);
+            }
         }
+        final Path local = Path.of(
+                System.getProperty("user.dir"), "..", "..", "common", "data")
+                .normalize();
+        if (Files.isDirectory(local)) {
+            try (Stream<Path> s = Files.list(local)) {
+                s.filter(p -> p.toString().toLowerCase().endsWith(".wotbreplay"))
+                        .sorted()
+                        .forEach(result::add);
+            }
+        }
+        Assumptions.assumeTrue(!result.isEmpty(),
+                "无真实回放夹具（common/fixtures/replays 或 common/data）");
+        return result;
     }
 
     private static MockMultipartFile file(final Path p) throws Exception {
@@ -144,7 +161,10 @@ public class WebApiTest {
         final JsonNode n = om.readTree(json);
         assertEquals(files.size(), n.get("battles").size());
         assertEquals(1, n.get("duplicates").size());
-        assertFalse(n.get("aggregate").isEmpty());
+        // aggregate 仅在 >1 场唯一战斗时由后端输出（ReplayService），单一夹具下为空
+        if (files.size() > 1) {
+            assertFalse(n.get("aggregate").isEmpty());
+        }
         final JsonNode b0 = n.get("battles").get(0);
         assertEquals(14, b0.get("players").size());
         assertTrue(b0.get("players").get(0).get("cells").has("damage_dealt"));

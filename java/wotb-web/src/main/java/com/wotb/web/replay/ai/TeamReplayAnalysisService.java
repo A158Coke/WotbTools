@@ -239,7 +239,7 @@ public class TeamReplayAnalysisService {
             10) 3-5 条可执行训练建议。
             不得推断未点亮敌人的位置、装填/弹药/装备、地形名称或玩家主观意图。
             无法从输入确定时必须写明“无法从当前回放数据确定”。
-            输出复盘中的所有战斗时间必须使用“XX分XX秒”格式，例如 75 秒写作“1分15秒”、180 秒写作“3分00秒”，禁止仅使用累计秒数或“1:15”格式。""" + PlayerReplayPromptBuilder.COMMON_TANK_PROPER_NOUN_RULE + PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE + PlayerReplayPromptBuilder.COMMON_EVIDENCE_LOGIC_RULE + TEAM_PRIOR_RULE + TEAM_REGION_RULE;
+             """ + PlayerReplayPromptBuilder.ZH_TIME_RULE + PlayerReplayPromptBuilder.COMMON_TANK_PROPER_NOUN_RULE + PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE + PlayerReplayPromptBuilder.COMMON_EVIDENCE_LOGIC_RULE + TEAM_PRIOR_RULE + TEAM_REGION_RULE;
 
     static final String MULTI_TEAM_PROMPT = """
             你是《坦克世界闪击战》(WoT Blitz) 的资深团队教练，正在比较多个训练房/联赛团队视角。
@@ -252,7 +252,7 @@ public class TeamReplayAnalysisService {
             请引用具体 analysisUnitId、teamLabel 和时间证据，避免根据单次事件概括长期行为。
             不得用对方回放补全本队当时未发现的敌人信息，无法判断时必须明确说明。
             输出应包含：各 perspective 摘要、可比较的团队行为、关键差异和 3-5 条训练建议。
-            输出复盘中的所有战斗时间必须使用“XX分XX秒”格式，例如 75 秒写作“1分15秒”、180 秒写作“3分00秒”，禁止仅使用累计秒数或“1:15”格式。""" + PlayerReplayPromptBuilder.COMMON_TANK_PROPER_NOUN_RULE + PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE + PlayerReplayPromptBuilder.COMMON_EVIDENCE_LOGIC_RULE + TEAM_PRIOR_RULE + TEAM_REGION_RULE;
+             """ + PlayerReplayPromptBuilder.ZH_TIME_RULE + PlayerReplayPromptBuilder.COMMON_TANK_PROPER_NOUN_RULE + PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE + PlayerReplayPromptBuilder.COMMON_EVIDENCE_LOGIC_RULE + TEAM_PRIOR_RULE + TEAM_REGION_RULE;
 
     private final AiChatGateway gateway;
     private final AiReplayAnalysisConfig config;
@@ -395,22 +395,18 @@ public class TeamReplayAnalysisService {
         AnalyzeResult firstAnalysis = null;
         SingleTeamBattleAnalysisContext firstContext = null;
         for (final var partition : partitions) {
+            final AnalyzeResult result;
             if (partition.size() == 1) {
                 final var ctx = partition.getFirst();
                 final RosterEvidence evidence = evidenceByUnitId.get(ctx.analysisUnitId());
                 final TeamAiPromptBuilder.PromptInput input =
                         TeamAiPromptBuilder.single(
                                 ctx,
-                                evidence != null ? evidence.limitations() : List.of(),
+                                rosterEvidenceLimits(evidence),
                                 priorsByUnitId.get(ctx.analysisUnitId()),
                                 config.estimator(),
                                 config.singleReplayMaxInputTokens());
-                final AnalyzeResult result =
-                        callSingleTeamContext(ctx, input, language, startNanos, listener);
-                if (firstAnalysis == null) {
-                    firstAnalysis = result;
-                    firstContext = ctx;
-                }
+                result = callSingleTeamContext(ctx, input, language, startNanos, listener);
             } else {
                 final MultiTeamBattleAnalysisContext multiContext =
                         buildMultiTeamContext(partition, evidenceByUnitId);
@@ -418,7 +414,7 @@ public class TeamReplayAnalysisService {
                 for (final var ctx : partition) {
                     final RosterEvidence ev = evidenceByUnitId.get(ctx.analysisUnitId());
                     if (ev != null) {
-                        partitionEvidenceLimits.put(ctx.analysisUnitId(), ev.limitations());
+                        partitionEvidenceLimits.put(ctx.analysisUnitId(), rosterEvidenceLimits(ev));
                     }
                 }
                 final TeamAiPromptBuilder.PromptInput input =
@@ -429,12 +425,11 @@ public class TeamReplayAnalysisService {
                                 perspectiveTeamByUnitId,
                                 config.estimator(),
                                 config.singleReplayMaxInputTokens());
-                final AnalyzeResult result =
-                        callMultiTeamContext(input, language, startNanos, listener);
-                if (firstAnalysis == null) {
-                    firstAnalysis = result;
-                    firstContext = partition.getFirst();
-                }
+                result = callMultiTeamContext(input, language, startNanos, listener);
+            }
+            if (firstAnalysis == null) {
+                firstAnalysis = result;
+                firstContext = partition.getFirst();
             }
         }
         if (firstAnalysis == null) {
@@ -448,6 +443,11 @@ public class TeamReplayAnalysisService {
                         language,
                         firstContext.battle() == null ? null : firstContext.battle().mapName);
         return new TeamAnalyzeResult(firstAnalysis, preBattleSection);
+    }
+
+    /** RosterEvidence 缺失时按空限制处理（single/multi 共用，避免 null 分支重复）。 */
+    private static List<String> rosterEvidenceLimits(final RosterEvidence evidence) {
+        return evidence == null ? List.of() : evidence.limitations();
     }
 
     /** 团队视角也应用 Call #1（地图 + 阵容先验）；失败不阻断团队复盘，仅无 prior 段。 */
