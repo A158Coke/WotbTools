@@ -8,10 +8,13 @@ import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.web.replay.dto.MapOverview;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -126,6 +129,56 @@ class MapOverviewBuilderTest {
         battle.mapName = "rift";
         battle.players = List.of();
         assertNull(MapOverviewBuilder.build(battle, null));
+    }
+
+    /**
+     * Wire 契约：SSE done 载荷中的 mapOverview JSON 字段名与前端组件消费一致
+     * （camelCase；null 降级时字段输出 JSON null）。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void jsonContractMatchesFrontendConsumption() throws Exception {
+        final ObjectMapper mapper = JsonMapper.builder().build();
+        final MapOverview overview = new MapOverview(
+                "desert_train",
+                "Desert Sands",
+                2,
+                new MapOverview.Bounds(-256, 260, -251, 254.3),
+                List.of(new MapOverview.GridCell("F1", 6,
+                        new MapOverview.Bounds(-256, -170, -251, -166.78))),
+                new MapOverview.ImageInfo("desert-sands.png", 765, 772),
+                List.of(new MapOverview.SpawnPoint("S1", 2, -200, 200)),
+                List.of(new MapOverview.Phase("opening", 0, 45)),
+                new MapOverview.Heatmaps(
+                        new MapOverview.Layer(List.of(1.0), List.of(250.0), List.of(0.0)),
+                        new MapOverview.Layer(List.of(2.0), List.of(300.0), List.of(1.0))),
+                List.of(new MapOverview.Route(
+                        1L, "p1", 29985L, 2,
+                        List.of(new MapOverview.Point(0, 0, 1.5)),
+                        0.8, 146.9, 115.0)));
+        final Map<String, Object> payload = mapper.convertValue(overview, Map.class);
+        assertEquals("desert_train", payload.get("mapCode"));
+        assertEquals("Desert Sands", payload.get("displayName"));
+        assertEquals(2, payload.get("friendlyTeam"));
+        assertTrue(payload.containsKey("playableBounds"));
+        assertTrue(payload.containsKey("gridCells"));
+        assertTrue(payload.containsKey("image"));
+        assertTrue(payload.containsKey("spawnPoints"));
+        assertTrue(payload.containsKey("phases"));
+        assertTrue(payload.containsKey("heatmaps"));
+        assertTrue(payload.containsKey("routes"));
+        @SuppressWarnings("unchecked")
+        final Map<String, Object> route = (Map<String, Object>) ((List<?>) payload.get("routes")).get(0);
+        assertTrue(route.containsKey("firstObservedSec"));
+        assertTrue(route.containsKey("lastObservedSec"));
+        assertTrue(route.containsKey("deathSec"));
+        @SuppressWarnings("unchecked")
+        final Map<String, Object> point = (Map<String, Object>) ((List<?>) route.get("points")).get(0);
+        assertTrue(point.containsKey("timeSec"));
+        assertTrue(point.containsKey("x"));
+        assertTrue(point.containsKey("y"));
+        final String json = mapper.writeValueAsString(new com.wotb.web.replay.dto.AnalyzeResponse("a", null, null));
+        assertTrue(json.contains("\"mapOverview\":null"), "降级时 mapOverview 输出 JSON null");
     }
 
     private static PlayerResult player(final long account, final String nick,
