@@ -408,6 +408,15 @@ public class SpringAiChatGateway implements AiChatGateway {
                                 try {
                                     if (delta.length() > CHUNK_SPLIT_THRESHOLD) {
                                         for (final String piece : splitChunks(delta, CHUNK_MAX_PIECE)) {
+                                            // 分块转发期间同样遵守取消/超时语义：超大块切分可能耗时数秒，
+                                            // 不能在等待期间无视客户端取消或总预算。
+                                            if (context.isExpired()
+                                                    || nanoTimeSource.getAsLong() >= deadlineNanos) {
+                                                throw new StreamInterruptedMarker("AI_TIMEOUT");
+                                            }
+                                            if (context.isCancelled()) {
+                                                throw new StreamInterruptedMarker("AI_CANCELLED");
+                                            }
                                             consumer.onDelta(piece);
                                             pauseChunk();
                                         }
