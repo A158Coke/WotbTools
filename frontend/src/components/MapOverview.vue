@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { mapImages } from '../data/mapImages'
 
 /**
@@ -13,6 +14,8 @@ const props = defineProps({
     required: true
   }
 })
+
+const { t } = useI18n()
 
 const image = computed(() => mapImages[props.overview.mapCode] || null)
 
@@ -135,7 +138,7 @@ function fmtTime(sec) {
   if (!Number.isFinite(sec) || sec < 0) return '-'
   const m = Math.floor(sec / 60)
   const s = Math.round(sec % 60)
-  return `${m}分${String(s).padStart(2, '0')}秒`
+  return t('recon.map.duration', { m, s: String(s).padStart(2, '0') })
 }
 
 const gridRegions = computed(() => {

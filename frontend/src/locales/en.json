@@ -792,6 +792,7 @@
               "death": "Destroyed",
               "observed_from": "positions observed from",
               "observed_note": "Observation window (vehicles missing at opening):",
+              "duration": "{m}m {s}s",
               "aria": "map overview"
           },
         "stages": {
