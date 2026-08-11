@@ -940,6 +940,42 @@ class TeamAiPromptBuilderTest {
     }
 
     @Test
+    void observedDamageNumbersSuppressedWhenPartial() {
+        final SingleTeamBattleAnalysisContext base = contextWithMembers(1, 1);
+        final TeamObservedAggregate observed = new TeamObservedAggregate(
+                18443, 11517, 70, 0);
+        final TeamBattleFeatureSet features = new TeamBattleFeatureSet(
+                base.features().perspectiveTeam(),
+                base.features().members(),
+                base.features().authoritativeAggregate(),
+                observed,
+                base.features().formationPhases(),
+                base.features().engagements(),
+                base.features().battlePhases(),
+                base.features().keyEvents(),
+                base.features().coverage(),
+                List.of("OBSERVED_DAMAGE_IS_PARTIAL"),
+                true);
+        final SingleTeamBattleAnalysisContext context = new SingleTeamBattleAnalysisContext(
+                base.analysisUnitId(), base.battleId(), base.fileName(),
+                base.battleCategory(), base.battle(), 1, features,
+                base.coverage(), base.limitations(), null);
+
+        final String content = TeamAiPromptBuilder.single(context).content();
+
+        assertTrue(content.contains("OBSERVED_EVENT_SUBSET_NOT_AUTHORITATIVE"),
+                "section header must remain");
+        assertTrue(content.contains("numbersSuppressed=true"),
+                "suppression flag must be present when OBSERVED_DAMAGE_IS_PARTIAL");
+        assertFalse(content.contains("damageDealtSubset=18443"),
+                "partial observed damage number must NOT leak into prompt: " + content);
+        assertFalse(content.contains("damageReceivedSubset=11517"),
+                "partial observed received number must NOT leak into prompt: " + content);
+        assertTrue(content.contains("AUTHORITATIVE_TEAM_RESULT"),
+                "authoritative single-source directive must remain");
+    }
+
+    @Test
     void singlePromptContainsKeyEvents() {
         final var input = TeamAiPromptBuilder.single(contextWithMembers(1, 1));
         assertTrue(input.content().contains("KEY_EVENTS"),

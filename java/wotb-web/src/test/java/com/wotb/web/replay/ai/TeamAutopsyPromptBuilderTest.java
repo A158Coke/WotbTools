@@ -73,7 +73,7 @@ class TeamAutopsyPromptBuilderTest {
         assertTrue(content.contains("窗口内阵亡=true(部分)"));
         assertTrue(content.contains("结算级代理=true"));
         assertTrue(content.contains("结算级代理=false"));
-        assertTrue(content.contains("死亡时间线（权威结算，仅本方 TEAM_A）"));
+        assertTrue(content.contains("死亡时间线（后端时间线，仅本方 TEAM_A）"));
         assertTrue(content.contains("P2"));
         assertFalse(content.contains("Leopard 1"),
                 "enemy death must not appear in the friendly death timeline");
@@ -109,10 +109,14 @@ class TeamAutopsyPromptBuilderTest {
         assertTrue(section.contains("CHRD落败"));
         assertTrue(section.contains("置信度: 精确"), "EXACT must render as 精确");
         assertTrue(section.contains(": 高（"), "HIGH contribution must render as 高");
-        assertTrue(section.contains("主要战犯"));
-        assertTrue(section.contains("P2（\"nick2 / Kranvagn 2\"）"));
-        assertTrue(section.contains("P1（\"nick1 / Kranvagn 1\"）"));
+        assertTrue(section.contains("**主要战犯：**"), "战犯标题必须加粗：" + section);
+        assertTrue(section.contains("**MVP：**"), "MVP 标题必须加粗：" + section);
+        assertTrue(section.contains("**P2（\"nick2 / Kranvagn 2\"）**"),
+                "战犯玩家名必须加粗：" + section);
+        assertTrue(section.contains("**P1（\"nick1 / Kranvagn 1\"）**"),
+                "MVP 玩家名必须加粗：" + section);
         assertTrue(section.contains("逐人贡献"));
+        assertFalse(section.contains("限制"), "用户可见复盘不得包含限制段：" + section);
         assertFalse(section.contains("未知玩家"));
     }
 

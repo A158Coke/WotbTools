@@ -139,9 +139,51 @@ class PreBattleSectionRendererTest {
     void renderReturnsStableMarkdownShape() {
         final String section = PreBattleSectionRenderer.render(PRIOR);
         assertEquals("## 赛前预测\n", section.substring(0, "## 赛前预测\n".length()));
-        assertTrue(section.contains("- 阵容属性：mobility=HIGH\n"));
+        assertTrue(section.contains("- 阵容属性：机动性=高\n"),
+                "composition keys/values must be translated to Chinese: " + section);
         assertTrue(section.contains("- 优势：重坦正面推进\n"));
         assertTrue(section.contains("- 劣势：转场慢\n"));
         assertTrue(section.contains("- 预期打法：左路集结\n"));
+    }
+
+    @Test
+    void teamVariantsAreMappedToPerspectiveLabels() {
+        final PreBattleStrategicPrior prior = new PreBattleStrategicPrior(
+                new PreBattleStrategicPrior.TeamProfile(
+                        Map.of(), List.of("A队正面推进"), List.of(), List.of()),
+                new PreBattleStrategicPrior.TeamProfile(
+                        Map.of(), List.of("B队机动拉扯"), List.of(), List.of()),
+                List.of(new PreBattleStrategicPrior.KeyMatchup(
+                        "GRID_REGION_5", "A 队", "B队需避免正面接触")),
+                List.of(new PreBattleStrategicPrior.StrategicWinCondition(
+                        "B队", "利用机动拉扯")),
+                List.of());
+        final String section = PreBattleSectionRenderer.render(prior, 2, "CHRD");
+        assertFalse(section.contains("A队"), "A队 variant must be replaced: " + section);
+        assertFalse(section.contains("B队"), "B队 variant must be replaced: " + section);
+        assertTrue(section.contains("区域 5区：对方（"),
+                "A 队（raw team 1）在视角队伍 2 时应映射为对方：" + section);
+        assertTrue(section.contains("我方（CHRD）画像"), "B队（视角队伍）应映射为我方：" + section);
+    }
+
+    @Test
+    void areaIdsMapToChineseNameAndGridRegions() {
+        final PreBattleStrategicPrior prior = new PreBattleStrategicPrior(
+                null, null,
+                List.of(new PreBattleStrategicPrior.KeyMatchup(
+                        "ELEVATED_TERRAIN_01", "TEAM_A", "山脊卖头")),
+                List.of(), List.of());
+        final String section = PreBattleSectionRenderer.render(prior, 1, null, AllowedLanguage.ZH, "neptune");
+        assertTrue(section.contains("东侧高地区域（3/5/6/9区）"),
+                "AREA ID must map to Chinese label + grid regions: " + section);
+        assertFalse(section.contains("ELEVATED_TERRAIN_01"),
+                "raw AREA ID must not leak: " + section);
+    }
+
+    @Test
+    void compositionTranslatedToEnglish() {
+        final String section = PreBattleSectionRenderer.render(PRIOR, 1, null, AllowedLanguage.EN);
+        assertTrue(section.contains("Mobility=High"),
+                "composition key/value must follow requested language: " + section);
     }
 }

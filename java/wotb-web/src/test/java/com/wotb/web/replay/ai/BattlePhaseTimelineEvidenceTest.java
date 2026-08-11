@@ -34,7 +34,7 @@ import java.util.Map;
 class BattlePhaseTimelineEvidenceTest {
 
     private static final AiTokenEstimator ESTIMATOR = new ConservativeDeepSeekTokenEstimator();
-    private static final String PLAYER_SECTION_HEADER = "阶段时间线（双方存活人数·battle_results 权威结算）";
+    private static final String PLAYER_SECTION_HEADER = "阶段时间线（双方存活人数）";
     private static final String TEAM_SECTION_HEADER = "=== BATTLE_PHASES ===";
     private static final String HARNESS_SECTION_MARKER = "BATTLE PHASE SUMMARY";
 
@@ -139,15 +139,15 @@ class BattlePhaseTimelineEvidenceTest {
         // 中期 [1分00秒-3分00秒]：我方死 2 → 5、敌方死 3 → 4（5 打 4）
         assertTrue(section.contains("phase[1分00秒-3分00秒]"), section);
         assertTrue(section.contains("type=中期"), section);
-        assertTrue(section.contains("friendlyAlive=5"), section);
-        assertTrue(section.contains("enemyAlive=4"), section);
+        assertTrue(section.contains("阶段末friendlyAlive=5"), section);
+        assertTrue(section.contains("阶段末enemyAlive=4"), section);
         assertTrue(section.contains("denseKills=true"), "密集击杀段必须标注：" + section);
         // 开局 [0分00秒-0分45秒]：7 打 7
         assertTrue(section.contains("phase[0分00秒-0分45秒]"), section);
-        assertTrue(section.contains("friendlyAlive=7"), section);
-        assertTrue(section.contains("enemyAlive=7"), section);
+        assertTrue(section.contains("阶段末friendlyAlive=7"), section);
+        assertTrue(section.contains("阶段末enemyAlive=7"), section);
         // 权威口径
-        assertTrue(section.contains("battle_results 权威结算"), section);
+        assertTrue(section.contains("DEATH_SOURCE=权威结算"), section);
         assertTrue(section.contains("不得猜测"), section);
     }
 
@@ -200,13 +200,13 @@ class BattlePhaseTimelineEvidenceTest {
         final String section = betweenHeaders(content, HARNESS_SECTION_MARKER);
 
         assertTrue(section.contains("[1分00秒-3分00秒] 中期"), section);
-        assertTrue(section.contains("我方存活 5"), "我方死 2 → 存活 5：" + section);
-        assertTrue(section.contains("敌方存活 4"), "敌方死 3 → 存活 4：" + section);
+        assertTrue(section.contains("至阶段末 我方存活 5"), "我方死 2 → 存活 5：" + section);
+        assertTrue(section.contains("我方存活 5 敌方存活 4"), "敌方死 3 → 存活 4：" + section);
         assertTrue(section.contains("（密集击杀）"), section);
         assertTrue(section.contains("[0分00秒-0分45秒] 开局"), section);
-        assertTrue(section.contains("我方存活 7"), section);
-        assertTrue(section.contains("敌方存活 7"), section);
-        assertTrue(section.contains("battle_results 权威结算"), section);
+        assertTrue(section.contains("至阶段末 我方存活 7"), section);
+        assertTrue(section.contains("我方存活 7 敌方存活 7"), section);
+        assertTrue(section.contains("DEATH_SOURCE=权威结算"), section);
         assertFalse(section.contains("录像者"), "不得以「录像者」指代自己：" + section);
         assertFalse(section.contains("team="), "raw team 不得进入 prompt 段：" + section);
         assertFalse(section.matches("(?s).*\\d+\\.\\d+.*"), "裸秒数不得出现：" + section);
@@ -234,13 +234,13 @@ class BattlePhaseTimelineEvidenceTest {
 
         // fallback 无首次接敌：阶段为 开局[0,45] / 中期[45,180] / 残局[180,180]
         assertTrue(section.contains("[0分45秒-3分00秒] 中期"), section);
-        assertTrue(section.contains("我方存活 5"), section);
-        assertTrue(section.contains("敌方存活 4"), section);
+        assertTrue(section.contains("至阶段末 我方存活 5"), section);
+        assertTrue(section.contains("我方存活 5 敌方存活 4"), section);
         assertTrue(section.contains("（密集击杀）"), section);
         assertTrue(section.contains("[0分00秒-0分45秒] 开局"), section);
-        assertTrue(section.contains("我方存活 7"), section);
-        assertTrue(section.contains("敌方存活 7"), section);
-        assertTrue(section.contains("battle_results 权威结算"), section);
+        assertTrue(section.contains("至阶段末 我方存活 7"), section);
+        assertTrue(section.contains("我方存活 7 敌方存活 7"), section);
+        assertTrue(section.contains("DEATH_SOURCE=权威结算"), section);
         assertFalse(section.contains("录像者"), "不得以「录像者」指代自己：" + section);
         assertFalse(section.contains("team="), section);
         assertFalse(section.matches("(?s).*\\d+\\.\\d+.*"), "裸秒数不得出现：" + section);
@@ -253,7 +253,7 @@ class BattlePhaseTimelineEvidenceTest {
                 PlayerReplayPromptBuilder.prepareFallback(battleWithUnknownEnemyDeath(), null);
         final String section = betweenHeaders(prepared.userPrompt(), PLAYER_SECTION_HEADER);
 
-        assertTrue(section.contains("我方存活 5"), section);
+        assertTrue(section.contains("至阶段末 我方存活 5"), section);
         assertTrue(section.contains("敌方存活 未知"), "人数不可算 → 写未知不猜：" + section);
         assertFalse(section.contains("敌方存活 4"), section);
     }
@@ -265,7 +265,7 @@ class BattlePhaseTimelineEvidenceTest {
         final PreparedAiPrompt prepared = PlayerReplayPromptBuilder.prepareFallback(noRoster, null);
         final String content = prepared.userPrompt();
         final String section = betweenHeaders(content, PLAYER_SECTION_HEADER);
-        assertTrue(section.contains("我方存活 未知"), "无名册 → 写未知不猜：" + section);
+        assertTrue(section.contains("至阶段末 我方存活 未知"), "无名册 → 写未知不猜：" + section);
         assertTrue(section.contains("敌方存活 未知"), section);
         assertNotNull(prepared.systemPrompt());
         assertTrue(content.contains("地图"), "fallback 其余内容不受影响");
@@ -297,10 +297,10 @@ class BattlePhaseTimelineEvidenceTest {
         final String section = between(content, PLAYER_SECTION_HEADER, "\n覆盖:");
 
         assertTrue(section.contains("[1分00秒-3分00秒] 中期"), section);
-        assertTrue(section.contains("我方存活 5"), section);
-        assertTrue(section.contains("敌方存活 4"), section);
+        assertTrue(section.contains("至阶段末 我方存活 5"), section);
+        assertTrue(section.contains("我方存活 5 敌方存活 4"), section);
         assertTrue(section.contains("（密集击杀）"), section);
-        assertTrue(section.contains("battle_results 权威结算"), section);
+        assertTrue(section.contains("DEATH_SOURCE=权威结算"), section);
         assertFalse(section.contains("录像者"), section);
         assertFalse(section.contains("team="), section);
         assertFalse(section.matches("(?s).*\\d+\\.\\d+.*"), "裸秒数不得出现：" + section);

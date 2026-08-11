@@ -67,6 +67,15 @@ Controller 只负责 HTTP binding + 委托 Service。Service 接管 validate / p
 | Key events | Battle + events | TEAM_MEMBER_DESTROYED / FIRST_CONTACT / BATTLE_END |
 | Coverage | Event stream | 解码率、完整度、CLAMPED/INVALID 计数 |
 
+### 5.3 死亡时刻口径与阶段语义
+
+- 部分回放的 `battle_results` 缺少死亡时刻字段（`deathTimeMillis` 为 0），系统回退事件流估算（damage threshold → entity leave → position）。`BattlePhaseSummary.deathSourceLabel()` 输出 `DEATH_SOURCE=权威结算 | 事件流估算 | 未知`，prompt 禁止把估算数据标注为权威。
+- 阶段时间线行明确「至阶段末」存活人数（`阶段末friendlyAlive` / `至阶段末 我方存活`），system prompt 禁止把阶段末人数解读为「某时刻前已全灭」；prompt 注入双方逐车阵亡时间线（`DEATH_TIMELINE`，本队/对方 + 昵称 + 坦克 + X分XX秒）。
+
+### 5.4 观测伤害抑制
+
+事件流迄今只逆向出 sub3 直接伤害，观测聚合与权威结算不一致时标记 `OBSERVED_DAMAGE_IS_PARTIAL`（条件触发：观测=权威时自动消失），prompt 层抑制观测数字、强制以 `AUTHORITATIVE_TEAM_RESULT` 为唯一可信口径；随机战交火段同步抑制「观测输出子集 + 百分比」。待事件流覆盖达 100%（type 5/31/35/39 与更多 EntityMethod subtype 逆向完成）后数字自动恢复输出。
+
 ### 5.1 战斗开始
 
 `BattleStartResolver.resolve()` 返回 `BattleStartResolution`（IDENTIFIED / ESTIMATED / UNRESOLVED）。所有事件时间通过 `tryRelative()` 转换为 battle-relative（即开战后第 N 秒）。准备阶段事件被排除。
@@ -188,6 +197,8 @@ prompt 构建内部（`TeamAiPromptBuilder` 的 included/omitted/truncated 集�
 - `ReconstructionPage`：登录门控 + 编排，触发分析并展示结果
 - `ReplayInputPanel`：单文件选择（替换而非追加），超限拒绝，单文件删除，clear all
 - `AnalysisResultPanel`：仅渲染最终 Markdown 报告（`MarkdownContent`）
+- `MarkdownContent`：渲染前对 `^#{1,6}(?=\S)` 行补空格（跳过围栏代码块），修复 AI 输出 `##一、` 导致 `##` 字面显示的问题；归一化逻辑在 `utils/markdownHeadingNormalize.js`（happy-dom 下 DOMPurify 会剥掉 h1-h6，组件测试断言文本，语义由 utils 单测 + markdown-it 断言）
+- `analysis` 末尾由后端统一追加三语免责句（AI复盘仅供参考 / This AI review is for reference only / Разбор ИИ приведён только для справки）
 - limitation code 由后端合并去重写入报告；前端不再逐单元渲染 limitation 明细
 - 文件交互：单文件选择（替换而非追加），超限拒绝，单文件删除，clear all
 - Fetch Response body 只读取一次（text -> JSON.parse）

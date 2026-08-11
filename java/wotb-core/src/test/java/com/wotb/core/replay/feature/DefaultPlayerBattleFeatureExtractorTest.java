@@ -17,6 +17,7 @@ import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import org.junit.jupiter.api.Test;
 
@@ -149,6 +150,30 @@ class DefaultPlayerBattleFeatureExtractorTest {
         final var features = new DefaultPlayerBattleFeatureExtractor()
                 .extract(recon(null, List.of()), recorderMapping(), null);
         assertTrue(features.limitations().contains("PRE_BATTLE_START_UNRESOLVED"));
+    }
+
+    @Test
+    void observedDamageMatchingAuthoritativeOmitsPartialLimitation() {
+        final Battle battle = new Battle();
+        battle.recorder = "Recorder";
+        final PlayerResult rec = new PlayerResult();
+        rec.nickname = "Recorder";
+        rec.team = 1;
+        rec.damageDealt = 100;
+        rec.damageReceived = 50;
+        final PlayerResult foe = new PlayerResult();
+        foe.nickname = "Foe";
+        foe.team = 2;
+        battle.players = List.of(rec, foe);
+        final var features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(recon(BATTLE_START_RAW, List.of(
+                        mapping(1, 1, 1001L),
+                        mapping(2, 2, 2001L),
+                        damage(3, BATTLE_START_RAW + 2f, 1, 2, 100),
+                        damage(4, BATTLE_START_RAW + 3f, 2, 1, 50),
+                        battleEnd(5, BATTLE_START_RAW + 30f))), recorderMapping(), battle);
+        assertFalse(features.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL"),
+                "观测=权威时不得标记 PARTIAL：" + features.limitations());
     }
 
     @Test
