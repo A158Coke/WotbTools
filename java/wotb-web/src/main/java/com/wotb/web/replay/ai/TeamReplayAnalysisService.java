@@ -105,7 +105,8 @@ public class TeamReplayAnalysisService {
         }
         final long startNanos = budgetStartNanos();
         if (remainingBudget(startNanos) <= 0) {
-            // ?? deadline????? + overall??????????????????????
+            // 预算起点回溯到提交时刻（now + overall）：排队计入剩余预算，
+            // 启动时剩余不足直接干净失败 AI_TIMEOUT。
             throw new AiUpstreamException("AI_TIMEOUT", 504, AiRequestContext.correlationId());
         }
         final PreBattleStrategicPrior prior = call1Prior(context.battle(), listener);
@@ -185,7 +186,8 @@ public class TeamReplayAnalysisService {
         }
         final long startNanos = budgetStartNanos();
         if (remainingBudget(startNanos) <= 0) {
-            // ?? deadline????? + overall??????????????????????
+            // 预算起点回溯到提交时刻（now + overall）：排队计入剩余预算，
+            // 启动时剩余不足直接干净失败 AI_TIMEOUT。
             throw new AiUpstreamException("AI_TIMEOUT", 504, AiRequestContext.correlationId());
         }
         final Map<String, PreBattleStrategicPrior> priorsByUnitId = new LinkedHashMap<>();
@@ -354,8 +356,8 @@ public class TeamReplayAnalysisService {
     }
 
     /**
-     * ?????nanoTime??worker ???????? deadline ????????
-     * ??????????????????/? analyze ?????????
+     * 预算起点（nanoTime）：有 worker 整体 deadline（提交时刻 + overall）时
+     * 回溯到提交时刻，排队等待计入预算；无 deadline（如直接调用 analyze）时用当前时间。
      */
     private long budgetStartNanos() {
         final Long deadline = AiRequestContext.overallDeadlineNanos();
