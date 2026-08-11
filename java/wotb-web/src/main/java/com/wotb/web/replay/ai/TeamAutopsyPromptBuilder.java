@@ -61,7 +61,7 @@ public final class TeamAutopsyPromptBuilder {
             }
             要求：players 覆盖下方名单全部玩家且 playerKey 必须来自名单；mvps ≤3；biggestLiabilities ≤3；
             每条 verdict 至少 1 条 evidence 且 playerKey 有效；confidence 只能写 PARTIAL 或 UNKNOWN，
-            结算级评估不得使用 EXACT/INFERRED。""" + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE;
+            结算级评估不得使用 EXACT/INFERRED。""" + PlayerPromptRules.COMMON_DAMAGE_SEMANTICS_RULE;
 
     static String buildUserContent(
             final List<TeamAutopsyStats> stats,
