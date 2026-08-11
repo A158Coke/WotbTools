@@ -40,6 +40,11 @@
 
 - 2026-08-11：team 标签曾误判（以 AI 复盘中的「CHRD=A 队」为前提），经 type-0 pickle（`teamTitles{2:'chrd'}`）+ updateArena2 field 4 验证后修正：CHRD=team 2=录像者队伍；位置覆盖结论随之反转（本方完整、敌方开局缺失）。附带发现：pickle `wins{1:1,2:0}` 显示本样本胜方为 team 1（BSK-T），与早前「CHRD 7-3 获胜」的说法冲突，待用 battle_results 核验。
 
+## 外部对照（社区先例）
+
+- `eigenein/wotbreplay-parser`（Rust，v0.4.2）为 Blitz 回放公开实现：仅解 **type 0（BasePlayerCreate）与 type 8（EntityMethod）**，其余全部 `Unknown`；type 0 用 `serde_pickle` 解 arguments（与我们的 PickleDecoder 思路一致），字段 schema 与我们解出的 dict 吻合且我们的字段更全（clanTags/teamTitles/wins/webEmitterID 等社区未覆盖）。
+- 结论：type 7/31/35/39 在全球公开资料中均未破解，本分支的成果（type 7 结构 + propId 部分语义、type 35 tick、type 13 容器、type 39/31 排除性结论）为新增贡献。
+
 ## 下一步
 
 1. type 39 语义：与录像者自身状态（相机/瞄准/输入）关联；确认是否含 HP 分数。
