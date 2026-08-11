@@ -142,25 +142,6 @@ services:
     restart: unless-stopped
     logging: *default-logging
     mem_limit: 256m
-  mcp-grafana:
-    image: grafana/mcp-grafana:latest
-    command:
-      - --transport=sse
-      - --address=0.0.0.0:8000
-      - -t
-      - streamable-http
-      - -allowed-hosts
-      - monitor.wotbtools.com
-    environment:
-      GRAFANA_URL: http://grafana:3000
-      GRAFANA_SERVICE_ACCOUNT_TOKEN: ${GRAFANA_MCP_TOKEN:?GRAFANA_MCP_TOKEN is required}
-    ports:
-      - "127.0.0.1:8000:8000"
-    depends_on:
-      - grafana
-    restart: unless-stopped
-    logging: *default-logging
-    mem_limit: 128m
 volumes:
   postgres_data:
   prometheus_data:

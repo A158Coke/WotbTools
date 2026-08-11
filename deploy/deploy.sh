@@ -3,7 +3,7 @@
 # Production deploy script (invoked by .github/workflows/deploy.yml via SSH).
 # Requires the following env vars (forwarded by the workflow step `envs`):
 #   TAG, DB_PASSWORD, KC_ADMIN_PASSWORD, WG_APPLICATION_ID, KEYCLOAK_ADMIN_CLIENT_SECRET,
-#   AI_API_KEY, GRAFANA_ADMIN_USER, GRAFANA_ADMIN_PASSWORD, GRAFANA_MCP_TOKEN
+#   AI_API_KEY, GRAFANA_ADMIN_USER, GRAFANA_ADMIN_PASSWORD
 # Optional vars carry the same defaults as the previous inline workflow script.
 # Flow: pre-deploy backup -> write .env -> render docker-compose.prod.yml -> pull ->
 # promote to docker-compose.yml -> compose up -> health checks -> rollback.
@@ -40,7 +40,6 @@ require_env KEYCLOAK_ADMIN_CLIENT_SECRET
 require_env AI_API_KEY
 require_env GRAFANA_ADMIN_USER
 require_env GRAFANA_ADMIN_PASSWORD
-require_env GRAFANA_MCP_TOKEN
 
 mkdir -p "$WOTB_DIR"
 cd "$WOTB_DIR"
@@ -64,8 +63,8 @@ else
 fi
 # Observability: Grafana 凭据写入权限 600 的 .env（不落入 compose 文件本身）
 umask 177
-printf 'GRAFANA_ADMIN_USER=%s\nGRAFANA_MCP_TOKEN=%s\nGRAFANA_ADMIN_PASSWORD=%s\n' \
-  "$GRAFANA_ADMIN_USER" "$GRAFANA_MCP_TOKEN" "$GRAFANA_ADMIN_PASSWORD" > .env
+printf 'GRAFANA_ADMIN_USER=%s\nGRAFANA_ADMIN_PASSWORD=%s\n' \
+  "$GRAFANA_ADMIN_USER" "$GRAFANA_ADMIN_PASSWORD" > .env
 chmod 600 .env
 # 新 compose 先写入 next 文件：pull 成功后才替换正式 docker-compose.yml，
 # pull 失败时服务器上的正式 compose 保持旧版本（旧栈不受影响）。

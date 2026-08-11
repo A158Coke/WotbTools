@@ -165,29 +165,6 @@ services:
     logging: *default-logging
     mem_limit: 256m
 
-  # Grafana MCP server（opencode / Claude 等 AI 客户端经 Caddy 反代公网 /mcp 访问）
-  # 本地运行需设置 GRAFANA_MCP_TOKEN_FILE 指向 Service Account Token 文件；未设置时服务不启动。
-  mcp-grafana:
-    image: grafana/mcp-grafana:latest
-    command:
-      - --transport=sse
-      - --address=0.0.0.0:8000
-      - -t
-      - streamable-http
-      - -allowed-hosts
-      - ${GRAFANA_MCP_ALLOWED_HOST:-localhost,127.0.0.1}
-    environment:
-      GRAFANA_URL: http://grafana:3000
-      GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE: /token
-    volumes:
-      - ${GRAFANA_MCP_TOKEN_FILE:-/dev/null}:/token:ro
-    ports:
-      - "127.0.0.1:8000:8000"
-    depends_on:
-      - grafana
-    restart: unless-stopped
-    logging: *default-logging
-    mem_limit: 128m
 
 volumes:
   postgres_data:
