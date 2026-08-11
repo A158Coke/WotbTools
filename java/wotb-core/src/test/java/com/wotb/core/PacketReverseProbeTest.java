@@ -121,6 +121,248 @@ class PacketReverseProbeTest {
         type31DetailWindows(es, byType);
         randomRecorderVsType39(es, byType);
         dumpType1String(byType);
+        packetContextWindows(es);
+        type32Structure(es, byType);
+        type33Structure(byType);
+        type23_26Correlation(es, byType);
+        type23VsType31(es, byType);
+        recorderMotionAtShots(es, byType);
+        type26VsRecorderHits(es, byType);
+        type23AttackerCheck(es, byType);
+    }
+
+    /**
+     * Verify type23=1 (impact) is followed by a damage event whose ATTACKER is the
+     * recorder (3115055801); and type26 clusters precede recorder-victim hits.
+     */
+    private static void type23AttackerCheck(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final long recAcc = 3115055801L;
+        final List<EventStreamReader.DirectDamageEvent> dmg = EventStreamReader.extractDirectDamageEvents(
+                es.packets, EventStreamReader.extractEntityToAccountMap(es.packets));
+        System.out.println("== type23=1 -> recorder-attacker damage within 2s ==");
+        int matched = 0;
+        int total = 0;
+        for (final EventStreamReader.ParsedPacket p : byType.getOrDefault(23, List.of())) {
+            if (readU32LE(p.payload, 0) != 1) {
+                continue;
+            }
+            total++;
+            final List<EventStreamReader.DirectDamageEvent> near = dmg.stream()
+                    .filter(d -> d.attackerAccountId() == recAcc
+                            && d.clockSecs() >= p.clockSecs - 0.5f && d.clockSecs() <= p.clockSecs + 2.0f)
+                    .toList();
+            if (!near.isEmpty()) {
+                matched++;
+                System.out.printf(Locale.ROOT, "  impact t=%7.1fs -> recorder dmg %s%n",
+                        p.clockSecs, near.toString());
+            } else {
+                System.out.printf(Locale.ROOT, "  impact t=%7.1fs -> no recorder-attacker dmg (miss/ricochet)%n",
+                        p.clockSecs);
+            }
+        }
+        System.out.println("  matched " + matched + "/" + total);
+        // type26 clusters -> recorder-victim hits within 3s (ordered)
+        System.out.println("== type26 -> recorder-victim damage within 3s (nearest) ==");
+        for (final EventStreamReader.ParsedPacket p : byType.getOrDefault(26, List.of())) {
+            final List<EventStreamReader.DirectDamageEvent> near = dmg.stream()
+                    .filter(d -> d.victimAccountId() == recAcc
+                            && d.clockSecs() >= p.clockSecs && d.clockSecs() <= p.clockSecs + 3.0f)
+                    .sorted(Comparator.comparingDouble(EventStreamReader.DirectDamageEvent::clockSecs))
+                    .toList();
+            System.out.printf(Locale.ROOT, "  type26 t=%7.1fs -> hits %s%n", p.clockSecs,
+                    near.stream().limit(2).toList());
+        }
+    }
+
+    /** type26 timestamps vs damage events where victim = recorder account (3115055801). */
+    private static void type26VsRecorderHits(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final List<EventStreamReader.ParsedPacket> t26 = byType.getOrDefault(26, List.of());
+        final List<EventStreamReader.DirectDamageEvent> dmg = EventStreamReader.extractDirectDamageEvents(
+                es.packets, EventStreamReader.extractEntityToAccountMap(es.packets));
+        final long recAcc = 3115055801L;
+        System.out.println("== type26 vs recorder-hit damage events (victim=" + recAcc + ") ==");
+        for (final EventStreamReader.ParsedPacket p : t26) {
+            final List<EventStreamReader.DirectDamageEvent> near = dmg.stream()
+                    .filter(d -> d.victimAccountId() == recAcc && Math.abs(d.clockSecs() - p.clockSecs) < 1.0f)
+                    .toList();
+            System.out.printf(Locale.ROOT, "  type26 t=%7.1fs hits=%s%n", p.clockSecs,
+                    near.isEmpty() ? "-" : near.toString());
+        }
+        System.out.println("  recorder hit events:");
+        dmg.stream().filter(d -> d.victimAccountId() == recAcc)
+                .sorted(Comparator.comparingDouble(EventStreamReader.DirectDamageEvent::clockSecs))
+                .forEach(d -> System.out.printf(Locale.ROOT, "    dmg=%d@%.1fs%n", d.damage(), d.clockSecs()));
+    }
+
+    /** Recorder position/speed/yaw at each type23=0 (shot) moment. */
+    private static void recorderMotionAtShots(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final int recEid = 12558552;
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final List<EventStreamReader.PositionData> rec = positions.stream()
+                .filter(p -> p.entityId == recEid)
+                .sorted(Comparator.comparingDouble(p -> p.clockSecs))
+                .toList();
+        System.out.println("== recorder motion at type23=0 (shot) moments ==");
+        for (final EventStreamReader.ParsedPacket p : byType.getOrDefault(23, List.of())) {
+            if (readU32LE(p.payload, 0) != 0) {
+                continue;
+            }
+            EventStreamReader.PositionData before = null, after = null;
+            for (final EventStreamReader.PositionData pos : rec) {
+                if (pos.clockSecs <= p.clockSecs) {
+                    before = pos;
+                } else {
+                    after = pos;
+                    break;
+                }
+            }
+            if (before == null || after == null || after.clockSecs - before.clockSecs > 1.5f) {
+                continue;
+            }
+            final double dt = after.clockSecs - before.clockSecs;
+            final double speed = Math.hypot(after.x - before.x, after.z - before.z) / dt * 3.6;
+            System.out.printf(Locale.ROOT,
+                    "  t=%7.1fs rec=(%7.1f,%6.1f,%7.1f) yaw=%7.1fdeg pitch=%6.1fdeg speed=%.1fkm/h%n",
+                    p.clockSecs, before.x, before.y, before.z,
+                    Math.toDegrees(before.yaw), Math.toDegrees(before.pitch), speed);
+        }
+    }
+
+    /** type23 toggle times vs type31 value + type8 events + damage events at those moments. */
+    private static void type23VsType31(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final List<EventStreamReader.ParsedPacket> t23 = byType.getOrDefault(23, List.of());
+        final List<EventStreamReader.ParsedPacket> t31 = byType.getOrDefault(31, List.of());
+        final Map<Long, List<EventStreamReader.DirectDamageEvent>> dmgByVictim = new HashMap<>();
+        final List<EventStreamReader.DirectDamageEvent> dmg = EventStreamReader.extractDirectDamageEvents(
+                es.packets, EventStreamReader.extractEntityToAccountMap(es.packets));
+        System.out.println("== type23 toggle vs type31 value / nearby type8 ==");
+        for (final EventStreamReader.ParsedPacket p : t23) {
+            EventStreamReader.ParsedPacket near31 = null;
+            float bestDt = Float.MAX_VALUE;
+            for (final EventStreamReader.ParsedPacket q : t31) {
+                final float dt = Math.abs(q.clockSecs - p.clockSecs);
+                if (dt < 0.4f && dt < bestDt) {
+                    bestDt = dt;
+                    near31 = q;
+                }
+            }
+            final List<EventStreamReader.ParsedPacket> near8 = es.packets.stream()
+                    .filter(q -> q.type == 8 && Math.abs(q.clockSecs - p.clockSecs) < 0.2f)
+                    .sorted(Comparator.comparingDouble(q -> q.clockSecs))
+                    .toList();
+            final List<EventStreamReader.DirectDamageEvent> nearDmg = dmg.stream()
+                    .filter(d -> Math.abs(d.clockSecs() - p.clockSecs) < 0.3f)
+                    .toList();
+            final StringBuilder sb = new StringBuilder(String.format(Locale.ROOT,
+                    "  t=%7.1fs type23=%d", p.clockSecs, readU32LE(p.payload, 0)));
+            if (near31 != null) {
+                sb.append(String.format(Locale.ROOT, " type31=%.2f", f(near31.payload, 0)));
+            }
+            if (!near8.isEmpty()) {
+                sb.append(" type8=[");
+                for (final EventStreamReader.ParsedPacket q : near8) {
+                    sb.append(String.format(Locale.ROOT, "t=%.2f/%d(%d)", q.clockSecs, q.payload.length,
+                            q.payload.length >= 8 ? readU32LE(q.payload, 4) : -1));
+                }
+                sb.append("]");
+            }
+            if (!nearDmg.isEmpty()) {
+                sb.append(" dmg=");
+                for (final EventStreamReader.DirectDamageEvent d : nearDmg) {
+                    sb.append(String.format(Locale.ROOT, "%d@%.1f ", d.damage(), d.clockSecs()));
+                }
+            }
+            System.out.println(sb);
+        }
+    }
+
+    /** Print ALL packets in windows around type31 start (52.7s) and last reset (114.5s). */
+    private static void packetContextWindows(final EventStreamReader.EventStream es) {
+        System.out.println("== packet context windows (type31 start / last reset) ==");
+        for (final double[] win : new double[][]{{52.2, 53.8}, {113.8, 115.3}}) {
+            System.out.printf(Locale.ROOT, "-- window [%.1f..%.1f] --%n", win[0], win[1]);
+            final List<EventStreamReader.ParsedPacket> pkts = es.packets.stream()
+                    .filter(p -> p.clockSecs >= win[0] && p.clockSecs <= win[1])
+                    .sorted(Comparator.comparingDouble(p -> p.clockSecs))
+                    .toList();
+            for (final EventStreamReader.ParsedPacket p : pkts) {
+                System.out.printf(Locale.ROOT, "  t=%7.3fs type=%-3d len=%-5d hex=%s%n",
+                        p.clockSecs, p.type, p.payload.length, hex(p.payload, 24));
+            }
+        }
+    }
+
+    /** type32: length histogram + samples; try to identify leading int/float. */
+    private static void type32Structure(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final List<EventStreamReader.ParsedPacket> t32 = byType.getOrDefault(32, List.of());
+        System.out.println("== type32 structure (n=" + t32.size() + ") ==");
+        final Map<Integer, Long> lens = new TreeMap<>();
+        for (final EventStreamReader.ParsedPacket p : t32) {
+            lens.merge(p.payload.length, 1L, Long::sum);
+        }
+        lens.forEach((k, v) -> System.out.println("  len=" + k + " count=" + v));
+        t32.stream().limit(12).forEach(p -> System.out.printf(Locale.ROOT,
+                "  t=%7.1fs len=%d hex=%s%n", p.clockSecs, p.payload.length, hex(p.payload, 32)));
+        // structure: eid u32 | u32 | 3B | b | b | double | 3B
+        for (final EventStreamReader.ParsedPacket p : t32) {
+            if (p.payload.length < 21) {
+                continue;
+            }
+            final long dbl = readU32LE(p.payload, 13) | ((long) readU32LE(p.payload, 17) << 32);
+            System.out.printf(Locale.ROOT,
+                    "  detail t=%7.1fs len=%d eid=%d u32@4=%d b@11=%02x b@12=%02x double@13=%.3f tail=%s%n",
+                    p.clockSecs, p.payload.length, readU32LE(p.payload, 0), readU32LE(p.payload, 4),
+                    p.payload[11] & 0xFF, p.payload[12] & 0xFF,
+                    Double.longBitsToDouble(dbl), p.payload.length > 21
+                            ? hex(payloadTail(p.payload, 21), 999) : "-");
+            break;
+        }
+    }
+
+    private static byte[] payloadTail(final byte[] b, final int from) {
+        final byte[] out = new byte[Math.max(0, b.length - from)];
+        System.arraycopy(b, from, out, 0, out.length);
+        return out;
+    }
+
+    /** type33: 12B fixed; samples + int/float view. */
+    private static void type33Structure(
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final List<EventStreamReader.ParsedPacket> t33 = byType.getOrDefault(33, List.of());
+        System.out.println("== type33 structure (n=" + t33.size() + ") ==");
+        t33.stream().limit(10).forEach(p -> {
+            final StringBuilder sb = new StringBuilder(String.format(Locale.ROOT, "  t=%7.1fs len=%d hex=%s",
+                    p.clockSecs, p.payload.length, hex(p.payload, 24)));
+            if (p.payload.length >= 12) {
+                sb.append(String.format(Locale.ROOT, " u32s=[%d,%d,%d]",
+                        readU32LE(p.payload, 0), readU32LE(p.payload, 4), readU32LE(p.payload, 8)));
+            }
+            System.out.println(sb);
+        });
+    }
+
+    /** type23/26 timestamps vs type31 reset times and recorder death. */
+    private static void type23_26Correlation(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        System.out.println("== type23/26 timeline ==");
+        for (final int t : new int[]{23, 26, 28}) {
+            final List<EventStreamReader.ParsedPacket> ps = byType.getOrDefault(t, List.of());
+            System.out.println("  type " + t + " (n=" + ps.size() + "):");
+            ps.stream().sorted(Comparator.comparingDouble(p -> p.clockSecs)).forEach(p ->
+                    System.out.printf(Locale.ROOT, "    t=%7.1fs len=%d hex=%s%n",
+                            p.clockSecs, p.payload.length, hex(p.payload, 16)));
+        }
     }
 
     /** type1: hex + printable strings (recorder nickname). */
