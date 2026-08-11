@@ -1,0 +1,175 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+services:
+  postgres:
+    image: postgres:18-alpine
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_DB: wotb
+      POSTGRES_USER: wotb
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./deploy/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    restart: unless-stopped
+    logging: *default-logging
+  keycloak:
+    image: ghcr.io/a158coke/wotbtools-keycloak:${TAG:?TAG is required}
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:?KC_ADMIN_PASSWORD is required}
+      WG_APPLICATION_ID: ${WG_APPLICATION_ID:?WG_APPLICATION_ID is required}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: wotb
+      KC_DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    command: start --hostname=auth.wotbtools.com --hostname-strict=false --http-enabled=true --http-port=8080 --proxy-headers=xforwarded
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    logging: *default-logging
+  wotb-backend:
+    image: ghcr.io/a158coke/wotbtools-backend:${TAG:?TAG is required}
+    depends_on:
+      - postgres
+      - keycloak
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      KEYCLOAK_ISSUER_URI: https://auth.wotbtools.com/realms/wotbtools
+      KEYCLOAK_ADMIN_SERVER_URL: https://auth.wotbtools.com
+      KEYCLOAK_ADMIN_REALM: wotbtools
+      KEYCLOAK_ADMIN_CLIENT_ID: wotbtools-admin-api
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:?KEYCLOAK_ADMIN_CLIENT_SECRET is required}
+      BOOST_AUTO_CONFIRM_HOURS: "${BOOST_AUTO_CONFIRM_HOURS:-72}"
+      BOOST_AUTO_CONFIRM_SCAN_MS: "${BOOST_AUTO_CONFIRM_SCAN_MS:-300000}"
+      AI_API_KEY: ${AI_API_KEY:?AI_API_KEY is required}
+      AI_BASE_URL: "${AI_BASE_URL:-https://api.deepseek.com}"
+      AI_MODEL: "${AI_MODEL:-deepseek-v4-flash}"
+      AI_CONNECT_TIMEOUT_SEC: "${AI_CONNECT_TIMEOUT_SEC:-10}"
+      AI_TIMEOUT_SEC: "${AI_TIMEOUT_SEC:-300}"
+      AI_CALL_TIMEOUT_SEC: "${AI_CALL_TIMEOUT_SEC:-315}"
+      AI_RETRY_MAX_ATTEMPTS: "${AI_RETRY_MAX_ATTEMPTS:-3}"
+      AI_RETRY_INITIAL_BACKOFF_MS: "${AI_RETRY_INITIAL_BACKOFF_MS:-1000}"
+      AI_RETRY_MAX_BACKOFF_MS: "${AI_RETRY_MAX_BACKOFF_MS:-8000}"
+      AI_RETRY_BACKOFF_MULTIPLIER: "${AI_RETRY_BACKOFF_MULTIPLIER:-2.0}"
+      AI_CONTEXT_WINDOW_TOKENS: "${AI_CONTEXT_WINDOW_TOKENS:-1000000}"
+      AI_SINGLE_REPLAY_MAX_INPUT_TOKENS: "${AI_SINGLE_REPLAY_MAX_INPUT_TOKENS:-940000}"
+      AI_MAX_OUTPUT_TOKENS: "${AI_MAX_OUTPUT_TOKENS:-32768}"
+      AI_PROMPT_SAFETY_MARGIN_TOKENS: "${AI_PROMPT_SAFETY_MARGIN_TOKENS:-16384}"
+      AI_THINKING_ENABLED: "${AI_THINKING_ENABLED:-true}"
+      AI_THINKING_ENABLED_CALL2: "${AI_THINKING_ENABLED_CALL2:-false}"
+      AI_REASONING_EFFORT: "${AI_REASONING_EFFORT:-max}"
+      AI_REVIEW_WORKER_MAX_CONCURRENT: "${AI_REVIEW_WORKER_MAX_CONCURRENT:-4}"
+      AI_REVIEW_WORKER_QUEUE_CAPACITY: "${AI_REVIEW_WORKER_QUEUE_CAPACITY:-4}"
+      AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC: "${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:-400}"
+      REPLAY_COORDINATE_HALF_EXTENT: "${REPLAY_COORDINATE_HALF_EXTENT:-250}"
+      REPLAY_COORDINATE_CLAMP_TOLERANCE: "${REPLAY_COORDINATE_CLAMP_TOLERANCE:-12.5}"
+    restart: unless-stopped
+    logging: *default-logging
+  wotb-frontend:
+    image: ghcr.io/a158coke/wotbtools-frontend:${TAG:?TAG is required}
+    ports:
+      - "127.0.0.1:8088:80"
+    volumes:
+      - ./config/sponsor-config.json:/usr/share/nginx/html/sponsor-config.json:ro
+      - ./config/sponsor:/usr/share/nginx/html/sponsor-assets:ro
+    depends_on:
+      - wotb-backend
+      - keycloak
+    restart: unless-stopped
+    logging: *default-logging
+  # Observability stack: Prometheus / Loki / Alloy / Grafana (docker-internal only)
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=168h
+      - --storage.tsdb.retention.size=2GB
+    volumes:
+      - ./deploy/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      - wotb-backend
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 384m
+  loki:
+    image: grafana/loki:3.3.2
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./deploy/observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 256m
+  alloy:
+    image: grafana/alloy:v1.4.2
+    command:
+      - run
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./deploy/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+    depends_on:
+      - loki
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 128m
+  grafana:
+    image: grafana/grafana:11.6.16
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER is required}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
+      GF_SERVER_ROOT_URL: "${GRAFANA_ROOT_URL:-https://monitor.wotbtools.com}"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      OBSERVABILITY_ENVIRONMENT: "${OBSERVABILITY_ENVIRONMENT:-production}"
+    volumes:
+      - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 256m
+  mcp-grafana:
+    image: grafana/mcp-grafana:latest
+    command:
+      - --transport=sse
+      - --address=0.0.0.0:8000
+      - -t
+      - streamable-http
+      - -allowed-hosts
+      - monitor.wotbtools.com
+    environment:
+      GRAFANA_URL: http://grafana:3000
+      GRAFANA_SERVICE_ACCOUNT_TOKEN: ${GRAFANA_MCP_TOKEN:?GRAFANA_MCP_TOKEN is required}
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      - grafana
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 128m
+volumes:
+  postgres_data:
+  prometheus_data:
+  loki_data:
+  grafana_data:
+networks:
+  default:
+    name: wotb_internal
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+          gateway: 172.28.0.1

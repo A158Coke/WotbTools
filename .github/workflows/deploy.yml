@@ -252,337 +252,43 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 35m
-          script: |
-            set -e
-            mkdir -p /opt/wotb
-            cd /opt/wotb
-            mkdir -p config/sponsor
-            if [ ! -e config/sponsor-config.json ] && [ ! -L config/sponsor-config.json ]; then
-              install -m 644 deploy/sponsor-config.example.json config/sponsor-config.json
-            fi
-            chmod 700 deploy/postgres-backup.sh deploy/postgres-backup-inspect.sh deploy/postgres-restore.sh
-            if [ -f docker-compose.yml ]; then
-              deploy/postgres-backup.sh --database wotb
-              deploy/postgres-backup.sh --database keycloak
-            else
-              echo "No existing deployment; skipping pre-deploy backup."
-            fi
-            # Observability: Grafana 管理员凭据为必填（GitHub Secrets 未配置时展开为空）
-            if [ -z "${{ secrets.GRAFANA_ADMIN_PASSWORD }}" ]; then
-              echo "ERROR: GRAFANA_ADMIN_PASSWORD secret is not configured." >&2
-              exit 1
-            fi
-            if [ -z "${{ secrets.GRAFANA_ADMIN_USER }}" ]; then
-              echo "ERROR: GRAFANA_ADMIN_USER secret is not configured." >&2
-              exit 1
-            fi
-            if [ -z "${{ secrets.GRAFANA_MCP_TOKEN }}" ]; then
-              echo "ERROR: GRAFANA_MCP_TOKEN secret is not configured." >&2
-              exit 1
-            fi
-            # Previous deployment info (rollback target)
-            PREV_SHA=""
-            if [ -f DEPLOYED_SHA ]; then
-              PREV_SHA=$(cat DEPLOYED_SHA)
-            fi
-            docker rm -f wotb wotb-backend wotb-frontend 2>/dev/null || true
-            # 清理手动 docker run 的 mcp-grafana 容器，避免与 compose 管理的 8000 端口冲突
-            docker rm -f wotb-mcp-grafana 2>/dev/null || true
-            # Observability: Grafana 凭据写入权限 600 的 .env（不落入 compose 文件本身）
-            umask 177
-            cat > .env <<'ENDENV'
-            GRAFANA_ADMIN_USER=${{ secrets.GRAFANA_ADMIN_USER }}
-            GRAFANA_MCP_TOKEN=${{ secrets.GRAFANA_MCP_TOKEN }}
-            GRAFANA_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
-            ENDENV
-            chmod 600 .env
-            # 新 compose 先写入 next 文件：pull 成功后才替换正式 docker-compose.yml，
-            # pull 失败时服务器上的正式 compose 保持旧版本（旧栈不受影响）。
-            cat > docker-compose.next.yml <<'ENDCOMPOSE'
-            x-logging: &default-logging
-              driver: json-file
-              options:
-                max-size: "20m"
-                max-file: "3"
-            services:
-              postgres:
-                image: postgres:18-alpine
-                ports:
-                  - "127.0.0.1:5432:5432"
-                environment:
-                  POSTGRES_DB: wotb
-                  POSTGRES_USER: wotb
-                  POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
-                volumes:
-                  - postgres_data:/var/lib/postgresql
-                  - ./deploy/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
-                restart: unless-stopped
-                logging: *default-logging
-              keycloak:
-                image: ghcr.io/a158coke/wotbtools-keycloak:${{ needs.changes.outputs.tag }}
-                environment:
-                  KC_BOOTSTRAP_ADMIN_USERNAME: admin
-                  KC_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.KC_ADMIN_PASSWORD }}
-                  WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
-                  KC_DB: postgres
-                  KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
-                  KC_DB_USERNAME: wotb
-                  KC_DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-                command: start --hostname=auth.wotbtools.com --hostname-strict=false --http-enabled=true --http-port=8080 --proxy-headers=xforwarded
-                ports:
-                  - "127.0.0.1:8080:8080"
-                depends_on:
-                  - postgres
-                restart: unless-stopped
-                logging: *default-logging
-              wotb-backend:
-                image: ghcr.io/a158coke/wotbtools-backend:${{ needs.changes.outputs.tag }}
-                depends_on:
-                  - postgres
-                  - keycloak
-                environment:
-                  POSTGRES_HOST: postgres
-                  POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
-                  KEYCLOAK_ISSUER_URI: https://auth.wotbtools.com/realms/wotbtools
-                  KEYCLOAK_ADMIN_SERVER_URL: https://auth.wotbtools.com
-                  KEYCLOAK_ADMIN_REALM: wotbtools
-                  KEYCLOAK_ADMIN_CLIENT_ID: wotbtools-admin-api
-                  KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
-                  BOOST_AUTO_CONFIRM_HOURS: "${{ vars.BOOST_AUTO_CONFIRM_HOURS || '72' }}"
-                  BOOST_AUTO_CONFIRM_SCAN_MS: "${{ vars.BOOST_AUTO_CONFIRM_SCAN_MS || '300000' }}"
-                  AI_API_KEY: ${{ secrets.AI_API_KEY }}
-                  AI_BASE_URL: "${{ vars.AI_BASE_URL || 'https://api.deepseek.com' }}"
-                  AI_MODEL: "${{ vars.AI_MODEL || 'deepseek-v4-flash' }}"
-                  AI_CONNECT_TIMEOUT_SEC: "${{ vars.AI_CONNECT_TIMEOUT_SEC || '10' }}"
-                  AI_TIMEOUT_SEC: "${{ vars.AI_TIMEOUT_SEC || '300' }}"
-                  AI_CALL_TIMEOUT_SEC: "${{ vars.AI_CALL_TIMEOUT_SEC || '315' }}"
-                  AI_RETRY_MAX_ATTEMPTS: "${{ vars.AI_RETRY_MAX_ATTEMPTS || '3' }}"
-                  AI_RETRY_INITIAL_BACKOFF_MS: "${{ vars.AI_RETRY_INITIAL_BACKOFF_MS || '1000' }}"
-                  AI_RETRY_MAX_BACKOFF_MS: "${{ vars.AI_RETRY_MAX_BACKOFF_MS || '8000' }}"
-                  AI_RETRY_BACKOFF_MULTIPLIER: "${{ vars.AI_RETRY_BACKOFF_MULTIPLIER || '2.0' }}"
-                  AI_CONTEXT_WINDOW_TOKENS: "${{ vars.AI_CONTEXT_WINDOW_TOKENS || '1000000' }}"
-                  AI_SINGLE_REPLAY_MAX_INPUT_TOKENS: "${{ vars.AI_SINGLE_REPLAY_MAX_INPUT_TOKENS || '940000' }}"
-                  AI_MAX_OUTPUT_TOKENS: "${{ vars.AI_MAX_OUTPUT_TOKENS || '32768' }}"
-                  AI_PROMPT_SAFETY_MARGIN_TOKENS: "${{ vars.AI_PROMPT_SAFETY_MARGIN_TOKENS || '16384' }}"
-                  AI_THINKING_ENABLED: "${{ vars.AI_THINKING_ENABLED || 'true' }}"
-                  AI_THINKING_ENABLED_CALL2: "${{ vars.AI_THINKING_ENABLED_CALL2 || 'false' }}"
-                  AI_REASONING_EFFORT: "${{ vars.AI_REASONING_EFFORT || 'max' }}"
-                  AI_REVIEW_WORKER_MAX_CONCURRENT: "${{ vars.AI_REVIEW_WORKER_MAX_CONCURRENT || '4' }}"
-                  AI_REVIEW_WORKER_QUEUE_CAPACITY: "${{ vars.AI_REVIEW_WORKER_QUEUE_CAPACITY || '4' }}"
-                  REPLAY_COORDINATE_HALF_EXTENT: "${{ vars.REPLAY_COORDINATE_HALF_EXTENT || '250' }}"
-                  REPLAY_COORDINATE_CLAMP_TOLERANCE: "${{ vars.REPLAY_COORDINATE_CLAMP_TOLERANCE || '12.5' }}"
-                restart: unless-stopped
-                logging: *default-logging
-              wotb-frontend:
-                image: ghcr.io/a158coke/wotbtools-frontend:${{ needs.changes.outputs.tag }}
-                ports:
-                  - "127.0.0.1:8088:80"
-                volumes:
-                  - ./config/sponsor-config.json:/usr/share/nginx/html/sponsor-config.json:ro
-                  - ./config/sponsor:/usr/share/nginx/html/sponsor-assets:ro
-                depends_on:
-                  - wotb-backend
-                  - keycloak
-                restart: unless-stopped
-                logging: *default-logging
-              # Observability stack: Prometheus / Loki / Alloy / Grafana (docker-internal only)
-              prometheus:
-                image: prom/prometheus:v2.55.1
-                command:
-                  - --config.file=/etc/prometheus/prometheus.yml
-                  - --storage.tsdb.retention.time=168h
-                  - --storage.tsdb.retention.size=2GB
-                volumes:
-                  - ./deploy/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-                  - prometheus_data:/prometheus
-                depends_on:
-                  - wotb-backend
-                restart: unless-stopped
-                logging: *default-logging
-                mem_limit: 384m
-              loki:
-                image: grafana/loki:3.3.2
-                command: -config.file=/etc/loki/loki-config.yml
-                volumes:
-                  - ./deploy/observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
-                  - loki_data:/loki
-                restart: unless-stopped
-                logging: *default-logging
-                mem_limit: 256m
-              alloy:
-                image: grafana/alloy:v1.4.2
-                command:
-                  - run
-                  - --storage.path=/var/lib/alloy/data
-                  - /etc/alloy/config.alloy
-                volumes:
-                  - /var/run/docker.sock:/var/run/docker.sock
-                  - ./deploy/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
-                depends_on:
-                  - loki
-                restart: unless-stopped
-                logging: *default-logging
-                mem_limit: 128m
-              grafana:
-                image: grafana/grafana:11.6.16
-                environment:
-                  GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER is required}
-                  GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
-                  GF_SERVER_ROOT_URL: "${{ vars.GRAFANA_ROOT_URL || 'https://monitor.wotbtools.com' }}"
-                  GF_AUTH_ANONYMOUS_ENABLED: "false"
-                  GF_USERS_ALLOW_SIGN_UP: "false"
-                  OBSERVABILITY_ENVIRONMENT: "${{ vars.OBSERVABILITY_ENVIRONMENT || 'production' }}"
-                volumes:
-                  - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
-                  - ./deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
-                  - grafana_data:/var/lib/grafana
-                depends_on:
-                  - prometheus
-                  - loki
-                restart: unless-stopped
-                logging: *default-logging
-                mem_limit: 256m
-              mcp-grafana:
-                image: grafana/mcp-grafana:latest
-                command:
-                  - --transport=sse
-                  - --address=0.0.0.0:8000
-                  - -t
-                  - streamable-http
-                  - -allowed-hosts
-                  - monitor.wotbtools.com
-                environment:
-                  GRAFANA_URL: http://grafana:3000
-                  GRAFANA_SERVICE_ACCOUNT_TOKEN: ${GRAFANA_MCP_TOKEN:?GRAFANA_MCP_TOKEN is required}
-                ports:
-                  - "127.0.0.1:8000:8000"
-                depends_on:
-                  - grafana
-                restart: unless-stopped
-                logging: *default-logging
-                mem_limit: 128m
-            volumes:
-              postgres_data:
-              prometheus_data:
-              loki_data:
-              grafana_data:
-            ENDCOMPOSE
-
-            pull_compose() {
-              local compose_file="$1"
-              for attempt in 1 2 3; do
-                if docker compose -f "$compose_file" pull; then
-                  return 0
-                fi
-                if [ "$attempt" -lt 3 ]; then
-                  echo "docker compose pull failed (${compose_file}, attempt $attempt), retrying in 10s..."
-                  sleep 10
-                fi
-              done
-              return 1
-            }
-
-            # Health checks: backend /api/health, frontend nginx E2E, Keycloak realm availability
-            wait_healthy() {
-              for i in $(seq 1 60); do
-                if docker compose ps | grep -E "wotb-backend|wotb-frontend|keycloak" | grep -qE "Restarting|Exited"; then
-                  sleep 2
-                  continue
-                fi
-                ok=true
-                if ! docker compose exec -T wotb-backend wget -qO- http://127.0.0.1:8087/api/health >/dev/null 2>&1; then
-                  ok=false
-                fi
-                if [ "$ok" = true ] && ! docker compose exec -T wotb-frontend wget -qO- http://127.0.0.1:80/api/health >/dev/null 2>&1; then
-                  ok=false
-                fi
-                if [ "$ok" = true ] && ! docker compose exec -T wotb-backend wget -qO- http://keycloak:8080/realms/wotbtools/.well-known/openid-configuration >/dev/null 2>&1; then
-                  ok=false
-                fi
-                if [ "$ok" = true ]; then
-                  return 0
-                fi
-                sleep 2
-              done
-              return 1
-            }
-
-            dump_logs() {
-              docker compose ps || true
-              echo "== backend logs =="
-              docker compose logs --tail 160 wotb-backend || true
-              echo "== frontend logs =="
-              docker compose logs --tail 80 wotb-frontend || true
-              echo "== keycloak logs =="
-              docker compose logs --tail 80 keycloak || true
-            }
-
-            if ! pull_compose docker-compose.next.yml; then
-              echo "ERROR: docker compose pull failed after 3 attempts (docker-compose.next.yml)." >&2
-              echo "The running stack and docker-compose.yml are untouched; fix the images before the next deploy." >&2
-              exit 1
-            fi
-
-            # pull 成功后才备份当前正式 compose（回滚目标）并提升 next 为正式。
-            # 只有当前 compose 引用的镜像本地存在（即上一次部署真实可运行）才覆盖 prev，
-            # 避免把历史失败部署留下的坏 compose 存成回滚目标。
-            if [ -f docker-compose.yml ] && docker compose -f docker-compose.yml config --images 2>/dev/null \
-                | xargs -r docker image inspect >/dev/null 2>&1; then
-              cp -f docker-compose.yml docker-compose.prev.yml
-              echo "Previous compose saved (PREV_SHA=${PREV_SHA:-unknown})."
-            elif [ -f docker-compose.yml ]; then
-              echo "Current docker-compose.yml references images unavailable locally; keeping existing docker-compose.prev.yml as rollback target."
-            else
-              echo "No previous compose found; first deployment."
-            fi
-            mv -f docker-compose.next.yml docker-compose.yml
-
-            rollback_needed=false
-            if ! docker compose up -d --remove-orphans; then
-              echo "ERROR: docker compose up failed; attempting rollback." >&2
-              rollback_needed=true
-            else
-              docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
-              if wait_healthy; then
-                echo "${{ needs.changes.outputs.tag }}" > DEPLOYED_SHA
-                docker image prune -af
-                docker builder prune -af
-                echo "== DEPLOY OK: ${{ needs.changes.outputs.tag }} =="
-                exit 0
-              fi
-              rollback_needed=true
-            fi
-
-            if [ "$rollback_needed" = true ]; then
-              echo "== DEPLOY FAILED: rolling back to previous deployment =="
-              if [ -f docker-compose.prev.yml ]; then
-                cp -f docker-compose.prev.yml docker-compose.yml
-                rm -f docker-compose.next.yml
-                if pull_compose docker-compose.yml && docker compose up -d --remove-orphans; then
-                  if wait_healthy; then
-                    if [ -n "$PREV_SHA" ]; then
-                      echo "$PREV_SHA" > DEPLOYED_SHA
-                      echo "== ROLLBACK OK: back to $PREV_SHA =="
-                    else
-                      echo "== ROLLBACK OK: previous compose (SHA unknown) =="
-                    fi
-                    docker image prune -af
-                    docker builder prune -af
-                  else
-                    echo "== ROLLBACK FAILED: previous deployment also unhealthy; manual intervention required =="
-                    dump_logs
-                  fi
-                else
-                  echo "== ROLLBACK FAILED: could not start previous compose; manual intervention required =="
-                  dump_logs
-                fi
-              else
-                echo "== No previous compose found; manual intervention required =="
-                dump_logs
-              fi
-              exit 1
-            fi
-
+          envs: TAG,DB_PASSWORD,KC_ADMIN_PASSWORD,WG_APPLICATION_ID,KEYCLOAK_ADMIN_CLIENT_SECRET,AI_API_KEY,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,GRAFANA_MCP_TOKEN,BOOST_AUTO_CONFIRM_HOURS,BOOST_AUTO_CONFIRM_SCAN_MS,AI_BASE_URL,AI_MODEL,AI_CONNECT_TIMEOUT_SEC,AI_TIMEOUT_SEC,AI_CALL_TIMEOUT_SEC,AI_RETRY_MAX_ATTEMPTS,AI_RETRY_INITIAL_BACKOFF_MS,AI_RETRY_MAX_BACKOFF_MS,AI_RETRY_BACKOFF_MULTIPLIER,AI_CONTEXT_WINDOW_TOKENS,AI_SINGLE_REPLAY_MAX_INPUT_TOKENS,AI_MAX_OUTPUT_TOKENS,AI_PROMPT_SAFETY_MARGIN_TOKENS,AI_THINKING_ENABLED,AI_THINKING_ENABLED_CALL2,AI_REASONING_EFFORT,AI_REVIEW_WORKER_MAX_CONCURRENT,AI_REVIEW_WORKER_QUEUE_CAPACITY,AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC,REPLAY_COORDINATE_HALF_EXTENT,REPLAY_COORDINATE_CLAMP_TOLERANCE,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT
+          script: bash /opt/wotb/deploy/deploy.sh
+        env:
+          TAG: ${{ needs.changes.outputs.tag }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          KC_ADMIN_PASSWORD: ${{ secrets.KC_ADMIN_PASSWORD }}
+          WG_APPLICATION_ID: ${{ secrets.WG_APPLICATION_ID }}
+          KEYCLOAK_ADMIN_CLIENT_SECRET: ${{ secrets.KEYCLOAK_ADMIN_CLIENT_SECRET }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          GRAFANA_ADMIN_USER: ${{ secrets.GRAFANA_ADMIN_USER }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          GRAFANA_MCP_TOKEN: ${{ secrets.GRAFANA_MCP_TOKEN }}
+          BOOST_AUTO_CONFIRM_HOURS: ${{ vars.BOOST_AUTO_CONFIRM_HOURS || '72' }}
+          BOOST_AUTO_CONFIRM_SCAN_MS: ${{ vars.BOOST_AUTO_CONFIRM_SCAN_MS || '300000' }}
+          AI_BASE_URL: ${{ vars.AI_BASE_URL || 'https://api.deepseek.com' }}
+          AI_MODEL: ${{ vars.AI_MODEL || 'deepseek-v4-flash' }}
+          AI_CONNECT_TIMEOUT_SEC: ${{ vars.AI_CONNECT_TIMEOUT_SEC || '10' }}
+          AI_TIMEOUT_SEC: ${{ vars.AI_TIMEOUT_SEC || '300' }}
+          AI_CALL_TIMEOUT_SEC: ${{ vars.AI_CALL_TIMEOUT_SEC || '315' }}
+          AI_RETRY_MAX_ATTEMPTS: ${{ vars.AI_RETRY_MAX_ATTEMPTS || '3' }}
+          AI_RETRY_INITIAL_BACKOFF_MS: ${{ vars.AI_RETRY_INITIAL_BACKOFF_MS || '1000' }}
+          AI_RETRY_MAX_BACKOFF_MS: ${{ vars.AI_RETRY_MAX_BACKOFF_MS || '8000' }}
+          AI_RETRY_BACKOFF_MULTIPLIER: ${{ vars.AI_RETRY_BACKOFF_MULTIPLIER || '2.0' }}
+          AI_CONTEXT_WINDOW_TOKENS: ${{ vars.AI_CONTEXT_WINDOW_TOKENS || '1000000' }}
+          AI_SINGLE_REPLAY_MAX_INPUT_TOKENS: ${{ vars.AI_SINGLE_REPLAY_MAX_INPUT_TOKENS || '940000' }}
+          AI_MAX_OUTPUT_TOKENS: ${{ vars.AI_MAX_OUTPUT_TOKENS || '32768' }}
+          AI_PROMPT_SAFETY_MARGIN_TOKENS: ${{ vars.AI_PROMPT_SAFETY_MARGIN_TOKENS || '16384' }}
+          AI_THINKING_ENABLED: ${{ vars.AI_THINKING_ENABLED || 'true' }}
+          AI_THINKING_ENABLED_CALL2: ${{ vars.AI_THINKING_ENABLED_CALL2 || 'false' }}
+          AI_REASONING_EFFORT: ${{ vars.AI_REASONING_EFFORT || 'max' }}
+          AI_REVIEW_WORKER_MAX_CONCURRENT: ${{ vars.AI_REVIEW_WORKER_MAX_CONCURRENT || '4' }}
+          AI_REVIEW_WORKER_QUEUE_CAPACITY: ${{ vars.AI_REVIEW_WORKER_QUEUE_CAPACITY || '4' }}
+          AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC: ${{ vars.AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC || '400' }}
+          REPLAY_COORDINATE_HALF_EXTENT: ${{ vars.REPLAY_COORDINATE_HALF_EXTENT || '250' }}
+          REPLAY_COORDINATE_CLAMP_TOLERANCE: ${{ vars.REPLAY_COORDINATE_CLAMP_TOLERANCE || '12.5' }}
+          GRAFANA_ROOT_URL: ${{ vars.GRAFANA_ROOT_URL || 'https://monitor.wotbtools.com' }}
+          OBSERVABILITY_ENVIRONMENT: ${{ vars.OBSERVABILITY_ENVIRONMENT || 'production' }}
   # ── 清理 GHCR（独立 job，清理失败不影响部署） ──────────────────
   cleanup-ghcr:
     needs: deploy

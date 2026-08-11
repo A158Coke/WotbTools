@@ -24,9 +24,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
+import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -52,9 +52,6 @@ public class AiReplayReviewService {
 
     private final AtomicInteger aiReviewInFlight = new AtomicInteger();
     private Timer aiReviewDuration;
-    private static final long MAX_FILE_SIZE = 20L * 1024 * 1024;
-    private static final long MAX_TOTAL_SIZE = 200L * 1024 * 1024;
-
     public AiReplayReviewService(
             final DefaultReplayProcessingFacade processingFacade,
             final AiReplayAnalysisService aiAnalysisService) {
@@ -69,12 +66,6 @@ public class AiReplayReviewService {
         this.processingFacade = processingFacade;
         this.aiAnalysisService = aiAnalysisService;
         this.tacticalReviewHarness = tacticalReviewHarness;
-    }
-
-    private void validateBatchSize(final int fileCount) {
-        if (fileCount > AiReplayBatchPolicy.MAX_FILES) {
-            throw new ReplayFileCountExceededException(AiReplayBatchPolicy.MAX_FILES, fileCount);
-        }
     }
 
     public AnalyzeResponse analyze(final MultipartFile[] files) throws IOException {
@@ -159,22 +150,7 @@ public class AiReplayReviewService {
     private AnalyzeResponse analyzeInternal(final MultipartFile[] files,
                                             final AllowedLanguage language,
                                             final AiReviewStreamListener listener) throws IOException {
-        if (files == null || files.length == 0) throw new IllegalArgumentException("NO_REPLAY_FILES");
-        validateBatchSize(files.length);
-        long totalSize = 0;
-        for (int i = 0; i < files.length; i++) {
-            final MultipartFile file = files[i];
-            if (file == null) throw new IllegalArgumentException("NO_REPLAY_FILE");
-            final String name = file.getOriginalFilename();
-            if (!StringUtils.hasText(name) || !name.toLowerCase(Locale.ROOT).endsWith(".wotbreplay")) {
-                throw new IllegalArgumentException("INVALID_REPLAY_FILE_TYPE");
-            }
-            if (file.isEmpty()) throw new IllegalArgumentException("NO_REPLAY_FILE");
-            final long fileSize = file.getSize();
-            if (fileSize > MAX_FILE_SIZE) throw new IllegalArgumentException("FILE_TOO_LARGE");
-            if (fileSize > MAX_TOTAL_SIZE - totalSize) throw new IllegalArgumentException("TOTAL_REQUEST_TOO_LARGE");
-            totalSize += fileSize;
-        }
+        ReplayUploadValidator.validateAiReview(files);
         final List<ReplayProcessingResult> allResults = new ArrayList<>();
         for (int index = 0; index < files.length; index++) {
             final MultipartFile file = files[index];

@@ -1,5 +1,12 @@
 [
   {
+    "v": "2.8.0",
+    "date": "2026-08-11",
+    "tag": "add",
+    "zh": "公开回放接口限流（高频/并发 429/503）· 取消请求 correlationId 校验加固 · AI 复盘整体超时对齐（排队计入预算，超期干净失败）· 全链路大文件/职责拆分重构（行为不变）",
+    "en": "Rate limits on public replay endpoints (429/503) · Correlation id validation hardening for AI review cancel · Overall AI review deadline aligned (queue time counted, clean AI_TIMEOUT) · Large-file/responsibility-split refactors (behavior unchanged)",
+    "ru": "Лимиты на публичных реплей-эндпоинтах (429/503) · Усиление валидации correlationId для отмены AI-разбора · Выравнивание общего дедлайна AI-разбора (очередь учитывается, чистый AI_TIMEOUT) · Рефакторинг крупных файлов/зон ответственности (поведение не изменено)"
+  },  {
     "v": "2.7.0",
     "date": "2026-08-11",
     "tag": "add",
