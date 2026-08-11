@@ -89,6 +89,7 @@ public final class MapOverviewBuilder {
         return new MapOverview(
                 battle.mapName.trim().toLowerCase(),
                 profile.displayName(),
+                friendlyTeam,
                 new MapOverview.Bounds(
                         profile.playableBounds().xMin(),
                         profile.playableBounds().xMax(),

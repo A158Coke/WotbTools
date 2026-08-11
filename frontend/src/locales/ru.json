@@ -768,11 +768,32 @@
         "analyze_multi_btn": "AI по сериям ({n})",
         "cancel_btn": "Отменить анализ",
         "analysis_title_player": "AI Review",
-        "prebattle": {
-            "title": "Прогноз до боя",
-            "collapse": "Свернуть",
-            "expand": "Развернуть"
-        },
+          "prebattle": {
+              "title": "Прогноз до боя",
+              "collapse": "Свернуть",
+              "expand": "Развернуть"
+          },
+          "map": {
+              "title": "Карта боя",
+              "view_heatmap": "Тепловая карта",
+              "view_routes": "Маршруты",
+              "team_friendly": "Свои",
+              "team_enemy": "Враг",
+              "team_all": "Все",
+              "type_dwell": "Пребывание",
+              "type_damage": "Урон",
+              "type_deaths": "Гибель",
+              "phase_all": "Все",
+              "phase_opening": "Начало",
+              "phase_mid": "Середина",
+              "phase_late": "Концовка",
+              "legend_heat": "Плотность",
+              "spawn": "Точка появления",
+              "death": "Уничтожен",
+              "observed_from": "позиции наблюдаются с",
+              "observed_note": "Окно наблюдения (техника без позиций на старте):",
+              "aria": "карта боя"
+          },
         "stages": {
             "call1": "Предбоевой прогноз…",
             "evidence": "Анализ улик…",

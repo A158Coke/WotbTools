@@ -11,24 +11,23 @@ import java.util.Map;
 public final class MapImageCatalog {
 
     private static final Map<String, MapOverview.ImageInfo> IMAGES = Map.ofEntries(
-            Map.entry("alpen", image("alpen.png", 771, 772)),
-            Map.entry("black_goldville", image("black-goldville.png", 771, 772)),
             Map.entry("canal", image("canal.png", 778, 772)),
-            Map.entry("castilla", image("castilla.png", 783, 777)),
             Map.entry("desert_train", image("desert-sands.png", 765, 772)),
-            Map.entry("fort_despair", image("fort-despair.png", 766, 772)),
+            Map.entry("erlenberg", image("middburg.png", 763, 768)),
+            Map.entry("forgecity", image("newbay.png", 768, 780)),
+            Map.entry("fort", image("fort-despair.png", 766, 772)),
+            Map.entry("holland", image("molen.png", 766, 769)),
+            Map.entry("idle", image("yukong.png", 766, 769)),
+            Map.entry("italy", image("vineyard.png", 772, 772)),
+            Map.entry("karelia", image("rockfield.png", 768, 768)),
             Map.entry("malinovka", image("malinov.png", 754, 762)),
-            Map.entry("maya_ruins", image("maya-ruins.png", 769, 771)),
-            Map.entry("middburg", image("middburg.png", 763, 768)),
-            Map.entry("molen", image("molen.png", 766, 769)),
-            Map.entry("naval", image("naval.png", 762, 771)),
-            Map.entry("newbay", image("newbay.png", 768, 780)),
-            Map.entry("normandy", image("Normandy.png", 778, 769)),
-            Map.entry("oasis", image("oasis.png", 762, 766)),
-            Map.entry("portbay", image("portbay.png", 769, 769)),
-            Map.entry("rockfield", image("rockfield.png", 768, 768)),
-            Map.entry("vineyard", image("vineyard.png", 772, 772)),
-            Map.entry("yukong", image("yukong.png", 766, 769)));
+            Map.entry("mountain", image("black-goldville.png", 771, 772)),
+            Map.entry("neptune", image("Normandy.png", 778, 769)),
+            Map.entry("pliego", image("castilla.png", 783, 777)),
+            Map.entry("port", image("portbay.png", 769, 769)),
+            Map.entry("rock", image("maya-ruins.png", 769, 771)),
+            Map.entry("savanna", image("oasis.png", 762, 766)),
+            Map.entry("skit", image("naval.png", 762, 771)));
 
     private MapImageCatalog() {
     }

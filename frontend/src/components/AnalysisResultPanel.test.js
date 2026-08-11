@@ -68,4 +68,48 @@ describe('AnalysisResultPanel preBattleSection', () => {
     expect(toggle.attributes('aria-expanded')).toBe('true')
     expect(wrapper.text()).toContain('recon.prebattle.collapse')
   })
+
+  it('renders the map overview block when mapOverview has an asset', async () => {
+    const wrapper = mount(AnalysisResultPanel, {
+      props: {
+        result: {
+          analysis: 'report',
+          mapOverview: {
+            mapCode: 'desert_train',
+            displayName: 'Desert Sands',
+            friendlyTeam: 2,
+            playableBounds: { xMin: -256, xMax: 260, yMin: -251, yMax: 254.3 },
+            gridCells: [],
+            spawnPoints: [],
+            phases: [],
+            heatmaps: {
+              friendly: { dwell: [], damage: [], deaths: [] },
+              enemy: { dwell: [], damage: [], deaths: [] }
+            },
+            routes: []
+          }
+        }
+      },
+      global: { mocks: { $t: i18n.t } }
+    })
+    expect(wrapper.find('[data-test="map-block"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('recon.map.title')
+    // 默认收起：点击展开后渲染 MapOverview
+    await wrapper.get('.prebattle-toggle').trigger('click')
+    expect(wrapper.find('.map-overview-content').exists()).toBe(true)
+  })
+
+  it('does not render the map block when the map has no image asset', () => {
+    const wrapper = mount(AnalysisResultPanel, {
+      props: {
+        result: {
+          analysis: 'report',
+          mapOverview: { mapCode: 'rift', displayName: 'Hellas' }
+        }
+      },
+      global: { mocks: { $t: i18n.t } }
+    })
+    expect(wrapper.find('[data-test="map-block"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('report')
+  })
 })
