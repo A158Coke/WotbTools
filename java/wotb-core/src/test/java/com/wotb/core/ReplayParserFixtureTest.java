@@ -2,7 +2,6 @@ package com.wotb.core;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.parse.ReplayParser;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -28,8 +27,8 @@ class ReplayParserFixtureTest {
 
     private static List<Path> fixtures() throws Exception {
         final Path dir = fixturesDir();
-        Assumptions.assumeTrue(Files.isDirectory(dir),
-                "common/fixtures/replays 目录不存在");
+        assertTrue(Files.isDirectory(dir),
+                "common/fixtures/replays 目录必须存在（已提交夹具，CI 无条件执行）");
         try (Stream<Path> s = Files.list(dir)) {
             return s.filter(p -> p.toString().toLowerCase().endsWith(".wotbreplay"))
                     .sorted()
