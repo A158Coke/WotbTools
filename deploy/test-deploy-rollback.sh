@@ -114,7 +114,7 @@ export WOTB_BACKUP_ROOT="$WORK/backups"
 export WOTB_HEALTH_RETRIES=3
 export DB_PASSWORD=db-secret KC_ADMIN_PASSWORD=kc-secret WG_APPLICATION_ID=wg-id \
        KEYCLOAK_ADMIN_CLIENT_SECRET=kc-client-secret AI_API_KEY=ai-key \
-       GRAFANA_ADMIN_USER=admin GRAFANA_ADMIN_PASSWORD=grafana-secret GRAFANA_MCP_TOKEN=mcp-token
+       GRAFANA_ADMIN_USER=admin GRAFANA_ADMIN_PASSWORD=grafana-secret
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
