@@ -90,7 +90,7 @@ public final class TeamAutopsyPromptBuilder {
                     .append(" 格挡").append(s.damageBlocked())
                     .append(" 击杀").append(s.kills())
                     .append(s.survived() ? " 存活"
-                            : " 阵亡@" + PlayerAnalysisTerms.battleClock((float) s.deathSec()))
+                            : " 阵亡@" + PlayerAnalysisTerms.knownDeathClock(s.deathSec()))
                     .append('\n');
             sb.append("    flags: 早死=").append(s.earlyDeath())
                     .append("(规则候选,")
@@ -130,11 +130,17 @@ public final class TeamAutopsyPromptBuilder {
         sb.append("\n死亡时间线（后端时间线，仅本方 TEAM_A）:\n");
         stats.stream()
                 .filter(s -> !s.survived())
-                .sorted(java.util.Comparator.comparingDouble(TeamAutopsyStats::deathSec))
+                // 未知死亡时间（deathSec<=0）排到已知时间之后，绝不因 0 被排到整场最前
+                .sorted(java.util.Comparator
+                        .comparingDouble((TeamAutopsyStats s) -> s.deathSec() > 0
+                                ? s.deathSec() : Double.MAX_VALUE)
+                        .thenComparing(TeamAutopsyStats::playerKey))
                 .forEach(s -> sb.append("- ")
-                        .append(PlayerAnalysisTerms.battleClock((float) s.deathSec()))
+                        .append(s.deathSec() > 0
+                                ? PlayerAnalysisTerms.battleClock((float) s.deathSec()) : "未知")
                         .append(' ').append(s.playerKey()).append(' ')
                         .append(PromptDataQuoter.quote(s.tankName(), "未知坦克"))
+                        .append(s.deathSec() > 0 ? "" : "（时刻未知）")
                         .append('\n'));
         sb.append("\n请按输出契约给出 JSON。");
         return sb.toString();

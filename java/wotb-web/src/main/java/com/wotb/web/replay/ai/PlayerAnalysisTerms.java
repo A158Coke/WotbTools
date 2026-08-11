@@ -38,7 +38,16 @@ public final class PlayerAnalysisTerms {
      * 非 AI 调用方（导出/前端），改它会波及无关输出。这里只负责 AI 侧的 {@code X分XX秒}。</p>
      */
     public static String survivalDisplay(final boolean survived, final double deathSec) {
-        return survived ? "存活" : "阵亡@" + battleClock((float) deathSec);
+        return survived ? "存活" : "阵亡@" + knownDeathClock(deathSec);
+    }
+
+    /**
+     * 死亡时刻（秒）→ {@code X分XX秒}；未知（{@code deathSec <= 0}）→ 「未知」。
+     * <p>阵亡玩家可能因结算缺失 + 事件流 fallback 失败而时刻未知（deathSec=0），
+     * 此时绝不能格式化成 {@code 0分00秒}（错误确定性证据），统一输出「未知」。</p>
+     */
+    public static String knownDeathClock(final double deathSec) {
+        return deathSec > 0 ? battleClock((float) deathSec) : "未知";
     }
 
     /** 战斗阶段。 */

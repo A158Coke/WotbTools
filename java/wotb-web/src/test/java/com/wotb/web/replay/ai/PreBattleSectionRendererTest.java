@@ -181,6 +181,40 @@ class PreBattleSectionRendererTest {
     }
 
     @Test
+    void enAreaNamesUseGenericRegionsWithoutChineseLabel() {
+        final PreBattleStrategicPrior prior = new PreBattleStrategicPrior(
+                null, null,
+                List.of(new PreBattleStrategicPrior.KeyMatchup(
+                        "ELEVATED_TERRAIN_01", "TEAM_A", "ridge")),
+                List.of(), List.of());
+        final String section = PreBattleSectionRenderer.render(
+                prior, 1, null, AllowedLanguage.EN, "neptune");
+        assertTrue(section.contains("Regions 3/5/6/9"),
+                "EN must keep grid regions: " + section);
+        assertFalse(section.contains("东侧高地区域"),
+                "EN must not leak Chinese semantic label: " + section);
+        assertFalse(section.contains("ELEVATED_TERRAIN_01"),
+                "EN must not leak raw AREA ID: " + section);
+    }
+
+    @Test
+    void ruAreaNamesUseGenericRegionsWithoutChineseLabel() {
+        final PreBattleStrategicPrior prior = new PreBattleStrategicPrior(
+                null, null,
+                List.of(new PreBattleStrategicPrior.KeyMatchup(
+                        "ELEVATED_TERRAIN_01", "TEAM_A", "гребень")),
+                List.of(), List.of());
+        final String section = PreBattleSectionRenderer.render(
+                prior, 1, null, AllowedLanguage.RU, "neptune");
+        assertTrue(section.contains("Области 3/5/6/9"),
+                "RU must keep grid regions: " + section);
+        assertFalse(section.contains("东侧高地区域"),
+                "RU must not leak Chinese semantic label: " + section);
+        assertFalse(section.contains("ELEVATED_TERRAIN_01"),
+                "RU must not leak raw AREA ID: " + section);
+    }
+
+    @Test
     void compositionTranslatedToEnglish() {
         final String section = PreBattleSectionRenderer.render(PRIOR, 1, null, AllowedLanguage.EN);
         assertTrue(section.contains("Mobility=High"),

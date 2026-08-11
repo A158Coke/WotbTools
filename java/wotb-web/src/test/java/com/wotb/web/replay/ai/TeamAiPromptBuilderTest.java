@@ -10,6 +10,7 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.CanonicalMapPosition;
+import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MovementType;
@@ -973,6 +974,73 @@ class TeamAiPromptBuilderTest {
                 "partial observed received number must NOT leak into prompt: " + content);
         assertTrue(content.contains("AUTHORITATIVE_TEAM_RESULT"),
                 "authoritative single-source directive must remain");
+    }
+
+    @Test
+    void deathTimelineUnknownDeathTimeRendersUnknownNotZeroClock() {
+        final PlayerResult allyKnown = new PlayerResult();
+        allyKnown.accountId = 10_001L;
+        allyKnown.nickname = "AllyKnown";
+        allyKnown.team = 1;
+        allyKnown.tankId = 4481L;
+        allyKnown.damageDealt = 1_000;
+        allyKnown.survived = false;
+        allyKnown.deathTimeMillis = 62_000L;
+        allyKnown.survivalTimeSec = 62.0;
+        final PlayerResult allyUnknown = new PlayerResult();
+        allyUnknown.accountId = 10_002L;
+        allyUnknown.nickname = "AllyUnknown";
+        allyUnknown.team = 1;
+        allyUnknown.tankId = 4481L;
+        allyUnknown.damageDealt = 1_000;
+        allyUnknown.survived = false;
+        allyUnknown.deathTimeMillis = 0L;
+        allyUnknown.survivalTimeSec = 0.0;
+        final PlayerResult enemy = new PlayerResult();
+        enemy.accountId = 20_001L;
+        enemy.nickname = "Enemy";
+        enemy.team = 2;
+        enemy.tankId = 4481L;
+        enemy.damageDealt = 1_000;
+        enemy.survived = true;
+
+        final Battle battle = new Battle();
+        battle.arenaId = "arena-death";
+        battle.arenaBonusType = 2;
+        battle.mapName = "test-map";
+        battle.durationS = 180.0;
+        battle.winnerTeam = 1;
+        battle.recorder = "AllyKnown";
+        battle.players = List.of(allyKnown, allyUnknown, enemy);
+        final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhasesWithSurvival(
+                50f, 180f,
+                BattlePhaseSummary.SurvivalTimeline.fromBattleResults(battle, 1));
+        final TeamBattleFeatureSet features = new TeamBattleFeatureSet(
+                1, List.of(), null, TeamObservedAggregate.empty(),
+                List.of(), List.of(), phases, List.of(),
+                TeamFeatureCoverage.empty(), List.of(), true);
+        final SingleTeamBattleAnalysisContext context = new SingleTeamBattleAnalysisContext(
+                "unit-death", null, "death.wotbreplay", null, battle, 1, features,
+                null, List.of(), null);
+        final String content = TeamAiPromptBuilder.single(context).content();
+
+        assertTrue(content.contains("DEATH_SOURCE=未知"),
+                "any unknown death time must mark source as 未知: " + content);
+        assertTrue(content.contains("1分02秒 本队 \"AllyKnown\""),
+                "known death time must keep X分XX秒: " + content);
+        assertTrue(content.contains("未知 本队 \"AllyUnknown\""),
+                "unknown death time must render as 未知: " + content);
+        assertTrue(content.contains("阵亡（时刻未知）"),
+                "unknown death time must be marked: " + content);
+        assertFalse(content.contains("阵亡@0分00秒"),
+                "unknown death time must NOT render as 阵亡@0分00秒: " + content);
+        assertFalse(content.contains("0分00秒 本队"),
+                "unknown death time must NOT render as 0分00秒 本队: " + content);
+        assertFalse(content.contains("0分00秒 对方"),
+                "unknown death time must NOT render as 0分00秒 对方: " + content);
+        assertTrue(content.indexOf("1分02秒 本队 \"AllyKnown\"")
+                        < content.indexOf("未知 本队 \"AllyUnknown\""),
+                "unknown death time must be sorted after known: " + content);
     }
 
     @Test

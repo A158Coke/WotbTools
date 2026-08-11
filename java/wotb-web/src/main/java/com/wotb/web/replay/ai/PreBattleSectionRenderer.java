@@ -150,12 +150,15 @@ public final class PreBattleSectionRenderer {
             sb.append("\n**").append(texts.matchups()).append("**\n");
             for (final PreBattleStrategicPrior.KeyMatchup m : prior.keyMatchups()) {
                 sb.append("- ").append(texts.region()).append(' ')
-                        .append(display(text(m.area(), texts.unknown()), tokenALabel, tokenBLabel, texts, mapCode));
+                        .append(display(text(m.area(), texts.unknown()),
+                                tokenALabel, tokenBLabel, texts, mapCode, language));
                 if (StringUtils.hasText(m.advantage())) {
-                    sb.append("：").append(display(m.advantage(), tokenALabel, tokenBLabel, texts, mapCode));
+                    sb.append("：").append(display(m.advantage(),
+                            tokenALabel, tokenBLabel, texts, mapCode, language));
                 }
                 if (StringUtils.hasText(m.reason())) {
-                    sb.append("（").append(display(m.reason(), tokenALabel, tokenBLabel, texts, mapCode)).append("）");
+                    sb.append("（").append(display(m.reason(),
+                            tokenALabel, tokenBLabel, texts, mapCode, language)).append("）");
                 }
                 sb.append('\n');
             }
@@ -164,8 +167,10 @@ public final class PreBattleSectionRenderer {
             sb.append("\n**").append(texts.winConditions()).append("**\n");
             for (final PreBattleStrategicPrior.StrategicWinCondition w
                     : prior.strategicWinConditions()) {
-                sb.append("- ").append(display(text(w.team(), texts.unknown()), tokenALabel, tokenBLabel, texts, mapCode))
-                        .append("：").append(display(text(w.condition(), ""), tokenALabel, tokenBLabel, texts, mapCode))
+                sb.append("- ").append(display(text(w.team(), texts.unknown()),
+                        tokenALabel, tokenBLabel, texts, mapCode, language))
+                        .append("：").append(display(text(w.condition(), ""),
+                                tokenALabel, tokenBLabel, texts, mapCode, language))
                         .append('\n');
             }
         }
@@ -174,10 +179,12 @@ public final class PreBattleSectionRenderer {
             for (final PreBattleStrategicPrior.StrategicHypothesis h : prior.hypotheses()) {
                 // id 直接输出 parser 得到的值（如 H1），绝不 prepend 前缀（避免 HH1）。
                 sb.append("- ").append(text(h.id(), "?"))
-                        .append("：").append(display(text(h.claim(), ""), tokenALabel, tokenBLabel, texts, mapCode));
+                        .append("：").append(display(text(h.claim(), ""),
+                                tokenALabel, tokenBLabel, texts, mapCode, language));
                 if (StringUtils.hasText(h.reason())) {
                     sb.append("（").append(texts.reasonPrefix())
-                            .append(display(h.reason(), tokenALabel, tokenBLabel, texts, mapCode)).append("）");
+                            .append(display(h.reason(),
+                                    tokenALabel, tokenBLabel, texts, mapCode, language)).append("）");
                 }
                 sb.append('\n');
             }
@@ -201,28 +208,29 @@ public final class PreBattleSectionRenderer {
             sb.append("- ").append(texts.composition()).append('：');
             sb.append(String.join("；", profile.composition().entrySet().stream()
                     .map(e -> compositionKey(e.getKey(), language) + "="
-                            + compositionValue(display(e.getValue(), tokenALabel, tokenBLabel, texts, mapCode), language))
+                            + compositionValue(display(e.getValue(),
+                                    tokenALabel, tokenBLabel, texts, mapCode, language), language))
                     .toList()));
             sb.append('\n');
         }
         if (!profile.strengths().isEmpty()) {
             sb.append("- ").append(texts.strengths()).append('：')
                     .append(String.join("；", profile.strengths().stream()
-                            .map(s -> display(s, tokenALabel, tokenBLabel, texts, mapCode))
+                            .map(s -> display(s, tokenALabel, tokenBLabel, texts, mapCode, language))
                             .toList()))
                     .append('\n');
         }
         if (!profile.weaknesses().isEmpty()) {
             sb.append("- ").append(texts.weaknesses()).append('：')
                     .append(String.join("；", profile.weaknesses().stream()
-                            .map(s -> display(s, tokenALabel, tokenBLabel, texts, mapCode))
+                            .map(s -> display(s, tokenALabel, tokenBLabel, texts, mapCode, language))
                             .toList()))
                     .append('\n');
         }
         if (!profile.preferredPlans().isEmpty()) {
             sb.append("- ").append(texts.plans()).append('：')
                     .append(String.join("；", profile.preferredPlans().stream()
-                            .map(s -> display(s, tokenALabel, tokenBLabel, texts, mapCode))
+                            .map(s -> display(s, tokenALabel, tokenBLabel, texts, mapCode, language))
                             .toList()))
                     .append('\n');
         }
@@ -242,7 +250,8 @@ public final class PreBattleSectionRenderer {
                                   final String teamALabel,
                                   final String teamBLabel,
                                   final Texts texts,
-                                  final String mapCode) {
+                                  final String mapCode,
+                                  final AllowedLanguage language) {
         if (!StringUtils.hasText(value)) {
             return value;
         }
@@ -259,27 +268,40 @@ public final class PreBattleSectionRenderer {
             // regionName 模板形如 "$1区" / "Region $1"：replaceAll 会把 $1 展开为区域号。
             result = matcher.replaceAll(texts.regionName());
         }
-        return mapAreaNames(result, mapCode);
+        return mapAreaNames(result, mapCode, language);
     }
 
-    /** AREA ID → 中文 label + 九宫格编号（如 ELEVATED_TERRAIN_01 → 东侧高地区域（3/5/6/9区））。 */
-    private static String mapAreaNames(final String value, final String mapCode) {
+    /**
+     * AREA ID → 用户可见区域名 + 九宫格编号，语言跟随请求。
+     * <p>ZH 使用现有 semantic 中文 label（如 ELEVATED_TERRAIN_01 → 东侧高地区域（3/5/6/9区））；
+     * EN/RU 不泄漏中文、不翻译/猜测区域名，只保留可靠的九宫格编号（Regions 3/5/6/9 /
+     * Области 3/5/6/9），无编号时用通用词 Area / Область。</p>
+     */
+    private static String mapAreaNames(final String value,
+                                       final String mapCode,
+                                       final AllowedLanguage language) {
         if (!StringUtils.hasText(value) || !StringUtils.hasText(mapCode)) {
             return value;
         }
         final MapTacticalSemantics semantics = MAP_SEMANTICS.semanticsFor(mapCode);
+        final AllowedLanguage lang = language == null ? AllowedLanguage.ZH : language;
         String result = value;
         for (final Map.Entry<String, MapTacticalSemantics.TacticalArea> entry
                 : semantics.areas().entrySet()) {
             final MapTacticalSemantics.TacticalArea area = entry.getValue();
-            if (area.label().isBlank() && area.gridRegions().isEmpty()) {
+            if (lang == AllowedLanguage.ZH
+                    && area.label().isBlank() && area.gridRegions().isEmpty()) {
                 continue;
             }
             final List<String> regions = area.gridRegions().stream()
                     .map(region -> region.replace("GRID_REGION_", ""))
                     .toList();
-            final String readable = (area.label().isBlank() ? entry.getKey() : area.label())
-                    + (regions.isEmpty() ? "" : "（" + String.join("/", regions) + "区）");
+            final String readable = switch (lang) {
+                case EN -> regions.isEmpty() ? "Area" : "Regions " + String.join("/", regions);
+                case RU -> regions.isEmpty() ? "Область" : "Области " + String.join("/", regions);
+                case ZH -> (area.label().isBlank() ? entry.getKey() : area.label())
+                        + (regions.isEmpty() ? "" : "（" + String.join("/", regions) + "区）");
+            };
             result = result.replace(entry.getKey(), readable);
         }
         return result;
