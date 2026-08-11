@@ -100,6 +100,1189 @@ class PacketReverseProbeTest {
         type31VsRecorder(es, byType);
         type31HpHypothesis(es, byType);
         type39AimingHypothesis(es, byType);
+        type39CameraVsRecorder(es, byType);
+        type39ChangeEvents(byType);
+        type39Histograms(byType);
+        type39Lengths(byType);
+        type39AngleChangeContext(byType);
+        type39Endgame(es, byType);
+        type31DistanceMatch(es, byType);
+        type39LateRaw(byType);
+        type39TargetMatch(es, byType);
+        mysteryEntitiesVsType39(es, byType);
+        alliesVsType39Late(es, byType);
+        enemiesVsType39Late(es, byType);
+        type39FullAffine(es, byType);
+        eid13185652VsType39(es, byType);
+        cameraTupleTest(es, byType);
+        entity13185652Timeline(es);
+        type39LastSeconds(byType, "team");
+        type39AimRayGeometry(es, byType);
+        type31DetailWindows(es, byType);
+        randomRecorderVsType39(es, byType);
+        dumpType1String(byType);
+    }
+
+    /** type1: hex + printable strings (recorder nickname). */
+    private static void dumpType1String(
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final List<EventStreamReader.ParsedPacket> t1 = byType.getOrDefault(1, List.of());
+        System.out.println("== type1 payload strings ==");
+        for (final EventStreamReader.ParsedPacket p : t1) {
+            final StringBuilder ascii = new StringBuilder();
+            for (int i = 0; i < p.payload.length; i++) {
+                final int b = p.payload[i] & 0xFF;
+                ascii.append(b >= 32 && b < 127 ? (char) b : '.');
+            }
+            final String s = ascii.toString();
+            final StringBuilder runs = new StringBuilder();
+            for (int i = 0; i < s.length(); i++) {
+                final char c = s.charAt(i);
+                if (c != '.') {
+                    runs.append(c);
+                } else if (runs.length() > 0 && runs.charAt(runs.length() - 1) != ' ') {
+                    runs.append(' ');
+                }
+            }
+            System.out.println("  len=" + p.payload.length + " t=" + p.clockSecs
+                    + " ascii-runs: " + runs.toString().trim().replaceAll("\\s+", " "));
+        }
+    }
+
+    /** For the random battle: find the recorder vehicle (one whose positions hug type39 f2/f3/f4). */
+    private static void randomRecorderVsType39(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final Map<Integer, List<EventStreamReader.PositionData>> byEntity = new TreeMap<>();
+        for (final EventStreamReader.PositionData p : positions) {
+            byEntity.computeIfAbsent(p.entityId, k -> new ArrayList<>()).add(p);
+        }
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        System.out.println("== random battle: entities near type39 (f2,f3,f4) ==");
+        final List<Map.Entry<String, Double>> best = new ArrayList<>();
+        for (final Map.Entry<Integer, List<EventStreamReader.PositionData>> e : byEntity.entrySet()) {
+            double sum = 0;
+            int n = 0;
+            for (final EventStreamReader.ParsedPacket p : p39) {
+                if (p.payload.length < 28) {
+                    continue;
+                }
+                EventStreamReader.PositionData near = null;
+                float bestDt = Float.MAX_VALUE;
+                for (final EventStreamReader.PositionData pos : e.getValue()) {
+                    final float dt = Math.abs(pos.clockSecs - p.clockSecs);
+                    if (dt < 0.5f && dt < bestDt) {
+                        bestDt = dt;
+                        near = pos;
+                    }
+                }
+                if (near != null) {
+                    sum += Math.hypot(f(p.payload, 8) - near.x,
+                            Math.hypot(f(p.payload, 12) - near.y, f(p.payload, 16) - near.z));
+                    n++;
+                }
+            }
+            if (n > 100) {
+                best.add(Map.entry("eid=" + e.getKey() + " n=" + n, sum / n));
+            }
+        }
+        best.sort(Map.Entry.comparingByValue());
+        best.stream().limit(6).forEach(x -> System.out.println("  " + x.getKey() + " meanD="
+                + String.format(Locale.ROOT, "%.1fm", x.getValue())));
+    }
+
+    /** type31 raw values at battle start/end of the stream + recorder->enemy distances. */
+    private static void type31DetailWindows(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final int recEid = 12558552;
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final Map<Integer, List<EventStreamReader.PositionData>> byEntity = new TreeMap<>();
+        for (final EventStreamReader.PositionData p : positions) {
+            byEntity.computeIfAbsent(p.entityId, k -> new ArrayList<>()).add(p);
+        }
+        final Map<Integer, Integer> eidTeam = new HashMap<>();
+        for (final EventStreamReader.ParsedPacket pkt : es.packets) {
+            if (pkt.type != 8 || pkt.payload.length < 8) {
+                continue;
+            }
+            if (readU32LE(pkt.payload, 4) != 48) {
+                continue;
+            }
+            final byte[] body = new byte[pkt.payload.length - 8];
+            System.arraycopy(pkt.payload, 8, body, 0, body.length);
+            final byte[] proto = unwrap(body);
+            if (proto == null) {
+                continue;
+            }
+            try {
+                final Map<Integer, List<Object>> root = Protobuf.decode(proto);
+                final Object wrapperRaw = Protobuf.first(root, 1);
+                if (!(wrapperRaw instanceof byte[])) {
+                    continue;
+                }
+                final Map<Integer, List<Object>> wrapper = Protobuf.decode((byte[]) wrapperRaw);
+                final List<Object> players = wrapper.get(1);
+                if (players == null) {
+                    continue;
+                }
+                for (final Object pRaw : players) {
+                    if (!(pRaw instanceof byte[])) {
+                        continue;
+                    }
+                    final Map<Integer, List<Object>> p = Protobuf.decode((byte[]) pRaw);
+                    final int eid = (int) Protobuf.firstLong(p, 1, 0);
+                    final int team = (int) Protobuf.firstLong(p, 4, -1);
+                    if (eid != 0) {
+                        eidTeam.put(eid, team);
+                    }
+                }
+            } catch (RuntimeException ignored) {
+                // skip malformed
+            }
+        }
+        final List<EventStreamReader.ParsedPacket> t31 = byType.getOrDefault(31, List.of());
+        System.out.println("== type31 detail: first/last 3s of stream + rec->enemy distances ==");
+        for (final String which : new String[]{"first", "last"}) {
+            System.out.println("-- " + which + " 3s --");
+            final List<EventStreamReader.ParsedPacket> sorted = new ArrayList<>(t31);
+            sorted.sort(Comparator.comparingDouble(p -> p.clockSecs));
+            final List<EventStreamReader.ParsedPacket> win = "first".equals(which)
+                    ? sorted.stream().limit(90).toList()
+                    : sorted.stream().skip(Math.max(0, sorted.size() - 90)).toList();
+            for (final EventStreamReader.ParsedPacket p : win) {
+                if (p.payload.length < 4) {
+                    continue;
+                }
+                EventStreamReader.PositionData recPos = null;
+                for (final EventStreamReader.PositionData pos : byEntity.getOrDefault(recEid, List.of())) {
+                    if (pos.clockSecs <= p.clockSecs) {
+                        recPos = pos;
+                    } else {
+                        break;
+                    }
+                }
+                final StringBuilder sb = new StringBuilder(
+                        String.format(Locale.ROOT, "  t=%7.1fs v=%6.2f", p.clockSecs, f(p.payload, 0)));
+                if (recPos != null) {
+                    for (final Map.Entry<Integer, List<EventStreamReader.PositionData>> e : byEntity.entrySet()) {
+                        if (eidTeam.getOrDefault(e.getKey(), -1) != 1) {
+                            continue;
+                        }
+                        EventStreamReader.PositionData near = null;
+                        float bestDt = Float.MAX_VALUE;
+                        for (final EventStreamReader.PositionData pos : e.getValue()) {
+                            final float dt = Math.abs(pos.clockSecs - p.clockSecs);
+                            if (dt < 0.5f && dt < bestDt) {
+                                bestDt = dt;
+                                near = pos;
+                            }
+                        }
+                        if (near != null) {
+                            final float d = (float) Math.hypot(recPos.x - near.x, recPos.z - near.z);
+                            sb.append(String.format(Locale.ROOT, " e%d=%.0f", e.getKey(), d));
+                        }
+                    }
+                }
+                System.out.println(sb);
+            }
+        }
+    }
+
+    /**
+     * If (f0,f1)=aim(x,z), (f2,f3,f4)=camera(x,y,z), f5=gun yaw: the azimuth from
+     * camera to aim minus f5 should be nearly constant (parallax/calibration offset).
+     */
+    private static void type39AimRayGeometry(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        System.out.println("== type39 aim-ray geometry ==");
+        double sumOff = 0, sumOffSq = 0;
+        int n = 0;
+        double minOff = 999, maxOff = -999;
+        int printed = 0;
+        for (final EventStreamReader.ParsedPacket p : p39) {
+            if (p.payload.length < 28) {
+                continue;
+            }
+            final float aimX = f(p.payload, 0);
+            final float aimZ = f(p.payload, 1 * 4);
+            final float camX = f(p.payload, 2 * 4);
+            final float camZ = f(p.payload, 4 * 4);
+            final float yaw = f(p.payload, 5 * 4);
+            final float dX = aimX - camX;
+            final float dZ = aimZ - camZ;
+            if (Math.abs(dX) < 1e-3f && Math.abs(dZ) < 1e-3f) {
+                continue;
+            }
+            final double az = Math.atan2(dZ, dX);
+            final double off = normalizeAngle(Math.toDegrees(az - yaw));
+            sumOff += off;
+            sumOffSq += off * off;
+            n++;
+            minOff = Math.min(minOff, off);
+            maxOff = Math.max(maxOff, off);
+            if (printed < 10) {
+                System.out.printf(Locale.ROOT,
+                        "  t=%7.1fs az=%.1fdeg yaw(f5)=%.2frad(%.1fdeg) off=%.1fdeg%n",
+                        p.clockSecs, Math.toDegrees(az), yaw, Math.toDegrees(yaw), off);
+                printed++;
+            }
+        }
+        final double mean = n == 0 ? 0 : sumOff / n;
+        final double var = n == 0 ? 0 : Math.max(0, sumOffSq / n - mean * mean);
+        System.out.printf(Locale.ROOT,
+                "  n=%d offset mean=%.2fdeg std=%.2fdeg min=%.2f max=%.2f%n",
+                n, mean, Math.sqrt(var), minOff, maxOff);
+    }
+
+    /** Print type39 floats every 0.5s for the last 40s of the stream. */
+    private static void type39LastSeconds(
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType, final String label) {
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        if (p39.isEmpty()) {
+            return;
+        }
+        final float last = (float) p39.stream().mapToDouble(p -> p.clockSecs).max().orElse(0);
+        final float start = Math.max(0f, last - 40f);
+        System.out.println("== type39 last 40s (" + label + ") ==");
+        final List<EventStreamReader.ParsedPacket> sorted = new ArrayList<>(p39);
+        sorted.sort(Comparator.comparingDouble(p -> p.clockSecs));
+        float next = start;
+        for (final EventStreamReader.ParsedPacket p : sorted) {
+            if (p.clockSecs < next || p.payload.length < 28) {
+                continue;
+            }
+            next = p.clockSecs + 0.5f;
+            final StringBuilder sb = new StringBuilder(
+                    String.format(Locale.ROOT, "  t=%7.3fs", p.clockSecs));
+            for (int f = 0; f < 7; f++) {
+                sb.append(String.format(Locale.ROOT, " f%d=%9.3f", f, f(p.payload, f * 4)));
+            }
+            System.out.println(sb);
+        }
+    }
+
+    /** Full timeline of entity 13185652: distinct (x,y,z,yaw) states and their time windows. */
+    private static void entity13185652Timeline(final EventStreamReader.EventStream es) {
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final List<EventStreamReader.PositionData> e = positions.stream()
+                .filter(p -> p.entityId == 13185652)
+                .sorted(Comparator.comparingDouble(p -> p.clockSecs))
+                .toList();
+        System.out.println("== entity 13185652 timeline ==");
+        int changes = 0;
+        float prevX = Float.NaN, prevY = Float.NaN, prevZ = Float.NaN, prevYaw = Float.NaN;
+        float windowStart = 0;
+        int printed = 0;
+        for (final EventStreamReader.PositionData p : e) {
+            final boolean changed = !(Math.abs(p.x - prevX) < 0.01f && Math.abs(p.y - prevY) < 0.01f
+                    && Math.abs(p.z - prevZ) < 0.01f && Math.abs(p.yaw - prevYaw) < 0.01f);
+            if (changed) {
+                if (printed < 60) {
+                    System.out.printf(Locale.ROOT, "  t=%7.1fs..%7.1fs pos=(%7.1f,%6.1f,%7.1f) yaw=%7.1fdeg%n",
+                            windowStart, p.clockSecs, prevX, prevY, prevZ, Math.toDegrees(prevYaw));
+                    printed++;
+                }
+                prevX = p.x;
+                prevY = p.y;
+                prevZ = p.z;
+                prevYaw = p.yaw;
+                windowStart = p.clockSecs;
+                changes++;
+            }
+        }
+        System.out.printf(Locale.ROOT, "  distinct states: %d of %d positions%n", changes + 1, e.size());
+    }
+
+    /**
+     * Test whether (f2,f3,f4) is the camera position: distance to recorder tank
+     * across the battle, and whether (f0,f1) is the aim point at distance f4+? no.
+     */
+    private static void cameraTupleTest(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final int recEid = 12558552;
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final List<EventStreamReader.PositionData> rec = positions.stream()
+                .filter(p -> p.entityId == recEid)
+                .sorted(Comparator.comparingDouble(p -> p.clockSecs))
+                .toList();
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        System.out.println("== camera tuple test: (f2,f3,f4) vs recorder tank ==");
+        double sum = 0, sumFlat = 0, sumF4 = 0;
+        int n = 0;
+        int close10 = 0, close30 = 0, close60 = 0;
+        double maxD = 0;
+        int printed = 0;
+        for (final EventStreamReader.ParsedPacket p : p39) {
+            if (p.payload.length < 28) {
+                continue;
+            }
+            EventStreamReader.PositionData near = null;
+            float bestDt = Float.MAX_VALUE;
+            for (final EventStreamReader.PositionData pos : rec) {
+                final float dt = Math.abs(pos.clockSecs - p.clockSecs);
+                if (dt < 0.5f && dt < bestDt) {
+                    bestDt = dt;
+                    near = pos;
+                }
+            }
+            if (near == null) {
+                continue;
+            }
+            final float cx = f(p.payload, 8);
+            final float cy = f(p.payload, 12);
+            final float cz = f(p.payload, 16);
+            final double d = Math.hypot(cx - near.x, Math.hypot(cy - near.y, cz - near.z));
+            final double dFlat = Math.hypot(cx - near.x, cz - near.z);
+            sum += d;
+            sumFlat += dFlat;
+            sumF4 += Math.abs(f(p.payload, 16) - near.z);
+            n++;
+            maxD = Math.max(maxD, d);
+            if (d < 10) {
+                close10++;
+            }
+            if (d < 30) {
+                close30++;
+            }
+            if (d < 60) {
+                close60++;
+            }
+            if (printed < 8) {
+                System.out.printf(Locale.ROOT,
+                        "  t=%7.1fs cam=(%7.1f,%6.1f,%7.1f) rec=(%7.1f,%6.1f,%7.1f) d=%6.1fm%n",
+                        p.clockSecs, cx, cy, cz, near.x, near.y, near.z, d);
+                printed++;
+            }
+        }
+        System.out.printf(Locale.ROOT,
+                "  n=%d meanD=%.1fm meanFlat=%.1fm maxD=%.1fm close10=%.1f%% close30=%.1f%% close60=%.1f%%%n",
+                n, n == 0 ? -1 : sum / n, n == 0 ? -1 : sumFlat / n, maxD,
+                n == 0 ? 0 : 100.0 * close10 / n, n == 0 ? 0 : 100.0 * close30 / n,
+                n == 0 ? 0 : 100.0 * close60 / n);
+    }
+
+    /** Print entity 13185652 type-10 trajectory alongside type39 (f0,f1,f2) at 2s steps. */
+    private static void eid13185652VsType39(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final List<EventStreamReader.PositionData> e = positions.stream()
+                .filter(p -> p.entityId == 13185652)
+                .sorted(Comparator.comparingDouble(p -> p.clockSecs))
+                .toList();
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        System.out.println("== eid 13185652 vs type39 (2s samples) ==");
+        float next = 0f;
+        int ei = 0;
+        for (final EventStreamReader.ParsedPacket p : p39) {
+            if (p.clockSecs < next || p.payload.length < 28) {
+                continue;
+            }
+            next = p.clockSecs + 2f;
+            EventStreamReader.PositionData near = null;
+            float bestDt = Float.MAX_VALUE;
+            for (final EventStreamReader.PositionData pos : e) {
+                final float dt = Math.abs(pos.clockSecs - p.clockSecs);
+                if (dt < 0.5f && dt < bestDt) {
+                    bestDt = dt;
+                    near = pos;
+                }
+            }
+            if (near == null) {
+                continue;
+            }
+            final float d = (float) Math.hypot(f(p.payload, 0) - near.x,
+                    Math.hypot(f(p.payload, 4) - near.y, f(p.payload, 8) - near.z));
+            System.out.printf(Locale.ROOT,
+                    "  t=%7.1fs e=(%7.1f,%6.1f,%7.1f) yaw=%6.1f t39=(%7.1f,%6.1f,%7.1f) d3D=%6.1fm%n",
+                    p.clockSecs, near.x, near.y, near.z, Math.toDegrees(near.yaw),
+                    f(p.payload, 0), f(p.payload, 4), f(p.payload, 8), d);
+        }
+        System.out.println("  eid 13185652 positions: " + e.size()
+                + " clock[" + (e.isEmpty() ? "-" : String.format(Locale.ROOT, "%.1f..%.1f",
+                e.get(0).clockSecs, e.get(e.size() - 1).clockSecs)) + "]");
+        for (int i = 0; i < Math.min(6, e.size()); i++) {
+            final EventStreamReader.PositionData q = e.get(i);
+            System.out.printf(Locale.ROOT, "  first pos t=%7.1fs (%7.1f,%6.1f,%7.1f)%n",
+                    q.clockSecs, q.x, q.y, q.z);
+        }
+    }
+
+    /** Full least-squares affine fit of type39 (f0,f1,f2) -> each entity (x,y,z). */
+    private static void type39FullAffine(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final Map<Integer, List<EventStreamReader.PositionData>> byEntity = new TreeMap<>();
+        for (final EventStreamReader.PositionData p : positions) {
+            byEntity.computeIfAbsent(p.entityId, k -> new ArrayList<>()).add(p);
+        }
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        System.out.println("== type39 full affine fit -> each entity (std of residual) ==");
+        final List<Map.Entry<String, Double>> best = new ArrayList<>();
+        for (final Map.Entry<Integer, List<EventStreamReader.PositionData>> e : byEntity.entrySet()) {
+            final List<double[]> pairs = new ArrayList<>();
+            for (final EventStreamReader.ParsedPacket p : p39) {
+                if (p.payload.length < 28) {
+                    continue;
+                }
+                EventStreamReader.PositionData near = null;
+                float bestDt = Float.MAX_VALUE;
+                for (final EventStreamReader.PositionData pos : e.getValue()) {
+                    final float dt = Math.abs(pos.clockSecs - p.clockSecs);
+                    if (dt < 0.5f && dt < bestDt) {
+                        bestDt = dt;
+                        near = pos;
+                    }
+                }
+                if (near != null) {
+                    pairs.add(new double[]{f(p.payload, 0), f(p.payload, 4), f(p.payload, 8),
+                            near.x, near.y, near.z});
+                }
+            }
+            if (pairs.size() < 50) {
+                continue;
+            }
+            // fit T: target = A * source + b  (least squares via normal equations)
+            final double[][] ata = new double[4][4];
+            final double[][] atb = new double[4][3];
+            for (final double[] d : pairs) {
+                final double[] row = {d[0], d[1], d[2], 1.0};
+                for (int i = 0; i < 4; i++) {
+                    for (int j = 0; j < 4; j++) {
+                        ata[i][j] += row[i] * row[j];
+                    }
+                    for (int k = 0; k < 3; k++) {
+                        atb[i][k] += row[i] * d[3 + k];
+                    }
+                }
+            }
+            final double[][] inv = invert4(ata);
+            if (inv == null) {
+                continue;
+            }
+            final double[][] m = new double[4][3];
+            for (int i = 0; i < 4; i++) {
+                for (int k = 0; k < 3; k++) {
+                    for (int j = 0; j < 4; j++) {
+                        m[i][k] += inv[i][j] * atb[j][k];
+                    }
+                }
+            }
+            double ss = 0;
+            for (final double[] d : pairs) {
+                final double px = m[0][0] * d[0] + m[1][0] * d[1] + m[2][0] * d[2] + m[3][0];
+                final double py = m[0][1] * d[0] + m[1][1] * d[1] + m[2][1] * d[2] + m[3][1];
+                final double pz = m[0][2] * d[0] + m[1][2] * d[1] + m[2][2] * d[2] + m[3][2];
+                ss += Math.pow(px - d[3], 2) + Math.pow(py - d[4], 2) + Math.pow(pz - d[5], 2);
+            }
+            final double std = Math.sqrt(ss / pairs.size());
+            best.add(Map.entry("eid=" + e.getKey() + " n=" + pairs.size(), std));
+        }
+        best.sort(Map.Entry.comparingByValue());
+        best.stream().limit(12).forEach(x -> System.out.println("  " + x.getKey() + " std="
+                + String.format(Locale.ROOT, "%.2f", x.getValue())));
+    }
+
+    private static double[][] invert4(final double[][] a) {
+        final double[][] m = new double[4][8];
+        for (int i = 0; i < 4; i++) {
+            System.arraycopy(a[i], 0, m[i], 0, 4);
+            m[i][4 + i] = 1;
+        }
+        for (int col = 0; col < 4; col++) {
+            int pivot = col;
+            for (int r = col + 1; r < 4; r++) {
+                if (Math.abs(m[r][col]) > Math.abs(m[pivot][col])) {
+                    pivot = r;
+                }
+            }
+            if (Math.abs(m[pivot][col]) < 1e-12) {
+                return null;
+            }
+            final double[] tmp = m[col];
+            m[col] = m[pivot];
+            m[pivot] = tmp;
+            final double d = m[col][col];
+            for (int j = 0; j < 8; j++) {
+                m[col][j] /= d;
+            }
+            for (int r = 0; r < 4; r++) {
+                if (r == col) {
+                    continue;
+                }
+                final double f = m[r][col];
+                for (int j = 0; j < 8; j++) {
+                    m[r][j] -= f * m[col][j];
+                }
+            }
+        }
+        final double[][] inv = new double[4][4];
+        for (int i = 0; i < 4; i++) {
+            System.arraycopy(m[i], 4, inv[i], 0, 4);
+        }
+        return inv;
+    }
+
+    /** Print team-1 (enemy) positions at 115..147s alongside type39 (f0,f1,f2). */
+    private static void enemiesVsType39Late(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final Map<Integer, Integer> eidTeam = new HashMap<>();
+        for (final EventStreamReader.ParsedPacket pkt : es.packets) {
+            if (pkt.type != 8 || pkt.payload.length < 8) {
+                continue;
+            }
+            final int subType = readU32LE(pkt.payload, 4);
+            if (subType != 48) {
+                continue;
+            }
+            final byte[] body = new byte[pkt.payload.length - 8];
+            System.arraycopy(pkt.payload, 8, body, 0, body.length);
+            final byte[] proto = unwrap(body);
+            if (proto == null) {
+                continue;
+            }
+            try {
+                final Map<Integer, List<Object>> root = Protobuf.decode(proto);
+                final Object wrapperRaw = Protobuf.first(root, 1);
+                if (!(wrapperRaw instanceof byte[])) {
+                    continue;
+                }
+                final Map<Integer, List<Object>> wrapper = Protobuf.decode((byte[]) wrapperRaw);
+                final List<Object> players = wrapper.get(1);
+                if (players == null) {
+                    continue;
+                }
+                for (final Object pRaw : players) {
+                    if (!(pRaw instanceof byte[])) {
+                        continue;
+                    }
+                    final Map<Integer, List<Object>> p = Protobuf.decode((byte[]) pRaw);
+                    final int eid = (int) Protobuf.firstLong(p, 1, 0);
+                    final int team = (int) Protobuf.firstLong(p, 4, -1);
+                    if (eid != 0) {
+                        eidTeam.put(eid, team);
+                    }
+                }
+            } catch (RuntimeException ignored) {
+                // skip malformed
+            }
+        }
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final Map<Integer, List<EventStreamReader.PositionData>> byEntity = new TreeMap<>();
+        for (final EventStreamReader.PositionData p : positions) {
+            byEntity.computeIfAbsent(p.entityId, k -> new ArrayList<>()).add(p);
+        }
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        System.out.println("== type39 vs ENEMIES (team=1) t=115..147s ==");
+        float next = 115f;
+        for (final EventStreamReader.ParsedPacket p : p39) {
+            if (p.clockSecs < next || p.payload.length < 28) {
+                continue;
+            }
+            next = p.clockSecs + 1f;
+            final StringBuilder sb = new StringBuilder(
+                    String.format(Locale.ROOT, "  t=%7.1fs t39=(%7.1f,%6.1f,%7.1f) enemies:", p.clockSecs,
+                            f(p.payload, 0), f(p.payload, 4), f(p.payload, 8)));
+            for (final Map.Entry<Integer, List<EventStreamReader.PositionData>> e : byEntity.entrySet()) {
+                if (eidTeam.getOrDefault(e.getKey(), -1) != 1) {
+                    continue;
+                }
+                EventStreamReader.PositionData near = null;
+                float bestDt = Float.MAX_VALUE;
+                for (final EventStreamReader.PositionData pos : e.getValue()) {
+                    final float dt = Math.abs(pos.clockSecs - p.clockSecs);
+                    if (dt < 0.4f && dt < bestDt) {
+                        bestDt = dt;
+                        near = pos;
+                    }
+                }
+                if (near != null) {
+                    sb.append(String.format(Locale.ROOT, " e%d=(%7.1f,%6.1f,%7.1f)", e.getKey(), near.x, near.y, near.z));
+                }
+            }
+            System.out.println(sb);
+        }
+    }
+
+    /** Print team-2 (ally) positions at 115..147s alongside type39 (f0,f1,f2). */
+    private static void alliesVsType39Late(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final Map<Integer, Integer> eidTeam = new HashMap<>();
+        for (final EventStreamReader.ParsedPacket pkt : es.packets) {
+            if (pkt.type != 8 || pkt.payload.length < 8) {
+                continue;
+            }
+            final int subType = readU32LE(pkt.payload, 4);
+            if (subType != 48) {
+                continue;
+            }
+            final byte[] body = new byte[pkt.payload.length - 8];
+            System.arraycopy(pkt.payload, 8, body, 0, body.length);
+            final byte[] proto = unwrap(body);
+            if (proto == null) {
+                continue;
+            }
+            try {
+                final Map<Integer, List<Object>> root = Protobuf.decode(proto);
+                final Object wrapperRaw = Protobuf.first(root, 1);
+                if (!(wrapperRaw instanceof byte[])) {
+                    continue;
+                }
+                final Map<Integer, List<Object>> wrapper = Protobuf.decode((byte[]) wrapperRaw);
+                final List<Object> players = wrapper.get(1);
+                if (players == null) {
+                    continue;
+                }
+                for (final Object pRaw : players) {
+                    if (!(pRaw instanceof byte[])) {
+                        continue;
+                    }
+                    final Map<Integer, List<Object>> p = Protobuf.decode((byte[]) pRaw);
+                    final int eid = (int) Protobuf.firstLong(p, 1, 0);
+                    final int team = (int) Protobuf.firstLong(p, 4, -1);
+                    if (eid != 0) {
+                        eidTeam.put(eid, team);
+                    }
+                }
+            } catch (RuntimeException ignored) {
+                // skip malformed
+            }
+        }
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final Map<Integer, List<EventStreamReader.PositionData>> byEntity = new TreeMap<>();
+        for (final EventStreamReader.PositionData p : positions) {
+            byEntity.computeIfAbsent(p.entityId, k -> new ArrayList<>()).add(p);
+        }
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        System.out.println("== type39 vs ALLIES (team=2) t=115..147s ==");
+        float next = 115f;
+        for (final EventStreamReader.ParsedPacket p : p39) {
+            if (p.clockSecs < next || p.payload.length < 28) {
+                continue;
+            }
+            next = p.clockSecs + 1f;
+            final StringBuilder sb = new StringBuilder(
+                    String.format(Locale.ROOT, "  t=%7.1fs t39=(%7.1f,%6.1f,%7.1f) allies:", p.clockSecs,
+                            f(p.payload, 0), f(p.payload, 4), f(p.payload, 8)));
+            for (final Map.Entry<Integer, List<EventStreamReader.PositionData>> e : byEntity.entrySet()) {
+                if (eidTeam.getOrDefault(e.getKey(), -1) != 2) {
+                    continue;
+                }
+                EventStreamReader.PositionData near = null;
+                float bestDt = Float.MAX_VALUE;
+                for (final EventStreamReader.PositionData pos : e.getValue()) {
+                    final float dt = Math.abs(pos.clockSecs - p.clockSecs);
+                    if (dt < 0.4f && dt < bestDt) {
+                        bestDt = dt;
+                        near = pos;
+                    }
+                }
+                if (near != null) {
+                    sb.append(String.format(Locale.ROOT, " e%d=(%7.1f,%6.1f,%7.1f)", e.getKey(), near.x, near.y, near.z));
+                }
+            }
+            System.out.println(sb);
+        }
+    }
+
+    /** Print trajectories of team=-1 mystery entities alongside type39 (f0,f1,f2). */
+    private static void mysteryEntitiesVsType39(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final Map<Integer, List<EventStreamReader.PositionData>> byEntity = new TreeMap<>();
+        for (final EventStreamReader.PositionData p : positions) {
+            byEntity.computeIfAbsent(p.entityId, k -> new ArrayList<>()).add(p);
+        }
+        final int[] mystery = {12558633, 12558634, 12558649};
+        System.out.println("== mystery entities (team=-1) trajectories vs type39 ==");
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        float next39 = 6f;
+        for (final EventStreamReader.ParsedPacket p : p39) {
+            if (p.clockSecs < next39 || p.payload.length < 28) {
+                continue;
+            }
+            next39 = p.clockSecs + 3f;
+            final StringBuilder sb = new StringBuilder(
+                    String.format(Locale.ROOT, "  t=%7.1fs", p.clockSecs));
+            for (final int eid : mystery) {
+                EventStreamReader.PositionData near = null;
+                float bestDt = Float.MAX_VALUE;
+                for (final EventStreamReader.PositionData pos : byEntity.getOrDefault(eid, List.of())) {
+                    final float dt = Math.abs(pos.clockSecs - p.clockSecs);
+                    if (dt < 0.3f && dt < bestDt) {
+                        bestDt = dt;
+                        near = pos;
+                    }
+                }
+                if (near != null) {
+                    sb.append(String.format(Locale.ROOT, " e%d=(%7.1f,%6.1f,%7.1f)", eid, near.x, near.y, near.z));
+                }
+            }
+            sb.append(String.format(Locale.ROOT, " t39=(%7.1f,%6.1f,%7.1f)", f(p.payload, 0), f(p.payload, 4), f(p.payload, 8)));
+            System.out.println(sb);
+        }
+    }
+
+    /**
+     * type39 = target/spectated entity position? For each sample, find the team-1
+     * (enemy) vehicle whose (x,y,z) is nearest to (f0,f1,f2); report min-distance stats.
+     */
+    private static void type39TargetMatch(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final Map<Integer, Integer> eidTeam = new HashMap<>();
+        for (final EventStreamReader.ParsedPacket pkt : es.packets) {
+            if (pkt.type != 8 || pkt.payload.length < 8) {
+                continue;
+            }
+            final int subType = readU32LE(pkt.payload, 4);
+            if (subType != 48) {
+                continue;
+            }
+            final byte[] body = new byte[pkt.payload.length - 8];
+            System.arraycopy(pkt.payload, 8, body, 0, body.length);
+            final byte[] proto = unwrap(body);
+            if (proto == null) {
+                continue;
+            }
+            try {
+                final Map<Integer, List<Object>> root = Protobuf.decode(proto);
+                final Object wrapperRaw = Protobuf.first(root, 1);
+                if (!(wrapperRaw instanceof byte[])) {
+                    continue;
+                }
+                final Map<Integer, List<Object>> wrapper = Protobuf.decode((byte[]) wrapperRaw);
+                final List<Object> players = wrapper.get(1);
+                if (players == null) {
+                    continue;
+                }
+                for (final Object pRaw : players) {
+                    if (!(pRaw instanceof byte[])) {
+                        continue;
+                    }
+                    final Map<Integer, List<Object>> p = Protobuf.decode((byte[]) pRaw);
+                    final int eid = (int) Protobuf.firstLong(p, 1, 0);
+                    final int team = (int) Protobuf.firstLong(p, 4, -1);
+                    if (eid != 0) {
+                        eidTeam.put(eid, team);
+                    }
+                }
+            } catch (RuntimeException ignored) {
+                // skip malformed
+            }
+        }
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final Map<Integer, List<EventStreamReader.PositionData>> byEntity = new TreeMap<>();
+        for (final EventStreamReader.PositionData p : positions) {
+            byEntity.computeIfAbsent(p.entityId, k -> new ArrayList<>()).add(p);
+        }
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        System.out.println("== type39 = enemy target position? (nearest team-1 entity per sample) ==");
+        double sumBest = 0, sumBestFlat = 0;
+        int n = 0;
+        int within5 = 0, within15 = 0;
+        final Map<Integer, Integer> bestByEid = new HashMap<>();
+        for (final EventStreamReader.ParsedPacket p : p39) {
+            if (p.payload.length < 28) {
+                continue;
+            }
+            final float tx = f(p.payload, 0);
+            final float ty = f(p.payload, 4);
+            final float tz = f(p.payload, 8);
+            double best = Double.MAX_VALUE;
+            double bestFlat = Double.MAX_VALUE;
+            int bestEid = -1;
+            for (final Map.Entry<Integer, List<EventStreamReader.PositionData>> e : byEntity.entrySet()) {
+                if (eidTeam.getOrDefault(e.getKey(), -1) != 1) {
+                    continue;
+                }
+                EventStreamReader.PositionData near = null;
+                float bestDt = Float.MAX_VALUE;
+                for (final EventStreamReader.PositionData pos : e.getValue()) {
+                    final float dt = Math.abs(pos.clockSecs - p.clockSecs);
+                    if (dt < 0.5f && dt < bestDt) {
+                        bestDt = dt;
+                        near = pos;
+                    }
+                }
+                if (near == null) {
+                    continue;
+                }
+                final double d = Math.hypot(tx - near.x, Math.hypot(ty - near.y, tz - near.z));
+                final double dFlat = Math.hypot(tx - near.x, tz - near.z);
+                if (d < best) {
+                    best = d;
+                    bestFlat = dFlat;
+                    bestEid = e.getKey();
+                }
+            }
+            if (bestEid < 0) {
+                continue;
+            }
+            sumBest += best;
+            sumBestFlat += bestFlat;
+            n++;
+            if (best < 5) {
+                within5++;
+            }
+            if (best < 15) {
+                within15++;
+            }
+            bestByEid.merge(bestEid, 1, Integer::sum);
+        }
+        System.out.printf(Locale.ROOT,
+                "  n=%d meanBest=%.2fm meanBestFlat=%.2fm within5=%.1f%% within15=%.1f%%%n",
+                n, n == 0 ? -1 : sumBest / n, n == 0 ? -1 : sumBestFlat / n,
+                n == 0 ? 0 : 100.0 * within5 / n, n == 0 ? 0 : 100.0 * within15 / n);
+        bestByEid.entrySet().stream()
+                .sorted(Map.Entry.<Integer, Integer>comparingByValue().reversed())
+                .limit(8)
+                .forEach(e -> System.out.println("  bestEid=" + e.getKey() + " samples=" + e.getValue()));
+    }
+
+    /** type39: raw hex + floats at 0.25s resolution for t in [100..147]. */
+    private static void type39LateRaw(
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        System.out.println("== type39 late window t=100..147s (0.25s samples) ==");
+        final List<EventStreamReader.ParsedPacket> sorted = new ArrayList<>(p39);
+        sorted.sort(Comparator.comparingDouble(p -> p.clockSecs));
+        float lastPrinted = -1f;
+        for (final EventStreamReader.ParsedPacket p : sorted) {
+            if (p.clockSecs < 100f || p.payload.length < 28) {
+                continue;
+            }
+            if (p.clockSecs - lastPrinted < 0.25f) {
+                continue;
+            }
+            lastPrinted = p.clockSecs;
+            final StringBuilder sb = new StringBuilder(
+                    String.format(Locale.ROOT, "  t=%7.3fs", p.clockSecs));
+            for (int f = 0; f < 7; f++) {
+                sb.append(String.format(Locale.ROOT, " f%d=%9.3f", f, f(p.payload, f * 4)));
+            }
+            sb.append(" hex=").append(hex(p.payload, 28));
+            System.out.println(sb);
+        }
+    }
+
+    /**
+     * type31 = distance from recorder to a specific (target) entity?
+     * For each type31 sample, compute distance recorder->every other entity and
+     * check whether one entity's distance consistently equals the type31 value.
+     */
+    private static void type31DistanceMatch(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final int recEid = 12558552;
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final Map<Integer, List<EventStreamReader.PositionData>> byEntity = new TreeMap<>();
+        for (final EventStreamReader.PositionData p : positions) {
+            byEntity.computeIfAbsent(p.entityId, k -> new ArrayList<>()).add(p);
+        }
+        final List<EventStreamReader.ParsedPacket> t31 = byType.getOrDefault(31, List.of());
+        System.out.println("== type31 = distance to a target entity? (rec eid=" + recEid + ") ==");
+        // entity -> count of samples where |v - dist(rec, entity)| < 2m and entity has pos near t
+        final Map<Integer, Integer> matchCount = new HashMap<>();
+        final Map<Integer, List<String>> samples = new HashMap<>();
+        int checked = 0;
+        for (final EventStreamReader.ParsedPacket p : t31) {
+            if (p.payload.length < 4) {
+                continue;
+            }
+            final float v = f(p.payload, 0);
+            EventStreamReader.PositionData recPos = null;
+            for (final EventStreamReader.PositionData pos : byEntity.getOrDefault(recEid, List.of())) {
+                if (pos.clockSecs <= p.clockSecs) {
+                    recPos = pos;
+                } else {
+                    break;
+                }
+            }
+            if (recPos == null || p.clockSecs - recPos.clockSecs > 1f) {
+                continue;
+            }
+            checked++;
+            for (final Map.Entry<Integer, List<EventStreamReader.PositionData>> e : byEntity.entrySet()) {
+                if (e.getKey() == recEid) {
+                    continue;
+                }
+                EventStreamReader.PositionData near = null;
+                float bestDt = Float.MAX_VALUE;
+                for (final EventStreamReader.PositionData pos : e.getValue()) {
+                    final float dt = Math.abs(pos.clockSecs - p.clockSecs);
+                    if (dt < 0.5f && dt < bestDt) {
+                        bestDt = dt;
+                        near = pos;
+                    }
+                }
+                if (near == null) {
+                    continue;
+                }
+                final float d = (float) Math.hypot(recPos.x - near.x, recPos.z - near.z);
+                if (Math.abs(d - v) < 2f) {
+                    matchCount.merge(e.getKey(), 1, Integer::sum);
+                    samples.computeIfAbsent(e.getKey(), k -> new ArrayList<>())
+                            .add(String.format(Locale.ROOT, "t=%.1fs v=%.1f d=%.1f", p.clockSecs, v, d));
+                }
+            }
+        }
+        final int totalChecked = checked;
+        matchCount.entrySet().stream()
+                .sorted(Map.Entry.<Integer, Integer>comparingByValue().reversed())
+                .limit(8)
+                .forEach(e -> {
+                    System.out.println("  eid=" + e.getKey() + " matches=" + e.getValue() + "/" + totalChecked
+                            + " firstSamples=" + samples.get(e.getKey()).stream().limit(3).toList());
+                });
+        System.out.println("  checked=" + checked);
+    }
+
+    /** type39 vs recorder position at endgame (110..147s) — does camera track vehicle? */
+    private static void type39Endgame(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final int recEid = 12558552;
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final List<EventStreamReader.PositionData> rec = positions.stream()
+                .filter(p -> p.entityId == recEid)
+                .sorted(Comparator.comparingDouble(p -> p.clockSecs))
+                .toList();
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        System.out.println("== type39 vs recorder pos, endgame t=110..147s ==");
+        EventStreamReader.PositionData lastRec = null;
+        float lastPrinted = -10f;
+        for (final EventStreamReader.ParsedPacket p : p39) {
+            if (p.clockSecs < 110f || p.clockSecs > 147.5f || p.payload.length < 28) {
+                continue;
+            }
+            for (final EventStreamReader.PositionData pos : rec) {
+                if (pos.clockSecs <= p.clockSecs) {
+                    lastRec = pos;
+                } else {
+                    break;
+                }
+            }
+            if (lastRec == null || p.clockSecs - lastRec.clockSecs > 2f) {
+                continue;
+            }
+            if (p.clockSecs - lastPrinted < 2f) {
+                continue;
+            }
+            lastPrinted = p.clockSecs;
+            final float dFlat = (float) Math.hypot(f(p.payload, 0) - lastRec.x, f(p.payload, 8) - lastRec.z);
+            System.out.printf(Locale.ROOT,
+                    "  t=%7.1fs t39=(%8.1f,%6.1f,%8.1f) f3=%6.1f f4=%7.1f f5=%6.3f f6=%6.3f | rec=(%8.1f,%6.1f,%8.1f) dFlat=%6.1fm%n",
+                    p.clockSecs, f(p.payload, 0), f(p.payload, 4), f(p.payload, 8),
+                    f(p.payload, 12), f(p.payload, 16), f(p.payload, 20), f(p.payload, 24),
+                    lastRec.x, lastRec.y, lastRec.z, dFlat);
+        }
+    }
+
+    /** type39: payload length distribution + trailing bytes beyond 7 floats. */
+    private static void type39Lengths(
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        final Map<Integer, Long> lens = new TreeMap<>();
+        for (final EventStreamReader.ParsedPacket p : p39) {
+            lens.merge(p.payload.length, 1L, Long::sum);
+        }
+        System.out.println("== type39 payload lengths ==");
+        lens.forEach((k, v) -> System.out.println("  len=" + k + " count=" + v));
+        final EventStreamReader.ParsedPacket sample = p39.stream()
+                .filter(p -> p.payload.length > 28)
+                .findFirst().orElse(null);
+        if (sample != null) {
+            System.out.println("  first >28B sample t=" + sample.clockSecs + " len=" + sample.payload.length
+                    + " hex=" + hex(sample.payload, 96));
+        }
+    }
+
+    /** type39: find rows where f5/f6 change materially; print 3 rows before/after for context. */
+    private static void type39AngleChangeContext(
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        final List<EventStreamReader.ParsedPacket> sorted = new ArrayList<>(p39);
+        sorted.sort(Comparator.comparingDouble(p -> p.clockSecs));
+        System.out.println("== type39 rows where f5 or f6 changes by >0.02 rad (context) ==");
+        float prev5 = Float.NaN, prev6 = Float.NaN;
+        int events = 0;
+        int printed = 0;
+        for (int i = 0; i < sorted.size(); i++) {
+            final EventStreamReader.ParsedPacket p = sorted.get(i);
+            if (p.payload.length < 28) {
+                continue;
+            }
+            final float v5 = f(p.payload, 20);
+            final float v6 = f(p.payload, 24);
+            if (!Float.isNaN(prev5) && (Math.abs(v5 - prev5) > 0.02f || Math.abs(v6 - prev6) > 0.02f)) {
+                events++;
+                if (printed < 24) {
+                    for (int j = Math.max(0, i - 3); j <= Math.min(sorted.size() - 1, i + 3); j++) {
+                        final EventStreamReader.ParsedPacket q = sorted.get(j);
+                        if (q.payload.length < 28) {
+                            continue;
+                        }
+                        final StringBuilder sb = new StringBuilder(
+                                String.format(Locale.ROOT, "    t=%7.3fs", q.clockSecs));
+                        for (int f = 0; f < 7 && (f + 1) * 4 <= q.payload.length; f++) {
+                            sb.append(String.format(Locale.ROOT, " f%d=%9.3f", f, f(q.payload, f * 4)));
+                        }
+                        sb.append(j == i ? "  <-- change" : "");
+                        System.out.println(sb);
+                    }
+                    printed++;
+                }
+            }
+            prev5 = v5;
+            prev6 = v6;
+        }
+        System.out.println("  total f5/f6 change events: " + events);
+    }
+
+    /**
+     * type39 = recorder camera/aim state? Correlate f5/f6 (radians) with recorder
+     * vehicle yaw/pitch, and f0/f1/f2 with recorder position + typical third-person
+     * camera offsets (height above turret, offset behind along -yaw).
+     */
+    private static void type39CameraVsRecorder(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final int recEid = 12558552;
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final List<EventStreamReader.PositionData> rec = positions.stream()
+                .filter(p -> p.entityId == recEid)
+                .sorted(Comparator.comparingDouble(p -> p.clockSecs))
+                .toList();
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        System.out.println("== type39 camera-vs-recorder hypothesis (eid=" + recEid + ") ==");
+        double sumYawErr = 0, sumPitchErr = 0;
+        int yawN = 0, pitchN = 0;
+        double sumPosErr = 0, sumPosErrH = 0;
+        int posN = 0, posNH = 0;
+        int printed = 0;
+        for (final EventStreamReader.ParsedPacket p : p39) {
+            if (p.payload.length < 28) {
+                continue;
+            }
+            EventStreamReader.PositionData before = null, after = null;
+            for (final EventStreamReader.PositionData pos : rec) {
+                if (pos.clockSecs <= p.clockSecs) {
+                    before = pos;
+                } else {
+                    after = pos;
+                    break;
+                }
+            }
+            if (before == null || after == null || after.clockSecs - before.clockSecs > 2f) {
+                continue;
+            }
+            final float yawDeg = (float) Math.toDegrees(before.yaw);
+            final float pitchDeg = (float) Math.toDegrees(before.pitch);
+            final float yawErr = (float) Math.abs(normalizeAngle(Math.toDegrees(f(p.payload, 20)) - yawDeg));
+            final float pitchErr = (float) Math.abs(normalizeAngle(Math.toDegrees(f(p.payload, 24)) - pitchDeg));
+            sumYawErr += yawErr;
+            yawN++;
+            sumPitchErr += pitchErr;
+            pitchN++;
+            // camera above vehicle (y + 5/10/15) and horizontal offset behind (-yaw dir)
+            final float camX = f(p.payload, 0);
+            final float camY = f(p.payload, 4);
+            final float camZ = f(p.payload, 8);
+            final double dFlat = Math.hypot(camX - before.x, camZ - before.z);
+            final double dAll = Math.hypot(camX - before.x, Math.hypot(camY - before.y, camZ - before.z));
+            sumPosErr += dAll;
+            posN++;
+            final double dFlatH = Math.hypot(camX - before.x, Math.hypot(camY - (before.y + 10f), camZ - before.z));
+            sumPosErrH += dFlatH;
+            posNH++;
+            if (printed < 6) {
+                System.out.printf(Locale.ROOT,
+                        "  t=%.1fs cam=(%.1f,%.1f,%.1f) yaw=%.1fdeg pitch=%.1fdeg | rec pos=(%.1f,%.1f,%.1f) yaw=%.1fdeg pitch=%.1fdeg dFlat=%.1fm dYaw=%.1f dPitch=%.1f%n",
+                        p.clockSecs, camX, camY, camZ, Math.toDegrees(f(p.payload, 20)),
+                        Math.toDegrees(f(p.payload, 24)), before.x, before.y, before.z,
+                        yawDeg, pitchDeg, dFlat, yawErr, pitchErr);
+                printed++;
+            }
+        }
+        System.out.printf(Locale.ROOT,
+                "  yaw: n=%d mean|f5-yaw|=%.1fdeg  pitch: n=%d mean|f6-pitch|=%.1fdeg%n",
+                yawN, yawN == 0 ? -1 : sumYawErr / yawN, pitchN, pitchN == 0 ? -1 : sumPitchErr / pitchN);
+        System.out.printf(Locale.ROOT,
+                "  cam pos: n=%d mean|f0..f2-recPos|=%.1fm  mean|f0..f2-(recPos+y10)|=%.1fm%n",
+                posN, posN == 0 ? -1 : sumPosErr / posN, posNH == 0 ? -1 : sumPosErrH / posNH);
+    }
+
+    /** type39: print only rows whose payload differs from the previous (evolution of values). */
+    private static void type39ChangeEvents(
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        final List<EventStreamReader.ParsedPacket> sorted = new ArrayList<>(p39);
+        sorted.sort(Comparator.comparingDouble(p -> p.clockSecs));
+        System.out.println("== type39 change events (first 160 payload changes) ==");
+        byte[] prev = null;
+        int changes = 0;
+        for (final EventStreamReader.ParsedPacket p : sorted) {
+            if (prev == null || !java.util.Arrays.equals(prev, p.payload)) {
+                final StringBuilder sb = new StringBuilder(
+                        String.format(Locale.ROOT, "  t=%7.3fs", p.clockSecs));
+                for (int f = 0; f < 7 && (f + 1) * 4 <= p.payload.length; f++) {
+                    sb.append(String.format(Locale.ROOT, " f%d=%9.3f", f, f(p.payload, f * 4)));
+                }
+                System.out.println(sb);
+                changes++;
+                if (changes >= 160) {
+                    break;
+                }
+            }
+            prev = p.payload;
+        }
+        System.out.println("  (total changes: " + changes + "+ shown)");
+    }
+
+    /** type39: histograms of f3/f4 (discrete modes?) and f5/f6 distributions. */
+    private static void type39Histograms(
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        System.out.println("== type39 f3/f4 histograms (rounded) ==");
+        final Map<Integer, Long> h3 = new TreeMap<>();
+        final Map<Integer, Long> h4 = new TreeMap<>();
+        for (final EventStreamReader.ParsedPacket p : p39) {
+            if (p.payload.length < 28) {
+                continue;
+            }
+            h3.merge(Math.round(f(p.payload, 12)), 1L, Long::sum);
+            h4.merge(Math.round(f(p.payload, 16)), 1L, Long::sum);
+        }
+        System.out.print("  f3: ");
+        h3.forEach((k, v) -> System.out.print(k + "=" + v + " "));
+        System.out.println();
+        System.out.print("  f4: ");
+        h4.forEach((k, v) -> System.out.print(k + "=" + v + " "));
+        System.out.println();
+        final double[] f5 = new double[p39.size()];
+        final double[] f6 = new double[p39.size()];
+        for (int i = 0; i < p39.size(); i++) {
+            final EventStreamReader.ParsedPacket p = p39.get(i);
+            if (p.payload.length >= 28) {
+                f5[i] = f(p.payload, 20);
+                f6[i] = f(p.payload, 24);
+            }
+        }
+        System.out.printf(Locale.ROOT, "  f5: min=%.3f max=%.3f mean=%.3f | f6: min=%.3f max=%.3f mean=%.3f%n",
+                java.util.Arrays.stream(f5).min().orElse(0), java.util.Arrays.stream(f5).max().orElse(0),
+                java.util.Arrays.stream(f5).average().orElse(0),
+                java.util.Arrays.stream(f6).min().orElse(0), java.util.Arrays.stream(f6).max().orElse(0),
+                java.util.Arrays.stream(f6).average().orElse(0));
     }
 
     /** type39 = recorder aiming info? f0/f1/f2 aim point, f3/f4/f5 gun pos (~vehicle pos). */
@@ -179,7 +1362,8 @@ class PacketReverseProbeTest {
         double bestMean = Double.MAX_VALUE;
         Long bestAcc = null;
         for (final Long acc : maxHp.keySet()) {
-            final List<EventStreamReader.DirectDamageEvent> hits = dmg.getOrDefault(acc, List.of());
+            final List<EventStreamReader.DirectDamageEvent> hits =
+                    new ArrayList<>(dmg.getOrDefault(acc, List.of()));
             hits.sort(Comparator.comparingDouble(EventStreamReader.DirectDamageEvent::clockSecs));
             final int hp0 = maxHp.get(acc);
             double sumErr = 0;
