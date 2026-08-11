@@ -129,6 +129,24 @@ class PacketReverseProbeTest {
         recorderMotionAtShots(es, byType);
         type26VsRecorderHits(es, byType);
         type23AttackerCheck(es, byType);
+        statsByAccount(es);
+    }
+
+    /** Damage dealt/killed by each account from direct damage events + EntityLeave correlation. */
+    private static void statsByAccount(final EventStreamReader.EventStream es) {
+        final List<EventStreamReader.DirectDamageEvent> dmg = EventStreamReader.extractDirectDamageEvents(
+                es.packets, EventStreamReader.extractEntityToAccountMap(es.packets));
+        final Map<Long, Long> dealt = new TreeMap<>();
+        for (final EventStreamReader.DirectDamageEvent d : dmg) {
+            dealt.merge(d.attackerAccountId(), (long) d.damage(), Long::sum);
+        }
+        System.out.println("== damage dealt by account ==");
+        dealt.forEach((acc, sum) -> System.out.printf(Locale.ROOT, "  acc=%d dmg=%d%n", acc, sum));
+        final Map<Long, Integer> kills = new TreeMap<>();
+        for (final EventStreamReader.EntityLeaveEvent leave : EventStreamReader.extractEntityLeaves(es.packets)) {
+            kills.merge((long) leave.entityId, 1, Integer::sum);
+        }
+        System.out.println("  EntityLeave count=" + EventStreamReader.extractEntityLeaves(es.packets).size());
     }
 
     /**
