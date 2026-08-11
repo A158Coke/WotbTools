@@ -16,24 +16,24 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * ?? AI Review / SSE worker executor?{@code ReconstructionController.analyze()}
- * ? servlet request ????????????? AI ????????????
- * ????? worker ??????request ?????? {@code SseEmitter}?
+ * 有界 AI Review / SSE worker executor：{@code ReconstructionController.analyze()}
+ * 在 servlet request 线程只做校验与提交，真正的 AI 复盘（含上游流式调用）在
+ * 此执行器的 worker 线程上运行，request 线程立即返回 {@code SseEmitter}。
  *
- * <p><b>?????V1?2C4G VPS?</b>??? 4 concurrent workers + 4 queued?
- * ?? 8 active/pending?? 9 ????????{@code AI_REVIEW_BUSY} / 503??
- * ??????? {@code AI_REVIEW_WORKER_MAX_CONCURRENT} /
- * {@code AI_REVIEW_WORKER_QUEUE_CAPACITY} ???3/4/6 ??? rebuild??
- * ??????core = max??daemon??????</p>
+ * <p><b>容量设计（V1：2C4G VPS）</b>：默认 4 concurrent workers + 4 queued，
+ * 最多 8 active/pending，第 9 个请求立即拒绝（{@code AI_REVIEW_BUSY} / 503）。
+ * 可通过环境变量 {@code AI_REVIEW_WORKER_MAX_CONCURRENT} /
+ * {@code AI_REVIEW_WORKER_QUEUE_CAPACITY} 调整（3/4/6 等无需 rebuild）。
+ * 线程数固定（core = max），daemon，有界队列。</p>
  *
- * <p><b>????</b>?{@link ThreadPoolExecutor.AbortPolicy}??????
- * {@code RejectedExecutionException}?? Controller ????? 503
- * {@code AI_REVIEW_BUSY}????? {@code CallerRunsPolicy}??? servlet
- * request ???? AI Review????? SSE blocking bug??</p>
+ * <p><b>拒绝策略</b>：{@link ThreadPoolExecutor.AbortPolicy}——满载时抛
+ * {@code RejectedExecutionException}，由 Controller 捕获后返回 503
+ * {@code AI_REVIEW_BUSY}。绝不使用 {@code CallerRunsPolicy}（会让 servlet
+ * request 线程执行 AI Review，重新引入 SSE blocking bug）。</p>
  *
- * <p><b>?? deadline?E ???</b>?????????? {@code now + overall-deadline-sec}
- * ??? 400s????? 400s / nginx 420s???? {@link AiRequestContext} ???
- * worker?????????????????????????????? AI_TIMEOUT?</p>
+ * <p><b>整体 deadline（E）</b>：请求在提交时刻计算 {@code now + overall-deadline-sec}
+ * （默认 400s，对齐前端 400s / nginx 420s），经 {@link AiRequestContext} 暴露给
+ * worker；排队等待计入剩余预算，启动时预算耗尽直接干净失败 {@code AI_TIMEOUT}。</p>
  */
 @Component
 public class AiReviewWorkerExecutor implements AutoCloseable {
@@ -51,14 +51,14 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
     private MeterRegistry meterRegistry;
 
     /**
-     * Spring ?????? {@code wotb.ai.review-worker.max-concurrent} /
+     * Spring 构造器：从 {@code wotb.ai.review-worker.max-concurrent} /
      * {@code wotb.ai.review-worker.queue-capacity} /
-     * {@code wotb.ai.review-worker.overall-deadline-sec} ??????? 4/4/400??
-     * ????????????{@code @Value} ? Spring ??????
+     * {@code wotb.ai.review-worker.overall-deadline-sec} 读取配置（默认 4/4/400）。
+     * 测试可直接传字面值调用（{@code @Value} 仅 Spring 容器处理）。
      *
-     * @param maxConcurrent    worker ????core = max???????????? ? 1
-     * @param queueCapacity    ????????? ? 1
-     * @param overallDeadlineSec  ???? deadline?????? ? 1
+     * @param maxConcurrent    worker 线程数（core = max，固定不弹性伸缩），必须 ≥ 1
+     * @param queueCapacity    有界队列容量，必须 ≥ 1
+     * @param overallDeadlineSec  请求整体 deadline（秒），必须 ≥ 1
      */
     @Autowired
     public AiReviewWorkerExecutor(
@@ -88,23 +88,23 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
                 new ThreadPoolExecutor.AbortPolicy());
     }
 
-    /** ????????????? 4/4/400? */
+    /** 测试便利构造器：使用默认 4/4/400。 */
     public AiReviewWorkerExecutor() {
         this(DEFAULT_MAX_CONCURRENT, DEFAULT_QUEUE_CAPACITY, DEFAULT_OVERALL_DEADLINE_SEC);
     }
 
-    /** ??????????? workers/queue??? deadline ???? 400s? */
+    /** 测试便利构造器：指定 workers/queue，整体 deadline 用默认 400s。 */
     public AiReviewWorkerExecutor(final int maxConcurrent, final int queueCapacity) {
         this(maxConcurrent, queueCapacity, DEFAULT_OVERALL_DEADLINE_SEC);
     }
 
     /**
-     * ?????? workers + queue ???? {@code RejectedExecutionException}
-     * ?AbortPolicy??????????? 503 {@code AI_REVIEW_BUSY}?
+     * 提交任务；当 workers + queue 全满时抛 {@code RejectedExecutionException}
+     * （AbortPolicy），由调用方捕获并返回 503 {@code AI_REVIEW_BUSY}。
      *
-     * <p>?? deadline ????????now + overall-deadline-sec????
-     * {@link AiRequestContext} ??? worker ????????????????
-     * ?????????????????? AI_TIMEOUT?</p>
+     * <p>提交时刻即计算整体 deadline（now + overall-deadline-sec），经
+     * {@link AiRequestContext} 暴露给 worker；排队等待计入剩余预算，
+     * 启动时预算耗尽由服务层直接抛 {@code AI_TIMEOUT}。</p>
      */
     public void execute(final Runnable task) {
         final long submittedNanos = System.nanoTime();

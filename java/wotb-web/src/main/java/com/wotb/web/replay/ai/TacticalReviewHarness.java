@@ -97,7 +97,8 @@ public class TacticalReviewHarness {
                                            final AiReviewStreamListener listener) {
         final long startNanos = budgetStartNanos();
         if (remainingSeconds(startNanos) < SAFETY_MARGIN_SEC) {
-            // ?? deadline????? + overall??????????????????????
+            // 预算起点回溯到提交时刻（now + overall）：排队计入剩余预算，
+            // 启动时剩余不足直接干净失败 AI_TIMEOUT。
             LOGGER.info("Harness overall deadline exhausted before start, aborting with AI_TIMEOUT");
             throw new AiUpstreamException("AI_TIMEOUT", 504, AiRequestContext.correlationId());
         }
@@ -202,8 +203,11 @@ public class TacticalReviewHarness {
         }
     }
 
-    /** 剩余请求预算（秒）：整体 deadline = 配置的 callTimeoutSec。 */
-    /** ?????worker ???????? deadline ????????????????? */
+    /**
+     * 剩余请求预算（秒）：整体 deadline = 配置的 callTimeoutSec；
+     * 有 worker 整体 deadline 时预算起点回溯到提交时刻（排队计入预算），
+     * 无 deadline（直接调用）时用当前时间。
+     */
     private long budgetStartNanos() {
         final Long deadline = AiRequestContext.overallDeadlineNanos();
         if (deadline == null) {
