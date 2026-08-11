@@ -224,8 +224,11 @@ public class DefaultTeamBattleFeatureExtractor {
         // 覆盖补齐后（观测=权威）该 limitation 自动消失，数字恢复输出。
         final boolean observedMatchesAuthoritative = authoritativeAggregate != null
                 && observedAggregate != null
-                && observedAggregate.damageDealt() == authoritativeAggregate.totalDamageDealt()
-                && observedAggregate.damageReceived() == authoritativeAggregate.totalDamageReceived();
+                && ObservedDamageCoverage.matches(
+                        observedAggregate.damageDealt(),
+                        observedAggregate.damageReceived(),
+                        authoritativeAggregate.totalDamageDealt(),
+                        authoritativeAggregate.totalDamageReceived());
         if (!observedMatchesAuthoritative) {
             limitations.add("OBSERVED_DAMAGE_IS_PARTIAL");
         }

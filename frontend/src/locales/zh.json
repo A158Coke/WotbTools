@@ -1,7 +1,7 @@
 {
     "app": {
         "title": "WoTBTools",
-        "subtitle": "《坦克世界闪击战》工具集",
+        "subtitle": "回放解析 · 在线排行榜 · 实时评分 · AI 战术复盘",
         "replay_tab": "回放解析",
         "theme": "主题",
         "login": "登入",
