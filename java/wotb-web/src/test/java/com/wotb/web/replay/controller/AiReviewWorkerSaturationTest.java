@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -90,7 +91,7 @@ class AiReviewWorkerSaturationTest {
                         ReconstructionController.SSE_TIMEOUT_MS);
         final ReconstructionController controllerSpyA = spy(controller);
         doReturn(emitterA).when(controllerSpyA).newAnalyzeEmitter();
-        controllerSpyA.analyze(replayFiles(), "zh", "task-A");
+        controllerSpyA.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000011");
         assertTrue(taskAStarted.await(5, TimeUnit.SECONDS), "Task A must start on the worker");
 
         // Task B: enters the queue (worker busy, queue has capacity=1).
@@ -99,7 +100,7 @@ class AiReviewWorkerSaturationTest {
                         ReconstructionController.SSE_TIMEOUT_MS);
         final ReconstructionController controllerSpyB = spy(controller);
         doReturn(emitterB).when(controllerSpyB).newAnalyzeEmitter();
-        controllerSpyB.analyze(replayFiles(), "zh", "task-B");
+        controllerSpyB.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000012");
 
         // Task C: workers + queue full → RejectedExecutionException → AiReviewBusyException.
         final ReconstructionControllerStreamingTest.RecordingEmitter emitterC =
@@ -111,7 +112,7 @@ class AiReviewWorkerSaturationTest {
         final AtomicReference<String> callerThreadName = new AtomicReference<>();
         final Thread testThread = Thread.currentThread();
         try {
-            controllerSpyC.analyze(replayFiles(), "zh", "task-C");
+            controllerSpyC.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000013");
             // If no exception, the task ran in the caller thread (CallerRunsPolicy bug).
             callerThreadName.set(testThread.getName());
         } catch (final AiReviewBusyException e) {
@@ -123,7 +124,7 @@ class AiReviewWorkerSaturationTest {
                 "Task C must be rejected with AiReviewBusyException, not run in caller thread");
 
         // Cancellation registry cleanup: rejected request must not leak.
-        verify(cancellationRegistry, timeout(2000)).unregister("task-C");
+        verify(cancellationRegistry, timeout(2000)).unregister(eq("00000000-0000-0000-0000-000000000013"), any());
         // The emitter for task-C must never have received events (no worker executed it).
         assertNull(emitterC.awaitEvent(500, TimeUnit.MILLISECONDS),
                 "rejected task emitter must never receive events");
@@ -151,19 +152,19 @@ class AiReviewWorkerSaturationTest {
         final ReconstructionController spyA = spy(controller);
         doReturn(new ReconstructionControllerStreamingTest.RecordingEmitter(
                 ReconstructionController.SSE_TIMEOUT_MS)).when(spyA).newAnalyzeEmitter();
-        spyA.analyze(replayFiles(), "zh", "occ-A");
+        spyA.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000021");
 
         final ReconstructionController spyB = spy(controller);
         doReturn(new ReconstructionControllerStreamingTest.RecordingEmitter(
                 ReconstructionController.SSE_TIMEOUT_MS)).when(spyB).newAnalyzeEmitter();
-        spyB.analyze(replayFiles(), "zh", "occ-B");
+        spyB.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000022");
 
         // Third submit must throw AiReviewBusyException (AbortPolicy), not run in caller.
         final ReconstructionController spyC = spy(controller);
         doReturn(new ReconstructionControllerStreamingTest.RecordingEmitter(
                 ReconstructionController.SSE_TIMEOUT_MS)).when(spyC).newAnalyzeEmitter();
         assertThrows(AiReviewBusyException.class,
-                () -> spyC.analyze(replayFiles(), "zh", "occ-C"));
+                () -> spyC.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000023"));
 
         holdWorker.countDown();
     }
@@ -192,7 +193,7 @@ class AiReviewWorkerSaturationTest {
                         ReconstructionController.SSE_TIMEOUT_MS);
         final ReconstructionController spyA = spy(controller);
         doReturn(emitterA).when(spyA).newAnalyzeEmitter();
-        spyA.analyze(replayFiles(), "zh", "cancel-A");
+        spyA.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000014");
         assertTrue(taskAStarted.await(5, TimeUnit.SECONDS), "Task A must start");
 
         // Task B: enters the queue.
@@ -201,10 +202,10 @@ class AiReviewWorkerSaturationTest {
                         ReconstructionController.SSE_TIMEOUT_MS);
         final ReconstructionController spyB = spy(controller);
         doReturn(emitterB).when(spyB).newAnalyzeEmitter();
-        spyB.analyze(replayFiles(), "zh", "cancel-B");
+        spyB.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000015");
 
         // Cancel Task B while it is queued (cancel endpoint / client disconnect).
-        assertTrue(cancellationRegistry.cancel("cancel-B"),
+        assertTrue(cancellationRegistry.cancel("00000000-0000-0000-0000-000000000015"),
                 "Task B must be registered and cancellable while queued");
 
         // Release Task A → worker picks up Task B.
@@ -224,7 +225,7 @@ class AiReviewWorkerSaturationTest {
         verify(reviewService, times(1)).analyzeStreaming(any(), any(), any());
 
         // Cancellation registry: Task B must be unregistered after worker completes it.
-        verify(cancellationRegistry, timeout(5000)).unregister("cancel-B");
+        verify(cancellationRegistry, timeout(5000)).unregister(eq("00000000-0000-0000-0000-000000000015"), any());
     }
 
     // ---- helpers ----

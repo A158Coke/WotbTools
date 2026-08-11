@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
@@ -148,9 +149,9 @@ class ReconstructionControllerStreamingTest {
             return new AnalyzeResponse("x", null);
         }).when(reviewService).analyzeStreaming(any(), any(), any());
 
-        controllerSpy.analyze(replayFiles(), "zh", "corr-disconnect");
+        controllerSpy.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000004");
 
-        verify(cancellationRegistry, timeout(5000)).cancel("corr-disconnect");
+        verify(cancellationRegistry, timeout(5000)).cancel("00000000-0000-0000-0000-000000000004");
     }
 
     @Test
@@ -163,7 +164,7 @@ class ReconstructionControllerStreamingTest {
             throw new AiUpstreamException("AI_RATE_LIMITED", 429, "corr-stream");
         }).when(reviewService).analyzeStreaming(any(), any(), any());
 
-        final String body = drainUntilTerminal(analyzeDirect("zh", "corr-mid"));
+        final String body = drainUntilTerminal(analyzeDirect("zh", "00000000-0000-0000-0000-000000000016"));
 
         // 已发送事件：错误以 error 事件传达稳定码，done 不出现。
         assertTrue(body.contains("event:call1_start"), body);
@@ -180,7 +181,7 @@ class ReconstructionControllerStreamingTest {
             throw new AiUpstreamException("AI_UPSTREAM_UNAVAILABLE", 500, "corr-stream");
         }).when(reviewService).analyzeStreaming(any(), any(), any());
 
-        final String body = drainUntilTerminal(analyzeDirect("zh", "corr-prestream"));
+        final String body = drainUntilTerminal(analyzeDirect("zh", "00000000-0000-0000-0000-000000000017"));
 
         assertTrue(body.contains("event:error"), body);
         assertTrue(body.contains("\"code\":\"AI_UPSTREAM_UNAVAILABLE\""), body);
@@ -207,7 +208,7 @@ class ReconstructionControllerStreamingTest {
         }).when(reviewService).analyzeStreaming(any(), any(), any());
 
         final long startNanos = System.nanoTime();
-        final RecordingEmitter emitter = analyzeDirect("zh", "corr-timing");
+        final RecordingEmitter emitter = analyzeDirect("zh", "00000000-0000-0000-0000-000000000001");
         final long returnMillis = (System.nanoTime() - startNanos) / 1_000_000;
 
         // 1) request 线程不被完整 AI 调用占住：分析仍在进行，controller 已返回。
@@ -221,7 +222,7 @@ class ReconstructionControllerStreamingTest {
                 "first event must arrive while the analysis is still in flight");
 
         // 3) cancel 端点在流式期间仍可找到并取消进行中的 request（#6/#7）。
-        assertTrue(cancellationRegistry.cancel("corr-timing"),
+        assertTrue(cancellationRegistry.cancel("00000000-0000-0000-0000-000000000001"),
                 "cancel endpoint must find the in-flight request");
 
         // 4) 释放 latch 后：token 与 done 正常到达，完成语义不被取消破坏。
@@ -248,19 +249,19 @@ class ReconstructionControllerStreamingTest {
             return new AnalyzeResponse("full", null);
         }).when(reviewService).analyzeStreaming(any(), any(), any());
 
-        final RecordingEmitter emitter = analyzeDirect("zh", "corr-unregister");
+        final RecordingEmitter emitter = analyzeDirect("zh", "00000000-0000-0000-0000-000000000002");
         // 等待 worker 真正启动（通过 worker-entry cancellation check）再 cancel。
         assertTrue(workerStarted.await(5, TimeUnit.SECONDS),
                 "worker must start before cancel to test unregister-after-completion");
         // 流式进行中（worker 尚未结束）：cancel 端点必须能找到 request。
-        assertTrue(cancellationRegistry.cancel("corr-unregister"),
+        assertTrue(cancellationRegistry.cancel("00000000-0000-0000-0000-000000000002"),
                 "request must stay registered while the worker is running");
         releaseWorker.countDown();
 
         final String doneEvent = emitter.awaitEventContaining("event:done", 5, TimeUnit.SECONDS);
         assertNotNull(doneEvent, "done must arrive");
         // worker 真正结束后才 unregister（在 finally 中）。
-        verify(cancellationRegistry, timeout(5000)).unregister("corr-unregister");
+        verify(cancellationRegistry, timeout(5000)).unregister(eq("00000000-0000-0000-0000-000000000002"), any());
     }
 
     @Test
@@ -281,12 +282,12 @@ class ReconstructionControllerStreamingTest {
         final ReconstructionController controllerSpy = spy(controller);
         doReturn(spyEmitter).when(controllerSpy).newAnalyzeEmitter();
 
-        controllerSpy.analyze(replayFiles(), "zh", "corr-timeout");
+        controllerSpy.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000005");
 
         final Runnable callback = timeoutCallback.get();
         assertNotNull(callback, "onTimeout callback must be registered");
         callback.run();
-        verify(cancellationRegistry, timeout(5000)).cancel("corr-timeout");
+        verify(cancellationRegistry, timeout(5000)).cancel("00000000-0000-0000-0000-000000000005");
     }
 
     @Test
@@ -307,13 +308,13 @@ class ReconstructionControllerStreamingTest {
         final ReconstructionController controllerSpy = spy(controller);
         doReturn(spyEmitter).when(controllerSpy).newAnalyzeEmitter();
 
-        controllerSpy.analyze(replayFiles(), "zh", "corr-error");
+        controllerSpy.analyze(replayFiles(), "zh", "00000000-0000-0000-0000-000000000006");
 
         final java.util.function.Consumer<Throwable> callback = errorCallback.get();
         assertNotNull(callback, "onError callback must be registered");
         // 模拟客户端断开（AsyncClientDisconnectedException 语义）→ 驱动取消。
         callback.accept(new IOException("client gone"));
-        verify(cancellationRegistry, timeout(5000)).cancel("corr-error");
+        verify(cancellationRegistry, timeout(5000)).cancel("00000000-0000-0000-0000-000000000006");
     }
 
     @Test
@@ -326,14 +327,14 @@ class ReconstructionControllerStreamingTest {
             return new AnalyzeResponse("full", null);
         }).when(reviewService).analyzeStreaming(any(), any(), any());
 
-        final RecordingEmitter emitter = analyzeDirect("zh", "corr-endpoint");
+        final RecordingEmitter emitter = analyzeDirect("zh", "00000000-0000-0000-0000-000000000007");
         // 等待 worker 真正启动（进入 analyzeStreaming，被 release latch 阻塞）再 cancel。
         assertTrue(workerStarted.await(5, TimeUnit.SECONDS),
                 "worker must start and block before cancel");
         // 进行中：cancel 端点命中。
-        assertEquals(204, controller.cancelAnalyze("corr-endpoint").getStatusCode().value());
+        assertEquals(204, controller.cancelAnalyze("00000000-0000-0000-0000-000000000007").getStatusCode().value());
         // 未注册的 id：404。
-        assertEquals(404, controller.cancelAnalyze("unknown-id").getStatusCode().value());
+        assertEquals(404, controller.cancelAnalyze("00000000-0000-0000-0000-000000000008").getStatusCode().value());
         release.countDown();
         final String doneEvent = emitter.awaitEventContaining("event:done", 5, TimeUnit.SECONDS);
         assertNotNull(doneEvent, "cancelled-but-finished worker still completes the emitter");
@@ -350,28 +351,48 @@ class ReconstructionControllerStreamingTest {
             return new AnalyzeResponse("full", null);
         }).when(reviewService).analyzeStreaming(any(), any(), any());
 
-        final RecordingEmitter emitter = analyzeDirect("zh", "corr-idempotent");
+        final RecordingEmitter emitter = analyzeDirect("zh", "00000000-0000-0000-0000-000000000003");
         // 等待 worker 真正启动（通过 worker-entry cancellation check）再 cancel。
         assertTrue(workerStarted.await(5, TimeUnit.SECONDS),
                 "worker must start before cancel to test idempotent concurrent ops");
 
         // 模拟 cancel 端点 / SSE IOException / timeout 回调在正常完成前后同时发生：
         // 全部幂等，不抛异常。
-        cancellationRegistry.cancel("corr-idempotent");
-        cancellationRegistry.cancel("corr-idempotent");
-        cancellationRegistry.unregister("corr-idempotent");
+        cancellationRegistry.cancel("00000000-0000-0000-0000-000000000003");
+        cancellationRegistry.cancel("00000000-0000-0000-0000-000000000003");
+        cancellationRegistry.unregister("00000000-0000-0000-0000-000000000003", null);
 
         final String body = drainUntilTerminal(emitter);
         assertTrue(body.contains("event:call2_token"), body);
         assertTrue(body.contains("event:done"), body);
 
-        cancellationRegistry.unregister("corr-idempotent");
+        cancellationRegistry.unregister("00000000-0000-0000-0000-000000000003", null);
         verify(cancellationRegistry, timeout(5000).atLeastOnce()).cancel(anyString());
     }
 
     @Test
     void cancelEndpointOnUnregisteredRequestReturnsNotFound() {
-        assertEquals(404, controller.cancelAnalyze("never-registered").getStatusCode().value());
+        assertEquals(404, controller.cancelAnalyze("00000000-0000-0000-0000-000000000009").getStatusCode().value());
+    }
+
+    @Test
+    void analyzeRejectsInvalidCorrelationId() {
+        assertThrows(IllegalArgumentException.class,
+                () -> controller.analyze(replayFiles(), "zh", "not-a-uuid"));
+    }
+
+    @Test
+    void analyzeRejectsDuplicateCorrelationId() {
+        final String id = "00000000-0000-0000-0000-0000000000cc";
+        assertNotNull(cancellationRegistry.register(id));
+        assertThrows(IllegalArgumentException.class,
+                () -> controller.analyze(replayFiles(), "zh", id));
+    }
+
+    @Test
+    void cancelEndpointRejectsInvalidCorrelationId() {
+        assertThrows(IllegalArgumentException.class,
+                () -> controller.cancelAnalyze("not-a-uuid"));
     }
 
     // ---- helpers ----
