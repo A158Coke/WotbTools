@@ -1,6 +1,7 @@
 package com.wotb.web.replay.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -24,6 +25,7 @@ import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
 import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
+import com.wotb.web.replay.ai.gateway.AiRequestContext;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.AiReviewBusyException;
 import org.junit.jupiter.api.AfterEach;
@@ -226,6 +228,33 @@ class AiReviewWorkerSaturationTest {
 
         // Cancellation registry: Task B must be unregistered after worker completes it.
         verify(cancellationRegistry, timeout(5000)).unregister(eq("00000000-0000-0000-0000-000000000015"), any());
+    }
+
+    @Test
+    void workerWrapperExposesOverallDeadlineToTaskAndClearsAfter() throws Exception {
+        final AiReviewWorkerExecutor executor = new AiReviewWorkerExecutor(1, 1);
+        final CountDownLatch started = new CountDownLatch(1);
+        final AtomicReference<Long> deadlineSeen = new AtomicReference<>();
+        executor.execute(() -> {
+            deadlineSeen.set(AiRequestContext.overallDeadlineNanos());
+            started.countDown();
+        });
+        assertTrue(started.await(5, TimeUnit.SECONDS), "task must start");
+        assertNotNull(deadlineSeen.get(), "worker task must see the overall deadline");
+        assertTrue(deadlineSeen.get() > System.nanoTime() - TimeUnit.SECONDS.toNanos(2),
+                "deadline must be ~now + overall, not in the past");
+
+        // 每个任务由 wrapper 设置自己的整体 deadline（提交时刻 + overall）。
+        final CountDownLatch second = new CountDownLatch(1);
+        executor.execute(() -> {
+            assertNotNull(AiRequestContext.overallDeadlineNanos(),
+                    "every worker task must see its own overall deadline");
+            assertTrue(!AiRequestContext.overallDeadlineNanos().equals(deadlineSeen.get()),
+                    "each task must get a fresh deadline, not the previous task's value");
+            second.countDown();
+        });
+        assertTrue(second.await(5, TimeUnit.SECONDS), "second task must start");
+        executor.close();
     }
 
     // ---- helpers ----

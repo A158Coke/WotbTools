@@ -18,6 +18,8 @@ import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.feature.TeamBattleAnalysisSummary;
 
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
+import com.wotb.web.replay.ai.gateway.AiRequestContext;
+import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -100,7 +102,11 @@ public class TeamReplayAnalysisService {
         if (!isConfigured()) {
             throw new AiNotConfiguredException();
         }
-        final long startNanos = nanoTimeSource.getAsLong();
+        final long startNanos = budgetStartNanos();
+        if (remainingBudget(startNanos) <= 0) {
+            // ?? deadline????? + overall??????????????????????
+            throw new AiUpstreamException("AI_TIMEOUT", 504, AiRequestContext.correlationId());
+        }
         final PreBattleStrategicPrior prior = call1Prior(context.battle(), listener);
         final TeamRosterResolver.RosterEvidence evidence = TeamRosterResolver.RosterEvidence.from(context);
         final List<String> extraLimitations = evidence != null ? evidence.limitations() : List.of();
@@ -176,7 +182,11 @@ public class TeamReplayAnalysisService {
         for (final SingleTeamBattleAnalysisContext ctx : contexts) {
             evidenceByUnitId.put(ctx.analysisUnitId(), TeamRosterResolver.RosterEvidence.from(ctx));
         }
-        final long startNanos = nanoTimeSource.getAsLong();
+        final long startNanos = budgetStartNanos();
+        if (remainingBudget(startNanos) <= 0) {
+            // ?? deadline????? + overall??????????????????????
+            throw new AiUpstreamException("AI_TIMEOUT", 504, AiRequestContext.correlationId());
+        }
         final Map<String, PreBattleStrategicPrior> priorsByUnitId = new LinkedHashMap<>();
         final Map<String, Integer> perspectiveTeamByUnitId = new LinkedHashMap<>();
         for (final SingleTeamBattleAnalysisContext ctx : contexts) {
@@ -340,6 +350,18 @@ public class TeamReplayAnalysisService {
         }
         return reviewText + TeamAutopsyPromptBuilder.renderSection(
                 outcome.result(), winner, outcome.roster(), teamLabel);
+    }
+
+    /**
+     * ?????nanoTime??worker ???????? deadline ????????
+     * ??????????????????/? analyze ?????????
+     */
+    private long budgetStartNanos() {
+        final Long deadline = AiRequestContext.overallDeadlineNanos();
+        if (deadline == null) {
+            return nanoTimeSource.getAsLong();
+        }
+        return deadline - config.callTimeoutSec() * 1_000_000_000L;
     }
 
     private long remainingSeconds(final long startNanos) {
