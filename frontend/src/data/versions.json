@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.6.0",
+    "date": "2026-08-11",
+    "tag": "add",
+    "zh": "AI 复盘质量收敛：赛前预测改「我方/对方」视角 + 九宫格区域 + 中文属性 · 复盘时间统一 X分XX秒 · 阶段存活人数明确「至阶段末」并给出双方逐车阵亡时间线 · 未知阵亡时间不再显示 0分00秒 · 伤害以权威结算为唯一口径 · 团队剖析 MVP/战犯加粗 · 复盘末尾固定免责声明 · 英文/俄文界面不再混入中文区域名 · Call #2 正文真正逐段流式生成",
+    "en": "AI review quality: pre-battle prediction from our/opponent view with grid regions and Chinese attributes · Times in Xm Xs · Phase survival counts marked \"at phase end\" plus both teams' death timeline · Unknown death times no longer show 0m 0s · Authoritative-only damage figures · Bold MVP/liabilities · Fixed disclaimer footer · No Chinese region labels in EN/RU · Call #2 text streams incrementally",
+    "ru": "Качество AI-разбора: прогноз до боя от лица «мы/противник» с сеткой зон и китайскими атрибутами · Время в формате Xм Xс · Выжившие «на конец фазы» + таймлайн гибели обеих сторон · Неизвестное время гибели больше не 0м 0с · Урон только из итогов боя · Жирные MVP/виновники · Дисклеймер в конце · Без китайских названий зон в EN/RU · Текст разбора идёт потоком"
+  },
+  {
     "v": "2.5.0",
     "date": "2026-08-10",
     "tag": "add",
