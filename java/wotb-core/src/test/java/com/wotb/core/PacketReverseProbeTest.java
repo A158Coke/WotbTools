@@ -130,6 +130,47 @@ class PacketReverseProbeTest {
         type26VsRecorderHits(es, byType);
         type23AttackerCheck(es, byType);
         statsByAccount(es);
+        type5Vs33(es, byType);
+    }
+
+    /** type5 vs type33 timing pairing + type32 double values. */
+    private static void type5Vs33(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final List<EventStreamReader.ParsedPacket> t5 = byType.getOrDefault(5, List.of());
+        final List<EventStreamReader.ParsedPacket> t33 = byType.getOrDefault(33, List.of());
+        System.out.println("== type5 vs type33 pairing ==");
+        final List<Float> t5t = t5.stream().map(p -> p.clockSecs).sorted().toList();
+        final List<Float> t33t = t33.stream().map(p -> p.clockSecs).sorted().toList();
+        System.out.println("  type5 n=" + t5.size() + " type33 n=" + t33.size());
+        int matched = 0;
+        for (final float t : t33t) {
+            for (final float q : t5t) {
+                if (Math.abs(q - t) < 0.2f) {
+                    matched++;
+                    break;
+                }
+            }
+        }
+        System.out.println("  type33 times within 0.2s of a type5 time: " + matched + "/" + t33t.size());
+        for (int i = 0; i < Math.min(6, t33t.size()); i++) {
+            System.out.printf(Locale.ROOT, "  t33=%.1f t5=%.1f%n", t33t.get(i), t5t.get(i));
+        }
+        // type32 non-zero doubles
+        System.out.println("== type32 doubles (non-zero) ==");
+        int shown = 0;
+        for (final EventStreamReader.ParsedPacket p : byType.getOrDefault(32, List.of())) {
+            if (p.payload.length < 21) {
+                continue;
+            }
+            final long dbl = readU32LE(p.payload, 13) | ((long) readU32LE(p.payload, 17) << 32);
+            final double v = Double.longBitsToDouble(dbl);
+            if (v > 1 && shown < 10) {
+                System.out.printf(Locale.ROOT, "  t=%7.1fs eid=%d double=%.2f%n",
+                        p.clockSecs, readU32LE(p.payload, 0), v);
+                shown++;
+            }
+        }
     }
 
     /** Damage dealt/killed by each account from direct damage events + EntityLeave correlation. */
