@@ -65,7 +65,7 @@ public class ReplayUsageMetrics {
             return body.call();
         } finally {
             // 成功与异常路径都结束 Timer 并递减 in-flight
-            sample.stop(timer("wotb_replay_parse_duration_seconds", operation));
+            sample.stop(timer(operation));
             inFlight.decrementAndGet();
         }
     }
@@ -74,8 +74,8 @@ public class ReplayUsageMetrics {
         return meterRegistry.counter(name, "operation", operation);
     }
 
-    private Timer timer(final String name, final String operation) {
-        return Timer.builder(name)
+    private Timer timer(final String operation) {
+        return Timer.builder("wotb_replay_parse_duration_seconds")
                 .description("回放解析与处理耗时")
                 .tag("operation", operation)
                 .publishPercentileHistogram()

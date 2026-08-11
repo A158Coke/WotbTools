@@ -15,7 +15,6 @@ public final class ApiPaths {
 
     // ---- 基础前缀 ----
     public static final String API = "/api";
-    public static final String REPLAY = "/api/replay";
     public static final String LEADERBOARD = "/api/leaderboard";
     public static final String USERS = "/api/users";
     public static final String USER_NOTIFICATIONS = "/api/users/notifications";
