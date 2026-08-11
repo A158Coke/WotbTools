@@ -10,6 +10,7 @@ import java.util.List;
  *
  * @param mapCode       内部地图 code（meta.json 的 mapName，小写）
  * @param displayName   人类可读地图名（如 Desert Sands）
+ * @param friendlyTeam  本方（录像者）队伍号（1/2；前端用于路线阵营配色与热力 Tab 映射）
  * @param playableBounds 可玩区边界
  * @param gridCells     6x6 分析格（36 个；id 如 F1/A6，带 nineGridRegion 与格子边界）
  * @param image         地图图片元信息（file/width/height；素材开关在前端 mapImages.js，
@@ -23,6 +24,7 @@ import java.util.List;
 public record MapOverview(
         String mapCode,
         String displayName,
+        int friendlyTeam,
         Bounds playableBounds,
         List<GridCell> gridCells,
         ImageInfo image,

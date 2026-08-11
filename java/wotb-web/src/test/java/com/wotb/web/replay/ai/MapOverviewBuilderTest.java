@@ -48,6 +48,7 @@ class MapOverviewBuilderTest {
 
         assertEquals("rift", overview.mapCode());
         assertEquals("Hellas", overview.displayName());
+        assertTrue(overview.friendlyTeam() == 1 || overview.friendlyTeam() == 2);
         assertTrue(overview.playableBounds().xMin() < overview.playableBounds().xMax());
         assertTrue(overview.playableBounds().yMin() < overview.playableBounds().yMax());
         assertEquals(36, overview.gridCells().size(), "6x6 分析格");
