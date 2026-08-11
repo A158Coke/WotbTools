@@ -113,7 +113,7 @@ public class DefaultPlayerBattleFeatureExtractor {
         // 交火段
         final List<EngagementSummary> engagements = buildEngagements(damages, recorder.entityId());
 
-        // Phases (battle-relative) + 双方存活人数（battle_results 权威死亡时刻）
+        // Phases (battle-relative) + 双方存活人数（battle_results deathTimeMillis，缺失时事件流估算）
         final List<BattlePhaseSummary> phases = BattlePhaseSummary.buildRelativePhasesWithSurvival(
                         firstContactTime, phaseEndClock,
                         BattlePhaseSummary.SurvivalTimeline.fromBattleResults(battle, recorder.team()));

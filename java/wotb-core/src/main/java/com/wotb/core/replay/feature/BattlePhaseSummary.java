@@ -103,12 +103,13 @@ public record BattlePhaseSummary(
     }
 
     /**
-     * Build battle-relative phases with authoritative survival counts.
+     * Build battle-relative phases with survival counts.
      * <p>与 {@link #buildRelativePhases} 完全相同的阶段边界，附加每阶段结束时的
      * 双方存活人数（{@code friendlyAlive/enemyAlive}）与密集击杀段标记（{@code denseKills}）。
-     * 人数只来自 {@link SurvivalTimeline}（battle_results 权威死亡时刻）；
-     * 某侧人数不可算（无名册/视角未知/存在未知死亡时刻）时为 null，调用方渲染为「未知」，
-     * 绝不猜测。</p>
+     * 人数来自 {@link SurvivalTimeline}——死亡时刻优先 battle_results 的 deathTimeMillis，
+     * 缺失时回退事件流估算（{@link PlayerResultFormat#deathSec}），来源由
+     * {@link #deathSourceLabel} 标注；某侧人数不可算（无名册/视角未知/存在未知死亡时刻）
+     * 时为 null，调用方渲染为「未知」，绝不猜测。</p>
      */
     public static List<BattlePhaseSummary> buildRelativePhasesWithSurvival(
             final float firstContactRelative,
@@ -232,7 +233,8 @@ public record BattlePhaseSummary(
     }
 
     /**
-     * 双方权威存活时间线（来自 battle_results 的死亡时刻）。
+     * 双方存活时间线（死亡时刻优先 battle_results 的 deathTimeMillis，缺失时回退
+     * 事件流估算；来源由 {@link #deathSourceLabel} 标注）。
      * <p>{@code friendlyDeathTimes/enemyDeathTimes} 只包含死亡时刻已知（>0）的阵亡玩家；
      * {@code *UnknownDeaths} 是死亡时刻缺失（deathSec <= 0）的阵亡玩家数 —— 这类玩家无法
      * 归入任何时间窗，整侧存活人数不可算，渲染为「未知」而非猜测。</p>
