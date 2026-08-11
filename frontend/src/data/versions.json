@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.9.0",
+    "date": "2026-08-12",
+    "tag": "add",
+    "zh": "AI 复盘结果页新增「地图鸟瞰」：按本方/敌方 × 驻留/伤害/阵亡查看 6x6 热力，按本方/敌方 × 开局/中期/残局查看双方 14 车路线（断线断开、开局缺失位置如实标注「位置观测自 X 秒起」）；已支持 17 张地图素材，其余地图自动隐藏",
+    "en": "New \"Map Overview\" section on AI review results: 6x6 heatmaps by friendly/enemy × dwell/damage/deaths, and both teams' 14-vehicle routes sliced by friendly/enemy × opening/mid/endgame (line breaks at gaps, honest \"positions observed from X\" notes); 17 maps have assets, others are hidden",
+    "ru": "Новый раздел «Карта боя» в AI-разборе: тепловые карты 6x6 по своим/врагам × пребывание/урон/гибель и маршруты обеих команд (14 машин) с разбивкой по своим/врагам × начало/середина/концовка (разрывы линий, честные пометки «позиции наблюдаются с X»); есть ассеты для 17 карт, остальные скрыты"
+  },
+  {
     "v": "2.8.0",
     "date": "2026-08-11",
     "tag": "add",
