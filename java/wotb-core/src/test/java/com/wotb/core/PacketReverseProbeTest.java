@@ -131,6 +131,60 @@ class PacketReverseProbeTest {
         type23AttackerCheck(es, byType);
         statsByAccount(es);
         type5Vs33(es, byType);
+        type39YawVsTank(es, byType);
+    }
+
+    /** f0 (deg) vs recorder tank type-10 yaw: |f0 - yaw| distribution (free-look deviations). */
+    private static void type39YawVsTank(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final int recEid = 12558552;
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final List<EventStreamReader.PositionData> rec = positions.stream()
+                .filter(p -> p.entityId == recEid)
+                .sorted(Comparator.comparingDouble(p -> p.clockSecs))
+                .toList();
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        System.out.println("== type39 f0 (camera yaw deg?) vs tank yaw ==");
+        double sum = 0;
+        int n = 0;
+        int close15 = 0, close30 = 0, close60 = 0;
+        for (final EventStreamReader.ParsedPacket p : p39) {
+            if (p.payload.length < 28) {
+                continue;
+            }
+            EventStreamReader.PositionData near = null;
+            float bestDt = Float.MAX_VALUE;
+            for (final EventStreamReader.PositionData pos : rec) {
+                final float dt = Math.abs(pos.clockSecs - p.clockSecs);
+                if (dt < 0.5f && dt < bestDt) {
+                    bestDt = dt;
+                    near = pos;
+                }
+            }
+            if (near == null) {
+                continue;
+            }
+            final float f0 = f(p.payload, 0);
+            final float yawDeg = (float) Math.toDegrees(near.yaw);
+            final double err = Math.abs(normalizeAngle(f0 - yawDeg));
+            sum += err;
+            n++;
+            if (err < 15) {
+                close15++;
+            }
+            if (err < 30) {
+                close30++;
+            }
+            if (err < 60) {
+                close60++;
+            }
+        }
+        System.out.printf(Locale.ROOT,
+                "  n=%d mean|f0-yaw|=%.1fdeg close15=%.1f%% close30=%.1f%% close60=%.1f%%%n",
+                n, n == 0 ? -1 : sum / n,
+                n == 0 ? 0 : 100.0 * close15 / n, n == 0 ? 0 : 100.0 * close30 / n,
+                n == 0 ? 0 : 100.0 * close60 / n);
     }
 
     /** type5 vs type33 timing pairing + type32 double values. */
