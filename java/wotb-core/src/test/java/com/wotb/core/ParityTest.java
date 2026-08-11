@@ -30,49 +30,29 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class ParityTest {
 
-    /** 定位提交版夹具目录（surefire 运行时 user.dir = wotb-core 模块目录）。 */
-    private static Path fixturesDir() {
-        return Path.of(System.getProperty("user.dir"), "..", "..", "common", "fixtures", "replays")
-                .normalize();
-    }
-
-    /** 本地可选扩展样本目录 common/data（gitignored，无则跳过本地扩展样本）。 */
-    private static Path localDataDir() {
+    /** 定位共享样本目录 common/data (surefire 运行时 user.dir = wotb-core 模块目录)。 */
+    private static Path dataDir() {
         return Path.of(System.getProperty("user.dir"), "..", "..", "common", "data").normalize();
     }
 
     private static List<Path> replays() throws Exception {
-        final List<Path> result = new ArrayList<>();
-        final Path committed = fixturesDir();
-        if (Files.isDirectory(committed)) {
-            try (Stream<Path> s = Files.list(committed)) {
-                s.filter(p -> p.toString().toLowerCase().endsWith(".wotbreplay"))
-                        .sorted()
-                        .forEach(result::add);
-            }
+        final Path dir = dataDir();
+        Assumptions.assumeTrue(Files.isDirectory(dir), "common/data 样本目录不存在, 跳过真实回放回归");
+        try (Stream<Path> s = Files.list(dir)) {
+            final List<Path> files = s.filter(p -> p.toString().toLowerCase().endsWith(".wotbreplay")).sorted().toList();
+            Assumptions.assumeTrue(!files.isEmpty(), "common/data 中没有 .wotbreplay, 跳过真实回放回归");
+            return files;
         }
-        final Path local = localDataDir();
-        if (Files.isDirectory(local)) {
-            try (Stream<Path> s = Files.list(local)) {
-                s.filter(p -> p.toString().toLowerCase().endsWith(".wotbreplay"))
-                        .sorted()
-                        .forEach(result::add);
-            }
-        }
-        Assumptions.assumeTrue(!result.isEmpty(),
-                "无真实回放夹具（common/fixtures/replays 或 common/data）");
-        return result;
     }
 
-    private static java.util.Optional<Battle> optionalBattleByArena(final String arenaId)
-            throws Exception {
+    private static Battle battleByArena(final String arenaId) throws Exception {
         for (final Path p : replays()) {
             final Battle b = ReplayParser.parse(Files.readAllBytes(p));
             if (arenaId.equals(b.arenaId)) {
-                return java.util.Optional.of(b);
+                return b;
             }
         }
-        return java.util.Optional.empty();
+        throw new AssertionError("找不到 arenaId=" + arenaId + " 的回放");
     }
 
     private static PlayerResult byAccount(final Battle battle, final long accountId) {
@@ -95,10 +75,7 @@ class ParityTest {
 
     @Test
     void parsesBattleExactValues() throws Exception {
-        // lagoon 样本仅在本地 common/data 时存在（gitignored）；CI 只跑提交夹具
-        final java.util.Optional<Battle> lagoon = optionalBattleByArena("1161909687528274499");
-        Assumptions.assumeTrue(lagoon.isPresent(), "lagoon 样本不在本地, 跳过精确值回归");
-        final Battle b = lagoon.get();
+        final Battle b = battleByArena("1161909687528274499");   // lagoon 那场
         assertEquals(14, b.players.size());
         assertEquals(Integer.valueOf(2), b.winnerTeam);
 

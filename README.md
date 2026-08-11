@@ -47,8 +47,7 @@ flowchart LR
 4. **九宫格 + 地图语义化**：500×500 canonical 九宫格 1-9；AREA 语义来自客户端 SC2 / heightmap 解码，人工核验前不当作已验证事实。
 5. **结构化 JSON 调用关闭 thinking**：Call #1 赛前预测与 Team Autopsy 防空正文（reasoning 吃光输出预算）。
 6. **有界 worker 池（4+4）+ AbortPolicy**：SSE 长请求不阻塞 servlet 线程，饱和返回 503。
-7. **真实回放夹具脱敏进 CI**：解析回归不再依赖本地 gitignored 样本；昵称按 UTF-8 字节长度等价掩码。
-8. **备份同机 7 天保留 + 校验**：单服务器基础设施限制，暂无异地备份。
+7. **备份同机 7 天保留 + 校验**：单服务器基础设施限制，暂无异地备份。
 
 ## 文档入口
 
