@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Fixed
+- **真实回放夹具进 CI（随机战斗样例）**：提交 `common/fixtures/replays/random-battle-example.wotbreplay`（rift 随机战，按用户指示原样提交、不脱敏）；`ParityTest` / `WebApiTest` 无条件加载提交夹具（gitignored `common/data` 仅本地扩展），新增 `ReplayParserFixtureTest` 断言名册/胜负/输出总量/幸存数等解析值；`.gitignore` 放开 `common/fixtures/replays/*.wotbreplay`。
 - **定点重构（行为不变）**：R1 Replay archive 读取统一为 `ReplayArchiveReader`（`ReplayParser` / `ReplayReconstructionService` 复用，大小限制语义逐字节一致）；R2 时间格式规则复用 `ZH_TIME_RULE` 常量（消除 4 处内联字面量）；R3 观测伤害覆盖判定抽 `ObservedDamageCoverage`（Team / Player 共用）；R4 Team 分析 single/multi 的 evidence 限制与 first-result 记录收敛。
 - **README / 首页叙事升级**：README（zh/en）重写——项目定位、mermaid 架构图、AI 证据链、真实复盘样例截图（`docs/assets/review-sample.png`）、8 条核心工程取舍；首页 hero 副标题三语更新。
 - **AI 复盘 Call #2 流式修复（thinking 关闭 + 阶段事件 + 分块兜底）**：① Call #2 自由文本复盘默认关闭 thinking——新增独立配置 `AI_THINKING_ENABLED_CALL2`（`wotb.ai.call2-thinking-enabled`，默认 `false`），player/team/harness 三处 Call #2 请求统一使用（`AiReplayAnalysisConfig` 的 `thinkingEnabled` 更名为 `call2ThinkingEnabled`；`AI_THINKING_ENABLED` 保留为 legacy 键）；DeepSeek 推理模式下 content 末尾一次性到达、破坏 SSE 流式的问题由此修复；② 团队路径在 Call #2 前补发 `evidence_done` 阶段事件（`TeamReplayAnalysisService.analyzeTeamGroups`，与随机战 harness 对齐），前端阶段指示不再卡在「证据分析中…」；③ `SpringAiChatGateway` 新增超大 delta 分块兜底——单块 >512 字符时按句子边界切成 ≤128 字符片段、每片间隔 ~20ms 转发（上限 512 片，超长自动放大单片段），保证即使上游仍粗粒度也逐段出字；正常 token 流不引入延迟。新增回归测试：Call #2 默认 thinking=false / 开启时透传、团队 evidence_done 发射、`splitChunks` 边界与片数上限、大 delta 分片转发。
