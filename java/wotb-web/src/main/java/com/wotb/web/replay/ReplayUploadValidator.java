@@ -6,7 +6,11 @@ import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * 共享回放上传校验器：文件类型 / 单文件 20MiB / 总大小 200MiB / 空文件 / 文件数上限。
+ * 共享回放上传校验器：文件类型 / 单文件 20MiB / 总大小 200MiB / 空文件。
+ *
+ * <p>通用校验不限制文件数量（reconstruct-batch / process 允许多文件）；AI 单文件策略
+ * （{@link AiReplayBatchPolicy#MAX_FILES}=1）由 {@link #validateAiReview} 单独应用
+ * （analyze / AiReplayReviewService）。</p>
  *
  * <p>错误码与既有端点保持一致：{@code NO_REPLAY_FILES} / {@code NO_REPLAY_FILE} /
  * {@code INVALID_REPLAY_FILE_TYPE} / {@code FILE_TOO_LARGE} /
@@ -20,16 +24,10 @@ public final class ReplayUploadValidator {
     private ReplayUploadValidator() {
     }
 
-    /**
-     * 校验整个上传批次：文件列表非空、数量 ≤ {@link AiReplayBatchPolicy#MAX_FILES}、
-     * 每个文件非空/类型合法/单文件 ≤ 20MiB、累计总大小 ≤ 200MiB。
-     */
+    /** 通用上传校验：文件数组非空、每个文件非空/类型合法/单文件 ≤ 20MiB、累计 ≤ 200MiB。不限制文件数量。 */
     public static void validate(final MultipartFile[] files) {
         if (files == null || files.length == 0) {
             throw new IllegalArgumentException("NO_REPLAY_FILES");
-        }
-        if (files.length > AiReplayBatchPolicy.MAX_FILES) {
-            throw new ReplayFileCountExceededException(AiReplayBatchPolicy.MAX_FILES, files.length);
         }
         long totalBytes = 0;
         for (final MultipartFile file : files) {
@@ -48,6 +46,14 @@ public final class ReplayUploadValidator {
                 throw new IllegalArgumentException("TOTAL_REQUEST_TOO_LARGE");
             }
             totalBytes += fileSize;
+        }
+    }
+
+    /** AI Review 上传校验：通用校验 + 单文件限制（{@link AiReplayBatchPolicy#MAX_FILES}）。 */
+    public static void validateAiReview(final MultipartFile[] files) {
+        validate(files);
+        if (files.length > AiReplayBatchPolicy.MAX_FILES) {
+            throw new ReplayFileCountExceededException(AiReplayBatchPolicy.MAX_FILES, files.length);
         }
     }
 }

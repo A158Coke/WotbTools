@@ -220,9 +220,12 @@ class AiReplayReviewServiceTest {
 
     @Test
     void twoFilesExceededDoesNotCallGetBytes() throws IOException {
+        final var file = mock(MultipartFile.class);
+        when(file.getOriginalFilename()).thenReturn("a.wotbreplay");
+        when(file.isEmpty()).thenReturn(false);
+        when(file.getSize()).thenReturn(1L);
         final var files = new MultipartFile[]{
-                mock(MultipartFile.class),
-                mock(MultipartFile.class)
+                file, file
         };
         assertThrows(ReplayFileCountExceededException.class,
                 () -> service.analyze(files));
@@ -232,9 +235,12 @@ class AiReplayReviewServiceTest {
 
     @Test
     void twoFilesExceededDoesNotCallProcessingFacade() throws IOException {
+        final var file = mock(MultipartFile.class);
+        when(file.getOriginalFilename()).thenReturn("a.wotbreplay");
+        when(file.isEmpty()).thenReturn(false);
+        when(file.getSize()).thenReturn(1L);
         final var files = new MultipartFile[]{
-                mock(MultipartFile.class),
-                mock(MultipartFile.class)
+                file, file
         };
         assertThrows(ReplayFileCountExceededException.class,
                 () -> service.analyze(files));

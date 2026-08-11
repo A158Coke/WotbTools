@@ -150,7 +150,7 @@ public class AiReplayReviewService {
     private AnalyzeResponse analyzeInternal(final MultipartFile[] files,
                                             final AllowedLanguage language,
                                             final AiReviewStreamListener listener) throws IOException {
-        ReplayUploadValidator.validate(files);
+        ReplayUploadValidator.validateAiReview(files);
         final List<ReplayProcessingResult> allResults = new ArrayList<>();
         for (int index = 0; index < files.length; index++) {
             final MultipartFile file = files[index];

@@ -5,10 +5,24 @@
 #   TAG, DB_PASSWORD, KC_ADMIN_PASSWORD, WG_APPLICATION_ID, KEYCLOAK_ADMIN_CLIENT_SECRET,
 #   AI_API_KEY, GRAFANA_ADMIN_USER, GRAFANA_ADMIN_PASSWORD, GRAFANA_MCP_TOKEN
 # Optional vars carry the same defaults as the previous inline workflow script.
-# Flow: pre-deploy backup -> write .env -> stage docker-compose.prod.yml as next ->
-# pull -> promote to docker-compose.yml -> compose up -> health checks -> rollback.
+# Flow: pre-deploy backup -> write .env -> render docker-compose.prod.yml -> pull ->
+# promote to docker-compose.yml -> compose up -> health checks -> rollback.
+#
+# The formal docker-compose.yml is RENDERED (all ${...} resolved to concrete values)
+# so later independent SSH sessions (daily DB backup, diagnostics, manual ops) never
+# depend on GitHub Actions temporary environment variables. Rollback targets
+# (docker-compose.prev.yml) therefore pin the previous image tag instead of the
+# current (failed) one.
 #
 set -e
+
+readonly WOTB_DIR="${WOTB_DIR:-/opt/wotb}"
+readonly HEALTH_RETRIES="${WOTB_HEALTH_RETRIES:-60}"
+
+if [[ ! "$HEALTH_RETRIES" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ERROR: WOTB_HEALTH_RETRIES must be a positive integer." >&2
+  exit 1
+fi
 
 require_env() {
   local name="$1"
@@ -28,8 +42,15 @@ require_env GRAFANA_ADMIN_USER
 require_env GRAFANA_ADMIN_PASSWORD
 require_env GRAFANA_MCP_TOKEN
 
-mkdir -p /opt/wotb
-cd /opt/wotb
+mkdir -p "$WOTB_DIR"
+cd "$WOTB_DIR"
+
+# Previous deployment info (rollback target)
+PREV_SHA=""
+if [ -f DEPLOYED_SHA ]; then
+  PREV_SHA=$(cat DEPLOYED_SHA)
+fi
+
 mkdir -p config/sponsor
 if [ ! -e config/sponsor-config.json ] && [ ! -L config/sponsor-config.json ]; then
   install -m 644 deploy/sponsor-config.example.json config/sponsor-config.json
@@ -48,8 +69,12 @@ printf 'GRAFANA_ADMIN_USER=%s\nGRAFANA_MCP_TOKEN=%s\nGRAFANA_ADMIN_PASSWORD=%s\n
 chmod 600 .env
 # 新 compose 先写入 next 文件：pull 成功后才替换正式 docker-compose.yml，
 # pull 失败时服务器上的正式 compose 保持旧版本（旧栈不受影响）。
+# 模板中的 ${TAG}/${DB_PASSWORD} 等通过 `docker compose config` 渲染为具体值：
+# 正式文件自包含，后续独立 SSH 会话与每日备份不依赖 GitHub Actions 临时环境变量。
 cp -f deploy/docker-compose.prod.yml docker-compose.next.yml
-
+docker compose -f docker-compose.next.yml config > docker-compose.next.resolved.yml
+mv -f docker-compose.next.resolved.yml docker-compose.next.yml
+chmod 600 docker-compose.next.yml
 
 pull_compose() {
   local compose_file="$1"
@@ -67,7 +92,7 @@ pull_compose() {
 
 # Health checks: backend /api/health, frontend nginx E2E, Keycloak realm availability
 wait_healthy() {
-  for i in $(seq 1 60); do
+  for i in $(seq 1 "$HEALTH_RETRIES"); do
     if docker compose ps | grep -E "wotb-backend|wotb-frontend|keycloak" | grep -qE "Restarting|Exited"; then
       sleep 2
       continue
@@ -119,6 +144,7 @@ else
   echo "No previous compose found; first deployment."
 fi
 mv -f docker-compose.next.yml docker-compose.yml
+chmod 600 docker-compose.yml
 
 rollback_needed=false
 if ! docker compose up -d --remove-orphans; then
@@ -127,10 +153,10 @@ if ! docker compose up -d --remove-orphans; then
 else
   docker compose exec -T postgres psql -U wotb -d wotb -c "CREATE DATABASE keycloak;" 2>/dev/null || true
   if wait_healthy; then
-    echo ""$TAG"" > DEPLOYED_SHA
+    echo "$TAG" > DEPLOYED_SHA
     docker image prune -af
     docker builder prune -af
-    echo "== DEPLOY OK: "$TAG" =="
+    echo "== DEPLOY OK: $TAG =="
     exit 0
   fi
   rollback_needed=true

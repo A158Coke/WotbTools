@@ -137,3 +137,31 @@ jobs:
                       "service " + name + " must not expose any host port: " + str(s.get("ports")))
           print("no host exposure of observability/backend-management ports")
           PY
+
+  deploy-smoke:
+    name: Deploy/rollback + nginx rate-limit smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: bash -n deploy.sh
+        run: bash -n deploy/deploy.sh
+
+      - name: Production compose config validation (rendered template)
+        env:
+          TAG: sha-ci
+          DB_PASSWORD: ci
+          KC_ADMIN_PASSWORD: ci
+          WG_APPLICATION_ID: ci
+          KEYCLOAK_ADMIN_CLIENT_SECRET: ci
+          AI_API_KEY: ci
+          GRAFANA_ADMIN_USER: ci
+          GRAFANA_ADMIN_PASSWORD: ci
+          GRAFANA_MCP_TOKEN: ci
+        run: docker compose -f deploy/docker-compose.prod.yml config --quiet
+
+      - name: Deploy/rollback smoke (fake docker, sandboxed)
+        run: bash deploy/test-deploy-rollback.sh
+
+      - name: nginx rate-limit real-IP smoke
+        run: bash deploy/test-nginx-ratelimit.sh
