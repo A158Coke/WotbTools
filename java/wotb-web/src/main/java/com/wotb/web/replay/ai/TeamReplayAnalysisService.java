@@ -44,6 +44,7 @@ import java.util.function.LongSupplier;
  * 调用：Autopsy 输入只有权威逐人结算（无 Call #1 prior / Critical Window / Route 证据），相关结论置信度
  * PARTIAL/UNKNOWN。随机战斗个人复盘不输出战犯/MVP。</p>
  */
+@Service
 public class TeamReplayAnalysisService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TeamReplayAnalysisService.class);

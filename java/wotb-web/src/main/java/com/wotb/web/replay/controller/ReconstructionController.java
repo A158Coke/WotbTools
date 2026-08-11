@@ -10,7 +10,6 @@ import com.wotb.core.processing.ReplayBatchProcessingResult;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.web.replay.ai.AiReplayReviewService;
-import com.wotb.web.replay.ai.AiReplayBatchPolicy;
 import com.wotb.web.replay.ai.AiReviewStreamListener;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
 import com.wotb.web.replay.ai.AllowedLanguage;
@@ -20,6 +19,7 @@ import com.wotb.web.replay.ai.gateway.AiRequestContext;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.config.ApiPaths;
 import com.wotb.web.replay.dto.AnalyzeResponse;
+import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 import com.wotb.web.replay.exception.AiReviewBusyException;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
@@ -107,7 +107,7 @@ public class ReconstructionController {
         // HTTP request-envelope validation（request 线程同步执行）：文件参数校验
         // 在提交 worker 前完成，非法请求直接 HTTP 400（经 @ExceptionHandler），
         // 不进入 SSE 流。worker 内 analyzeInternal 保留相同校验作为防御。
-        validateAnalyzeRequest(files);
+        ReplayUploadValidator.validate(files);
         if (correlationId != null && !correlationId.isBlank()
                 && !AiCancellationRegistry.isValidCorrelationId(correlationId)) {
             throw new IllegalArgumentException("INVALID_CORRELATION_ID");
@@ -293,7 +293,7 @@ public class ReconstructionController {
     public ReplayBatchProcessingResult reconstructBatch(
             @RequestParam("files") final MultipartFile[] files) throws IOException {
 
-        validateBatch(files);
+        ReplayUploadValidator.validate(files);
         final List<Source> sources = toSources(files);
         return timed(ReplayUsageMetrics.OP_RECONSTRUCT, files.length, () -> processingFacade.processBatch(sources, ReplayProcessingOptions.full()));
     }
@@ -303,7 +303,7 @@ public class ReconstructionController {
             @RequestParam("files") final MultipartFile[] files,
             @RequestParam(name = "reconstruct", defaultValue = "false") final boolean doReconstruct) throws IOException {
 
-        validateBatch(files);
+        ReplayUploadValidator.validate(files);
 
         final ReplayProcessingOptions options = doReconstruct
                 ? ReplayProcessingOptions.full()
@@ -444,49 +444,6 @@ public class ReconstructionController {
         return ResponseEntity.badRequest()
                 .contentType(MediaType.TEXT_PLAIN)
                 .body("MIXED_RANDOM_BATTLE_RECORDERS");
-    }
-
-    // ---- 验证 ----
-
-    private static void validateFile(final MultipartFile file) {
-        if (file == null || file.isEmpty()) {
-            throw new IllegalArgumentException("NO_REPLAY_FILE");
-        }
-        final String name = file.getOriginalFilename();
-        if (name == null || name.isBlank() || !name.toLowerCase().endsWith(".wotbreplay")) {
-            throw new IllegalArgumentException("INVALID_REPLAY_FILE_TYPE");
-        }
-        if (file.getSize() > 20L * 1024 * 1024) {
-            throw new IllegalArgumentException("FILE_TOO_LARGE");
-        }
-    }
-
-    private static void validateBatch(final MultipartFile[] files) {
-        if (files == null || files.length == 0) {
-            throw new IllegalArgumentException("NO_REPLAY_FILES");
-        }
-        long totalBytes = 0;
-        for (final MultipartFile file : files) {
-            validateFile(file);
-            totalBytes += file.getSize();
-        }
-        if (totalBytes > 200L * 1024 * 1024) {
-            throw new IllegalArgumentException("TOTAL_REQUEST_TOO_LARGE");
-        }
-    }
-
-    /**
-     * analyze 端点的 request-envelope 校验（servlet request 线程同步执行）：
-     * 文件非空 / 数量 ≤ {@link AiReplayBatchPolicy#MAX_FILES} / 每个文件合法 /
-     * 总大小 ≤ 上限。失败直接 HTTP 400，不进入 SSE 流。worker 内
-     * {@code analyzeInternal} 保留相同校验作为防御。
-     */
-    private static void validateAnalyzeRequest(final MultipartFile[] files) {
-        validateBatch(files);
-        if (files.length > AiReplayBatchPolicy.MAX_FILES) {
-            throw new ReplayFileCountExceededException(
-                    AiReplayBatchPolicy.MAX_FILES, files.length);
-        }
     }
 
     // ---- 辅助 ----
