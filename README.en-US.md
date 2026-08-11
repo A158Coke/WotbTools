@@ -47,8 +47,7 @@ Real review sample (neptune 7v7 team battle):
 4. **3x3 grid + map semantics**: canonical 500×500 grid regions 1-9; AREA semantics are decoded from client SC2 / heightmap and are not treated as verified facts before manual review.
 5. **Structured JSON calls disable thinking**: Call #1 pre-battle and Team Autopsy avoid blank completions (reasoning consuming the output budget).
 6. **Bounded worker pool (4+4) + AbortPolicy**: long SSE requests never block servlet threads; saturation returns 503.
-7. **Desensitized real replay fixtures in CI**: parse regression no longer depends on local gitignored samples; nicknames are masked with byte-length-preserving placeholders.
-8. **Same-server backups with 7-day retention + verification**: single-server infrastructure constraint; no off-site backup yet.
+7. **Same-server backups with 7-day retention + verification**: single-server infrastructure constraint; no off-site backup yet.
 
 ## Documentation
 
