@@ -423,6 +423,11 @@ public class SpringAiChatGateway implements AiChatGateway {
                                     } else {
                                         consumer.onDelta(delta);
                                     }
+                                } catch (final StreamInterruptedMarker marker) {
+                                    // Gateway 自己产生的取消/超时标记：原样向外传播到控制流
+                                    // catch，转换为 AI_CANCELLED / AI_TIMEOUT 稳定错误码，
+                                    // 不得被当成 consumer/sink 异常包装成 ConsumerAbortException。
+                                    throw marker;
                                 } catch (final RuntimeException sinkError) {
                                     throw new ConsumerAbortException(sinkError);
                                 }

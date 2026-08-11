@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -264,6 +265,57 @@ class SpringAiChatGatewayStreamTest {
         assertTrue(capped.size() <= SpringAiChatGateway.CHUNK_MAX_PIECES,
                 "piece count must not exceed cap: " + capped.size());
         assertEquals(longText, String.join("", capped));
+    }
+
+    @Test
+    void cancellationDuringLargeDeltaSplitMapsAiCancelled() {
+        final String big = "一".repeat(600);
+        when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.just(chunk(big, null, "STOP")));
+        final AtomicBoolean cancelledOnce = new AtomicBoolean();
+
+        final AiUpstreamException e = assertThrows(AiUpstreamException.class,
+                () -> gateway.stream(request(), delta -> {
+                    // 第一片已发出后触发取消：下一片发送前的检查必须稳定映射为 AI_CANCELLED
+                    if (cancelledOnce.compareAndSet(false, true)) {
+                        cancellation.cancel();
+                    }
+                }));
+
+        assertEquals("AI_CANCELLED", e.code(),
+                "cancellation during large-delta split must keep stable code AI_CANCELLED");
+    }
+
+    @Test
+    void deadlineDuringLargeDeltaSplitMapsAiTimeout() {
+        final String big = "一".repeat(600);
+        when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.just(chunk(big, null, "STOP")));
+        final AtomicBoolean advanced = new AtomicBoolean();
+
+        final AiUpstreamException e = assertThrows(AiUpstreamException.class,
+                () -> gateway.stream(request(), delta -> {
+                    // 第一片后推进假时钟到 deadline：下一片发送前的检查必须稳定映射为 AI_TIMEOUT
+                    if (advanced.compareAndSet(false, true)) {
+                        now.set(START_NANOS + 315_000_000_000L);
+                    }
+                }));
+
+        assertEquals("AI_TIMEOUT", e.code(),
+                "deadline during large-delta split must keep stable code AI_TIMEOUT");
+    }
+
+    @Test
+    void largeDeltaConsumerRuntimeExceptionStillPropagatesUnmapped() {
+        final String big = "x".repeat(600);
+        when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.just(chunk(big, null, "STOP")));
+        final IllegalStateException sentinel = new IllegalStateException("sink closed");
+
+        final IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                () -> gateway.stream(request(), delta -> {
+                    throw sentinel;
+                }));
+
+        assertEquals(sentinel, thrown,
+                "real consumer RuntimeException must keep consumer-abort semantics");
     }
 
     private static AiChatRequest request() {
