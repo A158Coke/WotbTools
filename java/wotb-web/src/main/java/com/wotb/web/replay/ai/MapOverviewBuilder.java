@@ -14,6 +14,7 @@ import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.map.MapGridProfile;
 import com.wotb.core.replay.map.MapGridRegistry;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.util.PlayerResultFormat;
 import com.wotb.web.replay.dto.MapImageCatalog;
 import com.wotb.web.replay.dto.MapOverview;
 
@@ -102,7 +103,7 @@ public final class MapOverviewBuilder {
                                         cell.bounds().xMin(), cell.bounds().xMax(),
                                         cell.bounds().yMin(), cell.bounds().yMax())))
                         .toList(),
-                MapImageCatalog.imageFor(profile.mapCode()),
+                MapImageCatalog.imageFor(battle.mapName),
                 profile.spawnPoints().stream()
                         .map(s -> new MapOverview.SpawnPoint(s.name(), s.team(), s.x(), s.y()))
                         .toList(),
@@ -172,8 +173,7 @@ public final class MapOverviewBuilder {
             if (points.isEmpty() || points.get(points.size() - 1).timeSec() < last.timeSec - 1e-6) {
                 points.add(new MapOverview.Point(last.x, last.z, last.timeSec));
             }
-            final Double deathSec = player.deathTimeMillis > 0
-                    ? player.deathTimeMillis / 1000.0 : null;
+            final Double deathSec = resolveDeathSec(player);
             routes.add(new MapOverview.Route(
                     player.accountId,
                     player.nickname,
@@ -239,8 +239,9 @@ public final class MapOverviewBuilder {
 
         final Map<Long, Double> deathSecByAccount = new HashMap<>();
         for (final PlayerResult player : battle.players) {
-            if (player.deathTimeMillis > 0) {
-                deathSecByAccount.put(player.accountId, player.deathTimeMillis / 1000.0);
+            final Double deathSec = resolveDeathSec(player);
+            if (deathSec != null) {
+                deathSecByAccount.put(player.accountId, deathSec);
             }
         }
         for (final Map.Entry<Long, Double> entry : deathSecByAccount.entrySet()) {
@@ -324,6 +325,15 @@ public final class MapOverviewBuilder {
             out.add(v);
         }
         return out;
+    }
+
+    /** 阵亡时刻（battle-relative 秒）：仅未存活玩家；优先结算，回退事件流估算；未知为 null。 */
+    private static Double resolveDeathSec(final PlayerResult player) {
+        if (player.survived) {
+            return null;
+        }
+        final double deathSec = PlayerResultFormat.deathSec(player);
+        return deathSec > 0 ? deathSec : null;
     }
 
     private static double relativeSec(final ReplayEvent event, final Float battleStartRawClockSec) {

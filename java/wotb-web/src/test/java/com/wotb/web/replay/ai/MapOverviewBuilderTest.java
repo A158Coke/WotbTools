@@ -74,6 +74,41 @@ class MapOverviewBuilderTest {
         // 双方阵营都在
         assertTrue(overview.routes().stream().anyMatch(r -> r.team() == 1));
         assertTrue(overview.routes().stream().anyMatch(r -> r.team() == 2));
+
+        // 热力非空：驻留/伤害计数 > 0，阵亡总数 = 14 - 幸存数（权威口径）
+        final double friendlyDwell = overview.heatmaps().friendly().dwell().stream()
+                .mapToDouble(Double::doubleValue).sum();
+        final double enemyDwell = overview.heatmaps().enemy().dwell().stream()
+                .mapToDouble(Double::doubleValue).sum();
+        final double friendlyDmg = overview.heatmaps().friendly().damage().stream()
+                .mapToDouble(Double::doubleValue).sum();
+        final double enemyDmg = overview.heatmaps().enemy().damage().stream()
+                .mapToDouble(Double::doubleValue).sum();
+        assertTrue(friendlyDwell > 0 && enemyDwell > 0, "双方驻留采样非空");
+        assertTrue(friendlyDmg > 0 && enemyDmg > 0, "双方伤害热力非空");
+        final long dead = result.battle().players.stream().filter(p -> !p.survived).count();
+        final double deaths = overview.heatmaps().friendly().deaths().stream()
+                .mapToDouble(Double::doubleValue).sum()
+                + overview.heatmaps().enemy().deaths().stream()
+                .mapToDouble(Double::doubleValue).sum();
+        assertEquals(dead, (long) deaths, "阵亡热力总数 == 权威阵亡人数");
+
+        // 路线点坐标落在 playableBounds 内（允许 1m 容差）；死亡标记与权威阵亡一致
+        final double xMin = overview.playableBounds().xMin();
+        final double xMax = overview.playableBounds().xMax();
+        final double yMin = overview.playableBounds().yMin();
+        final double yMax = overview.playableBounds().yMax();
+        for (final MapOverview.Route route : overview.routes()) {
+            for (final MapOverview.Point point : route.points()) {
+                assertTrue(point.x() >= xMin - 1 && point.x() <= xMax + 1
+                                && point.y() >= yMin - 1 && point.y() <= yMax + 1,
+                        "路线点在可玩区内: " + route.playerName());
+            }
+            if (route.deathSec() != null) {
+                assertTrue(route.deathSec() <= result.battle().durationS + 1,
+                        "阵亡时刻不晚于战斗结束: " + route.playerName());
+            }
+        }
     }
 
     @Test
