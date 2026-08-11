@@ -1,6 +1,10 @@
 package com.wotb.web.replay.ai;
 
+import com.wotb.web.replay.ai.gateway.AiRequestContext;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PreDestroy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -12,41 +16,55 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 有界 AI Review / SSE worker executor：{@code ReconstructionController.analyze()}
- * 在 servlet request 线程只做校验与提交，真正的 AI 复盘（含上游流式调用）在
- * 此执行器的 worker 线程上运行，request 线程立即返回 {@code SseEmitter}。
+ * ?? AI Review / SSE worker executor?{@code ReconstructionController.analyze()}
+ * ? servlet request ????????????? AI ????????????
+ * ????? worker ??????request ?????? {@code SseEmitter}?
  *
- * <p><b>容量设计（V1：2C4G VPS）</b>：默认 4 concurrent workers + 4 queued，
- * 最多 8 active/pending，第 9 个请求立即拒绝（{@code AI_REVIEW_BUSY} / 503）。
- * 可通过环境变量 {@code AI_REVIEW_WORKER_MAX_CONCURRENT} /
- * {@code AI_REVIEW_WORKER_QUEUE_CAPACITY} 调整（3/4/6 等无需 rebuild）。
- * 线程数固定（core = max），daemon，有界队列。</p>
+ * <p><b>?????V1?2C4G VPS?</b>??? 4 concurrent workers + 4 queued?
+ * ?? 8 active/pending?? 9 ????????{@code AI_REVIEW_BUSY} / 503??
+ * ??????? {@code AI_REVIEW_WORKER_MAX_CONCURRENT} /
+ * {@code AI_REVIEW_WORKER_QUEUE_CAPACITY} ???3/4/6 ??? rebuild??
+ * ??????core = max??daemon??????</p>
  *
- * <p><b>拒绝策略</b>：{@link ThreadPoolExecutor.AbortPolicy}——满载时抛
- * {@code RejectedExecutionException}，由 Controller 捕获后返回 503
- * {@code AI_REVIEW_BUSY}。绝不使用 {@code CallerRunsPolicy}（会让 servlet
- * request 线程执行 AI Review，重新引入 SSE blocking bug）。</p>
+ * <p><b>????</b>?{@link ThreadPoolExecutor.AbortPolicy}??????
+ * {@code RejectedExecutionException}?? Controller ????? 503
+ * {@code AI_REVIEW_BUSY}????? {@code CallerRunsPolicy}??? servlet
+ * request ???? AI Review????? SSE blocking bug??</p>
+ *
+ * <p><b>?? deadline?E ???</b>?????????? {@code now + overall-deadline-sec}
+ * ??? 400s????? 400s / nginx 420s???? {@link AiRequestContext} ???
+ * worker?????????????????????????????? AI_TIMEOUT?</p>
  */
 @Component
 public class AiReviewWorkerExecutor implements AutoCloseable {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(AiReviewWorkerExecutor.class);
+
     static final int DEFAULT_MAX_CONCURRENT = 4;
     static final int DEFAULT_QUEUE_CAPACITY = 4;
+    static final long DEFAULT_OVERALL_DEADLINE_SEC = 400;
 
     private final ThreadPoolExecutor executor;
+    private final long overallDeadlineNanos;
+
+    @Autowired(required = false)
+    private MeterRegistry meterRegistry;
 
     /**
-     * Spring 构造器：从 {@code wotb.ai.review-worker.max-concurrent} /
-     * {@code wotb.ai.review-worker.queue-capacity} 读取配置（默认 4/4）。
-     * 测试可直接传字面值调用（{@code @Value} 仅 Spring 容器处理）。
+     * Spring ?????? {@code wotb.ai.review-worker.max-concurrent} /
+     * {@code wotb.ai.review-worker.queue-capacity} /
+     * {@code wotb.ai.review-worker.overall-deadline-sec} ??????? 4/4/400??
+     * ????????????{@code @Value} ? Spring ??????
      *
-     * @param maxConcurrent  worker 线程数（core = max，固定不弹性伸缩），必须 ≥ 1
-     * @param queueCapacity  有界队列容量，必须 ≥ 1
+     * @param maxConcurrent    worker ????core = max???????????? ? 1
+     * @param queueCapacity    ????????? ? 1
+     * @param overallDeadlineSec  ???? deadline?????? ? 1
      */
     @Autowired
     public AiReviewWorkerExecutor(
             @Value("${wotb.ai.review-worker.max-concurrent:4}") final int maxConcurrent,
-            @Value("${wotb.ai.review-worker.queue-capacity:4}") final int queueCapacity) {
+            @Value("${wotb.ai.review-worker.queue-capacity:4}") final int queueCapacity,
+            @Value("${wotb.ai.review-worker.overall-deadline-sec:400}") final long overallDeadlineSec) {
         if (maxConcurrent < 1) {
             throw new IllegalArgumentException(
                     "maxConcurrent must be >= 1: " + maxConcurrent);
@@ -55,6 +73,11 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
             throw new IllegalArgumentException(
                     "queueCapacity must be >= 1: " + queueCapacity);
         }
+        if (overallDeadlineSec < 1) {
+            throw new IllegalArgumentException(
+                    "overallDeadlineSec must be >= 1: " + overallDeadlineSec);
+        }
+        this.overallDeadlineNanos = TimeUnit.SECONDS.toNanos(overallDeadlineSec);
         this.executor = new ThreadPoolExecutor(
                 maxConcurrent,
                 maxConcurrent,
@@ -65,17 +88,44 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
                 new ThreadPoolExecutor.AbortPolicy());
     }
 
-    /** 测试便利构造器：使用默认 4/4。 */
+    /** ????????????? 4/4/400? */
     public AiReviewWorkerExecutor() {
-        this(DEFAULT_MAX_CONCURRENT, DEFAULT_QUEUE_CAPACITY);
+        this(DEFAULT_MAX_CONCURRENT, DEFAULT_QUEUE_CAPACITY, DEFAULT_OVERALL_DEADLINE_SEC);
+    }
+
+    /** ??????????? workers/queue??? deadline ???? 400s? */
+    public AiReviewWorkerExecutor(final int maxConcurrent, final int queueCapacity) {
+        this(maxConcurrent, queueCapacity, DEFAULT_OVERALL_DEADLINE_SEC);
     }
 
     /**
-     * 提交任务；当 workers + queue 全满时抛 {@code RejectedExecutionException}
-     * （AbortPolicy），由调用方捕获并返回 503 {@code AI_REVIEW_BUSY}。
+     * ?????? workers + queue ???? {@code RejectedExecutionException}
+     * ?AbortPolicy??????????? 503 {@code AI_REVIEW_BUSY}?
+     *
+     * <p>?? deadline ????????now + overall-deadline-sec????
+     * {@link AiRequestContext} ??? worker ????????????????
+     * ?????????????????? AI_TIMEOUT?</p>
      */
     public void execute(final Runnable task) {
-        executor.execute(task);
+        final long submittedNanos = System.nanoTime();
+        executor.execute(() -> {
+            final long startNanos = System.nanoTime();
+            final long queueWaitMillis = (startNanos - submittedNanos) / 1_000_000L;
+            if (queueWaitMillis > 0) {
+                LOGGER.debug("AI review worker queue wait {} ms (overall deadline {} s)",
+                        queueWaitMillis, TimeUnit.NANOSECONDS.toSeconds(overallDeadlineNanos));
+                if (meterRegistry != null) {
+                    meterRegistry.timer("wotb_ai_review_queue_wait")
+                            .record(startNanos - submittedNanos, TimeUnit.NANOSECONDS);
+                }
+            }
+            AiRequestContext.setOverallDeadline(submittedNanos + overallDeadlineNanos);
+            try {
+                task.run();
+            } finally {
+                AiRequestContext.clearOverallDeadline();
+            }
+        });
     }
 
     @PreDestroy

@@ -95,7 +95,12 @@ public class TacticalReviewHarness {
     public HarnessOutcome analyzeWithPrior(final ReplayProcessingResult result,
                                            final AllowedLanguage language,
                                            final AiReviewStreamListener listener) {
-        final long startNanos = nanoTimeSource.getAsLong();
+        final long startNanos = budgetStartNanos();
+        if (remainingSeconds(startNanos) < SAFETY_MARGIN_SEC) {
+            // ?? deadline????? + overall??????????????????????
+            LOGGER.info("Harness overall deadline exhausted before start, aborting with AI_TIMEOUT");
+            throw new AiUpstreamException("AI_TIMEOUT", 504, AiRequestContext.correlationId());
+        }
         if (language != AllowedLanguage.ZH) {
             return new HarnessOutcome(fallback(result, language, "NON_ZH", listener), null);
         }
@@ -198,6 +203,15 @@ public class TacticalReviewHarness {
     }
 
     /** 剩余请求预算（秒）：整体 deadline = 配置的 callTimeoutSec。 */
+    /** ?????worker ???????? deadline ????????????????? */
+    private long budgetStartNanos() {
+        final Long deadline = AiRequestContext.overallDeadlineNanos();
+        if (deadline == null) {
+            return nanoTimeSource.getAsLong();
+        }
+        return deadline - config.callTimeoutSec() * 1_000_000_000L;
+    }
+
     private long remainingSeconds(final long startNanos) {
         final long elapsedNanos = nanoTimeSource.getAsLong() - startNanos;
         return Math.max(0L, config.callTimeoutSec() - elapsedNanos / 1_000_000_000L);
