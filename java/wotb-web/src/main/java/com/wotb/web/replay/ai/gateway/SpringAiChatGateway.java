@@ -2,6 +2,7 @@ package com.wotb.web.replay.ai.gateway;
 
 import java.net.SocketTimeoutException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -71,6 +72,13 @@ public class SpringAiChatGateway implements AiChatGateway {
     private static final String RETRIES = "wotb_ai_upstream_retries_total";
     private static final String RETRY_OUTCOME = "wotb_ai_upstream_retry_outcome_total";
     private static final String TOKENS = "wotb_ai_upstream_tokens_total";
+    // 超大 delta 分块兜底：上游（如 DeepSeek thinking 关闭后仍可能）一次性返回大块时，
+    // 按句切分转发，保证前端 SSE 逐段出字（C2：单请求多条 call2_token 且时间分散）。
+    // 正常 token 流（小 delta）不触发、不引入任何额外延迟。
+    static final int CHUNK_SPLIT_THRESHOLD = 512;
+    static final int CHUNK_MAX_PIECE = 128;
+    static final int CHUNK_MAX_PIECES = 512;
+    static final long CHUNK_PAUSE_MILLIS = 20L;
 
     volatile ChatModel chatModel;
     private final String defaultModel;
@@ -398,7 +406,14 @@ public class SpringAiChatGateway implements AiChatGateway {
                             if (StringUtils.hasText(delta)) {
                                 text.append(delta);
                                 try {
-                                    consumer.onDelta(delta);
+                                    if (delta.length() > CHUNK_SPLIT_THRESHOLD) {
+                                        for (final String piece : splitChunks(delta, CHUNK_MAX_PIECE)) {
+                                            consumer.onDelta(piece);
+                                            pauseChunk();
+                                        }
+                                    } else {
+                                        consumer.onDelta(delta);
+                                    }
                                 } catch (final RuntimeException sinkError) {
                                     throw new ConsumerAbortException(sinkError);
                                 }
@@ -492,6 +507,49 @@ public class SpringAiChatGateway implements AiChatGateway {
         }
         final String delta = response.getResult().getOutput().getText();
         return delta != null ? delta : "";
+    }
+
+    /**
+     * 把超大 delta 按句子边界切成 ≤{@code maxPiece} 字符的片段。
+     * <p>优先在句子边界（。！？；\n 及英文 .!?;）切分，无边界时按 {@code maxPiece} 硬切；
+     * 片段数上限 {@link #CHUNK_MAX_PIECES}——文本过长时按需放大单片段长度，
+     * 避免分片过多（每片带 ~20ms 间隔）拖慢整篇展示。</p>
+     */
+    static List<String> splitChunks(final String text, final int maxPiece) {
+        if (text == null || text.isEmpty()) {
+            return List.of();
+        }
+        final int base = Math.max(1, maxPiece);
+        final int effectiveMax = Math.max(
+                base, (int) Math.ceil((double) text.length() / CHUNK_MAX_PIECES));
+        final List<String> pieces = new ArrayList<>();
+        int start = 0;
+        while (start < text.length()) {
+            final int end = Math.min(text.length(), start + effectiveMax);
+            int cut = end;
+            if (end < text.length()) {
+                for (int i = end - 1; i > start; i--) {
+                    final char c = text.charAt(i);
+                    if (c == '。' || c == '！' || c == '？' || c == '；'
+                            || c == '\n' || c == '.' || c == '!' || c == '?' || c == ';') {
+                        cut = i + 1;
+                        break;
+                    }
+                }
+            }
+            pieces.add(text.substring(start, cut));
+            start = cut;
+        }
+        return pieces;
+    }
+
+    /** 分块兜底时每片之间的轻量间隔（仅触发切分时调用；中断恢复标志后继续）。 */
+    private static void pauseChunk() {
+        try {
+            Thread.sleep(CHUNK_PAUSE_MILLIS);
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**

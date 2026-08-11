@@ -381,6 +381,48 @@ class AiReplayAnalysisServiceTest {
     }
 
     @Test
+    void teamCall2ForwardsThinkingOptionFromConfig() {
+        // startService() 使用 4 参构造（call2 thinking 默认开启 true/high），验证团队入口透传
+        final var service = startService();
+        final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
+                teamResult("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
+        service.analyzeTeamGroups(groups);
+        final AiChatRequest review = gateway.requests.stream()
+                .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("team Call #2 request must reach the gateway"));
+        assertTrue(review.thinkingEnabled(),
+                "team Call #2 must forward call2ThinkingEnabled from config");
+        assertEquals("high", review.reasoningEffort(),
+                "team Call #2 must forward reasoningEffort when thinking enabled");
+    }
+
+    @Test
+    void teamStreamingEmitsEvidenceDoneBeforeReviewCall() {
+        final var service = startService();
+        final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
+                teamResult("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
+        final List<String> stages = new CopyOnWriteArrayList<>();
+        final List<String> tokens = new CopyOnWriteArrayList<>();
+        service.analyzeTeamGroups(groups, AllowedLanguage.ZH, new AiReviewStreamListener() {
+            @Override
+            public void onStage(final String stage) {
+                stages.add(stage);
+            }
+
+            @Override
+            public void onToken(final String delta) {
+                tokens.add(delta);
+            }
+        });
+        assertTrue(stages.contains("evidence_done"),
+                "team path must emit evidence_done so the stage indicator advances: " + stages);
+        assertTrue(gateway.requests.stream()
+                        .anyMatch(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode())),
+                "team Call #2 request must be issued");
+    }
+
+    @Test
     void singletonDuplicateLimitationAppearsInRequestBody() {
         gateway.nextCompletionText = "test analysis";
         final var service = startService();

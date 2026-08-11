@@ -388,6 +388,8 @@ public class TeamReplayAnalysisService {
             perspectiveTeamByUnitId.put(ctx.analysisUnitId(), ctx.perspectiveTeam());
             priorsByUnitId.put(ctx.analysisUnitId(), call1Prior(ctx.battle(), listener));
         }
+        // 证据分析完成：与随机战 harness 对齐，让前端阶段指示从「证据分析中…」推进到「战术复盘生成中…」
+        listener.onStage("evidence_done");
         final List<List<SingleTeamBattleAnalysisContext>> partitions =
                 buildPartitions(contexts, evidenceByUnitId);
         AnalyzeResult firstAnalysis = null;
@@ -803,8 +805,8 @@ public class TeamReplayAnalysisService {
                 config.model(),
                 null,
                 config.maxOutputTokens(),
-                config.thinkingEnabled(),
-                config.reasoningEffort(),
+                config.call2ThinkingEnabled(),
+                config.call2ThinkingEnabled() ? config.reasoningEffort() : null,
                 null,
                 analysisMode,
                 (int) Math.min(Math.max(1L, callTimeoutSec), Integer.MAX_VALUE));

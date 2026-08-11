@@ -128,7 +128,7 @@ Enemy-only damage 不得延长 Team phase。
 |-------|------|------|
 | `call1_start` | `{}` | Call #1（赛前战略基线）开始 |
 | `call1_done` | `{}` | Call #1 结束（真实发起调用时必发，无论成败） |
-| `evidence_done` | `{}` | 后端证据分析完成 |
+| `evidence_done` | `{}` | 后端证据分析完成（随机战 harness 与团队路径均发射；团队路径在 `TeamReplayAnalysisService.analyzeTeamGroups` 首轮 Call #2 前补发，前端阶段指示随之推进） |
 | `call2_token` | `{"delta":"..."}` | 主复盘 token 增量 |
 | `autopsy_start` | `{}` | Team Autopsy 开始 |
 | `autopsy_done` | `{}` | Team Autopsy 结束 |
@@ -145,6 +145,12 @@ Enemy-only damage 不得延长 Team phase。
 已断开的连接写入。`AiChatGateway.stream` 单次尝试不流内重试，
 `AI_TIMEOUT` / `AI_CANCELLED`（`correlationId` cancel）语义与同步 `chat()` 一致；
 同步测试路径委托流式实现（`AiReviewStreamListener.NOOP`）。
+
+**Call #2 流式保证**：Call #2 自由文本复盘默认关闭 thinking（`AI_THINKING_ENABLED_CALL2`
+默认 `false`，见 DEVELOPER_GUIDE 配置表）——DeepSeek 推理模式下 `reasoning_content` 先流、
+content 末尾一次性到达会破坏逐段流式；`SpringAiChatGateway` 另对单块 >512 字符的 delta
+按句切分（≤128 字符/片、间隔 ~20ms、上限 512 片）兜底，保证前端 `stream-text` 在 `done`
+前持续出字。
 
 历史上响应的四类计数（`analysisUnitCount` / `analyzedUnitCount` /
 `omittedAnalysisUnitCount` / `unavailableAnalysisUnitCount`）、`files`、

@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -214,7 +215,7 @@ class SpringAiChatGatewayStreamTest {
         final SpringAiChatGateway unconfigured = SpringAiChatGateway.fromProperties(
                 new com.wotb.web.config.AiModelProperties(
                         "", "https://api.deepseek.com", "test-model", 10, 300, 315, 3,
-                        1000, 8000, 2.0, 1_000_000, 940_000, 32_768, 16_384, true, "max"),
+                        1000, 8000, 2.0, 1_000_000, 940_000, 32_768, 16_384, true, "max", false),
                 null);
         assertThrows(AiNotConfiguredException.class,
                 () -> unconfigured.stream(request(), received::append));
@@ -232,6 +233,37 @@ class SpringAiChatGatewayStreamTest {
         assertTrue(received.toString().equals("甲方推进"));
         assertTrue(result.completionText().equals("甲方推进"));
         assertEquals(3, result.outputTokens());
+    }
+
+    @Test
+    void largeSingleDeltaIsSplitIntoMultipleConsumerEvents() {
+        final String big = "一".repeat(600);
+        when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.just(
+                chunk(big, null, "STOP")));
+        final List<String> deltas = new ArrayList<>();
+
+        final AiChatResponse result = gateway.stream(request(), deltas::add);
+
+        assertTrue(deltas.size() >= 2,
+                "large upstream delta must be split into multiple consumer events: " + deltas.size());
+        assertEquals(big, String.join("", deltas),
+                "split pieces must reassemble to the original text");
+        assertEquals(big, result.completionText());
+    }
+
+    @Test
+    void splitChunksKeepsSentenceBoundariesAndPieceCap() {
+        final String text = "第一句。第二句！第三句？\n第四段";
+        final List<String> pieces = SpringAiChatGateway.splitChunks(text, 128);
+        assertEquals(text, String.join("", pieces), "split must preserve the full text");
+        assertTrue(pieces.stream().allMatch(p -> p.length() <= 128),
+                "every piece must respect maxPiece: " + pieces);
+
+        final String longText = "x".repeat(2000);
+        final List<String> capped = SpringAiChatGateway.splitChunks(longText, 128);
+        assertTrue(capped.size() <= SpringAiChatGateway.CHUNK_MAX_PIECES,
+                "piece count must not exceed cap: " + capped.size());
+        assertEquals(longText, String.join("", capped));
     }
 
     private static AiChatRequest request() {
