@@ -2,6 +2,11 @@ package com.wotb.web.replay.ai;
 
 import org.springframework.util.StringUtils;
 
+import com.wotb.core.replay.map.MapTacticalSemantics;
+import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
+
+import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -24,6 +29,26 @@ import java.util.regex.Pattern;
 public final class PreBattleSectionRenderer {
 
     private static final Pattern GRID_REGION = Pattern.compile("GRID_REGION_(\\d)");
+    private static final MapTacticalSemanticsRegistry MAP_SEMANTICS = MapTacticalSemanticsRegistry.load();
+
+    /** composition 属性键的中文显示名（用户可见，不直出 mobility 等英文键）。 */
+    private static final Map<String, String> COMPOSITION_KEYS_ZH = Map.of(
+            "mobility", "机动性",
+            "closeRangeTrading", "近距离换血",
+            "hullDownCapability", "卖头能力",
+            "burstPotential", "爆发能力");
+
+    private static final Map<String, String> COMPOSITION_KEYS_EN = Map.of(
+            "mobility", "Mobility",
+            "closeRangeTrading", "Close-range trading",
+            "hullDownCapability", "Hull-down capability",
+            "burstPotential", "Burst potential");
+
+    private static final Map<String, String> COMPOSITION_KEYS_RU = Map.of(
+            "mobility", "Мобильность",
+            "closeRangeTrading", "Ближний размен",
+            "hullDownCapability", "Игра от башни",
+            "burstPotential", "Залповый урон");
 
     private PreBattleSectionRenderer() {
     }
@@ -54,8 +79,20 @@ public final class PreBattleSectionRenderer {
                                 final int perspectiveTeam,
                                 final String teamLabel,
                                 final AllowedLanguage language) {
+        return render(prior, perspectiveTeam, teamLabel, language, null);
+    }
+
+    /**
+     * 团队复盘（语言跟随请求 + 地图语义）：按视角队伍交换，视角队伍渲染为「我方」；
+     * {@code mapCode} 用于把 AREA ID 映射为中文名 + 九宫格编号。
+     */
+    public static String render(final PreBattleStrategicPrior prior,
+                                final int perspectiveTeam,
+                                final String teamLabel,
+                                final AllowedLanguage language,
+                                final String mapCode) {
         return renderInternal(prior, perspectiveTeam, teamLabel,
-                texts(language, false));
+                texts(language, false), language, mapCode);
     }
 
     /**
@@ -69,14 +106,24 @@ public final class PreBattleSectionRenderer {
     public static String renderRandomBattle(final PreBattleStrategicPrior prior,
                                             final int recorderTeam,
                                             final AllowedLanguage language) {
+        return renderRandomBattle(prior, recorderTeam, language, null);
+    }
+
+    /** 随机战（语言跟随 + 地图语义，AREA ID → 中文名 + 九宫格编号）。 */
+    public static String renderRandomBattle(final PreBattleStrategicPrior prior,
+                                            final int recorderTeam,
+                                            final AllowedLanguage language,
+                                            final String mapCode) {
         return renderInternal(prior, recorderTeam, null,
-                texts(language, true));
+                texts(language, true), language, mapCode);
     }
 
     private static String renderInternal(final PreBattleStrategicPrior prior,
                                          final int perspectiveTeam,
                                          final String teamLabel,
-                                         final Texts texts) {
+                                         final Texts texts,
+                                         final AllowedLanguage language,
+                                         final String mapCode) {
         if (prior == null || !prior.hasContent()) {
             return null;
         }
@@ -97,18 +144,21 @@ public final class PreBattleSectionRenderer {
         final StringBuilder sb = new StringBuilder(2048);
         sb.append("## ").append(texts.title()).append("\n\n");
         sb.append(texts.intro()).append('\n');
-        appendTeamProfile(sb, teamALabel, profileA, tokenALabel, tokenBLabel, texts);
-        appendTeamProfile(sb, teamBLabel, profileB, tokenALabel, tokenBLabel, texts);
+        appendTeamProfile(sb, teamALabel, profileA, tokenALabel, tokenBLabel, texts, language, mapCode);
+        appendTeamProfile(sb, teamBLabel, profileB, tokenALabel, tokenBLabel, texts, language, mapCode);
         if (!prior.keyMatchups().isEmpty()) {
             sb.append("\n**").append(texts.matchups()).append("**\n");
             for (final PreBattleStrategicPrior.KeyMatchup m : prior.keyMatchups()) {
                 sb.append("- ").append(texts.region()).append(' ')
-                        .append(display(text(m.area(), texts.unknown()), tokenALabel, tokenBLabel, texts));
+                        .append(display(text(m.area(), texts.unknown()),
+                                tokenALabel, tokenBLabel, texts, mapCode, language));
                 if (StringUtils.hasText(m.advantage())) {
-                    sb.append("：").append(display(m.advantage(), tokenALabel, tokenBLabel, texts));
+                    sb.append("：").append(display(m.advantage(),
+                            tokenALabel, tokenBLabel, texts, mapCode, language));
                 }
                 if (StringUtils.hasText(m.reason())) {
-                    sb.append("（").append(display(m.reason(), tokenALabel, tokenBLabel, texts)).append("）");
+                    sb.append("（").append(display(m.reason(),
+                            tokenALabel, tokenBLabel, texts, mapCode, language)).append("）");
                 }
                 sb.append('\n');
             }
@@ -117,8 +167,10 @@ public final class PreBattleSectionRenderer {
             sb.append("\n**").append(texts.winConditions()).append("**\n");
             for (final PreBattleStrategicPrior.StrategicWinCondition w
                     : prior.strategicWinConditions()) {
-                sb.append("- ").append(display(text(w.team(), texts.unknown()), tokenALabel, tokenBLabel, texts))
-                        .append("：").append(display(text(w.condition(), ""), tokenALabel, tokenBLabel, texts))
+                sb.append("- ").append(display(text(w.team(), texts.unknown()),
+                        tokenALabel, tokenBLabel, texts, mapCode, language))
+                        .append("：").append(display(text(w.condition(), ""),
+                                tokenALabel, tokenBLabel, texts, mapCode, language))
                         .append('\n');
             }
         }
@@ -127,10 +179,12 @@ public final class PreBattleSectionRenderer {
             for (final PreBattleStrategicPrior.StrategicHypothesis h : prior.hypotheses()) {
                 // id 直接输出 parser 得到的值（如 H1），绝不 prepend 前缀（避免 HH1）。
                 sb.append("- ").append(text(h.id(), "?"))
-                        .append("：").append(display(text(h.claim(), ""), tokenALabel, tokenBLabel, texts));
+                        .append("：").append(display(text(h.claim(), ""),
+                                tokenALabel, tokenBLabel, texts, mapCode, language));
                 if (StringUtils.hasText(h.reason())) {
                     sb.append("（").append(texts.reasonPrefix())
-                            .append(display(h.reason(), tokenALabel, tokenBLabel, texts)).append("）");
+                            .append(display(h.reason(),
+                                    tokenALabel, tokenBLabel, texts, mapCode, language)).append("）");
                 }
                 sb.append('\n');
             }
@@ -143,7 +197,9 @@ public final class PreBattleSectionRenderer {
                                           final PreBattleStrategicPrior.TeamProfile profile,
                                           final String tokenALabel,
                                           final String tokenBLabel,
-                                          final Texts texts) {
+                                          final Texts texts,
+                                          final AllowedLanguage language,
+                                          final String mapCode) {
         if (profile == null) {
             return;
         }
@@ -151,29 +207,30 @@ public final class PreBattleSectionRenderer {
         if (!profile.composition().isEmpty()) {
             sb.append("- ").append(texts.composition()).append('：');
             sb.append(String.join("；", profile.composition().entrySet().stream()
-                    .map(e -> e.getKey() + "="
-                            + display(e.getValue(), tokenALabel, tokenBLabel, texts))
+                    .map(e -> compositionKey(e.getKey(), language) + "="
+                            + compositionValue(display(e.getValue(),
+                                    tokenALabel, tokenBLabel, texts, mapCode, language), language))
                     .toList()));
             sb.append('\n');
         }
         if (!profile.strengths().isEmpty()) {
             sb.append("- ").append(texts.strengths()).append('：')
                     .append(String.join("；", profile.strengths().stream()
-                            .map(s -> display(s, tokenALabel, tokenBLabel, texts))
+                            .map(s -> display(s, tokenALabel, tokenBLabel, texts, mapCode, language))
                             .toList()))
                     .append('\n');
         }
         if (!profile.weaknesses().isEmpty()) {
             sb.append("- ").append(texts.weaknesses()).append('：')
                     .append(String.join("；", profile.weaknesses().stream()
-                            .map(s -> display(s, tokenALabel, tokenBLabel, texts))
+                            .map(s -> display(s, tokenALabel, tokenBLabel, texts, mapCode, language))
                             .toList()))
                     .append('\n');
         }
         if (!profile.preferredPlans().isEmpty()) {
             sb.append("- ").append(texts.plans()).append('：')
                     .append(String.join("；", profile.preferredPlans().stream()
-                            .map(s -> display(s, tokenALabel, tokenBLabel, texts))
+                            .map(s -> display(s, tokenALabel, tokenBLabel, texts, mapCode, language))
                             .toList()))
                     .append('\n');
         }
@@ -192,17 +249,103 @@ public final class PreBattleSectionRenderer {
     private static String display(final String value,
                                   final String teamALabel,
                                   final String teamBLabel,
-                                  final Texts texts) {
+                                  final Texts texts,
+                                  final String mapCode,
+                                  final AllowedLanguage language) {
         if (!StringUtils.hasText(value)) {
             return value;
         }
-        String result = value.replace("TEAM_A", teamALabel).replace("TEAM_B", teamBLabel);
+        // TEAM_A/TEAM_B 是 Call #1 契约 token；LLM 自由文本还可能出现
+        // TEAM A / A队 / A 队 / 队伍1 等变体，全部映射到同一视角标签。
+        String result = value
+                .replace("TEAM_A", teamALabel).replace("TEAM_B", teamBLabel)
+                .replace("TEAM A", teamALabel).replace("TEAM B", teamBLabel)
+                .replace("A队", teamALabel).replace("B队", teamBLabel)
+                .replace("A 队", teamALabel).replace("B 队", teamBLabel)
+                .replace("队伍1", teamALabel).replace("队伍2", teamBLabel);
         final Matcher matcher = GRID_REGION.matcher(result);
         if (matcher.find()) {
             // regionName 模板形如 "$1区" / "Region $1"：replaceAll 会把 $1 展开为区域号。
             result = matcher.replaceAll(texts.regionName());
         }
+        return mapAreaNames(result, mapCode, language);
+    }
+
+    /**
+     * AREA ID → 用户可见区域名 + 九宫格编号，语言跟随请求。
+     * <p>ZH 使用现有 semantic 中文 label（如 ELEVATED_TERRAIN_01 → 东侧高地区域（3/5/6/9区））；
+     * EN/RU 不泄漏中文、不翻译/猜测区域名，只保留可靠的九宫格编号（Regions 3/5/6/9 /
+     * Области 3/5/6/9），无编号时用通用词 Area / Область。</p>
+     */
+    private static String mapAreaNames(final String value,
+                                       final String mapCode,
+                                       final AllowedLanguage language) {
+        if (!StringUtils.hasText(value) || !StringUtils.hasText(mapCode)) {
+            return value;
+        }
+        final MapTacticalSemantics semantics = MAP_SEMANTICS.semanticsFor(mapCode);
+        final AllowedLanguage lang = language == null ? AllowedLanguage.ZH : language;
+        String result = value;
+        for (final Map.Entry<String, MapTacticalSemantics.TacticalArea> entry
+                : semantics.areas().entrySet()) {
+            final MapTacticalSemantics.TacticalArea area = entry.getValue();
+            if (lang == AllowedLanguage.ZH
+                    && area.label().isBlank() && area.gridRegions().isEmpty()) {
+                continue;
+            }
+            final List<String> regions = area.gridRegions().stream()
+                    .map(region -> region.replace("GRID_REGION_", ""))
+                    .toList();
+            final String readable = switch (lang) {
+                case EN -> regions.isEmpty() ? "Area" : "Regions " + String.join("/", regions);
+                case RU -> regions.isEmpty() ? "Область" : "Области " + String.join("/", regions);
+                case ZH -> (area.label().isBlank() ? entry.getKey() : area.label())
+                        + (regions.isEmpty() ? "" : "（" + String.join("/", regions) + "区）");
+            };
+            result = result.replace(entry.getKey(), readable);
+        }
         return result;
+    }
+
+    /** composition 属性键翻译（三语），用户可见不直出 mobility 等英文键。 */
+    private static String compositionKey(final String key, final AllowedLanguage language) {
+        if (key == null) {
+            return "";
+        }
+        final Map<String, String> map = switch (language == null ? AllowedLanguage.ZH : language) {
+            case EN -> COMPOSITION_KEYS_EN;
+            case RU -> COMPOSITION_KEYS_RU;
+            case ZH -> COMPOSITION_KEYS_ZH;
+        };
+        return map.getOrDefault(key, key);
+    }
+
+    /** composition 属性值翻译（HIGH/MEDIUM/LOW → 三语）。 */
+    private static String compositionValue(final String value, final AllowedLanguage language) {
+        if (value == null) {
+            return "";
+        }
+        final String upper = value.trim().toUpperCase();
+        return switch (language == null ? AllowedLanguage.ZH : language) {
+            case EN -> switch (upper) {
+                case "HIGH" -> "High";
+                case "MEDIUM" -> "Medium";
+                case "LOW" -> "Low";
+                default -> value;
+            };
+            case RU -> switch (upper) {
+                case "HIGH" -> "Высокий";
+                case "MEDIUM" -> "Средний";
+                case "LOW" -> "Низкий";
+                default -> value;
+            };
+            case ZH -> switch (upper) {
+                case "HIGH" -> "高";
+                case "MEDIUM" -> "中";
+                case "LOW" -> "低";
+                default -> value;
+            };
+        };
     }
 
     /** 文案集合：按语言与展示形态（随机战 友军/敌军 vs 团队 我方/对方）选择。 */

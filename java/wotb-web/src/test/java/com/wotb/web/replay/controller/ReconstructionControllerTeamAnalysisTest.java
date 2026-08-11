@@ -121,7 +121,8 @@ class ReconstructionControllerTeamAnalysisTest {
 
         final String body = drainUntilDone(analyzeDirect(replayFile("training.wotbreplay")));
 
-        assertTrue(body.contains("\"analysis\":\"team review\""), body);
+        assertTrue(body.contains("\"analysis\":\"team review") && body.contains("AI复盘仅供参考"),
+                "analysis must keep text and end with disclaimer footer: " + body);
 
         final ArgumentCaptor<List<ReplayPerspectiveGroup>> captor =
                 teamGroupCaptor();
@@ -179,7 +180,7 @@ class ReconstructionControllerTeamAnalysisTest {
 
         final String body = drainUntilDone(analyzeDirect(replayFile("fallback.wotbreplay")));
 
-        assertTrue(body.contains("\"analysis\":\"fallback review\""), body);
+        assertTrue(body.contains("\"analysis\":\"fallback review") && body.contains("AI复盘仅供参考"), body);
     }
 
     @Test
@@ -193,7 +194,7 @@ class ReconstructionControllerTeamAnalysisTest {
 
         final String body = drainUntilDone(analyzeDirect(replayFile("training.wotbreplay")));
 
-        assertTrue(body.contains("\"analysis\":\"team review\""), body);
+        assertTrue(body.contains("\"analysis\":\"team review") && body.contains("AI复盘仅供参考"), body);
     }
 
     @Test
@@ -207,7 +208,7 @@ class ReconstructionControllerTeamAnalysisTest {
 
         final String body = drainUntilDone(analyzeDirect(replayFile("battle.wotbreplay")));
 
-        assertTrue(body.contains("\"analysis\":\"team review\""), body);
+        assertTrue(body.contains("\"analysis\":\"team review") && body.contains("AI复盘仅供参考"), body);
     }
 
     @Test
@@ -255,7 +256,7 @@ class ReconstructionControllerTeamAnalysisTest {
 
         final String body = drainUntilDone(analyzeDirect(replayFile("resolved.wotbreplay")));
 
-        assertTrue(body.contains("\"analysis\":\"review\""), body);
+        assertTrue(body.contains("\"analysis\":\"review") && body.contains("AI复盘仅供参考"), body);
     }
 
     @Test
@@ -307,7 +308,7 @@ class ReconstructionControllerTeamAnalysisTest {
 
         final String body = drainUntilDone(analyzeDirect(replayFile("random.wotbreplay")));
 
-        assertTrue(body.contains("\"analysis\":\"player review\""), body);
+        assertTrue(body.contains("\"analysis\":\"player review") && body.contains("AI复盘仅供参考"), body);
 
         verify(aiService).analyzePlayerOrFallback(any(), any(), any());
         verify(aiService, never()).analyzeTeamGroups(any(), any(), any());

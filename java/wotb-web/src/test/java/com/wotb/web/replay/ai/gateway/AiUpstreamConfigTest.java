@@ -2,6 +2,7 @@ package com.wotb.web.replay.ai.gateway;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 
@@ -93,6 +94,22 @@ class AiUpstreamConfigTest {
                 () -> properties(10, 300, 315, 3, 1000, 8000, 0.9));
     }
 
+    @Test
+    void call2ThinkingEnabledRequiresHighOrMaxEffort() {
+        // call2 开启但 effort 非法 → 拒绝
+        assertThrows(IllegalArgumentException.class,
+                () -> new AiModelProperties(
+                        "sk-test", "https://api.deepseek.com", "deepseek-v4-flash",
+                        10, 300, 315, 3, 1000, 8000, 2.0,
+                        1_000_000, 940_000, 32_768, 16_384, false, null, true));
+        // 开启 + high → 合法且透传
+        final AiModelProperties enabled = new AiModelProperties(
+                "sk-test", "https://api.deepseek.com", "deepseek-v4-flash",
+                10, 300, 315, 3, 1000, 8000, 2.0,
+                1_000_000, 940_000, 32_768, 16_384, false, "high", true);
+        assertTrue(enabled.call2ThinkingEnabled(), "call2ThinkingEnabled must be forwarded");
+    }
+
     private static AiModelProperties properties(
             final int connect, final int read, final int call,
             final int retryMax, final long initialBackoff, final long maxBackoff,
@@ -100,6 +117,6 @@ class AiUpstreamConfigTest {
         return new AiModelProperties(
                 "sk-test", "https://api.deepseek.com", "deepseek-v4-flash",
                 connect, read, call, retryMax, initialBackoff, maxBackoff, multiplier,
-                1_000_000, 940_000, 32_768, 16_384, true, "max");
+                1_000_000, 940_000, 32_768, 16_384, true, "max", false);
     }
 }

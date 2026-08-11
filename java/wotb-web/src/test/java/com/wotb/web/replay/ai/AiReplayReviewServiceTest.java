@@ -301,7 +301,10 @@ class AiReplayReviewServiceTest {
 
         final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
 
-        assertEquals("harness-text", response.analysis(), "analysis must be unaffected");
+        assertTrue(response.analysis().startsWith("harness-text"),
+                "analysis text must be preserved before footer");
+        assertTrue(response.analysis().endsWith("AI复盘仅供参考"),
+                "ZH analysis must end with fixed disclaimer footer");
         final String section = response.preBattleSection();
         assertNotNull(section, "Call #1 prior must be rendered when harness succeeds");
         assertTrue(section.contains("赛前预测"), "section must be user-visible Chinese");
@@ -322,7 +325,8 @@ class AiReplayReviewServiceTest {
 
         final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
 
-        assertEquals("harness-text", response.analysis());
+        assertTrue(response.analysis().startsWith("harness-text"));
+        assertTrue(response.analysis().endsWith("AI复盘仅供参考"));
         assertNull(response.preBattleSection(),
                 "failed Call #1 / fallback must yield null preBattleSection");
     }
@@ -340,7 +344,9 @@ class AiReplayReviewServiceTest {
         final AnalyzeResponse response = service.analyze(
                 new MultipartFile[]{singleFile()}, AllowedLanguage.EN);
 
-        assertEquals("fallback-text", response.analysis());
+        assertTrue(response.analysis().startsWith("fallback-text"));
+        assertTrue(response.analysis().endsWith("This AI review is for reference only"),
+                "EN analysis must end with English disclaimer footer");
         assertNull(response.preBattleSection());
     }
 
@@ -352,7 +358,8 @@ class AiReplayReviewServiceTest {
 
         final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
 
-        assertEquals("fallback-text", response.analysis());
+        assertTrue(response.analysis().startsWith("fallback-text"));
+        assertTrue(response.analysis().endsWith("AI复盘仅供参考"));
         assertNull(response.preBattleSection(),
                 "old path has no Call #1 prior, section must stay null");
     }
@@ -401,7 +408,8 @@ class AiReplayReviewServiceTest {
 
         assertEquals("call1_start;call1_done;evidence_done;token:harness;token:-text;",
                 events.toString(), "stage and token events must be forwarded in order");
-        assertEquals("harness-text", response.analysis());
+        assertTrue(response.analysis().startsWith("harness-text"));
+        assertTrue(response.analysis().endsWith("AI复盘仅供参考"));
         assertNotNull(response.preBattleSection());
     }
 
@@ -418,7 +426,8 @@ class AiReplayReviewServiceTest {
 
         final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
 
-        assertEquals("harness-text", response.analysis());
+        assertTrue(response.analysis().startsWith("harness-text"));
+        assertTrue(response.analysis().endsWith("AI复盘仅供参考"));
         final String section = response.preBattleSection();
         assertNotNull(section, "preBattleSection must be rendered when prior is available");
         assertTrue(section.contains("友军画像"),

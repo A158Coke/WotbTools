@@ -255,6 +255,18 @@ class TacticalReviewHarnessTest {
     }
 
     @Test
+    void call2FreeTextDisablesThinkingByDefault() {
+        final RecordingGateway gateway = recordingGateway(PRIOR_JSON, null);
+        harness(gateway).analyze(result(recon()), AllowedLanguage.ZH);
+        assertNotNull(gateway.lastHarnessRequest, "Call #2 must reach the gateway");
+        assertEquals("TACTICAL_REVIEW_HARNESS", gateway.lastHarnessRequest.analysisMode());
+        assertFalse(gateway.lastHarnessRequest.thinkingEnabled(),
+                "Call #2 must default thinking OFF so tokens stream incrementally");
+        assertNull(gateway.lastHarnessRequest.reasoningEffort(),
+                "reasoning effort must be null when Call #2 thinking is disabled");
+    }
+
+    @Test
     void call1FastSuccessLeavesCall2WithinOverallBudget() {
         final RecordingGateway gateway = recordingGateway(PRIOR_JSON, null);
         final AtomicLong clock = new AtomicLong(0L);

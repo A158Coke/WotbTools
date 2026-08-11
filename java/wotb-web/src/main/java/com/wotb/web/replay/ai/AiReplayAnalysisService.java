@@ -57,13 +57,13 @@ public class AiReplayAnalysisService {
                                     final int contextWindowTokens,
                                     final int maxOutputTokens,
                                     final int promptSafetyMarginTokens,
-                                    final boolean thinkingEnabled,
+                                    final boolean call2ThinkingEnabled,
                                     final String reasoningEffort) {
         final AiReplayAnalysisConfig config = new AiReplayAnalysisConfig(
                 tokenEstimator, model,
                 Math.max(1, singleReplayMaxInputTokens),
                 contextWindowTokens, maxOutputTokens, promptSafetyMarginTokens,
-                thinkingEnabled, reasoningEffort, 315);
+                call2ThinkingEnabled, reasoningEffort, 315);
         this.playerService = new PlayerReplayAnalysisService(gateway, config);
         this.teamService = new TeamReplayAnalysisService(
                 gateway, config,

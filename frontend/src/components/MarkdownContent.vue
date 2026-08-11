@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
+import { normalizeHeadings } from '../utils/markdownHeadingNormalize'
 
 const md = new MarkdownIt({
   html: false,
@@ -10,7 +11,7 @@ const md = new MarkdownIt({
 })
 
 // Custom render for links: target="_blank" rel="noopener noreferrer"
-const defaultRender = md.renderer.rules.link_open || ((tokens, idx, options, env, self) => self.renderToken(tokens, idx, options))
+const defaultRender = md.renderer.rules.link_open || ((tokens, idx, options, env, self) => self.renderToken(tokens, idx, options, env, self))
 
 md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
   const token = tokens[idx]
@@ -28,7 +29,8 @@ const props = defineProps({
 
 const sanitizedHtml = computed(() => {
   if (!props.content) return ''
-  const raw = md.render(props.content)
+  const normalized = normalizeHeadings(props.content)
+  const raw = md.render(normalized)
   return DOMPurify.sanitize(raw, {
     ALLOWED_TAGS: [
       'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
