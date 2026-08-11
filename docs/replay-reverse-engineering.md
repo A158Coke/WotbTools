@@ -33,12 +33,12 @@
 
 - 两种战斗模式（7v7 团队 / 30 人随机）类型集一致，频率也一致 → type 31/35/39 是**全局/录像者流**，不是按实体广播。
 - 本方静止无 type-10 位置、移动后才有 → 协议行为（本地模拟），非解码缺陷；开局初始状态候选在 type 0/7/13。
-- type 0 pickle 的 `accountDatabaseIds` / `clanTags` / `teamTitles` 可作**权威名册与队名来源**（优于 updateArena2 映射）。
+- type 0 pickle 的 `accountDatabaseIds` / `clanTags` / `teamTitles` 可作**权威名册与队名来源**（优于 updateArena2 映射）；已落地：`PickleDecoder`（协议 2 精简解码器）+ `EventStreamReader.extractArenaInfo` + 真实载荷单测。
 - HP 仍未定位；候选：type 39 某 float、type 8 field 18（初始满血比例）、type 13 玩家统计块、battle_results。
 
 ## 下一步
 
 1. type 39 语义：与录像者自身状态（相机/瞄准/输入）关联；确认是否含 HP 分数。
-2. type 0/13 集成：pickle 解码器（受限 Unpickler）进解析器，提供权威名册/队名/赛后统计。
+2. type 13 集成：zlib + protobuf 解码进解析器，提供赛后统计/玩家档案。
 3. type 31/32/33/5 归属；type 7 propId 完整映射（对照炮塔/车体朝向、弹药）。
 4. 将破解结果沉淀为解析器实现 + 契约测试。

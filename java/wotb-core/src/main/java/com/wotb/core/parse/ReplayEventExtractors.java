@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -101,6 +102,92 @@ final class ReplayEventExtractors {
             }
         }
         return map;
+    }
+
+    /**
+     * Extracts authoritative arena metadata from the {@code basePlayerCreate} packet
+     * (type 0): the payload embeds a Python pickle dict with the full account roster,
+     * clan tags, team titles, win flags and matchmaking metadata.
+     *
+     * @return {@code null} when no decodable base-player-create packet exists
+     */
+    public static EventStreamReader.ArenaInfo extractArenaInfo(
+            List<EventStreamReader.ParsedPacket> packets) {
+        for (final EventStreamReader.ParsedPacket pkt : packets) {
+            if (pkt.type != TYPE_BASE_PLAYER_CREATE) {
+                continue;
+            }
+            final int idx = indexOfProto2(pkt.payload);
+            if (idx < 0) {
+                continue;
+            }
+            try {
+                final Object decoded = PickleDecoder.decode(
+                        Arrays.copyOfRange(pkt.payload, idx, pkt.payload.length));
+                if (decoded instanceof Map<?, ?> map) {
+                    return toArenaInfo(map);
+                }
+            } catch (RuntimeException ignored) {
+                // tolerate a single malformed packet; try the next one
+            }
+        }
+        return null;
+    }
+
+    private static int indexOfProto2(final byte[] data) {
+        for (int i = 0; i + 1 < data.length; i++) {
+            if (data[i] == (byte) 0x80 && data[i + 1] == 0x02) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static EventStreamReader.ArenaInfo toArenaInfo(final Map<?, ?> map) {
+        final List<Long> accounts = new ArrayList<>();
+        if (map.get("accountDatabaseIds") instanceof List<?> ids) {
+            for (final Object id : ids) {
+                if (id instanceof Number n) {
+                    accounts.add(n.longValue());
+                }
+            }
+        }
+        return new EventStreamReader.ArenaInfo(
+                accounts,
+                intStringMap(map.get("clanTags")),
+                intStringMap(map.get("teamTitles")),
+                intIntMap(map.get("wins")),
+                number(map.get("battleLevel")),
+                number(map.get("mmType")),
+                map.get("webID") instanceof Number w ? w.longValue() : 0L);
+    }
+
+    private static Map<Integer, String> intStringMap(final Object raw) {
+        final Map<Integer, String> result = new HashMap<>();
+        if (raw instanceof Map<?, ?> m) {
+            for (final Map.Entry<?, ?> e : m.entrySet()) {
+                if (e.getKey() instanceof Number k && e.getValue() instanceof String v) {
+                    result.put(k.intValue(), v);
+                }
+            }
+        }
+        return result;
+    }
+
+    private static Map<Integer, Integer> intIntMap(final Object raw) {
+        final Map<Integer, Integer> result = new HashMap<>();
+        if (raw instanceof Map<?, ?> m) {
+            for (final Map.Entry<?, ?> e : m.entrySet()) {
+                if (e.getKey() instanceof Number k && e.getValue() instanceof Number v) {
+                    result.put(k.intValue(), v.intValue());
+                }
+            }
+        }
+        return result;
+    }
+
+    private static int number(final Object raw) {
+        return raw instanceof Number n ? n.intValue() : 0;
     }
 
     private static Map<Integer, Long> parseUpdateArena2(byte[] body, float clockSecs) {

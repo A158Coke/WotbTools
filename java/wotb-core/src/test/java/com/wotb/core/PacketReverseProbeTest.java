@@ -91,6 +91,90 @@ class PacketReverseProbeTest {
         transformType39(es, byType);
         type31AroundDeaths(es, byType);
         type39Stream(byType);
+        type39VehicleCorrelation(es, byType);
+        findRecorder(es);
+    }
+
+    /** Find the recorder's vehicle eid by nickname in updateArena2 protobuf. */
+    private static void findRecorder(final EventStreamReader.EventStream es) {
+        final Map<Integer, Long> e2a = EventStreamReader.extractEntityToAccountMap(es.packets);
+        System.out.println("== entity->account (first 20) ==");
+        e2a.entrySet().stream().limit(20).forEach(e ->
+                System.out.println("  eid=" + e.getKey() + " acc=" + e.getValue()));
+    }
+
+    /** Type 39 vs per-vehicle type-10 positions: find most stable offset mapping. */
+    private static void type39VehicleCorrelation(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final Map<Integer, List<EventStreamReader.PositionData>> byEntity = new HashMap<>();
+        for (final EventStreamReader.PositionData p : positions) {
+            byEntity.computeIfAbsent(p.entityId, k -> new ArrayList<>()).add(p);
+        }
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        System.out.println("== type39 vs vehicle position (best stable offset per entity) ==");
+        final java.util.List<Map.Entry<String, Double>> best = new ArrayList<>();
+        for (final Map.Entry<Integer, List<EventStreamReader.PositionData>> e : byEntity.entrySet()) {
+            final List<EventStreamReader.PositionData> ps = e.getValue();
+            if (ps.size() < 50) {
+                continue;
+            }
+            for (final String[] pair : new String[][]{{"f0", "f2", "x", "z"}, {"f2", "f0", "x", "z"},
+                    {"f0", "f2", "z", "x"}, {"-f0", "f2", "x", "z"}, {"f0", "-f2", "x", "z"}}) {
+                final int fa = pair[0].equals("-f0") ? 0 : pair[0].equals("f0") ? 0
+                        : pair[0].equals("f2") ? 8 : 0;
+                final int fb = pair[1].equals("f2") ? 8 : 0;
+                final int pa = pair[2].equals("x") ? 0 : 1;
+                final int pb = pair[3].equals("x") ? 0 : 1;
+                final boolean negA = pair[0].startsWith("-");
+                final boolean negB = pair[1].startsWith("-");
+                final java.util.List<double[]> deltas = new ArrayList<>();
+                for (final EventStreamReader.ParsedPacket p : p39) {
+                    if (p.payload.length < 24) {
+                        continue;
+                    }
+                    EventStreamReader.PositionData near = null;
+                    float bestD = Float.MAX_VALUE;
+                    for (final EventStreamReader.PositionData pos : ps) {
+                        final float dt = Math.abs(pos.clockSecs - p.clockSecs);
+                        if (dt < 0.5f && dt < bestD) {
+                            bestD = dt;
+                            near = pos;
+                        }
+                    }
+                    if (near == null) {
+                        continue;
+                    }
+                    final float fA = f(p.payload, fa) * (negA ? -1 : 1);
+                    final float fB = f(p.payload, fb) * (negB ? -1 : 1);
+                    final float posA = pa == 0 ? near.x : near.z;
+                    final float posB = pb == 0 ? near.x : near.z;
+                    deltas.add(new double[]{fA - posA, fB - posB});
+                }
+                if (deltas.size() < 100) {
+                    continue;
+                }
+                double meanA = 0, meanB = 0;
+                for (final double[] d : deltas) {
+                    meanA += d[0];
+                    meanB += d[1];
+                }
+                meanA /= deltas.size();
+                meanB /= deltas.size();
+                double var = 0;
+                for (final double[] d : deltas) {
+                    var += Math.pow(d[0] - meanA, 2) + Math.pow(d[1] - meanB, 2);
+                }
+                var /= deltas.size();
+                final double std = Math.sqrt(var);
+                best.add(Map.entry("eid=" + e.getKey() + " " + pair[0] + "/" + pair[1] + "->" + pair[2] + "/" + pair[3]
+                        + " offset=(" + String.format(Locale.ROOT, "%.1f,%.1f", meanA, meanB) + ") std="
+                        + String.format(Locale.ROOT, "%.2f", std), std));
+            }
+        }
+        best.sort(Map.Entry.comparingByValue());
+        best.stream().limit(12).forEach(e -> System.out.println("  " + e.getKey()));
     }
 
     /** Type 39: inter-packet deltas + first 20 consecutive float rows + recorder-position match. */
