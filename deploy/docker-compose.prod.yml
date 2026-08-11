@@ -166,3 +166,10 @@ volumes:
   prometheus_data:
   loki_data:
   grafana_data:
+networks:
+  default:
+    name: wotb_internal
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+          gateway: 172.28.0.1
