@@ -57,6 +57,26 @@ public record BattlePhaseSummary(
     public static final int MIN_DENSE_KILLS = 3;
 
     /**
+     * 死亡时刻来源标签（数据口径诚实）：全部阵亡玩家都有 battle_results 的
+     * deathTimeMillis（>0）时返回「权威结算」；结算缺少死亡时刻字段、实际回退
+     * 事件流估算时返回「事件流估算」。无阵亡玩家时返回「权威结算」（无争议数据）。
+     */
+    public static String deathSourceLabel(final Battle battle) {
+        if (battle == null || battle.players == null) {
+            return "未知";
+        }
+        for (final PlayerResult p : battle.players) {
+            if (!PlayerSideResolver.isValidRawTeam(p.team) || p.survived) {
+                continue;
+            }
+            if (p.deathTimeMillis <= 0) {
+                return "事件流估算";
+            }
+        }
+        return "权威结算";
+    }
+
+    /**
      * Build battle-relative phases.
      * <p>
      * Time semantics (all battle-relative seconds, battle start = 0):

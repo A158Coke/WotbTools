@@ -118,6 +118,13 @@ value:     [u8; value_len]
 > **可靠的血量/伤害/助攻/格挡/击杀/存活/死亡时刻请以 `battle_results.dat`（`Battle`/`PlayerResult`）为准**——
 > 见下文《权威数据源与 AI 分析》。逐帧血量时间线属于已知限制，待拿到属性定义参考后再实现。
 
+> **死亡时刻口径（AI 复盘）**：部分回放 `battle_results` 的 `deathTimeMillis`(#104) 为 0，系统回退事件流估算
+> （damage threshold → entity leave → position）。AI prompt 通过 `DEATH_SOURCE` 标注来源（权威结算 / 事件流估算），
+> 不得把估算数据当作权威；阶段存活人数明确为「至阶段末」，并注入双方逐车阵亡时间线。
+
+> **观测伤害抑制（AI 复盘）**：事件流伤害仅为观测子集（`DamageEvent`），覆盖未达 100% 时后端标记
+> `OBSERVED_DAMAGE_IS_PARTIAL` 并抑制观测数字（观测=权威时自动恢复），AI 只引用权威团队总伤害。
+
 ### Type 8：EntityMethod（关键）
 
 格式：`entity_id(i32) + sub_type(u32) + args`
@@ -788,7 +795,7 @@ Body: file=<单个 .wotbreplay>
 | 队伍 / 坦克 / 昵称 / 录像者     | `Battle` / `PlayerResult` / `Battle.recorderResult()`                                        | 结算名册可靠；录像者队伍仍需多证据解析             |
 | 胜负 / 地图 / 时长 / 模式      | `Battle.winnerTeam` / `mapName` / `durationS` / `arenaBonusType`                             | 可靠                              |
 | 位置 / 走位时间线             | `data.wotreplay` type 10（重建）                                                                 | 仅对已可靠映射且实际观测到的 entity 可用           |
-| 事件流伤害                  | `DamageEvent`                                                                                | 观测子集，不能替代权威团队总伤害                  |
+| 事件流伤害                  | `DamageEvent`                                                                                | 观测子集，不能替代权威团队总伤害；覆盖未达 100% 时 prompt 层抑制观测数字 |
 | **逐帧血量 / 击毁事件**        | —（type 7/8 尚不可靠）                                                                             | **已知限制**：不作为血量/死亡来源，见 Type 7 小节 |
 | **车辆炮/模块配置（所选炮）**   | —（meta 只有 tankId；事件流无可靠模块 id）                                                              | **已知限制**：无法从回放读取所选炮，见下文          |
 

@@ -136,6 +136,49 @@ class DefaultTeamBattleFeatureExtractorTest {
     }
 
     @Test
+    void observedDamageMatchingAuthoritativeOmitsPartialLimitation() {
+        final PlayerResult allyOne = player(100L, "AllyOne", 1, 400, 100, true, 0);
+        final PlayerResult allyTwo = player(101L, "AllyTwo", 1, 300, 200, true, 0);
+        final PlayerResult enemy = player(200L, "Enemy", 2, 600, 300, false, 30_000);
+        final Battle battle = new Battle();
+        battle.arenaId = "arena-team";
+        battle.arenaBonusType = 2;
+        battle.mapName = "test-map";
+        battle.durationS = 120.0;
+        battle.winnerTeam = 1;
+        battle.recorder = "AllyOne";
+        battle.players = List.of(allyOne, allyTwo, enemy);
+        final List<BattleParticipant> participants = List.of(
+                new BattleParticipant(100L, "AllyOne", 1, 1, "a", true),
+                new BattleParticipant(101L, "AllyTwo", 1, 2, "b", false),
+                new BattleParticipant(200L, "Enemy", 2, 3, "c", false));
+        final List<ReplayEvent> events = List.of(
+                mapping(1, 10, 100L),
+                mapping(2, 11, 101L),
+                mapping(3, 20, 200L),
+                position(4, 5f, 10, 0f, 0f),
+                position(5, 8f, 10, 2.5f, 0f),
+                position(6, 5f, 11, 125f, 0f),
+                position(7, 8f, 11, 127.5f, 0f),
+                position(8, 5f, 20, 250f, 250f),
+                damage(9, 20f, 10, 20, 400),
+                damage(10, 25f, 11, 20, 300),
+                damage(11, 30f, 20, 10, 100),
+                damage(12, 35f, 20, 11, 200));
+        final TeamBattleFeatureSet features = extract(
+                new Fixture(battle, participants, events), events);
+
+        assertEquals(700, features.observedAggregate().damageDealt(),
+                "observed=" + features.observedAggregate()
+                        + " limitations=" + features.limitations());
+        assertEquals(300, features.observedAggregate().damageReceived(),
+                "observed=" + features.observedAggregate()
+                        + " limitations=" + features.limitations());
+        assertFalse(features.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL"),
+                "观测=权威时不得标记 PARTIAL：" + features.limitations());
+    }
+
+    @Test
     void friendlyFireDoesNotCreateEnemyEngagement() {
         final Fixture fixture = fixture();
         final List<ReplayEvent> events = new ArrayList<>(fixture.events());

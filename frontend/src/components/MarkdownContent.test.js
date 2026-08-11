@@ -107,3 +107,59 @@ describe('MarkdownContent edge cases', () => {
     expect(wrapper.text()).toBe('')
   })
 })
+
+describe('MarkdownContent heading normalization (closes # ##-literal bug)', () => {
+  // happy-dom 的 DOMPurify 会剥掉 h1-h6 元素（真实浏览器保留），因此组件层只能
+  // 断言文本：标题内容被渲染且无字面 `##`；h2 语义由 utils 单测 + markdown-it 断言。
+  it('renders `##一、` (no space after ##) without literal ## in output', () => {
+    const wrapper = render('##一、战前预测\n正文')
+    expect(wrapper.text()).toContain('一、战前预测')
+    expect(wrapper.text()).not.toContain('##')
+  })
+
+  it('renders `###三、` without literal ###', () => {
+    const wrapper = render('###三、 阶段分析')
+    expect(wrapper.text()).toContain('三、 阶段分析')
+    expect(wrapper.text()).not.toContain('###')
+  })
+
+  it('renders `#Title` (1-6 hashes no space) without literal #', () => {
+    const wrapper = render('#Title')
+    expect(wrapper.text()).toContain('Title')
+    expect(wrapper.text()).not.toContain('#')
+  })
+
+  it('handles `######Deep` (6 hashes) without literal ######', () => {
+    const wrapper = render('######Deep')
+    expect(wrapper.text()).toContain('Deep')
+    expect(wrapper.text()).not.toContain('######')
+  })
+
+  it('does NOT touch ## inside fenced code blocks', () => {
+    const wrapper = render('```\n## comment\n## another\n```\n\n##一、真标题')
+    const code = wrapper.find('code')
+    expect(code.exists()).toBe(true)
+    expect(code.text()).toContain('## comment')
+    expect(code.text()).toContain('## another')
+    expect(wrapper.text()).toContain('一、真标题')
+    expect(wrapper.text()).not.toContain('##一、真标题')
+  })
+
+  it('real `## 一、` (with space) still renders unchanged', () => {
+    const wrapper = render('## 一、正常标题')
+    expect(wrapper.text()).toBe('一、正常标题')
+  })
+
+  it('toggles fence across multiple lines correctly', () => {
+    const content = '```\n## inside fence\n```\n##outside\n```\n## inside again\n```\n##final'
+    const wrapper = render(content)
+    const codeBlocks = wrapper.findAll('code')
+    expect(codeBlocks.length).toBe(2)
+    expect(codeBlocks[0].text()).toContain('## inside fence')
+    expect(codeBlocks[1].text()).toContain('## inside again')
+    expect(wrapper.text()).toContain('## inside fence')
+    expect(wrapper.text()).toContain('## inside again')
+    expect(wrapper.text()).not.toContain('##outside')
+    expect(wrapper.text()).not.toContain('##final')
+  })
+})

@@ -205,6 +205,9 @@ public class TeamReplayAnalysisService {
                 .replace(PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE,
                         en ? PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE_EN
                                 : PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE_RU)
+                .replace(PlayerReplayPromptBuilder.COMMON_EVIDENCE_LOGIC_RULE,
+                        en ? PlayerReplayPromptBuilder.COMMON_EVIDENCE_LOGIC_RULE_EN
+                                : PlayerReplayPromptBuilder.COMMON_EVIDENCE_LOGIC_RULE_RU)
                 .replace(TEAM_PRIOR_RULE,
                         en ? TEAM_PRIOR_RULE_EN : TEAM_PRIOR_RULE_RU)
                 .replace(TEAM_REGION_RULE,
@@ -236,7 +239,7 @@ public class TeamReplayAnalysisService {
             10) 3-5 条可执行训练建议。
             不得推断未点亮敌人的位置、装填/弹药/装备、地形名称或玩家主观意图。
             无法从输入确定时必须写明“无法从当前回放数据确定”。
-            输出复盘中的所有战斗时间必须使用“XX分XX秒”格式，例如 75 秒写作“1分15秒”、180 秒写作“3分00秒”，禁止仅使用累计秒数或“1:15”格式。""" + PlayerReplayPromptBuilder.COMMON_TANK_PROPER_NOUN_RULE + PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE + TEAM_PRIOR_RULE + TEAM_REGION_RULE;
+            输出复盘中的所有战斗时间必须使用“XX分XX秒”格式，例如 75 秒写作“1分15秒”、180 秒写作“3分00秒”，禁止仅使用累计秒数或“1:15”格式。""" + PlayerReplayPromptBuilder.COMMON_TANK_PROPER_NOUN_RULE + PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE + PlayerReplayPromptBuilder.COMMON_EVIDENCE_LOGIC_RULE + TEAM_PRIOR_RULE + TEAM_REGION_RULE;
 
     static final String MULTI_TEAM_PROMPT = """
             你是《坦克世界闪击战》(WoT Blitz) 的资深团队教练，正在比较多个训练房/联赛团队视角。
@@ -249,7 +252,7 @@ public class TeamReplayAnalysisService {
             请引用具体 analysisUnitId、teamLabel 和时间证据，避免根据单次事件概括长期行为。
             不得用对方回放补全本队当时未发现的敌人信息，无法判断时必须明确说明。
             输出应包含：各 perspective 摘要、可比较的团队行为、关键差异和 3-5 条训练建议。
-            输出复盘中的所有战斗时间必须使用“XX分XX秒”格式，例如 75 秒写作“1分15秒”、180 秒写作“3分00秒”，禁止仅使用累计秒数或“1:15”格式。""" + PlayerReplayPromptBuilder.COMMON_TANK_PROPER_NOUN_RULE + PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE + TEAM_PRIOR_RULE + TEAM_REGION_RULE;
+            输出复盘中的所有战斗时间必须使用“XX分XX秒”格式，例如 75 秒写作“1分15秒”、180 秒写作“3分00秒”，禁止仅使用累计秒数或“1:15”格式。""" + PlayerReplayPromptBuilder.COMMON_TANK_PROPER_NOUN_RULE + PlayerReplayPromptBuilder.COMMON_CHINESE_LANGUAGE_RULE + TEAM_ANALYSIS_RULE + PlayerReplayPromptBuilder.COMMON_DAMAGE_SEMANTICS_RULE + PlayerReplayPromptBuilder.COMMON_EVIDENCE_LOGIC_RULE + TEAM_PRIOR_RULE + TEAM_REGION_RULE;
 
     private final AiChatGateway gateway;
     private final AiReplayAnalysisConfig config;
@@ -440,7 +443,8 @@ public class TeamReplayAnalysisService {
                         priorsByUnitId.get(firstContext.analysisUnitId()),
                         perspectiveTeamByUnitId.getOrDefault(firstContext.analysisUnitId(), 0),
                         resolveTeamLabel(firstContext.battle(), firstContext.perspectiveTeam()),
-                        language);
+                        language,
+                        firstContext.battle() == null ? null : firstContext.battle().mapName);
         return new TeamAnalyzeResult(firstAnalysis, preBattleSection);
     }
 

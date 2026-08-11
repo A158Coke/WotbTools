@@ -219,7 +219,16 @@ public class DefaultTeamBattleFeatureExtractor {
         if (battleStartRes.limitation() != null) {
             limitations.add(battleStartRes.limitation());
         }
-        limitations.add("OBSERVED_DAMAGE_IS_PARTIAL");
+        // 事件流迄今仅逆向出 sub3 直接伤害子类型；只有当观测聚合与权威结算不一致
+        // （覆盖未达 100%）时才标记 PARTIAL，触发 prompt 层抑制观测数字。
+        // 覆盖补齐后（观测=权威）该 limitation 自动消失，数字恢复输出。
+        final boolean observedMatchesAuthoritative = authoritativeAggregate != null
+                && observedAggregate != null
+                && observedAggregate.damageDealt() == authoritativeAggregate.totalDamageDealt()
+                && observedAggregate.damageReceived() == authoritativeAggregate.totalDamageReceived();
+        if (!observedMatchesAuthoritative) {
+            limitations.add("OBSERVED_DAMAGE_IS_PARTIAL");
+        }
         if (authoritativeAggregate == null) {
             limitations.add("AUTHORITATIVE_TEAM_RESULT_UNAVAILABLE");
         }

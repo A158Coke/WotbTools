@@ -24,6 +24,7 @@ import com.wotb.core.replay.feature.TeamFormationPhase;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.reconstruction.Vector3;
+import com.wotb.core.util.PlayerResultFormat;
 import com.wotb.core.util.PromptDataQuoter;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 import org.springframework.util.StringUtils;
@@ -104,7 +105,8 @@ final class TeamAiPromptBuilder {
         // 构建所有 optional details（无固定截断）
         final BudgetWriter optTemp = new BudgetWriter();
         appendOptionalDetails(optTemp, context.features(), context.analysisUnitId(),
-                context.battle() == null ? null : context.battle().mapName);
+                context.battle() == null ? null : context.battle().mapName,
+                context.battle(), context.perspectiveTeam());
         // 敌方最后已知位置（观测子集）：与其它 optional 证据同级，超预算时整体被裁剪
         final String enemyPositions = EnemyLastKnownPositionsSection.renderTeamSection(
                 context.reconstruction(), context.battle(), context.perspectiveTeam());
@@ -289,7 +291,8 @@ final class TeamAiPromptBuilder {
         final boolean hpfTruncated = hpfTemp.isTruncated();
         final BudgetWriter optTemp = new BudgetWriter();
         appendOptionalDetails(optTemp, perspective.features(), perspective.analysisUnitId(),
-                perspective.mapName());
+                perspective.mapName(), null,
+                perspectiveTeam);
         final String optContent = optTemp.content();
         final boolean optTruncated = optTemp.isTruncated();
         return new PerspectivePromptSections(
@@ -403,7 +406,7 @@ final class TeamAiPromptBuilder {
             return;
         }
         appendAuthoritative(writer, features.authoritativeAggregate());
-        appendObserved(writer, features.observedAggregate());
+        appendObserved(writer, features.observedAggregate(), features.limitations());
         appendMemberFacts(writer, features.members());
         writer.append("coverage=" + features.coverage() + "\n");
     }
@@ -451,7 +454,8 @@ final class TeamAiPromptBuilder {
                     + " hits=" + p.nHitsDealt
                     + " penetrations=" + p.nPenetrationsDealt
                     + " enemiesDamaged=" + p.nEnemiesDamaged
-                    + " survived=" + p.survived
+                    + " death=" + PlayerAnalysisTerms.survivalDisplay(
+                            p.survived, PlayerResultFormat.deathSec(p))
                     + "\n");
             damage += p.damageDealt;
             received += p.damageReceived;
@@ -502,7 +506,9 @@ final class TeamAiPromptBuilder {
             final BudgetWriter writer,
             final TeamBattleFeatureSet features,
             final String analysisUnitId,
-            final String mapCode
+            final String mapCode,
+            final Battle battle,
+            final int perspectiveTeam
     ) {
         writer.append("\n=== PERSPECTIVE_OPTIONAL ===\n");
         writer.append("analysisUnitId=" + quoteData(analysisUnitId) + "\n");
@@ -511,7 +517,7 @@ final class TeamAiPromptBuilder {
         }
         appendMemberMovements(writer, features.members(), mapCode);
         appendFormation(writer, features.formationPhases());
-        appendBattlePhases(writer, features.battlePhases());
+        appendBattlePhases(writer, features.battlePhases(), battle, perspectiveTeam);
         appendEngagements(writer, features.engagements());
         appendKeyEvents(writer, features.keyEvents());
     }
@@ -533,22 +539,37 @@ final class TeamAiPromptBuilder {
         writer.append("kills=" + aggregate.totalKills() + "\n");
         writer.append("survivors=" + aggregate.survivorCount() + "\n");
         writer.append("deaths=" + aggregate.deathCount() + "\n");
-        writer.append("averageDeathTimeSec=" + formatScalar(
-                aggregate.averageDeathTimeSec()) + "\n");
-        writer.append("firstDeathTimeSec=" + formatScalar(
-                aggregate.firstDeathTimeSec()) + "\n");
-        writer.append("lastDeathTimeSec=" + formatScalar(
-                aggregate.lastDeathTimeSec()) + "\n");
+        writer.append("averageDeathTime=" + deathTimeLabel(aggregate.averageDeathTimeSec()) + "\n");
+        writer.append("firstDeathTime=" + deathTimeLabel(aggregate.firstDeathTimeSec()) + "\n");
+        writer.append("lastDeathTime=" + deathTimeLabel(aggregate.lastDeathTimeSec()) + "\n");
         writer.append("win=" + formatScalar(aggregate.win()) + "\n");
+    }
+
+    /** 团队聚合死亡时刻：统一 X分XX秒，null/UNKNOWN 不裸出秒数。 */
+    private static String deathTimeLabel(final Double deathTimeSec) {
+        return deathTimeSec == null || !Double.isFinite(deathTimeSec)
+                ? "UNKNOWN" : PlayerAnalysisTerms.battleClock((float) deathTimeSec.doubleValue());
     }
 
     private static void appendObserved(
             final BudgetWriter writer,
-            final TeamObservedAggregate aggregate
+            final TeamObservedAggregate aggregate,
+            final List<String> limitations
     ) {
         writer.append("\n=== OBSERVED_EVENT_SUBSET_NOT_AUTHORITATIVE ===\n");
         if (aggregate == null) {
             writer.append("UNAVAILABLE\n");
+            return;
+        }
+        // 事件流迄今仅逆向出 sub3 直接伤害子类型；type 5/31/35/39 与其他 EntityMethod
+        // 伤害子类型尚未逆向，观测子集无法与权威结算对齐。为避免 AI 在并排数字间误读
+        // （如「观测 18443 vs 权威 20360」），缺口未清零前抑制数字输出，
+        // 强制 AI 以 AUTHORITATIVE_TEAM_RESULT 为唯一可信口径。
+        // 待事件流覆盖达 100%（观测=权威）后，从此处恢复数字输出。
+        if (limitations != null && limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL")) {
+            writer.append("coverage=PARTIAL numbersSuppressed=true\n");
+            writer.append("reason=OBSERVED_DAMAGE_IS_PARTIAL\n");
+            writer.append("directive=以 AUTHORITATIVE_TEAM_RESULT 为唯一可信口径；事件流观测子集覆盖不全，不得引用其数字\n");
             return;
         }
         writer.append("damageDealtSubset=" + aggregate.damageDealt() + "\n");
@@ -578,7 +599,9 @@ final class TeamAiPromptBuilder {
                     + " blocked=" + member.blockedDamage()
                     + " kills=" + member.kills()
                     + " survived=" + member.survived()
-                    + " deathTimeSec=" + formatScalar(member.deathTimeSec())
+                    + " deathTime=" + (member.deathTimeSec() == null
+                            ? "未知" : PlayerAnalysisTerms.survivalDisplay(
+                                    member.survived(), member.deathTimeSec()))
                     + "\n");
             final TeamMemberFeatureSet.DeathProximity prox = member.deathProximity();
             if (prox != null) {
@@ -765,12 +788,43 @@ final class TeamAiPromptBuilder {
      */
     private static void appendBattlePhases(
             final BudgetWriter writer,
-            final List<BattlePhaseSummary> phases
+            final List<BattlePhaseSummary> phases,
+            final Battle battle,
+            final int perspectiveTeam
     ) {
         writer.append("\n=== BATTLE_PHASES ===\n");
         if (phases != null && !phases.isEmpty()) {
-            writer.append(BattlePhaseTimelineSection.AUTHORITATIVE_NOTE);
+            writer.append(BattlePhaseTimelineSection.PHASE_SEMANTICS_NOTE);
+            if (battle != null) {
+                writer.append("DEATH_SOURCE=" + BattlePhaseSummary.deathSourceLabel(battle) + "\n");
+            }
             writer.append(BattlePhaseTimelineSection.renderTeamRows(phases));
+            appendDeathTimeline(writer, battle, perspectiveTeam);
+        }
+    }
+
+    /** 双方逐车阵亡时间线（权威死亡时刻 + 事件流估算回退），按时间排序；无数据则省略。 */
+    private static void appendDeathTimeline(
+            final BudgetWriter writer,
+            final Battle battle,
+            final int perspectiveTeam
+    ) {
+        if (battle == null || battle.players == null) {
+            return;
+        }
+        final List<PlayerResult> dead = battle.players.stream()
+                .filter(p -> PlayerSideResolver.isValidRawTeam(p.team) && !p.survived)
+                .sorted(java.util.Comparator.comparingDouble(p -> PlayerResultFormat.deathSec(p)))
+                .toList();
+        if (dead.isEmpty()) {
+            return;
+        }
+        writer.append("\n=== DEATH_TIMELINE（双方逐车阵亡时刻） ===\n");
+        for (final PlayerResult p : dead) {
+            final String side = p.team == perspectiveTeam ? "本队" : "对方";
+            writer.append(PlayerAnalysisTerms.battleClock((float) PlayerResultFormat.deathSec(p))
+                    + " " + side + " " + quoteData(p.nickname)
+                    + "（" + quoteData(resolveTankName(p.tankId, p.tankName)) + "）阵亡\n");
         }
     }
 

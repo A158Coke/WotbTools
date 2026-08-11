@@ -1,6 +1,5 @@
 package com.wotb.web.replay.ai;
 
-import com.wotb.core.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.replay.evidence.AiEvidence;
 import com.wotb.core.replay.feature.TeamAutopsyStats;
@@ -128,7 +127,7 @@ public final class TeamAutopsyPromptBuilder {
                         .append(' ').append(w.summary()).append('\n');
             }
         }
-        sb.append("\n死亡时间线（权威结算，仅本方 TEAM_A）:\n");
+        sb.append("\n死亡时间线（后端时间线，仅本方 TEAM_A）:\n");
         stats.stream()
                 .filter(s -> !s.survived())
                 .sorted(java.util.Comparator.comparingDouble(TeamAutopsyStats::deathSec))
@@ -156,9 +155,9 @@ public final class TeamAutopsyPromptBuilder {
         sb.append("\n\n======================== 团队剖析 ========================\n");
         sb.append("胜负: ").append(winnerLabel(winner, teamLabel)).append('\n');
         if (!result.biggestLiabilities().isEmpty()) {
-            sb.append("主要战犯:\n");
+            sb.append("**主要战犯：**\n");
             for (final TeamAutopsyResult.AutopsyVerdict v : result.biggestLiabilities()) {
-                sb.append("- ").append(renderPlayer(v.playerKey(), byKey))
+                sb.append("- **").append(renderPlayer(v.playerKey(), byKey)).append("**")
                         .append("（置信度: ")
                         .append(confidenceLabel(v.confidence()))
                         .append("）: ").append(v.reason() == null ? "" : v.reason()).append('\n');
@@ -168,9 +167,9 @@ public final class TeamAutopsyPromptBuilder {
             }
         }
         if (!result.mvps().isEmpty()) {
-            sb.append("MVP:\n");
+            sb.append("**MVP：**\n");
             for (final TeamAutopsyResult.AutopsyVerdict v : result.mvps()) {
-                sb.append("- ").append(renderPlayer(v.playerKey(), byKey))
+                sb.append("- **").append(renderPlayer(v.playerKey(), byKey)).append("**")
                         .append("（置信度: ")
                         .append(confidenceLabel(v.confidence()))
                         .append("）: ").append(v.reason() == null ? "" : v.reason()).append('\n');
@@ -189,10 +188,6 @@ public final class TeamAutopsyPromptBuilder {
                         .append(confidenceLabel(p.confidence()))
                         .append("）\n");
             }
-        }
-        if (!result.limitations().isEmpty()) {
-            sb.append("限制:\n");
-            result.limitations().forEach(l -> sb.append("- ").append(l).append('\n'));
         }
         return sb.toString();
     }
