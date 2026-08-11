@@ -63,7 +63,7 @@ cd docker/online && docker compose up -d --build   # 构建 Dockerfile.backend +
 后端没有无数据库 profile。若要测试本地 Keycloak 管理员写操作，需在本地 realm 配置 `wotbtools-admin-api` 服务账号，并在启动 compose 前设置 `KEYCLOAK_ADMIN_CLIENT_SECRET`；普通回放解析可留空。
 Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT Blitz 应用 ID，GitHub Secrets 或 `docker/online/.env`）；缺失时 Keycloak 正常启动、仅 WG 登录返回"未配置"。
 
-> **测试夹具**：真实回放断言读取 gitignored 的 `common/data/*.wotbreplay`；新克隆或 CI 无样本时只跳过对应样本测试，其余 parser、service、security、API 契约与 controller 测试仍执行。`WebApiTest` 的 PostgreSQL 集成路径在无 Docker 时条件跳过。
+> **测试夹具**：提交版脱敏夹具在 `common/fixtures/replays/*.wotbreplay`（CI 无条件执行，`ReplayParserFixtureTest` / `ParityTest` / `WebApiTest` 均加载）；本地可用 gitignored 的 `common/data/*.wotbreplay` 扩展样本，缺失时跳过仅本地样本的精确值断言。夹具由 `common/fixtures/mask_replay.py` 脱敏（昵称/军团名按 UTF-8 字节长度等价替换，账号保留）。`WebApiTest` 的 PostgreSQL 集成路径在无 Docker 时条件跳过。
 
 ---
 

@@ -1,8 +1,54 @@
 # WoTBTools
 
-A toolset for World of Tanks Blitz: extract battle data from `.wotbreplay` replays and export to Excel, online damage leaderboard, real-time rating (Rating V2), AI tactical review, and Keycloak authentication.
+A toolset for World of Tanks Blitz: parse `.wotbreplay` replays and export battle data to Excel, online damage leaderboard, real-time rating (Rating V2), AI tactical review (player / team), and Keycloak authentication.
 
 Entry: [https://wotbtools.com](https://wotbtools.com) · Repository: [https://github.com/A158Coke/WotbTools](https://github.com/A158Coke/WotbTools)
+
+## What it does
+
+- **Replay parsing & Excel export**: upload a `.wotbreplay` in the browser, extract authoritative settlement (damage / received / assisted / blocked / kills / death times) plus event-stream features (movement / engagements / 3x3 grid regions).
+- **Online damage leaderboard**: per-battle damage ranking for random battles.
+- **Real-time rating (Rating V2)**: composite score based on potential damage, assistance, KAST, impact.
+- **AI tactical review**: pre-battle prediction + evidence-chain review + liabilities / MVP, streamed token-by-token over SSE.
+- **Auth & business**: Keycloak (QQ + Wargaming.net ASIA / EU / NA), booster & pilot management.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A["Upload .wotbreplay"] --> B["ReplayParser · meta.json + battle_results.dat"]
+    A --> C["ReplayReconstruction · data.wotreplay event stream"]
+    B --> D["Team / Player Feature Extractors"]
+    C --> D
+    D --> E["Deterministic features · phases / formations / engagements / death timeline / grid"]
+    B --> F["Authoritative settlement (single trusted source)"]
+    C --> G["Observed event subset (suppressed when coverage is partial)"]
+    E --> H["AI Prompt Builder (backend evidence only)"]
+    F --> H
+    G --> H
+    H --> I["Call #1 pre-battle → Call #2 review → Team Autopsy"]
+    I --> J["SSE stream text/event-stream"]
+    J --> K["Frontend AnalysisResultPanel"]
+```
+
+## AI evidence chain
+
+Replay → **authoritative settlement** (`battle_results.dat`: damage / received / death times) and **event stream** (`data.wotreplay`: movement / engagements / damage events / grid regions) → deterministic features (phase survival counts "at phase end", per-vehicle death timeline for both teams, engagement & focus-fire evidence) → the prompt contains backend evidence only → the AI reviews against the pre-battle baseline (times in Xm Xs, grid regions, our/opponent view) → results stream incrementally with a team autopsy (MVP / liabilities).
+
+Real review sample (neptune 7v7 team battle):
+
+![AI review sample](docs/assets/review-sample.png)
+
+## Key engineering trade-offs
+
+1. **Authoritative settlement > observed event stream**: damage / deaths come from `battle_results`; the event stream is only an observed subset, and its numbers are suppressed when coverage is partial (`OBSERVED_DAMAGE_IS_PARTIAL`) — never show two conflicting totals side by side.
+2. **SSE streaming, single attempt**: `/api/replay/analyze` is `text/event-stream`; no in-stream retry, failures keep already-emitted output; oversized deltas are split sentence-wise so text always appears incrementally.
+3. **Call #2 thinking off by default**: DeepSeek reasoning mode delivers content in one final burst and breaks streaming; enable it only when deeper reasoning is worth it (the chunk fallback still guarantees streaming).
+4. **3x3 grid + map semantics**: canonical 500×500 grid regions 1-9; AREA semantics are decoded from client SC2 / heightmap and are not treated as verified facts before manual review.
+5. **Structured JSON calls disable thinking**: Call #1 pre-battle and Team Autopsy avoid blank completions (reasoning consuming the output budget).
+6. **Bounded worker pool (4+4) + AbortPolicy**: long SSE requests never block servlet threads; saturation returns 503.
+7. **Desensitized real replay fixtures in CI**: parse regression no longer depends on local gitignored samples; nicknames are masked with byte-length-preserving placeholders.
+8. **Same-server backups with 7-day retention + verification**: single-server infrastructure constraint; no off-site backup yet.
 
 ## Documentation
 
@@ -15,6 +61,9 @@ Entry: [https://wotbtools.com](https://wotbtools.com) · Repository: [https://gi
 - [rating-system.md](docs/rating-system.md) — rating algorithm and parameters
 - [observability.md](docs/observability.md) — monitoring / logging / backups
 - [team-ai-review-feature.md](docs/team-ai-review-feature.md) — AI team review feature notes
+- [auth/wargaming-asia-login.md](docs/auth/wargaming-asia-login.md) — Wargaming.net ASIA / EU / NA login requirements & implementation
+- [auth/wargaming-asia-deployment.md](docs/auth/wargaming-asia-deployment.md) — Wargaming login deployment & manual config (ops guide)
+- [auth/keycloak-mapper-guide.md](docs/auth/keycloak-mapper-guide.md) — Keycloak Protocol Mapper / Client Scope and production mapper guide
 
 ## Quick Start
 

@@ -1,7 +1,7 @@
 {
     "app": {
         "title": "WoTBTools",
-        "subtitle": "Инструменты World of Tanks Blitz",
+        "subtitle": "Парсинг реплеев · Рейтинги · Рейтинг в реальном времени · AI-разбор",
         "replay_tab": "Реплей",
         "theme": "Тема",
         "login": "Войти",
