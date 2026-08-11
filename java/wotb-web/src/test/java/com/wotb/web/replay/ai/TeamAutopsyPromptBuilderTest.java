@@ -81,6 +81,22 @@ class TeamAutopsyPromptBuilderTest {
     }
 
     @Test
+    void userContentUnknownDeathTimeRendersUnknownNotZeroClock() {
+        final List<TeamAutopsyStats> stats = new java.util.ArrayList<>(sevenStats());
+        stats.add(stat("P8", 1008L, false, 0.0, false, false, false, true));
+        final String content = TeamAutopsyPromptBuilder.buildUserContent(
+                stats, null, List.of(), win(Winner.ENEMY_WIN), "CHRD");
+
+        assertTrue(content.contains("阵亡@未知"),
+                "unknown death time must render as 未知 in member line: " + content);
+        assertTrue(content.contains("未知 P8"),
+                "unknown death time must render as 未知 in death timeline: " + content);
+        assertTrue(content.contains("（时刻未知）"), content);
+        assertFalse(content.contains("0分00秒"),
+                "unknown death time must NOT render as 0分00秒: " + content);
+    }
+
+    @Test
     void systemPromptBansHindsightAndRequiresPlayerKeys() {
         final String settlement = TeamAutopsyPromptBuilder.AUTOPSY_SYSTEM_PROMPT_SETTLEMENT_ONLY;
         assertTrue(settlement.contains("严禁事后诸葛亮"));

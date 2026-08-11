@@ -204,6 +204,33 @@ class PlayerSecondPersonAndPerHitDamageTest {
     }
 
     @Test
+    void deathTimelineUnknownTimeRendersUnknownNotZeroClock() {
+        final Battle battle = battle();
+        battle.durationS = 420.0;
+        battle.players.get(0).survived = false;   // 你，已知
+        battle.players.get(0).deathTimeMillis = 192_000L;
+        battle.players.get(1).survived = false;   // 敌方，时刻未知
+        battle.players.get(1).deathTimeMillis = 0L;
+        battle.players.get(1).survivalTimeSec = 0.0;
+        battle.players.get(2).survived = false;   // 队友，已知
+        battle.players.get(2).deathTimeMillis = 210_000L;
+
+        final StringBuilder sb = new StringBuilder();
+        PlayerReplayPromptBuilder.appendDeathTimeline(sb, battle);
+        final String timeline = sb.toString();
+
+        assertTrue(timeline.contains("3分12秒"), timeline);
+        assertTrue(timeline.contains("3分30秒"), timeline);
+        assertTrue(timeline.contains("未知 敌方 \"EnemyAce\""),
+                "unknown death time must render as 未知: " + timeline);
+        assertTrue(timeline.contains("阵亡（时刻未知）"), timeline);
+        assertFalse(timeline.contains("0分00秒"),
+                "unknown death time must NOT render as 0分00秒: " + timeline);
+        assertTrue(timeline.indexOf("3分12秒") < timeline.indexOf("未知"),
+                "unknown death time must be sorted after known: " + timeline);
+    }
+
+    @Test
     void tankDestroyerIsWrittenInChinese() {
         // tankopedia 把坦克歼击车记作 TD，证据里必须展开为中文
         assertEquals("Tank destroyer", com.wotb.core.ref.ReplayDisplayNames.tankClass(8529L)); // AT 15

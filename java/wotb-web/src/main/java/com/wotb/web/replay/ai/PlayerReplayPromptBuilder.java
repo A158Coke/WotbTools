@@ -892,7 +892,7 @@ public final class PlayerReplayPromptBuilder {
                                  final boolean isFriendly, final boolean isYou) {
         final String tankDisplay = ReplayDisplayNames.tankName(p.tankId, p.tankName);
         final String deathStr = p.survived ? "存活"
-                : "阵亡@" + PlayerAnalysisTerms.battleClock((float) PlayerResultFormat.deathSec(p));
+                : "阵亡@" + PlayerAnalysisTerms.knownDeathClock(PlayerResultFormat.deathSec(p));
         sb.append(isYou ? "你 " : (isFriendly ? "队友 " : "敌方 "))
                 .append(PlayerResultFormat.quoteForPrompt(p.nickname))
                 .append(" 坦克: ").append(PlayerResultFormat.quoteForPrompt(tankDisplay))
@@ -971,11 +971,11 @@ public final class PlayerReplayPromptBuilder {
         final long survivors = players.stream().filter(p -> p.survived).count();
         final long deaths = players.stream().filter(p -> !p.survived).count();
         final double firstDeath = players.stream()
-                .filter(p -> !p.survived)
+                .filter(p -> !p.survived && PlayerResultFormat.deathSec(p) > 0)
                 .mapToDouble(PlayerResultFormat::deathSec)
                 .min().orElse(-1);
         final double lastDeath = players.stream()
-                .filter(p -> !p.survived)
+                .filter(p -> !p.survived && PlayerResultFormat.deathSec(p) > 0)
                 .mapToDouble(PlayerResultFormat::deathSec)
                 .max().orElse(-1);
         sb.append("总伤害: ").append(totalDmg)
@@ -986,8 +986,8 @@ public final class PlayerReplayPromptBuilder {
                 .append(" 存活: ").append(survivors)
                 .append(" 阵亡: ").append(deaths);
         if (deaths > 0) {
-            sb.append(" 首阵亡: ").append(PlayerAnalysisTerms.battleClock((float) firstDeath));
-            sb.append(" 末阵亡: ").append(PlayerAnalysisTerms.battleClock((float) lastDeath));
+            sb.append(" 首阵亡: ").append(PlayerAnalysisTerms.knownDeathClock(firstDeath));
+            sb.append(" 末阵亡: ").append(PlayerAnalysisTerms.knownDeathClock(lastDeath));
         }
         sb.append('\n');
     }
@@ -1023,7 +1023,7 @@ public final class PlayerReplayPromptBuilder {
                     .filter(p -> sides.getOrDefault(p, Side.UNKNOWN) == Side.ENEMY)
                     .filter(p -> p.survived || PlayerResultFormat.deathSec(p) > deathSec).count();
 
-            sb.append(" 死亡时间: ").append(PlayerAnalysisTerms.battleClock((float) deathSec));
+            sb.append(" 死亡时间: ").append(PlayerAnalysisTerms.knownDeathClock(deathSec));
             sb.append(" 你在本队的阵亡序位: ").append(deathOrder).append("/").append(totalFriendly);
             sb.append(" 战斗进度: ").append(String.format("%.0f%%", progressRatio * 100));
             sb.append(" 你阵亡时本队存活: ").append(friendlyAlive);
@@ -1035,7 +1035,11 @@ public final class PlayerReplayPromptBuilder {
     static void appendDeathTimeline(final StringBuilder sb, final Battle battle) {
         final List<PlayerResult> dead = battle.players != null ? battle.players.stream()
                 .filter(p -> !p.survived)
-                .sorted(java.util.Comparator.comparingDouble(p -> PlayerResultFormat.deathSec(p)))
+                // 未知死亡时间（deathSec<=0）排到已知时间之后，绝不因 0 被排到整场最前
+                .sorted(java.util.Comparator
+                        .comparingDouble((PlayerResult p) -> PlayerResultFormat.deathSec(p) > 0
+                                ? PlayerResultFormat.deathSec(p) : Double.MAX_VALUE)
+                        .thenComparingLong(p -> p.accountId))
                 .toList() : List.of();
         if (dead.isEmpty()) {
             sb.append("无阵亡\n");
@@ -1043,15 +1047,18 @@ public final class PlayerReplayPromptBuilder {
         }
         final PlayerResult recorder = battle.recorderResult();
         for (final PlayerResult p : dead) {
+            final double deathSec = PlayerResultFormat.deathSec(p);
             // 玩家本人写「你」，同队写「队友」，对方写「敌方」；本人绝不出现为「友方/队友」
             final String who = PlayerAnalysisPromptFormatter.isSamePlayer(p, recorder)
                     ? "你"
                     : PlayerAnalysisPromptFormatter.sideLabel(PlayerSideResolver.resolve(battle, p))
                             + " " + PlayerResultFormat.quoteForPrompt(p.nickname);
-            sb.append(PlayerAnalysisTerms.battleClock((float) PlayerResultFormat.deathSec(p))).append(' ')
+            sb.append(deathSec > 0
+                            ? PlayerAnalysisTerms.battleClock((float) deathSec) : "未知").append(' ')
                     .append(who)
                     .append("（").append(PlayerResultFormat.quoteForPrompt(
-                            ReplayDisplayNames.tankName(p.tankId, p.tankName))).append("）阵亡")
+                            ReplayDisplayNames.tankName(p.tankId, p.tankName)))
+                    .append("）").append(deathSec > 0 ? "阵亡" : "阵亡（时刻未知）")
                     .append('\n');
         }
     }
@@ -1322,7 +1329,10 @@ public final class PlayerReplayPromptBuilder {
         if (battle.players != null) {
             final var dead = battle.players.stream()
                     .filter(p -> !p.survived)
-                    .sorted(Comparator.comparingDouble(PlayerResultFormat::deathSec))
+                    .sorted(Comparator
+                            .comparingDouble((PlayerResult p) -> PlayerResultFormat.deathSec(p) > 0
+                                    ? PlayerResultFormat.deathSec(p) : Double.MAX_VALUE)
+                            .thenComparingLong(p -> p.accountId))
                     .toList();
             final PlayerResult recorder = battle.recorderResult();
             for (final PlayerResult p : dead) {
@@ -1336,9 +1346,10 @@ public final class PlayerReplayPromptBuilder {
                             case UNKNOWN -> "未知阵营 " + PlayerResultFormat.quoteForPrompt(p.nickname);
                         };
                 events.add(new KeyBattleEvent(deathSec, "VEHICLE_DESTROYED",
-                        PlayerAnalysisTerms.battleClock(deathSec) + " " + who
+                        PlayerAnalysisTerms.knownDeathClock(deathSec) + " " + who
                                 + "（" + PlayerResultFormat.quoteForPrompt(
-                                        ReplayDisplayNames.tankName(p.tankId, p.tankName)) + "）阵亡"));
+                                        ReplayDisplayNames.tankName(p.tankId, p.tankName)) + "）"
+                                + (deathSec > 0 ? "阵亡" : "阵亡（时刻未知）")));
             }
         }
         final float endSec = battle.durationS != null ? battle.durationS.floatValue() : 0f;

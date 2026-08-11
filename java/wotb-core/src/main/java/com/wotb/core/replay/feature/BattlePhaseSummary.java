@@ -58,22 +58,29 @@ public record BattlePhaseSummary(
 
     /**
      * 死亡时刻来源标签（数据口径诚实）：全部阵亡玩家都有 battle_results 的
-     * deathTimeMillis（>0）时返回「权威结算」；结算缺少死亡时刻字段、实际回退
-     * 事件流估算时返回「事件流估算」。无阵亡玩家时返回「权威结算」（无争议数据）。
+     * deathTimeMillis（>0）时返回「权威结算」；结算缺少死亡时刻字段、但事件流
+     * fallback 最终估出时间（deathSec>0）时返回「事件流估算」；存在任意阵亡玩家
+     * 最终 deathSec<=0（时刻未知）时返回「未知」。无阵亡玩家时返回「权威结算」。
      */
     public static String deathSourceLabel(final Battle battle) {
         if (battle == null || battle.players == null) {
             return "未知";
         }
+        boolean anyDead = false;
+        boolean anyNonAuthoritative = false;
         for (final PlayerResult p : battle.players) {
             if (!PlayerSideResolver.isValidRawTeam(p.team) || p.survived) {
                 continue;
             }
+            anyDead = true;
             if (p.deathTimeMillis <= 0) {
-                return "事件流估算";
+                anyNonAuthoritative = true;
+                if (PlayerResultFormat.deathSec(p) <= 0) {
+                    return "未知";
+                }
             }
         }
-        return "权威结算";
+        return !anyDead || !anyNonAuthoritative ? "权威结算" : "事件流估算";
     }
 
     /**

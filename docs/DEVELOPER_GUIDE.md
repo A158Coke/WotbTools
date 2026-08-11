@@ -647,7 +647,7 @@ files → DefaultReplayProcessingFacade.processBatch()
 - **死亡时刻口径**：部分回放 `battle_results` 的 `deathTimeMillis` 为 0，系统回退事件流估算；prompt 用 `DEATH_SOURCE` 标注来源（`BattlePhaseSummary.deathSourceLabel`），禁止把估算当权威。阶段存活人数为「至阶段末」语义（`BattlePhaseTimelineSection`），prompt 注入双方逐车阵亡时间线（`DEATH_TIMELINE`）。
 - **观测伤害抑制**：事件流覆盖未达 100% 时 `DefaultTeam/PlayerBattleFeatureExtractor` 条件标记 `OBSERVED_DAMAGE_IS_PARTIAL`，prompt 层抑制观测数字（`TeamAiPromptBuilder.appendObserved` / 随机战交火段），以权威结算为唯一口径；覆盖补齐后自动恢复。
 - **赛前预测渲染**：`PreBattleSectionRenderer` 覆盖 TEAM 变体（A队/B队/A 队/队伍1 等）、AREA ID → 中文名 + 九宫格（复用 `MapTacticalSemanticsRegistry`）、composition 键值三语翻译。
-- **复盘正文规范**：`COMMON_EVIDENCE_LOGIC_RULE`（ZH/EN/RU）禁止集火同义反复、机器标签直出与标题粘连；团队剖析段 MVP/战犯加粗、不渲染限制段；`AiReplayReviewService` 统一追加三语免责结尾。前端 `MarkdownContent` 对 `^#{1,6}(?=\S)` 行补空格（`utils/markdownHeadingNormalize.js`）。
+- **复盘正文规范**：`COMMON_EVIDENCE_LOGIC_RULE`（ZH/EN/RU）禁止集火同义反复、机器标签直出与标题粘连；团队剖析段 MVP/战犯加粗、不渲染限制段；`AiReplayReviewService` 统一追加三语免责结尾。前端 `MarkdownContent` 对 `^(#{1,6})(?!#|\s)` 行补空格（`utils/markdownHeadingNormalize.js`）。
 - 同场不同队是两个独立 perspective，entityId、坐标和时钟不跨 perspective 合并。
 - 未点亮敌人的位置仍未知；不能用对方录像补写本队当时不可见的信息。
 - `battle_results.dat` 的团队总伤害、承伤、助攻、格挡、击杀、存活和死亡时刻是权威值；damage event 只标为观测子集。

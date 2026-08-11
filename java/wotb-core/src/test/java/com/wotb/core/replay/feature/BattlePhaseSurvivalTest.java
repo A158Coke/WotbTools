@@ -93,6 +93,33 @@ class BattlePhaseSurvivalTest {
     }
 
     @Test
+    void deathSourceLabelDistinguishesAuthoritativeEstimatedAndUnknown() {
+        final Battle authoritative = new Battle();
+        authoritative.players = List.of(
+                player(1L, 1, false, 62.0),
+                player(2L, 2, true, 0.0));
+        assertEquals("权威结算", BattlePhaseSummary.deathSourceLabel(authoritative));
+
+        final PlayerResult estimated = player(1L, 1, false, 83.0);
+        estimated.deathTimeMillis = 0L;   // 结算缺失死亡时刻
+        estimated.survivalTimeSec = 83.0; // 事件流 fallback 估出
+        final Battle estimatedBattle = new Battle();
+        estimatedBattle.players = List.of(estimated);
+        assertEquals("事件流估算", BattlePhaseSummary.deathSourceLabel(estimatedBattle));
+
+        final PlayerResult unknown = player(1L, 1, false, 0.0);
+        unknown.deathTimeMillis = 0L;     // 结算缺失 + 事件流未估出
+        unknown.survivalTimeSec = 0.0;
+        final Battle unknownBattle = new Battle();
+        unknownBattle.players = List.of(unknown);
+        assertEquals("未知", BattlePhaseSummary.deathSourceLabel(unknownBattle));
+
+        final Battle noDead = new Battle();
+        noDead.players = List.of(player(1L, 1, true, 0.0));
+        assertEquals("权威结算", BattlePhaseSummary.deathSourceLabel(noDead));
+    }
+
+    @Test
     void denseKillWindowDetectedOnMidGameOnly() {
         final List<BattlePhaseSummary> phases = phasesWithSurvival(battle7v7());
         // 中期 [60,180] 内 5 个阵亡集中在 60-70s → 15 秒窗口内 >= 3 → 密集击杀
