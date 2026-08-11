@@ -96,6 +96,171 @@ class PacketReverseProbeTest {
         findRecorder(es);
         recorderAffine(es, byType);
         teamCoverage(es);
+        type7YawVsPos(es, byType);
+        type31VsRecorder(es, byType);
+        type31HpHypothesis(es, byType);
+    }
+
+    /** type31 vs "HP%" hypothesis: match float to any tracked vehicle's HP fraction (0-100). */
+    private static void type31HpHypothesis(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        // account -> maxHp (tankopedia, hardcoded for this sample's roster)
+        final Map<Long, Integer> maxHp = new HashMap<>();
+        maxHp.put(3101365552L, 3400); // 29985 SPHT
+        maxHp.put(3105519605L, 2600); // 7297 60TP
+        maxHp.put(3125216420L, 3400); // 29985
+        maxHp.put(3112767868L, 2400); // 6225 FV215b
+        maxHp.put(3108556254L, 2400); // 6225
+        maxHp.put(3111605321L, 2600); // 7297
+        maxHp.put(3116319903L, 2600); // 7297
+        maxHp.put(3115055801L, 3400); // recorder SPHT
+        final Map<Long, List<EventStreamReader.DirectDamageEvent>> dmg = new HashMap<>();
+        for (final EventStreamReader.DirectDamageEvent d :
+                EventStreamReader.extractDirectDamageEvents(es.packets,
+                        EventStreamReader.extractEntityToAccountMap(es.packets))) {
+            dmg.computeIfAbsent(d.victimAccountId(), k -> new ArrayList<>()).add(d);
+        }
+        final List<EventStreamReader.ParsedPacket> t31 = byType.getOrDefault(31, List.of());
+        System.out.println("== type31 vs HP% hypothesis ==");
+        double bestMean = Double.MAX_VALUE;
+        Long bestAcc = null;
+        for (final Long acc : maxHp.keySet()) {
+            final List<EventStreamReader.DirectDamageEvent> hits = dmg.getOrDefault(acc, List.of());
+            hits.sort(Comparator.comparingDouble(EventStreamReader.DirectDamageEvent::clockSecs));
+            final int hp0 = maxHp.get(acc);
+            double sumErr = 0;
+            int count = 0;
+            for (final EventStreamReader.ParsedPacket p : t31) {
+                if (p.payload.length < 4) {
+                    continue;
+                }
+                int cum = 0;
+                for (final EventStreamReader.DirectDamageEvent d : hits) {
+                    if (d.clockSecs() <= p.clockSecs) {
+                        cum += d.damage();
+                    }
+                }
+                final double hpPct = Math.max(0, hp0 - cum) * 100.0 / hp0;
+                final double v = f(p.payload, 0);
+                sumErr += Math.abs(v - hpPct);
+                count++;
+            }
+            final double mean = count == 0 ? Double.MAX_VALUE : sumErr / count;
+            System.out.printf(Locale.ROOT, "  acc=%d hp0=%d hits=%d mean|v-hpPct|=%.2f%n",
+                    acc, hp0, hits.size(), mean);
+            if (mean < bestMean) {
+                bestMean = mean;
+                bestAcc = acc;
+            }
+        }
+        System.out.printf(Locale.ROOT, "  best: acc=%d mean=%.2f%n", bestAcc, bestMean);
+    }
+
+    /** type7 propId=2 (2-byte int) vs the same vehicle's type-10 yaw (degrees). */
+    private static void type7YawVsPos(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final int eid = 12558550; // team1 victim with dense type-7 propId=2 stream
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final List<EventStreamReader.ParsedPacket> props = byType.getOrDefault(7, List.of()).stream()
+                .filter(p -> p.payload.length >= 12 && readI32LE(p.payload, 0) == eid
+                        && readU32LE(p.payload, 4) == 2 && readU32LE(p.payload, 8) == 2)
+                .sorted(Comparator.comparingDouble(p -> p.clockSecs))
+                .toList();
+        System.out.println("== type7 propId=2 vs type-10 yaw (eid=" + eid + ", n=" + props.size() + ") ==");
+        int printed = 0;
+        double sumErr = 0;
+        int count = 0;
+        for (final EventStreamReader.ParsedPacket p : props) {
+            EventStreamReader.PositionData near = null;
+            float bestDt = Float.MAX_VALUE;
+            for (final EventStreamReader.PositionData pos : positions) {
+                if (pos.entityId != eid) {
+                    continue;
+                }
+                final float dt = Math.abs(pos.clockSecs - p.clockSecs);
+                if (dt < 0.5f && dt < bestDt) {
+                    bestDt = dt;
+                    near = pos;
+                }
+            }
+            if (near == null) {
+                continue;
+            }
+            final int raw = intValue(p.payload, 12, 2);
+            final double propDeg = raw * 360.0 / 65536.0;
+            final double pitchDeg = Math.toDegrees(near.pitch);
+            double err = Math.abs(normalizeAngle(propDeg - pitchDeg));
+            sumErr += err;
+            count++;
+            if (printed < 8) {
+                System.out.printf(Locale.ROOT, "  t=%.1fs prop=%.1fdeg pitch=%.1fdeg err=%.1f%n",
+                        p.clockSecs, propDeg, pitchDeg, err);
+                printed++;
+            }
+        }
+        System.out.printf(Locale.ROOT, "  mean abs err=%.2f deg (n=%d)%n",
+                count == 0 ? -1 : sumErr / count, count);
+    }
+
+    private static double normalizeAngle(final double deg) {
+        double a = deg % 360.0;
+        if (a > 180) {
+            a -= 360;
+        }
+        if (a < -180) {
+            a += 360;
+        }
+        return a;
+    }
+
+    /** type31 single float vs recorder vehicle (eid 12558552) speed/yaw from type-10. */
+    private static void type31VsRecorder(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final int recEid = 12558552;
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final List<EventStreamReader.PositionData> rec = positions.stream()
+                .filter(p -> p.entityId == recEid)
+                .sorted(Comparator.comparingDouble(p -> p.clockSecs))
+                .toList();
+        final List<EventStreamReader.ParsedPacket> t31 = byType.getOrDefault(31, List.of());
+        System.out.println("== type31 vs recorder speed/yaw (eid=" + recEid + ") ==");
+        int printed = 0;
+        double sumSpeedErr = 0, sumYawErr = 0;
+        int count = 0;
+        for (final EventStreamReader.ParsedPacket p : t31) {
+            if (p.payload.length < 4) {
+                continue;
+            }
+            EventStreamReader.PositionData before = null;
+            EventStreamReader.PositionData after = null;
+            for (final EventStreamReader.PositionData pos : rec) {
+                if (pos.clockSecs <= p.clockSecs) {
+                    before = pos;
+                } else {
+                    after = pos;
+                    break;
+                }
+            }
+            if (before == null || after == null || after.clockSecs - before.clockSecs > 2f) {
+                continue;
+            }
+            final double dt = after.clockSecs - before.clockSecs;
+            final double speed = Math.hypot(after.x - before.x, after.z - before.z) / dt * 3.6;
+            final float v = f(p.payload, 0);
+            sumSpeedErr += Math.abs(v - speed);
+            sumYawErr += Math.abs(normalizeAngle(v - Math.toDegrees(before.yaw)));
+            count++;
+            if (printed < 6) {
+                System.out.printf(Locale.ROOT, "  t=%.1fs type31=%.2f recSpeed=%.1fkm/h recYaw=%.1fdeg%n",
+                        p.clockSecs, v, speed, Math.toDegrees(before.yaw));
+                printed++;
+            }
+        }
+        System.out.printf(Locale.ROOT, "  n=%d mean|v-speed|=%.1f mean|v-yaw|=%.1fdeg%n",
+                count, count == 0 ? -1 : sumSpeedErr / count, count == 0 ? -1 : sumYawErr / count);
     }
 
     /** Per-entity first/last position time + count + team (from updateArena2 field 4). */
