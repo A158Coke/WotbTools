@@ -17,11 +17,28 @@ description: >
 ## 流程
 
 1. **完成 review-fix** — 先走 `.agents/skills/review-fix/SKILL.md` 的 6 项代码审查
-2. **AI 死代码清理** — 按下方方案 8 检查并安全删除 AI 提前性/投机死代码
-3. **文档自检** — 按下方检查清单逐项检查文档同步
-4. **spawn docs verifier** — `type: verifier`，审查文档是否与代码一致
-5. **修复** → **重审** → 循环直到零问题
-6. **出具报告** — 包含 review-fix 报告 + AI 死代码清理报告 + 文档审查报告
+2. **DI 注入审计** — 按下方 DI 注入检查单审计 Spring 注入方式，违规改造
+3. **AI 死代码清理** — 按下方方案检查并安全删除 AI 提前性/投机死代码
+4. **文档自检** — 按下方检查清单逐项检查文档同步
+5. **spawn docs verifier** — `type: verifier`，审查文档是否与代码一致
+6. **修复** → **重审** → 循环直到零问题
+7. **出具报告** — 包含 review-fix 报告 + DI 注入审计报告 + AI 死代码清理报告 + 文档审查报告
+
+## DI 注入检查单（Spring）
+
+> 硬约定：**禁止 `@Autowired` 字段注入**，除非是唯一可行手段。
+> 理由：字段注入破坏不可变性、妨碍单测构造、隐藏依赖图、与规则 13（Java final）/24（Mapper）冲突。
+
+- [ ] **字段注入扫描**：`rg -n "@Autowired\s+private|@Autowired\s+\n\s+private" java/src/main/java`（含 Lombok `@Autowired` 配合 `@RequiredArgsConstructor` 是否绕过）
+- [ ] **改造优先级**（按此顺序选可行档）：
+  1. **构造器注入**（首选）：`private final XxxService svc;` + 无参/显式构造器；Spring 4.3+ 单构造器免 `@Autowired`；与 `final` 规则协同
+  2. **Lombok `@RequiredArgsConstructor`**：配合 `private final` 字段生成构造器，等价构造器注入
+  3. **`@Autowired` setter 方法**：仅当需运行时重配 / 测试需注入 mock 而类已被多构造器占满
+  4. **`@Autowired` 字段注入**：仅当上述三档均不可行（如循环依赖的临时收口、第三方框架反射装配），保留时必须留 `// ponytail: 唯一手段，原因=xxx` 注释
+- [ ] **不可变性**：改造后依赖字段必须为 `final`（除非确实需运行时重配，留 ponytail）
+- [ ] **循环依赖**：若引入 `@Autowired` 字段仅为缓解循环依赖，**优先重构**拆循环（提取第三方/接口反转/事件总线），不在本检查单用字段注入掩盖
+- [ ] **测试可构造**：改造后单测可直接 `new XxxService(mockDep)` 构造，无需 `@SpringBootTest` / 反射字段注入
+- [ ] **首批 vs 增量**：本次变更新增/修改的类强制审计；历史存量字段注入随所在类改动顺手改造，暂不开专项大扫除
 
 ## 文档检查清单
 
@@ -92,7 +109,7 @@ QUESTION: 审查以下代码变更对应的文档是否全部同步
 SCOPE: [变更文件列表 + 对应文档路径]
 ALREADY_KNOWN: [已自审并更新的文档]
 EFFORT: medium
-STOP_CONDITION: 完成全部 9 项检查（8 项文档 + AI 死代码清理），报告缺失项
+STOP_CONDITION: 完成全部 10 项检查（DI 注入审计 + 8 项文档 + AI 死代码清理），报告缺失项
 OUTPUT:
   VERDICT: 文档齐全 / 有遗漏（列出数量）
   EVIDENCE: 逐项列出（文档:章节 → 缺失内容）
@@ -105,12 +122,18 @@ OUTPUT:
 ```
 ### Review-With-Docs 审查报告
 
-| 项目 | review-fix | docs |
-|------|-----------|------|
-| 发现问题 | N | N |
-| 已修复 | N | N |
-| 文档同步 | — | [齐全 / 缺 N 项] |
-| AI 死代码清理 | — | [扫描 N / 删除 N / 保留 N（假死）] |
+| 项目 | review-fix | DI 审计 | docs |
+|------|-----------|--------|------|
+| 发现问题 | N | N | N |
+| 已修复 | N | N | N |
+| 字段注入改造 | — | [扫描 N / 改造 N / 保留 N（唯一手段）] | — |
+| 文档同步 | — | — | [齐全 / 缺 N 项] |
+| AI 死代码清理 | — | — | [扫描 N / 删除 N / 保留 N（假死）] |
+
+#### DI 审计清单
+1. 字段注入扫描：发现 N 处 `@Autowired private`
+2. 已改造为构造器注入 / `@RequiredArgsConstructor`：N 处
+3. 唯一手段保留（含 ponytail 注释）：N 处
 
 #### 文档缺失清单
 1. CHANGELOG 缺少 [变更描述]

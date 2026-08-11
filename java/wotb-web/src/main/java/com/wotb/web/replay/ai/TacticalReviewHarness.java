@@ -57,28 +57,29 @@ public class TacticalReviewHarness {
     private final AiReplayAnalysisConfig config;
     private final LongSupplier nanoTimeSource;
     private final EvidenceSkillEngine skillEngine = new EvidenceSkillEngine();
-
-    @Autowired(required = false)
-    private MeterRegistry meterRegistry;
+    private final MeterRegistry meterRegistry;
 
     @Autowired
     public TacticalReviewHarness(final PlayerReplayAnalysisService playerService,
                                  final PreBattleStrategicService preBattleService,
                                  final AiChatGateway gateway,
-                                 final AiReplayAnalysisConfig config) {
-        this(playerService, preBattleService, gateway, config, System::nanoTime);
+                                 final AiReplayAnalysisConfig config,
+                                 @Autowired(required = false) final MeterRegistry meterRegistry) {
+        this(playerService, preBattleService, gateway, config, System::nanoTime, meterRegistry);
     }
 
     TacticalReviewHarness(final PlayerReplayAnalysisService playerService,
                           final PreBattleStrategicService preBattleService,
                           final AiChatGateway gateway,
                           final AiReplayAnalysisConfig config,
-                          final LongSupplier nanoTimeSource) {
+                          final LongSupplier nanoTimeSource,
+                          final MeterRegistry meterRegistry) {
         this.playerService = playerService;
         this.preBattleService = preBattleService;
         this.gateway = gateway;
         this.config = config;
         this.nanoTimeSource = nanoTimeSource;
+        this.meterRegistry = meterRegistry;
     }
 
     /** 运行双 Call Harness；不满足前提时回退到旧单 Call 路径。 */

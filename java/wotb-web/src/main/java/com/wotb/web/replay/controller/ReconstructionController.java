@@ -59,6 +59,7 @@ public class ReconstructionController {
     private final AiReplayReviewService reviewService;
     private final AiCancellationRegistry cancellationRegistry;
     private final AiReviewWorkerExecutor workerExecutor;
+    private final ReplayUsageMetrics usageMetrics;
 
     /**
      * SSE 连接超时：对齐 nginx analyze 420s read timeout，避免服务端在代理之前
@@ -66,18 +67,18 @@ public class ReconstructionController {
      */
     static final long SSE_TIMEOUT_MS = 420_000L;
 
-    @Autowired(required = false)
-    private ReplayUsageMetrics usageMetrics;
-
+    @Autowired
     public ReconstructionController(
             final DefaultReplayProcessingFacade processingFacade,
             final AiReplayReviewService reviewService,
             final AiCancellationRegistry cancellationRegistry,
-            final AiReviewWorkerExecutor workerExecutor) {
+            final AiReviewWorkerExecutor workerExecutor,
+            @Autowired(required = false) final ReplayUsageMetrics usageMetrics) {
         this.processingFacade = processingFacade;
         this.reviewService = reviewService;
         this.cancellationRegistry = cancellationRegistry;
         this.workerExecutor = workerExecutor;
+        this.usageMetrics = usageMetrics;
     }
 
     /**

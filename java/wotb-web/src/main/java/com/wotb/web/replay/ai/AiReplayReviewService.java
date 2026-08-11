@@ -43,29 +43,29 @@ public class AiReplayReviewService {
     private final DefaultReplayProcessingFacade processingFacade;
     private final AiReplayAnalysisService aiAnalysisService;
     private final TacticalReviewHarness tacticalReviewHarness;
-
-    @Autowired(required = false)
-    private MeterRegistry meterRegistry;
-
-    @Autowired(required = false)
-    private ReplayUsageMetrics replayUsageMetrics;
+    private final MeterRegistry meterRegistry;
+    private final ReplayUsageMetrics replayUsageMetrics;
 
     private final AtomicInteger aiReviewInFlight = new AtomicInteger();
     private Timer aiReviewDuration;
     public AiReplayReviewService(
             final DefaultReplayProcessingFacade processingFacade,
             final AiReplayAnalysisService aiAnalysisService) {
-        this(processingFacade, aiAnalysisService, null);
+        this(processingFacade, aiAnalysisService, null, null, null);
     }
 
     @Autowired
     public AiReplayReviewService(
             final DefaultReplayProcessingFacade processingFacade,
             final AiReplayAnalysisService aiAnalysisService,
-            final TacticalReviewHarness tacticalReviewHarness) {
+            final TacticalReviewHarness tacticalReviewHarness,
+            @Autowired(required = false) final MeterRegistry meterRegistry,
+            @Autowired(required = false) final ReplayUsageMetrics replayUsageMetrics) {
         this.processingFacade = processingFacade;
         this.aiAnalysisService = aiAnalysisService;
         this.tacticalReviewHarness = tacticalReviewHarness;
+        this.meterRegistry = meterRegistry;
+        this.replayUsageMetrics = replayUsageMetrics;
     }
 
     public AnalyzeResponse analyze(final MultipartFile[] files) throws IOException {

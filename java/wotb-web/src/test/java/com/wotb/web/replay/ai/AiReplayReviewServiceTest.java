@@ -302,7 +302,7 @@ class AiReplayReviewServiceTest {
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.ZH), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("harness-text"), PRIOR));
-        service = new AiReplayReviewService(processingFacade, aiAnalysisService, harness);
+        service = new AiReplayReviewService(processingFacade, aiAnalysisService, harness, null, null);
         stubRandomProcessing();
 
         final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
@@ -326,7 +326,7 @@ class AiReplayReviewServiceTest {
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.ZH), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("harness-text"), null));
-        service = new AiReplayReviewService(processingFacade, aiAnalysisService, harness);
+        service = new AiReplayReviewService(processingFacade, aiAnalysisService, harness, null, null);
         stubRandomProcessing();
 
         final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
@@ -344,7 +344,7 @@ class AiReplayReviewServiceTest {
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.EN), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("fallback-text"), null));
-        service = new AiReplayReviewService(processingFacade, aiAnalysisService, harness);
+        service = new AiReplayReviewService(processingFacade, aiAnalysisService, harness, null, null);
         stubRandomProcessing();
 
         final AnalyzeResponse response = service.analyze(
@@ -394,7 +394,7 @@ class AiReplayReviewServiceTest {
                     return new TacticalReviewHarness.HarnessOutcome(
                             new AnalyzeResult("harness-text"), PRIOR);
                 });
-        service = new AiReplayReviewService(processingFacade, aiAnalysisService, harness);
+        service = new AiReplayReviewService(processingFacade, aiAnalysisService, harness, null, null);
         stubRandomProcessing();
 
         final StringBuilder events = new StringBuilder();
@@ -427,7 +427,7 @@ class AiReplayReviewServiceTest {
         when(harness.analyzeWithPrior(any(), eq(AllowedLanguage.ZH), any())).thenReturn(
                 new TacticalReviewHarness.HarnessOutcome(
                         new AnalyzeResult("harness-text"), PRIOR));
-        service = new AiReplayReviewService(processingFacade, aiAnalysisService, harness);
+        service = new AiReplayReviewService(processingFacade, aiAnalysisService, harness, null, null);
         when(processingFacade.process(any(), any())).thenReturn(randomResultWithReconstruction());
 
         final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});

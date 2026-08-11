@@ -44,16 +44,17 @@ public class PreBattleStrategicService {
     private final AiReplayAnalysisConfig config;
     private final TankTacticalProfileRegistry profileRegistry;
     private final MapTacticalSemanticsRegistry mapSemanticsRegistry;
+    private final MeterRegistry meterRegistry;
 
-    @Autowired(required = false)
-    private MeterRegistry meterRegistry;
-
+    @Autowired
     public PreBattleStrategicService(final AiChatGateway gateway,
-                                     final AiReplayAnalysisConfig config) {
+                                     final AiReplayAnalysisConfig config,
+                                     @Autowired(required = false) final MeterRegistry meterRegistry) {
         this.gateway = gateway;
         this.config = config;
         this.profileRegistry = TankTacticalProfileRegistry.load();
         this.mapSemanticsRegistry = MapTacticalSemanticsRegistry.load();
+        this.meterRegistry = meterRegistry;
     }
 
     public boolean isConfigured() {
