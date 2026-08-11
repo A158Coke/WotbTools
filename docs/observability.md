@@ -68,11 +68,17 @@
 生产 `mcp-grafana` 曾把 Grafana Service Account Token 当作调用者认证使用，实际该 Token 仅是访问 Grafana 的后端凭据：未设置 `MCP_GRAFANA_SERVER_TOKEN`/`--server-auth-token` 时，公网 `/mcp` 的匿名 MCP initialize 返回 200 并建立 session。因使用频率低，选择**彻底下线**而非加固：
 
 - 仓库侧（已完成）：生产与本地 compose 移除 `mcp-grafana`；部署链路不再传递 `GRAFANA_MCP_TOKEN`；CI 增加「生产 compose 不得含 MCP 服务 / 8000 端口」回归断言。
-- 人工清理（生产服务器 / Grafana / GitHub，仓库外）：
-  1. 宿主 Caddy：删除 `/mcp*` 路由并 reload（临时止血期间应已删除；确认 `https://monitor.wotbtools.com/mcp` 返回 404/拒绝）。
-  2. Grafana：删除或禁用 MCP 专用 Service Account（若保留则降为 Viewer 只读），并吊销/删除其 Token。
-  3. GitHub 仓库 Settings → Secrets：删除 `GRAFANA_MCP_TOKEN`（代码已停止引用）。
-  4. 下次生产部署后确认 `docker ps` 无 `mcp-grafana` 容器（compose `--remove-orphans` 会自动清理）。
+- 生产侧（已完成，2026-08-11）：`docker rm -f wotb-mcp-grafana-1` 移除容器、8000 端口关闭；宿主 Caddy（`wotb-caddy` 容器，配置 `/opt/caddy/Caddyfile`）将 `/mcp*` 从反代改为 `respond 404` 并热重载，外部验证 `https://monitor.wotbtools.com/mcp` → 404。
+- 剩余人工步骤（Grafana / GitHub，仓库外）：
+  1. Grafana：删除或禁用 MCP 专用 Service Account（若保留则降为 Viewer 只读），并吊销/删除其 Token。
+  2. GitHub 仓库 Settings → Secrets：删除 `GRAFANA_MCP_TOKEN`（代码已停止引用）。
+  3. 轮换 Grafana admin 密码（2026-08-11 排障时一次命令参数错误曾将 `GRAFANA_ADMIN_PASSWORD` 输出到终端日志）。
+
+**生产 Caddy 运维注意（2026-08-11 实战教训）**
+
+- `wotb-caddy` 由 `/opt/caddy/docker-compose.yml` 管理（`caddy:2`，host 网络），`/opt/caddy/Caddyfile` 以 bind mount 挂载到容器 `/etc/caddy/Caddyfile`。
+- **禁止用 `sed -i` 编辑挂载文件**：`sed -i` 通过重命名替换文件，会破坏 bind mount 的 inode 关联，容器内会继续读到旧内容（`docker cp` 也会因 unlink busy 失败）。必须原地写入（`vi` / `tee` / `cp`）。
+- 改完热重载：`docker exec wotb-caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile`（先 `caddy fmt --overwrite` 可消除格式告警）。
 
 如需恢复 MCP，必须：固定 release + digest、设置 `MCP_GRAFANA_SERVER_TOKEN`/`--server-auth-token`（匿名 401）、启用 `--disable-write` 只读、Service Account 仅 Viewer 权限。
 
