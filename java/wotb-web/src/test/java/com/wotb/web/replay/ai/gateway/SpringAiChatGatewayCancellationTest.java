@@ -1,6 +1,9 @@
 package com.wotb.web.replay.ai.gateway;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -106,14 +109,24 @@ class SpringAiChatGatewayCancellationTest {
     @Test
     void registryCancelsOnlyRegisteredRequests() {
         final AiCancellationRegistry registry = new AiCancellationRegistry();
-        final AiCancellationToken token = registry.register("abc");
-        assertTrue(registry.cancel("abc"));
+        final String id = "00000000-0000-0000-0000-0000000000aa";
+        // 非 UUID id 被拒绝（不复用 token），也不会注册
+        assertNull(registry.register("abc"));
+        assertFalse(registry.cancel("abc"));
+        final AiCancellationToken token = registry.register(id);
+        assertNotNull(token);
+        // 同一 id 重复注册被拒绝
+        assertNull(registry.register(id));
+        assertTrue(registry.cancel(id));
         assertTrue(token.isCancelled());
-        // idempotent: cancelling again still reports the request as registered
-        assertTrue(registry.cancel("abc"));
-        registry.unregister("abc");
-        assertTrue(!registry.cancel("abc"));
-        assertTrue(!registry.cancel("never-registered"));
+        // cancel 幂等：再次 cancel 仍报告已注册
+        assertTrue(registry.cancel(id));
+        // unregister(id, token) compare-and-remove：错误 token 不删除，正确 token 删除
+        registry.unregister(id, new AiCancellationToken());
+        assertTrue(registry.cancel(id));
+        registry.unregister(id, token);
+        assertFalse(registry.cancel(id));
+        assertFalse(registry.cancel("00000000-0000-0000-0000-0000000000bb"));
     }
 
     private static AiUpstreamException upstream(final String code, final Integer status) {

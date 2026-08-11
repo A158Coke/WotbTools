@@ -33,6 +33,7 @@ import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
+import com.wotb.web.replay.ai.gateway.AiRequestContext;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -297,6 +298,25 @@ class TacticalReviewHarnessTest {
 
         assertEquals("AI_TIMEOUT", e.code());
         assertNull(gateway.lastHarnessRequest, "Call #2 must not run when the overall budget is gone");
+    }
+
+    @Test
+    void exhaustedOverallDeadlineFailsFastBeforeAnyAiCall() {
+        // 模拟 worker 包装器：提交时计算的整体 deadline 已过期（排队吃光预算），
+        // worker 启动后必须在任何 AI 调用前干净失败为 AI_TIMEOUT。
+        final RecordingGateway gateway = recordingGateway(PRIOR_JSON, null);
+        final TacticalReviewHarness harness = harness(gateway, System::nanoTime);
+        AiRequestContext.setOverallDeadline(System.nanoTime() - 1_000_000_000L);
+        try {
+            final com.wotb.web.replay.ai.gateway.AiUpstreamException e = assertThrows(
+                    com.wotb.web.replay.ai.gateway.AiUpstreamException.class,
+                    () -> harness.analyze(result(recon()), AllowedLanguage.ZH));
+            assertEquals("AI_TIMEOUT", e.code());
+        } finally {
+            AiRequestContext.clear();
+        }
+        assertNull(gateway.lastPreBattleRequest, "Call #1 must not run when the overall deadline is exhausted");
+        assertNull(gateway.lastHarnessRequest, "Call #2 must not run when the overall deadline is exhausted");
     }
 
     @Test

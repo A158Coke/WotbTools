@@ -29,7 +29,6 @@ description: >
 - [ ] 是否记录了本次变更（Added / Changed / Fixed / Removed）
 - [ ] 变更描述是否准确（不含实现细节，面向读者）
 - [ ] 是否在 `[Unreleased]` 下（未发布版本）
-- [ ] 用户可见功能变更是否同步 `frontend/src/data/versions.json`（三语新版本条目，最新在前）
 
 ### 2. DEVELOPER_GUIDE
 - [ ] 新增字段/API 是否更新字段表
@@ -62,7 +61,20 @@ description: >
 - [ ] `docs/current-plan.md` 中是否有与本变更相关的进行中任务；有则任务状态是否与实际一致（IN PROGRESS → COMPLETED / BLOCKED）
 - [ ] 计划的业务目标/范围/验收标准是否与本次变更一致（grill-me / grill-with-docs 产出的确认单与方案单已落入计划文件）
 
-### 8. AI 死代码 / 提前性代码清理
+### 8. frontend 版本历史 (`frontend/src/data/versions.json`)
+> 面向用户的版本历史卡片（首页入口读取）。**仅用户可见变更需新增条目**；纯技术/构建/CI/重构变更不写。
+
+- [ ] 触发条件：本变更对用户端可见（新功能 / 改交互 / 修 bug / 改文案 / 改样式）才新增条目
+- [ ] `v`：语义化版本递增（major / minor / patch），绝不跳号、不复用历史号
+- [ ] `date`：`YYYY-MM-DD`，落地当天日期，不早于代码改动日
+- [ ] `tag`：`add`（新功能）/ `chg`（改交互）/ `fix`（修 bug）/ `del`（删功能）
+- [ ] `zh` / `en` / `ru` 三语必同条目同步，含义一致；按各 locale 风格表述，不互相硬译；EN/RU 文案不得出现中文标点或分区中文标签
+- [ ] 文案面向用户：不含技术细节、不含 PR 号 / commit hash / 内部模块名
+- [ ] 新条目追加到数组**顶部**（最新在前），禁止修改历史条目
+- [ ] 同一发版若跨多个变更，合并为一条而非多条（条目 ≠ commit 数；多条逐步追加将造成版本号爆炸）
+- [ ] 与产品侧 `CHANGELOG-PRODUCT.md` 描述一致；与技术侧 `CHANGELOG.md` 互补，发版号吻合（同一发版日期 + 同一版本号语义）
+
+### 9. AI 死代码 / 提前性代码清理
 > 定位：review-fix 管"对不对"，code-smell 管"好不好的品味"，本节负责**执行清理**——
 > 针对 AI 生成代码常见的"为未来准备却没换来灵活性"的提前性死代码。
 
@@ -80,7 +92,7 @@ QUESTION: 审查以下代码变更对应的文档是否全部同步
 SCOPE: [变更文件列表 + 对应文档路径]
 ALREADY_KNOWN: [已自审并更新的文档]
 EFFORT: medium
-STOP_CONDITION: 完成全部 8 项检查（7 项文档 + AI 死代码清理），报告缺失项
+STOP_CONDITION: 完成全部 9 项检查（8 项文档 + AI 死代码清理），报告缺失项
 OUTPUT:
   VERDICT: 文档齐全 / 有遗漏（列出数量）
   EVIDENCE: 逐项列出（文档:章节 → 缺失内容）

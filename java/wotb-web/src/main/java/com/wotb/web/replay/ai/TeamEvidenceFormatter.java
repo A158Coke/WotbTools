@@ -1,0 +1,657 @@
+package com.wotb.web.replay.ai;
+
+import com.wotb.core.ai.AiTokenEstimator;
+import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
+import com.wotb.core.processing.FriendlyEnemyResult;
+import com.wotb.core.processing.PlayerSideResolver;
+import com.wotb.core.processing.TeamPerspectiveLabelResolver;
+import com.wotb.core.ref.ReplayDisplayNames;
+import com.wotb.core.replay.feature.BattlePhaseSummary;
+import com.wotb.core.replay.feature.CanonicalMapPosition;
+import com.wotb.core.replay.feature.KeyBattleEvent;
+import com.wotb.core.replay.feature.MapCoordinateResolution;
+import com.wotb.core.replay.feature.MapRegionResolver;
+import com.wotb.core.replay.feature.MovementSegment;
+import com.wotb.core.replay.feature.TeamAggregateResult;
+import com.wotb.core.replay.feature.TeamBattleFeatureSet;
+import com.wotb.core.replay.feature.TeamEngagementSummary;
+import com.wotb.core.replay.feature.TeamFormationCluster;
+import com.wotb.core.replay.feature.TeamFormationPhase;
+import com.wotb.core.replay.feature.TeamMemberFeatureSet;
+import com.wotb.core.replay.feature.TeamObservedAggregate;
+import com.wotb.core.replay.reconstruction.Vector3;
+import com.wotb.core.util.PlayerResultFormat;
+import com.wotb.core.util.PromptDataQuoter;
+import org.springframework.util.StringUtils;
+
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+/**
+ * 团队证据格式化器：把 Team 特征/结算/事件证据渲染为确定性 prompt 片段（对方阵容、
+ * 权威/观测聚合、成员事实、移动/队形/交火/阶段/关键事件、Call #1 prior 与死亡时间线），
+ * 以及基于 token 预算的 BudgetWriter。
+ * <p>从 {@link TeamAiPromptBuilder} 拆出，纯静态工具类；single/multi 组装与预算编排保留在原类。</p>
+ */
+final class TeamEvidenceFormatter {
+
+    private TeamEvidenceFormatter() {
+    }
+
+    static String priorSection(final PreBattleStrategicPrior prior,
+                                       final int perspectiveTeam,
+                                       final String teamLabel) {
+        final StringBuilder sb = new StringBuilder(2048);
+        sb.append("=== PRE-BATTLE STRATEGIC PRIOR（Call #1 赛前战略基线，仅基于地图与双方阵容，未读取任何战斗结果） ===\n");
+        if (prior == null || !prior.hasContent()) {
+            sb.append("（本次赛前战略基线不可用：Call #1 未产出有效结果）\n");
+            return sb.toString();
+        }
+        final boolean swapped = perspectiveTeam == 2;
+        final PreBattleStrategicPrior.TeamProfile teamAProfile = swapped
+                ? prior.teamB() : prior.teamA();
+        final PreBattleStrategicPrior.TeamProfile teamBProfile = swapped
+                ? prior.teamA() : prior.teamB();
+        final String teamALabel = "TEAM_A（你的队伍"
+                + (StringUtils.hasText(teamLabel) ? " " + teamLabel : "") + "）";
+        appendTeamProfile(sb, teamALabel, teamAProfile);
+        appendTeamProfile(sb, "TEAM_B（对方队伍）", teamBProfile);
+        if (!prior.keyMatchups().isEmpty()) {
+            sb.append("\n关键对阵:\n");
+            for (final PreBattleStrategicPrior.KeyMatchup m : prior.keyMatchups()) {
+                sb.append("  - 区域 ").append(quoteData(m.area()))
+                        .append(" | 优势 ").append(quoteData(swapped ? swapTeamToken(m.advantage()) : m.advantage()))
+                        .append(" | ").append(quoteData(m.reason())).append('\n');
+            }
+        }
+        if (!prior.strategicWinConditions().isEmpty()) {
+            sb.append("\n战略胜机:\n");
+            for (final PreBattleStrategicPrior.StrategicWinCondition w : prior.strategicWinConditions()) {
+                sb.append("  - ").append(quoteData(swapped ? swapTeamToken(w.team()) : w.team()))
+                        .append(": ").append(quoteData(w.condition())).append('\n');
+            }
+        }
+        if (!prior.hypotheses().isEmpty()) {
+            sb.append("\n战略假设（复盘对照：预期 vs 实际，考虑一波流等特殊战局）:\n");
+            for (final PreBattleStrategicPrior.StrategicHypothesis h : prior.hypotheses()) {
+                sb.append("  [").append(hypothesisIdLabel(h.id())).append("] ")
+                        .append(quoteData(swapped ? swapTeamToken(h.claim()) : h.claim()))
+                        .append("（理由: ").append(quoteData(swapped ? swapTeamToken(h.reason()) : h.reason()))
+                        .append("）\n");
+            }
+        }
+        return sb.toString();
+    }
+
+    static void appendTeamProfile(final StringBuilder sb,
+                                          final String label,
+                                          final PreBattleStrategicPrior.TeamProfile profile) {
+        if (profile == null) {
+            return;
+        }
+        sb.append('\n').append(label).append(":\n");
+        if (!profile.strengths().isEmpty()) {
+            sb.append("  优势: ").append(String.join("；", profile.strengths())).append('\n');
+        }
+        if (!profile.weaknesses().isEmpty()) {
+            sb.append("  劣势: ").append(String.join("；", profile.weaknesses())).append('\n');
+        }
+        if (!profile.preferredPlans().isEmpty()) {
+            sb.append("  预期最优打法（分阶段）: ").append(String.join("；", profile.preferredPlans())).append('\n');
+        }
+    }
+
+    static String hypothesisIdLabel(final String id) {
+        if (id == null) {
+            return "H?";
+        }
+        final String sanitized = id.replaceAll("[\\[\\]\\n\\r]", " ").trim();
+        return sanitized.isBlank() ? "H?" : sanitized;
+    }
+
+    static String swapTeamToken(final String text) {
+        if (text == null || text.isBlank()) {
+            return text == null ? "" : text;
+        }
+        return text.replace("TEAM_A", "\u0000A")
+                .replace("TEAM_B", "TEAM_A")
+                .replace("\u0000A", "TEAM_B");
+    }
+
+    static void appendHighPriorityFacts(
+            final BudgetWriter writer,
+            final TeamBattleFeatureSet features,
+            final String analysisUnitId
+    ) {
+        writer.append("\n=== PERSPECTIVE_FACTS ===\n");
+        writer.append("analysisUnitId=" + quoteData(analysisUnitId) + "\n");
+        if (features == null) {
+            writer.append("features=UNAVAILABLE\n");
+            return;
+        }
+        appendAuthoritative(writer, features.authoritativeAggregate());
+        appendObserved(writer, features.observedAggregate(), features.limitations());
+        appendMemberFacts(writer, features.members());
+        writer.append("coverage=" + features.coverage() + "\n");
+    }
+
+    static boolean appendOpposingTeam(
+            final BudgetWriter writer,
+            final Battle battle,
+            final int perspectiveTeam
+    ) {
+        if (battle == null || battle.players == null
+                || !PlayerSideResolver.isValidRawTeam(perspectiveTeam)) {
+            return false;
+        }
+        final List<PlayerResult> opponents = battle.players.stream()
+                .filter(p -> PlayerSideResolver.isValidRawTeam(p.team) && p.team != perspectiveTeam)
+                .toList();
+        if (opponents.isEmpty()) {
+            return false;
+        }
+        writer.append("\n=== OPPOSING_TEAM_LINEUP_AUTHORITATIVE（对方阵容·权威结算） ===\n");
+        int damage = 0;
+        int received = 0;
+        int assisted = 0;
+        int blocked = 0;
+        int kills = 0;
+        int survivors = 0;
+        for (final PlayerResult p : opponents) {
+            writer.append("opponent accountId=" + p.accountId
+                    + " nickname=" + quoteData(p.nickname)
+                    + " tank=" + quoteData(resolveTankName(p.tankId, p.tankName))
+                    + " vehicleClass=" + resolveTankClass(p.tankId)
+                    + structuredTankFacts(p.tankId)
+                    + " finalDamage=" + p.damageDealt
+                    + " damageReceived=" + p.damageReceived
+                    + " assisted=" + p.damageAssisted
+                    + " blocked=" + p.damageBlocked
+                    + " kills=" + p.kills
+                    + " hits=" + p.nHitsDealt
+                    + " penetrations=" + p.nPenetrationsDealt
+                    + " enemiesDamaged=" + p.nEnemiesDamaged
+                    + " death=" + PlayerAnalysisTerms.survivalDisplay(
+                            p.survived, PlayerResultFormat.deathSec(p))
+                    + "\n");
+            damage += p.damageDealt;
+            received += p.damageReceived;
+            assisted += p.damageAssisted;
+            blocked += p.damageBlocked;
+            kills += p.kills;
+            if (p.survived) survivors++;
+        }
+        writer.append("\n=== OPPOSING_TEAM_AUTHORITATIVE_RESULT（对方合计·权威结算） ===\n");
+        writer.append("opponentCount=" + opponents.size()
+                + " finalDamage=" + damage
+                + " damageReceived=" + received
+                + " assisted=" + assisted
+                + " blocked=" + blocked
+                + " kills=" + kills
+                + " survivors=" + survivors
+                + "\n");
+        return true;
+    }
+
+    static String structuredTankFacts(final long tankId) {
+        final StringBuilder sb = new StringBuilder(80);
+        appendFact(sb, "tier", ReplayDisplayNames.tankTier(tankId));
+        appendFact(sb, "nation", ReplayDisplayNames.tankNation(tankId));
+        appendFact(sb, "alphaDamage", ReplayDisplayNames.tankAlphaDamage(tankId));
+        appendFact(sb, "hp", ReplayDisplayNames.tankMaxHp(tankId));
+        sb.append(extraInfoFact(ReplayDisplayNames.tankExtraInfo(tankId)));
+        return sb.toString();
+    }
+
+    static void appendFact(final StringBuilder sb, final String key, final String value) {
+        if (!value.isEmpty()) {
+            sb.append(' ').append(key).append('=').append(value);
+        }
+    }
+
+    static String extraInfoFact(final String extraInfo) {
+        return extraInfo.isEmpty() ? "" : " extraInfo=" + quoteData(extraInfo);
+    }
+
+    static void appendOptionalDetails(
+            final BudgetWriter writer,
+            final TeamBattleFeatureSet features,
+            final String analysisUnitId,
+            final String mapCode,
+            final Battle battle,
+            final int perspectiveTeam
+    ) {
+        writer.append("\n=== PERSPECTIVE_OPTIONAL ===\n");
+        writer.append("analysisUnitId=" + quoteData(analysisUnitId) + "\n");
+        if (features == null) {
+            return;
+        }
+        appendMemberMovements(writer, features.members(), mapCode);
+        appendFormation(writer, features.formationPhases());
+        appendBattlePhases(writer, features.battlePhases(), battle, perspectiveTeam);
+        appendEngagements(writer, features.engagements());
+        appendKeyEvents(writer, features.keyEvents());
+    }
+
+    static void appendAuthoritative(
+            final BudgetWriter writer,
+            final TeamAggregateResult aggregate
+    ) {
+        writer.append("\n=== AUTHORITATIVE_TEAM_RESULT ===\n");
+        if (aggregate == null) {
+            writer.append("UNAVAILABLE\n");
+            return;
+        }
+        writer.append("memberCount=" + aggregate.memberCount() + "\n");
+        writer.append("damageDealt=" + aggregate.totalDamageDealt() + "\n");
+        writer.append("damageReceived=" + aggregate.totalDamageReceived() + "\n");
+        writer.append("assistedDamage=" + aggregate.totalAssistedDamage() + "\n");
+        writer.append("blockedDamage=" + aggregate.totalBlockedDamage() + "\n");
+        writer.append("kills=" + aggregate.totalKills() + "\n");
+        writer.append("survivors=" + aggregate.survivorCount() + "\n");
+        writer.append("deaths=" + aggregate.deathCount() + "\n");
+        writer.append("averageDeathTime=" + deathTimeLabel(aggregate.averageDeathTimeSec()) + "\n");
+        writer.append("firstDeathTime=" + deathTimeLabel(aggregate.firstDeathTimeSec()) + "\n");
+        writer.append("lastDeathTime=" + deathTimeLabel(aggregate.lastDeathTimeSec()) + "\n");
+        writer.append("win=" + formatScalar(aggregate.win()) + "\n");
+    }
+
+    static String deathTimeLabel(final Double deathTimeSec) {
+        return deathTimeSec == null || !Double.isFinite(deathTimeSec) || deathTimeSec <= 0
+                ? "UNKNOWN" : PlayerAnalysisTerms.battleClock((float) deathTimeSec.doubleValue());
+    }
+
+    static void appendObserved(
+            final BudgetWriter writer,
+            final TeamObservedAggregate aggregate,
+            final List<String> limitations
+    ) {
+        writer.append("\n=== OBSERVED_EVENT_SUBSET_NOT_AUTHORITATIVE ===\n");
+        if (aggregate == null) {
+            writer.append("UNAVAILABLE\n");
+            return;
+        }
+        // 事件流迄今仅逆向出 sub3 直接伤害子类型；type 5/31/35/39 与其他 EntityMethod
+        // 伤害子类型尚未逆向，观测子集无法与权威结算对齐。为避免 AI 在并排数字间误读
+        // （如「观测 18443 vs 权威 20360」），缺口未清零前抑制数字输出，
+        // 强制 AI 以 AUTHORITATIVE_TEAM_RESULT 为唯一可信口径。
+        // 待事件流覆盖达 100%（观测=权威）后，从此处恢复数字输出。
+        if (limitations != null && limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL")) {
+            writer.append("coverage=PARTIAL numbersSuppressed=true\n");
+            writer.append("reason=OBSERVED_DAMAGE_IS_PARTIAL\n");
+            writer.append("directive=以 AUTHORITATIVE_TEAM_RESULT 为唯一可信口径；事件流观测子集覆盖不全，不得引用其数字\n");
+            return;
+        }
+        writer.append("damageDealtSubset=" + aggregate.damageDealt() + "\n");
+        writer.append("damageReceivedSubset=" + aggregate.damageReceived() + "\n");
+        writer.append("attributedDamageEvents=" + aggregate.attributedDamageEventCount() + "\n");
+        writer.append("unattributedDamageEvents="
+                + aggregate.unattributedDamageEventCount() + "\n");
+    }
+
+    static void appendMemberFacts(
+            final BudgetWriter writer,
+            final List<TeamMemberFeatureSet> members
+    ) {
+        writer.append("\n=== TEAM_MEMBERS ===\n");
+        for (final TeamMemberFeatureSet member : members) {
+            writer.append("member accountId=" + member.accountId()
+                    + " nickname=" + quoteData(member.nickname())
+                    + " tank=" + quoteData(resolveTankName(member.tankId(), member.tankName()))
+                    // vehicleClass / tier / nation 只来自 tankopedia 的结构化字段，不得由 tank 名称推断
+                    + " vehicleClass=" + resolveTankClass(member.tankId())
+                    + structuredTankFacts(member.tankId())
+                    + " entityIds=" + member.entityIds()
+                    + " mapping=" + PlayerAnalysisTerms.confidenceLabel(member.mappingConfidence())
+                    + " finalDamage=" + member.finalDamage()
+                    + " damageReceived=" + member.damageReceived()
+                    + " assisted=" + member.assistedDamage()
+                    + " blocked=" + member.blockedDamage()
+                    + " kills=" + member.kills()
+                    + " survived=" + member.survived()
+                    + " deathTime=" + (member.deathTimeSec() == null
+                            ? "未知" : PlayerAnalysisTerms.survivalDisplay(
+                                    member.survived(), member.deathTimeSec()))
+                    + "\n");
+            final TeamMemberFeatureSet.DeathProximity prox = member.deathProximity();
+            if (prox != null) {
+                writer.append("  deathProximityMeters=" + format(prox.distanceMeters())
+                        + " observedDeltaSec=" + format(prox.observedDeltaSec())
+                        + " confidence=" + PlayerAnalysisTerms.confidenceLabel(prox.confidence())
+                        + "\n");
+            }
+            if (!member.limitations().isEmpty()) {
+                writer.append("  memberLimitations=" + member.limitations() + "\n");
+            }
+        }
+    }
+
+    static void appendMemberMovements(
+            final BudgetWriter writer,
+            final List<TeamMemberFeatureSet> members,
+            final String mapCode
+    ) {
+        boolean hasMovements = false;
+        for (final TeamMemberFeatureSet teamMemberFeatureSet : members) {
+            if (!teamMemberFeatureSet.movements().isEmpty()) {
+                hasMovements = true;
+                break;
+            }
+        }
+        if (!hasMovements) return;
+        writer.append("\n=== MEMBER_MOVEMENTS ===\n");
+        for (final TeamMemberFeatureSet member : members) {
+            if (member.movements().isEmpty()) continue;
+            // 必须标出归属成员：否则所有成员的移动段被打成一个匿名平铺列表，AI 无法归属
+            writer.append("member accountId=" + member.accountId()
+                    + " nickname=" + quoteData(member.nickname())
+                    + " tank=" + quoteData(resolveTankName(member.tankId(), member.tankName()))
+                    + " vehicleClass=" + resolveTankClass(member.tankId())
+                    + "\n");
+            // 压缩区域序列（1-9 区，与回放九宫格一致）：让 AI 一眼看到该成员的整场路线
+            final List<String> regionSequence = new ArrayList<>();
+            String lastRegion = null;
+            for (final MovementSegment movement : member.movements()) {
+                final String startRegion = regionOf(movement.rawStartPosition(), mapCode);
+                if (startRegion != null && !startRegion.equals(lastRegion)) {
+                    regionSequence.add(startRegion);
+                    lastRegion = startRegion;
+                }
+                final String endRegion = regionOf(movement.rawEndPosition(), mapCode);
+                if (endRegion != null && !endRegion.equals(lastRegion)) {
+                    regionSequence.add(endRegion);
+                    lastRegion = endRegion;
+                }
+            }
+            if (!regionSequence.isEmpty()) {
+                writer.append("  regionSequence=" + String.join("→", regionSequence) + "\n");
+            }
+            for (final MovementSegment movement : member.movements()) {
+                final String startInfo = formatRawPosition(movement.rawStartPosition(), mapCode);
+                final String endInfo = formatRawPosition(movement.rawEndPosition(), mapCode);
+                writer.append("  movement[" + format(movement.startTime())
+                        + "-" + format(movement.endTime()) + "]"
+                        + " type=" + PlayerAnalysisTerms.movementLabel(movement.type())
+                        + " distance=" + format(movement.distance())
+                        + " avgSpeed=" + format(movement.averageSpeed())
+                        + " start=" + startInfo
+                        + " end=" + endInfo
+                        + " confidence=" + PlayerAnalysisTerms.confidenceLabel(movement.confidence())
+                        + "\n");
+            }
+        }
+    }
+
+    static void appendFormation(
+            final BudgetWriter writer,
+            final List<TeamFormationPhase> phases
+    ) {
+        writer.append("\n=== FORMATION_PHASES ===\n");
+        for (final TeamFormationPhase phase : phases) {
+            final String phasePosInfo = formatCanonicalPosition(phase.centroid());
+            writer.append("formation[" + format(phase.startTime())
+                    + "-" + format(phase.endTime()) + "]"
+                    + " " + phasePosInfo
+                    + " dispersion=" + format(phase.averageDispersion())
+                    + " clusters=" + phase.clusterCount()
+                    + " members=" + phase.observedMemberCount()
+                    + " confidence=" + PlayerAnalysisTerms.confidenceLabel(phase.confidence())
+                    + "\n");
+            // Structured cluster output
+            for (final TeamFormationCluster cluster : phase.clusters()) {
+                writer.append("  cluster[" + format(cluster.startTime())
+                        + "-" + format(cluster.endTime()) + "]"
+                        + " region=" + cluster.region()
+                        + " centroidXZ=(" + format(cluster.centroidX())
+                        + "," + format(cluster.centroidZ()) + ")"
+                        + " centroidStatus=" + cluster.centroidStatus()
+                        + " clampedMemberPositions=" + cluster.clampedMemberPositionCount()
+                        + " members=" + cluster.memberIdentities().stream()
+                        .map(id -> PromptDataQuoter.quote(id, "?"))
+                        .collect(Collectors.joining(",", "[", "]"))
+                        + " memberCount=" + cluster.memberCount()
+                        + " confidence=" + PlayerAnalysisTerms.confidenceLabel(cluster.confidence())
+                        + "\n");
+            }
+        }
+    }
+
+    static void appendEngagements(
+            final BudgetWriter writer,
+            final List<TeamEngagementSummary> engagements
+    ) {
+        writer.append("\n=== TEAM_ENGAGEMENTS_OBSERVED_SUBSET ===\n");
+        for (final TeamEngagementSummary engagement : engagements) {
+            writer.append("engagement[" + format(engagement.startTime())
+                    + "-" + format(engagement.endTime()) + "]"
+                    + " allies=" + engagement.alliedAccountIds()
+                    + " enemies=" + engagement.enemyAccountIds()
+                    + " dealtSubset=" + engagement.damageDealt()
+                    + " receivedSubset=" + engagement.damageReceived()
+                    + " focusedTargets=" + engagement.focusedTargetAccountIds()
+                    + " targetSwitches=" + engagement.targetSwitchCount()
+                    + " outcome=" + PlayerAnalysisTerms.outcomeLabel(engagement.outcome())
+                    + " confidence=" + PlayerAnalysisTerms.confidenceLabel(engagement.confidence())
+                    + "\n");
+        }
+    }
+
+    static void appendKeyEvents(
+            final BudgetWriter writer,
+            final List<KeyBattleEvent> events
+    ) {
+        writer.append("\n=== KEY_EVENTS ===\n");
+        for (final KeyBattleEvent event : events) {
+            writer.append("event[" + format(event.clockSec()) + "]"
+                    + " type=" + PlayerAnalysisTerms.keyEventLabel(event.type())
+                    + " evidence=" + quoteData(event.label())
+                    + " source=" + event.source()
+                    + " confidence=" + PlayerAnalysisTerms.confidenceLabel(event.confidence())
+                    + " entities=" + event.relatedEntityIds()
+                    + "\n");
+        }
+    }
+
+    static String formatScalar(final Object value) {
+        if (value == null) {
+            return "UNKNOWN";
+        }
+        if (value instanceof Number number
+                && !Double.isFinite(number.doubleValue())) {
+            return "UNKNOWN";
+        }
+        return String.valueOf(value);
+    }
+
+    static String quoteData(final Object value) {
+        return PromptDataQuoter.quote(value, "UNKNOWN");
+    }
+
+    static String resolveMapName(final String mapCode) {
+        return ReplayDisplayNames.mapName(mapCode);
+    }
+
+    static String resolveTeamResult(final Battle battle, final int perspectiveTeam,
+                                            final String teamLabel) {
+        final var winner = FriendlyEnemyResult.resolveTeamBattle(battle, perspectiveTeam);
+        final String label = StringUtils.hasText(teamLabel) ? teamLabel : "本队";
+        return switch (winner.winner()) {
+            case FRIENDLY_WIN -> winner.pointsDecided() ? label + "获胜（点数判定）" : label + "获胜";
+            case ENEMY_WIN -> winner.pointsDecided() ? label + "落败（点数判定）" : label + "落败";
+            case DRAW_OR_UNKNOWN -> "平局或未知";
+        };
+    }
+
+    static void appendBattlePhases(
+            final BudgetWriter writer,
+            final List<BattlePhaseSummary> phases,
+            final Battle battle,
+            final int perspectiveTeam
+    ) {
+        writer.append("\n=== BATTLE_PHASES ===\n");
+        if (phases != null && !phases.isEmpty()) {
+            writer.append(BattlePhaseTimelineSection.PHASE_SEMANTICS_NOTE);
+            if (battle != null) {
+                writer.append("DEATH_SOURCE=" + BattlePhaseSummary.deathSourceLabel(battle) + "\n");
+            }
+            writer.append(BattlePhaseTimelineSection.renderTeamRows(phases));
+            appendDeathTimeline(writer, battle, perspectiveTeam);
+        }
+    }
+
+    static void appendDeathTimeline(
+            final BudgetWriter writer,
+            final Battle battle,
+            final int perspectiveTeam
+    ) {
+        if (battle == null || battle.players == null) {
+            return;
+        }
+        final List<PlayerResult> dead = battle.players.stream()
+                .filter(p -> PlayerSideResolver.isValidRawTeam(p.team) && !p.survived)
+                // 未知死亡时间（deathSec<=0）排到已知时间之后，绝不因 0 被排到整场最前
+                .sorted(java.util.Comparator
+                        .comparingDouble((PlayerResult p) -> PlayerResultFormat.deathSec(p) > 0
+                                ? PlayerResultFormat.deathSec(p) : Double.MAX_VALUE)
+                        .thenComparingLong(p -> p.accountId))
+                .toList();
+        if (dead.isEmpty()) {
+            return;
+        }
+        writer.append("\n=== DEATH_TIMELINE（双方逐车阵亡时刻） ===\n");
+        for (final PlayerResult p : dead) {
+            final String side = p.team == perspectiveTeam ? "本队" : "对方";
+            final double deathSec = PlayerResultFormat.deathSec(p);
+            final String clock = deathSec > 0
+                    ? PlayerAnalysisTerms.battleClock((float) deathSec) : "未知";
+            final String suffix = deathSec > 0 ? "阵亡" : "阵亡（时刻未知）";
+            writer.append(clock
+                    + " " + side + " " + quoteData(p.nickname)
+                    + "（" + quoteData(resolveTankName(p.tankId, p.tankName)) + "）" + suffix + "\n");
+        }
+    }
+
+    static String format(final double value) {
+        return String.format(Locale.ROOT, "%.1f", value);
+    }
+
+    static String formatNullable(final Double value) {
+        return value == null || !Double.isFinite(value)
+                ? "UNKNOWN" : format(value);
+    }
+
+    static String formatCanonicalPosition(final CanonicalMapPosition pos) {
+        if (pos == null) return "UNKNOWN";
+        return "(" + format(pos.x()) + "," + format(pos.z()) + ")";
+    }
+
+    static String formatRawPosition(final Vector3 position, final String mapCode) {
+        if (position == null) return "UNKNOWN";
+        final MapCoordinateResolution res = MapRegionResolver.resolve(position.x(), position.z(), mapCode);
+        if (!res.usable()) return "UNKNOWN";
+        return "(" + format(res.position().x()) + "," + format(res.position().z())
+                + ") r=" + res.region() + " s=" + res.status().name();
+    }
+
+    static String regionOf(final Vector3 position, final String mapCode) {
+        if (position == null) return null;
+        final int region = MapRegionResolver.resolveRegionFromRaw(position.x(), position.z(), mapCode);
+        return region > 0 ? String.valueOf(region) : null;
+    }
+
+    static String resolvePerspectiveLabel(
+            final List<PlayerResult> players, final int perspectiveTeam) {
+        if (players == null) return "未知队伍";
+        final List<PlayerResult> perspectivePlayers = players.stream()
+                .filter(p -> p.team == perspectiveTeam)
+                .toList();
+        if (perspectivePlayers.isEmpty()) return "未知队伍";
+        return TeamPerspectiveLabelResolver.resolve(perspectivePlayers);
+    }
+
+    static String resolveTankName(final long tankId, final String existingTankName) {
+        return ReplayDisplayNames.tankName(tankId, existingTankName);
+    }
+
+    static String resolveTankClass(final long tankId) {
+        return ReplayDisplayNames.tankClass(tankId);
+    }
+
+    static final class BudgetWriter {
+
+        private static final String TRUNCATION_LINE = "\nLIMITATION: AI_INPUT_TRUNCATED\n";
+
+        final StringBuilder content = new StringBuilder(4096);
+        boolean truncated;
+
+        BudgetWriter() {
+        }
+
+        void append(final String value) {
+            if (StringUtils.hasText(value)) {
+                content.append(value);
+            }
+        }
+
+        void appendRequired(final String value) {
+            if (StringUtils.hasText(value)) {
+                content.append(value);
+            }
+        }
+
+        void appendRequiredBlock(final String block) {
+            if (StringUtils.hasText(block)) {
+                content.append(block);
+            }
+        }
+
+        String content() {
+            return content.toString();
+        }
+
+        boolean isTruncated() {
+            return truncated;
+        }
+
+        void markTruncated() {
+            truncated = true;
+        }
+
+        TeamAiPromptBuilder.PromptInput finish(
+                final AiTokenEstimator estimator,
+                final int maxInputTokens,
+                final Set<String> suppliedGlobalLimitations,
+                final Set<String> includedIds,
+                final Set<String> omittedIds,
+                final Set<String> truncatedIds,
+                final Map<String, List<String>> perUnitLimitations
+        ) {
+            final Set<String> globalLimitations = new LinkedHashSet<>(suppliedGlobalLimitations);
+            // 在 finish 时估算 token 数，如果超限则标记 truncated
+            if (estimator != null) {
+                final String currentContent = content.toString();
+                if (estimator.estimateTextTokens(currentContent) > maxInputTokens) {
+                    truncated = true;
+                }
+            }
+            if (truncated) {
+                globalLimitations.add("AI_INPUT_TRUNCATED");
+                content.append(TRUNCATION_LINE);
+            }
+            return new TeamAiPromptBuilder.PromptInput(
+                    content.toString(),
+                    includedIds,
+                    omittedIds,
+                    truncatedIds,
+                    perUnitLimitations,
+                    new ArrayList<>(globalLimitations));
+        }
+    }
+
+}
