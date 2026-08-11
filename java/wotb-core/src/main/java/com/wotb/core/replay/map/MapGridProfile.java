@@ -36,12 +36,6 @@ public record MapGridProfile(
         return !mapCode.isBlank() && !gridCells.isEmpty();
     }
 
-    /** 语义坐标是否落在可玩区内（含边界）。 */
-    public boolean inBounds(final double x, final double y) {
-        return x >= playableBounds.xMin() && x <= playableBounds.xMax()
-                && y >= playableBounds.yMin() && y <= playableBounds.yMax();
-    }
-
     /**
      * 语义坐标所在的 6x6 格子 id（如 F1）；落在可玩区外或未找到时返回 null。
      * 使用 36 格的精确 bounds 判定（playableBounds 外接区内的空隙也按格子归属）。

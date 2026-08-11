@@ -18,7 +18,6 @@ import com.wotb.web.replay.dto.MapImageCatalog;
 import com.wotb.web.replay.dto.MapOverview;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -83,8 +82,9 @@ public final class MapOverviewBuilder {
                 .map(DamageEvent.class::cast)
                 .toList();
         final MapOverview.Heatmaps heatmaps = buildHeatmaps(
-                battle, mapping, positions, damages, friendlyTeam, profile);
-        final List<MapOverview.Phase> phases = buildPhases(damages, positions, battle);
+                battle, mapping, positions, damages, friendlyTeam, profile, battleStart);
+        final List<MapOverview.Phase> phases = buildPhases(
+                damages, positions, battle, battleStart);
 
         return new MapOverview(
                 battle.mapName.trim().toLowerCase(),
@@ -193,7 +193,8 @@ public final class MapOverviewBuilder {
             final Positions positions,
             final List<DamageEvent> damages,
             final int friendlyTeam,
-            final MapGridProfile profile
+            final MapGridProfile profile,
+            final Float battleStartRawClockSec
     ) {
         final int cells = profile.gridCells().size();
         final double[] friendlyDwell = new double[cells];
@@ -223,7 +224,8 @@ public final class MapOverviewBuilder {
             if (victim == null || !victim.usable() || victim.team() <= 0) {
                 continue;
             }
-            final Position pos = positions.nearest(damage.victimEid(), relativeSec(damage, null));
+            final Position pos = positions.nearest(
+                    damage.victimEid(), relativeSec(damage, battleStartRawClockSec));
             if (pos == null) {
                 continue;
             }
@@ -275,11 +277,12 @@ public final class MapOverviewBuilder {
     private static List<MapOverview.Phase> buildPhases(
             final List<DamageEvent> damages,
             final Positions positions,
-            final Battle battle
+            final Battle battle,
+            final Float battleStartRawClockSec
     ) {
         float firstContact = -1f;
         for (final DamageEvent damage : damages) {
-            final float t = (float) relativeSec(damage, null);
+            final float t = (float) relativeSec(damage, battleStartRawClockSec);
             if (Float.isFinite(t) && t >= 0 && (firstContact < 0 || t < firstContact)) {
                 firstContact = t;
             }

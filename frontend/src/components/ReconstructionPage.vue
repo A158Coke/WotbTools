@@ -290,7 +290,8 @@ async function readAnalyzeStream(r, signal) {
         if (typeof data.analysis === 'string' && data.analysis.trim()) {
           analysisResult.value = {
             analysis: data.analysis,
-            preBattleSection: data.preBattleSection
+            preBattleSection: data.preBattleSection,
+            mapOverview: data.mapOverview
           }
           progressStage.value = 'done'
           receivedDone = true
