@@ -211,30 +211,39 @@ public class AiReplayReviewService {
         }
         return switch (plan.mode()) {
             case SINGLE_PLAYER_BATTLE -> {
+                final ReplayProcessingResult representative =
+                        analyzableGroups.getFirst().representative();
                 final TacticalReviewHarness.HarnessOutcome outcome = harnessOrFallback(
-                        analyzableGroups.getFirst().representative(), language, listener);
+                        representative, language, listener);
                 yield new AnalyzeResponse(
                         withDisclaimerFooter(outcome.result().analysis(), language),
                         renderRandomBattleSection(
-                                analyzableGroups.getFirst().representative(),
-                                outcome.preBattlePrior(), language));
+                                representative,
+                                outcome.preBattlePrior(), language),
+                        MapOverviewBuilder.build(
+                                representative.battle(), representative.reconstruction()));
             }
             case MULTI_PLAYER_BATTLE -> {
                 final var battles = analyzableGroups.stream()
                         .map(ReplayPerspectiveGroup::representative)
                         .map(ReplayProcessingResult::battle)
                         .toList();
+                final ReplayProcessingResult first = analyzableGroups.getFirst().representative();
                 yield new AnalyzeResponse(
                         withDisclaimerFooter(
                                 aiAnalysisService.analyzeMulti(battles, language, listener).analysis(),
-                                language));
+                                language),
+                        null,
+                        MapOverviewBuilder.build(first.battle(), first.reconstruction()));
             }
             case SINGLE_TEAM_BATTLE, MULTI_TEAM_BATTLE -> {
                 final TeamAnalyzeResult teamResult = aiAnalysisService
                         .analyzeTeamGroups(analyzableGroups, language, listener);
+                final ReplayProcessingResult first = analyzableGroups.getFirst().representative();
                 yield new AnalyzeResponse(
                         withDisclaimerFooter(teamResult.analysis().analysis(), language),
-                        teamResult.preBattleSection());
+                        teamResult.preBattleSection(),
+                        MapOverviewBuilder.build(first.battle(), first.reconstruction()));
             }
             case NONE -> throw new IllegalArgumentException("NO_BATTLE_DATA");
         };
