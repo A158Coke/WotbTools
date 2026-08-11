@@ -99,6 +99,59 @@ class PacketReverseProbeTest {
         type7YawVsPos(es, byType);
         type31VsRecorder(es, byType);
         type31HpHypothesis(es, byType);
+        type39AimingHypothesis(es, byType);
+    }
+
+    /** type39 = recorder aiming info? f0/f1/f2 aim point, f3/f4/f5 gun pos (~vehicle pos). */
+    private static void type39AimingHypothesis(
+            final EventStreamReader.EventStream es,
+            final Map<Integer, List<EventStreamReader.ParsedPacket>> byType) {
+        final int recEid = 12558552;
+        final List<EventStreamReader.PositionData> positions = EventStreamReader.extractPositions(es.packets);
+        final List<EventStreamReader.PositionData> rec = positions.stream()
+                .filter(p -> p.entityId == recEid)
+                .sorted(Comparator.comparingDouble(p -> p.clockSecs))
+                .toList();
+        final List<EventStreamReader.ParsedPacket> p39 = byType.getOrDefault(39, List.of());
+        System.out.println("== type39 aiming hypothesis (recorder eid=" + recEid + ") ==");
+        double sumD0 = 0, sumD34 = 0;
+        int n = 0;
+        int close0 = 0, close34 = 0;
+        for (final EventStreamReader.ParsedPacket p : p39) {
+            if (p.payload.length < 24) {
+                continue;
+            }
+            EventStreamReader.PositionData near = null;
+            float bestDt = Float.MAX_VALUE;
+            for (final EventStreamReader.PositionData pos : rec) {
+                final float dt = Math.abs(pos.clockSecs - p.clockSecs);
+                if (dt < 0.5f && dt < bestDt) {
+                    bestDt = dt;
+                    near = pos;
+                }
+            }
+            if (near == null) {
+                continue;
+            }
+            final float aimX = f(p.payload, 0);
+            final float aimZ = f(p.payload, 8);
+            final float gunX = f(p.payload, 12);
+            final float gunZ = f(p.payload, 16);
+            final double d0 = Math.hypot(aimX - near.x, aimZ - near.z);
+            final double d34 = Math.hypot(gunX - near.x, gunZ - near.z);
+            sumD0 += d0;
+            sumD34 += d34;
+            if (d0 < 15) {
+                close0++;
+            }
+            if (d34 < 15) {
+                close34++;
+            }
+            n++;
+        }
+        System.out.printf(Locale.ROOT,
+                "  n=%d meanDist(f0,f2 -> rec pos)=%.1fm (close<15m: %d) meanDist(f3,f4 -> rec pos)=%.1fm (close: %d)%n",
+                n, n == 0 ? -1 : sumD0 / n, close0, n == 0 ? -1 : sumD34 / n, close34);
     }
 
     /** type31 vs "HP%" hypothesis: match float to any tracked vehicle's HP fraction (0-100). */
