@@ -35,10 +35,6 @@ flowchart LR
 
 回放 → **权威结算**（`battle_results.dat`：伤害 / 承伤 / 死亡时刻）与**事件流**（`data.wotreplay`：走位 / 交火 / 伤害事件 / 九宫格）→ 确定性特征（阶段边界「至阶段末」存活人数、双方逐车死亡时间线、交火与集火证据）→ Prompt 只注入后端证据 → AI 对照赛前基线复盘（时间统一 X分XX秒、九宫格区域、我方/对方视角）→ 结果页逐段流式展示 + 团队剖析（MVP / 战犯）。
 
-真实复盘样例截图（本场 neptune 7v7 团队战）：
-
-![AI 复盘样例](docs/assets/review-sample.png)
-
 ## 核心工程取舍
 
 1. **权威结算 > 事件流观测**：伤害 / 死亡以 `battle_results` 为准；事件流只是观测子集，覆盖不足时抑制数字（`OBSERVED_DAMAGE_IS_PARTIAL`），绝不并排展示两套冲突口径。
