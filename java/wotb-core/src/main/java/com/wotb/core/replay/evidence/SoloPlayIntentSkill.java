@@ -35,6 +35,8 @@ public final class SoloPlayIntentSkill {
     private static final MapTacticalSemanticsRegistry SEMANTICS = MapTacticalSemanticsRegistry.load();
 
     private static final int MAX_EVIDENCE = 6;
+    /** 移动覆盖门控：窗口内被移动证据覆盖时长占比低于该值时移动状态视为 UNKNOWN。 */
+    public static final float MIN_MOVEMENT_COVERAGE_RATIO = 0.5f;
 
     private SoloPlayIntentSkill() {
     }
@@ -57,19 +59,21 @@ public final class SoloPlayIntentSkill {
                 break;
             }
             final Double stationaryRatio = stationaryRatio(features, window.startSec(), window.endSec());
-            final int pressure = engagementCount(features, window.startSec(), window.endSec());
+            final float inWindowDealt = engagementDamageDealt(features, window.startSec(), window.endSec());
             final float inWindowDamage = engagementDamage(features, window.startSec(), window.endSec());
             final Float distanceGrowth = distanceGrowthMeters(ctx, window.startSec(), window.endSec());
             final Integer region = recorderRegion(
                     features, window.startSec(), window.endSec(), ctx.battle().mapName);
-            final String intent = classify(window, stationaryRatio, pressure, inWindowDamage,
-                    distanceGrowth, openingEnd, recorder);
+            final String intent = classify(window, stationaryRatio, inWindowDamage,
+                    inWindowDealt, distanceGrowth, openingEnd, recorder);
             if (intent == null) {
                 continue;
             }
             final float distanceM = window.numbers().getOrDefault("distanceM", 150.0)
                     .floatValue();
             final int objectiveProximity = objectiveProximity(region, controlPointRegions);
+            final boolean contactObserved = inWindowDealt > 0f || inWindowDamage > 0f;
+            final boolean underPressure = inWindowDamage > 0f;
             result.add(new AiEvidence(
                     String.format("SI_%02d", ++index),
                     EvidenceType.SOLO_INTENT,
@@ -81,7 +85,8 @@ public final class SoloPlayIntentSkill {
                             "distanceGrowthM", distanceGrowth == null ? -1.0 : distanceGrowth,
                             "stationaryRatio", stationaryRatio == null ? -1.0 : stationaryRatio,
                             "objectiveProximity", (double) objectiveProximity,
-                            "nearbyEnemy", (double) pressure),
+                            "contactObserved", contactObserved ? 1.0 : 0.0,
+                            "underPressure", underPressure ? 1.0 : 0.0),
                     java.util.Map.of(
                             "intent", intent,
                             "region", region == null ? "GRID_REGION_UNKNOWN"
@@ -97,14 +102,16 @@ public final class SoloPlayIntentSkill {
     private static String classify(
             final AiEvidence window,
             final Double stationaryRatio,
-            final int pressure,
             final float inWindowDamage,
+            final float inWindowDealt,
             final Float distanceGrowth,
             final float openingEnd,
             final PlayerResult recorder
     ) {
         final boolean opening = window.startSec() >= 0f && window.endSec() <= openingEnd;
-        final boolean untouchedInWindow = pressure == 0 && !memberDeadIn(recorder, window);
+        final boolean contactObserved = inWindowDealt > 0f || inWindowDamage > 0f;
+        final boolean underPressure = inWindowDamage > 0f;
+        final boolean untouchedInWindow = !contactObserved && !memberDeadIn(recorder, window);
         if (opening && untouchedInWindow) {
             return "OPENING_MAP_CONTROL";
         }
@@ -114,7 +121,7 @@ public final class SoloPlayIntentSkill {
         // 未知（null）不等于 MOVING / STATIONARY：只有覆盖充分时才判移动状态
         final boolean stationary = stationaryRatio != null
                 && stationaryRatio >= TeamSoloIntentSkill.MIN_STATIONARY_SHARE;
-        if (stationary && pressure > 0) {
+        if (stationary && underPressure) {
             return "SOLO_DELAY";
         }
         final boolean moving = stationaryRatio != null
@@ -122,8 +129,7 @@ public final class SoloPlayIntentSkill {
         final boolean pulledAway = distanceGrowth != null
                 && distanceGrowth >= TeamSoloIntentSkill.DISTANCE_GROWTH_M;
         final boolean whiteEaten = memberDeadIn(recorder, window)
-                || inWindowDamage >= TeamSoloIntentSkill.DETACH_DAMAGE_RECEIVED
-                || pressure >= 2;
+                || inWindowDamage >= TeamSoloIntentSkill.DETACH_DAMAGE_RECEIVED;
         if (moving && pulledAway && whiteEaten) {
             return "SOLO_DETACHED";
         }
@@ -184,21 +190,23 @@ public final class SoloPlayIntentSkill {
                 stationary += duration;
             }
         }
-        if (covered <= 0f) {
+        final float spanDuration = end - start;
+        if (covered <= 0f || spanDuration <= 0f
+                || covered / spanDuration < MIN_MOVEMENT_COVERAGE_RATIO) {
             return null;
         }
         return (double) stationary / covered;
     }
 
-    private static int engagementCount(final PlayerBattleFeatureSet features,
-                                       final float start, final float end) {
-        int count = 0;
+    private static float engagementDamageDealt(final PlayerBattleFeatureSet features,
+                                               final float start, final float end) {
+        float damage = 0f;
         for (final EngagementSummary engagement : features.engagements()) {
             if (engagement.startTime() <= end && engagement.endTime() >= start) {
-                count += engagement.enemyAccountIds().size();
+                damage += engagement.damageDealt();
             }
         }
-        return count;
+        return damage;
     }
 
     private static float engagementDamage(final PlayerBattleFeatureSet features,

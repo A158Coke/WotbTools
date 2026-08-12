@@ -74,6 +74,9 @@ public final class AiEvalFixtures {
             case "cw-cap-defense-01" -> capDefenseComeback();
             case "cw-cap-points-decided-01" -> capPointsDecided();
             case "cw-main-cluster-no-solo-01" -> mainClusterNoSolo();
+            case "cw-partial-observation-01" -> partialObservation();
+            case "cw-gap-no-merge-01" -> gapNoMerge();
+            case "cw-engagement-not-multiplied-01" -> engagementNotMultiplied();
             default -> throw new IllegalArgumentException("Unknown fixture: " + fixtureKey);
         };
     }
@@ -94,6 +97,8 @@ public final class AiEvalFixtures {
             case "player-detach-push-01" -> playerDetachPush();
             case "player-no-growth-01" -> playerNoGrowth();
             case "player-unknown-stationary-01" -> playerUnknownStationary();
+            case "player-opening-contact-01" -> playerOpeningContact();
+            case "player-thin-coverage-01" -> playerThinCoverage();
             default -> throw new IllegalArgumentException("Unknown player fixture: " + fixtureKey);
         };
     }
@@ -156,6 +161,30 @@ public final class AiEvalFixtures {
                 new float[]{1060f, 1075f},
                 new float[]{200f, 200f},
                 new float[]{200f, 200f});
+    }
+
+    /** éšæœºæˆ˜ false-positiveï¼šå¼€å±€çª—å£å†…æœ‰äº¤ç«ï¼ˆçª—å£å†…æ‰¿ä¼¤>0ï¼‰â†’ ä¸å¾—åˆ¤å¼€å±´å›¾æŽ§ã€‚ */
+    private static PlayerFixture playerOpeningContact() {
+        return playerFixtureOf(
+                200, true,
+                List.of(move(5, 40, 0, 0, 100, 150, 6f)),
+                List.of(playerEngagement(5, 40, 200)),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1015f, 1030f, 1045f},
+                new float[]{200f, 200f, 200f},
+                new float[]{200f, 200f, 200f});
+    }
+
+    /** éšæœºæˆ˜ false-positiveï¼šçª—å£å†…ç§»åŠ¨è¦†ç›–æžä½Žï¼ˆ1s/15sï¼‰â‰  MOVINGï¼Œå³³ä½¿çª—å£å†…æ‰¿ä¼¤ 1800 ä¹Ÿä¸åˆ¤è„±èŠ‚ã€‚ */
+    private static PlayerFixture playerThinCoverage() {
+        return playerFixtureOf(
+                1800, true,
+                List.of(move(60, 61, 200, 200, 200, 200, 5f)),
+                List.of(playerEngagement(60, 75, 1800)),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1060f, 1065f, 1075f},
+                new float[]{200f, 200f, 240f},
+                new float[]{200f, 200f, 240f});
     }
 
     private static PlayerFixture playerFixtureOf(
@@ -252,7 +281,8 @@ public final class AiEvalFixtures {
 
     private static EngagementSummary playerEngagement(final float start, final float end,
                                                       final int damageReceived) {
-        return new EngagementSummary(start, end, List.of(1001L), List.of(2001L),
+        // 生产形态：DefaultPlayerBattleFeatureExtractor 构造的 player engagement 敌我 account 列表为空
+        return new EngagementSummary(start, end, List.of(), List.of(),
                 300, damageReceived, new Vector3(100f, 0f, 150f), new Vector3(100f, 0f, 150f),
                 EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
     }
@@ -550,6 +580,76 @@ public final class AiEvalFixtures {
                 List.of(keyEvent(60, "TEAM_FIRST_CONTACT", "damage=120")), List.of());
     }
 
+    // ===== false-positive：观测不足 / span 缺口 / 交火跨窗口去重 =====
+
+    private static SingleTeamBattleAnalysisContext partialObservation() {
+        // 7 名成员存活但每窗口只观测到 4 人（3+1 子集）：不得把子集最大簇当作全局主力
+        final List<TeamMemberFeatureSet> members = new ArrayList<>();
+        for (int index = 0; index < 7; index++) {
+            members.add(member(index, 0, true, null, null,
+                    List.of(stationary(60, 90, 0, 0)), List.of(), List.of()));
+        }
+        final List<TeamFormationPhase> phases = List.of(
+                new TeamFormationPhase(60, 75, new CanonicalMapPosition(250, 250), 80f, 4,
+                        DecodeConfidence.EXACT, List.of(
+                                cluster(60, 75, 250, 250, List.of(key(0), key(1), key(2))),
+                                cluster(60, 75, 400, 400, List.of(key(6))))),
+                new TeamFormationPhase(75, 90, new CanonicalMapPosition(300, 250), 80f, 4,
+                        DecodeConfidence.EXACT, List.of(
+                                cluster(75, 90, 300, 250, List.of(key(0), key(1), key(2))),
+                                cluster(75, 90, 400, 400, List.of(key(6))))));
+        final TeamAggregateResult aggregate = new TeamAggregateResult(
+                7, 4000, 2000, 0, 0, 0, 7, 0, null, null, null, true);
+        return context("cw-partial-observation-01", 3, 1, new double[7],
+                members, aggregate, phases, BattlePhaseSummary.buildRelativePhases(60, 300),
+                List.of(keyEvent(60, "TEAM_FIRST_CONTACT", "damage=120")), List.of());
+    }
+
+    private static SingleTeamBattleAnalysisContext gapNoMerge() {
+        // [60,75] 与 [90,105] 中间缺失 75-90 phase：禁止跨缺口合并 span 计算距离增长
+        final List<TeamMemberFeatureSet> members = List.of(
+                member(0, 0, true, null, null,
+                        List.of(move(60, 75, 100, 150, 100, 150, 2f),
+                                move(90, 105, 0, 150, 0, 150, 2f)),
+                        List.of(engagement(60, 105, 10_001L,
+                                List.of(20_001L, 20_002L, 20_003L), 1800)), List.of()),
+                member(1, 0, true, null, null, List.of(stationary(60, 105, 0, 0)), List.of(), List.of()),
+                member(2, 0, true, null, null, List.of(stationary(60, 105, 0, 0)), List.of(), List.of()),
+                member(3, 0, true, null, null, List.of(stationary(60, 105, 0, 0)), List.of(), List.of()),
+                member(4, 0, true, null, null, List.of(stationary(60, 105, 0, 0)), List.of(), List.of()),
+                member(5, 0, true, null, null, List.of(stationary(60, 105, 0, 0)), List.of(), List.of()),
+                member(6, 0, true, null, null, List.of(stationary(60, 105, 0, 0)), List.of(), List.of()));
+        final List<TeamFormationPhase> phases = List.of(
+                twoClusterPhase(60, 75, 300, 250, 100, 150, 1, 6, 0, 0),
+                twoClusterPhase(90, 105, 300, 250, 0, 150, 1, 6, 0, 0));
+        final TeamAggregateResult aggregate = new TeamAggregateResult(
+                7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false);
+        return context("cw-gap-no-merge-01", 3, 2, new double[7],
+                members, aggregate, phases, BattlePhaseSummary.buildRelativePhases(40, 300),
+                List.of(keyEvent(40, "TEAM_FIRST_CONTACT", "damage=120")), List.of());
+    }
+
+    private static SingleTeamBattleAnalysisContext engagementNotMultiplied() {
+        // 同一交火段横跨 4 个 formation window：实际承伤 300、1 名敌人，不得累计成 1200/4 而误判脱节
+        final List<TeamMemberFeatureSet> members = List.of(
+                member(0, 0, true, null, null,
+                        List.of(move(60, 120, 100, 150, 0, 150, 2f)),
+                        List.of(engagement(60, 120, 10_001L, List.of(20_001L), 300)), List.of()),
+                member(1, 0, true, null, null, List.of(stationary(60, 120, 0, 0)), List.of(), List.of()),
+                member(2, 0, true, null, null, List.of(stationary(60, 120, 0, 0)), List.of(), List.of()),
+                member(3, 0, true, null, null, List.of(stationary(60, 120, 0, 0)), List.of(), List.of()),
+                member(4, 0, true, null, null, List.of(stationary(60, 120, 0, 0)), List.of(), List.of()),
+                member(5, 0, true, null, null, List.of(stationary(60, 120, 0, 0)), List.of(), List.of()),
+                member(6, 0, true, null, null, List.of(stationary(60, 120, 0, 0)), List.of(), List.of()));
+        final List<TeamFormationPhase> phases = soloPhases(60, 120,
+                100, 150, 0, 150, 300, 250, 300, 250, key(0), mainKeysExcluding(0));
+        final TeamAggregateResult aggregate = new TeamAggregateResult(
+                7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false);
+        return context("cw-engagement-not-multiplied-01", 3, 2, new double[7],
+                members, aggregate, phases, BattlePhaseSummary.buildRelativePhases(40, 300),
+                List.of(keyEvent(40, "TEAM_FIRST_CONTACT", "damage=120")), List.of());
+    }
+
     private static TeamFormationPhase twoClusterPhase(
             final float start, final float end,
             final float mainX, final float mainZ,
@@ -806,6 +906,15 @@ public final class AiEvalFixtures {
             final long allyAccountId, final List<Long> enemyAccountIds) {
         return new EngagementSummary(start, end, List.of(allyAccountId), enemyAccountIds,
                 300, 200, new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
+                EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
+    }
+
+    private static EngagementSummary engagement(
+            final float start, final float end,
+            final long allyAccountId, final List<Long> enemyAccountIds,
+            final int damageReceived) {
+        return new EngagementSummary(start, end, List.of(allyAccountId), enemyAccountIds,
+                300, damageReceived, new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
                 EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
     }
 

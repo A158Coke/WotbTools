@@ -235,6 +235,116 @@ class TeamSoloIntentSkillTest {
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN).isEmpty());
     }
 
+    @Test
+    void engagementSpanningFourWindowsCountedOnce() {
+        // 同一交火段横跨 4 个 15s formation window：实际承伤 300、1 名敌人，按 span 去重后
+        // 不得被累计成承伤 1200 / 敌情 4，因此不得误生成 SOLO_DETACHED
+        final Battle battle = battle(3, new double[7], new long[7]);
+        final TeamMemberFeatureSet solo = member(0, 0, true, null,
+                List.of(move(60, 120, 100, 150, 0, 150, 2f)),
+                List.of(engagement(60, 120, 10_001L, List.of(20_001L), 300)), 1);
+        final TeamBattleFeatureSet features = features(
+                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
+                phases(60, 120, 100, 150, 0, 150, 300, 250, 300, 250, "account:10001"),
+                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
+                BattlePhaseSummary.buildRelativePhases(40, 300));
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertTrue(evidence.isEmpty(),
+                "one engagement across 4 windows must be counted once: received=300 enemies=1 -> no SOLO_DETACHED");
+    }
+
+    @Test
+    void partialObservationDoesNotDeclareMainCluster() {
+        // 7 名成员存活但只观测到 4 人（3+1 子集）：不得把子集最大簇称为全局主力
+        final Battle battle = battle(1, new double[7], new long[7]);
+        final List<TeamMemberFeatureSet> members = new ArrayList<>();
+        for (int index = 0; index < 7; index++) {
+            members.add(member(index, 0, true, null, List.of(), List.of(), 1));
+        }
+        final TeamFormationPhase phase = new TeamFormationPhase(
+                60, 75, new CanonicalMapPosition(250, 250), 80f, 4,
+                DecodeConfidence.EXACT, List.of(
+                        cluster(60, 75, 250, 250, List.of(key(0), key(1), key(2))),
+                        cluster(60, 75, 400, 400, List.of(key(6)))));
+
+        assertNull(TeamSoloIntentSkill.mainClusterOf(phase, 7),
+                "observed subset must not be declared global main cluster");
+        final TeamBattleFeatureSet features = features(
+                members, List.of(phase),
+                new TeamAggregateResult(7, 1000, 500, 0, 0, 0, 7, 0, null, null, null, true),
+                BattlePhaseSummary.buildRelativePhases(60, 300));
+
+        assertTrue(TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN).isEmpty());
+    }
+
+    @Test
+    void soloWindowsWithMissingPhaseAreNotMerged() {
+        // [60,75] 与 [90,105] 中间缺失 75-90 phase：禁止跨缺口合并 span，距离增长不得跨缺口计算
+        final Battle battle = battle(3, new double[7], new long[7]);
+        final TeamMemberFeatureSet solo = member(0, 0, true, null,
+                List.of(move(60, 75, 100, 150, 100, 150, 2f),
+                        move(90, 105, 0, 150, 0, 150, 2f)),
+                List.of(engagement(60, 105, 10_001L,
+                        List.of(20_001L, 20_002L, 20_003L), 1800)), 1);
+        final TeamBattleFeatureSet features = features(
+                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
+                List.of(
+                        twoClusterPhase(60, 75, 300, 250, 100, 150, 1, 6, 0, 0),
+                        twoClusterPhase(90, 105, 300, 250, 0, 150, 1, 6, 0, 0)),
+                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
+                BattlePhaseSummary.buildRelativePhases(40, 300));
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertTrue(evidence.isEmpty(),
+                "solo windows separated by a missing 15s phase must not merge across the gap");
+    }
+
+    @Test
+    void thinMovementCoverageIsUnknown() {
+        // 30s span 只有 1s 移动覆盖（60-61s）：覆盖/窗口时长 < 门控 → UNKNOWN，不得按 MOVING 判脱节
+        final Battle battle = battle(3, new double[7], new long[7]);
+        final TeamMemberFeatureSet solo = member(0, 0, true, null,
+                List.of(move(60, 61, 100, 150, 100, 150, 5f)),
+                List.of(engagement(60, 90, 10_001L,
+                        List.of(20_001L, 20_002L, 20_003L), 1800)), 1);
+        final TeamBattleFeatureSet features = features(
+                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
+                phases(60, 90, 100, 150, 0, 150, 300, 250, 300, 250, "account:10001"),
+                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
+                BattlePhaseSummary.buildRelativePhases(40, 300));
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertTrue(evidence.isEmpty(), "1s movement coverage in a 30s span must not imply MOVING");
+    }
+
+    @Test
+    void authoritativeDamageOutsideSpanDoesNotWhiteEaten() {
+        // 整场权威承伤（member.damageReceived=1800）没有对应窗口内交火：不得冒充窗口内被白吃
+        final Battle battle = battle(3, new double[7], new long[7]);
+        final TeamMemberFeatureSet solo = member(0, 1800, true, null,
+                List.of(move(60, 90, 0, 0, -150, -100, 2f)),
+                List.of(), 1);
+        final TeamBattleFeatureSet features = features(
+                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
+                phases(60, 90, 150, 180, 100, 150, 300, 250, 300, 250, "account:10001"),
+                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
+                BattlePhaseSummary.buildRelativePhases(40, 300));
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertTrue(evidence.isEmpty(),
+                "whole-battle authoritative damageReceived must not white-eat the window without in-window evidence");
+    }
+
     // ===== helpers =====
 
     private static TeamFormationPhase twoClusterPhase(
