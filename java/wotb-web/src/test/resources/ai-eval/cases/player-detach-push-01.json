@@ -1,0 +1,12 @@
+{
+  "id": "player-detach-push-01",
+  "mode": "PLAYER_FOCUSED",
+  "arenaBonusType": 1,
+  "fixtureKey": "player-detach-push-01",
+  "lessonRef": "docs/ai-lessons/player-detach-push-01.md",
+  "expectedJudgment": "脱节（持续拉大距离 + 无掩护 + 承伤高）",
+  "checks": [
+    { "kind": "prompt_contains", "text": "单走脱节候选" }
+  ],
+  "note": "随机战单走推进被集火：移动 + 无目标点 + 承伤高 → SOLO_DETACHED 候选。"
+}
