@@ -7,7 +7,9 @@ const { locale, t } = useI18n()
 function versionTagLabel(tag) {
   if (tag === 'add') return t('version.added')
   if (tag === 'fix') return t('version.fixed')
-  return t(`version.${tag}`)
+  if (tag === 'chg') return t('version.changed')
+  if (tag === 'rem') return t('version.removed')
+  return tag
 }
 </script>
 
