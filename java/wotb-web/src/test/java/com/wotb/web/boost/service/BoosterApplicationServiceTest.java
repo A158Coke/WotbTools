@@ -12,6 +12,8 @@ import com.wotb.web.user.service.UserProfileService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -64,10 +66,18 @@ class BoosterApplicationServiceTest {
         );
     }
 
-    @Test
-    void shouldReuseBoundWotbAccountWhenCreatingApplication() {
+    @ParameterizedTest
+    @CsvSource({
+            "CN,CN",
+            "ASIA,ASIA",
+            "EU,EU",
+            "NA,NA",
+            "' asia ',ASIA"
+    })
+    void shouldReuseBoundWotbAccountAndServerWhenCreatingApplication(final String profileServer,
+                                                                     final String expectedServer) {
         when(userProfileService.findByKeycloakUserId(eq("kc-user")))
-                .thenReturn(Optional.of(profile(1001L, "BoundName")));
+                .thenReturn(Optional.of(profile(1001L, "BoundName", profileServer)));
         when(boosterService.findByKeycloakUserId(eq("kc-user"))).thenReturn(Optional.empty());
         when(repository.existsByKeycloakUserIdAndStatusIn(eq("kc-user"), any())).thenReturn(false);
         when(repository.saveAndFlush(any())).thenAnswer(invocation -> {
@@ -85,7 +95,24 @@ class BoosterApplicationServiceTest {
         verify(repository).saveAndFlush(captor.capture());
         assertThat(captor.getValue().getWotbAccountId()).isEqualTo(1001L);
         assertThat(captor.getValue().getWotbNickname()).isEqualTo("BoundName");
+        assertThat(captor.getValue().getWotbServer()).isEqualTo(expectedServer);
         assertThat(captor.getValue().getStatus()).isEqualTo(BoosterApplicationStatus.NEW.name());
+    }
+
+    @Test
+    void shouldRejectUnsupportedWotbServer() {
+        when(userProfileService.findByKeycloakUserId(eq("kc-user")))
+                .thenReturn(Optional.of(profile(1001L, "BoundName", "RU")));
+        when(boosterService.findByKeycloakUserId(eq("kc-user"))).thenReturn(Optional.empty());
+        when(repository.existsByKeycloakUserIdAndStatusIn(eq("kc-user"), any())).thenReturn(false);
+
+        assertThatThrownBy(() -> service.create("kc-user", 2222L, "RequestName", "CN",
+                IMAGE, IMAGE, "ELITE", "123456", null,
+                "MONTH_20", "20:00-23:00", "self"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("UNSUPPORTED_WOTB_SERVER");
+
+        verify(repository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -203,8 +230,14 @@ class BoosterApplicationServiceTest {
     }
 
     private static UserProfileDto profile(final Long wotbAccountId, final String wotbNickname) {
+        return profile(wotbAccountId, wotbNickname, "CN");
+    }
+
+    private static UserProfileDto profile(final Long wotbAccountId,
+                                          final String wotbNickname,
+                                          final String wotbServer) {
         return new UserProfileDto(11L, "kc-user", "Display", "username",
-                wotbAccountId, wotbNickname, "CN", "MANUAL", null);
+                wotbAccountId, wotbNickname, wotbServer, "MANUAL", null);
     }
 
     private static BoosterApplication application() {
