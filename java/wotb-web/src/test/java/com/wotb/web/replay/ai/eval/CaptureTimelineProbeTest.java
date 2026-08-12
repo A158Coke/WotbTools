@@ -1,7 +1,6 @@
 package com.wotb.web.replay.ai.eval;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ReplayArchiveReader;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.replay.stream.RawReplayPacket;

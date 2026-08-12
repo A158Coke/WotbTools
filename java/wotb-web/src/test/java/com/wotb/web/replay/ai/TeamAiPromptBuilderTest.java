@@ -11,7 +11,6 @@ import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.CanonicalMapPosition;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
-import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
@@ -29,15 +28,10 @@ import com.wotb.core.replay.reconstruction.Vector3;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
