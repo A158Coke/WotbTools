@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import MapOverview from './MapOverview.vue'
+import { luminanceOfImage } from '../utils/mapPalette'
 
 const i18n = vi.hoisted(() => ({
   t: vi.fn(key => key)
@@ -11,6 +12,14 @@ const i18n = vi.hoisted(() => ({
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: i18n.t, locale: { value: 'zh' } })
 }))
+
+vi.mock('../utils/mapPalette.js', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    luminanceOfImage: vi.fn()
+  }
+})
 
 function zeros(n) {
   return Array.from({ length: n }, () => 0)
@@ -132,7 +141,7 @@ describe('MapOverview', () => {
     const routeTab = wrapper.findAll('.map-tab')[1]
     await routeTab.trigger('click')
 
-    expect(wrapper.findAll('.routes polyline').length).toBe(2)
+    expect(wrapper.findAll('.routes .route-line').length).toBe(2)
     expect(wrapper.findAll('.routes .death-mark').length).toBe(1)
     // 迟观测提示（敌方 firstObservedSec=30 > 5）
     expect(wrapper.find('.observed-note').exists()).toBe(true)
@@ -148,6 +157,52 @@ describe('MapOverview', () => {
     await phaseButtons[1].trigger('click') // 开局
     expect(phaseButtons[1].classes()).toContain('active')
     // 开局 [0,45]：FriendlyTank 有 0/2s 两点 → 有线段；LateEnemy 起点 30s → 也在内
-    expect(wrapper.findAll('.routes polyline').length).toBeGreaterThan(0)
+    expect(wrapper.findAll('.routes .route-line').length).toBeGreaterThan(0)
+  })
+
+  it('shows the player-only filter for random battles and renders only the recorder route', async () => {
+    luminanceOfImage.mockResolvedValue(null)
+    const overview = makeOverview({ arenaBonusType: 1, recorderAccountId: 1 })
+    const wrapper = mountOverview(overview)
+    await wrapper.findAll('.map-tab')[1].trigger('click')
+
+    const teamButtons = wrapper.findAll('.filter-group')[0].findAll('button')
+    expect(teamButtons.map(b => b.text())).toEqual([
+      'recon.map.team_friendly',
+      'recon.map.team_enemy',
+      'recon.map.team_all',
+      'recon.map.team_player'
+    ])
+
+    await teamButtons[3].trigger('click')
+    await flushPromises()
+    // 仅渲染录像者（accountId=1）一条路线（含对比描边，route-line 只有一条主路线）
+    expect(wrapper.findAll('.routes .route-line').length).toBe(1)
+  })
+
+  it('hides the player-only filter for non-random battles or unresolved recorder', async () => {
+    luminanceOfImage.mockResolvedValue(null)
+
+    const nonRandom = mountOverview(makeOverview())
+    await nonRandom.findAll('.map-tab')[1].trigger('click')
+    expect(nonRandom.findAll('.filter-group')[0].findAll('button').map(b => b.text()))
+      .toEqual(['recon.map.team_friendly', 'recon.map.team_enemy', 'recon.map.team_all'])
+
+    const unresolved = mountOverview(makeOverview({ arenaBonusType: 1, recorderAccountId: null }))
+    await unresolved.findAll('.map-tab')[1].trigger('click')
+    expect(unresolved.findAll('.filter-group')[0].findAll('button').map(b => b.text()))
+      .toEqual(['recon.map.team_friendly', 'recon.map.team_enemy', 'recon.map.team_all'])
+  })
+
+  it('applies the light palette on bright maps and falls back to dark when brightness is unknown', async () => {
+    luminanceOfImage.mockResolvedValue(0.8)
+    const light = mountOverview(makeOverview())
+    await flushPromises()
+    expect(light.find('.map-overview').attributes('style')).toContain('--map-region-stroke: rgba(0,0,0,.55)')
+
+    luminanceOfImage.mockResolvedValue(null)
+    const dark = mountOverview(makeOverview())
+    await flushPromises()
+    expect(dark.find('.map-overview').attributes('style')).toContain('--map-region-stroke: rgba(255,255,255,.55)')
   })
 })
