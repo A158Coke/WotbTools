@@ -5,6 +5,16 @@
 ## [Unreleased]
 
 ### Changed
+- **AI 复盘维持分析 + 地图可视化改进**：`App.vue` 视图渲染改为 `<component :is>` +
+  `<KeepAlive :include="['ReconstructionPage']">`——切走「AI 复盘」视图不再卸载/取消，SSE 流继续，
+  返回时进度/结果直接可见（关标签/刷新仍由 `beforeunload` 取消）；`ReconstructionPage` 移除卸载时
+  取消，超时改为「setTimeout 兜底 + 流内墙钟 deadline」双保险，后台标签定时器节流不再影响 400s 语义；
+  `MapOverview` 新增 `arenaBonusType` / `recorderAccountId`（`MapOverviewBuilder` 从
+  `Battle.arenaBonusType` / `Battle.recorderResult()` 填充），随机战路线视图新增「仅玩家」筛选；
+  前端新增 `utils/mapPalette.js` 自适应配色——底图平均相对亮度（阈值 0.45）分暗/亮两套色板，
+  地图鸟瞰网格/九宫格/出生点/路线/热力颜色随底图明暗切换并为路线加对比描边；canvas 不可用时回退默认色板。
+  新增 `mapPalette` 单测与 `MapOverview`/`ReconstructionPage` 回归测试（仅玩家筛选、深浅色板、
+  卸载不取消、流内墙钟超时）。
 - **单走/图控否定判断加伤害覆盖门禁（OBSERVED_DAMAGE_IS_PARTIAL）**：事件流观测伤害与权威结算不一致时，`teammateBenefit` 判定为 UNKNOWN（不得把“没观察到队友获利”当确定无获利）、开局图控不得用“未观察到交火”证明未接火（Team/Player 两路径一致）；正向观测到的交火/承伤仍可作为证据；SOLO_DELAY 必须 TRUE、SOLO_DETACHED 必须 FALSE、UNKNOWN 均不生成。新增生产契约回归测试与 2 个 golden false-positive cases（`cw-damage-partial-benefit-unknown-01` / `player-damage-partial-opening-01`），golden 27/27。
 - **十级车战术 profile 数据修正（0de5719c）**：`common/tank_tactical_profiles.json` 调整多辆十级车的 mobility/strengths/weaknesses/roles/burstPotential/sustainedDpm/hullDownAbility（350+/281-），为手工数据修正；数据基线来自 BlitzKit 车辆库（alpha/hp/机动数值）驱动的车型基线 + 手工战术微调，LOW/MEDIUM/HIGH 与 strengths/weaknesses 沿用既有受控词表；`TankTacticalProfileRegistryTest` 7/7（含全部 Tier X 覆盖断言）通过。
 - **AI 模型切换为 deepseek-v4-pro（官方稳定别名）**：`AI_MODEL` 默认值从 `deepseek-v4-flash` 切换为 `deepseek-v4-pro`——官方稳定别名直接调用最新 Pro 版本（当前对应 DeepSeek-V4-Pro-0813），调用方式不变，不使用带日期的显示名（`application.yml` / `.env.example` / `docker-compose.prod.yml` / `docker/online/docker-compose.yml` / `deploy.yml` workflow / `DEVELOPER_GUIDE` / gateway 测试字面量同步）；已显式设置 `AI_MODEL` 的环境以环境值为准。

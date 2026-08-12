@@ -55,6 +55,12 @@ class MapOverviewBuilderTest {
         assertEquals("Hellas", overview.displayNames().get("en"));
         assertEquals("Эллада", overview.displayNames().get("ru"));
         assertTrue(overview.friendlyTeam() == 1 || overview.friendlyTeam() == 2);
+        assertEquals(1, overview.arenaBonusType(), "rift 随机战 fixture arenaBonusType=1");
+        assertNotNull(overview.recorderAccountId(), "录像者账号应解析");
+        assertTrue(overview.routes().stream().anyMatch(r ->
+                        r.accountId() == overview.recorderAccountId()
+                                && r.playerName().equals(result.battle().recorder)),
+                "recorderAccountId 对应名册中的录像者路线");
         assertTrue(overview.playableBounds().xMin() < overview.playableBounds().xMax());
         assertTrue(overview.playableBounds().yMin() < overview.playableBounds().yMax());
         assertEquals(36, overview.gridCells().size(), "6x6 分析格");
@@ -159,7 +165,9 @@ class MapOverviewBuilderTest {
                 List.of(new MapOverview.Route(
                         1L, "p1", 29985L, 2,
                         List.of(new MapOverview.Point(0, 0, 1.5)),
-                        0.8, 146.9, 115.0)));
+                        0.8, 146.9, 115.0)),
+                1,
+                1L);
         final Map<String, Object> payload = mapper.convertValue(overview, Map.class);
         assertEquals("desert_train", payload.get("mapCode"));
         assertEquals("Desert Sands", payload.get("displayName"));
@@ -173,6 +181,10 @@ class MapOverviewBuilderTest {
         assertTrue(payload.containsKey("phases"));
         assertTrue(payload.containsKey("heatmaps"));
         assertTrue(payload.containsKey("routes"));
+        assertTrue(payload.containsKey("arenaBonusType"));
+        assertTrue(payload.containsKey("recorderAccountId"));
+        assertEquals(1, payload.get("arenaBonusType"));
+        assertEquals(1L, payload.get("recorderAccountId"));
         @SuppressWarnings("unchecked")
         final Map<String, Object> route = (Map<String, Object>) ((List<?>) payload.get("routes")).get(0);
         assertTrue(route.containsKey("firstObservedSec"));

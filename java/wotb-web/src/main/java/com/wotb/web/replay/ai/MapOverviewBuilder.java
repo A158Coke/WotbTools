@@ -111,7 +111,15 @@ public final class MapOverviewBuilder {
                         .toList(),
                 phases,
                 heatmaps,
-                routes);
+                routes,
+                battle.arenaBonusType,
+                resolveRecorderAccountId(battle));
+    }
+
+    /** 录像者账号 id（Battle.recorder 昵称已在 ReplayParser 解析时归一化，可稳定匹配 players）；未解析为 null。 */
+    private static Long resolveRecorderAccountId(final Battle battle) {
+        final PlayerResult recorder = battle.recorderResult();
+        return recorder != null && recorder.accountId > 0 ? recorder.accountId : null;
     }
 
     private static Integer resolveFriendlyTeam(

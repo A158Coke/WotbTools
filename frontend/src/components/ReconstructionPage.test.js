@@ -51,6 +51,7 @@ describe('ReconstructionPage team analysis', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.useRealTimers()
   })
 
   it('selecting a second file replaces the first', async () => {
@@ -202,6 +203,7 @@ describe('ReconstructionPage file management', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.useRealTimers()
   })
 
   it('clears analysis result after removing a file', async () => {
@@ -420,6 +422,7 @@ describe('ReconstructionPage SSE streaming', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.useRealTimers()
   })
 
   /** 可分段写入的 SSE 流，用于验证流中间状态。 */
@@ -598,6 +601,62 @@ describe('ReconstructionPage SSE streaming', () => {
     expect(wrapper.text()).toContain('recon.analysis_title_player')
     expect(wrapper.text()).toContain('fallback review')
     expect(wrapper.text()).not.toContain('recon.stages.call2')
+  })
+
+  it('keeps the stream alive when the component unmounts (no cancel/abort on in-app view switch)', async () => {
+    const sse = chunkedSse()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: sse.stream,
+      text: vi.fn().mockResolvedValue('')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['keep.wotbreplay'])
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+
+    const analyzeCall = fetchMock.mock.calls.find(([url]) => String(url) === '/api/replay/analyze')
+    expect(analyzeCall).toBeDefined()
+
+    wrapper.unmount()
+    await flushPromises()
+
+    // 卸载不再触发取消：不 abort、不调用 cancel 端点（真实关页/刷新仍由 beforeunload 处理）
+    expect(analyzeCall[1].signal.aborted).toBe(false)
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/replay/analyze/cancel'))).toBe(false)
+
+    // 流仍可推进：卸载后继续消费数据，不会因组件卸载而中断
+    sse.enqueue('event:call2_token\ndata:{"delta":"kept"}\n\n')
+    sse.enqueue('event:done\ndata:{"analysis":"kept","preBattleSection":null}\n\n')
+    sse.close()
+    await flushPromises()
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/replay/analyze/cancel'))).toBe(false)
+  })
+
+  it('aborts with AI_TIMEOUT when the wall-clock deadline passes during an active stream', async () => {
+    vi.useFakeTimers()
+    const sse = chunkedSse()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: sse.stream,
+      text: vi.fn().mockResolvedValue('')
+    }))
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['slow-stream.wotbreplay'])
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+
+    // 模拟后台标签：setTimeout 被节流未触发，但墙钟已超过 400s——
+    // 活跃流在下一个数据块到达时按墙钟 deadline 中止
+    vi.setSystemTime(Date.now() + 400_000)
+    sse.enqueue('event:call2_token\ndata:{"delta":"late"}\n\n')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('recon.errors.AI_TIMEOUT')
+    expect(analyzeButton(wrapper).attributes('disabled')).toBeUndefined()
   })
 })
 

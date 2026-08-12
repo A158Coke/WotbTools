@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.0",
+    "date": "2026-08-12",
+    "tag": "add",
+    "zh": "AI 复盘体验升级：切到其他页面或把浏览器标签放到后台（未关闭）时复盘继续运行，返回后直接看到结果或进度；随机战路线图新增「仅玩家」，只显示你自己的路线；热力图/路线图颜色随地图明暗自动切换，浅色地图上不再看不清",
+    "en": "AI review experience upgrade: analysis keeps running when you switch pages or background the tab (without closing it), with results or progress ready on return; random-battle route maps gain a \"Player only\" filter showing just your route; heatmap and route colors now adapt to map brightness so light maps stay readable",
+    "ru": "Улучшение AI-разбора: анализ продолжается при переключении на другую страницу или сворачивании вкладки (не закрытой), а по возвращении результат или прогресс уже на месте; на картах маршрутов случайных боёв добавлен фильтр «Только игрок», показывающий только ваш маршрут; цвета тепловой карты и маршрутов автоматически подстраиваются под яркость карты, чтобы светлые карты оставались читаемыми"
+  },
+  {
     "v": "2.10.0",
     "date": "2026-08-12",
     "tag": "chg",

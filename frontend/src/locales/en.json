@@ -789,6 +789,7 @@
               "team_friendly": "Friendly",
               "team_enemy": "Enemy",
               "team_all": "All",
+              "team_player": "Player only",
               "type_dwell": "Dwell",
               "type_damage": "Damage",
               "type_deaths": "Deaths",

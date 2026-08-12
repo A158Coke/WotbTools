@@ -789,6 +789,7 @@
             "team_friendly": "本方",
             "team_enemy": "敌方",
             "team_all": "全部",
+            "team_player": "仅玩家",
             "type_dwell": "驻留",
             "type_damage": "伤害",
             "type_deaths": "阵亡",

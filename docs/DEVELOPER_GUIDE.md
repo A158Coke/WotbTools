@@ -422,6 +422,14 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
   （`px = (x - xMin)/(xMax - xMin)`，`py = (yMax - y)/(yMax - yMin)`）。
 - **标题三语**：`MapOverview` 携带 `displayNames{zh,en,ru}`（来自 `common/map_names.json`，
   未收录时三语同 code）；前端按 vue-i18n 当前 locale 取标题，缺失回退 `displayName`（en）。
+- **模式与录像者**：`MapOverview` 携带 `arenaBonusType`（meta.json 原值；1=随机战斗，其他=训练/联赛等，
+  未知为 null）与 `recorderAccountId`（经 `Battle.recorderResult()` 解析，录像者昵称已在
+  `ReplayParser.resolveRecorderNickname` 归一化为纯昵称；未解析为 null）。随机战路线视图提供
+  「全部/本方/敌方/仅玩家」筛选，「仅玩家」只渲染录像者一条路线（含阶段切片）；非随机战维持三档。
+- **自适应配色**：前端 `frontend/src/utils/mapPalette.js` 将底图降采样 64×64 后计算平均相对亮度
+  （sRGB 线性化后按 0.2126/0.7152/0.0722 加权），阈值 0.45——低于视为暗图用亮色系、否则用深饱和色系；
+  路线 7+7 色、热力、网格/九宫格/出生点/死亡标记与路线对比描边均随色板切换；canvas 不可用或计算失败时
+  回退暗图默认色板。不做每图手工配色表。
 - **热力口径**：伤害热力按**受击方**位置落格（受击方阵营）；驻留/阵亡为事件计数；
   每层 36 个值按 `gridCells` 顺序，前端按 max 归一化。
 - **路线**：双方 14 车，2s 均匀采样（间隔 = max(2s, duration/200)，每车 ≤200 点），
