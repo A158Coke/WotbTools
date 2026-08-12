@@ -1,0 +1,13 @@
+{
+  "id": "player-thin-coverage-01",
+  "mode": "PLAYER_FOCUSED",
+  "arenaBonusType": 1,
+  "fixtureKey": "player-thin-coverage-01",
+  "lessonRef": "docs/ai-lessons/player-thin-coverage-01.md",
+  "expectedJudgment": "无候选（移动覆盖不足 ≠ MOVING，即使窗口内承伤 1800）",
+  "checks": [
+    { "kind": "prompt_omits", "text": "单走脱节" },
+    { "kind": "prompt_omits", "text": "单走拖延" }
+  ],
+  "note": "15s 窗口只有 1s 移动覆盖：covered/spanDuration 低于门控 → stationaryRatio=UNKNOWN，不判 MOVING，不生成候选。"
+}

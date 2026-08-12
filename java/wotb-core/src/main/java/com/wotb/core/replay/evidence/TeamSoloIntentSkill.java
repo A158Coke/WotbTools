@@ -48,6 +48,10 @@ public final class TeamSoloIntentSkill {
     public static final int MAIN_CLUSTER_DOMINANCE = 2;
 
     private static final int MAX_EVIDENCE = 6;
+    /** 移动覆盖门控：窗口内被移动证据覆盖时长占比低于该值时移动状态视为 UNKNOWN。 */
+    public static final float MIN_MOVEMENT_COVERAGE_RATIO = 0.5f;
+    /** span 连续性容差：相邻 formation window 间隔超过该值视为缺窗口，禁止跨缺口合并。 */
+    static final float SPAN_CONTINUITY_EPSILON_SEC = 0.01f;
 
     private TeamSoloIntentSkill() {
     }
@@ -74,7 +78,7 @@ public final class TeamSoloIntentSkill {
         final List<AiEvidence> result = new ArrayList<>();
         int index = 0;
         for (final TeamMemberFeatureSet member : features.members()) {
-            final List<SoloSpan> spans = soloSpans(member, phases);
+            final List<SoloSpan> spans = soloSpans(member, phases, features.members());
             for (final SoloSpan span : spans) {
                 final String intent = classify(member, span, features, opening);
                 if (intent == null) {
@@ -171,15 +175,22 @@ public final class TeamSoloIntentSkill {
 
     /** 每名成员：把连续「非主力簇且距离 ≥150m」的 15s 窗口合并为单走时段。 */
     private static List<SoloSpan> soloSpans(final TeamMemberFeatureSet member,
-                                            final List<TeamFormationPhase> phases) {
+                                            final List<TeamFormationPhase> phases,
+                                            final List<TeamMemberFeatureSet> allMembers) {
         final List<SoloSpan> spans = new ArrayList<>();
         SoloSpan current = null;
         for (final TeamFormationPhase phase : phases) {
-            final WindowInfo info = windowInfo(member, phase);
+            final WindowInfo info = windowInfo(member, phase, allMembers);
             if (info.solo()) {
-                current = current == null
-                        ? new SoloSpan(phase.startTime(), phase.endTime(), info)
-                        : current.extend(phase.endTime(), info);
+                if (current == null) {
+                    current = new SoloSpan(member, phase.startTime(), phase.endTime(), info);
+                } else if (phase.startTime() <= current.endSec() + SPAN_CONTINUITY_EPSILON_SEC
+                        && phase.startTime() >= current.endSec() - SPAN_CONTINUITY_EPSILON_SEC) {
+                    current = current.extend(phase.endTime(), info);
+                } else {
+                    spans.add(current);
+                    current = new SoloSpan(member, phase.startTime(), phase.endTime(), info);
+                }
             } else if (current != null) {
                 spans.add(current);
                 current = null;
@@ -213,9 +224,21 @@ public final class TeamSoloIntentSkill {
         return main;
     }
 
+    /** 全局主力簇（观测门控版）：只有观测成员数达到该时刻应存活成员数时才承认全局主力。 */
+    static TeamFormationCluster mainClusterOf(final TeamFormationPhase phase,
+                                              final int expectedAliveMembers) {
+        if (expectedAliveMembers <= 0 || phase == null
+                || phase.observedMemberCount() < expectedAliveMembers) {
+            return null;
+        }
+        return mainClusterOf(phase);
+    }
+
     private static WindowInfo windowInfo(final TeamMemberFeatureSet member,
-                                         final TeamFormationPhase phase) {
-        final TeamFormationCluster main = mainClusterOf(phase);
+                                         final TeamFormationPhase phase,
+                                         final List<TeamMemberFeatureSet> allMembers) {
+        final TeamFormationCluster main = mainClusterOf(
+                phase, expectedAliveMembers(allMembers, phase));
         if (main == null) {
             return WindowInfo.NOT_SOLO;
         }
@@ -246,31 +269,21 @@ public final class TeamSoloIntentSkill {
                 distance,
                 memberCluster.centroid().region(),
                 main.centroidX(),
-                main.centroidZ(),
-                engagementCount(member, phase.startTime(), phase.endTime()),
-                engagementDamage(member, phase.startTime(), phase.endTime()));
+                main.centroidZ());
     }
 
-    private static int engagementCount(final TeamMemberFeatureSet member,
-                                       final float start, final float end) {
-        int count = 0;
-        for (final EngagementSummary engagement : member.engagements()) {
-            if (engagement.startTime() <= end && engagement.endTime() >= start) {
-                count += engagement.enemyAccountIds().size();
+    /** 该 phase 开始时应当存活的成员数（死亡时刻未知或晚于 phase 开始视为存活）。 */
+    private static int expectedAliveMembers(final List<TeamMemberFeatureSet> members,
+                                            final TeamFormationPhase phase) {
+        int alive = 0;
+        for (final TeamMemberFeatureSet member : members) {
+            final Double deathTimeSec = member.deathTimeSec();
+            if (deathTimeSec == null || !Double.isFinite(deathTimeSec)
+                    || deathTimeSec > phase.startTime()) {
+                alive++;
             }
         }
-        return count;
-    }
-
-    private static float engagementDamage(final TeamMemberFeatureSet member,
-                                          final float start, final float end) {
-        float damage = 0f;
-        for (final EngagementSummary engagement : member.engagements()) {
-            if (engagement.startTime() <= end && engagement.endTime() >= start) {
-                damage += engagement.damageReceived();
-            }
-        }
-        return damage;
+        return alive;
     }
 
     /** 静止占比：时段内移动段重叠部分中「静止/低速」的占比；无覆盖返回 null。 */
@@ -291,7 +304,9 @@ public final class TeamSoloIntentSkill {
                 stationary += duration;
             }
         }
-        if (covered <= 0f) {
+        final float spanDuration = span.durationSec();
+        if (covered <= 0f || spanDuration <= 0f
+                || covered / spanDuration < MIN_MOVEMENT_COVERAGE_RATIO) {
             return null;
         }
         return (double) stationary / covered;
@@ -403,24 +418,28 @@ public final class TeamSoloIntentSkill {
 
     /** 单走时段聚合：窗口序列 + 距离趋势 + 主力质心位移。 */
     private static final class SoloSpan {
+        private final TeamMemberFeatureSet member;
         private final float startSec;
         private final float endSec;
         private final List<WindowInfo> windows = new ArrayList<>();
 
-        SoloSpan(final float startSec, final float endSec, final WindowInfo window) {
+        SoloSpan(final TeamMemberFeatureSet member, final float startSec,
+                 final float endSec, final WindowInfo window) {
+            this.member = member;
             this.startSec = startSec;
             this.endSec = endSec;
             this.windows.add(window);
         }
 
         SoloSpan extend(final float endSec, final WindowInfo window) {
-            final SoloSpan extended = new SoloSpan(startSec, endSec, windows);
+            final SoloSpan extended = new SoloSpan(member, startSec, endSec, windows);
             extended.windows.add(window);
             return extended;
         }
 
-        private SoloSpan(final float startSec, final float endSec,
-                         final List<WindowInfo> windows) {
+        private SoloSpan(final TeamMemberFeatureSet member, final float startSec,
+                         final float endSec, final List<WindowInfo> windows) {
+            this.member = member;
             this.startSec = startSec;
             this.endSec = endSec;
             this.windows.addAll(windows);
@@ -463,12 +482,31 @@ public final class TeamSoloIntentSkill {
             return windows.getLast();
         }
 
+        /** 窗口内敌情压力：对 span 内重叠的 member engagements 去重（同一交火段只算一次）。 */
         int enemyPressureCount() {
-            return windows.stream().mapToInt(WindowInfo::enemyPressureCount).sum();
+            final Set<Long> enemies = new LinkedHashSet<>();
+            for (final EngagementSummary engagement : member.engagements()) {
+                if (overlaps(engagement, startSec, endSec)) {
+                    enemies.addAll(engagement.enemyAccountIds());
+                }
+            }
+            return enemies.size();
         }
 
+        /** 窗口内承伤：对 span 内重叠的 member engagements 去重（同一交火段只算一次）。 */
         float damageReceived() {
-            return windows.stream().map(WindowInfo::damageReceived).reduce(0f, Float::sum);
+            float damage = 0f;
+            for (final EngagementSummary engagement : member.engagements()) {
+                if (overlaps(engagement, startSec, endSec)) {
+                    damage += engagement.damageReceived();
+                }
+            }
+            return damage;
+        }
+
+        private static boolean overlaps(final EngagementSummary engagement,
+                                        final float startSec, final float endSec) {
+            return engagement.startTime() <= endSec && engagement.endTime() >= startSec;
         }
     }
 
@@ -477,11 +515,9 @@ public final class TeamSoloIntentSkill {
             float distanceM,
             int region,
             float mainCentroidX,
-            float mainCentroidZ,
-            int enemyPressureCount,
-            float damageReceived
+            float mainCentroidZ
     ) {
-        static final WindowInfo NOT_SOLO = new WindowInfo(false, 0f, 0, 0f, 0f, 0, 0f);
+        static final WindowInfo NOT_SOLO = new WindowInfo(false, 0f, 0, 0f, 0f);
     }
 
     private record OpeningWindow(float startSec, float endSec) {

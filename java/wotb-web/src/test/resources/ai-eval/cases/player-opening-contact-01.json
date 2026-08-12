@@ -1,0 +1,14 @@
+{
+  "id": "player-opening-contact-01",
+  "mode": "PLAYER_FOCUSED",
+  "arenaBonusType": 1,
+  "fixtureKey": "player-opening-contact-01",
+  "lessonRef": "docs/ai-lessons/player-opening-contact-01.md",
+  "expectedJudgment": "无候选（开局窗口内有交火：既非图控也非脱节/拖延）",
+  "checks": [
+    { "kind": "prompt_omits", "text": "开局图控" },
+    { "kind": "prompt_omits", "text": "单走脱节" },
+    { "kind": "prompt_omits", "text": "单走拖延" }
+  ],
+  "note": "开局窗口内发生交火（窗口内承伤>0）：不满足「未接火」，不得标开局图控；信号矛盾不硬判。"
+}

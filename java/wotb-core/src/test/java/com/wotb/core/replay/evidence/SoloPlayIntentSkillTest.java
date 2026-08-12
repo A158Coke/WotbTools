@@ -145,6 +145,52 @@ class SoloPlayIntentSkillTest {
         assertTrue(evidence.isEmpty(), "no growth evidence -> no SOLO_DETACHED");
     }
 
+    @Test
+    void openingWindowWithInWindowContactIsNotMapControl() {
+        // 开局窗口内有交火（窗口内承伤 > 0）：不满足「未接火」→ 不生成 OPENING_MAP_CONTROL，也不硬判其他标签
+        final EvidenceSkillContext ctx = context(200, true, 0,
+                List.of(move(5, 40, 200, 200, 200, 200, 1f)),
+                List.of(engagement(5, 40, 200)),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1015f, 1030f, 1045f},
+                new float[]{200f, 200f, 200f}, new float[]{200f, 200f, 200f});
+
+        final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
+
+        assertTrue(evidence.isEmpty(), "contact inside the opening window must not be OPENING_MAP_CONTROL");
+    }
+
+    @Test
+    void lateDamageOutsideWindowDoesNotSuppressOpening() {
+        // 窗口外（200-210s）的整场承伤/交火不影响 [5,40] 开局图控
+        final EvidenceSkillContext ctx = context(1800, true, 0,
+                List.of(move(5, 40, 200, 200, 200, 200, 1f)),
+                List.of(engagement(200, 210, 1800)),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1015f, 1030f, 1045f},
+                new float[]{200f, 200f, 200f}, new float[]{200f, 200f, 200f});
+
+        final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
+
+        assertEquals(1, evidence.size());
+        assertEquals("OPENING_MAP_CONTROL", evidence.getFirst().labels().get("intent"));
+    }
+
+    @Test
+    void thinMovementCoverageIsNotMoving() {
+        // 窗口 [60,75] 只有 1s 移动覆盖（60-61s）：覆盖/窗口时长 < 门控 ≠ MOVING，即使窗口内承伤 1800 也不判脱节
+        final EvidenceSkillContext ctx = context(1800, true, 0,
+                List.of(move(60, 61, 200, 200, 200, 200, 5f)),
+                List.of(engagement(60, 75, 1800)),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1060f, 1065f, 1075f},
+                new float[]{200f, 200f, 240f}, new float[]{200f, 200f, 240f});
+
+        final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
+
+        assertTrue(evidence.isEmpty(), "1s movement coverage in a 15s window must not imply MOVING");
+    }
+
     // ===== helpers =====
 
     private static EvidenceSkillContext context(
@@ -254,7 +300,8 @@ class SoloPlayIntentSkillTest {
 
     private static EngagementSummary engagement(final float start, final float end,
                                                 final int damageReceived) {
-        return new EngagementSummary(start, end, List.of(1001L), List.of(2001L),
+        // 生产形态：DefaultPlayerBattleFeatureExtractor 构造的 player engagement 敌我 account 列表为空
+        return new EngagementSummary(start, end, List.of(), List.of(),
                 300, damageReceived, new Vector3(200f, 0f, 200f), new Vector3(200f, 0f, 200f),
                 EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
     }

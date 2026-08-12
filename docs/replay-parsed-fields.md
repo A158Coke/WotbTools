@@ -55,7 +55,8 @@
 `ReplayTimestamp` 同时保存 `rawClockSec`（原始回放时钟，底层事实）与可空的 `battleClockSec`
 （battle-relative，`rawClockSec - battleStartRawClockSec`；战斗开始事件无法可靠识别时为 null）。
 派生证据优先使用可靠的 `battleClockSec`；原始 ReplayEvent 并不天然只有 battle-relative 时间，
-统一经 `tryRelative()` 在无法识别战斗开始时回退 raw 时钟并标注。
+战斗开始无法解析时 `tryRelative()` 返回 `UNRESOLVED_RAW_ONLY`（limitation=`UNRESOLVED_RAW_ONLY_EVENTS_IGNORED`），
+这类事件被排除在所有需要 battle-relative 时间的派生计算之外；`rawClockSec` 仍保留，但不作为可用时间。
 
 `DecodeConfidence` 四级：`EXACT`（所有已知字段精确解析）/ `INFERRED`（部分字段上下文推断）/ `PARTIAL`（仅部分成功）/ `UNKNOWN`（未解码）。
 
@@ -90,7 +91,7 @@
 
 - **死亡时刻**：`deathTimeMillis=0`（存活/未知）→ 回退事件流估算；prompt 用 `DEATH_SOURCE=权威结算/事件流估算/未知` 标注，禁止把估算当权威。
 - **坐标**：优先使用每张地图 `map-semantics/*.semantic.json` 的 `playableBoundsMeters` 推导 `centerX/centerZ/halfExtent`，再映射到 500×500 canonical；只有语义缺失或边界无效时才回退中心原点、`halfExtent=250`。三态 `VALID/CLAMPED/INVALID`；九宫格 region 只描述方位，禁止用 region 差推断距离。
-- **时间**：派生证据优先使用可靠的 battle-relative 时间（`battleClockSec`）；无法识别战斗开始时回退 raw 时钟并标注；准备阶段事件排除。
+- **时间**：派生证据优先使用可靠的 battle-relative 时间（`battleClockSec`）；战斗开始无法解析时 `tryRelative()` 返回 `UNRESOLVED_RAW_ONLY`，事件以 `UNRESOLVED_RAW_ONLY_EVENTS_IGNORED` 标记并从派生计算中排除（`rawClockSec` 仍保留，但不作为可用时间）；准备阶段事件排除。
 - **权威 vs 观测**：`battle_results` 是唯一可信口径；事件流数字只是观测子集。
 - **录像者**：只用于确定视角（PLAYER_FOCUSED 的个人复盘 / TEAM_PERSPECTIVE 的视角队伍），不参与团队结论权重。
 
