@@ -87,7 +87,7 @@ python .\map_semanticizer.py `
 - `GRID_RULE_DERIVED`：由 6×6 网格和确定性阈值合并出的区域候选；
 - `RULE_DERIVED_CANDIDATE`：`favors` 和 `risks`，仅供 LLM 提出假设。
 
-每份文档还带 `verified`（默认 `false`）：表示尚未完成人工地图核验，区域名称/类型/边界/favors/risks 不得被描述为已验证事实。后端 Call #1 Prompt 会原样渲染该状态与区域 `confidence` 五字段（geometry / objectPositions / objectCategories / areaBoundary / favorsAndRisks）。
+每份文档还带 `verified`：2026-08-12 已对仓库内全部 33 张地图语义完成人工核验并置为 `true`；生成新地图时默认 `false`，需人工核验区域名称/类型/边界/favors/risks 后置 `true`。后端 Call #1 Prompt 会原样渲染该状态（已完成/未完成）与区域 `confidence` 五字段（geometry / objectPositions / objectCategories / areaBoundary / favorsAndRisks）；`verified=false` 时区域候选不得被描述为已验证事实。
 
 当前版本不会自动生成：
 

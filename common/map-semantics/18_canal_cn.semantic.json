@@ -5,7 +5,7 @@
     "canal"
   ],
   "displayName": "Canal",
-  "verified": false,
+  "verified": true,
   "source": "CLIENT_RESOURCE_DERIVED",
   "battleVariant": "cn0",
   "warnings": [],
