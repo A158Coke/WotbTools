@@ -1,0 +1,14 @@
+{
+  "id": "cw-delay-sacrifice-capped-01",
+  "mode": "TEAM_PERSPECTIVE",
+  "arenaBonusType": 3,
+  "fixtureKey": "cw-delay-sacrifice-capped-01",
+  "lessonRef": "docs/ai-lessons/cw-delay-sacrifice-capped-01.md",
+  "expectedJudgment": "拖延（牺牲拖延：1vN 卡点后阵亡，队友借机占点）",
+  "checks": [
+    { "kind": "prompt_contains", "text": "DEATH_TIMELINE" },
+    { "kind": "prompt_contains", "text": "4分00秒" },
+    { "kind": "prompt_contains", "text": "队员阵亡" }
+  ],
+  "note": "残局 1vN 卡点拖延后阵亡，队友借机占点获胜。Step 2 将断言 SOLO_DELAY（牺牲有价值）+ 占点关联。"
+}

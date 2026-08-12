@@ -120,28 +120,6 @@ public class PlayerReplayAnalysisService {
     }
 
     /**
-     * 多场趋势复盘：每场独立摘要 + 后端确定性聚合，不拼接原始事件流。
-     */
-    public AnalyzeResult analyzeMulti(final List<Battle> battles) {
-        return analyzeMulti(battles, AllowedLanguage.ZH);
-    }
-
-    public AnalyzeResult analyzeMulti(final List<Battle> battles,
-                                      final AllowedLanguage language) {
-        return analyzeMulti(battles, language, AiReviewStreamListener.NOOP);
-    }
-
-    public AnalyzeResult analyzeMulti(final List<Battle> battles,
-                                      final AllowedLanguage language,
-                                      final AiReviewStreamListener listener) {
-        if (!isConfigured()) {
-            throw new AiNotConfiguredException();
-        }
-        final PreparedAiPrompt prepared = PlayerReplayPromptBuilder.prepareMulti(battles, language);
-        return new AnalyzeResult(chat(prepared, listener));
-    }
-
-    /**
      * 单场分析：先尝试完整特征分析，不满足条件时降级到结算分析。
      * <p>fallback 是延迟执行的控制流，不提前调用 AI。</p>
      */

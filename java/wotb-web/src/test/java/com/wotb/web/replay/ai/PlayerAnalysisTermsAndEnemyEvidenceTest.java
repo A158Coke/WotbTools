@@ -40,9 +40,7 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         return Stream.of(
                 PlayerReplayPromptBuilder.SYSTEM_PROMPT,
                 PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT,
-                TeamReplayAnalysisService.SINGLE_TEAM_PROMPT,
-                TeamReplayAnalysisService.MULTI_TEAM_PROMPT,
-                PlayerReplayPromptBuilder.MULTI_SYSTEM_PROMPT);
+                TeamReplayAnalysisService.SINGLE_TEAM_PROMPT);
     }
 
     // ---- 1. friendly ≠ 朋友 ----

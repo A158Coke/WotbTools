@@ -5,6 +5,8 @@
 ## [Unreleased]
 
 ### Changed
+- **移除多文件 AI 复盘死代码（单文件策略确认）**：删除 `MULTI_SYSTEM_PROMPT` / `MULTI_TEAM_PROMPT`（含 md 资源）、`analyzeMulti`（Player/Team 三入口）、`MULTI_PLAYER_BATTLE` / `MULTI_TEAM_BATTLE` AI 分支、团队多视角分区合并（`TeamPartitionBuilder` / `TeamContextBuilder.buildMultiTeamContext` / `TeamAiPromptBuilder.multi` / `MultiTeamBattleAnalysisContext` / `TeamBattleAnalysisSummary` / `TeamRosterResolver` 多场 roster 阈值辅助）；`analyzeTeamGroups` 简化为逐 context 单队调用；`BatchAnalyzer` / `ReplayAnalysisMode` 保留（非 AI 批量端点仍支持多文件）。同步清理约 30 个多场/分区测试，全量 `mvn -s settings.xml test` 全绿。
+- **AI 提示词拆分 md（行为不变）**：AI 提示词正文从 Java 文本块常量迁移到 `java/wotb-web/src/main/resources/prompts/*.zh.md`（单一事实源），新增 `AiPromptLibrary` 惰性加载/缓存（`classpath:/prompts/<key>.zh.md`，CRLF 归一化）；8 个 prompt 模板（player fallback/single/tactical、team single/autopsy、prebattle system/user-header/confidence-legend）字节级不变，EN/RU 本地化替换链不变；新增 `AiPromptLibraryTest` 回归门禁（全部 key 可加载 + tactical=fallback+harness 不变量 + 无文本块残留）。全量 `mvn -s settings.xml test` 全绿。
 - **地图资源整理（统一命名 + 单一权威）**：`assets/maps/*.png` 全部按英文展示名小写中划线命名（15 个改名：`Normandy→normandy`、`Middleburg→middleburg`、`malinov→winter-malinovka`、`newbay→new-bay` 等；`alpen→horrorstadt` 补齐 lumber/山麓角逐 素材，28/29 图有素材，仅 `holmeisk`(Wasteland) 待补）；删除后端 `MapImageCatalog`（`MapOverview.image` 恒 null），`frontend/src/data/mapImages.js` 成为唯一素材权威；新增 `docs/map-catalog.md` 存档内部 code↔展示名(zh/en/ru)↔语义 mapId↔素材 映射与新增素材流程；DEVELOPER_GUIDE 素材约定同步；无素材样例改用 `holmeisk`。
 
 ### Added

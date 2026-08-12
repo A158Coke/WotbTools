@@ -12,7 +12,7 @@ import java.util.List;
 
 /**
  * Player Replay 的 prompt 构建入口（facade）。
- * <p>提供 prepareFallback / prepareFullNoRecon / prepareFull / prepareMulti 公开入口与
+ * <p>提供 prepareFallback / prepareFullNoRecon / prepareFull 公开入口与
  * buildPlayerContextSummary / buildSummary 等测试入口；实际实现已拆分到
  * {@link PlayerPromptRules}（规则/多语言/system prompt）、{@link PlayerEvidenceFormatter}（证据格式化）
  * 与 {@link PlayerSummaryBuilder}（prepare* 编排与摘要构建）。</p>
@@ -29,8 +29,6 @@ public final class PlayerReplayPromptBuilder {
     static final String SYSTEM_PROMPT = PlayerPromptRules.SYSTEM_PROMPT;
 
     static final String SINGLE_PLAYER_PROMPT = PlayerPromptRules.SINGLE_PLAYER_PROMPT;
-
-    static final String MULTI_SYSTEM_PROMPT = PlayerPromptRules.MULTI_SYSTEM_PROMPT;
 
     static String localizePlayerSystemPrompt(final String zhPrompt, final AllowedLanguage language) {
         return PlayerPromptRules.localizePlayerSystemPrompt(zhPrompt, language);
@@ -95,15 +93,6 @@ public final class PlayerReplayPromptBuilder {
             final AllowedLanguage language) {
         return PlayerSummaryBuilder.prepareFull(ctx, recon, estimator, maxInputTokens,
                 contextWindowTokens, maxOutputTokens, promptSafetyMarginTokens, language);
-    }
-
-    public static PreparedAiPrompt prepareMulti(final List<Battle> battles) {
-        return PlayerSummaryBuilder.prepareMulti(battles);
-    }
-
-    public static PreparedAiPrompt prepareMulti(final List<Battle> battles,
-                                                final AllowedLanguage language) {
-        return PlayerSummaryBuilder.prepareMulti(battles, language);
     }
 
     public static String buildPlayerContextSummary(final SinglePlayerBattleAnalysisContext ctx) {

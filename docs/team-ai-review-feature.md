@@ -6,6 +6,8 @@
 
 分析对象是整支录像者所在队伍，而非录像者个人。
 
+> 2026-08-12：AI Review 收口为单文件（`AiReplayBatchPolicy.MAX_FILES=1`），多文件/多视角 partition 能力已移除（`analyzeMulti`、MULTI prompt、complete-link partition、多场 roster 趋势）。
+
 ## 1. 产品语义
 
 - Recorder raw team 1 → team 1 为分析对象
@@ -49,9 +51,8 @@ Controller 只负责 HTTP binding + 委托 Service。Service 接管 validate / p
 - Exact duplicate detection（同一文件上传多次）
 - Perspective grouping（同一战斗同一队伍合并为一个代表）
 - Opposing perspectives 永远不可合并（同战斗不同队伍）
-- Complete-link partition：新 context 必须与分区内每个现有成员都兼容
-- Roster coverage >= 0.75 且 Jaccard >= 0.60 才能合并
-- Partition 输出顺序按输入顺序稳定
+- 单文件策略：1 个文件 = 1 个 perspective group；Team 路径逐 context 单队调用
+- 多视角 complete-link partition 已移除（2026-08-12）
 
 ## 5. Team Evidence
 
@@ -162,10 +163,9 @@ prompt 构建内部（`TeamAiPromptBuilder` 的 included/omitted/truncated 集�
 
 ### Global（prompt 内容中的全局限制行）
 
-- `PERSPECTIVE_TIMELINES_ISOLATED`
-- `ROSTER_CONSISTENCY_UNCONFIRMED`
-- `PERSPECTIVES_OMITTED_COUNT_<TOTAL>`（多 partition 聚合）
 - `AI_INPUT_TRUNCATED`
+
+（`PERSPECTIVE_TIMELINES_ISOLATED` / `ROSTER_CONSISTENCY_UNCONFIRMED` / `PERSPECTIVES_OMITTED_COUNT_<TOTAL>` 为多文件 partition 历史限制，2026-08-12 移除后不再产生）
 
 ### Per-unit（prompt 中 `unitLimitations=[...]` 头部）
 
@@ -180,7 +180,6 @@ prompt 构建内部（`TeamAiPromptBuilder` 的 included/omitted/truncated 集�
 
 - Global limitations 不出现在 unit report
 - Per-unit limitations 不出现在 global list
-- Partition A 的 global limitation 不泄漏到 partition B 的 unit
 - Per-unit limitation 始终绑定 `analysisUnitId`
 
 ### Omission 本地化
@@ -215,6 +214,6 @@ prompt 构建内部（`TeamAiPromptBuilder` 的 included/omitted/truncated 集�
 
 - Custom auth scheme（非 Bearer/Basic/Digest）在 provider body 中不做特定脱敏——统一返回 `[PROVIDER_BODY_REDACTED]`
 - Player path 暂无 prompt omission（prompt 构建内部无省略单位）
-- Multi-team 不再有固定 `MAX_PERSPECTIVES` 数量上限；perspective 是否省略由 token 预算（mandatory/high-priority 原子写入）与编排决定，省略单位进入 `truncatedUnitIds`/`omittedUnitIds`（prompt 构建内部；响应不再暴露单元计数）
+- 多文件/多视角 partition 已移除（2026-08-12）：AI 复盘仅单文件，Team 路径逐 context 单队调用；perspective 省略仍由 token 预算（mandatory/high-priority 原子写入）决定，省略单位进入 `truncatedUnitIds`/`omittedUnitIds`（prompt 构建内部；响应不再暴露单元计数）
 - 不支持 drag-and-drop 文件上传
 - 不要求真实 `.wotbreplay` E2E fixture

@@ -232,37 +232,6 @@ class PlayerGatewayPromptContractTest {
         assertFalse(body.contains("PLAYER_DESTROYED"));
     }
 
-    // ===== multi-player =====
-
-    @Test
-    void multiPlayerPathSendsMultiSystemPromptAndSummaryMode() {
-        final Battle a = makeBattle(1, 1);   // friendly win
-        final Battle b = makeBattle(2, 1);   // enemy win (winnerTeam matches recorder team? -> makeBattle uses winnerTeam=1 when recorderTeam=2)
-        service().analyzeMulti(List.of(a, b));
-        final AiChatRequest req = last();
-        assertEquals(PlayerReplayPromptBuilder.MULTI_SYSTEM_PROMPT, req.systemPrompt());
-        assertEquals("MULTI_PLAYER_SUMMARY", req.analysisMode());
-        assertModelOptions(req);
-        final String body = lastUser();
-        assertTrue(body.contains("友方获胜"), "battle A friendly win");
-        assertTrue(body.contains("敌方获胜"), "battle B enemy win");
-        assertTrue(body.contains("可统计场数: 2"));
-        assertTrue(body.contains("已知胜负场数: 2"));
-        assertTrue(body.contains("胜率: 50%"));
-        assertNoRawTeamLabels(body);
-        assertNoBareSeconds(body);
-    }
-
-    @Test
-    void multiPlayerDrawWinnerYieldsDrawOrUnknown() {
-        final Battle battle = makeBattle(1, null);
-        service().analyzeMulti(List.of(battle));
-        final String body = lastUser();
-        assertTrue(body.contains("平局或未知"));
-        assertTrue(body.contains("已知胜负场数: 0"));
-        assertTrue(body.contains("胜率: 无法计算"));
-    }
-
     // ===== shared contract helpers =====
 
     private static void assertModelOptions(final AiChatRequest req) {
