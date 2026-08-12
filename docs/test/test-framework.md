@@ -64,7 +64,7 @@ assertThat(result.status()).isEqualTo("NEW");
 assertThat(result.id()).isNotNull();
 assertThatThrownBy(() -> service.create(request))
     .isInstanceOf(IllegalArgumentException.class)
-    .hasMessageContaining("当前仅支持国服");
+    .hasMessage("UNSUPPORTED_BOOST_REGION");
 ```
 
 AssertJ 可读性更好，适合复杂对象、集合、异常断言。
@@ -506,7 +506,8 @@ admin assign booster -> DB 里有 assignment，request.status = MATCHED
 ```text
 创建 boost request 时 status = NEW
 region 为 null 时默认 CN
-region 不是 CN 时拒绝
+region 为 CN/ASIA/EU/NA 时保存规范化值
+region 不在 CN/ASIA/EU/NA 时拒绝
 requestType 非法时拒绝
 contactType 非 QQ/WECHAT 时拒绝
 targetDescription 为空时拒绝
@@ -676,12 +677,12 @@ void givenInvalidRegion_whenCreateRequest_thenThrowsValidationException()
 @Test
 void shouldRejectInvalidRegion() {
     // given
-    var request = validRequestWithRegion("EU");
+    var request = validRequestWithRegion("RU");
 
     // when / then
     assertThatThrownBy(() -> service.create(request))
-        .isInstanceOf(ValidationException.class)
-        .hasMessageContaining("当前仅支持国服");
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("UNSUPPORTED_BOOST_REGION");
 }
 ```
 
