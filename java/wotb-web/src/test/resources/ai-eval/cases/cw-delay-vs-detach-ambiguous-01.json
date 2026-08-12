@@ -7,7 +7,9 @@
   "expectedJudgment": "无法确定/低置信（信号矛盾，不硬下标签）",
   "checks": [
     { "kind": "prompt_contains", "text": "type=静止" },
-    { "kind": "prompt_contains", "text": "=== FORMATION_PHASES ===" }
+    { "kind": "prompt_contains", "text": "=== FORMATION_PHASES ===" },
+    { "kind": "prompt_omits", "text": "SOLO_DELAY" },
+    { "kind": "prompt_omits", "text": "SOLO_DETACHED" }
   ],
   "note": "行为信号矛盾：静止但有敌情压力、队友半获利 → 明说无法确定/低置信。Step 2 将断言矛盾 → 空候选。"
 }

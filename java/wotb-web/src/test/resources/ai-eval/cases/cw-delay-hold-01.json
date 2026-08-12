@@ -9,6 +9,7 @@
     { "kind": "prompt_contains", "text": "type=静止" },
     { "kind": "prompt_contains", "text": "clusters=2" },
     { "kind": "prompt_contains", "text": "=== FORMATION_PHASES ===" },
+    { "kind": "prompt_contains", "text": "SOLO_DELAY" },
     { "kind": "prompt_omits", "text": "队员阵亡" }
   ],
   "note": "HT 单走卡点（静止、守点邻近、敌情压力、不撤退），队友借机转场推进。Step 2 将断言 SOLO_DELAY 候选 + 队友获利时序关联。"

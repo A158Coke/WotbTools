@@ -1,0 +1,15 @@
+{
+  "id": "cw-cap-win-01",
+  "mode": "TEAM_PERSPECTIVE",
+  "arenaBonusType": 3,
+  "fixtureKey": "cw-cap-win-01",
+  "lessonRef": "docs/ai-lessons/cw-cap-win-01.md",
+  "expectedJudgment": "占点致胜（双方未全灭，点数推断 POINTS_INFERENCE）",
+  "checks": [
+    { "kind": "prompt_contains", "text": "CAPTURE_AND_POINTS" },
+    { "kind": "prompt_contains", "text": "victoryPointsEarned" },
+    { "kind": "prompt_contains", "text": "pointsDecided=true" },
+    { "kind": "prompt_contains", "text": "winnerSource=POINTS_INFERENCE" }
+  ],
+  "note": "争霸赛点数胜利：双方未全灭、我方占点分更高（规则候选推断，非权威结算 winnerTeam）。"
+}

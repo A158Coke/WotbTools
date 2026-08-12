@@ -8,7 +8,8 @@
   "checks": [
     { "kind": "prompt_contains", "text": "DEATH_TIMELINE" },
     { "kind": "prompt_contains", "text": "4分00秒" },
-    { "kind": "prompt_contains", "text": "队员阵亡" }
+    { "kind": "prompt_contains", "text": "队员阵亡" },
+    { "kind": "prompt_contains", "text": "SOLO_DELAY" }
   ],
   "note": "残局 1vN 卡点拖延后阵亡，队友借机占点获胜。Step 2 将断言 SOLO_DELAY（牺牲有价值）+ 占点关联。"
 }

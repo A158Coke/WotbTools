@@ -8,7 +8,8 @@
   "checks": [
     { "kind": "prompt_contains", "text": "type=移动" },
     { "kind": "prompt_contains", "text": "1分30秒" },
-    { "kind": "prompt_contains", "text": "DEATH_TIMELINE" }
+    { "kind": "prompt_contains", "text": "DEATH_TIMELINE" },
+    { "kind": "prompt_contains", "text": "SOLO_DETACHED" }
   ],
   "note": "MT 单走推进拉大距离、远离目标点、被集火阵亡，队友原地无收益。Step 2 将断言 SOLO_DETACHED 候选。"
 }

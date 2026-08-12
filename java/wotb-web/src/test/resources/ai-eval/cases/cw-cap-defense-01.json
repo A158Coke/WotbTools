@@ -1,0 +1,14 @@
+{
+  "id": "cw-cap-defense-01",
+  "mode": "TEAM_PERSPECTIVE",
+  "arenaBonusType": 3,
+  "fixtureKey": "cw-cap-defense-01",
+  "lessonRef": "docs/ai-lessons/cw-cap-defense-01.md",
+  "expectedJudgment": "守家翻盘（防守者拖延 + 队友占点获胜）",
+  "checks": [
+    { "kind": "prompt_contains", "text": "CAPTURE_AND_POINTS" },
+    { "kind": "prompt_contains", "text": "victoryPointsEarned" },
+    { "kind": "prompt_contains", "text": "SOLO_DELAY" }
+  ],
+  "note": "残局一名成员守家（静止+敌情压力），队友借机占点：防守者行为满足拖延候选（SOLO_DELAY）。"
+}

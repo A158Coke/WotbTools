@@ -28,10 +28,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * AI 复盘评估 golden fixtures：synthetic 7v7 训练房/联赛场景。
- * <p>坐标语义：raw 回放坐标（±250 → canonical 0..500），移动段 distance 为 canonical 米。
- * 本类只产出 Step 1 可断言的基线证据（阵型/移动/阶段/关键事件）；
- * Step 2 的图控/拖延/脱节候选证据由 {@code TeamSoloIntentSkill} 从同一特征派生。</p>
+ * AI 复盘评估 golden fixtures：synthetic 7v7 训练房/联赛（争霸赛）场景。
+ * <p>坐标语义：raw 回放坐标（±250 → canonical 0..500），移动段 distance 为 canonical 米；
+ * 阵型簇成员身份使用 {@code account:<accountId>}（与 {@code DefaultTeamBattleFeatureExtractor.identityKey} 一致）。</p>
  */
 public final class AiEvalFixtures {
 
@@ -51,6 +50,10 @@ public final class AiEvalFixtures {
             case "cw-delay-no-payoff-01" -> delayNoPayoff();
             case "cw-detach-rotate-01" -> detachRotate();
             case "cw-delay-vs-detach-ambiguous-01" -> delayVsDetachAmbiguous();
+            case "cw-cap-win-01" -> capWinByPoints();
+            case "cw-cap-stolen-01" -> capStolenWhileConcentrating();
+            case "cw-cap-defense-01" -> capDefenseComeback();
+            case "cw-cap-points-decided-01" -> capPointsDecided();
             default -> throw new IllegalArgumentException("Unknown fixture: " + fixtureKey);
         };
     }
@@ -59,32 +62,31 @@ public final class AiEvalFixtures {
 
     private static SingleTeamBattleAnalysisContext openingMapControl() {
         final List<TeamMemberFeatureSet> members = List.of(
-                member(0, 900, 0, true, null, null,
+                member(0, 0, true, null, null,
                         List.of(move(5, 40, 0, 0, 100, 150, 6f)), List.of(), List.of()),
-                member(1, 900, 0, true, null, null,
+                member(1, 0, true, null, null,
                         List.of(move(5, 40, 0, 0, 100, -100, 6f)), List.of(), List.of()),
-                member(2, 900, 0, true, null, null,
+                member(2, 0, true, null, null,
                         List.of(move(5, 40, 0, 0, -150, 0, 5f)), List.of(), List.of()),
-                member(3, 900, 0, true, null, null,
+                member(3, 0, true, null, null,
                         List.of(move(5, 40, 0, 0, 150, 0, 5f)), List.of(), List.of()),
-                member(4, 900, 0, true, null, null,
+                member(4, 0, true, null, null,
                         List.of(move(5, 40, 0, 0, 0, -150, 5f)), List.of(), List.of()),
-                member(5, 900, 0, true, null, null,
+                member(5, 0, true, null, null,
                         List.of(move(5, 40, 0, 0, -60, 130, 4.5f)), List.of(), List.of()),
-                member(6, 900, 0, true, null, null,
+                member(6, 0, true, null, null,
                         List.of(move(5, 40, 0, 0, 130, 130, 5f)), List.of(), List.of()));
         final List<TeamFormationPhase> phases = List.of(
                 phase(15, 30, 250, 250, 140, 7, List.of(
-                        cluster(15, 30, 350, 400, List.of("H1")),
-                        cluster(15, 30, 300, 250, List.of("H2", "M1", "M2")),
-                        cluster(15, 30, 130, 100, List.of("M3", "T1", "L1")))),
+                        cluster(15, 30, 350, 400, List.of(key(0))),
+                        cluster(15, 30, 300, 250, List.of(key(1), key(2), key(3))),
+                        cluster(15, 30, 130, 100, List.of(key(4), key(5), key(6))))),
                 phase(30, 45, 250, 250, 130, 7, List.of(
-                        cluster(30, 45, 350, 400, List.of("H1")),
-                        cluster(30, 45, 300, 250, List.of("H2", "M1", "M2")),
-                        cluster(30, 45, 130, 100, List.of("M3", "T1", "L1")))),
+                        cluster(30, 45, 350, 400, List.of(key(0))),
+                        cluster(30, 45, 300, 250, List.of(key(1), key(2), key(3))),
+                        cluster(30, 45, 130, 100, List.of(key(4), key(5), key(6))))),
                 phase(45, 60, 260, 250, 100, 7, List.of(
-                        cluster(45, 60, 350, 400, List.of("H1")),
-                        cluster(45, 60, 280, 240, List.of("H2", "M1", "M2", "M3", "T1", "L1")))));
+                        cluster(45, 60, 280, 240, mainKeys()))));
         final TeamAggregateResult aggregate = new TeamAggregateResult(
                 7, 4200, 600, 0, 0, 0, 7, 0, null, null, null, true);
         return context("cw-opening-mapcontrol-01", 2, 1, new double[7],
@@ -96,36 +98,14 @@ public final class AiEvalFixtures {
 
     private static SingleTeamBattleAnalysisContext delayHold() {
         final List<TeamMemberFeatureSet> members = List.of(
-                member(0, 1100, 400, true, null, null,
+                member(0, 400, true, null, null,
                         List.of(move(45, 60, 0, 0, 100, 150, 14f), stationary(60, 240, 100, 150)),
-                        List.of(engagement(120, 180, 10_001L, List.of(20_001L, 20_002L), 300, 200)), List.of()),
-                member(1, 800, 200, true, null, null,
-                        List.of(move(60, 150, 0, 0, 50, 0, 1f), move(150, 240, 50, 0, 150, 0, 1.5f)),
-                        List.of(), List.of()),
-                member(2, 800, 200, true, null, null,
-                        List.of(move(60, 150, 0, 0, 50, 0, 1f), move(150, 240, 50, 0, 150, 0, 1.5f)),
-                        List.of(), List.of()),
-                member(3, 800, 200, true, null, null,
-                        List.of(move(60, 150, 0, 0, 50, 0, 1f), move(150, 240, 50, 0, 150, 0, 1.5f)),
-                        List.of(), List.of()),
-                member(4, 800, 200, true, null, null,
-                        List.of(move(60, 150, 0, 0, 50, 0, 1f), move(150, 240, 50, 0, 150, 0, 1.5f)),
-                        List.of(), List.of()),
-                member(5, 800, 200, true, null, null,
-                        List.of(move(60, 150, 0, 0, 50, 0, 1f), move(150, 240, 50, 0, 150, 0, 1.5f)),
-                        List.of(), List.of()),
-                member(6, 500, 0, true, null, null,
-                        List.of(stationary(60, 240, 0, 0)), List.of(), List.of()));
-        final List<TeamFormationPhase> phases = List.of(
-                phase(60, 75, 270, 260, 90, 7, List.of(
-                        cluster(60, 75, 350, 400, List.of("10001")),
-                        cluster(60, 75, 300, 250, List.of("10002", "10003", "10004", "10005", "10006", "10007")))),
-                phase(150, 165, 330, 250, 90, 7, List.of(
-                        cluster(150, 165, 350, 400, List.of("10001")),
-                        cluster(150, 165, 380, 250, List.of("10002", "10003", "10004", "10005", "10006", "10007")))),
-                phase(225, 240, 350, 250, 90, 7, List.of(
-                        cluster(225, 240, 350, 400, List.of("10001")),
-                        cluster(225, 240, 400, 250, List.of("10002", "10003", "10004", "10005", "10006", "10007")))));
+                        List.of(engagement(120, 180, 10_001L, List.of(20_001L, 20_002L))), List.of()),
+                teammateAdvancing(1), teammateAdvancing(2), teammateAdvancing(3),
+                teammateAdvancing(4), teammateAdvancing(5),
+                member(6, 0, true, null, null, List.of(stationary(60, 240, 0, 0)), List.of(), List.of()));
+        final List<TeamFormationPhase> phases = soloPhases(60, 240,
+                350, 400, 350, 400, 300, 250, 400, 250, key(0), mainKeysExcluding(0));
         final TeamAggregateResult aggregate = new TeamAggregateResult(
                 7, 5200, 1500, 0, 0, 1, 7, 0, null, null, null, true);
         return context("cw-delay-hold-01", 3, 1, new double[7],
@@ -138,28 +118,14 @@ public final class AiEvalFixtures {
     private static SingleTeamBattleAnalysisContext delaySacrificeCapped() {
         final double[] deaths = {240, 0, 0, 0, 0, 0, 0};
         final List<TeamMemberFeatureSet> members = List.of(
-                member(0, 1100, 900, false, 240.0, deathProximity(180, 1.0),
+                member(0, 900, false, 240.0, deathProximity(180, 1.0),
                         List.of(stationary(180, 238, 100, 150)),
                         List.of(engagement(180, 238, 10_001L,
-                                List.of(20_001L, 20_002L, 20_003L), 500, 900)), List.of()),
-                member(1, 900, 300, true, null, null,
-                        List.of(move(200, 260, 50, 0, 0, -100, 1.5f)), List.of(), List.of()),
-                member(2, 900, 300, true, null, null,
-                        List.of(move(200, 260, 50, 0, 0, -100, 1.5f)), List.of(), List.of()),
-                member(3, 900, 300, true, null, null,
-                        List.of(move(200, 260, 50, 0, 0, -100, 1.5f)), List.of(), List.of()),
-                member(4, 900, 300, true, null, null,
-                        List.of(move(200, 260, 50, 0, 0, -100, 1.5f)), List.of(), List.of()),
-                member(5, 900, 300, true, null, null,
-                        List.of(move(200, 260, 50, 0, 0, -100, 1.5f)), List.of(), List.of()),
-                member(6, 900, 300, true, null, null,
-                        List.of(move(200, 260, 50, 0, 0, -100, 1.5f)), List.of(), List.of()));
-        final List<TeamFormationPhase> phases = List.of(
-                phase(180, 195, 270, 260, 90, 7, List.of(
-                        cluster(180, 195, 350, 400, List.of("10001")),
-                        cluster(180, 195, 300, 250, List.of("10002", "10003", "10004", "10005", "10006", "10007")))),
-                phase(240, 255, 250, 150, 60, 6, List.of(
-                        cluster(240, 255, 250, 150, List.of("10002", "10003", "10004", "10005", "10006", "10007")))));
+                                List.of(20_001L, 20_002L, 20_003L))), List.of()),
+                cappingTeammate(1), cappingTeammate(2), cappingTeammate(3),
+                cappingTeammate(4), cappingTeammate(5), cappingTeammate(6));
+        final List<TeamFormationPhase> phases = soloPhases(180, 240,
+                350, 400, 350, 400, 300, 250, 250, 150, key(0), mainKeysExcluding(0));
         final TeamAggregateResult aggregate = new TeamAggregateResult(
                 7, 6000, 2600, 0, 0, 1, 6, 1, 240.0, 240.0, 240.0, true);
         return context("cw-delay-sacrifice-capped-01", 3, 1, deaths,
@@ -167,7 +133,8 @@ public final class AiEvalFixtures {
                 List.of(
                         keyEvent(50, "TEAM_FIRST_CONTACT", "damage=120"),
                         keyEvent(240, "TEAM_MEMBER_DESTROYED", "accountId=10001;nickname=H1")),
-                List.of());
+                List.of(),
+                earned(10002, 60), earned(10003, 40));
     }
 
     // ===== 场景四：单走推进被集火（队友无获利） =====
@@ -175,34 +142,23 @@ public final class AiEvalFixtures {
     private static SingleTeamBattleAnalysisContext detachPush() {
         final double[] deaths = {0, 0, 90, 0, 0, 0, 0};
         final List<TeamMemberFeatureSet> members = List.of(
-                member(0, 800, 300, true, null, null,
-                        List.of(move(45, 90, 0, 0, 50, 0, 1f), stationary(90, 300, 50, 0)),
-                        List.of(), List.of()),
-                member(1, 800, 300, true, null, null,
-                        List.of(move(45, 90, 0, 0, 50, 0, 1f), stationary(90, 300, 50, 0)),
-                        List.of(), List.of()),
-                member(2, 400, 1800, false, 90.0, deathProximity(200, 1.0),
+                member(0, 300, true, null, null,
+                        List.of(move(45, 90, 0, 0, 50, 0, 1f), stationary(90, 300, 50, 0)), List.of(), List.of()),
+                member(1, 300, true, null, null,
+                        List.of(move(45, 90, 0, 0, 50, 0, 1f), stationary(90, 300, 50, 0)), List.of(), List.of()),
+                member(2, 1800, false, 90.0, deathProximity(200, 1.0),
                         List.of(move(45, 90, 0, 0, -150, -100, 5.1f)),
-                        List.of(engagement(50, 90, 10_003L, List.of(20_001L, 20_002L, 20_003L), 200, 1600)),
-                        List.of()),
-                member(3, 800, 300, true, null, null,
-                        List.of(move(45, 90, 0, 0, 50, 0, 1f), stationary(90, 300, 50, 0)),
-                        List.of(), List.of()),
-                member(4, 800, 300, true, null, null,
-                        List.of(move(45, 90, 0, 0, 50, 0, 1f), stationary(90, 300, 50, 0)),
-                        List.of(), List.of()),
-                member(5, 800, 300, true, null, null,
-                        List.of(move(45, 90, 0, 0, 50, 0, 1f), stationary(90, 300, 50, 0)),
-                        List.of(), List.of()),
-                member(6, 800, 300, true, null, null,
-                        List.of(move(45, 90, 0, 0, 50, 0, 1f), stationary(90, 300, 50, 0)),
-                        List.of(), List.of()));
-        final List<TeamFormationPhase> phases = List.of(
-                phase(60, 75, 250, 240, 100, 7, List.of(
-                        cluster(60, 75, 100, 150, List.of("10003")),
-                        cluster(60, 75, 300, 250, List.of("10001", "10002", "10004", "10005", "10006", "10007")))),
-                phase(120, 135, 300, 250, 40, 6, List.of(
-                        cluster(120, 135, 300, 250, List.of("10001", "10002", "10004", "10005", "10006", "10007")))));
+                        List.of(engagement(50, 90, 10_003L, List.of(20_001L, 20_002L, 20_003L))), List.of()),
+                member(3, 300, true, null, null,
+                        List.of(move(45, 90, 0, 0, 50, 0, 1f), stationary(90, 300, 50, 0)), List.of(), List.of()),
+                member(4, 300, true, null, null,
+                        List.of(move(45, 90, 0, 0, 50, 0, 1f), stationary(90, 300, 50, 0)), List.of(), List.of()),
+                member(5, 300, true, null, null,
+                        List.of(move(45, 90, 0, 0, 50, 0, 1f), stationary(90, 300, 50, 0)), List.of(), List.of()),
+                member(6, 300, true, null, null,
+                        List.of(move(45, 90, 0, 0, 50, 0, 1f), stationary(90, 300, 50, 0)), List.of(), List.of()));
+        final List<TeamFormationPhase> phases = soloPhases(60, 90,
+                150, 180, 100, 150, 300, 250, 300, 250, key(2), mainKeysExcluding(2));
         final TeamAggregateResult aggregate = new TeamAggregateResult(
                 7, 3200, 3200, 0, 0, 0, 6, 1, 90.0, 90.0, 90.0, false);
         return context("cw-detach-push-01", 3, 2, deaths,
@@ -218,7 +174,7 @@ public final class AiEvalFixtures {
     private static SingleTeamBattleAnalysisContext soloUnknown() {
         final List<TeamMemberFeatureSet> members = new ArrayList<>();
         for (int index = 0; index < 7; index++) {
-            members.add(member(index, 600, 100, true, null, null,
+            members.add(member(index, 100, true, null, null,
                     List.of(), List.of(), List.of("TEAM_MEMBER_MOVEMENT_UNAVAILABLE")));
         }
         final TeamAggregateResult aggregate = new TeamAggregateResult(
@@ -233,25 +189,17 @@ public final class AiEvalFixtures {
 
     private static SingleTeamBattleAnalysisContext delayNoPayoff() {
         final List<TeamMemberFeatureSet> members = List.of(
-                member(0, 600, 300, true, null, null,
-                        List.of(stationary(90, 220, 0, 0)), List.of(), List.of()),
-                member(1, 600, 300, true, null, null,
+                member(0, 300, true, null, null, List.of(stationary(90, 220, 0, 0)), List.of(), List.of()),
+                member(1, 300, true, null, null,
                         List.of(move(90, 100, 0, 0, 100, -100, 20f), stationary(100, 220, 100, -100)),
                         List.of(), List.of()),
-                member(2, 600, 300, true, null, null,
-                        List.of(stationary(90, 220, 0, 0)), List.of(), List.of()),
-                member(3, 600, 300, true, null, null,
-                        List.of(stationary(90, 220, 0, 0)), List.of(), List.of()),
-                member(4, 600, 300, true, null, null,
-                        List.of(stationary(90, 220, 0, 0)), List.of(), List.of()),
-                member(5, 600, 300, true, null, null,
-                        List.of(stationary(90, 220, 0, 0)), List.of(), List.of()),
-                member(6, 600, 300, true, null, null,
-                        List.of(stationary(90, 220, 0, 0)), List.of(), List.of()));
-        final List<TeamFormationPhase> phases = List.of(
-                phase(120, 135, 260, 240, 80, 7, List.of(
-                        cluster(120, 135, 350, 150, List.of("10002")),
-                        cluster(120, 135, 250, 250, List.of("10001", "10003", "10004", "10005", "10006", "10007")))));
+                member(2, 300, true, null, null, List.of(stationary(90, 220, 0, 0)), List.of(), List.of()),
+                member(3, 300, true, null, null, List.of(stationary(90, 220, 0, 0)), List.of(), List.of()),
+                member(4, 300, true, null, null, List.of(stationary(90, 220, 0, 0)), List.of(), List.of()),
+                member(5, 300, true, null, null, List.of(stationary(90, 220, 0, 0)), List.of(), List.of()),
+                member(6, 300, true, null, null, List.of(stationary(90, 220, 0, 0)), List.of(), List.of()));
+        final List<TeamFormationPhase> phases = soloPhases(120, 135,
+                350, 150, 350, 150, 250, 250, 250, 250, key(1), mainKeysExcluding(1));
         final TeamAggregateResult aggregate = new TeamAggregateResult(
                 7, 3000, 1800, 0, 0, 0, 7, 0, null, null, null, false);
         return context("cw-delay-no-payoff-01", 3, 2, new double[7],
@@ -263,34 +211,28 @@ public final class AiEvalFixtures {
 
     private static SingleTeamBattleAnalysisContext detachRotate() {
         final List<TeamMemberFeatureSet> members = List.of(
-                member(0, 800, 200, true, null, null,
+                member(0, 200, true, null, null,
                         List.of(move(60, 120, 0, 0, 50, 0, 1f), move(120, 180, 50, 0, 60, -40, 2.5f)),
                         List.of(), List.of()),
-                member(1, 800, 200, true, null, null,
+                member(1, 200, true, null, null,
                         List.of(move(60, 120, 0, 0, 50, 0, 1f), move(120, 180, 50, 0, 60, -40, 2.5f)),
                         List.of(), List.of()),
-                member(2, 800, 200, true, null, null,
+                member(2, 200, true, null, null,
                         List.of(move(60, 120, 0, 0, 50, 0, 1f), move(120, 180, 50, 0, 60, -40, 2.5f)),
                         List.of(), List.of()),
-                member(3, 600, 200, true, null, null,
-                        List.of(move(60, 150, 0, 0, -150, -100, 2.5f)),
-                        List.of(), List.of()),
-                member(4, 800, 200, true, null, null,
+                member(3, 200, true, null, null,
+                        List.of(move(60, 150, 0, 0, -150, -100, 2.5f)), List.of(), List.of()),
+                member(4, 200, true, null, null,
                         List.of(move(60, 120, 0, 0, 50, 0, 1f), move(120, 180, 50, 0, 60, -40, 2.5f)),
                         List.of(), List.of()),
-                member(5, 800, 200, true, null, null,
+                member(5, 200, true, null, null,
                         List.of(move(60, 120, 0, 0, 50, 0, 1f), move(120, 180, 50, 0, 60, -40, 2.5f)),
                         List.of(), List.of()),
-                member(6, 800, 200, true, null, null,
+                member(6, 200, true, null, null,
                         List.of(move(60, 120, 0, 0, 50, 0, 1f), move(120, 180, 50, 0, 60, -40, 2.5f)),
                         List.of(), List.of()));
-        final List<TeamFormationPhase> phases = List.of(
-                phase(60, 75, 270, 250, 90, 7, List.of(
-                        cluster(60, 75, 100, 150, List.of("10004")),
-                        cluster(60, 75, 300, 250, List.of("10001", "10002", "10003", "10005", "10006", "10007")))),
-                phase(150, 165, 280, 230, 90, 7, List.of(
-                        cluster(150, 165, 100, 150, List.of("10004")),
-                        cluster(150, 165, 310, 210, List.of("10001", "10002", "10003", "10005", "10006", "10007")))));
+        final List<TeamFormationPhase> phases = soloPhases(60, 150,
+                100, 150, 100, 150, 300, 250, 310, 210, key(3), mainKeysExcluding(3));
         final TeamAggregateResult aggregate = new TeamAggregateResult(
                 7, 5000, 1200, 0, 0, 1, 7, 0, null, null, null, true);
         return context("cw-detach-rotate-01", 3, 1, new double[7],
@@ -302,25 +244,18 @@ public final class AiEvalFixtures {
 
     private static SingleTeamBattleAnalysisContext delayVsDetachAmbiguous() {
         final List<TeamMemberFeatureSet> members = List.of(
-                member(0, 700, 300, true, null, null,
+                member(0, 300, true, null, null,
                         List.of(move(120, 260, 0, 0, 70, 30, 1f)), List.of(), List.of()),
-                member(1, 500, 300, true, null, null,
-                        List.of(stationary(100, 260, 0, 0)), List.of(), List.of()),
-                member(2, 500, 300, true, null, null,
-                        List.of(stationary(100, 260, 0, 0)), List.of(), List.of()),
-                member(3, 500, 300, true, null, null,
-                        List.of(stationary(100, 260, 0, 0)), List.of(), List.of()),
-                member(4, 600, 400, true, null, null,
+                member(1, 300, true, null, null, List.of(stationary(100, 260, 0, 0)), List.of(), List.of()),
+                member(2, 300, true, null, null, List.of(stationary(100, 260, 0, 0)), List.of(), List.of()),
+                member(3, 300, true, null, null, List.of(stationary(100, 260, 0, 0)), List.of(), List.of()),
+                member(4, 400, true, null, null,
                         List.of(move(100, 115, 0, 0, 150, 100, 15f), stationary(115, 260, 150, 100)),
-                        List.of(engagement(130, 200, 10_005L, List.of(20_002L), 200, 300)), List.of()),
-                member(5, 500, 300, true, null, null,
-                        List.of(stationary(100, 260, 0, 0)), List.of(), List.of()),
-                member(6, 500, 300, true, null, null,
-                        List.of(stationary(100, 260, 0, 0)), List.of(), List.of()));
-        final List<TeamFormationPhase> phases = List.of(
-                phase(120, 135, 270, 260, 90, 7, List.of(
-                        cluster(120, 135, 400, 350, List.of("10005")),
-                        cluster(120, 135, 260, 260, List.of("10001", "10002", "10003", "10004", "10006", "10007")))));
+                        List.of(engagement(130, 200, 10_005L, List.of(20_002L))), List.of()),
+                member(5, 300, true, null, null, List.of(stationary(100, 260, 0, 0)), List.of(), List.of()),
+                member(6, 300, true, null, null, List.of(stationary(100, 260, 0, 0)), List.of(), List.of()));
+        final List<TeamFormationPhase> phases = soloPhases(120, 135,
+                400, 350, 400, 350, 260, 260, 260, 260, key(4), mainKeysExcluding(4));
         final TeamAggregateResult aggregate = new TeamAggregateResult(
                 7, 3500, 2600, 0, 0, 0, 7, 0, null, null, null, false);
         return context("cw-delay-vs-detach-ambiguous-01", 2, 2, new double[7],
@@ -328,21 +263,106 @@ public final class AiEvalFixtures {
                 List.of(keyEvent(60, "TEAM_FIRST_CONTACT", "damage=120")), List.of());
     }
 
+    // ===== 场景九：占点致胜（点数推断） =====
+
+    private static SingleTeamBattleAnalysisContext capWinByPoints() {
+        final List<TeamMemberFeatureSet> members = compactTeam();
+        final List<TeamFormationPhase> phases = List.of(
+                phase(120, 135, 250, 200, 60, 7, List.of(
+                        cluster(120, 135, 250, 200, mainKeys()))));
+        final TeamAggregateResult aggregate = new TeamAggregateResult(
+                7, 7000, 2000, 0, 0, 2, 7, 0, null, null, null, null);
+        return context("cw-cap-win-01", 3, null, new double[7],
+                members, aggregate, phases, BattlePhaseSummary.buildRelativePhases(60, 300),
+                List.of(keyEvent(60, "TEAM_FIRST_CONTACT", "damage=120")), List.of(),
+                earned(10002, 80), earned(10003, 60), enemyEarned(20_002, 40));
+    }
+
+    // ===== 场景十：集中一波被偷家 =====
+
+    private static SingleTeamBattleAnalysisContext capStolenWhileConcentrating() {
+        final List<TeamMemberFeatureSet> members = compactTeam();
+        final List<TeamFormationPhase> phases = List.of(
+                phase(90, 105, 300, 250, 30, 7, List.of(
+                        cluster(90, 105, 300, 250, mainKeys()))));
+        final TeamAggregateResult aggregate = new TeamAggregateResult(
+                7, 8000, 3000, 0, 0, 1, 7, 0, null, null, null, false);
+        return context("cw-cap-stolen-01", 3, 2, new double[7],
+                members, aggregate, phases, BattlePhaseSummary.buildRelativePhases(60, 300),
+                List.of(keyEvent(60, "TEAM_FIRST_CONTACT", "damage=120")), List.of(),
+                enemyEarned(20_001, 120), enemyEarned(20_002, 90));
+    }
+
+    // ===== 场景十一：守家翻盘（防守者拖延 + 队友占点） =====
+
+    private static SingleTeamBattleAnalysisContext capDefenseComeback() {
+        final List<TeamMemberFeatureSet> members = List.of(
+                member(0, 800, true, null, null,
+                        List.of(stationary(180, 260, 150, -150)),
+                        List.of(engagement(180, 250, 10_001L, List.of(20_001L, 20_002L, 20_003L))), List.of()),
+                cappingTeammate(1), cappingTeammate(2), cappingTeammate(3),
+                cappingTeammate(4), cappingTeammate(5), cappingTeammate(6));
+        final List<TeamFormationPhase> phases = soloPhases(180, 260,
+                400, 100, 400, 100, 300, 250, 250, 150, key(0), mainKeysExcluding(0));
+        final TeamAggregateResult aggregate = new TeamAggregateResult(
+                7, 6500, 2800, 0, 0, 1, 7, 0, null, null, null, true);
+        return context("cw-cap-defense-01", 3, 1, new double[7],
+                members, aggregate, phases, BattlePhaseSummary.buildRelativePhases(50, 300),
+                List.of(keyEvent(50, "TEAM_FIRST_CONTACT", "damage=120")), List.of(),
+                earned(10002, 120), earned(10003, 90));
+    }
+
+    // ===== 场景十二：点数胜负（双方存活，比占点分） =====
+
+    private static SingleTeamBattleAnalysisContext capPointsDecided() {
+        final List<TeamMemberFeatureSet> members = compactTeam();
+        final List<TeamFormationPhase> phases = List.of(
+                phase(200, 215, 250, 250, 80, 7, List.of(
+                        cluster(200, 215, 250, 250, mainKeys()))));
+        final TeamAggregateResult aggregate = new TeamAggregateResult(
+                7, 9000, 4000, 0, 0, 2, 7, 0, null, null, null, null);
+        return context("cw-cap-points-decided-01", 3, null, new double[7],
+                members, aggregate, phases, BattlePhaseSummary.buildRelativePhases(60, 300),
+                List.of(keyEvent(60, "TEAM_FIRST_CONTACT", "damage=120")), List.of(),
+                earned(10002, 100), earned(10004, 70), enemyEarned(20_001, 60));
+    }
+
     // ===== 构建辅助 =====
+
+    private static List<TeamMemberFeatureSet> compactTeam() {
+        final List<TeamMemberFeatureSet> members = new ArrayList<>();
+        for (int index = 0; index < 7; index++) {
+            members.add(member(index, 300, true, null, null,
+                    List.of(stationary(60, 260, 0, 0)), List.of(), List.of()));
+        }
+        return members;
+    }
+
+    private static TeamMemberFeatureSet teammateAdvancing(final int index) {
+        return member(index, 200, true, null, null,
+                List.of(move(60, 150, 0, 0, 50, 0, 1f), move(150, 240, 50, 0, 150, 0, 1.5f)),
+                List.of(), List.of());
+    }
+
+    private static TeamMemberFeatureSet cappingTeammate(final int index) {
+        return member(index, 300, true, null, null,
+                List.of(move(200, 260, 50, 0, 0, -100, 1.5f)), List.of(), List.of());
+    }
 
     private static SingleTeamBattleAnalysisContext context(
             final String key,
             final int arenaBonusType,
-            final int winnerTeam,
+            final Integer winnerTeam,
             final double[] deathSecs,
             final List<TeamMemberFeatureSet> members,
             final TeamAggregateResult aggregate,
             final List<TeamFormationPhase> phases,
             final List<BattlePhaseSummary> battlePhases,
             final List<KeyBattleEvent> keyEvents,
-            final List<String> limitations
+            final List<String> limitations,
+            final Earned... points
     ) {
-        final Battle battle = battle(arenaBonusType, winnerTeam, deathSecs);
+        final Battle battle = battle(arenaBonusType, winnerTeam, deathSecs, points);
         final TeamBattleFeatureSet features = new TeamBattleFeatureSet(
                 1, members, aggregate, TeamObservedAggregate.empty(),
                 phases, List.of(), battlePhases, keyEvents,
@@ -353,7 +373,19 @@ public final class AiEvalFixtures {
                 null, limitations, null);
     }
 
-    private static Battle battle(final int arenaBonusType, final int winnerTeam, final double[] deathSecs) {
+    private record Earned(long accountId, int victoryPointsEarned) {
+    }
+
+    private static Earned earned(final long accountId, final int points) {
+        return new Earned(accountId, points);
+    }
+
+    private static Earned enemyEarned(final long accountId, final int points) {
+        return new Earned(accountId, points);
+    }
+
+    private static Battle battle(final int arenaBonusType, final Integer winnerTeam,
+                                 final double[] deathSecs, final Earned[] points) {
         final Battle battle = new Battle();
         battle.arenaId = "eval-arena";
         battle.mapName = "team_map";
@@ -363,16 +395,32 @@ public final class AiEvalFixtures {
         battle.recorder = FRIENDLY_NAMES[0];
         battle.players = new ArrayList<>();
         for (int index = 0; index < 7; index++) {
-            battle.players.add(player(
+            final PlayerResult player = player(
                     10_001L + index, FRIENDLY_NAMES[index], "CHRD", 1,
-                    FRIENDLY_TANKS[index], 900, deathSecs[index]));
+                    FRIENDLY_TANKS[index], 900, deathSecs[index]);
+            player.victoryPointsEarned = pointsFor(points, player.accountId);
+            battle.players.add(player);
         }
         for (int index = 0; index < 7; index++) {
-            battle.players.add(player(
+            final PlayerResult player = player(
                     20_001L + index, "E" + (index + 1), "NOVA", 2,
-                    FRIENDLY_TANKS[index], 800, 0));
+                    FRIENDLY_TANKS[index], 800, 0);
+            player.victoryPointsEarned = pointsFor(points, player.accountId);
+            battle.players.add(player);
         }
         return battle;
+    }
+
+    private static int pointsFor(final Earned[] points, final long accountId) {
+        if (points == null) {
+            return 0;
+        }
+        for (final Earned earned : points) {
+            if (earned.accountId() == accountId) {
+                return earned.victoryPointsEarned();
+            }
+        }
+        return 0;
     }
 
     private static PlayerResult player(
@@ -404,7 +452,6 @@ public final class AiEvalFixtures {
 
     private static TeamMemberFeatureSet member(
             final int index,
-            final int damageDealt,
             final int damageReceived,
             final boolean survived,
             final Double deathSec,
@@ -418,7 +465,7 @@ public final class AiEvalFixtures {
         return new TeamMemberFeatureSet(
                 List.of((int) accountId), accountId, FRIENDLY_NAMES[index],
                 tankId, resolveTankName(tankId), 1,
-                DecodeConfidence.EXACT, damageDealt, damageReceived, 0, 0, 0,
+                DecodeConfidence.EXACT, 900, damageReceived, 0, 0, 0,
                 survived, deathSec, deathProximity, movements, engagements,
                 List.of(), limitations);
     }
@@ -426,6 +473,24 @@ public final class AiEvalFixtures {
     private static TeamMemberFeatureSet.DeathProximity deathProximity(
             final double meters, final double deltaSec) {
         return new TeamMemberFeatureSet.DeathProximity(meters, deltaSec, DecodeConfidence.INFERRED);
+    }
+
+    private static String key(final int index) {
+        return "account:" + (10_001L + index);
+    }
+
+    private static List<String> mainKeys() {
+        return List.of(key(0), key(1), key(2), key(3), key(4), key(5), key(6));
+    }
+
+    private static List<String> mainKeysExcluding(final int soloIndex) {
+        final List<String> keys = new ArrayList<>();
+        for (int index = 0; index < 7; index++) {
+            if (index != soloIndex) {
+                keys.add(key(index));
+            }
+        }
+        return keys;
     }
 
     private static MovementSegment move(
@@ -443,6 +508,33 @@ public final class AiEvalFixtures {
         return new MovementSegment(start, end, MovementType.STATIONARY,
                 new Vector3(x, 0f, z), new Vector3(x, 0f, z),
                 0f, 0f, DecodeConfidence.EXACT);
+    }
+
+    /** 15s 窗口序列：单走簇质心（可选渐变）+ 主力簇质心（可选渐变），首尾拼接成连续单走时段。 */
+    private static List<TeamFormationPhase> soloPhases(
+            final float start, final float end,
+            final float soloX1, final float soloZ1, final float soloX2, final float soloZ2,
+            final float mainX1, final float mainZ1, final float mainX2, final float mainZ2,
+            final String soloIdentity, final List<String> mainIdentities) {
+        final List<TeamFormationPhase> phases = new ArrayList<>();
+        float t = start;
+        int guard = 0;
+        while (t < end && guard < 100) {
+            final float windowEnd = Math.min(t + 15f, end);
+            final float progress = (windowEnd - start) / Math.max(1f, end - start);
+            final float soloX = lerp(soloX1, soloX2, progress);
+            final float soloZ = lerp(soloZ1, soloZ2, progress);
+            final float mainX = lerp(mainX1, mainX2, progress);
+            final float mainZ = lerp(mainZ1, mainZ2, progress);
+            phases.add(new TeamFormationPhase(
+                    t, windowEnd, new CanonicalMapPosition(mainX, mainZ), 90f, 7,
+                    DecodeConfidence.EXACT, List.of(
+                            cluster(t, windowEnd, soloX, soloZ, List.of(soloIdentity)),
+                            cluster(t, windowEnd, mainX, mainZ, mainIdentities))));
+            t = windowEnd;
+            guard++;
+        }
+        return phases;
     }
 
     private static TeamFormationPhase phase(
@@ -467,15 +559,17 @@ public final class AiEvalFixtures {
 
     private static EngagementSummary engagement(
             final float start, final float end,
-            final long allyAccountId, final List<Long> enemyAccountIds,
-            final int dealt, final int received) {
+            final long allyAccountId, final List<Long> enemyAccountIds) {
         return new EngagementSummary(start, end, List.of(allyAccountId), enemyAccountIds,
-                dealt, received,
-                new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
+                300, 200, new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
                 EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
     }
 
     private static KeyBattleEvent keyEvent(final float clock, final String type, final String label) {
         return new KeyBattleEvent(clock, type, label, DecodeConfidence.EXACT, "TEST", List.of());
+    }
+
+    private static float lerp(final float from, final float to, final float progress) {
+        return from + (to - from) * progress;
     }
 }

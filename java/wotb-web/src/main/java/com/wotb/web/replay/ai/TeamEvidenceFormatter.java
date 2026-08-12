@@ -7,6 +7,8 @@ import com.wotb.core.processing.FriendlyEnemyResult;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.ref.ReplayDisplayNames;
+import com.wotb.core.replay.evidence.AiEvidence;
+import com.wotb.core.replay.evidence.TeamSoloIntentSkill;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.CanonicalMapPosition;
 import com.wotb.core.replay.feature.KeyBattleEvent;
@@ -20,6 +22,7 @@ import com.wotb.core.replay.feature.TeamFormationCluster;
 import com.wotb.core.replay.feature.TeamFormationPhase;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
+import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
 import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.util.PlayerResultFormat;
 import com.wotb.core.util.PromptDataQuoter;
@@ -43,6 +46,9 @@ final class TeamEvidenceFormatter {
 
     private TeamEvidenceFormatter() {
     }
+
+    private static final MapTacticalSemanticsRegistry SEMANTICS_REGISTRY =
+            MapTacticalSemanticsRegistry.load();
 
     static String priorSection(final PreBattleStrategicPrior prior,
                                        final int perspectiveTeam,
@@ -237,6 +243,84 @@ final class TeamEvidenceFormatter {
         appendBattlePhases(writer, features.battlePhases(), battle, perspectiveTeam);
         appendEngagements(writer, features.engagements());
         appendKeyEvents(writer, features.keyEvents());
+        appendCaptureAndPoints(writer, battle, perspectiveTeam, mapCode);
+        appendSoloIntentCandidates(writer, features, battle, mapCode);
+    }
+
+    /** 争霸赛占点证据段（权威结算 + 静态占领点区域；P3 optional）。 */
+    static void appendCaptureAndPoints(
+            final BudgetWriter writer,
+            final Battle battle,
+            final int perspectiveTeam,
+            final String mapCode
+    ) {
+        if (battle == null || battle.players == null) {
+            return;
+        }
+        final long earned = battle.players.stream()
+                .filter(player -> player != null && player.team == perspectiveTeam)
+                .mapToLong(player -> player.victoryPointsEarned)
+                .sum();
+        final long seized = battle.players.stream()
+                .filter(player -> player != null && player.team == perspectiveTeam)
+                .mapToLong(player -> player.victoryPointsSeized)
+                .sum();
+        final long opposingEarned = battle.players.stream()
+                .filter(player -> player != null && player.team != perspectiveTeam)
+                .mapToLong(player -> player.victoryPointsEarned)
+                .sum();
+        final FriendlyEnemyResult.TeamBattleWinner winner =
+                FriendlyEnemyResult.resolveTeamBattle(battle, perspectiveTeam);
+        writer.append("\n=== CAPTURE_AND_POINTS（争霸赛占点·权威结算） ===\n");
+        writer.append("pointsDecided=" + winner.pointsDecided() + "\n");
+        if (winner.pointsDecided()) {
+            writer.append("winnerSource=" + winner.source().name() + "\n");
+        }
+        writer.append("team victoryPointsEarned=" + earned
+                + " victoryPointsSeized=" + seized + "\n");
+        writer.append("opposing victoryPointsEarned=" + opposingEarned + "\n");
+        for (final PlayerResult player : battle.players) {
+            if (player != null && player.team == perspectiveTeam
+                    && (player.victoryPointsEarned > 0 || player.victoryPointsSeized > 0)) {
+                writer.append("member accountId=" + player.accountId
+                        + " nickname=" + quoteData(player.nickname)
+                        + " victoryPointsEarned=" + player.victoryPointsEarned
+                        + " victoryPointsSeized=" + player.victoryPointsSeized + "\n");
+            }
+        }
+        final List<String> regions = new ArrayList<>(
+                TeamSoloIntentSkill.controlPointRegions(SEMANTICS_REGISTRY.semanticsFor(mapCode)));
+        regions.sort(String::compareTo);
+        writer.append("controlPointRegions="
+                + (regions.isEmpty() ? "UNKNOWN" : regions) + "\n");
+    }
+
+    /** 单走行为候选段（TeamSoloIntentSkill 规则候选，PARTIAL；P3 optional）。 */
+    static void appendSoloIntentCandidates(
+            final BudgetWriter writer,
+            final TeamBattleFeatureSet features,
+            final Battle battle,
+            final String mapCode
+    ) {
+        final List<AiEvidence> candidates = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(),
+                SEMANTICS_REGISTRY.semanticsFor(mapCode));
+        if (candidates.isEmpty()) {
+            return;
+        }
+        writer.append("\n=== SOLO_INTENT_CANDIDATES（单走行为候选·规则候选 PARTIAL） ===\n");
+        for (final AiEvidence candidate : candidates) {
+            writer.append("[" + format(candidate.startSec()) + "-" + format(candidate.endSec()) + "] "
+                    + candidate.summary() + "\n");
+            writer.append("  intent=" + candidate.labels().get("intent")
+                    + " distanceM=" + format(candidate.numbers().get("distanceM"))
+                    + " stationaryRatio=" + format(candidate.numbers().get("stationaryRatio"))
+                    + " teammateBenefit=" + format(candidate.numbers().get("teammateBenefit"))
+                    + " objectiveProximity=" + format(candidate.numbers().get("objectiveProximity"))
+                    + " nearbyEnemy=" + format(candidate.numbers().get("nearbyEnemy"))
+                    + " region=" + candidate.labels().get("region")
+                    + " confidence=部分\n");
+        }
     }
 
     static void appendAuthoritative(

@@ -1,5 +1,6 @@
 package com.wotb.web.replay.ai.eval;
 
+import com.wotb.web.replay.ai.AiPromptLibrary;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -11,6 +12,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** CI 模式评估：加载 golden cases → 构建 prompt → 断言 → 写报告；任一 FAIL 构建失败。 */
 @Tag("ai-eval")
 class AiEvalHarnessTest {
+
+    @Test
+    void teamSystemPromptCarriesSoloIntentAndCaptureRules() {
+        final String systemPrompt = AiPromptLibrary.zh("team/single");
+        assertTrue(systemPrompt.contains("单走行为判定规则"), "team system prompt must carry SOLO_INTENT_RULE");
+        assertTrue(systemPrompt.contains("争霸赛占点规则"), "team system prompt must carry CAPTURE_RULE");
+        assertTrue(systemPrompt.contains("玩家心理意图"),
+                "intent clause must allow observable behavior patterns while banning mental-intent claims");
+    }
 
     @Test
     void goldenCasesPassPromptChecks() throws Exception {

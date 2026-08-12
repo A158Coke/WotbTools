@@ -113,6 +113,59 @@ final class TeamPromptLocalizer {
             "Если данных реплея недостаточно, прямо укажите, что это невозможно определить "
                     + "по имеющимся данным реплея.";
 
+    /** Team 专用：单走行为判定规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。 */
+    static final String SOLO_INTENT_RULE = """
+
+            === 单走行为判定规则（强制） ===
+            1. 开局散开（首次接敌前或开局 45 秒内、未接火未承伤未阵亡）是图控/拿视野，不是脱节，不得判为失误。
+            2. 单走成员是否判「拖延」取决于队友是否因他获利（转场/占点/另一侧推进/视野时间）：后端只提供时序关联，禁止声称「A 的行为导致 B 获利」的因果。
+            3. 判「脱节」需要无拖延收益且被白吃/丢点（无接应、承伤高或阵亡、远离目标点）。
+            4. 后端给出 OPENING_MAP_CONTROL / SOLO_DELAY / SOLO_DETACHED 候选时，先说明信号依据再下结论；信号不足或矛盾时明确写「无法从当前回放数据确定」，禁止硬下标签。
+            5. 只基于可观测行为（位置、移动、交火、占点）判定战术行为模式，不得把行为模式说成玩家心理意图。""";
+
+    static final String SOLO_INTENT_RULE_EN = """
+
+            === SOLO-PLAY JUDGMENT RULES (mandatory) ===
+            1. An opening spread (before first contact or within the first 45 seconds, no damage dealt/received, no destruction) is map control / vision gathering, not detachment; never call it a mistake.
+            2. Whether a solo member's play is "delay" depends on whether teammates profited from it (rotation / capture / advance on another flank / vision time): the backend provides temporal correlation only; never claim causation ("A's play caused B's profit").
+            3. "Detachment" requires no delay benefit and being caught out / losing ground (no support, high damage taken or destruction, away from objectives).
+            4. When the backend provides OPENING_MAP_CONTROL / SOLO_DELAY / SOLO_DETACHED candidates, state the signal basis before concluding; when signals are insufficient or contradictory, explicitly write "cannot be determined from the current replay data" and never force a label.
+            5. Judge tactical behavior patterns only from observable behavior (position, movement, engagements, capture points); never describe a behavior pattern as the player's mental intent.""";
+
+    static final String SOLO_INTENT_RULE_RU = """
+
+            === ПРАВИЛА ОЦЕНКИ ДЕЙСТВИЙ В ОДИНОЧКУ (обязательно) ===
+            1. Рассредоточение на старте (до первого контакта или в первые 45 секунд, без нанесённого/полученного урона, без уничтожения) — это контроль карты / сбор разведданных, а не отрыв; не считайте это ошибкой.
+            2. Является ли действие игрока «задержкой», зависит от того, извлекли ли союзники выгоду (ротация / захват / продвижение на другом фланге / время на разведку): бэкенд даёт только временну́ю корреляцию; запрещено утверждать причинность («действие A принесло выгоду B»).
+            3. «Отрыв» требует отсутствия выгоды от задержки и размена без пользы (без поддержки, высокий полученный урон или уничтожение, вдали от целей).
+            4. Когда бэкенд даёт кандидатов OPENING_MAP_CONTROL / SOLO_DELAY / SOLO_DETACHED, сначала укажите обоснование по сигналам; при недостатке или противоречивости сигналов прямо пишите «невозможно определить по данным реплея» и не навешивайте ярлык.
+            5. Оценивайте только наблюдаемые паттерны поведения (позиция, движение, перестрелки, захват точек); не выдавайте паттерн поведения за психологические намерения игрока.""";
+
+    /** Team 专用：争霸赛占点规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。 */
+    static final String CAPTURE_RULE = """
+
+            === 争霸赛占点规则（强制，训练房/联赛恒为争霸赛） ===
+            1. 集中一波（多车同簇推进）可能付出代价：失去高视野 + 被敌方偷家/占点，复盘必须权衡。
+            2. 残局守家 vs 占点是点数胜负的关键：双方未全灭时以点数分高者胜（pointsDecided）。
+            3. 占点分/占领分（victoryPointsEarned/Seized）是权威结算总量，不代表时间线；不得把总量说成某时刻占领进度。
+            4. 地图占领点区域（CONTAINS_CONTROL_POINT）只用于描述方位，未提供时不得声称谁在占点。""";
+
+    static final String CAPTURE_RULE_EN = """
+
+            === SUPREMACY CAPTURE RULES (mandatory; training room / clan battles are always supremacy) ===
+            1. A concentrated one-lane rush can cost the team: losing high vision and risking a base capture / being capped; always weigh this in the review.
+            2. Late-game base defense vs capture decides point victories: when both teams are not fully destroyed, the team with more capture points wins (pointsDecided).
+            3. victoryPointsEarned / victoryPointsSeized are authoritative settlement totals, not a timeline; never present totals as capture progress at a specific moment.
+            4. Capture-point areas (CONTAINS_CONTROL_POINT) only describe direction; when not provided, never claim who is capturing.""";
+
+    static final String CAPTURE_RULE_RU = """
+
+            === ПРАВИЛА ЗАХВАТА (обязательно; тренировочные бои и клановые бои — всегда supremacy) ===
+            1. Концентрированный рывок одной линией может стоить команде: потеря высокого обзора и риск захвата базы противником; всегда взвешивайте это в разборе.
+            2. В концовке защита базы против захвата решает исход по очкам: если обе команды не уничтожены полностью, побеждает команда с большим числом очков захвата (pointsDecided).
+            3. victoryPointsEarned / victoryPointsSeized — авторитетные итоги расчёта, а не таймлайн; не выдавайте итоги за прогресс захвата в конкретный момент.
+            4. Области точек захвата (CONTAINS_CONTROL_POINT) описывают только направление; если они не предоставлены, не утверждайте, кто захватывает.""";
+
     /**
      * 组装团队 system prompt：ZH 返回原样；EN/RU 在中文基座上替换中文输出强制句
      * （输出语言、时间格式、语言规则与团队规则）。
@@ -148,7 +201,11 @@ final class TeamPromptLocalizer {
                 .replace(TEAM_PRIOR_RULE,
                         en ? TEAM_PRIOR_RULE_EN : TEAM_PRIOR_RULE_RU)
                 .replace(TEAM_REGION_RULE,
-                        en ? TEAM_REGION_RULE_EN : TEAM_REGION_RULE_RU);
+                        en ? TEAM_REGION_RULE_EN : TEAM_REGION_RULE_RU)
+                .replace(SOLO_INTENT_RULE,
+                        en ? SOLO_INTENT_RULE_EN : SOLO_INTENT_RULE_RU)
+                .replace(CAPTURE_RULE,
+                        en ? CAPTURE_RULE_EN : CAPTURE_RULE_RU);
     }
 
     static final String SINGLE_TEAM_PROMPT = AiPromptLibrary.zh("team/single");
