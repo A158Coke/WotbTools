@@ -5,7 +5,7 @@
     "desert_train"
   ],
   "displayName": "Desert Sands",
-  "verified": false,
+  "verified": true,
   "source": "CLIENT_RESOURCE_DERIVED",
   "battleVariant": "dt1",
   "warnings": [],

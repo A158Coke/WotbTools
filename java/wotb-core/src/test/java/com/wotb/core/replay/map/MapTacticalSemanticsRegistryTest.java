@@ -5,7 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
+import java.io.InputStream;
 import java.util.List;
 
 class MapTacticalSemanticsRegistryTest {
@@ -28,7 +33,7 @@ class MapTacticalSemanticsRegistryTest {
     @Test
     void verifiedSourceAndAreaConfidenceArePreserved() {
         final MapTacticalSemantics semantics = registry.semanticsFor("desert_train");
-        assertFalse(semantics.verified(), "逐图人工核验未完成（另立 PR），不得声明已核验");
+        assertTrue(semantics.verified(), "用户已逐图人工核验（33 张 verified=true）");
         assertEquals("CLIENT_RESOURCE_DERIVED", semantics.source());
         assertEquals("Desert Sands", semantics.displayName());
         final MapTacticalSemantics.AreaConfidence confidence =
@@ -38,6 +43,28 @@ class MapTacticalSemanticsRegistryTest {
         assertEquals("NAME_HEURISTIC", confidence.objectCategories());
         assertEquals("GRID_RULE_DERIVED", confidence.areaBoundary());
         assertEquals("RULE_DERIVED_CANDIDATE", confidence.favorsAndRisks());
+    }
+
+    @Test
+    void allRepositoryMapsAreHumanVerified() throws Exception {
+        // 用户已确认：仓库内 33 张地图语义全部完成人工核验 → verified=true 恰好 33、false 为 0
+        final Resource[] resources = new PathMatchingResourcePatternResolver()
+                .getResources("classpath:/map-semantics/*.semantic.json");
+        int verifiedCount = 0;
+        int unverifiedCount = 0;
+        for (final Resource resource : resources) {
+            try (InputStream in = resource.getInputStream()) {
+                final JsonNode root = JsonMapper.builder().build().readTree(in);
+                if (root.path("verified").asBoolean(false)) {
+                    verifiedCount++;
+                } else {
+                    unverifiedCount++;
+                }
+            }
+        }
+        assertEquals(33, resources.length, "语义数据文件数");
+        assertEquals(33, verifiedCount, "33 张地图均应由用户人工核验 verified=true");
+        assertEquals(0, unverifiedCount, "不得存在 verified=false 的地图");
     }
 
     @Test

@@ -120,6 +120,11 @@ public final class SoloPlayIntentSkill {
         if (window.startSec() < openingEnd) {
             return null;
         }
+        if (partialOverlap) {
+            // 录像者自身存在与窗口部分重叠的交火：交火压力/损失血量无法可靠归属，
+            // 不得依靠其他强信号（移动/距离/阵亡/承伤）硬生成拖延或脱节。
+            return null;
+        }
         // 未知（null）不等于 MOVING / STATIONARY：只有覆盖充分时才判移动状态
         final boolean stationary = stationaryRatio != null
                 && stationaryRatio >= TeamSoloIntentSkill.MIN_STATIONARY_SHARE;

@@ -77,6 +77,7 @@ public final class AiEvalFixtures {
             case "cw-partial-observation-01" -> partialObservation();
             case "cw-gap-no-merge-01" -> gapNoMerge();
             case "cw-engagement-not-multiplied-01" -> engagementNotMultiplied();
+            case "cw-benefit-partial-overlap-unknown-01" -> benefitPartialOverlapUnknown();
             default -> throw new IllegalArgumentException("Unknown fixture: " + fixtureKey);
         };
     }
@@ -99,6 +100,7 @@ public final class AiEvalFixtures {
             case "player-unknown-stationary-01" -> playerUnknownStationary();
             case "player-opening-contact-01" -> playerOpeningContact();
             case "player-thin-coverage-01" -> playerThinCoverage();
+            case "player-partial-overlap-strong-signals-01" -> playerPartialOverlapStrongSignals();
             default -> throw new IllegalArgumentException("Unknown player fixture: " + fixtureKey);
         };
     }
@@ -181,6 +183,18 @@ public final class AiEvalFixtures {
                 1800, true,
                 List.of(move(60, 61, 200, 200, 200, 200, 5f)),
                 List.of(playerEngagement(60, 75, 1800)),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1060f, 1065f, 1075f},
+                new float[]{200f, 200f, 240f},
+                new float[]{200f, 200f, 240f});
+    }
+
+    /** éšæœºæˆ˜ false-positiveï¼šå½•åƒè€…éƒ¨åˆ†é‡å äº¤ç«ï¼ˆ40-65sï¼‰+ çª—å£å†…æ‰¿ä¼¤ 1000 + æ‹‰å¤§è·ç¦» â†’ ä¸å¾—ç¡¬ç”Ÿæˆè„±èŠ‚/æ‹–å»¶ã€‚ */
+    private static PlayerFixture playerPartialOverlapStrongSignals() {
+        return playerFixtureOf(
+                0, true,
+                List.of(move(60, 75, 200, 200, 240, 240, 5f)),
+                List.of(playerEngagement(40, 65, 1000)),
                 BattlePhaseSummary.buildRelativePhases(60, 300),
                 new float[]{1060f, 1065f, 1075f},
                 new float[]{200f, 200f, 240f},
@@ -375,7 +389,7 @@ public final class AiEvalFixtures {
                         List.of(move(45, 90, 0, 0, 50, 0, 1f), stationary(90, 300, 50, 0)), List.of(), List.of()),
                 member(2, 1800, false, 90.0, deathProximity(200, 1.0),
                         List.of(move(45, 90, 0, 0, -150, -100, 5.1f)),
-                        List.of(engagement(50, 90, 10_003L, List.of(20_001L, 20_002L, 20_003L))), List.of()),
+                        List.of(engagement(60, 90, 10_003L, List.of(20_001L, 20_002L, 20_003L))), List.of()),
                 member(3, 300, true, null, null,
                         List.of(move(45, 90, 0, 0, 50, 0, 1f), stationary(90, 300, 50, 0)), List.of(), List.of()),
                 member(4, 300, true, null, null,
@@ -650,6 +664,35 @@ public final class AiEvalFixtures {
                 List.of(keyEvent(40, "TEAM_FIRST_CONTACT", "damage=120")), List.of());
     }
 
+    private static SingleTeamBattleAnalysisContext benefitPartialOverlapUnknown() {
+        // 队友 FAVORABLE 交火 40-65s 与单走 span 60-90s 部分重叠：teammateBenefit=UNKNOWN，
+        // 即使单走成员窗口内承伤 1000 且持续拉大距离，也不得生成拖延/脱节
+        final List<TeamMemberFeatureSet> members = List.of(
+                member(0, 0, true, null, null,
+                        List.of(move(60, 90, 100, 150, 0, 150, 2f)),
+                        List.of(engagement(60, 90, 10_001L, List.of(20_001L), 1000)), List.of()),
+                member(1, 0, true, null, null,
+                        List.of(stationary(60, 90, 0, 0)),
+                        List.of(favorableEngagement(40, 65, 10_002L)), List.of()),
+                member(2, 0, true, null, null,
+                        List.of(stationary(60, 90, 0, 0)), List.of(), List.of()),
+                member(3, 0, true, null, null,
+                        List.of(stationary(60, 90, 0, 0)), List.of(), List.of()),
+                member(4, 0, true, null, null,
+                        List.of(stationary(60, 90, 0, 0)), List.of(), List.of()),
+                member(5, 0, true, null, null,
+                        List.of(stationary(60, 90, 0, 0)), List.of(), List.of()),
+                member(6, 0, true, null, null,
+                        List.of(stationary(60, 90, 0, 0)), List.of(), List.of()));
+        final List<TeamFormationPhase> phases = soloPhases(60, 90,
+                100, 150, 0, 150, 300, 250, 300, 250, key(0), mainKeysExcluding(0));
+        final TeamAggregateResult aggregate = new TeamAggregateResult(
+                7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false);
+        return context("cw-benefit-partial-overlap-unknown-01", 3, 2, new double[7],
+                members, aggregate, phases, BattlePhaseSummary.buildRelativePhases(40, 300),
+                List.of(keyEvent(40, "TEAM_FIRST_CONTACT", "damage=120")), List.of());
+    }
+
     private static TeamFormationPhase twoClusterPhase(
             final float start, final float end,
             final float mainX, final float mainZ,
@@ -916,6 +959,13 @@ public final class AiEvalFixtures {
         return new EngagementSummary(start, end, List.of(allyAccountId), enemyAccountIds,
                 300, damageReceived, new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
                 EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
+    }
+
+    private static EngagementSummary favorableEngagement(final float start, final float end,
+                                                         final long allyAccountId) {
+        return new EngagementSummary(start, end, List.of(allyAccountId), List.of(20_001L),
+                300, 50, new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
+                EngagementOutcome.FAVORABLE, DecodeConfidence.PARTIAL);
     }
 
     private static KeyBattleEvent keyEvent(final float clock, final String type, final String label) {

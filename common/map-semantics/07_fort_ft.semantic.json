@@ -5,7 +5,7 @@
     "fort"
   ],
   "displayName": "Fort Despair",
-  "verified": false,
+  "verified": true,
   "source": "CLIENT_RESOURCE_DERIVED",
   "battleVariant": "UNKNOWN",
   "warnings": [],
