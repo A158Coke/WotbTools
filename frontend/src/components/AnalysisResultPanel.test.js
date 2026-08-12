@@ -104,7 +104,7 @@ describe('AnalysisResultPanel preBattleSection', () => {
       props: {
         result: {
           analysis: 'report',
-          mapOverview: { mapCode: 'rift', displayName: 'Hellas' }
+          mapOverview: { mapCode: 'lumber', displayName: 'Horrorstadt' }
         }
       },
       global: { mocks: { $t: i18n.t } }
