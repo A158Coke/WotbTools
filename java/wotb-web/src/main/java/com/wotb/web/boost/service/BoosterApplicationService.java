@@ -23,7 +23,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.OffsetDateTime;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
@@ -91,9 +90,13 @@ public class BoosterApplicationService {
         validateAccount(effectiveAccountId);
         validateImage(overallStatsImage, "OVERALL_STATS_IMAGE_REQUIRED");
         validateImage(vehicleStatsImage, "VEHICLE_STATS_IMAGE_REQUIRED");
-        final String effectiveLevel = BoosterLevel.from(
+        final BoosterLevel requestedBoosterLevel = BoosterLevel.from(
                 trimRequired(requestedLevel, "BOOSTER_LEVEL_REQUIRED")
-        ).name();
+        );
+        if (!requestedBoosterLevel.canBeSelectedOnCreate()) {
+            throw new IllegalArgumentException("BOOSTER_LEVEL_ADMIN_EDIT_ONLY");
+        }
+        final String effectiveLevel = requestedBoosterLevel.name();
         final String effectiveAvailabilityTier = BoosterAvailabilityTier.from(
                 trimRequired(availabilityTier, "AVAILABILITY_TIER_REQUIRED")
         ).name();
@@ -197,7 +200,7 @@ public class BoosterApplicationService {
                 ContactType.QQ.name(),
                 application.getQq(),
                 application.getSelfAssessment(),
-                composeBoosterDescription(application)
+                null
         );
 
         application.setStatus(BoosterApplicationStatus.APPROVED.name());
@@ -280,18 +283,4 @@ public class BoosterApplicationService {
         return value;
     }
 
-    private static String composeBoosterDescription(final BoosterApplication application) {
-        final List<String> lines = new ArrayList<>();
-        lines.add("application_id=" + application.getId());
-        lines.add("wotb_account_id=" + application.getWotbAccountId());
-        lines.add("availability_tier=" + application.getAvailabilityTier());
-        lines.add("daily_time_window=" + application.getDailyTimeWindow());
-        if (StringUtils.hasText(application.getWechat())) {
-            lines.add("wechat=" + application.getWechat());
-        }
-        if (StringUtils.hasText(application.getSelfAssessment())) {
-            lines.add("self_assessment=" + application.getSelfAssessment());
-        }
-        return String.join("\n", lines);
-    }
 }

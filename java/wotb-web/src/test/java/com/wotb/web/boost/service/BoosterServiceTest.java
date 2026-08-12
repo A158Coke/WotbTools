@@ -127,6 +127,120 @@ class BoosterServiceTest {
     }
 
     @Test
+    void shouldRejectAverageGodWhenCreatingBooster() {
+        assertThatThrownBy(() -> service.create("TestBooster", "AVERAGE_GOD",
+                null, true, "ACTIVE",
+                "QQ", "123", null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("BOOSTER_LEVEL_ADMIN_EDIT_ONLY");
+
+        verify(boosterRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void shouldCopyBoundUserServerWhenCreatingBooster() {
+        final UserProfile profile = profile("kc-asia");
+        profile.setWotbServer("ASIA");
+        when(userProfileService.findEntityByKeycloakUserIdForUpdate("kc-asia"))
+                .thenReturn(Optional.of(profile));
+        when(boosterRepository.findByKeycloakUserId("kc-asia")).thenReturn(Optional.empty());
+        when(keycloakAdminUserService.hasRealmRole("kc-asia", "booster")).thenReturn(true);
+        when(boosterRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(mapper.toDto(any())).thenReturn(dto(7L, "kc-asia", true));
+
+        service.create("TestBooster", "MASTER", "kc-asia", true, "ACTIVE",
+                "QQ", "123", null, null);
+
+        final org.mockito.ArgumentCaptor<BoosterProfile> captor =
+                org.mockito.ArgumentCaptor.forClass(BoosterProfile.class);
+        verify(boosterRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getLevel()).isEqualTo("MASTER");
+        assertThat(captor.getValue().getWotbServer()).isEqualTo("ASIA");
+    }
+
+    @Test
+    void shouldAllowOneAverageGodPerServerWhenEditing() {
+        final BoosterProfile booster = booster(7L, "kc-cn");
+        booster.setWotbServer("CN");
+        when(boosterRepository.findById(7L)).thenReturn(Optional.of(booster));
+        when(boosterRepository.existsByWotbServerAndLevelAndIdNot("CN", "AVERAGE_GOD", 7L))
+                .thenReturn(false);
+        when(boosterRepository.saveAndFlush(booster)).thenReturn(booster);
+        when(mapper.toDto(booster)).thenReturn(dto(7L, "kc-cn", true));
+
+        service.update(7L, null, "AVERAGE_GOD", null, null,
+                null, null, null, null, null);
+
+        assertThat(booster.getLevel()).isEqualTo("AVERAGE_GOD");
+        verify(boosterRepository).saveAndFlush(booster);
+    }
+
+    @Test
+    void shouldAllowAverageGodOnDifferentServers() {
+        final BoosterProfile asiaBooster = booster(8L, "kc-asia");
+        asiaBooster.setWotbServer("ASIA");
+        when(boosterRepository.findById(8L)).thenReturn(Optional.of(asiaBooster));
+        when(boosterRepository.existsByWotbServerAndLevelAndIdNot("ASIA", "AVERAGE_GOD", 8L))
+                .thenReturn(false);
+        when(boosterRepository.saveAndFlush(asiaBooster)).thenReturn(asiaBooster);
+        when(mapper.toDto(asiaBooster)).thenReturn(dto(8L, "kc-asia", true));
+
+        service.update(8L, null, "AVERAGE_GOD", null, null,
+                null, null, null, null, null);
+
+        assertThat(asiaBooster.getLevel()).isEqualTo("AVERAGE_GOD");
+        verify(boosterRepository).existsByWotbServerAndLevelAndIdNot("ASIA", "AVERAGE_GOD", 8L);
+    }
+
+    @Test
+    void shouldRejectSecondAverageGodOnSameServer() {
+        final BoosterProfile booster = booster(7L, "kc-eu");
+        booster.setWotbServer("EU");
+        when(boosterRepository.findById(7L)).thenReturn(Optional.of(booster));
+        when(boosterRepository.existsByWotbServerAndLevelAndIdNot("EU", "AVERAGE_GOD", 7L))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> service.update(7L, null, "AVERAGE_GOD", null, null,
+                null, null, null, null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("AVERAGE_GOD_ALREADY_EXISTS");
+
+        verify(boosterRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void shouldMapAverageGodUniqueIndexRaceToStableConflict() {
+        final BoosterProfile booster = booster(7L, "kc-na");
+        booster.setWotbServer("NA");
+        when(boosterRepository.findById(7L)).thenReturn(Optional.of(booster));
+        when(boosterRepository.existsByWotbServerAndLevelAndIdNot("NA", "AVERAGE_GOD", 7L))
+                .thenReturn(false);
+        when(boosterRepository.saveAndFlush(booster))
+                .thenThrow(new DataIntegrityViolationException("uq_booster_profile_average_god_server"));
+
+        assertThatThrownBy(() -> service.update(7L, null, "AVERAGE_GOD", null, null,
+                null, null, null, null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("AVERAGE_GOD_ALREADY_EXISTS");
+    }
+
+    @Test
+    void shouldNotMisreportUnrelatedConstraintAsAverageGodConflict() {
+        final BoosterProfile booster = booster(7L, "kc-na");
+        booster.setWotbServer("NA");
+        when(boosterRepository.findById(7L)).thenReturn(Optional.of(booster));
+        when(boosterRepository.existsByWotbServerAndLevelAndIdNot("NA", "AVERAGE_GOD", 7L))
+                .thenReturn(false);
+        when(boosterRepository.saveAndFlush(booster))
+                .thenThrow(new DataIntegrityViolationException("uq_booster_profile_keycloak_user_id"));
+
+        assertThatThrownBy(() -> service.update(7L, null, "AVERAGE_GOD", null, null,
+                null, null, null, null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("ALREADY_BOOSTER");
+    }
+
+    @Test
     void shouldPersistBoosterBeforeAssigningRole() {
         final BoosterDto expected = dto(7L, "kc-new", true);
         when(userProfileService.findEntityByKeycloakUserIdForUpdate(eq("kc-new")))
@@ -489,7 +603,7 @@ class BoosterServiceTest {
     private static BoosterDto dto(final Long id, final String keycloakUserId, final boolean available) {
         return new BoosterDto(
                 id, "booster", "ELITE", keycloakUserId,
-                available, "ACTIVE", null, null, null, null,
+                "CN", available, "ACTIVE", null, null, null, null,
                 0, null, OffsetDateTime.parse("2026-07-09T00:00:00Z")
         );
     }
