@@ -52,6 +52,8 @@ public final class TeamSoloIntentSkill {
     public static final float MIN_MOVEMENT_COVERAGE_RATIO = 0.5f;
     /** span 连续性容差：相邻 formation window 间隔超过该值视为缺窗口，禁止跨缺口合并。 */
     static final float SPAN_CONTINUITY_EPSILON_SEC = 0.01f;
+    /** 事件流观测伤害与权威结算不一致：伤害/交火事件覆盖不完整，否定判断（“没有观察到事件”）不可靠。 */
+    public static final String OBSERVED_DAMAGE_IS_PARTIAL = "OBSERVED_DAMAGE_IS_PARTIAL";
 
     /** 队友获利三态：TRUE=有可靠归属到 span 的获利证据；FALSE=覆盖可靠且无获利；UNKNOWN=存在无法可靠归属的部分重叠交火。 */
     private enum TeammateBenefit { TRUE, FALSE, UNKNOWN }
@@ -130,7 +132,8 @@ public final class TeamSoloIntentSkill {
                 && span.endSec() <= opening.endSec()
                 && span.enemyPressureCount() == 0
                 && !memberDeadIn(member, span)
-                && !span.hasPartialOverlapEngagement()) {
+                && !span.hasPartialOverlapEngagement()
+                && !observedDamageIsPartial(features)) {
             return "OPENING_MAP_CONTROL";
         }
         if (opening != null && span.startSec() < opening.endSec()) {
@@ -323,7 +326,7 @@ public final class TeamSoloIntentSkill {
 
     /**
      * 队友获利三态（时间边界 = 当前 span）：TRUE=主力质心位移 ≥ 阈值 / span 内完全包含的队友有利交火；
-     * FALSE=覆盖可靠且无涉及 span 的队友交火（或 span 内本队成员阵亡）；UNKNOWN=存在与 span 部分重叠、无法可靠归属的队友交火。
+     * FALSE=覆盖可靠且无涉及 span 的队友交火（或 span 内本队成员阵亡）；UNKNOWN=存在与 span 部分重叠、无法可靠归属的队友交火，或伤害观测覆盖不完整（OBSERVED_DAMAGE_IS_PARTIAL）无法证明无获利。
      * 整场击杀/占点分不参与（无法归属到窗口）。
      */
     private static TeammateBenefit teammateBenefit(final TeamBattleFeatureSet features,
@@ -350,7 +353,17 @@ public final class TeamSoloIntentSkill {
                 }
             }
         }
-        return partialOverlap ? TeammateBenefit.UNKNOWN : TeammateBenefit.FALSE;
+        if (partialOverlap || observedDamageIsPartial(features)) {
+            // 部分重叠交火无法可靠归属，或伤害观测覆盖不完整：无法证明窗口内不存在队友获利 → UNKNOWN
+            return TeammateBenefit.UNKNOWN;
+        }
+        return TeammateBenefit.FALSE;
+    }
+
+    /** 事件流观测伤害覆盖不完整时，否定判断（“没有观察到队友获利/交火”）不可靠。 */
+    private static boolean observedDamageIsPartial(final TeamBattleFeatureSet features) {
+        return features.limitations() != null
+                && features.limitations().contains(OBSERVED_DAMAGE_IS_PARTIAL);
     }
 
     /** 队友获利的数值渲染：TRUE=1 / FALSE=0 / UNKNOWN=-1（不得把 UNKNOWN 当 false）。 */

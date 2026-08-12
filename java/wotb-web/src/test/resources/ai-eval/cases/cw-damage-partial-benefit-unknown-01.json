@@ -1,0 +1,14 @@
+{
+  "id": "cw-damage-partial-benefit-unknown-01",
+  "mode": "TEAM_PERSPECTIVE",
+  "arenaBonusType": 3,
+  "fixtureKey": "cw-damage-partial-benefit-unknown-01",
+  "lessonRef": "docs/ai-lessons/cw-damage-partial-benefit-unknown-01.md",
+  "expectedJudgment": "无候选（伤害观测覆盖不完整 → 队友获利 UNKNOWN，不判脱节/拖延）",
+  "checks": [
+    { "kind": "prompt_contains", "text": "=== FORMATION_PHASES ===" },
+    { "kind": "prompt_omits", "text": "SOLO_DELAY" },
+    { "kind": "prompt_omits", "text": "SOLO_DETACHED" }
+  ],
+  "note": "OBSERVED_DAMAGE_IS_PARTIAL + 没有队友 Engagement：不能把“没观察到队友获利”当确定无获利，teammateBenefit=UNKNOWN，不生成候选。"
+}

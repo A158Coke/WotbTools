@@ -512,6 +512,71 @@ class TeamSoloIntentSkillTest {
                 "partial-overlap engagement + in-window death must not bypass UNKNOWN to emit SOLO_DETACHED");
     }
 
+    @Test
+    void observedDamagePartialMakesBenefitUnknown() {
+        // 生产契约：事件流观测伤害不完整（OBSERVED_DAMAGE_IS_PARTIAL）且没有队友 Engagement：
+        // “没观察到队友获利”不等于“确定没获利” → teammateBenefit=UNKNOWN，不生成 SOLO_DETACHED
+        final Battle battle = battle(3, new double[7], new long[7]);
+        final TeamMemberFeatureSet solo = member(0, 0, true, null,
+                List.of(move(60, 90, 100, 150, 0, 150, 2f)),
+                List.of(engagement(60, 90, 10_001L, List.of(20_001L), 1000)), 1);
+        final TeamBattleFeatureSet features = features(
+                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
+                phases(60, 90, 100, 150, 0, 150, 300, 250, 300, 250, "account:10001"),
+                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
+                BattlePhaseSummary.buildRelativePhases(40, 300),
+                1,
+                List.of(TeamSoloIntentSkill.OBSERVED_DAMAGE_IS_PARTIAL));
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertTrue(evidence.isEmpty(),
+                "OBSERVED_DAMAGE_IS_PARTIAL must make teammateBenefit UNKNOWN, not FALSE");
+    }
+
+    @Test
+    void completeCoverageWithoutTeammateEngagementAllowsFalse() {
+        // 覆盖完整（无 OBSERVED_DAMAGE_IS_PARTIAL）且没有相关队友 Engagement：teammateBenefit=FALSE 允许判脱节
+        final Battle battle = battle(3, new double[7], new long[7]);
+        final TeamMemberFeatureSet solo = member(0, 0, true, null,
+                List.of(move(60, 90, 100, 150, 0, 150, 2f)),
+                List.of(engagement(60, 90, 10_001L, List.of(20_001L), 1000)), 1);
+        final TeamBattleFeatureSet features = features(
+                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
+                phases(60, 90, 100, 150, 0, 150, 300, 250, 300, 250, "account:10001"),
+                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
+                BattlePhaseSummary.buildRelativePhases(40, 300));
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertEquals(1, evidence.size());
+        assertEquals("SOLO_DETACHED", evidence.getFirst().labels().get("intent"));
+    }
+
+    @Test
+    void observedDamagePartialSuppressesOpening() {
+        // OBSERVED_DAMAGE_IS_PARTIAL + 开局未观察到交火：不得用“没有观察到”证明未接火 → 不生成 OPENING_MAP_CONTROL
+        final Battle battle = battle(1, new double[7], new long[7]);
+        final TeamMemberFeatureSet solo = member(0, 0, true, null,
+                List.of(stationary(15, 45, 350, 400)),
+                List.of(), 1);
+        final TeamBattleFeatureSet features = features(
+                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
+                phases(15, 45, 350, 400, 350, 400, 300, 250, 300, 250, "account:10001"),
+                new TeamAggregateResult(7, 3000, 1000, 0, 0, 0, 7, 0, null, null, null, false),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                1,
+                List.of(TeamSoloIntentSkill.OBSERVED_DAMAGE_IS_PARTIAL));
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertTrue(evidence.isEmpty(),
+                "partial damage coverage must not support the negative 'no contact' opening judgment");
+    }
+
     // ===== helpers =====
 
     private static TeamFormationPhase twoClusterPhase(
@@ -549,10 +614,20 @@ class TeamSoloIntentSkillTest {
             final TeamAggregateResult aggregate,
             final List<BattlePhaseSummary> battlePhases,
             final int perspectiveTeam) {
+        return features(members, formationPhases, aggregate, battlePhases, perspectiveTeam, List.of());
+    }
+
+    private static TeamBattleFeatureSet features(
+            final List<TeamMemberFeatureSet> members,
+            final List<TeamFormationPhase> formationPhases,
+            final TeamAggregateResult aggregate,
+            final List<BattlePhaseSummary> battlePhases,
+            final int perspectiveTeam,
+            final List<String> limitations) {
         return new TeamBattleFeatureSet(
                 perspectiveTeam, members, aggregate, TeamObservedAggregate.empty(),
                 formationPhases, List.of(), battlePhases, List.of(),
-                TeamFeatureCoverage.empty(), List.of(), true);
+                TeamFeatureCoverage.empty(), limitations, true);
     }
 
     private static TeamMemberFeatureSet member(

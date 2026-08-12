@@ -10,6 +10,7 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.evidence.TeamSoloIntentSkill;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.CanonicalMapPosition;
 import com.wotb.core.replay.feature.EngagementOutcome;
@@ -78,6 +79,7 @@ public final class AiEvalFixtures {
             case "cw-gap-no-merge-01" -> gapNoMerge();
             case "cw-engagement-not-multiplied-01" -> engagementNotMultiplied();
             case "cw-benefit-partial-overlap-unknown-01" -> benefitPartialOverlapUnknown();
+            case "cw-damage-partial-benefit-unknown-01" -> damagePartialBenefitUnknown();
             default -> throw new IllegalArgumentException("Unknown fixture: " + fixtureKey);
         };
     }
@@ -101,6 +103,7 @@ public final class AiEvalFixtures {
             case "player-opening-contact-01" -> playerOpeningContact();
             case "player-thin-coverage-01" -> playerThinCoverage();
             case "player-partial-overlap-strong-signals-01" -> playerPartialOverlapStrongSignals();
+            case "player-damage-partial-opening-01" -> playerDamagePartialOpening();
             default -> throw new IllegalArgumentException("Unknown player fixture: " + fixtureKey);
         };
     }
@@ -201,6 +204,19 @@ public final class AiEvalFixtures {
                 new float[]{200f, 200f, 240f});
     }
 
+    /** éšæœºæˆ˜ false-positiveï¼šOBSERVED_DAMAGE_IS_PARTIAL + å¼€å±´æœªè§‚å¯Ÿåˆ°äº¤ç« â†’ ä¸å¾—ç”¨â€œæ²¡æœ‰è§‚å¯Ÿåˆ°â€è¯æ˜ŽæœªæŽ¥ç«ã€‚ */
+    private static PlayerFixture playerDamagePartialOpening() {
+        return playerFixtureOf(
+                0, true,
+                List.of(move(5, 40, 0, 0, 100, 150, 6f)),
+                List.of(),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1015f, 1030f, 1045f},
+                new float[]{200f, 200f, 200f},
+                new float[]{200f, 200f, 200f},
+                List.of(TeamSoloIntentSkill.OBSERVED_DAMAGE_IS_PARTIAL));
+    }
+
     private static PlayerFixture playerFixtureOf(
             final int recorderDamageReceived,
             final boolean recorderSurvived,
@@ -210,6 +226,21 @@ public final class AiEvalFixtures {
             final float[] rawClocks,
             final float[] recorderXs,
             final float[] recorderZs
+    ) {
+        return playerFixtureOf(recorderDamageReceived, recorderSurvived, movements,
+                engagements, phases, rawClocks, recorderXs, recorderZs, List.of());
+    }
+
+    private static PlayerFixture playerFixtureOf(
+            final int recorderDamageReceived,
+            final boolean recorderSurvived,
+            final List<MovementSegment> movements,
+            final List<EngagementSummary> engagements,
+            final List<BattlePhaseSummary> phases,
+            final float[] rawClocks,
+            final float[] recorderXs,
+            final float[] recorderZs,
+            final List<String> limitations
     ) {
         final Battle battle = new Battle();
         battle.arenaId = "eval-arena";
@@ -247,7 +278,7 @@ public final class AiEvalFixtures {
         final RecorderEntityMapping recorder = new RecorderEntityMapping(
                 1001L, 1, 1, "rec1", 1, 4481, DecodeConfidence.EXACT);
         final PlayerBattleFeatureSet features = new PlayerBattleFeatureSet(
-                movements, engagements, phases, List.of(), List.of(), true);
+                movements, engagements, phases, List.of(), limitations, true);
         return new PlayerFixture(battle, recon, features, recorder);
     }
 
@@ -691,6 +722,35 @@ public final class AiEvalFixtures {
         return context("cw-benefit-partial-overlap-unknown-01", 3, 2, new double[7],
                 members, aggregate, phases, BattlePhaseSummary.buildRelativePhases(40, 300),
                 List.of(keyEvent(40, "TEAM_FIRST_CONTACT", "damage=120")), List.of());
+    }
+
+    private static SingleTeamBattleAnalysisContext damagePartialBenefitUnknown() {
+        // OBSERVED_DAMAGE_IS_PARTIAL + 没有队友 Engagement：teammateBenefit=UNKNOWN，
+        // 即使单走成员窗口内承伤 1000 且持续拉大距离，也不得生成拖延/脱节
+        final List<TeamMemberFeatureSet> members = List.of(
+                member(0, 0, true, null, null,
+                        List.of(move(60, 90, 100, 150, 0, 150, 2f)),
+                        List.of(engagement(60, 90, 10_001L, List.of(20_001L), 1000)), List.of()),
+                member(1, 0, true, null, null,
+                        List.of(stationary(60, 90, 0, 0)), List.of(), List.of()),
+                member(2, 0, true, null, null,
+                        List.of(stationary(60, 90, 0, 0)), List.of(), List.of()),
+                member(3, 0, true, null, null,
+                        List.of(stationary(60, 90, 0, 0)), List.of(), List.of()),
+                member(4, 0, true, null, null,
+                        List.of(stationary(60, 90, 0, 0)), List.of(), List.of()),
+                member(5, 0, true, null, null,
+                        List.of(stationary(60, 90, 0, 0)), List.of(), List.of()),
+                member(6, 0, true, null, null,
+                        List.of(stationary(60, 90, 0, 0)), List.of(), List.of()));
+        final List<TeamFormationPhase> phases = soloPhases(60, 90,
+                100, 150, 0, 150, 300, 250, 300, 250, key(0), mainKeysExcluding(0));
+        final TeamAggregateResult aggregate = new TeamAggregateResult(
+                7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false);
+        return context("cw-damage-partial-benefit-unknown-01", 3, 2, new double[7],
+                members, aggregate, phases, BattlePhaseSummary.buildRelativePhases(40, 300),
+                List.of(keyEvent(40, "TEAM_FIRST_CONTACT", "damage=120")),
+                List.of(TeamSoloIntentSkill.OBSERVED_DAMAGE_IS_PARTIAL));
     }
 
     private static TeamFormationPhase twoClusterPhase(
