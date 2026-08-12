@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -115,6 +116,40 @@ class BoosterApplicationServiceTest {
         verify(repository, never()).saveAndFlush(any());
     }
 
+    @ParameterizedTest
+    @CsvSource({"CASUAL", "SKILLED", "ELITE", "PRO", "MASTER"})
+    void shouldAllowFivePlayerSelectableLevels(final String requestedLevel) {
+        when(userProfileService.findByKeycloakUserId(eq("kc-user")))
+                .thenReturn(Optional.of(profile(1001L, "BoundName")));
+        when(boosterService.findByKeycloakUserId(eq("kc-user"))).thenReturn(Optional.empty());
+        when(repository.existsByKeycloakUserIdAndStatusIn(eq("kc-user"), any())).thenReturn(false);
+        when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.create("kc-user", 1001L, "BoundName", "CN",
+                IMAGE, IMAGE, requestedLevel, "123456", null,
+                "MONTH_20", "20:00-23:00", "self");
+
+        final ArgumentCaptor<BoosterApplication> captor = ArgumentCaptor.forClass(BoosterApplication.class);
+        verify(repository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getRequestedLevel()).isEqualTo(requestedLevel);
+    }
+
+    @Test
+    void shouldRejectAdminOnlyAverageGodApplication() {
+        when(userProfileService.findByKeycloakUserId(eq("kc-user")))
+                .thenReturn(Optional.of(profile(1001L, "BoundName")));
+        when(boosterService.findByKeycloakUserId(eq("kc-user"))).thenReturn(Optional.empty());
+        when(repository.existsByKeycloakUserIdAndStatusIn(eq("kc-user"), any())).thenReturn(false);
+
+        assertThatThrownBy(() -> service.create("kc-user", 1001L, "BoundName", "CN",
+                IMAGE, IMAGE, "AVERAGE_GOD", "123456", null,
+                "MONTH_20", "20:00-23:00", "self"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("BOOSTER_LEVEL_ADMIN_EDIT_ONLY");
+
+        verify(repository, never()).saveAndFlush(any());
+    }
+
     @Test
     void shouldRejectMissingQq() {
         when(userProfileService.findByKeycloakUserId(eq("kc-user")))
@@ -135,7 +170,7 @@ class BoosterApplicationServiceTest {
                 .thenReturn(Optional.of(profile(1001L, "BoundName")));
         when(boosterService.findByKeycloakUserId(eq("kc-user")))
                 .thenReturn(Optional.of(new BoosterDto(1L, "B", "ELITE", "kc-user",
-                        true, "ACTIVE", "QQ", "1", null, null,
+                        "CN", true, "ACTIVE", "QQ", "1", null, null,
                         0, null, null)));
 
         assertThatThrownBy(() -> service.create("kc-user", 2222L, "RequestName", "CN",
@@ -169,22 +204,22 @@ class BoosterApplicationServiceTest {
     }
 
     @Test
-    void shouldCreateBoosterAndNotifyWhenApproving() {
+    void shouldCreateBoosterWithoutApplicationMetadataAndNotifyWhenApproving() {
         final BoosterApplication application = application();
         final BoosterApplicationSummaryDto summary = summary();
         when(repository.findById(eq(9L))).thenReturn(Optional.of(application));
         when(boosterService.findByKeycloakUserId(eq("kc-user"))).thenReturn(Optional.empty());
         when(boosterService.create(eq("BoundName"), eq("ELITE"), eq("kc-user"),
-                eq(true), eq("ACTIVE"), eq("QQ"), eq("123456"), eq("self"), any()))
+                eq(true), eq("ACTIVE"), eq("QQ"), eq("123456"), eq("self"), isNull()))
                 .thenReturn(new BoosterDto(33L, "BoundName", "ELITE", "kc-user",
-                        true, "ACTIVE", "QQ", "123456", "self", "desc",
+                        "CN", true, "ACTIVE", "QQ", "123456", "self", null,
                         0, null, null));
         when(mapper.toSummary(any())).thenReturn(summary);
 
         assertThat(service.approve(9L, "admin-user", "ok")).isSameAs(summary);
 
         verify(boosterService).create(eq("BoundName"), eq("ELITE"), eq("kc-user"),
-                eq(true), eq("ACTIVE"), eq("QQ"), eq("123456"), eq("self"), any());
+                eq(true), eq("ACTIVE"), eq("QQ"), eq("123456"), eq("self"), isNull());
         verify(notificationService).create(
                 eq("kc-user"),
                 eq(UserNotificationType.BOOSTER_APPLICATION_APPROVED),

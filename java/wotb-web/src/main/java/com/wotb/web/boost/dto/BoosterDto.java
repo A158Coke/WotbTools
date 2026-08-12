@@ -8,6 +8,7 @@ public record BoosterDto(
     String nickname,
     String level,
     String keycloakUserId,
+    String wotbServer,
     Boolean available,
     String status,
     String contactType,

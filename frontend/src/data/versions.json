@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.9.3",
+    "date": "2026-08-13",
+    "tag": "fix",
+    "zh": "打手管理编辑恢复为弹窗，申请 ID、账号 ID、档期等系统字段不再出现在备注；申请等级新增大师级，管理员可为每个服务器唯一授予一名场均神",
+    "en": "Booster editing is a modal again, and application IDs, account IDs, schedules, and other system fields no longer appear in notes; applications gain a Master level, while administrators may grant one unique Average Damage God per server",
+    "ru": "Редактирование бустера снова открывается в модальном окне, а ID заявки, ID аккаунта, расписание и другие системные поля больше не попадают в заметки; в заявках добавлен уровень гранд-мастера, а администратор может назначить по одному Богу среднего урона на сервер"
+  },
+  {
     "v": "2.9.2",
     "date": "2026-08-13",
     "tag": "fix",

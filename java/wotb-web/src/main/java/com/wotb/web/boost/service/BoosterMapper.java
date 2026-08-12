@@ -17,7 +17,7 @@ public class BoosterMapper implements Mapper<BoosterProfile, BoosterDto> {
     @Override
     public BoosterDto toDto(final BoosterProfile booster) {
         return new BoosterDto(booster.getId(), booster.getNickname(), booster.getLevel(),
-                booster.getKeycloakUserId(), booster.getAvailable(), booster.getStatus(),
+                booster.getKeycloakUserId(), booster.getWotbServer(), booster.getAvailable(), booster.getStatus(),
                 booster.getContactType(), booster.getContactValue(), booster.getSpecialties(),
                 booster.getDescription(), (int) statsService.activeAssignmentCount(booster.getId()),
                 booster.getCreatedAt(), booster.getUpdatedAt());
