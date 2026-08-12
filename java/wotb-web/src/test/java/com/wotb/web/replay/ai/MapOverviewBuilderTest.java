@@ -59,8 +59,7 @@ class MapOverviewBuilderTest {
         assertEquals(36, overview.heatmaps().friendly().damage().size());
         assertEquals(36, overview.heatmaps().friendly().deaths().size());
         assertEquals(36, overview.heatmaps().enemy().dwell().size());
-        assertNotNull(overview.image(), "rift 已有 hellas.png 素材");
-        assertEquals("hellas.png", overview.image().file());
+        assertNull(overview.image(), "image 恒 null——素材由前端 mapImages.js 唯一维护");
         assertFalse(overview.phases().isEmpty(), "应产出阶段切片");
         assertEquals("opening", overview.phases().get(0).key());
 
@@ -147,7 +146,7 @@ class MapOverviewBuilderTest {
                 new MapOverview.Bounds(-256, 260, -251, 254.3),
                 List.of(new MapOverview.GridCell("F1", 6,
                         new MapOverview.Bounds(-256, -170, -251, -166.78))),
-                new MapOverview.ImageInfo("desert-sands.png", 765, 772),
+                null,
                 List.of(new MapOverview.SpawnPoint("S1", 2, -200, 200)),
                 List.of(new MapOverview.Phase("opening", 0, 45)),
                 new MapOverview.Heatmaps(
@@ -164,6 +163,7 @@ class MapOverviewBuilderTest {
         assertTrue(payload.containsKey("playableBounds"));
         assertTrue(payload.containsKey("gridCells"));
         assertTrue(payload.containsKey("image"));
+        assertNull(payload.get("image"), "image 恒 null（前端 mapImages.js 为唯一素材源）");
         assertTrue(payload.containsKey("spawnPoints"));
         assertTrue(payload.containsKey("phases"));
         assertTrue(payload.containsKey("heatmaps"));

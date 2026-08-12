@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Changed
+- **地图资源整理（统一命名 + 单一权威）**：`assets/maps/*.png` 全部按英文展示名小写中划线命名（15 个改名：`Normandy→normandy`、`Middleburg→middleburg`、`malinov→winter-malinovka`、`newbay→new-bay` 等；`alpen→horrorstadt` 补齐 lumber/山麓角逐 素材，28/29 图有素材，仅 `holmeisk`(Wasteland) 待补）；删除后端 `MapImageCatalog`（`MapOverview.image` 恒 null），`frontend/src/data/mapImages.js` 成为唯一素材权威；新增 `docs/map-catalog.md` 存档内部 code↔展示名(zh/en/ru)↔语义 mapId↔素材 映射与新增素材流程；DEVELOPER_GUIDE 素材约定同步；无素材样例改用 `holmeisk`。
+
 ### Added
 - **AI 复盘结果页「地图鸟瞰」（热力 + 路线，双阵营）**：后端 SSE `done` 载荷新增可空 `mapOverview`（`AnalyzeResponse` 第三字段，向后兼容 null）——`MapGridRegistry` 从 `map-semantics/*.semantic.json` 读取 `playableBoundsMeters` / `analysisGrid.cells`(6x6) / `sceneEvidence.battlePoints`(出生点)；`MapOverviewBuilder` 聚合：路线（双方 14 车，2s 均匀采样 ≤200 点 + `firstObservedSec/lastObservedSec` 观测区间 + 阵亡时刻，坐标与 playableBounds 同系 x=回放x、y=回放z）、六张热力（本方/敌方 × 驻留/伤害/阵亡，36 格；伤害按受击方位置落格、驻留/阵亡为事件计数，前端归一化）、阶段切片（开局/中期/残局，残局=战斗末 15s 窗口）、出生点；未知地图/无观测/无名册/视角未解析 → null。随机战（SINGLE_PLAYER）与团队战（SINGLE/MULTI_TEAM）路径均接入；`MapImageCatalog` 登记 17 张已提供素材的图片元信息（前端 mapImages.js 为渲染门控）。新增 `MapOverviewBuilderTest`（真实 rift 夹具完整输出 + 降级 null），后端全量 621 测试全绿。
 - **前端「地图鸟瞰」区块**：`MapOverview.vue` 纯 SVG 渲染——底图拉伸铺满 playableBounds + 6x6 网格 + 九宫格线/编号 + 出生点；热力视图（阵营 Tab 本方/敌方 × 类型 Tab 驻留/伤害/阵亡，36 格半透明着色 + legend）；路线视图（阵营 Tab 本方/敌方/全部 × 阶段 Tab 全部/开局/中期/残局，本方暖色系/敌方冷色系各 7 色、起点圆点、阵亡 ✕、gap>5s 断线、悬停 tooltip、迟观测「位置观测自 X 秒起」提示）；`AnalysisResultPanel` 在 `done.mapOverview` 非 null 且 `mapImages` 有该地图素材时渲染可展开/收起区块（无素材整块跳过）。`frontend/src/assets/maps/` 入库 18 张素材（17 张已映射，alpen 待对应地图语义）。i18n 三语 key；vitest 169 全绿、vite build 通过。

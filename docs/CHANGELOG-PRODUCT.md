@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Changed
+- **地图鸟瞰覆盖扩至 28 张地图**：补齐 Horrorstadt/Copperfield/Himmelsdorf/Yamato Harbor/Falls Creek/Dead Rail/Ghost Factory/Hellas/Canyon/Lagoon/Faust 素材；仅剩 Wasteland 待补。
+
 ### Added
 - **AI 复盘结果页新增「地图鸟瞰」**：展开可查看该场地图的 6x6 网格与九宫格、出生点；热力视图按本方/敌方与驻留/伤害/阵亡切换查看；路线视图画出双方 14 辆车的移动轨迹，可按本方/敌方与开局/中期/残局阶段切换，断线处断开，开局缺少位置的车会诚实标注「位置观测自 X 秒起」。仅当该地图有鸟瞰素材时显示（目前已支持 17 张地图，其余自动隐藏）。
 

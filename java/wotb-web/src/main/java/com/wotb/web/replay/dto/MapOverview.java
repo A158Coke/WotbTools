@@ -13,8 +13,8 @@ import java.util.List;
  * @param friendlyTeam  本方（录像者）队伍号（1/2；前端用于路线阵营配色与热力 Tab 映射）
  * @param playableBounds 可玩区边界
  * @param gridCells     6x6 分析格（36 个；id 如 F1/A6，带 nineGridRegion 与格子边界）
- * @param image         地图图片元信息（file/width/height；素材开关在前端 mapImages.js，
- *                      无素材时前端整块跳过，本字段仅信息性）
+ * @param image         地图图片元信息（恒为 null——素材与尺寸由前端
+ *                      {@code frontend/src/data/mapImages.js} 唯一维护，本字段仅为兼容保留）
  * @param spawnPoints   出生点（语义坐标）
  * @param phases        阶段切片（开局/中期/残局，按 battle-relative 秒）
  * @param heatmaps      热力：本方/敌方 × 驻留/伤害/阵亡（每层 36 个值，与 gridCells 同序；
