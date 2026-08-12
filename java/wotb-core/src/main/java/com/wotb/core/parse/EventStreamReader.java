@@ -97,6 +97,20 @@ public final class EventStreamReader {
         }
     }
 
+    /**
+     * Arena metadata decoded from the {@code basePlayerCreate} pickle
+     * (authoritative roster, team labels and result flags at match start).
+     */
+    public record ArenaInfo(
+            List<Long> accountDatabaseIds,
+            Map<Integer, String> clanTags,
+            Map<Integer, String> teamTitles,
+            Map<Integer, Integer> wins,
+            int battleLevel,
+            int mmType,
+            long webId) {
+    }
+
 
     static final int MAX_PACKETS = ReplayPacketParser.MAX_PACKETS;
     static final int MAX_SCAN_STEPS = ReplayPacketParser.MAX_SCAN_STEPS;
@@ -122,6 +136,10 @@ public final class EventStreamReader {
 
     public static Map<Integer, Long> extractEntityToAccountMap(List<ParsedPacket> packets) {
         return ReplayEventExtractors.extractEntityToAccountMap(packets);
+    }
+
+    public static ArenaInfo extractArenaInfo(List<ParsedPacket> packets) {
+        return ReplayEventExtractors.extractArenaInfo(packets);
     }
 
     public static Map<Long, Double> estimateDeathTimesByEntityLeaves(
