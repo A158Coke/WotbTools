@@ -9,6 +9,7 @@
     { "kind": "prompt_contains", "text": "=== FORMATION_PHASES ===" },
     { "kind": "prompt_contains", "text": "clusters=" },
     { "kind": "prompt_contains", "text": "团队首次接敌" },
+    { "kind": "prompt_contains", "text": "OPENING_MAP_CONTROL" },
     { "kind": "prompt_omits", "text": "队员阵亡" }
   ],
   "note": "开局全队散开拿视野：多簇阵型、未接火、无阵亡。Step 2 将断言 OPENING_MAP_CONTROL 抑制脱节候选。"

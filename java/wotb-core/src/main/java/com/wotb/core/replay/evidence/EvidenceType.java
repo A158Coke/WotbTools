@@ -11,5 +11,7 @@ public enum EvidenceType {
     LOCAL_SUPPORT,
     DEATH_CASCADE,
     ROUTE,
-    CRITICAL_WINDOW
+    CRITICAL_WINDOW,
+    /** 单走行为候选（图控 / 拖延 / 脱节），由 TeamSoloIntentSkill / SoloPlayIntentSkill 产出。 */
+    SOLO_INTENT
 }
