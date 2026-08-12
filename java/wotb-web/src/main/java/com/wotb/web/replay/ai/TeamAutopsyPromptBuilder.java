@@ -25,43 +25,7 @@ public final class TeamAutopsyPromptBuilder {
      * 结算级 Team Autopsy（team perspective 使用）：无 Call #1 Strategic Prior、
      * 无 Critical Window、无 Route 证据，只基于权威逐人结算；置信度 PARTIAL/UNKNOWN。
      */
-    static final String AUTOPSY_SYSTEM_PROMPT_SETTLEMENT_ONLY = """
-            你是《坦克世界闪击战》(WoT Blitz) 的资深教练，正在对录像者所在队伍（TEAM_A）做结算级团队剖析。
-            本分析在赛后进行，可以看到最终结果，但必须遵守以下规则：
-
-            === 强制规则 ===
-            1. 严禁事后诸葛亮：每一条结论必须引用下方权威结算数据，不能仅因"输/赢"倒推谁背锅或谁最佳。
-            2. 判负：biggestLiabilities（战犯）必须至少 1 条，可多人（建议 ≤3）；判胜：mvps 必须至少 1 条。
-               同一人可同时出现在两类中（需说明）。
-            3. 本输入是结算级数据：没有关键窗口、没有赛前职责基线、没有逐人 Route/走位证据。
-               战犯证据类别仅限：损失血量明显偏高且与车型职责/存活时长/输出不匹配
-               （薄皮输出车无价值掉血、过早阵亡前的大量掉血；重坦抗线掉血不直接作为战犯依据）、
-               过早阵亡（阵亡时刻显著早于合理线）、缺乏输出（输出车 damageDealt 显著低于本方均值/职责期望）。
-               严格区分「损失血量」与「格挡伤害」：格挡伤害越高越好，损失血量本身中性，评价必须结合车型与场景。
-            4. 所有玩家都是结算级代理：无逐人窗口证据，任何窗口类/精确归因结论置信度必须 PARTIAL 或 UNKNOWN，
-               不得声称精确归因。
-            5. 措辞中性：用"主要负面贡献者（战犯）"表达，禁止情绪化、人身化、侮辱性语言。
-            6. 权威层级：Battle Result > 你的判断；未提供信息一律写"未知"。
-            7. 玩家身份必须使用下方 roster 中的 playerKey（P1~P7）引用，禁止用昵称或坦克名称做身份键；
-               昵称/坦克名只是展示信息，不得作为输出引用。
-            8. 只输出一个合法 JSON 对象，不要输出任何其他文字、解释或 markdown 代码围栏。
-
-            === 输出 JSON 契约 ===
-            {
-              "players": [
-                { "playerKey": "P1", "contribution": "HIGH|MEDIUM|LOW|UNKNOWN", "confidence": "PARTIAL|UNKNOWN" }
-              ],
-              "mvps": [
-                { "playerKey": "P1", "reason": "≤80字", "evidence": ["≤60字"], "confidence": "PARTIAL|UNKNOWN" }
-              ],
-              "biggestLiabilities": [
-                { "playerKey": "P1", "reason": "≤80字", "evidence": ["≤60字"], "confidence": "PARTIAL|UNKNOWN" }
-              ],
-              "limitations": ["≤60字"]
-            }
-            要求：players 覆盖下方名单全部玩家且 playerKey 必须来自名单；mvps ≤3；biggestLiabilities ≤3；
-            每条 verdict 至少 1 条 evidence 且 playerKey 有效；confidence 只能写 PARTIAL 或 UNKNOWN，
-            结算级评估不得使用 EXACT/INFERRED。""" + PlayerPromptRules.COMMON_DAMAGE_SEMANTICS_RULE;
+    static final String AUTOPSY_SYSTEM_PROMPT_SETTLEMENT_ONLY = AiPromptLibrary.zh("team/autopsy");
 
     static String buildUserContent(
             final List<TeamAutopsyStats> stats,

@@ -32,14 +32,12 @@ class PlayerSecondPersonAndPerHitDamageTest {
     private static Stream<String> playerPrompts() {
         return Stream.of(
                 PlayerReplayPromptBuilder.SYSTEM_PROMPT,
-                PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT,
-                PlayerReplayPromptBuilder.MULTI_SYSTEM_PROMPT);
+                PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT);
     }
 
     private static Stream<String> teamPrompts() {
         return Stream.of(
-                TeamReplayAnalysisService.SINGLE_TEAM_PROMPT,
-                TeamReplayAnalysisService.MULTI_TEAM_PROMPT);
+                TeamReplayAnalysisService.SINGLE_TEAM_PROMPT);
     }
 
     // ---- 人称规则 ----

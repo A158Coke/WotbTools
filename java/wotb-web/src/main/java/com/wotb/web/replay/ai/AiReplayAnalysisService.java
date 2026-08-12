@@ -106,21 +106,6 @@ public class AiReplayAnalysisService {
         return playerService.analyzePlayerContext(ctx, recon, language);
     }
 
-    public AnalyzeResult analyzeMulti(final List<Battle> battles) {
-        return analyzeMulti(battles, AllowedLanguage.ZH);
-    }
-
-    public AnalyzeResult analyzeMulti(final List<Battle> battles,
-                                      final AllowedLanguage language) {
-        return analyzeMulti(battles, language, AiReviewStreamListener.NOOP);
-    }
-
-    public AnalyzeResult analyzeMulti(final List<Battle> battles,
-                                      final AllowedLanguage language,
-                                      final AiReviewStreamListener listener) {
-        return playerService.analyzeMulti(battles, language, listener);
-    }
-
     public AnalyzeResult analyzePlayerOrFallback(final ReplayProcessingResult result) {
         return analyzePlayerOrFallback(result, AllowedLanguage.ZH);
     }

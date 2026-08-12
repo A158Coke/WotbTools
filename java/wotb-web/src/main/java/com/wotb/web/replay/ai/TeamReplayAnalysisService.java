@@ -1,6 +1,5 @@
 package com.wotb.web.replay.ai;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -13,9 +12,7 @@ import com.wotb.core.processing.FriendlyEnemyResult;
 import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.TeamPerspectiveLabelResolver;
-import com.wotb.core.replay.feature.MultiTeamBattleAnalysisContext;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
-import com.wotb.core.replay.feature.TeamBattleAnalysisSummary;
 
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
@@ -31,10 +28,10 @@ import org.springframework.stereotype.Service;
 import java.util.function.LongSupplier;
 
 /**
- * 单/多团队 AI 复盘编排（team perspective：训练房/联赛）。
+ * 团队 AI 复盘编排（team perspective：训练房/联赛）。
  * <p>职责：兼容 facade 路径的单团队入口、{@code analyzeTeamGroups} 的完整编排（Call #1 prior、
- * 分区遍历、Team Prompt 调用与 Team Autopsy 追加）；roster 校验/分区/Context 组装/团队 Prompt 规则
- * 分别由 {@link TeamRosterResolver} / {@link TeamPartitionBuilder} / {@link TeamContextBuilder} /
+ * 逐 context 的 Team Prompt 调用与 Team Autopsy 追加）；roster 校验/Context 组装/团队 Prompt 规则
+ * 分别由 {@link TeamRosterResolver} / {@link TeamContextBuilder} /
  * {@link TeamPromptLocalizer} 负责。Prompt 文本由 {@link TeamAiPromptBuilder} 产出，
  * HTTP/DTO/异常分类由 {@link AiChatGateway} 负责，预算由 {@link AiPromptBudgetGuard} 守，
  * {@code analysisUnitId} 由 {@link AnalysisUnitAssembler} 提供稳定实现。</p>
@@ -132,27 +129,11 @@ public class TeamReplayAnalysisService {
         return new AnalyzeResult(appendTeamAutopsy(context, content, language, startNanos, listener));
     }
 
-    private AnalyzeResult callMultiTeamContext(
-            final TeamAiPromptBuilder.PromptInput input,
-            final AllowedLanguage language,
-            final long startNanos,
-            final AiReviewStreamListener listener
-    ) {
-        final String content = call(
-                TeamPromptLocalizer.localizeTeamSystemPrompt(TeamPromptLocalizer.MULTI_TEAM_PROMPT, language),
-                input.content(), "MULTI_TEAM_BATTLE",
-                remainingBudget(startNanos), listener);
-        return new AnalyzeResult(content);
-    }
-
     /**
-     * 完整 Team 分析编排：将 contexts 划分为兼容分区，每个分区发起一次 AI 请求。
-     * <p>返回的 {@link TeamAnalyzeResult#analysis} 是第一个分区的 AI 输出
-     * （即第一个输入 group 所在分区的分析结果）；{@link TeamAnalyzeResult#preBattleSection}
-     * 是对应同一分区的 Call #1 prior 用户可见渲染（失败/降级为 null）。</p>
-     * <p>分区归属通过 canonical 排序（{@link #buildPartitions}）确定，以保证
-     * 对 permutation 稳定的分区行为：先按 {@code (battleIdentity, analysisUnitId)}
-     * 字典序排序，再执行 complete-link 分组。</p>
+     * 完整 Team 分析编排：逐个 context 发起单队 AI 请求（AI 复盘单文件策略下无分区合并）。
+     * <p>返回的 {@link TeamAnalyzeResult#analysis} 是第一个 context 的 AI 输出；
+     * {@link TeamAnalyzeResult#preBattleSection} 是对应同一 context 的 Call #1 prior
+     * 用户可见渲染（失败/降级为 null）。</p>
      */
     public TeamAnalyzeResult analyzeTeamGroups(final List<ReplayPerspectiveGroup> groups) {
         return analyzeTeamGroups(groups, AllowedLanguage.ZH);
@@ -192,53 +173,26 @@ public class TeamReplayAnalysisService {
             throw new AiUpstreamException("AI_TIMEOUT", 504, AiRequestContext.correlationId());
         }
         final Map<String, PreBattleStrategicPrior> priorsByUnitId = new LinkedHashMap<>();
-        final Map<String, Integer> perspectiveTeamByUnitId = new LinkedHashMap<>();
         for (final SingleTeamBattleAnalysisContext ctx : contexts) {
-            perspectiveTeamByUnitId.put(ctx.analysisUnitId(), ctx.perspectiveTeam());
             priorsByUnitId.put(ctx.analysisUnitId(), call1Prior(ctx.battle(), listener));
         }
         // 证据分析完成：与随机战 harness 对齐，让前端阶段指示从「证据分析中…」推进到「战术复盘生成中…」
         listener.onStage("evidence_done");
-        final List<List<SingleTeamBattleAnalysisContext>> partitions =
-                TeamPartitionBuilder.buildPartitions(contexts, evidenceByUnitId);
         AnalyzeResult firstAnalysis = null;
         SingleTeamBattleAnalysisContext firstContext = null;
-        for (final var partition : partitions) {
-            final AnalyzeResult result;
-            if (partition.size() == 1) {
-                final var ctx = partition.getFirst();
-                final TeamRosterResolver.RosterEvidence evidence = evidenceByUnitId.get(ctx.analysisUnitId());
-                final TeamAiPromptBuilder.PromptInput input =
-                        TeamAiPromptBuilder.single(
-                                ctx,
-                                TeamRosterResolver.rosterEvidenceLimits(evidence),
-                                priorsByUnitId.get(ctx.analysisUnitId()),
-                                config.estimator(),
-                                config.singleReplayMaxInputTokens());
-                result = callSingleTeamContext(ctx, input, language, startNanos, listener);
-            } else {
-                final MultiTeamBattleAnalysisContext multiContext =
-                        TeamContextBuilder.buildMultiTeamContext(partition, evidenceByUnitId);
-                final Map<String, List<String>> partitionEvidenceLimits = new LinkedHashMap<>();
-                for (final var ctx : partition) {
-                    final TeamRosterResolver.RosterEvidence ev = evidenceByUnitId.get(ctx.analysisUnitId());
-                    if (ev != null) {
-                        partitionEvidenceLimits.put(ctx.analysisUnitId(), TeamRosterResolver.rosterEvidenceLimits(ev));
-                    }
-                }
-                final TeamAiPromptBuilder.PromptInput input =
-                        TeamAiPromptBuilder.multi(
-                                multiContext,
-                                partitionEvidenceLimits,
-                                priorsByUnitId,
-                                perspectiveTeamByUnitId,
-                                config.estimator(),
-                                config.singleReplayMaxInputTokens());
-                result = callMultiTeamContext(input, language, startNanos, listener);
-            }
+        for (final SingleTeamBattleAnalysisContext ctx : contexts) {
+            final TeamRosterResolver.RosterEvidence evidence = evidenceByUnitId.get(ctx.analysisUnitId());
+            final TeamAiPromptBuilder.PromptInput input =
+                    TeamAiPromptBuilder.single(
+                            ctx,
+                            TeamRosterResolver.rosterEvidenceLimits(evidence),
+                            priorsByUnitId.get(ctx.analysisUnitId()),
+                            config.estimator(),
+                            config.singleReplayMaxInputTokens());
+            final AnalyzeResult result = callSingleTeamContext(ctx, input, language, startNanos, listener);
             if (firstAnalysis == null) {
                 firstAnalysis = result;
-                firstContext = partition.getFirst();
+                firstContext = ctx;
             }
         }
         if (firstAnalysis == null) {
@@ -247,7 +201,7 @@ public class TeamReplayAnalysisService {
         final String preBattleSection = firstContext == null ? null
                 : PreBattleSectionRenderer.render(
                         priorsByUnitId.get(firstContext.analysisUnitId()),
-                        perspectiveTeamByUnitId.getOrDefault(firstContext.analysisUnitId(), 0),
+                        firstContext.perspectiveTeam(),
                         TeamRosterResolver.resolveTeamLabel(firstContext.battle(), firstContext.perspectiveTeam()),
                         language,
                         firstContext.battle() == null ? null : firstContext.battle().mapName);
@@ -268,8 +222,6 @@ public class TeamReplayAnalysisService {
 
     static final String SINGLE_TEAM_PROMPT = TeamPromptLocalizer.SINGLE_TEAM_PROMPT;
 
-    static final String MULTI_TEAM_PROMPT = TeamPromptLocalizer.MULTI_TEAM_PROMPT;
-
     static String localizeTeamSystemPrompt(final String zhPrompt, final AllowedLanguage language) {
         return TeamPromptLocalizer.localizeTeamSystemPrompt(zhPrompt, language);
     }
@@ -277,11 +229,6 @@ public class TeamReplayAnalysisService {
     public SingleTeamBattleAnalysisContext buildSingleTeamContext(final ReplayPerspectiveGroup group) {
         return TeamContextBuilder.buildSingleTeamContext(group);
     }
-
-    static boolean hasConsistentRoster(final List<TeamBattleAnalysisSummary> summaries) {
-        return TeamRosterResolver.hasConsistentRoster(summaries);
-    }
-
 
     private String call(
             final String systemPrompt,
