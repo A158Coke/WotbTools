@@ -589,8 +589,8 @@ API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + �
 MVP 只记录**录像者本人**在某场战斗中用某辆车打出的**单场伤害成绩**，不存全场 14 人，不存 replay 原文件。当前后端为单一在线配置，启动依赖 PostgreSQL。
 
 - **数据库配置**：`application.yml` 始终启用 DataSource/JPA/Flyway，`ddl-auto: validate`；本地开发需提供 PostgreSQL 与 `POSTGRES_PASSWORD`。
-- **Schema 来源**：Flyway 迁移 `wotb-web/.../resources/db/migration/V1__init_leaderboard.sql` → `V11__add_boost_completion_confirmation.sql`。**改表结构必须新增迁移**（`V12__...`），不要改已应用的 V1–V11；实体列与迁移列**逐列对齐**，否则 `validate` 启动即失败。
-- **打手资格申请**：`booster_application` 保存玩家申请的 WoTB 账号、两张截图、申请等级、QQ/微信、可接单频率、日在线时间和审核状态；同一 Keycloak 用户只允许存在一个 `NEW`/`REVIEWING` 申请。审批通过由 `BoosterService` 先 flush `booster_profile`，再授予 Keycloak `booster` role；外层事务回滚会撤销新增 role。
+- **Schema 来源**：Flyway 迁移 `wotb-web/.../resources/db/migration/V1__init_leaderboard.sql` → `V13__allow_wotb_eu_na.sql`。**改表结构必须新增迁移**（`V14__...`），不要改已应用的 V1–V13；实体列与迁移列**逐列对齐**，否则 `validate` 启动即失败。
+- **打手资格申请**：`booster_application` 保存玩家申请的 WoTB 账号、真实区服、两张截图、申请等级、QQ/微信、可接单频率、日在线时间和审核状态；区服从已绑定用户资料优先取得，规范值仅允许 `CN / ASIA / EU / NA`。同一 Keycloak 用户只允许存在一个 `NEW`/`REVIEWING` 申请。审批通过由 `BoosterService` 先 flush `booster_profile`，再授予 Keycloak `booster` role；外层事务回滚会撤销新增 role。该范围只控制资格申请，客户提交陪练需求仍由 `BoostRegion` 独立约束。
 - **打手资料双状态**：`booster_profile.status` 控制资格是否有效；`booster_profile.available` 控制是否手动暂停接单；`boost_request_assignment` 活跃记录数控制是否忙碌。分配打手时必须同时满足 `ACTIVE`、`available=true`、活跃订单数为 0。`GET /api/booster/assignments` 默认返回打手工作台所需的活跃订单详情（需求状态、联系方式、可安排时间、备注）；`GET /api/booster/assignments?includeHistory=true` 供个人中心回看活跃 + 历史订单，服务端会把仍未释放的订单排在前面；`PATCH /api/boost/boosters/my/availability` 允许打手本人切换是否接收新订单；`PATCH /api/booster/assignments/{id}/accept|start|complete|decline` 只允许当前打手操作自己的活跃订单。
 - **仅随机战斗**：只有 `meta.json#arenaBonusType == 1`（随机）的战斗计入；训练房（==2）/娱乐/联赛等其他模式、以及模式未知（null）一律拒绝。`ReplayParser` 解析到 `Battle.arenaBonusType`，策略判断在 `LeaderboardService`。取值经真实样本核实（1=随机、2=训练房）。
 - **录像者识别**：`meta.json` 无录像者 `accountId`，`ReplayParser` 仅给出 `Battle.recorder`（昵称）。`LeaderboardService` 按 `nickname.equals(battle.recorder)` 在 `players` 中匹配；匹配不到则跳过（不猜）。

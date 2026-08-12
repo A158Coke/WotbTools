@@ -26,6 +26,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @Service
@@ -83,12 +84,11 @@ public class BoosterApplicationService {
         final String effectiveNickname = StringUtils.hasText(profile.wotbNickname())
                 ? profile.wotbNickname()
                 : trimRequired(requestWotbNickname, "WOTB_NICKNAME_REQUIRED");
-        final String effectiveServer = StringUtils.hasText(profile.wotbServer())
+        final String effectiveServer = normalizeServer(StringUtils.hasText(profile.wotbServer())
                 ? profile.wotbServer()
-                : defaultServer(requestWotbServer);
+                : requestWotbServer);
 
         validateAccount(effectiveAccountId);
-        validateServer(effectiveServer);
         validateImage(overallStatsImage, "OVERALL_STATS_IMAGE_REQUIRED");
         validateImage(vehicleStatsImage, "VEHICLE_STATS_IMAGE_REQUIRED");
         final String effectiveLevel = BoosterLevel.from(
@@ -105,7 +105,7 @@ public class BoosterApplicationService {
         application.setUserProfileId(profile.id());
         application.setWotbAccountId(effectiveAccountId);
         application.setWotbNickname(effectiveNickname);
-        application.setWotbServer("CN");
+        application.setWotbServer(effectiveServer);
         application.setOverallStatsImage(overallStatsImage.trim());
         application.setVehicleStatsImage(vehicleStatsImage.trim());
         application.setRequestedLevel(effectiveLevel);
@@ -242,12 +242,6 @@ public class BoosterApplicationService {
         }
     }
 
-    private static void validateServer(final String wotbServer) {
-        if (!"CN".equalsIgnoreCase(wotbServer)) {
-            throw new IllegalArgumentException("UNSUPPORTED_WOTB_SERVER");
-        }
-    }
-
     private static void validateImage(final String image, final String errorCode) {
         final String value = trimRequired(image, errorCode);
         if (!value.startsWith("data:image/")) {
@@ -258,8 +252,14 @@ public class BoosterApplicationService {
         }
     }
 
-    private static String defaultServer(final String server) {
-        return StringUtils.hasText(server) ? server.trim() : "CN";
+    private static String normalizeServer(final String server) {
+        final String normalized = StringUtils.hasText(server)
+                ? server.trim().toUpperCase(Locale.ROOT)
+                : "CN";
+        return switch (normalized) {
+            case "CN", "ASIA", "EU", "NA" -> normalized;
+            default -> throw new IllegalArgumentException("UNSUPPORTED_WOTB_SERVER");
+        };
     }
 
     private static String trimRequired(final String value, final String errorCode) {
