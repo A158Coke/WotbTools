@@ -424,6 +424,94 @@ class TeamSoloIntentSkillTest {
                 "partially overlapping engagement at opening boundary must not be misattributed");
     }
 
+    @Test
+    void teammateFavorablePartialOverlapMakesBenefitUnknown() {
+        // 单走 span 60-90s，其他队友 FAVORABLE Engagement 为 40-65s：teammateBenefit 必须为 UNKNOWN，
+        // 即使单走成员窗口内承伤 1000 且持续拉大距离，也不得把 UNKNOWN 当 false 生成 SOLO_DETACHED
+        final Battle battle = battle(3, new double[7], new long[7]);
+        final TeamMemberFeatureSet solo = member(0, 0, true, null,
+                List.of(move(60, 90, 100, 150, 0, 150, 2f)),
+                List.of(engagement(60, 90, 10_001L, List.of(20_001L), 1000)), 1);
+        final TeamMemberFeatureSet teammate = member(1, 0, true, null,
+                List.of(), List.of(favorableEngagement(40, 65, 10_002L)), 1);
+        final TeamBattleFeatureSet features = features(
+                List.of(solo, teammate, member(2, 0, true, null, List.of(), List.of(), 1)),
+                phases(60, 90, 100, 150, 0, 150, 300, 250, 300, 250, "account:10001"),
+                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
+                BattlePhaseSummary.buildRelativePhases(40, 300));
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertTrue(evidence.isEmpty(),
+                "partially overlapping teammate favorable engagement must make benefit UNKNOWN, not FALSE");
+    }
+
+    @Test
+    void teammateFavorableFullyInsideSpanYieldsDelay() {
+        // 队友 FAVORABLE Engagement 完全位于 span 内：teammateBenefit=TRUE → SOLO_DELAY
+        final Battle battle = battle(3, new double[7], new long[7]);
+        final TeamMemberFeatureSet solo = member(0, 0, true, null,
+                List.of(stationary(60, 90, 100, 150)),
+                List.of(engagement(60, 90, 10_001L, List.of(20_001L, 20_002L), 200)), 1);
+        final TeamMemberFeatureSet teammate = member(1, 0, true, null,
+                List.of(), List.of(favorableEngagement(60, 90, 10_002L)), 1);
+        final TeamBattleFeatureSet features = features(
+                List.of(solo, teammate, member(2, 0, true, null, List.of(), List.of(), 1)),
+                phases(60, 90, 100, 150, 100, 150, 300, 250, 300, 250, "account:10001"),
+                new TeamAggregateResult(7, 3000, 1500, 0, 0, 0, 7, 0, null, null, null, false),
+                BattlePhaseSummary.buildRelativePhases(40, 300));
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertEquals(1, evidence.size());
+        assertEquals("SOLO_DELAY", evidence.getFirst().labels().get("intent"));
+    }
+
+    @Test
+    void teammateEngagementsFullyOutsideAllowFalseDetach() {
+        // 所有队友 Engagement 完全位于 span 外且覆盖可靠：teammateBenefit=FALSE 允许判 SOLO_DETACHED
+        final Battle battle = battle(3, new double[7], new long[7]);
+        final TeamMemberFeatureSet solo = member(0, 0, true, null,
+                List.of(move(60, 90, 100, 150, 0, 150, 2f)),
+                List.of(engagement(60, 90, 10_001L, List.of(20_001L), 1000)), 1);
+        final TeamMemberFeatureSet teammate = member(1, 0, true, null,
+                List.of(), List.of(favorableEngagement(95, 120, 10_002L)), 1);
+        final TeamBattleFeatureSet features = features(
+                List.of(solo, teammate, member(2, 0, true, null, List.of(), List.of(), 1)),
+                phases(60, 90, 100, 150, 0, 150, 300, 250, 300, 250, "account:10001"),
+                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
+                BattlePhaseSummary.buildRelativePhases(40, 300));
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertEquals(1, evidence.size());
+        assertEquals("SOLO_DETACHED", evidence.getFirst().labels().get("intent"));
+    }
+
+    @Test
+    void soloMemberPartialOverlapWithInWindowDeathDoesNotDetach() {
+        // 单走成员部分重叠 Engagement（40-65s）+ 窗口内阵亡（75s）：
+        // 不得绕过 UNKNOWN 直接生成 SOLO_DETACHED
+        final Battle battle = battle(3, new double[]{0, 0, 0, 0, 0, 0, 75}, new long[7]);
+        final TeamMemberFeatureSet solo = member(0, 0, false, 75.0,
+                List.of(move(60, 90, 100, 150, 0, 150, 2f)),
+                List.of(engagement(40, 65, 10_001L, List.of(20_001L), 1000)), 1);
+        final TeamBattleFeatureSet features = features(
+                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
+                phases(60, 90, 100, 150, 0, 150, 300, 250, 300, 250, "account:10001"),
+                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 6, 1, 75.0, 75.0, 75.0, false),
+                BattlePhaseSummary.buildRelativePhases(40, 300));
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertTrue(evidence.isEmpty(),
+                "partial-overlap engagement + in-window death must not bypass UNKNOWN to emit SOLO_DETACHED");
+    }
+
     // ===== helpers =====
 
     private static TeamFormationPhase twoClusterPhase(
@@ -546,6 +634,13 @@ class TeamSoloIntentSkillTest {
         return new EngagementSummary(start, end, List.of(ally), enemies,
                 300, damageReceived, new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
                 EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
+    }
+
+    private static EngagementSummary favorableEngagement(final float start, final float end,
+                                                         final long ally) {
+        return new EngagementSummary(start, end, List.of(ally), List.of(20_001L),
+                300, 50, new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
+                EngagementOutcome.FAVORABLE, DecodeConfidence.PARTIAL);
     }
 
     private static Battle battle(final int arenaBonusType, final double[] deathSecs,

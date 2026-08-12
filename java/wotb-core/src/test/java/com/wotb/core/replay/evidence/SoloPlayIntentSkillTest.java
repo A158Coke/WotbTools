@@ -254,6 +254,23 @@ class SoloPlayIntentSkillTest {
                 "partially overlapping engagement at opening boundary must not be misattributed");
     }
 
+    @Test
+    void partialOverlapWithInWindowDeathDoesNotDetach() {
+        // 录像者部分重叠 Engagement（40-65s，承伤 1000）+ 窗口内阵亡（70s）：
+        // 不得绕过 UNKNOWN 依靠阵亡强信号硬生成 SOLO_DETACHED
+        final EvidenceSkillContext ctx = context(0, false, 70,
+                List.of(move(60, 75, 200, 200, 240, 240, 5f)),
+                List.of(engagement(40, 65, 1000)),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1060f, 1065f, 1075f},
+                new float[]{200f, 200f, 240f}, new float[]{200f, 200f, 240f});
+
+        final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
+
+        assertTrue(evidence.isEmpty(),
+                "partial-overlap engagement + in-window death must not bypass UNKNOWN to emit SOLO_DETACHED");
+    }
+
     // ===== helpers =====
 
     private static EvidenceSkillContext context(

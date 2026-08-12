@@ -5,7 +5,7 @@
     "neptune"
   ],
   "displayName": "Normandy",
-  "verified": false,
+  "verified": true,
   "source": "CLIENT_RESOURCE_DERIVED",
   "battleVariant": "nt0",
   "warnings": [],

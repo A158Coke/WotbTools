@@ -53,6 +53,9 @@ public final class TeamSoloIntentSkill {
     /** span 连续性容差：相邻 formation window 间隔超过该值视为缺窗口，禁止跨缺口合并。 */
     static final float SPAN_CONTINUITY_EPSILON_SEC = 0.01f;
 
+    /** 队友获利三态：TRUE=有可靠归属到 span 的获利证据；FALSE=覆盖可靠且无获利；UNKNOWN=存在无法可靠归属的部分重叠交火。 */
+    private enum TeammateBenefit { TRUE, FALSE, UNKNOWN }
+
     private TeamSoloIntentSkill() {
     }
 
@@ -88,7 +91,7 @@ public final class TeamSoloIntentSkill {
                     break;
                 }
                 final Double stationaryRatio = stationaryRatio(member, span);
-                final boolean benefit = teammateBenefit(features, span, member);
+                final TeammateBenefit benefit = teammateBenefit(features, span, member);
                 final int objectiveProximity = objectiveProximity(span.regionInfo().region(),
                         controlPointRegions, mapSemantics);
                 result.add(new AiEvidence(
@@ -101,7 +104,7 @@ public final class TeamSoloIntentSkill {
                                 "distanceM", (double) span.maxDistanceM(),
                                 "stationaryRatio", stationaryRatio == null
                                         ? -1.0 : stationaryRatio,
-                                "teammateBenefit", benefit ? 1.0 : 0.0,
+                                "teammateBenefit", benefitNumber(benefit),
                                 "objectiveProximity", (double) objectiveProximity,
                                 "nearbyEnemy", (double) span.enemyPressureCount()),
                         java.util.Map.of(
@@ -134,12 +137,17 @@ public final class TeamSoloIntentSkill {
             // 与开局窗口重叠但不完全在内：窗口信号混合，不硬判
             return null;
         }
+        if (span.hasPartialOverlapEngagement()) {
+            // 单走成员自身存在与 span 部分重叠的交火：压力/承伤无法可靠归属，
+            // 不得依靠其他信号（移动/距离/阵亡/承伤）硬生成拖延或脱节。
+            return null;
+        }
         final Double stationaryRatio = stationaryRatio(member, span);
         final boolean stationary = stationaryRatio != null
                 && stationaryRatio >= MIN_STATIONARY_SHARE;
         final boolean pressure = span.enemyPressureCount() > 0;
-        final boolean benefit = teammateBenefit(features, span, member);
-        if (stationary && pressure && benefit) {
+        final TeammateBenefit benefit = teammateBenefit(features, span, member);
+        if (stationary && pressure && benefit == TeammateBenefit.TRUE) {
             return "SOLO_DELAY";
         }
         // moving 必须由窗口内移动证据证明：覆盖不足（null）不等于正在移动
@@ -149,7 +157,7 @@ public final class TeamSoloIntentSkill {
         final boolean whiteEaten = memberDeadIn(member, span)
                 || span.damageReceived() >= DETACH_DAMAGE_RECEIVED
                 || span.enemyPressureCount() >= 2;
-        if (moving && pulledAway && !benefit && whiteEaten) {
+        if (moving && pulledAway && benefit == TeammateBenefit.FALSE && whiteEaten) {
             return "SOLO_DETACHED";
         }
         return null;
@@ -314,31 +322,44 @@ public final class TeamSoloIntentSkill {
     }
 
     /**
-     * 队友获利（时间边界 = 当前 span）：主力质心在 span 内位移 ≥ 阈值 /
-     * span 内其他成员存在有利交火；span 内其他本队成员阵亡则视为未获利。
+     * 队友获利三态（时间边界 = 当前 span）：TRUE=主力质心位移 ≥ 阈值 / span 内完全包含的队友有利交火；
+     * FALSE=覆盖可靠且无涉及 span 的队友交火（或 span 内本队成员阵亡）；UNKNOWN=存在与 span 部分重叠、无法可靠归属的队友交火。
      * 整场击杀/占点分不参与（无法归属到窗口）。
      */
-    private static boolean teammateBenefit(final TeamBattleFeatureSet features,
-                                           final SoloSpan span,
-                                           final TeamMemberFeatureSet soloMember) {
+    private static TeammateBenefit teammateBenefit(final TeamBattleFeatureSet features,
+                                                   final SoloSpan span,
+                                                   final TeamMemberFeatureSet soloMember) {
         if (otherFriendlyDied(features, span, soloMember)) {
-            return false;
+            return TeammateBenefit.FALSE;
         }
         if (span.mainCentroidDisplacementM() >= TEAMMATE_BENEFIT_ROTATION_M) {
-            return true;
+            return TeammateBenefit.TRUE;
         }
+        boolean partialOverlap = false;
         for (final TeamMemberFeatureSet member : features.members()) {
             if (member.accountId() == soloMember.accountId()) {
                 continue;
             }
             for (final EngagementSummary engagement : member.engagements()) {
-                if (fullyContained(engagement, span.startSec(), span.endSec())
-                        && engagement.outcome() == EngagementOutcome.FAVORABLE) {
-                    return true;
+                if (fullyContained(engagement, span.startSec(), span.endSec())) {
+                    if (engagement.outcome() == EngagementOutcome.FAVORABLE) {
+                        return TeammateBenefit.TRUE;
+                    }
+                } else if (intersects(engagement, span.startSec(), span.endSec())) {
+                    partialOverlap = true;
                 }
             }
         }
-        return false;
+        return partialOverlap ? TeammateBenefit.UNKNOWN : TeammateBenefit.FALSE;
+    }
+
+    /** 队友获利的数值渲染：TRUE=1 / FALSE=0 / UNKNOWN=-1（不得把 UNKNOWN 当 false）。 */
+    private static double benefitNumber(final TeammateBenefit benefit) {
+        return switch (benefit) {
+            case TRUE -> 1.0;
+            case FALSE -> 0.0;
+            case UNKNOWN -> -1.0;
+        };
     }
 
     private static boolean otherFriendlyDied(final TeamBattleFeatureSet features,
@@ -421,6 +442,12 @@ public final class TeamSoloIntentSkill {
                                           final float startSec, final float endSec) {
         return engagement.startTime() >= startSec - SPAN_CONTINUITY_EPSILON_SEC
                 && engagement.endTime() <= endSec + SPAN_CONTINUITY_EPSILON_SEC;
+    }
+
+    /** 交火段是否与 [startSec, endSec] 相交（含端点）。 */
+    private static boolean intersects(final EngagementSummary engagement,
+                                      final float startSec, final float endSec) {
+        return engagement.startTime() <= endSec && engagement.endTime() >= startSec;
     }
 
     /** 单走时段聚合：窗口序列 + 距离趋势 + 主力质心位移。 */
@@ -520,11 +547,6 @@ public final class TeamSoloIntentSkill {
                 }
             }
             return false;
-        }
-
-        private static boolean intersects(final EngagementSummary engagement,
-                                          final float startSec, final float endSec) {
-            return engagement.startTime() <= endSec && engagement.endTime() >= startSec;
         }
 
     }
