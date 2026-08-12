@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Changed
+- **AI 复盘判别升级（图控 / 拖延 vs 脱节 / 争霸赛占点）**：开局散开拿视野（图控）不再被误判为脱节；单走行为按「队友是否因他获利」区分拖延与脱节，证据不足时明确写「无法确定」；训练房/联赛复盘新增争霸赛占点与点数胜负分析——集中一波的代价（失去高视野 + 被偷家风险）、残局守家 vs 占点。
 - **地图鸟瞰覆盖扩至 28 张地图**：补齐 Horrorstadt/Copperfield/Himmelsdorf/Yamato Harbor/Falls Creek/Dead Rail/Ghost Factory/Hellas/Canyon/Lagoon/Faust 素材；仅剩 Wasteland 待补。
 
 ### Added
