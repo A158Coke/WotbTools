@@ -51,7 +51,7 @@ services:
       BOOST_AUTO_CONFIRM_SCAN_MS: "${BOOST_AUTO_CONFIRM_SCAN_MS:-300000}"
       AI_API_KEY: ${AI_API_KEY:?AI_API_KEY is required}
       AI_BASE_URL: "${AI_BASE_URL:-https://api.deepseek.com}"
-      AI_MODEL: "${AI_MODEL:-DeepSeek-V4-Pro-0813}"
+      AI_MODEL: "${AI_MODEL:-deepseek-v4-pro}"
       AI_CONNECT_TIMEOUT_SEC: "${AI_CONNECT_TIMEOUT_SEC:-10}"
       AI_TIMEOUT_SEC: "${AI_TIMEOUT_SEC:-300}"
       AI_CALL_TIMEOUT_SEC: "${AI_CALL_TIMEOUT_SEC:-315}"

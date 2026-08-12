@@ -95,7 +95,7 @@ wotb:
     # empty default: app still starts without a key; /api/replay/analyze returns AI_NOT_CONFIGURED
     api-key: ${AI_API_KEY:}
     base-url: ${AI_BASE_URL:https://api.deepseek.com}
-    model: ${AI_MODEL:DeepSeek-V4-Pro-0813}
+    model: ${AI_MODEL:deepseek-v4-pro}
     connect-timeout-sec: ${AI_CONNECT_TIMEOUT_SEC:10}
     timeout-sec: ${AI_TIMEOUT_SEC:300}
     # total budget for one AiChatGateway.chat() lifecycle (attempts + retries + backoff)
