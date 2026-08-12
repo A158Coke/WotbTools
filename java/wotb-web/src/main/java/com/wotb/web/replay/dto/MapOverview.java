@@ -23,6 +23,9 @@ import java.util.Map;
  * @param heatmaps      热力：本方/敌方 × 驻留/伤害/阵亡（每层 36 个值，与 gridCells 同序；
  *                      驻留=位置采样计数、伤害=累计伤害、阵亡=事件计数；前端按 max 归一化）
  * @param routes        双方路线（每车 ≤200 点、2s 采样、观测区间与阵亡时刻）
+ * @param arenaBonusType      战斗模式（meta.json#arenaBonusType 原值；1=随机战斗，其他=训练/联赛等；未知为 null）
+ * @param recorderAccountId   录像者账号 id（经 {@link com.wotb.core.model.Battle#recorderResult()} 解析；
+ *                             未解析为 null；前端用于路线「仅玩家」筛选）
  */
 public record MapOverview(
         String mapCode,
@@ -35,7 +38,9 @@ public record MapOverview(
         List<SpawnPoint> spawnPoints,
         List<Phase> phases,
         Heatmaps heatmaps,
-        List<Route> routes
+        List<Route> routes,
+        Integer arenaBonusType,
+        Long recorderAccountId
 ) {
 
     public MapOverview {

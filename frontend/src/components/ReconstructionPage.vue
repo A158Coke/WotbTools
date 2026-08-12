@@ -9,6 +9,9 @@ import ReplayInputPanel from './ReplayInputPanel.vue'
 const { t, locale } = useI18n()
 const { initPromise, tokenParsed, token, ensureToken, login, authenticated } = useAuth()
 
+// KeepAlive include 匹配组件名：App.vue 仅缓存本页，切走视图时保持 SSE 流存活。
+defineOptions({ name: 'ReconstructionPage' })
+
 /** 登录后回跳到本页而不是个人中心。 */
 const LOGIN_VIEW = 'reconstruction'
 
@@ -43,12 +46,9 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  // 仅移除页面级监听；应用内切页由 App.vue KeepAlive 保持组件存活，
+  // 不在卸载时取消分析（真实关页/刷新由 beforeunload 处理）。
   window.removeEventListener('beforeunload', onPageLeave)
-  if (analyzing.value) {
-    cancelRequested = true
-    fireCancel(currentCorrelationId)
-    analyzeAbortController?.abort()
-  }
 })
 
 // 本页只做一件事：上传单场回放 → 发起 AI 复盘 → 展示结果。
@@ -72,6 +72,7 @@ let analyzeTimeoutTimer = null
 let cancelRequested = false
 let timedOut = false
 let currentCorrelationId = ''
+let analyzeStartedAt = 0
 
 function resetResults() {
   analysisResult.value = null
@@ -175,6 +176,7 @@ async function runAnalyze() {
   cancelRequested = false
   timedOut = false
   currentCorrelationId = newCorrelationId()
+  analyzeStartedAt = Date.now()
   const controller = new AbortController()
   analyzeAbortController = controller
   analyzeTimeoutTimer = setTimeout(() => {
@@ -202,7 +204,7 @@ async function runAnalyze() {
       throw new Error(localizeAiError(errorData, r.status, t))
     }
     // SSE 流式解析：阶段事件 + call2_token 主复盘增量 + done 收尾。
-    const receivedDone = await readAnalyzeStream(r, controller.signal)
+    const receivedDone = await readAnalyzeStream(r, controller)
     if (!receivedDone && !cancelRequested) {
       // 流异常中断（未收到 done 且未取消）：视为无效响应。
       throw new Error(t('recon.errors.AI_RESPONSE_INVALID'))
@@ -234,13 +236,14 @@ async function runAnalyze() {
  * error → 抛出本地化错误。
  * @returns {Promise<boolean>} 是否收到 done 事件
  */
-async function readAnalyzeStream(r, signal) {
+async function readAnalyzeStream(r, controller) {
   const reader = r.body.getReader()
   const decoder = new TextDecoder('utf-8')
   let buffer = ''
   let currentEvent = ''
   let currentData = ''
   let receivedDone = false
+  const deadlineMs = analyzeStartedAt + AI_ANALYZE_TIMEOUT_MS
 
   const dispatch = () => {
     if (!currentEvent) return
@@ -309,6 +312,15 @@ async function readAnalyzeStream(r, signal) {
 
   try {
     for (;;) {
+      // 墙钟超时兜底：后台标签定时器被节流时，活跃流仍按 400s 语义中止。
+      if (Date.now() >= deadlineMs) {
+        timedOut = true
+        fireCancel(currentCorrelationId)
+        controller.abort()
+        const err = new Error('AI_ANALYZE_TIMEOUT')
+        err.name = 'AbortError'
+        throw err
+      }
       const { done, value } = await reader.read()
       if (done) break
       buffer += decoder.decode(value, { stream: true })

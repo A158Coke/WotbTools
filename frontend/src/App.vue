@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useTheme } from './composables/useTheme.js'
 import { useError } from './composables/useError.js'
 import HomePage from './components/HomePage.vue'
@@ -33,6 +33,22 @@ const ALLOWED_VIEWS = [
   'profile', 'boost', 'admin-users', 'reconstruction', 'version', 'contact',
 ]
 const activeTool = ref(ALLOWED_VIEWS.includes(viewParam) ? viewParam : defaultView)
+
+// 视图映射 + KeepAlive：仅「AI 复盘」页在切走时保持存活（SSE 流不中断，
+// 返回时进度/结果直接可见）；其余视图仍按需挂载/卸载，行为不变。
+const VIEW_COMPONENTS = {
+  home: HomePage,
+  replay: ReplayPage,
+  leaderboard: LeaderboardPage,
+  extended: ExtendedPage,
+  profile: ProfilePage,
+  boost: BoostPage,
+  'admin-users': AdminUsersPage,
+  reconstruction: ReconstructionPage,
+  version: VersionPage,
+  contact: ContactPage
+}
+const currentView = computed(() => VIEW_COMPONENTS[activeTool.value] || ReplayPage)
 
 function navigate(view) {
   activeTool.value = view
@@ -73,16 +89,9 @@ function onLangChange(e) { localStorage.setItem('wotb-lang', e.target.value) }
   </div>
 
   <div class="tb-content">
-    <HomePage v-if="activeTool === 'home'" />
-    <ProfilePage v-else-if="activeTool === 'profile'" />
-    <LeaderboardPage v-else-if="activeTool === 'leaderboard'" />
-    <ExtendedPage v-else-if="activeTool === 'extended'" />
-    <BoostPage v-else-if="activeTool === 'boost'" />
-    <AdminUsersPage v-else-if="activeTool === 'admin-users'" />
-    <ReconstructionPage v-else-if="activeTool === 'reconstruction'" />
-    <VersionPage v-else-if="activeTool === 'version'" />
-    <ContactPage v-else-if="activeTool === 'contact'" />
-    <ReplayPage v-else />
+    <KeepAlive :include="['ReconstructionPage']">
+      <component :is="currentView" />
+    </KeepAlive>
   </div>
 
   <!-- Global Error Dialog -->

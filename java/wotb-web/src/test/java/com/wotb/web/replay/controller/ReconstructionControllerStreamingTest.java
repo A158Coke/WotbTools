@@ -99,7 +99,8 @@ class ReconstructionControllerStreamingTest {
                             Map.of("zh", "黄沙荒漠", "en", "Desert Sands", "ru", "Пустынные пески"),
                             2,
                             new com.wotb.web.replay.dto.MapOverview.Bounds(-256, 260, -251, 254.3),
-                            List.of(), null, List.of(), List.of(), null, List.of()));
+                            List.of(), null, List.of(), List.of(), null, List.of(),
+                            null, null));
         }).when(reviewService).analyzeStreaming(any(), any(), any());
 
         final String body = drainUntilTerminal(analyzeDirect("zh", null));
