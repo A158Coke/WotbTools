@@ -168,7 +168,7 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 
 `GET /api/booster/assignments` 默认返回当前登录打手的活跃订单；追加 `?includeHistory=true` 时返回活跃 + 历史订单（活跃优先、历史按分配时间倒序），供个人中心回看已完成/已取消/已拒绝订单。`PATCH /api/boost/boosters/my/availability` 允许打手本人切换 `available`，用于暂停/恢复接收新订单，并返回最新 `BoosterDto` 给个人中心即时刷新。打手可通过 `PATCH /api/booster/assignments/{id}/accept|start|complete|decline` 流转自己的订单；提交完成后需求进入 `PENDING_CONFIRM`，客户调用 `PATCH /api/boost/requests/my/{id}/confirm-completion` 确认为 `CLOSED`。若客户未操作，系统默认 72 小时后自动确认；管理员也可关闭 `PENDING_CONFIRM`/`EXCEPTION` 订单。三条入口共用带行锁的幂等完结路径，同时把分配置为 `COMPLETED`、写入 `unassigned_at` 并释放打手。管理员分配订单时要求打手资格为 `ACTIVE`、未暂停接单且没有活跃订单；前端会按资格、接单状态、活跃订单数、等级和擅长内容推荐排序。
 
-打手资格申请支持用户资料中的 `CN / ASIA / EU / NA` 四个区服，并把规范化后的真实区服写入申请记录。列表接口 `GET /api/boost/booster-applications/my` 与 `GET /api/admin/boost/booster-applications` 返回不含截图、微信、日常时段和自评的 `BoosterApplicationSummaryDto`，并通过 JPA 构造投影避免读取 Base64 图片列；审核状态变更接口也返回该摘要 DTO，避免重复回传图片。管理员需要完整资料时调用 `GET /api/admin/boost/booster-applications/{id}`；资格审批前端只在点击“详情”后请求该接口。
+客户提交陪练需求和打手资格申请都支持 `CN / ASIA / EU / NA` 四个区服。`GET /api/boost/options` 从 `BoostRegion` 动态返回客户需求区服选项，空值默认 `CN`、未知值返回 `UNSUPPORTED_BOOST_REGION`；需求区服会显示在客户、管理员列表，并通过 `BoostAssignmentDto.region` 提供给打手工作台。打手申请则把用户资料中规范化后的真实区服写入申请记录。列表接口 `GET /api/boost/booster-applications/my` 与 `GET /api/admin/boost/booster-applications` 返回不含截图、微信、日常时段和自评的 `BoosterApplicationSummaryDto`，并通过 JPA 构造投影避免读取 Base64 图片列；审核状态变更接口也返回该摘要 DTO，避免重复回传图片。管理员需要完整资料时调用 `GET /api/admin/boost/booster-applications/{id}`；资格审批前端只在点击“详情”后请求该接口。
 
 完成确认窗口由 `BOOST_AUTO_CONFIRM_HOURS` 配置（默认 `72`），到期扫描间隔由 `BOOST_AUTO_CONFIRM_SCAN_MS` 配置（默认 `300000` 毫秒）；线上部署可用同名 GitHub repository variables 覆盖。Flyway V11 会给已有 `PENDING_CONFIRM` 订单从迁移时刻起补一个 72 小时窗口。
 

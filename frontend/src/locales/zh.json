@@ -442,7 +442,10 @@
             "REJECTED": "已拒绝"
         },
         "regionValue": {
-            "CN": "国服"
+            "CN": "国服",
+            "ASIA": "亚洲服",
+            "EU": "欧洲服",
+            "NA": "北美服"
         },
         "requestTypeValue": {
             "COACHING": "技术指导 / 意识陪练",

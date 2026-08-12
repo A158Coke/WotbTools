@@ -966,6 +966,7 @@ function switchTab(t) {
         <div v-for="r in myRequests" :key="r.id" class="my-item">
           <div class="my-header">
             <span class="my-type">{{ label('requestTypeValue', r.requestType) }}</span>
+            <span>{{ label('regionValue', r.region) }}</span>
             <span :class="'badge badge-' + statusBadge(r.status)">{{ statusText(r.status) }}</span>
             <span class="my-time">{{ new Date(r.createdAt).toLocaleString() }}</span>
           </div>
@@ -1001,6 +1002,7 @@ function switchTab(t) {
         <div v-for="a in myAssignments" :key="a.id" class="my-item">
           <div class="my-header">
             <strong>#{{ a.requestId }}</strong>
+            <span>{{ label('regionValue', a.region) }}</span>
             <span>{{ label('requestTypeValue', a.requestType) }}</span>
             <span :class="'badge badge-' + statusBadge(a.requestStatus)">{{ statusText(a.requestStatus) }}</span>
             <span :class="'badge badge-' + statusBadge(a.status)">{{ assignmentStatusText(a.status) }}</span>
@@ -1049,6 +1051,7 @@ function switchTab(t) {
         <div v-for="r in adminRequests" :key="r.id" class="admin-item">
           <div class="admin-header">
             <strong>#{{ r.id }}</strong>
+            <span>{{ label('regionValue', r.region) }}</span>
             <span>{{ label('requestTypeValue', r.requestType) }}</span>
             <span :class="'badge badge-' + statusBadge(r.status)">{{ statusText(r.status) }}</span>
             <span class="admin-player">{{ r.playerNickname || r.contactValue }}</span>
