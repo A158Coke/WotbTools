@@ -1,0 +1,97 @@
+# 回放解析字段字典（已确认）
+
+> 用途：记录本项目**已确认解析**的字段与含义，方便后人查阅，避免重复逆向。
+> 解析实现细节见 `docs/replay-data.md`（文件结构/事件流逆向）与 `docs/replay-reverse-engineering.md`；
+> AI 证据链见 `docs/DEVELOPER_GUIDE.md` §AI Review Harness。
+> 字段号基于 v11.18.0_china_apple 回放分析，可能随游戏版本变化。
+
+## 1. 权威结算层（`battle_results.dat` → `PlayerResult`）
+
+来源：`ReplayParser` 解析 pickle → protobuf（`#301` 玩家战绩 → `#2` 单场明细），字段号来自 protobuf schema。
+
+| 字段 | 类型 | protobuf 来源 | 含义 | 备注 |
+|---|---|---|---|---|
+| `accountId` | long | 名册 | 玩家账号 ID | 身份主键（>0 可用） |
+| `nickname` | String | 名册 | 昵称 | 录像者按昵称匹配（无 accountId 兜底） |
+| `clan` | String | 名册 | 军团标签 | 团队标签 dominant clan（如 CHRD） |
+| `team` | int | 名册 | 原始队伍编号 1/2 | 只用于内部计算；prompt 禁止直出 |
+| `tankId` | long | 名册 | 坦克 ID | tankopedia 单一数据源映射 |
+| `nShots` / `nHitsDealt` / `nPenetrationsDealt` | int | 战绩 | 开炮/命中/击穿次数 | |
+| `damageDealt` | int | 战绩 | 输出伤害 | 权威 |
+| `damageAssisted` | int | 战绩 `#9 + #10` | 协助伤害 | 两字段求和 |
+| `damageReceived` | int | 战绩 | 损失血量（结算字段曾名「承伤」） | prompt 统一称「损失血量」 |
+| `damageBlocked` | int | 战绩 | 格挡伤害 | 越高越好，与损失血量严格区分 |
+| `nHitsReceived` / `nPenetrationsReceived` | int | 战绩 | 被命中/被击穿次数 | |
+| `nEnemiesDamaged` | int | 战绩 | 击伤敌数 | |
+| `kills` | int | 战绩 | 击杀数 | |
+| `victoryPointsEarned` | int | 战绩 `#32` | 占点得分 | supremacy 争霸赛逐人 |
+| `victoryPointsSeized` | int | 战绩 `#33` | 占点占领分 | supremacy 争霸赛逐人 |
+| `survived` | boolean | 战绩 | 是否存活 | |
+| `deathTimeMillis` | long | 战绩 `#104` | 死亡时刻（毫秒，battle-relative） | 存活/未知=0 → 事件流估算 |
+| `survivalTimeSec` | double | 派生 | 存活时间（秒） | ReplayParser 计算 |
+| `xp` / `credits` | int | 战绩 | 经验/银币 | 展示用 |
+| `potentialDamage` 系 | int/List | 战绩 | 潜在伤害 | 逐击杀明细解析完成前 = 实际伤害 |
+| `tankName` / `tankTier` / `tankType` / `tankNation` / `alphaDamage` | String | tankopedia 映射 | 展示派生字段 | 非回放原始值 |
+
+## 2. 战斗层（`meta.json` → `Battle`）
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `arenaId` | String | 地图/竞技场 ID |
+| `mapName` | String | 内部地图 code（如 `desert_train`） |
+| `arenaBonusType` | Integer | 模式：1=随机战斗、2=训练房、3..10=联赛/锦标赛；null=未知 |
+| `winnerTeam` | Integer | 获胜队伍原始编号；null=平局/未知 |
+| `durationS` | Double | 战斗时长（秒） |
+| `startTime` | Long | 战斗开始时间戳 |
+| `version` / `clientVersion` | String | 游戏/客户端版本 |
+| `recorder` | String | 录像者昵称（meta 无 accountId，靠昵称匹配名册） |
+| `recorderVehicle` | String | 录像者坦克 |
+| `players` | List\<PlayerResult\> | 全部玩家战绩 |
+
+## 3. 事件流层（`data.wotreplay` → `ReplayEvent` 子类）
+
+所有事件共用：`sequence`（包序号）、`timestamp`（raw 时钟 → battle-relative）、`packetType`、`DecodeConfidence`。
+
+`DecodeConfidence` 四级：`EXACT`（所有已知字段精确解析）/ `INFERRED`（部分字段上下文推断）/ `PARTIAL`（仅部分成功）/ `UNKNOWN`（未解码）。
+
+| 事件 | 已确认字段 | 含义 | AI 用途 |
+|---|---|---|---|
+| `ParticipantMappingEvent` | `entityId` ↔ `accountId` / `nickname` / `team` | 实体-玩家身份映射 | 视角解析、成员归属、录像者实体 |
+| `PositionChangedEvent` | `entityId`, `x/y/z`, `positionErrorX/Y/Z`, `yaw/pitch/roll`, `errorFlag` | 位置更新 | 移动段、阵型簇、脱节/接应/图控、最后已知位置 |
+| `DamageEvent` | `attackerEid`/`victimEid` (+`accountId`), `damage`, `lethal` | 单次伤害 | 交火段、集火候选、对炮明细、死亡估算 |
+| `HealthChangedEvent` | `entityId`, `currentHealth`, `maxHealth`, `alive` | HP 变化 | HP 动量（只取两端共同可靠观察） |
+| `VehicleDestroyedEvent` | `entityId`, `killerEid`, `inferred` | 车辆被击毁 | 死亡事件流估算 |
+| `BattleEndedEvent` | `winnerTeam` | 战斗结束 | battle-end 兜底 |
+| `EntityCreatedEvent` / `EntityRemovedEvent` | `entityId`（+未解析 `unknownInitData`） | 实体生命周期 | 覆盖统计 |
+| `UnknownReplayEvent` | — | 未解码包 | 覆盖率（decodedRatio） |
+
+> **观测伤害边界**：事件流迄今只逆向出 sub3 直接伤害子类型（type 5/31/35/39 等未解），
+> 观测聚合 ≠ 权威结算时标记 `OBSERVED_DAMAGE_IS_PARTIAL`，prompt 层抑制观测数字。
+
+## 4. 派生/证据字段（AI 复盘使用，由上面数据确定性计算）
+
+| 字段/记录 | 计算规则 | 含义 |
+|---|---|---|
+| `MovementSegment` | 位置流压缩为移动段 | `type=MOVING/STATIONARY/UNKNOWN`、raw 起终点、distance（canonical 米）、avgSpeed |
+| `TeamFormationPhase` / `TeamFormationCluster` | 15s 窗口；X/Z ≤100m 连通簇 | 质心（canonical 500×500）、region 1-9、离散度 |
+| `TeamEngagementSummary` | 相邻可靠伤害 ≤10s 一段；同目标 ≤5s 内 ≥2 人命中=集火候选 | 交火段、集火、目标切换、结果 |
+| `BattlePhaseSummary` | OPENING=45s / FIRST_CONTACT / MID_GAME / ENDGAME | 阶段 + 阶段末双方存活人数 |
+| `DeathProximity` | 阵亡时刻与主力质心（其余 OBSERVED 本队均值）距离 | canonical 米 + 观测时间差 + 置信度；无 OBSERVED 不硬算 |
+| `TeamAggregateResult` | `battle_results` 权威聚合 | 团队伤害/承伤/击杀/存活/死亡时刻 |
+| `TeamObservedAggregate` | 事件流观测子集 | 非权威；覆盖不全时抑制数字 |
+| `KeyBattleEvent` | 事件流/派生 | `TEAM_MEMBER_DESTROYED` / `TEAM_FIRST_CONTACT` / `TEAM_FORMATION_SPLIT` / `BATTLE_END` |
+
+## 5. 口径约定（易错点）
+
+- **死亡时刻**：`deathTimeMillis=0`（存活/未知）→ 回退事件流估算；prompt 用 `DEATH_SOURCE=权威结算/事件流估算/未知` 标注，禁止把估算当权威。
+- **坐标**：raw ±250m 线性映射到 500×500 canonical；三态 `VALID/CLAMPED/INVALID`；九宫格 region 只描述方位，禁止用 region 差推断距离。
+- **时间**：一律 battle-relative（`tryRelative` 转换）；准备阶段事件排除。
+- **权威 vs 观测**：`battle_results` 是唯一可信口径；事件流数字只是观测子集。
+- **录像者**：只用于确定视角（PLAYER_FOCUSED 的个人复盘 / TEAM_PERSPECTIVE 的视角队伍），不参与团队结论权重。
+
+## 6. 相关文档
+
+- `docs/replay-data.md` — 文件结构、事件流格式、解析安全预算
+- `docs/replay-reverse-engineering.md` — 逆向记录
+- `docs/DEVELOPER_GUIDE.md` — 架构与 AI 证据链
+- `docs/team-ai-review-feature.md` — Team-Level AI 复盘设计
