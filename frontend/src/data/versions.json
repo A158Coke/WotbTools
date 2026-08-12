@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.2",
+    "date": "2026-08-13",
+    "tag": "fix",
+    "zh": "地图鸟瞰更紧凑：等比例缩小约三分之一，平板/桌面一屏内完整可见；移除九宫格数字标注，保留可玩区网格与分区框",
+    "en": "Map overview is more compact: it scales down to about two-thirds so tablets and desktops see the full map on one screen; nine-grid numbers are removed while the playable grid and region boxes remain",
+    "ru": "Обзор карты стал компактнее: карта пропорционально уменьшена примерно до двух третей и полностью видна на одном экране планшета/ПК; номера регионов 3×3 убраны, сетка и границы зон сохранены"
+  },
+  {
     "v": "2.11.1",
     "date": "2026-08-12",
     "tag": "fix",

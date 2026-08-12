@@ -163,6 +163,15 @@ describe('MapOverview', () => {
     expect(wrapper.findAll('.spawns circle').length).toBe(1)
   })
 
+  it('scales the map to two-thirds width and draws nine-grid boxes without numeric labels', () => {
+    const wrapper = mountOverview(makeOverview())
+    // 9 个九宫格分区框保留（region-line），数字标注（region-label）不再渲染。
+    expect(wrapper.findAll('.region-line').length).toBe(9)
+    expect(wrapper.find('.region-label').exists()).toBe(false)
+    // 等比例缩小三分之一：SVG 宽度 = 容器 66.7%。
+    expect(wrapper.find('.map-svg').attributes('style')).toContain('66.7%')
+  })
+
   it('renders nothing when the map has no image asset (素材开关)', () => {
     const wrapper = mountOverview(makeOverview({ mapCode: 'holmeisk' }))
     expect(wrapper.find('[data-test="map-overview"]').exists()).toBe(false)
