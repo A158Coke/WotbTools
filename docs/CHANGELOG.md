@@ -34,6 +34,13 @@
 - **DI 注入方式收敛为构造器注入**：消除后端 9 处 `@Autowired` 字段注入（`MeterRegistry` / `ReplayUsageMetrics` 可选依赖），统一改造为构造器参数注入（参数级 `@Autowired(required = false)`）。改造范围：`AiReplayReviewService` / `AiReviewWorkerExecutor` / `PreBattleStrategicService` / `TacticalReviewHarness` / `TeamAutopsyService` / `TeamReplayAnalysisService` / `ReconstructionController` / `ReplayService`；`AiReplayAnalysisService` 测试包级构造器连动传 `null`。所有改造依赖字段升级为 `final`，便于单测直接 `new XxxService(mockDep)` 构造无需反射；行为零变更，`mvn -s settings.xml -pl wotb-web -am test` 618 用例全绿。`review-with-docs` skill 同步新增 DI 注入检查单（方法级 + 参数级 `@Autowired(required = false)` 改造优先级、不可变性、测试可构造等 5 项 sub-checks）。
 
 ### Fixed
+- **地图鸟瞰渲染边界修正（图片坐标 vs 分析边界分离）**：`frontend/src/data/mapImages.js` 为全部
+  28 张已登记地图增加 `coordinateBounds`（来源：对应 `map-semantics/*.semantic.json` 的
+  `coordinateSystem.worldBounds`，当前均为 -300..300，逐图可校准）；`MapOverview.vue` 渲染统一改用
+  `renderBounds = coordinateBounds ?? playableBounds` 换算路线/起点/阵亡标记/热力/分析网格，
+  `playableBounds` 继续承担 6×6 分析网格、热力分桶与可玩区域判断——修复越靠近地图边缘偏移越大的问题
+  （如 Molendijk `Spawn_1_02` 由 (110.6, 741.7) 校正至 (152.4, 693.7)）。新增 Molendijk 真实坐标
+  校准、中心映射、右上出生点、无 coordinateBounds 兼容回退与路线/出生点/阵亡/网格同变换回归测试。
 - **打手管理编辑回归与等级规则**：打手新增/编辑改为 `Teleport` 模态框，支持遮罩/Esc 关闭与焦点约束；编辑已有打手时关联用户只读且不再显示/提交 Keycloak UUID，PATCH 仅发送等级、资格状态、接单状态、联系方式、擅长及实际变更过的人工备注。资格申请审批不再把 `application_id`、账号 ID、档期、微信、自评等系统字段拼入 `booster_profile.description`；Flyway V14 只清理与旧自动模板精确相等的历史备注，保留人工修改内容。申请等级由四档扩为五档（新增 `MASTER`/大师级）；`AVERAGE_GOD`/场均神仅允许管理员编辑已有打手时授予。`booster_profile` 新增由绑定资料/审批申请回填的 `wotb_server`，等级 CHECK + 应用预检 + 数据库部分唯一索引共同保证合法等级及每个区服最多一名场均神，`BoosterDto` 同步返回区服。
 - **客户陪练需求支持四服**：客户需求 `BoostRegion` 现在接受 `CN / ASIA / EU / NA`，提交页从动态选项展示四服，客户/管理员/打手订单视图均显示需求区服。`BoostAssignmentDto` 新增 `region` 透传给打手工作台；参数化回归测试覆盖四服、大小写/空白规范化与未知区服拒绝，API 契约测试锁定四个选项值。`boost_request.region` 原本就是无 CN-only CHECK 的 `varchar`，无需数据库迁移。
 - **打手资格申请支持四服**：`BoosterApplicationService` 现在接受并规范化 `CN / ASIA / EU / NA`，申请记录保存用户资料中的真实区服，不再拒绝 Wargaming 亚洲、欧洲、北美服玩家或把其区服误写为 `CN`；参数化回归测试覆盖四服与未知区服拒绝。

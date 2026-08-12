@@ -5,7 +5,7 @@ import { mapImages } from '../data/mapImages'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 
 /**
- * 地图鸟瞰：底图（拉伸铺满 playableBounds）+ 6x6 网格 + 九宫格线/编号 + 出生点；
+ * 地图鸟瞰：底图（按图片 coordinateBounds 渲染）+ 6x6 分析网格（playableBounds 系）+ 九宫格线/编号 + 出生点；
  * 热力视图（阵营 × 类型）与路线视图（阵营 × 阶段）双 Tab。
  * 数据来自后端 SSE done 的 mapOverview；本组件仅在 mapImages 有该地图素材时被渲染。
  */
@@ -39,7 +39,11 @@ watch(view, (next) => {
 
 const W = computed(() => image.value ? image.value.width : 800)
 const H = computed(() => image.value ? image.value.height : 800)
-const B = computed(() => props.overview.playableBounds)
+// 渲染坐标边界：优先用图片自身的 coordinateBounds（语义 JSON 的 worldBounds，逐图校准）；
+// 旧配置无 coordinateBounds 时回退 playableBounds（兼容策略）。
+// playableBounds 仍承担分析职责：gridCells/热力/区域判断都用它，绘制时经 renderBounds 统一换算。
+const renderBounds = computed(() =>
+  image.value?.coordinateBounds ?? props.overview.playableBounds)
 // 标题：按当前 locale 取 displayNames（zh/en/ru），缺失回退 displayName
 const title = computed(() => {
   const names = props.overview.displayNames
@@ -49,10 +53,10 @@ const title = computed(() => {
 
 // 语义坐标（x=回放 x，y=回放 z）→ SVG 像素（y 反转：语义 y 向上，图片 y 向下）
 function toX(x) {
-  return ((x - B.value.xMin) / (B.value.xMax - B.value.xMin)) * W.value
+  return ((x - renderBounds.value.xMin) / (renderBounds.value.xMax - renderBounds.value.xMin)) * W.value
 }
 function toY(y) {
-  return ((B.value.yMax - y) / (B.value.yMax - B.value.yMin)) * H.value
+  return ((renderBounds.value.yMax - y) / (renderBounds.value.yMax - renderBounds.value.yMin)) * H.value
 }
 
 // ---- 热力 ----

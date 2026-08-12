@@ -44,12 +44,15 @@
 - **展示名**（zh/en/ru）来自 `common/map_names.json`（游戏客户端名称）。注意内部 code 与英文名常不一致（如 `neptune`=Normandy、`erlenberg`=Middleburg、`rock`=Mayan Ruins），这是正常的，两套分别对应"解析键"与"用户可见名"。
 - **素材文件名**：统一为**英文展示名小写中划线**（如 Normandy → `normandy.png`，Middleburg → `middleburg.png`，Winter Malinovka → `winter-malinovka.png`）。文件位于 `frontend/src/assets/maps/`。
 - **唯一权威**：素材与尺寸只在 `frontend/src/data/mapImages.js` 维护（后端 `MapOverview.image` 恒 null）。新增/修改素材只需改这一处 + 本表。
+- **渲染坐标边界**：每条素材配置 `coordinateBounds`（图片对应的世界坐标范围，取自语义 JSON 的
+  `coordinateSystem.worldBounds`；当前 28 张均为 -300..300）。渲染统一用它换算像素，
+  分析网格仍用 `playableBounds`——两者分离，逐图可独立校准。
 - **语义数据手工调整**：`common/map-semantics/*.semantic.json` 的区域 label/特征/风险等人类可读字段为中文，可直接手工修改；**改后不要重跑 map-semanticizer**（重新生成会整份覆盖），直到语义化器引入人工覆写合并。
 
 ## 新增地图 / 素材流程
 
 1. 素材图片按英文展示名小写中划线放入 `frontend/src/assets/maps/`（如 `wasteland.png`）。
-2. 在 `frontend/src/data/mapImages.js` 加一行：`import xxxImg from '../assets/maps/xxx.png'` + `code: { src: xxxImg, width, height }`（key 为内部 code）。
+2. 在 `frontend/src/data/mapImages.js` 加一行：`import xxxImg from '../assets/maps/xxx.png'` + `code: { src: xxxImg, width, height, coordinateBounds }`（key 为内部 code；`coordinateBounds` 取该图语义 JSON 的 `coordinateSystem.worldBounds`）。
 3. 更新本表对应行（素材文件/尺寸/状态）。
 4. 后端无需改动；前端 `vite build` 会自动打包素材。CI 绿后合并部署即生效。
 
