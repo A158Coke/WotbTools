@@ -15,7 +15,7 @@ const props = defineProps({
   }
 })
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const image = computed(() => mapImages[props.overview.mapCode] || null)
 
@@ -33,6 +33,12 @@ watch(view, (next) => {
 const W = computed(() => image.value ? image.value.width : 800)
 const H = computed(() => image.value ? image.value.height : 800)
 const B = computed(() => props.overview.playableBounds)
+// 标题：按当前 locale 取 displayNames（zh/en/ru），缺失回退 displayName
+const title = computed(() => {
+  const names = props.overview.displayNames
+  const localized = names && locale && locale.value ? names[locale.value] : null
+  return localized || props.overview.displayName
+})
 
 // 语义坐标（x=回放 x，y=回放 z）→ SVG 像素（y 反转：语义 y 向上，图片 y 向下）
 function toX(x) {
@@ -161,7 +167,7 @@ const gridRegions = computed(() => {
 <template>
   <div v-if="image" class="map-overview" data-test="map-overview">
     <div class="map-head">
-      <span class="map-title">{{ overview.displayName }}</span>
+      <span class="map-title">{{ title }}</span>
       <div class="map-tabs" role="tablist">
         <button
           type="button"

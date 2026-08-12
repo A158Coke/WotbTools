@@ -19,7 +19,9 @@ public final class MapNames {
 
     private static final String LOCALE_ZH = "zh";
     private static final String LOCALE_EN = "en";
+    private static final String LOCALE_RU = "ru";
     private static final Map<String, String> CN = loadChineseNames();
+    private static final Map<String, Localized> LOCALIZED = loadLocalized();
 
     private MapNames() {
     }
@@ -68,6 +70,41 @@ public final class MapNames {
 
     private static String normalizeKey(final String mapName) {
         return mapName == null ? "" : mapName.toLowerCase(Locale.ROOT).trim();
+    }
+
+    /** 单张地图的三语显示名（zh/en/ru；未收录时三语均回退内部 code）。 */
+    public record Localized(String zh, String en, String ru) {
+    }
+
+    private static Map<String, Localized> loadLocalized() {
+        final Map<String, Localized> map = new HashMap<>();
+        try (InputStream in = MapNames.class.getResourceAsStream("/map_names.json")) {
+            if (in != null) {
+                final JsonNode root = JsonMapper.builder().build().readTree(in);
+                root.properties().forEach(entry -> {
+                    final String code = normalizeKey(entry.getKey());
+                    final JsonNode node = entry.getValue();
+                    map.put(code, new Localized(
+                            textOrNull(node == null ? null : node.get(LOCALE_ZH)),
+                            textOrNull(node == null ? null : node.get(LOCALE_EN)),
+                            textOrNull(node == null ? null : node.get(LOCALE_RU))));
+                });
+            }
+        } catch (Exception ignored) {
+            // 缺映射表时降级为显示原始内部名
+        }
+        return map;
+    }
+
+    /**
+     * 三语显示名；未收录时三语均回退内部 code（与 {@link #cn} 的降级一致）。
+     */
+    public static Localized localized(final String mapName) {
+        if (!StringUtils.hasText(mapName)) {
+            return new Localized(mapName, mapName, mapName);
+        }
+        final Localized hit = LOCALIZED.get(normalizeKey(mapName));
+        return hit != null ? hit : new Localized(mapName, mapName, mapName);
     }
 
     /** 中文名,未匹配则原样返回(与 Python get_map_cn_name 行为一致)。 */
