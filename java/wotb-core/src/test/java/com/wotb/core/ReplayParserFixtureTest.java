@@ -1,6 +1,7 @@
 package com.wotb.core;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.parse.ReplayParser;
 import org.junit.jupiter.api.Test;
 
@@ -11,6 +12,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -50,6 +52,13 @@ class ReplayParserFixtureTest {
         assertEquals("rift", b.mapName);
         assertEquals(Integer.valueOf(2), b.winnerTeam);
         assertEquals(14, b.players.size());
+
+        // meta.json#playerName 可能是「军团-昵称」拼接（如 CHRD-A158布丁）：
+        // 录像者必须按 roster 纯昵称解析，禁止把军团名当玩家名
+        final PlayerResult recorder = b.recorderResult();
+        assertNotNull(recorder, "随机战录像者必须能按纯昵称解析");
+        assertEquals(recorder.nickname, b.recorder,
+                "录像者必须是纯昵称，不得带军团前缀");
 
         final int team1 = b.players.stream().filter(p -> p.team == 1)
                 .mapToInt(p -> p.damageDealt).sum();

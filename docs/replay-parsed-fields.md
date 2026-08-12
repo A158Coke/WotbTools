@@ -89,6 +89,7 @@
 
 ## 5. 口径约定（易错点）
 
+- **录像者昵称**：`meta.json#playerName` 在部分版本中是「军团-昵称」拼接（如 `CHRD-A158布丁`），roster 的 nickname 是纯昵称。解析层 `ReplayParser.resolveRecorderNickname` 会先精确匹配 roster 昵称，再尝试「clan+分隔符+nickname」常见形式并唯一匹配时归一化为纯昵称；随机战斗复盘只使用玩家 nickname，不得把军团名当作玩家名。
 - **死亡时刻**：`deathTimeMillis=0`（存活/未知）→ 回退事件流估算；prompt 用 `DEATH_SOURCE=权威结算/事件流估算/未知` 标注，禁止把估算当权威。
 - **坐标**：优先使用每张地图 `map-semantics/*.semantic.json` 的 `playableBoundsMeters` 推导 `centerX/centerZ/halfExtent`，再映射到 500×500 canonical；只有语义缺失或边界无效时才回退中心原点、`halfExtent=250`。三态 `VALID/CLAMPED/INVALID`；九宫格 region 只描述方位，禁止用 region 差推断距离。
 - **时间**：派生证据优先使用可靠的 battle-relative 时间（`battleClockSec`）；战斗开始无法解析时 `tryRelative()` 返回 `UNRESOLVED_RAW_ONLY`，事件以 `UNRESOLVED_RAW_ONLY_EVENTS_IGNORED` 标记并从派生计算中排除（`rawClockSec` 仍保留，但不作为可用时间）；准备阶段事件排除。
