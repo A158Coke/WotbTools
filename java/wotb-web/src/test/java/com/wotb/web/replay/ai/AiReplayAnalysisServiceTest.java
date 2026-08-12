@@ -58,7 +58,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
-import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 
 class AiReplayAnalysisServiceTest {
 
