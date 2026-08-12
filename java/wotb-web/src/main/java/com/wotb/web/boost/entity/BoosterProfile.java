@@ -11,7 +11,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.OffsetDateTime;
 
-/** 打手档案。与 Flyway V3 逐列对齐。 */
+/** 打手档案。与 Flyway 迁移逐列对齐。 */
 @Entity
 @Table(name = "booster_profile")
 public class BoosterProfile {
@@ -28,6 +28,9 @@ public class BoosterProfile {
 
     @Column(name = "keycloak_user_id", length = 64)
     private String keycloakUserId;
+
+    @Column(name = "wotb_server", nullable = false, length = 32)
+    private String wotbServer = "CN";
 
     @Column(name = "available", nullable = false)
     private Boolean available;
@@ -70,6 +73,9 @@ public class BoosterProfile {
 
     public String getKeycloakUserId() { return keycloakUserId; }
     public void setKeycloakUserId(final String keycloakUserId) { this.keycloakUserId = keycloakUserId; }
+
+    public String getWotbServer() { return wotbServer; }
+    public void setWotbServer(final String wotbServer) { this.wotbServer = wotbServer; }
 
     public Boolean getAvailable() { return available; }
     public void setAvailable(final Boolean available) { this.available = available; }
