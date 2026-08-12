@@ -98,7 +98,7 @@ describe('MapOverview', () => {
   })
 
   it('renders nothing when the map has no image asset (素材开关)', () => {
-    const wrapper = mountOverview(makeOverview({ mapCode: 'lumber' }))
+    const wrapper = mountOverview(makeOverview({ mapCode: 'holmeisk' }))
     expect(wrapper.find('[data-test="map-overview"]').exists()).toBe(false)
   })
 

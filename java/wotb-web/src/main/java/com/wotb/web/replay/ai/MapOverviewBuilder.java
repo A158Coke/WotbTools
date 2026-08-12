@@ -15,7 +15,6 @@ import com.wotb.core.replay.map.MapGridProfile;
 import com.wotb.core.replay.map.MapGridRegistry;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.util.PlayerResultFormat;
-import com.wotb.web.replay.dto.MapImageCatalog;
 import com.wotb.web.replay.dto.MapOverview;
 
 import java.util.ArrayList;
@@ -103,7 +102,8 @@ public final class MapOverviewBuilder {
                                         cell.bounds().xMin(), cell.bounds().xMax(),
                                         cell.bounds().yMin(), cell.bounds().yMax())))
                         .toList(),
-                MapImageCatalog.imageFor(battle.mapName),
+                // 素材信息由前端 mapImages.js 唯一维护（素材开关）；后端 image 恒 null。
+                null,
                 profile.spawnPoints().stream()
                         .map(s -> new MapOverview.SpawnPoint(s.name(), s.team(), s.x(), s.y()))
                         .toList(),

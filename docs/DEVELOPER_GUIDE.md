@@ -404,11 +404,13 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
 
 ### 图片素材与对齐约定
 
-- **素材开关在前端**：`frontend/src/data/mapImages.js`（mapCode → 图片资源 + 尺寸）是渲染
-  门控——该地图无素材时整块跳过、不画示意图。后端 `MapImageCatalog` 仅信息性（同目录）。
-- **新增素材流程**：图片放入 `frontend/src/assets/maps/` + `mapImages.js` 加一行
-  （mapCode 用语义文件的 `mapCodes` 权威 code，如 `desert_train`、`neptune`）+ 后端
-  `MapImageCatalog` 加一行（保持同步）。
+- **素材唯一权威在前端**：`frontend/src/data/mapImages.js`（mapCode → 图片资源 + 尺寸）既是
+  渲染门控也是唯一素材源——该地图无素材时整块跳过、不画示意图；后端 `MapOverview.image` 恒
+  null（兼容字段，不维护第二份目录）。
+- **新增素材流程**：图片按英文展示名小写中划线放入 `frontend/src/assets/maps/`（如
+  `normandy.png`）+ `mapImages.js` 加一行（key 用内部 code，如 `neptune`）+ 更新
+  `docs/map-catalog.md` 主表。完整映射（内部 code ↔ 展示名 ↔ 语义 mapId ↔ 素材）见
+  `docs/map-catalog.md`。
 - **对齐假设**：图片可视区 = `playableBounds`，前端拉伸铺满；desert-sands 765x772 vs
   bounds 约 516x505m（aspect 偏差约 3%，可接受）。若实测错位再补每图校准常量。
 
