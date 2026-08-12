@@ -74,7 +74,8 @@ cd docker/online && docker compose up -d --build             # 在线版(四容�
 
 ### Phase 4: Report
 12. 输出**可视化审查报告**：变动文件/行数、审查轮次、发现问题数/修复数、测试结果；并更新 `docs/current-plan.md` 任务状态（IN PROGRESS → COMPLETED / BLOCKED）。
-13. **等待用户审批后提交**（规则 9）。
+13. **提交**：review-with-docs 审查零 blocker 时允许直接提交并开 PR（无需再等用户指示）；
+    存在 blocker/未闭环问题时等待用户审批后提交（规则 9）。
 14. 深入背景见 [DEVELOPER_GUIDE.md](../docs/DEVELOPER_GUIDE.md)。
 ## 禁止
 
