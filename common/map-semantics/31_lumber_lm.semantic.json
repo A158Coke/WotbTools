@@ -5,7 +5,7 @@
     "lumber"
   ],
   "displayName": "Horrorstadt",
-  "verified": false,
+  "verified": true,
   "source": "CLIENT_RESOURCE_DERIVED",
   "battleVariant": "lm0",
   "warnings": [],

@@ -3,7 +3,7 @@
   "mapId": "30_grossberg_sh",
   "mapCodes": [],
   "displayName": "30_grossberg_sh",
-  "verified": false,
+  "verified": true,
   "source": "CLIENT_RESOURCE_DERIVED",
   "battleVariant": "UNKNOWN",
   "warnings": [],
