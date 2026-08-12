@@ -34,6 +34,10 @@
 - **DI 注入方式收敛为构造器注入**：消除后端 9 处 `@Autowired` 字段注入（`MeterRegistry` / `ReplayUsageMetrics` 可选依赖），统一改造为构造器参数注入（参数级 `@Autowired(required = false)`）。改造范围：`AiReplayReviewService` / `AiReviewWorkerExecutor` / `PreBattleStrategicService` / `TacticalReviewHarness` / `TeamAutopsyService` / `TeamReplayAnalysisService` / `ReconstructionController` / `ReplayService`；`AiReplayAnalysisService` 测试包级构造器连动传 `null`。所有改造依赖字段升级为 `final`，便于单测直接 `new XxxService(mockDep)` 构造无需反射；行为零变更，`mvn -s settings.xml -pl wotb-web -am test` 618 用例全绿。`review-with-docs` skill 同步新增 DI 注入检查单（方法级 + 参数级 `@Autowired(required = false)` 改造优先级、不可变性、测试可构造等 5 项 sub-checks）。
 
 ### Fixed
+- **地图鸟瞰体积与九宫格标注调整**：`MapOverview.vue` 鸟瞰 SVG 等比缩至容器 66.7%（约 2/3）并居中，
+  iPad Pro / 桌面一屏内完整可见；移除九宫格数字标注（region-label 文本、`--map-region-label` 与
+  mapPalette `regionLabel` 死代码一并清理），保留 region-line 分区框与 6×6 网格；新增「无
+  region-label、region-line=9、SVG 宽度 66.7%」回归断言；versions 2.11.2。
 - **地图鸟瞰渲染边界修正（图片坐标 vs 分析边界分离）**：`frontend/src/data/mapImages.js` 为全部
   28 张已登记地图增加 `coordinateBounds`（来源：对应 `map-semantics/*.semantic.json` 的
   `coordinateSystem.worldBounds`，当前均为 -300..300，逐图可校准）；`MapOverview.vue` 渲染统一改用

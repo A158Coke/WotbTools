@@ -5,7 +5,7 @@ import { mapImages } from '../data/mapImages'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 
 /**
- * 地图鸟瞰：底图（按图片 coordinateBounds 渲染）+ 6x6 分析网格（playableBounds 系）+ 九宫格线/编号 + 出生点；
+ * 地图鸟瞰：底图（按图片 coordinateBounds 渲染）+ 6x6 分析网格（playableBounds 系）+ 九宫格分区框 + 出生点；
  * 热力视图（阵营 × 类型）与路线视图（阵营 × 阶段）双 Tab。
  * 数据来自后端 SSE done 的 mapOverview；本组件仅在 mapImages 有该地图素材时被渲染。
  */
@@ -44,6 +44,8 @@ const H = computed(() => image.value ? image.value.height : 800)
 // playableBounds 仍承担分析职责：gridCells/热力/区域判断都用它，绘制时经 renderBounds 统一换算。
 const renderBounds = computed(() =>
   image.value?.coordinateBounds ?? props.overview.playableBounds)
+// 鸟瞰 SVG 宽度：用户确认「等比例小三分之一」→ 容器宽度 66.7%（viewBox 不变，等比缩放不裁切）。
+const MAP_SVG_WIDTH = '66.7%'
 // 标题：按当前 locale 取 displayNames（zh/en/ru），缺失回退 displayName
 const title = computed(() => {
   const names = props.overview.displayNames
@@ -98,7 +100,6 @@ const teamKeys = computed(() => {
 const mapStyle = computed(() => ({
   '--map-grid-stroke': palette.value.gridStroke,
   '--map-region-stroke': palette.value.regionStroke,
-  '--map-region-label': palette.value.regionLabel,
   '--map-spawn-friendly': palette.value.spawnFriendly,
   '--map-spawn-enemy': palette.value.spawnEnemy,
   '--map-route-outline': palette.value.routeOutline,
@@ -257,6 +258,7 @@ const gridRegions = computed(() => {
 
     <svg
       class="map-svg"
+      :style="{ width: MAP_SVG_WIDTH }"
       :viewBox="`0 0 ${W} ${H}`"
       role="img"
       :aria-label="`${overview.displayName} ${$t('recon.map.aria')}`"
@@ -278,7 +280,7 @@ const gridRegions = computed(() => {
         />
       </g>
 
-      <!-- 九宫格线 + 区域编号 -->
+      <!-- 九宫格分区框 -->
       <g class="grid-regions">
         <g v-for="[region, r] in gridRegions" :key="region">
           <rect
@@ -288,11 +290,6 @@ const gridRegions = computed(() => {
             :height="toY(r.yMin) - toY(r.yMax)"
             class="region-line"
           />
-          <text
-            :x="toX(r.xMin) + 5"
-            :y="toY(r.yMax) + 14"
-            class="region-label"
-          >{{ region + 1 }}</text>
         </g>
       </g>
 
@@ -413,14 +410,14 @@ const gridRegions = computed(() => {
 }
 .map-filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
 .map-svg {
-  width: 100%;
+  display: block;
+  margin: 0 auto;
   height: auto;
   border-radius: 4px;
   background: #111;
 }
 .grid-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.16)); stroke-width: .5; }
 .region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.55)); stroke-width: 1.4; }
-.region-label { fill: var(--map-region-label, rgba(255,255,255,.8)); font-size: 12px; font-weight: 700; }
 .spawn-friendly { fill: var(--map-spawn-friendly, #ffd166); stroke: #7a5200; stroke-width: 1; }
 .spawn-enemy { fill: var(--map-spawn-enemy, #4aa3ff); stroke: #0b3f85; stroke-width: 1; }
 .death-mark { fill: var(--map-death-mark, #ff3b30); font-size: 14px; font-weight: 700; paint-order: stroke; stroke: #000; stroke-width: 1.5; }
