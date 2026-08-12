@@ -29,7 +29,7 @@ class MyAssignmentControllerTest {
         final BoosterService boosterService = mock(BoosterService.class);
         final BoosterDto booster = new BoosterDto(
                 7L, "booster", "ELITE", "kc-booster",
-                true, "ACTIVE", null, null, null, null,
+                "CN", true, "ACTIVE", null, null, null, null,
                 0, null, null
         );
         when(boosterService.findByKeycloakUserId("kc-booster")).thenReturn(Optional.of(booster));

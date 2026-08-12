@@ -10,6 +10,7 @@ import com.wotb.web.boost.dto.CreateBoosterApplicationResponse;
 import com.wotb.web.boost.dto.OptionDto;
 import com.wotb.web.boost.service.BoostOptionsMapper;
 import com.wotb.web.boost.service.BoostOptionsService;
+import com.wotb.web.boost.enums.BoosterLevel;
 import com.wotb.web.controller.GlobalExceptionHandler;
 import com.wotb.web.replay.exception.ReplayBusyException;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,7 @@ class ApiContractTest {
     void boostDtosShouldExposeRawKeysWithoutLocalizedLabels() throws Exception {
         final var options = new BoostOptionsService(new BoostOptionsMapper()).options();
         final BoosterDto booster = new BoosterDto(
-                7L, "booster", "ELITE", "kc-user", true, "ACTIVE",
+                7L, "booster", "ELITE", "kc-user", "EU", true, "ACTIVE",
                 "QQ", "123", null, null, 0, null, null
         );
         final BoostAssignmentDto assignment = new BoostAssignmentDto(
@@ -50,6 +51,7 @@ class ApiContractTest {
                 .containsExactly("CN", "ASIA", "EU", "NA");
         assertThat(json)
                 .contains("\"level\":\"ELITE\"")
+                .contains("\"wotbServer\":\"EU\"")
                 .contains("\"region\":\"EU\"")
                 .contains("\"requestType\":\"COACHING\"")
                 .contains("\"warningCode\":\"SENSITIVE_INFO_WARNING\"")
@@ -120,6 +122,28 @@ class ApiContractTest {
                 .containsEntry("error", "INVALID_ARGUMENT")
                 .containsKey("timestamp")
                 .doesNotContainKey("message");
+    }
+
+    @Test
+    void boosterLevelsShouldExposeFiveApplicationChoicesAndOneAdminOnlyValue() {
+        assertThat(BoosterLevel.values())
+                .extracting(Enum::name)
+                .containsExactly("CASUAL", "SKILLED", "ELITE", "PRO", "MASTER", "AVERAGE_GOD");
+        assertThat(java.util.Arrays.stream(BoosterLevel.values())
+                .filter(BoosterLevel::canBeSelectedOnCreate)
+                .map(Enum::name))
+                .containsExactly("CASUAL", "SKILLED", "ELITE", "PRO", "MASTER");
+    }
+
+    @Test
+    void averageGodUniquenessShouldReturnConflict() {
+        final GlobalExceptionHandler handler = new GlobalExceptionHandler();
+        final ResponseEntity<Map<String, Object>> response = handler.handleIllegalArgument(
+                new IllegalArgumentException("AVERAGE_GOD_ALREADY_EXISTS")
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        assertThat(response.getBody()).containsEntry("error", "AVERAGE_GOD_ALREADY_EXISTS");
     }
 
     @Test

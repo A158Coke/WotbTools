@@ -5,7 +5,14 @@ public enum BoosterLevel {
     CASUAL,
     SKILLED,
     ELITE,
-    PRO;
+    PRO,
+    MASTER,
+    AVERAGE_GOD;
+
+    /** 场均神只能由管理员编辑已有打手档案时授予。 */
+    public boolean canBeSelectedOnCreate() {
+        return this != AVERAGE_GOD;
+    }
 
     public static BoosterLevel from(final String value) {
         for (final BoosterLevel l : values()) {

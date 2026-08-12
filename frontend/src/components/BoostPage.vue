@@ -51,8 +51,9 @@ const tab = ref('request')
 // Options (dropdown data)
 const options = ref({ regions: [], requestTypes: [], contactTypes: [], warningCode: '' })
 const imageMaxBytes = 4 * 1024 * 1024
-const boosterLevels = ['CASUAL', 'SKILLED', 'ELITE', 'PRO']
-const boosterLevelRank = { CASUAL: 1, SKILLED: 2, ELITE: 3, PRO: 4 }
+const applicationBoosterLevels = ['CASUAL', 'SKILLED', 'ELITE', 'PRO', 'MASTER']
+const adminBoosterLevels = [...applicationBoosterLevels, 'AVERAGE_GOD']
+const boosterLevelRank = { CASUAL: 1, SKILLED: 2, ELITE: 3, PRO: 4, MASTER: 5, AVERAGE_GOD: 6 }
 const availabilityTiers = ['YEAR_360', 'QUARTER_80', 'MONTH_20', 'WEEK_5', 'WEEK_4', 'WEEK_3', 'WEEK_1']
 
 // Form
@@ -135,8 +136,11 @@ const boosters = ref([])
 const boosterPage = ref({ page: 0, size: 20 })
 const loadingBoosters = ref(false)
 const editingBooster = ref(null)
-const boosterForm = ref({ nickname: '', level: 'ELITE', keycloakUserId: '', available: true, status: 'ACTIVE', contactType: '', contactValue: '', specialties: '', description: '' })
+const boosterForm = ref({ nickname: '', level: 'ELITE', keycloakUserId: '', wotbServer: 'CN', available: true, status: 'ACTIVE', contactType: '', contactValue: '', specialties: '', description: '' })
 const boosterError = ref('')
+const boosterModalCloseButton = ref(null)
+let boosterModalTrigger = null
+let boosterModalInitialDescription = null
 
 // Admin: user search
 const allUsers = ref([])
@@ -192,6 +196,7 @@ function searchUsers() {
 function selectUser(user) {
   latestUserSearch.cancel()
   boosterForm.value.keycloakUserId = user.keycloakUserId || user.id
+  boosterForm.value.wotbServer = user.wotbServer || 'CN'
   const displayName = user.displayName || user.keycloakUsername || t('admin.unknownUser')
   boosterForm.value.nickname = displayName
   userSearchQuery.value = displayName
@@ -213,7 +218,7 @@ const assignNote = ref('')
 const assignError = ref('')
 
 onMounted(async () => {
-  window.addEventListener('keydown', handleImagePreviewKeydown)
+  window.addEventListener('keydown', handleDialogKeydown)
   try {
     const loggedIn = await initPromise
     if (loggedIn || isAuthenticated()) {
@@ -241,7 +246,7 @@ async function loadOptions() {
 }
 
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', handleImagePreviewKeydown)
+  window.removeEventListener('keydown', handleDialogKeydown)
   latestUserSearch.cancel()
   adminRequestLoadGeneration += 1
   adminApplicationLoadGeneration += 1
@@ -423,8 +428,10 @@ function closeApplicationImage() {
   })
 }
 
-function handleImagePreviewKeydown(event) {
-  if (event.key === 'Escape' && applicationImagePreview.value) closeApplicationImage()
+function handleDialogKeydown(event) {
+  if (event.key !== 'Escape') return
+  if (applicationImagePreview.value) closeApplicationImage()
+  else if (editingBooster.value !== null) cancelEditBooster()
 }
 
 function keepImagePreviewFocus(event) {
@@ -707,36 +714,94 @@ async function loadBoosters(page = 0) {
   }
 }
 
-function startNewBooster() {
+async function focusBoosterModal(trigger) {
+  boosterModalTrigger = trigger
+  await nextTick()
+  boosterModalCloseButton.value?.focus()
+}
+
+async function startNewBooster(trigger) {
   editingBooster.value = {}
-  boosterForm.value = { nickname: '', level: 'ELITE', keycloakUserId: '', available: true, status: 'ACTIVE', contactType: '', contactValue: '', specialties: '', description: '' }
+  boosterForm.value = { nickname: '', level: 'ELITE', keycloakUserId: '', wotbServer: 'CN', available: true, status: 'ACTIVE', contactType: '', contactValue: '', specialties: '', description: '' }
   userSearchQuery.value = ''
   userSearchResults.value = allUsers.value.slice(0, 30)
   showUserSearch.value = true
   boosterError.value = ''
+  boosterModalInitialDescription = null
+  await focusBoosterModal(trigger)
 }
 
-function startEditBooster(b) {
+async function startEditBooster(b, trigger) {
   editingBooster.value = b
-  boosterForm.value = { nickname: b.nickname || '', level: b.level || 'ELITE', keycloakUserId: b.keycloakUserId || '', available: b.available, status: b.status || 'ACTIVE', contactType: b.contactType || '', contactValue: b.contactValue || '', specialties: b.specialties || '', description: b.description || '' }
-  userSearchQuery.value = b.keycloakUserId || ''
+  boosterForm.value = { nickname: b.nickname || '', level: b.level || 'ELITE', keycloakUserId: b.keycloakUserId || '', wotbServer: b.wotbServer || 'CN', available: b.available, status: b.status || 'ACTIVE', contactType: b.contactType || '', contactValue: b.contactValue || '', specialties: b.specialties || '', description: b.description || '' }
+  userSearchQuery.value = ''
   userSearchResults.value = []
   showUserSearch.value = false
   boosterError.value = ''
+  boosterModalInitialDescription = b.description || null
+  await focusBoosterModal(trigger)
 }
 
 function cancelEditBooster() {
+  const trigger = boosterModalTrigger
   editingBooster.value = null
+  boosterModalTrigger = null
+  boosterModalInitialDescription = null
+  latestUserSearch.cancel()
+  showUserSearch.value = false
+  nextTick(() => {
+    if (trigger?.isConnected) trigger.focus()
+  })
+}
+
+function keepBoosterModalFocus(event) {
+  const modal = event.currentTarget.querySelector('.booster-editor')
+  const focusable = modal
+    ? [...modal.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])')]
+    : []
+  if (!focusable.length) return
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
 }
 
 async function saveBooster() {
   boosterError.value = ''
   try {
     if (editingBooster.value?.id) {
-      await adminBoostBoosterUpdate(editingBooster.value.id, boosterForm.value)
+      const { level, available, status, contactType, contactValue, specialties, description } = boosterForm.value
+      const updatePayload = {
+        level,
+        available,
+        status,
+        contactType,
+        contactValue,
+        specialties
+      }
+      if ((description || null) !== boosterModalInitialDescription) updatePayload.description = description
+      await adminBoostBoosterUpdate(editingBooster.value.id, updatePayload)
     } else {
-      await adminBoostBoosterCreate(boosterForm.value)
+      const { nickname, level, keycloakUserId, available, status, contactType, contactValue, specialties, description } = boosterForm.value
+      await adminBoostBoosterCreate({
+        nickname,
+        level,
+        keycloakUserId,
+        available,
+        status,
+        contactType,
+        contactValue,
+        specialties,
+        description
+      })
     }
+    boosterModalTrigger = null
+    boosterModalInitialDescription = null
     editingBooster.value = null
     loadBoosters(boosterPage.value.page)
   } catch (e) { boosterError.value = apiError(e) }
@@ -887,7 +952,7 @@ function switchTab(t) {
         <div class="form-row">
           <label>{{ $t('boost.applicationLevel') }} *</label>
           <select v-model="applicationForm.requestedLevel">
-            <option v-for="level in boosterLevels" :key="level" :value="level">{{ applicationLevelLabel(level) }}</option>
+            <option v-for="level in applicationBoosterLevels" :key="level" :value="level">{{ applicationLevelLabel(level) }}</option>
           </select>
         </div>
         <div class="form-grid">
@@ -1205,65 +1270,7 @@ function switchTab(t) {
     <div v-if="isAdmin && tab === 'boosters'" class="boost-card">
       <div class="flex-between">
         <h3 class="card-title">{{ $t('boost.boosters') }}</h3>
-        <button class="btn-primary btn-sm" @click="startNewBooster()">{{ $t('boost.addBooster') }}</button>
-      </div>
-
-      <!-- Booster editor -->
-      <div v-if="editingBooster !== null" class="booster-editor">
-        <h4>{{ editingBooster.id ? $t('boost.editBooster') : $t('boost.newBooster') }}</h4>
-        <div class="form-row">
-          <label>{{ $t('boost.boosterLevel') }}</label>
-          <select v-model="boosterForm.level">
-            <option v-for="level in boosterLevels" :key="level" :value="level">{{ applicationLevelLabel(level) }}</option>
-          </select>
-        </div>
-        <div class="form-row">
-          <label>{{ $t('boost.boosterStatus') }}</label>
-          <select v-model="boosterForm.status">
-            <option value="ACTIVE">{{ $t('boost.boosterStatusValue.ACTIVE') }}</option>
-            <option value="INACTIVE">{{ $t('boost.boosterStatusValue.INACTIVE') }}</option>
-            <option value="BANNED">{{ $t('boost.boosterStatusValue.BANNED') }}</option>
-          </select>
-        </div>
-        <div class="form-row">
-          <label><input type="checkbox" v-model="boosterForm.available" /> {{ $t('boost.boosterAvailable') }}</label>
-        </div>
-        <div class="form-row user-search-row">
-          <label>{{ $t('boost.boosterUserSearch') }}</label>
-          <input v-model="userSearchQuery" @input="searchUsers()" @focus="searchUsers()" @blur="setTimeout(() => showUserSearch = false, 200)" maxlength="100" :placeholder="$t('boost.boosterUserSearchHint')" />
-          <div v-if="showUserSearch && userSearchResults.length" class="user-search-dropdown">
-            <div v-for="u in userSearchResults" :key="u.keycloakUserId || u.id" class="user-search-item" @mousedown.prevent="selectUser(u)">
-              <span class="user-search-name">{{ u.displayName || u.keycloakUsername || u.keycloakUserId }}</span>
-              <span class="user-search-id" v-if="u.wotbNickname">{{ u.wotbNickname }}</span>
-            </div>
-          </div>
-          <div v-if="showUserSearch && !userSearchResults.length && userSearchQuery.trim()" class="user-search-dropdown">
-            <div class="user-search-empty">{{ $t('boost.noUsersFound') }}</div>
-          </div>
-          <input type="hidden" v-model="boosterForm.keycloakUserId" />
-        </div>
-        <div class="form-row">
-          <label>{{ $t('boost.boosterContact') }}</label>
-          <select v-model="boosterForm.contactType">
-            <option value="">--</option>
-            <option value="QQ">QQ</option>
-            <option value="WECHAT">{{ $t('boost.contactWechat') }}</option>
-          </select>
-          <input v-model="boosterForm.contactValue" maxlength="255" :placeholder="$t('boost.contactHint')" />
-        </div>
-        <div class="form-row">
-          <label>{{ $t('boost.boosterSpecialties') }}</label>
-          <input v-model="boosterForm.specialties" maxlength="2000" />
-        </div>
-        <div class="form-row">
-          <label>{{ $t('boost.boosterDesc') }}</label>
-          <textarea v-model="boosterForm.description" rows="2" maxlength="2000"></textarea>
-        </div>
-        <div v-if="boosterError" class="boost-error">{{ boosterError }}</div>
-        <div class="form-actions">
-          <button class="btn-primary btn-sm" @click="saveBooster()">{{ $t('boost.save') }}</button>
-          <button class="btn-ghost btn-sm" @click="cancelEditBooster()">{{ $t('boost.cancel') }}</button>
-        </div>
+        <button class="btn-primary btn-sm" @click="startNewBooster($event.currentTarget)">{{ $t('boost.addBooster') }}</button>
       </div>
 
       <div v-if="loadingBoosters" class="boost-loading">{{ $t('boost.loading') }}</div>
@@ -1273,13 +1280,14 @@ function switchTab(t) {
           <div class="booster-header">
             <strong>{{ b.nickname }}</strong>
             <span>{{ label('level', b.level) }}</span>
+            <span>{{ label('regionValue', b.wotbServer) }}</span>
             <span :class="'badge badge-' + statusBadge(b.status)">{{ label('boosterStatusValue', b.status) }}</span>
             <span :class="'badge badge-' + boosterAvailabilityBadge(b)">{{ boosterAvailabilityLabel(b) }}</span>
             <span class="booster-stats">{{ $t('boost.activeAssignments') }}: {{ b.activeAssignmentCount }}</span>
           </div>
           <div class="booster-meta" v-if="b.specialties">{{ b.specialties }}</div>
           <div class="booster-actions">
-            <button class="btn-ghost btn-sm" @click="startEditBooster(b)">{{ $t('boost.edit') }}</button>
+            <button class="btn-ghost btn-sm" @click="startEditBooster(b, $event.currentTarget)">{{ $t('boost.edit') }}</button>
             <button class="btn-ghost btn-sm" @click="toggleBoosterAvailable(b)">
               {{ boosterAvailabilityActionLabel(b.available) }}
             </button>
@@ -1293,6 +1301,90 @@ function switchTab(t) {
         <button :disabled="boosterPage.page >= boosterPage.totalPages - 1" @click="loadBoosters(boosterPage.page + 1)">→</button>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div v-if="editingBooster !== null" class="booster-editor-overlay" role="dialog" aria-modal="true"
+        aria-labelledby="booster-editor-title" @click.self="cancelEditBooster" @keydown.tab="keepBoosterModalFocus">
+        <section class="booster-editor">
+          <div class="booster-editor-header">
+            <h4 id="booster-editor-title">{{ editingBooster.id ? $t('boost.editBooster') : $t('boost.newBooster') }}</h4>
+            <button ref="boosterModalCloseButton" type="button" class="booster-editor-close"
+              :aria-label="$t('app.close')" @click="cancelEditBooster">&times;</button>
+          </div>
+          <div class="booster-editor-body">
+            <div class="form-row">
+              <label>{{ $t('boost.boosterLevel') }}</label>
+              <select v-model="boosterForm.level">
+                <option v-for="level in (editingBooster.id ? adminBoosterLevels : applicationBoosterLevels)"
+                  :key="level" :value="level">{{ applicationLevelLabel(level) }}</option>
+              </select>
+              <small v-if="boosterForm.level === 'AVERAGE_GOD'" class="field-hint">
+                {{ $t('boost.averageGodHint') }}
+              </small>
+            </div>
+            <div class="form-row">
+              <label>{{ $t('boost.boosterStatus') }}</label>
+              <select v-model="boosterForm.status">
+                <option value="ACTIVE">{{ $t('boost.boosterStatusValue.ACTIVE') }}</option>
+                <option value="INACTIVE">{{ $t('boost.boosterStatusValue.INACTIVE') }}</option>
+                <option value="BANNED">{{ $t('boost.boosterStatusValue.BANNED') }}</option>
+              </select>
+            </div>
+            <div class="form-row booster-available-row">
+              <label><input type="checkbox" v-model="boosterForm.available" /> {{ $t('boost.boosterAvailable') }}</label>
+            </div>
+            <div v-if="!editingBooster.id" class="form-row user-search-row">
+              <label>{{ $t('boost.boosterUserSearch') }}</label>
+              <input v-model="userSearchQuery" @input="searchUsers()" @focus="searchUsers()"
+                @blur="setTimeout(() => showUserSearch = false, 200)" maxlength="100"
+                :placeholder="$t('boost.boosterUserSearchHint')" />
+              <div v-if="showUserSearch && userSearchResults.length" class="user-search-dropdown">
+                <div v-for="u in userSearchResults" :key="u.keycloakUserId || u.id" class="user-search-item" @mousedown.prevent="selectUser(u)">
+                  <span class="user-search-name">{{ u.displayName || u.keycloakUsername || u.keycloakUserId }}</span>
+                  <span class="user-search-id" v-if="u.wotbNickname">{{ u.wotbNickname }}</span>
+                </div>
+              </div>
+              <div v-if="showUserSearch && !userSearchResults.length && userSearchQuery.trim()" class="user-search-dropdown">
+                <div class="user-search-empty">{{ $t('boost.noUsersFound') }}</div>
+              </div>
+              <input type="hidden" v-model="boosterForm.keycloakUserId" />
+            </div>
+            <div v-else class="form-row">
+              <label>{{ $t('boost.boosterUserSearch') }}</label>
+              <div class="booster-readonly-value">{{ editingBooster.nickname || '--' }}</div>
+            </div>
+            <div v-if="editingBooster.id || boosterForm.keycloakUserId" class="form-row">
+              <label>{{ $t('boost.boosterServer') }}</label>
+              <div class="booster-readonly-value">{{ label('regionValue', boosterForm.wotbServer) }}</div>
+            </div>
+            <div class="form-row">
+              <label>{{ $t('boost.boosterContact') }}</label>
+              <div class="booster-contact-fields">
+                <select v-model="boosterForm.contactType">
+                  <option value="">--</option>
+                  <option value="QQ">QQ</option>
+                  <option value="WECHAT">{{ $t('boost.contactWechat') }}</option>
+                </select>
+                <input v-model="boosterForm.contactValue" maxlength="255" :placeholder="$t('boost.contactHint')" />
+              </div>
+            </div>
+            <div class="form-row">
+              <label>{{ $t('boost.boosterSpecialties') }}</label>
+              <input v-model="boosterForm.specialties" maxlength="2000" />
+            </div>
+            <div class="form-row">
+              <label>{{ $t('boost.boosterDesc') }}</label>
+              <textarea v-model="boosterForm.description" rows="3" maxlength="2000"></textarea>
+            </div>
+            <div v-if="boosterError" class="boost-error">{{ boosterError }}</div>
+            <div class="form-actions">
+              <button type="button" class="btn-primary btn-sm" @click="saveBooster()">{{ $t('boost.save') }}</button>
+              <button type="button" class="btn-ghost btn-sm" @click="cancelEditBooster()">{{ $t('boost.cancel') }}</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </Teleport>
 
     <Teleport to="body">
       <div v-if="applicationImagePreview" class="application-image-overlay" role="dialog" aria-modal="true"
@@ -1386,10 +1478,20 @@ function switchTab(t) {
 .assign-box { margin-top: 10px; padding: 12px; background: var(--bg); border: 1px solid var(--border-light); border-radius: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .assign-box select, .assign-box input { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 13px; }
 .mr { margin-right: 4px; }
-.booster-editor { border: 1px solid var(--accent); border-radius: 8px; padding: 16px; margin-bottom: 16px; background: color-mix(in srgb, var(--accent) 6%, var(--bg-card)); }
-.booster-editor .form-row { margin-bottom: 10px; }
-.booster-editor label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 2px; }
-.booster-editor input, .booster-editor select, .booster-editor textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text); font-size: 13px; box-sizing: border-box; }
+.booster-editor-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; background: color-mix(in srgb, var(--text-heading) 72%, transparent); }
+.booster-editor { display: flex; flex-direction: column; width: min(100%, 680px); max-height: calc(100vh - 48px); overflow: hidden; border: 1px solid var(--accent); border-radius: 12px; background: var(--bg-card); box-shadow: var(--hard-shadow); }
+.booster-editor-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.booster-editor-header h4 { margin: 0; color: var(--text-heading); }
+.booster-editor-close { width: 36px; height: 36px; flex: 0 0 auto; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card2); color: var(--text); cursor: pointer; font-size: 24px; line-height: 1; }
+.booster-editor-body { min-height: 0; padding: 18px; overflow-y: auto; }
+.booster-editor .form-row { margin-bottom: 12px; }
+.booster-editor label { display: block; margin-bottom: 4px; color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+.booster-editor input, .booster-editor select, .booster-editor textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); color: var(--text); font-size: 13px; box-sizing: border-box; }
+.booster-editor textarea { resize: vertical; }
+.booster-editor .booster-available-row label { display: inline-flex; align-items: center; gap: 8px; margin: 0; cursor: pointer; }
+.booster-editor .booster-available-row input { width: auto; }
+.booster-readonly-value { padding: 8px 10px; border: 1px solid var(--border-light); border-radius: 7px; background: var(--bg-card2); color: var(--text-secondary); font-size: 13px; }
+.booster-contact-fields { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 8px; }
 .form-actions { display: flex; gap: 8px; margin-top: 10px; }
 .flex-between { display: flex; justify-content: space-between; align-items: center; }
 
@@ -1423,5 +1525,8 @@ function switchTab(t) {
   .form-grid, .application-summary, .application-details, .application-images { grid-template-columns: 1fr; }
   .application-image-overlay { padding: 8px; }
   .application-image-viewer { width: 100%; height: 96vh; }
+  .booster-editor-overlay { align-items: flex-start; padding: 8px; }
+  .booster-editor { max-height: calc(100vh - 16px); }
+  .booster-contact-fields { grid-template-columns: 1fr; }
 }
 </style>

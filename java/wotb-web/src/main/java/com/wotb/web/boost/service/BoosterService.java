@@ -10,6 +10,7 @@ import com.wotb.web.boost.enums.ContactType;
 import com.wotb.web.boost.repository.BoosterApplicationRepository;
 import com.wotb.web.boost.repository.BoosterProfileRepository;
 import com.wotb.web.boost.repository.BoostRequestAssignmentRepository;
+import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +26,7 @@ import org.springframework.util.StringUtils;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -34,6 +36,7 @@ public class BoosterService {
 
     private static final Logger log = LoggerFactory.getLogger(BoosterService.class);
     private static final String BOOSTER_ROLE = "booster";
+    private static final String AVERAGE_GOD_UNIQUE_INDEX = "uq_booster_profile_average_god_server";
 
     private final BoosterProfileRepository boosterRepository;
     private final BoosterMapper mapper;
@@ -75,9 +78,13 @@ public class BoosterService {
                              final String contactType, final String contactValue,
                              final String specialties, final String description) {
         final String effectiveNickname = trimRequired(nickname, "BOOSTER_NICKNAME_REQUIRED");
-        final String effectiveLevel = BoosterLevel.from(
+        final BoosterLevel requestedLevel = BoosterLevel.from(
                 trimRequired(level, "BOOSTER_LEVEL_REQUIRED")
-        ).name();
+        );
+        if (!requestedLevel.canBeSelectedOnCreate()) {
+            throw new IllegalArgumentException("BOOSTER_LEVEL_ADMIN_EDIT_ONLY");
+        }
+        final String effectiveLevel = requestedLevel.name();
         final String effectiveKeycloakUserId = trimOrNull(keycloakUserId);
         final String effectiveStatus = StringUtils.hasText(status)
                 ? BoosterStatus.from(status.trim()).name()
@@ -85,12 +92,14 @@ public class BoosterService {
         final String effectiveContactType = StringUtils.hasText(contactType)
                 ? ContactType.from(contactType.trim()).name()
                 : null;
-        validateUserBinding(effectiveKeycloakUserId, null);
+        final UserProfile boundUser = validateUserBinding(effectiveKeycloakUserId, null);
+        final String effectiveWotbServer = serverOf(boundUser);
 
         final BoosterProfile booster = new BoosterProfile();
         booster.setNickname(effectiveNickname);
         booster.setLevel(effectiveLevel);
         booster.setKeycloakUserId(effectiveKeycloakUserId);
+        booster.setWotbServer(effectiveWotbServer);
         booster.setAvailable(available != null ? available : true);
         booster.setStatus(effectiveStatus);
         booster.setContactType(effectiveContactType);
@@ -128,9 +137,9 @@ public class BoosterService {
                 : oldKeycloakUserId;
         final boolean bindingChanged = !Objects.equals(oldKeycloakUserId, newKeycloakUserId);
 
-        if (bindingChanged) {
-            validateUserBinding(newKeycloakUserId, id);
-        }
+        final UserProfile newBoundUser = bindingChanged
+                ? validateUserBinding(newKeycloakUserId, id)
+                : null;
         final String updatedNickname = nickname != null
                 ? trimRequired(nickname, "BOOSTER_NICKNAME_REQUIRED")
                 : booster.getNickname();
@@ -153,12 +162,18 @@ public class BoosterService {
         final String updatedDescription = description != null
                 ? trimOrNull(description)
                 : booster.getDescription();
+        final String updatedWotbServer = bindingChanged
+                ? serverOf(newBoundUser)
+                : normalizeServer(booster.getWotbServer());
+
+        validateAverageGodUniqueness(updatedLevel, updatedWotbServer, id);
 
         final List<RollbackCompensation> compensations = new ArrayList<>();
         try {
             booster.setNickname(updatedNickname);
             booster.setLevel(updatedLevel);
             booster.setKeycloakUserId(newKeycloakUserId);
+            booster.setWotbServer(updatedWotbServer);
             booster.setAvailable(updatedAvailability);
             booster.setStatus(updatedStatus);
             booster.setContactType(updatedContactType);
@@ -174,7 +189,10 @@ public class BoosterService {
             return mapper.toDto(persisted);
         } catch (final DataIntegrityViolationException e) {
             compensations.reversed().forEach(compensation -> compensation.afterFailure(e));
-            throw new IllegalArgumentException("ALREADY_BOOSTER", e);
+            final String errorCode = causedByConstraint(e, AVERAGE_GOD_UNIQUE_INDEX)
+                    ? "AVERAGE_GOD_ALREADY_EXISTS"
+                    : "ALREADY_BOOSTER";
+            throw new IllegalArgumentException(errorCode, e);
         } catch (final RuntimeException e) {
             compensations.reversed().forEach(compensation -> compensation.afterFailure(e));
             throw e;
@@ -265,18 +283,53 @@ public class BoosterService {
         return page.map(mapper::toDto);
     }
 
-    private void validateUserBinding(final String keycloakUserId, final Long currentBoosterId) {
+    private UserProfile validateUserBinding(final String keycloakUserId, final Long currentBoosterId) {
         if (!StringUtils.hasText(keycloakUserId)) {
-            return;
+            return null;
         }
-        if (userProfileService.findEntityByKeycloakUserIdForUpdate(keycloakUserId).isEmpty()) {
-            throw new IllegalArgumentException("USER_PROFILE_NOT_FOUND");
-        }
+        final UserProfile userProfile = userProfileService.findEntityByKeycloakUserIdForUpdate(keycloakUserId)
+                .orElseThrow(() -> new IllegalArgumentException("USER_PROFILE_NOT_FOUND"));
         boosterRepository.findByKeycloakUserId(keycloakUserId)
                 .filter(existing -> !Objects.equals(existing.getId(), currentBoosterId))
                 .ifPresent(existing -> {
                     throw new IllegalArgumentException("ALREADY_BOOSTER");
                 });
+        return userProfile;
+    }
+
+    private void validateAverageGodUniqueness(final String level,
+                                              final String wotbServer,
+                                              final Long currentBoosterId) {
+        if (BoosterLevel.AVERAGE_GOD.name().equals(level)
+                && boosterRepository.existsByWotbServerAndLevelAndIdNot(
+                        wotbServer, BoosterLevel.AVERAGE_GOD.name(), currentBoosterId)) {
+            throw new IllegalArgumentException("AVERAGE_GOD_ALREADY_EXISTS");
+        }
+    }
+
+    private static String serverOf(final UserProfile userProfile) {
+        return userProfile == null ? "CN" : normalizeServer(userProfile.getWotbServer());
+    }
+
+    private static String normalizeServer(final String wotbServer) {
+        final String normalized = StringUtils.hasText(wotbServer)
+                ? wotbServer.trim().toUpperCase(Locale.ROOT)
+                : "CN";
+        return switch (normalized) {
+            case "CN", "ASIA", "EU", "NA" -> normalized;
+            default -> throw new IllegalArgumentException("UNSUPPORTED_WOTB_SERVER");
+        };
+    }
+
+    private static boolean causedByConstraint(final Throwable failure, final String constraintName) {
+        Throwable current = failure;
+        while (current != null) {
+            if (current.getMessage() != null && current.getMessage().contains(constraintName)) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private RollbackCompensation addRoleIfMissing(final String keycloakUserId) {

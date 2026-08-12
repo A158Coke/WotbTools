@@ -718,6 +718,7 @@ final class BoostTestData {
         var booster = new BoosterProfile();
         booster.setId(1L);
         booster.setKeycloakUserId("kc-user-id");
+        booster.setWotbServer("CN");
         booster.setNickname("TestBooster");
         booster.setLevel("ELITE");
         booster.setAvailable(true);

@@ -28,4 +28,6 @@ public interface BoosterProfileRepository extends JpaRepository<BoosterProfile, 
     Page<BoosterProfile> findByAvailable(Boolean available, Pageable pageable);
 
     Page<BoosterProfile> findByStatusAndAvailable(String status, Boolean available, Pageable pageable);
+
+    boolean existsByWotbServerAndLevelAndIdNot(String wotbServer, String level, Long id);
 }
