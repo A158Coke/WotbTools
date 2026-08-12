@@ -13,31 +13,35 @@
     ],
     "weaknesses": [
       "low_dpm",
-      "large_profile"
+      "large_profile",
+      "mobility"
     ],
-    "mobility": "MEDIUM",
+    "mobility": "LOW",
     "burstPotential": "HIGH",
     "sustainedDpm": "LOW",
-    "hullDownAbility": "LOW",
+    "hullDownAbility": "MEDIUM",
     "armorReliability": "HIGH"
   },
   "116-F3": {
     "tier": 10,
     "vehicleClass": "HEAVY",
     "roles": [
-      "armored_frontline",
-      "close_range_trader"
+      "auto_reloader",
+      "burst_trader"
     ],
     "strengths": [
+      "clip_burst",
+      "trade_power",
       "armor_reliability"
     ],
     "weaknesses": [
-      "slow_rotation",
-      "flexibility"
+      "low_dpm",
+      "magazine_management",
+      "poor_gun_depression"
     ],
     "mobility": "MEDIUM",
-    "burstPotential": "MEDIUM",
-    "sustainedDpm": "MEDIUM",
+    "burstPotential": "HIGH",
+    "sustainedDpm": "LOW",
     "hullDownAbility": "MEDIUM",
     "armorReliability": "HIGH"
   },
@@ -50,7 +54,8 @@
     ],
     "strengths": [
       "dpm",
-      "armor_for_medium"
+      "armor_for_medium",
+      "mobility"
     ],
     "weaknesses": [
       "poor_gun_depression",
@@ -58,7 +63,7 @@
     ],
     "mobility": "HIGH",
     "burstPotential": "MEDIUM",
-    "sustainedDpm": "HIGH",
+    "sustainedDpm": "MEDIUM",
     "hullDownAbility": "MEDIUM",
     "armorReliability": "MEDIUM"
   },
@@ -75,31 +80,35 @@
     ],
     "weaknesses": [
       "slow_rotation",
-      "poor_gun_depression"
+      "poor_gun_depression",
+      "low_dpm"
     ],
-    "mobility": "LOW",
+    "mobility": "MEDIUM",
     "burstPotential": "HIGH",
-    "sustainedDpm": "MEDIUM",
-    "hullDownAbility": "LOW",
+    "sustainedDpm": "LOW",
+    "hullDownAbility": "MEDIUM",
     "armorReliability": "HIGH"
   },
   "AC Atlas": {
     "tier": 10,
     "vehicleClass": "HEAVY",
     "roles": [
-      "hull_down_heavy",
-      "sustained_trader"
+      "burst_heavy",
+      "hull_down_heavy"
     ],
     "strengths": [
+      "clip_burst",
       "strong_turret",
-      "gun_depression"
+      "armor_reliability"
     ],
     "weaknesses": [
+      "clip_reload",
+      "low_alpha",
       "hull_weakness"
     ],
     "mobility": "MEDIUM",
     "burstPotential": "MEDIUM",
-    "sustainedDpm": "HIGH",
+    "sustainedDpm": "MEDIUM",
     "hullDownAbility": "HIGH",
     "armorReliability": "HIGH"
   },
@@ -112,16 +121,16 @@
     ],
     "strengths": [
       "armor_for_medium",
-      "dpm"
+      "gun_depression"
     ],
     "weaknesses": [
       "low_alpha",
-      "poor_gun_depression"
+      "low_dpm"
     ],
-    "mobility": "HIGH",
-    "burstPotential": "MEDIUM",
-    "sustainedDpm": "HIGH",
-    "hullDownAbility": "MEDIUM",
+    "mobility": "MEDIUM",
+    "burstPotential": "LOW",
+    "sustainedDpm": "LOW",
+    "hullDownAbility": "HIGH",
     "armorReliability": "MEDIUM"
   },
   "AMX 30 B": {
@@ -133,14 +142,15 @@
     ],
     "strengths": [
       "gun_accuracy",
-      "mobility"
+      "mobility",
+      "dpm"
     ],
     "weaknesses": [
       "paper_armor",
       "no_trading_power"
     ],
     "mobility": "HIGH",
-    "burstPotential": "MEDIUM",
+    "burstPotential": "LOW",
     "sustainedDpm": "HIGH",
     "hullDownAbility": "MEDIUM",
     "armorReliability": "MEDIUM"
@@ -155,7 +165,8 @@
     "strengths": [
       "clip_burst",
       "mobility",
-      "flexibility"
+      "flexibility",
+      "dpm"
     ],
     "weaknesses": [
       "clip_reload",
@@ -163,7 +174,7 @@
     ],
     "mobility": "HIGH",
     "burstPotential": "HIGH",
-    "sustainedDpm": "LOW",
+    "sustainedDpm": "HIGH",
     "hullDownAbility": "LOW",
     "armorReliability": "LOW"
   },
@@ -175,16 +186,17 @@
       "sustained_trader"
     ],
     "strengths": [
-      "flexibility",
-      "dpm"
+      "armor_reliability",
+      "trade_power",
+      "flexibility"
     ],
     "weaknesses": [
       "large_profile"
     ],
     "mobility": "MEDIUM",
     "burstPotential": "MEDIUM",
-    "sustainedDpm": "HIGH",
-    "hullDownAbility": "MEDIUM",
+    "sustainedDpm": "MEDIUM",
+    "hullDownAbility": "HIGH",
     "armorReliability": "HIGH"
   },
   "B-C 25 t": {
@@ -201,7 +213,8 @@
     "weaknesses": [
       "clip_reload",
       "paper_armor",
-      "gun_handling"
+      "gun_handling",
+      "low_dpm"
     ],
     "mobility": "HIGH",
     "burstPotential": "HIGH",
@@ -222,12 +235,13 @@
     ],
     "weaknesses": [
       "slow_rotation",
-      "flexibility"
+      "flexibility",
+      "low_dpm"
     ],
     "mobility": "MEDIUM",
     "burstPotential": "HIGH",
-    "sustainedDpm": "MEDIUM",
-    "hullDownAbility": "MEDIUM",
+    "sustainedDpm": "LOW",
+    "hullDownAbility": "HIGH",
     "armorReliability": "HIGH"
   },
   "BZT-70": {
@@ -243,32 +257,34 @@
     ],
     "weaknesses": [
       "low_dpm",
-      "large_profile"
+      "large_profile",
+      "mobility"
     ],
-    "mobility": "MEDIUM",
+    "mobility": "LOW",
     "burstPotential": "HIGH",
     "sustainedDpm": "LOW",
-    "hullDownAbility": "LOW",
+    "hullDownAbility": "HIGH",
     "armorReliability": "HIGH"
   },
   "Carro 45t": {
     "tier": 10,
     "vehicleClass": "MEDIUM",
     "roles": [
-      "flexible_support",
-      "all_round_medium"
+      "auto_reloader",
+      "flexible_support"
     ],
     "strengths": [
-      "dpm",
-      "gun_depression"
+      "clip_burst",
+      "flexibility",
+      "mobility"
     ],
     "weaknesses": [
-      "armor_reliability",
-      "low_alpha"
+      "magazine_management",
+      "armor_reliability"
     ],
-    "mobility": "HIGH",
-    "burstPotential": "MEDIUM",
-    "sustainedDpm": "HIGH",
+    "mobility": "MEDIUM",
+    "burstPotential": "HIGH",
+    "sustainedDpm": "MEDIUM",
     "hullDownAbility": "MEDIUM",
     "armorReliability": "MEDIUM"
   },
@@ -311,7 +327,7 @@
     "burstPotential": "MEDIUM",
     "sustainedDpm": "MEDIUM",
     "hullDownAbility": "HIGH",
-    "armorReliability": "HIGH"
+    "armorReliability": "MEDIUM"
   },
   "CS-63": {
     "tier": 10,
@@ -329,7 +345,7 @@
       "low_alpha"
     ],
     "mobility": "HIGH",
-    "burstPotential": "MEDIUM",
+    "burstPotential": "LOW",
     "sustainedDpm": "HIGH",
     "hullDownAbility": "MEDIUM",
     "armorReliability": "MEDIUM"
@@ -348,12 +364,14 @@
     ],
     "weaknesses": [
       "slow_rotation",
-      "large_profile"
+      "large_profile",
+      "low_dpm",
+      "mobility"
     ],
     "mobility": "LOW",
     "burstPotential": "HIGH",
-    "sustainedDpm": "MEDIUM",
-    "hullDownAbility": "LOW",
+    "sustainedDpm": "LOW",
+    "hullDownAbility": "MEDIUM",
     "armorReliability": "HIGH"
   },
   "E 50 M": {
@@ -366,7 +384,8 @@
     "strengths": [
       "armor_for_medium",
       "ram_power",
-      "gun_depression"
+      "gun_depression",
+      "mobility"
     ],
     "weaknesses": [
       "large_profile",
@@ -374,30 +393,31 @@
     ],
     "mobility": "HIGH",
     "burstPotential": "LOW",
-    "sustainedDpm": "HIGH",
+    "sustainedDpm": "MEDIUM",
     "hullDownAbility": "MEDIUM",
-    "armorReliability": "MEDIUM"
+    "armorReliability": "HIGH"
   },
   "Felice": {
     "tier": 10,
     "vehicleClass": "HEAVY",
     "roles": [
-      "armored_frontline",
-      "close_range_trader"
+      "auto_reloader",
+      "burst_trader"
     ],
     "strengths": [
+      "clip_burst",
       "armor_reliability",
-      "dpm",
       "hp_pool"
     ],
     "weaknesses": [
-      "slow_rotation",
-      "cupola_weakness"
+      "low_dpm",
+      "magazine_management",
+      "mobility"
     ],
-    "mobility": "MEDIUM",
-    "burstPotential": "MEDIUM",
-    "sustainedDpm": "HIGH",
-    "hullDownAbility": "MEDIUM",
+    "mobility": "LOW",
+    "burstPotential": "HIGH",
+    "sustainedDpm": "LOW",
+    "hullDownAbility": "HIGH",
     "armorReliability": "HIGH"
   },
   "Foch 155": {
@@ -409,29 +429,30 @@
     ],
     "strengths": [
       "clip_burst",
-      "alpha"
+      "alpha",
+      "mobility"
     ],
     "weaknesses": [
       "clip_reload",
       "paper_armor"
     ],
-    "mobility": "MEDIUM",
+    "mobility": "HIGH",
     "burstPotential": "HIGH",
-    "sustainedDpm": "LOW",
-    "hullDownAbility": "MEDIUM",
+    "sustainedDpm": "MEDIUM",
+    "hullDownAbility": "LOW",
     "armorReliability": "MEDIUM"
   },
   "FV215b": {
     "tier": 10,
     "vehicleClass": "HEAVY",
     "roles": [
-      "hull_down_heavy",
+      "all_round_heavy",
       "sustained_trader"
     ],
     "strengths": [
-      "strong_turret",
       "dpm",
-      "gun_depression"
+      "gun_accuracy",
+      "flexibility"
     ],
     "weaknesses": [
       "hull_weakness",
@@ -440,8 +461,8 @@
     "mobility": "MEDIUM",
     "burstPotential": "MEDIUM",
     "sustainedDpm": "HIGH",
-    "hullDownAbility": "HIGH",
-    "armorReliability": "HIGH"
+    "hullDownAbility": "MEDIUM",
+    "armorReliability": "MEDIUM"
   },
   "FV215b 183": {
     "tier": 10,
@@ -452,19 +473,19 @@
     ],
     "strengths": [
       "extreme_alpha",
-      "armor",
-      "very_high_alpha"
+      "trade_power"
     ],
     "weaknesses": [
-      "extremely_slow",
+      "paper_armor",
       "long_reload",
-      "poor_gun_depression"
+      "poor_gun_depression",
+      "mobility"
     ],
     "mobility": "LOW",
     "burstPotential": "HIGH",
-    "sustainedDpm": "LOW",
-    "hullDownAbility": "MEDIUM",
-    "armorReliability": "MEDIUM"
+    "sustainedDpm": "MEDIUM",
+    "hullDownAbility": "LOW",
+    "armorReliability": "LOW"
   },
   "FV217 Badger": {
     "tier": 10,
@@ -482,9 +503,9 @@
       "mobility"
     ],
     "mobility": "MEDIUM",
-    "burstPotential": "HIGH",
+    "burstPotential": "MEDIUM",
     "sustainedDpm": "HIGH",
-    "hullDownAbility": "MEDIUM",
+    "hullDownAbility": "HIGH",
     "armorReliability": "HIGH"
   },
   "FV4005": {
@@ -501,11 +522,12 @@
     "weaknesses": [
       "no_armor",
       "long_reload",
-      "turret_limitation"
+      "turret_limitation",
+      "paper_armor"
     ],
-    "mobility": "LOW",
+    "mobility": "MEDIUM",
     "burstPotential": "HIGH",
-    "sustainedDpm": "LOW",
+    "sustainedDpm": "MEDIUM",
     "hullDownAbility": "LOW",
     "armorReliability": "LOW"
   },
@@ -518,17 +540,18 @@
     ],
     "strengths": [
       "gun_depression",
-      "dpm"
+      "armor_for_medium",
+      "mobility"
     ],
     "weaknesses": [
       "low_alpha",
-      "armor_reliability"
+      "sustained_dpm"
     ],
     "mobility": "HIGH",
-    "burstPotential": "MEDIUM",
-    "sustainedDpm": "HIGH",
+    "burstPotential": "LOW",
+    "sustainedDpm": "LOW",
     "hullDownAbility": "HIGH",
-    "armorReliability": "MEDIUM"
+    "armorReliability": "HIGH"
   },
   "Grille 15": {
     "tier": 10,
@@ -539,16 +562,18 @@
     "strengths": [
       "accuracy",
       "high_alpha",
-      "mobility_for_td"
+      "mobility_for_td",
+      "dpm"
     ],
     "weaknesses": [
       "no_armor",
       "turret_limitation",
-      "exposed"
+      "exposed",
+      "paper_armor"
     ],
-    "mobility": "MEDIUM",
-    "burstPotential": "HIGH",
-    "sustainedDpm": "MEDIUM",
+    "mobility": "HIGH",
+    "burstPotential": "MEDIUM",
+    "sustainedDpm": "HIGH",
     "hullDownAbility": "LOW",
     "armorReliability": "LOW"
   },
@@ -561,14 +586,15 @@
     ],
     "strengths": [
       "gun_depression",
-      "flexibility"
+      "flexibility",
+      "dpm"
     ],
     "weaknesses": [
       "low_alpha"
     ],
     "mobility": "MEDIUM",
     "burstPotential": "LOW",
-    "sustainedDpm": "MEDIUM",
+    "sustainedDpm": "HIGH",
     "hullDownAbility": "HIGH",
     "armorReliability": "HIGH"
   },
@@ -588,8 +614,8 @@
       "casemate"
     ],
     "mobility": "MEDIUM",
-    "burstPotential": "HIGH",
-    "sustainedDpm": "HIGH",
+    "burstPotential": "MEDIUM",
+    "sustainedDpm": "MEDIUM",
     "hullDownAbility": "MEDIUM",
     "armorReliability": "MEDIUM"
   },
@@ -602,8 +628,8 @@
     ],
     "strengths": [
       "armor_reliability",
-      "dpm",
-      "hp_pool"
+      "hp_pool",
+      "trade_power"
     ],
     "weaknesses": [
       "slow_rotation",
@@ -611,7 +637,7 @@
     ],
     "mobility": "MEDIUM",
     "burstPotential": "MEDIUM",
-    "sustainedDpm": "HIGH",
+    "sustainedDpm": "MEDIUM",
     "hullDownAbility": "MEDIUM",
     "armorReliability": "HIGH"
   },
@@ -632,7 +658,7 @@
       "low_gun_depression"
     ],
     "mobility": "MEDIUM",
-    "burstPotential": "HIGH",
+    "burstPotential": "MEDIUM",
     "sustainedDpm": "MEDIUM",
     "hullDownAbility": "MEDIUM",
     "armorReliability": "HIGH"
@@ -651,33 +677,36 @@
     "weaknesses": [
       "extremely_slow",
       "large_profile",
-      "casemate"
+      "casemate",
+      "low_dpm"
     ],
     "mobility": "LOW",
     "burstPotential": "HIGH",
-    "sustainedDpm": "MEDIUM",
-    "hullDownAbility": "LOW",
+    "sustainedDpm": "LOW",
+    "hullDownAbility": "MEDIUM",
     "armorReliability": "HIGH"
   },
   "Kpz 50 t": {
     "tier": 10,
     "vehicleClass": "MEDIUM",
     "roles": [
-      "flexible_support",
-      "hull_down_medium"
+      "hull_down_medium",
+      "sustained_support"
     ],
     "strengths": [
-      "gun_depression",
-      "dpm"
+      "dpm",
+      "strong_turret",
+      "gun_accuracy",
+      "mobility"
     ],
     "weaknesses": [
       "low_alpha"
     ],
     "mobility": "HIGH",
-    "burstPotential": "MEDIUM",
+    "burstPotential": "LOW",
     "sustainedDpm": "HIGH",
     "hullDownAbility": "HIGH",
-    "armorReliability": "MEDIUM"
+    "armorReliability": "HIGH"
   },
   "Kpz 70": {
     "tier": 10,
@@ -711,11 +740,12 @@
       "flexibility"
     ],
     "weaknesses": [
-      "turret_weakspot"
+      "turret_weakspot",
+      "low_dpm"
     ],
     "mobility": "MEDIUM",
     "burstPotential": "HIGH",
-    "sustainedDpm": "MEDIUM",
+    "sustainedDpm": "LOW",
     "hullDownAbility": "MEDIUM",
     "armorReliability": "HIGH"
   },
@@ -723,21 +753,22 @@
     "tier": 10,
     "vehicleClass": "HEAVY",
     "roles": [
-      "hull_down_heavy",
-      "burst_trader"
+      "auto_reloader",
+      "hull_down_heavy"
     ],
     "strengths": [
+      "clip_burst",
       "strong_turret",
-      "hull_down",
-      "burst_damage"
+      "gun_depression"
     ],
     "weaknesses": [
-      "sustained_dpm",
-      "hull_exposure"
+      "magazine_management",
+      "hull_weakness",
+      "mobility"
     ],
-    "mobility": "MEDIUM",
+    "mobility": "LOW",
     "burstPotential": "HIGH",
-    "sustainedDpm": "LOW",
+    "sustainedDpm": "MEDIUM",
     "hullDownAbility": "HIGH",
     "armorReliability": "MEDIUM"
   },
@@ -751,36 +782,39 @@
     "strengths": [
       "gun_accuracy",
       "mobility",
-      "vision"
+      "vision",
+      "dpm"
     ],
     "weaknesses": [
       "paper_armor",
       "no_trading_power"
     ],
     "mobility": "HIGH",
-    "burstPotential": "MEDIUM",
+    "burstPotential": "LOW",
     "sustainedDpm": "HIGH",
-    "hullDownAbility": "MEDIUM",
+    "hullDownAbility": "LOW",
     "armorReliability": "LOW"
   },
   "Lion": {
     "tier": 10,
     "vehicleClass": "MEDIUM",
     "roles": [
-      "all_round_medium",
+      "auto_reloader",
       "flexible_support"
     ],
     "strengths": [
-      "dpm",
-      "gun_depression"
+      "clip_burst",
+      "flexibility",
+      "mobility"
     ],
     "weaknesses": [
-      "low_alpha",
-      "armor_reliability"
+      "magazine_management",
+      "armor_reliability",
+      "low_dpm"
     ],
-    "mobility": "HIGH",
-    "burstPotential": "MEDIUM",
-    "sustainedDpm": "HIGH",
+    "mobility": "MEDIUM",
+    "burstPotential": "HIGH",
+    "sustainedDpm": "LOW",
     "hullDownAbility": "MEDIUM",
     "armorReliability": "MEDIUM"
   },
@@ -788,21 +822,22 @@
     "tier": 10,
     "vehicleClass": "HEAVY",
     "roles": [
-      "armored_frontline",
-      "sustained_trader"
+      "clip_trader",
+      "hull_down_heavy"
     ],
     "strengths": [
-      "armor_reliability",
-      "hp_pool"
+      "clip_burst",
+      "gun_depression",
+      "armor_reliability"
     ],
     "weaknesses": [
-      "large_profile",
-      "slow_rotation"
+      "clip_reload",
+      "large_profile"
     ],
     "mobility": "MEDIUM",
-    "burstPotential": "MEDIUM",
+    "burstPotential": "HIGH",
     "sustainedDpm": "MEDIUM",
-    "hullDownAbility": "MEDIUM",
+    "hullDownAbility": "HIGH",
     "armorReliability": "HIGH"
   },
   "M47 Chevalier": {
@@ -814,15 +849,16 @@
     ],
     "strengths": [
       "gun_depression",
-      "dpm"
+      "dpm",
+      "mobility"
     ],
     "weaknesses": [
       "low_alpha"
     ],
     "mobility": "HIGH",
-    "burstPotential": "MEDIUM",
+    "burstPotential": "LOW",
     "sustainedDpm": "HIGH",
-    "hullDownAbility": "HIGH",
+    "hullDownAbility": "MEDIUM",
     "armorReliability": "MEDIUM"
   },
   "M48 Patton": {
@@ -843,7 +879,7 @@
     ],
     "mobility": "MEDIUM",
     "burstPotential": "LOW",
-    "sustainedDpm": "HIGH",
+    "sustainedDpm": "MEDIUM",
     "hullDownAbility": "HIGH",
     "armorReliability": "MEDIUM"
   },
@@ -857,15 +893,15 @@
     "strengths": [
       "vision",
       "gun_depression",
-      "dpm"
+      "gun_accuracy"
     ],
     "weaknesses": [
       "large_profile",
       "armor_reliability"
     ],
-    "mobility": "HIGH",
-    "burstPotential": "MEDIUM",
-    "sustainedDpm": "HIGH",
+    "mobility": "MEDIUM",
+    "burstPotential": "LOW",
+    "sustainedDpm": "MEDIUM",
     "hullDownAbility": "HIGH",
     "armorReliability": "MEDIUM"
   },
@@ -885,9 +921,9 @@
       "large_profile"
     ],
     "mobility": "LOW",
-    "burstPotential": "LOW",
+    "burstPotential": "MEDIUM",
     "sustainedDpm": "MEDIUM",
-    "hullDownAbility": "MEDIUM",
+    "hullDownAbility": "HIGH",
     "armorReliability": "HIGH"
   },
   "Minotauro": {
@@ -898,17 +934,20 @@
       "close_range_ambush"
     ],
     "strengths": [
+      "clip_burst",
       "armor",
-      "dpm"
+      "gun_depression"
     ],
     "weaknesses": [
+      "low_dpm",
+      "magazine_management",
       "casemate",
-      "low_alpha"
+      "mobility"
     ],
-    "mobility": "MEDIUM",
+    "mobility": "LOW",
     "burstPotential": "HIGH",
-    "sustainedDpm": "HIGH",
-    "hullDownAbility": "MEDIUM",
+    "sustainedDpm": "LOW",
+    "hullDownAbility": "HIGH",
     "armorReliability": "HIGH"
   },
   "NC 70 Błyskawica": {
@@ -920,17 +959,18 @@
     ],
     "strengths": [
       "mobility",
-      "high_alpha"
+      "high_alpha",
+      "dpm"
     ],
     "weaknesses": [
       "paper_armor",
       "casemate"
     ],
-    "mobility": "HIGH",
+    "mobility": "MEDIUM",
     "burstPotential": "HIGH",
     "sustainedDpm": "HIGH",
-    "hullDownAbility": "MEDIUM",
-    "armorReliability": "MEDIUM"
+    "hullDownAbility": "LOW",
+    "armorReliability": "LOW"
   },
   "Obj. 140": {
     "tier": 10,
@@ -963,12 +1003,13 @@
     ],
     "strengths": [
       "flexible_gun",
-      "mobility_for_heavy"
+      "mobility_for_heavy",
+      "dpm"
     ],
     "weaknesses": [
       "cupola_weakness"
     ],
-    "mobility": "MEDIUM",
+    "mobility": "HIGH",
     "burstPotential": "MEDIUM",
     "sustainedDpm": "HIGH",
     "hullDownAbility": "MEDIUM",
@@ -991,9 +1032,9 @@
       "poor_gun_depression"
     ],
     "mobility": "MEDIUM",
-    "burstPotential": "HIGH",
+    "burstPotential": "MEDIUM",
     "sustainedDpm": "HIGH",
-    "hullDownAbility": "MEDIUM",
+    "hullDownAbility": "LOW",
     "armorReliability": "HIGH"
   },
   "Obj. 268": {
@@ -1008,13 +1049,14 @@
     ],
     "weaknesses": [
       "no_armor",
-      "long_reload"
+      "long_reload",
+      "paper_armor"
     ],
     "mobility": "MEDIUM",
     "burstPotential": "HIGH",
-    "sustainedDpm": "LOW",
-    "hullDownAbility": "MEDIUM",
-    "armorReliability": "MEDIUM"
+    "sustainedDpm": "MEDIUM",
+    "hullDownAbility": "LOW",
+    "armorReliability": "LOW"
   },
   "Obj. 777 II": {
     "tier": 10,
@@ -1025,15 +1067,16 @@
     ],
     "strengths": [
       "armor_reliability",
-      "high_alpha"
+      "high_alpha",
+      "dpm"
     ],
     "weaknesses": [
       "slow_rotation",
       "flexibility"
     ],
     "mobility": "MEDIUM",
-    "burstPotential": "HIGH",
-    "sustainedDpm": "MEDIUM",
+    "burstPotential": "MEDIUM",
+    "sustainedDpm": "HIGH",
     "hullDownAbility": "MEDIUM",
     "armorReliability": "HIGH"
   },
@@ -1045,16 +1088,17 @@
       "brawling_medium"
     ],
     "strengths": [
-      "dpm",
-      "armor_for_medium"
+      "armor_for_medium",
+      "mobility",
+      "gun_accuracy"
     ],
     "weaknesses": [
       "low_alpha",
       "poor_gun_depression"
     ],
     "mobility": "HIGH",
-    "burstPotential": "MEDIUM",
-    "sustainedDpm": "HIGH",
+    "burstPotential": "LOW",
+    "sustainedDpm": "MEDIUM",
     "hullDownAbility": "MEDIUM",
     "armorReliability": "MEDIUM"
   },
@@ -1075,8 +1119,8 @@
     ],
     "mobility": "MEDIUM",
     "burstPotential": "HIGH",
-    "sustainedDpm": "HIGH",
-    "hullDownAbility": "MEDIUM",
+    "sustainedDpm": "LOW",
+    "hullDownAbility": "LOW",
     "armorReliability": "HIGH"
   },
   "Progetto 65": {
@@ -1093,12 +1137,13 @@
     ],
     "weaknesses": [
       "magazine_management",
-      "paper_armor"
+      "paper_armor",
+      "low_dpm"
     ],
     "mobility": "HIGH",
     "burstPotential": "HIGH",
-    "sustainedDpm": "MEDIUM",
-    "hullDownAbility": "MEDIUM",
+    "sustainedDpm": "LOW",
+    "hullDownAbility": "LOW",
     "armorReliability": "LOW"
   },
   "Projet Murat": {
@@ -1109,16 +1154,17 @@
       "brawling_medium"
     ],
     "strengths": [
-      "dpm",
-      "high_alpha_for_medium"
+      "high_alpha_for_medium",
+      "mobility"
     ],
     "weaknesses": [
-      "armor_reliability"
+      "armor_reliability",
+      "low_dpm"
     ],
     "mobility": "HIGH",
     "burstPotential": "MEDIUM",
-    "sustainedDpm": "HIGH",
-    "hullDownAbility": "MEDIUM",
+    "sustainedDpm": "LOW",
+    "hullDownAbility": "HIGH",
     "armorReliability": "MEDIUM"
   },
   "Rhm. Pzw.": {
@@ -1137,7 +1183,7 @@
       "paper_armor"
     ],
     "mobility": "HIGH",
-    "burstPotential": "MEDIUM",
+    "burstPotential": "LOW",
     "sustainedDpm": "MEDIUM",
     "hullDownAbility": "LOW",
     "armorReliability": "LOW"
@@ -1146,22 +1192,24 @@
     "tier": 10,
     "vehicleClass": "HEAVY",
     "roles": [
-      "clip_trader",
-      "close_range_trader"
+      "auto_reloader",
+      "clip_trader"
     ],
     "strengths": [
       "clip_burst",
-      "gun_depression"
+      "gun_depression",
+      "flexibility"
     ],
     "weaknesses": [
-      "clip_reload",
+      "low_dpm",
+      "magazine_management",
       "hull_weakness"
     ],
     "mobility": "MEDIUM",
-    "burstPotential": "HIGH",
+    "burstPotential": "MEDIUM",
     "sustainedDpm": "LOW",
-    "hullDownAbility": "MEDIUM",
-    "armorReliability": "HIGH"
+    "hullDownAbility": "HIGH",
+    "armorReliability": "MEDIUM"
   },
   "Sheridan": {
     "tier": 10,
@@ -1176,11 +1224,12 @@
     ],
     "weaknesses": [
       "paper_armor",
-      "gun_handling"
+      "gun_handling",
+      "low_dpm"
     ],
     "mobility": "HIGH",
     "burstPotential": "HIGH",
-    "sustainedDpm": "MEDIUM",
+    "sustainedDpm": "LOW",
     "hullDownAbility": "LOW",
     "armorReliability": "LOW"
   },
@@ -1197,11 +1246,12 @@
     ],
     "weaknesses": [
       "paper_armor",
-      "gun_handling"
+      "gun_handling",
+      "low_dpm"
     ],
     "mobility": "HIGH",
     "burstPotential": "HIGH",
-    "sustainedDpm": "MEDIUM",
+    "sustainedDpm": "LOW",
     "hullDownAbility": "LOW",
     "armorReliability": "LOW"
   },
@@ -1214,7 +1264,8 @@
     ],
     "strengths": [
       "hp_pool",
-      "armor_reliability"
+      "armor_reliability",
+      "dpm"
     ],
     "weaknesses": [
       "extremely_slow",
@@ -1222,8 +1273,8 @@
     ],
     "mobility": "LOW",
     "burstPotential": "MEDIUM",
-    "sustainedDpm": "MEDIUM",
-    "hullDownAbility": "MEDIUM",
+    "sustainedDpm": "HIGH",
+    "hullDownAbility": "HIGH",
     "armorReliability": "HIGH"
   },
   "STB-1": {
@@ -1235,16 +1286,16 @@
     ],
     "strengths": [
       "gun_depression",
-      "dpm",
-      "hull_down"
+      "hull_down",
+      "mobility"
     ],
     "weaknesses": [
       "hull_weakness",
-      "mobility_medium"
+      "low_dpm"
     ],
-    "mobility": "MEDIUM",
+    "mobility": "HIGH",
     "burstPotential": "LOW",
-    "sustainedDpm": "HIGH",
+    "sustainedDpm": "LOW",
     "hullDownAbility": "HIGH",
     "armorReliability": "MEDIUM"
   },
@@ -1252,22 +1303,23 @@
     "tier": 10,
     "vehicleClass": "HEAVY",
     "roles": [
-      "hull_down_heavy",
+      "flexible_heavy",
       "sustained_trader"
     ],
     "strengths": [
-      "strong_turret",
-      "gun_depression"
+      "dpm",
+      "gun_accuracy",
+      "mobility_for_heavy"
     ],
     "weaknesses": [
-      "hull_weakness",
+      "paper_armor",
       "low_alpha"
     ],
     "mobility": "MEDIUM",
-    "burstPotential": "MEDIUM",
-    "sustainedDpm": "MEDIUM",
-    "hullDownAbility": "HIGH",
-    "armorReliability": "HIGH"
+    "burstPotential": "LOW",
+    "sustainedDpm": "HIGH",
+    "hullDownAbility": "LOW",
+    "armorReliability": "LOW"
   },
   "Super Conqueror": {
     "tier": 10,
@@ -1277,19 +1329,20 @@
       "sustained_trader"
     ],
     "strengths": [
+      "armor_reliability",
       "strong_turret",
-      "high_dpm",
-      "gun_depression"
+      "gun_depression",
+      "dpm"
     ],
     "weaknesses": [
-      "hull_weakness",
-      "large_profile"
+      "large_profile",
+      "mobility"
     ],
     "mobility": "MEDIUM",
-    "burstPotential": "LOW",
+    "burstPotential": "MEDIUM",
     "sustainedDpm": "HIGH",
     "hullDownAbility": "HIGH",
-    "armorReliability": "MEDIUM"
+    "armorReliability": "HIGH"
   },
   "T-100 LT": {
     "tier": 10,
@@ -1322,17 +1375,18 @@
     ],
     "strengths": [
       "dpm",
-      "armor_for_medium"
+      "armor_for_medium",
+      "mobility"
     ],
     "weaknesses": [
       "low_alpha",
       "poor_gun_depression"
     ],
     "mobility": "HIGH",
-    "burstPotential": "MEDIUM",
+    "burstPotential": "LOW",
     "sustainedDpm": "HIGH",
     "hullDownAbility": "MEDIUM",
-    "armorReliability": "MEDIUM"
+    "armorReliability": "HIGH"
   },
   "T-62A": {
     "tier": 10,
@@ -1344,7 +1398,8 @@
     "strengths": [
       "dpm",
       "small_profile",
-      "turret_armor"
+      "turret_armor",
+      "mobility"
     ],
     "weaknesses": [
       "low_alpha",
@@ -1352,7 +1407,7 @@
     ],
     "mobility": "HIGH",
     "burstPotential": "LOW",
-    "sustainedDpm": "HIGH",
+    "sustainedDpm": "MEDIUM",
     "hullDownAbility": "MEDIUM",
     "armorReliability": "MEDIUM"
   },
@@ -1370,11 +1425,12 @@
     "weaknesses": [
       "extremely_slow",
       "casemate",
-      "large_profile"
+      "large_profile",
+      "low_dpm"
     ],
     "mobility": "LOW",
     "burstPotential": "HIGH",
-    "sustainedDpm": "HIGH",
+    "sustainedDpm": "LOW",
     "hullDownAbility": "MEDIUM",
     "armorReliability": "HIGH"
   },
@@ -1392,13 +1448,14 @@
     ],
     "weaknesses": [
       "poor_gun_depression",
-      "slow_rotation"
+      "slow_rotation",
+      "mobility"
     ],
     "mobility": "LOW",
     "burstPotential": "HIGH",
     "sustainedDpm": "MEDIUM",
     "hullDownAbility": "MEDIUM",
-    "armorReliability": "HIGH"
+    "armorReliability": "MEDIUM"
   },
   "T110E5": {
     "tier": 10,
@@ -1410,14 +1467,15 @@
     "strengths": [
       "strong_turret",
       "flexible_gun",
-      "reliable_armor"
+      "reliable_armor",
+      "dpm"
     ],
     "weaknesses": [
       "low_alpha",
       "cupola_weakness"
     ],
     "mobility": "MEDIUM",
-    "burstPotential": "LOW",
+    "burstPotential": "MEDIUM",
     "sustainedDpm": "HIGH",
     "hullDownAbility": "HIGH",
     "armorReliability": "HIGH"
@@ -1436,7 +1494,8 @@
     "weaknesses": [
       "clip_reload",
       "hull_weakness",
-      "low_accuracy_snap"
+      "low_accuracy_snap",
+      "paper_armor"
     ],
     "mobility": "MEDIUM",
     "burstPotential": "HIGH",
@@ -1448,21 +1507,23 @@
     "tier": 10,
     "vehicleClass": "HEAVY",
     "roles": [
-      "hull_down_heavy",
-      "sustained_trader"
+      "mobile_flanker",
+      "sustained_support"
     ],
     "strengths": [
-      "strong_turret",
-      "dpm"
+      "dpm",
+      "mobility_for_heavy",
+      "flexible_gun"
     ],
     "weaknesses": [
-      "hull_weakness"
+      "paper_armor",
+      "large_profile"
     ],
-    "mobility": "MEDIUM",
+    "mobility": "HIGH",
     "burstPotential": "MEDIUM",
     "sustainedDpm": "HIGH",
-    "hullDownAbility": "HIGH",
-    "armorReliability": "HIGH"
+    "hullDownAbility": "LOW",
+    "armorReliability": "LOW"
   },
   "TVP T 50/51": {
     "tier": 10,
@@ -1478,11 +1539,11 @@
     "weaknesses": [
       "clip_reload",
       "paper_armor",
-      "poor_gun_depression"
+      "low_dpm"
     ],
     "mobility": "HIGH",
     "burstPotential": "HIGH",
-    "sustainedDpm": "MEDIUM",
+    "sustainedDpm": "LOW",
     "hullDownAbility": "LOW",
     "armorReliability": "LOW"
   },
@@ -1505,7 +1566,7 @@
     "mobility": "LOW",
     "burstPotential": "HIGH",
     "sustainedDpm": "MEDIUM",
-    "hullDownAbility": "MEDIUM",
+    "hullDownAbility": "HIGH",
     "armorReliability": "HIGH"
   },
   "Type 5 Heavy": {
@@ -1527,7 +1588,7 @@
     "mobility": "LOW",
     "burstPotential": "HIGH",
     "sustainedDpm": "LOW",
-    "hullDownAbility": "MEDIUM",
+    "hullDownAbility": "HIGH",
     "armorReliability": "HIGH"
   },
   "Type 71": {
@@ -1539,15 +1600,15 @@
     ],
     "strengths": [
       "gun_depression",
-      "dpm",
       "hp_pool"
     ],
     "weaknesses": [
-      "hull_weakness"
+      "hull_weakness",
+      "low_dpm"
     ],
     "mobility": "MEDIUM",
     "burstPotential": "MEDIUM",
-    "sustainedDpm": "HIGH",
+    "sustainedDpm": "LOW",
     "hullDownAbility": "HIGH",
     "armorReliability": "HIGH"
   },
@@ -1568,7 +1629,7 @@
       "paper_armor"
     ],
     "mobility": "HIGH",
-    "burstPotential": "MEDIUM",
+    "burstPotential": "LOW",
     "sustainedDpm": "HIGH",
     "hullDownAbility": "LOW",
     "armorReliability": "LOW"
@@ -1586,9 +1647,10 @@
     ],
     "weaknesses": [
       "low_dpm",
-      "large_profile"
+      "large_profile",
+      "mobility"
     ],
-    "mobility": "MEDIUM",
+    "mobility": "LOW",
     "burstPotential": "HIGH",
     "sustainedDpm": "LOW",
     "hullDownAbility": "MEDIUM",
@@ -1607,12 +1669,13 @@
     ],
     "weaknesses": [
       "slow_rotation",
-      "cupola_weakness"
+      "cupola_weakness",
+      "mobility"
     ],
-    "mobility": "MEDIUM",
-    "burstPotential": "HIGH",
+    "mobility": "LOW",
+    "burstPotential": "MEDIUM",
     "sustainedDpm": "MEDIUM",
-    "hullDownAbility": "MEDIUM",
+    "hullDownAbility": "HIGH",
     "armorReliability": "HIGH"
   },
   "Vz. 55": {
@@ -1632,7 +1695,7 @@
     ],
     "mobility": "MEDIUM",
     "burstPotential": "HIGH",
-    "sustainedDpm": "LOW",
+    "sustainedDpm": "MEDIUM",
     "hullDownAbility": "MEDIUM",
     "armorReliability": "HIGH"
   },
@@ -1640,22 +1703,24 @@
     "tier": 10,
     "vehicleClass": "TANK_DESTROYER",
     "roles": [
-      "mobile_td",
-      "flexible_support"
+      "burst_td",
+      "ambush"
     ],
     "strengths": [
-      "mobility",
-      "dpm"
+      "clip_burst",
+      "very_high_alpha",
+      "flexibility"
     ],
     "weaknesses": [
       "paper_armor",
-      "casemate"
+      "clip_reload",
+      "low_dpm"
     ],
-    "mobility": "HIGH",
+    "mobility": "MEDIUM",
     "burstPotential": "HIGH",
-    "sustainedDpm": "HIGH",
-    "hullDownAbility": "MEDIUM",
-    "armorReliability": "MEDIUM"
+    "sustainedDpm": "LOW",
+    "hullDownAbility": "LOW",
+    "armorReliability": "LOW"
   },
   "WZ-111 5A": {
     "tier": 10,
@@ -1675,7 +1740,7 @@
     ],
     "mobility": "MEDIUM",
     "burstPotential": "MEDIUM",
-    "sustainedDpm": "HIGH",
+    "sustainedDpm": "MEDIUM",
     "hullDownAbility": "MEDIUM",
     "armorReliability": "MEDIUM"
   },
@@ -1688,7 +1753,8 @@
     ],
     "strengths": [
       "flexible_gun",
-      "mobility"
+      "mobility",
+      "dpm"
     ],
     "weaknesses": [
       "turret_weakspot"
@@ -1712,11 +1778,12 @@
     ],
     "weaknesses": [
       "casemate",
-      "flexibility"
+      "flexibility",
+      "low_dpm"
     ],
     "mobility": "MEDIUM",
     "burstPotential": "HIGH",
-    "sustainedDpm": "HIGH",
+    "sustainedDpm": "LOW",
     "hullDownAbility": "MEDIUM",
     "armorReliability": "HIGH"
   },
@@ -1724,22 +1791,23 @@
     "tier": 10,
     "vehicleClass": "MEDIUM",
     "roles": [
-      "flexible_support",
-      "brawling_medium"
+      "brawling_medium",
+      "flexible_support"
     ],
     "strengths": [
-      "dpm",
-      "high_alpha_for_medium"
+      "high_alpha_for_medium",
+      "armor_for_medium",
+      "mobility"
     ],
     "weaknesses": [
       "poor_gun_depression",
-      "armor_reliability"
+      "gun_handling"
     ],
     "mobility": "HIGH",
     "burstPotential": "MEDIUM",
-    "sustainedDpm": "HIGH",
+    "sustainedDpm": "MEDIUM",
     "hullDownAbility": "MEDIUM",
-    "armorReliability": "MEDIUM"
+    "armorReliability": "HIGH"
   },
   "WZ-132-1": {
     "tier": 10,
@@ -1750,15 +1818,16 @@
     ],
     "strengths": [
       "mobility",
-      "high_alpha_for_light"
+      "high_alpha_for_light",
+      "dpm"
     ],
     "weaknesses": [
       "paper_armor",
       "poor_gun_depression"
     ],
     "mobility": "HIGH",
-    "burstPotential": "HIGH",
-    "sustainedDpm": "MEDIUM",
+    "burstPotential": "MEDIUM",
+    "sustainedDpm": "HIGH",
     "hullDownAbility": "LOW",
     "armorReliability": "LOW"
   },
@@ -1778,9 +1847,9 @@
       "low_alpha"
     ],
     "mobility": "MEDIUM",
-    "burstPotential": "HIGH",
+    "burstPotential": "MEDIUM",
     "sustainedDpm": "HIGH",
-    "hullDownAbility": "MEDIUM",
+    "hullDownAbility": "HIGH",
     "armorReliability": "HIGH"
   }
 }
