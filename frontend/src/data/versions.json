@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.1",
+    "date": "2026-08-12",
+    "tag": "fix",
+    "zh": "修复地图鸟瞰偏移：路线、出生点、阵亡标记与分析网格不再越靠近地图边缘越向外偏移，点位与底图地形准确对齐",
+    "en": "Fixed map overview offset: routes, spawn points, death marks, and the analysis grid no longer drift outward toward map edges; positions now align with the terrain",
+    "ru": "Исправлено смещение обзора карты: маршруты, точки появления, отметки гибели и сетка анализа больше не сдвигаются к краям карты; позиции совпадают с рельефом"
+  },
+  {
     "v": "2.11.0",
     "date": "2026-08-12",
     "tag": "add",
