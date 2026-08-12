@@ -3,7 +3,7 @@
   "mapId": "06_rudniki_rd",
   "mapCodes": [],
   "displayName": "06_rudniki_rd",
-  "verified": true,
+  "verified": false,
   "source": "CLIENT_RESOURCE_DERIVED",
   "battleVariant": "rd0",
   "warnings": [],

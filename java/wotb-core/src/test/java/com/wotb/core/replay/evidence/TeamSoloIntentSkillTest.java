@@ -345,6 +345,85 @@ class TeamSoloIntentSkillTest {
                 "whole-battle authoritative damageReceived must not white-eat the window without in-window evidence");
     }
 
+    @Test
+    void partiallyOverlappingEngagementIsNotAttributedToSpan() {
+        // 交火 40-65s、承伤 1000，单走 span 60-90s：只部分重叠，不得把整段 1000 计入 span 内承伤
+        final Battle battle = battle(3, new double[7], new long[7]);
+        final TeamMemberFeatureSet solo = member(0, 0, true, null,
+                List.of(move(60, 90, 100, 150, 0, 150, 2f)),
+                List.of(engagement(40, 65, 10_001L, List.of(20_001L), 1000)), 1);
+        final TeamBattleFeatureSet features = features(
+                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
+                phases(60, 90, 100, 150, 0, 150, 300, 250, 300, 250, "account:10001"),
+                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
+                BattlePhaseSummary.buildRelativePhases(40, 300));
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertTrue(evidence.isEmpty(),
+                "partially overlapping engagement must not contribute its full 1000 damage to the span");
+    }
+
+    @Test
+    void engagementFullyInsideSpanIsUsed() {
+        // 交火完全位于 span 内：整段承伤可正常归属 → SOLO_DETACHED
+        final Battle battle = battle(3, new double[7], new long[7]);
+        final TeamMemberFeatureSet solo = member(0, 0, true, null,
+                List.of(move(60, 90, 100, 150, 0, 150, 2f)),
+                List.of(engagement(60, 90, 10_001L, List.of(20_001L), 1000)), 1);
+        final TeamBattleFeatureSet features = features(
+                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
+                phases(60, 90, 100, 150, 0, 150, 300, 250, 300, 250, "account:10001"),
+                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
+                BattlePhaseSummary.buildRelativePhases(40, 300));
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertEquals(1, evidence.size());
+        assertEquals("SOLO_DETACHED", evidence.getFirst().labels().get("intent"));
+    }
+
+    @Test
+    void engagementFullyOutsideSpanDoesNotAffect() {
+        // 交火完全位于 span 外：不影响 span 内判断
+        final Battle battle = battle(3, new double[7], new long[7]);
+        final TeamMemberFeatureSet solo = member(0, 0, true, null,
+                List.of(move(60, 90, 100, 150, 0, 150, 2f)),
+                List.of(engagement(95, 120, 10_001L, List.of(20_001L), 1000)), 1);
+        final TeamBattleFeatureSet features = features(
+                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
+                phases(60, 90, 100, 150, 0, 150, 300, 250, 300, 250, "account:10001"),
+                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
+                BattlePhaseSummary.buildRelativePhases(40, 300));
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertTrue(evidence.isEmpty(), "engagement outside the span must not affect it");
+    }
+
+    @Test
+    void partiallyOverlappingEngagementAtOpeningBoundarySuppressesOpening() {
+        // 开局窗口 [15,45] 与交火 40-65s 部分重叠：无法证明窗口内未接火 → 不生成 OPENING_MAP_CONTROL
+        final Battle battle = battle(1, new double[7], new long[7]);
+        final TeamMemberFeatureSet solo = member(0, 0, true, null,
+                List.of(stationary(15, 45, 350, 400)),
+                List.of(engagement(40, 65, 10_001L, List.of(20_001L), 200)), 1);
+        final TeamBattleFeatureSet features = features(
+                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
+                phases(15, 45, 350, 400, 350, 400, 300, 250, 300, 250, "account:10001"),
+                new TeamAggregateResult(7, 3000, 1000, 0, 0, 0, 7, 0, null, null, null, false),
+                BattlePhaseSummary.buildRelativePhases(60, 300));
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertTrue(evidence.isEmpty(),
+                "partially overlapping engagement at opening boundary must not be misattributed");
+    }
+
     // ===== helpers =====
 
     private static TeamFormationPhase twoClusterPhase(

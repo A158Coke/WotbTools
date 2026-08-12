@@ -65,7 +65,8 @@ public final class SoloPlayIntentSkill {
             final Integer region = recorderRegion(
                     features, window.startSec(), window.endSec(), ctx.battle().mapName);
             final String intent = classify(window, stationaryRatio, inWindowDamage,
-                    inWindowDealt, distanceGrowth, openingEnd, recorder);
+                    inWindowDealt, distanceGrowth, openingEnd, recorder,
+                    hasPartialOverlapEngagement(features, window.startSec(), window.endSec()));
             if (intent == null) {
                 continue;
             }
@@ -106,13 +107,14 @@ public final class SoloPlayIntentSkill {
             final float inWindowDealt,
             final Float distanceGrowth,
             final float openingEnd,
-            final PlayerResult recorder
+            final PlayerResult recorder,
+            final boolean partialOverlap
     ) {
         final boolean opening = window.startSec() >= 0f && window.endSec() <= openingEnd;
         final boolean contactObserved = inWindowDealt > 0f || inWindowDamage > 0f;
         final boolean underPressure = inWindowDamage > 0f;
         final boolean untouchedInWindow = !contactObserved && !memberDeadIn(recorder, window);
-        if (opening && untouchedInWindow) {
+        if (opening && untouchedInWindow && !partialOverlap) {
             return "OPENING_MAP_CONTROL";
         }
         if (window.startSec() < openingEnd) {
@@ -202,7 +204,7 @@ public final class SoloPlayIntentSkill {
                                                final float start, final float end) {
         float damage = 0f;
         for (final EngagementSummary engagement : features.engagements()) {
-            if (engagement.startTime() <= end && engagement.endTime() >= start) {
+            if (fullyContained(engagement, start, end)) {
                 damage += engagement.damageDealt();
             }
         }
@@ -213,11 +215,29 @@ public final class SoloPlayIntentSkill {
                                           final float start, final float end) {
         float damage = 0f;
         for (final EngagementSummary engagement : features.engagements()) {
-            if (engagement.startTime() <= end && engagement.endTime() >= start) {
+            if (fullyContained(engagement, start, end)) {
                 damage += engagement.damageReceived();
             }
         }
         return damage;
+    }
+
+    /** 是否存在与窗口相交但不完全包含的交火：无法可靠归属，禁止据此下结论。 */
+    private static boolean hasPartialOverlapEngagement(final PlayerBattleFeatureSet features,
+                                                       final float start, final float end) {
+        for (final EngagementSummary engagement : features.engagements()) {
+            if (engagement.startTime() <= end && engagement.endTime() >= start
+                    && !fullyContained(engagement, start, end)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean fullyContained(final EngagementSummary engagement,
+                                          final float start, final float end) {
+        return engagement.startTime() >= start - 0.01f
+                && engagement.endTime() <= end + 0.01f;
     }
 
     /** 窗口内距离增长：由 checkpoints 的录像者-友军质心距离序列首尾差得出；不足 2 点返回 null。 */

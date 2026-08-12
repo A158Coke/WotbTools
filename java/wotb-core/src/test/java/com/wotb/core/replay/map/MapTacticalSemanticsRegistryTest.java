@@ -28,7 +28,7 @@ class MapTacticalSemanticsRegistryTest {
     @Test
     void verifiedSourceAndAreaConfidenceArePreserved() {
         final MapTacticalSemantics semantics = registry.semanticsFor("desert_train");
-        assertTrue(semantics.verified(), "map semantics are human-verified since 2026-08-12");
+        assertFalse(semantics.verified(), "逐图人工核验未完成（另立 PR），不得声明已核验");
         assertEquals("CLIENT_RESOURCE_DERIVED", semantics.source());
         assertEquals("Desert Sands", semantics.displayName());
         final MapTacticalSemantics.AreaConfidence confidence =

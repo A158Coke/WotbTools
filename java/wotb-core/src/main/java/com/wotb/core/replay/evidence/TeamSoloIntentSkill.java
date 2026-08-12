@@ -126,7 +126,8 @@ public final class TeamSoloIntentSkill {
                 && span.startSec() >= opening.startSec()
                 && span.endSec() <= opening.endSec()
                 && span.enemyPressureCount() == 0
-                && !memberDeadIn(member, span)) {
+                && !memberDeadIn(member, span)
+                && !span.hasPartialOverlapEngagement()) {
             return "OPENING_MAP_CONTROL";
         }
         if (opening != null && span.startSec() < opening.endSec()) {
@@ -331,8 +332,7 @@ public final class TeamSoloIntentSkill {
                 continue;
             }
             for (final EngagementSummary engagement : member.engagements()) {
-                if (engagement.startTime() <= span.endSec()
-                        && engagement.endTime() >= span.startSec()
+                if (fullyContained(engagement, span.startSec(), span.endSec())
                         && engagement.outcome() == EngagementOutcome.FAVORABLE) {
                     return true;
                 }
@@ -416,6 +416,13 @@ public final class TeamSoloIntentSkill {
         return (float) Math.sqrt(dx * dx + dz * dz);
     }
 
+    /** 交火段是否完全位于 [startSec, endSec] 内：只有完全包含才允许把整段总量归属到局部窗口。 */
+    private static boolean fullyContained(final EngagementSummary engagement,
+                                          final float startSec, final float endSec) {
+        return engagement.startTime() >= startSec - SPAN_CONTINUITY_EPSILON_SEC
+                && engagement.endTime() <= endSec + SPAN_CONTINUITY_EPSILON_SEC;
+    }
+
     /** 单走时段聚合：窗口序列 + 距离趋势 + 主力质心位移。 */
     private static final class SoloSpan {
         private final TeamMemberFeatureSet member;
@@ -482,32 +489,44 @@ public final class TeamSoloIntentSkill {
             return windows.getLast();
         }
 
-        /** 窗口内敌情压力：对 span 内重叠的 member engagements 去重（同一交火段只算一次）。 */
+        /** 窗口内敌情压力：只统计完全位于 span 内的 engagements（部分重叠不可可靠归属，禁止整段计入）。 */
         int enemyPressureCount() {
             final Set<Long> enemies = new LinkedHashSet<>();
             for (final EngagementSummary engagement : member.engagements()) {
-                if (overlaps(engagement, startSec, endSec)) {
+                if (fullyContained(engagement, startSec, endSec)) {
                     enemies.addAll(engagement.enemyAccountIds());
                 }
             }
             return enemies.size();
         }
 
-        /** 窗口内承伤：对 span 内重叠的 member engagements 去重（同一交火段只算一次）。 */
+        /** 窗口内承伤：只统计完全位于 span 内的 engagements（部分重叠禁止整段计入）。 */
         float damageReceived() {
             float damage = 0f;
             for (final EngagementSummary engagement : member.engagements()) {
-                if (overlaps(engagement, startSec, endSec)) {
+                if (fullyContained(engagement, startSec, endSec)) {
                     damage += engagement.damageReceived();
                 }
             }
             return damage;
         }
 
-        private static boolean overlaps(final EngagementSummary engagement,
-                                        final float startSec, final float endSec) {
+        /** 是否存在与 span 相交但不完全包含的交火：无法可靠归属，禁止据此下结论。 */
+        boolean hasPartialOverlapEngagement() {
+            for (final EngagementSummary engagement : member.engagements()) {
+                if (intersects(engagement, startSec, endSec)
+                        && !fullyContained(engagement, startSec, endSec)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static boolean intersects(final EngagementSummary engagement,
+                                          final float startSec, final float endSec) {
             return engagement.startTime() <= endSec && engagement.endTime() >= startSec;
         }
+
     }
 
     private record WindowInfo(
