@@ -296,6 +296,7 @@ AI 提示词正文维护在 `java/wotb-web/src/main/resources/prompts/` 下的 `
 
 - **CI 模式**：`AiEvalHarnessTest`（`@Tag("ai-eval")`，默认构建运行）加载 `src/test/resources/ai-eval/cases/*.json`（synthetic 7v7 争霸赛场景），用 `TeamAiPromptBuilder.single` 构建 prompt（不调 AI），执行 `prompt_contains` / `prompt_omits` 断言，写 `target/ai-eval-report/report.md` + `report.json`；任一 FAIL 构建失败。
 - **单走行为候选**：`TeamSoloIntentSkill`（wotb-core）从阵型簇/移动段/交火/占点分推导 `OPENING_MAP_CONTROL` / `SOLO_DELAY` / `SOLO_DETACHED` 候选（PARTIAL 规则候选，B1 口径：拖延需队友获利；开局图控抑制脱节），`TeamEvidenceFormatter` 渲染 `SOLO_INTENT_CANDIDATES` 段（P3 optional）。
+- **player 路径同规则**：`SoloPlayIntentSkill`（wotb-core）复用 `RouteSkill` 脱节窗口推导同口径候选（个人复盘无「队友获利」维度），已在 `EvidenceSkillEngine` 注册；player prompt（fallback/single/tactical）追加三语 `SOLO_INTENT_RULE`。
 - **争霸赛占点**：`TeamEvidenceFormatter` 渲染 `CAPTURE_AND_POINTS` 段（逐人/双方占点分、`pointsDecided`、占领点区域）；`TeamPromptLocalizer` 三语 `SOLO_INTENT_RULE` / `CAPTURE_RULE`。
 - **生产反馈闭环**：人工评估 + 用户反馈登记模板见 `docs/ai-eval/feedback-checklist.md`；可复现反馈转 lesson + synthetic case 回归。评估人工，不引入 LLM-as-judge；真实回放不入库。
 
