@@ -768,11 +768,33 @@
         "analyze_multi_btn": "AI Multi-battle ({n})",
         "cancel_btn": "Cancel Analysis",
         "analysis_title_player": "AI Review",
-        "prebattle": {
-            "title": "Pre-Battle Prediction",
-            "collapse": "Collapse",
-            "expand": "Expand"
-        },
+          "prebattle": {
+              "title": "Pre-Battle Prediction",
+              "collapse": "Collapse",
+              "expand": "Expand"
+          },
+          "map": {
+              "title": "Map Overview",
+              "view_heatmap": "Heatmap",
+              "view_routes": "Routes",
+              "team_friendly": "Friendly",
+              "team_enemy": "Enemy",
+              "team_all": "All",
+              "type_dwell": "Dwell",
+              "type_damage": "Damage",
+              "type_deaths": "Deaths",
+              "phase_all": "All",
+              "phase_opening": "Opening",
+              "phase_mid": "Mid",
+              "phase_late": "Endgame",
+              "legend_heat": "Density",
+              "spawn": "Spawn",
+              "death": "Destroyed",
+              "observed_from": "positions observed from",
+              "observed_note": "Observation window (vehicles missing at opening):",
+              "duration": "{m}m {s}s",
+              "aria": "map overview"
+          },
         "stages": {
             "call1": "Pre-battle prediction…",
             "evidence": "Analyzing evidence…",
