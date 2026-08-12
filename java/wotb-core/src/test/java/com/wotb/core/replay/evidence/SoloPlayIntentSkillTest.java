@@ -191,6 +191,69 @@ class SoloPlayIntentSkillTest {
         assertTrue(evidence.isEmpty(), "1s movement coverage in a 15s window must not imply MOVING");
     }
 
+    @Test
+    void partiallyOverlappingEngagementIsNotAttributedToSpan() {
+        // 交火 40-65s、承伤 1000，单走 span 60-75s：只部分重叠，不得把整段 1000 计入 span 内承伤
+        final EvidenceSkillContext ctx = context(0, true, 0,
+                List.of(move(60, 75, 200, 200, 240, 240, 5f)),
+                List.of(engagement(40, 65, 1000)),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1060f, 1065f, 1075f},
+                new float[]{200f, 200f, 240f}, new float[]{200f, 200f, 240f});
+
+        final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
+
+        assertTrue(evidence.isEmpty(),
+                "partially overlapping engagement must not contribute its full 1000 damage to the span");
+    }
+
+    @Test
+    void engagementFullyInsideSpanIsUsed() {
+        // 交火完全位于 span 内：整段承伤可正常归属 → SOLO_DETACHED
+        final EvidenceSkillContext ctx = context(0, true, 0,
+                List.of(move(60, 75, 200, 200, 240, 240, 5f)),
+                List.of(engagement(60, 75, 1000)),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1060f, 1065f, 1075f},
+                new float[]{200f, 200f, 240f}, new float[]{200f, 200f, 240f});
+
+        final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
+
+        assertEquals(1, evidence.size());
+        assertEquals("SOLO_DETACHED", evidence.getFirst().labels().get("intent"));
+    }
+
+    @Test
+    void engagementFullyOutsideSpanDoesNotAffect() {
+        // 交火完全位于 span 外：不影响 span 内判断
+        final EvidenceSkillContext ctx = context(0, true, 0,
+                List.of(move(60, 75, 200, 200, 240, 240, 5f)),
+                List.of(engagement(80, 95, 1000)),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1060f, 1065f, 1075f},
+                new float[]{200f, 200f, 240f}, new float[]{200f, 200f, 240f});
+
+        final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
+
+        assertTrue(evidence.isEmpty(), "engagement outside the window must not affect it");
+    }
+
+    @Test
+    void partiallyOverlappingEngagementAtOpeningBoundarySuppressesOpening() {
+        // 开局窗口 [15,45] 与交火 40-65s 部分重叠：无法证明窗口内未接火 → 不生成 OPENING_MAP_CONTROL
+        final EvidenceSkillContext ctx = context(0, true, 0,
+                List.of(move(5, 40, 200, 200, 200, 200, 1f)),
+                List.of(engagement(40, 65, 200)),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1015f, 1030f, 1045f},
+                new float[]{200f, 200f, 200f}, new float[]{200f, 200f, 200f});
+
+        final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
+
+        assertTrue(evidence.isEmpty(),
+                "partially overlapping engagement at opening boundary must not be misattributed");
+    }
+
     // ===== helpers =====
 
     private static EvidenceSkillContext context(

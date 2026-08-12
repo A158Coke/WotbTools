@@ -5,7 +5,7 @@
     "canyon"
   ],
   "displayName": "Canyon",
-  "verified": true,
+  "verified": false,
   "source": "CLIENT_RESOURCE_DERIVED",
   "battleVariant": "UNKNOWN",
   "warnings": [],

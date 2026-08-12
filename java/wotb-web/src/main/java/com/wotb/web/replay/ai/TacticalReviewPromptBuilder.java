@@ -31,7 +31,7 @@ public final class TacticalReviewPromptBuilder {
     static final int MAX_TOP_WINDOWS = 8;
     static final int MAX_WINDOW_DETAIL = 8;
 
-    
+
 
     static final String TACTICAL_SYSTEM_PROMPT = AiPromptLibrary.zh("player/tactical");
 

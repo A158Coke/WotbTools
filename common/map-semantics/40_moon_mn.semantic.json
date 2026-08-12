@@ -3,7 +3,7 @@
   "mapId": "40_moon_mn",
   "mapCodes": [],
   "displayName": "40_moon_mn",
-  "verified": true,
+  "verified": false,
   "source": "CLIENT_RESOURCE_DERIVED",
   "battleVariant": "UNKNOWN",
   "warnings": [],
