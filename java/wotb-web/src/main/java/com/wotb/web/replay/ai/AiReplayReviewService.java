@@ -223,20 +223,7 @@ public class AiReplayReviewService {
                         MapOverviewBuilder.build(
                                 representative.battle(), representative.reconstruction()));
             }
-            case MULTI_PLAYER_BATTLE -> {
-                final var battles = analyzableGroups.stream()
-                        .map(ReplayPerspectiveGroup::representative)
-                        .map(ReplayProcessingResult::battle)
-                        .toList();
-                final ReplayProcessingResult first = analyzableGroups.getFirst().representative();
-                yield new AnalyzeResponse(
-                        withDisclaimerFooter(
-                                aiAnalysisService.analyzeMulti(battles, language, listener).analysis(),
-                                language),
-                        null,
-                        MapOverviewBuilder.build(first.battle(), first.reconstruction()));
-            }
-            case SINGLE_TEAM_BATTLE, MULTI_TEAM_BATTLE -> {
+            case SINGLE_TEAM_BATTLE -> {
                 final TeamAnalyzeResult teamResult = aiAnalysisService
                         .analyzeTeamGroups(analyzableGroups, language, listener);
                 final ReplayProcessingResult first = analyzableGroups.getFirst().representative();
@@ -246,6 +233,7 @@ public class AiReplayReviewService {
                         MapOverviewBuilder.build(first.battle(), first.reconstruction()));
             }
             case NONE -> throw new IllegalArgumentException("NO_BATTLE_DATA");
+            default -> throw new UnsupportedReplayAnalysisModeException("UNSUPPORTED_BATTLE_CATEGORY");
         };
     }
 

@@ -51,6 +51,9 @@ class MapOverviewBuilderTest {
 
         assertEquals("rift", overview.mapCode());
         assertEquals("Hellas", overview.displayName());
+        assertEquals("海拉斯", overview.displayNames().get("zh"));
+        assertEquals("Hellas", overview.displayNames().get("en"));
+        assertEquals("Эллада", overview.displayNames().get("ru"));
         assertTrue(overview.friendlyTeam() == 1 || overview.friendlyTeam() == 2);
         assertTrue(overview.playableBounds().xMin() < overview.playableBounds().xMax());
         assertTrue(overview.playableBounds().yMin() < overview.playableBounds().yMax());
@@ -142,6 +145,7 @@ class MapOverviewBuilderTest {
         final MapOverview overview = new MapOverview(
                 "desert_train",
                 "Desert Sands",
+                Map.of("zh", "黄沙荒漠", "en", "Desert Sands", "ru", "Пустынные пески"),
                 2,
                 new MapOverview.Bounds(-256, 260, -251, 254.3),
                 List.of(new MapOverview.GridCell("F1", 6,
@@ -159,6 +163,7 @@ class MapOverviewBuilderTest {
         final Map<String, Object> payload = mapper.convertValue(overview, Map.class);
         assertEquals("desert_train", payload.get("mapCode"));
         assertEquals("Desert Sands", payload.get("displayName"));
+        assertEquals("黄沙荒漠", ((Map<?, ?>) payload.get("displayNames")).get("zh"));
         assertEquals(2, payload.get("friendlyTeam"));
         assertTrue(payload.containsKey("playableBounds"));
         assertTrue(payload.containsKey("gridCells"));

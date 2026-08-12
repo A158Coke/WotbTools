@@ -106,7 +106,9 @@ class PreBattlePromptBuilderTest {
         assertTrue(content.contains(
                 "GRID_RULE_DERIVED: 区域名称、区域边界与区域合并结果是确定性规则候选"));
         assertTrue(content.contains("RULE_DERIVED_CANDIDATE: favors/risks 只是战术假设候选"));
-        assertTrue(content.contains("人工地图核验: 未完成（verified=false"));
+        assertTrue(content.contains("人工地图核验: 已完成"));
+        assertFalse(content.contains("未完成"),
+                "33 张地图已由用户人工核验（verified=true）");
         assertTrue(content.contains("本图区域置信度（与下方可信度图例对应）"));
         assertTrue(content.contains("areaBoundary=GRID_RULE_DERIVED"));
         assertTrue(content.contains("objectCategories=NAME_HEURISTIC"));

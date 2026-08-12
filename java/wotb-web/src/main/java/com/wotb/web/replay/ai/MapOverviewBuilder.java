@@ -2,6 +2,7 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.ref.MapNames;
 import com.wotb.core.processing.TeamEntityIdentity;
 import com.wotb.core.processing.TeamEntityMapper;
 import com.wotb.core.processing.TeamEntityMapping;
@@ -89,6 +90,7 @@ public final class MapOverviewBuilder {
         return new MapOverview(
                 battle.mapName.trim().toLowerCase(),
                 profile.displayName(),
+                displayNames(battle.mapName, profile.displayName()),
                 friendlyTeam,
                 new MapOverview.Bounds(
                         profile.playableBounds().xMin(),
@@ -324,6 +326,16 @@ public final class MapOverviewBuilder {
         for (final double v : values) {
             out.add(v);
         }
+        return out;
+    }
+
+    private static Map<String, String> displayNames(final String mapCode, final String fallbackEn) {
+        final MapNames.Localized names = MapNames.localized(mapCode);
+        final String en = names.en() != null && !names.en().isBlank() ? names.en() : fallbackEn;
+        final Map<String, String> out = new LinkedHashMap<>();
+        out.put("zh", names.zh() != null && !names.zh().isBlank() ? names.zh() : en);
+        out.put("en", en);
+        out.put("ru", names.ru() != null && !names.ru().isBlank() ? names.ru() : en);
         return out;
     }
 

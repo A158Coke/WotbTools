@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-import java.util.List;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
@@ -70,7 +69,7 @@ class AiSecretRedactorTest {
 
     private static Stream<Arguments> plainTextCases() {
         return Stream.of(
-                Arguments.of("model=deepseek-v4-flash"),
+                Arguments.of("model=deepseek-v4-pro"),
                 Arguments.of("the quick brown fox"),
                 Arguments.of("reasoning_effort=max"));
     }

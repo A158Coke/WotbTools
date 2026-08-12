@@ -51,15 +51,9 @@ class AllowedLanguagePromptTest {
         assertEquals(PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT,
                 PlayerReplayPromptBuilder.localizePlayerSystemPrompt(
                         PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT, AllowedLanguage.ZH));
-        assertEquals(PlayerReplayPromptBuilder.MULTI_SYSTEM_PROMPT,
-                PlayerReplayPromptBuilder.localizePlayerSystemPrompt(
-                        PlayerReplayPromptBuilder.MULTI_SYSTEM_PROMPT, AllowedLanguage.ZH));
         assertEquals(TeamReplayAnalysisService.SINGLE_TEAM_PROMPT,
                 TeamReplayAnalysisService.localizeTeamSystemPrompt(
                         TeamReplayAnalysisService.SINGLE_TEAM_PROMPT, AllowedLanguage.ZH));
-        assertEquals(TeamReplayAnalysisService.MULTI_TEAM_PROMPT,
-                TeamReplayAnalysisService.localizeTeamSystemPrompt(
-                        TeamReplayAnalysisService.MULTI_TEAM_PROMPT, AllowedLanguage.ZH));
     }
 
     @ParameterizedTest
@@ -124,7 +118,7 @@ class AllowedLanguagePromptTest {
     }
 
     @Test
-    void playerFallbackAndMultiUseLocalizedSystemPrompts() {
+    void playerFallbackUsesLocalizedSystemPrompts() {
         final Battle battle = battle();
         assertTrue(PlayerReplayPromptBuilder.prepareFallback(
                 battle, (ReplayReconstruction) null, AllowedLanguage.EN)
@@ -132,8 +126,6 @@ class AllowedLanguagePromptTest {
         assertTrue(PlayerReplayPromptBuilder.prepareFallback(
                 battle, (ReplayReconstruction) null, AllowedLanguage.RU)
                 .systemPrompt().contains("на русском языке"));
-        assertTrue(PlayerReplayPromptBuilder.prepareMulti(
-                List.of(battle), AllowedLanguage.EN).systemPrompt().contains("1m 15s"));
         assertEquals(PlayerReplayPromptBuilder.prepareFallback(
                         battle, (ReplayReconstruction) null).systemPrompt(),
                 PlayerReplayPromptBuilder.prepareFallback(
@@ -168,14 +160,12 @@ class AllowedLanguagePromptTest {
     private static Stream<Arguments> playerBases() {
         return Stream.of(
                 Arguments.of(PlayerReplayPromptBuilder.SYSTEM_PROMPT),
-                Arguments.of(PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT),
-                Arguments.of(PlayerReplayPromptBuilder.MULTI_SYSTEM_PROMPT));
+                Arguments.of(PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT));
     }
 
     private static Stream<Arguments> teamBases() {
         return Stream.of(
-                Arguments.of(TeamReplayAnalysisService.SINGLE_TEAM_PROMPT),
-                Arguments.of(TeamReplayAnalysisService.MULTI_TEAM_PROMPT));
+                Arguments.of(TeamReplayAnalysisService.SINGLE_TEAM_PROMPT));
     }
 
     private static boolean containsAny(final String text, final List<String> needles) {

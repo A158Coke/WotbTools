@@ -21,13 +21,12 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.IntStream;
 
 /**
  * Player 复盘 prompt 编排与摘要构建器。
  * <p>从 {@link PlayerReplayPromptBuilder} 拆出，职责：prepareFallback / prepareFullNoRecon /
- * prepareFull / prepareMulti 四条入口、单场上下文摘要 {@link #buildPlayerContextSummary}、
- * 多场聚合摘要与死亡时间线事件构建；证据渲染委托 {@link PlayerEvidenceFormatter}，
+ * prepareFull 三条入口、单场上下文摘要 {@link #buildPlayerContextSummary}、
+ * 死亡时间线事件构建；证据渲染委托 {@link PlayerEvidenceFormatter}，
  * 规则/多语言来自 {@link PlayerPromptRules}。</p>
  * <p>纯静态工具类，不引入 Spring AI，不包含 API key 或 {@code Map<String,Object>} Provider 请求体。</p>
  */
@@ -161,21 +160,6 @@ final class PlayerSummaryBuilder {
                 "SINGLE_PLAYER_BATTLE", planned.density(), estimatedTokens);
     }
 
-    /**
-     * 多场趋势复盘 prompt。
-     */
-    public static PreparedAiPrompt prepareMulti(final List<Battle> battles) {
-        return prepareMulti(battles, AllowedLanguage.ZH);
-    }
-
-    public static PreparedAiPrompt prepareMulti(final List<Battle> battles,
-                                                final AllowedLanguage language) {
-        final String summary = buildMultiSummary(battles);
-        final String systemPrompt = PlayerPromptRules.localizePlayerSystemPrompt(PlayerPromptRules.MULTI_SYSTEM_PROMPT, language);
-        return new PreparedAiPrompt(systemPrompt, summary, "MULTI_PLAYER_SUMMARY",
-                EvidenceDensity.LEVEL_1_COMPRESSED, 0);
-    }
-
     public static String buildPlayerContextSummary(final SinglePlayerBattleAnalysisContext ctx) {
         final StringBuilder sb = new StringBuilder(4096);
         final var battle = ctx.battle();
@@ -288,105 +272,6 @@ final class PlayerSummaryBuilder {
                 sb.append("- RECORDER_TEAM_UNRESOLVED\n");
             }
             sb.append("- SIDE_AGGREGATES_UNAVAILABLE\n");
-        }
-        return sb.toString();
-    }
-
-    // ===== 包内 forwarder：新逻辑在 PlayerEvidenceFormatter，此处保留入口供既有契约测试与 Harness 调用 =====
-
-/**
-     * 每场独立摘要 + 后端确定性聚合（录像者视角）。
-     */
-    private record MultiBattleStats(
-            int totalBattles, int decidedCount, int friendlyWins, int enemyWins, int draws,
-            long sumDmg, long sumRecv, long sumAssist, double sumSurvival, int survivedCount
-    ) {
-        static final MultiBattleStats ZERO = new MultiBattleStats(0, 0, 0, 0, 0, 0L, 0L, 0L, 0.0, 0);
-
-        static MultiBattleStats fromBattle(final Battle battle, final PlayerResult rec) {
-            final Winner w = FriendlyEnemyResult.resolve(battle);
-            return new MultiBattleStats(
-                    1,
-                    w == Winner.DRAW_OR_UNKNOWN ? 0 : 1,
-                    w == Winner.FRIENDLY_WIN ? 1 : 0,
-                    w == Winner.ENEMY_WIN ? 1 : 0,
-                    w == Winner.DRAW_OR_UNKNOWN ? 1 : 0,
-                    rec.damageDealt,
-                    rec.damageReceived,
-                    rec.damageAssisted,
-                    rec.survived
-                            ? (battle.durationS != null ? battle.durationS : 0.0)
-                            : PlayerResultFormat.deathSec(rec),
-                    rec.survived ? 1 : 0
-            );
-        }
-
-        MultiBattleStats combine(final MultiBattleStats other) {
-            return new MultiBattleStats(
-                    totalBattles + other.totalBattles,
-                    decidedCount + other.decidedCount,
-                    friendlyWins + other.friendlyWins,
-                    enemyWins + other.enemyWins,
-                    draws + other.draws,
-                    sumDmg + other.sumDmg,
-                    sumRecv + other.sumRecv,
-                    sumAssist + other.sumAssist,
-                    sumSurvival + other.sumSurvival,
-                    survivedCount + other.survivedCount
-            );
-        }
-    }
-
-    private static String buildMultiSummary(final List<Battle> battles) {
-        final StringBuilder sb = new StringBuilder(4096);
-        sb.append("共 ").append(battles.size()).append(" 场。\n\n=== 各场摘要（你的视角）===\n");
-
-        // Compute stats via immutable Stream reduce (no mutable reassignment)
-        final MultiBattleStats stats = IntStream.range(0, battles.size())
-                .filter(i -> battles.get(i).recorderResult() != null)
-                .mapToObj(i -> MultiBattleStats.fromBattle(
-                        battles.get(i), battles.get(i).recorderResult()))
-                .reduce(MultiBattleStats::combine)
-                .orElse(MultiBattleStats.ZERO);
-
-        IntStream.range(0, battles.size()).forEachOrdered(index -> {
-            final Battle b = battles.get(index);
-            final PlayerResult rec = b.recorderResult();
-            sb.append("场 ").append(index + 1).append(": 地图 ").append(PlayerResultFormat.quoteForPrompt(ReplayDisplayNames.mapName(b.mapName)));
-            if (rec != null) {
-                final Winner w = FriendlyEnemyResult.resolve(b);
-                final String resultLabel = FriendlyEnemyResult.label(w);
-                // 这一行描述玩家本人，只称「你」：不附加 侧=（本人既不是友方也不是队友）
-                sb.append(" | ").append(PlayerResultFormat.quoteForPrompt(ReplayDisplayNames.tankName(rec.tankId, rec.tankName)))
-                        .append(" | ").append(resultLabel);
-                PlayerResultFormat.appendRecorderLine(sb, rec);
-            } else {
-                sb.append(" | (未能定位你的战绩)");
-            }
-            sb.append('\n');
-        });
-
-        sb.append("\n=== 聚合统计（后端计算，你的视角）===\n");
-        if (stats.totalBattles > 0) {
-            sb.append("可统计场数: ").append(stats.totalBattles).append('\n');
-            sb.append("已知胜负场数: ").append(stats.decidedCount).append('\n');
-            sb.append("友方获胜场数: ").append(stats.friendlyWins).append('\n');
-            sb.append("敌方获胜场数: ").append(stats.enemyWins).append('\n');
-            sb.append("平局或未知场数: ").append(stats.draws).append('\n');
-            if (stats.decidedCount > 0) {
-                sb.append("胜率: ").append(String.format("%.0f%%", 100.0 * stats.friendlyWins / stats.decidedCount)).append('\n');
-            } else {
-                sb.append("胜率: 无法计算\n");
-            }
-            sb.append("场均输出: ").append(stats.sumDmg / stats.totalBattles).append('\n');
-            sb.append("场均损失血量: ").append(stats.sumRecv / stats.totalBattles).append('\n');
-            sb.append("场均助攻: ").append(stats.sumAssist / stats.totalBattles).append('\n');
-            sb.append("平均存活时间: ")
-                    .append(PlayerAnalysisTerms.battleClock((float) (stats.sumSurvival / stats.totalBattles)))
-                    .append('\n');
-            sb.append("存活率: ").append(String.format("%.0f%%", 100.0 * stats.survivedCount / stats.totalBattles)).append('\n');
-        } else {
-            sb.append("(无法定位任一场你的战绩，无法聚合)\n");
         }
         return sb.toString();
     }

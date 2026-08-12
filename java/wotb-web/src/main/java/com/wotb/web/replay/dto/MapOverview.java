@@ -1,6 +1,7 @@
 package com.wotb.web.replay.dto;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * AI 复盘结果页「地图鸟瞰」区块数据（可空；未知地图/无观测/无名册时为 null）。
@@ -10,6 +11,8 @@ import java.util.List;
  *
  * @param mapCode       内部地图 code（meta.json 的 mapName，小写）
  * @param displayName   人类可读地图名（如 Desert Sands）
+ * @param displayNames  三语显示名（zh/en/ru，来自 map_names.json；未收录时三语同 code，
+ *                      前端按当前 locale 取 `displayNames[locale]`，缺失回退 displayName）
  * @param friendlyTeam  本方（录像者）队伍号（1/2；前端用于路线阵营配色与热力 Tab 映射）
  * @param playableBounds 可玩区边界
  * @param gridCells     6x6 分析格（36 个；id 如 F1/A6，带 nineGridRegion 与格子边界）
@@ -24,6 +27,7 @@ import java.util.List;
 public record MapOverview(
         String mapCode,
         String displayName,
+        Map<String, String> displayNames,
         int friendlyTeam,
         Bounds playableBounds,
         List<GridCell> gridCells,
@@ -35,6 +39,7 @@ public record MapOverview(
 ) {
 
     public MapOverview {
+        displayNames = displayNames == null ? Map.of() : Map.copyOf(displayNames);
         gridCells = gridCells == null ? List.of() : List.copyOf(gridCells);
         spawnPoints = spawnPoints == null ? List.of() : List.copyOf(spawnPoints);
         phases = phases == null ? List.of() : List.copyOf(phases);

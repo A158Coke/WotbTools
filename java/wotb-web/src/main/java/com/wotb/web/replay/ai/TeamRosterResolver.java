@@ -4,13 +4,11 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
-import com.wotb.core.replay.feature.TeamBattleAnalysisSummary;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -25,20 +23,10 @@ final class TeamRosterResolver {
     private TeamRosterResolver() {
     }
 
-    static final double MIN_ROSTER_JACCARD = 0.60;
     static final double MIN_ROSTER_ACCOUNT_COVERAGE = 0.75;
 
     static List<String> rosterEvidenceLimits(final RosterEvidence evidence) {
         return evidence == null ? List.of() : evidence.limitations();
-    }
-
-    static String normalizedDominantClan(
-            final Battle battle, final int perspectiveTeam) {
-        if (battle == null || battle.players == null) return "";
-        final List<PlayerResult> perspectivePlayers = battle.players.stream()
-                .filter(p -> p.team == perspectiveTeam)
-                .toList();
-        return TeamPerspectiveLabelResolver.resolveDominantClanTag(perspectivePlayers);
     }
 
     static String resolveTeamLabel(final Battle battle, final int perspectiveTeam) {
@@ -48,73 +36,6 @@ final class TeamRosterResolver {
                 .toList();
         if (perspectivePlayers.isEmpty()) return "未知队伍";
         return TeamPerspectiveLabelResolver.resolve(perspectivePlayers);
-    }
-
-    static boolean hasConsistentRoster(
-            final List<TeamBattleAnalysisSummary> summaries
-    ) {
-        if (summaries.size() <= 1) {
-            return true;
-        }
-        if (summaries.stream().anyMatch(
-                summary -> !hasSufficientRosterCoverage(summary))) {
-            return false;
-        }
-        final Set<Long> reference = validRoster(summaries.getFirst());
-        if (reference.isEmpty()) {
-            return false;
-        }
-        final List<Set<Long>> rosters = summaries.stream()
-                .map(TeamRosterResolver::validRoster)
-                .toList();
-        for (int left = 0; left < rosters.size(); left++) {
-            for (int right = left + 1; right < rosters.size(); right++) {
-                if (jaccard(rosters.get(left), rosters.get(right))
-                        < MIN_ROSTER_JACCARD) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
-    static boolean hasSufficientRosterCoverage(
-            final TeamBattleAnalysisSummary summary
-    ) {
-        final Set<Long> roster = validRoster(summary);
-        final int expectedMembers = expectedRosterSize(summary);
-        return expectedMembers > 0
-                && (double) roster.size() / expectedMembers
-                        >= MIN_ROSTER_ACCOUNT_COVERAGE;
-    }
-
-    static int expectedRosterSize(
-            final TeamBattleAnalysisSummary summary
-    ) {
-        if (summary.features() == null) {
-            return 0;
-        }
-        if (summary.features().authoritativeAggregate() != null) {
-            return summary.features().authoritativeAggregate().memberCount();
-        }
-        return summary.features().members().size();
-    }
-
-    static Set<Long> validRoster(
-            final TeamBattleAnalysisSummary summary
-    ) {
-        return summary.rosterAccountIds().stream()
-                .filter(accountId -> accountId != null && accountId > 0)
-                .collect(Collectors.toCollection(
-                        LinkedHashSet::new));
-    }
-
-    static double jaccard(final Set<Long> left, final Set<Long> right) {
-        final Set<Long> intersection = new HashSet<>(left);
-        intersection.retainAll(right);
-        final Set<Long> union = new HashSet<>(left);
-        union.addAll(right);
-        return union.isEmpty() ? 0.0 : (double) intersection.size() / union.size();
     }
 
     record RosterEvidence(

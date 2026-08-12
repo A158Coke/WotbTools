@@ -44,6 +44,7 @@
 - **展示名**（zh/en/ru）来自 `common/map_names.json`（游戏客户端名称）。注意内部 code 与英文名常不一致（如 `neptune`=Normandy、`erlenberg`=Middleburg、`rock`=Mayan Ruins），这是正常的，两套分别对应"解析键"与"用户可见名"。
 - **素材文件名**：统一为**英文展示名小写中划线**（如 Normandy → `normandy.png`，Middleburg → `middleburg.png`，Winter Malinovka → `winter-malinovka.png`）。文件位于 `frontend/src/assets/maps/`。
 - **唯一权威**：素材与尺寸只在 `frontend/src/data/mapImages.js` 维护（后端 `MapOverview.image` 恒 null）。新增/修改素材只需改这一处 + 本表。
+- **语义数据手工调整**：`common/map-semantics/*.semantic.json` 的区域 label/特征/风险等人类可读字段为中文，可直接手工修改；**改后不要重跑 map-semanticizer**（重新生成会整份覆盖），直到语义化器引入人工覆写合并。
 
 ## 新增地图 / 素材流程
 

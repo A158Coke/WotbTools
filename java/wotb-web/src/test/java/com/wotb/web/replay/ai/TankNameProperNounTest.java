@@ -41,9 +41,7 @@ class TankNameProperNounTest {
         return Stream.of(
                 PlayerReplayPromptBuilder.SYSTEM_PROMPT,
                 PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT,
-                TeamReplayAnalysisService.SINGLE_TEAM_PROMPT,
-                TeamReplayAnalysisService.MULTI_TEAM_PROMPT,
-                PlayerReplayPromptBuilder.MULTI_SYSTEM_PROMPT);
+                TeamReplayAnalysisService.SINGLE_TEAM_PROMPT);
     }
 
     // ---- 1 & 2：Player 与 Team system prompt 都包含专有名词规则 ----
@@ -52,8 +50,7 @@ class TankNameProperNounTest {
     void playerSystemPromptsRequireTankNamesToBeKeptVerbatim() {
         for (final String prompt : List.of(
                 PlayerReplayPromptBuilder.SYSTEM_PROMPT,
-                PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT,
-                PlayerReplayPromptBuilder.MULTI_SYSTEM_PROMPT)) {
+                PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT)) {
             assertTrue(prompt.contains("专有名词"), prompt);
             assertTrue(prompt.contains("必须原样使用"), prompt);
             assertTrue(prompt.contains("禁止拆分、翻译、展开"), prompt);
@@ -63,8 +60,7 @@ class TankNameProperNounTest {
     @Test
     void teamSystemPromptsContainTheSameRule() {
         for (final String prompt : List.of(
-                TeamReplayAnalysisService.SINGLE_TEAM_PROMPT,
-                TeamReplayAnalysisService.MULTI_TEAM_PROMPT)) {
+                TeamReplayAnalysisService.SINGLE_TEAM_PROMPT)) {
             assertTrue(prompt.contains("专有名词"), prompt);
             assertTrue(prompt.contains("必须原样使用"), prompt);
             assertTrue(prompt.contains("vehicleClass"), prompt);

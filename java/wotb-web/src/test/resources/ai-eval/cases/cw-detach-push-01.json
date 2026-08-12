@@ -1,0 +1,15 @@
+{
+  "id": "cw-detach-push-01",
+  "mode": "TEAM_PERSPECTIVE",
+  "arenaBonusType": 3,
+  "fixtureKey": "cw-detach-push-01",
+  "lessonRef": "docs/ai-lessons/cw-detach-push-01.md",
+  "expectedJudgment": "脱节（单走推进被集火，队友无获利）",
+  "checks": [
+    { "kind": "prompt_contains", "text": "type=移动" },
+    { "kind": "prompt_contains", "text": "1分30秒" },
+    { "kind": "prompt_contains", "text": "DEATH_TIMELINE" },
+    { "kind": "prompt_contains", "text": "SOLO_DETACHED" }
+  ],
+  "note": "MT 单走推进拉大距离、远离目标点、被集火阵亡，队友原地无收益。Step 2 将断言 SOLO_DETACHED 候选。"
+}
