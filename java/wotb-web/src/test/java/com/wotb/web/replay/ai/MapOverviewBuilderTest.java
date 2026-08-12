@@ -59,7 +59,8 @@ class MapOverviewBuilderTest {
         assertEquals(36, overview.heatmaps().friendly().damage().size());
         assertEquals(36, overview.heatmaps().friendly().deaths().size());
         assertEquals(36, overview.heatmaps().enemy().dwell().size());
-        assertNull(overview.image(), "rift 尚无鸟瞰素材，image 应为 null");
+        assertNotNull(overview.image(), "rift 已有 hellas.png 素材");
+        assertEquals("hellas.png", overview.image().file());
         assertFalse(overview.phases().isEmpty(), "应产出阶段切片");
         assertEquals("opening", overview.phases().get(0).key());
 
