@@ -9,7 +9,7 @@ Entry: [https://wotbtools.com](https://wotbtools.com) · Repository: [https://gi
 - **Replay parsing & Excel export**: upload a `.wotbreplay` in the browser, extract authoritative settlement (damage / received / assisted / blocked / kills / death times) plus event-stream features (movement / engagements / 3x3 grid regions).
 - **Online damage leaderboard**: per-battle damage ranking for random battles.
 - **Real-time rating (Rating V2)**: composite score based on potential damage, assistance, KAST, impact.
-- **AI tactical review**: pre-battle prediction + evidence-chain review + liabilities / MVP, streamed token-by-token over SSE.
+- **AI tactical review**: pre-battle prediction + evidence-chain review + liabilities / MVP, streamed token-by-token over SSE; results include a "Map Overview" (friendly/enemy heatmaps + routes, 17 maps with assets).
 - **Auth & business**: Keycloak (QQ + Wargaming.net ASIA / EU / NA), booster & pilot management.
 
 ## Architecture

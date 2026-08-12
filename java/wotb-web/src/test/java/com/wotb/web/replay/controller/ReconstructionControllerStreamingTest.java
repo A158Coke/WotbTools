@@ -37,6 +37,7 @@ import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
+import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -91,7 +92,11 @@ class ReconstructionControllerStreamingTest {
             listener.onStage("evidence_done");
             listener.onToken("hello ");
             listener.onToken("world");
-            return new AnalyzeResponse("full analysis", "## 赛前预测");
+            return new AnalyzeResponse("full analysis", "## 赛前预测",
+                    new com.wotb.web.replay.dto.MapOverview(
+                            "desert_train", "Desert Sands", 2,
+                            new com.wotb.web.replay.dto.MapOverview.Bounds(-256, 260, -251, 254.3),
+                            List.of(), null, List.of(), List.of(), null, List.of()));
         }).when(reviewService).analyzeStreaming(any(), any(), any());
 
         final String body = drainUntilTerminal(analyzeDirect("zh", null));
@@ -105,6 +110,7 @@ class ReconstructionControllerStreamingTest {
         assertTrue(body.contains("event:done"), body);
         assertTrue(body.contains("\"analysis\":\"full analysis\""), body);
         assertTrue(body.contains("\"preBattleSection\":\"## 赛前预测\""), body);
+        assertTrue(body.contains("\"mapOverview\":{\"mapCode\":\"desert_train\""), body);
     }
 
     @Test

@@ -389,14 +389,14 @@ function okResponse(body) {
 }
 
 /** 多阶段流：call1 → evidence → call2 token 滚动 → done。 */
-function sseStreamingResponse({ analysis = 'team report', preBattleSection = null } = {}) {
+function sseStreamingResponse({ analysis = 'team report', preBattleSection = null, mapOverview = null } = {}) {
   return sseResponse([
     { event: 'call1_start', data: {} },
     { event: 'call1_done', data: {} },
     { event: 'evidence_done', data: {} },
     { event: 'call2_token', data: { delta: 'team ' } },
     { event: 'call2_token', data: { delta: 'report' } },
-    { event: 'done', data: { analysis, preBattleSection } }
+    { event: 'done', data: { analysis, preBattleSection, mapOverview } }
   ])
 }
 
@@ -495,6 +495,28 @@ describe('ReconstructionPage SSE streaming', () => {
     sse.close()
     await flushPromises()
     expect(wrapper.text()).toContain('recon.analysis_title_player')
+  })
+
+  it('propagates mapOverview from done to the result panel', async () => {
+    const sse = chunkedSse()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: sse.stream,
+      text: vi.fn().mockResolvedValue('')
+    }))
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['stream.wotbreplay'])
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+
+    sse.enqueue('event:done\ndata:{"analysis":"x","preBattleSection":null,' +
+      '"mapOverview":{"mapCode":"desert_train","displayName":"Desert Sands"}}\n\n')
+    sse.close()
+    await flushPromises()
+
+    // mapOverview 进入结果面板 → 素材存在 → 「地图鸟瞰」区块可展开
+    expect(wrapper.text()).toContain('recon.map.title')
   })
 
   it('shows localized error from an error event mid-stream', async () => {

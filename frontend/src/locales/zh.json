@@ -773,6 +773,28 @@
             "collapse": "收起",
             "expand": "展开"
         },
+        "map": {
+            "title": "地图鸟瞰",
+            "view_heatmap": "热力",
+            "view_routes": "路线",
+            "team_friendly": "本方",
+            "team_enemy": "敌方",
+            "team_all": "全部",
+            "type_dwell": "驻留",
+            "type_damage": "伤害",
+            "type_deaths": "阵亡",
+            "phase_all": "全部",
+            "phase_opening": "开局",
+            "phase_mid": "中期",
+            "phase_late": "残局",
+            "legend_heat": "密度",
+            "spawn": "出生点",
+            "death": "阵亡",
+            "observed_from": "位置观测自",
+            "observed_note": "观测区间提示（开局位置缺失的车）：",
+            "duration": "{m}分{s}秒",
+            "aria": "地图鸟瞰"
+        },
         "stages": {
             "call1": "赛前预测中…",
             "evidence": "证据分析中…",
