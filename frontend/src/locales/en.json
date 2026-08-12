@@ -442,7 +442,10 @@
             "REJECTED": "Rejected"
         },
         "regionValue": {
-            "CN": "China"
+            "CN": "China",
+            "ASIA": "Asia",
+            "EU": "Europe",
+            "NA": "North America"
         },
         "requestTypeValue": {
             "COACHING": "Coaching / game sense",

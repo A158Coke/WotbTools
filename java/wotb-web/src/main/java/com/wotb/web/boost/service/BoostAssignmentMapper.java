@@ -23,6 +23,7 @@ public class BoostAssignmentMapper {
                 assignment.getId(), assignment.getRequestId(),
                 toBoosterSummary(booster),
                 assignment.getStatus(),
+                hasRequest ? request.getRegion() : null,
                 hasRequest ? request.getRequestType() : null,
                 hasRequest ? request.getTargetDescription() : null,
                 hasRequest ? request.getStatus() : null,

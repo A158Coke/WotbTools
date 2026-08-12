@@ -1,8 +1,11 @@
 package com.wotb.web.boost.enums;
 
-/** 服务区域。Phase 1 仅支持国服。 */
+/** 陪练需求支持的 WoTB 服务区域。 */
 public enum BoostRegion {
-    CN;
+    CN,
+    ASIA,
+    EU,
+    NA;
 
     public static BoostRegion from(final String value) {
         for (final BoostRegion r : values()) {
