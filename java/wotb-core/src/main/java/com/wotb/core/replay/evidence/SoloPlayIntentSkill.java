@@ -147,11 +147,11 @@ public final class SoloPlayIntentSkill {
         return switch (intent) {
             case "OPENING_MAP_CONTROL" -> "开局图控：%s 开局散开拿视野（%.0fs）"
                     .formatted(who, window.endSec() - window.startSec());
-            case "SOLO_DELAY" -> "单走拖延候选：%s 静止卡点/守点且有敌情压力（%.0fs）"
+            case "SOLO_DELAY" -> "单走拖延：%s 静止卡点/守点且有敌情压力（约 %.0fs）"
                     .formatted(who, window.endSec() - window.startSec());
-            case "SOLO_DETACHED" -> "单走脱节候选：%s 持续拉大距离且无掩护（%.0fs）"
+            case "SOLO_DETACHED" -> "单走脱节：%s 持续脱离队友且无掩护（约 %.0fs）"
                     .formatted(who, window.endSec() - window.startSec());
-            default -> "单走候选：%s".formatted(who);
+            default -> "单走：%s".formatted(who);
         };
     }
 

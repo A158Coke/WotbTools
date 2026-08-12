@@ -218,7 +218,7 @@ final class PlayerPromptRules {
             === 证据逻辑与术语（强制） ===
             1. 车辆被击毁必然损失全部血量，所以「被打死的车承受了等于满血的伤害」是必然结果，不是集火证据；
                集火只能用「同一目标在短时间内被多车命中 / 多笔伤害归属」来证实；没有这类证据就写「无法确定」。
-            2. 正文禁止直出内部机器标签与字段名（CLAMPED / VALID / 离散度 / 质心 / coverage / damageDealtSubset 等）；
+            2. 正文禁止直出内部机器标签与字段名（CLAMPED / VALID / 离散度 / 质心 / 簇 / 候选 / 规则候选 / PARTIAL / coverage / damageDealtSubset 等）；
                九宫格编号只能写成「N区」（如「5区」），数据里的机器词一律转成自然中文。
             3. 复盘标题必须用「## 」写法（井号后带一个空格），标题独占一行，标题与正文之间空一行；
                段落之间用空行分隔，禁止标题与正文粘连。""";
@@ -232,7 +232,7 @@ final class PlayerPromptRules {
                hitting the same target within a short window / by per-hit damage attribution. Without such evidence
                write "cannot be determined".
             2. Never echo internal machine labels or field names in the prose (CLAMPED / VALID / dispersion /
-               centroid / coverage / damageDealtSubset, etc.); write grid region numbers as "Region N" and translate
+               centroid / cluster / candidate / PARTIAL / coverage / damageDealtSubset, etc.); write grid region numbers as "Region N" and translate
                machine terms into natural English.
             3. Use "## " for headings (a space after the hashes), keep each heading on its own line, and leave a
                blank line between the heading and the following paragraph; separate paragraphs with blank lines.""";
@@ -245,7 +245,7 @@ final class PlayerPromptRules {
                полному HP» — тавтология, а не доказательство сосредоточенного огня; сосредоточенный огонь можно
                показать только множественными попаданиями разных машин в одну цель за короткий интервал / атрибуцией
                поурочного урона. Без таких данных пишите «невозможно определить».
-            2. Не повторяйте в тексте внутренние машинные метки и имена полей (CLAMPED / VALID / разброс / центроид /
+            2. Не повторяйте в тексте внутренние машинные метки и имена полей (CLAMPED / VALID / разброс / центроид / кластер / кандидат / PARTIAL /
                coverage / damageDealtSubset и т. п.); номера областей пишите как «область N», а машинные термины
                передавайте по-русски.
             3. Заголовки оформляйте как «## » (пробел после решёток), каждый заголовок — на отдельной строке,
@@ -256,7 +256,7 @@ final class PlayerPromptRules {
 
             === 单走行为判定规则（强制，随机战个人复盘） ===
             1. 开局散开（首次接敌前或开局 45 秒内、未接火未承伤未阵亡）是图控/拿视野，不是脱节。
-            2. 单走判「拖延」需要可观测行为：静止/卡点/守点 + 有敌情压力（不撤退）；只基于位置、移动、交火判定行为模式，不得把行为模式说成玩家心理意图。
+            2. 单走判「拖延」需要可观测行为：静止/卡点/守点 + 有敌情压力（不撤退）；只基于位置、移动、交火判定行为模式，不得把行为模式说成玩家心理意图；正文不得出现「簇/质心/候选/规则候选/PARTIAL」等内部术语，一律转成自然中文。
             3. 判「脱节」需要持续拉大距离 + 无掩护/无收益 + 被白吃或阵亡。
             4. 证据不足或信号矛盾时明确写「无法从当前回放数据确定」，禁止硬下标签。""";
 
@@ -264,7 +264,7 @@ final class PlayerPromptRules {
 
             === SOLO-PLAY JUDGMENT RULES (mandatory, random-battle personal review) ===
             1. An opening spread (before first contact or within the first 45 seconds, no damage dealt/received, no destruction) is map control / vision gathering, not detachment.
-            2. Calling a solo play "delay" requires observable behavior: holding/stationary at a key point + enemy pressure (no retreat); judge behavior patterns only from position, movement and engagements, never describe a behavior pattern as the player's mental intent.
+            2. Calling a solo play "delay" requires observable behavior: holding/stationary at a key point + enemy pressure (no retreat); judge behavior patterns only from position, movement and engagements, never describe a behavior pattern as the player's mental intent. Never echo internal terms such as cluster/centroid/candidate/PARTIAL; use natural language.
             3. "Detachment" requires continuously increasing distance + no cover/no payoff + being caught out or destroyed.
             4. When signals are insufficient or contradictory, explicitly write "cannot be determined from the current replay data" and never force a label.""";
 
@@ -272,7 +272,7 @@ final class PlayerPromptRules {
 
             === ПРАВИЛА ОЦЕНКИ ДЕЙСТВИЙ В ОДИНОЧКУ (обязательно, личный разбор случайного боя) ===
             1. Рассредоточение на старте (до первого контакта или в первые 45 секунд, без нанесённого/полученного урона, без уничтожения) — это контроль карты / сбор разведданных, а не отрыв.
-            2. Называть действие «задержкой» можно только на основе наблюдаемого поведения: удержание/неподвижность на ключевой позиции + давление противника (без отхода); оценивайте паттерны только по позиции, движению и перестрелкам, не выдавайте паттерн за психологические намерения игрока.
+            2. Называть действие «задержкой» можно только на основе наблюдаемого поведения: удержание/неподвижность на ключевой позиции + давление противника (без отхода); оценивайте паттерны только по позиции, движению и перестрелкам, не выдавайте паттерн за психологические намерения игрока. Не используйте внутренние термины (кластер/центроид/кандидат/PARTIAL); излагайте естественно.
             3. «Отрыв» требует непрерывного увеличения дистанции + отсутствия прикрытия/выгоды + размена без пользы или уничтожения.
             4. При недостатке или противоречивости сигналов прямо пишите «невозможно определить по данным реплея» и не навешивайте ярлык.""";
 

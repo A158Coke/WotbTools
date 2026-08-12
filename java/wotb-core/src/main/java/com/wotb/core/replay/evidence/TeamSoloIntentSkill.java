@@ -153,13 +153,13 @@ public final class TeamSoloIntentSkill {
     private static String summary(final String intent, final SoloSpan span,
                                   final TeamMemberFeatureSet member) {
         return switch (intent) {
-            case "OPENING_MAP_CONTROL" -> "开局图控：%s 在开局散开拿视野（距主力簇 %.0fm）"
+            case "OPENING_MAP_CONTROL" -> "开局图控：%s 在开局散开拿视野（与主力相距约 %.0fm）"
                     .formatted(member.nickname(), span.maxDistanceM());
-            case "SOLO_DELAY" -> "单走拖延候选：%s 静止卡点/守点且有敌情压力，队友获利（%.0fs，距主力簇 %.0fm）"
+            case "SOLO_DELAY" -> "单走拖延：%s 静止卡点/守点且有敌情压力，队友获利（约 %.0fs，与主力相距约 %.0fm）"
                     .formatted(member.nickname(), span.durationSec(), span.maxDistanceM());
-            case "SOLO_DETACHED" -> "单走脱节候选：%s 持续拉大距离且无队友获利（%.0fs，距主力簇 %.0fm）"
+            case "SOLO_DETACHED" -> "单走脱节：%s 持续脱离主力且无队友获利（约 %.0fs，与主力相距约 %.0fm）"
                     .formatted(member.nickname(), span.durationSec(), span.maxDistanceM());
-            default -> "单走候选：%s".formatted(member.nickname());
+            default -> "单走：%s".formatted(member.nickname());
         };
     }
 
