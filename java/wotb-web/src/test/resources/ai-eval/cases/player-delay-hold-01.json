@@ -1,0 +1,12 @@
+{
+  "id": "player-delay-hold-01",
+  "mode": "PLAYER_FOCUSED",
+  "arenaBonusType": 1,
+  "fixtureKey": "player-delay-hold-01",
+  "lessonRef": "docs/ai-lessons/player-delay-hold-01.md",
+  "expectedJudgment": "拖延（静止卡点 + 敌情压力）",
+  "checks": [
+    { "kind": "prompt_contains", "text": "单走拖延候选" }
+  ],
+  "note": "随机战卡点拖延：静止 + 敌情压力 → SOLO_DELAY 候选（个人复盘无队友获利维度）。"
+}
