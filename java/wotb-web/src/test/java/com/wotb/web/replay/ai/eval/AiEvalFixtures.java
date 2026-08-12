@@ -73,6 +73,7 @@ public final class AiEvalFixtures {
             case "cw-cap-stolen-01" -> capStolenWhileConcentrating();
             case "cw-cap-defense-01" -> capDefenseComeback();
             case "cw-cap-points-decided-01" -> capPointsDecided();
+            case "cw-main-cluster-no-solo-01" -> mainClusterNoSolo();
             default -> throw new IllegalArgumentException("Unknown fixture: " + fixtureKey);
         };
     }
@@ -91,6 +92,8 @@ public final class AiEvalFixtures {
             case "player-opening-mapcontrol-01" -> playerOpeningMapControl();
             case "player-delay-hold-01" -> playerDelayHold();
             case "player-detach-push-01" -> playerDetachPush();
+            case "player-no-growth-01" -> playerNoGrowth();
+            case "player-unknown-stationary-01" -> playerUnknownStationary();
             default -> throw new IllegalArgumentException("Unknown player fixture: " + fixtureKey);
         };
     }
@@ -102,7 +105,9 @@ public final class AiEvalFixtures {
                 List.of(move(5, 40, 0, 0, 100, 150, 6f)),
                 List.of(),
                 BattlePhaseSummary.buildRelativePhases(60, 300),
-                new float[]{1015f, 1030f, 1045f});
+                new float[]{1015f, 1030f, 1045f},
+                new float[]{200f, 200f, 200f},
+                new float[]{200f, 200f, 200f});
     }
 
     /** 随机战卡点拖延：录像者静止 + 敌情压力 → SOLO_DELAY。 */
@@ -112,17 +117,45 @@ public final class AiEvalFixtures {
                 List.of(stationary(60, 75, 100, 150)),
                 List.of(playerEngagement(60, 75)),
                 BattlePhaseSummary.buildRelativePhases(60, 300),
-                new float[]{1060f, 1075f});
+                new float[]{1060f, 1075f},
+                new float[]{200f, 200f},
+                new float[]{200f, 200f});
     }
 
     /** 随机战单走推进被集火：移动 + 无掩护 + 承伤高 → SOLO_DETACHED。 */
     private static PlayerFixture playerDetachPush() {
         return playerFixtureOf(
                 1800, true,
-                List.of(move(60, 75, 200, 200, 180, 180, 5f)),
-                List.of(),
+                List.of(move(60, 75, 200, 200, 240, 240, 5f)),
+                List.of(playerEngagement(60, 75, 1800)),
                 BattlePhaseSummary.buildRelativePhases(60, 300),
-                new float[]{1060f, 1075f});
+                new float[]{1060f, 1075f},
+                new float[]{200f, 240f},
+                new float[]{200f, 240f});
+    }
+
+    /** 随机战 false-positive：窗口内移动但距离无增长 + 承伤 → 不应判脱节。 */
+    private static PlayerFixture playerNoGrowth() {
+        return playerFixtureOf(
+                1800, true,
+                List.of(move(60, 75, 200, 200, 200, 200, 5f)),
+                List.of(playerEngagement(60, 75, 1800)),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1060f, 1075f},
+                new float[]{200f, 200f},
+                new float[]{200f, 200f});
+    }
+
+    /** 随机战 false-positive：窗口内移动覆盖不足（未知）≠ MOVING → 不应判任何候选。 */
+    private static PlayerFixture playerUnknownStationary() {
+        return playerFixtureOf(
+                1800, true,
+                List.of(move(5, 10, 200, 200, 200, 200, 1f)),
+                List.of(playerEngagement(60, 75, 1800)),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1060f, 1075f},
+                new float[]{200f, 200f},
+                new float[]{200f, 200f});
     }
 
     private static PlayerFixture playerFixtureOf(
@@ -131,7 +164,9 @@ public final class AiEvalFixtures {
             final List<MovementSegment> movements,
             final List<EngagementSummary> engagements,
             final List<BattlePhaseSummary> phases,
-            final float[] rawClocks
+            final float[] rawClocks,
+            final float[] recorderXs,
+            final float[] recorderZs
     ) {
         final Battle battle = new Battle();
         battle.arenaId = "eval-arena";
@@ -145,8 +180,8 @@ public final class AiEvalFixtures {
         battle.players.add(playerResult(2001L, "enemy1", 2, 0, true));
 
         final List<BattleStateCheckpoint> checkpoints = new ArrayList<>();
-        for (final float raw : rawClocks) {
-            checkpoints.add(playerCheckpoint(raw));
+        for (int index = 0; index < rawClocks.length; index++) {
+            checkpoints.add(playerCheckpoint(rawClocks[index], recorderXs[index], recorderZs[index]));
         }
         final ReplayMetadata meta = new ReplayMetadata(
                 "eval-arena", "team_map", "11.0", "11.0", 1, "rec1", "", 300.0, 0L);
@@ -173,9 +208,11 @@ public final class AiEvalFixtures {
         return new PlayerFixture(battle, recon, features, recorder);
     }
 
-    private static BattleStateCheckpoint playerCheckpoint(final float rawClockSec) {
+    private static BattleStateCheckpoint playerCheckpoint(final float rawClockSec,
+                                                          final float recorderX,
+                                                          final float recorderZ) {
         final Map<Integer, VehicleState> vehicles = new HashMap<>();
-        vehicles.put(1, vehicleState(1, 1001L, 1, 200f, 200f));
+        vehicles.put(1, vehicleState(1, 1001L, 1, recorderX, recorderZ));
         vehicles.put(2, vehicleState(2, 1002L, 1, 0f, 0f));
         vehicles.put(3, vehicleState(3, 1003L, 1, 0f, 0f));
         return new BattleStateCheckpoint(rawClockSec, 0,
@@ -210,8 +247,13 @@ public final class AiEvalFixtures {
     }
 
     private static EngagementSummary playerEngagement(final float start, final float end) {
+        return playerEngagement(start, end, 200);
+    }
+
+    private static EngagementSummary playerEngagement(final float start, final float end,
+                                                      final int damageReceived) {
         return new EngagementSummary(start, end, List.of(1001L), List.of(2001L),
-                300, 200, new Vector3(100f, 0f, 150f), new Vector3(100f, 0f, 150f),
+                300, damageReceived, new Vector3(100f, 0f, 150f), new Vector3(100f, 0f, 150f),
                 EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
     }
 
@@ -236,12 +278,10 @@ public final class AiEvalFixtures {
         final List<TeamFormationPhase> phases = List.of(
                 phase(15, 30, 250, 250, 140, 7, List.of(
                         cluster(15, 30, 350, 400, List.of(key(0))),
-                        cluster(15, 30, 300, 250, List.of(key(1), key(2), key(3))),
-                        cluster(15, 30, 130, 100, List.of(key(4), key(5), key(6))))),
+                        cluster(15, 30, 280, 250, List.of(key(1), key(2), key(3), key(4), key(5), key(6))))),
                 phase(30, 45, 250, 250, 130, 7, List.of(
                         cluster(30, 45, 350, 400, List.of(key(0))),
-                        cluster(30, 45, 300, 250, List.of(key(1), key(2), key(3))),
-                        cluster(30, 45, 130, 100, List.of(key(4), key(5), key(6))))),
+                        cluster(30, 45, 280, 250, List.of(key(1), key(2), key(3), key(4), key(5), key(6))))),
                 phase(45, 60, 260, 250, 100, 7, List.of(
                         cluster(45, 60, 280, 240, mainKeys()))));
         final TeamAggregateResult aggregate = new TeamAggregateResult(
@@ -482,6 +522,53 @@ public final class AiEvalFixtures {
                 members, aggregate, phases, BattlePhaseSummary.buildRelativePhases(60, 300),
                 List.of(keyEvent(60, "TEAM_FIRST_CONTACT", "damage=120")), List.of(),
                 earned(10002, 100), earned(10004, 70), enemyEarned(20_001, 60));
+    }
+
+    // ===== 场景十三：5+2 分簇 false-positive（主力簇成员不得判单走） =====
+
+    private static SingleTeamBattleAnalysisContext mainClusterNoSolo() {
+        final List<TeamMemberFeatureSet> members = List.of(
+                member(0, 200, true, null, null,
+                        List.of(stationary(60, 90, 0, 0)),
+                        List.of(engagement(60, 75, 10_001L, List.of(20_001L, 20_002L))), List.of()),
+                member(1, 0, true, null, null, List.of(stationary(60, 90, 0, 0)), List.of(), List.of()),
+                member(2, 0, true, null, null, List.of(stationary(60, 90, 0, 0)), List.of(), List.of()),
+                member(3, 0, true, null, null, List.of(stationary(60, 90, 0, 0)), List.of(), List.of()),
+                member(4, 0, true, null, null, List.of(stationary(60, 90, 0, 0)), List.of(), List.of()),
+                member(5, 200, true, null, null,
+                        List.of(stationary(60, 90, 100, 150)),
+                        List.of(engagement(60, 75, 10_006L, List.of(20_001L, 20_002L))), List.of()),
+                member(6, 0, true, null, null,
+                        List.of(stationary(60, 90, 100, 150)), List.of(), List.of()));
+        final List<TeamFormationPhase> phases = List.of(
+                twoClusterPhase(60, 75, 300, 250, 400, 400, 0, 4, 5, 6),
+                twoClusterPhase(75, 90, 350, 250, 400, 400, 0, 4, 5, 6));
+        final TeamAggregateResult aggregate = new TeamAggregateResult(
+                7, 4000, 2000, 0, 0, 1, 7, 0, null, null, null, true);
+        return context("cw-main-cluster-no-solo-01", 3, 1, new double[7],
+                members, aggregate, phases, BattlePhaseSummary.buildRelativePhases(60, 300),
+                List.of(keyEvent(60, "TEAM_FIRST_CONTACT", "damage=120")), List.of());
+    }
+
+    private static TeamFormationPhase twoClusterPhase(
+            final float start, final float end,
+            final float mainX, final float mainZ,
+            final float smallX, final float smallZ,
+            final int mainFrom, final int mainTo,
+            final int smallFrom, final int smallTo) {
+        final List<String> main = new ArrayList<>();
+        for (int index = mainFrom; index <= mainTo; index++) {
+            main.add(key(index));
+        }
+        final List<String> small = new ArrayList<>();
+        for (int index = smallFrom; index <= smallTo; index++) {
+            small.add(key(index));
+        }
+        return new TeamFormationPhase(
+                start, end, new CanonicalMapPosition(mainX, mainZ), 80f, 7,
+                DecodeConfidence.EXACT, List.of(
+                        cluster(start, end, mainX, mainZ, main),
+                        cluster(start, end, smallX, smallZ, small)));
     }
 
     // ===== 构建辅助 =====

@@ -1,0 +1,13 @@
+{
+  "id": "cw-main-cluster-no-solo-01",
+  "mode": "TEAM_PERSPECTIVE",
+  "arenaBonusType": 3,
+  "fixtureKey": "cw-main-cluster-no-solo-01",
+  "lessonRef": "docs/ai-lessons/cw-main-cluster-no-solo-01.md",
+  "expectedJudgment": "主力簇成员不判单走（5+2 分簇 false-positive）",
+  "checks": [
+    { "kind": "prompt_contains", "text": "单走拖延候选：T1" },
+    { "kind": "prompt_omits", "text": "单走拖延候选：H1" }
+  ],
+  "note": "5+2 分簇：H1 在五人主力簇内，即使静止+接火+主力转场也不得判单走；只有独立簇 T1 生成候选。"
+}

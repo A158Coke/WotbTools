@@ -1,0 +1,13 @@
+{
+  "id": "player-no-growth-01",
+  "mode": "PLAYER_FOCUSED",
+  "arenaBonusType": 1,
+  "fixtureKey": "player-no-growth-01",
+  "lessonRef": "docs/ai-lessons/player-no-growth-01.md",
+  "expectedJudgment": "无候选（窗口内距离无增长，不判脱节）",
+  "checks": [
+    { "kind": "prompt_omits", "text": "单走脱节候选" },
+    { "kind": "prompt_omits", "text": "单走拖延候选" }
+  ],
+  "note": "移动 + 窗口内承伤，但距离无增长：无法证明持续拉大 → 不生成 SOLO_DETACHED。"
+}

@@ -8,6 +8,7 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
+import com.wotb.core.replay.feature.EngagementOutcome;
 import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MovementType;
@@ -33,15 +34,17 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SoloPlayIntentSkillTest {
 
     @Test
     void openingSpreadLabelsMapControlNotDetach() {
-        final EvidenceSkillContext ctx = context(0, true,
+        final EvidenceSkillContext ctx = context(0, true, 0,
                 List.of(move(5, 40, 200, 200, 200, 200, 1f)),
                 List.of(), BattlePhaseSummary.buildRelativePhases(60, 300),
-                new float[]{1015f, 1030f, 1045f});
+                new float[]{1015f, 1030f, 1045f},
+                new float[]{200f, 200f, 200f}, new float[]{200f, 200f, 200f});
 
         final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
 
@@ -50,30 +53,96 @@ class SoloPlayIntentSkillTest {
     }
 
     @Test
-    void stationaryHoldWithPressureLabelsDelay() {
-        final EvidenceSkillContext ctx = context(200, true,
+    void lateDamageAndDeathDoNotSuppressEarlierOpeningMapControl() {
+        // 玩家后期才掉血/阵亡：早期真实成立的开局图控仍应识别
+        final EvidenceSkillContext ctx = context(1800, false, 200,
+                List.of(move(5, 40, 200, 200, 200, 200, 1f)),
+                List.of(), BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1015f, 1030f, 1045f},
+                new float[]{200f, 200f, 200f}, new float[]{200f, 200f, 200f});
+
+        final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
+
+        assertEquals(1, evidence.size());
+        assertEquals("OPENING_MAP_CONTROL", evidence.getFirst().labels().get("intent"));
+    }
+
+    @Test
+    void stationaryHoldWithPressureLabelsDelayAndUnknownObjective() {
+        final EvidenceSkillContext ctx = context(200, true, 0,
                 List.of(stationary(60, 75, 200, 200)),
-                List.of(engagement(60, 75)),
+                List.of(engagement(60, 75, 200)),
                 BattlePhaseSummary.buildRelativePhases(60, 300),
-                new float[]{1060f, 1075f});
+                new float[]{1060f, 1075f},
+                new float[]{200f, 200f}, new float[]{200f, 200f});
 
         final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
 
         assertEquals(1, evidence.size());
         assertEquals("SOLO_DELAY", evidence.getFirst().labels().get("intent"));
+        // 地图语义 UNKNOWN：目标点关系为未知（-1），不得当作「远离目标点」
+        assertEquals(-1.0, evidence.getFirst().numbers().get("objectiveProximity"));
     }
 
     @Test
-    void movingPushWithoutCoverLabelsDetach() {
-        final EvidenceSkillContext ctx = context(1800, true,
-                List.of(move(60, 75, 200, 200, 180, 180, 5f)),
-                List.of(), BattlePhaseSummary.buildRelativePhases(60, 300),
-                new float[]{1060f, 1075f});
+    void movingPushWithInWindowDamageLabelsDetach() {
+        final EvidenceSkillContext ctx = context(1800, true, 0,
+                List.of(move(60, 75, 200, 200, 240, 240, 5f)),
+                List.of(engagement(60, 75, 1800)),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1060f, 1075f},
+                new float[]{200f, 240f}, new float[]{200f, 240f});
 
         final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
 
         assertEquals(1, evidence.size());
         assertEquals("SOLO_DETACHED", evidence.getFirst().labels().get("intent"));
+        assertTrue(evidence.getFirst().numbers().get("distanceGrowthM") >= 20);
+    }
+
+    @Test
+    void lateDeathOutsideSpanDoesNotLabelDetach() {
+        // 后期阵亡（200s）不属于 [60,75] 窗口：不得把早期侧翼移动标成 SOLO_DETACHED
+        final EvidenceSkillContext ctx = context(0, false, 200,
+                List.of(move(60, 75, 200, 200, 240, 240, 5f)),
+                List.of(),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1060f, 1075f},
+                new float[]{200f, 240f}, new float[]{200f, 240f});
+
+        final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
+
+        assertTrue(evidence.isEmpty(), "death outside the window must not white-eat it");
+    }
+
+    @Test
+    void missingMovementCoverageIsNotMoving() {
+        // stationaryRatio == null（移动覆盖不足）≠ MOVING：有窗口内承伤也不判脱节
+        final EvidenceSkillContext ctx = context(1800, true, 0,
+                List.of(move(5, 10, 200, 200, 200, 200, 1f)),
+                List.of(engagement(60, 75, 1800)),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1060f, 1075f},
+                new float[]{200f, 240f}, new float[]{200f, 240f});
+
+        final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
+
+        assertTrue(evidence.isEmpty(), "unknown movement state must not be treated as MOVING");
+    }
+
+    @Test
+    void noDistanceGrowthSuppressesDetach() {
+        // 窗口内距离无增长：即使移动 + 承伤，也不生成 SOLO_DETACHED
+        final EvidenceSkillContext ctx = context(1800, true, 0,
+                List.of(move(60, 75, 200, 200, 200, 200, 5f)),
+                List.of(engagement(60, 75, 1800)),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1060f, 1075f},
+                new float[]{200f, 200f}, new float[]{200f, 200f});
+
+        final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
+
+        assertTrue(evidence.isEmpty(), "no growth evidence -> no SOLO_DETACHED");
     }
 
     // ===== helpers =====
@@ -81,10 +150,13 @@ class SoloPlayIntentSkillTest {
     private static EvidenceSkillContext context(
             final int recorderDamageReceived,
             final boolean recorderSurvived,
+            final double recorderDeathSec,
             final List<MovementSegment> movements,
             final List<EngagementSummary> engagements,
             final List<BattlePhaseSummary> phases,
-            final float[] rawClocks
+            final float[] rawClocks,
+            final float[] recorderXs,
+            final float[] recorderZs
     ) {
         final Battle battle = new Battle();
         battle.arenaId = "eval-arena";
@@ -93,13 +165,14 @@ class SoloPlayIntentSkillTest {
         battle.durationS = 300.0;
         battle.recorder = "rec1";
         battle.players = new ArrayList<>();
-        battle.players.add(player(1001L, "rec1", 1, recorderDamageReceived, recorderSurvived));
-        battle.players.add(player(1002L, "mate1", 1, 0, true));
-        battle.players.add(player(2001L, "enemy1", 2, 0, true));
+        battle.players.add(player(1001L, "rec1", 1, recorderDamageReceived,
+                recorderSurvived, recorderDeathSec));
+        battle.players.add(player(1002L, "mate1", 1, 0, true, 0));
+        battle.players.add(player(2001L, "enemy1", 2, 0, true, 0));
 
         final List<BattleStateCheckpoint> checkpoints = new ArrayList<>();
-        for (final float raw : rawClocks) {
-            checkpoints.add(cp(raw));
+        for (int index = 0; index < rawClocks.length; index++) {
+            checkpoints.add(cp(rawClocks[index], recorderXs[index], recorderZs[index]));
         }
         final ReplayMetadata meta = new ReplayMetadata(
                 "eval-arena", "team_map", "11.0", "11.0", 1, "rec1", "", 300.0, 0L);
@@ -126,9 +199,10 @@ class SoloPlayIntentSkillTest {
         return new EvidenceSkillContext(battle, recon, features, recorder);
     }
 
-    private static BattleStateCheckpoint cp(final float rawClockSec) {
+    private static BattleStateCheckpoint cp(final float rawClockSec,
+                                            final float recorderX, final float recorderZ) {
         final Map<Integer, VehicleState> vehicles = new HashMap<>();
-        vehicles.put(1, vehicle(1, 1001L, 1, 200f, 200f));
+        vehicles.put(1, vehicle(1, 1001L, 1, recorderX, recorderZ));
         vehicles.put(2, vehicle(2, 1002L, 1, 0f, 0f));
         vehicles.put(3, vehicle(3, 1003L, 1, 0f, 0f));
         return new BattleStateCheckpoint(rawClockSec, 0,
@@ -151,7 +225,7 @@ class SoloPlayIntentSkillTest {
 
     private static PlayerResult player(final long accountId, final String nickname,
                                        final int team, final int damageReceived,
-                                       final boolean survived) {
+                                       final boolean survived, final double deathSec) {
         final PlayerResult player = new PlayerResult();
         player.accountId = accountId;
         player.nickname = nickname;
@@ -159,6 +233,7 @@ class SoloPlayIntentSkillTest {
         player.tankId = 4481L;
         player.damageReceived = damageReceived;
         player.survived = survived;
+        player.deathTimeMillis = deathSec > 0 ? (long) (deathSec * 1000) : 0L;
         return player;
     }
 
@@ -177,10 +252,10 @@ class SoloPlayIntentSkillTest {
                 new Vector3(x, 0f, z), new Vector3(x, 0f, z), 0f, 0f, DecodeConfidence.EXACT);
     }
 
-    private static EngagementSummary engagement(final float start, final float end) {
+    private static EngagementSummary engagement(final float start, final float end,
+                                                final int damageReceived) {
         return new EngagementSummary(start, end, List.of(1001L), List.of(2001L),
-                300, 200, new Vector3(200f, 0f, 200f), new Vector3(200f, 0f, 200f),
-                com.wotb.core.replay.feature.EngagementOutcome.UNFAVORABLE,
-                DecodeConfidence.PARTIAL);
+                300, damageReceived, new Vector3(200f, 0f, 200f), new Vector3(200f, 0f, 200f),
+                EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
     }
 }
