@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { mapImages } from '../data/mapImages'
+import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 
 /**
  * 地图鸟瞰：底图（拉伸铺满 playableBounds）+ 6x6 网格 + 九宫格线/编号 + 出生点；
@@ -18,6 +19,12 @@ const props = defineProps({
 const { t, locale } = useI18n()
 
 const image = computed(() => mapImages[props.overview.mapCode] || null)
+
+// 自适应配色：按底图平均相对亮度选择暗图/亮图调色板（规则见 docs/DEVELOPER_GUIDE.md「地图鸟瞰」节）。
+const palette = ref(darkMapPalette)
+watch(image, async (img) => {
+  palette.value = paletteForLuminance(await luminanceOfImage(img))
+}, { immediate: true })
 
 // 视图与筛选 Tab
 const view = ref('heatmap')
@@ -58,7 +65,7 @@ function heatOpacity(value) {
   const ratio = value / heatMax.value
   return 0.08 + 0.82 * Math.min(1, ratio)
 }
-const heatColor = computed(() => (teamTab.value === 'friendly' ? '#ff7a1a' : '#2f7dff'))
+const heatColor = computed(() => (teamTab.value === 'friendly' ? palette.value.heatFriendly : palette.value.heatEnemy))
 
 // ---- 路线 ----
 const phaseRanges = computed(() => {
@@ -71,7 +78,33 @@ const phaseRanges = computed(() => {
 
 const friendlyTeam = computed(() => props.overview.friendlyTeam)
 
+// 「仅玩家」筛选：随机战（arenaBonusType=1）且录像者账号可解析时提供该选项。
+const isRandomBattle = computed(() => props.overview.arenaBonusType === 1)
+const recorderAccountId = computed(() =>
+  props.overview.recorderAccountId == null ? null : props.overview.recorderAccountId)
+const teamKeys = computed(() => {
+  if (view.value === 'heatmap') return ['friendly', 'enemy']
+  if (isRandomBattle.value && recorderAccountId.value != null) {
+    return ['friendly', 'enemy', 'all', 'player']
+  }
+  return ['friendly', 'enemy', 'all']
+})
+
+// 自适应配色 CSS 变量（网格/九宫格/出生点/死亡标记对比色）。
+const mapStyle = computed(() => ({
+  '--map-grid-stroke': palette.value.gridStroke,
+  '--map-region-stroke': palette.value.regionStroke,
+  '--map-region-label': palette.value.regionLabel,
+  '--map-spawn-friendly': palette.value.spawnFriendly,
+  '--map-spawn-enemy': palette.value.spawnEnemy,
+  '--map-route-outline': palette.value.routeOutline,
+  '--map-death-mark': palette.value.deathMark
+}))
+
 const visibleRoutes = computed(() => {
+  if (teamTab.value === 'player') {
+    return (props.overview.routes || []).filter(route => route.accountId === recorderAccountId.value)
+  }
   const teamFilter = teamTab.value === 'all'
     ? null
     : (teamTab.value === 'friendly' ? friendlyTeam.value : (friendlyTeam.value === 1 ? 2 : 1))
@@ -79,13 +112,14 @@ const visibleRoutes = computed(() => {
     teamFilter === null || route.team === teamFilter)
 })
 
-/** 按阵营给路线分配稳定颜色（本方暖色系、敌方冷色系，各 7 色）。 */
-const friendlyColors = ['#ff7a1a', '#ffb01a', '#e85d2a', '#ff8f4d', '#d96b0f', '#ffc266', '#b74e1e']
-const enemyColors = ['#2f7dff', '#4aa3ff', '#1f5fd6', '#7ab8ff', '#144ba8', '#9ecbff', '#0e3a7d']
+/** 按阵营给路线分配稳定颜色（本方暖色系、敌方冷色系，各 7 色；深浅色板随底图自适应）。 */
+const friendlyColors = computed(() => palette.value.friendlyColors)
+const enemyColors = computed(() => palette.value.enemyColors)
+const routeOutline = computed(() => palette.value.routeOutline)
 function routeColor(route) {
   const index = visibleRoutes.value.filter(r => r.team === route.team).indexOf(route)
-  const palette = route.team === friendlyTeam.value ? friendlyColors : enemyColors
-  return palette[index % palette.length]
+  const list = route.team === friendlyTeam.value ? friendlyColors.value : enemyColors.value
+  return list[index % list.length]
 }
 
 /** 按阶段裁剪并断线（gap > 5s 拆段），返回多段点组。 */
@@ -165,7 +199,7 @@ const gridRegions = computed(() => {
 </script>
 
 <template>
-  <div v-if="image" class="map-overview" data-test="map-overview">
+  <div v-if="image" class="map-overview" data-test="map-overview" :style="mapStyle">
     <div class="map-head">
       <span class="map-title">{{ title }}</span>
       <div class="map-tabs" role="tablist">
@@ -187,7 +221,7 @@ const gridRegions = computed(() => {
     <div class="map-filters">
       <div class="filter-group">
         <button
-          v-for="key in (view === 'heatmap' ? ['friendly', 'enemy'] : ['friendly', 'enemy', 'all'])"
+          v-for="key in teamKeys"
           :key="key"
           type="button"
           class="filter-btn"
@@ -275,21 +309,32 @@ const gridRegions = computed(() => {
       <!-- 路线 -->
       <g v-if="view === 'routes'" class="routes">
         <g v-for="route in visibleRoutes" :key="route.accountId">
-          <polyline
-            v-for="(segment, i) in routeSegments(route)"
-            :key="i"
-            :points="polylinePoints(segment)"
-            fill="none"
-            :stroke="routeColor(route)"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <title>
-              {{ route.playerName }} · {{ $t('recon.map.observed_from') }} {{ fmtTime(route.firstObservedSec) }}
-              <template v-if="route.deathSec != null"> · {{ $t('recon.map.death') }} {{ fmtTime(route.deathSec) }}</template>
-            </title>
-          </polyline>
+          <g v-for="(segment, i) in routeSegments(route)" :key="i">
+            <polyline
+              class="route-outline"
+              :points="polylinePoints(segment)"
+              fill="none"
+              :stroke="routeOutline"
+              stroke-width="5"
+              opacity=".28"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <polyline
+              class="route-line"
+              :points="polylinePoints(segment)"
+              fill="none"
+              :stroke="routeColor(route)"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <title>
+                {{ route.playerName }} · {{ $t('recon.map.observed_from') }} {{ fmtTime(route.firstObservedSec) }}
+                <template v-if="route.deathSec != null"> · {{ $t('recon.map.death') }} {{ fmtTime(route.deathSec) }}</template>
+              </title>
+            </polyline>
+          </g>
           <circle
             v-if="route.points.length"
             :cx="toX(route.points[0].x)"
@@ -369,12 +414,12 @@ const gridRegions = computed(() => {
   border-radius: 4px;
   background: #111;
 }
-.grid-cell { stroke: rgba(255,255,255,.16); stroke-width: .5; }
-.region-line { fill: none; stroke: rgba(255,255,255,.55); stroke-width: 1.4; }
-.region-label { fill: rgba(255,255,255,.8); font-size: 12px; font-weight: 700; }
-.spawn-friendly { fill: #ffd166; stroke: #7a5200; stroke-width: 1; }
-.spawn-enemy { fill: #4aa3ff; stroke: #0b3f85; stroke-width: 1; }
-.death-mark { fill: #ff3b30; font-size: 14px; font-weight: 700; paint-order: stroke; stroke: #000; stroke-width: 1.5; }
+.grid-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.16)); stroke-width: .5; }
+.region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.55)); stroke-width: 1.4; }
+.region-label { fill: var(--map-region-label, rgba(255,255,255,.8)); font-size: 12px; font-weight: 700; }
+.spawn-friendly { fill: var(--map-spawn-friendly, #ffd166); stroke: #7a5200; stroke-width: 1; }
+.spawn-enemy { fill: var(--map-spawn-enemy, #4aa3ff); stroke: #0b3f85; stroke-width: 1; }
+.death-mark { fill: var(--map-death-mark, #ff3b30); font-size: 14px; font-weight: 700; paint-order: stroke; stroke: #000; stroke-width: 1.5; }
 .map-legend {
   display: flex;
   align-items: center;

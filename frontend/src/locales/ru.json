@@ -789,6 +789,7 @@
               "team_friendly": "Свои",
               "team_enemy": "Враг",
               "team_all": "Все",
+              "team_player": "Только игрок",
               "type_dwell": "Пребывание",
               "type_damage": "Урон",
               "type_deaths": "Гибель",
