@@ -51,9 +51,13 @@ description: >
      `.agents/skills/review-with-docs/SKILL.md`，对本次全部变更执行其流程
      （代码质量审查 + 文档同步 + AI 死代码清理）；审查发现的问题先修复，
      再复查直到零问题；单轮无法闭环的阻塞项停下汇报。
+   - **review-with-docs 零 blocker 即验收通过，可直接开 PR**：提交（git add/commit，
+     中文信息 + Co-Authored-By，按 `.agents/AGENTS.md` 约定）→ 推送 → `gh pr create`，
+     无需再等用户指示；存在 blocker/未闭环问题时禁止开 PR。
 8. **计划文件收尾**：状态表全部置为完成；按 `current-plan.md` 头部约定
    决定清理回初始状态（默认保留完成记录，询问用户是否清理）。
-   任务分支保留，用于按项目流程提 PR；PR 合并后由 `finish-task` 清理分支与计划文件。
+   任务分支与提交保留；review-with-docs 零 blocker 时按步骤 7 直接开 PR。
+   PR 合并后由 `finish-task` 清理分支与计划文件。
 
 ## 规则
 
@@ -63,4 +67,5 @@ description: >
 - 计划中标记"待确认"且阻塞的项，未获用户答复前不得执行。
 - 发现方案与代码事实冲突时停下汇报（引用 `文件:行`），不擅自推翻已批准方案。
 - 执行完成后必须调用 review-with-docs 审查并闭环（修复 → 复查 → 零问题），
-  审查结果写入最终汇报；本技能不替代审查。
+  审查结果写入最终汇报；本技能不替代审查。review-with-docs 零 blocker 后允许
+  直接提交并开 PR（无需再等用户指示）；存在 blocker/未闭环时不得开 PR。
