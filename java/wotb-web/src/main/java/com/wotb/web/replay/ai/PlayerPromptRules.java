@@ -251,6 +251,31 @@ final class PlayerPromptRules {
             3. Заголовки оформляйте как «## » (пробел после решёток), каждый заголовок — на отдельной строке,
                между заголовком и следующим абзацем оставляйте пустую строку; абзацы разделяйте пустыми строками.""";
 
+    /** Player 专用：单走行为判定规则（ZH；与 prompts/player/*.zh.md 内文本逐字一致）。 */
+    static final String SOLO_INTENT_RULE = """
+
+            === 单走行为判定规则（强制，随机战个人复盘） ===
+            1. 开局散开（首次接敌前或开局 45 秒内、未接火未承伤未阵亡）是图控/拿视野，不是脱节。
+            2. 单走判「拖延」需要可观测行为：静止/卡点/守点 + 有敌情压力（不撤退）；只基于位置、移动、交火判定行为模式，不得把行为模式说成玩家心理意图。
+            3. 判「脱节」需要持续拉大距离 + 无掩护/无收益 + 被白吃或阵亡。
+            4. 证据不足或信号矛盾时明确写「无法从当前回放数据确定」，禁止硬下标签。""";
+
+    static final String SOLO_INTENT_RULE_EN = """
+
+            === SOLO-PLAY JUDGMENT RULES (mandatory, random-battle personal review) ===
+            1. An opening spread (before first contact or within the first 45 seconds, no damage dealt/received, no destruction) is map control / vision gathering, not detachment.
+            2. Calling a solo play "delay" requires observable behavior: holding/stationary at a key point + enemy pressure (no retreat); judge behavior patterns only from position, movement and engagements, never describe a behavior pattern as the player's mental intent.
+            3. "Detachment" requires continuously increasing distance + no cover/no payoff + being caught out or destroyed.
+            4. When signals are insufficient or contradictory, explicitly write "cannot be determined from the current replay data" and never force a label.""";
+
+    static final String SOLO_INTENT_RULE_RU = """
+
+            === ПРАВИЛА ОЦЕНКИ ДЕЙСТВИЙ В ОДИНОЧКУ (обязательно, личный разбор случайного боя) ===
+            1. Рассредоточение на старте (до первого контакта или в первые 45 секунд, без нанесённого/полученного урона, без уничтожения) — это контроль карты / сбор разведданных, а не отрыв.
+            2. Называть действие «задержкой» можно только на основе наблюдаемого поведения: удержание/неподвижность на ключевой позиции + давление противника (без отхода); оценивайте паттерны только по позиции, движению и перестрелкам, не выдавайте паттерн за психологические намерения игрока.
+            3. «Отрыв» требует непрерывного увеличения дистанции + отсутствия прикрытия/выгоды + размена без пользы или уничтожения.
+            4. При недостатке или противоречивости сигналов прямо пишите «невозможно определить по данным реплея» и не навешивайте ярлык.""";
+
     /**
      * 组装 system prompt：ZH 返回原样（字节级不变）；EN/RU 在中文基座上替换中文输出强制句
      * （输出语言、时间格式、车种与称谓规则），保留业务事实约束与注入防护。
@@ -277,7 +302,9 @@ final class PlayerPromptRules {
                 .replace(COMMON_DAMAGE_SEMANTICS_RULE,
                         en ? COMMON_DAMAGE_SEMANTICS_RULE_EN : COMMON_DAMAGE_SEMANTICS_RULE_RU)
                 .replace(COMMON_EVIDENCE_LOGIC_RULE,
-                        en ? COMMON_EVIDENCE_LOGIC_RULE_EN : COMMON_EVIDENCE_LOGIC_RULE_RU);
+                        en ? COMMON_EVIDENCE_LOGIC_RULE_EN : COMMON_EVIDENCE_LOGIC_RULE_RU)
+                .replace(SOLO_INTENT_RULE,
+                        en ? SOLO_INTENT_RULE_EN : SOLO_INTENT_RULE_RU);
         if (zhPrompt.contains(ZH_TIME_RULE)) {
             return localized;
         }
