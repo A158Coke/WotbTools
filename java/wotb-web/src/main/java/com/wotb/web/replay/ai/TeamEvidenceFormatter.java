@@ -308,7 +308,7 @@ final class TeamEvidenceFormatter {
         if (candidates.isEmpty()) {
             return;
         }
-        writer.append("\n=== SOLO_INTENT_CANDIDATES（单走行为候选·规则候选 PARTIAL） ===\n");
+        writer.append("\n=== SOLO_INTENT_SIGNALS（单走行为信号） ===\n");
         for (final AiEvidence candidate : candidates) {
             writer.append("[" + format(candidate.startSec()) + "-" + format(candidate.endSec()) + "] "
                     + candidate.summary() + "\n");
