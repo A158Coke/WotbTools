@@ -9,7 +9,7 @@ const i18n = vi.hoisted(() => ({
 }))
 
 vi.mock('vue-i18n', () => ({
-  useI18n: () => ({ t: i18n.t })
+  useI18n: () => ({ t: i18n.t, locale: { value: 'zh' } })
 }))
 
 function zeros(n) {
@@ -100,6 +100,18 @@ describe('MapOverview', () => {
   it('renders nothing when the map has no image asset (素材开关)', () => {
     const wrapper = mountOverview(makeOverview({ mapCode: 'holmeisk' }))
     expect(wrapper.find('[data-test="map-overview"]').exists()).toBe(false)
+  })
+
+  it('shows the localized (zh) title from displayNames, falling back to displayName', () => {
+    const overview = makeOverview({
+      displayNames: { zh: '黄沙荒漠', en: 'Desert Sands', ru: 'Пустынные пески' }
+    })
+    const wrapper = mountOverview(overview)
+    expect(wrapper.find('.map-title').text()).toBe('黄沙荒漠')
+
+    // 无 displayNames 时回退 displayName
+    const fallback = mountOverview(makeOverview())
+    expect(fallback.find('.map-title').text()).toBe('Desert Sands')
   })
 
   it('switches heatmap team and type tabs', async () => {
