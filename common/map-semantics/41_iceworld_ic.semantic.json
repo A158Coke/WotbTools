@@ -3,7 +3,7 @@
   "mapId": "41_iceworld_ic",
   "mapCodes": [],
   "displayName": "41_iceworld_ic",
-  "verified": false,
+  "verified": true,
   "source": "CLIENT_RESOURCE_DERIVED",
   "battleVariant": "UNKNOWN",
   "warnings": [],

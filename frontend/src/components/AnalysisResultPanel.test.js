@@ -9,7 +9,7 @@ const i18n = vi.hoisted(() => ({
 }))
 
 vi.mock('vue-i18n', () => ({
-  useI18n: () => ({ t: i18n.t })
+  useI18n: () => ({ t: i18n.t, locale: { value: 'zh' } })
 }))
 
 describe('AnalysisResultPanel preBattleSection', () => {

@@ -11,8 +11,10 @@ import org.springframework.util.StringUtils;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -166,7 +168,7 @@ public final class ReplayParser {
         battle.durationS = meta.hasNonNull("battleDuration") ? Math.min(meta.get("battleDuration").asDouble(), 420) : null;
         final Long startTime = parseLong(text(meta, "battleStartTime"));
         battle.startTime = (startTime != null && startTime > 1388534400L) ? startTime : null;
-        battle.recorder = text(meta, "playerName");
+        battle.recorder = resolveRecorderNickname(text(meta, "playerName"), players);
         battle.recorderVehicle = text(meta, "playerVehicleName");
         battle.arenaBonusType = meta.hasNonNull("arenaBonusType") ? meta.get("arenaBonusType").asInt() : null;
         battle.players = players;
@@ -244,6 +246,44 @@ public final class ReplayParser {
         }
 
         return battle;
+    }
+
+    /**
+     * meta.json#playerName 在部分版本中是「军团-昵称」拼接（如 {@code "CHRD-A158布丁"}），
+     * 而 roster 的 nickname 是纯昵称（如 {@code "A158布丁"}）。录像者身份只按玩家 nickname 解析：
+     * 先精确匹配 roster 昵称；否则若唯一匹配「clan + 分隔符 + nickname」的常见形式则归一化为纯昵称；
+     * 无法可靠归一化（无匹配或歧义）时保留原值，由调用方回退。
+     */
+    static String resolveRecorderNickname(final String metaPlayerName,
+                                          final List<PlayerResult> players) {
+        if (!StringUtils.hasText(metaPlayerName) || players == null || players.isEmpty()) {
+            return metaPlayerName;
+        }
+        for (final PlayerResult player : players) {
+            if (metaPlayerName.equals(player.nickname)) {
+                return player.nickname;
+            }
+        }
+        final Set<String> candidates = new LinkedHashSet<>();
+        for (final PlayerResult player : players) {
+            if (!StringUtils.hasText(player.clan) || !StringUtils.hasText(player.nickname)) {
+                continue;
+            }
+            if (isClanPrefixedNickname(metaPlayerName, player)) {
+                candidates.add(player.nickname);
+            }
+        }
+        return candidates.size() == 1 ? candidates.iterator().next() : metaPlayerName;
+    }
+
+    private static boolean isClanPrefixedNickname(final String metaPlayerName,
+                                                  final PlayerResult player) {
+        final String clan = player.clan.trim();
+        final String nickname = player.nickname;
+        return metaPlayerName.equals(clan + "-" + nickname)
+                || metaPlayerName.equals(clan + "_" + nickname)
+                || metaPlayerName.equals("[" + clan + "]" + nickname)
+                || metaPlayerName.equals(clan + " " + nickname);
     }
 
     private static String text(final JsonNode n, final String key) {

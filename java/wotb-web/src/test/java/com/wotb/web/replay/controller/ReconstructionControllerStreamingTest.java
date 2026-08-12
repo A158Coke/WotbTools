@@ -38,6 +38,7 @@ import com.wotb.web.replay.ai.gateway.AiCancellationRegistry;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -94,7 +95,9 @@ class ReconstructionControllerStreamingTest {
             listener.onToken("world");
             return new AnalyzeResponse("full analysis", "## 赛前预测",
                     new com.wotb.web.replay.dto.MapOverview(
-                            "desert_train", "Desert Sands", 2,
+                            "desert_train", "Desert Sands",
+                            Map.of("zh", "黄沙荒漠", "en", "Desert Sands", "ru", "Пустынные пески"),
+                            2,
                             new com.wotb.web.replay.dto.MapOverview.Bounds(-256, 260, -251, 254.3),
                             List.of(), null, List.of(), List.of(), null, List.of()));
         }).when(reviewService).analyzeStreaming(any(), any(), any());

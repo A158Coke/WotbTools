@@ -14,15 +14,17 @@ description: >
 > **扩展**：本文档同步检查是 review-fix 的补充层，聚焦"改了什么文档就跟什么"；
 > 同时负责清理 AI 生成代码中的提前性/投机死代码。
 
-## 流程
+## 流程（全程主代理，禁止 spawn 子代理）
 
-1. **完成 review-fix** — 先走 `.agents/skills/review-fix/SKILL.md` 的 6 项代码审查
+> 硬约束：本技能全程由主代理自审执行，**不 spawn verifier 子代理**；
+> review-fix 的 6 项代码审查也由主代理按检查单自审完成（覆盖 review-fix SKILL.md 中的 spawn verifier 步骤）。
+
+1. **review-fix 自审（6 项代码审查）** — 按 `.agents/skills/review-fix/SKILL.md` 的检查单，由主代理逐项自审本次变更涉及的所有文件
 2. **DI 注入审计** — 按下方 DI 注入检查单审计 Spring 注入方式，违规改造
-3. **AI 死代码清理** — 按下方方案检查并安全删除 AI 提前性/投机死代码
-4. **文档自检** — 按下方检查清单逐项检查文档同步
-5. **spawn docs verifier** — `type: verifier`，审查文档是否与代码一致
-6. **修复** → **重审** → 循环直到零问题
-7. **出具报告** — 包含 review-fix 报告 + DI 注入审计报告 + AI 死代码清理报告 + 文档审查报告
+3. **AI 死代码清理** — 按下方方案由主代理检查并安全删除 AI 提前性/投机死代码
+4. **文档自检** — 按下方检查清单由主代理逐项检查文档同步
+5. **修复 → 重审** — 主代理对发现的问题逐项修复并重审，循环直到零问题
+6. **出具报告** — 包含 review-fix 报告 + DI 注入审计报告 + AI 死代码清理报告 + 文档审查报告
 
 ## DI 注入检查单（Spring）
 
@@ -102,17 +104,24 @@ description: >
 - [ ] **安全边界（绝不能删）**：前端消费的 JSON 字段/DTO/错误码；Flyway 迁移与实体列；Spring bean 装配/Jackson 反序列化/反射引用；Prometheus/Grafana 指标名（dashboards 引用）；i18n keys（三语 locale）；文档承诺的功能；测试夹具仍需要的行为
 - [ ] **品味判断**引用 `.agents/skills/code-smell/SKILL.md`（不复制其清单）
 
-## 文档 verifier brief 模板
+## 主代理文档自审指引（不 spawn）
+
+按上方「文档检查清单」逐项核验，每一项给出：`文档:章节 → 确认通过或缺失内容`。
+核查基线：`git diff origin/main...HEAD --stat` 与本次变更文件清单；逐项对照：
+
+- CHANGELOG / CHANGELOG-PRODUCT / DEVELOPER_GUIDE / README / java/README / map-semanticizer README；
+- 前端 i18n（新增列 → `frontend/src/locales/{zh,en,ru}.json` 三语）、导出列（`Columns.java` / `AggregateSheets.java`）、API DTO 与注释；
+- 代码注释 / TODO / FIXME；
+- 配置依赖文档（`pom.xml` 新依赖注释 / `application.yml` 环境变量注释 / Dockerfile 注释）；
+- `docs/current-plan.md`（如存在且与本次变更相关，任务状态需一致）；
+- `frontend/src/data/versions.json`（仅用户可见变更新增条目：版本号/日期/tag/三语/顶部追加/与 CHANGELOG-PRODUCT 一致）；
+- AI 死代码清理配合（对新增类/方法做全仓零引用扫描，含 `src/test`、`scripts`、`docs`、`deploy`、`frontend/src/locales`、Grafana dashboards）。
+
+输出：
 
 ```
-QUESTION: 审查以下代码变更对应的文档是否全部同步
-SCOPE: [变更文件列表 + 对应文档路径]
-ALREADY_KNOWN: [已自审并更新的文档]
-EFFORT: medium
-STOP_CONDITION: 完成全部 10 项检查（DI 注入审计 + 8 项文档 + AI 死代码清理），报告缺失项
-OUTPUT:
   VERDICT: 文档齐全 / 有遗漏（列出数量）
-  EVIDENCE: 逐项列出（文档:章节 → 缺失内容）
+  EVIDENCE: 逐项列出（文档:章节 → 通过或缺失）
   GAPS: 待确认项
   NEXT: 建议补充的文档位置
 ```

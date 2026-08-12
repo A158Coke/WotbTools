@@ -1,0 +1,13 @@
+{
+  "id": "player-opening-mapcontrol-01",
+  "mode": "PLAYER_FOCUSED",
+  "arenaBonusType": 1,
+  "fixtureKey": "player-opening-mapcontrol-01",
+  "lessonRef": "docs/ai-lessons/player-opening-mapcontrol-01.md",
+  "expectedJudgment": "开局图控（散开拿视野，非脱节）",
+  "checks": [
+    { "kind": "prompt_contains", "text": "开局图控" },
+    { "kind": "prompt_omits", "text": "单走脱节" }
+  ],
+  "note": "随机战开局散开：SoloPlayIntentSkill 抑制开局脱节候选，标注图控。"
+}

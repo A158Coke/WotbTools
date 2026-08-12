@@ -1,4 +1,4 @@
-﻿# Developer Guide
+# Developer Guide
 
 > 动手前先读这一份。接手维护的人或 AI 都适用。
 
@@ -271,12 +271,41 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 2. **Backend Evidence Skills**（`com.wotb.core.replay.evidence`）：`HpMomentumSkill` / `EngagementTradeSkill` / `LocalSupportSkill` / `DeathCascadeSkill` / `RouteSkill` / `CriticalWindowSkill`，输出确定性 `AiEvidence`（含 confidence / provenance / priority），只描述「发生了什么」，不做战术裁决。
 3. **Call #2（Tactical Review）**：`TacticalReviewPromptBuilder` 按 Priority Bookends 组织 Prompt（BATTLE SNAPSHOT（含结算、死亡时间线、**走位/区域时间线与压缩移动段**）→ STRATEGIC PRIOR → TOP PIVOTAL WINDOWS（≤8）→ PHASE → **对炮明细（ENGAGEMENTS·逐次交火）** → EVIDENCE → CRITICAL DECISION WINDOWS（≤8 完整证据）→ TASK），预算不足时按相关性裁剪，书签段永不裁剪。
 
+### AI 提示词文件（单一事实源）
+
+AI 提示词正文维护在 `java/wotb-web/src/main/resources/prompts/` 下的 `.zh.md` 文件（随 jar 打包到 classpath），运行期由 `AiPromptLibrary.zh("<key>")` 惰性加载并缓存（`classpath:/prompts/<key>.zh.md`）。历史 Java 文本块常量已迁移为加载调用，prompt 内容字节级不变。
+
+| key | 文件 | 对应常量 |
+|---|---|---|
+| player/fallback | `prompts/player/fallback.zh.md` | `PlayerPromptRules.SYSTEM_PROMPT`（旧单 Call 兜底） |
+| player/single | `prompts/player/single.zh.md` | `PlayerPromptRules.SINGLE_PLAYER_PROMPT` |
+| player/tactical | `prompts/player/tactical.zh.md` | `TacticalReviewPromptBuilder.TACTICAL_SYSTEM_PROMPT`（fallback + Harness 规则） |
+| team/single | `prompts/team/single.zh.md` | `TeamPromptLocalizer.SINGLE_TEAM_PROMPT` |
+| team/autopsy | `prompts/team/autopsy.zh.md` | `TeamAutopsyPromptBuilder.AUTOPSY_SYSTEM_PROMPT_SETTLEMENT_ONLY` |
+| prebattle/system | `prompts/prebattle/system.zh.md` | `PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT` |
+| prebattle/user-header | `prompts/prebattle/user-header.zh.md` | `PreBattlePromptBuilder.PRE_BATTLE_USER_HEADER`（含 `%s`/`%d` 占位，由 `.formatted()` 填充） |
+| prebattle/confidence-legend | `prompts/prebattle/confidence-legend.zh.md` | `PreBattlePromptBuilder.CONFIDENCE_LEGEND` |
+
+编辑约定：
+
+- UTF-8、LF 换行（加载器会把 CRLF 归一化为 LF；文件末尾换行保留——`confidence-legend` 以换行结尾，勿删）。
+- 文件是 ZH 完整 prompt；EN/RU 由 `PlayerPromptRules.localizePlayerSystemPrompt` / `TeamPromptLocalizer.localizeTeamSystemPrompt` 对 ZH 规则片段做字符串替换生成。**md 内中文规则片段必须与 Java 常量（`COMMON_*_RULE` / `TEAM_*_RULE` 等）逐字一致**，否则 EN/RU 替换失效。
+- 多文件 AI 复盘已移除（2026-08-12）：`player/multi` / `team/multi` 提示词、`analyzeMulti`、`MULTI_*_BATTLE` AI 分支与团队多视角分区合并全部删除；AI 复盘仅单文件（`AiReplayBatchPolicy.MAX_FILES=1`）。`BatchAnalyzer` / `ReplayAnalysisMode` 保留 MULTI 模式，因为非 AI 端点（`/api/replay/process`、`/api/replay/reconstruct-batch`）不受单文件限制。
+
+### AI 复盘评估 harness（golden cases + lessons）
+
+- **CI 模式**：`AiEvalHarnessTest`（`@Tag("ai-eval")`，默认构建运行）加载 `src/test/resources/ai-eval/cases/*.json`（synthetic 7v7 争霸赛场景），用 `TeamAiPromptBuilder.single` 构建 prompt（不调 AI），执行 `prompt_contains` / `prompt_omits` 断言，写 `target/ai-eval-report/report.md` + `report.json`；任一 FAIL 构建失败。
+- **单走行为候选**：`TeamSoloIntentSkill`（wotb-core）从阵型簇/移动段/交火/占点分推导 `OPENING_MAP_CONTROL` / `SOLO_DELAY` / `SOLO_DETACHED` 候选（PARTIAL 规则候选，B1 口径：拖延需队友获利；开局图控抑制脱节），`TeamEvidenceFormatter` 渲染 `SOLO_INTENT_CANDIDATES` 段（P3 optional）。
+- **player 路径同规则**：`SoloPlayIntentSkill`（wotb-core）复用 `RouteSkill` 脱节窗口推导同口径候选（个人复盘无「队友获利」维度），已在 `EvidenceSkillEngine` 注册；player prompt（fallback/single/tactical）追加三语 `SOLO_INTENT_RULE`。
+- **争霸赛占点**：`TeamEvidenceFormatter` 渲染 `CAPTURE_AND_POINTS` 段（逐人/双方占点分、`pointsDecided`、占领点区域）；`TeamPromptLocalizer` 三语 `SOLO_INTENT_RULE` / `CAPTURE_RULE`。
+- **生产反馈闭环**：人工评估 + 用户反馈登记模板见 `docs/ai-eval/feedback-checklist.md`；可复现反馈转 lesson + synthetic case 回归。评估人工，不引入 LLM-as-judge；真实回放不入库。
+
 关键约束：
 
-- **地图战术语义层**：`MapTacticalSemanticsRegistry` 加载 `common/map-semantics/*.semantic.json`（由 `map-semanticizer` 从 Wot Blitz 客户端 SC2 + heightmap 解码生成，含 `areas` / `relationships` / `spawnSemantics` / `mapCodes` / `gridRegions` / `verified` / `source` / `displayName` / 区域 `confidence`；`displayName` 为 `map_names.json` 的 en 名，未收录回退 mapId）；按 `mapCodes` / `mapId` / token 边界别名查询，未收录地图明确 UNKNOWN，禁止编造区域语义。`relationships` 为 `List<TacticalRelationship>`（from/type/to/reason/confidence 原样保留，不做分组/改名）：ADJACENT_TO 仅表示确定性分析网格相邻，不代表可通行路线/视线/交叉火力；CONTAINS_CONTROL_POINT 与 CONTAINS_STRATEGIC_POINT 保持区分。Call #1 Prompt 输出可信度图例：EXACT_CLIENT_DATA/EXACT_SCENE_DATA=客户端直接事实、NAME_HEURISTIC=对象位置精确但类别由资源名推断、GRID_RULE_DERIVED=区域名称/边界/合并是规则候选、RULE_DERIVED_CANDIDATE=favors/risks 是假设候选；`verified=false` 渲染"尚未完成人工地图核验"；语义段显示「地图: "Desert Sands"（内部 code: "desert_train"）」。CONTROLS / ENABLES_PRESSURE_AGAINST 未提供时禁止声称；出生点语义仅在有数据时输出。每个 AREA 标注 `gridRegions`（GRID_REGION_1~9），与 `MapRegionResolver` 同一坐标约定（回放 raw 按每图 playableBounds 推导的 per-map profile（`MapCoordinateProfileRegistry`，含中心偏移与半边长）→ 500×500 canonical → 3×3）；无语义数据时 GRID_REGION_1~9 仍只是位置编号。TEAM_A=队伍1、TEAM_B=队伍2 固定映射。
+- **地图战术语义层**：`MapTacticalSemanticsRegistry` 加载 `common/map-semantics/*.semantic.json`（由 `map-semanticizer` 从 Wot Blitz 客户端 SC2 + heightmap 解码生成，含 `areas` / `relationships` / `spawnSemantics` / `mapCodes` / `gridRegions` / `verified` / `source` / `displayName` / 区域 `confidence`；`displayName` 为 `map_names.json` 的 en 名，未收录回退 mapId）；按 `mapCodes` / `mapId` / token 边界别名查询，未收录地图明确 UNKNOWN，禁止编造区域语义。`relationships` 为 `List<TacticalRelationship>`（from/type/to/reason/confidence 原样保留，不做分组/改名）：ADJACENT_TO 仅表示确定性分析网格相邻，不代表可通行路线/视线/交叉火力；CONTAINS_CONTROL_POINT 与 CONTAINS_STRATEGIC_POINT 保持区分。Call #1 Prompt 输出可信度图例：EXACT_CLIENT_DATA/EXACT_SCENE_DATA=客户端直接事实、NAME_HEURISTIC=对象位置精确但类别由资源名推断、GRID_RULE_DERIVED=区域名称/边界/合并是规则候选、RULE_DERIVED_CANDIDATE=favors/risks 是假设候选；`verified=true` 渲染"人工地图核验: 已完成"（2026-08-12 起仓库内 33 张地图语义全部核验；`verified=false` 时渲染"尚未完成人工地图核验"）；语义段显示「地图: "Desert Sands"（内部 code: "desert_train"）」。CONTROLS / ENABLES_PRESSURE_AGAINST 未提供时禁止声称；出生点语义仅在有数据时输出。每个 AREA 标注 `gridRegions`（GRID_REGION_1~9），与 `MapRegionResolver` 同一坐标约定（回放 raw 按每图 playableBounds 推导的 per-map profile（`MapCoordinateProfileRegistry`，含中心偏移与半边长）→ 500×500 canonical → 3×3）；无语义数据时 GRID_REGION_1~9 仍只是位置编号。TEAM_A=队伍1、TEAM_B=队伍2 固定映射。
 - **双 Call 预算**：Call #1 独立 45s stage budget（`AiChatRequest.callTimeoutSec`），Call #2 使用剩余预算并留 10s 安全余量；Call #1 失败后剩余 < 60s 时不启动旧路径 fallback；总 deadline = `AI_CALL_TIMEOUT_SEC`。
 - **结构化 JSON 调用关闭 thinking**：`PRE_BATTLE_STRATEGIC_PRIOR`（Call #1）与 `TEAM_AUTOPSY` 在请求层强制 `thinkingEnabled=false`（`reasoningEffort=null`）。生产实测 DeepSeek thinking（`AI_REASONING_EFFORT=max`）会把整个输出预算（Call #1 4096 / Autopsy 2048）消耗在 reasoning 上、`finish_reason=length` 且 content 为空（`AI_EMPTY_RESPONSE`），导致 Call #1 静默降级、战犯/MVP 段缺失；关闭后直接输出契约 JSON。**Call #2 主复盘默认也关闭 thinking**（`AI_THINKING_ENABLED_CALL2=false`，见配置表）——DeepSeek 推理模式下 `reasoning_content` 先流、content 末尾一次性到达，破坏 SSE 逐段流式；需要推理深度时开回 `AI_THINKING_ENABLED_CALL2=true`（流式体验由网关分块兜底保证）。
-- **伤害语义（损失血量 vs 格挡伤害）**：AI 提示词统一用「损失血量」称呼 `damageReceived`（不再叫「承伤」），并强制区分两个概念——格挡伤害（`damageBlocked`）越高越好；损失血量本身中性，评价必须结合车型职责、存活时长、输出贡献与战况（重坦/装甲车抗线掉血可接受，薄皮输出车无价值掉血或过早阵亡前大量掉血才是问题）；不得仅因损失血量高判定表现差。个人复盘（fallback/harness/多场）、团队复盘与 Team Autopsy 共用 `COMMON_DAMAGE_SEMANTICS_RULE`（ZH/EN/RU 三语，Team Autopsy 为 ZH）；战犯证据类别同步改写为「损失血量明显偏高且与车型职责/存活时长/输出不匹配」。
+- **伤害语义（损失血量 vs 格挡伤害）**：AI 提示词统一用「损失血量」称呼 `damageReceived`（不再叫「承伤」），并强制区分两个概念——格挡伤害（`damageBlocked`）越高越好；损失血量本身中性，评价必须结合车型职责、存活时长、输出贡献与战况（重坦/装甲车抗线掉血可接受，薄皮输出车无价值掉血或过早阵亡前大量掉血才是问题）；不得仅因损失血量高判定表现差。个人复盘（fallback/harness）、团队复盘与 Team Autopsy 共用 `COMMON_DAMAGE_SEMANTICS_RULE`（ZH/EN/RU 三语，Team Autopsy 为 ZH）；战犯证据类别同步改写为「损失血量明显偏高且与车型职责/存活时长/输出不匹配」。
 - **观察性语义**：HP 动量只按两端共同可靠观察实体计算 delta（unspot / STALE 不伪造 HP swing；confirmed DESTROYED 按 0 HP 计入 lethal loss）；Call #2 只输出安全比较后的 HP_MOMENTUM 证据、不输出 raw 逐采样 HP 曲线，HP before/after/swing/coverage 必须来自同一 comparison cohort（禁止跨 cohort 拼接）；局部支援 denominator 使用当前时刻存活名单（已阵亡车辆不污染覆盖、存活敌军全部观察可重新 EXACT），敌军数量表达为"至少观察到 N"，仅两侧完整覆盖才 EXACT；隐藏/点亮不制造 local-number flip；Route 敌方人数优势需友军侧完整覆盖（observedEnemy 作为真实敌军下界）。
 - **观察性**：HP 动量带 `observedCoverage`，覆盖率低时置信度降为 PARTIAL；局部支援只统计 `OBSERVED` 位置，STALE/UNKNOWN 不计入。
 - **降级阶梯**：非 ZH / 无重建 / 录像者未解析 / 特征不可用 / Call #1 失败 / 无证据 → 旧单 Call 路径；对外 API 与响应结构不变。
@@ -316,7 +345,6 @@ AI 复盘区分两种 scope，互不混用：
 - 录像者所属队伍 → 友方；另一队 → 敌方。
 - 录像者在原始 team 2 时仍正确识别为友方（`PlayerSideResolver`）。
 - 胜负使用完整三态（`FriendlyEnemyResult`）：友方获胜 / 敌方获胜 / 平局或未知。
-- 同一录像者的多场随机战斗分析会对每场战斗独立解析录像者视角。
 - 胜率只统计已知胜负场数，平局/未知不作为失败。
 - `PlayerResult.team` 原始编号不受影响（仅用于内部计算）。
 - AI Prompt 由 `PlayerAnalysisPromptFormatter` 格式化（独立于 `PlayerResultFormat`）。
@@ -327,7 +355,7 @@ AI 复盘区分两种 scope，互不混用：
 |------|---------|--------|------|
 | `apiKey` | `AI_API_KEY` | 空 | DeepSeek API Key；为空时应用正常启动，AI 调用返回 `AI_NOT_CONFIGURED` |
 | `baseUrl` | `AI_BASE_URL` | `https://api.deepseek.com` | Provider Base URL |
-| `model` | `AI_MODEL` | `deepseek-v4-flash` | 模型字符串，原样传递给 Provider |
+| `model` | `AI_MODEL` | `deepseek-v4-pro` | 模型字符串，原样传递给 Provider |
 | `connectTimeoutSec` | `AI_CONNECT_TIMEOUT_SEC` | 10 | 连接超时（秒） |
 | `timeoutSec` | `AI_TIMEOUT_SEC` | 300 | 单次 read/response 超时（秒） |
 | `callTimeoutSec` | `AI_CALL_TIMEOUT_SEC` | 315 | **整个 `AiChatGateway.chat()` 的总时间预算**（首次请求 + 全部 retry + 全部 backoff + 响应解析），必须 ≥ connect + read |
@@ -392,6 +420,8 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
 - **坐标约定**：所有坐标与 `playableBounds` 同系——`x` = 地图横向 = 回放 x，`y` = 地图纵向 =
   回放 z（同一原点同一米制）。前端把图片拉伸铺满 `playableBounds` 后直接映射像素
   （`px = (x - xMin)/(xMax - xMin)`，`py = (yMax - y)/(yMax - yMin)`）。
+- **标题三语**：`MapOverview` 携带 `displayNames{zh,en,ru}`（来自 `common/map_names.json`，
+  未收录时三语同 code）；前端按 vue-i18n 当前 locale 取标题，缺失回退 `displayName`（en）。
 - **热力口径**：伤害热力按**受击方**位置落格（受击方阵营）；驻留/阵亡为事件计数；
   每层 36 个值按 `gridCells` 顺序，前端按 max 归一化。
 - **路线**：双方 14 车，2s 均匀采样（间隔 = max(2s, duration/200)，每车 ≤200 点），
@@ -672,9 +702,10 @@ files → DefaultReplayProcessingFacade.processBatch()
        ├─ BattleIdentity + TeamPerspectiveResolver 结果分组
        ├─ 代表回放选择（reconstruction 成功优先）
        └─ 录像者一致性验证（PLAYER_FOCUSED + RANDOM）
-  → resolveMode() → SINGLE/MULTI_PLAYER_BATTLE, SINGLE/MULTI_TEAM_BATTLE
+  → resolveMode() → AI 复盘单文件：SINGLE_PLAYER_BATTLE / SINGLE_TEAM_BATTLE
+    （MULTI_*_BATTLE 仅供非 AI 批量端点；AI 多文件复盘已移除）
   → ReconstructionController
-       ├─ PLAYER_FOCUSED → analyzePlayerOrFallback / analyzeMulti
+       ├─ PLAYER_FOCUSED → analyzePlayerOrFallback
        └─ TEAM_PERSPECTIVE → analyzeTeamGroups
             ├─ TeamPerspectiveResolver（录像者只决定 perspectiveTeam）
             ├─ TeamEntityMapper（可靠映射，未知实体不归队）
@@ -710,9 +741,7 @@ files → DefaultReplayProcessingFacade.processBatch()
 | 坐标可信范围 | `|x|, |z| <= 1050 (1000 + 50 CLAMP_TOLERANCE_RAW)` 且 `|y| <= 200`；越界点忽略并计入 coverage/limitation |
 | 时间戳 | 必须 finite 且 `>= 0`；非法事件不进入移动、阵型、交火或关键事件 |
 
-多场趋势还需要每个 perspective 的有效 accountId 覆盖率
-`validAccountIds / authoritativeMemberCount >= 0.75`，且 roster
-`Jaccard = |A ∩ B| / |A ∪ B| >= 0.60`；任一条件不满足时只比较上传样本，不声称固定阵容趋势。
+> 多文件 AI 复盘已移除（2026-08-12），无多场 roster 趋势聚合（原 coverage ≥ 0.75 + Jaccard ≥ 0.60 阈值随之删除）。
 
 ### Team AI 输入预算
 
@@ -723,7 +752,7 @@ files → DefaultReplayProcessingFacade.processBatch()
 2. **High-priority facts**（authoritative aggregate、observed aggregate、member facts、coverage）必须原子完整写入，无法容纳时该 perspective 整体 omitted；
 3. **Optional details**（movements、formation、battle phases、engagements、key events）可按 unit 整块省略，被省略的 unit 加入 `truncatedUnitIds`，global `AI_INPUT_TRUNCATED` 添加。任意 unit 的截断不影响其他 unit 的 mandatory/high-priority facts。
 
-所有入口（单队/多队/编排）使用相同的 evidence limitation 规则：`AiReplayAnalysisService`（兼容 facade）委托 Player/Team Service 编排 `analyzeTeamGroups()` / `analyzeMulti()` / `analyzePlayerOrFallback()`，per-unit limitations 在各自上下文头部作为 `unitLimitations=[...]` 优先输出，不混入 global `DATA_LIMITATIONS`。
+所有入口使用相同的 evidence limitation 规则：`AiReplayAnalysisService`（兼容 facade）委托 Player/Team Service 编排 `analyzeTeamGroups()` / `analyzePlayerOrFallback()`，per-unit limitations 在各自上下文头部作为 `unitLimitations=[...]` 优先输出，不混入 global `DATA_LIMITATIONS`。
 
 原始 `ReplayEvent` 和逐帧坐标流不得进入 Prompt。文件名、昵称、地图名和证据文本按 JSON 字符串编码，并在 system prompt 中声明为不可信数据，不能作为模型指令。PLAYER_FOCUSED 与 TEAM_PERSPECTIVE 使用同一个 `PromptDataQuoter.quote(value, fallback)` 实现，分别传入 `"?"` 或 `"UNKNOWN"` 作为 fallback。`TeamAiPromptBuilder.quoteData()` 和 `PlayerResultFormat.quoteForPrompt()` 均为轻量委托，不含 escaping 逻辑。所有外部字符串必须通过 `PromptDataQuoter.quote()` 转义后才能写入 prompt body。
 

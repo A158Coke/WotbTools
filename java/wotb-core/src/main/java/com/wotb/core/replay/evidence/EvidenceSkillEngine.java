@@ -22,6 +22,7 @@ public final class EvidenceSkillEngine {
         final List<AiEvidence> trades = new EngagementTradeSkill().detect(ctx, momentumSeries);
         final List<AiEvidence> support = new LocalSupportSkill().detect(ctx);
         final List<AiEvidence> routes = new RouteSkill().detect(ctx);
+        final List<AiEvidence> soloIntents = SoloPlayIntentSkill.detect(ctx);
 
         final List<AiEvidence> all = new ArrayList<>();
         all.addAll(hp);
@@ -29,6 +30,7 @@ public final class EvidenceSkillEngine {
         all.addAll(trades);
         all.addAll(support);
         all.addAll(routes);
+        all.addAll(soloIntents);
         all.sort(Comparator.comparingDouble(AiEvidence::startSec));
 
         final List<AiEvidence> windows = new CriticalWindowSkill().detect(all);
