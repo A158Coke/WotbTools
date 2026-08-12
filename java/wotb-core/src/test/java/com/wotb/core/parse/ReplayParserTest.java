@@ -15,6 +15,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -86,6 +87,63 @@ class ReplayParserTest {
                 () -> ReplayParser.parse(zip(Map.of("payload.bin", new byte[0]))));
 
         assertEquals("Unexpected replay entry: payload.bin", error.getMessage());
+    }
+
+    @Test
+    void normalizesClanPrefixedRecorderToPureNickname() throws IOException {
+        // meta playerName = "CHRD-A158布丁"（军团-昵称拼接），roster nickname = "A158布丁"：
+        // 录像者必须归一化为纯昵称，禁止把军团名当玩家名
+        final Map<String, byte[]> entries = new LinkedHashMap<>();
+        entries.put("meta.json",
+                "{\"playerName\":\"CHRD-A158布丁\",\"arenaBonusType\":1}".getBytes(StandardCharsets.UTF_8));
+        entries.put("battle_results.dat", pickle(clanPrefixedFixtureRoot()));
+
+        final Battle battle = ReplayParser.parse(zip(entries));
+
+        assertEquals("A158布丁", battle.recorder,
+                "recorder must be the pure roster nickname, not the clan-prefixed meta playerName");
+        assertNotNull(battle.recorderResult());
+        assertEquals("A158布丁", battle.recorderResult().nickname);
+        assertEquals("CHRD", battle.recorderResult().clan);
+    }
+
+    @Test
+    void keepsPureNicknameRecorderUnchanged() throws IOException {
+        // meta playerName 已是纯昵称：保持不变
+        final Map<String, byte[]> entries = new LinkedHashMap<>();
+        entries.put("meta.json",
+                "{\"playerName\":\"A158布丁\"}".getBytes(StandardCharsets.UTF_8));
+        entries.put("battle_results.dat", pickle(clanPrefixedFixtureRoot()));
+
+        final Battle battle = ReplayParser.parse(zip(entries));
+
+        assertEquals("A158布丁", battle.recorder);
+        assertNotNull(battle.recorderResult());
+    }
+
+    /** roster #201（nickname=A158布丁 / clan=CHRD）+ 成绩 #301（account=1001, team=1）的 protobuf 根消息。 */
+    private static byte[] clanPrefixedFixtureRoot() {
+        final ByteArrayOutputStream rosterInfo = new ByteArrayOutputStream();
+        writeStringField(rosterInfo, 1, "A158布丁");
+        writeStringField(rosterInfo, 5, "CHRD");
+        final ByteArrayOutputStream rosterEntry = new ByteArrayOutputStream();
+        writeField(rosterEntry, 1, 1001);
+        writeBytesField(rosterEntry, 2, rosterInfo.toByteArray());
+
+        final ByteArrayOutputStream resultInfo = new ByteArrayOutputStream();
+        writeField(resultInfo, 101, 1001);
+        writeField(resultInfo, 102, 1);
+        writeField(resultInfo, 103, 4481);
+        writeField(resultInfo, 8, 500);
+        writeField(resultInfo, 105, -1);
+        final ByteArrayOutputStream resultEntry = new ByteArrayOutputStream();
+        writeBytesField(resultEntry, 2, resultInfo.toByteArray());
+
+        final ByteArrayOutputStream root = new ByteArrayOutputStream();
+        writeField(root, 3, 1);
+        writeBytesField(root, 201, rosterEntry.toByteArray());
+        writeBytesField(root, 301, resultEntry.toByteArray());
+        return root.toByteArray();
     }
 
     @Test
@@ -271,6 +329,11 @@ class ReplayParserTest {
         writeVarint(output, (field << 3) | 2);
         writeVarint(output, value.length);
         output.writeBytes(value);
+    }
+
+    private static void writeStringField(final ByteArrayOutputStream output,
+                                         final int field, final String value) {
+        writeBytesField(output, field, value.getBytes(StandardCharsets.UTF_8));
     }
 
     private static int replaceAllAscii(final byte[] data, final String target, final String replacement) {
