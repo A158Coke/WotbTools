@@ -8,6 +8,7 @@ public record BoostAssignmentDto(
     Long requestId,
     BoosterSummaryDto booster,
     String status,
+    String region,
     String requestType,
     String targetDescription,
     String requestStatus,

@@ -367,6 +367,7 @@ class BoostAssignmentServiceTest {
                 assignment.getRequestId(),
                 null,
                 assignment.getStatus(),
+                null,
                 null, null, null, null, null,
                 null, null, null, null, null,
                 assignment.getAssignedAt(),

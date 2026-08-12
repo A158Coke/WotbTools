@@ -7,6 +7,7 @@ import com.wotb.web.boost.dto.BoosterDto;
 import com.wotb.web.boost.dto.ConfirmBoostRequestResponse;
 import com.wotb.web.boost.dto.CreateBoostRequestResponse;
 import com.wotb.web.boost.dto.CreateBoosterApplicationResponse;
+import com.wotb.web.boost.dto.OptionDto;
 import com.wotb.web.boost.service.BoostOptionsMapper;
 import com.wotb.web.boost.service.BoostOptionsService;
 import com.wotb.web.controller.GlobalExceptionHandler;
@@ -27,12 +28,13 @@ class ApiContractTest {
 
     @Test
     void boostDtosShouldExposeRawKeysWithoutLocalizedLabels() throws Exception {
+        final var options = new BoostOptionsService(new BoostOptionsMapper()).options();
         final BoosterDto booster = new BoosterDto(
                 7L, "booster", "ELITE", "kc-user", true, "ACTIVE",
                 "QQ", "123", null, null, 0, null, null
         );
         final BoostAssignmentDto assignment = new BoostAssignmentDto(
-                9L, 10L, null, "ASSIGNED", "COACHING", "target",
+                9L, 10L, null, "ASSIGNED", "EU", "COACHING", "target",
                 "MATCHED", "QQ", "123", null, null, null,
                 null, null, null, null, null, null, null
         );
@@ -40,11 +42,15 @@ class ApiContractTest {
         final String json = objectMapper.writeValueAsString(Map.of(
                 "booster", booster,
                 "assignment", assignment,
-                "options", new BoostOptionsService(new BoostOptionsMapper()).options()
+                "options", options
         ));
 
+        assertThat(options.regions())
+                .extracting(OptionDto::value)
+                .containsExactly("CN", "ASIA", "EU", "NA");
         assertThat(json)
                 .contains("\"level\":\"ELITE\"")
+                .contains("\"region\":\"EU\"")
                 .contains("\"requestType\":\"COACHING\"")
                 .contains("\"warningCode\":\"SENSITIVE_INFO_WARNING\"")
                 .doesNotContain("Label\"")
