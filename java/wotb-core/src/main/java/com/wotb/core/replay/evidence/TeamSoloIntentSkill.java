@@ -1,7 +1,6 @@
 package com.wotb.core.replay.evidence;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.BattlePhaseType;
@@ -25,9 +24,11 @@ import java.util.Set;
  * 单走行为候选 Skill（team perspective）：把「图控 / 拖延 / 脱节」从可观测行为 + 队友获利
  * 时序关联中确定性推导为候选证据（用户 B1 口径：单走判拖延取决于队友是否因他获利）。
  * <p>只输出候选与信号数字（confidence=PARTIAL，规则候选），最终行为标签由 Call #2 结合
- * prior/战局类型判定；信号不足/矛盾不输出结论（prompt 规则要求 AI 写「无法确定」）。</p>
- * <p>开局散开（OPENING 阶段内、未接火未阵亡、队伍多簇）标注 {@code OPENING_MAP_CONTROL}，
- * 抑制该窗口的脱节候选——开局图控不是脱节。</p>
+ * prior/战局类型判定；信号不足/矛盾/无法按时间归属时不输出结论（prompt 规则要求 AI 写「无法确定」）。</p>
+ * <p>时间口径：所有信号（接火、承伤、阵亡、队友获利）只使用与当前单走窗口重叠的证据；
+ * 整场结算（击杀、占点分、最终存活）不作为局部窗口依据。</p>
+ * <p>主力簇：每个 15s 窗口先确定全局最大簇；平票不判；主力簇成员不产生单走候选，
+ * 非主力簇仅当明显小于主力簇（人数差 ≥ {@link #MAIN_CLUSTER_DOMINANCE}）且距离达标时进入候选。</p>
  */
 public final class TeamSoloIntentSkill {
 
@@ -39,10 +40,12 @@ public final class TeamSoloIntentSkill {
     public static final float MIN_STATIONARY_SHARE = 0.6f;
     /** 队友获利判定：主力质心位移下限（canonical 米）。 */
     public static final float TEAMMATE_BENEFIT_ROTATION_M = 30f;
-    /** 脱节候选的承伤下界（无队友获利时被集火/白吃的信号）。 */
+    /** 脱节候选的窗口内承伤下界（无法归属到窗口时不生效）。 */
     public static final int DETACH_DAMAGE_RECEIVED = 800;
-    /** 单走时段距离增长下限（canonical 米），用于「持续拉大」信号。 */
+    /** 单走窗口内距离增长下限（canonical 米），用于「持续拉大」信号。 */
     public static final float DISTANCE_GROWTH_M = 20f;
+    /** 非主力簇相对主力簇的最小人数差（明显小于才算单走）。 */
+    public static final int MAIN_CLUSTER_DOMINANCE = 2;
 
     private static final int MAX_EVIDENCE = 6;
 
@@ -51,8 +54,8 @@ public final class TeamSoloIntentSkill {
 
     /**
      * @param features     团队特征（阵型簇/成员移动/交火）
-     * @param battle       权威结算（占点分、胜负）
-     * @param battlePhases 战斗阶段（OPENING 边界/首次接敌）
+     * @param battle       权威结算（仅作胜负/背景，不用于窗口内获利判定）
+     * @param battlePhases 战斗阶段（OPENING 边界/首次接敌；缺失时不开局图控）
      * @param mapSemantics 地图语义（占领点区域；可为 UNKNOWN）
      */
     public static List<AiEvidence> detect(
@@ -73,7 +76,7 @@ public final class TeamSoloIntentSkill {
         for (final TeamMemberFeatureSet member : features.members()) {
             final List<SoloSpan> spans = soloSpans(member, phases);
             for (final SoloSpan span : spans) {
-                final String intent = classify(member, span, features, battle, opening);
+                final String intent = classify(member, span, features, opening);
                 if (intent == null) {
                     continue;
                 }
@@ -81,9 +84,9 @@ public final class TeamSoloIntentSkill {
                     break;
                 }
                 final Double stationaryRatio = stationaryRatio(member, span);
-                final boolean benefit = teammateBenefit(features, battle, span, member);
-                final int objectiveProximity = controlPointRegions.contains(
-                        String.valueOf(span.regionInfo().region())) ? 1 : 0;
+                final boolean benefit = teammateBenefit(features, span, member);
+                final int objectiveProximity = objectiveProximity(span.regionInfo().region(),
+                        controlPointRegions, mapSemantics);
                 result.add(new AiEvidence(
                         String.format("SI_%02d", ++index),
                         EvidenceType.SOLO_INTENT,
@@ -113,17 +116,16 @@ public final class TeamSoloIntentSkill {
             final TeamMemberFeatureSet member,
             final SoloSpan span,
             final TeamBattleFeatureSet features,
-            final Battle battle,
             final OpeningWindow opening) {
-        // 开局图控：span 完全落在 OPENING 窗口内 + 未接火/未承伤/未阵亡
-        if (span.startSec() >= opening.startSec()
+        // 开局图控：OPENING 窗口已确定、span 完全在内、窗口内未接火/未阵亡
+        if (opening != null
+                && span.startSec() >= opening.startSec()
                 && span.endSec() <= opening.endSec()
-                && member.damageReceived() == 0
-                && member.survived()
+                && span.enemyPressureCount() == 0
                 && !memberDeadIn(member, span)) {
             return "OPENING_MAP_CONTROL";
         }
-        if (span.startSec() < opening.endSec()) {
+        if (opening != null && span.startSec() < opening.endSec()) {
             // 与开局窗口重叠但不完全在内：窗口信号混合，不硬判
             return null;
         }
@@ -131,15 +133,17 @@ public final class TeamSoloIntentSkill {
         final boolean stationary = stationaryRatio != null
                 && stationaryRatio >= MIN_STATIONARY_SHARE;
         final boolean pressure = span.enemyPressureCount() > 0;
-        final boolean benefit = teammateBenefit(features, battle, span, member);
+        final boolean benefit = teammateBenefit(features, span, member);
         if (stationary && pressure && benefit) {
             return "SOLO_DELAY";
         }
-        final boolean moving = stationaryRatio == null
-                || stationaryRatio < MIN_STATIONARY_SHARE;
+        // moving 必须由窗口内移动证据证明：覆盖不足（null）不等于正在移动
+        final boolean moving = stationaryRatio != null
+                && stationaryRatio < MIN_STATIONARY_SHARE;
         final boolean pulledAway = span.distanceGrowthM() >= DISTANCE_GROWTH_M;
         final boolean whiteEaten = memberDeadIn(member, span)
-                || member.damageReceived() >= DETACH_DAMAGE_RECEIVED;
+                || span.damageReceived() >= DETACH_DAMAGE_RECEIVED
+                || span.enemyPressureCount() >= 2;
         if (moving && pulledAway && !benefit && whiteEaten) {
             return "SOLO_DETACHED";
         }
@@ -165,7 +169,7 @@ public final class TeamSoloIntentSkill {
                 && member.deathTimeSec() <= span.endSec();
     }
 
-    /** 每名成员：把连续「与主力簇距离 ≥150m」的 15s 窗口合并为单走时段。 */
+    /** 每名成员：把连续「非主力簇且距离 ≥150m」的 15s 窗口合并为单走时段。 */
     private static List<SoloSpan> soloSpans(final TeamMemberFeatureSet member,
                                             final List<TeamFormationPhase> phases) {
         final List<SoloSpan> spans = new ArrayList<>();
@@ -187,25 +191,53 @@ public final class TeamSoloIntentSkill {
         return spans;
     }
 
+    /** 全局主力簇：窗口内人数最多的簇；平票返回 null（不硬判）。 */
+    static TeamFormationCluster mainClusterOf(final TeamFormationPhase phase) {
+        if (phase == null || phase.clusters() == null || phase.clusters().isEmpty()) {
+            return null;
+        }
+        TeamFormationCluster main = null;
+        for (final TeamFormationCluster cluster : phase.clusters()) {
+            if (main == null || cluster.memberCount() > main.memberCount()) {
+                main = cluster;
+            }
+        }
+        if (main == null) {
+            return null;
+        }
+        for (final TeamFormationCluster cluster : phase.clusters()) {
+            if (cluster != main && cluster.memberCount() == main.memberCount()) {
+                return null;
+            }
+        }
+        return main;
+    }
+
     private static WindowInfo windowInfo(final TeamMemberFeatureSet member,
                                          final TeamFormationPhase phase) {
+        final TeamFormationCluster main = mainClusterOf(phase);
+        if (main == null) {
+            return WindowInfo.NOT_SOLO;
+        }
         final String memberKey = identityKey(member);
         TeamFormationCluster memberCluster = null;
-        TeamFormationCluster mainCluster = null;
         for (final TeamFormationCluster cluster : phase.clusters()) {
             if (cluster.memberIdentities().contains(memberKey)) {
                 memberCluster = cluster;
-            } else if (mainCluster == null
-                    || cluster.memberCount() > mainCluster.memberCount()) {
-                mainCluster = cluster;
+                break;
             }
         }
-        if (memberCluster == null || mainCluster == null) {
+        if (memberCluster == null || memberCluster == main) {
+            // 主力簇成员：不产生单走候选
+            return WindowInfo.NOT_SOLO;
+        }
+        if (main.memberCount() < memberCluster.memberCount() + MAIN_CLUSTER_DOMINANCE) {
+            // 非主力簇未明显小于主力簇：不是单走
             return WindowInfo.NOT_SOLO;
         }
         final float distance = distance(
                 memberCluster.centroidX(), memberCluster.centroidZ(),
-                mainCluster.centroidX(), mainCluster.centroidZ());
+                main.centroidX(), main.centroidZ());
         if (distance < SOLO_DISTANCE_M) {
             return WindowInfo.NOT_SOLO;
         }
@@ -213,9 +245,10 @@ public final class TeamSoloIntentSkill {
                 true,
                 distance,
                 memberCluster.centroid().region(),
-                mainCluster.centroidX(),
-                mainCluster.centroidZ(),
-                engagementCount(member, phase.startTime(), phase.endTime()));
+                main.centroidX(),
+                main.centroidZ(),
+                engagementCount(member, phase.startTime(), phase.endTime()),
+                engagementDamage(member, phase.startTime(), phase.endTime()));
     }
 
     private static int engagementCount(final TeamMemberFeatureSet member,
@@ -227,6 +260,17 @@ public final class TeamSoloIntentSkill {
             }
         }
         return count;
+    }
+
+    private static float engagementDamage(final TeamMemberFeatureSet member,
+                                          final float start, final float end) {
+        float damage = 0f;
+        for (final EngagementSummary engagement : member.engagements()) {
+            if (engagement.startTime() <= end && engagement.endTime() >= start) {
+                damage += engagement.damageReceived();
+            }
+        }
+        return damage;
     }
 
     /** 静止占比：时段内移动段重叠部分中「静止/低速」的占比；无覆盖返回 null。 */
@@ -254,24 +298,17 @@ public final class TeamSoloIntentSkill {
     }
 
     /**
-     * 队友获利（时序关联，不声称因果）：主力质心位移 ≥ 阈值 / 队友击杀 / supremacy 占点分 /
-     * 队友正向交火；时段内其他本队成员阵亡则视为未获利。
+     * 队友获利（时间边界 = 当前 span）：主力质心在 span 内位移 ≥ 阈值 /
+     * span 内其他成员存在有利交火；span 内其他本队成员阵亡则视为未获利。
+     * 整场击杀/占点分不参与（无法归属到窗口）。
      */
     private static boolean teammateBenefit(final TeamBattleFeatureSet features,
-                                           final Battle battle,
                                            final SoloSpan span,
                                            final TeamMemberFeatureSet soloMember) {
         if (otherFriendlyDied(features, span, soloMember)) {
             return false;
         }
         if (span.mainCentroidDisplacementM() >= TEAMMATE_BENEFIT_ROTATION_M) {
-            return true;
-        }
-        if (features.authoritativeAggregate() != null
-                && features.authoritativeAggregate().totalKills() > 0) {
-            return true;
-        }
-        if (supremacyPointsEarned(battle, soloMember.accountId()) > 0) {
             return true;
         }
         for (final TeamMemberFeatureSet member : features.members()) {
@@ -305,28 +342,16 @@ public final class TeamSoloIntentSkill {
         return false;
     }
 
-    private static long supremacyPointsEarned(final Battle battle, final long soloAccountId) {
-        if (battle == null || battle.players == null) {
-            return 0L;
-        }
-        return battle.players.stream()
-                .filter(player -> player != null
-                        && player.accountId != soloAccountId
-                        && player.team == 1)
-                .mapToLong(player -> player.victoryPointsEarned)
-                .sum();
-    }
-
     private static OpeningWindow openingWindow(final List<BattlePhaseSummary> battlePhases) {
         if (battlePhases == null || battlePhases.isEmpty()) {
-            return new OpeningWindow(0f, Float.MAX_VALUE);
+            return null;
         }
         for (final BattlePhaseSummary phase : battlePhases) {
             if (phase.type() == BattlePhaseType.OPENING) {
                 return new OpeningWindow(phase.startTime(), phase.endTime());
             }
         }
-        return new OpeningWindow(0f, Float.MAX_VALUE);
+        return null;
     }
 
     /** 地图语义中占领点/战略点覆盖的九宫格区域（GRID_REGION_N 的数字部分）。 */
@@ -351,6 +376,16 @@ public final class TeamSoloIntentSkill {
             }
         }
         return regions;
+    }
+
+    /** 目标点关系三态：1=邻近 / 0=已知不在 / -1=未知（region 缺失或无语义）。 */
+    private static int objectiveProximity(final int region,
+                                          final Set<String> controlPointRegions,
+                                          final MapTacticalSemantics semantics) {
+        if (region <= 0 || controlPointRegions.isEmpty()) {
+            return -1;
+        }
+        return controlPointRegions.contains(String.valueOf(region)) ? 1 : 0;
     }
 
     private static String identityKey(final TeamMemberFeatureSet member) {
@@ -378,14 +413,6 @@ public final class TeamSoloIntentSkill {
             this.windows.add(window);
         }
 
-        float startSec() {
-            return startSec;
-        }
-
-        float endSec() {
-            return endSec;
-        }
-
         SoloSpan extend(final float endSec, final WindowInfo window) {
             final SoloSpan extended = new SoloSpan(startSec, endSec, windows);
             extended.windows.add(window);
@@ -397,6 +424,14 @@ public final class TeamSoloIntentSkill {
             this.startSec = startSec;
             this.endSec = endSec;
             this.windows.addAll(windows);
+        }
+
+        float startSec() {
+            return startSec;
+        }
+
+        float endSec() {
+            return endSec;
         }
 
         float durationSec() {
@@ -431,6 +466,10 @@ public final class TeamSoloIntentSkill {
         int enemyPressureCount() {
             return windows.stream().mapToInt(WindowInfo::enemyPressureCount).sum();
         }
+
+        float damageReceived() {
+            return windows.stream().map(WindowInfo::damageReceived).reduce(0f, Float::sum);
+        }
     }
 
     private record WindowInfo(
@@ -439,9 +478,10 @@ public final class TeamSoloIntentSkill {
             int region,
             float mainCentroidX,
             float mainCentroidZ,
-            int enemyPressureCount
+            int enemyPressureCount,
+            float damageReceived
     ) {
-        static final WindowInfo NOT_SOLO = new WindowInfo(false, 0f, 0, 0f, 0f, 0);
+        static final WindowInfo NOT_SOLO = new WindowInfo(false, 0f, 0, 0f, 0f, 0, 0f);
     }
 
     private record OpeningWindow(float startSec, float endSec) {

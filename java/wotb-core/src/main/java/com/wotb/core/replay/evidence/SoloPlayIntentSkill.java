@@ -1,6 +1,7 @@
 package com.wotb.core.replay.evidence;
 
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.BattlePhaseType;
@@ -9,18 +10,25 @@ import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
+import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
+import com.wotb.core.replay.reconstruction.ObservationState;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.replay.reconstruction.VehicleState;
 import com.wotb.core.replay.map.MapTacticalSemantics;
 import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 
 /**
  * 单走行为候选 Skill（player 路径）：复用 {@link RouteSkill} 脱节窗口，按可观测行为
  * （静止/卡点/守点 + 敌情压力、持续拉大距离 + 被白吃/阵亡）推导「图控 / 拖延 / 脱节」候选。
- * <p>与 {@link TeamSoloIntentSkill} 同口径：开局图控抑制脱节；只输出 PARTIAL 规则候选，
- * 证据不足/矛盾不输出（prompt 规则要求 AI 写「无法确定」）。个人复盘无「队友获利」维度。</p>
+ * <p>时间口径：接火/承伤/阵亡/距离增长只使用与当前窗口重叠的证据；整场承伤/最终存活不作为
+ * 早期窗口依据。未知不等于结论：移动覆盖不足 ≠ MOVING，region/语义缺失 ≠ 远离目标点。</p>
+ * <p>开局图控：OPENING 窗口（缺失时回退 45s 安全上限）内未接火/未阵亡；后续掉血/阵亡不抑制
+ * 已成立的早期图控。</p>
  */
 public final class SoloPlayIntentSkill {
 
@@ -50,15 +58,18 @@ public final class SoloPlayIntentSkill {
             }
             final Double stationaryRatio = stationaryRatio(features, window.startSec(), window.endSec());
             final int pressure = engagementCount(features, window.startSec(), window.endSec());
+            final float inWindowDamage = engagementDamage(features, window.startSec(), window.endSec());
+            final Float distanceGrowth = distanceGrowthMeters(ctx, window.startSec(), window.endSec());
             final Integer region = recorderRegion(
                     features, window.startSec(), window.endSec(), ctx.battle().mapName);
-            final String intent = classify(window, stationaryRatio, pressure,
-                    region, controlPointRegions, openingEnd, recorder);
+            final String intent = classify(window, stationaryRatio, pressure, inWindowDamage,
+                    distanceGrowth, openingEnd, recorder);
             if (intent == null) {
                 continue;
             }
             final float distanceM = window.numbers().getOrDefault("distanceM", 150.0)
                     .floatValue();
+            final int objectiveProximity = objectiveProximity(region, controlPointRegions);
             result.add(new AiEvidence(
                     String.format("SI_%02d", ++index),
                     EvidenceType.SOLO_INTENT,
@@ -67,9 +78,9 @@ public final class SoloPlayIntentSkill {
                     List.of(),
                     java.util.Map.of(
                             "distanceM", (double) distanceM,
+                            "distanceGrowthM", distanceGrowth == null ? -1.0 : distanceGrowth,
                             "stationaryRatio", stationaryRatio == null ? -1.0 : stationaryRatio,
-                            "objectiveProximity", region != null
-                                    && controlPointRegions.contains(String.valueOf(region)) ? 1.0 : 0.0,
+                            "objectiveProximity", (double) objectiveProximity,
                             "nearbyEnemy", (double) pressure),
                     java.util.Map.of(
                             "intent", intent,
@@ -87,36 +98,46 @@ public final class SoloPlayIntentSkill {
             final AiEvidence window,
             final Double stationaryRatio,
             final int pressure,
-            final Integer region,
-            final Set<String> controlPointRegions,
+            final float inWindowDamage,
+            final Float distanceGrowth,
             final float openingEnd,
             final PlayerResult recorder
     ) {
         final boolean opening = window.startSec() >= 0f && window.endSec() <= openingEnd;
-        final boolean untouched = recorder == null
-                || (recorder.damageReceived == 0 && recorder.survived);
-        if (opening && untouched) {
+        final boolean untouchedInWindow = pressure == 0 && !memberDeadIn(recorder, window);
+        if (opening && untouchedInWindow) {
             return "OPENING_MAP_CONTROL";
         }
         if (window.startSec() < openingEnd) {
             return null;
         }
+        // 未知（null）不等于 MOVING / STATIONARY：只有覆盖充分时才判移动状态
         final boolean stationary = stationaryRatio != null
                 && stationaryRatio >= TeamSoloIntentSkill.MIN_STATIONARY_SHARE;
         if (stationary && pressure > 0) {
             return "SOLO_DELAY";
         }
-        final boolean moving = stationaryRatio == null
-                || stationaryRatio < TeamSoloIntentSkill.MIN_STATIONARY_SHARE;
-        final boolean whiteEaten = recorder != null
-                && (recorder.damageReceived >= TeamSoloIntentSkill.DETACH_DAMAGE_RECEIVED
-                || !recorder.survived);
-        final boolean noObjective = region == null
-                || !controlPointRegions.contains(String.valueOf(region));
-        if (moving && noObjective && whiteEaten) {
+        final boolean moving = stationaryRatio != null
+                && stationaryRatio < TeamSoloIntentSkill.MIN_STATIONARY_SHARE;
+        final boolean pulledAway = distanceGrowth != null
+                && distanceGrowth >= TeamSoloIntentSkill.DISTANCE_GROWTH_M;
+        final boolean whiteEaten = memberDeadIn(recorder, window)
+                || inWindowDamage >= TeamSoloIntentSkill.DETACH_DAMAGE_RECEIVED
+                || pressure >= 2;
+        if (moving && pulledAway && whiteEaten) {
             return "SOLO_DETACHED";
         }
         return null;
+    }
+
+    private static boolean memberDeadIn(final PlayerResult recorder, final AiEvidence window) {
+        if (recorder == null) {
+            return false;
+        }
+        final double deathSec = recorder.deathTimeMillis > 0
+                ? recorder.deathTimeMillis / 1000.0 : -1.0;
+        return !recorder.survived && deathSec >= 0
+                && deathSec >= window.startSec() && deathSec <= window.endSec();
     }
 
     private static String summary(final String intent, final AiEvidence window,
@@ -142,6 +163,7 @@ public final class SoloPlayIntentSkill {
                 }
             }
         }
+        // 阶段缺失时使用明确的 45s 安全回退（与 RouteSkill.OPENING_END_SEC 一致）
         return RouteSkill.OPENING_END_SEC;
     }
 
@@ -179,6 +201,80 @@ public final class SoloPlayIntentSkill {
         return count;
     }
 
+    private static float engagementDamage(final PlayerBattleFeatureSet features,
+                                          final float start, final float end) {
+        float damage = 0f;
+        for (final EngagementSummary engagement : features.engagements()) {
+            if (engagement.startTime() <= end && engagement.endTime() >= start) {
+                damage += engagement.damageReceived();
+            }
+        }
+        return damage;
+    }
+
+    /** 窗口内距离增长：由 checkpoints 的录像者-友军质心距离序列首尾差得出；不足 2 点返回 null。 */
+    private static Float distanceGrowthMeters(final EvidenceSkillContext ctx,
+                                              final float start, final float end) {
+        final ReplayReconstruction recon = ctx.recon();
+        final RecorderEntityMapping recorder = ctx.recorder();
+        if (recon == null || recon.checkpoints() == null || recon.checkpoints().isEmpty()
+                || recorder == null || recorder.entityId() == null
+                || recorder.team() == null || recon.battleStartRawClockSec() == null) {
+            return null;
+        }
+        final List<BattleStateCheckpoint> sorted = new ArrayList<>(recon.checkpoints());
+        sorted.sort(Comparator.comparingDouble(BattleStateCheckpoint::rawClockSec));
+        final float startRaw = recon.battleStartRawClockSec();
+        final List<Float> distances = new ArrayList<>();
+        for (final BattleStateCheckpoint checkpoint : sorted) {
+            final float rel = checkpoint.rawClockSec() - startRaw;
+            if (rel < start || rel > end) {
+                continue;
+            }
+            final VehicleState recorderVehicle = checkpoint.stateSnapshot()
+                    .vehicleByEntityId(recorder.entityId());
+            if (recorderVehicle == null || recorderVehicle.position() == null
+                    || recorderVehicle.observationState() != ObservationState.OBSERVED) {
+                continue;
+            }
+            final float[] centroid = friendlyCentroid(checkpoint, recorder.entityId(), recorder.team());
+            if (centroid == null) {
+                continue;
+            }
+            final float meters = MapRegionResolver.canonicalDistanceMeters(
+                    recorderVehicle.position().x(), recorderVehicle.position().z(),
+                    centroid[0], centroid[1], ctx.battle().mapName);
+            if (meters >= 0f) {
+                distances.add(meters);
+            }
+        }
+        if (distances.size() < 2) {
+            return null;
+        }
+        return distances.getLast() - distances.getFirst();
+    }
+
+    private static float[] friendlyCentroid(final BattleStateCheckpoint checkpoint,
+                                            final int recorderEntityId, final int recorderTeam) {
+        float sumX = 0;
+        float sumZ = 0;
+        int count = 0;
+        for (final VehicleState vehicle : checkpoint.stateSnapshot().vehiclesByEntityId().values()) {
+            if (vehicle.entityId() == recorderEntityId || vehicle.position() == null
+                    || vehicle.observationState() != ObservationState.OBSERVED) {
+                continue;
+            }
+            final Integer team = vehicle.team();
+            if (team == null || team != recorderTeam) {
+                continue;
+            }
+            sumX += vehicle.position().x();
+            sumZ += vehicle.position().z();
+            count++;
+        }
+        return count == 0 ? null : new float[]{sumX / count, sumZ / count};
+    }
+
     private static Integer recorderRegion(final PlayerBattleFeatureSet features,
                                           final float start, final float end,
                                           final String mapCode) {
@@ -194,5 +290,13 @@ public final class SoloPlayIntentSkill {
         final int region = MapRegionResolver.resolveRegionFromRaw(
                 last.rawEndPosition().x(), last.rawEndPosition().z(), mapCode);
         return region > 0 ? region : null;
+    }
+
+    /** 目标点关系三态：1=邻近 / 0=已知不在 / -1=未知（region 缺失或无语义，不等于远离）。 */
+    private static int objectiveProximity(final Integer region, final Set<String> controlPointRegions) {
+        if (region == null || controlPointRegions.isEmpty()) {
+            return -1;
+        }
+        return controlPointRegions.contains(String.valueOf(region)) ? 1 : 0;
     }
 }

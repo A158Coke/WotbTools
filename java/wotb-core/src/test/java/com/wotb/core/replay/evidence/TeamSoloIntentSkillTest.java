@@ -25,15 +25,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TeamSoloIntentSkillTest {
 
     @Test
     void openingSpreadLabelsMapControlNotDetach() {
-        final Battle battle = battle(1, new double[7]);
+        final Battle battle = battle(1, new double[7], new long[7]);
         final TeamBattleFeatureSet features = features(
-                List.of(member(0, 0, true, null, List.of(), List.of())),
+                List.of(member(0, 0, true, null, List.of(), List.of(), 1)),
                 phases(15, 45, 350, 400, 350, 400, 300, 250, 300, 250, "account:10001"),
                 new TeamAggregateResult(7, 4200, 600, 0, 0, 0, 7, 0, null, null, null, true),
                 BattlePhaseSummary.buildRelativePhases(60, 300));
@@ -46,13 +48,13 @@ class TeamSoloIntentSkillTest {
     }
 
     @Test
-    void stationaryHoldWithTeammateBenefitLabelsDelay() {
-        final Battle battle = battle(3, new double[7]);
-        final TeamMemberFeatureSet solo = member(0, 400, true, null,
+    void stationaryHoldWithTeammateRotationLabelsDelay() {
+        final Battle battle = battle(3, new double[7], new long[7]);
+        final TeamMemberFeatureSet solo = member(0, 200, true, null,
                 List.of(stationary(60, 240, 100, 150)),
-                List.of(engagement(120, 180, 10_001L, List.of(20_001L, 20_002L))));
+                List.of(engagement(120, 180, 10_001L, List.of(20_001L, 20_002L), 200)), 1);
         final TeamBattleFeatureSet features = features(
-                List.of(solo, member(1, 200, true, null, List.of(), List.of())),
+                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
                 phases(60, 240, 350, 400, 350, 400, 300, 250, 400, 250, "account:10001"),
                 new TeamAggregateResult(7, 5200, 1500, 0, 0, 1, 7, 0, null, null, null, true),
                 BattlePhaseSummary.buildRelativePhases(60, 300));
@@ -67,11 +69,11 @@ class TeamSoloIntentSkillTest {
 
     @Test
     void movingPushWithoutBenefitLabelsDetach() {
-        final Battle battle = battle(3, new double[]{0, 0, 90, 0, 0, 0, 0});
+        final Battle battle = battle(3, new double[]{0, 0, 90, 0, 0, 0, 0}, new long[7]);
         final TeamMemberFeatureSet solo = member(0, 1800, false, 90.0,
-                List.of(move(45, 90, 0, 0, -150, -100, 5f)), List.of());
+                List.of(move(45, 90, 0, 0, -150, -100, 5f)), List.of(), 1);
         final TeamBattleFeatureSet features = features(
-                List.of(solo, member(1, 300, true, null, List.of(), List.of())),
+                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
                 phases(60, 90, 150, 180, 100, 150, 300, 250, 300, 250, "account:10001"),
                 new TeamAggregateResult(7, 3200, 3200, 0, 0, 0, 6, 1, 90.0, 90.0, 90.0, false),
                 BattlePhaseSummary.buildRelativePhases(40, 300));
@@ -85,12 +87,12 @@ class TeamSoloIntentSkillTest {
 
     @Test
     void contradictorySignalsProduceNoCandidate() {
-        final Battle battle = battle(2, new double[7]);
+        final Battle battle = battle(2, new double[7], new long[7]);
         final TeamMemberFeatureSet solo = member(0, 400, true, null,
                 List.of(stationary(115, 260, 150, 100)),
-                List.of(engagement(130, 200, 10_001L, List.of(20_002L))));
+                List.of(engagement(130, 200, 10_001L, List.of(20_002L), 300)), 1);
         final TeamBattleFeatureSet features = features(
-                List.of(solo, member(1, 300, true, null, List.of(), List.of())),
+                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
                 phases(120, 135, 400, 350, 400, 350, 260, 260, 260, 260, "account:10001"),
                 new TeamAggregateResult(7, 3500, 2600, 0, 0, 0, 7, 0, null, null, null, false),
                 BattlePhaseSummary.buildRelativePhases(60, 300));
@@ -101,15 +103,177 @@ class TeamSoloIntentSkillTest {
         assertTrue(evidence.isEmpty(), "contradictory signals must not produce a hard candidate");
     }
 
+    @Test
+    void fiveTwoSplitMainClusterMembersProduceNoCandidate() {
+        // 5+2 分簇：主力 5 人（P0-P4）+ 独立 2 人（P5-P6）。主力成员 P0 静止+接火+主力转场：
+        // 旧实现会反向把 P0 判成单走拖延；新实现只输出 P6。
+        final Battle battle = battle(3, new double[7], new long[7]);
+        final List<TeamMemberFeatureSet> members = new ArrayList<>();
+        for (int index = 0; index < 7; index++) {
+            members.add(member(index, 0, true, null,
+                    List.of(stationary(60, 90, 0, 0)),
+                    index == 0 || index == 6
+                            ? List.of(engagement(60, 75, 10_001L + index,
+                            List.of(20_001L, 20_002L), 200))
+                            : List.of(),
+                    1));
+        }
+        final List<TeamFormationPhase> phases = List.of(
+                twoClusterPhase(60, 75, 250, 250, 400, 400, 0, 4, 5, 6),
+                twoClusterPhase(75, 90, 300, 250, 400, 400, 0, 4, 5, 6));
+        final TeamBattleFeatureSet features = features(
+                members, phases,
+                new TeamAggregateResult(7, 4000, 2000, 0, 0, 0, 7, 0, null, null, null, true),
+                BattlePhaseSummary.buildRelativePhases(60, 300));
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertEquals(1, evidence.size(), "only the off-main member must be a candidate");
+        assertEquals("SOLO_DELAY", evidence.getFirst().labels().get("intent"));
+        assertTrue(evidence.getFirst().summary().contains("P6"),
+                "candidate must belong to the small-cluster member");
+        assertFalse(evidence.getFirst().summary().contains("P0"),
+                "main-cluster member must never be flagged as solo");
+    }
+
+    @Test
+    void teamTwoPerspectiveIgnoresTeamOneCapturePoints() {
+        // Team 2 视角：Team 1 的整场占点分不是 Team 2 的队友获利证据。
+        final Battle battle = battle(3, new double[7], new long[]{0, 0, 0, 0, 0, 0, 999});
+        final TeamMemberFeatureSet solo = member(0, 200, true, null,
+                List.of(stationary(120, 135, 150, 100)),
+                List.of(engagement(120, 135, 10_001L, List.of(20_001L), 200)), 2);
+        final TeamBattleFeatureSet features = features(
+                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 2)),
+                phases(120, 135, 400, 350, 400, 350, 260, 260, 260, 260, "account:10001"),
+                new TeamAggregateResult(7, 1000, 500, 0, 0, 0, 7, 0, null, null, null, false),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                2);
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertTrue(evidence.isEmpty(),
+                "team 1 capture points must not count as team 2 teammate benefit");
+    }
+
+    @Test
+    void missingBattlePhasesDoesNotTreatWholeBattleAsOpening() {
+        final Battle battle = battle(1, new double[7], new long[7]);
+        final TeamBattleFeatureSet features = features(
+                List.of(member(0, 0, true, null, List.of(), List.of(), 1)),
+                phases(15, 45, 350, 400, 350, 400, 300, 250, 300, 250, "account:10001"),
+                new TeamAggregateResult(7, 4200, 600, 0, 0, 0, 7, 0, null, null, null, true),
+                List.of());
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertTrue(evidence.isEmpty(),
+                "without battle phases no OPENING_MAP_CONTROL may be emitted");
+    }
+
+    @Test
+    void noDistanceGrowthSuppressesDetach() {
+        final Battle battle = battle(3, new double[7], new long[7]);
+        final TeamMemberFeatureSet solo = member(0, 0, true, null,
+                List.of(move(60, 75, 0, 0, 50, 0, 2f)),
+                List.of(engagement(60, 75, 10_001L, List.of(20_001L, 20_002L, 20_003L), 1800)), 1);
+        final TeamBattleFeatureSet features = features(
+                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
+                phases(60, 75, 150, 180, 150, 180, 300, 250, 300, 250, "account:10001"),
+                new TeamAggregateResult(7, 3000, 3000, 0, 0, 0, 7, 0, null, null, null, false),
+                BattlePhaseSummary.buildRelativePhases(40, 300));
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertTrue(evidence.isEmpty(), "single-window span has no growth evidence -> no SOLO_DETACHED");
+    }
+
+    @Test
+    void lateDeathOutsideSpanDoesNotWhiteEaten() {
+        final Battle battle = battle(3, new double[]{0, 0, 0, 0, 0, 0, 200}, new long[7]);
+        final TeamMemberFeatureSet solo = member(0, 0, false, 200.0,
+                List.of(move(60, 90, 0, 0, -150, -100, 2f)),
+                List.of(), 1);
+        final TeamBattleFeatureSet features = features(
+                List.of(solo, member(1, 0, true, null, List.of(), List.of(), 1)),
+                phases(60, 90, 150, 180, 100, 150, 300, 250, 300, 250, "account:10001"),
+                new TeamAggregateResult(7, 3000, 1000, 0, 0, 0, 6, 1, 200.0, 200.0, 200.0, false),
+                BattlePhaseSummary.buildRelativePhases(40, 300));
+
+        final List<AiEvidence> evidence = TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
+
+        assertTrue(evidence.isEmpty(),
+                "death outside the span must not white-eat the window");
+    }
+
+    @Test
+    void mainClusterTieIsAmbiguousAndProducesNothing() {
+        final Battle battle = battle(1, new double[7], new long[7]);
+        final List<TeamMemberFeatureSet> members = new ArrayList<>();
+        for (int index = 0; index < 7; index++) {
+            members.add(member(index, 0, true, null, List.of(), List.of(), 1));
+        }
+        // 3+3+1：两个 3 人簇平票，无法确定主力 → 不硬判
+        final TeamFormationPhase phase = new TeamFormationPhase(
+                60, 75, new CanonicalMapPosition(250, 250), 80f, 7,
+                DecodeConfidence.EXACT, List.of(
+                        cluster(60, 75, 250, 250, List.of(key(0), key(1), key(2))),
+                        cluster(60, 75, 400, 400, List.of(key(3), key(4), key(5))),
+                        cluster(60, 75, 100, 100, List.of(key(6)))));
+        final TeamBattleFeatureSet features = features(
+                members, List.of(phase),
+                new TeamAggregateResult(7, 1000, 500, 0, 0, 0, 7, 0, null, null, null, true),
+                BattlePhaseSummary.buildRelativePhases(60, 300));
+
+        assertNull(TeamSoloIntentSkill.mainClusterOf(phase));
+        assertTrue(TeamSoloIntentSkill.detect(
+                features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN).isEmpty());
+    }
+
     // ===== helpers =====
+
+    private static TeamFormationPhase twoClusterPhase(
+            final float start, final float end,
+            final float mainX, final float mainZ,
+            final float smallX, final float smallZ,
+            final int mainFrom, final int mainTo,
+            final int smallFrom, final int smallTo) {
+        final List<String> main = new ArrayList<>();
+        for (int index = mainFrom; index <= mainTo; index++) {
+            main.add(key(index));
+        }
+        final List<String> small = new ArrayList<>();
+        for (int index = smallFrom; index <= smallTo; index++) {
+            small.add(key(index));
+        }
+        return new TeamFormationPhase(
+                start, end, new CanonicalMapPosition(mainX, mainZ), 80f, 7,
+                DecodeConfidence.EXACT, List.of(
+                        cluster(start, end, mainX, mainZ, main),
+                        cluster(start, end, smallX, smallZ, small)));
+    }
 
     private static TeamBattleFeatureSet features(
             final List<TeamMemberFeatureSet> members,
             final List<TeamFormationPhase> formationPhases,
             final TeamAggregateResult aggregate,
             final List<BattlePhaseSummary> battlePhases) {
+        return features(members, formationPhases, aggregate, battlePhases, 1);
+    }
+
+    private static TeamBattleFeatureSet features(
+            final List<TeamMemberFeatureSet> members,
+            final List<TeamFormationPhase> formationPhases,
+            final TeamAggregateResult aggregate,
+            final List<BattlePhaseSummary> battlePhases,
+            final int perspectiveTeam) {
         return new TeamBattleFeatureSet(
-                1, members, aggregate, TeamObservedAggregate.empty(),
+                perspectiveTeam, members, aggregate, TeamObservedAggregate.empty(),
                 formationPhases, List.of(), battlePhases, List.of(),
                 TeamFeatureCoverage.empty(), List.of(), true);
     }
@@ -117,10 +281,10 @@ class TeamSoloIntentSkillTest {
     private static TeamMemberFeatureSet member(
             final int index, final int damageReceived, final boolean survived,
             final Double deathSec, final List<MovementSegment> movements,
-            final List<EngagementSummary> engagements) {
+            final List<EngagementSummary> engagements, final int team) {
         final long accountId = 10_001L + index;
         return new TeamMemberFeatureSet(
-                List.of((int) accountId), accountId, "P" + index, 4481L, "Kranvagn", 1,
+                List.of((int) accountId), accountId, "P" + index, 4481L, "Kranvagn", team,
                 DecodeConfidence.EXACT, 900, damageReceived, 0, 0, 0,
                 survived, deathSec, null, movements, engagements, List.of(), List.of());
     }
@@ -137,8 +301,8 @@ class TeamSoloIntentSkillTest {
                 "account:10002", "account:10003", "account:10004",
                 "account:10005", "account:10006", "account:10007");
         float t = start;
-        int step = 0;
-        while (t < end) {
+        int guard = 0;
+        while (t < end && guard < 100) {
             final float windowEnd = Math.min(t + 15f, end);
             final float progress = (windowEnd - start) / Math.max(1f, end - start);
             final float soloX = lerp(soloX1, soloX2, progress);
@@ -151,10 +315,7 @@ class TeamSoloIntentSkillTest {
                             cluster(t, windowEnd, soloX, soloZ, List.of(soloIdentity)),
                             cluster(t, windowEnd, mainX, mainZ, mainIdentities))));
             t = windowEnd;
-            step++;
-            if (step > 100) {
-                break;
-            }
+            guard++;
         }
         return phases;
     }
@@ -165,6 +326,10 @@ class TeamSoloIntentSkillTest {
         final CanonicalMapPosition centroid = new CanonicalMapPosition(x, z);
         return new TeamFormationCluster(start, end, centroid, MapCoordinateResolution.Status.VALID,
                 centroid.region(), 0, identities, DecodeConfidence.EXACT);
+    }
+
+    private static String key(final int index) {
+        return "account:" + (10_001L + index);
     }
 
     private static float lerp(final float from, final float to, final float progress) {
@@ -187,13 +352,15 @@ class TeamSoloIntentSkillTest {
     }
 
     private static EngagementSummary engagement(final float start, final float end,
-                                                final long ally, final List<Long> enemies) {
+                                                final long ally, final List<Long> enemies,
+                                                final int damageReceived) {
         return new EngagementSummary(start, end, List.of(ally), enemies,
-                300, 200, new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
+                300, damageReceived, new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 0f),
                 EngagementOutcome.UNFAVORABLE, DecodeConfidence.PARTIAL);
     }
 
-    private static Battle battle(final int arenaBonusType, final double[] deathSecs) {
+    private static Battle battle(final int arenaBonusType, final double[] deathSecs,
+                                 final long[] earned) {
         final Battle battle = new Battle();
         battle.arenaId = "eval-arena";
         battle.mapName = "team_map";
@@ -206,11 +373,12 @@ class TeamSoloIntentSkillTest {
             final PlayerResult player = new PlayerResult();
             player.accountId = 10_001L + index;
             player.nickname = "P" + index;
-            player.team = 1;
+            player.team = index < 4 ? 1 : 2;
             player.tankId = 4481L;
             player.survived = deathSecs[index] <= 0;
             player.deathTimeMillis = deathSecs[index] > 0
                     ? (long) (deathSecs[index] * 1000) : 0L;
+            player.victoryPointsEarned = (int) earned[index];
             battle.players.add(player);
         }
         return battle;

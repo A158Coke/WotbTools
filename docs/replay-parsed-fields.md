@@ -33,24 +33,29 @@
 | `potentialDamage` 系 | int/List | 战绩 | 潜在伤害 | 逐击杀明细解析完成前 = 实际伤害 |
 | `tankName` / `tankTier` / `tankType` / `tankNation` / `alphaDamage` | String | tankopedia 映射 | 展示派生字段 | 非回放原始值 |
 
-## 2. 战斗层（`meta.json` → `Battle`）
+## 2. 战斗层（`Battle`，来源按字段区分）
 
 | 字段 | 类型 | 含义 |
 |---|---|---|
-| `arenaId` | String | 地图/竞技场 ID |
-| `mapName` | String | 内部地图 code（如 `desert_train`） |
-| `arenaBonusType` | Integer | 模式：1=随机战斗、2=训练房、3..10=联赛/锦标赛；null=未知 |
-| `winnerTeam` | Integer | 获胜队伍原始编号；null=平局/未知 |
-| `durationS` | Double | 战斗时长（秒） |
-| `startTime` | Long | 战斗开始时间戳 |
-| `version` / `clientVersion` | String | 游戏/客户端版本 |
-| `recorder` | String | 录像者昵称（meta 无 accountId，靠昵称匹配名册） |
-| `recorderVehicle` | String | 录像者坦克 |
-| `players` | List\<PlayerResult\> | 全部玩家战绩 |
+| `arenaId` | String | 地图/竞技场 ID（来源：`battle_results.dat`） |
+| `winnerTeam` | Integer | 获胜队伍原始编号；null=平局/未知（来源：`battle_results.dat`） |
+| `players` | List\<PlayerResult\> | 全部玩家战绩（来源：`battle_results.dat`） |
+| `version` | String | 游戏版本（来源：`meta.json`） |
+| `mapName` | String | 内部地图 code（如 `desert_train`；来源：`meta.json`） |
+| `durationS` | Double | 战斗时长（秒，来源：`meta.json#battleDuration`，上限 420） |
+| `startTime` | Long | 战斗开始时间戳（来源：`meta.json`） |
+| `recorder` | String | 录像者昵称（meta 无 accountId，靠昵称匹配名册；来源：`meta.json#playerName`） |
+| `recorderVehicle` | String | 录像者坦克（来源：`meta.json#playerVehicleName`） |
+| `arenaBonusType` | Integer | 模式：1=随机战斗、2=训练房、3..10=联赛/锦标赛；null=未知（来源：`meta.json`） |
+| `clientVersion` | String | 客户端版本（来源：`data.wotreplay` 事件流头部） |
 
 ## 3. 事件流层（`data.wotreplay` → `ReplayEvent` 子类）
 
-所有事件共用：`sequence`（包序号）、`timestamp`（raw 时钟 → battle-relative）、`packetType`、`DecodeConfidence`。
+所有事件共用：`sequence`（包序号）、`timestamp`、`packetType`、`DecodeConfidence`。
+`ReplayTimestamp` 同时保存 `rawClockSec`（原始回放时钟，底层事实）与可空的 `battleClockSec`
+（battle-relative，`rawClockSec - battleStartRawClockSec`；战斗开始事件无法可靠识别时为 null）。
+派生证据优先使用可靠的 `battleClockSec`；原始 ReplayEvent 并不天然只有 battle-relative 时间，
+统一经 `tryRelative()` 在无法识别战斗开始时回退 raw 时钟并标注。
 
 `DecodeConfidence` 四级：`EXACT`（所有已知字段精确解析）/ `INFERRED`（部分字段上下文推断）/ `PARTIAL`（仅部分成功）/ `UNKNOWN`（未解码）。
 
@@ -84,8 +89,8 @@
 ## 5. 口径约定（易错点）
 
 - **死亡时刻**：`deathTimeMillis=0`（存活/未知）→ 回退事件流估算；prompt 用 `DEATH_SOURCE=权威结算/事件流估算/未知` 标注，禁止把估算当权威。
-- **坐标**：raw ±250m 线性映射到 500×500 canonical；三态 `VALID/CLAMPED/INVALID`；九宫格 region 只描述方位，禁止用 region 差推断距离。
-- **时间**：一律 battle-relative（`tryRelative` 转换）；准备阶段事件排除。
+- **坐标**：优先使用每张地图 `map-semantics/*.semantic.json` 的 `playableBoundsMeters` 推导 `centerX/centerZ/halfExtent`，再映射到 500×500 canonical；只有语义缺失或边界无效时才回退中心原点、`halfExtent=250`。三态 `VALID/CLAMPED/INVALID`；九宫格 region 只描述方位，禁止用 region 差推断距离。
+- **时间**：派生证据优先使用可靠的 battle-relative 时间（`battleClockSec`）；无法识别战斗开始时回退 raw 时钟并标注；准备阶段事件排除。
 - **权威 vs 观测**：`battle_results` 是唯一可信口径；事件流数字只是观测子集。
 - **录像者**：只用于确定视角（PLAYER_FOCUSED 的个人复盘 / TEAM_PERSPECTIVE 的视角队伍），不参与团队结论权重。
 
