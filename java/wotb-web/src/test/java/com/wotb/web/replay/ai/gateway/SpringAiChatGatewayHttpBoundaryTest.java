@@ -71,7 +71,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
     void sendsDeepSeekCompatibleRequestAndParsesCompletion() throws Exception {
         final SpringAiChatGateway gateway = gateway();
         final AiChatResponse result = gateway.chat(new AiChatRequest(
-                "system-instructions", "player-evidence", "DeepSeek-V4-Pro-0813",
+                "system-instructions", "player-evidence", "deepseek-v4-pro",
                 null, 4096, true, "max", "corr-boundary", "SINGLE_PLAYER_BATTLE"));
 
         assertEquals(1, requests.size(), "exactly one upstream request expected");
@@ -86,7 +86,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
                 "Authorization must carry a non-empty token");
 
         final JsonNode body = new ObjectMapper().readTree(captured.body());
-        assertEquals("DeepSeek-V4-Pro-0813", body.get("model").asText());
+        assertEquals("deepseek-v4-pro", body.get("model").asText());
         assertEquals(4096, body.get("max_tokens").asInt());
         assertEquals("system", body.get("messages").get(0).get("role").asText());
         assertEquals("system-instructions", body.get("messages").get(0).get("content").asText());
@@ -97,7 +97,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
 
         assertEquals("tactical review", result.completionText());
         assertEquals("DeepSeek", result.provider());
-        assertEquals("DeepSeek-V4-Pro-0813", result.model());
+        assertEquals("deepseek-v4-pro", result.model());
         assertEquals(11, result.inputTokens());
         assertEquals(22, result.outputTokens());
         assertEquals(33, result.totalTokens());
@@ -111,7 +111,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
     void thinkingDisabledOmitsReasoningEffortFromRequestBody() throws Exception {
         final SpringAiChatGateway gateway = gateway();
         gateway.chat(new AiChatRequest(
-                "system-instructions", "player-evidence", "DeepSeek-V4-Pro-0813",
+                "system-instructions", "player-evidence", "deepseek-v4-pro",
                 null, 2048, false, "max", "corr-boundary-2", "SINGLE_PLAYER_BATTLE"));
 
         final CapturedRequest captured = requests.getFirst();
@@ -162,11 +162,11 @@ class SpringAiChatGatewayHttpBoundaryTest {
             // The model's SDK read timeout is 60s and the gateway total budget is
             // 5s: only the total-deadline watchdog can stop the slow body read.
             final AiModelProperties modelProperties = new AiModelProperties(
-                    FAKE_API_KEY, baseUrl, "DeepSeek-V4-Pro-0813",
+                    FAKE_API_KEY, baseUrl, "deepseek-v4-pro",
                     1, 60, 61, 1, 0, 0, 2.0,
                 1_000_000, 940_000, 32_768, 16_384, true, "max", false);
             final SpringAiChatGateway gateway = new SpringAiChatGateway(
-                    null, "DeepSeek-V4-Pro-0813", new SimpleMeterRegistry(),
+                    null, "deepseek-v4-pro", new SimpleMeterRegistry(),
                     new AiRetryPolicy(1, 0, 0, 2.0),
                     5_000_000_000L, System::nanoTime, Thread::sleep);
             gateway.chatModel = SpringAiChatGateway.buildModel(modelProperties, gateway);
@@ -205,7 +205,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
         try {
             final String baseUrl = "http://127.0.0.1:" + countingServer.getAddress().getPort();
             final SpringAiChatGateway gateway = SpringAiChatGateway.fromProperties(
-                    new AiModelProperties(FAKE_API_KEY, baseUrl, "DeepSeek-V4-Pro-0813",
+                    new AiModelProperties(FAKE_API_KEY, baseUrl, "deepseek-v4-pro",
                             1, 2, 3, 1, 0, 0, 2.0,
                 1_000_000, 940_000, 32_768, 16_384, true, "max", false),
                     new SimpleMeterRegistry());
@@ -227,14 +227,14 @@ class SpringAiChatGatewayHttpBoundaryTest {
     private SpringAiChatGateway gateway() {
         final String baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
         return SpringAiChatGateway.fromProperties(new AiModelProperties(
-                FAKE_API_KEY, baseUrl, "DeepSeek-V4-Pro-0813",
+                FAKE_API_KEY, baseUrl, "deepseek-v4-pro",
                 10, 300, 315, 3, 0, 0, 2.0,
                 1_000_000, 940_000, 32_768, 16_384, true, "max", false), null);
     }
 
     private static AiChatRequest request() {
         return new AiChatRequest("system-instructions", "player-evidence",
-                "DeepSeek-V4-Pro-0813", null, 4096, true, "max",
+                "deepseek-v4-pro", null, 4096, true, "max",
                 "corr-boundary", "SINGLE_PLAYER_BATTLE");
     }
 
@@ -244,7 +244,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
                   "id": "chatcmpl-boundary-test",
                   "object": "chat.completion",
                   "created": 1,
-                  "model": "DeepSeek-V4-Pro-0813",
+                  "model": "deepseek-v4-pro",
                   "choices": [
                     {
                       "index": 0,

@@ -267,7 +267,7 @@ jobs:
           BOOST_AUTO_CONFIRM_HOURS: ${{ vars.BOOST_AUTO_CONFIRM_HOURS || '72' }}
           BOOST_AUTO_CONFIRM_SCAN_MS: ${{ vars.BOOST_AUTO_CONFIRM_SCAN_MS || '300000' }}
           AI_BASE_URL: ${{ vars.AI_BASE_URL || 'https://api.deepseek.com' }}
-          AI_MODEL: ${{ vars.AI_MODEL || 'DeepSeek-V4-Pro-0813' }}
+          AI_MODEL: ${{ vars.AI_MODEL || 'deepseek-v4-pro' }}
           AI_CONNECT_TIMEOUT_SEC: ${{ vars.AI_CONNECT_TIMEOUT_SEC || '10' }}
           AI_TIMEOUT_SEC: ${{ vars.AI_TIMEOUT_SEC || '300' }}
           AI_CALL_TIMEOUT_SEC: ${{ vars.AI_CALL_TIMEOUT_SEC || '315' }}
