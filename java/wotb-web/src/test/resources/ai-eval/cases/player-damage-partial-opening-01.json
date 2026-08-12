@@ -1,0 +1,14 @@
+{
+  "id": "player-damage-partial-opening-01",
+  "mode": "PLAYER_FOCUSED",
+  "arenaBonusType": 1,
+  "fixtureKey": "player-damage-partial-opening-01",
+  "lessonRef": "docs/ai-lessons/player-damage-partial-opening-01.md",
+  "expectedJudgment": "无候选（伤害观测覆盖不完整时不得用“未观察到交火”判开局图控）",
+  "checks": [
+    { "kind": "prompt_omits", "text": "开局图控" },
+    { "kind": "prompt_omits", "text": "单走脱节" },
+    { "kind": "prompt_omits", "text": "单走拖延" }
+  ],
+  "note": "OBSERVED_DAMAGE_IS_PARTIAL：开局窗口未观察到交火不等于确定未接火，不生成 OPENING_MAP_CONTROL。"
+}

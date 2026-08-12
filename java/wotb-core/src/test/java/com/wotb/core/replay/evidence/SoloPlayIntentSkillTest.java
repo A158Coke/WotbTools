@@ -271,6 +271,23 @@ class SoloPlayIntentSkillTest {
                 "partial-overlap engagement + in-window death must not bypass UNKNOWN to emit SOLO_DETACHED");
     }
 
+    @Test
+    void observedDamagePartialSuppressesOpening() {
+        // 生产契约：OBSERVED_DAMAGE_IS_PARTIAL + 开局未观察到交火 → 不得用“没有观察到”证明未接火
+        final EvidenceSkillContext ctx = context(0, true, 0,
+                List.of(move(5, 40, 200, 200, 200, 200, 1f)),
+                List.of(),
+                BattlePhaseSummary.buildRelativePhases(60, 300),
+                new float[]{1015f, 1030f, 1045f},
+                new float[]{200f, 200f, 200f}, new float[]{200f, 200f, 200f},
+                List.of(TeamSoloIntentSkill.OBSERVED_DAMAGE_IS_PARTIAL));
+
+        final List<AiEvidence> evidence = SoloPlayIntentSkill.detect(ctx);
+
+        assertTrue(evidence.isEmpty(),
+                "partial damage coverage must not support the negative 'no contact' opening judgment");
+    }
+
     // ===== helpers =====
 
     private static EvidenceSkillContext context(
@@ -283,6 +300,22 @@ class SoloPlayIntentSkillTest {
             final float[] rawClocks,
             final float[] recorderXs,
             final float[] recorderZs
+    ) {
+        return context(recorderDamageReceived, recorderSurvived, recorderDeathSec,
+                movements, engagements, phases, rawClocks, recorderXs, recorderZs, List.of());
+    }
+
+    private static EvidenceSkillContext context(
+            final int recorderDamageReceived,
+            final boolean recorderSurvived,
+            final double recorderDeathSec,
+            final List<MovementSegment> movements,
+            final List<EngagementSummary> engagements,
+            final List<BattlePhaseSummary> phases,
+            final float[] rawClocks,
+            final float[] recorderXs,
+            final float[] recorderZs,
+            final List<String> limitations
     ) {
         final Battle battle = new Battle();
         battle.arenaId = "eval-arena";
@@ -321,7 +354,7 @@ class SoloPlayIntentSkillTest {
         final RecorderEntityMapping recorder = new RecorderEntityMapping(
                 1001L, 1, 1, "rec1", 1, 4481, DecodeConfidence.EXACT);
         final PlayerBattleFeatureSet features = new PlayerBattleFeatureSet(
-                movements, engagements, phases, List.of(), List.of(), true);
+                movements, engagements, phases, List.of(), limitations, true);
         return new EvidenceSkillContext(battle, recon, features, recorder);
     }
 

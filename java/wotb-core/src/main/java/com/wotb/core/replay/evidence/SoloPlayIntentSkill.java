@@ -66,7 +66,8 @@ public final class SoloPlayIntentSkill {
                     features, window.startSec(), window.endSec(), ctx.battle().mapName);
             final String intent = classify(window, stationaryRatio, inWindowDamage,
                     inWindowDealt, distanceGrowth, openingEnd, recorder,
-                    hasPartialOverlapEngagement(features, window.startSec(), window.endSec()));
+                    hasPartialOverlapEngagement(features, window.startSec(), window.endSec()),
+                    observedDamageIsPartial(features));
             if (intent == null) {
                 continue;
             }
@@ -108,13 +109,14 @@ public final class SoloPlayIntentSkill {
             final Float distanceGrowth,
             final float openingEnd,
             final PlayerResult recorder,
-            final boolean partialOverlap
+            final boolean partialOverlap,
+            final boolean damageCoveragePartial
     ) {
         final boolean opening = window.startSec() >= 0f && window.endSec() <= openingEnd;
         final boolean contactObserved = inWindowDealt > 0f || inWindowDamage > 0f;
         final boolean underPressure = inWindowDamage > 0f;
         final boolean untouchedInWindow = !contactObserved && !memberDeadIn(recorder, window);
-        if (opening && untouchedInWindow && !partialOverlap) {
+        if (opening && untouchedInWindow && !partialOverlap && !damageCoveragePartial) {
             return "OPENING_MAP_CONTROL";
         }
         if (window.startSec() < openingEnd) {
@@ -243,6 +245,12 @@ public final class SoloPlayIntentSkill {
                                           final float start, final float end) {
         return engagement.startTime() >= start - 0.01f
                 && engagement.endTime() <= end + 0.01f;
+    }
+
+    /** 事件流观测伤害覆盖不完整时，否定判断（“窗口内未接火”）不可靠。 */
+    private static boolean observedDamageIsPartial(final PlayerBattleFeatureSet features) {
+        return features.limitations() != null
+                && features.limitations().contains(TeamSoloIntentSkill.OBSERVED_DAMAGE_IS_PARTIAL);
     }
 
     /** 窗口内距离增长：由 checkpoints 的录像者-友军质心距离序列首尾差得出；不足 2 点返回 null。 */
