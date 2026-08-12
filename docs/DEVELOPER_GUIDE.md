@@ -417,9 +417,12 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
   `playableBoundsMeters` / `analysisGrid.cells`(6x6) / `sceneEvidence.battlePoints`（出生点）；
   `MapOverviewBuilder`（web）从 `Battle`（权威名册/阵亡时刻/地图名）+ `ReplayReconstruction`
   （type-10 位置流 / 伤害事件 / 实体→账号映射，经 `TeamEntityMapper`）聚合。
-- **坐标约定**：所有坐标与 `playableBounds` 同系——`x` = 地图横向 = 回放 x，`y` = 地图纵向 =
-  回放 z（同一原点同一米制）。前端把图片拉伸铺满 `playableBounds` 后直接映射像素
-  （`px = (x - xMin)/(xMax - xMin)`，`py = (yMax - y)/(yMax - yMin)`）。
+- **坐标约定**：分析坐标与 `playableBounds` 同系——`x` = 地图横向 = 回放 x，`y` = 地图纵向 =
+  回放 z（同一原点同一米制）；`playableBounds` 用于 6×6 分析网格、热力分桶与可玩区域判断。
+  图片渲染边界独立为 `coordinateBounds`（地图图片对应的世界坐标范围，见「图片素材与对齐约定」）：
+  `px = (x - coordinateBounds.xMin)/(coordinateBounds.xMax - coordinateBounds.xMin) × W`、
+  `py = (coordinateBounds.yMax - y)/(coordinateBounds.yMax - coordinateBounds.yMin) × H`。
+  分析网格坐标仍来自 `playableBounds`，绘制时经同一变换换算，因此只覆盖可玩区、不铺满整图。
 - **标题三语**：`MapOverview` 携带 `displayNames{zh,en,ru}`（来自 `common/map_names.json`，
   未收录时三语同 code）；前端按 vue-i18n 当前 locale 取标题，缺失回退 `displayName`（en）。
 - **模式与录像者**：`MapOverview` 携带 `arenaBonusType`（meta.json 原值；1=随机战斗，其他=训练/联赛等，
@@ -449,8 +452,11 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
   `normandy.png`）+ `mapImages.js` 加一行（key 用内部 code，如 `neptune`）+ 更新
   `docs/map-catalog.md` 主表。完整映射（内部 code ↔ 展示名 ↔ 语义 mapId ↔ 素材）见
   `docs/map-catalog.md`。
-- **对齐假设**：图片可视区 = `playableBounds`，前端拉伸铺满；desert-sands 765x772 vs
-  bounds 约 516x505m（aspect 偏差约 3%，可接受）。若实测错位再补每图校准常量。
+- **对齐依据**：每张图片在 `frontend/src/data/mapImages.js` 配置 `coordinateBounds`——来源为对应
+  `map-semantics/*.semantic.json` 的 `coordinateSystem.worldBounds`（当前 28 张已登记图均为
+  -300..300，即完整世界坐标截图；新图以各自语义 JSON 为准，逐图校准）。渲染统一用
+  `coordinateBounds`，不得用 `playableBounds` 铺满图片（会越靠近边缘偏移越大）。无
+  `coordinateBounds` 的旧配置按兼容策略回退 `playableBounds`。
 
 ---
 
