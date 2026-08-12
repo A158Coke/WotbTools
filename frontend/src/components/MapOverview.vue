@@ -44,8 +44,6 @@ const H = computed(() => image.value ? image.value.height : 800)
 // playableBounds 仍承担分析职责：gridCells/热力/区域判断都用它，绘制时经 renderBounds 统一换算。
 const renderBounds = computed(() =>
   image.value?.coordinateBounds ?? props.overview.playableBounds)
-// 鸟瞰 SVG 宽度：用户确认「等比例小三分之一」→ 容器宽度 66.7%（viewBox 不变，等比缩放不裁切）。
-const MAP_SVG_WIDTH = '66.7%'
 // 标题：按当前 locale 取 displayNames（zh/en/ru），缺失回退 displayName
 const title = computed(() => {
   const names = props.overview.displayNames
@@ -258,7 +256,6 @@ const gridRegions = computed(() => {
 
     <svg
       class="map-svg"
-      :style="{ width: MAP_SVG_WIDTH }"
       :viewBox="`0 0 ${W} ${H}`"
       role="img"
       :aria-label="`${overview.displayName} ${$t('recon.map.aria')}`"
@@ -412,9 +409,13 @@ const gridRegions = computed(() => {
 .map-svg {
   display: block;
   margin: 0 auto;
+  width: 66.7%;
   height: auto;
   border-radius: 4px;
   background: #111;
+}
+@media (max-width: 768px) {
+  .map-svg { width: 100%; }
 }
 .grid-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.16)); stroke-width: .5; }
 .region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.55)); stroke-width: 1.4; }
