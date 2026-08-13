@@ -87,7 +87,7 @@ description: >
 
 1. **Flyway**：改表结构必须新增下一序号 Flyway 迁移（当前最高 V14，命名 `V<N>__xxx.sql`），不改已应用版本。
 2. **列对齐**：JPA Entity、DTO、Repository 列与迁移逐列对齐，否则 `ddl-auto: validate` 启动失败。
-3. **分层**：Controller → Service → Repository；新端点/查询走 `LeaderboardController` + `LeaderboardService` + `LeaderboardRepository`（Service 只调自己域的 Repository）。
+3. **分层**（真实调用链）：查询端点 `LeaderboardController` → `LeaderboardService` → `LeaderboardRecordRepository`；上传端点 `LeaderboardController` → `LeaderboardUploadService` → `LeaderboardService` → `LeaderboardRecordRepository`（Service 只调自己域的 Repository）。
 4. **API 纯英文稳定 key**（snake_case）；前端三语 label 在 `locales/*.json` 的 `leaderboard` 块。
 5. **前端上传/调用**：`api.leaderboardUpload(file)` → `POST /api/leaderboard/upload`；新增端点同步前端 API 调用函数。
 6. **测试 + 文档**：Java `mvn test`（WebApiTest）+ 前端 `npm test`，并更新文档。
