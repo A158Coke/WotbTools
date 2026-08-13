@@ -75,6 +75,7 @@ public final class AiEvalFixtures {
             case "cw-cap-defense-01" -> capDefenseComeback();
             case "cw-cap-points-decided-01" -> capPointsDecided();
             case "cw-annihilation-win-01" -> annihilationWin();
+            case "cw-annihilation-loss-01" -> annihilationLoss();
             case "cw-main-cluster-no-solo-01" -> mainClusterNoSolo();
             case "cw-partial-observation-01" -> partialObservation();
             case "cw-gap-no-merge-01" -> gapNoMerge();
@@ -614,6 +615,26 @@ public final class AiEvalFixtures {
                 List.of(keyEvent(60, "TEAM_FIRST_CONTACT", "damage=120")), List.of(),
                 new double[]{60, 105, 150, 195, 240, 270, 285},
                 earned(10002, 120), earned(10003, 120));
+    }
+
+    // ===== 场景十二C：被敌方全歼落败（本方 7 台全部阵亡、双方点数均 <1000；battle result 权威） =====
+
+    private static SingleTeamBattleAnalysisContext annihilationLoss() {
+        final List<TeamMemberFeatureSet> members = new ArrayList<>();
+        for (int index = 0; index < 7; index++) {
+            members.add(member(index, 700, false, 90.0 + index * 30, null,
+                    List.of(stationary(60, 260, 0, 0)), List.of(), List.of()));
+        }
+        final List<TeamFormationPhase> phases = List.of(
+                phase(200, 215, 250, 250, 80, 7, List.of(
+                        cluster(200, 215, 250, 250, mainKeys()))));
+        final TeamAggregateResult aggregate = new TeamAggregateResult(
+                7, 5000, 9000, 0, 0, 2, 0, 7, 180.0, 90.0, 270.0, null);
+        return context("cw-annihilation-loss-01", 3, 2,
+                new double[]{90, 120, 150, 180, 210, 240, 270},
+                members, aggregate, phases, BattlePhaseSummary.buildRelativePhases(60, 300),
+                List.of(keyEvent(60, "TEAM_FIRST_CONTACT", "damage=120")), List.of(),
+                earned(10002, 100));
     }
 
     // ===== 场景十三：5+2 分簇 false-positive（主力簇成员不得判单走） =====
