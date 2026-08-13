@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### Fixed
+- **战局回放 review 修复（4 项）**：① 炮塔方向证据文档 source-of-truth 统一为受控旋转实验定案
+  PROVEN（历史 NOT_PROVEN 标 SUPERSEDED）；② `directionSamples` 只接受落在该车同一可信
+  position-interval 内的 prop2 样本、hull yaw 仅从同区间位置配对（跨 gap 不取对侧、段末样本恒保留
+  保证冻结）；③ playback 时长三优先级（`battle.durationS` → `BattleEndedEvent` → 位置流最后时刻）
+  并对全部 event/interval/direction/deathSec 施加 `[0,durationSec]` 契约；④ 前端同一 AI 时间戳重复
+  点击可再次 seek、单点 last-known 时间保持真实采样时间。
+
 ### Added
 - **战局回放炮塔方向契约与双层坦克标记（门禁 B 破解）**：type-7 propId=2 定案为
   炮塔相对车体偏航（u16 LE：`raw*360/65536-180` 度，完整 360° 且 ±180 回绕）——车体静止
