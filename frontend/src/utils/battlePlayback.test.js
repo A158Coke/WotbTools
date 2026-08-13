@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   aggregateEventsBySecond,
   formatClock,
+  lastKnownPosition,
   observedAt,
   parseAiTime,
   positionAt,
-  recorderRelated
+  recorderRelated,
+  routePrefix
 } from './battlePlayback'
 
 describe('positionAt', () => {
@@ -74,7 +76,84 @@ describe('parseAiTime', () => {
   })
 })
 
-describe('aggregateEventsBySecond / formatClock / recorderRelated', () => {
+describe('formatClock', () => {
+  it('rounds the total first and never shows 00:60', () => {
+    expect(formatClock(59.6)).toBe('01:00')
+    expect(formatClock(59.4)).toBe('00:59')
+    expect(formatClock(119.5)).toBe('02:00')
+    expect(formatClock(359.99)).toBe('06:00')
+  })
+})
+
+describe('lastKnownPosition', () => {
+  const points = [
+    { x: 0, y: 0, timeSec: 10 },
+    { x: 100, y: 50, timeSec: 15 },
+    { x: 300, y: 50, timeSec: 40 }
+  ]
+  it('returns the latest trusted point <= t', () => {
+    expect(lastKnownPosition(points, 20)).toEqual({ x: 100, y: 50, timeSec: 15 })
+    expect(lastKnownPosition(points, 60)).toEqual({ x: 300, y: 50, timeSec: 40 })
+  })
+  it('returns null before the first point (never observed)', () => {
+    expect(lastKnownPosition(points, 5)).toBeNull()
+    expect(lastKnownPosition(null, 15)).toBeNull()
+    expect(lastKnownPosition([], 15)).toBeNull()
+  })
+  it('skips non-finite coordinates', () => {
+    const mixed = [
+      { x: 0, y: 0, timeSec: 10 },
+      { x: Number.NaN, y: 10, timeSec: 12 },
+      { x: 5, y: 5, timeSec: 14 }
+    ]
+    expect(lastKnownPosition(mixed, 13)).toEqual({ x: 0, y: 0, timeSec: 10 })
+  })
+})
+
+describe('routePrefix', () => {
+  const points = [
+    { x: 0, y: 0, timeSec: 10 },
+    { x: 10, y: 0, timeSec: 14 },
+    { x: 20, y: 0, timeSec: 40 },
+    { x: 30, y: 0, timeSec: 44 }
+  ]
+  it('only returns points up to t (future hidden)', () => {
+    const segs = routePrefix(points, 14)
+    expect(segs).toHaveLength(1)
+    const flat = segs.flat().map(p => p.timeSec)
+    expect(Math.max(...flat)).toBeLessThanOrEqual(14.001)
+    expect(flat).not.toContain(40)
+  })
+  it('breaks segments across a gap > 5s', () => {
+    const segs = routePrefix(points, 44)
+    expect(segs).toHaveLength(2)
+    expect(segs[0].map(p => p.timeSec)).toEqual([10, 14])
+    expect(segs[1].map(p => p.timeSec)).toEqual([40, 44])
+  })
+  it('appends the interpolated live position when inside a trusted segment', () => {
+    const segs = routePrefix(points, 12)
+    const last = segs[0][segs[0].length - 1]
+    expect(last.timeSec).toBe(12)
+    expect(last.x).toBeCloseTo(5)
+  })
+  it('does not append a live point inside a gap', () => {
+    const segs = routePrefix(points, 20)
+    expect(segs).toHaveLength(1)
+    expect(segs[0].map(p => p.timeSec)).toEqual([10, 14])
+  })
+  it('skips invalid coordinates and never through-lines them', () => {
+    const bad = [
+      { x: 0, y: 0, timeSec: 10 },
+      { x: Number.NaN, y: 0, timeSec: 12 },
+      { x: 20, y: 0, timeSec: 15 }
+    ]
+    const segs = routePrefix(bad, 15)
+    expect(segs).toHaveLength(1)
+    expect(segs[0].map(p => p.timeSec)).toEqual([10, 15])
+  })
+})
+
+describe('aggregateEventsBySecond / recorderRelated', () => {
   it('aggregates events by rounded second', () => {
     const events = [
       { type: 'DAMAGE', timeSec: 10.1 },

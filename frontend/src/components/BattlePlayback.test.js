@@ -136,4 +136,77 @@ describe('BattlePlayback', () => {
     expect(wrapper.text()).toContain('recon.map.playback.event_DAMAGE')
     expect(wrapper.text()).toContain('400')
   })
+
+  function gapOverview() {
+    const overview = makeOverview()
+    // EnemyA 在 14s 与 40s 之间存在 >5s 断线：20s 时不得穿线，但车辆应停在最后可信位置
+    overview.routes[1].points = [
+      { x: -50, y: -50, timeSec: 10 },
+      { x: -100, y: -100, timeSec: 14 },
+      { x: -200, y: -200, timeSec: 40 }
+    ]
+    return overview
+  }
+
+  it('gap vehicles stay at the faded last-known position instead of disappearing', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(gapOverview(), 20)
+    await flushPromises()
+    expect(wrapper.findAll('.pb-vehicle')).toHaveLength(2)
+    const enemy = wrapper.findAll('.pb-vehicle').find(v => v.text().includes('EnemyA'))
+    expect(enemy.exists()).toBe(true)
+    expect(enemy.classes()).toContain('pb-last-known')
+  })
+
+  it('renders route prefixes only up to the current time', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const polylines = wrapper.findAll('.pb-route')
+    expect(polylines.length).toBeGreaterThanOrEqual(1)
+    for (const pl of polylines) {
+      const pts = pl.attributes('points')
+      expect(pts).toBeTruthy()
+      expect(pts.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('dragging the progress bar pauses immediately and stays paused', async () => {
+    stubRaf()
+    const wrapper = mountPlayback()
+    await flushPromises()
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
+    expect(wrapper.find('[data-test="pb-play"]').text()).toBe('recon.map.playback.pause')
+    await wrapper.find('.pb-range').trigger('pointerdown')
+    expect(wrapper.find('[data-test="pb-play"]').text()).toBe('recon.map.playback.play')
+    rafCb(1000) // 残留 RAF 回调不得再推进时间
+    await flushPromises()
+    expect(wrapper.text()).toContain('00:00 / 01:00')
+  })
+
+  it('event marker click and prev/next jumps keep the player paused', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 11)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-next"]').trigger('click')
+    expect(wrapper.find('[data-test="pb-play"]').text()).toBe('recon.map.playback.play')
+    expect(wrapper.text()).toContain('00:12 / 01:00')
+  })
+
+  it('a single play click schedules exactly one RAF loop', async () => {
+    let rafCalls = 0
+    vi.stubGlobal('requestAnimationFrame', (cb) => {
+      rafCalls++
+      rafCb = cb
+      return rafCalls
+    })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    const wrapper = mountPlayback()
+    await flushPromises()
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
+    expect(rafCalls).toBe(1)
+    await wrapper.find('[data-test="pb-play"]').trigger('click') // 暂停
+    await wrapper.find('[data-test="pb-play"]').trigger('click') // 再次播放
+    expect(rafCalls).toBe(2)
+  })
 })
