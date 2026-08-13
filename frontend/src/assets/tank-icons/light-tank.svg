@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 40" role="img" aria-labelledby="title">
+  <title id="title">Light tank top-down icon</title>
+  <g fill="currentColor">
+    <g opacity=".55">
+      <rect x="6" y="14" width="3.5" height="21" rx="1.75"/>
+      <rect x="22.5" y="14" width="3.5" height="21" rx="1.75"/>
+    </g>
+    <path d="M11 12h10l2 5v15l-3 5h-8l-3-5V17z" opacity=".78"/>
+    <circle cx="16" cy="21" r="4.5" opacity=".95"/>
+    <rect x="14.5" y="2" width="3" height="17" rx="1.5"/>
+  </g>
+</svg>

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 40" role="img" aria-labelledby="title">
+  <title id="title">Heavy tank top-down icon</title>
+  <g fill="currentColor">
+    <g opacity=".55">
+      <rect x="2" y="9" width="6" height="29" rx="2"/>
+      <rect x="24" y="9" width="6" height="29" rx="2"/>
+    </g>
+    <path d="M8 8h16l3 7v18l-5 6H10l-5-6V15z" opacity=".78"/>
+    <path d="M10 18l4-5h4l4 5 1 7-4 5h-6l-4-5z" opacity=".95"/>
+    <rect x="14" y="1" width="4" height="18" rx="2"/>
+  </g>
+</svg>
