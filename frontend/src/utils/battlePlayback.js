@@ -17,7 +17,8 @@ export function positionAt(points, t) {
   if (!points || points.length === 0 || !Number.isFinite(t)) return null
   if (t < points[0].timeSec - 1e-6) return null
   if (points.length === 1) {
-    return { x: points[0].x, y: points[0].y, timeSec: t }
+    // 单点：位置停在该点，但 last-known 时间保持真实采样时间（不随 currentTime 增长）
+    return { x: points[0].x, y: points[0].y, timeSec: points[0].timeSec }
   }
   let prev = points[0]
   for (let i = 1; i < points.length; i++) {

@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, ref } from 'vue'
+import { nextTick, onBeforeUnmount, ref } from 'vue'
 import MarkdownContent from './MarkdownContent.vue'
 import MapOverview from './MapOverview.vue'
 import { mapImages } from '../data/mapImages'
@@ -29,10 +29,17 @@ function toggleMap() {
   mapOpen.value = !mapOpen.value
 }
 
-/** AI 报告时间跳转：展开地图鸟瞰并让播放器 seek（MapOverview 自动切到战局回放视图）。 */
+/**
+ * AI 报告时间跳转：展开地图鸟瞰并让播放器 seek（MapOverview 自动切到战局回放视图）。
+ * 先置 null 再 nextTick 写回同一数值：即使连续点击同一时间戳（值不变）也会触发子组件 watch，
+ * 播放器被拖走后再次点击同一 03:20 仍会重新 seek 并暂停。
+ */
 function onSeek(sec) {
-  mapSeek.value = sec
   mapOpen.value = true
+  mapSeek.value = null
+  nextTick(() => {
+    mapSeek.value = sec
+  })
 }
 
 // 素材开关：mapOverview 非 null 且该地图在 mapImages 中有素材时才渲染（无素材整块跳过）

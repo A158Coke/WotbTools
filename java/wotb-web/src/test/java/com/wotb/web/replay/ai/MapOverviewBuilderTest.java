@@ -6,6 +6,12 @@ import com.wotb.core.model.Source;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
+import com.wotb.core.replay.event.BattleEndedEvent;
+import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.PositionChangedEvent;
+import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.web.replay.dto.MapOverview;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -13,6 +19,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -250,5 +257,111 @@ class MapOverviewBuilderTest {
         p.team = team;
         p.tankId = tank;
         return p;
+    }
+
+    // ===== 时间契约 + 方向跨 gap 边界回归 =====
+
+    private static ReplayReconstruction filteredRecon(
+            final ReplayReconstruction recon, final List<ReplayEvent> events) {
+        return new ReplayReconstruction(
+                recon.metadata(), recon.streamHeader(), recon.replayDurationSec(),
+                recon.battleStartRawClockSec(), recon.participants(), events,
+                recon.checkpoints(), recon.finalState(), recon.coverage(), recon.diagnostics());
+    }
+
+    @Test
+    void directionSamplesNeverCrossPositionGap() throws Exception {
+        final ReplayProcessingResult result = processFixture();
+        final ReplayReconstruction recon = result.reconstruction();
+        final float battleStart = recon.battleStartRawClockSec() != null
+                ? recon.battleStartRawClockSec() : 0f;
+        // 制造位置流中断：删除 (40s, 100s) 窗口内的全部位置（两侧保留；prop2 事件原样保留）
+        final double gapStart = 40.0;
+        final double gapEnd = 100.0;
+        final List<ReplayEvent> filtered = new ArrayList<>();
+        for (final ReplayEvent e : recon.events()) {
+            if (e instanceof PositionChangedEvent pos) {
+                final double t = pos.timestamp().rawClockSec() - battleStart;
+                if (t > gapStart && t < gapEnd) {
+                    continue;
+                }
+            }
+            filtered.add(e);
+        }
+        final MapOverview overview = MapOverviewBuilder.build(
+                result.battle(), filteredRecon(recon, filtered));
+        assertNotNull(overview);
+        assertNotNull(overview.playback());
+        for (final MapOverview.PlaybackVehicle v : overview.playback().vehicles()) {
+            // gap 内不得产生任何方向样本（prop2 在 gap 中继续广播也不得推动炮塔）
+            assertTrue(v.directionSamples().stream()
+                            .noneMatch(s -> s.timeSec() > gapStart + 1e-6
+                                    && s.timeSec() < gapEnd - 1e-6),
+                    "gap 内的 prop2 不得产生 direction sample: " + v.accountId());
+            // 时间升序
+            double last = -1;
+            for (final MapOverview.DirectionSample s : v.directionSamples()) {
+                assertTrue(s.timeSec() >= last);
+                last = s.timeSec();
+            }
+        }
+        // gap 前应有冻结点、re-entry 后方向段应继续（至少一辆有方向的车辆同时满足）
+        final List<MapOverview.PlaybackVehicle> withDirections = overview.playback().vehicles()
+                .stream().filter(v -> !v.directionSamples().isEmpty()).toList();
+        assertFalse(withDirections.isEmpty());
+        assertTrue(withDirections.stream().anyMatch(v -> v.directionSamples().stream()
+                        .anyMatch(s -> s.timeSec() <= gapStart + 1e-6)),
+                "gap 前应有方向样本（冻结点）");
+        assertTrue(withDirections.stream().anyMatch(v -> v.directionSamples().stream()
+                        .anyMatch(s -> s.timeSec() >= gapEnd - 1e-6)),
+                "re-entry 后方向段应继续");
+    }
+
+    @Test
+    void playbackTimesNeverExceedDuration() throws Exception {
+        final ReplayProcessingResult result = processFixture();
+        result.battle().durationS = 120.0; // 人为把权威时长压到尾部事件之前
+        final MapOverview overview = MapOverviewBuilder.build(
+                result.battle(), result.reconstruction());
+        assertNotNull(overview);
+        assertNotNull(overview.playback());
+        assertEquals(120.0, overview.playback().durationSec());
+        for (final MapOverview.PlaybackEvent e : overview.playback().events()) {
+            assertTrue(e.timeSec() >= 0 && e.timeSec() <= 120.0 + 1e-6,
+                    "event 越界: " + e);
+        }
+        for (final MapOverview.PlaybackVehicle v : overview.playback().vehicles()) {
+            for (final MapOverview.PositionInterval iv : v.positionIntervals()) {
+                assertTrue(iv.startSec() >= 0 && iv.endSec() <= 120.0 + 1e-6,
+                        "interval 越界: " + iv);
+            }
+            for (final MapOverview.DirectionSample s : v.directionSamples()) {
+                assertTrue(s.timeSec() >= 0 && s.timeSec() <= 120.0 + 1e-6,
+                        "direction 越界: " + s.timeSec());
+            }
+            if (v.deathSec() != null) {
+                assertTrue(v.deathSec() <= 120.0 + 1e-6, "deathSec 越界");
+            }
+        }
+    }
+
+    @Test
+    void durationPrefersBattleEndedOverLastPosition() throws Exception {
+        final ReplayProcessingResult result = processFixture();
+        final ReplayReconstruction recon = result.reconstruction();
+        final List<ReplayEvent> events = new ArrayList<>(recon.events());
+        // 合成 BattleEndedEvent（battle-relative 150s），早于位置流最后时刻（≈302s）
+        events.add(new BattleEndedEvent(
+                999_999, new ReplayTimestamp(0f, 150f), 14,
+                DecodeConfidence.EXACT, 2));
+        result.battle().durationS = null;
+        final MapOverview overview = MapOverviewBuilder.build(
+                result.battle(), filteredRecon(recon, events));
+        assertNotNull(overview);
+        assertNotNull(overview.playback());
+        assertEquals(150.0, overview.playback().durationSec(), 1e-6);
+        for (final MapOverview.PlaybackEvent e : overview.playback().events()) {
+            assertTrue(e.timeSec() <= 150.0 + 1e-6, "event 越过 BattleEnded 时长");
+        }
     }
 }
