@@ -80,6 +80,8 @@ public final class TeamAiPromptBuilder {
             final String result = TeamEvidenceFormatter.resolveTeamResult(
                     context.battle(), context.perspectiveTeam(), teamLabel);
             headerBuf.append("result=").append(result).append("\n");
+            headerBuf.append("resultSource=").append(TeamEvidenceFormatter.resolveTeamResultSource(
+                    context.battle(), context.perspectiveTeam())).append("\n");
         }
         headerBuf.append("unitLimitations=").append(limitations).append("\n");
         final String headerBlock = headerBuf.toString();

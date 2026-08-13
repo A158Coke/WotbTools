@@ -45,6 +45,7 @@ public final class ReplayParser {
     static final int F_DEATH_TIME = 104;        // 死亡时刻(ms; 存活时=0)
     // 名册 PlayerInfo (#201 -> #2)
     static final int R_NICK = 1, R_PLATOON = 2, R_CLAN = 5, R_RANK = 9;
+    static final int R_TEAM = 3;                // 名册来源队伍（1/2；用于结算阵容完整性校验）
 
     private ReplayParser() {
     }
@@ -85,6 +86,7 @@ public final class ReplayParser {
         final Map<Long, String[]> roster = new HashMap<>();   // acc -> [nickname, clan]
         final Map<Long, Long> platoonByAcc = new HashMap<>();
         final Map<Long, Long> rankByAcc = new HashMap<>();
+        final Map<Long, Integer> rosterTeamByAcc = new HashMap<>();  // acc -> 名册队伍(#201→#2→#3)
         final List<Object> rosterEntries = root.getOrDefault(201, List.of());
         if (rosterEntries.size() > MAX_PLAYERS_PER_REPLAY) {
             throw new IOException("Replay roster exceeds player limit");
@@ -97,6 +99,10 @@ public final class ReplayParser {
             final long acc = Protobuf.firstLong(p, 1, 0);
             final Map<Integer, List<Object>> info = Protobuf.message(p, 2);
             roster.put(acc, new String[]{Protobuf.string(info, R_NICK), Protobuf.string(info, R_CLAN)});
+            final Object team = Protobuf.first(info, R_TEAM);
+            if (team instanceof Number) {
+                rosterTeamByAcc.put(acc, ((Number) team).intValue());
+            }
             final Object pl = Protobuf.first(info, R_PLATOON);
             if (pl instanceof Number) {
                 platoonByAcc.put(acc, ((Number) pl).longValue());
@@ -172,6 +178,9 @@ public final class ReplayParser {
         battle.recorderVehicle = text(meta, "playerVehicleName");
         battle.arenaBonusType = meta.hasNonNull("arenaBonusType") ? meta.get("arenaBonusType").asInt() : null;
         battle.players = players;
+        // 结算阵容完整性证据：只有名册(#201)与战绩(#301)账号集合一致且每个账号队伍一致，
+        // 才能用 survivors==0 断言全歼或推导 SURVIVOR_SETTLEMENT（不把未知当成零存活）。
+        battle.rosterComplete = resolveRosterComplete(roster.keySet(), rosterTeamByAcc, players);
 
         // ---- data.wotreplay 事件流 ----
         final byte[] eventData = entries.get("data.wotreplay");
@@ -246,6 +255,31 @@ public final class ReplayParser {
         }
 
         return battle;
+    }
+
+    /**
+     * 结算阵容完整性：名册与战绩账号集合完全一致（所有参战成员都有结算记录）；
+     * 名册提供队伍字段(#201→#2→#3)时，还要求与结算队伍一致（字段缺失时不做硬性要求）。
+     */
+    private static boolean resolveRosterComplete(final Set<Long> rosterAccounts,
+                                                 final Map<Long, Integer> rosterTeamByAcc,
+                                                 final List<PlayerResult> players) {
+        if (rosterAccounts.isEmpty() || players == null || players.isEmpty()) {
+            return false;
+        }
+        final Set<Long> resultAccounts = players.stream()
+                .map(p -> p.accountId)
+                .collect(Collectors.toSet());
+        if (!resultAccounts.equals(rosterAccounts)) {
+            return false;
+        }
+        for (final PlayerResult p : players) {
+            final Integer rosterTeam = rosterTeamByAcc.get(p.accountId);
+            if (rosterTeam != null && rosterTeam.intValue() != p.team) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

@@ -301,7 +301,8 @@ public class TeamReplayAnalysisService {
             return reviewText;
         }
         return reviewText + TeamAutopsyPromptBuilder.renderSection(
-                outcome.result(), winner, outcome.roster(), teamLabel);
+                outcome.result(), winner, outcome.roster(), teamLabel,
+                context.battle(), context.perspectiveTeam());
     }
 
     /**
