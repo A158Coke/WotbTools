@@ -177,10 +177,19 @@ public final class FriendlyEnemyResult {
     /**
      * 全歼双向语义后缀：分析方获胜且对方无存活 → 「（全歼敌方）」；分析方落败且本方无存活 →
      * 「（被敌方全歼）」；其余（含 battle 缺失）返回空串。只看结算存活状态，与 resultSource 无关。
+     * fail-closed：perspectiveTeam 非法、players 缺失/为空、任一方队伍不在 roster 时一律返回空串，
+     * 不得把未知当成零存活。
      */
     public static String annihilationSuffix(final Battle battle, final int perspectiveTeam,
                                             final Winner winner) {
-        if (battle == null || winner == null) {
+        if (battle == null || winner == null
+                || !PlayerSideResolver.isValidRawTeam(perspectiveTeam)
+                || battle.players == null || battle.players.isEmpty()) {
+            return "";
+        }
+        if (countTeam(battle, perspectiveTeam) == 0
+                || countTeam(battle, opposingTeam(perspectiveTeam)) == 0) {
+            // 任一方队伍缺失：不能把未知当成零存活
             return "";
         }
         return switch (winner) {
