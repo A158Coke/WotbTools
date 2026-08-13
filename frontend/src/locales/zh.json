@@ -466,7 +466,7 @@
             "ELITE": "高手",
             "PRO": "职业级",
             "MASTER": "大师级",
-            "AVERAGE_GOD": "场均神"
+            "AVERAGE_GOD": "殿堂级"
         },
         "availability": {
             "YEAR_360": "全年 360+ 天在线",
@@ -647,13 +647,13 @@
         "ASSIGNMENT_STATUS_INVALID": "分配状态不允许此操作",
         "ASSIGNMENT_STATUS_NOT_COMPLETABLE": "当前分配不能提交完成",
         "ALREADY_BOOSTER": "该用户已经是打手",
-        "AVERAGE_GOD_ALREADY_EXISTS": "该服务器已有一名场均神",
+        "AVERAGE_GOD_ALREADY_EXISTS": "该服务器已有一名殿堂级打手",
         "BOOSTER_APPLICATION_ALREADY_OPEN": "已有待处理的打手申请",
         "BOOSTER_APPLICATION_NOT_FOUND": "打手申请不存在",
         "BOOSTER_APPLICATION_NOT_OPEN": "打手申请已结束",
         "BOOSTER_NICKNAME_REQUIRED": "请填写打手昵称",
         "BOOSTER_LEVEL_REQUIRED": "请选择打手等级",
-        "BOOSTER_LEVEL_ADMIN_EDIT_ONLY": "场均神只能由管理员编辑已有打手时授予",
+        "BOOSTER_LEVEL_ADMIN_EDIT_ONLY": "殿堂级只能由管理员编辑已有打手时授予",
         "BOOSTER_STATUS_REQUIRED": "请选择打手状态",
         "BOOSTER_AVAILABILITY_REQUIRED": "请设置接单状态",
         "BOOSTER_HAS_DEPENDENCIES": "该打手存在关联记录，无法删除",
@@ -777,6 +777,8 @@
         "analyze_multi_btn": "AI 多场复盘 ({n})",
         "cancel_btn": "取消分析",
         "analysis_title_player": "AI 复盘",
+        "copy": "复制",
+        "copied": "已复制",
         "prebattle": {
             "title": "赛前预测",
             "collapse": "收起",
