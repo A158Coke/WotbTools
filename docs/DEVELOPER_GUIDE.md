@@ -153,7 +153,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 ├── .agents/                      # AI 工具定义
 │   ├── AGENTS.md                 #   AI 硬性约定（RULES）
 │   ├── wotb-sync.md              #   跨层改动检查单（配方 A–G）
-│   └── skills/                   #   技能库（开发前：grill-me / grill-with-docs；开发后：review-fix / review-with-docs / code-smell / column-sync / wotb-sync）
+│   └── skills/                   #   技能库（开发前：grill-me / plan-designer；开发后：review-fix / review-with-docs / code-smell / column-sync / wotb-sync）
 ```
 
 ### 架构速览

@@ -7,7 +7,7 @@
 ## 规则
 
 1. **Plan-First** — 代码改动前先出 plan（范围/影响/风险），待用户批准后执行。Review-Fix 循环内部自动进行不需用户介入，但结束后必须出具可视化审查报告。
-2. **Feature 流程** — 任何 feature 类或大范围改动必须：需求 grill（grill-me → grill-with-docs）→ 出 plan → 等待用户批准 → 执行 → Review-Fix 闭环 → 出具审查报告。未批准不得开始编码。小修小补（bug fix、CSS、i18n 缺漏）可跳过 plan 直接修。
+2. **Feature 流程** — 任何 feature 类或大范围改动必须：需求澄清（grill-me）→ 方案设计（plan-designer，自动前置 grill-me）→ 出 plan → 等待用户批准 → 执行 → Review-Fix 闭环 → 出具审查报告。未批准不得开始编码。小修小补（bug fix、CSS、i18n 缺漏）可跳过 plan 直接修。
 3. **改动即更新文档** — 影响界面/导出/数据/构建的改动，同提交更新 CHANGELOG（技术变更）、CHANGELOG-PRODUCT（产品功能变更）、DEVELOPER_GUIDE、相关 README、`docs/current-plan.md`（任务状态）。
 4. **跨层一致** — 列 key(snake_case) API/前端/导出三方一致。显示名前端三语 locale + 导出两处一致。
 5. **API 纯英文** — 只回 key+数据，中文归前端/导出。
@@ -56,7 +56,7 @@ cd docker/online && docker compose up -d --build             # 在线版(四容�
 
 ### Phase 1: 需求 grill + Plan（需用户介入）
 0. 需求边界不清 → 先走 **grill-me**（`.agents/skills/grill-me/SKILL.md`）：澄清目标/范围/非目标/验收标准/假设，输出《需求确认单》。
-1. 实现角度 grill → **grill-with-docs**（`.agents/skills/grill-with-docs/SKILL.md`）：结合文档与代码核对可落地性、影响面，输出开发方案。
+1. 方案设计 → **plan-designer**（`.agents/skills/plan-designer/SKILL.md`）：自动前置 grill-me 澄清需求，再结合文档与代码核对可落地性、影响面，输出开发方案。
 2. 分析需求 → 确定改动范围、影响面、风险。
 3. 输出 plan 并写入 `docs/current-plan.md`（文件清单 + 改动概要 + 风险评估）。
 4. **等待用户审批**：批准 → 执行 / 修改重 plan / 拒绝 → 停止。

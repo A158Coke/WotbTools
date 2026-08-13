@@ -78,7 +78,7 @@ description: >
 
 ### 7. current-plan（计划文件同步）
 - [ ] `docs/current-plan.md` 中是否有与本变更相关的进行中任务；有则任务状态是否与实际一致（IN PROGRESS → COMPLETED / BLOCKED）
-- [ ] 计划的业务目标/范围/验收标准是否与本次变更一致（grill-me / grill-with-docs 产出的确认单与方案单已落入计划文件）
+- [ ] 计划的业务目标/范围/验收标准是否与本次变更一致（grill-me / plan-designer 产出的确认单与方案单已落入计划文件）
 
 ### 8. frontend 版本历史 (`frontend/src/data/versions.json`)
 > 面向用户的版本历史卡片（首页入口读取）。**仅用户可见变更需新增条目**；纯技术/构建/CI/重构变更不写。
