@@ -453,6 +453,12 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
     完整 360° 且 ±180 回绕；旋转实验 + 开火锚点拟合证明，交叉验证残差 2.3°）；
     前端 `turretWorldYawDeg = normalize(hullYawDeg + turretRelativeYawDeg)`。
     仅保留 finite、≤deathSec 样本；无可靠方向的车辆不伪造朝向。
+    方向采样必须落在该车同一可信 position-interval 内，hull yaw 只从同区间位置配对——
+    位置流中断期间不继续旋转炮塔、不跨 gap 取对侧 hull yaw，re-entry 后新段继续；
+    每个可信方向段最后一个样本恒保留（冻结准确）。
+    **时长契约**：playback `durationSec` 三优先级 = `battle.durationS`（finite>0）→
+    `BattleEndedEvent`（合法 battle-relative）→ 位置流最后时刻；全部 event/interval/
+    directionSample/deathSec 强制 `[0, durationSec]`。
   - **双层坦克标记**：前端 `BattlePlayback.vue` 用 PR #72 四张运行时 PNG
     （`frontend/src/assets/tank-icons/tank-marker-{friendly,enemy}-{hull,turret}.png`，512×512
     RGBA、共同 pivot 256,256）渲染 HTML overlay 标记（约 28px，移动端 22px）：hull 层按
