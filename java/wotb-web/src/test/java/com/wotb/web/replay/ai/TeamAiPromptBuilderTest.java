@@ -149,6 +149,8 @@ class TeamAiPromptBuilderTest {
         enemy.victoryPointsEarned = 700;
         context.battle().players = List.of(
                 context.battle().players.get(0), enemy);
+        // 完整 1v1 结算阵容：允许 POINTS_INFERENCE / 时间耗尽点数判定
+        context.battle().rosterComplete = true;
 
         final TeamAiPromptBuilder.PromptInput input =
                 TeamAiPromptBuilder.single(context);
