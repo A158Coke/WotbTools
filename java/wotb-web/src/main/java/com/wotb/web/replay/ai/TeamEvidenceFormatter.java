@@ -4,6 +4,7 @@ import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.FriendlyEnemyResult;
+import com.wotb.core.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.ref.ReplayDisplayNames;
@@ -632,13 +633,26 @@ final class TeamEvidenceFormatter {
                                             final String teamLabel) {
         final var winner = FriendlyEnemyResult.resolveTeamBattle(battle, perspectiveTeam);
         final String label = StringUtils.hasText(teamLabel) ? teamLabel : "本队";
-        return switch (winner.winner()) {
-            case FRIENDLY_WIN -> winner.pointsDecided()
-                    ? label + "获胜" + pointsSuffix(winner) : label + "获胜";
-            case ENEMY_WIN -> winner.pointsDecided()
-                    ? label + "落败" + pointsSuffix(winner) : label + "落败";
+        final String base = switch (winner.winner()) {
+            case FRIENDLY_WIN -> label + "获胜";
+            case ENEMY_WIN -> label + "落败";
             case DRAW_OR_UNKNOWN -> "平局或未知";
         };
+        if (winner.winner() == Winner.DRAW_OR_UNKNOWN) {
+            return base;
+        }
+        // 全歼双向语义（结算存活状态，与 resultSource 无关）：获胜且对方无存活 / 落败且本方无存活。
+        final String annihilation = FriendlyEnemyResult.annihilationSuffix(
+                battle, perspectiveTeam, winner.winner());
+        if (!annihilation.isEmpty()) {
+            return base + annihilation;
+        }
+        return winner.pointsDecided() ? base + pointsSuffix(winner) : base;
+    }
+
+    /** result 行的胜负来源（BATTLE_RESULTS / SURVIVOR_SETTLEMENT / POINTS_INFERENCE / UNKNOWN）。 */
+    static String resolveTeamResultSource(final Battle battle, final int perspectiveTeam) {
+        return FriendlyEnemyResult.resolveTeamBattle(battle, perspectiveTeam).source().name();
     }
 
     /** 点数胜负的结束方式后缀：时间耗尽 / 1000 分提前 / 未知。 */

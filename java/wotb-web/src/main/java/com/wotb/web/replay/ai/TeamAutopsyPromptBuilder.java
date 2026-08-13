@@ -1,6 +1,7 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
+import com.wotb.core.model.Battle;
 import com.wotb.core.replay.evidence.AiEvidence;
 import com.wotb.core.replay.feature.TeamAutopsyStats;
 import com.wotb.core.util.PromptDataQuoter;
@@ -33,9 +34,23 @@ public final class TeamAutopsyPromptBuilder {
             final List<AiEvidence> criticalWindows,
             final TeamBattleWinner winner,
             final String teamLabel) {
+        return buildUserContent(stats, prior, criticalWindows, winner, teamLabel, null, 0);
+    }
+
+    static String buildUserContent(
+            final List<TeamAutopsyStats> stats,
+            final PreBattleStrategicPrior prior,
+            final List<AiEvidence> criticalWindows,
+            final TeamBattleWinner winner,
+            final String teamLabel,
+            final Battle battle,
+            final int perspectiveTeam) {
         final StringBuilder sb = new StringBuilder(3072);
         sb.append("=== 结果 ===\n");
-        sb.append(winnerLabel(winner, teamLabel)).append('\n');
+        sb.append(winnerLabel(winner, teamLabel, battle, perspectiveTeam)).append('\n');
+        if (winner != null && winner.source() != null) {
+            sb.append("resultSource=").append(winner.source().name()).append('\n');
+        }
         if (winner != null && winner.pointsDecided()) {
             // pointsDecided=true 已保证结束时刻双方均未全员阵亡（非全歼）：supremacy 点数胜负只有
             // 两种结束方式——任一方达到 1000 分提前获胜，或时间耗尽后比较点数；双方均未达 1000 分时
@@ -117,6 +132,15 @@ public final class TeamAutopsyPromptBuilder {
                                 final TeamBattleWinner winner,
                                 final List<TeamAutopsyStats> roster,
                                 final String teamLabel) {
+        return renderSection(result, winner, roster, teamLabel, null, 0);
+    }
+
+    static String renderSection(final TeamAutopsyResult result,
+                                final TeamBattleWinner winner,
+                                final List<TeamAutopsyStats> roster,
+                                final String teamLabel,
+                                final Battle battle,
+                                final int perspectiveTeam) {
         if (result == null) {
             return "";
         }
@@ -125,7 +149,7 @@ public final class TeamAutopsyPromptBuilder {
                         TeamAutopsyStats::playerKey, Function.identity()));
         final StringBuilder sb = new StringBuilder(1024);
         sb.append("\n\n======================== 团队剖析 ========================\n");
-        sb.append("胜负: ").append(winnerLabel(winner, teamLabel)).append('\n');
+        sb.append("胜负: ").append(winnerLabel(winner, teamLabel, battle, perspectiveTeam)).append('\n');
         if (!result.biggestLiabilities().isEmpty()) {
             sb.append("**主要战犯：**\n");
             for (final TeamAutopsyResult.AutopsyVerdict v : result.biggestLiabilities()) {
@@ -178,6 +202,12 @@ public final class TeamAutopsyPromptBuilder {
 
     /** 团队赛胜负标签；使用实际队名（teamLabel），点数判定时附加结束方式说明。 */
     static String winnerLabel(final TeamBattleWinner winner, final String teamLabel) {
+        return winnerLabel(winner, teamLabel, null, 0);
+    }
+
+    /** 团队赛胜负标签（battle 可用时附加全歼双向语义）：全歼敌方获胜 / 被敌方全歼落败。 */
+    static String winnerLabel(final TeamBattleWinner winner, final String teamLabel,
+                              final Battle battle, final int perspectiveTeam) {
         if (winner == null) {
             return "未知";
         }
@@ -187,6 +217,12 @@ public final class TeamAutopsyPromptBuilder {
             case ENEMY_WIN -> label + "落败";
             case DRAW_OR_UNKNOWN -> "未知";
         };
+        // 全歼双向语义（结算存活状态，与 resultSource 无关）；battle 缺失时保持纯胜负标签。
+        final String annihilation = com.wotb.core.processing.FriendlyEnemyResult.annihilationSuffix(
+                battle, perspectiveTeam, winner.winner());
+        if (!annihilation.isEmpty()) {
+            return base + annihilation;
+        }
         if (!winner.pointsDecided()) {
             return base;
         }

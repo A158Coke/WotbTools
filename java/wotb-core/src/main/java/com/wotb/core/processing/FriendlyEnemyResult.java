@@ -163,9 +163,37 @@ public final class FriendlyEnemyResult {
     }
 
     private static long countAlive(final Battle battle, final int team) {
-        return battle.players.stream()
-                .filter(p -> p != null && p.team == team && p.survived)
-                .count();
+        return survivors(battle, team);
+    }
+
+    /** 指定团队的结算存活车辆数（团队 1/2）；battle/players 缺失时返回 0。 */
+    public static long survivors(final Battle battle, final int team) {
+        return battle == null || battle.players == null ? 0L
+                : battle.players.stream()
+                        .filter(p -> p != null && p.team == team && p.survived)
+                        .count();
+    }
+
+    /**
+     * 全歼双向语义后缀：分析方获胜且对方无存活 → 「（全歼敌方）」；分析方落败且本方无存活 →
+     * 「（被敌方全歼）」；其余（含 battle 缺失）返回空串。只看结算存活状态，与 resultSource 无关。
+     */
+    public static String annihilationSuffix(final Battle battle, final int perspectiveTeam,
+                                            final Winner winner) {
+        if (battle == null || winner == null) {
+            return "";
+        }
+        return switch (winner) {
+            case FRIENDLY_WIN -> survivors(battle, opposingTeam(perspectiveTeam)) == 0
+                    ? "（全歼敌方）" : "";
+            case ENEMY_WIN -> survivors(battle, perspectiveTeam) == 0
+                    ? "（被敌方全歼）" : "";
+            default -> "";
+        };
+    }
+
+    private static int opposingTeam(final int perspectiveTeam) {
+        return perspectiveTeam == 1 ? 2 : 1;
     }
 
     private static long pointsEarned(final Battle battle, final int team) {

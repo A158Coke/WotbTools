@@ -5,7 +5,7 @@ package com.wotb.web.replay.ai;
  * localizeTeamSystemPrompt 与 single/multi 两个 system prompt。
  * <p>从 {@link TeamReplayAnalysisService} 拆出，纯常量/纯函数工具类。</p>
  */
-final class TeamPromptLocalizer {
+public final class TeamPromptLocalizer {
 
     private TeamPromptLocalizer() {
     }
@@ -146,45 +146,56 @@ final class TeamPromptLocalizer {
 
             === 争霸赛占点规则（强制，训练房/联赛恒为争霸赛） ===
             1. 集中一波（多车同簇推进）可能付出代价：失去高视野 + 被敌方偷家/占点，复盘必须权衡。
-            2. 胜利队伍的结算来源一定是 battle result 权威结算（AUTHORITATIVE_TEAM_RESULT / result 行），
-               不得用事件流观测或点数推断覆盖它；胜利方式只可能是以下三种，按顺序判定：
-               a. 全歼敌方：对方队伍全部阵亡（无存活车辆）→ 写「全歼敌方获胜」；即使双方 victoryPointsEarned
-                  均 <1000，也是全歼获胜，不得写成「时间耗尽点数判定」；
-               b. 点数达到 1000：任一方 victoryPointsEarned ≥ 1000 → 写「达到 1000 分提前获胜」；
-               c. 时间结束且双方均未全歼：比较点数，高者胜（pointsDecided=true）→ 写「时间耗尽后以点数优势获胜」，必须写「时间耗尽」。
-            3. 禁止把全歼获胜写成点数胜负，也禁止把点数胜负写成全歼或常规胜利；禁止用 <1000 的中间比分作为获胜理由。
-            4. 占点分/占领分（victoryPointsEarned/Seized）是权威结算总量，不代表时间线；不得把总量说成某时刻占领进度。
-            5. 地图占领点区域（CONTAINS_CONTROL_POINT）只用于描述方位，未提供时不得声称谁在占点。""";
+            2. result 行的胜负来源以 resultSource 为准，只有三级证据，BATTLE_RESULTS 存在时最高优先级：
+               a. BATTLE_RESULTS：来自 battle_results#winnerTeam 的权威结算；LLM 不得用事件流、存活数或点数覆盖胜方；
+               b. SURVIVOR_SETTLEMENT：结算存活状态推导（一方全员阵亡）；非 battle result 权威，不得伪装成权威结算；
+               c. POINTS_INFERENCE：双方均有存活时按占点分推断（pointsDecided=true）；非权威规则候选，不得伪装成权威结算。
+            3. 全歼语义按存活情况双向判定（与 resultSource 无关）：
+               a. 本方获胜且对方 survivors=0 → 写「全歼敌方获胜」；
+               b. 本方落败且本方 survivors=0 → 写「被敌方全歼落败」；
+               c. 双方均有存活车辆时，才允许进入点数结束方式判断：任一方 victoryPointsEarned ≥ 1000 → 写「达到 1000 分提前获胜」；
+                  双方均 <1000 → 写「时间耗尽后以点数优势获胜」，必须写「时间耗尽」。
+            4. 禁止把失败方被全歼写成「全歼敌方获胜」；禁止把点数胜负写成全歼或常规胜利；禁止用 <1000 的中间比分作为获胜理由。
+            5. 占点分/占领分（victoryPointsEarned/Seized）是权威结算总量，不代表时间线；不得把总量说成某时刻占领进度。
+            6. 地图占领点区域（CONTAINS_CONTROL_POINT）只用于描述方位，未提供时不得声称谁在占点。""";
 
     static final String CAPTURE_RULE_EN = """
 
             === SUPREMACY CAPTURE RULES (mandatory; training room / clan battles are always supremacy) ===
             1. A concentrated one-lane rush can cost the team: losing high vision and risking a base capture / being capped; always weigh this in the review.
-            2. The winning side always comes from the authoritative battle result (AUTHORITATIVE_TEAM_RESULT / result line); never override it with event-stream observations or point inference. Victory can only be one of the following, judged in this order:
-               a. Annihilation: the opposing team is fully destroyed (no survivors) → write "won by annihilating the enemy team"; even if both teams' victoryPointsEarned are below 1000, this is still an annihilation win, never write "points-decided after time expired";
-               b. Reaching 1000 points: either team's victoryPointsEarned >= 1000 → write "won by reaching 1000 points early";
-               c. Time expired with neither team fully destroyed: the team with more points wins (pointsDecided=true) → write "won on points after time expired" — always write "time expired".
-            3. Never present an annihilation win as a points win, nor a points win as annihilation or a regular win; never use a mid-match score below 1000 as the reason for winning.
-            4. victoryPointsEarned / victoryPointsSeized are authoritative settlement totals, not a timeline; never present totals as capture progress at a specific moment.
-            5. Capture-point areas (CONTAINS_CONTROL_POINT) only describe direction; when not provided, never claim who is capturing.""";
+            2. The win/loss line must be read with resultSource; there are only three evidence levels, and BATTLE_RESULTS has the highest priority when present:
+               a. BATTLE_RESULTS: authoritative settlement from battle_results#winnerTeam; never override the winner with event-stream observations, survival counts, or points;
+               b. SURVIVOR_SETTLEMENT: derived from settlement survival state (one team fully destroyed); not an authoritative battle-result winner, never present it as one;
+               c. POINTS_INFERENCE: inferred from capture points while both teams have survivors (pointsDecided=true); a non-authoritative rule candidate, never present it as an authoritative result.
+            3. Annihilation wording is bidirectional and based on survivors (independent of resultSource):
+               a. Your team wins and the opposing team has 0 survivors → write "won by annihilating the enemy team";
+               b. Your team loses and your team has 0 survivors → write "lost, annihilated by the enemy team";
+               c. Only when both teams have surviving vehicles may you judge the points end condition: either team's victoryPointsEarned >= 1000 → write "won by reaching 1000 points early"; both below 1000 → write "won on points after time expired" — always write "time expired".
+            4. Never write "won by annihilating the enemy team" when your own team was annihilated; never present a points win as annihilation or a regular win; never use a mid-match score below 1000 as the reason for winning.
+            5. victoryPointsEarned / victoryPointsSeized are authoritative settlement totals, not a timeline; never present totals as capture progress at a specific moment.
+            6. Capture-point areas (CONTAINS_CONTROL_POINT) only describe direction; when not provided, never claim who is capturing.""";
 
     static final String CAPTURE_RULE_RU = """
 
             === ПРАВИЛА ЗАХВАТА (обязательно; тренировочные бои и клановые бои — всегда supremacy) ===
             1. Концентрированный рывок одной линией может стоить команде: потеря высокого обзора и риск захвата базы противником; всегда взвешивайте это в разборе.
-            2. Победившая команда всегда определяется авторитетным итогом боя (AUTHORITATIVE_TEAM_RESULT / строка result); не подменяйте его наблюдениями из потока событий или выводами по очкам. Победа возможна только в одном из следующих видов, проверяйте по порядку:
-               a. Полное уничтожение: вся команда противника уничтожена (нет выживших) → напишите «победа полным уничтожением противника»; даже если victoryPointsEarned обеих команд меньше 1000, это победа уничтожением, а не «по очкам после истечения времени»;
-               b. Достижение 1000 очков: victoryPointsEarned любой команды ≥1000 → напишите «победа досрочно по достижении 1000 очков»;
-               c. Время истекло, и ни одна команда не уничтожена полностью: побеждает команда с большим числом очков (pointsDecided=true) → напишите «победа по очкам после истечения времени» — обязательно укажите «время истекло».
-            3. Не выдавайте победу полным уничтожением за победу по очкам, а победу по очкам — за уничтожение или обычную победу; не используйте промежуточный счёт ниже 1000 как причину победы.
-            4. victoryPointsEarned / victoryPointsSeized — авторитетные итоги расчёта, а не таймлайн; не выдавайте итоги за прогресс захвата в конкретный момент.
-            5. Области точек захвата (CONTAINS_CONTROL_POINT) описывают только направление; если они не предоставлены, не утверждайте, кто захватывает.""";
+            2. Строку result следует читать вместе с resultSource; существует только три уровня доказательности, и при наличии BATTLE_RESULTS он имеет высший приоритет:
+               a. BATTLE_RESULTS: авторитетный итог из battle_results#winnerTeam; не подменяйте победителя наблюдениями из потока событий, числом выживших или очками;
+               b. SURVIVOR_SETTLEMENT: вывод по статусу выживших из итогов (одна команда полностью уничтожена); это не авторитетное поле победителя battle result, не выдавайте его за таковое;
+               c. POINTS_INFERENCE: неавторитетный вывод по очкам захвата, когда в обеих командах есть выжившие (pointsDecided=true); не выдавайте его за авторитетный итог.
+            3. Формулировка полного уничтожения двунаправленна и зависит от выживших (независимо от resultSource):
+               a. Ваша команда победила, а у противника 0 выживших → напишите «победа полным уничтожением противника»;
+               b. Ваша команда проиграла, а в вашей команде 0 выживших → напишите «поражение — противник полностью уничтожил вашу команду»;
+               c. Только когда в обеих командах есть выжившие машины, оценивайте завершение по очкам: victoryPointsEarned любой команды ≥1000 → напишите «победа досрочно по достижении 1000 очков»; у обеих меньше 1000 → напишите «победа по очкам после истечения времени» — обязательно укажите «время истекло».
+            4. Не пишите «победа полным уничтожением противника», когда полностью уничтожена ваша команда; не выдавайте победу по очкам за уничтожение или обычную победу; не используйте промежуточный счёт ниже 1000 как причину победы.
+            5. victoryPointsEarned / victoryPointsSeized — авторитетные итоги расчёта, а не таймлайн; не выдавайте итоги за прогресс захвата в конкретный момент.
+            6. Области точек захвата (CONTAINS_CONTROL_POINT) описывают только направление; если они не предоставлены, не утверждайте, кто захватывает.""";
 
     /**
      * 组装团队 system prompt：ZH 返回原样；EN/RU 在中文基座上替换中文输出强制句
      * （输出语言、时间格式、语言规则与团队规则）。
      */
-    static String localizeTeamSystemPrompt(final String zhPrompt, final AllowedLanguage language) {
+    public static String localizeTeamSystemPrompt(final String zhPrompt, final AllowedLanguage language) {
         if (language == null || language == AllowedLanguage.ZH) {
             return zhPrompt;
         }

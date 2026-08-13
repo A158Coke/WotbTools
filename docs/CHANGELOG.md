@@ -5,16 +5,19 @@
 ## [Unreleased]
 
 ### Changed
-- **AI 复盘胜利方式判定修正（全歼优先，battle result 权威）**：`CAPTURE_RULE`（ZH/EN/RU）由
-  「双方 victoryPointsEarned 均 <1000 必然时间耗尽点数判定」改为按顺序判定三种胜利方式——
-  全歼敌方（对方全部阵亡即获胜，即使双方点数均 <1000 也不得写成「时间耗尽点数判定」）→
-  任一方达到 1000 分提前获胜 → 时间结束且双方均未全歼时比较点数（pointsDecided=true）；
-  胜利队伍结算来源明确为 battle result 权威结算（AUTHORITATIVE_TEAM_RESULT / result 行），
-  不得用事件流观测或点数推断覆盖。`autopsy` 提示词规则同步（结果行无点数后缀时不得臆造结束方式）；
-  `FriendlyEnemyResult`/`TeamEvidenceFormatter` 注释澄清 `pointsDecided` 前置条件（结束时刻
-  双方均未全员阵亡才存在点数结束方式）。新增 golden case `cw-annihilation-win-01`
-  （对方 7 台全灭、双方点数均 <1000、结算 winnerTeam=我方）+ fixture + lesson，
-  `AiEvalHarnessTest` 断言系统提示词含「全歼敌方」且不含「双方均 <1000 → 必然」。
+- **AI 复盘胜负来源证据层级与全歼双向语义（battle result 权威）**：`CAPTURE_RULE`（ZH/EN/RU）
+  不再宣称所有 result 行都来自权威 winnerTeam，改为按 `resultSource` 三级证据描述——
+  BATTLE_RESULTS（battle_results#winnerTeam 权威，最高优先级，LLM 不得用事件流/存活数/点数
+  覆盖胜方）/ SURVIVOR_SETTLEMENT（结算存活状态推导，非权威不得伪装）/ POINTS_INFERENCE
+  （双方存活时占点分推断，非权威规则候选）；`TeamAiPromptBuilder` mandatory header 同时输出
+  `result` 与 `resultSource`（不再只放在可能被 token 预算裁掉的 CAPTURE_AND_POINTS）。
+  全歼语义双向：本方获胜且对方 survivors=0 → 「全歼敌方获胜」；本方落败且本方 survivors=0 →
+  「被敌方全歼落败」；双方均有存活才进入点数结束方式（≥1000 提前获胜 / 双方 <1000 时间耗尽
+  点数判定，pointsEndReason 前置条件=双方均未全员阵亡）；`autopsy` 提示词规则 9 同步。
+  新增 golden case `cw-annihilation-win-01` / `cw-annihilation-loss-01` + fixtures + lessons；
+  `cw-cap-win-01` / `cw-cap-points-decided-01` 断言 mandatory header `resultSource=POINTS_INFERENCE`
+  且不出现 BATTLE_RESULTS；`AiEvalHarnessTest` 断言 ZH 规则含全歼双向语义与三级证据、
+  EN/RU 本地化后不残留中文规则。
 - **技能更名：grill-with-docs → plan-designer（开发方案设计）**：开发前方案 grill 技能更名为
   `plan-designer`，调用时**自动前置 grill-me**（需求澄清：复述理解 → 逐层提问 ≤3 个/轮 →
   输出《需求确认单》），需求已明确时跳过并注明；随后进入方案设计流程（可落地性核对 →
