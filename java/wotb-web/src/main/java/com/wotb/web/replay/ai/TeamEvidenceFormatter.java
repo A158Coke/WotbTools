@@ -417,7 +417,8 @@ final class TeamEvidenceFormatter {
                         .append("掉血").append(window.totalDamage())
                         .append('/').append(window.hitCount()).append("次")
                         .append("攻击者").append(window.uniqueAttackerCount())
-                        .append(window.attackersUnresolved() ? "（部分未解析）" : "");
+                        .append(window.attackersUnresolved() ? "（部分未解析）" : "")
+                        .append(window.focusFireCandidate() ? "（短时多车集火证据）" : "");
             }
             rows.append('\n');
         }
@@ -426,9 +427,11 @@ final class TeamEvidenceFormatter {
         }
         writer.append("\n=== MEMBER_DAMAGE_RECEIVED_WINDOWS（逐成员掉血窗口·事件流观测） ===\n");
         writer.append("注意: 每条为一名成员的掉血窗口, 观测子集, 非权威总量; 攻击者N=窗口内不同攻击者数; "
+                + "只有窗口总跨度 ≤" + (int) DamageWindowClusterer.SHORT_FOCUS_WINDOW_SEC
+                + " 秒、攻击者≥2 且无未解析攻击者时才标注「（短时多车集火证据）」; "
                 + "攻击者=1 → 短时间集中掉血/高压掉血窗口（不是集火）; "
-                + "攻击者≥2 → 才可作为多车集火证据; "
-                + "标注「（部分未解析）」时攻击者数不完整, 不得断言集火.\n");
+                + "标注「（部分未解析）」时攻击者数不完整, 不得断言集火; "
+                + "链式聚类形成的大跨度窗口不得当作短时集火.\n");
         writer.append(rows.toString());
     }
 

@@ -138,13 +138,17 @@ final class PlayerSummaryBuilder {
         final long recorderAccountId = ctx.recorder() != null && ctx.recorder().accountId() != null
                 ? ctx.recorder().accountId() : -1L;
         final StringBuilder summaryBuilder = new StringBuilder(buildPlayerContextSummary(ctx));
-        PlayerEvidenceFormatter.appendDamageExchangeByOpponent(summaryBuilder, ctx.battle(), recorderAccountId, recon);
-        if (!PlayerEvidenceFormatter.appendPerHitDamageEvents(summaryBuilder, ctx.battle(), recorderAccountId, recon)) {
+        // OBSERVED_DAMAGE_IS_PARTIAL 只计算一次：逐对手、逐炮、掉血窗口三段统一抑制，
+        // 覆盖完整时三段正常输出（不一边输出数字一边声明已抑制）。
+        final boolean observedDamagePartial = hasObservedDamagePartial(ctx);
+        PlayerEvidenceFormatter.appendDamageExchangeByOpponent(
+                summaryBuilder, ctx.battle(), recorderAccountId, recon, observedDamagePartial);
+        if (!PlayerEvidenceFormatter.appendPerHitDamageEvents(
+                summaryBuilder, ctx.battle(), recorderAccountId, recon, observedDamagePartial)) {
             summaryBuilder.append("- PER_HIT_DAMAGE_EVENTS_UNAVAILABLE\n");
         }
         PlayerEvidenceFormatter.appendRecorderDamageReceivedWindows(
-                summaryBuilder, ctx.battle(), recon, recorderAccountId,
-                hasObservedDamagePartial(ctx));
+                summaryBuilder, ctx.battle(), recon, recorderAccountId, observedDamagePartial);
         PlayerEvidenceFormatter.appendEnemyLastKnownPositions(summaryBuilder, ctx.battle(), recon);
         final String baseSummary = summaryBuilder.toString();
         final String systemPrompt = PlayerPromptRules.localizePlayerSystemPrompt(PlayerPromptRules.SINGLE_PLAYER_PROMPT, language);

@@ -88,6 +88,7 @@ class DamageWindowClustererTest {
         assertEquals(1, windows.getFirst().uniqueAttackerCount(),
                 "同一攻击者连续多炮只能算 1 个攻击者，不得作为集火证据");
         assertFalse(windows.getFirst().attackersUnresolved());
+        assertFalse(windows.getFirst().focusFireCandidate(), "单一攻击者绝不构成短时集火");
     }
 
     @Test
@@ -102,6 +103,8 @@ class DamageWindowClustererTest {
         assertEquals(2, windows.getFirst().uniqueAttackerCount(),
                 "两个不同攻击者（2、3）才算多车集火证据");
         assertFalse(windows.getFirst().attackersUnresolved());
+        assertTrue(windows.getFirst().focusFireCandidate(),
+                "总跨度 4s ≤ 15s、攻击者 2 个且无未解析 → 可作短时集火证据");
     }
 
     @Test
@@ -116,6 +119,43 @@ class DamageWindowClustererTest {
         assertEquals(1, windows.size());
         assertEquals(0, windows.getFirst().uniqueAttackerCount());
         assertTrue(windows.getFirst().attackersUnresolved());
+        assertFalse(windows.getFirst().focusFireCandidate(), "攻击者未解析不得断言集火");
+    }
+
+    @Test
+    void chainedClusteringLongSpanIsNotShortFocusFire() {
+        // 相邻间隔均 ≤10s（9s），链式聚类成一个窗口，但总跨度 27s 超阈值：
+        // 即使攻击者 ≥2 也不得当作短时集火。
+        final List<DamageWindowClusterer.DamageWindow> windows =
+                DamageWindowClusterer.receivedWindows(
+                        null, recon(30f,
+                                hit(30f, 2L, VICTIM, 100),
+                                hit(39f, 3L, VICTIM, 100),
+                                hit(48f, 2L, VICTIM, 100),
+                                hit(57f, 3L, VICTIM, 100)), VICTIM);
+        assertEquals(1, windows.size(), "9s 间隔链式聚类应合并为单一窗口");
+        final DamageWindowClusterer.DamageWindow window = windows.getFirst();
+        assertEquals(0f, window.startSec());
+        assertEquals(27f, window.endSec());
+        assertEquals(2, window.uniqueAttackerCount());
+        assertFalse(window.attackersUnresolved());
+        assertFalse(window.focusFireCandidate(),
+                "总跨度 27s 超短窗口阈值，链式聚类不得被当成短时集火");
+    }
+
+    @Test
+    void twoAttackersWithinShortSpanIsFocusFireCandidate() {
+        final List<DamageWindowClusterer.DamageWindow> windows =
+                DamageWindowClusterer.receivedWindows(
+                        null, recon(30f,
+                                hit(30f, 2L, VICTIM, 100),
+                                hit(39f, 3L, VICTIM, 100)), VICTIM);
+        assertEquals(1, windows.size());
+        final DamageWindowClusterer.DamageWindow window = windows.getFirst();
+        assertEquals(9f, window.endSec() - window.startSec());
+        assertEquals(2, window.uniqueAttackerCount());
+        assertTrue(window.focusFireCandidate(),
+                "总跨度 9s ≤ 15s、攻击者 2 个且无未解析 → 可作短时集火证据");
     }
 
     @Test

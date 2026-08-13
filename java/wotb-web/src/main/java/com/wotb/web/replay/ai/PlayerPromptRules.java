@@ -217,21 +217,21 @@ final class PlayerPromptRules {
 
             === 掉血时间范围（强制） ===
             1. 凡提及掉血/损失血量，必须给出明确时间范围（XX分XX秒–XX分XX秒）与掉血量，禁止「掉血较多」「前期掉血」这类无时间范围的笼统描述。
-            2. 若在很短的时间窗口内掉了大量血，先说明是「短时间集中掉血/高压掉血窗口」；仅当窗口内解析出 ≥2 个不同攻击者时才可写「被多车集火」；攻击者无法解析或只有 1 个攻击者时，不得断言集火。
+            2. 若在很短的时间窗口内掉了大量血，先说明是「短时间集中掉血/高压掉血窗口」；仅当窗口总跨度在 15 秒内、解析出 ≥2 个不同攻击者且无未解析攻击者时，才可写「被多车集火」；攻击者无法解析、只有 1 个攻击者或窗口总跨度超阈值时，不得断言集火。
             3. 正常、慢速、有交换的掉血不得误标为问题；没有时间窗口证据时写「无法确定」，不得编造时间。""";
 
     static final String HP_LOSS_TIME_RULE_EN = """
 
             === HP LOSS TIME RANGE (mandatory) ===
             1. Whenever you mention HP loss / damage received, give an explicit time range (Xm Xs – Xm Xs) and the amount lost; never write vague statements without a time range like "lost a lot of HP early".
-            2. If a large amount of HP is lost within a very short window, describe it as a "short concentrated HP-loss / high-pressure window" first; only when the window contains 2 or more resolved distinct attackers may you write "focus-fired by multiple vehicles"; never claim focus fire when attackers are unresolved or only one attacker is present.
+            2. If a large amount of HP is lost within a very short window, describe it as a "short concentrated HP-loss / high-pressure window" first; only when the window's total span is within 15 seconds and it contains 2 or more resolved distinct attackers with no unresolved attackers may you write "focus-fired by multiple vehicles"; never claim focus fire when attackers are unresolved, only one attacker is present, or the window spans longer than the threshold.
             3. Normal, gradual, or traded damage must not be flagged as a problem; without time-window evidence write "cannot be determined" and never invent times.""";
 
     static final String HP_LOSS_TIME_RULE_RU = """
 
             === ДИАПАЗОН ВРЕМЕНИ ПОТЕРИ ОЗ (обязательно) ===
             1. Упоминая потерю ОЗ / полученный урон, всегда указывайте точный временной диапазон (X мин X с – X мин X с) и количество потерянных ОЗ; запрещены расплывчатые формулировки без диапазона вроде «потерял много ОЗ в начале».
-            2. Если за очень короткий промежуток потеряно много ОЗ, сначала опишите это как «окно кратковременной концентрированной потери ОЗ / окно высокого давления»; только когда в окне определено 2 и более различных атакующих, можно писать «сосредоточенный обстрел несколькими машинами»; при неопределённых атакующих или единственном атакующем не утверждайте сосредоточенный огонь.
+            2. Если за очень короткий промежуток потеряно много ОЗ, сначала опишите это как «окно кратковременной концентрированной потери ОЗ / окно высокого давления»; только когда общая протяжённость окна ≤15 секунд, в нём определено 2 и более различных атакующих и нет неопределённых атакующих, можно писать «сосредоточенный обстрел несколькими машинами»; при неопределённых атакующих, единственном атакующем или окне длиннее порога не утверждайте сосредоточенный огонь.
             3. Нормальная, постепенная потеря ОЗ или обмен уроном не должны отмечаться как проблема; при отсутствии данных о временных окнах пишите «невозможно определить» и не выдумывайте время.""";
 
     /** 公共：证据逻辑与术语（禁止集火同义反复、禁止机器标签直出、标题规范）。 */
