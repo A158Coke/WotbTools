@@ -60,10 +60,13 @@ done
 
 # 2) the source nginx observes from the host must be the trusted gateway.
 #    A request without X-Forwarded-For leaves remote_addr unchanged; the default
-#    access log records it as the first field.
+#    access log records it as the first field. nginx error log 行首是日期（如 2026/08/13）
+#    且同样包含 request: "GET /api/preview"（后端不可达时），因此必须只取 IP 首字段，
+#    避免把 error log 行误当 access log 导致偶发失败。
 curl -s -o /dev/null -H 'Host: wotbtools.com' "http://127.0.0.1:$PUB_PORT/api/preview"
 sleep 1
-observed="$(docker logs "$CONTAINER" 2>&1 | grep 'GET /api/preview' | tail -n 1 | awk '{print $1}')"
+observed="$(docker logs "$CONTAINER" 2>&1 | grep 'GET /api/preview' \
+  | awk '{print $1}' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | tail -n 1)"
 [[ "$observed" == "172.28.0.1" ]] \
   || { echo "FAIL: observed host source $observed != trusted gateway 172.28.0.1" >&2; exit 1; }
 
