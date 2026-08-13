@@ -77,6 +77,10 @@ public final class TacticalReviewPromptBuilder {
         // 录像者掉血窗口：与 fallback 同格式/同口径；OBSERVED_DAMAGE_IS_PARTIAL 时抑制数字
         final boolean damagePartial = features != null && features.limitations() != null
                 && features.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL");
+        // 覆盖不全时逐条交火数字同样是事件流伤害数字：一并抑制（与 fallback 交火段口径一致）
+        if (damagePartial) {
+            includeEngagements = false;
+        }
         final String damageWindowsSection = recorder != null && recorder.accountId() != null
                 ? PlayerEvidenceFormatter.recorderDamageReceivedWindowsSection(
                         battle, recon, recorder.accountId(), damagePartial)

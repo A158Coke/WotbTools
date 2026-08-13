@@ -33,10 +33,18 @@ final class DamageWindowClusterer {
     static final double MAX_GAP_SEC = 10.0;
 
     /**
+     * 可断言「短时多车集火」的窗口总跨度上限（秒）。仅当窗口总跨度 ≤ 该阈值、
+     * 不同攻击者数 ≥2 且无未解析攻击者时，{@link DamageWindow#focusFireCandidate()} 才为 true；
+     * 链式聚类（相邻间隔 ≤10s）形成的更大跨度窗口不得被当作短时集火。
+     */
+    static final float SHORT_FOCUS_WINDOW_SEC = 15f;
+
+    /**
      * 一个掉血窗口（battle-relative 秒）。
      *
      * @param uniqueAttackerCount 窗口内解析出的不同攻击者账号数
      * @param attackersUnresolved 窗口内是否存在攻击者无法解析（true 时不得断言集火）
+     * @param focusFireCandidate  窗口总跨度 ≤ {@link #SHORT_FOCUS_WINDOW_SEC}、攻击者 ≥2 且无未解析
      */
     record DamageWindow(
             float startSec,
@@ -44,7 +52,8 @@ final class DamageWindowClusterer {
             int totalDamage,
             int hitCount,
             int uniqueAttackerCount,
-            boolean attackersUnresolved) {
+            boolean attackersUnresolved,
+            boolean focusFireCandidate) {
     }
 
     private DamageWindowClusterer() {
@@ -102,7 +111,9 @@ final class DamageWindowClusterer {
                 if (windowStart >= 0f) {
                     windows.add(new DamageWindow(
                             windowStart, windowEnd, total, hits,
-                            attackers.size(), attackersUnresolved));
+                            attackers.size(), attackersUnresolved,
+                            attackers.size() >= 2 && !attackersUnresolved
+                                    && (windowEnd - windowStart) <= SHORT_FOCUS_WINDOW_SEC));
                 }
                 windowStart = relative;
                 total = 0;
@@ -122,7 +133,9 @@ final class DamageWindowClusterer {
         }
         windows.add(new DamageWindow(
                 windowStart, windowEnd, total, hits,
-                attackers.size(), attackersUnresolved));
+                attackers.size(), attackersUnresolved,
+                attackers.size() >= 2 && !attackersUnresolved
+                        && (windowEnd - windowStart) <= SHORT_FOCUS_WINDOW_SEC));
         return windows;
     }
 

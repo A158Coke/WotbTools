@@ -178,6 +178,7 @@ class PlayerSecondPersonAndPerHitDamageTest {
         // 不再输出生产中恒为 false 的「致死」宣称；单攻击者不得被提示为集火
         assertFalse(evidence.contains("致死"), evidence);
         assertFalse(evidence.contains("=被集火"), evidence);
+        assertFalse(evidence.contains("攻击者1（短时多车集火证据）"), evidence);
     }
 
     @Test
@@ -191,7 +192,8 @@ class PlayerSecondPersonAndPerHitDamageTest {
 
         assertTrue(written);
         final String evidence = sb.toString();
-        assertTrue(evidence.contains("[0分05秒-0分08秒] 掉血700 命中2次 攻击者2"), evidence);
+        assertTrue(evidence.contains(
+                "[0分05秒-0分08秒] 掉血700 命中2次 攻击者2（短时多车集火证据）"), evidence);
         assertFalse(evidence.contains("攻击者2（攻击者部分未解析）"), evidence);
     }
 

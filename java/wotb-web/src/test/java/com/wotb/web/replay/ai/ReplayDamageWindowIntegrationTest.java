@@ -152,6 +152,8 @@ class ReplayDamageWindowIntegrationTest {
         assertTrue(partialContent.contains("RECORDER_DAMAGE_RECEIVED_WINDOWS ===\n"
                 + "UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)"), partialContent);
         assertFalse(partialContent.contains("掉血488"), partialContent);
+        assertFalse(partialContent.contains("你输出"), partialContent);
+        assertFalse(partialContent.contains("事件流输出:"), partialContent);
 
         // fallback（prepareFull）同样包含窗口
         final SinglePlayerBattleAnalysisContext ctx = new SinglePlayerBattleAnalysisContext(
@@ -172,6 +174,46 @@ class ReplayDamageWindowIntegrationTest {
                 fallback.userPrompt());
         assertTrue(fallback.userPrompt().contains("对 你驾驶的"),
                 "逐次伤害必须包含录像者受击行: " + fallback.userPrompt());
+    }
+
+    @Test
+    void fallbackPromptSuppressesAllEventStreamDamageNumbersWhenPartial() throws Exception {
+        final ReplayProcessingResult result = processFixture();
+        final Battle battle = result.battle();
+        final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(result);
+        assertTrue(recorder.resolved());
+        final PlayerBattleFeatureSet features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(result.reconstruction(), recorder, battle);
+        assertTrue(features.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL"),
+                "真实夹具必须带 OBSERVED_DAMAGE_IS_PARTIAL（前置条件）");
+        // 使用真实 features（不移除 limitations）：partial 下三段事件流伤害数字必须全部抑制
+        final SinglePlayerBattleAnalysisContext ctx = new SinglePlayerBattleAnalysisContext(
+                null, battle, features, recorder, result.reconstruction().coverage(),
+                features.limitations());
+        final var zh = PlayerReplayPromptBuilder.prepareFull(
+                ctx, result.reconstruction(), ESTIMATOR, 100_000, 131_072, 8192, 1000,
+                AllowedLanguage.ZH);
+        assertNoEventStreamDamageNumbers(zh.userPrompt());
+        // NON_ZH（Harness fallback 可达路径）同样抑制
+        final var en = PlayerReplayPromptBuilder.prepareFull(
+                ctx, result.reconstruction(), ESTIMATOR, 100_000, 131_072, 8192, 1000,
+                AllowedLanguage.EN);
+        assertNoEventStreamDamageNumbers(en.userPrompt());
+    }
+
+    private static void assertNoEventStreamDamageNumbers(final String prompt) {
+        final long markers = prompt.split("UNAVAILABLE \\(OBSERVED_DAMAGE_IS_PARTIAL\\)", -1).length - 1;
+        assertTrue(markers >= 3,
+                "逐对手/逐炮/掉血窗口三段都应有 UNAVAILABLE 标记，实际 " + markers + "\n" + prompt);
+        assertFalse(prompt.contains("DAMAGE_EXCHANGE_BY_OPPONENT_OBSERVED"), prompt);
+        assertFalse(prompt.contains("PER_HIT_DAMAGE_EVENTS_OBSERVED"), prompt);
+        assertFalse(prompt.contains("你对其造成"), prompt);
+        assertFalse(prompt.contains("造成了"), prompt);
+        assertFalse(prompt.contains("掉血488"), prompt);
+        assertFalse(prompt.contains("攻击者1"), prompt);
+        assertFalse(prompt.contains("事件流输出:"), prompt);
+        assertFalse(prompt.contains("事件流损失血量:"), prompt);
+        assertFalse(prompt.contains("事件流观测输出子集"), prompt);
     }
 
     @Test

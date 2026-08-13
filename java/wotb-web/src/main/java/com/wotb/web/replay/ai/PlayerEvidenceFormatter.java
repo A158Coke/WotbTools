@@ -95,6 +95,23 @@ final class PlayerEvidenceFormatter {
                                                   final Battle battle,
                                                   final long recorderAccountId,
                                                   final ReplayReconstruction recon) {
+        return appendDamageExchangeByOpponent(sb, battle, recorderAccountId, recon, false);
+    }
+
+    /**
+     * 逐对手对炮（事件流观测子集）：{@code OBSERVED_DAMAGE_IS_PARTIAL} 时抑制全部数字，
+     * 输出稳定 UNAVAILABLE 标记（与掉血窗口段一致），绝不一边输出数字一边声明已抑制。
+     */
+    static boolean appendDamageExchangeByOpponent(final StringBuilder sb,
+                                                  final Battle battle,
+                                                  final long recorderAccountId,
+                                                  final ReplayReconstruction recon,
+                                                  final boolean suppressObservedNumbers) {
+        if (suppressObservedNumbers) {
+            sb.append("\n=== DAMAGE_EXCHANGE_BY_OPPONENT ===\n")
+                    .append("UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)\n");
+            return true;
+        }
         if (battle == null || recorderAccountId <= 0 || recon == null || recon.events() == null) {
             return false;
         }
@@ -173,6 +190,23 @@ final class PlayerEvidenceFormatter {
                                             final Battle battle,
                                             final long recorderAccountId,
                                             final ReplayReconstruction recon) {
+        return appendPerHitDamageEvents(sb, battle, recorderAccountId, recon, false);
+    }
+
+    /**
+     * 逐次伤害（事件流观测子集）：{@code OBSERVED_DAMAGE_IS_PARTIAL} 时抑制全部数字，
+     * 输出稳定 UNAVAILABLE 标记（与掉血窗口段一致），绝不一边输出数字一边声明已抑制。
+     */
+    static boolean appendPerHitDamageEvents(final StringBuilder sb,
+                                            final Battle battle,
+                                            final long recorderAccountId,
+                                            final ReplayReconstruction recon,
+                                            final boolean suppressObservedNumbers) {
+        if (suppressObservedNumbers) {
+            sb.append("\n=== PER_HIT_DAMAGE_EVENTS ===\n")
+                    .append("UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)\n");
+            return true;
+        }
         if (battle == null || recorderAccountId <= 0 || recon == null || recon.events() == null) {
             return false;
         }
@@ -253,15 +287,18 @@ final class PlayerEvidenceFormatter {
         final StringBuilder sb = new StringBuilder(512);
         sb.append("\n=== RECORDER_DAMAGE_RECEIVED_WINDOWS（你掉血时间窗口·事件流观测） ===\n");
         sb.append("注意: 每条是一个按时间聚类的掉血窗口; 攻击者N=窗口内解析出的不同攻击者数; "
+                + "只有窗口总跨度 ≤" + (int) DamageWindowClusterer.SHORT_FOCUS_WINDOW_SEC
+                + " 秒、攻击者≥2 且无未解析攻击者时才标注「（短时多车集火证据）」; "
                 + "攻击者=1 → 短时间集中掉血/高压掉血窗口（不是集火）; "
-                + "攻击者≥2 → 才可作为多车集火证据; "
-                + "标注「（攻击者部分未解析）」时攻击者数不完整, 不得断言集火.\n");
+                + "标注「（攻击者部分未解析）」时攻击者数不完整, 不得断言集火; "
+                + "链式聚类形成的大跨度窗口（相邻间隔虽小但总跨度超阈值）不得当作短时集火.\n");
         for (final DamageWindowClusterer.DamageWindow window : windows) {
             sb.append("  ").append(PlayerAnalysisTerms.battleRange(window.startSec(), window.endSec()))
                     .append(" 掉血").append(window.totalDamage())
                     .append(" 命中").append(window.hitCount()).append("次")
                     .append(" 攻击者").append(window.uniqueAttackerCount())
                     .append(window.attackersUnresolved() ? "（攻击者部分未解析）" : "")
+                    .append(window.focusFireCandidate() ? "（短时多车集火证据）" : "")
                     .append('\n');
         }
         return sb.toString();
@@ -607,14 +644,17 @@ final class PlayerEvidenceFormatter {
                         .append(")\n");
                 sb.append("注意: 事件流数值仅为观测子集, 不是整场权威总伤害.\n");
             }
-            for (final EngagementSummary e : features.engagements()) {
-                sb.append("  #" + " ")
-                        .append(PlayerAnalysisTerms.battleRange(e.startTime(), e.endTime()))
-                        .append(" 事件流输出: ").append(e.damageDealt())
-                        .append(" 事件流损失血量: ").append(e.damageReceived())
-                        .append(" 结果: ").append(PlayerAnalysisTerms.outcomeLabel(e.outcome()))
-                        .append(" 置信度: ").append(PlayerAnalysisTerms.confidenceLabel(e.confidence()))
-                        .append('\n');
+            // 覆盖不全时逐条交火数字同样是事件流伤害数字：一并抑制，不输出任何 N
+            if (!observedPartial) {
+                for (final EngagementSummary e : features.engagements()) {
+                    sb.append("  #" + " ")
+                            .append(PlayerAnalysisTerms.battleRange(e.startTime(), e.endTime()))
+                            .append(" 事件流输出: ").append(e.damageDealt())
+                            .append(" 事件流损失血量: ").append(e.damageReceived())
+                            .append(" 结果: ").append(PlayerAnalysisTerms.outcomeLabel(e.outcome()))
+                            .append(" 置信度: ").append(PlayerAnalysisTerms.confidenceLabel(e.confidence()))
+                            .append('\n');
+                }
             }
         }
 

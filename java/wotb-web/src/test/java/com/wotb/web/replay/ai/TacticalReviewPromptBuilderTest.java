@@ -285,7 +285,8 @@ class TacticalReviewPromptBuilderTest {
                 1000);
         final String content = prepared.userContent();
         assertTrue(content.contains("RECORDER_DAMAGE_RECEIVED_WINDOWS（你掉血时间窗口"), content);
-        assertTrue(content.contains("[0分05秒-0分08秒] 掉血700 命中2次 攻击者2"), content);
+        assertTrue(content.contains(
+                "[0分05秒-0分08秒] 掉血700 命中2次 攻击者2（短时多车集火证据）"), content);
         assertTrue(content.indexOf("======================== TASK")
                         > content.indexOf("RECORDER_DAMAGE_RECEIVED_WINDOWS"),
                 "掉血窗口段必须位于 TASK 之前");
@@ -300,7 +301,12 @@ class TacticalReviewPromptBuilderTest {
                                 DecodeConfidence.EXACT, 0, 0, 2001L, 1001L, 400, false)),
                 List.of(), null, null, null);
         final PlayerBattleFeatureSet partial = new PlayerBattleFeatureSet(
-                List.of(), List.of(), List.of(), List.of(),
+                List.of(),
+                List.of(new EngagementSummary(
+                        10f, 20f, List.of(1001L), List.of(2001L),
+                        800, 300, null, null, EngagementOutcome.FAVORABLE,
+                        DecodeConfidence.EXACT)),
+                List.of(), List.of(),
                 List.of("OBSERVED_DAMAGE_IS_PARTIAL"), true);
         final var prepared = TacticalReviewPromptBuilder.prepare(
                 prior(),
@@ -319,5 +325,8 @@ class TacticalReviewPromptBuilderTest {
                 + "UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)"), content);
         assertFalse(content.contains("掉血400"), content);
         assertFalse(content.contains("攻击者1"), content);
+        // 覆盖不全时逐条交火数字同样是事件流伤害数字：一并抑制
+        assertFalse(content.contains("你输出 800"), content);
+        assertFalse(content.contains("损失 300"), content);
     }
 }
