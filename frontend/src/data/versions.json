@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.4",
+    "date": "2026-08-13",
+    "tag": "add",
+    "zh": "AI 复盘结果新增「复制」按钮：一键复制战术复盘正文（不含赛前预测与地图鸟瞰），方便分享或存档",
+    "en": "AI review results gain a Copy button: one click copies the tactical review body (excluding the pre-battle prediction and map overview) for easy sharing or archiving",
+    "ru": "В результатах AI-разбора появилась кнопка «Копировать»: одним кликом копируется текст тактического разбора (без предбоевого прогноза и карты боя) для удобного обмена или сохранения"
+  },
+  {
     "v": "2.11.3",
     "date": "2026-08-13",
     "tag": "fix",

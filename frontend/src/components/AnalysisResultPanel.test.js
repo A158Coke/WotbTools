@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import AnalysisResultPanel from './AnalysisResultPanel.vue'
 
 const i18n = vi.hoisted(() => ({
@@ -111,5 +111,54 @@ describe('AnalysisResultPanel preBattleSection', () => {
     })
     expect(wrapper.find('[data-test="map-block"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('report')
+  })
+
+  it('copies only the call2 analysis body, excluding pre-battle and map overview', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const wrapper = mount(AnalysisResultPanel, {
+      props: {
+        result: {
+          analysis: '## 正文\n\n战术复盘内容',
+          preBattleSection: '## 赛前预测\n\n不要被复制',
+          mapOverview: { mapCode: 'desert_train', displayName: 'Desert Sands' }
+        }
+      },
+      global: { mocks: { $t: i18n.t } }
+    })
+    const btn = wrapper.get('[data-test="copy-analysis-btn"]')
+    expect(wrapper.text()).toContain('recon.copy')
+
+    await btn.trigger('click')
+    await flushPromises()
+
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(writeText).toHaveBeenCalledWith('## 正文\n\n战术复盘内容')
+    expect(writeText.mock.calls[0][0]).not.toContain('赛前预测')
+    expect(writeText.mock.calls[0][0]).not.toContain('Desert Sands')
+    expect(wrapper.text()).toContain('recon.copied')
+    delete navigator.clipboard
+  })
+
+  it('resets the copy label after the feedback window', async () => {
+    vi.useFakeTimers()
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+      configurable: true
+    })
+    const wrapper = mount(AnalysisResultPanel, {
+      props: { result: { analysis: 'report text' } },
+      global: { mocks: { $t: i18n.t } }
+    })
+    await wrapper.get('[data-test="copy-analysis-btn"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('recon.copied')
+
+    vi.advanceTimersByTime(1500)
+    await flushPromises()
+    expect(wrapper.text()).toContain('recon.copy')
+
+    vi.useRealTimers()
+    delete navigator.clipboard
   })
 })
