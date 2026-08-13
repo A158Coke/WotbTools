@@ -447,6 +447,19 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
   `events`（按 battle-relative 秒升序的英文稳定码：`DAMAGE`/`DESTROYED`/`KILL`/
   `POSITION_REPORTED`/`POSITION_STALE`，伤害/击毁身份经 `TeamEntityMapper` 实体映射解析，
   无法可靠解析则不输出；`POSITION_REPORTED/STALE` 只表达服务器位置流覆盖变化，不是点亮）。
+  - **方向契约（2026-08-13 门禁 B 破解）**：`PlaybackVehicle.directionSamples`（时间升序，
+    约 1s 降采样 + 方向变化 ≥10° 保点）：`hullYawDeg` 来自 type-10 yaw（弧度→度）；
+    `turretRelativeYawDeg` 来自 type-7 propId=2（u16 LE：`raw*360/65536-180`，[-180,180)，
+    完整 360° 且 ±180 回绕；旋转实验 + 开火锚点拟合证明，交叉验证残差 2.3°）；
+    前端 `turretWorldYawDeg = normalize(hullYawDeg + turretRelativeYawDeg)`。
+    仅保留 finite、≤deathSec 样本；无可靠方向的车辆不伪造朝向。
+  - **双层坦克标记**：前端 `BattlePlayback.vue` 用 PR #72 四张运行时 PNG
+    （`frontend/src/assets/tank-icons/tank-marker-{friendly,enemy}-{hull,turret}.png`，512×512
+    RGBA、共同 pivot 256,256）渲染 HTML overlay 标记（约 28px，移动端 22px）：hull 层按
+    `hullYawDeg` 旋转、turret 层按 `turretWorldYawDeg` 旋转（炮管不脱离炮塔）；阵营色只来自
+    素材本身；录像者 gold halo、选中 ring、最后已知淡化、阵亡 ✕ 为独立 overlay，不烘焙进 PNG。
+    旋转换算：地图 yaw 从北(+Z)顺时针 → 屏幕 `rotate(yawDeg)`（0=朝上/90=朝右/180=朝下/270=朝左，
+    两次翻转抵消，无符号/偏移修正）。
   前端 `BattlePlayback.vue`（独立组件，复用 mapImages/coordinateBounds/色板/响应式布局）用
   `requestAnimationFrame` 推进播放时间：仅在同一可信连续点（gap ≤ 5s）之间线性插值，
   跨断线/位置中断/无效坐标禁止穿线；`positionCoveredAt` 决定车辆当前是否有位置流覆盖——

@@ -57,9 +57,23 @@ function makeOverview() {
     playback: {
       durationSec: 60,
       vehicles: [
-        { accountId: 1001, playerName: 'You', tankId: 1, team: 1, positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null },
-        { accountId: 2001, playerName: 'EnemyA', tankId: 2, team: 2, positionIntervals: [{ startSec: 10, endSec: 20 }], deathSec: null },
-        { accountId: 2002, playerName: 'NeverSeen', tankId: 3, team: 2, positionIntervals: [], deathSec: null }
+        {
+          accountId: 1001, playerName: 'You', tankId: 1, team: 1,
+          positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null,
+          directionSamples: [
+            { timeSec: 10, hullYawDeg: 0, turretRelativeYawDeg: 0 },
+            { timeSec: 14, hullYawDeg: 90, turretRelativeYawDeg: 30 }
+          ]
+        },
+        {
+          accountId: 2001, playerName: 'EnemyA', tankId: 2, team: 2,
+          positionIntervals: [{ startSec: 10, endSec: 20 }], deathSec: null,
+          directionSamples: [
+            { timeSec: 10, hullYawDeg: 10, turretRelativeYawDeg: 5 },
+            { timeSec: 14, hullYawDeg: 30, turretRelativeYawDeg: 20 }
+          ]
+        },
+        { accountId: 2002, playerName: 'NeverSeen', tankId: 3, team: 2, positionIntervals: [], deathSec: null, directionSamples: [] }
       ],
       events: [
         { type: 'POSITION_REPORTED', timeSec: 10, accountId: 2001, targetAccountId: null, damage: null },
@@ -153,7 +167,7 @@ describe('BattlePlayback', () => {
     const wrapper = mountPlayback(gapOverview(), 20)
     await flushPromises()
     expect(wrapper.findAll('.pb-vehicle')).toHaveLength(2)
-    const enemy = wrapper.findAll('.pb-vehicle').find(v => v.text().includes('EnemyA'))
+    const enemy = wrapper.find('[data-test="pb-marker-2001"]')
     expect(enemy.exists()).toBe(true)
     expect(enemy.classes()).toContain('pb-last-known')
   })
@@ -208,5 +222,45 @@ describe('BattlePlayback', () => {
     await wrapper.find('[data-test="pb-play"]').trigger('click') // 暂停
     await wrapper.find('[data-test="pb-play"]').trigger('click') // 再次播放
     expect(rafCalls).toBe(2)
+  })
+
+  it('renders two-layer tank markers: friendly/enemy images + independent hull/turret rotation', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const friendly = wrapper.find('[data-test="pb-marker-1001"]')
+    expect(friendly.exists()).toBe(true)
+    const friendlyImgs = friendly.findAll('img')
+    expect(friendlyImgs).toHaveLength(2)
+    expect(friendlyImgs[0].attributes('src')).toContain('tank-marker-friendly-hull')
+    expect(friendlyImgs[1].attributes('src')).toContain('tank-marker-friendly-turret')
+    // t=12：hull 0→90 半程=45°；turret rel 0→30 半程=15° → 世界=60°
+    expect(friendlyImgs[0].attributes('style')).toContain('rotate(45deg)')
+    expect(friendlyImgs[1].attributes('style')).toContain('rotate(60deg)')
+    const enemy = wrapper.find('[data-test="pb-marker-2001"]')
+    expect(enemy.exists()).toBe(true)
+    expect(enemy.findAll('img')).toHaveLength(2)
+    expect(enemy.findAll('img')[0].attributes('src')).toContain('tank-marker-enemy-hull')
+    expect(enemy.findAll('img')[1].attributes('src')).toContain('tank-marker-enemy-turret')
+  })
+
+  it('never-observed enemies render no marker; recorder/selected/destroyed overlays stay separate', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-marker-2002"]').exists()).toBe(false)
+    const recorder = wrapper.find('[data-test="pb-marker-1001"]')
+    expect(recorder.classes()).toContain('pb-recorder')
+    await recorder.trigger('click')
+    expect(recorder.classes()).toContain('pb-selected')
+  })
+
+  it('markers keep showing the faded last-known state in a gap instead of disappearing', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(gapOverview(), 20)
+    await flushPromises()
+    const enemy = wrapper.find('[data-test="pb-marker-2001"]')
+    expect(enemy.exists()).toBe(true)
+    expect(enemy.classes()).toContain('pb-last-known')
   })
 })

@@ -5,6 +5,21 @@
 ## [Unreleased]
 
 ### Added
+- **战局回放炮塔方向契约与双层坦克标记（门禁 B 破解）**：type-7 propId=2 定案为
+  炮塔相对车体偏航（u16 LE：`raw*360/65536-180` 度，完整 360° 且 ±180 回绕）——车体静止
+  炮塔转一圈的旋转实验回放证明满圈 + wrap；开火命中锚点拟合（41 锚点残差 9.5°）+
+  独立受击集交叉验证（34 锚点残差 2.3°）证明 `炮口世界方向 = normalize(hullYaw + turretRelativeYaw)`；
+  新增 `TurretDirectionChangedEvent`（`EntityPropertyDecoder` propId=2）与
+  `MapOverview.PlaybackVehicle.directionSamples`（`{timeSec, hullYawDeg, turretRelativeYawDeg}`，
+  约 1s 降采样 + ≥10° 变化保点、finite、≤deathSec、时间升序）；`ReplayEvent` permits 扩展。
+  前端 `BattlePlayback.vue` 圆点标记替换为 PR #72 四张运行时 PNG 的 HTML overlay 双层标记
+  （hull 按 `hullYawDeg`、turret 按 `turretWorldYawDeg=normalize(hull+rel)` 独立旋转，
+  共同 pivot，炮管不脱离炮塔；约 28px/移动端 22px；阵营色只来自素材；录像者 halo/选中 ring/
+  最后已知淡化/阵亡 ✕ 为独立 overlay）；`utils/battlePlayback.js` 新增 `normalizeDeg`/
+  `shortestArcDeg`/`interpolateDirection`（最短圆弧插值、跨 gap 冻结）/`screenRotation`
+  （地图 yaw→屏幕 rotate，0=朝上/90=朝右/180=朝下/270=朝左）与四基准方向单测。
+  `TurretDirectionProbeTest` 新增检查项 12（旋转实验时序 dump）与检查项 11（炮口模型拟合+
+  交叉验证）；证据笔记与逆向文档同步。
 - **AI 复盘结果页「地图鸟瞰」新增「战局回放」第三视图**：后端 `MapOverview` 扩展 `playback`
   （`durationSec` / `vehicles`（含 `positionIntervals` 位置上报区间与 `deathSec`）/ `events`：
   `DAMAGE` / `DESTROYED` / `KILL` / `POSITION_REPORTED` / `POSITION_STALE`，身份经

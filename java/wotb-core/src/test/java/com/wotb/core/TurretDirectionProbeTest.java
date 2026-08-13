@@ -88,6 +88,11 @@ class TurretDirectionProbeTest {
     // =====================================================================
 
     private static List<Path> findSamples() throws Exception {
+        // 定向单样本（如旋转实验回放）：-Dprobe.sample=path
+        final String single = System.getProperty("probe.sample");
+        if (single != null && !single.isBlank() && Files.isRegularFile(Path.of(single))) {
+            return List.of(Path.of(single));
+        }
         final List<Path> out = new ArrayList<>();
         Path repo = Path.of(System.getProperty("user.dir")).toAbsolutePath();
         while (repo != null && !Files.isDirectory(repo.resolve("common"))) {
@@ -99,7 +104,8 @@ class TurretDirectionProbeTest {
         for (final String sub : new String[]{"common/fixtures/replays", "common/data"}) {
             final Path dir = repo.resolve(sub);
             if (Files.isDirectory(dir)) {
-                try (Stream<Path> s = Files.list(dir)) {
+                // 递归扫描（common/data 允许子目录放特殊样本，如旋转实验；ParityTest 仍非递归）
+                try (Stream<Path> s = Files.walk(dir)) {
                     s.filter(p -> p.toString().toLowerCase().endsWith(".wotbreplay"))
                             .sorted().forEach(out::add);
                 }
@@ -213,6 +219,7 @@ class TurretDirectionProbeTest {
         check10HullYaw(posByEid, e2a);
         System.out.println();
         check39Cross(byType, prop2ByEid, posByEid, recEid);
+        check12RotationDump(prop2ByEid, posByEid, recEid);
         System.out.println();
         type23AroundRecorder(byType, posByEid, prop2ByEid, recEid);
     }
@@ -766,71 +773,89 @@ class TurretDirectionProbeTest {
     // =====================================================================
 
     private static void check11OffsetFit() {
-        System.out.println("== [11] 常数偏移 / 尺度回归拟合 (跨全部样本命中锚点) ==");
+        System.out.println("== [11] 炮口方向模型拟合 + 交叉验证 (跨全部样本命中锚点) ==");
         if (FIRE_FIT.isEmpty()) {
             System.out.println("  no fire-hit anchors -> skip");
             return;
         }
-        // 双 bearing 约定取较小误差（与 [7] 同口径）
-        final double[] bestA = bestScaleOffset(FIRE_FIT);
-        final double fitRes = bestA[2];
-        final double fitResNeg = bestA[3];
-        final double cvRes = HIT_FIT.isEmpty() ? Double.NaN : residual(HIT_FIT, bestA[0], bestA[1], false);
-        final double cvResNeg = HIT_FIT.isEmpty() ? Double.NaN : residual(HIT_FIT, bestA[0], bestA[1], true);
-        System.out.printf(Locale.ROOT,
-                "  FIT n=%d best(a=%.3f, b=%.1f) meanRes=%.1f deg (a=-1 变体 meanRes=%.1f)%n",
-                FIRE_FIT.size(), bestA[0], bestA[1], fitRes, fitResNeg);
-        System.out.printf(Locale.ROOT,
-                "  CROSS-VALIDATION on 7b (attacker->recorder) n=%d: meanRes=%.1f deg (a=-1 变体 %.1f)%n",
-                HIT_FIT.size(), cvRes, cvResNeg);
-        final double bestRes = Math.min(Math.min(fitRes, fitResNeg),
-                Double.isNaN(Math.min(cvRes, cvResNeg)) ? Double.MAX_VALUE : Math.min(cvRes, cvResNeg));
-        if (!Double.isNaN(cvRes) && !Double.isNaN(cvResNeg)
-                && Math.min(cvRes, cvResNeg) < 15.0 && fitRes < 15.0) {
-            System.out.println("  VERDICT: PROVEN-ish（线性编码成立，残差 <15°，需人工核验）");
+        // 模型（旋转实验已证 prop2 为满圈角度、与 type-10 yaw 同向）：
+        //   M1 gun = prop2 + b
+        //   M2 gun = yaw + prop2 + b   （prop2 = 炮塔相对车体角）
+        //   M3 gun = yaw - prop2 + b
+        // 拟合 b = 圆形均值(锚点 bearing - 基角)（双 bearing 约定取较小），受击集不重拟合交叉验证。
+        final double[] m1 = fitOffset(FIRE_FIT, 0);
+        final double[] m2 = fitOffset(FIRE_FIT, 1);
+        final double[] m3 = fitOffset(FIRE_FIT, -1);
+        for (final double[] m : new double[][]{m1, m2, m3}) {
+            final double cv = HIT_FIT.isEmpty() ? Double.NaN : residualModel(HIT_FIT, m[0], m[1]);
+            System.out.printf(Locale.ROOT,
+                    "  model(k=%+.1f) b=%.1f FIT n=%d meanRes=%.1f | CROSS-VAL n=%d meanRes=%.1f%n",
+                    m[0], m[1], FIRE_FIT.size(), m[2], HIT_FIT.size(), cv);
+        }
+        final boolean proven = m2[2] < 15.0 && !HIT_FIT.isEmpty()
+                && residualModel(HIT_FIT, m2[0], m2[1]) < 15.0;
+        if (proven) {
+            System.out.println("  VERDICT: PROVEN（M2 yaw+prop2+偏移 拟合与交叉验证残差均 <15° => prop2=炮塔相对车体角）");
         } else {
-            System.out.println("  VERDICT: NOT_PROVEN（任意线性编码下残差仍大 => prop2 非炮口水平方向）");
+            System.out.println("  VERDICT: NOT_PROVEN（全部模型交叉验证残差仍大；prop2 与命中方向的系统偏差待录屏 ground truth）");
         }
     }
 
-    /** 网格搜索 gunWorld = scale*propDeg + offset 的最优 (scale, offset)；返回 {scale, offset, meanRes, meanResNegScale}。 */
-    private static double[] bestScaleOffset(final List<double[]> fit) {
-        double bestScale = 1.0;
-        double bestOffset = 0.0;
+    /**
+     * gun = k*yaw + prop2 + b（k=0 纯 prop2；k=+1 世界=车体+相对；k=-1 相减变体）。
+     * 返回 {k, 最优 b, FIT 平均圆形残差}。b 用圆形均值估计（双 bearing 约定取较小）。
+     */
+    private static double[] fitOffset(final List<double[]> fit, final double k) {
+        double bestB = 0;
         double bestRes = Double.MAX_VALUE;
-        double bestResNeg = Double.MAX_VALUE;
-        for (double a = -2.0; a <= 2.0 + 1e-9; a += 0.05) {
-            for (double b = -180.0; b < 180.0; b += 2.0) {
-                final double rPos = residual(fit, a, b, false);
-                final double rNeg = residual(fit, a, b, true);
-                if (rPos < bestRes) {
-                    bestRes = rPos;
-                    bestScale = a;
-                    bestOffset = b;
-                }
-                if (rNeg < bestResNeg) {
-                    bestResNeg = rNeg;
-                }
+        for (double b = -180.0; b < 180.0; b += 1.0) {
+            final double res = residualModel(fit, k, b);
+            if (res < bestRes) {
+                bestRes = res;
+                bestB = b;
             }
         }
-        return new double[]{bestScale, bestOffset, bestRes, bestResNeg};
+        return new double[]{k, bestB, bestRes};
     }
 
-    /** gunWorld = (negScale ? -scale : scale)*propDeg + offset 在锚点集上的平均圆形误差（双 bearing 约定取较小）。 */
-    private static double residual(final List<double[]> fit, final double scale,
-                                   final double offset, final boolean negScale) {
+    /** gun = k*yaw + prop2 + b 在锚点集上的平均圆形误差（双 bearing 约定取较小）。 */
+    private static double residualModel(final List<double[]> fit, final double k, final double b) {
         if (fit.isEmpty()) {
             return Double.NaN;
         }
-        final double a = negScale ? -scale : scale;
         double sum = 0;
         for (final double[] s : fit) {
-            final double gun = a * s[0] + offset;
+            final double gun = k * s[1] + s[0] + b;
             final double e = Math.min(Math.abs(angDiffDeg(gun, s[2])),
                     Math.abs(angDiffDeg(gun, s[3])));
             sum += e;
         }
         return sum / fit.size();
+    }
+
+    // =====================================================================
+    // 检查项 12：旋转实验（车体静止炮塔转一圈 / 车体转一圈炮塔跟随）——
+    // 打印录像者 prop2（默认解码）与 type-10 yaw 的全时序，供人工核对 360° 扫掠与 wrap。
+    // =====================================================================
+
+    private static void check12RotationDump(final Map<Integer, List<Prop2Sample>> prop2ByEid,
+                                            final Map<Integer, List<EventStreamReader.PositionData>> posByEid,
+                                            final Integer recEid) {
+        System.out.println("== [12] 旋转实验: 录像者 prop2 / yaw 全时序 =");
+        if (recEid == null) {
+            System.out.println("  recorder eid unknown -> skip");
+            return;
+        }
+        final List<Prop2Sample> props = prop2ByEid.getOrDefault(recEid, List.of());
+        final List<EventStreamReader.PositionData> positions = posByEid.getOrDefault(recEid, List.of());
+        System.out.printf(Locale.ROOT, "  recorder eid=%d prop2 n=%d pos n=%d%n", recEid, props.size(), positions.size());
+        for (final Prop2Sample s : props) {
+            System.out.printf(Locale.ROOT, "  P2 t=%.2f raw=%d deg=%.1f%n", s.t(), s.raw(), defaultDeg(s));
+        }
+        for (final EventStreamReader.PositionData p : positions) {
+            System.out.printf(Locale.ROOT, "  YW t=%.2f yawDeg=%.1f x=%.1f z=%.1f%n",
+                    p.clockSecs, Math.toDegrees(p.yaw), p.x, p.z);
+        }
     }
 
     // =====================================================================

@@ -85,6 +85,59 @@ export function parseAiTime(text) {
   return null
 }
 
+/** 角度归一化到 [-180, 180)。 */
+export function normalizeDeg(a) {
+  return (((a + 180) % 360) + 360) % 360 - 180
+}
+
+/** 最短圆弧差（度，[-180,180]）：359° → 1° 的正确跨 0 处理。 */
+export function shortestArcDeg(a, b) {
+  return normalizeDeg(a - b)
+}
+
+/**
+ * 地图 yaw → 屏幕旋转角（CSS/SVG rotate，正值=屏幕顺时针）。
+ * 地图约定：yaw 从北(+Z)起顺时针为正；屏幕：+Y 向下。两次翻转（Z→−Y 镜像与 y-down 顺时针）抵消，
+ * 故 screenRotate = yawDeg（0=朝上、90=朝右/东、180=朝下、270=朝左），四个基准方向已用公式验证。
+ */
+export function screenRotation(yawDeg) {
+  return normalizeDeg(yawDeg)
+}
+
+/** 炮塔世界方向 = normalize(hullYaw + turretRelativeYaw)（单位：度）。 */
+export function turretWorldYawDeg(hullYawDeg, turretRelativeYawDeg) {
+  return normalizeDeg(hullYawDeg + turretRelativeYawDeg)
+}
+
+/**
+ * 方向插值：在时间升序的 directionSamples 上按最短圆弧分别插值 hull/turret 角。
+ * - t 早于首个样本 → null（未采样，不伪造朝向）
+ * - 样本间 gap > OBSERVED_GAP_SEC → 不插值，返回最后可信样本（lost 冻结语义）
+ * - t 晚于末样本 → 返回末样本（阵亡/战斗末冻结）
+ */
+export function interpolateDirection(samples, t) {
+  if (!samples || samples.length === 0 || !Number.isFinite(t)) return null
+  if (t < samples[0].timeSec - 1e-6) return null
+  let prev = samples[0]
+  for (let i = 1; i < samples.length; i++) {
+    const next = samples[i]
+    if (t <= next.timeSec + 1e-6) {
+      const gap = next.timeSec - prev.timeSec
+      if (gap > OBSERVED_GAP_SEC) {
+        return { hullYawDeg: prev.hullYawDeg, turretRelativeYawDeg: prev.turretRelativeYawDeg, timeSec: prev.timeSec }
+      }
+      const ratio = gap <= 0 ? 0 : Math.min(1, Math.max(0, (t - prev.timeSec) / gap))
+      return {
+        hullYawDeg: normalizeDeg(prev.hullYawDeg + shortestArcDeg(next.hullYawDeg, prev.hullYawDeg) * ratio),
+        turretRelativeYawDeg: normalizeDeg(prev.turretRelativeYawDeg + shortestArcDeg(next.turretRelativeYawDeg, prev.turretRelativeYawDeg) * ratio),
+        timeSec: t
+      }
+    }
+    prev = next
+  }
+  return { hullYawDeg: prev.hullYawDeg, turretRelativeYawDeg: prev.turretRelativeYawDeg, timeSec: prev.timeSec }
+}
+
 /** 秒 → MM:SS（播放器/进度条显示）。先对总秒数统一取整再分解，避免 59.6s 显示成 00:60。 */
 export function formatClock(sec) {
   if (!Number.isFinite(sec) || sec < 0) return '00:00'

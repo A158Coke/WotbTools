@@ -137,14 +137,32 @@ public record MapOverview(
             String tankName,
             int team,
             List<PositionInterval> positionIntervals,
-            Double deathSec
+            Double deathSec,
+            List<DirectionSample> directionSamples
     ) {
         public PlaybackVehicle {
             playerName = playerName == null ? "" : playerName;
             tankName = tankName == null ? "" : tankName;
             positionIntervals = positionIntervals == null
                     ? List.of() : List.copyOf(positionIntervals);
+            directionSamples = directionSamples == null
+                    ? List.of() : List.copyOf(directionSamples);
         }
+    }
+
+    /**
+     * 车辆方向采样（battle-relative 秒升序）。
+     * <p>单位均为度：{@code hullYawDeg} 来自 type-10 yaw（弧度→度，[-180,180)）；
+     * {@code turretRelativeYawDeg} 来自 type-7 propId=2（u16*360/65536-180，[-180,180)，
+     * 完整 360° 且 ±180 回绕）。炮口/炮塔世界方向由前端计算：
+     * {@code turretWorldYaw = normalize(hullYawDeg + turretRelativeYawDeg)}。
+     * 相邻采样间前端按最短圆弧插值；跨位置中断/阵亡/不可信 gap 禁止插值。
+     */
+    public record DirectionSample(
+            double timeSec,
+            double hullYawDeg,
+            double turretRelativeYawDeg
+    ) {
     }
 
     /**

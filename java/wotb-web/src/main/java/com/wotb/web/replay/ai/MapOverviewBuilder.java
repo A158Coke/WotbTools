@@ -12,6 +12,7 @@ import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.TurretDirectionChangedEvent;
 import com.wotb.core.replay.event.VehicleDestroyedEvent;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.map.MapGridProfile;
@@ -156,10 +157,12 @@ public final class MapOverviewBuilder {
             final Double deathSec = resolveDeathSec(player);
             final List<MapOverview.PositionInterval> intervals = positionIntervals(
                     entityIds, positions, events, battleStartRawClockSec, deathSec);
+            final List<MapOverview.DirectionSample> directionSamples = directionSamples(
+                    entityIds, positions, events, battleStartRawClockSec, deathSec);
             vehicles.add(new MapOverview.PlaybackVehicle(
                     player.accountId, player.nickname, player.tankId,
                     player.tankName == null ? "" : player.tankName, player.team,
-                    intervals, deathSec));
+                    intervals, deathSec, directionSamples));
         }
         if (vehicles.isEmpty()) {
             return null;
@@ -210,6 +213,72 @@ public final class MapOverviewBuilder {
                 ? battle.durationS : positions.lastTimeSec();
         return new MapOverview.Playback(
                 duration > 0 ? duration : 0, vehicles, playbackEvents);
+    }
+
+    /**
+     * 车辆方向采样：type-7 propId=2（炮塔相对车体角）与同车最近 type-10 位置（hull yaw）配对。
+     * 仅保留 finite、≥0、≤deathSec 的样本；按「dt≥1s 或方向变化≥10°」降采样以控制载荷，
+     * 首尾样本恒保留；无可靠炮塔/车体方向的车辆返回空列表（不伪造朝向）。
+     */
+    private static List<MapOverview.DirectionSample> directionSamples(
+            final List<Integer> entityIds,
+            final Positions positions,
+            final List<ReplayEvent> events,
+            final Float battleStartRawClockSec,
+            final Double deathSec) {
+        final List<double[]> raw = new ArrayList<>();
+        for (final int entityId : entityIds) {
+            for (final ReplayEvent event : events) {
+                if (!(event instanceof TurretDirectionChangedEvent turret)
+                        || turret.entityId() != entityId) {
+                    continue;
+                }
+                final double t = relativeSec(turret, battleStartRawClockSec);
+                if (!Double.isFinite(t) || t < 0
+                        || (deathSec != null && t > deathSec + 1e-6)) {
+                    continue;
+                }
+                final Position pos = positions.nearest(entityId, t);
+                if (pos == null || pos.yawDeg() == null || !Double.isFinite(pos.yawDeg())) {
+                    continue;
+                }
+                raw.add(new double[]{t, pos.yawDeg(), turret.turretRelativeYawDeg()});
+            }
+        }
+        raw.sort(Comparator.comparingDouble(a -> a[0]));
+        final List<MapOverview.DirectionSample> out = new ArrayList<>();
+        double lastKeptT = Double.NEGATIVE_INFINITY;
+        double lastHull = 0;
+        double lastRel = 0;
+        for (final double[] s : raw) {
+            final boolean first = out.isEmpty();
+            final double dHull = first ? 0 : shortestArcDeg(s[1], lastHull);
+            final double dRel = first ? 0 : shortestArcDeg(s[2], lastRel);
+            if (first || s[0] - lastKeptT >= 1.0
+                    || Math.abs(dHull) >= 10.0 || Math.abs(dRel) >= 10.0) {
+                out.add(new MapOverview.DirectionSample(s[0], s[1], s[2]));
+                lastKeptT = s[0];
+                lastHull = s[1];
+                lastRel = s[2];
+            } else {
+                // 未保留：更新基准，避免漂移累积误判变化阈值
+                lastHull = s[1];
+                lastRel = s[2];
+            }
+        }
+        return out;
+    }
+
+    /** 最短圆弧差（度，[-180,180]）。 */
+    private static double shortestArcDeg(final double a, final double b) {
+        double d = (a - b) % 360.0;
+        if (d > 180) {
+            d -= 360;
+        }
+        if (d < -180) {
+            d += 360;
+        }
+        return d;
     }
 
     /**
@@ -535,8 +604,11 @@ public final class MapOverviewBuilder {
         return event.timestamp().rawClockSec();
     }
 
-    /** 某时刻的平面位置（语义坐标 x/z 与 battle-relative 秒）。 */
-    private record Position(double timeSec, double x, double z) {
+    /**
+     * 某时刻的平面位置（语义坐标 x/z 与 battle-relative 秒）。
+     * yawDeg 来自 type-10 yaw（弧度→度，[-180,180)），非有限时为 null（不参与方向采样）。
+     */
+    private record Position(double timeSec, double x, double z, Double yawDeg) {
     }
 
     /** 按实体聚合的位置时间线（有序），附带最近/最后位置查询。 */
@@ -573,8 +645,10 @@ public final class MapOverviewBuilder {
                 if (!Double.isFinite(t) || t < 0) {
                     continue;
                 }
+                final Double yawDeg = Float.isFinite(pos.yaw())
+                        ? Math.toDegrees(pos.yaw()) : null;
                 byEntity.computeIfAbsent(pos.entityId(), k -> new ArrayList<>())
-                        .add(new Position(t, pos.x(), pos.z()));
+                        .add(new Position(t, pos.x(), pos.z(), yawDeg));
             }
             byEntity.values().forEach(list -> list.sort(Comparator.comparingDouble(Position::timeSec)));
             return new Positions(byEntity);
