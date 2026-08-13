@@ -43,7 +43,7 @@ watch(view, (next) => {
 })
 // AI 报告时间跳转：自动切到「战局回放」视图
 watch(() => props.seekTo, (sec) => {
-  if (Number.isFinite(sec)) {
+  if (Number.isFinite(sec) && props.overview.playback) {
     view.value = 'playback'
   }
 }, { immediate: true })

@@ -360,4 +360,14 @@ describe('MapOverview', () => {
     await flushPromises()
     expect(wrapper.find('[data-test="battle-playback"]').exists()).toBe(true)
   })
+
+  it('keeps the current view when seekTo is provided but playback data is absent', async () => {
+    const wrapper = mount(MapOverview, {
+      props: { overview: makeOverview(), seekTo: 30 },
+      global: { mocks: { $t: i18n.t } }
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-test="battle-playback"]').exists()).toBe(false)
+    expect(wrapper.find('svg').exists()).toBe(true)
+  })
 })
