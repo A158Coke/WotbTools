@@ -777,6 +777,8 @@
         "analyze_multi_btn": "AI Multi-battle ({n})",
         "cancel_btn": "Cancel Analysis",
         "analysis_title_player": "AI Review",
+        "copy": "Copy",
+        "copied": "Copied",
           "prebattle": {
               "title": "Pre-Battle Prediction",
               "collapse": "Collapse",

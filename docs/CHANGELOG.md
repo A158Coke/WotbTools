@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Changed
+- **AI 复盘结果一键复制正文**：`AnalysisResultPanel` 面板头部（右上角）新增「复制」按钮，用
+  `navigator.clipboard.writeText` 复制 `result.analysis`（Call #2 正文；不含
+  preBattleSection/mapOverview），剪贴板 API 不可用时降级 `execCommand('copy')`；
+  复制后按钮显示「已复制」1.5s 后复位。新增三语 locale `recon.copy` / `recon.copied`
+  与组件测试（仅复制正文、排除赛前预测/地图鸟瞰、反馈状态复位）。
 - **技能更名：grill-with-docs → plan-designer（开发方案设计）**：开发前方案 grill 技能更名为
   `plan-designer`，调用时**自动前置 grill-me**（需求澄清：复述理解 → 逐层提问 ≤3 个/轮 →
   输出《需求确认单》），需求已明确时跳过并注明；随后进入方案设计流程（可落地性核对 →
