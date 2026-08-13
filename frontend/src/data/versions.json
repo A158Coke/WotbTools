@@ -1,5 +1,29 @@
 [
   {
+    "v": "2.11.6",
+    "date": "2026-08-13",
+    "tag": "add",
+    "zh": "AI 复盘结果新增「复制」按钮：一键复制战术复盘正文（不含赛前预测与地图鸟瞰），方便分享或存档",
+    "en": "AI review results gain a Copy button: one click copies the tactical review body (excluding the pre-battle prediction and map overview) for easy sharing or archiving",
+    "ru": "В результатах AI-разбора появилась кнопка «Копировать»: одним кликом копируется текст тактического разбора (без предбоевого прогноза и карты боя) для удобного обмена или сохранения"
+  },
+  {
+    "v": "2.11.5",
+    "date": "2026-08-13",
+    "tag": "fix",
+    "zh": "修复 AI 复盘胜负判定：优先采用权威结算结果（存在时）；结算缺失时明确标注为「存活状态推导」或「点数推断」，不再把推断结果说成权威结算；全歼按双向判定——对方全歼写「全歼敌方获胜」，本方被全歼写「被敌方全歼落败」，不再误判为「时间耗尽后以点数优势获胜」",
+    "en": "Fixed AI review win/loss determination: the authoritative battle result is used when present; when it is missing, the review explicitly labels the source as a survival-state derivation or points inference instead of presenting inference as an authoritative result; annihilation is judged both ways (\"won by annihilating the enemy team\" when the enemy is wiped out, \"lost, annihilated by the enemy team\" when your team is wiped out) instead of mislabeling it \"won on points after time expired\"",
+    "ru": "Исправлено определение исхода в AI-разборе: при наличии используется авторитетный итог боя; если его нет, источник явно помечается как вывод по выжившим или вывод по очкам, а не выдаётся за авторитетный итог; полное уничтожение учитывается в обе стороны: «победа полным уничтожением противника» и «поражение: противник полностью уничтожил вашу команду», вместо ошибочной «победы по очкам после истечения времени»"
+  },
+  {
+    "v": "2.11.4",
+    "date": "2026-08-14",
+    "tag": "chg",
+    "zh": "管理员专属最高打手等级更名为“殿堂级”；每个服务器最多一名、仅管理员编辑已有打手时可授予的规则保持不变",
+    "en": "The administrator-only top booster tier is now called “Mythic”; the limit of one per server and edit-only assignment rule remain unchanged",
+    "ru": "Высший уровень бустера, доступный только администратору, переименован в «Мифический»; ограничение одного на сервер и назначение только при редактировании остаются без изменений"
+  },
+  {
     "v": "2.11.3",
     "date": "2026-08-13",
     "tag": "fix",

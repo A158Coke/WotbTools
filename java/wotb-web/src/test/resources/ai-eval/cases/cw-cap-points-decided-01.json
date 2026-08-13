@@ -8,7 +8,9 @@
   "checks": [
     { "kind": "prompt_contains", "text": "CAPTURE_AND_POINTS" },
     { "kind": "prompt_contains", "text": "pointsDecided=true" },
-    { "kind": "prompt_contains", "text": "winnerSource=POINTS_INFERENCE" }
+    { "kind": "prompt_contains", "text": "winnerSource=POINTS_INFERENCE" },
+    { "kind": "prompt_contains", "text": "resultSource=POINTS_INFERENCE" },
+    { "kind": "prompt_omits", "text": "resultSource=BATTLE_RESULTS" }
   ],
   "note": "双方未全灭、结算无 winnerTeam：以逐人占点分总和推断点数胜负（规则候选，非权威）。"
 }

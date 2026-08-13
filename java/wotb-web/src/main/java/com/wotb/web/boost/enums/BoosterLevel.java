@@ -9,7 +9,7 @@ public enum BoosterLevel {
     MASTER,
     AVERAGE_GOD;
 
-    /** 场均神只能由管理员编辑已有打手档案时授予。 */
+    /** 殿堂级（界面英文 Mythic）只能由管理员编辑已有打手档案时授予。 */
     public boolean canBeSelectedOnCreate() {
         return this != AVERAGE_GOD;
     }
