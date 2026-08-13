@@ -27,7 +27,7 @@ public final class FriendlyEnemyResult {
     public enum WinnerSource {
         /** 结算字段 battle_results#winnerTeam 直接给出。 */
         BATTLE_RESULTS,
-        /** 结算存活标记：一方全员阵亡，另一方获胜（结算级事实推导）。 */
+        /** 结算存活标记：一方全员阵亡，另一方获胜（结算级事实推导；仅当结算阵容完整时）。 */
         SURVIVOR_SETTLEMENT,
         /** 双方均未全灭时的争霸赛点数推断：占点得分高者胜（规则候选，非权威）。 */
         POINTS_INFERENCE,
@@ -100,7 +100,8 @@ public final class FriendlyEnemyResult {
     /**
      * 团队赛（supremacy 争霸赛）胜负解析，供 team perspective 使用。
      *
-     * <p>规则：团队赛一定是争霸赛；结束时刻若任意一方全员阵亡则对方获胜（结算级推导），
+     * <p>规则：团队赛一定是争霸赛；结束时刻若任意一方全员阵亡则对方获胜（结算级推导，
+     * 仅当 {@link Battle#rosterComplete} 为 true 时；名册/战绩不完整时不得用存活数推导胜方），
      * 若双方都未全员阵亡则说明是某一方点数胜利（比较占点得分推断，方向一致时胜方高）。
      * 点数胜利的结束方式按双方胜利点数区分：任一方 ≥1000 为提前获胜，均 <1000 为时间耗尽。
      * 结算 winnerTeam 存在时始终以其为准。数据不足/点数相同仍返回 DRAW_OR_UNKNOWN。</p>
@@ -127,13 +128,15 @@ public final class FriendlyEnemyResult {
                     pointsDecided ? pointsEndReason(battle, recorderTeam) : PointsEndReason.NOT_APPLICABLE);
         }
         if (bothTeamsPresent && (team1Alive == 0 || team2Alive == 0)) {
-            // 结算级存活标记：一方全员阵亡，另一方获胜
-            final boolean friendlyWiped = recorderTeam == 1 ? team1Alive == 0 : team2Alive == 0;
-            return new TeamBattleWinner(
-                    friendlyWiped ? Winner.ENEMY_WIN : Winner.FRIENDLY_WIN,
-                    WinnerSource.SURVIVOR_SETTLEMENT,
-                    false,
-                    PointsEndReason.NOT_APPLICABLE);
+            // 结算级存活标记：一方全员阵亡，另一方获胜（仅当结算阵容完整，否则不能把未知当零存活）
+            if (rosterComplete(battle)) {
+                final boolean friendlyWiped = recorderTeam == 1 ? team1Alive == 0 : team2Alive == 0;
+                return new TeamBattleWinner(
+                        friendlyWiped ? Winner.ENEMY_WIN : Winner.FRIENDLY_WIN,
+                        WinnerSource.SURVIVOR_SETTLEMENT,
+                        false,
+                        PointsEndReason.NOT_APPLICABLE);
+            }
         }
         if (pointsDecided) {
             // 点数推断：比较双方占点得分总和（方向与胜方一致时才可用）
@@ -167,7 +170,7 @@ public final class FriendlyEnemyResult {
     }
 
     /** 指定团队的结算存活车辆数（团队 1/2）；battle/players 缺失时返回 0。 */
-    public static long survivors(final Battle battle, final int team) {
+    private static long survivors(final Battle battle, final int team) {
         return battle == null || battle.players == null ? 0L
                 : battle.players.stream()
                         .filter(p -> p != null && p.team == team && p.survived)
@@ -177,14 +180,17 @@ public final class FriendlyEnemyResult {
     /**
      * 全歼双向语义后缀：分析方获胜且对方无存活 → 「（全歼敌方）」；分析方落败且本方无存活 →
      * 「（被敌方全歼）」；其余（含 battle 缺失）返回空串。只看结算存活状态，与 resultSource 无关。
-     * fail-closed：perspectiveTeam 非法、players 缺失/为空、任一方队伍不在 roster 时一律返回空串，
-     * 不得把未知当成零存活。
+     * fail-closed：perspectiveTeam 非法、players 缺失/为空、结算阵容不完整（rosterComplete != true）、
+     * 任一方队伍不在 roster 时一律返回空串，不得把未知当成零存活。
      */
     public static String annihilationSuffix(final Battle battle, final int perspectiveTeam,
                                             final Winner winner) {
         if (battle == null || winner == null
                 || !PlayerSideResolver.isValidRawTeam(perspectiveTeam)
                 || battle.players == null || battle.players.isEmpty()) {
+            return "";
+        }
+        if (!rosterComplete(battle)) {
             return "";
         }
         if (countTeam(battle, perspectiveTeam) == 0
@@ -203,6 +209,14 @@ public final class FriendlyEnemyResult {
 
     private static int opposingTeam(final int perspectiveTeam) {
         return perspectiveTeam == 1 ? 2 : 1;
+    }
+
+    /**
+     * 结算阵容完整前提（SURVIVOR_SETTLEMENT 推导与 annihilationSuffix 共享）：
+     * 仅当 ReplayParser 确认名册(#201)与战绩(#301)账号/队伍一致时返回 true；未知一律视为不完整。
+     */
+    private static boolean rosterComplete(final Battle battle) {
+        return battle != null && Boolean.TRUE.equals(battle.rosterComplete);
     }
 
     private static long pointsEarned(final Battle battle, final int team) {

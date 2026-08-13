@@ -33,15 +33,6 @@ public final class TeamAutopsyPromptBuilder {
             final PreBattleStrategicPrior prior,
             final List<AiEvidence> criticalWindows,
             final TeamBattleWinner winner,
-            final String teamLabel) {
-        return buildUserContent(stats, prior, criticalWindows, winner, teamLabel, null, 0);
-    }
-
-    static String buildUserContent(
-            final List<TeamAutopsyStats> stats,
-            final PreBattleStrategicPrior prior,
-            final List<AiEvidence> criticalWindows,
-            final TeamBattleWinner winner,
             final String teamLabel,
             final Battle battle,
             final int perspectiveTeam) {
@@ -131,13 +122,6 @@ public final class TeamAutopsyPromptBuilder {
     static String renderSection(final TeamAutopsyResult result,
                                 final TeamBattleWinner winner,
                                 final List<TeamAutopsyStats> roster,
-                                final String teamLabel) {
-        return renderSection(result, winner, roster, teamLabel, null, 0);
-    }
-
-    static String renderSection(final TeamAutopsyResult result,
-                                final TeamBattleWinner winner,
-                                final List<TeamAutopsyStats> roster,
                                 final String teamLabel,
                                 final Battle battle,
                                 final int perspectiveTeam) {
@@ -198,11 +182,6 @@ public final class TeamAutopsyPromptBuilder {
         final String label = stat.nickname().isBlank()
                 ? stat.tankName() : stat.nickname() + " / " + stat.tankName();
         return playerKey + "（" + PromptDataQuoter.quote(label, stat.tankName()) + "）";
-    }
-
-    /** 团队赛胜负标签；使用实际队名（teamLabel），点数判定时附加结束方式说明。 */
-    static String winnerLabel(final TeamBattleWinner winner, final String teamLabel) {
-        return winnerLabel(winner, teamLabel, null, 0);
     }
 
     /** 团队赛胜负标签（battle 可用时附加全歼双向语义）：全歼敌方获胜 / 被敌方全歼落败。 */

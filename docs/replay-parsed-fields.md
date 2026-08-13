@@ -40,6 +40,7 @@
 | `arenaId` | String | 地图/竞技场 ID（来源：`battle_results.dat`） |
 | `winnerTeam` | Integer | 获胜队伍原始编号；null=平局/未知（来源：`battle_results.dat`） |
 | `players` | List\<PlayerResult\> | 全部玩家战绩（来源：`battle_results.dat`） |
+| `rosterComplete` | Boolean | 结算阵容完整性证据：名册(#201)与战绩(#301)账号集合一致（所有参战成员都有结算记录）且名册提供队伍(#201→#2→#3)时与结算队伍一致时为 true；null=未知/不完整（来源：`ReplayParser` 对比 #201/#301）。只有为 true 才允许用 survivors==0 断言全歼或推导 SURVIVOR_SETTLEMENT |
 | `version` | String | 游戏版本（来源：`meta.json`） |
 | `mapName` | String | 内部地图 code（如 `desert_train`；来源：`meta.json`） |
 | `durationS` | Double | 战斗时长（秒，来源：`meta.json#battleDuration`，上限 420） |

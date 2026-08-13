@@ -14,9 +14,13 @@
   全歼语义双向：本方获胜且对方 survivors=0 → 「全歼敌方获胜」；本方落败且本方 survivors=0 →
   「被敌方全歼落败」；双方均有存活才进入点数结束方式（≥1000 提前获胜 / 双方 <1000 时间耗尽
   点数判定，pointsEndReason 前置条件=双方均未全员阵亡）；`autopsy` 提示词规则 9 同步。
-  `annihilationSuffix` fail-closed：非法 perspectiveTeam、players 缺失/为空、任一方队伍不在
-  roster 时一律不输出全歼后缀，不得把未知当成零存活（新增 `TeamResultSourceBoundaryTest` 覆盖
-  主 result 行与 Autopsy 结果行边界）。
+  `annihilationSuffix` fail-closed 升级为**结算阵容完整前提**（`Battle.rosterComplete`）：
+  ReplayParser 解析名册 `#201→#2→#3`（名册来源队伍）并与战绩 `#301` 对比——账号集合完全一致且
+  每个账号队伍一致才标记完整；非法 perspectiveTeam、players 缺失/为空、阵容不完整或任一方队伍
+  不在 roster 时一律不输出全歼后缀，winnerTeam 缺失时也不得推导 SURVIVOR_SETTLEMENT 胜方，
+  不得把未知当成零存活；不写死每队 7 人，完整名册的非 7v7 训练房同样生效。新增
+  `TeamResultSourceBoundaryTest` 覆盖部分缺失敌方/本方、winnerTeam 存在与缺失、主 result 行与
+  Autopsy 结果行、完整 7v7 与合法非 7v7 场景。
   新增 golden case `cw-annihilation-win-01` / `cw-annihilation-loss-01` + fixtures + lessons；
   `cw-cap-win-01` / `cw-cap-points-decided-01` 断言 mandatory header `resultSource=POINTS_INFERENCE`
   且不出现 BATTLE_RESULTS；`AiEvalHarnessTest` 断言 ZH 规则含全歼双向语义与三级证据、

@@ -5,7 +5,7 @@ package com.wotb.web.replay.ai;
  * localizeTeamSystemPrompt 与 single/multi 两个 system prompt。
  * <p>从 {@link TeamReplayAnalysisService} 拆出，纯常量/纯函数工具类。</p>
  */
-public final class TeamPromptLocalizer {
+final class TeamPromptLocalizer {
 
     private TeamPromptLocalizer() {
     }
@@ -195,7 +195,7 @@ public final class TeamPromptLocalizer {
      * 组装团队 system prompt：ZH 返回原样；EN/RU 在中文基座上替换中文输出强制句
      * （输出语言、时间格式、语言规则与团队规则）。
      */
-    public static String localizeTeamSystemPrompt(final String zhPrompt, final AllowedLanguage language) {
+    static String localizeTeamSystemPrompt(final String zhPrompt, final AllowedLanguage language) {
         if (language == null || language == AllowedLanguage.ZH) {
             return zhPrompt;
         }
