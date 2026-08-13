@@ -34,8 +34,6 @@ public class TacticalReviewHarness {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TacticalReviewHarness.class);
 
-    /** Call #1 的硬 stage budget（秒）：小型 roster/map JSON 分析，独立且远短于整体。 */
-    static final int CALL_1_BUDGET_SEC = 45;
     /** Call #2 前保留的安全余量（秒），避免恰好在 endpoint deadline 边缘结束。 */
     static final int SAFETY_MARGIN_SEC = 10;
     /** Call #1 失败后进入旧路径 fallback 所需的最小剩余预算（秒）。 */

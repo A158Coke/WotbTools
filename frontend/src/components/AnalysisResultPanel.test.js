@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { watch } from 'vue'
 import AnalysisResultPanel from './AnalysisResultPanel.vue'
 
 const i18n = vi.hoisted(() => ({
@@ -32,6 +33,39 @@ afterEach(() => {
   vi.useRealTimers()
   delete navigator.clipboard
   delete document.execCommand
+})
+
+describe('AnalysisResultPanel repeated seek', () => {
+  it('clicking the same AI timestamp twice re-triggers the seek', async () => {
+    const seen = []
+    const MapStub = {
+      name: 'MapOverview',
+      props: ['overview', 'seekTo'],
+      setup(props) {
+        seen.push(props.seekTo)
+        watch(() => props.seekTo, v => seen.push(v))
+        return () => null
+      }
+    }
+    const wrapper = mount(AnalysisResultPanel, {
+      props: {
+        result: {
+          analysis: '你在 03:20 与敌方交火',
+          mapOverview: { mapCode: 'desert_train', displayName: 'Desert Sands' }
+        }
+      },
+      global: { mocks: { $t: i18n.t }, stubs: { MapOverview: MapStub } }
+    })
+    const link = wrapper.find('a[href="#seek=200"]')
+    expect(link.exists()).toBe(true)
+    await link.trigger('click')
+    await flushPromises()
+    expect(seen.filter(v => v === 200)).toHaveLength(1)
+    // 用户手动把播放器拖到别处后，再次点击同一个 03:20：必须再次 seek 200
+    await link.trigger('click')
+    await flushPromises()
+    expect(seen.filter(v => v === 200)).toHaveLength(2)
+  })
 })
 
 describe('AnalysisResultPanel preBattleSection', () => {

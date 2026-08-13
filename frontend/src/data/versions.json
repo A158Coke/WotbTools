@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.7",
+    "date": "2026-08-13",
+    "tag": "add",
+    "zh": "地图鸟瞰新增「战局回放」：进度条回放整场战斗，支持播放/暂停、快进快退 5 秒、逐事件跳转与 1×/2×/4× 倍速；双层坦克标记按车体/炮塔独立旋转（车头朝向 + 炮口世界方向），倒车不翻转；当前时刻前的位置轨迹可见，服务器位置流中断时车辆停在淡化最后已知位置（位置流≠点亮），从未上报位置的敌人不显示，阵亡车辆在正确时刻标记；点击 AI 报告中的明确时间（如 03:20、3分20秒）自动跳到对应时刻并暂停",
+    "en": "Map Overview gains a \"Battle Playback\" view: scrub through the battle on a progress bar with play/pause, ±5s, per-event jumps and 1×/2×/4× speeds; two-layer tank markers rotate hull and turret independently (heading + gun world direction), staying correct in reverse; position tracks up to the current time are shown, vehicles fade to their last known position when the server position stream stalls (position stream ≠ spotting), enemies that never reported a position stay hidden, and destroyed vehicles are marked at the right moment; clicking an explicit AI-report time (e.g. 03:20, 3m 20s) jumps to that moment and pauses",
+    "ru": "Обзор карты получил вид «Повтор боя»: перемотка боя по шкале времени с воспроизведением/паузой, ±5 с, переходами по событиям и скоростью 1×/2×/4×; двухслойные маркеры танков вращают корпус и башню независимо (курс корпуса + мировое направление орудия), корректно при заднем ходе; трассы позиций до текущего момента отображаются, при паузе серверного потока позиций машина затухает на последней известной позиции (поток позиций ≠ засвет), враги без единой переданной позиции скрыты, уничтоженные машины отмечаются в нужный момент; клик по явному времени в AI-отчёте (например, 03:20, 3 мин 20 с) переходит к этому моменту и ставит на паузу"
+  },
+  {
     "v": "2.11.6",
     "date": "2026-08-13",
     "tag": "add",

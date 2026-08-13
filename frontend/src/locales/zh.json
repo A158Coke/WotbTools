@@ -788,6 +788,7 @@
             "title": "地图鸟瞰",
             "view_heatmap": "热力",
             "view_routes": "路线",
+            "view_playback": "战局回放",
             "team_friendly": "本方",
             "team_enemy": "敌方",
             "team_all": "全部",
@@ -805,7 +806,28 @@
             "observed_from": "位置观测自",
             "observed_note": "观测区间提示（开局位置缺失的车）：",
             "duration": "{m}分{s}秒",
-            "aria": "地图鸟瞰"
+            "aria": "地图鸟瞰",
+            "playback": {
+                "play": "播放",
+                "pause": "暂停",
+                "all_events": "全部已知事件",
+                "progress": "进度",
+                "tank": "坦克",
+                "team": "阵营",
+                "team_friendly": "本方",
+                "team_enemy": "敌方",
+                "state": "状态",
+                "state_position_reported": "位置上报中",
+                "state_position_stale": "位置中断（最后已知位置）",
+                "state_destroyed": "已击毁",
+                "last_known": "最后已知位置 @",
+                "unknown": "未知",
+                "event_DAMAGE": "伤害",
+                "event_DESTROYED": "击毁",
+                "event_KILL": "击杀",
+                "event_POSITION_REPORTED": "位置上报",
+                "event_POSITION_STALE": "位置中断"
+            }
         },
         "stages": {
             "call1": "赛前预测中…",
