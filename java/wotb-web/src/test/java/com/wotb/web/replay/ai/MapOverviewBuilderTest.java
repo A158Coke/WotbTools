@@ -72,6 +72,22 @@ class MapOverviewBuilderTest {
         assertFalse(overview.phases().isEmpty(), "应产出阶段切片");
         assertEquals("opening", overview.phases().get(0).key());
 
+        // 战局回放契约：时长/车辆/事件（真实夹具应有 DAMAGE 与可见性事件）
+        assertNotNull(overview.playback(), "rift 有观测与名册，playback 不应为 null");
+        assertTrue(overview.playback().durationSec() > 0);
+        assertFalse(overview.playback().vehicles().isEmpty());
+        assertFalse(overview.playback().events().isEmpty());
+        assertTrue(overview.playback().events().stream()
+                        .anyMatch(e -> "DAMAGE".equals(e.type())),
+                "真实夹具应包含 DAMAGE 事件");
+        assertTrue(overview.playback().events().stream()
+                        .anyMatch(e -> "OBSERVED".equals(e.type()) || "LOST".equals(e.type())),
+                "真实夹具应包含可见性事件");
+        for (final MapOverview.PlaybackEvent event : overview.playback().events()) {
+            assertTrue(event.timeSec() >= 0);
+            assertTrue(event.timeSec() <= overview.playback().durationSec() + 1);
+        }
+
         assertEquals(14, overview.routes().size(), "双方 14 车");
         for (final MapOverview.Route route : overview.routes()) {
             assertFalse(route.points().isEmpty(), "每车至少一个路线点");
@@ -167,7 +183,8 @@ class MapOverviewBuilderTest {
                         List.of(new MapOverview.Point(0, 0, 1.5)),
                         0.8, 146.9, 115.0)),
                 1,
-                1L);
+                1L,
+                null);
         final Map<String, Object> payload = mapper.convertValue(overview, Map.class);
         assertEquals("desert_train", payload.get("mapCode"));
         assertEquals("Desert Sands", payload.get("displayName"));
@@ -185,6 +202,8 @@ class MapOverviewBuilderTest {
         assertTrue(payload.containsKey("recorderAccountId"));
         assertEquals(1, payload.get("arenaBonusType"));
         assertEquals(1L, payload.get("recorderAccountId"));
+        assertTrue(payload.containsKey("playback"));
+        assertNull(payload.get("playback"), "降级样例 playback 恒 null");
         @SuppressWarnings("unchecked")
         final Map<String, Object> route = (Map<String, Object>) ((List<?>) payload.get("routes")).get(0);
         assertTrue(route.containsKey("firstObservedSec"));

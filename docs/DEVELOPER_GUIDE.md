@@ -410,7 +410,7 @@ AI 复盘区分两种 scope，互不混用：
 ## 地图鸟瞰（Map Overview）
 
 AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `mapOverview`（可空）→ 前端
-`MapOverview.vue` 纯 SVG 渲染（热力 + 路线双视图）。
+`MapOverview.vue` 纯 SVG 渲染（热力 + 路线 + 战局回放三视图）。
 
 ### 数据链路
 
@@ -442,6 +442,20 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
 - **路线**：双方 14 车，2s 均匀采样（间隔 = max(2s, duration/200)，每车 ≤200 点），
   `firstObservedSec/lastObservedSec` 诚实标注观测区间（敌方静止开局通常缺失，
   前端显示「位置观测自 X 秒起」），`deathSec` 标注阵亡；连续点 gap > 5s 前端断线。
+- **战局回放（Battle Playback，第三视图）**：`MapOverview.playback`（可空）携带
+  `durationSec`、`vehicles`（账号/昵称/坦克/阵营/`observedIntervals` 可观测区间/`deathSec`）与
+  `events`（按 battle-relative 秒升序的英文稳定码：`DAMAGE`/`DESTROYED`/`KILL`/`OBSERVED`/`LOST`，
+  伤害/击毁身份经 `TeamEntityMapper` 实体映射解析，无法可靠解析则不输出）。
+  前端 `BattlePlayback.vue`（独立组件，复用 mapImages/coordinateBounds/色板/响应式布局）用
+  `requestAnimationFrame` 推进播放时间：仅在同一可信连续点（gap ≤ 5s）之间线性插值，
+  跨断线/失察/无效坐标禁止穿线；`observedAt` 决定车辆当前是否可见——可见实体实心显示、
+  失察实体淡化最后已知位置、从未观测实体不显示、阵亡实体在阵亡时刻切换为 ✕；
+  随机战默认只显示与录像者相关的伤害/击杀/阵亡 + 全部可见性事件（可切换「全部已知事件」），
+  训练房/联赛默认显示本方关键事件；进度条按秒聚合事件标记，点击标记跳转该秒并弹出事件列表。
+  播放控制：播放/暂停、±5s、上一/下一事件、1×/2×/4×、拖动 seek。
+  **AI 报告时间跳转**：`MarkdownContent` 把明确时间文本（`03:20` / `3分20秒` / `3m 20s` /
+  `3 мин 20 с`）转成 `#seek=<秒>` 链接（不识别普通数字/比分），点击后展开地图鸟瞰、
+  自动切换到战局回放并 seek 到该时刻暂停。
 - **阶段切片**：opening = OPENING + FIRST_CONTACT 合并；mid = 中间段；late = 战斗末
   `BattlePhaseSummary.DENSE_KILL_WINDOW_SEC`（15s）窗口（残局）。
 - **降级**：未知地图 / 无语义网格 / 无名册 / 无观测 / 视角未解析 → `mapOverview = null`，

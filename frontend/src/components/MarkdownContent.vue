@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import { normalizeHeadings } from '../utils/markdownHeadingNormalize'
+import { parseAiTime } from '../utils/battlePlayback'
 
 const md = new MarkdownIt({
   html: false,
@@ -26,11 +27,26 @@ const props = defineProps({
     default: ''
   }
 })
+const emit = defineEmits(['seek'])
+
+/**
+ * 把 AI 报告中的明确时间文本（03:20 / 3分20秒 / 3m 20s / 3 мин 20 с）转为
+ * `#seek=<秒>` 链接，供战局回放跳转；普通数字（如比分 854:275）不会被误识别。
+ */
+function linkifyTimes(text) {
+  return text.replace(
+    /(^|[^a-zA-Z0-9])(\d{1,2}:\d{2}|\d{1,2}分\d{1,2}秒|\d{1,2}m ?\d{1,2}s|\d{1,2} ?мин\.? ?\d{1,2} ?с\.?)(?![a-zA-Z0-9])/gi,
+    (match, prefix, time) => {
+      const sec = parseAiTime(time)
+      return sec == null ? match : `${prefix}[${time}](#seek=${sec})`
+    }
+  )
+}
 
 const sanitizedHtml = computed(() => {
   if (!props.content) return ''
   const normalized = normalizeHeadings(props.content)
-  const raw = md.render(normalized)
+  const raw = md.render(linkifyTimes(normalized))
   return DOMPurify.sanitize(raw, {
     ALLOWED_TAGS: [
       'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
@@ -46,10 +62,20 @@ const sanitizedHtml = computed(() => {
     ALLOWED_ATTR: ['href', 'target', 'rel']
   })
 })
+
+function onClick(event) {
+  const anchor = event.target.closest && event.target.closest('a[href^="#seek="]')
+  if (!anchor) return
+  event.preventDefault()
+  const sec = Number(anchor.getAttribute('href').slice('#seek='.length))
+  if (Number.isFinite(sec)) {
+    emit('seek', sec)
+  }
+}
 </script>
 
 <template>
-  <div class="markdown-content" v-html="sanitizedHtml" />
+  <div class="markdown-content" v-html="sanitizedHtml" @click="onClick" />
 </template>
 
 <style scoped>
