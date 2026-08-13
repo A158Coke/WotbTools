@@ -89,7 +89,7 @@ public final class MapOverviewBuilder {
         final List<MapOverview.Phase> phases = buildPhases(
                 damages, positions, battle, battleStart);
         final MapOverview.Playback playback = buildPlayback(
-                battle, mapping, positions, events, battleStart, friendlyTeam);
+                battle, mapping, positions, events, battleStart);
 
         return new MapOverview(
                 battle.mapName.trim().toLowerCase(),
@@ -134,8 +134,7 @@ public final class MapOverviewBuilder {
             final TeamEntityMapping mapping,
             final Positions positions,
             final List<ReplayEvent> events,
-            final Float battleStartRawClockSec,
-            final int friendlyTeam) {
+            final Float battleStartRawClockSec) {
         if (battle == null || battle.players == null || positions.isEmpty()) {
             return null;
         }
