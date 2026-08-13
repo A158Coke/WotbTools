@@ -14,6 +14,7 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.processing.FriendlyEnemyResult.WinnerSource;
+import com.wotb.core.processing.FriendlyEnemyResult.PointsEndReason;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
@@ -30,7 +31,8 @@ class TeamAutopsyServiceTest {
     private static final AiTokenEstimator ESTIMATOR = new ConservativeDeepSeekTokenEstimator();
 
     private static TeamBattleWinner win(final Winner winner) {
-        return new TeamBattleWinner(winner, WinnerSource.BATTLE_RESULTS, false);
+        return new TeamBattleWinner(
+                winner, WinnerSource.BATTLE_RESULTS, false, PointsEndReason.NOT_APPLICABLE);
     }
 
     private static final String AUTOPSY_JSON = "{\"players\":["

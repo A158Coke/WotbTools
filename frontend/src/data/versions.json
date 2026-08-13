@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.3",
+    "date": "2026-08-13",
+    "tag": "fix",
+    "zh": "AI 复盘切页不中断：长复盘（团队 3 次 AI 调用）整体预算放宽到约 1100 秒，切走做其他操作时复盘在后台跑完并保留结果；点数胜负写明结束方式（时间耗尽 / 达到 1000 分提前获胜），不再出现未说明时间耗尽的点数优势描述；掉血描述带明确时间范围，短时间内大量掉血或被秒会标注为问题",
+    "en": "AI review keeps running across page switches: the overall budget for long reviews (team flow with 3 AI calls) is raised to about 1100 seconds, so the review finishes in the background and keeps its result; points victories now state how they ended (time expired / reached 1000 points early) instead of implying a mid-match score win; HP-loss descriptions include explicit time ranges, and rapid HP loss or instant destruction is flagged as a problem",
+    "ru": "AI-разбор не прерывается при переключении страниц: общий бюджет длинных разборов (командный поток с 3 AI-вызовами) увеличен примерно до 1100 секунд, разбор завершается в фоне и сохраняет результат; победа по очкам теперь описывается с указанием способа завершения (истекло время / досрочно набрано 1000 очков) вместо намёка на победу по промежуточному счёту; описание потери ОЗ сопровождается точным временным диапазоном, а быстрая потеря ОЗ или мгновенное уничтожение помечаются как проблема"
+  },
+  {
     "v": "2.11.2",
     "date": "2026-08-13",
     "tag": "fix",

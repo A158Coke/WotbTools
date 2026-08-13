@@ -94,6 +94,12 @@ public final class TeamAiPromptBuilder {
         if (!enemyPositions.isEmpty()) {
             optTemp.append("\n" + enemyPositions);
         }
+        // 逐成员掉血窗口（事件流观测子集）：与 OBSERVED 聚合同一覆盖率口径
+        TeamEvidenceFormatter.appendMemberDamageReceivedWindows(
+                optTemp,
+                context.features(),
+                context.reconstruction(),
+                limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
         final String optBlock = optTemp.content();
 
         // 如果 mandatory（header + HPF + prior）超出 token 预算，直接抛出异常

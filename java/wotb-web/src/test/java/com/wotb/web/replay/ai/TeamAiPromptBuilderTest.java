@@ -9,6 +9,9 @@ import com.wotb.core.processing.ReplayProcessingCapabilities;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.feature.CanonicalMapPosition;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.MovementSegment;
@@ -24,6 +27,7 @@ import com.wotb.web.replay.ai.gateway.AiChatResponse;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
 import org.junit.jupiter.api.Test;
 
@@ -147,9 +151,63 @@ class TeamAiPromptBuilderTest {
         final TeamAiPromptBuilder.PromptInput input =
                 TeamAiPromptBuilder.single(context);
 
-        assertTrue(input.content().matches("(?s).*result=.*落败（点数判定）.*"),
+        assertTrue(input.content().matches("(?s).*result=.*落败（时间耗尽点数判定）.*"),
                 input.content());
         assertFalse(input.content().contains("平局或未知"));
+    }
+
+    @Test
+    void memberDamageReceivedWindowsRenderClustersAndRespectPartialSuppression() {
+        final Battle battle = new Battle();
+        battle.arenaId = "windows-arena";
+        battle.mapName = "windows_map";
+        battle.arenaBonusType = 2;
+        battle.durationS = 300.0;
+        battle.winnerTeam = 1;
+        final PlayerResult ally = new PlayerResult();
+        ally.accountId = 10_001L;
+        ally.nickname = "AllyA";
+        ally.team = 1;
+        ally.survived = true;
+        battle.players = List.of(ally);
+        final TeamMemberFeatureSet member = new TeamMemberFeatureSet(
+                List.of(1), 10_001L, "AllyA", 4481L, "Kranvagn", 1,
+                DecodeConfidence.EXACT, 1000, 800, 0, 0, 0,
+                true, null, List.of(), List.of(), List.of(), List.of());
+        final TeamAggregateResult aggregate = new TeamAggregateResult(
+                1, 1000, 800, 0, 0, 0, 1, 0, null, null, null, true);
+        final TeamBattleFeatureSet features = new TeamBattleFeatureSet(
+                1, List.of(member), aggregate, TeamObservedAggregate.empty(),
+                List.of(), List.of(), List.of(), List.of(),
+                TeamFeatureCoverage.empty(), List.of(), true);
+        final ReplayReconstruction recon = new ReplayReconstruction(
+                null, null, 600f, 30f, List.of(),
+                List.<ReplayEvent>of(
+                        new DamageEvent(0, new ReplayTimestamp(35f, null), 8,
+                                DecodeConfidence.EXACT, 0, 0, 20_001L, 10_001L, 400, false),
+                        new DamageEvent(1, new ReplayTimestamp(43f, null), 8,
+                                DecodeConfidence.EXACT, 0, 0, 20_001L, 10_001L, 300, false)),
+                List.of(), null, null, null);
+        final SingleTeamBattleAnalysisContext context = new SingleTeamBattleAnalysisContext(
+                "unit-A", null, "f.wotbreplay", null, battle, 1, features,
+                new ReplayCoverage(false, 0, 0, 0, 0, 0, 0.0, Map.of()),
+                List.of(), recon);
+
+        final String content = TeamAiPromptBuilder.single(context).content();
+        assertTrue(content.contains("MEMBER_DAMAGE_RECEIVED_WINDOWS（逐成员掉血窗口·事件流观测）"), content);
+        assertTrue(content.contains("AllyA"), content);
+        assertTrue(content.contains("[0分05秒-0分13秒]掉血700/2次"), content);
+        assertFalse(content.contains("UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)"), content);
+
+        // 事件流覆盖不全时抑制数字（与 OBSERVED_EVENT_SUBSET 同口径）
+        final SingleTeamBattleAnalysisContext partial = new SingleTeamBattleAnalysisContext(
+                "unit-A", null, "f.wotbreplay", null, battle, 1, features,
+                new ReplayCoverage(false, 0, 0, 0, 0, 0, 0.0, Map.of()),
+                List.of("OBSERVED_DAMAGE_IS_PARTIAL"), recon);
+        final String partialContent = TeamAiPromptBuilder.single(partial).content();
+        assertTrue(partialContent.contains("MEMBER_DAMAGE_RECEIVED_WINDOWS ===\n"
+                + "UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)"), partialContent);
+        assertFalse(partialContent.contains("[0分05秒-0分13秒]掉血700"), partialContent);
     }
 
     @Test

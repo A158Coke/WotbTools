@@ -121,9 +121,10 @@ wotb:
       # the 9th request is rejected with 503 AI_REVIEW_BUSY.
       max-concurrent: ${AI_REVIEW_WORKER_MAX_CONCURRENT:4}
       queue-capacity: ${AI_REVIEW_WORKER_QUEUE_CAPACITY:4}
-      # Request overall deadline (queue wait included): 400s aligns with the
-      # frontend timeout; nginx keeps a 420s proxy margin.
-      overall-deadline-sec: ${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:400}
+      # Request overall deadline (queue wait included): 1100s covers the team
+      # flow (Call #1 + Call #2 + Autopsy, each <=315s) plus margin; aligns with
+      # the frontend timeout; nginx keeps a 1120s proxy margin.
+      overall-deadline-sec: ${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:1100}
   replay:
     max-concurrent-jobs: ${REPLAY_MAX_CONCURRENT_JOBS:2}
     coordinate:

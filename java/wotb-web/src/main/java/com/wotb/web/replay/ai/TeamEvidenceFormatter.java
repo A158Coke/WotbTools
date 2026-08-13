@@ -23,6 +23,7 @@ import com.wotb.core.replay.feature.TeamFormationPhase;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.util.PlayerResultFormat;
 import com.wotb.core.util.PromptDataQuoter;
@@ -275,6 +276,9 @@ final class TeamEvidenceFormatter {
         writer.append("pointsDecided=" + winner.pointsDecided() + "\n");
         if (winner.pointsDecided()) {
             writer.append("winnerSource=" + winner.source().name() + "\n");
+            // 点数胜负只可能发生在：任一方达到 1000 分提前结束，或时间耗尽后比较点数。
+            // 双方 victoryPointsEarned 均 <1000 时必然是时间耗尽（REACHED_1000 / TIME_EXPIRED / UNKNOWN）。
+            writer.append("pointsEndReason=" + winner.pointsEndReason().name() + "\n");
         }
         writer.append("team victoryPointsEarned=" + earned
                 + " victoryPointsSeized=" + seized + "\n");
@@ -377,6 +381,50 @@ final class TeamEvidenceFormatter {
         writer.append("attributedDamageEvents=" + aggregate.attributedDamageEventCount() + "\n");
         writer.append("unattributedDamageEvents="
                 + aggregate.unattributedDamageEventCount() + "\n");
+    }
+
+    /**
+     * 逐成员掉血时间窗口（事件流观测子集）：把每名成员的受击 DamageEvent 聚类成窗口，
+     * 输出时间范围 + 总掉血量。与 {@code OBSERVED_EVENT_SUBSET} 同一覆盖率口径：
+     * {@code OBSERVED_DAMAGE_IS_PARTIAL} 时抑制数字，输出 UNAVAILABLE。
+     */
+    static void appendMemberDamageReceivedWindows(
+            final BudgetWriter writer,
+            final TeamBattleFeatureSet features,
+            final ReplayReconstruction recon,
+            final boolean suppressObservedNumbers) {
+        if (features == null || features.members() == null || features.members().isEmpty()) {
+            return;
+        }
+        if (suppressObservedNumbers) {
+            writer.append("\n=== MEMBER_DAMAGE_RECEIVED_WINDOWS ===\n");
+            writer.append("UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)\n");
+            return;
+        }
+        final StringBuilder rows = new StringBuilder(1024);
+        for (final TeamMemberFeatureSet member : features.members()) {
+            final List<DamageWindowClusterer.DamageWindow> windows =
+                    DamageWindowClusterer.receivedWindows(recon, member.accountId());
+            if (windows.isEmpty()) {
+                continue;
+            }
+            rows.append("member accountId=").append(member.accountId())
+                    .append(" nickname=").append(quoteData(member.nickname()))
+                    .append(" damageReceivedWindows=");
+            for (final DamageWindowClusterer.DamageWindow window : windows) {
+                rows.append(PlayerAnalysisTerms.battleRange(window.startSec(), window.endSec()))
+                        .append("掉血").append(window.totalDamage())
+                        .append('/').append(window.hitCount()).append("次")
+                        .append(window.lethal() ? "（致死）" : "");
+            }
+            rows.append('\n');
+        }
+        if (rows.isEmpty()) {
+            return;
+        }
+        writer.append("\n=== MEMBER_DAMAGE_RECEIVED_WINDOWS（逐成员掉血窗口·事件流观测） ===\n");
+        writer.append("注意: 每条为一名成员的掉血窗口, 观测子集, 非权威总量; 小窗口大量掉血=被集火.\n");
+        writer.append(rows.toString());
     }
 
     static void appendMemberFacts(
@@ -566,9 +614,20 @@ final class TeamEvidenceFormatter {
         final var winner = FriendlyEnemyResult.resolveTeamBattle(battle, perspectiveTeam);
         final String label = StringUtils.hasText(teamLabel) ? teamLabel : "本队";
         return switch (winner.winner()) {
-            case FRIENDLY_WIN -> winner.pointsDecided() ? label + "获胜（点数判定）" : label + "获胜";
-            case ENEMY_WIN -> winner.pointsDecided() ? label + "落败（点数判定）" : label + "落败";
+            case FRIENDLY_WIN -> winner.pointsDecided()
+                    ? label + "获胜" + pointsSuffix(winner) : label + "获胜";
+            case ENEMY_WIN -> winner.pointsDecided()
+                    ? label + "落败" + pointsSuffix(winner) : label + "落败";
             case DRAW_OR_UNKNOWN -> "平局或未知";
+        };
+    }
+
+    /** 点数胜负的结束方式后缀：时间耗尽 / 1000 分提前 / 未知。 */
+    private static String pointsSuffix(final FriendlyEnemyResult.TeamBattleWinner winner) {
+        return switch (winner.pointsEndReason()) {
+            case REACHED_1000 -> "（达到 1000 分提前获胜）";
+            case TIME_EXPIRED -> "（时间耗尽点数判定）";
+            case UNKNOWN, NOT_APPLICABLE -> "（点数判定）";
         };
     }
 
