@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import AnalysisResultPanel from './AnalysisResultPanel.vue'
 
@@ -11,6 +11,28 @@ const i18n = vi.hoisted(() => ({
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: i18n.t, locale: { value: 'zh' } })
 }))
+
+const mountPanel = (result) => mount(AnalysisResultPanel, {
+  props: { result },
+  global: { mocks: { $t: i18n.t } }
+})
+
+const stubClipboard = (writeText) => {
+  Object.defineProperty(navigator, 'clipboard', {
+    value: writeText === undefined ? undefined : { writeText },
+    configurable: true
+  })
+}
+
+const stubExecCommand = (impl) => {
+  Object.defineProperty(document, 'execCommand', { value: impl, configurable: true })
+}
+
+afterEach(() => {
+  vi.useRealTimers()
+  delete navigator.clipboard
+  delete document.execCommand
+})
 
 describe('AnalysisResultPanel preBattleSection', () => {
   it('renders the collapsible pre-battle block when preBattleSection is present', () => {
@@ -113,18 +135,13 @@ describe('AnalysisResultPanel preBattleSection', () => {
     expect(wrapper.text()).toContain('report')
   })
 
-  it('copies only the call2 analysis body, excluding pre-battle and map overview', async () => {
+  it('copies only the final review body, excluding pre-battle and map overview', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-    const wrapper = mount(AnalysisResultPanel, {
-      props: {
-        result: {
-          analysis: '## 正文\n\n战术复盘内容',
-          preBattleSection: '## 赛前预测\n\n不要被复制',
-          mapOverview: { mapCode: 'desert_train', displayName: 'Desert Sands' }
-        }
-      },
-      global: { mocks: { $t: i18n.t } }
+    stubClipboard(writeText)
+    const wrapper = mountPanel({
+      analysis: '## 正文\n\n战术复盘内容',
+      preBattleSection: '## 赛前预测\n\n不要被复制',
+      mapOverview: { mapCode: 'desert_train', displayName: 'Desert Sands' }
     })
     const btn = wrapper.get('[data-test="copy-analysis-btn"]')
     expect(wrapper.text()).toContain('recon.copy')
@@ -137,19 +154,85 @@ describe('AnalysisResultPanel preBattleSection', () => {
     expect(writeText.mock.calls[0][0]).not.toContain('赛前预测')
     expect(writeText.mock.calls[0][0]).not.toContain('Desert Sands')
     expect(wrapper.text()).toContain('recon.copied')
-    delete navigator.clipboard
+    expect(document.querySelector('textarea')).toBeNull()
+  })
+
+  it('falls back to execCommand when Clipboard API is missing', async () => {
+    stubClipboard(undefined)
+    const exec = vi.fn().mockReturnValue(true)
+    stubExecCommand(exec)
+    const wrapper = mountPanel({ analysis: 'report text' })
+
+    await wrapper.get('[data-test="copy-analysis-btn"]').trigger('click')
+    await flushPromises()
+
+    expect(exec).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('recon.copied')
+    expect(document.querySelector('textarea')).toBeNull()
+  })
+
+  it('falls back to execCommand when writeText rejects', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'))
+    stubClipboard(writeText)
+    const exec = vi.fn().mockReturnValue(true)
+    stubExecCommand(exec)
+    const wrapper = mountPanel({ analysis: 'report text' })
+
+    await wrapper.get('[data-test="copy-analysis-btn"]').trigger('click')
+    await flushPromises()
+
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(exec).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('recon.copied')
+    expect(document.querySelector('textarea')).toBeNull()
+  })
+
+  it('does not show copied when execCommand returns false', async () => {
+    stubClipboard(undefined)
+    stubExecCommand(() => false)
+    const wrapper = mountPanel({ analysis: 'report text' })
+
+    await wrapper.get('[data-test="copy-analysis-btn"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('recon.copied')
+    expect(wrapper.text()).toContain('recon.copy')
+    expect(document.querySelector('textarea')).toBeNull()
+  })
+
+  it('does not show copied and removes the textarea when execCommand throws', async () => {
+    stubClipboard(undefined)
+    stubExecCommand(() => {
+      throw new Error('boom')
+    })
+    const wrapper = mountPanel({ analysis: 'report text' })
+
+    await wrapper.get('[data-test="copy-analysis-btn"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('recon.copied')
+    expect(document.querySelector('textarea')).toBeNull()
+  })
+
+  it('unmount clears the feedback timer', async () => {
+    vi.useFakeTimers()
+    stubClipboard(vi.fn().mockResolvedValue(undefined))
+    const clearSpy = vi.spyOn(globalThis, 'clearTimeout')
+    const wrapper = mountPanel({ analysis: 'report text' })
+
+    await wrapper.get('[data-test="copy-analysis-btn"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('recon.copied')
+
+    clearSpy.mockClear()
+    wrapper.unmount()
+    expect(clearSpy).toHaveBeenCalled()
   })
 
   it('resets the copy label after the feedback window', async () => {
     vi.useFakeTimers()
-    Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText: vi.fn().mockResolvedValue(undefined) },
-      configurable: true
-    })
-    const wrapper = mount(AnalysisResultPanel, {
-      props: { result: { analysis: 'report text' } },
-      global: { mocks: { $t: i18n.t } }
-    })
+    stubClipboard(vi.fn().mockResolvedValue(undefined))
+    const wrapper = mountPanel({ analysis: 'report text' })
     await wrapper.get('[data-test="copy-analysis-btn"]').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('recon.copied')
@@ -159,6 +242,5 @@ describe('AnalysisResultPanel preBattleSection', () => {
     expect(wrapper.text()).toContain('recon.copy')
 
     vi.useRealTimers()
-    delete navigator.clipboard
   })
 })

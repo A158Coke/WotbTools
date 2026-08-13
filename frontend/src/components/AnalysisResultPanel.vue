@@ -33,31 +33,51 @@ function hasMapAsset(overview) {
   return !!(overview && overview.mapCode && mapImages[overview.mapCode])
 }
 
-/** 一键复制 Call #2 正文（result.analysis；不含赛前预测与地图鸟瞰）。 */
+/** 一键复制最终复盘正文（result.analysis；可能包含团队剖析与免责声明；不含独立的赛前预测与地图鸟瞰）。 */
 async function copyAnalysis() {
   const text = props.result.analysis
   if (!text) return
-  try {
-    if (navigator.clipboard?.writeText) {
+  if (!(await copyTextWithFallback(text))) return
+  copied.value = true
+  clearTimeout(copyTimer)
+  copyTimer = setTimeout(() => {
+    copied.value = false
+  }, 1500)
+}
+
+/** Clipboard API 优先；writeText 缺失或 reject 时降级 execCommand。复制成功返回 true。 */
+async function copyTextWithFallback(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
       await navigator.clipboard.writeText(text)
-    } else {
-      const ta = document.createElement('textarea')
-      ta.value = text
-      ta.style.position = 'fixed'
-      ta.style.opacity = '0'
-      document.body.appendChild(ta)
-      ta.select()
-      const ok = document.execCommand('copy')
-      document.body.removeChild(ta)
-      if (!ok) return
+      return true
+    } catch {
+      // writeText 存在但失败 → 继续尝试 fallback
     }
-    copied.value = true
-    clearTimeout(copyTimer)
-    copyTimer = setTimeout(() => {
-      copied.value = false
-    }, 1500)
+  }
+  return fallbackCopy(text)
+}
+
+/**
+ * execCommand 降级：textarea 通过 try/finally 保证移除；
+ * execCommand 返回 false 或抛异常时视为失败（不显示「已复制」）。
+ */
+function fallbackCopy(text) {
+  let textarea = null
+  try {
+    textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    return document.execCommand('copy')
   } catch {
-    // 剪贴板不可用时不打断用户
+    return false
+  } finally {
+    if (textarea) {
+      textarea.remove()
+    }
   }
 }
 
