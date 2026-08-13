@@ -5,6 +5,13 @@
 ## [Unreleased]
 
 ### Changed
+- **Player fallback killVictims 事件流伤害数字纳入 partial 门禁**：`buildPlayerContextSummary`
+  在构建基础 summary 时即读取 `hasObservedDamagePartial(ctx)`——partial 下
+  `DAMAGE_EXCHANGE_AGGREGATED_OBSERVED` 输出 `UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)`，
+  `KILL_ATTRIBUTION` 仅保留「你击杀了谁 / 谁击杀了你」身份信息、抑制
+  `累计直接伤害/击穿/致死前累计 N 点伤害`；权威结算（YOU_AUTHORITATIVE/阵容/总伤害）不受影响；
+  complete coverage 保持逐目标累计伤害与击杀归因明细。清理
+  `TacticalEvidenceFormatter` 零调用的 `renderEvidenceSections(EvidenceSkillResult)` 重载。
 - **AI 复盘 partial 事件流伤害证据全链路抑制（Player Harness/fallback + Team）**：
   `EvidenceSkillEngine` 在 `OBSERVED_DAMAGE_IS_PARTIAL` 时跳过 `EngagementTradeSkill`，
   `CriticalWindowSkill` 基于过滤后的 HP 动量/阵亡/支援/路线/单走证据重新聚合窗口；

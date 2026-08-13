@@ -57,6 +57,22 @@ final class PlayerEvidenceFormatter {
     static boolean appendRecorderDamageExchange(final StringBuilder sb,
                                                 final Battle battle,
                                                 final PlayerResult rec) {
+        return appendRecorderDamageExchange(sb, battle, rec, false);
+    }
+
+    /**
+     * 录像者逐目标累计伤害（事件流观测子集，来自 killVictims）：
+     * {@code OBSERVED_DAMAGE_IS_PARTIAL} 时抑制全部累计伤害/击穿数字，输出稳定 UNAVAILABLE 标记。
+     */
+    static boolean appendRecorderDamageExchange(final StringBuilder sb,
+                                                final Battle battle,
+                                                final PlayerResult rec,
+                                                final boolean suppressObservedNumbers) {
+        if (suppressObservedNumbers) {
+            sb.append("\n=== DAMAGE_EXCHANGE_AGGREGATED_OBSERVED ===\n")
+                    .append("UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)\n");
+            return true;
+        }
         if (battle == null || rec == null || rec.killVictims.isEmpty()) {
             return false;
         }
@@ -356,6 +372,18 @@ final class PlayerEvidenceFormatter {
     static boolean appendKillAttribution(final StringBuilder sb,
                                          final Battle battle,
                                          final PlayerResult rec) {
+        return appendKillAttribution(sb, battle, rec, false);
+    }
+
+    /**
+     * 击杀归因（事件流观测）：{@code OBSERVED_DAMAGE_IS_PARTIAL} 时仅保留已正向观察到的
+     * 「你击杀了谁 / 谁击杀了你」身份信息，抑制 victim.damage / penetrations 与
+     * 「致死前累计 N 点伤害」等事件流伤害数字。
+     */
+    static boolean appendKillAttribution(final StringBuilder sb,
+                                         final Battle battle,
+                                         final PlayerResult rec,
+                                         final boolean suppressObservedNumbers) {
         if (battle == null || battle.players == null || rec == null) {
             return false;
         }
@@ -369,20 +397,24 @@ final class PlayerEvidenceFormatter {
             final PlayerResult target = byAccount.get(victim.victimAccountId());
             if (target == null) continue;
             recorderKills.add(EntityIdentityResolver.label(battle, target, rec.accountId)
-                    + " 致死前累计承受你" + victim.damage() + "点伤害");
+                    + (suppressObservedNumbers ? "" : " 致死前累计承受你" + victim.damage() + "点伤害"));
         }
         for (final PlayerResult other : battle.players) {
             if (PlayerAnalysisPromptFormatter.isSamePlayer(other, rec)) continue;
             for (final PotentialDamage.KillVictim victim : other.killVictims) {
                 if (victim.victimAccountId() != rec.accountId) continue;
                 killersOfRecorder.add(EntityIdentityResolver.label(battle, other, rec.accountId)
-                        + " 致死前对你累计造成" + victim.damage() + "点伤害");
+                        + (suppressObservedNumbers ? "" : " 致死前对你累计造成" + victim.damage() + "点伤害"));
             }
         }
         if (recorderKills.isEmpty() && killersOfRecorder.isEmpty()) {
             return false;
         }
         sb.append("\n=== KILL_ATTRIBUTION_OBSERVED（击杀归因·事件流观测） ===\n");
+        if (suppressObservedNumbers) {
+            sb.append("注意: 事件流观测覆盖不全（OBSERVED_DAMAGE_IS_PARTIAL），"
+                    + "伤害数字已抑制；仅保留击杀身份。\n");
+        }
         for (final String line : recorderKills) {
             sb.append("你击杀了 ").append(line).append('\n');
         }
