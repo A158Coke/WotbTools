@@ -270,7 +270,8 @@ public class TeamReplayAnalysisService {
             return reviewText;
         }
         // 团队赛恒为争霸赛（supremacy）：结算 winnerTeam 缺失时，
-        // 一方全灭 → 结算推导；双方均未全灭 → 点数胜利（比较占点得分推断）。
+        // 一方全灭 → 结算推导；双方均未全灭 → 点数胜利（比较占点得分推断；
+        // 结束方式由 pointsEndReason 区分：任一方 ≥1000 提前获胜，均 <1000 为时间耗尽）。
         final TeamBattleWinner winner = FriendlyEnemyResult.resolveTeamBattle(
                 context.battle(), context.perspectiveTeam());
         if (!winner.resolved()) {

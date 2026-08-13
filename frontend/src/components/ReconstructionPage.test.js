@@ -635,6 +635,73 @@ describe('ReconstructionPage SSE streaming', () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/replay/analyze/cancel'))).toBe(false)
   })
 
+  it('keeps the stream alive across KeepAlive view switches (switch to replay parser, parse, then return)', async () => {
+    // 复现用户场景：AI 复盘进行中 → 切到「回放解析」并解析一个回放 → 切回 AI 复盘。
+    // App.vue 用 <KeepAlive :include="['ReconstructionPage']"> 缓存本页，
+    // 切走时组件被 deactivate 而非 unmount，SSE 流必须继续消费且不得 abort / 调 cancel。
+    const sse = chunkedSse()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: sse.stream,
+      text: vi.fn().mockResolvedValue('')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const StubReplayPage = { name: 'StubReplayPage', template: '<div class="stub-replay" />' }
+    const Harness = {
+      components: { ReconstructionPage, StubReplayPage },
+      data: () => ({ view: 'recon' }),
+      template: `
+        <KeepAlive :include="['ReconstructionPage']">
+          <component :is="view === 'recon' ? 'ReconstructionPage' : 'StubReplayPage'" />
+        </KeepAlive>
+      `
+    }
+    const wrapper = mount(Harness, {
+      global: { mocks: { $t: i18n.t } }
+    })
+    const recon = wrapper.findComponent(ReconstructionPage)
+    await selectReplays(recon, ['keepalive.wotbreplay'])
+    await analyzeButton(recon).trigger('click')
+    await flushPromises()
+
+    const analyzeCall = fetchMock.mock.calls.find(([url]) => String(url) === '/api/replay/analyze')
+    expect(analyzeCall).toBeDefined()
+    const analyzeSignal = analyzeCall[1].signal
+
+    // 切到「回放解析」视图：ReconstructionPage 被 KeepAlive deactivate，SSE 不应被取消
+    await wrapper.setData({ view: 'replay' })
+    await flushPromises()
+    expect(wrapper.find('.stub-replay').exists()).toBe(true)
+    expect(analyzeSignal.aborted).toBe(false)
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/replay/analyze/cancel'))).toBe(false)
+
+    // 在回放解析页解析一个回放（独立 /api/preview 请求），不得影响进行中的复盘
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ battles: [], aggregate: [] })
+    })
+    await fetch('/api/preview', { method: 'POST' })
+    await flushPromises()
+    expect(analyzeSignal.aborted).toBe(false)
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/replay/analyze/cancel'))).toBe(false)
+
+    // 切回 AI 复盘视图：流仍存活，token 持续消费，done 后结果可见
+    sse.enqueue('event:call2_token\ndata:{"delta":"kept "}\n\n')
+    await wrapper.setData({ view: 'recon' })
+    await flushPromises()
+    sse.enqueue('event:done\ndata:{"analysis":"kept alive","preBattleSection":null}\n\n')
+    sse.close()
+    await flushPromises()
+
+    expect(analyzeSignal.aborted).toBe(false)
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/replay/analyze/cancel'))).toBe(false)
+    const reconAfter = wrapper.findComponent(ReconstructionPage)
+    expect(reconAfter.text()).toContain('recon.analysis_title_player')
+    expect(reconAfter.text()).toContain('kept alive')
+  })
+
   it('aborts with AI_TIMEOUT when the wall-clock deadline passes during an active stream', async () => {
     vi.useFakeTimers()
     const sse = chunkedSse()
@@ -649,9 +716,9 @@ describe('ReconstructionPage SSE streaming', () => {
     await analyzeButton(wrapper).trigger('click')
     await flushPromises()
 
-    // 模拟后台标签：setTimeout 被节流未触发，但墙钟已超过 400s——
+    // 模拟后台标签：setTimeout 被节流未触发，但墙钟已超过 1100s——
     // 活跃流在下一个数据块到达时按墙钟 deadline 中止
-    vi.setSystemTime(Date.now() + 400_000)
+    vi.setSystemTime(Date.now() + 1_100_000)
     sse.enqueue('event:call2_token\ndata:{"delta":"late"}\n\n')
     await flushPromises()
 
@@ -697,7 +764,7 @@ describe('ReconstructionPage AI request lifecycle (timeout + cancel)', () => {
     expect(analyzeButton(wrapper).attributes('disabled')).toBeDefined()
     expect(analyzeButton(wrapper).text()).toBe('action.processing')
 
-    await vi.advanceTimersByTimeAsync(400_000)
+    await vi.advanceTimersByTimeAsync(1_100_000)
     await flushPromises()
 
     expect(wrapper.text()).toContain('recon.errors.AI_TIMEOUT')

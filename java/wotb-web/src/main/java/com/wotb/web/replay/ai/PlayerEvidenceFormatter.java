@@ -6,6 +6,7 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.TankInfo;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.PlayerSideResolver.Side;
+import com.wotb.core.processing.TeamEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.replay.event.DamageEvent;
@@ -56,6 +57,22 @@ final class PlayerEvidenceFormatter {
     static boolean appendRecorderDamageExchange(final StringBuilder sb,
                                                 final Battle battle,
                                                 final PlayerResult rec) {
+        return appendRecorderDamageExchange(sb, battle, rec, false);
+    }
+
+    /**
+     * 录像者逐目标累计伤害（事件流观测子集，来自 killVictims）：
+     * {@code OBSERVED_DAMAGE_IS_PARTIAL} 时抑制全部累计伤害/击穿数字，输出稳定 UNAVAILABLE 标记。
+     */
+    static boolean appendRecorderDamageExchange(final StringBuilder sb,
+                                                final Battle battle,
+                                                final PlayerResult rec,
+                                                final boolean suppressObservedNumbers) {
+        if (suppressObservedNumbers) {
+            sb.append("\n=== DAMAGE_EXCHANGE_AGGREGATED_OBSERVED ===\n")
+                    .append("UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)\n");
+            return true;
+        }
         if (battle == null || rec == null || rec.killVictims.isEmpty()) {
             return false;
         }
@@ -94,10 +111,28 @@ final class PlayerEvidenceFormatter {
                                                   final Battle battle,
                                                   final long recorderAccountId,
                                                   final ReplayReconstruction recon) {
+        return appendDamageExchangeByOpponent(sb, battle, recorderAccountId, recon, false);
+    }
+
+    /**
+     * 逐对手对炮（事件流观测子集）：{@code OBSERVED_DAMAGE_IS_PARTIAL} 时抑制全部数字，
+     * 输出稳定 UNAVAILABLE 标记（与掉血窗口段一致），绝不一边输出数字一边声明已抑制。
+     */
+    static boolean appendDamageExchangeByOpponent(final StringBuilder sb,
+                                                  final Battle battle,
+                                                  final long recorderAccountId,
+                                                  final ReplayReconstruction recon,
+                                                  final boolean suppressObservedNumbers) {
+        if (suppressObservedNumbers) {
+            sb.append("\n=== DAMAGE_EXCHANGE_BY_OPPONENT ===\n")
+                    .append("UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)\n");
+            return true;
+        }
         if (battle == null || recorderAccountId <= 0 || recon == null || recon.events() == null) {
             return false;
         }
         final Float battleStart = recon.battleStartRawClockSec();
+        final TeamEntityMapping mapping = DamageEventIdentityResolver.mapping(battle, recon);
         final Map<Long, int[]> dealt = new LinkedHashMap<>();   // [伤害合计, 命中次数]
         final Map<Long, int[]> received = new LinkedHashMap<>();
         for (final ReplayEvent event : recon.events()) {
@@ -108,11 +143,14 @@ final class PlayerEvidenceFormatter {
                     && damage.timestamp().rawClockSec() < battleStart) {
                 continue;
             }
-            final Long attacker = damage.attackerAccountId();
-            final Long victim = damage.victimAccountId();
-            if (attacker != null && attacker == recorderAccountId && victim != null) {
+            final long attacker = DamageEventIdentityResolver.attackerAccount(damage, mapping);
+            final long victim = DamageEventIdentityResolver.victimAccount(damage, mapping);
+            if (attacker <= 0 || victim <= 0) {
+                continue; // 身份无法解析（真实 decoder 直填账号为 null，必须经 entity 映射）
+            }
+            if (attacker == recorderAccountId) {
                 accumulate(dealt, victim, damage.damage());
-            } else if (victim != null && victim == recorderAccountId && attacker != null) {
+            } else if (victim == recorderAccountId) {
                 accumulate(received, attacker, damage.damage());
             }
         }
@@ -156,8 +194,9 @@ final class PlayerEvidenceFormatter {
 
     /**
      * 逐次伤害事件（随机战个人复盘）。每条记录对应一个真实 {@link DamageEvent}，
-     * 使用事件自带的 attacker/victim accountId 判定方向，绝不颠倒；伤害值是本次事件伤害，
-     * 与聚合观测子集严格区分。时间转换为战斗相对时间并输出「X分XX秒」。
+     * 攻击者/受击者经 entityId→accountId 映射解析（真实 decoder 直填账号为 null），
+     * 绝不颠倒方向；伤害值是本次事件伤害，与聚合观测子集严格区分。
+     * 时间转换为战斗相对时间并输出「X分XX秒」。
      * <p>排除准备阶段（开战前）与 damage &lt;= 0 的事件；坦克名称来自 {@link ReplayDisplayNames}，
      * 无法映射时为「未知坦克」，不猜测。</p>
      *
@@ -167,9 +206,27 @@ final class PlayerEvidenceFormatter {
                                             final Battle battle,
                                             final long recorderAccountId,
                                             final ReplayReconstruction recon) {
+        return appendPerHitDamageEvents(sb, battle, recorderAccountId, recon, false);
+    }
+
+    /**
+     * 逐次伤害（事件流观测子集）：{@code OBSERVED_DAMAGE_IS_PARTIAL} 时抑制全部数字，
+     * 输出稳定 UNAVAILABLE 标记（与掉血窗口段一致），绝不一边输出数字一边声明已抑制。
+     */
+    static boolean appendPerHitDamageEvents(final StringBuilder sb,
+                                            final Battle battle,
+                                            final long recorderAccountId,
+                                            final ReplayReconstruction recon,
+                                            final boolean suppressObservedNumbers) {
+        if (suppressObservedNumbers) {
+            sb.append("\n=== PER_HIT_DAMAGE_EVENTS ===\n")
+                    .append("UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)\n");
+            return true;
+        }
         if (battle == null || recorderAccountId <= 0 || recon == null || recon.events() == null) {
             return false;
         }
+        final TeamEntityMapping mapping = DamageEventIdentityResolver.mapping(battle, recon);
         final Map<Long, PlayerResult> byAccount = new LinkedHashMap<>();
         if (battle.players != null) {
             for (final PlayerResult p : battle.players) {
@@ -184,9 +241,9 @@ final class PlayerEvidenceFormatter {
             if (damage.timestamp() == null) continue;
             final float raw = damage.timestamp().rawClockSec();
             if (battleStart != null && raw < battleStart) continue;   // 准备阶段不计
-            final Long attacker = damage.attackerAccountId();
-            final Long victim = damage.victimAccountId();
-            if (attacker == null || victim == null) continue;
+            final long attacker = DamageEventIdentityResolver.attackerAccount(damage, mapping);
+            final long victim = DamageEventIdentityResolver.victimAccount(damage, mapping);
+            if (attacker <= 0 || victim <= 0) continue;   // 身份无法解析（真实事件必须经 entity 映射）
             final boolean recorderIsAttacker = attacker == recorderAccountId;
             final boolean recorderIsVictim = victim == recorderAccountId;
             if (!recorderIsAttacker && !recorderIsVictim) continue;
@@ -207,6 +264,60 @@ final class PlayerEvidenceFormatter {
             sb.append(row).append('\n');
         }
         return true;
+    }
+
+    /**
+     * 录像者掉血时间窗口（事件流观测）：按受击事件聚类，每窗口给出时间范围 + 总掉血量 + 不同攻击者数。
+     * <p>与 {@code PER_HIT_DAMAGE_EVENTS} 同口径（battle-relative，准备阶段不计）；
+     * {@code OBSERVED_DAMAGE_IS_PARTIAL} 时抑制数字并输出 UNAVAILABLE（与 Team 一致）。
+     * 真实事件经 entityId → accountId 映射解析攻击者/受击者，不依赖恒为 null 的直填账号字段。</p>
+     */
+    static boolean appendRecorderDamageReceivedWindows(final StringBuilder sb,
+                                                       final Battle battle,
+                                                       final ReplayReconstruction recon,
+                                                       final long recorderAccountId,
+                                                       final boolean suppressObservedNumbers) {
+        final String section = recorderDamageReceivedWindowsSection(
+                battle, recon, recorderAccountId, suppressObservedNumbers);
+        if (section.isEmpty()) {
+            return false;
+        }
+        sb.append(section);
+        return true;
+    }
+
+    /** 渲染录像者掉血窗口段（供 PlayerSummaryBuilder 与 TacticalReviewPromptBuilder 复用，口径一致）。 */
+    static String recorderDamageReceivedWindowsSection(final Battle battle,
+                                                       final ReplayReconstruction recon,
+                                                       final long recorderAccountId,
+                                                       final boolean suppressObservedNumbers) {
+        if (suppressObservedNumbers) {
+            return "\n=== RECORDER_DAMAGE_RECEIVED_WINDOWS ===\n"
+                    + "UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)\n";
+        }
+        final List<DamageWindowClusterer.DamageWindow> windows =
+                DamageWindowClusterer.receivedWindows(battle, recon, recorderAccountId);
+        if (windows.isEmpty()) {
+            return "";
+        }
+        final StringBuilder sb = new StringBuilder(512);
+        sb.append("\n=== RECORDER_DAMAGE_RECEIVED_WINDOWS（你掉血时间窗口·事件流观测） ===\n");
+        sb.append("注意: 每条是一个按时间聚类的掉血窗口; 攻击者N=窗口内解析出的不同攻击者数; "
+                + "只有窗口总跨度 ≤" + (int) DamageWindowClusterer.SHORT_FOCUS_WINDOW_SEC
+                + " 秒、攻击者≥2 且无未解析攻击者时才标注「（短时多车集火证据）」; "
+                + "攻击者=1 → 短时间集中掉血/高压掉血窗口（不是集火）; "
+                + "标注「（攻击者部分未解析）」时攻击者数不完整, 不得断言集火; "
+                + "链式聚类形成的大跨度窗口（相邻间隔虽小但总跨度超阈值）不得当作短时集火.\n");
+        for (final DamageWindowClusterer.DamageWindow window : windows) {
+            sb.append("  ").append(PlayerAnalysisTerms.battleRange(window.startSec(), window.endSec()))
+                    .append(" 掉血").append(window.totalDamage())
+                    .append(" 命中").append(window.hitCount()).append("次")
+                    .append(" 攻击者").append(window.uniqueAttackerCount())
+                    .append(window.attackersUnresolved() ? "（攻击者部分未解析）" : "")
+                    .append(window.focusFireCandidate() ? "（短时多车集火证据）" : "")
+                    .append('\n');
+        }
+        return sb.toString();
     }
 
     /**
@@ -261,6 +372,18 @@ final class PlayerEvidenceFormatter {
     static boolean appendKillAttribution(final StringBuilder sb,
                                          final Battle battle,
                                          final PlayerResult rec) {
+        return appendKillAttribution(sb, battle, rec, false);
+    }
+
+    /**
+     * 击杀归因（事件流观测）：{@code OBSERVED_DAMAGE_IS_PARTIAL} 时仅保留已正向观察到的
+     * 「你击杀了谁 / 谁击杀了你」身份信息，抑制 victim.damage / penetrations 与
+     * 「致死前累计 N 点伤害」等事件流伤害数字。
+     */
+    static boolean appendKillAttribution(final StringBuilder sb,
+                                         final Battle battle,
+                                         final PlayerResult rec,
+                                         final boolean suppressObservedNumbers) {
         if (battle == null || battle.players == null || rec == null) {
             return false;
         }
@@ -274,20 +397,24 @@ final class PlayerEvidenceFormatter {
             final PlayerResult target = byAccount.get(victim.victimAccountId());
             if (target == null) continue;
             recorderKills.add(EntityIdentityResolver.label(battle, target, rec.accountId)
-                    + " 致死前累计承受你" + victim.damage() + "点伤害");
+                    + (suppressObservedNumbers ? "" : " 致死前累计承受你" + victim.damage() + "点伤害"));
         }
         for (final PlayerResult other : battle.players) {
             if (PlayerAnalysisPromptFormatter.isSamePlayer(other, rec)) continue;
             for (final PotentialDamage.KillVictim victim : other.killVictims) {
                 if (victim.victimAccountId() != rec.accountId) continue;
                 killersOfRecorder.add(EntityIdentityResolver.label(battle, other, rec.accountId)
-                        + " 致死前对你累计造成" + victim.damage() + "点伤害");
+                        + (suppressObservedNumbers ? "" : " 致死前对你累计造成" + victim.damage() + "点伤害"));
             }
         }
         if (recorderKills.isEmpty() && killersOfRecorder.isEmpty()) {
             return false;
         }
         sb.append("\n=== KILL_ATTRIBUTION_OBSERVED（击杀归因·事件流观测） ===\n");
+        if (suppressObservedNumbers) {
+            sb.append("注意: 事件流观测覆盖不全（OBSERVED_DAMAGE_IS_PARTIAL），"
+                    + "伤害数字已抑制；仅保留击杀身份。\n");
+        }
         for (final String line : recorderKills) {
             sb.append("你击杀了 ").append(line).append('\n');
         }
@@ -549,14 +676,17 @@ final class PlayerEvidenceFormatter {
                         .append(")\n");
                 sb.append("注意: 事件流数值仅为观测子集, 不是整场权威总伤害.\n");
             }
-            for (final EngagementSummary e : features.engagements()) {
-                sb.append("  #" + " ")
-                        .append(PlayerAnalysisTerms.battleRange(e.startTime(), e.endTime()))
-                        .append(" 事件流输出: ").append(e.damageDealt())
-                        .append(" 事件流损失血量: ").append(e.damageReceived())
-                        .append(" 结果: ").append(PlayerAnalysisTerms.outcomeLabel(e.outcome()))
-                        .append(" 置信度: ").append(PlayerAnalysisTerms.confidenceLabel(e.confidence()))
-                        .append('\n');
+            // 覆盖不全时逐条交火数字同样是事件流伤害数字：一并抑制，不输出任何 N
+            if (!observedPartial) {
+                for (final EngagementSummary e : features.engagements()) {
+                    sb.append("  #" + " ")
+                            .append(PlayerAnalysisTerms.battleRange(e.startTime(), e.endTime()))
+                            .append(" 事件流输出: ").append(e.damageDealt())
+                            .append(" 事件流损失血量: ").append(e.damageReceived())
+                            .append(" 结果: ").append(PlayerAnalysisTerms.outcomeLabel(e.outcome()))
+                            .append(" 置信度: ").append(PlayerAnalysisTerms.confidenceLabel(e.confidence()))
+                            .append('\n');
+                }
             }
         }
 

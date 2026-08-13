@@ -41,6 +41,15 @@ require_env AI_API_KEY
 require_env GRAFANA_ADMIN_USER
 require_env GRAFANA_ADMIN_PASSWORD
 
+# AI Review 整体 deadline 必须与前端(1100s)/nginx(1120s) 固定链路对齐：
+# 不允许通过环境变量把旧 400 静默带进生产（前端先掐断、后端继续计费）。
+if [ -n "${AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC:-}" ] \
+    && [ "$AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC" != "1100" ]; then
+  printf 'ERROR: AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC must be 1100 to stay aligned with frontend(1100s)/nginx(1120s); got %s\n' \
+    "$AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC" >&2
+  exit 3
+fi
+
 mkdir -p "$WOTB_DIR"
 cd "$WOTB_DIR"
 

@@ -124,6 +124,15 @@ public final class PlayerReplayPromptBuilder {
         return PlayerEvidenceFormatter.appendPerHitDamageEvents(sb, battle, recorderAccountId, recon);
     }
 
+    static boolean appendRecorderDamageReceivedWindows(final StringBuilder sb,
+                                                       final Battle battle,
+                                                       final ReplayReconstruction recon,
+                                                       final long recorderAccountId,
+                                                       final boolean suppressObservedNumbers) {
+        return PlayerEvidenceFormatter.appendRecorderDamageReceivedWindows(
+                sb, battle, recon, recorderAccountId, suppressObservedNumbers);
+    }
+
     static boolean appendKillAttribution(final StringBuilder sb,
                                          final Battle battle,
                                          final PlayerResult rec) {

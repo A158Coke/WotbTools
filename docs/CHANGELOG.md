@@ -5,10 +5,55 @@
 ## [Unreleased]
 
 ### Changed
+- **Player fallback killVictims 事件流伤害数字纳入 partial 门禁**：`buildPlayerContextSummary`
+  在构建基础 summary 时即读取 `hasObservedDamagePartial(ctx)`——partial 下
+  `DAMAGE_EXCHANGE_AGGREGATED_OBSERVED` 输出 `UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)`，
+  `KILL_ATTRIBUTION` 仅保留「你击杀了谁 / 谁击杀了你」身份信息、抑制
+  `累计直接伤害/击穿/致死前累计 N 点伤害`；权威结算（YOU_AUTHORITATIVE/阵容/总伤害）不受影响；
+  complete coverage 保持逐目标累计伤害与击杀归因明细。清理
+  `TacticalEvidenceFormatter` 零调用的 `renderEvidenceSections(EvidenceSkillResult)` 重载。
+- **AI 复盘 partial 事件流伤害证据全链路抑制（Player Harness/fallback + Team）**：
+  `EvidenceSkillEngine` 在 `OBSERVED_DAMAGE_IS_PARTIAL` 时跳过 `EngagementTradeSkill`，
+  `CriticalWindowSkill` 基于过滤后的 HP 动量/阵亡/支援/路线/单走证据重新聚合窗口；
+  `TacticalReviewPromptBuilder` 在 Prompt 边界再防御性剔除 ENGAGEMENT_TRADE 与携带
+  recorderDamage* 的窗口；`TeamAiPromptBuilder` 把合并后的 limitations 传入
+  `appendOptionalDetails`/`appendHighPriorityFacts`，partial 时
+  `TEAM_ENGAGEMENTS_OBSERVED_SUBSET` 与 `OBSERVED_EVENT_SUBSET` 均不输出事件流伤害数字。
+  覆盖完整时换血/团队交火证据保持不变。
+- **AI 复盘整体超时预算 400s → 1100s（切页后台跑完不中断）**：`AiReviewWorkerExecutor` 默认
+  overall-deadline、`application.yml`、前端 `AI_ANALYZE_TIMEOUT_MS`（`ReconstructionPage.vue`）、
+  nginx `proxy_read/send_timeout`、`SseEmitter` 超时与部署 env（`deploy.yml` / `.env.example` /
+  `docker-compose.prod.yml`）统一对齐 1100s / 1120s——团队复盘 3 次 AI 调用
+  （Call #1 + Call #2 + Team Autopsy，各 ≤315s）的最坏耗时不再被旧 400s 硬杀；
+  `TacticalReviewHarness.ENDPOINT_DEADLINE_SEC` 同步更新；新增 `AiTimeoutChainContractTest`
+  配置契约测试（application / compose / workflow / frontend / nginx / SseEmitter 防漂移），
+  deploy.yml 固定使用 1100 并在 `deploy.sh` fail-fast 校验，杜绝旧 400 静默生效。
+  前端新增 KeepAlive 切页回归测试（开始复盘 → 切「回放解析」→ 预览 → 切回：
+  不 abort、不调 cancel、结果可见）。
+- **争霸赛点数胜负结束方式（pointsEndReason）**：`FriendlyEnemyResult` 新增 `PointsEndReason`
+  派生（`REACHED_1000` / `TIME_EXPIRED` / `UNKNOWN` / `NOT_APPLICABLE`）并纳入
+  `TeamBattleWinner`；`CAPTURE_AND_POINTS` 输出 `pointsEndReason`；`CAPTURE_RULE`（ZH/EN/RU）
+  写明结束条件三分法——点数胜负叙述必须体现「时间耗尽」或「达到 1000 分提前获胜」，
+  禁止把 <1000 的中间比分当作获胜理由；团队剖析胜负标签与 `resolveTeamResult` 按结束方式输出。
+- **掉血时间范围（规则 + 窗口证据）**：新增三语 `HP_LOSS_TIME_RULE`（player/team 提示词共用）——
+  凡提及掉血必须给时间范围与掉血量；小窗口大量掉血先描述为「短时间集中掉血/高压掉血窗口」，
+  仅当窗口总跨度 ≤15 秒、解析出 ≥2 个不同攻击者且无未解析攻击者时才可写「被多车集火」，
+  攻击者无法解析、只有 1 个攻击者或窗口总跨度超阈值（含 ≤10s 间隔链式聚类形成的大跨度窗口）时不得断言集火。
+  新增 `DamageWindowClusterer`（≤10s 间隙聚类掉血窗口，含不同攻击者数）：真实 decoder 的
+  `DamageEvent` 账号字段恒为 null，窗口沿 `ParticipantMappingEvent` 的 entityId→accountId 映射
+  （复用 `TeamEntityMapper`）解析攻击者/受击者；不再依赖生产中恒为 false 的 `lethal()`，
+  删除不可达的「致死」宣称。player 路径输出 `RECORDER_DAMAGE_RECEIVED_WINDOWS`（fallback 与
+  Tactical Harness 主路径同格式/同口径），团队路径输出 `MEMBER_DAMAGE_RECEIVED_WINDOWS`
+  （均受 `OBSERVED_DAMAGE_IS_PARTIAL` 覆盖率抑制，覆盖不全时输出 UNAVAILABLE 不给数字）。
+  新增真实回放集成回归测试 `ReplayDamageWindowIntegrationTest`
+  （common/fixtures 的 rift 随机战夹具：真实 decoder 账号字段为 null、经 entity 映射生成窗口、
+  battle-relative 时间、partial 抑制、Harness/fallback/团队三路径、单一攻击者不标集火）。
+  同根因修复：逐次伤害段 `PER_HIT_DAMAGE_EVENTS` 与逐对手对炮段 `DAMAGE_EXCHANGE_BY_OPPONENT`
+  一并改用同一 entity 映射解析（真实回放不再显示 UNAVAILABLE/空段）。
 - **AI 复盘维持分析 + 地图可视化改进**：`App.vue` 视图渲染改为 `<component :is>` +
   `<KeepAlive :include="['ReconstructionPage']">`——切走「AI 复盘」视图不再卸载/取消，SSE 流继续，
   返回时进度/结果直接可见（关标签/刷新仍由 `beforeunload` 取消）；`ReconstructionPage` 移除卸载时
-  取消，超时改为「setTimeout 兜底 + 流内墙钟 deadline」双保险，后台标签定时器节流不再影响 400s 语义；
+  取消，超时改为「setTimeout 兜底 + 流内墙钟 deadline」双保险，后台标签定时器节流不再影响 1100s 语义；
   `MapOverview` 新增 `arenaBonusType` / `recorderAccountId`（`MapOverviewBuilder` 从
   `Battle.arenaBonusType` / `Battle.recorderResult()` 填充），随机战路线视图新增「仅玩家」筛选；
   前端新增 `utils/mapPalette.js` 自适应配色——底图平均相对亮度（阈值 0.45）分暗/亮两套色板，
@@ -34,6 +79,9 @@
 - **DI 注入方式收敛为构造器注入**：消除后端 9 处 `@Autowired` 字段注入（`MeterRegistry` / `ReplayUsageMetrics` 可选依赖），统一改造为构造器参数注入（参数级 `@Autowired(required = false)`）。改造范围：`AiReplayReviewService` / `AiReviewWorkerExecutor` / `PreBattleStrategicService` / `TacticalReviewHarness` / `TeamAutopsyService` / `TeamReplayAnalysisService` / `ReconstructionController` / `ReplayService`；`AiReplayAnalysisService` 测试包级构造器连动传 `null`。所有改造依赖字段升级为 `final`，便于单测直接 `new XxxService(mockDep)` 构造无需反射；行为零变更，`mvn -s settings.xml -pl wotb-web -am test` 618 用例全绿。`review-with-docs` skill 同步新增 DI 注入检查单（方法级 + 参数级 `@Autowired(required = false)` 改造优先级、不可变性、测试可构造等 5 项 sub-checks）。
 
 ### Fixed
+- **AI 复盘切页后不再被 400s 预算中途掐断**：KeepAlive（v2.11.0）已保证切页不取消，但长复盘
+  （团队 3 次 AI 调用）会撞整体 400s deadline 被 `AI_TIMEOUT` 杀掉；本次把全链路预算提到 1100s
+  并对齐前端 / nginx / SseEmitter / 部署 env，切页做其他操作期间复盘可继续跑完并保留结果。
 - **地图鸟瞰体积与九宫格标注调整**：`MapOverview.vue` 鸟瞰 SVG 宽度由 scoped CSS 控制——
   桌面/平板为容器 66.7%（约 2/3）并居中，`max-width: 768px`（手机端）恢复 100%；移除九宫格
   数字标注（region-label 文本、`--map-region-label` 与 mapPalette `regionLabel` 死代码一并清理），

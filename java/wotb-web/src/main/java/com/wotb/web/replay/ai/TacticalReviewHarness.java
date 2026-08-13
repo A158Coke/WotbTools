@@ -40,8 +40,8 @@ public class TacticalReviewHarness {
     static final int SAFETY_MARGIN_SEC = 10;
     /** Call #1 失败后进入旧路径 fallback 所需的最小剩余预算（秒）。 */
     static final int FALLBACK_MIN_REMAINING_SEC = 60;
-    /** 前端/nginx 的现有请求生命周期上限（秒），用于理论最坏时间断言。 */
-    static final int ENDPOINT_DEADLINE_SEC = 400;
+    /** 前端/后端/nginx 的请求生命周期上限（秒），用于理论最坏时间断言。 */
+    static final int ENDPOINT_DEADLINE_SEC = 1100;
 
     /**
      * Harness 运行结果：复盘文本 + 本次执行实际使用的 Call #1 prior。

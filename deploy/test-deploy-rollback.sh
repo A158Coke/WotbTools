@@ -118,8 +118,22 @@ export DB_PASSWORD=db-secret KC_ADMIN_PASSWORD=kc-secret WG_APPLICATION_ID=wg-id
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
-# ---- deploy A (success) ----
+# ---- deadline alignment guard: 400 must fail fast with a clean error; 1100 must pass ----
 export TAG=sha-A
+set +e
+guard_output=$(AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC=400 bash "$WORK/deploy/deploy.sh" 2>&1)
+guard_rc=$?
+set -e
+[[ $guard_rc -ne 0 ]] || fail "deadline=400 must fail the alignment guard"
+[[ $guard_rc -eq 3 ]] || fail "deadline=400 must exit with the controlled code 3, got $guard_rc"
+grep -q "AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC must be 1100" <<<"$guard_output" \
+  || fail "deadline=400 error message missing: $guard_output"
+if grep -q "command not found\|No such file or directory" <<<"$guard_output"; then
+  fail "deadline=400 must not produce shell errors: $guard_output"
+fi
+
+# ---- deploy A (success) ----
+export AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC=1100
 bash "$WORK/deploy/deploy.sh"
 [[ -f "$WORK/DEPLOYED_SHA" ]] || fail "DEPLOYED_SHA missing after deploy A"
 [[ "$(cat "$WORK/DEPLOYED_SHA")" == "sha-A" ]] || fail "DEPLOYED_SHA != sha-A after deploy A"

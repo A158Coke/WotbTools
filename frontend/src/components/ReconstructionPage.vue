@@ -64,9 +64,9 @@ const progressStage = ref('')
 const partialAnalysis = ref('')
 
 // AI 复盘请求生命周期：客户端安全超时 + 取消（AbortController + 后端 cancel 端点）。
-// 超时链对齐：后端 AI_CALL_TIMEOUT_SEC=315 + 解析余量 < nginx analyze 420s；
-// 前端 400s 在 nginx 之前给出干净 AI_TIMEOUT，而不是等到代理 504。
-const AI_ANALYZE_TIMEOUT_MS = 400_000
+// 超时链对齐：后端整体 deadline=1100s（团队 Call#1+Call#2+Autopsy 各 ≤315s + 余量）
+// < nginx analyze 1120s；前端 1100s 在 nginx 之前给出干净 AI_TIMEOUT，而不是等到代理 504。
+const AI_ANALYZE_TIMEOUT_MS = 1_100_000
 let analyzeAbortController = null
 let analyzeTimeoutTimer = null
 let cancelRequested = false
@@ -312,7 +312,7 @@ async function readAnalyzeStream(r, controller) {
 
   try {
     for (;;) {
-      // 墙钟超时兜底：后台标签定时器被节流时，活跃流仍按 400s 语义中止。
+      // 墙钟超时兜底：后台标签定时器被节流时，活跃流仍按 1100s 语义中止。
       if (Date.now() >= deadlineMs) {
         timedOut = true
         fireCancel(currentCorrelationId)

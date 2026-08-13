@@ -51,7 +51,8 @@ public final class TeamAiPromptBuilder {
         // 不能被 optional 预算裁掉。构建结果决定是否需要补 OPPOSING_LINEUP_UNAVAILABLE，
         // 因此必须在 header 写出 unitLimitations 之前完成。
         final TeamEvidenceFormatter.BudgetWriter hpfTemp = new TeamEvidenceFormatter.BudgetWriter();
-        TeamEvidenceFormatter.appendHighPriorityFacts(hpfTemp, context.features(), context.analysisUnitId());
+        TeamEvidenceFormatter.appendHighPriorityFacts(
+                hpfTemp, context.features(), context.analysisUnitId(), List.copyOf(limitations));
         if (!TeamEvidenceFormatter.appendOpposingTeam(hpfTemp, context.battle(), context.perspectiveTeam())) {
             // prompt 要求逐车分析对方；拿不到对方名册时必须显式告知，避免 AI 跳过或编造
             limitations.add("OPPOSING_LINEUP_UNAVAILABLE");
@@ -87,13 +88,20 @@ public final class TeamAiPromptBuilder {
         final TeamEvidenceFormatter.BudgetWriter optTemp = new TeamEvidenceFormatter.BudgetWriter();
         TeamEvidenceFormatter.appendOptionalDetails(optTemp, context.features(), context.analysisUnitId(),
                 context.battle() == null ? null : context.battle().mapName,
-                context.battle(), context.perspectiveTeam());
+                context.battle(), context.perspectiveTeam(), List.copyOf(limitations));
         // 敌方最后已知位置（观测子集）：与其它 optional 证据同级，超预算时整体被裁剪
         final String enemyPositions = EnemyLastKnownPositionsSection.renderTeamSection(
                 context.reconstruction(), context.battle(), context.perspectiveTeam());
         if (!enemyPositions.isEmpty()) {
             optTemp.append("\n" + enemyPositions);
         }
+        // 逐成员掉血窗口（事件流观测子集）：与 OBSERVED 聚合同一覆盖率口径
+        TeamEvidenceFormatter.appendMemberDamageReceivedWindows(
+                optTemp,
+                context.battle(),
+                context.features() == null ? List.of() : context.features().members(),
+                context.reconstruction(),
+                limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
         final String optBlock = optTemp.content();
 
         // 如果 mandatory（header + HPF + prior）超出 token 预算，直接抛出异常
