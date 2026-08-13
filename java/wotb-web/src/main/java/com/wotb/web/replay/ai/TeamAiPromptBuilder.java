@@ -97,7 +97,8 @@ public final class TeamAiPromptBuilder {
         // 逐成员掉血窗口（事件流观测子集）：与 OBSERVED 聚合同一覆盖率口径
         TeamEvidenceFormatter.appendMemberDamageReceivedWindows(
                 optTemp,
-                context.features(),
+                context.battle(),
+                context.features() == null ? List.of() : context.features().members(),
                 context.reconstruction(),
                 limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
         final String optBlock = optTemp.content();

@@ -196,7 +196,7 @@ class TeamAiPromptBuilderTest {
         final String content = TeamAiPromptBuilder.single(context).content();
         assertTrue(content.contains("MEMBER_DAMAGE_RECEIVED_WINDOWS（逐成员掉血窗口·事件流观测）"), content);
         assertTrue(content.contains("AllyA"), content);
-        assertTrue(content.contains("[0分05秒-0分13秒]掉血700/2次"), content);
+        assertTrue(content.contains("[0分05秒-0分13秒]掉血700/2次攻击者1"), content);
         assertFalse(content.contains("UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)"), content);
 
         // 事件流覆盖不全时抑制数字（与 OBSERVED_EVENT_SUBSET 同口径）

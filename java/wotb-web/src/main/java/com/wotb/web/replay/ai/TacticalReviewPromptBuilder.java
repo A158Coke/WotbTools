@@ -74,6 +74,14 @@ public final class TacticalReviewPromptBuilder {
         final String enemyPositionsSection =
                 EnemyLastKnownPositionsSection.renderPlayerSection(battle, recon);
         boolean includeEnemyPositions = !enemyPositionsSection.isEmpty();
+        // 录像者掉血窗口：与 fallback 同格式/同口径；OBSERVED_DAMAGE_IS_PARTIAL 时抑制数字
+        final boolean damagePartial = features != null && features.limitations() != null
+                && features.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL");
+        final String damageWindowsSection = recorder != null && recorder.accountId() != null
+                ? PlayerEvidenceFormatter.recorderDamageReceivedWindowsSection(
+                        battle, recon, recorder.accountId(), damagePartial)
+                : "";
+        boolean includeDamageWindows = !damageWindowsSection.isEmpty();
         boolean includePhases = features != null && features.phases() != null && !features.phases().isEmpty();
         boolean includeTop = !windows.isEmpty();
         boolean includeWindowDetail = !windows.isEmpty();
@@ -85,6 +93,7 @@ public final class TacticalReviewPromptBuilder {
         String content = assemble(baseContent, evidence, features, windows,
                 windowDetail, includeEvidence, includeEngagements,
                 includeEnemyPositions, enemyPositionsSection,
+                includeDamageWindows, damageWindowsSection,
                 includePhases, includeTop, includeWindowDetail, battle);
         int estimated = estimate(estimator, TACTICAL_SYSTEM_PROMPT, content);
         boolean truncated = false;
@@ -99,6 +108,8 @@ public final class TacticalReviewPromptBuilder {
                 includeEngagements = false;
             } else if (includeEnemyPositions) {
                 includeEnemyPositions = false;
+            } else if (includeDamageWindows) {
+                includeDamageWindows = false;
             } else if (includePhases) {
                 includePhases = false;
             } else if (includeWindowDetail) {
@@ -112,6 +123,7 @@ public final class TacticalReviewPromptBuilder {
             content = assemble(baseContent, evidence, features, windows,
                     windowDetail, includeEvidence, includeEngagements,
                     includeEnemyPositions, enemyPositionsSection,
+                    includeDamageWindows, damageWindowsSection,
                     includePhases, includeTop, includeWindowDetail, battle);
             estimated = estimate(estimator, TACTICAL_SYSTEM_PROMPT, content);
         }
@@ -134,6 +146,8 @@ public final class TacticalReviewPromptBuilder {
             final boolean includeEngagements,
             final boolean includeEnemyPositions,
             final String enemyPositionsSection,
+            final boolean includeDamageWindows,
+            final String damageWindowsSection,
             final boolean includePhases,
             final boolean includeTop,
             final boolean includeWindowDetail,
@@ -172,6 +186,9 @@ public final class TacticalReviewPromptBuilder {
         }
         if (includeEnemyPositions && !enemyPositionsSection.isEmpty()) {
             sb.append("\n\n").append(enemyPositionsSection);
+        }
+        if (includeDamageWindows && !damageWindowsSection.isEmpty()) {
+            sb.append("\n\n").append(damageWindowsSection);
         }
         if (includeEvidence && evidence != null) {
             sb.append("\n======================== TACTICAL EVIDENCE（Backend 确定性证据） ========================\n");

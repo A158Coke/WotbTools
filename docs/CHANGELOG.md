@@ -10,18 +10,28 @@
   nginx `proxy_read/send_timeout`、`SseEmitter` 超时与部署 env（`deploy.yml` / `.env.example` /
   `docker-compose.prod.yml`）统一对齐 1100s / 1120s——团队复盘 3 次 AI 调用
   （Call #1 + Call #2 + Team Autopsy，各 ≤315s）的最坏耗时不再被旧 400s 硬杀；
-  `TacticalReviewHarness.ENDPOINT_DEADLINE_SEC` 同步更新。前端新增 KeepAlive 切页回归测试
-  （开始复盘 → 切「回放解析」→ 预览 → 切回：不 abort、不调 cancel、结果可见）。
+  `TacticalReviewHarness.ENDPOINT_DEADLINE_SEC` 同步更新；新增 `AiTimeoutChainContractTest`
+  配置契约测试（application / compose / workflow / frontend / nginx / SseEmitter 防漂移），
+  deploy.yml 固定使用 1100 并在 `deploy.sh` fail-fast 校验，杜绝旧 400 静默生效。
+  前端新增 KeepAlive 切页回归测试（开始复盘 → 切「回放解析」→ 预览 → 切回：
+  不 abort、不调 cancel、结果可见）。
 - **争霸赛点数胜负结束方式（pointsEndReason）**：`FriendlyEnemyResult` 新增 `PointsEndReason`
   派生（`REACHED_1000` / `TIME_EXPIRED` / `UNKNOWN` / `NOT_APPLICABLE`）并纳入
   `TeamBattleWinner`；`CAPTURE_AND_POINTS` 输出 `pointsEndReason`；`CAPTURE_RULE`（ZH/EN/RU）
   写明结束条件三分法——点数胜负叙述必须体现「时间耗尽」或「达到 1000 分提前获胜」，
   禁止把 <1000 的中间比分当作获胜理由；团队剖析胜负标签与 `resolveTeamResult` 按结束方式输出。
 - **掉血时间范围（规则 + 窗口证据）**：新增三语 `HP_LOSS_TIME_RULE`（player/team 提示词共用）——
-  凡提及掉血必须给时间范围与掉血量，小窗口大量掉血/被秒必须标注为问题；新增
-  `DamageWindowClusterer`（≤10s 间隙聚类掉血窗口，含致死标记），player 路径输出
-  `RECORDER_DAMAGE_RECEIVED_WINDOWS`、团队路径输出 `MEMBER_DAMAGE_RECEIVED_WINDOWS`
-  （受 `OBSERVED_DAMAGE_IS_PARTIAL` 覆盖率抑制）。
+  凡提及掉血必须给时间范围与掉血量；小窗口大量掉血先描述为「短时间集中掉血/高压掉血窗口」，
+  仅当窗口内解析出 ≥2 个不同攻击者时才可写「被多车集火」，攻击者无法解析或只有 1 个攻击者时不得断言集火。
+  新增 `DamageWindowClusterer`（≤10s 间隙聚类掉血窗口，含不同攻击者数）：真实 decoder 的
+  `DamageEvent` 账号字段恒为 null，窗口沿 `ParticipantMappingEvent` 的 entityId→accountId 映射
+  （复用 `TeamEntityMapper`）解析攻击者/受击者；不再依赖生产中恒为 false 的 `lethal()`，
+  删除不可达的「致死」宣称。player 路径输出 `RECORDER_DAMAGE_RECEIVED_WINDOWS`（fallback 与
+  Tactical Harness 主路径同格式/同口径），团队路径输出 `MEMBER_DAMAGE_RECEIVED_WINDOWS`
+  （均受 `OBSERVED_DAMAGE_IS_PARTIAL` 覆盖率抑制，覆盖不全时输出 UNAVAILABLE 不给数字）。
+  新增真实回放集成回归测试 `ReplayDamageWindowIntegrationTest`
+  （common/fixtures 的 rift 随机战夹具：真实 decoder 账号字段为 null、经 entity 映射生成窗口、
+  battle-relative 时间、partial 抑制、Harness/fallback/团队三路径、单一攻击者不标集火）。
 - **AI 复盘维持分析 + 地图可视化改进**：`App.vue` 视图渲染改为 `<component :is>` +
   `<KeepAlive :include="['ReconstructionPage']">`——切走「AI 复盘」视图不再卸载/取消，SSE 流继续，
   返回时进度/结果直接可见（关标签/刷新仍由 `beforeunload` 取消）；`ReconstructionPage` 移除卸载时

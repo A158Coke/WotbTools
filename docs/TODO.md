@@ -72,7 +72,7 @@
 - [x] 增量检测使用完整 push range，并覆盖 `rating.json`、`map_names.json`、公共资源与部署脚本。
 - [x] 生产 `wotb` + `keycloak` 双库部署前/每日备份、7 日保留、校验与手动恢复闭环。
 - [x] 生产部署钉住 `sha-<SHA>` + 失败自动回滚：每次部署统一构建 backend/frontend/keycloak 三件套 SHA 镜像；新 compose 以 `docker-compose.next.yml` 暂存、pull 成功后替换并备份 `docker-compose.prev.yml` / `DEPLOYED_SHA`；三端健康检查失败自动恢复并复检，回滚失败保留现场人工介入；镜像清理移到检查通过之后。
-- [x] AI 全链路超时对齐 + 客户端取消：前端 400s 安全超时/取消按钮 → 容器 nginx 420s → 后端 315s 预算；取消经 `/api/replay/analyze/cancel` 中断上游调用；`AI_TIMEOUT` 不再重试，减少 504 / Broken pipe / 无效 API 消耗。
+- [x] AI 全链路超时对齐 + 客户端取消：前端 1100s 安全超时/取消按钮 → 容器 nginx `/api/replay/analyze` 1120s → worker overall deadline 1100s（`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`，团队 3 次 AI 调用各 ≤315s + 余量）→ 单次 AI call 315s；取消经 `/api/replay/analyze/cancel` 中断上游调用；`AI_TIMEOUT` 不再重试，减少 504 / Broken pipe / 无效 API 消耗。deadline 与前端/nginx 固定对齐，部署时 fail-fast 校验。
 
 ## P1：打手视角订单系统
 
