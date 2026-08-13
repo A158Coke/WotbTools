@@ -21,6 +21,14 @@
   不得把未知当成零存活；不写死每队 7 人，完整名册的非 7v7 训练房同样生效。新增
   `TeamResultSourceBoundaryTest` 覆盖部分缺失敌方/本方、winnerTeam 存在与缺失、主 result 行与
   Autopsy 结果行、完整 7v7 与合法非 7v7 场景。
+  **点数推断同步 fail-closed**：`resolveTeamBattle` 的 POINTS_INFERENCE 仅在 rosterComplete=true
+  时可用（winnerTeam 缺失 + 阵容不完整 → DRAW_OR_UNKNOWN/UNKNOWN，残缺点数不推断胜方）；
+  winnerTeam 存在时胜方仍为 BATTLE_RESULTS，但 rosterComplete!=true 时 pointsEndReason 降级
+  UNKNOWN，result 只写通用「点数判定」，不得写「时间耗尽/达到 1000 分」；
+  `CAPTURE_AND_POINTS` 在阵容不完整时输出 `SETTLEMENT_ROSTER_INCOMPLETE=true` /
+  `pointsTotalsUnavailable=true` 并抑制逐人/双方占点分总量（写 UNKNOWN），与 mandatory header
+  和 `CAPTURE_RULE`（ZH/EN/RU 新增 2d 条）口径一致。新增 ReplayParser 解析级负向测试
+  （#201/#301 账号不一致、队伍不一致 → rosterComplete=false）。
   新增 golden case `cw-annihilation-win-01` / `cw-annihilation-loss-01` + fixtures + lessons；
   `cw-cap-win-01` / `cw-cap-points-decided-01` 断言 mandatory header `resultSource=POINTS_INFERENCE`
   且不出现 BATTLE_RESULTS；`AiEvalHarnessTest` 断言 ZH 规则含全歼双向语义与三级证据、
