@@ -81,7 +81,7 @@ class MapOverviewBuilderTest {
                         .anyMatch(e -> "DAMAGE".equals(e.type())),
                 "真实夹具应包含 DAMAGE 事件");
         assertTrue(overview.playback().events().stream()
-                        .anyMatch(e -> "OBSERVED".equals(e.type()) || "LOST".equals(e.type())),
+                        .anyMatch(e -> "POSITION_REPORTED".equals(e.type()) || "POSITION_STALE".equals(e.type())),
                 "真实夹具应包含可见性事件");
         for (final MapOverview.PlaybackEvent event : overview.playback().events()) {
             assertTrue(event.timeSec() >= 0);

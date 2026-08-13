@@ -6,14 +6,17 @@
 
 ### Added
 - **AI 复盘结果页「地图鸟瞰」新增「战局回放」第三视图**：后端 `MapOverview` 扩展 `playback`
-  （`durationSec` / `vehicles`（含 `observedIntervals` 可观测区间与 `deathSec`）/ `events`：
-  `DAMAGE` / `DESTROYED` / `KILL` / `OBSERVED` / `LOST`，身份经 `TeamEntityMapper` 实体映射解析，
-  无法可靠解析不输出）；前端新增 `BattlePlayback.vue` 与 `utils/battlePlayback.js`
-  （RAF 播放、仅在同一可信连续点 gap≤5s 间插值、失察淡化最后已知位置、从未观测不显示、
-  阵亡切换 ✕、进度条事件按秒聚合标记、播放/暂停/±5s/上一/下一事件/1×2×4×/拖动 seek、
-  随机战默认录像者相关事件过滤）；`MarkdownContent` 把 AI 报告中的明确时间文本
-  （`03:20` / `3分20秒` / `3m 20s` / `3 мин 20 с`，不识别普通数字/比分）转成 `#seek=` 链接，
-  点击后展开鸟瞰、自动切换战局回放并 seek 暂停；三语 locale 与文档同步。
+  （`durationSec` / `vehicles`（含 `positionIntervals` 位置上报区间与 `deathSec`）/ `events`：
+  `DAMAGE` / `DESTROYED` / `KILL` / `POSITION_REPORTED` / `POSITION_STALE`，身份经
+  `TeamEntityMapper` 实体映射解析，无法可靠解析不输出；`POSITION_REPORTED/STALE` 只表达
+  服务器位置流覆盖变化——type-10 是服务器完整实体流、与点亮无关，敌方静止时不上报位置，
+  故不得把位置中断当「失察」）；前端新增 `BattlePlayback.vue` 与 `utils/battlePlayback.js`
+  （RAF 播放、仅在同一可信连续点 gap≤5s 间插值、gap 内淡化最后已知位置而不消失、从未上报
+  位置不显示、阵亡切换 ✕、进度条事件按秒聚合标记、播放/暂停/±5s/上一/下一事件/1×2×4×/
+  拖动 seek（拖动即暂停）、随机战默认录像者相关事件过滤、`formatClock` 先取整杜绝 00:60）；
+  `MarkdownContent` 把 AI 报告中的明确时间文本（`03:20` / `3分20秒` / `3m 20s` /
+  `3 мин 20 с`，不识别普通数字/比分）转成 `#seek=` 链接，点击后展开鸟瞰、自动切换战局回放
+  并 seek 暂停；三语 locale 与文档同步。
 
 ### Changed
 - **打手最高等级显示名调整**：保留数据库/API 内部兼容值 `AVERAGE_GOD`，仅把界面中文名改为“殿堂级”、英文名改为 `Mythic`，俄文同步对应译名；管理员编辑授予、普通申请禁用及每服最多一名的规则不变。

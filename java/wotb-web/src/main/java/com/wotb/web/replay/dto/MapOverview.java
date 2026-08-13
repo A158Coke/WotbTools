@@ -125,32 +125,39 @@ public record MapOverview(
         }
     }
 
-    /** 一辆参战车辆（位置复用 {@link Route#points()}，这里只补充可见性区间）。 */
+    /**
+     * 一辆参战车辆（位置复用 {@link Route#points()}，这里只补充位置上报区间）。
+     * <p>注意：{@code positionIntervals} 是服务器位置流上报覆盖（type-10 gap 聚类），
+     * 不代表录像者客户端点亮——敌方静止时服务器不上报位置，位置中断≠失察。
+     */
     public record PlaybackVehicle(
             long accountId,
             String playerName,
             long tankId,
             String tankName,
             int team,
-            List<ObservedInterval> observedIntervals,
+            List<PositionInterval> positionIntervals,
             Double deathSec
     ) {
         public PlaybackVehicle {
             playerName = playerName == null ? "" : playerName;
             tankName = tankName == null ? "" : tankName;
-            observedIntervals = observedIntervals == null
-                    ? List.of() : List.copyOf(observedIntervals);
+            positionIntervals = positionIntervals == null
+                    ? List.of() : List.copyOf(positionIntervals);
         }
     }
 
-    /** 车辆可观测区间（battle-relative 秒；[startSec, endSec] 内该车辆位置对录像者可见）。 */
-    public record ObservedInterval(double startSec, double endSec) {
+    /**
+     * 车辆位置上报区间（battle-relative 秒；[startSec, endSec] 内服务器持续上报该车位置）。
+     * 语义 = 位置流覆盖，不等于「对录像者可见/点亮」。
+     */
+    public record PositionInterval(double startSec, double endSec) {
     }
 
     /**
      * 时间轴事件。
      *
-     * @param type           DAMAGE | DESTROYED | KILL | OBSERVED | LOST（英文稳定码）
+     * @param type           DAMAGE | DESTROYED | KILL | POSITION_REPORTED | POSITION_STALE（英文稳定码）
      * @param timeSec        battle-relative 秒
      * @param accountId      主体（攻击者 / 被击毁者 / 进入或离开观察的车辆）；无法解析为 null
      * @param targetAccountId 对象（DAMAGE/KILL 的受害者）；其余为 null

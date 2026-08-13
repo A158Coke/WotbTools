@@ -817,16 +817,16 @@
                 "team_friendly": "Friendly",
                 "team_enemy": "Enemy",
                 "state": "State",
-                "state_observed": "Observed",
-                "state_lost": "Lost (last known position)",
+                "state_position_reported": "Position reporting",
+                "state_position_stale": "Position stale (last known)",
                 "state_destroyed": "Destroyed",
                 "last_known": "Last known @",
                 "unknown": "Unknown",
                 "event_DAMAGE": "Damage",
                 "event_DESTROYED": "Destroyed",
                 "event_KILL": "Kill",
-                "event_OBSERVED": "Observed",
-                "event_LOST": "Lost"
+                "event_POSITION_REPORTED": "Position reported",
+                "event_POSITION_STALE": "Position stale"
             }
           },
         "stages": {

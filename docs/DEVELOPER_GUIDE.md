@@ -443,21 +443,22 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
   `firstObservedSec/lastObservedSec` 诚实标注观测区间（敌方静止开局通常缺失，
   前端显示「位置观测自 X 秒起」），`deathSec` 标注阵亡；连续点 gap > 5s 前端断线。
 - **战局回放（Battle Playback，第三视图）**：`MapOverview.playback`（可空）携带
-  `durationSec`、`vehicles`（账号/昵称/坦克/阵营/`observedIntervals` 可观测区间/`deathSec`）与
-  `events`（按 battle-relative 秒升序的英文稳定码：`DAMAGE`/`DESTROYED`/`KILL`/`OBSERVED`/`LOST`，
-  伤害/击毁身份经 `TeamEntityMapper` 实体映射解析，无法可靠解析则不输出）。
+  `durationSec`、`vehicles`（账号/昵称/坦克/阵营/`positionIntervals` 位置上报区间/`deathSec`）与
+  `events`（按 battle-relative 秒升序的英文稳定码：`DAMAGE`/`DESTROYED`/`KILL`/
+  `POSITION_REPORTED`/`POSITION_STALE`，伤害/击毁身份经 `TeamEntityMapper` 实体映射解析，
+  无法可靠解析则不输出；`POSITION_REPORTED/STALE` 只表达服务器位置流覆盖变化，不是点亮）。
   前端 `BattlePlayback.vue`（独立组件，复用 mapImages/coordinateBounds/色板/响应式布局）用
   `requestAnimationFrame` 推进播放时间：仅在同一可信连续点（gap ≤ 5s）之间线性插值，
-  跨断线/失察/无效坐标禁止穿线；`observedAt` 决定车辆当前是否可见——可见实体实心显示、
-  失察实体淡化最后已知位置、从未观测实体不显示、阵亡实体在阵亡时刻切换为 ✕；
+  跨断线/位置中断/无效坐标禁止穿线；`positionCoveredAt` 决定车辆当前是否有位置流覆盖——
+  覆盖中实体实心显示、位置中断实体淡化最后已知位置、从未上报位置实体不显示、阵亡实体在阵亡时刻切换为 ✕；
   随机战默认只显示与录像者相关的伤害/击杀/阵亡 + 全部可见性事件（可切换「全部已知事件」），
   训练房/联赛默认显示本方关键事件；进度条按秒聚合事件标记，点击标记跳转该秒并弹出事件列表。
   播放控制：播放/暂停、±5s、上一/下一事件、1×/2×/4×、拖动 seek。
   - **历史路线**：只渲染 `timeSec <= currentTime` 的路线前缀（`routePrefix`），未来路线永不显示；
     gap > 5s 断线，当前时间在可信段内时把插值终点追加为段尾；阵亡后路线不再延伸。
   - **gap 内最后已知**：`positionAt` 只返回可信插值位置（gap 内为 null，禁止穿线）；
-    车辆显示位置由 `lastKnownPosition` 兜底——gap/失察/阵亡时车辆停在淡化的最后可信位置而非消失，
-    阵亡优先于 lost；「最后已知」面板显示真实的最后可信时间（`pos.timeSec`），不再显示 `currentTime`。
+    车辆显示位置由 `lastKnownPosition` 兜底——gap/位置中断/阵亡时车辆停在淡化的最后可信位置而非消失，
+    阵亡优先于位置中断；「最后已知」面板显示真实的最后可信时间（`pos.timeSec`），不再显示 `currentTime`。
   - **拖动与跳转即暂停**：进度条 `pointerdown/mousedown/touchstart` 立即暂停，拖动中实时 seek，
     松开保持暂停（不恢复拖动前状态）；事件标记点击、上一/下一事件跳转、AI 报告时间跳转均保持暂停。
   - **RAF 幂等**：`play()` 在已播放时直接返回、`pause()` 取消未完成回调，任意时刻至多一个 RAF 循环；

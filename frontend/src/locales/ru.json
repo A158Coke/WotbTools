@@ -817,16 +817,16 @@
                 "team_friendly": "Союзники",
                 "team_enemy": "Противник",
                 "state": "Состояние",
-                "state_observed": "Наблюдается",
-                "state_lost": "Потерян (последняя известная позиция)",
+                "state_position_reported": "Позиция передаётся",
+                "state_position_stale": "Позиция устарела (последняя известная)",
                 "state_destroyed": "Уничтожен",
                 "last_known": "Последняя известная позиция @",
                 "unknown": "Неизвестно",
                 "event_DAMAGE": "Урон",
                 "event_DESTROYED": "Уничтожен",
                 "event_KILL": "Фраг",
-                "event_OBSERVED": "Наблюдается",
-                "event_LOST": "Потерян"
+                "event_POSITION_REPORTED": "Позиция передана",
+                "event_POSITION_STALE": "Позиция устарела"
             }
           },
         "stages": {

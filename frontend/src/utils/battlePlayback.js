@@ -37,8 +37,11 @@ export function positionAt(points, t) {
   return { x: prev.x, y: prev.y, timeSec: prev.timeSec }
 }
 
-/** t 是否落在任一可观测区间内。 */
-export function observedAt(intervals, t) {
+/**
+ * t 是否落在任一位置上报区间内。
+ * 语义 = 服务器位置流覆盖（type-10 gap 聚类），不代表录像者客户端点亮。
+ */
+export function positionCoveredAt(intervals, t) {
   if (!intervals) return false
   return intervals.some(iv => t >= iv.startSec - 1e-6 && t <= iv.endSec + 1e-6)
 }
@@ -146,16 +149,16 @@ export function routePrefix(points, t) {
   return segments
 }
 
-/** 事件是否与录像者相关（随机战默认过滤；OBSERVED/LOST 恒显示）。 */
+/** 事件是否与录像者相关（随机战默认过滤；位置覆盖事件恒显示）。 */
 export function recorderRelated(event, recorderAccountId) {
-  if (event.type === 'OBSERVED' || event.type === 'LOST') return true
+  if (event.type === 'POSITION_REPORTED' || event.type === 'POSITION_STALE') return true
   if (recorderAccountId == null) return true
   return event.accountId === recorderAccountId || event.targetAccountId === recorderAccountId
 }
 
 /** 事件是否涉及某阵营（团队视角默认过滤）。 */
 export function teamRelated(event, team, vehiclesByAccount) {
-  if (event.type === 'OBSERVED' || event.type === 'LOST') return true
+  if (event.type === 'POSITION_REPORTED' || event.type === 'POSITION_STALE') return true
   const a = vehiclesByAccount.get(event.accountId)
   const b = vehiclesByAccount.get(event.targetAccountId)
   return (a && a.team === team) || (b && b.team === team)
