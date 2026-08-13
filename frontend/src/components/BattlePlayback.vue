@@ -7,9 +7,11 @@ import { createMapView } from '../utils/mapView'
 import {
   aggregateEventsBySecond,
   formatClock,
+  lastKnownPosition,
   observedAt,
   positionAt,
   recorderRelated,
+  routePrefix,
   teamRelated
 } from '../utils/battlePlayback'
 
@@ -50,24 +52,30 @@ let rafId = null
 let lastFrameTs = null
 
 function frame(ts) {
-  if (!playing.value) return
+  if (!playing.value) {
+    rafId = null
+    return
+  }
   const delta = lastFrameTs == null ? 0 : (ts - lastFrameTs)
   lastFrameTs = ts
   currentTime.value = Math.min(duration.value, currentTime.value + (delta / 1000) * speed.value)
   if (currentTime.value >= duration.value) {
     playing.value = false
+    rafId = null
     return
   }
   rafId = requestAnimationFrame(frame)
 }
 
+/** 幂等启动：任意时刻最多一个 RAF 循环（重复调用/重复事件不会创建第二个循环）。 */
 function play() {
-  if (duration.value <= 0) return
+  if (playing.value || duration.value <= 0) return
   playing.value = true
   lastFrameTs = null
   rafId = requestAnimationFrame(frame)
 }
 
+/** 幂等暂停：取消未完成的 RAF，绝不残留回调推进时间。 */
 function pause() {
   playing.value = false
   if (rafId != null) {
@@ -76,16 +84,11 @@ function pause() {
   }
 }
 
-watch(playing, (value) => {
-  if (value) play()
-  else pause()
-})
-
 watch(() => props.seekTo, (sec) => {
   if (Number.isFinite(sec)) {
+    pause() // 点击 AI 时间 → seek + 自动暂停（含取消 RAF）
     currentTime.value = Math.min(duration.value, Math.max(0, sec))
     eventPopupSec.value = Math.round(sec)
-    playing.value = false // 点击 AI 时间 → seek + 自动暂停
   }
 }, { immediate: true })
 
@@ -97,6 +100,17 @@ function seek(sec) {
 function togglePlay() {
   if (playing.value) pause()
   else play()
+}
+
+/** 拖动进度条：按下即暂停，拖动中实时 seek，松开后保持暂停（不恢复拖动前状态）。 */
+function dragStart() {
+  pause()
+}
+
+/** 事件标记点击：跳转并保持暂停。 */
+function jumpTo(sec) {
+  pause()
+  seek(sec)
 }
 
 function step(delta) {
@@ -145,14 +159,40 @@ function vehicleColor(vehicle) {
   return list[Math.max(0, index) % list.length]
 }
 
+/**
+ * 车辆显示状态：把「当前可信插值位置」与「最后可信位置」分开——
+ * gap 内禁止穿线插值，但车辆停在淡化最后已知位置，不整辆消失；
+ * 阵亡后冻结在阵亡时刻的最后可信位置（优先于 lost）。
+ */
 function vehicleState(vehicle) {
   const route = routesByAccount.value.get(vehicle.accountId)
-  const pos = positionAt(route ? route.points : [], currentTime.value)
-  if (!pos) return null
-  const observed = observedAt(vehicle.observedIntervals, currentTime.value)
-  const destroyed = vehicle.deathSec != null && currentTime.value >= vehicle.deathSec
+  const points = route ? route.points : []
+  const t = currentTime.value
+  const destroyed = vehicle.deathSec != null && t >= vehicle.deathSec
+  const displayT = destroyed ? Math.min(t, vehicle.deathSec) : t
+  const live = positionAt(points, displayT)
+  const last = live ? live : lastKnownPosition(points, displayT)
+  if (!last) return null // 从未有可信位置：不显示
+  const observed = observedAt(vehicle.observedIntervals, t)
   const recorder = vehicle.accountId === props.overview.recorderAccountId
-  return { vehicle, pos, observed, destroyed, recorder, lastKnown: !observed && !destroyed }
+  return {
+    vehicle,
+    pos: last,
+    observed,
+    destroyed,
+    recorder,
+    lastKnown: destroyed || !live || !observed
+  }
+}
+
+/** 历史路线前缀（只到当前时间；gap 断线；阵亡后不再延伸）。 */
+function routeSegments(vehicle) {
+  const route = routesByAccount.value.get(vehicle.accountId)
+  if (!route) return []
+  const stop = vehicle.deathSec != null
+    ? Math.min(currentTime.value, vehicle.deathSec)
+    : currentTime.value
+  return routePrefix(route.points, stop)
 }
 
 const vehicleStates = computed(() => {
@@ -189,6 +229,7 @@ function nearestEvent(direction) {
     }
   }
   if (best) {
+    pause() // 上一/下一事件跳转后保持暂停
     currentTime.value = best.timeSec
     eventPopupSec.value = Math.round(best.timeSec)
   }
@@ -298,6 +339,9 @@ const mapStyle = computed(() => ({
         :max="duration || 1"
         step="0.1"
         :value="currentTime"
+        @pointerdown="dragStart"
+        @mousedown="dragStart"
+        @touchstart="dragStart"
         @input="seek(Number($event.target.value))"
         :aria-label="$t('recon.map.playback.progress')"
       />
@@ -307,7 +351,7 @@ const mapStyle = computed(() => ({
         class="pb-marker"
         :style="{ left: `${duration > 0 ? (marker.sec / duration) * 100 : 0}%` }"
         :title="`${formatClock(marker.sec)} ×${marker.count}`"
-        @click="seek(marker.sec)"
+        @click="jumpTo(marker.sec)"
       ></span>
     </div>
 
@@ -345,6 +389,17 @@ const mapStyle = computed(() => ({
           r="4"
           :class="spawn.team === friendlyTeam ? 'pb-spawn-friendly' : 'pb-spawn-enemy'"
         />
+      </g>
+      <g class="pb-routes">
+        <template v-for="st in vehicleStates" :key="`route-${st.vehicle.accountId}`">
+          <polyline
+            v-for="(seg, i) in routeSegments(st.vehicle)"
+            :key="`seg-${st.vehicle.accountId}-${i}`"
+            class="pb-route"
+            :stroke="vehicleColor(st.vehicle)"
+            :points="seg.map(p => `${mapView.toX(p.x)},${mapView.toY(p.y)}`).join(' ')"
+          />
+        </template>
       </g>
       <g class="pb-vehicles">
         <g
@@ -386,7 +441,7 @@ const mapStyle = computed(() => ({
           : (selectedState.observed ? $t('recon.map.playback.state_observed') : $t('recon.map.playback.state_lost')) }}
       </span>
       <span v-if="selectedState.lastKnown">
-        {{ $t('recon.map.playback.last_known') }} {{ formatClock(currentTime) }}
+        {{ $t('recon.map.playback.last_known') }} {{ formatClock(selectedState.pos.timeSec) }}
       </span>
     </div>
 
@@ -459,6 +514,7 @@ const mapStyle = computed(() => ({
   .pb-svg { width: 100%; }
 }
 .pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.16)); stroke-width: .5; fill: none; }
+.pb-route { fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; opacity: .55; }
 .pb-region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.28)); stroke-width: 1; }
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }

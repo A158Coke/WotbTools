@@ -82,12 +82,68 @@ export function parseAiTime(text) {
   return null
 }
 
-/** 秒 → MM:SS（播放器/进度条显示）。 */
+/** 秒 → MM:SS（播放器/进度条显示）。先对总秒数统一取整再分解，避免 59.6s 显示成 00:60。 */
 export function formatClock(sec) {
   if (!Number.isFinite(sec) || sec < 0) return '00:00'
-  const m = Math.floor(sec / 60)
-  const s = Math.round(sec % 60)
+  const total = Math.round(sec)
+  const m = Math.floor(total / 60)
+  const s = total % 60
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+/**
+ * 最后可信位置：t 之前（含）最近一个有限坐标的点；
+ * t 早于首点返回 null（从未可信，不显示）。
+ * 用于 gap/失察/阵亡时淡化停驻，不参与插值。
+ */
+export function lastKnownPosition(points, t) {
+  if (!points || points.length === 0 || !Number.isFinite(t)) return null
+  let best = null
+  for (const p of points) {
+    if (!Number.isFinite(p.timeSec) || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue
+    if (p.timeSec > t + 1e-6) break
+    best = { x: p.x, y: p.y, timeSec: p.timeSec }
+  }
+  return best
+}
+
+/**
+ * 历史路线前缀：只返回 timeSec ≤ t 的可信点序列，按 gap > OBSERVED_GAP_SEC 断成多段；
+ * 当前时间落在可信段内时把插值位置追加为最后一段的终点。
+ * 未来路线永不出现在返回结果里。
+ */
+export function routePrefix(points, t) {
+  if (!points || points.length === 0 || !Number.isFinite(t)) return []
+  const segments = []
+  let current = []
+  let nextAfterT = null
+  for (const p of points) {
+    if (!Number.isFinite(p.timeSec) || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue
+    if (p.timeSec > t + 1e-6) {
+      nextAfterT = p
+      break
+    }
+    const prev = current[current.length - 1]
+    if (prev && p.timeSec - prev.timeSec > OBSERVED_GAP_SEC) {
+      if (current.length >= 1) segments.push(current)
+      current = [p]
+    } else {
+      current.push(p)
+    }
+  }
+  if (current.length >= 1) {
+    // 仅当 t 严格落在最后一个可信点与下一个可信点之间（且 gap ≤ 5s）时才追加插值终点；
+    // t 在断线内或已过末点（冻结最后已知）时不追加，避免重复终点。
+    const lastTrusted = current[current.length - 1]
+    if (nextAfterT
+        && t > lastTrusted.timeSec + 1e-6
+        && nextAfterT.timeSec - lastTrusted.timeSec <= OBSERVED_GAP_SEC + 1e-6) {
+      const live = positionAt(points, t)
+      if (live) current.push({ x: live.x, y: live.y, timeSec: t })
+    }
+    segments.push(current)
+  }
+  return segments
 }
 
 /** 事件是否与录像者相关（随机战默认过滤；OBSERVED/LOST 恒显示）。 */
