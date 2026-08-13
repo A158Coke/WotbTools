@@ -6,6 +6,7 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.TankInfo;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.PlayerSideResolver.Side;
+import com.wotb.core.processing.TeamEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.core.replay.event.DamageEvent;
@@ -98,6 +99,7 @@ final class PlayerEvidenceFormatter {
             return false;
         }
         final Float battleStart = recon.battleStartRawClockSec();
+        final TeamEntityMapping mapping = DamageEventIdentityResolver.mapping(battle, recon);
         final Map<Long, int[]> dealt = new LinkedHashMap<>();   // [伤害合计, 命中次数]
         final Map<Long, int[]> received = new LinkedHashMap<>();
         for (final ReplayEvent event : recon.events()) {
@@ -108,11 +110,14 @@ final class PlayerEvidenceFormatter {
                     && damage.timestamp().rawClockSec() < battleStart) {
                 continue;
             }
-            final Long attacker = damage.attackerAccountId();
-            final Long victim = damage.victimAccountId();
-            if (attacker != null && attacker == recorderAccountId && victim != null) {
+            final long attacker = DamageEventIdentityResolver.attackerAccount(damage, mapping);
+            final long victim = DamageEventIdentityResolver.victimAccount(damage, mapping);
+            if (attacker <= 0 || victim <= 0) {
+                continue; // 身份无法解析（真实 decoder 直填账号为 null，必须经 entity 映射）
+            }
+            if (attacker == recorderAccountId) {
                 accumulate(dealt, victim, damage.damage());
-            } else if (victim != null && victim == recorderAccountId && attacker != null) {
+            } else if (victim == recorderAccountId) {
                 accumulate(received, attacker, damage.damage());
             }
         }
@@ -156,8 +161,9 @@ final class PlayerEvidenceFormatter {
 
     /**
      * 逐次伤害事件（随机战个人复盘）。每条记录对应一个真实 {@link DamageEvent}，
-     * 使用事件自带的 attacker/victim accountId 判定方向，绝不颠倒；伤害值是本次事件伤害，
-     * 与聚合观测子集严格区分。时间转换为战斗相对时间并输出「X分XX秒」。
+     * 攻击者/受击者经 entityId→accountId 映射解析（真实 decoder 直填账号为 null），
+     * 绝不颠倒方向；伤害值是本次事件伤害，与聚合观测子集严格区分。
+     * 时间转换为战斗相对时间并输出「X分XX秒」。
      * <p>排除准备阶段（开战前）与 damage &lt;= 0 的事件；坦克名称来自 {@link ReplayDisplayNames}，
      * 无法映射时为「未知坦克」，不猜测。</p>
      *
@@ -170,6 +176,7 @@ final class PlayerEvidenceFormatter {
         if (battle == null || recorderAccountId <= 0 || recon == null || recon.events() == null) {
             return false;
         }
+        final TeamEntityMapping mapping = DamageEventIdentityResolver.mapping(battle, recon);
         final Map<Long, PlayerResult> byAccount = new LinkedHashMap<>();
         if (battle.players != null) {
             for (final PlayerResult p : battle.players) {
@@ -184,9 +191,9 @@ final class PlayerEvidenceFormatter {
             if (damage.timestamp() == null) continue;
             final float raw = damage.timestamp().rawClockSec();
             if (battleStart != null && raw < battleStart) continue;   // 准备阶段不计
-            final Long attacker = damage.attackerAccountId();
-            final Long victim = damage.victimAccountId();
-            if (attacker == null || victim == null) continue;
+            final long attacker = DamageEventIdentityResolver.attackerAccount(damage, mapping);
+            final long victim = DamageEventIdentityResolver.victimAccount(damage, mapping);
+            if (attacker <= 0 || victim <= 0) continue;   // 身份无法解析（真实事件必须经 entity 映射）
             final boolean recorderIsAttacker = attacker == recorderAccountId;
             final boolean recorderIsVictim = victim == recorderAccountId;
             if (!recorderIsAttacker && !recorderIsVictim) continue;

@@ -1,8 +1,6 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
-import com.wotb.core.processing.TeamEntityIdentity;
-import com.wotb.core.processing.TeamEntityMapper;
 import com.wotb.core.processing.TeamEntityMapping;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.ReplayEvent;
@@ -65,7 +63,7 @@ final class DamageWindowClusterer {
         if (recon == null || recon.events() == null || accountId <= 0) {
             return List.of();
         }
-        final TeamEntityMapping mapping = TeamEntityMapper.resolve(battle, recon);
+        final TeamEntityMapping mapping = DamageEventIdentityResolver.mapping(battle, recon);
         final Float battleStart = recon.battleStartRawClockSec();
         final List<DamageEvent> received = new ArrayList<>();
         for (final ReplayEvent event : recon.events()) {
@@ -75,7 +73,7 @@ final class DamageWindowClusterer {
             if (damage.damage() <= 0) {
                 continue;
             }
-            if (victimAccount(damage, mapping) != accountId) {
+            if (DamageEventIdentityResolver.victimAccount(damage, mapping) != accountId) {
                 continue;
             }
             if (battleStart != null && damage.timestamp() != null
@@ -114,7 +112,7 @@ final class DamageWindowClusterer {
             windowEnd = relative;
             total += damage.damage();
             hits++;
-            final long attacker = attackerAccount(damage, mapping);
+            final long attacker = DamageEventIdentityResolver.attackerAccount(damage, mapping);
             if (attacker > 0) {
                 attackers.add(attacker);
             } else {
@@ -125,30 +123,6 @@ final class DamageWindowClusterer {
                 windowStart, windowEnd, total, hits,
                 attackers.size(), attackersUnresolved));
         return windows;
-    }
-
-    /** 受击者账号：优先直填字段（合成 fixture），否则经 entityId → accountId 映射解析。 */
-    private static long victimAccount(final DamageEvent damage, final TeamEntityMapping mapping) {
-        if (damage.victimAccountId() != null && damage.victimAccountId() > 0) {
-            return damage.victimAccountId();
-        }
-        return accountOf(damage.victimEid(), mapping);
-    }
-
-    /** 攻击者账号：优先直填字段（合成 fixture），否则经 entityId → accountId 映射解析；无法解析返回 0。 */
-    private static long attackerAccount(final DamageEvent damage, final TeamEntityMapping mapping) {
-        if (damage.attackerAccountId() != null && damage.attackerAccountId() > 0) {
-            return damage.attackerAccountId();
-        }
-        return accountOf(damage.attackerEid(), mapping);
-    }
-
-    private static long accountOf(final int entityId, final TeamEntityMapping mapping) {
-        if (entityId <= 0) {
-            return 0L;
-        }
-        final TeamEntityIdentity identity = mapping.identity(entityId);
-        return identity != null ? identity.accountId() : 0L;
     }
 
     private static float relativeSec(final DamageEvent damage, final Float battleStart) {

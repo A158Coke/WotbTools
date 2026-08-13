@@ -163,6 +163,15 @@ class ReplayDamageWindowIntegrationTest {
         assertTrue(fallback.userPrompt().contains("RECORDER_DAMAGE_RECEIVED_WINDOWS（你掉血时间窗口"),
                 fallback.userPrompt());
         assertTrue(fallback.userPrompt().contains("掉血488"), fallback.userPrompt());
+        // 同根因修复：逐次伤害与逐对手对炮段在真实事件（直填账号为 null）下也必须非空
+        assertTrue(fallback.userPrompt().contains("PER_HIT_DAMAGE_EVENTS_OBSERVED"),
+                fallback.userPrompt());
+        assertFalse(fallback.userPrompt().contains("PER_HIT_DAMAGE_EVENTS_UNAVAILABLE"),
+                fallback.userPrompt());
+        assertTrue(fallback.userPrompt().contains("DAMAGE_EXCHANGE_BY_OPPONENT_OBSERVED"),
+                fallback.userPrompt());
+        assertTrue(fallback.userPrompt().contains("对 你驾驶的"),
+                "逐次伤害必须包含录像者受击行: " + fallback.userPrompt());
     }
 
     @Test
