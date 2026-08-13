@@ -42,6 +42,15 @@ describe('positionAt', () => {
     expect(pos).toEqual({ x: 300, y: 50, timeSec: 40 })
   })
 
+  it('single point: position freezes but last-known time stays the real sample time', () => {
+    const single = [{ x: 5, y: 6, timeSec: 10 }]
+    const pos = positionAt(single, 30)
+    expect(pos).not.toBeNull()
+    expect(pos.x).toBe(5)
+    expect(pos.y).toBe(6)
+    expect(pos.timeSec).toBe(10) // 不是 30：last-known 时间不得随 currentTime 增长
+  })
+
   it('handles empty/null inputs', () => {
     expect(positionAt(null, 0)).toBeNull()
     expect(positionAt([], 0)).toBeNull()

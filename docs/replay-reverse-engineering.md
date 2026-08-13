@@ -60,16 +60,20 @@
   type 8 sub=0/1 = 伤害/命中通知（sub=0 挂受击方、sub=1 挂攻击方且 args 含对方 eid）；type 10 gap≤5s 聚类会误发 2–9 个 LOST/场（静止/死车/断包全部误报）。
   可靠锚点仅两类交火证据：录像者命中敌 X（5 样本 35 次、83% 相机 yaw 指向目标）、敌命中录像者（type 26 + 伤害归因）——覆盖稀疏、不能闭环「从未/当前/失去/重观察」状态机。
   详见 `docs/visibility-evidence-notes.md`（探针 `VisibilitySignalProbeTest`，S1–S11 量化）。
-- **门禁 B（炮塔相对方向）VERDICT: NOT_PROVEN**：type-7 propId=2（全部 valueLen=2、u16*360/65536）
-  是双方 7/7 全覆盖的独立平滑量（静止车体下 8 段变化>8°、角速度 mean 17.5°/s、p95 38.8、与 hull yaw 不锁定、无 wrap），
-  但**开火指向检查失败**：9 次命中时刻 mean|prop2−bearing|=87.5°、|yaw+prop2−bearing|=95.5°、|yaw−prop2−bearing|=62.4°——
-  三种角度假设均不指向命中目标，炮塔假设不成立；且值域仅 ≈126–247°、生命周期不一致（部分车早于位置流 48–166s 停止）、与 type-39 f5/f6 非同源。
+- **门禁 B（炮塔相对方向）——历史中间结论（已 SUPERSEDED）**：受控旋转实验之前曾判 NOT_PROVEN——
+  type-7 propId=2 是双方 7/7 全覆盖的独立平滑量（静止车体下变化、角速度 17.5°/s、与 hull yaw 不锁定），但开火时刻
+  三种**恒等**假设（prop2 / yaw+prop2 / yaw−prop2，无偏移）误差 47.9–111.6° 全部失败，且当时值域仅 ≈126–247°、
+  与 type-39 f5/f6 非同源。**该结论被 2026-08-13 受控训练房实验推翻**：车体静止、炮塔顺时针转一圈的
+  `common/data/test/test.wotbreplay`（gitignored research sample，未入库）证明 prop2 完整扫 360° 并在 0° 干净 wrap，
+  历史「恒等失败」缺的是 −180° 零点偏移；加入偏移后（b=−180°）41 个开火锚点拟合残差 9.5°、34 个独立受击集
+  交叉验证残差 2.3°。**权威最终结论：prop2 = 炮塔相对车体偏航，`u16*360/65536−180` 度，VERDICT = PROVEN**（已落地生产）。
   **hull yaw PROVEN 可用**：type-10 yaw 全部 finite、相邻步长 3.9–9.6°、静止恒定、倒车案例 113/1190（录像者）→ 车头朝向权威源（弧度）。
-  详见 `docs/turret-direction-evidence-notes.md`（探针 `TurretDirectionProbeTest`，检查 1–10+39x 量化）。
+  详见 `docs/turret-direction-evidence-notes.md`（权威最终状态在文首与「受控实验定案」节）。
 - 需要用户补充：① 录像者客户端录屏逐秒标注点亮/失察（≥2 场：随机+supremacy）；② 训练房回放 + 炮塔匀速转动录屏校准 prop2；③ 对方视角回放区分团队/个人点亮。
 - **多样本复跑（2026-08-13，common/data 扩充）**：6 个 11.18.0 样本（随机/训练/supremacy）+ 9 个 9.4.0–10.1.0 旧版样本。
   - 编码稳定性：type-7 propId=2 恒为 valueLen=2，自 9.4.0（2022）到 11.18.0（2026）不变，满编战斗双方 7/7 覆盖。
-  - 开火指向 4 样本 30 次命中：三种假设（prop2 / yaw+prop2 / yaw−prop2）误差均值 47.9–111.6°，全部失败 → prop2 不是炮管水平方向；NOT_PROVEN 维持。
+  - 开火指向 4 样本 30 次命中：三种**恒等**假设（prop2 / yaw+prop2 / yaw−prop2，无偏移）误差均值 47.9–111.6° 全部失败——
+    该历史否定已被受控实验 + 偏移定标（b=−180°）SUPERSEDED，最终结论 PROVEN（见上一段）。
   - gap 聚类伪 LOST 多模式坐实（每场 2–9 个误报）；敌方首包与首次交火无关（全部 engBeforePos=false）。
   - 旧版样本 eid→账号映射为空（updateArena 格式差异），暂不参与可见性/方向判定。
 

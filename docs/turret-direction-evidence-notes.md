@@ -1,9 +1,11 @@
 # 真实性门禁 B：炮塔相对方向（turretRelativeYaw）事件流数据源 — 证据笔记
 
-> 状态：**PROBE_RUN / VERDICT = NOT_PROVEN（2026-08-13 量化回填完成）**。探针已在随机战夹具上跑通（Tests run: 1, 0 失败），量化结果见各检查项。
-> 日期：2026-08-12（会话）。样本：提交夹具 common/fixtures/replays/random-battle-example.wotbreplay（rift，arenaBonusType=1 随机战，时长≈302.7s）；
-> common/data/ 无本地额外样本。
-> 探针：java/wotb-core/src/test/java/com/wotb/core/TurretDirectionProbeTest.java（新增，可重复运行；无样本时 Assumptions 自动跳过）。
+> **权威最终状态：VERDICT = PROVEN（2026-08-13，受控训练房旋转实验定案）**。
+> 结论：type-7 propId=2 = 炮塔相对车体偏航；编码 `u16 LE`，角度 = `raw*360/65536 − 180`（度，[-180,180)，完整 360° 且 ±180 回绕）；
+> 炮口世界方向 = `normalize(hullYaw + turretRelativeYaw)`。已落地生产（`TurretDirectionChangedEvent` + `directionSamples` + 双层坦克标记）。
+> 证据链见「受控实验定案」一节。本文档中早期「NOT_PROVEN / 待运行」章节为**没有受控 ground truth 前的历史中间结论，已被以下实验 SUPERSEDED**，保留仅为记录排除过程。
+> 探针：java/wotb-core/src/test/java/com/wotb/core/TurretDirectionProbeTest.java（可重复运行；无样本时 Assumptions 自动跳过）。
+> 受控样本：common/data/test/test.wotbreplay（gitignored research sample，**未入库**；port 训练房、A178_SPHT、11.19.0、≈49s）。
 
 ## 任务定义
 
@@ -135,9 +137,36 @@ mvn -s settings.xml test -Dtest=TurretDirectionProbeTest -Dsurefire.failIfNoSpec
   三种假设在全部样本上均不指向命中目标（最小均值 47.9°，远大于 <15° 判据）——prop2 不是炮管水平方向的任何简单线性编码。
 - **受击反向（7b，4 样本）**：mean 13.1–58.1°（n=2–8/场），同样不支持。
 - 旧版样本（9.4–10.1）eid→账号映射缺失，无法跑开火锚点，仅贡献编码稳定性证据。
-- 结论不变：**turretRelativeYaw NOT_PROVEN**；**hull yaw（type-10 yaw）PROVEN 可用**（多车 finite/连续/倒车独立）。
+- 当时结论（已 SUPERSEDED）：turretRelativeYaw NOT_PROVEN；hull yaw（type-10 yaw）PROVEN 可用（多车 finite/连续/倒车独立）。
+  受控旋转实验后权威最终状态 = PROVEN，见文首与「受控实验定案」。
+  该节保留价值：编码稳定性（9.4.0→11.18.0 四年 valueLen=2）与恒等假设失败的量化记录。
 
-## 检查项 11（新增，决定性）：线性编码回归拟合 + 交叉验证（2026-08-13）
+## 受控实验定案（2026-08-13，PROVEN 的权威证据）
+
+> 样本 `common/data/test/test.wotbreplay`（gitignored research sample，未入库）：port 训练房、A178_SPHT、
+> 客户端 11.19.0、时长 ≈49s。动作顺序（操作者确认）：先**炮塔顺时针匀速转一圈**（车体全程静止），
+> 再**车体顺时针转一圈**（炮塔跟随车体）。
+
+### 观测事实（检查项 12 时序 dump，raw 全量输出）
+
+1. **hull yaw 恒定**：炮塔转圈阶段（t≈10.9–29.6s）type-10 yaw 恒为 156.9°、位置 (x,z)=(-237.2,168.3) 不变——车体确为静止，prop2 的变化只能来自炮塔。
+2. **prop2 完整扫 360°**：同一阶段 prop2 从 182.0° 单调增至 358.8°，随后 raw 从 65326 跳到 110（0.6°）——**在 0° 干净 wrap**——再继续增至 181.0°，总行程 ≈358–360° = 恰好一整圈；旋转方向与操作一致（顺时针 = 值增大）。
+3. **wrap 行为**：raw 0/65535 边界处相邻样本 358.8°→0.6°（差 2.2°），证明 [0,360) 满圈编码 + 回绕，而非仅 126–247° 子区间（历史样本的值域窄只是玩家未转满圈）。
+4. **编码公式**：`turretRelativeYawDeg = u16(raw)*360/65536 − 180`，值域 [-180,180)，0 rad 对应 u16=32768。
+5. **炮口世界方向**：`turretWorldYaw = normalize(hullYawDeg + turretRelativeYawDeg)`（与 type-10 yaw 同一顺时针约定）。
+
+### 开火锚点独立交叉验证（检查项 7/7b/11，5 个 11.18 样本）
+
+- 录像者命中锚点 **41 个**：模型 `gunWorld = yaw + prop2 + b` 拟合最优 `b = −180°`，拟合残差 **9.5°**。
+- 独立受击集（攻击者→录像者）**34 个**，不重拟合，用同一 (a,b)：交叉验证残差 **2.3°**。
+- 两集合互相独立、覆盖双方车辆、跨随机/训练/supremacy 三种模式——残差 <15° 的物理约束（开火时炮口必须指向命中目标）闭合。
+
+### 为什么历史 NOT_PROVEN 结论被推翻
+
+历史否定基于「开火时刻三种**恒等**假设（prop2 / yaw+prop2 / yaw−prop2，无偏移）均不指向目标」。受控实验证明 prop2 是满圈相对角之后，
+加入唯一待定常数 b 重新拟合：b=−180° 时炮口指向与命中方向吻合（交叉验证 2.3°）。即历史结论缺的是「−180° 零点偏移」这一定标，而非方向数据源本身。
+
+## 检查项 11（历史，2026-08-13，已 SUPERSEDED）：线性编码回归拟合 + 交叉验证（修正模型后即「受控实验定案」第 6 点）
 
 - 方法：假设 gunWorld = a*prop2 + b（含 a=±1 特殊情形），在全部样本的命中锚点上网格搜索 (a,b) 最小化平均圆形误差；
   用录像者命中集（n=41）拟合、受击集（n=34，攻击者→录像者）**不重拟合**交叉验证。
@@ -146,9 +175,11 @@ mvn -s settings.xml test -Dtest=TurretDirectionProbeTest -Dsurefire.failIfNoSpec
 - 判定：**VERDICT=NOT_PROVEN** —— 任意线性编码下 prop2 均非炮口水平方向；结合范围仅 126–247°、无 wrap、生命周期不一致、与 f5/f6 非同源，
   prop2 的炮塔/炮管假设被决定性排除。需要录屏 ground truth 才能继续（用户已确认暂无法提供）。
 
-## 结论（2026-08-13 最终）
+## 结论（2026-08-13 早期，**已 SUPERSEDED**，见「受控实验定案」）
 
-- **turretRelativeYaw 数据源：NOT_PROVEN**。prop2 满足独立自由度/角速度/双方覆盖（检查 2/3/4/5 通过），但**开火指向检查（决定性）失败**——三种角度假设在命中时刻均不指向目标；且无 wrap、值域仅 ≈126–247°、生命周期不一致、仅单样本、与 f5/f6 非同源。不能把它当炮塔相对方向用于生产。
+> ⚠️ 本节为受控旋转实验之前的历史结论，保留供排除过程追溯；权威最终状态 = PROVEN（见文首与「受控实验定案」）。
+
+- **turretRelativeYaw 数据源（当时）：NOT_PROVEN**。prop2 满足独立自由度/角速度/双方覆盖（检查 2/3/4/5 通过），但**开火指向检查（决定性）失败**——三种角度假设在命中时刻均不指向目标；且无 wrap、值域仅 ≈126–247°、生命周期不一致、仅单样本、与 f5/f6 非同源。不能把它当炮塔相对方向用于生产。
 - **hull yaw：PROVEN 可用**——type-10 yaw 全部 finite、连续、静止恒定、与移动向量独立（倒车案例 113/1190），可直接作为车体方向权威源（单位弧度，前端换算）。
 - 禁止项维持：不得用 type-39 相机 yaw 冒充炮塔方向；不得固定 turretRelativeYaw=0；不得用移动向量推导 hullYaw。
 - 由于门禁 B 未通过，**后端方向播放契约（hullYaw/turretRelativeYaw）与双层坦克标记暂不落地**；hullYaw 证据已备，待 turret 证据补全后一并接入。
