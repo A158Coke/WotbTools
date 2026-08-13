@@ -5,6 +5,14 @@
 ## [Unreleased]
 
 ### Changed
+- **AI 复盘 partial 事件流伤害证据全链路抑制（Player Harness/fallback + Team）**：
+  `EvidenceSkillEngine` 在 `OBSERVED_DAMAGE_IS_PARTIAL` 时跳过 `EngagementTradeSkill`，
+  `CriticalWindowSkill` 基于过滤后的 HP 动量/阵亡/支援/路线/单走证据重新聚合窗口；
+  `TacticalReviewPromptBuilder` 在 Prompt 边界再防御性剔除 ENGAGEMENT_TRADE 与携带
+  recorderDamage* 的窗口；`TeamAiPromptBuilder` 把合并后的 limitations 传入
+  `appendOptionalDetails`/`appendHighPriorityFacts`，partial 时
+  `TEAM_ENGAGEMENTS_OBSERVED_SUBSET` 与 `OBSERVED_EVENT_SUBSET` 均不输出事件流伤害数字。
+  覆盖完整时换血/团队交火证据保持不变。
 - **AI 复盘整体超时预算 400s → 1100s（切页后台跑完不中断）**：`AiReviewWorkerExecutor` 默认
   overall-deadline、`application.yml`、前端 `AI_ANALYZE_TIMEOUT_MS`（`ReconstructionPage.vue`）、
   nginx `proxy_read/send_timeout`、`SseEmitter` 超时与部署 env（`deploy.yml` / `.env.example` /

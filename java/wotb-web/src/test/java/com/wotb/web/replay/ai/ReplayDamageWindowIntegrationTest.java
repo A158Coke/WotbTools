@@ -154,6 +154,13 @@ class ReplayDamageWindowIntegrationTest {
         assertFalse(partialContent.contains("掉血488"), partialContent);
         assertFalse(partialContent.contains("你输出"), partialContent);
         assertFalse(partialContent.contains("事件流输出:"), partialContent);
+        // 引擎在 partial 下跳过 EngagementTradeSkill，Prompt 边界再防御性过滤：
+        // 换血摘要/伤害数字/窗口聚合数字一律不得进入 final user prompt
+        assertFalse(partialContent.contains("换血"), partialContent);
+        assertFalse(partialContent.contains("damageDealt="), partialContent);
+        assertFalse(partialContent.contains("damageReceived="), partialContent);
+        assertFalse(partialContent.contains("recorderDamageDealt"), partialContent);
+        assertFalse(partialContent.contains("recorderDamageReceived"), partialContent);
 
         // fallback（prepareFull）同样包含窗口
         final SinglePlayerBattleAnalysisContext ctx = new SinglePlayerBattleAnalysisContext(

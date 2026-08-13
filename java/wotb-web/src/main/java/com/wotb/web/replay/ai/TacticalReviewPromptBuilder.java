@@ -7,6 +7,7 @@ import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.evidence.AiEvidence;
 import com.wotb.core.replay.evidence.EvidenceSkillResult;
+import com.wotb.core.replay.evidence.EvidenceType;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
@@ -66,17 +67,30 @@ public final class TacticalReviewPromptBuilder {
         sb.append("\n\n").append(priorSection(prior));
 
         final String baseContent = sb.toString();
-        final List<AiEvidence> windows = evidence != null ? evidence.criticalWindows() : List.of();
+        final List<AiEvidence> rawEvidence = evidence != null ? evidence.evidence() : List.of();
+        final List<AiEvidence> rawWindows = evidence != null ? evidence.criticalWindows() : List.of();
+        // 录像者掉血窗口：与 fallback 同格式/同口径；OBSERVED_DAMAGE_IS_PARTIAL 时抑制数字
+        final boolean damagePartial = features != null && features.limitations() != null
+                && features.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL");
+        // 覆盖不全时防御性过滤：换血（ENGAGEMENT_TRADE）的摘要/数字与依赖它们的窗口
+        // 一律不得进入 LLM（即使调用方传入未过滤的 EvidenceSkillResult）。
+        final List<AiEvidence> evidenceForPrompt = damagePartial
+                ? rawEvidence.stream()
+                        .filter(e -> e.type() != EvidenceType.ENGAGEMENT_TRADE)
+                        .toList()
+                : rawEvidence;
+        final List<AiEvidence> windows = damagePartial
+                ? rawWindows.stream()
+                        .filter(w -> !windowCarriesTradeDamage(w))
+                        .toList()
+                : rawWindows;
         int windowDetail = Math.min(MAX_WINDOW_DETAIL, windows.size());
-        boolean includeEvidence = evidence != null && evidence.hasContent();
+        boolean includeEvidence = !evidenceForPrompt.isEmpty();
         boolean includeEngagements = features != null
                 && features.engagements() != null && !features.engagements().isEmpty();
         final String enemyPositionsSection =
                 EnemyLastKnownPositionsSection.renderPlayerSection(battle, recon);
         boolean includeEnemyPositions = !enemyPositionsSection.isEmpty();
-        // 录像者掉血窗口：与 fallback 同格式/同口径；OBSERVED_DAMAGE_IS_PARTIAL 时抑制数字
-        final boolean damagePartial = features != null && features.limitations() != null
-                && features.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL");
         // 覆盖不全时逐条交火数字同样是事件流伤害数字：一并抑制（与 fallback 交火段口径一致）
         if (damagePartial) {
             includeEngagements = false;
@@ -94,7 +108,7 @@ public final class TacticalReviewPromptBuilder {
                 contextWindowTokens - maxOutputTokens - promptSafetyMarginTokens,
                 0, singleReplayMaxInputTokens);
 
-        String content = assemble(baseContent, evidence, features, windows,
+        String content = assemble(baseContent, evidenceForPrompt, features, windows,
                 windowDetail, includeEvidence, includeEngagements,
                 includeEnemyPositions, enemyPositionsSection,
                 includeDamageWindows, damageWindowsSection,
@@ -124,7 +138,7 @@ public final class TacticalReviewPromptBuilder {
                 break;
             }
             truncated = true;
-            content = assemble(baseContent, evidence, features, windows,
+            content = assemble(baseContent, evidenceForPrompt, features, windows,
                     windowDetail, includeEvidence, includeEngagements,
                     includeEnemyPositions, enemyPositionsSection,
                     includeDamageWindows, damageWindowsSection,
@@ -142,7 +156,7 @@ public final class TacticalReviewPromptBuilder {
 
     private static String assemble(
             final String baseContent,
-            final EvidenceSkillResult evidence,
+            final List<AiEvidence> evidenceForPrompt,
             final PlayerBattleFeatureSet features,
             final List<AiEvidence> windows,
             final int windowDetail,
@@ -194,12 +208,12 @@ public final class TacticalReviewPromptBuilder {
         if (includeDamageWindows && !damageWindowsSection.isEmpty()) {
             sb.append("\n\n").append(damageWindowsSection);
         }
-        if (includeEvidence && evidence != null) {
+        if (includeEvidence && !evidenceForPrompt.isEmpty()) {
             sb.append("\n======================== TACTICAL EVIDENCE（Backend 确定性证据） ========================\n");
             // 注意：raw momentumSeries（逐采样点的可观察 HP 差）观察集合可能不同，
             // 直接展示会把 observation membership change 伪装成 HP momentum。
             // 这里只输出 HpMomentumSkill.detect() 安全比较后生成的 HP_MOMENTUM AiEvidence。
-            final String sections = TacticalEvidenceFormatter.renderEvidenceSections(evidence);
+            final String sections = TacticalEvidenceFormatter.renderEvidenceSections(evidenceForPrompt);
             if (!sections.isBlank()) {
                 sb.append(sections);
             }
@@ -215,6 +229,14 @@ public final class TacticalReviewPromptBuilder {
         // TASK 必须是 user prompt 最后一个业务 section：证据之后再给最终推理指令
         sb.append("\n\n").append(taskSection());
         return sb.toString();
+    }
+
+    /** 关键窗口是否携带换血伤害数字（覆盖不全时防御性剔除，避免未来调用方传入未过滤结果）。 */
+    private static boolean windowCarriesTradeDamage(final AiEvidence window) {
+        final Map<String, Double> numbers = window.numbers();
+        return numbers != null
+                && (numbers.containsKey("recorderDamageDealt")
+                        || numbers.containsKey("recorderDamageReceived"));
     }
 
     /** 对炮明细的对方玩家：优先昵称，缺失时回退 accountId。 */
