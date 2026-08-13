@@ -8,6 +8,8 @@ import com.wotb.core.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.processing.FriendlyEnemyResult.WinnerSource;
 import com.wotb.core.processing.FriendlyEnemyResult.PointsEndReason;
+import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.feature.TeamAutopsyStats;
 import org.junit.jupiter.api.Test;
@@ -52,6 +54,31 @@ class TeamAutopsyPromptBuilderTest {
                 DecodeConfidence.PARTIAL);
     }
 
+    private static PlayerResult player(final long id, final int team, final boolean survived) {
+        final PlayerResult p = new PlayerResult();
+        p.accountId = id;
+        p.nickname = "P" + id;
+        p.team = team;
+        p.survived = survived;
+        return p;
+    }
+
+    /** 完整 7v7 且双方均有存活的结算阵容（rosterComplete=true；不产生全歼后缀）。 */
+    private static Battle completeBothAlive() {
+        final Battle b = new Battle();
+        b.winnerTeam = 1;
+        b.rosterComplete = true;
+        final List<PlayerResult> players = new ArrayList<>();
+        for (int i = 0; i < 7; i++) {
+            players.add(player(10_001L + i, 1, true));
+        }
+        for (int i = 0; i < 7; i++) {
+            players.add(player(20_001L + i, 2, true));
+        }
+        b.players = players;
+        return b;
+    }
+
     @Test
     void userContentUsesPlayerKeysAndKeepsDeathTimelineFriendlyOnly() {
         final String content = TeamAutopsyPromptBuilder.buildUserContent(
@@ -62,7 +89,7 @@ class TeamAutopsyPromptBuilderTest {
                                 List.of("s1"), List.of("w1"), List.of("p1")),
                         null, List.of(), List.of(),
                         List.of(new PreBattleStrategicPrior.StrategicHypothesis("H1", "cl", "rs"))),
-                List.of(), win(Winner.ENEMY_WIN), "CHRD");
+                List.of(), win(Winner.ENEMY_WIN), "CHRD", completeBothAlive(), 1);
         assertTrue(content.contains("CHRD落败"));
         assertFalse(content.contains("队伍1"));
         assertFalse(content.contains("队伍2"));
@@ -87,7 +114,7 @@ class TeamAutopsyPromptBuilderTest {
         final List<TeamAutopsyStats> stats = new java.util.ArrayList<>(sevenStats());
         stats.add(stat("P8", 1008L, false, 0.0, false, false, false, true));
         final String content = TeamAutopsyPromptBuilder.buildUserContent(
-                stats, null, List.of(), win(Winner.ENEMY_WIN), "CHRD");
+                stats, null, List.of(), win(Winner.ENEMY_WIN), "CHRD", completeBothAlive(), 1);
 
         assertTrue(content.contains("阵亡@未知"),
                 "unknown death time must render as 未知 in member line: " + content);
@@ -122,7 +149,7 @@ class TeamAutopsyPromptBuilderTest {
                         "P2", "过早阵亡", List.of("e2"), "PARTIAL")),
                 List.of("l"));
         final String section = TeamAutopsyPromptBuilder.renderSection(
-                result, win(Winner.ENEMY_WIN), sevenStats(), "CHRD");
+                result, win(Winner.ENEMY_WIN), sevenStats(), "CHRD", completeBothAlive(), 1);
         assertTrue(section.contains("团队剖析"));
         assertTrue(section.contains("CHRD落败"));
         assertTrue(section.contains("置信度: 精确"), "EXACT must render as 精确");
@@ -144,7 +171,7 @@ class TeamAutopsyPromptBuilderTest {
                 Winner.ENEMY_WIN, WinnerSource.POINTS_INFERENCE, true,
                 PointsEndReason.TIME_EXPIRED);
         final String content = TeamAutopsyPromptBuilder.buildUserContent(
-                sevenStats(), null, List.of(), points, "CHRD");
+                sevenStats(), null, List.of(), points, "CHRD", completeBothAlive(), 1);
         assertTrue(content.contains("CHRD落败（时间耗尽点数判定）"));
         assertTrue(content.contains("时间耗尽点数胜利"));
         assertTrue(content.contains("叙述必须写「时间耗尽」"));
@@ -153,7 +180,7 @@ class TeamAutopsyPromptBuilderTest {
         final TeamAutopsyResult empty =
                 new TeamAutopsyResult(List.of(), List.of(), List.of(), List.of());
         final String section = TeamAutopsyPromptBuilder.renderSection(
-                empty, points, sevenStats(), "CHRD");
+                empty, points, sevenStats(), "CHRD", completeBothAlive(), 1);
         assertTrue(section.contains("CHRD落败（时间耗尽点数判定）"));
     }
 
@@ -163,7 +190,7 @@ class TeamAutopsyPromptBuilderTest {
                 Winner.FRIENDLY_WIN, WinnerSource.BATTLE_RESULTS, true,
                 PointsEndReason.REACHED_1000);
         final String content = TeamAutopsyPromptBuilder.buildUserContent(
-                sevenStats(), null, List.of(), points, "CHRD");
+                sevenStats(), null, List.of(), points, "CHRD", completeBothAlive(), 1);
         assertTrue(content.contains("CHRD获胜（达到 1000 分提前获胜）"));
         assertTrue(content.contains("达到 1000 分提前获胜"));
         assertTrue(content.contains("不要描述成敌方全歼"));
@@ -175,7 +202,7 @@ class TeamAutopsyPromptBuilderTest {
                 Winner.ENEMY_WIN, WinnerSource.POINTS_INFERENCE, true,
                 PointsEndReason.UNKNOWN);
         final String content = TeamAutopsyPromptBuilder.buildUserContent(
-                sevenStats(), null, List.of(), points, "CHRD");
+                sevenStats(), null, List.of(), points, "CHRD", completeBothAlive(), 1);
         assertTrue(content.contains("CHRD落败（点数判定）"));
         assertTrue(content.contains("争霸赛点数胜利"));
     }
@@ -184,21 +211,22 @@ class TeamAutopsyPromptBuilderTest {
     void winnerLabelPlainWinnerStaysStable() {
         assertEquals("CHRD获胜", TeamAutopsyPromptBuilder.winnerLabel(
                 new TeamBattleWinner(Winner.FRIENDLY_WIN, WinnerSource.BATTLE_RESULTS, false,
-                        PointsEndReason.NOT_APPLICABLE), "CHRD"));
+                        PointsEndReason.NOT_APPLICABLE), "CHRD", completeBothAlive(), 1));
         assertEquals("CHRD落败", TeamAutopsyPromptBuilder.winnerLabel(
                 new TeamBattleWinner(Winner.ENEMY_WIN, WinnerSource.BATTLE_RESULTS, false,
-                        PointsEndReason.NOT_APPLICABLE), "CHRD"));
+                        PointsEndReason.NOT_APPLICABLE), "CHRD", completeBothAlive(), 1));
         assertEquals("未知", TeamAutopsyPromptBuilder.winnerLabel(
                 new TeamBattleWinner(Winner.DRAW_OR_UNKNOWN, WinnerSource.UNKNOWN, false,
-                        PointsEndReason.NOT_APPLICABLE), "CHRD"));
-        assertEquals("未知", TeamAutopsyPromptBuilder.winnerLabel(null, "CHRD"));
+                        PointsEndReason.NOT_APPLICABLE), "CHRD", completeBothAlive(), 1));
+        assertEquals("未知", TeamAutopsyPromptBuilder.winnerLabel(
+                null, "CHRD", completeBothAlive(), 1));
     }
 
     @Test
     void winnerLabelsDoNotExposeRawTeamNumbers() {
         final String label = TeamAutopsyPromptBuilder.winnerLabel(
                 new TeamBattleWinner(Winner.FRIENDLY_WIN, WinnerSource.BATTLE_RESULTS, false,
-                        PointsEndReason.NOT_APPLICABLE), "CHRD");
+                        PointsEndReason.NOT_APPLICABLE), "CHRD", completeBothAlive(), 1);
         assertFalse(label.contains("TEAM_A"));
         assertFalse(label.contains("1"));
         assertFalse(label.contains("2"));

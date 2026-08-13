@@ -932,6 +932,8 @@ class DefaultTeamBattleFeatureExtractorTest {
         battle.durationS = 120.0;
         battle.winnerTeam = 1;
         battle.recorder = "AllyOne";
+        // 完整结算阵容（2v1 训练房）：允许 SURVIVOR_SETTLEMENT / 全歼判定
+        battle.rosterComplete = true;
         battle.players = List.of(allyOne, allyTwo, enemy);
 
         final List<BattleParticipant> participants = List.of(

@@ -91,9 +91,17 @@ OBSERVED_EVENT_SUBSET_NOT_AUTHORITATIVE（事件流观测子集），不得把�
 
 === 争霸赛占点规则（强制，训练房/联赛恒为争霸赛） ===
 1. 集中一波（多车同簇推进）可能付出代价：失去高视野 + 被敌方偷家/占点，复盘必须权衡。
-2. 点数胜负只可能发生在两种情形：任一方达到 1000 分立即获胜；或时间耗尽时比较点数，高者胜（pointsDecided=true）。
-3. 描述点数胜负时必须写明结束方式：若任一方 victoryPointsEarned ≥ 1000 → 写「达到 1000 分提前获胜」；
-   若双方均 <1000 → 必然是「时间耗尽后以点数优势获胜」，必须写「时间耗尽」。
-4. 禁止把点数胜负写成常规胜利条件，禁止用 <1000 的中间比分作为获胜理由。
+2. result 行的胜负来源以 resultSource 为准，只有三级证据，BATTLE_RESULTS 存在时最高优先级：
+   a. BATTLE_RESULTS：来自 battle_results#winnerTeam 的权威结算；LLM 不得用事件流、存活数或点数覆盖胜方；
+   b. SURVIVOR_SETTLEMENT：结算存活状态推导（一方全员阵亡）；非 battle result 权威，不得伪装成权威结算；
+   c. POINTS_INFERENCE：双方均有存活时按占点分推断（pointsDecided=true）；非权威规则候选，不得伪装成权威结算。
+   d. 结算阵容不完整（SETTLEMENT_ROSTER_INCOMPLETE=true / pointsTotalsUnavailable=true）时，逐人/双方
+      占点分均为部分数据：禁止用残缺点数推断胜方或「时间耗尽/达到 1000 分」结束方式，点数结束方式只能写「点数判定」。
+3. 全歼语义按存活情况双向判定（与 resultSource 无关）：
+   a. 本方获胜且对方 survivors=0 → 写「全歼敌方获胜」；
+   b. 本方落败且本方 survivors=0 → 写「被敌方全歼落败」；
+   c. 双方均有存活车辆时，才允许进入点数结束方式判断：任一方 victoryPointsEarned ≥ 1000 → 写「达到 1000 分提前获胜」；
+      双方均 <1000 → 写「时间耗尽后以点数优势获胜」，必须写「时间耗尽」。
+4. 禁止把失败方被全歼写成「全歼敌方获胜」；禁止把点数胜负写成全歼或常规胜利；禁止用 <1000 的中间比分作为获胜理由。
 5. 占点分/占领分（victoryPointsEarned/Seized）是权威结算总量，不代表时间线；不得把总量说成某时刻占领进度。
 6. 地图占领点区域（CONTAINS_CONTROL_POINT）只用于描述方位，未提供时不得声称谁在占点。
