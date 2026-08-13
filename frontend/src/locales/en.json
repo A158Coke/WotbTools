@@ -466,7 +466,7 @@
             "ELITE": "Elite",
             "PRO": "Pro",
             "MASTER": "Master",
-            "AVERAGE_GOD": "Average Damage God"
+            "AVERAGE_GOD": "Mythic"
         },
         "availability": {
             "YEAR_360": "360+ days per year",
@@ -647,13 +647,13 @@
         "ASSIGNMENT_STATUS_INVALID": "The assignment status does not allow this action",
         "ASSIGNMENT_STATUS_NOT_COMPLETABLE": "The assignment cannot be completed now",
         "ALREADY_BOOSTER": "This user is already a booster",
-        "AVERAGE_GOD_ALREADY_EXISTS": "This server already has an Average Damage God",
+        "AVERAGE_GOD_ALREADY_EXISTS": "This server already has a Mythic booster",
         "BOOSTER_APPLICATION_ALREADY_OPEN": "An application is already pending",
         "BOOSTER_APPLICATION_NOT_FOUND": "Booster application not found",
         "BOOSTER_APPLICATION_NOT_OPEN": "Booster application is closed",
         "BOOSTER_NICKNAME_REQUIRED": "Booster nickname is required",
         "BOOSTER_LEVEL_REQUIRED": "Booster level is required",
-        "BOOSTER_LEVEL_ADMIN_EDIT_ONLY": "Average Damage God can only be granted by editing an existing booster",
+        "BOOSTER_LEVEL_ADMIN_EDIT_ONLY": "Mythic can only be granted by editing an existing booster",
         "BOOSTER_STATUS_REQUIRED": "Booster status is required",
         "BOOSTER_AVAILABILITY_REQUIRED": "Availability value is required",
         "BOOSTER_HAS_DEPENDENCIES": "The booster has related records and cannot be deleted",
