@@ -52,6 +52,22 @@
 - **神秘实体 12558633/12558634/12558649 排除**：出现后完全静止（团队样本），为场景静态物体（建筑/可破坏物），非炮弹。
 - **type 7 propId=2 与炮塔朝向**：对照 eid=12558550 的 622 个 propId=2 样本与 type-10 pitch，误差分布不支持车体 pitch，炮塔朝向假设仍待炮塔数据源。
 
+## 2026-08-13 进展（PR #71 战局回放门禁 A/B 探针，5 样本：fixture + target/probe p1–p4）
+
+- **门禁 A（敌方可见性）VERDICT: PARTIAL**：不存在可直接证明「录像者客户端当前点亮」的标志位——
+  type 4/5/33 = 服务器实体流生命周期（敌方首 enterWorld≈首 type-10≈首移动；leave≠阵亡；enter/leave 与录像者交火相关率 0–8%；距离无固定半径 42–451m）；
+  type 7 propId=4/0 = 高频状态位掩码（每车 24–471 次翻转、值含 2^k 位、0.1–0.5s 间隔，与位置流出现不同步），**非双态可见性**；
+  type 8 sub=0/1 = 伤害/命中通知（sub=0 挂受击方、sub=1 挂攻击方且 args 含对方 eid）；type 10 gap≤5s 聚类会误发 2–9 个 LOST/场（静止/死车/断包全部误报）。
+  可靠锚点仅两类交火证据：录像者命中敌 X（5 样本 35 次、83% 相机 yaw 指向目标）、敌命中录像者（type 26 + 伤害归因）——覆盖稀疏、不能闭环「从未/当前/失去/重观察」状态机。
+  详见 `docs/visibility-evidence-notes.md`（探针 `VisibilitySignalProbeTest`，S1–S11 量化）。
+- **门禁 B（炮塔相对方向）VERDICT: NOT_PROVEN**：type-7 propId=2（全部 valueLen=2、u16*360/65536）
+  是双方 7/7 全覆盖的独立平滑量（静止车体下 8 段变化>8°、角速度 mean 17.5°/s、p95 38.8、与 hull yaw 不锁定、无 wrap），
+  但**开火指向检查失败**：9 次命中时刻 mean|prop2−bearing|=87.5°、|yaw+prop2−bearing|=95.5°、|yaw−prop2−bearing|=62.4°——
+  三种角度假设均不指向命中目标，炮塔假设不成立；且值域仅 ≈126–247°、生命周期不一致（部分车早于位置流 48–166s 停止）、与 type-39 f5/f6 非同源。
+  **hull yaw PROVEN 可用**：type-10 yaw 全部 finite、相邻步长 3.9–9.6°、静止恒定、倒车案例 113/1190（录像者）→ 车头朝向权威源（弧度）。
+  详见 `docs/turret-direction-evidence-notes.md`（探针 `TurretDirectionProbeTest`，检查 1–10+39x 量化）。
+- 需要用户补充：① 录像者客户端录屏逐秒标注点亮/失察（≥2 场：随机+supremacy）；② 训练房回放 + 炮塔匀速转动录屏校准 prop2；③ 对方视角回放区分团队/个人点亮。
+
 ## 已知修正记录
 
 - 2026-08-11：team 标签曾误判（以 AI 复盘中的「CHRD=A 队」为前提），经 type-0 pickle（`teamTitles{2:'chrd'}`）+ updateArena2 field 4 验证后修正：CHRD=team 2=录像者队伍；位置覆盖结论随之反转（本方完整、敌方开局缺失）。附带发现：pickle `wins{1:1,2:0}` 显示本样本胜方为 team 1（BSK-T），与早前「CHRD 7-3 获胜」的说法冲突，待用 battle_results 核验。
