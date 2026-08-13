@@ -32,6 +32,8 @@
   新增真实回放集成回归测试 `ReplayDamageWindowIntegrationTest`
   （common/fixtures 的 rift 随机战夹具：真实 decoder 账号字段为 null、经 entity 映射生成窗口、
   battle-relative 时间、partial 抑制、Harness/fallback/团队三路径、单一攻击者不标集火）。
+  同根因修复：逐次伤害段 `PER_HIT_DAMAGE_EVENTS` 与逐对手对炮段 `DAMAGE_EXCHANGE_BY_OPPONENT`
+  一并改用同一 entity 映射解析（真实回放不再显示 UNAVAILABLE/空段）。
 - **AI 复盘维持分析 + 地图可视化改进**：`App.vue` 视图渲染改为 `<component :is>` +
   `<KeepAlive :include="['ReconstructionPage']">`——切走「AI 复盘」视图不再卸载/取消，SSE 流继续，
   返回时进度/结果直接可见（关标签/刷新仍由 `beforeunload` 取消）；`ReconstructionPage` 移除卸载时
