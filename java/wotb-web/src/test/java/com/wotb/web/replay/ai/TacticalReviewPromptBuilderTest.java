@@ -8,7 +8,10 @@ import com.wotb.core.ai.ConservativeDeepSeekTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.RecorderEntityMapping;
+import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.evidence.AiEvidence;
 import com.wotb.core.replay.evidence.EvidencePriority;
 import com.wotb.core.replay.evidence.EvidenceProvenance;
@@ -20,6 +23,7 @@ import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
 import org.junit.jupiter.api.Test;
 
@@ -255,5 +259,65 @@ class TacticalReviewPromptBuilderTest {
         assertTrue(content.lastIndexOf("======================== TASK")
                         > content.lastIndexOf("======================== BATTLE SNAPSHOT"),
                 "tiny budget 下 TASK 必须是最后一个业务 section");
+    }
+
+    @Test
+    void harnessPromptIncludesRecorderDamageWindowsFromEventStream() {
+        final ReplayReconstruction recon = new ReplayReconstruction(
+                null, null, 600f, 30f, List.of(),
+                List.<ReplayEvent>of(
+                        new DamageEvent(0, new ReplayTimestamp(35f, null), 8,
+                                DecodeConfidence.EXACT, 0, 0, 2001L, 1001L, 400, false),
+                        new DamageEvent(1, new ReplayTimestamp(38f, null), 8,
+                                DecodeConfidence.EXACT, 0, 0, 2002L, 1001L, 300, false)),
+                List.of(), null, null, null);
+        final var prepared = TacticalReviewPromptBuilder.prepare(
+                prior(),
+                evidence(),
+                battle(),
+                recon,
+                new PlayerBattleFeatureSet(List.of(), List.of(), List.of(), List.of(), List.of(), true),
+                new RecorderEntityMapping(1001L, 4481, 1, "rec1", 1, 4481, DecodeConfidence.EXACT),
+                ESTIMATOR,
+                100_000,
+                131_072,
+                8192,
+                1000);
+        final String content = prepared.userContent();
+        assertTrue(content.contains("RECORDER_DAMAGE_RECEIVED_WINDOWS（你掉血时间窗口"), content);
+        assertTrue(content.contains("[0分05秒-0分08秒] 掉血700 命中2次 攻击者2"), content);
+        assertTrue(content.indexOf("======================== TASK")
+                        > content.indexOf("RECORDER_DAMAGE_RECEIVED_WINDOWS"),
+                "掉血窗口段必须位于 TASK 之前");
+    }
+
+    @Test
+    void harnessPromptSuppressesDamageWindowNumbersWhenPartial() {
+        final ReplayReconstruction recon = new ReplayReconstruction(
+                null, null, 600f, 30f, List.of(),
+                List.<ReplayEvent>of(
+                        new DamageEvent(0, new ReplayTimestamp(35f, null), 8,
+                                DecodeConfidence.EXACT, 0, 0, 2001L, 1001L, 400, false)),
+                List.of(), null, null, null);
+        final PlayerBattleFeatureSet partial = new PlayerBattleFeatureSet(
+                List.of(), List.of(), List.of(), List.of(),
+                List.of("OBSERVED_DAMAGE_IS_PARTIAL"), true);
+        final var prepared = TacticalReviewPromptBuilder.prepare(
+                prior(),
+                evidence(),
+                battle(),
+                recon,
+                partial,
+                new RecorderEntityMapping(1001L, 4481, 1, "rec1", 1, 4481, DecodeConfidence.EXACT),
+                ESTIMATOR,
+                100_000,
+                131_072,
+                8192,
+                1000);
+        final String content = prepared.userContent();
+        assertTrue(content.contains("RECORDER_DAMAGE_RECEIVED_WINDOWS ===\n"
+                + "UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)"), content);
+        assertFalse(content.contains("掉血400"), content);
+        assertFalse(content.contains("攻击者1"), content);
     }
 }

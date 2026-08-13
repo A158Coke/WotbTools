@@ -210,27 +210,54 @@ final class PlayerEvidenceFormatter {
     }
 
     /**
-     * 录像者掉血时间窗口（事件流观测）：按受击事件聚类，每窗口给出时间范围 + 总掉血量。
-     * <p>与 {@code PER_HIT_DAMAGE_EVENTS} 同口径（battle-relative，准备阶段不计）；无窗口时返回 false。</p>
+     * 录像者掉血时间窗口（事件流观测）：按受击事件聚类，每窗口给出时间范围 + 总掉血量 + 不同攻击者数。
+     * <p>与 {@code PER_HIT_DAMAGE_EVENTS} 同口径（battle-relative，准备阶段不计）；
+     * {@code OBSERVED_DAMAGE_IS_PARTIAL} 时抑制数字并输出 UNAVAILABLE（与 Team 一致）。
+     * 真实事件经 entityId → accountId 映射解析攻击者/受击者，不依赖恒为 null 的直填账号字段。</p>
      */
     static boolean appendRecorderDamageReceivedWindows(final StringBuilder sb,
+                                                       final Battle battle,
                                                        final ReplayReconstruction recon,
-                                                       final long recorderAccountId) {
-        final List<DamageWindowClusterer.DamageWindow> windows =
-                DamageWindowClusterer.receivedWindows(recon, recorderAccountId);
-        if (windows.isEmpty()) {
+                                                       final long recorderAccountId,
+                                                       final boolean suppressObservedNumbers) {
+        final String section = recorderDamageReceivedWindowsSection(
+                battle, recon, recorderAccountId, suppressObservedNumbers);
+        if (section.isEmpty()) {
             return false;
         }
+        sb.append(section);
+        return true;
+    }
+
+    /** 渲染录像者掉血窗口段（供 PlayerSummaryBuilder 与 TacticalReviewPromptBuilder 复用，口径一致）。 */
+    static String recorderDamageReceivedWindowsSection(final Battle battle,
+                                                       final ReplayReconstruction recon,
+                                                       final long recorderAccountId,
+                                                       final boolean suppressObservedNumbers) {
+        if (suppressObservedNumbers) {
+            return "\n=== RECORDER_DAMAGE_RECEIVED_WINDOWS ===\n"
+                    + "UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)\n";
+        }
+        final List<DamageWindowClusterer.DamageWindow> windows =
+                DamageWindowClusterer.receivedWindows(battle, recon, recorderAccountId);
+        if (windows.isEmpty()) {
+            return "";
+        }
+        final StringBuilder sb = new StringBuilder(512);
         sb.append("\n=== RECORDER_DAMAGE_RECEIVED_WINDOWS（你掉血时间窗口·事件流观测） ===\n");
-        sb.append("注意: 每条是一个按时间聚类的掉血窗口; 小窗口大量掉血=被集火, 含「（致死）」=该窗口击毁了你.\n");
+        sb.append("注意: 每条是一个按时间聚类的掉血窗口; 攻击者N=窗口内解析出的不同攻击者数; "
+                + "攻击者=1 → 短时间集中掉血/高压掉血窗口（不是集火）; "
+                + "攻击者≥2 → 才可作为多车集火证据; "
+                + "标注「（攻击者部分未解析）」时攻击者数不完整, 不得断言集火.\n");
         for (final DamageWindowClusterer.DamageWindow window : windows) {
             sb.append("  ").append(PlayerAnalysisTerms.battleRange(window.startSec(), window.endSec()))
                     .append(" 掉血").append(window.totalDamage())
                     .append(" 命中").append(window.hitCount()).append("次")
-                    .append(window.lethal() ? "（致死）" : "")
+                    .append(" 攻击者").append(window.uniqueAttackerCount())
+                    .append(window.attackersUnresolved() ? "（攻击者部分未解析）" : "")
                     .append('\n');
         }
-        return true;
+        return sb.toString();
     }
 
     /**

@@ -390,10 +390,11 @@ final class TeamEvidenceFormatter {
      */
     static void appendMemberDamageReceivedWindows(
             final BudgetWriter writer,
-            final TeamBattleFeatureSet features,
+            final Battle battle,
+            final List<TeamMemberFeatureSet> members,
             final ReplayReconstruction recon,
             final boolean suppressObservedNumbers) {
-        if (features == null || features.members() == null || features.members().isEmpty()) {
+        if (members == null || members.isEmpty()) {
             return;
         }
         if (suppressObservedNumbers) {
@@ -402,9 +403,9 @@ final class TeamEvidenceFormatter {
             return;
         }
         final StringBuilder rows = new StringBuilder(1024);
-        for (final TeamMemberFeatureSet member : features.members()) {
+        for (final TeamMemberFeatureSet member : members) {
             final List<DamageWindowClusterer.DamageWindow> windows =
-                    DamageWindowClusterer.receivedWindows(recon, member.accountId());
+                    DamageWindowClusterer.receivedWindows(battle, recon, member.accountId());
             if (windows.isEmpty()) {
                 continue;
             }
@@ -415,7 +416,8 @@ final class TeamEvidenceFormatter {
                 rows.append(PlayerAnalysisTerms.battleRange(window.startSec(), window.endSec()))
                         .append("掉血").append(window.totalDamage())
                         .append('/').append(window.hitCount()).append("次")
-                        .append(window.lethal() ? "（致死）" : "");
+                        .append("攻击者").append(window.uniqueAttackerCount())
+                        .append(window.attackersUnresolved() ? "（部分未解析）" : "");
             }
             rows.append('\n');
         }
@@ -423,7 +425,10 @@ final class TeamEvidenceFormatter {
             return;
         }
         writer.append("\n=== MEMBER_DAMAGE_RECEIVED_WINDOWS（逐成员掉血窗口·事件流观测） ===\n");
-        writer.append("注意: 每条为一名成员的掉血窗口, 观测子集, 非权威总量; 小窗口大量掉血=被集火.\n");
+        writer.append("注意: 每条为一名成员的掉血窗口, 观测子集, 非权威总量; 攻击者N=窗口内不同攻击者数; "
+                + "攻击者=1 → 短时间集中掉血/高压掉血窗口（不是集火）; "
+                + "攻击者≥2 → 才可作为多车集火证据; "
+                + "标注「（部分未解析）」时攻击者数不完整, 不得断言集火.\n");
         writer.append(rows.toString());
     }
 

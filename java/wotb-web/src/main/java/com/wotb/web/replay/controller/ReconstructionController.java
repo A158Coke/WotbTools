@@ -65,7 +65,8 @@ public class ReconstructionController {
      * SSE 连接超时：对齐 nginx analyze 1120s read timeout，避免服务端在代理之前
      * 提前关闭长流。
      */
-    static final long SSE_TIMEOUT_MS = 1_120_000L;
+    /** 公开给配置契约测试（AiTimeoutChainContractTest）校验与 nginx 代理超时对齐。 */
+    public static final long SSE_TIMEOUT_MS = 1_120_000L;
 
     @Autowired
     public ReconstructionController(

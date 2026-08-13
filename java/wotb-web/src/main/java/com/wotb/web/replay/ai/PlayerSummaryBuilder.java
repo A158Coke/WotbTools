@@ -142,7 +142,9 @@ final class PlayerSummaryBuilder {
         if (!PlayerEvidenceFormatter.appendPerHitDamageEvents(summaryBuilder, ctx.battle(), recorderAccountId, recon)) {
             summaryBuilder.append("- PER_HIT_DAMAGE_EVENTS_UNAVAILABLE\n");
         }
-        PlayerEvidenceFormatter.appendRecorderDamageReceivedWindows(summaryBuilder, recon, recorderAccountId);
+        PlayerEvidenceFormatter.appendRecorderDamageReceivedWindows(
+                summaryBuilder, ctx.battle(), recon, recorderAccountId,
+                hasObservedDamagePartial(ctx));
         PlayerEvidenceFormatter.appendEnemyLastKnownPositions(summaryBuilder, ctx.battle(), recon);
         final String baseSummary = summaryBuilder.toString();
         final String systemPrompt = PlayerPromptRules.localizePlayerSystemPrompt(PlayerPromptRules.SINGLE_PLAYER_PROMPT, language);
@@ -159,6 +161,16 @@ final class PlayerSummaryBuilder {
                 maxOutputTokens, promptSafetyMarginTokens);
         return new PreparedAiPrompt(systemPrompt, planned.userContent(),
                 "SINGLE_PLAYER_BATTLE", planned.density(), estimatedTokens);
+    }
+
+    /** Player 与 Team 一致的 OBSERVED_DAMAGE_IS_PARTIAL 抑制口径（上下文与特征集任一命中即抑制）。 */
+    private static boolean hasObservedDamagePartial(final SinglePlayerBattleAnalysisContext ctx) {
+        if (ctx.limitations() != null
+                && ctx.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL")) {
+            return true;
+        }
+        return ctx.features() != null && ctx.features().limitations() != null
+                && ctx.features().limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL");
     }
 
     public static String buildPlayerContextSummary(final SinglePlayerBattleAnalysisContext ctx) {
