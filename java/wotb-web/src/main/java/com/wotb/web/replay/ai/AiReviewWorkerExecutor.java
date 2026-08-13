@@ -32,7 +32,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * request 线程执行 AI Review，重新引入 SSE blocking bug）。</p>
  *
  * <p><b>整体 deadline（E）</b>：请求在提交时刻计算 {@code now + overall-deadline-sec}
- * （默认 400s，对齐前端 400s / nginx 420s），经 {@link AiRequestContext} 暴露给
+ * （默认 1100s，覆盖团队 3 次 AI 调用（Call #1 + Call #2 + Autopsy，每次 ≤315s）
+ * 加余量；对齐前端 1100s / nginx 1120s），经 {@link AiRequestContext} 暴露给
  * worker；排队等待计入剩余预算，启动时预算耗尽直接干净失败 {@code AI_TIMEOUT}。</p>
  */
 @Component
@@ -42,7 +43,7 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
 
     static final int DEFAULT_MAX_CONCURRENT = 4;
     static final int DEFAULT_QUEUE_CAPACITY = 4;
-    static final long DEFAULT_OVERALL_DEADLINE_SEC = 400;
+    static final long DEFAULT_OVERALL_DEADLINE_SEC = 1100;
 
 private final ThreadPoolExecutor executor;
     private final long overallDeadlineNanos;
@@ -51,7 +52,7 @@ private final ThreadPoolExecutor executor;
     /**
      * Spring 构造器：从 {@code wotb.ai.review-worker.max-concurrent} /
      * {@code wotb.ai.review-worker.queue-capacity} /
-     * {@code wotb.ai.review-worker.overall-deadline-sec} 读取配置（默认 4/4/400）。
+     * {@code wotb.ai.review-worker.overall-deadline-sec} 读取配置（默认 4/4/1100）。
      * 测试可直接传字面值调用（{@code @Value} 仅 Spring 容器处理）。
      *
      * @param maxConcurrent    worker 线程数（core = max，固定不弹性伸缩），必须 ≥ 1
@@ -63,7 +64,7 @@ private final ThreadPoolExecutor executor;
     public AiReviewWorkerExecutor(
             @Value("${wotb.ai.review-worker.max-concurrent:4}") final int maxConcurrent,
             @Value("${wotb.ai.review-worker.queue-capacity:4}") final int queueCapacity,
-            @Value("${wotb.ai.review-worker.overall-deadline-sec:400}") final long overallDeadlineSec,
+            @Value("${wotb.ai.review-worker.overall-deadline-sec:1100}") final long overallDeadlineSec,
             @Autowired(required = false) final MeterRegistry meterRegistry) {
         if (maxConcurrent < 1) {
             throw new IllegalArgumentException(
@@ -89,12 +90,12 @@ private final ThreadPoolExecutor executor;
         this.meterRegistry = meterRegistry;
     }
 
-    /** 测试便利构造器：使用默认 4/4/400。 */
+    /** 测试便利构造器：使用默认 4/4/1100。 */
     public AiReviewWorkerExecutor() {
         this(DEFAULT_MAX_CONCURRENT, DEFAULT_QUEUE_CAPACITY, DEFAULT_OVERALL_DEADLINE_SEC, null);
     }
 
-    /** 测试便利构造器：指定 workers/queue，整体 deadline 用默认 400s。 */
+    /** 测试便利构造器：指定 workers/queue，整体 deadline 用默认 1100s。 */
     public AiReviewWorkerExecutor(final int maxConcurrent, final int queueCapacity) {
         this(maxConcurrent, queueCapacity, DEFAULT_OVERALL_DEADLINE_SEC, null);
     }

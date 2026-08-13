@@ -23,6 +23,7 @@ import com.wotb.core.replay.feature.TeamFormationPhase;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
 import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.Vector3;
 import com.wotb.core.util.PlayerResultFormat;
 import com.wotb.core.util.PromptDataQuoter;
@@ -133,7 +134,8 @@ final class TeamEvidenceFormatter {
     static void appendHighPriorityFacts(
             final BudgetWriter writer,
             final TeamBattleFeatureSet features,
-            final String analysisUnitId
+            final String analysisUnitId,
+            final List<String> limitations
     ) {
         writer.append("\n=== PERSPECTIVE_FACTS ===\n");
         writer.append("analysisUnitId=" + quoteData(analysisUnitId) + "\n");
@@ -142,7 +144,8 @@ final class TeamEvidenceFormatter {
             return;
         }
         appendAuthoritative(writer, features.authoritativeAggregate());
-        appendObserved(writer, features.observedAggregate(), features.limitations());
+        // 使用合并后的 limitations（context + features + extra），不能只检查 features.limitations
+        appendObserved(writer, features.observedAggregate(), limitations);
         appendMemberFacts(writer, features.members());
         writer.append("coverage=" + features.coverage() + "\n");
     }
@@ -231,7 +234,8 @@ final class TeamEvidenceFormatter {
             final String analysisUnitId,
             final String mapCode,
             final Battle battle,
-            final int perspectiveTeam
+            final int perspectiveTeam,
+            final List<String> limitations
     ) {
         writer.append("\n=== PERSPECTIVE_OPTIONAL ===\n");
         writer.append("analysisUnitId=" + quoteData(analysisUnitId) + "\n");
@@ -241,7 +245,9 @@ final class TeamEvidenceFormatter {
         appendMemberMovements(writer, features.members(), mapCode);
         appendFormation(writer, features.formationPhases());
         appendBattlePhases(writer, features.battlePhases(), battle, perspectiveTeam);
-        appendEngagements(writer, features.engagements());
+        // 覆盖不全时 Team Engagement 的 dealtSubset/receivedSubset 是事件流伤害数字：一并抑制
+        appendEngagements(writer, features.engagements(),
+                limitations != null && limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
         appendKeyEvents(writer, features.keyEvents());
         appendCaptureAndPoints(writer, battle, perspectiveTeam, mapCode);
         appendSoloIntentCandidates(writer, features, battle, mapCode);
@@ -275,6 +281,9 @@ final class TeamEvidenceFormatter {
         writer.append("pointsDecided=" + winner.pointsDecided() + "\n");
         if (winner.pointsDecided()) {
             writer.append("winnerSource=" + winner.source().name() + "\n");
+            // 点数胜负只可能发生在：任一方达到 1000 分提前结束，或时间耗尽后比较点数。
+            // 双方 victoryPointsEarned 均 <1000 时必然是时间耗尽（REACHED_1000 / TIME_EXPIRED / UNKNOWN）。
+            writer.append("pointsEndReason=" + winner.pointsEndReason().name() + "\n");
         }
         writer.append("team victoryPointsEarned=" + earned
                 + " victoryPointsSeized=" + seized + "\n");
@@ -377,6 +386,58 @@ final class TeamEvidenceFormatter {
         writer.append("attributedDamageEvents=" + aggregate.attributedDamageEventCount() + "\n");
         writer.append("unattributedDamageEvents="
                 + aggregate.unattributedDamageEventCount() + "\n");
+    }
+
+    /**
+     * 逐成员掉血时间窗口（事件流观测子集）：把每名成员的受击 DamageEvent 聚类成窗口，
+     * 输出时间范围 + 总掉血量。与 {@code OBSERVED_EVENT_SUBSET} 同一覆盖率口径：
+     * {@code OBSERVED_DAMAGE_IS_PARTIAL} 时抑制数字，输出 UNAVAILABLE。
+     */
+    static void appendMemberDamageReceivedWindows(
+            final BudgetWriter writer,
+            final Battle battle,
+            final List<TeamMemberFeatureSet> members,
+            final ReplayReconstruction recon,
+            final boolean suppressObservedNumbers) {
+        if (members == null || members.isEmpty()) {
+            return;
+        }
+        if (suppressObservedNumbers) {
+            writer.append("\n=== MEMBER_DAMAGE_RECEIVED_WINDOWS ===\n");
+            writer.append("UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)\n");
+            return;
+        }
+        final StringBuilder rows = new StringBuilder(1024);
+        for (final TeamMemberFeatureSet member : members) {
+            final List<DamageWindowClusterer.DamageWindow> windows =
+                    DamageWindowClusterer.receivedWindows(battle, recon, member.accountId());
+            if (windows.isEmpty()) {
+                continue;
+            }
+            rows.append("member accountId=").append(member.accountId())
+                    .append(" nickname=").append(quoteData(member.nickname()))
+                    .append(" damageReceivedWindows=");
+            for (final DamageWindowClusterer.DamageWindow window : windows) {
+                rows.append(PlayerAnalysisTerms.battleRange(window.startSec(), window.endSec()))
+                        .append("掉血").append(window.totalDamage())
+                        .append('/').append(window.hitCount()).append("次")
+                        .append("攻击者").append(window.uniqueAttackerCount())
+                        .append(window.attackersUnresolved() ? "（部分未解析）" : "")
+                        .append(window.focusFireCandidate() ? "（短时多车集火证据）" : "");
+            }
+            rows.append('\n');
+        }
+        if (rows.isEmpty()) {
+            return;
+        }
+        writer.append("\n=== MEMBER_DAMAGE_RECEIVED_WINDOWS（逐成员掉血窗口·事件流观测） ===\n");
+        writer.append("注意: 每条为一名成员的掉血窗口, 观测子集, 非权威总量; 攻击者N=窗口内不同攻击者数; "
+                + "只有窗口总跨度 ≤" + (int) DamageWindowClusterer.SHORT_FOCUS_WINDOW_SEC
+                + " 秒、攻击者≥2 且无未解析攻击者时才标注「（短时多车集火证据）」; "
+                + "攻击者=1 → 短时间集中掉血/高压掉血窗口（不是集火）; "
+                + "标注「（部分未解析）」时攻击者数不完整, 不得断言集火; "
+                + "链式聚类形成的大跨度窗口不得当作短时集火.\n");
+        writer.append(rows.toString());
     }
 
     static void appendMemberFacts(
@@ -508,9 +569,14 @@ final class TeamEvidenceFormatter {
 
     static void appendEngagements(
             final BudgetWriter writer,
-            final List<TeamEngagementSummary> engagements
+            final List<TeamEngagementSummary> engagements,
+            final boolean partial
     ) {
         writer.append("\n=== TEAM_ENGAGEMENTS_OBSERVED_SUBSET ===\n");
+        if (partial) {
+            writer.append("UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)\n");
+            return;
+        }
         for (final TeamEngagementSummary engagement : engagements) {
             writer.append("engagement[" + format(engagement.startTime())
                     + "-" + format(engagement.endTime()) + "]"
@@ -566,9 +632,20 @@ final class TeamEvidenceFormatter {
         final var winner = FriendlyEnemyResult.resolveTeamBattle(battle, perspectiveTeam);
         final String label = StringUtils.hasText(teamLabel) ? teamLabel : "本队";
         return switch (winner.winner()) {
-            case FRIENDLY_WIN -> winner.pointsDecided() ? label + "获胜（点数判定）" : label + "获胜";
-            case ENEMY_WIN -> winner.pointsDecided() ? label + "落败（点数判定）" : label + "落败";
+            case FRIENDLY_WIN -> winner.pointsDecided()
+                    ? label + "获胜" + pointsSuffix(winner) : label + "获胜";
+            case ENEMY_WIN -> winner.pointsDecided()
+                    ? label + "落败" + pointsSuffix(winner) : label + "落败";
             case DRAW_OR_UNKNOWN -> "平局或未知";
+        };
+    }
+
+    /** 点数胜负的结束方式后缀：时间耗尽 / 1000 分提前 / 未知。 */
+    private static String pointsSuffix(final FriendlyEnemyResult.TeamBattleWinner winner) {
+        return switch (winner.pointsEndReason()) {
+            case REACHED_1000 -> "（达到 1000 分提前获胜）";
+            case TIME_EXPIRED -> "（时间耗尽点数判定）";
+            case UNKNOWN, NOT_APPLICABLE -> "（点数判定）";
         };
     }
 

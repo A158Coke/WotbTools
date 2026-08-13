@@ -138,10 +138,17 @@ final class PlayerSummaryBuilder {
         final long recorderAccountId = ctx.recorder() != null && ctx.recorder().accountId() != null
                 ? ctx.recorder().accountId() : -1L;
         final StringBuilder summaryBuilder = new StringBuilder(buildPlayerContextSummary(ctx));
-        PlayerEvidenceFormatter.appendDamageExchangeByOpponent(summaryBuilder, ctx.battle(), recorderAccountId, recon);
-        if (!PlayerEvidenceFormatter.appendPerHitDamageEvents(summaryBuilder, ctx.battle(), recorderAccountId, recon)) {
+        // OBSERVED_DAMAGE_IS_PARTIAL 只计算一次：逐对手、逐炮、掉血窗口三段统一抑制，
+        // 覆盖完整时三段正常输出（不一边输出数字一边声明已抑制）。
+        final boolean observedDamagePartial = hasObservedDamagePartial(ctx);
+        PlayerEvidenceFormatter.appendDamageExchangeByOpponent(
+                summaryBuilder, ctx.battle(), recorderAccountId, recon, observedDamagePartial);
+        if (!PlayerEvidenceFormatter.appendPerHitDamageEvents(
+                summaryBuilder, ctx.battle(), recorderAccountId, recon, observedDamagePartial)) {
             summaryBuilder.append("- PER_HIT_DAMAGE_EVENTS_UNAVAILABLE\n");
         }
+        PlayerEvidenceFormatter.appendRecorderDamageReceivedWindows(
+                summaryBuilder, ctx.battle(), recon, recorderAccountId, observedDamagePartial);
         PlayerEvidenceFormatter.appendEnemyLastKnownPositions(summaryBuilder, ctx.battle(), recon);
         final String baseSummary = summaryBuilder.toString();
         final String systemPrompt = PlayerPromptRules.localizePlayerSystemPrompt(PlayerPromptRules.SINGLE_PLAYER_PROMPT, language);
@@ -160,10 +167,22 @@ final class PlayerSummaryBuilder {
                 "SINGLE_PLAYER_BATTLE", planned.density(), estimatedTokens);
     }
 
+    /** Player 与 Team 一致的 OBSERVED_DAMAGE_IS_PARTIAL 抑制口径（上下文与特征集任一命中即抑制）。 */
+    private static boolean hasObservedDamagePartial(final SinglePlayerBattleAnalysisContext ctx) {
+        if (ctx.limitations() != null
+                && ctx.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL")) {
+            return true;
+        }
+        return ctx.features() != null && ctx.features().limitations() != null
+                && ctx.features().limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL");
+    }
+
     public static String buildPlayerContextSummary(final SinglePlayerBattleAnalysisContext ctx) {
         final StringBuilder sb = new StringBuilder(4096);
         final var battle = ctx.battle();
         final var features = ctx.features();
+        // 基础 summary 构建期就统一读取 partial 门禁：killVictims 等事件流观测伤害段一并抑制
+        final boolean observedDamagePartial = hasObservedDamagePartial(ctx);
 
         int authoritativeDealt = 0;
         int authoritativeReceived = 0;
@@ -246,10 +265,12 @@ final class PlayerSummaryBuilder {
         }
 
         // ====== 7b. Recorder per-target damage exchange (observed subset) ======
-        final boolean damageExchangeAvailable = PlayerEvidenceFormatter.appendRecorderDamageExchange(sb, battle, rec);
+        final boolean damageExchangeAvailable = PlayerEvidenceFormatter.appendRecorderDamageExchange(
+                sb, battle, rec, observedDamagePartial);
 
         // ====== 7c. Kill attribution: 谁击杀录像者 / 录像者击杀谁 ======
-        final boolean killAttributionAvailable = PlayerEvidenceFormatter.appendKillAttribution(sb, battle, rec);
+        final boolean killAttributionAvailable = PlayerEvidenceFormatter.appendKillAttribution(
+                sb, battle, rec, observedDamagePartial);
 
         // ====== 8. Death timeline (authoritative) ======
         sb.append("\n=== DEATH_TIMELINE_AUTHORITATIVE（阵亡时间线·权威结算） ===\n");

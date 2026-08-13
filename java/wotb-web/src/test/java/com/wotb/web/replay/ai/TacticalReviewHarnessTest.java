@@ -321,7 +321,7 @@ class TacticalReviewHarnessTest {
 
     @Test
     void sequentialTheoreticalTimeoutNeverExceedsEndpointDeadline() {
-        // Call #1(45s) + 旧路径 fallback(≤315s) 的理论最坏值必须低于前端/nginx 的 400s
+        // Call #1(45s) + 旧路径 fallback(≤315s) 的理论最坏值必须低于前端/后端/nginx 的 1100s
         assertTrue(TacticalReviewHarness.CALL_1_BUDGET_SEC + config().callTimeoutSec()
                 < TacticalReviewHarness.ENDPOINT_DEADLINE_SEC);
     }

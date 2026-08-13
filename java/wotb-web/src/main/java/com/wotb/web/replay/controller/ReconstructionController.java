@@ -62,10 +62,11 @@ public class ReconstructionController {
     private final ReplayUsageMetrics usageMetrics;
 
     /**
-     * SSE 连接超时：对齐 nginx analyze 420s read timeout，避免服务端在代理之前
+     * SSE 连接超时：对齐 nginx analyze 1120s read timeout，避免服务端在代理之前
      * 提前关闭长流。
      */
-    static final long SSE_TIMEOUT_MS = 420_000L;
+    /** 公开给配置契约测试（AiTimeoutChainContractTest）校验与 nginx 代理超时对齐。 */
+    public static final long SSE_TIMEOUT_MS = 1_120_000L;
 
     @Autowired
     public ReconstructionController(
@@ -208,7 +209,7 @@ public class ReconstructionController {
 
     /**
      * Package-private factory so tests can substitute a spy emitter; production
-     * timeout aligns with the nginx 420s read timeout.
+     * timeout aligns with the nginx 1120s read timeout.
      */
     SseEmitter newAnalyzeEmitter() {
         return new SseEmitter(SSE_TIMEOUT_MS);
