@@ -34,6 +34,14 @@
   `cw-cap-win-01` / `cw-cap-points-decided-01` 断言 mandatory header `resultSource=POINTS_INFERENCE`
   且不出现 BATTLE_RESULTS；`AiEvalHarnessTest` 断言 ZH 规则含全歼双向语义与三级证据、
    EN/RU 本地化后不残留中文规则。
+- **AI 复盘结果一键复制正文**：`AnalysisResultPanel` 面板头部（右上角）新增「复制」按钮，一键复制
+  `result.analysis`（最终复盘正文，可能包含团队剖析与免责声明；不含独立的
+  preBattleSection/mapOverview）。Clipboard 降级链：`navigator.clipboard.writeText` 优先，
+  writeText 缺失或 reject 时降级 `execCommand('copy')`（textarea 经 try/finally 保证移除；
+  execCommand 返回 false 或抛异常时不显示「已复制」）；复制后按钮显示「已复制」1.5s 后复位，
+  组件卸载清理定时器。新增三语 locale `recon.copy` / `recon.copied` 与组件测试
+  （仅复制最终正文、排除赛前预测/地图鸟瞰、Clipboard 成功/缺失/reject、execCommand false/抛异常、
+  textarea 清理、卸载清理定时器）。
 - **技能更名：grill-with-docs → plan-designer（开发方案设计）**：开发前方案 grill 技能更名为
   `plan-designer`，调用时**自动前置 grill-me**（需求澄清：复述理解 → 逐层提问 ≤3 个/轮 →
   输出《需求确认单》），需求已明确时跳过并注明；随后进入方案设计流程（可落地性核对 →
