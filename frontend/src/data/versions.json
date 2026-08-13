@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.4",
+    "date": "2026-08-13",
+    "tag": "add",
+    "zh": "地图鸟瞰新增「战局回放」：进度条回放整场战斗，支持播放/暂停、快进快退 5 秒、逐事件跳转与 1×/2×/4× 倍速；当前时刻前的可观察轨迹可见，敌人进入/离开观察实时切换，未观察敌人不显示，阵亡车辆在正确时刻标记；点击 AI 报告中的明确时间（如 03:20、3分20秒）自动跳到对应时刻并暂停",
+    "en": "Map Overview gains a \"Battle Playback\" view: scrub through the battle on a progress bar with play/pause, ±5s, per-event jumps and 1×/2×/4× speeds; visible tracks up to the current time are shown, enemies entering/leaving observation switch in real time, never-observed enemies stay hidden, and destroyed vehicles are marked at the right moment; clicking an explicit AI-report time (e.g. 03:20, 3m 20s) jumps to that moment and pauses",
+    "ru": "Обзор карты получил вид «Повтор боя»: перемотка боя по шкале времени с воспроизведением/паузой, ±5 с, переходами по событиям и скоростью 1×/2×/4×; видимые трассы до текущего момента отображаются, появление/потеря врага переключаются в реальном времени, ненаблюдаемые враги скрыты, уничтоженные машины отмечаются в нужный момент; клик по явному времени в AI-отчёте (например, 03:20, 3 мин 20 с) переходит к этому моменту и ставит на паузу"
+  },
+  {
     "v": "2.11.3",
     "date": "2026-08-13",
     "tag": "fix",

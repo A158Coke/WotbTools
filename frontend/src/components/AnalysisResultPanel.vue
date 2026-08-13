@@ -17,6 +17,7 @@ defineProps({
 // 默认展开，用户可折叠收起
 const preBattleOpen = ref(true)
 const mapOpen = ref(false)
+const mapSeek = ref(null)
 
 function togglePreBattle() {
   preBattleOpen.value = !preBattleOpen.value
@@ -24,6 +25,12 @@ function togglePreBattle() {
 
 function toggleMap() {
   mapOpen.value = !mapOpen.value
+}
+
+/** AI 报告时间跳转：展开地图鸟瞰并让播放器 seek（MapOverview 自动切到战局回放视图）。 */
+function onSeek(sec) {
+  mapSeek.value = sec
+  mapOpen.value = true
 }
 
 // 素材开关：mapOverview 非 null 且该地图在 mapImages 中有素材时才渲染（无素材整块跳过）
@@ -75,9 +82,10 @@ function hasMapAsset(overview) {
         v-if="mapOpen"
         class="map-overview-content"
         :overview="result.mapOverview"
+        :seek-to="mapSeek"
       />
     </div>
-    <MarkdownContent class="analysis-text" :content="result.analysis" />
+    <MarkdownContent class="analysis-text" :content="result.analysis" @seek="onSeek" />
   </div>
 </template>
 

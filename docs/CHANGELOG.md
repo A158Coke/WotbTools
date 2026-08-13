@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### Added
+- **AI 复盘结果页「地图鸟瞰」新增「战局回放」第三视图**：后端 `MapOverview` 扩展 `playback`
+  （`durationSec` / `vehicles`（含 `observedIntervals` 可观测区间与 `deathSec`）/ `events`：
+  `DAMAGE` / `DESTROYED` / `KILL` / `OBSERVED` / `LOST`，身份经 `TeamEntityMapper` 实体映射解析，
+  无法可靠解析不输出）；前端新增 `BattlePlayback.vue` 与 `utils/battlePlayback.js`
+  （RAF 播放、仅在同一可信连续点 gap≤5s 间插值、失察淡化最后已知位置、从未观测不显示、
+  阵亡切换 ✕、进度条事件按秒聚合标记、播放/暂停/±5s/上一/下一事件/1×2×4×/拖动 seek、
+  随机战默认录像者相关事件过滤）；`MarkdownContent` 把 AI 报告中的明确时间文本
+  （`03:20` / `3分20秒` / `3m 20s` / `3 мин 20 с`，不识别普通数字/比分）转成 `#seek=` 链接，
+  点击后展开鸟瞰、自动切换战局回放并 seek 暂停；三语 locale 与文档同步。
+
 ### Changed
 - **技能更名：grill-with-docs → plan-designer（开发方案设计）**：开发前方案 grill 技能更名为
   `plan-designer`，调用时**自动前置 grill-me**（需求澄清：复述理解 → 逐层提问 ≤3 个/轮 →

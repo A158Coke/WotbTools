@@ -9,8 +9,10 @@ import com.wotb.core.processing.TeamEntityMapping;
 import com.wotb.core.processing.TeamPerspectiveResolution;
 import com.wotb.core.processing.TeamPerspectiveResolver;
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.VehicleDestroyedEvent;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.map.MapGridProfile;
 import com.wotb.core.replay.map.MapGridRegistry;
@@ -86,6 +88,8 @@ public final class MapOverviewBuilder {
                 battle, mapping, positions, damages, friendlyTeam, profile, battleStart);
         final List<MapOverview.Phase> phases = buildPhases(
                 damages, positions, battle, battleStart);
+        final MapOverview.Playback playback = buildPlayback(
+                battle, mapping, positions, events, battleStart, friendlyTeam);
 
         return new MapOverview(
                 battle.mapName.trim().toLowerCase(),
@@ -113,7 +117,164 @@ public final class MapOverviewBuilder {
                 heatmaps,
                 routes,
                 battle.arenaBonusType,
-                resolveRecorderAccountId(battle));
+                resolveRecorderAccountId(battle),
+                playback);
+    }
+
+    /** 位置连续观测的最大间隔（秒）；超过则视为失去观察，重新进入时新开区间。 */
+    private static final double OBSERVED_GAP_SEC = 5.0;
+
+    /**
+     * 战局回放数据：车辆（位置复用路线点，这里只补充可见性区间）+
+     * 时间轴事件（DAMAGE/DESTROYED/KILL/OBSERVED/LOST，按 battle-relative 秒）。
+     * 无法可靠解析身份的伤害/击毁不输出对应事件，绝不编造。
+     */
+    private static MapOverview.Playback buildPlayback(
+            final Battle battle,
+            final TeamEntityMapping mapping,
+            final Positions positions,
+            final List<ReplayEvent> events,
+            final Float battleStartRawClockSec,
+            final int friendlyTeam) {
+        if (battle == null || battle.players == null || positions.isEmpty()) {
+            return null;
+        }
+        final Long recorderAccount = resolveRecorderAccountId(battle);
+        final List<MapOverview.PlaybackVehicle> vehicles = new ArrayList<>();
+        for (final PlayerResult player : battle.players) {
+            if (player.team <= 0 || player.accountId <= 0) {
+                continue;
+            }
+            final List<Integer> entityIds = mapping.entityIdsByAccount()
+                    .getOrDefault(player.accountId, List.of());
+            if (entityIds.isEmpty()) {
+                continue;
+            }
+            final Double deathSec = resolveDeathSec(player);
+            final List<MapOverview.ObservedInterval> intervals = observedIntervals(
+                    entityIds, positions, events, battleStartRawClockSec, deathSec);
+            vehicles.add(new MapOverview.PlaybackVehicle(
+                    player.accountId, player.nickname, player.tankId,
+                    player.tankName == null ? "" : player.tankName, player.team,
+                    intervals, deathSec));
+        }
+        if (vehicles.isEmpty()) {
+            return null;
+        }
+
+        final List<MapOverview.PlaybackEvent> playbackEvents = new ArrayList<>();
+        for (final ReplayEvent event : events) {
+            if (event instanceof DamageEvent damage) {
+                final long victim = accountOf(damage.victimEid(), mapping);
+                if (victim <= 0) {
+                    continue;
+                }
+                final long attacker = accountOf(damage.attackerEid(), mapping);
+                playbackEvents.add(new MapOverview.PlaybackEvent(
+                        "DAMAGE", relativeSec(damage, battleStartRawClockSec),
+                        attacker > 0 ? attacker : null, victim, damage.damage()));
+            } else if (event instanceof VehicleDestroyedEvent destroyed) {
+                final long victim = accountOf(destroyed.entityId(), mapping);
+                if (victim <= 0) {
+                    continue;
+                }
+                playbackEvents.add(new MapOverview.PlaybackEvent(
+                        "DESTROYED", relativeSec(destroyed, battleStartRawClockSec),
+                        victim, null, null));
+                final Integer killerEid = destroyed.killerEid();
+                final long killer = killerEid != null ? accountOf(killerEid, mapping) : 0L;
+                if (killer > 0 && killer != victim) {
+                    playbackEvents.add(new MapOverview.PlaybackEvent(
+                            "KILL", relativeSec(destroyed, battleStartRawClockSec),
+                            killer, victim, null));
+                }
+            }
+        }
+        for (final MapOverview.PlaybackVehicle vehicle : vehicles) {
+            if (recorderAccount != null && vehicle.accountId() == recorderAccount) {
+                continue; // 录像者自身不做 OBSERVED/LOST 广播
+            }
+            for (final MapOverview.ObservedInterval interval : vehicle.observedIntervals()) {
+                playbackEvents.add(new MapOverview.PlaybackEvent(
+                        "OBSERVED", interval.startSec(), vehicle.accountId(), null, null));
+                playbackEvents.add(new MapOverview.PlaybackEvent(
+                        "LOST", interval.endSec(), vehicle.accountId(), null, null));
+            }
+        }
+        playbackEvents.sort(Comparator.comparingDouble(MapOverview.PlaybackEvent::timeSec));
+
+        final double duration = battle.durationS != null && battle.durationS > 0
+                ? battle.durationS : positions.lastTimeSec();
+        return new MapOverview.Playback(
+                duration > 0 ? duration : 0, vehicles, playbackEvents);
+    }
+
+    /**
+     * 车辆可观测区间：按位置事件时间线聚类（gap ≤ 5s 视为连续观测），
+     * EntityRemoved 关闭末段区间，阵亡时刻截断区间末端；re-entry 跨实体区间合并。
+     */
+    private static List<MapOverview.ObservedInterval> observedIntervals(
+            final List<Integer> entityIds,
+            final Positions positions,
+            final List<ReplayEvent> events,
+            final Float battleStartRawClockSec,
+            final Double deathSec) {
+        final List<MapOverview.ObservedInterval> raw = new ArrayList<>();
+        for (final int entityId : entityIds) {
+            final List<Position> pts = positions.byEntity().getOrDefault(entityId, List.of());
+            if (pts.isEmpty()) {
+                continue;
+            }
+            double removedAt = Double.MAX_VALUE;
+            for (final ReplayEvent event : events) {
+                if (event instanceof EntityRemovedEvent removed && removed.entityId() == entityId) {
+                    removedAt = Math.min(removedAt, relativeSec(removed, battleStartRawClockSec));
+                }
+            }
+            double runStart = pts.get(0).timeSec;
+            double runEnd = runStart;
+            for (int i = 1; i < pts.size(); i++) {
+                final double t = pts.get(i).timeSec;
+                if (t - runEnd > OBSERVED_GAP_SEC) {
+                    raw.add(new MapOverview.ObservedInterval(runStart, runEnd));
+                    runStart = t;
+                }
+                runEnd = t;
+            }
+            final double intervalEnd = removedAt < runEnd
+                    ? removedAt : runEnd;
+            raw.add(new MapOverview.ObservedInterval(runStart, intervalEnd));
+        }
+        raw.sort(Comparator.comparingDouble(MapOverview.ObservedInterval::startSec));
+        final List<MapOverview.ObservedInterval> merged = new ArrayList<>();
+        for (final MapOverview.ObservedInterval interval : raw) {
+            if (merged.isEmpty()
+                    || interval.startSec() - merged.get(merged.size() - 1).endSec() > 1e-6) {
+                merged.add(interval);
+            } else {
+                final MapOverview.ObservedInterval last = merged.get(merged.size() - 1);
+                merged.set(merged.size() - 1, new MapOverview.ObservedInterval(
+                        last.startSec(), Math.max(last.endSec(), interval.endSec())));
+            }
+        }
+        if (deathSec != null) {
+            for (int i = 0; i < merged.size(); i++) {
+                final MapOverview.ObservedInterval interval = merged.get(i);
+                if (interval.endSec() > deathSec) {
+                    merged.set(i, new MapOverview.ObservedInterval(
+                            interval.startSec(), Math.max(interval.startSec(), deathSec)));
+                }
+            }
+        }
+        return merged;
+    }
+
+    private static long accountOf(final int entityId, final TeamEntityMapping mapping) {
+        if (entityId <= 0) {
+            return 0L;
+        }
+        final TeamEntityIdentity identity = mapping.identity(entityId);
+        return identity != null ? identity.accountId() : 0L;
     }
 
     /** 录像者账号 id（Battle.recorder 昵称已在 ReplayParser 解析时归一化，可稳定匹配 players）；未解析为 null。 */

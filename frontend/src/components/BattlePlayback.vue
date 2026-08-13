@@ -1,0 +1,492 @@
+<script setup>
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { mapImages } from '../data/mapImages'
+import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
+import { createMapView } from '../utils/mapView'
+import {
+  aggregateEventsBySecond,
+  formatClock,
+  observedAt,
+  positionAt,
+  recorderRelated,
+  teamRelated
+} from '../utils/battlePlayback'
+
+/**
+ * 战局回放（Battle Playback）：地图鸟瞰第三视图。
+ * 复用 mapImages 素材、coordinateBounds 坐标映射、自适应色板与响应式布局；
+ * RAF 推进播放时间，仅在同一可信连续点（gap ≤ 5s）之间插值。
+ */
+const props = defineProps({
+  overview: { type: Object, required: true },
+  seekTo: { type: Number, default: null }
+})
+
+const { t } = useI18n()
+
+const image = computed(() => mapImages[props.overview.mapCode] || null)
+const mapView = computed(() => createMapView(image.value, props.overview))
+
+// 自适应配色（与热力/路线视图同一色板）
+const palette = ref(darkMapPalette)
+watch(image, async (img) => {
+  palette.value = paletteForLuminance(await luminanceOfImage(img))
+}, { immediate: true })
+
+const playback = computed(() => props.overview.playback || null)
+const duration = computed(() => (playback.value ? Math.max(0, playback.value.durationSec) : 0))
+const friendlyTeam = computed(() => props.overview.friendlyTeam)
+
+// ---- 播放状态 ----
+const currentTime = ref(0)
+const playing = ref(false)
+const speed = ref(1)
+const showAll = ref(false)
+const typeFilter = ref(new Set(['DAMAGE', 'DESTROYED', 'KILL', 'OBSERVED', 'LOST']))
+const selectedAccountId = ref(null)
+const eventPopupSec = ref(null)
+let rafId = null
+let lastFrameTs = null
+
+function frame(ts) {
+  if (!playing.value) return
+  const delta = lastFrameTs == null ? 0 : (ts - lastFrameTs)
+  lastFrameTs = ts
+  currentTime.value = Math.min(duration.value, currentTime.value + (delta / 1000) * speed.value)
+  if (currentTime.value >= duration.value) {
+    playing.value = false
+    return
+  }
+  rafId = requestAnimationFrame(frame)
+}
+
+function play() {
+  if (duration.value <= 0) return
+  playing.value = true
+  lastFrameTs = null
+  rafId = requestAnimationFrame(frame)
+}
+
+function pause() {
+  playing.value = false
+  if (rafId != null) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+}
+
+watch(playing, (value) => {
+  if (value) play()
+  else pause()
+})
+
+watch(() => props.seekTo, (sec) => {
+  if (Number.isFinite(sec)) {
+    currentTime.value = Math.min(duration.value, Math.max(0, sec))
+    eventPopupSec.value = Math.round(sec)
+    playing.value = false // 点击 AI 时间 → seek + 自动暂停
+  }
+}, { immediate: true })
+
+function seek(sec) {
+  currentTime.value = Math.min(duration.value, Math.max(0, sec))
+  eventPopupSec.value = Math.round(sec)
+}
+
+function togglePlay() {
+  if (playing.value) pause()
+  else play()
+}
+
+function step(delta) {
+  currentTime.value = Math.min(duration.value, Math.max(0, currentTime.value + delta))
+}
+
+function toggleSpeed() {
+  speed.value = speed.value === 1 ? 2 : (speed.value === 2 ? 4 : 1)
+}
+
+function toggleType(type) {
+  const next = new Set(typeFilter.value)
+  if (next.has(type)) next.delete(type)
+  else next.add(type)
+  typeFilter.value = next
+}
+
+onBeforeUnmount(() => {
+  if (rafId != null) cancelAnimationFrame(rafId)
+})
+
+// ---- 数据 ----
+const routesByAccount = computed(() => {
+  const map = new Map()
+  for (const route of props.overview.routes || []) map.set(route.accountId, route)
+  return map
+})
+
+const vehiclesByAccount = computed(() => {
+  const map = new Map()
+  for (const vehicle of (playback.value ? playback.value.vehicles : [])) {
+    map.set(vehicle.accountId, vehicle)
+  }
+  return map
+})
+
+const friendlyColors = computed(() => palette.value.friendlyColors)
+const enemyColors = computed(() => palette.value.enemyColors)
+
+function vehicleColor(vehicle) {
+  const teamVehicles = vehicleStates.value
+    .map(st => st.vehicle)
+    .filter(v => v.team === vehicle.team)
+  const index = teamVehicles.indexOf(vehicle)
+  const list = vehicle.team === friendlyTeam.value ? friendlyColors.value : enemyColors.value
+  return list[Math.max(0, index) % list.length]
+}
+
+function vehicleState(vehicle) {
+  const route = routesByAccount.value.get(vehicle.accountId)
+  const pos = positionAt(route ? route.points : [], currentTime.value)
+  if (!pos) return null
+  const observed = observedAt(vehicle.observedIntervals, currentTime.value)
+  const destroyed = vehicle.deathSec != null && currentTime.value >= vehicle.deathSec
+  const recorder = vehicle.accountId === props.overview.recorderAccountId
+  return { vehicle, pos, observed, destroyed, recorder, lastKnown: !observed && !destroyed }
+}
+
+const vehicleStates = computed(() => {
+  const vehicles = playback.value ? playback.value.vehicles : []
+  return vehicles.map(vehicleState).filter(Boolean)
+})
+
+const filteredEvents = computed(() => {
+  const events = (playback.value ? playback.value.events : [])
+    .filter(event => typeFilter.value.has(event.type))
+  if (showAll.value) return events
+  const recorderId = props.overview.recorderAccountId
+  if (props.overview.arenaBonusType === 1 && recorderId != null) {
+    return events.filter(event => recorderRelated(event, recorderId))
+  }
+  if (props.overview.arenaBonusType !== 1) {
+    return events.filter(event => teamRelated(event, friendlyTeam.value, vehiclesByAccount.value))
+  }
+  return events
+})
+
+const eventMarkers = computed(() => aggregateEventsBySecond(filteredEvents.value))
+
+function nearestEvent(direction) {
+  const events = filteredEvents.value
+  if (!events.length) return
+  const t = currentTime.value
+  let best = null
+  for (const event of events) {
+    if (direction === 'prev' && event.timeSec < t - 0.1) {
+      if (best === null || event.timeSec > best.timeSec) best = event
+    } else if (direction === 'next' && event.timeSec > t + 0.1) {
+      if (best === null || event.timeSec < best.timeSec) best = event
+    }
+  }
+  if (best) {
+    currentTime.value = best.timeSec
+    eventPopupSec.value = Math.round(best.timeSec)
+  }
+}
+
+const popupEvents = computed(() => {
+  if (eventPopupSec.value == null) return []
+  return filteredEvents.value.filter(event => Math.round(event.timeSec) === eventPopupSec.value)
+})
+
+function playerName(accountId) {
+  const vehicle = vehiclesByAccount.value.get(accountId)
+  return vehicle ? (vehicle.playerName || `#${accountId}`) : (accountId == null ? t('recon.map.playback.unknown') : `#${accountId}`)
+}
+
+function eventLabel(event) {
+  const type = t(`recon.map.playback.event_${event.type}`)
+  switch (event.type) {
+    case 'DAMAGE':
+      return `${playerName(event.accountId)} → ${playerName(event.targetAccountId)} ${event.damage}`
+    case 'KILL':
+      return `${playerName(event.accountId)} → ${playerName(event.targetAccountId)}`
+    case 'DESTROYED':
+      return playerName(event.accountId)
+    case 'OBSERVED':
+    case 'LOST':
+      return playerName(event.accountId)
+    default:
+      return type
+  }
+}
+
+function selectVehicle(vehicle) {
+  selectedAccountId.value = selectedAccountId.value === vehicle.accountId ? null : vehicle.accountId
+}
+
+const selectedState = computed(() => {
+  if (selectedAccountId.value == null) return null
+  return vehicleStates.value.find(st => st.vehicle.accountId === selectedAccountId.value) || null
+})
+
+const gridRegions = computed(() => {
+  const regions = new Map()
+  for (const cell of props.overview.gridCells || []) {
+    const key = cell.nineGridRegion
+    if (!regions.has(key)) {
+      regions.set(key, { xMin: Infinity, yMin: Infinity, xMax: -Infinity, yMax: -Infinity })
+    }
+    const r = regions.get(key)
+    r.xMin = Math.min(r.xMin, cell.bounds.xMin)
+    r.yMin = Math.min(r.yMin, cell.bounds.yMin)
+    r.xMax = Math.max(r.xMax, cell.bounds.xMax)
+    r.yMax = Math.max(r.yMax, cell.bounds.yMax)
+  }
+  return [...regions.entries()].sort((a, b) => a[0] - b[0])
+})
+
+const mapStyle = computed(() => ({
+  '--map-grid-stroke': palette.value.gridStroke,
+  '--map-region-stroke': palette.value.regionStroke,
+  '--map-spawn-friendly': palette.value.spawnFriendly,
+  '--map-spawn-enemy': palette.value.spawnEnemy,
+  '--map-route-outline': palette.value.routeOutline,
+  '--map-death-mark': palette.value.deathMark
+}))
+</script>
+
+<template>
+  <div v-if="image && playback" class="battle-playback" :style="mapStyle" data-test="battle-playback">
+    <!-- 播放控制 -->
+    <div class="pb-controls">
+      <button type="button" class="pb-btn" data-test="pb-play" @click="togglePlay">
+        {{ $t(playing ? 'recon.map.playback.pause' : 'recon.map.playback.play') }}
+      </button>
+      <button type="button" class="pb-btn" data-test="pb-back5" @click="step(-5)">-5s</button>
+      <button type="button" class="pb-btn" data-test="pb-fwd5" @click="step(5)">+5s</button>
+      <button type="button" class="pb-btn" data-test="pb-prev" @click="nearestEvent('prev')">◀</button>
+      <button type="button" class="pb-btn" data-test="pb-next" @click="nearestEvent('next')">▶</button>
+      <button type="button" class="pb-btn" data-test="pb-speed" @click="toggleSpeed">{{ speed }}×</button>
+      <span class="pb-time">{{ formatClock(currentTime) }} / {{ formatClock(duration) }}</span>
+      <span v-if="overview.recorderAccountId != null" class="pb-filter">
+        <label class="pb-check">
+          <input type="checkbox" v-model="showAll" data-test="pb-all-events" />
+          {{ $t('recon.map.playback.all_events') }}
+        </label>
+      </span>
+    </div>
+
+    <!-- 事件类型过滤 -->
+    <div class="pb-filters">
+      <button
+        v-for="type in ['DAMAGE', 'DESTROYED', 'KILL', 'OBSERVED', 'LOST']"
+        :key="type"
+        type="button"
+        class="pb-chip"
+        :class="{ active: typeFilter.has(type) }"
+        @click="toggleType(type)"
+      >{{ $t(`recon.map.playback.event_${type}`) }}</button>
+    </div>
+
+    <!-- 进度条 + 事件标记 -->
+    <div class="pb-progress" data-test="pb-progress">
+      <input
+        class="pb-range"
+        type="range"
+        min="0"
+        :max="duration || 1"
+        step="0.1"
+        :value="currentTime"
+        @input="seek(Number($event.target.value))"
+        :aria-label="$t('recon.map.playback.progress')"
+      />
+      <span
+        v-for="marker in eventMarkers"
+        :key="marker.sec"
+        class="pb-marker"
+        :style="{ left: `${duration > 0 ? (marker.sec / duration) * 100 : 0}%` }"
+        :title="`${formatClock(marker.sec)} ×${marker.count}`"
+        @click="seek(marker.sec)"
+      ></span>
+    </div>
+
+    <!-- 地图 + 当前车辆状态 -->
+    <svg class="pb-svg" :viewBox="`0 0 ${mapView.W} ${mapView.H}`" role="img">
+      <image :href="image.src" :width="mapView.W" :height="mapView.H" preserveAspectRatio="none" />
+      <g class="pb-grid">
+        <rect
+          v-for="(cell, index) in overview.gridCells"
+          :key="cell.id"
+          :x="mapView.toX(cell.bounds.xMin)"
+          :y="mapView.toY(cell.bounds.yMax)"
+          :width="mapView.toX(cell.bounds.xMax) - mapView.toX(cell.bounds.xMin)"
+          :height="mapView.toY(cell.bounds.yMin) - mapView.toY(cell.bounds.yMax)"
+          class="pb-cell"
+        />
+      </g>
+      <g class="pb-regions">
+        <g v-for="[region, r] in gridRegions" :key="region">
+          <rect
+            :x="mapView.toX(r.xMin)"
+            :y="mapView.toY(r.yMax)"
+            :width="mapView.toX(r.xMax) - mapView.toX(r.xMin)"
+            :height="mapView.toY(r.yMin) - mapView.toY(r.yMax)"
+            class="pb-region-line"
+          />
+        </g>
+      </g>
+      <g class="pb-spawns">
+        <circle
+          v-for="(spawn, i) in overview.spawnPoints"
+          :key="`${spawn.name}-${i}`"
+          :cx="mapView.toX(spawn.x)"
+          :cy="mapView.toY(spawn.y)"
+          r="4"
+          :class="spawn.team === friendlyTeam ? 'pb-spawn-friendly' : 'pb-spawn-enemy'"
+        />
+      </g>
+      <g class="pb-vehicles">
+        <g
+          v-for="st in vehicleStates"
+          :key="st.vehicle.accountId"
+          class="pb-vehicle"
+          :class="{ 'pb-last-known': st.lastKnown, 'pb-recorder': st.recorder, 'pb-selected': selectedAccountId === st.vehicle.accountId }"
+          @click="selectVehicle(st.vehicle)"
+        >
+          <circle
+            :cx="mapView.toX(st.pos.x)"
+            :cy="mapView.toY(st.pos.y)"
+            :r="st.recorder ? 7 : 5"
+            :fill="vehicleColor(st.vehicle)"
+            :stroke="palette.routeOutline"
+            stroke-width="1.5"
+          >
+            <title>{{ st.vehicle.playerName }}</title>
+          </circle>
+          <text
+            v-if="st.destroyed"
+            :x="mapView.toX(st.pos.x)"
+            :y="mapView.toY(st.pos.y) - 8"
+            class="pb-death"
+          >✕</text>
+        </g>
+      </g>
+    </svg>
+
+    <!-- 选中车辆信息 -->
+    <div v-if="selectedState" class="pb-info" data-test="pb-info">
+      <strong>{{ selectedState.vehicle.playerName }}</strong>
+      <span>{{ $t('recon.map.playback.tank') }}: {{ selectedState.vehicle.tankName || selectedState.vehicle.tankId }}</span>
+      <span>{{ $t('recon.map.playback.team') }}: {{ $t(`recon.map.playback.team_${selectedState.vehicle.team === friendlyTeam ? 'friendly' : 'enemy'}`) }}</span>
+      <span>
+        {{ $t('recon.map.playback.state') }}:
+        {{ selectedState.destroyed
+          ? $t('recon.map.playback.state_destroyed')
+          : (selectedState.observed ? $t('recon.map.playback.state_observed') : $t('recon.map.playback.state_lost')) }}
+      </span>
+      <span v-if="selectedState.lastKnown">
+        {{ $t('recon.map.playback.last_known') }} {{ formatClock(currentTime) }}
+      </span>
+    </div>
+
+    <!-- 事件弹层（点击进度条标记展示该秒事件） -->
+    <div v-if="popupEvents.length" class="pb-popup" data-test="pb-popup">
+      <div class="pb-popup-head">
+        {{ formatClock(eventPopupSec) }}
+        <button type="button" class="pb-close" @click="eventPopupSec = null">&times;</button>
+      </div>
+      <ul>
+        <li v-for="(event, i) in popupEvents" :key="i">
+          <span class="pb-event-type">{{ $t(`recon.map.playback.event_${event.type}`) }}</span>
+          {{ eventLabel(event) }}
+        </li>
+      </ul>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.battle-playback {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.pb-controls, .pb-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.pb-btn, .pb-chip {
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-label);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: .78rem;
+  cursor: pointer;
+}
+.pb-chip.active {
+  background: var(--accent, #2f7dff);
+  border-color: var(--accent, #2f7dff);
+  color: #fff;
+}
+.pb-time { font-size: .8rem; color: var(--text-label); font-variant-numeric: tabular-nums; }
+.pb-filter { display: inline-flex; align-items: center; gap: 4px; font-size: .78rem; }
+.pb-check { display: inline-flex; align-items: center; gap: 4px; }
+.pb-progress { position: relative; margin: 2px 0; }
+.pb-range { width: 100%; display: block; }
+.pb-marker {
+  position: absolute;
+  top: 2px;
+  width: 3px;
+  height: 10px;
+  background: var(--accent, #2f7dff);
+  cursor: pointer;
+  transform: translateX(-50%);
+}
+.pb-svg {
+  display: block;
+  margin: 0 auto;
+  width: 66.7%;
+  height: auto;
+  border-radius: 4px;
+  background: #111;
+}
+@media (max-width: 768px) {
+  .pb-svg { width: 100%; }
+}
+.pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.16)); stroke-width: .5; fill: none; }
+.pb-region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.28)); stroke-width: 1; }
+.pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
+.pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
+.pb-vehicle { cursor: pointer; }
+.pb-last-known circle { opacity: .28; }
+.pb-recorder circle { stroke-width: 3; }
+.pb-selected circle { stroke: #fff; stroke-width: 2.5; }
+.pb-death { fill: var(--map-death-mark, #ff5a5a); font-size: 14px; font-weight: 700; pointer-events: none; }
+.pb-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: .8rem;
+  color: var(--text-label);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+.pb-popup {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: .8rem;
+}
+.pb-popup-head { display: flex; justify-content: space-between; font-weight: 700; }
+.pb-popup ul { margin: 4px 0 0; padding-left: 16px; }
+.pb-event-type { color: var(--accent); margin-right: 4px; }
+.pb-close { border: none; background: none; cursor: pointer; color: var(--text-muted); }
+</style>
