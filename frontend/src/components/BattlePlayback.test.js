@@ -57,14 +57,14 @@ function makeOverview() {
     playback: {
       durationSec: 60,
       vehicles: [
-        { accountId: 1001, playerName: 'You', tankId: 1, team: 1, observedIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null },
-        { accountId: 2001, playerName: 'EnemyA', tankId: 2, team: 2, observedIntervals: [{ startSec: 10, endSec: 20 }], deathSec: null },
-        { accountId: 2002, playerName: 'NeverSeen', tankId: 3, team: 2, observedIntervals: [], deathSec: null }
+        { accountId: 1001, playerName: 'You', tankId: 1, team: 1, positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null },
+        { accountId: 2001, playerName: 'EnemyA', tankId: 2, team: 2, positionIntervals: [{ startSec: 10, endSec: 20 }], deathSec: null },
+        { accountId: 2002, playerName: 'NeverSeen', tankId: 3, team: 2, positionIntervals: [], deathSec: null }
       ],
       events: [
-        { type: 'OBSERVED', timeSec: 10, accountId: 2001, targetAccountId: null, damage: null },
+        { type: 'POSITION_REPORTED', timeSec: 10, accountId: 2001, targetAccountId: null, damage: null },
         { type: 'DAMAGE', timeSec: 12, accountId: 1001, targetAccountId: 2001, damage: 400 },
-        { type: 'LOST', timeSec: 20, accountId: 2001, targetAccountId: null, damage: null }
+        { type: 'POSITION_STALE', timeSec: 20, accountId: 2001, targetAccountId: null, damage: null }
       ]
     }
   }

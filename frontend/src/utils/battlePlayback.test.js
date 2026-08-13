@@ -3,9 +3,9 @@ import {
   aggregateEventsBySecond,
   formatClock,
   lastKnownPosition,
-  observedAt,
   parseAiTime,
   positionAt,
+  positionCoveredAt,
   recorderRelated,
   routePrefix
 } from './battlePlayback'
@@ -44,17 +44,17 @@ describe('positionAt', () => {
   })
 })
 
-describe('observedAt', () => {
+describe('positionCoveredAt', () => {
   const intervals = [
     { startSec: 10, endSec: 20 },
     { startSec: 40, endSec: 50 }
   ]
-  it('true inside intervals, false in gaps', () => {
-    expect(observedAt(intervals, 15)).toBe(true)
-    expect(observedAt(intervals, 45)).toBe(true)
-    expect(observedAt(intervals, 30)).toBe(false)
-    expect(observedAt(intervals, 5)).toBe(false)
-    expect(observedAt(null, 15)).toBe(false)
+  it('true inside intervals, false in gaps (position coverage, not spotting)', () => {
+    expect(positionCoveredAt(intervals, 15)).toBe(true)
+    expect(positionCoveredAt(intervals, 45)).toBe(true)
+    expect(positionCoveredAt(intervals, 30)).toBe(false)
+    expect(positionCoveredAt(intervals, 5)).toBe(false)
+    expect(positionCoveredAt(null, 15)).toBe(false)
   })
 })
 
@@ -173,7 +173,7 @@ describe('aggregateEventsBySecond / recorderRelated', () => {
   })
 
   it('filters recorder-related events', () => {
-    expect(recorderRelated({ type: 'OBSERVED', accountId: 2 }, 1)).toBe(true)
+    expect(recorderRelated({ type: 'POSITION_REPORTED', accountId: 2 }, 1)).toBe(true)
     expect(recorderRelated({ type: 'DAMAGE', accountId: 2, targetAccountId: 3 }, 1)).toBe(false)
     expect(recorderRelated({ type: 'DAMAGE', accountId: 1, targetAccountId: 3 }, 1)).toBe(true)
     expect(recorderRelated({ type: 'DAMAGE', accountId: 2, targetAccountId: 1 }, 1)).toBe(true)

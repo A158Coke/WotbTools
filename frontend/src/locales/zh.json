@@ -817,16 +817,16 @@
                 "team_friendly": "本方",
                 "team_enemy": "敌方",
                 "state": "状态",
-                "state_observed": "观察中",
-                "state_lost": "已失察（最后已知位置）",
+                "state_position_reported": "位置上报中",
+                "state_position_stale": "位置中断（最后已知位置）",
                 "state_destroyed": "已击毁",
                 "last_known": "最后已知位置 @",
                 "unknown": "未知",
                 "event_DAMAGE": "伤害",
                 "event_DESTROYED": "击毁",
                 "event_KILL": "击杀",
-                "event_OBSERVED": "进入观察",
-                "event_LOST": "失去观察"
+                "event_POSITION_REPORTED": "位置上报",
+                "event_POSITION_STALE": "位置中断"
             }
         },
         "stages": {

@@ -8,8 +8,8 @@ import {
   aggregateEventsBySecond,
   formatClock,
   lastKnownPosition,
-  observedAt,
   positionAt,
+  positionCoveredAt,
   recorderRelated,
   routePrefix,
   teamRelated
@@ -45,7 +45,7 @@ const currentTime = ref(0)
 const playing = ref(false)
 const speed = ref(1)
 const showAll = ref(false)
-const typeFilter = ref(new Set(['DAMAGE', 'DESTROYED', 'KILL', 'OBSERVED', 'LOST']))
+const typeFilter = ref(new Set(['DAMAGE', 'DESTROYED', 'KILL', 'POSITION_REPORTED', 'POSITION_STALE']))
 const selectedAccountId = ref(null)
 const eventPopupSec = ref(null)
 let rafId = null
@@ -162,7 +162,8 @@ function vehicleColor(vehicle) {
 /**
  * 车辆显示状态：把「当前可信插值位置」与「最后可信位置」分开——
  * gap 内禁止穿线插值，但车辆停在淡化最后已知位置，不整辆消失；
- * 阵亡后冻结在阵亡时刻的最后可信位置（优先于 lost）。
+ * 阵亡后冻结在阵亡时刻的最后可信位置（优先于位置中断）。
+ * covered 只表示服务器位置流覆盖（type-10），不是点亮。
  */
 function vehicleState(vehicle) {
   const route = routesByAccount.value.get(vehicle.accountId)
@@ -173,15 +174,15 @@ function vehicleState(vehicle) {
   const live = positionAt(points, displayT)
   const last = live ? live : lastKnownPosition(points, displayT)
   if (!last) return null // 从未有可信位置：不显示
-  const observed = observedAt(vehicle.observedIntervals, t)
+  const covered = positionCoveredAt(vehicle.positionIntervals, t)
   const recorder = vehicle.accountId === props.overview.recorderAccountId
   return {
     vehicle,
     pos: last,
-    observed,
+    covered,
     destroyed,
     recorder,
-    lastKnown: destroyed || !live || !observed
+    lastKnown: destroyed || !live || !covered
   }
 }
 
@@ -254,8 +255,8 @@ function eventLabel(event) {
       return `${playerName(event.accountId)} → ${playerName(event.targetAccountId)}`
     case 'DESTROYED':
       return playerName(event.accountId)
-    case 'OBSERVED':
-    case 'LOST':
+    case 'POSITION_REPORTED':
+    case 'POSITION_STALE':
       return playerName(event.accountId)
     default:
       return type
@@ -321,7 +322,7 @@ const mapStyle = computed(() => ({
     <!-- 事件类型过滤 -->
     <div class="pb-filters">
       <button
-        v-for="type in ['DAMAGE', 'DESTROYED', 'KILL', 'OBSERVED', 'LOST']"
+        v-for="type in ['DAMAGE', 'DESTROYED', 'KILL', 'POSITION_REPORTED', 'POSITION_STALE']"
         :key="type"
         type="button"
         class="pb-chip"
@@ -438,7 +439,7 @@ const mapStyle = computed(() => ({
         {{ $t('recon.map.playback.state') }}:
         {{ selectedState.destroyed
           ? $t('recon.map.playback.state_destroyed')
-          : (selectedState.observed ? $t('recon.map.playback.state_observed') : $t('recon.map.playback.state_lost')) }}
+          : (selectedState.covered ? $t('recon.map.playback.state_position_reported') : $t('recon.map.playback.state_position_stale')) }}
       </span>
       <span v-if="selectedState.lastKnown">
         {{ $t('recon.map.playback.last_known') }} {{ formatClock(selectedState.pos.timeSec) }}

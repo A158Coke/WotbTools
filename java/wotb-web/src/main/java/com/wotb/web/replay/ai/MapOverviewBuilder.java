@@ -121,12 +121,16 @@ public final class MapOverviewBuilder {
                 playback);
     }
 
-    /** 位置连续观测的最大间隔（秒）；超过则视为失去观察，重新进入时新开区间。 */
-    private static final double OBSERVED_GAP_SEC = 5.0;
+    /**
+     * 位置流连续上报的最大间隔（秒）；超过则视为位置上报中断，重新出现时新开区间。
+     * 语义 = 服务器位置流覆盖，不等于「对录像者可见/点亮」（type-10 与点亮无关）。
+     */
+    private static final double POSITION_GAP_SEC = 5.0;
 
     /**
-     * 战局回放数据：车辆（位置复用路线点，这里只补充可见性区间）+
-     * 时间轴事件（DAMAGE/DESTROYED/KILL/OBSERVED/LOST，按 battle-relative 秒）。
+     * 战局回放数据：车辆（位置复用路线点，这里只补充位置上报区间）+
+     * 时间轴事件（DAMAGE/DESTROYED/KILL/POSITION_REPORTED/POSITION_STALE，按 battle-relative 秒）。
+     * POSITION_REPORTED/STALE 只表达服务器位置流覆盖变化，不是点亮/失察（见 POSITION_GAP_SEC）。
      * 无法可靠解析身份的伤害/击毁不输出对应事件，绝不编造。
      */
     private static MapOverview.Playback buildPlayback(
@@ -150,7 +154,7 @@ public final class MapOverviewBuilder {
                 continue;
             }
             final Double deathSec = resolveDeathSec(player);
-            final List<MapOverview.ObservedInterval> intervals = observedIntervals(
+            final List<MapOverview.PositionInterval> intervals = positionIntervals(
                     entityIds, positions, events, battleStartRawClockSec, deathSec);
             vehicles.add(new MapOverview.PlaybackVehicle(
                     player.accountId, player.nickname, player.tankId,
@@ -191,13 +195,13 @@ public final class MapOverviewBuilder {
         }
         for (final MapOverview.PlaybackVehicle vehicle : vehicles) {
             if (recorderAccount != null && vehicle.accountId() == recorderAccount) {
-                continue; // 录像者自身不做 OBSERVED/LOST 广播
+                continue; // 录像者自身不做位置覆盖事件广播
             }
-            for (final MapOverview.ObservedInterval interval : vehicle.observedIntervals()) {
+            for (final MapOverview.PositionInterval interval : vehicle.positionIntervals()) {
                 playbackEvents.add(new MapOverview.PlaybackEvent(
-                        "OBSERVED", interval.startSec(), vehicle.accountId(), null, null));
+                        "POSITION_REPORTED", interval.startSec(), vehicle.accountId(), null, null));
                 playbackEvents.add(new MapOverview.PlaybackEvent(
-                        "LOST", interval.endSec(), vehicle.accountId(), null, null));
+                        "POSITION_STALE", interval.endSec(), vehicle.accountId(), null, null));
             }
         }
         playbackEvents.sort(Comparator.comparingDouble(MapOverview.PlaybackEvent::timeSec));
@@ -209,16 +213,17 @@ public final class MapOverviewBuilder {
     }
 
     /**
-     * 车辆可观测区间：按位置事件时间线聚类（gap ≤ 5s 视为连续观测），
+     * 车辆位置上报区间：按位置事件时间线聚类（gap ≤ 5s 视为连续上报），
      * EntityRemoved 关闭末段区间，阵亡时刻截断区间末端；re-entry 跨实体区间合并。
+     * 语义 = 服务器位置流覆盖，不代表录像者点亮。
      */
-    private static List<MapOverview.ObservedInterval> observedIntervals(
+    private static List<MapOverview.PositionInterval> positionIntervals(
             final List<Integer> entityIds,
             final Positions positions,
             final List<ReplayEvent> events,
             final Float battleStartRawClockSec,
             final Double deathSec) {
-        final List<MapOverview.ObservedInterval> raw = new ArrayList<>();
+        final List<MapOverview.PositionInterval> raw = new ArrayList<>();
         for (final int entityId : entityIds) {
             final List<Position> pts = positions.byEntity().getOrDefault(entityId, List.of());
             if (pts.isEmpty()) {
@@ -234,33 +239,33 @@ public final class MapOverviewBuilder {
             double runEnd = runStart;
             for (int i = 1; i < pts.size(); i++) {
                 final double t = pts.get(i).timeSec;
-                if (t - runEnd > OBSERVED_GAP_SEC) {
-                    raw.add(new MapOverview.ObservedInterval(runStart, runEnd));
+                if (t - runEnd > POSITION_GAP_SEC) {
+                    raw.add(new MapOverview.PositionInterval(runStart, runEnd));
                     runStart = t;
                 }
                 runEnd = t;
             }
             final double intervalEnd = removedAt < runEnd
                     ? removedAt : runEnd;
-            raw.add(new MapOverview.ObservedInterval(runStart, intervalEnd));
+            raw.add(new MapOverview.PositionInterval(runStart, intervalEnd));
         }
-        raw.sort(Comparator.comparingDouble(MapOverview.ObservedInterval::startSec));
-        final List<MapOverview.ObservedInterval> merged = new ArrayList<>();
-        for (final MapOverview.ObservedInterval interval : raw) {
+        raw.sort(Comparator.comparingDouble(MapOverview.PositionInterval::startSec));
+        final List<MapOverview.PositionInterval> merged = new ArrayList<>();
+        for (final MapOverview.PositionInterval interval : raw) {
             if (merged.isEmpty()
                     || interval.startSec() - merged.get(merged.size() - 1).endSec() > 1e-6) {
                 merged.add(interval);
             } else {
-                final MapOverview.ObservedInterval last = merged.get(merged.size() - 1);
-                merged.set(merged.size() - 1, new MapOverview.ObservedInterval(
+                final MapOverview.PositionInterval last = merged.get(merged.size() - 1);
+                merged.set(merged.size() - 1, new MapOverview.PositionInterval(
                         last.startSec(), Math.max(last.endSec(), interval.endSec())));
             }
         }
         if (deathSec != null) {
             for (int i = 0; i < merged.size(); i++) {
-                final MapOverview.ObservedInterval interval = merged.get(i);
+                final MapOverview.PositionInterval interval = merged.get(i);
                 if (interval.endSec() > deathSec) {
-                    merged.set(i, new MapOverview.ObservedInterval(
+                    merged.set(i, new MapOverview.PositionInterval(
                             interval.startSec(), Math.max(interval.startSec(), deathSec)));
                 }
             }
