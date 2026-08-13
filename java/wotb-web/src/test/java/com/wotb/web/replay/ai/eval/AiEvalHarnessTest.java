@@ -20,6 +20,10 @@ class AiEvalHarnessTest {
         assertTrue(systemPrompt.contains("争霸赛占点规则"), "team system prompt must carry CAPTURE_RULE");
         assertTrue(systemPrompt.contains("玩家心理意图"),
                 "intent clause must allow observable behavior patterns while banning mental-intent claims");
+        assertTrue(systemPrompt.contains("全歼敌方"),
+                "CAPTURE_RULE must list annihilation as a victory mode ahead of points inference");
+        assertFalse(systemPrompt.contains("若双方均 <1000 → 必然"),
+                "CAPTURE_RULE must not force time-expired points win whenever both teams are below 1000");
     }
 
     @Test

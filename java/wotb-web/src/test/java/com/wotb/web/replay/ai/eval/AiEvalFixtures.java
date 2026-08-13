@@ -74,6 +74,7 @@ public final class AiEvalFixtures {
             case "cw-cap-stolen-01" -> capStolenWhileConcentrating();
             case "cw-cap-defense-01" -> capDefenseComeback();
             case "cw-cap-points-decided-01" -> capPointsDecided();
+            case "cw-annihilation-win-01" -> annihilationWin();
             case "cw-main-cluster-no-solo-01" -> mainClusterNoSolo();
             case "cw-partial-observation-01" -> partialObservation();
             case "cw-gap-no-merge-01" -> gapNoMerge();
@@ -599,6 +600,22 @@ public final class AiEvalFixtures {
                 earned(10002, 100), earned(10004, 70), enemyEarned(20_001, 60));
     }
 
+    // ===== 场景十二B：全歼胜利（对方全部阵亡、双方点数均 <1000；battle result 权威） =====
+
+    private static SingleTeamBattleAnalysisContext annihilationWin() {
+        final List<TeamMemberFeatureSet> members = compactTeam();
+        final List<TeamFormationPhase> phases = List.of(
+                phase(200, 215, 250, 250, 80, 7, List.of(
+                        cluster(200, 215, 250, 250, mainKeys()))));
+        final TeamAggregateResult aggregate = new TeamAggregateResult(
+                7, 11006, 3060, 0, 0, 7, 7, 0, null, null, null, null);
+        return context("cw-annihilation-win-01", 3, 1, new double[7],
+                members, aggregate, phases, BattlePhaseSummary.buildRelativePhases(60, 300),
+                List.of(keyEvent(60, "TEAM_FIRST_CONTACT", "damage=120")), List.of(),
+                new double[]{60, 105, 150, 195, 240, 270, 285},
+                earned(10002, 120), earned(10003, 120));
+    }
+
     // ===== 场景十三：5+2 分簇 false-positive（主力簇成员不得判单走） =====
 
     private static SingleTeamBattleAnalysisContext mainClusterNoSolo() {
@@ -809,7 +826,25 @@ public final class AiEvalFixtures {
             final List<String> limitations,
             final Earned... points
     ) {
-        final Battle battle = battle(arenaBonusType, winnerTeam, deathSecs, points);
+        return context(key, arenaBonusType, winnerTeam, deathSecs, members, aggregate, phases,
+                battlePhases, keyEvents, limitations, null, points);
+    }
+
+    private static SingleTeamBattleAnalysisContext context(
+            final String key,
+            final int arenaBonusType,
+            final Integer winnerTeam,
+            final double[] deathSecs,
+            final List<TeamMemberFeatureSet> members,
+            final TeamAggregateResult aggregate,
+            final List<TeamFormationPhase> phases,
+            final List<BattlePhaseSummary> battlePhases,
+            final List<KeyBattleEvent> keyEvents,
+            final List<String> limitations,
+            final double[] enemyDeathSecs,
+            final Earned... points
+    ) {
+        final Battle battle = battle(arenaBonusType, winnerTeam, deathSecs, points, enemyDeathSecs);
         final TeamBattleFeatureSet features = new TeamBattleFeatureSet(
                 1, members, aggregate, TeamObservedAggregate.empty(),
                 phases, List.of(), battlePhases, keyEvents,
@@ -833,6 +868,12 @@ public final class AiEvalFixtures {
 
     private static Battle battle(final int arenaBonusType, final Integer winnerTeam,
                                  final double[] deathSecs, final Earned[] points) {
+        return battle(arenaBonusType, winnerTeam, deathSecs, points, null);
+    }
+
+    private static Battle battle(final int arenaBonusType, final Integer winnerTeam,
+                                 final double[] deathSecs, final Earned[] points,
+                                 final double[] enemyDeathSecs) {
         final Battle battle = new Battle();
         battle.arenaId = "eval-arena";
         battle.mapName = "team_map";
@@ -851,7 +892,9 @@ public final class AiEvalFixtures {
         for (int index = 0; index < 7; index++) {
             final PlayerResult player = player(
                     20_001L + index, "E" + (index + 1), "NOVA", 2,
-                    FRIENDLY_TANKS[index], 800, 0);
+                    FRIENDLY_TANKS[index], 800,
+                    enemyDeathSecs != null && enemyDeathSecs.length > index
+                            ? enemyDeathSecs[index] : 0.0);
             player.victoryPointsEarned = pointsFor(points, player.accountId);
             battle.players.add(player);
         }
