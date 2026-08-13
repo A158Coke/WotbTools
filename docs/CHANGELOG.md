@@ -14,6 +14,9 @@
   全歼语义双向：本方获胜且对方 survivors=0 → 「全歼敌方获胜」；本方落败且本方 survivors=0 →
   「被敌方全歼落败」；双方均有存活才进入点数结束方式（≥1000 提前获胜 / 双方 <1000 时间耗尽
   点数判定，pointsEndReason 前置条件=双方均未全员阵亡）；`autopsy` 提示词规则 9 同步。
+  `annihilationSuffix` fail-closed：非法 perspectiveTeam、players 缺失/为空、任一方队伍不在
+  roster 时一律不输出全歼后缀，不得把未知当成零存活（新增 `TeamResultSourceBoundaryTest` 覆盖
+  主 result 行与 Autopsy 结果行边界）。
   新增 golden case `cw-annihilation-win-01` / `cw-annihilation-loss-01` + fixtures + lessons；
   `cw-cap-win-01` / `cw-cap-points-decided-01` 断言 mandatory header `resultSource=POINTS_INFERENCE`
   且不出现 BATTLE_RESULTS；`AiEvalHarnessTest` 断言 ZH 规则含全歼双向语义与三级证据、
