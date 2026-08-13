@@ -15,10 +15,11 @@ import java.util.Set;
 /**
  * 把受击者视角的逐次伤害事件按时间间隙聚类成「掉血窗口」，供 Player/Team 证据复用。
  *
- * <p>真实 {@link EntityMethodDecoder} 生成的 {@link DamageEvent} 中
+ * <p>真实 {@link com.wotb.core.replay.decoder.EntityMethodDecoder} 生成的 {@link DamageEvent} 中
  * {@code attackerAccountId/victimAccountId} 恒为 null，必须沿
- * {@link ParticipantMappingEvent} 建立 entityId → accountId 映射（复用
- * {@link TeamEntityMapper} 的确定性解析）后，按 {@code attackerEid/victimEid} 解析身份。
+ * {@link com.wotb.core.replay.event.ParticipantMappingEvent} 建立 entityId → accountId 映射
+ * （复用 {@link com.wotb.core.processing.TeamEntityMapper} 的确定性解析）后，
+ * 按 {@code attackerEid/victimEid} 解析身份。
  * 不假设 decoder 在解析 DamageEvent 时已拿到完整参与者映射；同一事件流只解析一次。</p>
  *
  * <p>同一窗口内相邻伤害事件的时间间隔 ≤ {@link #MAX_GAP_SEC}；超过则新开窗口。
