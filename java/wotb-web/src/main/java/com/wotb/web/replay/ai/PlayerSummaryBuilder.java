@@ -181,6 +181,8 @@ final class PlayerSummaryBuilder {
         final StringBuilder sb = new StringBuilder(4096);
         final var battle = ctx.battle();
         final var features = ctx.features();
+        // 基础 summary 构建期就统一读取 partial 门禁：killVictims 等事件流观测伤害段一并抑制
+        final boolean observedDamagePartial = hasObservedDamagePartial(ctx);
 
         int authoritativeDealt = 0;
         int authoritativeReceived = 0;
@@ -263,10 +265,12 @@ final class PlayerSummaryBuilder {
         }
 
         // ====== 7b. Recorder per-target damage exchange (observed subset) ======
-        final boolean damageExchangeAvailable = PlayerEvidenceFormatter.appendRecorderDamageExchange(sb, battle, rec);
+        final boolean damageExchangeAvailable = PlayerEvidenceFormatter.appendRecorderDamageExchange(
+                sb, battle, rec, observedDamagePartial);
 
         // ====== 7c. Kill attribution: 谁击杀录像者 / 录像者击杀谁 ======
-        final boolean killAttributionAvailable = PlayerEvidenceFormatter.appendKillAttribution(sb, battle, rec);
+        final boolean killAttributionAvailable = PlayerEvidenceFormatter.appendKillAttribution(
+                sb, battle, rec, observedDamagePartial);
 
         // ====== 8. Death timeline (authoritative) ======
         sb.append("\n=== DEATH_TIMELINE_AUTHORITATIVE（阵亡时间线·权威结算） ===\n");

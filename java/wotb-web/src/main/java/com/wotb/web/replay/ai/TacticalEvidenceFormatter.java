@@ -2,7 +2,6 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.replay.evidence.AiEvidence;
 import com.wotb.core.replay.evidence.EntityRef;
-import com.wotb.core.replay.evidence.EvidenceSkillResult;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -16,10 +15,6 @@ import java.util.Map;
 final class TacticalEvidenceFormatter {
 
     private TacticalEvidenceFormatter() {
-    }
-
-    static String renderEvidenceSections(final EvidenceSkillResult result) {
-        return renderEvidenceSections(result == null ? List.of() : result.evidence());
     }
 
     /** 按给定证据列表渲染（调用方可先做 partial 过滤，避免把换血伤害数字送入 LLM）。 */

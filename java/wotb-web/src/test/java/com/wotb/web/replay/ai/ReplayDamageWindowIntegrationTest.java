@@ -23,6 +23,7 @@ import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.feature.TeamMemberFeatureSet;
+import com.wotb.core.stats.PotentialDamage;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import org.junit.jupiter.api.Test;
 
@@ -221,6 +222,73 @@ class ReplayDamageWindowIntegrationTest {
         assertFalse(prompt.contains("事件流输出:"), prompt);
         assertFalse(prompt.contains("事件流损失血量:"), prompt);
         assertFalse(prompt.contains("事件流观测输出子集"), prompt);
+        assertFalse(prompt.contains("累计直接伤害"), prompt);
+        assertFalse(prompt.contains("致死前累计承受你"), prompt);
+        assertFalse(prompt.contains("致死前对你累计造成"), prompt);
+    }
+
+    @Test
+    void fallbackKillVictimSectionsSuppressedWhenPartial() throws Exception {
+        final ReplayProcessingResult result = processFixture();
+        final Battle battle = result.battle();
+        final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(result);
+        assertTrue(recorder.resolved());
+        final PlayerResult rec = battle.recorderResult();
+        assertNotNull(rec);
+        final PlayerResult enemy = battle.players.stream()
+                .filter(p -> p != null && p.team != recorder.team())
+                .findFirst().orElseThrow();
+        // 构造双方 killVictims（事件流观测数据）：累计伤害 780 / 击穿 2、650 / 3
+        rec.killVictims.add(new PotentialDamage.KillVictim(enemy.accountId, 780, 2));
+        enemy.killVictims.add(new PotentialDamage.KillVictim(rec.accountId, 650, 3));
+
+        final PlayerBattleFeatureSet features = new DefaultPlayerBattleFeatureExtractor()
+                .extract(result.reconstruction(), recorder, battle);
+        assertTrue(features.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL"));
+        final SinglePlayerBattleAnalysisContext partialCtx = new SinglePlayerBattleAnalysisContext(
+                null, battle, features, recorder, result.reconstruction().coverage(),
+                features.limitations());
+        final var zh = PlayerReplayPromptBuilder.prepareFull(
+                partialCtx, result.reconstruction(), ESTIMATOR, 100_000, 131_072, 8192, 1000,
+                AllowedLanguage.ZH);
+        final String zhPrompt = zh.userPrompt();
+        assertKillVictimNumbersSuppressed(zhPrompt);
+        assertTrue(zhPrompt.contains("你击杀了"), "partial 下应保留击杀身份: " + zhPrompt);
+        assertTrue(zhPrompt.contains("击杀你的是"), "partial 下应保留击杀身份: " + zhPrompt);
+        assertTrue(zhPrompt.contains("你的战绩"), "权威结算段不得被误删: " + zhPrompt);
+        assertTrue(zhPrompt.contains("DAMAGE_EXCHANGE_AGGREGATED_OBSERVED ===\n"
+                + "UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)"), zhPrompt);
+
+        // NON_ZH（Harness fallback 可达路径）同样抑制
+        final var en = PlayerReplayPromptBuilder.prepareFull(
+                partialCtx, result.reconstruction(), ESTIMATOR, 100_000, 131_072, 8192, 1000,
+                AllowedLanguage.EN);
+        assertKillVictimNumbersSuppressed(en.userPrompt());
+
+        // complete coverage：累计伤害与击杀归因明细正常输出
+        final PlayerBattleFeatureSet completeFeatures = new PlayerBattleFeatureSet(
+                features.movements(), features.engagements(), features.phases(),
+                features.keyEvents(), List.of(), features.hasFeatures());
+        final SinglePlayerBattleAnalysisContext completeCtx = new SinglePlayerBattleAnalysisContext(
+                null, battle, completeFeatures, recorder, result.reconstruction().coverage(),
+                List.of());
+        final var complete = PlayerReplayPromptBuilder.prepareFull(
+                completeCtx, result.reconstruction(), ESTIMATOR, 100_000, 131_072, 8192, 1000,
+                AllowedLanguage.ZH);
+        final String completePrompt = complete.userPrompt();
+        assertTrue(completePrompt.contains("累计直接伤害780"), completePrompt);
+        assertTrue(completePrompt.contains("击穿2"), completePrompt);
+        assertTrue(completePrompt.contains("致死前累计承受你780"), completePrompt);
+        assertTrue(completePrompt.contains("致死前对你累计造成650"), completePrompt);
+    }
+
+    private static void assertKillVictimNumbersSuppressed(final String prompt) {
+        assertFalse(prompt.contains("累计直接伤害"), prompt);
+        assertFalse(prompt.contains("累计直接伤害780"), prompt);
+        assertFalse(prompt.contains("致死前累计承受你"), prompt);
+        assertFalse(prompt.contains("致死前累计承受你780"), prompt);
+        assertFalse(prompt.contains("致死前对你累计造成"), prompt);
+        assertFalse(prompt.contains("致死前对你累计造成650"), prompt);
     }
 
     @Test
