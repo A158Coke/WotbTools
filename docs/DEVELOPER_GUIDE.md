@@ -20,7 +20,8 @@ Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；
 |---|---|---|
 | **本文件 `DEVELOPER_GUIDE.md`** | 开发指南（含环境、架构、部署、约定） | 最先 |
 | [`.agents/AGENTS.md`](../.agents/AGENTS.md) | AI 硬性约定（RULES） | 动手前必读 |
-| [`.agents/wotb-sync.md`](../.agents/wotb-sync.md) | 跨层改动检查单（配方 A–G） | 增删/改名数据列、改解析/导出/前端时 |
+| [根 `AGENTS.md`](../AGENTS.md) + 各目录 `AGENTS.md`（`java/` `frontend/` `common/` `deploy/` `.github/` keycloak providers `map-semanticizer/`） | 按作用域继承的 Agent 指令层级（根=入口，`.agents/AGENTS.md`=全仓不变式，目录级=局部约束） | 进入对应目录工作时 |
+| [`.agents/wotb-sync.md`](../.agents/wotb-sync.md) | 跨层改动检查单（指向 `.agents/skills/wotb-sync/SKILL.md`，配方 A–G 单一事实源） | 增删/改名数据列、改解析/导出/前端时 |
 | [`docs/replay-data.md`](replay-data.md) | data.wotreplay 事件流格式、protobuf 字段表、死亡时间推算 | 深入回放格式时 |
 | [`docs/rating-system.md`](rating-system.md) | 评分算法细节 | 碰评分时 |
 | [`docs/rating-progress.md`](rating-progress.md) | rating 扩展目标、已完成项、缺口与下一步 | 接手 rating 扩展时 |
@@ -32,7 +33,8 @@ Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；
 | [`README.md`](../README.md) / [`java/README.md`](../java/README.md) | 用户向概览与文档索引；Java/Web 运行、接口、构建 | 跑起来时 |
 | [`TODO.md`](TODO.md) | 待办（含已完成收尾记录与下一步） | 找下一步做什么 |
 
-> `.agents/AGENTS.md` / `wotb-sync.md` 本就是写给"任意 AI/人"的，不绑定特定工具。
+> `.agents/AGENTS.md` / `wotb-sync.md` / 各目录 `AGENTS.md` 本就是写给"任意 AI/人"的，不绑定特定工具。
+> Agent 指令层级以真实代码为 source of truth：发现文档与代码漂移时先修正文档。
 
 ---
 
@@ -220,7 +222,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 | `PlayerBattleFeatureSet` | `wotb-core/.../feature/PlayerBattleFeatureSet.java` | 个人特征集（含 `hasFeatures` / `limitations`） |
 | `DefaultTeamBattleFeatureExtractor` | `wotb-core/.../feature/DefaultTeamBattleFeatureExtractor.java` | perspective team 的队员独立移动、阵型、交火、关键事件与权威聚合 |
 | `TeamBattleFeatureSet` | `wotb-core/.../feature/TeamBattleFeatureSet.java` | 团队特征、覆盖率、权威结算、观测子集与 limitations |
-| `AiReplayAnalysisService` | `wotb-web/.../ai/AiReplayAnalysisService.java` | 玩家/团队 AI 调用、上游错误分类与 context 编排 |
+| `AiReplayAnalysisService` | `wotb-web/.../ai/AiReplayAnalysisService.java` | 兼容 facade（保持旧入口不变，委托 PlayerReplayAnalysisService / TeamReplayAnalysisService；无真实编排） ||
 | `AiCancellationRegistry` | `wotb-web/.../ai/gateway/AiCancellationRegistry.java` | in-flight AI 请求取消注册表（客户端取消 → 中断上游调用，稳定错误码 `AI_CANCELLED`） |
 | `ApiPaths` | `wotb-web/.../config/ApiPaths.java` | API URL 常量单一来源（SecurityConfig 匹配器与 Controller 映射共用） |
 | `TeamAiPromptBuilder` | `wotb-web/.../ai/TeamAiPromptBuilder.java` | 确定性团队输入压缩和 token 估算预算（`BudgetWriter` + `AiTokenEstimator`） |
