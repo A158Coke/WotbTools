@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.4",
+    "date": "2026-08-14",
+    "tag": "chg",
+    "zh": "管理员专属最高打手等级更名为“殿堂级”；每个服务器最多一名、仅管理员编辑已有打手时可授予的规则保持不变",
+    "en": "The administrator-only top booster tier is now called “Mythic”; the limit of one per server and edit-only assignment rule remain unchanged",
+    "ru": "Высший уровень бустера, доступный только администратору, переименован в «Мифический»; ограничение одного на сервер и назначение только при редактировании остаются без изменений"
+  },
+  {
     "v": "2.11.3",
     "date": "2026-08-13",
     "tag": "fix",

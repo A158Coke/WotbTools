@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Changed
+- **打手最高等级显示名调整**：保留数据库/API 内部兼容值 `AVERAGE_GOD`，仅把界面中文名改为“殿堂级”、英文名改为 `Mythic`，俄文同步对应译名；管理员编辑授予、普通申请禁用及每服最多一名的规则不变。
 - **技能更名：grill-with-docs → plan-designer（开发方案设计）**：开发前方案 grill 技能更名为
   `plan-designer`，调用时**自动前置 grill-me**（需求澄清：复述理解 → 逐层提问 ≤3 个/轮 →
   输出《需求确认单》），需求已明确时跳过并注明；随后进入方案设计流程（可落地性核对 →
@@ -101,7 +102,7 @@
   `playableBounds` 继续承担 6×6 分析网格、热力分桶与可玩区域判断——修复越靠近地图边缘偏移越大的问题
   （如 Molendijk `Spawn_1_02` 由 (110.6, 741.7) 校正至 (152.4, 693.7)）。新增 Molendijk 真实坐标
   校准、中心映射、右上出生点、无 coordinateBounds 兼容回退与路线/出生点/阵亡/网格同变换回归测试。
-- **打手管理编辑回归与等级规则**：打手新增/编辑改为 `Teleport` 模态框，支持遮罩/Esc 关闭与焦点约束；编辑已有打手时关联用户只读且不再显示/提交 Keycloak UUID，PATCH 仅发送等级、资格状态、接单状态、联系方式、擅长及实际变更过的人工备注。资格申请审批不再把 `application_id`、账号 ID、档期、微信、自评等系统字段拼入 `booster_profile.description`；Flyway V14 只清理与旧自动模板精确相等的历史备注，保留人工修改内容。申请等级由四档扩为五档（新增 `MASTER`/大师级）；`AVERAGE_GOD`/场均神仅允许管理员编辑已有打手时授予。`booster_profile` 新增由绑定资料/审批申请回填的 `wotb_server`，等级 CHECK + 应用预检 + 数据库部分唯一索引共同保证合法等级及每个区服最多一名场均神，`BoosterDto` 同步返回区服。
+- **打手管理编辑回归与等级规则**：打手新增/编辑改为 `Teleport` 模态框，支持遮罩/Esc 关闭与焦点约束；编辑已有打手时关联用户只读且不再显示/提交 Keycloak UUID，PATCH 仅发送等级、资格状态、接单状态、联系方式、擅长及实际变更过的人工备注。资格申请审批不再把 `application_id`、账号 ID、档期、微信、自评等系统字段拼入 `booster_profile.description`；Flyway V14 只清理与旧自动模板精确相等的历史备注，保留人工修改内容。申请等级由四档扩为五档（新增 `MASTER`/大师级）；兼容内部值 `AVERAGE_GOD` 的“殿堂级”（英文 `Mythic`）仅允许管理员编辑已有打手时授予。`booster_profile` 新增由绑定资料/审批申请回填的 `wotb_server`，等级 CHECK + 应用预检 + 数据库部分唯一索引共同保证合法等级及每个区服最多一名殿堂级打手，`BoosterDto` 同步返回区服。
 - **客户陪练需求支持四服**：客户需求 `BoostRegion` 现在接受 `CN / ASIA / EU / NA`，提交页从动态选项展示四服，客户/管理员/打手订单视图均显示需求区服。`BoostAssignmentDto` 新增 `region` 透传给打手工作台；参数化回归测试覆盖四服、大小写/空白规范化与未知区服拒绝，API 契约测试锁定四个选项值。`boost_request.region` 原本就是无 CN-only CHECK 的 `varchar`，无需数据库迁移。
 - **打手资格申请支持四服**：`BoosterApplicationService` 现在接受并规范化 `CN / ASIA / EU / NA`，申请记录保存用户资料中的真实区服，不再拒绝 Wargaming 亚洲、欧洲、北美服玩家或把其区服误写为 `CN`；参数化回归测试覆盖四服与未知区服拒绝。
 - **真实回放夹具进 CI（随机战斗样例）**：提交 `common/fixtures/replays/random-battle-example.wotbreplay`（rift 随机战，按用户指示原样提交、不脱敏）；`ParityTest` / `WebApiTest` 无条件加载提交夹具（gitignored `common/data` 仅本地扩展），新增 `ReplayParserFixtureTest` 断言名册/胜负/输出总量/幸存数等解析值；`.gitignore` 放开 `common/fixtures/replays/*.wotbreplay`。
