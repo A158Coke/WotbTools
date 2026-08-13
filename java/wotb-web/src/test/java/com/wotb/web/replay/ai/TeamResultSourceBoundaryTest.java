@@ -14,6 +14,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -233,5 +234,117 @@ class TeamResultSourceBoundaryTest {
         assertEquals(WinnerSource.SURVIVOR_SETTLEMENT, resolved.source());
         assertEquals("CHRD获胜（全歼敌方）",
                 TeamEvidenceFormatter.resolveTeamResult(noWinner, 1, "CHRD"));
+    }
+
+    @Test
+    void incompleteRoster_winnerMissing_neverPointsInference() {
+        final List<PlayerResult> players = bothRosters(true, true);
+        players.get(0).victoryPointsEarned = 300;
+        players.get(7).victoryPointsEarned = 700; // 部分点数不同
+        final Battle noWinner = battle(players, null); // rosterComplete=false
+        final var resolved = FriendlyEnemyResult.resolveTeamBattle(noWinner, 1);
+        assertEquals(Winner.DRAW_OR_UNKNOWN, resolved.winner());
+        assertEquals(WinnerSource.UNKNOWN, resolved.source());
+        assertNotEquals(WinnerSource.POINTS_INFERENCE, resolved.source());
+        assertEquals(PointsEndReason.UNKNOWN, resolved.pointsEndReason());
+        assertEquals("平局或未知", TeamEvidenceFormatter.resolveTeamResult(noWinner, 1, "CHRD"));
+    }
+
+    @Test
+    void incompleteRoster_winnerPresent_pointsEndReasonUnknown() {
+        final List<PlayerResult> players = bothRosters(true, true);
+        players.get(0).victoryPointsEarned = 300;
+        players.get(7).victoryPointsEarned = 700; // 双方均 <1000，看似 TIME_EXPIRED
+        final Battle withWinner = battle(players, 1); // rosterComplete=false
+        final var resolved = FriendlyEnemyResult.resolveTeamBattle(withWinner, 1);
+        assertEquals(Winner.FRIENDLY_WIN, resolved.winner());
+        assertEquals(WinnerSource.BATTLE_RESULTS, resolved.source());
+        assertTrue(resolved.pointsDecided());
+        assertEquals(PointsEndReason.UNKNOWN, resolved.pointsEndReason());
+        assertEquals("CHRD获胜（点数判定）",
+                TeamEvidenceFormatter.resolveTeamResult(withWinner, 1, "CHRD"));
+        final TeamBattleWinner unknownPoints = new TeamBattleWinner(
+                Winner.FRIENDLY_WIN, WinnerSource.BATTLE_RESULTS, true, PointsEndReason.UNKNOWN);
+        assertEquals("CHRD获胜（点数判定）",
+                TeamAutopsyPromptBuilder.winnerLabel(unknownPoints, "CHRD", withWinner, 1));
+    }
+
+    @Test
+    void incompleteRoster_winnerPresent_partialReached1000StillUnknown() {
+        final List<PlayerResult> players = bothRosters(true, true);
+        players.get(0).victoryPointsEarned = 1043; // 看似 REACHED_1000
+        players.get(7).victoryPointsEarned = 100;
+        final Battle withWinner = battle(players, 1); // rosterComplete=false
+        final var resolved = FriendlyEnemyResult.resolveTeamBattle(withWinner, 1);
+        assertEquals(PointsEndReason.UNKNOWN, resolved.pointsEndReason());
+        assertEquals("CHRD获胜（点数判定）",
+                TeamEvidenceFormatter.resolveTeamResult(withWinner, 1, "CHRD"));
+    }
+
+    @Test
+    void captureAndPointsSuppressesPartialTotalsWhenRosterIncomplete() {
+        final List<PlayerResult> players = bothRosters(true, true);
+        players.get(0).victoryPointsEarned = 1043;
+        players.get(7).victoryPointsEarned = 100;
+        final Battle incomplete = battle(players, 1); // rosterComplete=false
+        final TeamEvidenceFormatter.BudgetWriter w = new TeamEvidenceFormatter.BudgetWriter();
+        TeamEvidenceFormatter.appendCaptureAndPoints(w, incomplete, 1, "eval-arena");
+        final String content = w.content();
+        assertTrue(content.contains("SETTLEMENT_ROSTER_INCOMPLETE=true"), content);
+        assertTrue(content.contains("pointsTotalsUnavailable=true"), content);
+        assertTrue(content.contains("team victoryPointsEarned=UNKNOWN victoryPointsSeized=UNKNOWN"),
+                content);
+        assertTrue(content.contains("opposing victoryPointsEarned=UNKNOWN"), content);
+        assertFalse(content.contains("victoryPointsEarned=1043"), content);
+        assertFalse(content.contains("victoryPointsEarned=100"), content);
+        // 完整阵容对照：输出真实总量且无标记
+        final Battle complete = completeBattle(players, 1);
+        final TeamEvidenceFormatter.BudgetWriter w2 = new TeamEvidenceFormatter.BudgetWriter();
+        TeamEvidenceFormatter.appendCaptureAndPoints(w2, complete, 1, "eval-arena");
+        final String completeContent = w2.content();
+        assertTrue(completeContent.contains("team victoryPointsEarned=1043"), completeContent);
+        assertFalse(completeContent.contains("SETTLEMENT_ROSTER_INCOMPLETE"), completeContent);
+    }
+
+    @Test
+    void completeRosterPointsWinsStillWork() {
+        // 完整 7v7：winnerTeam=null、双方存活 → POINTS_INFERENCE + TIME_EXPIRED
+        final List<PlayerResult> timeExpired = bothRosters(true, true);
+        timeExpired.get(0).victoryPointsEarned = 400;
+        timeExpired.get(7).victoryPointsEarned = 100;
+        var resolved = FriendlyEnemyResult.resolveTeamBattle(
+                completeBattle(timeExpired, null), 1);
+        assertEquals(Winner.FRIENDLY_WIN, resolved.winner());
+        assertEquals(WinnerSource.POINTS_INFERENCE, resolved.source());
+        assertEquals(PointsEndReason.TIME_EXPIRED, resolved.pointsEndReason());
+        assertEquals("CHRD获胜（时间耗尽点数判定）",
+                TeamEvidenceFormatter.resolveTeamResult(
+                        completeBattle(timeExpired, null), 1, "CHRD"));
+
+        // 完整 7v7：任一方 ≥1000 → REACHED_1000
+        final List<PlayerResult> reached = bothRosters(true, true);
+        reached.get(0).victoryPointsEarned = 1043;
+        reached.get(7).victoryPointsEarned = 100;
+        resolved = FriendlyEnemyResult.resolveTeamBattle(completeBattle(reached, null), 1);
+        assertEquals(WinnerSource.POINTS_INFERENCE, resolved.source());
+        assertEquals(PointsEndReason.REACHED_1000, resolved.pointsEndReason());
+        assertEquals("CHRD获胜（达到 1000 分提前获胜）",
+                TeamEvidenceFormatter.resolveTeamResult(
+                        completeBattle(reached, null), 1, "CHRD"));
+
+        // 合法非 7v7（完整 3v3）：点数胜负同样工作
+        final List<PlayerResult> threeVThree = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            threeVThree.add(player(10_001L + i, 1, true));
+        }
+        for (int i = 0; i < 3; i++) {
+            threeVThree.add(player(20_001L + i, 2, true));
+        }
+        threeVThree.get(0).victoryPointsEarned = 300;
+        threeVThree.get(3).victoryPointsEarned = 700;
+        resolved = FriendlyEnemyResult.resolveTeamBattle(completeBattle(threeVThree, null), 1);
+        assertEquals(Winner.ENEMY_WIN, resolved.winner());
+        assertEquals(WinnerSource.POINTS_INFERENCE, resolved.source());
+        assertEquals(PointsEndReason.TIME_EXPIRED, resolved.pointsEndReason());
     }
 }

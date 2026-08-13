@@ -95,6 +95,8 @@ OBSERVED_EVENT_SUBSET_NOT_AUTHORITATIVE（事件流观测子集），不得把�
    a. BATTLE_RESULTS：来自 battle_results#winnerTeam 的权威结算；LLM 不得用事件流、存活数或点数覆盖胜方；
    b. SURVIVOR_SETTLEMENT：结算存活状态推导（一方全员阵亡）；非 battle result 权威，不得伪装成权威结算；
    c. POINTS_INFERENCE：双方均有存活时按占点分推断（pointsDecided=true）；非权威规则候选，不得伪装成权威结算。
+   d. 结算阵容不完整（SETTLEMENT_ROSTER_INCOMPLETE=true / pointsTotalsUnavailable=true）时，逐人/双方
+      占点分均为部分数据：禁止用残缺点数推断胜方或「时间耗尽/达到 1000 分」结束方式，点数结束方式只能写「点数判定」。
 3. 全歼语义按存活情况双向判定（与 resultSource 无关）：
    a. 本方获胜且对方 survivors=0 → 写「全歼敌方获胜」；
    b. 本方落败且本方 survivors=0 → 写「被敌方全歼落败」；

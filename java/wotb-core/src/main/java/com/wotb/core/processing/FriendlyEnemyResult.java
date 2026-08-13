@@ -102,9 +102,12 @@ public final class FriendlyEnemyResult {
      *
      * <p>规则：团队赛一定是争霸赛；结束时刻若任意一方全员阵亡则对方获胜（结算级推导，
      * 仅当 {@link Battle#rosterComplete} 为 true 时；名册/战绩不完整时不得用存活数推导胜方），
-     * 若双方都未全员阵亡则说明是某一方点数胜利（比较占点得分推断，方向一致时胜方高）。
-     * 点数胜利的结束方式按双方胜利点数区分：任一方 ≥1000 为提前获胜，均 <1000 为时间耗尽。
-     * 结算 winnerTeam 存在时始终以其为准。数据不足/点数相同仍返回 DRAW_OR_UNKNOWN。</p>
+     * 若双方都未全员阵亡则说明是某一方点数胜利（比较占点得分推断，方向一致时胜方高；
+     * 仅当 rosterComplete 为 true，残缺点数不得推断胜方）。
+     * 点数胜利的结束方式按双方胜利点数区分：任一方 ≥1000 为提前获胜，均 <1000 为时间耗尽；
+     * rosterComplete 不为 true 时 pointsEndReason 降级为 UNKNOWN（只能写通用「点数判定」）。
+     * 结算 winnerTeam 存在时始终以其为准（胜方不降级，但点数结束方式仍受完整前提约束）。
+     * 数据不足/点数相同仍返回 DRAW_OR_UNKNOWN。</p>
      */
     public static TeamBattleWinner resolveTeamBattle(final Battle battle, final int recorderTeam) {
         if (battle == null || battle.players == null
@@ -121,11 +124,16 @@ public final class FriendlyEnemyResult {
         final boolean pointsDecided = bothTeamsPresent && team1Alive > 0 && team2Alive > 0;
 
         if (battle.winnerTeam != null && PlayerSideResolver.isValidRawTeam(battle.winnerTeam)) {
+            final PointsEndReason endReason = pointsDecided
+                    ? (rosterComplete(battle)
+                            ? pointsEndReason(battle, recorderTeam)
+                            : PointsEndReason.UNKNOWN)
+                    : PointsEndReason.NOT_APPLICABLE;
             return new TeamBattleWinner(
                     resolve(battle.winnerTeam, recorderTeam),
                     WinnerSource.BATTLE_RESULTS,
                     pointsDecided,
-                    pointsDecided ? pointsEndReason(battle, recorderTeam) : PointsEndReason.NOT_APPLICABLE);
+                    endReason);
         }
         if (bothTeamsPresent && (team1Alive == 0 || team2Alive == 0)) {
             // 结算级存活标记：一方全员阵亡，另一方获胜（仅当结算阵容完整，否则不能把未知当零存活）
@@ -138,8 +146,9 @@ public final class FriendlyEnemyResult {
                         PointsEndReason.NOT_APPLICABLE);
             }
         }
-        if (pointsDecided) {
-            // 点数推断：比较双方占点得分总和（方向与胜方一致时才可用）
+        if (pointsDecided && rosterComplete(battle)) {
+            // 点数推断：比较双方占点得分总和（方向与胜方一致时才可用；仅当结算阵容完整，
+            // 否则残缺点数不得推断胜方或结束方式）
             final long team1Points = pointsEarned(battle, 1);
             final long team2Points = pointsEarned(battle, 2);
             if (team1Points != team2Points) {
@@ -152,11 +161,16 @@ public final class FriendlyEnemyResult {
                         pointsEndReason(team1Points, team2Points));
             }
         }
+        final PointsEndReason endReason = pointsDecided
+                ? (rosterComplete(battle)
+                        ? pointsEndReason(battle, recorderTeam)
+                        : PointsEndReason.UNKNOWN)
+                : PointsEndReason.NOT_APPLICABLE;
         return new TeamBattleWinner(
                 Winner.DRAW_OR_UNKNOWN,
                 WinnerSource.UNKNOWN,
                 pointsDecided,
-                pointsDecided ? pointsEndReason(battle, recorderTeam) : PointsEndReason.NOT_APPLICABLE);
+                endReason);
     }
 
     private static long countTeam(final Battle battle, final int team) {
@@ -212,10 +226,11 @@ public final class FriendlyEnemyResult {
     }
 
     /**
-     * 结算阵容完整前提（SURVIVOR_SETTLEMENT 推导与 annihilationSuffix 共享）：
-     * 仅当 ReplayParser 确认名册(#201)与战绩(#301)账号/队伍一致时返回 true；未知一律视为不完整。
+     * 结算阵容完整前提（SURVIVOR_SETTLEMENT / annihilationSuffix / POINTS_INFERENCE /
+     * pointsEndReason 共享）：仅当 ReplayParser 确认名册(#201)与战绩(#301)账号/队伍一致时返回 true；
+     * 未知一律视为不完整，残缺点数/存活数不得用于推断胜方或结束方式。
      */
-    private static boolean rosterComplete(final Battle battle) {
+    public static boolean rosterComplete(final Battle battle) {
         return battle != null && Boolean.TRUE.equals(battle.rosterComplete);
     }
 

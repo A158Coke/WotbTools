@@ -278,26 +278,40 @@ final class TeamEvidenceFormatter {
                 .sum();
         final FriendlyEnemyResult.TeamBattleWinner winner =
                 FriendlyEnemyResult.resolveTeamBattle(battle, perspectiveTeam);
+        final boolean rosterComplete = FriendlyEnemyResult.rosterComplete(battle);
         writer.append("\n=== CAPTURE_AND_POINTS（争霸赛占点·权威结算） ===\n");
         writer.append("pointsDecided=" + winner.pointsDecided() + "\n");
+        if (!rosterComplete) {
+            // 结算阵容不完整：逐人/双方占点分只是部分数据，不得当作权威总量或推断点数结束方式。
+            // mandatory header 的 result 行同步降级为 UNKNOWN/「点数判定」，口径保持一致。
+            writer.append("SETTLEMENT_ROSTER_INCOMPLETE=true\n");
+            writer.append("pointsTotalsUnavailable=true\n");
+            writer.append("directive=结算阵容不完整：占点分总量不可用，禁止用残缺点数推断胜方或「时间耗尽/达到 1000 分」结束方式\n");
+        }
         if (winner.pointsDecided()) {
             writer.append("winnerSource=" + winner.source().name() + "\n");
             // pointsDecided=true 表示结束时刻双方均未全员阵亡（非全歼）：任一方 victoryPointsEarned ≥1000
-            // → REACHED_1000；双方均 <1000 → TIME_EXPIRED（时间耗尽）；点数缺失 → UNKNOWN。
+            // → REACHED_1000；双方均 <1000 → TIME_EXPIRED（时间耗尽）；点数缺失 → UNKNOWN；
+            // 结算阵容不完整（rosterComplete=false）→ UNKNOWN，只写通用「点数判定」。
             // 全歼获胜（一方全员阵亡）时 pointsDecided=false，不写点数结束方式。
             writer.append("pointsEndReason=" + winner.pointsEndReason().name() + "\n");
         }
-        writer.append("team victoryPointsEarned=" + earned
-                + " victoryPointsSeized=" + seized + "\n");
-        writer.append("opposing victoryPointsEarned=" + opposingEarned + "\n");
-        for (final PlayerResult player : battle.players) {
-            if (player != null && player.team == perspectiveTeam
-                    && (player.victoryPointsEarned > 0 || player.victoryPointsSeized > 0)) {
-                writer.append("member accountId=" + player.accountId
-                        + " nickname=" + quoteData(player.nickname)
-                        + " victoryPointsEarned=" + player.victoryPointsEarned
-                        + " victoryPointsSeized=" + player.victoryPointsSeized + "\n");
+        if (rosterComplete) {
+            writer.append("team victoryPointsEarned=" + earned
+                    + " victoryPointsSeized=" + seized + "\n");
+            writer.append("opposing victoryPointsEarned=" + opposingEarned + "\n");
+            for (final PlayerResult player : battle.players) {
+                if (player != null && player.team == perspectiveTeam
+                        && (player.victoryPointsEarned > 0 || player.victoryPointsSeized > 0)) {
+                    writer.append("member accountId=" + player.accountId
+                            + " nickname=" + quoteData(player.nickname)
+                            + " victoryPointsEarned=" + player.victoryPointsEarned
+                            + " victoryPointsSeized=" + player.victoryPointsSeized + "\n");
+                }
             }
+        } else {
+            writer.append("team victoryPointsEarned=UNKNOWN victoryPointsSeized=UNKNOWN\n");
+            writer.append("opposing victoryPointsEarned=UNKNOWN\n");
         }
         final List<String> regions = new ArrayList<>(
                 TeamSoloIntentSkill.controlPointRegions(SEMANTICS_REGISTRY.semanticsFor(mapCode)));

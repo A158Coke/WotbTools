@@ -10,6 +10,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -249,9 +250,71 @@ class ReplayParserTest {
         assertEquals("Replay results exceed player limit", error.getMessage());
     }
 
+    @Test
+    void rosterCompleteFalseWhenRosterAndResultsAccountsMismatch() throws IOException {
+        // 名册(#201) 有 2 人，战绩(#301) 只有 1 人（其余结算记录缺失）
+        final byte[] root = rosterResultsRoot(
+                List.of(new int[]{1001, 1}, new int[]{1002, 1}),
+                List.of(new int[]{1001, 1}),
+                1);
+        final Battle battle = ReplayParser.parse(zip(Map.of("battle_results.dat", pickle(root))));
+        assertEquals(Boolean.FALSE, battle.rosterComplete);
+    }
+
+    @Test
+    void rosterCompleteFalseWhenRosterTeamDiffersFromResultTeam() throws IOException {
+        // 名册队伍(#201→#2→#3)=1，结算队伍(#301→#2→#102)=2 → 队伍不一致
+        final byte[] root = rosterResultsRoot(
+                List.of(new int[]{1001, 1}),
+                List.of(new int[]{1001, 2}),
+                1);
+        final Battle battle = ReplayParser.parse(zip(Map.of("battle_results.dat", pickle(root))));
+        assertEquals(Boolean.FALSE, battle.rosterComplete);
+    }
+
+    @Test
+    void rosterCompleteTrueWhenRosterAndResultsMatch() throws IOException {
+        final byte[] root = rosterResultsRoot(
+                List.of(new int[]{1001, 1}, new int[]{2001, 2}),
+                List.of(new int[]{1001, 1}, new int[]{2001, 2}),
+                1);
+        final Battle battle = ReplayParser.parse(zip(Map.of("battle_results.dat", pickle(root))));
+        assertEquals(Boolean.TRUE, battle.rosterComplete);
+    }
+
     private static Long invokeParseLong(final Method parseLong, final String value)
             throws InvocationTargetException, IllegalAccessException {
         return (Long) parseLong.invoke(null, value);
+    }
+
+    /**
+     * 构造 #201 名册 + #301 战绩根消息：名册条目 [(accountId, team)]，战绩条目 [(accountId, team)]；
+     * 名册队伍写入 #201→#2→#3，结算队伍写入 #301→#2→#102，root #3=winnerTeam。
+     */
+    private static byte[] rosterResultsRoot(final List<int[]> roster,
+                                            final List<int[]> results,
+                                            final int winnerTeam) {
+        final ByteArrayOutputStream root = new ByteArrayOutputStream();
+        writeField(root, 3, winnerTeam);
+        for (final int[] entry : roster) {
+            final ByteArrayOutputStream info = new ByteArrayOutputStream();
+            writeStringField(info, 1, "P" + entry[0]);
+            writeField(info, 3, entry[1]);
+            final ByteArrayOutputStream rosterEntry = new ByteArrayOutputStream();
+            writeField(rosterEntry, 1, entry[0]);
+            writeBytesField(rosterEntry, 2, info.toByteArray());
+            writeBytesField(root, 201, rosterEntry.toByteArray());
+        }
+        for (final int[] entry : results) {
+            final ByteArrayOutputStream info = new ByteArrayOutputStream();
+            writeField(info, 101, entry[0]);
+            writeField(info, 102, entry[1]);
+            writeField(info, 105, -1); // 存活
+            final ByteArrayOutputStream resultEntry = new ByteArrayOutputStream();
+            writeBytesField(resultEntry, 2, info.toByteArray());
+            writeBytesField(root, 301, resultEntry.toByteArray());
+        }
+        return root.toByteArray();
     }
 
     private static byte[] zip(final Map<String, byte[]> entries) throws IOException {
