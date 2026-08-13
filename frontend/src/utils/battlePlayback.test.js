@@ -2,12 +2,17 @@ import { describe, expect, it } from 'vitest'
 import {
   aggregateEventsBySecond,
   formatClock,
+  interpolateDirection,
   lastKnownPosition,
+  normalizeDeg,
   parseAiTime,
   positionAt,
   positionCoveredAt,
   recorderRelated,
-  routePrefix
+  routePrefix,
+  screenRotation,
+  shortestArcDeg,
+  turretWorldYawDeg
 } from './battlePlayback'
 
 describe('positionAt', () => {
@@ -150,6 +155,69 @@ describe('routePrefix', () => {
     const segs = routePrefix(bad, 15)
     expect(segs).toHaveLength(1)
     expect(segs[0].map(p => p.timeSec)).toEqual([10, 15])
+  })
+})
+
+describe('direction utilities', () => {
+  it('normalizeDeg wraps into [-180,180)', () => {
+    expect(normalizeDeg(0)).toBe(0)
+    expect(normalizeDeg(90)).toBe(90)
+    expect(normalizeDeg(180)).toBe(-180)
+    expect(normalizeDeg(-180)).toBe(-180)
+    expect(normalizeDeg(270)).toBe(-90)
+    expect(normalizeDeg(540)).toBe(-180)
+  })
+
+  it('shortestArcDeg handles 359° -> 1° and cross-zero interpolation', () => {
+    expect(shortestArcDeg(1, 359)).toBe(2)
+    expect(shortestArcDeg(359, 1)).toBe(-2)
+    expect(shortestArcDeg(-179, 179)).toBe(2)
+    expect(shortestArcDeg(179, -179)).toBe(-2)
+  })
+
+  it('screenRotation maps the four cardinal map yaws to screen rotations', () => {
+    // 地图：yaw 从北(+Z)起顺时针。屏幕：0=朝上、90=朝右(东)、180=朝下、270=朝左。
+    expect(screenRotation(0)).toBe(0)
+    expect(screenRotation(90)).toBe(90)
+    expect(screenRotation(180)).toBe(-180)
+    expect(screenRotation(270)).toBe(-90)
+  })
+
+  it('turretWorldYawDeg = normalize(hull + relative)', () => {
+    expect(turretWorldYawDeg(30, 20)).toBe(50)
+    expect(turretWorldYawDeg(170, 20)).toBe(-170)
+    expect(turretWorldYawDeg(-170, -20)).toBe(170)
+  })
+
+  it('interpolateDirection interpolates both angles along the shortest arc', () => {
+    const samples = [
+      { timeSec: 10, hullYawDeg: 0, turretRelativeYawDeg: -170 },
+      { timeSec: 14, hullYawDeg: 170, turretRelativeYawDeg: 170 }
+    ]
+    const mid = interpolateDirection(samples, 12)
+    expect(mid).not.toBeNull()
+    expect(mid.hullYawDeg).toBeCloseTo(85) // 0 → 170 半程
+    // -170 → 170 最短圆弧为 -20°（跨 ±180 回绕），半程 = -180 ≡ ±180
+    expect(mid.turretRelativeYawDeg).toBeCloseTo(-180, 0)
+  })
+
+  it('interpolateDirection freezes at the last trusted sample across a gap and past the end', () => {
+    const samples = [
+      { timeSec: 10, hullYawDeg: 10, turretRelativeYawDeg: 5 },
+      { timeSec: 14, hullYawDeg: 20, turretRelativeYawDeg: 15 },
+      { timeSec: 40, hullYawDeg: 90, turretRelativeYawDeg: 60 }
+    ]
+    const inGap = interpolateDirection(samples, 20)
+    expect(inGap).toEqual({ hullYawDeg: 20, turretRelativeYawDeg: 15, timeSec: 14 })
+    const pastEnd = interpolateDirection(samples, 60)
+    expect(pastEnd.hullYawDeg).toBe(90)
+    expect(pastEnd.timeSec).toBe(40)
+  })
+
+  it('interpolateDirection returns null before the first sample or without data', () => {
+    expect(interpolateDirection(null, 5)).toBeNull()
+    expect(interpolateDirection([], 5)).toBeNull()
+    expect(interpolateDirection([{ timeSec: 10, hullYawDeg: 0, turretRelativeYawDeg: 0 }], 5)).toBeNull()
   })
 })
 

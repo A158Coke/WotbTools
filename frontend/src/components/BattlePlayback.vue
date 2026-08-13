@@ -4,15 +4,22 @@ import { useI18n } from 'vue-i18n'
 import { mapImages } from '../data/mapImages'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 import { createMapView } from '../utils/mapView'
+import enemyHull from '../assets/tank-icons/tank-marker-enemy-hull.png'
+import enemyTurret from '../assets/tank-icons/tank-marker-enemy-turret.png'
+import friendlyHull from '../assets/tank-icons/tank-marker-friendly-hull.png'
+import friendlyTurret from '../assets/tank-icons/tank-marker-friendly-turret.png'
 import {
   aggregateEventsBySecond,
   formatClock,
+  interpolateDirection,
   lastKnownPosition,
   positionAt,
   positionCoveredAt,
   recorderRelated,
   routePrefix,
-  teamRelated
+  screenRotation,
+  teamRelated,
+  turretWorldYawDeg
 } from '../utils/battlePlayback'
 
 /**
@@ -164,6 +171,7 @@ function vehicleColor(vehicle) {
  * gap 内禁止穿线插值，但车辆停在淡化最后已知位置，不整辆消失；
  * 阵亡后冻结在阵亡时刻的最后可信位置（优先于位置中断）。
  * covered 只表示服务器位置流覆盖（type-10），不是点亮。
+ * direction = {hullYawDeg, turretRelativeYawDeg} | null：无可靠方向样本时不旋转（不伪造朝向）。
  */
 function vehicleState(vehicle) {
   const route = routesByAccount.value.get(vehicle.accountId)
@@ -176,14 +184,34 @@ function vehicleState(vehicle) {
   if (!last) return null // 从未有可信位置：不显示
   const covered = positionCoveredAt(vehicle.positionIntervals, t)
   const recorder = vehicle.accountId === props.overview.recorderAccountId
+  const direction = interpolateDirection(vehicle.directionSamples, displayT)
+  const friendly = vehicle.team === friendlyTeam.value
   return {
     vehicle,
     pos: last,
     covered,
     destroyed,
     recorder,
+    friendly,
+    direction,
+    hullImage: friendly ? friendlyHull : enemyHull,
+    turretImage: friendly ? friendlyTurret : enemyTurret,
+    hullScreenDeg: direction ? screenRotation(direction.hullYawDeg) : null,
+    turretScreenDeg: direction
+      ? screenRotation(turretWorldYawDeg(direction.hullYawDeg, direction.turretRelativeYawDeg))
+      : null,
     lastKnown: destroyed || !live || !covered
   }
+}
+
+/** 标记水平位置（%）：地图用户坐标 → 容器百分比。 */
+function markerLeft(x) {
+  return `${((mapView.value.toX(x)) / mapView.value.W) * 100}%`
+}
+
+/** 标记垂直位置（%）。 */
+function markerTop(y) {
+  return `${((mapView.value.toY(y)) / mapView.value.H) * 100}%`
 }
 
 /** 历史路线前缀（只到当前时间；gap 断线；阵亡后不再延伸）。 */
@@ -356,7 +384,8 @@ const mapStyle = computed(() => ({
       ></span>
     </div>
 
-    <!-- 地图 + 当前车辆状态 -->
+    <!-- 地图 + 当前车辆状态（标记为 HTML overlay，固定像素尺寸，双层 hull/turret 独立旋转） -->
+    <div class="pb-map" data-test="pb-map">
     <svg class="pb-svg" :viewBox="`0 0 ${mapView.W} ${mapView.H}`" role="img">
       <image :href="image.src" :width="mapView.W" :height="mapView.H" preserveAspectRatio="none" />
       <g class="pb-grid">
@@ -402,33 +431,39 @@ const mapStyle = computed(() => ({
           />
         </template>
       </g>
-      <g class="pb-vehicles">
-        <g
-          v-for="st in vehicleStates"
-          :key="st.vehicle.accountId"
-          class="pb-vehicle"
-          :class="{ 'pb-last-known': st.lastKnown, 'pb-recorder': st.recorder, 'pb-selected': selectedAccountId === st.vehicle.accountId }"
-          @click="selectVehicle(st.vehicle)"
-        >
-          <circle
-            :cx="mapView.toX(st.pos.x)"
-            :cy="mapView.toY(st.pos.y)"
-            :r="st.recorder ? 7 : 5"
-            :fill="vehicleColor(st.vehicle)"
-            :stroke="palette.routeOutline"
-            stroke-width="1.5"
-          >
-            <title>{{ st.vehicle.playerName }}</title>
-          </circle>
-          <text
-            v-if="st.destroyed"
-            :x="mapView.toX(st.pos.x)"
-            :y="mapView.toY(st.pos.y) - 8"
-            class="pb-death"
-          >✕</text>
-        </g>
-      </g>
     </svg>
+    <div class="pb-markers" data-test="pb-markers" aria-hidden="false">
+      <button
+        v-for="st in vehicleStates"
+        :key="st.vehicle.accountId"
+        type="button"
+        class="pb-vehicle"
+        :class="{ 'pb-last-known': st.lastKnown, 'pb-recorder': st.recorder, 'pb-selected': selectedAccountId === st.vehicle.accountId }"
+        :style="{ left: markerLeft(st.pos.x), top: markerTop(st.pos.y) }"
+        :aria-label="`${st.vehicle.playerName}: ${$t(st.destroyed ? 'recon.map.playback.state_destroyed' : (st.covered ? 'recon.map.playback.state_position_reported' : 'recon.map.playback.state_position_stale'))}`"
+        :data-test="`pb-marker-${st.vehicle.accountId}`"
+        @click="selectVehicle(st.vehicle)"
+      >
+        <img
+          v-if="st.hullScreenDeg != null"
+          class="pb-hull"
+          :src="st.hullImage"
+          alt=""
+          aria-hidden="true"
+          :style="{ transform: `rotate(${st.hullScreenDeg}deg)` }"
+        />
+        <img
+          v-if="st.turretScreenDeg != null"
+          class="pb-turret"
+          :src="st.turretImage"
+          alt=""
+          aria-hidden="true"
+          :style="{ transform: `rotate(${st.turretScreenDeg}deg)` }"
+        />
+        <span v-if="st.destroyed" class="pb-death" aria-hidden="true">✕</span>
+      </button>
+    </div>
+    </div>
 
     <!-- 选中车辆信息 -->
     <div v-if="selectedState" class="pb-info" data-test="pb-info">
@@ -503,27 +538,80 @@ const mapStyle = computed(() => ({
   cursor: pointer;
   transform: translateX(-50%);
 }
+.pb-map { position: relative; margin: 0 auto; width: 66.7%; }
 .pb-svg {
   display: block;
-  margin: 0 auto;
-  width: 66.7%;
+  width: 100%;
   height: auto;
   border-radius: 4px;
   background: #111;
 }
 @media (max-width: 768px) {
-  .pb-svg { width: 100%; }
+  .pb-map { width: 100%; }
+}
+.pb-markers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pb-vehicle {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  transform: translate(-50%, -50%);
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.pb-vehicle .pb-hull, .pb-vehicle .pb-turret {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.pb-vehicle .pb-hull { z-index: 1; }
+.pb-vehicle .pb-turret { z-index: 2; }
+@media (max-width: 768px) {
+  .pb-vehicle { width: 22px; height: 22px; }
+}
+.pb-last-known { opacity: .3; }
+.pb-recorder { filter: drop-shadow(0 0 3px #ffd76a); }
+.pb-recorder::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border: 2px solid #ffd76a;
+  border-radius: 50%;
+  z-index: 3;
+}
+.pb-selected::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  z-index: 3;
+}
+.pb-death {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  z-index: 4;
+  pointer-events: none;
+  text-shadow: 0 0 2px #000, 0 0 2px #000;
 }
 .pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.16)); stroke-width: .5; fill: none; }
 .pb-route { fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; opacity: .55; }
 .pb-region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.28)); stroke-width: 1; }
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
-.pb-vehicle { cursor: pointer; }
-.pb-last-known circle { opacity: .28; }
-.pb-recorder circle { stroke-width: 3; }
-.pb-selected circle { stroke: #fff; stroke-width: 2.5; }
-.pb-death { fill: var(--map-death-mark, #ff5a5a); font-size: 14px; font-weight: 700; pointer-events: none; }
+
 .pb-info {
   display: flex;
   flex-wrap: wrap;

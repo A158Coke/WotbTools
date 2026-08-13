@@ -88,6 +88,30 @@ class MapOverviewBuilderTest {
             assertTrue(event.timeSec() <= overview.playback().durationSec() + 1);
         }
 
+        // 方向采样契约：真实夹具（11.18 编码）应有炮塔相对方向样本
+        final List<MapOverview.PlaybackVehicle> withDirections = overview.playback().vehicles().stream()
+                .filter(v -> !v.directionSamples().isEmpty())
+                .toList();
+        assertFalse(withDirections.isEmpty(), "真实夹具至少一辆车有方向采样（type-7 propId=2 已破解）");
+        for (final MapOverview.PlaybackVehicle v : overview.playback().vehicles()) {
+            double lastT = -1;
+            for (final MapOverview.DirectionSample s : v.directionSamples()) {
+                assertTrue(Double.isFinite(s.timeSec()) && s.timeSec() >= 0);
+                assertTrue(s.timeSec() <= overview.playback().durationSec() + 1e-6,
+                        "方向采样不得越界");
+                assertTrue(s.timeSec() >= lastT, "方向采样按时间升序");
+                lastT = s.timeSec();
+                assertTrue(Double.isFinite(s.hullYawDeg()), "hull yaw 必须 finite");
+                assertTrue(Double.isFinite(s.turretRelativeYawDeg())
+                        && s.turretRelativeYawDeg() >= -180.0
+                        && s.turretRelativeYawDeg() < 180.0,
+                        "turretRelativeYawDeg ∈ [-180,180)");
+                if (v.deathSec() != null) {
+                    assertTrue(s.timeSec() <= v.deathSec() + 1e-6, "阵亡后不采样");
+                }
+            }
+        }
+
         assertEquals(14, overview.routes().size(), "双方 14 车");
         for (final MapOverview.Route route : overview.routes()) {
             assertFalse(route.points().isEmpty(), "每车至少一个路线点");

@@ -3,6 +3,7 @@ package com.wotb.core.replay.decoder;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.event.TurretDirectionChangedEvent;
 import com.wotb.core.replay.event.UnknownReplayEvent;
 import com.wotb.core.replay.stream.RawReplayPacket;
 
@@ -33,6 +34,14 @@ public class EntityPropertyDecoder implements ReplayPacketDecoder {
     static final int TYPE_ENTITY_PROPERTY = 7;
     /** propId=3：当前血量（u16 LE，含装备加成；受击时同步）。 */
     static final int PROP_CURRENT_HP = 3;
+    /**
+     * propId=2：炮塔相对车体偏航（valueLen=2 u16 LE；度 = raw*360/65536 - 180，[-180,180)）。
+     * 2026-08-13 旋转实验证明：车体静止炮塔转一圈 prop2 恰好扫过 360° 且带 wrap；
+     * 开火锚点拟合证明：炮口世界方向 = normalize(hullYaw + prop2)（交叉验证残差 2.3°）。
+     */
+    static final int PROP_TURRET_RELATIVE_YAW = 2;
+    static final double TURRET_YAW_SCALE_DEG = 360.0 / 65536.0;
+    static final double TURRET_YAW_OFFSET_DEG = -180.0;
 
     @Override
     public boolean supports(ReplayDecodeContext context, RawReplayPacket packet) {
@@ -75,6 +84,17 @@ public class EntityPropertyDecoder implements ReplayPacketDecoder {
                     currentHp,
                     null,
                     currentHp > 0));
+            return new ReplayDecodeResult(
+                    warnings.isEmpty() ? DecodeStatus.SUCCESS : DecodeStatus.PARTIAL,
+                    events, warnings);
+        }
+        if (propId == PROP_TURRET_RELATIVE_YAW && valueLen >= 2 && 12 + 2 <= payload.length) {
+            // 炮塔相对车体偏航（u16 LE）：度 = raw*360/65536 - 180（完整 360°，±180 回绕）。
+            final int raw = (payload[12] & 0xFF) | ((payload[13] & 0xFF) << 8);
+            final double deg = raw * TURRET_YAW_SCALE_DEG + TURRET_YAW_OFFSET_DEG;
+            events.add(new TurretDirectionChangedEvent(
+                    packet.sequence(), ts, packet.type(),
+                    DecodeConfidence.EXACT, entityId, deg));
             return new ReplayDecodeResult(
                     warnings.isEmpty() ? DecodeStatus.SUCCESS : DecodeStatus.PARTIAL,
                     events, warnings);
