@@ -5,6 +5,13 @@
 ## [Unreleased]
 
 ### Changed
+- **技能更名：grill-with-docs → plan-designer（开发方案设计）**：开发前方案 grill 技能更名为
+  `plan-designer`，调用时**自动前置 grill-me**（需求澄清：复述理解 → 逐层提问 ≤3 个/轮 →
+  输出《需求确认单》），需求已明确时跳过并注明；随后进入方案设计流程（可落地性核对 →
+  影响面扫描 → 分步方案 → 风险与默认决策 → 输出《开发方案单》→ 交给 Plan）。
+  全仓交叉引用同步：`AGENTS.md`（Feature 流程 / Phase 1）、`grill-me`（交接）、`plan-executer`
+  （输入与互补）、`review-with-docs`（current-plan 检查项）、`finish-task`（current-plan 头部模板）、
+  `DEVELOPER_GUIDE`（技能库注释）。流程职责与《开发方案单》输出契约不变。
 - **Player fallback killVictims 事件流伤害数字纳入 partial 门禁**：`buildPlayerContextSummary`
   在构建基础 summary 时即读取 `hasObservedDamagePartial(ctx)`——partial 下
   `DAMAGE_EXCHANGE_AGGREGATED_OBSERVED` 输出 `UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)`，

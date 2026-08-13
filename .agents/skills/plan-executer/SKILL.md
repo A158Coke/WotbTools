@@ -4,8 +4,8 @@ description: >
   执行 docs/current-plan.md 中已批准的分步开发计划：基于计划主题创建分支 → 读取计划 → 逐项实现 →
   每步验证 → 更新计划状态 → 按验收标准收尾并汇报。
   Trigger: 用户说"执行 current-plan / 按计划执行 / 执行 docs/current-plan.md /
-  继续执行计划"，或计划文件已由 grill-with-docs 产出《开发方案单》且用户已批准。
-  与 grill-with-docs（开发前方案 grill）、review-with-docs（变更后审查）互补。
+  继续执行计划"，或计划文件已由 plan-designer 产出《开发方案单》且用户已批准。
+  与 plan-designer（开发前方案设计）、review-with-docs（变更后审查）互补。
 ---
 
 # Plan Executer（计划执行）
