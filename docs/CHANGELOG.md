@@ -42,15 +42,16 @@
   组件卸载清理定时器。新增三语 locale `recon.copy` / `recon.copied` 与组件测试
   （仅复制最终正文、排除赛前预测/地图鸟瞰、Clipboard 成功/缺失/reject、execCommand false/抛异常、
   textarea 清理、卸载清理定时器）。
-- **战局回放坦克标记素材整理（PR #72）**：最终方案确定为通用半立体 MT 双层模型，删除早期废弃方案
-  四个车型 SVG（`light/medium/heavy-tank.svg`、`tank-destroyer.svg`）及全部"兼容保留"表述；
-  状态规范表 `tank-marker-state-spec.png` 移入 `docs/assets/battle-replay/`（非运行时资产，
-  README 用相对链接引用并声明仅作设计/实现校验）；素材 README 与 `.agents/AGENTS.md` 更新为
-  唯一契约（`512×512` RGBA、旋转中心 `(256,256)`、`hullYaw` / `turretRelativeYaw` /
-  `turretWorldYaw = hullYaw + turretRelativeYaw`、轨迹≠朝向、最后已知状态透明灰、UI overlay 不烘焙），
-  并明确该契约为未来播放器接入准备（PR #71 DTO 尚未提供方向字段）。
-  已知 blocker：仓库无 authoritative master，现有 hull/turret 素材未通过同源/旋转/边缘校验，
-  规范表文件当前损坏（IDAT 截断），待基于最终 master 重新生成后再合入素材。
+- **战局回放坦克标记素材（PR #72）**：删除早期废弃方案四个车型 SVG
+  （`light/medium/heavy-tank.svg`、`tank-destroyer.svg`）及全部"兼容保留"表述。素材审查发现
+  仓库/工作区无 authoritative master：原 hull/turret 为两次独立生成、非同源（几何漂移、
+  炮管触边、座圈不匹配），规范表 `tank-marker-state-spec.png` 已损坏（IDAT 截断无法解码）；
+  按评审要求从 PR 删除不合格二进制与损坏规范表，不提交假完成状态。
+  `frontend/src/assets/tank-icons/README.md` 与 `.agents/AGENTS.md` 更新为唯一素材契约
+  （`512×512` 8-bit RGBA、旋转中心 `(256,256)`、`hullYaw` / `turretRelativeYaw` /
+  `turretWorldYaw = hullYaw + turretRelativeYaw`、轨迹≠朝向、最后已知透明灰、UI overlay 不烘焙、
+  友军暖金/敌军冷青蓝确定性配色），并明确契约为未来播放器接入准备（PR #71 DTO 尚无方向字段）；
+  运行时素材需由持有 authoritative master 的会话同源拆层后补充。
 - **技能更名：grill-with-docs → plan-designer（开发方案设计）**：开发前方案 grill 技能更名为
   `plan-designer`，调用时**自动前置 grill-me**（需求澄清：复述理解 → 逐层提问 ≤3 个/轮 →
   输出《需求确认单》），需求已明确时跳过并注明；随后进入方案设计流程（可落地性核对 →
