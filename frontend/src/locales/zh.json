@@ -777,6 +777,8 @@
         "analyze_multi_btn": "AI 多场复盘 ({n})",
         "cancel_btn": "取消分析",
         "analysis_title_player": "AI 复盘",
+        "copy": "复制",
+        "copied": "已复制",
         "prebattle": {
             "title": "赛前预测",
             "collapse": "收起",

@@ -777,6 +777,8 @@
         "analyze_multi_btn": "AI по сериям ({n})",
         "cancel_btn": "Отменить анализ",
         "analysis_title_player": "AI Review",
+        "copy": "Копировать",
+        "copied": "Скопировано",
           "prebattle": {
               "title": "Прогноз до боя",
               "collapse": "Свернуть",
