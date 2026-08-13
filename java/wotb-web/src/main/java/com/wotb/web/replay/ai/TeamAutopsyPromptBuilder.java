@@ -37,8 +37,9 @@ public final class TeamAutopsyPromptBuilder {
         sb.append("=== 结果 ===\n");
         sb.append(winnerLabel(winner, teamLabel)).append('\n');
         if (winner != null && winner.pointsDecided()) {
-            // supremacy 点数胜负只有两种结束方式：任一方达到 1000 分提前获胜，
-            // 或时间耗尽后比较点数；双方均未达 1000 分时必然是时间耗尽。
+            // pointsDecided=true 已保证结束时刻双方均未全员阵亡（非全歼）：supremacy 点数胜负只有
+            // 两种结束方式——任一方达到 1000 分提前获胜，或时间耗尽后比较点数；双方均未达 1000 分时
+            // 为时间耗尽。全歼获胜不属于点数胜负（pointsDecided=false，结果行不加结束方式后缀）。
             sb.append(pointsDecidedNote(winner)).append('\n');
         }
         sb.append("本方 7 人（TEAM_A）:\n");

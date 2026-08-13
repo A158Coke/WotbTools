@@ -146,32 +146,39 @@ final class TeamPromptLocalizer {
 
             === 争霸赛占点规则（强制，训练房/联赛恒为争霸赛） ===
             1. 集中一波（多车同簇推进）可能付出代价：失去高视野 + 被敌方偷家/占点，复盘必须权衡。
-            2. 点数胜负只可能发生在两种情形：任一方达到 1000 分立即获胜；或时间耗尽时比较点数，高者胜（pointsDecided=true）。
-            3. 描述点数胜负时必须写明结束方式：若任一方 victoryPointsEarned ≥ 1000 → 写「达到 1000 分提前获胜」；
-               若双方均 <1000 → 必然是「时间耗尽后以点数优势获胜」，必须写「时间耗尽」。
-            4. 禁止把点数胜负写成常规胜利条件，禁止用 <1000 的中间比分作为获胜理由。
-            5. 占点分/占领分（victoryPointsEarned/Seized）是权威结算总量，不代表时间线；不得把总量说成某时刻占领进度。
-            6. 地图占领点区域（CONTAINS_CONTROL_POINT）只用于描述方位，未提供时不得声称谁在占点。""";
+            2. 胜利队伍的结算来源一定是 battle result 权威结算（AUTHORITATIVE_TEAM_RESULT / result 行），
+               不得用事件流观测或点数推断覆盖它；胜利方式只可能是以下三种，按顺序判定：
+               a. 全歼敌方：对方队伍全部阵亡（无存活车辆）→ 写「全歼敌方获胜」；即使双方 victoryPointsEarned
+                  均 <1000，也是全歼获胜，不得写成「时间耗尽点数判定」；
+               b. 点数达到 1000：任一方 victoryPointsEarned ≥ 1000 → 写「达到 1000 分提前获胜」；
+               c. 时间结束且双方均未全歼：比较点数，高者胜（pointsDecided=true）→ 写「时间耗尽后以点数优势获胜」，必须写「时间耗尽」。
+            3. 禁止把全歼获胜写成点数胜负，也禁止把点数胜负写成全歼或常规胜利；禁止用 <1000 的中间比分作为获胜理由。
+            4. 占点分/占领分（victoryPointsEarned/Seized）是权威结算总量，不代表时间线；不得把总量说成某时刻占领进度。
+            5. 地图占领点区域（CONTAINS_CONTROL_POINT）只用于描述方位，未提供时不得声称谁在占点。""";
 
     static final String CAPTURE_RULE_EN = """
 
             === SUPREMACY CAPTURE RULES (mandatory; training room / clan battles are always supremacy) ===
             1. A concentrated one-lane rush can cost the team: losing high vision and risking a base capture / being capped; always weigh this in the review.
-            2. A points victory can only happen in two ways: a team reaching 1000 points wins immediately; or when time runs out, the team with more points wins (pointsDecided=true).
-            3. When describing a points victory, always state how it ended: if either team's victoryPointsEarned >= 1000, write "won by reaching 1000 points early"; if both are below 1000, it must be "won on points after time expired" — write "time expired".
-            4. Never present a points victory as a regular win condition, and never use a mid-match score below 1000 as the reason for winning.
-            5. victoryPointsEarned / victoryPointsSeized are authoritative settlement totals, not a timeline; never present totals as capture progress at a specific moment.
-            6. Capture-point areas (CONTAINS_CONTROL_POINT) only describe direction; when not provided, never claim who is capturing.""";
+            2. The winning side always comes from the authoritative battle result (AUTHORITATIVE_TEAM_RESULT / result line); never override it with event-stream observations or point inference. Victory can only be one of the following, judged in this order:
+               a. Annihilation: the opposing team is fully destroyed (no survivors) → write "won by annihilating the enemy team"; even if both teams' victoryPointsEarned are below 1000, this is still an annihilation win, never write "points-decided after time expired";
+               b. Reaching 1000 points: either team's victoryPointsEarned >= 1000 → write "won by reaching 1000 points early";
+               c. Time expired with neither team fully destroyed: the team with more points wins (pointsDecided=true) → write "won on points after time expired" — always write "time expired".
+            3. Never present an annihilation win as a points win, nor a points win as annihilation or a regular win; never use a mid-match score below 1000 as the reason for winning.
+            4. victoryPointsEarned / victoryPointsSeized are authoritative settlement totals, not a timeline; never present totals as capture progress at a specific moment.
+            5. Capture-point areas (CONTAINS_CONTROL_POINT) only describe direction; when not provided, never claim who is capturing.""";
 
     static final String CAPTURE_RULE_RU = """
 
             === ПРАВИЛА ЗАХВАТА (обязательно; тренировочные бои и клановые бои — всегда supremacy) ===
             1. Концентрированный рывок одной линией может стоить команде: потеря высокого обзора и риск захвата базы противником; всегда взвешивайте это в разборе.
-            2. Победа по очкам возможна только в двух случаях: команда, набравшая 1000 очков, побеждает сразу; либо после истечения времени побеждает команда с большим числом очков (pointsDecided=true).
-            3. Описывая победу по очкам, всегда указывайте, как она завершилась: если victoryPointsEarned любой команды ≥1000 — напишите «победа досрочно по достижении 1000 очков»; если у обеих меньше 1000 — это обязательно «победа по очкам после истечения времени» — напишите «время истекло».
-            4. Не выдавайте победу по очкам за обычное условие победы и не используйте промежуточный счёт ниже 1000 как причину победы.
-            5. victoryPointsEarned / victoryPointsSeized — авторитетные итоги расчёта, а не таймлайн; не выдавайте итоги за прогресс захвата в конкретный момент.
-            6. Области точек захвата (CONTAINS_CONTROL_POINT) описывают только направление; если они не предоставлены, не утверждайте, кто захватывает.""";
+            2. Победившая команда всегда определяется авторитетным итогом боя (AUTHORITATIVE_TEAM_RESULT / строка result); не подменяйте его наблюдениями из потока событий или выводами по очкам. Победа возможна только в одном из следующих видов, проверяйте по порядку:
+               a. Полное уничтожение: вся команда противника уничтожена (нет выживших) → напишите «победа полным уничтожением противника»; даже если victoryPointsEarned обеих команд меньше 1000, это победа уничтожением, а не «по очкам после истечения времени»;
+               b. Достижение 1000 очков: victoryPointsEarned любой команды ≥1000 → напишите «победа досрочно по достижении 1000 очков»;
+               c. Время истекло, и ни одна команда не уничтожена полностью: побеждает команда с большим числом очков (pointsDecided=true) → напишите «победа по очкам после истечения времени» — обязательно укажите «время истекло».
+            3. Не выдавайте победу полным уничтожением за победу по очкам, а победу по очкам — за уничтожение или обычную победу; не используйте промежуточный счёт ниже 1000 как причину победы.
+            4. victoryPointsEarned / victoryPointsSeized — авторитетные итоги расчёта, а не таймлайн; не выдавайте итоги за прогресс захвата в конкретный момент.
+            5. Области точек захвата (CONTAINS_CONTROL_POINT) описывают только направление; если они не предоставлены, не утверждайте, кто захватывает.""";
 
     /**
      * 组装团队 system prompt：ZH 返回原样；EN/RU 在中文基座上替换中文输出强制句

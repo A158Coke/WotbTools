@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.4",
+    "date": "2026-08-13",
+    "tag": "fix",
+    "zh": "修复 AI 复盘胜负判定：对方队伍被全歼时，复盘会写「全歼敌方获胜」，不再误判为「时间耗尽后以点数优势获胜」；胜负描述统一以 battle result 权威结算为准",
+    "en": "Fixed AI review win determination: when the enemy team is fully destroyed, the review now says \"won by annihilating the enemy team\" instead of mislabeling it \"won on points after time expired\"; win/loss descriptions are always based on the authoritative battle result",
+    "ru": "Исправлено определение победы в AI-разборе: когда команда противника полностью уничтожена, разбор пишет «победа полным уничтожением противника», а не ошибочно «победа по очкам после истечения времени»; описание исхода всегда основано на авторитетном итоге боя"
+  },
+  {
     "v": "2.11.3",
     "date": "2026-08-13",
     "tag": "fix",

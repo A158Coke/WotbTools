@@ -281,8 +281,9 @@ final class TeamEvidenceFormatter {
         writer.append("pointsDecided=" + winner.pointsDecided() + "\n");
         if (winner.pointsDecided()) {
             writer.append("winnerSource=" + winner.source().name() + "\n");
-            // 点数胜负只可能发生在：任一方达到 1000 分提前结束，或时间耗尽后比较点数。
-            // 双方 victoryPointsEarned 均 <1000 时必然是时间耗尽（REACHED_1000 / TIME_EXPIRED / UNKNOWN）。
+            // pointsDecided=true 表示结束时刻双方均未全员阵亡（非全歼）：任一方 victoryPointsEarned ≥1000
+            // → REACHED_1000；双方均 <1000 → TIME_EXPIRED（时间耗尽）；点数缺失 → UNKNOWN。
+            // 全歼获胜（一方全员阵亡）时 pointsDecided=false，不写点数结束方式。
             writer.append("pointsEndReason=" + winner.pointsEndReason().name() + "\n");
         }
         writer.append("team victoryPointsEarned=" + earned

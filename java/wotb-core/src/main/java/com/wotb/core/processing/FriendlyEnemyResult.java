@@ -39,14 +39,16 @@ public final class FriendlyEnemyResult {
      *
      * <p>点数胜负只可能发生在两种情形：任一方达到 1000 分立即获胜（REACHED_1000），
      * 或时间耗尽时比较点数、高者胜（TIME_EXPIRED）。若点数决胜但双方胜利点数均缺失
-     * （≤0），无法判定结束方式 → UNKNOWN；非点数胜负 → NOT_APPLICABLE。</p>
+     * （≤0），无法判定结束方式 → UNKNOWN；非点数胜负 → NOT_APPLICABLE。
+     * 仅当结束时刻双方均未全员阵亡（pointsDecided=true）时适用；一方全员阵亡即全歼获胜，
+     * pointsEndReason 恒为 NOT_APPLICABLE。</p>
      */
     public enum PointsEndReason {
         /** 非点数胜负（全歼 / 未知）。 */
         NOT_APPLICABLE,
         /** 任一方 victoryPointsEarned ≥ 1000，提前以点数获胜。 */
         REACHED_1000,
-        /** 双方均未达 1000 分，时间耗尽后比较点数获胜。 */
+        /** 双方均未全员阵亡且均未达 1000 分，时间耗尽后比较点数获胜。 */
         TIME_EXPIRED,
         /** 点数决胜但双方胜利点数缺失，结束方式无法确定。 */
         UNKNOWN
@@ -173,7 +175,8 @@ public final class FriendlyEnemyResult {
                 .sum();
     }
 
-    /** 点数胜负结束方式：按双方胜利点数推导（任一方 ≥1000 → 提前获胜；均 <1000 → 时间耗尽）。 */
+    /** 点数胜负结束方式：按双方胜利点数推导（任一方 ≥1000 → 提前获胜；均 <1000 → 时间耗尽；
+     * 须在双方均未全员阵亡 / pointsDecided=true 时调用）。 */
     public static PointsEndReason pointsEndReason(final long teamPoints, final long opposingPoints) {
         if (teamPoints <= 0 && opposingPoints <= 0) {
             return PointsEndReason.UNKNOWN;
