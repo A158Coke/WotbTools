@@ -232,6 +232,7 @@ class PlayerSideResolverTest {
     void supremacy_winnerMissing_enemyWiped_friendlyWinsBySettlement() {
         final Battle battle = new Battle();
         battle.winnerTeam = null;
+        battle.rosterComplete = true;
         battle.players = List.of(
                 player(1, "A1", true, 0),
                 player(1, "A2", true, 0),
@@ -247,6 +248,7 @@ class PlayerSideResolverTest {
     void supremacy_winnerMissing_friendlyWiped_enemyWinsBySettlement() {
         final Battle battle = new Battle();
         battle.winnerTeam = null;
+        battle.rosterComplete = true;
         battle.players = List.of(
                 player(1, "A1", false, 200),
                 player(2, "B1", true, 100));

@@ -901,6 +901,8 @@ public final class AiEvalFixtures {
         battle.arenaBonusType = arenaBonusType;
         battle.durationS = 300.0;
         battle.winnerTeam = winnerTeam;
+        // 合成 7v7 完整结算阵容：名册/战绩齐全，允许全歼与 SURVIVOR_SETTLEMENT 判定
+        battle.rosterComplete = true;
         battle.recorder = FRIENDLY_NAMES[0];
         battle.players = new ArrayList<>();
         for (int index = 0; index < 7; index++) {

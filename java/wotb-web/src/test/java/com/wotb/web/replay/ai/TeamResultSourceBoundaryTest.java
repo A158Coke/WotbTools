@@ -40,6 +40,13 @@ class TeamResultSourceBoundaryTest {
         return b;
     }
 
+    /** 结算阵容完整（rosterComplete=true）的 battle；players 由调用方给出。 */
+    private static Battle completeBattle(final List<PlayerResult> players, final Integer winnerTeam) {
+        final Battle b = battle(players, winnerTeam);
+        b.rosterComplete = true;
+        return b;
+    }
+
     private static List<PlayerResult> friendlyRoster(final boolean survived) {
         final List<PlayerResult> players = new ArrayList<>();
         for (int i = 0; i < 7; i++) {
@@ -135,7 +142,7 @@ class TeamResultSourceBoundaryTest {
     @Test
     void realAnnihilationStillReportsWhenBothRostersPresent() {
         // 双方 roster 齐全且对方 0 存活 → 全歼敌方
-        final Battle enemyWiped = battle(bothRosters(true, false), 1);
+        final Battle enemyWiped = completeBattle(bothRosters(true, false), 1);
         assertEquals("（全歼敌方）",
                 FriendlyEnemyResult.annihilationSuffix(enemyWiped, 1, Winner.FRIENDLY_WIN));
         assertEquals("CHRD获胜（全歼敌方）",
@@ -144,7 +151,7 @@ class TeamResultSourceBoundaryTest {
                 TeamAutopsyPromptBuilder.winnerLabel(
                         win(Winner.FRIENDLY_WIN), "CHRD", enemyWiped, 1));
         // 双方 roster 齐全且本方 0 存活 → 被敌方全歼
-        final Battle friendlyWiped = battle(bothRosters(false, true), 2);
+        final Battle friendlyWiped = completeBattle(bothRosters(false, true), 2);
         assertEquals("（被敌方全歼）",
                 FriendlyEnemyResult.annihilationSuffix(friendlyWiped, 1, Winner.ENEMY_WIN));
         assertEquals("CHRD落败（被敌方全歼）",
@@ -152,5 +159,79 @@ class TeamResultSourceBoundaryTest {
         assertEquals("CHRD落败（被敌方全歼）",
                 TeamAutopsyPromptBuilder.winnerLabel(
                         win(Winner.ENEMY_WIN), "CHRD", friendlyWiped, 1));
+    }
+
+    @Test
+    void partialEnemyRecordsNeverReportAnnihilation() {
+        // 7 名我方存活 + 仅 1 名已阵亡敌方记录（其余敌方结算记录缺失，rosterComplete=false）
+        final List<PlayerResult> players = new ArrayList<>(friendlyRoster(true));
+        players.add(player(20_001L, 2, false));
+        // winnerTeam 存在：BATTLE_RESULTS 权威胜方可用，但不得输出全歼
+        final Battle withWinner = battle(players, 1);
+        assertTrue(FriendlyEnemyResult.annihilationSuffix(
+                withWinner, 1, Winner.FRIENDLY_WIN).isEmpty());
+        assertEquals(Winner.FRIENDLY_WIN, FriendlyEnemyResult.resolveTeamBattle(withWinner, 1).winner());
+        assertEquals(WinnerSource.BATTLE_RESULTS,
+                FriendlyEnemyResult.resolveTeamBattle(withWinner, 1).source());
+        assertEquals("CHRD获胜", TeamEvidenceFormatter.resolveTeamResult(withWinner, 1, "CHRD"));
+        assertEquals("CHRD获胜", TeamAutopsyPromptBuilder.winnerLabel(
+                win(Winner.FRIENDLY_WIN), "CHRD", withWinner, 1));
+        // winnerTeam 缺失：不得推导为 SURVIVOR_SETTLEMENT 胜利
+        final Battle noWinner = battle(players, null);
+        final var resolved = FriendlyEnemyResult.resolveTeamBattle(noWinner, 1);
+        assertEquals(Winner.DRAW_OR_UNKNOWN, resolved.winner());
+        assertEquals(WinnerSource.UNKNOWN, resolved.source());
+        assertEquals("平局或未知", TeamEvidenceFormatter.resolveTeamResult(noWinner, 1, "CHRD"));
+        assertEquals("CHRD获胜", TeamAutopsyPromptBuilder.winnerLabel(
+                win(Winner.FRIENDLY_WIN), "CHRD", noWinner, 1));
+    }
+
+    @Test
+    void partialFriendlyRecordsNeverReportAnnihilation() {
+        // 7 名敌方存活 + 仅 1 名已阵亡本方记录（其余本方结算记录缺失，rosterComplete=false）
+        final List<PlayerResult> players = new ArrayList<>(enemyRoster(true));
+        players.add(player(10_001L, 1, false));
+        // winnerTeam 存在：BATTLE_RESULTS 权威胜方可用，但不得输出被敌方全歼
+        final Battle withWinner = battle(players, 2);
+        assertTrue(FriendlyEnemyResult.annihilationSuffix(
+                withWinner, 1, Winner.ENEMY_WIN).isEmpty());
+        assertEquals(Winner.ENEMY_WIN, FriendlyEnemyResult.resolveTeamBattle(withWinner, 1).winner());
+        assertEquals(WinnerSource.BATTLE_RESULTS,
+                FriendlyEnemyResult.resolveTeamBattle(withWinner, 1).source());
+        assertEquals("CHRD落败", TeamEvidenceFormatter.resolveTeamResult(withWinner, 1, "CHRD"));
+        assertEquals("CHRD落败", TeamAutopsyPromptBuilder.winnerLabel(
+                win(Winner.ENEMY_WIN), "CHRD", withWinner, 1));
+        // winnerTeam 缺失：不得推导为 SURVIVOR_SETTLEMENT 落败
+        final Battle noWinner = battle(players, null);
+        final var resolved = FriendlyEnemyResult.resolveTeamBattle(noWinner, 1);
+        assertEquals(Winner.DRAW_OR_UNKNOWN, resolved.winner());
+        assertEquals(WinnerSource.UNKNOWN, resolved.source());
+        assertEquals("平局或未知", TeamEvidenceFormatter.resolveTeamResult(noWinner, 1, "CHRD"));
+    }
+
+    @Test
+    void legalNonSevenVsSevenCompleteRosterStillWorks() {
+        // 完整 3v3 训练房（非 7v7）：名册完整时全歼与 SURVIVOR_SETTLEMENT 仍成立
+        final List<PlayerResult> players = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            players.add(player(10_001L + i, 1, true));
+        }
+        for (int i = 0; i < 3; i++) {
+            players.add(player(20_001L + i, 2, false));
+        }
+        final Battle withWinner = completeBattle(players, 1);
+        assertEquals("（全歼敌方）",
+                FriendlyEnemyResult.annihilationSuffix(withWinner, 1, Winner.FRIENDLY_WIN));
+        assertEquals("CHRD获胜（全歼敌方）",
+                TeamEvidenceFormatter.resolveTeamResult(withWinner, 1, "CHRD"));
+        assertEquals("CHRD获胜（全歼敌方）", TeamAutopsyPromptBuilder.winnerLabel(
+                win(Winner.FRIENDLY_WIN), "CHRD", withWinner, 1));
+        // winnerTeam 缺失且完整 3v3：仍可推导 SURVIVOR_SETTLEMENT
+        final Battle noWinner = completeBattle(players, null);
+        final var resolved = FriendlyEnemyResult.resolveTeamBattle(noWinner, 1);
+        assertEquals(Winner.FRIENDLY_WIN, resolved.winner());
+        assertEquals(WinnerSource.SURVIVOR_SETTLEMENT, resolved.source());
+        assertEquals("CHRD获胜（全歼敌方）",
+                TeamEvidenceFormatter.resolveTeamResult(noWinner, 1, "CHRD"));
     }
 }
