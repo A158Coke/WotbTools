@@ -60,12 +60,12 @@ description: >
 
 只动前端组件/样式（必要时 `deploy/nginx/nginx.conf`）。不碰后端/导出。改完 `npm test` + `npm run build`，并在文档记一句。
 
-## 配方 F：调评分（权重/系数/阈值）
+## 配方 E：调评分（权重/系数/阈值）
 
 只改 `common/rating.json`（权重 assist/block/killValue/winBonus、minSamples、scale、车型系数 classFactor）。改完跑测试（均值应仍 ≈ scale）、重建镜像。改公式结构（而非数值）才需动 `Rating.java`。
 > 前端「评分规则」弹窗与 `GET /api/rating`（`Rating.config()`→`RatingConfig`）自动反映 rating.json 的数值，无需改前端。只有改了**公式文字说明**才动 `locales/*.json` 的 `rating_help`（三语）。
 
-## 配方 G：增改地图显示名
+## 配方 F：增改地图显示名
 
 地图显示名**单一来源**在 `common/map_names.json`，结构为 `内部名(小写) -> { zh, en, ru }`。只改这一个文件即可两端生效：
 
@@ -77,19 +77,20 @@ description: >
 
 > 未匹配的地图名原样显示（英文内部名），不会报错。API 始终回原始英文 `mapName`；前端按 locale 渲染，导出固定中文。
 
-## 配方 E：更新车辆库
+## 配方 G：更新车辆库
 
 更新走 `.github/workflows/update-tankopedia.yml`（手动触发，blitzkit 数据源，自动提交 4 个文件）或本地 `cd common/python && python update_tankopedia.py`（需联网）。产物为 `common/tankopedia-tier{7,8,9,10}.json`（**不是** `tankopedia.json`）；写入前有完整性门禁。Java 构建会自动复制到 classpath，无需手动同步。详见 `common/AGENTS.md`。
 
 ---
 
-## 配方 H：新增/修改排行榜 Schema 或端点
+## 配方 H：Leaderboard 改动（Schema/端点/上传）
 
-1. 改表结构必须新增下一序号的 Flyway 迁移（当前最高 V14，命名 `V<N>__xxx.sql`），不改已应用版本。
-2. JPA 实体与迁移列逐列对齐，否则 `ddl-auto: validate` 启动失败。
-3. 新端点走 `LeaderboardController` + `LeaderboardService`。
-4. API 纯英文 key；前端三语文案在 `locales/*.json` 的 `leaderboard` 块。
-5. 验证 + 文档。
+1. **Flyway**：改表结构必须新增下一序号 Flyway 迁移（当前最高 V14，命名 `V<N>__xxx.sql`），不改已应用版本。
+2. **列对齐**：JPA Entity、DTO、Repository 列与迁移逐列对齐，否则 `ddl-auto: validate` 启动失败。
+3. **分层**：Controller → Service → Repository；新端点/查询走 `LeaderboardController` + `LeaderboardService` + `LeaderboardRepository`（Service 只调自己域的 Repository）。
+4. **API 纯英文稳定 key**（snake_case）；前端三语 label 在 `locales/*.json` 的 `leaderboard` 块。
+5. **前端上传/调用**：`api.leaderboardUpload(file)` → `POST /api/leaderboard/upload`；新增端点同步前端 API 调用函数。
+6. **测试 + 文档**：Java `mvn test`（WebApiTest）+ 前端 `npm test`，并更新文档。
 
 ## 配方 I：新增跨站点状态（主题/语言/偏好）
 
@@ -107,16 +108,7 @@ description: >
 6. API：`POST /api/preview`（复用）+ `POST /api/rating`（实时评分）。
 7. 验证 + 文档。
 
-## 配方 K：Leaderboard 改动
-
-1. 改表结构必须新增下一序号 Flyway 迁移（当前最高 V14），不改已应用版本。
-2. JPA Entity、DTO、repository column 与迁移逐列对齐，否则 `ddl-auto: validate` 启动失败。
-3. 新查询走 `LeaderboardRepository` + `LeaderboardService`。
-4. API 纯英文 key；前端 label 在 `locales/*.json` → `leaderboard` 块。
-5. 前端上传：`api.leaderboardUpload(file)` → `POST /api/leaderboard/upload`。
-6. 验证 + 文档。
-
-## 配方 L：Auth 改动
+## 配方 K：Auth 改动
 
 1. Keycloak：`auth.wotbtools.com` 独立容器，realm `wotbtools`，client `wotbtools-web`。
 2. 前端：`useAuth.js` composable（Keycloak adapter check-sso 游客模式）。

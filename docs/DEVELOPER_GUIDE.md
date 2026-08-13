@@ -21,7 +21,7 @@ Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；
 | **本文件 `DEVELOPER_GUIDE.md`** | 开发指南（含环境、架构、部署、约定） | 最先 |
 | [`.agents/AGENTS.md`](../.agents/AGENTS.md) | AI 硬性约定（RULES） | 动手前必读 |
 | [根 `AGENTS.md`](../AGENTS.md) + 各目录 `AGENTS.md`（`java/` `frontend/` `common/` `deploy/` `.github/` keycloak providers `map-semanticizer/`） | 按作用域继承的 Agent 指令层级（根=入口，`.agents/AGENTS.md`=全仓不变式，目录级=局部约束） | 进入对应目录工作时 |
-| [`.agents/wotb-sync.md`](../.agents/wotb-sync.md) | 跨层改动检查单兼容指针（指向 `.agents/skills/wotb-sync/SKILL.md`，配方 A–L 单一事实源） | 增删/改名数据列、改解析/导出/前端时 |
+| [`.agents/wotb-sync.md`](../.agents/wotb-sync.md) | 跨层改动检查单兼容指针（指向 `.agents/skills/wotb-sync/SKILL.md`，配方 A–K 单一事实源） | 增删/改名数据列、改解析/导出/前端时 |
 | [`docs/replay-data.md`](replay-data.md) | data.wotreplay 事件流格式、protobuf 字段表、死亡时间推算 | 深入回放格式时 |
 | [`docs/rating-system.md`](rating-system.md) | 评分算法细节 | 碰评分时 |
 | [`docs/rating-progress.md`](rating-progress.md) | rating 扩展目标、已完成项、缺口与下一步 | 接手 rating 扩展时 |
@@ -125,7 +125,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 │   │   └── sponsor-config.js
 │   ├── extended.html             #   Rating V2 独立入口
 ├── .github/
-│   ├── workflows/deploy.yml      # 测试门禁 + 增量构建/部署
+│   ├── workflows/deploy.yml      # 测试门禁 + 每次统一构建三镜像/部署
 │   ├── workflows/database-backup.yml # 每日生产双库备份
 │   └── workflows/prod-diagnostics.yml # 线上诊断日志
 ├── common/                       # 共享资源
