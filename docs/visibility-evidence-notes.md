@@ -110,6 +110,14 @@ recorder-attacker 直接伤害（余为未命中/跳弹/未击穿或非 direct-H
 
 LOST 事件对"敌人静止/死车/断包"全部误报，对"录像者实际失察"无法验证——**不得作为可见性**。
 
+## 3.6 多样本复跑（2026-08-13，common/data 扩充后：6 个 11.18 样本 + 9 个 9.4–10.1 旧版样本）
+
+- 旧版样本（9.4.0/9.8.x/10.1.0，2022–2023）可解包但 eid→账号映射为空（withT5=0/withPos=0），不参与可见性判定；仅作编码稳定性佐证（type-7 valueLen=2 自 9.4.0 起一致）。
+- 现代样本（11.18.0）gap 聚类误报 LOST 交叉验证：fixture=9、1535(malinoka mode2)=3、1555(neptune mode4)=3、1600(neptune mode4)=2、1604=5、Maus(holland mode4)=（见 vis-run2.log）——每场必有误报；
+- 敌方首包≠交火交叉验证：全部现代样本 engBeforePos=false（首包早于或晚于首次交火、部分敌全程无交火却有位置流）；
+- ENTER/LEAVE 与交火相关率跨样本维持 0–8%（ENTER engaged 0–2/19–25、LEAVE engaged 0–1/5–12）。
+- 结论不变：**VERDICT=PARTIAL**（无客户端点亮标志；gap 聚类=伪上帝视角已多模式坐实；仅交火锚点部分可信）。
+
 ## 4. 六条验收对照
 
 | 验收 | 现状 | 判定 |
