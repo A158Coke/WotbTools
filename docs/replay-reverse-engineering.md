@@ -67,6 +67,11 @@
   **hull yaw PROVEN 可用**：type-10 yaw 全部 finite、相邻步长 3.9–9.6°、静止恒定、倒车案例 113/1190（录像者）→ 车头朝向权威源（弧度）。
   详见 `docs/turret-direction-evidence-notes.md`（探针 `TurretDirectionProbeTest`，检查 1–10+39x 量化）。
 - 需要用户补充：① 录像者客户端录屏逐秒标注点亮/失察（≥2 场：随机+supremacy）；② 训练房回放 + 炮塔匀速转动录屏校准 prop2；③ 对方视角回放区分团队/个人点亮。
+- **多样本复跑（2026-08-13，common/data 扩充）**：6 个 11.18.0 样本（随机/训练/supremacy）+ 9 个 9.4.0–10.1.0 旧版样本。
+  - 编码稳定性：type-7 propId=2 恒为 valueLen=2，自 9.4.0（2022）到 11.18.0（2026）不变，满编战斗双方 7/7 覆盖。
+  - 开火指向 4 样本 30 次命中：三种假设（prop2 / yaw+prop2 / yaw−prop2）误差均值 47.9–111.6°，全部失败 → prop2 不是炮管水平方向；NOT_PROVEN 维持。
+  - gap 聚类伪 LOST 多模式坐实（每场 2–9 个误报）；敌方首包与首次交火无关（全部 engBeforePos=false）。
+  - 旧版样本 eid→账号映射为空（updateArena 格式差异），暂不参与可见性/方向判定。
 
 ## 已知修正记录
 
