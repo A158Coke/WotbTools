@@ -24,7 +24,7 @@
 
 - 单文件策略：`AiReplayBatchPolicy.MAX_FILES = 1`（仅 `/api/replay/analyze`；`/process`、`/reconstruct-batch` 不受限）。
 - 编排归属：`AiReplayAnalysisService` 是**兼容 facade**（无真实编排）；随机战双 Call 在 `TacticalReviewHarness`，团队复盘在 `TeamReplayAnalysisService`，赛前基线 `PreBattleStrategicService`，Team Autopsy `TeamAutopsyService`。
-- transport 唯一生产实现：`SpringAiChatGateway`（Spring AI OpenAI-compatible → api.deepseek.com）；业务只依赖 `AiChatGateway` 接口。Prompt 文本单一来源 `wotb-web/src/main/resources/prompts/*.zh.md`（`AiPromptLibrary` 加载；md 内 ZH 规则片段与 Java 常量逐字一致，否则 EN/RU 替换失效）。
+- transport 唯一生产实现：`SpringAiChatGateway`（Spring AI OpenAI-compatible → api.deepseek.com）；业务只依赖 `AiChatGateway` 接口。Prompt 文本单一来源 `wotb-web/src/main/resources/prompts/{player,prebattle,team}/*.zh.md`（`AiPromptLibrary.zh("player/tactical" 等 key)` 按 `classpath:/prompts/<key>.zh.md` 加载，如 `player/fallback`、`player/single`、`player/tactical`、`prebattle/system`、`prebattle/user-header`、`prebattle/confidence-legend`、`team/single`、`team/autopsy`；md 内 ZH 规则片段与 Java 常量逐字一致，否则 EN/RU 替换失效）。
 - 超时链：worker 整体 1100s（`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）→ 单次 AI call 315s；SSE `SseEmitter` 1120s 对齐 nginx；改任何一层都要同步 `AiTimeoutChainContractTest` 与 deploy 校验。
 - 回放证据语义：位置流（type-10）≠ 点亮（`POSITION_REPORTED/POSITION_STALE` 只是位置覆盖）；炮塔方向 `type-7 propId=2 = u16*360/65536-180` 已证明，勿改编码常量；证据与解码结论见 `docs/replay-reverse-engineering.md` 与 `docs/turret-direction-evidence-notes.md`。
 - 探针测试（`*ProbeTest`）可重复运行、无样本自动跳过；本地特殊样本放 `common/data/` 子目录（不进 ParityTest）。
