@@ -142,6 +142,7 @@ final class PlayerSummaryBuilder {
         if (!PlayerEvidenceFormatter.appendPerHitDamageEvents(summaryBuilder, ctx.battle(), recorderAccountId, recon)) {
             summaryBuilder.append("- PER_HIT_DAMAGE_EVENTS_UNAVAILABLE\n");
         }
+        PlayerEvidenceFormatter.appendRecorderDamageReceivedWindows(summaryBuilder, recon, recorderAccountId);
         PlayerEvidenceFormatter.appendEnemyLastKnownPositions(summaryBuilder, ctx.battle(), recon);
         final String baseSummary = summaryBuilder.toString();
         final String systemPrompt = PlayerPromptRules.localizePlayerSystemPrompt(PlayerPromptRules.SINGLE_PLAYER_PROMPT, language);

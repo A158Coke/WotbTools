@@ -159,6 +159,39 @@ class PlayerSecondPersonAndPerHitDamageTest {
     }
 
     @Test
+    void recorderDamageWindowsClusterWithinGapAndFlagLethalWindow() {
+        final StringBuilder sb = new StringBuilder();
+        final boolean written = PlayerReplayPromptBuilder.appendRecorderDamageReceivedWindows(
+                sb, recon(30f,
+                        hit(35f, ENEMY, YOU, 400),
+                        hit(43f, ENEMY, YOU, 300),
+                        hit(80f, ENEMY, YOU, 700, true)),
+                YOU);
+
+        assertTrue(written);
+        final String evidence = sb.toString();
+        assertTrue(evidence.contains("RECORDER_DAMAGE_RECEIVED_WINDOWS"), evidence);
+        // 窗口1：相对 5s–13s（间隙 8s ≤ 10s）→ 掉血 700 / 2 次
+        assertTrue(evidence.contains("[0分05秒-0分13秒] 掉血700 命中2次"), evidence);
+        // 窗口2：相对 50s（与窗口1间隙 37s > 10s）→ 单独窗口且 lethal
+        assertTrue(evidence.contains("[0分50秒-0分50秒] 掉血700 命中1次（致死）"), evidence);
+    }
+
+    @Test
+    void recorderDamageWindowsExcludePreBattleAndOtherVictims() {
+        final StringBuilder sb = new StringBuilder();
+        final boolean written = PlayerReplayPromptBuilder.appendRecorderDamageReceivedWindows(
+                sb, recon(30f,
+                        hit(10f, ENEMY, YOU, 500),   // 准备阶段（battleStart=30s 之前）
+                        hit(40f, ENEMY, MATE, 999),  // 非玩家受击
+                        hit(0f, ENEMY, YOU, 0)),     // 零伤害
+                YOU);
+
+        assertFalse(written);
+        assertEquals("", sb.toString());
+    }
+
+    @Test
     void aggregateSummaryIsExplicitlyLabelledAsAggregate() {
         final Battle battle = battle();
         final PlayerResult recorder = battle.players.get(0);
@@ -303,6 +336,12 @@ class PlayerSecondPersonAndPerHitDamageTest {
                                    final long victim, final int amount) {
         return new DamageEvent(0, new ReplayTimestamp(clock, null), 8,
                 DecodeConfidence.EXACT, 0, 0, attacker, victim, amount, false);
+    }
+
+    private static DamageEvent hit(final float clock, final long attacker,
+                                   final long victim, final int amount, final boolean lethal) {
+        return new DamageEvent(0, new ReplayTimestamp(clock, null), 8,
+                DecodeConfidence.EXACT, 0, 0, attacker, victim, amount, lethal);
     }
 
     private static ReplayReconstruction recon(final Float battleStart, final DamageEvent... events) {

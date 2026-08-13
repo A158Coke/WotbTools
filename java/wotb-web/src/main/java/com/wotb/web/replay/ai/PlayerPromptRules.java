@@ -212,6 +212,28 @@ final class PlayerPromptRules {
             3. Оценивая игрока, никогда не делайте вывод «играл плохо» только из-за больших потерь ОЗ и не считайте высокий заблокированный урон сам по себе достижением;
                учитывайте роль класса, время выживания, вклад по урону и ситуацию.""";
 
+    /** 公共：掉血时间范围（ZH；与 prompts/{player,team}/*.zh.md 内文本逐字一致）。 */
+    static final String HP_LOSS_TIME_RULE = """
+
+            === 掉血时间范围（强制） ===
+            1. 凡提及掉血/损失血量，必须给出明确时间范围（XX分XX秒–XX分XX秒）与掉血量，禁止「掉血较多」「前期掉血」这类无时间范围的笼统描述。
+            2. 若在很短的时间窗口内掉了大量血甚至被秒杀，必须明确标注为问题，并给出该窗口的时间范围与掉血量（如「X分XX秒–X分XX秒被集火掉血 N」「X分XX秒被秒杀」）。
+            3. 正常、慢速、有交换的掉血不得误标为问题；没有时间窗口证据时写「无法确定」，不得编造时间。""";
+
+    static final String HP_LOSS_TIME_RULE_EN = """
+
+            === HP LOSS TIME RANGE (mandatory) ===
+            1. Whenever you mention HP loss / damage received, give an explicit time range (Xm Xs – Xm Xs) and the amount lost; never write vague statements without a time range like "lost a lot of HP early".
+            2. If a large amount of HP is lost within a very short window or the vehicle is instantly destroyed, flag it explicitly as a problem and give the window's time range and damage (e.g., "was focus-fired for N damage from 2m 10s to 2m 18s" or "was destroyed at 1m 05s").
+            3. Normal, gradual, or traded damage must not be flagged as a problem; without time-window evidence write "cannot be determined" and never invent times.""";
+
+    static final String HP_LOSS_TIME_RULE_RU = """
+
+            === ДИАПАЗОН ВРЕМЕНИ ПОТЕРИ ОЗ (обязательно) ===
+            1. Упоминая потерю ОЗ / полученный урон, всегда указывайте точный временной диапазон (X мин X с – X мин X с) и количество потерянных ОЗ; запрещены расплывчатые формулировки без диапазона вроде «потерял много ОЗ в начале».
+            2. Если за очень короткий промежуток потеряно много ОЗ или машина уничтожена мгновенно, обязательно отметьте это как проблему и укажите временной диапазон и урон (например, «сосредоточенно обстрелян на N урона с 2 мин 10 с по 2 мин 18 с» или «уничтожен на 1 мин 05 с»).
+            3. Нормальная, постепенная потеря ОЗ или обмен уроном не должны отмечаться как проблема; при отсутствии данных о временных окнах пишите «невозможно определить» и не выдумывайте время.""";
+
     /** 公共：证据逻辑与术语（禁止集火同义反复、禁止机器标签直出、标题规范）。 */
     static final String COMMON_EVIDENCE_LOGIC_RULE = """
 
@@ -301,6 +323,8 @@ final class PlayerPromptRules {
                         en ? PLAYER_ENEMY_DAMAGE_RULE_EN : PLAYER_ENEMY_DAMAGE_RULE_RU)
                 .replace(COMMON_DAMAGE_SEMANTICS_RULE,
                         en ? COMMON_DAMAGE_SEMANTICS_RULE_EN : COMMON_DAMAGE_SEMANTICS_RULE_RU)
+                .replace(HP_LOSS_TIME_RULE,
+                        en ? HP_LOSS_TIME_RULE_EN : HP_LOSS_TIME_RULE_RU)
                 .replace(COMMON_EVIDENCE_LOGIC_RULE,
                         en ? COMMON_EVIDENCE_LOGIC_RULE_EN : COMMON_EVIDENCE_LOGIC_RULE_RU)
                 .replace(SOLO_INTENT_RULE,

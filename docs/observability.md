@@ -343,7 +343,7 @@ sum by (type) (rate(wotb_ai_review_errors_total[5m]))
 错误类型枚举（低基数，与代码 `classifyHttpError/classifyClientFailure` 一致）：
 `AI_TIMEOUT`、`AI_CANCELLED`（客户端取消，上游调用被中断，不产生新请求）、`AI_UPSTREAM_UNAVAILABLE`、`AI_INVALID_REQUEST`、`AI_AUTHENTICATION_ERROR`、`AI_RATE_LIMITED`、`AI_CONTEXT_TOO_LARGE`、`AI_RESPONSE_INVALID`、`AI_EMPTY_RESPONSE`。
 
-> **AI 全链路超时与无效消耗**：前端 analyze 安全超时 400s → 容器 nginx `/api/replay/analyze` 420s → 后端 AI 单次预算 `AI_CALL_TIMEOUT_SEC=315s` + 解析余量。**host 级 Caddy/Nginx 反代必须允许 ≥420s**（Nginx 默认 60s 会提前 504，用户重试即产生重复 API 消耗）；客户端取消（按钮/离开页面/前端超时）会经 `POST /api/replay/analyze/cancel` 中断 in-flight 上游调用，`AI_TIMEOUT` 不再自动重试（上游可能已计费）。Broken pipe 已在 `GlobalExceptionHandler` 降级为 WARN，不再产生 Unhandled exception 堆栈。
+> **AI 全链路超时与无效消耗**：整体 deadline 默认 1100s（团队 3 次 AI 调用 + 余量，`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）→ 前端 analyze 安全超时 1100s → 容器 nginx `/api/replay/analyze` 1120s → 后端 AI 单次预算 `AI_CALL_TIMEOUT_SEC=315s` + 解析余量。**host 级 Caddy/Nginx 反代必须允许 ≥1120s**（Nginx 默认 60s 会提前 504，用户重试即产生重复 API 消耗）；客户端取消（按钮/离开页面/前端超时）会经 `POST /api/replay/analyze/cancel` 中断 in-flight 上游调用，`AI_TIMEOUT` 不再自动重试（上游可能已计费）。Broken pipe 已在 `GlobalExceptionHandler` 降级为 WARN，不再产生 Unhandled exception 堆栈。
 
 ---
 

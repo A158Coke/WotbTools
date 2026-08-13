@@ -210,6 +210,30 @@ final class PlayerEvidenceFormatter {
     }
 
     /**
+     * 录像者掉血时间窗口（事件流观测）：按受击事件聚类，每窗口给出时间范围 + 总掉血量。
+     * <p>与 {@code PER_HIT_DAMAGE_EVENTS} 同口径（battle-relative，准备阶段不计）；无窗口时返回 false。</p>
+     */
+    static boolean appendRecorderDamageReceivedWindows(final StringBuilder sb,
+                                                       final ReplayReconstruction recon,
+                                                       final long recorderAccountId) {
+        final List<DamageWindowClusterer.DamageWindow> windows =
+                DamageWindowClusterer.receivedWindows(recon, recorderAccountId);
+        if (windows.isEmpty()) {
+            return false;
+        }
+        sb.append("\n=== RECORDER_DAMAGE_RECEIVED_WINDOWS（你掉血时间窗口·事件流观测） ===\n");
+        sb.append("注意: 每条是一个按时间聚类的掉血窗口; 小窗口大量掉血=被集火, 含「（致死）」=该窗口击毁了你.\n");
+        for (final DamageWindowClusterer.DamageWindow window : windows) {
+            sb.append("  ").append(PlayerAnalysisTerms.battleRange(window.startSec(), window.endSec()))
+                    .append(" 掉血").append(window.totalDamage())
+                    .append(" 命中").append(window.hitCount()).append("次")
+                    .append(window.lethal() ? "（致死）" : "")
+                    .append('\n');
+        }
+        return true;
+    }
+
+    /**
      * 敌方最后已知位置段（观测子集）。与 fallback 路径共用同一渲染器；
      * 无 OBSERVED 敌方记录或视角未解析时静默跳过，不输出噪音标记。
      */

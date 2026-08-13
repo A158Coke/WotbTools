@@ -37,8 +37,9 @@ public final class TeamAutopsyPromptBuilder {
         sb.append("=== 结果 ===\n");
         sb.append(winnerLabel(winner, teamLabel)).append('\n');
         if (winner != null && winner.pointsDecided()) {
-            sb.append("本局为争霸赛点数胜利（结束时刻双方均未全员阵亡），"
-                    + "不要描述成敌方全歼。\n");
+            // supremacy 点数胜负只有两种结束方式：任一方达到 1000 分提前获胜，
+            // 或时间耗尽后比较点数；双方均未达 1000 分时必然是时间耗尽。
+            sb.append(pointsDecidedNote(winner)).append('\n');
         }
         sb.append("本方 7 人（TEAM_A）:\n");
         for (final TeamAutopsyStats s : stats) {
@@ -174,7 +175,7 @@ public final class TeamAutopsyPromptBuilder {
         return playerKey + "（" + PromptDataQuoter.quote(label, stat.tankName()) + "）";
     }
 
-    /** 团队赛胜负标签；使用实际队名（teamLabel），点数判定时附加说明。 */
+    /** 团队赛胜负标签；使用实际队名（teamLabel），点数判定时附加结束方式说明。 */
     static String winnerLabel(final TeamBattleWinner winner, final String teamLabel) {
         if (winner == null) {
             return "未知";
@@ -185,7 +186,26 @@ public final class TeamAutopsyPromptBuilder {
             case ENEMY_WIN -> label + "落败";
             case DRAW_OR_UNKNOWN -> "未知";
         };
-        return winner.pointsDecided() ? base + "（点数判定）" : base;
+        if (!winner.pointsDecided()) {
+            return base;
+        }
+        return switch (winner.pointsEndReason()) {
+            case REACHED_1000 -> base + "（达到 1000 分提前获胜）";
+            case TIME_EXPIRED -> base + "（时间耗尽点数判定）";
+            case UNKNOWN, NOT_APPLICABLE -> base + "（点数判定）";
+        };
+    }
+
+    /** 点数胜利的结束方式说明（供 prompt 使用；禁止 AI 把点数胜负写成常规胜利）。 */
+    private static String pointsDecidedNote(final TeamBattleWinner winner) {
+        return switch (winner.pointsEndReason()) {
+            case TIME_EXPIRED -> "本局为时间耗尽点数胜利（结束时刻双方均未全员阵亡，且双方均未达 1000 分），"
+                    + "叙述必须写「时间耗尽」；不要描述成敌方全歼。";
+            case REACHED_1000 -> "本局为任一方达到 1000 分提前获胜（结束时刻双方均未全员阵亡），"
+                    + "叙述必须写「达到 1000 分提前获胜」；不要描述成敌方全歼。";
+            case UNKNOWN, NOT_APPLICABLE -> "本局为争霸赛点数胜利（结束时刻双方均未全员阵亡），"
+                    + "不要描述成敌方全歼。";
+        };
     }
 
     /** 渲染层中文映射：LLM JSON 契约保持英文枚举，仅展示时翻译（MVP 保留英文）。 */

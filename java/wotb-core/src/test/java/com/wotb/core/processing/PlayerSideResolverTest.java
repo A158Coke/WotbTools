@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.processing.FriendlyEnemyResult.PointsEndReason;
 import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.processing.FriendlyEnemyResult.WinnerSource;
@@ -209,6 +210,7 @@ class PlayerSideResolverTest {
         assertEquals(Winner.FRIENDLY_WIN, w.winner());
         assertEquals(WinnerSource.BATTLE_RESULTS, w.source());
         assertFalse(w.pointsDecided(), "enemy team fully destroyed -> not a points victory");
+        assertEquals(PointsEndReason.NOT_APPLICABLE, w.pointsEndReason());
     }
 
     @Test
@@ -222,6 +224,8 @@ class PlayerSideResolverTest {
         assertEquals(Winner.ENEMY_WIN, w.winner());
         assertEquals(WinnerSource.BATTLE_RESULTS, w.source());
         assertTrue(w.pointsDecided(), "neither team fully destroyed -> supremacy points victory");
+        assertEquals(PointsEndReason.TIME_EXPIRED, w.pointsEndReason(),
+                "both sides below 1000 points -> points victory only possible after time expired");
     }
 
     @Test
@@ -264,6 +268,35 @@ class PlayerSideResolverTest {
         assertEquals(Winner.ENEMY_WIN, w.winner());
         assertEquals(WinnerSource.POINTS_INFERENCE, w.source());
         assertTrue(w.pointsDecided());
+        assertEquals(PointsEndReason.TIME_EXPIRED, w.pointsEndReason());
+    }
+
+    @Test
+    void supremacy_pointsReach1000_isReached1000EndReason() {
+        final Battle battle = new Battle();
+        battle.winnerTeam = 1;
+        battle.players = List.of(
+                player(1, "A1", true, 1043),
+                player(2, "B1", true, 280));
+        final TeamBattleWinner w = FriendlyEnemyResult.resolveTeamBattle(battle, 1);
+        assertEquals(Winner.FRIENDLY_WIN, w.winner());
+        assertTrue(w.pointsDecided());
+        assertEquals(PointsEndReason.REACHED_1000, w.pointsEndReason(),
+                "a team reaching >=1000 points wins immediately");
+    }
+
+    @Test
+    void pointsEndReason_helperDistinguishesTimeExpiredReached1000AndMissingData() {
+        assertEquals(PointsEndReason.TIME_EXPIRED,
+                FriendlyEnemyResult.pointsEndReason(854, 275),
+                "854:275 below 1000 -> must be time-expired points decision");
+        assertEquals(PointsEndReason.REACHED_1000,
+                FriendlyEnemyResult.pointsEndReason(1043, 280));
+        assertEquals(PointsEndReason.REACHED_1000,
+                FriendlyEnemyResult.pointsEndReason(275, 1000));
+        assertEquals(PointsEndReason.UNKNOWN,
+                FriendlyEnemyResult.pointsEndReason(0, 0),
+                "no victory points at all -> end reason cannot be determined");
     }
 
     @Test
