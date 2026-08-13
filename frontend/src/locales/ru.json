@@ -786,8 +786,9 @@
           },
           "map": {
               "title": "Карта боя",
-              "view_heatmap": "Тепловая карта",
-              "view_routes": "Маршруты",
+            "view_heatmap": "Тепловая карта",
+            "view_routes": "Маршруты",
+            "view_playback": "Повтор боя",
               "team_friendly": "Свои",
               "team_enemy": "Враг",
               "team_all": "Все",
@@ -804,8 +805,29 @@
               "death": "Уничтожен",
               "observed_from": "позиции наблюдаются с",
               "observed_note": "Окно наблюдения (техника без позиций на старте):",
-              "duration": "{m} мин {s} с",
-              "aria": "карта боя"
+            "duration": "{m} мин {s} с",
+            "aria": "карта боя",
+            "playback": {
+                "play": "Играть",
+                "pause": "Пауза",
+                "all_events": "Все известные события",
+                "progress": "Прогресс",
+                "tank": "Танк",
+                "team": "Команда",
+                "team_friendly": "Союзники",
+                "team_enemy": "Противник",
+                "state": "Состояние",
+                "state_position_reported": "Позиция передаётся",
+                "state_position_stale": "Позиция устарела (последняя известная)",
+                "state_destroyed": "Уничтожен",
+                "last_known": "Последняя известная позиция @",
+                "unknown": "Неизвестно",
+                "event_DAMAGE": "Урон",
+                "event_DESTROYED": "Уничтожен",
+                "event_KILL": "Фраг",
+                "event_POSITION_REPORTED": "Позиция передана",
+                "event_POSITION_STALE": "Позиция устарела"
+            }
           },
         "stages": {
             "call1": "Предбоевой прогноз…",

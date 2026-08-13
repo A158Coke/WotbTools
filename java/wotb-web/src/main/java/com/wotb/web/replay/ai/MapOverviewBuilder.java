@@ -8,9 +8,13 @@ import com.wotb.core.processing.TeamEntityMapper;
 import com.wotb.core.processing.TeamEntityMapping;
 import com.wotb.core.processing.TeamPerspectiveResolution;
 import com.wotb.core.processing.TeamPerspectiveResolver;
+import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.TurretDirectionChangedEvent;
+import com.wotb.core.replay.event.VehicleDestroyedEvent;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.map.MapGridProfile;
 import com.wotb.core.replay.map.MapGridRegistry;
@@ -86,6 +90,8 @@ public final class MapOverviewBuilder {
                 battle, mapping, positions, damages, friendlyTeam, profile, battleStart);
         final List<MapOverview.Phase> phases = buildPhases(
                 damages, positions, battle, battleStart);
+        final MapOverview.Playback playback = buildPlayback(
+                battle, mapping, positions, events, battleStart);
 
         return new MapOverview(
                 battle.mapName.trim().toLowerCase(),
@@ -113,7 +119,321 @@ public final class MapOverviewBuilder {
                 heatmaps,
                 routes,
                 battle.arenaBonusType,
-                resolveRecorderAccountId(battle));
+                resolveRecorderAccountId(battle),
+                playback);
+    }
+
+    /**
+     * 位置流连续上报的最大间隔（秒）；超过则视为位置上报中断，重新出现时新开区间。
+     * 语义 = 服务器位置流覆盖，不等于「对录像者可见/点亮」（type-10 与点亮无关）。
+     */
+    private static final double POSITION_GAP_SEC = 5.0;
+
+    /**
+     * 战局回放数据：车辆（位置复用路线点，这里只补充位置上报区间）+
+     * 时间轴事件（DAMAGE/DESTROYED/KILL/POSITION_REPORTED/POSITION_STALE，按 battle-relative 秒）。
+     * POSITION_REPORTED/STALE 只表达服务器位置流覆盖变化，不是点亮/失察（见 POSITION_GAP_SEC）。
+     * 无法可靠解析身份的伤害/击毁不输出对应事件，绝不编造。
+     */
+    private static MapOverview.Playback buildPlayback(
+            final Battle battle,
+            final TeamEntityMapping mapping,
+            final Positions positions,
+            final List<ReplayEvent> events,
+            final Float battleStartRawClockSec) {
+        if (battle == null || battle.players == null || positions.isEmpty()) {
+            return null;
+        }
+        // 时长契约：所有 playback 数据（event/interval/direction/deathSec）都必须落在 [0, durationSec]。
+        final double duration = resolveDurationSec(battle, positions, events, battleStartRawClockSec);
+        final Long recorderAccount = resolveRecorderAccountId(battle);
+        final List<MapOverview.PlaybackVehicle> vehicles = new ArrayList<>();
+        for (final PlayerResult player : battle.players) {
+            if (player.team <= 0 || player.accountId <= 0) {
+                continue;
+            }
+            final List<Integer> entityIds = mapping.entityIdsByAccount()
+                    .getOrDefault(player.accountId, List.of());
+            if (entityIds.isEmpty()) {
+                continue;
+            }
+            final Double rawDeath = resolveDeathSec(player);
+            final Double deathSec = rawDeath == null ? null : Math.min(rawDeath, duration);
+            final List<MapOverview.PositionInterval> intervals = positionIntervals(
+                    entityIds, positions, events, battleStartRawClockSec, deathSec, duration);
+            final List<MapOverview.DirectionSample> directionSamples = directionSamples(
+                    entityIds, positions, events, battleStartRawClockSec, deathSec, intervals, duration);
+            vehicles.add(new MapOverview.PlaybackVehicle(
+                    player.accountId, player.nickname, player.tankId,
+                    player.tankName == null ? "" : player.tankName, player.team,
+                    intervals, deathSec, directionSamples));
+        }
+        if (vehicles.isEmpty()) {
+            return null;
+        }
+
+        final List<MapOverview.PlaybackEvent> playbackEvents = new ArrayList<>();
+        for (final ReplayEvent event : events) {
+            if (event instanceof DamageEvent damage) {
+                final long victim = accountOf(damage.victimEid(), mapping);
+                if (victim <= 0) {
+                    continue;
+                }
+                final long attacker = accountOf(damage.attackerEid(), mapping);
+                playbackEvents.add(new MapOverview.PlaybackEvent(
+                        "DAMAGE", relativeSec(damage, battleStartRawClockSec),
+                        attacker > 0 ? attacker : null, victim, damage.damage()));
+            } else if (event instanceof VehicleDestroyedEvent destroyed) {
+                final long victim = accountOf(destroyed.entityId(), mapping);
+                if (victim <= 0) {
+                    continue;
+                }
+                playbackEvents.add(new MapOverview.PlaybackEvent(
+                        "DESTROYED", relativeSec(destroyed, battleStartRawClockSec),
+                        victim, null, null));
+                final Integer killerEid = destroyed.killerEid();
+                final long killer = killerEid != null ? accountOf(killerEid, mapping) : 0L;
+                if (killer > 0 && killer != victim) {
+                    playbackEvents.add(new MapOverview.PlaybackEvent(
+                            "KILL", relativeSec(destroyed, battleStartRawClockSec),
+                            killer, victim, null));
+                }
+            }
+        }
+        for (final MapOverview.PlaybackVehicle vehicle : vehicles) {
+            if (recorderAccount != null && vehicle.accountId() == recorderAccount) {
+                continue; // 录像者自身不做位置覆盖事件广播
+            }
+            for (final MapOverview.PositionInterval interval : vehicle.positionIntervals()) {
+                playbackEvents.add(new MapOverview.PlaybackEvent(
+                        "POSITION_REPORTED", interval.startSec(), vehicle.accountId(), null, null));
+                playbackEvents.add(new MapOverview.PlaybackEvent(
+                        "POSITION_STALE", interval.endSec(), vehicle.accountId(), null, null));
+            }
+        }
+        // 时间契约兜底：非法/越界事件一律不进入 DTO（绝不因单个事件突破 duration）。
+        playbackEvents.removeIf(e -> !Double.isFinite(e.timeSec())
+                || e.timeSec() < 0 || e.timeSec() > duration + 1e-6);
+        playbackEvents.sort(Comparator.comparingDouble(MapOverview.PlaybackEvent::timeSec));
+
+        return new MapOverview.Playback(duration, vehicles, playbackEvents);
+    }
+
+    /**
+     * playback 时长（秒）：① finite 且 >0 的 battle.durationS；② 合法 battle-relative 的
+     * BattleEndedEvent（取最早一个）；③ 位置流最后可信时刻；全无 → 0。
+     */
+    private static double resolveDurationSec(
+            final Battle battle,
+            final Positions positions,
+            final List<ReplayEvent> events,
+            final Float battleStartRawClockSec) {
+        if (battle != null && battle.durationS != null
+                && Double.isFinite(battle.durationS) && battle.durationS > 0) {
+            return battle.durationS;
+        }
+        double battleEnd = Double.NaN;
+        for (final ReplayEvent event : events) {
+            if (event instanceof BattleEndedEvent ended) {
+                final double t = relativeSec(ended, battleStartRawClockSec);
+                if (Double.isFinite(t) && t > 0) {
+                    battleEnd = Double.isNaN(battleEnd) ? t : Math.min(battleEnd, t);
+                }
+            }
+        }
+        if (Double.isFinite(battleEnd) && battleEnd > 0) {
+            return battleEnd;
+        }
+        return Math.max(0, positions.lastTimeSec());
+    }
+
+    /**
+     * 车辆方向采样：type-7 propId=2（炮塔相对车体角）与同车 type-10 位置（hull yaw）配对。
+     * <p>可信度边界：turret sample 的 t 必须落在该车同一可信 position-report 区间内，hull yaw 只能
+     * 从该区间内的位置样本配对——位置流中断（gap）期间不得继续用后续 prop2 推动炮塔，不得跨 gap
+     * 从另一侧取 hull yaw；re-entry 后新方向段才继续。</p>
+     * <p>仅保留 finite、0 ≤ t ≤ min(duration, deathSec) 的样本；按「dt≥1s 或方向变化≥10°」降采样，
+     * 每个可信方向段的最后一个样本恒保留（冻结准确）；无可靠方向的车辆返回空列表（不伪造朝向）。</p>
+     */
+    private static List<MapOverview.DirectionSample> directionSamples(
+            final List<Integer> entityIds,
+            final Positions positions,
+            final List<ReplayEvent> events,
+            final Float battleStartRawClockSec,
+            final Double deathSec,
+            final List<MapOverview.PositionInterval> intervals,
+            final double duration) {
+        final List<double[]> raw = new ArrayList<>();
+        for (final int entityId : entityIds) {
+            for (final ReplayEvent event : events) {
+                if (!(event instanceof TurretDirectionChangedEvent turret)
+                        || turret.entityId() != entityId) {
+                    continue;
+                }
+                final double t = relativeSec(turret, battleStartRawClockSec);
+                if (!Double.isFinite(t) || t < 0 || t > duration + 1e-6
+                        || (deathSec != null && t > deathSec + 1e-6)) {
+                    continue;
+                }
+                // t 必须位于该车某个可信位置上报区间内；hull yaw 只允许来自同一区间的位置样本。
+                final MapOverview.PositionInterval interval = intervals.stream()
+                        .filter(iv -> t >= iv.startSec() - 1e-6 && t <= iv.endSec() + 1e-6)
+                        .findFirst().orElse(null);
+                if (interval == null) {
+                    continue;
+                }
+                final Position pos = nearestWithin(entityIds, positions, t,
+                        interval.startSec(), interval.endSec());
+                if (pos == null || pos.yawDeg() == null || !Double.isFinite(pos.yawDeg())) {
+                    continue;
+                }
+                raw.add(new double[]{t, pos.yawDeg(), turret.turretRelativeYawDeg()});
+            }
+        }
+        raw.sort(Comparator.comparingDouble(a -> a[0]));
+        final List<MapOverview.DirectionSample> out = new ArrayList<>();
+        double lastKeptT = Double.NEGATIVE_INFINITY;
+        double lastHull = 0;
+        double lastRel = 0;
+        for (final double[] s : raw) {
+            final boolean first = out.isEmpty();
+            final double dHull = first ? 0 : shortestArcDeg(s[1], lastHull);
+            final double dRel = first ? 0 : shortestArcDeg(s[2], lastRel);
+            if (first || s[0] - lastKeptT >= 1.0
+                    || Math.abs(dHull) >= 10.0 || Math.abs(dRel) >= 10.0) {
+                out.add(new MapOverview.DirectionSample(s[0], s[1], s[2]));
+                lastKeptT = s[0];
+                lastHull = s[1];
+                lastRel = s[2];
+            } else {
+                // 未保留：更新基准，避免漂移累积误判变化阈值
+                lastHull = s[1];
+                lastRel = s[2];
+            }
+        }
+        // 段末冻结保证：最后一个可信样本即使未跨阈值也恒保留（当前实现与注释一致）。
+        if (!raw.isEmpty()
+                && (out.isEmpty()
+                || raw.get(raw.size() - 1)[0] > out.get(out.size() - 1).timeSec() + 1e-6)) {
+            final double[] lastRaw = raw.get(raw.size() - 1);
+            out.add(new MapOverview.DirectionSample(lastRaw[0], lastRaw[1], lastRaw[2]));
+        }
+        return out;
+    }
+
+    /** 在 [startSec, endSec] 区间内找时间上最接近 t 的位置（跨实体合并；禁止区间外配对）。 */
+    private static Position nearestWithin(
+            final List<Integer> entityIds,
+            final Positions positions,
+            final double t,
+            final double startSec,
+            final double endSec) {
+        Position best = null;
+        double bestDelta = Double.MAX_VALUE;
+        for (final int entityId : entityIds) {
+            for (final Position pos : positions.byEntity().getOrDefault(entityId, List.of())) {
+                if (pos.timeSec < startSec - 1e-6 || pos.timeSec > endSec + 1e-6) {
+                    continue;
+                }
+                final double delta = Math.abs(pos.timeSec - t);
+                if (delta < bestDelta) {
+                    bestDelta = delta;
+                    best = pos;
+                }
+            }
+        }
+        return best;
+    }
+
+    /** 最短圆弧差（度，[-180,180]）。 */
+    private static double shortestArcDeg(final double a, final double b) {
+        double d = (a - b) % 360.0;
+        if (d > 180) {
+            d -= 360;
+        }
+        if (d < -180) {
+            d += 360;
+        }
+        return d;
+    }
+
+    /**
+     * 车辆位置上报区间：按位置事件时间线聚类（gap ≤ 5s 视为连续上报），
+     * EntityRemoved 关闭末段区间，阵亡时刻截断区间末端；re-entry 跨实体区间合并。
+     * 语义 = 服务器位置流覆盖，不代表录像者点亮。
+     */
+    private static List<MapOverview.PositionInterval> positionIntervals(
+            final List<Integer> entityIds,
+            final Positions positions,
+            final List<ReplayEvent> events,
+            final Float battleStartRawClockSec,
+            final Double deathSec,
+            final double duration) {
+        final List<MapOverview.PositionInterval> raw = new ArrayList<>();
+        for (final int entityId : entityIds) {
+            final List<Position> pts = positions.byEntity().getOrDefault(entityId, List.of());
+            if (pts.isEmpty()) {
+                continue;
+            }
+            double removedAt = Double.MAX_VALUE;
+            for (final ReplayEvent event : events) {
+                if (event instanceof EntityRemovedEvent removed && removed.entityId() == entityId) {
+                    removedAt = Math.min(removedAt, relativeSec(removed, battleStartRawClockSec));
+                }
+            }
+            double runStart = pts.get(0).timeSec;
+            double runEnd = runStart;
+            for (int i = 1; i < pts.size(); i++) {
+                final double t = pts.get(i).timeSec;
+                if (t - runEnd > POSITION_GAP_SEC) {
+                    raw.add(new MapOverview.PositionInterval(runStart, runEnd));
+                    runStart = t;
+                }
+                runEnd = t;
+            }
+            final double intervalEnd = removedAt < runEnd
+                    ? removedAt : runEnd;
+            raw.add(new MapOverview.PositionInterval(runStart, intervalEnd));
+        }
+        raw.sort(Comparator.comparingDouble(MapOverview.PositionInterval::startSec));
+        final List<MapOverview.PositionInterval> merged = new ArrayList<>();
+        for (final MapOverview.PositionInterval interval : raw) {
+            if (merged.isEmpty()
+                    || interval.startSec() - merged.get(merged.size() - 1).endSec() > 1e-6) {
+                merged.add(interval);
+            } else {
+                final MapOverview.PositionInterval last = merged.get(merged.size() - 1);
+                merged.set(merged.size() - 1, new MapOverview.PositionInterval(
+                        last.startSec(), Math.max(last.endSec(), interval.endSec())));
+            }
+        }
+        if (deathSec != null) {
+            for (int i = 0; i < merged.size(); i++) {
+                final MapOverview.PositionInterval interval = merged.get(i);
+                if (interval.endSec() > deathSec) {
+                    merged.set(i, new MapOverview.PositionInterval(
+                            interval.startSec(), Math.max(interval.startSec(), deathSec)));
+                }
+            }
+        }
+        // 时间契约：区间不得越过 playback duration；起点越界的区间整体剔除。
+        final List<MapOverview.PositionInterval> bounded = new ArrayList<>();
+        for (final MapOverview.PositionInterval interval : merged) {
+            if (interval.startSec() > duration + 1e-6) {
+                continue;
+            }
+            bounded.add(new MapOverview.PositionInterval(
+                    interval.startSec(), Math.min(interval.endSec(), duration)));
+        }
+        return bounded;
+    }
+
+    private static long accountOf(final int entityId, final TeamEntityMapping mapping) {
+        if (entityId <= 0) {
+            return 0L;
+        }
+        final TeamEntityIdentity identity = mapping.identity(entityId);
+        return identity != null ? identity.accountId() : 0L;
     }
 
     /** 录像者账号 id（Battle.recorder 昵称已在 ReplayParser 解析时归一化，可稳定匹配 players）；未解析为 null。 */
@@ -370,8 +690,11 @@ public final class MapOverviewBuilder {
         return event.timestamp().rawClockSec();
     }
 
-    /** 某时刻的平面位置（语义坐标 x/z 与 battle-relative 秒）。 */
-    private record Position(double timeSec, double x, double z) {
+    /**
+     * 某时刻的平面位置（语义坐标 x/z 与 battle-relative 秒）。
+     * yawDeg 来自 type-10 yaw（弧度→度，[-180,180)），非有限时为 null（不参与方向采样）。
+     */
+    private record Position(double timeSec, double x, double z, Double yawDeg) {
     }
 
     /** 按实体聚合的位置时间线（有序），附带最近/最后位置查询。 */
@@ -408,8 +731,10 @@ public final class MapOverviewBuilder {
                 if (!Double.isFinite(t) || t < 0) {
                     continue;
                 }
+                final Double yawDeg = Float.isFinite(pos.yaw())
+                        ? Math.toDegrees(pos.yaw()) : null;
                 byEntity.computeIfAbsent(pos.entityId(), k -> new ArrayList<>())
-                        .add(new Position(t, pos.x(), pos.z()));
+                        .add(new Position(t, pos.x(), pos.z(), yawDeg));
             }
             byEntity.values().forEach(list -> list.sort(Comparator.comparingDouble(Position::timeSec)));
             return new Positions(byEntity);

@@ -26,6 +26,7 @@ import java.util.Map;
  * @param arenaBonusType      战斗模式（meta.json#arenaBonusType 原值；1=随机战斗，其他=训练/联赛等；未知为 null）
  * @param recorderAccountId   录像者账号 id（经 {@link com.wotb.core.model.Battle#recorderResult()} 解析；
  *                             未解析为 null；前端用于路线「仅玩家」筛选）
+ * @param playback      战局回放数据（可空；无观测/无名册时为 null；前端用于地图鸟瞰「战局回放」第三视图）
  */
 public record MapOverview(
         String mapCode,
@@ -40,7 +41,8 @@ public record MapOverview(
         Heatmaps heatmaps,
         List<Route> routes,
         Integer arenaBonusType,
-        Long recorderAccountId
+        Long recorderAccountId,
+        Playback playback
 ) {
 
     public MapOverview {
@@ -103,5 +105,88 @@ public record MapOverview(
 
     /** 路线点（语义坐标 + battle-relative 秒；连续点 gap > 5s 时前端断线）。 */
     public record Point(double x, double y, double timeSec) {
+    }
+
+    /**
+     * 战局回放（Playback）：给前端播放器的时间轴契约。
+     *
+     * @param durationSec 战斗总时长（battle-relative 秒；无权威时长时取最后观测时刻）
+     * @param vehicles    参战车辆（仅含可解析名册且有观测的车辆）
+     * @param events      时间轴事件（按 timeSec 升序；type 为英文稳定码，文案由前端三语渲染）
+     */
+    public record Playback(
+            double durationSec,
+            List<PlaybackVehicle> vehicles,
+            List<PlaybackEvent> events
+    ) {
+        public Playback {
+            vehicles = vehicles == null ? List.of() : List.copyOf(vehicles);
+            events = events == null ? List.of() : List.copyOf(events);
+        }
+    }
+
+    /**
+     * 一辆参战车辆（位置复用 {@link Route#points()}，这里只补充位置上报区间）。
+     * <p>注意：{@code positionIntervals} 是服务器位置流上报覆盖（type-10 gap 聚类），
+     * 不代表录像者客户端点亮——敌方静止时服务器不上报位置，位置中断≠失察。
+     */
+    public record PlaybackVehicle(
+            long accountId,
+            String playerName,
+            long tankId,
+            String tankName,
+            int team,
+            List<PositionInterval> positionIntervals,
+            Double deathSec,
+            List<DirectionSample> directionSamples
+    ) {
+        public PlaybackVehicle {
+            playerName = playerName == null ? "" : playerName;
+            tankName = tankName == null ? "" : tankName;
+            positionIntervals = positionIntervals == null
+                    ? List.of() : List.copyOf(positionIntervals);
+            directionSamples = directionSamples == null
+                    ? List.of() : List.copyOf(directionSamples);
+        }
+    }
+
+    /**
+     * 车辆方向采样（battle-relative 秒升序）。
+     * <p>单位均为度：{@code hullYawDeg} 来自 type-10 yaw（弧度→度，[-180,180)）；
+     * {@code turretRelativeYawDeg} 来自 type-7 propId=2（u16*360/65536-180，[-180,180)，
+     * 完整 360° 且 ±180 回绕）。炮口/炮塔世界方向由前端计算：
+     * {@code turretWorldYaw = normalize(hullYawDeg + turretRelativeYawDeg)}。
+     * 相邻采样间前端按最短圆弧插值；跨位置中断/阵亡/不可信 gap 禁止插值。
+     */
+    public record DirectionSample(
+            double timeSec,
+            double hullYawDeg,
+            double turretRelativeYawDeg
+    ) {
+    }
+
+    /**
+     * 车辆位置上报区间（battle-relative 秒；[startSec, endSec] 内服务器持续上报该车位置）。
+     * 语义 = 位置流覆盖，不等于「对录像者可见/点亮」。
+     */
+    public record PositionInterval(double startSec, double endSec) {
+    }
+
+    /**
+     * 时间轴事件。
+     *
+     * @param type           DAMAGE | DESTROYED | KILL | POSITION_REPORTED | POSITION_STALE（英文稳定码）
+     * @param timeSec        battle-relative 秒
+     * @param accountId      主体（攻击者 / 被击毁者 / 进入或离开观察的车辆）；无法解析为 null
+     * @param targetAccountId 对象（DAMAGE/KILL 的受害者）；其余为 null
+     * @param damage         DAMAGE 的伤害值；其余为 null
+     */
+    public record PlaybackEvent(
+            String type,
+            double timeSec,
+            Long accountId,
+            Long targetAccountId,
+            Integer damage
+    ) {
     }
 }
