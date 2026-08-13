@@ -466,7 +466,7 @@
             "ELITE": "Мастер",
             "PRO": "Профи",
             "MASTER": "Гранд-мастер",
-            "AVERAGE_GOD": "Бог среднего урона"
+            "AVERAGE_GOD": "Мифический"
         },
         "availability": {
             "YEAR_360": "360+ дней в год",
@@ -647,13 +647,13 @@
         "ASSIGNMENT_STATUS_INVALID": "Статус назначения не допускает это действие",
         "ASSIGNMENT_STATUS_NOT_COMPLETABLE": "Назначение сейчас нельзя завершить",
         "ALREADY_BOOSTER": "Пользователь уже является бустером",
-        "AVERAGE_GOD_ALREADY_EXISTS": "На этом сервере уже есть Бог среднего урона",
+        "AVERAGE_GOD_ALREADY_EXISTS": "На этом сервере уже есть бустер мифического уровня",
         "BOOSTER_APPLICATION_ALREADY_OPEN": "Уже есть заявка на рассмотрении",
         "BOOSTER_APPLICATION_NOT_FOUND": "Заявка бустера не найдена",
         "BOOSTER_APPLICATION_NOT_OPEN": "Заявка бустера закрыта",
         "BOOSTER_NICKNAME_REQUIRED": "Укажите ник бустера",
         "BOOSTER_LEVEL_REQUIRED": "Выберите уровень бустера",
-        "BOOSTER_LEVEL_ADMIN_EDIT_ONLY": "Уровень Бога среднего урона можно присвоить только при редактировании существующего бустера",
+        "BOOSTER_LEVEL_ADMIN_EDIT_ONLY": "Мифический уровень можно присвоить только при редактировании существующего бустера",
         "BOOSTER_STATUS_REQUIRED": "Выберите статус бустера",
         "BOOSTER_AVAILABILITY_REQUIRED": "Укажите доступность",
         "BOOSTER_HAS_DEPENDENCIES": "У бустера есть связанные записи, удаление невозможно",

@@ -110,7 +110,9 @@ public class TeamAutopsyService {
                 allStats, null,
                 List.of(),
                 winner,
-                teamLabel);
+                teamLabel,
+                battle,
+                recorderTeam);
         final List<Map<String, Object>> messages = List.of(
                 Map.<String, Object>of("role", "system", "content", systemPrompt),
                 Map.<String, Object>of("role", "user", "content", userContent));

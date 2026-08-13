@@ -52,6 +52,8 @@ class ReplayParserFixtureTest {
         assertEquals("rift", b.mapName);
         assertEquals(Integer.valueOf(2), b.winnerTeam);
         assertEquals(14, b.players.size());
+        assertTrue(Boolean.TRUE.equals(b.rosterComplete),
+                "真实 7v7 夹具：名册(#201)与战绩(#301)账号集合一致时应标记结算阵容完整");
 
         // meta.json#playerName 可能是「军团-昵称」拼接（如 CHRD-A158布丁）：
         // 录像者必须按 roster 纯昵称解析，禁止把军团名当玩家名
@@ -78,6 +80,8 @@ class ReplayParserFixtureTest {
         for (final Path p : fixtures()) {
             final Battle b = ReplayParser.parse(Files.readAllBytes(p));
             assertEquals(14, b.players.size(), p.getFileName().toString());
+            assertTrue(Boolean.TRUE.equals(b.rosterComplete),
+                    "已提交夹具必须标记结算阵容完整（rosterComplete=true）: " + p.getFileName());
             // 发射 >= 命中 >= 击穿
             b.players.forEach(pr -> assertTrue(
                     pr.nShots >= pr.nHitsDealt && pr.nHitsDealt >= pr.nPenetrationsDealt,

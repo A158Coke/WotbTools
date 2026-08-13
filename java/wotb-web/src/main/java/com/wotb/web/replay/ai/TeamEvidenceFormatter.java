@@ -4,6 +4,7 @@ import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.FriendlyEnemyResult;
+import com.wotb.core.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.TeamPerspectiveLabelResolver;
 import com.wotb.core.ref.ReplayDisplayNames;
@@ -277,25 +278,40 @@ final class TeamEvidenceFormatter {
                 .sum();
         final FriendlyEnemyResult.TeamBattleWinner winner =
                 FriendlyEnemyResult.resolveTeamBattle(battle, perspectiveTeam);
+        final boolean rosterComplete = FriendlyEnemyResult.rosterComplete(battle);
         writer.append("\n=== CAPTURE_AND_POINTS（争霸赛占点·权威结算） ===\n");
         writer.append("pointsDecided=" + winner.pointsDecided() + "\n");
+        if (!rosterComplete) {
+            // 结算阵容不完整：逐人/双方占点分只是部分数据，不得当作权威总量或推断点数结束方式。
+            // mandatory header 的 result 行同步降级为 UNKNOWN/「点数判定」，口径保持一致。
+            writer.append("SETTLEMENT_ROSTER_INCOMPLETE=true\n");
+            writer.append("pointsTotalsUnavailable=true\n");
+            writer.append("directive=结算阵容不完整：占点分总量不可用，禁止用残缺点数推断胜方或「时间耗尽/达到 1000 分」结束方式\n");
+        }
         if (winner.pointsDecided()) {
             writer.append("winnerSource=" + winner.source().name() + "\n");
-            // 点数胜负只可能发生在：任一方达到 1000 分提前结束，或时间耗尽后比较点数。
-            // 双方 victoryPointsEarned 均 <1000 时必然是时间耗尽（REACHED_1000 / TIME_EXPIRED / UNKNOWN）。
+            // pointsDecided=true 表示结束时刻双方均未全员阵亡（非全歼）：任一方 victoryPointsEarned ≥1000
+            // → REACHED_1000；双方均 <1000 → TIME_EXPIRED（时间耗尽）；点数缺失 → UNKNOWN；
+            // 结算阵容不完整（rosterComplete=false）→ UNKNOWN，只写通用「点数判定」。
+            // 全歼获胜（一方全员阵亡）时 pointsDecided=false，不写点数结束方式。
             writer.append("pointsEndReason=" + winner.pointsEndReason().name() + "\n");
         }
-        writer.append("team victoryPointsEarned=" + earned
-                + " victoryPointsSeized=" + seized + "\n");
-        writer.append("opposing victoryPointsEarned=" + opposingEarned + "\n");
-        for (final PlayerResult player : battle.players) {
-            if (player != null && player.team == perspectiveTeam
-                    && (player.victoryPointsEarned > 0 || player.victoryPointsSeized > 0)) {
-                writer.append("member accountId=" + player.accountId
-                        + " nickname=" + quoteData(player.nickname)
-                        + " victoryPointsEarned=" + player.victoryPointsEarned
-                        + " victoryPointsSeized=" + player.victoryPointsSeized + "\n");
+        if (rosterComplete) {
+            writer.append("team victoryPointsEarned=" + earned
+                    + " victoryPointsSeized=" + seized + "\n");
+            writer.append("opposing victoryPointsEarned=" + opposingEarned + "\n");
+            for (final PlayerResult player : battle.players) {
+                if (player != null && player.team == perspectiveTeam
+                        && (player.victoryPointsEarned > 0 || player.victoryPointsSeized > 0)) {
+                    writer.append("member accountId=" + player.accountId
+                            + " nickname=" + quoteData(player.nickname)
+                            + " victoryPointsEarned=" + player.victoryPointsEarned
+                            + " victoryPointsSeized=" + player.victoryPointsSeized + "\n");
+                }
             }
+        } else {
+            writer.append("team victoryPointsEarned=UNKNOWN victoryPointsSeized=UNKNOWN\n");
+            writer.append("opposing victoryPointsEarned=UNKNOWN\n");
         }
         final List<String> regions = new ArrayList<>(
                 TeamSoloIntentSkill.controlPointRegions(SEMANTICS_REGISTRY.semanticsFor(mapCode)));
@@ -631,13 +647,26 @@ final class TeamEvidenceFormatter {
                                             final String teamLabel) {
         final var winner = FriendlyEnemyResult.resolveTeamBattle(battle, perspectiveTeam);
         final String label = StringUtils.hasText(teamLabel) ? teamLabel : "本队";
-        return switch (winner.winner()) {
-            case FRIENDLY_WIN -> winner.pointsDecided()
-                    ? label + "获胜" + pointsSuffix(winner) : label + "获胜";
-            case ENEMY_WIN -> winner.pointsDecided()
-                    ? label + "落败" + pointsSuffix(winner) : label + "落败";
+        final String base = switch (winner.winner()) {
+            case FRIENDLY_WIN -> label + "获胜";
+            case ENEMY_WIN -> label + "落败";
             case DRAW_OR_UNKNOWN -> "平局或未知";
         };
+        if (winner.winner() == Winner.DRAW_OR_UNKNOWN) {
+            return base;
+        }
+        // 全歼双向语义（结算存活状态，与 resultSource 无关）：获胜且对方无存活 / 落败且本方无存活。
+        final String annihilation = FriendlyEnemyResult.annihilationSuffix(
+                battle, perspectiveTeam, winner.winner());
+        if (!annihilation.isEmpty()) {
+            return base + annihilation;
+        }
+        return winner.pointsDecided() ? base + pointsSuffix(winner) : base;
+    }
+
+    /** result 行的胜负来源（BATTLE_RESULTS / SURVIVOR_SETTLEMENT / POINTS_INFERENCE / UNKNOWN）。 */
+    static String resolveTeamResultSource(final Battle battle, final int perspectiveTeam) {
+        return FriendlyEnemyResult.resolveTeamBattle(battle, perspectiveTeam).source().name();
     }
 
     /** 点数胜负的结束方式后缀：时间耗尽 / 1000 分提前 / 未知。 */

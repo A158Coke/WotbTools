@@ -19,6 +19,14 @@ public class Battle {
     public String clientVersion = "";
     public List<PlayerResult> players;
 
+    /**
+     * 结算阵容完整性证据（ReplayParser 设置）：名册(#201) 与战绩(#301) 的账号集合完全一致
+     * （所有参战成员都有结算记录）；名册提供队伍字段(#201→#2→#3)时还要求与结算队伍一致；
+     * null/false 表示未知或不完整（非回放解析路径或数据缺失）。
+     * 只有为 true 时，才能用 survivors==0 断言全歼或推导 SURVIVOR_SETTLEMENT。
+     */
+    public Boolean rosterComplete;
+
     public int nPlayers() {
         return players == null ? 0 : players.size();
     }
