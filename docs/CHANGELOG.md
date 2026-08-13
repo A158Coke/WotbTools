@@ -42,16 +42,13 @@
   组件卸载清理定时器。新增三语 locale `recon.copy` / `recon.copied` 与组件测试
   （仅复制最终正文、排除赛前预测/地图鸟瞰、Clipboard 成功/缺失/reject、execCommand false/抛异常、
   textarea 清理、卸载清理定时器）。
-- **战局回放坦克标记素材（PR #72）**：删除早期废弃方案四个车型 SVG
-  （`light/medium/heavy-tank.svg`、`tank-destroyer.svg`）及全部"兼容保留"表述。素材审查发现
-  仓库/工作区无 authoritative master：原 hull/turret 为两次独立生成、非同源（几何漂移、
-  炮管触边、座圈不匹配），规范表 `tank-marker-state-spec.png` 已损坏（IDAT 截断无法解码）；
-  按评审要求从 PR 删除不合格二进制与损坏规范表，不提交假完成状态。
-  `frontend/src/assets/tank-icons/README.md` 与 `.agents/AGENTS.md` 更新为唯一素材契约
-  （`512×512` 8-bit RGBA、旋转中心 `(256,256)`、`hullYaw` / `turretRelativeYaw` /
-  `turretWorldYaw = hullYaw + turretRelativeYaw`、轨迹≠朝向、最后已知透明灰、UI overlay 不烘焙、
-  友军暖金/敌军冷青蓝确定性配色），并明确契约为未来播放器接入准备（PR #71 DTO 尚无方向字段）；
-  运行时素材需由持有 authoritative master 的会话同源拆层后补充。
+- **战局回放坦克标记素材定稿（PR #72）**：最终方案为通用半立体 MT 双层模型；新增车体与炮塔同图生成的
+  authoritative master，并由该单一基材拆出友军暖金/敌军青蓝四张 `512×512` RGBA 运行时素材；
+  两阵营共用完全一致的 alpha 蒙版，敌军色为确定性换色，不依赖运行时 CSS filter。重新生成可正常解码的
+  状态规范表和运行时验收板，覆盖双层叠加、0°/90°/180°/270° 旋转、28px 深浅背景、录像者/选中/
+  最后已知/阵亡 overlay；删除早期废弃的四车型 SVG 与两张非同源旧 PNG。素材 README 与
+  `.agents/AGENTS.md` 固化 `(256,256)` 旋转中心、`hullYaw` / `turretRelativeYaw` /
+  `turretWorldYaw = hullYaw + turretRelativeYaw`、轨迹≠朝向及未来播放器接入边界（PR #71 不变）。
 - **技能更名：grill-with-docs → plan-designer（开发方案设计）**：开发前方案 grill 技能更名为
   `plan-designer`，调用时**自动前置 grill-me**（需求澄清：复述理解 → 逐层提问 ≤3 个/轮 →
   输出《需求确认单》），需求已明确时跳过并注明；随后进入方案设计流程（可落地性核对 →
