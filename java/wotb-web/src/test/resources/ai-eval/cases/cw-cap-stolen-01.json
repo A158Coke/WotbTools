@@ -9,7 +9,8 @@
     { "kind": "prompt_contains", "text": "CAPTURE_AND_POINTS" },
     { "kind": "prompt_contains", "text": "victoryPointsEarned" },
     { "kind": "prompt_contains", "text": "opposing victoryPointsEarned" },
-    { "kind": "prompt_contains", "text": "team victoryPointsEarned=0" }
+    { "kind": "prompt_contains", "text": "team victoryPointsEarned=0" },
+    { "kind": "prompt_contains", "text": "resultSource=BATTLE_RESULTS" }
   ],
   "note": "全队单簇集中一波，敌方占点分明显更高：复盘必须权衡集中→丢视野+被偷家风险（CAPTURE_RULE）。"
 }

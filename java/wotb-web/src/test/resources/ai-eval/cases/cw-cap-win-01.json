@@ -9,7 +9,9 @@
     { "kind": "prompt_contains", "text": "CAPTURE_AND_POINTS" },
     { "kind": "prompt_contains", "text": "victoryPointsEarned" },
     { "kind": "prompt_contains", "text": "pointsDecided=true" },
-    { "kind": "prompt_contains", "text": "winnerSource=POINTS_INFERENCE" }
+    { "kind": "prompt_contains", "text": "winnerSource=POINTS_INFERENCE" },
+    { "kind": "prompt_contains", "text": "resultSource=POINTS_INFERENCE" },
+    { "kind": "prompt_omits", "text": "resultSource=BATTLE_RESULTS" }
   ],
   "note": "争霸赛点数胜利：双方未全灭、我方占点分更高（规则候选推断，非权威结算 winnerTeam）。"
 }

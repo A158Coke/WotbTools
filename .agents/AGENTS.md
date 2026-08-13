@@ -43,6 +43,7 @@
     ═══════════════════════════════════
     ```
 27. **大需求拆分** — 一次性遇到大/长需求的情况下，拆分需求计划为多个小任务。每个小任务专注一个目标。 然后每个小任务分配一个子代理完成。 主代理最后执行 review-fix skill。
+28. **战局回放坦克标记** — 开发 AI Review 战局回放/地图标记时，默认复用 `frontend/src/assets/tank-icons/tank-marker-{friendly,enemy}-{hull,turret}.png` 的通用半立体 MT 双层模型，并遵循 `docs/assets/battle-replay/tank-marker-authoritative-master.png` 同源基材、`docs/assets/battle-replay/tank-marker-state-spec.png` 规范表与 `frontend/src/assets/tank-icons/README.md` 契约：车体按 `hullYaw` 旋转、炮塔按 `turretWorldYaw = hullYaw + turretRelativeYaw` 整体旋转，炮管不得脱离炮塔独立旋转；轨迹只代表历史位置不代表朝向。该契约为未来播放器接入准备（当前 BattlePlayback 仍为圆点标记，DTO 尚未提供方向字段）。禁止退化为普通圆点、分别生成两层、运行时 CSS filter 换阵营色或绘制与现有资产风格不一致的新图标。
 
 ## 常用命令
 

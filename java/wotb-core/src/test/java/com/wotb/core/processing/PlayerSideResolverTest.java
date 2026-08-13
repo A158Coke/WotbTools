@@ -217,6 +217,7 @@ class PlayerSideResolverTest {
     void supremacy_winnerPresentButNoFullWipe_isPointsDecided() {
         final Battle battle = new Battle();
         battle.winnerTeam = 2;
+        battle.rosterComplete = true;
         battle.players = List.of(
                 player(1, "A1", true, 100),
                 player(2, "B1", true, 500));
@@ -232,6 +233,7 @@ class PlayerSideResolverTest {
     void supremacy_winnerMissing_enemyWiped_friendlyWinsBySettlement() {
         final Battle battle = new Battle();
         battle.winnerTeam = null;
+        battle.rosterComplete = true;
         battle.players = List.of(
                 player(1, "A1", true, 0),
                 player(1, "A2", true, 0),
@@ -247,6 +249,7 @@ class PlayerSideResolverTest {
     void supremacy_winnerMissing_friendlyWiped_enemyWinsBySettlement() {
         final Battle battle = new Battle();
         battle.winnerTeam = null;
+        battle.rosterComplete = true;
         battle.players = List.of(
                 player(1, "A1", false, 200),
                 player(2, "B1", true, 100));
@@ -259,6 +262,7 @@ class PlayerSideResolverTest {
     void supremacy_winnerMissing_noFullWipe_pointsLeadWins() {
         final Battle battle = new Battle();
         battle.winnerTeam = null;
+        battle.rosterComplete = true;
         battle.players = List.of(
                 player(1, "A1", true, 300),
                 player(1, "A2", true, 300),
@@ -275,6 +279,7 @@ class PlayerSideResolverTest {
     void supremacy_pointsReach1000_isReached1000EndReason() {
         final Battle battle = new Battle();
         battle.winnerTeam = 1;
+        battle.rosterComplete = true;
         battle.players = List.of(
                 player(1, "A1", true, 1043),
                 player(2, "B1", true, 280));
@@ -303,6 +308,7 @@ class PlayerSideResolverTest {
     void supremacy_winnerMissing_equalPoints_remainsUnknown() {
         final Battle battle = new Battle();
         battle.winnerTeam = null;
+        battle.rosterComplete = true;
         battle.players = List.of(
                 player(1, "A1", true, 100),
                 player(2, "B1", true, 100));
