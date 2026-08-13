@@ -7,10 +7,10 @@
 ## ✦ 给接手的一句话
 
 这是个单人维护的 WoT Blitz 回放分析工具（Java core + Spring Boot + Vue + Keycloak，Web 版）。
-动手前读 `.agents/AGENTS.md` 和本文件；跨层改动按 `.agents/wotb-sync.md` 的配方；
+动手前读 `.agents/AGENTS.md` 和本文件；跨层改动按 `.agents/skills/wotb-sync/SKILL.md` 的配方；
 Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；
 改完跑 `mvn -s settings.xml test`、`npm test` 和 `npm run build`；
-提交用中文信息、推 `github-personal`（账号 A158Coke），push main 即自动部署。
+提交用中文信息（账号 A158Coke）；推送前先 `git remote -v` 确认实际 remote（本机 remote 名/SSH 别名以本机配置为准），push main 即自动部署。
 
 ---
 
@@ -20,7 +20,8 @@ Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；
 |---|---|---|
 | **本文件 `DEVELOPER_GUIDE.md`** | 开发指南（含环境、架构、部署、约定） | 最先 |
 | [`.agents/AGENTS.md`](../.agents/AGENTS.md) | AI 硬性约定（RULES） | 动手前必读 |
-| [`.agents/wotb-sync.md`](../.agents/wotb-sync.md) | 跨层改动检查单（配方 A–G） | 增删/改名数据列、改解析/导出/前端时 |
+| [根 `AGENTS.md`](../AGENTS.md) + 各目录 `AGENTS.md`（`java/` `frontend/` `common/` `deploy/` `.github/` keycloak providers `map-semanticizer/`） | 按作用域继承的 Agent 指令层级（根=入口，`.agents/AGENTS.md`=全仓不变式，目录级=局部约束） | 进入对应目录工作时 |
+| [`.agents/wotb-sync.md`](../.agents/wotb-sync.md) | 跨层改动检查单兼容指针（指向 `.agents/skills/wotb-sync/SKILL.md`，配方 A–K 单一事实源） | 增删/改名数据列、改解析/导出/前端时 |
 | [`docs/replay-data.md`](replay-data.md) | data.wotreplay 事件流格式、protobuf 字段表、死亡时间推算 | 深入回放格式时 |
 | [`docs/rating-system.md`](rating-system.md) | 评分算法细节 | 碰评分时 |
 | [`docs/rating-progress.md`](rating-progress.md) | rating 扩展目标、已完成项、缺口与下一步 | 接手 rating 扩展时 |
@@ -32,7 +33,8 @@ Maven 必须 `-s java/settings.xml` 且 `JAVA_HOME` 指向 JDK 21；
 | [`README.md`](../README.md) / [`java/README.md`](../java/README.md) | 用户向概览与文档索引；Java/Web 运行、接口、构建 | 跑起来时 |
 | [`TODO.md`](TODO.md) | 待办（含已完成收尾记录与下一步） | 找下一步做什么 |
 
-> `.agents/AGENTS.md` / `wotb-sync.md` 本就是写给"任意 AI/人"的，不绑定特定工具。
+> `.agents/AGENTS.md` / `wotb-sync.md` / 各目录 `AGENTS.md` 本就是写给"任意 AI/人"的，不绑定特定工具。
+> Agent 指令层级以真实代码为 source of truth：发现文档与代码漂移时先修正文档。
 
 ---
 
@@ -78,7 +80,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 - **车辆库更新（blitzkit 单一来源）**：推荐手动触发 GitHub Actions **`Update Tankopedia`**——runner 直接从 `assets.blitzkit.app/definitions/tanks.pb` + `consumables.pb` + `provisions.pb` + `equipment.pb`（游戏客户端数据，公开 CDN，无 IP 白名单，无需任何 secret）同步并自动提交回 main。本地跑 `cd common/python && python update_tankopedia.py` 即可。数据源为什么不用 WG 百科：WG 滞后于游戏版本（11.19 的 SPHT / AC Atlas 等缺失）且 application_id 有 IP 白名单限制。脚本旧数据只从 `--existing-dir` 目录读取（`tankopedia-tier*.json`，用于保留 extraInfo）、新数据只写 `--output-dir`（workflow 两者路径分离，输入输出互不覆盖）；流程为 `parse_tanks → 过滤业务范围 tier 7–10 → apply 物资/装备 → merge_extraInfo → 完整性门禁 → 写 4 个 tier 文件`（真实 tanks.pb 含 1–10 级，1–6 级不参与校验与输出）。写入前有**完整性门禁**（解析为空 / 总量或单 tier 数量下降超 20% / tank ID 重复 / tier 不在 7–10 / 缺 id·name·hp·gun 均失败，失败不写文件不提交）。每个文件为 `meta` + `vehicles` 数组（全部字段与值均为英文/数字）：每辆车一条记录 `name/id/tier/class/nation/hp/forwardSpeed/reverseSpeed/turretRotationSpeed/hullRotationSpeed/powerToWeightRatio/guns/alphaDamage/allowedProvision/allowedConsumables/allowedEquipment/extraInfo`。`guns` 数组含该车顶配炮塔的**全部炮**（7–9 级也可能多把，如 T-34-2 有 5 把），每把带 `gunId/isDefault/alphaDamage/shells`（shells 每发 `{type, damage, penetration}`，type 归一化 ap/apcr/heat/he，顺序即游戏内弹序）；vehicle 级 `alphaDamage` 只在有唯一权威依据时输出——单炮车 / 7–9 级顶配炮（最高 tier，同 tier 取最高 alpha，如 T-34-2=400），**10 级多终局炮车省略**（回放无可靠实际炮，AI 不输出虚假唯一炮伤）。`allowedProvision`/`allowedConsumables` 由 blitzkit 的 include/exclude 过滤器（tier/ids/clip/nations）判定后映射为 `common/wotb-item-catalog-json` 的逻辑 id / code；`allowedEquipment` 由车辆 `equipment_preset` 槽位装备映射为 catalog 装备 code（含 VK 72.01 俯角/履带齿、Type 71 改进悬挂等专属装备）；手工维护的 `extraInfo`（个人知识点）按 tank_id 保留合并，仍存在车辆的知识点丢失会直接失败。AI prompt 会注入结构化事实（车种/等级/国家/炮伤/血量/知识），Team 路径（TEAM_MEMBERS / OPPOSING_TEAM_LINEUP_AUTHORITATIVE）额外注入 alphaDamage/hp/extraInfo，prompt 规则白名单已放行这些字段。
 - **代码风格**：不可变模型用 `record`；可变模型用公有字段 POJO（**不引入 Lombok**）；局部变量/参数尽量 `final`。
 - **分层**：controller 只做 HTTP；业务在 service；core 按功能分包。新 endpoint 的逻辑写进 service。
-- 跨层联动改动（加列/改解析/改评分/改地图名…）务必按 `.agents/wotb-sync.md` 的配方走。
+- 跨层联动改动（加列/改解析/改评分/改地图名…）务必按 `.agents/skills/wotb-sync/SKILL.md` 的配方走。
 
 ---
 
@@ -123,7 +125,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 │   │   └── sponsor-config.js
 │   ├── extended.html             #   Rating V2 独立入口
 ├── .github/
-│   ├── workflows/deploy.yml      # 测试门禁 + 增量构建/部署
+│   ├── workflows/deploy.yml      # 测试门禁 + 每次统一构建三镜像/部署
 │   ├── workflows/database-backup.yml # 每日生产双库备份
 │   └── workflows/prod-diagnostics.yml # 线上诊断日志
 ├── common/                       # 共享资源
@@ -152,7 +154,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 ├── .gitignore  .dockerignore  qodana.yaml
 ├── .agents/                      # AI 工具定义
 │   ├── AGENTS.md                 #   AI 硬性约定（RULES）
-│   ├── wotb-sync.md              #   跨层改动检查单（配方 A–G）
+│   ├── wotb-sync.md              #   跨层改动检查单（指向 skills/wotb-sync/SKILL.md）
 │   └── skills/                   #   技能库（开发前：grill-me / plan-designer；开发后：review-fix / review-with-docs / code-smell / column-sync / wotb-sync）
 ```
 
@@ -220,7 +222,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 | `PlayerBattleFeatureSet` | `wotb-core/.../feature/PlayerBattleFeatureSet.java` | 个人特征集（含 `hasFeatures` / `limitations`） |
 | `DefaultTeamBattleFeatureExtractor` | `wotb-core/.../feature/DefaultTeamBattleFeatureExtractor.java` | perspective team 的队员独立移动、阵型、交火、关键事件与权威聚合 |
 | `TeamBattleFeatureSet` | `wotb-core/.../feature/TeamBattleFeatureSet.java` | 团队特征、覆盖率、权威结算、观测子集与 limitations |
-| `AiReplayAnalysisService` | `wotb-web/.../ai/AiReplayAnalysisService.java` | 玩家/团队 AI 调用、上游错误分类与 context 编排 |
+| `AiReplayAnalysisService` | `wotb-web/.../ai/AiReplayAnalysisService.java` | 兼容 facade（保持旧入口不变，委托 PlayerReplayAnalysisService / TeamReplayAnalysisService；无真实编排） |
 | `AiCancellationRegistry` | `wotb-web/.../ai/gateway/AiCancellationRegistry.java` | in-flight AI 请求取消注册表（客户端取消 → 中断上游调用，稳定错误码 `AI_CANCELLED`） |
 | `ApiPaths` | `wotb-web/.../config/ApiPaths.java` | API URL 常量单一来源（SecurityConfig 匹配器与 Controller 映射共用） |
 | `TeamAiPromptBuilder` | `wotb-web/.../ai/TeamAiPromptBuilder.java` | 确定性团队输入压缩和 token 估算预算（`BudgetWriter` + `AiTokenEstimator`） |
@@ -712,8 +714,7 @@ MVP 只记录**录像者本人**在某场战斗中用某辆车打出的**单场�
 
 ## Git / 推送（个人项目，勿碰公司基建）
 
-- **远程**：SSH remote `github-personal`，账号 **`A158Coke`**。推送：
-  `GIT_SSH_COMMAND="ssh -o ConnectTimeout=15" git push github-personal main`
+- **远程**：执行前先 `git remote -v` 确认实际 remote（本机 remote 名/SSH 别名以本机配置为准，不写死）；仓库账号 **`A158Coke`**。推送：`git push <实际 remote> main`
 - **绝不**使用任何公司 token / 凭据。
 - **提交信息**：中文，结尾带 `Co-Authored-By`（若工具支持）。
 - ⚠️ **提交信息别用 `git commit -m @'...'`** —— 那是 PowerShell here-string，在 **bash** 里 `@` 会变成提交首行（历史里能看到一串以 `@` 开头的提交就是这么来的）。bash 里用普通双引号 `-m "..."` 或多个 `-m`。

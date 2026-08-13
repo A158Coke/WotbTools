@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### Changed
+- **Agent 指令体系分层（AGENTS.md hierarchy）**：新增根 `AGENTS.md`（自动发现入口）与 8 个按作用域
+  继承的目录级 `AGENTS.md`（java/frontend/common/deploy/.github/两个 keycloak provider/map-semanticizer），
+  内容全部经真实代码/构建/CI 核对；`.agents/AGENTS.md` 收敛为 repository-wide 硬约定（115→39 行），
+  修正与代码漂移的条目（tankopedia tier 四文件、八服务开发环境、AiReplayAnalysisService 为兼容 facade、
+  remote 命名等）；`.agents/wotb-sync.md` 收敛为指向 `skills/wotb-sync/SKILL.md` 的指针（单一事实源）；
+  DEVELOPER_GUIDE 文档地图补充层级说明。纯文档变更，不影响代码与构建。
+
 ### Fixed
 - **战局回放 review 修复（4 项）**：① 炮塔方向证据文档 source-of-truth 统一为受控旋转实验定案
   PROVEN（历史 NOT_PROVEN 标 SUPERSEDED）；② `directionSamples` 只接受落在该车同一可信
