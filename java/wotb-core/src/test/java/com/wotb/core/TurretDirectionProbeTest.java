@@ -62,11 +62,17 @@ class TurretDirectionProbeTest {
     private record Cand(String name, Function<Prop2Sample, Double> toDeg) {
     }
 
+    /** 检查项 11 拟合样本：{propDeg, yawDeg, bearingA, bearingB}（命中锚点，跨全部样本累计）。 */
+    private static final List<double[]> FIRE_FIT = new ArrayList<>();
+    private static final List<double[]> HIT_FIT = new ArrayList<>();
+
     @Test
     void probe() throws Exception {
         final List<Path> samples = findSamples();
         Assumptions.assumeTrue(!samples.isEmpty(),
                 "no .wotbreplay under common/fixtures/replays or common/data -> skip");
+        FIRE_FIT.clear();
+        HIT_FIT.clear();
         for (final Path f : samples) {
             System.out.println("################ SAMPLE: " + f.getFileName() + " ################");
             final byte[] zip = Files.readAllBytes(f);
@@ -74,6 +80,7 @@ class TurretDirectionProbeTest {
             Assumptions.assumeTrue(eventData != null, "data.wotreplay missing in " + f);
             analyze(f, zip, eventData);
         }
+        check11OffsetFit();
     }
 
     // =====================================================================
@@ -670,6 +677,7 @@ class TurretDirectionProbeTest {
             sumAbs += eAbs;
             sumRel += eRel;
             sumRelNeg += eRelNeg;
+            FIRE_FIT.add(new double[]{propDeg, yawDeg, bearingA, bearingB});
             System.out.printf(Locale.ROOT,
                     "    fire@%.1fs hit@%.1fs victim=%d |prop2-bearing|=%.1f |yaw+prop2-bearing|=%.1f |yaw-prop2-bearing|=%.1f (prop2=%.1f yaw=%.1f)%n",
                     t, hit.clockSecs(), victimEid, eAbs, eRel, eRelNeg, propDeg, yawDeg);
@@ -737,6 +745,7 @@ class TurretDirectionProbeTest {
             sumAbs += eAbs;
             sumRel += eRel;
             sumRelNeg += eRelNeg;
+            HIT_FIT.add(new double[]{propDeg, yawDeg, bearingA, bearingB});
             final boolean has26 = t26.stream().anyMatch(t -> Math.abs(t - d.clockSecs()) < 3.0f);
             System.out.printf(Locale.ROOT,
                     "    hit@%.1fs atk=%d (t26=%s) |prop2-bearing|=%.1f |yaw+prop2-bearing|=%.1f |yaw-prop2-bearing|=%.1f (prop2=%.1f yaw=%.1f)%n",
@@ -748,6 +757,80 @@ class TurretDirectionProbeTest {
                     "  hits=%d mean|prop2-bearing|=%.1f mean|yaw+prop2-bearing|=%.1f mean|yaw-prop2-bearing|=%.1f%n",
                     hits, sumAbs / hits, sumRel / hits, sumRelNeg / hits);
         }
+    }
+
+    // =====================================================================
+    // 检查项 11：常数偏移 / 尺度回归拟合（决定性）——
+    // 若存在 (a,b) 使 gunWorld = a*propDeg + b 在全部命中锚点上残差小,
+    // 且同一 (a,b) 在独立受击集(7b)上交叉验证残差也小 => prop2 = 炮口方向(线性编码)。
+    // =====================================================================
+
+    private static void check11OffsetFit() {
+        System.out.println("== [11] 常数偏移 / 尺度回归拟合 (跨全部样本命中锚点) ==");
+        if (FIRE_FIT.isEmpty()) {
+            System.out.println("  no fire-hit anchors -> skip");
+            return;
+        }
+        // 双 bearing 约定取较小误差（与 [7] 同口径）
+        final double[] bestA = bestScaleOffset(FIRE_FIT);
+        final double fitRes = bestA[2];
+        final double fitResNeg = bestA[3];
+        final double cvRes = HIT_FIT.isEmpty() ? Double.NaN : residual(HIT_FIT, bestA[0], bestA[1], false);
+        final double cvResNeg = HIT_FIT.isEmpty() ? Double.NaN : residual(HIT_FIT, bestA[0], bestA[1], true);
+        System.out.printf(Locale.ROOT,
+                "  FIT n=%d best(a=%.3f, b=%.1f) meanRes=%.1f deg (a=-1 变体 meanRes=%.1f)%n",
+                FIRE_FIT.size(), bestA[0], bestA[1], fitRes, fitResNeg);
+        System.out.printf(Locale.ROOT,
+                "  CROSS-VALIDATION on 7b (attacker->recorder) n=%d: meanRes=%.1f deg (a=-1 变体 %.1f)%n",
+                HIT_FIT.size(), cvRes, cvResNeg);
+        final double bestRes = Math.min(Math.min(fitRes, fitResNeg),
+                Double.isNaN(Math.min(cvRes, cvResNeg)) ? Double.MAX_VALUE : Math.min(cvRes, cvResNeg));
+        if (!Double.isNaN(cvRes) && !Double.isNaN(cvResNeg)
+                && Math.min(cvRes, cvResNeg) < 15.0 && fitRes < 15.0) {
+            System.out.println("  VERDICT: PROVEN-ish（线性编码成立，残差 <15°，需人工核验）");
+        } else {
+            System.out.println("  VERDICT: NOT_PROVEN（任意线性编码下残差仍大 => prop2 非炮口水平方向）");
+        }
+    }
+
+    /** 网格搜索 gunWorld = scale*propDeg + offset 的最优 (scale, offset)；返回 {scale, offset, meanRes, meanResNegScale}。 */
+    private static double[] bestScaleOffset(final List<double[]> fit) {
+        double bestScale = 1.0;
+        double bestOffset = 0.0;
+        double bestRes = Double.MAX_VALUE;
+        double bestResNeg = Double.MAX_VALUE;
+        for (double a = -2.0; a <= 2.0 + 1e-9; a += 0.05) {
+            for (double b = -180.0; b < 180.0; b += 2.0) {
+                final double rPos = residual(fit, a, b, false);
+                final double rNeg = residual(fit, a, b, true);
+                if (rPos < bestRes) {
+                    bestRes = rPos;
+                    bestScale = a;
+                    bestOffset = b;
+                }
+                if (rNeg < bestResNeg) {
+                    bestResNeg = rNeg;
+                }
+            }
+        }
+        return new double[]{bestScale, bestOffset, bestRes, bestResNeg};
+    }
+
+    /** gunWorld = (negScale ? -scale : scale)*propDeg + offset 在锚点集上的平均圆形误差（双 bearing 约定取较小）。 */
+    private static double residual(final List<double[]> fit, final double scale,
+                                   final double offset, final boolean negScale) {
+        if (fit.isEmpty()) {
+            return Double.NaN;
+        }
+        final double a = negScale ? -scale : scale;
+        double sum = 0;
+        for (final double[] s : fit) {
+            final double gun = a * s[0] + offset;
+            final double e = Math.min(Math.abs(angDiffDeg(gun, s[2])),
+                    Math.abs(angDiffDeg(gun, s[3])));
+            sum += e;
+        }
+        return sum / fit.size();
     }
 
     // =====================================================================
