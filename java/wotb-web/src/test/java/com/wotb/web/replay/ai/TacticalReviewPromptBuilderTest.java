@@ -138,6 +138,8 @@ class TacticalReviewPromptBuilderTest {
         assertTrue(prepared.userContent().contains("TASK"));
         assertTrue(prepared.userContent().contains("[H1]"));
         assertTrue(prepared.userContent().contains("战局变化窗口"));
+        assertTrue(prepared.userContent().contains("换血：输出 300"),
+                "complete coverage 时换血证据必须正常渲染");
     }
 
     @Test
@@ -328,5 +330,13 @@ class TacticalReviewPromptBuilderTest {
         // 覆盖不全时逐条交火数字同样是事件流伤害数字：一并抑制
         assertFalse(content.contains("你输出 800"), content);
         assertFalse(content.contains("损失 300"), content);
+        // ENGAGEMENT_TRADE 的摘要与数字（含窗口聚合）不得进入 partial prompt
+        assertFalse(content.contains("换血"), content);
+        assertFalse(content.contains("输出 300"), content);
+        assertFalse(content.contains("损失血量 100"), content);
+        assertFalse(content.contains("damageDealt=300"), content);
+        assertFalse(content.contains("damageReceived=100"), content);
+        assertFalse(content.contains("recorderDamageDealt"), content);
+        assertFalse(content.contains("recorderDamageReceived"), content);
     }
 }

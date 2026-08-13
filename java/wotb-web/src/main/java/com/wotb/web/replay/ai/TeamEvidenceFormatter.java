@@ -134,7 +134,8 @@ final class TeamEvidenceFormatter {
     static void appendHighPriorityFacts(
             final BudgetWriter writer,
             final TeamBattleFeatureSet features,
-            final String analysisUnitId
+            final String analysisUnitId,
+            final List<String> limitations
     ) {
         writer.append("\n=== PERSPECTIVE_FACTS ===\n");
         writer.append("analysisUnitId=" + quoteData(analysisUnitId) + "\n");
@@ -143,7 +144,8 @@ final class TeamEvidenceFormatter {
             return;
         }
         appendAuthoritative(writer, features.authoritativeAggregate());
-        appendObserved(writer, features.observedAggregate(), features.limitations());
+        // 使用合并后的 limitations（context + features + extra），不能只检查 features.limitations
+        appendObserved(writer, features.observedAggregate(), limitations);
         appendMemberFacts(writer, features.members());
         writer.append("coverage=" + features.coverage() + "\n");
     }
@@ -232,7 +234,8 @@ final class TeamEvidenceFormatter {
             final String analysisUnitId,
             final String mapCode,
             final Battle battle,
-            final int perspectiveTeam
+            final int perspectiveTeam,
+            final List<String> limitations
     ) {
         writer.append("\n=== PERSPECTIVE_OPTIONAL ===\n");
         writer.append("analysisUnitId=" + quoteData(analysisUnitId) + "\n");
@@ -242,7 +245,9 @@ final class TeamEvidenceFormatter {
         appendMemberMovements(writer, features.members(), mapCode);
         appendFormation(writer, features.formationPhases());
         appendBattlePhases(writer, features.battlePhases(), battle, perspectiveTeam);
-        appendEngagements(writer, features.engagements());
+        // 覆盖不全时 Team Engagement 的 dealtSubset/receivedSubset 是事件流伤害数字：一并抑制
+        appendEngagements(writer, features.engagements(),
+                limitations != null && limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
         appendKeyEvents(writer, features.keyEvents());
         appendCaptureAndPoints(writer, battle, perspectiveTeam, mapCode);
         appendSoloIntentCandidates(writer, features, battle, mapCode);
@@ -564,9 +569,14 @@ final class TeamEvidenceFormatter {
 
     static void appendEngagements(
             final BudgetWriter writer,
-            final List<TeamEngagementSummary> engagements
+            final List<TeamEngagementSummary> engagements,
+            final boolean partial
     ) {
         writer.append("\n=== TEAM_ENGAGEMENTS_OBSERVED_SUBSET ===\n");
+        if (partial) {
+            writer.append("UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)\n");
+            return;
+        }
         for (final TeamEngagementSummary engagement : engagements) {
             writer.append("engagement[" + format(engagement.startTime())
                     + "-" + format(engagement.endTime()) + "]"

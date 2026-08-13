@@ -19,13 +19,15 @@ final class TacticalEvidenceFormatter {
     }
 
     static String renderEvidenceSections(final EvidenceSkillResult result) {
-        if (result == null) {
-            return "";
-        }
+        return renderEvidenceSections(result == null ? List.of() : result.evidence());
+    }
+
+    /** 按给定证据列表渲染（调用方可先做 partial 过滤，避免把换血伤害数字送入 LLM）。 */
+    static String renderEvidenceSections(final List<AiEvidence> evidence) {
         final StringBuilder sb = new StringBuilder(2048);
-        final List<AiEvidence> evidence = new ArrayList<>(result.evidence());
-        evidence.sort(Comparator.comparingDouble(AiEvidence::startSec));
-        for (final AiEvidence e : evidence) {
+        final List<AiEvidence> sorted = new ArrayList<>(evidence);
+        sorted.sort(Comparator.comparingDouble(AiEvidence::startSec));
+        for (final AiEvidence e : sorted) {
             sb.append("  ").append(PlayerAnalysisTerms.battleRange(e.startSec(), e.endSec()))
                     .append(" [").append(e.type().name()).append("] ")
                     .append(e.summary());

@@ -19,6 +19,8 @@ import com.wotb.core.replay.feature.MovementType;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.core.replay.feature.TeamAggregateResult;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
+import com.wotb.core.replay.feature.TeamEngagementSummary;
+import com.wotb.core.replay.feature.EngagementOutcome;
 import com.wotb.core.replay.feature.TeamFeatureCoverage;
 import com.wotb.core.replay.feature.TeamFormationPhase;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
@@ -734,6 +736,54 @@ class TeamAiPromptBuilderTest {
         assertFalse(input.globalLimitations().contains("AI_INPUT_TRUNCATED"));
         assertFalse(input.content().contains("AI_INPUT_TRUNCATED"));
         assertTrue(input.perUnitLimitations().getOrDefault(base.analysisUnitId(), List.of()).contains("OBSERVED_DAMAGE_IS_PARTIAL"));
+    }
+
+    @Test
+    void teamEngagementsSuppressedWhenPartialButPresentWhenComplete() {
+        final Battle battle = new Battle();
+        battle.arenaId = "team-eng-arena";
+        battle.mapName = "team_eng_map";
+        battle.arenaBonusType = 2;
+        battle.durationS = 300.0;
+        battle.winnerTeam = 1;
+        final PlayerResult ally = new PlayerResult();
+        ally.accountId = 10_001L;
+        ally.nickname = "AllyA";
+        ally.team = 1;
+        ally.survived = true;
+        battle.players = List.of(ally);
+        final TeamEngagementSummary engagement = new TeamEngagementSummary(
+                10f, 20f, List.of(10_001L), List.of(20_001L),
+                1200, 800, List.of(20_001L), 3, EngagementOutcome.FAVORABLE,
+                DecodeConfidence.EXACT);
+        final TeamAggregateResult aggregate = new TeamAggregateResult(
+                1, 1000, 800, 0, 0, 0, 1, 0, null, null, null, true);
+        final TeamBattleFeatureSet features = new TeamBattleFeatureSet(
+                1, List.of(), aggregate, TeamObservedAggregate.empty(),
+                List.of(), List.of(engagement), List.of(), List.of(),
+                TeamFeatureCoverage.empty(), List.of(), true);
+        final ReplayCoverage coverage = new ReplayCoverage(
+                false, 0, 0, 0, 0, 0, 0.0, Map.of());
+
+        // partial：TEAM_ENGAGEMENTS 不得输出 dealtSubset/receivedSubset 等事件流伤害数字
+        final SingleTeamBattleAnalysisContext partial = new SingleTeamBattleAnalysisContext(
+                "unit-A", null, "f.wotbreplay", null, battle, 1, features,
+                coverage, List.of("OBSERVED_DAMAGE_IS_PARTIAL"), null);
+        final String partialContent = TeamAiPromptBuilder.single(partial).content();
+        assertTrue(partialContent.contains("TEAM_ENGAGEMENTS_OBSERVED_SUBSET ===\n"
+                + "UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)"), partialContent);
+        assertFalse(partialContent.contains("dealtSubset="), partialContent);
+        assertFalse(partialContent.contains("receivedSubset="), partialContent);
+        assertFalse(partialContent.contains("damageDealtSubset="), partialContent);
+        assertFalse(partialContent.contains("damageReceivedSubset="), partialContent);
+
+        // complete coverage：Team Engagement 明细正常输出
+        final SingleTeamBattleAnalysisContext complete = new SingleTeamBattleAnalysisContext(
+                "unit-A", null, "f.wotbreplay", null, battle, 1, features,
+                coverage, List.of(), null);
+        final String completeContent = TeamAiPromptBuilder.single(complete).content();
+        assertTrue(completeContent.contains("dealtSubset=1200"), completeContent);
+        assertTrue(completeContent.contains("receivedSubset=800"), completeContent);
     }
 
 }
