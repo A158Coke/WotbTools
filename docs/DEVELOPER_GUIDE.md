@@ -507,14 +507,18 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
   `3 мин 20 с`）转成 `#seek=<秒>` 链接（不识别普通数字/比分），点击后展开地图鸟瞰、
   自动切换到战局回放并 seek 到该时刻暂停。
 - **争霸赛击杀夺分口径（团队复盘）**：每击杀夺取对方 40 分补充自身、本方掉人损失 40 分
-  （`FriendlyEnemyResult.KILL_STEAL_POINTS`，双向计入）；`finalPointsComputed = victoryPointsEarned
-  合计 + 40×击杀 − 40×阵亡`；`victoryPointsEarned`(#32) 是逐人占点分（不含被动占点增长），不是
-  终局比分；时间未耗尽（`durationS < 420s`）的点数决胜必为「达到 1000 分提前获胜」，赢队终局比分
-  钉死 1000（`earlyPointsEnd`；训练房自定义更短时限的场次可能不适用，属已知限制）；
-  `TeamEvidenceFormatter` 输出双方 kills/deaths/finalPointsComputed 与禁止冒充终局比分指令。
-- **掉血窗口严重度**：`DamageWindowClusterer.DamageWindow` 带 `victimHpPct`（tankopedia maxHp）：
-  跨度 ≤10s 且掉血 ≥75% → `criticalWindow`（高危掉血窗口）；≤10s 且 ≥100% → `instantKill`
-  （被秒杀）；证据段输出 pct 与标记，prompt 规则（player×3 + team/single 三语）强制定性并给时间范围。
+  （`FriendlyEnemyResult.KILL_STEAL_POINTS`，双向计入）；`knownPointsSubtotal = victoryPointsEarned
+  合计 + 40×击杀 − 40×阵亡` 是**部分可计算值（不含被动占点增长），不是终局比分**；
+  `victoryPointsEarned`(#32) 是逐人占点统计；标准时限证据 = 随机战/官方联赛
+  （`standardSupremacyRules`；训练房自定义时限 fail closed）：时长 <420s 且权威胜方存在 →
+  REACHED_1000（胜方=1000、失败方 UNKNOWN）；部分分下界 ≥1000 同样证明 REACHED_1000；
+  时长 ≥420s 且双方部分分 <1000 → TIME_EXPIRED；其余 UNKNOWN；无权威胜方时不推断胜方
+  （POINTS_INFERENCE 停止产出）；终局比分无法证明时一律 UNKNOWN。
+- **掉血窗口严重度**：`DamageWindowClusterer.DamageWindow` 带 `damageVsBaseMaxHpPct`
+  （累计伤害/基础满血量，tankopedia 基础值、不含装备加成——只是计算基准，不是实际掉血比例）：
+  跨度 ≤10s 且伤害 ≥75% 基础满血量 → `criticalWindow`（短窗高额伤害窗口）；
+  不判定「被秒杀」（无法证明窗口起始血量、窗口内阵亡与实际最大血量）；
+  证据段输出基准百分比与标记，prompt 规则（player×3 + team/single 三语）强制定性并给时间范围。
 - **阶段切片**：opening = OPENING + FIRST_CONTACT 合并；mid = 中间段；late = 战斗末
   `BattlePhaseSummary.DENSE_KILL_WINDOW_SEC`（15s）窗口（残局）。
 - **降级**：未知地图 / 无语义网格 / 无名册 / 无观测 / 视角未解析 → `mapOverview = null`，

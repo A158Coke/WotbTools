@@ -307,32 +307,33 @@ class TeamResultSourceBoundaryTest {
     }
 
     @Test
-    void completeRosterPointsWinsStillWork() {
-        // 完整 7v7：winnerTeam=null、双方存活 → POINTS_INFERENCE + TIME_EXPIRED（时长打满 7 分钟）
+    void completeRosterPointsWinsFailClosedWithoutAuthoritativeWinner() {
+        // 完整 7v7、winnerTeam=null、双方存活 → 无权威胜方：fail closed，不做点数推断（时长打满 7 分钟）
         final List<PlayerResult> timeExpired = bothRosters(true, true);
         timeExpired.get(0).victoryPointsEarned = 400;
         timeExpired.get(7).victoryPointsEarned = 100;
         final Battle timeExpiredBattle = completeBattle(timeExpired, null);
         timeExpiredBattle.durationS = 420.0;
         var resolved = FriendlyEnemyResult.resolveTeamBattle(timeExpiredBattle, 1);
-        assertEquals(Winner.FRIENDLY_WIN, resolved.winner());
-        assertEquals(WinnerSource.POINTS_INFERENCE, resolved.source());
+        assertEquals(Winner.DRAW_OR_UNKNOWN, resolved.winner());
+        assertEquals(WinnerSource.UNKNOWN, resolved.source());
         assertEquals(PointsEndReason.TIME_EXPIRED, resolved.pointsEndReason());
-        assertEquals("CHRD获胜（时间耗尽点数判定）",
+        assertEquals("平局或未知",
                 TeamEvidenceFormatter.resolveTeamResult(timeExpiredBattle, 1, "CHRD"));
 
-        // 完整 7v7：任一方 ≥1000 → REACHED_1000
+        // 完整 7v7：部分分下界 ≥1000 → REACHED_1000（胜方仍未知）
         final List<PlayerResult> reached = bothRosters(true, true);
         reached.get(0).victoryPointsEarned = 1043;
         reached.get(7).victoryPointsEarned = 100;
         resolved = FriendlyEnemyResult.resolveTeamBattle(completeBattle(reached, null), 1);
-        assertEquals(WinnerSource.POINTS_INFERENCE, resolved.source());
+        assertEquals(Winner.DRAW_OR_UNKNOWN, resolved.winner());
+        assertEquals(WinnerSource.UNKNOWN, resolved.source());
         assertEquals(PointsEndReason.REACHED_1000, resolved.pointsEndReason());
-        assertEquals("CHRD获胜（达到 1000 分提前获胜）",
+        assertEquals("平局或未知",
                 TeamEvidenceFormatter.resolveTeamResult(
                         completeBattle(reached, null), 1, "CHRD"));
 
-        // 合法非 7v7（完整 3v3）：点数胜负同样工作
+        // 合法非 7v7（完整 3v3）：无权威胜方同样 fail closed
         final List<PlayerResult> threeVThree = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
             threeVThree.add(player(10_001L + i, 1, true));
@@ -345,8 +346,8 @@ class TeamResultSourceBoundaryTest {
         final Battle threeVThreeBattle = completeBattle(threeVThree, null);
         threeVThreeBattle.durationS = 420.0;
         resolved = FriendlyEnemyResult.resolveTeamBattle(threeVThreeBattle, 1);
-        assertEquals(Winner.ENEMY_WIN, resolved.winner());
-        assertEquals(WinnerSource.POINTS_INFERENCE, resolved.source());
+        assertEquals(Winner.DRAW_OR_UNKNOWN, resolved.winner());
+        assertEquals(WinnerSource.UNKNOWN, resolved.source());
         assertEquals(PointsEndReason.TIME_EXPIRED, resolved.pointsEndReason());
     }
 }

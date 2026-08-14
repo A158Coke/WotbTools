@@ -201,8 +201,8 @@ class DamageWindowClustererTest {
     }
 
     @Test
-    void criticalAndInstantKillWindowsAreFlagged() {
-        // Kranvagn（4481）满血量 2400：5s 窗口掉血 1900（79%）→ 高危；2400（100%）→ 被秒杀
+    void shortWindowHighDamageIsFlaggedRelativeToBaseMaxHp() {
+        // Kranvagn（4481）基础满血量 2400：5s 窗口伤害 1900（79%）→ 短窗高额伤害窗口
         final Battle battle = new Battle();
         battle.players = List.of(player(VICTIM, 1, "Victim"));
         final List<DamageWindowClusterer.DamageWindow> critical =
@@ -210,17 +210,17 @@ class DamageWindowClustererTest {
                         hit(35f, 2L, VICTIM, 1000),
                         hit(40f, 2L, VICTIM, 900)), VICTIM);
         assertEquals(1, critical.size());
-        assertEquals(79, Math.round(critical.getFirst().victimHpPct()));
+        assertEquals(79, Math.round(critical.getFirst().damageVsBaseMaxHpPct()));
         assertTrue(critical.getFirst().criticalWindow());
-        assertFalse(critical.getFirst().instantKill());
 
-        final List<DamageWindowClusterer.DamageWindow> killed =
+        // 伤害 ≥ 基础满血量（100%）：只标短窗高额伤害窗口，不判定「被秒杀」——
+        // 数据无法证明窗口起始满血、窗口内阵亡与装备加成后的实际最大血量
+        final List<DamageWindowClusterer.DamageWindow> full =
                 DamageWindowClusterer.receivedWindows(battle, recon(30f,
                         hit(35f, 2L, VICTIM, 1400),
                         hit(40f, 3L, VICTIM, 1000)), VICTIM);
-        assertEquals(100, Math.round(killed.getFirst().victimHpPct()));
-        assertTrue(killed.getFirst().instantKill());
-        assertTrue(killed.getFirst().criticalWindow());
+        assertEquals(100, Math.round(full.getFirst().damageVsBaseMaxHpPct()));
+        assertTrue(full.getFirst().criticalWindow());
     }
 
     @Test
@@ -235,20 +235,18 @@ class DamageWindowClustererTest {
                         hit(50f, 2L, VICTIM, 400)), VICTIM);
         assertEquals(1, windows.size());
         assertEquals(15f, windows.getFirst().endSec() - windows.getFirst().startSec());
-        assertEquals(79, Math.round(windows.getFirst().victimHpPct()));
+        assertEquals(79, Math.round(windows.getFirst().damageVsBaseMaxHpPct()));
         assertFalse(windows.getFirst().criticalWindow());
-        assertFalse(windows.getFirst().instantKill());
     }
 
     @Test
-    void unknownVictimHpYieldsUnknownPct() {
-        // battle=null → 无 maxHp 口径 → pct 未知，不得误标高危/秒杀
+    void unknownBaseMaxHpYieldsUnknownPctAndFailsClosed() {
+        // battle=null → 无基础满血量口径 → pct 未知，不得误标短窗高额伤害窗口
         final List<DamageWindowClusterer.DamageWindow> windows =
                 DamageWindowClusterer.receivedWindows(
                         null, recon(30f, hit(35f, 2L, VICTIM, 400)), VICTIM);
-        assertEquals(null, windows.getFirst().victimHpPct());
+        assertEquals(null, windows.getFirst().damageVsBaseMaxHpPct());
         assertFalse(windows.getFirst().criticalWindow());
-        assertFalse(windows.getFirst().instantKill());
     }
 
     private static PlayerResult player(final long accountId, final int team, final String nickname) {

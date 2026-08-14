@@ -324,23 +324,38 @@ final class TeamEvidenceFormatter {
                 }
             }
             if (winner.pointsDecided()) {
-                final long teamFinal = FriendlyEnemyResult.finalPointsComputed(battle, perspectiveTeam);
-                final long opposingFinal = FriendlyEnemyResult.finalPointsComputed(battle, opposingTeam);
-                final boolean early = FriendlyEnemyResult.earlyPointsEnd(battle);
-                // 提前结束（时间未耗尽 <7 分钟）：赢队必达 1000（规则保证；逐人占点分不含被动增长，按规则钉死）
-                final long teamFinalOut = early && winner.winner() == Winner.FRIENDLY_WIN
-                        ? FriendlyEnemyResult.SUPREMACY_WIN_POINTS : teamFinal;
-                final long opposingFinalOut = early && winner.winner() == Winner.ENEMY_WIN
-                        ? FriendlyEnemyResult.SUPREMACY_WIN_POINTS : opposingFinal;
-                writer.append("finalPointsComputed: team=" + teamFinalOut
-                        + " opposing=" + opposingFinalOut
-                        + " (口径=占点分+40×击杀−40×阵亡"
-                        + (early ? "; 时间未耗尽提前结束, 赢队终局比分按规则=1000" : "")
-                        + ")\n");
+                final long teamSubtotal = FriendlyEnemyResult.knownPointsSubtotal(battle, perspectiveTeam);
+                final long opposingSubtotal = FriendlyEnemyResult.knownPointsSubtotal(battle, opposingTeam);
+                writer.append("knownPointsSubtotal: team=" + teamSubtotal
+                        + " opposing=" + opposingSubtotal
+                        + " (口径=逐人占点分+40×击杀−40×阵亡, 不含被动占点增长, 不是终局比分)\n");
+                // 终局比分：只有可证明时才输出，否则一律 UNKNOWN（失败方精确比分在缺被动增长时不可计算）
+                final boolean provableEarly = winner.winner() != Winner.DRAW_OR_UNKNOWN
+                        && FriendlyEnemyResult.provableEarlyPointsWin(battle);
+                if (provableEarly) {
+                    // 标准时限提前结束：胜方达到 1000（规则保证）；失败方终局比分无权威字段 → UNKNOWN
+                    writer.append("finalScore: team="
+                            + (winner.winner() == Winner.FRIENDLY_WIN
+                                    ? FriendlyEnemyResult.SUPREMACY_WIN_POINTS + "（达到1000分提前获胜, 规则保证）" : "UNKNOWN")
+                            + " opposing="
+                            + (winner.winner() == Winner.ENEMY_WIN
+                                    ? FriendlyEnemyResult.SUPREMACY_WIN_POINTS + "（达到1000分提前获胜, 规则保证）" : "UNKNOWN")
+                            + "\n");
+                } else if (teamSubtotal >= FriendlyEnemyResult.SUPREMACY_WIN_POINTS
+                        || opposingSubtotal >= FriendlyEnemyResult.SUPREMACY_WIN_POINTS) {
+                    final boolean teamReached = teamSubtotal >= FriendlyEnemyResult.SUPREMACY_WIN_POINTS;
+                    writer.append("finalScore: team" + (teamReached ? ">=1000" : "=UNKNOWN")
+                            + " opposing" + (teamReached ? "=UNKNOWN" : ">=1000")
+                            + " (部分分下界已证明达标, 精确终局比分未知)\n");
+                } else {
+                    writer.append("finalScore: team=UNKNOWN opposing=UNKNOWN "
+                            + "(缺少被动占点增长, 终局比分不可计算)\n");
+                }
                 writer.append("directive=争霸赛计分口径: 每击杀夺取对方40分补充自身、本方掉人同样损失40分; "
-                        + "victoryPointsEarned 是逐人占点分(不含被动占点增长), 不是终局比分; "
-                        + "时间未耗尽(<7分钟)提前结束时赢队终局比分必为1000; "
-                        + "禁止用 victoryPointsEarned 合计冒充终局比分\n");
+                        + "victoryPointsEarned 是逐人占点分(不含被动占点增长), knownPointsSubtotal 是部分可计算值, "
+                        + "两者都不是终局比分; 只有标准时限(随机战/官方联赛)且权威胜方存在时才能写"
+                        + "「达到1000分提前获胜」(胜方=1000, 失败方比分未知); "
+                        + "时间耗尽与自定义时限未知时终局比分一律 UNKNOWN, 禁止编造双方精确比分\n");
             }
         } else {
             writer.append("team victoryPointsEarned=UNKNOWN victoryPointsSeized=UNKNOWN\n");
@@ -473,10 +488,9 @@ final class TeamEvidenceFormatter {
                         .append("攻击者").append(window.uniqueAttackerCount())
                         .append(window.attackersUnresolved() ? "（部分未解析）" : "")
                         .append(window.focusFireCandidate() ? "（短时多车集火证据）" : "")
-                        .append("掉血pct=").append(window.victimHpPct() == null
-                                ? "未知" : Math.round(window.victimHpPct()) + "%")
-                        .append(window.instantKill() ? "（被秒杀）" : "")
-                        .append(window.criticalWindow() && !window.instantKill() ? "（高危掉血窗口）" : "");
+                        .append("伤害/基础满血pct=").append(window.damageVsBaseMaxHpPct() == null
+                                ? "未知" : Math.round(window.damageVsBaseMaxHpPct()) + "%")
+                        .append(window.criticalWindow() ? "（短窗高额伤害窗口）" : "");
             }
             rows.append('\n');
         }
@@ -490,10 +504,12 @@ final class TeamEvidenceFormatter {
                 + "攻击者=1 → 短时间集中掉血/高压掉血窗口（不是集火）; "
                 + "标注「（部分未解析）」时攻击者数不完整, 不得断言集火; "
                 + "链式聚类形成的大跨度窗口不得当作短时集火; "
-                + "掉血pct=窗口掉血量/满血量(tankopedia maxHp)的百分比(未知则为「未知」); "
+                + "伤害/基础满血pct=窗口累计伤害/基础满血量(tankopedia 基础值, 不含装备加成)的百分比, "
+                + "只是计算基准, 不是实际掉血比例(未知则为「未知」); "
                 + "窗口跨度≤" + (int) DamageWindowClusterer.CRITICAL_WINDOW_SPAN_SEC
-                + " 秒且掉血≥" + (int) DamageWindowClusterer.CRITICAL_HP_PCT
-                + "% 标注「（高危掉血窗口）」, 掉血≥100% 标注「（被秒杀）」.\n");
+                + " 秒且伤害≥" + (int) DamageWindowClusterer.CRITICAL_HP_PCT
+                + "% 基础满血量标注「（短窗高额伤害窗口）」; "
+                + "数据无法证明窗口起始血量/窗口内阵亡/装备加成后的实际最大血量, 不得判定「从满血被秒杀」.\n");
         writer.append(rows.toString());
     }
 
@@ -705,7 +721,7 @@ final class TeamEvidenceFormatter {
         return winner.pointsDecided() ? base + pointsSuffix(winner) : base;
     }
 
-    /** result 行的胜负来源（BATTLE_RESULTS / SURVIVOR_SETTLEMENT / POINTS_INFERENCE / UNKNOWN）。 */
+    /** result 行的胜负来源（BATTLE_RESULTS / SURVIVOR_SETTLEMENT / UNKNOWN；无权威胜方时不再做点数推断）。 */
     static String resolveTeamResultSource(final Battle battle, final int perspectiveTeam) {
         return FriendlyEnemyResult.resolveTeamBattle(battle, perspectiveTeam).source().name();
     }

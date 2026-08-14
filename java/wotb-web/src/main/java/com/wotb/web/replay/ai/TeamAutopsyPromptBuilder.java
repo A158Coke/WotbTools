@@ -216,14 +216,16 @@ public final class TeamAutopsyPromptBuilder {
     private static String pointsDecidedNote(final TeamBattleWinner winner) {
         return switch (winner.pointsEndReason()) {
             case TIME_EXPIRED -> "本局为时间耗尽点数胜利（结束时刻双方均未全员阵亡，且双方均未达 1000 分），"
-                    + "叙述必须写「时间耗尽」；不要描述成敌方全歼。";
+                    + "叙述必须写「时间耗尽」；双方终局比分因缺少被动占点增长数据为未知，不得编造精确比分；"
+                    + "不要描述成敌方全歼。";
             case REACHED_1000 -> "本局为任一方达到 1000 分提前获胜（结束时刻双方均未全员阵亡），"
                     + "叙述必须写「达到 1000 分提前获胜」；不要描述成敌方全歼。"
-                    + "赢队终局比分必为 1000；争霸赛每击杀夺取对方 40 分、本方掉人损失 40 分，"
-                    + "最终比分=占点分+击杀夺取分−被夺分（见 finalPointsComputed）；"
-                    + "禁止用逐人占点分合计冒充终局比分。";
+                    + "争霸赛每击杀夺取对方 40 分、本方掉人损失 40 分；胜利方终局比分为 1000（规则保证），"
+                    + "失败方终局比分未知，不得编造；knownPointsSubtotal 只是部分可计算值，"
+                    + "禁止把逐人占点分合计或 knownPointsSubtotal 冒充终局比分。";
             case UNKNOWN, NOT_APPLICABLE -> "本局为争霸赛点数胜利（结束时刻双方均未全员阵亡），"
-                    + "不要描述成敌方全歼。";
+                    + "不要描述成敌方全歼；无法证明「达到 1000 分提前获胜」或「时间耗尽」时只写「点数判定」，"
+                    + "终局比分未知，不得编造。";
         };
     }
 

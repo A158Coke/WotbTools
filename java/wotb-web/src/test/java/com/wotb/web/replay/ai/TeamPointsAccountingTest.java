@@ -13,9 +13,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 争霸赛击杀夺分口径（#5）：40×击杀−40×阵亡（双向）、提前结束（时间未耗尽）赢队必达 1000、
- * 证据段 finalPointsComputed 与禁止冒充终局比分指令。
- * 口径来自真实样本：Maus 点数胜利回放（team2 占点 854/击杀 4/阵亡 4，team1 275/4/4，时长 226s）。
+ * 争霸赛击杀夺分口径（fail-closed）：40×击杀−40×阵亡（双向）、knownPointsSubtotal 只是部分可计算值、
+ * 只有标准时限（随机战/官方联赛）+ 权威胜方才可证明「达到 1000 分提前获胜」且只钉死胜方 1000、
+ * 失败方/时间耗尽/自定义时限的终局比分一律 UNKNOWN、无权威胜方时禁止推断胜方。
+ * 口径来自真实样本：Maus 点数胜利回放（team2 占点 854/击杀 4/阵亡 4，team1 275/4/4，时长 226s，联赛）。
  */
 class TeamPointsAccountingTest {
 
@@ -31,13 +32,13 @@ class TeamPointsAccountingTest {
         return p;
     }
 
-    /** Maus 样本口径的合成 battle：team2 为视角队（854/4/4），team1（275/4/4）。 */
-    private static Battle supremacyBattle(final double durationSec, final Integer winnerTeam) {
+    private static Battle supremacyBattle(final double durationSec, final Integer winnerTeam,
+                                          final int arenaBonusType) {
         final Battle b = new Battle();
         b.rosterComplete = true;
         b.durationS = durationSec;
         b.winnerTeam = winnerTeam;
-        b.arenaBonusType = 4;
+        b.arenaBonusType = arenaBonusType;
         b.players = new ArrayList<>();
         b.players.add(player(1, 2, 300, 1, true));
         b.players.add(player(2, 2, 263, 1, true));
@@ -57,54 +58,99 @@ class TeamPointsAccountingTest {
     }
 
     @Test
-    void killStealAccountingIsBidirectional() {
-        final Battle b = supremacyBattle(420, 2);
+    void killStealAccountingIsBidirectionalAndSubtotalIsPartial() {
+        final Battle b = supremacyBattle(420, 2, 4);
         assertEquals(4, FriendlyEnemyResult.teamKills(b, 2));
         assertEquals(4, FriendlyEnemyResult.teamDeaths(b, 2));
         assertEquals(0, FriendlyEnemyResult.killPointsDelta(b, 2));
-        assertEquals(854, FriendlyEnemyResult.finalPointsComputed(b, 2));
-        assertEquals(275, FriendlyEnemyResult.finalPointsComputed(b, 1));
+        assertEquals(854, FriendlyEnemyResult.knownPointsSubtotal(b, 2));
+        assertEquals(275, FriendlyEnemyResult.knownPointsSubtotal(b, 1));
     }
 
     @Test
-    void earlyEndPinsWinnerTo1000InEvidence() {
-        final Battle early = supremacyBattle(226, 2);
-        assertTrue(FriendlyEnemyResult.earlyPointsEnd(early));
-        final FriendlyEnemyResult.TeamBattleWinner w =
-                FriendlyEnemyResult.resolveTeamBattle(early, 2);
-        assertEquals(FriendlyEnemyResult.PointsEndReason.REACHED_1000, w.pointsEndReason());
+    void tournamentEarlyEndPinsOnlyWinnerTo1000() {
+        final Battle early = supremacyBattle(226, 2, 4); // 联赛（标准时限）
+        assertTrue(FriendlyEnemyResult.standardSupremacyRules(early));
+        assertTrue(FriendlyEnemyResult.provableEarlyPointsWin(early));
+        assertEquals(FriendlyEnemyResult.PointsEndReason.REACHED_1000,
+                FriendlyEnemyResult.resolveTeamBattle(early, 2).pointsEndReason());
         final TeamEvidenceFormatter.BudgetWriter bw = new TeamEvidenceFormatter.BudgetWriter();
         TeamEvidenceFormatter.appendCaptureAndPoints(bw, early, 2, "eval-arena");
         final String content = bw.content();
         assertTrue(content.contains("pointsEndReason=REACHED_1000"), content);
-        assertTrue(content.contains("team victoryPointsEarned=854"), content);
-        assertTrue(content.contains("opposing victoryPointsEarned=275"), content);
-        assertTrue(content.contains("kills=4 deaths=4"), content);
-        assertTrue(content.contains("finalPointsComputed: team=1000 opposing=275"), content);
-        assertTrue(content.contains("赢队终局比分按规则=1000"), content);
-        assertTrue(content.contains("禁止用 victoryPointsEarned 合计冒充终局比分"), content);
+        assertTrue(content.contains("knownPointsSubtotal: team=854 opposing=275"), content);
+        assertTrue(content.contains("finalScore: team=1000（达到1000分提前获胜, 规则保证） opposing=UNKNOWN"), content);
+        assertFalse(content.contains("finalScore: team=854"), content);
+        assertTrue(content.contains("不是终局比分"), content);
     }
 
     @Test
-    void timeExpiredKeepsComputedScores() {
-        final Battle late = supremacyBattle(420, 2);
-        assertFalse(FriendlyEnemyResult.earlyPointsEnd(late));
+    void enemyWinEarlyEndPinsOnlyOpposing() {
+        final Battle early = supremacyBattle(226, 1, 4);
+        final TeamEvidenceFormatter.BudgetWriter bw = new TeamEvidenceFormatter.BudgetWriter();
+        TeamEvidenceFormatter.appendCaptureAndPoints(bw, early, 2, "eval-arena");
+        assertTrue(bw.content().contains(
+                "finalScore: team=UNKNOWN opposing=1000（达到1000分提前获胜, 规则保证）"), bw.content());
+    }
+
+    @Test
+    void timeExpiredOutputsUnknownFinalScores() {
+        final Battle late = supremacyBattle(420, 2, 4);
         assertEquals(FriendlyEnemyResult.PointsEndReason.TIME_EXPIRED,
                 FriendlyEnemyResult.resolveTeamBattle(late, 2).pointsEndReason());
         final TeamEvidenceFormatter.BudgetWriter bw = new TeamEvidenceFormatter.BudgetWriter();
         TeamEvidenceFormatter.appendCaptureAndPoints(bw, late, 2, "eval-arena");
         final String content = bw.content();
-        assertTrue(content.contains("finalPointsComputed: team=854 opposing=275"), content);
-        assertFalse(content.contains("按规则=1000"), content);
+        assertTrue(content.contains("finalScore: team=UNKNOWN opposing=UNKNOWN"), content);
+        assertFalse(content.contains("finalScore: team=1000"), content);
+        assertFalse(content.contains("finalScore: team>=1000"), content);
     }
 
     @Test
-    void enemyWinEarlyEndPinsOpposingScore() {
-        final Battle early = supremacyBattle(226, 1);
-        final var w = FriendlyEnemyResult.resolveTeamBattle(early, 2);
-        assertEquals(FriendlyEnemyResult.PointsEndReason.REACHED_1000, w.pointsEndReason());
+    void trainingRoomCustomLimitDoesNotForce1000() {
+        final Battle training = supremacyBattle(226, 2, 2); // 训练房：自定义时限不可证明
+        assertFalse(FriendlyEnemyResult.standardSupremacyRules(training));
+        assertFalse(FriendlyEnemyResult.provableEarlyPointsWin(training));
+        assertEquals(FriendlyEnemyResult.PointsEndReason.UNKNOWN,
+                FriendlyEnemyResult.resolveTeamBattle(training, 2).pointsEndReason());
         final TeamEvidenceFormatter.BudgetWriter bw = new TeamEvidenceFormatter.BudgetWriter();
-        TeamEvidenceFormatter.appendCaptureAndPoints(bw, early, 2, "eval-arena");
-        assertTrue(bw.content().contains("finalPointsComputed: team=854 opposing=1000"), bw.content());
+        TeamEvidenceFormatter.appendCaptureAndPoints(bw, training, 2, "eval-arena");
+        final String content = bw.content();
+        assertTrue(content.contains("finalScore: team=UNKNOWN opposing=UNKNOWN"), content);
+        assertFalse(content.contains("finalScore: team=1000"), content);
+    }
+
+    @Test
+    void missingWinnerTeamFailsClosedEvenWhenPointsConflict() {
+        // 原始占点分 team1(900) > team2(700)，但击杀夺分后 team2(940) > team1(660)：方向冲突
+        final Battle b = new Battle();
+        b.rosterComplete = true;
+        b.durationS = 226.0;
+        b.arenaBonusType = 4;
+        b.players = new ArrayList<>();
+        b.players.add(player(1, 1, 900, 0, true));
+        for (int i = 2; i <= 7; i++) {
+            b.players.add(player(i, 1, 0, 0, false));
+        }
+        b.players.add(player(11, 2, 700, 6, true));
+        for (int i = 12; i <= 17; i++) {
+            b.players.add(player(i, 2, 0, 0, true));
+        }
+        final var w = FriendlyEnemyResult.resolveTeamBattle(b, 1);
+        assertEquals(FriendlyEnemyResult.Winner.DRAW_OR_UNKNOWN, w.winner());
+        assertEquals(FriendlyEnemyResult.WinnerSource.UNKNOWN, w.source());
+        assertEquals("平局或未知", TeamEvidenceFormatter.resolveTeamResult(b, 1, "CHRD"));
+    }
+
+    @Test
+    void subtotalLowerBoundProvesReached1000WithoutDurationClaims() {
+        // 部分分下界 ≥1000 本身就是 REACHED_1000 证明（与时长/类别无关）
+        final Battle training = supremacyBattle(420, 2, 2);
+        training.players.get(0).victoryPointsEarned = 1043; // team2 部分分 ≥1000
+        assertEquals(FriendlyEnemyResult.PointsEndReason.REACHED_1000,
+                FriendlyEnemyResult.resolveTeamBattle(training, 2).pointsEndReason());
+        final TeamEvidenceFormatter.BudgetWriter bw = new TeamEvidenceFormatter.BudgetWriter();
+        TeamEvidenceFormatter.appendCaptureAndPoints(bw, training, 2, "eval-arena");
+        assertTrue(bw.content().contains("finalScore: team>=1000 opposing=UNKNOWN"), bw.content());
     }
 }
