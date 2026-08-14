@@ -68,7 +68,7 @@ final class TeamAggregateExtractor {
 
     /**
      * Resolve aggregate win as Boolean（team perspective / supremacy 规则）。
-     * 结算 winnerTeam 缺失时 fail closed：占点分不含被动增长与击杀夺分，禁止比较推断胜方；
+     * 结算 winnerTeam 缺失时 fail closed：victoryPointsEarned 的精确定义及是否包含被动增长/击杀夺分仍未证明，禁止比较推断胜方；
      * 无法判定返回 null。
      */
     static Boolean resolveAggregateWin(final Battle battle, final int perspectiveTeam) {

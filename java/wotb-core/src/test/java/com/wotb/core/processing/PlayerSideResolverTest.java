@@ -271,7 +271,7 @@ class PlayerSideResolverTest {
                 player(2, "B1", true, 700),
                 player(2, "B2", true, 0));
         final TeamBattleWinner w = FriendlyEnemyResult.resolveTeamBattle(battle, 1);
-        // 无权威胜方：占点分不含被动增长与击杀夺分，禁止比较推断胜方 → fail closed
+        // 无权威胜方：victoryPointsEarned 是否含被动增长/击杀夺分仍未证明，禁止比较推断胜方 → fail closed
         assertEquals(Winner.DRAW_OR_UNKNOWN, w.winner());
         assertEquals(WinnerSource.UNKNOWN, w.source());
         assertTrue(w.pointsDecided());

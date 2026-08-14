@@ -157,19 +157,20 @@ final class TeamPromptLocalizer {
                a. 本方获胜且对方 survivors=0 → 写「全歼敌方获胜」；
                b. 本方落败且本方 survivors=0 → 写「被敌方全歼落败」；
                c. 双方均有存活车辆时，才允许进入点数结束方式判断（争霸赛所有模式均为固定 7 分钟/420 秒、胜利点数上限 1000 分的业务规则——项目所有者确认，游戏不提供时长调整；arenaBonusType 只证明战斗类别，不直接解码出 420s/1000）：
-                  战斗时长未到 7 分钟且权威胜方存在 → 写「达到 1000 分提前获胜」，胜利方终局比分=1000（达到上限，可能略超并被压缩为1000），失败方比分未知；
-                  时长 ≥7 分钟 → 写「时间耗尽后以点数优势获胜」，必须写「时间耗尽」；
-                  无法证明时限或胜负时只写「点数判定」，终局比分未知，不得编造。
+                  战斗时长未到 7 分钟 → 结束原因为「某一方达到 1000 分导致提前结束」：权威胜方存在时写「达到 1000 分提前获胜」，胜利方终局比分=1000（1000 分上限业务约定），失败方比分未知；
+                  胜方缺失时只写「某一方达到 1000 分导致提前结束，具体胜方未知」，双方终局比分未知；
+                  时长 ≥7 分钟 → 权威胜方存在时写「时间耗尽后以点数优势获胜」，必须写「时间耗尽」；胜方缺失时只写「时间耗尽点数判定，具体胜方未知」，双方终局比分未知；
+                  无法证明时限时只写「点数判定」，终局比分未知，不得编造。
             4. 禁止把失败方被全歼写成「全歼敌方获胜」；禁止把点数胜负写成全歼或常规胜利；禁止用 <1000 的中间比分作为获胜理由。
-            5. 占点分/占领分（victoryPointsEarned/Seized）是逐人结算字段：其精确定义（是否含击杀夺分/被动占点增长）未经证明，
-               不代表时间线也不是终局比分；占点得分业务规则（项目所有者确认）：每个据点每次 tick 为己方 +3 或 +5 分（取值依场次/模式而异，3 据点 = 9~15/tick），
-               tick 间隔与取值未解码，禁止用 tick 数计算终局比分；不得把总量说成某时刻占领进度，也不得把 victoryPointsEarned 合计
+            5. 占点分/占领分（victoryPointsEarned/Seized）是逐人结算字段：其精确定义及是否包含被动占点增长、击杀夺分等调整仍未证明，
+               不代表时间线也不是终局比分；每据点每 tick 产分与 tick 间隔均未解码（无任何已验证的 tick 产分规则），
+               禁止用 tick 数或占点分计算终局比分；不得把总量说成某时刻占领进度，也不得把 victoryPointsEarned 合计
                或任何公式计算结果冒充终局比分。
             6. 地图占领点区域（CONTAINS_CONTROL_POINT）只用于描述方位，未提供时不得声称谁在占点。
             7. 击杀夺分（业务规则，项目所有者确认）：争霸赛每击杀一辆敌方坦克，击杀方夺取对方 40 分补充自身，被击杀方损失 40 分；
                该规则只作叙述口径（「击毁车辆通常会改变双方点数」），结算字段是否已包含该调整未经证明，
                禁止自行用「占点分 + 40×击杀 − 40×阵亡」等公式计算结果并当作事实输出；
-               只有权威胜方存在且标准规则下提前结束时，胜利方终局比分才=1000（业务规则保证），其余终局比分一律未知；
+               只有权威胜方存在且标准规则下提前结束时，胜利方终局比分才=1000（1000 分上限业务约定），其余终局比分一律未知；
                禁止用不含击杀夺分的中间比分解释获胜，禁止编造失败方精确比分。""";
 
     static final String CAPTURE_RULE_EN = """
@@ -185,13 +186,14 @@ final class TeamPromptLocalizer {
                a. Your team wins and the opposing team has 0 survivors → write "won by annihilating the enemy team";
                b. Your team loses and your team has 0 survivors → write "lost, annihilated by the enemy team";
                c. Only when both teams have surviving vehicles may you judge the points end condition (every Supremacy mode uses the fixed 7-minute / 420-second duration and a 1000-point victory cap — business rules confirmed by the project owner; the game offers no battle-duration setting, and arenaBonusType only proves the battle category, it does not decode 420s/1000):
-                  battle shorter than 7 minutes + authoritative winner → write "won by reaching 1000 points early"; the winning team's final score is 1000 (the cap — it may slightly exceed it and be clamped to 1000 in the replay), the losing team's score is unknown;
-                  duration >= 7 minutes → write "won on points after time expired" — always write "time expired";
-                  when the time limit or the winner cannot be proven, only write "points decision" and the final score is unknown — never invent it.
+                  battle shorter than 7 minutes → the end reason is "a team reached 1000 points, ending the battle early"; with an authoritative winner write "won by reaching 1000 points early" and the winning team's final score is 1000 (the 1000-point cap, a business convention), the losing team's score is unknown;
+                  without an authoritative winner write only "a team reached 1000 points, ending the battle early; the winning team is unknown" and both final scores are unknown;
+                  duration >= 7 minutes → with an authoritative winner write "won on points after time expired" — always write "time expired"; without one, write only "points decision after time expired, the winning team is unknown" and both final scores are unknown;
+                  when the time limit cannot be proven, only write "points decision" and the final score is unknown — never invent it.
             4. Never write "won by annihilating the enemy team" when your own team was annihilated; never present a points win as annihilation or a regular win; never use a mid-match score below 1000 as the reason for winning.
-            5. victoryPointsEarned / victoryPointsSeized are per-player settlement fields whose exact meaning (whether they already include kill steals or passive accumulation) is unproven; they are not a timeline and not the final score. Capture scoring business rule (confirmed by the project owner): each held base gives your team +3 or +5 points per tick (the exact value varies by battle/mode; 3 bases = 9–15 per tick); the tick interval and exact value are undecoded, so never compute a final score from tick counts. Never present the totals as capture progress at a specific moment and never pass off the victoryPointsEarned sum or any formula result as the final score.
+            5. victoryPointsEarned / victoryPointsSeized are per-player settlement fields whose exact meaning and whether they already include passive accumulation or kill steals is unproven; they are not a timeline and not the final score. Capture scoring business rule (confirmed by the project owner): No per-base per-tick scoring rule has been verified, and the tick interval is undecoded, so never compute a final score from tick counts or capture points. Never present the totals as capture progress at a specific moment and never pass off the victoryPointsEarned sum or any formula result as the final score.
             6. Capture-point areas (CONTAINS_CONTROL_POINT) only describe direction; when not provided, never claim who is capturing.
-            7. Kill steals (business rule, confirmed by the project owner): in Supremacy every destroyed enemy tank steals 40 points from the enemy team and adds them to the killer's team, while the team that lost the tank loses 40 points; this rule is a narrative guideline only ("destroying vehicles usually changes both teams' points") — whether the settlement fields already include this adjustment is unproven, so never compute "capture points + 40×kills − 40×deaths" yourself and present the result as fact; only with an authoritative winner and a rule-provable early end is the winning team's final score 1000 (guaranteed by the business rules) — all other final scores are unknown; never explain the win with a score that omits kill steals and never invent the losing team's exact score.""";
+            7. Kill steals (business rule, confirmed by the project owner): in Supremacy every destroyed enemy tank steals 40 points from the enemy team and adds them to the killer's team, while the team that lost the tank loses 40 points; this rule is a narrative guideline only ("destroying vehicles usually changes both teams' points") — whether the settlement fields already include this adjustment is unproven, so never compute "capture points + 40×kills − 40×deaths" yourself and present the result as fact; only with an authoritative winner and a rule-provable early end is the winning team's final score 1000 (the 1000-point cap, a business convention) — all other final scores are unknown; never explain the win with a score that omits kill steals and never invent the losing team's exact score.""";
 
     static final String CAPTURE_RULE_RU = """
 
@@ -206,13 +208,14 @@ final class TeamPromptLocalizer {
                a. Ваша команда победила, а у противника 0 выживших → напишите «победа полным уничтожением противника»;
                b. Ваша команда проиграла, а в вашей команде 0 выживших → напишите «поражение — противник полностью уничтожил вашу команду»;
                c. Только когда в обеих командах есть выжившие машины, оценивайте завершение по очкам (во всех режимах Supremacy действует фиксированная длительность 7 минут / 420 секунд и предел победы 1000 очков — бизнес-правила, подтверждённые владельцем проекта; в игре нет настройки длительности боя, а arenaBonusType лишь доказывает категорию боя и не декодирует 420с/1000):
-                  бой короче 7 минут + авторитетный победитель → напишите «победа досрочно по достижении 1000 очков», итоговый счёт победителя = 1000 (предел — может слегка превышать его и быть сжат до 1000 в реплее), счёт проигравшего неизвестен;
-                  длительность ≥7 минут → напишите «победа по очкам после истечения времени» — обязательно укажите «время истекло»;
-                  если лимит времени или победитель недоказуемы, пишите только «решение по очкам», итоговый счёт неизвестен — не выдумывайте его.
+                  бой короче 7 минут → причина завершения «одна из команд достигла 1000 очков, бой завершён досрочно»; при авторитетном победителе напишите «победа досрочно по достижении 1000 очков», итоговый счёт победителя = 1000 (предел 1000 очков, деловое соглашение), счёт проигравшего неизвестен;
+                  без авторитетного победителя напишите только «одна из команд достигла 1000 очков, бой завершён досрочно; победитель неизвестен», оба итоговых счёта неизвестны;
+                  длительность ≥7 минут → при авторитетном победителе напишите «победа по очкам после истечения времени» — обязательно укажите «время истекло»; без него напишите только «решение по очкам после истечения времени, победитель неизвестен», оба итоговых счёта неизвестны;
+                  если лимит времени недоказуем, пишите только «решение по очкам», итоговый счёт неизвестен — не выдумывайте его.
             4. Не пишите «победа полным уничтожением противника», когда полностью уничтожена ваша команда; не выдавайте победу по очкам за уничтожение или обычную победу; не используйте промежуточный счёт ниже 1000 как причину победы.
-            5. victoryPointsEarned / victoryPointsSeized — посчётные поля расчёта, чьё точное значение (включены ли уже очки за фраги или пассивное накопление) не доказано; это не таймлайн и не итоговый счёт. Бизнес-правило начисления за захват (подтверждено владельцем проекта): каждая удерживаемая база даёт вашей команде +3 или +5 очков за тик (точное значение зависит от боя/режима; 3 базы = 9–15 за тик); интервал тика и точное значение не декодированы, поэтому не вычисляйте итоговый счёт из числа тиков. Не выдавайте суммы за прогресс захвата в конкретный момент и не выдавайте сумму victoryPointsEarned или любой результат формулы за итоговый счёт.
+            5. victoryPointsEarned / victoryPointsSeized — посчётные поля расчёта, чьё точное значение и включены ли уже очки за фраги или пассивное накопление не доказаны; это не таймлайн и не итоговый счёт. Бизнес-правило начисления за захват (подтверждено владельцем проекта): Никакое правило начисления очков за базу за тик не проверено, интервал тика не декодирован, поэтому не вычисляйте итоговый счёт из числа тиков или очков захвата. Не выдавайте суммы за прогресс захвата в конкретный момент и не выдавайте сумму victoryPointsEarned или любой результат формулы за итоговый счёт.
             6. Области точек захвата (CONTAINS_CONTROL_POINT) описывают только направление; если они не предоставлены, не утверждайте, кто захватывает.
-            7. Очки за фраги (бизнес-правило, подтверждённое владельцем проекта): в Supremacy каждый уничтоженный вражеский танк отнимает у вражеской команды 40 очков и добавляет их команде убийцы, а команда, потерявшая машину, теряет 40 очков; это правило — только ориентир для описания («уничтожение машин обычно меняет очки обеих команд»): включена ли эта поправка в поля расчёта, не доказано, поэтому запрещено самому вычислять «очки захвата + 40×фраги − 40×потери» и выдавать результат за факт; только при авторитетном победителе и доказуемом по правилам досрочном завершении итоговый счёт победителя = 1000 (гарантировано бизнес-правилами), все остальные итоговые счета неизвестны; запрещено объяснять победу счётом без очков за фраги и выдумывать точный счёт проигравшей команды.""";
+            7. Очки за фраги (бизнес-правило, подтверждённое владельцем проекта): в Supremacy каждый уничтоженный вражеский танк отнимает у вражеской команды 40 очков и добавляет их команде убийцы, а команда, потерявшая машину, теряет 40 очков; это правило — только ориентир для описания («уничтожение машин обычно меняет очки обеих команд»): включена ли эта поправка в поля расчёта, не доказано, поэтому запрещено самому вычислять «очки захвата + 40×фраги − 40×потери» и выдавать результат за факт; только при авторитетном победителе и доказуемом по правилам досрочном завершении итоговый счёт победителя = 1000 (предел 1000 очков, деловое соглашение), все остальные итоговые счета неизвестны; запрещено объяснять победу счётом без очков за фраги и выдумывать точный счёт проигравшей команды.""";
 
     /**
      * 组装团队 system prompt：ZH 返回原样；EN/RU 在中文基座上替换中文输出强制句
