@@ -10,7 +10,6 @@ import {
   positionAt,
   positionCoveredAt,
   recorderRelated,
-  routePrefix,
   screenRotation,
   shortestArcDeg,
   tracerLines,
@@ -128,48 +127,6 @@ describe('lastKnownPosition', () => {
   })
 })
 
-describe('routePrefix', () => {
-  const points = [
-    { x: 0, y: 0, timeSec: 10 },
-    { x: 10, y: 0, timeSec: 14 },
-    { x: 20, y: 0, timeSec: 40 },
-    { x: 30, y: 0, timeSec: 44 }
-  ]
-  it('only returns points up to t (future hidden)', () => {
-    const segs = routePrefix(points, 14)
-    expect(segs).toHaveLength(1)
-    const flat = segs.flat().map(p => p.timeSec)
-    expect(Math.max(...flat)).toBeLessThanOrEqual(14.001)
-    expect(flat).not.toContain(40)
-  })
-  it('breaks segments across a gap > 5s', () => {
-    const segs = routePrefix(points, 44)
-    expect(segs).toHaveLength(2)
-    expect(segs[0].map(p => p.timeSec)).toEqual([10, 14])
-    expect(segs[1].map(p => p.timeSec)).toEqual([40, 44])
-  })
-  it('appends the interpolated live position when inside a trusted segment', () => {
-    const segs = routePrefix(points, 12)
-    const last = segs[0][segs[0].length - 1]
-    expect(last.timeSec).toBe(12)
-    expect(last.x).toBeCloseTo(5)
-  })
-  it('does not append a live point inside a gap', () => {
-    const segs = routePrefix(points, 20)
-    expect(segs).toHaveLength(1)
-    expect(segs[0].map(p => p.timeSec)).toEqual([10, 14])
-  })
-  it('skips invalid coordinates and never through-lines them', () => {
-    const bad = [
-      { x: 0, y: 0, timeSec: 10 },
-      { x: Number.NaN, y: 0, timeSec: 12 },
-      { x: 20, y: 0, timeSec: 15 }
-    ]
-    const segs = routePrefix(bad, 15)
-    expect(segs).toHaveLength(1)
-    expect(segs[0].map(p => p.timeSec)).toEqual([10, 15])
-  })
-})
 
 describe('direction utilities', () => {
   it('normalizeDeg wraps into [-180,180)', () => {
@@ -298,23 +255,37 @@ describe('tracerLines', () => {
   ])
   const damage = { type: 'DAMAGE', timeSec: 12, accountId: 1, targetAccountId: 2, damage: 400 }
 
-  it('draws one line at the event time and fades out over the window (seek-safe)', () => {
+  it('laser opacity holds bright then fades over the window (seek-safe)', () => {
     expect(tracerLines([damage], routes, 11.99, 1)).toEqual([])
     const at = tracerLines([damage], routes, 12, 1)
     expect(at).toHaveLength(1)
     expect(at[0].x1).toBeCloseTo(50)
     expect(at[0].y2).toBeCloseTo(100)
     expect(at[0].opacity).toBeCloseTo(1)
-    expect(tracerLines([damage], routes, 12.25, 1)[0].opacity).toBeCloseTo(0.5)
-    expect(tracerLines([damage], routes, 12.5, 1)).toEqual([])
+    // 前 0.4s（真实时间）保持全亮（激光感），之后线性淡出
+    expect(tracerLines([damage], routes, 12.25, 1)[0].opacity).toBeCloseTo(1)
+    expect(tracerLines([damage], routes, 12.6, 1)[0].opacity).toBeCloseTo(2 / 3)
+    expect(tracerLines([damage], routes, 13, 1)).toEqual([])
     expect(tracerLines([damage], routes, 12, 1)).toHaveLength(1)
   })
 
+  it('impact flash progress runs 0→1 over the flash window at any speed', () => {
+    expect(tracerLines([damage], routes, 12, 1)[0].flashProgress).toBeCloseTo(0)
+    expect(tracerLines([damage], routes, 12.1, 1)[0].flashProgress).toBeCloseTo(0.1 / 0.35)
+    // 超过闪光窗口后钳制为 1（闪光不可见，线仍在淡出）
+    expect(tracerLines([damage], routes, 12.4, 1)[0].flashProgress).toBe(1)
+    // 2×/4×：真实 0.35s 对应游戏 0.7s / 1.4s
+    expect(tracerLines([damage], routes, 12.35, 2)[0].flashProgress).toBeCloseTo(0.5)
+    expect(tracerLines([damage], routes, 12.7, 4)[0].flashProgress).toBeCloseTo(0.5)
+  })
+
   it('windows scale with playback speed (1x/2x/4x)', () => {
-    expect(tracerLines([damage], routes, 12.5, 1)).toEqual([])
-    expect(tracerLines([damage], routes, 12.9, 2)).toHaveLength(1)
-    expect(tracerLines([damage], routes, 13.9, 4)).toHaveLength(1)
-    expect(tracerLines([damage], routes, 14, 4)).toEqual([])
+    expect(tracerLines([damage], routes, 13, 1)).toEqual([])
+    // 2×：窗口 2s、保持 0.8s → 13.9s（elapsed 1.9）opacity = 1-(1.9-0.8)/1.2
+    expect(tracerLines([damage], routes, 13.9, 2)[0].opacity).toBeCloseTo(1 - 1.1 / 1.2)
+    // 4×：窗口 4s、保持 1.6s → 15.9s（elapsed 3.9）opacity = 1-(3.9-1.6)/2.4
+    expect(tracerLines([damage], routes, 15.9, 4)[0].opacity).toBeCloseTo(1 - 2.3 / 2.4)
+    expect(tracerLines([damage], routes, 16, 4)).toEqual([])
   })
 
   it('dedupes DAMAGE+KILL of the same shot into one line', () => {

@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
+import com.wotb.web.replay.MapOverviewQueryService;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiReviewStreamListener;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
@@ -76,7 +77,7 @@ class ReconstructionControllerStreamingTest {
         reviewService = spy(new AiReplayReviewService(processingFacade, aiService));
         cancellationRegistry = spy(new AiCancellationRegistry());
         workerExecutor = new AiReviewWorkerExecutor();
-        controller = new ReconstructionController(processingFacade, reviewService, cancellationRegistry, workerExecutor, null);
+        controller = new ReconstructionController(processingFacade, reviewService, cancellationRegistry, workerExecutor, new MapOverviewQueryService(processingFacade), null);
     }
 
     @AfterEach

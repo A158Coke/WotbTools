@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.10",
+    "date": "2026-08-14",
+    "tag": "add",
+    "zh": "AI 复盘页新增独立「地图鸟瞰」区块：热力/路线/战局回放三视图不再依赖 AI 复盘，选文件后点「加载地图」即可查看（后端新增 /api/replay/map-overview 接口，只解析回放、不调 AI）；战局回放移除行驶路线线，坦克图标上方常显坦克型号名（不再限高倍缩放），炮线动画延长到约 1 秒并改为激光样式（亮白内芯 + 阵营色光晕 + 命中端扩散闪光，先亮后淡）；AI 赛前预测不再使用「簇」等内部词，兵力/阵型集中一律表述为「集群」",
+    "en": "The AI review page gains a standalone Map Overview section: the heatmap/routes/battle-playback views no longer depend on the AI review, just pick a replay and click Load map to see them (new backend endpoint /api/replay/map-overview parses the replay only, no AI involved); the battle playback no longer draws vehicle route lines, the tank name label is now always visible above each marker (no longer limited to high zoom), and tracer lines last about 1 second in a laser style (bright white core with a team-colored glow and an expanding impact flash, bright first then fading); the AI pre-battle prediction no longer uses internal jargon like the character cu — concentrated force groupings are always described as cluster in natural Chinese",
+    "ru": "На странице AI-разбора появился независимый блок «Обзор карты»: виды «тепловая карта/маршруты/повтор боя» больше не зависят от AI-разбора — выберите реплей и нажмите «Загрузить карту» (новый эндпоинт /api/replay/map-overview только разбирает реплей, без ИИ); в повторе боя убраны линии маршрутов машин, подпись с названием танка теперь всегда видна над маркером (не только при большом зуме), линии выстрелов длятся около 1 секунды и выглядят как лазеры (яркая белая сердцевина с ореолом цвета команды и расширяющейся вспышкой в точке попадания, сначала яркая, затем затухает); в предбоевом прогнозе ИИ больше не используется жаргон вроде «cu» — сосредоточение сил всегда описывается как «cluster»"
+  },
+  {
     "v": "2.11.9",
     "date": "2026-08-14",
     "tag": "add",

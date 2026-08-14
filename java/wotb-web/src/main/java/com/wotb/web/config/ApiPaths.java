@@ -40,6 +40,7 @@ public final class ApiPaths {
     public static final String BOOST_OPTIONS = "/api/boost/options";
     public static final String REPLAY_ANALYZE = "/api/replay/analyze";
     public static final String REPLAY_ANALYZE_CANCEL = "/api/replay/analyze/cancel";
+    public static final String REPLAY_MAP_OVERVIEW = "/api/replay/map-overview";
     public static final String REPLAY_RECONSTRUCT_BATCH = "/api/replay/reconstruct-batch";
     public static final String REPLAY_PROCESS = "/api/replay/process";
 

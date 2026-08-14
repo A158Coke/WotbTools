@@ -17,7 +17,6 @@ import {
   positionAt,
   positionCoveredAt,
   recorderRelated,
-  routePrefix,
   screenRotation,
   teamRelated,
   tracerLines,
@@ -61,7 +60,7 @@ const eventPopupSec = ref(null)
 let rafId = null
 let lastFrameTs = null
 
-// ---- 地图视图缩放/平移：单一 transform 层保证地图/网格/路线/炮线/标记严格对齐 ----
+// ---- 地图视图缩放/平移：单一 transform 层保证地图/网格/炮线/标记严格对齐 ----
 const mapEl = ref(null)
 const view = reactive({ scale: 1, tx: 0, ty: 0 })
 const PAN_THRESHOLD_PX = 5
@@ -383,16 +382,6 @@ function markerTop(y) {
   return `${((mapView.value.toY(y)) / mapView.value.H) * 100}%`
 }
 
-/** 历史路线前缀（只到当前时间；gap 断线；阵亡后不再延伸）。 */
-function routeSegments(vehicle) {
-  const route = routesByAccount.value.get(vehicle.accountId)
-  if (!route) return []
-  const stop = vehicle.deathSec != null
-    ? Math.min(currentTime.value, vehicle.deathSec)
-    : currentTime.value
-  return routePrefix(route.points, stop)
-}
-
 const vehicleStates = computed(() => {
   const vehicles = playback.value ? playback.value.vehicles : []
   return vehicles.map(vehicleState).filter(Boolean)
@@ -608,29 +597,40 @@ const mapStyle = computed(() => ({
           :class="spawn.team === friendlyTeam ? 'pb-spawn-friendly' : 'pb-spawn-enemy'"
         />
       </g>
-      <g class="pb-routes" :stroke-width="2 / view.scale">
-        <template v-for="st in vehicleStates" :key="`route-${st.vehicle.accountId}`">
-          <polyline
-            v-for="(seg, i) in routeSegments(st.vehicle)"
-            :key="`seg-${st.vehicle.accountId}-${i}`"
-            class="pb-route"
-            :stroke="vehicleColor(st.vehicle)"
-            :points="seg.map(p => `${mapView.toX(p.x)},${mapView.toY(p.y)}`).join(' ')"
+      <g class="pb-tracers" aria-hidden="true">
+        <template v-for="(l, i) in visibleTracers" :key="`tracer-${l.timeSec}-${i}`">
+          <!-- 外层光晕：阵营色宽线半透明（激光辉光） -->
+          <line
+            class="pb-tracer"
+            :x1="mapView.toX(l.x1)"
+            :y1="mapView.toY(l.y1)"
+            :x2="mapView.toX(l.x2)"
+            :y2="mapView.toY(l.y2)"
+            :stroke="tracerColor(l.attackerAccountId)"
+            :stroke-width="6 / view.scale"
+            :opacity="l.opacity * 0.35"
+          />
+          <!-- 内芯：亮白细线（激光束主体） -->
+          <line
+            class="pb-tracer-core"
+            :x1="mapView.toX(l.x1)"
+            :y1="mapView.toY(l.y1)"
+            :x2="mapView.toX(l.x2)"
+            :y2="mapView.toY(l.y2)"
+            stroke="#fff"
+            :stroke-width="1.75 / view.scale"
+            :opacity="l.opacity"
+          />
+          <!-- 命中闪光：目标端圆点扩散 + 淡出（flashProgress 0→1） -->
+          <circle
+            class="pb-tracer-flash"
+            :cx="mapView.toX(l.x2)"
+            :cy="mapView.toY(l.y2)"
+            :r="(3 + 9 * l.flashProgress) / view.scale"
+            :fill="tracerColor(l.attackerAccountId)"
+            :opacity="(1 - l.flashProgress) * 0.9"
           />
         </template>
-      </g>
-      <g class="pb-tracers" aria-hidden="true" :stroke-width="1.5 / view.scale">
-        <line
-          v-for="(l, i) in visibleTracers"
-          :key="`tracer-${l.timeSec}-${i}`"
-          class="pb-tracer"
-          :x1="mapView.toX(l.x1)"
-          :y1="mapView.toY(l.y1)"
-          :x2="mapView.toX(l.x2)"
-          :y2="mapView.toY(l.y2)"
-          :stroke="tracerColor(l.attackerAccountId)"
-          :opacity="l.opacity"
-        />
       </g>
     </svg>
     <div class="pb-markers" data-test="pb-markers" aria-hidden="false">
@@ -662,7 +662,7 @@ const mapStyle = computed(() => ({
           :style="{ transform: `translate(-50%, -50%) rotate(${st.turretScreenDeg}deg)` }"
         />
         <span v-if="st.destroyed" class="pb-death" aria-hidden="true">✕</span>
-        <span v-if="view.scale >= 2" class="pb-name" aria-hidden="true">{{ st.vehicle.playerName }}</span>
+        <span class="pb-name" aria-hidden="true">{{ st.vehicle.tankName || st.vehicle.tankId }}</span>
       </button>
     </div>
     </div>
@@ -822,10 +822,10 @@ const mapStyle = computed(() => ({
   pointer-events: none;
   text-shadow: 0 0 2px #000, 0 0 2px #000;
 }
-/* 高倍缩放（≥2×）车名小标签：位于反缩放按钮内 → 字号不随地图缩放 */
+/* 常显坦克型号名标签：位于图标上方、反缩放按钮内 → 字号不随地图缩放 */
 .pb-name {
   position: absolute;
-  top: calc(100% + 2px);
+  bottom: calc(100% + 2px);
   left: 50%;
   transform: translateX(-50%);
   font-size: 10px;
@@ -842,9 +842,8 @@ const mapStyle = computed(() => ({
   pointer-events: none;
 }
 .pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.16)); stroke-width: .5; fill: none; }
-/* 路线/炮线屏幕宽度由 <g> 的 :stroke-width（2/view.scale、1.5/view.scale）固定，不随缩放变粗 */
-.pb-route { fill: none; stroke-linejoin: round; stroke-linecap: round; opacity: .55; }
-.pb-tracer { stroke-linecap: round; }
+/* 激光炮线：外层光晕/内芯线宽逐元素绑定（6/view.scale、1.75/view.scale），不随缩放变粗 */
+.pb-tracer, .pb-tracer-core { stroke-linecap: round; }
 .pb-region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.28)); stroke-width: 1; }
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }

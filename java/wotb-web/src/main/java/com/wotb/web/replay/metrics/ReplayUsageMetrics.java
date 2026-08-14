@@ -32,6 +32,7 @@ public class ReplayUsageMetrics {
     public static final String OP_PROCESS = "process";
     public static final String OP_RECONSTRUCT = "reconstruct";
     public static final String OP_AI_REVIEW = "ai_review";
+    public static final String OP_MAP_OVERVIEW = "map_overview";
 
     private final MeterRegistry meterRegistry;
     private final AtomicInteger inFlight = new AtomicInteger();
