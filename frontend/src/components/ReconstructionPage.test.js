@@ -853,6 +853,152 @@ describe('ReconstructionPage standalone map section', () => {
   })
 })
 
+describe('ReconstructionPage map request race (file switch)', () => {
+  /** 可控 deferred fetch：按调用顺序记录 resolver；可选收集 AbortSignal。 */
+  function deferredFetch(signals = []) {
+    const resolvers = []
+    const mock = vi.fn((url, opts = {}) => {
+      if (opts.signal) signals.push(opts.signal)
+      return new Promise(resolve => {
+        resolvers.push(resolve)
+      })
+    })
+    mock.resolvers = resolvers
+    return mock
+  }
+
+  function raceJsonResponse(overview) {
+    return {
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue(overview)
+    }
+  }
+
+  function raceOverview(mapCode) {
+    return {
+      mapCode,
+      displayName: 'Map',
+      displayNames: { zh: '图', en: 'Map', ru: 'Карта' },
+      friendlyTeam: 1,
+      playableBounds: { xMin: -300, xMax: 300, yMin: -300, yMax: 300 },
+      gridCells: [],
+      spawnPoints: [],
+      phases: [],
+      heatmaps: { friendly: { dwell: [], damage: [], deaths: [] }, enemy: { dwell: [], damage: [], deaths: [] } },
+      routes: [],
+      arenaBonusType: 1,
+      recorderAccountId: null,
+      playback: null
+    }
+  }
+
+  /** 记录 MapOverview overview.mapCode 的 stub（分辨 A/B 数据）。 */
+  function mapCodeStub(seenCodes) {
+    return {
+      name: 'MapOverview',
+      props: ['overview', 'seekTo'],
+      setup(props) {
+        seenCodes.push(props.overview ? props.overview.mapCode : null)
+        return () => null
+      }
+    }
+  }
+
+  beforeEach(() => {
+    auth.ensureToken.mockResolvedValue(true)
+    auth.login.mockReset()
+    i18n.t.mockClear()
+    authState.authenticated.value = true
+    authState.roles = ['wotbtools-admin']
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it('stale request A never shows its map after switching to file B (A resolves late)', async () => {
+    const seenCodes = []
+    const fetchMock = deferredFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(ReconstructionPage, {
+      global: { mocks: { $t: i18n.t }, stubs: { MapOverview: mapCodeStub(seenCodes) } }
+    })
+    await selectReplays(wrapper, ['a.wotbreplay'])
+    await wrapper.get('[data-test="map-load-btn"]').trigger('click') // request A
+    await selectReplays(wrapper, ['b.wotbreplay']) // 换文件：旧请求失效并取消
+    await wrapper.get('[data-test="map-load-btn"]').trigger('click') // request B
+    // A 后到：页面不得显示 A
+    fetchMock.resolvers[0](raceJsonResponse(raceOverview('rift')))
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'MapOverview' }).exists()).toBe(false)
+    expect(wrapper.find('[data-test="map-load-btn"]').exists()).toBe(true) // B 仍在加载
+    // B 到达：显示 B
+    fetchMock.resolvers[1](raceJsonResponse(raceOverview('desert_train')))
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'MapOverview' }).exists()).toBe(true)
+    expect(seenCodes.filter(c => c === 'rift')).toHaveLength(0) // A 从未显示
+    expect(seenCodes).toContain('desert_train')
+  })
+
+  it('regardless of resolution order, only file B map is shown (B resolves first, A late)', async () => {
+    const seenCodes = []
+    const fetchMock = deferredFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(ReconstructionPage, {
+      global: { mocks: { $t: i18n.t }, stubs: { MapOverview: mapCodeStub(seenCodes) } }
+    })
+    await selectReplays(wrapper, ['a.wotbreplay'])
+    await wrapper.get('[data-test="map-load-btn"]').trigger('click')
+    await selectReplays(wrapper, ['b.wotbreplay'])
+    await wrapper.get('[data-test="map-load-btn"]').trigger('click')
+    // B 先到、A 后到
+    fetchMock.resolvers[1](raceJsonResponse(raceOverview('desert_train')))
+    await flushPromises()
+    fetchMock.resolvers[0](raceJsonResponse(raceOverview('rift')))
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'MapOverview' }).exists()).toBe(true)
+    expect(seenCodes.filter(c => c === 'rift')).toHaveLength(0)
+    expect(seenCodes).toContain('desert_train')
+  })
+
+  it('stale request A finally does not clear file B loading state', async () => {
+    const fetchMock = deferredFetch()
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['a.wotbreplay'])
+    await wrapper.get('[data-test="map-load-btn"]').trigger('click')
+    await selectReplays(wrapper, ['b.wotbreplay'])
+    await wrapper.get('[data-test="map-load-btn"]').trigger('click')
+    expect(wrapper.get('[data-test="map-load-btn"]').text()).toBe('recon.map.loading')
+    // A 返回（stale，失败路径也一样）：finally 不得提前解除 B 的 loading
+    fetchMock.resolvers[0](errorResponse(400, 'NO_BATTLE_DATA'))
+    await flushPromises()
+    expect(wrapper.get('[data-test="map-load-btn"]').text()).toBe('recon.map.loading')
+    expect(wrapper.get('[data-test="map-load-btn"]').attributes('disabled')).toBeDefined()
+    // B 完成：loading 结束，地图显示
+    fetchMock.resolvers[1](raceJsonResponse(raceOverview('desert_train')))
+    await flushPromises()
+    expect(wrapper.find('[data-test="map-load-btn"]').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'MapOverview' }).exists()).toBe(true)
+  })
+
+  it('aborts the in-flight map request on real unmount (KeepAlive deactivate unaffected)', async () => {
+    const signals = []
+    const fetchMock = deferredFetch(signals)
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['a.wotbreplay'])
+    await wrapper.get('[data-test="map-load-btn"]').trigger('click')
+    await flushPromises()
+    expect(signals.length).toBe(1)
+    expect(signals[0].aborted).toBe(false)
+    wrapper.unmount()
+    expect(signals[0].aborted).toBe(true)
+  })
+})
+
   it('aborts with AI_TIMEOUT when the wall-clock deadline passes during an active stream', async () => {
     vi.useFakeTimers()
     const sse = chunkedSse()

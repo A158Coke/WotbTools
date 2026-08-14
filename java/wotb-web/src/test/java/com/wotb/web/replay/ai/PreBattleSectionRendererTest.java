@@ -237,4 +237,61 @@ class PreBattleSectionRendererTest {
         assertFalse(section.contains("簇"),
                 "LLM 自由文本中的「簇」必须被确定性替换（prompt 规则 8 的兜底）: " + section);
     }
+
+    @Test
+    void specialWordsAndLeftoverClusterCharAreFullyNormalized() {
+        final PreBattleStrategicPrior clusterPrior = new PreBattleStrategicPrior(
+                new PreBattleStrategicPrior.TeamProfile(
+                        Map.of("mobility", "高簇"), // 非标准 composition 值同样经 display 兜底
+                        List.of("小簇袭扰", "车辆簇集中"),
+                        List.of("簇状推进"),
+                        List.of("簇拥出击")),
+                null,
+                List.of(new PreBattleStrategicPrior.KeyMatchup(
+                        "GRID_REGION_5", "TEAM_A", "主力簇并进")),
+                List.of(new PreBattleStrategicPrior.StrategicWinCondition(
+                        "TEAM_A", "多簇拉扯")),
+                List.of(new PreBattleStrategicPrior.StrategicHypothesis(
+                        "H1", "簇", "一簇")));
+        final String section = PreBattleSectionRenderer.render(clusterPrior);
+        assertTrue(section.contains("小群袭扰"), "小簇 must become 小群: " + section);
+        assertTrue(section.contains("车辆群集中"), "车辆簇 must become 车辆群: " + section);
+        assertTrue(section.contains("集群状推进"), "簇状 must become 集群状: " + section);
+        assertTrue(section.contains("聚集出击"), "簇拥 must become 聚集: " + section);
+        assertTrue(section.contains("机动性=高群"), "bare 簇 in composition must become 群: " + section);
+        assertTrue(section.contains("主力集群并进"), "主力簇 phrase replacement: " + section);
+        assertTrue(section.contains("多股拉扯"), "多簇 phrase replacement: " + section);
+        assertTrue(section.contains("H1：群"), "bare 簇 claim must become 群: " + section);
+        assertFalse(section.contains("簇"),
+                "所有用户可见自由文本字段最终都不得包含「簇」（专门替换 + 短语替换 + 字符兜底）: " + section);
+    }
+
+    @Test
+    void allUserVisibleFieldsNeverContainLeftoverClusterChar() {
+        // 每个用户可见自由文本字段都塞入不同「簇」形态：strengths/weaknesses/plans/
+        // composition 值/keyMatchups area+advantage+reason/winConditions/hypotheses。
+        final PreBattleStrategicPrior dirty = new PreBattleStrategicPrior(
+                new PreBattleStrategicPrior.TeamProfile(
+                        Map.of("mobility", "高簇", "burstPotential", "MEDIUM"),
+                        List.of("小簇袭扰"),
+                        List.of("车辆簇集中"),
+                        List.of("簇状推进")),
+                new PreBattleStrategicPrior.TeamProfile(
+                        Map.of(),
+                        List.of("簇拥集火"),
+                        List.of("多簇分散"),
+                        List.of("主力簇并进")),
+                List.of(new PreBattleStrategicPrior.KeyMatchup(
+                        "GRID_REGION_5", "TEAM_A", "一簇强攻")),
+                List.of(new PreBattleStrategicPrior.StrategicWinCondition(
+                        "TEAM_A", "成簇集结")),
+                List.of(new PreBattleStrategicPrior.StrategicHypothesis(
+                        "H1", "分簇行动", "同簇换线")));
+        final String section = PreBattleSectionRenderer.render(dirty);
+        assertFalse(section.contains("簇"),
+                "全部用户可见自由文本字段（队伍画像/对阵/胜机/假设）都不含「簇」: " + section);
+        assertTrue(section.contains("集群状推进") && section.contains("聚集集火")
+                        && section.contains("主力集群并进"),
+                "专门表达保留自然中文: " + section);
+    }
 }
