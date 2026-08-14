@@ -149,6 +149,23 @@ class TeamPointsAccountingTest {
     }
 
     @Test
+    void winnerMissingBothAliveEarlyEndKnowsReasonButNotTeam() {
+        // 完整阵容 + 双方均有存活 + 标准业务规则 + <420s → REACHED_1000；
+        // 但胜方未知：只知「有人达到1000」，不得把1000分配给任何队伍，finalScore 双方 UNKNOWN
+        final Battle b = supremacyBattle(226, null, 4);
+        final var w = FriendlyEnemyResult.resolveTeamBattle(b, 2);
+        assertEquals(FriendlyEnemyResult.Winner.DRAW_OR_UNKNOWN, w.winner());
+        assertEquals(FriendlyEnemyResult.WinnerSource.UNKNOWN, w.source());
+        assertEquals(FriendlyEnemyResult.PointsEndReason.REACHED_1000, w.pointsEndReason());
+        final TeamEvidenceFormatter.BudgetWriter bw = new TeamEvidenceFormatter.BudgetWriter();
+        TeamEvidenceFormatter.appendCaptureAndPoints(bw, b, 2, "eval-arena");
+        final String content = bw.content();
+        assertTrue(content.contains("pointsEndReason=REACHED_1000"), content);
+        assertTrue(content.contains("finalScore: team=UNKNOWN opposing=UNKNOWN"), content);
+        assertFalse(content.contains("finalScore: team=1000"), content);
+    }
+
+    @Test
     void missingWinnerTeamFailsClosedEvenWhenPointsConflict() {
         // 原始占点分 team1(900) > team2(700)、击杀分布相反：禁止推断胜方
         final Battle b = new Battle();

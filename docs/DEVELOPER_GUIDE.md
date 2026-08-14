@@ -517,7 +517,10 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
   口径（占点分+40×击杀−40×阵亡）**已撤回**，证据只输出原始结算字段（victoryPointsEarned/Seized、
   kills、deaths）；击杀夺分 40 分规则仅作叙述口径（`KILL_STEAL_POINTS`，不参与计算）；
   实时点数/基地占领/终局比分尚未解码（`PointsEvidenceProbeTest`/`ShotSpottingStreamProbeTest`
-  记录候选，语义 UNKNOWN）。无权威胜方时不推断胜方（POINTS_INFERENCE 停止产出）。
+  记录候选，语义 UNKNOWN）。胜负来源统一契约：BATTLE_RESULTS（winnerTeam 权威）/
+  SURVIVOR_SETTLEMENT（winnerTeam 缺失且 rosterComplete=true 且一方全员阵亡 → 按完整结算存活状态
+  推导全歼胜方）/ UNKNOWN（双方均有存活且 winnerTeam 缺失 → 胜方未知，禁止比较占点字段推断；
+  POINTS_INFERENCE 停止产出）。
 - **掉血窗口严重度**：`DamageWindowClusterer.DamageWindow` 带 `damageVsBaseMaxHpPct`
   （累计伤害/基础满血量，tankopedia 基础值、不含装备加成——只是计算基准，不是实际掉血比例）：
   跨度 ≤10s 且伤害 ≥75% 基础满血量 → `criticalWindow`（短窗高额伤害窗口）；
