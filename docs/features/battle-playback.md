@@ -116,8 +116,8 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
   播放控制：播放/暂停、±5s、上一/下一事件、1×/2×/4×、拖动 seek。
   - **gap 内最后已知**：`positionAt` 只返回可信插值位置（gap 内为 null，禁止穿线）；
     t 恰为采样点（含 gap > 5s 后的重新上报首点）直接返回该点本身（gap 判定只用于两点间插值），
-    否则重新上报首点会被误判为「gap 内」→ 车辆 lastKnown 残留淡化（敌方图标再点亮仍透明）。
-    **点亮即不淡化**：`vehicleState.lastKnown = !covered`——位置流覆盖（covered）即「点亮」，route 采样点
+    否则重新上报首点会被误判为「gap 内」→ 车辆 lastKnown 残留淡化（位置流恢复覆盖仍淡化）。
+    **覆盖即不淡化**：`vehicleState.lastKnown = !covered`——covered 只表示服务器位置流覆盖（type-10），route 采样点
     稀疏（长局采样间隔 max(2, duration/200) 可 >5s）导致 live=null 不代表位置中断，只有位置流未覆盖才淡化。
     车辆显示位置由 `lastKnownPosition` 兜底——gap/位置中断/阵亡时车辆停在淡化的最后可信位置而非消失，
     阵亡优先于位置中断；「最后已知」面板显示真实的最后可信时间（`pos.timeSec`），不再显示 `currentTime`。

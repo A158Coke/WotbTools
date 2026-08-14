@@ -191,15 +191,29 @@ class EntityMethodDecoderTest {
     }
 
     @Test
-    void malformedField12DoesNotProduceExactPointEvent() {
-        // team=9（非法）→ 跳过；points=负数 → 跳过；缺 field2 → 跳过
+    void wrapper13MalformedField12DoesNotProduceExactPointEvent() {
+        // wrapper=13 但：team=9（非法）→ 跳过；points=负数 → 跳过；缺 field2 → 跳过
         final byte[] badTeam = fieldDelimited(12, teamPointsMessage(9, 100));
         final byte[] badPoints = fieldDelimited(12, teamPointsMessage(1, -5));
         final byte[] noField2 = fieldDelimited(12, new byte[]{0x08, 0x01});
-        final RawReplayPacket packet = rawPacket48(concat(badTeam, badPoints, noField2));
+        final RawReplayPacket packet = rawPacket48(EntityMethodDecoder.WRAPPER_SUPREMACY_POINTS,
+                concat(badTeam, badPoints, noField2));
         final ReplayDecodeResult result = decoder.decode(context, packet);
         assertTrue(result.events().stream().noneMatch(SupremacyPointsChangedEvent.class::isInstance),
                 "非法 field12 不得产出 EXACT 点数事件");
+    }
+
+    @Test
+    void wrapperFieldNumberNot13DoesNotProducePointsEvenWithSameRootField12() {
+        // 与 pointsPacket 完全相同的 root field12，但 wrapperFieldNumber=1（名册）与 18（配置）
+        final byte[] sameRoot = concat(fieldDelimited(12, teamPointsMessage(1, 303)),
+                fieldDelimited(12, teamPointsMessage(2, 306)));
+        for (final long wrapper : new long[]{1L, 18L}) {
+            final ReplayDecodeResult result = decoder.decode(context,
+                    rawPacket48(wrapper, sameRoot));
+            assertTrue(result.events().stream().noneMatch(SupremacyPointsChangedEvent.class::isInstance),
+                    "wrapper=" + wrapper + " 不得产出实时点数事件（即使 root 结构相同）");
+        }
     }
 
     private static byte[] teamPointsMessage(final int team, final int points) {
@@ -247,18 +261,19 @@ class EntityMethodDecoderTest {
         return out.toByteArray();
     }
 
+    /** wrapper=13（实时点数）的完整 subtype48 载荷。 */
     private static RawReplayPacket pointsPacket(final int seq, final float clock,
                                                  final int team1, final int p1, final int team2, final int p2) {
-        // root field12 直接携带 {field1=team, field2=points}（交叉验证：数量/点数区间与真实回放一致）
-        return rawPacket48(concat(fieldDelimited(12, teamPointsMessage(team1, p1)),
-                fieldDelimited(12, teamPointsMessage(team2, p2))));
+        return rawPacket48(EntityMethodDecoder.WRAPPER_SUPREMACY_POINTS,
+                concat(fieldDelimited(12, teamPointsMessage(team1, p1)),
+                        fieldDelimited(12, teamPointsMessage(team2, p2))));
     }
 
-    /** subtype48 载荷：body[0..3] 固定字段 + varint + msgLen + protoData（root 直接放入）。 */
-    private static RawReplayPacket rawPacket48(final byte[] root) {
+    /** subtype48 载荷：body[0..3] 固定字段 + varint(wrapperFieldNumber) + msgLen + protoData（root 直接放入）。 */
+    private static RawReplayPacket rawPacket48(final long wrapperFieldNumber, final byte[] root) {
         final byte[] payload = new byte[8 + 4 + 1 + 1 + root.length];
         payload[4] = EntityMethodDecoder.SUBTYPE_UPDATE_ARENA2;
-        payload[12] = 0x01;
+        payload[12] = (byte) wrapperFieldNumber;
         payload[13] = (byte) root.length;
         System.arraycopy(root, 0, payload, 14, root.length);
         return new RawReplayPacket(7, 0, payload.length,

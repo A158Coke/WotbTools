@@ -243,10 +243,10 @@ describe('BattlePlayback', () => {
     expect(recorder.classes()).toContain('pb-selected')
   })
 
-  it('covered vehicles are not faded even when sampled route points have a >5s gap (position coverage = lit)', async () => {
+  it('covered vehicles are not faded even when sampled route points have a >5s gap (position stream coverage)', async () => {
     stubRaf()
     // t=20 落在 positionIntervals [10,20] 内（位置上报中）但 route 采样点 14→40 gap>5s：
-    // 不得因 live=null 误判 lastKnown（修复「点亮却半透明」）
+    // 不得因 live=null 误判 lastKnown（修复「位置流覆盖却半透明」）
     const wrapper = mountPlayback(gapOverview(), 20)
     await flushPromises()
     const enemy = wrapper.find('[data-test="pb-marker-2001"]')

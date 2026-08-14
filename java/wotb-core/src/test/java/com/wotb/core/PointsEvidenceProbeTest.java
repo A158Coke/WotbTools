@@ -6,8 +6,6 @@ import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.decoder.EntityMethodDecoder;
-import com.wotb.core.replay.decoder.EntityPropertyDecoder;
-import com.wotb.core.replay.decoder.ProtobufDecoder;
 import com.wotb.core.replay.decoder.ReplayDecodeContext;
 import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.stream.RawReplayPacket;
@@ -27,7 +25,7 @@ import java.util.TreeMap;
  * 扫描 common/data（递归）与 common/fixtures/replays 的全部 .wotbreplay 样本，逐样本输出：
  * 元数据/结算字段、包类型直方图、EntityMethod 子类型直方图、type 7 propId 直方图，
  * 以及候选包（实时点数/基地占领/1000 分触发/结束原因可能所在）按时间排序的样本。
- * 所有候选语义一律 UNKNOWN——本探针只收集证据，不做任何解码断言；无样本自动跳过。
+ * 本探针只收集证据，不做解码断言；无样本自动跳过。
  */
 class PointsEvidenceProbeTest {
 
@@ -146,8 +144,11 @@ class PointsEvidenceProbeTest {
     }
 
     /**
-     * REALTIME_SUPREMACY_POINTS + PROP3_HP_SENTINELS 交叉验证探针：
-     * 对真实样本逐包：subtype48 root field12 → SupremacyPointsChangedEvent（记录时间序列与终局值）；
+     * REALTIME_SUPREMACY_POINTS + PROP3_HP_SENTINELS 交叉验证探针（走生产解码路径）：
+     * 对真实样本逐包调用生产 {@code EntityMethodDecoder.decode}，并复用生产
+     * {@code readWrapperFieldNumber} / {@code readUpdateArena2Root} 打印 subtype48 的
+     * wrapperFieldNumber 分布与 root keys——验证只有 wrapper=13 的 subtype48 产出点数事件
+     * （wrapper=1 名册 / 18 配置即使 root 结构相同也不产出，门禁回归）；
      * propId=3 扫描所有 ≥0xFF00 高位值（signed 负 sentinel 清单，确认是否还有 FFFC/FFFE 等）。
      * 手动运行，不进 CI：无样本自动跳过。
      */
@@ -163,7 +164,7 @@ class PointsEvidenceProbeTest {
             }
         }
         Assumptions.assumeTrue(!samples.isEmpty(), "no replay samples under common/");
-        System.out.println("== REALTIME_SUPREMACY_POINTS + PROP3_HP_SENTINELS probe ==");
+        System.out.println("== REALTIME_SUPREMACY_POINTS + PROP3_HP_SENTINELS probe (production decode) ==");
         final EntityMethodDecoder methodDecoder = new EntityMethodDecoder();
         final ReplayDecodeContext ctx = new ReplayDecodeContext("probe");
         for (final Path sample : samples) {
@@ -178,12 +179,15 @@ class PointsEvidenceProbeTest {
                 }
                 final var stream = ReplayPacketStreamReader.read(eventData);
                 final float start = stream.packets().isEmpty() ? 0f : stream.packets().get(0).rawClockSec();
+                final Map<Long, Integer> wrapperDist = new TreeMap<>();
+                final Map<String, Integer> rootKeysDist = new TreeMap<>();
                 final Map<Long, Integer> lastPoints = new TreeMap<>();
+                int sub48Count = 0;
+                int wrapper13Count = 0;
                 int pointsEvents = 0;
                 final List<String> samplesList = new ArrayList<>();
                 final Map<Integer, Integer> hpSentinelCounts = new TreeMap<>();
                 int hpEvents = 0;
-                int sub48Count = 0;
                 for (final RawReplayPacket p : stream.packets()) {
                     final byte[] pl = p.payload();
                     if (p.type() == 8 && pl.length >= 8) {
@@ -193,6 +197,15 @@ class PointsEvidenceProbeTest {
                             continue;
                         }
                         sub48Count++;
+                        final long wrapper = EntityMethodDecoder.readWrapperFieldNumber(pl);
+                        wrapperDist.merge(wrapper, 1, Integer::sum);
+                        if (wrapper == EntityMethodDecoder.WRAPPER_SUPREMACY_POINTS) {
+                            wrapper13Count++;
+                            final Map<Integer, List<Object>> root =
+                                    EntityMethodDecoder.readUpdateArena2Root(pl);
+                            rootKeysDist.merge(String.valueOf(root == null ? "null" : root.keySet()),
+                                    1, Integer::sum);
+                        }
                         final var result = methodDecoder.decode(ctx, p);
                         for (final var ev : result.events()) {
                             if (ev instanceof SupremacyPointsChangedEvent sp) {
@@ -219,7 +232,11 @@ class PointsEvidenceProbeTest {
                     }
                 }
                 System.out.println("  subtype48 total=" + sub48Count);
-                System.out.println("  supremacy pointsEvents(field12)=" + pointsEvents + " finalRealtime=" + lastPoints);
+                System.out.println("  wrapperFieldNumber dist=" + wrapperDist);
+                System.out.println("  wrapper=13 packets=" + wrapper13Count
+                        + " rootKeysDist=" + rootKeysDist);
+                System.out.println("  supremacy pointsEvents(production decode)=" + pointsEvents
+                        + " finalRealtime=" + lastPoints);
                 samplesList.forEach(System.out::println);
                 System.out.println("  propId3 hpEvents=" + hpEvents
                         + " sentinels(>=0xFF00)=" + hpSentinelCounts);
@@ -227,60 +244,5 @@ class PointsEvidenceProbeTest {
                 System.out.println("  ERROR " + e);
             }
         }
-    }
-
-    /** 调试：提取 subtype48 root；成功返回 rootKeys（含 13 前缀 HAS13），失败返回 FAIL。 */
-    private static String subtype48RootKeys(final byte[] pl) {
-        try {
-            final byte[] body = new byte[pl.length - 8];
-            System.arraycopy(pl, 8, body, 0, body.length);
-            int off = 4;
-            if (off >= body.length) return "FAIL(short)";
-            final long[] vr = readVarintProbe(body, off);
-            off = (int) vr[1];
-            if (off >= body.length) return "FAIL(varint)";
-            final int first = body[off] & 0xFF;
-            final int msgLen;
-            if (first == 0xFF) {
-                if (off + 2 > body.length) return "FAIL(ff)";
-                msgLen = (body[off + 1] & 0xFF) | ((body[off + 2] & 0xFF) << 8);
-                off += 4;
-            } else {
-                msgLen = first;
-                off += 1;
-            }
-            if (off + msgLen > body.length) return "FAIL(overrun)";
-            final byte[] protoData = new byte[msgLen];
-            System.arraycopy(body, off, protoData, 0, msgLen);
-            final var root = ProtobufDecoder.decode(protoData);
-            final String keys = String.valueOf(root.keySet());
-            if (root.containsKey(12) && root.size() == 1) {
-                // 疑似实时点数包：field12 → {field1=team, field2=points}
-                final Object f12 = ProtobufDecoder.first(root, 12);
-                if (f12 instanceof byte[] b12) {
-                    final var f12map = ProtobufDecoder.decode(b12);
-                    final long team = ProtobufDecoder.firstLong(f12map, 1, -99);
-                    final long points = ProtobufDecoder.firstLong(f12map, 2, -99);
-                    return "PTS12 keys=" + f12map.keySet() + " team=" + team + " points=" + points;
-                }
-            }
-            return keys;
-        } catch (Exception e) {
-            return "FAIL(exc)";
-        }
-    }
-
-    private static long[] readVarintProbe(final byte[] buf, final int i) {
-        int idx = i;
-        int shift = 0;
-        long result = 0;
-        while (idx < buf.length && shift < 64) {
-            final int b = buf[idx] & 0xFF;
-            idx++;
-            result |= (long) (b & 0x7F) << shift;
-            if ((b & 0x80) == 0) break;
-            shift += 7;
-        }
-        return new long[]{result, idx};
     }
 }
