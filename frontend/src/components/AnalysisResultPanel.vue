@@ -18,11 +18,17 @@ defineEmits(['seek'])
 
 // 默认展开，用户可折叠收起
 const preBattleOpen = ref(true)
+// 复盘正文（call2）折叠状态，默认展开
+const analysisOpen = ref(true)
 const copied = ref(false)
 let copyTimer
 
 function togglePreBattle() {
   preBattleOpen.value = !preBattleOpen.value
+}
+
+function toggleAnalysis() {
+  analysisOpen.value = !analysisOpen.value
 }
 
 /** 一键复制最终复盘正文（result.analysis；可能包含团队剖析与免责声明；不含独立的赛前预测与地图鸟瞰）。 */
@@ -80,16 +86,27 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
   <div class="panel analysis-panel">
     <div class="panel-head">
       <h2>{{ $t('recon.analysis_title_player') }}</h2>
-      <button
-        type="button"
-        class="copy-btn"
-        :class="{ copied }"
-        data-test="copy-analysis-btn"
-        :aria-label="$t('recon.copy')"
-        @click="copyAnalysis"
-      >
-        {{ $t(copied ? 'recon.copied' : 'recon.copy') }}
-      </button>
+      <div class="panel-head-actions">
+        <button
+          type="button"
+          class="toggle-btn"
+          data-test="toggle-analysis"
+          :aria-expanded="analysisOpen"
+          @click="toggleAnalysis"
+        >
+          {{ $t(analysisOpen ? 'recon.collapse' : 'recon.expand') }}
+        </button>
+        <button
+          type="button"
+          class="copy-btn"
+          :class="{ copied }"
+          data-test="copy-analysis-btn"
+          :aria-label="$t('recon.copy')"
+          @click="copyAnalysis"
+        >
+          {{ $t(copied ? 'recon.copied' : 'recon.copy') }}
+        </button>
+      </div>
     </div>
     <div v-if="result.preBattleSection" class="prebattle-block">
       <button
@@ -109,7 +126,12 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
         :content="result.preBattleSection"
       />
     </div>
-    <MarkdownContent class="analysis-text" :content="result.analysis" @seek="$emit('seek', $event)" />
+    <MarkdownContent
+      v-if="analysisOpen"
+      class="analysis-text"
+      :content="result.analysis"
+      @seek="$emit('seek', $event)"
+    />
   </div>
 </template>
 
@@ -119,6 +141,20 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
 }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .panel-head h2 { margin: 0 0 12px; }
+.panel-head-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.panel-head-actions .copy-btn, .panel-head-actions .toggle-btn { margin: 0; }
+.toggle-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-card2);
+  color: var(--text-label);
+  font-size: .8rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color .15s, color .15s;
+}
+.toggle-btn:hover { border-color: var(--accent); color: var(--accent-dark); }
 .copy-btn {
   margin: 0 0 12px;
   padding: 4px 12px;

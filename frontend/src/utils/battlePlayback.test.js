@@ -40,6 +40,18 @@ describe('positionAt', () => {
     expect(positionAt(points, 20)).toBeNull()
   })
 
+  it('returns the re-entry point itself even after a gap > 5s (no residual last-known fade)', () => {
+    const reentry = [
+      { x: 0, y: 0, timeSec: 10 },
+      { x: 100, y: 50, timeSec: 14 },
+      { x: 200, y: 100, timeSec: 30 }
+    ]
+    // 20 落在 14→30 的 gap 内（gap 16s）→ 仍为 null（不穿线插值）
+    expect(positionAt(reentry, 20)).toBeNull()
+    // 30 恰为重新上报首点 → 返回该点本身，而非被 gap 误判为 null（否则 lastKnown 残留淡化）
+    expect(positionAt(reentry, 30)).toEqual({ x: 200, y: 100, timeSec: 30 })
+  })
+
   it('returns the last known position after the final point', () => {
     const pos = positionAt(points, 60)
     expect(pos).toEqual({ x: 300, y: 50, timeSec: 40 })
