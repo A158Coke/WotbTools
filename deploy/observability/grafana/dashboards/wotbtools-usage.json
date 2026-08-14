@@ -430,6 +430,155 @@
       ],
       "title": "AI Review 请求趋势",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "AI 上游每次发起调用平均消耗的总 token（total_tokens / 调用次数；失败调用计 0 token）。单机复盘 = PRE_BATTLE_STRATEGIC_PRIOR + TACTICAL_REVIEW_HARNESS，团队复盘 = SINGLE_TEAM_BATTLE + TEAM_AUTOPSY。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 14
+      },
+      "id": 7,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "round(sum(increase(wotb_ai_upstream_tokens_total{token_type=\"total\"}[$__range])) / sum(increase(wotb_ai_upstream_requests_total[$__range]))) or vector(0)",
+          "legendFormat": "平均 tokens/调用",
+          "refId": "A"
+        }
+      ],
+      "title": "AI 平均每次调用 Token（所选区间）",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "按 analysisMode 分维的平均每次调用 token（total / 调用次数，分母 clamp_min 1 避免无流量 mode 显示 NaN）。单机复盘 = PRE_BATTLE_STRATEGIC_PRIOR + TACTICAL_REVIEW_HARNESS；团队复盘 = SINGLE_TEAM_BATTLE + TEAM_AUTOPSY。",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 8,
+        "y": 14
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (mode) (increase(wotb_ai_upstream_tokens_total{token_type=\"total\"}[$__range])) / clamp_min(sum by (mode) (increase(wotb_ai_upstream_requests_total[$__range])), 1)",
+          "legendFormat": "{{mode}}",
+          "refId": "A"
+        }
+      ],
+      "title": "按模式平均每次调用 Token（所选区间）",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
@@ -449,6 +598,6 @@
   "timezone": "browser",
   "title": "WotBTools 使用统计",
   "uid": "wotbtools-usage",
-  "version": 3,
+  "version": 4,
   "weekStart": ""
 }
