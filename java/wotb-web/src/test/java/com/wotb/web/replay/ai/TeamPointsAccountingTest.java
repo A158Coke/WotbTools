@@ -207,7 +207,7 @@ class TeamPointsAccountingTest {
         assertTrue(content.contains("(某一方达到 1000 分导致提前结束, 具体胜方未知, 终局比分未知)"), content);
         assertFalse(content.contains("finalScore: team=1000"), content);
         // autopsy 结果行：胜方未知时不得写「获胜」，只表达已证明的结束原因 + 胜方未知
-        assertEquals("未知（某一方达到 1000 分提前结束，具体胜方未知）",
+        assertEquals("未知（某一方达到 1000 分导致提前结束，具体胜方未知）",
                 TeamAutopsyPromptBuilder.winnerLabel(w, "CHRD", b, 2));
     }
 

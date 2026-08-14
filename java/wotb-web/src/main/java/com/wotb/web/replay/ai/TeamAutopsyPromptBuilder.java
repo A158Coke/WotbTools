@@ -208,7 +208,7 @@ public final class TeamAutopsyPromptBuilder {
         }
         return switch (winner.pointsEndReason()) {
             case REACHED_1000 -> winner.winner() == Winner.DRAW_OR_UNKNOWN
-                    ? base + "（某一方达到 1000 分提前结束，具体胜方未知）"
+                    ? base + "（某一方达到 1000 分导致提前结束，具体胜方未知）"
                     : base + "（达到 1000 分提前获胜）";
             case TIME_EXPIRED -> winner.winner() == Winner.DRAW_OR_UNKNOWN
                     ? base + "（时间耗尽点数判定，具体胜方未知）"
