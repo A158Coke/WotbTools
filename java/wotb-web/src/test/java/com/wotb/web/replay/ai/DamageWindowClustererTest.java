@@ -200,6 +200,57 @@ class DamageWindowClustererTest {
         assertTrue(windows.isEmpty());
     }
 
+    @Test
+    void criticalAndInstantKillWindowsAreFlagged() {
+        // Kranvagn（4481）满血量 2400：5s 窗口掉血 1900（79%）→ 高危；2400（100%）→ 被秒杀
+        final Battle battle = new Battle();
+        battle.players = List.of(player(VICTIM, 1, "Victim"));
+        final List<DamageWindowClusterer.DamageWindow> critical =
+                DamageWindowClusterer.receivedWindows(battle, recon(30f,
+                        hit(35f, 2L, VICTIM, 1000),
+                        hit(40f, 2L, VICTIM, 900)), VICTIM);
+        assertEquals(1, critical.size());
+        assertEquals(79, Math.round(critical.getFirst().victimHpPct()));
+        assertTrue(critical.getFirst().criticalWindow());
+        assertFalse(critical.getFirst().instantKill());
+
+        final List<DamageWindowClusterer.DamageWindow> killed =
+                DamageWindowClusterer.receivedWindows(battle, recon(30f,
+                        hit(35f, 2L, VICTIM, 1400),
+                        hit(40f, 3L, VICTIM, 1000)), VICTIM);
+        assertEquals(100, Math.round(killed.getFirst().victimHpPct()));
+        assertTrue(killed.getFirst().instantKill());
+        assertTrue(killed.getFirst().criticalWindow());
+    }
+
+    @Test
+    void slowLongWindowIsNotCritical() {
+        final Battle battle = new Battle();
+        battle.players = List.of(player(VICTIM, 1, "Victim"));
+        // 相邻间隔 ≤10s 链式聚类成单个跨度 15s 的窗口：掉血 79% 但跨度 >10s，不是「短窗大额掉血」
+        final List<DamageWindowClusterer.DamageWindow> windows =
+                DamageWindowClusterer.receivedWindows(battle, recon(30f,
+                        hit(35f, 2L, VICTIM, 1000),
+                        hit(44f, 2L, VICTIM, 500),
+                        hit(50f, 2L, VICTIM, 400)), VICTIM);
+        assertEquals(1, windows.size());
+        assertEquals(15f, windows.getFirst().endSec() - windows.getFirst().startSec());
+        assertEquals(79, Math.round(windows.getFirst().victimHpPct()));
+        assertFalse(windows.getFirst().criticalWindow());
+        assertFalse(windows.getFirst().instantKill());
+    }
+
+    @Test
+    void unknownVictimHpYieldsUnknownPct() {
+        // battle=null → 无 maxHp 口径 → pct 未知，不得误标高危/秒杀
+        final List<DamageWindowClusterer.DamageWindow> windows =
+                DamageWindowClusterer.receivedWindows(
+                        null, recon(30f, hit(35f, 2L, VICTIM, 400)), VICTIM);
+        assertEquals(null, windows.getFirst().victimHpPct());
+        assertFalse(windows.getFirst().criticalWindow());
+        assertFalse(windows.getFirst().instantKill());
+    }
+
     private static PlayerResult player(final long accountId, final int team, final String nickname) {
         final PlayerResult p = new PlayerResult();
         p.accountId = accountId;

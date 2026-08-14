@@ -218,21 +218,27 @@ final class PlayerPromptRules {
             === 掉血时间范围（强制） ===
             1. 凡提及掉血/损失血量，必须给出明确时间范围（XX分XX秒–XX分XX秒）与掉血量，禁止「掉血较多」「前期掉血」这类无时间范围的笼统描述。
             2. 若在很短的时间窗口内掉了大量血，先说明是「短时间集中掉血/高压掉血窗口」；仅当窗口总跨度在 15 秒内、解析出 ≥2 个不同攻击者且无未解析攻击者时，才可写「被多车集火」；攻击者无法解析、只有 1 个攻击者或窗口总跨度超阈值时，不得断言集火。
-            3. 正常、慢速、有交换的掉血不得误标为问题；没有时间窗口证据时写「无法确定」，不得编造时间。""";
+            3. 正常、慢速、有交换的掉血不得误标为问题；没有时间窗口证据时写「无法确定」，不得编造时间。
+            4. 高危掉血窗口必须明确定性：证据中标注「（高危掉血窗口）」（窗口跨度 ≤10 秒且掉血 ≥75% 满血量）或「（被秒杀）」（窗口内掉血 ≥100%）时，必须写出明确时间范围、掉血量并定性为严重问题/危险信号——短时间内掉大量血或瞬间被击毁本身就是肯定存在的问题，不得轻描淡写或略过。
+            5. 禁止同义反复废话：阵亡车辆的掉血必然达到其阵亡时剩余血量的 100%（含过量伤害），「阵亡所以掉了 100% 的血」是必然事实而不是分析发现，禁止作为发现、结论或证据写出；描述阵亡必须给出时间窗口与命中/击杀过程（如「03:12 起 5 秒内连中三炮被击毁」）；没有窗口证据就写「无法确定」。""";
 
     static final String HP_LOSS_TIME_RULE_EN = """
 
             === HP LOSS TIME RANGE (mandatory) ===
             1. Whenever you mention HP loss / damage received, give an explicit time range (Xm Xs – Xm Xs) and the amount lost; never write vague statements without a time range like "lost a lot of HP early".
             2. If a large amount of HP is lost within a very short window, describe it as a "short concentrated HP-loss / high-pressure window" first; only when the window's total span is within 15 seconds and it contains 2 or more resolved distinct attackers with no unresolved attackers may you write "focus-fired by multiple vehicles"; never claim focus fire when attackers are unresolved, only one attacker is present, or the window spans longer than the threshold.
-            3. Normal, gradual, or traded damage must not be flagged as a problem; without time-window evidence write "cannot be determined" and never invent times.""";
+            3. Normal, gradual, or traded damage must not be flagged as a problem; without time-window evidence write "cannot be determined" and never invent times.
+            4. Critical HP-loss windows must be explicitly called out: when the evidence marks a window "（高危掉血窗口）" (span ≤ 10 seconds and ≥ 75% of full HP lost) or "（被秒杀）" (≥ 100% of full HP lost within the window), you must state the exact time range and amount and label it a serious problem / danger signal — losing a large share of HP within seconds or being destroyed instantly is itself a definite problem; never downplay or skip it.
+            5. No tautological filler: a destroyed vehicle necessarily loses 100% of the HP it had left when it died (overkill damage included), so "it died, therefore it lost 100% HP" is a necessary fact, not an analytical finding; never present it as a finding, conclusion, or evidence. Describe a death with its time window and the hits/kill sequence (e.g. "destroyed by three hits within 5 seconds starting 03:12"); without window evidence write "cannot be determined".""";
 
     static final String HP_LOSS_TIME_RULE_RU = """
 
             === ДИАПАЗОН ВРЕМЕНИ ПОТЕРИ ОЗ (обязательно) ===
             1. Упоминая потерю ОЗ / полученный урон, всегда указывайте точный временной диапазон (X мин X с – X мин X с) и количество потерянных ОЗ; запрещены расплывчатые формулировки без диапазона вроде «потерял много ОЗ в начале».
             2. Если за очень короткий промежуток потеряно много ОЗ, сначала опишите это как «окно кратковременной концентрированной потери ОЗ / окно высокого давления»; только когда общая протяжённость окна ≤15 секунд, в нём определено 2 и более различных атакующих и нет неопределённых атакующих, можно писать «сосредоточенный обстрел несколькими машинами»; при неопределённых атакующих, единственном атакующем или окне длиннее порога не утверждайте сосредоточенный огонь.
-            3. Нормальная, постепенная потеря ОЗ или обмен уроном не должны отмечаться как проблема; при отсутствии данных о временных окнах пишите «невозможно определить» и не выдумывайте время.""";
+            3. Нормальная, постепенная потеря ОЗ или обмен уроном не должны отмечаться как проблема; при отсутствии данных о временных окнах пишите «невозможно определить» и не выдумывайте время.
+            4. Критические окна потери ОЗ необходимо выделять явно: если в данных окно помечено «（高危掉血窗口）» (протяжённость ≤10 секунд и потеряно ≥75% полных ОЗ) или «（被秒杀）» (в окне потеряно ≥100% ОЗ), обязательно укажите точный временной диапазон и объём потерь и прямо обозначьте это как серьёзную проблему / сигнал опасности — потеря большой доли ОЗ за секунды или мгновенное уничтожение само по себе является проблемой; не преуменьшайте и не пропускайте.
+            5. Запрещены тавтологии: уничтоженная машина обязательно теряет 100% ОЗ, оставшихся к моменту гибели (включая избыточный урон), поэтому «погибла, значит потеряла 100% ОЗ» — это неизбежный факт, а не аналитическая находка; не выдавайте это за находку, вывод или доказательство. Описывайте гибель с временным диапазоном и последовательностью попаданий/уничтожения (например, «уничтожена тремя попаданиями за 5 секунд начиная с 03:12»); без данных об окне пишите «невозможно определить».""";
 
     /** 公共：证据逻辑与术语（禁止集火同义反复、禁止机器标签直出、标题规范）。 */
     static final String COMMON_EVIDENCE_LOGIC_RULE = """

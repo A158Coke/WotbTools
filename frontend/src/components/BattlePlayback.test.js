@@ -91,21 +91,21 @@ function mountPlayback(overview = makeOverview(), seekTo = null) {
   })
 }
 
-describe('BattlePlayback', () => {
-  let rafCb
+let rafCb
 
+function stubRaf() {
+  vi.stubGlobal('requestAnimationFrame', (cb) => {
+    rafCb = cb
+    return 1
+  })
+  vi.stubGlobal('cancelAnimationFrame', () => {})
+}
+
+describe('BattlePlayback', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     vi.useRealTimers()
   })
-
-  function stubRaf() {
-    vi.stubGlobal('requestAnimationFrame', (cb) => {
-      rafCb = cb
-      return 1
-    })
-    vi.stubGlobal('cancelAnimationFrame', () => {})
-  }
 
   it('renders controls, progress and vehicles (never-observed hidden)', async () => {
     stubRaf()
@@ -262,5 +262,141 @@ describe('BattlePlayback', () => {
     const enemy = wrapper.find('[data-test="pb-marker-2001"]')
     expect(enemy.exists()).toBe(true)
     expect(enemy.classes()).toContain('pb-last-known')
+  })
+})
+
+describe('tracer shots', () => {
+  it('draws a tracer at the damage moment only within its window (seek-safe)', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    expect(wrapper.findAll('.pb-tracer').length).toBeGreaterThanOrEqual(1)
+    expect(wrapper.findAll('.pb-tracer')[0].attributes('x1')).toBeTruthy()
+    const before = mountPlayback(makeOverview(), 11)
+    await flushPromises()
+    expect(before.findAll('.pb-tracer')).toHaveLength(0)
+    const after = mountPlayback(makeOverview(), 12.5)
+    await flushPromises()
+    expect(after.findAll('.pb-tracer')).toHaveLength(0)
+  })
+
+  it('dedupes a same-shot DAMAGE+KILL pair into one tracer', async () => {
+    stubRaf()
+    const overview = makeOverview()
+    overview.playback.events.push({ type: 'KILL', timeSec: 12.1, accountId: 1001, targetAccountId: 2001, damage: null })
+    const wrapper = mountPlayback(overview, 12.05)
+    await flushPromises()
+    expect(wrapper.findAll('.pb-tracer')).toHaveLength(1)
+  })
+})
+
+describe('map zoom and pan', () => {
+  async function zoomedWrapper() {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+    return wrapper
+  }
+
+  it('wheel zooms in/out anchored at the cursor and clamps to 1x-4x', async () => {
+    const wrapper = await zoomedWrapper()
+    expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('scale(1.2)')
+    for (let i = 0; i < 12; i++) {
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+    }
+    expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('scale(4)')
+    for (let i = 0; i < 20; i++) {
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: 120, clientX: 0, clientY: 0 })
+    }
+    expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('scale(1)')
+  })
+
+  it('dragging pans the viewport and suppresses the follow-up click (no accidental selection)', async () => {
+    const wrapper = await zoomedWrapper()
+    const viewport = wrapper.find('[data-test="pb-viewport"]')
+    await viewport.trigger('pointerdown', { pointerId: 1, clientX: 10, clientY: 10 })
+    await viewport.trigger('pointermove', { pointerId: 1, clientX: 60, clientY: 30 })
+    expect(viewport.attributes('style')).toContain('translate(50px, 20px)')
+    await viewport.trigger('pointerup', { pointerId: 1 })
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
+    expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(false)
+    await viewport.trigger('pointerdown', { pointerId: 2, clientX: 0, clientY: 0 })
+    await viewport.trigger('pointerup', { pointerId: 2 })
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
+    expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(true)
+  })
+
+  it('pinch with two pointers zooms around the midpoint', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const viewport = wrapper.find('[data-test="pb-viewport"]')
+    await viewport.trigger('pointerdown', { pointerId: 1, clientX: 0, clientY: 0 })
+    await viewport.trigger('pointerdown', { pointerId: 2, clientX: 100, clientY: 0 })
+    await viewport.trigger('pointermove', { pointerId: 2, clientX: 200, clientY: 0 })
+    expect(viewport.attributes('style')).toContain('scale(2)')
+    await viewport.trigger('pointerup', { pointerId: 1 })
+    await viewport.trigger('pointerup', { pointerId: 2 })
+  })
+
+  it('reset restores identity view and keeps all layers on the single transform', async () => {
+    const wrapper = await zoomedWrapper()
+    const markerStyleBefore = wrapper.find('[data-test="pb-marker-1001"]').attributes('style')
+    await wrapper.find('[data-test="pb-reset"]').trigger('click')
+    const style = wrapper.find('[data-test="pb-viewport"]').attributes('style')
+    expect(style).toContain('scale(1)')
+    expect(style).toContain('translate(0px, 0px)')
+    // 图层对齐契约：transform 只在 viewport 单层；标记 left/top（%）与 svg 自身不随缩放变化
+    expect(wrapper.find('[data-test="pb-marker-1001"]').attributes('style')).toBe(markerStyleBefore)
+    expect(wrapper.find('.pb-svg').attributes('style')).toBeUndefined()
+  })
+})
+
+describe('destroyed markers (symmetric contract)', () => {
+  function destroyedOverview() {
+    const overview = makeOverview()
+    overview.playback.vehicles[0].deathSec = 30
+    overview.playback.vehicles[1].deathSec = 30
+    overview.playback.vehicles[1].directionSamples = []
+    overview.playback.vehicles[1].positionIntervals = [{ startSec: 10, endSec: 40 }]
+    overview.routes[0].points.push({ x: 200, y: 200, timeSec: 40 })
+    overview.routes[1].points.push({ x: -300, y: -300, timeSec: 40 })
+    return overview
+  }
+
+  it('friendly and enemy destroyed markers share the same structure at the same timestamp', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(destroyedOverview(), 40)
+    await flushPromises()
+    const friendly = wrapper.find('[data-test="pb-marker-1001"]')
+    const enemy = wrapper.find('[data-test="pb-marker-2001"]')
+    for (const m of [friendly, enemy]) {
+      expect(m.exists()).toBe(true)
+      expect(m.classes()).toContain('pb-destroyed')
+      expect(m.classes()).not.toContain('pb-last-known')
+      expect(m.findAll('img')).toHaveLength(2)
+      expect(m.find('.pb-death').exists()).toBe(true)
+    }
+    // 唯一允许的差异：阵营 PNG src
+    expect(friendly.findAll('img')[0].attributes('src')).toContain('tank-marker-friendly-hull')
+    expect(friendly.findAll('img')[1].attributes('src')).toContain('tank-marker-friendly-turret')
+    expect(enemy.findAll('img')[0].attributes('src')).toContain('tank-marker-enemy-hull')
+    expect(enemy.findAll('img')[1].attributes('src')).toContain('tank-marker-enemy-turret')
+  })
+
+  it('destroyed vehicles freeze at the last trusted pose and stay two-layer without direction samples', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(destroyedOverview(), 40)
+    await flushPromises()
+    const friendly = wrapper.find('[data-test="pb-marker-1001"]')
+    // 友方方向冻结在最后可信样本（hull 90°、turret world 120°），不随当前时间继续旋转
+    expect(friendly.findAll('img')[0].attributes('style')).toContain('rotate(90deg)')
+    expect(friendly.findAll('img')[1].attributes('style')).toContain('rotate(120deg)')
+    // 敌方无方向样本：双层以素材默认 0° 渲染（不代表朝向），✕ 标记阵亡
+    const enemy = wrapper.find('[data-test="pb-marker-2001"]')
+    expect(enemy.findAll('img')[0].attributes('style')).toContain('rotate(0deg)')
+    expect(enemy.findAll('img')[1].attributes('style')).toContain('rotate(0deg)')
+    expect(enemy.find('.pb-death').text()).toBe('✕')
   })
 })

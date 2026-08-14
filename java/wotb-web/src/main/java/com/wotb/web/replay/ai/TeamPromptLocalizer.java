@@ -157,9 +157,15 @@ final class TeamPromptLocalizer {
                b. 本方落败且本方 survivors=0 → 写「被敌方全歼落败」；
                c. 双方均有存活车辆时，才允许进入点数结束方式判断：任一方 victoryPointsEarned ≥ 1000 → 写「达到 1000 分提前获胜」；
                   双方均 <1000 → 写「时间耗尽后以点数优势获胜」，必须写「时间耗尽」。
+                  例外：战斗时长未到 7 分钟（时间未耗尽）的点数胜负必然是达到 1000 分提前获胜——即使逐人占点分合计不足 1000
+                  （占点分不含被动增长与击杀夺分），也必须写「达到 1000 分提前获胜」，且赢队终局比分=1000。
             4. 禁止把失败方被全歼写成「全歼敌方获胜」；禁止把点数胜负写成全歼或常规胜利；禁止用 <1000 的中间比分作为获胜理由。
-            5. 占点分/占领分（victoryPointsEarned/Seized）是权威结算总量，不代表时间线；不得把总量说成某时刻占领进度。
-            6. 地图占领点区域（CONTAINS_CONTROL_POINT）只用于描述方位，未提供时不得声称谁在占点。""";
+            5. 占点分/占领分（victoryPointsEarned/Seized）是逐人占点统计，不含被动占点增长与击杀夺分，不代表时间线也不是终局比分；
+               不得把总量说成某时刻占领进度，也不得把 victoryPointsEarned 合计冒充终局比分。
+            6. 地图占领点区域（CONTAINS_CONTROL_POINT）只用于描述方位，未提供时不得声称谁在占点。
+            7. 击杀夺分（强制）：争霸赛每击杀一辆敌方坦克，击杀方夺取对方 40 分补充自身，被击杀方损失 40 分；
+               最终比分 = 占点分 + 击杀夺取分 − 被夺分（证据 finalPointsComputed 即该口径；提前结束时赢队按规则=1000）；
+               禁止用不含击杀夺分的中间比分解释获胜。""";
 
     static final String CAPTURE_RULE_EN = """
 
@@ -174,9 +180,11 @@ final class TeamPromptLocalizer {
                a. Your team wins and the opposing team has 0 survivors → write "won by annihilating the enemy team";
                b. Your team loses and your team has 0 survivors → write "lost, annihilated by the enemy team";
                c. Only when both teams have surviving vehicles may you judge the points end condition: either team's victoryPointsEarned >= 1000 → write "won by reaching 1000 points early"; both below 1000 → write "won on points after time expired" — always write "time expired".
+                  Exception: a points-decided battle that ends before the 7-minute time limit is necessarily an early win by reaching 1000 points — even when the per-player capture-point totals sum below 1000 (they exclude passive accumulation and kill steals), you must write "won by reaching 1000 points early", and the winning team's final score is 1000.
             4. Never write "won by annihilating the enemy team" when your own team was annihilated; never present a points win as annihilation or a regular win; never use a mid-match score below 1000 as the reason for winning.
-            5. victoryPointsEarned / victoryPointsSeized are authoritative settlement totals, not a timeline; never present totals as capture progress at a specific moment.
-            6. Capture-point areas (CONTAINS_CONTROL_POINT) only describe direction; when not provided, never claim who is capturing.""";
+            5. victoryPointsEarned / victoryPointsSeized are per-player capture statistics without passive accumulation or kill steals; they are not a timeline and not the final score — never present them as capture progress at a specific moment and never pass off the victoryPointsEarned sum as the final score.
+            6. Capture-point areas (CONTAINS_CONTROL_POINT) only describe direction; when not provided, never claim who is capturing.
+            7. Kill steals (mandatory): in Supremacy every destroyed enemy tank steals 40 points from the enemy team and adds them to the killer's team, while the team that lost the tank loses 40 points; final score = capture points + kill steals − stolen points (the evidence's finalPointsComputed uses this formula; on an early end the winning team is 1000 by rule); never explain the win with a score that omits kill steals.""";
 
     static final String CAPTURE_RULE_RU = """
 
@@ -191,9 +199,11 @@ final class TeamPromptLocalizer {
                a. Ваша команда победила, а у противника 0 выживших → напишите «победа полным уничтожением противника»;
                b. Ваша команда проиграла, а в вашей команде 0 выживших → напишите «поражение — противник полностью уничтожил вашу команду»;
                c. Только когда в обеих командах есть выжившие машины, оценивайте завершение по очкам: victoryPointsEarned любой команды ≥1000 → напишите «победа досрочно по достижении 1000 очков»; у обеих меньше 1000 → напишите «победа по очкам после истечения времени» — обязательно укажите «время истекло».
+                  Исключение: бой по очкам, завершившийся до истечения 7 минут, всегда является досрочной победой по достижении 1000 очков — даже если сумма посчётных очков захвата игроков меньше 1000 (в них нет пассивного накопления и очков за фраги), пишите «победа досрочно по достижении 1000 очков», а итоговый счёт победителя равен 1000.
             4. Не пишите «победа полным уничтожением противника», когда полностью уничтожена ваша команда; не выдавайте победу по очкам за уничтожение или обычную победу; не используйте промежуточный счёт ниже 1000 как причину победы.
-            5. victoryPointsEarned / victoryPointsSeized — авторитетные итоги расчёта, а не таймлайн; не выдавайте итоги за прогресс захвата в конкретный момент.
-            6. Области точек захвата (CONTAINS_CONTROL_POINT) описывают только направление; если они не предоставлены, не утверждайте, кто захватывает.""";
+            5. victoryPointsEarned / victoryPointsSeized — посчётная статистика захвата игроков без пассивного накопления и очков за фраги; это не таймлайн и не итоговый счёт — не выдавайте их за прогресс захвата в конкретный момент и не выдавайте сумму victoryPointsEarned за итоговый счёт.
+            6. Области точек захвата (CONTAINS_CONTROL_POINT) описывают только направление; если они не предоставлены, не утверждайте, кто захватывает.
+            7. Очки за фраги (обязательно): в Supremacy каждый уничтоженный вражеский танк отнимает у вражеской команды 40 очков и добавляет их команде убийцы, а команда, потерявшая машину, теряет 40 очков; итоговый счёт = очки захвата + очки за фраги − потерянные очки (в данных finalPointsComputed используется эта формула; при досрочном завершении у победителя по правилам 1000); запрещено объяснять победу счётом без очков за фраги.""";
 
     /**
      * 组装团队 system prompt：ZH 返回原样；EN/RU 在中文基座上替换中文输出强制句

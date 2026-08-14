@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.8",
+    "date": "2026-08-14",
+    "tag": "add",
+    "zh": "战局回放新增炮线动画与地图缩放：每次已知射击（伤害/击杀）从攻击车指向被击车显示短暂炮线（仅双方位置可信时，1×/2×/4× 均可见）；地图支持鼠标滚轮/双指缩放（1×–4×，以指针为锚点）与拖动平移，一键重置；敌我阵亡车辆统一为灰化双层标记 + 同款 ✕，阵亡后冻结在最后可信姿态；修复三语界面选中「位置中断/已击毁」车辆后整张回放图消失的问题；AI 复盘点数胜负计入击杀夺分（每击杀夺取对方 40 分、本方掉人损失 40 分，提前结束赢队必达 1000 分）、掉血描述强制定性高危窗口（5–10 秒内掉血 ≥75% 或被秒杀）并禁止「阵亡掉血 100%」式废话",
+    "en": "Battle Playback gains tracer lines and map zoom: every known shot (damage/kill) shows a brief line from the shooter to the target (only when both positions are trusted; visible at 1×/2×/4×); the map supports mouse-wheel/pinch zoom (1×–4×, anchored at the pointer) and drag panning with one-click reset; destroyed vehicles are unified on both teams into a desaturated two-layer marker with the same ✕, frozen at the last trusted pose; fixed the whole playback view disappearing after selecting a last-known or destroyed vehicle in any interface language; AI review points wins now include kill steals (each kill takes 40 points from the enemy team and adds them to yours, losing a tank costs 40 — an early win always reaches 1000 points), HP-loss descriptions must flag critical windows (≥75% HP lost within 5–10 seconds or instant kills) and stop writing the tautology that a destroyed tank lost 100% HP",
+    "ru": "В «Повторе боя» появились линии выстрелов и масштабирование карты: каждый известный выстрел (урон/фраг) показывает короткую линию от стрелка к цели (только при достоверных позициях обеих машин; видно на 1×/2×/4×); карта поддерживает зум колесом мыши/щипком (1×–4×, с якорем у курсора) и перетаскивание с кнопкой сброса; уничтоженные машины обеих команд унифицированы: обесцвеченный двухслойный маркер с одинаковым ✕, застывший в последней достоверной позе; исправлено исчезновение всего повтора после выбора машины в состоянии «последняя известная позиция»/«уничтожена» на любом языке интерфейса; в AI-разборе победа по очкам учитывает очки за фраги (каждый фраг отнимает у врага 40 очков и добавляет вашей команде, потеря своей машины стоит 40 — досрочная победа всегда достигает 1000 очков), описание потери ОЗ обязано выделять критические окна (≥75% ОЗ за 5–10 секунд или мгновенное уничтожение) и запрещена тавтология «уничтоженная машина потеряла 100% ОЗ»"
+  },
+  {
     "v": "2.11.7",
     "date": "2026-08-13",
     "tag": "add",
