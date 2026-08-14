@@ -826,6 +826,7 @@
                 "state_position_stale": "Позиция устарела (последняя известная)",
                 "state_destroyed": "Уничтожен",
                 "last_known": "Последняя известная позиция:",
+                "points": "Очки",
                 "reset_view": "Сброс вида",
                 "unknown": "Неизвестно",
                 "event_DAMAGE": "Урон",

@@ -103,6 +103,36 @@ final class TeamPromptLocalizer {
             дистанция до центра масс своей группы в момент гибели); запрещено делать вывод о дистанции
             по номерам областей.""";
 
+    /** Team 专用：阵型深度（前后排）与控制区域规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。 */
+    static final String FORMATION_DEPTH_RULE = """
+            === 阵型深度与控制区域规则（强制） ===
+            FORMATION_DEPTH 段是确定性几何/计数证据，用于理解阵型、前后排与地图实际控制区域：
+            1. frontLine / midLine / backLine 是本队成员沿「本队质心 → 敌方质心」轴按深度三分位的分类，
+               描述阵型时用自然中文（如「前排抗线、中排输出、后排支援」），不得改判成员排位。
+            2. controlledRegions 的 own / contested / enemy 是九宫格区域内双方车辆驻留计数优势——
+               own=实际有本方车辆驻留、contested=双方都有驻留、enemy=仅对方驻留；这是「实际控制区域」的
+               确定性近似（车辆存在 ≠ 占领点得分），不得表述为占领点得分、实时比分或地图语义区域名。
+            3. 未提供 FORMATION_DEPTH 段时（位置观测不足）禁止编造前后排或控制区域。
+            4. 控制区域只能引用证据中的 GRID_REGION_1~9 编号，禁止用裸坐标重新划区。""";
+
+    static final String FORMATION_DEPTH_RULE_EN = """
+
+            === FORMATION DEPTH AND CONTROL RULE (mandatory) ===
+            The FORMATION_DEPTH section is deterministic geometric/counting evidence for understanding the formation, the front/mid/back lines and the areas actually controlled on the map:
+            1. frontLine / midLine / backLine classify own-team members by depth terciles along the "own centroid → enemy centroid" axis; describe the formation in natural language (e.g. "front line holds, middle line outputs, back line supports") and do not re-judge member positions.
+            2. controlledRegions own / contested / enemy are nine-grid region dwell-count advantages (own = own vehicles dwelled there, contested = both dwelled, enemy = only the enemy dwelled); this is a deterministic approximation of "actually controlled areas" (vehicle presence ≠ capture-point score) and must not be presented as capture points, a live score, or named tactical map areas.
+            3. If the FORMATION_DEPTH section is absent (insufficient position observation), never fabricate front/back lines or controlled areas.
+            4. Reference controlled areas only by the GRID_REGION_1~9 ids in the evidence; never re-derive regions from raw coordinates.""";
+
+    static final String FORMATION_DEPTH_RULE_RU = """
+
+            === ПРАВИЛО ГЛУБИНЫ СТРОЯ И КОНТРОЛЯ (обязательно) ===
+            Секция FORMATION_DEPTH — детерминированное геометрическое/счётное свидетельство для понимания строя, передней/средней/задней линий и фактически контролируемых областей карты:
+            1. frontLine / midLine / backLine классифицируют участников своей команды по терцилям глубины вдоль оси «центроид своей команды → центроид противника»; описывайте строй естественным языком (например, «передняя линия держит, средняя наносит урон, задняя поддерживает») и не пересматривайте позиции участников.
+            2. controlledRegions own / contested / enemy — преимущество по числу нахождений в девятисекторных областях (own = находилась своя техника, contested = находились обе, enemy = только техника противника); это детерминированное приближение «фактически контролируемых областей» (присутствие техники ≠ очки захвата) и не должно выдаваться за очки захвата, живой счёт или именованные тактические зоны карты.
+            3. Если секция FORMATION_DEPTH отсутствует (недостаточно наблюдений позиций), запрещено выдумывать переднюю/заднюю линию или контролируемые области.
+            4. Контролируемые области можно указывать только по идентификаторам GRID_REGION_1~9 из свидетельств; запрещено переопределять области по сырым координатам.""";
+
     /** 数据不足时的输出措辞（中文强制句，EN/RU 本地化时替换）。 */
     static final String ZH_CANNOT_DETERMINE_RULE =
             "无法从输入确定时必须写明“无法从当前回放数据确定”。";
@@ -286,7 +316,9 @@ final class TeamPromptLocalizer {
                 .replace(SOLO_INTENT_RULE,
                         en ? SOLO_INTENT_RULE_EN : SOLO_INTENT_RULE_RU)
                 .replace(CAPTURE_RULE,
-                        en ? CAPTURE_RULE_EN : CAPTURE_RULE_RU);
+                        en ? CAPTURE_RULE_EN : CAPTURE_RULE_RU)
+                .replace(FORMATION_DEPTH_RULE,
+                        en ? FORMATION_DEPTH_RULE_EN : FORMATION_DEPTH_RULE_RU);
     }
 
     static final String SINGLE_TEAM_PROMPT = AiPromptLibrary.zh("team/single");

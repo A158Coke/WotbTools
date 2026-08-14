@@ -826,6 +826,7 @@
                 "state_position_stale": "Position stale (last known)",
                 "state_destroyed": "Destroyed",
                 "last_known": "Last known:",
+                "points": "Points",
                 "reset_view": "Reset view",
                 "unknown": "Unknown",
                 "event_DAMAGE": "Damage",

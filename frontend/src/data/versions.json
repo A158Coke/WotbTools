@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.12",
+    "date": "2026-08-14",
+    "tag": "add",
+    "zh": "战局回放与团队 AI 增强：战局回放放大地图时坦克随地图同比放大（坦克名/阵亡标记保持屏幕尺寸不变）；地图下方新增双方总血量条（实时剩余血量，随播放下降；争霸赛附加双方点数）；团队 AI 复盘新增阵型理解——前后排车辆与实际控制区域（九宫格驻留优势，确定性证据）；修复敌方坦克「位置上报中」仍呈半透明（点亮状态不再被误判为最后已知位置淡化）",
+    "en": "Battle-playback and team-AI enhancements: zooming the battle-playback map now scales tank markers with the map (tank-name/death overlays keep a constant screen size); team HP bars are added below the map showing real-time remaining HP (decreasing during playback; supremacy battles also show both teams' points); the team AI review now understands formation — front/mid/back line vehicles and the areas actually controlled (nine-grid dwell advantage, deterministic evidence); fixed enemy markers staying translucent while position reports are active (lit vehicles are no longer misjudged as faded last-known positions)",
+    "ru": "Улучшения повтора боя и командного ИИ: при зуме карты в повторе боя танки теперь масштабируются вместе с картой (подписи названий/маркеры гибели сохраняют постоянный размер на экране); под картой добавлены полосы HP обеих команд с текущим остатком (уменьшаются при проигрывании; в боях за точки дополнительно показываются очки обеих команд); командный ИИ-разбор теперь понимает строй — машины передней/средней/задней линии и фактически контролируемые области (преимущество нахождений по сетке 3×3, детерминированное свидетельство); исправлено, что танк противника оставался полупрозрачным при активном отчёте о позиции (подсвеченные машины больше не ошибочно считаются затухшими по последней известной позиции)"
+  },
+  {
     "v": "2.11.11",
     "date": "2026-08-14",
     "tag": "fix",

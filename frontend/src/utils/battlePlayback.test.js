@@ -12,6 +12,8 @@ import {
   recorderRelated,
   screenRotation,
   shortestArcDeg,
+  teamHp,
+  vehicleHpAt,
   tracerLines,
   trustedPositionAt,
   turretWorldYawDeg,
@@ -84,6 +86,30 @@ describe('positionCoveredAt', () => {
     expect(positionCoveredAt(intervals, 30)).toBe(false)
     expect(positionCoveredAt(intervals, 5)).toBe(false)
     expect(positionCoveredAt(null, 15)).toBe(false)
+  })
+})
+
+describe('vehicleHpAt / teamHp', () => {
+  const vehicles = [
+    { team: 1, maxHp: 3000, hpSamples: [{ timeSec: 0, hp: 3000 }, { timeSec: 10, hp: 2000 }, { timeSec: 20, hp: 0 }] },
+    { team: 1, maxHp: 2600, hpSamples: [] },
+    { team: 2, maxHp: 4000, hpSamples: [{ timeSec: 5, hp: 4000 }, { timeSec: 15, hp: 1000 }] }
+  ]
+
+  it('vehicleHpAt uses the latest sample <= t, falling back to maxHp before the first sample', () => {
+    expect(vehicleHpAt(vehicles[0], 5)).toBe(3000)
+    expect(vehicleHpAt(vehicles[0], 10)).toBe(2000)
+    expect(vehicleHpAt(vehicles[0], 25)).toBe(0) // 阵亡 0 采样
+    expect(vehicleHpAt(vehicles[1], 50)).toBe(2600) // 无采样 → maxHp
+    expect(vehicleHpAt({ team: 1, maxHp: 100 }, 0)).toBe(100) // 无 hpSamples 数组
+    expect(vehicleHpAt(null, 0)).toBe(0)
+  })
+
+  it('teamHp sums totalMax and remaining per team', () => {
+    expect(teamHp(vehicles, 1, 5)).toEqual({ totalMax: 5600, remaining: 5600 })
+    expect(teamHp(vehicles, 1, 15)).toEqual({ totalMax: 5600, remaining: 4600 }) // 2000 + 2600
+    expect(teamHp(vehicles, 2, 15)).toEqual({ totalMax: 4000, remaining: 1000 })
+    expect(teamHp([], 1, 0)).toEqual({ totalMax: 0, remaining: 0 })
   })
 })
 
