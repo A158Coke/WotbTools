@@ -826,6 +826,7 @@
                 "state_position_stale": "位置中断（最后已知位置）",
                 "state_destroyed": "已击毁",
                 "last_known": "最后已知位置：",
+                "points": "点数",
                 "reset_view": "重置视图",
                 "unknown": "未知",
                 "event_DAMAGE": "伤害",

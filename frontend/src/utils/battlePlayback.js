@@ -51,6 +51,35 @@ export function positionCoveredAt(intervals, t) {
   return intervals.some(iv => t >= iv.startSec - 1e-6 && t <= iv.endSec + 1e-6)
 }
 
+/**
+ * 车辆 t 时刻剩余血量：最近一次血量采样（≤t）为准（含阵亡 0 采样）；
+ * 无采样时回退 maxHp（回放实测/兜底），maxHp 缺失 → 0。
+ * hpSamples 契约：{ timeSec, hp }（battle-relative 秒升序，type-7 propId=3 含装备加成）。
+ */
+export function vehicleHpAt(vehicle, t) {
+  if (!vehicle || !Number.isFinite(t)) return 0
+  const samples = vehicle.hpSamples || []
+  let hp = vehicle.maxHp || 0
+  for (const s of samples) {
+    if (!Number.isFinite(s.timeSec) || !Number.isFinite(s.hp)) continue
+    if (s.timeSec <= t + 1e-6) hp = s.hp
+    else break
+  }
+  return hp
+}
+
+/** 队伍总血量：{ totalMax = ΣmaxHp, remaining(t) = ΣvehicleHpAt }（仅该队车辆）。 */
+export function teamHp(vehicles, team, t) {
+  let totalMax = 0
+  let remaining = 0
+  for (const v of vehicles || []) {
+    if (v.team !== team) continue
+    totalMax += v.maxHp || 0
+    remaining += vehicleHpAt(v, t)
+  }
+  return { totalMax, remaining }
+}
+
 /** 事件按秒聚合（进度条标记）：[{ sec, count, types }]。 */
 export function aggregateEventsBySecond(events) {
   const map = new Map()

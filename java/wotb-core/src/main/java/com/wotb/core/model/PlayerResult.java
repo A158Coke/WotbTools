@@ -45,6 +45,8 @@ public class PlayerResult {
 
     // 展示派生字段 (enrich)
     public String tankName = "";
+    /** 本场实测最大血量（type-7 propId=3 含装备加成，经 ObservedMaxHp.populate 回填；null=未解析）。 */
+    public Integer observedMaxHp;
     public Object tankTier = "";
     public String tankType = "";
     public String tankNation = "";
