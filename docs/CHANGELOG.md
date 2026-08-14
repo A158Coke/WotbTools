@@ -25,8 +25,11 @@
   保证冻结）；③ playback 时长三优先级（`battle.durationS` → `BattleEndedEvent` → 位置流最后时刻）
   并对全部 event/interval/direction/deathSec 施加 `[0,durationSec]` 契约；④ 前端同一 AI 时间戳重复
   点击可再次 seek、单点 last-known 时间保持真实采样时间。
+- **战局回放坦克名权威解析**：MapOverviewBuilder.buildPlayback 的 PlaybackVehicle.tankName 由空串改为 ReplayDisplayNames.tankName(tankId, tankName) 权威解析（与 AI 证据路径同源，如 29985 → "SPHT"），前端不再回退显示纯数字 tankId；新增 MapOverviewBuilderTest 坦克名非空/非数字断言。
+- **positionAt 重新上报首点边界修复**：修复 t 恰为采样点（gap > 5s 后的重新上报首点）被误判为「gap 内」返回 null 的问题——该点应直接返回，否则 vehicleState.lastKnown=true 使敌方图标残留「最后已知位置」淡化；新增 battlePlayback.test.js 回归用例。
 
 ### Added
+- **AI 复盘三板块折叠 + 时间链接跳回地图**：AnalysisResultPanel 复盘正文（call2）与 ReconstructionPage 地图区块新增独立折叠开关（默认展开，复用通用 recon.collapse/expand 三语）；点击 AI 报告时间链接（onAiSeek）改为 async，seek 后 scrollIntoView 回滚到地图区块。
 - **地图鸟瞰独立端点 /api/replay/map-overview（不调 AI）**：ReconstructionController 新增同步端点（与 analyze 同角色/校验/稳定错误码，ReplayUsageMetrics.OP_MAP_OVERVIEW 计费）；新 MapOverviewQueryService 只解析回放并复用 MapOverviewBuilder 确定性聚合，地图不可构建返回 204（前端显示不可用提示）；analyze SSE done.mapOverview 字段保留兼容、前端不再消费。AI 复盘页新增独立「地图鸟瞰」区块（热力/路线/战局回放三视图，ReconstructionPage 手动按钮加载；AnalysisResultPanel 移除地图折叠块并把 AI 报告时间链接 seek 事件上抛给页面加载/跳转）；locale 新增 recon.map.{load,loading,unavailable} 三语。
 - **战局回放视觉调整**：回放视图移除车辆路线渲染（pb-routes/routeSegments/.pb-route 删除，路线数据仍供位置插值与炮线端点复用；「路线」视图不受影响）；坦克图标上方常显坦克型号名标签（PlaybackVehicle.tankName 回退 tankId，位于反缩放按钮内 → 任意缩放下可见、字号恒定，不再限 ≥2× 且从下方移到上方）；炮线可见窗口 TRACER_BASE_SEC 0.5 → 1.0（1×/2×/4× 各约 1s 真实时间）。
 - **AI 用词「簇 → 自然中文」确定性兜底**：prebattle/system.zh.md 强制规则新增禁「簇」条款（兵力/阵型集中一律「集群」）；PreBattleSectionRenderer.display() 对 LLM 自由文本做三层卫生——① 特殊自然表达（簇拥→聚集、簇状→集群状）→ ② 短语级替换（一簇→一批 / 同簇→集群 / 成簇→集群 / 分簇→分散 / 主力簇→主力集群 / 多簇→多股）→ ③ 剩余「簇」字符兜底为「群」（单字替换，不会把已替换出的「集群」二次污染），保证全部用户可见自由文本字段（队伍画像/对阵/胜机/假设）最终不含该字；team/single.zh.md 与 TeamPromptLocalizer.CAPTURE_RULE「多车同簇推进」→「多车集群推进」（md 与常量逐字一致）。

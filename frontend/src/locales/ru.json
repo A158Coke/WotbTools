@@ -779,6 +779,8 @@
         "analysis_title_player": "AI Review",
         "copy": "Копировать",
         "copied": "Скопировано",
+        "collapse": "Свернуть",
+        "expand": "Развернуть",
           "prebattle": {
               "title": "Прогноз до боя",
               "collapse": "Свернуть",

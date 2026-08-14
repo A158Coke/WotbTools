@@ -67,7 +67,8 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
     131% 后桌面有效可见车体 ≈15×24px，放大地图不再显小；hull 层按 `hullYawDeg` 旋转、turret 层按
     `turretWorldYawDeg` 旋转（炮管不脱离炮塔）；阵营色只来自素材本身；录像者 gold halo、选中 ring、
     最后已知淡化、阵亡 ✕ 为独立 overlay，不烘焙进 PNG；标记**上方**常显固定字号坦克型号名小标签
-    （`PlaybackVehicle.tankName`，空时回退 `tankId`；位于反缩放按钮内 → 字号不随地图缩放，任意缩放下可见）。
+    （`PlaybackVehicle.tankName`，后端 `ReplayDisplayNames.tankName(tankId, tankName)` 权威解析自
+    tankopedia，如 29985 → "SPHT"，不再是空串/纯数字；位于反缩放按钮内 → 字号不随地图缩放，任意缩放下可见）。
     旋转换算：地图 yaw 从北(+Z)顺时针 → 屏幕 `rotate(yawDeg)`（0=朝上/90=朝右/180=朝下/270=朝左，
     两次翻转抵消，无符号/偏移修正）。
    - **炮线/曳光线（已知射击）**：`visibleTracers` 由纯函数 `tracerLines`（`utils/battlePlayback.js`）
@@ -106,6 +107,8 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
   训练房/联赛默认显示本方关键事件；进度条按秒聚合事件标记，点击标记跳转该秒并弹出事件列表。
   播放控制：播放/暂停、±5s、上一/下一事件、1×/2×/4×、拖动 seek。
   - **gap 内最后已知**：`positionAt` 只返回可信插值位置（gap 内为 null，禁止穿线）；
+    t 恰为采样点（含 gap > 5s 后的重新上报首点）直接返回该点本身（gap 判定只用于两点间插值），
+    否则重新上报首点会被误判为「gap 内」→ 车辆 lastKnown 残留淡化（敌方图标再点亮仍透明）。
     车辆显示位置由 `lastKnownPosition` 兜底——gap/位置中断/阵亡时车辆停在淡化的最后可信位置而非消失，
     阵亡优先于位置中断；「最后已知」面板显示真实的最后可信时间（`pos.timeSec`），不再显示 `currentTime`。
   - **拖动与跳转即暂停**：进度条 `pointerdown/mousedown/touchstart` 立即暂停，拖动中实时 seek，
@@ -116,7 +119,8 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
   **AI 报告时间跳转**：`MarkdownContent` 把明确时间文本（`03:20` / `3分20秒` / `3m 20s` /
   `3 мин 20 с`）转成 `#seek=<秒>` 链接（不识别普通数字/比分）；结果面板把 seek 事件上抛给页面，
   页面确保独立地图区块已加载（未加载自动拉取 /api/replay/map-overview）并把 seek 传给 MapOverview——
-  自动切换到战局回放并 seek 到该时刻暂停。
+  自动切换到战局回放并 seek 到该时刻暂停；随后页面 scrollIntoView 回滚到地图区块（地图在结果面板上方，
+  点报告底部时间链接即可直接看到对应时刻的回放）。
 - **阶段切片**：opening = OPENING + FIRST_CONTACT 合并；mid = 中间段；late = 战斗末
   `BattlePhaseSummary.DENSE_KILL_WINDOW_SEC`（15s）窗口（残局）。
 - **降级**：未知地图 / 无语义网格 / 无名册 / 无观测 / 视角未解析 → `mapOverview = null`，
