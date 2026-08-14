@@ -7,7 +7,7 @@
 - **车辆库**：`tankopedia-tier{7,8,9,10}.json`（4 个文件，无 `tankopedia.json`）。数据源 blitzkit（`assets.blitzkit.app/definitions/*.pb`）；更新走 `.github/workflows/update-tankopedia.yml`（手动触发，自动提交）或本地 `cd common/python && python update_tankopedia.py`；写入前有完整性门禁（总量/tier 骤降、重复 id、缺 id/name/hp/gun 即失败）。
 - **评分参数** `rating.json`：改数值（权重/系数/阈值/车型系数）只改此文件；改公式结构才动 `wotb-core` 的 `Rating.java`。
 - **地图三语名** `map_names.json`：内部名(小写) → {zh,en,ru}；导出端 `MapNames.cn()` 与前端 `mapLabel()` 共用。
-- **地图语义** `map-semantics/*.semantic.json`：由 `map-semanticizer/` 生成（覆盖式）；**已人工核验的地图严禁整份重跑语义化器**（会覆盖手工修正），改语义 JSON 时同步 `docs/map-catalog.md` 与 `MapTacticalSemanticsRegistryTest` 断言。
+- **地图语义** `map-semantics/*.semantic.json`：由 `map-semanticizer/` 生成（覆盖式）；**已人工核验的地图严禁整份重跑语义化器**（会覆盖手工修正），改语义 JSON 时同步 `docs/reference/maps.md` 与 `MapTacticalSemanticsRegistryTest` 断言。
 - **坦克战术画像** `tank_tactical_profiles.json`：AI 复盘注入用；十级车全覆盖有回归测试守卫。
 - `assets/`（logo/图标/silent-check-sso.html）：Dockerfile 构建时复制到 homepage + frontend/public。
 

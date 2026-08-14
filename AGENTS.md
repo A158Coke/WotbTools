@@ -26,5 +26,5 @@ review-with-docs · code-smell · column-sync · wotb-sync · fallow · finish-t
 
 ## 文档入口
 
-README.md · docs/DEVELOPER_GUIDE.md · docs/CHANGELOG.md · docs/CHANGELOG-PRODUCT.md · docs/TODO.md ·
-docs/replay-data.md · docs/replay-reverse-engineering.md · docs/observability.md
+README.md · docs/README.md（文档索引）· docs/DEVELOPER_GUIDE.md · docs/CHANGELOG.md · docs/CHANGELOG-PRODUCT.md ·
+docs/ROADMAP.md

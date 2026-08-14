@@ -42,7 +42,7 @@ description: >
 
 ### 7. 文档
 - [ ] `DEVELOPER_GUIDE.md` — 字段表/回放格式表更新
-- [ ] `docs/replay-data.md` — 如有 protobuf 字段号变更
+- [ ] `docs/reference/replay-data.md` — 如有 protobuf 字段号变更
 - [ ] `CHANGELOG.md` — 记录列变更
 
 ## 子 agent 分工建议
