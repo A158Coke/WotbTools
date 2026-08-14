@@ -37,28 +37,17 @@ Replay → **authoritative settlement** (`battle_results.dat`: damage / received
 
 ## Key engineering trade-offs
 
-1. **Authoritative settlement > observed event stream**: damage / deaths come from `battle_results`; the event stream is only an observed subset, and its numbers are suppressed when coverage is partial (`OBSERVED_DAMAGE_IS_PARTIAL`) — never show two conflicting totals side by side.
-2. **SSE streaming, single attempt**: `/api/replay/analyze` is `text/event-stream`; no in-stream retry, failures keep already-emitted output; oversized deltas are split sentence-wise so text always appears incrementally.
-3. **Call #2 thinking off by default**: DeepSeek reasoning mode delivers content in one final burst and breaks streaming; enable it only when deeper reasoning is worth it (the chunk fallback still guarantees streaming).
-4. **3x3 grid + map semantics**: canonical 500×500 grid regions 1-9; AREA semantics are decoded from client SC2 / heightmap and are not treated as verified facts before manual review.
-5. **Structured JSON calls disable thinking**: Call #1 pre-battle and Team Autopsy avoid blank completions (reasoning consuming the output budget).
-6. **Bounded worker pool (4+4) + AbortPolicy**: long SSE requests never block servlet threads; saturation returns 503.
-7. **Same-server backups with 7-day retention + verification**: single-server infrastructure constraint; no off-site backup yet.
+1. **Authoritative settlement > observed event stream**: damage / deaths come from `battle_results`; the event stream is only an observed subset, and its numbers are suppressed when coverage is partial (`OBSERVED_DAMAGE_IS_PARTIAL`).
+2. **SSE streaming, single attempt**: `/api/replay/analyze` is `text/event-stream`; no in-stream retry; a bounded worker pool (4+4) prevents blocking and returns 503 on saturation.
+3. **3x3 grid + map semantics**: canonical 500×500 grid regions 1-9; AREA semantics are decoded from client SC2 / heightmap and are not treated as verified facts before manual review.
+
+> More architecture and trade-offs: `docs/DEVELOPER_GUIDE.md` and `docs/architecture/`.
 
 ## Documentation
 
-- [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) — architecture, repository layout, routes, i18n, testing, and deployment conventions (must-read for maintainers)
+- [docs/README.md](docs/README.md) — documentation index (when to read each doc)
+- [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) — developer entry (env / build / layout / conventions)
 - [java/README.md](java/README.md) — running, APIs, and deployment of the Java / Web version
-- [CHANGELOG.md](docs/CHANGELOG.md) — technical version history
-- [CHANGELOG-PRODUCT.md](docs/CHANGELOG-PRODUCT.md) — product version history
-- [TODO.md](docs/TODO.md) — task list
-- [replay-data.md](docs/replay-data.md) — `data.wotreplay` event stream format and fields
-- [rating-system.md](docs/rating-system.md) — rating algorithm and parameters
-- [observability.md](docs/observability.md) — monitoring / logging / backups
-- [team-ai-review-feature.md](docs/team-ai-review-feature.md) — AI team review feature notes
-- [auth/wargaming-asia-login.md](docs/auth/wargaming-asia-login.md) — Wargaming.net ASIA / EU / NA login requirements & implementation
-- [auth/wargaming-asia-deployment.md](docs/auth/wargaming-asia-deployment.md) — Wargaming login deployment & manual config (ops guide)
-- [auth/keycloak-mapper-guide.md](docs/auth/keycloak-mapper-guide.md) — Keycloak Protocol Mapper / Client Scope and production mapper guide
 
 ## Quick Start
 

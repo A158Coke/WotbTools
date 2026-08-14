@@ -1,7 +1,32 @@
 # WoT Blitz 回放包逆向笔记
 
-> 状态：进行中（分支 `re/replay-packet-reverse`）。工具：`PacketReverseProbeTest`（手动探针，不进 CI）。
 > 样本：CHRD neptune 团队战（9034890693886323）、random-battle-example 夹具。
+> 工具：`PacketReverseProbeTest`（手动探针，不进 CI）。
+
+## CURRENT VERDICT
+
+| type | 语义 | 状态 |
+|---|---|---|
+| 0 basePlayerCreate | 实体创建 + 竞技场 pickle（权威名册/队名） | PROVEN |
+| 1/2 实体创建 | 录像者 avatar cell 等 | PARTIAL |
+| 4 EntityLeave | 实体离开（i32） | PROVEN |
+| 5 enterWorld | 实体进入世界 | UNKNOWN |
+| 7 EntityProperty | 属性包；propId 2=炮塔相对偏航、3=当前血量 | PROVEN（propId 0/4/8/9 语义 UNKNOWN） |
+| 8 EntityMethod | sub 47/48 updateArena、sub 8 伤害 | PROVEN |
+| 10 Position | 49B 位置（含 space_id） | PROVEN |
+| 11 空间信息 | 含 `spaces/neptune` 字符串 | PARTIAL |
+| 13 赛后结算 dump | 与 `battle_results.dat` 字节级相同 | PROVEN |
+| 14/29/36 | 低频结束/标记包 | UNKNOWN |
+| 23 开火/炮弹事件 | 0=在飞、1=落地结算 | PROVEN |
+| 26 敌方炮弹来袭 | 4B 恒 0 告警 | PROVEN |
+| 28 4B 小包 | 本样本 0 个 | UNKNOWN |
+| 31 散布衰减流 | 开火后瞄准圈衰减（τ≈0.83s） | PROVEN |
+| 32 客户端事件 | double = 客户端运行时长（ms） | PARTIAL（事件语义待续） |
+| 33 进入世界确认 | 12B 固定 | PROVEN |
+| 35 tick 计数 | 单字节递增 ~10Hz | PROVEN |
+| 39 相机/瞄准流 | 7 floats × 120Hz | PARTIAL（f0/f1 已定，f5/f6 待第三样本确认） |
+
+> 状态词约定：PROVEN / PARTIAL / UNKNOWN / SUPERSEDED / DEPRECATED。历史实验按日期归档（见下文各「20xx-xx-xx」节），早期相反结论标 SUPERSEDED。
 
 ## 包格式
 
@@ -59,7 +84,7 @@
   type 7 propId=4/0 = 高频状态位掩码（每车 24–471 次翻转、值含 2^k 位、0.1–0.5s 间隔，与位置流出现不同步），**非双态可见性**；
   type 8 sub=0/1 = 伤害/命中通知（sub=0 挂受击方、sub=1 挂攻击方且 args 含对方 eid）；type 10 gap≤5s 聚类会误发 2–9 个 LOST/场（静止/死车/断包全部误报）。
   可靠锚点仅两类交火证据：录像者命中敌 X（5 样本 35 次、83% 相机 yaw 指向目标）、敌命中录像者（type 26 + 伤害归因）——覆盖稀疏、不能闭环「从未/当前/失去/重观察」状态机。
-  详见 `docs/visibility-evidence-notes.md`（探针 `VisibilitySignalProbeTest`，S1–S11 量化）。
+  详见 `docs/research/replay/visibility.md`（探针 `VisibilitySignalProbeTest`，S1–S11 量化）。
 - **门禁 B（炮塔相对方向）——历史中间结论（已 SUPERSEDED）**：受控旋转实验之前曾判 NOT_PROVEN——
   type-7 propId=2 是双方 7/7 全覆盖的独立平滑量（静止车体下变化、角速度 17.5°/s、与 hull yaw 不锁定），但开火时刻
   三种**恒等**假设（prop2 / yaw+prop2 / yaw−prop2，无偏移）误差 47.9–111.6° 全部失败，且当时值域仅 ≈126–247°、
@@ -68,7 +93,7 @@
   历史「恒等失败」缺的是 −180° 零点偏移；加入偏移后（b=−180°）41 个开火锚点拟合残差 9.5°、34 个独立受击集
   交叉验证残差 2.3°。**权威最终结论：prop2 = 炮塔相对车体偏航，`u16*360/65536−180` 度，VERDICT = PROVEN**（已落地生产）。
   **hull yaw PROVEN 可用**：type-10 yaw 全部 finite、相邻步长 3.9–9.6°、静止恒定、倒车案例 113/1190（录像者）→ 车头朝向权威源（弧度）。
-  详见 `docs/turret-direction-evidence-notes.md`（权威最终状态在文首与「受控实验定案」节）。
+  详见 `docs/research/replay/turret-direction.md`（权威最终状态在文首与「受控实验定案」节）。
 - 需要用户补充：① 录像者客户端录屏逐秒标注点亮/失察（≥2 场：随机+supremacy）；② 训练房回放 + 炮塔匀速转动录屏校准 prop2；③ 对方视角回放区分团队/个人点亮。
 - **多样本复跑（2026-08-13，common/data 扩充）**：6 个 11.18.0 样本（随机/训练/supremacy）+ 9 个 9.4.0–10.1.0 旧版样本。
   - 编码稳定性：type-7 propId=2 恒为 valueLen=2，自 9.4.0（2022）到 11.18.0（2026）不变，满编战斗双方 7/7 覆盖。
