@@ -50,6 +50,13 @@ onBeforeUnmount(() => {
   // 仅移除页面级监听；应用内切页由 App.vue KeepAlive 保持组件存活，
   // 不在卸载时取消分析（真实关页/刷新由 beforeunload 处理）。
   window.removeEventListener('beforeunload', onPageLeave)
+  // 地图请求：组件真正卸载（非 KeepAlive deactivate）时取消仍在执行的请求，
+  // 递增序号使旧响应全部失效；deactivate 不触发本钩子，有效状态不受影响。
+  mapRequestSeq++
+  if (mapAbortController) {
+    mapAbortController.abort()
+    mapAbortController = null
+  }
 })
 
 // 本页只做一件事：上传单场回放 → 发起 AI 复盘 → 展示结果。
@@ -66,16 +73,29 @@ const mapLoading = ref(false)
 const mapLoaded = ref(false)
 const mapError = ref('')
 const mapSeek = ref(null)
+// 换文件竞态防护：每次请求独占一个 generation（递增序号 + AbortController）；
+// 文件变化（addFile/removeFile/clearFile → resetMap）或组件真正卸载时递增序号并 abort 旧请求，
+// 旧请求在成功/失败/finally 写状态前必须校验序号，绝不覆盖新文件的 mapOverview/mapError/mapLoaded/mapLoading。
+let mapRequestSeq = 0
+let mapAbortController = null
 
-/** 手动加载地图鸟瞰：成功 200 → MapOverview；204 → 无数据（显示不可用提示）；失败 → 稳定错误码本地化。 */
+/**
+ * 手动加载地图鸟瞰：成功 200 → MapOverview；204 → 无数据（显示不可用提示）；失败 → 稳定错误码本地化。
+ * 竞态契约：响应只属于发起时的 generation；任何写状态前校验 mapRequestSeq 未变，
+ * 旧请求（含 AbortError）不得影响新文件的状态。
+ */
 async function loadMapOverview() {
   if (mapLoading.value || files.value.length === 0) return
+  const controller = new AbortController()
+  mapAbortController = controller
+  const requestSeq = ++mapRequestSeq
   mapLoading.value = true
   mapError.value = ''
   const fd = new FormData()
   for (const f of files.value) fd.append('files', f)
   try {
-    const r = await authedFetch('/api/replay/map-overview', fd)
+    const r = await authedFetch('/api/replay/map-overview', fd, { signal: controller.signal })
+    if (requestSeq !== mapRequestSeq) return // 换文件/卸载：旧响应丢弃
     if (r.status === 204) {
       mapOverview.value = null
     } else if (!r.ok) {
@@ -92,17 +112,29 @@ async function loadMapOverview() {
     } else {
       mapOverview.value = await r.json()
     }
+    if (requestSeq !== mapRequestSeq) return
     mapLoaded.value = true
   } catch (e) {
+    if (requestSeq !== mapRequestSeq) return // 旧请求的失败/取消不得写入错误
+    if (e && e.name === 'AbortError') return // 主动取消：不是错误
     mapError.value = e.message || String(e)
     mapLoaded.value = true
   } finally {
-    mapLoading.value = false
+    // 仅当前 generation 可结束 loading；旧请求 finally 不得提前解除新请求的 loading
+    if (requestSeq === mapRequestSeq) {
+      mapLoading.value = false
+      if (mapAbortController === controller) mapAbortController = null
+    }
   }
 }
 
-/** 文件变化（新增/移除/清空）时重置地图区块。 */
+/** 文件变化（新增/移除/清空）时使旧请求失效并取消，重置地图区块。 */
 function resetMap() {
+  mapRequestSeq++
+  if (mapAbortController) {
+    mapAbortController.abort()
+    mapAbortController = null
+  }
   mapOverview.value = null
   mapLoading.value = false
   mapLoaded.value = false
