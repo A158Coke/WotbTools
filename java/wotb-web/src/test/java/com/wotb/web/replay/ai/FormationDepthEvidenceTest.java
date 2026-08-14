@@ -83,8 +83,8 @@ class FormationDepthEvidenceTest {
         assertTrue(section.contains("frontLine=account:1001"), section);
         assertTrue(section.contains("backLine=account:1002"), section);
         // 双方驻留不同区域 → own 与 enemy 区域都存在
-        assertTrue(section.contains("controlledRegions own=GRID_REGION_"), section);
-        assertTrue(section.contains("controlledRegions enemy=GRID_REGION_"), section);
+        assertTrue(section.contains("dwellRegions own=GRID_REGION_"), section);
+        assertTrue(section.contains("dwellRegions enemy=GRID_REGION_"), section);
     }
 
     @Test
@@ -108,6 +108,6 @@ class FormationDepthEvidenceTest {
                 List.of(), new ArrayList<>(filtered), List.of(), null, null, null);
         final String section = FormationDepthEvidence.renderSection(battle, ownOnly, 1, MAP);
         assertFalse(section.contains("frontLine="), "敌方无位置观测时不得输出前后排");
-        assertTrue(section.contains("controlledRegions own=GRID_REGION_"), section);
+        assertTrue(section.contains("dwellRegions own=GRID_REGION_"), section);
     }
 }

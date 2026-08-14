@@ -52,32 +52,58 @@ export function positionCoveredAt(intervals, t) {
 }
 
 /**
- * 车辆 t 时刻剩余血量：最近一次血量采样（≤t）为准（含阵亡 0 采样）；
- * 无采样时回退 maxHp（回放实测/兜底），maxHp 缺失 → 0。
- * hpSamples 契约：{ timeSec, hp }（battle-relative 秒升序，type-7 propId=3 含装备加成）。
+ * 车辆 t 时刻剩余血量：
+ * - 有可信采样（≤t）→ 最近一次值（含阵亡 0 采样）；
+ * - 无可信采样 → null（UNKNOWN：尚未观测到该车血量，不得假设为满血）；
+ * - 高位/负 sentinel（<0 或 ≥0xFF00，如 0xFFFD/-3、0xFFFF/-1）一律忽略，防 65533/65535 污染。
+ * hpSamples 契约：{ timeSec, hp }（battle-relative 秒升序，type-7 propId=3 signed i16 含装备加成）。
  */
 export function vehicleHpAt(vehicle, t) {
-  if (!vehicle || !Number.isFinite(t)) return 0
+  if (!vehicle || !Number.isFinite(t)) return null
   const samples = vehicle.hpSamples || []
-  let hp = vehicle.maxHp || 0
+  let hp = null
   for (const s of samples) {
     if (!Number.isFinite(s.timeSec) || !Number.isFinite(s.hp)) continue
+    if (s.hp < 0 || s.hp >= 0xFF00) continue // sentinel 兜底
     if (s.timeSec <= t + 1e-6) hp = s.hp
     else break
   }
   return hp
 }
 
-/** 队伍总血量：{ totalMax = ΣmaxHp, remaining(t) = ΣvehicleHpAt }（仅该队车辆）。 */
+/**
+ * 队伍总血量（t 时刻）：
+ * totalMax = ΣmaxHp（理论容量）、knownRemaining = Σ已知当前剩余 HP、
+ * unknownMax = Σ尚未观测到血量的理论容量（UNKNOWN，灰段；不得并入 knownRemaining）。
+ */
 export function teamHp(vehicles, team, t) {
   let totalMax = 0
-  let remaining = 0
+  let knownRemaining = 0
+  let unknownMax = 0
   for (const v of vehicles || []) {
     if (v.team !== team) continue
-    totalMax += v.maxHp || 0
-    remaining += vehicleHpAt(v, t)
+    const maxHp = v.maxHp || 0
+    totalMax += maxHp
+    const cur = vehicleHpAt(v, t)
+    if (cur == null) unknownMax += maxHp
+    else knownRemaining += cur
   }
-  return { totalMax, remaining }
+  return { totalMax, knownRemaining, unknownMax }
+}
+
+/**
+ * 争霸赛实时点数：t 时刻该队最近一次 ≤t 的广播值（type-8 subtype48 field13，PROVEN）；
+ * 无 → null（非争霸赛/该队暂无广播时不显示，绝不用结算值冒充实时比分）。
+ */
+export function teamPointsAt(samples, team, t) {
+  if (!Array.isArray(samples) || !Number.isFinite(t)) return null
+  let points = null
+  for (const s of samples) {
+    if (!s || s.team !== team || !Number.isFinite(s.timeSec) || !Number.isFinite(s.points)) continue
+    if (s.timeSec <= t + 1e-6) points = s.points
+    else break
+  }
+  return points
 }
 
 /** 事件按秒聚合（进度条标记）：[{ sec, count, types }]。 */

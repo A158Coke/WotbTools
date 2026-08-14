@@ -827,6 +827,7 @@
                 "state_destroyed": "Уничтожен",
                 "last_known": "Последняя известная позиция:",
                 "points": "Очки",
+                "hp_unknown": "неизвестно",
                 "reset_view": "Сброс вида",
                 "unknown": "Неизвестно",
                 "event_DAMAGE": "Урон",

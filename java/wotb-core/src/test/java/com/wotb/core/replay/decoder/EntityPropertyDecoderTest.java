@@ -91,6 +91,31 @@ class EntityPropertyDecoderTest {
         assertInstanceOf(UnknownReplayEvent.class, result.events().getFirst());
     }
 
+
+    @Test
+    void propId3FdFfDeathSentinelNormalizesToZero() {
+        // 0xFFFD（signed -3）：已证明与击毁 ±40 点同刻的死亡 sentinel，绝不解析为 65533
+        final byte[] value = {(byte) 0xfd, (byte) 0xff};
+        final ReplayDecodeResult result = decoder.decode(context, packet(3, value));
+        final HealthChangedEvent event = assertInstanceOf(
+                HealthChangedEvent.class, result.events().getFirst());
+        assertEquals(0, event.currentHealth(), "死亡 sentinel 归一化为 HP=0");
+        assertEquals(Boolean.FALSE, event.alive());
+        assertEquals(DecodeConfidence.EXACT, event.confidence());
+    }
+
+    @Test
+    void propId3FfFfUnknownSentinelIsNullNot65535() {
+        // 0xFFFF（signed -1）：UNKNOWN sentinel，不得当作 65535 HP、也不得当作死亡
+        final byte[] value = {(byte) 0xff, (byte) 0xff};
+        final ReplayDecodeResult result = decoder.decode(context, packet(3, value));
+        final HealthChangedEvent event = assertInstanceOf(
+                HealthChangedEvent.class, result.events().getFirst());
+        assertEquals(null, event.currentHealth());
+        assertEquals(null, event.alive());
+        assertEquals(DecodeConfidence.PARTIAL, event.confidence());
+    }
+
     private static void putU32(final byte[] buf, final int i, final int v) {
         buf[i] = (byte) v;
         buf[i + 1] = (byte) (v >>> 8);

@@ -25,8 +25,9 @@ import java.util.Map;
  *       （残局 = 战斗末 15s 窗口，与地图鸟瞰同口径）；</li>
  *   <li><b>前后排</b>：某阶段内本队成员平均位置沿「本队质心 → 敌方质心」轴投影，
  *       按深度三分位分 前排/中排/后排（仅双方均有可用位置时输出）；</li>
- *   <li><b>控制区域</b>：九宫格区域按双方位置样本计数——本队>敌队 → own、
- *       双方>0 → contested、仅敌队 → enemy（均为「有车辆驻留过」的实际控制，不等于占领点得分）。</li>
+ *   <li><b>区域驻留优势（dwell advantage）</b>：九宫格区域按双方位置样本计数——本队>敌队 → own、
+ *       双方>0 → contested、仅敌队 → enemy。这只是「某区域双方活动/驻留计数」的确定性近似，
+ *       不等于「真正控制该区域」，更不等于占领点得分；AI 只可据此说「驻留更多」，不得断言控制了某区。</li>
  * </ul>
  * <p>成员用 {@code account:<accountId>}（与 FORMATION_PHASES 簇成员一致）供 AI 交叉引用。</p>
  */
@@ -184,7 +185,7 @@ final class FormationDepthEvidence {
         return sb.toString() + renderControl(ownRegionCount, enemyRegionCount);
     }
 
-    /** 控制区域：本队>敌队 → own；双方>0 → contested；仅敌队 → enemy。 */
+    /** 区域驻留优势：本队>敌队 → own；双方>0 → contested；仅敌队 → enemy（计数事实，非「控制」断言）。 */
     private static String renderControl(
             final Map<Integer, Integer> own,
             final Map<Integer, Integer> enemy
@@ -211,13 +212,13 @@ final class FormationDepthEvidence {
         }
         final StringBuilder sb = new StringBuilder();
         if (!ownList.isEmpty()) {
-            sb.append("controlledRegions own=").append(String.join(",", ownList)).append('\n');
+            sb.append("dwellRegions own=").append(String.join(",", ownList)).append('\n');
         }
         if (!contested.isEmpty()) {
-            sb.append("controlledRegions contested=").append(String.join(",", contested)).append('\n');
+            sb.append("dwellRegions contested=").append(String.join(",", contested)).append('\n');
         }
         if (!enemyList.isEmpty()) {
-            sb.append("controlledRegions enemy=").append(String.join(",", enemyList)).append('\n');
+            sb.append("dwellRegions enemy=").append(String.join(",", enemyList)).append('\n');
         }
         return sb.toString();
     }

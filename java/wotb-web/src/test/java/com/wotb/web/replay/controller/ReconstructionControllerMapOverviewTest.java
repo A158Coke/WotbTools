@@ -33,7 +33,7 @@ class ReconstructionControllerMapOverviewTest {
             2,
             new MapOverview.Bounds(-256, 260, -251, 254.3),
             List.of(), null, List.of(), List.of(), null, List.of(),
-            null, null, null, null, null);
+            null, null, null);
 
     private static final MultipartFile[] FILES = new MultipartFile[]{
             new MockMultipartFile("files", "a.wotbreplay", null, new byte[]{1})};

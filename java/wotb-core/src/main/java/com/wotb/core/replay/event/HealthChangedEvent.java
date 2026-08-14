@@ -22,4 +22,15 @@ public record HealthChangedEvent(
         Integer maxHealth,
         Boolean alive
 ) implements ReplayEvent {
+
+    /** 已证明的 HP 未知 sentinel（原始 u16=0xFFFD，与争霸击毁 ±40 点事件重合；绝非 65533 HP）。 */
+    public static final int SENTINEL_UNKNOWN_HP = 0xFFFD;
+
+    /**
+     * 保守归一化：可信正 HP 必须 >0 且 < 0xFF00。任何 ≥0xFF00 的 u16 高位值（含 0xFFFD）
+     * 都视为不可信 sentinel/损坏——不臆测其具体语义，但绝不作为真实血量进入任何计算。
+     */
+    public static boolean isPlausibleHp(final Integer hp) {
+        return hp != null && hp > 0 && hp < 0xFF00;
+    }
 }

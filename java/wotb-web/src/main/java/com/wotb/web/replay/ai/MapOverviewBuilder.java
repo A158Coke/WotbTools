@@ -16,6 +16,7 @@ import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.event.TurretDirectionChangedEvent;
 import com.wotb.core.replay.event.VehicleDestroyedEvent;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
@@ -123,9 +124,7 @@ public final class MapOverviewBuilder {
                 routes,
                 battle.arenaBonusType,
                 resolveRecorderAccountId(battle),
-                playback,
-                supremacyPoints(battle, friendlyTeam),
-                supremacyPoints(battle, friendlyTeam == 1 ? 2 : 1));
+                playback);
     }
 
     /**
@@ -226,7 +225,8 @@ public final class MapOverviewBuilder {
                 || e.timeSec() < 0 || e.timeSec() > duration + 1e-6);
         playbackEvents.sort(Comparator.comparingDouble(MapOverview.PlaybackEvent::timeSec));
 
-        return new MapOverview.Playback(duration, vehicles, playbackEvents);
+        return new MapOverview.Playback(duration, vehicles, playbackEvents,
+                pointsSamples(events, duration, battleStartRawClockSec));
     }
 
     /**
@@ -249,6 +249,11 @@ public final class MapOverviewBuilder {
                     || hp.currentHealth() == null) {
                 continue;
             }
+            // signed i16 语义：仅保留真实正 HP 与阵亡 0；0xFFFD(-3)/0xFFFF(-1) 等 sentinel
+            // 已被解码器置 null，此处再兜底——绝不允许 65533/65535 进入 hpSamples
+            if (hp.currentHealth() != 0 && !HealthChangedEvent.isPlausibleHp(hp.currentHealth())) {
+                continue;
+            }
             if (accountOf(hp.entityId(), mapping) != accountId) {
                 continue;
             }
@@ -262,23 +267,31 @@ public final class MapOverviewBuilder {
         return samples;
     }
 
-    /** 争霸赛终局点数（victoryPointsEarned 逐人求和；非争霸赛/无数据 → null）。 */
-    private static Integer supremacyPoints(final Battle battle, final int team) {
-        if (battle == null || battle.players == null) {
-            return null;
+    /**
+     * 争霸赛实时点数时间线（type-8 subtype48 root field12，PROVEN）：只消费回放真实广播，
+     * 绝不按游戏规则推算；battle-relative 秒升序，仅保留 [0, duration] 内 EXACT 事件。
+     */
+    private static List<MapOverview.PointsSample> pointsSamples(
+            final List<ReplayEvent> events,
+            final double duration,
+            final Float battleStartRawClockSec) {
+        final List<MapOverview.PointsSample> samples = new ArrayList<>();
+        if (events == null) {
+            return samples;
         }
-        long total = 0;
-        boolean any = false;
-        for (final PlayerResult player : battle.players) {
-            if (player == null || player.team != team) {
+        for (final ReplayEvent event : events) {
+            if (!(event instanceof SupremacyPointsChangedEvent points)
+                    || points.confidence() != DecodeConfidence.EXACT) {
                 continue;
             }
-            if (player.victoryPointsEarned > 0) {
-                any = true;
+            final double t = relativeSec(points, battleStartRawClockSec);
+            if (!Double.isFinite(t) || t < 0 || t > duration + 1e-6) {
+                continue;
             }
-            total += player.victoryPointsEarned;
+            samples.add(new MapOverview.PointsSample(t, points.team(), points.points()));
         }
-        return any ? (int) total : null;
+        samples.sort(Comparator.comparingDouble(MapOverview.PointsSample::timeSec));
+        return samples;
     }
 
     /**

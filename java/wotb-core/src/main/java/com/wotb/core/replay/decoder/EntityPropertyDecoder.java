@@ -75,15 +75,35 @@ public class EntityPropertyDecoder implements ReplayPacketDecoder {
 
         final List<com.wotb.core.replay.event.ReplayEvent> events = new ArrayList<>();
         if (propId == PROP_CURRENT_HP && valueLen >= 2 && 12 + 2 <= payload.length) {
-            // 当前血量：u16 LE（含装备加成）。受击时客户端同步，阵亡到 0、存活不到 0。
-            final int currentHp = (payload[12] & 0xFF) | ((payload[13] & 0xFF) << 8);
-            events.add(new HealthChangedEvent(
-                    packet.sequence(), ts, packet.type(),
-                    DecodeConfidence.EXACT,
-                    entityId,
-                    currentHp,
-                    null,
-                    currentHp > 0));
+            // 当前血量：u16 LE 但按 **signed i16** 解释（真实正 HP 恒小，signed 无歧义）。
+            // 受击时客户端同步；阵亡到 0；0xFFFD(signed -3)=已证明的死亡关联 sentinel（11/11 与击毁 ±40 点同刻），
+            // 归一化为死亡 HP=0（alive=false）；0xFFFF(signed -1) 及其它 ≤0 高位值 = UNKNOWN sentinel
+            // （-1 时刻无死亡证据，不得臆测为死亡或 65535），currentHealth 记 null、alive 记 null。
+            final int raw = (payload[12] & 0xFF) | ((payload[13] & 0xFF) << 8);
+            final short signed = (short) raw;
+            if (raw == 0 || raw == HealthChangedEvent.SENTINEL_UNKNOWN_HP) {
+                // 0 = 阵亡到 0；0xFFFD(-3) = 已证明死亡 sentinel → 死亡 HP=0
+                events.add(new HealthChangedEvent(
+                        packet.sequence(), ts, packet.type(),
+                        DecodeConfidence.EXACT,
+                        entityId, 0, null, false));
+            } else if (signed > 0) {
+                // 真实正 HP（含装备加成）
+                events.add(new HealthChangedEvent(
+                        packet.sequence(), ts, packet.type(),
+                        DecodeConfidence.EXACT,
+                        entityId, (int) signed, null, true));
+            } else {
+                // 其它 ≤0 sentinel（如 0xFFFF=-1）：UNKNOWN，不臆测语义；血量记 null
+                warnings.add(new ReplayDecodeWarning("HP_SENTINEL",
+                        "propId=3 raw=0x" + Integer.toHexString(raw)
+                                + " (signed " + signed + ") treated as UNKNOWN HP sentinel at entity "
+                                + entityId));
+                events.add(new HealthChangedEvent(
+                        packet.sequence(), ts, packet.type(),
+                        DecodeConfidence.PARTIAL,
+                        entityId, null, null, null));
+            }
             return new ReplayDecodeResult(
                     warnings.isEmpty() ? DecodeStatus.SUCCESS : DecodeStatus.PARTIAL,
                     events, warnings);

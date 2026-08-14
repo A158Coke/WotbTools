@@ -3,9 +3,12 @@ package com.wotb.core.replay.decoder;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
+import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.stream.PacketReadStatus;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -165,5 +168,100 @@ class EntityMethodDecoderTest {
         result[1] = (byte) value.length;
         System.arraycopy(value, 0, result, 2, value.length);
         return result;
+    }
+
+    @Test
+    void updateArena2Field12DecodesRealtimeSupremacyPointsForBothTeams() {
+        final RawReplayPacket packet = pointsPacket(1, 56.233f, 1, 303, 2, 306);
+        final ReplayDecodeResult result = decoder.decode(context, packet);
+        final List<SupremacyPointsChangedEvent> points = result.events().stream()
+                .filter(SupremacyPointsChangedEvent.class::isInstance)
+                .map(SupremacyPointsChangedEvent.class::cast).toList();
+        assertEquals(2, points.size());
+        final SupremacyPointsChangedEvent t1 = points.get(0);
+        assertEquals(1, t1.team());
+        assertEquals(303, t1.points());
+        assertEquals(DecodeConfidence.EXACT, t1.confidence());
+        assertEquals(56.233f, t1.timestamp().rawClockSec(), 1e-6);
+        final SupremacyPointsChangedEvent t2 = points.get(1);
+        assertEquals(2, t2.team());
+        assertEquals(306, t2.points());
+        assertEquals(DecodeConfidence.EXACT, t2.confidence());
+        assertEquals(DecodeStatus.SUCCESS, result.status());
+    }
+
+    @Test
+    void malformedField12DoesNotProduceExactPointEvent() {
+        // team=9（非法）→ 跳过；points=负数 → 跳过；缺 field2 → 跳过
+        final byte[] badTeam = fieldDelimited(12, teamPointsMessage(9, 100));
+        final byte[] badPoints = fieldDelimited(12, teamPointsMessage(1, -5));
+        final byte[] noField2 = fieldDelimited(12, new byte[]{0x08, 0x01});
+        final RawReplayPacket packet = rawPacket48(concat(badTeam, badPoints, noField2));
+        final ReplayDecodeResult result = decoder.decode(context, packet);
+        assertTrue(result.events().stream().noneMatch(SupremacyPointsChangedEvent.class::isInstance),
+                "非法 field12 不得产出 EXACT 点数事件");
+    }
+
+    private static byte[] teamPointsMessage(final int team, final int points) {
+        final byte[] teamVar = varint(team);
+        final byte[] pointsVar = varint(points);
+        final byte[] out = new byte[1 + teamVar.length + 1 + pointsVar.length];
+        int off = 0;
+        out[off++] = 0x08;
+        System.arraycopy(teamVar, 0, out, off, teamVar.length);
+        off += teamVar.length;
+        out[off++] = 0x10;
+        System.arraycopy(pointsVar, 0, out, off, pointsVar.length);
+        return out;
+    }
+
+    private static byte[] fieldDelimited(final int fieldNumber, final byte[] value) {
+        final int tag = (fieldNumber << 3) | 2;
+        final byte[] out = new byte[2 + value.length];
+        out[0] = (byte) tag;
+        out[1] = (byte) value.length;
+        System.arraycopy(value, 0, out, 2, value.length);
+        return out;
+    }
+
+    private static byte[] concat(final byte[]... arrays) {
+        int total = 0;
+        for (final byte[] a : arrays) total += a.length;
+        final byte[] out = new byte[total];
+        int off = 0;
+        for (final byte[] a : arrays) {
+            System.arraycopy(a, 0, out, off, a.length);
+            off += a.length;
+        }
+        return out;
+    }
+
+    private static byte[] varint(final long value) {
+        final java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        long v = value;
+        while ((v & ~0x7FL) != 0) {
+            out.write((int) ((v & 0x7F) | 0x80));
+            v >>>= 7;
+        }
+        out.write((int) v);
+        return out.toByteArray();
+    }
+
+    private static RawReplayPacket pointsPacket(final int seq, final float clock,
+                                                 final int team1, final int p1, final int team2, final int p2) {
+        // root field12 直接携带 {field1=team, field2=points}（交叉验证：数量/点数区间与真实回放一致）
+        return rawPacket48(concat(fieldDelimited(12, teamPointsMessage(team1, p1)),
+                fieldDelimited(12, teamPointsMessage(team2, p2))));
+    }
+
+    /** subtype48 载荷：body[0..3] 固定字段 + varint + msgLen + protoData（root 直接放入）。 */
+    private static RawReplayPacket rawPacket48(final byte[] root) {
+        final byte[] payload = new byte[8 + 4 + 1 + 1 + root.length];
+        payload[4] = EntityMethodDecoder.SUBTYPE_UPDATE_ARENA2;
+        payload[12] = 0x01;
+        payload[13] = (byte) root.length;
+        System.arraycopy(root, 0, payload, 14, root.length);
+        return new RawReplayPacket(7, 0, payload.length,
+                EntityMethodDecoder.TYPE_ENTITY_METHOD, 56.233f, PacketReadStatus.NORMAL, payload, 0);
     }
 }

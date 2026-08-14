@@ -94,6 +94,8 @@ class MapOverviewBuilderTest {
         assertTrue(overview.playback().vehicles().stream()
                         .anyMatch(v -> !v.hpSamples().isEmpty()),
                 "fixture 应至少有一辆车（录像者）有回放实测血量采样");
+        // 争霸赛实时点数时间线契约（随机战 fixture 无 field12 广播 → 空列表而非 null）
+        assertNotNull(overview.playback().pointsSamples(), "pointsSamples 契约：非 null");
         for (final MapOverview.PlaybackVehicle v : overview.playback().vehicles()) {
             assertNotNull(v.maxHp(), "maxHp 应由回放实测/兜底解析，非空: " + v.playerName());
             final Integer base = ReplayDisplayNames.tankMaxHpValue(v.tankId());
@@ -233,8 +235,6 @@ class MapOverviewBuilderTest {
                         0.8, 146.9, 115.0)),
                 1,
                 1L,
-                null,
-                null,
                 null);
         final Map<String, Object> payload = mapper.convertValue(overview, Map.class);
         assertEquals("desert_train", payload.get("mapCode"));
@@ -253,8 +253,6 @@ class MapOverviewBuilderTest {
         assertTrue(payload.containsKey("recorderAccountId"));
         assertEquals(1, payload.get("arenaBonusType"));
         assertEquals(1L, payload.get("recorderAccountId"));
-        assertTrue(payload.containsKey("friendlyPoints"));
-        assertTrue(payload.containsKey("enemyPoints"));
         assertTrue(payload.containsKey("playback"));
         assertNull(payload.get("playback"), "降级样例 playback 恒 null");
         @SuppressWarnings("unchecked")

@@ -19,6 +19,7 @@ import {
   recorderRelated,
   screenRotation,
   teamHp,
+  teamPointsAt,
   teamRelated,
   tracerLines,
   turretWorldYawDeg,
@@ -53,13 +54,18 @@ const friendlyTeam = computed(() => props.overview.friendlyTeam)
 // 双方总血量（实时剩余，随播放时间/进度条变化；争霸赛附终局点数）
 const friendlyHp = computed(() => teamHp(playback.value?.vehicles, friendlyTeam.value, currentTime.value))
 const enemyHp = computed(() => teamHp(playback.value?.vehicles, friendlyTeam.value === 1 ? 2 : 1, currentTime.value))
-const points = computed(() => {
-  if (props.overview.friendlyPoints == null || props.overview.enemyPoints == null) return null
-  return { friendly: props.overview.friendlyPoints, enemy: props.overview.enemyPoints }
-})
-function hpBarWidth(hp) {
-  if (!hp.totalMax || hp.totalMax <= 0) return '0%'
-  return `${Math.max(0, Math.min(100, (hp.remaining / hp.totalMax) * 100)).toFixed(1)}%`
+// 争霸赛实时点数：来自回放广播 pointsSamples（随 currentTime 变化）；非争霸赛/无广播 → null 不显示
+const friendlyPoints = computed(() =>
+  teamPointsAt(playback.value?.pointsSamples, friendlyTeam.value, currentTime.value))
+const enemyPoints = computed(() =>
+  teamPointsAt(playback.value?.pointsSamples, friendlyTeam.value === 1 ? 2 : 1, currentTime.value))
+const showPoints = computed(() => friendlyPoints.value != null || enemyPoints.value != null)
+/** HP bar 填充宽度：kind='known' 阵营色实段（已知剩余）、'unknown' 灰色弱化段（未观测容量）。 */
+function hpBarFill(hp, kind) {
+  const total = hp.totalMax || 0
+  if (total <= 0) return '0%'
+  const val = kind === 'known' ? hp.knownRemaining : hp.unknownMax
+  return `${Math.max(0, Math.min(100, (val / total) * 100)).toFixed(1)}%`
 }
 
 // ---- 播放状态 ----
@@ -381,9 +387,10 @@ function vehicleState(vehicle) {
     turretImage: friendly ? friendlyTurret : enemyTurret,
     hullScreenDeg: destroyed ? (hullDeg == null ? 0 : hullDeg) : hullDeg,
     turretScreenDeg: destroyed ? (turretDeg == null ? 0 : turretDeg) : turretDeg,
-    // lastKnown = 位置流未覆盖（covered=false）才淡化：位置流覆盖才是「点亮」。
-    // route 采样点稀疏（长局采样间隔 max(2, duration/200) 可 >5s）导致 live=null 不代表位置中断，
-    // 不得借 !live 误判淡化（否则敌方「位置上报中」仍呈半透明）。destroyed 是独立视觉状态，
+    // lastKnown = 位置流未覆盖（covered=false）才淡化（最后已知位置）。
+    // 注意：covered 只是「服务器位置流当前覆盖」，不等于录像者客户端点亮/失察（无 authoritative
+    // spotting signal，不得声称已恢复点亮）；route 采样点稀疏（长局采样间隔 max(2, duration/200)
+    // 可 >5s）导致 live=null 不代表位置中断，不得借 !live 误判淡化。destroyed 是独立视觉状态，
     // 阵亡车信息栏同样显示最后可信时间，但视觉 class 不再套用 pb-last-known
     lastKnown: !covered
   }
@@ -694,23 +701,27 @@ const mapStyle = computed(() => ({
     </div>
     </div>
 
-    <!-- 双方总血量条 + 争霸赛点数 -->
+    <!-- 双方总血量条 + 争霸赛实时点数（阵营色实段=已知剩余，灰段=未观测容量，空=已损失） -->
     <div class="pb-hp-bars" data-test="pb-hp-bars">
       <div class="pb-hp-row">
         <span class="pb-hp-label">{{ $t('recon.map.playback.team_friendly') }}</span>
         <div class="pb-hp-track">
-          <div class="pb-hp-fill pb-hp-friendly" :style="{ width: hpBarWidth(friendlyHp) }"></div>
+          <div class="pb-hp-fill pb-hp-friendly" :style="{ width: hpBarFill(friendlyHp, 'known') }"></div>
+          <div class="pb-hp-fill pb-hp-unknown" :style="{ width: hpBarFill(friendlyHp, 'unknown') }"></div>
         </div>
-        <span class="pb-hp-value">{{ friendlyHp.remaining }} / {{ friendlyHp.totalMax }}</span>
-        <span v-if="points != null" class="pb-hp-points" data-test="pb-points-friendly">{{ $t('recon.map.playback.points') }}: {{ points.friendly }}</span>
+        <span class="pb-hp-value">{{ friendlyHp.knownRemaining }} / {{ friendlyHp.totalMax }}</span>
+        <span v-if="friendlyHp.unknownMax > 0" class="pb-hp-unknown-text" data-test="pb-hp-unknown-friendly">{{ $t('recon.map.playback.hp_unknown') }} {{ friendlyHp.unknownMax }}</span>
+        <span v-if="showPoints && friendlyPoints != null" class="pb-hp-points" data-test="pb-points-friendly">{{ $t('recon.map.playback.points') }}: {{ friendlyPoints }}</span>
       </div>
       <div class="pb-hp-row">
         <span class="pb-hp-label">{{ $t('recon.map.playback.team_enemy') }}</span>
         <div class="pb-hp-track">
-          <div class="pb-hp-fill pb-hp-enemy" :style="{ width: hpBarWidth(enemyHp) }"></div>
+          <div class="pb-hp-fill pb-hp-enemy" :style="{ width: hpBarFill(enemyHp, 'known') }"></div>
+          <div class="pb-hp-fill pb-hp-unknown" :style="{ width: hpBarFill(enemyHp, 'unknown') }"></div>
         </div>
-        <span class="pb-hp-value">{{ enemyHp.remaining }} / {{ enemyHp.totalMax }}</span>
-        <span v-if="points != null" class="pb-hp-points" data-test="pb-points-enemy">{{ $t('recon.map.playback.points') }}: {{ points.enemy }}</span>
+        <span class="pb-hp-value">{{ enemyHp.knownRemaining }} / {{ enemyHp.totalMax }}</span>
+        <span v-if="enemyHp.unknownMax > 0" class="pb-hp-unknown-text" data-test="pb-hp-unknown-enemy">{{ $t('recon.map.playback.hp_unknown') }} {{ enemyHp.unknownMax }}</span>
+        <span v-if="showPoints && enemyPoints != null" class="pb-hp-points" data-test="pb-points-enemy">{{ $t('recon.map.playback.points') }}: {{ enemyPoints }}</span>
       </div>
     </div>
 
@@ -898,11 +909,13 @@ const mapStyle = computed(() => ({
 .pb-hp-bars { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
 .pb-hp-row { display: flex; align-items: center; gap: 8px; font-size: .78rem; color: var(--text-label); }
 .pb-hp-label { width: 3.5em; flex-shrink: 0; }
-.pb-hp-track { flex: 1; height: 10px; border-radius: 5px; background: var(--bg-chip, rgba(128,128,128,.25)); overflow: hidden; }
+.pb-hp-track { flex: 1; display: flex; height: 10px; border-radius: 5px; background: var(--bg-chip, rgba(128,128,128,.25)); overflow: hidden; }
 .pb-hp-fill { height: 100%; transition: width .15s linear; }
 .pb-hp-friendly { background: var(--map-spawn-friendly, #8ef7b0); }
 .pb-hp-enemy { background: var(--map-spawn-enemy, #ff8d8d); }
+.pb-hp-unknown { background: rgba(128,128,128,.45); }
 .pb-hp-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pb-hp-unknown-text { color: var(--text-muted, #999); white-space: nowrap; }
 .pb-hp-points { white-space: nowrap; }
 .pb-info {
   display: flex;
