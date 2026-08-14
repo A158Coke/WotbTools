@@ -2,6 +2,7 @@ package com.wotb.core.replay.evidence;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.processing.FriendlyEnemyResult;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.util.PlayerResultFormat;
@@ -34,8 +35,6 @@ public final class PointsSituationSkill {
     private PointsSituationSkill() {
     }
 
-    /** 每击杀夺取对方 40 分补充自身、被击杀方损失 40 分（业务规则，项目所有者确认；仅叙述口径）。 */
-    public static final int KILL_STEAL_POINTS = 40;
 
     /** 占领点存在聚合时间窗（秒）。 */
     public static final float PRESENCE_BIN_SEC = 15f;

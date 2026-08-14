@@ -2,6 +2,7 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.processing.FriendlyEnemyResult;
 import com.wotb.core.processing.TeamEntityIdentity;
 import com.wotb.core.processing.TeamEntityMapper;
 import com.wotb.core.processing.TeamEntityMapping;
@@ -157,22 +158,22 @@ final class PointsSituationEvidence {
                 + "推进窗口），禁止据此编造任何中间比分或精确领先幅度；击杀夺分时间线只是击杀换分项，"
                 + "不代表整体点数，禁止把击杀换分项净劣势/优势说成整体落后/领先；位置存在≠占点产分。\n");
         if (!killTimeline.isEmpty()) {
-            sb.append("KILL_POINTS_TIMELINE（击杀夺分 ±").append(PointsSituationSkill.KILL_STEAL_POINTS)
+            sb.append("KILL_POINTS_TIMELINE（击杀夺分 ±").append(FriendlyEnemyResult.KILL_STEAL_POINTS)
                     .append("/击杀业务规则，按阵亡时刻对齐，叙述口径，非实时比分，不含占点基础产分）:\n");
             int selfDelta = 0;
             int otherDelta = 0;
             for (final PointsSituationSkill.KillPointsEvent event : killTimeline) {
                 final boolean selfVictim = event.victimTeam() == perspectiveTeam;
                 selfDelta += selfVictim
-                        ? -PointsSituationSkill.KILL_STEAL_POINTS : PointsSituationSkill.KILL_STEAL_POINTS;
+                        ? -FriendlyEnemyResult.KILL_STEAL_POINTS : FriendlyEnemyResult.KILL_STEAL_POINTS;
                 otherDelta += selfVictim
-                        ? PointsSituationSkill.KILL_STEAL_POINTS : -PointsSituationSkill.KILL_STEAL_POINTS;
+                        ? FriendlyEnemyResult.KILL_STEAL_POINTS : -FriendlyEnemyResult.KILL_STEAL_POINTS;
                 sb.append("  ").append(PlayerAnalysisTerms.battleClock(event.timeSec()))
                         .append(" ").append(selfVictim ? selfLabel : otherLabel)
                         .append("车辆被击毁 → ").append(selfLabel).append(" ")
-                        .append(selfVictim ? "-" : "+").append(PointsSituationSkill.KILL_STEAL_POINTS)
+                        .append(selfVictim ? "-" : "+").append(FriendlyEnemyResult.KILL_STEAL_POINTS)
                         .append(" / ").append(otherLabel).append(" ")
-                        .append(selfVictim ? "+" : "-").append(PointsSituationSkill.KILL_STEAL_POINTS)
+                        .append(selfVictim ? "+" : "-").append(FriendlyEnemyResult.KILL_STEAL_POINTS)
                         .append("（累计：").append(selfLabel).append(" ").append(selfDelta)
                         .append("，").append(otherLabel).append(" ").append(otherDelta).append("）\n");
             }
