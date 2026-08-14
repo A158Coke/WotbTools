@@ -149,7 +149,8 @@ final class TeamPromptLocalizer {
             2. result 行的胜负来源以 resultSource 为准，只有三级证据，BATTLE_RESULTS 存在时最高优先级：
                a. BATTLE_RESULTS：来自 battle_results#winnerTeam 的权威结算；LLM 不得用事件流、存活数或点数覆盖胜方；
                b. SURVIVOR_SETTLEMENT：结算存活状态推导（一方全员阵亡）；非 battle result 权威，不得伪装成权威结算；
-               c. 无权威胜方（winnerTeam 缺失）时胜负为未知：禁止用占点分或存活数推断胜方。
+               c. 无权威胜方（winnerTeam 缺失）时：仅当 rosterComplete=true 且一方全员阵亡，才可用 SURVIVOR_SETTLEMENT
+                  按完整结算存活状态推导全歼胜方；双方均有存活时胜方未知，禁止比较占点字段推断胜方。
                d. 结算阵容不完整（SETTLEMENT_ROSTER_INCOMPLETE=true / pointsTotalsUnavailable=true）时，逐人/双方
                   占点分均为部分数据：禁止用残缺点数推断胜方或「时间耗尽/达到 1000 分」结束方式，点数结束方式只能写「点数判定」。
             3. 全歼语义按存活情况双向判定（与 resultSource 无关）：
@@ -178,7 +179,7 @@ final class TeamPromptLocalizer {
             2. The win/loss line must be read with resultSource; there are only three evidence levels, and BATTLE_RESULTS has the highest priority when present:
                a. BATTLE_RESULTS: authoritative settlement from battle_results#winnerTeam; never override the winner with event-stream observations, survival counts, or points;
                b. SURVIVOR_SETTLEMENT: derived from settlement survival state (one team fully destroyed); not an authoritative battle-result winner, never present it as one;
-               c. Without an authoritative winner (winnerTeam missing) the winner is unknown: never infer it from capture points or survivor counts.
+               c. Without an authoritative winner (winnerTeam missing): only when rosterComplete=true and one team is fully destroyed may you derive the annihilation winner via SURVIVOR_SETTLEMENT from the complete settlement survival state; when both teams have survivors the winner is unknown — never infer it by comparing capture-point fields.
                d. When the settlement roster is incomplete (SETTLEMENT_ROSTER_INCOMPLETE=true / pointsTotalsUnavailable=true), the per-player and team capture-point totals are partial data: never infer the winner or a "time expired / reached 1000 points" end condition from partial points; the points end condition can only be written as "points decision".
             3. Annihilation wording is bidirectional and based on survivors (independent of resultSource):
                a. Your team wins and the opposing team has 0 survivors → write "won by annihilating the enemy team";
@@ -199,7 +200,7 @@ final class TeamPromptLocalizer {
             2. Строку result следует читать вместе с resultSource; существует только три уровня доказательности, и при наличии BATTLE_RESULTS он имеет высший приоритет:
                a. BATTLE_RESULTS: авторитетный итог из battle_results#winnerTeam; не подменяйте победителя наблюдениями из потока событий, числом выживших или очками;
                b. SURVIVOR_SETTLEMENT: вывод по статусу выживших из итогов (одна команда полностью уничтожена); это не авторитетное поле победителя battle result, не выдавайте его за таковое;
-               c. Без авторитетного победителя (winnerTeam отсутствует) победитель неизвестен: не выводите его из очков захвата или числа выживших.
+               c. Без авторитетного победителя (winnerTeam отсутствует): только при rosterComplete=true и полном уничтожении одной из команд можно вывести победителя полного уничтожения через SURVIVOR_SETTLEMENT из полного состояния выживших; когда в обеих командах есть выжившие, победитель неизвестен — не выводите его сравнением полей захвата.
                d. Когда состав расчёта неполон (SETTLEMENT_ROSTER_INCOMPLETE=true / pointsTotalsUnavailable=true), суммы очков захвата по игрокам и командам являются частичными данными: запрещено выводить победителя или условие завершения «время истекло / набрано 1000 очков» по неполным очкам; условие завершения по очкам можно писать только как «решение по очкам».
             3. Формулировка полного уничтожения двунаправленна и зависит от выживших (независимо от resultSource):
                a. Ваша команда победила, а у противника 0 выживших → напишите «победа полным уничтожением противника»;

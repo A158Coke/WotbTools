@@ -350,8 +350,10 @@ final class TeamEvidenceFormatter {
                         + "禁止用tick数或占点分计算终局比分; 击毁车辆通常会改变双方点数"
                         + "(每击杀夺取对方40分、本方掉人损失40分), 但结算字段 victoryPointsEarned 是否已含该调整"
                         + "未经证明, 禁止用「占点分+40×击杀−40×阵亡」等公式计算结果冒充终局比分; "
-                        + "标准规则下双方均有存活且时长<7分钟 → 达到1000分上限提前获胜(胜方=1000, 可能略超), 失败方比分未知; "
-                        + "时间耗尽(≥7分钟)或无法证明时终局比分一律 UNKNOWN, 禁止编造双方精确比分\n");
+                        + "无权威胜方(winnerTeam缺失)时: 仅当 rosterComplete=true 且一方全员阵亡才可用"
+                        + "SURVIVOR_SETTLEMENT 按完整结算存活状态推导全歼胜方, 双方均有存活时胜方未知, "
+                        + "禁止比较占点字段推断胜方; 只有 winnerTeam 已知且 REACHED_1000 时才输出具体胜方"
+                        + "finalScore=1000(可能略超), 失败方终局比分一律 UNKNOWN, 禁止编造双方精确比分\n");
             }
         } else {
             writer.append("team victoryPointsEarned=UNKNOWN victoryPointsSeized=UNKNOWN\n");

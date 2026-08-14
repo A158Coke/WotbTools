@@ -65,11 +65,15 @@ let lastFrameTs = null
 const mapEl = ref(null)
 const view = reactive({ scale: 1, tx: 0, ty: 0 })
 const PAN_THRESHOLD_PX = 5
+const PINCH_THRESHOLD_PX = 5
 const ZOOM_STEP = 1.2
 const pointers = new Map()
 let panStart = null
 let pinchStart = null
 let suppressClick = false
+// 当前交互是否为真实手势（单指拖动超阈值 / 双指捏合距离或中点移动超阈值）：
+// 手势结束后的首个 click 必须被吞掉，纯点击车辆仍正常选中
+let gestureMoved = false
 
 function applyView(next) {
   const clamped = clampViewPan(
@@ -83,6 +87,11 @@ function applyView(next) {
 }
 
 const viewportStyle = computed(() => `transform: translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`)
+
+// 车辆标记固定屏幕尺寸：标记中心锚定在地图坐标（left/top % 经 viewport 变换），
+// 标记本体按 1/view.scale 反缩放，保证 28px/22px 在 1×–4× 下不变；
+// hull/turret 的方向旋转在子元素 img 上，不受该反缩放影响。
+const markerTransform = computed(() => `translate(-50%, -50%) scale(${1 / view.scale})`)
 
 /** 指针 client 坐标 → 相对地图容器的**屏幕坐标**（zoomViewAt 契约，不参与任何变换）。 */
 function screenPoint(clientX, clientY) {
@@ -103,7 +112,16 @@ function pinchInfo() {
 
 function onPointerDown(e) {
   suppressClick = false
+  gestureMoved = false
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+  // 指针捕获（受支持时）：指针移出地图仍持续收到 move/up；不支持的环境走 window 级兜底
+  try {
+    if (typeof e.target.setPointerCapture === 'function') {
+      e.target.setPointerCapture(e.pointerId)
+    }
+  } catch {
+    // 某些测试环境不支持指针捕获，忽略
+  }
   if (pointers.size === 1) {
     panStart = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false }
   } else if (pointers.size === 2) {
@@ -115,7 +133,8 @@ function onPointerDown(e) {
       anchorScreen: screenPoint(info.mid.x, info.mid.y),
       scale: view.scale,
       tx: view.tx,
-      ty: view.ty
+      ty: view.ty,
+      moved: false
     }
     panStart = null
   }
@@ -126,6 +145,12 @@ function onPointerMove(e) {
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
   if (pointers.size === 2 && pinchStart) {
     const { mid, dist } = pinchInfo()
+    if (!pinchStart.moved
+        && (Math.abs(dist - pinchStart.dist) > PINCH_THRESHOLD_PX
+            || Math.hypot(mid.x - pinchStart.mid.x, mid.y - pinchStart.mid.y) > PINCH_THRESHOLD_PX)) {
+      pinchStart.moved = true
+      gestureMoved = true
+    }
     if (pinchStart.dist > 0 && dist > 0) {
       const next = zoomViewAt(
         { scale: pinchStart.scale, tx: pinchStart.tx, ty: pinchStart.ty },
@@ -143,15 +168,30 @@ function onPointerMove(e) {
     const dy = e.clientY - panStart.y
     if (!panStart.moved && Math.hypot(dx, dy) < PAN_THRESHOLD_PX) return
     panStart.moved = true
+    gestureMoved = true
     applyView({ scale: view.scale, tx: panStart.tx + dx, ty: panStart.ty + dy })
   }
 }
 
 function onPointerUp(e) {
   if (!pointers.delete(e.pointerId)) return
-  if (panStart && panStart.moved) suppressClick = true
+  if (gestureMoved) suppressClick = true
+  try {
+    if (typeof e.target.releasePointerCapture === 'function') {
+      e.target.releasePointerCapture(e.pointerId)
+    }
+  } catch {
+    // 忽略（无捕获或已释放）
+  }
   if (pointers.size < 2) pinchStart = null
-  if (pointers.size === 0) panStart = null
+  if (pointers.size === 0) {
+    panStart = null
+    gestureMoved = false
+  } else if (pointers.size === 1 && pinchStart == null && panStart == null) {
+    // 捏合结束剩下一根手指：以该手指为新基线继续平移，状态不卡死
+    const [p] = [...pointers.values()]
+    panStart = { x: p.x, y: p.y, tx: view.tx, ty: view.ty, moved: false }
+  }
 }
 
 /** 拖动/捏合结束后吞掉随之而来的 click 避免误选车；未拖动的点击正常到达车辆按钮。 */
@@ -168,6 +208,7 @@ function resetView() {
 }
 
 onMounted(() => {
+  window.addEventListener('pointermove', onPointerMove)
   window.addEventListener('pointerup', onPointerUp)
   window.addEventListener('pointercancel', onPointerUp)
 })
@@ -251,8 +292,14 @@ function toggleType(type) {
 
 onBeforeUnmount(() => {
   if (rafId != null) cancelAnimationFrame(rafId)
+  window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
   window.removeEventListener('pointercancel', onPointerUp)
+  pointers.clear()
+  panStart = null
+  pinchStart = null
+  gestureMoved = false
+  suppressClick = false
 })
 
 // ---- 数据 ----
@@ -593,7 +640,7 @@ const mapStyle = computed(() => ({
         type="button"
         class="pb-vehicle"
         :class="{ 'pb-last-known': st.lastKnown && !st.destroyed, 'pb-destroyed': st.destroyed, 'pb-recorder': st.recorder, 'pb-selected': selectedAccountId === st.vehicle.accountId }"
-        :style="{ left: markerLeft(st.pos.x), top: markerTop(st.pos.y) }"
+        :style="{ left: markerLeft(st.pos.x), top: markerTop(st.pos.y), transform: markerTransform }"
         :aria-label="`${st.vehicle.playerName}: ${$t(st.destroyed ? 'recon.map.playback.state_destroyed' : (st.covered ? 'recon.map.playback.state_position_reported' : 'recon.map.playback.state_position_stale'))}`"
         :data-test="`pb-marker-${st.vehicle.accountId}`"
         @click="selectVehicle(st.vehicle)"

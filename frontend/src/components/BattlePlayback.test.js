@@ -480,9 +480,150 @@ describe('map zoom and pan', () => {
     const style = wrapper.find('[data-test="pb-viewport"]').attributes('style')
     expect(style).toContain('scale(1)')
     expect(style).toContain('translate(0px, 0px)')
-    // 图层对齐契约：transform 只在 viewport 单层；标记 left/top（%）与 svg 自身不随缩放变化
-    expect(wrapper.find('[data-test="pb-marker-1001"]').attributes('style')).toBe(markerStyleBefore)
+    // 图层对齐契约：transform 只在 viewport 单层；标记 left/top（%）不随缩放变化，
+    // 标记反缩放随 view.scale 回到 1（scale(1)），svg 自身无 style
+    const markerAfter = wrapper.find('[data-test="pb-marker-1001"]').attributes('style')
+    const leftTop = (s) => s.match(/left: ([^;]+); top: ([^;]+);/).slice(1, 3)
+    expect(leftTop(markerAfter)).toEqual(leftTop(markerStyleBefore))
+    expect(markerAfter).toContain('scale(1)')
     expect(wrapper.find('.pb-svg').attributes('style')).toBeUndefined()
+  })
+})
+
+describe('fixed-size vehicle markers', () => {
+  function parseMarkerScale(style) {
+    const m = style.match(/scale\(([-\d.]+)\)/)
+    return m ? Number(m[1]) : null
+  }
+
+  function viewportScale(wrapper) {
+    const m = wrapper.find('[data-test="pb-viewport"]').attributes('style').match(/scale\(([-\d.]+)\)/)
+    return Number(m[1])
+  }
+
+  it('marker inverse scale keeps screen size fixed at 1x/2x/4x', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const marker = wrapper.find('[data-test="pb-marker-1001"]')
+    // 1×：反缩放 1
+    expect(parseMarkerScale(marker.attributes('style'))).toBeCloseTo(1)
+    // 2×（两次 wheel）
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+    const s2 = viewportScale(wrapper)
+    expect(s2).toBeGreaterThan(1)
+    expect(parseMarkerScale(marker.attributes('style'))).toBeCloseTo(1 / s2, 10)
+    // 4×（clamp）
+    for (let i = 0; i < 12; i++) {
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+    }
+    expect(viewportScale(wrapper)).toBe(4)
+    expect(parseMarkerScale(marker.attributes('style'))).toBeCloseTo(0.25, 10)
+  })
+
+  it('marker map-coordinate anchor and child rotation/overlays survive zooming', async () => {
+    stubRaf()
+    const overview = makeOverview()
+    overview.playback.vehicles[0].deathSec = 30 // destroyed 结构：hull/turret + ✕
+    const wrapper = mountPlayback(overview, 40)
+    await flushPromises()
+    const marker = wrapper.find('[data-test="pb-marker-1001"]')
+    const leftTopBefore = marker.attributes('style').match(/left: ([^;]+); top: ([^;]+);/).slice(1, 3)
+    const hullRotateBefore = marker.findAll('img')[0].attributes('style')
+    const turretRotateBefore = marker.findAll('img')[1].attributes('style')
+    expect(marker.classes()).toContain('pb-destroyed')
+    expect(marker.find('.pb-death').exists()).toBe(true)
+    for (let i = 0; i < 4; i++) {
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+    }
+    const leftTopAfter = marker.attributes('style').match(/left: ([^;]+); top: ([^;]+);/).slice(1, 3)
+    expect(leftTopAfter).toEqual(leftTopBefore) // 中心仍锚定同一地图坐标
+    expect(marker.findAll('img')[0].attributes('style')).toBe(hullRotateBefore) // 旋转不被反缩放覆盖
+    expect(marker.findAll('img')[1].attributes('style')).toBe(turretRotateBefore)
+    expect(marker.find('.pb-death').exists()).toBe(true) // ✕ 随标记保持固定屏幕尺寸（同一结构）
+  })
+})
+
+describe('gesture click suppression and pointer cleanup', () => {
+  it('pinch followed by a click does not select the vehicle; next plain click does', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const viewport = wrapper.find('[data-test="pb-viewport"]')
+    await viewport.trigger('pointerdown', { pointerId: 1, clientX: 0, clientY: 0 })
+    await viewport.trigger('pointerdown', { pointerId: 2, clientX: 100, clientY: 0 })
+    await viewport.trigger('pointermove', { pointerId: 2, clientX: 220, clientY: 0 })
+    await viewport.trigger('pointerup', { pointerId: 1 })
+    await viewport.trigger('pointerup', { pointerId: 2 })
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
+    expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(false)
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
+    expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(true)
+  })
+
+  it('plain click selects and sub-threshold single-finger move is not a drag', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const viewport = wrapper.find('[data-test="pb-viewport"]')
+    await viewport.trigger('pointerdown', { pointerId: 1, clientX: 10, clientY: 10 })
+    await viewport.trigger('pointermove', { pointerId: 1, clientX: 12, clientY: 12 }) // <5px
+    await viewport.trigger('pointerup', { pointerId: 1 })
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
+    expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(true)
+  })
+
+  it('pointerup on window cleans state; next pan starts from a fresh baseline', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const viewport = wrapper.find('[data-test="pb-viewport"]')
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 }) // scale>1 才可平移
+    await viewport.trigger('pointerdown', { pointerId: 1, clientX: 10, clientY: 10 })
+    await viewport.trigger('pointermove', { pointerId: 1, clientX: 60, clientY: 30 }) // pan +50/+20
+    const up = new window.Event('pointerup')
+    up.pointerId = 1
+    window.dispatchEvent(up) // 指针移出元素后在 window 上结束
+    await viewport.trigger('pointerdown', { pointerId: 2, clientX: 20, clientY: 20 })
+    await viewport.trigger('pointermove', { pointerId: 2, clientX: 30, clientY: 20 })
+    expect(viewport.attributes('style')).toContain('translate(60px, 20px)') // 上次 50,20 + 新位移 10,0
+    await viewport.trigger('pointerup', { pointerId: 2 })
+  })
+
+  it('pinch ending with one finger left continues panning (no stuck state)', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const viewport = wrapper.find('[data-test="pb-viewport"]')
+    await viewport.trigger('pointerdown', { pointerId: 1, clientX: 0, clientY: 0 })
+    await viewport.trigger('pointerdown', { pointerId: 2, clientX: 100, clientY: 0 })
+    await viewport.trigger('pointermove', { pointerId: 2, clientX: 200, clientY: 0 })
+    await viewport.trigger('pointerup', { pointerId: 2 }) // 剩下一根手指
+    await viewport.trigger('pointermove', { pointerId: 1, clientX: 50, clientY: 30 })
+    const style = viewport.attributes('style')
+    expect(style).toContain('scale(2)')
+    expect(style).toContain('translate(50px, 30px)')
+    await viewport.trigger('pointerup', { pointerId: 1 })
+  })
+
+  it('unmount removes window listeners and pointer state', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const removeSpy = vi.spyOn(window, 'removeEventListener')
+    await wrapper.find('[data-test="pb-viewport"]').trigger('pointerdown', { pointerId: 1, clientX: 0, clientY: 0 })
+    wrapper.unmount()
+    expect(removeSpy).toHaveBeenCalledWith('pointermove', expect.any(Function))
+    expect(removeSpy).toHaveBeenCalledWith('pointerup', expect.any(Function))
+    expect(removeSpy).toHaveBeenCalledWith('pointercancel', expect.any(Function))
+    removeSpy.mockRestore()
+    const up = new window.Event('pointerup')
+    up.pointerId = 1
+    window.dispatchEvent(up)
+    const move = new window.Event('pointermove')
+    move.pointerId = 1
+    window.dispatchEvent(move)
   })
 })
 

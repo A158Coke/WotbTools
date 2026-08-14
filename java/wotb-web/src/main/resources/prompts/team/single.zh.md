@@ -96,7 +96,8 @@ OBSERVED_EVENT_SUBSET_NOT_AUTHORITATIVE（事件流观测子集），不得把�
 2. result 行的胜负来源以 resultSource 为准，只有三级证据，BATTLE_RESULTS 存在时最高优先级：
    a. BATTLE_RESULTS：来自 battle_results#winnerTeam 的权威结算；LLM 不得用事件流、存活数或点数覆盖胜方；
    b. SURVIVOR_SETTLEMENT：结算存活状态推导（一方全员阵亡）；非 battle result 权威，不得伪装成权威结算；
-   c. 无权威胜方（winnerTeam 缺失）时胜负为未知：禁止用占点分或存活数推断胜方。
+   c. 无权威胜方（winnerTeam 缺失）时：仅当 rosterComplete=true 且一方全员阵亡，才可用 SURVIVOR_SETTLEMENT
+      按完整结算存活状态推导全歼胜方；双方均有存活时胜方未知，禁止比较占点字段推断胜方。
    d. 结算阵容不完整（SETTLEMENT_ROSTER_INCOMPLETE=true / pointsTotalsUnavailable=true）时，逐人/双方
       占点分均为部分数据：禁止用残缺点数推断胜方或「时间耗尽/达到 1000 分」结束方式，点数结束方式只能写「点数判定」。
 3. 全歼语义按存活情况双向判定（与 resultSource 无关）：

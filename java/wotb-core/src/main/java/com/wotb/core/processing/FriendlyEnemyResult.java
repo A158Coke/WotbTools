@@ -47,13 +47,13 @@ public final class FriendlyEnemyResult {
     }
 
     /**
-     * 点数胜负的结束方式（supremacy 规则）。
+     * 点数胜负的结束方式（supremacy 规则，项目所有者确认的 420s/1000 业务规则）。
      *
-     * <p>点数胜负只可能发生在两种情形：任一方达到 1000 分立即获胜（REACHED_1000），
-     * 或时间耗尽时比较点数、高者胜（TIME_EXPIRED）。若点数决胜但双方胜利点数均缺失
-     * （≤0），无法判定结束方式 → UNKNOWN；非点数胜负 → NOT_APPLICABLE。
-     * 仅当结束时刻双方均未全员阵亡（pointsDecided=true）时适用；一方全员阵亡即全歼获胜，
-     * pointsEndReason 恒为 NOT_APPLICABLE。</p>
+     * <p>仅当结束时刻双方均有存活（pointsDecided=true，调用方保证）时适用；一方全员阵亡即
+     * 全歼获胜，pointsEndReason 恒为 NOT_APPLICABLE。判定契约（不使用任何点数公式）：
+     * 标准业务规则 + 时长&lt;420s → REACHED_1000（达到 1000 分上限提前获胜；胜方未知时只知
+     * 「有人达到1000」，不把1000分配给任何队伍）；标准业务规则 + 时长≥420s → TIME_EXPIRED
+     * （时间耗尽，双方终局比分未知）；其余（类别未知/rosterComplete=false/时长未知）→ UNKNOWN。</p>
      */
     public enum PointsEndReason {
         /** 非点数胜负（全歼 / 未知）。 */
@@ -110,16 +110,19 @@ public final class FriendlyEnemyResult {
     }
 
     /**
-     * 团队赛（supremacy 争霸赛）胜负解析，供 team perspective 使用。
-     *
-     * <p>规则：团队赛一定是争霸赛；结束时刻若任意一方全员阵亡则对方获胜（结算级推导，
-     * 仅当 {@link Battle#rosterComplete} 为 true 时；名册/战绩不完整时不得用存活数推导胜方），
-     * 若双方都未全员阵亡则说明是某一方点数胜利（比较占点得分推断，方向一致时胜方高；
-     * 仅当 rosterComplete 为 true，残缺点数不得推断胜方）。
-     * 点数胜利的结束方式按双方胜利点数区分：任一方 ≥1000 为提前获胜，均 <1000 为时间耗尽；
-     * rosterComplete 不为 true 时 pointsEndReason 降级为 UNKNOWN（只能写通用「点数判定」）。
-     * 结算 winnerTeam 存在时始终以其为准（胜方不降级，但点数结束方式仍受完整前提约束）。
-     * 数据不足/点数相同仍返回 DRAW_OR_UNKNOWN。</p>
+     * 团队赛（supremacy 争霸赛）胜负与结束方式解析，供 team perspective 使用。统一契约：
+     * <ul>
+     *   <li>BATTLE_RESULTS：结算 winnerTeam 权威胜方，存在时始终以其为准；</li>
+     *   <li>SURVIVOR_SETTLEMENT：winnerTeam 缺失时，仅当 rosterComplete=true 且一方全员阵亡，
+     *       才按完整结算存活状态推导全歼胜方；</li>
+     *   <li>双方均有存活且 winnerTeam 缺失：胜方 UNKNOWN——禁止比较 victoryPointsEarned/Seized
+     *       推断胜方（该字段精确语义未经证明）；</li>
+     *   <li>rosterComplete=false：禁止用零存活/部分点数/时长推导结束方式（pointsEndReason=UNKNOWN）；</li>
+     *   <li>完整阵容 + 双方均有存活 + 标准业务规则（项目所有者确认的 7 分钟/1000 分）+ 时长&lt;420s →
+     *       REACHED_1000（winnerTeam 缺失时只知「有人达到1000」，不把1000分配给任何队伍）；</li>
+     *   <li>完整阵容 + 双方均有存活 + 标准业务规则 + 时长 ≥420s → TIME_EXPIRED；</li>
+     *   <li>其余 → UNKNOWN/NOT_APPLICABLE；任何点数公式不得用于终局比分。</li>
+     * </ul>
      */
     public static TeamBattleWinner resolveTeamBattle(final Battle battle, final int recorderTeam) {
         if (battle == null || battle.players == null
