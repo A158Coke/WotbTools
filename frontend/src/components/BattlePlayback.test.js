@@ -533,17 +533,40 @@ describe('fixed-size vehicle markers', () => {
 })
 
 describe('fixed-size strokes and always-visible tank name labels', () => {
-  it('tracer stroke width stays constant on screen at any zoom', async () => {
+  it('laser glow and core stroke widths stay constant on screen at any zoom', async () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
-    // 1×：炮线 1.5px
-    expect(wrapper.find('.pb-tracers').attributes('stroke-width')).toBe('1.5')
+    // 1×：外层光晕 6px / 内芯 1.75px（逐元素绑定，屏幕宽度恒定）
+    expect(wrapper.find('.pb-tracer').attributes('stroke-width')).toBe('6')
+    expect(wrapper.find('.pb-tracer-core').attributes('stroke-width')).toBe('1.75')
     for (let i = 0; i < 12; i++) {
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
     }
     // 4×：除以 view.scale 保持屏幕宽度（长度仍随地图坐标缩放）
-    expect(wrapper.find('.pb-tracers').attributes('stroke-width')).toBe('0.375')
+    expect(wrapper.find('.pb-tracer').attributes('stroke-width')).toBe('1.5')
+    expect(wrapper.find('.pb-tracer-core').attributes('stroke-width')).toBe('0.4375')
+  })
+
+  it('renders laser layers (glow + white core + impact flash) with flash expanding', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    // 命中瞬间三层齐全：光晕（阵营色）、内芯（亮白）、命中闪光圆点
+    expect(wrapper.findAll('.pb-tracer')).toHaveLength(1)
+    expect(wrapper.findAll('.pb-tracer-core')).toHaveLength(1)
+    expect(wrapper.findAll('.pb-tracer-flash')).toHaveLength(1)
+    const core = wrapper.find('.pb-tracer-core')
+    expect(core.attributes('stroke')).toBe('#fff')
+    expect(core.attributes('opacity')).toBe('1')
+    const flash = wrapper.find('.pb-tracer-flash')
+    expect(flash.attributes('cx')).toBeTruthy()
+    expect(flash.attributes('r')).toBe('3') // flashProgress=0 → 起始半径 3px
+    // 0.1s 后闪光扩散（flashProgress≈0.286 → r≈5.57）
+    const later = mountPlayback(makeOverview(), 12.1)
+    await flushPromises()
+    const rLater = Number(later.find('.pb-tracer-flash').attributes('r'))
+    expect(rLater).toBeGreaterThan(3)
   })
 
   it('marker images keep center-pivot rotation with the visible-body scale', async () => {
