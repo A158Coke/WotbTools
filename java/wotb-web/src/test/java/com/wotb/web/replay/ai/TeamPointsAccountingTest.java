@@ -78,7 +78,7 @@ class TeamPointsAccountingTest {
         TeamEvidenceFormatter.appendCaptureAndPoints(bw, early, 2, "eval-arena");
         final String content = bw.content();
         assertTrue(content.contains("pointsEndReason=REACHED_1000"), content);
-        assertTrue(content.contains("finalScore: team=1000（达到1000分提前获胜, 业务规则） opposing=UNKNOWN"), content);
+        assertTrue(content.contains("finalScore: team=1000（达到1000分上限提前获胜, 可能略超并被压缩为1000, 业务规则） opposing=UNKNOWN"), content);
         assertTrue(content.contains("team victoryPointsEarned=854"), content);
         assertTrue(content.contains("kills=4 deaths=4"), content);
         assertFalse(content.contains("knownPointsSubtotal"), content);
@@ -91,7 +91,7 @@ class TeamPointsAccountingTest {
         final TeamEvidenceFormatter.BudgetWriter bw = new TeamEvidenceFormatter.BudgetWriter();
         TeamEvidenceFormatter.appendCaptureAndPoints(bw, early, 2, "eval-arena");
         assertTrue(bw.content().contains(
-                "finalScore: team=UNKNOWN opposing=1000（达到1000分提前获胜, 业务规则）"), bw.content());
+                "finalScore: team=UNKNOWN opposing=1000（达到1000分上限提前获胜, 可能略超并被压缩为1000, 业务规则）"), bw.content());
     }
 
     @Test

@@ -12,12 +12,17 @@ import com.wotb.core.model.PlayerResult;
  */
 public final class FriendlyEnemyResult {
 
-    /** 胜利点数上限 1000 分（项目所有者确认的业务规则；提前结束时赢队终局比分恒为此值，不是从回放字段解码）。 */
+    /** 胜利点数上限 1000 分（项目所有者确认的业务规则；达到上限即提前结束，不是从回放字段解码）。
+     *  <p>终局比分可能略超上限（如 990+15=1005），回放可能压缩为 1000——不得断言精确等于 1000。 */
     public static final long SUPREMACY_WIN_POINTS = 1000;
 
     /** 击杀夺分业务规则（项目所有者确认）：每击杀夺取对方 40 分、本方掉人损失 40 分。
      *  <p>仅作叙述口径，不用于计算——结算字段 victoryPointsEarned 是否已含该调整未经证明。 */
     public static final long KILL_STEAL_POINTS = 40;
+
+    /** 占点得分业务规则（项目所有者确认，以 Maus 点数胜利样本为准）：每个据点每次 tick 为己方 +5 分
+     *  （3 个据点 = 15/tick）；tick 间隔与其它模式的点数产率未解码（UNKNOWN），不得用于计算终局比分。 */
+    public static final long BASE_TICK_POINTS = 5;
 
     /** 争霸赛固定战斗时长 420 秒（项目所有者确认的业务规则；游戏不提供时长调整）。 */
     public static final double SUPREMACY_TIME_LIMIT_SEC = 420;
