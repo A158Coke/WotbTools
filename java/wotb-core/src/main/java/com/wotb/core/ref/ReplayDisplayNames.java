@@ -104,6 +104,15 @@ public final class ReplayDisplayNames {
         return hp != null && hp > 0 ? String.valueOf(hp) : "";
     }
 
+    /** 结构化车辆满血量数值（tankopedia maxHp）；缺失或 ≤0 返回 null（供掉血百分比计算）。 */
+    public static Integer tankMaxHpValue(final long tankId) {
+        if (tankId <= 0) {
+            return null;
+        }
+        final Integer hp = TANKOPEDIA.info(tankId).maxHp();
+        return hp != null && hp > 0 ? hp : null;
+    }
+
     /** 手工维护的每辆车知识点，取自 tankopedia 的 {@code extraInfo}；空串时不输出。 */
     public static String tankExtraInfo(final long tankId) {
         if (tankId <= 0) {
