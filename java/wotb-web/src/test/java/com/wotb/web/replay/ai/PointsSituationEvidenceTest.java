@@ -3,6 +3,7 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.TeamEntityMapper;
+import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
@@ -114,6 +115,46 @@ class PointsSituationEvidenceTest {
         assertTrue(section.contains("KILL_POINTS_TIMELINE"), section);
         assertFalse(section.contains("CAPTURE_PRESENCE"), section);
         assertFalse(section.contains("PUSH_WINDOWS"), section);
+    }
+
+    @Test
+    void tollCountsOnlyOppositeTeamResolvedAttackerDamageInsideWindow() {
+        // 推进方 1001（本队）在 5 区推进窗口 [12,14]；构造窗口内外的伤害事件：
+        //  - 窗口内 2001（对方）→1001 400：计入
+        //  - 窗口内 attackerEid=999（未映射，环境伤害）→1001 300：排除（攻击者未解析）
+        //  - 窗口内 2001→2001 自伤 250：排除（自伤）
+        //  - 窗口外（t=20）2001→1001 200：不计入（事件时间不在窗口内）
+        final Battle battle = battle();
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 10, 1001L));
+        events.add(new ParticipantMappingEvent(2, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 20, 2001L));
+        events.add(pos(3, 40f, 10, -80f, 120f));  // t=10 r2（非占领点区域）
+        events.add(pos(4, 42f, 10, -80f, 0f));    // t=12 r5 进入
+        events.add(pos(5, 44f, 10, -70f, 0f));    // t=14 r5
+        events.add(pos(6, 40f, 20, 0f, 0f));
+        events.add(pos(7, 42f, 20, 10f, 0f));
+        events.add(dmg(8, 42.5f, 20, 10, 400));   // 窗口内 对方→本队：计入
+        events.add(dmg(9, 43f, 999, 10, 300));    // 攻击者未映射（环境伤害）：排除
+        events.add(dmg(10, 43.5f, 10, 10, 250));  // 自伤（推进方打自己）：排除
+        events.add(dmg(11, 50f, 20, 10, 200));    // t=20 窗口外：不计入
+        final ReplayReconstruction recon = new ReplayReconstruction(null, null, 600f, 30f,
+                List.of(), events, List.of(), null, null, null);
+
+        final String section = PointsSituationEvidence.renderSection(
+                battle, recon, 1, false, "本队", "对方");
+
+        assertTrue(section.contains("推进方窗口内承受伤害 400"), section);
+        assertTrue(section.contains("过路费排除 2 笔事件"), section);
+        assertFalse(section.contains("承受伤害 700"), "环境伤害不得计入");
+        assertFalse(section.contains("承受伤害 1150"), "窗口外伤害不得计入");
+    }
+
+    private static DamageEvent dmg(final int sequence, final float rawClock,
+                                   final int attackerEid, final int victimEid, final int amount) {
+        return new DamageEvent(sequence, new ReplayTimestamp(rawClock, null), 8,
+                DecodeConfidence.EXACT, attackerEid, victimEid, null, null, amount, false);
     }
 
     @Test

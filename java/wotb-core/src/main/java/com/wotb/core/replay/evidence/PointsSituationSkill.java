@@ -176,8 +176,10 @@ public final class PointsSituationSkill {
 
     /**
      * 进攻推进窗口：对每辆车识别「从非占领点区域移动进入占领点区域」——
-     * 进入时刻向前追溯到进入前连续移动的最早采样（上限 {@link #MAX_PUSH_LOOKBACK_SEC}），
-     * 向后延续到离开占领点区域为止；同队窗口按 {@link #PUSH_MERGE_GAP_SEC} 合并。
+     * 进入必须满足 previous→entry 段连续且 canonical 位移 ≥ {@link #MIN_MOVE_METERS_PER_SAMPLE}
+     * （九宫格边界小幅移动/坐标抖动不算推进）；进入时刻向前追溯到进入前连续移动的最早采样
+     * （上限 {@link #MAX_PUSH_LOOKBACK_SEC}），向后延续到离开占领点区域为止；
+     * 同队同目标区域窗口按 {@link #PUSH_MERGE_GAP_SEC} 合并，不同目标区域不合并。
      * 位置流中断（相邻采样时间差 &gt; {@link #POSITION_STREAM_GAP_SEC}）处不跨断线。
      */
     public static List<PushWindow> pushWindows(
@@ -196,7 +198,7 @@ public final class PointsSituationSkill {
             }
             perVehicle.addAll(pushWindowsOf(track, controlRegions, mapCode));
         }
-        return mergeByTeam(perVehicle);
+        return mergeByTeamAndRegion(perVehicle);
     }
 
     private static List<PushWindow> pushWindowsOf(
@@ -216,6 +218,13 @@ public final class PointsSituationSkill {
             if (inside(previous, controlRegions, mapCode)
                     || entry.timeSec() - previous.timeSec() > POSITION_STREAM_GAP_SEC) {
                 // 进入时刻前一个采样已在占领点区域，或跨位置流断线：无「从外进入」证据
+                continue;
+            }
+            // 创建窗口前必须验证 previous→entry 的 canonical 位移达到移动阈值：
+            // 九宫格边界附近的小幅移动/坐标抖动（位移 < MIN_MOVE_METERS_PER_SAMPLE）不算推进
+            final float entryDisplacement = MapRegionResolver.canonicalDistanceMeters(
+                    previous.x(), previous.z(), entry.x(), entry.z(), mapCode);
+            if (entryDisplacement < MIN_MOVE_METERS_PER_SAMPLE) {
                 continue;
             }
             final float start = approachStart(samples, i, controlRegions, mapCode);
@@ -292,11 +301,13 @@ public final class PointsSituationSkill {
         return MapRegionResolver.resolveRegionFromRaw(x, z, mapCode);
     }
 
-    /** 同队窗口按开始时刻排序、间隔 ≤ PUSH_MERGE_GAP_SEC 时合并（车辆去重，目标区取最早窗口）。 */
-    private static List<PushWindow> mergeByTeam(final List<PushWindow> windows) {
+    /** 同队同目标区域窗口按开始时刻排序、间隔 ≤ PUSH_MERGE_GAP_SEC 时合并（车辆去重）；
+     *  不同目标区域不得合并（同一队伍同时推进不同占领点区域是两个独立推进窗口）。 */
+    private static List<PushWindow> mergeByTeamAndRegion(final List<PushWindow> windows) {
         final List<PushWindow> sorted = new ArrayList<>(windows);
         sorted.sort(Comparator
                 .comparingInt(PushWindow::team)
+                .thenComparingInt(PushWindow::targetRegion)
                 .thenComparingDouble(PushWindow::startSec)
                 .thenComparingDouble(PushWindow::endSec));
         final List<PushWindow> merged = new ArrayList<>();
@@ -307,6 +318,7 @@ public final class PointsSituationSkill {
                 continue;
             }
             if (current.team() == window.team()
+                    && current.targetRegion() == window.targetRegion()
                     && window.startSec() <= current.endSec() + PUSH_MERGE_GAP_SEC) {
                 final Set<Long> accounts = new LinkedHashSet<>(current.accountIds());
                 accounts.addAll(window.accountIds());
