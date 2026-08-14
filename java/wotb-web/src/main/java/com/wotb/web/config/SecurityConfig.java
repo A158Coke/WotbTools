@@ -38,6 +38,7 @@ import static com.wotb.web.config.ApiPaths.PREVIEW;
 import static com.wotb.web.config.ApiPaths.RATING;
 import static com.wotb.web.config.ApiPaths.REPLAY_ANALYZE;
 import static com.wotb.web.config.ApiPaths.REPLAY_ANALYZE_CANCEL;
+import static com.wotb.web.config.ApiPaths.REPLAY_MAP_OVERVIEW;
 import static com.wotb.web.config.ApiPaths.REPLAY_PROCESS;
 import static com.wotb.web.config.ApiPaths.REPLAY_RECONSTRUCT_BATCH;
 import static com.wotb.web.config.ApiPaths.USERS_PATTERN;
@@ -74,7 +75,8 @@ public class SecurityConfig {
                 .requestMatchers(REPLAY_RECONSTRUCT_BATCH,
                         REPLAY_PROCESS,
                         REPLAY_ANALYZE,
-                        REPLAY_ANALYZE_CANCEL)
+                        REPLAY_ANALYZE_CANCEL,
+                        REPLAY_MAP_OVERVIEW)
                     .hasAnyRole("wotbtools-user", "wotbtools-admin")
 
                 // --- 管理员用户管理 (仅 wotbtools-admin) ---

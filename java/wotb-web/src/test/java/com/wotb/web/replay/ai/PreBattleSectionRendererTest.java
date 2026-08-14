@@ -220,4 +220,21 @@ class PreBattleSectionRendererTest {
         assertTrue(section.contains("Mobility=High"),
                 "composition key/value must follow requested language: " + section);
     }
+
+    @Test
+    void freeTextClusterTermsAreNormalizedToNaturalChinese() {
+        final PreBattleStrategicPrior clusterPrior = new PreBattleStrategicPrior(
+                new PreBattleStrategicPrior.TeamProfile(
+                        Map.of(),
+                        List.of("多车同簇推进"),
+                        List.of("主力簇分簇行动"),
+                        List.of("一簇强攻")),
+                null, List.of(), List.of(), List.of());
+        final String section = PreBattleSectionRenderer.render(clusterPrior);
+        assertTrue(section.contains("多车集群推进"), "同簇 must become 集群: " + section);
+        assertTrue(section.contains("主力集群分散行动"), "主力簇/分簇 must be normalized: " + section);
+        assertTrue(section.contains("一批强攻"), "一簇 must become 一批: " + section);
+        assertFalse(section.contains("簇"),
+                "LLM 自由文本中的「簇」必须被确定性替换（prompt 规则 8 的兜底）: " + section);
+    }
 }

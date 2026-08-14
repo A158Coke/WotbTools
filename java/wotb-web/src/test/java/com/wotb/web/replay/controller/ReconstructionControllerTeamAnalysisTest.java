@@ -13,6 +13,7 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.web.replay.MapOverviewQueryService;
 import com.wotb.web.replay.ai.AiReplayAnalysisService;
 import com.wotb.web.replay.ai.AiReplayReviewService;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
@@ -67,7 +68,7 @@ class ReconstructionControllerTeamAnalysisTest {
         aiService = mock(AiReplayAnalysisService.class);
         reviewService = spy(new AiReplayReviewService(processingFacade, aiService));
         workerExecutor = new AiReviewWorkerExecutor();
-        controller = new ReconstructionController(processingFacade, reviewService, new AiCancellationRegistry(), workerExecutor, null);
+        controller = new ReconstructionController(processingFacade, reviewService, new AiCancellationRegistry(), workerExecutor, new MapOverviewQueryService(processingFacade), null);
     }
 
     @AfterEach

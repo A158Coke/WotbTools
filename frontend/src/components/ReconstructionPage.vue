@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { localizeAiError } from '../utils/reconstruction-analysis.js'
 import AnalysisResultPanel from './AnalysisResultPanel.vue'
+import MapOverview from './MapOverview.vue'
 import ReplayInputPanel from './ReplayInputPanel.vue'
 
 const { t, locale } = useI18n()
@@ -58,6 +59,72 @@ const error = ref('')
 const analyzing = ref(false)
 const analysisResult = ref(null)
 
+// 独立地图区块（热力/路线/战局回放）：走 /api/replay/map-overview 只解析回放、不调 AI；
+// 与 AI 复盘结果解耦——不想跑 AI 复盘时也能看图。
+const mapOverview = ref(null)
+const mapLoading = ref(false)
+const mapLoaded = ref(false)
+const mapError = ref('')
+const mapSeek = ref(null)
+
+/** 手动加载地图鸟瞰：成功 200 → MapOverview；204 → 无数据（显示不可用提示）；失败 → 稳定错误码本地化。 */
+async function loadMapOverview() {
+  if (mapLoading.value || files.value.length === 0) return
+  mapLoading.value = true
+  mapError.value = ''
+  const fd = new FormData()
+  for (const f of files.value) fd.append('files', f)
+  try {
+    const r = await authedFetch('/api/replay/map-overview', fd)
+    if (r.status === 204) {
+      mapOverview.value = null
+    } else if (!r.ok) {
+      const rawBody = await r.text().catch(() => '')
+      let errorData = { code: rawBody.trim() }
+      if (rawBody.trim().startsWith('{')) {
+        try {
+          errorData = JSON.parse(rawBody.trim())
+        } catch {
+          // 保持纯文本错误码
+        }
+      }
+      throw new Error(localizeAiError(errorData, r.status, t))
+    } else {
+      mapOverview.value = await r.json()
+    }
+    mapLoaded.value = true
+  } catch (e) {
+    mapError.value = e.message || String(e)
+    mapLoaded.value = true
+  } finally {
+    mapLoading.value = false
+  }
+}
+
+/** 文件变化（新增/移除/清空）时重置地图区块。 */
+function resetMap() {
+  mapOverview.value = null
+  mapLoading.value = false
+  mapLoaded.value = false
+  mapError.value = ''
+  mapSeek.value = null
+}
+
+/**
+ * AI 报告时间跳转：确保地图已加载（未加载先拉取）并把 seek 传给 MapOverview
+ * （其 watch 自动切到战局回放视图）。先置 null 再 nextTick 写回同一数值：
+ * 连续点击同一时间戳（值不变）也会触发子组件 watch，播放器被拖走后仍会重新 seek。
+ */
+function onAiSeek(sec) {
+  if (files.value.length > 0 && !mapOverview.value && !mapLoading.value) {
+    loadMapOverview()
+  }
+  mapSeek.value = null
+  nextTick(() => {
+    mapSeek.value = sec
+  })
+}
+
 // 流式状态：当前阶段（call1 赛前预测 / evidence 证据分析 / call2 生成中 / autopsy 团队剖析）
 // 与主复盘已到达文本（token 滚动）。
 const progressStage = ref('')
@@ -92,11 +159,13 @@ function addFile(e) {
   files.value = [picked[0]]
   error.value = ''
   resetResults()
+  resetMap()
 }
 
 function removeFile(index) {
   files.value = files.value.filter((_, i) => i !== index)
   resetResults()
+  resetMap()
   error.value = ''
 }
 
@@ -104,6 +173,7 @@ function clearFile() {
   files.value = []
   error.value = ''
   resetResults()
+  resetMap()
 }
 
 /** 单文件表单（analyze 使用唯一的文件）。 */
@@ -291,10 +361,11 @@ async function readAnalyzeStream(r, controller) {
         break
       case 'done':
         if (typeof data.analysis === 'string' && data.analysis.trim()) {
+          // done 载荷的 mapOverview 不再消费：地图已拆为页面级独立区块
+          // （/api/replay/map-overview 单独加载，与 AI 复盘解耦）。
           analysisResult.value = {
             analysis: data.analysis,
-            preBattleSection: data.preBattleSection,
-            mapOverview: data.mapOverview
+            preBattleSection: data.preBattleSection
           }
           progressStage.value = 'done'
           receivedDone = true
@@ -386,6 +457,30 @@ function onPageLeave() {
         @cancel="cancelAnalyze"
       />
 
+      <!-- 独立地图区块：热力/路线/战局回放，不依赖 AI 复盘 -->
+      <div v-if="files.length" class="panel map-panel" data-test="map-panel">
+        <div class="map-panel-head">
+          <h2>{{ $t('recon.map.title') }}</h2>
+          <button
+            v-if="!mapOverview"
+            type="button"
+            class="map-load-btn"
+            data-test="map-load-btn"
+            :disabled="mapLoading"
+            @click="loadMapOverview"
+          >{{ $t(mapLoading ? 'recon.map.loading' : 'recon.map.load') }}</button>
+        </div>
+        <p v-if="mapError" class="error map-error" data-test="map-error">{{ mapError }}</p>
+        <MapOverview
+          v-if="mapOverview"
+          :overview="mapOverview"
+          :seek-to="mapSeek"
+        />
+        <p v-else-if="mapLoaded && !mapLoading" class="map-unavailable" data-test="map-unavailable">
+          {{ $t('recon.map.unavailable') }}
+        </p>
+      </div>
+
       <p v-if="error" class="error" style="margin:12px 0">{{ error }}</p>
 
       <div v-if="analyzing" class="panel streaming-panel">
@@ -398,7 +493,7 @@ function onPageLeave() {
         <div v-if="partialAnalysis" class="stream-text">{{ partialAnalysis }}</div>
       </div>
 
-      <AnalysisResultPanel v-if="analysisResult" :result="analysisResult" />
+      <AnalysisResultPanel v-if="analysisResult" :result="analysisResult" @seek="onAiSeek" />
     </template>
   </main>
 </template>
@@ -423,6 +518,32 @@ function onPageLeave() {
 .recon-page :deep(.recon-details summary) { cursor: pointer; font-size: .82rem; color: var(--accent); }
 
 .recon-page :deep(.ai-action) { margin-top: 16px; }
+
+/* 独立地图区块：标题 + 加载按钮；MapOverview 自身带边框与 tab */
+.map-panel { margin-top: 16px; }
+.map-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.map-panel-head h2 { margin: 0 0 12px; }
+.map-load-btn {
+  margin: 0 0 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-card2);
+  color: var(--text-label);
+  font-size: .8rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color .15s, color .15s;
+}
+.map-load-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-dark); }
+.map-load-btn:disabled { opacity: .6; cursor: default; }
+.map-error { margin: 0 0 8px; }
+.map-unavailable { color: var(--text-secondary); font-size: .85rem; margin: 0; }
 
 /* 流式生成面板：阶段状态 + 主复盘 token 滚动预览 */
 .streaming-panel { margin-top: 16px; }

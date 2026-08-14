@@ -500,7 +500,7 @@ describe('ReconstructionPage SSE streaming', () => {
     expect(wrapper.text()).toContain('recon.analysis_title_player')
   })
 
-  it('propagates mapOverview from done to the result panel', async () => {
+  it('does not render a map block from the done payload (map section is standalone)', async () => {
     const sse = chunkedSse()
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
@@ -518,8 +518,11 @@ describe('ReconstructionPage SSE streaming', () => {
     sse.close()
     await flushPromises()
 
-    // mapOverview 进入结果面板 → 素材存在 → 「地图鸟瞰」区块可展开
-    expect(wrapper.text()).toContain('recon.map.title')
+    // done 携带的 mapOverview 不再进入结果面板（地图已拆为页面级独立区块，
+    // 由 /api/replay/map-overview 单独加载）；结果面板无地图折叠块
+    expect(wrapper.find('[data-test="map-block"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="map-panel"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="map-load-btn"]').exists()).toBe(true)
   })
 
   it('shows localized error from an error event mid-stream', async () => {
@@ -701,6 +704,154 @@ describe('ReconstructionPage SSE streaming', () => {
     expect(reconAfter.text()).toContain('recon.analysis_title_player')
     expect(reconAfter.text()).toContain('kept alive')
   })
+
+describe('ReconstructionPage standalone map section', () => {
+  /** /api/replay/map-overview 成功响应（MapOverview JSON 由组件 stub 消费）。 */
+  function mapJsonResponse(overview) {
+    return {
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue(overview)
+    }
+  }
+
+  function mapOverviewFixture() {
+    return {
+      mapCode: 'desert_train',
+      displayName: 'Desert Sands',
+      displayNames: { zh: '黄沙荒漠', en: 'Desert Sands', ru: 'Пустынные пески' },
+      friendlyTeam: 2,
+      playableBounds: { xMin: -256, xMax: 260, yMin: -251, yMax: 254.3 },
+      gridCells: [],
+      spawnPoints: [],
+      phases: [],
+      heatmaps: { friendly: { dwell: [], damage: [], deaths: [] }, enemy: { dwell: [], damage: [], deaths: [] } },
+      routes: [],
+      arenaBonusType: 1,
+      recorderAccountId: null,
+      playback: null
+    }
+  }
+
+  /** 记录 MapOverview props（含 seekTo 变更）的 stub。 */
+  function mapStub(seen) {
+    return {
+      name: 'MapOverview',
+      props: ['overview', 'seekTo'],
+      setup(props) {
+        seen.push(props.seekTo)
+        const { watch } = require('vue')
+        watch(() => props.seekTo, v => seen.push(v))
+        return () => null
+      }
+    }
+  }
+
+  beforeEach(() => {
+    auth.ensureToken.mockResolvedValue(true)
+    auth.login.mockReset()
+    i18n.t.mockClear()
+    authState.authenticated.value = true
+    authState.roles = ['wotbtools-admin']
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it('loads map overview via the button and renders the map view without any AI', async () => {
+    const seen = []
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mapJsonResponse(mapOverviewFixture())))
+    const wrapper = mount(ReconstructionPage, {
+      global: { mocks: { $t: i18n.t }, stubs: { MapOverview: mapStub(seen) } }
+    })
+    await selectReplays(wrapper, ['map.wotbreplay'])
+    await wrapper.get('[data-test="map-load-btn"]').trigger('click')
+    await flushPromises()
+
+    // 请求打到独立端点（不经过 /api/replay/analyze）
+    const call = fetch.mock.calls.find(([url]) => String(url) === '/api/replay/map-overview')
+    expect(call).toBeDefined()
+    expect(call[1].body.has('files')).toBe(true)
+    // 地图视图挂载，overview 传入；按钮消失
+    expect(wrapper.findComponent({ name: 'MapOverview' }).exists()).toBe(true)
+    expect(wrapper.find('[data-test="map-load-btn"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="map-unavailable"]').exists()).toBe(false)
+    expect(seen).toContain(null)
+  })
+
+  it('shows the unavailable hint when the endpoint returns 204', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 204,
+      text: vi.fn().mockResolvedValue('')
+    }))
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['map.wotbreplay'])
+    await wrapper.get('[data-test="map-load-btn"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="map-unavailable"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="map-load-btn"]').exists()).toBe(true)
+  })
+
+  it('shows a localized error when the map-overview endpoint fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(errorResponse(400, 'NO_BATTLE_DATA')))
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['map.wotbreplay'])
+    await wrapper.get('[data-test="map-load-btn"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="map-error"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('recon.errors.NO_BATTLE_DATA')
+    // 失败后可重试
+    expect(wrapper.find('[data-test="map-load-btn"]').exists()).toBe(true)
+  })
+
+  it('resets the map section when the file is removed', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mapJsonResponse(mapOverviewFixture())))
+    const wrapper = mountedPage()
+    await selectReplays(wrapper, ['map.wotbreplay'])
+    await wrapper.get('[data-test="map-load-btn"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="map-panel"]').exists()).toBe(true)
+
+    await wrapper.findAll('.chipx')[0].trigger('click')
+    expect(wrapper.find('[data-test="map-panel"]').exists()).toBe(false)
+  })
+
+  it('clicking an AI report time link loads the map and seeks the playback', async () => {
+    const seen = []
+    const fetchMock = vi.fn((url) => {
+      if (String(url) === '/api/replay/map-overview') {
+        return Promise.resolve(mapJsonResponse(mapOverviewFixture()))
+      }
+      return Promise.resolve(okResponse({
+        analysis: '你在 03:20 与敌方交火',
+        preBattleSection: null
+      }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(ReconstructionPage, {
+      global: { mocks: { $t: i18n.t }, stubs: { MapOverview: mapStub(seen) } }
+    })
+    await selectReplays(wrapper, ['seek.wotbreplay'])
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+
+    const link = wrapper.find('a[href="#seek=200"]')
+    expect(link.exists()).toBe(true)
+    await link.trigger('click')
+    await flushPromises()
+
+    // 未加载时点击时间链接：自动加载地图并把 seekTo=200 传给 MapOverview
+    expect(seen).toContain(200)
+    expect(wrapper.findComponent({ name: 'MapOverview' }).exists()).toBe(true)
+    // 连续点击同一时间戳：再次 seek 200
+    await link.trigger('click')
+    await flushPromises()
+    expect(seen.filter(v => v === 200).length).toBeGreaterThanOrEqual(2)
+  })
+})
 
   it('aborts with AI_TIMEOUT when the wall-clock deadline passes during an active stream', async () => {
     vi.useFakeTimers()

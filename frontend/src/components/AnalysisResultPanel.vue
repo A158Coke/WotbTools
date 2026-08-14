@@ -1,12 +1,12 @@
 <script setup>
-import { nextTick, onBeforeUnmount, ref } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
 import MarkdownContent from './MarkdownContent.vue'
-import MapOverview from './MapOverview.vue'
-import { mapImages } from '../data/mapImages'
 
 // 普通用户页面只展示 AI 复盘正文 + 可折叠的「赛前预测」区块。
-// 后端 /api/replay/analyze 返回 { analysis, preBattleSection?, mapOverview? }；
+// 后端 /api/replay/analyze 返回 { analysis, preBattleSection? }；
 // preBattleSection 为 null/空（Call #1 失败/降级）时整个区块不渲染。
+// 地图鸟瞰（热力/路线/战局回放）已拆为页面级独立区块（ReconstructionPage 加载），
+// 不随 AI 复盘结果渲染；AI 报告时间链接经 seek 事件上抛给页面。
 const props = defineProps({
   result: {
     type: Object,
@@ -14,37 +14,15 @@ const props = defineProps({
   }
 })
 
+defineEmits(['seek'])
+
 // 默认展开，用户可折叠收起
 const preBattleOpen = ref(true)
-const mapOpen = ref(false)
-const mapSeek = ref(null)
 const copied = ref(false)
 let copyTimer
 
 function togglePreBattle() {
   preBattleOpen.value = !preBattleOpen.value
-}
-
-function toggleMap() {
-  mapOpen.value = !mapOpen.value
-}
-
-/**
- * AI 报告时间跳转：展开地图鸟瞰并让播放器 seek（MapOverview 自动切到战局回放视图）。
- * 先置 null 再 nextTick 写回同一数值：即使连续点击同一时间戳（值不变）也会触发子组件 watch，
- * 播放器被拖走后再次点击同一 03:20 仍会重新 seek 并暂停。
- */
-function onSeek(sec) {
-  mapOpen.value = true
-  mapSeek.value = null
-  nextTick(() => {
-    mapSeek.value = sec
-  })
-}
-
-// 素材开关：mapOverview 非 null 且该地图在 mapImages 中有素材时才渲染（无素材整块跳过）
-function hasMapAsset(overview) {
-  return !!(overview && overview.mapCode && mapImages[overview.mapCode])
 }
 
 /** 一键复制最终复盘正文（result.analysis；可能包含团队剖析与免责声明；不含独立的赛前预测与地图鸟瞰）。 */
@@ -131,30 +109,7 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
         :content="result.preBattleSection"
       />
     </div>
-    <div
-      v-if="hasMapAsset(result.mapOverview)"
-      class="prebattle-block"
-      data-test="map-block"
-    >
-      <button
-        type="button"
-        class="prebattle-toggle"
-        :aria-expanded="mapOpen"
-        @click="toggleMap"
-      >
-        <span class="prebattle-title">{{ $t('recon.map.title') }}</span>
-        <span class="prebattle-state">
-          {{ $t(mapOpen ? 'recon.prebattle.collapse' : 'recon.prebattle.expand') }}
-        </span>
-      </button>
-      <MapOverview
-        v-if="mapOpen"
-        class="map-overview-content"
-        :overview="result.mapOverview"
-        :seek-to="mapSeek"
-      />
-    </div>
-    <MarkdownContent class="analysis-text" :content="result.analysis" @seek="onSeek" />
+    <MarkdownContent class="analysis-text" :content="result.analysis" @seek="$emit('seek', $event)" />
   </div>
 </template>
 
@@ -208,5 +163,4 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
 .prebattle-title { font-weight: 700; }
 .prebattle-state { font-size: .78rem; color: var(--text-label); }
 .prebattle-content { margin: 8px 0 0; }
-.map-overview-content { margin: 8px 0 0; }
 </style>

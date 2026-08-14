@@ -92,7 +92,7 @@ OBSERVED_EVENT_SUBSET_NOT_AUTHORITATIVE（事件流观测子集），不得把�
 5. 只基于可观测行为（位置、移动、交火、占点）判定战术行为模式，不得把行为模式说成玩家心理意图；正文不得出现「簇/质心/候选/规则候选/PARTIAL」等内部术语，一律转成自然中文。
 
 === 争霸赛占点规则（强制，训练房/联赛恒为争霸赛） ===
-1. 集中一波（多车同簇推进）可能付出代价：失去高视野 + 被敌方偷家/占点，复盘必须权衡。
+1. 集中一波（多车集群推进）可能付出代价：失去高视野 + 被敌方偷家/占点，复盘必须权衡。
 2. result 行的胜负来源以 resultSource 为准，只有三级证据，BATTLE_RESULTS 存在时最高优先级：
    a. BATTLE_RESULTS：来自 battle_results#winnerTeam 的权威结算；LLM 不得用事件流、存活数或点数覆盖胜方；
    b. SURVIVOR_SETTLEMENT：结算存活状态推导（一方全员阵亡）；非 battle result 权威，不得伪装成权威结算；
