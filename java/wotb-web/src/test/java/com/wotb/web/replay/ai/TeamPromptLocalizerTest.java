@@ -56,5 +56,20 @@ class TeamPromptLocalizerTest {
                 "EN must keep the proven end reason with unknown winner");
         assertTrue(ru.contains("одна из команд достигла 1000 очков, бой завершён досрочно; победитель неизвестен"),
                 "RU must keep the proven end reason with unknown winner");
+        // 点数局势与攻防姿态（规则 8）：三语必须携带，EN/RU 不得残留中文
+        assertTrue(zh.contains("点数局势与攻防姿态（只基于可证明信号）"),
+                "ZH must carry the points-situation rule");
+        assertTrue(zh.contains("过路费：对方进攻推进窗口（PUSH_WINDOWS）"),
+                "ZH must carry the toll rule");
+        assertTrue(en.contains("Points situation and attack/defense posture"),
+                "EN must carry the points-situation rule");
+        assertTrue(en.contains("Toll: inside the opposing team's push window (PUSH_WINDOWS)"),
+                "EN must carry the toll rule");
+        assertTrue(ru.contains("Ситуация по очкам и стойка атаки/обороны"),
+                "RU must carry the points-situation rule");
+        assertTrue(ru.contains("Плата за проезд: в окне продвижения противника (PUSH_WINDOWS)"),
+                "RU must carry the toll rule");
+        assertFalse(en.contains("点数局势与攻防姿态"), "EN must not retain the Chinese rule");
+        assertFalse(ru.contains("点数局势与攻防姿态"), "RU must not retain the Chinese rule");
     }
 }

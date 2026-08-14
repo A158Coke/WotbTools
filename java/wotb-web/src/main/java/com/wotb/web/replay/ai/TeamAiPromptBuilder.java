@@ -104,6 +104,13 @@ public final class TeamAiPromptBuilder {
                 context.features() == null ? List.of() : context.features().members(),
                 context.reconstruction(),
                 limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
+        // 点数局势（击杀夺分时间线/占领点存在/推进窗口）：同为 optional 证据
+        TeamEvidenceFormatter.appendPointsSituation(
+                optTemp,
+                context.battle(),
+                context.reconstruction(),
+                context.perspectiveTeam(),
+                limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
         final String optBlock = optTemp.content();
 
         // 如果 mandatory（header + HPF + prior）超出 token 预算，直接抛出异常
