@@ -1,6 +1,8 @@
 # 产品路线图（Roadmap）
 
-> 产品方向（非工程 checklist）。未完成的工程任务以 GitHub Issues 追踪（见 PR 描述 Recommended GitHub Issues）。
+> 产品方向（非工程 checklist）。未完成的工程任务以 GitHub Issues 追踪：
+> [#78](https://github.com/A158Coke/WotbTools/issues/78) 大批量回放预览性能 · [#79](https://github.com/A158Coke/WotbTools/issues/79) Excel 导出结构快照测试 ·
+> [#80](https://github.com/A158Coke/WotbTools/issues/80) 版本发布清单 · [#81](https://github.com/A158Coke/WotbTools/issues/81) 用户 FAQ。
 > 已完成项见 `CHANGELOG-PRODUCT.md`；技术侧变更见 `CHANGELOG.md`。
 
 ## Now
