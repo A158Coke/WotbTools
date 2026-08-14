@@ -254,7 +254,7 @@ class TeamResultSourceBoundaryTest {
     void incompleteRoster_winnerPresent_pointsEndReasonUnknown() {
         final List<PlayerResult> players = bothRosters(true, true);
         players.get(0).victoryPointsEarned = 300;
-        players.get(7).victoryPointsEarned = 700; // 双方均 <1000，看似 TIME_EXPIRED
+        players.get(7).victoryPointsEarned = 700; // 点数无关：结束方式只按标准规则+时长+阵容完整判定
         final Battle withWinner = battle(players, 1); // rosterComplete=false
         final var resolved = FriendlyEnemyResult.resolveTeamBattle(withWinner, 1);
         assertEquals(Winner.FRIENDLY_WIN, resolved.winner());
@@ -272,7 +272,7 @@ class TeamResultSourceBoundaryTest {
     @Test
     void incompleteRoster_winnerPresent_partialReached1000StillUnknown() {
         final List<PlayerResult> players = bothRosters(true, true);
-        players.get(0).victoryPointsEarned = 1043; // 看似 REACHED_1000
+        players.get(0).victoryPointsEarned = 1043; // 点数无关：rosterComplete=false → 结束方式 fail closed
         players.get(7).victoryPointsEarned = 100;
         final Battle withWinner = battle(players, 1); // rosterComplete=false
         final var resolved = FriendlyEnemyResult.resolveTeamBattle(withWinner, 1);
@@ -321,7 +321,7 @@ class TeamResultSourceBoundaryTest {
         assertEquals("平局或未知",
                 TeamEvidenceFormatter.resolveTeamResult(timeExpiredBattle, 1, "CHRD"));
 
-        // 完整 7v7：部分分下界 ≥1000 → REACHED_1000（胜方仍未知）
+        // 完整 7v7：时长 300s < 420s（标准规则）→ REACHED_1000（胜方仍未知，与点数字段无关）
         final List<PlayerResult> reached = bothRosters(true, true);
         reached.get(0).victoryPointsEarned = 1043;
         reached.get(7).victoryPointsEarned = 100;

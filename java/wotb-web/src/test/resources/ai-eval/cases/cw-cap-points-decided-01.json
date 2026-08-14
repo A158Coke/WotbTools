@@ -27,5 +27,5 @@
       "text": "resultSource=BATTLE_RESULTS"
     }
   ],
-  "note": "双方未全灭、结算无 winnerTeam：占点分不含被动增长与击杀夺分，禁止比较推断胜方，fail closed 为未知。"
+  "note": "双方未全灭、结算无 winnerTeam：victoryPointsEarned 是否含被动增长与击杀夺分仍未证明，禁止比较推断胜方，fail closed 为未知。"
 }

@@ -290,10 +290,10 @@ final class TeamEvidenceFormatter {
         }
         if (winner.pointsDecided()) {
             writer.append("winnerSource=" + winner.source().name() + "\n");
-            // pointsDecided=true 表示结束时刻双方均未全员阵亡（非全歼）：任一方 victoryPointsEarned ≥1000
-            // → REACHED_1000；双方均 <1000 → TIME_EXPIRED（时间耗尽）；点数缺失 → UNKNOWN；
-            // 结算阵容不完整（rosterComplete=false）→ UNKNOWN，只写通用「点数判定」。
-            // 全歼获胜（一方全员阵亡）时 pointsDecided=false，不写点数结束方式。
+            // pointsDecided=true 表示结束时刻双方均未全员阵亡（非全歼）：结束方式只按
+            // 「标准业务规则 + 时长」判定，不使用任何点数字段——时长<420s → REACHED_1000，
+            // 时长≥420s → TIME_EXPIRED；类别未知/结算阵容不完整（rosterComplete=false）→ UNKNOWN，
+            // 只写通用「点数判定」。全歼获胜（一方全员阵亡）时 pointsDecided=false，不写点数结束方式。
             writer.append("pointsEndReason=" + winner.pointsEndReason().name() + "\n");
         }
         if (rosterComplete) {
@@ -324,36 +324,43 @@ final class TeamEvidenceFormatter {
                 }
             }
             if (winner.pointsDecided()) {
-                // 终局比分：回放无已验证的实时点数/终局比分解码，一律 UNKNOWN；
-                // 唯一例外：业务规则可证明的提前结束（标准规则 + 双方均有存活 + 时长<7分钟 +
-                // 权威胜方）→ 胜方达到 1000 分上限（业务规则），失败方仍 UNKNOWN。
-                final boolean provableEarly = winner.winner() != Winner.DRAW_OR_UNKNOWN
-                        && FriendlyEnemyResult.provableEarlyPointsWin(battle);
-                if (provableEarly) {
+                // 终局比分：回放无已验证的实时点数/终局比分解码。唯一可分配的是业务规则可证明的
+                // 提前结束（标准规则 + 双方均有存活 + 时长<420s → REACHED_1000）：
+                // 权威胜方（winnerTeam）已知时，胜方终局比分=1000（1000 分上限业务约定），失败方 UNKNOWN；
+                // winnerTeam 缺失时只写「某一方达到 1000 分导致提前结束，具体胜方未知」，
+                // 双方终局比分一律 UNKNOWN（结束原因 REACHED_1000 与胜方/比分三者解耦）。
+                final boolean reached1000 =
+                        winner.pointsEndReason() == FriendlyEnemyResult.PointsEndReason.REACHED_1000;
+                if (reached1000 && winner.winner() != Winner.DRAW_OR_UNKNOWN) {
                     writer.append("finalScore: team="
                             + (winner.winner() == Winner.FRIENDLY_WIN
                                     ? FriendlyEnemyResult.SUPREMACY_WIN_POINTS
-                                            + "（达到1000分上限提前获胜, 可能略超并被压缩为1000, 业务规则）" : "UNKNOWN")
+                                            + "（达到1000分上限提前结束, 业务规则）" : "UNKNOWN")
                             + " opposing="
                             + (winner.winner() == Winner.ENEMY_WIN
                                     ? FriendlyEnemyResult.SUPREMACY_WIN_POINTS
-                                            + "（达到1000分上限提前获胜, 可能略超并被压缩为1000, 业务规则）" : "UNKNOWN")
+                                            + "（达到1000分上限提前结束, 业务规则）" : "UNKNOWN")
                             + "\n");
+                } else if (reached1000) {
+                    writer.append("finalScore: team=UNKNOWN opposing=UNKNOWN "
+                            + "(某一方达到 1000 分导致提前结束, 具体胜方未知, 终局比分未知)\n");
                 } else {
                     writer.append("finalScore: team=UNKNOWN opposing=UNKNOWN "
                             + "(无已验证的实时点数/终局比分证据, 不可计算)\n");
                 }
                 writer.append("directive=争霸赛业务规则(项目所有者确认): 战斗时长固定7分钟(420s)、"
-                        + "胜利点数上限1000分(达到上限即提前结束, 终局比分可能略超上限, 回放可能压缩为1000), "
+                        + "胜利点数上限1000分(达到上限即提前结束), "
                         + "游戏不提供时长调整; arenaBonusType 只证明战斗类别, 420s/1000不是从该字段解码出来的; "
-                        + "占点得分: 每个据点每次tick为己方+3或+5分(取值依场次/模式而异, 3据点=9~15/tick), tick间隔与取值未解码, "
+                        + "每据点每tick产分与tick间隔均未解码(无任何已验证的tick产分规则), "
                         + "禁止用tick数或占点分计算终局比分; 击毁车辆通常会改变双方点数"
                         + "(每击杀夺取对方40分、本方掉人损失40分), 但结算字段 victoryPointsEarned 是否已含该调整"
                         + "未经证明, 禁止用「占点分+40×击杀−40×阵亡」等公式计算结果冒充终局比分; "
                         + "无权威胜方(winnerTeam缺失)时: 仅当 rosterComplete=true 且一方全员阵亡才可用"
                         + "SURVIVOR_SETTLEMENT 按完整结算存活状态推导全歼胜方, 双方均有存活时胜方未知, "
-                        + "禁止比较占点字段推断胜方; 只有 winnerTeam 已知且 REACHED_1000 时才输出具体胜方"
-                        + "finalScore=1000(可能略超), 失败方终局比分一律 UNKNOWN, 禁止编造双方精确比分\n");
+                        + "禁止比较占点字段推断胜方; REACHED_1000 是结束原因(某一方达到1000分导致提前结束), "
+                        + "与胜方解耦: winnerTeam 缺失时仍写「某一方达到 1000 分导致提前结束, 具体胜方未知」, "
+                        + "双方终局比分一律 UNKNOWN; 只有 winnerTeam 已知时才把胜方"
+                        + "finalScore=1000(1000分上限业务约定), 失败方终局比分一律 UNKNOWN, 禁止编造双方精确比分\n");
             }
         } else {
             writer.append("team victoryPointsEarned=UNKNOWN victoryPointsSeized=UNKNOWN\n");

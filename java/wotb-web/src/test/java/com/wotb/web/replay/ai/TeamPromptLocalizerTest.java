@@ -37,5 +37,24 @@ class TeamPromptLocalizerTest {
                 "ZH capture rule must reference resultSource");
         assertTrue(zh.contains("被敌方全歼落败"),
                 "ZH capture rule must carry bidirectional annihilation wording");
+        // 未证实的 tick 产分/超分/回放压缩不得进入三语 prompt
+        assertFalse(zh.contains("略超"), "ZH must not claim overshoot");
+        assertFalse(zh.contains("压缩为1000"), "ZH must not claim replay clamping");
+        assertFalse(zh.contains("+3 或 +5"), "ZH must not claim an unverified per-tick value");
+        assertFalse(zh.contains("15/tick"), "ZH must not claim unverified 15/tick");
+        assertFalse(en.contains("+3 or +5"), "EN must not claim an unverified per-tick value");
+        assertFalse(en.contains("15 per tick"), "EN must not claim unverified 15/tick");
+        assertFalse(en.contains("clamped to 1000"), "EN must not claim replay clamping");
+        assertFalse(en.contains("slightly exceed"), "EN must not claim overshoot");
+        assertFalse(ru.contains("+3 или +5"), "RU must not claim an unverified per-tick value");
+        assertFalse(ru.contains("15 за тик"), "RU must not claim unverified 15/tick");
+        assertFalse(ru.contains("сжат до 1000"), "RU must not claim replay clamping");
+        // 胜方未知时三语都保留已证明的结束原因（达到 1000 分提前结束），而不是降级为「点数判定」
+        assertTrue(zh.contains("某一方达到 1000 分导致提前结束，具体胜方未知"),
+                "ZH must keep the proven end reason with unknown winner");
+        assertTrue(en.contains("a team reached 1000 points, ending the battle early; the winning team is unknown"),
+                "EN must keep the proven end reason with unknown winner");
+        assertTrue(ru.contains("одна из команд достигла 1000 очков, бой завершён досрочно; победитель неизвестен"),
+                "RU must keep the proven end reason with unknown winner");
     }
 }

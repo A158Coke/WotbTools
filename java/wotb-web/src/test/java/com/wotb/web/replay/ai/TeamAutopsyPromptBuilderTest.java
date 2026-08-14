@@ -173,7 +173,7 @@ class TeamAutopsyPromptBuilderTest {
         final String content = TeamAutopsyPromptBuilder.buildUserContent(
                 sevenStats(), null, List.of(), points, "CHRD", completeBothAlive(), 1);
         assertTrue(content.contains("CHRD落败（时间耗尽点数判定）"));
-        assertTrue(content.contains("时间耗尽点数胜利"));
+        assertTrue(content.contains("本局为时间耗尽点数判定"));
         assertTrue(content.contains("叙述必须写「时间耗尽」"));
         assertTrue(content.contains("不要描述成敌方全歼"));
 
@@ -204,7 +204,7 @@ class TeamAutopsyPromptBuilderTest {
         final String content = TeamAutopsyPromptBuilder.buildUserContent(
                 sevenStats(), null, List.of(), points, "CHRD", completeBothAlive(), 1);
         assertTrue(content.contains("CHRD落败（点数判定）"));
-        assertTrue(content.contains("争霸赛点数胜利"));
+        assertTrue(content.contains("本局为争霸赛点数判定"));
     }
 
     @Test

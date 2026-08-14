@@ -3,7 +3,6 @@ package com.wotb.core;
 import com.wotb.core.model.Source;
 import com.wotb.core.parse.ReplayArchiveReader;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
-import com.wotb.core.processing.FriendlyEnemyResult;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.stream.RawReplayPacket;
@@ -126,22 +125,10 @@ class PointsEvidenceProbeTest {
                                 p.rawClockSec() - start, p.type(), pl.length, hex(pl, 48)));
                     }
                 }
-                if (battle.winnerTeam != null && battle.durationS != null
-                        && battle.durationS < 420 && FriendlyEnemyResult.rosterComplete(battle)) {
-                    // 交叉验证（INFERRED，仅诊断）：按项目所有者确认的规则「每据点每 tick +3 或 +5 分
-                    // （取值依场次/模式而异）」，胜方达到 1000 上限 ⇒ 隐含据点-tick 数区间 =
-                    // (1000 − 胜方 victoryPointsEarned) / 5 ～ (1000 − 胜方 victoryPointsEarned) / 3。
-                    // 该区间只用于对照候选事件频率，不作为任何业务结论。
-                    long winnerEarned = 0;
-                    for (final var p : battle.players) {
-                        if (p != null && p.team == battle.winnerTeam) {
-                            winnerEarned += p.victoryPointsEarned;
-                        }
-                    }
-                    System.out.println("  impliedBaseTicks(winner, INFERRED)="
-                            + ((1000.0 - winnerEarned) / 5.0) + "~" + ((1000.0 - winnerEarned) / 3.0)
-                            + " (假设终局=1000 且 earned 不含击杀分, 每tick每据点3~5分)");
-                }
+                // 已移除按未证实 tick 产分的反推计算：每据点每 tick 产分（3/5 等任何固定值）均未经回放证据或
+                // 项目所有者确认（UNVERIFIED_HYPOTHESIS），且该反推同时假设「终局=1000、earned 不含
+                // 击杀分」等多重未证明前提，不能作为证据。本探针只输出上面读取到的原始结算字段与包样本，
+                // 等待受控回放验证后再研究点数产率。
                 System.out.println("  packetTypes=" + typeCounts);
                 System.out.println("  entityMethodSubtypes=" + methodSubs);
                 System.out.println("  type7PropIds=" + propIds);
