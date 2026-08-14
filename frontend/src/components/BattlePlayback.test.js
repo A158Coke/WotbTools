@@ -545,6 +545,52 @@ describe('fixed-size vehicle markers', () => {
   })
 })
 
+describe('fixed-size strokes and high-zoom name labels', () => {
+  it('route and tracer stroke widths stay constant on screen at any zoom', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    // 1×：路线 2px / 炮线 1.5px
+    expect(wrapper.find('.pb-routes').attributes('stroke-width')).toBe('2')
+    expect(wrapper.find('.pb-tracers').attributes('stroke-width')).toBe('1.5')
+    for (let i = 0; i < 12; i++) {
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+    }
+    // 4×：除以 view.scale 保持屏幕宽度（长度仍随地图坐标缩放）
+    expect(wrapper.find('.pb-routes').attributes('stroke-width')).toBe('0.5')
+    expect(wrapper.find('.pb-tracers').attributes('stroke-width')).toBe('0.375')
+  })
+
+  it('marker images keep center-pivot rotation with the visible-body scale', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const imgs = wrapper.find('[data-test="pb-marker-1001"]').findAll('img')
+    expect(imgs.length).toBe(2)
+    for (const img of imgs) {
+      const style = img.attributes('style')
+      expect(style).toContain('translate(-50%, -50%)') // 以素材共同 pivot 居中（131% 有效车体缩放）
+      expect(style).toContain('rotate(')
+    }
+  })
+
+  it('vehicle name label appears only at 2x zoom and above', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    expect(wrapper.find('.pb-name').exists()).toBe(false)
+    for (let i = 0; i < 3; i++) { // 1.2× → 1.44× → 1.728×（<2×）
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+    }
+    expect(wrapper.find('.pb-name').exists()).toBe(false)
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 }) // 2.07×
+    const labels = wrapper.findAll('.pb-name')
+    expect(labels.length).toBe(2) // 两辆可见车都显示车名
+    expect(labels[0].text()).toContain('You')
+    expect(labels[1].text()).toContain('EnemyA')
+  })
+})
+
 describe('gesture click suppression and pointer cleanup', () => {
   it('pinch followed by a click does not select the vehicle; next plain click does', async () => {
     stubRaf()

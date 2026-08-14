@@ -304,6 +304,44 @@ final class PlayerPromptRules {
             3. «Отрыв» требует непрерывного увеличения дистанции + отсутствия прикрытия/выгоды + размена без пользы или уничтожения.
             4. При недостатке или противоречивости сигналов прямо пишите «невозможно определить по данным реплея» и не навешивайте ярлык.""";
 
+    /** Player 专用：点数局势与攻防姿态（ZH；与 prompts/player/*.zh.md 内文本逐字一致）。 */
+    static final String POINTS_SITUATION_RULE = """
+
+            === 点数局势与攻防姿态（强制，随机战个人复盘） ===
+            1. 终局前任意时刻的绝对比分未解码（实时比分/占点进度/被动占点增长均无证据），禁止编造任何中间比分、
+               精确领先幅度或「此刻领先多少分」式断言。击杀夺分时间线只表达「击杀换分项」的累计净差值，
+               是部分可证明信号，不是整体点数：禁止把击杀换分项净劣势/优势直接写成整体点数落后/领先；
+               终局点数落败只能描述终局结果，禁止反推早期任意时刻的整体点数状态。判断点数压力只能用
+               POINTS_SITUATION 段的可证明信号（击杀夺分时间线、占领点区域位置存在、推进窗口）与终局结算/结束方式。
+            2. 条件式分析（允许，须写明前提）：若双方未通过占点取得更大的点数积累（占点积累不可观测），
+               击杀换分项净劣势的一方进攻压力更大——需要进攻抢点；击杀换分项净优势的一方可以更从容地
+               防守拉交叉：评价你（与你的队伍）的进攻/抢点/防守行为时，必须先说明这是基于击杀换分项与
+               占点存在信号的推断，不得说成整体比分领先/落后。
+            3. 进攻推进大概率付出掉血代价：评价掉血必须结合点数压力情境——为抢点/进攻付出的掉血未必是失误；
+               无点数压力时的无谓掉血、无交换的单方面掉血才是问题。
+            4. 过路费：对方进攻推进窗口（PUSH_WINDOWS）内，你方对推进方造成的伤害就是过路费；窗口内对方几乎
+               无伤完成推进或达成占点存在（过路费明显不足）时，必须指出你方防守失误；伤害数字不可用
+               （OBSERVED_DAMAGE_IS_PARTIAL）时只做定性描述，不得报数字。
+            5. 信号不足或矛盾时写「无法从当前回放数据确定」，不得硬下「落后/领先」结论。""";
+
+    static final String POINTS_SITUATION_RULE_EN = """
+
+            === POINTS SITUATION AND ATTACK/DEFENSE POSTURE (mandatory, random-battle personal review) ===
+            1. The absolute score at any moment before the end is undecoded (live score, capture progress, and passive accumulation have no evidence); never invent any mid-match score, an exact lead margin, or claims like "currently behind by X points". The kill-steal timeline expresses only the cumulative net delta of the "kill-steal component" — a partial provable signal, not the overall score: never present a net kill-steal deficit/lead as an overall points disadvantage/advantage; a final points loss describes only the final result — never retro-infer the overall points state at any earlier moment. Judge points pressure only from the provable signals in the POINTS_SITUATION section (kill-steal timeline, capture-point area presence, push windows) and the final settlement / end condition.
+            2. Conditional analysis is allowed but must state its premise: if neither team accumulated more points through captures (capture accumulation is not observable), the team with a net kill-steal deficit faces greater attack pressure — it needs to attack and capture; the team with a net kill-steal lead can more comfortably defend with crossfire: when judging your (and your team's) attack/capture/defense play, always state first that this is an inference based on the kill-steal component and capture-presence signals — never present it as an overall score lead/deficit.
+            3. Attacking pushes usually cost HP: judge HP loss together with the points-pressure context — HP paid for a capture/push is not necessarily a mistake; pointless HP loss under no pressure, or one-sided loss without any trade, is the problem.
+            4. Toll: inside the opposing team's push window (PUSH_WINDOWS), the damage your team deals to the pushing team is the toll; when the opposing team completed the push or established capture-point presence almost unharmed (the toll is clearly insufficient), you must call out your team's defensive mistake; when damage numbers are unavailable (OBSERVED_DAMAGE_IS_PARTIAL), describe qualitatively only and never report numbers.
+            5. When signals are insufficient or contradictory, write "cannot be determined from the current replay data"; never force a "behind/ahead" conclusion.""";
+
+    static final String POINTS_SITUATION_RULE_RU = """
+
+            === СИТУАЦИЯ ПО ОЧКАМ И СТОЙКА АТАКИ/ОБОРОНЫ (обязательно, личный разбор случайного боя) ===
+            1. Абсолютный счёт в любой момент до конца боя не декодирован (живой счёт, прогресс захвата и пассивное накопление не имеют доказательств); запрещено выдумывать любой промежуточный счёт, точный отрыв или утверждения вида «сейчас позади на X очков». Таймлайн очков за фраги выражает только накопленную чистую разницу «компоненты очков за фраги» — частичный доказуемый сигнал, а не общий счёт: запрещено выдавать чистый минус/плюс по очкам за фраги за общее отставание/преимущество по очкам; поражение по очкам описывает только итоговый результат — запрещено обратно выводить общее состояние по очкам на любой ранний момент. Оценивайте давление по очкам только по доказуемым сигналам секции POINTS_SITUATION (таймлайн очков за фраги, присутствие в зонах точек захвата, окна продвижения) и итогу расчёта / условию завершения.
+            2. Условный анализ разрешён, но обязан указывать предпосылку: если ни одна команда не накопила больше очков захватом (накопление за захват ненаблюдаемо), команда с чистым минусом по очкам за фраги испытывает большее атакующее давление — ей нужно атаковать и захватывать точки; команда с чистым плюсом по очкам за фраги может спокойнее обороняться с перекрёстным огнём: оценивая ваши (и вашей команды) атаку/захват/оборону, всегда сначала указывайте, что это вывод на основе компоненты очков за фраги и сигналов присутствия на точках, — не выдавайте его за общий счёт впереди/позади.
+            3. Атакующее продвижение обычно стоит HP: оценивайте потерю HP вместе с давлением по очкам — HP, отданные ради захвата/атаки, не обязательно ошибка; бесполезная потеря HP без давления или односторонняя потеря без размена — настоящая проблема.
+            4. Плата за проезд: в окне продвижения противника (PUSH_WINDOWS) урон, который ваша команда наносит продвигающимся, и есть плата за проезд; когда противник почти без потерь завершил продвижение или занял точку захвата (плата явно недостаточна), обязательно укажите ошибку вашей обороны; когда цифры урона недоступны (OBSERVED_DAMAGE_IS_PARTIAL), описывайте только качественно и не называйте чисел.
+            5. При недостаточных или противоречивых сигналах пишите «невозможно определить по данным реплея»; не навязывайте вывод «позади/впереди».""";
+
     /**
      * 组装 system prompt：ZH 返回原样（字节级不变）；EN/RU 在中文基座上替换中文输出强制句
      * （输出语言、时间格式、车种与称谓规则），保留业务事实约束与注入防护。
@@ -334,7 +372,9 @@ final class PlayerPromptRules {
                 .replace(COMMON_EVIDENCE_LOGIC_RULE,
                         en ? COMMON_EVIDENCE_LOGIC_RULE_EN : COMMON_EVIDENCE_LOGIC_RULE_RU)
                 .replace(SOLO_INTENT_RULE,
-                        en ? SOLO_INTENT_RULE_EN : SOLO_INTENT_RULE_RU);
+                        en ? SOLO_INTENT_RULE_EN : SOLO_INTENT_RULE_RU)
+                .replace(POINTS_SITUATION_RULE,
+                        en ? POINTS_SITUATION_RULE_EN : POINTS_SITUATION_RULE_RU);
         if (zhPrompt.contains(ZH_TIME_RULE)) {
             return localized;
         }

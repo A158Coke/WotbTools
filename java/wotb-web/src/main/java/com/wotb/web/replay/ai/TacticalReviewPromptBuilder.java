@@ -101,6 +101,12 @@ public final class TacticalReviewPromptBuilder {
                 : "";
         boolean includeDamageWindows = !damageWindowsSection.isEmpty();
         boolean includePhases = features != null && features.phases() != null && !features.phases().isEmpty();
+        // 点数局势（击杀夺分时间线/占领点存在/推进窗口）：录像者队伍视角
+        final String pointsSituationSection = recorder != null && recorder.team() != null
+                ? PointsSituationEvidence.renderSection(
+                        battle, recon, recorder.team(), damagePartial, "你的队伍", "敌方")
+                : "";
+        boolean includePointsSituation = !pointsSituationSection.isEmpty();
         boolean includeTop = !windows.isEmpty();
         boolean includeWindowDetail = !windows.isEmpty();
 
@@ -112,7 +118,8 @@ public final class TacticalReviewPromptBuilder {
                 windowDetail, includeEvidence, includeEngagements,
                 includeEnemyPositions, enemyPositionsSection,
                 includeDamageWindows, damageWindowsSection,
-                includePhases, includeTop, includeWindowDetail, battle);
+                includePhases, includePointsSituation, pointsSituationSection,
+                includeTop, includeWindowDetail, battle);
         int estimated = estimate(estimator, TACTICAL_SYSTEM_PROMPT, content);
         boolean truncated = false;
 
@@ -130,6 +137,8 @@ public final class TacticalReviewPromptBuilder {
                 includeDamageWindows = false;
             } else if (includePhases) {
                 includePhases = false;
+            } else if (includePointsSituation) {
+                includePointsSituation = false;
             } else if (includeWindowDetail) {
                 includeWindowDetail = false;
             } else if (includeTop) {
@@ -142,7 +151,8 @@ public final class TacticalReviewPromptBuilder {
                     windowDetail, includeEvidence, includeEngagements,
                     includeEnemyPositions, enemyPositionsSection,
                     includeDamageWindows, damageWindowsSection,
-                    includePhases, includeTop, includeWindowDetail, battle);
+                    includePhases, includePointsSituation, pointsSituationSection,
+                    includeTop, includeWindowDetail, battle);
             estimated = estimate(estimator, TACTICAL_SYSTEM_PROMPT, content);
         }
 
@@ -167,6 +177,8 @@ public final class TacticalReviewPromptBuilder {
             final boolean includeDamageWindows,
             final String damageWindowsSection,
             final boolean includePhases,
+            final boolean includePointsSituation,
+            final String pointsSituationSection,
             final boolean includeTop,
             final boolean includeWindowDetail,
             final Battle battle
@@ -188,6 +200,9 @@ public final class TacticalReviewPromptBuilder {
                 sb.append("DEATH_SOURCE=").append(BattlePhaseSummary.deathSourceLabel(battle)).append('\n');
             }
             sb.append(BattlePhaseTimelineSection.renderPlayerRows(features.phases()));
+        }
+        if (includePointsSituation && !pointsSituationSection.isEmpty()) {
+            sb.append("\n\n").append(pointsSituationSection);
         }
         if (includeEngagements && features != null
                 && features.engagements() != null && !features.engagements().isEmpty()) {

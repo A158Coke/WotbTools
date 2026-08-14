@@ -373,6 +373,25 @@ final class TeamEvidenceFormatter {
                 + (regions.isEmpty() ? "UNKNOWN" : regions) + "\n");
     }
 
+    /**
+     * 点数局势证据段（P3 optional）：击杀夺分时间线 + 占领点区域位置存在 +
+     * 进攻推进窗口（含推进方窗口内承受伤害 = 防守方过路费）。
+     * 口径：实时比分未解码，只给可证明信号；OBSERVED_DAMAGE_IS_PARTIAL 时抑制伤害数字。
+     */
+    static void appendPointsSituation(
+            final BudgetWriter writer,
+            final Battle battle,
+            final ReplayReconstruction recon,
+            final int perspectiveTeam,
+            final boolean damagePartial
+    ) {
+        final String section = PointsSituationEvidence.renderSection(
+                battle, recon, perspectiveTeam, damagePartial, "本队", "对方");
+        if (!section.isEmpty()) {
+            writer.append(section);
+        }
+    }
+
     /** 单走行为候选段（TeamSoloIntentSkill 规则候选，PARTIAL；P3 optional）。 */
     static void appendSoloIntentCandidates(
             final BudgetWriter writer,

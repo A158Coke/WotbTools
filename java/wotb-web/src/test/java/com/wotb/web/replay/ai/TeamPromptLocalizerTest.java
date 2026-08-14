@@ -56,5 +56,36 @@ class TeamPromptLocalizerTest {
                 "EN must keep the proven end reason with unknown winner");
         assertTrue(ru.contains("одна из команд достигла 1000 очков, бой завершён досрочно; победитель неизвестен"),
                 "RU must keep the proven end reason with unknown winner");
+        // 点数局势与攻防姿态（规则 8）：三语必须携带，EN/RU 不得残留中文
+        assertTrue(zh.contains("点数局势与攻防姿态（只基于可证明信号）"),
+                "ZH must carry the points-situation rule");
+        // 击杀换分项 ≠ 整体点数：禁止把击杀换分项净劣势/优势说成整体落后/领先，禁止反推早期点数状态
+        assertTrue(zh.contains("击杀夺分时间线只表达「击杀换分项」的累计净差值"),
+                "ZH must scope the timeline as the kill-steal component only");
+        assertTrue(zh.contains("禁止把击杀换分项净劣势/优势直接写成整体点数落后/领先"),
+                "ZH must ban presenting the kill-steal delta as the overall score");
+        assertTrue(zh.contains("禁止反推早期任意时刻的整体点数状态"),
+                "ZH must ban retro-inferring early-window points state");
+        assertTrue(en.contains("The kill-steal timeline expresses only the cumulative net delta of the \"kill-steal component\""),
+                "EN must scope the timeline as the kill-steal component only");
+        assertTrue(en.contains("never present a net kill-steal deficit/lead as an overall points disadvantage/advantage"),
+                "EN must ban presenting the kill-steal delta as the overall score");
+        assertTrue(ru.contains("компоненты очков за фраги"),
+                "RU must scope the timeline as the kill-steal component only");
+        assertFalse(zh.contains("击杀夺分累计净劣势"), "old wording must be gone from ZH");
+        assertFalse(en.contains("a net kill-steal deficit, a points loss"), "old wording must be gone from EN");
+        assertFalse(ru.contains("чистый минус по очкам за фраги или поражение"), "old wording must be gone from RU");
+        assertTrue(zh.contains("过路费：对方进攻推进窗口（PUSH_WINDOWS）"),
+                "ZH must carry the toll rule");
+        assertTrue(en.contains("Points situation and attack/defense posture"),
+                "EN must carry the points-situation rule");
+        assertTrue(en.contains("Toll: inside the opposing team's push window (PUSH_WINDOWS)"),
+                "EN must carry the toll rule");
+        assertTrue(ru.contains("Ситуация по очкам и стойка атаки/обороны"),
+                "RU must carry the points-situation rule");
+        assertTrue(ru.contains("Плата за проезд: в окне продвижения противника (PUSH_WINDOWS)"),
+                "RU must carry the toll rule");
+        assertFalse(en.contains("点数局势与攻防姿态"), "EN must not retain the Chinese rule");
+        assertFalse(ru.contains("点数局势与攻防姿态"), "RU must not retain the Chinese rule");
     }
 }
