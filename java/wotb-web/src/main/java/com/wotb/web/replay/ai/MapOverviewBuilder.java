@@ -13,6 +13,7 @@ import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.ShotEvent;
 import com.wotb.core.replay.event.TurretDirectionChangedEvent;
 import com.wotb.core.replay.event.VehicleDestroyedEvent;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
@@ -131,9 +132,10 @@ public final class MapOverviewBuilder {
 
     /**
      * 战局回放数据：车辆（位置复用路线点，这里只补充位置上报区间）+
-     * 时间轴事件（DAMAGE/DESTROYED/KILL/POSITION_REPORTED/POSITION_STALE，按 battle-relative 秒）。
+     * 时间轴事件（DAMAGE/DESTROYED/KILL/SHOT/POSITION_REPORTED/POSITION_STALE，按 battle-relative 秒）。
+     * SHOT = 开炮但无直接伤害结果（未命中/弹跳/未击穿/吸收），只含已解析的攻击者，不含目标；
      * POSITION_REPORTED/STALE 只表达服务器位置流覆盖变化，不是点亮/失察（见 POSITION_GAP_SEC）。
-     * 无法可靠解析身份的伤害/击毁不输出对应事件，绝不编造。
+     * 无法可靠解析身份的伤害/击毁/开炮不输出对应事件，绝不编造。
      */
     private static MapOverview.Playback buildPlayback(
             final Battle battle,
@@ -183,6 +185,15 @@ public final class MapOverviewBuilder {
                 playbackEvents.add(new MapOverview.PlaybackEvent(
                         "DAMAGE", relativeSec(damage, battleStartRawClockSec),
                         attacker > 0 ? attacker : null, victim, damage.damage()));
+            } else if (event instanceof ShotEvent shot) {
+                // 开炮（无直接伤害结果）：只输出已解析的攻击者；目标 eid 含义未经证明，不输出
+                final long attacker = accountOf(shot.attackerEid(), mapping);
+                if (attacker <= 0) {
+                    continue;
+                }
+                playbackEvents.add(new MapOverview.PlaybackEvent(
+                        "SHOT", relativeSec(shot, battleStartRawClockSec),
+                        attacker, null, null));
             } else if (event instanceof VehicleDestroyedEvent destroyed) {
                 final long victim = accountOf(destroyed.entityId(), mapping);
                 if (victim <= 0) {

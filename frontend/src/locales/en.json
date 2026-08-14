@@ -826,6 +826,7 @@
                 "event_DAMAGE": "Damage",
                 "event_DESTROYED": "Destroyed",
                 "event_KILL": "Kill",
+                "event_SHOT": "Shot",
                 "event_POSITION_REPORTED": "Position reported",
                 "event_POSITION_STALE": "Position stale"
             }

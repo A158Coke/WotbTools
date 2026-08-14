@@ -290,6 +290,35 @@ describe('tracer shots', () => {
   })
 })
 
+describe('miss shot tracers', () => {
+  function shotOverview() {
+    const overview = makeOverview()
+    overview.playback.events.push({ type: 'SHOT', timeSec: 12, accountId: 1001, targetAccountId: null, damage: null })
+    overview.playback.events.push({ type: 'SHOT', timeSec: 12.1, accountId: 2001, targetAccountId: null, damage: null })
+    return overview
+  }
+
+  it('renders friendly shots along the turret direction and suppresses enemy shots (fail closed)', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(shotOverview(), 12)
+    await flushPromises()
+    const shots = wrapper.findAll('.pb-tracer-shot')
+    expect(shots).toHaveLength(1) // 仅友方开炮；敌方未证明被点亮 → 不渲染
+    expect(shots[0].attributes('x1')).toBeTruthy()
+    expect(shots[0].attributes('y2')).toBeTruthy()
+  })
+
+  it('SHOT chip toggle hides shot tracers', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(shotOverview(), 12)
+    await flushPromises()
+    expect(wrapper.findAll('.pb-tracer-shot')).toHaveLength(1)
+    const chip = wrapper.findAll('.pb-chip').find(c => c.text() === 'recon.map.playback.event_SHOT')
+    await chip.trigger('click')
+    expect(wrapper.findAll('.pb-tracer-shot')).toHaveLength(0)
+  })
+})
+
 describe('map zoom and pan', () => {
   async function zoomedWrapper() {
     stubRaf()

@@ -60,6 +60,8 @@ class ShotSpottingStreamProbeTest {
         final Map<Integer, Integer> damageSubs = new TreeMap<>();
         final Map<Integer, Integer> type5Lens = new TreeMap<>();
         final List<String> damageSamples = new ArrayList<>();
+        final List<String> non3Samples = new ArrayList<>();
+        final List<String> shortSamples = new ArrayList<>();
         final List<String> type5Samples = new ArrayList<>();
         int type8Sub8Count = 0;
         for (final RawReplayPacket p : stream.packets()) {
@@ -68,17 +70,26 @@ class ShotSpottingStreamProbeTest {
             if (p.type() == 8 && pl.length >= 8) {
                 final int sub = (pl[4] & 0xFF) | (pl[5] & 0xFF) << 8 | (pl[6] & 0xFF) << 16 | (pl[7] & 0xFF) << 24;
                 methodSubtypes.merge(sub, 1, Integer::sum);
-                if (sub == 8 && pl.length >= 22) {
+                if (sub == 8) {
                     type8Sub8Count++;
-                    // body = payload[8..]; body[13] = payload[21]（伤害子类型）
-                    final int dmgSub = pl[21] & 0xFF;
-                    damageSubs.merge(dmgSub, 1, Integer::sum);
-                    if (damageSamples.size() < 12) {
+                    if (pl.length >= 22) {
+                        // body = payload[8..]; body[13] = payload[21]（伤害子类型）
+                        final int dmgSub = pl[21] & 0xFF;
+                        damageSubs.merge(dmgSub, 1, Integer::sum);
                         final int attacker = (pl[12] & 0xFF) | (pl[13] & 0xFF) << 8 | (pl[14] & 0xFF) << 16 | (pl[15] & 0xFF) << 24;
                         final int victim = (pl[16] & 0xFF) | (pl[17] & 0xFF) << 8 | (pl[18] & 0xFF) << 16 | (pl[19] & 0xFF) << 24;
                         final int dmg = (pl[22] & 0xFF) << 8 | (pl[23] & 0xFF);
-                        damageSamples.add("len=" + pl.length + " sub=" + dmgSub + " att=" + attacker
-                                + " vic=" + victim + " dmg=" + dmg + " hex=" + hex(pl));
+                        if (dmgSub == 3 && damageSamples.size() < 4) {
+                            damageSamples.add("len=" + pl.length + " sub=3 att=" + attacker
+                                    + " vic=" + victim + " dmg=" + dmg);
+                        }
+                        if (dmgSub != 3 && non3Samples.size() < 20) {
+                            non3Samples.add("len=" + pl.length + " sub=" + dmgSub + " att=" + attacker
+                                    + " vic=" + victim + " hex=" + hex(pl));
+                        }
+                    } else if (shortSamples.size() < 20) {
+                        final int eid = (pl[0] & 0xFF) | (pl[1] & 0xFF) << 8 | (pl[2] & 0xFF) << 16 | (pl[3] & 0xFF) << 24;
+                        shortSamples.add("len=" + pl.length + " eid=" + eid + " hex=" + hex(pl));
                     }
                 }
             }
@@ -95,8 +106,12 @@ class ShotSpottingStreamProbeTest {
         methodSubtypes.forEach((s, c) -> System.out.println("  sub=" + s + " count=" + c));
         System.out.println("-- type8/sub8 body[13] damage-sub counts (total=" + type8Sub8Count + ") --");
         damageSubs.forEach((s, c) -> System.out.println("  dmgSub=" + s + " count=" + c));
-        System.out.println("-- type8/sub8 samples --");
+        System.out.println("-- type8/sub8 sub=3 hit samples --");
         damageSamples.forEach(System.out::println);
+        System.out.println("-- type8/sub8 non-3 (miss candidates) samples --");
+        non3Samples.forEach(System.out::println);
+        System.out.println("-- type8/sub8 short (len<22) samples --");
+        shortSamples.forEach(System.out::println);
         System.out.println("-- type 5 spotting len histogram --");
         type5Lens.forEach((l, c) -> System.out.println("  len=" + l + " count=" + c));
         System.out.println("-- type 5 samples --");
