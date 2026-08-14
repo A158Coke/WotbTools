@@ -73,6 +73,9 @@ const mapLoading = ref(false)
 const mapLoaded = ref(false)
 const mapError = ref('')
 const mapSeek = ref(null)
+// 地图区块折叠状态（默认展开）与面板 DOM 引用（时间链接 seek 后滚动定位）。
+const mapOpen = ref(true)
+const mapPanelEl = ref(null)
 // 换文件竞态防护：每次请求独占一个 generation（递增序号 + AbortController）；
 // 文件变化（addFile/removeFile/clearFile → resetMap）或组件真正卸载时递增序号并 abort 旧请求，
 // 旧请求在成功/失败/finally 写状态前必须校验序号，绝不覆盖新文件的 mapOverview/mapError/mapLoaded/mapLoading。
@@ -140,6 +143,12 @@ function resetMap() {
   mapLoaded.value = false
   mapError.value = ''
   mapSeek.value = null
+  mapOpen.value = true
+}
+
+/** 地图区块折叠/展开（默认展开）。 */
+function toggleMap() {
+  mapOpen.value = !mapOpen.value
 }
 
 /**
@@ -147,14 +156,18 @@ function resetMap() {
  * （其 watch 自动切到战局回放视图）。先置 null 再 nextTick 写回同一数值：
  * 连续点击同一时间戳（值不变）也会触发子组件 watch，播放器被拖走后仍会重新 seek。
  */
-function onAiSeek(sec) {
+async function onAiSeek(sec) {
   if (files.value.length > 0 && !mapOverview.value && !mapLoading.value) {
-    loadMapOverview()
+    await loadMapOverview()
   }
   mapSeek.value = null
-  nextTick(() => {
-    mapSeek.value = sec
-  })
+  await nextTick()
+  mapSeek.value = sec
+  await nextTick()
+  // 报告底部点时间链接 → 回滚到地图区块（其在分析结果面板上方），MapOverview 已自动切到战局回放视图
+  if (mapOverview.value && mapPanelEl.value) {
+    mapPanelEl.value.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 }
 
 // 流式状态：当前阶段（call1 赛前预测 / evidence 证据分析 / call2 生成中 / autopsy 团队剖析）
@@ -490,7 +503,7 @@ function onPageLeave() {
       />
 
       <!-- 独立地图区块：热力/路线/战局回放，不依赖 AI 复盘 -->
-      <div v-if="files.length" class="panel map-panel" data-test="map-panel">
+      <div v-if="files.length" class="panel map-panel" data-test="map-panel" ref="mapPanelEl">
         <div class="map-panel-head">
           <h2>{{ $t('recon.map.title') }}</h2>
           <button
@@ -501,14 +514,22 @@ function onPageLeave() {
             :disabled="mapLoading"
             @click="loadMapOverview"
           >{{ $t(mapLoading ? 'recon.map.loading' : 'recon.map.load') }}</button>
+          <button
+            v-else
+            type="button"
+            class="map-load-btn"
+            data-test="toggle-map"
+            :aria-expanded="mapOpen"
+            @click="toggleMap"
+          >{{ $t(mapOpen ? 'recon.collapse' : 'recon.expand') }}</button>
         </div>
         <p v-if="mapError" class="error map-error" data-test="map-error">{{ mapError }}</p>
         <MapOverview
-          v-if="mapOverview"
+          v-if="mapOverview && mapOpen"
           :overview="mapOverview"
           :seek-to="mapSeek"
         />
-        <p v-else-if="mapLoaded && !mapLoading" class="map-unavailable" data-test="map-unavailable">
+        <p v-else-if="mapLoaded && !mapLoading && mapOpen" class="map-unavailable" data-test="map-unavailable">
           {{ $t('recon.map.unavailable') }}
         </p>
       </div>

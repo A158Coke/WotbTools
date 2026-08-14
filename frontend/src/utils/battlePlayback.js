@@ -16,14 +16,18 @@ export const OBSERVED_GAP_SEC = 5
 export function positionAt(points, t) {
   if (!points || points.length === 0 || !Number.isFinite(t)) return null
   if (t < points[0].timeSec - 1e-6) return null
-  if (points.length === 1) {
-    // 单点：位置停在该点，但 last-known 时间保持真实采样时间（不随 currentTime 增长）
+  // t 恰为采样点（含 gap 后重新上报的首点）：直接返回该点本身；
+  // gap > OBSERVED_GAP_SEC 的断线判定只用于「两点之间」的插值，不适用于落在采样点上的时刻。
+  if (t <= points[0].timeSec + 1e-6) {
     return { x: points[0].x, y: points[0].y, timeSec: points[0].timeSec }
   }
   let prev = points[0]
   for (let i = 1; i < points.length; i++) {
     const next = points[i]
     if (t <= next.timeSec + 1e-6) {
+      if (t >= next.timeSec - 1e-6) {
+        return { x: next.x, y: next.y, timeSec: next.timeSec }
+      }
       const gap = next.timeSec - prev.timeSec
       if (gap > OBSERVED_GAP_SEC) return null
       const ratio = gap <= 0 ? 0 : Math.min(1, Math.max(0, (t - prev.timeSec) / gap))

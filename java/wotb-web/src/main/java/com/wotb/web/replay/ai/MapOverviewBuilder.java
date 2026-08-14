@@ -3,6 +3,7 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.MapNames;
+import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.processing.TeamEntityIdentity;
 import com.wotb.core.processing.TeamEntityMapper;
 import com.wotb.core.processing.TeamEntityMapping;
@@ -165,7 +166,7 @@ public final class MapOverviewBuilder {
                     entityIds, positions, events, battleStartRawClockSec, deathSec, intervals, duration);
             vehicles.add(new MapOverview.PlaybackVehicle(
                     player.accountId, player.nickname, player.tankId,
-                    player.tankName == null ? "" : player.tankName, player.team,
+                    ReplayDisplayNames.tankName(player.tankId, player.tankName), player.team,
                     intervals, deathSec, directionSamples));
         }
         if (vehicles.isEmpty()) {

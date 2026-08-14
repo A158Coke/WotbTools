@@ -779,6 +779,8 @@
         "analysis_title_player": "AI Review",
         "copy": "Copy",
         "copied": "Copied",
+        "collapse": "Collapse",
+        "expand": "Expand",
           "prebattle": {
               "title": "Pre-Battle Prediction",
               "collapse": "Collapse",

@@ -779,6 +779,8 @@
         "analysis_title_player": "AI 复盘",
         "copy": "复制",
         "copied": "已复制",
+        "collapse": "收起",
+        "expand": "展开",
         "prebattle": {
             "title": "赛前预测",
             "collapse": "收起",

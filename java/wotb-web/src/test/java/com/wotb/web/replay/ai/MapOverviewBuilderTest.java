@@ -83,6 +83,12 @@ class MapOverviewBuilderTest {
         assertNotNull(overview.playback(), "rift 有观测与名册，playback 不应为 null");
         assertTrue(overview.playback().durationSec() > 0);
         assertFalse(overview.playback().vehicles().isEmpty());
+        // 坦克名权威解析（#6/#1）：playback.vehicles[].tankName 由 tankId → tankopedia 映射，
+        // 不再是空串（空串会让前端回退显示纯数字 tankId）。
+        for (final MapOverview.PlaybackVehicle v : overview.playback().vehicles()) {
+            assertFalse(v.tankName().isBlank(), "坦克名应权威解析，非空: " + v.playerName());
+            assertFalse(v.tankName().matches("\\d+"), "坦克名不应是纯数字 tankId: " + v.playerName());
+        }
         assertFalse(overview.playback().events().isEmpty());
         assertTrue(overview.playback().events().stream()
                         .anyMatch(e -> "DAMAGE".equals(e.type())),
