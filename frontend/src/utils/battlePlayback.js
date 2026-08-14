@@ -195,6 +195,12 @@ export function trustedPositionAt(points, t) {
 /** 炮线可见窗口基础时长（游戏时间秒）；实际窗口 = TRACER_BASE_SEC × 播放倍速（1×/2×/4× 各约 1s 真实时间）。 */
 export const TRACER_BASE_SEC = 1.0
 
+/** 炮线全亮保持期（真实秒）：激光「先亮后淡」——保持期后平滑淡出到窗口结束（各倍速约 0.4s 真实时间）。 */
+export const TRACER_HOLD_REAL_SEC = 0.4
+
+/** 命中闪光窗口（真实秒）：命中端圆点扩散 + 淡出（各倍速约 0.35s 真实时间）。 */
+export const TRACER_FLASH_REAL_SEC = 0.35
+
 /** 同一次射击的判同窗口（秒）：同 attacker/target 且时间差 ≤ 该值的 DAMAGE/KILL 只画一条炮线。 */
 export const SAME_SHOT_WINDOW_SEC = 0.25
 
@@ -202,13 +208,16 @@ export const SAME_SHOT_WINDOW_SEC = 0.25
  * 已知射击事件 → 当前可见炮线（纯函数：只依赖 now/speed，seek 与倍速天然正确，无一次性定时器）。
  * 候选 = DAMAGE 与 KILL（攻击者/目标均已解析）；同刻同 attacker/target 去重为一条（优先保留 DAMAGE）；
  * 两端都必须在事件时刻有可信位置（trustedPositionAt）且不是同一辆车/同一坐标才输出。
- * nowSec ∈ [timeSec, timeSec + TRACER_BASE_SEC × speed) 时可见，opacity 随时间渐隐。
+ * nowSec ∈ [timeSec, timeSec + TRACER_BASE_SEC × speed) 时可见。
+ * 激光视觉派生：opacity 为「先亮后淡」（前 TRACER_HOLD_REAL_SEC × speed 秒全亮，
+ * 之后线性淡出到窗口结束）；flashProgress 0→1 描述命中端闪光进度（窗口
+ * TRACER_FLASH_REAL_SEC × speed 秒，扩散 + 淡出，由组件派生半径/透明度）。
  *
  * @param events         过滤后的 playback 事件（DAMAGE/KILL）
  * @param routesByAccount Map<accountId, { points: [{x,y,timeSec}] }>
  * @param nowSec         当前播放时间（battle-relative 秒）
  * @param speed          播放倍速（1/2/4）
- * @returns [{ x1, y1, x2, y2, opacity, timeSec, attackerAccountId, targetAccountId }]
+ * @returns [{ x1, y1, x2, y2, opacity, flashProgress, timeSec, attackerAccountId, targetAccountId }]
  */
 export function tracerLines(events, routesByAccount, nowSec, speed) {
   if (!Array.isArray(events) || !routesByAccount || !Number.isFinite(nowSec)) return []
@@ -254,12 +263,24 @@ export function tracerLines(events, routesByAccount, nowSec, speed) {
     const b = to ? trustedPositionAt(to.points, t) : null
     if (!a || !b) continue
     if (Math.abs(a.x - b.x) < 1e-9 && Math.abs(a.y - b.y) < 1e-9) continue
+    const elapsed = nowSec - t
+    const holdSec = TRACER_HOLD_REAL_SEC * rate
+    const fadeSpan = windowSec - holdSec
+    // 先亮后淡：保持期内全亮，之后线性淡出到窗口结束；窗口 ≤ 保持期时回退线性淡出
+    const opacity = fadeSpan > 1e-9
+      ? Math.max(0, Math.min(1, 1 - (elapsed - holdSec) / fadeSpan))
+      : Math.max(0, Math.min(1, 1 - elapsed / windowSec))
+    const flashSec = TRACER_FLASH_REAL_SEC * rate
+    const flashProgress = flashSec > 1e-9
+      ? Math.max(0, Math.min(1, elapsed / flashSec))
+      : 1
     lines.push({
       x1: a.x,
       y1: a.y,
       x2: b.x,
       y2: b.y,
-      opacity: Math.max(0, Math.min(1, 1 - (nowSec - t) / windowSec)),
+      opacity,
+      flashProgress,
       timeSec: t,
       attackerAccountId: ev.accountId,
       targetAccountId: ev.targetAccountId
