@@ -128,11 +128,12 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
      */
     private ParticipantMappingResult parseUpdateArena2(
             byte[] payload, int entityId, RawReplayPacket packet, ReplayTimestamp ts) {
-        final Map<Integer, List<Object>> root = decodeRoot(payload);
-        if (root == null) {
+        final DecodedUpdateArena2 decoded = decodeUpdateArena2(payload);
+        if (decoded == null || decoded.wrapperFieldNumber() != WRAPPER_ROSTER) {
             return null;
         }
-        // 名册映射：root field 1 = wrapper protobuf，其 field 1 = 玩家列表
+        // 名册映射：wrapper=1 → root field 1 = wrapper protobuf，其 field 1 = 玩家列表
+        final Map<Integer, List<Object>> root = decoded.root();
         final Object wrapperRaw = ProtobufDecoder.first(root, 1);
         if (!(wrapperRaw instanceof byte[] wrapperBytes)) {
             return null;
@@ -163,17 +164,20 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     }
 
     /**
-     * 解析 subtype 48 (updateArena2) 实时争霸点数广播（root field 12，PROVEN）。
-     * <p>root field 12 为重复 protobuf 消息，每条直接携带 field 1 = team（1/2）、
-     * field 2 = 当前争霸点数（已对 5 个真实回放交叉验证：字段号 12、点数区间与击毁 ±40 点事件吻合）。
-     * 只消费回放真实广播，绝不按游戏规则推算点数；结构不完整或 team/points 非法 → 跳过。</p>
+     * 解析 subtype 48 (updateArena2) 实时争霸点数广播（wrapper=13 → root field 12，PROVEN）。
+     * <p>门禁（缺一不可）：packet type 8 / subtype 48 / <b>wrapperFieldNumber == 13</b> /
+     * root field 12 存在 / 每条 nested field 1 = team（1/2）/ field 2 = 点数合法。
+     * wrapperFieldNumber != 13 时即使 root 结构相同也绝不产出点数事件。
+     * 已对 5 个真实回放交叉验证（事件数 185/161/69/204/201、点数区间与击毁 ±40 点事件吻合）；
+     * 只消费回放真实广播，绝不按游戏规则推算。</p>
      */
     private List<SupremacyPointsChangedEvent> parseSupremacyPoints(
             byte[] payload, RawReplayPacket packet, ReplayTimestamp ts) {
-        final Map<Integer, List<Object>> root = decodeRoot(payload);
-        if (root == null) {
+        final DecodedUpdateArena2 decoded = decodeUpdateArena2(payload);
+        if (decoded == null || decoded.wrapperFieldNumber() != WRAPPER_SUPREMACY_POINTS) {
             return List.of();
         }
+        final Map<Integer, List<Object>> root = decoded.root();
         final List<Object> teamBlocks = root.get(12);
         if (teamBlocks == null || teamBlocks.isEmpty()) {
             return List.of();
@@ -199,8 +203,12 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
         return out;
     }
 
-    /** 提取 subtype48 的 root protobuf（body 内 varint + msgLen + protoData）。 */
-    private static Map<Integer, List<Object>> decodeRoot(final byte[] payload) {
+    /**
+     * 提取 subtype48 的 wrapperFieldNumber + root protobuf。
+     * body 结构（已逆向确认）：body[0..3] 固定前缀 + varint(wrapperFieldNumber) +
+     * msgLen(0xFF 双字节或单字节) + protoData(root protobuf)。
+     */
+    private static DecodedUpdateArena2 decodeUpdateArena2(final byte[] payload) {
         final byte[] body = new byte[payload.length - 8];
         System.arraycopy(payload, 8, body, 0, body.length);
         try {
@@ -209,6 +217,7 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 return null;
             }
             final long[] varRes = readVarint(body, off);
+            final long wrapperFieldNumber = varRes[0];
             off = (int) varRes[1];
             if (off >= body.length) {
                 return null;
@@ -230,10 +239,22 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
             }
             final byte[] protoData = new byte[msgLen];
             System.arraycopy(body, off, protoData, 0, msgLen);
-            return ProtobufDecoder.decode(protoData);
+            return new DecodedUpdateArena2(wrapperFieldNumber, ProtobufDecoder.decode(protoData));
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** 供探针/诊断读取 subtype48 的 wrapper field_number（复用生产提取；-1=结构不完整）。 */
+    public static long readWrapperFieldNumber(final byte[] payload) {
+        final DecodedUpdateArena2 decoded = decodeUpdateArena2(payload);
+        return decoded == null ? -1 : decoded.wrapperFieldNumber();
+    }
+
+    /** 供探针/诊断读取 subtype48 的 root protobuf（复用生产提取；null=结构不完整）。 */
+    public static Map<Integer, List<Object>> readUpdateArena2Root(final byte[] payload) {
+        final DecodedUpdateArena2 decoded = decodeUpdateArena2(payload);
+        return decoded == null ? null : decoded.root();
     }
 
     private static String decodeUtf8(final Object value) {
@@ -242,6 +263,18 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
     }
 
     // ---- 内部辅助类和工具方法 ----
+
+    /** subtype48 名册映射（wrapper field_number = 1）。 */
+    public static final long WRAPPER_ROSTER = 1L;
+    /** subtype48 实时争霸点数（wrapper field_number = 13 → root field 12）。 */
+    public static final long WRAPPER_SUPREMACY_POINTS = 13L;
+
+    /** subtype48 解码结果：wrapper field_number + root protobuf（两层字段，不得混用）。 */
+    private record DecodedUpdateArena2(
+            long wrapperFieldNumber,
+            Map<Integer, List<Object>> root
+    ) {
+    }
 
     private record DamageResult(DamageEvent damageEvent, VehicleDestroyedEvent destroyedEvent) {
     }
