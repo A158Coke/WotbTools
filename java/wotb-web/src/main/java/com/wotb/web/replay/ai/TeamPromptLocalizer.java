@@ -155,10 +155,10 @@ final class TeamPromptLocalizer {
             3. 全歼语义按存活情况双向判定（与 resultSource 无关）：
                a. 本方获胜且对方 survivors=0 → 写「全歼敌方获胜」；
                b. 本方落败且本方 survivors=0 → 写「被敌方全歼落败」；
-               c. 双方均有存活车辆时，才允许进入点数结束方式判断（标准时限=随机战/官方联赛；训练房自定义时限时结束方式未知）：
+               c. 双方均有存活车辆时，才允许进入点数结束方式判断（争霸赛所有模式均为标准 7 分钟/1000 分规则，游戏不提供时长调整）：
                   任一方 knownPointsSubtotal ≥ 1000 → 写「达到 1000 分提前获胜」（部分分下界证明，精确比分未知）；
-                  标准时限且战斗时长未到 7 分钟且权威胜方存在 → 写「达到 1000 分提前获胜」，胜利方终局比分=1000（规则保证），失败方比分未知；
-                  标准时限且时长 ≥7 分钟且双方部分分均 <1000 → 写「时间耗尽后以点数优势获胜」，必须写「时间耗尽」；
+                  战斗时长未到 7 分钟且权威胜方存在 → 写「达到 1000 分提前获胜」，胜利方终局比分=1000（规则保证），失败方比分未知；
+                  时长 ≥7 分钟且双方部分分均 <1000 → 写「时间耗尽后以点数优势获胜」，必须写「时间耗尽」；
                   无法证明时限或胜负时只写「点数判定」，终局比分未知，不得编造。
             4. 禁止把失败方被全歼写成「全歼敌方获胜」；禁止把点数胜负写成全歼或常规胜利；禁止用 <1000 的中间比分作为获胜理由。
             5. 占点分/占领分（victoryPointsEarned/Seized）是逐人占点统计，不含被动占点增长与击杀夺分，不代表时间线也不是终局比分；
@@ -182,10 +182,10 @@ final class TeamPromptLocalizer {
             3. Annihilation wording is bidirectional and based on survivors (independent of resultSource):
                a. Your team wins and the opposing team has 0 survivors → write "won by annihilating the enemy team";
                b. Your team loses and your team has 0 survivors → write "lost, annihilated by the enemy team";
-               c. Only when both teams have surviving vehicles may you judge the points end condition (standard time limit = random battles / official tournaments; with custom training-room limits the end condition is unknown):
+               c. Only when both teams have surviving vehicles may you judge the points end condition (every Supremacy mode — random battles, training rooms and tournaments — uses the standard 7-minute / 1000-point rules; the game offers no battle-duration setting):
                   either team's knownPointsSubtotal >= 1000 → write "won by reaching 1000 points early" (a lower-bound proof from partial points; the exact score is unknown);
-                  standard time limit + battle shorter than 7 minutes + authoritative winner → write "won by reaching 1000 points early"; the winning team's final score is 1000 (guaranteed by the rules), the losing team's score is unknown;
-                  standard time limit + duration >= 7 minutes + both partial totals < 1000 → write "won on points after time expired" — always write "time expired";
+                  battle shorter than 7 minutes + authoritative winner → write "won by reaching 1000 points early"; the winning team's final score is 1000 (guaranteed by the rules), the losing team's score is unknown;
+                  duration >= 7 minutes + both partial totals < 1000 → write "won on points after time expired" — always write "time expired";
                   when the time limit or the winner cannot be proven, only write "points decision" and the final score is unknown — never invent it.
             4. Never write "won by annihilating the enemy team" when your own team was annihilated; never present a points win as annihilation or a regular win; never use a mid-match score below 1000 as the reason for winning.
             5. victoryPointsEarned / victoryPointsSeized are per-player capture statistics without passive accumulation or kill steals; they are not a timeline and not the final score. knownPointsSubtotal = per-player capture points + kill steals − stolen points is still a partial computable value (without passive accumulation) and is likewise not the final score — never present the totals as capture progress at a specific moment and never pass off the victoryPointsEarned sum or knownPointsSubtotal as the final score.
@@ -204,10 +204,10 @@ final class TeamPromptLocalizer {
             3. Формулировка полного уничтожения двунаправленна и зависит от выживших (независимо от resultSource):
                a. Ваша команда победила, а у противника 0 выживших → напишите «победа полным уничтожением противника»;
                b. Ваша команда проиграла, а в вашей команде 0 выживших → напишите «поражение — противник полностью уничтожил вашу команду»;
-               c. Только когда в обеих командах есть выжившие машины, оценивайте завершение по очкам (стандартный лимит времени = случайные бои / официальные турниры; при пользовательском лимите в тренировочной комнате способ завершения неизвестен):
+               c. Только когда в обеих командах есть выжившие машины, оценивайте завершение по очкам (во всех режимах Supremacy — случайные бои, тренировочные комнаты и турниры — действуют стандартные правила 7 минут / 1000 очков; в игре нет настройки длительности боя):
                   knownPointsSubtotal любой команды ≥1000 → напишите «победа досрочно по достижении 1000 очков» (доказательство по нижней границе частичных очков, точный счёт неизвестен);
-                  стандартный лимит + бой короче 7 минут + авторитетный победитель → напишите «победа досрочно по достижении 1000 очков», итоговый счёт победителя = 1000 (гарантировано правилами), счёт проигравшего неизвестен;
-                  стандартный лимит + длительность ≥7 минут + обе частичные суммы <1000 → напишите «победа по очкам после истечения времени» — обязательно укажите «время истекло»;
+                  бой короче 7 минут + авторитетный победитель → напишите «победа досрочно по достижении 1000 очков», итоговый счёт победителя = 1000 (гарантировано правилами), счёт проигравшего неизвестен;
+                  длительность ≥7 минут + обе частичные суммы <1000 → напишите «победа по очкам после истечения времени» — обязательно укажите «время истекло»;
                   если лимит времени или победитель недоказуемы, пишите только «решение по очкам», итоговый счёт неизвестен — не выдумывайте его.
             4. Не пишите «победа полным уничтожением противника», когда полностью уничтожена ваша команда; не выдавайте победу по очкам за уничтожение или обычную победу; не используйте промежуточный счёт ниже 1000 как причину победы.
             5. victoryPointsEarned / victoryPointsSeized — посчётная статистика захвата игроков без пассивного накопления и очков за фраги; это не таймлайн и не итоговый счёт. knownPointsSubtotal = очки захвата игроков + очки за фраги − потерянные очки — всё ещё частичная вычисляемая величина (без пассивного накопления) и тоже не итоговый счёт — не выдавайте суммы за прогресс захвата в конкретный момент и не выдавайте сумму victoryPointsEarned или knownPointsSubtotal за итоговый счёт.

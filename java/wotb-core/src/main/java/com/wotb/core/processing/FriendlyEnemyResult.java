@@ -310,16 +310,15 @@ public final class FriendlyEnemyResult {
     }
 
     /**
-     * 标准争霸赛规则（7 分钟 / 1000 分）可证明的战斗类别：随机战与官方联赛/锦标赛。
-     * 训练房（arenaBonusType=2）可自定义时限，类别未知时同样不可证明——此类场次禁止用
-     * 时长推断「达到 1000 分提前获胜」或「时间耗尽」。
+     * 争霸赛标准规则（7 分钟 / 1000 分）可证明的战斗类别：随机战、训练房与官方联赛/锦标赛。
+     * 游戏机制不提供战斗时长调整，故所有已知类别恒为标准规则；仅类别未知
+     * （arenaBonusType 缺失/未知值）时无法证明，需 fail closed。
      */
     public static boolean standardSupremacyRules(final Battle battle) {
         if (battle == null || battle.arenaBonusType == null) {
             return false;
         }
-        final BattleCategory category = BattleCategoryUtils.fromArenaBonusType(battle.arenaBonusType);
-        return category == BattleCategory.RANDOM || category == BattleCategory.TOURNAMENT;
+        return BattleCategoryUtils.fromArenaBonusType(battle.arenaBonusType) != BattleCategory.UNKNOWN;
     }
 
     /** 标准时限证据成立且时长未到 {@value #SUPREMACY_TIME_LIMIT_SEC} 秒——点数决胜必为达到 1000 分提前获胜。 */

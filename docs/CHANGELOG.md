@@ -36,8 +36,9 @@
 - **AI 复盘击杀夺分与掉血窗口口径**：`FriendlyEnemyResult` 新增 `KILL_STEAL_POINTS=40`（双向：
   每击杀夺取对方 40 分、本方掉人损失 40 分）、`teamKills`/`teamDeaths`/`killPointsDelta`/
   `knownPointsSubtotal`（逐人占点分+40×击杀−40×阵亡，**部分可计算值、非终局比分**）与
-  `standardSupremacyRules`/`provableEarlyPointsWin`（标准时限证据=随机战/官方联赛；训练房自定义
-  时限 fail closed）；无权威胜方时不再按占点分推断胜方（POINTS_INFERENCE 停止产出）；
+  `standardSupremacyRules`/`provableEarlyPointsWin`（争霸赛所有模式均为标准 7 分钟/1000 分
+  规则——游戏不提供时长调整；仅类别未知 fail closed）；无权威胜方时不再按占点分推断胜方
+  （POINTS_INFERENCE 停止产出）；
   `TeamEvidenceFormatter` 输出双方 kills/deaths/knownPointsSubtotal，终局比分只有可证明时输出
   （标准时限提前结束+权威胜方 → 胜方=1000、失败方 UNKNOWN；其余一律 UNKNOWN）；
   `DamageWindowClusterer.DamageWindow` 新增 `damageVsBaseMaxHpPct`（累计伤害/基础满血量，
