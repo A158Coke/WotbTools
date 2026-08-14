@@ -20,6 +20,6 @@
 ## AI 复盘前端边界
 
 - SSE：`ReconstructionPage.vue` 用 fetch `ReadableStream` 解析 `/api/replay/analyze`；安全超时 `AI_ANALYZE_TIMEOUT_MS = 1_100_000` 与后端 1100s/nginx 1120s 对齐（改超时必须三层同步）。
-- 地图鸟瞰素材唯一权威 `src/data/mapImages.js`；新增地图素材走 `docs/map-catalog.md` 流程。
+- 地图鸟瞰素材唯一权威 `src/data/mapImages.js`；新增地图素材走 `docs/reference/maps.md` 流程。
 - 战局回放方向语义：位置流覆盖（`POSITION_REPORTED/POSITION_STALE`）≠ 点亮；方向公式 `turretWorldYawDeg = normalize(hullYawDeg + turretRelativeYawDeg)`（单位度，最短圆弧插值见 `utils/battlePlayback.js`）；不得用 CSS filter 换阵营色、不得伪造朝向。
 - **双层坦克标记契约**：复用 `src/assets/tank-icons/tank-marker-{friendly,enemy}-{hull,turret}.png`（512×512 RGBA、共同 pivot 256,256）；hull 按 `hullYawDeg`、turret 按 `turretWorldYawDeg` 整体旋转，炮管不得脱离炮塔；录像者 halo/选中 ring/最后已知淡化/阵亡 ✕ 为独立 overlay。规格见 `docs/assets/battle-replay/*` 与 `frontend/src/assets/tank-icons/README.md`。

@@ -37,28 +37,17 @@ flowchart LR
 
 ## 核心工程取舍
 
-1. **权威结算 > 事件流观测**：伤害 / 死亡以 `battle_results` 为准；事件流只是观测子集，覆盖不足时抑制数字（`OBSERVED_DAMAGE_IS_PARTIAL`），绝不并排展示两套冲突口径。
-2. **SSE 流式 + 单次尝试**：`/api/replay/analyze` 为 `text/event-stream`；AI 不流内重试，失败保留已输出部分；超大 delta 按句分块转发保证逐段出字。
-3. **Call #2 默认关闭 thinking**：DeepSeek 推理模式会让 content 末尾一次性到达、破坏流式；需要推理深度时可开回（分块兜底保证流式）。
-4. **九宫格 + 地图语义化**：500×500 canonical 九宫格 1-9；AREA 语义来自客户端 SC2 / heightmap 解码，人工核验前不当作已验证事实。
-5. **结构化 JSON 调用关闭 thinking**：Call #1 赛前预测与 Team Autopsy 防空正文（reasoning 吃光输出预算）。
-6. **有界 worker 池（4+4）+ AbortPolicy**：SSE 长请求不阻塞 servlet 线程，饱和返回 503。
-7. **备份同机 7 天保留 + 校验**：单服务器基础设施限制，暂无异地备份。
+1. **权威结算 > 事件流观测**：伤害 / 死亡以 `battle_results` 为准；事件流只是观测子集，覆盖不足时抑制数字（`OBSERVED_DAMAGE_IS_PARTIAL`）。
+2. **SSE 流式 + 单次尝试**：`/api/replay/analyze` 为 `text/event-stream`；AI 不流内重试；有界 worker 池（4+4）防阻塞，饱和返回 503。
+3. **九宫格 + 地图语义化**：500×500 canonical 九宫格 1-9；AREA 语义来自客户端 SC2 / heightmap 解码，人工核验前不当作已验证事实。
+
+> 更多架构与工程取舍见 `docs/DEVELOPER_GUIDE.md` 与 `docs/architecture/`。
 
 ## 文档入口
 
-- [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) — 架构、仓库结构、路由、i18n、测试与部署约定（接手维护必读）
+- [docs/README.md](docs/README.md) — 文档索引（架构 / 功能 / 研究 / 运维 / 参考字典，每项「何时读」）
+- [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) — 开发入口（环境 / 构建 / 仓库结构 / 约定）
 - [java/README.md](java/README.md) — Java / Web 版运行、接口与部署
-- [CHANGELOG.md](docs/CHANGELOG.md) — 版本历史（技术）
-- [CHANGELOG-PRODUCT.md](docs/CHANGELOG-PRODUCT.md) — 版本历史（产品）
-- [TODO.md](docs/TODO.md) — 待办事项
-- [replay-data.md](docs/replay-data.md) — `data.wotreplay` 事件流格式与字段
-- [rating-system.md](docs/rating-system.md) — 评分算法与参数
-- [observability.md](docs/observability.md) — 监控 / 日志 / 备份等运维
-- [team-ai-review-feature.md](docs/team-ai-review-feature.md) — AI 团队复盘功能说明
-- [auth/wargaming-asia-login.md](docs/auth/wargaming-asia-login.md) — Wargaming.net ASIA / EU / NA 登录需求与实现说明
-- [auth/wargaming-asia-deployment.md](docs/auth/wargaming-asia-deployment.md) — Wargaming 登录部署与手工配置（运维手册）
-- [auth/keycloak-mapper-guide.md](docs/auth/keycloak-mapper-guide.md) — Keycloak Protocol Mapper / Client Scope 机制与生产补 mapper 指南
 
 ## 快速开始
 

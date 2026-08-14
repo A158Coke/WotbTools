@@ -14,7 +14,7 @@
   turretWorldYaw = normalize(hullYaw + turretRelativeYaw)。
 - 候选：type-7 propId=2（平滑变化值，已知与 type-10 yaw/pitch 不一致，误差 80°/148°，疑炮塔朝向未定案）。
 
-## 已有证据（来自 docs/replay-reverse-engineering.md，团队样本 CHRD neptune 9034890693886323 + 随机夹具）
+## 已有证据（来自 `docs/research/replay/protocol.md`，团队样本 CHRD neptune 9034890693886323 + 随机夹具）
 
 - type-7 属性包结构已确认：`eid(u32) + propId(u32) + valueLen(u32) + value(1-4B)`；propId ∈ {0,1,2,3,4,7,8,9}（不同样本观测子集）。
 - propId=2 在团队样本 eid=12558550 上 622 个样本（valueLen=2），按 u16*360/65536 解码后与同车 type-10 pitch 均差 ≈148°（不支持车体 pitch）；

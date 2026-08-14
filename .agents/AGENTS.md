@@ -28,7 +28,7 @@
 - API 塞中文；模块内放 tankopedia 副本
 - 使用公司 token/凭据；把 secret/环境变量写进仓库
 - 在付款/赞助页面或代码中硬编码个人收款信息
-- 用推测值冒充权威方向/可见性（回放数据只信已证明的解码，见 docs/replay-reverse-engineering.md）
+- 用推测值冒充权威方向/可见性（回放数据只信已证明的解码，见 `docs/research/replay/protocol.md`）
 
 ## 技能库（.agents/skills/，按需显式加载）
 
