@@ -11,7 +11,6 @@ public sealed interface ReplayEvent
         permits PositionChangedEvent,
                 HealthChangedEvent,
                 DamageEvent,
-                ShotEvent,
                 EntityCreatedEvent,
                 EntityRemovedEvent,
                 VehicleDestroyedEvent,

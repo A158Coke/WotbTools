@@ -826,7 +826,6 @@
                 "event_DAMAGE": "伤害",
                 "event_DESTROYED": "击毁",
                 "event_KILL": "击杀",
-                "event_SHOT": "射击",
                 "event_POSITION_REPORTED": "位置上报",
                 "event_POSITION_STALE": "位置中断"
             }

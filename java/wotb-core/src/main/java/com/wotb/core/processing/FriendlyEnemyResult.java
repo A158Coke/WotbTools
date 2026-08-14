@@ -12,13 +12,14 @@ import com.wotb.core.model.PlayerResult;
  */
 public final class FriendlyEnemyResult {
 
-    /** supremacy 点数胜利阈值：任一方达到该点数立即获胜（提前结束时赢队终局比分恒为此值）。 */
+    /** 胜利点数上限 1000 分（项目所有者确认的业务规则；提前结束时赢队终局比分恒为此值，不是从回放字段解码）。 */
     public static final long SUPREMACY_WIN_POINTS = 1000;
 
-    /** 争霸赛击杀夺分：每击杀夺取对方 40 分补充自身，本方掉人同样损失 40 分（双向计入）。 */
+    /** 击杀夺分业务规则（项目所有者确认）：每击杀夺取对方 40 分、本方掉人损失 40 分。
+     *  <p>仅作叙述口径，不用于计算——结算字段 victoryPointsEarned 是否已含该调整未经证明。 */
     public static final long KILL_STEAL_POINTS = 40;
 
-    /** 争霸赛标准时长上限（秒）：时长未到该上限即点数决胜结束，必为达到 1000 分提前获胜。 */
+    /** 争霸赛固定战斗时长 420 秒（项目所有者确认的业务规则；游戏不提供时长调整）。 */
     public static final double SUPREMACY_TIME_LIMIT_SEC = 420;
 
     private FriendlyEnemyResult() {}
@@ -242,35 +243,20 @@ public final class FriendlyEnemyResult {
                 .sum();
     }
 
-    /** 点数胜负结束方式：按双方胜利点数推导（任一方 ≥1000 → 提前获胜；均 <1000 → 时间耗尽；
-     * 须在双方均未全员阵亡 / pointsDecided=true 时调用）。 */
-    public static PointsEndReason pointsEndReason(final long teamPoints, final long opposingPoints) {
-        if (teamPoints <= 0 && opposingPoints <= 0) {
-            return PointsEndReason.UNKNOWN;
-        }
-        return Math.max(teamPoints, opposingPoints) >= SUPREMACY_WIN_POINTS
-                ? PointsEndReason.REACHED_1000
-                : PointsEndReason.TIME_EXPIRED;
-    }
-
     /** 按 battle 推导 recorder 所在队与其对手的点数胜负结束方式（团队 1/2）。 */
     public static PointsEndReason pointsEndReason(final Battle battle, final int recorderTeam) {
         if (battle == null || battle.players == null
                 || !PlayerSideResolver.isValidRawTeam(recorderTeam)) {
             return PointsEndReason.UNKNOWN;
         }
-        final int opposingTeam = recorderTeam == 1 ? 2 : 1;
-        final long teamPoints = pointsEarned(battle, recorderTeam);
-        final long opposingPoints = pointsEarned(battle, opposingTeam);
-        // 下界证明：已知逐人占点分（不含被动增长）合计 ≥1000 ⇒ 实际终局必达 1000
-        if (Math.max(teamPoints, opposingPoints) >= SUPREMACY_WIN_POINTS) {
-            return PointsEndReason.REACHED_1000;
-        }
-        // 标准时限证据（随机战/官方联赛）+ 时长未到 7 分钟 ⇒ 提前结束，赢队必达 1000
+        // 结束方式只按业务规则 + 结算存活证据判定：
+        // 项目所有者确认的业务规则：所有已知战斗类别固定 7 分钟（420s）/ 胜利点数上限 1000 分，
+        // 游戏不提供时长调整；arenaBonusType 只证明战斗类别，420s/1000 不是从该字段解码出来的。
+        // 双方均有存活（pointsDecided，调用方保证）⇒ 非全歼/退出全灭：
+        // 时长 <7 分钟提前结束只能是达到 1000 分（业务规则）；时长 ≥7 分钟为时间耗尽。
         if (provableEarlyPointsWin(battle)) {
             return PointsEndReason.REACHED_1000;
         }
-        // 标准时限下双方部分分均 <1000 且已打到 7 分钟 → 时间耗尽；自定义时限未知 → UNKNOWN
         if (standardSupremacyRules(battle)
                 && battle.durationS != null && battle.durationS >= SUPREMACY_TIME_LIMIT_SEC) {
             return PointsEndReason.TIME_EXPIRED;
@@ -295,24 +281,11 @@ public final class FriendlyEnemyResult {
                         .count();
     }
 
-    /** 击杀夺分净额 = {@link #KILL_STEAL_POINTS} × (击杀 − 阵亡)。 */
-    public static long killPointsDelta(final Battle battle, final int team) {
-        return KILL_STEAL_POINTS * (teamKills(battle, team) - teamDeaths(battle, team));
-    }
-
     /**
-     * 已知部分分（非终局比分）= victoryPointsEarned 合计 + 击杀夺分净额（40×击杀 − 40×阵亡）。
-     * <p>victoryPointsEarned(#32) 是逐人占点统计，不含据点被动占点增长，因此本值只是
-     * 「已知逐人占点统计与击杀夺分净额」，不是终局比分，调用方不得把它当精确终局比分输出。</p>
-     */
-    public static long knownPointsSubtotal(final Battle battle, final int team) {
-        return pointsEarned(battle, team) + killPointsDelta(battle, team);
-    }
-
-    /**
-     * 争霸赛标准规则（7 分钟 / 1000 分）可证明的战斗类别：随机战、训练房与官方联赛/锦标赛。
-     * 游戏机制不提供战斗时长调整，故所有已知类别恒为标准规则；仅类别未知
-     * （arenaBonusType 缺失/未知值）时无法证明，需 fail closed。
+     * 争霸赛标准规则可证明的战斗类别：所有已知类别（随机战/训练房/联赛）。
+     * <p>注意：420 秒/1000 分是<b>项目所有者确认的业务规则</b>（游戏不提供时长调整），
+     * 不是从 {@code arenaBonusType} 字段本身解码出来的——该字段只证明战斗类别；
+     * 仅类别未知（arenaBonusType 缺失/未知值）时无法应用业务规则，需 fail closed。</p>
      */
     public static boolean standardSupremacyRules(final Battle battle) {
         if (battle == null || battle.arenaBonusType == null) {
@@ -321,7 +294,10 @@ public final class FriendlyEnemyResult {
         return BattleCategoryUtils.fromArenaBonusType(battle.arenaBonusType) != BattleCategory.UNKNOWN;
     }
 
-    /** 标准时限证据成立且时长未到 {@value #SUPREMACY_TIME_LIMIT_SEC} 秒——点数决胜必为达到 1000 分提前获胜。 */
+    /**
+     * 标准业务规则 + 时长未到 {@value #SUPREMACY_TIME_LIMIT_SEC} 秒——点数决胜（双方均有存活）
+     * 必为达到 1000 分提前获胜（项目所有者确认的 1000 分上限规则）。
+     */
     public static boolean provableEarlyPointsWin(final Battle battle) {
         return battle != null && standardSupremacyRules(battle)
                 && battle.durationS != null && battle.durationS < SUPREMACY_TIME_LIMIT_SEC;

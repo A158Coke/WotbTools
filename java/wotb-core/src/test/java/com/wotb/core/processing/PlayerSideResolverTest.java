@@ -280,10 +280,12 @@ class PlayerSideResolverTest {
     }
 
     @Test
-    void supremacy_pointsReach1000_isReached1000EndReason() {
+    void supremacy_standardRulesEarlyEnd_isReached1000() {
         final Battle battle = new Battle();
         battle.winnerTeam = 1;
         battle.rosterComplete = true;
+        battle.arenaBonusType = 3; // 已知类别：业务规则固定 7 分钟/1000 分
+        battle.durationS = 300.0;  // 双方均有存活且时长 <7 分钟 → 达到 1000 分提前获胜
         battle.players = List.of(
                 player(1, "A1", true, 1043),
                 player(2, "B1", true, 280));
@@ -291,21 +293,7 @@ class PlayerSideResolverTest {
         assertEquals(Winner.FRIENDLY_WIN, w.winner());
         assertTrue(w.pointsDecided());
         assertEquals(PointsEndReason.REACHED_1000, w.pointsEndReason(),
-                "a team reaching >=1000 points wins immediately");
-    }
-
-    @Test
-    void pointsEndReason_helperDistinguishesTimeExpiredReached1000AndMissingData() {
-        assertEquals(PointsEndReason.TIME_EXPIRED,
-                FriendlyEnemyResult.pointsEndReason(854, 275),
-                "854:275 below 1000 -> must be time-expired points decision");
-        assertEquals(PointsEndReason.REACHED_1000,
-                FriendlyEnemyResult.pointsEndReason(1043, 280));
-        assertEquals(PointsEndReason.REACHED_1000,
-                FriendlyEnemyResult.pointsEndReason(275, 1000));
-        assertEquals(PointsEndReason.UNKNOWN,
-                FriendlyEnemyResult.pointsEndReason(0, 0),
-                "no victory points at all -> end reason cannot be determined");
+                "standard rules + both teams alive + duration < 420s -> reached 1000 (business rule)");
     }
 
     @Test

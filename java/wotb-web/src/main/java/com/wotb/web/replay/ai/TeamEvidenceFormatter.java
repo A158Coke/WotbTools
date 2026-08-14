@@ -324,38 +324,32 @@ final class TeamEvidenceFormatter {
                 }
             }
             if (winner.pointsDecided()) {
-                final long teamSubtotal = FriendlyEnemyResult.knownPointsSubtotal(battle, perspectiveTeam);
-                final long opposingSubtotal = FriendlyEnemyResult.knownPointsSubtotal(battle, opposingTeam);
-                writer.append("knownPointsSubtotal: team=" + teamSubtotal
-                        + " opposing=" + opposingSubtotal
-                        + " (口径=逐人占点分+40×击杀−40×阵亡, 不含被动占点增长, 不是终局比分)\n");
-                // 终局比分：只有可证明时才输出，否则一律 UNKNOWN（失败方精确比分在缺被动增长时不可计算）
+                // 终局比分：回放无已验证的实时点数/终局比分解码，一律 UNKNOWN；
+                // 唯一例外：业务规则可证明的提前结束（标准规则 + 双方均有存活 + 时长<7分钟 +
+                // 权威胜方）→ 胜方达到 1000 分上限（业务规则），失败方仍 UNKNOWN。
                 final boolean provableEarly = winner.winner() != Winner.DRAW_OR_UNKNOWN
                         && FriendlyEnemyResult.provableEarlyPointsWin(battle);
                 if (provableEarly) {
-                    // 标准时限提前结束：胜方达到 1000（规则保证）；失败方终局比分无权威字段 → UNKNOWN
                     writer.append("finalScore: team="
                             + (winner.winner() == Winner.FRIENDLY_WIN
-                                    ? FriendlyEnemyResult.SUPREMACY_WIN_POINTS + "（达到1000分提前获胜, 规则保证）" : "UNKNOWN")
+                                    ? FriendlyEnemyResult.SUPREMACY_WIN_POINTS
+                                            + "（达到1000分提前获胜, 业务规则）" : "UNKNOWN")
                             + " opposing="
                             + (winner.winner() == Winner.ENEMY_WIN
-                                    ? FriendlyEnemyResult.SUPREMACY_WIN_POINTS + "（达到1000分提前获胜, 规则保证）" : "UNKNOWN")
+                                    ? FriendlyEnemyResult.SUPREMACY_WIN_POINTS
+                                            + "（达到1000分提前获胜, 业务规则）" : "UNKNOWN")
                             + "\n");
-                } else if (teamSubtotal >= FriendlyEnemyResult.SUPREMACY_WIN_POINTS
-                        || opposingSubtotal >= FriendlyEnemyResult.SUPREMACY_WIN_POINTS) {
-                    final boolean teamReached = teamSubtotal >= FriendlyEnemyResult.SUPREMACY_WIN_POINTS;
-                    writer.append("finalScore: team" + (teamReached ? ">=1000" : "=UNKNOWN")
-                            + " opposing" + (teamReached ? "=UNKNOWN" : ">=1000")
-                            + " (部分分下界已证明达标, 精确终局比分未知)\n");
                 } else {
                     writer.append("finalScore: team=UNKNOWN opposing=UNKNOWN "
-                            + "(缺少被动占点增长, 终局比分不可计算)\n");
+                            + "(无已验证的实时点数/终局比分证据, 不可计算)\n");
                 }
-                writer.append("directive=争霸赛计分口径: 每击杀夺取对方40分补充自身、本方掉人同样损失40分; "
-                        + "victoryPointsEarned 是逐人占点分(不含被动占点增长), knownPointsSubtotal 是部分可计算值, "
-                        + "两者都不是终局比分; 争霸赛所有模式均为标准7分钟/1000分规则(游戏不提供时长调整), "
-                        + "权威胜方存在且时长<7分钟时才能写「达到1000分提前获胜」(胜方=1000, 失败方比分未知); "
-                        + "时间耗尽与无法证明时限时终局比分一律 UNKNOWN, 禁止编造双方精确比分\n");
+                writer.append("directive=争霸赛业务规则(项目所有者确认): 战斗时长固定7分钟(420s)、"
+                        + "胜利点数上限1000分, 游戏不提供时长调整; arenaBonusType 只证明战斗类别, "
+                        + "420s/1000不是从该字段解码出来的; 击毁车辆通常会改变双方点数"
+                        + "(每击杀夺取对方40分、本方掉人损失40分), 但结算字段 victoryPointsEarned 是否已含该调整"
+                        + "未经证明, 禁止用「占点分+40×击杀−40×阵亡」等公式计算结果冒充终局比分; "
+                        + "标准规则下双方均有存活且时长<7分钟 → 达到1000分提前获胜(胜方=1000), 失败方比分未知; "
+                        + "时间耗尽(≥7分钟)或无法证明时终局比分一律 UNKNOWN, 禁止编造双方精确比分\n");
             }
         } else {
             writer.append("team victoryPointsEarned=UNKNOWN victoryPointsSeized=UNKNOWN\n");

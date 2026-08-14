@@ -16,10 +16,14 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 /**
- * 开炮/未命中/点亮证据探针（手动维护，不进常规 CI）：
+ * 候选包证据探针（手动维护，不进常规 CI）：
  * 运行方式 {@code mvn -pl wotb-core test -Dtest=ShotSpottingStreamProbeTest -Dprobe.replay=<file>}。
  * 输出：包类型直方图、type 8 subtype 8（伤害方法）body[13] 子类型直方图与样本、
  * type 5（Spotting）结构样本、type 8 其它 subtype 直方图。
+ *
+ * <p>注意：非直接伤害结果（body[13] ≠3 或 =3 且伤害 0）的候选包**语义 UNKNOWN**——
+ * 可能对应跳弹/履带/模块/零伤命中或其他服务器通知，完全打空的炮弹可能根本没有目标通知；
+ * 未经受控样本证明一对一对应前，这些候选不进入生产事件链，不标记 EXACT。</p>
  */
 class ShotSpottingStreamProbeTest {
 
@@ -108,7 +112,7 @@ class ShotSpottingStreamProbeTest {
         damageSubs.forEach((s, c) -> System.out.println("  dmgSub=" + s + " count=" + c));
         System.out.println("-- type8/sub8 sub=3 hit samples --");
         damageSamples.forEach(System.out::println);
-        System.out.println("-- type8/sub8 non-3 (miss candidates) samples --");
+        System.out.println("-- type8/sub8 non-3 candidate samples (semantics UNKNOWN: 跳弹/履带/模块/零伤/其他通知) --");
         non3Samples.forEach(System.out::println);
         System.out.println("-- type8/sub8 short (len<22) samples --");
         shortSamples.forEach(System.out::println);

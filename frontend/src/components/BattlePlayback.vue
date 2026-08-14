@@ -55,7 +55,7 @@ const currentTime = ref(0)
 const playing = ref(false)
 const speed = ref(1)
 const showAll = ref(false)
-const typeFilter = ref(new Set(['DAMAGE', 'DESTROYED', 'KILL', 'SHOT', 'POSITION_REPORTED', 'POSITION_STALE']))
+const typeFilter = ref(new Set(['DAMAGE', 'DESTROYED', 'KILL', 'POSITION_REPORTED', 'POSITION_STALE']))
 const selectedAccountId = ref(null)
 const eventPopupSec = ref(null)
 let rafId = null
@@ -84,17 +84,14 @@ function applyView(next) {
 
 const viewportStyle = computed(() => `transform: translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`)
 
-/** 指针 client 坐标 → 地图内容局部坐标（未变换）：(client − 容器原点 − 平移) / 缩放。 */
-function localPoint(clientX, clientY) {
+/** 指针 client 坐标 → 相对地图容器的**屏幕坐标**（zoomViewAt 契约，不参与任何变换）。 */
+function screenPoint(clientX, clientY) {
   const rect = mapEl.value ? mapEl.value.getBoundingClientRect() : { left: 0, top: 0 }
-  return {
-    x: (clientX - rect.left - view.tx) / view.scale,
-    y: (clientY - rect.top - view.ty) / view.scale
-  }
+  return { x: clientX - rect.left, y: clientY - rect.top }
 }
 
 function onWheel(e) {
-  const p = localPoint(e.clientX, e.clientY)
+  const p = screenPoint(e.clientX, e.clientY)
   applyView(zoomViewAt(view, p.x, p.y, e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP))
 }
 
@@ -114,8 +111,8 @@ function onPointerDown(e) {
     pinchStart = {
       mid: info.mid,
       dist: info.dist,
-      // 锚点必须转成地图内容局部坐标（zoomViewAt 以局部坐标为原点），不能用 client 坐标
-      anchorLocal: localPoint(info.mid.x, info.mid.y),
+      // 锚点 = 双指中点相对地图容器的屏幕坐标（zoomViewAt 契约）
+      anchorScreen: screenPoint(info.mid.x, info.mid.y),
       scale: view.scale,
       tx: view.tx,
       ty: view.ty
@@ -132,9 +129,9 @@ function onPointerMove(e) {
     if (pinchStart.dist > 0 && dist > 0) {
       const next = zoomViewAt(
         { scale: pinchStart.scale, tx: pinchStart.tx, ty: pinchStart.ty },
-        pinchStart.anchorLocal.x, pinchStart.anchorLocal.y, dist / pinchStart.dist
+        pinchStart.anchorScreen.x, pinchStart.anchorScreen.y, dist / pinchStart.dist
       )
-      // 两指中点整体移动 = 平移（translate 作用于缩放后的屏幕坐标，直接加 client 位移）
+      // 两指中点整体移动 = 屏幕平移（translate 单位为屏幕像素，直接加 client 位移）
       next.tx += mid.x - pinchStart.mid.x
       next.ty += mid.y - pinchStart.mid.y
       applyView(next)
@@ -370,19 +367,8 @@ const filteredEvents = computed(() => {
 
 const eventMarkers = computed(() => aggregateEventsBySecond(filteredEvents.value))
 
-// 开炮被观测门控：己方全部开炮可见；敌方开炮仅在「被点亮」可证明时可见——
-// 当前回放数据无已验证的点亮证据（位置流覆盖≠点亮），fail closed：敌方开炮炮线不渲染
-function observedFirer(accountId) {
-  const vehicle = vehiclesByAccount.value.get(accountId)
-  return vehicle != null && vehicle.team === friendlyTeam.value
-}
-
-const tracerEvents = computed(() => filteredEvents.value.filter(
-  ev => ev.type !== 'SHOT' || observedFirer(ev.accountId)
-))
-
-// 炮线：仅来自过滤后事件流中的已知射击（DAMAGE/KILL/SHOT），可信位置/方向，随播放时间与倍速确定性呈现
-const visibleTracers = computed(() => tracerLines(tracerEvents.value, routesByAccount.value, currentTime.value, speed.value, vehiclesByAccount.value))
+// 炮线：仅来自过滤后事件流中的已知射击（DAMAGE/KILL），两端可信位置，随播放时间与倍速确定性呈现
+const visibleTracers = computed(() => tracerLines(filteredEvents.value, routesByAccount.value, currentTime.value, speed.value))
 
 function tracerColor(accountId) {
   const vehicle = vehiclesByAccount.value.get(accountId)
@@ -425,8 +411,6 @@ function eventLabel(event) {
       return `${playerName(event.accountId)} → ${playerName(event.targetAccountId)} ${event.damage}`
     case 'KILL':
       return `${playerName(event.accountId)} → ${playerName(event.targetAccountId)}`
-    case 'SHOT':
-      return playerName(event.accountId)
     case 'DESTROYED':
       return playerName(event.accountId)
     case 'POSITION_REPORTED':
@@ -497,7 +481,7 @@ const mapStyle = computed(() => ({
     <!-- 事件类型过滤 -->
     <div class="pb-filters">
       <button
-        v-for="type in ['DAMAGE', 'DESTROYED', 'KILL', 'SHOT', 'POSITION_REPORTED', 'POSITION_STALE']"
+        v-for="type in ['DAMAGE', 'DESTROYED', 'KILL', 'POSITION_REPORTED', 'POSITION_STALE']"
         :key="type"
         type="button"
         class="pb-chip"
@@ -592,7 +576,7 @@ const mapStyle = computed(() => ({
         <line
           v-for="(l, i) in visibleTracers"
           :key="`tracer-${l.timeSec}-${i}`"
-          :class="l.kind === 'shot' ? 'pb-tracer pb-tracer-shot' : 'pb-tracer'"
+          class="pb-tracer"
           :x1="mapView.toX(l.x1)"
           :y1="mapView.toY(l.y1)"
           :x2="mapView.toX(l.x2)"
@@ -788,7 +772,6 @@ const mapStyle = computed(() => ({
 .pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.16)); stroke-width: .5; fill: none; }
 .pb-route { fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; opacity: .55; }
 .pb-tracer { stroke-width: 1.5; stroke-linecap: round; }
-.pb-tracer-shot { stroke-width: 1.1; }
 .pb-region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.28)); stroke-width: 1; }
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
