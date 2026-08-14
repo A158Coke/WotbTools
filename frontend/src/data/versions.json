@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.11",
+    "date": "2026-08-14",
+    "tag": "fix",
+    "zh": "AI 复盘战局回放与地图鸟瞰修复/增强：战局回放坦克标记与信息栏改用权威坦克名（tankId 经车辆库解析，如 29985 显示为 SPHT，不再显示纯数字）；修复敌方坦克「位置上报→中断→再上报」后图标残留透明（最后已知位置淡化不解除）；点击 AI 报告中的时间链接自动滚动到地图区块并切到战局回放视图；赛前预测/复盘正文/地图鸟瞰三板块支持独立展开/收起（默认展开）",
+    "en": "AI review battle-playback and map-overview fixes/enhancements: the battle-playback tank marker and info panel now show the authoritative tank name (tankId resolved via the vehicle database, e.g. 29985 shows as SPHT, no longer a raw number); fixed the enemy marker staying transparent after a position-report gap re-report cycle (the last-known fade no longer sticks); clicking a time link in the AI report now auto-scrolls to the map section and switches to the battle-playback view; the pre-battle prediction / review body / map overview sections can each collapse/expand independently (expanded by default)",
+    "ru": "Исправления и улучшения повтора боя и обзора карты в ИИ-разборе: маркер танка и панель информации теперь показывают авторитетное название танка (tankId разрешается по базе техники, напр. 29985 отображается как SPHT, а не числом); исправлено, что маркер противника оставался прозрачным после цикла «отчёт о позиции перерыв повторный отчёт» (затухание последней известной позиции больше не залипает); клик по временной ссылке в отчёте ИИ теперь прокручивает к блоку карты и переключается на вид повтора боя; блоки «прогноз до боя / текст разбора / обзор карты» можно сворачивать и разворачивать независимо (по умолчанию развёрнуты)"
+  },
+  {
     "v": "2.11.10",
     "date": "2026-08-14",
     "tag": "add",

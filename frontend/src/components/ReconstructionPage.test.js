@@ -747,6 +747,22 @@ describe('ReconstructionPage standalone map section', () => {
     }
   }
 
+  /** 记录 MapOverview 挂载/卸载生命周期与 seekTo 的 stub（折叠应为 v-show 语义，不销毁组件）。 */
+  function mapLifecycleStub(seen, lifecycle) {
+    return {
+      name: 'MapOverview',
+      props: ['overview', 'seekTo'],
+      setup(props) {
+        seen.push(props.seekTo)
+        const { watch, onMounted, onUnmounted } = require('vue')
+        watch(() => props.seekTo, v => seen.push(v))
+        onMounted(() => lifecycle.push('mount'))
+        onUnmounted(() => lifecycle.push('unmount'))
+        return () => null
+      }
+    }
+  }
+
   beforeEach(() => {
     auth.ensureToken.mockResolvedValue(true)
     auth.login.mockReset()
@@ -850,6 +866,49 @@ describe('ReconstructionPage standalone map section', () => {
     await link.trigger('click')
     await flushPromises()
     expect(seen.filter(v => v === 200).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('a collapsed map auto-expands when an AI report time link is clicked (MapOverview not recreated)', async () => {
+    const seen = []
+    const lifecycle = []
+    const fetchMock = vi.fn((url) => {
+      if (String(url) === '/api/replay/map-overview') {
+        return Promise.resolve(mapJsonResponse(mapOverviewFixture()))
+      }
+      return Promise.resolve(okResponse({
+        analysis: '你在 03:20 与敌方交火',
+        preBattleSection: null
+      }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(ReconstructionPage, {
+      global: { mocks: { $t: i18n.t }, stubs: { MapOverview: mapLifecycleStub(seen, lifecycle) } }
+    })
+    await selectReplays(wrapper, ['seek.wotbreplay'])
+    // 加载地图
+    await wrapper.get('[data-test="map-load-btn"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'MapOverview' }).exists()).toBe(true)
+    expect(lifecycle).toEqual(['mount'])
+
+    // 折叠地图：内容隐藏（v-show 置内联 display:none），但 MapOverview 不销毁
+    await wrapper.get('[data-test="toggle-map"]').trigger('click')
+    expect(wrapper.get('[data-test="map-body"]').element.style.display).toBe('none')
+    expect(wrapper.findComponent({ name: 'MapOverview' }).exists()).toBe(true)
+    expect(lifecycle).toEqual(['mount'])
+
+    // 跑 AI 复盘得到正文时间链接（地图保持已加载、仍处折叠状态）
+    await analyzeButton(wrapper).trigger('click')
+    await flushPromises()
+    const link = wrapper.find('a[href="#seek=200"]')
+    expect(link.exists()).toBe(true)
+
+    // 点击时间链接：地图自动重新展开、MapOverview 收到 seekTo=200，且从未销毁/重建
+    await link.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="map-body"]').element.style.display).not.toBe('none')
+    expect(seen).toContain(200)
+    expect(lifecycle).toEqual(['mount'])
   })
 })
 
