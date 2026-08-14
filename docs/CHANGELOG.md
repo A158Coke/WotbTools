@@ -29,7 +29,13 @@
   （`utils/battlePlayback.js` 新增 `trustedPositionAt` 严格事件时刻可信位置——末点后/gap 内/
   首点前/非有限坐标拒绝，不用最后已知位置伪造射击位置；`tracerLines` 纯函数按 now/speed 推导 →
   seek 与 1×/2×/4× 天然正确、无一次性定时器；同刻 DAMAGE+KILL 去重为一条；未命中/盲射/弹道/
-  瞄准线无数据依据不渲染）；`.pb-viewport` 单层 transform 缩放平移（滚轮/双指捏合 1×–4× 锚点
+  瞄准线无数据依据不渲染）；未命中开炮：EntityMethodDecoder 解析 type 8/sub 8 的非直接伤害结果
+  （body[13] 伤害子类型 ≠3 或 =3 但伤害 0）为新事件 `ShotEvent`，`MapOverview` 输出
+  `SHOT` playback 事件（仅已解析攻击者，无目标）；前端沿**已证明的炮塔世界方向**
+  （hullYaw+turretRelativeYaw）画固定视觉长度 60m 的更细更淡炮线（`SHOT_TRACER_LEN`，
+  不代表真实弹道），无方向样本不画；被观测门控：己方全部开炮可见，敌方开炮需点亮证据——
+  当前无已验证的点亮解码（位置流覆盖≠点亮），fail closed 不渲染敌方未命中；
+  `.pb-viewport` 单层 transform 缩放平移（滚轮/双指捏合 1×–4× 锚点
   缩放、>5px 阈值拖动平移、拖动后吞 click 防误选车、重置按钮、全图层严格对齐、卸载清理监听）；
   `pb-destroyed` 显式阵亡状态（敌我同款 opacity .35 + grayscale(1) 双层 + ✕，方向冻结最后可信
   样本，无样本以素材默认 0° 渲染，不并入 `pb-last-known`）。

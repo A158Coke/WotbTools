@@ -5,6 +5,7 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.event.ShotEvent;
 import com.wotb.core.replay.event.VehicleDestroyedEvent;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.springframework.util.StringUtils;
@@ -63,8 +64,14 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                         events.add(damageResult.destroyedEvent());
                     }
                 } else {
-                    warnings.add(new ReplayDecodeWarning("PARSE_FAILED",
-                            "Failed to parse damage from EntityMethod at seq " + packet.sequence()));
+                    // 无直接伤害结果的开炮（未命中/弹跳/未击穿/吸收）——短包不是开炮证据，静默跳过
+                    final ShotEvent shot = parseShot(payload, packet, ts);
+                    if (shot != null) {
+                        events.add(shot);
+                    } else if (payload.length >= 22) {
+                        warnings.add(new ReplayDecodeWarning("PARSE_FAILED",
+                                "Failed to parse damage from EntityMethod at seq " + packet.sequence()));
+                    }
                 }
             }
             case SUBTYPE_UPDATE_ARENA2 -> {
@@ -87,6 +94,34 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
 
         final DecodeStatus status = warnings.isEmpty() ? DecodeStatus.SUCCESS : DecodeStatus.PARTIAL;
         return new ReplayDecodeResult(status, events, warnings);
+    }
+
+    /**
+     * 开炮事件（无直接伤害结果）：sub != {@link #DAMAGE_SUB_DIRECT}，或 sub == 3 但伤害 = 0。
+     * 与 {@link DamageEvent} 同一方法包封套；短包（如环境实体事件）返回 null。
+     */
+    private ShotEvent parseShot(final byte[] payload, final RawReplayPacket packet, final ReplayTimestamp ts) {
+        if (payload.length < 22) {
+            return null;
+        }
+        final byte[] body = new byte[payload.length - 8];
+        System.arraycopy(payload, 8, body, 0, body.length);
+        if (body.length < 18) {
+            return null;
+        }
+        final int damageSub = body[13] & 0xFF;
+        final int damage = (body[14] & 0xFF) << 8 | (body[15] & 0xFF);
+        if (damageSub == DAMAGE_SUB_DIRECT && damage > 0) {
+            return null; // 直接命中由 DamageEvent 表达
+        }
+        final int attackerEid = readI32LE(body, 4);
+        final int victimEid = readI32LE(body, 8);
+        if (attackerEid == 0) {
+            return null;
+        }
+        return new ShotEvent(
+                packet.sequence(), ts, packet.type(), DecodeConfidence.EXACT,
+                attackerEid, victimEid, null, null);
     }
 
     private DamageResult parseDamage(byte[] payload, int entityId, RawReplayPacket packet, ReplayTimestamp ts) {

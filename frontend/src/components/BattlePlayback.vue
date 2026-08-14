@@ -55,7 +55,7 @@ const currentTime = ref(0)
 const playing = ref(false)
 const speed = ref(1)
 const showAll = ref(false)
-const typeFilter = ref(new Set(['DAMAGE', 'DESTROYED', 'KILL', 'POSITION_REPORTED', 'POSITION_STALE']))
+const typeFilter = ref(new Set(['DAMAGE', 'DESTROYED', 'KILL', 'SHOT', 'POSITION_REPORTED', 'POSITION_STALE']))
 const selectedAccountId = ref(null)
 const eventPopupSec = ref(null)
 let rafId = null
@@ -370,8 +370,19 @@ const filteredEvents = computed(() => {
 
 const eventMarkers = computed(() => aggregateEventsBySecond(filteredEvents.value))
 
-// 炮线：仅来自过滤后事件流中的已知射击（DAMAGE/KILL），两端可信位置，随播放时间与倍速确定性呈现
-const visibleTracers = computed(() => tracerLines(filteredEvents.value, routesByAccount.value, currentTime.value, speed.value))
+// 开炮被观测门控：己方全部开炮可见；敌方开炮仅在「被点亮」可证明时可见——
+// 当前回放数据无已验证的点亮证据（位置流覆盖≠点亮），fail closed：敌方开炮炮线不渲染
+function observedFirer(accountId) {
+  const vehicle = vehiclesByAccount.value.get(accountId)
+  return vehicle != null && vehicle.team === friendlyTeam.value
+}
+
+const tracerEvents = computed(() => filteredEvents.value.filter(
+  ev => ev.type !== 'SHOT' || observedFirer(ev.accountId)
+))
+
+// 炮线：仅来自过滤后事件流中的已知射击（DAMAGE/KILL/SHOT），可信位置/方向，随播放时间与倍速确定性呈现
+const visibleTracers = computed(() => tracerLines(tracerEvents.value, routesByAccount.value, currentTime.value, speed.value, vehiclesByAccount.value))
 
 function tracerColor(accountId) {
   const vehicle = vehiclesByAccount.value.get(accountId)
@@ -414,6 +425,8 @@ function eventLabel(event) {
       return `${playerName(event.accountId)} → ${playerName(event.targetAccountId)} ${event.damage}`
     case 'KILL':
       return `${playerName(event.accountId)} → ${playerName(event.targetAccountId)}`
+    case 'SHOT':
+      return playerName(event.accountId)
     case 'DESTROYED':
       return playerName(event.accountId)
     case 'POSITION_REPORTED':
@@ -484,7 +497,7 @@ const mapStyle = computed(() => ({
     <!-- 事件类型过滤 -->
     <div class="pb-filters">
       <button
-        v-for="type in ['DAMAGE', 'DESTROYED', 'KILL', 'POSITION_REPORTED', 'POSITION_STALE']"
+        v-for="type in ['DAMAGE', 'DESTROYED', 'KILL', 'SHOT', 'POSITION_REPORTED', 'POSITION_STALE']"
         :key="type"
         type="button"
         class="pb-chip"
@@ -579,7 +592,7 @@ const mapStyle = computed(() => ({
         <line
           v-for="(l, i) in visibleTracers"
           :key="`tracer-${l.timeSec}-${i}`"
-          class="pb-tracer"
+          :class="l.kind === 'shot' ? 'pb-tracer pb-tracer-shot' : 'pb-tracer'"
           :x1="mapView.toX(l.x1)"
           :y1="mapView.toY(l.y1)"
           :x2="mapView.toX(l.x2)"
@@ -775,6 +788,7 @@ const mapStyle = computed(() => ({
 .pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.16)); stroke-width: .5; fill: none; }
 .pb-route { fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; opacity: .55; }
 .pb-tracer { stroke-width: 1.5; stroke-linecap: round; }
+.pb-tracer-shot { stroke-width: 1.1; }
 .pb-region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.28)); stroke-width: 1; }
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }

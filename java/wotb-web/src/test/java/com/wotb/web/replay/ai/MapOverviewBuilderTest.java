@@ -8,11 +8,14 @@ import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.event.ShotEvent;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.web.replay.dto.MapOverview;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
@@ -363,5 +366,32 @@ class MapOverviewBuilderTest {
         for (final MapOverview.PlaybackEvent e : overview.playback().events()) {
             assertTrue(e.timeSec() <= 150.0 + 1e-6, "event 越过 BattleEnded 时长");
         }
+    }
+
+    @Test
+    void shotEventsMapAttackerToAccount() throws Exception {
+        final ReplayProcessingResult result = processFixture();
+        final ReplayReconstruction recon = result.reconstruction();
+        final ParticipantMappingEvent mapping = recon.events().stream()
+                .filter(e -> e instanceof ParticipantMappingEvent m && m.accountId() > 0)
+                .map(e -> (ParticipantMappingEvent) e)
+                .findFirst()
+                .orElse(null);
+        Assumptions.assumeTrue(mapping != null, "fixture must carry participant mappings");
+        final List<ReplayEvent> events = new ArrayList<>(recon.events());
+        events.add(new ShotEvent(999_998, new ReplayTimestamp(0f, 60f), 8,
+                DecodeConfidence.EXACT, mapping.entityId(), mapping.entityId() + 1, null, null));
+        final MapOverview overview = MapOverviewBuilder.build(
+                result.battle(), filteredRecon(recon, events));
+        assertNotNull(overview);
+        assertNotNull(overview.playback());
+        final MapOverview.PlaybackEvent shot = overview.playback().events().stream()
+                .filter(e -> "SHOT".equals(e.type()))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(shot, "合成 ShotEvent 应输出 SHOT 事件");
+        assertEquals(mapping.accountId(), shot.accountId());
+        assertNull(shot.targetAccountId());
+        assertNull(shot.damage());
     }
 }
