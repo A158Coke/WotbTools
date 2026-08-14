@@ -171,7 +171,20 @@ final class TeamPromptLocalizer {
                该规则只作叙述口径（「击毁车辆通常会改变双方点数」），结算字段是否已包含该调整未经证明，
                禁止自行用「占点分 + 40×击杀 − 40×阵亡」等公式计算结果并当作事实输出；
                只有权威胜方存在且标准规则下提前结束时，胜利方终局比分才=1000（1000 分上限业务约定），其余终局比分一律未知；
-               禁止用不含击杀夺分的中间比分解释获胜，禁止编造失败方精确比分。""";
+               禁止用不含击杀夺分的中间比分解释获胜，禁止编造失败方精确比分。
+            8. 点数局势与攻防姿态（只基于可证明信号）：
+               a. 终局前任意时刻的绝对比分未解码（实时比分/占点进度/被动占点增长均无证据），禁止编造任何中间比分、
+                  精确领先幅度或「此刻领先多少分」式断言；判断点数压力只能用 POINTS_SITUATION 段的可证明信号：
+                  击杀夺分时间线（±40/击杀业务规则叙述口径）、占领点区域位置存在、推进窗口与终局结算/结束方式。
+               b. 点数压力落后（击杀夺分累计净劣势、终局点数落败且非全歼、或时间所剩不多仍需追分）的一方需要进攻抢点：
+                  复盘必须评估该方是否及时转向进攻/抢点以及推进是否有效；点数压力领先的一方可以防守拉交叉：
+                  复盘必须评估领先方是否守住点位、拉开交叉火力。
+               c. 进攻推进大概率付出掉血代价：评价进攻方掉血必须结合点数压力情境——为抢点/进攻付出的掉血未必是失误；
+                  无点数压力时的无谓掉血、无交换的单方面掉血才是问题。
+               d. 过路费：对方进攻推进窗口（PUSH_WINDOWS）内，防守方对推进方造成的伤害就是过路费；
+                  窗口内推进方几乎无伤完成推进或达成占点存在（过路费明显不足）时，必须指出防守方失误；
+                  伤害数字不可用（OBSERVED_DAMAGE_IS_PARTIAL）时只做定性描述，不得报数字。
+               e. 信号不足或矛盾时写「无法从当前回放数据确定」，不得硬下「落后/领先」结论。""";
 
     static final String CAPTURE_RULE_EN = """
 
@@ -193,7 +206,13 @@ final class TeamPromptLocalizer {
             4. Never write "won by annihilating the enemy team" when your own team was annihilated; never present a points win as annihilation or a regular win; never use a mid-match score below 1000 as the reason for winning.
             5. victoryPointsEarned / victoryPointsSeized are per-player settlement fields whose exact meaning and whether they already include passive accumulation or kill steals is unproven; they are not a timeline and not the final score. Capture scoring business rule (confirmed by the project owner): No per-base per-tick scoring rule has been verified, and the tick interval is undecoded, so never compute a final score from tick counts or capture points. Never present the totals as capture progress at a specific moment and never pass off the victoryPointsEarned sum or any formula result as the final score.
             6. Capture-point areas (CONTAINS_CONTROL_POINT) only describe direction; when not provided, never claim who is capturing.
-            7. Kill steals (business rule, confirmed by the project owner): in Supremacy every destroyed enemy tank steals 40 points from the enemy team and adds them to the killer's team, while the team that lost the tank loses 40 points; this rule is a narrative guideline only ("destroying vehicles usually changes both teams' points") — whether the settlement fields already include this adjustment is unproven, so never compute "capture points + 40×kills − 40×deaths" yourself and present the result as fact; only with an authoritative winner and a rule-provable early end is the winning team's final score 1000 (the 1000-point cap, a business convention) — all other final scores are unknown; never explain the win with a score that omits kill steals and never invent the losing team's exact score.""";
+            7. Kill steals (business rule, confirmed by the project owner): in Supremacy every destroyed enemy tank steals 40 points from the enemy team and adds them to the killer's team, while the team that lost the tank loses 40 points; this rule is a narrative guideline only ("destroying vehicles usually changes both teams' points") — whether the settlement fields already include this adjustment is unproven, so never compute "capture points + 40×kills − 40×deaths" yourself and present the result as fact; only with an authoritative winner and a rule-provable early end is the winning team's final score 1000 (the 1000-point cap, a business convention) — all other final scores are unknown; never explain the win with a score that omits kill steals and never invent the losing team's exact score.
+            8. Points situation and attack/defense posture (provable signals only):
+               a. The absolute score at any moment before the end is undecoded (live score, capture progress, and passive accumulation have no evidence); never invent any mid-match score, an exact lead margin, or claims like "currently behind by X points"; judge points pressure only from the provable signals in the POINTS_SITUATION section: the kill-steal timeline (±40/kill, a narrative business rule), capture-point area presence, push windows, and the final settlement / end condition.
+               b. The team under points pressure (a net kill-steal deficit, a points loss without annihilation, or too little time left to close the gap) needs to attack and capture: the review must assess whether that team turned to attacking/capturing in time and whether the push worked; the team ahead on points may defend with crossfire: the review must assess whether it held the points and opened crossfire lanes.
+               c. Attacking pushes usually cost HP: judge an attacker's HP loss together with the points-pressure context — HP paid for a capture/push is not necessarily a mistake; pointless HP loss under no pressure, or one-sided loss without any trade, is the problem.
+               d. Toll: inside the opposing team's push window (PUSH_WINDOWS), the damage the defenders deal to the pushing team is the toll; when the pushing team completed the push or established capture-point presence almost unharmed (the toll is clearly insufficient), you must call out the defensive mistake; when damage numbers are unavailable (OBSERVED_DAMAGE_IS_PARTIAL), describe qualitatively only and never report numbers.
+               e. When signals are insufficient or contradictory, write "cannot be determined from the current replay data"; never force a "behind/ahead" conclusion.""";
 
     static final String CAPTURE_RULE_RU = """
 
@@ -215,7 +234,13 @@ final class TeamPromptLocalizer {
             4. Не пишите «победа полным уничтожением противника», когда полностью уничтожена ваша команда; не выдавайте победу по очкам за уничтожение или обычную победу; не используйте промежуточный счёт ниже 1000 как причину победы.
             5. victoryPointsEarned / victoryPointsSeized — посчётные поля расчёта, чьё точное значение и включены ли уже очки за фраги или пассивное накопление не доказаны; это не таймлайн и не итоговый счёт. Бизнес-правило начисления за захват (подтверждено владельцем проекта): Никакое правило начисления очков за базу за тик не проверено, интервал тика не декодирован, поэтому не вычисляйте итоговый счёт из числа тиков или очков захвата. Не выдавайте суммы за прогресс захвата в конкретный момент и не выдавайте сумму victoryPointsEarned или любой результат формулы за итоговый счёт.
             6. Области точек захвата (CONTAINS_CONTROL_POINT) описывают только направление; если они не предоставлены, не утверждайте, кто захватывает.
-            7. Очки за фраги (бизнес-правило, подтверждённое владельцем проекта): в Supremacy каждый уничтоженный вражеский танк отнимает у вражеской команды 40 очков и добавляет их команде убийцы, а команда, потерявшая машину, теряет 40 очков; это правило — только ориентир для описания («уничтожение машин обычно меняет очки обеих команд»): включена ли эта поправка в поля расчёта, не доказано, поэтому запрещено самому вычислять «очки захвата + 40×фраги − 40×потери» и выдавать результат за факт; только при авторитетном победителе и доказуемом по правилам досрочном завершении итоговый счёт победителя = 1000 (предел 1000 очков, деловое соглашение), все остальные итоговые счета неизвестны; запрещено объяснять победу счётом без очков за фраги и выдумывать точный счёт проигравшей команды.""";
+            7. Очки за фраги (бизнес-правило, подтверждённое владельцем проекта): в Supremacy каждый уничтоженный вражеский танк отнимает у вражеской команды 40 очков и добавляет их команде убийцы, а команда, потерявшая машину, теряет 40 очков; это правило — только ориентир для описания («уничтожение машин обычно меняет очки обеих команд»): включена ли эта поправка в поля расчёта, не доказано, поэтому запрещено самому вычислять «очки захвата + 40×фраги − 40×потери» и выдавать результат за факт; только при авторитетном победителе и доказуемом по правилам досрочном завершении итоговый счёт победителя = 1000 (предел 1000 очков, деловое соглашение), все остальные итоговые счета неизвестны; запрещено объяснять победу счётом без очков за фраги и выдумывать точный счёт проигравшей команды.
+            8. Ситуация по очкам и стойка атаки/обороны (только доказуемые сигналы):
+               a. Абсолютный счёт в любой момент до конца боя не декодирован (живой счёт, прогресс захвата и пассивное накопление не имеют доказательств); запрещено выдумывать любой промежуточный счёт, точный отрыв или утверждения вида «сейчас позади на X очков»; оценивайте давление по очкам только по доказуемым сигналам секции POINTS_SITUATION: таймлайн очков за фраги (±40/фраг, нарративное бизнес-правило), присутствие в зонах точек захвата, окна продвижения и итог расчёта / условие завершения.
+               b. Команда под давлением по очкам (чистый минус по очкам за фраги, поражение по очкам без полного уничтожения или слишком мало времени, чтобы отыграться) должна атаковать и захватывать точки: разбор обязан оценить, вовремя ли команда перешла к атаке/захвату и сработало ли продвижение; команда впереди по очкам может обороняться с перекрёстным огнём: разбор обязан оценить, удержала ли она точки и открыла ли перекрёстный огонь.
+               c. Атакующее продвижение обычно стоит HP: оценивайте потерю HP атакующего вместе с давлением по очкам — HP, отданные за захват/атаку, не обязательно ошибка; бесполезная потеря HP без давления или односторонняя потеря без размена — проблема.
+               d. Плата за проезд: в окне продвижения противника (PUSH_WINDOWS) урон, который обороняющиеся наносят продвигающейся команде, и есть плата за проезд; когда продвигающаяся команда завершила продвижение или заняла точку почти без потерь (плата явно недостаточна), обязательно укажите ошибку обороны; когда цифры урона недоступны (OBSERVED_DAMAGE_IS_PARTIAL), описывайте только качественно и не называйте чисел.
+               e. При недостаточных или противоречивых сигналах пишите «невозможно определить по данным реплея»; не навязывайте вывод «позади/впереди».""";
 
     /**
      * 组装团队 system prompt：ZH 返回原样；EN/RU 在中文基座上替换中文输出强制句

@@ -26,6 +26,26 @@
   点击可再次 seek、单点 last-known 时间保持真实采样时间。
 
 ### Added
+- **Grafana 使用统计 Dashboard 新增 AI 平均 Token 面板**：`wotbtools-usage` 新增「AI 平均每次调用 Token」stat 面板（`wotb_ai_upstream_tokens_total{token_type="total"}` 增量 ÷ `wotb_ai_upstream_requests_total` 增量，分母含失败调用、失败计 0 token）与「按模式平均每次调用 Token」timeseries 面板（按 `mode` 分维，分母 `clamp_min(...,1)` 避免无流量 mode 显示 NaN，可区分单机复盘 `PRE_BATTLE_STRATEGIC_PRIOR`+`TACTICAL_REVIEW_HARNESS` 与团队复盘 `SINGLE_TEAM_BATTLE`+`TEAM_AUTOPSY`）；`docs/operations/observability.md` 同步面板清单与统计口径。
+- **AI 复盘点数局势证据与规则（PointsSituationSkill）**：wotb-core 新增纯函数 `PointsSituationSkill`
+  （击杀夺分时间线——±40/击杀业务规则按双方阵亡时刻对齐、叙述口径非实时比分；占领点区域位置存在——
+  服务器位置流在 CONTAINS_CONTROL_POINT 九宫格的存在、位置存在≠占点产分；进攻推进窗口——车辆从
+  非占领点区域移动进入占领点区域，同队窗口按 8s 合并）与 `PointsSituationSkillTest`（9 例）；
+  wotb-web 新增 `PointsSituationEvidence`（复用 TeamEntityMapper 从重建事件流采集双方位置轨迹，
+  推进窗口与 `DamageWindowClusterer` 掉血窗口联接成「推进方窗口内承受伤害=防守方过路费」，
+  OBSERVED_DAMAGE_IS_PARTIAL 时抑制伤害数字）并接入团队复盘（`TeamEvidenceFormatter.appendPointsSituation`，
+  P3 optional 预算内）与随机战个人复盘（Harness Call #2 裁剪阶梯 + fallback/full/fullNoRecon 三条旧路径）；
+  prompt 三语规则同步：team/single.zh.md 占点规则 8 + `TeamPromptLocalizer` zh/en/ru 常量（逐字契约）、
+  player/tactical/single/fallback.zh.md + `PlayerPromptRules` POINTS_SITUATION_RULE zh/en/ru 替换链、
+  team/autopsy.zh.md 结算级点数规则（禁止编造比分与窗口级判断）；契约测试 `TeamPromptLocalizerTest`/
+  `PlayerPointsSituationRuleTest`/`TeamAutopsyPromptBuilderTest`/`PointsSituationEvidenceTest` 扩展。
+  数据边界不变：终局前绝对比分未解码，所有信号禁止冒充实时比分（PointsEvidenceProbeTest 结论继续有效）。
+- **战局回放标记有效尺寸与固定屏幕线宽**：`BattlePlayback.vue` 标记 hull/turret 素材放大到按钮
+  131% 并以共同 pivot 居中旋转（`translate(-50%,-50%) rotate(...)`；素材 512×512 有效车体 bbox
+  实测 ≈210×336 → 桌面 28px 容器下有效车体 ≈15×24px，不随缩放变小）；路线 `<g>` 绑定
+  `stroke-width=2/view.scale`、炮线 `1.5/view.scale`（屏幕宽度恒定，长度随地图坐标）；缩放 ≥2×
+  时标记显示车名小标签（反缩放按钮内，字号恒定）；CSS 移除 `.pb-route/.pb-tracer` 的静态
+  stroke-width（否则覆盖属性绑定）；组件测试新增固定线宽/居中旋转/车名标签 3 例（npm 288 全绿）。
 - **战局回放炮线动画 + 地图缩放平移 + 敌我阵亡统一**：DAMAGE/KILL 已知射击的炮线
   （`utils/battlePlayback.js` 新增 `trustedPositionAt` 严格事件时刻可信位置——末点后/gap 内/
   首点前/非有限坐标拒绝，不用最后已知位置伪造射击位置；`tracerLines` 纯函数按 now/speed 推导 →

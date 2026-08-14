@@ -57,9 +57,12 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
     directionSample/deathSec 强制 `[0, durationSec]`。
   - **双层坦克标记**：前端 `BattlePlayback.vue` 用 PR #72 四张运行时 PNG
     （`frontend/src/assets/tank-icons/tank-marker-{friendly,enemy}-{hull,turret}.png`，512×512
-    RGBA、共同 pivot 256,256）渲染 HTML overlay 标记（约 28px，移动端 22px）：hull 层按
-    `hullYawDeg` 旋转、turret 层按 `turretWorldYawDeg` 旋转（炮管不脱离炮塔）；阵营色只来自
-    素材本身；录像者 gold halo、选中 ring、最后已知淡化、阵亡 ✕ 为独立 overlay，不烘焙进 PNG。
+    RGBA、共同 pivot 256,256）渲染 HTML overlay 标记（按钮约 28px，移动端 22px；按钮经
+    `1/view.scale` 反缩放 → 屏幕尺寸恒定）：hull/turret img 放大到按钮 131% 并以共同 pivot 居中旋转
+    （`translate(-50%,-50%) rotate(...)`）——素材透明留白实测有效车体 bbox ≈210×336/512，
+    131% 后桌面有效可见车体 ≈15×24px，放大地图不再显小；hull 层按 `hullYawDeg` 旋转、turret 层按
+    `turretWorldYawDeg` 旋转（炮管不脱离炮塔）；阵营色只来自素材本身；录像者 gold halo、选中 ring、
+    最后已知淡化、阵亡 ✕ 为独立 overlay，不烘焙进 PNG；缩放 ≥2× 时标记下方显示固定字号车名小标签。
     旋转换算：地图 yaw 从北(+Z)顺时针 → 屏幕 `rotate(yawDeg)`（0=朝上/90=朝右/180=朝下/270=朝左，
     两次翻转抵消，无符号/偏移修正）。
    - **炮线/曳光线（已知射击）**：`visibleTracers` 由纯函数 `tracerLines`（`utils/battlePlayback.js`）
@@ -71,7 +74,9 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
    - **缩放平移**：`.pb-viewport` 单一 transform 层（translate+scale）同时承载 SVG 与 HTML 标记 →
      地图/网格/路线/炮线/标记严格对齐；滚轮锚点缩放（1×–4×，`zoomViewAt` 锚点不动）、双指捏合、
      单指/鼠标拖动（>5px 阈值，拖动后吞 click 防误选车）、重置按钮；地图区域 `touch-action:none`，
-     地图外页面滚动不受影响；卸载清理 window 级 pointer 监听。
+     地图外页面滚动不受影响；卸载清理 window 级 pointer 监听。路线 `<g>` 绑定
+     `stroke-width=2/view.scale`、炮线 `1.5/view.scale`（屏幕宽度恒定，放大后不变成粗色带；
+     长度仍随地图坐标）；网格/区域/出生点（A/B/C 基地）属地图内容，随缩放。
    - **阵亡状态（pb-destroyed）**：destroyed 是显式独立状态，不并入 `pb-last-known`；敌我阵亡车
      结构一致（hull+turret 双层 + 同款 ✕）：方向冻结在最后可信样本（`interpolateDirection` 末样本
      冻结语义），无方向样本以素材默认 0° 渲染（不代表朝向）；`.pb-destroyed { opacity:.35 }` +
