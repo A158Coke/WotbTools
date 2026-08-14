@@ -509,11 +509,11 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
 - **争霸赛击杀夺分口径（团队复盘）**：每击杀夺取对方 40 分补充自身、本方掉人损失 40 分
   （`FriendlyEnemyResult.KILL_STEAL_POINTS`，双向计入）；`knownPointsSubtotal = victoryPointsEarned
   合计 + 40×击杀 − 40×阵亡` 是**部分可计算值（不含被动占点增长），不是终局比分**；
-  `victoryPointsEarned`(#32) 是逐人占点统计；标准时限证据 = 随机战/官方联赛
-  （`standardSupremacyRules`；训练房自定义时限 fail closed）：时长 <420s 且权威胜方存在 →
-  REACHED_1000（胜方=1000、失败方 UNKNOWN）；部分分下界 ≥1000 同样证明 REACHED_1000；
-  时长 ≥420s 且双方部分分 <1000 → TIME_EXPIRED；其余 UNKNOWN；无权威胜方时不推断胜方
-  （POINTS_INFERENCE 停止产出）；终局比分无法证明时一律 UNKNOWN。
+  `victoryPointsEarned`(#32) 是逐人占点统计；争霸赛所有模式（随机战/训练房/联赛）均为标准
+  7 分钟/1000 分规则——游戏不提供时长调整（`standardSupremacyRules`；仅类别未知 fail closed）：
+  时长 <420s 且权威胜方存在 → REACHED_1000（胜方=1000、失败方 UNKNOWN）；部分分下界 ≥1000
+  同样证明 REACHED_1000；时长 ≥420s 且双方部分分 <1000 → TIME_EXPIRED；其余 UNKNOWN；
+  无权威胜方时不推断胜方（POINTS_INFERENCE 停止产出）；终局比分无法证明时一律 UNKNOWN。
 - **掉血窗口严重度**：`DamageWindowClusterer.DamageWindow` 带 `damageVsBaseMaxHpPct`
   （累计伤害/基础满血量，tankopedia 基础值、不含装备加成——只是计算基准，不是实际掉血比例）：
   跨度 ≤10s 且伤害 ≥75% 基础满血量 → `criticalWindow`（短窗高额伤害窗口）；

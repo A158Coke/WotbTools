@@ -33,7 +33,7 @@ class TeamPointsAccountingTest {
     }
 
     private static Battle supremacyBattle(final double durationSec, final Integer winnerTeam,
-                                          final int arenaBonusType) {
+                                          final Integer arenaBonusType) {
         final Battle b = new Battle();
         b.rosterComplete = true;
         b.durationS = durationSec;
@@ -107,14 +107,29 @@ class TeamPointsAccountingTest {
     }
 
     @Test
-    void trainingRoomCustomLimitDoesNotForce1000() {
-        final Battle training = supremacyBattle(226, 2, 2); // 训练房：自定义时限不可证明
-        assertFalse(FriendlyEnemyResult.standardSupremacyRules(training));
-        assertFalse(FriendlyEnemyResult.provableEarlyPointsWin(training));
-        assertEquals(FriendlyEnemyResult.PointsEndReason.UNKNOWN,
+    void trainingRoomEarlyEndPinsWinnerTo1000() {
+        // 游戏不提供时长调整：训练房争霸赛同为标准 7 分钟/1000 分规则
+        final Battle training = supremacyBattle(226, 2, 2);
+        assertTrue(FriendlyEnemyResult.standardSupremacyRules(training));
+        assertTrue(FriendlyEnemyResult.provableEarlyPointsWin(training));
+        assertEquals(FriendlyEnemyResult.PointsEndReason.REACHED_1000,
                 FriendlyEnemyResult.resolveTeamBattle(training, 2).pointsEndReason());
         final TeamEvidenceFormatter.BudgetWriter bw = new TeamEvidenceFormatter.BudgetWriter();
         TeamEvidenceFormatter.appendCaptureAndPoints(bw, training, 2, "eval-arena");
+        assertTrue(bw.content().contains(
+                "finalScore: team=1000（达到1000分提前获胜, 规则保证） opposing=UNKNOWN"), bw.content());
+    }
+
+    @Test
+    void unknownCategoryFailsClosedOnTimeRule() {
+        // 类别未知（arenaBonusType=null）：无法证明标准规则 → 时长判据失效，结束方式与终局比分未知
+        final Battle unknown = supremacyBattle(226, 2, null);
+        assertFalse(FriendlyEnemyResult.standardSupremacyRules(unknown));
+        assertFalse(FriendlyEnemyResult.provableEarlyPointsWin(unknown));
+        assertEquals(FriendlyEnemyResult.PointsEndReason.UNKNOWN,
+                FriendlyEnemyResult.resolveTeamBattle(unknown, 2).pointsEndReason());
+        final TeamEvidenceFormatter.BudgetWriter bw = new TeamEvidenceFormatter.BudgetWriter();
+        TeamEvidenceFormatter.appendCaptureAndPoints(bw, unknown, 2, "eval-arena");
         final String content = bw.content();
         assertTrue(content.contains("finalScore: team=UNKNOWN opposing=UNKNOWN"), content);
         assertFalse(content.contains("finalScore: team=1000"), content);

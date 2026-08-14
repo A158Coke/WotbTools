@@ -353,9 +353,9 @@ final class TeamEvidenceFormatter {
                 }
                 writer.append("directive=争霸赛计分口径: 每击杀夺取对方40分补充自身、本方掉人同样损失40分; "
                         + "victoryPointsEarned 是逐人占点分(不含被动占点增长), knownPointsSubtotal 是部分可计算值, "
-                        + "两者都不是终局比分; 只有标准时限(随机战/官方联赛)且权威胜方存在时才能写"
-                        + "「达到1000分提前获胜」(胜方=1000, 失败方比分未知); "
-                        + "时间耗尽与自定义时限未知时终局比分一律 UNKNOWN, 禁止编造双方精确比分\n");
+                        + "两者都不是终局比分; 争霸赛所有模式均为标准7分钟/1000分规则(游戏不提供时长调整), "
+                        + "权威胜方存在且时长<7分钟时才能写「达到1000分提前获胜」(胜方=1000, 失败方比分未知); "
+                        + "时间耗尽与无法证明时限时终局比分一律 UNKNOWN, 禁止编造双方精确比分\n");
             }
         } else {
             writer.append("team victoryPointsEarned=UNKNOWN victoryPointsSeized=UNKNOWN\n");
