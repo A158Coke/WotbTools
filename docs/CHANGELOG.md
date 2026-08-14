@@ -26,6 +26,9 @@
   点击可再次 seek、单点 last-known 时间保持真实采样时间。
 
 ### Added
+- **地图鸟瞰独立端点 /api/replay/map-overview（不调 AI）**：ReconstructionController 新增同步端点（与 analyze 同角色/校验/稳定错误码，ReplayUsageMetrics.OP_MAP_OVERVIEW 计费）；新 MapOverviewQueryService 只解析回放并复用 MapOverviewBuilder 确定性聚合，地图不可构建返回 204（前端显示不可用提示）；analyze SSE done.mapOverview 字段保留兼容、前端不再消费。AI 复盘页新增独立「地图鸟瞰」区块（热力/路线/战局回放三视图，ReconstructionPage 手动按钮加载；AnalysisResultPanel 移除地图折叠块并把 AI 报告时间链接 seek 事件上抛给页面加载/跳转）；locale 新增 recon.map.{load,loading,unavailable} 三语。
+- **战局回放视觉调整**：回放视图移除车辆路线渲染（pb-routes/routeSegments/.pb-route 删除，路线数据仍供位置插值与炮线端点复用；「路线」视图不受影响）；坦克图标上方常显坦克型号名标签（PlaybackVehicle.tankName 回退 tankId，位于反缩放按钮内 → 任意缩放下可见、字号恒定，不再限 ≥2× 且从下方移到上方）；炮线可见窗口 TRACER_BASE_SEC 0.5 → 1.0（1×/2×/4× 各约 1s 真实时间）。
+- **AI 用词「簇 → 集群」**：prebattle/system.zh.md 强制规则新增禁「簇」条款（兵力/阵型集中一律「集群」）；PreBattleSectionRenderer.display() 对 LLM 自由文本做确定性组合替换（一簇→一批 / 同簇→集群 / 成簇→集群 / 分簇→分散 / 主力簇→主力集群 / 多簇→多股，不做裸字替换防污染）；team/single.zh.md 与 TeamPromptLocalizer.CAPTURE_RULE「多车同簇推进」→「多车集群推进」（md 与常量逐字一致）。
 - **Grafana 使用统计 Dashboard 新增 AI 平均 Token 面板**：`wotbtools-usage` 新增「AI 平均每次调用 Token」stat 面板（`wotb_ai_upstream_tokens_total{token_type="total"}` 增量 ÷ `wotb_ai_upstream_requests_total` 增量，分母含失败调用、失败计 0 token）与「按模式平均每次调用 Token」timeseries 面板（按 `mode` 分维，分母 `clamp_min(...,1)` 避免无流量 mode 显示 NaN，可区分单机复盘 `PRE_BATTLE_STRATEGIC_PRIOR`+`TACTICAL_REVIEW_HARNESS` 与团队复盘 `SINGLE_TEAM_BATTLE`+`TEAM_AUTOPSY`）；`docs/operations/observability.md` 同步面板清单与统计口径。
 - **AI 复盘点数局势证据与规则（PointsSituationSkill）**：wotb-core 新增纯函数 `PointsSituationSkill`
   （击杀夺分时间线——±40/击杀业务规则按双方阵亡时刻对齐、叙述口径非实时比分、只表达击杀换分项净差值而非整体点数；占领点区域位置存在——

@@ -263,6 +263,15 @@ public final class PreBattleSectionRenderer {
                 .replace("A队", teamALabel).replace("B队", teamBLabel)
                 .replace("A 队", teamALabel).replace("B 队", teamBLabel)
                 .replace("队伍1", teamALabel).replace("队伍2", teamBLabel);
+        // 用语卫生：禁止「簇」字（prompt 规则 8 的确定性兜底）——只替换已知组合，
+        // 不做裸字替换（避免把已替换出的「集群」二次污染成「集集群」）。
+        result = result
+                .replace("一簇", "一批")
+                .replace("同簇", "集群")
+                .replace("成簇", "集群")
+                .replace("分簇", "分散")
+                .replace("主力簇", "主力集群")
+                .replace("多簇", "多股");
         final Matcher matcher = GRID_REGION.matcher(result);
         if (matcher.find()) {
             // regionName 模板形如 "$1区" / "Region $1"：replaceAll 会把 $1 展开为区域号。

@@ -58,7 +58,7 @@ function makeOverview() {
       durationSec: 60,
       vehicles: [
         {
-          accountId: 1001, playerName: 'You', tankId: 1, team: 1,
+          accountId: 1001, playerName: 'You', tankId: 1, tankName: 'Maus', team: 1,
           positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null,
           directionSamples: [
             { timeSec: 10, hullYawDeg: 0, turretRelativeYawDeg: 0 },
@@ -66,7 +66,7 @@ function makeOverview() {
           ]
         },
         {
-          accountId: 2001, playerName: 'EnemyA', tankId: 2, team: 2,
+          accountId: 2001, playerName: 'EnemyA', tankId: 2, tankName: 'T49', team: 2,
           positionIntervals: [{ startSec: 10, endSec: 20 }], deathSec: null,
           directionSamples: [
             { timeSec: 10, hullYawDeg: 10, turretRelativeYawDeg: 5 },
@@ -172,19 +172,6 @@ describe('BattlePlayback', () => {
     expect(enemy.classes()).toContain('pb-last-known')
   })
 
-  it('renders route prefixes only up to the current time', async () => {
-    stubRaf()
-    const wrapper = mountPlayback(makeOverview(), 12)
-    await flushPromises()
-    const polylines = wrapper.findAll('.pb-route')
-    expect(polylines.length).toBeGreaterThanOrEqual(1)
-    for (const pl of polylines) {
-      const pts = pl.attributes('points')
-      expect(pts).toBeTruthy()
-      expect(pts.length).toBeGreaterThan(0)
-    }
-  })
-
   it('dragging the progress bar pauses immediately and stays paused', async () => {
     stubRaf()
     const wrapper = mountPlayback()
@@ -275,7 +262,7 @@ describe('tracer shots', () => {
     const before = mountPlayback(makeOverview(), 11)
     await flushPromises()
     expect(before.findAll('.pb-tracer')).toHaveLength(0)
-    const after = mountPlayback(makeOverview(), 12.5)
+    const after = mountPlayback(makeOverview(), 13)
     await flushPromises()
     expect(after.findAll('.pb-tracer')).toHaveLength(0)
   })
@@ -545,19 +532,17 @@ describe('fixed-size vehicle markers', () => {
   })
 })
 
-describe('fixed-size strokes and high-zoom name labels', () => {
-  it('route and tracer stroke widths stay constant on screen at any zoom', async () => {
+describe('fixed-size strokes and always-visible tank name labels', () => {
+  it('tracer stroke width stays constant on screen at any zoom', async () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
-    // 1×：路线 2px / 炮线 1.5px
-    expect(wrapper.find('.pb-routes').attributes('stroke-width')).toBe('2')
+    // 1×：炮线 1.5px
     expect(wrapper.find('.pb-tracers').attributes('stroke-width')).toBe('1.5')
     for (let i = 0; i < 12; i++) {
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
     }
     // 4×：除以 view.scale 保持屏幕宽度（长度仍随地图坐标缩放）
-    expect(wrapper.find('.pb-routes').attributes('stroke-width')).toBe('0.5')
     expect(wrapper.find('.pb-tracers').attributes('stroke-width')).toBe('0.375')
   })
 
@@ -574,20 +559,33 @@ describe('fixed-size strokes and high-zoom name labels', () => {
     }
   })
 
-  it('vehicle name label appears only at 2x zoom and above', async () => {
+  it('tank name label is always visible above every marker at any zoom', async () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
-    expect(wrapper.find('.pb-name').exists()).toBe(false)
-    for (let i = 0; i < 3; i++) { // 1.2× → 1.44× → 1.728×（<2×）
+    // 1× 即常显（不再依赖 ≥2× 缩放）
+    const labels = wrapper.findAll('.pb-name')
+    expect(labels.length).toBe(2) // 两辆可见车都显示标签
+    expect(labels[0].text()).toContain('Maus')
+    expect(labels[1].text()).toContain('T49')
+    // 标签位于图标上方（bottom: calc(100% + 2px)），且高倍缩放后仍在（反缩放恒定）
+    for (const label of labels) {
+      expect(label.attributes('style')).toBeUndefined() // 位置由 CSS 控制
+    }
+    const firstStyle = wrapper.find('.pb-vehicle').attributes('style')
+    expect(firstStyle).toContain('scale(') // 反缩放逻辑未变
+    for (let i = 0; i < 12; i++) { // 1× → 4×
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
     }
-    expect(wrapper.find('.pb-name').exists()).toBe(false)
-    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 }) // 2.07×
-    const labels = wrapper.findAll('.pb-name')
-    expect(labels.length).toBe(2) // 两辆可见车都显示车名
-    expect(labels[0].text()).toContain('You')
-    expect(labels[1].text()).toContain('EnemyA')
+    expect(wrapper.findAll('.pb-name').length).toBe(2)
+  })
+
+  it('no route polylines are rendered in the playback view', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    expect(wrapper.find('.pb-routes').exists()).toBe(false)
+    expect(wrapper.findAll('.pb-route')).toHaveLength(0)
   })
 })
 

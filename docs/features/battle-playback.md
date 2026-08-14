@@ -1,12 +1,16 @@
 # 地图鸟瞰与战局回放（Battle Playback）
 
-> 用户可见契约：AI 复盘结果页的「地图鸟瞰」区块（热力 + 路线 + 战局回放三视图）。
+> 用户可见契约：AI 复盘页面（ReconstructionPage）的独立「地图鸟瞰」区块
+> （热力 + 路线 + 战局回放三视图），**不依赖 AI 复盘**——不跑 AI 也能看图。
 > 数据来源与素材权威见 `docs/reference/maps.md`（内部 code ↔ 展示名 ↔ 语义 mapId ↔ 素材）。
 
 ## 地图鸟瞰（Map Overview）
 
-AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `mapOverview`（可空）→ 前端
-`MapOverview.vue` 纯 SVG 渲染（热力 + 路线 + 战局回放三视图）。
+AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载地图」按钮 → `POST /api/replay/map-overview`
+（只解析回放、不调 AI，同步返回 `MapOverview` JSON；地图不可构建返回 204）→ 前端
+`MapOverview.vue` 纯 SVG 渲染（热力 + 路线 + 战局回放三视图）。AI 复盘 SSE `done` 载荷仍携带
+`mapOverview` 字段（后端兼容保留），但前端不再从复盘结果渲染地图——两处同源（同一
+`MapOverviewBuilder`），无数据漂移。
 
 ### 数据链路
 
@@ -62,21 +66,24 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
     （`translate(-50%,-50%) rotate(...)`）——素材透明留白实测有效车体 bbox ≈210×336/512，
     131% 后桌面有效可见车体 ≈15×24px，放大地图不再显小；hull 层按 `hullYawDeg` 旋转、turret 层按
     `turretWorldYawDeg` 旋转（炮管不脱离炮塔）；阵营色只来自素材本身；录像者 gold halo、选中 ring、
-    最后已知淡化、阵亡 ✕ 为独立 overlay，不烘焙进 PNG；缩放 ≥2× 时标记下方显示固定字号车名小标签。
+    最后已知淡化、阵亡 ✕ 为独立 overlay，不烘焙进 PNG；标记**上方**常显固定字号坦克型号名小标签
+    （`PlaybackVehicle.tankName`，空时回退 `tankId`；位于反缩放按钮内 → 字号不随地图缩放，任意缩放下可见）。
     旋转换算：地图 yaw 从北(+Z)顺时针 → 屏幕 `rotate(yawDeg)`（0=朝上/90=朝右/180=朝下/270=朝左，
     两次翻转抵消，无符号/偏移修正）。
    - **炮线/曳光线（已知射击）**：`visibleTracers` 由纯函数 `tracerLines`（`utils/battlePlayback.js`）
      按当前时间推导——候选 = 过滤后事件流中的 DAMAGE 与 KILL（攻击者已解析），同刻同 attacker/target
      去重为一条；两端都必须满足 `trustedPositionAt`（事件时刻落在该车路线首末点之间且所在段 gap ≤ 5s；
      末点后的最后已知位置/gap 内/首点前一律拒绝，不用最后已知位置伪造射击位置）；可见窗口 =
-     `0.5s × 播放倍速`（1×/2×/4× 各约 0.5s 真实时间），opacity 随窗口渐隐；纯函数依赖 now/speed →
-     seek/倍速天然正确，无一次性定时器。未命中/盲射/弹道弧线/瞄准线无数据依据，不渲染。
+     `1s × 播放倍速`（1×/2×/4× 各约 1s 真实时间，`TRACER_BASE_SEC=1.0`），opacity 随窗口渐隐；
+     纯函数依赖 now/speed → seek/倍速天然正确，无一次性定时器。未命中/盲射/弹道弧线/瞄准线无数据依据，不渲染。
    - **缩放平移**：`.pb-viewport` 单一 transform 层（translate+scale）同时承载 SVG 与 HTML 标记 →
-     地图/网格/路线/炮线/标记严格对齐；滚轮锚点缩放（1×–4×，`zoomViewAt` 锚点不动）、双指捏合、
+     地图/网格/炮线/标记严格对齐；滚轮锚点缩放（1×–4×，`zoomViewAt` 锚点不动）、双指捏合、
      单指/鼠标拖动（>5px 阈值，拖动后吞 click 防误选车）、重置按钮；地图区域 `touch-action:none`，
-     地图外页面滚动不受影响；卸载清理 window 级 pointer 监听。路线 `<g>` 绑定
-     `stroke-width=2/view.scale`、炮线 `1.5/view.scale`（屏幕宽度恒定，放大后不变成粗色带；
-     长度仍随地图坐标）；网格/区域/出生点（A/B/C 基地）属地图内容，随缩放。
+     地图外页面滚动不受影响；卸载清理 window 级 pointer 监听。炮线 `<g>` 绑定
+     `stroke-width=1.5/view.scale`（屏幕宽度恒定，放大后不变成粗色带；长度仍随地图坐标）；
+     网格/区域/出生点（A/B/C 基地）属地图内容，随缩放。**战局回放视图不再渲染车辆路线**
+     （用户 2026-08-14 确认去除；路线数据仍被车辆位置插值与炮线端点复用，只删渲染层；
+     想看路线用「路线」视图）。
    - **阵亡状态（pb-destroyed）**：destroyed 是显式独立状态，不并入 `pb-last-known`；敌我阵亡车
      结构一致（hull+turret 双层 + 同款 ✕）：方向冻结在最后可信样本（`interpolateDirection` 末样本
      冻结语义），无方向样本以素材默认 0° 渲染（不代表朝向）；`.pb-destroyed { opacity:.35 }` +
@@ -92,8 +99,6 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
   随机战默认只显示与录像者相关的伤害/击杀/阵亡 + 全部可见性事件（可切换「全部已知事件」），
   训练房/联赛默认显示本方关键事件；进度条按秒聚合事件标记，点击标记跳转该秒并弹出事件列表。
   播放控制：播放/暂停、±5s、上一/下一事件、1×/2×/4×、拖动 seek。
-  - **历史路线**：只渲染 `timeSec <= currentTime` 的路线前缀（`routePrefix`），未来路线永不显示；
-    gap > 5s 断线，当前时间在可信段内时把插值终点追加为段尾；阵亡后路线不再延伸。
   - **gap 内最后已知**：`positionAt` 只返回可信插值位置（gap 内为 null，禁止穿线）；
     车辆显示位置由 `lastKnownPosition` 兜底——gap/位置中断/阵亡时车辆停在淡化的最后可信位置而非消失，
     阵亡优先于位置中断；「最后已知」面板显示真实的最后可信时间（`pos.timeSec`），不再显示 `currentTime`。
@@ -103,12 +108,13 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
     播放到结尾、切离 playback Tab、折叠地图鸟瞰、组件卸载均停止。
   - **时间格式**：`formatClock` 先对总秒数统一取整再分解分钟/秒（杜绝 59.6s 显示为 00:60）。
   **AI 报告时间跳转**：`MarkdownContent` 把明确时间文本（`03:20` / `3分20秒` / `3m 20s` /
-  `3 мин 20 с`）转成 `#seek=<秒>` 链接（不识别普通数字/比分），点击后展开地图鸟瞰、
+  `3 мин 20 с`）转成 `#seek=<秒>` 链接（不识别普通数字/比分）；结果面板把 seek 事件上抛给页面，
+  页面确保独立地图区块已加载（未加载自动拉取 /api/replay/map-overview）并把 seek 传给 MapOverview——
   自动切换到战局回放并 seek 到该时刻暂停。
 - **阶段切片**：opening = OPENING + FIRST_CONTACT 合并；mid = 中间段；late = 战斗末
   `BattlePhaseSummary.DENSE_KILL_WINDOW_SEC`（15s）窗口（残局）。
 - **降级**：未知地图 / 无语义网格 / 无名册 / 无观测 / 视角未解析 → `mapOverview = null`，
-  前端不渲染。
+  前端不渲染（加载按钮返回 204 并显示不可用提示）。
 
 ### 图片素材与对齐约定
 
