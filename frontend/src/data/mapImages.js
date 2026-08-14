@@ -40,9 +40,9 @@ const WORLD_BOUNDS_300 = { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
 /**
  * 地图鸟瞰素材注册表（唯一权威，素材开关）：mapCode（meta.json 的 mapName）→ 图片资源与尺寸。
  * 文件命名约定：游戏英文展示名小写中划线（如 Normandy → normandy.png，Middleburg → middleburg.png）；
- * 内部 code 与展示名的完整映射见 docs/map-catalog.md。
+ * 内部 code 与展示名的完整映射见 docs/reference/maps.md。
  * 新增素材流程：图片按英文展示名放入 assets/maps + 本文件加一行（含 coordinateBounds，
- * 来源见 docs/DEVELOPER_GUIDE.md「地图鸟瞰」）。未登记地图整块不渲染。
+ * 来源见 docs/features/battle-playback.md）。未登记地图整块不渲染。
  */
 export const mapImages = {
   amigosville: { src: fallsCreekImg, width: 768, height: 765, coordinateBounds: WORLD_BOUNDS_300 },

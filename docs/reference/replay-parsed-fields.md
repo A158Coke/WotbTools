@@ -1,8 +1,8 @@
 # 回放解析字段字典（已确认）
 
 > 用途：记录本项目**已确认解析**的字段与含义，方便后人查阅，避免重复逆向。
-> 解析实现细节见 `docs/replay-data.md`（文件结构/事件流逆向）与 `docs/replay-reverse-engineering.md`；
-> AI 证据链见 `docs/DEVELOPER_GUIDE.md` §AI Review Harness。
+> 解析实现细节见 `docs/reference/replay-data.md`（文件结构/事件流逆向）与 `docs/research/replay/protocol.md`；
+> AI 证据链见 `docs/architecture/ai-review.md`。
 > 字段号基于 v11.18.0_china_apple 回放分析，可能随游戏版本变化。
 
 ## 1. 权威结算层（`battle_results.dat` → `PlayerResult`）
@@ -99,7 +99,7 @@
 
 ## 6. 相关文档
 
-- `docs/replay-data.md` — 文件结构、事件流格式、解析安全预算
-- `docs/replay-reverse-engineering.md` — 逆向记录
-- `docs/DEVELOPER_GUIDE.md` — 架构与 AI 证据链
-- `docs/team-ai-review-feature.md` — Team-Level AI 复盘设计
+- `docs/reference/replay-data.md` — 文件结构、事件流格式、解析安全预算
+- `docs/research/replay/protocol.md` — 逆向记录
+- `docs/architecture/ai-review.md` — 架构与 AI 证据链
+- `docs/features/team-ai-review.md` — Team-Level AI 复盘设计
