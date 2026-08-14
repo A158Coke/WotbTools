@@ -29,28 +29,24 @@
   （`utils/battlePlayback.js` 新增 `trustedPositionAt` 严格事件时刻可信位置——末点后/gap 内/
   首点前/非有限坐标拒绝，不用最后已知位置伪造射击位置；`tracerLines` 纯函数按 now/speed 推导 →
   seek 与 1×/2×/4× 天然正确、无一次性定时器；同刻 DAMAGE+KILL 去重为一条；未命中/盲射/弹道/
-  瞄准线无数据依据不渲染）；未命中开炮：EntityMethodDecoder 解析 type 8/sub 8 的非直接伤害结果
-  （body[13] 伤害子类型 ≠3 或 =3 但伤害 0）为新事件 `ShotEvent`，`MapOverview` 输出
-  `SHOT` playback 事件（仅已解析攻击者，无目标）；前端沿**已证明的炮塔世界方向**
-  （hullYaw+turretRelativeYaw）画固定视觉长度 60m 的更细更淡炮线（`SHOT_TRACER_LEN`，
-  不代表真实弹道），无方向样本不画；被观测门控：己方全部开炮可见，敌方开炮需点亮证据——
-  当前无已验证的点亮解码（位置流覆盖≠点亮），fail closed 不渲染敌方未命中；
-  `.pb-viewport` 单层 transform 缩放平移（滚轮/双指捏合 1×–4× 锚点
+  瞄准线无数据依据不渲染）；`.pb-viewport` 单层 transform 缩放平移（滚轮/双指捏合 1×–4× 锚点
   缩放、>5px 阈值拖动平移、拖动后吞 click 防误选车、重置按钮、全图层严格对齐、卸载清理监听）；
   `pb-destroyed` 显式阵亡状态（敌我同款 opacity .35 + grayscale(1) 双层 + ✕，方向冻结最后可信
   样本，无样本以素材默认 0° 渲染，不并入 `pb-last-known`）。
-- **AI 复盘击杀夺分与掉血窗口口径**：`FriendlyEnemyResult` 新增 `KILL_STEAL_POINTS=40`（双向：
-  每击杀夺取对方 40 分、本方掉人损失 40 分）、`teamKills`/`teamDeaths`/`killPointsDelta`/
-  `knownPointsSubtotal`（逐人占点分+40×击杀−40×阵亡，**部分可计算值、非终局比分**）与
-  `standardSupremacyRules`/`provableEarlyPointsWin`（争霸赛所有模式均为标准 7 分钟/1000 分
-  规则——游戏不提供时长调整；仅类别未知 fail closed）；无权威胜方时不再按占点分推断胜方
-  （POINTS_INFERENCE 停止产出）；
-  `TeamEvidenceFormatter` 输出双方 kills/deaths/knownPointsSubtotal，终局比分只有可证明时输出
-  （标准时限提前结束+权威胜方 → 胜方=1000、失败方 UNKNOWN；其余一律 UNKNOWN）；
+- **AI 复盘点数口径与掉血窗口口径**：`FriendlyEnemyResult` 新增 `teamKills`/`teamDeaths`
+  （原始结算事实）与 `standardSupremacyRules`/`provableEarlyPointsWin`（420s/1000 为
+  **项目所有者确认的业务规则**，arenaBonusType 只证明战斗类别、不解码出 420s/1000；仅类别未知
+  fail closed）；**撤回 `knownPointsSubtotal`/`killPointsDelta` 公式**（victoryPointsEarned 是否
+  含击杀夺分未经证明，现有样本双方击杀净值为 0 无法区分）；结束方式只按「标准规则+时长+双方
+  存活」判定，不使用任何点数公式；无权威胜方时不按占点分推断胜方（POINTS_INFERENCE 停止产出）；
+  `TeamEvidenceFormatter` 只输出原始结算字段（victoryPointsEarned/Seized、kills、deaths），
+  终局比分除业务规则可证明的胜方=1000 外一律 UNKNOWN；
   `DamageWindowClusterer.DamageWindow` 新增 `damageVsBaseMaxHpPct`（累计伤害/基础满血量，
   tankopedia 基础值，只是计算基准不是实际掉血比例）/ `criticalWindow`（跨度 ≤10s 且伤害 ≥75%
-  基础满血量）；不产出无法证明的「被秒杀」判定；prompt 规则三语同步（player×3 + team/single +
-  PlayerPromptRules/TeamPromptLocalizer：短窗高额伤害窗口强制定性 + 禁止把部分分当终局比分 +
+  基础满血量）；不产出无法证明的「被秒杀」判定；type 8/sub 8 非直接伤害结果与 type 5 Spotting
+  均为未解码候选（`ShotSpottingStreamProbeTest`/`PointsEvidenceProbeTest` 探针记录，不进入
+  生产时间线）；prompt 规则三语同步（player×3 + team/single + PlayerPromptRules/
+  TeamPromptLocalizer：短窗高额伤害窗口强制定性 + 禁止任何公式结果冒充终局比分 +
   禁止阵亡掉血 100% 废话）；`PointsVictoryProbeTest` 本地样本探针（CI 无样本自动跳过）。
 - **战局回放炮塔方向契约与双层坦克标记（门禁 B 破解）**：type-7 propId=2 定案为
   炮塔相对车体偏航（u16 LE：`raw*360/65536-180` 度，完整 360° 且 ±180 回绕）——车体静止

@@ -15,18 +15,22 @@ class TeamPromptLocalizerTest {
         final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(zh, AllowedLanguage.RU);
         assertTrue(en.contains("SUPREMACY CAPTURE RULES"),
                 "EN must carry the localized capture rules");
-        assertTrue(en.contains("BATTLE_RESULTS") && en.contains("knownPointsSubtotal"),
-                "EN must carry the resultSource evidence levels and the partial-score wording");
+        assertTrue(en.contains("BATTLE_RESULTS") && en.contains("business rules"),
+                "EN must carry the resultSource evidence levels and the business-rule wording");
         assertFalse(en.contains("POINTS_INFERENCE"),
                 "EN must not carry the retired points-inference rule");
+        assertFalse(en.contains("knownPointsSubtotal"),
+                "EN must not carry the retracted subtotal formula");
         assertFalse(en.contains("争霸赛占点规则"), "EN must not retain the Chinese capture rule");
         assertFalse(en.contains("被敌方全歼"), "EN must not retain Chinese rule wording");
         assertTrue(ru.contains("ПРАВИЛА ЗАХВАТА"),
                 "RU must carry the localized capture rules");
-        assertTrue(ru.contains("BATTLE_RESULTS") && ru.contains("knownPointsSubtotal"),
-                "RU must carry the resultSource evidence levels and the partial-score wording");
+        assertTrue(ru.contains("BATTLE_RESULTS") && ru.contains("бизнес-правила"),
+                "RU must carry the resultSource evidence levels and the business-rule wording");
         assertFalse(ru.contains("POINTS_INFERENCE"),
                 "RU must not carry the retired points-inference rule");
+        assertFalse(ru.contains("knownPointsSubtotal"),
+                "RU must not carry the retracted subtotal formula");
         assertFalse(ru.contains("争霸赛占点规则"), "RU must not retain the Chinese capture rule");
         assertFalse(ru.contains("被敌方全歼"), "RU must not retain Chinese rule wording");
         assertTrue(zh.contains("resultSource"),

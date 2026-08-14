@@ -473,12 +473,7 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
     去重为一条；两端都必须满足 `trustedPositionAt`（事件时刻落在该车路线首末点之间且所在段 gap ≤ 5s；
     末点后的最后已知位置/gap 内/首点前一律拒绝，不用最后已知位置伪造射击位置）；可见窗口 =
     `0.5s × 播放倍速`（1×/2×/4× 各约 0.5s 真实时间），opacity 随窗口渐隐；纯函数依赖 now/speed →
-    seek/倍速天然正确，无一次性定时器。未命中开炮：`ShotEvent`（type 8/sub 8 伤害方法包的非直接
-    伤害结果——body[13] ≠3 或 =3 但伤害 0；短包为环境实体事件，不是开炮证据）→ `SHOT` playback
-    事件（仅已解析攻击者）；炮线沿已证明的炮塔世界方向画固定视觉长度（`SHOT_TRACER_LEN=60m`，
-    不代表真实弹道），无方向样本不画；被观测门控 fail closed：己方全部开炮可见，敌方开炮需
-    「被点亮」证据（type 5 Spotting 尚未解码，位置流覆盖≠点亮，不得冒充）——当前不渲染敌方
-    未命中。未命中/盲射/弹道弧线/瞄准线无数据依据，不渲染。
+    seek/倍速天然正确，无一次性定时器。未命中/盲射/弹道弧线/瞄准线无数据依据，不渲染。
   - **缩放平移**：`.pb-viewport` 单一 transform 层（translate+scale）同时承载 SVG 与 HTML 标记 →
     地图/网格/路线/炮线/标记严格对齐；滚轮锚点缩放（1×–4×，`zoomViewAt` 锚点不动）、双指捏合、
     单指/鼠标拖动（>5px 阈值，拖动后吞 click 防误选车）、重置按钮；地图区域 `touch-action:none`，
@@ -511,14 +506,16 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
   **AI 报告时间跳转**：`MarkdownContent` 把明确时间文本（`03:20` / `3分20秒` / `3m 20s` /
   `3 мин 20 с`）转成 `#seek=<秒>` 链接（不识别普通数字/比分），点击后展开地图鸟瞰、
   自动切换到战局回放并 seek 到该时刻暂停。
-- **争霸赛击杀夺分口径（团队复盘）**：每击杀夺取对方 40 分补充自身、本方掉人损失 40 分
-  （`FriendlyEnemyResult.KILL_STEAL_POINTS`，双向计入）；`knownPointsSubtotal = victoryPointsEarned
-  合计 + 40×击杀 − 40×阵亡` 是**部分可计算值（不含被动占点增长），不是终局比分**；
-  `victoryPointsEarned`(#32) 是逐人占点统计；争霸赛所有模式（随机战/训练房/联赛）均为标准
-  7 分钟/1000 分规则——游戏不提供时长调整（`standardSupremacyRules`；仅类别未知 fail closed）：
-  时长 <420s 且权威胜方存在 → REACHED_1000（胜方=1000、失败方 UNKNOWN）；部分分下界 ≥1000
-  同样证明 REACHED_1000；时长 ≥420s 且双方部分分 <1000 → TIME_EXPIRED；其余 UNKNOWN；
-  无权威胜方时不推断胜方（POINTS_INFERENCE 停止产出）；终局比分无法证明时一律 UNKNOWN。
+- **争霸赛点数口径（团队复盘）**：固定 7 分钟（420s）/ 胜利点数上限 1000 分是
+  **项目所有者确认的业务规则**（游戏不提供时长调整）；`arenaBonusType` 只证明战斗类别，
+  不直接解码出 420s/1000（`standardSupremacyRules`，仅类别未知 fail closed）。结束方式只按
+  「标准规则 + 时长 + 双方存活」判定，不使用任何点数公式：双方均有存活且时长 <420s →
+  REACHED_1000（胜方=1000、失败方 UNKNOWN）；时长 ≥420s → TIME_EXPIRED；其余 UNKNOWN。
+  `victoryPointsEarned`(#32) 的精确定义（是否含击杀夺分/被动占点增长）未经证明，已知计算
+  口径（占点分+40×击杀−40×阵亡）**已撤回**，证据只输出原始结算字段（victoryPointsEarned/Seized、
+  kills、deaths）；击杀夺分 40 分规则仅作叙述口径（`KILL_STEAL_POINTS`，不参与计算）；
+  实时点数/基地占领/终局比分尚未解码（`PointsEvidenceProbeTest`/`ShotSpottingStreamProbeTest`
+  记录候选，语义 UNKNOWN）。无权威胜方时不推断胜方（POINTS_INFERENCE 停止产出）。
 - **掉血窗口严重度**：`DamageWindowClusterer.DamageWindow` 带 `damageVsBaseMaxHpPct`
   （累计伤害/基础满血量，tankopedia 基础值、不含装备加成——只是计算基准，不是实际掉血比例）：
   跨度 ≤10s 且伤害 ≥75% 基础满血量 → `criticalWindow`（短窗高额伤害窗口）；

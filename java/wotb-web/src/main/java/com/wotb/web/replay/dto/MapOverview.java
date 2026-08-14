@@ -175,9 +175,9 @@ public record MapOverview(
     /**
      * 时间轴事件。
      *
-     * @param type           DAMAGE | DESTROYED | KILL | SHOT | POSITION_REPORTED | POSITION_STALE（英文稳定码）
+     * @param type           DAMAGE | DESTROYED | KILL | POSITION_REPORTED | POSITION_STALE（英文稳定码）
      * @param timeSec        battle-relative 秒
-     * @param accountId      主体（攻击者 / 被击毁者 / 开炮者 / 进入或离开观察的车辆）；无法解析为 null
+     * @param accountId      主体（攻击者 / 被击毁者 / 进入或离开观察的车辆）；无法解析为 null
      * @param targetAccountId 对象（DAMAGE/KILL 的受害者）；其余为 null
      * @param damage         DAMAGE 的伤害值；其余为 null
      */

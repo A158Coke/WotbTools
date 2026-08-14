@@ -237,47 +237,35 @@ export const TRACER_BASE_SEC = 0.5
 /** 同一次射击的判同窗口（秒）：同 attacker/target 且时间差 ≤ 该值的 DAMAGE/KILL 只画一条炮线。 */
 export const SAME_SHOT_WINDOW_SEC = 0.25
 
-/** 未命中炮线视觉长度（地图米）：沿已证明的炮塔世界方向绘制，不代表真实弹道。 */
-export const SHOT_TRACER_LEN = 60
-
 /**
  * 已知射击事件 → 当前可见炮线（纯函数：只依赖 now/speed，seek 与倍速天然正确，无一次性定时器）。
- * - 命中：DAMAGE 与 KILL（攻击者/目标均已解析）；同刻同 attacker/target 去重为一条（优先保留 DAMAGE）；
- *   两端都必须在事件时刻有可信位置（trustedPositionAt）且不是同一辆车/同一坐标才输出。
- * - 未命中：SHOT（开炮但无直接伤害结果）；从攻击者可信位置沿**已证明的炮塔世界方向**
- *   （hullYaw + turretRelativeYaw）画固定视觉长度 {@link SHOT_TRACER_LEN} 米，无方向样本时不画（不伪造朝向）；
- *   该长度不代表真实弹道。调用方负责「开炮实体被观测」门控（己方恒可见；敌方需点亮证据）。
- * nowSec ∈ [timeSec, timeSec + TRACER_BASE_SEC × speed) 时可见，opacity 随时间渐隐（未命中线更淡）。
+ * 候选 = DAMAGE 与 KILL（攻击者/目标均已解析）；同刻同 attacker/target 去重为一条（优先保留 DAMAGE）；
+ * 两端都必须在事件时刻有可信位置（trustedPositionAt）且不是同一辆车/同一坐标才输出。
+ * nowSec ∈ [timeSec, timeSec + TRACER_BASE_SEC × speed) 时可见，opacity 随时间渐隐。
  *
- * @param events           过滤后的 playback 事件（DAMAGE/KILL/SHOT）
- * @param routesByAccount  Map<accountId, { points: [{x,y,timeSec}] }>
- * @param nowSec           当前播放时间（battle-relative 秒）
- * @param speed            播放倍速（1/2/4）
- * @param vehiclesByAccount 可选 Map<accountId, { directionSamples }>（未命中方向来源）
- * @returns [{ x1, y1, x2, y2, opacity, timeSec, attackerAccountId, targetAccountId, kind }]
+ * @param events         过滤后的 playback 事件（DAMAGE/KILL）
+ * @param routesByAccount Map<accountId, { points: [{x,y,timeSec}] }>
+ * @param nowSec         当前播放时间（battle-relative 秒）
+ * @param speed          播放倍速（1/2/4）
+ * @returns [{ x1, y1, x2, y2, opacity, timeSec, attackerAccountId, targetAccountId }]
  */
-export function tracerLines(events, routesByAccount, nowSec, speed, vehiclesByAccount) {
+export function tracerLines(events, routesByAccount, nowSec, speed) {
   if (!Array.isArray(events) || !routesByAccount || !Number.isFinite(nowSec)) return []
   const rate = Number.isFinite(speed) && speed > 0 ? speed : 1
   const windowSec = TRACER_BASE_SEC * rate
-  // 命中：按 (attacker,target) 分组，组内按实际时间差去重（时间差 ≤ SAME_SHOT_WINDOW_SEC 视为同一炮，
+  // 按 (attacker,target) 分组，组内按实际时间差去重（时间差 ≤ SAME_SHOT_WINDOW_SEC 视为同一炮，
   // 优先保留 DAMAGE）——不用固定时间桶，避免桶边界把相差 2ms 的两次事件拆成两条线
   const byPair = new Map()
-  const shotEvents = []
   for (const ev of events) {
-    if (!ev || !Number.isFinite(ev.timeSec)) continue
-    if (ev.type === 'SHOT') {
-      if (ev.accountId != null) shotEvents.push(ev)
-      continue
-    }
-    if (ev.type !== 'DAMAGE' && ev.type !== 'KILL') continue
+    if (!ev || (ev.type !== 'DAMAGE' && ev.type !== 'KILL')) continue
     if (ev.accountId == null || ev.targetAccountId == null || ev.accountId === ev.targetAccountId) continue
+    if (!Number.isFinite(ev.timeSec)) continue
     const key = `${ev.accountId}|${ev.targetAccountId}`
     const list = byPair.get(key)
     if (list) list.push(ev)
     else byPair.set(key, [ev])
   }
-  const hitEvents = []
+  const shots = []
   for (const pair of byPair.values()) {
     pair.sort((a, b) => a.timeSec - b.timeSec)
     let kept = null
@@ -290,13 +278,13 @@ export function tracerLines(events, routesByAccount, nowSec, speed, vehiclesByAc
         if (kept.type === 'KILL' && ev.type === 'DAMAGE') kept = ev
         continue
       }
-      hitEvents.push(kept)
+      shots.push(kept)
       kept = ev
     }
-    if (kept) hitEvents.push(kept)
+    if (kept) shots.push(kept)
   }
   const lines = []
-  for (const ev of hitEvents) {
+  for (const ev of shots) {
     const t = ev.timeSec
     if (nowSec < t - 1e-6 || nowSec >= t + windowSec - 1e-9) continue
     const from = routesByAccount.get(ev.accountId)
@@ -313,30 +301,7 @@ export function tracerLines(events, routesByAccount, nowSec, speed, vehiclesByAc
       opacity: Math.max(0, Math.min(1, 1 - (nowSec - t) / windowSec)),
       timeSec: t,
       attackerAccountId: ev.accountId,
-      targetAccountId: ev.targetAccountId,
-      kind: 'hit'
-    })
-  }
-  for (const ev of shotEvents) {
-    const t = ev.timeSec
-    if (nowSec < t - 1e-6 || nowSec >= t + windowSec - 1e-9) continue
-    const route = routesByAccount.get(ev.accountId)
-    const from = route ? trustedPositionAt(route.points, t) : null
-    if (!from) continue
-    const vehicle = vehiclesByAccount ? vehiclesByAccount.get(ev.accountId) : null
-    const dir = vehicle ? interpolateDirection(vehicle.directionSamples, t) : null
-    if (!dir) continue // 无可靠方向样本：不伪造朝向
-    const yawRad = (turretWorldYawDeg(dir.hullYawDeg, dir.turretRelativeYawDeg) * Math.PI) / 180
-    lines.push({
-      x1: from.x,
-      y1: from.y,
-      x2: from.x + SHOT_TRACER_LEN * Math.sin(yawRad),
-      y2: from.y + SHOT_TRACER_LEN * Math.cos(yawRad),
-      opacity: 0.7 * Math.max(0, Math.min(1, 1 - (nowSec - t) / windowSec)),
-      timeSec: t,
-      attackerAccountId: ev.accountId,
-      targetAccountId: null,
-      kind: 'shot'
+      targetAccountId: ev.targetAccountId
     })
   }
   return lines
@@ -347,8 +312,12 @@ export const VIEW_MIN_SCALE = 1
 export const VIEW_MAX_SCALE = 4
 
 /**
- * 以锚点 (px, py)（相对视口容器左上、未变换坐标）缩放视图：
- * s' = clamp(s × factor, min, max)；t' = p − (p − t)·(s'/s)，锚点下的地图内容点保持不动。
+ * 以屏幕锚点 (px, py)（相对地图容器左上的**屏幕坐标**，即 clientX/Y − getBoundingClientRect().left/top，
+ * 未经任何变换）缩放视图：
+ * s' = clamp(s × factor, min, max)；t' = p − (p − t)·(s'/s)。
+ * 契约：该公式保证锚点屏幕位置下的地图内容点在缩放前后不变
+ * （(px − tx)/scale 与 (py − ty)/scale 保持不变），translate 单位为屏幕像素。
+ * 调用方（wheel/pinch）必须传入屏幕坐标，不得混入内容坐标。
  */
 export function zoomViewAt(view, px, py, factor, minScale = VIEW_MIN_SCALE, maxScale = VIEW_MAX_SCALE) {
   if (!view || !Number.isFinite(view.scale) || !Number.isFinite(factor) || factor <= 0) return view

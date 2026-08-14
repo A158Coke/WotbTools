@@ -363,63 +363,6 @@ describe('tracerLines', () => {
   })
 })
 
-describe('tracerLines SHOT (miss) events', () => {
-  const routes = new Map([
-    [1, { points: [{ x: 0, y: 0, timeSec: 10 }, { x: 100, y: 0, timeSec: 14 }] }]
-  ])
-  const vehicles = new Map([
-    [1, { directionSamples: [{ timeSec: 10, hullYawDeg: 0, turretRelativeYawDeg: 0 }] }]
-  ])
-  const shot = { type: 'SHOT', timeSec: 12, accountId: 1, targetAccountId: null, damage: null }
-
-  it('draws a directional tracer from the trusted position along the proven turret direction', () => {
-    const lines = tracerLines([shot], routes, 12, 1, vehicles)
-    expect(lines).toHaveLength(1)
-    expect(lines[0].kind).toBe('shot')
-    expect(lines[0].x1).toBeCloseTo(50)
-    expect(lines[0].y1).toBeCloseTo(0)
-    // 炮塔世界方向 0° = 北 = +y（地图），视觉长度 60m
-    expect(lines[0].x2).toBeCloseTo(50)
-    expect(lines[0].y2).toBeCloseTo(60)
-    expect(lines[0].opacity).toBeCloseTo(0.7)
-    expect(lines[0].targetAccountId).toBeNull()
-  })
-
-  it('east turret direction maps to +x', () => {
-    const eastVehicles = new Map([
-      [1, { directionSamples: [{ timeSec: 10, hullYawDeg: 90, turretRelativeYawDeg: 0 }] }]
-    ])
-    const lines = tracerLines([shot], routes, 12, 1, eastVehicles)
-    expect(lines[0].x2).toBeCloseTo(110)
-    expect(lines[0].y2).toBeCloseTo(0)
-  })
-
-  it('respects the visible window and seek (same window contract as hits)', () => {
-    expect(tracerLines([shot], routes, 12.5, 1, vehicles)).toEqual([])
-    expect(tracerLines([shot], routes, 12, 1, vehicles)).toHaveLength(1)
-    expect(tracerLines([shot], routes, 13.9, 4, vehicles)).toHaveLength(1)
-    expect(tracerLines([shot], routes, 14, 4, vehicles)).toEqual([])
-  })
-
-  it('skips shots without a trusted position or direction samples (no orientation fabrication)', () => {
-    expect(tracerLines([{ ...shot, timeSec: 20 }], routes, 20, 1, vehicles)).toEqual([])
-    const noDir = new Map([[1, { directionSamples: [] }]])
-    expect(tracerLines([shot], routes, 12, 1, noDir)).toEqual([])
-    expect(tracerLines([shot], routes, 12, 1, null)).toEqual([])
-  })
-
-  it('a hit and a miss at the same moment render two distinct lines', () => {
-    const damage = { type: 'DAMAGE', timeSec: 12, accountId: 1, targetAccountId: 2, damage: 400 }
-    const both = new Map([
-      [1, { points: [{ x: 0, y: 0, timeSec: 10 }, { x: 100, y: 0, timeSec: 14 }] }],
-      [2, { points: [{ x: 0, y: 100, timeSec: 10 }, { x: 100, y: 100, timeSec: 14 }] }]
-    ])
-    const lines = tracerLines([shot, damage], both, 12, 1, vehicles)
-    expect(lines).toHaveLength(2)
-    expect(lines.map(l => l.kind).sort()).toEqual(['hit', 'shot'])
-  })
-})
-
 describe('zoomViewAt / clampViewPan', () => {
   it('clamps scale into [1,4] and keeps the anchor point fixed', () => {
     const z = zoomViewAt({ scale: 1, tx: 0, ty: 0 }, 100, 50, 1.2)
@@ -428,6 +371,28 @@ describe('zoomViewAt / clampViewPan', () => {
     expect(z.ty).toBeCloseTo(50 - 50 * (z.scale / 1))
     expect(zoomViewAt({ scale: 3.9, tx: 0, ty: 0 }, 0, 0, 2).scale).toBe(4)
     expect(zoomViewAt({ scale: 1.1, tx: 0, ty: 0 }, 0, 0, 0.5).scale).toBe(1)
+  })
+
+  it('keeps the content point under the screen anchor fixed after prior zoom/pan', () => {
+    const view = { scale: 1.7, tx: 80, ty: -40 }
+    const p = { x: 150, y: 90 }
+    const z = zoomViewAt(view, p.x, p.y, 1.3)
+    expect(z.scale).toBeCloseTo(2.21)
+    const before = { x: (p.x - view.tx) / view.scale, y: (p.y - view.ty) / view.scale }
+    const after = { x: (p.x - z.tx) / z.scale, y: (p.y - z.ty) / z.scale }
+    expect(after.x).toBeCloseTo(before.x, 9)
+    expect(after.y).toBeCloseTo(before.y, 9)
+  })
+
+  it('keeps the anchor fixed when clamped at the max scale', () => {
+    const view = { scale: 3.9, tx: 50, ty: 30 }
+    const p = { x: 200, y: 100 }
+    const z = zoomViewAt(view, p.x, p.y, 2)
+    expect(z.scale).toBe(4)
+    const before = { x: (p.x - view.tx) / view.scale, y: (p.y - view.ty) / view.scale }
+    const after = { x: (p.x - z.tx) / z.scale, y: (p.y - z.ty) / z.scale }
+    expect(after.x).toBeCloseTo(before.x, 9)
+    expect(after.y).toBeCloseTo(before.y, 9)
   })
 
   it('clampViewPan resets at scale 1 and keeps content inside the viewport', () => {

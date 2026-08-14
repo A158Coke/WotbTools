@@ -290,35 +290,6 @@ describe('tracer shots', () => {
   })
 })
 
-describe('miss shot tracers', () => {
-  function shotOverview() {
-    const overview = makeOverview()
-    overview.playback.events.push({ type: 'SHOT', timeSec: 12, accountId: 1001, targetAccountId: null, damage: null })
-    overview.playback.events.push({ type: 'SHOT', timeSec: 12.1, accountId: 2001, targetAccountId: null, damage: null })
-    return overview
-  }
-
-  it('renders friendly shots along the turret direction and suppresses enemy shots (fail closed)', async () => {
-    stubRaf()
-    const wrapper = mountPlayback(shotOverview(), 12)
-    await flushPromises()
-    const shots = wrapper.findAll('.pb-tracer-shot')
-    expect(shots).toHaveLength(1) // 仅友方开炮；敌方未证明被点亮 → 不渲染
-    expect(shots[0].attributes('x1')).toBeTruthy()
-    expect(shots[0].attributes('y2')).toBeTruthy()
-  })
-
-  it('SHOT chip toggle hides shot tracers', async () => {
-    stubRaf()
-    const wrapper = mountPlayback(shotOverview(), 12)
-    await flushPromises()
-    expect(wrapper.findAll('.pb-tracer-shot')).toHaveLength(1)
-    const chip = wrapper.findAll('.pb-chip').find(c => c.text() === 'recon.map.playback.event_SHOT')
-    await chip.trigger('click')
-    expect(wrapper.findAll('.pb-tracer-shot')).toHaveLength(0)
-  })
-})
-
 describe('map zoom and pan', () => {
   async function zoomedWrapper() {
     stubRaf()
@@ -398,14 +369,108 @@ describe('map zoom and pan', () => {
     await viewport.trigger('pointerup', { pointerId: 2 })
   })
 
-  it('wheel zoom anchors at the cursor in map-local coordinates', async () => {
+  it('wheel zoom anchors at the cursor in screen coordinates', async () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
     wrapper.find('[data-test="pb-map"]').element.getBoundingClientRect = () => nonzeroRect()
     await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 110, clientY: 60 })
-    // 局部 (10,10)：t' = 10 − 10×1.2 = −2
+    // 屏幕锚点 (10,10)：t' = 10 − 10×1.2 = −2
     expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('translate(-2px, -2px) scale(1.2)')
+  })
+
+  function parseTransform(style) {
+    const m = style.match(/translate\(([-\d.]+)px, ([-\d.]+)px\) scale\(([-\d.]+)\)/)
+    return m ? { tx: Number(m[1]), ty: Number(m[2]), scale: Number(m[3]) } : null
+  }
+
+  it('wheel zoom keeps the cursor content point fixed after prior zoom and pan', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    wrapper.find('[data-test="pb-map"]').element.getBoundingClientRect = () => nonzeroRect()
+    const map = wrapper.find('[data-test="pb-map"]')
+    const viewport = wrapper.find('[data-test="pb-viewport"]')
+    await map.trigger('wheel', { deltaY: -120, clientX: 110, clientY: 60 }) // → (-2,-2) scale 1.2
+    await viewport.trigger('pointerdown', { pointerId: 1, clientX: 10, clientY: 10 })
+    await viewport.trigger('pointermove', { pointerId: 1, clientX: 60, clientY: 30 }) // 平移 +50/+20 → (48,18)
+    await viewport.trigger('pointerup', { pointerId: 1 })
+    await map.trigger('wheel', { deltaY: -120, clientX: 150, clientY: 80 }) // 屏幕锚点 (50,30)
+    const t = parseTransform(viewport.attributes('style'))
+    expect(t).not.toBeNull()
+    expect(t.scale).toBeCloseTo(1.44, 6)
+    expect(t.tx).toBeCloseTo(47.6, 6)
+    expect(t.ty).toBeCloseTo(15.6, 6)
+    // 锚点内容不变式：(px − tx)/scale
+    const before = { x: (50 - 48) / 1.2, y: (30 - 18) / 1.2 }
+    const after = { x: (50 - t.tx) / t.scale, y: (30 - t.ty) / t.scale }
+    expect(after.x).toBeCloseTo(before.x, 6)
+    expect(after.y).toBeCloseTo(before.y, 6)
+  })
+
+  it('consecutive wheel zooms keep the anchor fixed at every step and clamp to 1x-4x', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    wrapper.find('[data-test="pb-map"]').element.getBoundingClientRect = () => nonzeroRect()
+    const map = wrapper.find('[data-test="pb-map"]')
+    const viewport = wrapper.find('[data-test="pb-viewport"]')
+    // 初始 scale 1、t=0：屏幕锚点 (50,30) 即内容点
+    for (let i = 0; i < 3; i++) {
+      await map.trigger('wheel', { deltaY: -120, clientX: 150, clientY: 80 })
+      const t = parseTransform(viewport.attributes('style'))
+      expect((50 - t.tx) / t.scale).toBeCloseTo(50, 6)
+      expect((30 - t.ty) / t.scale).toBeCloseTo(30, 6)
+    }
+    for (let i = 0; i < 12; i++) {
+      await map.trigger('wheel', { deltaY: -120, clientX: 150, clientY: 80 })
+    }
+    expect(parseTransform(viewport.attributes('style')).scale).toBe(4)
+    for (let i = 0; i < 30; i++) {
+      await map.trigger('wheel', { deltaY: 120, clientX: 150, clientY: 80 })
+    }
+    const min = parseTransform(viewport.attributes('style'))
+    expect(min.scale).toBe(1)
+    expect(min.tx).toBe(0)
+    expect(min.ty).toBe(0)
+  })
+
+  it('pinch keeps the mid-point content fixed after prior zoom and pan, including consecutive pinches', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    wrapper.find('[data-test="pb-map"]').element.getBoundingClientRect = () => nonzeroRect()
+    const map = wrapper.find('[data-test="pb-map"]')
+    const viewport = wrapper.find('[data-test="pb-viewport"]')
+    await map.trigger('wheel', { deltaY: -120, clientX: 110, clientY: 60 }) // (-2,-2) 1.2
+    await viewport.trigger('pointerdown', { pointerId: 9, clientX: 10, clientY: 10 })
+    await viewport.trigger('pointermove', { pointerId: 9, clientX: 60, clientY: 30 }) // → (48,18) 1.2
+    await viewport.trigger('pointerup', { pointerId: 9 })
+    // 第一次捏合：mid 160→210、dist 100→200（ratio 2）
+    await viewport.trigger('pointerdown', { pointerId: 1, clientX: 110, clientY: 60 })
+    await viewport.trigger('pointerdown', { pointerId: 2, clientX: 210, clientY: 60 })
+    await viewport.trigger('pointermove', { pointerId: 2, clientX: 310, clientY: 60 })
+    const t = parseTransform(viewport.attributes('style'))
+    expect(t.scale).toBeCloseTo(2.4, 6)
+    // 不变式：捏合前 mid0 下的内容点 == 捏合后 mid1 下的内容点（手指跟随）
+    const beforeMid = { x: (160 - 100 - 48) / 1.2, y: (60 - 50 - 18) / 1.2 }
+    const afterMid = { x: (210 - 100 - t.tx) / t.scale, y: (60 - 50 - t.ty) / t.scale }
+    expect(afterMid.x).toBeCloseTo(beforeMid.x, 6)
+    expect(afterMid.y).toBeCloseTo(beforeMid.y, 6)
+    await viewport.trigger('pointerup', { pointerId: 1 })
+    await viewport.trigger('pointerup', { pointerId: 2 })
+    // 连续第二次捏合：mid 170→210、dist 100→200，2.4×2 → clamp 4
+    await viewport.trigger('pointerdown', { pointerId: 3, clientX: 120, clientY: 70 })
+    await viewport.trigger('pointerdown', { pointerId: 4, clientX: 220, clientY: 70 })
+    await viewport.trigger('pointermove', { pointerId: 4, clientX: 320, clientY: 70 })
+    const t2 = parseTransform(viewport.attributes('style'))
+    expect(t2.scale).toBe(4)
+    const mid2Before = { x: (170 - 100 - t.tx) / t.scale, y: (70 - 50 - t.ty) / t.scale }
+    const mid2After = { x: (220 - 100 - t2.tx) / t2.scale, y: (70 - 50 - t2.ty) / t2.scale }
+    expect(mid2After.x).toBeCloseTo(mid2Before.x, 6)
+    expect(mid2After.y).toBeCloseTo(mid2Before.y, 6)
+    await viewport.trigger('pointerup', { pointerId: 3 })
+    await viewport.trigger('pointerup', { pointerId: 4 })
   })
 
   it('reset restores identity view and keeps all layers on the single transform', async () => {

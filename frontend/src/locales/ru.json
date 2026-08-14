@@ -826,7 +826,6 @@
                 "event_DAMAGE": "Урон",
                 "event_DESTROYED": "Уничтожен",
                 "event_KILL": "Фраг",
-                "event_SHOT": "Выстрел",
                 "event_POSITION_REPORTED": "Позиция передана",
                 "event_POSITION_STALE": "Позиция устарела"
             }
