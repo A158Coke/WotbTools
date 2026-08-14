@@ -827,6 +827,7 @@
                 "state_destroyed": "已击毁",
                 "last_known": "最后已知位置：",
                 "points": "点数",
+                "hp_unknown": "未知",
                 "reset_view": "重置视图",
                 "unknown": "未知",
                 "event_DAMAGE": "伤害",

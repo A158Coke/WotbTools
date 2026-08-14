@@ -42,9 +42,7 @@ public record MapOverview(
         List<Route> routes,
         Integer arenaBonusType,
         Long recorderAccountId,
-        Playback playback,
-        Integer friendlyPoints,
-        Integer enemyPoints
+        Playback playback
 ) {
 
     public MapOverview {
@@ -119,12 +117,18 @@ public record MapOverview(
     public record Playback(
             double durationSec,
             List<PlaybackVehicle> vehicles,
-            List<PlaybackEvent> events
+            List<PlaybackEvent> events,
+            List<PointsSample> pointsSamples
     ) {
         public Playback {
             vehicles = vehicles == null ? List.of() : List.copyOf(vehicles);
             events = events == null ? List.of() : List.copyOf(events);
+            pointsSamples = pointsSamples == null ? List.of() : List.copyOf(pointsSamples);
         }
+    }
+
+    /** 争霸赛实时点数广播（battle-relative 秒升序；type-8 subtype48 root field12，PROVEN）。 */
+    public record PointsSample(double timeSec, int team, int points) {
     }
 
     /**

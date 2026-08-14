@@ -5,6 +5,7 @@ import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.event.VehicleDestroyedEvent;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import org.springframework.util.StringUtils;
@@ -12,6 +13,7 @@ import org.springframework.util.StringUtils;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Type 8 (EntityMethod) 解码器。
@@ -77,6 +79,8 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                 if (mapping != null) {
                     events.addAll(mapping.mappingEvents());
                 }
+                // 争霸赛实时点数（root field 12，保守结构校验；结构不合法/数值非法 → 跳过）
+                events.addAll(parseSupremacyPoints(payload, packet, ts));
             }
             case SUBTYPE_UPDATE_ARENA -> {
                 // updateArena - 暂时不做实体映射，现有功能已覆盖
@@ -124,63 +128,112 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
      */
     private ParticipantMappingResult parseUpdateArena2(
             byte[] payload, int entityId, RawReplayPacket packet, ReplayTimestamp ts) {
+        final Map<Integer, List<Object>> root = decodeRoot(payload);
+        if (root == null) {
+            return null;
+        }
+        // 名册映射：root field 1 = wrapper protobuf，其 field 1 = 玩家列表
+        final Object wrapperRaw = ProtobufDecoder.first(root, 1);
+        if (!(wrapperRaw instanceof byte[] wrapperBytes)) {
+            return null;
+        }
+        final var wrapper = ProtobufDecoder.decode(wrapperBytes);
+        final List<Object> playerList = wrapper.get(1);
+        if (playerList == null) {
+            return null;
+        }
+        final List<ParticipantMappingEvent> mappings = new ArrayList<>();
+        for (final Object pRaw : playerList) {
+            if (!(pRaw instanceof byte[] playerBytes)) continue;
+            final var p = ProtobufDecoder.decode(playerBytes);
+            final int eid = (int) ProtobufDecoder.firstLong(p, 1, 0);
+            final long acc = ProtobufDecoder.firstLong(p, 7, 0);
+            final String nickname = decodeUtf8(ProtobufDecoder.first(p, 3));
+            final int team = (int) ProtobufDecoder.firstLong(p, 4, 0);
+            if (eid != 0 && (acc != 0 || StringUtils.hasText(nickname))) {
+                mappings.add(new ParticipantMappingEvent(
+                        packet.sequence(), ts, packet.type(),
+                        DecodeConfidence.EXACT, eid, acc, nickname, team));
+            }
+        }
+        if (mappings.isEmpty()) {
+            return null;
+        }
+        return new ParticipantMappingResult(mappings);
+    }
 
+    /**
+     * 解析 subtype 48 (updateArena2) 实时争霸点数广播（root field 12，PROVEN）。
+     * <p>root field 12 为重复 protobuf 消息，每条直接携带 field 1 = team（1/2）、
+     * field 2 = 当前争霸点数（已对 5 个真实回放交叉验证：字段号 12、点数区间与击毁 ±40 点事件吻合）。
+     * 只消费回放真实广播，绝不按游戏规则推算点数；结构不完整或 team/points 非法 → 跳过。</p>
+     */
+    private List<SupremacyPointsChangedEvent> parseSupremacyPoints(
+            byte[] payload, RawReplayPacket packet, ReplayTimestamp ts) {
+        final Map<Integer, List<Object>> root = decodeRoot(payload);
+        if (root == null) {
+            return List.of();
+        }
+        final List<Object> teamBlocks = root.get(12);
+        if (teamBlocks == null || teamBlocks.isEmpty()) {
+            return List.of();
+        }
+        final List<SupremacyPointsChangedEvent> out = new ArrayList<>();
+        for (final Object blockRaw : teamBlocks) {
+            if (!(blockRaw instanceof byte[] block)) {
+                continue;
+            }
+            final var blockFields = ProtobufDecoder.decode(block);
+            final long team = ProtobufDecoder.firstLong(blockFields, 1, -1);
+            final long points = ProtobufDecoder.firstLong(blockFields, 2, -1);
+            if (team != 1 && team != 2) {
+                continue;
+            }
+            if (points < 0 || points > 100_000) {
+                continue;
+            }
+            out.add(new SupremacyPointsChangedEvent(
+                    packet.sequence(), ts, packet.type(),
+                    DecodeConfidence.EXACT, (int) team, (int) points));
+        }
+        return out;
+    }
+
+    /** 提取 subtype48 的 root protobuf（body 内 varint + msgLen + protoData）。 */
+    private static Map<Integer, List<Object>> decodeRoot(final byte[] payload) {
         final byte[] body = new byte[payload.length - 8];
         System.arraycopy(payload, 8, body, 0, body.length);
-
-        final List<ParticipantMappingEvent> mappings = new ArrayList<>();
-
         try {
             int off = 4;
-            if (off >= body.length) return null;
-
+            if (off >= body.length) {
+                return null;
+            }
             final long[] varRes = readVarint(body, off);
             off = (int) varRes[1];
-
-            if (off >= body.length) return null;
-            final int msgLenSize;
+            if (off >= body.length) {
+                return null;
+            }
             final int msgLen;
             final int first = body[off] & 0xFF;
             if (first == 0xFF) {
-                if (off + 2 > body.length) return null;
-                msgLenSize = 4;
+                if (off + 2 > body.length) {
+                    return null;
+                }
                 msgLen = readU16LE(body, off + 1);
+                off += 4;
             } else {
-                msgLenSize = 1;
                 msgLen = first;
+                off += 1;
             }
-            off += msgLenSize;
-            if (off + msgLen > body.length) return null;
-
+            if (off + msgLen > body.length) {
+                return null;
+            }
             final byte[] protoData = new byte[msgLen];
             System.arraycopy(body, off, protoData, 0, msgLen);
-
-            final var root = ProtobufDecoder.decode(protoData);
-            final Object wrapperRaw = ProtobufDecoder.first(root, 1);
-            if (!(wrapperRaw instanceof byte[] wrapperBytes)) return null;
-            final var wrapper = ProtobufDecoder.decode(wrapperBytes);
-            final List<Object> playerList = wrapper.get(1);
-            if (playerList == null) return null;
-
-            for (final Object pRaw : playerList) {
-                if (!(pRaw instanceof byte[] playerBytes)) continue;
-                final var p = ProtobufDecoder.decode(playerBytes);
-                final int eid = (int) ProtobufDecoder.firstLong(p, 1, 0);
-                final long acc = ProtobufDecoder.firstLong(p, 7, 0);
-                final String nickname = decodeUtf8(ProtobufDecoder.first(p, 3));
-                final int team = (int) ProtobufDecoder.firstLong(p, 4, 0);
-                if (eid != 0 && (acc != 0 || StringUtils.hasText(nickname))) {
-                    mappings.add(new ParticipantMappingEvent(
-                            packet.sequence(), ts, packet.type(),
-                            DecodeConfidence.EXACT, eid, acc, nickname, team));
-                }
-            }
+            return ProtobufDecoder.decode(protoData);
         } catch (Exception e) {
             return null;
         }
-
-        if (mappings.isEmpty()) return null;
-        return new ParticipantMappingResult(mappings);
     }
 
     private static String decodeUtf8(final Object value) {

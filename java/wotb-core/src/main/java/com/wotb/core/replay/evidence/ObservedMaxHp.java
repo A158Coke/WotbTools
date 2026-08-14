@@ -39,8 +39,10 @@ public final class ObservedMaxHp {
             if (!(event instanceof HealthChangedEvent hp)) {
                 continue;
             }
+            // 只接受可信正 HP：signed i16 语义下 0xFFFD(-3) 死亡 sentinel、0xFFFF(-1)
+            // UNKNOWN sentinel 及其它 ≤0/≥0xFF00 高位值一律不得进入（防 65533/65535 污染）
             if (hp.confidence() != DecodeConfidence.EXACT
-                    || hp.currentHealth() == null || hp.currentHealth() <= 0) {
+                    || !HealthChangedEvent.isPlausibleHp(hp.currentHealth())) {
                 continue;
             }
             final TeamEntityIdentity identity = mapping.identity(hp.entityId());

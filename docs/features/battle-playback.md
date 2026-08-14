@@ -99,10 +99,14 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
    - **真实 i18n 回归**：三语 `recon.map.playback.last_known` 文案不得含裸 `@`（Vue I18n 11
      linked-message 语法），选中 last-known/已击毁车辆首次渲染该文案时编译报错会导致组件整体卸载；
      `BattlePlayback.i18n.test.js` 用真实 `createI18n`（不 mock `$t`）覆盖 zh/en/ru 选车路径。
-   - **双方总血量条 + 争霸赛点数**：地图下方两条 bar（本方/敌方阵营色）——`totalMax=ΣmaxHp`、
-     `remaining(t)=Σ(最近一次血量采样≤t，无采样用 maxHp)`（纯函数 `teamHp/vehicleHpAt`）；
-     `maxHp` 与 `hpSamples` 来自后端消费 type-7 propId=3（含装备/物资加成，`ObservedMaxHp` 解析）；
-     争霸赛（`friendlyPoints/enemyPoints` 非 null）在条区显示双方终局点数。
+   - **双方总血量条 + 争霸赛实时点数**：地图下方两条 bar（本方/敌方阵营色）——
+     `totalMax=ΣmaxHp`（理论容量）、`knownRemaining=Σ已知剩余`、`unknownMax=Σ未观测容量`
+     （纯函数 `teamHp/vehicleHpAt`）；阵营色实段=已知剩余、灰色弱化段=未观测（UNKNOWN，不冒充满血）、
+     空白=已损失；`maxHp` 与 `hpSamples` 来自后端消费 type-7 propId=3（**signed i16**，含装备/物资加成，
+     `ObservedMaxHp` 解析；0xFFFD/-3 死亡 sentinel 归一化为 0、0xFFFF/-1 等 UNKNOWN sentinel 绝不进入）。
+     争霸赛实时点数来自回放广播 `pointsSamples`（type-8 subtype48 root field12，PROVEN；纯函数
+     `teamPointsAt` 取最近一次 ≤currentTime 的广播值，随进度条变化；非争霸赛/无广播不显示，
+     结算值不得冒充实时比分）。
   前端 `BattlePlayback.vue`（独立组件，复用 mapImages/coordinateBounds/色板/响应式布局）用
   `requestAnimationFrame` 推进播放时间：仅在同一可信连续点（gap ≤ 5s）之间线性插值，
   跨断线/位置中断/无效坐标禁止穿线；`positionCoveredAt` 决定车辆当前是否有位置流覆盖——

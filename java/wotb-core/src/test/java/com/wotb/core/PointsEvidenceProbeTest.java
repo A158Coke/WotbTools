@@ -5,6 +5,11 @@ import com.wotb.core.parse.ReplayArchiveReader;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
+import com.wotb.core.replay.decoder.EntityMethodDecoder;
+import com.wotb.core.replay.decoder.EntityPropertyDecoder;
+import com.wotb.core.replay.decoder.ProtobufDecoder;
+import com.wotb.core.replay.decoder.ReplayDecodeContext;
+import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import com.wotb.core.replay.stream.ReplayPacketStreamReader;
 import org.junit.jupiter.api.Assumptions;
@@ -138,5 +143,144 @@ class PointsEvidenceProbeTest {
                 System.out.println("  ERROR " + e);
             }
         }
+    }
+
+    /**
+     * REALTIME_SUPREMACY_POINTS + PROP3_HP_SENTINELS 交叉验证探针：
+     * 对真实样本逐包：subtype48 root field12 → SupremacyPointsChangedEvent（记录时间序列与终局值）；
+     * propId=3 扫描所有 ≥0xFF00 高位值（signed 负 sentinel 清单，确认是否还有 FFFC/FFFE 等）。
+     * 手动运行，不进 CI：无样本自动跳过。
+     */
+    @Test
+    void realtimeSupremacyAndHpSentinelProbe() throws Exception {
+        final List<Path> samples = new ArrayList<>();
+        if (Files.isDirectory(REPO_COMMON)) {
+            try (var walk = Files.walk(REPO_COMMON)) {
+                walk.filter(p -> p.toString().endsWith(".wotbreplay"))
+                        .filter(Files::isRegularFile)
+                        .sorted()
+                        .forEach(samples::add);
+            }
+        }
+        Assumptions.assumeTrue(!samples.isEmpty(), "no replay samples under common/");
+        System.out.println("== REALTIME_SUPREMACY_POINTS + PROP3_HP_SENTINELS probe ==");
+        final EntityMethodDecoder methodDecoder = new EntityMethodDecoder();
+        final ReplayDecodeContext ctx = new ReplayDecodeContext("probe");
+        for (final Path sample : samples) {
+            System.out.println("===== " + sample + " =====");
+            try {
+                final byte[] bytes = Files.readAllBytes(sample);
+                final Map<String, byte[]> entries = ReplayArchiveReader.read(bytes);
+                final byte[] eventData = entries.get("data.wotreplay");
+                if (eventData == null) {
+                    System.out.println("  data.wotreplay missing");
+                    continue;
+                }
+                final var stream = ReplayPacketStreamReader.read(eventData);
+                final float start = stream.packets().isEmpty() ? 0f : stream.packets().get(0).rawClockSec();
+                final Map<Long, Integer> lastPoints = new TreeMap<>();
+                int pointsEvents = 0;
+                final List<String> samplesList = new ArrayList<>();
+                final Map<Integer, Integer> hpSentinelCounts = new TreeMap<>();
+                int hpEvents = 0;
+                int sub48Count = 0;
+                for (final RawReplayPacket p : stream.packets()) {
+                    final byte[] pl = p.payload();
+                    if (p.type() == 8 && pl.length >= 8) {
+                        final int sub = (pl[4] & 0xFF) | (pl[5] & 0xFF) << 8
+                                | (pl[6] & 0xFF) << 16 | (pl[7] & 0xFF) << 24;
+                        if (sub != 48) { // subtype48 updateArena2
+                            continue;
+                        }
+                        sub48Count++;
+                        final var result = methodDecoder.decode(ctx, p);
+                        for (final var ev : result.events()) {
+                            if (ev instanceof SupremacyPointsChangedEvent sp) {
+                                pointsEvents++;
+                                lastPoints.put((long) sp.team(), sp.points());
+                                if (samplesList.size() < 12) {
+                                    samplesList.add(String.format("    t=%+.3fs team%d=%d",
+                                            p.rawClockSec() - start, sp.team(), sp.points()));
+                                }
+                            }
+                        }
+                    }
+                    if (p.type() == 7 && pl.length >= 14) {
+                        final int propId = (pl[4] & 0xFF) | (pl[5] & 0xFF) << 8
+                                | (pl[6] & 0xFF) << 16 | (pl[7] & 0xFF) << 24;
+                        if (propId != 3) { // propId=3 当前血量
+                            continue;
+                        }
+                        hpEvents++;
+                        final int raw = (pl[12] & 0xFF) | ((pl[13] & 0xFF) << 8);
+                        if (raw >= 0xFF00) {
+                            hpSentinelCounts.merge(raw, 1, Integer::sum);
+                        }
+                    }
+                }
+                System.out.println("  subtype48 total=" + sub48Count);
+                System.out.println("  supremacy pointsEvents(field12)=" + pointsEvents + " finalRealtime=" + lastPoints);
+                samplesList.forEach(System.out::println);
+                System.out.println("  propId3 hpEvents=" + hpEvents
+                        + " sentinels(>=0xFF00)=" + hpSentinelCounts);
+            } catch (Exception e) {
+                System.out.println("  ERROR " + e);
+            }
+        }
+    }
+
+    /** 调试：提取 subtype48 root；成功返回 rootKeys（含 13 前缀 HAS13），失败返回 FAIL。 */
+    private static String subtype48RootKeys(final byte[] pl) {
+        try {
+            final byte[] body = new byte[pl.length - 8];
+            System.arraycopy(pl, 8, body, 0, body.length);
+            int off = 4;
+            if (off >= body.length) return "FAIL(short)";
+            final long[] vr = readVarintProbe(body, off);
+            off = (int) vr[1];
+            if (off >= body.length) return "FAIL(varint)";
+            final int first = body[off] & 0xFF;
+            final int msgLen;
+            if (first == 0xFF) {
+                if (off + 2 > body.length) return "FAIL(ff)";
+                msgLen = (body[off + 1] & 0xFF) | ((body[off + 2] & 0xFF) << 8);
+                off += 4;
+            } else {
+                msgLen = first;
+                off += 1;
+            }
+            if (off + msgLen > body.length) return "FAIL(overrun)";
+            final byte[] protoData = new byte[msgLen];
+            System.arraycopy(body, off, protoData, 0, msgLen);
+            final var root = ProtobufDecoder.decode(protoData);
+            final String keys = String.valueOf(root.keySet());
+            if (root.containsKey(12) && root.size() == 1) {
+                // 疑似实时点数包：field12 → {field1=team, field2=points}
+                final Object f12 = ProtobufDecoder.first(root, 12);
+                if (f12 instanceof byte[] b12) {
+                    final var f12map = ProtobufDecoder.decode(b12);
+                    final long team = ProtobufDecoder.firstLong(f12map, 1, -99);
+                    final long points = ProtobufDecoder.firstLong(f12map, 2, -99);
+                    return "PTS12 keys=" + f12map.keySet() + " team=" + team + " points=" + points;
+                }
+            }
+            return keys;
+        } catch (Exception e) {
+            return "FAIL(exc)";
+        }
+    }
+
+    private static long[] readVarintProbe(final byte[] buf, final int i) {
+        int idx = i;
+        int shift = 0;
+        long result = 0;
+        while (idx < buf.length && shift < 64) {
+            final int b = buf[idx] & 0xFF;
+            idx++;
+            result |= (long) (b & 0x7F) << shift;
+            if ((b & 0x80) == 0) break;
+            shift += 7;
+        }
+        return new long[]{result, idx};
     }
 }

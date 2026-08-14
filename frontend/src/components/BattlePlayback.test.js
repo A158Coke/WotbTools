@@ -268,15 +268,55 @@ describe('BattlePlayback', () => {
     expect(wrapper.text()).toContain('2200 / 2600') // 敌方 t=12
   })
 
-  it('shows supremacy points when the overview provides them', async () => {
+  it('supremacy points come from the realtime broadcast timeline and change with seek time', async () => {
     stubRaf()
     const overview = makeOverview()
-    overview.friendlyPoints = 1000
-    overview.enemyPoints = 520
+    overview.playback.pointsSamples = [
+      { timeSec: 10, team: 1, points: 300 },
+      { timeSec: 10, team: 2, points: 300 },
+      { timeSec: 20, team: 1, points: 500 },
+      { timeSec: 20, team: 2, points: 280 }
+    ]
     const wrapper = mountPlayback(overview, 12)
     await flushPromises()
-    expect(wrapper.find('[data-test="pb-points-friendly"]').text()).toContain('1000')
-    expect(wrapper.find('[data-test="pb-points-enemy"]').text()).toContain('520')
+    // t=12：取最近一次 ≤12 的广播
+    expect(wrapper.find('[data-test="pb-points-friendly"]').text()).toContain('300')
+    expect(wrapper.find('[data-test="pb-points-enemy"]').text()).toContain('300')
+    // 拖动到 t=20：比分必须随 currentTime 变化，不是终局静态值
+    await wrapper.find('.pb-range').setValue(20)
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-points-friendly"]').text()).toContain('500')
+    expect(wrapper.find('[data-test="pb-points-enemy"]').text()).toContain('280')
+  })
+
+  it('enemy without HP samples is UNKNOWN capacity (gray segment), not assumed full HP', async () => {
+    stubRaf()
+    const overview = makeOverview()
+    overview.playback.vehicles[0].maxHp = 3000
+    overview.playback.vehicles[0].hpSamples = [{ timeSec: 0, hp: 3000 }]
+    overview.playback.vehicles[1].maxHp = 2600 // 无 hpSamples → UNKNOWN
+    const wrapper = mountPlayback(overview, 12)
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-hp-unknown-enemy"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-hp-unknown-enemy"]').text()).toContain('2600')
+    // 已知数字不含未知容量：敌方显示 0 / 2600，而不是假装满血 2600/2600
+    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('0 / 2600')
+    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('3000 / 3000')
+  })
+
+  it('death does not jump the team HP bar to 65533 (0xFFFD sentinel excluded)', async () => {
+    stubRaf()
+    const overview = makeOverview()
+    overview.playback.vehicles[0].maxHp = 3000
+    overview.playback.vehicles[0].hpSamples = [
+      { timeSec: 0, hp: 3000 },
+      { timeSec: 10, hp: 65533 }, // 0xFFFD 死亡 sentinel：绝不作为 HP
+      { timeSec: 10.5, hp: 0 }    // 阵亡
+    ]
+    const wrapper = mountPlayback(overview, 11)
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('0 / 3000') // 阵亡 → 0
+    expect(wrapper.text()).not.toContain('65533')
   })
 
   it('tank marker scales with the map (no counter-scale) while name/death overlays stay constant', async () => {
