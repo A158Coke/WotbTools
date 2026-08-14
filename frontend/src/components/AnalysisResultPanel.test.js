@@ -2,7 +2,6 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { watch } from 'vue'
 import AnalysisResultPanel from './AnalysisResultPanel.vue'
 
 const i18n = vi.hoisted(() => ({
@@ -35,18 +34,8 @@ afterEach(() => {
   delete document.execCommand
 })
 
-describe('AnalysisResultPanel repeated seek', () => {
-  it('clicking the same AI timestamp twice re-triggers the seek', async () => {
-    const seen = []
-    const MapStub = {
-      name: 'MapOverview',
-      props: ['overview', 'seekTo'],
-      setup(props) {
-        seen.push(props.seekTo)
-        watch(() => props.seekTo, v => seen.push(v))
-        return () => null
-      }
-    }
+describe('AnalysisResultPanel seek emission', () => {
+  it('emits seek for every AI timestamp click (same timestamp twice re-emits)', async () => {
     const wrapper = mount(AnalysisResultPanel, {
       props: {
         result: {
@@ -54,17 +43,45 @@ describe('AnalysisResultPanel repeated seek', () => {
           mapOverview: { mapCode: 'desert_train', displayName: 'Desert Sands' }
         }
       },
-      global: { mocks: { $t: i18n.t }, stubs: { MapOverview: MapStub } }
+      global: { mocks: { $t: i18n.t } }
     })
     const link = wrapper.find('a[href="#seek=200"]')
     expect(link.exists()).toBe(true)
     await link.trigger('click')
     await flushPromises()
-    expect(seen.filter(v => v === 200)).toHaveLength(1)
-    // 用户手动把播放器拖到别处后，再次点击同一个 03:20：必须再次 seek 200
+    expect(wrapper.emitted('seek')).toEqual([[200]])
+    // 用户手动把播放器拖到别处后，再次点击同一个 03:20：必须再次 emit seek 200
     await link.trigger('click')
     await flushPromises()
-    expect(seen.filter(v => v === 200)).toHaveLength(2)
+    expect(wrapper.emitted('seek')).toEqual([[200], [200]])
+  })
+
+  it('does not render a map block (map overview moved to page-level section)', () => {
+    const wrapper = mount(AnalysisResultPanel, {
+      props: {
+        result: {
+          analysis: 'report',
+          mapOverview: {
+            mapCode: 'desert_train',
+            displayName: 'Desert Sands',
+            friendlyTeam: 2,
+            playableBounds: { xMin: -256, xMax: 260, yMin: -251, yMax: 254.3 },
+            gridCells: [],
+            spawnPoints: [],
+            phases: [],
+            heatmaps: {
+              friendly: { dwell: [], damage: [], deaths: [] },
+              enemy: { dwell: [], damage: [], deaths: [] }
+            },
+            routes: []
+          }
+        }
+      },
+      global: { mocks: { $t: i18n.t } }
+    })
+    expect(wrapper.find('[data-test="map-block"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('recon.map.title')
+    expect(wrapper.text()).toContain('report')
   })
 })
 
@@ -123,50 +140,6 @@ describe('AnalysisResultPanel preBattleSection', () => {
     expect(wrapper.find('.prebattle-content').exists()).toBe(true)
     expect(toggle.attributes('aria-expanded')).toBe('true')
     expect(wrapper.text()).toContain('recon.prebattle.collapse')
-  })
-
-  it('renders the map overview block when mapOverview has an asset', async () => {
-    const wrapper = mount(AnalysisResultPanel, {
-      props: {
-        result: {
-          analysis: 'report',
-          mapOverview: {
-            mapCode: 'desert_train',
-            displayName: 'Desert Sands',
-            friendlyTeam: 2,
-            playableBounds: { xMin: -256, xMax: 260, yMin: -251, yMax: 254.3 },
-            gridCells: [],
-            spawnPoints: [],
-            phases: [],
-            heatmaps: {
-              friendly: { dwell: [], damage: [], deaths: [] },
-              enemy: { dwell: [], damage: [], deaths: [] }
-            },
-            routes: []
-          }
-        }
-      },
-      global: { mocks: { $t: i18n.t } }
-    })
-    expect(wrapper.find('[data-test="map-block"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('recon.map.title')
-    // 默认收起：点击展开后渲染 MapOverview
-    await wrapper.get('.prebattle-toggle').trigger('click')
-    expect(wrapper.find('.map-overview-content').exists()).toBe(true)
-  })
-
-  it('does not render the map block when the map has no image asset', () => {
-    const wrapper = mount(AnalysisResultPanel, {
-      props: {
-        result: {
-          analysis: 'report',
-          mapOverview: { mapCode: 'holmeisk', displayName: 'Wasteland' }
-        }
-      },
-      global: { mocks: { $t: i18n.t } }
-    })
-    expect(wrapper.find('[data-test="map-block"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('report')
   })
 
   it('copies only the final review body, excluding pre-battle and map overview', async () => {

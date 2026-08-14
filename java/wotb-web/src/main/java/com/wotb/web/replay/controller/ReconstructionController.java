@@ -18,7 +18,9 @@ import com.wotb.web.replay.ai.gateway.AiCancellationToken;
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.config.ApiPaths;
+import com.wotb.web.replay.MapOverviewQueryService;
 import com.wotb.web.replay.dto.AnalyzeResponse;
+import com.wotb.web.replay.dto.MapOverview;
 import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 import com.wotb.web.replay.exception.AiReviewBusyException;
@@ -60,6 +62,7 @@ public class ReconstructionController {
     private final AiCancellationRegistry cancellationRegistry;
     private final AiReviewWorkerExecutor workerExecutor;
     private final ReplayUsageMetrics usageMetrics;
+    private final MapOverviewQueryService mapOverviewService;
 
     /**
      * SSE 连接超时：对齐 nginx analyze 1120s read timeout，避免服务端在代理之前
@@ -74,11 +77,13 @@ public class ReconstructionController {
             final AiReplayReviewService reviewService,
             final AiCancellationRegistry cancellationRegistry,
             final AiReviewWorkerExecutor workerExecutor,
+            final MapOverviewQueryService mapOverviewService,
             @Autowired(required = false) final ReplayUsageMetrics usageMetrics) {
         this.processingFacade = processingFacade;
         this.reviewService = reviewService;
         this.cancellationRegistry = cancellationRegistry;
         this.workerExecutor = workerExecutor;
+        this.mapOverviewService = mapOverviewService;
         this.usageMetrics = usageMetrics;
     }
 
@@ -312,6 +317,23 @@ public class ReconstructionController {
                 : ReplayProcessingOptions.summaryOnly();
 
         return timed(ReplayUsageMetrics.OP_PROCESS, files.length, () -> processingFacade.processBatch(toSources(files), options));
+    }
+
+    /**
+     * 地图鸟瞰（不调 AI）：只解析回放并确定性生成 MapOverview（热力/路线/战局回放）。
+     * AI Review 页面在不需要 AI 复盘时单独加载地图视图；错误码与 analyze 一致
+     * （文件校验 / NO_BATTLE_DATA），地图不可构建（未知地图/无观测/无名册/视角未解析）
+     * 返回 204 空响应，由前端显示不可用提示。
+     */
+    @PostMapping(value = ApiPaths.REPLAY_MAP_OVERVIEW, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<MapOverview> mapOverview(
+            @RequestParam("files") final MultipartFile[] files) throws IOException {
+        final MapOverview overview = timed(ReplayUsageMetrics.OP_MAP_OVERVIEW, files.length,
+                () -> mapOverviewService.buildOverview(files));
+        if (overview == null) {
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.ok(overview);
     }
 
     /** 执行并统计回放解析使用指标（成功与异常都记录；无 ReplayUsageMetrics 时原样执行）。 */
