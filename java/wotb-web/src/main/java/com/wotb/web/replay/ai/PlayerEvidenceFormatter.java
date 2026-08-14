@@ -307,7 +307,13 @@ final class PlayerEvidenceFormatter {
                 + " 秒、攻击者≥2 且无未解析攻击者时才标注「（短时多车集火证据）」; "
                 + "攻击者=1 → 短时间集中掉血/高压掉血窗口（不是集火）; "
                 + "标注「（攻击者部分未解析）」时攻击者数不完整, 不得断言集火; "
-                + "链式聚类形成的大跨度窗口（相邻间隔虽小但总跨度超阈值）不得当作短时集火.\n");
+                + "链式聚类形成的大跨度窗口（相邻间隔虽小但总跨度超阈值）不得当作短时集火; "
+                + "伤害/基础满血pct=窗口累计伤害/基础满血量(tankopedia 基础值, 不含装备加成)的百分比, "
+                + "只是计算基准, 不是实际掉血比例(未知则为「未知」); "
+                + "窗口跨度≤" + (int) DamageWindowClusterer.CRITICAL_WINDOW_SPAN_SEC
+                + " 秒且伤害≥" + (int) DamageWindowClusterer.CRITICAL_HP_PCT
+                + "% 基础满血量标注「（短窗高额伤害窗口）」; "
+                + "数据无法证明窗口起始血量/窗口内阵亡/装备加成后的实际最大血量, 不得判定「从满血被秒杀」.\n");
         for (final DamageWindowClusterer.DamageWindow window : windows) {
             sb.append("  ").append(PlayerAnalysisTerms.battleRange(window.startSec(), window.endSec()))
                     .append(" 掉血").append(window.totalDamage())
@@ -315,6 +321,9 @@ final class PlayerEvidenceFormatter {
                     .append(" 攻击者").append(window.uniqueAttackerCount())
                     .append(window.attackersUnresolved() ? "（攻击者部分未解析）" : "")
                     .append(window.focusFireCandidate() ? "（短时多车集火证据）" : "")
+                    .append(" 伤害/基础满血pct=").append(window.damageVsBaseMaxHpPct() == null
+                            ? "未知" : Math.round(window.damageVsBaseMaxHpPct()) + "%")
+                    .append(window.criticalWindow() ? "（短窗高额伤害窗口）" : "")
                     .append('\n');
         }
         return sb.toString();

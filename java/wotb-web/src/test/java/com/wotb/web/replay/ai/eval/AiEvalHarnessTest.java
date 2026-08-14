@@ -27,9 +27,10 @@ class AiEvalHarnessTest {
         assertTrue(systemPrompt.contains("resultSource"),
                 "CAPTURE_RULE must reference resultSource evidence levels");
         assertTrue(systemPrompt.contains("BATTLE_RESULTS")
-                        && systemPrompt.contains("SURVIVOR_SETTLEMENT")
-                        && systemPrompt.contains("POINTS_INFERENCE"),
-                "CAPTURE_RULE must describe the three resultSource evidence levels");
+                        && systemPrompt.contains("SURVIVOR_SETTLEMENT"),
+                "CAPTURE_RULE must describe the resultSource evidence levels");
+        assertTrue(systemPrompt.contains("无权威胜方"),
+                "CAPTURE_RULE must fail closed when the authoritative winner is missing");
         assertTrue(systemPrompt.contains("被敌方全歼落败"),
                 "CAPTURE_RULE must carry bidirectional annihilation wording");
     }

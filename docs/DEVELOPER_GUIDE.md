@@ -468,6 +468,24 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
     素材本身；录像者 gold halo、选中 ring、最后已知淡化、阵亡 ✕ 为独立 overlay，不烘焙进 PNG。
     旋转换算：地图 yaw 从北(+Z)顺时针 → 屏幕 `rotate(yawDeg)`（0=朝上/90=朝右/180=朝下/270=朝左，
     两次翻转抵消，无符号/偏移修正）。
+  - **炮线/曳光线（已知射击）**：`visibleTracers` 由纯函数 `tracerLines`（`utils/battlePlayback.js`）
+    按当前时间推导——候选 = 过滤后事件流中的 DAMAGE 与 KILL（攻击者已解析），同刻同 attacker/target
+    去重为一条；两端都必须满足 `trustedPositionAt`（事件时刻落在该车路线首末点之间且所在段 gap ≤ 5s；
+    末点后的最后已知位置/gap 内/首点前一律拒绝，不用最后已知位置伪造射击位置）；可见窗口 =
+    `0.5s × 播放倍速`（1×/2×/4× 各约 0.5s 真实时间），opacity 随窗口渐隐；纯函数依赖 now/speed →
+    seek/倍速天然正确，无一次性定时器。未命中/盲射/弹道弧线/瞄准线无数据依据，不渲染。
+  - **缩放平移**：`.pb-viewport` 单一 transform 层（translate+scale）同时承载 SVG 与 HTML 标记 →
+    地图/网格/路线/炮线/标记严格对齐；滚轮锚点缩放（1×–4×，`zoomViewAt` 锚点不动）、双指捏合、
+    单指/鼠标拖动（>5px 阈值，拖动后吞 click 防误选车）、重置按钮；地图区域 `touch-action:none`，
+    地图外页面滚动不受影响；卸载清理 window 级 pointer 监听。
+  - **阵亡状态（pb-destroyed）**：destroyed 是显式独立状态，不并入 `pb-last-known`；敌我阵亡车
+    结构一致（hull+turret 双层 + 同款 ✕）：方向冻结在最后可信样本（`interpolateDirection` 末样本
+    冻结语义），无方向样本以素材默认 0° 渲染（不代表朝向）；`.pb-destroyed { opacity:.35 }` +
+    `img { filter: grayscale(1) }`（去饱和≠换阵营色）；录像者 halo/选中 ring 为独立 overlay，
+    不改变阵亡结构。
+  - **真实 i18n 回归**：三语 `recon.map.playback.last_known` 文案不得含裸 `@`（Vue I18n 11
+    linked-message 语法），选中 last-known/已击毁车辆首次渲染该文案时编译报错会导致组件整体卸载；
+    `BattlePlayback.i18n.test.js` 用真实 `createI18n`（不 mock `$t`）覆盖 zh/en/ru 选车路径。
   前端 `BattlePlayback.vue`（独立组件，复用 mapImages/coordinateBounds/色板/响应式布局）用
   `requestAnimationFrame` 推进播放时间：仅在同一可信连续点（gap ≤ 5s）之间线性插值，
   跨断线/位置中断/无效坐标禁止穿线；`positionCoveredAt` 决定车辆当前是否有位置流覆盖——
@@ -488,6 +506,28 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
   **AI 报告时间跳转**：`MarkdownContent` 把明确时间文本（`03:20` / `3分20秒` / `3m 20s` /
   `3 мин 20 с`）转成 `#seek=<秒>` 链接（不识别普通数字/比分），点击后展开地图鸟瞰、
   自动切换到战局回放并 seek 到该时刻暂停。
+- **争霸赛点数口径（团队复盘）**：固定 7 分钟（420s）/ 胜利点数上限 1000 分是
+  **项目所有者确认的业务规则**（游戏不提供时长调整）；`arenaBonusType` 只证明战斗类别，
+  不直接解码出 420s/1000（`standardSupremacyRules`，仅类别未知 fail closed）。结束方式只按
+  「标准规则 + 时长 + 双方存活」判定，不使用任何点数公式：双方均有存活且时长 <420s →
+  REACHED_1000（某一方达到 1000 分上限导致提前结束——winnerTeam 已知时胜方 finalScore=1000
+  （1000 分上限业务约定），失败方 UNKNOWN；winnerTeam 缺失时只写「某一方达到 1000 分导致
+  提前结束、具体胜方未知」，双方终局比分一律 UNKNOWN）；
+  时长 ≥420s → TIME_EXPIRED（时间耗尽，双方终局比分未知）；其余 UNKNOWN。
+  每据点每 tick 产分与 tick 间隔均未解码（无任何已验证的 tick 产分规则），不得用 tick 数计算终局比分。
+  `victoryPointsEarned`(#32) 的精确定义及是否包含被动占点增长/击杀夺分等调整仍未证明，已知计算
+  口径（占点分+40×击杀−40×阵亡）**已撤回**，证据只输出原始结算字段（victoryPointsEarned/Seized、
+  kills、deaths）；击杀夺分 40 分规则仅作叙述口径（`KILL_STEAL_POINTS`，不参与计算）；
+  实时点数/基地占领/终局比分尚未解码（`PointsEvidenceProbeTest`/`ShotSpottingStreamProbeTest`
+  记录候选，语义 UNKNOWN）。胜负来源统一契约：BATTLE_RESULTS（winnerTeam 权威）/
+  SURVIVOR_SETTLEMENT（winnerTeam 缺失且 rosterComplete=true 且一方全员阵亡 → 按完整结算存活状态
+  推导全歼胜方）/ UNKNOWN（双方均有存活且 winnerTeam 缺失 → 胜方未知，禁止比较占点字段推断；
+  POINTS_INFERENCE 停止产出）。
+- **掉血窗口严重度**：`DamageWindowClusterer.DamageWindow` 带 `damageVsBaseMaxHpPct`
+  （累计伤害/基础满血量，tankopedia 基础值、不含装备加成——只是计算基准，不是实际掉血比例）：
+  跨度 ≤10s 且伤害 ≥75% 基础满血量 → `criticalWindow`（短窗高额伤害窗口）；
+  不判定「被秒杀」（无法证明窗口起始血量、窗口内阵亡与实际最大血量）；
+  证据段输出基准百分比与标记，prompt 规则（player×3 + team/single 三语）强制定性并给时间范围。
 - **阶段切片**：opening = OPENING + FIRST_CONTACT 合并；mid = 中间段；late = 战斗末
   `BattlePhaseSummary.DENSE_KILL_WINDOW_SEC`（15s）窗口（残局）。
 - **降级**：未知地图 / 无语义网格 / 无名册 / 无观测 / 视角未解析 → `mapOverview = null`，

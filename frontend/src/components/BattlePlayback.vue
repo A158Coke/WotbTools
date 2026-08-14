@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { mapImages } from '../data/mapImages'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
@@ -10,6 +10,7 @@ import friendlyHull from '../assets/tank-icons/tank-marker-friendly-hull.png'
 import friendlyTurret from '../assets/tank-icons/tank-marker-friendly-turret.png'
 import {
   aggregateEventsBySecond,
+  clampViewPan,
   formatClock,
   interpolateDirection,
   lastKnownPosition,
@@ -19,7 +20,9 @@ import {
   routePrefix,
   screenRotation,
   teamRelated,
-  turretWorldYawDeg
+  tracerLines,
+  turretWorldYawDeg,
+  zoomViewAt
 } from '../utils/battlePlayback'
 
 /**
@@ -57,6 +60,158 @@ const selectedAccountId = ref(null)
 const eventPopupSec = ref(null)
 let rafId = null
 let lastFrameTs = null
+
+// ---- 地图视图缩放/平移：单一 transform 层保证地图/网格/路线/炮线/标记严格对齐 ----
+const mapEl = ref(null)
+const view = reactive({ scale: 1, tx: 0, ty: 0 })
+const PAN_THRESHOLD_PX = 5
+const PINCH_THRESHOLD_PX = 5
+const ZOOM_STEP = 1.2
+const pointers = new Map()
+let panStart = null
+let pinchStart = null
+let suppressClick = false
+// 当前交互是否为真实手势（单指拖动超阈值 / 双指捏合距离或中点移动超阈值）：
+// 手势结束后的首个 click 必须被吞掉，纯点击车辆仍正常选中
+let gestureMoved = false
+
+function applyView(next) {
+  const clamped = clampViewPan(
+    next,
+    mapEl.value ? mapEl.value.clientWidth : 0,
+    mapEl.value ? mapEl.value.clientHeight : 0
+  )
+  view.scale = clamped.scale
+  view.tx = clamped.tx
+  view.ty = clamped.ty
+}
+
+const viewportStyle = computed(() => `transform: translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`)
+
+// 车辆标记固定屏幕尺寸：标记中心锚定在地图坐标（left/top % 经 viewport 变换），
+// 标记本体按 1/view.scale 反缩放，保证 28px/22px 在 1×–4× 下不变；
+// hull/turret 的方向旋转在子元素 img 上，不受该反缩放影响。
+const markerTransform = computed(() => `translate(-50%, -50%) scale(${1 / view.scale})`)
+
+/** 指针 client 坐标 → 相对地图容器的**屏幕坐标**（zoomViewAt 契约，不参与任何变换）。 */
+function screenPoint(clientX, clientY) {
+  const rect = mapEl.value ? mapEl.value.getBoundingClientRect() : { left: 0, top: 0 }
+  return { x: clientX - rect.left, y: clientY - rect.top }
+}
+
+function onWheel(e) {
+  const p = screenPoint(e.clientX, e.clientY)
+  applyView(zoomViewAt(view, p.x, p.y, e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP))
+}
+
+function pinchInfo() {
+  const [a, b] = [...pointers.values()]
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+  return { mid, dist: Math.hypot(a.x - b.x, a.y - b.y) }
+}
+
+function onPointerDown(e) {
+  suppressClick = false
+  gestureMoved = false
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+  // 指针捕获（受支持时）：指针移出地图仍持续收到 move/up；不支持的环境走 window 级兜底
+  try {
+    if (typeof e.target.setPointerCapture === 'function') {
+      e.target.setPointerCapture(e.pointerId)
+    }
+  } catch {
+    // 某些测试环境不支持指针捕获，忽略
+  }
+  if (pointers.size === 1) {
+    panStart = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false }
+  } else if (pointers.size === 2) {
+    const info = pinchInfo()
+    pinchStart = {
+      mid: info.mid,
+      dist: info.dist,
+      // 锚点 = 双指中点相对地图容器的屏幕坐标（zoomViewAt 契约）
+      anchorScreen: screenPoint(info.mid.x, info.mid.y),
+      scale: view.scale,
+      tx: view.tx,
+      ty: view.ty,
+      moved: false
+    }
+    panStart = null
+  }
+}
+
+function onPointerMove(e) {
+  if (!pointers.has(e.pointerId)) return
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+  if (pointers.size === 2 && pinchStart) {
+    const { mid, dist } = pinchInfo()
+    if (!pinchStart.moved
+        && (Math.abs(dist - pinchStart.dist) > PINCH_THRESHOLD_PX
+            || Math.hypot(mid.x - pinchStart.mid.x, mid.y - pinchStart.mid.y) > PINCH_THRESHOLD_PX)) {
+      pinchStart.moved = true
+      gestureMoved = true
+    }
+    if (pinchStart.dist > 0 && dist > 0) {
+      const next = zoomViewAt(
+        { scale: pinchStart.scale, tx: pinchStart.tx, ty: pinchStart.ty },
+        pinchStart.anchorScreen.x, pinchStart.anchorScreen.y, dist / pinchStart.dist
+      )
+      // 两指中点整体移动 = 屏幕平移（translate 单位为屏幕像素，直接加 client 位移）
+      next.tx += mid.x - pinchStart.mid.x
+      next.ty += mid.y - pinchStart.mid.y
+      applyView(next)
+    }
+    return
+  }
+  if (pointers.size === 1 && panStart) {
+    const dx = e.clientX - panStart.x
+    const dy = e.clientY - panStart.y
+    if (!panStart.moved && Math.hypot(dx, dy) < PAN_THRESHOLD_PX) return
+    panStart.moved = true
+    gestureMoved = true
+    applyView({ scale: view.scale, tx: panStart.tx + dx, ty: panStart.ty + dy })
+  }
+}
+
+function onPointerUp(e) {
+  if (!pointers.delete(e.pointerId)) return
+  if (gestureMoved) suppressClick = true
+  try {
+    if (typeof e.target.releasePointerCapture === 'function') {
+      e.target.releasePointerCapture(e.pointerId)
+    }
+  } catch {
+    // 忽略（无捕获或已释放）
+  }
+  if (pointers.size < 2) pinchStart = null
+  if (pointers.size === 0) {
+    panStart = null
+    gestureMoved = false
+  } else if (pointers.size === 1 && pinchStart == null && panStart == null) {
+    // 捏合结束剩下一根手指：以该手指为新基线继续平移，状态不卡死
+    const [p] = [...pointers.values()]
+    panStart = { x: p.x, y: p.y, tx: view.tx, ty: view.ty, moved: false }
+  }
+}
+
+/** 拖动/捏合结束后吞掉随之而来的 click 避免误选车；未拖动的点击正常到达车辆按钮。 */
+function onViewportClick(e) {
+  if (suppressClick) {
+    suppressClick = false
+    e.stopPropagation()
+    e.preventDefault()
+  }
+}
+
+function resetView() {
+  applyView({ scale: 1, tx: 0, ty: 0 })
+}
+
+onMounted(() => {
+  window.addEventListener('pointermove', onPointerMove)
+  window.addEventListener('pointerup', onPointerUp)
+  window.addEventListener('pointercancel', onPointerUp)
+})
 
 function frame(ts) {
   if (!playing.value) {
@@ -137,6 +292,14 @@ function toggleType(type) {
 
 onBeforeUnmount(() => {
   if (rafId != null) cancelAnimationFrame(rafId)
+  window.removeEventListener('pointermove', onPointerMove)
+  window.removeEventListener('pointerup', onPointerUp)
+  window.removeEventListener('pointercancel', onPointerUp)
+  pointers.clear()
+  panStart = null
+  pinchStart = null
+  gestureMoved = false
+  suppressClick = false
 })
 
 // ---- 数据 ----
@@ -186,6 +349,12 @@ function vehicleState(vehicle) {
   const recorder = vehicle.accountId === props.overview.recorderAccountId
   const direction = interpolateDirection(vehicle.directionSamples, displayT)
   const friendly = vehicle.team === friendlyTeam.value
+  // 阵亡：恒渲染 hull+turret 双层（方向冻结在最后可信样本；无样本以素材默认 0° 渲染，不代表真实朝向）；
+  // 未阵亡：无可靠方向样本时不渲染车体（不伪造朝向），行为保持不变。
+  const hullDeg = direction ? screenRotation(direction.hullYawDeg) : null
+  const turretDeg = direction
+    ? screenRotation(turretWorldYawDeg(direction.hullYawDeg, direction.turretRelativeYawDeg))
+    : null
   return {
     vehicle,
     pos: last,
@@ -196,11 +365,11 @@ function vehicleState(vehicle) {
     direction,
     hullImage: friendly ? friendlyHull : enemyHull,
     turretImage: friendly ? friendlyTurret : enemyTurret,
-    hullScreenDeg: direction ? screenRotation(direction.hullYawDeg) : null,
-    turretScreenDeg: direction
-      ? screenRotation(turretWorldYawDeg(direction.hullYawDeg, direction.turretRelativeYawDeg))
-      : null,
-    lastKnown: destroyed || !live || !covered
+    hullScreenDeg: destroyed ? (hullDeg == null ? 0 : hullDeg) : hullDeg,
+    turretScreenDeg: destroyed ? (turretDeg == null ? 0 : turretDeg) : turretDeg,
+    // lastKnown 表达「显示的是最后可信位置」（信息栏时间）；destroyed 是独立视觉状态，
+    // 阵亡车信息栏同样显示最后可信时间，但视觉 class 不再套用 pb-last-known
+    lastKnown: !live || !covered
   }
 }
 
@@ -244,6 +413,14 @@ const filteredEvents = computed(() => {
 })
 
 const eventMarkers = computed(() => aggregateEventsBySecond(filteredEvents.value))
+
+// 炮线：仅来自过滤后事件流中的已知射击（DAMAGE/KILL），两端可信位置，随播放时间与倍速确定性呈现
+const visibleTracers = computed(() => tracerLines(filteredEvents.value, routesByAccount.value, currentTime.value, speed.value))
+
+function tracerColor(accountId) {
+  const vehicle = vehiclesByAccount.value.get(accountId)
+  return vehicle ? vehicleColor(vehicle) : palette.value.routeOutline
+}
 
 function nearestEvent(direction) {
   const events = filteredEvents.value
@@ -338,6 +515,7 @@ const mapStyle = computed(() => ({
       <button type="button" class="pb-btn" data-test="pb-prev" @click="nearestEvent('prev')">◀</button>
       <button type="button" class="pb-btn" data-test="pb-next" @click="nearestEvent('next')">▶</button>
       <button type="button" class="pb-btn" data-test="pb-speed" @click="toggleSpeed">{{ speed }}×</button>
+      <button type="button" class="pb-btn" data-test="pb-reset" @click="resetView">{{ $t('recon.map.playback.reset_view') }}</button>
       <span class="pb-time">{{ formatClock(currentTime) }} / {{ formatClock(duration) }}</span>
       <span v-if="overview.recorderAccountId != null" class="pb-filter">
         <label class="pb-check">
@@ -385,7 +563,17 @@ const mapStyle = computed(() => ({
     </div>
 
     <!-- 地图 + 当前车辆状态（标记为 HTML overlay，固定像素尺寸，双层 hull/turret 独立旋转） -->
-    <div class="pb-map" data-test="pb-map">
+    <div class="pb-map" data-test="pb-map" ref="mapEl" @wheel.prevent="onWheel">
+    <div
+      class="pb-viewport"
+      data-test="pb-viewport"
+      :style="viewportStyle"
+      @pointerdown="onPointerDown"
+      @pointermove="onPointerMove"
+      @pointerup="onPointerUp"
+      @pointercancel="onPointerUp"
+      @click.capture="onViewportClick"
+    >
     <svg class="pb-svg" :viewBox="`0 0 ${mapView.W} ${mapView.H}`" role="img">
       <image :href="image.src" :width="mapView.W" :height="mapView.H" preserveAspectRatio="none" />
       <g class="pb-grid">
@@ -431,6 +619,19 @@ const mapStyle = computed(() => ({
           />
         </template>
       </g>
+      <g class="pb-tracers" aria-hidden="true">
+        <line
+          v-for="(l, i) in visibleTracers"
+          :key="`tracer-${l.timeSec}-${i}`"
+          class="pb-tracer"
+          :x1="mapView.toX(l.x1)"
+          :y1="mapView.toY(l.y1)"
+          :x2="mapView.toX(l.x2)"
+          :y2="mapView.toY(l.y2)"
+          :stroke="tracerColor(l.attackerAccountId)"
+          :opacity="l.opacity"
+        />
+      </g>
     </svg>
     <div class="pb-markers" data-test="pb-markers" aria-hidden="false">
       <button
@@ -438,8 +639,8 @@ const mapStyle = computed(() => ({
         :key="st.vehicle.accountId"
         type="button"
         class="pb-vehicle"
-        :class="{ 'pb-last-known': st.lastKnown, 'pb-recorder': st.recorder, 'pb-selected': selectedAccountId === st.vehicle.accountId }"
-        :style="{ left: markerLeft(st.pos.x), top: markerTop(st.pos.y) }"
+        :class="{ 'pb-last-known': st.lastKnown && !st.destroyed, 'pb-destroyed': st.destroyed, 'pb-recorder': st.recorder, 'pb-selected': selectedAccountId === st.vehicle.accountId }"
+        :style="{ left: markerLeft(st.pos.x), top: markerTop(st.pos.y), transform: markerTransform }"
         :aria-label="`${st.vehicle.playerName}: ${$t(st.destroyed ? 'recon.map.playback.state_destroyed' : (st.covered ? 'recon.map.playback.state_position_reported' : 'recon.map.playback.state_position_stale'))}`"
         :data-test="`pb-marker-${st.vehicle.accountId}`"
         @click="selectVehicle(st.vehicle)"
@@ -462,6 +663,7 @@ const mapStyle = computed(() => ({
         />
         <span v-if="st.destroyed" class="pb-death" aria-hidden="true">✕</span>
       </button>
+    </div>
     </div>
     </div>
 
@@ -538,7 +740,13 @@ const mapStyle = computed(() => ({
   cursor: pointer;
   transform: translateX(-50%);
 }
-.pb-map { position: relative; margin: 0 auto; width: 66.7%; }
+.pb-map { position: relative; margin: 0 auto; width: 66.7%; overflow: hidden; }
+.pb-viewport {
+  position: relative;
+  width: 100%;
+  transform-origin: 0 0;
+  touch-action: none;
+}
 .pb-svg {
   display: block;
   width: 100%;
@@ -577,6 +785,8 @@ const mapStyle = computed(() => ({
   .pb-vehicle { width: 22px; height: 22px; }
 }
 .pb-last-known { opacity: .3; }
+.pb-destroyed { opacity: .35; }
+.pb-destroyed .pb-hull, .pb-destroyed .pb-turret { filter: grayscale(1); }
 .pb-recorder { filter: drop-shadow(0 0 3px #ffd76a); }
 .pb-recorder::after {
   content: '';
@@ -608,6 +818,7 @@ const mapStyle = computed(() => ({
 }
 .pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.16)); stroke-width: .5; fill: none; }
 .pb-route { fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; opacity: .55; }
+.pb-tracer { stroke-width: 1.5; stroke-linecap: round; }
 .pb-region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.28)); stroke-width: 1; }
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
