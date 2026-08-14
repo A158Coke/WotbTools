@@ -43,17 +43,3 @@ description: >
 - 不写实现代码；方案获批后才开发。
 - 与 `review-with-docs` 的分工：本技能开发前（需求/方案设计），`review-with-docs` 开发后
   （变更审查 + 文档同步）。
-
-## current-plan.md 结构示例 
-
-### 1. Business Contract
-用户最终应该获得什么。
-
-### 2. Technical Contract
-真实数据源、API、数据结构、实现边界。
-
-### 3. UX / Visual Contract
-只在涉及 UI 时存在。
-
-### 4. Verification Contract
-必须怎么证明做完了。
