@@ -191,4 +191,51 @@ class PointsSituationSkillTest {
                 new PositionSample(2f, -80f, 0f)));
         assertTrue(PointsSituationSkill.pushWindows(List.of(track), Set.of(), MAP).isEmpty());
     }
+
+    @Test
+    void boundaryJitterBelowMoveThresholdDoesNotCreatePushWindow() {
+        // 九宫格边界两侧（canonical x=166.67）：x=-84 → 4 区，x=-83 → 5 区，位移仅 1m < 4m
+        // 坐标抖动/边界小幅移动不得生成推进窗口；位移达标（14m）的跨越仍正常生成
+        final VehicleTrack jitter = new VehicleTrack(101, 1, List.of(
+                new PositionSample(0f, -84f, 0f),
+                new PositionSample(2f, -83f, 0f),
+                new PositionSample(4f, -70f, 0f)));
+        final List<PushWindow> jitterWindows = PointsSituationSkill.pushWindows(
+                List.of(jitter), Set.of("5"), MAP);
+        assertTrue(jitterWindows.isEmpty(), "1m 边界抖动不得生成推进窗口");
+
+        final VehicleTrack moving = new VehicleTrack(102, 1, List.of(
+                new PositionSample(0f, -84f, 0f),
+                new PositionSample(2f, -70f, 0f)));
+        final List<PushWindow> movingWindows = PointsSituationSkill.pushWindows(
+                List.of(moving), Set.of("5"), MAP);
+        assertEquals(1, movingWindows.size());
+        assertEquals(2f, movingWindows.get(0).startSec());
+        assertEquals(2f, movingWindows.get(0).endSec());
+        assertEquals(5, movingWindows.get(0).targetRegion());
+    }
+
+    @Test
+    void sameTeamEnteringDifferentTargetRegionsKeepsTwoWindows() {
+        // 同队两辆车分别进入 5 区（从 2 区）与 4 区（从 1 区），时间重叠：
+        // 目标区域不同 → 不得合并，必须产出两个独立推进窗口
+        final VehicleTrack toFive = new VehicleTrack(101, 1, List.of(
+                new PositionSample(0f, -80f, 120f),   // 2 区（非占领点区域）
+                new PositionSample(2f, -80f, 0f)));    // 5 区
+        final VehicleTrack toFour = new VehicleTrack(102, 1, List.of(
+                new PositionSample(0f, -120f, 120f),  // 1 区（非占领点区域）
+                new PositionSample(2f, -120f, 0f)));   // 4 区
+
+        final List<PushWindow> windows = PointsSituationSkill.pushWindows(
+                List.of(toFive, toFour), Set.of("4", "5"), MAP);
+
+        assertEquals(2, windows.size(), "不同目标区域不得合并");
+        final Set<Integer> regions = windows.stream()
+                .map(PushWindow::targetRegion).collect(java.util.stream.Collectors.toSet());
+        assertEquals(Set.of(4, 5), regions);
+        assertEquals(1, windows.stream().filter(w -> w.targetRegion() == 5).findFirst()
+                .orElseThrow().accountIds().size());
+        assertEquals(1, windows.stream().filter(w -> w.targetRegion() == 4).findFirst()
+                .orElseThrow().accountIds().size());
+    }
 }

@@ -1,9 +1,11 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.TeamEntityIdentity;
 import com.wotb.core.processing.TeamEntityMapper;
 import com.wotb.core.processing.TeamEntityMapping;
+import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.evidence.PointsSituationSkill;
@@ -14,6 +16,7 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,11 +26,13 @@ import java.util.Set;
  * 点数局势证据采集与渲染（Team / Player 两条复盘线共用）：
  * 从重建事件流采集双方车辆位置轨迹（服务器位置流，battle-relative 秒），
  * 调用 {@link PointsSituationSkill} 产出击杀夺分时间线 / 占领点区域位置存在 /
- * 进攻推进窗口，并把推进窗口与 {@link DamageWindowClusterer} 掉血窗口联接成
- * 「推进方窗口内承受伤害（防守方过路费）」。
+ * 进攻推进窗口；过路费按原始 {@link DamageEvent} 计算——事件时间严格限制在推进窗口内，
+ * 攻击者/受击者身份经 {@link DamageEventIdentityResolver} 解析，只有攻击者属于推进方
+ * 对面队伍（队伍可信）的伤害才计入，环境伤害/自伤/未解析攻击者一律排除并输出 limitation。
  * <p>口径约束（与 team/single、player 三 prompt 的点数局势规则一致）：
  * 实时比分/占点进度未解码——本段只给可证明信号，禁止据此编造任何中间比分；
- * 位置存在 ≠ 占点产分；伤害数字按 OBSERVED_DAMAGE_IS_PARTIAL 抑制。</p>
+ * 击杀夺分时间线只是击杀换分项，不代表整体点数；位置存在 ≠ 占点产分；
+ * 伤害数字按 OBSERVED_DAMAGE_IS_PARTIAL 抑制。</p>
  */
 final class PointsSituationEvidence {
 
@@ -149,7 +154,8 @@ final class PointsSituationEvidence {
         final StringBuilder sb = new StringBuilder(2048);
         sb.append("\n=== POINTS_SITUATION（点数局势·后端计算） ===\n");
         sb.append("实时比分/占点进度未解码：本段只给可证明信号（击杀夺分时间线、占领点区域位置存在、"
-                + "推进窗口），禁止据此编造任何中间比分或精确领先幅度；位置存在≠占点产分。\n");
+                + "推进窗口），禁止据此编造任何中间比分或精确领先幅度；击杀夺分时间线只是击杀换分项，"
+                + "不代表整体点数，禁止把击杀换分项净劣势/优势说成整体落后/领先；位置存在≠占点产分。\n");
         if (!killTimeline.isEmpty()) {
             sb.append("KILL_POINTS_TIMELINE（击杀夺分 ±").append(PointsSituationSkill.KILL_STEAL_POINTS)
                     .append("/击杀业务规则，按阵亡时刻对齐，叙述口径，非实时比分，不含占点基础产分）:\n");
@@ -197,30 +203,78 @@ final class PointsSituationEvidence {
                 if (damagePartial) {
                     sb.append("    推进方窗口内承受伤害不可用（OBSERVED_DAMAGE_IS_PARTIAL）\n");
                 } else {
-                    final int toll = tollDuring(push, battle, recon);
-                    sb.append("    推进方窗口内承受伤害 ").append(toll)
-                            .append("（防守方过路费，观测子集；0 表示窗口内无已归因伤害记录）\n");
+                    final Toll toll = tollDuring(push, battle, recon);
+                    sb.append("    推进方窗口内承受伤害 ").append(toll.damage())
+                            .append("（防守方过路费，观测子集：仅计入攻击者属推进方对面队伍且双方身份已解析的伤害；")
+                            .append("0 表示窗口内无此类伤害记录）\n");
+                    if (toll.excludedCount() > 0) {
+                        sb.append("    过路费排除 ").append(toll.excludedCount())
+                                .append(" 笔事件（环境伤害/自伤/攻击者未解析或队伍不可信，不计入）\n");
+                    }
                 }
             }
         }
         return sb.toString();
     }
 
-    /** 推进窗口内推进方承受伤害：成员掉血窗口与推进窗口有重叠即累计（观测子集近似，明确标注）。 */
-    private static int tollDuring(
+    /** 防守方过路费（观测子集）：推进窗口内（事件时间严格在 push.startSec～push.endSec）推进方车辆
+     *  承受的伤害；仅当攻击者与受击者身份均解析、攻击者属于推进方对面队伍（队伍可信）时计入。
+     *  环境伤害/自伤/攻击者未解析或队伍不可信的事件一律不计入，并通过 {@code excludedCount} 输出 limitation。 */
+    private static Toll tollDuring(
             final PointsSituationSkill.PushWindow push,
             final Battle battle,
             final ReplayReconstruction recon
     ) {
         int total = 0;
-        for (final Long accountId : push.accountIds()) {
-            for (final DamageWindowClusterer.DamageWindow window
-                    : DamageWindowClusterer.receivedWindows(battle, recon, accountId)) {
-                if (window.endSec() >= push.startSec() && window.startSec() <= push.endSec()) {
-                    total += window.totalDamage();
-                }
+        int excluded = 0;
+        if (recon == null || recon.events() == null || battle == null || battle.players == null) {
+            return new Toll(0, 0);
+        }
+        final TeamEntityMapping mapping = DamageEventIdentityResolver.mapping(battle, recon);
+        final Float battleStart = recon.battleStartRawClockSec();
+        final Set<Long> pusherIds = new HashSet<>(push.accountIds());
+        for (final ReplayEvent event : recon.events()) {
+            if (!(event instanceof DamageEvent damage) || damage.damage() <= 0) {
+                continue;
+            }
+            final double t = relativeSec(event, battleStart);
+            if (t < push.startSec() || t > push.endSec()) {
+                continue;
+            }
+            final long victim = DamageEventIdentityResolver.victimAccount(damage, mapping);
+            if (victim <= 0 || !pusherIds.contains(victim)) {
+                continue;
+            }
+            final long attacker = DamageEventIdentityResolver.attackerAccount(damage, mapping);
+            if (attacker <= 0) {
+                excluded++; // 攻击者未解析（环境伤害/盲区）：不计入
+                continue;
+            }
+            if (attacker == victim) {
+                excluded++; // 自伤：不计入
+                continue;
+            }
+            final Integer attackerTeam = teamOf(battle, attacker);
+            if (attackerTeam == null || attackerTeam == push.team()) {
+                excluded++; // 队伍不可信或非对面队伍：不计入
+                continue;
+            }
+            total += damage.damage();
+        }
+        return new Toll(total, excluded);
+    }
+
+    /** 玩家队伍查询：名册中不存在 → null（不可信）。 */
+    private static Integer teamOf(final Battle battle, final long accountId) {
+        for (final PlayerResult player : battle.players) {
+            if (player != null && player.accountId == accountId) {
+                return player.team;
             }
         }
-        return total;
+        return null;
+    }
+
+    /** 过路费结果：damage 计入额，excludedCount 被排除事件数（limitation 输出用）。 */
+    private record Toll(int damage, int excludedCount) {
     }
 }
