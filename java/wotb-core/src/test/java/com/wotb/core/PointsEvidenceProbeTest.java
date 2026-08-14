@@ -3,6 +3,7 @@ package com.wotb.core;
 import com.wotb.core.model.Source;
 import com.wotb.core.parse.ReplayArchiveReader;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
+import com.wotb.core.processing.FriendlyEnemyResult;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.stream.RawReplayPacket;
@@ -124,6 +125,20 @@ class PointsEvidenceProbeTest {
                         candidates.add(String.format("    t=%+.1f type=%d len=%d hex=%s",
                                 p.rawClockSec() - start, p.type(), pl.length, hex(pl, 48)));
                     }
+                }
+                if (battle.winnerTeam != null && battle.durationS != null
+                        && battle.durationS < 420 && FriendlyEnemyResult.rosterComplete(battle)) {
+                    // 交叉验证（INFERRED，仅诊断）：按项目所有者确认的规则「每据点每 tick +5 分」，
+                    // 胜方达到 1000 上限 ⇒ 隐含据点-tick 数 = (1000 − 胜方 victoryPointsEarned) / 5。
+                    // 该值只用于对照候选事件频率，不作为任何业务结论。
+                    long winnerEarned = 0;
+                    for (final var p : battle.players) {
+                        if (p != null && p.team == battle.winnerTeam) {
+                            winnerEarned += p.victoryPointsEarned;
+                        }
+                    }
+                    System.out.println("  impliedBaseTicks(winner, INFERRED)="
+                            + ((1000.0 - winnerEarned) / 5.0) + " (假设终局=1000 且 earned 不含击杀分)");
                 }
                 System.out.println("  packetTypes=" + typeCounts);
                 System.out.println("  entityMethodSubtypes=" + methodSubs);

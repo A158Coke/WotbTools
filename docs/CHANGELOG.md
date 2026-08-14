@@ -40,7 +40,8 @@
   含击杀夺分未经证明，现有样本双方击杀净值为 0 无法区分）；结束方式只按「标准规则+时长+双方
   存活」判定，不使用任何点数公式；无权威胜方时不按占点分推断胜方（POINTS_INFERENCE 停止产出）；
   `TeamEvidenceFormatter` 只输出原始结算字段（victoryPointsEarned/Seized、kills、deaths），
-  终局比分除业务规则可证明的胜方=1000 外一律 UNKNOWN；
+  终局比分除业务规则可证明的胜方=1000 上限（可能略超并被压缩为1000）外一律 UNKNOWN；
+  占点 tick 业务规则（每据点每 tick +5 分、3 据点 15/tick，tick 间隔未解码）仅作叙述口径；
   `DamageWindowClusterer.DamageWindow` 新增 `damageVsBaseMaxHpPct`（累计伤害/基础满血量，
   tankopedia 基础值，只是计算基准不是实际掉血比例）/ `criticalWindow`（跨度 ≤10s 且伤害 ≥75%
   基础满血量）；不产出无法证明的「被秒杀」判定；type 8/sub 8 非直接伤害结果与 type 5 Spotting
