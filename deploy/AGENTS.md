@@ -1,6 +1,6 @@
 # deploy/ — 部署与生产指令
 
-> 仓库级硬约定见 `.agents/AGENTS.md`；运维细节见 `docs/observability.md` 与 `docs/auth/wargaming-asia-deployment.md`。
+> 仓库级硬约定见 `.agents/AGENTS.md`；运维细节见 `docs/operations/observability.md` 与 `docs/auth/wargaming-asia-deployment.md`。
 
 ## 镜像与产物（经 deploy.yml / Dockerfile×3 核对）
 
