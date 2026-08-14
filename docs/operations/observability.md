@@ -243,7 +243,7 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
    - Dashboard：
      - **WotBTools Backend Overview**（uid `wotbtools-backend-overview`）— 后端整体概览（HTTP/JVM/AI Review）
      - **WotBTools Replay Parser**（uid `wotbtools-replay-parser`）— 回放解析功能使用情况
-     - **WotBTools 使用统计**（uid `wotbtools-usage`）— 前端使用情况：回放预览次数、AI Review 请求/成功/未成功次数（均按 Grafana 所选时间范围估算增量，非永久累计）
+     - **WotBTools 使用统计**（uid `wotbtools-usage`）— 前端使用情况：回放预览次数、AI Review 请求/成功/未成功次数、AI 平均每次调用 Token 与按模式平均 Token（均按 Grafana 所选时间范围估算增量，非永久累计）
 
 **统计口径说明（WotBTools 使用统计 / Replay Parser）**
 
@@ -251,6 +251,7 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 - **回放预览次数**：仅统计 `operation="preview"` 的请求，不代表 export/rating/process/reconstruct 等其他解析操作。
 - **AI Review 请求次数**：统计所有请求尝试，包括成功、失败、超时和被拒绝，不等同于成功次数。
 - **AI Review 成功次数**：仅统计 `wotb_ai_review_results_total{result="success"}`；**未成功次数**保留 `failure` 与 `rejected` 独立标签，不混为同一结果。
+- **AI 平均每次调用 Token**：`wotb_ai_upstream_tokens_total{token_type="total"}` 增量 ÷ `wotb_ai_upstream_requests_total` 增量（分母含失败调用，失败计 0 token），即「平均每次发起的 AI 上游调用消耗的 token」；按模式面板可区分单机复盘（`PRE_BATTLE_STRATEGIC_PRIOR` + `TACTICAL_REVIEW_HARNESS`）与团队复盘（`SINGLE_TEAM_BATTLE` + `TEAM_AUTOPSY`）各阶段消耗。
 - **数据保留**：Prometheus 仅保留约 7 天，不提供网站历史永久累计；如未来需要永久累计，应写入 PostgreSQL（当前不引入），而非依赖 Counter。
 
 **WotBTools Replay Parser 面板清单**（uid `wotbtools-replay-parser`）
