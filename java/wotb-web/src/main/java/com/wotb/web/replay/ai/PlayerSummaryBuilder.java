@@ -55,9 +55,16 @@ final class PlayerSummaryBuilder {
         final String phaseSection = BattlePhaseTimelineSection.renderPlayerSection(
                 buildFallbackPhases(battle),
                 BattlePhaseSummary.deathSourceLabel(battle));
+        // 点数局势：fallback 无覆盖口径信号，伤害数字抑制（定性）；recon 缺失时仅击杀夺分时间线
+        final Integer recorderTeam = battle == null
+                ? null : PlayerSideResolver.resolveRecorderTeam(battle);
+        final String pointsSection = recorderTeam == null ? ""
+                : PointsSituationEvidence.renderSection(
+                        battle, recon, recorderTeam, true, "你的队伍", "敌方");
         final String summary = buildSummary(battle, recon, keyEvents)
                 + (phaseSection.isEmpty() ? "" : "\n" + phaseSection)
-                + (enemySection.isEmpty() ? "" : "\n" + enemySection);
+                + (enemySection.isEmpty() ? "" : "\n" + enemySection)
+                + (pointsSection.isEmpty() ? "" : "\n" + pointsSection);
         final String systemPrompt = PlayerPromptRules.localizePlayerSystemPrompt(PlayerPromptRules.SYSTEM_PROMPT, language);
         return new PreparedAiPrompt(systemPrompt, summary, "SINGLE_PLAYER_SUMMARY",
                 EvidenceDensity.LEVEL_1_COMPRESSED, 0);
@@ -98,7 +105,14 @@ final class PlayerSummaryBuilder {
             final int maxOutputTokens,
             final int promptSafetyMarginTokens,
             final AllowedLanguage language) {
-        final String summary = buildPlayerContextSummary(ctx);
+        // 无重建路径：仅击杀夺分时间线（结算可证）；存在/推进窗口需重建，不输出
+        final Integer recorderTeam = ctx.battle() == null
+                ? null : PlayerSideResolver.resolveRecorderTeam(ctx.battle());
+        final String pointsSection = recorderTeam == null ? ""
+                : PointsSituationEvidence.renderSection(
+                        ctx.battle(), null, recorderTeam, true, "你的队伍", "敌方");
+        final String summary = buildPlayerContextSummary(ctx)
+                + (pointsSection.isEmpty() ? "" : "\n" + pointsSection);
         final String systemPrompt = PlayerPromptRules.localizePlayerSystemPrompt(PlayerPromptRules.SINGLE_PLAYER_PROMPT, language);
         final List<Map<String, Object>> messages = List.of(
                 Map.<String, Object>of("role", "system", "content", systemPrompt),
@@ -150,6 +164,16 @@ final class PlayerSummaryBuilder {
         PlayerEvidenceFormatter.appendRecorderDamageReceivedWindows(
                 summaryBuilder, ctx.battle(), recon, recorderAccountId, observedDamagePartial);
         PlayerEvidenceFormatter.appendEnemyLastKnownPositions(summaryBuilder, ctx.battle(), recon);
+        final Integer recorderTeam = ctx.battle() == null
+                ? null : PlayerSideResolver.resolveRecorderTeam(ctx.battle());
+        if (recorderTeam != null) {
+            final String pointsSection = PointsSituationEvidence.renderSection(
+                    ctx.battle(), recon, recorderTeam, observedDamagePartial,
+                    "你的队伍", "敌方");
+            if (!pointsSection.isEmpty()) {
+                summaryBuilder.append(pointsSection);
+            }
+        }
         final String baseSummary = summaryBuilder.toString();
         final String systemPrompt = PlayerPromptRules.localizePlayerSystemPrompt(PlayerPromptRules.SINGLE_PLAYER_PROMPT, language);
         final SingleReplayPromptPlanner planner = new SingleReplayPromptPlanner(

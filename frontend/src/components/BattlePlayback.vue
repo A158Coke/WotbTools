@@ -608,7 +608,7 @@ const mapStyle = computed(() => ({
           :class="spawn.team === friendlyTeam ? 'pb-spawn-friendly' : 'pb-spawn-enemy'"
         />
       </g>
-      <g class="pb-routes">
+      <g class="pb-routes" :stroke-width="2 / view.scale">
         <template v-for="st in vehicleStates" :key="`route-${st.vehicle.accountId}`">
           <polyline
             v-for="(seg, i) in routeSegments(st.vehicle)"
@@ -619,7 +619,7 @@ const mapStyle = computed(() => ({
           />
         </template>
       </g>
-      <g class="pb-tracers" aria-hidden="true">
+      <g class="pb-tracers" aria-hidden="true" :stroke-width="1.5 / view.scale">
         <line
           v-for="(l, i) in visibleTracers"
           :key="`tracer-${l.timeSec}-${i}`"
@@ -651,7 +651,7 @@ const mapStyle = computed(() => ({
           :src="st.hullImage"
           alt=""
           aria-hidden="true"
-          :style="{ transform: `rotate(${st.hullScreenDeg}deg)` }"
+          :style="{ transform: `translate(-50%, -50%) rotate(${st.hullScreenDeg}deg)` }"
         />
         <img
           v-if="st.turretScreenDeg != null"
@@ -659,9 +659,10 @@ const mapStyle = computed(() => ({
           :src="st.turretImage"
           alt=""
           aria-hidden="true"
-          :style="{ transform: `rotate(${st.turretScreenDeg}deg)` }"
+          :style="{ transform: `translate(-50%, -50%) rotate(${st.turretScreenDeg}deg)` }"
         />
         <span v-if="st.destroyed" class="pb-death" aria-hidden="true">✕</span>
+        <span v-if="view.scale >= 2" class="pb-name" aria-hidden="true">{{ st.vehicle.playerName }}</span>
       </button>
     </div>
     </div>
@@ -773,11 +774,16 @@ const mapStyle = computed(() => ({
   cursor: pointer;
   pointer-events: auto;
 }
+/* 素材 512×512 含大量透明留白（实测有效车体 bbox ≈210×336 / 512），
+   放大到按钮 131% → 桌面 28px 容器下有效车体 ≈15×24px；
+   以素材共同 pivot（画布中心）居中旋转，hull/turret 缩放一致，炮管不脱离炮塔 */
 .pb-vehicle .pb-hull, .pb-vehicle .pb-turret {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  left: 50%;
+  top: 50%;
+  width: 131%;
+  height: 131%;
+  transform: translate(-50%, -50%);
 }
 .pb-vehicle .pb-hull { z-index: 1; }
 .pb-vehicle .pb-turret { z-index: 2; }
@@ -816,9 +822,29 @@ const mapStyle = computed(() => ({
   pointer-events: none;
   text-shadow: 0 0 2px #000, 0 0 2px #000;
 }
+/* 高倍缩放（≥2×）车名小标签：位于反缩放按钮内 → 字号不随地图缩放 */
+.pb-name {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  line-height: 1.2;
+  color: #fff;
+  background: rgba(0, 0, 0, .55);
+  padding: 1px 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 5;
+  pointer-events: none;
+}
 .pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.16)); stroke-width: .5; fill: none; }
-.pb-route { fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; opacity: .55; }
-.pb-tracer { stroke-width: 1.5; stroke-linecap: round; }
+/* 路线/炮线屏幕宽度由 <g> 的 :stroke-width（2/view.scale、1.5/view.scale）固定，不随缩放变粗 */
+.pb-route { fill: none; stroke-linejoin: round; stroke-linecap: round; opacity: .55; }
+.pb-tracer { stroke-linecap: round; }
 .pb-region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.28)); stroke-width: 1; }
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }

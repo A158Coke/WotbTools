@@ -86,7 +86,42 @@ public final class TeamAiPromptBuilder {
         headerBuf.append("unitLimitations=").append(limitations).append("\n");
         final String headerBlock = headerBuf.toString();
 
-        // 构建所有 optional details（无固定截断）
+        // 构建所有 optional details（无固定截断；点数局势段作为完整区块参与预算）
+        String optBlock = buildOptionalBlock(context, limitations, true);
+
+        // 如果 mandatory（header + HPF + prior）超出 token 预算，直接抛出异常
+        if (estimator != null) {
+            final String mandatoryContent = headerBlock + priorBlock + hpfBlock;
+            if (estimator.estimateTextTokens(mandatoryContent) > maxInputTokens) {
+                throw new AiPromptBudgetExceededException();
+            }
+            // 超预算时整个 POINTS_SITUATION 区块移除（不留半截正文再追加 AI_INPUT_TRUNCATED）
+            if (estimator.estimateTextTokens(mandatoryContent + optBlock) > maxInputTokens) {
+                final String optNoPoints = buildOptionalBlock(context, limitations, false);
+                if (!optNoPoints.equals(optBlock)) {
+                    optBlock = optNoPoints;
+                }
+            }
+        }
+
+        // 写入所有内容
+        final TeamEvidenceFormatter.BudgetWriter writer = new TeamEvidenceFormatter.BudgetWriter();
+        writer.appendRequired(headerBlock);
+        writer.appendRequired(priorBlock);
+        writer.appendRequiredBlock(hpfBlock);
+        writer.append(optBlock);
+
+        return writer.finish(estimator, maxInputTokens,
+                Set.of(), Set.of(context.analysisUnitId()), Set.of(), Set.of(),
+                Map.of(context.analysisUnitId(), List.copyOf(limitations)));
+    }
+
+    /** 构建 optional 证据正文：includePointsSituation=false 时点数局势段整体不输出（预算裁剪用）。 */
+    private static String buildOptionalBlock(
+            final SingleTeamBattleAnalysisContext context,
+            final Set<String> limitations,
+            final boolean includePointsSituation
+    ) {
         final TeamEvidenceFormatter.BudgetWriter optTemp = new TeamEvidenceFormatter.BudgetWriter();
         TeamEvidenceFormatter.appendOptionalDetails(optTemp, context.features(), context.analysisUnitId(),
                 context.battle() == null ? null : context.battle().mapName,
@@ -104,26 +139,16 @@ public final class TeamAiPromptBuilder {
                 context.features() == null ? List.of() : context.features().members(),
                 context.reconstruction(),
                 limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
-        final String optBlock = optTemp.content();
-
-        // 如果 mandatory（header + HPF + prior）超出 token 预算，直接抛出异常
-        if (estimator != null) {
-            final String mandatoryContent = headerBlock + priorBlock + hpfBlock;
-            if (estimator.estimateTextTokens(mandatoryContent) > maxInputTokens) {
-                throw new AiPromptBudgetExceededException();
-            }
+        // 点数局势（击杀夺分时间线/占领点存在/推进窗口）：完整区块，超预算时整体移除
+        if (includePointsSituation) {
+            TeamEvidenceFormatter.appendPointsSituation(
+                    optTemp,
+                    context.battle(),
+                    context.reconstruction(),
+                    context.perspectiveTeam(),
+                    limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
         }
-
-        // 写入所有内容
-        final TeamEvidenceFormatter.BudgetWriter writer = new TeamEvidenceFormatter.BudgetWriter();
-        writer.appendRequired(headerBlock);
-        writer.appendRequired(priorBlock);
-        writer.appendRequiredBlock(hpfBlock);
-        writer.append(optBlock);
-
-        return writer.finish(estimator, maxInputTokens,
-                Set.of(), Set.of(context.analysisUnitId()), Set.of(), Set.of(),
-                Map.of(context.analysisUnitId(), List.copyOf(limitations)));
+        return optTemp.content();
     }
 
     private static Set<String> collectLimitations(

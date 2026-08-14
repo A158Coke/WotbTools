@@ -137,6 +137,10 @@ class TeamAutopsyPromptBuilderTest {
         assertTrue(settlement.contains("结算级团队剖析"));
         assertTrue(settlement.contains("没有关键窗口、没有赛前职责基线、没有逐人 Route/走位证据"));
         assertTrue(settlement.contains("置信度必须 PARTIAL 或 UNKNOWN"));
+        assertTrue(settlement.contains("点数局势（结算级，强制）"),
+                "autopsy must carry the settlement-level points rule");
+        assertTrue(settlement.contains("禁止做「过路费不足」「攻防姿态失误」类窗口级判断"),
+                "autopsy must ban window-level toll/attack-defense claims");
     }
 
     @Test
