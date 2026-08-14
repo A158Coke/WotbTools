@@ -4,6 +4,8 @@
 > 探测工具：`CaptureTimelineProbeTest`（`@Tag("ai-capture-probe")`，默认排除）。
 > 复跑：`mvn -s settings.xml -pl wotb-web -am test -Dtest=CaptureTimelineProbeTest -Dai.probe.excludedGroups= -Dai.capture.replayDir=<目录>`
 
+> **VERDICT: UNKNOWN** —— Type 31/7 与 battle_results 均无可靠的时间线级基地归属信号；不升级 CAPTURE_TIMELINE，占点复盘维持「结算级（占点分 + 点数胜负）+ 静态语义（占领点区域）」。详见文末「结论」。
+
 ## 目的
 
 确认事件流能否还原「某时间点基地归属/占领进度」时间线（CAPTURE_TIMELINE），以决定占点复盘是否从结算级升级。
