@@ -18,6 +18,8 @@ import {
   positionCoveredAt,
   recorderRelated,
   screenRotation,
+  teamHp,
+  teamPointsAt,
   teamRelated,
   tracerLines,
   turretWorldYawDeg,
@@ -48,6 +50,23 @@ watch(image, async (img) => {
 const playback = computed(() => props.overview.playback || null)
 const duration = computed(() => (playback.value ? Math.max(0, playback.value.durationSec) : 0))
 const friendlyTeam = computed(() => props.overview.friendlyTeam)
+
+// 双方总血量（实时剩余，随播放时间/进度条变化；争霸赛附终局点数）
+const friendlyHp = computed(() => teamHp(playback.value?.vehicles, friendlyTeam.value, currentTime.value))
+const enemyHp = computed(() => teamHp(playback.value?.vehicles, friendlyTeam.value === 1 ? 2 : 1, currentTime.value))
+// 争霸赛实时点数：来自回放广播 pointsSamples（随 currentTime 变化）；非争霸赛/无广播 → null 不显示
+const friendlyPoints = computed(() =>
+  teamPointsAt(playback.value?.pointsSamples, friendlyTeam.value, currentTime.value))
+const enemyPoints = computed(() =>
+  teamPointsAt(playback.value?.pointsSamples, friendlyTeam.value === 1 ? 2 : 1, currentTime.value))
+const showPoints = computed(() => friendlyPoints.value != null || enemyPoints.value != null)
+/** HP bar 填充宽度：kind='known' 阵营色实段（已知剩余）、'unknown' 灰色弱化段（未观测容量）。 */
+function hpBarFill(hp, kind) {
+  const total = hp.totalMax || 0
+  if (total <= 0) return '0%'
+  const val = kind === 'known' ? hp.knownRemaining : hp.unknownMax
+  return `${Math.max(0, Math.min(100, (val / total) * 100)).toFixed(1)}%`
+}
 
 // ---- 播放状态 ----
 const currentTime = ref(0)
@@ -87,10 +106,12 @@ function applyView(next) {
 
 const viewportStyle = computed(() => `transform: translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`)
 
-// 车辆标记固定屏幕尺寸：标记中心锚定在地图坐标（left/top % 经 viewport 变换），
-// 标记本体按 1/view.scale 反缩放，保证 28px/22px 在 1×–4× 下不变；
-// hull/turret 的方向旋转在子元素 img 上，不受该反缩放影响。
-const markerTransform = computed(() => `translate(-50%, -50%) scale(${1 / view.scale})`)
+// 车辆标记随地图缩放（用户确认「坦克随地图一起放大，相对地图比例不变」）：
+// 标记中心锚定在地图坐标（left/top % 经 viewport 变换），本体不再反缩放；
+// 坦克名/阵亡 ✕ 等 UI 叠加层单独反缩放（overlayInverseScale）保持屏幕恒定；
+// hull/turret 的方向旋转在子元素 img 上，不受缩放影响。
+const markerTransform = computed(() => `translate(-50%, -50%)`)
+const overlayInverseScale = computed(() => `scale(${1 / view.scale})`)
 
 /** 指针 client 坐标 → 相对地图容器的**屏幕坐标**（zoomViewAt 契约，不参与任何变换）。 */
 function screenPoint(clientX, clientY) {
@@ -366,9 +387,12 @@ function vehicleState(vehicle) {
     turretImage: friendly ? friendlyTurret : enemyTurret,
     hullScreenDeg: destroyed ? (hullDeg == null ? 0 : hullDeg) : hullDeg,
     turretScreenDeg: destroyed ? (turretDeg == null ? 0 : turretDeg) : turretDeg,
-    // lastKnown 表达「显示的是最后可信位置」（信息栏时间）；destroyed 是独立视觉状态，
+    // lastKnown = 位置流未覆盖（covered=false）才淡化（最后已知位置）。
+    // 注意：covered 只是「服务器位置流当前覆盖」，不等于录像者客户端点亮/失察（无 authoritative
+    // spotting signal，不得声称已恢复点亮）；route 采样点稀疏（长局采样间隔 max(2, duration/200)
+    // 可 >5s）导致 live=null 不代表位置中断，不得借 !live 误判淡化。destroyed 是独立视觉状态，
     // 阵亡车信息栏同样显示最后可信时间，但视觉 class 不再套用 pb-last-known
-    lastKnown: !live || !covered
+    lastKnown: !covered
   }
 }
 
@@ -661,11 +685,44 @@ const mapStyle = computed(() => ({
           aria-hidden="true"
           :style="{ transform: `translate(-50%, -50%) rotate(${st.turretScreenDeg}deg)` }"
         />
-        <span v-if="st.destroyed" class="pb-death" aria-hidden="true">✕</span>
-        <span class="pb-name" aria-hidden="true">{{ st.vehicle.tankName || st.vehicle.tankId }}</span>
+        <span
+          v-if="st.destroyed"
+          class="pb-death"
+          aria-hidden="true"
+          :style="{ transform: `translateX(-50%) ${overlayInverseScale}` }"
+        >✕</span>
+        <span
+          class="pb-name"
+          aria-hidden="true"
+          :style="{ transform: `translateX(-50%) ${overlayInverseScale}` }"
+        >{{ st.vehicle.tankName || st.vehicle.tankId }}</span>
       </button>
     </div>
     </div>
+    </div>
+
+    <!-- 双方总血量条 + 争霸赛实时点数（阵营色实段=已知剩余，灰段=未观测容量，空=已损失） -->
+    <div class="pb-hp-bars" data-test="pb-hp-bars">
+      <div class="pb-hp-row">
+        <span class="pb-hp-label">{{ $t('recon.map.playback.team_friendly') }}</span>
+        <div class="pb-hp-track">
+          <div class="pb-hp-fill pb-hp-friendly" :style="{ width: hpBarFill(friendlyHp, 'known') }"></div>
+          <div class="pb-hp-fill pb-hp-unknown" :style="{ width: hpBarFill(friendlyHp, 'unknown') }"></div>
+        </div>
+        <span class="pb-hp-value">{{ friendlyHp.knownRemaining }} / {{ friendlyHp.totalMax }}</span>
+        <span v-if="friendlyHp.unknownMax > 0" class="pb-hp-unknown-text" data-test="pb-hp-unknown-friendly">{{ $t('recon.map.playback.hp_unknown') }} {{ friendlyHp.unknownMax }}</span>
+        <span v-if="showPoints && friendlyPoints != null" class="pb-hp-points" data-test="pb-points-friendly">{{ $t('recon.map.playback.points') }}: {{ friendlyPoints }}</span>
+      </div>
+      <div class="pb-hp-row">
+        <span class="pb-hp-label">{{ $t('recon.map.playback.team_enemy') }}</span>
+        <div class="pb-hp-track">
+          <div class="pb-hp-fill pb-hp-enemy" :style="{ width: hpBarFill(enemyHp, 'known') }"></div>
+          <div class="pb-hp-fill pb-hp-unknown" :style="{ width: hpBarFill(enemyHp, 'unknown') }"></div>
+        </div>
+        <span class="pb-hp-value">{{ enemyHp.knownRemaining }} / {{ enemyHp.totalMax }}</span>
+        <span v-if="enemyHp.unknownMax > 0" class="pb-hp-unknown-text" data-test="pb-hp-unknown-enemy">{{ $t('recon.map.playback.hp_unknown') }} {{ enemyHp.unknownMax }}</span>
+        <span v-if="showPoints && enemyPoints != null" class="pb-hp-points" data-test="pb-points-enemy">{{ $t('recon.map.playback.points') }}: {{ enemyPoints }}</span>
+      </div>
     </div>
 
     <!-- 选中车辆信息 -->
@@ -822,7 +879,7 @@ const mapStyle = computed(() => ({
   pointer-events: none;
   text-shadow: 0 0 2px #000, 0 0 2px #000;
 }
-/* 常显坦克型号名标签：位于图标上方、反缩放按钮内 → 字号不随地图缩放 */
+/* 常显坦克型号名标签：位于图标上方，经 overlayInverseScale 反缩放 → 字号不随地图缩放 */
 .pb-name {
   position: absolute;
   bottom: calc(100% + 2px);
@@ -848,6 +905,18 @@ const mapStyle = computed(() => ({
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
 
+/* 双方总血量条：阵营色填充（本方/敌方），随播放实时下降；争霸赛附点数 */
+.pb-hp-bars { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.pb-hp-row { display: flex; align-items: center; gap: 8px; font-size: .78rem; color: var(--text-label); }
+.pb-hp-label { width: 3.5em; flex-shrink: 0; }
+.pb-hp-track { flex: 1; display: flex; height: 10px; border-radius: 5px; background: var(--bg-chip, rgba(128,128,128,.25)); overflow: hidden; }
+.pb-hp-fill { height: 100%; transition: width .15s linear; }
+.pb-hp-friendly { background: var(--map-spawn-friendly, #8ef7b0); }
+.pb-hp-enemy { background: var(--map-spawn-enemy, #ff8d8d); }
+.pb-hp-unknown { background: rgba(128,128,128,.45); }
+.pb-hp-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pb-hp-unknown-text { color: var(--text-muted, #999); white-space: nowrap; }
+.pb-hp-points { white-space: nowrap; }
 .pb-info {
   display: flex;
   flex-wrap: wrap;

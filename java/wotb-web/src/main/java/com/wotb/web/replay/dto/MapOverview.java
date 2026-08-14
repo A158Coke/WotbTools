@@ -117,12 +117,18 @@ public record MapOverview(
     public record Playback(
             double durationSec,
             List<PlaybackVehicle> vehicles,
-            List<PlaybackEvent> events
+            List<PlaybackEvent> events,
+            List<PointsSample> pointsSamples
     ) {
         public Playback {
             vehicles = vehicles == null ? List.of() : List.copyOf(vehicles);
             events = events == null ? List.of() : List.copyOf(events);
+            pointsSamples = pointsSamples == null ? List.of() : List.copyOf(pointsSamples);
         }
+    }
+
+    /** 争霸赛实时点数广播（battle-relative 秒升序；type-8 subtype48 root field12，PROVEN）。 */
+    public record PointsSample(double timeSec, int team, int points) {
     }
 
     /**
@@ -138,7 +144,9 @@ public record MapOverview(
             int team,
             List<PositionInterval> positionIntervals,
             Double deathSec,
-            List<DirectionSample> directionSamples
+            List<DirectionSample> directionSamples,
+            Integer maxHp,
+            List<HpSample> hpSamples
     ) {
         public PlaybackVehicle {
             playerName = playerName == null ? "" : playerName;
@@ -147,7 +155,12 @@ public record MapOverview(
                     ? List.of() : List.copyOf(positionIntervals);
             directionSamples = directionSamples == null
                     ? List.of() : List.copyOf(directionSamples);
+            hpSamples = hpSamples == null ? List.of() : List.copyOf(hpSamples);
         }
+    }
+
+    /** 回放实测血量采样（battle-relative 秒；type-7 propId=3 当前血量，含装备加成，阵亡到 0）。 */
+    public record HpSample(double timeSec, int hp) {
     }
 
     /**

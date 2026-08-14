@@ -5,6 +5,9 @@ import com.wotb.core.parse.ReplayArchiveReader;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
+import com.wotb.core.replay.decoder.EntityMethodDecoder;
+import com.wotb.core.replay.decoder.ReplayDecodeContext;
+import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.stream.RawReplayPacket;
 import com.wotb.core.replay.stream.ReplayPacketStreamReader;
 import org.junit.jupiter.api.Assumptions;
@@ -22,7 +25,7 @@ import java.util.TreeMap;
  * 扫描 common/data（递归）与 common/fixtures/replays 的全部 .wotbreplay 样本，逐样本输出：
  * 元数据/结算字段、包类型直方图、EntityMethod 子类型直方图、type 7 propId 直方图，
  * 以及候选包（实时点数/基地占领/1000 分触发/结束原因可能所在）按时间排序的样本。
- * 所有候选语义一律 UNKNOWN——本探针只收集证据，不做任何解码断言；无样本自动跳过。
+ * 本探针只收集证据，不做解码断言；无样本自动跳过。
  */
 class PointsEvidenceProbeTest {
 
@@ -134,6 +137,109 @@ class PointsEvidenceProbeTest {
                 System.out.println("  type7PropIds=" + propIds);
                 System.out.println("  candidate samples (semantics UNKNOWN):");
                 candidates.forEach(System.out::println);
+            } catch (Exception e) {
+                System.out.println("  ERROR " + e);
+            }
+        }
+    }
+
+    /**
+     * REALTIME_SUPREMACY_POINTS + PROP3_HP_SENTINELS 交叉验证探针（走生产解码路径）：
+     * 对真实样本逐包调用生产 {@code EntityMethodDecoder.decode}，并复用生产
+     * {@code readWrapperFieldNumber} / {@code readUpdateArena2Root} 打印 subtype48 的
+     * wrapperFieldNumber 分布与 root keys——验证只有 wrapper=13 的 subtype48 产出点数事件
+     * （wrapper=1 名册 / 18 配置即使 root 结构相同也不产出，门禁回归）；
+     * propId=3 扫描所有 ≥0xFF00 高位值（signed 负 sentinel 清单，确认是否还有 FFFC/FFFE 等）。
+     * 手动运行，不进 CI：无样本自动跳过。
+     */
+    @Test
+    void realtimeSupremacyAndHpSentinelProbe() throws Exception {
+        final List<Path> samples = new ArrayList<>();
+        if (Files.isDirectory(REPO_COMMON)) {
+            try (var walk = Files.walk(REPO_COMMON)) {
+                walk.filter(p -> p.toString().endsWith(".wotbreplay"))
+                        .filter(Files::isRegularFile)
+                        .sorted()
+                        .forEach(samples::add);
+            }
+        }
+        Assumptions.assumeTrue(!samples.isEmpty(), "no replay samples under common/");
+        System.out.println("== REALTIME_SUPREMACY_POINTS + PROP3_HP_SENTINELS probe (production decode) ==");
+        final EntityMethodDecoder methodDecoder = new EntityMethodDecoder();
+        final ReplayDecodeContext ctx = new ReplayDecodeContext("probe");
+        for (final Path sample : samples) {
+            System.out.println("===== " + sample + " =====");
+            try {
+                final byte[] bytes = Files.readAllBytes(sample);
+                final Map<String, byte[]> entries = ReplayArchiveReader.read(bytes);
+                final byte[] eventData = entries.get("data.wotreplay");
+                if (eventData == null) {
+                    System.out.println("  data.wotreplay missing");
+                    continue;
+                }
+                final var stream = ReplayPacketStreamReader.read(eventData);
+                final float start = stream.packets().isEmpty() ? 0f : stream.packets().get(0).rawClockSec();
+                final Map<Long, Integer> wrapperDist = new TreeMap<>();
+                final Map<String, Integer> rootKeysDist = new TreeMap<>();
+                final Map<Long, Integer> lastPoints = new TreeMap<>();
+                int sub48Count = 0;
+                int wrapper13Count = 0;
+                int pointsEvents = 0;
+                final List<String> samplesList = new ArrayList<>();
+                final Map<Integer, Integer> hpSentinelCounts = new TreeMap<>();
+                int hpEvents = 0;
+                for (final RawReplayPacket p : stream.packets()) {
+                    final byte[] pl = p.payload();
+                    if (p.type() == 8 && pl.length >= 8) {
+                        final int sub = (pl[4] & 0xFF) | (pl[5] & 0xFF) << 8
+                                | (pl[6] & 0xFF) << 16 | (pl[7] & 0xFF) << 24;
+                        if (sub != 48) { // subtype48 updateArena2
+                            continue;
+                        }
+                        sub48Count++;
+                        final long wrapper = EntityMethodDecoder.readWrapperFieldNumber(pl);
+                        wrapperDist.merge(wrapper, 1, Integer::sum);
+                        if (wrapper == EntityMethodDecoder.WRAPPER_SUPREMACY_POINTS) {
+                            wrapper13Count++;
+                            final Map<Integer, List<Object>> root =
+                                    EntityMethodDecoder.readUpdateArena2Root(pl);
+                            rootKeysDist.merge(String.valueOf(root == null ? "null" : root.keySet()),
+                                    1, Integer::sum);
+                        }
+                        final var result = methodDecoder.decode(ctx, p);
+                        for (final var ev : result.events()) {
+                            if (ev instanceof SupremacyPointsChangedEvent sp) {
+                                pointsEvents++;
+                                lastPoints.put((long) sp.team(), sp.points());
+                                if (samplesList.size() < 12) {
+                                    samplesList.add(String.format("    t=%+.3fs team%d=%d",
+                                            p.rawClockSec() - start, sp.team(), sp.points()));
+                                }
+                            }
+                        }
+                    }
+                    if (p.type() == 7 && pl.length >= 14) {
+                        final int propId = (pl[4] & 0xFF) | (pl[5] & 0xFF) << 8
+                                | (pl[6] & 0xFF) << 16 | (pl[7] & 0xFF) << 24;
+                        if (propId != 3) { // propId=3 当前血量
+                            continue;
+                        }
+                        hpEvents++;
+                        final int raw = (pl[12] & 0xFF) | ((pl[13] & 0xFF) << 8);
+                        if (raw >= 0xFF00) {
+                            hpSentinelCounts.merge(raw, 1, Integer::sum);
+                        }
+                    }
+                }
+                System.out.println("  subtype48 total=" + sub48Count);
+                System.out.println("  wrapperFieldNumber dist=" + wrapperDist);
+                System.out.println("  wrapper=13 packets=" + wrapper13Count
+                        + " rootKeysDist=" + rootKeysDist);
+                System.out.println("  supremacy pointsEvents(production decode)=" + pointsEvents
+                        + " finalRealtime=" + lastPoints);
+                samplesList.forEach(System.out::println);
+                System.out.println("  propId3 hpEvents=" + hpEvents
+                        + " sentinels(>=0xFF00)=" + hpSentinelCounts);
             } catch (Exception e) {
                 System.out.println("  ERROR " + e);
             }

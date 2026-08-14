@@ -366,8 +366,13 @@ final class PlayerEvidenceFormatter {
 
     /** tankopedia 提供的结构化车辆事实（等级/国家）；缺失即为空串，绝不由名称推断。 */
     private static String structuredTankFacts(final long tankId) {
+        return structuredTankFacts(tankId, null);
+    }
+
+    /** 同上；observedMaxHp 非空时覆盖血量（回放实测，含装备/物资加成）。 */
+    private static String structuredTankFacts(final long tankId, final Integer observedMaxHp) {
         final StringBuilder sb = new StringBuilder(24);
-        EntityIdentityResolver.appendStructuredTankFacts(sb, tankId);
+        EntityIdentityResolver.appendStructuredTankFacts(sb, tankId, observedMaxHp);
         return sb.toString();
     }
 
@@ -452,7 +457,7 @@ final class PlayerEvidenceFormatter {
                 .append(" 坦克: ").append(PlayerResultFormat.quoteForPrompt(tankDisplay))
                 // 车种只来自 tankopedia 的结构化 class 字段，未提供时为「未知」；不得由名称推断
                 .append(" 车种: ").append(ReplayDisplayNames.tankClass(p.tankId))
-                .append(structuredTankFacts(p.tankId))
+                .append(structuredTankFacts(p.tankId, p.observedMaxHp))
                 .append(" 输出").append(p.damageDealt)
                 .append(" 损失血量").append(p.damageReceived)
                 .append(" 助攻").append(p.damageAssisted)

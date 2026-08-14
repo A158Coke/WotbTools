@@ -1,9 +1,11 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.ai.AiTokenEstimator;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -51,8 +53,17 @@ public final class TeamAiPromptBuilder {
         // 不能被 optional 预算裁掉。构建结果决定是否需要补 OPPOSING_LINEUP_UNAVAILABLE，
         // 因此必须在 header 写出 unitLimitations 之前完成。
         final TeamEvidenceFormatter.BudgetWriter hpfTemp = new TeamEvidenceFormatter.BudgetWriter();
+        final Map<Long, Integer> observedMaxHpByAccount = new HashMap<>();
+        if (context.battle() != null && context.battle().players != null) {
+            for (final PlayerResult p : context.battle().players) {
+                if (p != null) {
+                    observedMaxHpByAccount.put(p.accountId, p.observedMaxHp);
+                }
+            }
+        }
         TeamEvidenceFormatter.appendHighPriorityFacts(
-                hpfTemp, context.features(), context.analysisUnitId(), List.copyOf(limitations));
+                hpfTemp, context.features(), context.analysisUnitId(), List.copyOf(limitations),
+                observedMaxHpByAccount);
         if (!TeamEvidenceFormatter.appendOpposingTeam(hpfTemp, context.battle(), context.perspectiveTeam())) {
             // prompt 要求逐车分析对方；拿不到对方名册时必须显式告知，避免 AI 跳过或编造
             limitations.add("OPPOSING_LINEUP_UNAVAILABLE");
@@ -147,6 +158,15 @@ public final class TeamAiPromptBuilder {
                     context.reconstruction(),
                     context.perspectiveTeam(),
                     limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
+        }
+        // 阵型深度（前后排）与实际控制区域（确定性，仅团队路径）：小段，随 optional 预算裁剪
+        final String formationDepth = FormationDepthEvidence.renderSection(
+                context.battle(),
+                context.reconstruction(),
+                context.perspectiveTeam(),
+                context.battle() == null ? null : context.battle().mapName);
+        if (!formationDepth.isEmpty()) {
+            optTemp.append(formationDepth);
         }
         return optTemp.content();
     }
