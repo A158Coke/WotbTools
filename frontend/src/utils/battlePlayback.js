@@ -253,17 +253,38 @@ export function tracerLines(events, routesByAccount, nowSec, speed) {
   if (!Array.isArray(events) || !routesByAccount || !Number.isFinite(nowSec)) return []
   const rate = Number.isFinite(speed) && speed > 0 ? speed : 1
   const windowSec = TRACER_BASE_SEC * rate
-  const shots = new Map()
+  // 按 (attacker,target) 分组，组内按实际时间差去重（时间差 ≤ SAME_SHOT_WINDOW_SEC 视为同一炮，
+  // 优先保留 DAMAGE）——不用固定时间桶，避免桶边界把相差 2ms 的两次事件拆成两条线
+  const byPair = new Map()
   for (const ev of events) {
     if (!ev || (ev.type !== 'DAMAGE' && ev.type !== 'KILL')) continue
     if (ev.accountId == null || ev.targetAccountId == null || ev.accountId === ev.targetAccountId) continue
     if (!Number.isFinite(ev.timeSec)) continue
-    const key = `${ev.accountId}|${ev.targetAccountId}|${Math.floor(ev.timeSec / SAME_SHOT_WINDOW_SEC)}`
-    const existing = shots.get(key)
-    if (!existing || (existing.type === 'KILL' && ev.type === 'DAMAGE')) shots.set(key, ev)
+    const key = `${ev.accountId}|${ev.targetAccountId}`
+    const list = byPair.get(key)
+    if (list) list.push(ev)
+    else byPair.set(key, [ev])
+  }
+  const shots = []
+  for (const pair of byPair.values()) {
+    pair.sort((a, b) => a.timeSec - b.timeSec)
+    let kept = null
+    for (const ev of pair) {
+      if (!kept) {
+        kept = ev
+        continue
+      }
+      if (ev.timeSec - kept.timeSec <= SAME_SHOT_WINDOW_SEC + 1e-9) {
+        if (kept.type === 'KILL' && ev.type === 'DAMAGE') kept = ev
+        continue
+      }
+      shots.push(kept)
+      kept = ev
+    }
+    if (kept) shots.push(kept)
   }
   const lines = []
-  for (const ev of shots.values()) {
+  for (const ev of shots) {
     const t = ev.timeSec
     if (nowSec < t - 1e-6 || nowSec >= t + windowSec - 1e-9) continue
     const from = routesByAccount.get(ev.accountId)

@@ -40,14 +40,11 @@ final class DamageWindowClusterer {
      */
     static final float SHORT_FOCUS_WINDOW_SEC = 15f;
 
-    /** 高危掉血窗口的跨度上限（秒）：窗口跨度 ≤ 该阈值且掉血 ≥ {@link #CRITICAL_HP_PCT}% 即肯定有问题。 */
+    /** 短窗高额伤害窗口的跨度上限（秒）：窗口跨度 ≤ 该阈值且累计伤害 ≥ {@link #CRITICAL_HP_PCT}% 基础满血量即标出。 */
     static final float CRITICAL_WINDOW_SPAN_SEC = 10f;
 
-    /** 高危掉血窗口的掉血比例阈值（占满血量百分比）。 */
+    /** 短窗高额伤害窗口的伤害阈值：窗口累计伤害 ≥ 该比例的**基础**满血量（tankopedia 基础值，不含装备加成）。 */
     static final double CRITICAL_HP_PCT = 75.0;
-
-    /** 被秒杀阈值：窗口内掉血 ≥ 满血量（含过量伤害）。 */
-    static final double INSTANT_KILL_PCT = 100.0;
 
     /**
      * 一个掉血窗口（battle-relative 秒）。
@@ -55,9 +52,9 @@ final class DamageWindowClusterer {
      * @param uniqueAttackerCount 窗口内解析出的不同攻击者账号数
      * @param attackersUnresolved 窗口内是否存在攻击者无法解析（true 时不得断言集火）
      * @param focusFireCandidate  窗口总跨度 ≤ {@link #SHORT_FOCUS_WINDOW_SEC}、攻击者 ≥2 且无未解析
-     * @param victimHpPct         窗口掉血量占满血量百分比（tankopedia maxHp；未知为 null）
-     * @param criticalWindow      窗口跨度 ≤ {@link #CRITICAL_WINDOW_SPAN_SEC} 且掉血 ≥ {@link #CRITICAL_HP_PCT}%
-     * @param instantKill         窗口掉血 ≥ 满血量（被秒杀）
+     * @param damageVsBaseMaxHpPct 窗口累计伤害占**基础**满血量百分比（tankopedia 基础值，不含装备加成；
+     *                             只是计算基准，不是实际掉血比例；未知为 null）
+     * @param criticalWindow      窗口跨度 ≤ {@link #CRITICAL_WINDOW_SPAN_SEC} 且伤害 ≥ {@link #CRITICAL_HP_PCT}% 基础满血量
      */
     record DamageWindow(
             float startSec,
@@ -67,9 +64,8 @@ final class DamageWindowClusterer {
             int uniqueAttackerCount,
             boolean attackersUnresolved,
             boolean focusFireCandidate,
-            Double victimHpPct,
-            boolean criticalWindow,
-            boolean instantKill) {
+            Double damageVsBaseMaxHpPct,
+            boolean criticalWindow) {
 
         /** 窗口总跨度（秒）。 */
         float spanSec() {
@@ -157,22 +153,23 @@ final class DamageWindowClusterer {
         return windows;
     }
 
-    private static DamageWindow window(final int victimMaxHp,
+    private static DamageWindow window(final int baseMaxHp,
                                        final float startSec, final float endSec,
                                        final int totalDamage, final int hitCount,
                                        final int uniqueAttackers, final boolean attackersUnresolved) {
         final float span = endSec - startSec;
-        final Double pct = victimMaxHp > 0 ? 100.0 * totalDamage / victimMaxHp : null;
+        // 只是「伤害 / 基础满血量」的计算基准，不是实际掉血比例：
+        // 无法证明窗口起始血量、窗口内阵亡与装备加成后的实际最大血量
+        final Double pct = baseMaxHp > 0 ? 100.0 * totalDamage / baseMaxHp : null;
         return new DamageWindow(
                 startSec, endSec, totalDamage, hitCount,
                 uniqueAttackers, attackersUnresolved,
                 uniqueAttackers >= 2 && !attackersUnresolved && span <= SHORT_FOCUS_WINDOW_SEC,
                 pct,
-                pct != null && span <= CRITICAL_WINDOW_SPAN_SEC && pct >= CRITICAL_HP_PCT,
-                pct != null && span <= CRITICAL_WINDOW_SPAN_SEC && pct >= INSTANT_KILL_PCT);
+                pct != null && span <= CRITICAL_WINDOW_SPAN_SEC && pct >= CRITICAL_HP_PCT);
     }
 
-    /** 受击者满血量（tankopedia maxHp）；未知返回 0（不参与百分比判定）。 */
+    /** 受击者基础满血量（tankopedia 基础值，不含装备加成）；未知返回 0（不参与判定）。 */
     private static int victimMaxHp(final Battle battle, final long accountId) {
         if (battle == null || battle.players == null) {
             return 0;

@@ -327,6 +327,21 @@ describe('tracerLines', () => {
     expect(tracerLines([damage, d2], routes, 13.5, 4).map(l => l.timeSec)).toEqual([12, 13.5])
   })
 
+  it('dedupes across bucket boundaries by actual time difference (no fixed buckets)', () => {
+    const d1 = { type: 'DAMAGE', timeSec: 12.249, accountId: 1, targetAccountId: 2, damage: 100 }
+    const kill = { type: 'KILL', timeSec: 12.251, accountId: 1, targetAccountId: 2, damage: null }
+    // 相差 2ms（≤0.25s）必须算同一炮
+    expect(tracerLines([d1, kill], routes, 12.25, 1)).toHaveLength(1)
+    // KILL 在前时优先保留 DAMAGE
+    const pref = tracerLines([kill, d1], routes, 12.25, 1)
+    expect(pref).toHaveLength(1)
+    expect(pref[0].timeSec).toBeCloseTo(12.249)
+    // 真正超过阈值的两次射击保留两条
+    const d2 = { type: 'DAMAGE', timeSec: 12.6, accountId: 1, targetAccountId: 2, damage: 100 }
+    expect(tracerLines([d1, d2], routes, 12.3, 1)).toHaveLength(1)
+    expect(tracerLines([d1, d2], routes, 12.6, 4).map(l => l.timeSec)).toEqual([12.249, 12.6])
+  })
+
   it('rejects shots whose either end lacks a trusted position', () => {
     const gappy = new Map([
       [1, { points: [{ x: 0, y: 0, timeSec: 10 }, { x: 100, y: 0, timeSec: 40 }] }],

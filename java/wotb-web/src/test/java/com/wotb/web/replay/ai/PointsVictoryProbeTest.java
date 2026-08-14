@@ -3,6 +3,9 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
+import com.wotb.core.parse.PickleReader;
+import com.wotb.core.parse.Protobuf;
+import com.wotb.core.parse.ReplayArchiveReader;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.FriendlyEnemyResult;
 import com.wotb.core.processing.ReplayProcessingOptions;
@@ -10,10 +13,12 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * 手动探针（不进 CI）：点数胜利回放的双队分数口径 dump。
@@ -36,6 +41,20 @@ class PointsVictoryProbeTest {
         final Path file = Path.of(path);
         Assumptions.assumeTrue(Files.exists(file), "sample missing: " + file);
         final byte[] bytes = Files.readAllBytes(file);
+        // 元数据与 battle_results 根字段 dump：寻找权威终局比分 / 标准时限证据
+        final Map<String, byte[]> entries = ReplayArchiveReader.read(bytes);
+        System.out.println("meta.json=" + new String(entries.get("meta.json"), StandardCharsets.UTF_8));
+        final Object pickle = PickleReader.loads(entries.get("battle_results.dat"));
+        if (pickle instanceof Object[] tuple && tuple.length == 2 && tuple[1] instanceof byte[] pb) {
+            final Map<Integer, List<Object>> root = Protobuf.decode(pb);
+            final StringBuilder rootsb = new StringBuilder();
+            root.keySet().stream().sorted().forEach(k -> {
+                final Object first = root.get(k).get(0);
+                rootsb.append(' ').append(k).append('=');
+                rootsb.append(first instanceof byte[] rawb ? "<bytes:" + rawb.length + ">" : String.valueOf(first));
+            });
+            System.out.println("root fields:" + rootsb);
+        }
         final ReplayProcessingResult result = new DefaultReplayProcessingFacade()
                 .process(new Source(file.getFileName().toString(), bytes), ReplayProcessingOptions.full());
         final Battle battle = result.battle();

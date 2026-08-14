@@ -84,9 +84,18 @@ function applyView(next) {
 
 const viewportStyle = computed(() => `transform: translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`)
 
-function onWheel(e) {
+/** 指针 client 坐标 → 地图内容局部坐标（未变换）：(client − 容器原点 − 平移) / 缩放。 */
+function localPoint(clientX, clientY) {
   const rect = mapEl.value ? mapEl.value.getBoundingClientRect() : { left: 0, top: 0 }
-  applyView(zoomViewAt(view, e.clientX - rect.left, e.clientY - rect.top, e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP))
+  return {
+    x: (clientX - rect.left - view.tx) / view.scale,
+    y: (clientY - rect.top - view.ty) / view.scale
+  }
+}
+
+function onWheel(e) {
+  const p = localPoint(e.clientX, e.clientY)
+  applyView(zoomViewAt(view, p.x, p.y, e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP))
 }
 
 function pinchInfo() {
@@ -101,7 +110,16 @@ function onPointerDown(e) {
   if (pointers.size === 1) {
     panStart = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false }
   } else if (pointers.size === 2) {
-    pinchStart = { ...pinchInfo(), scale: view.scale, tx: view.tx, ty: view.ty }
+    const info = pinchInfo()
+    pinchStart = {
+      mid: info.mid,
+      dist: info.dist,
+      // 锚点必须转成地图内容局部坐标（zoomViewAt 以局部坐标为原点），不能用 client 坐标
+      anchorLocal: localPoint(info.mid.x, info.mid.y),
+      scale: view.scale,
+      tx: view.tx,
+      ty: view.ty
+    }
     panStart = null
   }
 }
@@ -114,8 +132,9 @@ function onPointerMove(e) {
     if (pinchStart.dist > 0 && dist > 0) {
       const next = zoomViewAt(
         { scale: pinchStart.scale, tx: pinchStart.tx, ty: pinchStart.ty },
-        pinchStart.mid.x, pinchStart.mid.y, dist / pinchStart.dist
+        pinchStart.anchorLocal.x, pinchStart.anchorLocal.y, dist / pinchStart.dist
       )
+      // 两指中点整体移动 = 平移（translate 作用于缩放后的屏幕坐标，直接加 client 位移）
       next.tx += mid.x - pinchStart.mid.x
       next.ty += mid.y - pinchStart.mid.y
       applyView(next)

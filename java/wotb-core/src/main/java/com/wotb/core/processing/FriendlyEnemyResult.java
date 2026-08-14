@@ -35,7 +35,7 @@ public final class FriendlyEnemyResult {
         BATTLE_RESULTS,
         /** 结算存活标记：一方全员阵亡，另一方获胜（结算级事实推导；仅当结算阵容完整时）。 */
         SURVIVOR_SETTLEMENT,
-        /** 双方均未全灭时的争霸赛点数推断：占点得分高者胜（规则候选，非权威）。 */
+        /** 已停用的争霸赛点数推断：占点分不含被动增长与击杀夺分，比较会推出错误胜方，不再产出（fail closed）。 */
         POINTS_INFERENCE,
         UNKNOWN
     }
@@ -153,19 +153,14 @@ public final class FriendlyEnemyResult {
             }
         }
         if (pointsDecided && rosterComplete(battle)) {
-            // 点数推断：比较双方占点得分总和（方向与胜方一致时才可用；仅当结算阵容完整，
-            // 否则残缺点数不得推断胜方或结束方式）
-            final long team1Points = pointsEarned(battle, 1);
-            final long team2Points = pointsEarned(battle, 2);
-            if (team1Points != team2Points) {
-                final boolean friendlyHigher =
-                        recorderTeam == 1 ? team1Points > team2Points : team2Points > team1Points;
-                return new TeamBattleWinner(
-                        friendlyHigher ? Winner.FRIENDLY_WIN : Winner.ENEMY_WIN,
-                        WinnerSource.POINTS_INFERENCE,
-                        true,
-                        pointsEndReason(team1Points, team2Points));
-            }
+            // fail closed：无权威胜方时禁止比较占点分推断胜方——
+            // victoryPointsEarned 不含被动占点增长与击杀夺分，直接比较会推出错误胜方；
+            // 结束方式仍按标准时限证据判定（用于结果行后缀），胜方保持未知。
+            return new TeamBattleWinner(
+                    Winner.DRAW_OR_UNKNOWN,
+                    WinnerSource.UNKNOWN,
+                    true,
+                    pointsEndReason(battle, recorderTeam));
         }
         final PointsEndReason endReason = pointsDecided
                 ? (rosterComplete(battle)
@@ -232,8 +227,8 @@ public final class FriendlyEnemyResult {
     }
 
     /**
-     * 结算阵容完整前提（SURVIVOR_SETTLEMENT / annihilationSuffix / POINTS_INFERENCE /
-     * pointsEndReason 共享）：仅当 ReplayParser 确认名册(#201)与战绩(#301)账号/队伍一致时返回 true；
+     * 结算阵容完整前提（SURVIVOR_SETTLEMENT / annihilationSuffix / pointsEndReason 共享）：
+     * 仅当 ReplayParser 确认名册(#201)与战绩(#301)账号/队伍一致时返回 true；
      * 未知一律视为不完整，残缺点数/存活数不得用于推断胜方或结束方式。
      */
     public static boolean rosterComplete(final Battle battle) {
@@ -264,16 +259,23 @@ public final class FriendlyEnemyResult {
                 || !PlayerSideResolver.isValidRawTeam(recorderTeam)) {
             return PointsEndReason.UNKNOWN;
         }
-        if (earlyPointsEnd(battle)) {
-            // 时间未耗尽（<7 分钟）的点数决胜：任一方达到 1000 分立即获胜（规则保证）。
-            // victoryPointsEarned 是逐人占点分（不含被动占点增长与击杀夺分），合计可能不足 1000，
-            // 但提前结束本身即证明赢队达到 1000。
+        final int opposingTeam = recorderTeam == 1 ? 2 : 1;
+        final long teamPoints = pointsEarned(battle, recorderTeam);
+        final long opposingPoints = pointsEarned(battle, opposingTeam);
+        // 下界证明：已知逐人占点分（不含被动增长）合计 ≥1000 ⇒ 实际终局必达 1000
+        if (Math.max(teamPoints, opposingPoints) >= SUPREMACY_WIN_POINTS) {
             return PointsEndReason.REACHED_1000;
         }
-        final int opposingTeam = recorderTeam == 1 ? 2 : 1;
-        return pointsEndReason(
-                pointsEarned(battle, recorderTeam),
-                pointsEarned(battle, opposingTeam));
+        // 标准时限证据（随机战/官方联赛）+ 时长未到 7 分钟 ⇒ 提前结束，赢队必达 1000
+        if (provableEarlyPointsWin(battle)) {
+            return PointsEndReason.REACHED_1000;
+        }
+        // 标准时限下双方部分分均 <1000 且已打到 7 分钟 → 时间耗尽；自定义时限未知 → UNKNOWN
+        if (standardSupremacyRules(battle)
+                && battle.durationS != null && battle.durationS >= SUPREMACY_TIME_LIMIT_SEC) {
+            return PointsEndReason.TIME_EXPIRED;
+        }
+        return PointsEndReason.UNKNOWN;
     }
 
     /** 指定团队的结算击杀总数（battle/players 缺失返回 0）。 */
@@ -299,18 +301,31 @@ public final class FriendlyEnemyResult {
     }
 
     /**
-     * 计算口径终局比分 = victoryPointsEarned 合计 + 40×击杀 − 40×阵亡。
-     * <p>占点分不含被动占点增长；提前结束（{@link #earlyPointsEnd}）时赢队按规则钉死为
-     * {@value #SUPREMACY_WIN_POINTS}，调用方负责该钉死逻辑。</p>
+     * 已知部分分（非终局比分）= victoryPointsEarned 合计 + 击杀夺分净额（40×击杀 − 40×阵亡）。
+     * <p>victoryPointsEarned(#32) 是逐人占点统计，不含据点被动占点增长，因此本值只是
+     * 「已知逐人占点统计与击杀夺分净额」，不是终局比分，调用方不得把它当精确终局比分输出。</p>
      */
-    public static long finalPointsComputed(final Battle battle, final int team) {
+    public static long knownPointsSubtotal(final Battle battle, final int team) {
         return pointsEarned(battle, team) + killPointsDelta(battle, team);
     }
 
-    /** 点数决胜是否时间未耗尽（时长 < {@value #SUPREMACY_TIME_LIMIT_SEC} 秒）——必为达到 1000 分提前获胜。 */
-    public static boolean earlyPointsEnd(final Battle battle) {
-        return battle != null && battle.durationS != null
-                && battle.durationS < SUPREMACY_TIME_LIMIT_SEC;
+    /**
+     * 标准争霸赛规则（7 分钟 / 1000 分）可证明的战斗类别：随机战与官方联赛/锦标赛。
+     * 训练房（arenaBonusType=2）可自定义时限，类别未知时同样不可证明——此类场次禁止用
+     * 时长推断「达到 1000 分提前获胜」或「时间耗尽」。
+     */
+    public static boolean standardSupremacyRules(final Battle battle) {
+        if (battle == null || battle.arenaBonusType == null) {
+            return false;
+        }
+        final BattleCategory category = BattleCategoryUtils.fromArenaBonusType(battle.arenaBonusType);
+        return category == BattleCategory.RANDOM || category == BattleCategory.TOURNAMENT;
+    }
+
+    /** 标准时限证据成立且时长未到 {@value #SUPREMACY_TIME_LIMIT_SEC} 秒——点数决胜必为达到 1000 分提前获胜。 */
+    public static boolean provableEarlyPointsWin(final Battle battle) {
+        return battle != null && standardSupremacyRules(battle)
+                && battle.durationS != null && battle.durationS < SUPREMACY_TIME_LIMIT_SEC;
     }
 
     /** Short Chinese label for each winner value. */

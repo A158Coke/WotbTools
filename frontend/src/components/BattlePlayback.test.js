@@ -340,6 +340,45 @@ describe('map zoom and pan', () => {
     await viewport.trigger('pointerup', { pointerId: 2 })
   })
 
+  function nonzeroRect() {
+    return {
+      left: 100,
+      top: 50,
+      width: 400,
+      height: 300,
+      right: 500,
+      bottom: 350,
+      x: 100,
+      y: 50,
+      toJSON: () => ({})
+    }
+  }
+
+  it('pinch anchor uses map-local coordinates when the map is not at the viewport origin', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    wrapper.find('[data-test="pb-map"]').element.getBoundingClientRect = () => nonzeroRect()
+    const viewport = wrapper.find('[data-test="pb-viewport"]')
+    await viewport.trigger('pointerdown', { pointerId: 1, clientX: 110, clientY: 60 })
+    await viewport.trigger('pointerdown', { pointerId: 2, clientX: 210, clientY: 60 })
+    await viewport.trigger('pointermove', { pointerId: 2, clientX: 310, clientY: 60 })
+    // 锚点局部 (60,10)，dist 100→200（ratio 2）：t'=anchor−anchor·2=(−60,−10)；中点位移 (50,0)
+    expect(viewport.attributes('style')).toContain('translate(-10px, -10px) scale(2)')
+    await viewport.trigger('pointerup', { pointerId: 1 })
+    await viewport.trigger('pointerup', { pointerId: 2 })
+  })
+
+  it('wheel zoom anchors at the cursor in map-local coordinates', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    wrapper.find('[data-test="pb-map"]').element.getBoundingClientRect = () => nonzeroRect()
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 110, clientY: 60 })
+    // 局部 (10,10)：t' = 10 − 10×1.2 = −2
+    expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('translate(-2px, -2px) scale(1.2)')
+  })
+
   it('reset restores identity view and keeps all layers on the single transform', async () => {
     const wrapper = await zoomedWrapper()
     const markerStyleBefore = wrapper.find('[data-test="pb-marker-1001"]').attributes('style')

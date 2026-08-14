@@ -35,13 +35,16 @@
   样本，无样本以素材默认 0° 渲染，不并入 `pb-last-known`）。
 - **AI 复盘击杀夺分与掉血窗口口径**：`FriendlyEnemyResult` 新增 `KILL_STEAL_POINTS=40`（双向：
   每击杀夺取对方 40 分、本方掉人损失 40 分）、`teamKills`/`teamDeaths`/`killPointsDelta`/
-  `finalPointsComputed`（占点分+40×击杀−40×阵亡）与 `earlyPointsEnd`（时长 <420s 的点数决胜 →
-  REACHED_1000，赢队终局比分钉死 1000）；`TeamEvidenceFormatter` 输出双方 kills/deaths/
-  finalPointsComputed 与「禁止用 victoryPointsEarned 合计冒充终局比分」指令；
-  `DamageWindowClusterer.DamageWindow` 新增 `victimHpPct`（tankopedia maxHp）/ `criticalWindow`
-  （跨度 ≤10s 且 ≥75%）/ `instantKill`（跨度 ≤10s 且 ≥100%）；prompt 规则三语同步（player×3 +
-  team/single + PlayerPromptRules/TeamPromptLocalizer：高危窗口强制定性 + 禁止阵亡掉血 100% 废话）；
-  `PointsVictoryProbeTest` 本地样本探针（CI 无样本自动跳过）。
+  `knownPointsSubtotal`（逐人占点分+40×击杀−40×阵亡，**部分可计算值、非终局比分**）与
+  `standardSupremacyRules`/`provableEarlyPointsWin`（标准时限证据=随机战/官方联赛；训练房自定义
+  时限 fail closed）；无权威胜方时不再按占点分推断胜方（POINTS_INFERENCE 停止产出）；
+  `TeamEvidenceFormatter` 输出双方 kills/deaths/knownPointsSubtotal，终局比分只有可证明时输出
+  （标准时限提前结束+权威胜方 → 胜方=1000、失败方 UNKNOWN；其余一律 UNKNOWN）；
+  `DamageWindowClusterer.DamageWindow` 新增 `damageVsBaseMaxHpPct`（累计伤害/基础满血量，
+  tankopedia 基础值，只是计算基准不是实际掉血比例）/ `criticalWindow`（跨度 ≤10s 且伤害 ≥75%
+  基础满血量）；不产出无法证明的「被秒杀」判定；prompt 规则三语同步（player×3 + team/single +
+  PlayerPromptRules/TeamPromptLocalizer：短窗高额伤害窗口强制定性 + 禁止把部分分当终局比分 +
+  禁止阵亡掉血 100% 废话）；`PointsVictoryProbeTest` 本地样本探针（CI 无样本自动跳过）。
 - **战局回放炮塔方向契约与双层坦克标记（门禁 B 破解）**：type-7 propId=2 定案为
   炮塔相对车体偏航（u16 LE：`raw*360/65536-180` 度，完整 360° 且 ±180 回绕）——车体静止
   炮塔转一圈的旋转实验回放证明满圈 + wrap；开火命中锚点拟合（41 锚点残差 9.5°）+

@@ -218,6 +218,8 @@ class PlayerSideResolverTest {
         final Battle battle = new Battle();
         battle.winnerTeam = 2;
         battle.rosterComplete = true;
+        battle.arenaBonusType = 3; // 官方联赛：标准时限证据
+        battle.durationS = 420.0;  // 打到 7 分钟且双方部分分均 <1000 → 时间耗尽
         battle.players = List.of(
                 player(1, "A1", true, 100),
                 player(2, "B1", true, 500));
@@ -226,7 +228,7 @@ class PlayerSideResolverTest {
         assertEquals(WinnerSource.BATTLE_RESULTS, w.source());
         assertTrue(w.pointsDecided(), "neither team fully destroyed -> supremacy points victory");
         assertEquals(PointsEndReason.TIME_EXPIRED, w.pointsEndReason(),
-                "both sides below 1000 points -> points victory only possible after time expired");
+                "both sides below 1000 points and time exhausted -> time-expired points decision");
     }
 
     @Test
@@ -259,7 +261,7 @@ class PlayerSideResolverTest {
     }
 
     @Test
-    void supremacy_winnerMissing_noFullWipe_pointsLeadWins() {
+    void supremacy_winnerMissing_noFullWipe_failsClosed() {
         final Battle battle = new Battle();
         battle.winnerTeam = null;
         battle.rosterComplete = true;
@@ -269,10 +271,12 @@ class PlayerSideResolverTest {
                 player(2, "B1", true, 700),
                 player(2, "B2", true, 0));
         final TeamBattleWinner w = FriendlyEnemyResult.resolveTeamBattle(battle, 1);
-        assertEquals(Winner.ENEMY_WIN, w.winner());
-        assertEquals(WinnerSource.POINTS_INFERENCE, w.source());
+        // 无权威胜方：占点分不含被动增长与击杀夺分，禁止比较推断胜方 → fail closed
+        assertEquals(Winner.DRAW_OR_UNKNOWN, w.winner());
+        assertEquals(WinnerSource.UNKNOWN, w.source());
         assertTrue(w.pointsDecided());
-        assertEquals(PointsEndReason.TIME_EXPIRED, w.pointsEndReason());
+        assertEquals(PointsEndReason.UNKNOWN, w.pointsEndReason(),
+                "无标准时限证据（类别未知）→ 结束方式未知");
     }
 
     @Test
