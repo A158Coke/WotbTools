@@ -140,6 +140,12 @@ EC = damageDealt + 0.6 * damageAssisted + 0.35 * damageBlocked + 200 * kills
 - `POST /api/rating`：上传本次回放，返回实时 rating 表、重复文件、解析失败文件和 `ratingColumns`。
 - `/api/columns.rating`：只返回英文 key + 是否数值，显示名由前端三语 `rating_labels` 映射。
 
+## 已知限制与后续
+
+- **精确 average_hp 数据源未解析**：当前 `common/tankopedia-tier{7,8,9,10}.json` 有 HP，但回放里每车实际进场血量 / 双方总血量字段尚未确认解析；车辆库无 HP 时暂定单车 HP 为 2400。后续方向见 `docs/ROADMAP.md`（Research）。
+- **特殊伤害未校验**：殉爆 / 火烧等非 direct HP damage 场景尚未用真实样本校验，可能误补/漏补潜在伤害。
+- **rating 参数未经大批量回归**：权重与封顶值基于当前样本，后续用真实比赛批量样本微调（见 `docs/ROADMAP.md`）。
+
 ## 测试
 
 - `RatingAnalyzerTest` 覆盖 Trade death KAST、多伤率、协助、Impact 和综合 rating 排序。
