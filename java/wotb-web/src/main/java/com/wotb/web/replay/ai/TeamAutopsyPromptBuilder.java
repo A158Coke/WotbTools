@@ -1,6 +1,7 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
+import com.wotb.core.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.model.Battle;
 import com.wotb.core.replay.evidence.AiEvidence;
 import com.wotb.core.replay.feature.TeamAutopsyStats;
@@ -43,9 +44,9 @@ public final class TeamAutopsyPromptBuilder {
             sb.append("resultSource=").append(winner.source().name()).append('\n');
         }
         if (winner != null && winner.pointsDecided()) {
-            // pointsDecided=true 已保证结束时刻双方均未全员阵亡（非全歼）：supremacy 点数胜负只有
-            // 两种结束方式——任一方达到 1000 分提前获胜，或时间耗尽后比较点数；双方均未达 1000 分时
-            // 为时间耗尽。全歼获胜不属于点数胜负（pointsDecided=false，结果行不加结束方式后缀）。
+            // pointsDecided=true 已保证结束时刻双方均未全员阵亡（非全歼）：supremacy 点数胜负的结束方式
+            // 只按「标准业务规则 + 时长」判定——时长<420s 为某一方达到 1000 分提前结束，时长≥420s 为
+            // 时间耗尽；不使用任何点数字段断言。全歼获胜不属于点数胜负（pointsDecided=false，结果行不加结束方式后缀）。
             sb.append(pointsDecidedNote(winner)).append('\n');
         }
         sb.append("本方 7 人（TEAM_A）:\n");
@@ -206,8 +207,12 @@ public final class TeamAutopsyPromptBuilder {
             return base;
         }
         return switch (winner.pointsEndReason()) {
-            case REACHED_1000 -> base + "（达到 1000 分提前获胜）";
-            case TIME_EXPIRED -> base + "（时间耗尽点数判定）";
+            case REACHED_1000 -> winner.winner() == Winner.DRAW_OR_UNKNOWN
+                    ? base + "（某一方达到 1000 分导致提前结束，具体胜方未知）"
+                    : base + "（达到 1000 分提前获胜）";
+            case TIME_EXPIRED -> winner.winner() == Winner.DRAW_OR_UNKNOWN
+                    ? base + "（时间耗尽点数判定，具体胜方未知）"
+                    : base + "（时间耗尽点数判定）";
             case UNKNOWN, NOT_APPLICABLE -> base + "（点数判定）";
         };
     }
@@ -215,12 +220,22 @@ public final class TeamAutopsyPromptBuilder {
     /** 点数胜利的结束方式说明（供 prompt 使用；禁止 AI 把点数胜负写成常规胜利）。 */
     private static String pointsDecidedNote(final TeamBattleWinner winner) {
         return switch (winner.pointsEndReason()) {
-            case TIME_EXPIRED -> "本局为时间耗尽点数胜利（结束时刻双方均未全员阵亡，且双方均未达 1000 分），"
-                    + "叙述必须写「时间耗尽」；不要描述成敌方全歼。";
-            case REACHED_1000 -> "本局为任一方达到 1000 分提前获胜（结束时刻双方均未全员阵亡），"
-                    + "叙述必须写「达到 1000 分提前获胜」；不要描述成敌方全歼。";
-            case UNKNOWN, NOT_APPLICABLE -> "本局为争霸赛点数胜利（结束时刻双方均未全员阵亡），"
+            case TIME_EXPIRED -> "本局为时间耗尽点数判定（结束时刻双方均未全员阵亡，时长达到 7 分钟），"
+                    + "叙述必须写「时间耗尽」；双方终局比分未解码，未知，不得编造精确比分；"
                     + "不要描述成敌方全歼。";
+            case REACHED_1000 -> winner.winner() == Winner.DRAW_OR_UNKNOWN
+                    ? "本局为某一方达到 1000 分导致提前结束（结束时刻双方均未全员阵亡，时长未到 7 分钟），"
+                    + "具体胜方未知；叙述写「某一方达到 1000 分导致提前结束，具体胜方未知」，"
+                    + "双方终局比分未知，不得把 1000 分分配给任何队伍；不要描述成敌方全歼。"
+                    : "本局为任一方达到 1000 分提前获胜（结束时刻双方均未全员阵亡，时长未到 7 分钟），"
+                    + "叙述必须写「达到 1000 分提前获胜」；不要描述成敌方全歼。"
+                    + "争霸赛每击杀夺取对方 40 分、本方掉人损失 40 分（业务规则，仅作叙述口径，"
+                    + "结算字段是否已含该调整未经证明）；只有权威胜方已知时胜利方终局比分才=1000"
+                    + "（1000 分上限业务约定），失败方终局比分未知，不得编造；"
+                    + "禁止把逐人占点分合计或任何公式计算结果冒充终局比分。";
+            case UNKNOWN, NOT_APPLICABLE -> "本局为争霸赛点数判定（结束时刻双方均未全员阵亡），"
+                    + "不要描述成敌方全歼；无法证明「达到 1000 分提前结束」或「时间耗尽」时只写「点数判定」，"
+                    + "终局比分未知，不得编造。";
         };
     }
 

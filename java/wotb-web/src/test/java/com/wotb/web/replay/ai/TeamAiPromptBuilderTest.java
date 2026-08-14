@@ -136,7 +136,7 @@ class TeamAiPromptBuilderTest {
     }
 
     @Test
-    void supremacyPointsVictoryLabelWhenWinnerMissing() {
+    void supremacyPointsVictoryLabelFailsClosedWhenWinnerMissing() {
         final SingleTeamBattleAnalysisContext context =
                 contextWithNickname("Ally");
         context.battle().winnerTeam = null;
@@ -149,15 +149,14 @@ class TeamAiPromptBuilderTest {
         enemy.victoryPointsEarned = 700;
         context.battle().players = List.of(
                 context.battle().players.get(0), enemy);
-        // 完整 1v1 结算阵容：允许 POINTS_INFERENCE / 时间耗尽点数判定
         context.battle().rosterComplete = true;
 
         final TeamAiPromptBuilder.PromptInput input =
                 TeamAiPromptBuilder.single(context);
 
-        assertTrue(input.content().matches("(?s).*result=.*落败（时间耗尽点数判定）.*"),
-                input.content());
-        assertFalse(input.content().contains("平局或未知"));
+        // 无权威胜方：禁止按占点分推断胜方 → fail closed 为未知
+        assertTrue(input.content().contains("result=平局或未知"), input.content());
+        assertFalse(input.content().contains("落败"), input.content());
     }
 
     @Test

@@ -4,13 +4,28 @@
   "arenaBonusType": 3,
   "fixtureKey": "cw-cap-points-decided-01",
   "lessonRef": "docs/ai-lessons/cw-cap-points-decided-01.md",
-  "expectedJudgment": "点数胜负（双方存活，比占点分，POINTS_INFERENCE）",
+  "expectedJudgment": "点数胜负（双方存活，无权威胜方：fail closed，胜方未知）",
   "checks": [
-    { "kind": "prompt_contains", "text": "CAPTURE_AND_POINTS" },
-    { "kind": "prompt_contains", "text": "pointsDecided=true" },
-    { "kind": "prompt_contains", "text": "winnerSource=POINTS_INFERENCE" },
-    { "kind": "prompt_contains", "text": "resultSource=POINTS_INFERENCE" },
-    { "kind": "prompt_omits", "text": "resultSource=BATTLE_RESULTS" }
+    {
+      "kind": "prompt_contains",
+      "text": "CAPTURE_AND_POINTS"
+    },
+    {
+      "kind": "prompt_contains",
+      "text": "pointsDecided=true"
+    },
+    {
+      "kind": "prompt_contains",
+      "text": "winnerSource=UNKNOWN"
+    },
+    {
+      "kind": "prompt_contains",
+      "text": "resultSource=UNKNOWN"
+    },
+    {
+      "kind": "prompt_omits",
+      "text": "resultSource=BATTLE_RESULTS"
+    }
   ],
-  "note": "双方未全灭、结算无 winnerTeam：以逐人占点分总和推断点数胜负（规则候选，非权威）。"
+  "note": "双方未全灭、结算无 winnerTeam：victoryPointsEarned 是否含被动增长与击杀夺分仍未证明，禁止比较推断胜方，fail closed 为未知。"
 }

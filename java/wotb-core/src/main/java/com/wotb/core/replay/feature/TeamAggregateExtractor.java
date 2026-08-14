@@ -68,8 +68,8 @@ final class TeamAggregateExtractor {
 
     /**
      * Resolve aggregate win as Boolean（team perspective / supremacy 规则）。
-     * 结算 winnerTeam 缺失时按 supremacy 推导：一方全灭或点数领先即可定胜负；
-     * 仍无法判定返回 null。
+     * 结算 winnerTeam 缺失时 fail closed：victoryPointsEarned 的精确定义及是否包含被动增长/击杀夺分仍未证明，禁止比较推断胜方；
+     * 无法判定返回 null。
      */
     static Boolean resolveAggregateWin(final Battle battle, final int perspectiveTeam) {
         final TeamBattleWinner w = FriendlyEnemyResult.resolveTeamBattle(battle, perspectiveTeam);

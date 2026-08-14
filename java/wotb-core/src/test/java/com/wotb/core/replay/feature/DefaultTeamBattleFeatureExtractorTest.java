@@ -469,7 +469,7 @@ class DefaultTeamBattleFeatureExtractorTest {
     }
 
     @Test
-    void supremacyMissingWinner_neitherTeamWiped_pointsLeadWins() {
+    void supremacyMissingWinner_neitherTeamWiped_pointsLeadFailsClosed() {
         final Fixture fixture = fixture();
         fixture.battle().winnerTeam = null;
         // allyOne(1) 存活, allyTwo(1) 阵亡, enemy(2) 存活 → 双方均未全灭 → 点数判定
@@ -478,7 +478,8 @@ class DefaultTeamBattleFeatureExtractorTest {
 
         final TeamBattleFeatureSet features = extract(fixture, List.of());
 
-        assertEquals(Boolean.TRUE, features.authoritativeAggregate().win());
+        // 无权威胜方：禁止按占点分推断胜方 → win 未知（fail closed）
+        assertEquals(null, features.authoritativeAggregate().win());
     }
 
     @Test
