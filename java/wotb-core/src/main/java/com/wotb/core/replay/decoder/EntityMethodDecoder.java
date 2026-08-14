@@ -63,8 +63,12 @@ public class EntityMethodDecoder implements ReplayPacketDecoder {
                         events.add(damageResult.destroyedEvent());
                     }
                 } else {
-                    warnings.add(new ReplayDecodeWarning("PARSE_FAILED",
-                            "Failed to parse damage from EntityMethod at seq " + packet.sequence()));
+                    // 结构合法但语义未解码的伤害方法变体（非 direct/零伤害/短体变体）：
+                    // 可能对应跳弹/履带/模块/其他通知，未经证明；不产出事件、不进入生产时间线，
+                    // 也不算解析失败（区别于真正的 MALFORMED/TRUNCATED）。
+                    warnings.add(new ReplayDecodeWarning("UNSUPPORTED_DAMAGE_VARIANT",
+                            "Undecoded damage-method variant at seq " + packet.sequence()
+                                    + " (payloadLen=" + payload.length + ")"));
                 }
             }
             case SUBTYPE_UPDATE_ARENA2 -> {

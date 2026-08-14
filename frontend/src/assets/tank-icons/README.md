@@ -22,9 +22,12 @@ AI Review「战局回放」的俯视坦克标记素材契约。最终方案为**
 
 ## 接入契约（未来播放器变更）
 
-- `hullYaw` / `turretRelativeYaw` / `turretWorldYaw` 是**未来播放器接入契约**：
-  当前 PR #71 的 DTO 尚未提供这些方向字段，`BattlePlayback.vue` 仍使用圆点标记，
-  本素材合入后不会被播放器自动使用；实际接入、方向字段与双层旋转属于后续播放器变更。
+- `hullYaw` / `turretRelativeYaw` / `turretWorldYaw` 已接入播放器：DTO 提供
+  `directionSamples`，`BattlePlayback.vue` 用四张运行时素材渲染双层标记
+  （hull 按 `hullYawDeg`、turret 按 `turretWorldYawDeg` 独立旋转，共同 pivot 256,256）。
+- 阵亡（`pb-destroyed`）：敌我一致——双层素材冻结在最后可信方向（无方向样本时以素材默认 0° 渲染，
+  不代表真实朝向），整体 opacity .35 + grayscale(1) 去饱和，叠加同款 ✕；为独立 UI 状态，
+  不并入 `pb-last-known`。
 - 历史轨迹只代表车辆曾经的位置，不代表车体或炮塔朝向。
 - 最后已知状态只使用透明灰，不添加时钟图标。
 - 录像者、选中、低血量、阵亡、悬停属于 UI overlay，不烘焙进基础 sprite。

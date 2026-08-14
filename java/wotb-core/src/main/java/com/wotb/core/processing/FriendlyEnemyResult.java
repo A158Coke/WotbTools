@@ -12,8 +12,15 @@ import com.wotb.core.model.PlayerResult;
  */
 public final class FriendlyEnemyResult {
 
-    /** supremacy 点数胜利阈值：任一方达到该点数立即获胜。 */
-    private static final long SUPREMACY_WIN_POINTS = 1000;
+    /** 胜利点数上限 1000 分（项目所有者确认的业务规则；达到上限即提前结束，不是从回放字段解码）。 */
+    public static final long SUPREMACY_WIN_POINTS = 1000;
+
+    /** 击杀夺分业务规则（项目所有者确认）：每击杀夺取对方 40 分、本方掉人损失 40 分。
+     *  <p>仅作叙述口径，不用于计算——结算字段 victoryPointsEarned 是否已含该调整未经证明。 */
+    public static final long KILL_STEAL_POINTS = 40;
+
+    /** 争霸赛固定战斗时长 420 秒（项目所有者确认的业务规则；游戏不提供时长调整）。 */
+    public static final double SUPREMACY_TIME_LIMIT_SEC = 420;
 
     private FriendlyEnemyResult() {}
 
@@ -29,28 +36,31 @@ public final class FriendlyEnemyResult {
         BATTLE_RESULTS,
         /** 结算存活标记：一方全员阵亡，另一方获胜（结算级事实推导；仅当结算阵容完整时）。 */
         SURVIVOR_SETTLEMENT,
-        /** 双方均未全灭时的争霸赛点数推断：占点得分高者胜（规则候选，非权威）。 */
+        /** 已停用的争霸赛点数推断：victoryPointsEarned 的精确定义及是否包含被动增长/击杀夺分仍未证明，
+         *  直接比较会推出错误胜方，不再产出（fail closed）。 */
         POINTS_INFERENCE,
         UNKNOWN
     }
 
     /**
-     * 点数胜负的结束方式（supremacy 规则）。
+     * 点数胜负的结束方式（supremacy 规则，项目所有者确认的 420s/1000 业务规则）。
      *
-     * <p>点数胜负只可能发生在两种情形：任一方达到 1000 分立即获胜（REACHED_1000），
-     * 或时间耗尽时比较点数、高者胜（TIME_EXPIRED）。若点数决胜但双方胜利点数均缺失
-     * （≤0），无法判定结束方式 → UNKNOWN；非点数胜负 → NOT_APPLICABLE。
-     * 仅当结束时刻双方均未全员阵亡（pointsDecided=true）时适用；一方全员阵亡即全歼获胜，
-     * pointsEndReason 恒为 NOT_APPLICABLE。</p>
+     * <p>仅当结束时刻双方均有存活（pointsDecided=true，调用方保证）时适用；一方全员阵亡即
+     * 全歼获胜，pointsEndReason 恒为 NOT_APPLICABLE。判定契约（不使用任何点数公式）：
+     * 标准业务规则 + 时长&lt;420s → REACHED_1000（某一方达到 1000 分上限导致提前结束，与胜方解耦；
+     * winnerTeam 缺失时胜方未知，不把1000分配给任何队伍）；标准业务规则 + 时长≥420s → TIME_EXPIRED
+     * （时间耗尽，双方终局比分未知）；其余（类别未知/rosterComplete=false/时长未知）→ UNKNOWN。</p>
      */
     public enum PointsEndReason {
         /** 非点数胜负（全歼 / 未知）。 */
         NOT_APPLICABLE,
-        /** 任一方 victoryPointsEarned ≥ 1000，提前以点数获胜。 */
+        /** 双方均有存活且时长未到 420 秒（标准业务规则）：某一方达到 1000 分上限导致提前结束。
+         *  本判定只依据标准规则与时长，不使用任何点数字段；具体胜方由 winnerTeam 决定，缺失时未知。 */
         REACHED_1000,
-        /** 双方均未全员阵亡且均未达 1000 分，时间耗尽后比较点数获胜。 */
+        /** 双方均有存活且时长达到 420 秒（标准业务规则）：时间耗尽，按点数优势分出胜负。
+         *  双方终局比分未解码（UNKNOWN）；原始点数字段不能证明任一方是否曾达 1000 分，不得断言。 */
         TIME_EXPIRED,
-        /** 点数决胜但双方胜利点数缺失，结束方式无法确定。 */
+        /** 点数决胜但无法证明标准规则或时长（类别未知 / rosterComplete=false / 时长缺失），结束方式无法确定。 */
         UNKNOWN
     }
 
@@ -98,16 +108,19 @@ public final class FriendlyEnemyResult {
     }
 
     /**
-     * 团队赛（supremacy 争霸赛）胜负解析，供 team perspective 使用。
-     *
-     * <p>规则：团队赛一定是争霸赛；结束时刻若任意一方全员阵亡则对方获胜（结算级推导，
-     * 仅当 {@link Battle#rosterComplete} 为 true 时；名册/战绩不完整时不得用存活数推导胜方），
-     * 若双方都未全员阵亡则说明是某一方点数胜利（比较占点得分推断，方向一致时胜方高；
-     * 仅当 rosterComplete 为 true，残缺点数不得推断胜方）。
-     * 点数胜利的结束方式按双方胜利点数区分：任一方 ≥1000 为提前获胜，均 <1000 为时间耗尽；
-     * rosterComplete 不为 true 时 pointsEndReason 降级为 UNKNOWN（只能写通用「点数判定」）。
-     * 结算 winnerTeam 存在时始终以其为准（胜方不降级，但点数结束方式仍受完整前提约束）。
-     * 数据不足/点数相同仍返回 DRAW_OR_UNKNOWN。</p>
+     * 团队赛（supremacy 争霸赛）胜负与结束方式解析，供 team perspective 使用。统一契约：
+     * <ul>
+     *   <li>BATTLE_RESULTS：结算 winnerTeam 权威胜方，存在时始终以其为准；</li>
+     *   <li>SURVIVOR_SETTLEMENT：winnerTeam 缺失时，仅当 rosterComplete=true 且一方全员阵亡，
+     *       才按完整结算存活状态推导全歼胜方；</li>
+     *   <li>双方均有存活且 winnerTeam 缺失：胜方 UNKNOWN——禁止比较 victoryPointsEarned/Seized
+     *       推断胜方（该字段精确语义未经证明）；</li>
+     *   <li>rosterComplete=false：禁止用零存活/部分点数/时长推导结束方式（pointsEndReason=UNKNOWN）；</li>
+     *   <li>完整阵容 + 双方均有存活 + 标准业务规则（项目所有者确认的 7 分钟/1000 分）+ 时长&lt;420s →
+     *       REACHED_1000（winnerTeam 缺失时只知「有人达到1000」，不把1000分配给任何队伍）；</li>
+     *   <li>完整阵容 + 双方均有存活 + 标准业务规则 + 时长 ≥420s → TIME_EXPIRED；</li>
+     *   <li>其余 → UNKNOWN/NOT_APPLICABLE；任何点数公式不得用于终局比分。</li>
+     * </ul>
      */
     public static TeamBattleWinner resolveTeamBattle(final Battle battle, final int recorderTeam) {
         if (battle == null || battle.players == null
@@ -147,19 +160,14 @@ public final class FriendlyEnemyResult {
             }
         }
         if (pointsDecided && rosterComplete(battle)) {
-            // 点数推断：比较双方占点得分总和（方向与胜方一致时才可用；仅当结算阵容完整，
-            // 否则残缺点数不得推断胜方或结束方式）
-            final long team1Points = pointsEarned(battle, 1);
-            final long team2Points = pointsEarned(battle, 2);
-            if (team1Points != team2Points) {
-                final boolean friendlyHigher =
-                        recorderTeam == 1 ? team1Points > team2Points : team2Points > team1Points;
-                return new TeamBattleWinner(
-                        friendlyHigher ? Winner.FRIENDLY_WIN : Winner.ENEMY_WIN,
-                        WinnerSource.POINTS_INFERENCE,
-                        true,
-                        pointsEndReason(team1Points, team2Points));
-            }
+            // fail closed：无权威胜方时禁止比较占点分推断胜方——
+            // victoryPointsEarned 的精确定义及是否包含被动占点增长与击杀夺分仍未证明，直接比较会推出错误胜方；
+            // 结束方式仍按标准时限证据判定（用于结果行后缀），胜方保持未知。
+            return new TeamBattleWinner(
+                    Winner.DRAW_OR_UNKNOWN,
+                    WinnerSource.UNKNOWN,
+                    true,
+                    pointsEndReason(battle, recorderTeam));
         }
         final PointsEndReason endReason = pointsDecided
                 ? (rosterComplete(battle)
@@ -226,30 +234,12 @@ public final class FriendlyEnemyResult {
     }
 
     /**
-     * 结算阵容完整前提（SURVIVOR_SETTLEMENT / annihilationSuffix / POINTS_INFERENCE /
-     * pointsEndReason 共享）：仅当 ReplayParser 确认名册(#201)与战绩(#301)账号/队伍一致时返回 true；
+     * 结算阵容完整前提（SURVIVOR_SETTLEMENT / annihilationSuffix / pointsEndReason 共享）：
+     * 仅当 ReplayParser 确认名册(#201)与战绩(#301)账号/队伍一致时返回 true；
      * 未知一律视为不完整，残缺点数/存活数不得用于推断胜方或结束方式。
      */
     public static boolean rosterComplete(final Battle battle) {
         return battle != null && Boolean.TRUE.equals(battle.rosterComplete);
-    }
-
-    private static long pointsEarned(final Battle battle, final int team) {
-        return battle.players.stream()
-                .filter(p -> p != null && p.team == team)
-                .mapToLong(p -> p.victoryPointsEarned)
-                .sum();
-    }
-
-    /** 点数胜负结束方式：按双方胜利点数推导（任一方 ≥1000 → 提前获胜；均 <1000 → 时间耗尽；
-     * 须在双方均未全员阵亡 / pointsDecided=true 时调用）。 */
-    public static PointsEndReason pointsEndReason(final long teamPoints, final long opposingPoints) {
-        if (teamPoints <= 0 && opposingPoints <= 0) {
-            return PointsEndReason.UNKNOWN;
-        }
-        return Math.max(teamPoints, opposingPoints) >= SUPREMACY_WIN_POINTS
-                ? PointsEndReason.REACHED_1000
-                : PointsEndReason.TIME_EXPIRED;
     }
 
     /** 按 battle 推导 recorder 所在队与其对手的点数胜负结束方式（团队 1/2）。 */
@@ -258,10 +248,58 @@ public final class FriendlyEnemyResult {
                 || !PlayerSideResolver.isValidRawTeam(recorderTeam)) {
             return PointsEndReason.UNKNOWN;
         }
-        final int opposingTeam = recorderTeam == 1 ? 2 : 1;
-        return pointsEndReason(
-                pointsEarned(battle, recorderTeam),
-                pointsEarned(battle, opposingTeam));
+        // 结束方式只按业务规则 + 结算存活证据判定：
+        // 项目所有者确认的业务规则：所有已知战斗类别固定 7 分钟（420s）/ 胜利点数上限 1000 分，
+        // 游戏不提供时长调整；arenaBonusType 只证明战斗类别，420s/1000 不是从该字段解码出来的。
+        // 双方均有存活（pointsDecided，调用方保证）⇒ 非全歼/退出全灭：
+        // 时长 <7 分钟提前结束只能是达到 1000 分（业务规则）；时长 ≥7 分钟为时间耗尽。
+        if (provableEarlyPointsWin(battle)) {
+            return PointsEndReason.REACHED_1000;
+        }
+        if (standardSupremacyRules(battle)
+                && battle.durationS != null && battle.durationS >= SUPREMACY_TIME_LIMIT_SEC) {
+            return PointsEndReason.TIME_EXPIRED;
+        }
+        return PointsEndReason.UNKNOWN;
+    }
+
+    /** 指定团队的结算击杀总数（battle/players 缺失返回 0）。 */
+    public static long teamKills(final Battle battle, final int team) {
+        return battle == null || battle.players == null ? 0L
+                : battle.players.stream()
+                        .filter(p -> p != null && p.team == team)
+                        .mapToLong(p -> p.kills)
+                        .sum();
+    }
+
+    /** 指定团队的结算阵亡数（survived=false 计数；名册不完整时仅作口径参考）。 */
+    public static long teamDeaths(final Battle battle, final int team) {
+        return battle == null || battle.players == null ? 0L
+                : battle.players.stream()
+                        .filter(p -> p != null && p.team == team && !p.survived)
+                        .count();
+    }
+
+    /**
+     * 争霸赛标准规则可证明的战斗类别：所有已知类别（随机战/训练房/联赛）。
+     * <p>注意：420 秒/1000 分是<b>项目所有者确认的业务规则</b>（游戏不提供时长调整），
+     * 不是从 {@code arenaBonusType} 字段本身解码出来的——该字段只证明战斗类别；
+     * 仅类别未知（arenaBonusType 缺失/未知值）时无法应用业务规则，需 fail closed。</p>
+     */
+    public static boolean standardSupremacyRules(final Battle battle) {
+        if (battle == null || battle.arenaBonusType == null) {
+            return false;
+        }
+        return BattleCategoryUtils.fromArenaBonusType(battle.arenaBonusType) != BattleCategory.UNKNOWN;
+    }
+
+    /**
+     * 标准业务规则 + 时长未到 {@value #SUPREMACY_TIME_LIMIT_SEC} 秒——点数决胜（双方均有存活）
+     * 必为某一方达到 1000 分上限导致提前结束（项目所有者确认的 1000 分上限规则；具体胜方另行确定）。
+     */
+    public static boolean provableEarlyPointsWin(final Battle battle) {
+        return battle != null && standardSupremacyRules(battle)
+                && battle.durationS != null && battle.durationS < SUPREMACY_TIME_LIMIT_SEC;
     }
 
     /** Short Chinese label for each winner value. */
