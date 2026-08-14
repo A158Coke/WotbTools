@@ -20,9 +20,11 @@ public final class FriendlyEnemyResult {
      *  <p>仅作叙述口径，不用于计算——结算字段 victoryPointsEarned 是否已含该调整未经证明。 */
     public static final long KILL_STEAL_POINTS = 40;
 
-    /** 占点得分业务规则（项目所有者确认，以 Maus 点数胜利样本为准）：每个据点每次 tick 为己方 +5 分
-     *  （3 个据点 = 15/tick）；tick 间隔与其它模式的点数产率未解码（UNKNOWN），不得用于计算终局比分。 */
-    public static final long BASE_TICK_POINTS = 5;
+    /** 占点得分业务规则（项目所有者确认）：每个据点每次 tick 为己方 +3 或 +5 分，
+     *  取值依场次/模式而异（Maus 点数胜利样本为 +5/tick）。tick 间隔与具体取值未解码（UNKNOWN），
+     *  仅作叙述口径，不参与任何计算。 */
+    public static final long BASE_TICK_POINTS_LOW = 3;
+    public static final long BASE_TICK_POINTS_HIGH = 5;
 
     /** 争霸赛固定战斗时长 420 秒（项目所有者确认的业务规则；游戏不提供时长调整）。 */
     public static final double SUPREMACY_TIME_LIMIT_SEC = 420;

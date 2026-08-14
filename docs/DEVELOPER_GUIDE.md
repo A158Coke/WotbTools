@@ -511,8 +511,8 @@ AI 复盘结果页的「地图鸟瞰」区块：后端 SSE `done` 载荷的 `map
   不直接解码出 420s/1000（`standardSupremacyRules`，仅类别未知 fail closed）。结束方式只按
   「标准规则 + 时长 + 双方存活」判定，不使用任何点数公式：双方均有存活且时长 <420s →
   REACHED_1000（胜方达到 1000 分上限——可能略超并被压缩为1000，失败方 UNKNOWN）；
-  时长 ≥420s → TIME_EXPIRED；其余 UNKNOWN。占点得分业务规则（项目所有者确认，以 Maus 样本为准）：
-  每个据点每次 tick 为己方 +5 分（3 据点 = 15/tick）；tick 间隔未解码，不得用 tick 数计算终局比分。
+  时长 ≥420s → TIME_EXPIRED；其余 UNKNOWN。占点得分业务规则（项目所有者确认）：
+  每个据点每次 tick 为己方 +3 或 +5 分（取值依场次/模式而异，Maus 样本为 5/tick，3 据点 = 9~15/tick）；tick 间隔与取值未解码，不得用 tick 数计算终局比分。
   `victoryPointsEarned`(#32) 的精确定义（是否含击杀夺分/被动占点增长）未经证明，已知计算
   口径（占点分+40×击杀−40×阵亡）**已撤回**，证据只输出原始结算字段（victoryPointsEarned/Seized、
   kills、deaths）；击杀夺分 40 分规则仅作叙述口径（`KILL_STEAL_POINTS`，不参与计算）；
