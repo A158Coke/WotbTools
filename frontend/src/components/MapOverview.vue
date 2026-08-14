@@ -25,7 +25,7 @@ const { t, locale } = useI18n()
 
 const image = computed(() => mapImages[props.overview.mapCode] || null)
 
-// 自适应配色：按底图平均相对亮度选择暗图/亮图调色板（规则见 docs/DEVELOPER_GUIDE.md「地图鸟瞰」节）。
+// 自适应配色：按底图平均相对亮度选择暗图/亮图调色板（规则见 docs/features/battle-playback.md）。
 const palette = ref(darkMapPalette)
 watch(image, async (img) => {
   palette.value = paletteForLuminance(await luminanceOfImage(img))
