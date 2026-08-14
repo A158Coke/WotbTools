@@ -17,7 +17,8 @@ public sealed interface ReplayEvent
                 BattleEndedEvent,
                 UnknownReplayEvent,
                 ParticipantMappingEvent,
-                TurretDirectionChangedEvent {
+                TurretDirectionChangedEvent,
+                SupremacyPointsChangedEvent {
 
     /** 事件在原始流中的稳定顺序 */
     int sequence();

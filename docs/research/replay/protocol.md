@@ -41,8 +41,8 @@
 | 1/2 | 实体创建（录像者 avatar cell 等） | type 1 含昵称 + 竞技场 pickle；结构待全解 |
 | 4 | EntityLeave | entity_id(i32)（已消费） |
 | 5 | 实体 enterWorld | eid + 数据块，部分含昵称；未解 |
-| 7 | **属性包** | `(eid u32, propId u32, valueLen u32, value 1-4B)`；本方移动后 ~10Hz；propId 0=标志、**2=炮塔相对车体偏航（2026-08-13 已破解）**、3=当前血量（已破解）、4=高频状态位掩码（非双态）、8=标志；**HP 未出现在已见 propId** |
-| 8 | EntityMethod | subtype 47/48 updateArena protobuf（名册/账号映射）、8 伤害（已消费）；玩家 protobuf 字段 1-24 已全量列出，field 18=float 1.0（疑初始满血比例） |
+| 7 | **属性包** | `(eid u32, propId u32, valueLen u32, value 1-4B)`；本方移动后 ~10Hz；propId 0=标志、**2=炮塔相对车体偏航（2026-08-13 已破解）**、3=当前血量（**signed i16**，见 PROP3_HP_SENTINELS）、4=高频状态位掩码（非双态）、8=标志；**HP 未出现在已见 propId** |
+| 8 | EntityMethod | subtype 47/48 updateArena protobuf（名册/账号映射）、8 伤害（已消费）；**subtype 48 双层字段：wrapperFieldNumber=13 → root field12=实时争霸点数、wrapperFieldNumber=18 → root field17=赛前配置（见 REALTIME_SUPREMACY_POINTS / SUPREMACY_CONFIG）；两层字段号绝不可混用**；玩家 protobuf 字段 1-24 已全量列出，field 18=float 1.0（疑初始满血比例） |
 | 10 | Position | 49B BigWorld 格式（已消费） |
 | 11 | 空间信息 | 含字符串 `spaces/neptune` 等 |
 | 13 | **赛后结算 dump（= zip 内 battle_results.dat，字节级相同）** | 容器已全解：28B 头 + zlib(偏移 22) → pickle 协议2(arenaId, 53188B protobuf)；protobuf：f2=开战 unix 时间戳(1784988019)、f8=录像者个人统计块(f101=账号/f102=队伍/f103=车型/f25=eid)、f150=逐队统计曲线(f21/f23=打包字段101+逐玩家帧，4B 头；f24=国家/账号维度，含 usa/japan/uk)、f184=锦标赛统计 key、f186=战队标签、f201=14 玩家身份(f1=账号，内层 f1=昵称/f5=战队/f7=头像URL)、f301=逐实体统计(f1=eid，内层 f101=账号/f102=队伍/f103=车型/f25=eid/f107=float 疑个人评分)；**昵称/战队/头像/车型权威来源** |
@@ -55,6 +55,49 @@
 | 33 | **实体进入世界确认（12B 固定）** | 134 个；= `eid u32 + 8B 零`；0.2s 起（车辆/空间实体）；与 type 5 数量相同但时间不对齐（1/134 匹配），非配对 |
 | 35 | **单字节递增 tick 计数** | ~10Hz，两种模式一致，疑全局心跳/帧计数 |
 | 39 | **录像者相机/瞄准状态流 120Hz × 7 floats（28B 恒定）** | 中位间隔 8.3ms（99.5% 一致）；**录像者阵亡时刻整体冻结**（团队 115.095s、随机 300.2s）；**字段映射：f0=相机 yaw（度，0-360，与战车 yaw 偏差 61%<30°=自由视角）、f1=相机 pitch（度，-30..33）、f2/f3/f4=相机位置（x,y,z，62% 样本距战车 <30m）、f3=FOV/缩放档（团队 20/24/35-41、随机 52-62）、f5/f6=有界角（弧度，疑炮/瞄准方向）**；已排除：任何车辆位置、瞄准射线几何；阵亡后 f0/f1 持续跳变=死亡观战镜头旋转 |
+
+## REALTIME_SUPREMACY_POINTS（实时争霸点数 · PROVEN）
+
+**结论**：`data.wotreplay` Type 8（EntityMethod）→ subtype 48（updateArena2）→ **wrapperFieldNumber=13** → root **field 12** 携带双方**实时争霸点数**广播（重复 protobuf 消息，每条直接携带 field1=team、field2=当前点数）。**门禁：wrapperFieldNumber 必须 == 13 且 root field 12 存在**（wrapper=1 名册/18 配置包即使携带相同 root 结构也绝不产出点数事件）。只消费回放真实广播，绝对禁止按游戏规则（时间/基地数/固定 +3/+5/击杀数）自行模拟比分。
+
+```
+Type8
+└── subtype48
+    ├── wrapperFieldNumber = 13（门禁；13=实时点数 / 1=名册 / 18=赛前配置）
+    └── root field12（重复 protobuf 消息）
+        ├── field1 = team（已验证 1/2）
+        └── field2 = currentPoints（当前实时点数）
+```
+
+**证据**（5 个真实回放，field12 点数事件 185/161/69/204/201 = 共 820，protobuf 结构 820/820 一致；与项目内探针 `PointsEvidenceProbeTest` 逐样本复核一致）：
+- 客户端：11.18.0_china_apple + 11.19.0_china_apple
+- 地图：neptune / malinovka / holland；arenaBonusType 2 / 4；training + tournament
+- 最终领先方与 battle_results winnerTeam **5/5 一致**
+- 示例（1555 样本）：56.233s team1=303、58.234s team1=306；击毁 ±40 点（78.534s team1 345→305 / team2 321→361；130.322s 反向）；最终 797:232
+
+**解码器**：`EntityMethodDecoder.parseSupremacyPoints`（生产门禁 wrapperFieldNumber==13 且 root field12 存在，保守结构校验；team∈{1,2}、points∈[0,100000] 才 EXACT，结构不合法/数值非法跳过；`readWrapperFieldNumber` 供探针复用同一提取路径）。前端 `teamPointsAt` 取最近一次 ≤ currentTime 的广播值，拖动时间轴时点数实时变化；非争霸赛/无广播不显示，battle_results 结算值不得冒充实时比分。
+
+**跨版本字段稳定性**：暂记 **PARTIAL**（11.18/11.19 已验证，未来客户端版本不假设永久不变）。
+
+## SUPREMACY_CONFIG（赛前配置 · PROVEN for tested samples）
+
+**结论**：同一 subtype48 以 **wrapperFieldNumber=18** 携带争霸赛赛前配置（用户描述「field 18」即此 wrapper 层；实测其 root 为 **field 17**，两层字段号不冲突）——wrapper=18 → root field17：
+- root field17 消息：field5="tournament" 或 "training"、field9=1、field10=300、field11=1000、field12=1
+- **field10 = 初始点数 300、field11 = 胜利阈值 1000**（5/5 样本一致；11.18 + 11.19）
+
+**状态**：PROVEN for tested 11.18–11.19 samples；生产代码若使用需结构化解码 + 版本/结构校验，结构不符合时安全降级，**不得把 300/1000 重新硬编码成游戏规则**。
+
+## PROP3_HP_SENTINELS（propId=3 血量 sentinel · PROVEN）
+
+**结论**：type-7 propId=3 的 u16 值按 **signed i16** 解释：
+- **正数**：当前真实 HP（含装备/物资加成；阵亡到 0、存活不到 0）
+- **0xFFFD（signed -3）**：与车辆死亡强关联的 sentinel——11/11 与争霸击毁 ±40 点**精确同刻**；不得解析为 HP=65533；解码器归一化为死亡 HP=0（alive=false）
+- **0xFFFF（signed -1）**：UNKNOWN/不可用/未初始化 sentinel（1535 样本 11.102s 出现，时刻无 ±40 kill points、无死亡证据）；不得当 HP、不得直接变成死亡 0
+- **其它 ≤0 高位值**：UNKNOWN sentinel，不臆测语义
+
+**落点**：`EntityPropertyDecoder`（signed 解码 + sentinel 归一化）、`HealthChangedEvent.isPlausibleHp`（>0 且 <0xFF00）、`ObservedMaxHp` / `MapOverviewBuilder.hpSamplesByAccount`（sentinel 永不进入 maxHp/hpSamples）。
+
+**遗留**：需扫描全部真实 fixtures/replays 的 propId3 高位值，确认是否还有 FFFC/FFFE 等其它负值 sentinel。
 
 ## 关键结论
 

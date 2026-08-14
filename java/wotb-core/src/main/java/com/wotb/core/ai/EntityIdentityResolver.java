@@ -83,7 +83,7 @@ public final class EntityIdentityResolver {
                 .append(" 坦克: ").append(PromptDataQuoter.quote(
                         ReplayDisplayNames.tankName(player.tankId, player.tankName), "\"未知坦克\""))
                 .append(" 车种: ").append(ReplayDisplayNames.tankClass(player.tankId));
-        appendStructuredTankFacts(sb, player.tankId);
+        appendStructuredTankFacts(sb, player.tankId, player.observedMaxHp);
         return sb.toString();
     }
 
@@ -92,6 +92,15 @@ public final class EntityIdentityResolver {
      * 只输出车辆库真实提供的字段，缺失即不输出，绝不由名称推断。
      */
     public static void appendStructuredTankFacts(final StringBuilder sb, final long tankId) {
+        appendStructuredTankFacts(sb, tankId, null);
+    }
+
+    /**
+     * 追加坦克的结构化车辆事实（等级 / 国家 / 炮伤 / 血量 / 知识）。
+     * {@code observedMaxHp} 非空时覆盖 tankopedia base 血量——回放实测值含装备/物资加成。
+     */
+    public static void appendStructuredTankFacts(final StringBuilder sb, final long tankId,
+                                                 final Integer observedMaxHp) {
         final String tier = ReplayDisplayNames.tankTier(tankId);
         if (!tier.isEmpty()) {
             sb.append(" 等级: ").append(tier);
@@ -104,9 +113,13 @@ public final class EntityIdentityResolver {
         if (!alpha.isEmpty()) {
             sb.append(" 炮伤: ").append(alpha);
         }
-        final String hp = ReplayDisplayNames.tankMaxHp(tankId);
-        if (!hp.isEmpty()) {
-            sb.append(" 血量: ").append(hp);
+        if (observedMaxHp != null && observedMaxHp > 0) {
+            sb.append(" 血量: ").append(observedMaxHp);
+        } else {
+            final String hp = ReplayDisplayNames.tankMaxHp(tankId);
+            if (!hp.isEmpty()) {
+                sb.append(" 血量: ").append(hp);
+            }
         }
         final String knowledge = ReplayDisplayNames.tankExtraInfo(tankId);
         if (!knowledge.isEmpty()) {

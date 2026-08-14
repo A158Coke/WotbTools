@@ -11,9 +11,12 @@ import com.wotb.core.processing.TeamPerspectiveResolution;
 import com.wotb.core.processing.TeamPerspectiveResolver;
 import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DamageEvent;
+import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.EntityRemovedEvent;
+import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.event.TurretDirectionChangedEvent;
 import com.wotb.core.replay.event.VehicleDestroyedEvent;
 import com.wotb.core.replay.feature.BattlePhaseSummary;
@@ -164,10 +167,15 @@ public final class MapOverviewBuilder {
                     entityIds, positions, events, battleStartRawClockSec, deathSec, duration);
             final List<MapOverview.DirectionSample> directionSamples = directionSamples(
                     entityIds, positions, events, battleStartRawClockSec, deathSec, intervals, duration);
+            final List<MapOverview.HpSample> hpSamples = hpSamplesByAccount(
+                    events, mapping, player.accountId, duration, battleStartRawClockSec);
             vehicles.add(new MapOverview.PlaybackVehicle(
                     player.accountId, player.nickname, player.tankId,
                     ReplayDisplayNames.tankName(player.tankId, player.tankName), player.team,
-                    intervals, deathSec, directionSamples));
+                    intervals, deathSec, directionSamples,
+                    player.observedMaxHp != null ? player.observedMaxHp
+                            : ReplayDisplayNames.tankMaxHpValue(player.tankId),
+                    hpSamples));
         }
         if (vehicles.isEmpty()) {
             return null;
@@ -217,7 +225,73 @@ public final class MapOverviewBuilder {
                 || e.timeSec() < 0 || e.timeSec() > duration + 1e-6);
         playbackEvents.sort(Comparator.comparingDouble(MapOverview.PlaybackEvent::timeSec));
 
-        return new MapOverview.Playback(duration, vehicles, playbackEvents);
+        return new MapOverview.Playback(duration, vehicles, playbackEvents,
+                pointsSamples(events, duration, battleStartRawClockSec));
+    }
+
+    /**
+     * 车辆回放实测血量采样（battle-relative 秒升序）：过滤 type-7 propId=3 HealthChangedEvent
+     * （EXACT 置信度），按实体→账号映射合并 re-entry，保留 [0, duration] 内样本（含阵亡到 0）。
+     */
+    private static List<MapOverview.HpSample> hpSamplesByAccount(
+            final List<ReplayEvent> events,
+            final TeamEntityMapping mapping,
+            final long accountId,
+            final double duration,
+            final Float battleStartRawClockSec) {
+        final List<MapOverview.HpSample> samples = new ArrayList<>();
+        if (events == null) {
+            return samples;
+        }
+        for (final ReplayEvent event : events) {
+            if (!(event instanceof HealthChangedEvent hp)
+                    || hp.confidence() != DecodeConfidence.EXACT
+                    || hp.currentHealth() == null) {
+                continue;
+            }
+            // signed i16 语义：仅保留真实正 HP 与阵亡 0；0xFFFD(-3)/0xFFFF(-1) 等 sentinel
+            // 已被解码器置 null，此处再兜底——绝不允许 65533/65535 进入 hpSamples
+            if (hp.currentHealth() != 0 && !HealthChangedEvent.isPlausibleHp(hp.currentHealth())) {
+                continue;
+            }
+            if (accountOf(hp.entityId(), mapping) != accountId) {
+                continue;
+            }
+            final double t = relativeSec(hp, battleStartRawClockSec);
+            if (!Double.isFinite(t) || t < 0 || t > duration + 1e-6) {
+                continue;
+            }
+            samples.add(new MapOverview.HpSample(t, hp.currentHealth()));
+        }
+        samples.sort(Comparator.comparingDouble(MapOverview.HpSample::timeSec));
+        return samples;
+    }
+
+    /**
+     * 争霸赛实时点数时间线（type-8 subtype48 root field12，PROVEN）：只消费回放真实广播，
+     * 绝不按游戏规则推算；battle-relative 秒升序，仅保留 [0, duration] 内 EXACT 事件。
+     */
+    private static List<MapOverview.PointsSample> pointsSamples(
+            final List<ReplayEvent> events,
+            final double duration,
+            final Float battleStartRawClockSec) {
+        final List<MapOverview.PointsSample> samples = new ArrayList<>();
+        if (events == null) {
+            return samples;
+        }
+        for (final ReplayEvent event : events) {
+            if (!(event instanceof SupremacyPointsChangedEvent points)
+                    || points.confidence() != DecodeConfidence.EXACT) {
+                continue;
+            }
+            final double t = relativeSec(points, battleStartRawClockSec);
+            if (!Double.isFinite(t) || t < 0 || t > duration + 1e-6) {
+                continue;
+            }
+            samples.add(new MapOverview.PointsSample(t, points.team(), points.points()));
+        }
+        samples.sort(Comparator.comparingDouble(MapOverview.PointsSample::timeSec));
+        return samples;
     }
 
     /**

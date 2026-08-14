@@ -12,6 +12,9 @@ import {
   recorderRelated,
   screenRotation,
   shortestArcDeg,
+  teamHp,
+  teamPointsAt,
+  vehicleHpAt,
   tracerLines,
   trustedPositionAt,
   turretWorldYawDeg,
@@ -84,6 +87,49 @@ describe('positionCoveredAt', () => {
     expect(positionCoveredAt(intervals, 30)).toBe(false)
     expect(positionCoveredAt(intervals, 5)).toBe(false)
     expect(positionCoveredAt(null, 15)).toBe(false)
+  })
+})
+
+describe('vehicleHpAt / teamHp', () => {
+  const vehicles = [
+    { team: 1, maxHp: 3000, hpSamples: [{ timeSec: 0, hp: 3000 }, { timeSec: 10, hp: 2000 }, { timeSec: 20, hp: 0 }] },
+    { team: 1, maxHp: 2600, hpSamples: [] },
+    { team: 2, maxHp: 4000, hpSamples: [{ timeSec: 5, hp: 4000 }, { timeSec: 15, hp: 1000 }] }
+  ]
+
+  it('vehicleHpAt uses the latest sample <= t; no sample is UNKNOWN (null), sentinels ignored', () => {
+    expect(vehicleHpAt(vehicles[0], 5)).toBe(3000)
+    expect(vehicleHpAt(vehicles[0], 10)).toBe(2000)
+    expect(vehicleHpAt(vehicles[0], 25)).toBe(0) // 阵亡 0 采样
+    expect(vehicleHpAt(vehicles[1], 50)).toBeNull() // 无采样 → UNKNOWN（不得宣称满血）
+    expect(vehicleHpAt({ team: 1, maxHp: 100 }, 0)).toBeNull() // 无 hpSamples 数组 → UNKNOWN
+    expect(vehicleHpAt(null, 0)).toBeNull()
+    // sentinel（0xFFFD=65533 / 0xFFFF=65535）绝不作为 HP：忽略后无有效采样 → UNKNOWN
+    const sentinel = { team: 1, maxHp: 2600, hpSamples: [{ timeSec: 0, hp: 65533 }, { timeSec: 1, hp: 65535 }] }
+    expect(vehicleHpAt(sentinel, 5)).toBeNull()
+  })
+
+  it('teamHp separates known remaining from unknown capacity (gray)', () => {
+    expect(teamHp(vehicles, 1, 5)).toEqual({ totalMax: 5600, knownRemaining: 3000, unknownMax: 2600 })
+    expect(teamHp(vehicles, 1, 15)).toEqual({ totalMax: 5600, knownRemaining: 2000, unknownMax: 2600 }) // 2000 + unknown 2600
+    expect(teamHp(vehicles, 2, 15)).toEqual({ totalMax: 4000, knownRemaining: 1000, unknownMax: 0 })
+    expect(teamHp([], 1, 0)).toEqual({ totalMax: 0, knownRemaining: 0, unknownMax: 0 })
+  })
+
+  it('teamPointsAt returns the latest broadcast <= t per team, null when absent', () => {
+    const samples = [
+      { timeSec: 56.233, team: 1, points: 303 },
+      { timeSec: 58.234, team: 1, points: 306 },
+      { timeSec: 78.534, team: 1, points: 305 },
+      { timeSec: 78.534, team: 2, points: 361 }
+    ]
+    expect(teamPointsAt(samples, 1, 0)).toBeNull() // 尚未广播
+    expect(teamPointsAt(samples, 1, 56.5)).toBe(303)
+    expect(teamPointsAt(samples, 1, 58.5)).toBe(306)
+    expect(teamPointsAt(samples, 1, 78.6)).toBe(305)
+    expect(teamPointsAt(samples, 2, 78.6)).toBe(361)
+    expect(teamPointsAt(samples, 2, 56.5)).toBeNull() // 该队暂无广播
+    expect(teamPointsAt(null, 1, 0)).toBeNull()
   })
 })
 

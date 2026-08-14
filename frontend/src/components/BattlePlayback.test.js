@@ -164,7 +164,8 @@ describe('BattlePlayback', () => {
 
   it('gap vehicles stay at the faded last-known position instead of disappearing', async () => {
     stubRaf()
-    const wrapper = mountPlayback(gapOverview(), 20)
+    // t=25 超出 positionIntervals [10,20]：位置流未覆盖 → 真实 gap，淡化停驻
+    const wrapper = mountPlayback(gapOverview(), 25)
     await flushPromises()
     expect(wrapper.findAll('.pb-vehicle')).toHaveLength(2)
     const enemy = wrapper.find('[data-test="pb-marker-2001"]')
@@ -242,13 +243,94 @@ describe('BattlePlayback', () => {
     expect(recorder.classes()).toContain('pb-selected')
   })
 
-  it('markers keep showing the faded last-known state in a gap instead of disappearing', async () => {
+  it('covered vehicles are not faded even when sampled route points have a >5s gap (position stream coverage)', async () => {
     stubRaf()
+    // t=20 落在 positionIntervals [10,20] 内（位置上报中）但 route 采样点 14→40 gap>5s：
+    // 不得因 live=null 误判 lastKnown（修复「位置流覆盖却半透明」）
     const wrapper = mountPlayback(gapOverview(), 20)
     await flushPromises()
     const enemy = wrapper.find('[data-test="pb-marker-2001"]')
     expect(enemy.exists()).toBe(true)
-    expect(enemy.classes()).toContain('pb-last-known')
+    expect(enemy.classes()).not.toContain('pb-last-known')
+  })
+
+  it('renders team HP bars that decrease with playback time', async () => {
+    stubRaf()
+    const overview = makeOverview()
+    overview.playback.vehicles[0].maxHp = 3000
+    overview.playback.vehicles[0].hpSamples = [{ timeSec: 0, hp: 3000 }, { timeSec: 12, hp: 2600 }]
+    overview.playback.vehicles[1].maxHp = 2600
+    overview.playback.vehicles[1].hpSamples = [{ timeSec: 10, hp: 2600 }, { timeSec: 12, hp: 2200 }]
+    const wrapper = mountPlayback(overview, 12)
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-hp-bars"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('2600 / 3000') // 本方 t=12
+    expect(wrapper.text()).toContain('2200 / 2600') // 敌方 t=12
+  })
+
+  it('supremacy points come from the realtime broadcast timeline and change with seek time', async () => {
+    stubRaf()
+    const overview = makeOverview()
+    overview.playback.pointsSamples = [
+      { timeSec: 10, team: 1, points: 300 },
+      { timeSec: 10, team: 2, points: 300 },
+      { timeSec: 20, team: 1, points: 500 },
+      { timeSec: 20, team: 2, points: 280 }
+    ]
+    const wrapper = mountPlayback(overview, 12)
+    await flushPromises()
+    // t=12：取最近一次 ≤12 的广播
+    expect(wrapper.find('[data-test="pb-points-friendly"]').text()).toContain('300')
+    expect(wrapper.find('[data-test="pb-points-enemy"]').text()).toContain('300')
+    // 拖动到 t=20：比分必须随 currentTime 变化，不是终局静态值
+    await wrapper.find('.pb-range').setValue(20)
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-points-friendly"]').text()).toContain('500')
+    expect(wrapper.find('[data-test="pb-points-enemy"]').text()).toContain('280')
+  })
+
+  it('enemy without HP samples is UNKNOWN capacity (gray segment), not assumed full HP', async () => {
+    stubRaf()
+    const overview = makeOverview()
+    overview.playback.vehicles[0].maxHp = 3000
+    overview.playback.vehicles[0].hpSamples = [{ timeSec: 0, hp: 3000 }]
+    overview.playback.vehicles[1].maxHp = 2600 // 无 hpSamples → UNKNOWN
+    const wrapper = mountPlayback(overview, 12)
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-hp-unknown-enemy"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-hp-unknown-enemy"]').text()).toContain('2600')
+    // 已知数字不含未知容量：敌方显示 0 / 2600，而不是假装满血 2600/2600
+    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('0 / 2600')
+    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('3000 / 3000')
+  })
+
+  it('death does not jump the team HP bar to 65533 (0xFFFD sentinel excluded)', async () => {
+    stubRaf()
+    const overview = makeOverview()
+    overview.playback.vehicles[0].maxHp = 3000
+    overview.playback.vehicles[0].hpSamples = [
+      { timeSec: 0, hp: 3000 },
+      { timeSec: 10, hp: 65533 }, // 0xFFFD 死亡 sentinel：绝不作为 HP
+      { timeSec: 10.5, hp: 0 }    // 阵亡
+    ]
+    const wrapper = mountPlayback(overview, 11)
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('0 / 3000') // 阵亡 → 0
+    expect(wrapper.text()).not.toContain('65533')
+  })
+
+  it('tank marker scales with the map (no counter-scale) while name/death overlays stay constant', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120 }) // 放大 1.2×
+    await flushPromises()
+    const marker = wrapper.find('[data-test="pb-marker-1001"]')
+    const style = marker.attributes('style')
+    expect(style).toContain('translate(-50%, -50%)')
+    expect(style).not.toContain('scale(') // 标记本体不再反缩放 → 随地图缩放
+    const name = marker.find('.pb-name')
+    expect(name.attributes('style')).toContain('scale(0.833') // 1/1.2 反缩放保屏幕恒定
   })
 })
 
@@ -468,11 +550,11 @@ describe('map zoom and pan', () => {
     expect(style).toContain('scale(1)')
     expect(style).toContain('translate(0px, 0px)')
     // 图层对齐契约：transform 只在 viewport 单层；标记 left/top（%）不随缩放变化，
-    // 标记反缩放随 view.scale 回到 1（scale(1)），svg 自身无 style
+    // 标记本体不再反缩放（随地图缩放），svg 自身无 style
     const markerAfter = wrapper.find('[data-test="pb-marker-1001"]').attributes('style')
     const leftTop = (s) => s.match(/left: ([^;]+); top: ([^;]+);/).slice(1, 3)
     expect(leftTop(markerAfter)).toEqual(leftTop(markerStyleBefore))
-    expect(markerAfter).toContain('scale(1)')
+    expect(markerAfter).not.toContain('scale(')
     expect(wrapper.find('.pb-svg').attributes('style')).toBeUndefined()
   })
 })
@@ -488,25 +570,20 @@ describe('fixed-size vehicle markers', () => {
     return Number(m[1])
   }
 
-  it('marker inverse scale keeps screen size fixed at 1x/2x/4x', async () => {
+  it('marker scales with the map (no counter-scale) while the name overlay counter-scales to stay constant', async () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
     const marker = wrapper.find('[data-test="pb-marker-1001"]')
-    // 1×：反缩放 1
-    expect(parseMarkerScale(marker.attributes('style'))).toBeCloseTo(1)
-    // 2×（两次 wheel）
-    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
-    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
-    const s2 = viewportScale(wrapper)
-    expect(s2).toBeGreaterThan(1)
-    expect(parseMarkerScale(marker.attributes('style'))).toBeCloseTo(1 / s2, 10)
-    // 4×（clamp）
-    for (let i = 0; i < 12; i++) {
+    // 1×：标记本体无反缩放
+    expect(parseMarkerScale(marker.attributes('style'))).toBeNull()
+    // 2× → 4×（wheel）：标记仍无反缩放（随 viewport 同比放大），名称叠加层按 1/view.scale 反缩放
+    for (let i = 0; i < 14; i++) {
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
     }
     expect(viewportScale(wrapper)).toBe(4)
-    expect(parseMarkerScale(marker.attributes('style'))).toBeCloseTo(0.25, 10)
+    expect(parseMarkerScale(marker.attributes('style'))).toBeNull()
+    expect(marker.find('.pb-name').attributes('style')).toContain('scale(0.25)')
   })
 
   it('marker map-coordinate anchor and child rotation/overlays survive zooming', async () => {
@@ -591,12 +668,12 @@ describe('fixed-size strokes and always-visible tank name labels', () => {
     expect(labels.length).toBe(2) // 两辆可见车都显示标签
     expect(labels[0].text()).toContain('Maus')
     expect(labels[1].text()).toContain('T49')
-    // 标签位于图标上方（bottom: calc(100% + 2px)），且高倍缩放后仍在（反缩放恒定）
+    // 标签位于图标上方（bottom: calc(100% + 2px)），自身反缩放（overlayInverseScale）→ 屏幕字号恒定
     for (const label of labels) {
-      expect(label.attributes('style')).toBeUndefined() // 位置由 CSS 控制
+      expect(label.attributes('style')).toContain('scale(')
     }
     const firstStyle = wrapper.find('.pb-vehicle').attributes('style')
-    expect(firstStyle).toContain('scale(') // 反缩放逻辑未变
+    expect(firstStyle).not.toContain('scale(') // 标记本体随地图缩放，不再反缩放
     for (let i = 0; i < 12; i++) { // 1× → 4×
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
     }

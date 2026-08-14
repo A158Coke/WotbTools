@@ -136,7 +136,8 @@ final class TeamEvidenceFormatter {
             final BudgetWriter writer,
             final TeamBattleFeatureSet features,
             final String analysisUnitId,
-            final List<String> limitations
+            final List<String> limitations,
+            final Map<Long, Integer> observedMaxHpByAccount
     ) {
         writer.append("\n=== PERSPECTIVE_FACTS ===\n");
         writer.append("analysisUnitId=" + quoteData(analysisUnitId) + "\n");
@@ -147,7 +148,7 @@ final class TeamEvidenceFormatter {
         appendAuthoritative(writer, features.authoritativeAggregate());
         // 使用合并后的 limitations（context + features + extra），不能只检查 features.limitations
         appendObserved(writer, features.observedAggregate(), limitations);
-        appendMemberFacts(writer, features.members());
+        appendMemberFacts(writer, features.members(), observedMaxHpByAccount);
         writer.append("coverage=" + features.coverage() + "\n");
     }
 
@@ -178,7 +179,7 @@ final class TeamEvidenceFormatter {
                     + " nickname=" + quoteData(p.nickname)
                     + " tank=" + quoteData(resolveTankName(p.tankId, p.tankName))
                     + " vehicleClass=" + resolveTankClass(p.tankId)
-                    + structuredTankFacts(p.tankId)
+                    + structuredTankFacts(p.tankId, p.observedMaxHp)
                     + " finalDamage=" + p.damageDealt
                     + " damageReceived=" + p.damageReceived
                     + " assisted=" + p.damageAssisted
@@ -210,11 +211,17 @@ final class TeamEvidenceFormatter {
     }
 
     static String structuredTankFacts(final long tankId) {
+        return structuredTankFacts(tankId, null);
+    }
+
+    /** 同上；observedMaxHp 非空时覆盖 hp 事实（回放实测，含装备/物资加成）。 */
+    static String structuredTankFacts(final long tankId, final Integer observedMaxHp) {
         final StringBuilder sb = new StringBuilder(80);
         appendFact(sb, "tier", ReplayDisplayNames.tankTier(tankId));
         appendFact(sb, "nation", ReplayDisplayNames.tankNation(tankId));
         appendFact(sb, "alphaDamage", ReplayDisplayNames.tankAlphaDamage(tankId));
-        appendFact(sb, "hp", ReplayDisplayNames.tankMaxHp(tankId));
+        appendFact(sb, "hp", observedMaxHp != null && observedMaxHp > 0
+                ? String.valueOf(observedMaxHp) : ReplayDisplayNames.tankMaxHp(tankId));
         sb.append(extraInfoFact(ReplayDisplayNames.tankExtraInfo(tankId)));
         return sb.toString();
     }
@@ -541,6 +548,14 @@ final class TeamEvidenceFormatter {
             final BudgetWriter writer,
             final List<TeamMemberFeatureSet> members
     ) {
+        appendMemberFacts(writer, members, null);
+    }
+
+    static void appendMemberFacts(
+            final BudgetWriter writer,
+            final List<TeamMemberFeatureSet> members,
+            final Map<Long, Integer> observedMaxHpByAccount
+    ) {
         writer.append("\n=== TEAM_MEMBERS ===\n");
         for (final TeamMemberFeatureSet member : members) {
             writer.append("member accountId=" + member.accountId()
@@ -548,7 +563,8 @@ final class TeamEvidenceFormatter {
                     + " tank=" + quoteData(resolveTankName(member.tankId(), member.tankName()))
                     // vehicleClass / tier / nation 只来自 tankopedia 的结构化字段，不得由 tank 名称推断
                     + " vehicleClass=" + resolveTankClass(member.tankId())
-                    + structuredTankFacts(member.tankId())
+                    + structuredTankFacts(member.tankId(),
+                            observedMaxHpByAccount == null ? null : observedMaxHpByAccount.get(member.accountId()))
                     + " entityIds=" + member.entityIds()
                     + " mapping=" + PlayerAnalysisTerms.confidenceLabel(member.mappingConfidence())
                     + " finalDamage=" + member.finalDamage()

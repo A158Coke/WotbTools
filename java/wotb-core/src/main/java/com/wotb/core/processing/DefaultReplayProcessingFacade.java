@@ -5,6 +5,7 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.util.PlayerResultFormat;
+import com.wotb.core.replay.evidence.ObservedMaxHp;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
@@ -162,6 +163,9 @@ public class DefaultReplayProcessingFacade {
                 TeamPerspectiveResolver.resolve(battle, reconstruction);
         final boolean perspectiveTeamResolved = teamResolution.resolved();
         final TeamEntityMapping teamEntityMapping = TeamEntityMapper.resolve(battle, reconstruction);
+        // 回放实测血量（含装备/物资加成）回填到 players.observedMaxHp，供 AI 事实与地图鸟瞰使用
+        ObservedMaxHp.populate(battle,
+                reconstruction != null ? reconstruction.events() : null, teamEntityMapping);
         final boolean playerFeaturePossible = reconOk && recorderEntityMapped;
         final boolean teamFeaturePossible = reconOk
                 && perspectiveTeamResolved

@@ -4,6 +4,7 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
+import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.event.BattleEndedEvent;
@@ -88,6 +89,19 @@ class MapOverviewBuilderTest {
         for (final MapOverview.PlaybackVehicle v : overview.playback().vehicles()) {
             assertFalse(v.tankName().isBlank(), "坦克名应权威解析，非空: " + v.playerName());
             assertFalse(v.tankName().matches("\\d+"), "坦克名不应是纯数字 tankId: " + v.playerName());
+        }
+        // 回放实测血量（#2）：maxHp 非空且 ≥ tankopedia base；fixture 至少录像者有血量采样
+        assertTrue(overview.playback().vehicles().stream()
+                        .anyMatch(v -> !v.hpSamples().isEmpty()),
+                "fixture 应至少有一辆车（录像者）有回放实测血量采样");
+        // 争霸赛实时点数时间线契约（随机战 fixture 无 field12 广播 → 空列表而非 null）
+        assertNotNull(overview.playback().pointsSamples(), "pointsSamples 契约：非 null");
+        for (final MapOverview.PlaybackVehicle v : overview.playback().vehicles()) {
+            assertNotNull(v.maxHp(), "maxHp 应由回放实测/兜底解析，非空: " + v.playerName());
+            final Integer base = ReplayDisplayNames.tankMaxHpValue(v.tankId());
+            if (base != null) {
+                assertTrue(v.maxHp() >= base, "maxHp 不得低于 tankopedia base: " + v.playerName());
+            }
         }
         assertFalse(overview.playback().events().isEmpty());
         assertTrue(overview.playback().events().stream()
