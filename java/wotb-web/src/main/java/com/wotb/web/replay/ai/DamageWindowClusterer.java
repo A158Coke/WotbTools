@@ -2,6 +2,7 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.processing.TeamEntityMapping;
+import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
@@ -39,12 +40,24 @@ final class DamageWindowClusterer {
      */
     static final float SHORT_FOCUS_WINDOW_SEC = 15f;
 
+    /** 高危掉血窗口的跨度上限（秒）：窗口跨度 ≤ 该阈值且掉血 ≥ {@link #CRITICAL_HP_PCT}% 即肯定有问题。 */
+    static final float CRITICAL_WINDOW_SPAN_SEC = 10f;
+
+    /** 高危掉血窗口的掉血比例阈值（占满血量百分比）。 */
+    static final double CRITICAL_HP_PCT = 75.0;
+
+    /** 被秒杀阈值：窗口内掉血 ≥ 满血量（含过量伤害）。 */
+    static final double INSTANT_KILL_PCT = 100.0;
+
     /**
      * 一个掉血窗口（battle-relative 秒）。
      *
      * @param uniqueAttackerCount 窗口内解析出的不同攻击者账号数
      * @param attackersUnresolved 窗口内是否存在攻击者无法解析（true 时不得断言集火）
      * @param focusFireCandidate  窗口总跨度 ≤ {@link #SHORT_FOCUS_WINDOW_SEC}、攻击者 ≥2 且无未解析
+     * @param victimHpPct         窗口掉血量占满血量百分比（tankopedia maxHp；未知为 null）
+     * @param criticalWindow      窗口跨度 ≤ {@link #CRITICAL_WINDOW_SPAN_SEC} 且掉血 ≥ {@link #CRITICAL_HP_PCT}%
+     * @param instantKill         窗口掉血 ≥ 满血量（被秒杀）
      */
     record DamageWindow(
             float startSec,
@@ -53,7 +66,15 @@ final class DamageWindowClusterer {
             int hitCount,
             int uniqueAttackerCount,
             boolean attackersUnresolved,
-            boolean focusFireCandidate) {
+            boolean focusFireCandidate,
+            Double victimHpPct,
+            boolean criticalWindow,
+            boolean instantKill) {
+
+        /** 窗口总跨度（秒）。 */
+        float spanSec() {
+            return endSec - startSec;
+        }
     }
 
     private DamageWindowClusterer() {
@@ -98,6 +119,7 @@ final class DamageWindowClusterer {
         received.sort(Comparator.comparingDouble(
                 d -> d.timestamp() == null ? 0.0 : d.timestamp().rawClockSec()));
 
+        final int victimMaxHp = victimMaxHp(battle, accountId);
         final List<DamageWindow> windows = new ArrayList<>();
         float windowStart = -1f;
         float windowEnd = -1f;
@@ -109,11 +131,9 @@ final class DamageWindowClusterer {
             final float relative = relativeSec(damage, battleStart);
             if (windowStart < 0f || relative - windowEnd > MAX_GAP_SEC) {
                 if (windowStart >= 0f) {
-                    windows.add(new DamageWindow(
+                    windows.add(window(victimMaxHp,
                             windowStart, windowEnd, total, hits,
-                            attackers.size(), attackersUnresolved,
-                            attackers.size() >= 2 && !attackersUnresolved
-                                    && (windowEnd - windowStart) <= SHORT_FOCUS_WINDOW_SEC));
+                            attackers.size(), attackersUnresolved));
                 }
                 windowStart = relative;
                 total = 0;
@@ -131,12 +151,38 @@ final class DamageWindowClusterer {
                 attackersUnresolved = true;
             }
         }
-        windows.add(new DamageWindow(
+        windows.add(window(victimMaxHp,
                 windowStart, windowEnd, total, hits,
-                attackers.size(), attackersUnresolved,
-                attackers.size() >= 2 && !attackersUnresolved
-                        && (windowEnd - windowStart) <= SHORT_FOCUS_WINDOW_SEC));
+                attackers.size(), attackersUnresolved));
         return windows;
+    }
+
+    private static DamageWindow window(final int victimMaxHp,
+                                       final float startSec, final float endSec,
+                                       final int totalDamage, final int hitCount,
+                                       final int uniqueAttackers, final boolean attackersUnresolved) {
+        final float span = endSec - startSec;
+        final Double pct = victimMaxHp > 0 ? 100.0 * totalDamage / victimMaxHp : null;
+        return new DamageWindow(
+                startSec, endSec, totalDamage, hitCount,
+                uniqueAttackers, attackersUnresolved,
+                uniqueAttackers >= 2 && !attackersUnresolved && span <= SHORT_FOCUS_WINDOW_SEC,
+                pct,
+                pct != null && span <= CRITICAL_WINDOW_SPAN_SEC && pct >= CRITICAL_HP_PCT,
+                pct != null && span <= CRITICAL_WINDOW_SPAN_SEC && pct >= INSTANT_KILL_PCT);
+    }
+
+    /** 受击者满血量（tankopedia maxHp）；未知返回 0（不参与百分比判定）。 */
+    private static int victimMaxHp(final Battle battle, final long accountId) {
+        if (battle == null || battle.players == null) {
+            return 0;
+        }
+        return battle.players.stream()
+                .filter(p -> p != null && p.accountId == accountId)
+                .findFirst()
+                .map(p -> ReplayDisplayNames.tankMaxHpValue(p.tankId))
+                .filter(java.util.Objects::nonNull)
+                .orElse(0);
     }
 
     private static float relativeSec(final DamageEvent damage, final Float battleStart) {

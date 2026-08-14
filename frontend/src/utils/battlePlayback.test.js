@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   aggregateEventsBySecond,
+  clampViewPan,
   formatClock,
   interpolateDirection,
   lastKnownPosition,
@@ -12,7 +13,10 @@ import {
   routePrefix,
   screenRotation,
   shortestArcDeg,
-  turretWorldYawDeg
+  tracerLines,
+  trustedPositionAt,
+  turretWorldYawDeg,
+  zoomViewAt
 } from './battlePlayback'
 
 describe('positionAt', () => {
@@ -254,5 +258,113 @@ describe('aggregateEventsBySecond / recorderRelated', () => {
     expect(recorderRelated({ type: 'DAMAGE', accountId: 2, targetAccountId: 3 }, 1)).toBe(false)
     expect(recorderRelated({ type: 'DAMAGE', accountId: 1, targetAccountId: 3 }, 1)).toBe(true)
     expect(recorderRelated({ type: 'DAMAGE', accountId: 2, targetAccountId: 1 }, 1)).toBe(true)
+  })
+})
+
+describe('trustedPositionAt', () => {
+  const points = [
+    { x: 0, y: 0, timeSec: 10 },
+    { x: 100, y: 50, timeSec: 15 },
+    { x: 300, y: 50, timeSec: 40 }
+  ]
+
+  it('returns the interpolated position inside a trusted segment', () => {
+    const p = trustedPositionAt(points, 12.5)
+    expect(p).not.toBeNull()
+    expect(p.timeSec).toBeCloseTo(12.5)
+    expect(p.x).toBeCloseTo(50)
+  })
+
+  it('accepts an exact sample time', () => {
+    expect(trustedPositionAt(points, 15)).not.toBeNull()
+  })
+
+  it('rejects gap, before-first and after-last positions (no last-known fabrication)', () => {
+    expect(trustedPositionAt(points, 20)).toBeNull()
+    expect(trustedPositionAt(points, 5)).toBeNull()
+    expect(trustedPositionAt(points, 60)).toBeNull()
+  })
+
+  it('rejects non-finite coordinates', () => {
+    const bad = [{ x: 0, y: 0, timeSec: 10 }, { x: Number.NaN, y: 0, timeSec: 12 }]
+    expect(trustedPositionAt(bad, 11)).toBeNull()
+  })
+})
+
+describe('tracerLines', () => {
+  const routes = new Map([
+    [1, { points: [{ x: 0, y: 0, timeSec: 10 }, { x: 100, y: 0, timeSec: 14 }] }],
+    [2, { points: [{ x: 0, y: 100, timeSec: 10 }, { x: 100, y: 100, timeSec: 14 }] }]
+  ])
+  const damage = { type: 'DAMAGE', timeSec: 12, accountId: 1, targetAccountId: 2, damage: 400 }
+
+  it('draws one line at the event time and fades out over the window (seek-safe)', () => {
+    expect(tracerLines([damage], routes, 11.99, 1)).toEqual([])
+    const at = tracerLines([damage], routes, 12, 1)
+    expect(at).toHaveLength(1)
+    expect(at[0].x1).toBeCloseTo(50)
+    expect(at[0].y2).toBeCloseTo(100)
+    expect(at[0].opacity).toBeCloseTo(1)
+    expect(tracerLines([damage], routes, 12.25, 1)[0].opacity).toBeCloseTo(0.5)
+    expect(tracerLines([damage], routes, 12.5, 1)).toEqual([])
+    expect(tracerLines([damage], routes, 12, 1)).toHaveLength(1)
+  })
+
+  it('windows scale with playback speed (1x/2x/4x)', () => {
+    expect(tracerLines([damage], routes, 12.5, 1)).toEqual([])
+    expect(tracerLines([damage], routes, 12.9, 2)).toHaveLength(1)
+    expect(tracerLines([damage], routes, 13.9, 4)).toHaveLength(1)
+    expect(tracerLines([damage], routes, 14, 4)).toEqual([])
+  })
+
+  it('dedupes DAMAGE+KILL of the same shot into one line', () => {
+    const kill = { type: 'KILL', timeSec: 12.1, accountId: 1, targetAccountId: 2, damage: null }
+    expect(tracerLines([damage, kill], routes, 12.05, 1)).toHaveLength(1)
+    expect(tracerLines([damage, kill], routes, 12.3, 2)).toHaveLength(1)
+    // 不同射击（相距 > 判同窗口）各画各的
+    const d2 = { type: 'DAMAGE', timeSec: 13.5, accountId: 1, targetAccountId: 2, damage: 100 }
+    expect(tracerLines([damage, d2], routes, 13.5, 1)).toHaveLength(1)
+    expect(tracerLines([damage, d2], routes, 13.5, 4).map(l => l.timeSec)).toEqual([12, 13.5])
+  })
+
+  it('rejects shots whose either end lacks a trusted position', () => {
+    const gappy = new Map([
+      [1, { points: [{ x: 0, y: 0, timeSec: 10 }, { x: 100, y: 0, timeSec: 40 }] }],
+      [2, { points: [{ x: 0, y: 100, timeSec: 10 }, { x: 100, y: 100, timeSec: 14 }] }]
+    ])
+    expect(tracerLines([{ ...damage, timeSec: 20 }], gappy, 20, 1)).toEqual([])
+    const ended = new Map([
+      [1, { points: [{ x: 0, y: 0, timeSec: 10 }, { x: 100, y: 0, timeSec: 14 }] }],
+      [2, { points: [{ x: 0, y: 100, timeSec: 10 }] }]
+    ])
+    expect(tracerLines([{ ...damage, timeSec: 30 }], ended, 30, 1)).toEqual([])
+    const never = new Map([[1, { points: [{ x: 0, y: 0, timeSec: 10 }, { x: 100, y: 0, timeSec: 14 }] }]])
+    expect(tracerLines([damage], never, 12, 1)).toEqual([])
+  })
+
+  it('skips unresolved attacker/target and self-shots', () => {
+    expect(tracerLines([{ type: 'DAMAGE', timeSec: 12, accountId: null, targetAccountId: 2, damage: 1 }], routes, 12, 1)).toEqual([])
+    expect(tracerLines([{ type: 'KILL', timeSec: 12, accountId: 1, targetAccountId: 1, damage: null }], routes, 12, 1)).toEqual([])
+  })
+})
+
+describe('zoomViewAt / clampViewPan', () => {
+  it('clamps scale into [1,4] and keeps the anchor point fixed', () => {
+    const z = zoomViewAt({ scale: 1, tx: 0, ty: 0 }, 100, 50, 1.2)
+    expect(z.scale).toBeCloseTo(1.2)
+    expect(z.tx).toBeCloseTo(100 - 100 * (z.scale / 1))
+    expect(z.ty).toBeCloseTo(50 - 50 * (z.scale / 1))
+    expect(zoomViewAt({ scale: 3.9, tx: 0, ty: 0 }, 0, 0, 2).scale).toBe(4)
+    expect(zoomViewAt({ scale: 1.1, tx: 0, ty: 0 }, 0, 0, 0.5).scale).toBe(1)
+  })
+
+  it('clampViewPan resets at scale 1 and keeps content inside the viewport', () => {
+    expect(clampViewPan({ scale: 1, tx: 50, ty: 50 }, 400, 300)).toEqual({ scale: 1, tx: 0, ty: 0 })
+    const panned = clampViewPan({ scale: 2, tx: 100, ty: -500 }, 400, 300)
+    expect(panned.tx).toBe(0)
+    expect(panned.ty).toBe(-300)
+    expect(clampViewPan({ scale: 2, tx: -500, ty: 0 }, 400, 300).tx).toBe(-400)
+    // 尺寸未知（无布局环境）不钳制
+    expect(clampViewPan({ scale: 2, tx: 50, ty: 20 }, 0, 0)).toEqual({ scale: 2, tx: 50, ty: 20 })
   })
 })

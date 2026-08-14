@@ -308,18 +308,18 @@ class TeamResultSourceBoundaryTest {
 
     @Test
     void completeRosterPointsWinsStillWork() {
-        // 完整 7v7：winnerTeam=null、双方存活 → POINTS_INFERENCE + TIME_EXPIRED
+        // 完整 7v7：winnerTeam=null、双方存活 → POINTS_INFERENCE + TIME_EXPIRED（时长打满 7 分钟）
         final List<PlayerResult> timeExpired = bothRosters(true, true);
         timeExpired.get(0).victoryPointsEarned = 400;
         timeExpired.get(7).victoryPointsEarned = 100;
-        var resolved = FriendlyEnemyResult.resolveTeamBattle(
-                completeBattle(timeExpired, null), 1);
+        final Battle timeExpiredBattle = completeBattle(timeExpired, null);
+        timeExpiredBattle.durationS = 420.0;
+        var resolved = FriendlyEnemyResult.resolveTeamBattle(timeExpiredBattle, 1);
         assertEquals(Winner.FRIENDLY_WIN, resolved.winner());
         assertEquals(WinnerSource.POINTS_INFERENCE, resolved.source());
         assertEquals(PointsEndReason.TIME_EXPIRED, resolved.pointsEndReason());
         assertEquals("CHRD获胜（时间耗尽点数判定）",
-                TeamEvidenceFormatter.resolveTeamResult(
-                        completeBattle(timeExpired, null), 1, "CHRD"));
+                TeamEvidenceFormatter.resolveTeamResult(timeExpiredBattle, 1, "CHRD"));
 
         // 完整 7v7：任一方 ≥1000 → REACHED_1000
         final List<PlayerResult> reached = bothRosters(true, true);
@@ -342,7 +342,9 @@ class TeamResultSourceBoundaryTest {
         }
         threeVThree.get(0).victoryPointsEarned = 300;
         threeVThree.get(3).victoryPointsEarned = 700;
-        resolved = FriendlyEnemyResult.resolveTeamBattle(completeBattle(threeVThree, null), 1);
+        final Battle threeVThreeBattle = completeBattle(threeVThree, null);
+        threeVThreeBattle.durationS = 420.0;
+        resolved = FriendlyEnemyResult.resolveTeamBattle(threeVThreeBattle, 1);
         assertEquals(Winner.ENEMY_WIN, resolved.winner());
         assertEquals(WinnerSource.POINTS_INFERENCE, resolved.source());
         assertEquals(PointsEndReason.TIME_EXPIRED, resolved.pointsEndReason());

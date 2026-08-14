@@ -297,17 +297,50 @@ final class TeamEvidenceFormatter {
             writer.append("pointsEndReason=" + winner.pointsEndReason().name() + "\n");
         }
         if (rosterComplete) {
+            final int opposingTeam = perspectiveTeam == 1 ? 2 : 1;
+            final long opposingSeized = battle.players.stream()
+                    .filter(player -> player != null && player.team == opposingTeam)
+                    .mapToLong(player -> player.victoryPointsSeized)
+                    .sum();
+            final long teamKills = FriendlyEnemyResult.teamKills(battle, perspectiveTeam);
+            final long teamDeaths = FriendlyEnemyResult.teamDeaths(battle, perspectiveTeam);
+            final long opposingKills = FriendlyEnemyResult.teamKills(battle, opposingTeam);
+            final long opposingDeaths = FriendlyEnemyResult.teamDeaths(battle, opposingTeam);
             writer.append("team victoryPointsEarned=" + earned
-                    + " victoryPointsSeized=" + seized + "\n");
-            writer.append("opposing victoryPointsEarned=" + opposingEarned + "\n");
+                    + " victoryPointsSeized=" + seized
+                    + " kills=" + teamKills + " deaths=" + teamDeaths + "\n");
+            writer.append("opposing victoryPointsEarned=" + opposingEarned
+                    + " victoryPointsSeized=" + opposingSeized
+                    + " kills=" + opposingKills + " deaths=" + opposingDeaths + "\n");
             for (final PlayerResult player : battle.players) {
                 if (player != null && player.team == perspectiveTeam
-                        && (player.victoryPointsEarned > 0 || player.victoryPointsSeized > 0)) {
+                        && (player.victoryPointsEarned > 0 || player.victoryPointsSeized > 0
+                        || player.kills > 0)) {
                     writer.append("member accountId=" + player.accountId
                             + " nickname=" + quoteData(player.nickname)
                             + " victoryPointsEarned=" + player.victoryPointsEarned
-                            + " victoryPointsSeized=" + player.victoryPointsSeized + "\n");
+                            + " victoryPointsSeized=" + player.victoryPointsSeized
+                            + " kills=" + player.kills + "\n");
                 }
+            }
+            if (winner.pointsDecided()) {
+                final long teamFinal = FriendlyEnemyResult.finalPointsComputed(battle, perspectiveTeam);
+                final long opposingFinal = FriendlyEnemyResult.finalPointsComputed(battle, opposingTeam);
+                final boolean early = FriendlyEnemyResult.earlyPointsEnd(battle);
+                // 提前结束（时间未耗尽 <7 分钟）：赢队必达 1000（规则保证；逐人占点分不含被动增长，按规则钉死）
+                final long teamFinalOut = early && winner.winner() == Winner.FRIENDLY_WIN
+                        ? FriendlyEnemyResult.SUPREMACY_WIN_POINTS : teamFinal;
+                final long opposingFinalOut = early && winner.winner() == Winner.ENEMY_WIN
+                        ? FriendlyEnemyResult.SUPREMACY_WIN_POINTS : opposingFinal;
+                writer.append("finalPointsComputed: team=" + teamFinalOut
+                        + " opposing=" + opposingFinalOut
+                        + " (口径=占点分+40×击杀−40×阵亡"
+                        + (early ? "; 时间未耗尽提前结束, 赢队终局比分按规则=1000" : "")
+                        + ")\n");
+                writer.append("directive=争霸赛计分口径: 每击杀夺取对方40分补充自身、本方掉人同样损失40分; "
+                        + "victoryPointsEarned 是逐人占点分(不含被动占点增长), 不是终局比分; "
+                        + "时间未耗尽(<7分钟)提前结束时赢队终局比分必为1000; "
+                        + "禁止用 victoryPointsEarned 合计冒充终局比分\n");
             }
         } else {
             writer.append("team victoryPointsEarned=UNKNOWN victoryPointsSeized=UNKNOWN\n");
@@ -439,7 +472,11 @@ final class TeamEvidenceFormatter {
                         .append('/').append(window.hitCount()).append("次")
                         .append("攻击者").append(window.uniqueAttackerCount())
                         .append(window.attackersUnresolved() ? "（部分未解析）" : "")
-                        .append(window.focusFireCandidate() ? "（短时多车集火证据）" : "");
+                        .append(window.focusFireCandidate() ? "（短时多车集火证据）" : "")
+                        .append("掉血pct=").append(window.victimHpPct() == null
+                                ? "未知" : Math.round(window.victimHpPct()) + "%")
+                        .append(window.instantKill() ? "（被秒杀）" : "")
+                        .append(window.criticalWindow() && !window.instantKill() ? "（高危掉血窗口）" : "");
             }
             rows.append('\n');
         }
@@ -452,7 +489,11 @@ final class TeamEvidenceFormatter {
                 + " 秒、攻击者≥2 且无未解析攻击者时才标注「（短时多车集火证据）」; "
                 + "攻击者=1 → 短时间集中掉血/高压掉血窗口（不是集火）; "
                 + "标注「（部分未解析）」时攻击者数不完整, 不得断言集火; "
-                + "链式聚类形成的大跨度窗口不得当作短时集火.\n");
+                + "链式聚类形成的大跨度窗口不得当作短时集火; "
+                + "掉血pct=窗口掉血量/满血量(tankopedia maxHp)的百分比(未知则为「未知」); "
+                + "窗口跨度≤" + (int) DamageWindowClusterer.CRITICAL_WINDOW_SPAN_SEC
+                + " 秒且掉血≥" + (int) DamageWindowClusterer.CRITICAL_HP_PCT
+                + "% 标注「（高危掉血窗口）」, 掉血≥100% 标注「（被秒杀）」.\n");
         writer.append(rows.toString());
     }
 

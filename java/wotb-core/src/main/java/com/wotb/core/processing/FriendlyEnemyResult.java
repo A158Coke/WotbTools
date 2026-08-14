@@ -12,8 +12,14 @@ import com.wotb.core.model.PlayerResult;
  */
 public final class FriendlyEnemyResult {
 
-    /** supremacy 点数胜利阈值：任一方达到该点数立即获胜。 */
-    private static final long SUPREMACY_WIN_POINTS = 1000;
+    /** supremacy 点数胜利阈值：任一方达到该点数立即获胜（提前结束时赢队终局比分恒为此值）。 */
+    public static final long SUPREMACY_WIN_POINTS = 1000;
+
+    /** 争霸赛击杀夺分：每击杀夺取对方 40 分补充自身，本方掉人同样损失 40 分（双向计入）。 */
+    public static final long KILL_STEAL_POINTS = 40;
+
+    /** 争霸赛标准时长上限（秒）：时长未到该上限即点数决胜结束，必为达到 1000 分提前获胜。 */
+    public static final double SUPREMACY_TIME_LIMIT_SEC = 420;
 
     private FriendlyEnemyResult() {}
 
@@ -258,10 +264,53 @@ public final class FriendlyEnemyResult {
                 || !PlayerSideResolver.isValidRawTeam(recorderTeam)) {
             return PointsEndReason.UNKNOWN;
         }
+        if (earlyPointsEnd(battle)) {
+            // 时间未耗尽（<7 分钟）的点数决胜：任一方达到 1000 分立即获胜（规则保证）。
+            // victoryPointsEarned 是逐人占点分（不含被动占点增长与击杀夺分），合计可能不足 1000，
+            // 但提前结束本身即证明赢队达到 1000。
+            return PointsEndReason.REACHED_1000;
+        }
         final int opposingTeam = recorderTeam == 1 ? 2 : 1;
         return pointsEndReason(
                 pointsEarned(battle, recorderTeam),
                 pointsEarned(battle, opposingTeam));
+    }
+
+    /** 指定团队的结算击杀总数（battle/players 缺失返回 0）。 */
+    public static long teamKills(final Battle battle, final int team) {
+        return battle == null || battle.players == null ? 0L
+                : battle.players.stream()
+                        .filter(p -> p != null && p.team == team)
+                        .mapToLong(p -> p.kills)
+                        .sum();
+    }
+
+    /** 指定团队的结算阵亡数（survived=false 计数；名册不完整时仅作口径参考）。 */
+    public static long teamDeaths(final Battle battle, final int team) {
+        return battle == null || battle.players == null ? 0L
+                : battle.players.stream()
+                        .filter(p -> p != null && p.team == team && !p.survived)
+                        .count();
+    }
+
+    /** 击杀夺分净额 = {@link #KILL_STEAL_POINTS} × (击杀 − 阵亡)。 */
+    public static long killPointsDelta(final Battle battle, final int team) {
+        return KILL_STEAL_POINTS * (teamKills(battle, team) - teamDeaths(battle, team));
+    }
+
+    /**
+     * 计算口径终局比分 = victoryPointsEarned 合计 + 40×击杀 − 40×阵亡。
+     * <p>占点分不含被动占点增长；提前结束（{@link #earlyPointsEnd}）时赢队按规则钉死为
+     * {@value #SUPREMACY_WIN_POINTS}，调用方负责该钉死逻辑。</p>
+     */
+    public static long finalPointsComputed(final Battle battle, final int team) {
+        return pointsEarned(battle, team) + killPointsDelta(battle, team);
+    }
+
+    /** 点数决胜是否时间未耗尽（时长 < {@value #SUPREMACY_TIME_LIMIT_SEC} 秒）——必为达到 1000 分提前获胜。 */
+    public static boolean earlyPointsEnd(final Battle battle) {
+        return battle != null && battle.durationS != null
+                && battle.durationS < SUPREMACY_TIME_LIMIT_SEC;
     }
 
     /** Short Chinese label for each winner value. */
