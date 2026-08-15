@@ -148,13 +148,24 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  /* 随用户视角固定在右上角：页面滚动时头部吸顶，复制按钮保持在可视区右上角 */
+  /* 随用户视角固定在右上角：页面滚动时头部吸顶，复制按钮保持在可视区右上角。
+     top 必须落在全局 Topbar 下方——App.vue 桌面端 (>1080px) .topbar 为 fixed 高 52px
+     (z-index:100)，若 top:0 会被顶栏遮挡；此值须与 App.vue .tb-content padding-top 同步。 */
   position: sticky;
-  top: 0;
+  top: 52px;
   z-index: 20;
   background: var(--bg-card);
   padding: 8px 0;
   margin: -8px 0 0;
+}
+@media (max-width: 1080px) {
+  /* <=1080px 时 App.vue .topbar 变为 sticky + auto height（可换行、高度不定），
+     固定偏移无法对齐；回退普通流式头部——复制按钮随面板滚动（不重叠、可操作、
+     滚出面板后消失），满足「不遮挡导航/正文、无横向溢出」。 */
+  .panel-head {
+    position: static;
+    top: auto;
+  }
 }
 .panel-head h2 { margin: 0 0 12px; }
 .panel-head-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }

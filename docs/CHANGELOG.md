@@ -17,7 +17,7 @@
   DEVELOPER_GUIDE 文档地图补充层级说明。纯文档变更，不影响代码与构建。
 
 ### Fixed
-- **AI 回复「簇」字确定性兜底全链路**：复盘正文（analysis）此前没有字符级兜底，LLM 输出「簇」会原样透传；新增 wotb-core `ClusterTermSanitizer`（簇拥→聚集、簇状→集群状、一簇→一批、同簇/成簇→集群、分簇→分散、主力簇→主力集群、多簇→多股、剩余「簇」→「群」，复用 `PreBattleSectionRenderer` 原有替换表），`AiReplayReviewService` 在 `correctTankNames` 后对 analysis + preBattleSection 两段统一应用，赛前预测渲染路径同步改调共享 helper；新增 `ClusterTermSanitizerTest`。
+- **AI 回复「簇」字确定性兜底全链路（权威 proper noun 保护）**：复盘正文（analysis）此前没有字符级兜底，LLM 输出「簇」会原样透传；新增 wotb-core `ClusterTermSanitizer`（簇拥→聚集、簇状→集群状、一簇→一批、同簇/成簇→集群、分簇→分散、主力簇→主力集群、多簇→多股、剩余「簇」→「群」，复用 `PreBattleSectionRenderer` 原有替换表），`AiReplayReviewService` 在 `correctTankNames` 后对 analysis + preBattleSection 两段统一应用，并保护权威 proper noun（roster 昵称 / 权威坦克名）原样保留（合法昵称如「星簇」不会被改写成「星群」）；赛前预测渲染路径同步改调共享 helper；新增 `ClusterTermSanitizerTest` + 服务层集成测试。契约：AI 生成的内部术语「簇」确定性转换，权威玩家昵称/车辆名称保持原样。
 - **战局回放敌方车标「位置流中断后重新上报不恢复」根因修复（后端区间生产）**：MapOverviewBuilder.positionIntervals 把 EntityLeave(type-4) 当作单个硬截断点导致漏洞——同一实体位置流中断后重新上报（gap ≤ 5s）会被 gap 聚类吞掉、整个 run 被 leave 截断，前端 positionCoveredAt 永假、车标一直淡化；改为「每次 EntityLeave 都是 coverage 的 hard segment boundary」——leave 强制关段、leave 后第一条 position 无论 gap 大小都开启新 interval，deathSec 最后 clamp。新增 MapOverviewBuilderPositionIntervalsTest（2s/10s 重新上报、多次 leave 周期、leave 早于首点、无 leave gap 分段、deathSec 前/后重新上报共 7 用例）+ 前端「两段区间重新上报恢复不透明」回归；此前 2.11.11（positionAt 精确采样点）/ 2.11.12（lastKnown=!covered）均为前端修复，本修复补齐后端。
 - **AI 复盘坦克名幻觉（Kranvagn 被写成「埃米尔1951」）**：生成侧 LLM 幻觉把玩家坦克名写成
   中文译名/相似车（EMIL 1951 与 Kranvagn 共用原型底盘）且保持全文；证据/结算层无 bug（tankId →
