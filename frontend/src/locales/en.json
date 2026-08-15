@@ -835,7 +835,24 @@
                 "event_DESTROYED": "Destroyed",
                 "event_KILL": "Kill",
                 "event_POSITION_REPORTED": "Position reported",
-                "event_POSITION_STALE": "Position stale"
+                "event_POSITION_STALE": "Position stale",
+                "annot": {
+                    "pen": "Pen",
+                    "eraser": "Eraser",
+                    "arrow": "Arrow",
+                    "line": "Line",
+                    "rect": "Rectangle",
+                    "circle": "Circle",
+                    "text": "Text",
+                    "color": "Color",
+                    "width": "Width",
+                    "undo": "Undo",
+                    "redo": "Redo",
+                    "clear": "Clear all",
+                    "show": "Show annotations",
+                    "hide": "Hide annotations",
+                    "text_placeholder": "Type annotation…"
+                }
             }
           },
         "stages": {
