@@ -17,6 +17,7 @@ import com.wotb.core.replay.feature.MapCoordinateResolution;
 import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.feature.MovementSegment;
 import com.wotb.core.replay.feature.TeamAggregateResult;
+import com.wotb.core.replay.evidence.ObservedMaxHp;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamEngagementSummary;
 import com.wotb.core.replay.feature.TeamFormationCluster;
@@ -137,7 +138,7 @@ final class TeamEvidenceFormatter {
             final TeamBattleFeatureSet features,
             final String analysisUnitId,
             final List<String> limitations,
-            final Map<Long, Integer> observedMaxHpByAccount
+            final Map<Long, PlayerResult> playersByAccount
     ) {
         writer.append("\n=== PERSPECTIVE_FACTS ===\n");
         writer.append("analysisUnitId=" + quoteData(analysisUnitId) + "\n");
@@ -148,7 +149,7 @@ final class TeamEvidenceFormatter {
         appendAuthoritative(writer, features.authoritativeAggregate());
         // 使用合并后的 limitations（context + features + extra），不能只检查 features.limitations
         appendObserved(writer, features.observedAggregate(), limitations);
-        appendMemberFacts(writer, features.members(), observedMaxHpByAccount);
+        appendMemberFacts(writer, features.members(), playersByAccount);
         writer.append("coverage=" + features.coverage() + "\n");
     }
 
@@ -179,7 +180,7 @@ final class TeamEvidenceFormatter {
                     + " nickname=" + quoteData(p.nickname)
                     + " tank=" + quoteData(resolveTankName(p.tankId, p.tankName))
                     + " vehicleClass=" + resolveTankClass(p.tankId)
-                    + structuredTankFacts(p.tankId, p.observedMaxHp)
+                    + structuredTankFacts(p.tankId, p)
                     + " finalDamage=" + p.damageDealt
                     + " damageReceived=" + p.damageReceived
                     + " assisted=" + p.damageAssisted
@@ -214,14 +215,16 @@ final class TeamEvidenceFormatter {
         return structuredTankFacts(tankId, null);
     }
 
-    /** 同上；observedMaxHp 非空时覆盖 hp 事实（回放实测，含装备/物资加成）。 */
-    static String structuredTankFacts(final long tankId, final Integer observedMaxHp) {
+    /** 同上；hp 按 provenance 口径（OBSERVED_EXACT → 已证明进场满血；否则 tankopedia base）。 */
+    static String structuredTankFacts(final long tankId, final PlayerResult player) {
         final StringBuilder sb = new StringBuilder(80);
         appendFact(sb, "tier", ReplayDisplayNames.tankTier(tankId));
         appendFact(sb, "nation", ReplayDisplayNames.tankNation(tankId));
         appendFact(sb, "alphaDamage", ReplayDisplayNames.tankAlphaDamage(tankId));
-        appendFact(sb, "hp", observedMaxHp != null && observedMaxHp > 0
-                ? String.valueOf(observedMaxHp) : ReplayDisplayNames.tankMaxHp(tankId));
+        final Integer maxHp = player == null
+                ? ReplayDisplayNames.tankMaxHpValue(tankId) : ObservedMaxHp.fullMaxHp(player);
+        appendFact(sb, "hp", maxHp != null && maxHp > 0
+                ? String.valueOf(maxHp) : ReplayDisplayNames.tankMaxHp(tankId));
         sb.append(extraInfoFact(ReplayDisplayNames.tankExtraInfo(tankId)));
         return sb.toString();
     }
@@ -519,8 +522,9 @@ final class TeamEvidenceFormatter {
                         .append("攻击者").append(window.uniqueAttackerCount())
                         .append(window.attackersUnresolved() ? "（部分未解析）" : "")
                         .append(window.focusFireCandidate() ? "（短时多车集火证据）" : "")
-                        .append("伤害/基础满血pct=").append(window.damageVsBaseMaxHpPct() == null
-                                ? "未知" : Math.round(window.damageVsBaseMaxHpPct()) + "%")
+                        .append(window.entryHpProven() ? "伤害/进场满血pct=" : "伤害/base满血pct=")
+                        .append(window.damageVsEntryMaxHpPct() == null
+                                ? "未知" : Math.round(window.damageVsEntryMaxHpPct()) + "%")
                         .append(window.criticalWindow() ? "（短窗高额伤害窗口）" : "");
             }
             rows.append('\n');
@@ -535,11 +539,12 @@ final class TeamEvidenceFormatter {
                 + "攻击者=1 → 短时间集中掉血/高压掉血窗口（不是集火）; "
                 + "标注「（部分未解析）」时攻击者数不完整, 不得断言集火; "
                 + "链式聚类形成的大跨度窗口不得当作短时集火; "
-                + "伤害/基础满血pct=窗口累计伤害/基础满血量(tankopedia 基础值, 不含装备加成)的百分比, "
-                + "只是计算基准, 不是实际掉血比例(未知则为「未知」); "
-                + "窗口跨度≤" + (int) DamageWindowClusterer.CRITICAL_WINDOW_SPAN_SEC
-                + " 秒且伤害≥" + (int) DamageWindowClusterer.CRITICAL_HP_PCT
-                + "% 基础满血量标注「（短窗高额伤害窗口）」; "
+                + "伤害/进场满血pct=窗口累计伤害/已证明进场满血量(回放受击前样本证明, 含装备/物资加成)的百分比; "
+                + "伤害/base满血pct=窗口累计伤害/tankopedia 基础血量的百分比(进场满血未被证明时的 base baseline, "
+                + "只是计算基准, 不是实际掉血比例; 未知则为「未知」); "
+                + "仅当进场满血被证明且窗口跨度≤" + (int) DamageWindowClusterer.CRITICAL_WINDOW_SPAN_SEC
+                + " 秒、伤害≥" + (int) DamageWindowClusterer.CRITICAL_HP_PCT
+                + "% 已证明进场满血量才标注「（短窗高额伤害窗口）」; "
                 + "数据无法证明窗口起始血量/窗口内阵亡/装备加成后的实际最大血量, 不得判定「从满血被秒杀」.\n");
         writer.append(rows.toString());
     }
@@ -554,7 +559,7 @@ final class TeamEvidenceFormatter {
     static void appendMemberFacts(
             final BudgetWriter writer,
             final List<TeamMemberFeatureSet> members,
-            final Map<Long, Integer> observedMaxHpByAccount
+            final Map<Long, PlayerResult> playersByAccount
     ) {
         writer.append("\n=== TEAM_MEMBERS ===\n");
         for (final TeamMemberFeatureSet member : members) {
@@ -564,7 +569,7 @@ final class TeamEvidenceFormatter {
                     // vehicleClass / tier / nation 只来自 tankopedia 的结构化字段，不得由 tank 名称推断
                     + " vehicleClass=" + resolveTankClass(member.tankId())
                     + structuredTankFacts(member.tankId(),
-                            observedMaxHpByAccount == null ? null : observedMaxHpByAccount.get(member.accountId()))
+                            playersByAccount == null ? null : playersByAccount.get(member.accountId()))
                     + " entityIds=" + member.entityIds()
                     + " mapping=" + PlayerAnalysisTerms.confidenceLabel(member.mappingConfidence())
                     + " finalDamage=" + member.finalDamage()

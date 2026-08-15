@@ -434,10 +434,12 @@ public final class MapOverviewBuilder {
 
     /**
      * 车辆位置上报区间：按位置事件时间线聚类（gap ≤ 5s 视为连续上报），
-     * EntityRemoved 关闭末段区间，阵亡时刻截断区间末端；re-entry 跨实体区间合并。
-     * 语义 = 服务器位置流覆盖，不代表录像者点亮。
+     * EntityLeave(type-4) 是 coverage 的 hard segment boundary——每一次 leave 都强制
+     * 结束当前 coverage run，leave 后的第一条 position（无论 gap 是 0.5s 还是 20s）
+     * 开启新 run；阵亡时刻（deathSec）最后 clamp，阵亡后的 interval 不出现。
+     * re-entry 跨实体区间合并。语义 = 服务器位置流覆盖，不代表录像者点亮/可见性。
      */
-    private static List<MapOverview.PositionInterval> positionIntervals(
+    static List<MapOverview.PositionInterval> positionIntervals(
             final List<Integer> entityIds,
             final Positions positions,
             final List<ReplayEvent> events,
@@ -450,25 +452,48 @@ public final class MapOverviewBuilder {
             if (pts.isEmpty()) {
                 continue;
             }
-            double removedAt = Double.MAX_VALUE;
+            // 该实体全部 EntityLeave 时刻（按时间升序），逐个消费；leave 不属于某一次
+            // 生命周期的最小值，而是按时间顺序的硬分段点。
+            final List<Double> leaves = new ArrayList<>();
             for (final ReplayEvent event : events) {
                 if (event instanceof EntityRemovedEvent removed && removed.entityId() == entityId) {
-                    removedAt = Math.min(removedAt, relativeSec(removed, battleStartRawClockSec));
+                    leaves.add(relativeSec(removed, battleStartRawClockSec));
                 }
             }
-            double runStart = pts.get(0).timeSec;
-            double runEnd = runStart;
-            for (int i = 1; i < pts.size(); i++) {
-                final double t = pts.get(i).timeSec;
+            leaves.sort(Comparator.naturalOrder());
+            int leaveIdx = 0;
+            double runStart = Double.NaN;
+            double runEnd = Double.NaN;
+            for (final Position p : pts) {
+                final double t = p.timeSec;
+                if (Double.isNaN(runStart)) {
+                    runStart = t;
+                    runEnd = t;
+                    continue;
+                }
+                // leave 在 (runEnd, t) 之间 → 强制关段（end = leave 时刻），t 开启新 run；
+                // leave == runEnd（与最后一个 position 同刻）也关闭该段（leave 在后）。
+                if (leaveIdx < leaves.size()
+                        && leaves.get(leaveIdx) >= runEnd
+                        && leaves.get(leaveIdx) < t) {
+                    raw.add(new MapOverview.PositionInterval(runStart, leaves.get(leaveIdx)));
+                    runStart = t;
+                    runEnd = t;
+                    leaveIdx++;
+                    continue;
+                }
+                // 无 leave：保留 gap > 5s 分段语义
                 if (t - runEnd > POSITION_GAP_SEC) {
                     raw.add(new MapOverview.PositionInterval(runStart, runEnd));
                     runStart = t;
+                    runEnd = t;
+                    continue;
                 }
                 runEnd = t;
             }
-            final double intervalEnd = removedAt < runEnd
-                    ? removedAt : runEnd;
-            raw.add(new MapOverview.PositionInterval(runStart, intervalEnd));
+            if (!Double.isNaN(runStart)) {
+                raw.add(new MapOverview.PositionInterval(runStart, runEnd));
+            }
         }
         raw.sort(Comparator.comparingDouble(MapOverview.PositionInterval::startSec));
         final List<MapOverview.PositionInterval> merged = new ArrayList<>();
@@ -483,13 +508,21 @@ public final class MapOverviewBuilder {
             }
         }
         if (deathSec != null) {
-            for (int i = 0; i < merged.size(); i++) {
-                final MapOverview.PositionInterval interval = merged.get(i);
-                if (interval.endSec() > deathSec) {
-                    merged.set(i, new MapOverview.PositionInterval(
-                            interval.startSec(), Math.max(interval.startSec(), deathSec)));
+            // 阵亡时刻最终优先级：start > deathSec 的区间（阵亡后重新出现）整体剔除；
+            // 其余区间末端 clamp 到 deathSec。
+            final List<MapOverview.PositionInterval> deathClamped = new ArrayList<>();
+            for (final MapOverview.PositionInterval interval : merged) {
+                if (interval.startSec() > deathSec + 1e-6) {
+                    continue;
+                }
+                final double end = Math.min(interval.endSec(), deathSec);
+                if (end >= interval.startSec() - 1e-6) {
+                    deathClamped.add(new MapOverview.PositionInterval(
+                            interval.startSec(), Math.max(interval.startSec(), end)));
                 }
             }
+            merged.clear();
+            merged.addAll(deathClamped);
         }
         // 时间契约：区间不得越过 playback duration；起点越界的区间整体剔除。
         final List<MapOverview.PositionInterval> bounded = new ArrayList<>();
@@ -497,8 +530,11 @@ public final class MapOverviewBuilder {
             if (interval.startSec() > duration + 1e-6) {
                 continue;
             }
-            bounded.add(new MapOverview.PositionInterval(
-                    interval.startSec(), Math.min(interval.endSec(), duration)));
+            final double end = Math.min(interval.endSec(), duration);
+            if (end >= interval.startSec() - 1e-6) {
+                bounded.add(new MapOverview.PositionInterval(
+                        interval.startSec(), Math.max(interval.startSec(), end)));
+            }
         }
         return bounded;
     }
@@ -769,16 +805,16 @@ public final class MapOverviewBuilder {
      * 某时刻的平面位置（语义坐标 x/z 与 battle-relative 秒）。
      * yawDeg 来自 type-10 yaw（弧度→度，[-180,180)），非有限时为 null（不参与方向采样）。
      */
-    private record Position(double timeSec, double x, double z, Double yawDeg) {
+    record Position(double timeSec, double x, double z, Double yawDeg) {
     }
 
     /** 按实体聚合的位置时间线（有序），附带最近/最后位置查询。 */
-    private static final class Positions {
+    static final class Positions {
 
         private final Map<Integer, List<Position>> byEntity;
         private float lastTimeSec;
 
-        private Positions(final Map<Integer, List<Position>> byEntity) {
+        Positions(final Map<Integer, List<Position>> byEntity) {
             this.byEntity = byEntity;
             this.lastTimeSec = 0f;
             for (final List<Position> list : byEntity.values()) {

@@ -2,6 +2,7 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.replay.evidence.EntryHpSource;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
@@ -31,6 +32,9 @@ class BehindLineHpEvidenceTest {
         p.accountId = accountId;
         p.team = team;
         p.tankId = tankId;
+        // hp ratio 分母只允许已证明的进场满血（OBSERVED_EXACT）
+        p.entryHpSource = EntryHpSource.OBSERVED_EXACT;
+        p.entryHp = 2000;
         p.observedMaxHp = 2000;
         p.survived = true;
         return p;
@@ -145,6 +149,51 @@ class BehindLineHpEvidenceTest {
                 battle(E100, E100), recon, 1, false);
         assertFalse(section.contains("vs 扛线队友"), "血量优势不足 1.2× 不得输出完整判据行, got: " + section);
         assertFalse(section.contains("仅位置+输出事实"), "血量数据足但优势不足不得降级输出");
+    }
+
+    @Test
+    void baseFallbackYieldsHpAdvantageUnknown() {
+        // BASE_FALLBACK（进场满血未证明）：hp ratio 不可用 → 中性 HP_ADVANTAGE_UNKNOWN，
+        // 不产生利用队友输出/避战的负面 HP 判定，不进 degree 聚合
+        final Battle b = battle(E100, E100);
+        for (final PlayerResult p : b.players) {
+            p.entryHpSource = EntryHpSource.BASE_FALLBACK;
+            p.entryHp = null;
+        }
+        final String section = BehindLineHpEvidence.renderTeamSection(b, recon(true, true), 1, false);
+        assertTrue(section.contains("HP_ADVANTAGE_UNKNOWN"), section);
+        assertFalse(section.contains("有输出（利用队友输出）"), section);
+        assertFalse(section.contains("避战"), section);
+        assertFalse(section.contains("degree"), "血量不可用不得出分级: " + section);
+    }
+
+    @Test
+    void unknownYieldsHpAdvantageUnknown() {
+        final Battle b = battle(E100, E100);
+        for (final PlayerResult p : b.players) {
+            p.entryHpSource = EntryHpSource.UNKNOWN;
+            p.entryHp = null;
+        }
+        final String section = BehindLineHpEvidence.renderTeamSection(b, recon(true, true), 1, false);
+        assertTrue(section.contains("HP_ADVANTAGE_UNKNOWN"), section);
+        assertFalse(section.contains("避战"), section);
+        assertFalse(section.contains("有输出（利用队友输出）"), section);
+    }
+
+    @Test
+    void highObservedMaxHpWithoutProvenEntryNeverFeedsRatio() {
+        // observedMaxHp 很高（5000）但 entryHp 未证明：不得偷偷拿 observedMaxHp 算 ratio
+        final Battle b = battle(E100, E100);
+        for (final PlayerResult p : b.players) {
+            p.observedMaxHp = 5000;
+            p.entryHpSource = EntryHpSource.BASE_FALLBACK;
+            p.entryHp = null;
+        }
+        final String section = BehindLineHpEvidence.renderTeamSection(b, recon(true, true), 1, false);
+        assertFalse(section.contains("hp=90%"), "不得用 observedMaxHp 作 ratio 分母: " + section);
+        assertFalse(section.contains("有输出（利用队友输出）"), section);
+        assertFalse(section.contains("避战"), section);
+        assertTrue(section.contains("HP_ADVANTAGE_UNKNOWN"), section);
     }
 
     @Test

@@ -9,6 +9,7 @@ import com.wotb.core.processing.ReplayProcessingOptions;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.event.BattleEndedEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.EntityRemovedEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
@@ -21,6 +22,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -363,6 +365,36 @@ class MapOverviewBuilderTest {
                 assertTrue(v.deathSec() <= 120.0 + 1e-6, "deathSec 越界");
             }
         }
+    }
+
+    @Test
+    void sameEntityLeaveThenReReportKeepsLaterInterval() {
+        // 同一 entityId：10–60 位置上报 → EntityLeave@60（type-4 只表示实体离开/停止存在，不代表阵亡）
+        // → 70–120 重新上报（gap 10s > 5s → 新区间）。
+        // 修复前：末段被 removedAt=60 截断成倒置区间 [70,60]，前端 positionCoveredAt 永假 → 车标一直淡化。
+        final Map<Integer, List<MapOverviewBuilder.Position>> byEntity = new LinkedHashMap<>();
+        final List<MapOverviewBuilder.Position> pts = new ArrayList<>();
+        for (double t = 10; t <= 60 + 1e-6; t += 5) {
+            pts.add(new MapOverviewBuilder.Position(t, 100, 100, null));
+        }
+        for (double t = 70; t <= 120 + 1e-6; t += 5) {
+            pts.add(new MapOverviewBuilder.Position(t, 200, 200, null));
+        }
+        byEntity.put(100, pts);
+        final MapOverviewBuilder.Positions positions = new MapOverviewBuilder.Positions(byEntity);
+        final List<ReplayEvent> events = List.of(new EntityRemovedEvent(
+                1, new ReplayTimestamp(60f, null), 4, DecodeConfidence.EXACT, 100));
+        final List<MapOverview.PositionInterval> intervals = MapOverviewBuilder.positionIntervals(
+                List.of(100), positions, events, 0f, null, 300.0);
+        for (final MapOverview.PositionInterval iv : intervals) {
+            assertTrue(iv.startSec() <= iv.endSec() + 1e-6, "不得产生倒置区间: " + iv);
+        }
+        assertTrue(intervals.stream().anyMatch(iv -> Math.abs(iv.startSec() - 10.0) < 1e-6
+                        && Math.abs(iv.endSec() - 60.0) < 1e-6),
+                "leave 前区间必须保留: " + intervals);
+        assertTrue(intervals.stream().anyMatch(iv -> Math.abs(iv.startSec() - 70.0) < 1e-6
+                        && Math.abs(iv.endSec() - 120.0) < 1e-6),
+                "EntityLeave 后同一实体再上报的区间必须保留（否则车标不再点亮）: " + intervals);
     }
 
     @Test

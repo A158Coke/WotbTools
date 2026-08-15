@@ -254,6 +254,28 @@ describe('BattlePlayback', () => {
     expect(enemy.classes()).not.toContain('pb-last-known')
   })
 
+  it('re-reported enemies restore opacity in the second coverage interval (position coverage gap → resume)', async () => {
+    stubRaf()
+    const overview = makeOverview()
+    // EnemyA：10–20 覆盖 → 位置流中断（gap）→ 40–60 再覆盖（两段区间）；t=50 在第二段区间内
+    overview.playback.vehicles[1].positionIntervals = [
+      { startSec: 10, endSec: 20 },
+      { startSec: 40, endSec: 60 }
+    ]
+    overview.routes[1].points = [
+      { x: -50, y: -50, timeSec: 10 },
+      { x: -100, y: -100, timeSec: 14 },
+      { x: -200, y: -200, timeSec: 40 },
+      { x: -250, y: -250, timeSec: 50 }
+    ]
+    const wrapper = mountPlayback(overview, 50)
+    await flushPromises()
+    const enemy = wrapper.find('[data-test="pb-marker-2001"]')
+    expect(enemy.exists()).toBe(true)
+    expect(enemy.classes()).not.toContain('pb-last-known')
+    expect(enemy.classes()).not.toContain('pb-destroyed')
+  })
+
   it('renders team HP bars that decrease with playback time', async () => {
     stubRaf()
     const overview = makeOverview()
