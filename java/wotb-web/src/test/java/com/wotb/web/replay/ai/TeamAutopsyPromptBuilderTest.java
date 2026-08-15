@@ -10,6 +10,7 @@ import com.wotb.core.processing.FriendlyEnemyResult.WinnerSource;
 import com.wotb.core.processing.FriendlyEnemyResult.PointsEndReason;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.replay.evidence.EntryHpSource;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.event.DamageEvent;
@@ -257,10 +258,12 @@ class TeamAutopsyPromptBuilderTest {
         for (final PlayerResult p : battle.players) {
             if (p.accountId == 101L || p.accountId == 102L) {
                 p.tankId = 9489L;
-                p.observedMaxHp = 2000;
+                p.entryHpSource = EntryHpSource.OBSERVED_EXACT;
+                p.entryHp = 2000;
             } else {
                 p.tankId = 9297L;
-                p.observedMaxHp = 1800;
+                p.entryHpSource = EntryHpSource.OBSERVED_EXACT;
+                p.entryHp = 1800;
             }
         }
         final List<ReplayEvent> events = new ArrayList<>();
@@ -311,10 +314,12 @@ class TeamAutopsyPromptBuilderTest {
         for (final PlayerResult p : battle.players) {
             if (p.accountId == 101L || p.accountId == 102L) {
                 p.tankId = 9489L;
-                p.observedMaxHp = 2000;
+                p.entryHpSource = EntryHpSource.OBSERVED_EXACT;
+                p.entryHp = 2000;
             } else {
                 p.tankId = 9297L;
-                p.observedMaxHp = 1800;
+                p.entryHpSource = EntryHpSource.OBSERVED_EXACT;
+                p.entryHp = 1800;
             }
         }
         final List<ReplayEvent> events = new ArrayList<>();

@@ -2,6 +2,7 @@ package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.replay.evidence.EntryHpSource;
 import com.wotb.core.processing.TeamEntityIdentity;
 import com.wotb.core.processing.TeamEntityMapper;
 import com.wotb.core.processing.TeamEntityMapping;
@@ -426,11 +427,15 @@ final class BehindLineHpEvidence {
             return -1;
         }
         final PlayerResult p = playersByAccount.get(accountId);
-        final Integer maxHp = p == null ? null : p.observedMaxHp;
-        if (maxHp == null || maxHp <= 0) {
+        // hp ratio 分母只允许已证明的进场满血（OBSERVED_EXACT）：
+        // observedMaxHp 是整场观测最大 current HP，可能低于真实 entry（装备加成/已受伤），
+        // 用它算 ratio 会让血量优势/利用队友输出/避战/吸血判定失真；BASE_FALLBACK 用
+        // tankopedia base 同样失真（装备加成后比例偏低/偏高）。无法证明 → -1 → HP_ADVANTAGE_UNKNOWN 中性路径。
+        if (p == null || p.entryHpSource != EntryHpSource.OBSERVED_EXACT
+                || p.entryHp == null || p.entryHp <= 0) {
             return -1;
         }
-        return lastHp / maxHp;
+        return lastHp / p.entryHp;
     }
 
     /**

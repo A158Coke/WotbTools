@@ -21,15 +21,18 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.stream.Stream;
 
 /**
  * 真实回放 HP probe（可重复运行，无样本自动跳过）：
- * 对每辆可映射车辆输出 propId=3 全部 positive 采样、max/首个采样、首个受击时间，
+ * 对每辆可映射车辆输出 propId=3 全部 positive 采样、max/首个采样、首个观测受击时间，
  * 判断「整场最大 currentHp」能否被证明为「实际进场满血量（含装备/物资加成）」。
  *
- * <p>产出供 Blocker 2 决策：entry HP 是否允许把 whole-battle max current HP 直接当
- * actual entry full HP，还是必须 fail closed / 降级为 base baseline。</p>
+ * <p><b>证明边界</b>：本 probe 里的 first observed DamageEvent（及其缺席）只能帮助
+ * <b>证伪</b>「whole-battle max current HP == entry HP」——真实样本显示绝大多数车辆首个
+ * positive 样本与首次观测受击同刻且低于 tankopedia base。它<b>不能独立证明</b>
+ * 「sample before first observed DamageEvent == authoritative initial full HP」：
+ * 事件流伤害覆盖可能 PARTIAL（OBSERVED_DAMAGE_IS_PARTIAL，缺伤害 ≠ 没发生伤害），
+ * entry HP 的 OBSERVED_EXACT 判定必须另行结合受击覆盖完整性（见 ObservedMaxHp）。</p>
  */
 class EntryHpProbeTest {
 
