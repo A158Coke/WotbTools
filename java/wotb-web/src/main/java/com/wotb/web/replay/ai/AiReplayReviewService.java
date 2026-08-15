@@ -301,6 +301,10 @@ public class AiReplayReviewService {
                 if (p.nickname != null && !p.nickname.isBlank()) {
                     protectedLiterals.add(p.nickname);
                 }
+                if (p.clan != null && !p.clan.isBlank()) {
+                    // teamLabel（TeamPerspectiveLabelResolver 从 clan 聚合）可能含「簇」
+                    protectedLiterals.add(p.clan);
+                }
                 final String tankName = ReplayDisplayNames.tankName(p.tankId, p.tankName);
                 if (tankName != null && !tankName.isBlank()) {
                     protectedLiterals.add(tankName);
