@@ -11,10 +11,14 @@
   Kranvagn。模型在错误行写「基础满血 2400」与 Kranvagn 一致，说明它用了正确数据却写错了名字——
   是生成侧幻觉，不是解析/结算/证据数据 bug。
 - **判定依据**：确定性后校验 `TankNameCorrector`——R1 昵称锚定纠正（`坦克名（昵称）` /
-  `昵称（坦克名）` / 「的」所属式，与 roster 权威名不一致即替换）、R2 别名与大小写归一化
-  （`common/tank-name-aliases.json`，如 KRV/克朗瓦根/埃米尔1951 → 权威名）、R3 无昵称锚定的
-  非 roster 已知车名只记录不改写（DETECTED）。`AiReplayReviewService.correctTankNames` 在
-  `done.analysis` 前对正文与 preBattleSection 应用；流式中间 token 不纠正（最终事件为准）。
+  `昵称（坦克名）` / 「的」所属式，与 roster 权威名不一致即替换）、R1+ 文档级两阶段传播
+  （Pass 1 收集昵称锚点已证明的「错名 → roster 车」唯一映射，Pass 2 传播到同一 canonical 的
+  standalone 提及——别名/英文原文一并修正，与出现顺序无关）、R2 别名与大小写归一化
+  （`common/tank-name-aliases.json`，如 KRV/克朗瓦根/埃米尔1951 → 权威名）、R3 无昵称锚定/
+  有歧义的非 roster 已知车名只记录不改写（DETECTED，fail closed 不猜测）。
+  `AiReplayReviewService.correctTankNames` 在 `done.analysis` 前对正文与 preBattleSection
+  应用；流式中间 token 不纠正（最终事件为准）。传播 fail closed 边界：source canonical 本身在
+  roster（standalone 可能是真车）、或同一错名被多个锚点指向不同 roster 车（映射冲突）时不传播。
 - **对应 golden case**：无（零容忍回归由
   `TankNameCorrectorTest.productionCase_kranvagnWrittenAsEmil1951_isCorrected` 承担；
   synthetic 复现收益低，v1 不做 ai-eval case）。

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -38,6 +39,80 @@ class TankNameCorrectorTest {
         assertEquals(List.of("CORRECTED"), reasons(result));
         assertEquals("埃米尔1951", result.replacements().getFirst().original());
         assertEquals("Kranvagn", result.replacements().getFirst().replacement());
+    }
+
+    @Test
+    void anchoredCorrection_propagatesToStandaloneAfterAnchor() {
+        final Result result = correct("埃米尔1951（Awesomeman954）阵亡。此前埃米尔1951一直在后排。");
+        assertEquals("Kranvagn（Awesomeman954）阵亡。此前Kranvagn一直在后排。", result.text());
+        assertFalse(result.text().contains("埃米尔1951"));
+        assertFalse(result.text().contains("EMIL 1951"));
+        assertEquals(2, result.replacements().size());
+        assertTrue(reasons(result).contains("CORRECTED"));
+        assertTrue(reasons(result).contains("PROPAGATED"));
+    }
+
+    @Test
+    void anchoredCorrection_propagatesToStandaloneBeforeAnchor() {
+        final Result result = correct("埃米尔1951先掉血，随后埃米尔1951（Awesomeman954）阵亡。");
+        assertEquals("Kranvagn先掉血，随后Kranvagn（Awesomeman954）阵亡。", result.text());
+        assertEquals(2, result.replacements().size());
+        assertTrue(reasons(result).contains("CORRECTED"));
+        assertTrue(reasons(result).contains("PROPAGATED"));
+    }
+
+    @Test
+    void propagation_coversAliasAndEnglishForms() {
+        final Result result = correct("EMIL 1951（Awesomeman954）阵亡，埃米尔1951 前压。");
+        assertEquals("Kranvagn（Awesomeman954）阵亡，Kranvagn 前压。", result.text());
+        assertEquals(2, result.replacements().size());
+        assertTrue(reasons(result).contains("PROPAGATED"));
+    }
+
+    @Test
+    void noAnchor_standaloneNameFailClosed() {
+        final Result result = correct("埃米尔1951前压");
+        // 无昵称锚点：只归一化为权威英文名 + DETECTED，禁止凭 roster 猜成 Kranvagn
+        assertEquals("EMIL 1951前压", result.text());
+        assertFalse(result.text().contains("Kranvagn"));
+        assertTrue(reasons(result).contains("NORMALIZED"));
+        assertTrue(reasons(result).contains("DETECTED"));
+    }
+
+    @Test
+    void sourceCanonicalInRoster_standaloneNotGloballyRewritten() {
+        final List<RosterEntry> roster = List.of(
+                new RosterEntry("Awesomeman954", "Kranvagn"),
+                new RosterEntry("OtherPlayer", "EMIL 1951"));
+        final Result result = TankNameCorrector.correct(
+                "埃米尔1951（Awesomeman954）阵亡。此前EMIL 1951一直在后排。", roster);
+        // 锚点处按 R1 局部纠正为 Kranvagn；standalone EMIL 1951 可能是真车（roster 有 EMIL 1951），不得全局改
+        assertEquals("Kranvagn（Awesomeman954）阵亡。此前EMIL 1951一直在后排。", result.text());
+        assertEquals(List.of("CORRECTED"), reasons(result));
+    }
+
+    @Test
+    void conflictingAnchors_standaloneNotGloballyRewritten() {
+        final List<RosterEntry> roster = List.of(
+                new RosterEntry("Awesomeman954", "Kranvagn"),
+                new RosterEntry("B158", "E 100"));
+        // 第三个锚点指向与第二个相同的 E 100：冲突源已封禁，不得因后到同目标锚点重新入传播表
+        final Result result = TankNameCorrector.correct(
+                "埃米尔1951（Awesomeman954）阵亡。埃米尔1951（B158）仍在。埃米尔1951（B158）对炮。此前埃米尔1951一直处于后排。", roster);
+        // 各锚点分别局部纠正；standalone 因映射冲突 fail closed（EMIL 1951 + DETECTED），不猜
+        assertTrue(result.text().contains("Kranvagn（Awesomeman954）"));
+        assertTrue(result.text().contains("E 100（B158）"));
+        assertTrue(result.text().contains("EMIL 1951一直处于后排"));
+        assertFalse(result.text().contains("Kranvagn一直处于后排"));
+        assertFalse(result.text().contains("E 100一直处于后排"));
+        assertTrue(reasons(result).contains("DETECTED"));
+    }
+
+    @Test
+    void correctNamesNeverModified_standaloneAndAnchored() {
+        final Result result = correct("Kranvagn 前压，Awesomeman954（Kranvagn）顶线。");
+        assertEquals("Kranvagn 前压，Awesomeman954（Kranvagn）顶线。", result.text());
+        assertTrue(result.replacements().isEmpty());
     }
 
     @Test

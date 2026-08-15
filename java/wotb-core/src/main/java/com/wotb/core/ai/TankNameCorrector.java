@@ -23,10 +23,13 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li>R1 昵称锚定：以 roster 昵称的括号对/所属式配对定位其坦克名，若与 roster 权威名
  *       不一致则替换为权威名（支持「坦克名（昵称）」与「昵称（坦克名）」两种顺序）；</li>
+ *   <li>R1+ 文档级传播：全文先收集昵称锚点已证明的「错名 canonical -> roster 车」唯一映射
+ *       （Pass 1），再传播到其它 standalone 提及（Pass 2，同一 canonical 的别名/英文原文
+ *       一并修正，与出现顺序无关；映射冲突或 source 本身在 roster 时 fail closed 不传播）；</li>
  *   <li>R2 归一化：别名（KRV/克朗瓦根/埃米尔1951 等，见 common/tank-name-aliases.json）
  *       与大小写差异统一为 tankopedia 权威英文名；</li>
- *   <li>R3 独立错名检测：正文中出现的、不在本场 roster 内的已知车名（无昵称锚点时无法
- *       确定归属玩家）只记录不改写，由调用方记日志。</li>
+ *   <li>R3 独立错名检测：正文中出现的、不在本场 roster 内的已知车名（无昵称锚点/有歧义时
+ *       无法确定归属玩家）只记录不改写，由调用方记日志——fail closed，不猜测。</li>
  * </ul>
  * 纯函数、确定性：同样的输入必然产出同样的输出，不改 AI 调用、不增加成本。</p>
  */
@@ -201,6 +204,9 @@ public final class TankNameCorrector {
                 pairedTankByStart.putIfAbsent(paired.start, span.canonical);
             }
         }
+        // Pass 1（文档级）：昵称锚定已证明的「错名 canonical -> roster canonical」唯一映射
+        final Map<String, String> propagatedByCanonicalLower =
+                buildPropagationMap(spans, pairedTankByStart, rosterTanksLower);
         final StringBuilder out = new StringBuilder(text);
         final List<Replacement> replacements = new ArrayList<>();
         // 应用替换（从后往前，避免位移）
@@ -221,6 +227,13 @@ public final class TankNameCorrector {
                 }
                 continue;
             }
+            // Pass 2（文档级）：全文已证明该 canonical -> 唯一 roster 车 → 传播到 standalone 提及
+            final String propagated = propagatedByCanonicalLower.get(lower(span.canonical));
+            if (propagated != null) {
+                out.replace(span.start, span.end, propagated);
+                replacements.add(new Replacement(span.text, propagated, "PROPAGATED"));
+                continue;
+            }
             if (ALIAS_KEYS_LOWER.contains(lower(span.text))) {
                 out.replace(span.start, span.end, span.canonical);
                 replacements.add(new Replacement(span.text, span.canonical, "NORMALIZED"));
@@ -238,6 +251,40 @@ public final class TankNameCorrector {
             }
         }
         return new Result(out.toString(), List.copyOf(replacements));
+    }
+
+    /**
+     * Pass 1：收集昵称锚定已证明的「错名 canonical -> roster canonical」确定性映射。
+     * <p>fail closed 规则：
+     * <ul>
+     *   <li>只收集 source canonical 不在本场 roster 的配对——若 source 本身在 roster，
+     *       standalone 提及可能是那辆真车，不得全局改写（仅该锚点处按 R1 局部纠正）；</li>
+     *   <li>同一 source 被多个锚点指向不同 roster 车 → 冲突，该 source 不进传播表，
+     *       standalone 保持 R2/R3 行为（NORMALIZED / DETECTED），不猜测。</li>
+     * </ul>
+     * 与出现顺序无关：全文锚点先收集完，再统一应用到 standalone（Pass 2）。</p>
+     */
+    private static Map<String, String> buildPropagationMap(final List<Span> spans,
+                                                           final Map<Integer, String> pairedTankByStart,
+                                                           final Set<String> rosterTanksLower) {
+        final Map<String, String> map = new HashMap<>();
+        final Set<String> conflicted = new HashSet<>();
+        for (final Span span : spans) {
+            if (span.nickname || !pairedTankByStart.containsKey(span.start)) {
+                continue;
+            }
+            final String sourceLower = lower(span.canonical);
+            if (rosterTanksLower.contains(sourceLower) || conflicted.contains(sourceLower)) {
+                continue; // source 本身在 roster，或已判冲突：standalone 可能是真车/不猜，均不传播
+            }
+            final String target = pairedTankByStart.get(span.start);
+            final String existing = map.putIfAbsent(sourceLower, target);
+            if (existing != null && !existing.equalsIgnoreCase(target)) {
+                map.remove(sourceLower);
+                conflicted.add(sourceLower); // 冲突永久封禁：后续同源锚点不得重新入表
+            }
+        }
+        return map;
     }
 
     /** R1 配对：返回与该昵称配对的坦克 span；不存在返回 null。 */
