@@ -48,9 +48,11 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
   `POSITION_REPORTED`/`POSITION_STALE`，伤害/击毁身份经 `TeamEntityMapper` 实体映射解析，
   无法可靠解析则不输出；`POSITION_REPORTED/STALE` 只表达服务器位置流覆盖变化，不是点亮）。
   - **位置上报区间口径（2026-08-15 修复）**：`positionIntervals` 按 type-10 gap>5s 分段聚类；
-    EntityLeave(type-4) 只表示实体离开/停止存在、不代表阵亡——leave 只截断落在其时间范围内的当前段，
-    同一实体灭点后再上报产生的新区间必须保留（此前 leave 早于末段起点仍截断，产出倒置区间、
-    前端 `covered` 永假、车标一直淡化；`sameEntityLeaveThenReReportKeepsLaterInterval` 回归）。
+    EntityLeave(type-4) 只表示实体离开/停止存在，不代表阵亡，也不代表点亮/失察——每一次 leave 都是
+    coverage 的 hard segment boundary：leave 强制关闭当前区间，leave 后第一条 position（无论 gap 大小）
+    开启新区间；同一实体位置流中断后重新上报的新区间必须保留（此前 leave 被当作单点截断，
+    重新上报 gap ≤ 5s 时会被吞掉，前端 `covered` 永假、车标一直淡化；
+    `MapOverviewBuilderPositionIntervalsTest` 回归）。
   - **方向契约（2026-08-13 门禁 B 破解）**：`PlaybackVehicle.directionSamples`（时间升序，
     约 1s 降采样 + 方向变化 ≥10° 保点）：`hullYawDeg` 来自 type-10 yaw（弧度→度）；
     `turretRelativeYawDeg` 来自 type-7 propId=2（u16 LE：`raw*360/65536-180`，[-180,180)，

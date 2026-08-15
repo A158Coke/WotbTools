@@ -4,6 +4,7 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.TeamEntityMapper;
 import com.wotb.core.processing.TeamEntityMapping;
+import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
@@ -17,9 +18,10 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** ObservedMaxHp：sentinel（0xFFFD=65533 / 0xFFFF=65535）绝不得污染实测最大血量。 */
+/** ObservedMaxHp：sentinel（0xFFFD=65533 / 0xFFFF=65535）绝不得污染实测最大血量；entry HP provenance。 */
 class ObservedMaxHpTest {
 
     private static PlayerResult player(final long accountId, final int team, final long tankId) {
@@ -75,11 +77,50 @@ class ObservedMaxHpTest {
         // max(2000 观测, 3400 tankopedia base) = 3400；绝不可能是 65533/65535
         assertEquals(3400, battle.players.getFirst().observedMaxHp);
         assertTrue(battle.players.getFirst().observedMaxHp < 0xFF00);
+        // 样本 2000 < base 3400 且无受击前证明 → 进场满血无法证明 → BASE_FALLBACK，entryHp=null
+        assertEquals(EntryHpSource.BASE_FALLBACK, battle.players.getFirst().entryHpSource);
+        assertNull(battle.players.getFirst().entryHp);
     }
 
     @Test
     void resolveFallsBackToTankopediaBaseWithoutObservation() {
         assertEquals(3400, ObservedMaxHp.resolve(null, 29985L));
         assertEquals(3400, ObservedMaxHp.resolve(2000, 29985L)); // max(观测, base)
+    }
+
+    @Test
+    void preFirstDamageSampleAtOrAboveBaseProvesEntryExact() {
+        // 首个 positive 样本 3600（> base 3400，含装备加成）严格早于首次受击 @20s
+        // → 受击前满血被证明 → OBSERVED_EXACT，entryHp=3600
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(5f, null), 8,
+                DecodeConfidence.EXACT, 10, 1001L));
+        events.add(new HealthChangedEvent(2, new ReplayTimestamp(10f, null), 7,
+                DecodeConfidence.EXACT, 10, 3600, null, true));
+        events.add(new DamageEvent(3, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 20, 10, null, null, 400, false));
+        final Battle battle = battle();
+        ObservedMaxHp.populate(battle, events,
+                TeamEntityMapper.resolve(battle, recon(events)));
+        final PlayerResult p = battle.players.getFirst();
+        assertEquals(EntryHpSource.OBSERVED_EXACT, p.entryHpSource);
+        assertEquals(3600, p.entryHp);
+    }
+
+    @Test
+    void sampleBelowBaseBeforeFirstDamageIsNotProvenEntry() {
+        // 首个样本 3000 < base 3400（已掉血）且早于首次受击 → 不得证明为进场满血
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(5f, null), 8,
+                DecodeConfidence.EXACT, 10, 1001L));
+        events.add(new HealthChangedEvent(2, new ReplayTimestamp(10f, null), 7,
+                DecodeConfidence.EXACT, 10, 3000, null, true));
+        events.add(new DamageEvent(3, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 20, 10, null, null, 400, false));
+        final Battle battle = battle();
+        ObservedMaxHp.populate(battle, events,
+                TeamEntityMapper.resolve(battle, recon(events)));
+        assertEquals(EntryHpSource.BASE_FALLBACK, battle.players.getFirst().entryHpSource);
+        assertNull(battle.players.getFirst().entryHp);
     }
 }

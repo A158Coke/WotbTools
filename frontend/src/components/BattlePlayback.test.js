@@ -254,10 +254,10 @@ describe('BattlePlayback', () => {
     expect(enemy.classes()).not.toContain('pb-last-known')
   })
 
-  it('re-reported enemies restore opacity in the second coverage interval (spot → unspot → re-spot)', async () => {
+  it('re-reported enemies restore opacity in the second coverage interval (position coverage gap → resume)', async () => {
     stubRaf()
     const overview = makeOverview()
-    // EnemyA：10–20 覆盖 → 灭点（gap）→ 40–60 再覆盖（两段区间）；t=50 在第二段区间内
+    // EnemyA：10–20 覆盖 → 位置流中断（gap）→ 40–60 再覆盖（两段区间）；t=50 在第二段区间内
     overview.playback.vehicles[1].positionIntervals = [
       { startSec: 10, endSec: 20 },
       { startSec: 40, endSec: 60 }

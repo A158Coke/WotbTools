@@ -5,8 +5,8 @@
 ## [Unreleased]
 
 ### Changed
-- **AI 复盘提示词去重与契约（prompts 重构）**：AiPromptLibrary 支持 {{key}} 占位包含（递归展开、循环/超深 fail loud），player×3 + team/single 中逐字重复的五块公共规则抽到 prompts/common/{tank-noun,language,damage-semantics,hp-loss,evidence-logic}.zh.md 复用，展开后提示词与重构前字节一致；修复两处 md 与 Java 常量漂移（COMMON_EVIDENCE_LOGIC_RULE 机器标签清单缺「簇/候选/规则候选」、team 身后输出规则 **禁止** vs <b>禁止</b>）——此前 EN/RU .replace 锚点静默失效，EN/RU 复盘会残留中文规则段；新增 PromptRuleContractTest 强制「展开后 ZH 片段与常量逐字一致 + EN/RU 无中文残留」契约。
-- **AI 复盘血量口径升级（装备/物资加成）**：掉血窗口严重度分母由 tankopedia 基础 maxHp 改为优先回放实测进场血量（`observedMaxHp`，含装备/物资加成；无实测回退基础值）——`DamageWindowClusterer.damageVsBaseMaxHpPct` 更名为 `damageVsEntryMaxHpPct`，短窗高额伤害窗口阈值（≥75% 进场满血量）随之改变；Call #1 赛前预测单车血量与双方总血量（`PreBattlePromptBuilder`）同样改为实测优先；`HP_LOSS_TIME_RULE`（ZH/EN/RU）与 4 个 prompts/*.zh.md「短窗高额伤害窗口」条目措辞同步为「进场满血量」口径。
+- **AI 复盘提示词去重与契约（prompts 重构）**：AiPromptLibrary 支持 {{key}} 占位包含（递归展开、循环包含 fail loud），player×3 + team/single 中逐字重复的五块公共规则抽到 prompts/common/{tank-noun,language,damage-semantics,hp-loss,evidence-logic}.zh.md 复用，展开后提示词与重构前字节一致；修复两处 md 与 Java 常量漂移（COMMON_EVIDENCE_LOGIC_RULE 机器标签清单缺「簇/候选/规则候选」、team 身后输出规则 **禁止** vs <b>禁止</b>）——此前 EN/RU .replace 锚点静默失效，EN/RU 复盘会残留中文规则段；新增 PromptRuleContractTest 强制「展开后 ZH 片段与常量逐字一致 + EN/RU 无中文残留」契约。
+- **AI 复盘血量口径：进场满血 provenance + fail closed**：真实回放 probe（EntryHpProbeTest，7 样本）证伪「整场 max current HP = 初始满血」——绝大多数车辆首个 positive 样本与首次受击同刻且低于 tankopedia base。新增 EntryHpSource（OBSERVED_EXACT / BASE_FALLBACK / UNKNOWN）与 PlayerResult.entryHp/entryHpSource：仅「严格早于首次受击且 ≥ base 的样本」证明进场满血；掉血窗口分母 damageVsEntryMaxHpPct 只允许已证明进场满血或 tankopedia base（BASE baseline），短窗高额伤害窗口判定 fail closed（base baseline 不判 critical，避免 1900 / 观测2500 / 真实2600 误报）；Call #1 赛前血量同样只输出已证明进场满血或 base（战斗中观测的 currentHp 不得冒充赛前进场满血）；HP_LOSS_TIME_RULE（ZH/EN/RU）与 prompts/common/hp-loss.zh.md 措辞同步；observedMaxHp 保留为「观测最大 current（下界 base）」供总血量条/血量优势证据。
 - **文档信息架构归一化重构（docs IA）**：docs/ 从平铺 16 个 md 重构为 architecture / features / research / operations / reference 分层；新建 `docs/README.md` 索引与 `docs/ROADMAP.md`，删除 TODO.md / rating-progress.md（完成项归 CHANGELOG，未完成工程项转 GitHub Issues #78–#81，产品方向转 ROADMAP）；DEVELOPER_GUIDE 拆分为开发入口 + 专题文档（AI 复盘 / 回放重建 / 地图鸟瞰 / 评分 / 排行榜）；research/replay 逆向文档 verdict 置顶、状态词统一 PROVEN/PARTIAL/UNKNOWN/SUPERSEDED/DEPRECATED；全仓库旧路径链接与代码注释同步修正。纯文档变更，不影响代码与构建。
 - **Agent 指令体系分层（AGENTS.md hierarchy）**：新增根 `AGENTS.md`（自动发现入口）与 8 个按作用域
   继承的目录级 `AGENTS.md`（java/frontend/common/deploy/.github/两个 keycloak provider/map-semanticizer），
@@ -16,7 +16,7 @@
   DEVELOPER_GUIDE 文档地图补充层级说明。纯文档变更，不影响代码与构建。
 
 ### Fixed
-- **战局回放敌方车标「再点亮不恢复」根因修复（后端区间生产）**：MapOverviewBuilder.positionIntervals 的 EntityLeave(type-4) 截断逻辑过宽——leave 早于末段起点（同一实体灭点后再上报）时仍截断，产出倒置区间 [70,60]，前端 positionCoveredAt 永假、车标一直淡化；改为仅当 leave 落在当前段时间范围内才截断。新增 sameEntityLeaveThenReReportKeepsLaterInterval 复现测试 + 前端「两段区间再点亮恢复不透明」回归；此前 2.11.11（positionAt 精确采样点）/ 2.11.12（lastKnown=!covered）均为前端修复，本修复补齐后端。
+- **战局回放敌方车标「位置流中断后重新上报不恢复」根因修复（后端区间生产）**：MapOverviewBuilder.positionIntervals 把 EntityLeave(type-4) 当作单个硬截断点导致漏洞——同一实体位置流中断后重新上报（gap ≤ 5s）会被 gap 聚类吞掉、整个 run 被 leave 截断，前端 positionCoveredAt 永假、车标一直淡化；改为「每次 EntityLeave 都是 coverage 的 hard segment boundary」——leave 强制关段、leave 后第一条 position 无论 gap 大小都开启新 interval，deathSec 最后 clamp。新增 MapOverviewBuilderPositionIntervalsTest（2s/10s 重新上报、多次 leave 周期、leave 早于首点、无 leave gap 分段、deathSec 前/后重新上报共 7 用例）+ 前端「两段区间重新上报恢复不透明」回归；此前 2.11.11（positionAt 精确采样点）/ 2.11.12（lastKnown=!covered）均为前端修复，本修复补齐后端。
 - **AI 复盘坦克名幻觉（Kranvagn 被写成「埃米尔1951」）**：生成侧 LLM 幻觉把玩家坦克名写成
   中文译名/相似车（EMIL 1951 与 Kranvagn 共用原型底盘）且保持全文；证据/结算层无 bug（tankId →
   tankopedia 权威映射未变）。修复：① wotb-core 新增确定性后校验 TankNameCorrector——R1 昵称

@@ -4,6 +4,7 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.evidence.EntryHpSource;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
@@ -201,35 +202,29 @@ class DamageWindowClustererTest {
     }
 
     @Test
-    void shortWindowHighDamageIsFlaggedRelativeToEntryMaxHp() {
-        // Kranvagn（4481）tankopedia 基础满血量 2400、无实测血量：5s 窗口伤害 1900（79%）→ 短窗高额伤害窗口
+    void unprovenEntryHpUsesBaseBaselineAndFailsClosedCritical() {
+        // Kranvagn（4481）tankopedia base 2400、无受击前样本证明进场满血（BASE_FALLBACK）：
+        // pct 按 base 输出（79%），但 criticalWindow fail closed（base 只是下界，真实 entry 可能更高）。
         final Battle battle = new Battle();
         battle.players = List.of(player(VICTIM, 1, "Victim"));
-        final List<DamageWindowClusterer.DamageWindow> critical =
+        final List<DamageWindowClusterer.DamageWindow> windows =
                 DamageWindowClusterer.receivedWindows(battle, recon(30f,
                         hit(35f, 2L, VICTIM, 1000),
                         hit(40f, 2L, VICTIM, 900)), VICTIM);
-        assertEquals(1, critical.size());
-        assertEquals(79, Math.round(critical.getFirst().damageVsEntryMaxHpPct()));
-        assertTrue(critical.getFirst().criticalWindow());
-
-        // 伤害 ≥ 进场满血量（100%）：只标短窗高额伤害窗口，不判定「被秒杀」——
-        // 数据无法证明窗口起始满血、窗口内阵亡与装备加成后的实际最大血量
-        final List<DamageWindowClusterer.DamageWindow> full =
-                DamageWindowClusterer.receivedWindows(battle, recon(30f,
-                        hit(35f, 2L, VICTIM, 1400),
-                        hit(40f, 3L, VICTIM, 1000)), VICTIM);
-        assertEquals(100, Math.round(full.getFirst().damageVsEntryMaxHpPct()));
-        assertTrue(full.getFirst().criticalWindow());
+        assertEquals(1, windows.size());
+        assertEquals(79, Math.round(windows.getFirst().damageVsEntryMaxHpPct()));
+        assertFalse(windows.getFirst().entryHpProven(), "未证明进场满血 → base baseline");
+        assertFalse(windows.getFirst().criticalWindow(), "base baseline 不得判定短窗高额伤害窗口（fail closed）");
     }
 
     @Test
-    void observedMaxHpWithEquipmentBonusOverridesBaseDenominator() {
-        // 同一 5s 窗口伤害 1900：tankopedia 基础 2400 → 79%（会误标）；
-        // observedMaxHp=2600（含装备/物资加成）→ 73% < 75% → 不得标短窗高额伤害窗口
+    void provenEntryHpWithEquipmentBonusUsesEntryDenominator() {
+        // 进场满血被证明（OBSERVED_EXACT，含装备/物资加成 entry=2600）：
+        // 同一 5s 窗口伤害 1900 → 1900/2600 = 73% < 75% → 不得标短窗高额伤害窗口
         final Battle battle = new Battle();
         final PlayerResult victim = player(VICTIM, 1, "Victim");
-        victim.observedMaxHp = 2600;
+        victim.entryHpSource = EntryHpSource.OBSERVED_EXACT;
+        victim.entryHp = 2600;
         battle.players = List.of(victim);
         final List<DamageWindowClusterer.DamageWindow> windows =
                 DamageWindowClusterer.receivedWindows(battle, recon(30f,
@@ -237,9 +232,30 @@ class DamageWindowClustererTest {
                         hit(40f, 2L, VICTIM, 900)), VICTIM);
         assertEquals(1, windows.size());
         assertEquals(73, Math.round(windows.getFirst().damageVsEntryMaxHpPct()),
-                "分母必须用回放实测进场血量（含装备/物资加成），而不是基础满血量");
+                "分母必须用已证明的进场满血量（含装备/物资加成），而不是 base");
+        assertTrue(windows.getFirst().entryHpProven());
         assertFalse(windows.getFirst().criticalWindow(),
                 "相对进场满血量不足 75% 时不得误标短窗高额伤害窗口");
+    }
+
+    @Test
+    void unprovenCurrentSampleNeverCreatesFalseCriticalWindow() {
+        // 反例（用户回归）：tankopedia base=2400、真实进场满血=2600、
+        // 整场观测最大 currentHp=2500（已受伤，未证明为进场满血）。
+        // 直接 1900/2500=76% 会误报 critical；必须 fail closed（按 base baseline 79%，不判 critical）。
+        final Battle battle = new Battle();
+        final PlayerResult victim = player(VICTIM, 1, "Victim");
+        victim.observedMaxHp = 2500; // 只是观测最大 current，无受击前证明 → 不得当 entry
+        battle.players = List.of(victim);
+        final List<DamageWindowClusterer.DamageWindow> windows =
+                DamageWindowClusterer.receivedWindows(battle, recon(30f,
+                        hit(35f, 2L, VICTIM, 1000),
+                        hit(40f, 2L, VICTIM, 900)), VICTIM);
+        assertEquals(1, windows.size());
+        assertEquals(79, Math.round(windows.getFirst().damageVsEntryMaxHpPct()),
+                "未证明进场满血 → 分母必须是 tankopedia base，不得用观测最大 current");
+        assertFalse(windows.getFirst().criticalWindow(),
+                "不得用可能低于真实进场满血的 current sample 制造 criticalWindow");
     }
 
     @Test

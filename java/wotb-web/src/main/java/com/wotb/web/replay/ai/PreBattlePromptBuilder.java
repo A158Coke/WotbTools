@@ -3,6 +3,7 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.ReplayDisplayNames;
+import com.wotb.core.replay.evidence.EntryHpSource;
 import com.wotb.core.replay.evidence.TankTacticalProfile;
 import com.wotb.core.replay.evidence.TankTacticalProfileRegistry;
 import com.wotb.core.replay.map.MapTacticalSemantics;
@@ -42,7 +43,7 @@ public final class PreBattlePromptBuilder {
         appendTeam(sb, battle, 1, profiles);
         sb.append("\n=== TEAM_B（队伍2）阵容 ===\n");
         appendTeam(sb, battle, 2, profiles);
-        sb.append("\n=== 双方总血量（回放实测进场血量求和，含装备/物资加成；无实测单车回退 tankopedia 基础值） ===\n");
+        sb.append("\n=== 双方总血量（tankopedia base 求和；仅当进场满血被回放证明时改用实测含加成值） ===\n");
         sb.append("TEAM_A 总血量=").append(totalHp(battle, 1)).append('\n');
         sb.append("TEAM_B 总血量=").append(totalHp(battle, 2)).append('\n');
         sb.append("\n请按输出契约给出 JSON。");
@@ -291,7 +292,7 @@ public final class PreBattlePromptBuilder {
         return max;
     }
 
-    /** 双方总血量：优先回放实测进场血量求和（含装备/物资加成），无实测单车回退 tankopedia 基础值；均无按 0 计。 */
+    /** 双方总血量：仅已证明的进场满血（OBSERVED_EXACT）用实测值，否则 tankopedia base 求和；均无按 0 计。 */
     private static int totalHp(final Battle battle, final int team) {
         if (battle.players == null) {
             return 0;
@@ -301,23 +302,34 @@ public final class PreBattlePromptBuilder {
             if (p.team != team) {
                 continue;
             }
-            final String hp = tankEntryMaxHp(p);
-            if (!hp.isBlank()) {
-                try {
-                    total += Integer.parseInt(hp);
-                } catch (final NumberFormatException ignored) {
-                    // 非数字血量忽略
-                }
+            final Integer hp = tankEntryMaxHpValue(p);
+            if (hp != null && hp > 0) {
+                total += hp;
             }
         }
         return total;
     }
 
-    /** 单车进场满血量：优先回放实测（observedMaxHp，含装备/物资加成），无实测回退 tankopedia 基础值；均未知 → 空串。 */
+    /**
+     * 单车进场满血量（含 provenance 标注）：仅 OBSERVED_EXACT 输出已证明的进场满血
+     * （回放受击前样本证明、含装备/物资加成）；否则输出 tankopedia base 并标注 BASE baseline——
+     * 战斗中观测到的 currentHp 不得被包装为赛前进场满血（真实回放 probe 已证伪）。
+     */
     private static String tankEntryMaxHp(final PlayerResult p) {
-        if (p.observedMaxHp != null && p.observedMaxHp > 0) {
-            return String.valueOf(p.observedMaxHp);
+        if (p.entryHpSource == EntryHpSource.OBSERVED_EXACT
+                && p.entryHp != null && p.entryHp > 0) {
+            return p.entryHp + "（回放实测进场满血）";
         }
-        return ReplayDisplayNames.tankMaxHp(p.tankId);
+        final String base = ReplayDisplayNames.tankMaxHp(p.tankId);
+        return base.isBlank() ? "未知" : base + "（tankopedia base）";
+    }
+
+    /** 满血量数值（无标注）：OBSERVED_EXACT → entryHp；否则 tankopedia base；均无 → null。 */
+    private static Integer tankEntryMaxHpValue(final PlayerResult p) {
+        if (p.entryHpSource == EntryHpSource.OBSERVED_EXACT
+                && p.entryHp != null && p.entryHp > 0) {
+            return p.entryHp;
+        }
+        return ReplayDisplayNames.tankMaxHpValue(p.tankId);
     }
 }

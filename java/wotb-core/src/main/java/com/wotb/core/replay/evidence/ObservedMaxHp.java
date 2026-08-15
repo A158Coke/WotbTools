@@ -5,28 +5,39 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.TeamEntityIdentity;
 import com.wotb.core.processing.TeamEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
+import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 回放实测最大血量（type-7 propId=3，u16 LE，含装备/物资加成）。
- * <p>血量事实权威口径：回放事件流里的 {@code HealthChangedEvent.currentHealth}
- * 是客户端同步的「当前血量」，含装备与物资加成；阵亡到 0、存活不到 0、受击时同步。
- * 因此每个账号在事件流里观测到的最大 hp 即该车本场初始满血量（只增不减语义下）。
- * 兜底：观测缺失（敌方从未点亮/低置信度）时回退 tankopedia base，
- * 最终值取 {@code max(观测, tankopedia base)}——装备加成只会提高上限，base 是下界。</p>
+ * 回放实测血量（type-7 propId=3，u16 LE，含装备/物资加成）与进场满血量 provenance。
+ *
+ * <p>propId=3 正数 = 当前真实 HP（含装备/物资加成；阵亡到 0、存活不到 0）。但当前代码
+ * <b>不证明</b>每个玩家一定在首次受击前广播一次完整初始满血——真实回放 probe
+ * （EntryHpProbeTest）显示：绝大多数车辆的 positive 样本要么与首次受击同刻（受击同步、
+ * 已掉血）、要么低于 tankopedia base，甚至从未受击的车辆首个样本也低于 base。
+ * 因此「整场 max current HP = 初始满血」不成立。</p>
+ *
+ * <p>契约：{@link #populate} 对每名玩家产出 {@link PlayerResult#entryHpSource} /
+ * {@link PlayerResult#entryHp}：只有「严格早于首次受击（或从未受击）的 positive 样本
+ * ≥ tankopedia base」才判定 {@link EntryHpSource#OBSERVED_EXACT}；否则
+ * {@link EntryHpSource#BASE_FALLBACK}（只允许 tankopedia base 作 baseline，base 是
+ * entry 的下界）；无 base 则 {@link EntryHpSource#UNKNOWN}。{@link PlayerResult#observedMaxHp}
+ * 保留为「整场观测最大 current HP」事实（供总血量条/血量优势证据），不得当 entry full。</p>
  */
 public final class ObservedMaxHp {
 
     private ObservedMaxHp() {
     }
 
-    /** 按账号统计回放实测最大血量（EXACT 置信度且 hp>0；re-entry 跨实体合并取 max）。 */
+    /** 按账号统计回放实测最大血量（EXACT 置信度且 hp>0；re-entry 跨实体合并取 max）。
+     * 语义 = 整场观测到的最大 current HP，不是进场满血。 */
     public static Map<Long, Integer> byAccount(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping
@@ -54,7 +65,31 @@ public final class ObservedMaxHp {
         return observed;
     }
 
-    /** 解析该玩家血量：max(回放实测, tankopedia base)；均无 → null（调用方回退 tankopedia 语义）。 */
+    /** 幂等回填：观测最大 current HP + 进场满血量 provenance 写入 battle.players（无重建时跳过）。 */
+    public static void populate(
+            final Battle battle,
+            final List<ReplayEvent> events,
+            final TeamEntityMapping mapping
+    ) {
+        if (battle == null || battle.players == null || events == null || mapping == null) {
+            return;
+        }
+        final Map<Long, Integer> observed = byAccount(events, mapping);
+        final Map<Long, List<double[]>> hpTimeline = hpTimelineByAccount(events, mapping);
+        final Map<Long, Double> firstDamageSec = firstDamageSecByAccount(events, mapping);
+        for (final PlayerResult player : battle.players) {
+            if (player == null) {
+                continue;
+            }
+            // observedMaxHp 保留「观测最大 current HP，下界 tankopedia base」语义：
+            // 供总血量条/血量优势证据保守使用（≥ base，不得低于基础值）。
+            player.observedMaxHp = resolve(observed.get(player.accountId), player.tankId);
+            resolveEntryHp(player, hpTimeline.get(player.accountId),
+                    firstDamageSec.get(player.accountId));
+        }
+    }
+
+    /** 观测最大血量解析：max(回放实测, tankopedia base)；均无 → null（调用方回退 tankopedia 语义）。 */
     public static Integer resolve(final Integer observed, final long tankId) {
         final Integer base = ReplayDisplayNames.tankMaxHpValue(tankId);
         if (observed == null) {
@@ -66,21 +101,92 @@ public final class ObservedMaxHp {
         return Math.max(observed, base);
     }
 
-    /** 幂等回填：把解析后的本场血量写入 battle.players 的 {@code observedMaxHp}（无重建时跳过）。 */
-    public static void populate(
-            final Battle battle,
+    /**
+     * 判定进场满血量 provenance 并回填 player.entryHpSource / player.entryHp。
+     * 当前 HP 单调非增（无治疗）：首个 positive 样本即整场最大值。
+     */
+    private static void resolveEntryHp(final PlayerResult player,
+                                       final List<double[]> samples,
+                                       final Double firstDamageSec) {
+        final Integer base = ReplayDisplayNames.tankMaxHpValue(player.tankId);
+        player.entryHpSource = null;
+        player.entryHp = null;
+        if (samples == null || samples.isEmpty()) {
+            player.entryHpSource = base != null ? EntryHpSource.BASE_FALLBACK : EntryHpSource.UNKNOWN;
+            return;
+        }
+        final double firstSampleTime = samples.get(0)[0];
+        final int firstSampleHp = (int) samples.get(0)[1];
+        // 受击前（或从未受击）的首个样本 = 当时满血；且 ≥ tankopedia base 才可证明
+        // 为 initial full（base 是 entry 下界，低于 base 说明已掉血或非初始）。
+        final boolean beforeFirstDamage = firstDamageSec == null
+                || firstSampleTime < firstDamageSec - 1e-6;
+        if (beforeFirstDamage && base != null && firstSampleHp >= base) {
+            player.entryHpSource = EntryHpSource.OBSERVED_EXACT;
+            player.entryHp = firstSampleHp;
+            return;
+        }
+        player.entryHpSource = base != null ? EntryHpSource.BASE_FALLBACK : EntryHpSource.UNKNOWN;
+    }
+
+    /** 每账号 positive HP 时间线（battle-relative 秒升序；EXACT & plausible；re-entry 合并）。 */
+    private static Map<Long, List<double[]>> hpTimelineByAccount(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping
     ) {
-        if (battle == null || battle.players == null || events == null || mapping == null) {
-            return;
+        final Map<Long, List<double[]>> out = new HashMap<>();
+        if (events == null || mapping == null) {
+            return out;
         }
-        final Map<Long, Integer> observed = byAccount(events, mapping);
-        for (final PlayerResult player : battle.players) {
-            if (player == null) {
+        for (final ReplayEvent event : events) {
+            if (!(event instanceof HealthChangedEvent hp)
+                    || hp.confidence() != DecodeConfidence.EXACT
+                    || hp.currentHealth() == null
+                    || !HealthChangedEvent.isPlausibleHp(hp.currentHealth())) {
                 continue;
             }
-            player.observedMaxHp = resolve(observed.get(player.accountId), player.tankId);
+            final TeamEntityIdentity identity = mapping.identity(hp.entityId());
+            if (identity == null || identity.accountId() <= 0) {
+                continue;
+            }
+            out.computeIfAbsent(identity.accountId(), k -> new ArrayList<>())
+                    .add(new double[]{relativeSec(event), hp.currentHealth()});
         }
+        out.values().forEach(list -> list.sort(java.util.Comparator.comparingDouble(a -> a[0])));
+        return out;
+    }
+
+    /** 每账号首次受击时间（battle-relative 秒；无受击事件 → null）。 */
+    private static Map<Long, Double> firstDamageSecByAccount(
+            final List<ReplayEvent> events,
+            final TeamEntityMapping mapping
+    ) {
+        final Map<Long, Double> out = new HashMap<>();
+        if (events == null || mapping == null) {
+            return out;
+        }
+        for (final ReplayEvent event : events) {
+            if (!(event instanceof DamageEvent damage) || damage.damage() <= 0) {
+                continue;
+            }
+            final TeamEntityIdentity identity = mapping.identity(damage.victimEid());
+            if (identity == null || identity.accountId() <= 0) {
+                continue;
+            }
+            final double t = relativeSec(damage);
+            out.merge(identity.accountId(), t, Math::min);
+        }
+        return out;
+    }
+
+    private static double relativeSec(final ReplayEvent e) {
+        if (e.timestamp() == null) {
+            return 0;
+        }
+        final Float battle = e.timestamp().battleClockSec();
+        if (battle != null) {
+            return battle;
+        }
+        return e.timestamp().rawClockSec();
     }
 }
