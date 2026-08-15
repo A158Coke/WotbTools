@@ -15,6 +15,7 @@ import com.wotb.core.replay.feature.MapCoordinateProfile;
 import com.wotb.core.replay.feature.MapCoordinateResolution;
 import com.wotb.core.replay.feature.MapRegionResolver;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -61,6 +62,16 @@ final class FormationDepthEvidence {
             return "";
         }
         final Float battleStart = recon.battleStartRawClockSec();
+        // 权威死亡边界（PlayerResult 结算）：knownDeathSec > 0 的车辆，t 超过该时刻的位置样本不进入阵型/控制权
+        final Map<Long, PlayerResult> playersByAccount = new LinkedHashMap<>();
+        if (battle.players != null) {
+            for (final PlayerResult p : battle.players) {
+                if (p != null) {
+                    playersByAccount.put(p.accountId, p);
+                }
+            }
+        }
+
         // 每账号位置样本（双方）+ 队伍；t/x/z 三元组
         final Map<Long, List<double[]>> tracks = new LinkedHashMap<>();
         final Map<Long, Integer> teamByAccount = new LinkedHashMap<>();
@@ -78,6 +89,11 @@ final class FormationDepthEvidence {
             final double t = relativeSec(event, battleStart);
             if (!Double.isFinite(t) || t < 0) {
                 continue;
+            }
+            final PlayerResult player = playersByAccount.get(identity.accountId());
+            final Double deathSec = player == null ? null : knownDeathSec(player);
+            if (deathSec != null && t > deathSec + 1e-6) {
+                continue; // 阵亡后的服务器位置流残留不得进入阵型/控制权
             }
             tracks.computeIfAbsent(identity.accountId(), k -> new ArrayList<>())
                     .add(new double[]{t, pos.x(), pos.z()});
@@ -108,7 +124,7 @@ final class FormationDepthEvidence {
 
         final StringBuilder sb = new StringBuilder();
         for (final PhaseRange phase : phases) {
-            sb.append(renderPhase(phase, tracks, teamByAccount, perspectiveTeam, mapCode, accountProfiles));
+            sb.append(renderPhase(phase, tracks, teamByAccount, perspectiveTeam, mapCode, playersByAccount, accountProfiles));
         }
         return sb.isEmpty() ? "" : "\n=== FORMATION_DEPTH（阵型深度·确定性） ===\n" + sb;
     }
@@ -120,6 +136,7 @@ final class FormationDepthEvidence {
             final Map<Long, Integer> teamByAccount,
             final int perspectiveTeam,
             final String mapCode,
+            final Map<Long, PlayerResult> playersByAccount,
             final Map<Long, TankTacticalProfile> profiles
     ) {
         // 阶段内每账号平均位置 + 九宫格样本计数
@@ -149,6 +166,35 @@ final class FormationDepthEvidence {
                 meanByAccount.put(entry.getKey(), new double[]{sx / n, sz / n});
             }
         }
+        // 位置参考完整性（fail-closed 门禁）：本阶段存活的双方成员中拥有位置参考（meanByAccount）的计数
+        final int ownTeam = perspectiveTeam;
+        final int enemyTeam = 3 - ownTeam;
+        int ownRefCount = 0;
+        int enemyRefCount = 0;
+        int ownAliveCount = 0;
+        int enemyAliveCount = 0;
+        for (final Map.Entry<Long, PlayerResult> entry : playersByAccount.entrySet()) {
+            final PlayerResult pl = entry.getValue();
+            if (pl == null || (pl.team != ownTeam && pl.team != enemyTeam)) {
+                continue;
+            }
+            if (!isAliveAt(playersByAccount, entry.getKey(), phase.end())) {
+                continue; // 本阶段已阵亡：不要求位置参考，也不计入 alive
+            }
+            final boolean hasRef = meanByAccount.containsKey(entry.getKey());
+            if (pl.team == ownTeam) {
+                ownAliveCount++;
+                if (hasRef) {
+                    ownRefCount++;
+                }
+            } else {
+                enemyAliveCount++;
+                if (hasRef) {
+                    enemyRefCount++;
+                }
+            }
+        }
+
         // 控制权：车辆阶段平均位置 → canonical（九宫格距离加权火力覆盖基准）
         final Map<Long, double[]> ownCanonical = new LinkedHashMap<>();
         final Map<Long, double[]> enemyCanonical = new LinkedHashMap<>();
@@ -257,12 +303,14 @@ final class FormationDepthEvidence {
                     sb.append("geometryFront=").append(geometryRef(depths, 0, 2)).append("\n");
                 }
 return sb.toString() + renderControl(ownRegionCount, enemyRegionCount,
-                ownCanonical, enemyCanonical, profiles, hasFront, mapCode);
+                ownCanonical, enemyCanonical, profiles, hasFront, mapCode,
+                ownRefCount, enemyRefCount, ownAliveCount, enemyAliveCount);
             }
         }
         sb.append(header);
 return sb.toString() + renderControl(ownRegionCount, enemyRegionCount,
-                ownCanonical, enemyCanonical, profiles, hasFront, mapCode);
+                ownCanonical, enemyCanonical, profiles, hasFront, mapCode,
+                ownRefCount, enemyRefCount, ownAliveCount, enemyAliveCount);
     }
 
     /** 账号展示 key：附 tank profile 标注（如 account:1234(HEAVY,armor=HIGH)）；UNKNOWN 只标未知。 */
@@ -313,10 +361,31 @@ return sb.toString() + renderControl(ownRegionCount, enemyRegionCount,
                     local = TankTacticalProfileRegistry.load();
                     profileRegistryInstance = local;
                 }
+
             }
         }
         return local;
     }
+
+    /** 权威死亡边界（秒）：结算存活或死亡时刻未知 → null（不猜）。复用 PlayerResultFormat 口径。 */
+    static Double knownDeathSec(final PlayerResult p) {
+        if (p == null || p.survived) {
+            return null;
+        }
+        final double sec = PlayerResultFormat.deathSec(p);
+        return sec > 0 ? sec : null;
+    }
+
+    /** 该账号在 t 时刻是否存活：死亡边界未知时视为存活（不猜）；已知且 t 超过边界 → 已阵亡。 */
+    static boolean isAliveAt(final Map<Long, PlayerResult> playersByAccount, final long accountId, final double t) {
+        final PlayerResult p = playersByAccount == null ? null : playersByAccount.get(accountId);
+        if (p == null) {
+            return true;
+        }
+        final Double deathSec = knownDeathSec(p);
+        return deathSec == null || t <= deathSec + 1e-6;
+    }
+
 
 
     /** 区域控制权：九宫格双方距离加权火力覆盖分（F=Σ fireWeight/(1+d/100)），1.2 倍阈值判 own/contested/enemy。
@@ -330,8 +399,28 @@ return sb.toString() + renderControl(ownRegionCount, enemyRegionCount,
             final Map<Long, double[]> enemyCanonical,
             final Map<Long, TankTacticalProfile> profiles,
             final boolean hasFront,
-            final String mapCode
+            final String mapCode,
+            final int ownRefCount,
+            final int enemyRefCount,
+            final int ownAliveCount,
+            final int enemyAliveCount
     ) {
+        final boolean ownRefComplete = ownRefCount >= ownAliveCount;
+        final boolean enemyRefComplete = enemyRefCount >= enemyAliveCount;
+        if (!ownRefComplete || !enemyRefComplete) {
+            // 位置参考完整性门禁：任一方存活车辆缺少位置参考时，禁止输出 own/enemy/contested 强结论
+            // （缺失的敌方车辆 ≠ 不存在，也不得隐式当作 firepower=0）；只保留本方位置存在纯事实。
+            final StringBuilder fail = new StringBuilder();
+            final List<String> presence = new ArrayList<>(own.keySet().stream()
+                    .sorted().map(r -> "GRID_REGION_" + r).toList());
+            fail.append("controlRegions=UNKNOWN（POSITION_COVERAGE_INSUFFICIENT：")
+                    .append("ownRef=").append(ownRefCount).append("/").append(ownAliveCount)
+                    .append(" enemyRef=").append(enemyRefCount).append("/").append(enemyAliveCount).append("）\n");
+            if (!presence.isEmpty()) {
+                fail.append("positionalPresence own=").append(String.join(",", presence)).append("\n");
+            }
+            return fail.toString();
+        }
         final java.util.Set<Integer> regions = new java.util.LinkedHashSet<>();
         regions.addAll(own.keySet());
         regions.addAll(enemy.keySet());

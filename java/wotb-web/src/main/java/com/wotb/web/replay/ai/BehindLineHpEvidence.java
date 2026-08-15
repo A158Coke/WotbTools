@@ -13,6 +13,7 @@ import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.evidence.TankTacticalProfile;
 import com.wotb.core.replay.evidence.TankTacticalProfileRegistry;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -96,6 +97,27 @@ final class BehindLineHpEvidence {
             return "";
         }
         final Float battleStart = recon.battleStartRawClockSec();
+        // 权威死亡边界（PlayerResult 结算）：knownDeathSec > 0 的车辆，其阵亡后的位置/攻击事件不进入证据
+        final Map<Long, PlayerResult> playersByAccount = new LinkedHashMap<>();
+        if (battle.players != null) {
+            for (final PlayerResult p : battle.players) {
+                if (p != null) {
+                    playersByAccount.put(p.accountId, p);
+                }
+            }
+        }
+        // 车辆战术画像（tankId → TankTacticalProfile，语义为主 + tankopedia 数值兜底佐证）
+        final Map<Long, TankTacticalProfile> profiles = new LinkedHashMap<>();
+        final TankTacticalProfileRegistry registry = FormationDepthEvidence.profileRegistry();
+        for (final PlayerResult p : battle.players) {
+            if (p == null) {
+                continue;
+            }
+            profiles.put(p.accountId, registry.profileFor(p.tankId, p.tankName,
+                    ReplayDisplayNames.tankClass(p.tankId), ReplayDisplayNames.tankTier(p.tankId)));
+        }
+
+
         final Map<Long, List<double[]>> tracks = new LinkedHashMap<>();
         final Map<Long, List<double[]>> hpSamples = new LinkedHashMap<>();
         final Map<Long, List<Double>> attacks = new LinkedHashMap<>();
@@ -113,6 +135,11 @@ final class BehindLineHpEvidence {
                 if (!Double.isFinite(t) || t < 0) {
                     continue;
                 }
+                final Double deathSec = FormationDepthEvidence.knownDeathSec(
+                        playersByAccount.get(identity.accountId()));
+                if (deathSec != null && t > deathSec + 1e-6) {
+                    continue; // 阵亡后的服务器位置流残留不得进入位置证据
+                }
                 tracks.computeIfAbsent(identity.accountId(), k -> new ArrayList<>())
                         .add(new double[]{t, pos.x(), pos.z()});
                 teamByAccount.putIfAbsent(identity.accountId(), identity.team());
@@ -121,8 +148,8 @@ final class BehindLineHpEvidence {
                 if (identity == null || !identity.usable() || identity.accountId() <= 0) {
                     continue;
                 }
-                if (hp.currentHealth() == null || !HealthChangedEvent.isPlausibleHp(hp.currentHealth())) {
-                    continue;
+                if (hp.currentHealth() == null || (hp.currentHealth() != 0
+                        && !HealthChangedEvent.isPlausibleHp(hp.currentHealth()))) {
                 }
                 final double t = FormationDepthEvidence.relativeSec(event, battleStart);
                 if (!Double.isFinite(t) || t < 0) {
@@ -140,6 +167,11 @@ final class BehindLineHpEvidence {
                 if (!Double.isFinite(t) || t < 0) {
                     continue;
                 }
+                final Double deathSec = FormationDepthEvidence.knownDeathSec(
+                        playersByAccount.get(identity.accountId()));
+                if (deathSec != null && t > deathSec + 1e-6) {
+                    continue; // 阵亡后的攻击事件不进入 observed attack evidence
+                }
                 attacks.computeIfAbsent(identity.accountId(), k -> new ArrayList<>()).add(t);
                 teamByAccount.putIfAbsent(identity.accountId(), identity.team());
             }
@@ -154,17 +186,6 @@ final class BehindLineHpEvidence {
         }
         final List<FormationDepthEvidence.PhaseRange> phases = FormationDepthEvidence.buildPhases(
                 FormationDepthEvidence.firstDamageTime(recon.events(), battleStart), battleEnd);
-        final Map<Long, PlayerResult> playersByAccount = new LinkedHashMap<>();
-        final Map<Long, TankTacticalProfile> profiles = new LinkedHashMap<>();
-        final TankTacticalProfileRegistry registry = FormationDepthEvidence.profileRegistry();
-        for (final PlayerResult p : battle.players) {
-            if (p == null) {
-                continue;
-            }
-            playersByAccount.put(p.accountId, p);
-            profiles.put(p.accountId, registry.profileFor(p.tankId, p.tankName,
-                    ReplayDisplayNames.tankClass(p.tankId), ReplayDisplayNames.tankTier(p.tankId)));
-        }
         // 目标账号：个人路径仅录像者自己（且须在册）；团队路径为本队全体
         final List<Long> targets = new ArrayList<>();
         if (selfAccountId != null) {
@@ -274,8 +295,36 @@ final class BehindLineHpEvidence {
             }
             return new PhaseResult(null, hits);
         }
+        // 敌方位置参考完整性门禁：本阶段存活的敌方车辆中缺失位置参考时，
+        // 最近观测敌方 ≠ 真实最近敌方，禁止产生吸血/避战负面判定（最多中性事实）
+        final int enemyTeamId = 3 - ownTeam;
+        int enemyAliveCount = 0;
+        int enemyRefCount = 0;
+        for (final Map.Entry<Long, PlayerResult> entry : playersByAccount.entrySet()) {
+            final PlayerResult pl = entry.getValue();
+            if (pl == null || pl.team != enemyTeamId) {
+                continue;
+            }
+            if (!FormationDepthEvidence.isAliveAt(playersByAccount, entry.getKey(), phase.end())) {
+                continue;
+            }
+            enemyAliveCount++;
+            if (meanByAccount.containsKey(entry.getKey())) {
+                enemyRefCount++;
+            }
+        }
+        final boolean enemyRefComplete = enemyRefCount >= enemyAliveCount;
+        if (!enemyRefComplete) {
+            // 敌方位置参考不完整：最近观测敌方 ≠ 真实最近敌方，禁止吸血/避战负面判定（也不输出不可信距离事实）
+            return new PhaseResult(null, hits);
+        }
+
+
         final StringBuilder sb = new StringBuilder();
         for (final long accountId : targets) {
+            if (!FormationDepthEvidence.isAliveAt(playersByAccount, accountId, phase.end())) {
+                continue; // 本阶段已阵亡：不作为身后输出/血量优势判定目标
+            }
             final TankTacticalProfile profile = profiles.get(accountId);
             if (!FormationDepthEvidence.isFrontlineCapable(profile)) {
                 continue;
@@ -293,6 +342,9 @@ final class BehindLineHpEvidence {
                 }
                 if (teamByAccount.getOrDefault(entry.getKey(), 0) != ownTeam) {
                     continue;
+                }
+                if (!FormationDepthEvidence.isAliveAt(playersByAccount, entry.getKey(), phase.end())) {
+                    continue; // 已阵亡车辆不得成为扛线队友/carrier
                 }
                 if (!FormationDepthEvidence.isFrontlineCapable(profiles.get(entry.getKey()))) {
                     continue;
@@ -323,8 +375,11 @@ final class BehindLineHpEvidence {
                         .append("（血量比 ").append(fmtRatio(hpRatioX / teammateHpRatio)).append("×）")
                         .append(" 距敌+").append(Math.round(distX - teammateDist)).append("m")
                         .append(" ").append(outputStatus(observedAttackEvents, observedDamagePartial)).append("\n");
+                // outputStatus=UNKNOWN（partial 且 0 个已观测攻击事件）时禁止进入 degree 聚合
+                if (!(observedDamagePartial && observedAttackEvents == 0)) {
                 hits.add(new PhaseHit(accountId,
                         hpRatioX / teammateHpRatio, distX - teammateDist));
+                }
             } else if (!hpKnown) {
                 // HP 优势未知：只输出中性事实（位置关系 + 已观察攻击事件），不判定吸血/避战
                 sb.append("- ").append(selfLabel).append(" hp=未知 HP_ADVANTAGE_UNKNOWN vs 扛线队友 ")
