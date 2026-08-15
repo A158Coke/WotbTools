@@ -5,7 +5,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import AnalysisResultPanel from './AnalysisResultPanel.vue'
 
 const i18n = vi.hoisted(() => ({
-  t: vi.fn(key => key)
+  t: vi.fn(key => key === 'recon.copy_footer' ? '由 WotBTools 生成 · https://wotbtools.com' : key)
 }))
 
 vi.mock('vue-i18n', () => ({
@@ -157,7 +157,10 @@ describe('AnalysisResultPanel preBattleSection', () => {
     await flushPromises()
 
     expect(writeText).toHaveBeenCalledTimes(1)
-    expect(writeText).toHaveBeenCalledWith('## 正文\n\n战术复盘内容')
+    // 复制内容 = 复盘正文 + 末尾宣传 footer（recon.copy_footer，三语；i18n mock 对 copy_footer 返回真实文案）
+    expect(writeText).toHaveBeenCalledWith('## 正文\n\n战术复盘内容\n由 WotBTools 生成 · https://wotbtools.com')
+    expect(writeText.mock.calls[0][0]).toContain('由 WotBTools 生成')
+    expect(writeText.mock.calls[0][0]).toContain('https://wotbtools.com')
     expect(writeText.mock.calls[0][0]).not.toContain('赛前预测')
     expect(writeText.mock.calls[0][0]).not.toContain('Desert Sands')
     expect(wrapper.text()).toContain('recon.copied')
