@@ -64,12 +64,13 @@ public class TeamAutopsyService {
      */
     public TeamAutopsyOutcome analyze(final Battle battle,
                                       final ReplayReconstruction recon,
+                                      final boolean observedDamagePartial,
                                       final int recorderTeam,
                                       final AllowedLanguage language,
                                       final TeamBattleWinner winner,
                                       final String teamLabel,
                                       final int callTimeoutSec) {
-        return analyze(battle, recon, recorderTeam, language, winner, teamLabel, callTimeoutSec,
+        return analyze(battle, recon, observedDamagePartial, recorderTeam, language, winner, teamLabel, callTimeoutSec,
                 AiReviewStreamListener.NOOP);
     }
 
@@ -79,6 +80,7 @@ public class TeamAutopsyService {
      */
     public TeamAutopsyOutcome analyze(final Battle battle,
                                       final ReplayReconstruction recon,
+                                      final boolean observedDamagePartial,
                                       final int recorderTeam,
                                       final AllowedLanguage language,
                                       final TeamBattleWinner winner,
@@ -116,7 +118,8 @@ public class TeamAutopsyService {
                 teamLabel,
                 battle,
                 recon,
-                recorderTeam);
+                recorderTeam,
+                observedDamagePartial);
         final List<Map<String, Object>> messages = List.of(
                 Map.<String, Object>of("role", "system", "content", systemPrompt),
                 Map.<String, Object>of("role", "user", "content", userContent));

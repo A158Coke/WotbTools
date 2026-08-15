@@ -38,7 +38,8 @@ public final class TeamAutopsyPromptBuilder {
             final String teamLabel,
             final Battle battle,
             final ReplayReconstruction recon,
-            final int perspectiveTeam) {
+            final int perspectiveTeam,
+            final boolean observedDamagePartial) {
         final StringBuilder sb = new StringBuilder(3072);
         sb.append("=== 结果 ===\n");
         sb.append(winnerLabel(winner, teamLabel, battle, perspectiveTeam)).append('\n');
@@ -120,7 +121,7 @@ public final class TeamAutopsyPromptBuilder {
         // 身后输出/血量优势（吸血/避战候选·确定性）：战犯/MVP 判定须考虑吸血程度（见规则 3）
         if (recon != null) {
             final String behindLine = BehindLineHpEvidence.renderTeamSection(
-                    battle, recon, perspectiveTeam);
+                    battle, recon, perspectiveTeam, observedDamagePartial);
             if (!behindLine.isEmpty()) {
                 sb.append(behindLine);
             }

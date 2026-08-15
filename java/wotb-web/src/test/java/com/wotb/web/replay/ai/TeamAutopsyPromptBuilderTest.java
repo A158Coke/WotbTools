@@ -96,7 +96,7 @@ class TeamAutopsyPromptBuilderTest {
                                 List.of("s1"), List.of("w1"), List.of("p1")),
                         null, List.of(), List.of(),
                         List.of(new PreBattleStrategicPrior.StrategicHypothesis("H1", "cl", "rs"))),
-                List.of(), win(Winner.ENEMY_WIN), "CHRD", completeBothAlive(), null, 1);
+                List.of(), win(Winner.ENEMY_WIN), "CHRD", completeBothAlive(), null, 1, false);
         assertTrue(content.contains("CHRD落败"));
         assertFalse(content.contains("队伍1"));
         assertFalse(content.contains("队伍2"));
@@ -121,7 +121,7 @@ class TeamAutopsyPromptBuilderTest {
         final List<TeamAutopsyStats> stats = new java.util.ArrayList<>(sevenStats());
         stats.add(stat("P8", 1008L, false, 0.0, false, false, false, true));
         final String content = TeamAutopsyPromptBuilder.buildUserContent(
-                stats, null, List.of(), win(Winner.ENEMY_WIN), "CHRD", completeBothAlive(), null, 1);
+                stats, null, List.of(), win(Winner.ENEMY_WIN), "CHRD", completeBothAlive(), null, 1, false);
 
         assertTrue(content.contains("阵亡@未知"),
                 "unknown death time must render as 未知 in member line: " + content);
@@ -142,7 +142,7 @@ class TeamAutopsyPromptBuilderTest {
         assertTrue(settlement
                 .contains("禁止用昵称或坦克名称做身份键"));
         assertTrue(settlement.contains("结算级团队剖析"));
-        assertTrue(settlement.contains("没有关键窗口、没有赛前职责基线、没有逐人 Route/走位证据"));
+        assertTrue(settlement.contains("没有关键窗口、没有赛前职责基线、没有逐人完整 Route/走位证据"));
         assertTrue(settlement.contains("置信度必须 PARTIAL 或 UNKNOWN"));
         assertTrue(settlement.contains("点数局势（结算级，强制）"),
                 "autopsy must carry the settlement-level points rule");
@@ -182,7 +182,7 @@ class TeamAutopsyPromptBuilderTest {
                 Winner.ENEMY_WIN, WinnerSource.POINTS_INFERENCE, true,
                 PointsEndReason.TIME_EXPIRED);
         final String content = TeamAutopsyPromptBuilder.buildUserContent(
-                sevenStats(), null, List.of(), points, "CHRD", completeBothAlive(), null, 1);
+                sevenStats(), null, List.of(), points, "CHRD", completeBothAlive(), null, 1, false);
         assertTrue(content.contains("CHRD落败（时间耗尽点数判定）"));
         assertTrue(content.contains("本局为时间耗尽点数判定"));
         assertTrue(content.contains("叙述必须写「时间耗尽」"));
@@ -201,7 +201,7 @@ class TeamAutopsyPromptBuilderTest {
                 Winner.FRIENDLY_WIN, WinnerSource.BATTLE_RESULTS, true,
                 PointsEndReason.REACHED_1000);
         final String content = TeamAutopsyPromptBuilder.buildUserContent(
-                sevenStats(), null, List.of(), points, "CHRD", completeBothAlive(), null, 1);
+                sevenStats(), null, List.of(), points, "CHRD", completeBothAlive(), null, 1, false);
         assertTrue(content.contains("CHRD获胜（达到 1000 分提前获胜）"));
         assertTrue(content.contains("达到 1000 分提前获胜"));
         assertTrue(content.contains("不要描述成敌方全歼"));
@@ -213,7 +213,7 @@ class TeamAutopsyPromptBuilderTest {
                 Winner.ENEMY_WIN, WinnerSource.POINTS_INFERENCE, true,
                 PointsEndReason.UNKNOWN);
         final String content = TeamAutopsyPromptBuilder.buildUserContent(
-                sevenStats(), null, List.of(), points, "CHRD", completeBothAlive(), null, 1);
+                sevenStats(), null, List.of(), points, "CHRD", completeBothAlive(), null, 1, false);
         assertTrue(content.contains("CHRD落败（点数判定）"));
         assertTrue(content.contains("本局为争霸赛点数判定"));
     }
@@ -291,10 +291,61 @@ class TeamAutopsyPromptBuilderTest {
 
         final String content = TeamAutopsyPromptBuilder.buildUserContent(
                 sevenStats(), null, List.of(),
-                win(Winner.ENEMY_WIN), "CHRD", battle, recon, 1);
+                win(Winner.ENEMY_WIN), "CHRD", battle, recon, 1, false);
         assertTrue(content.contains("BEHIND_LINE_HP_ADVANTAGE"), content);
         assertTrue(content.contains("有输出（利用队友输出）"), content);
     }
 
 
+
+    @Test
+    void autopsyBehindLineRespectsPartialDamageCoverage() {
+        // OBSERVED_DAMAGE_IS_PARTIAL 时 autopsy 的 BEHIND_LINE 段不得出现「避战」负面分类（UNKNOWN output 不作负面依据）
+        final Battle battle = completeBothAlive();
+        battle.durationS = 100d;
+        battle.players = List.of(
+                player(101L, 1, true),
+                player(102L, 1, true),
+                player(201L, 2, true),
+                player(202L, 2, true));
+        for (final PlayerResult p : battle.players) {
+            if (p.accountId == 101L || p.accountId == 102L) {
+                p.tankId = 9489L;
+                p.observedMaxHp = 2000;
+            } else {
+                p.tankId = 9297L;
+                p.observedMaxHp = 1800;
+            }
+        }
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 10, 101L));
+        events.add(new ParticipantMappingEvent(2, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 11, 102L));
+        events.add(new ParticipantMappingEvent(3, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 20, 201L));
+        events.add(new ParticipantMappingEvent(4, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 21, 202L));
+        events.add(new PositionChangedEvent(10, new ReplayTimestamp(40f, null), 10,
+                DecodeConfidence.EXACT, 10, 0, 0, -220f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
+        events.add(new PositionChangedEvent(11, new ReplayTimestamp(40f, null), 10,
+                DecodeConfidence.EXACT, 11, 0, 0, -90f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
+        events.add(new PositionChangedEvent(12, new ReplayTimestamp(40f, null), 10,
+                DecodeConfidence.EXACT, 20, 0, 0, 200f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
+        events.add(new PositionChangedEvent(13, new ReplayTimestamp(40f, null), 10,
+                DecodeConfidence.EXACT, 21, 0, 0, 230f, 50f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
+        events.add(new HealthChangedEvent(30, new ReplayTimestamp(30f, null), 7,
+                DecodeConfidence.EXACT, 10, 1800, null, true));
+        events.add(new HealthChangedEvent(31, new ReplayTimestamp(30f, null), 7,
+                DecodeConfidence.EXACT, 11, 1000, null, true));
+        // 无 DamageEvent：partial 覆盖下 101 的输出必须是 UNKNOWN，不得「避战」
+        final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
+                events, List.of(), null, null, null);
+        final String content = TeamAutopsyPromptBuilder.buildUserContent(
+                sevenStats(), null, List.of(),
+                win(Winner.ENEMY_WIN), "CHRD", battle, recon, 1, true);
+        assertTrue(content.contains("BEHIND_LINE_HP_ADVANTAGE"), content);
+        assertTrue(content.contains("outputStatus=UNKNOWN"), content);
+        assertFalse(content.contains("无输出（避战）"), "partial 覆盖下 autopsy 不得出现避战负面分类");
+    }
 }
