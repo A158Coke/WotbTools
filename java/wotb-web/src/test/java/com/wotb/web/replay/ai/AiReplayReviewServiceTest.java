@@ -478,6 +478,110 @@ class AiReplayReviewServiceTest {
                 "preBattleSection tank names must be roster-authoritative");
     }
 
+    // ---- package 传播：analysis + preBattleSection 共享同一份 anchor 证明 ----
+
+    @Test
+    void packagePropagation_analysisAnchor_preBattleStandalone() throws IOException {
+        when(aiAnalysisService.analyzeTeamGroups(any(), eq(AllowedLanguage.ZH), any()))
+                .thenReturn(new TeamAnalyzeResult(
+                        new AnalyzeResult("埃米尔1951（Awesomeman954）阵亡"),
+                        "赛前：埃米尔1951负责正面推进"));
+        when(processingFacade.process(any(), any())).thenReturn(randomBattleResult(
+                "team-arena", 2, List.of(
+                        player("Awesomeman954", 1001L, 1, 4481),
+                        player("A158布丁", 2001L, 2, 6929))));
+
+        final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
+
+        assertTrue(response.analysis().startsWith("Kranvagn（Awesomeman954）阵亡"),
+                "analysis anchored mention must be corrected");
+        assertTrue(response.analysis().endsWith("AI复盘仅供参考"));
+        assertEquals("赛前：Kranvagn负责正面推进", response.preBattleSection(),
+                "preBattle standalone must be corrected via shared package propagation");
+        assertFalse(response.analysis().contains("埃米尔1951"));
+        assertFalse(response.analysis().contains("EMIL 1951"));
+        assertFalse(response.preBattleSection().contains("埃米尔1951"));
+        assertFalse(response.preBattleSection().contains("EMIL 1951"));
+    }
+
+    @Test
+    void packagePropagation_preBattleAnchor_analysisStandalone() throws IOException {
+        when(aiAnalysisService.analyzeTeamGroups(any(), eq(AllowedLanguage.ZH), any()))
+                .thenReturn(new TeamAnalyzeResult(
+                        new AnalyzeResult("EMIL 1951 前压顶线"),
+                        "赛前：埃米尔1951（Awesomeman954）带队"));
+        when(processingFacade.process(any(), any())).thenReturn(randomBattleResult(
+                "team-arena", 2, List.of(
+                        player("Awesomeman954", 1001L, 1, 4481),
+                        player("A158布丁", 2001L, 2, 6929))));
+
+        final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
+
+        assertTrue(response.analysis().startsWith("Kranvagn 前压顶线"),
+                "analysis standalone must be corrected via preBattle anchor proof");
+        assertEquals("赛前：Kranvagn（Awesomeman954）带队", response.preBattleSection());
+    }
+
+    @Test
+    void packagePropagation_conflictingAnchors_standaloneFailClosed() throws IOException {
+        when(aiAnalysisService.analyzeTeamGroups(any(), eq(AllowedLanguage.ZH), any()))
+                .thenReturn(new TeamAnalyzeResult(
+                        new AnalyzeResult("埃米尔1951（Awesomeman954）阵亡。埃米尔1951前压。"),
+                        "赛前：埃米尔1951（A158布丁）带队"));
+        when(processingFacade.process(any(), any())).thenReturn(randomBattleResult(
+                "team-arena", 2, List.of(
+                        player("Awesomeman954", 1001L, 1, 4481),
+                        player("A158布丁", 2001L, 2, 6929))));
+
+        final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
+
+        assertTrue(response.analysis().startsWith("Kranvagn（Awesomeman954）阵亡。EMIL 1951前压。"),
+                "standalone must stay fail-closed when anchors conflict across sections");
+        assertEquals("赛前：Maus（A158布丁）带队", response.preBattleSection(),
+                "each anchored mention is locally corrected to its own roster tank");
+        assertFalse(response.analysis().contains("Kranvagn前压"));
+        assertFalse(response.analysis().contains("Maus前压"));
+    }
+
+    @Test
+    void packagePropagation_sourceInRoster_crossSectionNotRewritten() throws IOException {
+        when(aiAnalysisService.analyzeTeamGroups(any(), eq(AllowedLanguage.ZH), any()))
+                .thenReturn(new TeamAnalyzeResult(
+                        new AnalyzeResult("埃米尔1951（Awesomeman954）阵亡"),
+                        "赛前：EMIL 1951负责正面推进"));
+        // 本场同时有 Kranvagn 与 EMIL 1951：source canonical 本身在 roster → 跨段不得传播
+        when(processingFacade.process(any(), any())).thenReturn(randomBattleResult(
+                "team-arena", 2, List.of(
+                        player("Awesomeman954", 1001L, 1, 4481),
+                        player("EMILPlayer", 2001L, 2, 4737))));
+
+        final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
+
+        assertTrue(response.analysis().startsWith("Kranvagn（Awesomeman954）阵亡"),
+                "anchored mention is locally corrected to Kranvagn");
+        assertEquals("赛前：EMIL 1951负责正面推进", response.preBattleSection(),
+                "standalone EMIL 1951 may be the real tank in roster, must not be rewritten");
+    }
+
+    @Test
+    void packagePropagation_nullPreBattleSection_analysisStillCorrected() throws IOException {
+        when(aiAnalysisService.analyzeTeamGroups(any(), eq(AllowedLanguage.ZH), any()))
+                .thenReturn(new TeamAnalyzeResult(
+                        new AnalyzeResult("埃米尔1951（Awesomeman954）阵亡"),
+                        null));
+        when(processingFacade.process(any(), any())).thenReturn(randomBattleResult(
+                "team-arena", 2, List.of(
+                        player("Awesomeman954", 1001L, 1, 4481),
+                        player("A158布丁", 2001L, 2, 6929))));
+
+        final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
+
+        assertTrue(response.analysis().startsWith("Kranvagn（Awesomeman954）阵亡"),
+                "analysis must still be corrected when preBattleSection is null");
+        assertNull(response.preBattleSection(),
+                "null preBattleSection must stay null (no NPE)");
+    }
+
     private static PlayerResult player(final String nickname, final long accountId,
                                        final int team, final long tankId) {
         final PlayerResult p = new PlayerResult();

@@ -221,10 +221,13 @@ public class AiReplayReviewService {
                 final TacticalReviewHarness.HarnessOutcome outcome = harnessOrFallback(
                         representative, language, listener);
                 final Battle battle = representative.battle();
+                final List<String> corrected = correctTankNames(packageSections(
+                        outcome.result().analysis(),
+                        renderRandomBattleSection(representative, outcome.preBattlePrior(), language)),
+                        battle);
                 yield new AnalyzeResponse(
-                        withDisclaimerFooter(correctTankNames(outcome.result().analysis(), battle), language),
-                        correctTankNames(renderRandomBattleSection(
-                                representative, outcome.preBattlePrior(), language), battle),
+                        withDisclaimerFooter(corrected.get(0), language),
+                        corrected.get(1),
                         MapOverviewBuilder.build(battle, representative.reconstruction()));
             }
             case SINGLE_TEAM_BATTLE -> {
@@ -232,9 +235,11 @@ public class AiReplayReviewService {
                         .analyzeTeamGroups(analyzableGroups, language, listener);
                 final ReplayProcessingResult first = analyzableGroups.getFirst().representative();
                 final Battle battle = first.battle();
+                final List<String> corrected = correctTankNames(packageSections(
+                        teamResult.analysis().analysis(), teamResult.preBattleSection()), battle);
                 yield new AnalyzeResponse(
-                        withDisclaimerFooter(correctTankNames(teamResult.analysis().analysis(), battle), language),
-                        correctTankNames(teamResult.preBattleSection(), battle),
+                        withDisclaimerFooter(corrected.get(0), language),
+                        corrected.get(1),
                         MapOverviewBuilder.build(battle, first.reconstruction()));
             }
             case NONE -> throw new IllegalArgumentException("NO_BATTLE_DATA");
@@ -243,14 +248,16 @@ public class AiReplayReviewService {
     }
 
     /**
-     * 坦克名称确定性校验/纠正：以本场 roster（tankId → Tankopedia 权威名）为基准，
-     * 纠正 AI 复盘正文里 LLM 幻觉出的错名/译名/俗称（如把 Kranvagn 写成「埃米尔1951」）。
+     * 坦克名称确定性校验/纠正：把同一 AI Review 的多个文本（analysis + preBattleSection）
+     * 视为一个 correction package，跨文本共享昵称锚点已证明的传播映射后再逐文本纠正
+     * （见 {@link TankNameCorrector#correctAll(List, Collection)}）。
      * 只做文本级纠正，不改任何解析/结算数据；有处理明细时记日志（含 R3 独立检测）。
+     * null 输入段原样返回 null；返回列表与输入一一对应。
      */
-    private static String correctTankNames(final String text, final Battle battle) {
-        if (text == null || text.isBlank()
+    private static List<String> correctTankNames(final List<String> texts, final Battle battle) {
+        if (texts == null || texts.isEmpty()
                 || battle == null || battle.players == null || battle.players.isEmpty()) {
-            return text;
+            return texts;
         }
         final List<TankNameCorrector.RosterEntry> roster = battle.players.stream()
                 .filter(p -> PlayerSideResolver.isValidRawTeam(p.team))
@@ -260,16 +267,29 @@ public class AiReplayReviewService {
                         ReplayDisplayNames.tankName(p.tankId, p.tankName)))
                 .toList();
         if (roster.isEmpty()) {
-            return text;
+            return texts;
         }
-        final TankNameCorrector.Result result = TankNameCorrector.correct(text, roster);
-        if (!result.replacements().isEmpty()) {
-            final String detail = result.replacements().stream()
-                    .map(r -> r.original() + " -> " + r.replacement() + "[" + r.reason() + "]")
-                    .collect(Collectors.joining("; "));
+        final List<TankNameCorrector.Result> results = TankNameCorrector.correctAll(texts, roster);
+        final List<String> corrected = new ArrayList<>(texts.size());
+        for (int i = 0; i < texts.size(); i++) {
+            corrected.add(texts.get(i) == null ? null : results.get(i).text());
+        }
+        final String detail = results.stream()
+                .flatMap(r -> r.replacements().stream())
+                .map(r -> r.original() + " -> " + r.replacement() + "[" + r.reason() + "]")
+                .collect(Collectors.joining("; "));
+        if (!detail.isEmpty()) {
             LOGGER.info("AI tank-name correction applied: {}", detail);
         }
-        return result.text();
+        return corrected;
+    }
+
+    /** 组装 correction package 的各段（允许 null 元素，null 段原样保留）。 */
+    private static List<String> packageSections(final String analysis, final String preBattleSection) {
+        final List<String> sections = new ArrayList<>(2);
+        sections.add(analysis);
+        sections.add(preBattleSection);
+        return sections;
     }
 
     /** 复盘固定结尾免责句（三语），追加在 analysis 末尾。 */
