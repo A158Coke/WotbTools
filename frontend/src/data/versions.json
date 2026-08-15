@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.17",
+    "date": "2026-08-16",
+    "tag": "add",
+    "zh": "战局回放新增地图标注：在地图上用画笔/橡皮擦/箭头/直线/矩形/圆/文字圈点战术——支持 8 色、粗细滑块（1-12）、多步撤回/重做、清空与显隐开关；标注锚定地图坐标，缩放/平移/播放时跟地图一起移动不漂移；纯本地临时标注，切换回放/视图或刷新后清空，不保存到服务器。",
+    "en": "Battle playback gains map annotations: draw tactics on the map with pen/eraser/arrow/line/rectangle/circle/text — 8 colors, width slider (1-12), multi-step undo/redo, clear and show/hide; annotations are anchored to map coordinates and move with the map on zoom/pan/playback; purely local and ephemeral — cleared when switching replays/views or refreshing, never saved to the server.",
+    "ru": "В повторе боя появились пометки на карте: рисуйте тактику кистью/ластиком/стрелкой/линией/прямоугольником/кругом/текстом — 8 цветов, ползунок толщины (1-12), многошаговые отмена/повтор, очистка и показ/скрытие; пометки привязаны к координатам карты и движутся вместе с ней при зуме/перемещении/воспроизведении; только локальные временные пометки — очищаются при смене реплея/вида или обновлении страницы, на сервер не сохраняются."
+  },
+  {
     "v": "2.11.16",
     "date": "2026-08-15",
     "tag": "add",
