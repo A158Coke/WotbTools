@@ -53,6 +53,30 @@ class AiReplayReviewServiceTest {
     }
 
     @Test
+    void sanitizeClusterTermsProtectsRosterProperNounsInBothSections() {
+        // 权威昵称「星簇」在 analysis 与 preBattleSection 两段都必须原样保留；
+        // AI 内部术语「主力簇」确定性转为「主力集群」。
+        final Battle battle = new Battle();
+        final PlayerResult p = new PlayerResult();
+        p.accountId = 1L;
+        p.team = 1;
+        p.tankId = 4481L; // Kranvagn
+        p.nickname = "星簇";
+        p.tankName = "Kranvagn";
+        battle.players = List.of(p);
+        final List<String> corrected = AiReplayReviewService.sanitizeClusterTerms(
+                List.of("星簇（Kranvagn）随主力簇推进", "预判星簇会主力簇压向中路"),
+                battle);
+        assertEquals("星簇（Kranvagn）随主力集群推进", corrected.get(0));
+        assertEquals("预判星簇会主力集群压向中路", corrected.get(1));
+        for (final String section : corrected) {
+            assertTrue(section.contains("星簇"), "权威昵称必须保留: " + section);
+            assertFalse(section.contains("星群"), "昵称不得被单字兜底改写成星群");
+            assertFalse(section.contains("主力簇"), "内部术语必须转换: " + section);
+        }
+    }
+
+    @Test
     void nullBatchThrowsIllegalArgument() {
         final var ex = assertThrows(IllegalArgumentException.class,
                 () -> service.analyze(null));
