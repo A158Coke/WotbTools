@@ -3,6 +3,7 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.model.Battle;
 import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.processing.FriendlyEnemyResult.Winner;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.feature.TeamAutopsyStats;
 import com.wotb.core.replay.feature.TeamAutopsyStatsBuilder;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
@@ -62,12 +63,14 @@ public class TeamAutopsyService {
      * @return 结构化结果 + 本方 roster；DRAW / 非法队伍 / 非 ZH / 预算不足 / 调用或解析失败 → null
      */
     public TeamAutopsyOutcome analyze(final Battle battle,
+                                      final ReplayReconstruction recon,
+                                      final boolean observedDamagePartial,
                                       final int recorderTeam,
                                       final AllowedLanguage language,
                                       final TeamBattleWinner winner,
                                       final String teamLabel,
                                       final int callTimeoutSec) {
-        return analyze(battle, recorderTeam, language, winner, teamLabel, callTimeoutSec,
+        return analyze(battle, recon, observedDamagePartial, recorderTeam, language, winner, teamLabel, callTimeoutSec,
                 AiReviewStreamListener.NOOP);
     }
 
@@ -76,6 +79,8 @@ public class TeamAutopsyService {
      * {@code autopsy_start} / {@code autopsy_done} 阶段事件。
      */
     public TeamAutopsyOutcome analyze(final Battle battle,
+                                      final ReplayReconstruction recon,
+                                      final boolean observedDamagePartial,
                                       final int recorderTeam,
                                       final AllowedLanguage language,
                                       final TeamBattleWinner winner,
@@ -112,7 +117,9 @@ public class TeamAutopsyService {
                 winner,
                 teamLabel,
                 battle,
-                recorderTeam);
+                recon,
+                recorderTeam,
+                observedDamagePartial);
         final List<Map<String, Object>> messages = List.of(
                 Map.<String, Object>of("role", "system", "content", systemPrompt),
                 Map.<String, Object>of("role", "user", "content", userContent));
