@@ -5,6 +5,7 @@ import com.wotb.core.ai.TankNameCorrector.Result;
 import com.wotb.core.ai.TankNameCorrector.RosterEntry;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -237,5 +238,56 @@ class TankNameCorrectorTest {
     void allCorrectionsDeterministic_sameInputSameOutput() {
         final String input = "1分07秒：CHRD的埃米尔1951（Awesomeman954）!紧接着 KRV 顶上来";
         assertEquals(correct(input).text(), correct(input).text());
+    }
+
+    // ---- correctAll：跨文本共享 propagation map ----
+
+    @Test
+    void correctAll_anchorInFirstText_propagatesToSecondText() {
+        final List<Result> results = TankNameCorrector.correctAll(List.of(
+                "埃米尔1951（Awesomeman954）阵亡",
+                "埃米尔1951负责正面推进"), ROSTER);
+        assertEquals("Kranvagn（Awesomeman954）阵亡", results.get(0).text());
+        assertEquals("Kranvagn负责正面推进", results.get(1).text());
+        assertFalse(results.get(0).text().contains("埃米尔1951"));
+        assertFalse(results.get(1).text().contains("EMIL 1951"));
+        assertTrue(reasons(results.get(1)).contains("PROPAGATED"));
+    }
+
+    @Test
+    void correctAll_anchorInSecondText_propagatesToFirstText() {
+        final List<Result> results = TankNameCorrector.correctAll(List.of(
+                "埃米尔1951先掉血",
+                "随后埃米尔1951（Awesomeman954）阵亡"), ROSTER);
+        assertEquals("Kranvagn先掉血", results.get(0).text());
+        assertEquals("随后Kranvagn（Awesomeman954）阵亡", results.get(1).text());
+    }
+
+    @Test
+    void correctAll_nullAndBlankTexts_passthroughWithoutNpe() {
+        // Arrays.asList 允许 null 元素（List.of 不允许）
+        final List<Result> results = TankNameCorrector.correctAll(Arrays.asList(
+                "埃米尔1951（Awesomeman954）阵亡", null, "  "), ROSTER);
+        assertEquals("Kranvagn（Awesomeman954）阵亡", results.get(0).text());
+        assertEquals("", results.get(1).text());
+        assertEquals("  ", results.get(2).text());
+    }
+
+    @Test
+    void correctAll_conflictAcrossTexts_failClosed() {
+        final List<RosterEntry> roster = List.of(
+                new RosterEntry("Awesomeman954", "Kranvagn"),
+                new RosterEntry("A158布丁", "Maus"));
+        final List<Result> results = TankNameCorrector.correctAll(List.of(
+                "埃米尔1951（Awesomeman954）阵亡",
+                "埃米尔1951（A158布丁）仍在",
+                "埃米尔1951前压"), roster);
+        assertTrue(results.get(0).text().contains("Kranvagn（Awesomeman954）"));
+        assertTrue(results.get(1).text().contains("Maus（A158布丁）"));
+        assertEquals("EMIL 1951前压", results.get(2).text(),
+                "cross-section conflicting anchors must fail closed (not guessed)");
+        assertFalse(results.get(2).text().contains("Kranvagn"));
+        assertFalse(results.get(2).text().contains("Maus"));
+        assertTrue(reasons(results.get(2)).contains("DETECTED"));
     }
 }

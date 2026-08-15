@@ -39,7 +39,7 @@ public final class TankNameCorrector {
     public record RosterEntry(String nickname, String tankName) {
     }
 
-    /** 一条处理记录。{@code reason}：CORRECTED（R1 纠正）/ NORMALIZED（R2 归一化）/ DETECTED（R3 检测不改写）。 */
+    /** 一条处理记录。{@code reason}：CORRECTED（R1 纠正）/ PROPAGATED（共享映射传播）/ NORMALIZED（R2 归一化）/ DETECTED（R3 检测不改写）。 */
     public record Replacement(String original, String replacement, String reason) {
     }
 
@@ -96,15 +96,34 @@ public final class TankNameCorrector {
     }
 
     /**
-     * 纠正正文中的坦克名。
+     * 纠正单个文本中的坦克名（等价于 {@link #correctAll(List, Collection)} 的单元素版本）。
      *
      * @param text   AI 复盘正文（zh/en/ru 均可；坦克名本身是英文专有名词或别名）
      * @param roster 本场双方玩家 roster（昵称 -&gt; 权威坦克名）；空/无效条目会被忽略
      * @return 纠正后正文与处理明细
      */
     public static Result correct(final String text, final Collection<RosterEntry> roster) {
-        if (text == null || text.isBlank() || roster == null || roster.isEmpty()) {
-            return new Result(text == null ? "" : text, List.of());
+        if (text == null) {
+            return new Result("", List.of());
+        }
+        return correctAll(List.of(text), roster).getFirst();
+    }
+
+    /**
+     * 把同一 AI Review 的多个文本（如 analysis 与 preBattleSection）视为一个 correction
+     * package 整体纠正：Pass 1 跨全部文本收集昵称锚点已证明的「错名 canonical -&gt; roster 车」
+     * 共享传播映射，Pass 2 再逐文本应用同一份映射——任一段内的锚点证明可传播到其它段的
+     * standalone 提及，且跨段冲突 / source-in-roster 的 fail-closed 规则与单文本一致。
+     *
+     * @param texts  同一次 AI Review 的各段文本（可为 null/blank；null 段返回空正文且不参与
+     *               扫描，返回列表与输入一一对应，不通过拼接实现）
+     * @param roster 本场双方玩家 roster（昵称 -&gt; 权威坦克名）；空/无效条目会被忽略
+     * @return 各段纠正后正文与处理明细（顺序与 {@code texts} 一致）
+     */
+    public static List<Result> correctAll(final List<String> texts, final Collection<RosterEntry> roster) {
+        if (texts == null || texts.isEmpty() || roster == null || roster.isEmpty()) {
+            return texts == null ? List.of()
+                    : texts.stream().map(t -> new Result(t == null ? "" : t, List.of())).toList();
         }
         final Map<String, RosterEntry> byLowerNick = new LinkedHashMap<>();
         final Set<String> rosterTanksLower = new HashSet<>();
@@ -118,15 +137,38 @@ public final class TankNameCorrector {
             rosterTanksLower.add(lower(entry.tankName()));
         }
         if (byLowerNick.isEmpty()) {
-            return new Result(text, List.of());
+            return texts.stream().map(t -> new Result(t == null ? "" : t, List.of())).toList();
         }
         final Pattern nickPattern = buildPattern(byLowerNick.keySet());
-        final List<Span> spans = scan(text, TANK_PATTERN, nickPattern, byLowerNick);
-        return apply(text, spans, rosterTanksLower);
+        final List<Section> sections = new ArrayList<>(texts.size());
+        for (final String text : texts) {
+            if (text == null || text.isBlank()) {
+                sections.add(new Section(text == null ? "" : text, List.of()));
+                continue;
+            }
+            sections.add(new Section(text, scan(text, TANK_PATTERN, nickPattern, byLowerNick)));
+        }
+        // Pass 1：跨全部 section 收集共享传播映射（含跨段冲突封禁）
+        final Map<String, String> sharedPropagation = new HashMap<>();
+        final Set<String> conflicted = new HashSet<>();
+        for (final Section section : sections) {
+            collectPropagation(section.text(), section.spans(), rosterTanksLower,
+                    sharedPropagation, conflicted);
+        }
+        // Pass 2：逐段应用同一份共享映射
+        final List<Result> results = new ArrayList<>(sections.size());
+        for (final Section section : sections) {
+            results.add(applySection(section.text(), section.spans(), rosterTanksLower, sharedPropagation));
+        }
+        return List.copyOf(results);
     }
 
     /** 文本中的一个命中：坦克名或昵称。 */
     private record Span(int start, int end, String text, String canonical, boolean nickname) {
+    }
+
+    /** 一段待处理文本及其扫描结果（blank/null 段 spans 为空，原样返回）。 */
+    private record Section(String text, List<Span> spans) {
     }
 
     /** 扫描正文，合并坦克名与昵称命中，重叠时保留更长者（如 Emil II 优先于其前缀 Emil I）。 */
@@ -190,10 +232,8 @@ public final class TankNameCorrector {
         return true;
     }
 
-    private static Result apply(final String text,
-                                final List<Span> spans,
-                                final Set<String> rosterTanksLower) {
-        // R1：昵称锚定 → 被配对的坦克 span.start -> 该昵称的 roster 权威坦克名
+    /** R1 配对：返回该段内被昵称锚定的坦克 span.start -&gt; roster 权威坦克名。 */
+    private static Map<Integer, String> buildPairedTankByStart(final String text, final List<Span> spans) {
         final Map<Integer, String> pairedTankByStart = new HashMap<>();
         for (final Span span : spans) {
             if (!span.nickname) {
@@ -204,9 +244,53 @@ public final class TankNameCorrector {
                 pairedTankByStart.putIfAbsent(paired.start, span.canonical);
             }
         }
-        // Pass 1（文档级）：昵称锚定已证明的「错名 canonical -> roster canonical」唯一映射
-        final Map<String, String> propagatedByCanonicalLower =
-                buildPropagationMap(spans, pairedTankByStart, rosterTanksLower);
+        return pairedTankByStart;
+    }
+
+    /**
+     * Pass 1（跨段累积）：把一段内昵称锚点已证明的「错名 canonical -&gt; roster canonical」
+     * 映射并入共享 {@code map}。fail closed 规则：
+     * <ul>
+     *   <li>只收集 source canonical 不在本场 roster 的配对——若 source 本身在 roster，
+     *       standalone 提及可能是那辆真车，不得全局改写（仅该锚点处按 R1 局部纠正）；</li>
+     *   <li>同一 source 被多个锚点指向不同 roster 车 → 冲突，该 source 从 map 移除并加入
+     *       {@code conflicted} 永久封禁（后续任何段的同源锚点不得重新入表），
+     *       standalone 保持 R2/R3 行为（NORMALIZED / DETECTED），不猜测。</li>
+     * </ul>
+     * 与出现顺序无关：全部段先收集完，再统一应用（Pass 2）。
+     */
+    private static void collectPropagation(final String text,
+                                           final List<Span> spans,
+                                           final Set<String> rosterTanksLower,
+                                           final Map<String, String> map,
+                                           final Set<String> conflicted) {
+        final Map<Integer, String> pairedTankByStart = buildPairedTankByStart(text, spans);
+        for (final Span span : spans) {
+            if (span.nickname || !pairedTankByStart.containsKey(span.start)) {
+                continue;
+            }
+            final String sourceLower = lower(span.canonical);
+            if (rosterTanksLower.contains(sourceLower) || conflicted.contains(sourceLower)) {
+                continue; // source 本身在 roster，或已判冲突：standalone 可能是真车/不猜，均不传播
+            }
+            final String target = pairedTankByStart.get(span.start);
+            final String existing = map.putIfAbsent(sourceLower, target);
+            if (existing != null && !existing.equalsIgnoreCase(target)) {
+                map.remove(sourceLower);
+                conflicted.add(sourceLower); // 冲突永久封禁：后续同源锚点不得重新入表
+            }
+        }
+    }
+
+    /** Pass 2：对一段应用 R1 局部纠正 + 共享传播 + R2/R3（替换从后往前，避免位移）。 */
+    private static Result applySection(final String text,
+                                       final List<Span> spans,
+                                       final Set<String> rosterTanksLower,
+                                       final Map<String, String> propagatedByCanonicalLower) {
+        if (spans.isEmpty()) {
+            return new Result(text, List.of());
+        }
+        final Map<Integer, String> pairedTankByStart = buildPairedTankByStart(text, spans);
         final StringBuilder out = new StringBuilder(text);
         final List<Replacement> replacements = new ArrayList<>();
         // 应用替换（从后往前，避免位移）
@@ -227,7 +311,7 @@ public final class TankNameCorrector {
                 }
                 continue;
             }
-            // Pass 2（文档级）：全文已证明该 canonical -> 唯一 roster 车 → 传播到 standalone 提及
+            // Pass 2（文档级）：package 内已证明该 canonical -> 唯一 roster 车 → 传播到 standalone 提及
             final String propagated = propagatedByCanonicalLower.get(lower(span.canonical));
             if (propagated != null) {
                 out.replace(span.start, span.end, propagated);
@@ -251,40 +335,6 @@ public final class TankNameCorrector {
             }
         }
         return new Result(out.toString(), List.copyOf(replacements));
-    }
-
-    /**
-     * Pass 1：收集昵称锚定已证明的「错名 canonical -> roster canonical」确定性映射。
-     * <p>fail closed 规则：
-     * <ul>
-     *   <li>只收集 source canonical 不在本场 roster 的配对——若 source 本身在 roster，
-     *       standalone 提及可能是那辆真车，不得全局改写（仅该锚点处按 R1 局部纠正）；</li>
-     *   <li>同一 source 被多个锚点指向不同 roster 车 → 冲突，该 source 不进传播表，
-     *       standalone 保持 R2/R3 行为（NORMALIZED / DETECTED），不猜测。</li>
-     * </ul>
-     * 与出现顺序无关：全文锚点先收集完，再统一应用到 standalone（Pass 2）。</p>
-     */
-    private static Map<String, String> buildPropagationMap(final List<Span> spans,
-                                                           final Map<Integer, String> pairedTankByStart,
-                                                           final Set<String> rosterTanksLower) {
-        final Map<String, String> map = new HashMap<>();
-        final Set<String> conflicted = new HashSet<>();
-        for (final Span span : spans) {
-            if (span.nickname || !pairedTankByStart.containsKey(span.start)) {
-                continue;
-            }
-            final String sourceLower = lower(span.canonical);
-            if (rosterTanksLower.contains(sourceLower) || conflicted.contains(sourceLower)) {
-                continue; // source 本身在 roster，或已判冲突：standalone 可能是真车/不猜，均不传播
-            }
-            final String target = pairedTankByStart.get(span.start);
-            final String existing = map.putIfAbsent(sourceLower, target);
-            if (existing != null && !existing.equalsIgnoreCase(target)) {
-                map.remove(sourceLower);
-                conflicted.add(sourceLower); // 冲突永久封禁：后续同源锚点不得重新入表
-            }
-        }
-        return map;
     }
 
     /** R1 配对：返回与该昵称配对的坦克 span；不存在返回 null。 */

@@ -272,11 +272,14 @@ AI 复盘正文是 LLM 自由文本，存在把玩家坦克名写错/写成译�
 - **R1 昵称锚定**：以 roster（battle.players，tankId>0 经 ReplayDisplayNames.tankName）的昵称为锚，
   配对括号对（坦克名（昵称）/ 昵称（坦克名））或「的」所属式中的坦克名，与 roster 权威名
   不一致即替换；括号内多个昵称/多个坦克名时不判定。
-- **R1+ 文档级传播（两阶段）**：全文先收集昵称锚点已证明的「错名 canonical → roster 车」
-  唯一映射（Pass 1），再传播到其它 standalone 提及（Pass 2，同一 canonical 的别名/英文原文
-  一并修正，与出现顺序无关——standalone 在锚点前/后都会被修正）。传播严格 fail closed：
+- **R1+ package 级传播（两阶段）**：同一 AI Review 的 analysis 与 preBattleSection 被当作
+  一个 correction package（TankNameCorrector.correctAll，不拼接字符串）。Pass 1 跨全部段
+  收集昵称锚点已证明的「错名 canonical → roster 车」唯一映射（共享一份），Pass 2 再逐段应用
+  同一份映射——任一段内的锚点证明可传播到其它段的 standalone 提及（同一 canonical 的别名/
+  英文原文一并修正，与出现顺序无关）。传播严格 fail closed：
   ① source canonical 本身在本场 roster 时不传播（standalone 可能是那辆真车，仅锚点处局部纠正）；
-  ② 同一 source 被多个锚点指向不同 roster 车时视为映射冲突，不传播、不猜测（保持 DETECTED）；
+  ② 同一 source 被多个锚点（可跨段）指向不同 roster 车时视为映射冲突，冲突源永久封禁，
+  不传播、不猜测（保持 DETECTED）；
   ③ 完全没有昵称锚点时不做任何推断。
 - **R2 归一化**：common/tank-name-aliases.json 别名（KRV/克朗瓦根/埃米尔1951 等）与大小写差异
   统一为 tankopedia 权威英文名。
@@ -284,11 +287,12 @@ AI 复盘正文是 LLM 自由文本，存在把玩家坦克名写错/写成译�
 - 处理明细（original → replacement[reason]，含 CORRECTED / PROPAGATED / NORMALIZED / DETECTED）
   记 AI tank-name correction applied 日志；流式中间 token 不做逐段纠正（最终 done.analysis 已纠正）。
 
-零容忍口径：**凡昵称锚点可确定**的玩家车名错误（含同 canonical 的 standalone 传播）最终正文
-必须等于 roster 权威名；**无锚点或有歧义**的 standalone 车名保持 fail-closed（归一化 + DETECTED
-日志），不猜映射。回归由 TankNameCorrectorTest（含生产案例、传播前后顺序、映射冲突、
-source-in-roster、无锚点 5 类场景）与 AiReplayReviewServiceTest 的 fallback/team 两条链路
-用例守卫。prompt 侧同步加硬约束（禁止中文翻译/相似车替代，见
+零容忍口径：**凡昵称锚点可确定**的玩家车名错误（含跨段同 canonical 的 standalone 传播）最终
+analysis 与 preBattleSection 必须等于 roster 权威名、两侧名称一致；**无锚点或有歧义**的
+standalone 车名保持 fail-closed（归一化 + DETECTED 日志），不猜映射。回归由 TankNameCorrectorTest
+（含生产案例、段内/跨段传播、传播前后顺序、映射冲突、source-in-roster、无锚点、null 段场景）
+与 AiReplayReviewServiceTest 的 fallback/team 两条链路 + 5 个 package 传播用例守卫。
+prompt 侧同步加硬约束（禁止中文翻译/相似车替代，见
 PlayerPromptRules.COMMON_TANK_PROPER_NOUN_RULE 与 4 个 prompts/*.zh.md）。
 
 ### AI 分析数据流（/api/replay/analyze，仅 wotbtools-admin）

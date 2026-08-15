@@ -3,9 +3,9 @@
     "v": "2.11.14",
     "date": "2026-08-15",
     "tag": "fix",
-    "zh": "AI 复盘坦克名称修正：AI 复盘正文中若出现与阵容不符的坦克名（如把 Kranvagn 写成「埃米尔1951」、中文译名或相似车型混淆），会按本场阵容的权威车名自动纠正；同一错名在正文其它位置再次出现时也会一并修正。没有明确对应玩家的车名不做猜测，保持原文。",
-    "en": "AI review tank-name correction: if the AI review text shows a tank name that does not match the lineup (e.g. Kranvagn written as EMIL 1951, a Chinese translation, or a similar-vehicle mix-up), it is now auto-corrected to the authoritative name for that battle, and the same wrong name elsewhere in the text is corrected too. Names with no clear player association are left as-is rather than guessed.",
-    "ru": "Исправление названий танков в ИИ-разборе: если в тексте разбора встречается название танка, не совпадающее с составом (например, Kranvagn вместо EMIL 1951, перевод или путаница похожих машин), оно автоматически исправляется на авторитетное название этого боя, и то же ошибочное название в других местах текста тоже исправляется. Названия без явной привязки к игроку не угадываются и остаются как есть."
+    "zh": "AI 复盘坦克名称修正：AI 复盘正文与赛前板块中若出现与阵容不符的坦克名（如把 Kranvagn 写成「埃米尔1951」、中文译名或相似车型混淆），会按本场阵容的权威车名自动纠正；正文与赛前板块共享同一份已证明的映射，任一处确认错名后另一板块的同名错误也会一并修正，保证两侧名称一致。没有明确对应玩家的车名不做猜测，保持原文。",
+    "en": "AI review tank-name correction: if the review body or the pre-battle section shows a tank name that does not match the lineup (e.g. Kranvagn written as EMIL 1951, a Chinese translation, or a similar-vehicle mix-up), it is now auto-corrected to the authoritative name for that battle. The two sections share one proven mapping, so a wrong name confirmed in either one is corrected in the other too, keeping both sides consistent. Names with no clear player association are left as-is rather than guessed.",
+    "ru": "Исправление названий танков в ИИ-разборе: если в тексте разбора или предбоевом блоке встречается название танка, не совпадающее с составом (например, Kranvagn вместо EMIL 1951, перевод или путаница похожих машин), оно автоматически исправляется на авторитетное название этого боя. Оба блока используют одно подтверждённое сопоставление, поэтому ошибочное название, подтверждённое в одном из них, исправляется и в другом — названия на обеих сторонах согласованы. Названия без явной привязки к игроку не угадываются и остаются как есть."
   },
   {
     "v": "2.11.13",
