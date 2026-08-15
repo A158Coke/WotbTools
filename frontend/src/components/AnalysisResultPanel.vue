@@ -1,5 +1,6 @@
 <script setup>
 import { onBeforeUnmount, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import MarkdownContent from './MarkdownContent.vue'
 
 // 普通用户页面只展示 AI 复盘正文 + 可折叠的「赛前预测」区块。
@@ -22,6 +23,7 @@ const preBattleOpen = ref(true)
 const analysisOpen = ref(true)
 const copied = ref(false)
 let copyTimer
+const { t } = useI18n()
 
 function togglePreBattle() {
   preBattleOpen.value = !preBattleOpen.value
@@ -31,11 +33,13 @@ function toggleAnalysis() {
   analysisOpen.value = !analysisOpen.value
 }
 
-/** 一键复制最终复盘正文（result.analysis；可能包含团队剖析与免责声明；不含独立的赛前预测与地图鸟瞰）。 */
+/** 一键复制最终复盘正文（result.analysis；可能包含团队剖析与免责声明；不含独立的赛前预测与地图鸟瞰）。
+ * 末尾附带一行网站宣传（recon.copy_footer，三语随界面语言）。 */
 async function copyAnalysis() {
   const text = props.result.analysis
   if (!text) return
-  if (!(await copyTextWithFallback(text))) return
+  const withFooter = text + '\n' + t('recon.copy_footer')
+  if (!(await copyTextWithFallback(withFooter))) return
   copied.value = true
   clearTimeout(copyTimer)
   copyTimer = setTimeout(() => {
@@ -139,7 +143,30 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
 .analysis-panel {
   margin-top: 16px;
 }
-.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  /* 随用户视角固定在右上角：页面滚动时头部吸顶，复制按钮保持在可视区右上角。
+     top 必须落在全局 Topbar 下方——App.vue 桌面端 (>1080px) .topbar 为 fixed 高 52px
+     (z-index:100)，若 top:0 会被顶栏遮挡；此值须与 App.vue .tb-content padding-top 同步。 */
+  position: sticky;
+  top: 52px;
+  z-index: 20;
+  background: var(--bg-card);
+  padding: 8px 0;
+  margin: -8px 0 0;
+}
+@media (max-width: 1080px) {
+  /* <=1080px 时 App.vue .topbar 变为 sticky + auto height（可换行、高度不定），
+     固定偏移无法对齐；回退普通流式头部——复制按钮随面板滚动（不重叠、可操作、
+     滚出面板后消失），满足「不遮挡导航/正文、无横向溢出」。 */
+  .panel-head {
+    position: static;
+    top: auto;
+  }
+}
 .panel-head h2 { margin: 0 0 12px; }
 .panel-head-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .panel-head-actions .copy-btn, .panel-head-actions .toggle-btn { margin: 0; }

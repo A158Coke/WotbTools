@@ -1,7 +1,9 @@
 package com.wotb.web.replay.ai;
 
+import com.wotb.core.ai.ClusterTermSanitizer;
 import com.wotb.core.ai.TankNameCorrector;
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.model.Source;
 import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.processing.BatchAnalyzer;
@@ -221,10 +223,10 @@ public class AiReplayReviewService {
                 final TacticalReviewHarness.HarnessOutcome outcome = harnessOrFallback(
                         representative, language, listener);
                 final Battle battle = representative.battle();
-                final List<String> corrected = correctTankNames(packageSections(
+                final List<String> corrected = sanitizeClusterTerms(correctTankNames(packageSections(
                         outcome.result().analysis(),
                         renderRandomBattleSection(representative, outcome.preBattlePrior(), language)),
-                        battle);
+                        battle), battle);
                 yield new AnalyzeResponse(
                         withDisclaimerFooter(corrected.get(0), language),
                         corrected.get(1),
@@ -235,8 +237,8 @@ public class AiReplayReviewService {
                         .analyzeTeamGroups(analyzableGroups, language, listener);
                 final ReplayProcessingResult first = analyzableGroups.getFirst().representative();
                 final Battle battle = first.battle();
-                final List<String> corrected = correctTankNames(packageSections(
-                        teamResult.analysis().analysis(), teamResult.preBattleSection()), battle);
+                final List<String> corrected = sanitizeClusterTerms(correctTankNames(packageSections(
+                        teamResult.analysis().analysis(), teamResult.preBattleSection()), battle), battle);
                 yield new AnalyzeResponse(
                         withDisclaimerFooter(corrected.get(0), language),
                         corrected.get(1),
@@ -282,6 +284,38 @@ public class AiReplayReviewService {
             LOGGER.info("AI tank-name correction applied: {}", detail);
         }
         return corrected;
+    }
+
+    /**
+     * 「簇」字确定性兜底（{@link ClusterTermSanitizer}）：对 correction package 各段统一应用，
+     * 消除 AI 生成的内部术语「簇」；同时保护权威 proper noun（roster 昵称 / 权威坦克名，
+     * 可能合法含「簇」）原样保留。null 段原样保留。
+     */
+    static List<String> sanitizeClusterTerms(final List<String> texts, final Battle battle) {
+        final List<String> protectedLiterals = new ArrayList<>();
+        if (battle != null && battle.players != null) {
+            for (final PlayerResult p : battle.players) {
+                if (p == null) {
+                    continue;
+                }
+                if (p.nickname != null && !p.nickname.isBlank()) {
+                    protectedLiterals.add(p.nickname);
+                }
+                if (p.clan != null && !p.clan.isBlank()) {
+                    // teamLabel（TeamPerspectiveLabelResolver 从 clan 聚合）可能含「簇」
+                    protectedLiterals.add(p.clan);
+                }
+                final String tankName = ReplayDisplayNames.tankName(p.tankId, p.tankName);
+                if (tankName != null && !tankName.isBlank()) {
+                    protectedLiterals.add(tankName);
+                }
+            }
+        }
+        final List<String> out = new ArrayList<>(texts.size());
+        for (final String t : texts) {
+            out.add(t == null ? null : ClusterTermSanitizer.sanitize(t, protectedLiterals));
+        }
+        return out;
     }
 
     /** 组装 correction package 的各段（允许 null 元素，null 段原样保留）。 */
