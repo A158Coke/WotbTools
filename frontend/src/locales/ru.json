@@ -835,7 +835,24 @@
                 "event_DESTROYED": "Уничтожен",
                 "event_KILL": "Фраг",
                 "event_POSITION_REPORTED": "Позиция передана",
-                "event_POSITION_STALE": "Позиция устарела"
+                "event_POSITION_STALE": "Позиция устарела",
+                "annot": {
+                    "pen": "Кисть",
+                    "eraser": "Ластик",
+                    "arrow": "Стрелка",
+                    "line": "Линия",
+                    "rect": "Прямоугольник",
+                    "circle": "Круг",
+                    "text": "Текст",
+                    "color": "Цвет",
+                    "width": "Толщина",
+                    "undo": "Отменить",
+                    "redo": "Вернуть",
+                    "clear": "Очистить",
+                    "show": "Показать пометки",
+                    "hide": "Скрыть пометки",
+                    "text_placeholder": "Введите текст…"
+                }
             }
           },
         "stages": {

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { mapImages } from '../data/mapImages'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
@@ -25,6 +25,24 @@ import {
   turretWorldYawDeg,
   zoomViewAt
 } from '../utils/battlePlayback'
+import {
+  ANNOT_COLORS,
+  ANNOT_FONT_SIZE,
+  ANNOT_WIDTH_DEFAULT,
+  ANNOT_WIDTH_MAX,
+  ANNOT_WIDTH_MIN,
+  applyEraser,
+  arrowHeadPoints,
+  canRedo,
+  canUndo,
+  circleFromCorners,
+  commit,
+  polylinePoints,
+  rectFromCorners,
+  redo,
+  screenToSemantic,
+  undo
+} from '../utils/annotation'
 
 /**
  * 战局回放（Battle Playback）：地图鸟瞰第三视图。
@@ -143,6 +161,16 @@ function onPointerDown(e) {
   } catch {
     // 某些测试环境不支持指针捕获，忽略
   }
+  // 标注绘制：单指 + 激活工具 → 走绘制，不进入平移
+  if (activeTool.value && pointers.size === 1) {
+    startDrawing(e)
+    return
+  }
+  // 绘制中落下第二根手指：先提交当前笔画，再转入双指捏合
+  if (drawingPointerId != null && pointers.size === 2) {
+    endDrawing()
+    drawingPointerId = null
+  }
   if (pointers.size === 1) {
     panStart = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false }
   } else if (pointers.size === 2) {
@@ -164,6 +192,10 @@ function onPointerDown(e) {
 function onPointerMove(e) {
   if (!pointers.has(e.pointerId)) return
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+  if (drawingPointerId === e.pointerId && activeTool.value) {
+    moveDrawing(e)
+    return
+  }
   if (pointers.size === 2 && pinchStart) {
     const { mid, dist } = pinchInfo()
     if (!pinchStart.moved
@@ -196,7 +228,6 @@ function onPointerMove(e) {
 
 function onPointerUp(e) {
   if (!pointers.delete(e.pointerId)) return
-  if (gestureMoved) suppressClick = true
   try {
     if (typeof e.target.releasePointerCapture === 'function') {
       e.target.releasePointerCapture(e.pointerId)
@@ -204,6 +235,18 @@ function onPointerUp(e) {
   } catch {
     // 忽略（无捕获或已释放）
   }
+  if (drawingPointerId === e.pointerId) {
+    endDrawing()
+    drawingPointerId = null
+    if (pointers.size === 0) {
+      panStart = null
+      pinchStart = null
+      gestureMoved = false
+      suppressClick = false
+    }
+    return
+  }
+  if (gestureMoved) suppressClick = true
   if (pointers.size < 2) pinchStart = null
   if (pointers.size === 0) {
     panStart = null
@@ -227,6 +270,227 @@ function onViewportClick(e) {
 function resetView() {
   applyView({ scale: 1, tx: 0, ty: 0 })
 }
+
+// ---- 地图标注（临时纯前端：切视图/切文件即清空；几何一律存语义坐标） ----
+const activeTool = ref(null) // null|pen|eraser|arrow|line|rect|circle|text
+const annotColor = ref(ANNOT_COLORS[0])
+const annotVisible = ref(true)
+const annotWidthSlider = ref(ANNOT_WIDTH_DEFAULT) // 滑块值 = SVG 像素口径（1× 下所见即所得）
+// 语义单位/每 SVG 像素（x/y 轴因 preserveAspectRatio:none 比例可能不同；线宽/字号/半径按 x 轴换算）
+const semPerSvgX = computed(() => {
+  const b = mapView.value.renderBounds
+  return b && mapView.value.W > 0 ? (b.xMax - b.xMin) / mapView.value.W : 1
+})
+const semPerSvgY = computed(() => {
+  const b = mapView.value.renderBounds
+  return b && mapView.value.H > 0 ? (b.yMax - b.yMin) / mapView.value.H : 1
+})
+const annotWidth = computed(() => annotWidthSlider.value * semPerSvgX.value)
+const history = ref([[]]) // 快照栈（不可变数组），history[0] = 初始空
+const historyIndex = ref(0)
+const annotations = computed(() => history.value[historyIndex.value] || [])
+const draft = ref(null) // 进行中的标注（未提交）
+const textSession = ref(null) // reactive({ point, text })，文字输入会话
+const textInputRef = ref(null)
+let drawStart = null // 绘制起点（语义坐标）
+let drawPoints = [] // pen/eraser 已采点（语义坐标）
+let drawingPointerId = null
+
+function resetAnnotations() {
+  history.value = [[]]
+  historyIndex.value = 0
+  activeTool.value = null
+  draft.value = null
+  textSession.value = null
+  drawStart = null
+  drawPoints = []
+  drawingPointerId = null
+  suppressClick = false
+  gestureMoved = false
+  panStart = null
+  pinchStart = null
+}
+// 切换文件（overview 引用变化；MapOverview 未按文件 key 复用）→ 清空标注
+watch(() => props.overview, resetAnnotations)
+
+function toggleTool(tool) {
+  activeTool.value = activeTool.value === tool ? null : tool
+}
+
+function undoAnnot() {
+  const s = undo(history.value, historyIndex.value)
+  history.value = s.history
+  historyIndex.value = s.index
+}
+
+function redoAnnot() {
+  const s = redo(history.value, historyIndex.value)
+  history.value = s.history
+  historyIndex.value = s.index
+}
+
+function clearAll() {
+  const s = commit(history.value, historyIndex.value, [])
+  history.value = s.history
+  historyIndex.value = s.index
+}
+
+function commitDraft(ann) {
+  const s = commit(history.value, historyIndex.value, [...annotations.value, ann])
+  history.value = s.history
+  historyIndex.value = s.index
+}
+
+function draftFromTool(tool, a, b) {
+  switch (tool) {
+    case 'arrow':
+    case 'line':
+      return { type: tool, color: annotColor.value, width: annotWidth.value, x1: a.x, y1: a.y, x2: b.x, y2: b.y }
+    case 'rect':
+      return { type: 'rect', color: annotColor.value, width: annotWidth.value, ...rectFromCorners(a, b) }
+    case 'circle':
+      return { type: 'circle', color: annotColor.value, width: annotWidth.value, ...circleFromCorners(a, b) }
+    default:
+      return null
+  }
+}
+
+/** 指针 client 坐标 → 语义坐标（经 viewport 变换与 fromX/fromY 逆映射）。 */
+function semanticPoint(e) {
+  const sp = screenPoint(e.clientX, e.clientY)
+  return screenToSemantic(view, mapView.value, sp.x, sp.y)
+}
+
+function startDrawing(e) {
+  const p = semanticPoint(e)
+  if (!p) return
+  drawingPointerId = e.pointerId
+  if (activeTool.value === 'text') {
+    if (textSession.value) commitSession(textSession.value) // 先提交上一个未完成的文字
+    textSession.value = reactive({ point: p, text: '' })
+    nextTick(() => textInputRef.value && textInputRef.value.focus())
+    return
+  }
+  if (activeTool.value === 'pen' || activeTool.value === 'eraser') {
+    drawPoints = [p]
+    draft.value = { type: activeTool.value, color: annotColor.value, width: annotWidth.value, points: [p] }
+  } else {
+    drawStart = p
+    draft.value = draftFromTool(activeTool.value, p, p)
+  }
+}
+
+function moveDrawing(e) {
+  const p = semanticPoint(e)
+  if (!p) return
+  const tool = activeTool.value
+  if (tool === 'pen' || tool === 'eraser') {
+    const last = drawPoints[drawPoints.length - 1]
+    // 抽稀：约 2 屏幕像素对应的语义距离（屏幕 px → SVG px ÷scale → 语义 ×semPerSvg）
+    const minDist = (2 / Math.max(1e-6, view.scale)) * semPerSvgX.value
+    if (Math.hypot(p.x - last.x, p.y - last.y) >= minDist) {
+      drawPoints.push(p)
+      draft.value = { ...draft.value, points: [...drawPoints] }
+    }
+  } else if (drawStart) {
+    draft.value = draftFromTool(tool, drawStart, p)
+  }
+}
+
+function isDegenerate(ann) {
+  if (ann.type === 'rect') return ann.w < 1e-9 && ann.h < 1e-9
+  if (ann.type === 'circle') return ann.r < 1e-9
+  if (ann.type === 'line' || ann.type === 'arrow') {
+    return Math.hypot(ann.x2 - ann.x1, ann.y2 - ann.y1) < 1e-9
+  }
+  return false
+}
+
+function endDrawing() {
+  const tool = activeTool.value
+  if (!tool) return
+  if (tool === 'pen') {
+    if (drawPoints.length >= 2) {
+      commitDraft({ type: 'pen', color: annotColor.value, width: annotWidth.value, points: drawPoints })
+    }
+  } else if (tool === 'eraser') {
+    if (drawPoints.length) {
+      const current = annotations.value
+      const next = applyEraser(current, drawPoints, annotWidth.value)
+      if (next !== current) {
+        const s = commit(history.value, historyIndex.value, next)
+        history.value = s.history
+        historyIndex.value = s.index
+      }
+    }
+  } else if (draft.value && !isDegenerate(draft.value)) {
+    commitDraft(draft.value)
+  }
+  draft.value = null
+  drawStart = null
+  drawPoints = []
+}
+
+/** 文字提交（幂等：Enter/blur/移除输入框都会触发，committed 防重复）。 */
+function commitSession(session) {
+  if (textSession.value === session) textSession.value = null
+  if (!session || session.cancelled || session.committed) return
+  session.committed = true
+  const text = session.text.trim()
+  if (!text) return
+  commitDraft({ type: 'text', color: annotColor.value, x: session.point.x, y: session.point.y, text })
+}
+
+function cancelSession(session) {
+  if (textSession.value === session) {
+    textSession.value = null
+    session.cancelled = true
+  }
+}
+
+/** 文字输入框屏幕定位：内容坐标 ×scale + translate（viewport 变换的逆）。 */
+const textInputStyle = computed(() => {
+  const session = textSession.value
+  if (!session) return null
+  const sx = mapView.value.toX(session.point.x) * view.scale + view.tx
+  const sy = mapView.value.toY(session.point.y) * view.scale + view.ty
+  return { left: `${sx}px`, top: `${sy}px` }
+})
+
+/** 渲染用标注列表：语义坐标 → SVG 像素（含进行中的 draft），尺寸按 x/y 轴比例换算。 */
+const renderedAnnotations = computed(() => {
+  const toX = mapView.value.toX
+  const toY = mapView.value.toY
+  const invX = 1 / Math.max(1e-9, semPerSvgX.value)
+  const invY = 1 / Math.max(1e-9, semPerSvgY.value)
+  const list = [...annotations.value]
+  if (draft.value) list.push(draft.value)
+  return list.map(ann => {
+    const out = { ...ann, widthSvg: ann.width * invX }
+    if (ann.type === 'pen') {
+      out.svgPoints = polylinePoints(ann.points, toX, toY)
+    } else if (ann.type === 'line' || ann.type === 'arrow') {
+      out.x1 = toX(ann.x1)
+      out.y1 = toY(ann.y1)
+      out.x2 = toX(ann.x2)
+      out.y2 = toY(ann.y2)
+      if (ann.type === 'arrow') out.head = arrowHeadPoints(out.x1, out.y1, out.x2, out.y2)
+    } else if (ann.type === 'rect') {
+      out.x = toX(ann.x)
+      out.y = toY(ann.y)
+      out.w = ann.w * invX
+      out.h = ann.h * invY
+    } else if (ann.type === 'circle') {
+      out.cx = toX(ann.cx)
+      out.cy = toY(ann.cy)
+      out.r = ann.r * invX
+    } else if (ann.type === 'text') {
+      out.x = toX(ann.x)
+      out.y = toY(ann.y)
+    }
+    return out
+  })
+})
 
 onMounted(() => {
   window.addEventListener('pointermove', onPointerMove)
@@ -551,6 +815,63 @@ const mapStyle = computed(() => ({
       >{{ $t(`recon.map.playback.event_${type}`) }}</button>
     </div>
 
+    <!-- 地图标注工具栏：显式切工具才绘制，未选工具时保持原浏览交互 -->
+    <div class="pb-annot-toolbar" data-test="pb-annot-toolbar">
+      <button
+        v-for="tool in ['pen', 'eraser', 'arrow', 'line', 'rect', 'circle', 'text']"
+        :key="tool"
+        type="button"
+        class="pb-annot-btn"
+        :class="{ active: activeTool === tool }"
+        :data-test="`pb-annot-${tool}`"
+        @click="toggleTool(tool)"
+      >{{ $t(`recon.map.playback.annot.${tool}`) }}</button>
+      <span class="pb-annot-sep" aria-hidden="true"></span>
+      <button
+        v-for="c in ANNOT_COLORS"
+        :key="c"
+        type="button"
+        class="pb-annot-color"
+        :class="{ active: annotColor === c }"
+        :style="{ background: c }"
+        :aria-label="$t('recon.map.playback.annot.color')"
+        @click="annotColor = c"
+      ></button>
+      <span class="pb-annot-sep" aria-hidden="true"></span>
+      <label class="pb-annot-width">
+        {{ $t('recon.map.playback.annot.width') }}
+        <input type="range" :min="ANNOT_WIDTH_MIN" :max="ANNOT_WIDTH_MAX" step="1" v-model.number="annotWidthSlider" />
+        <span class="pb-annot-width-val">{{ annotWidthSlider }}</span>
+      </label>
+      <span class="pb-annot-sep" aria-hidden="true"></span>
+      <button
+        type="button"
+        class="pb-annot-btn"
+        :disabled="!canUndo(historyIndex)"
+        data-test="pb-annot-undo"
+        @click="undoAnnot"
+      >{{ $t('recon.map.playback.annot.undo') }}</button>
+      <button
+        type="button"
+        class="pb-annot-btn"
+        :disabled="!canRedo(history, historyIndex)"
+        data-test="pb-annot-redo"
+        @click="redoAnnot"
+      >{{ $t('recon.map.playback.annot.redo') }}</button>
+      <button
+        type="button"
+        class="pb-annot-btn"
+        data-test="pb-annot-clear"
+        @click="clearAll"
+      >{{ $t('recon.map.playback.annot.clear') }}</button>
+      <button
+        type="button"
+        class="pb-annot-btn"
+        data-test="pb-annot-toggle"
+        @click="annotVisible = !annotVisible"
+      >{{ $t(annotVisible ? 'recon.map.playback.annot.hide' : 'recon.map.playback.annot.show') }}</button>
+    </div>
+
     <!-- 进度条 + 事件标记 -->
     <div class="pb-progress" data-test="pb-progress">
       <input
@@ -657,8 +978,73 @@ const mapStyle = computed(() => ({
           />
         </template>
       </g>
+      <!-- 地图标注层：语义坐标锚定，随地图缩放/平移；静态叠加不随播放时间变化 -->
+      <g v-if="annotVisible" class="pb-annotations" data-test="pb-annotations">
+        <template v-for="(ann, i) in renderedAnnotations" :key="i">
+          <polyline
+            v-if="ann.type === 'pen'"
+            :points="ann.svgPoints"
+            fill="none"
+            :stroke="ann.color"
+            :stroke-width="ann.widthSvg"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <line
+            v-else-if="ann.type === 'line'"
+            :x1="ann.x1"
+            :y1="ann.y1"
+            :x2="ann.x2"
+            :y2="ann.y2"
+            :stroke="ann.color"
+            :stroke-width="ann.widthSvg"
+            stroke-linecap="round"
+          />
+          <g v-else-if="ann.type === 'arrow'">
+            <line
+              :x1="ann.x1"
+              :y1="ann.y1"
+              :x2="ann.x2"
+              :y2="ann.y2"
+              :stroke="ann.color"
+              :stroke-width="ann.widthSvg"
+              stroke-linecap="round"
+            />
+            <polygon :points="ann.head" :fill="ann.color" />
+          </g>
+          <rect
+            v-else-if="ann.type === 'rect'"
+            :x="ann.x"
+            :y="ann.y"
+            :width="ann.w"
+            :height="ann.h"
+            :stroke="ann.color"
+            :stroke-width="ann.widthSvg"
+            fill="none"
+          />
+          <circle
+            v-else-if="ann.type === 'circle'"
+            :cx="ann.cx"
+            :cy="ann.cy"
+            :r="ann.r"
+            :stroke="ann.color"
+            :stroke-width="ann.widthSvg"
+            fill="none"
+          />
+          <text
+            v-else-if="ann.type === 'text'"
+            :x="ann.x"
+            :y="ann.y"
+            :fill="ann.color"
+            :font-size="ANNOT_FONT_SIZE"
+            text-anchor="middle"
+            dominant-baseline="middle"
+            class="pb-annot-text"
+          >{{ ann.text }}</text>
+        </template>
+      </g>
     </svg>
-    <div class="pb-markers" data-test="pb-markers" aria-hidden="false">
+    <div class="pb-markers" :class="{ 'pb-drawing': !!activeTool }" data-test="pb-markers" aria-hidden="false">
       <button
         v-for="st in vehicleStates"
         :key="st.vehicle.accountId"
@@ -700,6 +1086,19 @@ const mapStyle = computed(() => ({
       </button>
     </div>
     </div>
+
+    <input
+      v-if="textSession"
+      ref="textInputRef"
+      v-model="textSession.text"
+      class="pb-text-input"
+      :style="textInputStyle"
+      :placeholder="$t('recon.map.playback.annot.text_placeholder')"
+      data-test="pb-text-input"
+      @keydown.enter.prevent="commitSession(textSession)"
+      @keydown.esc.prevent="cancelSession(textSession)"
+      @blur="commitSession(textSession)"
+    />
     </div>
 
     <!-- 双方总血量条 + 争霸赛实时点数（阵营色实段=已知剩余，灰段=未观测容量，空=已损失） -->
@@ -940,4 +1339,66 @@ const mapStyle = computed(() => ({
 .pb-popup ul { margin: 4px 0 0; padding-left: 16px; }
 .pb-event-type { color: var(--accent); margin-right: 4px; }
 .pb-close { border: none; background: none; cursor: pointer; color: var(--text-muted); }
+
+/* 地图标注：工具栏 + 标注层 + 文字输入 */
+.pb-annot-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.pb-annot-btn {
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-label);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: .78rem;
+  cursor: pointer;
+}
+.pb-annot-btn.active {
+  background: var(--accent, #2f7dff);
+  border-color: var(--accent, #2f7dff);
+  color: #fff;
+}
+.pb-annot-btn:disabled { opacity: .45; cursor: default; }
+.pb-annot-color {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.pb-annot-color.active { border-color: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.7); }
+.pb-annot-width {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: .78rem;
+  color: var(--text-label);
+}
+.pb-annot-width input { width: 80px; }
+.pb-annot-width-val { font-variant-numeric: tabular-nums; min-width: 2ch; }
+.pb-annot-sep { width: 1px; height: 16px; background: var(--border); }
+.pb-annotations { pointer-events: none; }
+/* 文字描边保证暗图上可读（paint-order 先描边后填充，不遮字） */
+.pb-annot-text {
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, .65);
+  stroke-width: 1;
+}
+/* 绘制模式下禁用车标按钮（pointer-events none），避免画到坦克上误触选中 */
+.pb-drawing { pointer-events: none; }
+.pb-text-input {
+  position: absolute;
+  width: 140px;
+  font-size: 13px;
+  padding: 2px 6px;
+  border: 1px solid var(--accent, #2f7dff);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, .8);
+  color: #fff;
+  z-index: 6;
+}
 </style>

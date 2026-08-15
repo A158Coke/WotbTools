@@ -835,7 +835,24 @@
                 "event_DESTROYED": "击毁",
                 "event_KILL": "击杀",
                 "event_POSITION_REPORTED": "位置上报",
-                "event_POSITION_STALE": "位置中断"
+                "event_POSITION_STALE": "位置中断",
+                "annot": {
+                    "pen": "画笔",
+                    "eraser": "橡皮擦",
+                    "arrow": "箭头",
+                    "line": "直线",
+                    "rect": "矩形",
+                    "circle": "圆",
+                    "text": "文字",
+                    "color": "颜色",
+                    "width": "粗细",
+                    "undo": "撤回",
+                    "redo": "重做",
+                    "clear": "清空",
+                    "show": "显示标注",
+                    "hide": "隐藏标注",
+                    "text_placeholder": "输入标注…"
+                }
             }
         },
         "stages": {

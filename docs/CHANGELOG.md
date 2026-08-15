@@ -5,6 +5,17 @@
 ## [Unreleased]
 
 ### Changed
+- **战局回放地图标注（纯前端临时标注）**：新增 `frontend/src/utils/annotation.js` 纯函数模块
+  （8 色色板/粗细范围常量、`screenToSemantic` 屏幕→语义坐标、`rectFromCorners`/`circleFromCorners`/
+  `arrowHeadPoints`/`polylinePoints` 几何归一与渲染换算、`applyEraser` 橡皮擦点擦（pen 删点拆段、
+  形状/文字整件擦）、`commit/undo/redo` 全量快照 undo/redo（`UNDO_LIMIT=100`））；`mapView.js`
+  `createMapView` 新增 `fromX/fromY` 逆映射；`BattlePlayback.vue` 新增标注工具栏与 SVG 标注层
+  （语义坐标锚定，随 viewport transform 缩放/平移），绘制走 `onPointerDown/Move/Up` 门控
+  （选工具时单指绘制、未选工具保持原浏览交互；绘制中车标 pointer-events 关闭、双指捏合保留），
+  文字标注用临时输入框（Enter/blur 提交、Esc 取消、committed 幂等）；切文件 `watch(overview)`
+  重置、切视图 v-if 卸载清空。新增 `utils/mapView.test.js`（往返映射）、
+  `utils/annotation.test.js`（20 用例）与 `components/BattlePlayback.annot.test.js`
+  （8 用例，真实 vue-i18n 三语）。三语文案 `recon.map.playback.annot.*`。
 - **AI 复盘复制按钮随视角固定 + 复制内容带网站宣传**：`AnalysisResultPanel` 面板头部 `position: sticky` 吸顶（滚动页面时复制按钮保持在右上角可视区）；复制内容末尾追加一行 `recon.copy_footer`（三语，默认「由 WotBTools 生成 · https://wotbtools.com」）。
 - **AI 复盘提示词去重与契约（prompts 重构）**：AiPromptLibrary 支持 {{key}} 占位包含（递归展开、循环包含 fail loud），player×3 + team/single 中逐字重复的五块公共规则抽到 prompts/common/{tank-noun,language,damage-semantics,hp-loss,evidence-logic}.zh.md 复用，展开后提示词与重构前字节一致；修复两处 md 与 Java 常量漂移（COMMON_EVIDENCE_LOGIC_RULE 机器标签清单缺「簇/候选/规则候选」、team 身后输出规则 **禁止** vs <b>禁止</b>）——此前 EN/RU .replace 锚点静默失效，EN/RU 复盘会残留中文规则段；新增 PromptRuleContractTest 强制「展开后 ZH 片段与常量逐字一致 + EN/RU 无中文残留」契约。
 - **AI 复盘血量口径：进场满血 provenance + fail closed**：真实回放 probe（EntryHpProbeTest，7 样本）证伪「整场 max current HP = 初始满血」——绝大多数车辆首个 positive 样本与首次受击同刻且低于 tankopedia base。新增 EntryHpSource（OBSERVED_EXACT / BASE_FALLBACK / UNKNOWN）与 PlayerResult.entryHp/entryHpSource：仅「严格早于首次受击且 ≥ base 的样本」证明进场满血；掉血窗口分母 damageVsEntryMaxHpPct 只允许已证明进场满血或 tankopedia base（BASE baseline），短窗高额伤害窗口判定 fail closed（base baseline 不判 critical，避免 1900 / 观测2500 / 真实2600 误报）；Call #1 赛前血量同样只输出已证明进场满血或 base（战斗中观测的 currentHp 不得冒充赛前进场满血）；HP_LOSS_TIME_RULE（ZH/EN/RU）与 prompts/common/hp-loss.zh.md 措辞同步；observedMaxHp 保留为「观测最大 current（下界 base）」供总血量条/血量优势证据。
