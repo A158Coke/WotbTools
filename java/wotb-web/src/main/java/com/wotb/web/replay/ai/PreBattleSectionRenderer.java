@@ -2,6 +2,7 @@ package com.wotb.web.replay.ai;
 
 import org.springframework.util.StringUtils;
 
+import com.wotb.core.ai.ClusterTermSanitizer;
 import com.wotb.core.replay.map.MapTacticalSemantics;
 import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
 
@@ -263,21 +264,8 @@ public final class PreBattleSectionRenderer {
                 .replace("A队", teamALabel).replace("B队", teamBLabel)
                 .replace("A 队", teamALabel).replace("B 队", teamBLabel)
                 .replace("队伍1", teamALabel).replace("队伍2", teamBLabel);
-        // 用语卫生：禁止「簇」字（prompt 规则 8 的确定性兜底）。
-        // 顺序：① 需要特殊自然表达的词先专门替换（簇拥→聚集、簇状→集群状）→
-        //      ② 短语级自然替换（一簇/同簇/成簇/分簇/主力簇/多簇）→
-        //      ③ 剩余「簇」字符兜底为「群」，保证用户可见自由文本最终不含该字；
-        // 兜底用单字「群」而非「集群」，不会把已替换出的「集群」二次污染成「集集群」。
-        result = result
-                .replace("簇拥", "聚集")
-                .replace("簇状", "集群状")
-                .replace("一簇", "一批")
-                .replace("同簇", "集群")
-                .replace("成簇", "集群")
-                .replace("分簇", "分散")
-                .replace("主力簇", "主力集群")
-                .replace("多簇", "多股")
-                .replace("簇", "群");
+        // 用语卫生：禁止「簇」字（prompt 规则 8 的确定性兜底，复用共享 helper）。
+        result = ClusterTermSanitizer.sanitize(result);
         final Matcher matcher = GRID_REGION.matcher(result);
         if (matcher.find()) {
             // regionName 模板形如 "$1区" / "Region $1"：replaceAll 会把 $1 展开为区域号。

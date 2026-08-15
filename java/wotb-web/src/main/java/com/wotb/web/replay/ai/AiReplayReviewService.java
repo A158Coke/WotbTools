@@ -1,5 +1,6 @@
 package com.wotb.web.replay.ai;
 
+import com.wotb.core.ai.ClusterTermSanitizer;
 import com.wotb.core.ai.TankNameCorrector;
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.Source;
@@ -221,10 +222,10 @@ public class AiReplayReviewService {
                 final TacticalReviewHarness.HarnessOutcome outcome = harnessOrFallback(
                         representative, language, listener);
                 final Battle battle = representative.battle();
-                final List<String> corrected = correctTankNames(packageSections(
+                final List<String> corrected = sanitizeClusterTerms(correctTankNames(packageSections(
                         outcome.result().analysis(),
                         renderRandomBattleSection(representative, outcome.preBattlePrior(), language)),
-                        battle);
+                        battle));
                 yield new AnalyzeResponse(
                         withDisclaimerFooter(corrected.get(0), language),
                         corrected.get(1),
@@ -235,8 +236,8 @@ public class AiReplayReviewService {
                         .analyzeTeamGroups(analyzableGroups, language, listener);
                 final ReplayProcessingResult first = analyzableGroups.getFirst().representative();
                 final Battle battle = first.battle();
-                final List<String> corrected = correctTankNames(packageSections(
-                        teamResult.analysis().analysis(), teamResult.preBattleSection()), battle);
+                final List<String> corrected = sanitizeClusterTerms(correctTankNames(packageSections(
+                        teamResult.analysis().analysis(), teamResult.preBattleSection()), battle));
                 yield new AnalyzeResponse(
                         withDisclaimerFooter(corrected.get(0), language),
                         corrected.get(1),
@@ -282,6 +283,18 @@ public class AiReplayReviewService {
             LOGGER.info("AI tank-name correction applied: {}", detail);
         }
         return corrected;
+    }
+
+    /**
+     * 「簇」字确定性兜底（{@link ClusterTermSanitizer}）：对 correction package 各段统一应用，
+     * 保证 AI 用户可见自由文本（复盘正文 + 赛前预测）不含「簇」字；null 段原样保留。
+     */
+    private static List<String> sanitizeClusterTerms(final List<String> texts) {
+        final List<String> out = new ArrayList<>(texts.size());
+        for (final String t : texts) {
+            out.add(t == null ? null : ClusterTermSanitizer.sanitize(t));
+        }
+        return out;
     }
 
     /** 组装 correction package 的各段（允许 null 元素，null 段原样保留）。 */
