@@ -437,7 +437,7 @@ public final class MapOverviewBuilder {
      * EntityRemoved 关闭末段区间，阵亡时刻截断区间末端；re-entry 跨实体区间合并。
      * 语义 = 服务器位置流覆盖，不代表录像者点亮。
      */
-    private static List<MapOverview.PositionInterval> positionIntervals(
+    static List<MapOverview.PositionInterval> positionIntervals(
             final List<Integer> entityIds,
             final Positions positions,
             final List<ReplayEvent> events,
@@ -466,7 +466,11 @@ public final class MapOverviewBuilder {
                 }
                 runEnd = t;
             }
-            final double intervalEnd = removedAt < runEnd
+            // EntityLeave(type-4) 只表示实体离开/停止存在，不代表阵亡；同一实体灭点后再上报
+            // 会产生新的位置段。leave 只截断「落在其时间范围内的当前段」；若 leave 早于本段起点
+            // （属于前一生涯周期），不得截断——否则再上报区间会被截断/倒置，前端 covered 永假、
+            // 车标一直淡化。
+            final double intervalEnd = removedAt >= runStart && removedAt < runEnd
                     ? removedAt : runEnd;
             raw.add(new MapOverview.PositionInterval(runStart, intervalEnd));
         }
@@ -769,16 +773,16 @@ public final class MapOverviewBuilder {
      * 某时刻的平面位置（语义坐标 x/z 与 battle-relative 秒）。
      * yawDeg 来自 type-10 yaw（弧度→度，[-180,180)），非有限时为 null（不参与方向采样）。
      */
-    private record Position(double timeSec, double x, double z, Double yawDeg) {
+    record Position(double timeSec, double x, double z, Double yawDeg) {
     }
 
     /** 按实体聚合的位置时间线（有序），附带最近/最后位置查询。 */
-    private static final class Positions {
+    static final class Positions {
 
         private final Map<Integer, List<Position>> byEntity;
         private float lastTimeSec;
 
-        private Positions(final Map<Integer, List<Position>> byEntity) {
+        Positions(final Map<Integer, List<Position>> byEntity) {
             this.byEntity = byEntity;
             this.lastTimeSec = 0f;
             for (final List<Position> list : byEntity.values()) {
