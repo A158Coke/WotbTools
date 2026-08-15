@@ -171,7 +171,8 @@ public final class TeamAiPromptBuilder {
         final String behindLine = BehindLineHpEvidence.renderTeamSection(
                 context.battle(),
                 context.reconstruction(),
-                context.perspectiveTeam());
+                context.perspectiveTeam(),
+                limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
         if (!behindLine.isEmpty()) {
             optTemp.append(behindLine);
         }

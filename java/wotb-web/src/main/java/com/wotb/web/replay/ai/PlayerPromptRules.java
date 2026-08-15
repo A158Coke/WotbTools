@@ -345,31 +345,34 @@ final class PlayerPromptRules {
     /** 身后输出/血量优势（个人路径·中性）规则（ZH；与 prompts/player/single.zh.md 内文本逐字一致）。 */
     static final String BEHIND_LINE_RULE = """
             === 身后输出/血量优势规则（强制·中性） ===
-            BEHIND_LINE_HP_ADVANTAGE 段是关于你本人的确定性事实（位置/血量/距离/输出次数/tank profile）：
+            BEHIND_LINE_HP_ADVANTAGE 段是关于你本人的确定性事实（位置/血量/距离/已观察攻击事件/tank profile）：
             1. 若你具备扛线能力却在扛线队友身后输出（血量比率 ≥ 扛线队友 × 1.2 且距敌更远），这是中性事实——
                复盘时用中性措辞描述（如「利用队友掩护输出」），不得作负面自我评价，也不得据此断言「吸血」。
-            2. 有输出/无输出与 degree=轻/中/重（跨阶段三因子分级）仅作事实参考。
-            3. 未提供本段时（位置/血量观测不足）禁止编造。""";
+            2. 输出分类受事件流观测覆盖约束：OBSERVED_DAMAGE_IS_PARTIAL 时 outputStatus=UNKNOWN 表示「已观察攻击事件=0」，
+               不得据此推断你「无输出/避战」；HP_ADVANTAGE_UNKNOWN（血量数据不足）只提供位置与已观察攻击事件事实，不得判定吸血/避战。
+            3. degree=轻/中/重（跨阶段三因子分级）仅作事实参考。
+            4. 未提供本段时（位置/血量观测不足）禁止编造。""";
 
     static final String BEHIND_LINE_RULE_EN = """
 
             === BEHIND-LINE OUTPUT / HP ADVANTAGE RULE (mandatory · neutral) ===
-            The BEHIND_LINE_HP_ADVANTAGE section contains deterministic facts about you (position/HP/distance/output counts/tank profile):
+            The BEHIND_LINE_HP_ADVANTAGE section contains deterministic facts about you (position/HP/distance/observed attack events/tank profile):
             1. If you are frontline-capable yet output from behind the carrier teammate (HP ratio ≥ the teammate × 1.2 and farther from the enemy), that is a neutral fact —
                describe it neutrally (e.g. "used teammate cover to output"); do not judge yourself negatively and never assert "HP-hoarding" from it.
-            2. With-output/without-output and degree=light/medium/heavy (cross-phase three-factor grade) are factual references only.
-            3. When this section is absent (insufficient position/HP observation), never fabricate it.""";
+            2. Output classification respects event-stream observation coverage: under OBSERVED_DAMAGE_IS_PARTIAL, outputStatus=UNKNOWN means "observed attack events = 0" — never infer that you had "no output / avoided engagement"; HP_ADVANTAGE_UNKNOWN (insufficient HP data) provides only positional and observed-attack-event facts, never a behind-line/HP-hoarding judgement.
+            3. degree=light/medium/heavy (cross-phase three-factor grade) is a factual reference only.
+            4. When this section is absent (insufficient position/HP observation), never fabricate it.""";
 
     static final String BEHIND_LINE_RULE_RU = """
 
             === ПРАВИЛО «ИГРА ЗА СПИНОЙ / ПРЕИМУЩЕСТВО ПО ОЗ» (обязательное · нейтрально) ===
-            Секция BEHIND_LINE_HP_ADVANTAGE содержит детерминированные факты о вас (позиция/ОЗ/дистанция/число выстрелов/профиль танка):
+            Секция BEHIND_LINE_HP_ADVANTAGE содержит детерминированные факты о вас (позиция/ОЗ/дистанция/наблюдаемые события атаки/профиль танка):
             1. Если вы способны держать фронт, но стреляете из-за спины союзника на первой линии (доля ОЗ ≥ союзника × 1.2 и вы дальше от противника), это нейтральный факт —
                описывайте его нейтрально (например, «использовал прикрытие союзника для стрельбы»); не давайте себе негативных оценок и не утверждайте «накопление ОЗ».
-            2. С уроном/без урона и degree=лёгкая/средняя/тяжёлая (трёхфакторная оценка за фазы) — только справочные факты.
-            3. Если секция отсутствует (недостаточно наблюдений позиций/ОЗ), запрещено её выдумывать.""";
-
-    /**
+            2. Классификация выхода уважает полноту наблюдения событий: при OBSERVED_DAMAGE_IS_PARTIAL outputStatus=UNKNOWN означает «наблюдаемых событий атаки = 0» —
+               не выводите из этого «нет выхода/избегание боя»; HP_ADVANTAGE_UNKNOWN (недостаточно данных об ОЗ) даёт только факты о позиции и наблюдаемых событиях атаки, не вывод об игре за спиной/накоплении ОЗ.
+            3. degree=лёгкая/средняя/тяжёлая (трёхфакторная оценка за фазы) — только справочный факт.
+            4. Если секция отсутствует (недостаточно наблюдений позиций/ОЗ), запрещено её выдумывать.""";    /**
      * 组装 system prompt：ZH 返回原样（字节级不变）；EN/RU 在中文基座上替换中文输出强制句
      * （输出语言、时间格式、车种与称谓规则），保留业务事实约束与注入防护。
      */

@@ -33,8 +33,8 @@ import java.util.Map;
  *       判定（isFrontlineCapable=HEAVY/高装甲、isBacklineCapable=TD/LIGHT、MEDIUM 中性）——
  *       无前线型车辆时不产出前排名单（noFrontlineVehicle + 几何参考）、无后排型车辆时不产出后排名单（noBacklineVehicle）；</li>
  *   <li><b>地图控制权（controlRegions）</b>：九宫格区域按双方距离加权火力覆盖分（F=Σ 火力权重/(1+d/100)）对比——
- *       本队 ≥ 敌队 × 1.2 → own、双方接近 → contested、敌队 ≥ 本队 × 1.2 → enemy；(vision)=区域内有本方位置样本、
- *       (firepower)=无驻留但火力压制。这只是火力覆盖+位置几何的确定性近似，不等于真实占领/点亮/视野。</li>
+ *       (presence)=区域内有本方位置样本、
+ *       (firepower)=无位置样本但火力覆盖占优。这只是火力覆盖+位置几何的确定性近似，不等于真实占领/点亮/视野。</li>
  * </ul>
  * <p>成员用 {@code account:<accountId>}（与 FORMATION_PHASES 簇成员一致）供 AI 交叉引用。</p>
  */
@@ -199,21 +199,29 @@ final class FormationDepthEvidence {
                 // 阵容结构（tank profile）：可扛线（前线型）与后排型计数
                 int frontline = 0;
                 int backline = 0;
+                int neutralOnly = 0;
                 for (final double[] d : depths) {
                     final TankTacticalProfile profile = profiles.get(Math.round(d[1]));
-                    if (isFrontlineCapable(profile)) {
+                    final boolean f = isFrontlineCapable(profile);
+                    final boolean b = isBacklineCapable(profile);
+                    if (f) {
                         frontline++;
                     }
-                    if (isBacklineCapable(profile)) {
+                    if (b) {
                         backline++;
+                    }
+                    if (!f && !b) {
+                        // neutralOnly 逐车按 !frontline && !backline 计数，绝不用减法推导（capability 可重叠）
+                        neutralOnly++;
                     }
                 }
                 hasFront = frontline > 0;
                 final boolean hasBack = backline > 0;
                 sb.append(header)
-                        .append("lineupStructure=frontlineType=").append(frontline)
-                        .append("/backlineType=").append(backline)
-                        .append("/neutral=").append(own.size() - frontline - backline).append("\n");
+                        .append("lineupStructure=totalVehicles=").append(own.size())
+                        .append("/frontlineCapable=").append(frontline)
+                        .append("/backlineCapable=").append(backline)
+                        .append("/neutralOnly=").append(neutralOnly).append("\n");
                 if (!hasFront) {
                     sb.append("noFrontlineVehicle=本阶段阵容无前线型车辆\n");
                 }
@@ -312,8 +320,9 @@ return sb.toString() + renderControl(ownRegionCount, enemyRegionCount,
 
 
     /** 区域控制权：九宫格双方距离加权火力覆盖分（F=Σ fireWeight/(1+d/100)），1.2 倍阈值判 own/contested/enemy。
-     * 视野确认 = 区域内有本方位置样本（vision）；无驻留但火力覆盖占优 → 火力压制（firepower）。
-     * 确定性近似：火力覆盖 + 位置几何，不等于真实占领/点亮，AI 不得断言「控制/占领」。 */
+     * presence = 区域内有本方位置样本（位置存在，非视野/点亮）；无位置样本但火力覆盖占优 → 火力压制（firepower）。
+     * 确定性近似：火力覆盖（距离+profile 权重）与位置几何，不代表真实射界/地形 LOS，不等于真实占领/点亮，AI 不得断言「控制/占领」。
+     */
     private static String renderControl(
             final Map<Integer, Integer> own,
             final Map<Integer, Integer> enemy,
@@ -332,8 +341,8 @@ return sb.toString() + renderControl(ownRegionCount, enemyRegionCount,
         for (final int region : regions) {
             final double fOwn = fireCoverage(region, ownCanonical, profiles);
             final double fEnemy = fireCoverage(region, enemyCanonical, profiles);
-            final boolean vision = own.getOrDefault(region, 0) > 0;
-            final String tag = vision ? "(vision)" : "(firepower)";
+            final boolean presence = own.getOrDefault(region, 0) > 0;
+            final String tag = presence ? "(presence)" : "(firepower)";
             if (fOwn >= fEnemy * CONTROL_RATIO && fOwn > 0) {
                 ownList.add("GRID_REGION_" + region + tag);
             } else if (fEnemy >= fOwn * CONTROL_RATIO && fEnemy > 0) {

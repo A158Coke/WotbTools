@@ -56,8 +56,18 @@ class BehindLineEvidenceProbeTest {
                     continue;
                 }
                 final String section = BehindLineHpEvidence.renderTeamSection(
-                        battle, recon, recorderTeam);
+                        battle, recon, recorderTeam, false);
                 System.out.println(section.isEmpty() ? "  (无命中)" : section);
+                // OBSERVED_DAMAGE_IS_PARTIAL 对照：事件流观测不全时不得出现「无输出（避战）」
+                final String partial = BehindLineHpEvidence.renderTeamSection(
+                        battle, recon, recorderTeam, true);
+                if (partial.contains("无输出（避战）")) {
+                    System.out.println("  !! PARTIAL_MODE_STILL_SAYS_AVOIDANCE");
+                } else if (!partial.isEmpty()) {
+                    System.out.println("  [partial 对照] 无「无输出（避战）」结论；outputStatus 行如下:");
+                    partial.lines().filter(l -> l.contains("outputStatus") || l.contains("observedAttackEvents"))
+                            .forEach(l -> System.out.println("    " + l));
+                }
                 // 地图控制权（controlRegions）：与阵型段同源输出，供用户审区域归属
                 final String formation = FormationDepthEvidence.renderSection(
                         battle, recon, recorderTeam,

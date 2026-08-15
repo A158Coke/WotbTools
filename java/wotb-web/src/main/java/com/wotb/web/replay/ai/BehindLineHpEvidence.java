@@ -26,15 +26,16 @@ import java.util.Map;
  * <ul>
  *   <li>阶段窗口与 {@link FormationDepthEvidence} 同口径（opening/mid/late，复用其包内工具）；</li>
  *   <li>判据（阶段粒度）：X 具备扛线能力（TankTacticalProfile：HEAVY 或 armorReliability=HIGH）、
- *       X 与扛线队友（距敌最近的本队成员）均有可用血量与位置、
+ *       扛线队友 = 本队内<b>可扛线</b>（isFrontlineCapable）且距敌最近的成员（无合格 carrier 不判定）、
+ *       X 与扛线队友均有可用血量与位置、
  *       X 血量比率（hp/maxHp）≥ 扛线队友血量比率 × 1.2、X 距敌 &gt; 扛线队友距敌；
- *       有输出（阶段内作为攻击者 damage ≥ 1）→「有输出（利用队友输出）」、无输出 →「无输出（避战）」；</li>
- *   <li>吸血程度分级（轻/中/重，三因子合成）：血量差幅度（1.2×/1.5×/2×+）+ 持续阶段数 + 躲后距离差
- *       （&lt;50m/50-150m/&gt;150m）→ 分值 3-9：≤4 轻度、5-6 中度、≥7 重度；</li>
+ *       输出分类受 <b>OBSERVED_DAMAGE_IS_PARTIAL</b> 约束：事件流观测不全时 0 个已观测攻击事件 ≠ 无输出，
+ *       只输出 observedAttackEvents + outputStatus=UNKNOWN，禁止推断「无输出（避战）」；</li>
  *   <li>附加（opening）：可扛线账号阶段平均位置在本方后排分位 →「前线型车辆未上前线」；</li>
  *   <li>团队路径：遍历本队全体成员，措辞负面由 prompt 规则给出；个人路径：仅录像者自己，中性措辞。</li>
  * </ul>
- * <p>血量数据不足时降级为「仅位置 + 输出事实」行；无前排阵容（全队不可扛线）不纳入任何成员。</p>
+ * <p>血量数据不足时只输出中性事实（位置关系 + observedAttackEvents + HP_ADVANTAGE_UNKNOWN），不判定吸血/避战；
+ * 无前排阵容（全队不可扛线）不纳入任何成员。</p>
  */
 final class BehindLineHpEvidence {
 
@@ -64,25 +65,28 @@ final class BehindLineHpEvidence {
     static String renderTeamSection(
             final Battle battle,
             final ReplayReconstruction recon,
-            final int perspectiveTeam
+            final int perspectiveTeam,
+            final boolean observedDamagePartial
     ) {
-        return render(battle, recon, perspectiveTeam, null);
+        return render(battle, recon, perspectiveTeam, null, observedDamagePartial);
     }
 
     /** 个人路径：仅录像者自己（中性措辞）；录像者不在册或非本队成员时返回空。 */
     static String renderPlayerSection(
             final Battle battle,
             final ReplayReconstruction recon,
-            final long recorderAccountId
+            final long recorderAccountId,
+            final boolean observedDamagePartial
     ) {
-        return render(battle, recon, null, recorderAccountId);
+        return render(battle, recon, null, recorderAccountId, observedDamagePartial);
     }
 
     private static String render(
             final Battle battle,
             final ReplayReconstruction recon,
             final Integer perspectiveTeam,
-            final Long selfAccountId
+            final Long selfAccountId,
+            final boolean observedDamagePartial
     ) {
         if (battle == null || recon == null || recon.events() == null || battle.players == null) {
             return "";
@@ -182,7 +186,7 @@ final class BehindLineHpEvidence {
         final StringBuilder sb = new StringBuilder();
         for (final FormationDepthEvidence.PhaseRange phase : phases) {
             final PhaseResult result = renderPhase(phase, tracks, hpSamples, attacks, teamByAccount,
-                    playersByAccount, profiles, targets, selfAccountId != null);
+                    playersByAccount, profiles, targets, selfAccountId != null, observedDamagePartial);
             if (result.text() != null) {
                 sb.append(result.text());
             }
@@ -214,7 +218,8 @@ final class BehindLineHpEvidence {
             final Map<Long, PlayerResult> playersByAccount,
             final Map<Long, TankTacticalProfile> profiles,
             final List<Long> targets,
-            final boolean playerPath
+            final boolean playerPath,
+            final boolean observedDamagePartial
     ) {
         final List<PhaseHit> hits = new ArrayList<>();
         final Map<Long, double[]> meanByAccount = new LinkedHashMap<>();
@@ -289,6 +294,9 @@ final class BehindLineHpEvidence {
                 if (teamByAccount.getOrDefault(entry.getKey(), 0) != ownTeam) {
                     continue;
                 }
+                if (!FormationDepthEvidence.isFrontlineCapable(profiles.get(entry.getKey()))) {
+                    continue;
+                }
                 if (entry.getValue() < teammateDist - 1e-9) {
                     teammateDist = entry.getValue();
                     teammate = entry.getKey();
@@ -307,23 +315,22 @@ final class BehindLineHpEvidence {
             final double hpRatioX = hpRatioAt(accountId, phase, hpSamples, playersByAccount);
             final boolean hpKnown = hpRatioX > 0 && teammateHpRatio > 0;
             final boolean hpAdvantage = hpKnown && hpRatioX >= teammateHpRatio * HP_ADVANTAGE_RATIO;
-            final int attackerDamage = countIn(attacks.get(accountId), phase);
-            final String tag = attackerDamage >= ATTACKER_DAMAGE_MIN
-                    ? "有输出（利用队友输出）" : "无输出（避战）";
+            final int observedAttackEvents = countIn(attacks.get(accountId), phase);
             final String selfLabel = playerPath ? "你" : key(accountId);
             if (hpAdvantage) {
                 sb.append("- ").append(selfLabel).append(" hp=").append(pct(hpRatioX))
                         .append(" vs 扛线队友 ").append(key(teammate)).append(" hp=").append(pct(teammateHpRatio))
                         .append("（血量比 ").append(fmtRatio(hpRatioX / teammateHpRatio)).append("×）")
                         .append(" 距敌+").append(Math.round(distX - teammateDist)).append("m")
-                        .append(" 输出").append(attackerDamage).append("次 → ").append(tag).append("\n");
+                        .append(" ").append(outputStatus(observedAttackEvents, observedDamagePartial)).append("\n");
                 hits.add(new PhaseHit(accountId,
                         hpRatioX / teammateHpRatio, distX - teammateDist));
             } else if (!hpKnown) {
-                sb.append("- ").append(selfLabel).append(" hp=未知 vs 扛线队友 ").append(key(teammate))
-                        .append(" hp=未知 距敌+").append(Math.round(distX - teammateDist)).append("m")
-                        .append(" 输出").append(attackerDamage).append("次 → ").append(tag)
-                        .append("（血量数据不足，仅位置+输出事实）\n");
+                // HP 优势未知：只输出中性事实（位置关系 + 已观察攻击事件），不判定吸血/避战
+                sb.append("- ").append(selfLabel).append(" hp=未知 HP_ADVANTAGE_UNKNOWN vs 扛线队友 ")
+                        .append(key(teammate)).append(" hp=未知 距敌+")
+                        .append(Math.round(distX - teammateDist)).append("m")
+                        .append(" observedAttackEvents=").append(observedAttackEvents).append("\n");
             }
         }
         if ("opening".equals(phase.key())) {
@@ -368,6 +375,23 @@ final class BehindLineHpEvidence {
             return -1;
         }
         return lastHp / maxHp;
+    }
+
+    /**
+     * 输出分类（fail-closed）：OBSERVED_DAMAGE_IS_PARTIAL 时 0 个已观测攻击事件 ≠ 无输出，
+     * 只输出 observedAttackEvents + outputStatus=UNKNOWN；完整覆盖时才可给「有输出/无输出」结论。
+     */
+    private static String outputStatus(final int observedAttackEvents, final boolean observedDamagePartial) {
+        if (observedAttackEvents >= ATTACKER_DAMAGE_MIN) {
+            if (observedDamagePartial) {
+                return "observedAttackEvents=" + observedAttackEvents + "（事件流观测不全，不得推断无输出）";
+            }
+            return "有输出（利用队友输出）";
+        }
+        if (observedDamagePartial) {
+            return "observedAttackEvents=0 outputStatus=UNKNOWN（事件流观测不全，不得推断无输出/避战）";
+        }
+        return "无输出（避战）";
     }
 
     private static int countIn(final List<Double> times, final FormationDepthEvidence.PhaseRange phase) {

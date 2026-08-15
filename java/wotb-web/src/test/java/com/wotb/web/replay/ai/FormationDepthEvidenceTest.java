@@ -87,7 +87,8 @@ class FormationDepthEvidenceTest {
         assertTrue(section.contains("frontLine=account:1001"), section);
         assertTrue(section.contains("backLine=account:1002"), section);
         // profile-aware：阵容结构行 + frontLine 带 tank profile 标注（HEAVY）
-        assertTrue(section.contains("lineupStructure=frontlineType="), section);
+        assertTrue(section.contains("lineupStructure=totalVehicles="), section);
+        assertTrue(section.contains("/frontlineCapable="), section);
         assertTrue(section.contains("frontLine=account:1001(HEAVY"), section);
         // 双方驻留不同区域 → own 与 enemy 区域都存在
         assertTrue(section.contains("controlRegions own=GRID_REGION_"), section);
@@ -195,10 +196,10 @@ class FormationDepthEvidenceTest {
 
     @Test
     void controlRegionsIncludeVisionAndFirepowerTags() {
-        // 本队 HEAVY+TD 在左侧区域有位置样本（vision），敌方在右侧 → own 带 (vision) 标签
+        // 本队 HEAVY+TD 在左侧区域有位置样本（presence），敌方在右侧 → own 带 (presence) 标签
         final String section = FormationDepthEvidence.renderSection(battle(), reconWithPositions(20f), 1, MAP);
         assertTrue(section.contains("controlRegions own=GRID_REGION_"), section);
-        assertTrue(section.contains("(vision)"), "本队驻留区域应标 vision");
+        assertTrue(section.contains("(presence)"), "本队驻留区域应标 presence");
         assertTrue(section.contains("controlRegions enemy=GRID_REGION_"), section);
     }
 
@@ -246,4 +247,33 @@ class FormationDepthEvidenceTest {
         assertTrue(section.contains("contested"), "对称火力应判 contested，got: " + section);
     }
 
+
+    @Test
+    void badgerOverlapCountsBothCapabilitiesWithoutNegativeNeutral() {
+        // FV217 Badger（TANK_DESTROYER + armorReliability=HIGH，tankId 17745）：frontlineCapable=true 且 backlineCapable=true
+        // → 两车（HEAVY + Badger）frontlineCapable=2、backlineCapable=1，neutralOnly 逐车计数恒非负
+        final Battle battle = battle();
+        battle.players = List.of(
+                player(1001L, 1, "AllyA", 9489L),     // HEAVY
+                player(1002L, 1, "AllyB", 17745L),    // FV217 Badger（TD+armor=HIGH，双 capability）
+                player(2001L, 2, "EnemyA", 9489L),
+                player(2002L, 2, "EnemyB", 9489L));
+        final String section = FormationDepthEvidence.renderSection(battle, reconWithPositions(20f), 1, MAP);
+        assertTrue(section.contains("lineupStructure=totalVehicles=2/frontlineCapable=2/backlineCapable=1/neutralOnly=0"),
+                "Badger 双 capability 计数正确且 neutralOnly 不为负, got: " + section);
+    }
+
+    @Test
+    void neutralOnlyCountsVehiclesWithoutEitherCapability() {
+        // 全 MEDIUM：frontlineCapable=0、backlineCapable=0、neutralOnly=total（逐车 !front && !back，非减法推导）
+        final Battle battle = battle();
+        battle.players = List.of(
+                player(1001L, 1, "AllyA", 385L),      // Progetto 65 (MEDIUM)
+                player(1002L, 1, "AllyB", 385L),
+                player(2001L, 2, "EnemyA", 9489L),
+                player(2002L, 2, "EnemyB", 9297L));
+        final String section = FormationDepthEvidence.renderSection(battle, reconWithPositions(20f), 1, MAP);
+        assertTrue(section.contains("lineupStructure=totalVehicles=2/frontlineCapable=0/backlineCapable=0/neutralOnly=2"),
+                "neutralOnly 逐车计数, got: " + section);
+    }
     }

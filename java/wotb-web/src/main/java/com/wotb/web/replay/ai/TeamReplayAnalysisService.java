@@ -292,6 +292,7 @@ public class TeamReplayAnalysisService {
         final TeamAutopsyOutcome outcome = teamAutopsyService.analyze(
                 context.battle(),
                 context.reconstruction(),
+                hasObservedDamagePartial(context),
                 context.perspectiveTeam(),
                 AllowedLanguage.ZH,
                 winner,
@@ -333,4 +334,14 @@ public class TeamReplayAnalysisService {
                     .increment();
         }
     }
+
+    /** OBSERVED_DAMAGE_IS_PARTIAL：上下文或特征集任一命中即抑制观测伤害数字（与 Team/Player 一致口径）。 */
+    private static boolean hasObservedDamagePartial(final SingleTeamBattleAnalysisContext context) {
+        if (context.limitations() != null && context.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL")) {
+            return true;
+        }
+        return context.features() != null && context.features().limitations() != null
+                && context.features().limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL");
+    }
+
 }
