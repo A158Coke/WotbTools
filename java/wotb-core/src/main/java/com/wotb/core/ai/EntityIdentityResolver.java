@@ -5,6 +5,7 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.PlayerSideResolver.Side;
 import com.wotb.core.ref.ReplayDisplayNames;
+import com.wotb.core.replay.evidence.ObservedMaxHp;
 import com.wotb.core.replay.reconstruction.BattleStateCheckpoint;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.reconstruction.VehicleState;
@@ -83,7 +84,7 @@ public final class EntityIdentityResolver {
                 .append(" 坦克: ").append(PromptDataQuoter.quote(
                         ReplayDisplayNames.tankName(player.tankId, player.tankName), "\"未知坦克\""))
                 .append(" 车种: ").append(ReplayDisplayNames.tankClass(player.tankId));
-        appendStructuredTankFacts(sb, player.tankId, player.observedMaxHp);
+        appendStructuredTankFacts(sb, player.tankId, player);
         return sb.toString();
     }
 
@@ -97,10 +98,12 @@ public final class EntityIdentityResolver {
 
     /**
      * 追加坦克的结构化车辆事实（等级 / 国家 / 炮伤 / 血量 / 知识）。
-     * {@code observedMaxHp} 非空时覆盖 tankopedia base 血量——回放实测值含装备/物资加成。
+     * 血量按 provenance 口径（见 {@link ObservedMaxHp#fullMaxHp}）：OBSERVED_EXACT →
+     * 已证明进场满血（含装备/物资加成）；否则 tankopedia base。整场观测最大 current HP
+     * （observedMaxHp）不得冒充满血输出。
      */
     public static void appendStructuredTankFacts(final StringBuilder sb, final long tankId,
-                                                 final Integer observedMaxHp) {
+                                                 final PlayerResult player) {
         final String tier = ReplayDisplayNames.tankTier(tankId);
         if (!tier.isEmpty()) {
             sb.append(" 等级: ").append(tier);
@@ -113,13 +116,10 @@ public final class EntityIdentityResolver {
         if (!alpha.isEmpty()) {
             sb.append(" 炮伤: ").append(alpha);
         }
-        if (observedMaxHp != null && observedMaxHp > 0) {
-            sb.append(" 血量: ").append(observedMaxHp);
-        } else {
-            final String hp = ReplayDisplayNames.tankMaxHp(tankId);
-            if (!hp.isEmpty()) {
-                sb.append(" 血量: ").append(hp);
-            }
+        final Integer maxHp = player == null
+                ? ReplayDisplayNames.tankMaxHpValue(tankId) : ObservedMaxHp.fullMaxHp(player);
+        if (maxHp != null && maxHp > 0) {
+            sb.append(" 血量: ").append(maxHp);
         }
         final String knowledge = ReplayDisplayNames.tankExtraInfo(tankId);
         if (!knowledge.isEmpty()) {

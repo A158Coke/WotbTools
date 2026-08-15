@@ -1,10 +1,13 @@
 package com.wotb.web.replay.ai;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.replay.evidence.EntryHpSource;
+import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.evidence.TankTacticalProfileRegistry;
 import com.wotb.core.replay.map.MapTacticalSemantics;
 import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
@@ -79,17 +82,59 @@ class PreBattlePromptBuilderTest {
         final String content = PreBattlePromptBuilder.buildUserContent(
                 battleWithFullResults(), TankTacticalProfileRegistry.load(),
                 MapTacticalSemanticsRegistry.load().semanticsFor("erlenberg"));
-        assertTrue(content.contains("双方总血量（tankopedia maxHp 求和"));
+        assertTrue(content.contains("双方总血量（tankopedia base 求和"));
         assertTrue(content.contains("TEAM_A 总血量="));
         assertTrue(content.contains("TEAM_B 总血量="));
-        assertTrue(content.contains("血量=2400"), "Kranvagn tankopedia maxHp must be rendered");
+        assertTrue(content.contains("血量=2400（tankopedia base）"), "Kranvagn base must be rendered with BASE baseline label");
         assertTrue(content.contains("血量="), "per-vehicle hp must be rendered");
+    }
+
+    @Test
+    void provenEntryHpOverridesTotalAndPerVehicleHp() {
+        // 仅当进场满血被回放证明（OBSERVED_EXACT，含装备/物资加成）时才输出实测值；
+        // 战斗中观测到的 currentHp（observedMaxHp）不得被包装为赛前进场满血。
+        final Battle battle = battleWithFullResults();
+        for (final PlayerResult p : battle.players) {
+            final Integer base = ReplayDisplayNames.tankMaxHpValue(p.tankId);
+            assertNotNull(base, "fixture tank must have tankopedia base hp");
+            p.entryHpSource = EntryHpSource.OBSERVED_EXACT;
+            p.entryHp = base + 200;
+        }
+        final String content = PreBattlePromptBuilder.buildUserContent(
+                battle, TankTacticalProfileRegistry.load(),
+                MapTacticalSemanticsRegistry.load().semanticsFor("erlenberg"));
+        final int teamA = battle.players.stream().filter(p -> p.team == 1)
+                .mapToInt(p -> p.entryHp).sum();
+        final int teamB = battle.players.stream().filter(p -> p.team == 2)
+                .mapToInt(p -> p.entryHp).sum();
+        assertTrue(content.contains("TEAM_A 总血量=" + teamA), "总血量必须按已证明进场满血（含加成）求和");
+        assertTrue(content.contains("TEAM_B 总血量=" + teamB));
+        assertTrue(content.contains("血量=" + (ReplayDisplayNames.tankMaxHpValue(4481L) + 200)
+                        + "（回放实测进场满血）"),
+                "单车血量必须标注为已证明的回放实测进场满血（含装备/物资加成）");
+        assertFalse(content.contains("（tankopedia base）"), "proven entry 场景不得出现 base 标注");
+    }
+
+    @Test
+    void unprovenEntryHpRendersBaseBaselineNotObservedCurrent() {
+        // 反例：observedMaxHp（战斗中观测最大 current）≠ 进场满血；未证明时输出 base baseline 标注
+        final Battle battle = battleWithFullResults();
+        for (final PlayerResult p : battle.players) {
+            final Integer base = ReplayDisplayNames.tankMaxHpValue(p.tankId);
+            p.observedMaxHp = base + 300; // 观测最大 current（未证明为进场满血）
+        }
+        final String content = PreBattlePromptBuilder.buildUserContent(
+                battle, TankTacticalProfileRegistry.load(),
+                MapTacticalSemanticsRegistry.load().semanticsFor("erlenberg"));
+        assertTrue(content.contains("血量=2400（tankopedia base）"),
+                "未证明进场满血时不得用 observedMaxHp 冒充 entry（Kranvagn 应输出 base baseline）");
+        assertFalse(content.contains("回放实测进场满血"), "未证明时不得声称实测进场满血");
     }
 
     @Test
     void systemPromptAllowsPreBattleHpAndRequiresStagedPlans() {
         final String system = PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT;
-        assertTrue(system.contains("车辆基础血量（tankopedia maxHp）与双方总血量为赛前车辆属性"));
+        assertTrue(system.contains("车辆进场满血（tankopedia base；仅当回放证明受击前初始满血时才含装备/物资加成）与双方总血量为赛前车辆属性"));
         assertTrue(system.contains("【开局】【中期】【残局】"),
                 "preferredPlans must be staged (opening/midgame/lategame)");
     }

@@ -53,17 +53,17 @@ public final class TeamAiPromptBuilder {
         // 不能被 optional 预算裁掉。构建结果决定是否需要补 OPPOSING_LINEUP_UNAVAILABLE，
         // 因此必须在 header 写出 unitLimitations 之前完成。
         final TeamEvidenceFormatter.BudgetWriter hpfTemp = new TeamEvidenceFormatter.BudgetWriter();
-        final Map<Long, Integer> observedMaxHpByAccount = new HashMap<>();
+        final Map<Long, PlayerResult> playersByAccount = new HashMap<>();
         if (context.battle() != null && context.battle().players != null) {
             for (final PlayerResult p : context.battle().players) {
                 if (p != null) {
-                    observedMaxHpByAccount.put(p.accountId, p.observedMaxHp);
+                    playersByAccount.put(p.accountId, p);
                 }
             }
         }
         TeamEvidenceFormatter.appendHighPriorityFacts(
                 hpfTemp, context.features(), context.analysisUnitId(), List.copyOf(limitations),
-                observedMaxHpByAccount);
+                playersByAccount);
         if (!TeamEvidenceFormatter.appendOpposingTeam(hpfTemp, context.battle(), context.perspectiveTeam())) {
             // prompt 要求逐车分析对方；拿不到对方名册时必须显式告知，避免 AI 跳过或编造
             limitations.add("OPPOSING_LINEUP_UNAVAILABLE");

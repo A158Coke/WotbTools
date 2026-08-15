@@ -308,11 +308,12 @@ final class PlayerEvidenceFormatter {
                 + "攻击者=1 → 短时间集中掉血/高压掉血窗口（不是集火）; "
                 + "标注「（攻击者部分未解析）」时攻击者数不完整, 不得断言集火; "
                 + "链式聚类形成的大跨度窗口（相邻间隔虽小但总跨度超阈值）不得当作短时集火; "
-                + "伤害/基础满血pct=窗口累计伤害/基础满血量(tankopedia 基础值, 不含装备加成)的百分比, "
+                + "伤害/进场满血pct=窗口累计伤害/已证明进场满血量(回放受击前样本证明, 含装备/物资加成)的百分比; "
+                + "伤害/base满血pct=窗口累计伤害/tankopedia 基础血量的百分比(进场满血未被证明时的 base baseline, "
                 + "只是计算基准, 不是实际掉血比例(未知则为「未知」); "
-                + "窗口跨度≤" + (int) DamageWindowClusterer.CRITICAL_WINDOW_SPAN_SEC
-                + " 秒且伤害≥" + (int) DamageWindowClusterer.CRITICAL_HP_PCT
-                + "% 基础满血量标注「（短窗高额伤害窗口）」; "
+                + "仅当进场满血被证明且窗口跨度≤" + (int) DamageWindowClusterer.CRITICAL_WINDOW_SPAN_SEC
+                + " 秒、伤害≥" + (int) DamageWindowClusterer.CRITICAL_HP_PCT
+                + "% 已证明进场满血量才标注「（短窗高额伤害窗口）」; "
                 + "数据无法证明窗口起始血量/窗口内阵亡/装备加成后的实际最大血量, 不得判定「从满血被秒杀」.\n");
         for (final DamageWindowClusterer.DamageWindow window : windows) {
             sb.append("  ").append(PlayerAnalysisTerms.battleRange(window.startSec(), window.endSec()))
@@ -321,8 +322,9 @@ final class PlayerEvidenceFormatter {
                     .append(" 攻击者").append(window.uniqueAttackerCount())
                     .append(window.attackersUnresolved() ? "（攻击者部分未解析）" : "")
                     .append(window.focusFireCandidate() ? "（短时多车集火证据）" : "")
-                    .append(" 伤害/基础满血pct=").append(window.damageVsBaseMaxHpPct() == null
-                            ? "未知" : Math.round(window.damageVsBaseMaxHpPct()) + "%")
+                    .append(window.entryHpProven() ? " 伤害/进场满血pct=" : " 伤害/base满血pct=")
+                    .append(window.damageVsEntryMaxHpPct() == null
+                            ? "未知" : Math.round(window.damageVsEntryMaxHpPct()) + "%")
                     .append(window.criticalWindow() ? "（短窗高额伤害窗口）" : "")
                     .append('\n');
         }
@@ -369,10 +371,10 @@ final class PlayerEvidenceFormatter {
         return structuredTankFacts(tankId, null);
     }
 
-    /** 同上；observedMaxHp 非空时覆盖血量（回放实测，含装备/物资加成）。 */
-    private static String structuredTankFacts(final long tankId, final Integer observedMaxHp) {
+    /** 同上；血量按 provenance 口径（OBSERVED_EXACT → 已证明进场满血；否则 tankopedia base）。 */
+    private static String structuredTankFacts(final long tankId, final PlayerResult player) {
         final StringBuilder sb = new StringBuilder(24);
-        EntityIdentityResolver.appendStructuredTankFacts(sb, tankId, observedMaxHp);
+        EntityIdentityResolver.appendStructuredTankFacts(sb, tankId, player);
         return sb.toString();
     }
 
@@ -457,7 +459,7 @@ final class PlayerEvidenceFormatter {
                 .append(" 坦克: ").append(PlayerResultFormat.quoteForPrompt(tankDisplay))
                 // 车种只来自 tankopedia 的结构化 class 字段，未提供时为「未知」；不得由名称推断
                 .append(" 车种: ").append(ReplayDisplayNames.tankClass(p.tankId))
-                .append(structuredTankFacts(p.tankId, p.observedMaxHp))
+                .append(structuredTankFacts(p.tankId, p))
                 .append(" 输出").append(p.damageDealt)
                 .append(" 损失血量").append(p.damageReceived)
                 .append(" 助攻").append(p.damageAssisted)
