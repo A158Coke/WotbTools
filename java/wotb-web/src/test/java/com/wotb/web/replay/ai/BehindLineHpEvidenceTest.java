@@ -348,4 +348,81 @@ class BehindLineHpEvidenceTest {
                 battle, recon, 1, false);
         assertFalse(section.contains("vs 扛线队友"), "无合格 carrier 不得产生 BehindLine 判定, got: " + section);
     }
+
+    @Test
+    void partialWithZeroObservedProducesNoDegree() {
+        // partial + 0 observed attack → outputStatus=UNKNOWN，禁止进入 degree 聚合（不得因 UNKNOWN 增加负面程度）
+        final String section = BehindLineHpEvidence.renderTeamSection(
+                battle(E100, E100), recon(true, false), 1, true);
+        assertTrue(section.contains("outputStatus=UNKNOWN"), section);
+        assertFalse(section.contains("degree"), "partial + 0 observed 不得生成 degree, got: " + section);
+    }
+
+    @Test
+    void deadFrontlineCannotBeCarrier() {
+        // 1002(HEAVY) 距敌最近但已阵亡（deathSec=10，phase.end 后）→ 不得成为扛线队友
+        // 本队仅剩 1001 一个存活可扛线车且无其它 carrier 候选 → 无 BehindLine 判定
+        final Battle battle = battle(E100, E100);
+        for (final PlayerResult pl : battle.players) {
+            if (pl.accountId == 1002L) {
+                pl.survived = false;
+                pl.deathTimeMillis = 10_000L;
+            }
+        }
+        final String section = BehindLineHpEvidence.renderTeamSection(
+                battle, recon(true, true), 1, false);
+        assertFalse(section.contains("vs 扛线队友 account:1002"), "已阵亡 HEAVY 不得成为 carrier, got: " + section);
+    }
+
+    @Test
+    void enemyPositionReferenceIncompleteYieldsNoNegativeVerdict() {
+        // 敌方 2 车中 2002 无位置参考 → 最近观测敌方 ≠ 真实最近敌方 → 本阶段禁止负面 BehindLine 判定
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 10, 1001L));
+        events.add(new ParticipantMappingEvent(2, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 11, 1002L));
+        events.add(new ParticipantMappingEvent(3, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 20, 2001L));
+        events.add(new ParticipantMappingEvent(4, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 21, 2002L));
+        events.add(pos(10, 40f, 10, -220f, 0f));
+        events.add(pos(12, 40f, 11, -90f, 0f));
+        events.add(pos(20, 40f, 20, 200f, 0f));   // 2001 有位置
+        // 2002 无位置（仅 mapping）→ enemyRef=1/2 → 不完整
+        events.add(hp(30, 30f, 10, 1800));
+        events.add(hp(31, 30f, 11, 1000));
+        events.add(dmg(40, 50f, 10, 20));
+        final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
+                events, List.of(), null, null, null);
+        final String section = BehindLineHpEvidence.renderTeamSection(
+                battle(E100, E100), recon, 1, false);
+        assertFalse(section.contains("vs 扛线队友"), "敌方位置参考不完整时不得产生 BehindLine 判定, got: " + section);
+        assertFalse(section.contains("避战"), "敌方参考不完整时不得产生负面 verdict");
+    }
+
+    @Test
+    void enemyPositionsCompletelyMissingYieldsNoVerdict() {
+        // 敌方完全无位置 → 无距离参考 → 无 BehindLine 判定
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 10, 1001L));
+        events.add(new ParticipantMappingEvent(2, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 11, 1002L));
+        events.add(new ParticipantMappingEvent(3, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 20, 2001L));
+        events.add(new ParticipantMappingEvent(4, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 21, 2002L));
+        events.add(pos(10, 40f, 10, -220f, 0f));
+        events.add(pos(12, 40f, 11, -90f, 0f));
+        events.add(hp(30, 30f, 10, 1800));
+        events.add(hp(31, 30f, 11, 1000));
+        events.add(dmg(40, 50f, 10, 20));
+        final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
+                events, List.of(), null, null, null);
+        final String section = BehindLineHpEvidence.renderTeamSection(
+                battle(E100, E100), recon, 1, false);
+        assertTrue(section.isEmpty() || !section.contains("vs 扛线队友"),
+                "敌方完全无位置时不得输出 BehindLine 判定, got: " + section);
+    }
 }
