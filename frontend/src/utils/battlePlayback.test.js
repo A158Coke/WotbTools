@@ -97,22 +97,29 @@ describe('vehicleHpAt / teamHp', () => {
     { team: 2, maxHp: 4000, hpSamples: [{ timeSec: 5, hp: 4000 }, { timeSec: 15, hp: 1000 }] }
   ]
 
-  it('vehicleHpAt uses the latest sample <= t; no sample is UNKNOWN (null), sentinels ignored', () => {
+  it('vehicleHpAt uses the latest sample <= t; alive without sample falls back to full HP; sentinels ignored', () => {
     expect(vehicleHpAt(vehicles[0], 5)).toBe(3000)
     expect(vehicleHpAt(vehicles[0], 10)).toBe(2000)
     expect(vehicleHpAt(vehicles[0], 25)).toBe(0) // 阵亡 0 采样
-    expect(vehicleHpAt(vehicles[1], 50)).toBeNull() // 无采样 → UNKNOWN（不得宣称满血）
-    expect(vehicleHpAt({ team: 1, maxHp: 100 }, 0)).toBeNull() // 无 hpSamples 数组 → UNKNOWN
+    // 存活车辆无采样 → 满血回退（开局/未受击=满血；propId=3 首采样=首次血量变化）
+    expect(vehicleHpAt(vehicles[1], 50)).toBe(2600)
+    expect(vehicleHpAt({ team: 1, maxHp: 100 }, 0)).toBe(100)
+    // 已阵亡且无采样 → UNKNOWN（不冒充满血/0）
+    expect(vehicleHpAt({ team: 1, maxHp: 2600, deathSec: 10 }, 50)).toBeNull()
+    expect(vehicleHpAt({ team: 1, maxHp: 2600, deathSec: 10 }, 5)).toBe(2600) // 阵亡前未受击=满血
     expect(vehicleHpAt(null, 0)).toBeNull()
-    // sentinel（0xFFFD=65533 / 0xFFFF=65535）绝不作为 HP：忽略后无有效采样 → UNKNOWN
+    // sentinel（0xFFFD=65533 / 0xFFFF=65535）绝不作为 HP：忽略后无有效采样 → 存活满血回退
     const sentinel = { team: 1, maxHp: 2600, hpSamples: [{ timeSec: 0, hp: 65533 }, { timeSec: 1, hp: 65535 }] }
-    expect(vehicleHpAt(sentinel, 5)).toBeNull()
+    expect(vehicleHpAt(sentinel, 5)).toBe(2600)
   })
 
-  it('teamHp separates known remaining from unknown capacity (gray)', () => {
-    expect(teamHp(vehicles, 1, 5)).toEqual({ totalMax: 5600, knownRemaining: 3000, unknownMax: 2600 })
-    expect(teamHp(vehicles, 1, 15)).toEqual({ totalMax: 5600, knownRemaining: 2000, unknownMax: 2600 }) // 2000 + unknown 2600
+  it('teamHp separates known remaining from unknown capacity (gray only for dead-without-sample)', () => {
+    expect(teamHp(vehicles, 1, 5)).toEqual({ totalMax: 5600, knownRemaining: 5600, unknownMax: 0 }) // 满血回退
+    expect(teamHp(vehicles, 1, 15)).toEqual({ totalMax: 5600, knownRemaining: 4600, unknownMax: 0 }) // 2000 + 满血回退 2600
     expect(teamHp(vehicles, 2, 15)).toEqual({ totalMax: 4000, knownRemaining: 1000, unknownMax: 0 })
+    // 阵亡且无采样 → 仍计入 UNKNOWN 灰段
+    expect(teamHp([{ team: 1, maxHp: 2000, deathSec: 5 }], 1, 50))
+      .toEqual({ totalMax: 2000, knownRemaining: 0, unknownMax: 2000 })
     expect(teamHp([], 1, 0)).toEqual({ totalMax: 0, knownRemaining: 0, unknownMax: 0 })
   })
 

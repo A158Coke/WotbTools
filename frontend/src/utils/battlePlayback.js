@@ -54,7 +54,10 @@ export function positionCoveredAt(intervals, t) {
 /**
  * 车辆 t 时刻剩余血量：
  * - 有可信采样（≤t）→ 最近一次值（含阵亡 0 采样）；
- * - 无可信采样 → null（UNKNOWN：尚未观测到该车血量，不得假设为满血）；
+ * - 无可信采样但车辆存活（未阵亡或 t 早于 deathSec）→ 满血回退 maxHp——回放整场覆盖（0s 起）、
+ *   propId=3 仅在受击/血量变化时上报（首采样=首次变化），故开局/未受击车辆血量 = maxHp 是确定性事实，
+ *   不得把整队显示为 UNKNOWN 灰段；
+ * - 无可信采样且已阵亡（t ≥ deathSec）→ null（UNKNOWN：死亡但无采样，不冒充 0/满血）；
  * - 高位/负 sentinel（<0 或 ≥0xFF00，如 0xFFFD/-3、0xFFFF/-1）一律忽略，防 65533/65535 污染。
  * hpSamples 契约：{ timeSec, hp }（battle-relative 秒升序，type-7 propId=3 signed i16 含装备加成）。
  */
@@ -68,13 +71,20 @@ export function vehicleHpAt(vehicle, t) {
     if (s.timeSec <= t + 1e-6) hp = s.hp
     else break
   }
+  // 满血回退：存活车辆无采样 = 未受击（首采样=首次血量变化）→ maxHp；阵亡无采样保持 UNKNOWN
+  if (hp == null) {
+    const death = vehicle.deathSec
+    if (death == null || t < death - 1e-6) hp = vehicle.maxHp || 0
+  }
   return hp
 }
+
 
 /**
  * 队伍总血量（t 时刻）：
  * totalMax = ΣmaxHp（理论容量）、knownRemaining = Σ已知当前剩余 HP、
- * unknownMax = Σ尚未观测到血量的理论容量（UNKNOWN，灰段；不得并入 knownRemaining）。
+ * unknownMax = Σ血量 UNKNOWN 的理论容量（灰段）——仅剩「阵亡且无采样」等数据缺失场景，
+ * 存活车辆按满血回退（vehicleHpAt：未受击=满血），开局显示满血而非整条灰。
  */
 export function teamHp(vehicles, team, t) {
   let totalMax = 0

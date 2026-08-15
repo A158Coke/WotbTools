@@ -289,19 +289,30 @@ describe('BattlePlayback', () => {
     expect(wrapper.find('[data-test="pb-points-enemy"]').text()).toContain('280')
   })
 
-  it('enemy without HP samples is UNKNOWN capacity (gray segment), not assumed full HP', async () => {
+  it('enemy without HP samples falls back to full HP (alive); dead without sample stays UNKNOWN gray', async () => {
     stubRaf()
     const overview = makeOverview()
     overview.playback.vehicles[0].maxHp = 3000
     overview.playback.vehicles[0].hpSamples = [{ timeSec: 0, hp: 3000 }]
-    overview.playback.vehicles[1].maxHp = 2600 // 无 hpSamples → UNKNOWN
+    // 存活无采样 → 满血回退（开局/未受击=满血，propId=3 首采样=首次血量变化）
+    overview.playback.vehicles[1].maxHp = 2600
+    overview.playback.vehicles[1].hpSamples = []
     const wrapper = mountPlayback(overview, 12)
     await flushPromises()
-    expect(wrapper.find('[data-test="pb-hp-unknown-enemy"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="pb-hp-unknown-enemy"]').text()).toContain('2600')
-    // 已知数字不含未知容量：敌方显示 0 / 2600，而不是假装满血 2600/2600
-    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('0 / 2600')
-    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('3000 / 3000')
+    expect(wrapper.find('[data-test="pb-hp-unknown-enemy"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('2600 / 2600')
+    // 已阵亡且无采样 → 仍为 UNKNOWN 灰段（不冒充满血/0）
+    const overview2 = makeOverview()
+    overview2.playback.vehicles[0].maxHp = 3000
+    overview2.playback.vehicles[0].hpSamples = [{ timeSec: 0, hp: 3000 }]
+    overview2.playback.vehicles[1].maxHp = 2600
+    overview2.playback.vehicles[1].hpSamples = []
+    overview2.playback.vehicles[1].deathSec = 5
+    const wrapper2 = mountPlayback(overview2, 12)
+    await flushPromises()
+    expect(wrapper2.find('[data-test="pb-hp-unknown-enemy"]').exists()).toBe(true)
+    expect(wrapper2.find('[data-test="pb-hp-unknown-enemy"]').text()).toContain('2600')
+    expect(wrapper2.find('[data-test="pb-hp-bars"]').text()).toContain('0 / 2600')
   })
 
   it('death does not jump the team HP bar to 65533 (0xFFFD sentinel excluded)', async () => {
