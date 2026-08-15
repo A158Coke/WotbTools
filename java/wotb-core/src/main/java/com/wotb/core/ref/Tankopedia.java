@@ -6,7 +6,9 @@ import com.wotb.core.model.TankInfo;
 
 import java.io.InputStream;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 /** 车辆库 (tank_id -> 车辆信息), 来自 blitzkit（按等级拆分的 4 个 tier 文件）。 */
 public final class Tankopedia {
@@ -75,5 +77,20 @@ public final class Tankopedia {
 
     public int size() {
         return vehicles.size();
+    }
+
+    /**
+     * 全部已知坦克名（tier7-10 词表，与 {@link #info} 同源）。
+     * <p>供 AI 复盘正文的车名校验使用：判断正文中出现的车名是否属于已知车辆、
+     * 是否属于本场 roster。名称本身仍是权威专有名词，不得由名称推断属性。</p>
+     */
+    public Set<String> names() {
+        final Set<String> names = new HashSet<>();
+        for (final JsonNode vehicle : vehicles.values()) {
+            if (vehicle != null && vehicle.hasNonNull("name")) {
+                names.add(vehicle.get("name").asText());
+            }
+        }
+        return names;
     }
 }

@@ -14,6 +14,17 @@
   DEVELOPER_GUIDE 文档地图补充层级说明。纯文档变更，不影响代码与构建。
 
 ### Fixed
+- **AI 复盘坦克名幻觉（Kranvagn 被写成「埃米尔1951」）**：生成侧 LLM 幻觉把玩家坦克名写成
+  中文译名/相似车（EMIL 1951 与 Kranvagn 共用原型底盘）且保持全文；证据/结算层无 bug（tankId →
+  tankopedia 权威映射未变）。修复：① wotb-core 新增确定性后校验 TankNameCorrector——R1 昵称
+  锚定纠正（坦克名（昵称）/ 昵称（坦克名）/ 「的」所属式，与 roster 权威名不一致即替换）、R2 别名
+  与大小写归一化（新增单一来源 common/tank-name-aliases.json，KRV/克朗瓦根/埃米尔1951 → 权威名）、
+  R3 无锚定非 roster 车名只记 DETECTED 日志不改写；AiReplayReviewService 在 done.analysis
+  前对正文与 preBattleSection 应用；② prompt 硬约束升级（禁止中文翻译/原型·后续·同级相似车替代），
+  PlayerPromptRules.COMMON_TANK_PROPER_NOUN_RULE 与 4 个 prompts/*.zh.md 逐字一致、
+  prebattle/system.zh.md 第 4 条同步；③ 零容忍回归
+  TankNameCorrectorTest.productionCase_kranvagnWrittenAsEmil1951_isCorrected + 服务级
+  fallback/team 两条链路用例 + TankNameProperNounTest/AllowedLanguagePromptTest 三语契约断言。
 - **地图鸟瞰换文件竞态**：loadMapOverview 为每次请求建立唯一 generation（递增序号 + AbortController）；选择/删除/清空文件（resetMap）与组件真正卸载时递增序号并 abort 旧请求；响应在成功/失败/finally 写状态前校验 generation——旧请求不得覆盖新文件的 mapOverview/mapError/mapLoaded/mapLoading、其 finally 不得提前解除新请求的 loading；KeepAlive deactivate 不触发卸载钩子，有效状态不受影响。新增 4 个 deferred-promise 竞态测试（A 后到不显示 / 任意返回顺序只显示 B / 旧 finally 不解除 B loading / 真实卸载 abort）。
 - **战局回放选中 last-known/已击毁车辆后整图消失**：三语 locale `recon.map.playback.last_known`
   文案末尾裸 `@` 被 Vue I18n 11 当作 linked-message 语法，首次渲染该文案（选中位置中断/已击毁

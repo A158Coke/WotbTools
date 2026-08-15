@@ -443,6 +443,71 @@ class AiReplayReviewServiceTest {
                 "recorder nickname must not appear as team label in random battle");
     }
 
+    @Test
+    void fallbackPathCorrectsHallucinatedTankName() throws IOException {
+        when(aiAnalysisService.analyzePlayerOrFallback(any(), eq(AllowedLanguage.ZH), any()))
+                .thenReturn(new AnalyzeResult("1分07秒：CHRD的埃米尔1951（Awesomeman954）!紧接着阵亡"));
+        when(processingFacade.process(any(), any())).thenReturn(randomBattleResult(
+                "random-arena", 1, List.of(player("Awesomeman954", 1001L, 1, 4481))));
+
+        final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
+
+        assertTrue(response.analysis().startsWith("1分07秒：CHRD的Kranvagn（Awesomeman954）!紧接着阵亡"),
+                "hallucinated EMIL 1951 must be corrected to roster Kranvagn");
+        assertTrue(response.analysis().endsWith("AI复盘仅供参考"));
+        assertFalse(response.analysis().contains("埃米尔1951"));
+    }
+
+    @Test
+    void teamBranchCorrectsTankNamesInAnalysisAndPreBattleSection() throws IOException {
+        when(aiAnalysisService.analyzeTeamGroups(any(), eq(AllowedLanguage.ZH), any()))
+                .thenReturn(new TeamAnalyzeResult(
+                        new AnalyzeResult("1分07秒：CHRD的埃米尔1951（Awesomeman954）阵亡"),
+                        "赛前：Awesomeman954（埃米尔1951）带队"));
+        when(processingFacade.process(any(), any())).thenReturn(randomBattleResult(
+                "team-arena", 2, List.of(
+                        player("Awesomeman954", 1001L, 1, 4481),
+                        player("A158布丁", 2001L, 2, 6929))));
+
+        final AnalyzeResponse response = service.analyze(new MultipartFile[]{singleFile()});
+
+        assertTrue(response.analysis().startsWith("1分07秒：CHRD的Kranvagn（Awesomeman954）阵亡"),
+                "analysis tank names must be roster-authoritative");
+        assertTrue(response.analysis().endsWith("AI复盘仅供参考"));
+        assertEquals("赛前：Awesomeman954（Kranvagn）带队", response.preBattleSection(),
+                "preBattleSection tank names must be roster-authoritative");
+    }
+
+    private static PlayerResult player(final String nickname, final long accountId,
+                                       final int team, final long tankId) {
+        final PlayerResult p = new PlayerResult();
+        p.accountId = accountId;
+        p.nickname = nickname;
+        p.team = team;
+        p.tankId = tankId;
+        p.tankName = "S16_Kranvagn";
+        p.survived = true;
+        return p;
+    }
+
+    private static ReplayProcessingResult randomBattleResult(
+            final String arenaId, final int arenaBonusType, final List<PlayerResult> players) {
+        final Battle battle = new Battle();
+        battle.arenaId = arenaId;
+        battle.mapName = "team_map";
+        battle.arenaBonusType = arenaBonusType;
+        battle.durationS = 300.0;
+        battle.winnerTeam = 1;
+        battle.recorder = players.getFirst().nickname;
+        battle.players = players;
+        final var capabilities = new ReplayProcessingCapabilities(
+                true, true, false, false, false, true, false, false);
+        return new ReplayProcessingResult(
+                arenaId + ".wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
+                new ReplayIdentity("h", arenaId, "11.0", "team_map", players.getFirst().accountId, null),
+                battle, null, null, capabilities, null, null);
+    }
+
     private static ReplayProcessingResult randomResultWithReconstruction() {
         final Battle battle = new Battle();
         battle.arenaId = "random-arena";
