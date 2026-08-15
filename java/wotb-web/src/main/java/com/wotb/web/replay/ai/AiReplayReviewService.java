@@ -1,10 +1,13 @@
 package com.wotb.web.replay.ai;
 
+import com.wotb.core.ai.TankNameCorrector;
+import com.wotb.core.model.Battle;
 import com.wotb.core.model.Source;
 import com.wotb.core.processing.AiNotConfiguredException;
 import com.wotb.core.processing.BatchAnalyzer;
 import com.wotb.core.processing.DefaultReplayProcessingFacade;
 import com.wotb.core.processing.PerspectiveTeamNotResolvedException;
+import com.wotb.core.processing.PlayerSideResolver;
 import com.wotb.core.processing.ReplayAnalysisScope;
 import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingOptions;
@@ -13,6 +16,7 @@ import com.wotb.core.processing.RecorderEntityMapping;
 import com.wotb.core.processing.TeamPerspectiveResolver;
 import com.wotb.core.processing.UnsupportedReplayAnalysisModeException;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
+import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.web.replay.metrics.ReplayUsageMetrics;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -34,6 +38,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.Locale;
+import java.util.stream.Collectors;
 
 @Service
 public class AiReplayReviewService {
@@ -215,26 +220,56 @@ public class AiReplayReviewService {
                         analyzableGroups.getFirst().representative();
                 final TacticalReviewHarness.HarnessOutcome outcome = harnessOrFallback(
                         representative, language, listener);
+                final Battle battle = representative.battle();
                 yield new AnalyzeResponse(
-                        withDisclaimerFooter(outcome.result().analysis(), language),
-                        renderRandomBattleSection(
-                                representative,
-                                outcome.preBattlePrior(), language),
-                        MapOverviewBuilder.build(
-                                representative.battle(), representative.reconstruction()));
+                        withDisclaimerFooter(correctTankNames(outcome.result().analysis(), battle), language),
+                        correctTankNames(renderRandomBattleSection(
+                                representative, outcome.preBattlePrior(), language), battle),
+                        MapOverviewBuilder.build(battle, representative.reconstruction()));
             }
             case SINGLE_TEAM_BATTLE -> {
                 final TeamAnalyzeResult teamResult = aiAnalysisService
                         .analyzeTeamGroups(analyzableGroups, language, listener);
                 final ReplayProcessingResult first = analyzableGroups.getFirst().representative();
+                final Battle battle = first.battle();
                 yield new AnalyzeResponse(
-                        withDisclaimerFooter(teamResult.analysis().analysis(), language),
-                        teamResult.preBattleSection(),
-                        MapOverviewBuilder.build(first.battle(), first.reconstruction()));
+                        withDisclaimerFooter(correctTankNames(teamResult.analysis().analysis(), battle), language),
+                        correctTankNames(teamResult.preBattleSection(), battle),
+                        MapOverviewBuilder.build(battle, first.reconstruction()));
             }
             case NONE -> throw new IllegalArgumentException("NO_BATTLE_DATA");
             default -> throw new UnsupportedReplayAnalysisModeException("UNSUPPORTED_BATTLE_CATEGORY");
         };
+    }
+
+    /**
+     * 坦克名称确定性校验/纠正：以本场 roster（tankId → Tankopedia 权威名）为基准，
+     * 纠正 AI 复盘正文里 LLM 幻觉出的错名/译名/俗称（如把 Kranvagn 写成「埃米尔1951」）。
+     * 只做文本级纠正，不改任何解析/结算数据；有处理明细时记日志（含 R3 独立检测）。
+     */
+    private static String correctTankNames(final String text, final Battle battle) {
+        if (text == null || text.isBlank()
+                || battle == null || battle.players == null || battle.players.isEmpty()) {
+            return text;
+        }
+        final List<TankNameCorrector.RosterEntry> roster = battle.players.stream()
+                .filter(p -> PlayerSideResolver.isValidRawTeam(p.team))
+                .filter(p -> p.tankId > 0)
+                .map(p -> new TankNameCorrector.RosterEntry(
+                        p.nickname == null ? "" : p.nickname,
+                        ReplayDisplayNames.tankName(p.tankId, p.tankName)))
+                .toList();
+        if (roster.isEmpty()) {
+            return text;
+        }
+        final TankNameCorrector.Result result = TankNameCorrector.correct(text, roster);
+        if (!result.replacements().isEmpty()) {
+            final String detail = result.replacements().stream()
+                    .map(r -> r.original() + " -> " + r.replacement() + "[" + r.reason() + "]")
+                    .collect(Collectors.joining("; "));
+            LOGGER.info("AI tank-name correction applied: {}", detail);
+        }
+        return result.text();
     }
 
     /** 复盘固定结尾免责句（三语），追加在 analysis 末尾。 */

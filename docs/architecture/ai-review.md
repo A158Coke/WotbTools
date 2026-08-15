@@ -262,7 +262,28 @@ V1/V2）在 `common/tankopedia-tier10.json` 的 `vehicles[].guns` 数组中保�
 vehicle 级权威 `alphaDamage`**（回放无法确定实际炮，AI structured facts 省略炮伤，不把某一门炮的
 伤害伪装成本场实际炮伤）；7–9 级与 10 级单炮车才输出权威 `alphaDamage`。待拿到客户端属性定义或新的回放字段后再接入。
 
-### AI 分析数据流（`/api/replay/analyze`，仅 `wotbtools-admin`）
+### 坦克名称确定性纠正（TankNameCorrector）
+
+AI 复盘正文是 LLM 自由文本，存在把玩家坦克名写错/写成译名/俗称的幻觉（如把 Kranvagn 写成
+「埃米尔1951」）。证据/结算层保证坦克名只经 tankId → Tankopedia 权威映射，但生成侧仍可能
+幻觉；因此 AiReplayReviewService 在 done.analysis 前对正文与 preBattleSection 做
+**确定性后校验**（纯函数、零 AI 成本）：
+
+- **R1 昵称锚定**：以 roster（battle.players，tankId>0 经 ReplayDisplayNames.tankName）的昵称为锚，
+  配对括号对（坦克名（昵称）/ 昵称（坦克名））或「的」所属式中的坦克名，与 roster 权威名
+  不一致即替换；括号内多个昵称/多个坦克名时不判定。
+- **R2 归一化**：common/tank-name-aliases.json 别名（KRV/克朗瓦根/埃米尔1951 等）与大小写差异
+  统一为 tankopedia 权威英文名。
+- **R3 独立检测**：无昵称锚定的非 roster 已知车名只记日志（DETECTED）不改写。
+- 处理明细（original → replacement[reason]）记 AI tank-name correction applied 日志；
+  流式中间 token 不做逐段纠正（最终 done.analysis 已纠正）。
+
+零容忍口径：提及玩家处的车名必须等于 roster 权威集合；回归由 TankNameCorrectorTest（含生产案例）
+与 AiReplayReviewServiceTest 的 fallback/team 两条链路用例守卫。prompt 侧同步加硬约束
+（禁止中文翻译/相似车替代，见 PlayerPromptRules.COMMON_TANK_PROPER_NOUN_RULE 与 4 个
+prompts/*.zh.md）。
+
+### AI 分析数据流（/api/replay/analyze，仅 wotbtools-admin）
 
 #### 完整回放重建架构
 

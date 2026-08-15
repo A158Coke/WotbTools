@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.14",
+    "date": "2026-08-15",
+    "tag": "fix",
+    "zh": "AI 复盘坦克名称修正：AI 复盘正文中若出现与阵容不符的坦克名（如把 Kranvagn 写成「埃米尔1951」、中文译名或相似车型混淆），现在会按本场阵容的权威车名自动纠正，正文与赛前板块都不再出现错名。",
+    "en": "AI review tank-name correction: if the AI review text shows a tank name that does not match the lineup (e.g. Kranvagn written as EMIL 1951, a Chinese translation, or a similar-vehicle mix-up), it is now auto-corrected to the authoritative name for that battle — wrong names no longer appear in the review body or the pre-battle section.",
+    "ru": "Исправление названий танков в ИИ-разборе: если в тексте разбора встречается название танка, не совпадающее с составом (например, Kranvagn вместо EMIL 1951, перевод или путаница похожих машин), оно автоматически исправляется на авторитетное название этого боя — ошибочные названия больше не появляются ни в тексте разбора, ни в предбоевом блоке."
+  },
+  {
     "v": "2.11.13",
     "date": "2026-08-15",
     "tag": "add",

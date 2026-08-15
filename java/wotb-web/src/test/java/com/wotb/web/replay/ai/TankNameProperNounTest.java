@@ -98,6 +98,15 @@ class TankNameProperNounTest {
                 prompt.contains("阵容分析、伤害交换描述、威胁分析、战术建议与最终总结"), prompt));
     }
 
+    @Test
+    void everySystemPromptForbidsChineseTranslationAndSimilarTankSubstitution() {
+        allSystemPrompts().forEach(prompt -> {
+            assertTrue(prompt.contains("禁止把 Kranvagn 写成「埃米尔1951」"), prompt);
+            assertTrue(prompt.contains("Kranvagn 与 EMIL 1951 是两款不同坦克"), prompt);
+            assertTrue(prompt.contains("禁止混用或互相代指"), prompt);
+        });
+    }
+
     // ---- 6：阵容证据把 SPHT 作为坦克名称输出，车种来自结构化字段 ----
 
     @Test

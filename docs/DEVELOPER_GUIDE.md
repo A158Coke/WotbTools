@@ -222,6 +222,8 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 | `FriendlyEnemyResult` | `wotb-core/.../processing/FriendlyEnemyResult.java` | 三态胜负转换（FRIENDLY_WIN/ENEMY_WIN/DRAW_OR_UNKNOWN） |
 | `PlayerAnalysisPromptFormatter` | `wotb-web/.../ai/PlayerAnalysisPromptFormatter.java` | AI Prompt 格式化（友方/敌方标签，独立于 Excel 导出的 PlayerResultFormat） |
 | `TacticalReviewHarness` | `wotb-web/.../ai/TacticalReviewHarness.java` | 双 Call Harness 编排与降级阶梯（随机战个人复盘 ZH） |
+| `TankNameCorrector` | `wotb-core/.../ai/TankNameCorrector.java` | AI 复盘正文坦克名确定性纠正（R1 昵称锚定 / R2 别名归一化 / R3 独立检测；`AiReplayReviewService` 在 `done.analysis` 前应用） |
+| `TankNameAliases` | `wotb-core/.../ref/TankNameAliases.java` | 坦克名别名表（via `common/tank-name-aliases.json`；缺失/损坏降级为空表） |
 | `PreBattleStrategicService` | `wotb-web/.../ai/PreBattleStrategicService.java` | Call #1：roster-only 赛前战略基线（结构化 JSON，≤4k tokens） |
 | `TacticalReviewPromptBuilder` | `wotb-web/.../ai/TacticalReviewPromptBuilder.java` | Call #2：Priority Bookends Prompt + 相关性预算裁剪 |
 | `EvidenceSkillEngine` | `wotb-core/.../replay/evidence/EvidenceSkillEngine.java` | 6 个 Backend Skill 编排（确定性证据编译，不裁决） |
