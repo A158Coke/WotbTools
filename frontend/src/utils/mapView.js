@@ -17,5 +17,15 @@ export function createMapView(image, overview) {
     if (!renderBounds) return 0
     return ((renderBounds.yMax - y) / (renderBounds.yMax - renderBounds.yMin)) * H
   }
-  return { W, H, renderBounds, toX, toY }
+  /** 逆映射：SVG 像素 → 语义 x（无 renderBounds 时返回 null）。 */
+  function fromX(svgX) {
+    if (!renderBounds) return null
+    return renderBounds.xMin + (svgX / W) * (renderBounds.xMax - renderBounds.xMin)
+  }
+  /** 逆映射：SVG 像素 → 语义 y（y 反转，无 renderBounds 时返回 null）。 */
+  function fromY(svgY) {
+    if (!renderBounds) return null
+    return renderBounds.yMax - (svgY / H) * (renderBounds.yMax - renderBounds.yMin)
+  }
+  return { W, H, renderBounds, toX, toY, fromX, fromY }
 }
