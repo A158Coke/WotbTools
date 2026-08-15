@@ -103,8 +103,14 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
      粗细滑块（1–12）+ 撤回/重做/清空/显隐开关；绘制需显式选工具（未选工具保持原有缩放/平移/
      选车交互；绘制中车标按钮 `pointer-events:none` 防误触，双指捏合/滚轮缩放保留）。几何一律存
      **语义坐标**（x=回放 x，y=回放 z），渲染经 `createMapView.toX/toY`（新增 `fromX/fromY`
-     逆映射；`screenToSemantic` = (screen−translate)/scale 再逆映射）→ SVG 像素，随 viewport
-     transform 缩放/平移锚定不漂移；线宽/字号/半径按 x/y 轴比例换算成 SVG 单位（随地图缩放）。
+     逆映射）→ SVG 像素，随 viewport transform 缩放/平移锚定不漂移；线宽/字号/半径按 x/y 轴比例
+     换算成 SVG 单位（随地图缩放）。
+     **屏幕↔语义换算（CSS px ≠ SVG unit，2026-08-16 修复）**：`.pb-map` 渲染宽度为容器 66.7%
+     （移动端 100%），CSS 渲染尺寸 ≠ viewBox W/H，禁止把 CSS px 当 SVG unit。正链：client px →
+     相对 `.pb-map` 的 CSS px（`screenPoint`）→ 撤销 viewport translate/scale → 未缩放 CSS px
+     ×(viewBox/渲染尺寸)（`screenToSvg`，渲染尺寸取 `.pb-map` clientWidth/clientHeight，缺失按
+     1:1 回退）→ `fromX/fromY` → 语义（`screenToSemantic`）；反链（文字输入框定位）`svgToScreen`
+     = SVG unit ÷W/H ×渲染尺寸 ×scale + translate，`svgToScreen(screenToSvg(p)) ≈ p`。
      undo/redo 为全量快照（`commit/undo/redo`，上限 `UNDO_LIMIT=100`）；橡皮擦对自由笔迹
      **点擦局部**（删半径内点 + 断点拆段，`applyEraser`），对形状/文字整件擦除；文字标注落点即
      位置（临时输入框 Enter/blur 提交、Esc 取消，committed 幂等防重复）。三语文案

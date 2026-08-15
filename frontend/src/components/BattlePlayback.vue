@@ -41,6 +41,7 @@ import {
   rectFromCorners,
   redo,
   screenToSemantic,
+  svgToScreen,
   undo
 } from '../utils/annotation'
 
@@ -292,8 +293,10 @@ const annotations = computed(() => history.value[historyIndex.value] || [])
 const draft = ref(null) // 进行中的标注（未提交）
 const textSession = ref(null) // reactive({ point, text })，文字输入会话
 const textInputRef = ref(null)
+const ANNOT_THIN_PX = 2 // 笔迹抽稀阈值（屏幕 CSS px，与坐标体系无关）
 let drawStart = null // 绘制起点（语义坐标）
 let drawPoints = [] // pen/eraser 已采点（语义坐标）
+let drawScreen = [] // 与 drawPoints 一一对应的屏幕点（CSS px，用于抽稀）
 let drawingPointerId = null
 
 function resetAnnotations() {
@@ -304,6 +307,7 @@ function resetAnnotations() {
   textSession.value = null
   drawStart = null
   drawPoints = []
+  drawScreen = []
   drawingPointerId = null
   suppressClick = false
   gestureMoved = false
@@ -355,10 +359,11 @@ function draftFromTool(tool, a, b) {
   }
 }
 
-/** 指针 client 坐标 → 语义坐标（经 viewport 变换与 fromX/fromY 逆映射）。 */
+/** 指针 client 坐标 → 语义坐标（CSS px → 撤销 viewport 变换 → CSS↔SVG 比例 → fromX/fromY）。 */
 function semanticPoint(e) {
   const sp = screenPoint(e.clientX, e.clientY)
-  return screenToSemantic(view, mapView.value, sp.x, sp.y)
+  const el = mapEl.value
+  return screenToSemantic(view, mapView.value, sp.x, sp.y, el ? el.clientWidth : 0, el ? el.clientHeight : 0)
 }
 
 function startDrawing(e) {
@@ -373,6 +378,7 @@ function startDrawing(e) {
   }
   if (activeTool.value === 'pen' || activeTool.value === 'eraser') {
     drawPoints = [p]
+    drawScreen = [{ x: e.clientX, y: e.clientY }]
     draft.value = { type: activeTool.value, color: annotColor.value, width: annotWidth.value, points: [p] }
   } else {
     drawStart = p
@@ -385,10 +391,10 @@ function moveDrawing(e) {
   if (!p) return
   const tool = activeTool.value
   if (tool === 'pen' || tool === 'eraser') {
-    const last = drawPoints[drawPoints.length - 1]
-    // 抽稀：约 2 屏幕像素对应的语义距离（屏幕 px → SVG px ÷scale → 语义 ×semPerSvg）
-    const minDist = (2 / Math.max(1e-6, view.scale)) * semPerSvgX.value
-    if (Math.hypot(p.x - last.x, p.y - last.y) >= minDist) {
+    // 屏幕空间抽稀：相邻采样点 ≥ ANNOT_THIN_PX CSS px（不依赖 scale/渲染比例，避免换算误差累积）
+    const last = drawScreen[drawScreen.length - 1]
+    if (last == null || Math.hypot(e.clientX - last.x, e.clientY - last.y) >= ANNOT_THIN_PX) {
+      drawScreen.push({ x: e.clientX, y: e.clientY })
       drawPoints.push(p)
       draft.value = { ...draft.value, points: [...drawPoints] }
     }
@@ -429,6 +435,7 @@ function endDrawing() {
   draft.value = null
   drawStart = null
   drawPoints = []
+  drawScreen = []
 }
 
 /** 文字提交（幂等：Enter/blur/移除输入框都会触发，committed 防重复）。 */
@@ -448,13 +455,21 @@ function cancelSession(session) {
   }
 }
 
-/** 文字输入框屏幕定位：内容坐标 ×scale + translate（viewport 变换的逆）。 */
+/** 文字输入框屏幕定位：语义 → SVG unit → CSS px（渲染尺寸比例）→ viewport 变换（与 screenToSvg 互逆）。 */
 const textInputStyle = computed(() => {
   const session = textSession.value
   if (!session) return null
-  const sx = mapView.value.toX(session.point.x) * view.scale + view.tx
-  const sy = mapView.value.toY(session.point.y) * view.scale + view.ty
-  return { left: `${sx}px`, top: `${sy}px` }
+  const el = mapEl.value
+  const s = svgToScreen(
+    mapView.value,
+    view,
+    mapView.value.toX(session.point.x),
+    mapView.value.toY(session.point.y),
+    el ? el.clientWidth : 0,
+    el ? el.clientHeight : 0
+  )
+  if (!s) return null
+  return { left: `${s.x}px`, top: `${s.y}px` }
 })
 
 /** 渲染用标注列表：语义坐标 → SVG 像素（含进行中的 draft），尺寸按 x/y 轴比例换算。 */
