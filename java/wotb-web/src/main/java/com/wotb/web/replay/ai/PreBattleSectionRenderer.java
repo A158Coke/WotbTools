@@ -2,7 +2,6 @@ package com.wotb.web.replay.ai;
 
 import org.springframework.util.StringUtils;
 
-import com.wotb.core.ai.ClusterTermSanitizer;
 import com.wotb.core.replay.map.MapTacticalSemantics;
 import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
 
@@ -264,8 +263,9 @@ public final class PreBattleSectionRenderer {
                 .replace("A队", teamALabel).replace("B队", teamBLabel)
                 .replace("A 队", teamALabel).replace("B 队", teamBLabel)
                 .replace("队伍1", teamALabel).replace("队伍2", teamBLabel);
-        // 用语卫生：禁止「簇」字（prompt 规则 8 的确定性兜底，复用共享 helper）。
-        result = ClusterTermSanitizer.sanitize(result);
+        // 「簇」字兜底不在 renderer 层做：此处无 authoritative Battle context（nickname/
+        // tankName/clan 可能合法含「簇」，如昵称「星簇」），提前裸替换会破坏 proper noun。
+        // 由最终输出边界 AiReplayReviewService.sanitizeClusterTerms（带 protected literals）统一处理。
         final Matcher matcher = GRID_REGION.matcher(result);
         if (matcher.find()) {
             // regionName 模板形如 "$1区" / "Region $1"：replaceAll 会把 $1 展开为区域号。

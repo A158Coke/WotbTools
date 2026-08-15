@@ -2,6 +2,7 @@ package com.wotb.web.replay.ai;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
@@ -74,6 +75,54 @@ class AiReplayReviewServiceTest {
             assertFalse(section.contains("星群"), "昵称不得被单字兜底改写成星群");
             assertFalse(section.contains("主力簇"), "内部术语必须转换: " + section);
         }
+    }
+
+    @Test
+    void preBattleRendererThenServiceSanitizerKeepsProperNouns() {
+        // 真实生产调用顺序：PreBattleStrategicPrior → PreBattleSectionRenderer.render
+        // （teamLabel=星簇，renderer 不再提前裸替换「簇」）→ correctTankNames（本文本已是权威名，
+        // 等价 no-op）→ sanitizeClusterTerms（带 protected literals：nickname/tankName/clan）。
+        final Battle battle = new Battle();
+        final PlayerResult p = new PlayerResult();
+        p.accountId = 1L;
+        p.team = 1;
+        p.tankId = 4481L; // Kranvagn
+        p.nickname = "星簇";
+        p.tankName = "Kranvagn";
+        p.clan = "星簇";
+        battle.players = List.of(p);
+
+        final PreBattleStrategicPrior prior = new PreBattleStrategicPrior(
+                new PreBattleStrategicPrior.TeamProfile(
+                        Map.of(),
+                        List.of("星簇（Kranvagn）随主力簇推进"),
+                        List.of(),
+                        List.of()),
+                null,
+                List.of(new PreBattleStrategicPrior.KeyMatchup(
+                        "GRID_REGION_5", "TEAM_A", "星簇会主力簇推进")),
+                List.of(),
+                List.of());
+        final String rendered = PreBattleSectionRenderer.render(
+                prior, 1, "星簇", AllowedLanguage.ZH, "neptune");
+        final List<String> corrected = AiReplayReviewService.sanitizeClusterTerms(
+                List.of(rendered, "星簇（Kranvagn）随主力簇推进"), battle);
+        // preBattleSection（renderer 输出）：昵称/坦克名/teamLabel(clan) 保留，内部术语转换
+        final String pre = corrected.get(0);
+        assertTrue(pre.contains("星簇"), "权威昵称/teamLabel 必须保留: " + pre);
+        assertFalse(pre.contains("星群"), "不得改写成星群: " + pre);
+        assertTrue(pre.contains("Kranvagn"), "权威坦克名必须保留: " + pre);
+        assertTrue(pre.contains("主力集群"), "内部术语必须转换: " + pre);
+        assertFalse(pre.contains("主力簇"), "内部术语不得残留: " + pre);
+        // analysis 段同样保留
+        final String analysis = corrected.get(1);
+        assertTrue(analysis.contains("星簇"), analysis);
+        assertFalse(analysis.contains("星群"), analysis);
+        // null preBattleSection 不回归
+        final List<String> withNull = AiReplayReviewService.sanitizeClusterTerms(
+                java.util.Arrays.asList("主力簇推进", null), battle);
+        assertNull(withNull.get(1));
+        assertTrue(withNull.get(0).contains("主力集群"), withNull.get(0));
     }
 
     @Test
