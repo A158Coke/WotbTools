@@ -369,8 +369,8 @@ class MapOverviewBuilderTest {
 
     @Test
     void sameEntityLeaveThenReReportKeepsLaterInterval() {
-        // 同一 entityId：10–60 位置上报 → EntityLeave@60（type-4 只表示离开视野，不代表阵亡）
-        // → 70–120 再上报（gap 10s > 5s → 新区间）。
+        // 同一 entityId：10–60 位置上报 → EntityLeave@60（type-4 只表示实体离开/停止存在，不代表阵亡）
+        // → 70–120 重新上报（gap 10s > 5s → 新区间）。
         // 修复前：末段被 removedAt=60 截断成倒置区间 [70,60]，前端 positionCoveredAt 永假 → 车标一直淡化。
         final Map<Integer, List<MapOverviewBuilder.Position>> byEntity = new LinkedHashMap<>();
         final List<MapOverviewBuilder.Position> pts = new ArrayList<>();

@@ -90,7 +90,7 @@ Type8
 ## PROP3_HP_SENTINELS（propId=3 血量 sentinel · PROVEN）
 
 **结论**：type-7 propId=3 的 u16 值按 **signed i16** 解释：
-- **正数**：当前真实 HP（含装备/物资加成；阵亡到 0、存活不到 0）
+- **正数**：当前真实 HP（含装备/物资加成；阵亡到 0、存活不到 0）——注意这只是该时刻的当前 HP，不等于初始满血：真实样本 probe（wotb-web `EntryHpProbeTest`）显示首个样本多与首次受击同刻且低于 tankopedia base，进场满血只能由「严格早于首次受击且 ≥ base 的样本」证明（`EntryHpSource.OBSERVED_EXACT`），否则只能 base baseline
 - **0xFFFD（signed -3）**：与车辆死亡强关联的 sentinel——11/11 与争霸击毁 ±40 点**精确同刻**；不得解析为 HP=65533；解码器归一化为死亡 HP=0（alive=false）
 - **0xFFFF（signed -1）**：UNKNOWN/不可用/未初始化 sentinel（1535 样本 11.102s 出现，时刻无 ±40 kill points、无死亡证据）；不得当 HP、不得直接变成死亡 0
 - **其它 ≤0 高位值**：UNKNOWN sentinel，不臆测语义
