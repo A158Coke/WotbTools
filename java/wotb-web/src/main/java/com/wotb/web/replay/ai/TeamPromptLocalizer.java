@@ -105,33 +105,64 @@ final class TeamPromptLocalizer {
 
     /** Team 专用：阵型深度（前后排）与控制区域规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。 */
     static final String FORMATION_DEPTH_RULE = """
-            === 阵型深度与区域驻留规则（强制） ===
-            FORMATION_DEPTH 段是确定性几何/计数证据，用于理解阵型、前后排与双方活动覆盖（区域驻留优势）：
+            === 阵型深度与地图控制权规则（强制） ===
+            FORMATION_DEPTH 段是确定性几何/火力近似证据，用于理解阵型、前后排与地图控制权（哪方有能力实际控制的区域）：
             1. frontLine / midLine / backLine 是本队成员沿「本队质心 → 敌方质心」轴按深度三分位的分类，
                描述阵型时用自然中文（如「前排抗线、中排输出、后排支援」），不得改判成员排位。
-            2. dwellRegions 的 own / contested / enemy 是九宫格区域内双方车辆驻留计数优势——
-               own=本方驻留更多、contested=双方都有驻留、enemy=对方驻留更多；这只是区域活动/驻留计数事实，
-               不得断言「控制/占领了某区」，也不得表述为占领点得分、实时比分或地图语义区域名。
-            3. 未提供 FORMATION_DEPTH 段时（位置观测不足）禁止编造前后排或区域驻留情况。
+            2. controlRegions 的 own / contested / enemy 是九宫格区域的「控制权确定性近似」——按双方距离加权火力覆盖分（F=Σ 火力权重/(1+距离/100)）对比：own=本方火力覆盖显著占优（≥1.2×）、contested=双方接近、enemy=敌方占优；(vision)=区域内有本方位置样本（视野覆盖确认）、(firepower)=无驻留但火力压制；noArmorNote=本队无重甲车辆，控制权依赖火力投射。这只是火力覆盖+位置几何的确定性近似，不等于真实占领/点亮/视野，不得断言「控制/占领了某区」，也不得表述为占领点得分、实时比分或地图语义区域名。
+            3. 未提供 FORMATION_DEPTH 段时（位置观测不足）禁止编造前后排或控制权情况。
             4. 区域只能引用证据中的 GRID_REGION_1~9 编号，禁止用裸坐标重新划区。""";
 
     static final String FORMATION_DEPTH_RULE_EN = """
 
-            === FORMATION DEPTH AND DWELL ADVANTAGE RULE (mandatory) ===
-            The FORMATION_DEPTH section is deterministic geometric/counting evidence for understanding the formation, the front/mid/back lines and where each team has activity/dwell coverage:
+            === FORMATION DEPTH AND MAP CONTROL RULE (mandatory) ===
+            The FORMATION_DEPTH section is deterministic geometric/firepower-approximation evidence for understanding the formation, the front/mid/back lines and map control (regions a team is capable of actually controlling):
             1. frontLine / midLine / backLine classify own-team members by depth terciles along the "own centroid → enemy centroid" axis; describe the formation in natural language (e.g. "front line holds, middle line outputs, back line supports") and do not re-judge member positions.
-            2. dwellRegions own / contested / enemy are nine-grid region dwell-count advantages (own = own team dwelled more, contested = both dwelled, enemy = the enemy dwelled more); this is only a deterministic dwell/activity counting fact — never claim a region is "controlled/captured", and never present it as capture points, a live score, or named tactical map areas.
-            3. If the FORMATION_DEPTH section is absent (insufficient position observation), never fabricate front/back lines or dwell coverage.
+            2. controlRegions own / contested / enemy are a "deterministic map-control approximation" of the nine-grid regions — computed from distance-weighted fire coverage (F=Σ fire weight/(1+distance/100)): own = own fire coverage significantly dominates (≥1.2×), contested = roughly even, enemy = the enemy dominates; (vision) = own position samples are present in the region (sight-coverage confirmation), (firepower) = no presence but fire suppression; noArmorNote = the team has no heavy-armor vehicles, control relies on firepower projection. This is only a deterministic approximation of fire coverage + position geometry — never claim a region is truly "controlled/captured", and never present it as capture points, a live score, or named tactical map areas.
+            3. If the FORMATION_DEPTH section is absent (insufficient position observation), never fabricate front/back lines or control coverage.
             4. Reference regions only by the GRID_REGION_1~9 ids in the evidence; never re-derive regions from raw coordinates.""";
 
     static final String FORMATION_DEPTH_RULE_RU = """
 
-            === ПРАВИЛО ГЛУБИНЫ СТРОЯ И ПРЕИМУЩЕСТВА ПРИСУТСТВИЯ (обязательно) ===
-            Секция FORMATION_DEPTH — детерминированное геометрическое/счётное свидетельство для понимания строя, передней/средней/задней линий и зон активности/присутствия команд:
+            === ПРАВИЛО ГЛУБИНЫ СТРОЯ И КОНТРОЛЯ КАРТЫ (обязательно) ===
+            Секция FORMATION_DEPTH — детерминированное геометрическое/огневое приближение для понимания строя, передней/средней/задней линий и контроля карты (регионы, которые команда способна фактически контролировать):
             1. frontLine / midLine / backLine классифицируют участников своей команды по терцилям глубины вдоль оси «центроид своей команды → центроид противника»; описывайте строй естественным языком (например, «передняя линия держит, средняя наносит урон, задняя поддерживает») и не пересматривайте позиции участников.
-            2. dwellRegions own / contested / enemy — преимущество по числу нахождений в девятисекторных областях (own = своя команда находилась больше, contested = находились обе, enemy = больше находился противник); это только детерминированный факт счёта присутствия — запрещено утверждать, что область «контролируется/захвачена», и выдавать это за очки захвата, живой счёт или именованные тактические зоны карты.
-            3. Если секция FORMATION_DEPTH отсутствует (недостаточно наблюдений позиций), запрещено выдумывать переднюю/заднюю линию или зоны присутствия.
+            2. controlRegions own / contested / enemy — «детерминированное приближение контроля карты» по девятисекторным областям — по дистанционно-взвешенному огневому покрытию (F=Σ огневой вес/(1+дистанция/100)): own = своё огневое покрытие значительно превосходит (≥1.2×), contested = примерно равно, enemy = превосходит противник; (vision) = в области есть свои позиционные сэмплы (подтверждение обзора), (firepower) = присутствия нет, но огневое подавление; noArmorNote = у команды нет тяжёлых машин, контроль зависит от огневой проекции. Это лишь детерминированное приближение огневого покрытия и геометрии позиций — запрещено утверждать, что область реально «контролируется/захвачена», и выдавать это за очки захвата, живой счёт или именованные тактические зоны карты.
+            3. Если секция FORMATION_DEPTH отсутствует (недостаточно наблюдений позиций), запрещено выдумывать переднюю/заднюю линию или контроль областей.
             4. Зоны можно указывать только по идентификаторам GRID_REGION_1~9 из свидетельств; запрещено переопределять зоны по сырым координатам.""";
+
+    /** Team 专用：身后输出/血量优势（吸血/避战候选）规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。 */
+    static final String BEHIND_LINE_RULE = """
+            === 身后输出/血量优势规则（强制·团队语境负面） ===
+            BEHIND_LINE_HP_ADVANTAGE 段是确定性事实（位置/血量/距离/输出次数/tank profile），用于识别「有扛线能力却在队友身后输出（利用队友扛伤害）」或「避战」的成员：
+            1. 判据由后端计算：成员可扛线（HEAVY/高装甲）、血量比率 ≥ 扛线队友 × 1.2、距敌比扛线队友更远；
+               有输出 → 「有输出（利用队友输出）」、无输出 → 「无输出（避战）」；degree=轻/中/重为跨阶段三因子分级。
+            2. 团队语境可作负面评价：指出成员「避战/利用队友输出」属于团队复盘，但只依据本段事实，不得超出证据断言玩家意图。
+            3. 输出高不等于贡献高：即使伤害较高，若吸血程度重，其对团队贡献应打折——除非输出显著高于本队均值/输出占比靠前（可视为「非常非常高」）才可部分抵消；
+               战犯/MVP 判断（TEAM_AUTOPSY）必须考虑吸血程度。
+            4. 未提供本段时（位置/血量观测不足）禁止编造身后输出或吸血情况。""";
+
+    static final String BEHIND_LINE_RULE_EN = """
+
+            === BEHIND-LINE OUTPUT / HP ADVANTAGE RULE (mandatory · negative in team context) ===
+            The BEHIND_LINE_HP_ADVANTAGE section contains deterministic facts (position/HP/distance/output counts/tank profile) for identifying members who, despite frontline capability, output from behind a teammate (letting the teammate absorb fire) or avoid engagement:
+            1. The criteria are computed server-side: the member is frontline-capable (HEAVY/high armor), HP ratio ≥ the carrier teammate × 1.2, and is farther from the enemy than the carrier teammate;
+               with output → "outputs from behind (uses teammate cover)", without output → "avoids engagement"; degree=light/medium/heavy is the cross-phase three-factor grade.
+            2. In the team context this may be phrased negatively: pointing out that a member "avoids engagement / outputs from behind" is part of the team review, but only within these facts — never assert player intent beyond them.
+            3. High damage is not equal to high contribution: even with fairly high damage, a heavy behind-line grade must discount that member's team contribution — unless the damage is very high (significantly above the team average / top damage share, which may partially offset);
+               the war-criminal/MVP judgement (TEAM_AUTOPSY) must account for the behind-line degree.
+            4. When this section is absent (insufficient position/HP observation), never fabricate behind-line output or HP-hoarding.""";
+
+    static final String BEHIND_LINE_RULE_RU = """
+
+            === ПРАВИЛО «ИГРА ЗА СПИНОЙ / ПРЕИМУЩЕСТВО ПО ОЗ» (обязательное · негатив в командном контексте) ===
+            Секция BEHIND_LINE_HP_ADVANTAGE содержит детерминированные факты (позиция/ОЗ/дистанция/число выстрелов/профиль танка) для выявления членов, которые, имея способность держать фронт, стреляют из-за спин союзников (заставляя союзника принимать огонь) или избегают боя:
+            1. Критерии вычисляются на сервере: член способен держать фронт (HEAVY/высокая броня), доля ОЗ ≥ союзника на первой линии × 1.2 и он дальше от противника, чем этот союзник;
+               с уроном — «стреляет из-за спины (использует прикрытие союзника)», без урона — «избегает боя»; degree=лёгкая/средняя/тяжёлая — трёхфакторная оценка за фазы.
+            2. В командном контексте это может быть негативной оценкой: указывать, что член «избегает боя / стреляет из-за спины», — часть командного разбора, но только в рамках фактов секции; не утверждать намерения игрока сверх них.
+            3. Высокий урон ≠ высокий вклад: даже при довольно высоком уроне тяжёлая оценка «игры за спиной» должна снижать вклад члена — если только урон не очень высок (заметно выше среднего по команде / большая доля урона команды, что может частично компенсировать);
+               вердикт «виновник/MVP» (TEAM_AUTOPSY) обязан учитывать степень игры за спиной.
+            4. Если секция отсутствует (недостаточно наблюдений позиций/ОЗ), запрещено выдумывать игру за спиной или накопление ОЗ.""";
 
     /** 数据不足时的输出措辞（中文强制句，EN/RU 本地化时替换）。 */
     static final String ZH_CANNOT_DETERMINE_RULE =
@@ -317,6 +348,8 @@ final class TeamPromptLocalizer {
                         en ? SOLO_INTENT_RULE_EN : SOLO_INTENT_RULE_RU)
                 .replace(CAPTURE_RULE,
                         en ? CAPTURE_RULE_EN : CAPTURE_RULE_RU)
+                .replace(BEHIND_LINE_RULE,
+                        en ? BEHIND_LINE_RULE_EN : BEHIND_LINE_RULE_RU)
                 .replace(FORMATION_DEPTH_RULE,
                         en ? FORMATION_DEPTH_RULE_EN : FORMATION_DEPTH_RULE_RU);
     }

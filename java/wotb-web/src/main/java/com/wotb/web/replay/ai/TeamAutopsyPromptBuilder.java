@@ -1,5 +1,6 @@
 package com.wotb.web.replay.ai;
 
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.processing.FriendlyEnemyResult.TeamBattleWinner;
 import com.wotb.core.processing.FriendlyEnemyResult.Winner;
 import com.wotb.core.model.Battle;
@@ -36,6 +37,7 @@ public final class TeamAutopsyPromptBuilder {
             final TeamBattleWinner winner,
             final String teamLabel,
             final Battle battle,
+            final ReplayReconstruction recon,
             final int perspectiveTeam) {
         final StringBuilder sb = new StringBuilder(3072);
         sb.append("=== 结果 ===\n");
@@ -115,6 +117,14 @@ public final class TeamAutopsyPromptBuilder {
                         .append(PromptDataQuoter.quote(s.tankName(), "未知坦克"))
                         .append(s.deathSec() > 0 ? "" : "（时刻未知）")
                         .append('\n'));
+        // 身后输出/血量优势（吸血/避战候选·确定性）：战犯/MVP 判定须考虑吸血程度（见规则 3）
+        if (recon != null) {
+            final String behindLine = BehindLineHpEvidence.renderTeamSection(
+                    battle, recon, perspectiveTeam);
+            if (!behindLine.isEmpty()) {
+                sb.append(behindLine);
+            }
+        }
         sb.append("\n请按输出契约给出 JSON。");
         return sb.toString();
     }
