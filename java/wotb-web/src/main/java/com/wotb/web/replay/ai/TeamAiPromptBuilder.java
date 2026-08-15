@@ -167,6 +167,15 @@ public final class TeamAiPromptBuilder {
                 context.battle() == null ? null : context.battle().mapName);
         if (!formationDepth.isEmpty()) {
             optTemp.append(formationDepth);
+        // 身后输出/血量优势（吸血/避战候选·确定性）：小段，随 optional 预算裁剪
+        final String behindLine = BehindLineHpEvidence.renderTeamSection(
+                context.battle(),
+                context.reconstruction(),
+                context.perspectiveTeam(),
+                limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
+        if (!behindLine.isEmpty()) {
+            optTemp.append(behindLine);
+        }
         }
         return optTemp.content();
     }

@@ -52,8 +52,9 @@ const duration = computed(() => (playback.value ? Math.max(0, playback.value.dur
 const friendlyTeam = computed(() => props.overview.friendlyTeam)
 
 // 双方总血量（实时剩余，随播放时间/进度条变化；争霸赛附终局点数）
-const friendlyHp = computed(() => teamHp(playback.value?.vehicles, friendlyTeam.value, currentTime.value))
-const enemyHp = computed(() => teamHp(playback.value?.vehicles, friendlyTeam.value === 1 ? 2 : 1, currentTime.value))
+// 本方：存活车辆尚无血量变化采样时按 maxHp 回退（开局满血）；敌方：无可信采样恒 UNKNOWN 灰段（不把理论 maxHp 当已知血量）
+const friendlyHp = computed(() => teamHp(playback.value?.vehicles, friendlyTeam.value, currentTime.value, true))
+const enemyHp = computed(() => teamHp(playback.value?.vehicles, friendlyTeam.value === 1 ? 2 : 1, currentTime.value, false))
 // 争霸赛实时点数：来自回放广播 pointsSamples（随 currentTime 变化）；非争霸赛/无广播 → null 不显示
 const friendlyPoints = computed(() =>
   teamPointsAt(playback.value?.pointsSamples, friendlyTeam.value, currentTime.value))

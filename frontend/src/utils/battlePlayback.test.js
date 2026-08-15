@@ -97,22 +97,46 @@ describe('vehicleHpAt / teamHp', () => {
     { team: 2, maxHp: 4000, hpSamples: [{ timeSec: 5, hp: 4000 }, { timeSec: 15, hp: 1000 }] }
   ]
 
-  it('vehicleHpAt uses the latest sample <= t; no sample is UNKNOWN (null), sentinels ignored', () => {
+  it('vehicleHpAt: sample priority; full-HP fallback only when assumeFullWhenUnobserved and alive', () => {
     expect(vehicleHpAt(vehicles[0], 5)).toBe(3000)
     expect(vehicleHpAt(vehicles[0], 10)).toBe(2000)
     expect(vehicleHpAt(vehicles[0], 25)).toBe(0) // 阵亡 0 采样
-    expect(vehicleHpAt(vehicles[1], 50)).toBeNull() // 无采样 → UNKNOWN（不得宣称满血）
-    expect(vehicleHpAt({ team: 1, maxHp: 100 }, 0)).toBeNull() // 无 hpSamples 数组 → UNKNOWN
+    // 敌方/未知路径（默认 false）：存活无采样 → UNKNOWN，禁止把理论 maxHp 当已知血量
+    expect(vehicleHpAt(vehicles[1], 50)).toBeNull()
+    expect(vehicleHpAt({ team: 1, maxHp: 100 }, 0)).toBeNull()
+    // 本方路径（assumeFullWhenUnobserved=true）：存活无采样 → 满血回退
+    expect(vehicleHpAt(vehicles[1], 50, true)).toBe(2600)
+    expect(vehicleHpAt({ team: 1, maxHp: 100 }, 0, true)).toBe(100)
+    // 已阵亡且无采样 → UNKNOWN（即使本方路径也不冒充满血/0）
+    expect(vehicleHpAt({ team: 1, maxHp: 2600, deathSec: 10 }, 50, true)).toBeNull()
+    expect(vehicleHpAt({ team: 1, maxHp: 2600, deathSec: 10 }, 5, true)).toBe(2600) // 阵亡前未受击=满血
     expect(vehicleHpAt(null, 0)).toBeNull()
-    // sentinel（0xFFFD=65533 / 0xFFFF=65535）绝不作为 HP：忽略后无有效采样 → UNKNOWN
+    // sentinel（0xFFFD=65533 / 0xFFFF=65535）绝不作为 HP：忽略后按调用方策略
     const sentinel = { team: 1, maxHp: 2600, hpSamples: [{ timeSec: 0, hp: 65533 }, { timeSec: 1, hp: 65535 }] }
-    expect(vehicleHpAt(sentinel, 5)).toBeNull()
+    expect(vehicleHpAt(sentinel, 5)).toBeNull() // 敌方路径 → UNKNOWN
+    expect(vehicleHpAt(sentinel, 5, true)).toBe(2600) // 本方路径存活 → 满血回退
   })
 
-  it('teamHp separates known remaining from unknown capacity (gray)', () => {
+  it('teamHp: friendly assumeFullWhenUnobserved; enemy keeps UNKNOWN without samples', () => {
+    // 本方（assumeFull=true）：无采样存活车按满血回退
+    expect(teamHp(vehicles, 1, 5, true)).toEqual({ totalMax: 5600, knownRemaining: 5600, unknownMax: 0 })
+    expect(teamHp(vehicles, 1, 15, true)).toEqual({ totalMax: 5600, knownRemaining: 4600, unknownMax: 0 }) // 2000 + 满血回退 2600
+    // 敌方（assumeFull=false）：无采样存活车恒 UNKNOWN 灰段，不得 maxHp fallback
     expect(teamHp(vehicles, 1, 5)).toEqual({ totalMax: 5600, knownRemaining: 3000, unknownMax: 2600 })
-    expect(teamHp(vehicles, 1, 15)).toEqual({ totalMax: 5600, knownRemaining: 2000, unknownMax: 2600 }) // 2000 + unknown 2600
+    expect(teamHp(vehicles, 1, 15)).toEqual({ totalMax: 5600, knownRemaining: 2000, unknownMax: 2600 })
+    // 敌方有第一条真实 HP sample（vehicles[2] 首采样 t=5）→ 使用真实 sample，不再 UNKNOWN
+    expect(teamHp(vehicles, 2, 5)).toEqual({ totalMax: 4000, knownRemaining: 4000, unknownMax: 0 })
+    expect(teamHp(vehicles, 2, 4)).toEqual({ totalMax: 4000, knownRemaining: 0, unknownMax: 4000 }) // 首采样前仍 UNKNOWN
     expect(teamHp(vehicles, 2, 15)).toEqual({ totalMax: 4000, knownRemaining: 1000, unknownMax: 0 })
+    // 阵亡且无采样 → 双方路径都 UNKNOWN
+    expect(teamHp([{ team: 1, maxHp: 2000, deathSec: 5 }], 1, 50, true))
+      .toEqual({ totalMax: 2000, knownRemaining: 0, unknownMax: 2000 })
+    expect(teamHp([{ team: 1, maxHp: 2000, deathSec: 5 }], 1, 50))
+      .toEqual({ totalMax: 2000, knownRemaining: 0, unknownMax: 2000 })
+    // perspectiveTeam=2 场景：team2 用 friendly fallback、team1 保持 enemy UNKNOWN（不写死 team1=本方）
+    const mirror = vehicles.map(v => ({ ...v, team: v.team === 1 ? 2 : 1 }))
+    expect(teamHp(mirror, 2, 5, true)).toEqual({ totalMax: 5600, knownRemaining: 5600, unknownMax: 0 })
+    expect(teamHp(mirror, 1, 5)).toEqual({ totalMax: 4000, knownRemaining: 4000, unknownMax: 0 })
     expect(teamHp([], 1, 0)).toEqual({ totalMax: 0, knownRemaining: 0, unknownMax: 0 })
   })
 

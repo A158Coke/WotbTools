@@ -289,19 +289,44 @@ describe('BattlePlayback', () => {
     expect(wrapper.find('[data-test="pb-points-enemy"]').text()).toContain('280')
   })
 
-  it('enemy without HP samples is UNKNOWN capacity (gray segment), not assumed full HP', async () => {
+  it('friendly no-sample falls back to full HP; enemy no-sample stays UNKNOWN gray', async () => {
     stubRaf()
     const overview = makeOverview()
+    // friendly（vehicles[0]）存活无采样 → 满血回退（本方路径）
     overview.playback.vehicles[0].maxHp = 3000
-    overview.playback.vehicles[0].hpSamples = [{ timeSec: 0, hp: 3000 }]
-    overview.playback.vehicles[1].maxHp = 2600 // 无 hpSamples → UNKNOWN
+    overview.playback.vehicles[0].hpSamples = []
+    // enemy（vehicles[1]）存活无采样 → UNKNOWN 灰段（敌方禁止 maxHp fallback）
+    overview.playback.vehicles[1].maxHp = 2600
+    overview.playback.vehicles[1].hpSamples = []
     const wrapper = mountPlayback(overview, 12)
     await flushPromises()
     expect(wrapper.find('[data-test="pb-hp-unknown-enemy"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-hp-unknown-enemy"]').text()).toContain('2600')
-    // 已知数字不含未知容量：敌方显示 0 / 2600，而不是假装满血 2600/2600
-    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('0 / 2600')
-    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('3000 / 3000')
+    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('3000 / 3000') // friendly 满血回退
+    expect(wrapper.find('[data-test="pb-hp-bars"]').text()).toContain('0 / 2600') // enemy 无采样 → known=0
+    // 已阵亡且无采样 → 双方路径都 UNKNOWN
+    const overview2 = makeOverview()
+    overview2.playback.vehicles[0].maxHp = 3000
+    overview2.playback.vehicles[0].hpSamples = []
+    overview2.playback.vehicles[0].deathSec = 5
+    overview2.playback.vehicles[1].maxHp = 2600
+    overview2.playback.vehicles[1].hpSamples = []
+    overview2.playback.vehicles[1].deathSec = 5
+    const wrapper2 = mountPlayback(overview2, 12)
+    await flushPromises()
+    expect(wrapper2.find('[data-test="pb-hp-unknown-friendly"]').exists()).toBe(true)
+    expect(wrapper2.find('[data-test="pb-hp-unknown-enemy"]').exists()).toBe(true)
+    expect(wrapper2.find('[data-test="pb-hp-unknown-friendly"]').text()).toContain('3000')
+    // enemy 有第一条真实 HP sample → 使用真实 sample，不再 UNKNOWN
+    const overview3 = makeOverview()
+    overview3.playback.vehicles[0].maxHp = 3000
+    overview3.playback.vehicles[0].hpSamples = [{ timeSec: 0, hp: 3000 }]
+    overview3.playback.vehicles[1].maxHp = 2600
+    overview3.playback.vehicles[1].hpSamples = [{ timeSec: 2, hp: 2000 }]
+    const wrapper3 = mountPlayback(overview3, 12)
+    await flushPromises()
+    expect(wrapper3.find('[data-test="pb-hp-unknown-enemy"]').exists()).toBe(false)
+    expect(wrapper3.find('[data-test="pb-hp-bars"]').text()).toContain('2000 / 2600')
   })
 
   it('death does not jump the team HP bar to 65533 (0xFFFD sentinel excluded)', async () => {

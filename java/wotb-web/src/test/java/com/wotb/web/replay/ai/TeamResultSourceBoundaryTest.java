@@ -135,7 +135,7 @@ class TeamResultSourceBoundaryTest {
     void autopsyUserContentResultRowCarriesSourceButNoAnnihilationOnBoundary() {
         final String content = TeamAutopsyPromptBuilder.buildUserContent(
                 List.of(), null, List.of(),
-                win(Winner.FRIENDLY_WIN), "CHRD", battle(List.of(), 1), 1);
+                win(Winner.FRIENDLY_WIN), "CHRD", battle(List.of(), 1), null, 1, false);
         assertTrue(content.contains("resultSource=BATTLE_RESULTS"), content);
         assertFalse(content.contains("全歼"), content);
     }

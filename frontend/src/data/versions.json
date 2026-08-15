@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.13",
+    "date": "2026-08-15",
+    "tag": "add",
+    "zh": "团队 AI 复盘升级：阵型理解感知坦克类型——阵容没有前线型或没有后排型车辆时如实说明；九宫格区域升级为「地图控制权」判断（按双方火力覆盖与位置几何，区分哪方有能力实际控制、双方拉锯或敌方占优，并标注视野覆盖/火力压制依据）；新增「身后输出/血量优势」甄别——有扛线能力却在扛线队友身后输出（血量明显更多、离敌更远）的成员会被指出（有输出为利用队友输出、无输出为避战，按程度分轻/中/重），输出高但吸血程度重时团队贡献会打折，战犯/MVP 判定考虑该因素；个人复盘只对你本人做中性描述，不做负面评价；战局回放总血量显示修正——本方存活车辆在尚无血量采样时按满血显示，敌方无可信血量采样时仍保持灰色「未知」段（灰色段同样保留给阵亡但无血量记录的车辆）",
+    "en": "Team AI review upgrades: formation understanding is now tank-profile aware — lineups without frontline or without backline vehicles are stated as-is; nine-grid regions are upgraded to a \"map control\" judgement (based on both sides' fire coverage and position geometry, telling apart regions a team can actually control, contested zones and enemy-dominated ones, with vision/fire-suppression notes); new \"behind-line output / HP advantage\" detection — members with frontline capability who output from behind the carrier teammate (clearly more HP, farther from the enemy) are called out (with output = using teammate cover, without output = avoiding engagement, graded light/medium/heavy by degree), and heavy behind-line grading discounts their team contribution, which the war-criminal/MVP judgement accounts for; the personal review describes only your own facts neutrally, with no negative judgement; battle-playback team HP bars now show full HP for your undamaged vehicles without HP samples, while the enemy team keeps the gray \"unknown\" segment when no trusted HP sample exists (gray also stays for destroyed vehicles without any HP record)",
+    "ru": "Обновление командного AI-разбора: понимание строя учитывает профиль танков — составы без машин передней или без машин задней линии описываются как есть; девять секторов карты переведены на оценку «контроля карты» (по огневому покрытию и геометрии позиций обеих сторон — регионы, которые команда способна реально контролировать, спорные и под контролем противника, с пометками обзора/огневого подавления); новая детекция «игры за спиной / преимущества по ОЗ» — участники, способные держать фронт, но стреляющие из-за спины союзника (заметно больше ОЗ, дальше от противника), отмечаются (с уроном — использует прикрытие союзника, без урона — избегает боя, с градацией лёгкая/средняя/тяжёлая); тяжёлая оценка снижает вклад в команду, что учитывается в вердикте «виновник/MVP»; личный разбор описывает только ваши факты нейтрально, без негативных оценок; исправлено отображение общего ОЗ — машины вашей команды без записей ОЗ показываются с полным ОЗ, а у противника без достоверных записей ОЗ остаётся серый сегмент «неизвестно» (серый также остаётся для уничтоженных машин без записей ОЗ)"
+  },
+  {
     "v": "2.11.12",
     "date": "2026-08-14",
     "tag": "add",

@@ -54,11 +54,14 @@ export function positionCoveredAt(intervals, t) {
 /**
  * 车辆 t 时刻剩余血量：
  * - 有可信采样（≤t）→ 最近一次值（含阵亡 0 采样）；
- * - 无可信采样 → null（UNKNOWN：尚未观测到该车血量，不得假设为满血）；
+ * - 无可信采样且存活：仅当调用方允许（assumeFullWhenUnobserved=true，仅本方路径）→ 满血回退 maxHp；
+ *   敌方/未知路径禁止把理论 maxHp 当作已知当前血量（maxHp 可能回退 tankopedia，非观测事实）；
+ *   本方可信采样优先，回退仅用于尚无任何血量变化的存活车辆；
+ * - 无可信采样且已阵亡（t ≥ deathSec）→ null（UNKNOWN：死亡但无采样，不冒充 0/满血）；
  * - 高位/负 sentinel（<0 或 ≥0xFF00，如 0xFFFD/-3、0xFFFF/-1）一律忽略，防 65533/65535 污染。
  * hpSamples 契约：{ timeSec, hp }（battle-relative 秒升序，type-7 propId=3 signed i16 含装备加成）。
  */
-export function vehicleHpAt(vehicle, t) {
+export function vehicleHpAt(vehicle, t, assumeFullWhenUnobserved = false) {
   if (!vehicle || !Number.isFinite(t)) return null
   const samples = vehicle.hpSamples || []
   let hp = null
@@ -68,15 +71,23 @@ export function vehicleHpAt(vehicle, t) {
     if (s.timeSec <= t + 1e-6) hp = s.hp
     else break
   }
+  // 满血回退仅限本方路径（assumeFullWhenUnobserved=true）且车辆存活：未受击=满血；
+  // 敌方/未知路径与阵亡车辆一律 UNKNOWN（不得把理论 maxHp 当作已知当前血量）
+  if (hp == null && assumeFullWhenUnobserved) {
+    const death = vehicle.deathSec
+    if (death == null || t < death - 1e-6) hp = vehicle.maxHp || 0
+  }
   return hp
 }
+
 
 /**
  * 队伍总血量（t 时刻）：
  * totalMax = ΣmaxHp（理论容量）、knownRemaining = Σ已知当前剩余 HP、
- * unknownMax = Σ尚未观测到血量的理论容量（UNKNOWN，灰段；不得并入 knownRemaining）。
+ * unknownMax = Σ血量 UNKNOWN 的理论容量（灰段）——敌方/未知路径无采样恒 UNKNOWN；本方路径仅在存活且
+ * assumeFullWhenUnobserved=true 时对尚无血量变化的车辆按满血回退。
  */
-export function teamHp(vehicles, team, t) {
+export function teamHp(vehicles, team, t, assumeFullWhenUnobserved = false) {
   let totalMax = 0
   let knownRemaining = 0
   let unknownMax = 0
@@ -84,7 +95,7 @@ export function teamHp(vehicles, team, t) {
     if (v.team !== team) continue
     const maxHp = v.maxHp || 0
     totalMax += maxHp
-    const cur = vehicleHpAt(v, t)
+    const cur = vehicleHpAt(v, t, assumeFullWhenUnobserved)
     if (cur == null) unknownMax += maxHp
     else knownRemaining += cur
   }
