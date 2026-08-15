@@ -425,4 +425,67 @@ class BehindLineHpEvidenceTest {
         assertTrue(section.isEmpty() || !section.contains("vs 扛线队友"),
                 "敌方完全无位置时不得输出 BehindLine 判定, got: " + section);
     }
+
+    @Test
+    void nullAndSentinelHpEventsAreSkippedWithoutException() {
+        // currentHealth=null（自动拆箱 NPE 回归）与 sentinel（65533=0xFFFD、65535=0xFFFF）事件必须被跳过：
+        // 不得抛异常、不得进入 hpSamples 污染血量；正常正 HP 判定保持不变
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 10, 1001L));
+        events.add(new ParticipantMappingEvent(2, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 11, 1002L));
+        events.add(new ParticipantMappingEvent(3, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 20, 2001L));
+        events.add(new ParticipantMappingEvent(4, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 21, 2002L));
+        events.add(pos(10, 40f, 10, -220f, 0f));
+        events.add(pos(12, 40f, 11, -90f, 0f));
+        events.add(pos(20, 40f, 20, 200f, 0f));
+        events.add(pos(21, 40f, 21, 230f, 50f));
+        // 正常正 HP（1001=1800、1002=1000）→ 判定可正常成立
+        events.add(hp(30, 30f, 10, 1800));
+        events.add(hp(31, 30f, 11, 1000));
+        // currentHealth=null → 不得抛 NPE（自动拆箱回归）
+        events.add(new HealthChangedEvent(32, new ReplayTimestamp(35f, null), 7,
+                DecodeConfidence.EXACT, 10, null, null, null));
+        // sentinel 高位（65533 / 65535）→ 忽略
+        events.add(new HealthChangedEvent(33, new ReplayTimestamp(36f, null), 7,
+                DecodeConfidence.EXACT, 10, 65533, null, true));
+        events.add(new HealthChangedEvent(34, new ReplayTimestamp(37f, null), 7,
+                DecodeConfidence.EXACT, 10, 65535, null, true));
+        final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
+                events, List.of(), null, null, null);
+        final String section = BehindLineHpEvidence.renderTeamSection(
+                battle(E100, E100), recon, 1, false);
+        assertTrue(section.contains("vs 扛线队友 account:1002"),
+                "正常正 HP 判定不得被 null/sentinel 破坏, got: " + section);
+    }
+
+    @Test
+    void zeroHpAllowedAsDeathTerminalWithoutException() {
+        // currentHealth=0（死亡终态）必须被允许进入 hpSamples（本次修复不得误过滤）：
+        // 作为最后采样时 hpRatio=0 → 血量优势不可判 → 中性输出，不抛异常、不产生吸血/避战结论
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 10, 1001L));
+        events.add(new ParticipantMappingEvent(2, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 11, 1002L));
+        events.add(new ParticipantMappingEvent(3, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 20, 2001L));
+        events.add(new ParticipantMappingEvent(4, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 21, 2002L));
+        events.add(pos(10, 40f, 10, -220f, 0f));
+        events.add(pos(12, 40f, 11, -90f, 0f));
+        events.add(pos(20, 40f, 20, 200f, 0f));
+        events.add(pos(21, 40f, 21, 230f, 50f));
+        events.add(hp(30, 30f, 10, 1800));   // 1001 正 HP
+        events.add(hp(31, 30f, 11, 1000));   // 1002 正 HP
+        events.add(hp(32, 50f, 10, 0));      // 1001 死亡终态 0
+        final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
+                events, List.of(), null, null, null);
+        final String section = BehindLineHpEvidence.renderTeamSection(
+                battle(E100, E100), recon, 1, false);
+        assertFalse(section.contains("有输出（利用队友输出）"), "0 死亡终态后不得再判吸血/避战");
+    }
 }

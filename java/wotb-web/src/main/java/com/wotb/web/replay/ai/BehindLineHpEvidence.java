@@ -150,6 +150,7 @@ final class BehindLineHpEvidence {
                 }
                 if (hp.currentHealth() == null || (hp.currentHealth() != 0
                         && !HealthChangedEvent.isPlausibleHp(hp.currentHealth()))) {
+                    continue; // null/非 plausible/sentinel（0xFFFD=65533、0xFFFF=65535 等）一律跳过，防拆箱 NPE 与污染
                 }
                 final double t = FormationDepthEvidence.relativeSec(event, battleStart);
                 if (!Double.isFinite(t) || t < 0) {
