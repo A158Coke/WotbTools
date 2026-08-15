@@ -201,8 +201,8 @@ class DamageWindowClustererTest {
     }
 
     @Test
-    void shortWindowHighDamageIsFlaggedRelativeToBaseMaxHp() {
-        // Kranvagn（4481）基础满血量 2400：5s 窗口伤害 1900（79%）→ 短窗高额伤害窗口
+    void shortWindowHighDamageIsFlaggedRelativeToEntryMaxHp() {
+        // Kranvagn（4481）tankopedia 基础满血量 2400、无实测血量：5s 窗口伤害 1900（79%）→ 短窗高额伤害窗口
         final Battle battle = new Battle();
         battle.players = List.of(player(VICTIM, 1, "Victim"));
         final List<DamageWindowClusterer.DamageWindow> critical =
@@ -210,17 +210,36 @@ class DamageWindowClustererTest {
                         hit(35f, 2L, VICTIM, 1000),
                         hit(40f, 2L, VICTIM, 900)), VICTIM);
         assertEquals(1, critical.size());
-        assertEquals(79, Math.round(critical.getFirst().damageVsBaseMaxHpPct()));
+        assertEquals(79, Math.round(critical.getFirst().damageVsEntryMaxHpPct()));
         assertTrue(critical.getFirst().criticalWindow());
 
-        // 伤害 ≥ 基础满血量（100%）：只标短窗高额伤害窗口，不判定「被秒杀」——
+        // 伤害 ≥ 进场满血量（100%）：只标短窗高额伤害窗口，不判定「被秒杀」——
         // 数据无法证明窗口起始满血、窗口内阵亡与装备加成后的实际最大血量
         final List<DamageWindowClusterer.DamageWindow> full =
                 DamageWindowClusterer.receivedWindows(battle, recon(30f,
                         hit(35f, 2L, VICTIM, 1400),
                         hit(40f, 3L, VICTIM, 1000)), VICTIM);
-        assertEquals(100, Math.round(full.getFirst().damageVsBaseMaxHpPct()));
+        assertEquals(100, Math.round(full.getFirst().damageVsEntryMaxHpPct()));
         assertTrue(full.getFirst().criticalWindow());
+    }
+
+    @Test
+    void observedMaxHpWithEquipmentBonusOverridesBaseDenominator() {
+        // 同一 5s 窗口伤害 1900：tankopedia 基础 2400 → 79%（会误标）；
+        // observedMaxHp=2600（含装备/物资加成）→ 73% < 75% → 不得标短窗高额伤害窗口
+        final Battle battle = new Battle();
+        final PlayerResult victim = player(VICTIM, 1, "Victim");
+        victim.observedMaxHp = 2600;
+        battle.players = List.of(victim);
+        final List<DamageWindowClusterer.DamageWindow> windows =
+                DamageWindowClusterer.receivedWindows(battle, recon(30f,
+                        hit(35f, 2L, VICTIM, 1000),
+                        hit(40f, 2L, VICTIM, 900)), VICTIM);
+        assertEquals(1, windows.size());
+        assertEquals(73, Math.round(windows.getFirst().damageVsEntryMaxHpPct()),
+                "分母必须用回放实测进场血量（含装备/物资加成），而不是基础满血量");
+        assertFalse(windows.getFirst().criticalWindow(),
+                "相对进场满血量不足 75% 时不得误标短窗高额伤害窗口");
     }
 
     @Test
@@ -235,17 +254,17 @@ class DamageWindowClustererTest {
                         hit(50f, 2L, VICTIM, 400)), VICTIM);
         assertEquals(1, windows.size());
         assertEquals(15f, windows.getFirst().endSec() - windows.getFirst().startSec());
-        assertEquals(79, Math.round(windows.getFirst().damageVsBaseMaxHpPct()));
+        assertEquals(79, Math.round(windows.getFirst().damageVsEntryMaxHpPct()));
         assertFalse(windows.getFirst().criticalWindow());
     }
 
     @Test
-    void unknownBaseMaxHpYieldsUnknownPctAndFailsClosed() {
-        // battle=null → 无基础满血量口径 → pct 未知，不得误标短窗高额伤害窗口
+    void unknownEntryMaxHpYieldsUnknownPctAndFailsClosed() {
+        // battle=null → 无满血量口径 → pct 未知，不得误标短窗高额伤害窗口
         final List<DamageWindowClusterer.DamageWindow> windows =
                 DamageWindowClusterer.receivedWindows(
                         null, recon(30f, hit(35f, 2L, VICTIM, 400)), VICTIM);
-        assertEquals(null, windows.getFirst().damageVsBaseMaxHpPct());
+        assertEquals(null, windows.getFirst().damageVsEntryMaxHpPct());
         assertFalse(windows.getFirst().criticalWindow());
     }
 

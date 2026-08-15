@@ -1,6 +1,7 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.TeamEntityMapping;
 import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.event.DamageEvent;
@@ -40,10 +41,10 @@ final class DamageWindowClusterer {
      */
     static final float SHORT_FOCUS_WINDOW_SEC = 15f;
 
-    /** 短窗高额伤害窗口的跨度上限（秒）：窗口跨度 ≤ 该阈值且累计伤害 ≥ {@link #CRITICAL_HP_PCT}% 基础满血量即标出。 */
+    /** 短窗高额伤害窗口的跨度上限（秒）：窗口跨度 ≤ 该阈值且累计伤害 ≥ {@link #CRITICAL_HP_PCT}% 进场满血量即标出。 */
     static final float CRITICAL_WINDOW_SPAN_SEC = 10f;
 
-    /** 短窗高额伤害窗口的伤害阈值：窗口累计伤害 ≥ 该比例的**基础**满血量（tankopedia 基础值，不含装备加成）。 */
+    /** 短窗高额伤害窗口的伤害阈值：窗口累计伤害 ≥ 该比例的**进场**满血量（优先回放实测含装备/物资加成，无实测回退 tankopedia 基础值）。 */
     static final double CRITICAL_HP_PCT = 75.0;
 
     /**
@@ -52,9 +53,9 @@ final class DamageWindowClusterer {
      * @param uniqueAttackerCount 窗口内解析出的不同攻击者账号数
      * @param attackersUnresolved 窗口内是否存在攻击者无法解析（true 时不得断言集火）
      * @param focusFireCandidate  窗口总跨度 ≤ {@link #SHORT_FOCUS_WINDOW_SEC}、攻击者 ≥2 且无未解析
-     * @param damageVsBaseMaxHpPct 窗口累计伤害占**基础**满血量百分比（tankopedia 基础值，不含装备加成；
-     *                             只是计算基准，不是实际掉血比例；未知为 null）
-     * @param criticalWindow      窗口跨度 ≤ {@link #CRITICAL_WINDOW_SPAN_SEC} 且伤害 ≥ {@link #CRITICAL_HP_PCT}% 基础满血量
+     * @param damageVsEntryMaxHpPct 窗口累计伤害占**进场**满血量百分比（优先回放实测含装备/物资加成，
+     *                              无实测回退 tankopedia 基础值；只是计算基准，不是实际掉血比例；未知为 null）
+     * @param criticalWindow      窗口跨度 ≤ {@link #CRITICAL_WINDOW_SPAN_SEC} 且伤害 ≥ {@link #CRITICAL_HP_PCT}% 进场满血量
      */
     record DamageWindow(
             float startSec,
@@ -64,7 +65,7 @@ final class DamageWindowClusterer {
             int uniqueAttackerCount,
             boolean attackersUnresolved,
             boolean focusFireCandidate,
-            Double damageVsBaseMaxHpPct,
+            Double damageVsEntryMaxHpPct,
             boolean criticalWindow) {
 
         /** 窗口总跨度（秒）。 */
@@ -115,7 +116,7 @@ final class DamageWindowClusterer {
         received.sort(Comparator.comparingDouble(
                 d -> d.timestamp() == null ? 0.0 : d.timestamp().rawClockSec()));
 
-        final int victimMaxHp = victimMaxHp(battle, accountId);
+        final int victimEntryMaxHp = victimEntryMaxHp(battle, accountId);
         final List<DamageWindow> windows = new ArrayList<>();
         float windowStart = -1f;
         float windowEnd = -1f;
@@ -127,7 +128,7 @@ final class DamageWindowClusterer {
             final float relative = relativeSec(damage, battleStart);
             if (windowStart < 0f || relative - windowEnd > MAX_GAP_SEC) {
                 if (windowStart >= 0f) {
-                    windows.add(window(victimMaxHp,
+                    windows.add(window(victimEntryMaxHp,
                             windowStart, windowEnd, total, hits,
                             attackers.size(), attackersUnresolved));
                 }
@@ -147,20 +148,20 @@ final class DamageWindowClusterer {
                 attackersUnresolved = true;
             }
         }
-        windows.add(window(victimMaxHp,
+        windows.add(window(victimEntryMaxHp,
                 windowStart, windowEnd, total, hits,
                 attackers.size(), attackersUnresolved));
         return windows;
     }
 
-    private static DamageWindow window(final int baseMaxHp,
+    private static DamageWindow window(final int entryMaxHp,
                                        final float startSec, final float endSec,
                                        final int totalDamage, final int hitCount,
                                        final int uniqueAttackers, final boolean attackersUnresolved) {
         final float span = endSec - startSec;
-        // 只是「伤害 / 基础满血量」的计算基准，不是实际掉血比例：
+        // 只是「伤害 / 进场满血量」的计算基准，不是实际掉血比例：
         // 无法证明窗口起始血量、窗口内阵亡与装备加成后的实际最大血量
-        final Double pct = baseMaxHp > 0 ? 100.0 * totalDamage / baseMaxHp : null;
+        final Double pct = entryMaxHp > 0 ? 100.0 * totalDamage / entryMaxHp : null;
         return new DamageWindow(
                 startSec, endSec, totalDamage, hitCount,
                 uniqueAttackers, attackersUnresolved,
@@ -169,17 +170,25 @@ final class DamageWindowClusterer {
                 pct != null && span <= CRITICAL_WINDOW_SPAN_SEC && pct >= CRITICAL_HP_PCT);
     }
 
-    /** 受击者基础满血量（tankopedia 基础值，不含装备加成）；未知返回 0（不参与判定）。 */
-    private static int victimMaxHp(final Battle battle, final long accountId) {
+    /** 受击者进场满血量：优先回放实测最大血量（observedMaxHp，含装备/物资加成），无实测回退 tankopedia 基础值；未知返回 0（不参与判定）。 */
+    private static int victimEntryMaxHp(final Battle battle, final long accountId) {
         if (battle == null || battle.players == null) {
             return 0;
         }
         return battle.players.stream()
                 .filter(p -> p != null && p.accountId == accountId)
                 .findFirst()
-                .map(p -> ReplayDisplayNames.tankMaxHpValue(p.tankId))
+                .map(DamageWindowClusterer::hpBaseline)
                 .filter(java.util.Objects::nonNull)
                 .orElse(0);
+    }
+
+    /** 满血量基准：observedMaxHp（回放实测，含装备/物资加成）>0 时优先；否则 tankopedia 基础值；均无 → null。 */
+    private static Integer hpBaseline(final PlayerResult p) {
+        if (p.observedMaxHp != null && p.observedMaxHp > 0) {
+            return p.observedMaxHp;
+        }
+        return ReplayDisplayNames.tankMaxHpValue(p.tankId);
     }
 
     private static float relativeSec(final DamageEvent damage, final Float battleStart) {

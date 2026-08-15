@@ -1,10 +1,12 @@
 package com.wotb.web.replay.ai;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
+import com.wotb.core.ref.ReplayDisplayNames;
 import com.wotb.core.replay.evidence.TankTacticalProfileRegistry;
 import com.wotb.core.replay.map.MapTacticalSemantics;
 import com.wotb.core.replay.map.MapTacticalSemanticsRegistry;
@@ -79,7 +81,7 @@ class PreBattlePromptBuilderTest {
         final String content = PreBattlePromptBuilder.buildUserContent(
                 battleWithFullResults(), TankTacticalProfileRegistry.load(),
                 MapTacticalSemanticsRegistry.load().semanticsFor("erlenberg"));
-        assertTrue(content.contains("双方总血量（tankopedia maxHp 求和"));
+        assertTrue(content.contains("双方总血量（回放实测进场血量求和"));
         assertTrue(content.contains("TEAM_A 总血量="));
         assertTrue(content.contains("TEAM_B 总血量="));
         assertTrue(content.contains("血量=2400"), "Kranvagn tankopedia maxHp must be rendered");
@@ -87,9 +89,32 @@ class PreBattlePromptBuilderTest {
     }
 
     @Test
+    void observedMaxHpOverridesTotalAndPerVehicleHp() {
+        // 回放实测血量（含装备/物资加成）必须覆盖 tankopedia 基础值：血量= 与双方总血量都改用实测
+        final Battle battle = battleWithFullResults();
+        for (final PlayerResult p : battle.players) {
+            final Integer base = ReplayDisplayNames.tankMaxHpValue(p.tankId);
+            assertNotNull(base, "fixture tank must have tankopedia base hp");
+            p.observedMaxHp = base + 200;
+        }
+        final String content = PreBattlePromptBuilder.buildUserContent(
+                battle, TankTacticalProfileRegistry.load(),
+                MapTacticalSemanticsRegistry.load().semanticsFor("erlenberg"));
+        final int teamA = battle.players.stream().filter(p -> p.team == 1)
+                .mapToInt(p -> p.observedMaxHp).sum();
+        final int teamB = battle.players.stream().filter(p -> p.team == 2)
+                .mapToInt(p -> p.observedMaxHp).sum();
+        assertTrue(content.contains("TEAM_A 总血量=" + teamA), "总血量必须按回放实测（含加成）求和");
+        assertTrue(content.contains("TEAM_B 总血量=" + teamB));
+        assertTrue(content.contains("血量=" + (ReplayDisplayNames.tankMaxHpValue(4481L) + 200)),
+                "单车血量必须显示回放实测值（含装备/物资加成）");
+        assertTrue(content.contains("无实测单车回退 tankopedia 基础值"));
+    }
+
+    @Test
     void systemPromptAllowsPreBattleHpAndRequiresStagedPlans() {
         final String system = PreBattlePromptBuilder.PRE_BATTLE_SYSTEM_PROMPT;
-        assertTrue(system.contains("车辆基础血量（tankopedia maxHp）与双方总血量为赛前车辆属性"));
+        assertTrue(system.contains("车辆进场血量（优先回放实测，含装备/物资加成；无实测回退 tankopedia 基础值）与双方总血量为赛前车辆属性"));
         assertTrue(system.contains("【开局】【中期】【残局】"),
                 "preferredPlans must be staged (opening/midgame/lategame)");
     }

@@ -42,7 +42,7 @@ public final class PreBattlePromptBuilder {
         appendTeam(sb, battle, 1, profiles);
         sb.append("\n=== TEAM_B（队伍2）阵容 ===\n");
         appendTeam(sb, battle, 2, profiles);
-        sb.append("\n=== 双方总血量（tankopedia maxHp 求和，基础值不含装备） ===\n");
+        sb.append("\n=== 双方总血量（回放实测进场血量求和，含装备/物资加成；无实测单车回退 tankopedia 基础值） ===\n");
         sb.append("TEAM_A 总血量=").append(totalHp(battle, 1)).append('\n');
         sb.append("TEAM_B 总血量=").append(totalHp(battle, 2)).append('\n');
         sb.append("\n请按输出契约给出 JSON。");
@@ -244,8 +244,7 @@ public final class PreBattlePromptBuilder {
                     .append(" 车种=").append(PromptDataQuoter.quote(vehicleClass, "未知"))
                     .append(" 等级=").append(tier.isBlank() ? "未知" : tier)
                     .append(" 国家=").append(nation.isBlank() ? "未知" : nation)
-                    .append(" 血量=").append(ReplayDisplayNames.tankMaxHp(p.tankId).isBlank()
-                            ? "未知" : ReplayDisplayNames.tankMaxHp(p.tankId))
+                    .append(" 血量=").append(tankEntryMaxHp(p))
                     .append('\n');
             sb.append("    战术属性");
             if (!profile.curated()) {
@@ -292,7 +291,7 @@ public final class PreBattlePromptBuilder {
         return max;
     }
 
-    /** 双方总血量：tankopedia maxHp 求和（基础值，缺失的车辆按 0 计）。 */
+    /** 双方总血量：优先回放实测进场血量求和（含装备/物资加成），无实测单车回退 tankopedia 基础值；均无按 0 计。 */
     private static int totalHp(final Battle battle, final int team) {
         if (battle.players == null) {
             return 0;
@@ -302,7 +301,7 @@ public final class PreBattlePromptBuilder {
             if (p.team != team) {
                 continue;
             }
-            final String hp = ReplayDisplayNames.tankMaxHp(p.tankId);
+            final String hp = tankEntryMaxHp(p);
             if (!hp.isBlank()) {
                 try {
                     total += Integer.parseInt(hp);
@@ -312,5 +311,13 @@ public final class PreBattlePromptBuilder {
             }
         }
         return total;
+    }
+
+    /** 单车进场满血量：优先回放实测（observedMaxHp，含装备/物资加成），无实测回退 tankopedia 基础值；均未知 → 空串。 */
+    private static String tankEntryMaxHp(final PlayerResult p) {
+        if (p.observedMaxHp != null && p.observedMaxHp > 0) {
+            return String.valueOf(p.observedMaxHp);
+        }
+        return ReplayDisplayNames.tankMaxHp(p.tankId);
     }
 }
