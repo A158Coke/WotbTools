@@ -30,19 +30,58 @@ export const ANNOT_FONT_SIZE = 20
 export const UNDO_LIMIT = 100
 
 /**
- * 屏幕坐标（相对地图容器的 client 坐标，见 BattlePlayback.screenPoint 契约）→ 语义坐标。
- * view = { scale, tx, ty }（viewport 变换：svgPx = (screen − translate) / scale）；
- * mapView 来自 createMapView（含 fromX/fromY 逆映射）。换算失败返回 null。
+ * 解析 CSS 渲染尺寸：真实未缩放地图布局尺寸（.pb-map clientWidth/clientHeight）缺失（≤0，
+ * 如测试无布局）时按 1:1 回退到 viewBox 尺寸。
+ * 背景：.pb-map 宽度为容器 66.7%（移动端 100%），CSS 渲染尺寸 ≠ viewBox W/H，
+ * 1 CSS px ≠ 1 SVG viewBox unit——屏幕↔语义换算必须带渲染尺寸比例，禁止把 CSS px 当 SVG unit。
  */
-export function screenToSemantic(view, mapView, screenX, screenY) {
+function renderedSize(mapView, renderedW, renderedH) {
+  return {
+    rw: Number.isFinite(renderedW) && renderedW > 0 ? renderedW : mapView.W,
+    rh: Number.isFinite(renderedH) && renderedH > 0 ? renderedH : mapView.H
+  }
+}
+
+/**
+ * 屏幕坐标（相对地图容器的 CSS px，见 BattlePlayback.screenPoint 契约）→ SVG viewBox 坐标。
+ * 链：screen CSS px → 撤销 viewport translate/scale → 未缩放地图 CSS px → ×(viewBox/渲染尺寸) → SVG unit。
+ * view = { scale, tx, ty }（单位 CSS px）；mapView 来自 createMapView（W/H = viewBox 尺寸）。
+ */
+export function screenToSvg(view, mapView, screenX, screenY, renderedW, renderedH) {
   if (!view || !mapView || !Number.isFinite(screenX) || !Number.isFinite(screenY)) return null
   const scale = Number.isFinite(view.scale) && view.scale > 0 ? view.scale : 1
   const tx = Number.isFinite(view.tx) ? view.tx : 0
   const ty = Number.isFinite(view.ty) ? view.ty : 0
-  const svgX = (screenX - tx) / scale
-  const svgY = (screenY - ty) / scale
-  const x = typeof mapView.fromX === 'function' ? mapView.fromX(svgX) : null
-  const y = typeof mapView.fromY === 'function' ? mapView.fromY(svgY) : null
+  const { rw, rh } = renderedSize(mapView, renderedW, renderedH)
+  return {
+    x: ((screenX - tx) / scale) * (mapView.W / rw),
+    y: ((screenY - ty) / scale) * (mapView.H / rh)
+  }
+}
+
+/** SVG viewBox 坐标 → 屏幕坐标（相对地图容器的 CSS px）；与 screenToSvg 互逆（svgToScreen(screenToSvg(p)) ≈ p）。 */
+export function svgToScreen(mapView, view, svgX, svgY, renderedW, renderedH) {
+  if (!mapView || !view || !Number.isFinite(svgX) || !Number.isFinite(svgY)) return null
+  const scale = Number.isFinite(view.scale) && view.scale > 0 ? view.scale : 1
+  const tx = Number.isFinite(view.tx) ? view.tx : 0
+  const ty = Number.isFinite(view.ty) ? view.ty : 0
+  const { rw, rh } = renderedSize(mapView, renderedW, renderedH)
+  return {
+    x: (svgX / mapView.W) * rw * scale + tx,
+    y: (svgY / mapView.H) * rh * scale + ty
+  }
+}
+
+/**
+ * 屏幕坐标（相对地图容器的 CSS px）→ 语义坐标（x=回放 x，y=回放 z）。
+ * 完整链：CSS px → 撤销 viewport 变换 → CSS px→SVG unit 比例 → fromX/fromY。换算失败返回 null。
+ */
+export function screenToSemantic(view, mapView, screenX, screenY, renderedW, renderedH) {
+  if (!view || !mapView || !Number.isFinite(screenX) || !Number.isFinite(screenY)) return null
+  const svg = screenToSvg(view, mapView, screenX, screenY, renderedW, renderedH)
+  if (!svg) return null
+  const x = typeof mapView.fromX === 'function' ? mapView.fromX(svg.x) : null
+  const y = typeof mapView.fromY === 'function' ? mapView.fromY(svg.y) : null
   if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) return null
   return { x, y }
 }

@@ -16,6 +16,8 @@ import {
   rectFromCorners,
   redo,
   screenToSemantic,
+  screenToSvg,
+  svgToScreen,
   undo
 } from './annotation.js'
 
@@ -51,6 +53,70 @@ describe('screenToSemantic', () => {
     expect(screenToSemantic(null, mapView, 500, 250)).toBeNull()
     expect(screenToSemantic({ scale: 1, tx: 0, ty: 0 }, null, 500, 250)).toBeNull()
     expect(screenToSemantic({ scale: 1, tx: 0, ty: 0 }, mapView, NaN, 250)).toBeNull()
+  })
+})
+
+describe('CSS ↔ SVG ↔ semantic conversion (rendered size)', () => {
+  // Holland 同款：viewBox W=766 H=769，语义 ±300
+  const holland = createMapView({
+    width: 766,
+    height: 769,
+    coordinateBounds: { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
+  }, null)
+  const identity = { scale: 1, tx: 0, ty: 0 }
+
+  it('desktop responsive: rendered map center (300,301) → semantic 0,0 (CSS px ≠ SVG unit)', () => {
+    // 渲染尺寸 600×602（.pb-map clientWidth/clientHeight），点击中心
+    const p = screenToSemantic(identity, holland, 300, 301, 600, 602)
+    expect(p.x).toBeCloseTo(0, 6)
+    expect(p.y).toBeCloseTo(0, 6)
+    // 对应 SVG viewBox 坐标 ≈ 383, 384.5（300×766/600、301×769/602）
+    const svg = screenToSvg(identity, holland, 300, 301, 600, 602)
+    expect(svg.x).toBeCloseTo(383, 6)
+    expect(svg.y).toBeCloseTo(384.5, 6)
+  })
+
+  it('mobile: rendered width 360 — center click semantic x = 0 (fromX(180) 回归防护)', () => {
+    const p = screenToSemantic(identity, holland, 180, 181, 360, 361)
+    expect(p.x).toBeCloseTo(0, 6)
+    expect(Math.abs(p.y)).toBeLessThan(1) // 渲染高 361 取整，y 允许 ±1
+  })
+
+  it('screenToSvg ↔ svgToScreen round-trip at scale 1', () => {
+    const css = { x: 123.4, y: 456.7 }
+    const svg = screenToSvg(identity, holland, css.x, css.y, 600, 602)
+    const back = svgToScreen(holland, identity, svg.x, svg.y, 600, 602)
+    expect(back.x).toBeCloseTo(css.x, 9)
+    expect(back.y).toBeCloseTo(css.y, 9)
+  })
+
+  it('zoom + pan round-trip (scale=2, tx=40, ty=-20)', () => {
+    const view = { scale: 2, tx: 40, ty: -20 }
+    const css = { x: 200, y: 250 }
+    const svg = screenToSvg(view, holland, css.x, css.y, 600, 602)
+    const back = svgToScreen(holland, view, svg.x, svg.y, 600, 602)
+    expect(back.x).toBeCloseTo(css.x, 9)
+    expect(back.y).toBeCloseTo(css.y, 9)
+    // 完整语义往返：screen → semantic → toX/toY → screen
+    const sem = screenToSemantic(view, holland, css.x, css.y, 600, 602)
+    const round = svgToScreen(holland, view, holland.toX(sem.x), holland.toY(sem.y), 600, 602)
+    expect(round.x).toBeCloseTo(css.x, 6)
+    expect(round.y).toBeCloseTo(css.y, 6)
+  })
+
+  it('falls back to viewBox 1:1 when rendered size is missing (≤0)', () => {
+    const svg = screenToSvg(identity, holland, 383, 384, 0, 0)
+    expect(svg.x).toBeCloseTo(383, 9)
+    expect(svg.y).toBeCloseTo(384, 9)
+    const svg2 = screenToSvg(identity, holland, 383, 384)
+    expect(svg2.x).toBeCloseTo(383, 9)
+  })
+
+  it('returns null for missing inputs', () => {
+    expect(screenToSvg(null, holland, 1, 1, 600, 602)).toBeNull()
+    expect(screenToSvg(identity, null, 1, 1, 600, 602)).toBeNull()
+    expect(svgToScreen(null, identity, 1, 1, 600, 602)).toBeNull()
+    expect(svgToScreen(holland, null, 1, 1, 600, 602)).toBeNull()
   })
 })
 
