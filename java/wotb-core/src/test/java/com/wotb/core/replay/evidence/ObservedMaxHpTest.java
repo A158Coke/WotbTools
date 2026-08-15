@@ -90,6 +90,7 @@ class ObservedMaxHpTest {
 
     @Test
     void preFirstDamageSampleAtOrAboveBaseProvesEntryExact() {
+        // 受击覆盖完整（事件流 received 400 == 结算 damageReceived 400）且
         // 首个 positive 样本 3600（> base 3400，含装备加成）严格早于首次受击 @20s
         // → 受击前满血被证明 → OBSERVED_EXACT，entryHp=3600
         final List<ReplayEvent> events = new ArrayList<>();
@@ -100,6 +101,7 @@ class ObservedMaxHpTest {
         events.add(new DamageEvent(3, new ReplayTimestamp(20f, null), 8,
                 DecodeConfidence.EXACT, 20, 10, null, null, 400, false));
         final Battle battle = battle();
+        battle.players.getFirst().damageReceived = 400; // 覆盖完整
         ObservedMaxHp.populate(battle, events,
                 TeamEntityMapper.resolve(battle, recon(events)));
         final PlayerResult p = battle.players.getFirst();
@@ -118,6 +120,47 @@ class ObservedMaxHpTest {
         events.add(new DamageEvent(3, new ReplayTimestamp(20f, null), 8,
                 DecodeConfidence.EXACT, 20, 10, null, null, 400, false));
         final Battle battle = battle();
+        battle.players.getFirst().damageReceived = 400;
+        ObservedMaxHp.populate(battle, events,
+                TeamEntityMapper.resolve(battle, recon(events)));
+        assertEquals(EntryHpSource.BASE_FALLBACK, battle.players.getFirst().entryHpSource);
+        assertNull(battle.players.getFirst().entryHp);
+    }
+
+    @Test
+    void unobservedEarlyDamageMakesCoveragePartialAndFailsClosed() {
+        // 用户反例：base=2400（Kranvagn 4481）、真实 entry=2600；
+        // 3s 发生未被事件流观察到的 100 伤害；10s sample=2500；20s 才观察到首次伤害 100。
+        // 事件流 observed received=100 != 结算 damageReceived=200 → 覆盖 PARTIAL
+        // → 不得 OBSERVED_EXACT(2500)，必须 fail closed 到 BASE_FALLBACK（entryHp=null）。
+        final Battle battle = new Battle();
+        battle.players = List.of(player(1001L, 1, 4481L)); // Kranvagn base 2400
+        battle.players.getFirst().damageReceived = 200; // 含 3s 未观察的 100
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(5f, null), 8,
+                DecodeConfidence.EXACT, 10, 1001L));
+        events.add(new HealthChangedEvent(2, new ReplayTimestamp(10f, null), 7,
+                DecodeConfidence.EXACT, 10, 2500, null, true));
+        events.add(new DamageEvent(3, new ReplayTimestamp(20f, null), 8,
+                DecodeConfidence.EXACT, 20, 10, null, null, 100, false));
+        ObservedMaxHp.populate(battle, events,
+                TeamEntityMapper.resolve(battle, recon(events)));
+        assertEquals(EntryHpSource.BASE_FALLBACK, battle.players.getFirst().entryHpSource,
+                "受击覆盖 PARTIAL 时不得仅凭「样本早于首次观测受击」判 OBSERVED_EXACT");
+        assertNull(battle.players.getFirst().entryHp);
+    }
+
+    @Test
+    void partialCoverageWithoutAnyObservedDamageFailsClosed() {
+        // 覆盖 PARTIAL + 没有任何 observed DamageEvent：不得因 firstDamageSec==null 判「从未受击」
+        final Battle battle = new Battle();
+        battle.players = List.of(player(1001L, 1, 4481L)); // base 2400
+        battle.players.getFirst().damageReceived = 100; // 结算有受击，但事件流 0
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(5f, null), 8,
+                DecodeConfidence.EXACT, 10, 1001L));
+        events.add(new HealthChangedEvent(2, new ReplayTimestamp(10f, null), 7,
+                DecodeConfidence.EXACT, 10, 2500, null, true)); // 2500 >= base 2400 也无用
         ObservedMaxHp.populate(battle, events,
                 TeamEntityMapper.resolve(battle, recon(events)));
         assertEquals(EntryHpSource.BASE_FALLBACK, battle.players.getFirst().entryHpSource);

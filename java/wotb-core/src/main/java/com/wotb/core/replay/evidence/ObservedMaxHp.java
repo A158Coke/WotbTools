@@ -25,11 +25,18 @@ import java.util.Map;
  * 因此「整场 max current HP = 初始满血」不成立。</p>
  *
  * <p>契约：{@link #populate} 对每名玩家产出 {@link PlayerResult#entryHpSource} /
- * {@link PlayerResult#entryHp}：只有「严格早于首次受击（或从未受击）的 positive 样本
- * ≥ tankopedia base」才判定 {@link EntryHpSource#OBSERVED_EXACT}；否则
- * {@link EntryHpSource#BASE_FALLBACK}（只允许 tankopedia base 作 baseline，base 是
- * entry 的下界）；无 base 则 {@link EntryHpSource#UNKNOWN}。{@link PlayerResult#observedMaxHp}
- * 保留为「整场观测最大 current HP」事实（供总血量条/血量优势证据），不得当 entry full。</p>
+ * {@link PlayerResult#entryHp}。{@link EntryHpSource#OBSERVED_EXACT} 需要<b>两个条件同时成立</b>：
+ * ① 该账号受击覆盖完整（事件流 observed received 与权威结算 damageReceived 一致，复用
+ * {@link com.wotb.core.replay.feature.ObservedDamageCoverage} 的匹配语义）——否则
+ * {@code OBSERVED_DAMAGE_IS_PARTIAL}，事件流缺伤害 ≠ 没发生伤害，「首次观测受击的缺席」
+ * 不能证明「样本发生时尚未损失 HP」；② 存在严格早于首次受击（或结算确认从未受击）的
+ * positive 样本且 ≥ tankopedia base。条件不满足一律 fail closed 到
+ * {@link EntryHpSource#BASE_FALLBACK}（只允许 tankopedia base 作 baseline）或
+ * {@link EntryHpSource#UNKNOWN}。{@link PlayerResult#observedMaxHp} 保留为
+ * 「整场观测最大 current HP」事实（供总血量条/血量优势证据），不得当 entry full。</p>
+ * <p>注意：{@code first observed DamageEvent} 只能帮助<b>证伪</b>「整场 max current HP ==
+ * entry HP」（见 {@code EntryHpProbeTest}），不能独立证明「sample before first observed
+ * damage == authoritative initial full HP」。</p>
  */
 public final class ObservedMaxHp {
 
@@ -77,6 +84,7 @@ public final class ObservedMaxHp {
         final Map<Long, Integer> observed = byAccount(events, mapping);
         final Map<Long, List<double[]>> hpTimeline = hpTimelineByAccount(events, mapping);
         final Map<Long, Double> firstDamageSec = firstDamageSecByAccount(events, mapping);
+        final Map<Long, Integer> observedReceived = observedReceivedByAccount(events, mapping);
         for (final PlayerResult player : battle.players) {
             if (player == null) {
                 continue;
@@ -84,9 +92,33 @@ public final class ObservedMaxHp {
             // observedMaxHp 保留「观测最大 current HP，下界 tankopedia base」语义：
             // 供总血量条/血量优势证据保守使用（≥ base，不得低于基础值）。
             player.observedMaxHp = resolve(observed.get(player.accountId), player.tankId);
+            final boolean coverageExact = receivedCoverageExact(player, observedReceived.get(player.accountId));
             resolveEntryHp(player, hpTimeline.get(player.accountId),
-                    firstDamageSec.get(player.accountId));
+                    firstDamageSec.get(player.accountId), coverageExact);
         }
+    }
+
+    /**
+     * 车辆静态满血事实（provenance-aware，供 AI 车辆 HP 属性/denominator）：
+     * OBSERVED_EXACT → 已证明的进场满血（含装备/物资加成）；否则 tankopedia base
+     * （BASE baseline，base 是 entry 下界）；均无 → null。整场观测最大 current HP
+     * （observedMaxHp）不得冒充满血。
+     */
+    public static Integer fullMaxHp(final PlayerResult p) {
+        if (p.entryHpSource == EntryHpSource.OBSERVED_EXACT
+                && p.entryHp != null && p.entryHp > 0) {
+            return p.entryHp;
+        }
+        return ReplayDisplayNames.tankMaxHpValue(p.tankId);
+    }
+
+    /** 该账号受击覆盖是否完整：事件流 observed received 与权威结算一致（复用 ObservedDamageCoverage 匹配语义）。 */
+    private static boolean receivedCoverageExact(final PlayerResult p, final Integer observedReceived) {
+        final int authoritative = p.damageReceived;
+        if (authoritative <= 0) {
+            return observedReceived == null || observedReceived == 0;
+        }
+        return observedReceived != null && observedReceived == authoritative;
     }
 
     /** 观测最大血量解析：max(回放实测, tankopedia base)；均无 → null（调用方回退 tankopedia 语义）。 */
@@ -104,10 +136,13 @@ public final class ObservedMaxHp {
     /**
      * 判定进场满血量 provenance 并回填 player.entryHpSource / player.entryHp。
      * 当前 HP 单调非增（无治疗）：首个 positive 样本即整场最大值。
+     * <p>OBSERVED_EXACT 需要受击覆盖完整（coverageExact）——否则事件流缺伤害 ≠ 没发生伤害，
+     * 「样本早于首次观测受击」不能证明「样本发生时尚未损失 HP」，一律 fail closed。</p>
      */
     private static void resolveEntryHp(final PlayerResult player,
                                        final List<double[]> samples,
-                                       final Double firstDamageSec) {
+                                       final Double firstDamageSec,
+                                       final boolean coverageExact) {
         final Integer base = ReplayDisplayNames.tankMaxHpValue(player.tankId);
         player.entryHpSource = null;
         player.entryHp = null;
@@ -115,10 +150,15 @@ public final class ObservedMaxHp {
             player.entryHpSource = base != null ? EntryHpSource.BASE_FALLBACK : EntryHpSource.UNKNOWN;
             return;
         }
+        if (!coverageExact) {
+            // 受击覆盖 PARTIAL/UNKNOWN：不得仅凭「首次观测受击的缺席」判受击前满血
+            player.entryHpSource = base != null ? EntryHpSource.BASE_FALLBACK : EntryHpSource.UNKNOWN;
+            return;
+        }
         final double firstSampleTime = samples.get(0)[0];
         final int firstSampleHp = (int) samples.get(0)[1];
-        // 受击前（或从未受击）的首个样本 = 当时满血；且 ≥ tankopedia base 才可证明
-        // 为 initial full（base 是 entry 下界，低于 base 说明已掉血或非初始）。
+        // 覆盖完整时 firstDamageSec 可靠：受击前（或结算确认从未受击）的首个样本 = 当时满血；
+        // 且 ≥ tankopedia base 才可证明为 initial full（base 是 entry 下界）。
         final boolean beforeFirstDamage = firstDamageSec == null
                 || firstSampleTime < firstDamageSec - 1e-6;
         if (beforeFirstDamage && base != null && firstSampleHp >= base) {
@@ -127,6 +167,28 @@ public final class ObservedMaxHp {
             return;
         }
         player.entryHpSource = base != null ? EntryHpSource.BASE_FALLBACK : EntryHpSource.UNKNOWN;
+    }
+
+    /** 每账号事件流受击总量（DamageEvent victim 聚合，用于覆盖判定）。 */
+    private static Map<Long, Integer> observedReceivedByAccount(
+            final List<ReplayEvent> events,
+            final TeamEntityMapping mapping
+    ) {
+        final Map<Long, Integer> out = new HashMap<>();
+        if (events == null || mapping == null) {
+            return out;
+        }
+        for (final ReplayEvent event : events) {
+            if (!(event instanceof DamageEvent damage) || damage.damage() <= 0) {
+                continue;
+            }
+            final TeamEntityIdentity identity = mapping.identity(damage.victimEid());
+            if (identity == null || identity.accountId() <= 0) {
+                continue;
+            }
+            out.merge(identity.accountId(), damage.damage(), Integer::sum);
+        }
+        return out;
     }
 
     /** 每账号 positive HP 时间线（battle-relative 秒升序；EXACT & plausible；re-entry 合并）。 */
