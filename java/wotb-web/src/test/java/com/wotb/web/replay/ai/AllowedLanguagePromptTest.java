@@ -66,6 +66,8 @@ class AllowedLanguagePromptTest {
         assertTrue(en.contains("3m 12s"));
         assertTrue(en.contains("tank proper names")
                 || en.contains("坦克名称"), "business constraints must be preserved");
+        assertTrue(en.contains("Kranvagn 与 EMIL 1951"),
+                "tank proper-noun hardening must be preserved in EN prompts");
         assertFalse(containsAny(en, CHINESE_OUTPUT_MANDATES),
                 "EN prompt must not contain conflicting Chinese output mandates");
         assertFalse(containsAny(en, LOCALIZED_OUTPUT_MANDATES),
@@ -81,6 +83,8 @@ class AllowedLanguagePromptTest {
         assertTrue(ru.contains("3 мин 0 с"));
         assertTrue(ru.contains("3 мин 12 с"));
         assertTrue(ru.contains("坦克名称"), "business constraints must be preserved");
+        assertTrue(ru.contains("Kranvagn 与 EMIL 1951"),
+                "tank proper-noun hardening must be preserved in RU prompts");
         assertFalse(containsAny(ru, CHINESE_OUTPUT_MANDATES),
                 "RU prompt must not contain conflicting Chinese output mandates");
         assertFalse(containsAny(ru, LOCALIZED_OUTPUT_MANDATES),
@@ -96,6 +100,8 @@ class AllowedLanguagePromptTest {
         assertTrue(en.contains("3m 0s"));
         assertTrue(en.contains("3m 12s"));
         assertTrue(en.contains("Never address the whole team as \"you\""));
+        assertTrue(en.contains("Kranvagn 与 EMIL 1951"),
+                "tank proper-noun hardening must be preserved in EN team prompts");
         assertFalse(containsAny(en, CHINESE_OUTPUT_MANDATES),
                 "EN team prompt must not contain conflicting Chinese output mandates");
         assertFalse(containsAny(en, LOCALIZED_OUTPUT_MANDATES),
@@ -111,6 +117,8 @@ class AllowedLanguagePromptTest {
         assertTrue(ru.contains("3 мин 0 с"));
         assertTrue(ru.contains("3 мин 12 с"));
         assertTrue(ru.contains("Не обращайтесь ко всей команде"));
+        assertTrue(ru.contains("Kranvagn 与 EMIL 1951"),
+                "tank proper-noun hardening must be preserved in RU team prompts");
         assertFalse(containsAny(ru, CHINESE_OUTPUT_MANDATES),
                 "RU team prompt must not contain conflicting Chinese output mandates");
         assertFalse(containsAny(ru, LOCALIZED_OUTPUT_MANDATES),

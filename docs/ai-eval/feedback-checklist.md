@@ -30,3 +30,9 @@
 - 单走「拖延 vs 脱节」取决于队友是否因他获利（转场/占点/另一侧推进/视野）；后端只给时序关联，禁止因果。
 - 判「脱节」需无收益 + 被白吃/丢点；信号不足/矛盾 → 明说无法确定。
 - CW（训练房/联赛）恒为争霸赛：result 与 resultSource 三级证据（BATTLE_RESULTS 权威 / SURVIVOR_SETTLEMENT 结算存活推导 / UNKNOWN；POINTS_INFERENCE 已停用、不再产出）；全歼双向（全歼敌方获胜 / 被敌方全歼落败）与 SURVIVOR_SETTLEMENT 仅在结算阵容完整（名册 #201 与战绩 #301 一致）时生效，不写死每队 7 人；双方均有存活才按结束方式判定——标准规则 + 时长<420s → 某一方达到 1000 分上限导致提前结束（具体胜方由 winnerTeam 决定，缺失时未知），时长≥420s → 时间耗尽，不使用任何点数公式；集中一波的代价 = 丢视野 + 被偷家；残局守家 vs 占点影响点数判定；占点分（victoryPointsEarned）的精确定义及是否含被动增长/击杀夺分仍未证明，不是权威终局比分，也不是时间线。
+
+## 已登记反馈
+
+| 日期 | 模式 | 现象 | 期望判断 | 复现方式 | 关联 lesson |
+|---|---|---|---|---|---|
+| 2026-08-15 | TRAINING | 把 Kranvagn 写成「埃米尔1951（Awesomeman954）」且保持全文（基础满血 2400 数据正确，生成侧幻觉） | 玩家处坦克名必须等于 roster 权威名（Kranvagn） | 零容忍单测：TankNameCorrectorTest.productionCase_kranvagnWrittenAsEmil1951_isCorrected | docs/ai-lessons/tank-name-hallucination-01.md |
