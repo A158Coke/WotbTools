@@ -23,9 +23,11 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li>R1 昵称锚定：以 roster 昵称的括号对/所属式配对定位其坦克名，若与 roster 权威名
  *       不一致则替换为权威名（支持「坦克名（昵称）」与「昵称（坦克名）」两种顺序）；</li>
- *   <li>R1+ 文档级传播：全文先收集昵称锚点已证明的「错名 canonical -> roster 车」唯一映射
- *       （Pass 1），再传播到其它 standalone 提及（Pass 2，同一 canonical 的别名/英文原文
- *       一并修正，与出现顺序无关；映射冲突或 source 本身在 roster 时 fail closed 不传播）；</li>
+ *   <li>R1+ package 级传播：同一 AI Review 的多段文本（analysis + preBattleSection）视为
+ *       一个 correction package（{@link #correctAll(List, Collection)}）：Pass 1 跨全部段
+ *       收集昵称锚点已证明的「错名 canonical -&gt; roster 车」唯一共享映射，Pass 2 逐段传播到
+ *       同一 canonical 的 standalone 提及（含别名/英文原文，与出现顺序无关；跨段映射冲突或
+ *       source 本身在 roster 时 fail closed 不传播、不猜测）；</li>
  *   <li>R2 归一化：别名（KRV/克朗瓦根/埃米尔1951 等，见 common/tank-name-aliases.json）
  *       与大小写差异统一为 tankopedia 权威英文名；</li>
  *   <li>R3 独立错名检测：正文中出现的、不在本场 roster 内的已知车名（无昵称锚点/有歧义时
