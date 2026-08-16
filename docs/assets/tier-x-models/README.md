@@ -36,7 +36,7 @@ AI 只做 visual QA；发现错误 → 修 baker → 重新生成，禁止人工
 | 路径 | 职责 |
 |---|---|
 | `frontend/src/vehicle-models/types.js` | discriminated union 类型契约 + 统一 viewBox + metadata schema（Source-faithful PBR） |
-| `frontend/src/vehicle-models/mapping.js` | 集中静态 Tank ID → baseModelKey（81 组，含 2 个 confirmPending） |
+| `frontend/src/vehicle-models/mapping.js` | 集中静态 Tank ID → baseModelKey（81 组；confirmPending 已全部清零，2026-08-19） |
 | `frontend/src/vehicle-models/assets/<modelKey>/` | **正式 WebP 资产**（hull.webp / turret.webp / metadata.json / bake-report.json，baker 生成） |
 | `frontend/src/vehicle-models/validate.js` | validator（CI 与 CLI 共用；正式资产强制 source.provider=blitzkit + method=texture-bake） |
 | `frontend/src/vehicle-models/coverage.test.js` | Tier X 100% 覆盖门禁（新增 Tier X 无 mapping → CI FAIL） |
@@ -97,10 +97,12 @@ kind 核验依据 / BlitzKit 参考链接）见 `tier-x-inventory.md`（脚本�
 **kind 核验（全 81 modelKey 逐组完成）**：官方 tankopedia / fandom wiki / 结构知识；
 修正 3 项：minotauro → turreted、foch-155 → turretless、xm66f → turreted。每行依据见 inventory 表。
 
-**视觉确认待定（confirmPending，contract 未冻结）**：AC Teichos (22129)、NC 70 Błyskawica
-(19585)——生成前须对照 BlitzKit 模型确认 kind（**不在正式资产生成清单内，禁止 bake**）。
-SPHT (29985) 已于 2026-08-19 经 BlitzKit 数据确认 **turreted**（GLB turret_01 + gun_01 +
-gun_01_mask；models.pb turret 模块无 yaw 限位）→ 解除 confirmPending 并生成正式资产。
+**confirmPending 已全部清零（2026-08-19，contract 冻结）**：AC Teichos (22129)、NC 70
+Błyskawica (19585) 与 SPHT (29985) 均经 BlitzKit 真实模型数据确认 **turreted** 并生成正式资产——
+SPHT / AC Teichos：GLB turret_01 + gun_01 + gun_01_mask、models.pb turret 模块无 yaw 限位；
+NC 70 Błyskawica：GLB turret_01 为 1-triangle stub（casemate 主体在 hull_nc_01，属 hull 层；
+旋转层实际 = gun_01 + gun_01_mask，yaw ±10° limited-traverse，同 grille-15 处理）。
+三车 turretPivot 均通过 yaw0/90 几何反推验证（err=0.0000m，见 scripts/verify-turret-pivot.mjs）。
 
 ### B. 目标路径（正式）
 
@@ -151,11 +153,11 @@ cd frontend && npm run build && node scripts/check-bundle-separation.mjs  # bund
 cd frontend && node scripts/check-webp-orientation.mjs                     # 真实 WebP 方向校验（developer-only）
 ```
 
-### H. 生成范围（79 个正式资产，全部非 confirmPending）
+### H. 生成范围（81 个正式资产，confirmPending = 0）
 
-79 个 modelKey 已生成正式 WebP 资产（maus / leopard-1 / grille-15 / fv4005 / ho-ri / minotauro /
-xm66f / sheridan 等结构差异最大化组 + 其余批量组 + spht（2026-08-19 确认 turreted 后加入））；
-2 个 confirmPending（ac-teichos / nc-70-blyskawica）**保持 pending，禁止生成**。
+81 个 modelKey 已生成正式 WebP 资产（maus / leopard-1 / grille-15 / fv4005 / ho-ri / minotauro /
+xm66f / sheridan 等结构差异最大化组 + 其余批量组；spht / ac-teichos / nc-70-blyskawica 于
+2026-08-19 BlitzKit 数据确认 turreted 后加入，无 pending）。
 
 **turretPivot source-of-truth（PR92 Review）**：yaw 旋转中心 = BlitzKit useTankTransform 契约——
 `modelPivot = correctZYTuple(trackOrigin) + correctZYTuple(turret_origin)`（hullOrigin + turretOrigin
@@ -175,6 +177,11 @@ PR1 DONE（78 资产确定性生成，方向契约测试全绿，PR #91 已合�
 
 ## 变更记录
 
+- PR92 Review 修复（2026-08-19）：**turretPivot source-of-truth 落地**（bake-report 记录 pivotSource：
+  modelPivot = correctZYTuple(trackOrigin) + correctZYTuple(turretOrigin)；`scripts/verify-turret-pivot.mjs` 用真实 GLB 旋转层几何做 yaw=0°/90° 反推，全 72 turreted 车型 err=0.0000m，含 minotauro
+  initial_turret_rotation（pitch=3°）影响量化 0.025m）；**confirmPending 清零**（spht / ac-teichos /
+  nc-70-blyskawica 经 BlitzKit 真实模型数据确认 turreted，81 资产齐备）；**dedicated 阵营视觉**
+  （VehicleMarker 友军暖橙 / 敌军冷青 halo，CSS drop-shadow，不动纹理/旋转/阵亡灰阶/红 ✕）。
 - PR2（2026-08-19）：**Dedicated Tier X Models in Battle Playback**——VehicleMarker 正式组件
   （frontend/src/components/VehicleMarker.vue，generic/dedicated turreted/dedicated turretless
   三渲染路径）+ 生产 runtime 资产解析（frontend/src/vehicle-models/runtime.js：tankId→modelKey→

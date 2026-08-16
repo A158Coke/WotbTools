@@ -70,6 +70,9 @@ const stateClasses = computed(() => ({
   'pb-destroyed': st.value.destroyed,
   'pb-recorder': st.value.recorder,
   'pb-selected': props.selected,
+  // PR92 Review B3：dedicated 阵营语义（generic 仍由 friendly/enemy PNG 表达，不加 class 副作用）
+  'pb-friendly': st.value.friendly === true,
+  'pb-enemy': st.value.friendly === false,
 }))
 </script>
 
@@ -87,7 +90,7 @@ const stateClasses = computed(() => ({
          pb-death ✕ / pb-name 是 button 直接子元素、在容器外，保持完整 opacity（parent opacity
          无法被子元素抵消，故不能放在 button 上）。容器 absolute inset:0 保持与 button 同盒，
          imgs 的百分比定位（containing block）不变。 -->
-    <div class="pb-graphics">
+    <div class="pb-graphics" :class="{ 'pb-graphics-dedicated': isDedicated }">
       <!-- dedicated turreted：hull 满盒 + turret assembly（父层绕盒中心 H，子层绕 image-local pivot T-H） -->
       <template v-if="isDedicated && isTurreted">
         <img
@@ -203,6 +206,17 @@ const stateClasses = computed(() => ({
 .pb-destroyed .pb-graphics {
   opacity: 0.35;
   filter: grayscale(1);
+}
+/* PR92 Review B3 —— dedicated 阵营 halo（只作用于 dedicated 视觉层）：
+   暖 amber（友军）/ 冷 cyan（敌军）外围光晕——不修改原始车型纹理、不生成两套资产、
+   不影响 hull/turret 独立旋转；generic 路径不加（保持 friendly/enemy PNG 原语义）。
+   :not(.pb-destroyed)：与 .pb-destroyed .pb-graphics 的 filter 互斥（两者 specificity
+   相同、后写者胜——若不加排除，阵亡灰阶会被 halo 覆盖）；destroyed 保持 grayscale 原语义。 */
+.pb-friendly:not(.pb-destroyed) .pb-graphics-dedicated {
+  filter: drop-shadow(0 0 2px rgba(255, 166, 77, 0.95)) drop-shadow(0 0 7px rgba(255, 166, 77, 0.55));
+}
+.pb-enemy:not(.pb-destroyed) .pb-graphics-dedicated {
+  filter: drop-shadow(0 0 2px rgba(64, 192, 255, 0.95)) drop-shadow(0 0 7px rgba(64, 192, 255, 0.55));
 }
 /* 阵亡 ✕（PR #92 Review A）：红色 + 更大 + 多层描边——深/亮色地图背景都清晰可读，
    与 last-known（仅淡化，无 ✕）语义区分明显。颜色/字号/z-index 由 inline style 提供

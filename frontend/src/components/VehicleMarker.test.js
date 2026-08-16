@@ -6,6 +6,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import VehicleMarker from './VehicleMarker.vue'
+import markerSource from './VehicleMarker.vue?raw'
 
 const genericMarker = {
   vehicle: { accountId: 1, playerName: 'You', tankId: 1, tankName: 'Maus' },
@@ -163,5 +164,54 @@ describe('marker 根元素（按钮）', () => {
     const d = mountMarker({ ...genericMarker, destroyed: true, lastKnown: true })
     expect(d.find('button').classes()).not.toContain('pb-last-known')
     expect(d.find('button').classes()).toContain('pb-destroyed')
+  })
+})
+
+describe('PR92 Review B3 — dedicated 阵营 halo（friendly/enemy）', () => {
+  it('dedicated friendly：pb-friendly class + dedicated 视觉层 halo 容器；无 pb-enemy', () => {
+    const w = mountMarker({ ...dedicatedMarker, friendly: true })
+    const btn = w.find('button')
+    expect(btn.classes()).toContain('pb-friendly')
+    expect(btn.classes()).not.toContain('pb-enemy')
+    const g = w.find('.pb-graphics')
+    expect(g.classes()).toContain('pb-graphics-dedicated')
+  })
+
+  it('dedicated enemy：pb-enemy class；与 friendly token 互斥且视觉定义不同', () => {
+    const w = mountMarker({ ...dedicatedMarker, friendly: false })
+    const btn = w.find('button')
+    expect(btn.classes()).toContain('pb-enemy')
+    expect(btn.classes()).not.toContain('pb-friendly')
+    // 两个 token 的 halo 色不同（读组件源码验证 CSS filter 定义）
+    const src = markerSource
+    const friendlyFilter = src.match(/\.pb-friendly[^{]*\.pb-graphics-dedicated \{[^}]*\}/)?.[0] || ''
+    const enemyFilter = src.match(/\.pb-enemy[^{]*\.pb-graphics-dedicated \{[^}]*\}/)?.[0] || ''
+    expect(friendlyFilter).toContain('rgba(255, 166, 77') // 暖 amber
+    expect(enemyFilter).toContain('rgba(64, 192, 255') // 冷 cyan
+    expect(friendlyFilter).not.toBe(enemyFilter)
+    // halo 与 destroyed grayscale 的 filter 互斥（同 specificity 后写者胜 → 必须 :not 排除）
+    expect(src).toContain('.pb-friendly:not(.pb-destroyed) .pb-graphics-dedicated')
+    expect(src).toContain('.pb-enemy:not(.pb-destroyed) .pb-graphics-dedicated')
+  })
+
+  it('generic：无 dedicated halo class（保持 friendly/enemy PNG 原语义）', () => {
+    const w = mountMarker({ ...genericMarker, friendly: true })
+    expect(w.find('.pb-graphics').classes()).not.toContain('pb-graphics-dedicated')
+    expect(w.find('button').classes()).toContain('pb-friendly')
+    expect(w.find('.pb-hull').attributes('src')).toBe('hull.png') // generic 行为不变
+  })
+
+  it('destroyed + enemy：grayscale + 红 X 完整 opacity 不受 halo 影响（容器外）', () => {
+    const w = mountMarker({ ...dedicatedMarker, friendly: false, destroyed: true })
+    const death = w.find('.pb-death')
+    expect(death.exists()).toBe(true)
+    expect(death.attributes('style')).toContain('color: #ff4d4f')
+    expect(death.element.parentElement).toBe(w.find('.pb-graphics').element.parentElement)
+    expect(w.find('button').classes()).toContain('pb-enemy')
+    expect(w.find('button').classes()).toContain('pb-destroyed')
+    // 视觉层容器自身仍在（grayscale 作用对象），halo 选择器已排除 destroyed：
+    // .pb-destroyed .pb-graphics 的 filter: grayscale(1) 不会被同 specificity 的
+    // halo 规则覆盖（:not(.pb-destroyed) 保证两规则永不共选）
+    expect(w.find('.pb-graphics').classes()).toContain('pb-graphics-dedicated')
   })
 })

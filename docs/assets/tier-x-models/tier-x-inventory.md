@@ -10,10 +10,9 @@
 > 不采用 BlitzKit TURRET module 或 turretRotationSpeed 字段（casemate 也有 turret module 且转速非零，不可判）。
 > 修正记录：minotauro → turreted（有炮塔 45° 限位）；foch-155 → turretless（fandom specs turret=no）；
 > xm66f → turreted（官方：non-fully-rotating turret）。
-> **confirmPending**（ac-teichos / nc-70-blyskawica）：无可靠公开结构资料，
-> contract 未冻结——ChatGPT 生成时须对照 BlitzKit 参考图确认 kind，不一致需同步修正 mapping 与 metadata。
-> spht 已于 2026-08-19 经 BlitzKit 数据确认 turreted（GLB turret_01 + gun_01 + gun_01_mask；
-> models.pb turret 模块无 yaw 限位）→ 解除 confirmPending。
+> **confirmPending 已全部清零（2026-08-19）**：spht / ac-teichos / nc-70-blyskawica
+> 均经 BlitzKit 真实模型数据确认 kind（GLB 节点结构 + models.pb turret yaw 限位），contract 冻结；
+> 三车已生成正式资产，turretPivot 通过 yaw0/90 几何反推验证（err=0.0000m）。
 
 ## 按 baseModelKey 分组
 
@@ -77,10 +76,10 @@
 | fv4005 | turreted | — | 18001 | FV4005 | Tank destroyer | UK | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/18001/icons/big.webp) · [page](https://blitzkit.app/tanks/fv4005) |
 | lion | turreted | — | 18049 | Lion | Medium tank | European | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/18049/icons/big.webp) · [page](https://blitzkit.app/tanks/lion) |
 | t95e6 | turreted | — | 18977 | T95E6 | Heavy tank | USA | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/18977/icons/big.webp) · [page](https://blitzkit.app/tanks/t95e6) |
-| grille-15 | turreted | — | 19217 | Grille 15 | Tank destroyer | Germany | limited-traverse 炮塔（BlitzKit models.pb turret yaw ±65° 权威数据；yaw 有界仍属 turreted visual layer，同 minotauro/xm66f） | [icon](https://api.blitzkit.app/tanks/19217/icons/big.webp) · [page](https://blitzkit.app/tanks/grille-15) |
+| grille-15 | turreted | — | 19217 | Grille 15 | Tank destroyer | Germany | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/19217/icons/big.webp) · [page](https://blitzkit.app/tanks/grille-15) |
 | super-conqueror | turreted | — | 19281 | Super Conqueror | Heavy tank | UK | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/19281/icons/big.webp) · [page](https://blitzkit.app/tanks/super-conqueror) |
 | vickers-light | turreted | — | 19537 | Vickers Light | Light tank | UK | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/19537/icons/big.webp) · [page](https://blitzkit.app/tanks/vickers-light) |
-| nc-70-blyskawica | turreted | ⚠️ 待确认 | 19585 | NC 70 Błyskawica | Tank destroyer | European | 官方文章未明确炮塔结构 → 视觉确认待定（confirmPending） | [icon](https://api.blitzkit.app/tanks/19585/icons/big.webp) · [page](https://blitzkit.app/tanks/nc-70-b-yskawica) |
+| nc-70-blyskawica | turreted | — | 19585 | NC 70 Błyskawica | Tank destroyer | European | 2026-08-19 BlitzKit 数据确认：GLB turret_01 为 1-triangle stub（casemate 主体在 hull_nc_01，属 hull 层；旋转层实际 = gun_01 + gun_01_mask）、models.pb turret 模块 yaw ±10°（limited-traverse，同 grille-15）→ 确认 turreted | [icon](https://api.blitzkit.app/tanks/19585/icons/big.webp) · [page](https://blitzkit.app/tanks/nc-70-b-yskawica) |
 | ac-atlas | turreted | — | 19825 | AC Atlas | Heavy tank | Other | fandom：炮塔正面坚不可摧 + Modules/Turret | [icon](https://api.blitzkit.app/tanks/19825/icons/big.webp) · [page](https://blitzkit.app/tanks/ac-atlas) |
 | t-22-medium | turreted | — | 19969 | T-22 medium | Medium tank | USSR | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/19969/icons/big.webp) · [page](https://blitzkit.app/tanks/t-22-medium) |
 | felice | turreted | — | 20097 | Felice | Heavy tank | European | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/20097/icons/big.webp) · [page](https://blitzkit.app/tanks/felice) |
@@ -88,7 +87,7 @@
 | sheridan | turreted | — | 21793 | Sheridan Missile | Light tank | USA | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/21793/icons/big.webp) · [page](https://blitzkit.app/tanks/sheridan-missile) |
 | projet-murat | turreted | — | 21057 | Projet Murat | Medium tank | France | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/21057/icons/big.webp) · [page](https://blitzkit.app/tanks/projet-murat) |
 | vk-90-01-p | turreted | — | 21777 | VK 90.01 (P) | Heavy tank | Germany | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/21777/icons/big.webp) · [page](https://blitzkit.app/tanks/vk-90-01-p) |
-| ac-teichos | turreted | ⚠️ 待确认 | 22129 | AC Teichos | Medium tank | Other | 无可靠公开结构资料 → 视觉确认待定（confirmPending） | [icon](https://api.blitzkit.app/tanks/22129/icons/big.webp) · [page](https://blitzkit.app/tanks/ac-teichos) |
+| ac-teichos | turreted | — | 22129 | AC Teichos | Medium tank | Other | 2026-08-19 BlitzKit 数据确认：GLB turret_01（631+1540 顶点）+ gun_01 + gun_01_mask、models.pb turret 模块无 yaw 限位 → 确认 turreted | [icon](https://api.blitzkit.app/tanks/22129/icons/big.webp) · [page](https://blitzkit.app/tanks/ac-teichos) |
 | obj-260 | turreted | — | 22273 | Obj. 260 | Heavy tank | USSR | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/22273/icons/big.webp) · [page](https://blitzkit.app/tanks/obj-260) |
 | m-vi-yoh | turreted | — | 22817 | M-VI-Yoh | Heavy tank | USA | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/22817/icons/big.webp) · [page](https://blitzkit.app/tanks/m-vi-yoh) |
 | m47-chevalier | turreted | — | 23105 | M47 Chevalier | Medium tank | France | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/23105/icons/big.webp) · [page](https://blitzkit.app/tanks/m47-chevalier) |
@@ -108,5 +107,5 @@
 
 - Tankopedia Tier X 总数：84（meta.count=84，generated_at=2026-08-08T17:28:26.017337+00:00）
 - baseModelKey 数：81
-- turreted：73；turretless：9；confirmPending：2（spht 已确认 turreted 并生成正式资产）
+- turreted：72；turretless：9；confirmPending：0
 

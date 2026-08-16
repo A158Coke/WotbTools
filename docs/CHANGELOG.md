@@ -298,6 +298,30 @@
   DEVELOPER_GUIDE 文档地图补充层级说明。纯文档变更，不影响代码与构建。
 
 ### Fixed
+- **turretPivot 参考系反推验证（PR92 Review B1，真实几何证据）**：新增
+  frontend/scripts/verify-turret-pivot.mjs（developer-only，CI 不执行）——对每个 turreted 车型
+  用 GLB 真实旋转层几何（= bake 的 turret 场景：turret + mantlet + gun，这才是 marker 里实际绕
+  turretPivot 旋转的视觉层）复刻 BlitzKit useTankTransform 运行时公式，构造 yaw=0°/90° 两个姿态，
+  垂直平分线最小二乘反求唯一 2D rotation center，与 metadata.turretPivot 比对：
+  **全 72 turreted 车型 err=0.0000m**（含 3 辆 confirmPending 新确认车；minotauro 含
+  initial_turret_rotation pitch=3° 完整复刻 err=0.0249m < 0.1m 阈值）。**B1 根因结论**：早期
+  QA 报告的“座圈偏后”来自测量脚本 GLB 轴映射 bug（误用 [v.x,v.z,v.y]，应为 [v.x,v.y,v.z]），
+  非资产缺陷；Maus/Grille 15 等全部 pivot 数值不变（81 组 track origin 均为空 → hullOrigin=0，
+  contract 数值等价），turretPivot = BlitzKit useTankTransform 契约 = 真实旋转中心。
+- **AC Teichos / NC 70 Błyskawica kind 确认 + 解除 confirmPending（PR92 Review B2）**：
+  经 BlitzKit 真实模型数据逐车确认 turreted——AC Teichos（22129）：GLB turret_01（631+1540
+  顶点）+ gun_01 + gun_01_mask、models.pb turret 模块无 yaw 限位；NC 70 Błyskawica（19585）：
+  GLB turret_01 为 1-triangle stub（casemate 主体在 hull_nc_01，属 hull 层；旋转层实际 =
+  gun_01 + gun_01_mask）、models.pb turret 模块 yaw ±10° limited-traverse（同 grille-15 处理）。
+  mapping 移除 confirmPending → **81/81 正式资产齐备（confirmPending=0）**；两车已 bake 并
+  通过 pivot 反推（err=0.0000m）；inventory/README/runtime 测试同步（runtime 不再有
+  confirmPending 分支）。
+- **dedicated 车型阵营视觉（PR92 Review B3）**：VehicleMarker 增加稳定 team token——
+  dedicated 渲染时 .pb-graphics 容器加 pb-graphics-dedicated 类，配合 marker 级
+  pb-friendly / pb-enemy 状态类输出友军暖橙（rgba(255,166,77)）/敌军冷青（rgba(64,192,255)）
+  双层 drop-shadow halo；纯 CSS 视觉层——不改纹理/不增第二资产集，不影响旋转、阵亡灰阶、
+  红 ✕、selected、recorder 与 generic 路径；新增 4 个组件测试（友/敌类名 + halo filter + generic
+  无 halo）。
 - **turretPivot source-of-truth（PR92 Review，BlitzKit useTankTransform 契约）**：baker 此前只用
   tankModelDefinition.turret_origin 计算 pivot；官方运行时（packages/website/src/hooks/useTankTransform.ts，
   已核对源码）的炮塔 yaw 旋转中心 = correctZYTuple(trackModelDefinition.origin) +

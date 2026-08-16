@@ -22,10 +22,14 @@
  * - minotauro: turretless → turreted（fandom：有炮塔，约 45° 限位）
  * - foch-155:  turreted → turretless（fandom specs turret=no，固定/微转前向炮塔）
  * - xm66f:     turretless → turreted（官方 tankopedia：non-fully-rotating turret）
- * confirmPending=true 的车型（ac-teichos / nc-70-blyskawica）无法从当前参考资料可靠确认
- * 结构，ChatGPT 生成时需对照 BlitzKit 参考图确认 kind，不一致时同步修正 mapping 与 metadata；
- * 确认前这些车型的 contract 未冻结。spht（29985）已于 2026-08-19 经 BlitzKit 数据确认
- * turreted（GLB turret_01 + gun_01 + gun_01_mask；models.pb turret 模块无 yaw 限位）→ 解除 confirmPending。
+ * confirmPending 已全部清零（2026-08-19 BlitzKit 数据逐车确认）：
+ * - spht（29985）：GLB turret_01 + gun_01 + gun_01_mask；turret 模块无 yaw 限位 → turreted；
+ * - ac-teichos（22129）：GLB turret_01（631+1540 顶点）+ gun_01 + gun_01_mask；turret 模块
+ *   无 yaw 限位 → turreted；
+ * - nc-70-blyskawica（19585）：GLB turret_01 为 1-triangle stub（casemate 主体在 hull_nc_01，
+ *   属 hull 层；旋转层实际 = gun_01 + gun_01_mask）；turret 模块 yaw ±10°（limited-traverse，
+ *   同 grille-15 处理，仍属 turreted visual layer）→ turreted。
+ * 三车 pivot 均已通过 verify-turret-pivot.mjs yaw0/90 几何反推（err=0.0000m）。
  */
 
 /** modelKey → { kind, tankIds }。 */
@@ -89,14 +93,14 @@ export const MODEL_DEFINITIONS = Object.freeze({
   "grille-15": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([19217]) }), // limited-traverse 炮塔 TD（BlitzKit models.pb turret yaw ±65°；yaw 有界仍属 turreted visual layer）
   "super-conqueror": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([19281]) }),
   "vickers-light": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([19537]) }),
-  "nc-70-blyskawica": Object.freeze({ kind: 'turreted', confirmPending: true, tankIds: Object.freeze([19585]) }),
+  "nc-70-blyskawica": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([19585]) }), // 2026-08-19 BlitzKit 数据确认 turreted：GLB turret_01 为 1-triangle stub（casemate 主体在 hull_nc_01，属 hull 层；旋转层实际 = gun_01 + gun_01_mask）、models.pb turret 模块 yaw ±10° limited-traverse——同 grille-15 处理，仍属 turreted visual layer
   "ac-atlas": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([19825]) }),
   "t-22-medium": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([19969]) }),
   "felice": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([20097]) }),
   "sheridan": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([20257, 21793]) }),
   "projet-murat": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([21057]) }),
   "vk-90-01-p": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([21777]) }),
-  "ac-teichos": Object.freeze({ kind: 'turreted', confirmPending: true, tankIds: Object.freeze([22129]) }),
+  "ac-teichos": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([22129]) }), // 2026-08-19 BlitzKit 数据确认 turreted（GLB turret_01 + gun_01 + gun_01_mask；models.pb turret 模块无 yaw 限位）
   "obj-260": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([22273]) }),
   "m-vi-yoh": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([22817]) }),
   "m47-chevalier": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([23105]) }),
