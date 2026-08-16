@@ -29,6 +29,13 @@
   - **QA 页**：新增阵营预览切换（friendly-green / friendly-blue / enemy-red，i18n 三语 +
     测试），canvas 注入 team CSS vars + team class，hull/turret outline/glow 与生产同构；
     destroyed 预览同步 PR3 语义（0.55 + grayscale + 弱 outline）。
+  - **车辆视觉尺寸上调（PR3 增补，人工 QA 全局地图视角辨识度不足）**：marker box
+    desktop 28 → 36px、mobile 22 → 28px（约 +28%）；generic img scale 131% → **134%**
+    （重新校准：generic 素材车体长边占 65.6%、dedicated hull.webp 占 88.1%，
+    134% = 0.881/0.656 使 generic 车体长边视觉与 dedicated 对齐，36px 下均 ≈31.7px；
+    不保持历史 131% 而引入比例差）；zoom 契约不变（viewport 整体 scale，车辆随地图缩放，
+    name/✕/selected/recorder 继续 inverse-scale 屏幕恒定）；Selected 三角 bottom +15 → +19px
+    （避免与 name label 3px 重叠）；halo 固定 px 不随模型放大（不过度扩散）。
 - **Tier X 专属俯视车型系统（PR1：ASSET_GENERATION_READY）**：新增 frontend/src/vehicle-models/ 集中静态 mapping（common/tankopedia-tier10.json 84 辆 Tier X → 81 个 baseModelKey，skin/特殊版本复用基础模型：sheridan / kpz-70 / type-5-heavy 三组合并）与 discriminated union 类型契约（turreted 必配 turret + turretPivot，turretless 禁止）；统一 SVG viewBox 320×320 技术契约 + metadata.json schema（8 键）；validator（validate.js，CI 与 CLI 共用）与 Tier X 100% 覆盖门禁（coverage.test.js：新增 Tier X 无 mapping → CI FAIL、mapping 孤儿/未知引用/半成品资产目录均 FAIL）；契约样例资产 assets/sample/；BlitzKit 辅助脚本（frontend/scripts/blitzkit-references.mjs，参考图 URL 已验证并缓存 84 张，gitignored）与 CLI 自检（validate-vehicle-models.mjs）；隐藏 admin QA 页 ?view=vehicle-models（仅 wotbtools-admin，车体/炮塔旋转 + pivot + 状态叠加预览，复用生产 BattlePlayback 渲染方式）；文档 docs/assets/tier-x-models/（README 交接清单 + 全局 SVG 生成规范 + 生成的 84 辆 inventory）。正式车型 SVG 由 ChatGPT 按规范生成，到达 ASSET_GENERATION_READY Gate 后暂停（本 PR 不含正式车型资产）。
 
 ### Changed

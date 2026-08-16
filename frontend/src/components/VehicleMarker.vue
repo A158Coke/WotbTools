@@ -59,7 +59,10 @@ const turretImageStyle = computed(() => {
   })
 })
 // hull 图片样式：dedicated 填满标记盒（0/0/100%/100%，绕盒中心 = 自身中心旋转）；
-// generic 保持现有 131% 居中模式（视觉不变）。
+// generic 居中模式：scale 134%（PR3 增补重新校准——generic 素材车体 bbox ≈210×336/512
+// （长边 65.6%），dedicated hull.webp 车体长边 ≈88.1%（fit padding 0.88）；134% = 0.881/0.656
+// 使 generic 车体长边视觉与 dedicated 对齐（≈31.7px @36px box），img 物理尺寸略大于 box
+// 属素材透明 padding 的正常溢出，不构成视觉偏大。
 const hullImageStyle = computed(() => {
   if (!isDedicated.value) return null
   return { transform: hullDeg.value != null ? `rotate(${hullDeg.value}deg)` : 'none' }
@@ -189,13 +192,14 @@ const stateClasses = computed(() => ({
 
 <style scoped>
 /* —— marker 内部样式（随组件迁移；父组件 scoped 不作用于子元素）—— */
-/* generic 素材 512×512 含大量透明留白：放大到按钮 131% 居中，共同 pivot 旋转 */
+/* generic 素材 512×512 含大量透明留白：放大到按钮 134% 居中（PR3 增补校准，
+   见 script 注释的素材占比推导），共同 pivot 旋转 */
 .pb-hull, .pb-turret {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 131%;
-  height: 131%;
+  width: 134%;
+  height: 134%;
   transform: translate(-50%, -50%);
 }
 .pb-hull { z-index: 1; }
@@ -266,10 +270,12 @@ const stateClasses = computed(() => ({
 }
 
 /* —— PR3 §22 Selected 红色倒三角：label 上方、永远朝下、screen-space 恒定
-   （overlayInverseScale 反缩放）、轻微上下浮动、深色阴影对比边。 */
+   （overlayInverseScale 反缩放）、轻微上下浮动、深色阴影对比边。
+   bottom 19px：name label 顶边 ≈ box 顶 +18px（底边 +2px + 高 ~16px），三角底边 +19px
+   避免与 label 重叠（PR3 增补 QA 微调）。 */
 .pb-selected-mark {
   position: absolute;
-  bottom: calc(100% + 15px);
+  bottom: calc(100% + 19px);
   left: 50%;
   width: 0;
   height: 0;

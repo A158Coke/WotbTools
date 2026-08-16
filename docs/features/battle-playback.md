@@ -67,10 +67,14 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
     directionSample/deathSec 强制 `[0, durationSec]`。
   - **双层坦克标记**：前端 `BattlePlayback.vue` 用 PR #72 四张运行时 PNG
     （`frontend/src/assets/tank-icons/tank-marker-{friendly,enemy}-{hull,turret}.png`，512×512
-    RGBA、共同 pivot 256,256）渲染 HTML overlay 标记（按钮约 28px，移动端 22px；按钮不再反缩放 →
-    坦克随地图同比缩放）：hull/turret img 放大到按钮 131% 并以共同 pivot 居中旋转
-    （`translate(-50%,-50%) rotate(...)`）——素材透明留白实测有效车体 bbox ≈210×336/512，
-    131% 后桌面有效可见车体 ≈15×24px，放大地图不再显小；hull 层按 `hullYawDeg` 旋转、turret 层按
+    RGBA、共同 pivot 256,256）渲染 HTML overlay 标记（**PR3 增补：按钮约 36px，移动端 28px**
+    ——人工 QA 全局地图视角车型辨识度不足，约 +28%；按钮不再反缩放 → 坦克随地图同比缩放）：
+    hull/turret img 放大到按钮 **134%** 并以共同 pivot 居中旋转
+    （`translate(-50%,-50%) rotate(...)`）——generic 素材透明留白实测有效车体 bbox
+    ≈210×336/512（长边占 65.6%），dedicated hull.webp 车体长边 ≈88.1%（fit padding 0.88），
+    **134% = 0.881/0.656 使 generic 车体长边视觉与 dedicated 对齐**（36px 容器下均 ≈31.7px；
+    generic 车体宽 ≈19.8px、dedicated 按真实长宽比 ≈11–16px，宽体 icon 为素材固有比例）；
+    放大地图不再显小；hull 层按 `hullYawDeg` 旋转、turret 层按
     `turretWorldYawDeg` 旋转（炮管不脱离炮塔）；**阵营视觉（PR3 §19–§21）**：整车 team outline+glow
     由 `VehicleMarker .pb-graphics` 双层 drop-shadow 表达（CSS vars `--pb-team-*/`--pb-enemy-*`，
     friendly 按地图显式 tone green|blue、enemy 固定 red，见 `data/mapTeamColors.js`；generic 素材
