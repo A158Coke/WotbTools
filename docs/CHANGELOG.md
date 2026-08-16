@@ -20,8 +20,22 @@
     （BlitzKit tankToDuelMember）。差异报告：collision.glb 是装甲碰撞网格（{part}_armor_{N}），
     分层车型模型是 model.glb（Maus 实测 77 节点）。
   - **metadata schema 切换 geometry-source**：顶层 5 键 modelKey/kind/source/turretPivot/generation；
-    正式资产强制 source.provider=blitzkit + generation.method=collision-glb-topdown-projection
+    正式资产强制 source.provider=blitzkit + generation.method=blitzkit-model-topdown-extraction
     （validator 强制）；sample 更新为新 schema。
+  - **extractor 2D geometry 修复（Blocker 1-4，Maus 真实 silhouette）**：
+    - Blocker 1：禁用全局 convex hull（会把 Maus 压成矩形）；改为 projected triangle polygon union
+      （polygon-clipping）——POSITION+INDEX 读取、节点/世界矩阵应用、top-down 投影、退化三角形过滤、
+      精确 union（保留全部凹轮廓与洞）、轻量共线简化、evenodd SVG path；Maus hull 轮廓 64 顶点
+      （含履带裙板阶梯与首上装甲细节，非矩形）。
+    - Blocker 2：collectTriangles 递归过滤 *_hide_elements*（此前 turret_01_hide_elements 细长条
+      被错误并入炮塔）；方向自洽证据：炮盾（gun_01_mask）在座圈前方 → 车头=+y，炮管从炮塔前端伸出；
+      turret 证据输出（raw bbox/center/origin/final SVG 顶点数）。
+    - Blocker 3：gun_{id}_mask（mantlet 炮盾）归入 turret 层（TankModel.tsx 源码确认 mask 与 gun 同层
+      渲染，但静态 0° 它是炮塔正面轮廓）——gun 层仅炮管（Maus gun tris 70，silhouette 细管不扩大）。
+    - Blocker 4：generation.method 更名 blitzkit-model-topdown-extraction（schema/validator/sample/docs/tests 同步）。
+    - 新增 9 用例：L 形凹轮廓不被 convex 填平 / 退化三角形过滤 / union 确定性 / 索引网格解析 /
+      共线简化 / mantlet 边界断言 / method 命名 / evenodd 洞 path。
+
   - **Maus 端到端资产（自动生成，无人工 patch）**：assets/maus/{hull,turret}.svg + metadata.json——
     hull 3800 顶点（hull+tracks）、turret 638、gun 625；turretPivot=(160.00,193.23)（真实
     turret_origin 投影）；hull 比例 1:2.43 与真实 Maus 一致；gun 炮管溢出 viewBox 顶部（contract §5）。

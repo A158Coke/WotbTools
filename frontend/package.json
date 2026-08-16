@@ -26,6 +26,7 @@
     "@vue/test-utils": "^2.4.6",
     "fallow": "^3.14.0",
     "happy-dom": "^18.0.1",
+    "polygon-clipping": "^0.15.7",
     "protobufjs": "^8.7.2",
     "three": "^0.185.1",
     "vite": "^6.0.7",

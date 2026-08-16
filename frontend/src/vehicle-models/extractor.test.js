@@ -19,8 +19,13 @@ import {
   correctZYTuple,
   hullToPath,
   projectTopDown,
+  projectTriangles,
+  silhouetteToSvgPaths,
+  simplifyRing,
   svgDocument,
   toSvg,
+  trianglesFromGeometry,
+  unionTriangles,
 } from '../../scripts/extractor-lib.mjs'
 
 /** 数学验证辅助：以 origin 为不动点的 rotate(deg) 下，点 point 的像（2D 仿射，角度制）。 */
@@ -109,8 +114,93 @@ describe('buildMetadata（geometry-source schema）', () => {
     })
     expect(meta.source.provider).toBe('blitzkit')
     expect(meta.source.tankId).toBe(6929)
-    expect(meta.generation.method).toBe('collision-glb-topdown-projection')
+    expect(meta.generation.method).toBe('blitzkit-model-topdown-extraction')
     expect(meta.turretPivot.x).toBe(160)
+  })
+})
+
+describe('Blocker 1 — concave silhouette（projected triangle union）', () => {
+  // L 形：由两个矩形三角形对构成——union 必须保留 L 形凹轮廓
+  const L_SHAPE_TRIS = [
+    // 底部横条 (0,0)-(4,1)
+    [[0, 0], [4, 0], [4, 1]],
+    [[0, 0], [4, 1], [0, 1]],
+    // 左侧竖条 (0,0)-(1,3)
+    [[0, 0], [1, 0], [1, 3]],
+    [[0, 0], [1, 3], [0, 3]],
+  ]
+  it('L 形凹轮廓不被 convex hull 填平（union ≠ hull）', () => {
+    const union = unionTriangles(L_SHAPE_TRIS)
+    expect(union.length).toBe(1)
+    const ring = union[0].ring
+    // L 形外轮廓：4+4+1+1 = 10 个角点（含共线点简化前）
+    const hull = convexHull2D(ring.map(([x, y]) => ({ x, y })))
+    // convex hull 只有 5 个角点（填掉凹角），union ring 必须保留凹角（更多点）
+    expect(hull.length).toBe(5)
+    expect(ring.length).toBeGreaterThan(5)
+    // 凹角 (1,1) 必须存在（hull 会丢失它）
+    expect(ring.some((p) => Math.abs(p[0] - 1) < 1e-9 && Math.abs(p[1] - 1) < 1e-9)).toBe(true)
+  })
+  it('projectTriangles 过滤退化（垂直面投影为线）', () => {
+    const tris = [
+      [[0, 0, 0], [1, 0, 0], [0, 1, 0]],   // 水平 → 保留
+      [[0, 0, 0], [1, 0, 0], [0.5, 0, 5]], // 与投影面垂直 → 投影退化
+    ]
+    const out = projectTriangles(tris)
+    expect(out.length).toBe(1)
+  })
+  it('polygon union 确定性：相同输入两次输出一致', () => {
+    expect(unionTriangles(L_SHAPE_TRIS)).toEqual(unionTriangles(L_SHAPE_TRIS))
+  })
+  it('silhouetteToSvgPaths 输出 evenodd path（含洞支持）', () => {
+    const fit = computeFit({ minX: -1, minY: -1, maxX: 4, maxY: 3 }, VIEWBOX, 0.8)
+    const paths = silhouetteToSvgPaths([{ ring: [[0, 0], [4, 0], [4, 3], [0, 3]], holes: [[[1, 1], [2, 1], [2, 2], [1, 2]]] }], fit, '#123456')
+    expect(paths.length).toBe(1)
+    expect(paths[0].fillRule).toBe('evenodd')
+    expect(paths[0].d).toMatch(/M[0-9.]+ [0-9.]+ /)
+    // 洞作为第二个 subpath（M 出现两次）
+    expect(paths[0].d.split('M').length - 1).toBe(2)
+  })
+})
+
+describe('Blocker 1 — trianglesFromGeometry（POSITION + INDEX 解析）', () => {
+  it('索引网格按 indices 构建三角形', () => {
+    const positions = [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0]
+    const indices = [0, 1, 2, 1, 3, 2]
+    const tris = trianglesFromGeometry({ positions, indices })
+    expect(tris.length).toBe(2)
+    expect(tris[0][0]).toEqual([0, 0, 0])
+    expect(tris[1][1]).toEqual([1, 1, 0])
+  })
+  it('无索引网格按连续 3 顶点', () => {
+    const positions = [0, 0, 0, 1, 0, 0, 0, 1, 0]
+    const tris = trianglesFromGeometry({ positions, indices: null })
+    expect(tris.length).toBe(1)
+  })
+})
+
+describe('Blocker 2 — transform / hide_elements（collectTriangles 语义）', () => {
+  it('simplifyRing 合并共线点且保持形状', () => {
+    const ring = [[0, 0], [1, 0], [2, 0], [2, 1], [0, 1]]
+    const simplified = simplifyRing(ring)
+    // (1,0) 共线应被合并
+    expect(simplified.length).toBeLessThan(ring.length)
+    expect(simplified.some((p) => p[0] === 2 && p[1] === 0)).toBe(true)
+    expect(simplified.some((p) => p[0] === 0 && p[1] === 1)).toBe(true)
+  })
+  it('Maus 资产：turret 不含 hide_elements 细长条（raw bbox y 上界来自 mantlet 而非 hide）', () => {
+    const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
+    // mantlet 在炮塔前部（+y）→ turretBounds.max.y ≈ 2.56（模型米），而非 hide_elements 的 0.47
+    expect(meta.generation.turretBounds.max[1]).toBeGreaterThan(1.5)
+    expect(meta.generation.turretBounds.max[1]).toBeLessThan(3)
+  })
+})
+
+describe('Blocker 4 — generation method 命名', () => {
+  it('metadata.generation.method = blitzkit-model-topdown-extraction', () => {
+    const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
+    expect(meta.generation.method).toBe('blitzkit-model-topdown-extraction')
+    expect(meta.generation.method).not.toMatch(/collision/)
   })
 })
 

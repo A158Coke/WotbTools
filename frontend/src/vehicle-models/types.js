@@ -49,7 +49,7 @@ export const VIEWBOX = Object.freeze({ width: 320, height: 320 })
  *     provider 必填（正式资产必须 'blitzkit'）；tankId 必填；两个 URL 记录数据源
  * @property {{x:number,y:number}} [turretPivot]       turreted 必填；x/y ∈ [0, VIEWBOX]
  * @property {{method:string, viewBox:string, hullBounds?:object, turretBounds?:object, gunBounds?:object, notes?:string}} generation
- *     method 必填（正式资产必须 'collision-glb-topdown-projection'）
+ *     method 必填（正式资产必须 'blitzkit-model-topdown-extraction'）
  */
 
 /** metadata.json 允许的顶层键（多余键视为契约违反，防漂移）。 */
@@ -65,7 +65,7 @@ export const METADATA_KEYS = Object.freeze([
 export const SOURCE_PROVIDER_BLITZKIT = 'blitzkit'
 
 /** 正式生成方法（extractor 生成）。 */
-export const GENERATION_METHOD_EXTRACTION = 'collision-glb-topdown-projection'
+export const GENERATION_METHOD_EXTRACTION = 'blitzkit-model-topdown-extraction'
 
 /** 资产目录内允许出现的文件（gun 禁止独立 layer，故无 gun.svg）。 */
 export const ASSET_FILES = Object.freeze({

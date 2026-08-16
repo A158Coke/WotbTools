@@ -26,7 +26,7 @@ const GOOD_META = {
   },
   turretPivot: { x: 160, y: 193.23 },
   generation: {
-    method: 'collision-glb-topdown-projection',
+    method: 'blitzkit-model-topdown-extraction',
     viewBox: '0 0 320 320',
     notes: 'test',
   },

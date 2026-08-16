@@ -29,11 +29,13 @@ import {
   bounds2D,
   buildMetadata,
   computeFit,
-  convexHull2D,
   correctZYTuple,
-  hullToPath,
   projectTopDown,
+  projectTriangles,
+  silhouetteToSvgPaths,
   svgDocument,
+  trianglesFromGeometry,
+  unionTriangles,
 } from './extractor-lib.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -109,7 +111,11 @@ function decodePb(buffer, typeName, protoText) {
 
 const io = new NodeIO()
 
-function collectVertices(node, out, matrix) {
+/**
+ * 收集节点子树所有 mesh 的三角形（POSITION + INDEX，应用节点/世界矩阵）。
+ * 递归时跳过 *_hide_elements* 子树（可隐藏元素，不参与正式 silhouette）。
+ */
+function collectTriangles(node, out, matrix) {
   const m = matrix.clone()
   // @gltf-transform v3 的 Vector3/Quaternion 为数组 [x,y,z](,[w])
   const t = node.getTranslation()
@@ -126,19 +132,38 @@ function collectVertices(node, out, matrix) {
   const mesh = node.getMesh()
   if (mesh) {
     for (const prim of mesh.listPrimitives()) {
-      const acc = prim.getAttribute('POSITION')
-      if (!acc) continue
-      const arr = acc.getArray()
+      const posAcc = prim.getAttribute('POSITION')
+      if (!posAcc) continue
+      const idxAcc = prim.getIndices()
+      const positions = posAcc.getArray()
       const v = new THREE.Vector3()
-      for (let i = 0; i < arr.length; i += 3) {
-        v.set(arr[i], arr[i + 1], arr[i + 2]).applyMatrix4(m)
-        out.push({ x: v.x, y: v.y, z: v.z })
+      const transformed = new Float32Array(positions.length)
+      for (let i = 0; i < positions.length; i += 3) {
+        v.set(positions[i], positions[i + 1], positions[i + 2]).applyMatrix4(m)
+        transformed[i] = v.x
+        transformed[i + 1] = v.y
+        transformed[i + 2] = v.z
       }
+      out.push({
+        positions: transformed,
+        indices: idxAcc ? Array.from(idxAcc.getArray()) : null,
+      })
     }
   }
-  for (const c of node.listChildren()) collectVertices(c, out, m)
+  for (const c of node.listChildren()) {
+    if (c.getName().includes('_hide_elements')) continue
+    collectTriangles(c, out, m)
+  }
 }
 
+/**
+ * 节点分组（复刻 TankModel.tsx 契约 + Blocker 3 修正）：
+ * - hull 层：hull + chassis_track_*（+ 可选 wheels）；
+ * - turret 层：turret_{id:02d} + gun_{id:02d}_mask（mask = mantlet 炮盾，静态 0° 属于
+ *   炮塔正面轮廓——TankModel 源码确认 mask 与 gun 同层渲染，但它是炮塔视觉的一部分，
+ *   不参与 gun silhouette，避免扩大炮管轮廓）；
+ * - gun 层：仅 gun_{id:02d}（炮管）。
+ */
 function groupNodes(rootNodes, { turretId, gunId, withWheels }) {
   const turretName = `turret_${String(turretId).padStart(2, '0')}`
   const gunName = `gun_${String(gunId).padStart(2, '0')}`
@@ -148,11 +173,14 @@ function groupNodes(rootNodes, { turretId, gunId, withWheels }) {
     const name = node.getName()
     if (name.includes('_hide_elements')) continue
     if (name === 'hull' || name.startsWith('chassis_track_') || (withWheels && name.startsWith('chassis_wheel_'))) {
-      collectVertices(node, groups.hull, identity)
+      collectTriangles(node, groups.hull, identity)
     } else if (name === turretName) {
-      collectVertices(node, groups.turret, identity)
-    } else if (name === gunName || name === `${gunName}_mask`) {
-      collectVertices(node, groups.gun, identity)
+      collectTriangles(node, groups.turret, identity)
+    } else if (name === gunName) {
+      collectTriangles(node, groups.gun, identity)
+    } else if (name === `${gunName}_mask`) {
+      // mantlet（炮盾）→ turret 层（静态 0° 属于炮塔正面轮廓）
+      collectTriangles(node, groups.turret, identity)
     }
   }
   return groups
@@ -195,32 +223,38 @@ async function main() {
   // TankModel.tsx 的 nodes = Object.values(gltf.nodes)——遍历全部节点按名匹配
   const allNodes = doc.getRoot().listNodes()
   const groups = groupNodes(allNodes, { turretId: turretModelId, gunId: gunModelId, withWheels: includeWheels })
-  if (groups.hull.length < 3) throw new Error(`hull 几何为空（${groups.hull.length} 顶点）`)
+  const countTri = (g) => g.reduce((n, m) => n + (m.indices ? m.indices.length / 3 : m.positions.length / 9), 0)
+  const hullTri = countTri(groups.hull)
+  const turretTri = countTri(groups.turret)
+  const gunTri = countTri(groups.gun)
+  if (hullTri < 3) throw new Error(`hull 几何为空（${hullTri} 三角形）`)
   if (def.kind === 'turreted') {
-    if (groups.turret.length < 3) throw new Error('turreted 车型未找到 selected turret 几何')
-    if (groups.gun.length < 3) throw new Error('turreted 车型未找到 selected gun 几何')
+    if (turretTri < 3) throw new Error('turreted 车型未找到 selected turret 几何')
+    if (gunTri < 3) throw new Error('turreted 车型未找到 selected gun 几何')
   }
-  console.log(`  hull verts=${groups.hull.length} turret verts=${groups.turret.length} gun verts=${groups.gun.length}`)
+  console.log(`  hull tris=${hullTri} turret tris=${turretTri} gun tris=${gunTri}`)
 
-  const hull2d = groups.hull.map(projectTopDown)
-  const turret2d = groups.turret.map(projectTopDown)
-  const gun2d = groups.gun.map(projectTopDown)
-  const fitBounds = bounds2D(hull2d.concat(turret2d))
+  // Blocker 1 — projected triangle polygon union（真实 silhouette，非 convex hull）
+  const tri2d = (group) => projectTriangles(group.flatMap((m) => trianglesFromGeometry(m)))
+  const hullTris2d = tri2d(groups.hull)
+  const turretTris2d = tri2d(groups.turret)
+  const gunTris2d = tri2d(groups.gun)
+  const hullPoly = unionTriangles(hullTris2d)
+  const turretPoly = unionTriangles(turretTris2d)
+  const gunPoly = unionTriangles(gunTris2d)
+  if (hullPoly.length === 0) throw new Error('hull silhouette union 为空')
+
+  // fit bounds = hull + turret 主体（不含 gun——炮管允许 overflow）
+  const polyPoints = (polys) => polys.flatMap((p) => p.ring.map(([x, y]) => ({ x, y })))
+  const fitBounds = bounds2D(polyPoints(hullPoly).concat(polyPoints(turretPoly)))
   const fit = computeFit(fitBounds, VIEWBOX, PADDING_RATIO)
   console.log(`  fit: scale=${fit.scale.toFixed(4)} bounds=(${fitBounds.minX.toFixed(2)},${fitBounds.minY.toFixed(2)})..(${fitBounds.maxX.toFixed(2)},${fitBounds.maxY.toFixed(2)})`)
 
-  const hullHull = convexHull2D(hull2d)
-  const hullPath = hullToPath(hullHull, fit)
-  if (!hullPath) throw new Error('hull 凸包无效')
-  const hullSvg = svgDocument([{ d: hullPath, fill: '#6d736f' }], VIEWBOX)
-
-  const turretSvgContent = []
-  const turretHull = convexHull2D(turret2d)
-  const turretPath = hullToPath(turretHull, fit)
-  if (turretPath) turretSvgContent.push({ d: turretPath, fill: '#7a817c' })
-  const gunHull = convexHull2D(gun2d)
-  const gunPath = hullToPath(gunHull, fit)
-  if (gunPath) turretSvgContent.push({ d: gunPath, fill: '#4d534f' })
+  const hullSvg = svgDocument(silhouetteToSvgPaths(hullPoly, fit, '#6d736f'), VIEWBOX)
+  const turretSvgContent = [
+    ...silhouetteToSvgPaths(turretPoly, fit, '#7a817c'),
+    ...silhouetteToSvgPaths(gunPoly, fit, '#4d534f'),
+  ]
   const turretSvg = svgDocument(turretSvgContent, VIEWBOX)
 
   const origin = modelDef.turretOrigin || { x: 0, y: 0, z: 0 }
@@ -231,9 +265,18 @@ async function main() {
 
   const outDir = outDirArg ? join(ROOT, outDirArg) : join(ROOT, 'frontend', 'src', 'vehicle-models', 'assets', modelKey)
   mkdirSync(outDir, { recursive: true })
-  const hb = bounds2D(hull2d)
-  const tb = bounds2D(turret2d)
-  const gb = bounds2D(gun2d)
+  const hb = bounds2D(polyPoints(hullPoly))
+  const tb = bounds2D(polyPoints(turretPoly))
+  const gb = bounds2D(polyPoints(gunPoly))
+  // Blocker 2 evidence：raw projected bounds / center / origin（模型坐标，单位米）
+  const tCenter = { x: (tb.minX + tb.maxX) / 2, y: (tb.minY + tb.maxY) / 2 }
+  console.log('  [evidence] hull raw bbox:', JSON.stringify({ min: [hb.minX, hb.minY], max: [hb.maxX, hb.maxY] }))
+  console.log('  [evidence] turret raw bbox:', JSON.stringify({ min: [tb.minX, tb.minY], max: [tb.maxX, tb.maxY] }))
+  console.log('  [evidence] turret center:', JSON.stringify(tCenter))
+  console.log('  [evidence] turretOrigin 引擎:', JSON.stringify(origin), '模型:', JSON.stringify(modelPivot))
+  console.log('  [evidence] gun raw bbox:', JSON.stringify({ min: [gb.minX, gb.minY], max: [gb.maxX, gb.maxY] }))
+  console.log('  [evidence] hull.svg 顶点数（简化后）:', hullSvg.split('L').length)
+  console.log('  [evidence] turret.svg 顶点数（简化后）:', turretSvg.split('L').length)
   writeFileSync(join(outDir, 'hull.svg'), hullSvg)
   if (def.kind === 'turreted') writeFileSync(join(outDir, 'turret.svg'), turretSvg)
   const metadata = buildMetadata({
@@ -247,7 +290,7 @@ async function main() {
     turretBounds: { min: [tb.minX, tb.minY], max: [tb.maxX, tb.maxY] },
     gunBounds: { min: [gb.minX, gb.minY], max: [gb.maxX, gb.maxY] },
     viewBox: VIEWBOX,
-    generationNotes: '确定性提取自 BlitzKit model.glb（hull + tracks + selected turret/gun 节点）',
+    generationNotes: '确定性提取自 BlitzKit model.glb（hull + tracks + selected turret/gun 节点；projected triangle union silhouette）',
   })
   writeFileSync(join(outDir, 'metadata.json'), JSON.stringify(metadata, null, 2) + '\n')
   console.log(`  输出: ${join(outDir, 'hull.svg')} / turret.svg / metadata.json`)
