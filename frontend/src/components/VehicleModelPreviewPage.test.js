@@ -181,6 +181,30 @@ describe('VehicleModelPreviewPage', () => {
     expect(wrapper.find('.vmp-centroid').exists()).toBe(false)
   })
 
+  it('阵营预览（PR3 §19/§20）：默认 friendly-green；切换 friendly-blue / enemy-red 更新 canvas team class 与 CSS vars', async () => {
+    authState.roles = ['wotbtools-admin']
+    authState.authenticated.value = true
+    const wrapper = mount(VehicleModelPreviewPage)
+    expect(await waitFor(() => wrapper.find('.vmp-canvas').exists())).toBe(true)
+    const select = wrapper.find('[data-test="vmp-team-tone"]')
+    expect(select.exists()).toBe(true)
+    // 默认 friendly-green
+    expect(select.element.value).toBe('friendly-green')
+    expect(wrapper.find('.vmp-canvas').classes()).toContain('vmp-team-friendly-green')
+    let style = wrapper.find('.vmp-canvas').attributes('style') || ''
+    expect(style).toContain('--pb-team-outline')
+    // friendly-blue：vars 切到 blue（TEAM_TOKENS.blue.outline = rgba(96, 165, 250, 0.9)）
+    await select.setValue('friendly-blue')
+    expect(wrapper.find('.vmp-canvas').classes()).toContain('vmp-team-friendly-blue')
+    style = wrapper.find('.vmp-canvas').attributes('style') || ''
+    expect(style).toContain('rgba(96, 165, 250, 0.9)')
+    // enemy-red：车辆走 enemy token（red）
+    await select.setValue('enemy-red')
+    expect(wrapper.find('.vmp-canvas').classes()).toContain('vmp-team-enemy-red')
+    style = wrapper.find('.vmp-canvas').attributes('style') || ''
+    expect(style).toContain('rgba(248, 113, 113, 0.9)')
+  })
+
   it('非 admin 角色显示无权限，不渲染工具栏', async () => {
     authState.roles = ['wotbtools-user']
     authState.authenticated.value = true

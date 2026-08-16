@@ -71,8 +71,12 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
     坦克随地图同比缩放）：hull/turret img 放大到按钮 131% 并以共同 pivot 居中旋转
     （`translate(-50%,-50%) rotate(...)`）——素材透明留白实测有效车体 bbox ≈210×336/512，
     131% 后桌面有效可见车体 ≈15×24px，放大地图不再显小；hull 层按 `hullYawDeg` 旋转、turret 层按
-    `turretWorldYawDeg` 旋转（炮管不脱离炮塔）；阵营色只来自素材本身；录像者 gold halo、选中 ring、
-    最后已知淡化、阵亡 ✕ 为独立 overlay，不烘焙进 PNG；标记**上方**常显固定字号坦克型号名小标签
+    `turretWorldYawDeg` 旋转（炮管不脱离炮塔）；**阵营视觉（PR3 §19–§21）**：整车 team outline+glow
+    由 `VehicleMarker .pb-graphics` 双层 drop-shadow 表达（CSS vars `--pb-team-*/`--pb-enemy-*`，
+    friendly 按地图显式 tone green|blue、enemy 固定 red，见 `data/mapTeamColors.js`；generic 素材
+    自身阵营色保留，叠加同一 team 光晕）；Selected 红色倒三角（label 上方、浮动、screen-space 恒定）、
+    Recorder 空心菱形（tank 下方、friendly 色）、最后已知淡化、阵亡 ✕ 均为独立 overlay，不烘焙进 PNG；
+    标记**上方**常显固定字号坦克型号名小标签
     （`PlaybackVehicle.tankName`，后端 `ReplayDisplayNames.tankName(tankId, tankName)` 权威解析自
     tankopedia，如 29985 → "SPHT"，不再是空串/纯数字；标签自身按 `1/view.scale` 反缩放 → 字号不随地图缩放、任意缩放下可见）。
     旋转换算：地图 yaw 从北(+Z)顺时针 → 屏幕 `rotate(yawDeg)`（0=朝上/90=朝右/180=朝下/270=朝左，
@@ -116,11 +120,14 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
      位置（临时输入框 Enter/blur 提交、Esc 取消，committed 幂等防重复）。三语文案
      `recon.map.playback.annot.*`；纯函数与交互回归见 `utils/annotation.test.js` 与
      `BattlePlayback.annot.test.js`。
-   - **阵亡状态（pb-destroyed）**：destroyed 是显式独立状态，不并入 `pb-last-known`；敌我阵亡车
-     结构一致（hull+turret 双层 + 同款 ✕）：方向冻结在最后可信样本（`interpolateDirection` 末样本
-     冻结语义），无方向样本以素材默认 0° 渲染（不代表朝向）；`.pb-destroyed { opacity:.35 }` +
-     `img { filter: grayscale(1) }`（去饱和≠换阵营色）；录像者 halo/选中 ring 为独立 overlay，
-     不改变阵亡结构。
+   - **阵亡状态（pb-destroyed，PR3 §24）**：destroyed 是显式独立状态，不并入 `pb-last-known`；
+     敌我阵亡车结构一致（hull+turret 双层 + 同款 ✕）：方向冻结在最后可信样本
+     （`interpolateDirection` 末样本冻结语义），无方向样本以素材默认 0° 渲染（不代表朝向）；
+     **中度变暗**（`.pb-destroyed .pb-graphics { opacity:.55 }`，不再极端透明）+ grayscale +
+     team outline 弱化保留（drop-shadow 在 grayscale 后绘制不灰化）+ 一次性 transition 0.45s
+     （prefers-reduced-motion 直达终态）；红色 ✕ / Selected 三角 / Recorder 菱形在 `.pb-graphics`
+     容器外，保持完整强度。**Last-known（PR3 §25）**：`.pb-graphics` 淡化 0.35 + 仅弱 outline
+     （无 glow）；label 仅文字弱化（background 正常）；Selected/Recorder 正常强度。
    - **真实 i18n 回归**：三语 `recon.map.playback.last_known` 文案不得含裸 `@`（Vue I18n 11
      linked-message 语法），选中 last-known/已击毁车辆首次渲染该文案时编译报错会导致组件整体卸载；
      `BattlePlayback.i18n.test.js` 用真实 `createI18n`（不 mock `$t`）覆盖 zh/en/ru 选车路径。

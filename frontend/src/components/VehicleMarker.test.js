@@ -149,8 +149,6 @@ describe('marker 根元素（按钮）', () => {
     const btn = w.find('button.pb-vehicle')
     expect(btn.attributes('style')).toContain('left: 10%')
     expect(btn.attributes('style')).toContain('top: 20%')
-    expect(btn.classes()).toContain('pb-recorder')
-    expect(btn.classes()).toContain('pb-selected')
     expect(btn.attributes('aria-label')).toBe('You: reported')
     expect(btn.attributes('data-test')).toBe('pb-marker-1')
     expect(w.find('.pb-name').text()).toBe('Maus')
@@ -167,51 +165,78 @@ describe('marker 根元素（按钮）', () => {
   })
 })
 
-describe('PR92 Review B3 — dedicated 阵营 halo（friendly/enemy）', () => {
-  it('dedicated friendly：pb-friendly class + dedicated 视觉层 halo 容器；无 pb-enemy', () => {
-    const w = mountMarker({ ...dedicatedMarker, friendly: true })
-    const btn = w.find('button')
-    expect(btn.classes()).toContain('pb-friendly')
-    expect(btn.classes()).not.toContain('pb-enemy')
-    const g = w.find('.pb-graphics')
-    expect(g.classes()).toContain('pb-graphics-dedicated')
+describe('PR3 §19–§25 — team outline/glow 与状态视觉', () => {
+  it('friendly/enemy token 互斥；generic 与 dedicated 都走 team class（不再 dedicated-only）', () => {
+    for (const [marker, friendly] of [[dedicatedMarker, true], [genericMarker, true], [dedicatedMarker, false]]) {
+      const w = mountMarker({ ...marker, friendly })
+      const btn = w.find('button')
+      expect(btn.classes()).toContain(friendly ? 'pb-friendly' : 'pb-enemy')
+      expect(btn.classes()).not.toContain(friendly ? 'pb-enemy' : 'pb-friendly')
+      expect(w.find('.pb-graphics').exists()).toBe(true)
+    }
   })
 
-  it('dedicated enemy：pb-enemy class；与 friendly token 互斥且视觉定义不同', () => {
-    const w = mountMarker({ ...dedicatedMarker, friendly: false })
-    const btn = w.find('button')
-    expect(btn.classes()).toContain('pb-enemy')
-    expect(btn.classes()).not.toContain('pb-friendly')
-    // 两个 token 的 halo 色不同（读组件源码验证 CSS filter 定义）
+  it('team outline/glow 消费根元素 CSS vars（friendly green|blue / enemy red，非专用色）', () => {
     const src = markerSource
-    const friendlyFilter = src.match(/\.pb-friendly[^{]*\.pb-graphics-dedicated \{[^}]*\}/)?.[0] || ''
-    const enemyFilter = src.match(/\.pb-enemy[^{]*\.pb-graphics-dedicated \{[^}]*\}/)?.[0] || ''
-    expect(friendlyFilter).toContain('rgba(255, 166, 77') // 暖 amber
-    expect(enemyFilter).toContain('rgba(64, 192, 255') // 冷 cyan
-    expect(friendlyFilter).not.toBe(enemyFilter)
-    // halo 与 destroyed grayscale 的 filter 互斥（同 specificity 后写者胜 → 必须 :not 排除）
-    expect(src).toContain('.pb-friendly:not(.pb-destroyed) .pb-graphics-dedicated')
-    expect(src).toContain('.pb-enemy:not(.pb-destroyed) .pb-graphics-dedicated')
+    const friendlyRule = src.match(/\.pb-friendly:not\(\.pb-destroyed\):not\(\.pb-last-known\) \.pb-graphics \{[^}]*\}/)?.[0] || ''
+    const enemyRule = src.match(/\.pb-enemy:not\(\.pb-destroyed\):not\(\.pb-last-known\) \.pb-graphics \{[^}]*\}/)?.[0] || ''
+    expect(friendlyRule).toContain('var(--pb-team-outline')
+    expect(friendlyRule).toContain('var(--pb-team-glow')
+    expect(enemyRule).toContain('var(--pb-enemy-outline')
+    expect(enemyRule).toContain('var(--pb-enemy-glow')
+    // PR2 B3 过渡色（暖 amber/冷 cyan）已被 PR3 正式 team token 取代
+    expect(src).not.toContain('rgba(255, 166, 77')
+    expect(src).not.toContain('rgba(64, 192, 255')
+    expect(src).not.toContain('pb-graphics-dedicated')
   })
 
-  it('generic：无 dedicated halo class（保持 friendly/enemy PNG 原语义）', () => {
-    const w = mountMarker({ ...genericMarker, friendly: true })
-    expect(w.find('.pb-graphics').classes()).not.toContain('pb-graphics-dedicated')
-    expect(w.find('button').classes()).toContain('pb-friendly')
-    expect(w.find('.pb-hull').attributes('src')).toBe('hull.png') // generic 行为不变
-  })
-
-  it('destroyed + enemy：grayscale + 红 X 完整 opacity 不受 halo 影响（容器外）', () => {
+  it('destroyed：中度变暗（0.55）+ grayscale + team outline 弱化保留；红 X 在容器外完整强度', () => {
+    const src = markerSource
+    expect(src).toContain('opacity: 0.55') // §24 不再极端透明（原 0.35）
+    expect(src).toMatch(/\.pb-destroyed\.pb-friendly \.pb-graphics \{[^}]*grayscale\(1\)[^}]*var\(--pb-team-outline[^}]*\}/)
+    expect(src).toMatch(/\.pb-destroyed\.pb-enemy \.pb-graphics \{[^}]*grayscale\(1\)[^}]*var\(--pb-enemy-outline[^}]*\}/)
+    // 一次性 transition <1s + reduced-motion 直达终态
+    expect(src).toContain('transition: opacity 0.45s ease, filter 0.45s ease')
+    expect(src).toContain('@media (prefers-reduced-motion: reduce)')
+    expect(src).toContain('.pb-destroyed .pb-graphics { transition: none; }')
     const w = mountMarker({ ...dedicatedMarker, friendly: false, destroyed: true })
     const death = w.find('.pb-death')
     expect(death.exists()).toBe(true)
     expect(death.attributes('style')).toContain('color: #ff4d4f')
     expect(death.element.parentElement).toBe(w.find('.pb-graphics').element.parentElement)
-    expect(w.find('button').classes()).toContain('pb-enemy')
-    expect(w.find('button').classes()).toContain('pb-destroyed')
-    // 视觉层容器自身仍在（grayscale 作用对象），halo 选择器已排除 destroyed：
-    // .pb-destroyed .pb-graphics 的 filter: grayscale(1) 不会被同 specificity 的
-    // halo 规则覆盖（:not(.pb-destroyed) 保证两规则永不共选）
-    expect(w.find('.pb-graphics').classes()).toContain('pb-graphics-dedicated')
+  })
+
+  it('last-known：模型淡化 + 仅弱 outline（无 glow）；label 文字弱化、background 正常', () => {
+    const src = markerSource
+    expect(src).toMatch(/\.pb-last-known\.pb-friendly \.pb-graphics \{[^}]*opacity: 0\.35[^}]*\}/)
+    expect(src).toMatch(/\.pb-last-known \.pb-name \{[^}]*color: rgba\(255, 255, 255, 0\.7\)[^}]*\}/)
+    expect(src).not.toContain('.pb-last-known { opacity: .3') // root opacity 已移除（✕/name 不被连带淡化）
+    const w = mountMarker({ ...dedicatedMarker, friendly: true, lastKnown: true, destroyed: false })
+    expect(w.find('button').classes()).toContain('pb-last-known')
+    expect(w.find('button').classes()).toContain('pb-friendly')
+  })
+
+  it('selected：红色倒三角渲染（label 上方、浮动动画、reduced-motion 停止）', () => {
+    const src = markerSource
+    expect(src).toMatch(/\.pb-selected-mark \{[^}]*border-top: 9px solid #e5484d[^}]*animation: pb-selected-float 1\.6s[^}]*\}/)
+    expect(src).toContain('.pb-selected-mark { animation: none; }')
+    const w = mountMarker(dedicatedMarker, true)
+    const mark = w.find('.pb-selected-mark')
+    expect(mark.exists()).toBe(true)
+    expect(mark.attributes('style')).toContain('translateX(-50%) scale(1)')
+    const w2 = mountMarker(dedicatedMarker, false)
+    expect(w2.find('.pb-selected-mark').exists()).toBe(false)
+  })
+
+  it('recorder：空心菱形（tank 下方、friendly team 色、静态）', () => {
+    const src = markerSource
+    expect(src).toContain('.pb-recorder-badge {')
+    expect(src).toContain('border: 1.5px solid var(--pb-team-outline, #ffd76a)') // rotate(45deg) 由 inline style 提供
+    const w = mountMarker({ ...dedicatedMarker, recorder: true })
+    const badge = w.find('.pb-recorder-badge')
+    expect(badge.exists()).toBe(true)
+    expect(badge.attributes('style')).toContain('rotate(45deg)')
+    const w2 = mountMarker({ ...dedicatedMarker, recorder: false })
+    expect(w2.find('.pb-recorder-badge').exists()).toBe(false)
   })
 })

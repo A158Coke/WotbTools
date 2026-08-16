@@ -247,9 +247,9 @@ describe('BattlePlayback', () => {
     await flushPromises()
     expect(wrapper.find('[data-test="pb-marker-2002"]').exists()).toBe(false)
     const recorder = wrapper.find('[data-test="pb-marker-1001"]')
-    expect(recorder.classes()).toContain('pb-recorder')
+    expect(recorder.find('.pb-recorder-badge').exists()).toBe(true)
     await recorder.trigger('click')
-    expect(recorder.classes()).toContain('pb-selected')
+    expect(recorder.find('.pb-selected-mark').exists()).toBe(true)
   })
 
   it('covered vehicles are not faded even when sampled route points have a >5s gap (position stream coverage)', async () => {
