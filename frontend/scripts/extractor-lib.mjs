@@ -376,7 +376,7 @@ export function silhouetteToSvgPaths(polygons, fit, fill) {
 /**
  * 三角形法线（未归一化向量 [nx,ny,nz]）。
  */
-export function triangleNormal(a, b, c) {
+function triangleNormal(a, b, c) {
   const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2]
   const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2]
   return [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx]
@@ -789,7 +789,7 @@ export function filterDegeneratePolys(polys, opts = {}) {
 }
 
 /** 2D ring 面积（Shoelace，正值）。 */
-export function ringArea(ring) {
+function ringArea(ring) {
   let area = 0
   for (let i = 0; i < ring.length; i++) {
     const p = ring[i]
@@ -1122,7 +1122,7 @@ export const BLITZKIT_TANKS_MIN_PROTO = [
 ].join('\n')
 
 /** protobufjs toObject 的 map 键可能是 number 或 string，统一容错取数。 */
-export function mapGet(map, key) {
+function mapGet(map, key) {
   if (map == null) return undefined
   return map[key] ?? map[String(key)]
 }
