@@ -88,6 +88,20 @@ const hasAssets = computed(() => Boolean(hullUrl.value))
 const qaSvgUrl = computed(() => qaSvgUrls[`../../scripts/.vehicle-model-refs/debug/${selectedKey.value}/final-hull.svg`] || null)
 const qaRefUrl = computed(() => qaRefUrls[`../../scripts/.vehicle-model-refs/debug/${selectedKey.value}/_textured-canvas-320.png`] || null)
 const bakeReport = computed(() => bakeReportMap[`../vehicle-models/assets/${selectedKey.value}/bake-report.json`] || null)
+// QA 报告行（i18n；turretless / 缺字段以 — 兜底）
+const qaReportText = computed(() => {
+  if (!bakeReport.value) return ''
+  const m = bakeReport.value.selectedModules
+  const p = bakeReport.value.turretPivot
+  return t('adminPreview.qaReport', {
+    turretId: m ? m.turretId : '—',
+    gunId: m ? m.gunId : '—',
+    hullBytes: bakeReport.value.assets?.hullWebp ?? '—',
+    turretBytes: bakeReport.value.assets?.turretWebp ?? '—',
+    pivotX: p ? p.x : '—',
+    pivotY: p ? p.y : '—',
+  })
+})
 const hasQa = computed(() => Boolean(hullUrl.value))
 const protoSize = ref(320)
 const PROTO_SIZES = [320, 128, 64, 28, 24, 20]
@@ -237,7 +251,7 @@ const pivotStyle = computed(() => {
 
       <!-- QA 对比（正式 bake 资产；A=geometry SVG debug / C=source reference 仅 dev 有缓存时显示） -->
       <div v-if="hasQa" class="vmp-proto">
-        <h3>Texture-Bake QA（source-faithful PBR top-view）</h3>
+        <h3>{{ t('adminPreview.qaTitle') }}</h3>
         <div class="vmp-proto-sizes">
           <span>{{ t('adminPreview.protoSize') }}:</span>
           <button
@@ -250,14 +264,14 @@ const pivotStyle = computed(() => {
         </div>
         <div class="vmp-proto-row">
           <div class="vmp-proto-cell">
-            <p class="vmp-proto-label">A · geometry SVG (debug)</p>
+            <p class="vmp-proto-label">{{ t('adminPreview.qaLabelA') }}</p>
             <div v-if="qaSvgUrl" :style="protoGeomStyle">
               <img class="vmp-proto-img" :src="qaSvgUrl" alt="" :style="bakeHullLayerStyle">
             </div>
-            <p v-else class="vmp-proto-none">dev-only</p>
+            <p v-else class="vmp-proto-none">{{ t('adminPreview.qaDevOnly') }}</p>
           </div>
           <div class="vmp-proto-cell">
-            <p class="vmp-proto-label">B · texture bake</p>
+            <p class="vmp-proto-label">{{ t('adminPreview.qaLabelB') }}</p>
             <div :style="protoBakeStyle">
               <img v-if="hullUrl" class="vmp-proto-img" :src="hullUrl" alt="" :style="bakeHullLayerStyle">
               <div v-if="isTurreted && turretUrl" :style="bakeTurretAssemblyStyle">
@@ -266,16 +280,12 @@ const pivotStyle = computed(() => {
             </div>
           </div>
           <div class="vmp-proto-cell">
-            <p class="vmp-proto-label">C · source reference</p>
+            <p class="vmp-proto-label">{{ t('adminPreview.qaLabelC') }}</p>
             <img v-if="qaRefUrl" class="vmp-proto-img" :src="qaRefUrl" alt="" :style="{ width: protoSize + 'px', height: protoSize + 'px', background: 'rgba(0,0,0,0.08)' }">
-            <p v-else class="vmp-proto-none">dev-only</p>
+            <p v-else class="vmp-proto-none">{{ t('adminPreview.qaDevOnly') }}</p>
           </div>
         </div>
-        <p v-if="bakeReport" class="vmp-proto-report">
-          {{ bakeReport.selectedModules ? 'turret ' + bakeReport.selectedModules.turretId + ' · gun ' + bakeReport.selectedModules.gunId : '' }}
-          · hull {{ bakeReport.assets?.hullWebp }}B / turret {{ bakeReport.assets?.turretWebp ? bakeReport.assets.turretWebp + 'B' : '—' }}
-          · pivot {{ bakeReport.turretPivot ? bakeReport.turretPivot.x + ',' + bakeReport.turretPivot.y : '—' }}
-        </p>
+        <p v-if="bakeReport" class="vmp-proto-report">{{ qaReportText }}</p>
       </div>
 
       <div class="vmp-info" v-if="selected">

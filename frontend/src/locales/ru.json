@@ -773,7 +773,13 @@
         "pivot": "Pivot башни",
         "reference": "Ссылка BlitzKit",
         "features": "Отличительные черты",
-        "pending": "Ассеты ожидаются"
+        "pending": "Ассеты ожидаются",
+        "qaTitle": "Texture-Bake QA (source-faithful PBR top-view)",
+        "qaLabelA": "A · geometry SVG (debug)",
+        "qaLabelB": "B · texture bake",
+        "qaLabelC": "C · source reference",
+        "qaDevOnly": "только для разработки",
+        "qaReport": "башня {turretId} · орудие {gunId} · hull {hullBytes}B / turret {turretBytes}B · pivot {pivotX},{pivotY}"
     },
     "home": {
         "replayTitle": "Анализатор реплеев",

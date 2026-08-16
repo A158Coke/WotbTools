@@ -13,7 +13,7 @@
  *   node scripts/check-webp-orientation.mjs                # 全部 78 资产
  *   node scripts/check-webp-orientation.mjs grille-15 maus # 指定 modelKey
  */
-import { readFileSync, readdirSync, existsSync } from 'node:fs'
+import { readFileSync, readdirSync, existsSync, rmSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -36,6 +36,7 @@ function decodeWebp(webpPath) {
   // decode-webp.py 输出：8 字节头 + RGBA（行主序）——取 A 通道
   const alpha = new Uint8Array(w * h)
   for (let i = 0; i < alpha.length; i++) alpha[i] = buf[8 + i * 4 + 3]
+  rmSync(tmp, { force: true }) // 清理临时文件
   return { w, h, alpha }
 }
 

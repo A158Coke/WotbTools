@@ -4,11 +4,11 @@
  * 校验层次（docs/assets/tier-x-models/README.md「Validation」）：
  * 1. validateCoverage     — Tankopedia Tier X 100% mapping 覆盖 + mapping 完整性
  * 2. validateMetadata     — metadata.json 契约（含与 mapping 的 kind 一致性）
- * 3. validateSvgText      — SVG 技术契约（viewBox / 禁止项 / 标签平衡）
- * 4. validateModelEntry   — 单车型目录完整性（hull 必填、turreted 必配 turret、
- *                           turretless 禁止 turret、禁止多余文件如 gun.svg）
+ * 3. validateSvgText      — SVG 技术契约（仅 Legacy/debug extractor 输出；正式资产无 SVG）
+ * 4. validateModelEntry   — 单车型目录完整性（hull.webp 必填、turreted 必配 turret.webp +
+ *                           turretPivot + turretRaster、turretless 禁止 turret、禁止多余文件）
  *
- * 设计：assets/ 下出现 metadata.json 即视为“资产已就位”，hull.svg（+turret.svg）
+ * 设计：assets/ 下出现 metadata.json 即视为“资产已就位”，hull.webp（+turret.webp，turreted）
  * 必须同时完整——半成品目录会直接 FAIL，防止覆盖率静默退化。
  */
 import fs from 'node:fs'
