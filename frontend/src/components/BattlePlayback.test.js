@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import BattlePlayback from './BattlePlayback.vue'
 import { preloadBattleModels } from '../vehicle-models/runtime.js'
+import { PLAYER_FADE_MS, PLAYER_HIDE_MS, PLAYER_SHOW_MS } from '../utils/labelLayout'
 
 const i18n = vi.hoisted(() => ({
   t: vi.fn(key => key)
@@ -1147,5 +1148,148 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
     rafCb(1000) // 推进 1s → 59 + 1 = 60 = duration → loop 回 0
     await flushPromises()
     expect(wrap.find('.pb-time').text()).toBe('00:00 / 01:00')
+  })
+})
+
+describe('PR4 Â§33 B3 â€” hysteresis ä½¿ç”¨ UI wall clockï¼ˆæš‚åœä¸å†»ç»“ï¼›fade-in å®Œæ•´ç”Ÿå‘½å‘¨æœŸï¼‰', () => {
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
+  /** ä¸¤è½¦åŒä½ï¼ˆt=12 æ’å†²çªï¼‰çš„ overviewï¼›2001 çŽ©å®¶åè¶³å¤Ÿé•¿ã€‚ */
+  function overlapOverview() {
+    const overview = makeOverview()
+    overview.routes[0].points = [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }]
+    overview.routes[1].points = [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }]
+    overview.playback.vehicles[1].playerName = 'VeryLongEnemyPlayerNameCollisionTest'
+    return overview
+  }
+
+  function mountWithPlayer(overview, seekTo) {
+    const w = mountPlayback(overview, seekTo)
+    Object.defineProperty(w.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
+    return w
+  }
+
+  function playerElOf(wrapper) {
+    return wrapper.find('[data-test="pb-marker-2001"]').find('.pb-label-player')
+  }
+
+  it('æš‚åœ + zoom äº§ç”Ÿ conflict â†’ ~250ms åŽæ­£å¸¸ hideï¼ˆä¸ä¾èµ–æ’­æ”¾ï¼‰', async () => {
+    stubRaf()
+    let fakeNow = 50_000
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
+    const wrapper = mountWithPlayer(overlapOverview(), 12)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-show-player"]').setValue(true)
+    await flushPromises()
+    // æš‚åœæ€ zoomï¼ˆwheelï¼‰â†’ å¸ƒå±€å˜åŒ–ï¼›hysteresis æ—¶é’Ÿå¿…é¡»ç»§ç»­ï¼ˆè½»é‡ RAFï¼‰
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 400, clientY: 300 })
+    await flushPromises()
+    expect(playerElOf(wrapper).attributes('style')).toBeUndefined() // æœªåˆ°é˜ˆå€¼
+    expect(rafCb).toBeTruthy() // è½»é‡ hysteresis RAF å·²æ³¨å†Œï¼ˆæœªå†³ transitionï¼‰
+    fakeNow = 50_000 + PLAYER_HIDE_MS + 50
+    rafCb(fakeNow)
+    await flushPromises()
+    expect(playerElOf(wrapper).attributes('style')).toContain('display: none') // æš‚åœæ€ 250ms åŽéšè—
+    nowSpy.mockRestore()
+  })
+
+  it('æš‚åœ + å†²çªè§£é™¤ â†’ ~300ms åŽæ­£å¸¸ showï¼ˆseek ä¸ç ´å hysteresisï¼‰', async () => {
+    stubRaf()
+    let fakeNow = 60_000
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
+    const overview = overlapOverview()
+    // tâ‰¤12 åŒä½å†²çªï¼›t=13.8 ä¸¤è½¦åˆ†ç¦»ï¼ˆçº¿æ€§æ’å€¼ï¼‰
+    overview.routes[0].points = [
+      { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
+      { x: -300, y: -260, timeSec: 14 },
+    ]
+    overview.routes[1].points = [
+      { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
+      { x: 300, y: 260, timeSec: 14 },
+    ]
+    const wrapper = mountWithPlayer(overview, 11)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-show-player"]').setValue(true)
+    await flushPromises()
+    // éšè—ï¼ˆ250msï¼‰
+    fakeNow = 60_000 + PLAYER_HIDE_MS + 50
+    rafCb(fakeNow)
+    await flushPromises()
+    expect(playerElOf(wrapper).attributes('style')).toContain('display: none')
+    // å†²çªè§£é™¤ï¼ˆseek åˆ°åˆ†ç¦»ä½ç½®ï¼‰â†’ show è®¡æ—¶é‡æ–°å¼€å§‹
+    await wrapper.find('.pb-range').setValue(13.8)
+    await flushPromises()
+    expect(playerElOf(wrapper).attributes('style')).toContain('display: none') // æœªåˆ° 300ms
+    fakeNow = 60_000 + PLAYER_HIDE_MS + 50 + PLAYER_SHOW_MS + 50
+    rafCb(fakeNow)
+    await flushPromises()
+    expect(playerElOf(wrapper).attributes('style')).toBeUndefined() // æ¢å¤æ˜¾ç¤º
+    expect(playerElOf(wrapper).classes()).toContain('pb-label-fading') // fade-in å¼€å§‹
+    nowSpy.mockRestore()
+  })
+
+  it('fade-in ä¸ä¼šåœ¨ä¸‹ä¸€ä¸ª RAF ç«‹å³æ¶ˆå¤±ï¼ˆâ‰¥PLAYER_FADE_MS å®Œæ•´ç”Ÿå‘½å‘¨æœŸï¼‰', async () => {
+    stubRaf()
+    let fakeNow = 70_000
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
+    const overview = overlapOverview()
+    overview.routes[0].points = [
+      { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
+      { x: -300, y: -260, timeSec: 14 },
+    ]
+    overview.routes[1].points = [
+      { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
+      { x: 300, y: 260, timeSec: 14 },
+    ]
+    const wrapper = mountWithPlayer(overview, 11)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-show-player"]').setValue(true)
+    await flushPromises()
+    const el = () => playerElOf(wrapper)
+    // hide
+    fakeNow = 70_000 + PLAYER_HIDE_MS + 50
+    rafCb(fakeNow)
+    await flushPromises()
+    expect(el().attributes('style')).toContain('display: none')
+    // showï¼ˆè§£é™¤å†²çªï¼‰
+    await wrapper.find('.pb-range').setValue(13.8)
+    await flushPromises()
+    fakeNow = 70_000 + PLAYER_HIDE_MS + 50 + PLAYER_SHOW_MS + 50
+    rafCb(fakeNow)
+    await flushPromises()
+    expect(el().classes()).toContain('pb-label-fading')
+    // ä¸‹ä¸€ RAFï¼ˆ10ms åŽï¼‰ä»ä¿æŒ fade ç±»ï¼ˆä¸è¢«ä¸‹ä¸€æ¬¡ resolve å–æ¶ˆï¼‰
+    fakeNow += 10
+    rafCb(fakeNow)
+    await flushPromises()
+    expect(el().classes()).toContain('pb-label-fading')
+    // è¶…è¿‡ PLAYER_FADE_MS â†’ ç±»ç§»é™¤
+    fakeNow += PLAYER_FADE_MS + 20
+    rafCb(fakeNow)
+    await flushPromises()
+    expect(el().classes()).not.toContain('pb-label-fading')
+    nowSpy.mockRestore()
+  })
+
+  it('æ’­æ”¾ä¸­åŒæ ·å·¥ä½œï¼ˆframe() é©±åŠ¨æ—¶é’Ÿï¼‰', async () => {
+    stubRaf()
+    let fakeNow = 80_000
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
+    const wrapper = mountWithPlayer(overlapOverview(), 12)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-show-player"]').setValue(true)
+    await flushPromises()
+    expect(playerElOf(wrapper).attributes('style')).toBeUndefined() // æœªåˆ°é˜ˆå€¼
+    await wrapper.find('[data-test="pb-play"]').trigger('click') // æ’­æ”¾
+    await flushPromises()
+    fakeNow = 80_000 + PLAYER_HIDE_MS + 50
+    rafCb(fakeNow) // frame â†’ nowMs åˆ·æ–° â†’ resolve
+    await flushPromises()
+    expect(playerElOf(wrapper).attributes('style')).toContain('display: none') // æ’­æ”¾ä¸­ 250ms åŽéšè—
+    nowSpy.mockRestore()
   })
 })

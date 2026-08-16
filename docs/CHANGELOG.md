@@ -15,10 +15,13 @@
   - **PlayerName 截断 + tooltip（§30）**：按实际像素宽度截断（max-width + ellipsis，非字符数），
     只有截断才显示完整名 tooltip；被碰撞隐藏时 tooltip 随行一起消失。
   - **标签碰撞（§32/§33/§34/§35）**：新增纯函数 `utils/labelLayout.js`——viewport 内
-    marker 才参与（越界裁剪）；TankName 冲突 → 上方标签轻量上移（上限一行，接受剩余 overlap，
-    禁止复杂 solver）；PlayerName 与任一 TankName 冲突 → 隐藏候选，经**时间稳定阈值**
-    （hide 250ms / show 300ms，performance.now，RAF/seek 推进）后 hide/show，恢复带 ~120ms
-    opacity fade-in；zoom 由 computed 依赖 view.scale 天然在缩放结束重算。
+    marker 才参与（越界裁剪）；TankName 冲突 → 上方标签**从下往上** greedy 轻量上移（下方先
+    finalized、上限一行，接受剩余 overlap，3+ 连锁不重新产生 overlap，禁止复杂 solver）；
+    PlayerName 与任一 TankName 冲突 → 隐藏候选，经**时间稳定阈值**（hide 250ms / show 300ms，
+    `performance.now` **UI wall clock**——播放由 frame 刷新、暂停由轻量 RAF 继续推进，
+    不依赖播放状态）后 hide/show，恢复带 ~120ms opacity fade-in（类保持完整生命周期不被
+    下一次 resolve 取消）；PlayerName 盒从 final TankName 盒推导（与共享 label 块整体位移
+    一致）；zoom 由 computed 依赖 view.scale 天然在缩放结束重算。
   - **hull hitbox + 重叠选中（§36/§37）**：点击命中从整盒改为车体视觉范围 + 小 padding
     （dedicated 90%、generic 58%×90%，随 marker 缩放；不含 gun overflow/label/三角/菱形/✕，
     destroyed/last-known 仍可点）；多个 hitbox 重叠 → 取指针距离最近车辆，距离几乎一致且已有

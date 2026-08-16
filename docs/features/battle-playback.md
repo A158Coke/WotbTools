@@ -93,8 +93,11 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
     共用一个半透明深色背景块（自适应宽度、team 文字色 `--pb-team-text`/`--pb-enemy-text`、
     destroyed/last-known 只弱化文字）；PlayerName 按实际像素截断（max-width+ellipsis），截断才有
     完整名 tooltip；碰撞纯函数 `utils/labelLayout.js`（screen px，viewport 内才参与）——
-    TankName 冲突上方标签轻量上移（上限一行）、PlayerName 冲突经时间阈值（hide 250ms / show 300ms，
-    `performance.now` 经 RAF/seek 推进）隐藏/恢复（~120ms opacity fade-in）；zoom 结束由 computed
+    TankName 冲突**从下往上** greedy 上移让位（下方先 finalized、上限一行，3+ 连锁不重新产生
+    overlap）、PlayerName 冲突经时间阈值（hide 250ms / show 300ms，`performance.now` **UI wall
+    clock**——播放由 frame 刷新、暂停由轻量 RAF 继续推进，不依赖播放状态）隐藏/恢复（~120ms
+    opacity fade-in，类保持完整生命周期不被下一次 resolve 取消）；PlayerName 盒从 final TankName
+    盒推导（与共享 label 块整体位移一致）；zoom 结束由 computed
     依赖 view.scale 自然重算；点击命中改为 hull hitbox（dedicated 90% / generic 58%×90% 盒比例，
     随 marker 缩放，不含 gun overflow/label/三角/菱形/✕；destroyed/last-known 仍可点），重叠时
     取指针最近车辆、距离几乎一致且已选中则保持、否则 render order tie-break；倍速含 0.5×；
