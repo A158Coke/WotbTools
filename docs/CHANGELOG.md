@@ -260,6 +260,15 @@
     - 验证：69 turreted 全部迁移成功（top-level turretRaster=69、generation 残留=0）、
       9 turretless 未受影响；validator ALL PASS；490 tests PASS（+3 schema 漂移用例）；
       build + bundle separation PASS；CI（7047ebd）6/6 PASS。
+  - **review-with-docs 清理（2026-08-19）**：
+    - 删除真死代码：extractor-lib `bumpsToSvgPaths` / `minSvgUnits`（bump 概念删除后残留、
+      全仓零引用）、types.js `GENERATION_METHOD_EXTRACTION`（lib 硬编码字符串，常量零引用）；
+      保留假死项：convexHull2D / hullToPath / filterOccludedSurfaces / toSvg（extractor.test 锁定语义）；
+    - preview QA 区 A 列 hull 旋转 origin 修正为画布中心（原误用 turret pivot）；
+    - i18n：adminPreview 补 `protoSize` 三语、删除死 key `sample`/`sampleNote`、hint 更新为
+      Source-faithful PBR WebP 描述（zh/en/ru 同步）；
+    - DEVELOPER_GUIDE：QA 页描述与文档索引更新（SVG 全局规范 → 车型资产全局规范）；
+    - current-plan 状态更新为 PR1_NON_PENDING_ASSET_MILESTONE_READY。
   - **kind 全量核验**：遍历全部 81 baseModelKey，不采用 BlitzKit TURRET module / turretRotationSpeed（casemate 也有 turret module 且转速非零，不可判）；以官方 tankopedia 描述 / fandom wiki / 结构知识逐组核验并修正 3 项——minotauro → turreted（fandom：有炮塔约 45° 限位）、foch-155 → turretless（fandom specs turret=no）、xm66f → turreted（官方：non-fully-rotating turret 前置炮塔）；无法可靠确认的 3 辆（spht / ac-teichos / nc-70-blyskawica）标记 confirmPending（contract 未冻结，第一批不生成）；tier-x-inventory.md 增加全量 kind 核验依据列与修正记录。
   - **turretPivot 旋转数学修正**：预览页不再用 translate 平移近似（旧实现旋转轴实际在 pivot 的镜像点 2C−P）；新增 frontend/src/vehicle-models/pivot.js——img 与 320×320 viewBox 1:1 对齐，transform-origin 直接用 pivot × renderScale，rotate 以 origin 为不动点；pivot.test.js 数学断言非中心 pivot 在 0°/90°/180°/270° 下不动（7 用例）；sample 改非中心 pivot (160,150) 证明实现支持任意 pivot；pivot debug marker 与旋转轴同源坐标。
   - **admin preview 懒加载**：App.vue 静态 import 改为 defineAsyncComponent 动态 import → preview 与全部车型 QA 资产（import.meta.glob）进入独立 chunk，普通用户主 bundle 不含车型资产；新增 scripts/check-bundle-separation.mjs 构建后检查（主入口无 vehicle-models/assets 标记 + 存在独立 preview chunk）。

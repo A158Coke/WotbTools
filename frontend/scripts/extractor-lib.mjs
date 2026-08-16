@@ -1033,16 +1033,6 @@ export function clusterEdges(edges, opts = {}) {
 }
 
 /**
- * 屏幕空间过滤：SVG units 阈值 = minPx × (viewBox 宽 / markerPx)。
- * markerPx 为实际 marker 屏幕尺寸（BattlePlayback 28px 桌面 / 22px 移动端）。
- * 高保真策略：仅用于 asset-space 微小结构判断（如 minDetailUnits=0.3），
- * 不再按 20-30px marker 过滤真实 detail（runtime LOD 负责小尺寸）。
- */
-export function minSvgUnits(minPx, viewBoxWidth, markerPx) {
-  return minPx * (viewBoxWidth / markerPx)
-}
-
-/**
  * 高保真 detail 分级（HIGH-FIDELITY ASSET → 未来 runtime LOD 的结构准备）：
  * - vehicle-primary：任何尺寸必须保留——silhouette / tracks / turret body / mantlet /
  *   gun / 大型 deck-roof 区域（surface ≥ primaryMinM2）；
@@ -1103,18 +1093,6 @@ export function edgesToSvgPath(edges, fit, stroke) {
     })
     .join(' ')
   return { d, stroke, strokeWidth: 5, fill: 'none' }
-}
-/**
- * 层内凸起（hatch / cupola / 甲板凸块）→ SVG fill paths。
- */
-export function bumpsToSvgPaths(surfaces, fit, fill) {
-  const paths = []
-  for (const s of surfaces) {
-    for (const b of s.bumps) {
-      paths.push(...silhouetteToSvgPaths(b.polys, fit, fill))
-    }
-  }
-  return paths
 }
 // —— BlitzKit definitions 解析共享（extractor CLI 与 bake CLI 共用）——
 import { readFileSync } from 'node:fs'
