@@ -18,6 +18,9 @@ import ContactPage from './components/ContactPage.vue'
 // 普通用户不访问该隐藏页面时完全不加载（见 scripts/check-bundle-separation.mjs）。
 // production Battle Playback 仍坚持「只 preload 当前战局实际出现 Tier X」的总计划边界。
 const VehicleModelPreviewPage = defineAsyncComponent(() => import('./components/VehicleModelPreviewPage.vue'))
+// 隐藏 QA 页（?view=playback-qa，仅 wotbtools-admin）：PR4 固定 14 车标签碰撞场景，
+// 复用生产 BattlePlayback（异步加载，不拖进普通用户初始 bundle）
+const PlaybackQaPage = defineAsyncComponent(() => import('./components/PlaybackQaPage.vue'))
 
 const { theme, handleTheme } = useTheme()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
@@ -39,6 +42,7 @@ const ALLOWED_VIEWS = [
   'profile', 'boost', 'admin-users', 'reconstruction', 'version', 'contact',
   // 隐藏 QA 页：车型预览（不在导航中，仅 wotbtools-admin 深链可进）
   'vehicle-models',
+  'playback-qa',
 ]
 const activeTool = ref(ALLOWED_VIEWS.includes(viewParam) ? viewParam : defaultView)
 
@@ -55,7 +59,8 @@ const VIEW_COMPONENTS = {
   reconstruction: ReconstructionPage,
   version: VersionPage,
   contact: ContactPage,
-  'vehicle-models': VehicleModelPreviewPage
+  'vehicle-models': VehicleModelPreviewPage,
+  'playback-qa': PlaybackQaPage
 }
 const currentView = computed(() => VIEW_COMPONENTS[activeTool.value] || ReplayPage)
 

@@ -784,7 +784,9 @@
         "qaLabelB": "B · texture bake",
         "qaLabelC": "C · source reference",
         "qaDevOnly": "dev-only",
-        "qaReport": "turret {turretId} · gun {gunId} · hull {hullBytes}B / turret {turretBytes}B · pivot {pivotX},{pivotY}"
+        "qaReport": "turret {turretId} · gun {gunId} · hull {hullBytes}B / turret {turretBytes}B · pivot {pivotX},{pivotY}",
+        "qaPlaybackTitle": "Battle Playback Label Collision QA (14 vehicles)",
+        "qaPlaybackHint": "Fixed 14-vehicle moving scene: two dense clusters stress player/tank name collisions, with destroyed/last-known/recorder states mixed in; the timeline loops at 0.5x–4x. Reuses the production BattlePlayback."
     },
     "home": {
         "replayTitle": "Replay Extractor",
@@ -852,6 +854,8 @@
                 "play": "Play",
                 "pause": "Pause",
                 "all_events": "All known events",
+                "show_player_name": "Show player names",
+                "show_tank_name": "Show tank names",
                 "progress": "Progress",
                 "tank": "Tank",
                 "team": "Team",

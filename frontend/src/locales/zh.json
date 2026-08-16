@@ -784,7 +784,9 @@
         "qaLabelB": "B · texture bake",
         "qaLabelC": "C · source reference",
         "qaDevOnly": "仅开发环境",
-        "qaReport": "炮塔 {turretId} · 炮管 {gunId} · hull {hullBytes}B / turret {turretBytes}B · pivot {pivotX},{pivotY}"
+        "qaReport": "炮塔 {turretId} · 炮管 {gunId} · hull {hullBytes}B / turret {turretBytes}B · pivot {pivotX},{pivotY}",
+        "qaPlaybackTitle": "战局回放标签碰撞 QA（14 车）",
+        "qaPlaybackHint": "固定 14 车移动场景：双密集簇制造玩家名/坦克名碰撞，含阵亡/失察/录像者状态；时间线循环，倍速 0.5×–4×。直接复用生产 BattlePlayback。"
     },
     "home": {
         "replayTitle": "回放提取器",
@@ -852,6 +854,8 @@
                 "play": "播放",
                 "pause": "暂停",
                 "all_events": "全部已知事件",
+                "show_player_name": "显示玩家名",
+                "show_tank_name": "显示坦克名",
                 "progress": "进度",
                 "tank": "坦克",
                 "team": "阵营",
