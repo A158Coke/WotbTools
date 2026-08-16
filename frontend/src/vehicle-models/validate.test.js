@@ -98,6 +98,26 @@ describe('validateMetadata', () => {
       ),
     ).not.toEqual([])
   })
+  it('generation 内出现 turretRaster 视为 schema 漂移 FAIL（authoritative 只在顶层）', () => {
+    const dup = { ...GOOD_META, generation: { ...GOOD_META.generation, turretRaster: GOOD_META.turretRaster } }
+    expect(validateMetadata(dup, { modelKey: 'maus' })).not.toEqual([])
+  })
+  it('turretPivot 与 turretRaster 映射一致；不一致 FAIL', () => {
+    const meta = { ...GOOD_META, turretRaster: { ...GOOD_META.turretRaster, pivotX: 50, pivotY: 200 } }
+    // GOOD_META: pivot(160,193.23)；raster logicalMin(120.01,-19.6) → 映射 160+? 需一致
+    // 直接构造一致 case：logicalMin(110,0) + pivot(50,193.23) = (160,193.23)
+    const consistent = {
+      ...GOOD_META,
+      turretRaster: { ...GOOD_META.turretRaster, logicalMinX: 110, logicalMinY: 0, pivotX: 50, pivotY: 193.23 },
+    }
+    expect(validateMetadata(consistent, { modelKey: 'maus' })).toEqual([])
+    const broken = { ...GOOD_META, turretRaster: { ...GOOD_META.turretRaster, logicalMinX: 120, pivotX: 60 } }
+    expect(validateMetadata(broken, { modelKey: 'maus' })).not.toEqual([])
+  })
+  it('turretRaster.pivot 必须落在 image-local raster bounds 内', () => {
+    const bad = { ...GOOD_META, turretRaster: { ...GOOD_META.turretRaster, pivotX: 999 } }
+    expect(validateMetadata(bad, { modelKey: 'maus' })).not.toEqual([])
+  })
   it('正式资产强制 source.provider=blitzkit / generation.method=extraction', () => {
     const badProvider = {
       ...GOOD_META,

@@ -450,7 +450,6 @@ writeFileSync(join(outDir, 'metadata.json'), JSON.stringify({
     hullBounds: report.hullBounds,
     turretBounds: report.turretBounds,
     gunBounds: report.gunBounds,
-    turretRaster: report.turretRaster,
     selectedModules: report.selectedModules,
     texturesUsed: report.texturesUsed,
     desaturate: DESATURATE,

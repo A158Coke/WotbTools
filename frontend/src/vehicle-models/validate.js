@@ -123,6 +123,11 @@ export function validateMetadata(meta, { modelKey, expectedKind = null }) {
     if (gen.notes !== undefined && typeof gen.notes !== 'string') {
       errors.push('generation.notes 必须为字符串')
     }
+    // turretRaster 是 authoritative runtime geometry contract，只允许在顶层——
+    // generation 内重复出现视为 schema 漂移（PR2 用顶层做 asset positioning）
+    if (gen.turretRaster !== undefined) {
+      errors.push('generation 内禁止 turretRaster（authoritative 契约只在顶层 metadata.turretRaster）')
+    }
     // Source-faithful PBR 契约（正式资产强制）：fidelity=high、geometryScale=faithful；
     // visibleDetailRetentionTarget ∈ (0,1] 仅为 visual QA target（非 geometric-detail-retention
     // guarantee——几何上限 = BlitzKit/WoTB LOD0 source）
@@ -152,6 +157,23 @@ export function validateMetadata(meta, { modelKey, expectedKind = null }) {
       }
       if (typeof r.pixelWidth === 'number' && r.pixelWidth <= 0) errors.push('turretRaster.pixelWidth 必须 > 0')
       if (typeof r.pixelHeight === 'number' && r.pixelHeight <= 0) errors.push('turretRaster.pixelHeight 必须 > 0')
+      // pivot 是 image-local 逻辑坐标，必须落在 raster bounds 内（0..logicalW/H）
+      if (typeof r.pivotX === 'number' && !(r.pivotX >= 0 && r.pivotX <= r.pixelWidth / 2 + 0.01)) {
+        errors.push('turretRaster.pivotX 必须落在 image-local raster bounds 内（0..pixelWidth/2）')
+      }
+      if (typeof r.pivotY === 'number' && !(r.pivotY >= 0 && r.pivotY <= r.pixelHeight / 2 + 0.01)) {
+        errors.push('turretRaster.pivotY 必须落在 image-local raster bounds 内（0..pixelHeight/2）')
+      }
+      // turretPivot（320 画布坐标）与 raster 数学映射一致：pivot = logicalMin + image-local pivot
+      const pv = meta.turretPivot
+      if (pv && typeof pv.x === 'number' && typeof pv.y === 'number' && typeof r.logicalMinX === 'number' && typeof r.pivotX === 'number') {
+        if (Math.abs(pv.x - (r.logicalMinX + r.pivotX)) > 0.11) {
+          errors.push('turretPivot.x(' + pv.x + ') 与 turretRaster 映射不一致（logicalMinX+pivotX=' + (r.logicalMinX + r.pivotX).toFixed(2) + '）')
+        }
+        if (Math.abs(pv.y - (r.logicalMinY + r.pivotY)) > 0.11) {
+          errors.push('turretPivot.y(' + pv.y + ') 与 turretRaster 映射不一致（logicalMinY+pivotY=' + (r.logicalMinY + r.pivotY).toFixed(2) + '）')
+        }
+      }
     }
   } else if (meta.turretRaster !== undefined) {
     errors.push('turretless 禁止 turretRaster')
@@ -209,6 +231,17 @@ export function validateModelEntry({ modelKey, kind, files }) {
   if (kind === 'turreted') {
     if (!files.turret || !isWebp(files.turret)) {
       errors.push('turreted 车型必须提供 turret.webp（WebP 二进制）')
+    } else {
+      // turretRaster.pixelWidth/pixelHeight 必须与实际 turret.webp 尺寸一致
+      let meta2 = null
+      try { meta2 = files.metadata ? JSON.parse(files.metadata) : null } catch { meta2 = null }
+      const r = meta2?.turretRaster
+      if (r && typeof r.pixelWidth === 'number' && typeof r.pixelHeight === 'number') {
+        const d = webpDimensions(files.turret)
+        if (d && (d.width !== r.pixelWidth || d.height !== r.pixelHeight)) {
+          errors.push('turret.webp 尺寸 ' + d.width + 'x' + d.height + ' 与 turretRaster ' + r.pixelWidth + 'x' + r.pixelHeight + ' 不一致')
+        }
+      }
     }
   } else if (files.turret) {
     errors.push('turretless 车型禁止 turret.webp')
@@ -226,6 +259,28 @@ export function validateModelEntry({ modelKey, kind, files }) {
     errors.push(`目录含未契约文件（gun 禁止独立 layer）：${files.extra.join(', ')}`)
   }
   return errors
+}
+
+/** 解析 WebP 尺寸（VP8X/VP8/VP8L 头；失败返回 null）。 */
+function webpDimensions(buf) {
+  if (typeof buf !== 'string' || buf.length < 24) return null
+  let off = 12
+  while (off < buf.length - 8) {
+    const tag = buf.slice(off, off + 4)
+    const sz = buf.charCodeAt(off + 4) | (buf.charCodeAt(off + 5) << 8) | (buf.charCodeAt(off + 6) << 16) | (buf.charCodeAt(off + 7) << 24)
+    if (tag === 'VP8X' && off + 20 < buf.length) {
+      const w = 1 + (buf.charCodeAt(off + 12) | (buf.charCodeAt(off + 13) << 8) | (buf.charCodeAt(off + 14) << 16))
+      const h = 1 + (buf.charCodeAt(off + 15) | (buf.charCodeAt(off + 16) << 8) | (buf.charCodeAt(off + 17) << 16))
+      return { width: w, height: h }
+    }
+    if (tag === 'VP8 ' && off + 18 < buf.length) {
+      const w = (buf.charCodeAt(off + 14) | (buf.charCodeAt(off + 15) << 8)) & 0x3fff
+      const h = (buf.charCodeAt(off + 16) | (buf.charCodeAt(off + 17) << 8)) & 0x3fff
+      return { width: w, height: h }
+    }
+    off += 8 + sz + (sz & 1)
+  }
+  return null
 }
 
 /** WebP 魔数检查（RIFF....WEBP）。 */

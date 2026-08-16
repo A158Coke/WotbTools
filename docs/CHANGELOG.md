@@ -248,6 +248,18 @@
       （turret 层按 raster 原点定位 + raster 内 pivot 旋转）；
     - 验证：grille-15 turret.webp 160×1010（原 640 裁掉 424px 炮管）、xm66f 325×846、
       minotauro 230×757——全部含完整炮管；hull 保持 640×640；validator/tests/build PASS。
+  - **turretRaster schema 去重（2026-08-19，PR2 runtime contract）**：
+    - 删除 `generation.turretRaster`（重复内容）——authoritative runtime geometry contract
+      只保留顶层 `metadata.turretRaster`（PR2 用顶层做 asset positioning / transform-origin；
+      generation 只保存生成审计数据）；baker/types/validator/69 辆 turreted metadata/tests/docs
+      全部同步（deterministic regeneration）；
+    - validator 新增：generation 内出现 turretRaster → FAIL（防 schema 漂移）；
+      turretRaster.pixelWidth/pixelHeight 与实际 turret.webp 尺寸一致（解析 WebP 头）；
+      pivotX/pivotY 落在 image-local raster bounds 内；turretPivot 与 raster 数学映射一致
+      （pivot = logicalMin + image-local pivot，容差 0.11）；
+    - 验证：69 turreted 全部迁移成功（top-level turretRaster=69、generation 残留=0）、
+      9 turretless 未受影响；validator ALL PASS；490 tests PASS（+3 schema 漂移用例）；
+      build + bundle separation PASS；CI（7047ebd）6/6 PASS。
   - **kind 全量核验**：遍历全部 81 baseModelKey，不采用 BlitzKit TURRET module / turretRotationSpeed（casemate 也有 turret module 且转速非零，不可判）；以官方 tankopedia 描述 / fandom wiki / 结构知识逐组核验并修正 3 项——minotauro → turreted（fandom：有炮塔约 45° 限位）、foch-155 → turretless（fandom specs turret=no）、xm66f → turreted（官方：non-fully-rotating turret 前置炮塔）；无法可靠确认的 3 辆（spht / ac-teichos / nc-70-blyskawica）标记 confirmPending（contract 未冻结，第一批不生成）；tier-x-inventory.md 增加全量 kind 核验依据列与修正记录。
   - **turretPivot 旋转数学修正**：预览页不再用 translate 平移近似（旧实现旋转轴实际在 pivot 的镜像点 2C−P）；新增 frontend/src/vehicle-models/pivot.js——img 与 320×320 viewBox 1:1 对齐，transform-origin 直接用 pivot × renderScale，rotate 以 origin 为不动点；pivot.test.js 数学断言非中心 pivot 在 0°/90°/180°/270° 下不动（7 用例）；sample 改非中心 pivot (160,150) 证明实现支持任意 pivot；pivot debug marker 与旋转轴同源坐标。
   - **admin preview 懒加载**：App.vue 静态 import 改为 defineAsyncComponent 动态 import → preview 与全部车型 QA 资产（import.meta.glob）进入独立 chunk，普通用户主 bundle 不含车型资产；新增 scripts/check-bundle-separation.mjs 构建后检查（主入口无 vehicle-models/assets 标记 + 存在独立 preview chunk）。

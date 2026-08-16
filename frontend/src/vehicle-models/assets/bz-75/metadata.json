@@ -58,16 +58,6 @@
         5.011777400970459
       ]
     },
-    "turretRaster": {
-      "logicalMinX": 95.13,
-      "logicalMinY": -41.85,
-      "logicalMaxX": 224.87,
-      "logicalMaxY": 212.7,
-      "pixelWidth": 260,
-      "pixelHeight": 510,
-      "pivotX": 64.85,
-      "pivotY": 166.27
-    },
     "selectedModules": {
       "turretId": 16433,
       "gunId": 19249,
