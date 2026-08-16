@@ -76,15 +76,33 @@ const genericTurretStyle = computed(() =>
 )
 
 // —— overlay 屏幕间距恒定（B2）：selected/recorder 的 layout offset（bottom/top calc）处于
-//    viewport 整体 scale 空间——乘以 overlayInverse（=1/view.scale）反缩放，zoom 下与车辆/
-//    name 的屏幕间距不按 1×/2×/4× 增长；元素自身尺寸仍由 transform scale(inv) 保证。 ——
+//    viewport 整体 scale 空间——乘以 overlayInverse（=1/view.scale）反缩放，zoom 下屏幕间距
+//    不按 1×/2×/4× 增长；元素自身尺寸仍由 transform scale(inv) 保证。 ——
 const overlayInv = computed(() =>
   Number.isFinite(st.value.overlayInverse) && st.value.overlayInverse > 0 ? st.value.overlayInverse : 1,
 )
-const selectedMarkStyle = computed(() => ({
-  transform: `translateX(-50%) ${st.value.overlayInverseScale}`,
-  bottom: `calc(100% + ${19 * overlayInv.value}px)`,
-}))
+// selected 三角 bottom（layout px）推导（B2 残余）：
+// - name：bottom anchor 2px、盒高 14px（10px×1.2 + padding 1px×2）→ 中心 layout offset 9px；
+//   transform scale(inv) 绕中心 → name 顶边 screen = (9 + 7)·s。
+// - 三角：高 9px（border-top）→ 底边 screen = (X + 4.5)·s − 4.5。
+// - 要求 底边 = name顶 + 3px（1× 时即 19px，既有车辆契约）→ X = 4.5 + 14.5·inv。
+//   高 zoom 时三角跟随 name 上移，selected→name 屏幕 gap 恒 3px（name 自身 anchor 按既有语义
+//   随 zoom 上移，禁止重做 name）。若 .pb-name CSS 盒高/锚点变化需同步 NAME_LAYOUT_*。
+const NAME_LAYOUT_BOTTOM_PX = 2 // .pb-name bottom offset（.pb-name CSS 唯一事实源）
+const NAME_LAYOUT_HALF_PX = 7 // .pb-name 盒高 14px 的一半
+const MARK_LAYOUT_HALF_PX = 4.5 // 三角高 9px 的一半
+const NAME_GAP_SCREEN_PX = 3 // 三角底边 ↔ name 顶边屏幕 gap（1× = 19 − 16）
+const selectedMarkStyle = computed(() => {
+  const inv = overlayInv.value
+  const x = NAME_LAYOUT_BOTTOM_PX + NAME_LAYOUT_HALF_PX - MARK_LAYOUT_HALF_PX
+    + (NAME_LAYOUT_HALF_PX + NAME_GAP_SCREEN_PX + MARK_LAYOUT_HALF_PX) * inv
+  return {
+    transform: `translateX(-50%) ${st.value.overlayInverseScale}`,
+    bottom: `calc(100% + ${x}px)`,
+    // 浮动动画幅度（CSS keyframes calc(2px * var(--pb-overlay-inv))）→ 任意 zoom 恒 ≈2px
+    '--pb-overlay-inv': inv,
+  }
+})
 const recorderBadgeStyle = computed(() => ({
   transform: `translate(-50%, -50%) rotate(45deg) ${st.value.overlayInverseScale}`,
   top: `calc(100% + ${5 * overlayInv.value}px)`,
@@ -291,9 +309,9 @@ const stateClasses = computed(() => ({
 
 /* —— PR3 §22 Selected 红色倒三角：label 上方、永远朝下、screen-space 恒定
    （overlayInverseScale 反缩放）、轻微上下浮动、深色阴影对比边。
-   bottom 19px：name label 顶边 ≈ box 顶 +18px（底边 +2px + 高 ~16px），三角底边 +19px
-   避免与 label 重叠（PR3 增补 QA 微调）；B2：实际 offset 由 inline style 按
-   overlayInverse 反缩放（19×inv px），此处为 1× 兜底值。 */
+   B2 残余：实际 bottom 由 inline style 按推导式 X = 4.5 + 14.5×inv px 提供（三角底边
+   跟随 name 顶边，屏幕 gap 恒 3px；此处 19px 为 1× 兜底值）；浮动幅度 =
+   calc(2px * var(--pb-overlay-inv))（inline 注入 var）→ 任意 zoom 恒 ≈2px。 */
 .pb-selected-mark {
   position: absolute;
   bottom: calc(100% + 19px);
@@ -310,7 +328,7 @@ const stateClasses = computed(() => ({
 }
 @keyframes pb-selected-float {
   0%, 100% { margin-top: 0; }
-  50% { margin-top: 2px; }
+  50% { margin-top: calc(2px * var(--pb-overlay-inv, 1)); }
 }
 
 /* —— PR3 增补 destroyed + selected 克制表达：阵亡车仍可辨认被选中，但 selected 权重低于

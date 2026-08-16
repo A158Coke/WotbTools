@@ -642,7 +642,7 @@ describe('fixed-size vehicle markers', () => {
     expect(marker.find('.pb-name').attributes('style')).toContain('scale(0.25)')
   })
 
-  it('selected/recorder layout offset 随 zoom 反缩放：屏幕间距恒定，不按 1×/2×/4× 增长', async () => {
+  it('zoom 下 selected→name gap 与 recorder→vehicle 恒定；浮动幅度恒 ≈2px（1×/≈2×/4×）', async () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
@@ -652,26 +652,46 @@ describe('fixed-size vehicle markers', () => {
       const m = style.match(/calc\(100% \+ ([\d.]+)px\)/)
       return m ? Number(m[1]) : null
     }
-    // 1×：基准屏幕间距 19px（selected）/ 5px（recorder）
+    const readInv = () => {
+      const style = wrapper.find('.pb-selected-mark').attributes('style') || ''
+      const m = style.match(/--pb-overlay-inv: ([\d.]+)/)
+      return m ? Number(m[1]) : null
+    }
+    // 屏幕几何（layout→screen）：三角底边 = (X + 4.5)·s − 4.5；name 顶边 = 9·s + 7（name 锚点 2px + 盒高 14px，与 .pb-name CSS 一致）
+    const triBottom = (x, s) => (x + 4.5) * s - 4.5
+    const nameTop = (s) => 9 * s + 7
+    const check = () => {
+      const s = viewportScale(wrapper)
+      const x = readOffset('.pb-selected-mark')
+      const r = readOffset('.pb-recorder-badge')
+      const inv = readInv()
+      expect(x).toBeTruthy()
+      expect(r).toBeTruthy()
+      expect(inv).toBeTruthy()
+      // selected → name 顶边屏幕 gap 恒 3px（三角跟随 name 上移）
+      expect(triBottom(x, s) - nameTop(s)).toBeCloseTo(3, 6)
+      // recorder → vehicle 恒 5px
+      expect(r * s).toBeCloseTo(5, 6)
+      // 浮动幅度 = 2px × inv × s = 2px（inv = 1/s）
+      expect(inv * s).toBeCloseTo(1, 6)
+    }
+    // 1×：selected 19px / recorder 5px（既有基准契约）
     expect(viewportScale(wrapper)).toBe(1)
     expect(readOffset('.pb-selected-mark')).toBe(19)
     expect(readOffset('.pb-recorder-badge')).toBe(5)
-    // 放大到 2× 附近（1.2^4 ≈ 2.07×）：offset × viewportScale = 屏幕间距必须仍 ≈ 19/5
+    check()
+    // ≈2×（1.2^4 ≈ 2.07）
     for (let i = 0; i < 4; i++) {
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
     }
-    const s2 = viewportScale(wrapper)
-    expect(s2).toBeGreaterThan(1.9)
-    expect(readOffset('.pb-selected-mark') * s2).toBeCloseTo(19, 4)
-    expect(readOffset('.pb-recorder-badge') * s2).toBeCloseTo(5, 4)
-    // 钳制到 4×：同样恒定
+    expect(viewportScale(wrapper)).toBeGreaterThan(1.9)
+    check()
+    // 4×（钳制）
     for (let i = 0; i < 12; i++) {
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
     }
-    const s4 = viewportScale(wrapper)
-    expect(s4).toBe(4)
-    expect(readOffset('.pb-selected-mark') * s4).toBeCloseTo(19, 4)
-    expect(readOffset('.pb-recorder-badge') * s4).toBeCloseTo(5, 4)
+    expect(viewportScale(wrapper)).toBe(4)
+    check()
   })
 
   it('marker map-coordinate anchor and child rotation/overlays survive zooming', async () => {
