@@ -4,15 +4,24 @@
  */
 import { describe, expect, it } from 'vitest'
 import { VIEWBOX } from './types.js'
-import {
-  hullLayerTransform,
-  pivotLayerTransform,
-  rotatePointAround,
-} from './pivot.js'
+import { hullLayerTransform, pivotLayerTransform } from './pivot.js'
 
 // sample 使用非 (160,160) pivot：证明实现不是碰巧只支持中心 pivot
 const PIVOT = { x: 160, y: 150 }
 const ANGLES = [0, 90, 180, 270]
+
+/** 数学验证辅助：以 origin 为不动点的 rotate(deg) 下，点 point 的像（2D 仿射，角度制）。 */
+function rotatePointAround({ point, origin, deg }) {
+  const rad = (deg * Math.PI) / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  const dx = point.x - origin.x
+  const dy = point.y - origin.y
+  return {
+    x: origin.x + dx * cos - dy * sin,
+    y: origin.y + dx * sin + dy * cos,
+  }
+}
 
 describe('rotatePointAround（2D 仿射不动点）', () => {
   it('pivot 绕自身旋转在 0/90/180/270 下不动', () => {

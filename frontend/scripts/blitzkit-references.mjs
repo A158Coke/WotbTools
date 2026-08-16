@@ -158,7 +158,10 @@ async function main() {
   }
 
   if (dryRun) {
-    for (const item of rows) console.log(`  ${item.tankId} ${item.modelKey} [${item.kind}] ${item.name} ${item.iconUrl}`)
+    for (const item of rows) {
+      const flag = item.confirmPending ? ' ⚠️confirmPending' : ''
+      console.log(`  ${item.tankId} ${item.modelKey} [${item.kind}]${flag} ${item.name} ${item.iconUrl}`)
+    }
     return
   }
 

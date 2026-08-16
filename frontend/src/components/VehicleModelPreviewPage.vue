@@ -93,9 +93,8 @@ const isSample = computed(() => selectedKey.value === 'sample')
 const renderScale = computed(() => canvasSize.value / VIEWBOX.width)
 const hullLayerStyle = computed(() => hullLayerTransform({ deg: hullDeg.value, renderScale: renderScale.value }))
 const turretLayerStyle = computed(() => {
-  if (!isTurreted.value || !pivot.value) {
-    return { transformOrigin: '0px 0px', transform: 'rotate(0deg)' }
-  }
+  // 无 pivot（turretless / metadata 缺 pivot）时不设置 style（img 也不渲染）
+  if (!isTurreted.value || !pivot.value) return null
   return pivotLayerTransform({ deg: turretDeg.value, pivot: pivot.value, renderScale: renderScale.value })
 })
 const pivotStyle = computed(() => {
