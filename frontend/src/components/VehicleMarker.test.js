@@ -20,6 +20,7 @@ const genericMarker = {
   lastKnown: false,
   markerStyle: { left: '10%', top: '20%', transform: 'translate(-50%, -50%)' },
   overlayInverseScale: 'scale(1)',
+  overlayInverse: 1,
   ariaLabel: 'You: reported',
 }
 
@@ -259,11 +260,28 @@ describe('PR3 §19–§25 — team outline/glow 与状态视觉', () => {
   })
 
   it('destroyed ✕ 与 name 保持 inverse-scale（不随地图 zoom 异常放大）；✕ 无 filter/opacity', () => {
-    const w = mountMarker({ ...genericMarker, destroyed: true, overlayInverseScale: 'scale(0.5)' })
+    const w = mountMarker({ ...genericMarker, destroyed: true, overlayInverseScale: 'scale(0.5)', overlayInverse: 0.5 })
     expect(w.find('.pb-death').attributes('style')).toContain('translate(-50%, -50%) scale(0.5)')
     expect(w.find('.pb-name').attributes('style')).toContain('translateX(-50%) scale(0.5)')
     // ✕ 不套用 .pb-graphics 的 grayscale/opacity（自身规则不含 filter/opacity）
     expect(markerSource).not.toMatch(/\.pb-death[^}]*filter:/)
     expect(markerSource).not.toMatch(/\.pb-death[^}]*opacity:/)
+  })
+
+  it('selected/recorder layout offset 按 overlayInverse 反缩放（zoom 下屏幕间距恒定，非仅 transform）', () => {
+    // inv = 1/1、1/2、1/4（对应 scale 1/2/4）：offset × scale 必须恒为 19 / 5——屏幕间距不按倍速增长
+    for (const inv of [1, 0.5, 0.25]) {
+      const w = mountMarker({ ...genericMarker, recorder: true, overlayInverse: inv, overlayInverseScale: `scale(${inv})` }, true)
+      const markStyle = w.find('.pb-selected-mark').attributes('style') || ''
+      expect(markStyle).toContain(`bottom: calc(100% + ${19 * inv}px)`)
+      expect(markStyle).toContain(`scale(${inv})`) // 元素尺寸同步反缩放
+      const badgeStyle = w.find('.pb-recorder-badge').attributes('style') || ''
+      expect(badgeStyle).toContain(`top: calc(100% + ${5 * inv}px)`)
+      expect(badgeStyle).toContain(`scale(${inv})`)
+    }
+    // 缺省 overlayInverse（旧 fixture 兼容）：回退 1× 间距
+    const legacy = mountMarker({ ...genericMarker, recorder: true }, true)
+    expect(legacy.find('.pb-selected-mark').attributes('style')).toContain('bottom: calc(100% + 19px)')
+    expect(legacy.find('.pb-recorder-badge').attributes('style')).toContain('top: calc(100% + 5px)')
   })
 })

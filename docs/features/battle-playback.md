@@ -78,8 +78,10 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
     `turretWorldYawDeg` 旋转（炮管不脱离炮塔）；**阵营视觉（PR3 §19–§21）**：整车 team outline+glow
     由 `VehicleMarker .pb-graphics` 双层 drop-shadow 表达（CSS vars `--pb-team-*/`--pb-enemy-*`，
     friendly 按地图显式 tone green|blue、enemy 固定 red，见 `data/mapTeamColors.js`；generic 素材
-    自身阵营色保留，叠加同一 team 光晕）；Selected 红色倒三角（label 上方、浮动、screen-space 恒定；
-    阵亡车为克制变体——缩小 + 淡化，destroyed 为主状态）、Recorder 空心菱形（tank 下方、friendly 色）、
+    自身阵营色保留，叠加同一 team 光晕）；Selected 红色倒三角（label 上方、浮动、screen-space 恒定——
+    元素尺寸与 layout offset 都按 overlayInverse（=1/view.scale）反缩放，zoom 下与车辆/name 的屏幕间距
+    不随 1×/2×/4× 增长；阵亡车为克制变体——缩小 + 淡化，destroyed 为主状态）、
+    Recorder 空心菱形（tank 下方、friendly 色、offset 同反缩放）、
     最后已知淡化、阵亡 ✕（覆盖车体中心、明显放大 30px、screen-space 恒定）均为独立 overlay，不烘焙进 PNG；
     标记**上方**常显固定字号坦克型号名小标签
     （`PlaybackVehicle.tankName`，后端 `ReplayDisplayNames.tankName(tankId, tankName)` 权威解析自

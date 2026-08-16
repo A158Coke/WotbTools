@@ -48,6 +48,11 @@
       `TRACER_FLASH_PEAK_REAL_SEC=0.1`），闪光结束不再渲染圆点（不残留孤立端点）；
     - 炮线端点仍为**事件时刻可信位置**（trustedPositionAt），绝不绑定车辆后来的位置——
       历史射击几何不变，移动目标不再出现"炮线穿过坦克"的假象。
+  - **overlay 屏幕间距恒定（PR3 增补 2 Review B2）**：selected 倒三角 / recorder 菱形的
+    layout offset（bottom/top calc）此前处于 viewport 整体 scale 空间——1×/2×/4× 下间距
+    按 19/38/76px、5/10/20px 增长；现按 `overlayInverse`（=1/view.scale，BattlePlayback
+    view model 新增数值字段）反缩放 → 任意 zoom 下与车辆/name 的屏幕间距恒定（19px/5px），
+    元素尺寸仍由 transform scale 保证；name/✕ 既有语义与 zoom/pan 算法未动。
 - **Tier X 专属俯视车型系统（PR1：ASSET_GENERATION_READY）**：新增 frontend/src/vehicle-models/ 集中静态 mapping（common/tankopedia-tier10.json 84 辆 Tier X → 81 个 baseModelKey，skin/特殊版本复用基础模型：sheridan / kpz-70 / type-5-heavy 三组合并）与 discriminated union 类型契约（turreted 必配 turret + turretPivot，turretless 禁止）；统一 SVG viewBox 320×320 技术契约 + metadata.json schema（8 键）；validator（validate.js，CI 与 CLI 共用）与 Tier X 100% 覆盖门禁（coverage.test.js：新增 Tier X 无 mapping → CI FAIL、mapping 孤儿/未知引用/半成品资产目录均 FAIL）；契约样例资产 assets/sample/；BlitzKit 辅助脚本（frontend/scripts/blitzkit-references.mjs，参考图 URL 已验证并缓存 84 张，gitignored）与 CLI 自检（validate-vehicle-models.mjs）；隐藏 admin QA 页 ?view=vehicle-models（仅 wotbtools-admin，车体/炮塔旋转 + pivot + 状态叠加预览，复用生产 BattlePlayback 渲染方式）；文档 docs/assets/tier-x-models/（README 交接清单 + 全局 SVG 生成规范 + 生成的 84 辆 inventory）。正式车型 SVG 由 ChatGPT 按规范生成，到达 ASSET_GENERATION_READY Gate 后暂停（本 PR 不含正式车型资产）。
 
 ### Changed

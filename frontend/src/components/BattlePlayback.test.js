@@ -642,6 +642,38 @@ describe('fixed-size vehicle markers', () => {
     expect(marker.find('.pb-name').attributes('style')).toContain('scale(0.25)')
   })
 
+  it('selected/recorder layout offset 随 zoom 反缩放：屏幕间距恒定，不按 1×/2×/4× 增长', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
+    const readOffset = (sel) => {
+      const style = wrapper.find(sel).attributes('style') || ''
+      const m = style.match(/calc\(100% \+ ([\d.]+)px\)/)
+      return m ? Number(m[1]) : null
+    }
+    // 1×：基准屏幕间距 19px（selected）/ 5px（recorder）
+    expect(viewportScale(wrapper)).toBe(1)
+    expect(readOffset('.pb-selected-mark')).toBe(19)
+    expect(readOffset('.pb-recorder-badge')).toBe(5)
+    // 放大到 2× 附近（1.2^4 ≈ 2.07×）：offset × viewportScale = 屏幕间距必须仍 ≈ 19/5
+    for (let i = 0; i < 4; i++) {
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+    }
+    const s2 = viewportScale(wrapper)
+    expect(s2).toBeGreaterThan(1.9)
+    expect(readOffset('.pb-selected-mark') * s2).toBeCloseTo(19, 4)
+    expect(readOffset('.pb-recorder-badge') * s2).toBeCloseTo(5, 4)
+    // 钳制到 4×：同样恒定
+    for (let i = 0; i < 12; i++) {
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+    }
+    const s4 = viewportScale(wrapper)
+    expect(s4).toBe(4)
+    expect(readOffset('.pb-selected-mark') * s4).toBeCloseTo(19, 4)
+    expect(readOffset('.pb-recorder-badge') * s4).toBeCloseTo(5, 4)
+  })
+
   it('marker map-coordinate anchor and child rotation/overlays survive zooming', async () => {
     stubRaf()
     const overview = makeOverview()

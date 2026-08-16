@@ -75,6 +75,21 @@ const genericTurretStyle = computed(() =>
   turretDeg.value != null ? { transform: `translate(-50%, -50%) rotate(${turretDeg.value}deg)` } : null,
 )
 
+// —— overlay 屏幕间距恒定（B2）：selected/recorder 的 layout offset（bottom/top calc）处于
+//    viewport 整体 scale 空间——乘以 overlayInverse（=1/view.scale）反缩放，zoom 下与车辆/
+//    name 的屏幕间距不按 1×/2×/4× 增长；元素自身尺寸仍由 transform scale(inv) 保证。 ——
+const overlayInv = computed(() =>
+  Number.isFinite(st.value.overlayInverse) && st.value.overlayInverse > 0 ? st.value.overlayInverse : 1,
+)
+const selectedMarkStyle = computed(() => ({
+  transform: `translateX(-50%) ${st.value.overlayInverseScale}`,
+  bottom: `calc(100% + ${19 * overlayInv.value}px)`,
+}))
+const recorderBadgeStyle = computed(() => ({
+  transform: `translate(-50%, -50%) rotate(45deg) ${st.value.overlayInverseScale}`,
+  top: `calc(100% + ${5 * overlayInv.value}px)`,
+}))
+
 // 仅保留有 CSS 规则消费的状态类；Selected/Recorder 改由独立元素表达
 // （.pb-selected-mark / .pb-recorder-badge），不再产出无样式 class。
 const stateClasses = computed(() => ({
@@ -176,7 +191,7 @@ const stateClasses = computed(() => ({
       class="pb-selected-mark"
       :class="{ 'pb-selected-restrained': st.destroyed }"
       aria-hidden="true"
-      :style="{ transform: `translateX(-50%) ${st.overlayInverseScale}` }"
+      :style="selectedMarkStyle"
     ></span>
 
     <!-- PR3 §23 Recorder：空心菱形（tank 下方居中、地图 friendly 色、静态） -->
@@ -184,7 +199,7 @@ const stateClasses = computed(() => ({
       v-if="st.recorder"
       class="pb-recorder-badge"
       aria-hidden="true"
-      :style="{ transform: `translate(-50%, -50%) rotate(45deg) ${st.overlayInverseScale}` }"
+      :style="recorderBadgeStyle"
     ></span>
 
     <span
@@ -277,7 +292,8 @@ const stateClasses = computed(() => ({
 /* —— PR3 §22 Selected 红色倒三角：label 上方、永远朝下、screen-space 恒定
    （overlayInverseScale 反缩放）、轻微上下浮动、深色阴影对比边。
    bottom 19px：name label 顶边 ≈ box 顶 +18px（底边 +2px + 高 ~16px），三角底边 +19px
-   避免与 label 重叠（PR3 增补 QA 微调）。 */
+   避免与 label 重叠（PR3 增补 QA 微调）；B2：实际 offset 由 inline style 按
+   overlayInverse 反缩放（19×inv px），此处为 1× 兜底值。 */
 .pb-selected-mark {
   position: absolute;
   bottom: calc(100% + 19px);
@@ -307,7 +323,8 @@ const stateClasses = computed(() => ({
   border-top-width: 6px;
 }
 
-/* —— PR3 §23 Recorder 空心菱形：tank 下方居中、地图 friendly 色（team outline）、静态 —— */
+/* —— PR3 §23 Recorder 空心菱形：tank 下方居中、地图 friendly 色（team outline）、静态；
+   B2：实际 offset 由 inline style 按 overlayInverse 反缩放（5×inv px），此处为 1× 兜底值。 —— */
 .pb-recorder-badge {
   position: absolute;
   left: 50%;
