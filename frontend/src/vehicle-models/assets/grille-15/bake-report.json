@@ -79,6 +79,16 @@
     "x": 160.1,
     "y": 220.36
   },
+  "turretRaster": {
+    "logicalMinX": 120.01,
+    "logicalMinY": -211.92,
+    "logicalMaxX": 200.19,
+    "logicalMaxY": 292.86,
+    "pixelWidth": 160,
+    "pixelHeight": 1010,
+    "pivotX": 40.09,
+    "pivotY": 432.28
+  },
   "fit": {
     "scale": 45.5642929230095,
     "tx": 160.10124392961723,
@@ -86,7 +96,7 @@
   },
   "assets": {
     "hullWebp": 43396,
-    "turretWebp": 9292
+    "turretWebp": 10616
   },
   "generation": {
     "method": "blitzkit-model-topdown-texture-bake",

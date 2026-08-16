@@ -4,7 +4,7 @@
   "source": {
     "provider": "blitzkit",
     "tankId": 3937,
-    "collisionModel": "https://api.blitzkit.app/tanks/3937/model.glb",
+    "modelGlb": "https://api.blitzkit.app/tanks/3937/model.glb",
     "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
   },
   "generation": {
@@ -26,6 +26,7 @@
     },
     "turretBounds": null,
     "gunBounds": null,
+    "turretRaster": null,
     "selectedModules": {
       "turretId": 7265,
       "gunId": 6753,
