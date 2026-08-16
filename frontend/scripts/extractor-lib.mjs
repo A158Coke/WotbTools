@@ -213,23 +213,40 @@ export function unionTriangles(triangles2d) {
 /**
  * 轻量确定性简化：合并共线连续点（三点叉积 ~0 且中间点落在两端之间时删除中间点）。
  * tolerance 控制共线判定（默认 1e-6）。不做平滑/美化。
+ *
+ * 2026-08-18 修复：polygon-clipping 的 ring 可能含相邻重复点（含闭合处首尾重复），
+ * 重复点会使叉积退化 → 真实角点被误删（Maus glacis 全宽带塌成细条、turret 环带塌成发丝）。
+ * 先按坐标去重再简化，保证真实几何不被破坏。
  */
 export function simplifyRing(ring, tolerance = 1e-6) {
   if (ring.length < 4) return ring
+  // 相邻重复点去重（含闭合处首尾重复：先去掉尾部与首点相同的点）
+  const pts = []
+  for (const p of ring) {
+    const last = pts[pts.length - 1]
+    if (!last || Math.abs(p[0] - last[0]) > 1e-9 || Math.abs(p[1] - last[1]) > 1e-9) pts.push(p)
+  }
+  if (pts.length > 1) {
+    const f = pts[0]
+    const l = pts[pts.length - 1]
+    if (Math.abs(f[0] - l[0]) <= 1e-9 && Math.abs(f[1] - l[1]) <= 1e-9) pts.pop()
+  }
+  if (pts.length < 4) return pts
   const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
   const dot = (o, a, b) => (a[0] - o[0]) * (b[0] - o[0]) + (a[1] - o[1]) * (b[1] - o[1])
   const out = []
-  for (let i = 0; i < ring.length; i++) {
-    const prev = ring[(i - 1 + ring.length) % ring.length]
-    const cur = ring[i]
-    const next = ring[(i + 1) % ring.length]
+  for (let i = 0; i < pts.length; i++) {
+    const prev = pts[(i - 1 + pts.length) % pts.length]
+    const cur = pts[i]
+    const next = pts[(i + 1) % pts.length]
     const c = cross(prev, cur, next)
     const d = dot(prev, next, cur) // cur 是否在 prev..next 之间
     if (Math.abs(c) > tolerance || d < 0) out.push(cur)
   }
-  // 兜底：全部被删时保留原始点
-  return out.length >= 3 ? out : ring
+  // 兜底：全部被删时保留去重后的点
+  return out.length >= 3 ? out : pts
 }
+
 
 /**
  * silhouette 多边形 → SVG path（outer ring + holes，fill-rule evenodd）。
@@ -280,12 +297,19 @@ export function triangleNormal(a, b, c) {
  *   topFacingCos: normal.z/|normal| 阈值（0.35 ≈ 70° 内视为顶面）；
  *   zTolerance:   高度层聚类容差（层间 gap 超过则分层，模型米）；
  *   minAreaM2:    区域最小投影面积（模型平方米），过滤碎块。
+ *   bumpDelta:    层内凸起判定的 z 抬升阈值（米）；
+ *   minBumpAreaM2: 凸起区域最小投影面积（模型平方米）；
+ *   bumpSignificanceRatio: 凸起区域在该层总凸起面积中的最低占比（< 该比例视为
+ *     粗糙网格面片伪影/噪声，过滤——"少而强"：只保留有语义的大特征）。
  * @returns {Array<{ z: number, polys: Array<{ring, holes}>, areaM2: number }>}
  */
 export function extractTopSurfaces(triangles3d, opts = {}) {
   const topFacingCos = opts.topFacingCos ?? 0.35
-  const zTolerance = opts.zTolerance ?? 0.15
-  const minAreaM2 = opts.minAreaM2 ?? 0.15
+  const zTolerance = opts.zTolerance ?? 0.5
+  const minAreaM2 = opts.minAreaM2 ?? 0.08
+  const bumpDelta = opts.bumpDelta ?? 0.08
+  const minBumpAreaM2 = opts.minBumpAreaM2 ?? 0.05
+  const bumpSignificanceRatio = opts.bumpSignificanceRatio ?? 0.1
   // 1) top-facing 筛选 + 重心 z
   const faces = []
   for (const tri of triangles3d) {
@@ -297,7 +321,7 @@ export function extractTopSurfaces(triangles3d, opts = {}) {
     const cz = (tri[0][2] + tri[1][2] + tri[2][2]) / 3
     faces.push({ tri, z: cz })
   }
-  // 2) 高度聚类（按 z 排序，gap > zTolerance 分层）
+  // 2) 粗高度聚类（zTolerance 0.5：连续曲面合并为主层，只分离明显高度带）
   faces.sort((a, b) => a.z - b.z)
   const layers = []
   for (const f of faces) {
@@ -305,22 +329,50 @@ export function extractTopSurfaces(triangles3d, opts = {}) {
     if (last && f.z - last.z <= zTolerance) last.faces.push(f)
     else layers.push({ z: f.z, faces: [f] })
   }
-  // 3) 每层投影 union；每个 polygon 单独面积过滤（防碎片混入）
+  // 3) 每层：主平面区域 + 层内凸起（raised regions：hatch / cupola / 甲板凸块）
   const out = []
   for (const layer of layers) {
-    const tris2d = layer.faces.map((f) => f.tri.map((p) => [p[0], p[1]]))
-    const polys = unionTriangles(tris2d)
-    if (polys.length === 0) continue
-    const kept = []
-    let area = 0
-    for (const poly of polys) {
-      const a = ringArea(poly.ring)
-      if (a < minAreaM2) continue
-      kept.push(poly)
-      area += a
+    // 面积加权平均 z（主面主导，避免小凸起抬高均值导致漏检）
+    const zMean =
+      layer.faces.reduce((s, f) => {
+        const [a, b, c] = f.tri
+        const area = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2
+        return { z: s.z + f.z * area, w: s.w + area }
+      }, { z: 0, w: 0 })
+    const zMeanFinal = zMean.w > 0 ? zMean.z / zMean.w : 0
+    const mainFaces = layer.faces.filter((f) => f.z <= zMeanFinal + bumpDelta)
+    const bumpFaces = layer.faces.filter((f) => f.z > zMeanFinal + bumpDelta)
+    // 主层 polygon 用 minAreaM2（过滤曲面碎块）；bump（凸起特征）用 minBumpAreaM2（保留 hatch/cupola）
+    const keepPolys = (fs, minA) => {
+      const tris2d = fs.map((f) => f.tri.map((p) => [p[0], p[1]]))
+      const polys = unionTriangles(tris2d)
+      const kept = []
+      let area = 0
+      for (const poly of polys) {
+        const a = ringArea(poly.ring)
+        if (a < minA) continue
+        kept.push(poly)
+        area += a
+      }
+      return kept.length > 0 ? { kept, area } : null
     }
-    if (kept.length === 0) continue
-    out.push({ z: +layer.z.toFixed(2), polys: kept, areaM2: +area.toFixed(3) })
+    const main = keepPolys(mainFaces, minAreaM2)
+    if (!main) continue
+    const entry = { z: +layer.z.toFixed(2), polys: main.kept, areaM2: +main.area.toFixed(3), bumps: [] }
+    if (bumpFaces.length >= 2) {
+      // ≥2 个抬升面才视为凸起特征（单个游离三角形视为网格伪影）
+      const bump = keepPolys(bumpFaces, minBumpAreaM2)
+      if (bump) {
+        // 显著性过滤：该层凸起总量中占比过低的碎块（粗糙网格面片伪影）丢弃，
+        // 只保留有语义的大特征（hatch / cupola / 甲板条带）。
+        const total = bump.area
+        const kept = bump.kept.filter((p) => ringArea(p.ring) >= Math.max(minBumpAreaM2, total * bumpSignificanceRatio))
+        if (kept.length > 0) {
+          entry.bumps = [{ z: +(zMeanFinal + bumpDelta + 0.05).toFixed(2), polys: kept, areaM2: +kept.reduce((s, p) => s + ringArea(p.ring), 0).toFixed(3) }]
+        }
+      }
+    }
+    out.push(entry)
   }
   return out
 }
@@ -409,6 +461,49 @@ export function extractMajorEdges(triangles3d, opts = {}) {
 }
 
 /**
+ * 边去重聚类：近乎平行（角度差 ≤ angleDeg）且位置重合（中点距离 ≤ maxDistM）的边
+ * 视为同一条结构线，只保留最长的一条。
+ *
+ * 目的（2026-08-18，少而强）：低多边形模型的斜切台阶会被拆成多条交叉短线
+ * （Maus 前甲板 4 条 ~110.9 交叉斜线 → 渲染成 X 形噪纹）；聚类后同一条结构只出一条线。
+ * 与数量上限配合：先聚类去重，再按长度排序截断。
+ *
+ * @param {Array<{p1:[x,y], p2:[x,y], reason:string}>} edges 投影后的 2D 边（模型坐标）
+ * @param {object} opts { angleDeg=15, maxDistM=0.15 }
+ * @returns {Array<{p1, p2, reason}>} 每条结构线保留的最长边
+ */
+export function clusterEdges(edges, opts = {}) {
+  const angleDeg = opts.angleDeg ?? 15
+  const maxDistM = opts.maxDistM ?? 0.15
+  const clusters = []
+  for (const e of edges) {
+    const dx = e.p2[0] - e.p1[0]
+    const dy = e.p2[1] - e.p1[1]
+    const len = Math.hypot(dx, dy)
+    let angle = (Math.atan2(dy, dx) * 180) / Math.PI
+    angle = ((angle % 180) + 180) % 180
+    const mid = { x: (e.p1[0] + e.p2[0]) / 2, y: (e.p1[1] + e.p2[1]) / 2 }
+    let best = -1
+    for (let i = 0; i < clusters.length; i++) {
+      const c = clusters[i]
+      let da = Math.abs(angle - c.angle)
+      da = Math.min(da, 180 - da)
+      const dist = Math.hypot(mid.x - c.mid.x, mid.y - c.mid.y)
+      if (da <= angleDeg && dist <= maxDistM) {
+        best = i
+        break
+      }
+    }
+    if (best >= 0) {
+      if (len > clusters[best].len) clusters[best] = { angle, mid, len, edge: e }
+    } else {
+      clusters.push({ angle, mid, len, edge: e })
+    }
+  }
+  return clusters.map((c) => c.edge)
+}
+
+/**
  * 屏幕空间过滤：SVG units 阈值 = minPx × (viewBox 宽 / markerPx)。
  * markerPx 为实际 marker 屏幕尺寸（BattlePlayback 28px 桌面 / 22px 移动端）。
  */
@@ -440,4 +535,16 @@ export function edgesToSvgPath(edges, fit, stroke) {
     })
     .join(' ')
   return { d, stroke, strokeWidth: 5, fill: 'none' }
+}
+/**
+ * 层内凸起（hatch / cupola / 甲板凸块）→ SVG fill paths。
+ */
+export function bumpsToSvgPaths(surfaces, fit, fill) {
+  const paths = []
+  for (const s of surfaces) {
+    for (const b of s.bumps) {
+      paths.push(...silhouetteToSvgPaths(b.polys, fit, fill))
+    }
+  }
+  return paths
 }
