@@ -1,10 +1,17 @@
 <script setup>
 /**
- * VehicleMarker（计划 §17）——Battle Playback 正式单车 marker 组件。
+ * VehicleMarker（计划 §17/§19–§25）——Battle Playback 正式单车 marker 组件。
  *
  * 职责：dedicated/generic model display + hull rotation + turret rotation
- * （含 OFF_CENTER turret assembly 嵌套 transform）。Selected/Recorder/Destroyed/
- * Last-known 视觉状态沿用现有 class（PR3 重设计后整体迁移）。
+ * （含 OFF_CENTER turret assembly 嵌套 transform）+ PR3 状态视觉：
+ * - team outline/glow（§19/§20/§21：friendly green|blue / enemy red，CSS vars 由
+ *   BattlePlayback 根元素提供；整车 silhouette 表达，generic 与 dedicated 同构）；
+ * - Selected 红色倒三角（§22：label 上方、朝下、screen-space 恒定、轻微浮动、
+ *   prefers-reduced-motion 停止浮动）；
+ * - Recorder 空心菱形（§23：tank 下方居中、地图 friendly 色、静态）；
+ * - Destroyed（§24：中度变暗 + grayscale、team outline 弱化保留、红色 ✕ 完整、
+ *   一次性 transition <1s、reduced-motion 直达终态）；
+ * - Last-known（§25：模型明显弱化、仅弱 outline、label 文字弱化背景正常）。
  * 不负责：replay parsing / Tankopedia lookup / resource fallback decision /
  * 全局 label collision / playback timeline / map orchestration（外层 BattlePlayback 完成）。
  *
@@ -65,12 +72,12 @@ const genericTurretStyle = computed(() =>
   turretDeg.value != null ? { transform: `translate(-50%, -50%) rotate(${turretDeg.value}deg)` } : null,
 )
 
+// 仅保留有 CSS 规则消费的状态类；Selected/Recorder 改由独立元素表达
+// （.pb-selected-mark / .pb-recorder-badge），不再产出无样式 class。
 const stateClasses = computed(() => ({
   'pb-last-known': st.value.lastKnown && !st.value.destroyed,
   'pb-destroyed': st.value.destroyed,
-  'pb-recorder': st.value.recorder,
-  'pb-selected': props.selected,
-  // PR92 Review B3：dedicated 阵营语义（generic 仍由 friendly/enemy PNG 表达，不加 class 副作用）
+  // team 语义 token（PR3 §19/§20：friendly green|blue / enemy red；generic + dedicated 都走）
   'pb-friendly': st.value.friendly === true,
   'pb-enemy': st.value.friendly === false,
 }))
@@ -86,11 +93,10 @@ const stateClasses = computed(() => ({
     :data-test="`pb-marker-${st.vehicle.accountId}`"
     @click="emit('select')"
   >
-    <!-- 车型视觉层容器：destroyed 的 opacity/grayscale 精确作用于此处（而非整个 button）——
-         pb-death ✕ / pb-name 是 button 直接子元素、在容器外，保持完整 opacity（parent opacity
-         无法被子元素抵消，故不能放在 button 上）。容器 absolute inset:0 保持与 button 同盒，
-         imgs 的百分比定位（containing block）不变。 -->
-    <div class="pb-graphics" :class="{ 'pb-graphics-dedicated': isDedicated }">
+    <!-- 车型视觉层容器：destroyed/last-known 的 opacity/grayscale/team 光晕精确作用于此处
+         （而非整个 button）——pb-death ✕ / pb-selected-mark / pb-recorder-badge / pb-name
+         是 button 直接子元素、在容器外，保持完整强度（parent opacity 无法被子元素抵消）。 -->
+    <div class="pb-graphics">
       <!-- dedicated turreted：hull 满盒 + turret assembly（父层绕盒中心 H，子层绕 image-local pivot T-H） -->
       <template v-if="isDedicated && isTurreted">
         <img
@@ -149,12 +155,30 @@ const stateClasses = computed(() => ({
       </template>
     </div>
 
+    <!-- PR3 §24 阵亡 ✕：红色 + 大号 + 多层描边（PR #92 Review 通过项）——容器外，完整强度 -->
     <span
       v-if="st.destroyed"
       class="pb-death"
       aria-hidden="true"
       :style="{ color: '#ff4d4f', fontSize: '22px', fontWeight: '800', zIndex: 6, transform: `translateX(-50%) ${st.overlayInverseScale}` }"
     >✕</span>
+
+    <!-- PR3 §22 Selected：红色倒三角（label 上方、永远朝下、screen-space 恒定、轻微浮动） -->
+    <span
+      v-if="selected"
+      class="pb-selected-mark"
+      aria-hidden="true"
+      :style="{ transform: `translateX(-50%) ${st.overlayInverseScale}` }"
+    ></span>
+
+    <!-- PR3 §23 Recorder：空心菱形（tank 下方居中、地图 friendly 色、静态） -->
+    <span
+      v-if="st.recorder"
+      class="pb-recorder-badge"
+      aria-hidden="true"
+      :style="{ transform: `translate(-50%, -50%) rotate(45deg) ${st.overlayInverseScale}` }"
+    ></span>
+
     <span
       class="pb-name"
       aria-hidden="true"
@@ -164,7 +188,7 @@ const stateClasses = computed(() => ({
 </template>
 
 <style scoped>
-/* —— marker 内部样式（原 BattlePlayback.vue，随组件迁移；父组件 scoped 不作用于子元素）—— */
+/* —— marker 内部样式（随组件迁移；父组件 scoped 不作用于子元素）—— */
 /* generic 素材 512×512 含大量透明留白：放大到按钮 131% 居中，共同 pivot 旋转 */
 .pb-hull, .pb-turret {
   position: absolute;
@@ -200,25 +224,81 @@ const stateClasses = computed(() => ({
   position: absolute;
   inset: 0;
 }
-/* 阵亡（PR #92 Review Blocker）：opacity/grayscale 精确作用于视觉层容器——
-   整棵子树恰好 .35 一次（assembly 内不再叠加 opacity，避免 0.35×0.35=0.1225）；
-   pb-death ✕ / pb-name 在容器外，保持完整 opacity。 */
+
+/* —— PR3 §19/§20/§21 team outline + glow（整车 silhouette；generic + dedicated）——
+   双层 drop-shadow：近扩散 = outline，远扩散 = glow；色值来自 BattlePlayback 根元素
+   CSS vars（friendly = 地图显式 tone green|blue；enemy = red）。
+   :not(pb-destroyed/pb-last-known)：与弱化规则互斥（§24/§25 弱化由下面规则负责）。 */
+.pb-friendly:not(.pb-destroyed):not(.pb-last-known) .pb-graphics {
+  filter:
+    drop-shadow(0 0 1px var(--pb-team-outline, rgba(255, 255, 255, 0.5)))
+    drop-shadow(0 0 6px var(--pb-team-glow, transparent));
+}
+.pb-enemy:not(.pb-destroyed):not(.pb-last-known) .pb-graphics {
+  filter:
+    drop-shadow(0 0 1px var(--pb-enemy-outline, rgba(255, 255, 255, 0.5)))
+    drop-shadow(0 0 6px var(--pb-enemy-glow, transparent));
+}
+
+/* —— PR3 §24 Destroyed：中度变暗（不再极端透明）+ grayscale + team outline 弱化保留
+   （drop-shadow 在 grayscale 之后绘制 → 轮廓不被灰化）；一次性 transition <1s；
+   ✕ 在容器外保持完整强度。 —— */
 .pb-destroyed .pb-graphics {
+  opacity: 0.55;
+  transition: opacity 0.45s ease, filter 0.45s ease;
+}
+.pb-destroyed.pb-friendly .pb-graphics {
+  filter: grayscale(1) drop-shadow(0 0 1px var(--pb-team-outline, rgba(255, 255, 255, 0.35)));
+}
+.pb-destroyed.pb-enemy .pb-graphics {
+  filter: grayscale(1) drop-shadow(0 0 1px var(--pb-enemy-outline, rgba(255, 255, 255, 0.35)));
+}
+
+/* —— PR3 §25 Last-known：模型明显弱于 OBSERVED（淡化 + 仅弱 outline，无 glow）；
+   label 文字弱化、background 正常（见 .pb-name）；Selected/Recorder 正常强度（容器外）。 */
+.pb-last-known.pb-friendly .pb-graphics {
   opacity: 0.35;
-  filter: grayscale(1);
+  filter: drop-shadow(0 0 1px var(--pb-team-outline, rgba(255, 255, 255, 0.35)));
 }
-/* PR92 Review B3 —— dedicated 阵营 halo（只作用于 dedicated 视觉层）：
-   暖 amber（友军）/ 冷 cyan（敌军）外围光晕——不修改原始车型纹理、不生成两套资产、
-   不影响 hull/turret 独立旋转；generic 路径不加（保持 friendly/enemy PNG 原语义）。
-   :not(.pb-destroyed)：与 .pb-destroyed .pb-graphics 的 filter 互斥（两者 specificity
-   相同、后写者胜——若不加排除，阵亡灰阶会被 halo 覆盖）；destroyed 保持 grayscale 原语义。 */
-.pb-friendly:not(.pb-destroyed) .pb-graphics-dedicated {
-  filter: drop-shadow(0 0 2px rgba(255, 166, 77, 0.95)) drop-shadow(0 0 7px rgba(255, 166, 77, 0.55));
+.pb-last-known.pb-enemy .pb-graphics {
+  opacity: 0.35;
+  filter: drop-shadow(0 0 1px var(--pb-enemy-outline, rgba(255, 255, 255, 0.35)));
 }
-.pb-enemy:not(.pb-destroyed) .pb-graphics-dedicated {
-  filter: drop-shadow(0 0 2px rgba(64, 192, 255, 0.95)) drop-shadow(0 0 7px rgba(64, 192, 255, 0.55));
+
+/* —— PR3 §22 Selected 红色倒三角：label 上方、永远朝下、screen-space 恒定
+   （overlayInverseScale 反缩放）、轻微上下浮动、深色阴影对比边。 */
+.pb-selected-mark {
+  position: absolute;
+  bottom: calc(100% + 15px);
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 9px solid #e5484d;
+  z-index: 7;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+  animation: pb-selected-float 1.6s ease-in-out infinite;
 }
-/* 阵亡 ✕（PR #92 Review A）：红色 + 更大 + 多层描边——深/亮色地图背景都清晰可读，
+@keyframes pb-selected-float {
+  0%, 100% { margin-top: 0; }
+  50% { margin-top: 2px; }
+}
+
+/* —— PR3 §23 Recorder 空心菱形：tank 下方居中、地图 friendly 色（team outline）、静态 —— */
+.pb-recorder-badge {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 5px);
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid var(--pb-team-outline, #ffd76a);
+  z-index: 4;
+  pointer-events: none;
+}
+
+/* 阵亡 ✕（PR #92 Review A 通过项）：红色 + 更大 + 多层描边——深/亮色地图背景都清晰可读，
    与 last-known（仅淡化，无 ✕）语义区分明显。颜色/字号/z-index 由 inline style 提供
    （可测试）；此块负责位置/形状/描边。 */
 .pb-death {
@@ -236,7 +316,8 @@ const stateClasses = computed(() => ({
     -1px -1px 0 rgba(0, 0, 0, 0.55),
     1px 1px 0 rgba(0, 0, 0, 0.55);
 }
-/* 常显坦克型号名标签：位于图标上方，经 overlayInverseScale 反缩放 → 字号不随地图缩放 */
+/* 常显坦克型号名标签：位于图标上方，经 overlayInverseScale 反缩放 → 字号不随地图缩放；
+   last-known 时仅文字弱化（§25：background 保持正常） */
 .pb-name {
   position: absolute;
   bottom: calc(100% + 2px);
@@ -255,5 +336,13 @@ const stateClasses = computed(() => ({
   z-index: 5;
   pointer-events: none;
 }
-</style>
+.pb-last-known .pb-name {
+  color: rgba(255, 255, 255, 0.7);
+}
 
+/* —— PR3 §22/§24 reduced motion：停止浮动动画、跳过 destroyed transition（直达终态） —— */
+@media (prefers-reduced-motion: reduce) {
+  .pb-selected-mark { animation: none; }
+  .pb-destroyed .pb-graphics { transition: none; }
+}
+</style>

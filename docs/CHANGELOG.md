@@ -5,6 +5,30 @@
 ## [Unreleased]
 
 ### Added
+- **PR3 — Tactical Marker State Visual Redesign（§19–§25）**：
+  - **Team Color System（§19/§20）**：新增 frontend/src/data/mapTeamColors.js——28 张地图
+    全部显式配置 friendly tone（green|blue，与地图主基色避免混淆；初值可视觉 QA 调整）；
+    enemy 固定 red；semantic tokens（TEAM_TOKENS：green/blue/red × text/outline/glow，
+    Battle Playback 局部 CSS vars --pb-team-*/--pb-enemy-*，根元素按 mapCode 注入）；
+    **新增完整性测试（CI 门禁）：mapImages 每 key 必须显式配置 tone，值域合法，
+    无多余 key——新增地图未配置 → CI FAIL，禁止默认色 silent fallback**。
+  - **整车 team outline + glow（§21）**：VehicleMarker .pb-graphics 容器双层 drop-shadow
+    （近扩散 outline + 远扩散 glow），generic 与 dedicated 同构；PR2 B3 过渡色
+    （暖橙/冷青，仅 dedicated）被正式 team token 取代（friendly green|blue / enemy red）。
+  - **Selected 红色倒三角（§22）**：生产 marker 旧白色圆环 → label 上方红色倒三角
+    （#e5484d，永远朝下、screen-space 恒定经 overlayInverseScale 反缩放、轻微上下浮动
+    1.6s 循环、深色阴影对比边）；prefers-reduced-motion 停止浮动。
+  - **Recorder 空心菱形（§23）**：黄色圆环 → tank 下方居中空心菱形（地图 friendly 色
+    var(--pb-team-outline)、静态、screen-space 恒定）。
+  - **Destroyed（§24）**：极端透明 0.35 → 中度变暗 0.55 + grayscale；team outline 弱化保留
+    （drop-shadow 在 grayscale 后绘制不灰化）；一次性 transition 0.45s（reduced-motion 直达
+    终态）；红色 ✕（PR2 用户要求通过项）保持完整强度（容器外）。
+  - **Last-known（§25）**：root opacity 0.3（会连带淡化 ✕/label）→ .pb-graphics 容器淡化
+    0.35 + 仅弱 outline（无 glow）；label 仅文字弱化（background 保持正常）；
+    Selected/Recorder 不受影响（容器外、正常强度）。
+  - **QA 页**：新增阵营预览切换（friendly-green / friendly-blue / enemy-red，i18n 三语 +
+    测试），canvas 注入 team CSS vars + team class，hull/turret outline/glow 与生产同构；
+    destroyed 预览同步 PR3 语义（0.55 + grayscale + 弱 outline）。
 - **Tier X 专属俯视车型系统（PR1：ASSET_GENERATION_READY）**：新增 frontend/src/vehicle-models/ 集中静态 mapping（common/tankopedia-tier10.json 84 辆 Tier X → 81 个 baseModelKey，skin/特殊版本复用基础模型：sheridan / kpz-70 / type-5-heavy 三组合并）与 discriminated union 类型契约（turreted 必配 turret + turretPivot，turretless 禁止）；统一 SVG viewBox 320×320 技术契约 + metadata.json schema（8 键）；validator（validate.js，CI 与 CLI 共用）与 Tier X 100% 覆盖门禁（coverage.test.js：新增 Tier X 无 mapping → CI FAIL、mapping 孤儿/未知引用/半成品资产目录均 FAIL）；契约样例资产 assets/sample/；BlitzKit 辅助脚本（frontend/scripts/blitzkit-references.mjs，参考图 URL 已验证并缓存 84 张，gitignored）与 CLI 自检（validate-vehicle-models.mjs）；隐藏 admin QA 页 ?view=vehicle-models（仅 wotbtools-admin，车体/炮塔旋转 + pivot + 状态叠加预览，复用生产 BattlePlayback 渲染方式）；文档 docs/assets/tier-x-models/（README 交接清单 + 全局 SVG 生成规范 + 生成的 84 辆 inventory）。正式车型 SVG 由 ChatGPT 按规范生成，到达 ASSET_GENERATION_READY Gate 后暂停（本 PR 不含正式车型资产）。
 
 ### Changed

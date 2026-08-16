@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { mapImages } from '../data/mapImages'
+import { teamCssVars } from '../data/mapTeamColors'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 import { createMapView } from '../utils/mapView'
 import VehicleMarker from './VehicleMarker.vue'
@@ -847,7 +848,9 @@ const mapStyle = computed(() => ({
   '--map-spawn-friendly': palette.value.spawnFriendly,
   '--map-spawn-enemy': palette.value.spawnEnemy,
   '--map-route-outline': palette.value.routeOutline,
-  '--map-death-mark': palette.value.deathMark
+  '--map-death-mark': palette.value.deathMark,
+  // PR3 §19/§20：marker team tokens（friendly 按地图显式 tone，enemy 固定 red）
+  ...teamCssVars(props.overview.mapCode)
 }))
 </script>
 
@@ -1272,27 +1275,10 @@ const mapStyle = computed(() => ({
 @media (max-width: 768px) {
   .pb-vehicle { width: 22px; height: 22px; }
 }
-/* marker 内部样式（hull/turret/death/name/grayscale）已随 VehicleMarker 组件迁移。
-   last-known：整标记淡化（无 ✕）；destroyed：车辆淡化/灰化由 VehicleMarker .pb-graphics
-   容器承担（root 不再 opacity，否则红色 ✕ 也会被淡到 35%——opacity 无法被子元素抵消） */
-.pb-last-known { opacity: .3; }
-.pb-recorder { filter: drop-shadow(0 0 3px #ffd76a); }
-.pb-recorder::after {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border: 2px solid #ffd76a;
-  border-radius: 50%;
-  z-index: 3;
-}
-.pb-selected::before {
-  content: '';
-  position: absolute;
-  inset: -3px;
-  border: 2px solid #fff;
-  border-radius: 50%;
-  z-index: 3;
-}
+/* marker 内部样式（hull/turret/death/name/状态视觉）全部随 VehicleMarker 组件迁移：
+   PR3 —— last-known/destroyed 弱化由 VehicleMarker .pb-graphics 容器承担（root 不再
+   opacity，否则 ✕/label 也会被淡掉）；Selected 红色倒三角、Recorder 空心菱形、
+   team outline/glow（friendly green|blue / enemy red，CSS vars 由根元素提供）。 */
 .pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.16)); stroke-width: .5; fill: none; }
 /* 激光炮线：外层光晕/内芯线宽逐元素绑定（6/view.scale、1.75/view.scale），不随缩放变粗 */
 .pb-tracer, .pb-tracer-core { stroke-linecap: round; }
