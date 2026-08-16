@@ -107,11 +107,23 @@
       cupola/侧裙板条等真实结构保留；
     - extraction-report 增加 merge 统计（rawProjectedRegions / mergedVisualSurfaces /
       tessellationRegionsMerged / retainedRegions / removedTinyRegions）；
-      debug 增加 merged-visual-surfaces.svg；
-    - 测试：bump 相关用例全部替换为 merge 语义（共面合并/斜面合并/台阶分离/隔离凸起/
       小凸起保留/遮挡过滤/确定性/无旧 bump 色）——extractor 61 用例，全套 449 全绿。
-  - 人工/ChatGPT 只做 visual QA（admin 预览页验证 pivot/方向/结构）；AI 手绘草稿归档
-    docs/assets/tier-x-models/manual-draft/（不参与正式流程）；AI 手绘 metadata 字段移除。
+  - **fidelity correctness audit（2026-08-18，Blocker 1/2/3/4）**：
+    - turret 比例审计：models.pb turret bounding_box（引擎坐标 ±1.534 / -2.374..2.149 / -0.034..1.497）
+      与 turret_01 mesh bbox（模型坐标 ±1.534 / -3.519..1.004 / 2.106..3.638）长度一致（4.523m），
+      差 = turretOrigin；最终 SVG turret 主体 bbox 比例 1.469 vs source 1.474（误差 0.4%）——
+      纵向长度真实，无异常拉长（新增 bbox projection fidelity 测试锁定）；
+    - over-merge 审计：merge 边连续性统计（每 large surface 的合并边 maxDz/maxAng、
+      dz>0.15/ang>10° 计数）——Maus 主甲板平坦（z 2.12 恒定）、前/后带与环带均为连续斜面，
+      无跨真实结构边界合并（真实台阶隔垂直壁 → 顶面不共享边 → 天然分离）；
+    - feature-fidelity-report.json（developer-only）：按 z 带/相对位置/面积自动分类
+      top-view 结构类别（upper-deck/glacis/engine-deck/hatch/roof/ring 等），每类标记
+      detected/retained/面积/mergedInto/sourceBBox——glacis 7→3、engine 4→3、roof 1→1、
+      ring 6→3（被 roof 遮挡的面片块正确剔除），无大结构消失；
+    - source-vs-output debug：source-top-projection.svg（ground truth，无过滤）/
+      merged-surfaces.svg / final-hull.svg / final-turret.svg；
+    - 新增测试：独立组件不合并、低噪声高度差合并、真实 deck step 不合并、
+      bbox projection fidelity、feature report 确定性——extractor 66 用例，全套 454 全绿。
 
 ### Fixed
 - **Tier X 车型系统 ASSET_GENERATION_READY Gate 3 blocker 修复（PR1 加固）**：
