@@ -1,0 +1,92 @@
+{
+  "modelKey": "kranvagn",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 4481,
+    "modelGlb": "https://api.blitzkit.app/tanks/4481/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 134.47
+  },
+  "turretRaster": {
+    "logicalMinX": 111.05,
+    "logicalMinY": -58.7,
+    "logicalMaxX": 208.95,
+    "logicalMaxY": 289.6,
+    "pixelWidth": 196,
+    "pixelHeight": 697,
+    "pivotX": 48.95,
+    "pivotY": 193.17
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "physicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.5718821287155151,
+        -3.537311553955078
+      ],
+      "max": [
+        1.5718821287155151,
+        3.4247539043426514
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.1925126314163208,
+        -0.41344156861305237
+      ],
+      "max": [
+        1.1925126314163208,
+        1.9341686964035034
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -1.2102996110916138,
+        -3.1477463245391846
+      ],
+      "max": [
+        1.2102996110916138,
+        5.463137626647949
+      ]
+    },
+    "turretRaster": {
+      "logicalMinX": 111.05,
+      "logicalMinY": -58.7,
+      "logicalMaxX": 208.95,
+      "logicalMaxY": 289.6,
+      "pixelWidth": 196,
+      "pixelHeight": 697,
+      "pivotX": 48.95,
+      "pivotY": 193.17
+    },
+    "selectedModules": {
+      "turretId": 7041,
+      "gunId": 6785,
+      "trackId": 7297,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "S16_Kranvagn_mtr",
+      "S16_Kranvagn_mtr",
+      "S16_Kranvagn_mtr",
+      "S16_Kranvagn_track_mtr",
+      "S16_Kranvagn_track_mtr",
+      "S16_Kranvagn_track_mtr"
+    ],
+    "desaturate": 0.75,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

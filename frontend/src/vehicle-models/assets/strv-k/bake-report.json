@@ -1,0 +1,111 @@
+{
+  "tankId": 12161,
+  "modelKey": "strv-k",
+  "kind": "turreted",
+  "sourceModel": {
+    "glbBytes": 3633068
+  },
+  "selectedModules": {
+    "turretId": 17537,
+    "gunId": 18561,
+    "trackId": 18305,
+    "turretModelId": 1,
+    "gunModelId": 1
+  },
+  "output": {
+    "physicalPixelSize": [
+      640,
+      640
+    ],
+    "logicalViewBox": "0 0 320 320",
+    "supersample": 2
+  },
+  "materials": [
+    "S31_Strv_K_mtr",
+    "S31_Strv_K_track_mtr",
+    "S31_Strv_K_grill_mtr"
+  ],
+  "texturesUsed": [
+    "S31_Strv_K_mtr",
+    "S31_Strv_K_mtr",
+    "S31_Strv_K_mtr",
+    "S31_Strv_K_track_mtr",
+    "S31_Strv_K_track_mtr",
+    "S31_Strv_K_track_mtr",
+    "S31_Strv_K_grill_mtr",
+    "S31_Strv_K_grill_mtr",
+    "S31_Strv_K_grill_mtr"
+  ],
+  "uvSetsUsed": [
+    "TEXCOORD_0"
+  ],
+  "metallicRoughness": {
+    "present": true,
+    "used": false,
+    "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
+  },
+  "visibleTriangleCounts": {
+    "hull": 3756,
+    "turret": 2243
+  },
+  "alphaTested": 2,
+  "hullBounds": {
+    "min": [
+      -1.5718778371810913,
+      -3.5419185161590576
+    ],
+    "max": [
+      1.5718836784362793,
+      3.424891471862793
+    ]
+  },
+  "turretBounds": {
+    "min": [
+      -1.6565278768539429,
+      -1.9225107431411743
+    ],
+    "max": [
+      1.6535874605178833,
+      1.8822529315948486
+    ]
+  },
+  "gunBounds": {
+    "min": [
+      -0.15004120767116547,
+      1.958849310874939
+    ],
+    "max": [
+      0.15003494918346405,
+      6.0677409172058105
+    ]
+  },
+  "turretPivot": {
+    "x": 160.06,
+    "y": 135.76
+  },
+  "turretRaster": {
+    "logicalMinX": 93.1,
+    "logicalMinY": -82.89,
+    "logicalMaxX": 226.9,
+    "logicalMaxY": 240.07,
+    "pixelWidth": 268,
+    "pixelHeight": 646,
+    "pivotX": 66.96,
+    "pivotY": 218.65
+  },
+  "fit": {
+    "scale": 40.4202210888713,
+    "tx": 160.05942613919842,
+    "ty": 162.36512950191607
+  },
+  "assets": {
+    "hullWebp": 37908,
+    "turretWebp": 25974
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "desaturate": 0.75,
+    "shading": "baseColor x occlusion x normal-z relief (restrained)",
+    "determinism": "pure arithmetic; same input -> same output"
+  }
+}

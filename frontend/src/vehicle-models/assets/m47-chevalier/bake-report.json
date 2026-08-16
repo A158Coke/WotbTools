@@ -1,0 +1,107 @@
+{
+  "tankId": 23105,
+  "modelKey": "m47-chevalier",
+  "kind": "turreted",
+  "sourceModel": {
+    "glbBytes": 3146296
+  },
+  "selectedModules": {
+    "turretId": 30529,
+    "gunId": 29249,
+    "trackId": 36929,
+    "turretModelId": 1,
+    "gunModelId": 1
+  },
+  "output": {
+    "physicalPixelSize": [
+      640,
+      640
+    ],
+    "logicalViewBox": "0 0 320 320",
+    "supersample": 2
+  },
+  "materials": [
+    "F142_M47_Chevalier_mtr",
+    "F142_M47_Chevalier_track_mtr"
+  ],
+  "texturesUsed": [
+    "F142_M47_Chevalier_mtr",
+    "F142_M47_Chevalier_mtr",
+    "F142_M47_Chevalier_mtr",
+    "F142_M47_Chevalier_track_mtr",
+    "F142_M47_Chevalier_track_mtr",
+    "F142_M47_Chevalier_track_mtr"
+  ],
+  "uvSetsUsed": [
+    "TEXCOORD_0"
+  ],
+  "metallicRoughness": {
+    "present": true,
+    "used": false,
+    "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
+  },
+  "visibleTriangleCounts": {
+    "hull": 4417,
+    "turret": 2083
+  },
+  "alphaTested": 1,
+  "hullBounds": {
+    "min": [
+      -1.8549951314926147,
+      -3.896199941635132
+    ],
+    "max": [
+      1.8549951314926147,
+      3.771461009979248
+    ]
+  },
+  "turretBounds": {
+    "min": [
+      -1.2458248138427734,
+      -1.905456781387329
+    ],
+    "max": [
+      1.2500340938568115,
+      1.8339102268218994
+    ]
+  },
+  "gunBounds": {
+    "min": [
+      -0.13067908585071564,
+      1.632520079612732
+    ],
+    "max": [
+      0.13067913055419922,
+      6.179993152618408
+    ]
+  },
+  "turretPivot": {
+    "x": 160.1,
+    "y": 141.85
+  },
+  "turretRaster": {
+    "logicalMinX": 114.25,
+    "logicalMinY": -64.67,
+    "logicalMaxX": 205.91,
+    "logicalMaxY": 232.27,
+    "pixelWidth": 183,
+    "pixelHeight": 594,
+    "pivotX": 45.85,
+    "pivotY": 206.52
+  },
+  "fit": {
+    "scale": 36.725671854427894,
+    "tx": 160,
+    "ty": 162.29056053573294
+  },
+  "assets": {
+    "hullWebp": 30696,
+    "turretWebp": 12868
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "desaturate": 0.75,
+    "shading": "baseColor x occlusion x normal-z relief (restrained)",
+    "determinism": "pure arithmetic; same input -> same output"
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "modelKey": "kpz-50-t",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 23313,
+    "modelGlb": "https://api.blitzkit.app/tanks/23313/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 158.99,
+    "y": 144.28
+  },
+  "turretRaster": {
+    "logicalMinX": 90.7,
+    "logicalMinY": -77.94,
+    "logicalMaxX": 222.91,
+    "logicalMaxY": 240.71,
+    "pixelWidth": 265,
+    "pixelHeight": 638,
+    "pivotX": 68.29,
+    "pivotY": 222.22
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "physicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.6214983463287354,
+        -3.041400671005249
+      ],
+      "max": [
+        1.6214998960494995,
+        3.367098331451416
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.5769990682601929,
+        -1.9996029138565063
+      ],
+      "max": [
+        1.4315969944000244,
+        2.4057986736297607
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.20019499957561493,
+        1.7910996675491333
+      ],
+      "max": [
+        0.19769899547100067,
+        5.252099990844727
+      ]
+    },
+    "turretRaster": {
+      "logicalMinX": 90.7,
+      "logicalMinY": -77.94,
+      "logicalMaxX": 222.91,
+      "logicalMaxY": 240.71,
+      "pixelWidth": 265,
+      "pixelHeight": 638,
+      "pivotX": 68.29,
+      "pivotY": 222.22
+    },
+    "selectedModules": {
+      "turretId": 261137,
+      "gunId": 262161,
+      "trackId": 261649,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "G144_Kpz_50t_mtr",
+      "G144_Kpz_50t_mtr",
+      "G144_Kpz_50t_mtr",
+      "G144_Kpz_50t_track_mtr",
+      "G144_Kpz_50t_track_mtr",
+      "G144_Kpz_50t_track_mtr"
+    ],
+    "desaturate": 0.75,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

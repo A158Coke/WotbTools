@@ -1,0 +1,95 @@
+{
+  "modelKey": "wz-132-1",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 10289,
+    "modelGlb": "https://api.blitzkit.app/tanks/10289/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160.25,
+    "y": 173.61
+  },
+  "turretRaster": {
+    "logicalMinX": 98.73,
+    "logicalMinY": -77.53,
+    "logicalMaxX": 220.88,
+    "logicalMaxY": 244.96,
+    "pixelWidth": 244,
+    "pixelHeight": 645,
+    "pivotX": 61.52,
+    "pivotY": 251.14
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "physicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.4352669715881348,
+        -3.3638756275177
+      ],
+      "max": [
+        1.44392728805542,
+        2.8626627922058105
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.3504959344863892,
+        -1.6280380487442017
+      ],
+      "max": [
+        1.3504959344863892,
+        1.4086484909057617
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.12719649076461792,
+        1.6325572729110718
+      ],
+      "max": [
+        0.14291168749332428,
+        5.502773284912109
+      ]
+    },
+    "turretRaster": {
+      "logicalMinX": 98.73,
+      "logicalMinY": -77.53,
+      "logicalMaxX": 220.88,
+      "logicalMaxY": 244.96,
+      "pixelWidth": 244,
+      "pixelHeight": 645,
+      "pivotX": 61.52,
+      "pivotY": 251.14
+    },
+    "selectedModules": {
+      "turretId": 14897,
+      "gunId": 14385,
+      "trackId": 16177,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "Ch29_Type_62C_prot_mtr",
+      "Ch29_Type_62C_prot_mtr",
+      "Ch29_Type_62C_prot_mtr",
+      "Ch29_Type_62C_prot_track_mtr",
+      "Ch29_Type_62C_prot_track_mtr",
+      "Ch29_Type_62C_prot_track_mtr",
+      "Ch29_Type_62C_prot_grid_mtr",
+      "Ch29_Type_62C_prot_grid_mtr",
+      "Ch29_Type_62C_prot_grid_mtr"
+    ],
+    "desaturate": 0.75,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "tankId": 19537,
+  "modelKey": "vickers-light",
+  "kind": "turreted",
+  "sourceModel": {
+    "glbBytes": 2219624
+  },
+  "selectedModules": {
+    "turretId": 261201,
+    "gunId": 265297,
+    "trackId": 261713,
+    "turretModelId": 1,
+    "gunModelId": 1
+  },
+  "output": {
+    "physicalPixelSize": [
+      640,
+      640
+    ],
+    "logicalViewBox": "0 0 320 320",
+    "supersample": 2
+  },
+  "materials": [
+    "GB_Vickers_Light_105_mtr",
+    "GB_Vickers_Light_105_track_mtr"
+  ],
+  "texturesUsed": [
+    "GB_Vickers_Light_105_mtr",
+    "GB_Vickers_Light_105_mtr",
+    "GB_Vickers_Light_105_mtr",
+    "GB_Vickers_Light_105_track_mtr",
+    "GB_Vickers_Light_105_track_mtr",
+    "GB_Vickers_Light_105_track_mtr"
+  ],
+  "uvSetsUsed": [
+    "TEXCOORD_0"
+  ],
+  "metallicRoughness": {
+    "present": true,
+    "used": false,
+    "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
+  },
+  "visibleTriangleCounts": {
+    "hull": 4419,
+    "turret": 1030
+  },
+  "alphaTested": 1,
+  "hullBounds": {
+    "min": [
+      -1.4098261594772339,
+      -2.881558418273926
+    ],
+    "max": [
+      1.4098261594772339,
+      3.062756061553955
+    ]
+  },
+  "turretBounds": {
+    "min": [
+      -1.2160412073135376,
+      -1.441391110420227
+    ],
+    "max": [
+      1.217809796333313,
+      1.3946114778518677
+    ]
+  },
+  "gunBounds": {
+    "min": [
+      -0.12993286550045013,
+      1.4566717147827148
+    ],
+    "max": [
+      0.1271483600139618,
+      4.126341342926025
+    ]
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 140.37
+  },
+  "turretRaster": {
+    "logicalMinX": 102.39,
+    "logicalMinY": -39.77,
+    "logicalMaxX": 217.69,
+    "logicalMaxY": 223.99,
+    "pixelWidth": 231,
+    "pixelHeight": 528,
+    "pivotX": 57.61,
+    "pivotY": 180.14
+  },
+  "fit": {
+    "scale": 47.37299834246889,
+    "tx": 160,
+    "ty": 155.70806217261796
+  },
+  "assets": {
+    "hullWebp": 25440,
+    "turretWebp": 14018
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "desaturate": 0.75,
+    "shading": "baseColor x occlusion x normal-z relief (restrained)",
+    "determinism": "pure arithmetic; same input -> same output"
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "tankId": 19281,
+  "modelKey": "super-conqueror",
+  "kind": "turreted",
+  "sourceModel": {
+    "glbBytes": 3048564
+  },
+  "selectedModules": {
+    "turretId": 260945,
+    "gunId": 262481,
+    "trackId": 261457,
+    "turretModelId": 1,
+    "gunModelId": 1
+  },
+  "output": {
+    "physicalPixelSize": [
+      640,
+      640
+    ],
+    "logicalViewBox": "0 0 320 320",
+    "supersample": 2
+  },
+  "materials": [
+    "Super_Conqueror_mtr",
+    "Super_Conqueror_track_mtr"
+  ],
+  "texturesUsed": [
+    "Super_Conqueror_mtr",
+    "Super_Conqueror_mtr",
+    "Super_Conqueror_mtr",
+    "Super_Conqueror_track_mtr",
+    "Super_Conqueror_track_mtr",
+    "Super_Conqueror_track_mtr"
+  ],
+  "uvSetsUsed": [
+    "TEXCOORD_0"
+  ],
+  "metallicRoughness": {
+    "present": true,
+    "used": false,
+    "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
+  },
+  "visibleTriangleCounts": {
+    "hull": 3987,
+    "turret": 1975
+  },
+  "alphaTested": 1,
+  "hullBounds": {
+    "min": [
+      -1.997467041015625,
+      -3.807464599609375
+    ],
+    "max": [
+      1.9977264404296875,
+      3.9414749145507812
+    ]
+  },
+  "turretBounds": {
+    "min": [
+      -1.55364990234375,
+      -2.0054168701171875
+    ],
+    "max": [
+      1.57025146484375,
+      2.0334928035736084
+    ]
+  },
+  "gunBounds": {
+    "min": [
+      -0.17177167534828186,
+      4.046462059020996
+    ],
+    "max": [
+      0.19426719844341278,
+      7.782646179199219
+    ]
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 140.4
+  },
+  "turretRaster": {
+    "logicalMinX": 103.53,
+    "logicalMinY": -125.26,
+    "logicalMaxX": 217.06,
+    "logicalMaxY": 230.44,
+    "pixelWidth": 227,
+    "pixelHeight": 712,
+    "pivotX": 56.47,
+    "pivotY": 265.66
+  },
+  "fit": {
+    "scale": 36.340456585757764,
+    "tx": 159.99528665342746,
+    "ty": 157.56500198391404
+  },
+  "assets": {
+    "hullWebp": 38676,
+    "turretWebp": 17252
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "desaturate": 0.75,
+    "shading": "baseColor x occlusion x normal-z relief (restrained)",
+    "determinism": "pure arithmetic; same input -> same output"
+  }
+}
