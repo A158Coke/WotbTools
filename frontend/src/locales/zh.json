@@ -753,14 +753,14 @@
     },
     "adminPreview": {
         "title": "车型预览（QA）",
-        "hint": "隐藏 QA 页：Tier X 专属俯视车型资产的单车型预览（计划 PR1 骨架版，正式资产由 ChatGPT 生成）。",
+        "hint": "隐藏 QA 页：Tier X 专属俯视车型资产预览（正式资产 = Source-faithful PBR WebP，BlitzKit 确定性 bake）。",
         "denied": "无权限：需要 wotbtools-admin 角色。",
         "loading": "鉴权中...",
         "model": "车型",
-        "sample": "契约样例（sample）",
         "hullRot": "车体方向",
         "turretRot": "炮塔方向",
         "canvasSize": "画布尺寸",
+        "protoSize": "QA 尺寸",
         "states": "状态叠加",
         "selected": "选中",
         "recorder": "录像者",
@@ -773,8 +773,7 @@
         "pivot": "炮塔 pivot",
         "reference": "BlitzKit 参考",
         "features": "辨识特征",
-        "pending": "资产待生成（ChatGPT）",
-        "sampleNote": "契约样例：仅用于验证 SVG 契约与预览管线，非真实车型。"
+        "pending": "资产待生成"
     },
     "home": {
         "replayTitle": "回放提取器",

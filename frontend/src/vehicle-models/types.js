@@ -75,9 +75,6 @@ export const SOURCE_PROVIDER_BLITZKIT = 'blitzkit'
 /** 正式生成方法（texture bake 生成，PR1 正式契约）。 */
 export const GENERATION_METHOD_TEXTURE_BAKE = 'blitzkit-model-topdown-texture-bake'
 
-/** 旧 geometry-SVG 生成方法（仅 debug/reference；extractor CLI 输出）。 */
-export const GENERATION_METHOD_EXTRACTION = 'blitzkit-model-topdown-extraction'
-
 /**
  * 正式资产目录契约（raster-backed high-fidelity）：
  * - hull.webp / turret.webp（turreted）：RGBA WebP，640×640 physical / 320×320 logical；

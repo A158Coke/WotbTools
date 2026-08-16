@@ -104,7 +104,8 @@ const protoBakeStyle = computed(() => ({
 }))
 const bakeHullLayerStyle = computed(() => ({
   position: 'absolute', left: '0', top: '0', width: '100%', height: '100%',
-  transform: 'rotate(' + hullDeg.value + 'deg)', transformOrigin: '160px 193.23px',
+  transform: 'rotate(' + hullDeg.value + 'deg)',
+  transformOrigin: VIEWBOX.width / 2 + 'px ' + VIEWBOX.height / 2 + 'px', // hull 绕画布中心
 }))
 const bakeTurretLayerStyle = computed(() => {
   if (!pivot.value) return null
