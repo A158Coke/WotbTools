@@ -35,7 +35,7 @@ const GOOD_META = {
   generation: {
     method: 'blitzkit-model-topdown-texture-bake',
     viewBox: '0 0 320 320',
-    physicalPixelSize: [640, 640],
+    hullPhysicalPixelSize: [640, 640],
     notes: 'test',
     fidelity: 'high',
     geometryScale: 'faithful',

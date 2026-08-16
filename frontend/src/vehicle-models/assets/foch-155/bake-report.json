@@ -13,7 +13,7 @@
     "gunModelId": 1
   },
   "output": {
-    "physicalPixelSize": [
+    "hullPhysicalPixelSize": [
       640,
       640
     ],

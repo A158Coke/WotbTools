@@ -443,7 +443,7 @@ describe('Layer B — Maus 生成资产细节（Layer 正确性）', () => {
   it('turretPivot 稳定（0/90/180/270 旋转不动点）且 metadata method = texture-bake', () => {
     const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
     expect(meta.generation.method).toBe('blitzkit-model-topdown-texture-bake')
-    expect(meta.generation.physicalPixelSize).toEqual([640, 640])
+    expect(meta.generation.hullPhysicalPixelSize).toEqual([640, 640])
     const pivot = meta.turretPivot
     for (const deg of [0, 90, 180, 270]) {
       const img = rotatePointAround({ point: pivot, origin: pivot, deg })
@@ -604,8 +604,10 @@ describe('Layer B — visual surface merging（HIGH-FIDELITY，Blocker 1/2/4）'
     const tb = meta.generation.turretBounds
     const ratio = (tb.max[1] - tb.min[1]) / (tb.max[0] - tb.min[0])
     expect(ratio).toBeCloseTo(4.5228 / 3.0676, 2)
-    // 逻辑画布契约：320×320 + physical 640×640
-    expect(meta.generation.physicalPixelSize).toEqual([640, 640])
+    // 逻辑画布契约：320×320 + hull physical 固定 640×640（turret 尺寸以 turretRaster 为准）
+    expect(meta.generation.hullPhysicalPixelSize).toEqual([640, 640])
+    expect(meta.turretRaster.pixelWidth).not.toBe(640) // turret.webp 是 variable-size canvas（Maus 191×574）
+    expect(meta.turretRaster.pixelHeight).not.toBe(640)
   })
   it('feature-fidelity-report 确定性：相同输入两次输出一致', () => {
     const input = {

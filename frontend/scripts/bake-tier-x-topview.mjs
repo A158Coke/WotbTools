@@ -4,7 +4,8 @@
  *
  * BlitzKit GLB + tanks.pb + models.pb → 真实 geometry/UV/material/textures
  * → 确定性正交俯视 bake（z-buffer + barycentric UV + alpha test + 中性化）
- * → 正式资产：hull.webp / turret.webp（turreted）/ metadata.json（640×640 / 320 logical）。
+ * → 正式资产：hull.webp（固定 640×640）/ turret.webp（turreted，尺寸可变）/ metadata.json
+ *   （320 logical；turret 尺寸/原点/枢轴以顶层 turretRaster 为准）。
  *
  * 数据驱动（不依赖 display name、不假设 turret_01/gun_01 永远最终模块）：
  * - tankId / baseModelKey / kind：frontend/src/vehicle-models/mapping.js（已审核 inventory）；
@@ -429,7 +430,8 @@ const report = {
   kind,
   sourceModel: { glbBytes: readFileSync(glbPath).length },
   selectedModules: { turretId: modules.turretId, gunId: modules.gunId, trackId: modules.trackId ?? null, turretModelId: modules.turretModelId, gunModelId: modules.gunModelId },
-  output: { physicalPixelSize: [PHYSICAL, PHYSICAL], logicalViewBox: '0 0 320 320', supersample: SUPERSAMPLE },
+  // hullPhysicalPixelSize：仅指 hull.webp 固定画布；turret.webp 尺寸可变（见 turretRaster）——不得误导 PR2
+  output: { hullPhysicalPixelSize: [PHYSICAL, PHYSICAL], logicalViewBox: '0 0 320 320', supersample: SUPERSAMPLE },
   materials: materials.map((m) => m.getName()),
   texturesUsed: texDefs.map((t) => t.name),
   uvSetsUsed: ['TEXCOORD_0'],
@@ -487,7 +489,7 @@ writeFileSync(join(outDir, 'metadata.json'), JSON.stringify({
   generation: {
     method: 'blitzkit-model-topdown-texture-bake',
     viewBox: `0 0 ${VIEWBOX.width} ${VIEWBOX.height}`,
-    physicalPixelSize: [PHYSICAL, PHYSICAL],
+    hullPhysicalPixelSize: [PHYSICAL, PHYSICAL], // hull.webp 固定 640×640；turret 尺寸以 turretRaster 为准
     hullBounds: report.hullBounds,
     turretBounds: report.turretBounds,
     gunBounds: report.gunBounds,
