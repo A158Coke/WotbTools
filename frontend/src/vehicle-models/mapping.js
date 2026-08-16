@@ -22,9 +22,10 @@
  * - minotauro: turretless → turreted（fandom：有炮塔，约 45° 限位）
  * - foch-155:  turreted → turretless（fandom specs turret=no，固定/微转前向炮塔）
  * - xm66f:     turretless → turreted（官方 tankopedia：non-fully-rotating turret）
- * confirmPending=true 的车型（spht / ac-teichos / nc-70-blyskawica）无法从当前
- * 参考资料可靠确认结构，ChatGPT 生成时需对照 BlitzKit 参考图确认 kind，
- * 不一致时同步修正 mapping 与 metadata；确认前这些车型的 contract 未冻结。
+ * confirmPending=true 的车型（ac-teichos / nc-70-blyskawica）无法从当前参考资料可靠确认
+ * 结构，ChatGPT 生成时需对照 BlitzKit 参考图确认 kind，不一致时同步修正 mapping 与 metadata；
+ * 确认前这些车型的 contract 未冻结。spht（29985）已于 2026-08-19 经 BlitzKit 数据确认
+ * turreted（GLB turret_01 + gun_01 + gun_01_mask；models.pb turret 模块无 yaw 限位）→ 解除 confirmPending。
  */
 
 /** modelKey → { kind, tankIds }。 */
@@ -108,7 +109,7 @@ export const MODEL_DEFINITIONS = Object.freeze({
   "rhm-pzw": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([28689]) }),
   "xm66f": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([28705]) }),
   "waffen-f1-0": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([28945]) }),
-  "spht": Object.freeze({ kind: 'turreted', confirmPending: true, tankIds: Object.freeze([29985]) }),
+  "spht": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([29985]) }), // 2026-08-19 BlitzKit 数据确认 turreted（GLB turret_01 + gun_01 + gun_01_mask；models.pb turret 模块无 yaw 限位）
   "vk-72-01-k": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([58641]) })
 })
 

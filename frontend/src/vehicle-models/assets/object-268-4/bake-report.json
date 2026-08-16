@@ -58,6 +58,7 @@
   "turretBounds": null,
   "gunBounds": null,
   "turretPivot": null,
+  "pivotSource": null,
   "rasterOrientation": {
     "hull": {
       "axisContract": "model +Y = screen up（raster top = bounds.maxY）",

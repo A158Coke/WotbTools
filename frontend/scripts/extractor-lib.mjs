@@ -14,6 +14,24 @@ export function correctZYTuple(v) {
   return { x: v.x, y: v.z, z: v.y }
 }
 
+/**
+ * 炮塔 yaw 旋转中心（BlitzKit useTankTransform.ts 契约）：
+ *   hullOrigin   = correctZYTuple(trackModelDefinition.origin)     // 模型坐标
+ *   turretOrigin = correctZYTuple(tankModelDefinition.turret_origin)
+ *   modelPivot   = hullOrigin + turretOrigin（模型坐标向量和）
+ * 运行时的 turretPosition = R_init(R_yaw(-modelPivot)) + modelPivot——旋转中心即 modelPivot；
+ * initial_turret_rotation 只附加初始朝向角（turretRotation.x/y/z += initial）与绕世界原点
+ * 的小幅位置修正（|Δ| ≤ |θ|·|modelPivot|，对 minotauro pitch=3° ≈ 0.13m），不影响顶视 pivot。
+ * @param {{x?:number,y?:number,z?:number}} hullOrigin   引擎坐标（track origin；可能缺失→零）
+ * @param {{x?:number,y?:number,z?:number}} turretOrigin 引擎坐标（turret_origin）
+ * @returns {{x:number,y:number,z:number}} 模型坐标 pivot
+ */
+export function computeTurretModelPivot(hullOrigin, turretOrigin) {
+  const h = correctZYTuple(hullOrigin || { x: 0, y: 0, z: 0 })
+  const t = correctZYTuple(turretOrigin || { x: 0, y: 0, z: 0 })
+  return { x: h.x + t.x, y: h.y + t.y, z: h.z + t.z }
+}
+
 /** 模型坐标 → 2D 俯视投影（x=宽、y=长）。 */
 export function projectTopDown(v) {
   return { x: v.x, y: v.y }
@@ -1142,8 +1160,8 @@ export function decodeBlitzkitPb(buffer, typeName, protoText) {
  * @param {object} tankDefs  TankDefinitions.toObject（tanks.pb）
  * @param {object} modelDefs ModelDefinitions.toObject（models.pb）
  * @param {number} tankId
- * @returns {{ turretId, gunId, trackId, turretModelId, gunModelId, turretOrigin }}
- *   turretOrigin 为 models.pb 引擎坐标（可能 null）
+ * @returns {{ turretId, gunId, trackId, turretModelId, gunModelId, trackOrigin, turretOrigin }}
+ *   trackOrigin / turretOrigin 为 models.pb 引擎坐标（可能 null/缺失）
  */
 export function selectDefaultModules(tankDefs, modelDefs, tankId) {
   const tankDef = tankDefs.tanks[String(tankId)]
@@ -1161,13 +1179,18 @@ export function selectDefaultModules(tankDefs, modelDefs, tankId) {
   if (turretModelId === undefined || gunModelId === undefined) {
     throw new Error('models.pb 缺 turret/gun model_id（turret=' + turretDef.id + ' gun=' + gunDef.id + '）')
   }
+  // hullOrigin（BlitzKit useTankTransform：trackModelDefinition.origin）——选中 track 的 origin
+  const trackModelDef = trackDef != null && modelDef.tracks ? modelDef.tracks[String(trackDef.id)] : null
   return {
     turretId: turretDef.id,
     gunId: gunDef.id,
     trackId: trackDef?.id,
     turretModelId,
     gunModelId,
+    trackOrigin: trackModelDef?.origin || null,
     turretOrigin: modelDef.turretOrigin || null,
+    // 审计用：initial_turret_rotation 只影响初始朝向角，不影响顶视 pivot（computeTurretModelPivot 不消费）
+    initialTurretRotation: modelDef.initialTurretRotation || null,
   }
 }
 

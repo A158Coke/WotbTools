@@ -10,8 +10,10 @@
 > 不采用 BlitzKit TURRET module 或 turretRotationSpeed 字段（casemate 也有 turret module 且转速非零，不可判）。
 > 修正记录：minotauro → turreted（有炮塔 45° 限位）；foch-155 → turretless（fandom specs turret=no）；
 > xm66f → turreted（官方：non-fully-rotating turret）。
-> **confirmPending**（spht / ac-teichos / nc-70-blyskawica）：无可靠公开结构资料，
+> **confirmPending**（ac-teichos / nc-70-blyskawica）：无可靠公开结构资料，
 > contract 未冻结——ChatGPT 生成时须对照 BlitzKit 参考图确认 kind，不一致需同步修正 mapping 与 metadata。
+> spht 已于 2026-08-19 经 BlitzKit 数据确认 turreted（GLB turret_01 + gun_01 + gun_01_mask；
+> models.pb turret 模块无 yaw 限位）→ 解除 confirmPending。
 
 ## 按 baseModelKey 分组
 
@@ -99,12 +101,12 @@
 | rhm-pzw | turreted | — | 28689 | Rhm. Pzw. | Light tank | Germany | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/28689/icons/big.webp) · [page](https://blitzkit.app/tanks/rhm-pzw) |
 | xm66f | turreted | — | 28705 | XM66F | Tank destroyer | USA | 官方 tankopedia：non-fully-rotating turret（前置炮塔） | [icon](https://api.blitzkit.app/tanks/28705/icons/big.webp) · [page](https://blitzkit.app/tanks/xm66f) |
 | waffen-f1-0 | turreted | — | 28945 | Waffen F1.0 | Tank destroyer | Germany | fandom：huge turret + 极慢炮塔旋转 | [icon](https://api.blitzkit.app/tanks/28945/icons/big.webp) · [page](https://blitzkit.app/tanks/waffen-f1-0) |
-| spht | turreted | ⚠️ 待确认 | 29985 | SPHT | Heavy tank | USA | 无可靠公开结构资料 → 视觉确认待定（confirmPending） | [icon](https://api.blitzkit.app/tanks/29985/icons/big.webp) · [page](https://blitzkit.app/tanks/spht) |
+| spht | turreted | — | 29985 | SPHT | Heavy tank | USA | 2026-08-19 BlitzKit 数据确认：GLB turret_01 + gun_01 + gun_01_mask、models.pb turret 模块无 yaw 限位 → 确认 turreted | [icon](https://api.blitzkit.app/tanks/29985/icons/big.webp) · [page](https://blitzkit.app/tanks/spht) |
 | vk-72-01-k | turreted | — | 58641 | VK 72.01 K | Heavy tank | Germany | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/58641/icons/big.webp) · [page](https://blitzkit.app/tanks/vk-72-01-k) |
 
 ## 统计
 
 - Tankopedia Tier X 总数：84（meta.count=84，generated_at=2026-08-08T17:28:26.017337+00:00）
 - baseModelKey 数：81
-- turreted：72；turretless：9；confirmPending：3
+- turreted：73；turretless：9；confirmPending：2（spht 已确认 turreted 并生成正式资产）
 
