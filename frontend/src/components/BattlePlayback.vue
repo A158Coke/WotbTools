@@ -1261,10 +1261,13 @@ const mapStyle = computed(() => ({
   inset: 0;
   pointer-events: none;
 }
+/* PR3 增补：车辆视觉尺寸上调（人工 QA：全局地图视角下车型辨识度不足）——
+   desktop 28 → 36px / mobile 22 → 28px（约 +28%）；zoom 契约不变（viewport 整体 scale，
+   车辆随地图缩放；name/✕/selected/recorder 继续 inverse-scale 保持屏幕尺寸）。 */
 .pb-vehicle {
   position: absolute;
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   transform: translate(-50%, -50%);
   border: none;
   background: none;
@@ -1273,7 +1276,7 @@ const mapStyle = computed(() => ({
   pointer-events: auto;
 }
 @media (max-width: 768px) {
-  .pb-vehicle { width: 22px; height: 22px; }
+  .pb-vehicle { width: 28px; height: 28px; }
 }
 /* marker 内部样式（hull/turret/death/name/状态视觉）全部随 VehicleMarker 组件迁移：
    PR3 —— last-known/destroyed 弱化由 VehicleMarker .pb-graphics 容器承担（root 不再
