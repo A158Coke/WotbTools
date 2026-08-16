@@ -6,7 +6,14 @@
  */
 import { describe, expect, it } from 'vitest'
 import { VIEWBOX } from './types.js'
-import { hullLayerTransform, turretAssemblyTransform, turretImageTransform, turretRingPosition } from './pivot.js'
+import {
+  hullLayerTransform,
+  markerTurretAssemblyTransform,
+  markerTurretImageTransform,
+  turretAssemblyTransform,
+  turretImageTransform,
+  turretRingPosition,
+} from './pivot.js'
 
 const C = { x: VIEWBOX.width / 2, y: VIEWBOX.height / 2 }
 
@@ -136,6 +143,35 @@ describe('嵌套 transform composition（最终 world yaw = T，座圈 = P2）',
     const child = turretImageTransform({ hullDeg: 10, turretWorldDeg: 30, pivot: { x: 40, y: 432 }, renderScale: 1.5 })
     expect(child.transformOrigin).toBe('60px 648px')
     expect(child.transform).toBe('rotate(20deg)')
+  })
+})
+
+describe('marker 百分比变换（Battle Playback marker，盒尺寸 CSS 控制）', () => {
+  const RASTER = { logicalMinX: 112.19, logicalMinY: -19.64, logicalMaxX: 207.81, logicalMaxY: 267.24, pixelWidth: 191, pixelHeight: 574, pivotX: 47.81, pivotY: 212.87 }
+
+  it('assembly 父层绕盒中心旋转 hullDeg（transform-origin 默认 50% 50%）', () => {
+    const s = markerTurretAssemblyTransform({ hullDeg: 90 })
+    expect(s.transform).toBe('rotate(90deg)')
+    expect(s.transformOrigin).toBeUndefined() // 默认 = 元素中心 = 盒中心
+  })
+
+  it('image 子层：raster 百分比定位 + 绕 image-local pivot 旋转 (T - H)', () => {
+    const s = markerTurretImageTransform({ hullDeg: 90, turretWorldDeg: 0, raster: RASTER })
+    expect(s.left).toBe('35.0594%') // 112.19/320
+    expect(s.top).toBe('-6.1375%') // -19.64/320
+    expect(s.width).toBe('29.8438%') // (191/2)/320
+    expect(s.height).toBe('89.6875%') // (574/2)/320
+    expect(s.transformOrigin).toBe('14.9406% 66.5219%') // 47.81/320, 212.87/320
+    expect(s.transform).toBe('rotate(-90deg)') // T - H
+  })
+
+  it('H/T 组合：子层旋转 (T-H) + 父层旋转 H = world yaw T（同 px 版数学）', () => {
+    for (const { H, T } of [{ H: 0, T: 0 }, { H: 90, T: 0 }, { H: 90, T: 90 }, { H: 180, T: 45 }, { H: 270, T: 10 }]) {
+      const child = markerTurretImageTransform({ hullDeg: H, turretWorldDeg: T, raster: RASTER })
+      expect(child.transform).toBe(`rotate(${T - H}deg)`)
+      const parent = markerTurretAssemblyTransform({ hullDeg: H })
+      expect(parent.transform).toBe(`rotate(${H}deg)`)
+    }
   })
 })
 

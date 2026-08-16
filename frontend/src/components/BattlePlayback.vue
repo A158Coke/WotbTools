@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { mapImages } from '../data/mapImages'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 import { createMapView } from '../utils/mapView'
+import VehicleMarker from './VehicleMarker.vue'
 import enemyHull from '../assets/tank-icons/tank-marker-enemy-hull.png'
 import enemyTurret from '../assets/tank-icons/tank-marker-enemy-turret.png'
 import friendlyHull from '../assets/tank-icons/tank-marker-friendly-hull.png'
@@ -69,6 +70,38 @@ watch(image, async (img) => {
 const playback = computed(() => props.overview.playback || null)
 const duration = computed(() => (playback.value ? Math.max(0, playback.value.durationSec) : 0))
 const friendlyTeam = computed(() => props.overview.friendlyTeam)
+
+// ---- PR2：Tier X dedicated model preload（计划 §12/§13）----
+// runtime.js 含全部车型资产引用（import.meta.glob），必须动态 import 保持主 bundle 分离
+// （scripts/check-bundle-separation.mjs 门禁：主入口不得含 'vehicle-models/assets'）。
+// preload 完成前不渲染车辆（asset decision 先于渲染，禁止 generic 闪现后替换）。
+const preload = ref({ phase: 'idle', resolved: new Map(), failed: new Set(), byTank: new Map() })
+// 竞态令牌：快速切换战局时，过期 preload 完成不得覆盖新战局结果
+let preloadToken = 0
+watch(
+  () => props.overview,
+  async (ov) => {
+    const token = ++preloadToken
+    preload.value = { phase: 'loading', resolved: new Map(), failed: new Set(), byTank: new Map() }
+    const vehicles = ov?.playback?.vehicles || []
+    if (vehicles.length === 0) {
+      preload.value = { phase: 'ready', resolved: new Map(), failed: new Set(), byTank: new Map() }
+      return
+    }
+    try {
+      const { preloadBattleModels } = await import('../vehicle-models/runtime.js')
+      const result = await preloadBattleModels(vehicles.map((v) => v.tankId))
+      if (token !== preloadToken) return // 过期结果丢弃
+      preload.value = { phase: 'ready', ...result }
+    } catch (e) {
+      // 模块加载异常 → 整场 generic fallback（计划 §11：静默，不弹 warning）
+      console.error('[vehicle-models] preload 模块加载失败 → 整场 generic fallback', e)
+      if (token !== preloadToken) return
+      preload.value = { phase: 'ready', resolved: new Map(), failed: new Set(), byTank: new Map() }
+    }
+  },
+  { immediate: true },
+)
 
 // 双方总血量（实时剩余，随播放时间/进度条变化；争霸赛附终局点数）
 // 本方：存活车辆尚无血量变化采样时按 maxHp 回退（开局满血）；敌方：无可信采样恒 UNKNOWN 灰段（不把理论 maxHp 当已知血量）
@@ -636,16 +669,30 @@ function vehicleColor(vehicle) {
  * covered 只表示服务器位置流覆盖（type-10），不是点亮。
  * direction = {hullYawDeg, turretRelativeYawDeg} | null：无可靠方向样本时不旋转（不伪造朝向）。
  */
+/**
+ * PR2：该车辆的 dedicated model 决策（preload 结果）——
+ * 非 Tier X / confirmPending / preload 失败 / 模块加载失败 → null（generic marker 单车 fallback，
+ * 计划 §11：不做整场 fallback）。
+ */
+function vehicleModel(vehicle) {
+  const p = preload.value
+  if (p.phase !== 'ready') return null
+  const modelKey = p.byTank.get(String(vehicle.tankId))
+  if (!modelKey || p.failed.has(modelKey)) return null
+  return p.resolved.get(modelKey) || null
+}
+
 function vehicleState(vehicle) {
   const route = routesByAccount.value.get(vehicle.accountId)
   const points = route ? route.points : []
-  const t = currentTime.value
-  const destroyed = vehicle.deathSec != null && t >= vehicle.deathSec
-  const displayT = destroyed ? Math.min(t, vehicle.deathSec) : t
+  // 局部时间变量命名 time——避免遮蔽 setup 的 i18n t()（ariaLabel 需要）
+  const time = currentTime.value
+  const destroyed = vehicle.deathSec != null && time >= vehicle.deathSec
+  const displayT = destroyed ? Math.min(time, vehicle.deathSec) : time
   const live = positionAt(points, displayT)
   const last = live ? live : lastKnownPosition(points, displayT)
   if (!last) return null // 从未有可信位置：不显示
-  const covered = positionCoveredAt(vehicle.positionIntervals, t)
+  const covered = positionCoveredAt(vehicle.positionIntervals, time)
   const recorder = vehicle.accountId === props.overview.recorderAccountId
   const direction = interpolateDirection(vehicle.directionSamples, displayT)
   const friendly = vehicle.team === friendlyTeam.value
@@ -663,10 +710,16 @@ function vehicleState(vehicle) {
     recorder,
     friendly,
     direction,
+    // dedicated model（null = generic；turretless 无 turret 层，§14）
+    model: vehicleModel(vehicle),
     hullImage: friendly ? friendlyHull : enemyHull,
     turretImage: friendly ? friendlyTurret : enemyTurret,
     hullScreenDeg: destroyed ? (hullDeg == null ? 0 : hullDeg) : hullDeg,
     turretScreenDeg: destroyed ? (turretDeg == null ? 0 : turretDeg) : turretDeg,
+    // VehicleMarker 渲染用（位置/反缩放/无障碍标签在 view model 一次性算好）
+    markerStyle: { left: markerLeft(last.x), top: markerTop(last.y), transform: markerTransform.value },
+    overlayInverseScale: overlayInverseScale.value,
+    ariaLabel: `${vehicle.playerName}: ${t(destroyed ? 'recon.map.playback.state_destroyed' : (covered ? 'recon.map.playback.state_position_reported' : 'recon.map.playback.state_position_stale'))}`,
     // lastKnown = 位置流未覆盖（covered=false）才淡化（最后已知位置）。
     // 注意：covered 只是「服务器位置流当前覆盖」，不等于录像者客户端点亮/失察（无 authoritative
     // spotting signal，不得声称已恢复点亮）；route 采样点稀疏（长局采样间隔 max(2, duration/200)
@@ -687,6 +740,8 @@ function markerTop(y) {
 }
 
 const vehicleStates = computed(() => {
+  // preload 未完成（asset decision 未定）时不渲染车辆——禁止 generic 闪现后替换
+  if (preload.value.phase !== 'ready') return []
   const vehicles = playback.value ? playback.value.vehicles : []
   return vehicles.map(vehicleState).filter(Boolean)
 })
@@ -1060,45 +1115,13 @@ const mapStyle = computed(() => ({
       </g>
     </svg>
     <div class="pb-markers" :class="{ 'pb-drawing': !!activeTool }" data-test="pb-markers" aria-hidden="false">
-      <button
+      <VehicleMarker
         v-for="st in vehicleStates"
         :key="st.vehicle.accountId"
-        type="button"
-        class="pb-vehicle"
-        :class="{ 'pb-last-known': st.lastKnown && !st.destroyed, 'pb-destroyed': st.destroyed, 'pb-recorder': st.recorder, 'pb-selected': selectedAccountId === st.vehicle.accountId }"
-        :style="{ left: markerLeft(st.pos.x), top: markerTop(st.pos.y), transform: markerTransform }"
-        :aria-label="`${st.vehicle.playerName}: ${$t(st.destroyed ? 'recon.map.playback.state_destroyed' : (st.covered ? 'recon.map.playback.state_position_reported' : 'recon.map.playback.state_position_stale'))}`"
-        :data-test="`pb-marker-${st.vehicle.accountId}`"
-        @click="selectVehicle(st.vehicle)"
-      >
-        <img
-          v-if="st.hullScreenDeg != null"
-          class="pb-hull"
-          :src="st.hullImage"
-          alt=""
-          aria-hidden="true"
-          :style="{ transform: `translate(-50%, -50%) rotate(${st.hullScreenDeg}deg)` }"
-        />
-        <img
-          v-if="st.turretScreenDeg != null"
-          class="pb-turret"
-          :src="st.turretImage"
-          alt=""
-          aria-hidden="true"
-          :style="{ transform: `translate(-50%, -50%) rotate(${st.turretScreenDeg}deg)` }"
-        />
-        <span
-          v-if="st.destroyed"
-          class="pb-death"
-          aria-hidden="true"
-          :style="{ transform: `translateX(-50%) ${overlayInverseScale}` }"
-        >✕</span>
-        <span
-          class="pb-name"
-          aria-hidden="true"
-          :style="{ transform: `translateX(-50%) ${overlayInverseScale}` }"
-        >{{ st.vehicle.tankName || st.vehicle.tankId }}</span>
-      </button>
+        :marker="st"
+        :selected="selectedAccountId === st.vehicle.accountId"
+        @select="selectVehicle(st.vehicle)"
+      />
     </div>
     </div>
 
@@ -1246,25 +1269,12 @@ const mapStyle = computed(() => ({
   cursor: pointer;
   pointer-events: auto;
 }
-/* 素材 512×512 含大量透明留白（实测有效车体 bbox ≈210×336 / 512），
-   放大到按钮 131% → 桌面 28px 容器下有效车体 ≈15×24px；
-   以素材共同 pivot（画布中心）居中旋转，hull/turret 缩放一致，炮管不脱离炮塔 */
-.pb-vehicle .pb-hull, .pb-vehicle .pb-turret {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 131%;
-  height: 131%;
-  transform: translate(-50%, -50%);
-}
-.pb-vehicle .pb-hull { z-index: 1; }
-.pb-vehicle .pb-turret { z-index: 2; }
 @media (max-width: 768px) {
   .pb-vehicle { width: 22px; height: 22px; }
 }
+/* marker 内部样式（hull/turret/death/name/grayscale）已随 VehicleMarker 组件迁移 */
 .pb-last-known { opacity: .3; }
 .pb-destroyed { opacity: .35; }
-.pb-destroyed .pb-hull, .pb-destroyed .pb-turret { filter: grayscale(1); }
 .pb-recorder { filter: drop-shadow(0 0 3px #ffd76a); }
 .pb-recorder::after {
   content: '';
@@ -1281,37 +1291,6 @@ const mapStyle = computed(() => ({
   border: 2px solid #fff;
   border-radius: 50%;
   z-index: 3;
-}
-.pb-death {
-  position: absolute;
-  top: -6px;
-  left: 50%;
-  transform: translateX(-50%);
-  color: #fff;
-  font-size: 16px;
-  font-weight: 700;
-  z-index: 4;
-  pointer-events: none;
-  text-shadow: 0 0 2px #000, 0 0 2px #000;
-}
-/* 常显坦克型号名标签：位于图标上方，经 overlayInverseScale 反缩放 → 字号不随地图缩放 */
-.pb-name {
-  position: absolute;
-  bottom: calc(100% + 2px);
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 10px;
-  line-height: 1.2;
-  color: #fff;
-  background: rgba(0, 0, 0, .55);
-  padding: 1px 4px;
-  border-radius: 3px;
-  white-space: nowrap;
-  max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  z-index: 5;
-  pointer-events: none;
 }
 .pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.16)); stroke-width: .5; fill: none; }
 /* 激光炮线：外层光晕/内芯线宽逐元素绑定（6/view.scale、1.75/view.scale），不随缩放变粗 */

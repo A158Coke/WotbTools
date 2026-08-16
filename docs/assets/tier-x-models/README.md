@@ -1,10 +1,11 @@
 # Tier X 专属俯视车型系统（Battle Playback Vehicle Marker System V2）
 
-> 总计划：docs/current-plan.md（PR1–PR4）。本目录是 PR1 的系统文档与资产生成交接清单。
-> 当前状态：**TIER_X_WEBP_BULK_GENERATION_READY** —— 正式资产 = Source-faithful PBR top-view
-> WebP（BlitzKit LOD0 geometry + 内嵌纹理确定性 bake）；旧 SVG 仅 Legacy/debug extractor 产物；
-> 本 PR 未接 Battle Playback。
-> baker 从真实模型确定性生成；人工/ChatGPT 只做 visual QA，不绘制 geometry。
+> 总计划：docs/current-plan.md（PR1–PR4）。本目录是 Tier X 车型系统的文档与资产生成规范。
+> 当前状态：**PR2 DONE** —— 正式资产 = Source-faithful PBR top-view
+> WebP（BlitzKit LOD0 geometry + 内嵌纹理确定性 bake）；**Battle Playback 已集成 dedicated
+> models**（VehicleMarker + 战局级 preload + 单车 fallback；非 Tier X 继续 generic）；
+> 旧 SVG 仅 Legacy/debug extractor 产物。baker 从真实模型确定性生成；人工/ChatGPT 只做
+> visual QA，不绘制 geometry。
 
 ## 业务目标（一句话）
 
@@ -43,6 +44,8 @@ AI 只做 visual QA；发现错误 → 修 baker → 重新生成，禁止人工
 | `frontend/src/vehicle-models/extractor.test.js` | extractor 契约测试（坐标/fit/资产/确定性，CI 不联网） |
 | `frontend/src/vehicle-models/texture-bake.test.js` | bake 纯函数契约 + **raster 方向回归（RASTER_Y_AXIS_CONTRACT）** |
 | `frontend/src/components/VehicleModelPreviewPage.vue` | 隐藏 admin QA 页（`?view=vehicle-models`，仅 wotbtools-admin；异步 chunk） |
+| `frontend/src/components/VehicleMarker.vue` | **生产 Battle Playback 正式单车 marker**（PR2：dedicated/generic 渲染 + hull/turret 旋转） |
+| `frontend/src/vehicle-models/runtime.js` | **生产 runtime 资产解析**（PR2：tankId→modelKey→资产、战局级 preload、单车 fallback；动态 import 保 bundle 分离） |
 | `frontend/scripts/bake-tier-x-topview.mjs` | **正式 baker**（`--model-key` / `--tank-id`，唯一网络点；依赖 python + PIL） |
 | `frontend/scripts/texture-bake-lib.mjs` | bake 纯函数库（z-buffer / barycentric UV / alpha test / Y-flip 投影 / 中性化） |
 | `frontend/scripts/extract-tier-x-model.mjs` | **Legacy/debug extractor**（SVG 输出仅供开发者 visual QA，非正式资产） |
@@ -156,16 +159,22 @@ nc-70-blyskawica）**保持 pending，禁止生成**。
 ## 状态流转
 
 ```
-TIER_X_WEBP_BULK_GENERATION_READY（当前：78 资产已确定性生成，方向契约测试全绿）
-  → 人工/ChatGPT visual QA（admin 预览页验证 pivot/方向/结构；prod 部署后人工 QA）
-  → 修 baker（如需要）→ 重新生成全量（禁止人工 patch 单车）
-  → Tier X 全覆盖（ASSET_GENERATION_COMPLETE，CI 全绿 + admin 全车型可预览）
-  → PR1 合入 → PR2 Battle Playback 集成 → PR3 状态视觉重设计 → PR4 标签与碰撞
+PR1 DONE（78 资产确定性生成，方向契约测试全绿，PR #91 已合并）
+  → PR2 DONE（Battle Playback 集成 dedicated models：
+     VehicleMarker 正式组件 + 战局级 preload + 3s 超时 + 单车 fallback）
+  → PR3 状态视觉重设计（team color / outline / Selected / Recorder / Destroyed / Last-known）
+  → PR4 玩家/坦克标签与碰撞
 ```
 
 ## 变更记录
 
-- PR1（本 PR）：inventory / mapping / kind 核验 / validator / coverage CI / admin 预览 /
+- PR2（2026-08-19）：**Dedicated Tier X Models in Battle Playback**——VehicleMarker 正式组件
+  （frontend/src/components/VehicleMarker.vue，generic/dedicated turreted/dedicated turretless
+  三渲染路径）+ 生产 runtime 资产解析（frontend/src/vehicle-models/runtime.js：tankId→modelKey→
+  资产、战局级 preload dedupe、3s 超时、单车 generic fallback、current-page cache、动态 import
+  保 bundle 分离）+ BattlePlayback 集成（preload 完成前不渲染车辆、turretless 无 fake turret 层、
+  方向/冻结沿用现有可信数据）；versions.json v2.11.18。
+- PR1（PR #91）：inventory / mapping / kind 核验 / validator / coverage CI / admin 预览 /
   **BlitzKit texture baker（确定性 bake 替代 AI 手绘）** / 78 资产批量生成 / 全局 spec / metadata Source-faithful PBR schema。
 - PR91 Review 修复（2026-08-18）：**RASTER_Y_AXIS_CONTRACT**（raster Y flip：model +Y → 图片 top，
   hull/turret 同一 orientation，pivot 指向真实座圈像素，78 资产确定性重新生成）；

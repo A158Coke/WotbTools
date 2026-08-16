@@ -298,6 +298,22 @@
   DEVELOPER_GUIDE 文档地图补充层级说明。纯文档变更，不影响代码与构建。
 
 ### Fixed
+- **PR2 — Dedicated Tier X Models in Battle Playback（2026-08-19）**：
+  - **VehicleMarker 正式组件**（frontend/src/components/VehicleMarker.vue，计划 §17）：从
+    BattlePlayback.vue 抽出正式单车 marker（generic / dedicated turreted / dedicated turretless
+    三条渲染路径）；dedicated turreted = hull 满盒绕中心旋转 + turret assembly 嵌套 transform
+    （父层 rotate(H) around 盒中心、子层按 turretRaster 百分比定位绕 image-local pivot 旋转
+    T-H，数学统一在 pivot.js marker*Transform，含单测）；generic 保持原双层 PNG 行为不变；
+    marker 内部样式随组件迁移（父组件 scoped 不作用于子元素）。
+  - **生产 runtime 资产解析**（frontend/src/vehicle-models/runtime.js，计划 §12/§13/§18）：
+    tankId → modelKey → 正式资产（Vite 静态 URL + metadata）；战局级 preload——只预加载本场
+    实际出现的 Tier X（dedupe 同 modelKey 一次），3s 超时/失败 → 单车 generic fallback
+    （confirmPending/未知 tankId 直接 generic）；current-page cache（模块生命周期）；
+    动态 import 保持主 bundle 分离（check-bundle-separation 门禁通过）。
+  - **BattlePlayback 集成**（计划 §14/§15/§16）：view model 扩展（model/markerStyle/ariaLabel）；
+    preload 完成前不渲染车辆（禁止 generic 闪现后替换）；turretless 无 fake turret layer；
+    方向/阵亡冻结/最后已知沿用现有可信数据与插值（不伪造朝向）；非 Tier X 继续 generic。
+  - **i18n/版本**：versions.json v2.11.18 + CHANGELOG-PRODUCT（用户可见：Tier X 专属模型）。
 - **Tier X 车型资产 PR91 Review 修复（2026-08-18，5 blockers + 1 engineering gate）**：
   - **RASTER_Y_AXIS_CONTRACT（raster 方向契约）**：`texture-bake-lib.mjs::bakeTopView` 投影
     此前用 `pixelY = (modelY - minY) * scale`（model +Y → 图片下方），与 logical 契约
