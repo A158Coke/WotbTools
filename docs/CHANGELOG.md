@@ -298,6 +298,121 @@
   DEVELOPER_GUIDE 文档地图补充层级说明。纯文档变更，不影响代码与构建。
 
 ### Fixed
+- **turretPivot 独立验证 matrix traversal 修复（PR92 Review B1 第三轮）**：
+  verify-pivot-independent.mjs 曾各自实现一套 collectVerts，且**漏乘 node 自身 TRS**
+  （mesh 只应用 parent matrix；nodeMatrix 只乘给 children）——与
+  extractor-lib.mjs::collectNodeTriangles 语义不一致（真实 GLB 节点 TRS 全为 identity，
+  未暴露，但语义错误）。修复：**extractor-lib.mjs 新增 collectNodeVerts**（与
+  collectNodeTriangles **同一 hierarchy 语义**：worldMatrix = parentMatrix · nodeLocalMatrix，
+  node 自身 TRS 乘入后作用于自己的 mesh，children 递归传 worldMatrix），verify 脚本改用
+  单源函数，删除本地两套 traversal；新增 **synthetic 非 identity TRS 测试**（4 用例）：
+  parent T(1,2,3)·Rz90°·S(2,1,1) 自带 mesh 单点 [1,0,0] → 期望 (1,4,3)（自身 TRS 作用于
+  自己 mesh）；child 再乘 T(0.5,0,0)·S(1,2,1) → (0.5,2,0)→(-1,3,3)（parent+child 合成）；
+  三级嵌套 P·C·G → (-1,7,4)；与 collectNodeTriangles 同树顶点一致。
+  **bottom turret-ring anchor 落地（方案 A）**：verifier 新增可复现输出——turret_01 子树
+  底部带（z∈[minZ, minZ+0.2]）顶视质心 vs pivot 模型坐标距离（68/72 台可计算；grille-15/
+  nc-70 战斗室底部顶点不足、e-50-m/felice 同理为 n/a）：median 0.217m（t57-heavy 0.019m /
+  m-vi-yoh 0.010m / fv215b-183 0.004m / ac-teichos 0.073m / minotauro 0.075m / xm66f 0.079m），
+  个别大偏差（bzt-70 1.27m / carro-45t 1.07m）由底部带含 *_hide_elements_switch* 替代网格
+  （nc/skin 网格位于车尾，属渲染子树的一部分）拉偏——ring anchor 仅作几何佐证不作为判据，
+  pivot 正确性由 scene-graph 反推（err≤0.0002m）+ turret_origin.y ≈ GLB 炮塔底部 z 保证。
+  6 台代表车重新执行：全 PASS（TRS 全 identity；yaw 0/90、grille 0/65、nc-70 0/10、
+  minotauro 0/45 含 initial pitch=3° err=0.0291m）。
+- **turretPivot 参考系反推验证（PR92 Review B1 第一轮，真实几何证据）**：新增
+  frontend/scripts/verify-turret-pivot.mjs（developer-only，CI 不执行）——对每个 turreted 车型
+  用 GLB 真实旋转层几何（= bake 的 turret 场景：turret + mantlet + gun，这才是 marker 里实际绕
+  turretPivot 旋转的视觉层）复刻 BlitzKit useTankTransform 运行时公式，构造 yaw=0°/90° 两个姿态，
+  垂直平分线最小二乘反求唯一 2D rotation center，与 metadata.turretPivot 比对：
+  **全 72 turreted 车型 err=0.0000m**（含 3 辆 confirmPending 新确认车；minotauro 含
+  initial_turret_rotation pitch=3° 完整复刻 err=0.0249m < 0.1m 阈值）。
+  ⚠️ 评审指出该验证是数学 tautology：待验证的 c 被用作生成 yaw 样本的旋转中心，反推必然
+  得 c——只能证明 transform 自洽，不能证明 pivot 正确；且"偏后"被归因于测量脚本轴映射 bug
+  而未复现视觉差异。**第一轮脚本已删除，由第二轮独立验证取代（见下条）**。
+- **turretPivot 独立几何验证（PR92 Review B1 第二轮，修复循环证明）**：新增
+  frontend/scripts/verify-pivot-independent.mjs——**待验证的 metadata.turretPivot /
+  computeTurretModelPivot 结果不参与生成 yaw 样本**；数据流为：GLB 原始旋转层顶点（模型坐标，
+  yaw=0 装配姿态）→ 逐行复刻 BlitzKit useTankTransform.ts scene graph（turretContainer.position =
+  R_z(yaw)(-(hullOrigin+turretOrigin)) [+initial axis-angle] + hullOrigin+turretOrigin；
+  rotation = Euler(initialPitch, initialRoll, yaw+initialYaw)，XYZ 序；origins 直接取自
+  models.pb 原始数据）→ 构造 yaw=0° 与 yaw=限位内角度两批 world positions → 只根据
+  world positions 垂直平分线最小二乘反推 rotation center → 最后才经 bake-report.fit 反投影
+  与 metadata.turretPivot 比对：**全 72 turreted 车型 err≤0.0002m**（grille-15 用 0°/65°、
+  nc-70 0°/10°、fv215b-183/xm66f/minotauro 0°/45°——yaw 限位自动读取）；**minotauro 真实包含
+  initial_turret_rotation（pitch=3°）完整复刻，err=0.0291m 原值报告**（pitch 使顶视投影非纯
+  2D 旋转，属物理效应非 pivot 偏差，不放宽阈值）。
+  **B1 视觉"偏后"根因（独立证据链）**：① pivot 数值正确——scene-graph 独立反推 err≤0.0002m，
+  且 GLB 炮塔底部环带中心与 pivot 吻合（bottom turret-ring anchor 已由 verifier 实现并输出，
+  见第三轮条目；Maus 0.218m / fv4005 0.110m / t57-heavy 0.019m / m-vi-yoh 0.010m）；② 视觉偏差来自
+  **turret.webp 的 raster
+  overflow contract**：图像包含完整炮管（Grille 15 炮管占图像上部 60%+），turret.webp 非透明
+  像素质心被炮管拉前，而座圈（红圈）在炮管根部、位于图像中下部（Maus 74.2% / Grille 15 85.6%）——
+  **红圈相对炮塔图像视觉质心偏"下"（后方）0.3m（Maus）~ 2.4m（Grille 15）**，炮管越长的车越
+  明显，"有些车没问题"（t57-heavy 0.02m / fv4005 0.04m / nc-70 图像仅炮盾+炮管、座圈居中）——
+  与人工 QA 反馈完全吻合；③ **QA 页 proto cell 真 bug**：bakeHullLayerStyle 的 transform-origin
+  写死 160px 未随 protoSize 缩放（protoSize≠320 时 hull 绕盒外点旋转，车体视觉漂移被误读为
+  pivot 偏后）——已修复（随 protoSize 缩放，与 turret assembly 同构）；④ QA 页新增"炮塔视觉
+  质心"青色参照标记（checkbox 开关，i18n 三语），人工 QA 对照红圈即可确认座圈落在炮塔主体上
+  = 正确，偏后量 ≈ 炮管占比效应。
+  **结论：pivot 数值不变（独立验证证明正确），修复 QA 页 proto cell 旋转中心 bug + 增加视觉
+  质心参照；全部 81 资产无需重新生成。**
+- **AC Teichos / NC 70 Błyskawica kind 确认 + 解除 confirmPending（PR92 Review B2）**：
+  经 BlitzKit 真实模型数据逐车确认 turreted——AC Teichos（22129）：GLB turret_01（631+1540
+  顶点）+ gun_01 + gun_01_mask、models.pb turret 模块无 yaw 限位；NC 70 Błyskawica（19585）：
+  GLB turret_01 为 1-triangle stub（casemate 主体在 hull_nc_01，属 hull 层；旋转层实际 =
+  gun_01 + gun_01_mask）、models.pb turret 模块 yaw ±10° limited-traverse（同 grille-15 处理）。
+  mapping 移除 confirmPending → **81/81 正式资产齐备（confirmPending=0）**；两车已 bake 并
+  通过 pivot 反推（err=0.0000m）；inventory/README/runtime 测试同步（runtime 不再有
+  confirmPending 分支）。
+- **dedicated 车型阵营视觉（PR92 Review B3）**：VehicleMarker 增加稳定 team token——
+  dedicated 渲染时 .pb-graphics 容器加 pb-graphics-dedicated 类，配合 marker 级
+  pb-friendly / pb-enemy 状态类输出友军暖橙（rgba(255,166,77)）/敌军冷青（rgba(64,192,255)）
+  双层 drop-shadow halo；纯 CSS 视觉层——不改纹理/不增第二资产集，不影响旋转、阵亡灰阶、
+  红 ✕、selected、recorder 与 generic 路径；新增 4 个组件测试（友/敌类名 + halo filter + generic
+  无 halo）。
+- **turretPivot source-of-truth（PR92 Review，BlitzKit useTankTransform 契约）**：baker 此前只用
+  tankModelDefinition.turret_origin 计算 pivot；官方运行时（packages/website/src/hooks/useTankTransform.ts，
+  已核对源码）的炮塔 yaw 旋转中心 = correctZYTuple(trackModelDefinition.origin) +
+  correctZYTuple(tankModelDefinition.turret_origin)。修复：selectDefaultModules 同时取得选中
+  track 的 origin（hullOrigin），baker 用 computeTurretModelPivot（向量和）计算 pivot；
+  bake-report 记录 pivotSource（engine origins + modelPivot）供不变量测试与审计。当前 BlitzKit
+  数据中 81 组 track origin 均为空（已与 live API 核对），hullOrigin=0 → 数值不变，但契约已
+  显式建模并有测试守护（B21：Maus/Grille 15/Leopard 1/FV4005/前置炮塔 type-71/后置炮塔 fv215b
+  + 全量 turreted 回归：metadata.turretPivot === fit(project(hullOrigin+turretOrigin))）。
+  initial_turret_rotation（仅 minotauro pitch=3 度）只影响初始朝向角与小幅修正，
+  不影响顶视 pivot——单测证明公式不消费该字段。
+- **SPHT（29985）kind 确认 + 解除 confirmPending**：经 BlitzKit 数据确认 turreted（GLB
+  turret_01 + gun_01 + gun_01_mask；models.pb turret 模块无 yaw 限位、turret_origin 存在）→
+  mapping 移除 confirmPending、生成正式资产（第 79 个）、inventory/README 同步；
+  runtime 测试更新（spht resolve 出正式资产；confirmPending 仅剩 ac-teichos / nc-70-blyskawica）。
+- **PR #92 Review 修复（2026-08-19）**：
+  - **marker transform-origin 坐标系修正（Blocker 1）**：markerTurretImageTransform 此前把
+    turretRaster.pivotX/pivotY（image-local pivot）错误除以 VIEWBOX=320 当 marker-global
+    坐标；改为相对 turret image 自身盒（origin% = pivot / (pixelWidth/2|pixelHeight/2)），
+    与 PR91 QA 页 px 数学同构；新增数学不变量测试（Maus + Grille 15 × H=0/90/180/270 ×
+    T≠H：复合位置 = turretRingPosition）。
+  - **runtime module-lifetime cache（Blocker 2）**：preloadBattleModels 增加 modelKey 级
+    cache（成功复用 / 失败页面生命周期内不重试 / 并发共享 in-flight Promise / 异常按失败
+    缓存）；测试重构为 vi.resetModules 隔离 + cache 1–8 用例。
+  - **阵亡 ✕ 视觉（追加需求 A）**：pb-death 白色 16px → 红色 #ff4d4f 22px/800、z-index 6、
+    多层描边——深/亮背景可读，与 last-known（淡化无 ✕）区分明显；三渲染路径一致。
+  - **QA 页 selected 指示器（追加需求 B）**：白色圆环绕画布边缘 → 红色 #e5484d 倒三角
+    （车辆正上方、z-index 6、drop-shadow），任意背景/车型/旋转角可见，不被图层遮挡。
+- **PR2 — Dedicated Tier X Models in Battle Playback（2026-08-19）**：
+  - **VehicleMarker 正式组件**（frontend/src/components/VehicleMarker.vue，计划 §17）：从
+    BattlePlayback.vue 抽出正式单车 marker（generic / dedicated turreted / dedicated turretless
+    三条渲染路径）；dedicated turreted = hull 满盒绕中心旋转 + turret assembly 嵌套 transform
+    （父层 rotate(H) around 盒中心、子层按 turretRaster 百分比定位绕 image-local pivot 旋转
+    T-H，数学统一在 pivot.js marker*Transform，含单测）；generic 保持原双层 PNG 行为不变；
+    marker 内部样式随组件迁移（父组件 scoped 不作用于子元素）。
+  - **生产 runtime 资产解析**（frontend/src/vehicle-models/runtime.js，计划 §12/§13/§18）：
+    tankId → modelKey → 正式资产（Vite 静态 URL + metadata）；战局级 preload——只预加载本场
+    实际出现的 Tier X（dedupe 同 modelKey 一次），3s 超时/失败 → 单车 generic fallback
+    （confirmPending/未知 tankId 直接 generic）；current-page cache（模块生命周期）；
+    动态 import 保持主 bundle 分离（check-bundle-separation 门禁通过）。
+  - **BattlePlayback 集成**（计划 §14/§15/§16）：view model 扩展（model/markerStyle/ariaLabel）；
+    preload 完成前不渲染车辆（禁止 generic 闪现后替换）；turretless 无 fake turret layer；
+    方向/阵亡冻结/最后已知沿用现有可信数据与插值（不伪造朝向）；非 Tier X 继续 generic。
+  - **i18n/版本**：versions.json v2.11.18 + CHANGELOG-PRODUCT（用户可见：Tier X 专属模型）。
 - **Tier X 车型资产 PR91 Review 修复（2026-08-18，5 blockers + 1 engineering gate）**：
   - **RASTER_Y_AXIS_CONTRACT（raster 方向契约）**：`texture-bake-lib.mjs::bakeTopView` 投影
     此前用 `pixelY = (modelY - minY) * scale`（model +Y → 图片下方），与 logical 契约

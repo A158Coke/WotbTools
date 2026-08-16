@@ -3,6 +3,10 @@
 AI Review「战局回放」的俯视坦克标记素材契约。最终方案为**通用半立体 MT 双层模型**：
 可独立旋转的透明车体层与透明炮塔层（炮塔外壳 + 完整炮管为刚性整体）。
 
+> **PR2 起（2026-08-19）**：本文件描述 **generic marker**（非 Tier X / fallback）契约。
+> Tier X 车型使用专属俯视模型（frontend/src/vehicle-models/assets/ + VehicleMarker.vue，
+> 系统文档见 docs/assets/tier-x-models/README.md），四张 sprite 不再用于 Tier X。
+
 ## 运行时素材
 
 - `tank-marker-friendly-hull.png` / `tank-marker-friendly-turret.png`：友军暖金车体与完整炮塔层。
@@ -23,10 +27,11 @@ AI Review「战局回放」的俯视坦克标记素材契约。最终方案为**
 ## 接入契约（未来播放器变更）
 
 - `hullYaw` / `turretRelativeYaw` / `turretWorldYaw` 已接入播放器：DTO 提供
-  `directionSamples`，`BattlePlayback.vue` 用四张运行时素材渲染双层标记
+  `directionSamples`，`VehicleMarker.vue`（PR2 起）在 generic 路径用四张运行时素材渲染双层标记
   （hull 按 `hullYawDeg`、turret 按 `turretWorldYawDeg` 独立旋转，共同 pivot 256,256）。
 - 阵亡（`pb-destroyed`）：敌我一致——双层素材冻结在最后可信方向（无方向样本时以素材默认 0° 渲染，
-  不代表真实朝向），整体 opacity .35 + grayscale(1) 去饱和，叠加同款 ✕；为独立 UI 状态，
+  不代表真实朝向），整体 opacity .35 + grayscale(1) 去饱和，叠加**红色大号 ✕**（PR #92 Review A：
+  VehicleMarker .pb-death，#ff4d4f/22px/多层描边，与仅淡化的 last-known 明显区分）；为独立 UI 状态，
   不并入 `pb-last-known`。
 - 历史轨迹只代表车辆曾经的位置，不代表车体或炮塔朝向。
 - 最后已知状态只使用透明灰，不添加时钟图标。

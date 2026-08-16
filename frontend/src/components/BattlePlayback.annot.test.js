@@ -26,6 +26,14 @@ vi.mock('../utils/mapPalette.js', async (importOriginal) => {
   return { ...actual, luminanceOfImage: vi.fn().mockResolvedValue(0.8) }
 })
 
+vi.mock('../vehicle-models/runtime.js', () => ({
+  preloadBattleModels: vi.fn(async () => ({
+    resolved: new Map(),
+    failed: new Set(),
+    byTank: new Map(),
+  })),
+}))
+
 function makeOverview() {
   return {
     mapCode: 'holland',

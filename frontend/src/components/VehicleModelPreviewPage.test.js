@@ -142,6 +142,45 @@ describe('VehicleModelPreviewPage', () => {
     expect(turretStyle).toContain('transform-origin: 47.81px 212.87px')
   })
 
+  it('selected 指示器：默认关闭不渲染；开启后为红色倒三角且层级最高（PR #92 Review B）', async () => {
+    authState.roles = ['wotbtools-admin']
+    authState.authenticated.value = true
+    const wrapper = mount(VehicleModelPreviewPage)
+    expect(await waitFor(() => wrapper.find('.vmp-canvas').exists())).toBe(true)
+    // 默认 showSelected=false → 不渲染
+    expect(wrapper.find('.vmp-selected').exists()).toBe(false)
+    // 第一个 checkbox = selected（模板顺序：selected/recorder/destroyed/lastKnown/pivot）
+    await wrapper.findAll('input[type="checkbox"]')[0].setValue(true)
+    const sel = wrapper.find('[data-test="vmp-selected"]')
+    expect(sel.exists()).toBe(true)
+    expect(sel.classes()).toContain('vmp-selected')
+    const style = sel.attributes('style') || ''
+    expect(style).toContain('border-top-color: #e5484d') // 红色倒三角
+    expect(style).toContain('z-index: 6') // 高于 hull(1)/turret(2)/pivot(5)——不被车型图层遮挡
+    // 关闭后消失
+    await wrapper.findAll('input[type="checkbox"]')[0].setValue(false)
+    expect(wrapper.find('.vmp-selected').exists()).toBe(false)
+  })
+
+  it('炮塔视觉质心参照（PR92 Review B1）：默认关闭；开启后渲染 .vmp-centroid（QA 对照红圈确认座圈正确）', async () => {
+    authState.roles = ['wotbtools-admin']
+    authState.authenticated.value = true
+    const wrapper = mount(VehicleModelPreviewPage)
+    expect(await waitFor(() => wrapper.find('.vmp-canvas').exists())).toBe(true)
+    // 默认 showCentroid=false → 不渲染
+    expect(wrapper.find('.vmp-centroid').exists()).toBe(false)
+    // 最后一个 checkbox = 视觉质心（模板顺序：selected/recorder/destroyed/lastKnown/pivot/centroid）
+    const boxes = wrapper.findAll('input[type="checkbox"]')
+    await boxes[boxes.length - 1].setValue(true)
+    expect(wrapper.find('.vmp-centroid').exists()).toBe(true)
+    // 质心未解码成功（happy-dom 无图片服务）时元素存在但隐藏——不阻塞 QA 主流程
+    const style = wrapper.find('.vmp-centroid').attributes('style') || ''
+    expect(style === '' || style.includes('display: none')).toBe(true)
+    // 关闭后消失
+    await boxes[boxes.length - 1].setValue(false)
+    expect(wrapper.find('.vmp-centroid').exists()).toBe(false)
+  })
+
   it('非 admin 角色显示无权限，不渲染工具栏', async () => {
     authState.roles = ['wotbtools-user']
     authState.authenticated.value = true

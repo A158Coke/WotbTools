@@ -40,6 +40,7 @@ import { bakeTopView, encodePng } from './texture-bake-lib.mjs'
 import {
   BLITZKIT_MODELS_PROTO,
   BLITZKIT_TANKS_MIN_PROTO,
+  computeTurretModelPivot,
   correctZYTuple,
   decodeBlitzkitPb,
   projectTopDown,
@@ -415,14 +416,29 @@ if (kind === 'turreted') {
   debugChannel('turret-ao', turretScene, turretFullB, 'occlusion')
 }
 
-// turretPivot（turreted：models.pb turretOrigin → 模型坐标 → 投影，与 extractor 同一公式）
+// turretPivot（turreted）——BlitzKit useTankTransform.ts 契约（PR92 Review）：
+// yaw 旋转中心 = correctZYTuple(trackModelDefinition.origin) + correctZYTuple(tankModelDefinition.turret_origin)
+// （运行时 turretPosition = R_init(R_yaw(-modelPivot)) + modelPivot；hullOrigin 缺失 = 零向量）
 let turretPivot = null
+let pivotSource = null
 if (kind === 'turreted') {
-  const origin = modules.turretOrigin || { x: 0, y: 0, z: 0 }
-  const modelPivot = correctZYTuple({ x: origin.x, y: origin.y, z: origin.z })
+  const hullOrigin = modules.trackOrigin || { x: 0, y: 0, z: 0 }
+  const turretOrigin = modules.turretOrigin || { x: 0, y: 0, z: 0 }
+  const hullOriginModel = correctZYTuple(hullOrigin)
+  const turretOriginModel = correctZYTuple(turretOrigin)
+  const modelPivot = computeTurretModelPivot(hullOrigin, turretOrigin)
   const pivot2d = projectTopDown(modelPivot)
   turretPivot = { x: +(pivot2d.x * scale + tx).toFixed(2), y: +(-pivot2d.y * scale + ty).toFixed(2) }
-  console.log(`  turretPivot=${JSON.stringify(turretPivot)}`)
+  pivotSource = {
+    contract: 'BlitzKit useTankTransform: yaw center = correctZYTuple(trackOrigin) + correctZYTuple(turret_origin)',
+    hullOrigin: hullOrigin,
+    turretOrigin: turretOrigin,
+    hullOriginModel: { x: +hullOriginModel.x.toFixed(6), y: +hullOriginModel.y.toFixed(6), z: +hullOriginModel.z.toFixed(6) },
+    turretOriginModel: { x: +turretOriginModel.x.toFixed(6), y: +turretOriginModel.y.toFixed(6), z: +turretOriginModel.z.toFixed(6) },
+    modelPivot: { x: +modelPivot.x.toFixed(6), y: +modelPivot.y.toFixed(6), z: +modelPivot.z.toFixed(6) },
+    initialTurretRotation: modules.initialTurretRotation || null,
+  }
+  console.log(`  turretPivot=${JSON.stringify(turretPivot)} modelPivot=${JSON.stringify(modelPivot)}`)
 }
 
 const report = {
@@ -443,6 +459,7 @@ const report = {
   turretBounds: kind === 'turreted' ? { min: [turretMainB.minX, turretMainB.minY], max: [turretMainB.maxX, turretMainB.maxY] } : null,
   gunBounds: gunB ? { min: [gunB.minX, gunB.minY], max: [gunB.maxX, gunB.maxY] } : null,
   turretPivot,
+  pivotSource,
   rasterOrientation: { hull: hullOrientation, ...(turretOrientation ? { turret: turretOrientation } : {}) },
   // raster overflow contract：turret.webp 画布 = turret+mantlet+完整 gun 的 logical bounds
   // （保持同一 fit.scale，主体不缩放；透明 canvas 向 320 逻辑画布外扩展，避免炮管裁切）

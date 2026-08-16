@@ -58,6 +58,50 @@ export function turretImageTransform({ hullDeg, turretWorldDeg, pivot, renderSca
 }
 
 /**
+ * —— Battle Playback marker 专用（标记盒尺寸由 CSS 控制，28px/22px，无固定 renderScale）——
+ * 百分比换算（Blocker 1 修复，与 PR91 VehicleModelPreviewPage.vue 的 px 数学严格同构）：
+ * - left/top/width/height：**相对 marker 盒**（containing block）——marker-global logical
+ *   坐标（logicalMinX/Y、pixelWidth/2、pixelHeight/2）除以 320 logical viewBox；
+ * - transform-origin：**相对 turret image 自身盒**——turretRaster.pivotX/pivotY 是
+ *   image-local logical pivot，必须除以 image 自身 logical 尺寸（pixelWidth/2 × pixelHeight/2），
+ *   等价于 QA 页的 origin = pivot * renderScale / 盒宽 = (pixelWidth/2) * renderScale。
+ *   错误做法（除以 320）会把 pivot 当成 marker-global 坐标，炮塔绕错误原点旋转。
+ */
+
+/**
+ * turret assembly 父层（marker 内）：绕 marker 盒中心旋转 hullWorldDeg。
+ * transform-origin 默认 50% 50%（元素自身中心 = 盒中心 = 车辆中心契约）。
+ * @param {{hullDeg:number}} p
+ */
+export function markerTurretAssemblyTransform({ hullDeg }) {
+  return { transform: `rotate(${hullDeg}deg)` }
+}
+
+/**
+ * turret image 子层（marker 内）：按 turretRaster（logical bounds + image-local pivot）
+ * 百分比定位，绕 image-local pivot 旋转 (turretWorldDeg - hullDeg)——最终 world yaw = T。
+ * @param {{hullDeg:number, turretWorldDeg:number, raster:object}} p raster = turretRaster
+ */
+export function markerTurretImageTransform({ hullDeg, turretWorldDeg, raster }) {
+  const { logicalMinX, logicalMinY, pixelWidth, pixelHeight, pivotX, pivotY } = raster
+  // 相对 marker 盒（containing block）：marker-global logical 坐标 / 320 viewBox
+  const boxPct = (v) => (v / VIEWBOX.width) * 100
+  // image-local pivot（pivotX/pivotY）必须相对 turret image 自身盒：
+  // origin% = pivot / (pixelWidth/2) * 100（同构于 QA 页 origin = pivot * renderScale）
+  const imgW = pixelWidth / 2
+  const imgH = pixelHeight / 2
+  const originPct = (v, size) => (size > 0 ? (v / size) * 100 : 0)
+  return {
+    left: `${boxPct(logicalMinX).toFixed(4)}%`,
+    top: `${boxPct(logicalMinY).toFixed(4)}%`,
+    width: `${boxPct(imgW).toFixed(4)}%`,
+    height: `${boxPct(imgH).toFixed(4)}%`,
+    transformOrigin: `${originPct(pivotX, imgW).toFixed(4)}% ${originPct(pivotY, imgH).toFixed(4)}%`,
+    transform: `rotate(${turretWorldDeg - hullDeg}deg)`,
+  }
+}
+
+/**
  * hull 旋转后炮塔座圈的真实屏幕位置（viewBox 坐标；y 向下，rotate 正角 = 屏幕顺时针）。
  * P' = C + rotate(P - C, hullDeg)。非中心炮塔（Grille 15 等）必须用此值，
  * 禁止把 turretPivot 当作 hull rotation 后的固定 screen point。

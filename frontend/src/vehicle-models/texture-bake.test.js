@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { bakeTopView, encodePng, interpolateUV, neutralize, sampleTexture } from '../../scripts/texture-bake-lib.mjs'
+import { computeTurretModelPivot } from '../../scripts/extractor-lib.mjs'
 
 const ASSETS = fileURLToPath(new URL('./assets/maus/', import.meta.url))
 
@@ -276,5 +277,47 @@ describe('Phase B — neutralize（B8 中性化，Blocker 3 语义反向修复�
     expect(r).toBeCloseTo(100 * 0.75 + luma * 0.25, 3)
     expect(g).toBeCloseTo(150 * 0.75 + luma * 0.25, 3)
     expect(b).toBeCloseTo(200 * 0.75 + luma * 0.25, 3)
+  })
+})
+describe('Phase B21 — turretPivot BlitzKit contract invariant（PR92 Review：yaw 中心 = hullOrigin + turretOrigin）', () => {
+  // 回归组：Maus / Grille 15 / Leopard 1 / FV4005 + 前置炮塔（type-71）+ 后置炮塔（fv215b）
+  const INVARIANT_KEYS = ['maus', 'grille-15', 'leopard-1', 'fv4005', 'type-71', 'fv215b']
+  const readReport = (key) => JSON.parse(readFileSync(fileURLToPath(new URL(`./assets/${key}/bake-report.json`, import.meta.url)), 'utf8'))
+
+  it('metadata.turretPivot === fit(project(correctZYTuple(trackOrigin) + correctZYTuple(turretOrigin)))', () => {
+    for (const key of INVARIANT_KEYS) {
+      const rep = readReport(key)
+      const meta = JSON.parse(readFileSync(fileURLToPath(new URL(`./assets/${key}/metadata.json`, import.meta.url)), 'utf8'))
+      const ps = rep.pivotSource
+      expect(ps, `${key} 缺 pivotSource`).toBeTruthy()
+      // 复算：由记录的引擎坐标 origins → 模型坐标向量和
+      const recomputed = computeTurretModelPivot(ps.hullOrigin, ps.turretOrigin)
+      expect(recomputed.x).toBeCloseTo(ps.modelPivot.x, 6)
+      expect(recomputed.y).toBeCloseTo(ps.modelPivot.y, 6)
+      // fit 投影 → metadata.turretPivot（与 baker 同式）
+      const { scale, tx, ty } = rep.fit
+      expect(meta.turretPivot.x).toBe(+(recomputed.x * scale + tx).toFixed(2))
+      expect(meta.turretPivot.y).toBe(+(-recomputed.y * scale + ty).toFixed(2))
+      expect(rep.turretPivot).toEqual(meta.turretPivot)
+    }
+  })
+
+  it('全部 turreted 资产：pivotSource 存在且 pivot 与复算一致（全量回归，防漂移）', () => {
+    const assetsDir = fileURLToPath(new URL('./assets/', import.meta.url))
+    const keys = readdirSync(assetsDir).filter((n) => /^[a-z0-9-]+$/.test(n))
+    expect(keys.length).toBeGreaterThanOrEqual(78)
+    for (const key of keys) {
+      const rep = readReport(key)
+      if (rep.kind !== 'turreted') continue
+      const ps = rep.pivotSource
+      expect(ps, `${key} 缺 pivotSource`).toBeTruthy()
+      const meta = JSON.parse(readFileSync(fileURLToPath(new URL(`./assets/${key}/metadata.json`, import.meta.url)), 'utf8'))
+      const recomputed = computeTurretModelPivot(ps.hullOrigin, ps.turretOrigin)
+      expect(recomputed.x).toBeCloseTo(ps.modelPivot.x, 6)
+      expect(recomputed.y).toBeCloseTo(ps.modelPivot.y, 6)
+      const { scale, tx, ty } = rep.fit
+      expect(meta.turretPivot.x).toBe(+(recomputed.x * scale + tx).toFixed(2))
+      expect(meta.turretPivot.y).toBe(+(-recomputed.y * scale + ty).toFixed(2))
+    }
   })
 })

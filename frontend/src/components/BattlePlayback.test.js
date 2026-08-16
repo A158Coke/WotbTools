@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import BattlePlayback from './BattlePlayback.vue'
+import { preloadBattleModels } from '../vehicle-models/runtime.js'
 
 const i18n = vi.hoisted(() => ({
   t: vi.fn(key => key)
@@ -30,6 +31,14 @@ vi.mock('../utils/mapPalette.js', async (importOriginal) => {
     luminanceOfImage: vi.fn().mockResolvedValue(0.8)
   }
 })
+
+vi.mock('../vehicle-models/runtime.js', () => ({
+  preloadBattleModels: vi.fn(async () => ({
+    resolved: new Map(),
+    failed: new Set(),
+    byTank: new Map(),
+  })),
+}))
 
 function makeOverview() {
   return {
@@ -863,5 +872,103 @@ describe('destroyed markers (symmetric contract)', () => {
     expect(enemy.findAll('img')[0].attributes('style')).toContain('rotate(0deg)')
     expect(enemy.findAll('img')[1].attributes('style')).toContain('rotate(0deg)')
     expect(enemy.find('.pb-death').text()).toBe('✕')
+  })
+})
+describe('PR2 — Tier X dedicated models in Battle Playback', () => {
+  const mausRaster = {
+    logicalMinX: 112.19, logicalMinY: -19.64, logicalMaxX: 207.81, logicalMaxY: 267.24,
+    pixelWidth: 191, pixelHeight: 574, pivotX: 47.81, pivotY: 212.87,
+  }
+  const mausModel = {
+    kind: 'turreted', hullSrc: '/vm/maus/hull.webp', turretSrc: '/vm/maus/turret.webp',
+    turretPivot: { x: 160, y: 193.23 }, turretRaster: mausRaster,
+  }
+  const hoRiModel = { kind: 'turretless', hullSrc: '/vm/ho-ri/hull.webp', turretSrc: null, turretPivot: null, turretRaster: null }
+
+  function overviewWithTank(tankId, tankName, team = 1) {
+    const overview = makeOverview()
+    overview.playback.vehicles = [
+      {
+        accountId: 1001, playerName: 'You', tankId, tankName, team,
+        positionIntervals: [{ startSec: 0, endSec: 60 }], deathSec: null,
+        directionSamples: [
+          { timeSec: 10, hullYawDeg: 0, turretRelativeYawDeg: 0 },
+          { timeSec: 14, hullYawDeg: 90, turretRelativeYawDeg: 30 },
+        ],
+      },
+    ]
+    return overview
+  }
+
+  afterEach(() => {
+    vi.mocked(preloadBattleModels).mockReset()
+    vi.mocked(preloadBattleModels).mockResolvedValue({ resolved: new Map(), failed: new Set(), byTank: new Map() })
+  })
+
+  it('Tier X turreted：渲染 dedicated hull + turret assembly（嵌套 transform），非 generic', async () => {
+    stubRaf()
+    const overview = overviewWithTank(6929, 'Maus')
+    vi.mocked(preloadBattleModels).mockResolvedValue({
+      resolved: new Map([['maus', mausModel]]),
+      failed: new Set(),
+      byTank: new Map([['6929', 'maus']]),
+    })
+    const wrapper = mountPlayback(overview, 12)
+    await flushPromises()
+    const marker = wrapper.find('[data-test="pb-marker-1001"]')
+    expect(marker.exists()).toBe(true)
+    expect(marker.find('.pb-hull-dedicated').attributes('src')).toBe('/vm/maus/hull.webp')
+    // t=12：hull 0→90 插值 45°；turret = 45 + 15(relative 0→30 插值) = 60°
+    expect(marker.find('.pb-hull-dedicated').attributes('style')).toContain('rotate(45deg)') // H
+    const assembly = marker.find('.pb-turret-assembly')
+    expect(assembly.exists()).toBe(true)
+    expect(assembly.attributes('style')).toContain('rotate(45deg)') // 父层 H
+    const turret = marker.find('.pb-turret-dedicated')
+    expect(turret.attributes('src')).toBe('/vm/maus/turret.webp')
+    expect(turret.attributes('style')).toContain('rotate(15deg)') // T - H = 60 - 45
+    expect(marker.find('.pb-hull.pb-hull-dedicated').exists()).toBe(true)
+    expect(marker.find('.pb-hull:not(.pb-hull-dedicated)').exists()).toBe(false) // 无 generic 层
+  })
+
+  it('preload 失败 modelKey → 单车 generic fallback（不整场 fallback）', async () => {
+    stubRaf()
+    const overview = overviewWithTank(6929, 'Maus')
+    vi.mocked(preloadBattleModels).mockResolvedValue({
+      resolved: new Map(),
+      failed: new Set(['maus']),
+      byTank: new Map([['6929', 'maus']]),
+    })
+    const wrapper = mountPlayback(overview, 12)
+    await flushPromises()
+    const marker = wrapper.find('[data-test="pb-marker-1001"]')
+    expect(marker.find('.pb-hull').exists()).toBe(true) // generic 双层
+    expect(marker.find('.pb-turret').exists()).toBe(true)
+    expect(marker.find('.pb-hull-dedicated').exists()).toBe(false)
+    expect(marker.find('.pb-turret-assembly').exists()).toBe(false)
+  })
+
+  it('Tier X turretless：仅 dedicated hull，无 fake turret layer（§14）', async () => {
+    stubRaf()
+    const overview = overviewWithTank(3937, 'Ho-Ri')
+    vi.mocked(preloadBattleModels).mockResolvedValue({
+      resolved: new Map([['ho-ri', hoRiModel]]),
+      failed: new Set(),
+      byTank: new Map([['3937', 'ho-ri']]),
+    })
+    const wrapper = mountPlayback(overview, 12)
+    await flushPromises()
+    const marker = wrapper.find('[data-test="pb-marker-1001"]')
+    expect(marker.find('.pb-hull-dedicated').exists()).toBe(true)
+    expect(marker.find('.pb-turret-assembly').exists()).toBe(false)
+    expect(marker.find('.pb-turret').exists()).toBe(false)
+  })
+
+  it('非 Tier X 战局：preload 返回空 → 全部 generic（行为不变）', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    expect(wrapper.findAll('.pb-vehicle')).toHaveLength(2)
+    expect(wrapper.find('.pb-hull-dedicated').exists()).toBe(false)
+    expect(wrapper.findAll('.pb-hull')).toHaveLength(2)
   })
 })

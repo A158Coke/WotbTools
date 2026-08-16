@@ -6,7 +6,14 @@
  */
 import { describe, expect, it } from 'vitest'
 import { VIEWBOX } from './types.js'
-import { hullLayerTransform, turretAssemblyTransform, turretImageTransform, turretRingPosition } from './pivot.js'
+import {
+  hullLayerTransform,
+  markerTurretAssemblyTransform,
+  markerTurretImageTransform,
+  turretAssemblyTransform,
+  turretImageTransform,
+  turretRingPosition,
+} from './pivot.js'
 
 const C = { x: VIEWBOX.width / 2, y: VIEWBOX.height / 2 }
 
@@ -137,6 +144,78 @@ describe('嵌套 transform composition（最终 world yaw = T，座圈 = P2）',
     expect(child.transformOrigin).toBe('60px 648px')
     expect(child.transform).toBe('rotate(20deg)')
   })
+})
+
+describe('marker 百分比变换（Battle Playback marker，盒尺寸 CSS 控制）', () => {
+  // 真实 metadata：Maus（turretPivot=(160,193.23)）与 Grille 15（明显后置 pivot=(160.1,220.36)）
+  const MAUS = {
+    raster: { logicalMinX: 112.19, logicalMinY: -19.64, logicalMaxX: 207.81, logicalMaxY: 267.24, pixelWidth: 191, pixelHeight: 574, pivotX: 47.81, pivotY: 212.87 },
+    turretPivot: { x: 160, y: 193.23 },
+  }
+  const GRILLE = {
+    raster: { logicalMinX: 120.01, logicalMinY: -211.92, logicalMaxX: 200.19, logicalMaxY: 292.86, pixelWidth: 160, pixelHeight: 1010, pivotX: 40.09, pivotY: 432.28 },
+    turretPivot: { x: 160.1, y: 220.36 },
+  }
+
+  it('assembly 父层绕盒中心旋转 hullDeg（transform-origin 默认 50% 50%）', () => {
+    const s = markerTurretAssemblyTransform({ hullDeg: 90 })
+    expect(s.transform).toBe('rotate(90deg)')
+    expect(s.transformOrigin).toBeUndefined() // 默认 = 元素中心 = 盒中心
+  })
+
+  it('image 子层：raster 百分比定位（相对 marker 盒）+ transform-origin 相对 image 自身盒（image-local pivot）', () => {
+    const s = markerTurretImageTransform({ hullDeg: 90, turretWorldDeg: 0, raster: MAUS.raster })
+    // left/top/width/height：marker-global logical / 320（containing block = marker 盒）
+    expect(s.left).toBe('35.0594%') // 112.19/320
+    expect(s.top).toBe('-6.1375%') // -19.64/320
+    expect(s.width).toBe('29.8438%') // (191/2)/320
+    expect(s.height).toBe('89.6875%') // (574/2)/320
+    // transform-origin：image-local pivot / image 自身 logical 尺寸（pixelWidth/2 × pixelHeight/2）
+    // Maus：47.81/95.5 = 50.0628%；212.87/287 = 74.1707%（不是 marker-global 的 14.9406%/66.5219%）
+    expect(s.transformOrigin).toBe('50.0628% 74.1707%')
+    expect(s.transform).toBe('rotate(-90deg)') // T - H
+  })
+
+  it('Grille 15（后置炮塔）：origin 同样相对 image 自身盒', () => {
+    const s = markerTurretImageTransform({ hullDeg: 0, turretWorldDeg: 45, raster: GRILLE.raster })
+    expect(s.transformOrigin).toBe('50.1125% 85.6000%') // 40.09/80, 432.28/505
+    expect(s.transform).toBe('rotate(45deg)')
+  })
+
+  /**
+   * 数学不变量（Blocker 1）：任意 H/T 下，turret image 的 image-local pivot 经嵌套 transform
+   * （子层绕自身 pivot 旋转 T-H——pivot 是不动点；父层绕 C 旋转 H）后，其 marker 位置
+   * 必须等于 metadata.turretPivot 经 hull rotation 后的位置（turretRingPosition）——
+   * 炮塔只绕真实座圈旋转，不漂移、不甩动、不脱离车体。
+   */
+  function composedPivot({ hullDeg, raster, turretPivot }) {
+    // 1) image-local pivot → marker 坐标（raster 原点 + image-local pivot；validator 同款自洽 ≤0.11）
+    const markerPivot = { x: raster.logicalMinX + raster.pivotX, y: raster.logicalMinY + raster.pivotY }
+    expect(Math.abs(markerPivot.x - turretPivot.x)).toBeLessThanOrEqual(0.11)
+    expect(Math.abs(markerPivot.y - turretPivot.y)).toBeLessThanOrEqual(0.11)
+    // 2) 子层 rotate(T-H) around pivot：pivot 不动 → 3) 父层 rotate(H) around C
+    return rotatePointAround({ point: markerPivot, origin: C, deg: hullDeg })
+  }
+
+  it('不变量：image-local pivot 复合位置 = turretRingPosition（Maus + Grille 15，H=0/90/180/270，T≠H）', () => {
+    for (const { raster, turretPivot } of [MAUS, GRILLE]) {
+      for (const H of [0, 90, 180, 270]) {
+        for (const T of [0, 45, 120]) {
+          if (T === H) continue
+          const s = markerTurretImageTransform({ hullDeg: H, turretWorldDeg: T, raster })
+          // origin 百分比 = pivot / image 自身 logical 尺寸
+          const [ox, oy] = s.transformOrigin.split(' ').map((v) => parseFloat(v))
+          expect(ox).toBeCloseTo(raster.pivotX / (raster.pixelWidth / 2) * 100, 4)
+          expect(oy).toBeCloseTo(raster.pivotY / (raster.pixelHeight / 2) * 100, 4)
+          const composed = composedPivot({ hullDeg: H, raster, turretPivot })
+          const ring = turretRingPosition({ pivot: turretPivot, hullDeg: H })
+          expect(composed.x).toBeCloseTo(ring.x, 6)
+          expect(composed.y).toBeCloseTo(ring.y, 6)
+        }
+      }
+    }
+  })
+
 })
 
 describe('hullLayerTransform（hull 层）', () => {

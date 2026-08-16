@@ -1,0 +1,259 @@
+<script setup>
+/**
+ * VehicleMarker（计划 §17）——Battle Playback 正式单车 marker 组件。
+ *
+ * 职责：dedicated/generic model display + hull rotation + turret rotation
+ * （含 OFF_CENTER turret assembly 嵌套 transform）。Selected/Recorder/Destroyed/
+ * Last-known 视觉状态沿用现有 class（PR3 重设计后整体迁移）。
+ * 不负责：replay parsing / Tankopedia lookup / resource fallback decision /
+ * 全局 label collision / playback timeline / map orchestration（外层 BattlePlayback 完成）。
+ *
+ * 渲染路径：
+ * - generic（marker.model == null）：现有通用 PNG 双层（共同 pivot 居中旋转，行为不变）；
+ * - dedicated turreted：hull.webp 填满标记盒绕中心旋转 + turret assembly
+ *   （父层 rotate(H) around 盒中心；子层按 turretRaster 百分比定位，绕 image-local
+ *   pivot rotate(T-H)）——数学见 vehicle-models/pivot.js（marker*Transform）；
+ * - dedicated turretless：仅 hull（gun/mantlet 已 bake 进 hull；无 fake turret layer）。
+ */
+import { computed } from 'vue'
+import {
+  markerTurretAssemblyTransform,
+  markerTurretImageTransform,
+} from '../vehicle-models/pivot.js'
+
+const props = defineProps({
+  /** vehicleState 视图模型（BattlePlayback 构建；含 model / hullScreenDeg / turretScreenDeg / 状态） */
+  marker: { type: Object, required: true },
+  /** 是否选中（selectedAccountId === accountId） */
+  selected: { type: Boolean, default: false },
+})
+
+const emit = defineEmits(['select'])
+
+const st = computed(() => props.marker)
+const model = computed(() => st.value.model || null)
+const isDedicated = computed(() => model.value !== null)
+const isTurreted = computed(() => model.value?.kind === 'turreted')
+const hullDeg = computed(() => st.value.hullScreenDeg)
+const turretDeg = computed(() => st.value.turretScreenDeg)
+
+// —— dedicated turret assembly（嵌套 transform）——
+const assemblyStyle = computed(() =>
+  isDedicated.value && isTurreted.value && turretDeg.value != null
+    ? markerTurretAssemblyTransform({ hullDeg: hullDeg.value ?? 0 })
+    : null,
+)
+const turretImageStyle = computed(() => {
+  if (!isDedicated.value || !isTurreted.value || turretDeg.value == null) return null
+  return markerTurretImageTransform({
+    hullDeg: hullDeg.value ?? 0,
+    turretWorldDeg: turretDeg.value,
+    raster: model.value.turretRaster,
+  })
+})
+// hull 图片样式：dedicated 填满标记盒（0/0/100%/100%，绕盒中心 = 自身中心旋转）；
+// generic 保持现有 131% 居中模式（视觉不变）。
+const hullImageStyle = computed(() => {
+  if (!isDedicated.value) return null
+  return { transform: hullDeg.value != null ? `rotate(${hullDeg.value}deg)` : 'none' }
+})
+// generic 模式 hull/turret：现有 translate(-50%,-50%) rotate() 组合
+const genericHullStyle = computed(() =>
+  hullDeg.value != null ? { transform: `translate(-50%, -50%) rotate(${hullDeg.value}deg)` } : null,
+)
+const genericTurretStyle = computed(() =>
+  turretDeg.value != null ? { transform: `translate(-50%, -50%) rotate(${turretDeg.value}deg)` } : null,
+)
+
+const stateClasses = computed(() => ({
+  'pb-last-known': st.value.lastKnown && !st.value.destroyed,
+  'pb-destroyed': st.value.destroyed,
+  'pb-recorder': st.value.recorder,
+  'pb-selected': props.selected,
+  // PR92 Review B3：dedicated 阵营语义（generic 仍由 friendly/enemy PNG 表达，不加 class 副作用）
+  'pb-friendly': st.value.friendly === true,
+  'pb-enemy': st.value.friendly === false,
+}))
+</script>
+
+<template>
+  <button
+    type="button"
+    class="pb-vehicle"
+    :class="stateClasses"
+    :style="st.markerStyle"
+    :aria-label="st.ariaLabel"
+    :data-test="`pb-marker-${st.vehicle.accountId}`"
+    @click="emit('select')"
+  >
+    <!-- 车型视觉层容器：destroyed 的 opacity/grayscale 精确作用于此处（而非整个 button）——
+         pb-death ✕ / pb-name 是 button 直接子元素、在容器外，保持完整 opacity（parent opacity
+         无法被子元素抵消，故不能放在 button 上）。容器 absolute inset:0 保持与 button 同盒，
+         imgs 的百分比定位（containing block）不变。 -->
+    <div class="pb-graphics" :class="{ 'pb-graphics-dedicated': isDedicated }">
+      <!-- dedicated turreted：hull 满盒 + turret assembly（父层绕盒中心 H，子层绕 image-local pivot T-H） -->
+      <template v-if="isDedicated && isTurreted">
+        <img
+          v-if="hullDeg != null"
+          class="pb-hull pb-hull-dedicated"
+          :src="model.hullSrc"
+          alt=""
+          aria-hidden="true"
+          :style="hullImageStyle"
+        />
+        <div
+          v-if="turretDeg != null"
+          class="pb-turret-assembly"
+          :style="assemblyStyle"
+        >
+          <img
+            class="pb-turret pb-turret-dedicated"
+            :src="model.turretSrc"
+            alt=""
+            aria-hidden="true"
+            :style="turretImageStyle"
+          />
+        </div>
+      </template>
+
+      <!-- dedicated turretless：仅 hull（gun 已 bake 进 hull；无 fake turret layer） -->
+      <template v-else-if="isDedicated">
+        <img
+          v-if="hullDeg != null"
+          class="pb-hull pb-hull-dedicated"
+          :src="model.hullSrc"
+          alt=""
+          aria-hidden="true"
+          :style="hullImageStyle"
+        />
+      </template>
+
+      <!-- generic：现有双层 PNG（共同 pivot 居中旋转，行为不变） -->
+      <template v-else>
+        <img
+          v-if="hullDeg != null"
+          class="pb-hull"
+          :src="st.hullImage"
+          alt=""
+          aria-hidden="true"
+          :style="genericHullStyle"
+        />
+        <img
+          v-if="turretDeg != null"
+          class="pb-turret"
+          :src="st.turretImage"
+          alt=""
+          aria-hidden="true"
+          :style="genericTurretStyle"
+        />
+      </template>
+    </div>
+
+    <span
+      v-if="st.destroyed"
+      class="pb-death"
+      aria-hidden="true"
+      :style="{ color: '#ff4d4f', fontSize: '22px', fontWeight: '800', zIndex: 6, transform: `translateX(-50%) ${st.overlayInverseScale}` }"
+    >✕</span>
+    <span
+      class="pb-name"
+      aria-hidden="true"
+      :style="{ transform: `translateX(-50%) ${st.overlayInverseScale}` }"
+    >{{ st.vehicle.tankName || st.vehicle.tankId }}</span>
+  </button>
+</template>
+
+<style scoped>
+/* —— marker 内部样式（原 BattlePlayback.vue，随组件迁移；父组件 scoped 不作用于子元素）—— */
+/* generic 素材 512×512 含大量透明留白：放大到按钮 131% 居中，共同 pivot 旋转 */
+.pb-hull, .pb-turret {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 131%;
+  height: 131%;
+  transform: translate(-50%, -50%);
+}
+.pb-hull { z-index: 1; }
+.pb-turret { z-index: 2; }
+/* dedicated hull：填满标记盒，绕盒中心（= 自身中心）旋转（rotate 由 inline style 提供） */
+.pb-hull-dedicated {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+}
+/* dedicated turret assembly：随 hull 绕盒中心旋转（座圈随车体移动） */
+.pb-turret-assembly {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+/* dedicated turret：raster 百分比定位 + image-local pivot 旋转（inline style 提供） */
+.pb-turret-dedicated {
+  position: absolute;
+  z-index: 1;
+}
+/* 车型视觉层容器：与 button 同盒（imgs 百分比定位的 containing block 不变） */
+.pb-graphics {
+  position: absolute;
+  inset: 0;
+}
+/* 阵亡（PR #92 Review Blocker）：opacity/grayscale 精确作用于视觉层容器——
+   整棵子树恰好 .35 一次（assembly 内不再叠加 opacity，避免 0.35×0.35=0.1225）；
+   pb-death ✕ / pb-name 在容器外，保持完整 opacity。 */
+.pb-destroyed .pb-graphics {
+  opacity: 0.35;
+  filter: grayscale(1);
+}
+/* PR92 Review B3 —— dedicated 阵营 halo（只作用于 dedicated 视觉层）：
+   暖 amber（友军）/ 冷 cyan（敌军）外围光晕——不修改原始车型纹理、不生成两套资产、
+   不影响 hull/turret 独立旋转；generic 路径不加（保持 friendly/enemy PNG 原语义）。
+   :not(.pb-destroyed)：与 .pb-destroyed .pb-graphics 的 filter 互斥（两者 specificity
+   相同、后写者胜——若不加排除，阵亡灰阶会被 halo 覆盖）；destroyed 保持 grayscale 原语义。 */
+.pb-friendly:not(.pb-destroyed) .pb-graphics-dedicated {
+  filter: drop-shadow(0 0 2px rgba(255, 166, 77, 0.95)) drop-shadow(0 0 7px rgba(255, 166, 77, 0.55));
+}
+.pb-enemy:not(.pb-destroyed) .pb-graphics-dedicated {
+  filter: drop-shadow(0 0 2px rgba(64, 192, 255, 0.95)) drop-shadow(0 0 7px rgba(64, 192, 255, 0.55));
+}
+/* 阵亡 ✕（PR #92 Review A）：红色 + 更大 + 多层描边——深/亮色地图背景都清晰可读，
+   与 last-known（仅淡化，无 ✕）语义区分明显。颜色/字号/z-index 由 inline style 提供
+   （可测试）；此块负责位置/形状/描边。 */
+.pb-death {
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  line-height: 1;
+  z-index: 6;
+  pointer-events: none;
+  text-shadow:
+    0 0 3px rgba(0, 0, 0, 0.9),
+    0 0 3px rgba(0, 0, 0, 0.9),
+    0 1px 2px rgba(0, 0, 0, 0.8),
+    -1px -1px 0 rgba(0, 0, 0, 0.55),
+    1px 1px 0 rgba(0, 0, 0, 0.55);
+}
+/* 常显坦克型号名标签：位于图标上方，经 overlayInverseScale 反缩放 → 字号不随地图缩放 */
+.pb-name {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  line-height: 1.2;
+  color: #fff;
+  background: rgba(0, 0, 0, .55);
+  padding: 1px 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 5;
+  pointer-events: none;
+}
+</style>
+

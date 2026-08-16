@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.18",
+    "date": "2026-08-19",
+    "tag": "add",
+    "zh": "战局回放新增 Tier X 专属坦克模型：Tier X 坦克显示自己车型的俯视模型（车体与炮塔独立旋转、无炮塔车型不再出现炮塔层），非 Tier X 保持原通用标记；进入战局回放前自动预加载本场实际出现的 Tier X 车型，个别车型加载失败会自动回退为通用标记，不影响整场回放；阵亡坦克的 ✕ 标记改为更醒目的红色，与仅淡化的最后已知位置明显区分。",
+    "en": "Battle playback now shows dedicated top-down models for Tier X tanks: each Tier X vehicle renders its own model with independent hull and turret rotation (turretless vehicles no longer show a turret layer), while non-Tier-X keeps the generic marker; the models appearing in the current battle are preloaded before playback starts, and a model that fails to load falls back to the generic marker for that vehicle only; destroyed vehicles now show a larger red ✕ mark, clearly distinct from the faded last-known position.",
+    "ru": "В повторе боя появились уникальные модели танков Tier X: машины Tier X отображаются со своей моделью сверху (корпус и башня вращаются независимо, у машин без башни слой башни больше не показывается), для машин ниже Tier X остаётся общий маркер; модели машин текущего боя предзагружаются до начала воспроизведения, а при сбое загрузки отдельной машины она автоматически переключается на общий маркер, не затрагивая остальных; у уничтоженных машин появился крупный красный знак ✕, чётко отличающийся от приглушённой последней известной позиции."
+  },
+  {
     "v": "2.11.17",
     "date": "2026-08-16",
     "tag": "add",

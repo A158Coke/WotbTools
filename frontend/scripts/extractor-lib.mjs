@@ -14,6 +14,24 @@ export function correctZYTuple(v) {
   return { x: v.x, y: v.z, z: v.y }
 }
 
+/**
+ * 炮塔 yaw 旋转中心（BlitzKit useTankTransform.ts 契约）：
+ *   hullOrigin   = correctZYTuple(trackModelDefinition.origin)     // 模型坐标
+ *   turretOrigin = correctZYTuple(tankModelDefinition.turret_origin)
+ *   modelPivot   = hullOrigin + turretOrigin（模型坐标向量和）
+ * 运行时的 turretPosition = R_init(R_yaw(-modelPivot)) + modelPivot——旋转中心即 modelPivot；
+ * initial_turret_rotation 只附加初始朝向角（turretRotation.x/y/z += initial）与绕世界原点
+ * 的小幅位置修正（|Δ| ≤ |θ|·|modelPivot|，对 minotauro pitch=3° ≈ 0.13m），不影响顶视 pivot。
+ * @param {{x?:number,y?:number,z?:number}} hullOrigin   引擎坐标（track origin；可能缺失→零）
+ * @param {{x?:number,y?:number,z?:number}} turretOrigin 引擎坐标（turret_origin）
+ * @returns {{x:number,y:number,z:number}} 模型坐标 pivot
+ */
+export function computeTurretModelPivot(hullOrigin, turretOrigin) {
+  const h = correctZYTuple(hullOrigin || { x: 0, y: 0, z: 0 })
+  const t = correctZYTuple(turretOrigin || { x: 0, y: 0, z: 0 })
+  return { x: h.x + t.x, y: h.y + t.y, z: h.z + t.z }
+}
+
 /** 模型坐标 → 2D 俯视投影（x=宽、y=长）。 */
 export function projectTopDown(v) {
   return { x: v.x, y: v.y }
@@ -238,6 +256,48 @@ export function collectNodeTriangles(node, out, matrix) {
   }
   for (const c of node.listChildren()) {
     collectNodeTriangles(c, out, m)
+  }
+}
+
+/**
+ * 收集节点子树所有 mesh 顶点（POSITION，应用节点/世界矩阵）——与 collectNodeTriangles
+ * **同一 hierarchy 语义**（PR92 Review B1 第三轮：verify-pivot-independent.mjs 曾各自
+ * 实现一套 traversal，且漏乘 node 自身 TRS；必须单源复用，避免两套语义漂移）：
+ *   worldMatrix = parentMatrix · nodeLocalMatrix
+ *   1. node 自身 TRS 乘入 worldMatrix 后作用于**自己的 mesh**；
+ *   2. children 递归传 worldMatrix（已含自身）。
+ * @param {object} node  @gltf-transform Node（或同接口 mock）
+ * @param {number[][]} out 输出 [[x,y,z], ...]（模型坐标）
+ * @param {THREE.Matrix4} matrix 父链 world matrix（入口传 identity）
+ */
+export function collectNodeVerts(node, out, matrix) {
+  const m = matrix.clone()
+  const t = node.getTranslation()
+  const r = node.getRotation()
+  const s = node.getScale()
+  if (t || r || s) {
+    const e = new THREE.Matrix4().compose(
+      new THREE.Vector3(t ? t[0] : 0, t ? t[1] : 0, t ? t[2] : 0),
+      new THREE.Quaternion(r ? r[0] : 0, r ? r[1] : 0, r ? r[2] : 0, r ? r[3] : 1),
+      new THREE.Vector3(s ? s[0] : 1, s ? s[1] : 1, s ? s[2] : 1),
+    )
+    m.multiply(e)
+  }
+  const mesh = node.getMesh()
+  if (mesh) {
+    for (const prim of mesh.listPrimitives()) {
+      const posAcc = prim.getAttribute('POSITION')
+      if (!posAcc) continue
+      const positions = posAcc.getArray()
+      const v = new THREE.Vector3()
+      for (let i = 0; i < positions.length; i += 3) {
+        v.set(positions[i], positions[i + 1], positions[i + 2]).applyMatrix4(m)
+        out.push([v.x, v.y, v.z])
+      }
+    }
+  }
+  for (const c of node.listChildren()) {
+    collectNodeVerts(c, out, m)
   }
 }
 
@@ -1142,8 +1202,8 @@ export function decodeBlitzkitPb(buffer, typeName, protoText) {
  * @param {object} tankDefs  TankDefinitions.toObject（tanks.pb）
  * @param {object} modelDefs ModelDefinitions.toObject（models.pb）
  * @param {number} tankId
- * @returns {{ turretId, gunId, trackId, turretModelId, gunModelId, turretOrigin }}
- *   turretOrigin 为 models.pb 引擎坐标（可能 null）
+ * @returns {{ turretId, gunId, trackId, turretModelId, gunModelId, trackOrigin, turretOrigin }}
+ *   trackOrigin / turretOrigin 为 models.pb 引擎坐标（可能 null/缺失）
  */
 export function selectDefaultModules(tankDefs, modelDefs, tankId) {
   const tankDef = tankDefs.tanks[String(tankId)]
@@ -1161,13 +1221,18 @@ export function selectDefaultModules(tankDefs, modelDefs, tankId) {
   if (turretModelId === undefined || gunModelId === undefined) {
     throw new Error('models.pb 缺 turret/gun model_id（turret=' + turretDef.id + ' gun=' + gunDef.id + '）')
   }
+  // hullOrigin（BlitzKit useTankTransform：trackModelDefinition.origin）——选中 track 的 origin
+  const trackModelDef = trackDef != null && modelDef.tracks ? modelDef.tracks[String(trackDef.id)] : null
   return {
     turretId: turretDef.id,
     gunId: gunDef.id,
     trackId: trackDef?.id,
     turretModelId,
     gunModelId,
+    trackOrigin: trackModelDef?.origin || null,
     turretOrigin: modelDef.turretOrigin || null,
+    // 审计用：initial_turret_rotation 只影响初始朝向角，不影响顶视 pivot（computeTurretModelPivot 不消费）
+    initialTurretRotation: modelDef.initialTurretRotation || null,
   }
 }
 
