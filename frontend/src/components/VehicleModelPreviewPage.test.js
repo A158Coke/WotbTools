@@ -79,6 +79,33 @@ describe('VehicleModelPreviewPage', () => {
     expect(wrapper.find('.vmp-turret').exists()).toBe(true)
   })
 
+  it('turret img 的 transform-origin 精确等于 sample 非中心 pivot（160,150）', async () => {
+    authState.roles = ['wotbtools-admin']
+    authState.authenticated.value = true
+    const wrapper = mount(VehicleModelPreviewPage)
+    expect(await waitFor(() => wrapper.find('.vmp-turret').exists())).toBe(true)
+    const hullStyle = wrapper.find('.vmp-hull').attributes('style') || ''
+    const turretStyle = wrapper.find('.vmp-turret').attributes('style') || ''
+    // hull 绕画布中心 (160,160)
+    expect(hullStyle).toContain('transform-origin: 160px 160px')
+    // turret 绕 metadata turretPivot (160,150)——非画布中心
+    expect(turretStyle).toContain('transform-origin: 160px 150px')
+    expect(turretStyle).toContain('rotate(0deg)')
+  })
+
+  it('pivot debug marker 位置与 turret 旋转轴一致（同源坐标）', async () => {
+    authState.roles = ['wotbtools-admin']
+    authState.authenticated.value = true
+    const wrapper = mount(VehicleModelPreviewPage)
+    expect(await waitFor(() => wrapper.find('.vmp-pivot').exists())).toBe(true)
+    const pivotEl = wrapper.find('.vmp-pivot').attributes('style') || ''
+    // 画布 320px：marker left/top = pivot × scale = 160px 150px
+    expect(pivotEl).toContain('left: 160px')
+    expect(pivotEl).toContain('top: 150px')
+    const turretStyle = wrapper.find('.vmp-turret').attributes('style') || ''
+    expect(turretStyle).toContain('transform-origin: 160px 150px')
+  })
+
   it('非 admin 角色显示无权限，不渲染工具栏', async () => {
     authState.roles = ['wotbtools-user']
     authState.authenticated.value = true

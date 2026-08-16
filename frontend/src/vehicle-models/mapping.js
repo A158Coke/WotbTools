@@ -15,6 +15,16 @@
  * 本文件不存 display name（继续来自 Tankopedia/replay），不建立第二套
  * canonical tank database。kind（turreted/turretless）是 mapping 的事实声明，
  * 资产 metadata.json 必须与之一致（validator 校验）。
+ *
+ * kind 核验（2026-08-17，全 81 组）：基于官方 tankopedia 描述 / fandom wiki /
+ * 车辆实际俯视结构核验，不采用 BlitzKit TURRET module 或 turretRotationSpeed
+ * 字段（casemate 也有 turret module 且转速非零，不可判）。修正记录：
+ * - minotauro: turretless → turreted（fandom：有炮塔，约 45° 限位）
+ * - foch-155:  turreted → turretless（fandom specs turret=no，固定/微转前向炮塔）
+ * - xm66f:     turretless → turreted（官方 tankopedia：non-fully-rotating turret）
+ * confirmPending=true 的车型（spht / ac-teichos / nc-70-blyskawica）无法从当前
+ * 参考资料可靠确认结构，ChatGPT 生成时需对照 BlitzKit 参考图确认 kind，
+ * 不一致时同步修正 mapping 与 metadata；确认前这些车型的 contract 未冻结。
  */
 
 /** modelKey → { kind, tankIds }。 */
@@ -45,7 +55,7 @@ export const MODEL_DEFINITIONS = Object.freeze({
   "e-100": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([9489]) }),
   "carro-45t": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([10113]) }),
   "wz-132-1": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([10289]) }),
-  "minotauro": Object.freeze({ kind: 'turretless', tankIds: Object.freeze([10369]) }),
+  "minotauro": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([10369]) }),
   "t110e5": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([10785]) }),
   "114-sp2": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([11057]) }),
   "kpz-70": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([11281, 30481]) }),
@@ -59,7 +69,7 @@ export const MODEL_DEFINITIONS = Object.freeze({
   "obj-268": Object.freeze({ kind: 'turretless', tankIds: Object.freeze([13569]) }),
   "t-62a": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([13825]) }),
   "t110e3": Object.freeze({ kind: 'turretless', tankIds: Object.freeze([13857]) }),
-  "foch-155": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([13889]) }),
+  "foch-155": Object.freeze({ kind: 'turretless', tankIds: Object.freeze([13889]) }),
   "m48-patton": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([14113]) }),
   "bzt-70": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([14129]) }),
   "obj-263": Object.freeze({ kind: 'turretless', tankIds: Object.freeze([14337]) }),
@@ -78,14 +88,14 @@ export const MODEL_DEFINITIONS = Object.freeze({
   "grille-15": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([19217]) }),
   "super-conqueror": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([19281]) }),
   "vickers-light": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([19537]) }),
-  "nc-70-blyskawica": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([19585]) }),
+  "nc-70-blyskawica": Object.freeze({ kind: 'turreted', confirmPending: true, tankIds: Object.freeze([19585]) }),
   "ac-atlas": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([19825]) }),
   "t-22-medium": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([19969]) }),
   "felice": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([20097]) }),
   "sheridan": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([20257, 21793]) }),
   "projet-murat": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([21057]) }),
   "vk-90-01-p": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([21777]) }),
-  "ac-teichos": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([22129]) }),
+  "ac-teichos": Object.freeze({ kind: 'turreted', confirmPending: true, tankIds: Object.freeze([22129]) }),
   "obj-260": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([22273]) }),
   "m-vi-yoh": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([22817]) }),
   "m47-chevalier": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([23105]) }),
@@ -96,9 +106,9 @@ export const MODEL_DEFINITIONS = Object.freeze({
   "gsor-the-tank": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([25169]) }),
   "obj-777-ii": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([25857]) }),
   "rhm-pzw": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([28689]) }),
-  "xm66f": Object.freeze({ kind: 'turretless', tankIds: Object.freeze([28705]) }),
+  "xm66f": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([28705]) }),
   "waffen-f1-0": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([28945]) }),
-  "spht": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([29985]) }),
+  "spht": Object.freeze({ kind: 'turreted', confirmPending: true, tankIds: Object.freeze([29985]) }),
   "vk-72-01-k": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([58641]) })
 })
 

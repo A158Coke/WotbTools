@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, defineAsyncComponent, ref } from 'vue'
 import { useTheme } from './composables/useTheme.js'
 import { useError } from './composables/useError.js'
 import HomePage from './components/HomePage.vue'
@@ -12,7 +12,12 @@ import ExtendedPage from './components/ExtendedPage.vue'
 import ReconstructionPage from './components/ReconstructionPage.vue'
 import VersionPage from './components/VersionPage.vue'
 import ContactPage from './components/ContactPage.vue'
-import VehicleModelPreviewPage from './components/VehicleModelPreviewPage.vue'
+// 隐藏 QA 页（?view=vehicle-models，仅 wotbtools-admin）必须异步加载：
+// preview 内含全部车型 QA 资产（import.meta.glob），静态 import 会把未来
+// 81 套 Tier X SVG 拖进普通用户初始主 bundle。异步组件 → 独立 chunk，
+// 普通用户不访问该隐藏页面时完全不加载（见 scripts/check-bundle-separation.mjs）。
+// production Battle Playback 仍坚持「只 preload 当前战局实际出现 Tier X」的总计划边界。
+const VehicleModelPreviewPage = defineAsyncComponent(() => import('./components/VehicleModelPreviewPage.vue'))
 
 const { theme, handleTheme } = useTheme()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
