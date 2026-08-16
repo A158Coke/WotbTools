@@ -82,7 +82,9 @@ describe('dedicated turreted（嵌套 transform）', () => {
     expect(turret.attributes('style')).toContain('left: 35.0594%')
     expect(turret.attributes('style')).toContain('top: -6.1375%')
     expect(turret.attributes('style')).toContain('width: 29.8438%')
-    expect(turret.attributes('style')).toContain('transform-origin: 14.9406% 66.5219%')
+    // transform-origin 相对 image 自身盒（image-local pivot / image 尺寸）：
+    // 47.81/95.5 = 50.0628%，212.87/287 = 74.1707%（不是 marker-global 的 14.9406%/66.5219%）
+    expect(turret.attributes('style')).toContain('transform-origin: 50.0628% 74.1707%')
     expect(turret.attributes('style')).toContain('rotate(30deg)') // T - H = 60 - 30
   })
 

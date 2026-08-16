@@ -96,12 +96,62 @@ function loadImage(url, timeoutMs) {
 }
 
 /**
+ * module-lifetime preload cache（current-page cache，计划 §12；页面刷新自然清空，
+ * 不做 localStorage/IndexedDB/persistent cache）。
+ *
+ * modelKey 级状态机（Map 值）：
+ * - undefined         未请求；
+ * - Promise           in-flight（并发去重：同一 modelKey 的并发请求共享同一个 Promise，
+ *                     实际只加载一次；两个 BattlePlayback 实例/快速切换不会重复 preload）；
+ * - { ok: true, model } 已成功——后续 battle 直接复用，不再调用 imageLoader；
+ * - { ok: false }     已失败（resolve 失败 / 图片加载或超时失败）——页面生命周期内
+ *                     不再重试：失败原因通常稳定（缺资产/网络），避免切换 replay 时
+ *                     反复等待 3s timeout；单车 generic fallback 语义不变。
+ */
+const preloadCache = new Map()
+
+/**
+ * 单个 modelKey 的 preload（带 cache + in-flight 去重）。
+ * 返回 { ok: true, model } | { ok: false }。
+ */
+async function preloadModel(modelKey, { timeoutMs, imageLoader }) {
+  const existing = preloadCache.get(modelKey)
+  if (existing) return existing // in-flight Promise 或已固化结果（await 非 thenable 直接返回）
+  const task = (async () => {
+    try {
+      const model = resolveModel(modelKey)
+      if (!model) {
+        console.error(`[vehicle-models] resolve 失败 modelKey=${modelKey} → generic fallback`)
+        return { ok: false }
+      }
+      const urls = [model.hullSrc]
+      if (model.turretSrc) urls.push(model.turretSrc)
+      const loaded = await Promise.all(urls.map((u) => imageLoader(u, timeoutMs))).then((r) => r.every(Boolean))
+      if (!loaded) {
+        console.error(`[vehicle-models] preload 超时/失败 modelKey=${modelKey} → generic fallback`)
+        return { ok: false }
+      }
+      return { ok: true, model }
+    } catch (e) {
+      // imageLoader 异常也按失败缓存——cache 永不留 rejected promise（避免悬挂/未处理 rejection）
+      console.error(`[vehicle-models] preload 异常 modelKey=${modelKey} → generic fallback`, e)
+      return { ok: false }
+    }
+  })()
+  preloadCache.set(modelKey, task) // 先存 in-flight，去重并发
+  const result = await task
+  preloadCache.set(modelKey, result) // 固化（成功/失败都缓存，页面生命周期内不再重试）
+  return result
+}
+
+/**
  * 战局级 preload（计划 §12/§13）：
- * - 输入本场全部 tankIds；只处理 Tier X modelKeys（dedupe：Set）；
- * - 并行解析 + 图片预加载；单个 modelKey 超时/失败 → failed（该车型 fallback generic）；
+ * - 输入本场全部 tankIds；只处理 Tier X modelKeys；
+ * - module-lifetime cache：已成功/已失败的 modelKey 不重复解析、不重复调用 imageLoader；
+ * - 并发请求同一 modelKey 共享 in-flight Promise（实际只加载一次）；
+ * - 单个 modelKey 失败 → failed（该车型 fallback generic，不整场 fallback）；
  * - 返回 { resolved: Map<modelKey, VehicleModel>, failed: Set<modelKey>,
- *   byTank: Map<tankId, modelKey|null> }（byTank 供渲染侧直接查单车决策）；
- * - 不做整场 fallback（其他车型照常）。
+ *   byTank: Map<tankId, modelKey|null> }（byTank 供渲染侧直接查单车决策）。
  * @param {number[]|string[]} tankIds
  * @param {{timeoutMs?:number, imageLoader?:(url:string, timeoutMs:number)=>Promise<boolean>}} [opts] 测试注入
  */
@@ -119,21 +169,9 @@ export async function preloadBattleModels(tankIds, opts = {}) {
   const failed = new Set()
   await Promise.all(
     [...modelKeys].map(async (modelKey) => {
-      const model = resolveModel(modelKey)
-      if (!model) {
-        failed.add(modelKey)
-        console.error(`[vehicle-models] resolve 失败 modelKey=${modelKey} → generic fallback`)
-        return
-      }
-      const urls = [model.hullSrc]
-      if (model.turretSrc) urls.push(model.turretSrc)
-      const ok = await Promise.all(urls.map((u) => imageLoader(u, timeoutMs))).then((r) => r.every(Boolean))
-      if (ok) {
-        resolved.set(modelKey, model)
-      } else {
-        failed.add(modelKey)
-        console.error(`[vehicle-models] preload 超时/失败 modelKey=${modelKey} → generic fallback`)
-      }
+      const result = await preloadModel(modelKey, { timeoutMs, imageLoader })
+      if (result.ok) resolved.set(modelKey, result.model)
+      else failed.add(modelKey)
     }),
   )
   return { resolved, failed, byTank }
