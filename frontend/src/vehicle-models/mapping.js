@@ -85,7 +85,7 @@ export const MODEL_DEFINITIONS = Object.freeze({
   "fv4005": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([18001]) }),
   "lion": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([18049]) }),
   "t95e6": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([18977]) }),
-  "grille-15": Object.freeze({ kind: 'turretless', tankIds: Object.freeze([19217]) }), // 2026-08-19 修正：casemate 固定战斗室（用户 inventory review 判定，与 ho-ri 同 contract）
+  "grille-15": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([19217]) }), // limited-traverse 炮塔 TD（BlitzKit models.pb turret yaw ±65°；yaw 有界仍属 turreted visual layer）
   "super-conqueror": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([19281]) }),
   "vickers-light": Object.freeze({ kind: 'turreted', tankIds: Object.freeze([19537]) }),
   "nc-70-blyskawica": Object.freeze({ kind: 'turreted', confirmPending: true, tankIds: Object.freeze([19585]) }),
