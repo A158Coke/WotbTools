@@ -28,6 +28,12 @@ import {
   zoomViewAt
 } from '../utils/battlePlayback'
 import {
+  PLAYER_HIDE_MS,
+  PLAYER_SHOW_MS,
+  computeLabelLayout,
+  resolvePlayerVisibility,
+} from '../utils/labelLayout'
+import {
   ANNOT_COLORS,
   ANNOT_FONT_SIZE,
   ANNOT_WIDTH_DEFAULT,
@@ -54,7 +60,9 @@ import {
  */
 const props = defineProps({
   overview: { type: Object, required: true },
-  seekTo: { type: Number, default: null }
+  seekTo: { type: Number, default: null },
+  /** QA 场景循环播放（PR4 §49：时间线到末尾自动回到 0 继续） */
+  loop: { type: Boolean, default: false }
 })
 
 const { t } = useI18n()
@@ -126,6 +134,34 @@ function hpBarFill(hp, kind) {
 const currentTime = ref(0)
 const playing = ref(false)
 const speed = ref(1)
+// PR4 §33：hysteresis 时间基准（performance.now，RAF/seek 推进；暂停时冻结）
+const nowMs = ref(typeof performance !== 'undefined' ? performance.now() : 0)
+
+// ---- PR4 §26：玩家/坦克名显示偏好（默认 showPlayerName=false / showTankName=true，localStorage 持久化）----
+const LABEL_PREFS_KEY = 'wotb.pb.label-prefs'
+function loadLabelPrefs() {
+  try {
+    const raw = localStorage.getItem(LABEL_PREFS_KEY)
+    if (raw) {
+      const p = JSON.parse(raw)
+      return {
+        showPlayerName: p.showPlayerName === true,
+        showTankName: p.showTankName !== false,
+      }
+    }
+  } catch {
+    // 损坏/不可用 → 默认值
+  }
+  return { showPlayerName: false, showTankName: true }
+}
+const labelPrefs = reactive(loadLabelPrefs())
+watch(labelPrefs, (p) => {
+  try {
+    localStorage.setItem(LABEL_PREFS_KEY, JSON.stringify(p))
+  } catch {
+    // 隐私模式/配额满：静默（本次会话内仍生效）
+  }
+}, { deep: true })
 const showAll = ref(false)
 const typeFilter = ref(new Set(['DAMAGE', 'DESTROYED', 'KILL', 'POSITION_REPORTED', 'POSITION_STALE']))
 const selectedAccountId = ref(null)
@@ -558,7 +594,13 @@ function frame(ts) {
   const delta = lastFrameTs == null ? 0 : (ts - lastFrameTs)
   lastFrameTs = ts
   currentTime.value = Math.min(duration.value, currentTime.value + (delta / 1000) * speed.value)
+  nowMs.value = typeof performance !== 'undefined' ? performance.now() : 0
   if (currentTime.value >= duration.value) {
+    if (props.loop) {
+      currentTime.value = 0
+      rafId = requestAnimationFrame(frame)
+      return
+    }
     playing.value = false
     rafId = null
     return
@@ -594,6 +636,7 @@ watch(() => props.seekTo, (sec) => {
 function seek(sec) {
   currentTime.value = Math.min(duration.value, Math.max(0, sec))
   eventPopupSec.value = Math.round(sec)
+  nowMs.value = typeof performance !== 'undefined' ? performance.now() : 0
 }
 
 function togglePlay() {
@@ -617,7 +660,8 @@ function step(delta) {
 }
 
 function toggleSpeed() {
-  speed.value = speed.value === 1 ? 2 : (speed.value === 2 ? 4 : 1)
+  // PR4 §49：QA 场景需要 0.5×——倍速循环 0.5 → 1 → 2 → 4 → 0.5
+  speed.value = speed.value === 0.5 ? 1 : (speed.value === 1 ? 2 : (speed.value === 2 ? 4 : 0.5))
 }
 
 function toggleType(type) {
@@ -686,6 +730,12 @@ function vehicleModel(vehicle) {
   return p.resolved.get(modelKey) || null
 }
 
+/** PR4 §36 hull hitbox 比例（相对 marker 盒，随 marker 缩放；视觉车体 + 小 padding）。 */
+const HULL_HITBOX = Object.freeze({
+  dedicated: Object.freeze({ w: 0.9, h: 0.9 }),
+  generic: Object.freeze({ w: 0.58, h: 0.9 }),
+})
+
 function vehicleState(vehicle) {
   const route = routesByAccount.value.get(vehicle.accountId)
   const points = route ? route.points : []
@@ -724,6 +774,12 @@ function vehicleState(vehicle) {
     markerStyle: { left: markerLeft(last.x), top: markerTop(last.y), transform: markerTransform.value },
     overlayInverseScale: overlayInverseScale.value,
     overlayInverse: overlayInverse.value, // 数值反缩放（VehicleMarker 用它反缩放 layout offset）
+    // PR4 §26：标签数据（playerName 可为空串；tankName 权威显示名回退 tankId）
+    playerName: vehicle.playerName || '',
+    tankName: vehicle.tankName || String(vehicle.tankId),
+    // PR4 §36：hull hitbox 占 marker 盒比例（随 marker 一起缩放；dedicated 车体≈88% 视觉、
+    // generic 车体 55%×88%；+小 padding 容错）。用于点击命中判定。
+    hitbox: vehicleModel(vehicle) ? HULL_HITBOX.dedicated : HULL_HITBOX.generic,
     ariaLabel: `${vehicle.playerName}: ${t(destroyed ? 'recon.map.playback.state_destroyed' : (covered ? 'recon.map.playback.state_position_reported' : 'recon.map.playback.state_position_stale'))}`,
     // lastKnown = 位置流未覆盖（covered=false）才淡化（最后已知位置）。
     // 注意：covered 只是「服务器位置流当前覆盖」，不等于录像者客户端点亮/失察（无 authoritative
@@ -821,14 +877,134 @@ function eventLabel(event) {
   }
 }
 
-function selectVehicle(vehicle) {
-  selectedAccountId.value = selectedAccountId.value === vehicle.accountId ? null : vehicle.accountId
+// ---- PR4 §36/§37：hull hitbox 点击选中（重叠时取指针最近车辆；tie 保持 selected / render order）----
+function onMarkerSelect(vehicle, event) {
+  // §36：label 块（含 PlayerName tooltip 悬停区）不是 hitbox——点标签不选中车辆；
+  // .pb-label-player 为触发原生 title 需要 pointer-events:auto，点击事件会冒泡到这里，须拦截。
+  const t = event && event.target
+  if (t && typeof t.closest === 'function' && t.closest('.pb-labels')) return
+  selectAt(vehicle.accountId, event ? event.clientX : undefined, event ? event.clientY : undefined)
+}
+
+/** 标记中心 → 相对地图容器的屏幕 px（viewport 变换后）。 */
+function markerScreen(st) {
+  const el = mapEl.value
+  const W = el ? el.clientWidth : 0
+  if (!W || mapView.value.W <= 0) return null
+  const H = W * (mapView.value.H / mapView.value.W)
+  return {
+    x: (mapView.value.toX(st.pos.x) / mapView.value.W) * W * view.scale + view.tx,
+    y: (mapView.value.toY(st.pos.y) / mapView.value.H) * H * view.scale + view.ty,
+  }
+}
+
+function selectAt(accountId, clientX, clientY) {
+  const states = vehicleStates.value
+  const hasPoint = Number.isFinite(clientX) && mapEl.value && mapEl.value.clientWidth > 0
+  const rect = mapEl.value ? mapEl.value.getBoundingClientRect() : { left: 0, top: 0 }
+  const px = hasPoint ? clientX - rect.left : NaN
+  const py = hasPoint ? clientY - rect.top : NaN
+  // §36 hitbox 尺寸（content px）：读取实际 marker 盒宽（CSS 36px desktop / 28px mobile，
+  // media query 生效于 viewport 变换前 → offsetWidth 即 content px）；测试环境无布局 → 回退 36
+  const markerBox = Number(mapEl.value?.querySelector('.pb-vehicle')?.offsetWidth) || 36
+  // 命中判定：内容坐标（撤销 viewport 变换）落在 hull hitbox 内
+  const hitTest = (s) => {
+    const cx = (px - view.tx) / view.scale
+    const cy = (py - view.ty) / view.scale
+    const W = mapEl.value.clientWidth
+    const H = W * (mapView.value.H / mapView.value.W)
+    const x = (mapView.value.toX(s.pos.x) / mapView.value.W) * W
+    const y = (mapView.value.toY(s.pos.y) / mapView.value.H) * H
+    const hw = (markerBox * s.hitbox.w) / 2
+    const hh = (markerBox * s.hitbox.h) / 2
+    return Math.abs(cx - x) <= hw && Math.abs(cy - y) <= hh
+  }
+  let candidates
+  if (hasPoint) {
+    candidates = states.filter(hitTest)
+    // 真实点击必然落在某 hitbox 内（label 点击已在 onMarkerSelect 拦截）；
+    // 此处兜底只为合成事件/坐标与布局瞬时不一致（既有 toggle 行为）
+    if (candidates.length === 0) {
+      const target = states.find((s) => s.vehicle.accountId === accountId)
+      candidates = target ? [target] : []
+    }
+  } else {
+    const target = states.find((s) => s.vehicle.accountId === accountId)
+    candidates = target ? [target] : []
+  }
+  if (candidates.length === 0) return
+  let best = candidates[0]
+  if (candidates.length > 1) {
+    const dist = (s) => {
+      const p = markerScreen(s)
+      return p ? Math.hypot(p.x - px, p.y - py) : Infinity
+    }
+    candidates.sort((a, b) => (dist(a) - dist(b)) || (states.indexOf(a) - states.indexOf(b)))
+    best = candidates[0]
+    // tie（与前二近者距离几乎一致）且已有 selected 在候选内 → 保持当前 selected，不切换
+    if (selectedAccountId.value != null && candidates.length > 1
+        && Math.abs(dist(best) - dist(candidates[1])) < 1) {
+      const sel = candidates.find((s) => s.vehicle.accountId === selectedAccountId.value)
+      if (sel) return
+    }
+  }
+  selectedAccountId.value = selectedAccountId.value === best.vehicle.accountId ? null : best.vehicle.accountId
 }
 
 const selectedState = computed(() => {
   if (selectedAccountId.value == null) return null
   return vehicleStates.value.find(st => st.vehicle.accountId === selectedAccountId.value) || null
 })
+
+// ---- PR4 §32–§35：标签碰撞布局（纯函数；screen px）+ PlayerName hysteresis ----
+const labelLayout = computed(() => {
+  const el = mapEl.value
+  const W = el ? el.clientWidth : 0
+  if (!W || mapView.value.W <= 0) return new Map()
+  const items = vehicleStates.value.map((st) => {
+    const p = markerScreen(st)
+    if (!p) return null
+    return {
+      accountId: st.vehicle.accountId,
+      x: p.x,
+      y: p.y,
+      tankName: st.tankName,
+      playerName: st.playerName,
+    }
+  }).filter(Boolean)
+  return computeLabelLayout(items, {
+    showTank: labelPrefs.showTankName,
+    showPlayer: labelPrefs.showPlayerName,
+    viewportW: W,
+    viewportH: W * (mapView.value.H / mapView.value.W),
+  })
+})
+
+const playerVisState = ref(new Map())
+const playerHidden = ref(new Set())
+const playerFading = ref(new Set())
+watch([labelLayout, nowMs], () => {
+  const conflicts = new Set()
+  for (const [id, r] of labelLayout.value) {
+    if (r.playerConflict) conflicts.add(id)
+  }
+  const res = resolvePlayerVisibility(conflicts, playerVisState.value, nowMs.value, PLAYER_HIDE_MS, PLAYER_SHOW_MS)
+  playerVisState.value = res.state
+  playerHidden.value = res.hidden
+  playerFading.value = res.fading
+}, { immediate: true })
+
+/** VehicleMarker label prop（每 marker 一个：显示开关 + 碰撞位移 + player 显隐/fade）。 */
+function markerLabel(accountId) {
+  const l = labelLayout.value.get(accountId)
+  return {
+    showPlayer: labelPrefs.showPlayerName,
+    showTank: labelPrefs.showTankName,
+    tankDy: l ? l.tankDy : 0,
+    playerHidden: playerHidden.value.has(accountId),
+    playerFading: playerFading.value.has(accountId),
+  }
+}
 
 const gridRegions = computed(() => {
   const regions = new Map()
@@ -876,6 +1052,17 @@ const mapStyle = computed(() => ({
         <label class="pb-check">
           <input type="checkbox" v-model="showAll" data-test="pb-all-events" />
           {{ $t('recon.map.playback.all_events') }}
+        </label>
+      </span>
+      <!-- PR4 §26：玩家/坦克名显示开关（默认 玩家名关 / 坦克名开，localStorage 持久化） -->
+      <span class="pb-filter">
+        <label class="pb-check">
+          <input type="checkbox" v-model="labelPrefs.showPlayerName" data-test="pb-show-player" />
+          {{ $t('recon.map.playback.show_player_name') }}
+        </label>
+        <label class="pb-check">
+          <input type="checkbox" v-model="labelPrefs.showTankName" data-test="pb-show-tank" />
+          {{ $t('recon.map.playback.show_tank_name') }}
         </label>
       </span>
     </div>
@@ -1129,7 +1316,8 @@ const mapStyle = computed(() => ({
         :key="st.vehicle.accountId"
         :marker="st"
         :selected="selectedAccountId === st.vehicle.accountId"
-        @select="selectVehicle(st.vehicle)"
+        :label="markerLabel(st.vehicle.accountId)"
+        @select="onMarkerSelect(st.vehicle, $event)"
       />
     </div>
     </div>
@@ -1278,8 +1466,8 @@ const mapStyle = computed(() => ({
   border: none;
   background: none;
   padding: 0;
-  cursor: pointer;
-  pointer-events: auto;
+  /* PR4 §36：按钮本身不拦截点击，只有 .pb-hitbox（hull 范围）可点 */
+  pointer-events: none;
 }
 @media (max-width: 768px) {
   .pb-vehicle { width: 28px; height: 28px; }

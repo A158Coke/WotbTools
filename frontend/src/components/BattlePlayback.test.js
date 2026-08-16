@@ -385,7 +385,7 @@ describe('BattlePlayback', () => {
     const style = marker.attributes('style')
     expect(style).toContain('translate(-50%, -50%)')
     expect(style).not.toContain('scale(') // 标记本体不再反缩放 → 随地图缩放
-    const name = marker.find('.pb-name')
+    const name = marker.find('.pb-labels')
     expect(name.attributes('style')).toContain('scale(0.833') // 1/1.2 反缩放保屏幕恒定
   })
 })
@@ -639,7 +639,7 @@ describe('fixed-size vehicle markers', () => {
     }
     expect(viewportScale(wrapper)).toBe(4)
     expect(parseMarkerScale(marker.attributes('style'))).toBeNull()
-    expect(marker.find('.pb-name').attributes('style')).toContain('scale(0.25)')
+    expect(marker.find('.pb-labels').attributes('style')).toContain('scale(0.25)')
   })
 
   it('zoom 下 selected→name gap 与 recorder→vehicle 恒定；浮动幅度恒 ≈2px（1×/≈2×/4×）', async () => {
@@ -772,11 +772,11 @@ describe('fixed-size strokes and always-visible tank name labels', () => {
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
     // 1× 即常显（不再依赖 ≥2× 缩放）
-    const labels = wrapper.findAll('.pb-name')
+    const labels = wrapper.findAll('.pb-labels')
     expect(labels.length).toBe(2) // 两辆可见车都显示标签
     expect(labels[0].text()).toContain('Maus')
     expect(labels[1].text()).toContain('T49')
-    // 标签位于图标上方（bottom: calc(100% + 2px)），自身反缩放（overlayInverseScale）→ 屏幕字号恒定
+    // 标签块位于图标上方（bottom: calc(100% + 2px)），自身反缩放（overlayInverseScale）→ 屏幕字号恒定
     for (const label of labels) {
       expect(label.attributes('style')).toContain('scale(')
     }
@@ -785,7 +785,7 @@ describe('fixed-size strokes and always-visible tank name labels', () => {
     for (let i = 0; i < 12; i++) { // 1× → 4×
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
     }
-    expect(wrapper.findAll('.pb-name').length).toBe(2)
+    expect(wrapper.findAll('.pb-labels').length).toBe(2)
   })
 
   it('no route polylines are rendered in the playback view', async () => {
@@ -1037,5 +1037,115 @@ describe('PR2 — Tier X dedicated models in Battle Playback', () => {
     expect(wrapper.findAll('.pb-vehicle')).toHaveLength(2)
     expect(wrapper.find('.pb-hull-dedicated').exists()).toBe(false)
     expect(wrapper.findAll('.pb-hull')).toHaveLength(2)
+  })
+})
+
+describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', () => {
+  afterEach(() => {
+    localStorage.clear()
+    vi.useRealTimers()
+  })
+
+  it('§26 默认 showPlayerName=false / showTankName=true；checkbox 切换并持久化', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const player = wrapper.find('[data-test="pb-show-player"]')
+    const tank = wrapper.find('[data-test="pb-show-tank"]')
+    expect(player.element.checked).toBe(false)
+    expect(tank.element.checked).toBe(true)
+    // 默认只显示坦克名行
+    expect(wrapper.findAll('.pb-label-tank').length).toBe(2)
+    expect(wrapper.findAll('.pb-label-player').length).toBe(0)
+    await player.setValue(true)
+    expect(wrapper.findAll('.pb-label-player').length).toBe(2)
+    expect(wrapper.findAll('.pb-label-player')[0].text()).toBe('You')
+    // 持久化：localStorage 写入
+    const saved = JSON.parse(localStorage.getItem('wotb.pb.label-prefs'))
+    expect(saved).toEqual({ showPlayerName: true, showTankName: true })
+    // 重新挂载 → 读取持久化值
+    const w2 = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    expect(w2.find('[data-test="pb-show-player"]').element.checked).toBe(true)
+    expect(w2.findAll('.pb-label-player').length).toBe(2)
+  })
+
+  it('§32/§33/§34 碰撞集成：两车贴近 → 上方 tank 标签上移，玩家名经 hysteresis 后隐藏', async () => {
+    stubRaf()
+    // performance.now 全程受控（fakeNow），hysteresis 时间轴确定
+    let fakeNow = 0
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
+    const overview = makeOverview()
+    // 两车同位 → 标签必然冲突（player 名够长保证与对方 tank 盒重叠）
+    overview.routes[0].points = [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }]
+    overview.routes[1].points = [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }]
+    overview.playback.vehicles[1].playerName = 'VeryLongEnemyPlayerNameCollisionTest'
+    const wrapper = mountPlayback(overview, 12)
+    Object.defineProperty(wrapper.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
+    await flushPromises()
+    await wrapper.find('[data-test="pb-show-player"]').setValue(true)
+    await wrapper.find('.pb-range').setValue(12.5) // 触发 seek（值变化）→ 重算 labelLayout
+    await flushPromises()
+    // 上方（friendly 1001，y 更小）tank 标签上移让位
+    const a = wrapper.find('[data-test="pb-marker-1001"]')
+    const b = wrapper.find('[data-test="pb-marker-2001"]')
+    const aDy = parseFloat((a.find('.pb-labels').attributes('style') || '').match(/calc\(100% \+ (-?[\d.]+)px\)/)?.[1] || '0')
+    expect(aDy).toBeLessThan(2) // 上方标签被上移（2 + dy < 2 基准）
+    // 玩家名：冲突持续超过 hideMs（250ms）才隐藏（fakeNow 受控推进）
+    await wrapper.find('.pb-range').setValue(12.1) // seek 刷新 nowMs（冲突开始计时，fakeNow=0）
+    await flushPromises()
+    expect(b.find('.pb-label-player').attributes('style')).toBeUndefined() // 未到阈值仍显示
+    fakeNow = 400 // 400ms > hideMs
+    await wrapper.find('.pb-range').setValue(12.2)
+    await flushPromises()
+    expect(b.find('.pb-label-player').attributes('style')).toContain('display: none') // 已隐藏
+    nowSpy.mockRestore()
+  })
+
+  it('§37 重叠 hitbox 选中：点击坐标靠近 B → 选中 B（即使点在 A 的按钮上）', async () => {
+    stubRaf()
+    const overview = makeOverview()
+    // A 中心 content x=100（map -225），B 中心 content x=90（map -232.5），y 相同
+    // A 按钮盒 x∈[82,118]，A hitbox x∈[83.8,116.2]，B hitbox x∈[73.8,106.2] → 点击 x=84 两盒都命中
+    overview.routes[0].points = [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }]
+    overview.routes[1].points = [{ x: -232.5, y: -204.2, timeSec: 10 }, { x: -232.5, y: -204.2, timeSec: 14 }]
+    overview.playback.vehicles[1].positionIntervals = [{ startSec: 0, endSec: 60 }]
+    const wrapper = mountPlayback(overview, 12)
+    await flushPromises()
+    Object.defineProperty(wrapper.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
+    const aBtn = wrapper.find('[data-test="pb-marker-1001"]')
+    // 点击 A 的按钮，坐标 (90, 675)：A/B generic hitbox 都命中（A 中心 (100,675)、B 中心 (90,675)）
+    await aBtn.trigger('click', { clientX: 90, clientY: 675 })
+    // 距离最近者 2001（B，dist 0）被选中（A dist 10）
+    expect(wrapper.find('[data-test="pb-info"]').text()).toContain('EnemyA')
+    // 再点同一点 → 已选 B 被取消（toggle）
+    await aBtn.trigger('click', { clientX: 90, clientY: 675 })
+    expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(false)
+  })
+
+  it('§49 倍速循环含 0.5×；loop 到末尾自动回绕', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const btn = wrapper.find('[data-test="pb-speed"]')
+    await btn.trigger('click')
+    expect(btn.text()).toBe('2×')
+    await btn.trigger('click')
+    expect(btn.text()).toBe('4×')
+    await btn.trigger('click')
+    expect(btn.text()).toBe('0.5×')
+    await btn.trigger('click')
+    expect(btn.text()).toBe('1×')
+    // loop：seek 到接近末尾 → 播放 → 越过末尾自动回 0 继续
+    await wrapper.setProps({ loop: true })
+    const wrap = mountPlayback(makeOverview(), 59)
+    await flushPromises()
+    await wrap.setProps({ loop: true })
+    await wrap.find('[data-test="pb-play"]').trigger('click')
+    expect(rafCb).toBeTruthy()
+    rafCb(0)
+    rafCb(1000) // 推进 1s → 59 + 1 = 60 = duration → loop 回 0
+    await flushPromises()
+    expect(wrap.find('.pb-time').text()).toBe('00:00 / 01:00')
   })
 })

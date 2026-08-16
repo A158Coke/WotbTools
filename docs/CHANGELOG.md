@@ -5,6 +5,29 @@
 ## [Unreleased]
 
 ### Added
+- **PR4 — Player/Tank Labels & Collision UX（§26–§37 + QA 场景）**：
+  - **显示开关（§26）**：Battle Playback 控制栏新增「显示玩家名 / 显示坦克名」checkbox
+    （默认 玩家名关 / 坦克名开），localStorage 持久化（`wotb.pb.label-prefs`），刷新/再次进入保留。
+  - **两行共享背景 label 块（§27/§28/§29）**：PlayerName + TankName 共用一个半透明深色背景
+    （自适应宽度、小圆角、细边框、轻阴影）；只显示一行时背景自动收缩；文字色跟随 team token
+    （friendly green|blue / enemy red，`--pb-team-text`/`--pb-enemy-text`）；
+    destroyed/last-known 只弱化文字、background 保持正常。
+  - **PlayerName 截断 + tooltip（§30）**：按实际像素宽度截断（max-width + ellipsis，非字符数），
+    只有截断才显示完整名 tooltip；被碰撞隐藏时 tooltip 随行一起消失。
+  - **标签碰撞（§32/§33/§34/§35）**：新增纯函数 `utils/labelLayout.js`——viewport 内
+    marker 才参与（越界裁剪）；TankName 冲突 → 上方标签轻量上移（上限一行，接受剩余 overlap，
+    禁止复杂 solver）；PlayerName 与任一 TankName 冲突 → 隐藏候选，经**时间稳定阈值**
+    （hide 250ms / show 300ms，performance.now，RAF/seek 推进）后 hide/show，恢复带 ~120ms
+    opacity fade-in；zoom 由 computed 依赖 view.scale 天然在缩放结束重算。
+  - **hull hitbox + 重叠选中（§36/§37）**：点击命中从整盒改为车体视觉范围 + 小 padding
+    （dedicated 90%、generic 58%×90%，随 marker 缩放；不含 gun overflow/label/三角/菱形/✕，
+    destroyed/last-known 仍可点）；多个 hitbox 重叠 → 取指针距离最近车辆，距离几乎一致且已有
+    selected → 保持，否则 render order tie-break。
+  - **倍速与循环**：倍速循环加入 0.5×（0.5→1→2→4，§49 QA 场景需要）；BattlePlayback 新增
+    `loop` prop（时间线到末尾自动回绕，QA 场景用）。
+  - **隐藏 QA 页 `?view=playback-qa`（§48/§49）**：仅 wotbtools-admin；固定 14 车移动场景
+    （双密集簇碰撞压力 + 阵亡/失察/录像者状态混合），直接复用生产 BattlePlayback
+    （loop + Play/Pause/Reset + 0.5×–4×），不引入第二套渲染。
 - **PR3 — Tactical Marker State Visual Redesign（§19–§25）**：
   - **Team Color System（§19/§20）**：新增 frontend/src/data/mapTeamColors.js——28 张地图
     全部显式配置 friendly tone（green|blue，与地图主基色避免混淆；初值可视觉 QA 调整）；

@@ -784,7 +784,9 @@
         "qaLabelB": "B · texture bake",
         "qaLabelC": "C · source reference",
         "qaDevOnly": "только для разработки",
-        "qaReport": "башня {turretId} · орудие {gunId} · hull {hullBytes}B / turret {turretBytes}B · pivot {pivotX},{pivotY}"
+        "qaReport": "башня {turretId} · орудие {gunId} · hull {hullBytes}B / turret {turretBytes}B · pivot {pivotX},{pivotY}",
+        "qaPlaybackTitle": "QA коллизий меток повтора боя (14 машин)",
+        "qaPlaybackHint": "Фиксированная сцена из 14 движущихся машин: два плотных кластера создают коллизии имён игроков/танков, добавлены состояния уничтожения/потери связи/оператора; таймлайн зациклен, скорость 0.5x–4x. Использует продовый BattlePlayback."
     },
     "home": {
         "replayTitle": "Анализатор реплеев",
@@ -852,6 +854,8 @@
                 "play": "Играть",
                 "pause": "Пауза",
                 "all_events": "Все известные события",
+                "show_player_name": "Показывать имена игроков",
+                "show_tank_name": "Показывать названия танков",
                 "progress": "Прогресс",
                 "tank": "Танк",
                 "team": "Команда",
