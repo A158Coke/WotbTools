@@ -41,7 +41,7 @@
       "R149_Object_268_4_track_mtr",
       "R149_Object_268_4_track_mtr"
     ],
-    "desaturate": 0.75,
+    "desaturate": 0.25,
     "fidelity": "high",
     "geometryScale": "faithful",
     "visibleDetailRetentionTarget": 0.9,

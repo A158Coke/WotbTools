@@ -7,7 +7,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { VIEWBOX } from '../vehicle-models/types.js'
-import { hullLayerTransform } from '../vehicle-models/pivot.js'
+import { hullLayerTransform, turretAssemblyTransform, turretImageTransform, turretRingPosition } from '../vehicle-models/pivot.js'
 
 const { t } = useI18n()
 const { initPromise, tokenParsed, authenticated, login } = useAuth()
@@ -107,6 +107,15 @@ const bakeHullLayerStyle = computed(() => ({
   transform: 'rotate(' + hullDeg.value + 'deg)',
   transformOrigin: VIEWBOX.width / 2 + 'px ' + VIEWBOX.height / 2 + 'px', // hull 绕画布中心
 }))
+// QA 对比 cell：与正式渲染同构的嵌套 transform（父层随 hull 旋转，子层绕 image-local pivot）
+const bakeTurretAssemblyStyle = computed(() => {
+  if (!pivot.value) return null
+  const s = protoSize.value / 320
+  return {
+    position: 'absolute', left: '0', top: '0', width: '100%', height: '100%',
+    ...turretAssemblyTransform({ hullDeg: hullDeg.value, renderScale: s }),
+  }
+})
 const bakeTurretLayerStyle = computed(() => {
   if (!pivot.value) return null
   const raster = metadataJson.value?.turretRaster
@@ -118,18 +127,28 @@ const bakeTurretLayerStyle = computed(() => {
     top: raster.logicalMinY * s + 'px',
     width: (raster.pixelWidth / 2) * s + 'px',
     height: (raster.pixelHeight / 2) * s + 'px',
-    transform: 'rotate(' + turretDeg.value + 'deg)',
-    transformOrigin: raster.pivotX * s + 'px ' + raster.pivotY * s + 'px',
+    // 子层只转 (T - H)：父层已转 hullDeg，最终 world yaw = turretDeg
+    ...turretImageTransform({ hullDeg: hullDeg.value, turretWorldDeg: turretDeg.value, pivot: { x: raster.pivotX, y: raster.pivotY }, renderScale: s }),
   }
 })
 
-// 旋转数学（pivot.js）：img 与 320×320 画布 1:1 对齐（left:0 top:0），
-// transform-origin 直接用 viewBox 坐标 × renderScale —— rotate 以 origin 为不动点，
-// 0°/90°/180°/270° 下 pivot 屏幕位置不变（非中心 pivot 同样成立，见 pivot.test.js）。
+// 旋转数学（pivot.js，Blocker 2 OFF_CENTER_TURRET_HULL_COMPOSITION）：
+// turretDeg 是 authoritative turret world yaw（T）。hull 旋转 H 后炮塔座圈随车体
+// 围绕画布中心 C 移动：P' = C + rotate(P - C, H)（非固定 screen point）。
+// 嵌套 transform：assembly 父层 rotate(H) around C；image 子层 rotate(T - H)
+// around image-local pivot（raster.pivotX/pivotY）——最终 world yaw = T。
+// img 与 320×320 viewBox 1:1 对齐，origin 用 viewBox 坐标 × renderScale。
 const renderScale = computed(() => canvasSize.value / VIEWBOX.width)
 const hullLayerStyle = computed(() => hullLayerTransform({ deg: hullDeg.value, renderScale: renderScale.value }))
+const turretAssemblyStyle = computed(() => {
+  // 无 pivot / 无 turretRaster（turretless / 缺契约）时不设置 style
+  if (!isTurreted.value || !pivot.value) return null
+  return {
+    position: 'absolute', left: '0', top: '0', width: '100%', height: '100%',
+    ...turretAssemblyTransform({ hullDeg: hullDeg.value, renderScale: renderScale.value }),
+  }
+})
 const turretLayerStyle = computed(() => {
-  // 无 pivot / 无 turretRaster（turretless / 缺契约）时不设置 style（img 也不渲染）
   if (!isTurreted.value || !pivot.value) return null
   const raster = metadataJson.value?.turretRaster
   if (!raster) return null
@@ -142,14 +161,15 @@ const turretLayerStyle = computed(() => {
     top: raster.logicalMinY * s + 'px',
     width: (raster.pixelWidth / 2) * s + 'px',
     height: (raster.pixelHeight / 2) * s + 'px',
-    transform: 'rotate(' + turretDeg.value + 'deg)',
-    transformOrigin: raster.pivotX * s + 'px ' + raster.pivotY * s + 'px',
+    ...turretImageTransform({ hullDeg: hullDeg.value, turretWorldDeg: turretDeg.value, pivot: { x: raster.pivotX, y: raster.pivotY }, renderScale: s }),
   }
 })
 const pivotStyle = computed(() => {
   if (!pivot.value) return {}
   const s = renderScale.value
-  return { left: pivot.value.x * s + 'px', top: pivot.value.y * s + 'px' }
+  // hull 旋转后的真实炮塔座圈位置（非固定 turretPivot）
+  const ring = turretRingPosition({ pivot: pivot.value, hullDeg: hullDeg.value })
+  return { left: ring.x * s + 'px', top: ring.y * s + 'px' }
 })
 </script>
 
@@ -203,7 +223,9 @@ const pivotStyle = computed(() => {
           :style="{ width: canvasSize + 'px', height: canvasSize + 'px' }"
         >
           <img v-if="hullUrl" class="vmp-hull" :src="hullUrl" alt="" :style="hullLayerStyle">
-          <img v-if="isTurreted && turretUrl" class="vmp-turret" :src="turretUrl" alt="" :style="turretLayerStyle">
+          <div v-if="isTurreted && turretUrl" class="vmp-turret-assembly" :style="turretAssemblyStyle">
+            <img class="vmp-turret" :src="turretUrl" alt="" :style="turretLayerStyle">
+          </div>
           <span v-if="showSelected" class="vmp-selected"></span>
           <span v-if="showRecorder" class="vmp-recorder"></span>
           <span v-if="showDestroyed" class="vmp-death">✕</span>
@@ -238,7 +260,9 @@ const pivotStyle = computed(() => {
             <p class="vmp-proto-label">B · texture bake</p>
             <div :style="protoBakeStyle">
               <img v-if="hullUrl" class="vmp-proto-img" :src="hullUrl" alt="" :style="bakeHullLayerStyle">
-              <img v-if="isTurreted && turretUrl" class="vmp-proto-img" :src="turretUrl" alt="" :style="bakeTurretLayerStyle">
+              <div v-if="isTurreted && turretUrl" :style="bakeTurretAssemblyStyle">
+                <img class="vmp-proto-img" :src="turretUrl" alt="" :style="bakeTurretLayerStyle">
+              </div>
             </div>
           </div>
           <div class="vmp-proto-cell">
@@ -318,7 +342,9 @@ const pivotStyle = computed(() => {
   will-change: transform;
 }
 .vmp-hull { z-index: 1; }
-.vmp-turret { z-index: 2; }
+/* turret assembly 父层：随 hull 绕画布中心旋转（座圈随车体移动，见 pivot.js） */
+.vmp-turret-assembly { z-index: 2; }
+.vmp-turret { z-index: 1; }
 /* 状态叠加：与生产 BattlePlayback 当前视觉语言一致（PR3 重设计后再同步） */
 .vmp-destroyed .vmp-hull, .vmp-destroyed .vmp-turret { opacity: 0.35; filter: grayscale(1); }
 .vmp-last-known .vmp-hull, .vmp-last-known .vmp-turret { opacity: 0.3; }

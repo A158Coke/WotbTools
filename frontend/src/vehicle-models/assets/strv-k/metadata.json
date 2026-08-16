@@ -76,7 +76,7 @@
       "S31_Strv_K_grill_mtr",
       "S31_Strv_K_grill_mtr"
     ],
-    "desaturate": 0.75,
+    "desaturate": 0.25,
     "fidelity": "high",
     "geometryScale": "faithful",
     "visibleDetailRetentionTarget": 0.9,

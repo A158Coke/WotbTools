@@ -76,7 +76,7 @@
       "Chieftain_Mk6_grill_mtr",
       "Chieftain_Mk6_grill_mtr"
     ],
-    "desaturate": 0.75,
+    "desaturate": 0.25,
     "fidelity": "high",
     "geometryScale": "faithful",
     "visibleDetailRetentionTarget": 0.9,

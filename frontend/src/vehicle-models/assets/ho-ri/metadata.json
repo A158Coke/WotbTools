@@ -41,7 +41,7 @@
       "J20_Ho_Ri_type3_track_mtr",
       "J20_Ho_Ri_type3_track_mtr"
     ],
-    "desaturate": 0.75,
+    "desaturate": 0.25,
     "fidelity": "high",
     "geometryScale": "faithful",
     "visibleDetailRetentionTarget": 0.9,

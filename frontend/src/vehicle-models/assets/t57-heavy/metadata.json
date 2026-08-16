@@ -73,7 +73,7 @@
       "T57_58_mtr",
       "T57_58_mtr"
     ],
-    "desaturate": 0.75,
+    "desaturate": 0.25,
     "fidelity": "high",
     "geometryScale": "faithful",
     "visibleDetailRetentionTarget": 0.9,

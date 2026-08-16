@@ -59,11 +59,11 @@ export function interpolateUV(uvs, w0, w1, w2) {
 /**
  * 中性化（B8）：真实采样 → luminance / restrained desaturation → 保留局部对比。
  * @param {number[]} rgb [r,g,b] 0..255
- * @param {number} amount 去色强度（0=原色，1=纯灰）
+ * @param {number} amount 去色强度（0=原色，1=纯灰）：rgb * (1-amount) + luma * amount
  */
-export function neutralize(rgb, amount = 0.75) {
+export function neutralize(rgb, amount = 0.25) {
   const luma = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
-  return [luma * (1 - amount) + rgb[0] * amount, luma * (1 - amount) + rgb[1] * amount, luma * (1 - amount) + rgb[2] * amount]
+  return [rgb[0] * (1 - amount) + luma * amount, rgb[1] * (1 - amount) + luma * amount, rgb[2] * (1 - amount) + luma * amount]
 }
 
 /**
@@ -72,6 +72,12 @@ export function neutralize(rgb, amount = 0.75) {
  * 由 barycentric UV → 采样 baseColor × occlusion × normal-z relief → 中性化。
  * MASK 材质在 z 写入前做 alpha test（alpha < cutoff 的片元丢弃）。
  *
+ * 坐标契约（RASTER_Y_AXIS_CONTRACT）：模型坐标 x=宽、y=长（forward=+y）；raster
+ * 行索引 = 屏幕 y（上小下大）。投影做 Y flip——pixelY = (bounds.maxY - modelY) * scale，
+ * 使 model +Y（车头/炮管 forward 端）位于图片 top（屏幕上方，0° = 12 点），
+ * 与 logical 契约（logicalY = -modelY * scale + ty）一致；
+ * hull.webp 与 turret.webp 使用同一 orientation。
+ *
  * @param {object} opts
  *   triangles: [{ p: number[9]（模型坐标 x宽,y长,z高）, uv: number[6]|null, material: number }]
  *   textures: [{ data: Uint8Array|Float32Array（RGBA）, width, height }]
@@ -79,10 +85,10 @@ export function neutralize(rgb, amount = 0.75) {
  *                 alphaMode: 'OPAQUE'|'MASK', alphaCutoff: number }]
  *   bounds: { minX, minY, maxX, maxY }（世界）
  *   resolution: number（输出边长）
- *   desaturate: 0..1（默认 0.75）
+ *   desaturate: 0..1（默认 0.25 = 去色强度，75% 原色 + 25% luma）
  * @returns {{ rgba: Uint8Array, width, height, covered: number }}
  */
-export function bakeTopView({ triangles, textures, materials, bounds, resolution = 640, desaturate = 0.75 }) {
+export function bakeTopView({ triangles, textures, materials, bounds, resolution = 640, desaturate = 0.25 }) {
   const texData = textures.map((t) => (t.data instanceof Float32Array ? t.data : new Float32Array(t.data)))
   const w = bounds.maxX - bounds.minX
   const h = bounds.maxY - bounds.minY
@@ -105,11 +111,11 @@ export function bakeTopView({ triangles, textures, materials, bounds, resolution
     const c = [tri.p[6], tri.p[7], tri.p[8]]
     // 投影 bbox（栅格）
     const ax = (a[0] - bounds.minX) * scale
-    const ay = (a[1] - bounds.minY) * scale
+    const ay = (bounds.maxY - a[1]) * scale // Y flip：model +Y → raster top（screen up）
     const bx = (b[0] - bounds.minX) * scale
-    const by = (b[1] - bounds.minY) * scale
+    const by = (bounds.maxY - b[1]) * scale
     const cx = (c[0] - bounds.minX) * scale
-    const cy = (c[1] - bounds.minY) * scale
+    const cy = (bounds.maxY - c[1]) * scale
     const x0 = Math.max(0, Math.floor(Math.min(ax, bx, cx)))
     const x1 = Math.min(W - 1, Math.ceil(Math.max(ax, bx, cx)))
     const y0 = Math.max(0, Math.floor(Math.min(ay, by, cy)))

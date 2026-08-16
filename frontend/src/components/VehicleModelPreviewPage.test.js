@@ -96,6 +96,39 @@ describe('VehicleModelPreviewPage', () => {
     expect(turretStyle).toContain('top: -19.64px')
   })
 
+  it('hull 90° 时 turret assembly 父层绕画布中心旋转、子层抵消、座圈随车体移动（OFF_CENTER_TURRET_HULL_COMPOSITION）', async () => {
+    authState.roles = ['wotbtools-admin']
+    authState.authenticated.value = true
+    const wrapper = mount(VehicleModelPreviewPage)
+    expect(await waitFor(() => wrapper.find('.vmp-turret-assembly').exists())).toBe(true)
+    // hullRot = 90°（第一个 range input）
+    await wrapper.findAll('input[type="range"]')[0].setValue(90)
+    const assemblyStyle = wrapper.find('.vmp-turret-assembly').attributes('style') || ''
+    // 父层：绕画布中心 (160,160) 旋转 hullDeg——座圈随车体围绕 C 移动
+    expect(assemblyStyle).toContain('transform-origin: 160px 160px')
+    expect(assemblyStyle).toContain('rotate(90deg)')
+    const turretStyle = wrapper.find('.vmp-turret').attributes('style') || ''
+    // 子层：绕 raster 内 pivot 旋转 (T - H) = 0 - 90 = -90（最终 world yaw = T = 0）
+    expect(turretStyle).toContain('transform-origin: 47.81px 212.87px')
+    expect(turretStyle).toContain('rotate(-90deg)')
+    // pivot marker 显示旋转后真实座圈位置：P' = C + R90(P-C)（maus P=(160,193.23)）
+    // R90·(0,33.23) = (-33.23, 0) → P' = (126.77, 160)（非固定 screen point）
+    const pivotEl = wrapper.find('.vmp-pivot').attributes('style') || ''
+    expect(pivotEl).toContain('left: 126.77px')
+    expect(pivotEl).toContain('top: 160px')
+  })
+
+  it('hull 90° + turret world 45°：子层 rotate(T-H) 后最终 world yaw = T', async () => {
+    authState.roles = ['wotbtools-admin']
+    authState.authenticated.value = true
+    const wrapper = mount(VehicleModelPreviewPage)
+    expect(await waitFor(() => wrapper.find('.vmp-turret-assembly').exists())).toBe(true)
+    await wrapper.findAll('input[type="range"]')[0].setValue(90) // hullRot
+    await wrapper.findAll('input[type="range"]')[1].setValue(45) // turretRot（world yaw）
+    const turretStyle = wrapper.find('.vmp-turret').attributes('style') || ''
+    expect(turretStyle).toContain('rotate(-45deg)') // T - H = 45 - 90
+  })
+
   it('pivot debug marker 位置与 turret 旋转轴一致（同源坐标）', async () => {
     authState.roles = ['wotbtools-admin']
     authState.authenticated.value = true
