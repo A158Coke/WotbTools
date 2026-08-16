@@ -1,0 +1,49 @@
+{
+  "modelKey": "maus",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 6929,
+    "collisionModel": "https://api.blitzkit.app/tanks/6929/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 193.23
+  },
+  "generation": {
+    "method": "collision-glb-topdown-projection",
+    "viewBox": "0 0 320 320",
+    "hullBounds": {
+      "min": [
+        -1.8600600957870483,
+        -4.437963962554932
+      ],
+      "max": [
+        1.8600600957870483,
+        4.595536231994629
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.5337796211242676,
+        -3.5188093185424805
+      ],
+      "max": [
+        1.5337797403335571,
+        1.0040172338485718
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.5080962181091309,
+        -0.14398309588432312
+      ],
+      "max": [
+        0.6785486936569214,
+        5.683868408203125
+      ]
+    },
+    "notes": "确定性提取自 BlitzKit model.glb（hull + tracks + selected turret/gun 节点）"
+  }
+}

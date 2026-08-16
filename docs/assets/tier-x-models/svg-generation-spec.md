@@ -1,8 +1,9 @@
 # Tier X 专属俯视车型 SVG — 全局生成规范（Global Generation Spec）
 
-> 本文是仓库正式文档：未来 ChatGPT / AI 重新生成或修复车型时**唯一**的全局规则来源。
-> 单车型 metadata.json 只记录车型特异内容，禁止每辆车复制一整份大 prompt（计划 §40）。
-> 系统总览与交接清单见同目录 `README.md`。
+> 本文是仓库正式文档：车型 SVG 由 **BlitzKit extractor 确定性生成**（`frontend/scripts/extract-tier-x-model.mjs`），
+> 几何必须来自真实模型（model.glb + models.pb），**禁止 AI / 人工绘制 geometry**。
+> 人工/ChatGPT 只做 visual QA；发现错误 → 修 extractor → 重新生成，禁止人工 patch SVG path。
+> 系统总览与生成交接见同目录 `README.md`。
 
 ## 1. 文件结构与分层契约
 
@@ -39,58 +40,61 @@ frontend/src/vehicle-models/assets/<modelKey>/
 ## 4. 画布与视觉重量
 
 - 车辆主体（hull + 履带）应稳定位于标准画布内，充分利用 320×320；
-  小尺寸车型（如 Leopard 1 细长车体）允许加宽比例以保可辨（见 §6），
-  但**禁止运行时按 bounds 自动缩放**——视觉重量由设计阶段归一化：
-  - Maus 仍然宽、重；Leopard 1 仍然细长；但 20–30px 下都必须可识别。
+  **禁止运行时按 bounds 自动缩放**——视觉重量来自真实几何的比例本身：
+  - Maus 仍然宽、重；Leopard 1 仍然细长；比例由 extractor 从真实模型保持。
 - 炮管允许略微超出 viewBox；超出部分不参与 label collision bounds 与 click hitbox。
 
 ## 5. 视觉语言（所有车型统一）
 
 - **模型本体完全中性**，不承担阵营语义：hull 用 neutral tone（灰阶系），
   turret 用与 hull 略有不同的 neutral brightness，差异必须克制。
-- **Tracks**：保留简化左右履带轮廓，neutral，不承担 team color。
-- **结构线**：每车大约只保留 1–3 个真正有辨识价值的结构特征，例如：
-  turret contour、engine deck、特征装甲分区、特殊 casemate / superstructure。
-- **禁止堆砌**：road wheels、track links、微小舱盖、微小机械结构——20–30px 下只会形成噪声。
+- **Tracks**：真实履带网格随 hull 层投影，neutral，不承担 team color。
+- **结构线 / 内部细节**：默认 silhouette-only（真实几何凸包）；内部结构线仅在
+  extractor 显式支持后按真实网格输出，禁止凭空添加。
+- **禁止堆砌**：road wheels、track links、微小舱盖、微小机械结构——20–30px 下只会形成噪声
+  （extractor 默认排除 chassis_wheel_* 与 *_hide_elements*）。
 - 阵营（friendly/enemy）、选中、录像者、阵亡、最后已知全部由运行时 UI overlay 表达，
   禁止烘焙进 SVG（同现有 tank-marker PNG 契约）。
 
-## 6. 小尺寸辨识度（优先级高于严格真实比例）
+## 6. 几何来源与简化规则（替代 AI 手绘路线）
 
-为辨识度允许（每车在 metadata.json 的 `intentionalExaggeration` 里如实记录）：
+- **silhouette 必须来自真实 geometry**（extractor 俯视投影 + 分组凸包），禁止 AI 重新设计 silhouette。
+- 允许确定性几何简化：凸包分组（hull+tracks / turret / gun 分别投影）与路径输出；
+  tolerance 明确由 extractor 参数控制（凸包点即输出点，不做美化）。
+- 禁止添加现实模型中不存在的结构（hatch / grille / muzzle brake 等一律不添加）。
+- 内部结构线、履带细节等：仅当真实网格提供且经 extractor 显式支持才输出；默认 silhouette-only。
+- 颜色保持 neutral vehicle asset contract（hull/turret 中性灰阶，tracks neutral，不承担阵营色）。
 
-- 适度夸张 hull 长宽比；
-- 强化典型 turret 轮廓；
-- 适度调整 gun 长度；
-- 强化车型最有代表性的结构；
-- 舍弃小尺寸无意义细节。
-
-**但必须基于真实车型参考**（BlitzKit 参考图/页面），不允许凭印象随便画。
-`metadata.json` 必须记录：BlitzKit 参考、3–5 个 top-down distinctive features、
-为 20–30px 做过的 intentional exaggeration、model-specific generation notes、
-必须保留/禁止丢失的结构。
-
-## 7. metadata.json 契约
+## 7. metadata.json 契约（geometry-source schema，任务 12）
 
 ```json
 {
   "modelKey": "maus",
   "kind": "turreted",
-  "blitzkitReference": "https://api.blitzkit.app/tanks/6929/icons/big.webp",
-  "turretPivot": { "x": 160, "y": 165 },
-  "distinctiveFeatures": ["宽大方形车体", "厚重前甲", "后置引擎甲板"],
-  "intentionalExaggeration": ["加宽车体保证小尺寸辨识度"],
-  "generationNotes": "……",
-  "mustKeepStructures": ["……"]
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 6929,
+    "collisionModel": "https://api.blitzkit.app/tanks/6929/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": { "x": 160, "y": 193.23 },
+  "generation": {
+    "method": "collision-glb-topdown-projection",
+    "viewBox": "0 0 320 320",
+    "hullBounds": { "min": [-1.86, -4.44], "max": [1.86, 4.6] },
+    "turretBounds": { "min": [...], "max": [...] },
+    "gunBounds": { "min": [...], "max": [...] },
+    "notes": "确定性提取自 BlitzKit model.glb（hull + tracks + selected turret/gun 节点）"
+  }
 }
 ```
 
-- `kind`：`turreted`（必须 `turretPivot`）/ `turretless`（禁止 `turretPivot`）；
-  必须与 `frontend/src/vehicle-models/mapping.js` 中该 modelKey 的声明一致。
-- `turretPivot`：x/y ∈ [0, 320] 的有限数字。
-- `blitzkitReference`：http(s) URL；`""` 仅允许契约样例（sample）。
-- 顶层键只能是上表 8 个，禁止自定义键（validator 拒绝）。
-- 完整 schema 与示例见 `frontend/src/vehicle-models/assets/sample/metadata.json`。
+- 顶层键只能是 `modelKey / kind / source / turretPivot / generation` 5 个（validator 拒绝多余键）。
+- `source.provider`：正式资产（mapping 内 modelKey）必须为 `blitzkit`；`source.tankId` 必须为正整数；
+  `collisionModel` / `modelDefinitions` 必须为 http(s) URL。
+- `generation.method`：正式资产必须为 `collision-glb-topdown-projection`。
+- `turretPivot`：turreted 必填、x/y ∈ [0, 320]；turretless 禁止。
+- 完整校验见 `frontend/src/vehicle-models/validate.js`（validateMetadata）。
 
 ## 8. 文件命名与 modelKey
 
@@ -98,13 +102,21 @@ frontend/src/vehicle-models/assets/<modelKey>/
   `frontend/src/vehicle-models/mapping.js` 的 `MODEL_DEFINITIONS` 为准。
 - 文件名固定：`hull.svg` / `turret.svg` / `metadata.json`，大小写敏感。
 
-## 9. 验收
+## 9. 生成与验收
+
+生成：
+
+```bash
+cd frontend && node scripts/extract-tier-x-model.mjs --model-key <modelKey>
+```
 
 放回仓库后运行：
 
 ```bash
 node frontend/scripts/validate-vehicle-models.mjs   # 全量自检（与 CI 同逻辑）
+cd frontend && npm test                             # CI 同口径
 ```
 
-CI（`frontend/src/vehicle-models/coverage.test.js` + `validate.test.js`）强制：
-Tier X 100% mapping 覆盖、metadata 契约、SVG 技术契约、turreted/turretless 资产完整性。
+CI（coverage.test.js + validate.test.js + extractor.test.js）强制：Tier X 100% mapping 覆盖、
+metadata source 契约、SVG 技术契约、turreted/turretless 资产完整性、turretPivot 稳定性。
+CI 不访问 BlitzKit 网络（任务 17）。

@@ -7,6 +7,29 @@
 ### Added
 - **Tier X 专属俯视车型系统（PR1：ASSET_GENERATION_READY）**：新增 frontend/src/vehicle-models/ 集中静态 mapping（common/tankopedia-tier10.json 84 辆 Tier X → 81 个 baseModelKey，skin/特殊版本复用基础模型：sheridan / kpz-70 / type-5-heavy 三组合并）与 discriminated union 类型契约（turreted 必配 turret + turretPivot，turretless 禁止）；统一 SVG viewBox 320×320 技术契约 + metadata.json schema（8 键）；validator（validate.js，CI 与 CLI 共用）与 Tier X 100% 覆盖门禁（coverage.test.js：新增 Tier X 无 mapping → CI FAIL、mapping 孤儿/未知引用/半成品资产目录均 FAIL）；契约样例资产 assets/sample/；BlitzKit 辅助脚本（frontend/scripts/blitzkit-references.mjs，参考图 URL 已验证并缓存 84 张，gitignored）与 CLI 自检（validate-vehicle-models.mjs）；隐藏 admin QA 页 ?view=vehicle-models（仅 wotbtools-admin，车体/炮塔旋转 + pivot + 状态叠加预览，复用生产 BattlePlayback 渲染方式）；文档 docs/assets/tier-x-models/（README 交接清单 + 全局 SVG 生成规范 + 生成的 84 辆 inventory）。正式车型 SVG 由 ChatGPT 按规范生成，到达 ASSET_GENERATION_READY Gate 后暂停（本 PR 不含正式车型资产）。
 
+### Changed
+- **PR1 资产生成路线切换：BlitzKit 确定性提取（替代 AI 手绘）**：
+  - 新增 `frontend/scripts/extract-tier-x-model.mjs`（extractor）+ `extractor-lib.mjs`（纯函数库）+
+    `protos/models.proto`（BlitzKit 官方 schema，字段号一致）：tankId → model.glb + models.pb +
+    tanks.pb → 节点分组（复刻 TankModel.tsx 契约：`hull`/chassis_track_*/turret_{id:02d}/
+    gun_{id:02d}(+_mask)，排除 *_hide_elements*）→ 俯视投影 → 分组凸包 silhouette → 统一 fit
+    320×320 → hull.svg/turret.svg/metadata.json；turretPivot 由 turret_origin 经 correctZYTuple
+    自动投影（同一 fit 变换）；网络仅存在于 developer CLI（缓存 gitignored，失败显式报错不 fallback）。
+  - **坐标语义（源码+实测确认）**：GLB 顶点 = 模型坐标（x宽/y长 forward=+y/z高）；models.pb origin =
+    引擎坐标（x宽/y高/z长）；correctZYTuple(x,y,z)=(x,z,y)；默认配置 = turrets/tracks/guns 数组最后
+    （BlitzKit tankToDuelMember）。差异报告：collision.glb 是装甲碰撞网格（{part}_armor_{N}），
+    分层车型模型是 model.glb（Maus 实测 77 节点）。
+  - **metadata schema 切换 geometry-source**：顶层 5 键 modelKey/kind/source/turretPivot/generation；
+    正式资产强制 source.provider=blitzkit + generation.method=collision-glb-topdown-projection
+    （validator 强制）；sample 更新为新 schema。
+  - **Maus 端到端资产（自动生成，无人工 patch）**：assets/maus/{hull,turret}.svg + metadata.json——
+    hull 3800 顶点（hull+tracks）、turret 638、gun 625；turretPivot=(160.00,193.23)（真实
+    turret_origin 投影）；hull 比例 1:2.43 与真实 Maus 一致；gun 炮管溢出 viewBox 顶部（contract §5）。
+  - 新增 extractor 契约测试（15 用例：坐标转换/fit/凸包/资产契约/pivot 稳定性/确定性，CI 不联网）；
+    新增依赖（devDeps）：three / protobufjs / @gltf-transform/core（BlitzKit 同款 GLTF 库）。
+  - 人工/ChatGPT 只做 visual QA（admin 预览页验证 pivot/方向/结构）；AI 手绘草稿归档
+    docs/assets/tier-x-models/manual-draft/（不参与正式流程）；AI 手绘 metadata 字段移除。
+
 ### Fixed
 - **Tier X 车型系统 ASSET_GENERATION_READY Gate 3 blocker 修复（PR1 加固）**：
   - **kind 全量核验**：遍历全部 81 baseModelKey，不采用 BlitzKit TURRET module / turretRotationSpeed（casemate 也有 turret module 且转速非零，不可判）；以官方 tankopedia 描述 / fandom wiki / 结构知识逐组核验并修正 3 项——minotauro → turreted（fandom：有炮塔约 45° 限位）、foch-155 → turretless（fandom specs turret=no）、xm66f → turreted（官方：non-fully-rotating turret 前置炮塔）；无法可靠确认的 3 辆（spht / ac-teichos / nc-70-blyskawica）标记 confirmPending（contract 未冻结，第一批不生成）；tier-x-inventory.md 增加全量 kind 核验依据列与修正记录。

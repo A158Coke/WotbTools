@@ -14,7 +14,14 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { VIEWBOX, METADATA_KEYS, ASSET_FILES, MODEL_KEY_PATTERN } from './types.js'
+import {
+  VIEWBOX,
+  METADATA_KEYS,
+  ASSET_FILES,
+  MODEL_KEY_PATTERN,
+  SOURCE_PROVIDER_BLITZKIT,
+  GENERATION_METHOD_EXTRACTION,
+} from './types.js'
 
 const ASSETS_DIR = fileURLToPath(new URL('./assets/', import.meta.url))
 
@@ -48,7 +55,11 @@ export function validateSvgText(svgText) {
   return errors
 }
 
-/** metadata.json 契约校验；expectedKind 来自 mapping（null = 非映射目录如 sample）。 */
+/**
+ * metadata.json 契约校验（geometry-source schema，任务 12/16）。
+ * expectedKind 来自 mapping（null = 非映射目录如 sample）。
+ * 正式资产（mapping 内 modelKey）强制 source.provider === 'blitzkit'。
+ */
 export function validateMetadata(meta, { modelKey, expectedKind = null }) {
   const errors = []
   if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
@@ -66,16 +77,54 @@ export function validateMetadata(meta, { modelKey, expectedKind = null }) {
   } else if (expectedKind && meta.kind !== expectedKind) {
     errors.push(`metadata.kind=${meta.kind} 与 mapping ${modelKey}.kind=${expectedKind} 不一致`)
   }
-  if (typeof meta.blitzkitReference !== 'string') {
-    errors.push('blitzkitReference 必须为字符串')
-  } else if (meta.blitzkitReference !== '') {
-    try {
-      const url = new URL(meta.blitzkitReference)
-      if (!/^https?:$/.test(url.protocol)) errors.push('blitzkitReference 必须为 http(s) URL')
-    } catch {
-      errors.push(`blitzkitReference 不是合法 URL：${meta.blitzkitReference}`)
+  // —— source（几何来源契约）——
+  const src = meta.source
+  if (!src || typeof src !== 'object') {
+    errors.push('metadata 必须提供 source（几何来源）')
+  } else {
+    if (typeof src.provider !== 'string' || src.provider === '') {
+      errors.push('source.provider 必须为非空字符串')
+    } else if (expectedKind && src.provider !== SOURCE_PROVIDER_BLITZKIT) {
+      errors.push(`正式资产（mapping 内）source.provider 必须为 blitzkit，实际 ${JSON.stringify(src.provider)}`)
+    }
+    if (src.provider === SOURCE_PROVIDER_BLITZKIT) {
+      // 正式 blitzkit 资产：tankId + 数据源 URL 必填
+      if (!Number.isInteger(src.tankId) || src.tankId <= 0) {
+        errors.push('source.tankId 必须为正整数')
+      }
+      for (const urlKey of ['collisionModel', 'modelDefinitions']) {
+        const u = src[urlKey]
+        if (typeof u !== 'string' || u === '') {
+          errors.push(`source.${urlKey} 必须为非空字符串`)
+        } else {
+          try {
+            const url = new URL(u)
+            if (!/^https?:$/.test(url.protocol)) errors.push(`source.${urlKey} 必须为 http(s) URL`)
+          } catch {
+            errors.push(`source.${urlKey} 不是合法 URL：${u}`)
+          }
+        }
+      }
     }
   }
+  // —— generation（生成记录）——
+  const gen = meta.generation
+  if (!gen || typeof gen !== 'object') {
+    errors.push('metadata 必须提供 generation（生成记录）')
+  } else {
+    if (typeof gen.method !== 'string' || gen.method === '') {
+      errors.push('generation.method 必须为非空字符串')
+    } else if (expectedKind && gen.method !== GENERATION_METHOD_EXTRACTION) {
+      errors.push(`正式资产 generation.method 必须为 ${GENERATION_METHOD_EXTRACTION}，实际 ${JSON.stringify(gen.method)}`)
+    }
+    if (typeof gen.viewBox !== 'string') {
+      errors.push('generation.viewBox 必须为字符串')
+    }
+    if (gen.notes !== undefined && typeof gen.notes !== 'string') {
+      errors.push('generation.notes 必须为字符串')
+    }
+  }
+  // —— turretPivot ——
   if (meta.kind === 'turreted') {
     const p = meta.turretPivot
     if (!p || typeof p !== 'object') {
@@ -95,22 +144,9 @@ export function validateMetadata(meta, { modelKey, expectedKind = null }) {
   } else if (meta.turretPivot !== undefined) {
     errors.push('turretless 禁止 turretPivot')
   }
-  for (const arrKey of ['distinctiveFeatures', 'intentionalExaggeration', 'mustKeepStructures']) {
-    const v = meta[arrKey]
-    if (v !== undefined && (!Array.isArray(v) || v.some((s) => typeof s !== 'string'))) {
-      errors.push(`${arrKey} 必须为字符串数组`)
-    }
-  }
-  if (meta.generationNotes !== undefined && typeof meta.generationNotes !== 'string') {
-    errors.push('generationNotes 必须为字符串')
-  }
   return errors
 }
 
-/**
- * 单车型目录校验。files = { hull, turret, metadata }（文件内容字符串或 null）。
- * expectedKind 来自 mapping；null 表示该 modelKey 不在 mapping 中（如 sample）。
- */
 export function validateModelEntry({ modelKey, kind, files }) {
   const errors = []
   if (!MODEL_KEY_PATTERN.test(modelKey)) {

@@ -1,10 +1,16 @@
 {
   "modelKey": "sample",
   "kind": "turreted",
-  "blitzkitReference": "",
+  "source": {
+    "provider": "manual-contract-sample",
+    "tankId": 0,
+    "collisionModel": "",
+    "modelDefinitions": ""
+  },
   "turretPivot": { "x": 160, "y": 150 },
-  "distinctiveFeatures": ["左右履带轮廓", "前置装甲斜面", "后置引擎甲板"],
-  "intentionalExaggeration": ["加宽履带，保证 20–30px 下可辨"],
-  "generationNotes": "契约样例（contract sample），非真实车型；仅用于验证 SVG 契约、validator 与 admin 预览管线。turretPivot=(160,150) 刻意非画布中心，用于证明预览旋转实现支持任意 pivot。正式车型由 ChatGPT 按 svg-generation-spec.md 生成。",
-  "mustKeepStructures": ["履带轮廓", "炮塔+完整炮管刚性层"]
+  "generation": {
+    "method": "manual-contract-sample",
+    "viewBox": "0 0 320 320",
+    "notes": "契约样例（contract sample），非真实车型；仅用于验证 SVG 契约、validator 与 admin 预览管线。turretPivot=(160,150) 刻意非画布中心，用于证明预览旋转实现支持任意 pivot。正式车型由 BlitzKit extractor 按 svg-generation-spec.md 确定性生成。"
+  }
 }

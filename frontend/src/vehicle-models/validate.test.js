@@ -18,10 +18,18 @@ const GOOD_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VIEWBOX
 const GOOD_META = {
   modelKey: 'maus',
   kind: 'turreted',
-  blitzkitReference: 'https://api.blitzkit.app/tanks/6929/icons/big.webp',
-  turretPivot: { x: 160, y: 160 },
-  distinctiveFeatures: ['宽大车体', '厚重炮塔'],
-  generationNotes: 'test',
+  source: {
+    provider: 'blitzkit',
+    tankId: 6929,
+    collisionModel: 'https://api.blitzkit.app/tanks/6929/model.glb',
+    modelDefinitions: 'https://api.blitzkit.app/definitions/models.pb',
+  },
+  turretPivot: { x: 160, y: 193.23 },
+  generation: {
+    method: 'collision-glb-topdown-projection',
+    viewBox: '0 0 320 320',
+    notes: 'test',
+  },
 }
 
 describe('validateSvgText', () => {
@@ -73,8 +81,43 @@ describe('validateMetadata', () => {
   it('拒绝未契约键与非法 URL', () => {
     expect(validateMetadata({ ...GOOD_META, extra: 1 }, { modelKey: 'maus' })).not.toEqual([])
     expect(
-      validateMetadata({ ...GOOD_META, blitzkitReference: 'not-a-url' }, { modelKey: 'maus' }),
+      validateMetadata(
+        { ...GOOD_META, source: { ...GOOD_META.source, collisionModel: 'not-a-url' } },
+        { modelKey: 'maus' },
+      ),
     ).not.toEqual([])
+  })
+  it('正式资产强制 source.provider=blitzkit / generation.method=extraction', () => {
+    const badProvider = {
+      ...GOOD_META,
+      source: { ...GOOD_META.source, provider: 'ai-hand-drawn' },
+    }
+    expect(validateMetadata(badProvider, { modelKey: 'maus', expectedKind: 'turreted' })).not.toEqual([])
+    const badMethod = {
+      ...GOOD_META,
+      generation: { ...GOOD_META.generation, method: 'manual' },
+    }
+    expect(validateMetadata(badMethod, { modelKey: 'maus', expectedKind: 'turreted' })).not.toEqual([])
+  })
+  it('source 缺失 / sourceTankId 非法 FAIL', () => {
+    const { source, ...noSource } = GOOD_META
+    expect(validateMetadata(noSource, { modelKey: 'maus' })).not.toEqual([])
+    expect(
+      validateMetadata(
+        { ...GOOD_META, source: { ...GOOD_META.source, tankId: 0 } },
+        { modelKey: 'maus' },
+      ),
+    ).not.toEqual([])
+  })
+  it('sample（非 mapping）允许非 blitzkit provider', () => {
+    const sampleMeta = {
+      modelKey: 'sample',
+      kind: 'turreted',
+      source: { provider: 'manual-contract-sample', tankId: 0, collisionModel: '', modelDefinitions: '' },
+      turretPivot: { x: 160, y: 150 },
+      generation: { method: 'manual-contract-sample', viewBox: '0 0 320 320' },
+    }
+    expect(validateMetadata(sampleMeta, { modelKey: 'sample', expectedKind: null })).toEqual([])
   })
 })
 
