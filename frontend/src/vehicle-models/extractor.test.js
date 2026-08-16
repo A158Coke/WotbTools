@@ -25,6 +25,7 @@ import {
   filterOccludedSurfaces,
   hullToPath,
   mergeVisualSurfaces,
+  projectTopFacingPolygons,
   projectTopDown,
   projectTriangles,
   silhouetteToSvgPaths,
@@ -460,8 +461,28 @@ describe('Layer B — Maus 生成资产细节（Layer 正确性）', () => {
 })
 
 describe('Layer B — visual surface merging（HIGH-FIDELITY，Blocker 1/2/4）', () => {
+  it('projectTopFacingPolygons：每个 top-facing 三角形独立投影（raw ground truth，无 merge）', () => {
+    const tris = [
+      [[0,0,0],[2,0,0],[0,2,0]], [[2,0,0],[2,2,0],[0,2,0]],           // 2 个水平三角形（top-facing）
+      [[0,0,1],[1,0,1],[0,1,0]],                                        // 斜面（nz ≈ 0.816 > 0.35）
+      [[0,0,0],[2,0,0],[0,0,1]],                                        // 垂直壁（nz = 0，排除）
+    ]
+    const polys = projectTopFacingPolygons(tris, { topFacingCos: 0.35 })
+    expect(polys.length).toBe(3) // 3 个 top-facing，垂直壁排除
+    // 每个 polygon 是三角形（3 个点）
+    for (const p of polys) {
+      expect(p.ring.length).toBeGreaterThanOrEqual(3)
+      expect(p.holes).toEqual([])
+    }
+  })
+  it('projectTopFacingPolygons 确定性：相同输入两次输出一致', () => {
+    const tris = [
+      [[0,0,0],[2,0,0],[0,2,0]], [[2,0,0],[2,2,0],[0,2,0]],
+      [[0,0,1],[1,0,1],[0,1,0]],
+    ]
+    expect(projectTopFacingPolygons(tris)).toEqual(projectTopFacingPolygons(tris))
+  })
   it('共面相邻三角形合并为一个矩形表面（共享对角线不得输出）', () => {
-    // 两个共面三角形组成矩形（沿对角线分割）→ merge 后 1 个矩形表面
     const tris = [
       [[0,0,0],[2,0,0],[0,2,0]], [[2,0,0],[2,2,0],[0,2,0]],
     ]

@@ -313,7 +313,42 @@ export function triangleNormal(a, b, c) {
  *
  * 最终：连续 roof/deck/斜面 是一个/少量 polygon，而不是十几个 tessellation
  * triangles（Maus turret ring 61 面 → 6 表面；roof 297 面 → 34 表面；
- * hull deck 205 面 → 79 表面——主甲板/屋顶/环带全部合并为单一区域）。
+/**
+ * Raw top-facing triangle projection（Blocker 1：source ground truth）：
+ * 每个 top-facing 三角形独立投影为 2D polygon——不做视觉表面合并、不做遮挡/微小过滤。
+ * 这是 model.glb top-down 投影的最原始表达（可显示 source 三角化结构），
+ * 仅用于 debug：source-top-projection.svg（与 final 对照，判断大结构是否消失）。
+ * 注意：相邻三角形共享边会产生视觉 seam——这正是"raw source"的语义。
+ *
+ * @param {number[][][]} triangles3d
+ * @param {object} opts { topFacingCos=0.35 }
+ * @returns {Array<{ring, holes}>} 每个 top-facing 三角形一个 polygon（2D 模型坐标）
+ */
+export function projectTopFacingPolygons(triangles3d, opts = {}) {
+  const topFacingCos = opts.topFacingCos ?? 0.35
+  const polys = []
+  for (const tri of triangles3d) {
+    const n = triangleNormal(tri[0], tri[1], tri[2])
+    const len = Math.hypot(n[0], n[1], n[2])
+    if (len < 1e-12) continue
+    const nz = n[2] / len
+    if (nz <= topFacingCos) continue
+    const p = projectTriangles([tri])[0]
+    if (!p) continue
+    polys.push({ ring: p, holes: [] })
+  }
+  return polys
+}
+
+/**
+ * 视觉表面合并（HIGH-FIDELITY，Blocker 1/2/4）：
+ * 把 model.glb 的 triangle tessellation / low-poly topology 合并为视觉连续表面。
+ *
+ * 规则：共享 3D 边的相邻 top-facing 面片，若（法线差 ≤ mergeAngleDeg 且
+ * 高度差 ≤ mergeHeightDeltaM）→ 属于同一视觉表面（union-find）。
+ * 只有真实结构分离才拆：height step / vertical wall / physical gap /
+ * strong normal discontinuity / isolated raised-recessed feature
+ * （即不满足连续条件 → 不合并）。
  *
  * @param {number[][][]} triangles3d
  * @param {object} opts { topFacingCos=0.35, mergeAngleDeg=20, mergeHeightDeltaM=0.4 }
@@ -323,7 +358,6 @@ export function mergeVisualSurfaces(triangles3d, opts = {}) {
   const topFacingCos = opts.topFacingCos ?? 0.35
   const mergeAngleDeg = opts.mergeAngleDeg ?? 20
   const mergeHeightDeltaM = opts.mergeHeightDeltaM ?? 0.4
-  // 1) top-facing 筛选 + 法线/重心 z/面积
   const faces = []
   for (const tri of triangles3d) {
     const n = triangleNormal(tri[0], tri[1], tri[2])
@@ -478,15 +512,26 @@ export function buildFeatureAudit(args) {
     const b = bounds2D(s.polys.flatMap((p) => p.ring.map(([x, y]) => ({ x, y }))))
     return { minX: b.minX, minY: b.minY, maxX: b.maxX, maxY: b.maxY }
   }
-  // hull 相对位置（模型坐标 y：+y 前、-y 后）
-  const hb = hullBounds || { min: [-2, -5], max: [2, 5] }
+  const inferBounds = (surfaces) => {
+    let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9
+    for (const s of surfaces) {
+      for (const p of s.polys) {
+        for (const [x, y] of p.ring) {
+          minX = Math.min(minX, x); minY = Math.min(minY, y)
+          maxX = Math.max(maxX, x); maxY = Math.max(maxY, y)
+        }
+      }
+    }
+    return minX === 1e9 ? { min: [-2, -5], max: [2, 5] } : { min: [minX, minY], max: [maxX, maxY] }
+  }
+  // bounds 优先来自调用方（真实投影计算）；否则从 source 几何推断——无车型专属硬编码
+  const hb = hullBounds || inferBounds(sourceHull)
+  const tb = turretBounds || inferBounds(sourceTurret)
+  // hull/turret 相对位置（模型坐标 y：+y 前、-y 后；通用比例 0.6 分带）
   const hullLen = hb.max[1] - hb.min[1]
   const hullPos = (cy) => (cy > hb.min[1] + hullLen * 0.6 ? 'front' : cy < hb.max[1] - hullLen * 0.6 ? 'rear' : 'center')
-  // turret 相对位置
-  const tb = turretBounds || { min: [-2, -4], max: [2, 1] }
   const turLen = tb.max[1] - tb.min[1]
   const turPos = (cy) => (cy > tb.min[1] + turLen * 0.6 ? 'front' : cy < tb.max[1] - turLen * 0.6 ? 'rear' : 'center')
-  // hull 类别（z 带 + 位置）
   const zOf = (s) => s.z ?? s.zMean ?? 0
   const classifyHull = (s) => {
     const b = surfaceBbox(s)

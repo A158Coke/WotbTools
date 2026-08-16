@@ -120,13 +120,19 @@
       top-view 结构类别（upper-deck/glacis/engine-deck/hatch/roof/ring 等），每类标记
       detected/retained/面积/mergedInto/sourceBBox——glacis 7→3、engine 4→3、roof 1→1、
       ring 6→3（被 roof 遮挡的面片块正确剔除），无大结构消失；
-    - source-vs-output debug：source-top-projection.svg（ground truth，无过滤）/
+    - source-vs-output debug：source-top-projection.svg（raw top-facing triangle projection，无 merge/无过滤——显示 source 三角化结构）/
       merged-surfaces.svg / final-hull.svg / final-turret.svg；
     - 新增测试：独立组件不合并、低噪声高度差合并、真实 deck step 不合并、
       bbox projection fidelity、feature report 确定性——extractor 66 用例，全套 454 全绿。
-
-### Fixed
-- **Tier X 车型系统 ASSET_GENERATION_READY Gate 3 blocker 修复（PR1 加固）**：
+  - **fidelity audit 循环论证 / 硬编码修复（2026-08-18，Review Blocker 1/2）**：
+    - source-top-projection.svg 改为真正的 raw ground truth：每个 top-facing 三角形独立投影
+      （projectTopFacingPolygons，无 merge / 无遮挡 / 无过滤——显示 source 三角化结构，
+      Maus 808 个三角形 path）；旧实现误用 mergeVisualSurfaces 输出（循环论证）已修正；
+    - feature-fidelity-report 移除 Maus 专属硬编码 bounds：hull/turret bounds 由真实投影
+      计算（bounds2D(polyPoints)）传入；buildFeatureAudit fallback 从 source 几何推断
+      （无车型专属数值）；
+    - 新增 projectTopFacingPolygons 测试（top-facing 过滤/每三角形一 polygon/确定性）——
+      extractor 68 用例，全套 456 全绿。
   - **kind 全量核验**：遍历全部 81 baseModelKey，不采用 BlitzKit TURRET module / turretRotationSpeed（casemate 也有 turret module 且转速非零，不可判）；以官方 tankopedia 描述 / fandom wiki / 结构知识逐组核验并修正 3 项——minotauro → turreted（fandom：有炮塔约 45° 限位）、foch-155 → turretless（fandom specs turret=no）、xm66f → turreted（官方：non-fully-rotating turret 前置炮塔）；无法可靠确认的 3 辆（spht / ac-teichos / nc-70-blyskawica）标记 confirmPending（contract 未冻结，第一批不生成）；tier-x-inventory.md 增加全量 kind 核验依据列与修正记录。
   - **turretPivot 旋转数学修正**：预览页不再用 translate 平移近似（旧实现旋转轴实际在 pivot 的镜像点 2C−P）；新增 frontend/src/vehicle-models/pivot.js——img 与 320×320 viewBox 1:1 对齐，transform-origin 直接用 pivot × renderScale，rotate 以 origin 为不动点；pivot.test.js 数学断言非中心 pivot 在 0°/90°/180°/270° 下不动（7 用例）；sample 改非中心 pivot (160,150) 证明实现支持任意 pivot；pivot debug marker 与旋转轴同源坐标。
   - **admin preview 懒加载**：App.vue 静态 import 改为 defineAsyncComponent 动态 import → preview 与全部车型 QA 资产（import.meta.glob）进入独立 chunk，普通用户主 bundle 不含车型资产；新增 scripts/check-bundle-separation.mjs 构建后检查（主入口无 vehicle-models/assets 标记 + 存在独立 preview chunk）。
