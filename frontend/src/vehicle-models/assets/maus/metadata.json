@@ -51,11 +51,9 @@
     "detailMethod": "top-surface-and-major-edge-extraction",
     "detailThresholds": {
       "topFacingCos": 0.35,
-      "zTolerance": 0.5,
+      "mergeAngleDeg": 20,
+      "mergeHeightDeltaM": 0.4,
       "minAreaM2": 0.01,
-      "bumpDelta": 0.08,
-      "minBumpAreaM2": 0.01,
-      "bumpHeightDeltaM": 0.06,
       "heightDeltaM": 0.15,
       "normalDeltaCos": 0.995,
       "minEdgeLenM": 1,

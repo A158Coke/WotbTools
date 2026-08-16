@@ -28,7 +28,6 @@ import { VIEWBOX } from '../src/vehicle-models/types.js'
 import {
   bounds2D,
   buildMetadata,
-  bumpsToSvgPaths,
   classifyDetail,
   clusterEdges,
   computeFit,
@@ -36,6 +35,8 @@ import {
   edgesToSvgPath,
   extractMajorEdges,
   extractTopSurfaces,
+  filterOccludedSurfaces,
+  mergeVisualSurfaces,
   projectTopDown,
   projectTriangles,
   silhouetteToSvgPaths,
@@ -272,19 +273,19 @@ async function main() {
   console.log(`  fit: scale=${fit.scale.toFixed(4)} bounds=(${fitBounds.minX.toFixed(2)},${fitBounds.minY.toFixed(2)})..(${fitBounds.maxX.toFixed(2)},${fitBounds.maxY.toFixed(2)})`)
   // —— Layer B：top-facing surfaces + bumps + structural edges（HIGH-FIDELITY ASSET）——
   // 高保真策略（2026-08-18）：
-  // - 真实 top-view 可见结构默认保留（目标 retention >= 90%）：surfaces 全部 top-facing
-  //   区域（仅滤 asset-space 极端微小），bumps 用连通分量隔离/高度不连续判据保留真实
-  //   凸起（hatch/cupola/台阶带）并剔除连续斜面面片（tessellation）；
+  // - 视觉表面合并（Blocker 1/2/4）：triangle tessellation / low-poly topology 合并为
+  //   视觉连续表面——连续 roof/deck/斜面是一个/少量 polygon，不输出三角马赛克；
+  //   真实结构分离（height step / vertical wall / gap / strong normal break /
+  //   isolated feature）保持独立区域；
+  // - 真实 top-view 可见结构默认保留（目标 retention >= 90%）；
   // - 不按 20-30px marker 过滤真实 detail（runtime LOD 负责小尺寸显示）；
   // - 不设 edge/path 数量上限——只限制"是不是实际视觉结构"（删 duplicate/overlap/
   //   tessellation 对角线，保留 component/height/normal 边界）。
   const DETAIL_THRESHOLDS = {
     topFacingCos: 0.35,       // 顶面判定（法线 z 分量）
-    zTolerance: 0.5,          // 高度层聚类容差（米）
+    mergeAngleDeg: 20,        // 视觉连续合并：相邻面片法线差 ≤ 20°（环带/斜面面片间 ~17.5°）
+    mergeHeightDeltaM: 0.4,   // 视觉连续合并：相邻面片高度差 ≤ 0.4m（环带面片间 ~0.24m）
     minAreaM2: 0.01,          // surface 区域最小投影面积（≈3 units @320，asset-space 极小）
-    bumpDelta: 0.08,          // 层内凸起 z 抬升判定（米）
-    minBumpAreaM2: 0.01,      // 凸起区域最小投影面积
-    bumpHeightDeltaM: 0.06,   // 凸起分量与外界共享边高度差下限（真实 hatch 高 ~0.06m+；连续斜面面片剔除）
     heightDeltaM: 0.15,       // feature edge 高度差（surface-edge 壁高 / height 边）
     normalDeltaCos: 0.995,    // ~5.7°：同一平滑曲面的面片法线差不算 feature
     minEdgeLenM: 1.0,         // 边最短投影长度（保留 hatch/panel 级边缘）
@@ -292,6 +293,8 @@ async function main() {
   }
   const hullSurfaces = extractTopSurfaces(hullTris, DETAIL_THRESHOLDS)
   const turretSurfaces = extractTopSurfaces(turretTris, DETAIL_THRESHOLDS)
+  const hullMerge = mergeVisualSurfaces(hullTris, DETAIL_THRESHOLDS).stats
+  const turretMerge = mergeVisualSurfaces(turretTris, DETAIL_THRESHOLDS).stats
   const hullEdges = extractMajorEdges(hullTris, DETAIL_THRESHOLDS)
   const turretEdges = extractMajorEdges(turretTris, DETAIL_THRESHOLDS)
   // asset-space 微噪声过滤（320 viewBox units）：只删宽/高 < 0.3 units 的退化 path；
@@ -319,22 +322,15 @@ async function main() {
   }
   const filterSurfaces = (surfaces) =>
     surfaces
-      .map((s) => ({
-        ...s,
-        polys: assetFilterPolys(s.polys),
-        bumps: s.bumps
-          .map((b) => ({ ...b, polys: assetFilterPolys(b.polys) }))
-          .filter((b) => b.polys.length > 0),
-      }))
-      .filter((s) => s.polys.length > 0 || s.bumps.length > 0)
+      .map((s) => ({ ...s, polys: assetFilterPolys(s.polys) }))
+      .filter((s) => s.polys.length > 0)
   // 去重聚类：duplicate/overlapping edge 合并为同一条结构线（保留最长边）；不截断数量
   const dedupeEdges = (edges) => clusterEdges(edges, { angleDeg: 5, maxDistM: 0.2 })
-  const hullSurfacesF = filterSurfaces(hullSurfaces)
-  const turretSurfacesF = filterSurfaces(turretSurfaces)
+  const hullSurfacesF = filterOccludedSurfaces(filterSurfaces(hullSurfaces))
+  const turretSurfacesF = filterOccludedSurfaces(filterSurfaces(turretSurfaces))
   const hullEdgesF = dedupeEdges(hullEdges)
   const turretEdgesF = dedupeEdges(turretEdges)
-  const bumpCount = (s) => s.reduce((n, x) => n + x.bumps.length, 0)
-  console.log(`  detail: hull surfaces ${hullSurfaces.length}→${hullSurfacesF.length} bumps=${bumpCount(hullSurfacesF)} edges=${hullEdgesF.length} | turret surfaces ${turretSurfaces.length}→${turretSurfacesF.length} bumps=${bumpCount(turretSurfacesF)} edges=${turretEdgesF.length}`)
+  console.log(`  detail: hull surfaces ${hullSurfaces.length}→${hullSurfacesF.length} edges=${hullEdgesF.length} | turret surfaces ${turretSurfaces.length}→${turretSurfacesF.length} edges=${turretEdgesF.length}`)
 
   // —— SVG 输出（detail-level grouping：primary/secondary/micro，为未来 runtime LOD 准备结构）——
   const GROUPS = { primary: 'vehicle-primary', secondary: 'vehicle-secondary', micro: 'vehicle-micro-detail' }
@@ -357,7 +353,6 @@ async function main() {
   put(hullGroups, silhouetteToSvgPaths(hullPoly, fit, '#6d736f'), 'silhouette')
   for (const s of hullSurfacesF) put(hullGroups, surfacesToSvgPaths([s], fit, '#565e58'), 'surface', s.areaM2)
   put(hullGroups, silhouetteToSvgPaths(trackPoly, fit, '#454b47'), 'track')
-  for (const s of hullSurfacesF) for (const b of s.bumps) put(hullGroups, silhouetteToSvgPaths(b.polys, fit, '#6f776f'), 'bump', b.areaM2)
   {
     const { sec, mic } = splitEdges(hullEdgesF)
     const secP = edgesToSvgPath(sec, fit, '#333833')
@@ -373,7 +368,6 @@ async function main() {
 
   put(turretGroups, silhouetteToSvgPaths(turretPoly, fit, '#7a817c'), 'silhouette')
   for (const s of turretSurfacesF) put(turretGroups, surfacesToSvgPaths([s], fit, '#6d756f'), 'surface', s.areaM2)
-  for (const s of turretSurfacesF) for (const b of s.bumps) put(turretGroups, silhouetteToSvgPaths(b.polys, fit, '#838b85'), 'bump', b.areaM2)
   put(turretGroups, silhouetteToSvgPaths(mantletPoly, fit, '#656c67'), 'mantlet')
   {
     const { sec, mic } = splitEdges(turretEdgesF)
@@ -389,18 +383,19 @@ async function main() {
     { group: GROUPS.micro, paths: turretGroups[GROUPS.micro] },
   ] }, VIEWBOX)
   // —— debug artifacts（gitignored 缓存目录，不提交正式 repo）——
-  // HIGH-FIDELITY evidence：all-visible（提取原始）/ retained（过滤后）/
-  // removed-tiny（被 asset-space 阈值删除）/ feature-edges / final-high-fidelity
+  // HIGH-FIDELITY evidence：all-visible / merged-visual-surfaces / retained /
+  // removed-tiny / feature-edges / final-high-fidelity（report 含 merge 统计）
   const debugDir = join(CACHE_DIR, 'debug', modelKey)
   mkdirSync(debugDir, { recursive: true })
-  writeFileSync(join(debugDir, 'silhouette.svg'), svgDocument(
-    [...silhouetteToSvgPaths(hullPoly, fit, '#6d736f'), ...silhouetteToSvgPaths(turretPoly, fit, '#7a817c')], VIEWBOX))
-  writeFileSync(join(debugDir, 'all-visible-surfaces.svg'), svgDocument(
-    [...surfacesToSvgPaths(hullSurfaces, fit, '#5c635e'), ...bumpsToSvgPaths(hullSurfaces, fit, '#6f776f'),
-     ...surfacesToSvgPaths(turretSurfaces, fit, '#717873'), ...bumpsToSvgPaths(turretSurfaces, fit, '#838b85')], VIEWBOX))
   writeFileSync(join(debugDir, 'retained-surfaces.svg'), svgDocument(
-    [...surfacesToSvgPaths(hullSurfacesF, fit, '#5c635e'), ...bumpsToSvgPaths(hullSurfacesF, fit, '#6f776f'),
-     ...surfacesToSvgPaths(turretSurfacesF, fit, '#717873'), ...bumpsToSvgPaths(turretSurfacesF, fit, '#838b85')], VIEWBOX))
+    [...surfacesToSvgPaths(hullSurfacesF, fit, '#5c635e'),
+     ...surfacesToSvgPaths(turretSurfacesF, fit, '#717873')], VIEWBOX))
+  // merged visual surfaces（合并后、过滤前）
+  writeFileSync(join(debugDir, 'merged-visual-surfaces.svg'), svgDocument(
+    [...surfacesToSvgPaths(hullSurfaces, fit, '#5c635e'),
+     ...surfacesToSvgPaths(turretSurfaces, fit, '#717873')], VIEWBOX))
+  // removed tessellation：raw faces 中不属于任何保留表面的（即合并吸收的三角形）
+  // —— 由 report 的 mergedFaces 统计表达；removed-tiny-details 表达 asset 过滤 ——
   if (removedTiny.length > 0) {
     writeFileSync(join(debugDir, 'removed-tiny-details.svg'), svgDocument(
       silhouetteToSvgPaths(removedTiny, fit, '#aa3a3a'), VIEWBOX))
@@ -418,32 +413,36 @@ async function main() {
     secondary: groups[GROUPS.secondary].length,
     micro: groups[GROUPS.micro].length,
   })
+  const retainedRegionsOf = (surfaces) => surfaces.reduce((n, s) => n + s.polys.length, 0)
   writeFileSync(join(debugDir, 'extraction-report.json'), JSON.stringify({
     modelKey, tankId,
     fidelity: 'high',
+    visibleDetailRetentionTarget: 0.9,
     thresholds: DETAIL_THRESHOLDS,
     fit: { scale: fit.scale, tx: fit.tx, ty: fit.ty },
+    merge: {
+      hull: hullMerge,
+      turret: turretMerge,
+    },
     counts: {
       hull: {
         tris: hullTri,
-        visibleSurfaceRegions: hullSurfaces.reduce((n, s) => n + s.polys.length + s.bumps.reduce((m, b) => m + b.polys.length, 0), 0),
-        retainedRegions: hullSurfacesF.reduce((n, s) => n + s.polys.length + s.bumps.reduce((m, b) => m + b.polys.length, 0), 0),
+        rawProjectedRegions: hullMerge.rawFaces,
+        mergedVisualSurfaces: hullSurfaces.length,
+        tessellationRegionsMerged: hullMerge.mergedFaces,
+        retainedRegions: retainedRegionsOf(hullSurfacesF),
         removedTinyRegions: removedTiny.length,
-        surfacesRaw: hullSurfaces.length,
-        surfaces: hullSurfacesF.length,
-        bumps: bumpCount(hullSurfacesF),
         edgesRaw: hullEdges.length,
         edges: hullEdgesF.length,
         groupPaths: groupStats(hullGroups),
       },
       turret: {
         tris: turretTri,
-        visibleSurfaceRegions: turretSurfaces.reduce((n, s) => n + s.polys.length + s.bumps.reduce((m, b) => m + b.polys.length, 0), 0),
-        retainedRegions: turretSurfacesF.reduce((n, s) => n + s.polys.length + s.bumps.reduce((m, b) => m + b.polys.length, 0), 0),
+        rawProjectedRegions: turretMerge.rawFaces,
+        mergedVisualSurfaces: turretSurfaces.length,
+        tessellationRegionsMerged: turretMerge.mergedFaces,
+        retainedRegions: retainedRegionsOf(turretSurfacesF),
         removedTinyRegions: removedTiny.length,
-        surfacesRaw: turretSurfaces.length,
-        surfaces: turretSurfacesF.length,
-        bumps: bumpCount(turretSurfacesF),
         edgesRaw: turretEdges.length,
         edges: turretEdgesF.length,
         groupPaths: groupStats(turretGroups),

@@ -21,7 +21,9 @@ import {
   correctZYTuple,
   extractMajorEdges,
   extractTopSurfaces,
+  filterOccludedSurfaces,
   hullToPath,
+  mergeVisualSurfaces,
   projectTopDown,
   projectTriangles,
   silhouetteToSvgPaths,
@@ -456,45 +458,24 @@ describe('Layer B — Maus 生成资产细节（Layer 正确性）', () => {
   })
 })
 
-describe('Layer B — bump（层内凸起特征）提取', () => {
-  it('主平面之上的凸起（hatch）被检出为 bump，主面保留', () => {
-    // 平台 z=0 + 中央凸起小平台 z=0.15（> bumpDelta 0.08）。全部三角形逆时针（法线朝上）。
+describe('Layer B — visual surface merging（HIGH-FIDELITY，Blocker 1/2/4）', () => {
+  it('共面相邻三角形合并为一个矩形表面（共享对角线不得输出）', () => {
+    // 两个共面三角形组成矩形（沿对角线分割）→ merge 后 1 个矩形表面
     const tris = [
-      [[0,0,0],[4,0,0],[0,4,0]], [[4,0,0],[4,4,0],[0,4,0]],
-      [[1.5,1.5,0.15],[2.5,1.5,0.15],[1.5,2.5,0.15]], [[2.5,1.5,0.15],[2.5,2.5,0.15],[1.5,2.5,0.15]],
+      [[0,0,0],[2,0,0],[0,2,0]], [[2,0,0],[2,2,0],[0,2,0]],
     ]
-    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.5, bumpDelta: 0.08, minBumpAreaM2: 0.05 })
+    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, mergeAngleDeg: 20, mergeHeightDeltaM: 0.4, minAreaM2: 0.1 })
     expect(s.length).toBe(1)
-    expect(s[0].bumps.length).toBe(1)
-    expect(s[0].bumps[0].areaM2).toBeCloseTo(1, 0)
+    expect(s[0].areaM2).toBeCloseTo(4, 6)
+    // 1 个 polygon（无内部对角线）
+    expect(s[0].polys.length).toBe(1)
+    // 矩形 4 顶点（简化后）
+    const ring = s[0].polys[0].ring
+    expect(ring.length).toBeLessThanOrEqual(5)
   })
-  it('主平面小碎块（z 差小）不产生 bump', () => {
-    const tris = [
-      [[0,0,0],[4,0,0],[0,4,0]], [[4,0,0],[4,4,0],[0,4,0]],
-      [[1.5,1.5,0.03],[2.5,1.5,0.03],[1.5,2.5,0.03]], // z 差 0.03 < bumpDelta
-    ]
-    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.5, bumpDelta: 0.08, minBumpAreaM2: 0.05 })
-    expect(s[0].bumps.length).toBe(0)
-  })
-  it('高保真：真实小凸起（相对占比小）默认保留——无 relative-ratio 过滤', () => {
-    // 平台 z=0 + 一个大凸起（4.0m²）+ 4 个 0.06125m² 小凸起（合计占比 ~6%）
-    // 高保真原则：小凸起是真实可见结构（≥ minBumpAreaM2），必须全部保留
-    const tris = [
-      [[0,0,0],[10,0,0],[0,10,0]], [[10,0,0],[10,10,0],[0,10,0]],
-      [[2,2,0.2],[4,2,0.2],[2,4,0.2]], [[4,2,0.2],[4,4,0.2],[2,4,0.2]],
-      [[6,6,0.2],[6.35,6,0.2],[6,6.35,0.2]], [[7,6,0.2],[7.35,6,0.2],[7,6.35,0.2]],
-      [[8,6,0.2],[8.35,6,0.2],[8,6.35,0.2]], [[9,6,0.2],[9.35,6,0.2],[9,6.35,0.2]],
-    ]
-    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.5, bumpDelta: 0.08, minBumpAreaM2: 0.05, bumpHeightDeltaM: 0.06 })
-    expect(s.length).toBe(1)
-    expect(s[0].bumps.length).toBe(1)
-    // 大 hatch + 4 小凸起全部保留（无相对占比过滤）
-    expect(s[0].bumps[0].polys.length).toBe(5)
-    expect(s[0].bumps[0].areaM2).toBeCloseTo(4.245, 2)
-  })
-  it('高保真：连续斜面面片不产生 bump（连通分量 vs 外界高度差判据）', () => {
-    // 缓坡平台（z = 0.025x 线性连续，5 个面片 x∈[0,10]；相邻面片共享顶点 z 对齐）
-    const zAt = (x) => x * 0.025
+  it('近共面连续曲面合并（环带式斜面不炸成三角马赛克）', () => {
+    // 连续斜面（z 线性变化，面片间高度差 0.2m、法线差 < 20°）→ 1 个表面
+    const zAt = (x) => x * 0.05
     const tris = []
     for (let i = 0; i < 5; i++) {
       const x0 = i * 2
@@ -504,41 +485,86 @@ describe('Layer B — bump（层内凸起特征）提取', () => {
       tris.push([[x0,0,z0],[x1,0,z1],[x0,2,z0]])
       tris.push([[x1,0,z1],[x1,2,z1],[x0,2,z0]])
     }
-    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.1, bumpDelta: 0.08, minBumpAreaM2: 0.05, bumpHeightDeltaM: 0.08 })
-    // 斜面整体是连续曲面（相邻面片共享边高度差 ≤0.05 < 0.08）→ 无 bump 分量被保留
+    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, mergeAngleDeg: 20, mergeHeightDeltaM: 0.4, minAreaM2: 0.5 })
     expect(s.length).toBe(1)
-    expect(s[0].bumps.length).toBe(0)
+    expect(s[0].areaM2).toBeCloseTo(20, 5)
   })
-  it('高保真：隔离凸起（cupola，与基底隔垂直壁）保留为 bump', () => {
+  it('真实高度台阶保留为两个表面', () => {
+    // 双层平台 z=0 / z=0.5：顶面法线同为 0° 但共享边高度差 0.5 > 0.4 → 不合并
+    // （台阶用垂直壁连接——顶面间不共享边，自然分离）
     const tris = [
-      [[0,0,0],[10,0,0],[0,10,0]], [[10,0,0],[10,10,0],[0,10,0]], // 平台 z=0
-      // cupola 顶面 z=0.3（不与平台共享边——模拟隔侧壁）
+      [[0,0,0],[4,0,0],[0,4,0]], [[4,0,0],[4,4,0],[0,4,0]],
+      [[0,0,0.5],[4,0,0.5],[0,4,0.5]], [[4,0,0.5],[4,4,0.5],[0,4,0.5]],
+    ]
+    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, mergeAngleDeg: 20, mergeHeightDeltaM: 0.4, minAreaM2: 0.5 })
+    expect(s.length).toBe(2)
+  })
+  it('隔离凸起（hatch，与基底隔垂直壁）保留为独立表面', () => {
+    const tris = [
+      [[0,0,0],[10,0,0],[0,10,0]], [[10,0,0],[10,10,0],[0,10,0]],
       [[2,2,0.3],[4,2,0.3],[2,4,0.3]], [[4,2,0.3],[4,4,0.3],[2,4,0.3]],
     ]
-    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.5, bumpDelta: 0.08, minBumpAreaM2: 0.05, bumpHeightDeltaM: 0.06 })
-    expect(s.length).toBe(1)
-    expect(s[0].bumps.length).toBe(1)
-    expect(s[0].bumps[0].areaM2).toBeCloseTo(4, 0)
+    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, mergeAngleDeg: 20, mergeHeightDeltaM: 0.4, minAreaM2: 0.5 })
+    expect(s.length).toBe(2)
+    const hatch = s.find((x) => x.areaM2 === 4)
+    expect(hatch).toBeTruthy()
   })
-  it('Maus hull.svg 含 bump 填充（#6f776f）与主面填充（#565e58）', () => {
+  it('小凸起（只占主面 4%）不因相对占比被拒——保留为独立表面', () => {
+    const tris = [
+      [[0,0,0],[10,0,0],[0,10,0]], [[10,0,0],[10,10,0],[0,10,0]],
+      [[4.8,4.8,0.2],[5.2,4.8,0.2],[4.8,5.2,0.2]], [[5.2,4.8,0.2],[5.2,5.2,0.2],[4.8,5.2,0.2]],
+    ]
+    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, mergeAngleDeg: 20, mergeHeightDeltaM: 0.4, minAreaM2: 0.01 })
+    // 平台 + 0.16 m² 小 hatch（占平台 0.16%）
+    expect(s.length).toBe(2)
+    expect(s.some((x) => x.areaM2 < 0.2)).toBe(true)
+  })
+  it('遮挡过滤：被高处表面完全覆盖的 hidden geometry 剔除', () => {
+    const surfaces = [
+      { z: 2.1, polys: [{ ring: [[0,0],[10,0],[10,10],[0,10]], holes: [] }], areaM2: 100 }, // 甲板（高层）
+      { z: 0.7, polys: [{ ring: [[2,2],[4,2],[4,4],[2,4]], holes: [] }], areaM2: 4 },      // 裙板（被甲板盖）
+      { z: 1.2, polys: [{ ring: [[8,8],[12,8],[12,12],[8,12]], holes: [] }], areaM2: 16 }, // 部分露出
+    ]
+    const kept = filterOccludedSurfaces(surfaces)
+    expect(kept.length).toBe(2)
+    expect(kept.some((s) => s.areaM2 === 100)).toBe(true)
+    expect(kept.some((s) => s.areaM2 === 4)).toBe(false) // 完全遮挡
+    expect(kept.some((s) => s.areaM2 === 16)).toBe(true)  // 部分遮挡保留
+  })
+  it('mergeVisualSurfaces 确定性：相同输入两次输出一致', () => {
+    const tris = [
+      [[0,0,0],[2,0,0],[0,2,0]], [[2,0,0],[2,2,0],[0,2,0]],
+    ]
+    const a = mergeVisualSurfaces(tris)
+    const b = mergeVisualSurfaces(tris)
+    expect(a.surfaceCount).toBe(b.surfaceCount)
+    expect(a.stats.rawFaces).toBe(b.stats.rawFaces)
+  })
+  it('Maus hull.svg 含主面填充（#565e58）与履带（#454b47），无 tessellation 色（旧 bump 色已删除）', () => {
     const svg = readFileSync(MAUS_DIR + 'hull.svg', 'utf8')
-    expect(svg).toContain('#6f776f')
     expect(svg).toContain('#565e58')
+    expect(svg).toContain('#454b47')
+    expect(svg).not.toContain('#6f776f') // 旧 bump 填充色已随 bump 概念移除
   })
-  it('Maus turret.svg 含屋顶凸起（#838b85）与屋顶主面（#6d756f）', () => {
+  it('Maus turret.svg 含屋顶主面（#6d756f）与炮盾（#656c67），无三角马赛克色', () => {
     const svg = readFileSync(MAUS_DIR + 'turret.svg', 'utf8')
-    expect(svg).toContain('#838b85')
     expect(svg).toContain('#6d756f')
+    expect(svg).toContain('#656c67')
+    expect(svg).not.toContain('#838b85') // 旧 bump 填充色已移除（面片块合并进 roof/环带）
   })
-  it('高保真：detail-level grouping 输出（vehicle-primary/secondary/micro-detail）', () => {
-    for (const name of ['hull.svg', 'turret.svg']) {
-      const svg = readFileSync(MAUS_DIR + name, 'utf8')
-      expect(svg).toContain('<g class="vehicle-primary">')
-      expect(svg).toContain('<g class="vehicle-secondary">')
-      expect(svg).toContain('<g class="vehicle-micro-detail">')
+  it('Maus turret 屋顶无三角马赛克：vehicle-secondary 不含小三角面片块', () => {
+    // 合并后 roof 是单一区域；面片块被合并/遮挡过滤——secondary 中不应有大量小面片
+    const svg = readFileSync(MAUS_DIR + 'turret.svg', 'utf8')
+    const groups = [...svg.matchAll(/<g class="vehicle-([^"]+)">([\s\S]*?)<\/g>/g)]
+    const micro = groups.find((m) => m[1] === 'micro-detail')
+    // micro 允许存在（真实小结构），但不应有 ~16 个规则小三角
+    if (micro) {
+      const paths = [...micro[2].matchAll(/<path/g)]
+      expect(paths.length).toBeLessThan(16)
     }
   })
 })
+
 describe('Maus 生成资产契约（assets/maus）', () => {
   it('hull.svg / turret.svg / metadata.json 存在且通过 validateModelEntry', () => {
     const files = { hull: null, turret: null, metadata: null, extra: [] }
