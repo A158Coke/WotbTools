@@ -4,12 +4,22 @@
   "source": {
     "provider": "blitzkit",
     "tankId": 10369,
-    "collisionModel": "https://api.blitzkit.app/tanks/10369/model.glb",
+    "modelGlb": "https://api.blitzkit.app/tanks/10369/model.glb",
     "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
   },
   "turretPivot": {
     "x": 160,
     "y": 142.83
+  },
+  "turretRaster": {
+    "logicalMinX": 102.57,
+    "logicalMinY": -129.61,
+    "logicalMaxX": 217.43,
+    "logicalMaxY": 248.87,
+    "pixelWidth": 230,
+    "pixelHeight": 757,
+    "pivotX": 57.43,
+    "pivotY": 272.44
   },
   "generation": {
     "method": "blitzkit-model-topdown-texture-bake",
@@ -47,6 +57,16 @@
         0.15652400255203247,
         7.730345249176025
       ]
+    },
+    "turretRaster": {
+      "logicalMinX": 102.57,
+      "logicalMinY": -129.61,
+      "logicalMaxX": 217.43,
+      "logicalMaxY": 248.87,
+      "pixelWidth": 230,
+      "pixelHeight": 757,
+      "pivotX": 57.43,
+      "pivotY": 272.44
     },
     "selectedModules": {
       "turretId": 14977,

@@ -1,14 +1,14 @@
 {
-  "tankId": 14609,
-  "modelKey": "leopard-1",
+  "tankId": 4145,
+  "modelKey": "wz-121",
   "kind": "turreted",
   "sourceModel": {
-    "glbBytes": 2993620
+    "glbBytes": 3415176
   },
   "selectedModules": {
-    "turretId": 30737,
-    "gunId": 20241,
-    "trackId": 36625,
+    "turretId": 6961,
+    "gunId": 6705,
+    "trackId": 6961,
     "turretModelId": 1,
     "gunModelId": 1
   },
@@ -21,16 +21,16 @@
     "supersample": 2
   },
   "materials": [
-    "G89_Leopard1_mtr",
-    "G89_Leopard1_track_mtr"
+    "Ch19_121_mtr",
+    "Ch19_121_track_mtr"
   ],
   "texturesUsed": [
-    "G89_Leopard1_mtr",
-    "G89_Leopard1_mtr",
-    "G89_Leopard1_mtr",
-    "G89_Leopard1_track_mtr",
-    "G89_Leopard1_track_mtr",
-    "G89_Leopard1_track_mtr"
+    "Ch19_121_mtr",
+    "Ch19_121_mtr",
+    "Ch19_121_mtr",
+    "Ch19_121_track_mtr",
+    "Ch19_121_track_mtr",
+    "Ch19_121_track_mtr"
   ],
   "uvSetsUsed": [
     "TEXCOORD_0"
@@ -41,62 +41,62 @@
     "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
   },
   "visibleTriangleCounts": {
-    "hull": 3388,
-    "turret": 2611
+    "hull": 4086,
+    "turret": 2405
   },
   "alphaTested": 1,
   "hullBounds": {
     "min": [
-      -1.6549224853515625,
-      -3.594482421875
+      -1.6476142406463623,
+      -3.8521668910980225
     ],
     "max": [
-      1.6549224853515625,
-      3.3264358043670654
+      1.6476142406463623,
+      3.3879220485687256
     ]
   },
   "turretBounds": {
     "min": [
-      -1.370707631111145,
-      -1.9531086683273315
+      -1.3155953884124756,
+      -1.3170639276504517
     ],
     "max": [
-      1.3707075119018555,
-      1.9684340953826904
+      1.3197640180587769,
+      1.6676902770996094
     ]
   },
   "gunBounds": {
     "min": [
-      -0.14310531318187714,
-      2.051478624343872
+      -0.16289712488651276,
+      1.753013014793396
     ],
     "max": [
-      0.14310622215270996,
-      5.921646595001221
+      0.22310638427734375,
+      6.8227972984313965
     ]
   },
   "turretPivot": {
     "x": 160,
-    "y": 143.61
+    "y": 163.85
   },
   "turretRaster": {
-    "logicalMinX": 104.23,
-    "logicalMinY": -75.49,
-    "logicalMaxX": 215.77,
-    "logicalMaxY": 244.92,
-    "pixelWidth": 223,
-    "pixelHeight": 641,
-    "pivotX": 55.77,
-    "pivotY": 219.1
+    "logicalMinX": 108.83,
+    "logicalMinY": -96.34,
+    "logicalMaxX": 211.33,
+    "logicalMaxY": 220.25,
+    "pixelWidth": 205,
+    "pixelHeight": 634,
+    "pivotX": 51.17,
+    "pivotY": 260.19
   },
   "fit": {
-    "scale": 40.688242628305666,
+    "scale": 38.89454982482048,
     "tx": 160,
-    "ty": 165.45317290442975
+    "ty": 169.02829707933583
   },
   "assets": {
-    "hullWebp": 31504,
-    "turretWebp": 17428
+    "hullWebp": 35132,
+    "turretWebp": 13960
   },
   "generation": {
     "method": "blitzkit-model-topdown-texture-bake",

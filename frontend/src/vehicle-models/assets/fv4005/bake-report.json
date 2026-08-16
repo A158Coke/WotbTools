@@ -62,7 +62,7 @@
     ],
     "max": [
       1.1479963064193726,
-      1.5560821294784546
+      1.542299509048462
     ]
   },
   "gunBounds": {
@@ -79,14 +79,24 @@
     "x": 160.28,
     "y": 163.22
   },
+  "turretRaster": {
+    "logicalMinX": 121.3,
+    "logicalMinY": -48.7,
+    "logicalMaxX": 199.3,
+    "logicalMaxY": 251.58,
+    "pixelWidth": 156,
+    "pixelHeight": 601,
+    "pivotX": 38.98,
+    "pivotY": 211.92
+  },
   "fit": {
     "scale": 33.98298446603618,
     "tx": 160.28376247047282,
     "ty": 175.40959120269537
   },
   "assets": {
-    "hullWebp": 32466,
-    "turretWebp": 11290
+    "hullWebp": 32792,
+    "turretWebp": 11768
   },
   "generation": {
     "method": "blitzkit-model-topdown-texture-bake",

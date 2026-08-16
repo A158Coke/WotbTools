@@ -58,6 +58,7 @@
   "turretBounds": null,
   "gunBounds": null,
   "turretPivot": null,
+  "turretRaster": null,
   "fit": {
     "scale": 27.14216368486084,
     "tx": 159.99998382200974,
