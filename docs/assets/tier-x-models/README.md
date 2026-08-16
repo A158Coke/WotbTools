@@ -50,7 +50,6 @@ AI 只做 visual QA；发现错误 → 修 extractor → 重新生成，禁止�
 | `frontend/scripts/.vehicle-model-refs/` | BlitzKit 数据缓存（gitignored：model.glb / models.pb / tanks.pb / 参考图） |
 | `docs/assets/tier-x-models/svg-generation-spec.md` | 全局 SVG 生成规范（正式文档） |
 | `docs/assets/tier-x-models/tier-x-inventory.md` | 84 辆 Tier X inventory（脚本生成） |
-| `docs/assets/tier-x-models/manual-draft/` | AI 手绘时代草稿（仅历史参考，不参与正式流程） |
 
 ## 提取器用法
 
