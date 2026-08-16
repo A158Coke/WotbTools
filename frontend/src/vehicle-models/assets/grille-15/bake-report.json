@@ -1,7 +1,7 @@
 {
   "tankId": 19217,
   "modelKey": "grille-15",
-  "kind": "turretless",
+  "kind": "turreted",
   "sourceModel": {
     "glbBytes": 3023672
   },
@@ -41,31 +41,52 @@
     "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
   },
   "visibleTriangleCounts": {
-    "hull": 5951,
-    "turret": null
+    "hull": 3971,
+    "turret": 1980
   },
   "alphaTested": 1,
   "hullBounds": {
     "min": [
       -1.556695580482483,
-      -3.038290500640869
+      -2.9677131175994873
     ],
     "max": [
       1.5522515773773193,
+      3.2125649452209473
+    ]
+  },
+  "turretBounds": {
+    "min": [
+      -0.8798010349273682,
+      -2.6459615230560303
+    ],
+    "max": [
+      0.8798010349273682,
+      -0.7853249907493591
+    ]
+  },
+  "gunBounds": {
+    "min": [
+      -0.24005362391471863,
+      -2.2490732669830322
+    ],
+    "max": [
+      0.2650880217552185,
       8.040014266967773
     ]
   },
-  "turretBounds": null,
-  "gunBounds": null,
-  "turretPivot": null,
+  "turretPivot": {
+    "x": 160.1,
+    "y": 220.36
+  },
   "fit": {
-    "scale": 25.419051552305874,
-    "tx": 160.05648117201437,
-    "ty": 96.43046286667146
+    "scale": 45.5642929230095,
+    "tx": 160.10124392961723,
+    "ty": 154.4217498017608
   },
   "assets": {
-    "hullWebp": 14750,
-    "turretWebp": null
+    "hullWebp": 43396,
+    "turretWebp": 9292
   },
   "generation": {
     "method": "blitzkit-model-topdown-texture-bake",

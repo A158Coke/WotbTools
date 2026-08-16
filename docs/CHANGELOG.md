@@ -208,9 +208,10 @@
       decodePb/mapGet/proto 共享到 extractor-lib（extractor CLI 与 bake CLI 复用）；
     - **turreted contract**：hull.webp（hull+tracks）+ turret.webp（selected turret+mantlet+gun）
       独立 z-buffer/bake；turretPivot 由 models.pb turretOrigin 投影（与 extractor 同公式）；
-    - **turretless contract**：grille-15/ho-ri 单 hull.webp（gun/mantlet/casemate 全部 bake 进
-      hull），无 turret layer/pivot；mapping 修正 grille-15 turreted→turretless（用户 inventory
-      review：casemate 固定战斗室）；
+    - **turretless contract**：ho-ri 单 hull.webp（casemate，gun 全部 bake 进 hull），无 turret
+      layer/pivot；grille-15 为 limited-traverse 炮塔 TD（BlitzKit models.pb turret yaw ±65°
+      权威数据）→ turreted visual layer（同 minotauro/xm66f ±45°）；kind 判定以 BlitzKit 数据
+      为 source of truth（yaw 无限制/null=全旋转、±45°~±65°=limited turret、±7°=casemate）；
     - **PBR 检查**：metallic/roughness 纹理存在但顶视中性 bake 无 specular → 报告后不加入（§5）；
       输出保持 0.75 去色 + 保留纹理结构（grille/panel/vent/AO/relief）；
     - **正式资产契约迁移**：assets/<modelKey>/{hull,turret}.webp + metadata.json + bake-report.json
