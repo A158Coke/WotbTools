@@ -260,6 +260,48 @@ export function collectNodeTriangles(node, out, matrix) {
 }
 
 /**
+ * 收集节点子树所有 mesh 顶点（POSITION，应用节点/世界矩阵）——与 collectNodeTriangles
+ * **同一 hierarchy 语义**（PR92 Review B1 第三轮：verify-pivot-independent.mjs 曾各自
+ * 实现一套 traversal，且漏乘 node 自身 TRS；必须单源复用，避免两套语义漂移）：
+ *   worldMatrix = parentMatrix · nodeLocalMatrix
+ *   1. node 自身 TRS 乘入 worldMatrix 后作用于**自己的 mesh**；
+ *   2. children 递归传 worldMatrix（已含自身）。
+ * @param {object} node  @gltf-transform Node（或同接口 mock）
+ * @param {number[][]} out 输出 [[x,y,z], ...]（模型坐标）
+ * @param {THREE.Matrix4} matrix 父链 world matrix（入口传 identity）
+ */
+export function collectNodeVerts(node, out, matrix) {
+  const m = matrix.clone()
+  const t = node.getTranslation()
+  const r = node.getRotation()
+  const s = node.getScale()
+  if (t || r || s) {
+    const e = new THREE.Matrix4().compose(
+      new THREE.Vector3(t ? t[0] : 0, t ? t[1] : 0, t ? t[2] : 0),
+      new THREE.Quaternion(r ? r[0] : 0, r ? r[1] : 0, r ? r[2] : 0, r ? r[3] : 1),
+      new THREE.Vector3(s ? s[0] : 1, s ? s[1] : 1, s ? s[2] : 1),
+    )
+    m.multiply(e)
+  }
+  const mesh = node.getMesh()
+  if (mesh) {
+    for (const prim of mesh.listPrimitives()) {
+      const posAcc = prim.getAttribute('POSITION')
+      if (!posAcc) continue
+      const positions = posAcc.getArray()
+      const v = new THREE.Vector3()
+      for (let i = 0; i < positions.length; i += 3) {
+        v.set(positions[i], positions[i + 1], positions[i + 2]).applyMatrix4(m)
+        out.push([v.x, v.y, v.z])
+      }
+    }
+  }
+  for (const c of node.listChildren()) {
+    collectNodeVerts(c, out, m)
+  }
+}
+
+/**
  * 节点分组（复刻 TankModel.tsx 渲染层 + A1 修正）：
  * - hullBody：hull 节点本体（含 *_hide_elements* 子树——BlitzKit 实际渲染）；
  * - tracks：chassis_track_{L,R}（可见性由 z-buffer 决定，顶视完全遮挡时视觉层不画）；

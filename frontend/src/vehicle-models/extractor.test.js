@@ -18,6 +18,7 @@ import {
   classifyDetail,
   clusterEdges,
   collectNodeTriangles,
+  collectNodeVerts,
   computeFit,
   computeTurretModelPivot,
   convexHull2D,
@@ -763,6 +764,76 @@ describe('Phase A1 — hide_elements 子树采集（复刻 TankModel.tsx 完整�
     expect(out.length).toBe(2)
   })
 })
+describe('Phase A1b — collectNodeVerts matrix traversal（PR92 Review B1 第三轮）', () => {
+  // 与 collectNodeTriangles 同一 hierarchy 语义：worldMatrix = parentMatrix · nodeLocalMatrix，
+  // node 自身 TRS 乘入后作用于自己的 mesh，children 递归传 worldMatrix。
+  const tri = (x, y, z) => [x, y, z]
+  // parent：非 identity TRS（T(1,2,3) · Rz(90°) · S(2,1,1)），自带 mesh 单点 [1,0,0]
+  const parentMesh = mockMesh(
+    new Float32Array(tri(1, 0, 0)),
+    new Uint16Array([0, 1, 2]),
+  )
+  // child：非 identity TRS（T(0.5,0,0) · S(1,2,1)），自带 mesh 单点 [0,1,0]
+  const childMesh = mockMesh(
+    new Float32Array(tri(0, 1, 0)),
+    new Uint16Array([0, 1, 2]),
+  )
+  // Rz(90°) quaternion：(x=0, y=0, z=sin45°, w=cos45°)
+  const Rz90 = [0, 0, Math.SQRT1_2, Math.SQRT1_2]
+  const parent = mockNode('parent', {
+    mesh: parentMesh,
+    t: [1, 2, 3],
+    r: Rz90,
+    s: [2, 1, 1],
+    children: [
+      mockNode('child', { mesh: childMesh, t: [0.5, 0, 0], r: null, s: [1, 2, 1] }),
+    ],
+  })
+
+  it('node 自身 TRS 作用于自己的 mesh（parent mesh 顶点 = P·v）', () => {
+    const out = []
+    collectNodeVerts(parent, out, new (require('three').Matrix4)())
+    // P = T(1,2,3)·Rz90·S(2,1,1)：v=[1,0,0] → S:(2,0,0) → Rz90:(0,2,0) → T:(1,4,3)
+    expect(out[0][0]).toBeCloseTo(1, 9)
+    expect(out[0][1]).toBeCloseTo(4, 9)
+    expect(out[0][2]).toBeCloseTo(3, 9)
+  })
+
+  it('parent + child matrix composition 正确（child mesh 顶点 = P·C·v）', () => {
+    const out = []
+    collectNodeVerts(parent, out, new (require('three').Matrix4)())
+    // C = T(0.5,0,0)·S(1,2,1)：v=[0,1,0] → S:(0,2,0) → T:(0.5,2,0)
+    // P·C·v：S:(1,2,0) → Rz90:(-2,1,0) → T:(-1,3,3)
+    expect(out[1][0]).toBeCloseTo(-1, 9)
+    expect(out[1][1]).toBeCloseTo(3, 9)
+    expect(out[1][2]).toBeCloseTo(3, 9)
+  })
+
+  it('child 子树再嵌套：worldMatrix 逐级合成（P·C·G·v）', () => {
+    const grand = mockNode('grand', { mesh: mockMesh(new Float32Array(tri(1, 1, 1)), new Uint16Array([0, 1, 2])), t: [1, 0, 0], r: null, s: [1, 1, 1] })
+    const child2 = mockNode('child2', { children: [grand], t: [0.5, 0, 0], r: null, s: [1, 2, 1] })
+    const p2 = mockNode('p2', { children: [child2], t: [1, 2, 3], r: Rz90, s: [2, 1, 1] })
+    const out = []
+    collectNodeVerts(p2, out, new (require('three').Matrix4)())
+    // G·v = [1,1,1]+[1,0,0] = [2,1,1]；C:(S:(2,2,1), T:(2.5,2,1))；P:(S:(5,2,1), Rz90:(-2,5,1), T:(-1,7,4))
+    expect(out[0][0]).toBeCloseTo(-1, 9)
+    expect(out[0][1]).toBeCloseTo(7, 9)
+    expect(out[0][2]).toBeCloseTo(4, 9)
+  })
+
+  it('与 collectNodeTriangles 同一 hierarchy 语义（同树顶点一致）', () => {
+    const outV = []
+    collectNodeVerts(parent, outV, new (require('three').Matrix4)())
+    const outT = []
+    collectNodeTriangles(parent, outT, new (require('three').Matrix4)())
+    // 三角形 positions 含索引（3 顶点三角形但只有 1 个唯一顶点？——mock 用 3 顶点，这里只比较首个顶点）
+    const t0 = outT[0].positions
+    expect(outV[0][0]).toBeCloseTo(t0[0], 9)
+    expect(outV[0][1]).toBeCloseTo(t0[1], 9)
+    expect(outV[0][2]).toBeCloseTo(t0[2], 9)
+  })
+})
+
 
 describe('Phase A2 — filterDegeneratePolys（几何退化判定，替代长窄 sliver 规则）', () => {
   it('真实长条（3.5m × 0.087m）保留——320px 下 110×2.7px 可见，不能算 noise', () => {

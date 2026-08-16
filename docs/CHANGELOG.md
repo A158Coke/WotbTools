@@ -298,6 +298,26 @@
   DEVELOPER_GUIDE 文档地图补充层级说明。纯文档变更，不影响代码与构建。
 
 ### Fixed
+- **turretPivot 独立验证 matrix traversal 修复（PR92 Review B1 第三轮）**：
+  verify-pivot-independent.mjs 曾各自实现一套 collectVerts，且**漏乘 node 自身 TRS**
+  （mesh 只应用 parent matrix；nodeMatrix 只乘给 children）——与
+  extractor-lib.mjs::collectNodeTriangles 语义不一致（真实 GLB 节点 TRS 全为 identity，
+  未暴露，但语义错误）。修复：**extractor-lib.mjs 新增 collectNodeVerts**（与
+  collectNodeTriangles **同一 hierarchy 语义**：worldMatrix = parentMatrix · nodeLocalMatrix，
+  node 自身 TRS 乘入后作用于自己的 mesh，children 递归传 worldMatrix），verify 脚本改用
+  单源函数，删除本地两套 traversal；新增 **synthetic 非 identity TRS 测试**（4 用例）：
+  parent T(1,2,3)·Rz90°·S(2,1,1) 自带 mesh 单点 [1,0,0] → 期望 (1,4,3)（自身 TRS 作用于
+  自己 mesh）；child 再乘 T(0.5,0,0)·S(1,2,1) → (0.5,2,0)→(-1,3,3)（parent+child 合成）；
+  三级嵌套 P·C·G → (-1,7,4)；与 collectNodeTriangles 同树顶点一致。
+  **bottom turret-ring anchor 落地（方案 A）**：verifier 新增可复现输出——turret_01 子树
+  底部带（z∈[minZ, minZ+0.2]）顶视质心 vs pivot 模型坐标距离（68/72 台可计算；grille-15/
+  nc-70 战斗室底部顶点不足、e-50-m/felice 同理为 n/a）：median 0.217m（t57-heavy 0.019m /
+  m-vi-yoh 0.010m / fv215b-183 0.004m / ac-teichos 0.073m / minotauro 0.075m / xm66f 0.079m），
+  个别大偏差（bzt-70 1.27m / carro-45t 1.07m）由底部带含 *_hide_elements_switch* 替代网格
+  （nc/skin 网格位于车尾，属渲染子树的一部分）拉偏——ring anchor 仅作几何佐证不作为判据，
+  pivot 正确性由 scene-graph 反推（err≤0.0002m）+ turret_origin.y ≈ GLB 炮塔底部 z 保证。
+  6 台代表车重新执行：全 PASS（TRS 全 identity；yaw 0/90、grille 0/65、nc-70 0/10、
+  minotauro 0/45 含 initial pitch=3° err=0.0291m）。
 - **turretPivot 参考系反推验证（PR92 Review B1 第一轮，真实几何证据）**：新增
   frontend/scripts/verify-turret-pivot.mjs（developer-only，CI 不执行）——对每个 turreted 车型
   用 GLB 真实旋转层几何（= bake 的 turret 场景：turret + mantlet + gun，这才是 marker 里实际绕
@@ -321,8 +341,9 @@
   initial_turret_rotation（pitch=3°）完整复刻，err=0.0291m 原值报告**（pitch 使顶视投影非纯
   2D 旋转，属物理效应非 pivot 偏差，不放宽阈值）。
   **B1 视觉"偏后"根因（独立证据链）**：① pivot 数值正确——scene-graph 独立反推 err≤0.0002m，
-  且 GLB 炮塔底部环带（z≈turret_origin.y 高度层）中心与 pivot 吻合（Maus 0.08m / Grille 15 0.15m /
-  fv4005 0.04m / t57-heavy 0.02m / m-vi-yoh 0.00m）；② 视觉偏差来自 **turret.webp 的 raster
+  且 GLB 炮塔底部环带中心与 pivot 吻合（bottom turret-ring anchor 已由 verifier 实现并输出，
+  见第三轮条目；Maus 0.218m / fv4005 0.110m / t57-heavy 0.019m / m-vi-yoh 0.010m）；② 视觉偏差来自
+  **turret.webp 的 raster
   overflow contract**：图像包含完整炮管（Grille 15 炮管占图像上部 60%+），turret.webp 非透明
   像素质心被炮管拉前，而座圈（红圈）在炮管根部、位于图像中下部（Maus 74.2% / Grille 15 85.6%）——
   **红圈相对炮塔图像视觉质心偏"下"（后方）0.3m（Maus）~ 2.4m（Grille 15）**，炮管越长的车越

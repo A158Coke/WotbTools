@@ -184,8 +184,19 @@ PR1 DONE（78 资产确定性生成，方向契约测试全绿，PR #91 已合�
   minotauro 真实含 initial pitch=3°（0.0291m 原值）。**"pivot 偏后"视觉根因**：turret.webp 含
   完整炮管（raster overflow contract）→ 图像像素质心被炮管拉前，座圈红圈在图像中下部
   （Grille 15 85.6%），偏后感知 = 炮管占比效应（非数值偏差；GLB 底部环带中心与 pivot 吻合
-  ≤0.15m）；QA 页 proto cell transform-origin 写死 160px 未随 protoSize 缩放（旋转漂移误读）
-  已修复；QA 页新增炮塔视觉质心青色参照（checkbox，三语 i18n）。pivot 数值不变，资产不重生成。
+  0.01–0.22m，见第三轮 verifier 可复现输出）；QA 页 proto cell transform-origin 写死 160px
+  未随 protoSize 缩放（旋转漂移误读）已修复；QA 页新增炮塔视觉质心青色参照（checkbox，三语
+  i18n）。pivot 数值不变，资产不重生成。
+- PR92 Review B1 第三轮（2026-08-19）：**collectVerts matrix traversal 修复**——verify 脚本
+  本地 traversal 漏乘 node 自身 TRS（mesh 只应用 parent matrix）；extractor-lib.mjs 新增
+  collectNodeVerts（与 collectNodeTriangles 同一 hierarchy 语义：worldMatrix = parent·local，
+  自身 TRS 作用于自己 mesh，children 递归），verify 脚本单源复用；新增 synthetic 非 identity
+  TRS 测试 4 用例（自身 TRS + parent/child/三级合成 + 与 collectNodeTriangles 一致）。
+  **bottom turret-ring anchor 落地**（CHANGELOG 数字改为 verifier 可复现输出）：turret_01
+  底部带（z∈[minZ,minZ+0.2]）顶视质心 vs pivot 距离，68/72 台可计算（median 0.22m；
+  t57-heavy 0.019m / m-vi-yoh 0.010m / fv215b-183 0.004m），个别大偏差（bzt-70 1.27m /
+  carro-45t 1.07m）为底部带含 hide_elements 替代网格所致；ring anchor 仅佐证非判据，
+  pivot 正确性以 scene-graph 反推 err≤0.0002m + turret_origin.y≈GLB 炮塔底部 z 为准。
 - PR92 Review 修复（2026-08-19）：**turretPivot source-of-truth 落地**（bake-report 记录 pivotSource：
   modelPivot = correctZYTuple(trackOrigin) + correctZYTuple(turretOrigin)；`scripts/verify-pivot-independent.mjs` 逐行复刻 useTankTransform.ts scene graph（turretContainer position/rotation 由 origins 构造，不经过 computeTurretModelPivot），yaw=0°/限位角反推，全 72 turreted 车型 err≤0.0002m，含 minotauro
   initial_turret_rotation（pitch=3°）影响量化 0.025m）；**confirmPending 清零**（spht / ac-teichos /
