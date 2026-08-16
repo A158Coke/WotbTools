@@ -18,6 +18,11 @@ const LOGIN_VIEW = 'vehicle-models'
 const hullUrls = import.meta.glob('../vehicle-models/assets/*/hull.svg', { eager: true, query: '?url', import: 'default' })
 const turretUrls = import.meta.glob('../vehicle-models/assets/*/turret.svg', { eager: true, query: '?url', import: 'default' })
 const metadataMap = import.meta.glob('../vehicle-models/assets/*/metadata.json', { eager: true, import: 'default' })
+// Phase B：Maus-only texture-baked prototype 对比（admin QA，仅 maus 有资产时显示）。
+const protoHullUrls = import.meta.glob('../vehicle-models/prototypes/*/hull-high-fidelity.webp', { eager: true, query: '?url', import: 'default' })
+const protoTurretUrls = import.meta.glob('../vehicle-models/prototypes/*/turret-high-fidelity.webp', { eager: true, query: '?url', import: 'default' })
+const protoRefUrls = import.meta.glob('../vehicle-models/prototypes/*/reference-topview.webp', { eager: true, query: '?url', import: 'default' })
+const protoReports = import.meta.glob('../vehicle-models/prototypes/*/bake-report.json', { eager: true, import: 'default' })
 
 const isAdmin = computed(() => {
   const roles = tokenParsed.value?.realm_access?.roles
@@ -86,6 +91,42 @@ const hullUrl = computed(() => hullUrls[`../vehicle-models/assets/${selectedKey.
 const turretUrl = computed(() => turretUrls[`../vehicle-models/assets/${selectedKey.value}/turret.svg`] || null)
 const hasAssets = computed(() => Boolean(hullUrl.value))
 const isSample = computed(() => selectedKey.value === 'sample')
+// —— Phase B prototype 对比（仅 maus）——
+const hasPrototype = computed(() => Boolean(protoHullUrls[`../vehicle-models/prototypes/${selectedKey.value}/hull-high-fidelity.webp`]))
+const protoHullUrl = computed(() => protoHullUrls[`../vehicle-models/prototypes/${selectedKey.value}/hull-high-fidelity.webp`] || null)
+const protoTurretUrl = computed(() => protoTurretUrls[`../vehicle-models/prototypes/${selectedKey.value}/turret-high-fidelity.webp`] || null)
+const protoRefUrl = computed(() => protoRefUrls[`../vehicle-models/prototypes/${selectedKey.value}/reference-topview.webp`] || null)
+const protoReport = computed(() => protoReports[`../vehicle-models/prototypes/${selectedKey.value}/bake-report.json`] || null)
+const protoSize = ref(320)
+const PROTO_SIZES = [320, 128, 64, 28, 24, 20]
+// 几何 SVG 合成（A）：hull+turret 双层叠在 320 画布（与生产 BattlePlayback 同渲染）
+const protoGeomStyle = computed(() => {
+  const s = protoSize.value / VIEWBOX.width
+  return {
+    width: protoSize.value + 'px',
+    height: protoSize.value + 'px',
+    position: 'relative',
+    overflow: 'visible',
+  }
+})
+// bake 合成（B）：640 physical → 按逻辑 320 缩放显示
+const protoBakeStyle = computed(() => {
+  const s = (protoSize.value / 320) * 2 // 640px 资源按 320 逻辑缩放
+  return {
+    width: protoSize.value + 'px',
+    height: protoSize.value + 'px',
+    position: 'relative',
+  }
+})
+const bakeHullLayerStyle = computed(() => {
+  const s = protoSize.value / 320
+  return { position: 'absolute', left: '0', top: '0', width: '100%', height: '100%', transform: 'rotate(' + hullDeg.value + 'deg)', transformOrigin: '160px 193.23px' }
+})
+const bakeTurretLayerStyle = computed(() => {
+  if (!pivot.value) return null
+  const s = protoSize.value / 320
+  return { position: 'absolute', left: '0', top: '0', width: '100%', height: '100%', transform: 'rotate(' + turretDeg.value + 'deg)', transformOrigin: `${pivot.value.x}px ${pivot.value.y}px` }
+})
 
 // 旋转数学（pivot.js）：img 与 320×320 画布 1:1 对齐（left:0 top:0），
 // transform-origin 直接用 viewBox 坐标 × renderScale —— rotate 以 origin 为不动点，
@@ -165,6 +206,48 @@ const pivotStyle = computed(() => {
         </div>
       </div>
 
+      <!-- Phase B：texture-baked prototype 对比（仅 maus；A=geometry SVG B=bake C=reference） -->
+      <div v-if="hasPrototype" class="vmp-proto">
+        <h3>Texture-Bake Prototype（Maus-only）</h3>
+        <div class="vmp-proto-sizes">
+          <span>{{ t('adminPreview.protoSize') }}:</span>
+          <button
+            v-for="sz in PROTO_SIZES"
+            :key="sz"
+            class="vmp-proto-btn"
+            :class="{ 'vmp-proto-active': protoSize === sz }"
+            @click="protoSize = sz"
+          >{{ sz }}</button>
+        </div>
+        <div class="vmp-proto-row">
+          <div class="vmp-proto-cell">
+            <p class="vmp-proto-label">A · geometry SVG</p>
+            <div :style="protoGeomStyle">
+              <img v-if="hullUrl" class="vmp-proto-img" :src="hullUrl" alt="" :style="bakeHullLayerStyle">
+              <img v-if="isTurreted && turretUrl" class="vmp-proto-img" :src="turretUrl" alt="" :style="bakeTurretLayerStyle">
+            </div>
+          </div>
+          <div class="vmp-proto-cell">
+            <p class="vmp-proto-label">B · texture bake</p>
+            <div :style="protoBakeStyle">
+              <img v-if="protoHullUrl" class="vmp-proto-img" :src="protoHullUrl" alt="" :style="bakeHullLayerStyle">
+              <img v-if="isTurreted && protoTurretUrl" class="vmp-proto-img" :src="protoTurretUrl" alt="" :style="bakeTurretLayerStyle">
+            </div>
+          </div>
+          <div class="vmp-proto-cell">
+            <p class="vmp-proto-label">C · source reference</p>
+            <img v-if="protoRefUrl" class="vmp-proto-img" :src="protoRefUrl" alt="" :style="{ width: protoSize + 'px', height: protoSize + 'px', background: 'rgba(0,0,0,0.08)' }">
+          </div>
+        </div>
+        <p v-if="protoReport" class="vmp-proto-report">
+          bake recall: {{ (protoReport.textureBakeRecall?.gtThr18 * 100).toFixed(1) }}% @thr18 /
+          {{ (protoReport.textureBakeRecall?.gtThr12 * 100).toFixed(1) }}% @thr12 ·
+          geometry SVG: {{ (protoReport.geometrySvgRecall?.gtThr18 * 100).toFixed(1) }}% ·
+          {{ protoReport.decorativeAnalysis?.verdict }} ·
+          hull {{ protoReport.assets?.hullWebp }}B / turret {{ protoReport.assets?.turretWebp }}B
+        </p>
+      </div>
+
       <div class="vmp-info" v-if="selected">
         <p><strong>{{ selected.modelKey }}</strong> · {{ isTurreted ? t('adminPreview.turreted') : t('adminPreview.turretless') }} · {{ selected.tankIds.join(', ') }}</p>
         <p v-if="isSample">{{ t('adminPreview.sampleNote') }}</p>
@@ -186,7 +269,7 @@ const pivotStyle = computed(() => {
 
 <style scoped>
 .vmp-page {
-  max-width: 860px;
+  max-width: 1080px;
   margin: 0 auto;
   padding: 16px 20px 40px;
   color: var(--text, #1e231f);
@@ -288,4 +371,21 @@ const pivotStyle = computed(() => {
 }
 .vmp-info { margin-top: 14px; font-size: 13px; line-height: 1.7; word-break: break-all; }
 .vmp-info p { margin: 4px 0; }
+.vmp-proto {
+  margin-top: 18px; padding: 12px 14px;
+  border: 1px solid var(--border, #d8ddd5); border-radius: 8px;
+  background: var(--bg-card, #fff);
+}
+.vmp-proto h3 { margin: 0 0 8px; font-size: 14px; }
+.vmp-proto-sizes { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; font-size: 13px; }
+.vmp-proto-btn {
+  border: 1px solid var(--border, #d8ddd5); background: transparent;
+  border-radius: 4px; padding: 2px 8px; font-size: 12px; cursor: pointer;
+}
+.vmp-proto-btn.vmp-proto-active { background: #2f6f4f; color: #fff; border-color: #2f6f4f; }
+.vmp-proto-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+.vmp-proto-cell { text-align: center; }
+.vmp-proto-label { font-size: 12px; color: var(--text-sub, #72796f); margin: 0 0 4px; }
+.vmp-proto-img { image-rendering: auto; }
+.vmp-proto-report { margin: 10px 0 0; font-size: 12px; color: var(--text-sub, #72796f); }
 </style>

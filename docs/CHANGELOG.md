@@ -156,6 +156,47 @@
       假装恢复纹理信息，本轮不改 pipeline/不调 threshold；审计文档
       docs/assets/tier-x-models/information-loss-audit.md + debug 渲染产物
       （_textured-topview-320.png / _svg-raster-320.png / _audit-composite.png 供视觉复核）。
+  - **Phase A — geometry correctness cleanup（2026-08-19，A1/A2/A3）**：
+    - **A1 hide_elements 纳入**：collectTriangles 不再跳过 *_hide_elements* 子树（BlitzKit
+      TankModel.tsx 渲染整个子树）——collectNodeTriangles/groupRenderNodes 移入 extractor-lib
+      （可测试）；mask_01 等无关顶层节点仍由顶层名匹配天然排除（无名字黑名单）；
+      Maus hull 原始 top-facing 450→571、turret 358→383；
+    - **A2 sliver 规则替换为几何退化判定**：filterDegeneratePolys（自交 ring / near-zero 面积 /
+      bbox 窄边 <5mm 数值 sliver / 完全重合重复）——3.5m×8.7cm 真实甲板缘条保留
+      （旧规则按纵横比误删，审计 15.5% gt 边缘所在）；removedTinyRegions 0；
+    - **A3 视觉层改真实 z-buffer 可见性**：rasterVisibility（逐像素 z-buffer + 面内 z 插值 +
+      surface 级分组累计赢家像素）；tracks 顶视可见 0 → 不再画 2D union 深色条；mantlet/gun
+      只画顶视可见表面（mantlet 区域 recall 0%→40.9%）；结构边按沿线多点采样可见比例过滤；
+      silhouette 契约仍由完整几何 union 提供（metadata bounds 不变，pivot 不变）；
+    - **recall 重新评估**：旧 42.2% 含水分（track 条 +6.2pp + 过绘小件碰巧命中 ~9pp）——
+      无水分真实几何 recall ≈26.6% = 几何驱动 gt 边缘（937）的 86% 覆盖；旧值 42.2% 中
+      的过绘区域在 gt 中确认为被遮挡结构（z-buffer 赢家均为 hullMain/turretMain）；
+    - 测试：collectNodeTriangles/groupRenderNodes（hide 采集/mask 排除）、filterDegeneratePolys
+      （长条保留/数值 sliver/自交/重复/面积）、rasterVisibility（完全遮挡/部分可见/对齐/
+      groups/确定性）——extractor 82 用例，全套 470 全绿；Maus 资产重生成（hull.svg 78 paths
+      无 track 色、turret.svg 40 paths）。
+  - **Phase B — Maus-only texture-baked prototype（2026-08-19，Texture-Baked High-Fidelity）**：
+    - **texture-bake-lib.mjs**（新，纯函数）：bakeTopView（1280² 确定性正交俯视 z-buffer +
+      barycentric UV + wrap bilinear 采样 + MASK alpha test + baseColor×occlusion×normal-z
+      起伏 + 0.75 中性化）+ encodePng（手写 PNG，zlib）；无 dynamic light/shadow/gloss/
+      outline——所有视觉信息来自 GLB 真实几何+材质+纹理；
+    - **bake-tier-x-topview.mjs**（新 CLI）+ decode-webp.py（PIL 解码 WEBP，developer-only）：
+      GLB → 分组（含 hide）→ 6 张内嵌纹理 → hull/turret 独立 bake（640×640 physical /
+      320×320 logical，fit 与 extractor 严格一致 scale=31.1729 → turretPivot 不变）→
+      RGBA WebP + bake-report.json + debug 通道图（source-color/normal/ao）；
+    - **结果**：hull 30KB / turret 14KB（640² WebP，q90）；**bake recall 81.0%@thr18 /
+      93.7%@thr12 vs geometry-only 26.6%**（同阈值同 gt）——明显突破 geometry ceiling；
+      区域：hull 86.2% / turret 64.8% / mantlet 80.3%；
+    - **装饰检查 STRUCTURAL_TEXTURE**：Maus baseColor 中性基础贴图（饱和度 mean 0.071、
+      >0.25 像素仅 0.4%、无迷彩/徽章/文字）——可直接使用，bake 仍 0.75 去色双保险；
+    - **prototypes/maus/**（入库小文件）：hull-high-fidelity.webp / turret-high-fidelity.webp /
+      reference-topview.webp / bake-report.json（含 recall/装饰分析/资产大小）；
+    - **QA 页对比区**：admin preview 增加 A(geometry SVG) / B(texture bake) / C(reference)
+      三列对比 + 320/128/64/28/24/20 尺寸档（仅 maus 显示；主包不受影响）；
+    - 测试：UV 插值/采样确定性/alpha cutoff/z-buffer topmost/hull-turret 分离/pivot 不变/
+      透明背景/稳定 hash/纹理缺失受控/无网络——texture-bake 13 用例，全套 483 全绿；
+    - **Gate 判据待 ChatGPT review**：fidelity 81-94% 达 >=85% 目标区间，但 turret 区域
+      （64.8%）与 precision（65-68%）仍需视觉复核；prototype 未冻结为正式资产契约。
   - **kind 全量核验**：遍历全部 81 baseModelKey，不采用 BlitzKit TURRET module / turretRotationSpeed（casemate 也有 turret module 且转速非零，不可判）；以官方 tankopedia 描述 / fandom wiki / 结构知识逐组核验并修正 3 项——minotauro → turreted（fandom：有炮塔约 45° 限位）、foch-155 → turretless（fandom specs turret=no）、xm66f → turreted（官方：non-fully-rotating turret 前置炮塔）；无法可靠确认的 3 辆（spht / ac-teichos / nc-70-blyskawica）标记 confirmPending（contract 未冻结，第一批不生成）；tier-x-inventory.md 增加全量 kind 核验依据列与修正记录。
   - **turretPivot 旋转数学修正**：预览页不再用 translate 平移近似（旧实现旋转轴实际在 pivot 的镜像点 2C−P）；新增 frontend/src/vehicle-models/pivot.js——img 与 320×320 viewBox 1:1 对齐，transform-origin 直接用 pivot × renderScale，rotate 以 origin 为不动点；pivot.test.js 数学断言非中心 pivot 在 0°/90°/180°/270° 下不动（7 用例）；sample 改非中心 pivot (160,150) 证明实现支持任意 pivot；pivot debug marker 与旋转轴同源坐标。
   - **admin preview 懒加载**：App.vue 静态 import 改为 defineAsyncComponent 动态 import → preview 与全部车型 QA 资产（import.meta.glob）进入独立 chunk，普通用户主 bundle 不含车型资产；新增 scripts/check-bundle-separation.mjs 构建后检查（主入口无 vehicle-models/assets 标记 + 存在独立 preview chunk）。
