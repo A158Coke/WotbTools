@@ -68,16 +68,16 @@ describe('assets/ 目录完整性（当前仅 sample 契约样例）', () => {
     }
   })
 
-  it('已就位目录（有 metadata.json）不得缺 hull/turret（半成品 FAIL）', () => {
+  it('已就位目录（有 metadata.json）不得缺 hull/turret webp（半成品 FAIL）', () => {
     for (const modelKey of listModelKeys()) {
       const files = readModelDir(modelKey)
       if (!files.metadata) continue
-      expect(files.hull, `${modelKey} 有 metadata 但缺 hull.svg`).toBeTruthy()
+      expect(files.hull, `${modelKey} 有 metadata 但缺 hull.webp`).toBeTruthy()
       const def = MODEL_DEFINITIONS[modelKey]
       if (def?.kind === 'turreted') {
-        expect(files.turret, `${modelKey} turreted 缺 turret.svg`).toBeTruthy()
+        expect(files.turret, `${modelKey} turreted 缺 turret.webp`).toBeTruthy()
       } else if (def?.kind === 'turretless') {
-        expect(files.turret, `${modelKey} turretless 禁止 turret.svg`).toBeFalsy()
+        expect(files.turret, `${modelKey} turretless 禁止 turret.webp`).toBeFalsy()
       }
     }
   })

@@ -75,7 +75,7 @@
 | fv4005 | turreted | — | 18001 | FV4005 | Tank destroyer | UK | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/18001/icons/big.webp) · [page](https://blitzkit.app/tanks/fv4005) |
 | lion | turreted | — | 18049 | Lion | Medium tank | European | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/18049/icons/big.webp) · [page](https://blitzkit.app/tanks/lion) |
 | t95e6 | turreted | — | 18977 | T95E6 | Heavy tank | USA | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/18977/icons/big.webp) · [page](https://blitzkit.app/tanks/t95e6) |
-| grille-15 | turreted | — | 19217 | Grille 15 | Tank destroyer | Germany | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/19217/icons/big.webp) · [page](https://blitzkit.app/tanks/grille-15) |
+| grille-15 | turretless | — | 19217 | Grille 15 | Tank destroyer | Germany | 2026-08-19 修正：casemate 固定战斗室（用户 inventory review：与 ho-ri 同 turretless contract；原误标 turreted） | [icon](https://api.blitzkit.app/tanks/19217/icons/big.webp) · [page](https://blitzkit.app/tanks/grille-15) |
 | super-conqueror | turreted | — | 19281 | Super Conqueror | Heavy tank | UK | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/19281/icons/big.webp) · [page](https://blitzkit.app/tanks/super-conqueror) |
 | vickers-light | turreted | — | 19537 | Vickers Light | Light tank | UK | 标准可旋转炮塔（HT/MT/LT，结构知识核验） | [icon](https://api.blitzkit.app/tanks/19537/icons/big.webp) · [page](https://blitzkit.app/tanks/vickers-light) |
 | nc-70-blyskawica | turreted | ⚠️ 待确认 | 19585 | NC 70 Błyskawica | Tank destroyer | European | 官方文章未明确炮塔结构 → 视觉确认待定（confirmPending） | [icon](https://api.blitzkit.app/tanks/19585/icons/big.webp) · [page](https://blitzkit.app/tanks/nc-70-b-yskawica) |

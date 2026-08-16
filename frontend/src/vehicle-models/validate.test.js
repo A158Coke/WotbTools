@@ -15,6 +15,9 @@ const GOOD_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VIEWBOX
   <g id="hull"><rect x="100" y="50" width="120" height="200"/></g>
 </svg>`
 
+/** 最小合法 WebP 二进制（RIFF....WEBP 魔数 + 填充）。 */
+const GOOD_WEBP = 'RIFF' + String.fromCharCode(0x20, 0, 0, 0) + 'WEBP' + 'x'.repeat(64)
+
 const GOOD_META = {
   modelKey: 'maus',
   kind: 'turreted',
@@ -26,8 +29,9 @@ const GOOD_META = {
   },
   turretPivot: { x: 160, y: 193.23 },
   generation: {
-    method: 'blitzkit-model-topdown-extraction',
+    method: 'blitzkit-model-topdown-texture-bake',
     viewBox: '0 0 320 320',
+    physicalPixelSize: [640, 640],
     notes: 'test',
     fidelity: 'high',
     geometryScale: 'faithful',
@@ -138,21 +142,27 @@ describe('validateMetadata', () => {
 
 describe('validateModelEntry', () => {
   const baseFiles = (over = {}) => ({
-    hull: GOOD_SVG,
-    turret: GOOD_SVG,
+    hull: GOOD_WEBP,
+    turret: GOOD_WEBP,
     metadata: JSON.stringify(GOOD_META),
+    bakeReport: JSON.stringify({ tankId: 6929 }),
     extra: [],
     ...over,
   })
   it('通过 turreted 完整目录', () => {
     expect(validateModelEntry({ modelKey: 'maus', kind: 'turreted', files: baseFiles() })).toEqual([])
   })
-  it('turreted 缺 turret.svg FAIL', () => {
+  it('turreted 缺 turret.webp FAIL', () => {
     expect(
       validateModelEntry({ modelKey: 'maus', kind: 'turreted', files: baseFiles({ turret: null }) }),
     ).not.toEqual([])
   })
-  it('turretless 带 turret.svg FAIL', () => {
+  it('hull 非 WebP 二进制 FAIL', () => {
+    expect(
+      validateModelEntry({ modelKey: 'maus', kind: 'turreted', files: baseFiles({ hull: 'not a webp' }) }),
+    ).not.toEqual([])
+  })
+  it('turretless 带 turret.webp FAIL', () => {
     const meta = { ...GOOD_META, kind: 'turretless', turretPivot: undefined }
     expect(
       validateModelEntry({
@@ -162,9 +172,14 @@ describe('validateModelEntry', () => {
       }),
     ).not.toEqual([])
   })
-  it('拒绝 gun.svg 独立 layer 与多余文件', () => {
+  it('拒绝 gun 独立 layer 与多余文件', () => {
     expect(
       validateModelEntry({ modelKey: 'maus', kind: 'turreted', files: baseFiles({ extra: ['gun.svg'] }) }),
+    ).not.toEqual([])
+  })
+  it('bake-report.json 缺失 FAIL', () => {
+    expect(
+      validateModelEntry({ modelKey: 'maus', kind: 'turreted', files: baseFiles({ bakeReport: null }) }),
     ).not.toEqual([])
   })
   it('拒绝非法 modelKey 命名', () => {

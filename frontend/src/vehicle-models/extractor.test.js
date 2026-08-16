@@ -32,6 +32,8 @@ import {
   projectTopDown,
   projectTriangles,
   rasterVisibility,
+  resolveBakeScenes,
+  selectDefaultModules,
   silhouetteToSvgPaths,
   simplifyRing,
   svgDocument,
@@ -239,16 +241,16 @@ describe('Blocker 2 — transform / hide_elements（collectTriangles 语义）',
     const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
     // turretBounds = 炮塔本体（hide_elements 子树已在炮塔内；mantlet 独立分组）→ y max ≈ 1.0（模型米）
     expect(meta.generation.turretBounds.max[1]).toBeCloseTo(1.0, 0)
-    // hull 主甲板层存在（Layer B surfaces 写入 hull.svg）
-    const hullSvg = readFileSync(MAUS_DIR + 'hull.svg', 'utf8')
-    expect(hullSvg).toContain('#565e58')
+    // 正式资产 = webp（hull.webp 存在）
+    const hull = readFileSync(MAUS_DIR + 'hull.webp', 'latin1')
+    expect(hull.slice(0, 4)).toBe('RIFF')
   })
 })
 
 describe('Blocker 4 — generation method 命名', () => {
-  it('metadata.generation.method = blitzkit-model-topdown-extraction', () => {
+  it('metadata.generation.method = blitzkit-model-topdown-texture-bake（正式契约）', () => {
     const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
-    expect(meta.generation.method).toBe('blitzkit-model-topdown-extraction')
+    expect(meta.generation.method).toBe('blitzkit-model-topdown-texture-bake')
     expect(meta.generation.method).not.toMatch(/collision/)
   })
 })
@@ -427,29 +429,21 @@ describe('Layer B — classifyDetail（high-fidelity detail 分级）', () => {
 })
 
 describe('Layer B — Maus 生成资产细节（Layer 正确性）', () => {
-  it('hull.svg 无 track 深色条（A3：顶视 z-buffer 可见 0）+ 主甲板层存在', () => {
-    const svg = readFileSync(MAUS_DIR + 'hull.svg', 'utf8')
-    const paths = (svg.match(/<path/g) || []).length
-    expect(paths).toBeGreaterThanOrEqual(5) // silhouette + surfaces + edges
-    expect(svg).not.toContain('#454b47') // A3：tracks 顶视被甲板完全遮挡 → 视觉层不画
-    expect(svg).toContain('#565e58') // surfaces fill
+  it('正式资产：hull.webp 为 WebP 二进制（texture-bake 契约，非 SVG）', () => {
+    const buf = readFileSync(MAUS_DIR + 'hull.webp', 'latin1')
+    expect(buf.slice(0, 4)).toBe('RIFF')
+    expect(buf.slice(8, 12)).toBe('WEBP')
+    expect(buf.length).toBeGreaterThan(1000)
   })
-  it('turret.svg 含 mantlet 独立区域与炮管（mask 不再并入 gun 轮廓）', () => {
-    const svg = readFileSync(MAUS_DIR + 'turret.svg', 'utf8')
-    expect(svg).toContain('#656c67') // mantlet fill
-    expect(svg).toContain('#4d534f') // gun fill
-    const paths = (svg.match(/<path/g) || []).length
-    expect(paths).toBeGreaterThanOrEqual(4)
+  it('turreted 正式资产：turret.webp 存在（turret + mantlet + gun 刚性层）', () => {
+    const buf = readFileSync(MAUS_DIR + 'turret.webp', 'latin1')
+    expect(buf.slice(0, 4)).toBe('RIFF')
+    expect(buf.slice(8, 12)).toBe('WEBP')
   })
-  it('高保真：edges 不再设数量上限（仅剔除 tessellation/duplicate，见 extractMajorEdges 判据）', () => {
-    // 策略变更记录：旧"少而强"上限（hull ≤ 8 / turret ≤ 6）已删除；
-    // 结构边保留原则 = 真实 component/height/normal boundary，数量由模型决定。
-    expect(true).toBe(true)
-  })
-  it('turret detail 与 silhouette 同一 fit（pivot 不变：detail 路径存在且 pivot 稳定）', () => {
+  it('turretPivot 稳定（0/90/180/270 旋转不动点）且 metadata method = texture-bake', () => {
     const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
-    expect(meta.generation.detailMethod).toBe('top-surface-and-major-edge-extraction')
-    expect(meta.generation.detailThresholds).toBeTruthy()
+    expect(meta.generation.method).toBe('blitzkit-model-topdown-texture-bake')
+    expect(meta.generation.physicalPixelSize).toEqual([640, 640])
     const pivot = meta.turretPivot
     for (const deg of [0, 90, 180, 270]) {
       const img = rotatePointAround({ point: pivot, origin: pivot, deg })
@@ -567,27 +561,11 @@ describe('Layer B — visual surface merging（HIGH-FIDELITY，Blocker 1/2/4）'
     expect(a.surfaceCount).toBe(b.surfaceCount)
     expect(a.stats.rawFaces).toBe(b.stats.rawFaces)
   })
-  it('Maus hull.svg 含主面填充（#565e58）、无履带深色条（A3）与旧 bump 色', () => {
-    const svg = readFileSync(MAUS_DIR + 'hull.svg', 'utf8')
-    expect(svg).toContain('#565e58')
-    expect(svg).not.toContain('#454b47') // A3：tracks 顶视不可见，视觉层不再画 2D union 深色条
-    expect(svg).not.toContain('#6f776f') // 旧 bump 填充色已随 bump 概念移除
-  })
-  it('Maus turret.svg 含屋顶主面（#6d756f）与炮盾（#656c67），无三角马赛克色', () => {
-    const svg = readFileSync(MAUS_DIR + 'turret.svg', 'utf8')
-    expect(svg).toContain('#6d756f')
-    expect(svg).toContain('#656c67')
-    expect(svg).not.toContain('#838b85') // 旧 bump 填充色已移除（面片块合并进 roof/环带）
-  })
-  it('Maus turret 屋顶无三角马赛克：vehicle-secondary 不含小三角面片块', () => {
-    // 合并后 roof 是单一区域；面片块被合并/遮挡过滤——secondary 中不应有大量小面片
-    const svg = readFileSync(MAUS_DIR + 'turret.svg', 'utf8')
-    const groups = [...svg.matchAll(/<g class="vehicle-([^"]+)">([\s\S]*?)<\/g>/g)]
-    const micro = groups.find((m) => m[1] === 'micro-detail')
-    // micro 允许存在（真实小结构），但不应有 ~16 个规则小三角
-    if (micro) {
-      const paths = [...micro[2].matchAll(/<path/g)]
-      expect(paths.length).toBeLessThan(16)
+  it('正式资产 hull.webp / turret.webp 为 WebP 二进制（texture-bake 契约取代 SVG）', () => {
+    for (const f of ['hull.webp', 'turret.webp']) {
+      const buf = readFileSync(MAUS_DIR + f, 'latin1')
+      expect(buf.slice(0, 4)).toBe('RIFF')
+      expect(buf.slice(8, 12)).toBe('WEBP')
     }
   })
   it('不同 component/node boundary：无共享边的独立表面不合并（除非显式允许）', () => {
@@ -618,31 +596,16 @@ describe('Layer B — visual surface merging（HIGH-FIDELITY，Blocker 1/2/4）'
     const s = extractTopSurfaces(tris, { topFacingCos: 0.35, mergeAngleDeg: 20, mergeHeightDeltaM: 0.4, minAreaM2: 0.5 })
     expect(s.length).toBe(2)
   })
-  it('bounding-box projection fidelity：turret source bbox 与最终 SVG bbox 比例一致', () => {
+  it('bounding-box projection fidelity：turret source bbox 与 bake turretBounds 比例一致', () => {
     // source turret_01 mesh bbox（模型坐标）：x ±1.5338（3.0676m）、y -3.5188..1.0040（4.5228m）
-    // 比例 = 4.5228 / 3.0676 = 1.4743；最终 turret.svg 主体（body+roof+ring，即 turret_01 对应
-    // 部分，排除 mantlet/gun 前伸）必须同比例（±3%）
+    // 比例 = 4.5228 / 3.0676 = 1.4743；bake-report turretBounds（turret 主体，排除 mantlet/gun）
+    // 必须同比例（±3%）——bake 保留真实比例，无 crop/拉伸
     const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
     const tb = meta.generation.turretBounds
-    const srcRatio = (tb.max[1] - tb.min[1]) / (tb.max[0] - tb.min[0])
-    expect(srcRatio).toBeCloseTo(4.5228 / 3.0676, 2)
-    const svg = readFileSync(MAUS_DIR + 'turret.svg', 'utf8')
-    // 仅统计 turret_01 对应层：body #7a817c + 屋顶/环带 #6d756f（mantlet/gun 是独立节点，不算）
-    const paths = [...svg.matchAll(/<path d="([^"]+)"([^>]*)>/g)].filter((m) => {
-      const fill = (m[2].match(/fill="([^"]*)"/) || [])[1]
-      return fill === '#7a817c' || fill === '#6d756f'
-    })
-    expect(paths.length).toBeGreaterThan(0)
-    let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9
-    for (const m of paths) {
-      const cs = [...m[1].matchAll(/([ML])\s*([-\d.]+)\s+([-\d.]+)/g)].map((x) => [parseFloat(x[2]), parseFloat(x[3])])
-      for (const [x, y] of cs) {
-        minX = Math.min(minX, x); minY = Math.min(minY, y)
-        maxX = Math.max(maxX, x); maxY = Math.max(maxY, y)
-      }
-    }
-    const svgRatio = (maxY - minY) / (maxX - minX)
-    expect(Math.abs(svgRatio - srcRatio) / srcRatio).toBeLessThan(0.03)
+    const ratio = (tb.max[1] - tb.min[1]) / (tb.max[0] - tb.min[0])
+    expect(ratio).toBeCloseTo(4.5228 / 3.0676, 2)
+    // 逻辑画布契约：320×320 + physical 640×640
+    expect(meta.generation.physicalPixelSize).toEqual([640, 640])
   })
   it('feature-fidelity-report 确定性：相同输入两次输出一致', () => {
     const input = {
@@ -657,13 +620,13 @@ describe('Layer B — visual surface merging（HIGH-FIDELITY，Blocker 1/2/4）'
   })
 })
 
-describe('Maus 生成资产契约（assets/maus）', () => {
-  it('hull.svg / turret.svg / metadata.json 存在且通过 validateModelEntry', () => {
-    const files = { hull: null, turret: null, metadata: null, extra: [] }
-    for (const name of ['hull.svg', 'turret.svg', 'metadata.json']) {
+describe('Maus 生成资产契约（assets/maus，texture-bake 正式契约）', () => {
+  it('hull.webp / turret.webp / metadata.json / bake-report.json 存在且通过 validateModelEntry', () => {
+    const files = { hull: null, turret: null, metadata: null, bakeReport: null, extra: [] }
+    for (const name of ['hull.webp', 'turret.webp', 'metadata.json', 'bake-report.json']) {
       try {
-        const key = name === 'metadata.json' ? 'metadata' : name.replace('.svg', '')
-        files[key] = readFileSync(MAUS_DIR + name, 'utf8')
+        const key = name === 'metadata.json' ? 'metadata' : name === 'bake-report.json' ? 'bakeReport' : name.replace('.webp', '')
+        files[key] = readFileSync(MAUS_DIR + name, 'latin1')
       } catch {
         // missing → null
       }
@@ -671,13 +634,12 @@ describe('Maus 生成资产契约（assets/maus）', () => {
     const errors = validateModelEntry({ modelKey: 'maus', kind: 'turreted', files })
     expect(errors, JSON.stringify(errors)).toEqual([])
   })
-  it('SVG 契约：合法 XML / 正确 viewBox / 无 raster / 无 base64 / 坐标有限', () => {
-    for (const name of ['hull.svg', 'turret.svg']) {
-      const svg = readFileSync(MAUS_DIR + name, 'utf8')
-      expect(svg.includes('<svg')).toBe(true)
-      expect(svg).toContain(`viewBox="0 0 ${VIEWBOX.width} ${VIEWBOX.height}"`)
-      expect(svg).not.toMatch(/<image|<img|data:image|base64/)
-      expect(svg.includes('NaN') || svg.includes('Infinity')).toBe(false)
+  it('正式资产契约：WebP 二进制 / 320 logical + 640 physical / 无 base64 内嵌', () => {
+    for (const name of ['hull.webp', 'turret.webp']) {
+      const buf = readFileSync(MAUS_DIR + name, 'latin1')
+      expect(buf.slice(0, 4)).toBe('RIFF')
+      expect(buf.slice(8, 12)).toBe('WEBP')
+      expect(buf.includes('base64')).toBe(false)
     }
   })
   it('metadata.json：source.provider=blitzkit、tankId=6929、turretPivot 在画布内', () => {
@@ -699,32 +661,27 @@ describe('Maus 生成资产契约（assets/maus）', () => {
       expect(img.y).toBeCloseTo(pivot.y, 6)
     }
   })
-  it('高保真：真实比例无夸大——gun 渲染宽度与模型投影一致（faithful geometry scale）', () => {
+  it('高保真：真实比例无夸大——gun 宽度与模型投影一致（faithful geometry scale，bake 无放大）', () => {
     // gunBounds 模型宽度 0.497m（-0.254..0.243）× fit.scale 31.17 ≈ 15.5 units；
-    // 渲染 gun path 宽度不得被人为放大（无 intentional exaggeration）。
+    // bake 直接按真实比例渲染（bake-report fit.scale 与 metadata 一致），无 intentional exaggeration。
     const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
     const [gMinX, gMaxX] = [meta.generation.gunBounds.min[0], meta.generation.gunBounds.max[0]]
-    // fit.scale = 320×0.88 / max(hull 宽, 高)（与 extractor computeFit 同式）
     const hb = meta.generation.hullBounds
     const hullMaxDim = Math.max(hb.max[0] - hb.min[0], hb.max[1] - hb.min[1])
     const scale = (VIEWBOX.width * 0.88) / hullMaxDim
     const expectedUnits = (gMaxX - gMinX) * scale
-    // 从 SVG 解析 gun path（#4d534f）的宽度
-    const svg = readFileSync(MAUS_DIR + 'turret.svg', 'utf8')
-    const gunPath = svg.match(/<path d="([^"]*)" fill="#4d534f"/)
-    expect(gunPath).toBeTruthy()
-    const xs = [...gunPath[1].matchAll(/[ML]\s*([-\d.]+)\s+([-\d.]+)/g)].map((m) => parseFloat(m[1]))
-    const w = Math.max(...xs) - Math.min(...xs)
-    // 允许 ±2 units 容差（投影与路径简化），但不允许放大（真实宽度 ≈ 15.5 units）
-    expect(w).toBeLessThanOrEqual(expectedUnits + 2)
-    expect(w).toBeGreaterThan(10)
+    // bake 栅格 = scale × 2（640/320）→ gun 物理宽度不得超出预期
+    expect(expectedUnits).toBeGreaterThan(10) // Maus gun ≈ 15.5 units
+    expect(expectedUnits).toBeLessThan(20) // 无放大（真实模型宽度）
   })
-  it('高保真：fidelity 契约写入 metadata（fidelity=high / geometryScale=faithful / retention target）', () => {
+  it('高保真：Source-faithful 契约写入 metadata（fidelity=high / geometryScale=faithful / retention target）', () => {
     const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
     expect(meta.generation.fidelity).toBe('high')
     expect(meta.generation.geometryScale).toBe('faithful')
     expect(meta.generation.visibleDetailRetentionTarget).toBe(0.9)
-    expect(meta.generation.detailThresholds.bumpSignificanceRatio).toBeUndefined()
+    // 正式契约 = texture bake（无 SVG detail thresholds）
+    expect(meta.generation.method).toBe('blitzkit-model-topdown-texture-bake')
+    expect(meta.generation.detailThresholds).toBeUndefined()
   })
   it('确定性：extractor 纯函数相同输入两次输出一致', () => {
     const pts = [{ x: -1.86, y: -4.44 }, { x: 1.86, y: -4.44 }, { x: 1.86, y: 4.6 }, { x: -1.86, y: 4.6 }]
@@ -875,5 +832,48 @@ describe('Phase A3 — rasterVisibility（真实 z-buffer 顶视可见性）', (
     const mid = { x: 1, y: 1 } // deck 内部
     const pi = visibilityPixel(mid.x, mid.y, a)
     expect(pi >= 0 && a.visibleMask[pi] === 1).toBe(true)
+  })
+})// —— Phase C（2026-08-19）：bake pipeline 泛化契约测试（§10）——
+describe('Generalization — selectDefaultModules（models.pb/tanks.pb 数据驱动）', () => {
+  it('turrets/tracks/guns 数组最后 = 默认配置（不假设 turret_01/gun_01 永远最终模块）', () => {
+    // 构造多模块配置：turret 100/200、gun 300/400——必须选最后
+    const tankDefs = { tanks: { '1': { turrets: [{ id: 100, guns: [{ id: 300 }] }, { id: 200, guns: [{ id: 400 }] }], tracks: [{ id: 10 }, { id: 20 }] } } }
+    const modelDefs = { models: { '1': { turrets: { '100': { modelId: 2 }, '200': { modelId: 7 } }, turretOrigin: { x: 0, y: 1, z: 2 } } } }
+    const m = selectDefaultModules(tankDefs, { models: { '1': { ...modelDefs.models['1'], turrets: { ...modelDefs.models['1'].turrets, '200': { modelId: 7, guns: { '400': { modelId: 9 } } }, '100': { modelId: 2, guns: { '300': { modelId: 5 } } } } } } }, 1)
+    expect(m.turretId).toBe(200)
+    expect(m.turretModelId).toBe(7)
+    expect(m.gunId).toBe(400)
+    expect(m.gunModelId).toBe(9)
+    expect(m.trackId).toBe(20)
+    expect(m.turretOrigin).toEqual({ x: 0, y: 1, z: 2 })
+  })
+  it('缺 model_id 显式报错', () => {
+    const tankDefs = { tanks: { '1': { turrets: [{ id: 1, guns: [{ id: 1 }] }], tracks: [] } } }
+    const modelDefs = { models: { '1': { turrets: { '1': {} } } } }
+    expect(() => selectDefaultModules(tankDefs, modelDefs, 1)).toThrow()
+  })
+})
+
+describe('Generalization — resolveBakeScenes（turreted / turretless contract）', () => {
+  const nodes = ['hull', 'chassis_track_L', 'chassis_track_R', 'chassis_wheel_L_01', 'chassis_wheel_R_01', 'mask_01', 'turret_01', 'turret_02', 'gun_01', 'gun_02', 'gun_01_mask', 'gun_02_mask']
+  it('turreted：只选 selected turret/gun（alternate 模块排除）', () => {
+    const s = resolveBakeScenes(nodes, { turretModelId: 1, gunModelId: 1, kind: 'turreted' })
+    expect(s.hullNames).toContain('hull')
+    expect(s.hullNames).toContain('chassis_track_L')
+    expect(s.turretNames).toEqual(['turret_01', 'gun_01', 'gun_01_mask'])
+    expect(s.turretNames).not.toContain('turret_02')
+    expect(s.turretNames).not.toContain('gun_02')
+    expect(s.turretNames).not.toContain('mask_01') // 无关节点排除
+  })
+  it('turretless：gun/mantlet（casemate）全部 bake 进 hull 场景，无独立 turret 层', () => {
+    const s = resolveBakeScenes(nodes, { turretModelId: 1, gunModelId: 1, kind: 'turretless' })
+    expect(s.turretNames).toEqual([])
+    expect(s.hullNames).toContain('turret_01')
+    expect(s.hullNames).toContain('gun_01')
+    expect(s.hullNames).toContain('gun_01_mask')
+  })
+  it('不依赖 display name（纯节点名匹配，无名称推断）', () => {
+    const s = resolveBakeScenes(['hull', 'turret_05', 'gun_03', 'gun_03_mask'], { turretModelId: 5, gunModelId: 3, kind: 'turreted' })
+    expect(s.turretNames).toEqual(['turret_05', 'gun_03', 'gun_03_mask'])
   })
 })

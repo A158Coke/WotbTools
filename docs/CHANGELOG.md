@@ -197,6 +197,31 @@
       透明背景/稳定 hash/纹理缺失受控/无网络——texture-bake 13 用例，全套 483 全绿；
     - **Gate 判据待 ChatGPT review**：fidelity 81-94% 达 >=85% 目标区间，但 turret 区域
       （64.8%）与 precision（65-68%）仍需视觉复核；prototype 未冻结为正式资产契约。
+  - **bake pipeline 泛化 + 正式契约迁移（2026-08-19，TEXTURE_BAKE_PIPELINE_NOT_GENERALIZED）**：
+    - **产品契约更新**：正式定义为 "Source-faithful PBR top-view asset"——geometry proportions
+      faithful、geometry detail 上限 = BlitzKit/WoTB LOD0 source、visual fidelity 由 source PBR
+      （baseColor/normal/occlusion/alpha）恢复；删除"恢复高精度 geometry / ≥90% geometric
+      retention"等误导表述（90% 仅作 visual comparison QA，不再描述为 geometric detail retention）；
+    - **泛化 bake CLI**：移除 hardcoded root/节点推断——数据驱动（tanks.pb + models.pb +
+      mapping.js）：selectDefaultModules（turrets/tracks/guns 数组最后，BlitzKit tankToDuelMember
+      语义，不假设 turret_01/gun_01）、resolveBakeScenes（turreted/turretless contract）；
+      decodePb/mapGet/proto 共享到 extractor-lib（extractor CLI 与 bake CLI 复用）；
+    - **turreted contract**：hull.webp（hull+tracks）+ turret.webp（selected turret+mantlet+gun）
+      独立 z-buffer/bake；turretPivot 由 models.pb turretOrigin 投影（与 extractor 同公式）；
+    - **turretless contract**：grille-15/ho-ri 单 hull.webp（gun/mantlet/casemate 全部 bake 进
+      hull），无 turret layer/pivot；mapping 修正 grille-15 turreted→turretless（用户 inventory
+      review：casemate 固定战斗室）；
+    - **PBR 检查**：metallic/roughness 纹理存在但顶视中性 bake 无 specular → 报告后不加入（§5）；
+      输出保持 0.75 去色 + 保留纹理结构（grille/panel/vent/AO/relief）；
+    - **正式资产契约迁移**：assets/<modelKey>/{hull,turret}.webp + metadata.json + bake-report.json
+      （640×640 physical / 320×320 logical）；types/validator/preview/tests 全部同步；旧 SVG 仅
+      debug（extractor CLI 默认输出 gitignored 缓存）；sample/prototypes 目录删除；
+    - **representative batch（8 辆）**：Maus/Leopard 1/Grille 15/Ho-Ri/Minotauro/XM66F/FV4005/
+      Sheridan 全部生成并通过 validator——turretless 无 turret.webp/pivot；pivot 各异（含非中心
+      160.28,163.22）；hull 15-35KB / turret 11-25KB；全部 6 张纹理采样；
+    - 测试：selectDefaultModules（数组最后/缺 model_id 报错）、resolveBakeScenes（alternate
+      模块排除/turretless gun 进 hull/无 display name 依赖）、webp 契约、turretBounds 排除
+      mantlet——全套 487 全绿；build/分离/validator ALL PASS。
   - **kind 全量核验**：遍历全部 81 baseModelKey，不采用 BlitzKit TURRET module / turretRotationSpeed（casemate 也有 turret module 且转速非零，不可判）；以官方 tankopedia 描述 / fandom wiki / 结构知识逐组核验并修正 3 项——minotauro → turreted（fandom：有炮塔约 45° 限位）、foch-155 → turretless（fandom specs turret=no）、xm66f → turreted（官方：non-fully-rotating turret 前置炮塔）；无法可靠确认的 3 辆（spht / ac-teichos / nc-70-blyskawica）标记 confirmPending（contract 未冻结，第一批不生成）；tier-x-inventory.md 增加全量 kind 核验依据列与修正记录。
   - **turretPivot 旋转数学修正**：预览页不再用 translate 平移近似（旧实现旋转轴实际在 pivot 的镜像点 2C−P）；新增 frontend/src/vehicle-models/pivot.js——img 与 320×320 viewBox 1:1 对齐，transform-origin 直接用 pivot × renderScale，rotate 以 origin 为不动点；pivot.test.js 数学断言非中心 pivot 在 0°/90°/180°/270° 下不动（7 用例）；sample 改非中心 pivot (160,150) 证明实现支持任意 pivot；pivot debug marker 与旋转轴同源坐标。
   - **admin preview 懒加载**：App.vue 静态 import 改为 defineAsyncComponent 动态 import → preview 与全部车型 QA 资产（import.meta.glob）进入独立 chunk，普通用户主 bundle 不含车型资产；新增 scripts/check-bundle-separation.mjs 构建后检查（主入口无 vehicle-models/assets 标记 + 存在独立 preview chunk）。
