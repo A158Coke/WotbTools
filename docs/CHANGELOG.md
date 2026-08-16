@@ -33,6 +33,21 @@
     - Blocker 3：gun_{id}_mask（mantlet 炮盾）归入 turret 层（TankModel.tsx 源码确认 mask 与 gun 同层
       渲染，但静态 0° 它是炮塔正面轮廓）——gun 层仅炮管（Maus gun tris 70，silhouette 细管不扩大）。
     - Blocker 4：generation.method 更名 blitzkit-model-topdown-extraction（schema/validator/sample/docs/tests 同步）。
+- **extractor 视觉信息密度（Layer B 结构细节，Maus Visual Detail）**：
+  - 在真实 silhouette（Layer A）之上新增 deterministic 结构细节：top-facing major surfaces
+    （三角形法线 z>0.35 + 高度层聚类 zTolerance=0.5 → 区域色块：主甲板/屋顶/裙板层）与
+    major structural edges（surface-edge 平台边缘 / height 高度差 / normal 辅助；
+    minEdgeLenM=1.5 + 屏幕空间过滤 minDetailPx=0.8 ≈ 1px@28px）。
+  - Maus hull.svg：履带独立深色区域、主甲板层（含真实炮塔座圈凹口）、前装甲带、车尾结构孔洞、
+    28 条结构边（≥1.5m，非 wireframe）；turret.svg：屋顶层色块、炮盾（mantlet）独立区域、8 条结构边、
+    细炮管——320px 一眼可辨 Maus（宽履带/宽车体/座圈位置），28px 主色块可读不糊噪。
+  - extractor-lib 新增：triangleNormal / extractTopSurfaces / extractMajorEdges（含 multi-owner 边修复）
+    / minSvgUnits / surfacesToSvgPaths / edgesToSvgPath；svgDocument 支持 stroke/strokeWidth/fill-rule。
+  - metadata.generation 增加 detailMethod=top-surface-and-major-edge-extraction + detailThresholds；
+    debug artifacts（silhouette/top-surfaces/major-edges/final/extraction-report）输出到 gitignored 缓存。
+  - 新增 14 用例（top-facing 判定/高度层聚类/碎片过滤/平台边缘/共享边去重/短边过滤/格栅过滤/
+    确定性/分层正确性/wireframe 上限/pivot 稳定）。
+
     - 新增 9 用例：L 形凹轮廓不被 convex 填平 / 退化三角形过滤 / union 确定性 / 索引网格解析 /
       共线简化 / mantlet 边界断言 / method 命名 / evenodd 洞 path。
 

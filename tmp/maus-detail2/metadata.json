@@ -48,11 +48,11 @@
     "detailMethod": "top-surface-and-major-edge-extraction",
     "detailThresholds": {
       "topFacingCos": 0.35,
-      "zTolerance": 0.5,
-      "minAreaM2": 0.25,
+      "zTolerance": 0.15,
+      "minAreaM2": 0.15,
       "heightDeltaM": 0.15,
       "normalDeltaCos": 0.92,
-      "minEdgeLenM": 1.5,
+      "minEdgeLenM": 0.5,
       "minDetailPx": 0.8
     }
   }

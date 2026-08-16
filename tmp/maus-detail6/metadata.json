@@ -52,7 +52,7 @@
       "minAreaM2": 0.25,
       "heightDeltaM": 0.15,
       "normalDeltaCos": 0.92,
-      "minEdgeLenM": 1.5,
+      "minEdgeLenM": 0.9,
       "minDetailPx": 0.8
     }
   }
