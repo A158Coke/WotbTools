@@ -7,32 +7,29 @@
  * 动态 import 获取全新模块实例（不污染生产 API，不用 test-only reset hook）。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-
-let runtime
-
-beforeEach(async () => {
-  vi.resetModules()
-  runtime = await import('./runtime.js')
-})
+// cache 无关的纯符号用静态 import（fallow 可静态链接消费方）；
+// preloadBattleModels 依赖 module-lifetime cache，在 cache describe 内用
+// vi.resetModules + 动态 import 隔离（不污染生产 API）。
+import { PRELOAD_TIMEOUT_MS, modelKeyForTank, resolveModel } from './runtime.js'
 
 describe('modelKeyForTank（tankId → modelKey）', () => {
   it('Tier X tankId 命中 mapping', () => {
-    expect(runtime.modelKeyForTank(6929)).toBe('maus')
-    expect(runtime.modelKeyForTank('19217')).toBe('grille-15')
+    expect(modelKeyForTank(6929)).toBe('maus')
+    expect(modelKeyForTank('19217')).toBe('grille-15')
   })
   it('非 Tier X / 未知 tankId → null（generic fallback）', () => {
-    expect(runtime.modelKeyForTank(1)).toBeNull()
-    expect(runtime.modelKeyForTank(999999)).toBeNull()
-    expect(runtime.modelKeyForTank(null)).toBeNull()
+    expect(modelKeyForTank(1)).toBeNull()
+    expect(modelKeyForTank(999999)).toBeNull()
+    expect(modelKeyForTank(null)).toBeNull()
   })
   it('confirmPending 车型仍可映射（contract 未冻结，preload 阶段按 resolve 失败处理）', () => {
-    expect(runtime.modelKeyForTank(29985)).toBe('spht')
+    expect(modelKeyForTank(29985)).toBe('spht')
   })
 })
 
 describe('resolveModel（modelKey → 正式资产）', () => {
   it('turreted：hull + turret + turretPivot + turretRaster 齐全', () => {
-    const m = runtime.resolveModel('maus')
+    const m = resolveModel('maus')
     expect(m).not.toBeNull()
     expect(m.kind).toBe('turreted')
     expect(m.hullSrc).toMatch(/hull\.webp$/)
@@ -42,7 +39,7 @@ describe('resolveModel（modelKey → 正式资产）', () => {
     expect(m.turretRaster.pivotX).toBeGreaterThan(0)
   })
   it('turretless：仅 hull，无 turret / pivot / raster（无 fake turret layer，§14）', () => {
-    const m = runtime.resolveModel('ho-ri')
+    const m = resolveModel('ho-ri')
     expect(m).not.toBeNull()
     expect(m.kind).toBe('turretless')
     expect(m.hullSrc).toMatch(/hull\.webp$/)
@@ -51,17 +48,22 @@ describe('resolveModel（modelKey → 正式资产）', () => {
     expect(m.turretRaster).toBeNull()
   })
   it('confirmPending（spht）→ null（contract 未冻结，不生成/不 resolve）', () => {
-    expect(runtime.resolveModel('spht')).toBeNull()
-    expect(runtime.resolveModel('ac-teichos')).toBeNull()
-    expect(runtime.resolveModel('nc-70-blyskawica')).toBeNull()
+    expect(resolveModel('spht')).toBeNull()
+    expect(resolveModel('ac-teichos')).toBeNull()
+    expect(resolveModel('nc-70-blyskawica')).toBeNull()
   })
   it('未知 modelKey → null', () => {
-    expect(runtime.resolveModel('not-a-tank')).toBeNull()
-    expect(runtime.resolveModel(null)).toBeNull()
+    expect(resolveModel('not-a-tank')).toBeNull()
+    expect(resolveModel(null)).toBeNull()
   })
 })
 
 describe('preloadBattleModels（module-lifetime cache，PR #92 Blocker 2）', () => {
+  let runtime
+  beforeEach(async () => {
+    vi.resetModules()
+    runtime = await import('./runtime.js')
+  })
   const okLoader = async () => true
   const failLoader = async () => false
 
@@ -95,7 +97,7 @@ describe('preloadBattleModels（module-lifetime cache，PR #92 Blocker 2）', ()
   })
 
   it('默认超时常量 = 3 秒（计划 §13）', () => {
-    expect(runtime.PRELOAD_TIMEOUT_MS).toBe(3000)
+    expect(PRELOAD_TIMEOUT_MS).toBe(3000)
   })
 
   it('空输入不抛错', async () => {
