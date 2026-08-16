@@ -95,7 +95,7 @@ describe('dedicated turreted（嵌套 transform）', () => {
     expect(w.find('.pb-death').exists()).toBe(true)
   })
 
-  it('阵亡 ✕：红色 + 更大 + 高层级（PR #92 Review A——与 last-known 淡化区分明显）', () => {
+  it('阵亡 ✕：红色 + 更大 + 高层级 + 不被车辆淡化（PR #92 Review A + Blocker）', () => {
     const w = mountMarker({ ...genericMarker, destroyed: true })
     const death = w.find('.pb-death')
     expect(death.exists()).toBe(true)
@@ -104,10 +104,32 @@ describe('dedicated turreted（嵌套 transform）', () => {
     expect(style).toContain('color: #ff4d4f') // 红色
     expect(style).toContain('font-size: 22px') // 比原 16px 更大
     expect(style).toContain('z-index: 6') // 高于 hull(1)/turret(2)/name(5)
+    // ✕ 是 button 直接子元素、与 .pb-graphics 视觉层容器平级——不继承 destroyed opacity
+    const graphics = w.find('.pb-graphics')
+    expect(graphics.exists()).toBe(true)
+    expect(death.element.parentElement).toBe(graphics.element.parentElement)
     // 非 destroyed 不渲染 ✕（与 last-known 语义区分：淡化无 ✕）
     const lk = mountMarker({ ...genericMarker, lastKnown: true, destroyed: false })
     expect(lk.find('.pb-death').exists()).toBe(false)
     expect(lk.find('button').classes()).toContain('pb-last-known')
+  })
+
+  it('destroyed 三条路径：车辆视觉层都在 .pb-graphics 容器内（root 不再整体 opacity）', () => {
+    const g = mountMarker({ ...genericMarker, destroyed: true })
+    const t = mountMarker({ ...dedicatedMarker, destroyed: true })
+    const tl = mountMarker({ ...turretlessMarker, destroyed: true })
+    for (const w of [g, t, tl]) {
+      expect(w.find('.pb-graphics').exists()).toBe(true)
+      expect(w.find('button').classes()).toContain('pb-destroyed')
+      // hull/turret/assembly 都是 .pb-graphics 的后代；✕ 是 button 直接子元素
+      const graphicsEl = w.find('.pb-graphics').element
+      const deathEl = w.find('.pb-death').element
+      expect(deathEl.parentElement).toBe(graphicsEl.parentElement)
+      for (const sel of ['.pb-hull', '.pb-turret', '.pb-turret-assembly']) {
+        const el = w.find(sel)
+        if (el.exists()) expect(graphicsEl.contains(el.element)).toBe(true)
+      }
+    }
   })
 })
 

@@ -1272,9 +1272,10 @@ const mapStyle = computed(() => ({
 @media (max-width: 768px) {
   .pb-vehicle { width: 22px; height: 22px; }
 }
-/* marker 内部样式（hull/turret/death/name/grayscale）已随 VehicleMarker 组件迁移 */
+/* marker 内部样式（hull/turret/death/name/grayscale）已随 VehicleMarker 组件迁移。
+   last-known：整标记淡化（无 ✕）；destroyed：车辆淡化/灰化由 VehicleMarker .pb-graphics
+   容器承担（root 不再 opacity，否则红色 ✕ 也会被淡到 35%——opacity 无法被子元素抵消） */
 .pb-last-known { opacity: .3; }
-.pb-destroyed { opacity: .35; }
 .pb-recorder { filter: drop-shadow(0 0 3px #ffd76a); }
 .pb-recorder::after {
   content: '';
