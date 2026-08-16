@@ -324,6 +324,7 @@ const rasterFingerprint = (baked, boundsWorld) => {
   let topRow = -1, bottomRow = -1
   for (let y = 0; y < H; y++) {
     let cnt = 0
+    // alpha > 40：边缘半透明像素不算覆盖（与 check-webp-orientation 同阈值）
     for (let x = 0; x < W; x++) if (rgba[(y * W + x) * 4 + 3] > 40) cnt++
     rowWidth[y] = cnt
     if (cnt > 0) { if (topRow < 0) topRow = y; bottomRow = y }

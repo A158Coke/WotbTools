@@ -773,7 +773,13 @@
         "pivot": "Turret pivot",
         "reference": "BlitzKit reference",
         "features": "Distinctive features",
-        "pending": "Assets pending"
+        "pending": "Assets pending",
+        "qaTitle": "Texture-Bake QA (source-faithful PBR top-view)",
+        "qaLabelA": "A · geometry SVG (debug)",
+        "qaLabelB": "B · texture bake",
+        "qaLabelC": "C · source reference",
+        "qaDevOnly": "dev-only",
+        "qaReport": "turret {turretId} · gun {gunId} · hull {hullBytes}B / turret {turretBytes}B · pivot {pivotX},{pivotY}"
     },
     "home": {
         "replayTitle": "Replay Extractor",
