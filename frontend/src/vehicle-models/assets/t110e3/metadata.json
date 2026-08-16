@@ -26,7 +26,6 @@
     },
     "turretBounds": null,
     "gunBounds": null,
-    "turretRaster": null,
     "selectedModules": {
       "turretId": 23329,
       "gunId": 19489,

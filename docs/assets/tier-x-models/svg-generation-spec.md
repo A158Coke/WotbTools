@@ -26,9 +26,9 @@ frontend/src/vehicle-models/assets/<modelKey>/
 - **raster overflow contract（RASTER_GUN_CLIPPING 修复）**：hull.webp 固定 640×640
   （320 logical 画布）；turret.webp 画布 = turret + mantlet + **完整 gun** 的 logical bounds
   （保持同一 fit.scale，主体不缩放；透明 canvas 可超出 320 画布，避免长炮管裁切）。
-  metadata 记录 `turretRaster`（logicalMin/Max、pixelWidth/Height、pivotX/pivotY——
-  pivot 相对 turret.webp 原点的逻辑坐标）；runtime 加载 turret 层时按 raster 原点定位 +
-  raster 内 pivot 旋转。
+  metadata 记录 **顶层** `turretRaster`（logicalMin/Max、pixelWidth/Height、pivotX/pivotY——
+  pivot 相对 turret.webp 原点的逻辑坐标；authoritative runtime geometry contract，generation
+  内禁止重复）；runtime 加载 turret 层时按 raster 原点定位 + raster 内 pivot 旋转。
 - 模块选择数据驱动（tanks.pb + models.pb：turrets/tracks/guns 数组最后），不依赖 display name。
 
 ## 2. SVG 技术契约（validator 强制）

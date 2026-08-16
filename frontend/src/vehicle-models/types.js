@@ -51,7 +51,8 @@ export const VIEWBOX = Object.freeze({ width: 320, height: 320 })
  *     turreted 必填（raster overflow contract）：turret.webp 画布 = turret+mantlet+完整 gun 的
  *     logical bounds（可超出 320 画布，避免炮管裁切）；pivotX/pivotY = turretPivot 在 turret.webp
  *     内（相对 raster 原点）的逻辑坐标
- * @property {{method:string, viewBox:string, physicalPixelSize?:number[], hullBounds?:object, turretBounds?:object, gunBounds?:object, turretRaster?:object, selectedModules?:object, texturesUsed?:string[], desaturate?:number, notes?:string, fidelity?:string, geometryScale?:string, visibleDetailRetentionTarget?:number, detailMethod?:string, detailThresholds?:object}} generation
+ * @property {{method:string, viewBox:string, physicalPixelSize?:number[], hullBounds?:object, turretBounds?:object, gunBounds?:object, selectedModules?:object, texturesUsed?:string[], desaturate?:number, notes?:string, fidelity?:string, geometryScale?:string, visibleDetailRetentionTarget?:number, detailMethod?:string, detailThresholds?:object}} generation
+ *     生成审计数据；turretRaster 是 authoritative runtime geometry contract，只存在于顶层（禁止重复）
  *     method 必填（正式资产必须 'blitzkit-model-topdown-texture-bake'）
  *     Source-faithful PBR 契约（正式资产强制）：fidelity='high' / geometryScale='faithful'；
  *     visibleDetailRetentionTarget ∈ (0,1] 仅为 visual QA target（非 geometric-detail-retention
