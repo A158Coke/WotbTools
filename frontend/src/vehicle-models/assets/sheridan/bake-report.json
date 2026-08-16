@@ -1,0 +1,97 @@
+{
+  "tankId": 20257,
+  "modelKey": "sheridan",
+  "kind": "turreted",
+  "sourceModel": {
+    "glbBytes": 2519748
+  },
+  "selectedModules": {
+    "turretId": 258337,
+    "gunId": 260129,
+    "trackId": 258337,
+    "turretModelId": 1,
+    "gunModelId": 1
+  },
+  "output": {
+    "physicalPixelSize": [
+      640,
+      640
+    ],
+    "logicalViewBox": "0 0 320 320",
+    "supersample": 2
+  },
+  "materials": [
+    "XM551_mtr",
+    "XM551_track_mtr"
+  ],
+  "texturesUsed": [
+    "XM551_mtr",
+    "XM551_mtr",
+    "XM551_mtr",
+    "XM551_track_mtr",
+    "XM551_track_mtr",
+    "XM551_track_mtr"
+  ],
+  "uvSetsUsed": [
+    "TEXCOORD_0"
+  ],
+  "metallicRoughness": {
+    "present": true,
+    "used": false,
+    "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
+  },
+  "visibleTriangleCounts": {
+    "hull": 3674,
+    "turret": 1927
+  },
+  "alphaTested": 1,
+  "hullBounds": {
+    "min": [
+      -1.3903576135635376,
+      -3.4528145790100098
+    ],
+    "max": [
+      1.384482741355896,
+      3.2267231941223145
+    ]
+  },
+  "turretBounds": {
+    "min": [
+      -1.2714920043945312,
+      -1.3331749439239502
+    ],
+    "max": [
+      1.2919625043869019,
+      2.2862753868103027
+    ]
+  },
+  "gunBounds": {
+    "min": [
+      -0.12364482879638672,
+      2.2862753868103027
+    ],
+    "max": [
+      0.11947040259838104,
+      3.1821367740631104
+    ]
+  },
+  "turretPivot": {
+    "x": 160.12,
+    "y": 154.27
+  },
+  "fit": {
+    "scale": 42.15860581441785,
+    "tx": 160.123838210806,
+    "ty": 164.76584878675808
+  },
+  "assets": {
+    "hullWebp": 28354,
+    "turretWebp": 13882
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "desaturate": 0.75,
+    "shading": "baseColor x occlusion x normal-z relief (restrained)",
+    "determinism": "pure arithmetic; same input -> same output"
+  }
+}

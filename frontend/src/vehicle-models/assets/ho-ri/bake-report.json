@@ -1,0 +1,76 @@
+{
+  "tankId": 3937,
+  "modelKey": "ho-ri",
+  "kind": "turretless",
+  "sourceModel": {
+    "glbBytes": 2598860
+  },
+  "selectedModules": {
+    "turretId": 7265,
+    "gunId": 6753,
+    "trackId": 7777,
+    "turretModelId": 1,
+    "gunModelId": 1
+  },
+  "output": {
+    "physicalPixelSize": [
+      640,
+      640
+    ],
+    "logicalViewBox": "0 0 320 320",
+    "supersample": 2
+  },
+  "materials": [
+    "J20_Ho_Ri_type3_mtr",
+    "J20_Ho_Ri_type3_track_mtr"
+  ],
+  "texturesUsed": [
+    "J20_Ho_Ri_type3_mtr",
+    "J20_Ho_Ri_type3_mtr",
+    "J20_Ho_Ri_type3_mtr",
+    "J20_Ho_Ri_type3_track_mtr",
+    "J20_Ho_Ri_type3_track_mtr",
+    "J20_Ho_Ri_type3_track_mtr"
+  ],
+  "uvSetsUsed": [
+    "TEXCOORD_0"
+  ],
+  "metallicRoughness": {
+    "present": true,
+    "used": false,
+    "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
+  },
+  "visibleTriangleCounts": {
+    "hull": 6490,
+    "turret": null
+  },
+  "alphaTested": 1,
+  "hullBounds": {
+    "min": [
+      -1.5437512397766113,
+      -4.271461486816406
+    ],
+    "max": [
+      1.5437524318695068,
+      6.103540420532227
+    ]
+  },
+  "turretBounds": null,
+  "gunBounds": null,
+  "turretPivot": null,
+  "fit": {
+    "scale": 27.14216368486084,
+    "tx": 159.99998382200974,
+    "ty": 135.13670684874995
+  },
+  "assets": {
+    "hullWebp": 16092,
+    "turretWebp": null
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "desaturate": 0.75,
+    "shading": "baseColor x occlusion x normal-z relief (restrained)",
+    "determinism": "pure arithmetic; same input -> same output"
+  }
+}

@@ -1,0 +1,97 @@
+{
+  "tankId": 28705,
+  "modelKey": "xm66f",
+  "kind": "turreted",
+  "sourceModel": {
+    "glbBytes": 2861436
+  },
+  "selectedModules": {
+    "turretId": 267297,
+    "gunId": 270881,
+    "trackId": 267553,
+    "turretModelId": 1,
+    "gunModelId": 1
+  },
+  "output": {
+    "physicalPixelSize": [
+      640,
+      640
+    ],
+    "logicalViewBox": "0 0 320 320",
+    "supersample": 2
+  },
+  "materials": [
+    "A153_XM66F_mtr",
+    "A153_XM66F_track_mtr"
+  ],
+  "texturesUsed": [
+    "A153_XM66F_mtr",
+    "A153_XM66F_mtr",
+    "A153_XM66F_mtr",
+    "A153_XM66F_track_mtr",
+    "A153_XM66F_track_mtr",
+    "A153_XM66F_track_mtr"
+  ],
+  "uvSetsUsed": [
+    "TEXCOORD_0"
+  ],
+  "metallicRoughness": {
+    "present": true,
+    "used": false,
+    "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
+  },
+  "visibleTriangleCounts": {
+    "hull": 3983,
+    "turret": 2492
+  },
+  "alphaTested": 1,
+  "hullBounds": {
+    "min": [
+      -1.8260046243667603,
+      -3.2297189235687256
+    ],
+    "max": [
+      1.82600736618042,
+      3.061255931854248
+    ]
+  },
+  "turretBounds": {
+    "min": [
+      -1.8198046684265137,
+      -1.3390789031982422
+    ],
+    "max": [
+      1.8114666938781738,
+      2.930166006088257
+    ]
+  },
+  "gunBounds": {
+    "min": [
+      -0.13051573932170868,
+      2.6915009021759033
+    ],
+    "max": [
+      0.13051940500736237,
+      8.110350608825684
+    ]
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 141.83
+  },
+  "fit": {
+    "scale": 44.76253783739955,
+    "tx": 159.99993863473117,
+    "ty": 163.7704155204104
+  },
+  "assets": {
+    "hullWebp": 30314,
+    "turretWebp": 25208
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "desaturate": 0.75,
+    "shading": "baseColor x occlusion x normal-z relief (restrained)",
+    "determinism": "pure arithmetic; same input -> same output"
+  }
+}

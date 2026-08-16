@@ -12,8 +12,12 @@
     "y": 193.23
   },
   "generation": {
-    "method": "blitzkit-model-topdown-extraction",
+    "method": "blitzkit-model-topdown-texture-bake",
     "viewBox": "0 0 320 320",
+    "physicalPixelSize": [
+      640,
+      640
+    ],
     "hullBounds": {
       "min": [
         -1.8600600957870483,
@@ -44,20 +48,25 @@
         5.683868408203125
       ]
     },
-    "notes": "确定性提取自 BlitzKit model.glb（HIGH-FIDELITY：真实比例 + visible top-view structure 默认保留，仅滤 tiny/hidden/tessellation）",
+    "selectedModules": {
+      "turretId": 11537,
+      "gunId": 266513,
+      "trackId": 14609,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "Maus_mtr",
+      "Maus_mtr",
+      "Maus_mtr",
+      "Maus_track_mtr",
+      "Maus_track_mtr",
+      "Maus_track_mtr"
+    ],
+    "desaturate": 0.75,
     "fidelity": "high",
     "geometryScale": "faithful",
     "visibleDetailRetentionTarget": 0.9,
-    "detailMethod": "top-surface-and-major-edge-extraction",
-    "detailThresholds": {
-      "topFacingCos": 0.35,
-      "mergeAngleDeg": 20,
-      "mergeHeightDeltaM": 0.4,
-      "minAreaM2": 0.01,
-      "heightDeltaM": 0.15,
-      "normalDeltaCos": 0.995,
-      "minEdgeLenM": 1,
-      "minDetailUnits": 0.3
-    }
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
   }
 }
