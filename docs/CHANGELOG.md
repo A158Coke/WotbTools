@@ -298,6 +298,21 @@
   DEVELOPER_GUIDE 文档地图补充层级说明。纯文档变更，不影响代码与构建。
 
 ### Fixed
+- **turretPivot source-of-truth（PR92 Review，BlitzKit useTankTransform 契约）**：baker 此前只用
+  tankModelDefinition.turret_origin 计算 pivot；官方运行时（packages/website/src/hooks/useTankTransform.ts，
+  已核对源码）的炮塔 yaw 旋转中心 = correctZYTuple(trackModelDefinition.origin) +
+  correctZYTuple(tankModelDefinition.turret_origin)。修复：selectDefaultModules 同时取得选中
+  track 的 origin（hullOrigin），baker 用 computeTurretModelPivot（向量和）计算 pivot；
+  bake-report 记录 pivotSource（engine origins + modelPivot）供不变量测试与审计。当前 BlitzKit
+  数据中 81 组 track origin 均为空（已与 live API 核对），hullOrigin=0 → 数值不变，但契约已
+  显式建模并有测试守护（B21：Maus/Grille 15/Leopard 1/FV4005/前置炮塔 type-71/后置炮塔 fv215b
+  + 全量 turreted 回归：metadata.turretPivot === fit(project(hullOrigin+turretOrigin))）。
+  initial_turret_rotation（仅 minotauro pitch=3 度）只影响初始朝向角与小幅修正，
+  不影响顶视 pivot——单测证明公式不消费该字段。
+- **SPHT（29985）kind 确认 + 解除 confirmPending**：经 BlitzKit 数据确认 turreted（GLB
+  turret_01 + gun_01 + gun_01_mask；models.pb turret 模块无 yaw 限位、turret_origin 存在）→
+  mapping 移除 confirmPending、生成正式资产（第 79 个）、inventory/README 同步；
+  runtime 测试更新（spht resolve 出正式资产；confirmPending 仅剩 ac-teichos / nc-70-blyskawica）。
 - **PR #92 Review 修复（2026-08-19）**：
   - **marker transform-origin 坐标系修正（Blocker 1）**：markerTurretImageTransform 此前把
     turretRaster.pivotX/pivotY（image-local pivot）错误除以 VIEWBOX=320 当 marker-global

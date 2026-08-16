@@ -36,7 +36,7 @@ AI 只做 visual QA；发现错误 → 修 baker → 重新生成，禁止人工
 | 路径 | 职责 |
 |---|---|
 | `frontend/src/vehicle-models/types.js` | discriminated union 类型契约 + 统一 viewBox + metadata schema（Source-faithful PBR） |
-| `frontend/src/vehicle-models/mapping.js` | 集中静态 Tank ID → baseModelKey（81 组，含 3 个 confirmPending） |
+| `frontend/src/vehicle-models/mapping.js` | 集中静态 Tank ID → baseModelKey（81 组，含 2 个 confirmPending） |
 | `frontend/src/vehicle-models/assets/<modelKey>/` | **正式 WebP 资产**（hull.webp / turret.webp / metadata.json / bake-report.json，baker 生成） |
 | `frontend/src/vehicle-models/validate.js` | validator（CI 与 CLI 共用；正式资产强制 source.provider=blitzkit + method=texture-bake） |
 | `frontend/src/vehicle-models/coverage.test.js` | Tier X 100% 覆盖门禁（新增 Tier X 无 mapping → CI FAIL） |
@@ -97,9 +97,10 @@ kind 核验依据 / BlitzKit 参考链接）见 `tier-x-inventory.md`（脚本�
 **kind 核验（全 81 modelKey 逐组完成）**：官方 tankopedia / fandom wiki / 结构知识；
 修正 3 项：minotauro → turreted、foch-155 → turretless、xm66f → turreted。每行依据见 inventory 表。
 
-**视觉确认待定（confirmPending，contract 未冻结）**：SPHT (29985)、AC Teichos (22129)、
-NC 70 Błyskawica (19585)——生成前须对照 BlitzKit 模型确认 kind（**不在正式资产生成清单内，
-禁止 bake**）。
+**视觉确认待定（confirmPending，contract 未冻结）**：AC Teichos (22129)、NC 70 Błyskawica
+(19585)——生成前须对照 BlitzKit 模型确认 kind（**不在正式资产生成清单内，禁止 bake**）。
+SPHT (29985) 已于 2026-08-19 经 BlitzKit 数据确认 **turreted**（GLB turret_01 + gun_01 +
+gun_01_mask；models.pb turret 模块无 yaw 限位）→ 解除 confirmPending 并生成正式资产。
 
 ### B. 目标路径（正式）
 
@@ -150,11 +151,17 @@ cd frontend && npm run build && node scripts/check-bundle-separation.mjs  # bund
 cd frontend && node scripts/check-webp-orientation.mjs                     # 真实 WebP 方向校验（developer-only）
 ```
 
-### H. 生成范围（78 个正式资产，全部非 confirmPending）
+### H. 生成范围（79 个正式资产，全部非 confirmPending）
 
-78 个 modelKey 已生成正式 WebP 资产（maus / leopard-1 / grille-15 / fv4005 / ho-ri / minotauro /
-xm66f / sheridan 等结构差异最大化组 + 其余批量组）；3 个 confirmPending（spht / ac-teichos /
-nc-70-blyskawica）**保持 pending，禁止生成**。
+79 个 modelKey 已生成正式 WebP 资产（maus / leopard-1 / grille-15 / fv4005 / ho-ri / minotauro /
+xm66f / sheridan 等结构差异最大化组 + 其余批量组 + spht（2026-08-19 确认 turreted 后加入））；
+2 个 confirmPending（ac-teichos / nc-70-blyskawica）**保持 pending，禁止生成**。
+
+**turretPivot source-of-truth（PR92 Review）**：yaw 旋转中心 = BlitzKit useTankTransform 契约——
+`modelPivot = correctZYTuple(trackOrigin) + correctZYTuple(turret_origin)`（hullOrigin + turretOrigin
+向量和；运行时 `turretPosition = R_init(R_yaw(-modelPivot)) + modelPivot`）。bake-report 记录
+`pivotSource`（origins + modelPivot）供 invariant 测试与审计；initial_turret_rotation 只影响
+初始朝向角，不影响顶视 pivot。
 
 ## 状态流转
 

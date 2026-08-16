@@ -19,6 +19,7 @@ import {
   clusterEdges,
   collectNodeTriangles,
   computeFit,
+  computeTurretModelPivot,
   convexHull2D,
   correctZYTuple,
   extractMajorEdges,
@@ -877,5 +878,40 @@ describe('Generalization — resolveBakeScenes（turreted / turretless contract�
   it('不依赖 display name（纯节点名匹配，无名称推断）', () => {
     const s = resolveBakeScenes(['hull', 'turret_05', 'gun_03', 'gun_03_mask'], { turretModelId: 5, gunModelId: 3, kind: 'turreted' })
     expect(s.turretNames).toEqual(['turret_05', 'gun_03', 'gun_03_mask'])
+  })
+})
+describe('computeTurretModelPivot（BlitzKit useTankTransform yaw 中心契约，PR92）', () => {
+  it('modelPivot = correctZYTuple(hullOrigin) + correctZYTuple(turretOrigin)', () => {
+    // maus 真实数据：track origin 缺失（零）、turret_origin engine (0, 2.1403, -1.1447)
+    const p = computeTurretModelPivot({ x: 0, y: 0, z: 0 }, { x: 0, y: 2.140294075012207, z: -1.144700050354004 })
+    expect(p.x).toBeCloseTo(0, 9)
+    expect(p.y).toBeCloseTo(-1.1447, 4) // 模型 y = 引擎 z
+    expect(p.z).toBeCloseTo(2.1403, 4) // 模型 z = 引擎 y
+  })
+
+  it('hullOrigin 与 turretOrigin 向量相加（含非零 track origin 情形）', () => {
+    // 引擎坐标：track origin (0, 0.9, 0.3)（高 0.9、前 0.3）+ turret_origin (0, 1.5, -0.5)
+    const p = computeTurretModelPivot({ x: 0, y: 0.9, z: 0.3 }, { x: 0, y: 1.5, z: -0.5 })
+    // hullModel = (0, 0.3, 0.9)；turretModel = (0, -0.5, 1.5) → (0, -0.2, 2.4)
+    expect(p.x).toBeCloseTo(0, 9)
+    expect(p.y).toBeCloseTo(-0.2, 9)
+    expect(p.z).toBeCloseTo(2.4, 9)
+  })
+
+  it('缺失 origin 按零向量处理（track origin 常缺失）', () => {
+    const p = computeTurretModelPivot(null, { x: 0, y: 1.5, z: 0.3 })
+    expect(p.y).toBeCloseTo(0.3, 9)
+    const q = computeTurretModelPivot(undefined, undefined)
+    expect(q).toEqual({ x: 0, y: 0, z: 0 })
+  })
+
+  it('不消费 initial_turret_rotation（仅影响初始朝向角，不影响顶视 pivot——minotauro pitch=3° 证据）', () => {
+    // minotauro：initial_turret_rotation={pitch:3,yaw:0,roll:0}——pivot 公式无该参数；
+    // 运行时影响 = turretRotation.x += -3°（初始朝向）与 ≤|θ|·|c|≈0.13m 的世界原点小修正，
+    // 不改变 yaw 旋转中心（hull+turret）。
+    const p = computeTurretModelPivot({ x: 0, y: 0, z: 0 }, { x: 0, y: 1.45136296749115, z: 0.6842650175094604 })
+    expect(p.y).toBeCloseTo(0.6843, 4) // 与 initial 无关
+    // 公式签名不接收 initial——结构性证明：pivot 只由两个 origin 决定
+    expect(computeTurretModelPivot.length).toBe(2)
   })
 })

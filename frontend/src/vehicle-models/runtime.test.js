@@ -23,6 +23,9 @@ describe('modelKeyForTank（tankId → modelKey）', () => {
     expect(modelKeyForTank(null)).toBeNull()
   })
   it('confirmPending 车型仍可映射（contract 未冻结，preload 阶段按 resolve 失败处理）', () => {
+    expect(modelKeyForTank(22129)).toBe('ac-teichos')
+    expect(modelKeyForTank(19585)).toBe('nc-70-blyskawica')
+    // spht 已确认 turreted（2026-08-19 BlitzKit 数据）并解除 confirmPending
     expect(modelKeyForTank(29985)).toBe('spht')
   })
 })
@@ -47,10 +50,17 @@ describe('resolveModel（modelKey → 正式资产）', () => {
     expect(m.turretPivot).toBeNull()
     expect(m.turretRaster).toBeNull()
   })
-  it('confirmPending（spht）→ null（contract 未冻结，不生成/不 resolve）', () => {
-    expect(resolveModel('spht')).toBeNull()
+  it('confirmPending（ac-teichos / nc-70-blyskawica）→ null（contract 未冻结，不生成/不 resolve）', () => {
     expect(resolveModel('ac-teichos')).toBeNull()
     expect(resolveModel('nc-70-blyskawica')).toBeNull()
+  })
+  it('spht（已确认 turreted）resolve 出正式资产（hull + turret + pivot）', () => {
+    const m = resolveModel('spht')
+    expect(m).not.toBeNull()
+    expect(m.kind).toBe('turreted')
+    expect(m.hullSrc).toMatch(/hull\.webp$/)
+    expect(m.turretSrc).toMatch(/turret\.webp$/)
+    expect(m.turretPivot).not.toBeNull()
   })
   it('未知 modelKey → null', () => {
     expect(resolveModel('not-a-tank')).toBeNull()
@@ -84,9 +94,9 @@ describe('preloadBattleModels（module-lifetime cache，PR #92 Blocker 2）', ()
   })
 
   it('confirmPending / 未知 modelKey → failed（不 resolve）', async () => {
-    const r = await runtime.preloadBattleModels([29985, 999], { imageLoader: okLoader })
+    const r = await runtime.preloadBattleModels([22129, 999], { imageLoader: okLoader })
     expect(r.resolved.size).toBe(0)
-    expect([...r.failed]).toEqual(['spht'])
+    expect([...r.failed]).toEqual(['ac-teichos'])
   })
 
   it('整场无 Tier X → 直接 ready（resolved/failed 空；渲染走 generic）', async () => {
