@@ -298,6 +298,19 @@
   DEVELOPER_GUIDE 文档地图补充层级说明。纯文档变更，不影响代码与构建。
 
 ### Fixed
+- **PR #92 Review 修复（2026-08-19）**：
+  - **marker transform-origin 坐标系修正（Blocker 1）**：markerTurretImageTransform 此前把
+    turretRaster.pivotX/pivotY（image-local pivot）错误除以 VIEWBOX=320 当 marker-global
+    坐标；改为相对 turret image 自身盒（origin% = pivot / (pixelWidth/2|pixelHeight/2)），
+    与 PR91 QA 页 px 数学同构；新增数学不变量测试（Maus + Grille 15 × H=0/90/180/270 ×
+    T≠H：复合位置 = turretRingPosition）。
+  - **runtime module-lifetime cache（Blocker 2）**：preloadBattleModels 增加 modelKey 级
+    cache（成功复用 / 失败页面生命周期内不重试 / 并发共享 in-flight Promise / 异常按失败
+    缓存）；测试重构为 vi.resetModules 隔离 + cache 1–8 用例。
+  - **阵亡 ✕ 视觉（追加需求 A）**：pb-death 白色 16px → 红色 #ff4d4f 22px/800、z-index 6、
+    多层描边——深/亮背景可读，与 last-known（淡化无 ✕）区分明显；三渲染路径一致。
+  - **QA 页 selected 指示器（追加需求 B）**：白色圆环绕画布边缘 → 红色 #e5484d 倒三角
+    （车辆正上方、z-index 6、drop-shadow），任意背景/车型/旋转角可见，不被图层遮挡。
 - **PR2 — Dedicated Tier X Models in Battle Playback（2026-08-19）**：
   - **VehicleMarker 正式组件**（frontend/src/components/VehicleMarker.vue，计划 §17）：从
     BattlePlayback.vue 抽出正式单车 marker（generic / dedicated turreted / dedicated turretless
