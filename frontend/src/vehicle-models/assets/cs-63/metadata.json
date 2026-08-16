@@ -24,7 +24,7 @@
   "generation": {
     "method": "blitzkit-model-topdown-texture-bake",
     "viewBox": "0 0 320 320",
-    "physicalPixelSize": [
+    "hullPhysicalPixelSize": [
       640,
       640
     ],

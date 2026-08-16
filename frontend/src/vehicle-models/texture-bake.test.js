@@ -97,13 +97,26 @@ describe('Phase B13 — hull/turret 独立 bake', () => {
   })
 })
 
-describe('Phase B14 — turretPivot 不变（bake 与 SVG 共用 fit）', () => {
-  it('bake-report 的 turretPivot 与正式 metadata 一致', () => {
+describe('Phase B14 — turretPivot 不变 + 尺寸契约（RASTER_SIZE_RUNTIME_CONTRACT）', () => {
+  it('bake-report 的 turretPivot 与正式 metadata 一致；hullPhysicalPixelSize = 固定 640×640', () => {
     const report = JSON.parse(readFileSync(ASSETS + 'bake-report.json', 'utf8'))
     const meta = JSON.parse(readFileSync(ASSETS + 'metadata.json', 'utf8'))
     expect(report.turretPivot).toEqual(meta.turretPivot)
     expect(report.output.logicalViewBox).toBe('0 0 320 320')
-    expect(report.output.physicalPixelSize).toEqual([640, 640])
+    expect(report.output.hullPhysicalPixelSize).toEqual([640, 640])
+    expect(meta.generation.hullPhysicalPixelSize).toEqual([640, 640])
+  })
+
+  it('Grille 15：hull 固定 640×640，turret raster 可变 160×1010（size contract 证据）', () => {
+    const report = JSON.parse(readFileSync(fileURLToPath(new URL('./assets/grille-15/bake-report.json', import.meta.url)), 'utf8'))
+    const meta = JSON.parse(readFileSync(fileURLToPath(new URL('./assets/grille-15/metadata.json', import.meta.url)), 'utf8'))
+    expect(report.output.hullPhysicalPixelSize).toEqual([640, 640])
+    expect(meta.generation.hullPhysicalPixelSize).toEqual([640, 640])
+    // turret.webp 不是固定 640×640：authoritative size 来自 turretRaster
+    expect(meta.turretRaster.pixelWidth).toBe(160)
+    expect(meta.turretRaster.pixelHeight).toBe(1010)
+    expect(report.turretRaster.pixelWidth).toBe(160)
+    expect(report.turretRaster.pixelHeight).toBe(1010)
   })
 })
 

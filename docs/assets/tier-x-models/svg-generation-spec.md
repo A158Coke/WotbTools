@@ -12,12 +12,16 @@
 
 ```
 frontend/src/vehicle-models/assets/<modelKey>/
-├── hull.webp         # 必填（640×640 physical / 320×320 logical，RGBA 透明背景）
-├── turret.webp       # 仅 turreted；turret + mantlet + 完整炮管 = 刚性 layer
+├── hull.webp         # 必填（固定 640×640 physical / 320×320 logical，RGBA 透明背景）
+├── turret.webp       # 仅 turreted；turret + mantlet + 完整炮管 = 刚性 layer；physical 尺寸可变
 ├── metadata.json     # 必填（Source-faithful PBR 契约，validator 强制）
 └── bake-report.json  # 必填（生成记录：modules/bounds/pivot/orientation/bytes）
 ```
 
+- **尺寸契约（RASTER_SIZE_RUNTIME_CONTRACT）**：hull.webp **固定 640×640**（320 logical）；
+  turret.webp physical canvas **尺寸可变**（按 turret + mantlet + complete gun bounds 动态扩展），
+  authoritative size / placement / pivot 一律来自顶层 `metadata.turretRaster`——
+  runtime 与后续 PR2 禁止假设 turret.webp 是 640×640（例：Grille 15 为 160×1010）。
 - turretless 车型只有 `hull.webp`，gun/mantlet/casemate 已 bake 进 hull；**禁止为了统一代码伪造 turret**。
 - 目录内不允许出现任何其他文件（validator 拒绝）。
 - bake 契约：turreted = hull 场景（hull + tracks）+ turret 场景（selected turret + mantlet + gun）
@@ -64,18 +68,18 @@ frontend/src/vehicle-models/assets/<modelKey>/
   },
   "turretPivot": { "x": 160, "y": 193.23 },
   "turretRaster": {
-    "logicalMinX": 0, "logicalMinY": 0, "logicalMaxX": 320, "logicalMaxY": 320,
-    "pixelWidth": 640, "pixelHeight": 640, "pivotX": 160, "pivotY": 193.23
+    "logicalMinX": 112.19, "logicalMinY": -19.64, "logicalMaxX": 207.81, "logicalMaxY": 267.24,
+    "pixelWidth": 191, "pixelHeight": 574, "pivotX": 47.81, "pivotY": 212.87
   },
   "generation": {
     "method": "blitzkit-model-topdown-texture-bake",
     "viewBox": "0 0 320 320",
-    "physicalPixelSize": [640, 640],
-    "hullBounds": { "min": [-1.86, -4.44], "max": [1.86, 4.6] },
-    "turretBounds": { "min": [...], "max": [...] },
-    "gunBounds": { "min": [...], "max": [...] },
-    "selectedModules": { "turretId": ..., "gunId": ..., "trackId": ... },
-    "texturesUsed": [...],
+    "hullPhysicalPixelSize": [640, 640],
+    "hullBounds": { "min": [-1.8601, -4.4380], "max": [1.8601, 4.5955] },
+    "turretBounds": { "min": [-1.5338, -3.5188], "max": [1.5338, 1.0040] },
+    "gunBounds": { "min": [-0.2543, 1.0314], "max": [0.2429, 5.6839] },
+    "selectedModules": { "turretId": 11537, "gunId": 266513, "trackId": 14609 },
+    "texturesUsed": ["Maus_mtr", "Maus_track_mtr"],
     "desaturate": 0.25,
     "fidelity": "high",
     "geometryScale": "faithful",
@@ -85,9 +89,15 @@ frontend/src/vehicle-models/assets/<modelKey>/
 }
 ```
 
+> 示例数值 = **真实 Maus 资产**（assets/maus/ 当前 bake 输出）：turretRaster 是 expanded
+> raster（191×574 px，logical bounds 超出 320 画布）——不是 640×640，不是画布全覆盖。
+
 - `source.provider`：正式资产（mapping 内 modelKey）必须为 `blitzkit`；`source.tankId` 正整数；
   `modelGlb`（视觉 model.glb，非 collision.glb）/ `modelDefinitions` 必须为 http(s) URL。
 - `generation.method`：正式资产必须为 `blitzkit-model-topdown-texture-bake`。
+- `generation.hullPhysicalPixelSize`：hull.webp 固定 physical 尺寸 `[640, 640]`；
+  turret.webp 的尺寸请读 `turretRaster.pixelWidth/pixelHeight`（variable-size canvas，
+  **不得**从 generation 推断 turret 尺寸）。
 - **fidelity 契约（正式资产强制）**：`generation.fidelity='high'`、`geometryScale='faithful'`、
   `visibleDetailRetentionTarget ∈ (0,1]`（visual QA target，非几何保留保证）。
 - **desaturate 语义**（Blocker 3 修复）：`neutralize` 的 amount = 去色强度（0=原色，1=纯灰），
@@ -147,7 +157,8 @@ Tier X 100% mapping 覆盖、metadata source/method 契约、资产完整性、t
   → fit 320×320 → hull.svg / turret.svg / metadata.json`（debug 输出到 gitignored 缓存）。
 - 节点契约：`hull` + `chassis_track_{L,R}` + `chassis_wheel_*` → hull 层；`turret_{model_id:02d}` →
   turret 层；`gun_{model_id:02d}` + `gun_{model_id:02d}_mask`（mantlet 归 turret 层）→ gun 层；
-  `*_hide_elements*` 子树排除（debug 几何语义）。
+  `*_hide_elements*` 子树**保留**（属于真实视觉模型——BlitzKit 实际渲染，audit 2026-08-19
+  源码确认；最终可见性由真实 z-buffer 决定）。
 - SVG 技术细节（validator 不校验 SVG——正式资产已无 SVG）：统一 viewBox 320×320、
   禁止 script/foreignObject/外部引用、detail-level grouping（vehicle-primary/secondary/micro-detail）。
 - 生成命令（仅 debug）：`node scripts/extract-tier-x-model.mjs --model-key <modelKey>`。
