@@ -14,6 +14,7 @@ import { validateModelEntry } from './validate.js'
 import {
   bounds2D,
   buildMetadata,
+  clusterEdges,
   computeFit,
   convexHull2D,
   correctZYTuple,
@@ -190,13 +191,47 @@ describe('Blocker 2 — transform / hide_elements（collectTriangles 语义）',
     expect(simplified.some((p) => p[0] === 2 && p[1] === 0)).toBe(true)
     expect(simplified.some((p) => p[0] === 0 && p[1] === 1)).toBe(true)
   })
+  it('simplifyRing 去重相邻/闭合重复点且不丢真实角点（polygon-clipping 退化修复）', () => {
+    // 含闭合重复点 + 相邻重复点的 ring（polygon-clipping 典型输出）：首尾角点必须保留
+    const ring = [
+      [-1.7521, 4.511], [-0.3325, 4.0719], [-0.274, 2.5997], [1.7158, 3.4383], [1.7521, 4.511],
+      [-1.7521, 4.511], // 闭合重复
+      [-1.7521, 4.511], // 相邻重复
+    ]
+    const simplified = simplifyRing(ring)
+    // 真实角点（首尾）必须保留
+    expect(simplified.some((p) => Math.abs(p[0] + 1.7521) < 1e-6 && Math.abs(p[1] - 4.511) < 1e-6)).toBe(true)
+    expect(simplified.some((p) => Math.abs(p[0] - 1.7521) < 1e-6 && Math.abs(p[1] - 4.511) < 1e-6)).toBe(true)
+    // 无重复点
+    for (let i = 0; i < simplified.length; i++) {
+      const a = simplified[i]
+      const b = simplified[(i + 1) % simplified.length]
+      expect(Math.abs(a[0] - b[0]) > 1e-9 || Math.abs(a[1] - b[1]) > 1e-9).toBe(true)
+    }
+  })
+  it('simplifyRing 不缩小 polygon（bbox 保持不变）', () => {
+    // Maus glacis 带状多边形（曾因重复点塌成细条）：简化后 bbox 不变
+    const ring = [
+      [-1.7521, 4.511], [-0.3325, 4.0719], [-0.274, 2.5997], [-0.2699, 2.7611],
+      [0.3335, 3.8659], [1.7158, 3.4383], [1.7521, 4.511], [-1.7521, 4.511],
+    ]
+    const bbox = (pts) => {
+      let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9
+      for (const [x, y] of pts) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y) }
+      return { minX, minY, maxX, maxY }
+    }
+    const a = bbox(ring)
+    const b = bbox(simplifyRing(ring))
+    expect(b.maxX - b.minX).toBeCloseTo(a.maxX - a.minX, 6)
+    expect(b.maxY - b.minY).toBeCloseTo(a.maxY - a.minY, 6)
+  })
   it('Maus 资产：turret 不含 hide_elements 细长条（bbox 仅炮塔本体；mantlet 独立）', () => {
     const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
     // turretBounds = 炮塔本体（mantlet 已独立分组）→ y max ≈ 1.0（模型米）
     expect(meta.generation.turretBounds.max[1]).toBeCloseTo(1.0, 0)
     // hull 主甲板层存在（Layer B surfaces 写入 hull.svg）
     const hullSvg = readFileSync(MAUS_DIR + 'hull.svg', 'utf8')
-    expect(hullSvg).toContain('#5c635e')
+    expect(hullSvg).toContain('#565e58')
   })
 })
 
@@ -297,6 +332,31 @@ describe('Layer B — major edge extraction', () => {
     const opts = { topFacingCos: 0.35, heightDeltaM: 0.15, normalDeltaCos: 0.92, minEdgeLenM: 0.1 }
     expect(extractMajorEdges(stepped, opts)).toEqual(extractMajorEdges(stepped, opts))
   })
+  it('clusterEdges：近乎平行且位置重合的边聚类为一条（斜切台阶交叉线去重）', () => {
+    // Maus 前甲板 4 条 ~110.9 交叉斜线（±1.4°、中点距离 ~0.06-0.1m）→ 1 条
+    const edges = [
+      { p1: [1.86, -0.13], p2: [-1.86, -0.13], reason: 'surface-edge' }, // 侧边（0°）
+      // 4 条 ~±1.4° 交叉斜线（Maus 前甲板斜切台阶），中点距离 ~0.05-0.1m
+      { p1: [-1.75, 3.943], p2: [1.8, 3.855], reason: 'height' },
+      { p1: [-1.75, 3.855], p2: [1.8, 3.767], reason: 'height' },
+      { p1: [1.75, 3.943], p2: [-1.8, 3.855], reason: 'height' },
+      { p1: [1.75, 3.855], p2: [-1.8, 3.767], reason: 'height' },
+    ]
+    const clustered = clusterEdges(edges, { angleDeg: 5, maxDistM: 0.5 })
+    // 侧边（0° 但中点距离 ~4m）与斜切台阶簇分离；4 条斜线 → 1 条
+    expect(clustered.length).toBe(2)
+    expect(clustered.some((e) => Math.abs(e.p1[0] - 1.86) < 1e-9)).toBe(true)
+  })
+  it('clusterEdges：真实平行台阶（距离 > maxDistM）保持独立', () => {
+    // 炮塔侧三阶结构：0.33m 间距的三条平行竖边必须保留
+    const edges = [
+      { p1: [1.53, 2.5], p2: [1.53, -2.5], reason: 'surface-edge' },
+      { p1: [1.21, 2.5], p2: [1.21, -2.5], reason: 'surface-edge' },
+      { p1: [0.88, 2.5], p2: [0.88, -2.5], reason: 'surface-edge' },
+    ]
+    const clustered = clusterEdges(edges, { angleDeg: 5, maxDistM: 0.15 })
+    expect(clustered.length).toBe(3)
+  })
 })
 
 describe('Layer B — Maus 生成资产细节（Layer 正确性）', () => {
@@ -305,7 +365,7 @@ describe('Layer B — Maus 生成资产细节（Layer 正确性）', () => {
     const paths = (svg.match(/<path/g) || []).length
     expect(paths).toBeGreaterThanOrEqual(5) // silhouette + tracks×2 + surfaces + edges
     expect(svg).toContain('#454b47') // tracks fill
-    expect(svg).toContain('#5c635e') // surfaces fill
+    expect(svg).toContain('#565e58') // surfaces fill
   })
   it('turret.svg 含 mantlet 独立区域与炮管（mask 不再并入 gun 轮廓）', () => {
     const svg = readFileSync(MAUS_DIR + 'turret.svg', 'utf8')
@@ -337,6 +397,71 @@ describe('Layer B — Maus 生成资产细节（Layer 正确性）', () => {
     const a = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.01 })
     const b = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.01 })
     expect(a).toEqual(b)
+  })
+})
+
+describe('Layer B — bump（层内凸起特征）提取', () => {
+  it('主平面之上的凸起（hatch）被检出为 bump，主面保留', () => {
+    // 平台 z=0 + 中央凸起小平台 z=0.15（> bumpDelta 0.08）。全部三角形逆时针（法线朝上）。
+    const tris = [
+      [[0,0,0],[4,0,0],[0,4,0]], [[4,0,0],[4,4,0],[0,4,0]],
+      [[1.5,1.5,0.15],[2.5,1.5,0.15],[1.5,2.5,0.15]], [[2.5,1.5,0.15],[2.5,2.5,0.15],[1.5,2.5,0.15]],
+    ]
+    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.5, bumpDelta: 0.08, minBumpAreaM2: 0.05 })
+    expect(s.length).toBe(1)
+    expect(s[0].bumps.length).toBe(1)
+    expect(s[0].bumps[0].areaM2).toBeCloseTo(1, 0)
+  })
+  it('主平面小碎块（z 差小）不产生 bump', () => {
+    const tris = [
+      [[0,0,0],[4,0,0],[0,4,0]], [[4,0,0],[4,4,0],[0,4,0]],
+      [[1.5,1.5,0.03],[2.5,1.5,0.03],[1.5,2.5,0.03]], // z 差 0.03 < bumpDelta
+    ]
+    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.5, bumpDelta: 0.08, minBumpAreaM2: 0.05 })
+    expect(s[0].bumps.length).toBe(0)
+  })
+  it('显著性过滤：层内占比过低的凸起（粗糙面片伪影）被丢弃，大特征保留', () => {
+    // 平台 z=0 + 一个大凸起（4.0m²，hatch 级）+ 4 个 0.0625m² 小碎块（网格面片伪影）
+    // 层凸起总量 = 4.25m²，10% = 0.425m² → 小碎块全被丢弃
+    const tris = [
+      [[0,0,0],[10,0,0],[0,10,0]], [[10,0,0],[10,10,0],[0,10,0]],
+      // 大 hatch 4.0m²
+      [[2,2,0.2],[4,2,0.2],[2,4,0.2]], [[4,2,0.2],[4,4,0.2],[2,4,0.2]],
+      // 4 个小碎块 0.06125m² each（≥ minBumpAreaM2，但占比 < 10%）
+      [[6,6,0.2],[6.35,6,0.2],[6,6.35,0.2]], [[7,6,0.2],[7.35,6,0.2],[7,6.35,0.2]],
+      [[8,6,0.2],[8.35,6,0.2],[8,6.35,0.2]], [[9,6,0.2],[9.35,6,0.2],[9,6.35,0.2]],
+    ]
+    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.5, bumpDelta: 0.08, minBumpAreaM2: 0.05, bumpSignificanceRatio: 0.1 })
+    expect(s.length).toBe(1)
+    expect(s[0].bumps.length).toBe(1)
+    expect(s[0].bumps[0].polys.length).toBe(1)
+    expect(s[0].bumps[0].areaM2).toBeCloseTo(4, 0)
+  })
+  it('显著性过滤关闭时（ratio=0）小凸起保留', () => {
+    const tris = [
+      [[0,0,0],[10,0,0],[0,10,0]], [[10,0,0],[10,10,0],[0,10,0]],
+      [[2,2,0.2],[4,2,0.2],[2,4,0.2]], [[4,2,0.2],[4,4,0.2],[2,4,0.2]],
+      [[6,6,0.2],[6.35,6,0.2],[6,6.35,0.2]],
+    ]
+    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.5, bumpDelta: 0.08, minBumpAreaM2: 0.05, bumpSignificanceRatio: 0 })
+    expect(s[0].bumps[0].polys.length).toBe(2)
+  })
+  it('Maus hull.svg 含 bump 填充（#6f776f）与主面填充（#565e58）', () => {
+    const svg = readFileSync(MAUS_DIR + 'hull.svg', 'utf8')
+    expect(svg).toContain('#6f776f')
+    expect(svg).toContain('#565e58')
+  })
+  it('Maus turret.svg 含屋顶凸起（#838b85）与屋顶主面（#6d756f）', () => {
+    const svg = readFileSync(MAUS_DIR + 'turret.svg', 'utf8')
+    expect(svg).toContain('#838b85')
+    expect(svg).toContain('#6d756f')
+  })
+  it('edges 数量上限（少而强）：hull ≤ 8、turret ≤ 6', () => {
+    for (const [file, stroke, cap] of [['hull.svg', '#333833', 8], ['turret.svg', '#4a504c', 6]]) {
+      const svg = readFileSync(MAUS_DIR + file, 'utf8')
+      const m = svg.match(new RegExp('<path d="([^"]*)" stroke="' + stroke + '"[^>]*>'))
+      if (m) expect(m[1].split(' M').length - 1).toBeLessThanOrEqual(cap)
+    }
   })
 })
 
