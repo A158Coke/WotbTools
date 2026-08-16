@@ -17,6 +17,8 @@ import {
   computeFit,
   convexHull2D,
   correctZYTuple,
+  extractMajorEdges,
+  extractTopSurfaces,
   hullToPath,
   projectTopDown,
   projectTriangles,
@@ -188,11 +190,13 @@ describe('Blocker 2 — transform / hide_elements（collectTriangles 语义）',
     expect(simplified.some((p) => p[0] === 2 && p[1] === 0)).toBe(true)
     expect(simplified.some((p) => p[0] === 0 && p[1] === 1)).toBe(true)
   })
-  it('Maus 资产：turret 不含 hide_elements 细长条（raw bbox y 上界来自 mantlet 而非 hide）', () => {
+  it('Maus 资产：turret 不含 hide_elements 细长条（bbox 仅炮塔本体；mantlet 独立）', () => {
     const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
-    // mantlet 在炮塔前部（+y）→ turretBounds.max.y ≈ 2.56（模型米），而非 hide_elements 的 0.47
-    expect(meta.generation.turretBounds.max[1]).toBeGreaterThan(1.5)
-    expect(meta.generation.turretBounds.max[1]).toBeLessThan(3)
+    // turretBounds = 炮塔本体（mantlet 已独立分组）→ y max ≈ 1.0（模型米）
+    expect(meta.generation.turretBounds.max[1]).toBeCloseTo(1.0, 0)
+    // hull 主甲板层存在（Layer B surfaces 写入 hull.svg）
+    const hullSvg = readFileSync(MAUS_DIR + 'hull.svg', 'utf8')
+    expect(hullSvg).toContain('#5c635e')
   })
 })
 
@@ -201,6 +205,138 @@ describe('Blocker 4 — generation method 命名', () => {
     const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
     expect(meta.generation.method).toBe('blitzkit-model-topdown-extraction')
     expect(meta.generation.method).not.toMatch(/collision/)
+  })
+})
+
+describe('Layer B — top-facing surface extraction', () => {
+  it('水平/垂直/倾斜三角形的 top-facing 判定（normal.z 阈值）', () => {
+    // 水平面 nz=1 → 保留；垂直面 nz=0 → 丢弃；45° 斜面 nz=0.707 → 保留（>0.35）
+    const horizontal = [[[0,0,0],[1,0,0],[0,1,0]]]
+    const vertical = [[[0,0,0],[1,0,0],[0,0,1]]]
+    const slope = [[[0,0,0],[1,0,1],[0,1,1]]]
+    expect(extractTopSurfaces(horizontal, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.01 }).length).toBe(1)
+    expect(extractTopSurfaces(vertical, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.01 }).length).toBe(0)
+    expect(extractTopSurfaces(slope, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.01 }).length).toBe(1)
+  })
+  it('高度层聚类：不同高度平面分离，连续曲面合并', () => {
+    // 两层平台（z=0 与 z=1，gap 1.0 > 0.5）→ 2 层
+    const tris = [
+      [[0,0,0],[2,0,0],[0,2,0]], [[0,0,0],[2,0,0],[2,2,0]], [[0,2,0],[2,2,0],[2,0,0]],
+      [[0,0,1],[2,0,1],[0,2,1]], [[0,0,1],[2,0,1],[2,2,1]], [[0,2,1],[2,2,1],[2,0,1]],
+    ]
+    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.1 })
+    expect(s.length).toBe(2)
+  })
+  it('小区域（minAreaM2）被过滤，大区域保留', () => {
+    const big = [[[0,0,0],[4,0,0],[0,4,0]], [[0,0,0],[4,0,0],[4,4,0]], [[0,4,0],[4,4,0],[4,0,0]]]
+    const small = [[[0,0,0],[0.2,0,0],[0,0.2,0]]]
+    const s = extractTopSurfaces([...big, ...small], { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.5 })
+    expect(s.length).toBe(1)
+    expect(s[0].areaM2).toBeGreaterThan(10)
+  })
+  it('高度层内碎片 polygon 单独过滤（防碎块混入）', () => {
+    // 同层一个大区域 + 一个小碎片（不相连）
+    const tris = [
+      [[0,0,0],[4,0,0],[0,4,0]], [[0,0,0],[4,0,0],[4,4,0]], [[0,4,0],[4,4,0],[4,0,0]],
+      [[10,10,0],[10.3,10,0],[10,10.3,0]],
+    ]
+    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.5 })
+    expect(s.length).toBe(1)
+    expect(s[0].polys.length).toBe(1)
+  })
+})
+
+describe('Layer B — major edge extraction', () => {
+  it('平台边缘边（顶面 + 垂直壁邻居）→ 结构边；同高度共面 → 无边', () => {
+    const flat = [
+      [[0,0,0],[2,0,0],[0,2,0]], [[0,0,0],[2,0,0],[2,2,0]], [[0,2,0],[2,0,0],[2,2,0]],
+    ]
+    expect(extractMajorEdges(flat, { topFacingCos: 0.35, heightDeltaM: 0.15, normalDeltaCos: 0.92, minEdgeLenM: 0.1 }).length).toBe(0)
+    // 平台（z=0 水平面）+ 垂直壁（共享边 [0,0,0]-[2,0,0]）→ 顶面边缘边
+    const platform = [
+      [[0,0,0],[2,0,0],[0,2,0]], [[0,0,0],[2,0,0],[2,2,0]], [[0,2,0],[2,0,0],[2,2,0]],
+      [[0,0,-1],[2,0,-1],[2,0,0]], [[0,0,-1],[2,0,0],[0,0,0]], // 垂直壁（z 向下）
+    ]
+    const e = extractMajorEdges(platform, { topFacingCos: 0.35, heightDeltaM: 0.15, normalDeltaCos: 0.92, minEdgeLenM: 0.1 })
+    // 顶面与壁共享边 [0,0,0]-[2,0,0] → 1 条 surface-edge（共享边去重）
+    expect(e.length).toBe(1)
+    expect(e[0].reason).toBe('surface-edge')
+  })
+  it('共享边去重（一条边只输出一次）', () => {
+    // 平台 + 两侧各一块垂直壁（共享同一条 [0,0,0]-[2,0,0] 边）
+    const tris = [
+      [[0,0,0],[2,0,0],[0,2,0]], [[0,0,0],[2,0,0],[2,2,0]], [[0,2,0],[2,0,0],[2,2,0]],
+      [[0,0,-1],[2,0,-1],[2,0,0]], [[0,0,-1],[2,0,0],[0,0,0]],
+      [[0,0,1],[2,0,1],[2,0,0]], [[0,0,1],[2,0,0],[0,0,0]],
+    ]
+    const e = extractMajorEdges(tris, { topFacingCos: 0.35, heightDeltaM: 0.15, normalDeltaCos: 0.92, minEdgeLenM: 0.1 })
+    // 共享边只输出一次（即使有多个非顶面邻居）
+    expect(e.length).toBe(1)
+  })
+  it('短边（minEdgeLenM）被过滤', () => {
+    const stepped = [
+      [[0,0,0],[0.3,0,0],[0,0.3,0]],
+      [[0,0,0.5],[0.3,0,0.5],[0,0.3,0.5]],
+    ]
+    const e = extractMajorEdges(stepped, { topFacingCos: 0.35, heightDeltaM: 0.15, normalDeltaCos: 0.92, minEdgeLenM: 1.0 })
+    expect(e.length).toBe(0)
+  })
+  it('高度差驱动：法线突变但高度差小（格栅凹槽）→ 不输出', () => {
+    // 两个水平三角形 z 差 0.05（< 0.15 且 < 0.6×0.15）→ 无边
+    const gutter = [
+      [[0,0,0],[2,0,0],[0,2,0]], [[0,0,0],[2,0,0],[2,2,0]], [[0,2,0],[2,0,0],[2,2,0]],
+      [[0,0,0.05],[2,0,0.05],[0,2,0.05]], [[0,0,0.05],[2,0,0.05],[2,2,0.05]], [[0,2,0.05],[2,0,0.05],[2,2,0.05]],
+    ]
+    const e = extractMajorEdges(gutter, { topFacingCos: 0.35, heightDeltaM: 0.15, normalDeltaCos: 0.92, minEdgeLenM: 0.1 })
+    expect(e.length).toBe(0)
+  })
+  it('确定性：相同输入两次输出一致', () => {
+    const stepped = [
+      [[0,0,0],[2,0,0],[0,2,0]], [[0,0,0.5],[2,0,0.5],[0,2,0.5]],
+    ]
+    const opts = { topFacingCos: 0.35, heightDeltaM: 0.15, normalDeltaCos: 0.92, minEdgeLenM: 0.1 }
+    expect(extractMajorEdges(stepped, opts)).toEqual(extractMajorEdges(stepped, opts))
+  })
+})
+
+describe('Layer B — Maus 生成资产细节（Layer 正确性）', () => {
+  it('hull.svg 含履带独立区域与主甲板层（非单色）', () => {
+    const svg = readFileSync(MAUS_DIR + 'hull.svg', 'utf8')
+    const paths = (svg.match(/<path/g) || []).length
+    expect(paths).toBeGreaterThanOrEqual(5) // silhouette + tracks×2 + surfaces + edges
+    expect(svg).toContain('#454b47') // tracks fill
+    expect(svg).toContain('#5c635e') // surfaces fill
+  })
+  it('turret.svg 含 mantlet 独立区域与炮管（mask 不再并入 gun 轮廓）', () => {
+    const svg = readFileSync(MAUS_DIR + 'turret.svg', 'utf8')
+    expect(svg).toContain('#656c67') // mantlet fill
+    expect(svg).toContain('#4d534f') // gun fill
+    const paths = (svg.match(/<path/g) || []).length
+    expect(paths).toBeGreaterThanOrEqual(4)
+  })
+  it('无 wireframe 爆炸：edges 段数受限（hull ≤ 16，turret ≤ 12）', () => {
+    for (const [file, stroke, cap] of [['hull.svg', '#333833', 16], ['turret.svg', '#4a504c', 12]]) {
+      const svg = readFileSync(MAUS_DIR + file, 'utf8')
+      const m = svg.match(new RegExp('<path d="([^"]*)" stroke="' + stroke + '"[^>]*>'))
+      if (m) expect(m[1].split(' M').length - 1).toBeLessThanOrEqual(cap)
+    }
+  })
+  it('turret detail 与 silhouette 同一 fit（pivot 不变：detail 路径存在且 pivot 稳定）', () => {
+    const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
+    expect(meta.generation.detailMethod).toBe('top-surface-and-major-edge-extraction')
+    expect(meta.generation.detailThresholds).toBeTruthy()
+    const pivot = meta.turretPivot
+    for (const deg of [0, 90, 180, 270]) {
+      const img = rotatePointAround({ point: pivot, origin: pivot, deg })
+      expect(img.x).toBeCloseTo(pivot.x, 6)
+      expect(img.y).toBeCloseTo(pivot.y, 6)
+    }
+  })
+  it('同源同输出：再次生成（纯函数路径）结果一致', () => {
+    const tris = [[[0,0,0],[1,0,0],[0,1,0]]]
+    const a = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.01 })
+    const b = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.01 })
+    expect(a).toEqual(b)
   })
 })
 

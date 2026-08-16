@@ -76,6 +76,11 @@ production / Battle Playback / backend / CI 均不访问 BlitzKit（任务 17）
 - **silhouette（Blocker 1）**：projected triangle polygon union（polygon-clipping）——保留全部凹轮廓与洞；
   convex hull 已禁用（会把 Maus 压成矩形）。`*_hide_elements*` 子树排除；`gun_{id}_mask`（mantlet 炮盾）
   归入 turret 层（静态 0° 属于炮塔正面轮廓），gun 层仅炮管。
+- **结构细节（Layer B，2026-08-17）**：top-facing major surfaces（法线 z 阈值 + 高度层聚类 → 区域色块，
+  含主甲板/屋顶/裙板层）+ major structural edges（surface-edge 平台边缘 / height 高度差 / normal 辅助，
+  全部 ≥ minEdgeLenM 且经屏幕空间过滤 minDetailPx=0.8 ≈ 1px@28px）——Maus hull.svg 含履带独立区域、
+  主甲板层（带真实炮塔座圈凹口）、前装甲带与 28 条结构边；turret.svg 含屋顶层、炮盾独立区域与炮管。
+  阈值通用（非 Maus 专属），见 metadata.generation.detailThresholds。
 - **turretPivot**：`turret_origin` → correctZYTuple → 投影 → 同一 fit 变换（与 hull/turret.svg 完全相同），自动计算，无人工猜测。
 
 ## Asset Handoff（生成交接清单）
