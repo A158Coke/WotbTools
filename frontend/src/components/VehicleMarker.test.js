@@ -268,13 +268,24 @@ describe('PR3 §19–§25 — team outline/glow 与状态视觉', () => {
     expect(markerSource).not.toMatch(/\.pb-death[^}]*opacity:/)
   })
 
-  it('selected/recorder layout offset 按 overlayInverse 反缩放（zoom 下屏幕间距恒定，非仅 transform）', () => {
-    // inv = 1/1、1/2、1/4（对应 scale 1/2/4）：offset × scale 必须恒为 19 / 5——屏幕间距不按倍速增长
+  it('selected/recorder layout offset 按 overlayInverse 反缩放：selected→name gap 与 recorder→vehicle 恒定', () => {
+    // inv = 1/1、1/2、1/4（对应 scale 1/2/4）
+    // selected：X = 4.5 + 14.5·inv（三角底边跟随 name 顶边，屏幕 gap 恒 3px；1× 即 19px 车辆契约）
     for (const inv of [1, 0.5, 0.25]) {
       const w = mountMarker({ ...genericMarker, recorder: true, overlayInverse: inv, overlayInverseScale: `scale(${inv})` }, true)
       const markStyle = w.find('.pb-selected-mark').attributes('style') || ''
-      expect(markStyle).toContain(`bottom: calc(100% + ${19 * inv}px)`)
+      const x = 4.5 + 14.5 * inv
+      expect(markStyle).toContain(`bottom: calc(100% + ${x}px)`)
       expect(markStyle).toContain(`scale(${inv})`) // 元素尺寸同步反缩放
+      // 屏幕几何：三角底边 = (x + 4.5)·s − 4.5；name 顶边 = 9·s + 7 → gap 必须恒 3
+      const s = 1 / inv
+      const triBottom = (x + 4.5) * s - 4.5
+      const nameTop = 9 * s + 7
+      expect(triBottom - nameTop).toBeCloseTo(3, 9)
+      // 浮动幅度：2px × inv × s = 2px 恒定（var 注入 + keyframes calc）
+      expect(markStyle).toContain(`--pb-overlay-inv: ${inv}`)
+      expect(markerSource).toContain('margin-top: calc(2px * var(--pb-overlay-inv, 1))')
+      // recorder：offset × scale = 5 恒定
       const badgeStyle = w.find('.pb-recorder-badge').attributes('style') || ''
       expect(badgeStyle).toContain(`top: calc(100% + ${5 * inv}px)`)
       expect(badgeStyle).toContain(`scale(${inv})`)
