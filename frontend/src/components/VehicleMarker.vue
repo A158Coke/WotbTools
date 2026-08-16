@@ -83,62 +83,68 @@ const stateClasses = computed(() => ({
     :data-test="`pb-marker-${st.vehicle.accountId}`"
     @click="emit('select')"
   >
-    <!-- dedicated turreted：hull 满盒 + turret assembly（父层绕盒中心 H，子层绕 image-local pivot T-H） -->
-    <template v-if="isDedicated && isTurreted">
-      <img
-        v-if="hullDeg != null"
-        class="pb-hull pb-hull-dedicated"
-        :src="model.hullSrc"
-        alt=""
-        aria-hidden="true"
-        :style="hullImageStyle"
-      />
-      <div
-        v-if="turretDeg != null"
-        class="pb-turret-assembly"
-        :style="assemblyStyle"
-      >
+    <!-- 车型视觉层容器：destroyed 的 opacity/grayscale 精确作用于此处（而非整个 button）——
+         pb-death ✕ / pb-name 是 button 直接子元素、在容器外，保持完整 opacity（parent opacity
+         无法被子元素抵消，故不能放在 button 上）。容器 absolute inset:0 保持与 button 同盒，
+         imgs 的百分比定位（containing block）不变。 -->
+    <div class="pb-graphics">
+      <!-- dedicated turreted：hull 满盒 + turret assembly（父层绕盒中心 H，子层绕 image-local pivot T-H） -->
+      <template v-if="isDedicated && isTurreted">
         <img
-          class="pb-turret pb-turret-dedicated"
-          :src="model.turretSrc"
+          v-if="hullDeg != null"
+          class="pb-hull pb-hull-dedicated"
+          :src="model.hullSrc"
           alt=""
           aria-hidden="true"
-          :style="turretImageStyle"
+          :style="hullImageStyle"
         />
-      </div>
-    </template>
+        <div
+          v-if="turretDeg != null"
+          class="pb-turret-assembly"
+          :style="assemblyStyle"
+        >
+          <img
+            class="pb-turret pb-turret-dedicated"
+            :src="model.turretSrc"
+            alt=""
+            aria-hidden="true"
+            :style="turretImageStyle"
+          />
+        </div>
+      </template>
 
-    <!-- dedicated turretless：仅 hull（gun 已 bake 进 hull；无 fake turret layer） -->
-    <template v-else-if="isDedicated">
-      <img
-        v-if="hullDeg != null"
-        class="pb-hull pb-hull-dedicated"
-        :src="model.hullSrc"
-        alt=""
-        aria-hidden="true"
-        :style="hullImageStyle"
-      />
-    </template>
+      <!-- dedicated turretless：仅 hull（gun 已 bake 进 hull；无 fake turret layer） -->
+      <template v-else-if="isDedicated">
+        <img
+          v-if="hullDeg != null"
+          class="pb-hull pb-hull-dedicated"
+          :src="model.hullSrc"
+          alt=""
+          aria-hidden="true"
+          :style="hullImageStyle"
+        />
+      </template>
 
-    <!-- generic：现有双层 PNG（共同 pivot 居中旋转，行为不变） -->
-    <template v-else>
-      <img
-        v-if="hullDeg != null"
-        class="pb-hull"
-        :src="st.hullImage"
-        alt=""
-        aria-hidden="true"
-        :style="genericHullStyle"
-      />
-      <img
-        v-if="turretDeg != null"
-        class="pb-turret"
-        :src="st.turretImage"
-        alt=""
-        aria-hidden="true"
-        :style="genericTurretStyle"
-      />
-    </template>
+      <!-- generic：现有双层 PNG（共同 pivot 居中旋转，行为不变） -->
+      <template v-else>
+        <img
+          v-if="hullDeg != null"
+          class="pb-hull"
+          :src="st.hullImage"
+          alt=""
+          aria-hidden="true"
+          :style="genericHullStyle"
+        />
+        <img
+          v-if="turretDeg != null"
+          class="pb-turret"
+          :src="st.turretImage"
+          alt=""
+          aria-hidden="true"
+          :style="genericTurretStyle"
+        />
+      </template>
+    </div>
 
     <span
       v-if="st.destroyed"
@@ -186,8 +192,18 @@ const stateClasses = computed(() => ({
   position: absolute;
   z-index: 1;
 }
-/* 阵亡：整层灰化（含 dedicated hull/turret） */
-.pb-destroyed .pb-hull, .pb-destroyed .pb-turret, .pb-destroyed .pb-turret-assembly { filter: grayscale(1); }
+/* 车型视觉层容器：与 button 同盒（imgs 百分比定位的 containing block 不变） */
+.pb-graphics {
+  position: absolute;
+  inset: 0;
+}
+/* 阵亡（PR #92 Review Blocker）：opacity/grayscale 精确作用于视觉层容器——
+   整棵子树恰好 .35 一次（assembly 内不再叠加 opacity，避免 0.35×0.35=0.1225）；
+   pb-death ✕ / pb-name 在容器外，保持完整 opacity。 */
+.pb-destroyed .pb-graphics {
+  opacity: 0.35;
+  filter: grayscale(1);
+}
 /* 阵亡 ✕（PR #92 Review A）：红色 + 更大 + 多层描边——深/亮色地图背景都清晰可读，
    与 last-known（仅淡化，无 ✕）语义区分明显。颜色/字号/z-index 由 inline style 提供
    （可测试）；此块负责位置/形状/描边。 */
