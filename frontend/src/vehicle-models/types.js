@@ -48,8 +48,10 @@ export const VIEWBOX = Object.freeze({ width: 320, height: 320 })
  * @property {{provider:string, tankId:number, collisionModel:string, modelDefinitions:string}} source
  *     provider 必填（正式资产必须 'blitzkit'）；tankId 必填；两个 URL 记录数据源
  * @property {{x:number,y:number}} [turretPivot]       turreted 必填；x/y ∈ [0, VIEWBOX]
- * @property {{method:string, viewBox:string, hullBounds?:object, turretBounds?:object, gunBounds?:object, notes?:string}} generation
+ * @property {{method:string, viewBox:string, hullBounds?:object, turretBounds?:object, gunBounds?:object, notes?:string, fidelity?:string, geometryScale?:string, visibleDetailRetentionTarget?:number, detailMethod?:string, detailThresholds?:object}} generation
  *     method 必填（正式资产必须 'blitzkit-model-topdown-extraction'）
+ *     HIGH-FIDELITY 契约（正式资产强制）：fidelity='high' / geometryScale='faithful' /
+ *     visibleDetailRetentionTarget ∈ (0,1]（contract target，非测量值）
  */
 
 /** metadata.json 允许的顶层键（多余键视为契约违反，防漂移）。 */

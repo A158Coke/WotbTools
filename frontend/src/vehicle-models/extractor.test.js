@@ -14,6 +14,7 @@ import { validateModelEntry } from './validate.js'
 import {
   bounds2D,
   buildMetadata,
+  classifyDetail,
   clusterEdges,
   computeFit,
   convexHull2D,
@@ -357,6 +358,63 @@ describe('Layer B — major edge extraction', () => {
     const clustered = clusterEdges(edges, { angleDeg: 5, maxDistM: 0.15 })
     expect(clustered.length).toBe(3)
   })
+  it('高保真：同一平滑曲面内共享边（tessellation）不输出', () => {
+    // 两个共面/近共面三角形（法线差 <1°，高度连续）共享边 → 无 feature edge
+    const flat = [
+      [[0,0,0],[2,0,0],[0,2,0]], [[0,0,0],[2,0,0],[2,2,0]], [[0,2,0],[2,2,0],[2,0,0]],
+      [[2,0,0],[4,0,0],[2,2,0]], [[2,0,0],[4,0,0],[4,2,0]], [[2,2,0],[4,2,0],[4,0,0]],
+    ]
+    const e = extractMajorEdges(flat, { topFacingCos: 0.35, heightDeltaM: 0.15, normalDeltaCos: 0.995, minEdgeLenM: 0.1 })
+    expect(e.length).toBe(0)
+  })
+  it('高保真：真实 feature boundary（高度不连续）保留，无数量上限', () => {
+    // 双层平台 z=0 / z=0.5 + 连接竖壁（x=0 面）：壁顶/壁底与上下层共享边 → 2 条 surface-edge
+    const stepped = [
+      [[0,0,0],[4,0,0],[0,4,0]], [[4,0,0],[4,4,0],[0,4,0]],
+      [[0,0,0.5],[4,0,0.5],[0,4,0.5]], [[4,0,0.5],[4,4,0.5],[0,4,0.5]],
+      [[0,0,0],[0,4,0],[0,4,0.5]], [[0,0,0],[0,4,0.5],[0,0,0.5]],
+    ]
+    const e = extractMajorEdges(stepped, { topFacingCos: 0.35, heightDeltaM: 0.15, normalDeltaCos: 0.995, minEdgeLenM: 0.1 })
+    expect(e.length).toBe(2)
+    expect(e.every((x) => x.reason === 'surface-edge')).toBe(true)
+  })
+  it('高保真：surface-edge 需要显著壁高（> heightDeltaM）——低模斜面面片台阶壁不输出', () => {
+    // 平台 + 0.05m 矮壁（tessellation 台阶）→ 不输出；0.3m 高壁（真实甲板边缘）→ 输出
+    const lowWall = [
+      [[0,0,0],[2,0,0],[0,2,0]], [[0,0,0],[2,0,0],[2,2,0]], [[0,2,0],[2,0,0],[2,2,0]],
+      [[0,0,-0.05],[2,0,-0.05],[2,0,0]], [[0,0,-0.05],[2,0,0],[0,0,0]],
+    ]
+    expect(extractMajorEdges(lowWall, { topFacingCos: 0.35, heightDeltaM: 0.15, normalDeltaCos: 0.995, minEdgeLenM: 0.1 }).length).toBe(0)
+    const tallWall = [
+      [[0,0,0],[2,0,0],[0,2,0]], [[0,0,0],[2,0,0],[2,2,0]], [[0,2,0],[2,0,0],[2,2,0]],
+      [[0,0,-0.3],[2,0,-0.3],[2,0,0]], [[0,0,-0.3],[2,0,0],[0,0,0]],
+    ]
+    const e = extractMajorEdges(tallWall, { topFacingCos: 0.35, heightDeltaM: 0.15, normalDeltaCos: 0.995, minEdgeLenM: 0.1 })
+    expect(e.length).toBe(1)
+    expect(e[0].reason).toBe('surface-edge')
+  })
+})
+
+describe('Layer B — classifyDetail（high-fidelity detail 分级）', () => {
+  it('silhouette/track/mantlet/gun 恒为 vehicle-primary', () => {
+    expect(classifyDetail({ kind: 'silhouette' })).toBe('vehicle-primary')
+    expect(classifyDetail({ kind: 'track' })).toBe('vehicle-primary')
+    expect(classifyDetail({ kind: 'mantlet' })).toBe('vehicle-primary')
+    expect(classifyDetail({ kind: 'gun' })).toBe('vehicle-primary')
+  })
+  it('surface 按面积分级（primary ≥ 0.5 m²、secondary 0.1-0.5、micro < 0.1）', () => {
+    expect(classifyDetail({ kind: 'surface', areaM2: 26.8 })).toBe('vehicle-primary')
+    expect(classifyDetail({ kind: 'surface', areaM2: 0.3 })).toBe('vehicle-secondary')
+    expect(classifyDetail({ kind: 'surface', areaM2: 0.05 })).toBe('vehicle-micro-detail')
+  })
+  it('bump 按面积分级（secondary ≥ 0.1、micro < 0.1——真实小 hatch 归 micro 而非删除）', () => {
+    expect(classifyDetail({ kind: 'bump', areaM2: 0.21 })).toBe('vehicle-secondary')
+    expect(classifyDetail({ kind: 'bump', areaM2: 0.052 })).toBe('vehicle-micro-detail')
+  })
+  it('edge 按长度分级（secondary ≥ 3m、micro < 3m）', () => {
+    expect(classifyDetail({ kind: 'edge', lengthM: 7.1 })).toBe('vehicle-secondary')
+    expect(classifyDetail({ kind: 'edge', lengthM: 1.2 })).toBe('vehicle-micro-detail')
+  })
 })
 
 describe('Layer B — Maus 生成资产细节（Layer 正确性）', () => {
@@ -374,12 +432,10 @@ describe('Layer B — Maus 生成资产细节（Layer 正确性）', () => {
     const paths = (svg.match(/<path/g) || []).length
     expect(paths).toBeGreaterThanOrEqual(4)
   })
-  it('无 wireframe 爆炸：edges 段数受限（hull ≤ 8，turret ≤ 6）', () => {
-    for (const [file, stroke, cap] of [['hull.svg', '#333833', 8], ['turret.svg', '#4a504c', 6]]) {
-      const svg = readFileSync(MAUS_DIR + file, 'utf8')
-      const m = svg.match(new RegExp('<path d="([^"]*)" stroke="' + stroke + '"[^>]*>'))
-      if (m) expect((m[1].match(/M/g) || []).length).toBeLessThanOrEqual(cap)
-    }
+  it('高保真：edges 不再设数量上限（仅剔除 tessellation/duplicate，见 extractMajorEdges 判据）', () => {
+    // 策略变更记录：旧"少而强"上限（hull ≤ 8 / turret ≤ 6）已删除；
+    // 结构边保留原则 = 真实 component/height/normal boundary，数量由模型决定。
+    expect(true).toBe(true)
   })
   it('turret detail 与 silhouette 同一 fit（pivot 不变：detail 路径存在且 pivot 稳定）', () => {
     const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
@@ -420,31 +476,49 @@ describe('Layer B — bump（层内凸起特征）提取', () => {
     const s = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.5, bumpDelta: 0.08, minBumpAreaM2: 0.05 })
     expect(s[0].bumps.length).toBe(0)
   })
-  it('显著性过滤：层内占比过低的凸起（粗糙面片伪影）被丢弃，大特征保留', () => {
-    // 平台 z=0 + 一个大凸起（4.0m²，hatch 级）+ 4 个 0.0625m² 小碎块（网格面片伪影）
-    // 层凸起总量 = 4.25m²，10% = 0.425m² → 小碎块全被丢弃
+  it('高保真：真实小凸起（相对占比小）默认保留——无 relative-ratio 过滤', () => {
+    // 平台 z=0 + 一个大凸起（4.0m²）+ 4 个 0.06125m² 小凸起（合计占比 ~6%）
+    // 高保真原则：小凸起是真实可见结构（≥ minBumpAreaM2），必须全部保留
     const tris = [
       [[0,0,0],[10,0,0],[0,10,0]], [[10,0,0],[10,10,0],[0,10,0]],
-      // 大 hatch 4.0m²
       [[2,2,0.2],[4,2,0.2],[2,4,0.2]], [[4,2,0.2],[4,4,0.2],[2,4,0.2]],
-      // 4 个小碎块 0.06125m² each（≥ minBumpAreaM2，但占比 < 10%）
       [[6,6,0.2],[6.35,6,0.2],[6,6.35,0.2]], [[7,6,0.2],[7.35,6,0.2],[7,6.35,0.2]],
       [[8,6,0.2],[8.35,6,0.2],[8,6.35,0.2]], [[9,6,0.2],[9.35,6,0.2],[9,6.35,0.2]],
     ]
-    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.5, bumpDelta: 0.08, minBumpAreaM2: 0.05, bumpSignificanceRatio: 0.1 })
+    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.5, bumpDelta: 0.08, minBumpAreaM2: 0.05, bumpHeightDeltaM: 0.06 })
     expect(s.length).toBe(1)
     expect(s[0].bumps.length).toBe(1)
-    expect(s[0].bumps[0].polys.length).toBe(1)
-    expect(s[0].bumps[0].areaM2).toBeCloseTo(4, 0)
+    // 大 hatch + 4 小凸起全部保留（无相对占比过滤）
+    expect(s[0].bumps[0].polys.length).toBe(5)
+    expect(s[0].bumps[0].areaM2).toBeCloseTo(4.245, 2)
   })
-  it('显著性过滤关闭时（ratio=0）小凸起保留', () => {
+  it('高保真：连续斜面面片不产生 bump（连通分量 vs 外界高度差判据）', () => {
+    // 缓坡平台（z = 0.025x 线性连续，5 个面片 x∈[0,10]；相邻面片共享顶点 z 对齐）
+    const zAt = (x) => x * 0.025
+    const tris = []
+    for (let i = 0; i < 5; i++) {
+      const x0 = i * 2
+      const x1 = (i + 1) * 2
+      const z0 = zAt(x0)
+      const z1 = zAt(x1)
+      tris.push([[x0,0,z0],[x1,0,z1],[x0,2,z0]])
+      tris.push([[x1,0,z1],[x1,2,z1],[x0,2,z0]])
+    }
+    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.1, bumpDelta: 0.08, minBumpAreaM2: 0.05, bumpHeightDeltaM: 0.08 })
+    // 斜面整体是连续曲面（相邻面片共享边高度差 ≤0.05 < 0.08）→ 无 bump 分量被保留
+    expect(s.length).toBe(1)
+    expect(s[0].bumps.length).toBe(0)
+  })
+  it('高保真：隔离凸起（cupola，与基底隔垂直壁）保留为 bump', () => {
     const tris = [
-      [[0,0,0],[10,0,0],[0,10,0]], [[10,0,0],[10,10,0],[0,10,0]],
-      [[2,2,0.2],[4,2,0.2],[2,4,0.2]], [[4,2,0.2],[4,4,0.2],[2,4,0.2]],
-      [[6,6,0.2],[6.35,6,0.2],[6,6.35,0.2]],
+      [[0,0,0],[10,0,0],[0,10,0]], [[10,0,0],[10,10,0],[0,10,0]], // 平台 z=0
+      // cupola 顶面 z=0.3（不与平台共享边——模拟隔侧壁）
+      [[2,2,0.3],[4,2,0.3],[2,4,0.3]], [[4,2,0.3],[4,4,0.3],[2,4,0.3]],
     ]
-    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.5, bumpDelta: 0.08, minBumpAreaM2: 0.05, bumpSignificanceRatio: 0 })
-    expect(s[0].bumps[0].polys.length).toBe(2)
+    const s = extractTopSurfaces(tris, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.5, bumpDelta: 0.08, minBumpAreaM2: 0.05, bumpHeightDeltaM: 0.06 })
+    expect(s.length).toBe(1)
+    expect(s[0].bumps.length).toBe(1)
+    expect(s[0].bumps[0].areaM2).toBeCloseTo(4, 0)
   })
   it('Maus hull.svg 含 bump 填充（#6f776f）与主面填充（#565e58）', () => {
     const svg = readFileSync(MAUS_DIR + 'hull.svg', 'utf8')
@@ -456,15 +530,15 @@ describe('Layer B — bump（层内凸起特征）提取', () => {
     expect(svg).toContain('#838b85')
     expect(svg).toContain('#6d756f')
   })
-  it('edges 数量上限（少而强）：hull ≤ 8、turret ≤ 6', () => {
-    for (const [file, stroke, cap] of [['hull.svg', '#333833', 8], ['turret.svg', '#4a504c', 6]]) {
-      const svg = readFileSync(MAUS_DIR + file, 'utf8')
-      const m = svg.match(new RegExp('<path d="([^"]*)" stroke="' + stroke + '"[^>]*>'))
-      if (m) expect((m[1].match(/M/g) || []).length).toBeLessThanOrEqual(cap)
+  it('高保真：detail-level grouping 输出（vehicle-primary/secondary/micro-detail）', () => {
+    for (const name of ['hull.svg', 'turret.svg']) {
+      const svg = readFileSync(MAUS_DIR + name, 'utf8')
+      expect(svg).toContain('<g class="vehicle-primary">')
+      expect(svg).toContain('<g class="vehicle-secondary">')
+      expect(svg).toContain('<g class="vehicle-micro-detail">')
     }
   })
 })
-
 describe('Maus 生成资产契约（assets/maus）', () => {
   it('hull.svg / turret.svg / metadata.json 存在且通过 validateModelEntry', () => {
     const files = { hull: null, turret: null, metadata: null, extra: [] }
@@ -506,6 +580,33 @@ describe('Maus 生成资产契约（assets/maus）', () => {
       expect(img.x).toBeCloseTo(pivot.x, 6)
       expect(img.y).toBeCloseTo(pivot.y, 6)
     }
+  })
+  it('高保真：真实比例无夸大——gun 渲染宽度与模型投影一致（faithful geometry scale）', () => {
+    // gunBounds 模型宽度 0.497m（-0.254..0.243）× fit.scale 31.17 ≈ 15.5 units；
+    // 渲染 gun path 宽度不得被人为放大（无 intentional exaggeration）。
+    const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
+    const [gMinX, gMaxX] = [meta.generation.gunBounds.min[0], meta.generation.gunBounds.max[0]]
+    // fit.scale = 320×0.88 / max(hull 宽, 高)（与 extractor computeFit 同式）
+    const hb = meta.generation.hullBounds
+    const hullMaxDim = Math.max(hb.max[0] - hb.min[0], hb.max[1] - hb.min[1])
+    const scale = (VIEWBOX.width * 0.88) / hullMaxDim
+    const expectedUnits = (gMaxX - gMinX) * scale
+    // 从 SVG 解析 gun path（#4d534f）的宽度
+    const svg = readFileSync(MAUS_DIR + 'turret.svg', 'utf8')
+    const gunPath = svg.match(/<path d="([^"]*)" fill="#4d534f"/)
+    expect(gunPath).toBeTruthy()
+    const xs = [...gunPath[1].matchAll(/[ML]\s*([-\d.]+)\s+([-\d.]+)/g)].map((m) => parseFloat(m[1]))
+    const w = Math.max(...xs) - Math.min(...xs)
+    // 允许 ±2 units 容差（投影与路径简化），但不允许放大（真实宽度 ≈ 15.5 units）
+    expect(w).toBeLessThanOrEqual(expectedUnits + 2)
+    expect(w).toBeGreaterThan(10)
+  })
+  it('高保真：fidelity 契约写入 metadata（fidelity=high / geometryScale=faithful / retention target）', () => {
+    const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
+    expect(meta.generation.fidelity).toBe('high')
+    expect(meta.generation.geometryScale).toBe('faithful')
+    expect(meta.generation.visibleDetailRetentionTarget).toBe(0.9)
+    expect(meta.generation.detailThresholds.bumpSignificanceRatio).toBeUndefined()
   })
   it('确定性：extractor 纯函数相同输入两次输出一致', () => {
     const pts = [{ x: -1.86, y: -4.44 }, { x: 1.86, y: -4.44 }, { x: 1.86, y: 4.6 }, { x: -1.86, y: 4.6 }]

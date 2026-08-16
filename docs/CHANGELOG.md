@@ -58,12 +58,41 @@
       （Maus 前甲板 4 条交叉斜线 X 形噪纹 → 1 条）；先聚类再按投影长度截断（hull ≤8 / turret ≤6）。
     - hull 绘制顺序调整：主面 → 履带（深色侧带覆盖在主面之上可见）→ 凸起 → 结构边。
     - Maus 资产更新：glacis 带恢复全宽 109×60px、turret 环带 20×133px、履带侧带可见；
+    - Maus 资产更新：glacis 带恢复全宽 109×60px、turret 环带 20×133px、履带侧带可见；
       新增 8 用例（simplifyRing 去重回归/bbox 不变、bump 显著性、clusterEdges 聚类/保留）。
-
-    - 新增 9 用例：L 形凹轮廓不被 convex 填平 / 退化三角形过滤 / union 确定性 / 索引网格解析 /
-      共线简化 / mantlet 边界断言 / method 命名 / evenodd 洞 path。
-
-  - **Maus 端到端资产（自动生成，无人工 patch）**：assets/maus/{hull,turret}.svg + metadata.json——
+  - **HIGH-FIDELITY ASSET 方向调整（2026-08-18，PR1 资产生成最终策略）**：
+    - 目标从"为 20-30px marker 主动简化"改为"高保真俯视资产 + 未来 runtime LOD"：
+      asset 保存真实比例与可见结构（retention target ≥ 90%），小尺寸显示交给后续 runtime LOD；
+      本 PR 不实现 runtime LOD，但 SVG 已按 detail-level grouping 输出结构准备。
+    - **删除 aggressive 过滤**：bumpSignificanceRatio（相对占比过滤）、edges 数量上限
+      （hull ≤8 / turret ≤6）、按 28px marker 的 minDetailPx 过滤——全部移除；
+      保留 clusterEdges（duplicate/overlapping 去重，收紧 angleDeg 5°/maxDistM 0.2m）与 simplifyRing 修复。
+    - **凸起判据改为局部不连续**（bumpHeightDeltaM=0.06）：层内凸起面经共享边连通成分量，
+      分量与外界无共享边（隔离：cupola/hatch 隔垂直壁）或共享边高度差显著（台阶带）→ 保留；
+      连续斜面面片（tessellation）剔除。真实 hatch 即使只占屋顶 3-5% 也保留
+      （Maus 甲板 2 个侧舱盖 + 中央舱盖 + turret cupola 全部恢复）。
+    - **feature edge 判据收紧**：normalDeltaCos 0.92 → 0.995（~5.7°，剔除同一平滑曲面内
+      tessellation 对角线）；surface-edge 要求显著壁高（> heightDeltaM，用壁面顶点 z 跨度而非重心）；
+      minEdgeLenM 1.5 → 1.0（保留 hatch/panel 级边缘）；无数量上限
+      （Maus hull 18-20 条、turret 6-7 条全为真实结构边）。
+    - **detail-level grouping**：SVG 输出 <g class="vehicle-primary / vehicle-secondary /
+      vehicle-micro-detail">（classifyDetail：silhouette/tracks/mantlet/gun/大型 deck-roof → primary；
+      hatch/cupola/vents/engine deck plates/≥3m 边界 → secondary；小 hatch/小屋顶结构 → micro）。
+    - **asset-space 微噪声过滤**：minDetailUnits=0.3（320 viewBox units）+ sliver 判定
+      （宽高比 >12 且窄边 <0.15m 的退化狭长 polygon 剔除，如 turret 68×2.5 units 细条）。
+    - **fidelity 契约**：metadata.generation 增加 fidelity='high' / geometryScale='faithful' /
+      visibleDetailRetentionTarget=0.9（contract target，非测量值）；validator 对正式资产强制。
+    - **debug evidence 扩展**：all-visible-surfaces / retained-surfaces / removed-tiny-details /
+      feature-edges / final-high-fidelity + extraction-report 统计
+      （visible/retained/removed regions、edges、primary/secondary/micro path 数）。
+    - Maus 资产：hull.svg 11.1KB 82 paths（primary 48 / secondary 33 / micro 1）、
+      turret.svg 4.8KB 35 paths（primary 10 / secondary 24 / micro 1）；
+      甲板/glacis/后带/裙板 + 舱盖×3 + 前带 + 后带 + 履带 + 20 结构边；
+      turret 主体/环带/台阶带/cupola/16 屋顶面片块（真实模型凸起，归 secondary/micro）/mantlet/gun + 6 边。
+    - 测试：删除 edges 上限 / bump 显著性 / minDetailPx 相关用例，新增 tessellation 边剔除、
+      surface-edge 壁高、bump 分量判据、classifyDetail 分级、faithful scale（gun 宽度无夸大）、
+      fidelity 契约等 14 类用例——extractor 59 用例，全套 447 全绿。
+    - 32 行 spec 重写为 "Asset fidelity first. Runtime readability handled later."。
     hull 3800 顶点（hull+tracks）、turret 638、gun 625；turretPivot=(160.00,193.23)（真实
     turret_origin 投影）；hull 比例 1:2.43 与真实 Maus 一致；gun 炮管溢出 viewBox 顶部（contract §5）。
   - 新增 extractor 契约测试（15 用例：坐标转换/fit/凸包/资产契约/pivot 稳定性/确定性，CI 不联网）；

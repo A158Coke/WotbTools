@@ -28,14 +28,14 @@ import { VIEWBOX } from '../src/vehicle-models/types.js'
 import {
   bounds2D,
   buildMetadata,
-  clusterEdges,
   bumpsToSvgPaths,
+  classifyDetail,
+  clusterEdges,
   computeFit,
   correctZYTuple,
   edgesToSvgPath,
   extractMajorEdges,
   extractTopSurfaces,
-  minSvgUnits,
   projectTopDown,
   projectTriangles,
   silhouetteToSvgPaths,
@@ -270,116 +270,184 @@ async function main() {
   const fitBounds = bounds2D(polyPoints(hullPoly).concat(polyPoints(turretPoly)))
   const fit = computeFit(fitBounds, VIEWBOX, PADDING_RATIO)
   console.log(`  fit: scale=${fit.scale.toFixed(4)} bounds=(${fitBounds.minX.toFixed(2)},${fitBounds.minY.toFixed(2)})..(${fitBounds.maxX.toFixed(2)},${fitBounds.maxY.toFixed(2)})`)
-
-  // —— Layer B：top-facing major surfaces + major structural edges ——
-  // 阈值说明（2026-08-17 调校，适用全部车型，非 Maus 专属）：
-  // - zTolerance 0.5：连续曲面（甲板/屋顶）合并为单层，只分离明显高度带；
-  // - minEdgeLenM 1.5：只保留明显结构边（≈4px @28px），过滤格栅/碎边；
-  // - heightDeltaM 0.15 + normal 辅助：高度差驱动，防密集线；
-  // - bumpSignificanceRatio 0.1：凸起在该层凸起总量占比过低 = 粗糙面片伪影（噪声），
-  //   只保留有语义的大特征（hatch / cupola / 甲板条带）——"少而强"。
+  // —— Layer B：top-facing surfaces + bumps + structural edges（HIGH-FIDELITY ASSET）——
+  // 高保真策略（2026-08-18）：
+  // - 真实 top-view 可见结构默认保留（目标 retention >= 90%）：surfaces 全部 top-facing
+  //   区域（仅滤 asset-space 极端微小），bumps 用连通分量隔离/高度不连续判据保留真实
+  //   凸起（hatch/cupola/台阶带）并剔除连续斜面面片（tessellation）；
+  // - 不按 20-30px marker 过滤真实 detail（runtime LOD 负责小尺寸显示）；
+  // - 不设 edge/path 数量上限——只限制"是不是实际视觉结构"（删 duplicate/overlap/
+  //   tessellation 对角线，保留 component/height/normal 边界）。
   const DETAIL_THRESHOLDS = {
-    topFacingCos: 0.35,
-    zTolerance: 0.5,
-    minAreaM2: 0.25,
-    bumpDelta: 0.08,
-    minBumpAreaM2: 0.05,
-    bumpSignificanceRatio: 0.1,
-    heightDeltaM: 0.15,
-    normalDeltaCos: 0.92,
-    minEdgeLenM: 1.5,
-    minDetailPx: 0.8,
+    topFacingCos: 0.35,       // 顶面判定（法线 z 分量）
+    zTolerance: 0.5,          // 高度层聚类容差（米）
+    minAreaM2: 0.01,          // surface 区域最小投影面积（≈3 units @320，asset-space 极小）
+    bumpDelta: 0.08,          // 层内凸起 z 抬升判定（米）
+    minBumpAreaM2: 0.01,      // 凸起区域最小投影面积
+    bumpHeightDeltaM: 0.06,   // 凸起分量与外界共享边高度差下限（真实 hatch 高 ~0.06m+；连续斜面面片剔除）
+    heightDeltaM: 0.15,       // feature edge 高度差（surface-edge 壁高 / height 边）
+    normalDeltaCos: 0.995,    // ~5.7°：同一平滑曲面的面片法线差不算 feature
+    minEdgeLenM: 1.0,         // 边最短投影长度（保留 hatch/panel 级边缘）
+    minDetailUnits: 0.3,      // asset-space 微噪声（320px preview 下 0.3px）
   }
   const hullSurfaces = extractTopSurfaces(hullTris, DETAIL_THRESHOLDS)
   const turretSurfaces = extractTopSurfaces(turretTris, DETAIL_THRESHOLDS)
   const hullEdges = extractMajorEdges(hullTris, DETAIL_THRESHOLDS)
   const turretEdges = extractMajorEdges(turretTris, DETAIL_THRESHOLDS)
-  const minSvg = minSvgUnits(DETAIL_THRESHOLDS.minDetailPx, VIEWBOX.width, 28)
-  // 屏幕空间过滤：区域最小边长 + 边最小长度（SVG units ≥ ~0.8px）。
-  // 用 simplifyRing 后的 ring 计算（与最终渲染形状一致——修复重复点后
-  // polygon-clipping 产生的发丝状退化 polygon 在此被正确过滤）。
-  const screenFilterPolys = (polys) =>
-    polys.filter((p) => {
+  // asset-space 微噪声过滤（320 viewBox units）：只删宽/高 < 0.3 units 的退化 path；
+  // 不再按 28px marker 过滤真实 detail（未来 runtime LOD 决定小尺寸显示）。
+  const minUnits = DETAIL_THRESHOLDS.minDetailUnits
+  // sliver 判定：简化后 bbox 宽高比 > 12 且窄边 < 0.15m（≈4.7 units）→ 退化狭长 polygon
+  // （polygon-clipping 伪影，如 turret 68×2.5 units 细条）；真实长条（如发动机甲板带
+  // 112×5.5 units）窄边 ≥ 0.15m 保留。
+  const sliverRatio = 12
+  const sliverMinEdgeM = 0.15
+  const removedTiny = []
+  const assetFilterPolys = (polys) => {
+    const kept = []
+    for (const p of polys) {
       const ring = simplifyRing(p.ring)
       const b = bounds2D(ring.map(([x, y]) => ({ x, y })))
-      return (b.maxX - b.minX) * fit.scale >= minSvg && (b.maxY - b.minY) * fit.scale >= minSvg
-    })
-  const screenSurfaces = (surfaces) =>
+      const wUnits = (b.maxX - b.minX) * fit.scale
+      const hUnits = (b.maxY - b.minY) * fit.scale
+      const isSliver = Math.max(wUnits, hUnits) / Math.max(Math.min(wUnits, hUnits), 1e-9) > sliverRatio &&
+        Math.min(wUnits, hUnits) * (VIEWBOX.width / 320) < sliverMinEdgeM * fit.scale
+      if ((wUnits >= minUnits && hUnits >= minUnits) && !isSliver) kept.push(p)
+      else removedTiny.push(p)
+    }
+    return kept
+  }
+  const filterSurfaces = (surfaces) =>
     surfaces
       .map((s) => ({
         ...s,
-        polys: screenFilterPolys(s.polys),
+        polys: assetFilterPolys(s.polys),
         bumps: s.bumps
-          .map((b) => ({ ...b, polys: screenFilterPolys(b.polys) }))
+          .map((b) => ({ ...b, polys: assetFilterPolys(b.polys) }))
           .filter((b) => b.polys.length > 0),
       }))
       .filter((s) => s.polys.length > 0 || s.bumps.length > 0)
-  const screenEdges = (edges) =>
-    edges.filter((e) => {
-      const len = Math.hypot(e.p2[0] - e.p1[0], e.p2[1] - e.p1[1]) * fit.scale
-      return len >= minSvg
-    })
-  // 少而强：先聚类去重（同一条结构线只保留最长边，防斜切台阶交叉线），
-  // 再按投影长度降序保留上限条数
-  const capEdges = (edges, cap) =>
-    clusterEdges(edges, { angleDeg: 15, maxDistM: 0.15 })
-      .map((e) => ({ ...e, len: Math.hypot(e.p2[0] - e.p1[0], e.p2[1] - e.p1[1]) }))
-      .sort((a, b) => b.len - a.len)
-      .slice(0, cap)
-      .map(({ len, ...e }) => e)
-  const hullSurfacesF = screenSurfaces(hullSurfaces)
-  const turretSurfacesF = screenSurfaces(turretSurfaces)
-  const hullEdgesF = capEdges(screenEdges(hullEdges), 8)
-  const turretEdgesF = capEdges(screenEdges(turretEdges), 6)
+  // 去重聚类：duplicate/overlapping edge 合并为同一条结构线（保留最长边）；不截断数量
+  const dedupeEdges = (edges) => clusterEdges(edges, { angleDeg: 5, maxDistM: 0.2 })
+  const hullSurfacesF = filterSurfaces(hullSurfaces)
+  const turretSurfacesF = filterSurfaces(turretSurfaces)
+  const hullEdgesF = dedupeEdges(hullEdges)
+  const turretEdgesF = dedupeEdges(turretEdges)
   const bumpCount = (s) => s.reduce((n, x) => n + x.bumps.length, 0)
-  console.log(`  detail: hull surfaces ${hullSurfaces.length}→${hullSurfacesF.length} bumps=${bumpCount(hullSurfacesF)} edges→${hullEdgesF.length} | turret surfaces ${turretSurfaces.length}→${turretSurfacesF.length} bumps=${bumpCount(turretSurfacesF)} edges→${turretEdgesF.length}`)
+  console.log(`  detail: hull surfaces ${hullSurfaces.length}→${hullSurfacesF.length} bumps=${bumpCount(hullSurfacesF)} edges=${hullEdgesF.length} | turret surfaces ${turretSurfaces.length}→${turretSurfacesF.length} bumps=${bumpCount(turretSurfacesF)} edges=${turretEdgesF.length}`)
 
-  // —— SVG 输出（多 path，neutral gray，内嵌样式；detail 与 silhouette 同一 fit）——
-  // 绘制顺序 = 视觉层次：车体轮廓 → 主面（甲板/glacis 等）→ 履带（深色侧带，
-  // 覆盖在甲板之上才可见——Maus 甲板全宽，履带投影被甲板遮住）→ 凸起 → 结构边。
-  const hullSvgContent = [
-    ...silhouetteToSvgPaths(hullPoly, fit, '#6d736f'),      // Layer A 车体
-    ...surfacesToSvgPaths(hullSurfacesF, fit, '#565e58'),   // 主面高度层（稍深，层次更强）
-    ...silhouetteToSvgPaths(trackPoly, fit, '#454b47'),     // 履带独立区域（深色侧带，压在主面之上）
-    ...bumpsToSvgPaths(hullSurfacesF, fit, '#6f776f'),      // 层内凸起（hatch / 甲板凸块，稍浅）
-  ]
-  const hullEdgePath = edgesToSvgPath(hullEdgesF, fit, '#333833')
-  if (hullEdgePath) hullSvgContent.push(hullEdgePath)
-  const hullSvg = svgDocument(hullSvgContent, VIEWBOX)
+  // —— SVG 输出（detail-level grouping：primary/secondary/micro，为未来 runtime LOD 准备结构）——
+  const GROUPS = { primary: 'vehicle-primary', secondary: 'vehicle-secondary', micro: 'vehicle-micro-detail' }
+  const splitEdges = (edges) => {
+    const sec = []
+    const mic = []
+    for (const e of edges) {
+      const len = Math.hypot(e.p2[0] - e.p1[0], e.p2[1] - e.p1[1])
+      ;(len >= 3.0 ? sec : mic).push(e)
+    }
+    return { sec, mic }
+  }
+  const put = (groups, paths, kind, areaM2 = 0, lengthM = 0) => {
+    const g = classifyDetail({ kind, areaM2, lengthM })
+    groups[g].push(...paths)
+  }
+  const hullGroups = { [GROUPS.primary]: [], [GROUPS.secondary]: [], [GROUPS.micro]: [] }
+  const turretGroups = { [GROUPS.primary]: [], [GROUPS.secondary]: [], [GROUPS.micro]: [] }
+  // 绘制顺序 = 视觉层次：轮廓 → 主面 → 履带（深色侧带）→ 凸起 → 结构边
+  put(hullGroups, silhouetteToSvgPaths(hullPoly, fit, '#6d736f'), 'silhouette')
+  for (const s of hullSurfacesF) put(hullGroups, surfacesToSvgPaths([s], fit, '#565e58'), 'surface', s.areaM2)
+  put(hullGroups, silhouetteToSvgPaths(trackPoly, fit, '#454b47'), 'track')
+  for (const s of hullSurfacesF) for (const b of s.bumps) put(hullGroups, silhouetteToSvgPaths(b.polys, fit, '#6f776f'), 'bump', b.areaM2)
+  {
+    const { sec, mic } = splitEdges(hullEdgesF)
+    const secP = edgesToSvgPath(sec, fit, '#333833')
+    const micP = edgesToSvgPath(mic, fit, '#333833')
+    if (secP) put(hullGroups, [secP], 'edge', 0, 3.0)
+    if (micP) put(hullGroups, [micP], 'edge', 0, 0.5)
+  }
+  const hullSvg = svgDocument({ groups: [
+    { group: GROUPS.primary, paths: hullGroups[GROUPS.primary] },
+    { group: GROUPS.secondary, paths: hullGroups[GROUPS.secondary] },
+    { group: GROUPS.micro, paths: hullGroups[GROUPS.micro] },
+  ] }, VIEWBOX)
 
-  const turretSvgContent = [
-    ...silhouetteToSvgPaths(turretPoly, fit, '#7a817c'),    // 炮塔主体
-    ...surfacesToSvgPaths(turretSurfacesF, fit, '#6d756f'), // 屋顶/环主面（稍深）
-    ...bumpsToSvgPaths(turretSurfacesF, fit, '#838b85'),    // 屋顶凸起（cupola / hatch，稍浅）
-    ...silhouetteToSvgPaths(mantletPoly, fit, '#656c67'),   // 炮盾独立区域
-  ]
-  const turretEdgePath = edgesToSvgPath(turretEdgesF, fit, '#4a504c')
-  if (turretEdgePath) turretSvgContent.push(turretEdgePath)
-  turretSvgContent.push(...silhouetteToSvgPaths(gunPoly, fit, '#4d534f')) // 炮管
-  const turretSvg = svgDocument(turretSvgContent, VIEWBOX)
-
+  put(turretGroups, silhouetteToSvgPaths(turretPoly, fit, '#7a817c'), 'silhouette')
+  for (const s of turretSurfacesF) put(turretGroups, surfacesToSvgPaths([s], fit, '#6d756f'), 'surface', s.areaM2)
+  for (const s of turretSurfacesF) for (const b of s.bumps) put(turretGroups, silhouetteToSvgPaths(b.polys, fit, '#838b85'), 'bump', b.areaM2)
+  put(turretGroups, silhouetteToSvgPaths(mantletPoly, fit, '#656c67'), 'mantlet')
+  {
+    const { sec, mic } = splitEdges(turretEdgesF)
+    const secP = edgesToSvgPath(sec, fit, '#4a504c')
+    const micP = edgesToSvgPath(mic, fit, '#4a504c')
+    if (secP) put(turretGroups, [secP], 'edge', 0, 3.0)
+    if (micP) put(turretGroups, [micP], 'edge', 0, 0.5)
+  }
+  put(turretGroups, silhouetteToSvgPaths(gunPoly, fit, '#4d534f'), 'gun') // 炮管（primary，组内最后）
+  const turretSvg = svgDocument({ groups: [
+    { group: GROUPS.primary, paths: turretGroups[GROUPS.primary] },
+    { group: GROUPS.secondary, paths: turretGroups[GROUPS.secondary] },
+    { group: GROUPS.micro, paths: turretGroups[GROUPS.micro] },
+  ] }, VIEWBOX)
   // —— debug artifacts（gitignored 缓存目录，不提交正式 repo）——
+  // HIGH-FIDELITY evidence：all-visible（提取原始）/ retained（过滤后）/
+  // removed-tiny（被 asset-space 阈值删除）/ feature-edges / final-high-fidelity
   const debugDir = join(CACHE_DIR, 'debug', modelKey)
   mkdirSync(debugDir, { recursive: true })
   writeFileSync(join(debugDir, 'silhouette.svg'), svgDocument(
     [...silhouetteToSvgPaths(hullPoly, fit, '#6d736f'), ...silhouetteToSvgPaths(turretPoly, fit, '#7a817c')], VIEWBOX))
-  writeFileSync(join(debugDir, 'top-surfaces.svg'), svgDocument(
+  writeFileSync(join(debugDir, 'all-visible-surfaces.svg'), svgDocument(
+    [...surfacesToSvgPaths(hullSurfaces, fit, '#5c635e'), ...bumpsToSvgPaths(hullSurfaces, fit, '#6f776f'),
+     ...surfacesToSvgPaths(turretSurfaces, fit, '#717873'), ...bumpsToSvgPaths(turretSurfaces, fit, '#838b85')], VIEWBOX))
+  writeFileSync(join(debugDir, 'retained-surfaces.svg'), svgDocument(
     [...surfacesToSvgPaths(hullSurfacesF, fit, '#5c635e'), ...bumpsToSvgPaths(hullSurfacesF, fit, '#6f776f'),
      ...surfacesToSvgPaths(turretSurfacesF, fit, '#717873'), ...bumpsToSvgPaths(turretSurfacesF, fit, '#838b85')], VIEWBOX))
+  if (removedTiny.length > 0) {
+    writeFileSync(join(debugDir, 'removed-tiny-details.svg'), svgDocument(
+      silhouetteToSvgPaths(removedTiny, fit, '#aa3a3a'), VIEWBOX))
+  }
   const dbgEdges = []
   const he = edgesToSvgPath(hullEdgesF, fit, '#333833')
   const te = edgesToSvgPath(turretEdgesF, fit, '#4a504c')
   if (he) dbgEdges.push(he)
   if (te) dbgEdges.push(te)
-  writeFileSync(join(debugDir, 'major-edges.svg'), svgDocument(dbgEdges, VIEWBOX))
-  writeFileSync(join(debugDir, 'final.svg'), hullSvg)
+  writeFileSync(join(debugDir, 'feature-edges.svg'), svgDocument(dbgEdges, VIEWBOX))
+  writeFileSync(join(debugDir, 'final-high-fidelity.svg'), hullSvg)
+  // 分组 path 统计（primary/secondary/micro）
+  const groupStats = (groups) => ({
+    primary: groups[GROUPS.primary].length,
+    secondary: groups[GROUPS.secondary].length,
+    micro: groups[GROUPS.micro].length,
+  })
   writeFileSync(join(debugDir, 'extraction-report.json'), JSON.stringify({
     modelKey, tankId,
+    fidelity: 'high',
     thresholds: DETAIL_THRESHOLDS,
     fit: { scale: fit.scale, tx: fit.tx, ty: fit.ty },
     counts: {
-      hull: { tris: hullTri, surfacesRaw: hullSurfaces.length, surfaces: hullSurfacesF.length, bumps: bumpCount(hullSurfacesF), edgesRaw: hullEdges.length, edges: hullEdgesF.length },
-      turret: { tris: turretTri, surfacesRaw: turretSurfaces.length, surfaces: turretSurfacesF.length, bumps: bumpCount(turretSurfacesF), edgesRaw: turretEdges.length, edges: turretEdgesF.length },
+      hull: {
+        tris: hullTri,
+        visibleSurfaceRegions: hullSurfaces.reduce((n, s) => n + s.polys.length + s.bumps.reduce((m, b) => m + b.polys.length, 0), 0),
+        retainedRegions: hullSurfacesF.reduce((n, s) => n + s.polys.length + s.bumps.reduce((m, b) => m + b.polys.length, 0), 0),
+        removedTinyRegions: removedTiny.length,
+        surfacesRaw: hullSurfaces.length,
+        surfaces: hullSurfacesF.length,
+        bumps: bumpCount(hullSurfacesF),
+        edgesRaw: hullEdges.length,
+        edges: hullEdgesF.length,
+        groupPaths: groupStats(hullGroups),
+      },
+      turret: {
+        tris: turretTri,
+        visibleSurfaceRegions: turretSurfaces.reduce((n, s) => n + s.polys.length + s.bumps.reduce((m, b) => m + b.polys.length, 0), 0),
+        retainedRegions: turretSurfacesF.reduce((n, s) => n + s.polys.length + s.bumps.reduce((m, b) => m + b.polys.length, 0), 0),
+        removedTinyRegions: removedTiny.length,
+        surfacesRaw: turretSurfaces.length,
+        surfaces: turretSurfacesF.length,
+        bumps: bumpCount(turretSurfacesF),
+        edgesRaw: turretEdges.length,
+        edges: turretEdgesF.length,
+        groupPaths: groupStats(turretGroups),
+      },
       tracks: countTri(groups.tracks),
       mantlet: countTri(groups.mantlet),
       gun: gunTri,
@@ -417,8 +485,11 @@ async function main() {
     turretBounds: { min: [tb.minX, tb.minY], max: [tb.maxX, tb.maxY] },
     gunBounds: { min: [gb.minX, gb.minY], max: [gb.maxX, gb.maxY] },
     viewBox: VIEWBOX,
-    generationNotes: '确定性提取自 BlitzKit model.glb（Layer A silhouette + Layer B top-surface/major-edge details）',
+    generationNotes: '确定性提取自 BlitzKit model.glb（HIGH-FIDELITY：真实比例 + visible top-view structure 默认保留，仅滤 tiny/hidden/tessellation）',
   })
+  metadata.generation.fidelity = 'high'
+  metadata.generation.geometryScale = 'faithful'
+  metadata.generation.visibleDetailRetentionTarget = 0.9
   metadata.generation.detailMethod = 'top-surface-and-major-edge-extraction'
   metadata.generation.detailThresholds = DETAIL_THRESHOLDS
   writeFileSync(join(outDir, 'metadata.json'), JSON.stringify(metadata, null, 2) + '\n')
