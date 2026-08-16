@@ -7,7 +7,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { VIEWBOX } from '../vehicle-models/types.js'
-import { hullLayerTransform, pivotLayerTransform } from '../vehicle-models/pivot.js'
+import { hullLayerTransform } from '../vehicle-models/pivot.js'
 
 const { t } = useI18n()
 const { initPromise, tokenParsed, authenticated, login } = useAuth()
@@ -108,9 +108,17 @@ const bakeHullLayerStyle = computed(() => ({
 }))
 const bakeTurretLayerStyle = computed(() => {
   if (!pivot.value) return null
+  const raster = metadataJson.value?.turretRaster
+  if (!raster) return null
+  const s = protoSize.value / 320
   return {
-    position: 'absolute', left: '0', top: '0', width: '100%', height: '100%',
-    transform: 'rotate(' + turretDeg.value + 'deg)', transformOrigin: `${pivot.value.x}px ${pivot.value.y}px`,
+    position: 'absolute',
+    left: raster.logicalMinX * s + 'px',
+    top: raster.logicalMinY * s + 'px',
+    width: (raster.pixelWidth / 2) * s + 'px',
+    height: (raster.pixelHeight / 2) * s + 'px',
+    transform: 'rotate(' + turretDeg.value + 'deg)',
+    transformOrigin: raster.pivotX * s + 'px ' + raster.pivotY * s + 'px',
   }
 })
 
@@ -120,9 +128,22 @@ const bakeTurretLayerStyle = computed(() => {
 const renderScale = computed(() => canvasSize.value / VIEWBOX.width)
 const hullLayerStyle = computed(() => hullLayerTransform({ deg: hullDeg.value, renderScale: renderScale.value }))
 const turretLayerStyle = computed(() => {
-  // 无 pivot（turretless / metadata 缺 pivot）时不设置 style（img 也不渲染）
+  // 无 pivot / 无 turretRaster（turretless / 缺契约）时不设置 style（img 也不渲染）
   if (!isTurreted.value || !pivot.value) return null
-  return pivotLayerTransform({ deg: turretDeg.value, pivot: pivot.value, renderScale: renderScale.value })
+  const raster = metadataJson.value?.turretRaster
+  if (!raster) return null
+  // raster overflow contract：turret.webp 画布 = turret+mantlet+完整 gun 的 logical bounds
+  // （可超出 320 画布）——img 以 raster 原点定位，transform-origin = raster 内 pivot。
+  const s = renderScale.value
+  return {
+    position: 'absolute',
+    left: raster.logicalMinX * s + 'px',
+    top: raster.logicalMinY * s + 'px',
+    width: (raster.pixelWidth / 2) * s + 'px',
+    height: (raster.pixelHeight / 2) * s + 'px',
+    transform: 'rotate(' + turretDeg.value + 'deg)',
+    transformOrigin: raster.pivotX * s + 'px ' + raster.pivotY * s + 'px',
+  }
 })
 const pivotStyle = computed(() => {
   if (!pivot.value) return {}

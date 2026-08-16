@@ -1,7 +1,8 @@
 # Tier X 专属俯视车型系统（Battle Playback Vehicle Marker System V2）
 
 > 总计划：docs/current-plan.md（PR1–PR4）。本目录是 PR1 的系统文档与资产生成交接清单。
-> 当前状态：**BLITZKIT_EXTRACTION_READY（Maus 端到端通过）** —— 正式车型 SVG 由 BlitzKit
+> 当前状态：**TIER_X_WEBP_BULK_GENERATION_READY** —— 正式资产 = Source-faithful PBR top-view
+> WebP（BlitzKit LOD0 geometry + 内嵌纹理确定性 bake）；旧 SVG 仅 debug/reference；本 PR 未接 Battle Playback。
 > extractor 从真实模型确定性生成；人工/ChatGPT 只做 visual QA，不绘制 geometry。
 
 ## 业务目标（一句话）
@@ -32,7 +33,7 @@ AI 只做 visual QA；发现错误 → 修 extractor → 重新生成，禁止�
 
 | 路径 | 职责 |
 |---|---|
-| `frontend/src/vehicle-models/types.js` | discriminated union 类型契约 + 统一 viewBox + metadata schema（geometry-source） |
+| `frontend/src/vehicle-models/types.js` | discriminated union 类型契约 + 统一 viewBox + metadata schema（Seometry-source） |
 | `frontend/src/vehicle-models/mapping.js` | 集中静态 Tank ID → baseModelKey（84 辆 → 81 组） |
 | `frontend/src/vehicle-models/assets/<modelKey>/` | 正式 SVG 资产（hull.svg / turret.svg / metadata.json，extractor 生成） |
 | `frontend/src/vehicle-models/validate.js` | validator（CI 与 CLI 共用；正式资产强制 source.provider=blitzkit） |
@@ -115,7 +116,7 @@ docs/assets/tier-x-models/svg-generation-spec.md           # 全局规范（已�
 turret 绕 metadata `turretPivot` 旋转；neutral 灰阶；长炮管允许溢出（Maus 已实测）；
 禁止 script/foreignObject/外部引用/独立 gun 层。**完整规则见 `svg-generation-spec.md`。**
 
-### D. Metadata schema（geometry-source，任务 12）
+### D. Metadata schema（Source-faithful PBR top-view asset）
 
 顶层 5 键：`modelKey / kind / source / turretPivot / generation`；
 `source.provider` 正式资产必须为 `blitzkit`（validator 强制）；`generation.method` 必须为
@@ -169,6 +170,6 @@ BLITZKIT_EXTRACTION_READY（当前：Maus 端到端通过）
 ## 变更记录
 
 - PR1（本 PR）：inventory / mapping / kind 核验 / validator / coverage CI / admin 预览 /
-  **BlitzKit extractor（确定性提取替代 AI 手绘）** / Maus 端到端资产 / 全局 spec / metadata geometry-source schema。
+  **BlitzKit texture baker（确定性 bake 替代 AI 手绘）** / representative batch / 全局 spec / metadata Source-faithful PBR schema。
 - 之后 PR（计划 §55）：PR2 dedicated models in Battle Playback；PR3 状态视觉重设计；
   PR4 玩家/坦克标签与碰撞。

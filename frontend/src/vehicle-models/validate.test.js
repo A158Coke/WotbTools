@@ -24,10 +24,14 @@ const GOOD_META = {
   source: {
     provider: 'blitzkit',
     tankId: 6929,
-    collisionModel: 'https://api.blitzkit.app/tanks/6929/model.glb',
+    modelGlb: 'https://api.blitzkit.app/tanks/6929/model.glb',
     modelDefinitions: 'https://api.blitzkit.app/definitions/models.pb',
   },
   turretPivot: { x: 160, y: 193.23 },
+  turretRaster: {
+    logicalMinX: 120.01, logicalMinY: -19.6, logicalMaxX: 200.19, logicalMaxY: 292.86,
+    pixelWidth: 160, pixelHeight: 625, pivotX: 40, pivotY: 212.8,
+  },
   generation: {
     method: 'blitzkit-model-topdown-texture-bake',
     viewBox: '0 0 320 320',
@@ -75,12 +79,12 @@ describe('validateMetadata', () => {
       validateMetadata({ ...GOOD_META, turretPivot: { x: 999, y: 160 } }, { modelKey: 'maus' }),
     ).not.toEqual([])
   })
-  it('turretless 禁止 turretPivot', () => {
-    const meta = { ...GOOD_META, modelKey: 'ho-ri', kind: 'turretless', turretPivot: undefined }
+  it('turretless 禁止 turretPivot / turretRaster', () => {
+    const meta = { ...GOOD_META, modelKey: 'ho-ri', kind: 'turretless', turretPivot: undefined, turretRaster: undefined }
     expect(validateMetadata(meta, { modelKey: 'ho-ri', expectedKind: 'turretless' })).toEqual([])
     expect(
       validateMetadata(
-        { ...GOOD_META, modelKey: 'ho-ri', kind: 'turretless', turretPivot: { x: 160, y: 160 } },
+        { ...GOOD_META, modelKey: 'ho-ri', kind: 'turretless', turretPivot: { x: 160, y: 160 }, turretRaster: undefined },
         { modelKey: 'ho-ri', expectedKind: 'turretless' },
       ),
     ).not.toEqual([])
@@ -89,7 +93,7 @@ describe('validateMetadata', () => {
     expect(validateMetadata({ ...GOOD_META, extra: 1 }, { modelKey: 'maus' })).not.toEqual([])
     expect(
       validateMetadata(
-        { ...GOOD_META, source: { ...GOOD_META.source, collisionModel: 'not-a-url' } },
+        { ...GOOD_META, source: { ...GOOD_META.source, modelGlb: 'not-a-url' } },
         { modelKey: 'maus' },
       ),
     ).not.toEqual([])
@@ -132,8 +136,9 @@ describe('validateMetadata', () => {
     const sampleMeta = {
       modelKey: 'sample',
       kind: 'turreted',
-      source: { provider: 'manual-contract-sample', tankId: 0, collisionModel: '', modelDefinitions: '' },
+      source: { provider: 'manual-contract-sample', tankId: 0, modelGlb: '', modelDefinitions: '' },
       turretPivot: { x: 160, y: 150 },
+      turretRaster: { logicalMinX: 0, logicalMinY: 0, logicalMaxX: 320, logicalMaxY: 320, pixelWidth: 640, pixelHeight: 640, pivotX: 160, pivotY: 150 },
       generation: { method: 'manual-contract-sample', viewBox: '0 0 320 320' },
     }
     expect(validateMetadata(sampleMeta, { modelKey: 'sample', expectedKind: null })).toEqual([])

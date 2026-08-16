@@ -79,7 +79,7 @@ describe('VehicleModelPreviewPage', () => {
     expect(wrapper.find('.vmp-turret').exists()).toBe(true)
   })
 
-  it('turret img 的 transform-origin 精确等于 maus 非中心 pivot（160,193.23）', async () => {
+  it('turret img 的 transform-origin 精确等于 turretRaster 内 pivot（raster overflow contract）', async () => {
     authState.roles = ['wotbtools-admin']
     authState.authenticated.value = true
     const wrapper = mount(VehicleModelPreviewPage)
@@ -88,9 +88,12 @@ describe('VehicleModelPreviewPage', () => {
     const turretStyle = wrapper.find('.vmp-turret').attributes('style') || ''
     // hull 绕画布中心 (160,160)
     expect(hullStyle).toContain('transform-origin: 160px 160px')
-    // turret 绕 metadata turretPivot (160,193.23)——非画布中心
-    expect(turretStyle).toContain('transform-origin: 160px 193.23px')
+    // turret 绕 turretRaster 内 pivot（maus：pivotX=47.81 pivotY=212.87，相对扩展画布）——非画布中心
+    expect(turretStyle).toContain('transform-origin: 47.81px 212.87px')
     expect(turretStyle).toContain('rotate(0deg)')
+    // turret 层按 raster 原点定位（logicalMinX=112.19；炮管方向 top=-19.64 超出 320 画布）
+    expect(turretStyle).toContain('left: 112.19px')
+    expect(turretStyle).toContain('top: -19.64px')
   })
 
   it('pivot debug marker 位置与 turret 旋转轴一致（同源坐标）', async () => {
@@ -99,11 +102,11 @@ describe('VehicleModelPreviewPage', () => {
     const wrapper = mount(VehicleModelPreviewPage)
     expect(await waitFor(() => wrapper.find('.vmp-pivot').exists())).toBe(true)
     const pivotEl = wrapper.find('.vmp-pivot').attributes('style') || ''
-    // 画布 320px：marker left/top = pivot × scale = 160px 193.23px（maus）
+    // 画布 320px：marker left/top = pivot × scale = 160px 193.23px（maus，画布坐标不变）
     expect(pivotEl).toContain('left: 160px')
     expect(pivotEl).toContain('top: 193.23px')
     const turretStyle = wrapper.find('.vmp-turret').attributes('style') || ''
-    expect(turretStyle).toContain('transform-origin: 160px 193.23px')
+    expect(turretStyle).toContain('transform-origin: 47.81px 212.87px')
   })
 
   it('非 admin 角色显示无权限，不渲染工具栏', async () => {

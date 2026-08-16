@@ -223,6 +223,31 @@
     - 测试：selectDefaultModules（数组最后/缺 model_id 报错）、resolveBakeScenes（alternate
       模块排除/turretless gun 进 hull/无 display name 依赖）、webp 契约、turretBounds 排除
       mantlet——全套 487 全绿；build/分离/validator ALL PASS。
+  - **contract cleanup + bulk generation（2026-08-19，TEXTURE_BAKE_PIPELINE_GENERALIZED = PASS 后）**：
+    - **source 字段语义修正**：`source.collisionModel` → `source.modelGlb`（该 URL 是视觉
+      model.glb，非 collision.glb）——schema/types/validator/baker/tests/docs 全部同步；
+      不保留 compatibility alias（PR 未发布）；
+    - **过时 wording 清理**：types.js / validator / README / spec 中 "geometry-source schema"、
+      "所有正式车型 SVG" 等已过时描述修正为 Source-faithful PBR top-view WebP asset 契约；
+      `visibleDetailRetentionTarget=0.9` 保留但明确为 visual QA target（非
+      geometric-detail-retention guarantee——几何上限 = BlitzKit/WoTB LOD0 source）；
+    - **bulk generation**：全部非 confirmPending baseModelKey（78 辆）确定性生成正式资产
+      （data-driven：tanks.pb + models.pb + mapping.js → selected modules → model_id → GLB nodes）；
+      失败逐辆记录（modelKey/tankId/modules/nodes/stage），修通用 pipeline 不跳过；
+    - **pending 保留**：spht / ac-teichos / nc-70-blyskawica 维持 confirmPending=true 不生成。
+  - **raster overflow contract（2026-08-19，RASTER_GUN_CLIPPING 修复）**：
+    - 根因：baker 沿用 SVG 时代 "fit = hull + turret body、gun allowed overflow"——SVG 可
+      overflow visible，但 WebP/raster 不存在 overflow，长炮管超出固定 640×640 后被永久裁切；
+    - 实测（representative 8 辆）：gun 超出 logical canvas——maus top+19.6u（39px）、
+      leopard-1 +75.5u（151px）、grille-15 +211.9u（424px）、minotauro +129.6u、xm66f +199.3u、
+      fv4005 +48.7u（sheridan 无 clip；ho-ri turretless 单 hull fit 已含 gun）；
+    - **修复**：hull.webp 固定 640×640（320 logical）；turret.webp 画布 = turret+mantlet+完整
+      gun 的 logical bounds（同一 fit.scale，主体不缩放；透明 canvas 向 320 画布外扩展）；
+      metadata 新增 `turretRaster`（logicalMinX/Y、logicalMaxX/Y、pixelWidth/Height、
+      pivotX/pivotY——pivot 相对 turret.webp 原点的逻辑坐标）；types/validator/preview 同步
+      （turret 层按 raster 原点定位 + raster 内 pivot 旋转）；
+    - 验证：grille-15 turret.webp 160×1010（原 640 裁掉 424px 炮管）、xm66f 325×846、
+      minotauro 230×757——全部含完整炮管；hull 保持 640×640；validator/tests/build PASS。
   - **kind 全量核验**：遍历全部 81 baseModelKey，不采用 BlitzKit TURRET module / turretRotationSpeed（casemate 也有 turret module 且转速非零，不可判）；以官方 tankopedia 描述 / fandom wiki / 结构知识逐组核验并修正 3 项——minotauro → turreted（fandom：有炮塔约 45° 限位）、foch-155 → turretless（fandom specs turret=no）、xm66f → turreted（官方：non-fully-rotating turret 前置炮塔）；无法可靠确认的 3 辆（spht / ac-teichos / nc-70-blyskawica）标记 confirmPending（contract 未冻结，第一批不生成）；tier-x-inventory.md 增加全量 kind 核验依据列与修正记录。
   - **turretPivot 旋转数学修正**：预览页不再用 translate 平移近似（旧实现旋转轴实际在 pivot 的镜像点 2C−P）；新增 frontend/src/vehicle-models/pivot.js——img 与 320×320 viewBox 1:1 对齐，transform-origin 直接用 pivot × renderScale，rotate 以 origin 为不动点；pivot.test.js 数学断言非中心 pivot 在 0°/90°/180°/270° 下不动（7 用例）；sample 改非中心 pivot (160,150) 证明实现支持任意 pivot；pivot debug marker 与旋转轴同源坐标。
   - **admin preview 懒加载**：App.vue 静态 import 改为 defineAsyncComponent 动态 import → preview 与全部车型 QA 资产（import.meta.glob）进入独立 chunk，普通用户主 bundle 不含车型资产；新增 scripts/check-bundle-separation.mjs 构建后检查（主入口无 vehicle-models/assets 标记 + 存在独立 preview chunk）。

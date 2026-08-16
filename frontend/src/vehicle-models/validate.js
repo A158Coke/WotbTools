@@ -56,8 +56,8 @@ export function validateSvgText(svgText) {
 }
 
 /**
- * metadata.json 契约校验（geometry-source schema，任务 12/16）。
- * expectedKind 来自 mapping（null = 非映射目录如 sample）。
+ * metadata.json 契约校验（Source-faithful PBR top-view asset）。
+ * expectedKind 来自 mapping（null = 非映射目录）。
  * 正式资产（mapping 内 modelKey）强制 source.provider === 'blitzkit'。
  */
 export function validateMetadata(meta, { modelKey, expectedKind = null }) {
@@ -77,7 +77,7 @@ export function validateMetadata(meta, { modelKey, expectedKind = null }) {
   } else if (expectedKind && meta.kind !== expectedKind) {
     errors.push(`metadata.kind=${meta.kind} 与 mapping ${modelKey}.kind=${expectedKind} 不一致`)
   }
-  // —— source（几何来源契约）——
+  // —— source（BlitzKit 数据源契约：视觉 model.glb + models.pb）——
   const src = meta.source
   if (!src || typeof src !== 'object') {
     errors.push('metadata 必须提供 source（几何来源）')
@@ -92,7 +92,7 @@ export function validateMetadata(meta, { modelKey, expectedKind = null }) {
       if (!Number.isInteger(src.tankId) || src.tankId <= 0) {
         errors.push('source.tankId 必须为正整数')
       }
-      for (const urlKey of ['collisionModel', 'modelDefinitions']) {
+      for (const urlKey of ['modelGlb', 'modelDefinitions']) {
         const u = src[urlKey]
         if (typeof u !== 'string' || u === '') {
           errors.push(`source.${urlKey} 必须为非空字符串`)
@@ -123,8 +123,9 @@ export function validateMetadata(meta, { modelKey, expectedKind = null }) {
     if (gen.notes !== undefined && typeof gen.notes !== 'string') {
       errors.push('generation.notes 必须为字符串')
     }
-    // HIGH-FIDELITY 契约（正式资产强制）：fidelity=high、geometryScale=faithful、
-    // visibleDetailRetentionTarget ∈ (0,1]（contract target，非测量值）
+    // Source-faithful PBR 契约（正式资产强制）：fidelity=high、geometryScale=faithful；
+    // visibleDetailRetentionTarget ∈ (0,1] 仅为 visual QA target（非 geometric-detail-retention
+    // guarantee——几何上限 = BlitzKit/WoTB LOD0 source）
     if (expectedKind) {
       if (gen.fidelity !== 'high') {
         errors.push('正式资产 generation.fidelity 必须为 "high"（HIGH-FIDELITY ASSET）')
@@ -137,6 +138,23 @@ export function validateMetadata(meta, { modelKey, expectedKind = null }) {
         errors.push('正式资产 generation.visibleDetailRetentionTarget 必须在 (0,1]')
       }
     }
+  }
+  // —— turretRaster（raster overflow contract：炮管超出 320 画布的 turret 资产）——
+  if (meta.kind === 'turreted') {
+    const r = meta.turretRaster
+    if (!r || typeof r !== 'object') {
+      errors.push('turreted 必须提供 turretRaster（raster overflow contract）')
+    } else {
+      for (const key of ['logicalMinX', 'logicalMinY', 'logicalMaxX', 'logicalMaxY', 'pixelWidth', 'pixelHeight', 'pivotX', 'pivotY']) {
+        if (typeof r[key] !== 'number' || !Number.isFinite(r[key])) {
+          errors.push(`turretRaster.${key} 必须为有限数字`)
+        }
+      }
+      if (typeof r.pixelWidth === 'number' && r.pixelWidth <= 0) errors.push('turretRaster.pixelWidth 必须 > 0')
+      if (typeof r.pixelHeight === 'number' && r.pixelHeight <= 0) errors.push('turretRaster.pixelHeight 必须 > 0')
+    }
+  } else if (meta.turretRaster !== undefined) {
+    errors.push('turretless 禁止 turretRaster')
   }
   // —— turretPivot ——
   if (meta.kind === 'turreted') {
