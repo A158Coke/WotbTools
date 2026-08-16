@@ -133,6 +133,29 @@
       （无车型专属数值）；
     - 新增 projectTopFacingPolygons 测试（top-facing 过滤/每三角形一 polygon/确定性）——
       extractor 68 用例，全套 456 全绿。
+  - **Information-Loss Audit（2026-08-19，VISUAL_DETAIL_FIDELITY_INSUFFICIENT 取证）**：
+    - 从实际缓存 GLB（6929.glb）解析：37 mesh / 2 材质 / **8 张内嵌 WEBP 纹理**
+      （Maus_mtr：baseColor 2048² + normal 1024² + metallicRoughness 2048² + occlusion 2048²；
+      Maus_track_mtr：256²×4，baseColor 带 alpha）；全部 primitive 有 TEXCOORD_0/1、无顶点色；
+      整车 6,513 三角（BlitzKit 渲染 5,835；mask_01 为 mantlet 重复 mesh 且不在渲染层）；
+    - **几何 vs 纹理分辨率**：实测 texel 密度 hull 5.6mm / turret 3.7mm / tracks 1.8mm，
+      几何顶面中位 5-8cm（hull 最大单面 12.46 m²）——纹理携带 ~15-40× 更细信息；
+      grille/vent/panel line/engine-deck pattern/roof 刻线/机械件阴影 = 纹理独有；
+    - **真值渲染**：从 GLB 重建 320px 正交俯视（z-buffer + baseColor×AO×normal 着色）——
+      silhouette 宽高比 0.418 vs 真实 0.412；正上方可见 = hull 19.44 m² + turret 13.07 m² +
+      hull hide 0.24 m²（1.2%）+ turret hide 0.06 m²；**tracks 可见面积 0（完全被甲板遮挡）**；
+    - **320px 结构分解**：gt 边缘 3,041 px = silhouette 303（SVG 命中 71%）+ 部件色界 532（46.1%）+
+      内部细节 2,377（41.8%）；stage recall：raw 18.7% → merged 18.7% → occlusion 后 30.8%
+      → final 42.2%；纹理独有边缘占 69.2%（几何驱动仅 30.8%）；
+    - **可恢复几何损失定位**：① hide_elements 被收集阶段跳过（BlitzKit TankModel.tsx 源码确认
+      渲染整个子树，无 hide 过滤）——但贡献仅 1.7% 边缘；② tiny/sliver 过滤删除 41+ 条
+      真实长条（110.87×2.77 units ≈ 3.5m×8.7cm 甲板缘条，占车辆面积 13%，内含 15.5% gt 边缘）
+      ——最大可恢复项；③ 2D union 过绘（履带条顶视不可见、mantlet 区域 recall 0%）；
+    - **结论 GEOMETRY_ONLY_FIDELITY_LIMIT_REACHED**：几何-only 现实上限 ≈55-65%
+      （当前 42.2% + 全部可恢复项），无法达到 90% 目标；按指令不再用 geometry heuristics
+      假装恢复纹理信息，本轮不改 pipeline/不调 threshold；审计文档
+      docs/assets/tier-x-models/information-loss-audit.md + debug 渲染产物
+      （_textured-topview-320.png / _svg-raster-320.png / _audit-composite.png 供视觉复核）。
   - **kind 全量核验**：遍历全部 81 baseModelKey，不采用 BlitzKit TURRET module / turretRotationSpeed（casemate 也有 turret module 且转速非零，不可判）；以官方 tankopedia 描述 / fandom wiki / 结构知识逐组核验并修正 3 项——minotauro → turreted（fandom：有炮塔约 45° 限位）、foch-155 → turretless（fandom specs turret=no）、xm66f → turreted（官方：non-fully-rotating turret 前置炮塔）；无法可靠确认的 3 辆（spht / ac-teichos / nc-70-blyskawica）标记 confirmPending（contract 未冻结，第一批不生成）；tier-x-inventory.md 增加全量 kind 核验依据列与修正记录。
   - **turretPivot 旋转数学修正**：预览页不再用 translate 平移近似（旧实现旋转轴实际在 pivot 的镜像点 2C−P）；新增 frontend/src/vehicle-models/pivot.js——img 与 320×320 viewBox 1:1 对齐，transform-origin 直接用 pivot × renderScale，rotate 以 origin 为不动点；pivot.test.js 数学断言非中心 pivot 在 0°/90°/180°/270° 下不动（7 用例）；sample 改非中心 pivot (160,150) 证明实现支持任意 pivot；pivot debug marker 与旋转轴同源坐标。
   - **admin preview 懒加载**：App.vue 静态 import 改为 defineAsyncComponent 动态 import → preview 与全部车型 QA 资产（import.meta.glob）进入独立 chunk，普通用户主 bundle 不含车型资产；新增 scripts/check-bundle-separation.mjs 构建后检查（主入口无 vehicle-models/assets 标记 + 存在独立 preview chunk）。
