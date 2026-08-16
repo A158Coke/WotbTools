@@ -1,0 +1,82 @@
+{
+  "modelKey": "fv4005",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 18001,
+    "modelGlb": "https://api.blitzkit.app/tanks/18001/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160.28,
+    "y": 163.22
+  },
+  "turretRaster": {
+    "logicalMinX": 121.3,
+    "logicalMinY": -48.7,
+    "logicalMaxX": 199.3,
+    "logicalMaxY": 251.58,
+    "pixelWidth": 156,
+    "pixelHeight": 601,
+    "pivotX": 38.98,
+    "pivotY": 211.92
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.6618000268936157,
+        -4.596700191497803
+      ],
+      "max": [
+        1.6450997591018677,
+        3.6897997856140137
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.1472911834716797,
+        -2.2414000034332275
+      ],
+      "max": [
+        1.1479963064193726,
+        1.542299509048462
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.17034512758255005,
+        1.2624067068099976
+      ],
+      "max": [
+        0.16786712408065796,
+        6.594688415527344
+      ]
+    },
+    "selectedModules": {
+      "turretId": 259409,
+      "gunId": 260433,
+      "trackId": 259921,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "FV4005_mtr",
+      "FV4005_mtr",
+      "FV4005_mtr",
+      "FV4005_track_mtr",
+      "FV4005_track_mtr",
+      "FV4005_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

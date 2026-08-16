@@ -1,0 +1,82 @@
+{
+  "modelKey": "bz-75",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 11825,
+    "modelGlb": "https://api.blitzkit.app/tanks/11825/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 159.98,
+    "y": 124.42
+  },
+  "turretRaster": {
+    "logicalMinX": 95.13,
+    "logicalMinY": -41.85,
+    "logicalMaxX": 224.87,
+    "logicalMaxY": 212.7,
+    "pixelWidth": 260,
+    "pixelHeight": 510,
+    "pivotX": 64.85,
+    "pivotY": 166.27
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.7072569131851196,
+        -3.4549551010131836
+      ],
+      "max": [
+        1.7072569131851196,
+        3.7260890007019043
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.65414297580719,
+        -1.479561686515808
+      ],
+      "max": [
+        1.6541433334350586,
+        2.523249626159668
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.12035919725894928,
+        2.5324788093566895
+      ],
+      "max": [
+        0.11928629875183105,
+        5.011777400970459
+      ]
+    },
+    "selectedModules": {
+      "turretId": 16433,
+      "gunId": 19249,
+      "trackId": 19249,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "Ch48_BZ_75_mtr",
+      "Ch48_BZ_75_mtr",
+      "Ch48_BZ_75_mtr",
+      "Ch48_BZ_75_track_mtr",
+      "Ch48_BZ_75_track_mtr",
+      "Ch48_BZ_75_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

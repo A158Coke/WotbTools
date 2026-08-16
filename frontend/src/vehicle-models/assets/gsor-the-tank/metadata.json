@@ -1,0 +1,82 @@
+{
+  "modelKey": "gsor-the-tank",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 25169,
+    "modelGlb": "https://api.blitzkit.app/tanks/25169/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160.02,
+    "y": 152.96
+  },
+  "turretRaster": {
+    "logicalMinX": 102.63,
+    "logicalMinY": -43.24,
+    "logicalMaxX": 217.37,
+    "logicalMaxY": 229.49,
+    "pixelWidth": 230,
+    "pixelHeight": 546,
+    "pivotX": 57.39,
+    "pivotY": 196.2
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.5165998935699463,
+        -3.6384246349334717
+      ],
+      "max": [
+        1.5166007280349731,
+        3.4249837398529053
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.2085007429122925,
+        -0.7799298763275146
+      ],
+      "max": [
+        1.2085007429122925,
+        1.358049750328064
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.1266442984342575,
+        1.142537236213684
+      ],
+      "max": [
+        0.12664398550987244,
+        5.204676628112793
+      ]
+    },
+    "selectedModules": {
+      "turretId": 266833,
+      "gunId": 270161,
+      "trackId": 267857,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "GSOT_mtr",
+      "GSOT_mtr",
+      "GSOT_mtr",
+      "GSOR_track_mtr",
+      "GSOR_track_mtr",
+      "GSOR_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

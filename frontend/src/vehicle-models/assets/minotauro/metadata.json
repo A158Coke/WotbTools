@@ -1,0 +1,82 @@
+{
+  "modelKey": "minotauro",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 10369,
+    "modelGlb": "https://api.blitzkit.app/tanks/10369/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 142.83
+  },
+  "turretRaster": {
+    "logicalMinX": 102.57,
+    "logicalMinY": -129.61,
+    "logicalMaxX": 217.43,
+    "logicalMaxY": 248.87,
+    "pixelWidth": 230,
+    "pixelHeight": 757,
+    "pivotX": 57.43,
+    "pivotY": 272.44
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.636099934577942,
+        -3.8816447257995605
+      ],
+      "max": [
+        1.636099934577942,
+        3.4012820720672607
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.4854209423065186,
+        -2.058332681655884
+      ],
+      "max": [
+        1.4854209423065186,
+        2.745638608932495
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.15652400255203247,
+        2.6715505123138428
+      ],
+      "max": [
+        0.15652400255203247,
+        7.730345249176025
+      ]
+    },
+    "selectedModules": {
+      "turretId": 14977,
+      "gunId": 14465,
+      "trackId": 15233,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "It21_Controcarro3_Minotauro_mtr",
+      "It21_Controcarro3_Minotauro_mtr",
+      "It21_Controcarro3_Minotauro_mtr",
+      "It21_Controcarro3_Minotauro_track_mtr",
+      "It21_Controcarro3_Minotauro_track_mtr",
+      "It21_Controcarro3_Minotauro_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

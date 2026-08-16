@@ -16,6 +16,16 @@
 - **跨站偏好**：主题/语言偏好写 `domain=.wotbtools.com` cookie（`utils/theme.js` 同款写法），localStorage 仅本地开发回退。
 - **versions.json**（`src/data/`）：仅用户可见变更新增条目；`v` 递增不跳号、三语同条目、顶部追加、不改历史条目；纯技术/CI 变更不写。
 - 测试文件与组件同目录（`*.test.js`），`// @vitest-environment happy-dom` 按需声明。
+- **Tier X 专属车型系统**（`src/vehicle-models/`）：Tankopedia Tier X 100% 覆盖由
+  `coverage.test.js` 强制；**正式车型 SVG 由 `scripts/extract-tier-x-model.mjs` 从 BlitzKit
+  真实模型确定性生成**（model.glb + models.pb，节点契约/坐标语义见 spec；禁止 AI/人工绘制 geometry、
+  禁止 patch SVG path——发现问题修 extractor 重新生成）；唯一允许访问 BlitzKit 网络的位置是
+  extractor CLI（production/Battle Playback/CI 均不联网）；生成后跑 `node frontend/scripts/validate-vehicle-models.mjs`
+  自检（正式资产强制 metadata source.provider=blitzkit）；隐藏 QA 页 `?view=vehicle-models`
+  （仅 wotbtools-admin，App.vue 必须保持异步加载——`scripts/check-bundle-separation.mjs` 构建后强制
+  主 bundle 不含车型资产）；图层旋转数学统一走 `src/vehicle-models/pivot.js`
+  （transform-origin = metadata turretPivot，禁止 translate 平移近似，改旋转数学先改 pivot.test.js）；
+  extractor 纯函数改完同步跑 `src/vehicle-models/extractor.test.js`。
 
 ## AI 复盘前端边界
 

@@ -1,0 +1,82 @@
+{
+  "modelKey": "vickers-light",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 19537,
+    "modelGlb": "https://api.blitzkit.app/tanks/19537/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 140.37
+  },
+  "turretRaster": {
+    "logicalMinX": 102.39,
+    "logicalMinY": -39.77,
+    "logicalMaxX": 217.69,
+    "logicalMaxY": 223.99,
+    "pixelWidth": 231,
+    "pixelHeight": 528,
+    "pivotX": 57.61,
+    "pivotY": 180.14
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.4098261594772339,
+        -2.881558418273926
+      ],
+      "max": [
+        1.4098261594772339,
+        3.062756061553955
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.2160412073135376,
+        -1.441391110420227
+      ],
+      "max": [
+        1.217809796333313,
+        1.3946114778518677
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.12993286550045013,
+        1.4566717147827148
+      ],
+      "max": [
+        0.1271483600139618,
+        4.126341342926025
+      ]
+    },
+    "selectedModules": {
+      "turretId": 261201,
+      "gunId": 265297,
+      "trackId": 261713,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "GB_Vickers_Light_105_mtr",
+      "GB_Vickers_Light_105_mtr",
+      "GB_Vickers_Light_105_mtr",
+      "GB_Vickers_Light_105_track_mtr",
+      "GB_Vickers_Light_105_track_mtr",
+      "GB_Vickers_Light_105_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

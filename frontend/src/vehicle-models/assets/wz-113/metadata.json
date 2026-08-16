@@ -1,0 +1,82 @@
+{
+  "modelKey": "wz-113",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 5425,
+    "modelGlb": "https://api.blitzkit.app/tanks/5425/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 183.46
+  },
+  "turretRaster": {
+    "logicalMinX": 112.1,
+    "logicalMinY": -70.21,
+    "logicalMaxX": 207.19,
+    "logicalMaxY": 238.65,
+    "pixelWidth": 190,
+    "pixelHeight": 618,
+    "pivotX": 47.9,
+    "pivotY": 253.67
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.6701990365982056,
+        -4.26168966293335
+      ],
+      "max": [
+        1.6703970432281494,
+        3.588195323944092
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.3351601362228394,
+        -1.8556767702102661
+      ],
+      "max": [
+        1.3156280517578125,
+        1.531797170639038
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.24799898266792297,
+        0.29861998558044434
+      ],
+      "max": [
+        0.248198002576828,
+        6.754024505615234
+      ]
+    },
+    "selectedModules": {
+      "turretId": 9521,
+      "gunId": 9009,
+      "trackId": 9777,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "wz_113",
+      "wz_113",
+      "wz_113",
+      "wz_113_track",
+      "wz_113_track",
+      "wz_113_track"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

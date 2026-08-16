@@ -280,6 +280,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 - `?view=boost`：进入陪练、打手申请与管理员资格审批页。
 - `?view=profile`：进入个人中心。
 - `?view=admin-users`：进入管理员用户管理（仅 `wotbtools-admin` 角色可见）。
+- `?view=vehicle-models`：隐藏 QA 页——Tier X 专属俯视车型资产预览（Source-faithful PBR WebP，仅 `wotbtools-admin`，无导航入口，深链可进；系统文档见 `docs/assets/tier-x-models/README.md`）。
 - `?view=login`：前端登录选择页（中国大陆 QQ / 亚服 Wargaming 两个入口；未登录访问个人中心时也会展示该页）。
 - `?view=reconstruction`：进入 AI 复盘页。入口（顶栏按钮 + 首页卡片）随时可见，不做角色门控；`ReconstructionPage` 挂载时检查登录，未登录自动 `login('reconstruction')` 跳转登录页并在登录后回到本页。页面只提供「选择回放文件 → 开始 AI 复盘 → 展示结果」，不再展示重建过程与任意时刻状态查询。
 - `?view=version`：进入版本历史页（`VersionPage.vue`，读取 `frontend/src/data/versions.json` 渲染，顶栏「更新历史」入口）。
@@ -435,5 +436,7 @@ cd frontend && npm test
 | 回放数据字典 | `docs/reference/replay-data.md` | 深入回放格式 / 字段时 |
 | 已确认字段字典 | `docs/reference/replay-parsed-fields.md` | 查字段含义时 |
 | 地图目录 | `docs/reference/maps.md` | 加地图素材时 |
+| Tier X 专属车型系统（资产交接） | `docs/assets/tier-x-models/README.md` | 改车型系统 / 生成资产 / 交接时 |
+| Tier X 车型资产全局规范 | `docs/assets/tier-x-models/svg-generation-spec.md` | 生成/修复车型资产（WebP bake）时 |
 | 逆向研究（protocol / turret / visibility / capture-probe） | `docs/research/replay/*.md` | 逆向 packet / 方向 / 可见性 / 占点时 |
 | 观测运维 | `docs/operations/observability.md` | 动监控 / 日志 / 保留策略时 |

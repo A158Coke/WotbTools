@@ -4,6 +4,276 @@
 
 ## [Unreleased]
 
+### Added
+- **Tier X 专属俯视车型系统（PR1：ASSET_GENERATION_READY）**：新增 frontend/src/vehicle-models/ 集中静态 mapping（common/tankopedia-tier10.json 84 辆 Tier X → 81 个 baseModelKey，skin/特殊版本复用基础模型：sheridan / kpz-70 / type-5-heavy 三组合并）与 discriminated union 类型契约（turreted 必配 turret + turretPivot，turretless 禁止）；统一 SVG viewBox 320×320 技术契约 + metadata.json schema（8 键）；validator（validate.js，CI 与 CLI 共用）与 Tier X 100% 覆盖门禁（coverage.test.js：新增 Tier X 无 mapping → CI FAIL、mapping 孤儿/未知引用/半成品资产目录均 FAIL）；契约样例资产 assets/sample/；BlitzKit 辅助脚本（frontend/scripts/blitzkit-references.mjs，参考图 URL 已验证并缓存 84 张，gitignored）与 CLI 自检（validate-vehicle-models.mjs）；隐藏 admin QA 页 ?view=vehicle-models（仅 wotbtools-admin，车体/炮塔旋转 + pivot + 状态叠加预览，复用生产 BattlePlayback 渲染方式）；文档 docs/assets/tier-x-models/（README 交接清单 + 全局 SVG 生成规范 + 生成的 84 辆 inventory）。正式车型 SVG 由 ChatGPT 按规范生成，到达 ASSET_GENERATION_READY Gate 后暂停（本 PR 不含正式车型资产）。
+
+### Changed
+- **PR1 资产生成路线切换：BlitzKit 确定性提取（替代 AI 手绘）**：
+  - 新增 `frontend/scripts/extract-tier-x-model.mjs`（extractor）+ `extractor-lib.mjs`（纯函数库）+
+    `protos/models.proto`（BlitzKit 官方 schema，字段号一致）：tankId → model.glb + models.pb +
+    tanks.pb → 节点分组（复刻 TankModel.tsx 契约：`hull`/chassis_track_*/turret_{id:02d}/
+    gun_{id:02d}(+_mask)，排除 *_hide_elements*）→ 俯视投影 → 分组凸包 silhouette → 统一 fit
+    320×320 → hull.svg/turret.svg/metadata.json；turretPivot 由 turret_origin 经 correctZYTuple
+    自动投影（同一 fit 变换）；网络仅存在于 developer CLI（缓存 gitignored，失败显式报错不 fallback）。
+  - **坐标语义（源码+实测确认）**：GLB 顶点 = 模型坐标（x宽/y长 forward=+y/z高）；models.pb origin =
+    引擎坐标（x宽/y高/z长）；correctZYTuple(x,y,z)=(x,z,y)；默认配置 = turrets/tracks/guns 数组最后
+    （BlitzKit tankToDuelMember）。差异报告：collision.glb 是装甲碰撞网格（{part}_armor_{N}），
+    分层车型模型是 model.glb（Maus 实测 77 节点）。
+  - **metadata schema 切换 geometry-source**：顶层 5 键 modelKey/kind/source/turretPivot/generation；
+    正式资产强制 source.provider=blitzkit + generation.method=blitzkit-model-topdown-extraction
+    （validator 强制）；sample 更新为新 schema。
+  - **extractor 2D geometry 修复（Blocker 1-4，Maus 真实 silhouette）**：
+    - Blocker 1：禁用全局 convex hull（会把 Maus 压成矩形）；改为 projected triangle polygon union
+      （polygon-clipping）——POSITION+INDEX 读取、节点/世界矩阵应用、top-down 投影、退化三角形过滤、
+      精确 union（保留全部凹轮廓与洞）、轻量共线简化、evenodd SVG path；Maus hull 轮廓 64 顶点
+      （含履带裙板阶梯与首上装甲细节，非矩形）。
+    - Blocker 2：collectTriangles 递归过滤 *_hide_elements*（此前 turret_01_hide_elements 细长条
+      被错误并入炮塔）；方向自洽证据：炮盾（gun_01_mask）在座圈前方 → 车头=+y，炮管从炮塔前端伸出；
+      turret 证据输出（raw bbox/center/origin/final SVG 顶点数）。
+    - Blocker 3：gun_{id}_mask（mantlet 炮盾）归入 turret 层（TankModel.tsx 源码确认 mask 与 gun 同层
+      渲染，但静态 0° 它是炮塔正面轮廓）——gun 层仅炮管（Maus gun tris 70，silhouette 细管不扩大）。
+    - Blocker 4：generation.method 更名 blitzkit-model-topdown-extraction（schema/validator/sample/docs/tests 同步）。
+- **extractor 视觉信息密度（Layer B 结构细节，Maus Visual Detail）**：
+  - 在真实 silhouette（Layer A）之上新增 deterministic 结构细节：top-facing major surfaces
+    （三角形法线 z>0.35 + 高度层聚类 zTolerance=0.5 → 区域色块：主甲板/屋顶/裙板层）与
+    major structural edges（surface-edge 平台边缘 / height 高度差 / normal 辅助；
+    minEdgeLenM=1.5 + 屏幕空间过滤 minDetailPx=0.8 ≈ 1px@28px）。
+  - Maus hull.svg：履带独立深色区域、主甲板层（含真实炮塔座圈凹口）、前装甲带、车尾结构孔洞、
+    28 条结构边（≥1.5m，非 wireframe）；turret.svg：屋顶层色块、炮盾（mantlet）独立区域、8 条结构边、
+    细炮管——320px 一眼可辨 Maus（宽履带/宽车体/座圈位置），28px 主色块可读不糊噪。
+  - extractor-lib 新增：triangleNormal / extractTopSurfaces / extractMajorEdges（含 multi-owner 边修复）
+    / minSvgUnits / surfacesToSvgPaths / edgesToSvgPath；svgDocument 支持 stroke/strokeWidth/fill-rule。
+  - metadata.generation 增加 detailMethod=top-surface-and-major-edge-extraction + detailThresholds；
+    debug artifacts（silhouette/top-surfaces/major-edges/final/extraction-report）输出到 gitignored 缓存。
+  - 新增 14 用例（top-facing 判定/高度层聚类/碎片过滤/平台边缘/共享边去重/短边过滤/格栅过滤/
+    确定性/分层正确性/wireframe 上限/pivot 稳定）。
+  - **Layer B V2「少而强」修复（2026-08-18，Maus Visual Gate 第二轮）**：
+    - simplifyRing 退化修复：polygon-clipping 的 ring 含相邻/闭合重复点，重复点使叉积退化 → 真实角点
+      被误删（Maus glacis 全宽带塌成细条、turret 环带塌成发丝线）——先按坐标去重再简化，bbox 不变；
+      屏幕空间过滤改用简化后的 ring（与实际渲染一致），发丝状退化 polygon 正确剔除。
+    - 凸起显著性过滤（bumpSignificanceRatio=0.1）：层内凸起面积占比过低的碎块 = 粗糙网格面片伪影
+      （Maus turret 屋顶 16 个 0.6m 面片块 + 2 条退化长条）→ 丢弃；只保留有语义的大特征
+      （hatch / cupola / 甲板条带）——turret 凸起从 20 个噪块收敛为 4 个真实特征。
+    - 结构边聚类去重（clusterEdges）：角度差 ≤5° 且中点距离 ≤0.5m 视为同一条结构线只留最长一条
+      （Maus 前甲板 4 条交叉斜线 X 形噪纹 → 1 条）；先聚类再按投影长度截断（hull ≤8 / turret ≤6）。
+    - hull 绘制顺序调整：主面 → 履带（深色侧带覆盖在主面之上可见）→ 凸起 → 结构边。
+    - Maus 资产更新：glacis 带恢复全宽 109×60px、turret 环带 20×133px、履带侧带可见；
+    - Maus 资产更新：glacis 带恢复全宽 109×60px、turret 环带 20×133px、履带侧带可见；
+      新增 8 用例（simplifyRing 去重回归/bbox 不变、bump 显著性、clusterEdges 聚类/保留）。
+  - **HIGH-FIDELITY ASSET 方向调整（2026-08-18，PR1 资产生成最终策略）**：
+    - 目标从"为 20-30px marker 主动简化"改为"高保真俯视资产 + 未来 runtime LOD"：
+      asset 保存真实比例与可见结构（retention target ≥ 90%），小尺寸显示交给后续 runtime LOD；
+      本 PR 不实现 runtime LOD，但 SVG 已按 detail-level grouping 输出结构准备。
+    - **删除 aggressive 过滤**：bumpSignificanceRatio（相对占比过滤）、edges 数量上限
+      （hull ≤8 / turret ≤6）、按 28px marker 的 minDetailPx 过滤——全部移除；
+      保留 clusterEdges（duplicate/overlapping 去重，收紧 angleDeg 5°/maxDistM 0.2m）与 simplifyRing 修复。
+    - **凸起判据改为局部不连续**（bumpHeightDeltaM=0.06）：层内凸起面经共享边连通成分量，
+      分量与外界无共享边（隔离：cupola/hatch 隔垂直壁）或共享边高度差显著（台阶带）→ 保留；
+      连续斜面面片（tessellation）剔除。真实 hatch 即使只占屋顶 3-5% 也保留
+      （Maus 甲板 2 个侧舱盖 + 中央舱盖 + turret cupola 全部恢复）。
+    - **feature edge 判据收紧**：normalDeltaCos 0.92 → 0.995（~5.7°，剔除同一平滑曲面内
+      tessellation 对角线）；surface-edge 要求显著壁高（> heightDeltaM，用壁面顶点 z 跨度而非重心）；
+      minEdgeLenM 1.5 → 1.0（保留 hatch/panel 级边缘）；无数量上限
+      （Maus hull 18-20 条、turret 6-7 条全为真实结构边）。
+    - **detail-level grouping**：SVG 输出 <g class="vehicle-primary / vehicle-secondary /
+      vehicle-micro-detail">（classifyDetail：silhouette/tracks/mantlet/gun/大型 deck-roof → primary；
+      hatch/cupola/vents/engine deck plates/≥3m 边界 → secondary；小 hatch/小屋顶结构 → micro）。
+    - **asset-space 微噪声过滤**：minDetailUnits=0.3（320 viewBox units）+ sliver 判定
+      （宽高比 >12 且窄边 <0.15m 的退化狭长 polygon 剔除，如 turret 68×2.5 units 细条）。
+    - **fidelity 契约**：metadata.generation 增加 fidelity='high' / geometryScale='faithful' /
+      visibleDetailRetentionTarget=0.9（contract target，非测量值）；validator 对正式资产强制。
+    - **debug evidence 扩展**：all-visible-surfaces / retained-surfaces / removed-tiny-details /
+      feature-edges / final-high-fidelity + extraction-report 统计
+      （visible/retained/removed regions、edges、primary/secondary/micro path 数）。
+    - Maus 资产：hull.svg 11.1KB 82 paths（primary 48 / secondary 33 / micro 1）、
+      turret.svg 4.8KB 35 paths（primary 10 / secondary 24 / micro 1）；
+      甲板/glacis/后带/裙板 + 舱盖×3 + 前带 + 后带 + 履带 + 20 结构边；
+      turret 主体/环带/台阶带/cupola/16 屋顶面片块（真实模型凸起，归 secondary/micro）/mantlet/gun + 6 边。
+    - 测试：删除 edges 上限 / bump 显著性 / minDetailPx 相关用例，新增 tessellation 边剔除、
+      surface-edge 壁高、bump 分量判据、classifyDetail 分级、faithful scale（gun 宽度无夸大）、
+      fidelity 契约等 14 类用例——extractor 59 用例，全套 447 全绿。
+    - 32 行 spec 重写为 "Asset fidelity first. Runtime readability handled later."。
+  - **视觉表面合并 + 遮挡过滤（2026-08-18，Maus High-Fidelity Gate Blocker 1/2/4）**：
+    - mergeVisualSurfaces：model.glb 的 triangle tessellation / low-poly topology 按共享 3D 边 +
+      法线差 ≤20° + 高度差 ≤0.4m 合并为视觉连续表面——连续 roof/deck/环带斜面是一个/少量
+      polygon，绝不输出三角马赛克（Maus turret ring 61→6 表面、roof 297→34、deck 205→79）；
+      真实结构分离（height step / vertical wall / gap / strong normal break / isolated feature）
+      保持独立表面——hatch/cupola/台阶带/面板自然成为独立表面，删除 zMean 切斜面机制；
+    - filterOccludedSurfaces：俯视可见性顶层优先，被高处表面完全覆盖的 hidden geometry
+      （甲板下方的裙板固定件等）剔除（Maus hull 122→31 表面、turret 22→19）；
+    - Maus 资产：hull.svg 6.4KB 36 paths（primary 6 / secondary 6 / micro 24）、
+      turret.svg 7.2KB 24 paths（primary 7 / secondary 9 / micro 8）——
+      turret 屋顶单一连续区域（无面片块马赛克）、环带合并为两条、甲板/glacis/后带/舱盖/
+      cupola/侧裙板条等真实结构保留；
+    - extraction-report 增加 merge 统计（rawProjectedRegions / mergedVisualSurfaces /
+      tessellationRegionsMerged / retainedRegions / removedTinyRegions）；
+      小凸起保留/遮挡过滤/确定性/无旧 bump 色）——extractor 61 用例，全套 449 全绿。
+  - **fidelity correctness audit（2026-08-18，Blocker 1/2/3/4）**：
+    - turret 比例审计：models.pb turret bounding_box（引擎坐标 ±1.534 / -2.374..2.149 / -0.034..1.497）
+      与 turret_01 mesh bbox（模型坐标 ±1.534 / -3.519..1.004 / 2.106..3.638）长度一致（4.523m），
+      差 = turretOrigin；最终 SVG turret 主体 bbox 比例 1.469 vs source 1.474（误差 0.4%）——
+      纵向长度真实，无异常拉长（新增 bbox projection fidelity 测试锁定）；
+    - over-merge 审计：merge 边连续性统计（每 large surface 的合并边 maxDz/maxAng、
+      dz>0.15/ang>10° 计数）——Maus 主甲板平坦（z 2.12 恒定）、前/后带与环带均为连续斜面，
+      无跨真实结构边界合并（真实台阶隔垂直壁 → 顶面不共享边 → 天然分离）；
+    - feature-fidelity-report.json（developer-only）：按 z 带/相对位置/面积自动分类
+      top-view 结构类别（upper-deck/glacis/engine-deck/hatch/roof/ring 等），每类标记
+      detected/retained/面积/mergedInto/sourceBBox——glacis 7→3、engine 4→3、roof 1→1、
+      ring 6→3（被 roof 遮挡的面片块正确剔除），无大结构消失；
+    - source-vs-output debug：source-top-projection.svg（raw top-facing triangle projection，无 merge/无过滤——显示 source 三角化结构）/
+      merged-surfaces.svg / final-hull.svg / final-turret.svg；
+    - 新增测试：独立组件不合并、低噪声高度差合并、真实 deck step 不合并、
+      bbox projection fidelity、feature report 确定性——extractor 66 用例，全套 454 全绿。
+  - **fidelity audit 循环论证 / 硬编码修复（2026-08-18，Review Blocker 1/2）**：
+    - source-top-projection.svg 改为真正的 raw ground truth：每个 top-facing 三角形独立投影
+      （projectTopFacingPolygons，无 merge / 无遮挡 / 无过滤——显示 source 三角化结构，
+      Maus 808 个三角形 path）；旧实现误用 mergeVisualSurfaces 输出（循环论证）已修正；
+    - feature-fidelity-report 移除 Maus 专属硬编码 bounds：hull/turret bounds 由真实投影
+      计算（bounds2D(polyPoints)）传入；buildFeatureAudit fallback 从 source 几何推断
+      （无车型专属数值）；
+    - 新增 projectTopFacingPolygons 测试（top-facing 过滤/每三角形一 polygon/确定性）——
+      extractor 68 用例，全套 456 全绿。
+  - **Information-Loss Audit（2026-08-19，VISUAL_DETAIL_FIDELITY_INSUFFICIENT 取证）**：
+    - 从实际缓存 GLB（6929.glb）解析：37 mesh / 2 材质 / **8 张内嵌 WEBP 纹理**
+      （Maus_mtr：baseColor 2048² + normal 1024² + metallicRoughness 2048² + occlusion 2048²；
+      Maus_track_mtr：256²×4，baseColor 带 alpha）；全部 primitive 有 TEXCOORD_0/1、无顶点色；
+      整车 6,513 三角（BlitzKit 渲染 5,835；mask_01 为 mantlet 重复 mesh 且不在渲染层）；
+    - **几何 vs 纹理分辨率**：实测 texel 密度 hull 5.6mm / turret 3.7mm / tracks 1.8mm，
+      几何顶面中位 5-8cm（hull 最大单面 12.46 m²）——纹理携带 ~15-40× 更细信息；
+      grille/vent/panel line/engine-deck pattern/roof 刻线/机械件阴影 = 纹理独有；
+    - **真值渲染**：从 GLB 重建 320px 正交俯视（z-buffer + baseColor×AO×normal 着色）——
+      silhouette 宽高比 0.418 vs 真实 0.412；正上方可见 = hull 19.44 m² + turret 13.07 m² +
+      hull hide 0.24 m²（1.2%）+ turret hide 0.06 m²；**tracks 可见面积 0（完全被甲板遮挡）**；
+    - **320px 结构分解**：gt 边缘 3,041 px = silhouette 303（SVG 命中 71%）+ 部件色界 532（46.1%）+
+      内部细节 2,377（41.8%）；stage recall：raw 18.7% → merged 18.7% → occlusion 后 30.8%
+      → final 42.2%；纹理独有边缘占 69.2%（几何驱动仅 30.8%）；
+    - **可恢复几何损失定位**：① hide_elements 被收集阶段跳过（BlitzKit TankModel.tsx 源码确认
+      渲染整个子树，无 hide 过滤）——但贡献仅 1.7% 边缘；② tiny/sliver 过滤删除 41+ 条
+      真实长条（110.87×2.77 units ≈ 3.5m×8.7cm 甲板缘条，占车辆面积 13%，内含 15.5% gt 边缘）
+      ——最大可恢复项；③ 2D union 过绘（履带条顶视不可见、mantlet 区域 recall 0%）；
+    - **结论 GEOMETRY_ONLY_FIDELITY_LIMIT_REACHED**：几何-only 现实上限 ≈55-65%
+      （当前 42.2% + 全部可恢复项），无法达到 90% 目标；按指令不再用 geometry heuristics
+      假装恢复纹理信息，本轮不改 pipeline/不调 threshold；审计文档
+      docs/assets/tier-x-models/information-loss-audit.md + debug 渲染产物
+      （_textured-topview-320.png / _svg-raster-320.png / _audit-composite.png 供视觉复核）。
+  - **Phase A — geometry correctness cleanup（2026-08-19，A1/A2/A3）**：
+    - **A1 hide_elements 纳入**：collectTriangles 不再跳过 *_hide_elements* 子树（BlitzKit
+      TankModel.tsx 渲染整个子树）——collectNodeTriangles/groupRenderNodes 移入 extractor-lib
+      （可测试）；mask_01 等无关顶层节点仍由顶层名匹配天然排除（无名字黑名单）；
+      Maus hull 原始 top-facing 450→571、turret 358→383；
+    - **A2 sliver 规则替换为几何退化判定**：filterDegeneratePolys（自交 ring / near-zero 面积 /
+      bbox 窄边 <5mm 数值 sliver / 完全重合重复）——3.5m×8.7cm 真实甲板缘条保留
+      （旧规则按纵横比误删，审计 15.5% gt 边缘所在）；removedTinyRegions 0；
+    - **A3 视觉层改真实 z-buffer 可见性**：rasterVisibility（逐像素 z-buffer + 面内 z 插值 +
+      surface 级分组累计赢家像素）；tracks 顶视可见 0 → 不再画 2D union 深色条；mantlet/gun
+      只画顶视可见表面（mantlet 区域 recall 0%→40.9%）；结构边按沿线多点采样可见比例过滤；
+      silhouette 契约仍由完整几何 union 提供（metadata bounds 不变，pivot 不变）；
+    - **recall 重新评估**：旧 42.2% 含水分（track 条 +6.2pp + 过绘小件碰巧命中 ~9pp）——
+      无水分真实几何 recall ≈26.6% = 几何驱动 gt 边缘（937）的 86% 覆盖；旧值 42.2% 中
+      的过绘区域在 gt 中确认为被遮挡结构（z-buffer 赢家均为 hullMain/turretMain）；
+    - 测试：collectNodeTriangles/groupRenderNodes（hide 采集/mask 排除）、filterDegeneratePolys
+      （长条保留/数值 sliver/自交/重复/面积）、rasterVisibility（完全遮挡/部分可见/对齐/
+      groups/确定性）——extractor 82 用例，全套 470 全绿；Maus 资产重生成（hull.svg 78 paths
+      无 track 色、turret.svg 40 paths）。
+  - **Phase B — Maus-only texture-baked prototype（2026-08-19，Texture-Baked High-Fidelity）**：
+    - **texture-bake-lib.mjs**（新，纯函数）：bakeTopView（1280² 确定性正交俯视 z-buffer +
+      barycentric UV + wrap bilinear 采样 + MASK alpha test + baseColor×occlusion×normal-z
+      起伏 + 0.75 中性化）+ encodePng（手写 PNG，zlib）；无 dynamic light/shadow/gloss/
+      outline——所有视觉信息来自 GLB 真实几何+材质+纹理；
+    - **bake-tier-x-topview.mjs**（新 CLI）+ decode-webp.py（PIL 解码 WEBP，developer-only）：
+      GLB → 分组（含 hide）→ 6 张内嵌纹理 → hull/turret 独立 bake（640×640 physical /
+      320×320 logical，fit 与 extractor 严格一致 scale=31.1729 → turretPivot 不变）→
+      RGBA WebP + bake-report.json + debug 通道图（source-color/normal/ao）；
+    - **结果**：hull 30KB / turret 14KB（640² WebP，q90）；**bake recall 81.0%@thr18 /
+      93.7%@thr12 vs geometry-only 26.6%**（同阈值同 gt）——明显突破 geometry ceiling；
+      区域：hull 86.2% / turret 64.8% / mantlet 80.3%；
+    - **装饰检查 STRUCTURAL_TEXTURE**：Maus baseColor 中性基础贴图（饱和度 mean 0.071、
+      >0.25 像素仅 0.4%、无迷彩/徽章/文字）——可直接使用，bake 仍 0.75 去色双保险；
+    - **prototypes/maus/**（入库小文件）：hull-high-fidelity.webp / turret-high-fidelity.webp /
+      reference-topview.webp / bake-report.json（含 recall/装饰分析/资产大小）；
+    - **QA 页对比区**：admin preview 增加 A(geometry SVG) / B(texture bake) / C(reference)
+      三列对比 + 320/128/64/28/24/20 尺寸档（仅 maus 显示；主包不受影响）；
+    - 测试：UV 插值/采样确定性/alpha cutoff/z-buffer topmost/hull-turret 分离/pivot 不变/
+      透明背景/稳定 hash/纹理缺失受控/无网络——texture-bake 13 用例，全套 483 全绿；
+    - **Gate 判据待 ChatGPT review**：fidelity 81-94% 达 >=85% 目标区间，但 turret 区域
+      （64.8%）与 precision（65-68%）仍需视觉复核；prototype 未冻结为正式资产契约。
+  - **bake pipeline 泛化 + 正式契约迁移（2026-08-19，TEXTURE_BAKE_PIPELINE_NOT_GENERALIZED）**：
+    - **产品契约更新**：正式定义为 "Source-faithful PBR top-view asset"——geometry proportions
+      faithful、geometry detail 上限 = BlitzKit/WoTB LOD0 source、visual fidelity 由 source PBR
+      （baseColor/normal/occlusion/alpha）恢复；删除"恢复高精度 geometry / ≥90% geometric
+      retention"等误导表述（90% 仅作 visual comparison QA，不再描述为 geometric detail retention）；
+    - **泛化 bake CLI**：移除 hardcoded root/节点推断——数据驱动（tanks.pb + models.pb +
+      mapping.js）：selectDefaultModules（turrets/tracks/guns 数组最后，BlitzKit tankToDuelMember
+      语义，不假设 turret_01/gun_01）、resolveBakeScenes（turreted/turretless contract）；
+      decodePb/mapGet/proto 共享到 extractor-lib（extractor CLI 与 bake CLI 复用）；
+    - **turreted contract**：hull.webp（hull+tracks）+ turret.webp（selected turret+mantlet+gun）
+      独立 z-buffer/bake；turretPivot 由 models.pb turretOrigin 投影（与 extractor 同公式）；
+    - **turretless contract**：ho-ri 单 hull.webp（casemate，gun 全部 bake 进 hull），无 turret
+      layer/pivot；grille-15 为 limited-traverse 炮塔 TD（BlitzKit models.pb turret yaw ±65°
+      权威数据）→ turreted visual layer（同 minotauro/xm66f ±45°）；kind 判定以 BlitzKit 数据
+      为 source of truth（yaw 无限制/null=全旋转、±45°~±65°=limited turret、±7°=casemate）；
+    - **PBR 检查**：metallic/roughness 纹理存在但顶视中性 bake 无 specular → 报告后不加入（§5）；
+      输出保持 0.75 去色 + 保留纹理结构（grille/panel/vent/AO/relief）；
+    - **正式资产契约迁移**：assets/<modelKey>/{hull,turret}.webp + metadata.json + bake-report.json
+      （640×640 physical / 320×320 logical）；types/validator/preview/tests 全部同步；旧 SVG 仅
+      debug（extractor CLI 默认输出 gitignored 缓存）；sample/prototypes 目录删除；
+    - **representative batch（8 辆）**：Maus/Leopard 1/Grille 15/Ho-Ri/Minotauro/XM66F/FV4005/
+      Sheridan 全部生成并通过 validator——turretless 无 turret.webp/pivot；pivot 各异（含非中心
+      160.28,163.22）；hull 15-35KB / turret 11-25KB；全部 6 张纹理采样；
+    - 测试：selectDefaultModules（数组最后/缺 model_id 报错）、resolveBakeScenes（alternate
+      模块排除/turretless gun 进 hull/无 display name 依赖）、webp 契约、turretBounds 排除
+      mantlet——全套 487 全绿；build/分离/validator ALL PASS。
+  - **contract cleanup + bulk generation（2026-08-19，TEXTURE_BAKE_PIPELINE_GENERALIZED = PASS 后）**：
+    - **source 字段语义修正**：`source.collisionModel` → `source.modelGlb`（该 URL 是视觉
+      model.glb，非 collision.glb）——schema/types/validator/baker/tests/docs 全部同步；
+      不保留 compatibility alias（PR 未发布）；
+    - **过时 wording 清理**：types.js / validator / README / spec 中 "geometry-source schema"、
+      "所有正式车型 SVG" 等已过时描述修正为 Source-faithful PBR top-view WebP asset 契约；
+      `visibleDetailRetentionTarget=0.9` 保留但明确为 visual QA target（非
+      geometric-detail-retention guarantee——几何上限 = BlitzKit/WoTB LOD0 source）；
+    - **bulk generation**：全部非 confirmPending baseModelKey（78 辆）确定性生成正式资产
+      （data-driven：tanks.pb + models.pb + mapping.js → selected modules → model_id → GLB nodes）；
+      失败逐辆记录（modelKey/tankId/modules/nodes/stage），修通用 pipeline 不跳过；
+    - **pending 保留**：spht / ac-teichos / nc-70-blyskawica 维持 confirmPending=true 不生成。
+  - **raster overflow contract（2026-08-19，RASTER_GUN_CLIPPING 修复）**：
+    - 根因：baker 沿用 SVG 时代 "fit = hull + turret body、gun allowed overflow"——SVG 可
+      overflow visible，但 WebP/raster 不存在 overflow，长炮管超出固定 640×640 后被永久裁切；
+    - 实测（representative 8 辆）：gun 超出 logical canvas——maus top+19.6u（39px）、
+      leopard-1 +75.5u（151px）、grille-15 +211.9u（424px）、minotauro +129.6u、xm66f +199.3u、
+      fv4005 +48.7u（sheridan 无 clip；ho-ri turretless 单 hull fit 已含 gun）；
+    - **修复**：hull.webp 固定 640×640（320 logical）；turret.webp 画布 = turret+mantlet+完整
+      gun 的 logical bounds（同一 fit.scale，主体不缩放；透明 canvas 向 320 画布外扩展）；
+      metadata 新增 `turretRaster`（logicalMinX/Y、logicalMaxX/Y、pixelWidth/Height、
+      pivotX/pivotY——pivot 相对 turret.webp 原点的逻辑坐标）；types/validator/preview 同步
+      （turret 层按 raster 原点定位 + raster 内 pivot 旋转）；
+    - 验证：grille-15 turret.webp 160×1010（原 640 裁掉 424px 炮管）、xm66f 325×846、
+      minotauro 230×757——全部含完整炮管；hull 保持 640×640；validator/tests/build PASS。
+  - **turretRaster schema 去重（2026-08-19，PR2 runtime contract）**：
+    - 删除 `generation.turretRaster`（重复内容）——authoritative runtime geometry contract
+      只保留顶层 `metadata.turretRaster`（PR2 用顶层做 asset positioning / transform-origin；
+      generation 只保存生成审计数据）；baker/types/validator/69 辆 turreted metadata/tests/docs
+      全部同步（deterministic regeneration）；
+    - validator 新增：generation 内出现 turretRaster → FAIL（防 schema 漂移）；
+      turretRaster.pixelWidth/pixelHeight 与实际 turret.webp 尺寸一致（解析 WebP 头）；
+      pivotX/pivotY 落在 image-local raster bounds 内；turretPivot 与 raster 数学映射一致
+      （pivot = logicalMin + image-local pivot，容差 0.11）；
+    - 验证：69 turreted 全部迁移成功（top-level turretRaster=69、generation 残留=0）、
+      9 turretless 未受影响；validator ALL PASS；490 tests PASS（+3 schema 漂移用例）；
+      build + bundle separation PASS；CI（7047ebd）6/6 PASS。
+  - **review-with-docs 清理（2026-08-19）**：
+    - 删除真死代码：extractor-lib `bumpsToSvgPaths` / `minSvgUnits`（bump 概念删除后残留、
+      全仓零引用）、types.js `GENERATION_METHOD_EXTRACTION`（lib 硬编码字符串，常量零引用）；
+      保留假死项：convexHull2D / hullToPath / filterOccludedSurfaces / toSvg（extractor.test 锁定语义）；
+    - preview QA 区 A 列 hull 旋转 origin 修正为画布中心（原误用 turret pivot）；
+    - i18n：adminPreview 补 `protoSize` 三语、删除死 key `sample`/`sampleNote`、hint 更新为
+      Source-faithful PBR WebP 描述（zh/en/ru 同步）；
+    - DEVELOPER_GUIDE：QA 页描述与文档索引更新（SVG 全局规范 → 车型资产全局规范）；
+    - current-plan 状态更新为 PR1_NON_PENDING_ASSET_MILESTONE_READY。
+  - **kind 全量核验**：遍历全部 81 baseModelKey，不采用 BlitzKit TURRET module / turretRotationSpeed（casemate 也有 turret module 且转速非零，不可判）；以官方 tankopedia 描述 / fandom wiki / 结构知识逐组核验并修正 3 项——minotauro → turreted（fandom：有炮塔约 45° 限位）、foch-155 → turretless（fandom specs turret=no）、xm66f → turreted（官方：non-fully-rotating turret 前置炮塔）；无法可靠确认的 3 辆（spht / ac-teichos / nc-70-blyskawica）标记 confirmPending（contract 未冻结，第一批不生成）；tier-x-inventory.md 增加全量 kind 核验依据列与修正记录。
+  - **turretPivot 旋转数学修正**：预览页不再用 translate 平移近似（旧实现旋转轴实际在 pivot 的镜像点 2C−P）；新增 frontend/src/vehicle-models/pivot.js——img 与 320×320 viewBox 1:1 对齐，transform-origin 直接用 pivot × renderScale，rotate 以 origin 为不动点；pivot.test.js 数学断言非中心 pivot 在 0°/90°/180°/270° 下不动（7 用例）；sample 改非中心 pivot (160,150) 证明实现支持任意 pivot；pivot debug marker 与旋转轴同源坐标。
+  - **admin preview 懒加载**：App.vue 静态 import 改为 defineAsyncComponent 动态 import → preview 与全部车型 QA 资产（import.meta.glob）进入独立 chunk，普通用户主 bundle 不含车型资产；新增 scripts/check-bundle-separation.mjs 构建后检查（主入口无 vehicle-models/assets 标记 + 存在独立 preview chunk）。
+  - **预览溢出 QA**：.vmp-canvas overflow:hidden → visible（长炮管可超出统一 viewBox 可见；仅视觉显示，不影响后续 collision/hitbox contract）。
+
 ### Changed
 - **战局回放地图标注（纯前端临时标注）**：新增 `frontend/src/utils/annotation.js` 纯函数模块
   （8 色色板/粗细范围常量、`screenToSemantic` 屏幕→语义坐标、`rectFromCorners`/`circleFromCorners`/
@@ -28,6 +298,46 @@
   DEVELOPER_GUIDE 文档地图补充层级说明。纯文档变更，不影响代码与构建。
 
 ### Fixed
+- **Tier X 车型资产 PR91 Review 修复（2026-08-18，5 blockers + 1 engineering gate）**：
+  - **RASTER_Y_AXIS_CONTRACT（raster 方向契约）**：`texture-bake-lib.mjs::bakeTopView` 投影
+    此前用 `pixelY = (modelY - minY) * scale`（model +Y → 图片下方），与 logical 契约
+    （`logicalY = -modelY * scale + ty`，model +Y → screen up）不一致；turretRaster.pivotY
+    指向的像素与 WebP 内真实座圈行镜像偏差（Grille 15：metadata pivot 像素 alpha=0 为空，
+    真实座圈行有覆盖）。修复：raster projection 层做 Y flip（`pixelY = (bounds.maxY - modelY) * scale`）
+    ——正式 WebP 与 logical 坐标同一坐标系，hull/turret 同一 orientation，0° = 车头/炮管朝 12 点，
+    turretRaster.pivotX/pivotY 指向 WebP 内真实座圈像素；bake-report 新增 `rasterOrientation`
+    指纹（topModelY/topRowCovered/topWidthMean 等，从实际 baked rgba 计算）；新增方向测试
+    （非对称三角形 +Y 在上方、Grille 15 炮口 +8.04 贴 turret.webp top、Maus/Leopard/Grille/FV4005
+    orientation regression、全部资产 hull top = forward 端）；新增 developer 工具
+    `scripts/check-webp-orientation.mjs`（PIL 解码真实 WebP 与 bake 指纹逐项比对 + pivot 像素覆盖）；
+    78 个正式 WebP + metadata/bake-report 全部确定性重新生成（禁止人工 patch 单车）。
+  - **OFF_CENTER_TURRET_HULL_COMPOSITION（偏心炮塔合成）**：`pivot.js` / QA 页此前把 turretPivot
+    当作 hull 旋转后固定不动的 screen point（仅 transform-origin 单层旋转），非中心炮塔
+    （Grille 15 P=(160.1,220.36) 等）hull 旋转时座圈脱离车体。修复：嵌套 transform——turret
+    assembly 父层 `rotate(hullWorldDeg)` around 车辆中心 C（座圈 P' = C + rotate(P-C, H)），
+    turret image 子层 `rotate(turretWorldDeg - hullWorldDeg)` around image-local pivot
+    （raster.pivotX/pivotY），最终 world yaw = authoritative turretWorldDeg；QA 页红色 pivot
+    marker 显示旋转后真实座圈位置；pivot.test.js 重写（H/T = 0/0、90/0、90/90、180/45、270/10
+    × Grille 15/Maus/FV4005/Leopard-1：座圈移动 + world yaw 合成断言）。
+  - **desaturate 参数语义反向（Blocker 3）**：`neutralize` 文档声称 amount=去色强度（0=原色，1=纯灰）
+    但实现为 `luma*(1-amount) + rgb*amount`（amount=1 反而保留全部原色）。修复：公式改为
+    `rgb*(1-amount) + luma*amount`，`DESATURATE` 0.75 → 0.25——视觉数学等价
+    （仍是 75% 原色 + 25% luma，像素不变），字段名与文档不再撒谎；tests/metadata/bake-report/docs 同步。
+  - **authoritative docs 收敛（Blocker 4）**：`docs/assets/tier-x-models/README.md` 与
+    `svg-generation-spec.md` 正式契约只描述 WebP asset（hull.webp/turret.webp/metadata.json/
+    bake-report.json，顶层键 modelKey/kind/source/turretPivot/turretRaster/generation，
+    method=blitzkit-model-topdown-texture-bake）；旧 hull.svg/turret.svg/extraction method/
+    SVG detail grouping/顶层 5 键/_hide_elements 排除 等旧说法全部移入「Legacy/debug extractor」
+    章节，不再称为正式资产契约。
+  - **bundle separation 进 CI（Engineering Gate 5）**：`ci.yml` frontend job 在 `npm run build`
+    后新增 `node scripts/check-bundle-separation.mjs`（主入口不含 vehicle assets + QA 资产在
+    独立 async chunk）。
+- **PR91 review-with-docs 闭环（2026-08-19）**：隐藏 QA 页 QA 对比区全部文案 i18n 化
+  （adminPreview.qaTitle/qaLabelA-C/qaDevOnly/qaReport，三语同步 28 keys）；validate.js 头部
+  设计注释更新为正式 WebP 资产契约（旧 hull.svg 说法移除）；docs/README 索引措辞改为
+  WebP bake；current-plan 执行状态更新为两轮 Review 闭环；check-webp-orientation 临时文件
+  清理 + decode-webp.py usage 修正；bake 指纹 alpha 阈值注释。纯代码质量/文档层变更，
+  无用户可见行为变化（versions.json 不新增条目）。
 - **AI 回复「簇」字确定性兜底全链路（权威 proper noun 保护）**：复盘正文（analysis）此前没有字符级兜底，LLM 输出「簇」会原样透传；新增 wotb-core `ClusterTermSanitizer`（簇拥→聚集、簇状→集群状、一簇→一批、同簇/成簇→集群、分簇→分散、主力簇→主力集群、多簇→多股、剩余「簇」→「群」，复用 `PreBattleSectionRenderer` 原有替换表），`AiReplayReviewService` 在 `correctTankNames` 后对 analysis + preBattleSection 两段统一应用，并保护权威 proper noun（roster 昵称 / 权威坦克名）原样保留（合法昵称如「星簇」不会被改写成「星群」）；赛前预测渲染路径同步改调共享 helper；新增 `ClusterTermSanitizerTest` + 服务层集成测试。契约：AI 生成的内部术语「簇」确定性转换，权威玩家昵称/车辆名称保持原样。
 - **战局回放敌方车标「位置流中断后重新上报不恢复」根因修复（后端区间生产）**：MapOverviewBuilder.positionIntervals 把 EntityLeave(type-4) 当作单个硬截断点导致漏洞——同一实体位置流中断后重新上报（gap ≤ 5s）会被 gap 聚类吞掉、整个 run 被 leave 截断，前端 positionCoveredAt 永假、车标一直淡化；改为「每次 EntityLeave 都是 coverage 的 hard segment boundary」——leave 强制关段、leave 后第一条 position 无论 gap 大小都开启新 interval，deathSec 最后 clamp。新增 MapOverviewBuilderPositionIntervalsTest（2s/10s 重新上报、多次 leave 周期、leave 早于首点、无 leave gap 分段、deathSec 前/后重新上报共 7 用例）+ 前端「两段区间重新上报恢复不透明」回归；此前 2.11.11（positionAt 精确采样点）/ 2.11.12（lastKnown=!covered）均为前端修复，本修复补齐后端。
 - **AI 复盘坦克名幻觉（Kranvagn 被写成「埃米尔1951」）**：生成侧 LLM 幻觉把玩家坦克名写成

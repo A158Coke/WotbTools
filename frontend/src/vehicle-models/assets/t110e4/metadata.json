@@ -1,0 +1,82 @@
+{
+  "modelKey": "t110e4",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 13089,
+    "modelGlb": "https://api.blitzkit.app/tanks/13089/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 159.66,
+    "y": 144.13
+  },
+  "turretRaster": {
+    "logicalMinX": 96.87,
+    "logicalMinY": -136.04,
+    "logicalMaxX": 222.51,
+    "logicalMaxY": 220.34,
+    "pixelWidth": 251,
+    "pixelHeight": 713,
+    "pivotX": 62.79,
+    "pivotY": 280.17
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.8641277551651,
+        -3.2256689071655273
+      ],
+      "max": [
+        1.879652500152588,
+        3.217258930206299
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.43661630153656,
+        -1.3763158321380615
+      ],
+      "max": [
+        1.4380439519882202,
+        2.2125070095062256
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.21771323680877686,
+        2.4139249324798584
+      ],
+      "max": [
+        0.2177036851644516,
+        6.777514934539795
+      ]
+    },
+    "selectedModules": {
+      "turretId": 22561,
+      "gunId": 267297,
+      "trackId": 26401,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "T110E4_mtr",
+      "T110E4_mtr",
+      "T110E4_mtr",
+      "T110E4_track_mtr",
+      "T110E4_track_mtr",
+      "T110E4_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

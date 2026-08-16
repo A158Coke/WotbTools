@@ -48,6 +48,9 @@
 | `reference/replay-data.md` | 深入回放格式 / 字段 / protobuf 结构时 |
 | `reference/replay-parsed-fields.md` | 查已确认字段含义时 |
 | `reference/maps.md` | 加地图素材 / 查内部 code ↔ 展示名映射时 |
+| `assets/tier-x-models/README.md` | 改 Tier X 专属车型系统 / 资产交接 / 生成资产时 |
+| `assets/tier-x-models/svg-generation-spec.md` | 生成/修复车型资产（WebP bake）时（唯一全局规则） |
+| `assets/tier-x-models/tier-x-inventory.md` | 查 Tier X 清单 / baseModelKey / 参考链接时 |
 
 ## AI engineering（AI 工程）
 

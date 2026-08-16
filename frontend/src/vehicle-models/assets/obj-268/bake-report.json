@@ -1,0 +1,90 @@
+{
+  "tankId": 13569,
+  "modelKey": "obj-268",
+  "kind": "turretless",
+  "sourceModel": {
+    "glbBytes": 2869068
+  },
+  "selectedModules": {
+    "turretId": 25601,
+    "gunId": 26369,
+    "trackId": 30977,
+    "turretModelId": 1,
+    "gunModelId": 1
+  },
+  "output": {
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "logicalViewBox": "0 0 320 320",
+    "supersample": 2
+  },
+  "materials": [
+    "Object268_mtr",
+    "Object268_track_mtr"
+  ],
+  "texturesUsed": [
+    "Object268_mtr",
+    "Object268_mtr",
+    "Object268_mtr",
+    "Object268_track_mtr",
+    "Object268_track_mtr",
+    "Object268_track_mtr"
+  ],
+  "uvSetsUsed": [
+    "TEXCOORD_0"
+  ],
+  "metallicRoughness": {
+    "present": true,
+    "used": false,
+    "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
+  },
+  "visibleTriangleCounts": {
+    "hull": 6528,
+    "turret": null
+  },
+  "alphaTested": 1,
+  "hullBounds": {
+    "min": [
+      -1.8806196451187134,
+      -3.640225648880005
+    ],
+    "max": [
+      1.830252766609192,
+      6.191351413726807
+    ]
+  },
+  "turretBounds": null,
+  "gunBounds": null,
+  "turretPivot": null,
+  "rasterOrientation": {
+    "hull": {
+      "axisContract": "model +Y = screen up（raster top = bounds.maxY）",
+      "topModelY": 6.8617,
+      "bottomModelY": -4.3106,
+      "topRowCovered": 38,
+      "bottomRowCovered": 601,
+      "topCoveredModelY": 6.1973,
+      "bottomCoveredModelY": -3.6462,
+      "topWidthMean": 8.89,
+      "bottomWidthMean": 61.5
+    }
+  },
+  "turretRaster": null,
+  "fit": {
+    "scale": 28.642403777826328,
+    "tx": 160.72131423564923,
+    "ty": 123.46481287762094
+  },
+  "assets": {
+    "hullWebp": 22330,
+    "turretWebp": null
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "desaturate": 0.25,
+    "shading": "baseColor x occlusion x normal-z relief (restrained)",
+    "determinism": "pure arithmetic; same input -> same output"
+  }
+}

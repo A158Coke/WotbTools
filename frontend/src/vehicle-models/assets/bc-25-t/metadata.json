@@ -1,0 +1,82 @@
+{
+  "modelKey": "bc-25-t",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 3649,
+    "modelGlb": "https://api.blitzkit.app/tanks/3649/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 162.12,
+    "y": 189.16
+  },
+  "turretRaster": {
+    "logicalMinX": 99.99,
+    "logicalMinY": -55.14,
+    "logicalMaxX": 224.25,
+    "logicalMaxY": 322.49,
+    "pixelWidth": 249,
+    "pixelHeight": 756,
+    "pivotX": 62.13,
+    "pivotY": 244.3
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.6840174198150635,
+        -3.0402116775512695
+      ],
+      "max": [
+        1.5944420099258423,
+        2.9014647006988525
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.3109498023986816,
+        -1.8061606884002686
+      ],
+      "max": [
+        1.3109498023986816,
+        0.7135896682739258
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.793222963809967,
+        -3.3591883182525635
+      ],
+      "max": [
+        0.19359080493450165,
+        4.608675003051758
+      ]
+    },
+    "selectedModules": {
+      "turretId": 5441,
+      "gunId": 13633,
+      "trackId": 6721,
+      "turretModelId": 1,
+      "gunModelId": 5
+    },
+    "texturesUsed": [
+      "F18_Batt_Chatillon25t_mtr",
+      "F18_Batt_Chatillon25t_mtr",
+      "F18_Batt_Chatillon25t_mtr",
+      "F18_Batt_Chatillon25t_track_mtr",
+      "F18_Batt_Chatillon25t_track_mtr",
+      "F18_Batt_Chatillon25t_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}
