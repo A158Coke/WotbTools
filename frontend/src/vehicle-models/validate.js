@@ -1,0 +1,232 @@
+/**
+ * Tier X 专属车型 — validator（纯逻辑，vitest 与 CLI 脚本共用）。
+ *
+ * 校验层次（docs/assets/tier-x-models/README.md「Validation」）：
+ * 1. validateCoverage     — Tankopedia Tier X 100% mapping 覆盖 + mapping 完整性
+ * 2. validateMetadata     — metadata.json 契约（含与 mapping 的 kind 一致性）
+ * 3. validateSvgText      — SVG 技术契约（viewBox / 禁止项 / 标签平衡）
+ * 4. validateModelEntry   — 单车型目录完整性（hull 必填、turreted 必配 turret、
+ *                           turretless 禁止 turret、禁止多余文件如 gun.svg）
+ *
+ * 设计：assets/ 下出现 metadata.json 即视为“资产已就位”，hull.svg（+turret.svg）
+ * 必须同时完整——半成品目录会直接 FAIL，防止覆盖率静默退化。
+ */
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { VIEWBOX, METADATA_KEYS, ASSET_FILES, MODEL_KEY_PATTERN } from './types.js'
+
+const ASSETS_DIR = fileURLToPath(new URL('./assets/', import.meta.url))
+
+/** 简单 XML 结构检查：根元素 + 标签平衡（不引入 XML 解析依赖）。 */
+export function validateSvgText(svgText) {
+  const errors = []
+  if (typeof svgText !== 'string' || svgText.trim() === '') {
+    return ['SVG 内容为空']
+  }
+  const open = (svgText.match(/<svg[\s>]/g) || []).length
+  const close = (svgText.match(/<\/svg>/g) || []).length
+  if (open !== 1 || close !== 1) {
+    errors.push(`SVG 根元素不平衡（open=${open}, close=${close}）`)
+  }
+  const viewBoxMatch = svgText.match(/viewBox\s*=\s*"([^"]+)"/)
+  const expected = `0 0 ${VIEWBOX.width} ${VIEWBOX.height}`
+  if (!viewBoxMatch) {
+    errors.push('缺少 viewBox 属性')
+  } else if (viewBoxMatch[1].replace(/\s+/g, ' ').trim() !== expected) {
+    errors.push(`viewBox 必须为 ${expected}，实际 "${viewBoxMatch[1]}"`)
+  }
+  for (const forbidden of ['<script', '<foreignObject', 'xlink:href', 'onload=', 'onerror=', '<image']) {
+    if (svgText.includes(forbidden)) {
+      errors.push(`SVG 包含禁止元素/属性：${forbidden}`)
+    }
+  }
+  const externalHref = svgText.match(/href\s*=\s*"https?:\/\//)
+  if (externalHref) {
+    errors.push('SVG 禁止外部 href 引用')
+  }
+  return errors
+}
+
+/** metadata.json 契约校验；expectedKind 来自 mapping（null = 非映射目录如 sample）。 */
+export function validateMetadata(meta, { modelKey, expectedKind = null }) {
+  const errors = []
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+    return ['metadata 不是对象']
+  }
+  const unknownKeys = Object.keys(meta).filter((k) => !METADATA_KEYS.includes(k))
+  if (unknownKeys.length > 0) {
+    errors.push(`metadata 含未契约键：${unknownKeys.join(', ')}`)
+  }
+  if (meta.modelKey !== modelKey) {
+    errors.push(`modelKey 必须与目录名一致：${JSON.stringify(meta.modelKey)} !== ${modelKey}`)
+  }
+  if (meta.kind !== 'turreted' && meta.kind !== 'turretless') {
+    errors.push(`kind 必须为 turreted/turretless，实际 ${JSON.stringify(meta.kind)}`)
+  } else if (expectedKind && meta.kind !== expectedKind) {
+    errors.push(`metadata.kind=${meta.kind} 与 mapping ${modelKey}.kind=${expectedKind} 不一致`)
+  }
+  if (typeof meta.blitzkitReference !== 'string') {
+    errors.push('blitzkitReference 必须为字符串')
+  } else if (meta.blitzkitReference !== '') {
+    try {
+      const url = new URL(meta.blitzkitReference)
+      if (!/^https?:$/.test(url.protocol)) errors.push('blitzkitReference 必须为 http(s) URL')
+    } catch {
+      errors.push(`blitzkitReference 不是合法 URL：${meta.blitzkitReference}`)
+    }
+  }
+  if (meta.kind === 'turreted') {
+    const p = meta.turretPivot
+    if (!p || typeof p !== 'object') {
+      errors.push('turreted 必须提供 turretPivot')
+    } else {
+      const { x, y } = p
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        errors.push(`turretPivot 必须为有限数字：${JSON.stringify(p)}`)
+      } else {
+        const maxX = VIEWBOX.width
+        const maxY = VIEWBOX.height
+        if (x < 0 || x > maxX || y < 0 || y > maxY) {
+          errors.push(`turretPivot 超出 viewBox：${x},${y}（允许 0..${maxX},0..${maxY}）`)
+        }
+      }
+    }
+  } else if (meta.turretPivot !== undefined) {
+    errors.push('turretless 禁止 turretPivot')
+  }
+  for (const arrKey of ['distinctiveFeatures', 'intentionalExaggeration', 'mustKeepStructures']) {
+    const v = meta[arrKey]
+    if (v !== undefined && (!Array.isArray(v) || v.some((s) => typeof s !== 'string'))) {
+      errors.push(`${arrKey} 必须为字符串数组`)
+    }
+  }
+  if (meta.generationNotes !== undefined && typeof meta.generationNotes !== 'string') {
+    errors.push('generationNotes 必须为字符串')
+  }
+  return errors
+}
+
+/**
+ * 单车型目录校验。files = { hull, turret, metadata }（文件内容字符串或 null）。
+ * expectedKind 来自 mapping；null 表示该 modelKey 不在 mapping 中（如 sample）。
+ */
+export function validateModelEntry({ modelKey, kind, files }) {
+  const errors = []
+  if (!MODEL_KEY_PATTERN.test(modelKey)) {
+    errors.push(`modelKey 必须为 kebab-case：${modelKey}`)
+  }
+  if (kind !== null && kind !== 'turreted' && kind !== 'turretless') {
+    errors.push(`kind 非法：${kind}`)
+  }
+  if (!files.metadata || files.metadata.trim() === '') {
+    errors.push('metadata.json 缺失或为空')
+  } else {
+    let meta = null
+    try {
+      meta = JSON.parse(files.metadata)
+    } catch (e) {
+      errors.push(`metadata.json 不是合法 JSON：${e.message}`)
+    }
+    if (meta) errors.push(...validateMetadata(meta, { modelKey, expectedKind: kind }))
+    // 非映射目录（kind=null，如 sample）用 metadata 自声明的 kind 继续做资产校验
+    if (kind === null && meta && (meta.kind === 'turreted' || meta.kind === 'turretless')) {
+      kind = meta.kind
+    }
+  }
+  if (!files.hull || files.hull.trim() === '') {
+    errors.push('hull.svg 缺失或为空')
+  } else {
+    errors.push(...validateSvgText(files.hull).map((e) => `hull.svg: ${e}`))
+  }
+  if (kind === 'turreted') {
+    if (!files.turret || files.turret.trim() === '') {
+      errors.push('turreted 车型必须提供 turret.svg')
+    } else {
+      errors.push(...validateSvgText(files.turret).map((e) => `turret.svg: ${e}`))
+    }
+  } else if (files.turret) {
+    errors.push('turretless 车型禁止 turret.svg')
+  }
+  if (files.extra && files.extra.length > 0) {
+    errors.push(`目录含未契约文件（gun 禁止独立 layer）：${files.extra.join(', ')}`)
+  }
+  return errors
+}
+
+/** 读取 assets/<modelKey>/ 目录（缺失文件为 null）。 */
+export function readModelDir(modelKey) {
+  const dir = path.join(ASSETS_DIR, modelKey)
+  const files = { hull: null, turret: null, metadata: null, extra: [] }
+  let names = []
+  try {
+    names = fs.readdirSync(dir)
+  } catch {
+    return files // 目录不存在
+  }
+  for (const name of names) {
+    const full = path.join(dir, name)
+    if (fs.statSync(full).isDirectory()) {
+      files.extra.push(name + '/')
+      continue
+    }
+    if (name === ASSET_FILES.hull) files.hull = fs.readFileSync(full, 'utf8')
+    else if (name === ASSET_FILES.turret) files.turret = fs.readFileSync(full, 'utf8')
+    else if (name === ASSET_FILES.metadata) files.metadata = fs.readFileSync(full, 'utf8')
+    else files.extra.push(name)
+  }
+  return files
+}
+
+/** 列出 assets/ 下所有子目录（modelKey）。 */
+export function listModelKeys() {
+  let names = []
+  try {
+    names = fs.readdirSync(ASSETS_DIR)
+  } catch {
+    return []
+  }
+  return names.filter((n) => fs.statSync(path.join(ASSETS_DIR, n)).isDirectory())
+}
+
+/**
+ * Tier X 覆盖校验：tankopedia 全量 vs mapping。
+ * 返回 { errors, stats }；errors 为空即通过。
+ */
+export function validateCoverage({ tankopedia, tankIdToModel, modelDefinitions }) {
+  const errors = []
+  const stats = { tankCount: 0, mappedCount: 0, modelKeyCount: Object.keys(modelDefinitions).length }
+  if (!tankopedia || !Array.isArray(tankopedia.vehicles)) {
+    return { errors: ['tankopedia 数据无效（缺 vehicles 数组）'], stats }
+  }
+  stats.tankCount = tankopedia.vehicles.length
+  const tankopediaIds = new Set(tankopedia.vehicles.map((v) => String(v.id)))
+  for (const v of tankopedia.vehicles) {
+    const key = String(v.id)
+    if (!tankIdToModel[key]) {
+      errors.push(`Tier X ${v.id} ${v.name} 缺少 baseModelKey mapping（新增 Tier X 必须补 mapping）`)
+    } else {
+      stats.mappedCount += 1
+    }
+  }
+  for (const [tankId, modelKey] of Object.entries(tankIdToModel)) {
+    if (!modelDefinitions[modelKey]) {
+      errors.push(`mapping ${tankId} → ${modelKey} 指向不存在的 modelKey`)
+    }
+    if (!tankopediaIds.has(tankId)) {
+      errors.push(`mapping 含 Tankopedia 之外的 tankId：${tankId}`)
+    }
+  }
+  for (const [modelKey, def] of Object.entries(modelDefinitions)) {
+    if (!MODEL_KEY_PATTERN.test(modelKey)) {
+      errors.push(`modelKey 命名非法：${modelKey}`)
+    }
+    if (def.kind !== 'turreted' && def.kind !== 'turretless') {
+      errors.push(`modelKey ${modelKey} kind 非法：${def.kind}`)
+    }
+    if (!Array.isArray(def.tankIds) || def.tankIds.length === 0 || def.tankIds.some((id) => !Number.isInteger(id))) {
+      errors.push(`modelKey ${modelKey} tankIds 必须为非空整数数组`)
+    }
+  }
+  return { errors, stats }
+}

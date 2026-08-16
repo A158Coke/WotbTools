@@ -1,0 +1,22 @@
+{
+  "modelKey": "sample",
+  "kind": "turreted",
+  "blitzkitReference": "",
+  "turretPivot": {
+    "x": 160,
+    "y": 160
+  },
+  "distinctiveFeatures": [
+    "左右履带轮廓",
+    "前置装甲斜面",
+    "后置引擎甲板"
+  ],
+  "intentionalExaggeration": [
+    "加宽履带，保证 20–30px 下可辨"
+  ],
+  "generationNotes": "契约样例（contract sample），非真实车型；仅用于验证 SVG 契约、validator 与 admin 预览管线。正式车型由 ChatGPT 按 svg-generation-spec.md 生成。",
+  "mustKeepStructures": [
+    "履带轮廓",
+    "炮塔+完整炮管刚性层"
+  ]
+}

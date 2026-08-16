@@ -12,6 +12,7 @@ import ExtendedPage from './components/ExtendedPage.vue'
 import ReconstructionPage from './components/ReconstructionPage.vue'
 import VersionPage from './components/VersionPage.vue'
 import ContactPage from './components/ContactPage.vue'
+import VehicleModelPreviewPage from './components/VehicleModelPreviewPage.vue'
 
 const { theme, handleTheme } = useTheme()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
@@ -31,6 +32,8 @@ const viewParam = params.get('view')
 const ALLOWED_VIEWS = [
   'home', 'replay', 'leaderboard', 'extended',
   'profile', 'boost', 'admin-users', 'reconstruction', 'version', 'contact',
+  // 隐藏 QA 页：车型预览（不在导航中，仅 wotbtools-admin 深链可进）
+  'vehicle-models',
 ]
 const activeTool = ref(ALLOWED_VIEWS.includes(viewParam) ? viewParam : defaultView)
 
@@ -46,7 +49,8 @@ const VIEW_COMPONENTS = {
   'admin-users': AdminUsersPage,
   reconstruction: ReconstructionPage,
   version: VersionPage,
-  contact: ContactPage
+  contact: ContactPage,
+  'vehicle-models': VehicleModelPreviewPage
 }
 const currentView = computed(() => VIEW_COMPONENTS[activeTool.value] || ReplayPage)
 
