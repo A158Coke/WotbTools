@@ -177,6 +177,12 @@ PR1 DONE（78 资产确定性生成，方向契约测试全绿，PR #91 已合�
 
 ## 变更记录
 
+- PR3（2026-08-19）：**Tactical Marker State Visual Redesign（§19–§25）**——team color 系统
+  （data/mapTeamColors.js：28 图显式 friendly tone green|blue + enemy red，CI 完整性门禁）、
+  VehicleMarker 整车 outline+glow（CSS vars，generic/dedicated 同构；取代 PR2 B3 过渡色）、
+  Selected 红色倒三角（浮动 + reduced-motion）、Recorder 空心菱形（friendly 色）、
+  Destroyed 中度变暗 0.55 + grayscale + 弱 outline（transition <1s）、Last-known 容器淡化
+  体系（label 文字弱化）；QA 页阵营预览切换。dedicated 资产/旋转数学不变。
 - PR92 Review B1 第二轮（2026-08-19）：**独立几何验证取代循环证明**——旧
   verify-turret-pivot.mjs 用待验证 pivot 生成样本再反推（tautology），已删除；新
   scripts/verify-pivot-independent.mjs 逐行复刻 useTankTransform.ts scene graph（origins 原始
