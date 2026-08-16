@@ -165,7 +165,10 @@ const viewportStyle = computed(() => `transform: translate(${view.tx}px, ${view.
 // 坦克名/阵亡 ✕ 等 UI 叠加层单独反缩放（overlayInverseScale）保持屏幕恒定；
 // hull/turret 的方向旋转在子元素 img 上，不受缩放影响。
 const markerTransform = computed(() => `translate(-50%, -50%)`)
-const overlayInverseScale = computed(() => `scale(${1 / view.scale})`)
+// overlay 反缩放数值（=1/view.scale）：元素尺寸（transform scale）与 layout offset（bottom/top calc）
+// 都按它反缩放 → zoom 下 selected/recorder 与车辆的屏幕间距恒定，不随 1×/2×/4× 增长
+const overlayInverse = computed(() => 1 / view.scale)
+const overlayInverseScale = computed(() => `scale(${overlayInverse.value})`)
 
 /** 指针 client 坐标 → 相对地图容器的**屏幕坐标**（zoomViewAt 契约，不参与任何变换）。 */
 function screenPoint(clientX, clientY) {
@@ -720,6 +723,7 @@ function vehicleState(vehicle) {
     // VehicleMarker 渲染用（位置/反缩放/无障碍标签在 view model 一次性算好）
     markerStyle: { left: markerLeft(last.x), top: markerTop(last.y), transform: markerTransform.value },
     overlayInverseScale: overlayInverseScale.value,
+    overlayInverse: overlayInverse.value, // 数值反缩放（VehicleMarker 用它反缩放 layout offset）
     ariaLabel: `${vehicle.playerName}: ${t(destroyed ? 'recon.map.playback.state_destroyed' : (covered ? 'recon.map.playback.state_position_reported' : 'recon.map.playback.state_position_stale'))}`,
     // lastKnown = 位置流未覆盖（covered=false）才淡化（最后已知位置）。
     // 注意：covered 只是「服务器位置流当前覆盖」，不等于录像者客户端点亮/失察（无 authoritative
