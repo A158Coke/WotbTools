@@ -298,16 +298,42 @@
   DEVELOPER_GUIDE 文档地图补充层级说明。纯文档变更，不影响代码与构建。
 
 ### Fixed
-- **turretPivot 参考系反推验证（PR92 Review B1，真实几何证据）**：新增
+- **turretPivot 参考系反推验证（PR92 Review B1 第一轮，真实几何证据）**：新增
   frontend/scripts/verify-turret-pivot.mjs（developer-only，CI 不执行）——对每个 turreted 车型
   用 GLB 真实旋转层几何（= bake 的 turret 场景：turret + mantlet + gun，这才是 marker 里实际绕
   turretPivot 旋转的视觉层）复刻 BlitzKit useTankTransform 运行时公式，构造 yaw=0°/90° 两个姿态，
   垂直平分线最小二乘反求唯一 2D rotation center，与 metadata.turretPivot 比对：
   **全 72 turreted 车型 err=0.0000m**（含 3 辆 confirmPending 新确认车；minotauro 含
-  initial_turret_rotation pitch=3° 完整复刻 err=0.0249m < 0.1m 阈值）。**B1 根因结论**：早期
-  QA 报告的“座圈偏后”来自测量脚本 GLB 轴映射 bug（误用 [v.x,v.z,v.y]，应为 [v.x,v.y,v.z]），
-  非资产缺陷；Maus/Grille 15 等全部 pivot 数值不变（81 组 track origin 均为空 → hullOrigin=0，
-  contract 数值等价），turretPivot = BlitzKit useTankTransform 契约 = 真实旋转中心。
+  initial_turret_rotation pitch=3° 完整复刻 err=0.0249m < 0.1m 阈值）。
+  ⚠️ 评审指出该验证是数学 tautology：待验证的 c 被用作生成 yaw 样本的旋转中心，反推必然
+  得 c——只能证明 transform 自洽，不能证明 pivot 正确；且"偏后"被归因于测量脚本轴映射 bug
+  而未复现视觉差异。**第一轮脚本已删除，由第二轮独立验证取代（见下条）**。
+- **turretPivot 独立几何验证（PR92 Review B1 第二轮，修复循环证明）**：新增
+  frontend/scripts/verify-pivot-independent.mjs——**待验证的 metadata.turretPivot /
+  computeTurretModelPivot 结果不参与生成 yaw 样本**；数据流为：GLB 原始旋转层顶点（模型坐标，
+  yaw=0 装配姿态）→ 逐行复刻 BlitzKit useTankTransform.ts scene graph（turretContainer.position =
+  R_z(yaw)(-(hullOrigin+turretOrigin)) [+initial axis-angle] + hullOrigin+turretOrigin；
+  rotation = Euler(initialPitch, initialRoll, yaw+initialYaw)，XYZ 序；origins 直接取自
+  models.pb 原始数据）→ 构造 yaw=0° 与 yaw=限位内角度两批 world positions → 只根据
+  world positions 垂直平分线最小二乘反推 rotation center → 最后才经 bake-report.fit 反投影
+  与 metadata.turretPivot 比对：**全 72 turreted 车型 err≤0.0002m**（grille-15 用 0°/65°、
+  nc-70 0°/10°、fv215b-183/xm66f/minotauro 0°/45°——yaw 限位自动读取）；**minotauro 真实包含
+  initial_turret_rotation（pitch=3°）完整复刻，err=0.0291m 原值报告**（pitch 使顶视投影非纯
+  2D 旋转，属物理效应非 pivot 偏差，不放宽阈值）。
+  **B1 视觉"偏后"根因（独立证据链）**：① pivot 数值正确——scene-graph 独立反推 err≤0.0002m，
+  且 GLB 炮塔底部环带（z≈turret_origin.y 高度层）中心与 pivot 吻合（Maus 0.08m / Grille 15 0.15m /
+  fv4005 0.04m / t57-heavy 0.02m / m-vi-yoh 0.00m）；② 视觉偏差来自 **turret.webp 的 raster
+  overflow contract**：图像包含完整炮管（Grille 15 炮管占图像上部 60%+），turret.webp 非透明
+  像素质心被炮管拉前，而座圈（红圈）在炮管根部、位于图像中下部（Maus 74.2% / Grille 15 85.6%）——
+  **红圈相对炮塔图像视觉质心偏"下"（后方）0.3m（Maus）~ 2.4m（Grille 15）**，炮管越长的车越
+  明显，"有些车没问题"（t57-heavy 0.02m / fv4005 0.04m / nc-70 图像仅炮盾+炮管、座圈居中）——
+  与人工 QA 反馈完全吻合；③ **QA 页 proto cell 真 bug**：bakeHullLayerStyle 的 transform-origin
+  写死 160px 未随 protoSize 缩放（protoSize≠320 时 hull 绕盒外点旋转，车体视觉漂移被误读为
+  pivot 偏后）——已修复（随 protoSize 缩放，与 turret assembly 同构）；④ QA 页新增"炮塔视觉
+  质心"青色参照标记（checkbox 开关，i18n 三语），人工 QA 对照红圈即可确认座圈落在炮塔主体上
+  = 正确，偏后量 ≈ 炮管占比效应。
+  **结论：pivot 数值不变（独立验证证明正确），修复 QA 页 proto cell 旋转中心 bug + 增加视觉
+  质心参照；全部 81 资产无需重新生成。**
 - **AC Teichos / NC 70 Błyskawica kind 确认 + 解除 confirmPending（PR92 Review B2）**：
   经 BlitzKit 真实模型数据逐车确认 turreted——AC Teichos（22129）：GLB turret_01（631+1540
   顶点）+ gun_01 + gun_01_mask、models.pb turret 模块无 yaw 限位；NC 70 Błyskawica（19585）：

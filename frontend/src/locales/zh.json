@@ -767,6 +767,7 @@
         "destroyed": "阵亡",
         "lastKnown": "最后已知",
         "showPivot": "显示 pivot",
+        "showCentroid": "显示炮塔视觉质心（炮管占图像上部→座圈在其下方，非数值偏差）",
         "kind": "结构",
         "turreted": "有炮塔",
         "turretless": "无炮塔",

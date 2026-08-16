@@ -29,7 +29,7 @@
  * - nc-70-blyskawica（19585）：GLB turret_01 为 1-triangle stub（casemate 主体在 hull_nc_01，
  *   属 hull 层；旋转层实际 = gun_01 + gun_01_mask）；turret 模块 yaw ±10°（limited-traverse，
  *   同 grille-15 处理，仍属 turreted visual layer）→ turreted。
- * 三车 pivot 均已通过 verify-turret-pivot.mjs yaw0/90 几何反推（err=0.0000m）。
+ * 三车 pivot 均已通过 verify-pivot-independent.mjs scene-graph 独立反推（err≤0.0002m）。
  */
 
 /** modelKey → { kind, tankIds }。 */
