@@ -1,15 +1,15 @@
 {
-  "modelKey": "maus",
+  "modelKey": "minotauro",
   "kind": "turreted",
   "source": {
     "provider": "blitzkit",
-    "tankId": 6929,
-    "collisionModel": "https://api.blitzkit.app/tanks/6929/model.glb",
+    "tankId": 10369,
+    "collisionModel": "https://api.blitzkit.app/tanks/10369/model.glb",
     "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
   },
   "turretPivot": {
     "x": 160,
-    "y": 193.23
+    "y": 142.83
   },
   "generation": {
     "method": "blitzkit-model-topdown-texture-bake",
@@ -20,48 +20,48 @@
     ],
     "hullBounds": {
       "min": [
-        -1.8600600957870483,
-        -4.437963962554932
+        -1.636099934577942,
+        -3.8816447257995605
       ],
       "max": [
-        1.8600600957870483,
-        4.595536231994629
+        1.636099934577942,
+        3.4012820720672607
       ]
     },
     "turretBounds": {
       "min": [
-        -1.5337796211242676,
-        -3.5188093185424805
+        -1.4854209423065186,
+        -2.058332681655884
       ],
       "max": [
-        1.5337797403335571,
-        1.0040172338485718
+        1.4854209423065186,
+        2.745638608932495
       ]
     },
     "gunBounds": {
       "min": [
-        -0.2543160319328308,
-        1.031419277191162
+        -0.15652400255203247,
+        2.6715505123138428
       ],
       "max": [
-        0.24294689297676086,
-        5.683868408203125
+        0.15652400255203247,
+        7.730345249176025
       ]
     },
     "selectedModules": {
-      "turretId": 11537,
-      "gunId": 266513,
-      "trackId": 14609,
+      "turretId": 14977,
+      "gunId": 14465,
+      "trackId": 15233,
       "turretModelId": 1,
       "gunModelId": 1
     },
     "texturesUsed": [
-      "Maus_mtr",
-      "Maus_mtr",
-      "Maus_mtr",
-      "Maus_track_mtr",
-      "Maus_track_mtr",
-      "Maus_track_mtr"
+      "It21_Controcarro3_Minotauro_mtr",
+      "It21_Controcarro3_Minotauro_mtr",
+      "It21_Controcarro3_Minotauro_mtr",
+      "It21_Controcarro3_Minotauro_track_mtr",
+      "It21_Controcarro3_Minotauro_track_mtr",
+      "It21_Controcarro3_Minotauro_track_mtr"
     ],
     "desaturate": 0.75,
     "fidelity": "high",

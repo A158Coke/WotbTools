@@ -1,0 +1,97 @@
+{
+  "tankId": 14609,
+  "modelKey": "leopard-1",
+  "kind": "turreted",
+  "sourceModel": {
+    "glbBytes": 2993620
+  },
+  "selectedModules": {
+    "turretId": 30737,
+    "gunId": 20241,
+    "trackId": 36625,
+    "turretModelId": 1,
+    "gunModelId": 1
+  },
+  "output": {
+    "physicalPixelSize": [
+      640,
+      640
+    ],
+    "logicalViewBox": "0 0 320 320",
+    "supersample": 2
+  },
+  "materials": [
+    "G89_Leopard1_mtr",
+    "G89_Leopard1_track_mtr"
+  ],
+  "texturesUsed": [
+    "G89_Leopard1_mtr",
+    "G89_Leopard1_mtr",
+    "G89_Leopard1_mtr",
+    "G89_Leopard1_track_mtr",
+    "G89_Leopard1_track_mtr",
+    "G89_Leopard1_track_mtr"
+  ],
+  "uvSetsUsed": [
+    "TEXCOORD_0"
+  ],
+  "metallicRoughness": {
+    "present": true,
+    "used": false,
+    "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
+  },
+  "visibleTriangleCounts": {
+    "hull": 3388,
+    "turret": 2611
+  },
+  "alphaTested": 1,
+  "hullBounds": {
+    "min": [
+      -1.6549224853515625,
+      -3.594482421875
+    ],
+    "max": [
+      1.6549224853515625,
+      3.3264358043670654
+    ]
+  },
+  "turretBounds": {
+    "min": [
+      -1.370707631111145,
+      -1.9531086683273315
+    ],
+    "max": [
+      1.3707075119018555,
+      2.191575050354004
+    ]
+  },
+  "gunBounds": {
+    "min": [
+      -0.14310531318187714,
+      2.051478624343872
+    ],
+    "max": [
+      0.14310622215270996,
+      5.921646595001221
+    ]
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 143.61
+  },
+  "fit": {
+    "scale": 40.688242628305666,
+    "tx": 160,
+    "ty": 165.45317290442975
+  },
+  "assets": {
+    "hullWebp": 31454,
+    "turretWebp": 16238
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "desaturate": 0.75,
+    "shading": "baseColor x occlusion x normal-z relief (restrained)",
+    "determinism": "pure arithmetic; same input -> same output"
+  }
+}

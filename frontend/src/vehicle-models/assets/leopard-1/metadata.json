@@ -1,15 +1,15 @@
 {
-  "modelKey": "maus",
+  "modelKey": "leopard-1",
   "kind": "turreted",
   "source": {
     "provider": "blitzkit",
-    "tankId": 6929,
-    "collisionModel": "https://api.blitzkit.app/tanks/6929/model.glb",
+    "tankId": 14609,
+    "collisionModel": "https://api.blitzkit.app/tanks/14609/model.glb",
     "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
   },
   "turretPivot": {
     "x": 160,
-    "y": 193.23
+    "y": 143.61
   },
   "generation": {
     "method": "blitzkit-model-topdown-texture-bake",
@@ -20,48 +20,48 @@
     ],
     "hullBounds": {
       "min": [
-        -1.8600600957870483,
-        -4.437963962554932
+        -1.6549224853515625,
+        -3.594482421875
       ],
       "max": [
-        1.8600600957870483,
-        4.595536231994629
+        1.6549224853515625,
+        3.3264358043670654
       ]
     },
     "turretBounds": {
       "min": [
-        -1.5337796211242676,
-        -3.5188093185424805
+        -1.370707631111145,
+        -1.9531086683273315
       ],
       "max": [
-        1.5337797403335571,
-        1.0040172338485718
+        1.3707075119018555,
+        2.191575050354004
       ]
     },
     "gunBounds": {
       "min": [
-        -0.2543160319328308,
-        1.031419277191162
+        -0.14310531318187714,
+        2.051478624343872
       ],
       "max": [
-        0.24294689297676086,
-        5.683868408203125
+        0.14310622215270996,
+        5.921646595001221
       ]
     },
     "selectedModules": {
-      "turretId": 11537,
-      "gunId": 266513,
-      "trackId": 14609,
+      "turretId": 30737,
+      "gunId": 20241,
+      "trackId": 36625,
       "turretModelId": 1,
       "gunModelId": 1
     },
     "texturesUsed": [
-      "Maus_mtr",
-      "Maus_mtr",
-      "Maus_mtr",
-      "Maus_track_mtr",
-      "Maus_track_mtr",
-      "Maus_track_mtr"
+      "G89_Leopard1_mtr",
+      "G89_Leopard1_mtr",
+      "G89_Leopard1_mtr",
+      "G89_Leopard1_track_mtr",
+      "G89_Leopard1_track_mtr",
+      "G89_Leopard1_track_mtr"
     ],
     "desaturate": 0.75,
     "fidelity": "high",
