@@ -49,30 +49,38 @@ frontend/src/vehicle-models/assets/<modelKey>/
 - **模型本体完全中性**，不承担阵营语义：hull 用 neutral tone（灰阶系），
   turret 用与 hull 略有不同的 neutral brightness，差异必须克制。
 - **Tracks**：真实履带网格随 hull 层投影，neutral，不承担 team color。
-- **结构线 / 内部细节**：默认 silhouette-only（真实几何凸包）；内部结构线仅在
-  extractor 显式支持后按真实网格输出，禁止凭空添加。
-- **禁止堆砌**：road wheels、track links、微小舱盖、微小机械结构——20–30px 下只会形成噪声
-  （extractor 默认排除 chassis_wheel_* 与 *_hide_elements*）。
+- **结构线 / 内部细节**：全部来自真实网格（extractor 显式支持），禁止凭空添加。
+- **不按 20–30px 过滤真实 detail**：小尺寸可读性由未来 runtime LOD 处理，
+  asset 本身保留信息（extractor 默认排除 chassis_wheel_* 与 *_hide_elements*）。
 - 阵营（friendly/enemy）、选中、录像者、阵亡、最后已知全部由运行时 UI overlay 表达，
   禁止烘焙进 SVG（同现有 tank-marker PNG 契约）。
 
-## 6. 几何来源与简化规则（替代 AI 手绘路线）
+## 6. 几何来源与 fidelity 规则（HIGH-FIDELITY ASSET，替代 AI 手绘路线）
 
-- **silhouette 必须来自真实 geometry**（extractor 俯视投影 + 分组凸包），禁止 AI 重新设计 silhouette。
-- 允许确定性几何简化：凸包分组（hull+tracks / turret / gun 分别投影）与路径输出；
-  tolerance 明确由 extractor 参数控制（凸包点即输出点，不做美化）。
-- 禁止添加现实模型中不存在的结构（hatch / grille / muzzle brake 等一律不添加）。
-- 内部结构线、履带细节等：仅当真实网格提供且经 extractor 显式支持才输出；默认 silhouette-only。
-- 颜色保持 neutral vehicle asset contract（hull/turret 中性灰阶，tracks neutral，不承担阵营色）。
+> **Asset fidelity first. Runtime readability handled later.**
+> 正式资产 = 高保真俯视资产（真实比例 + visible top-view structure 默认保留），
+> Battle Playback 小尺寸显示由未来 runtime LOD 决定（本 PR 不实现 runtime LOD）。
 
-### 6.1 Layer B「少而强」规则（2026-08-18，全部车型通用）
-
-- **凸起显著性过滤**（bumpSignificanceRatio=0.1）：层内凸起面积占比过低的碎块 = 粗糙网格
-  面片伪影（如 Maus 屋顶 0.6m 级面片块），丢弃；只保留有语义的大特征（hatch / cupola / 甲板条带）。
-- **结构边聚类去重**（clusterEdges）：角度差 ≤5° 且中点距离 ≤0.5m 的边视为同一条结构线，
-  只保留最长一条（Maus 前甲板 4 条交叉斜线 → 1 条）；聚类后再按投影长度截断（hull ≤8 / turret ≤6）。
+- **几何比例必须忠实**（faithful geometry scale）：hull 长宽比 / track 宽度 / turret 尺寸与位置 /
+  gun 长度 / mantlet / hatch / cupola / deck feature 位置与相对尺寸全部来自真实模型投影。
+  禁止 intentional exaggeration（放大炮塔 / 缩短车体 / 加宽炮管 / 移动 hatch 等一切人工改比例）。
+- **silhouette 必须来自真实 geometry**（projected triangle polygon union，保留凹轮廓与洞），
+  禁止 convex hull 回退、禁止 AI 重新设计 silhouette。
+- **细节默认保留**（visible top-view structural detail retention target ≥ 90%）：
+  真实 top-view 可见结构默认保留；只删除 sub-pixel 微小 / hidden / internal / duplicate /
+  LOD & extraction artifact / 极小 bolt-hook-handle / 单个微小 track tooth / 无视觉贡献的 mesh seam。
+- **凸起判据**（bumpHeightDeltaM）：层内凸起分量（共享边连通）与外界的高度不连续或完全隔离
+  → 真实 hatch / cupola / 台阶带；连续斜面面片（tessellation）剔除。不做 relative-ratio 过滤
+  （真实 hatch 只占屋顶 3–5% 也保留）。
+- **结构边**：真实 component / height / normal boundary 默认保留（无数量上限）；
+  删除 duplicate / overlapping / tessellation 对角线 / 内部三角剖分线。
+  surface-edge 需要显著壁高（> heightDeltaM）——低模斜面网格的面片台阶壁不算。
+- **detail-level grouping**：SVG 按 <g class="vehicle-primary / vehicle-secondary /
+  vehicle-micro-detail"> 分组输出，为未来 runtime LOD 准备结构（primary = silhouette/tracks/
+  body/mantlet/gun/大型 deck-roof；secondary = 大型 hatch/cupola/vents/engine deck plates/
+  major panel boundaries；micro = 小型 hatch/small roof features/minor structures）。
 - **simplifyRing 退化修复**：polygon-clipping 输出的 ring 可能含相邻/闭合重复点，先去重再简化，
-  防止真实角点被误删导致带状结构塌成细条/发丝线；屏幕空间过滤基于简化后的 ring（与实际渲染一致）。
+  防止真实角点被误删导致带状结构塌成细条/发丝线；asset-space 过滤基于简化后的 ring。
 - **绘制顺序**：hull = 轮廓 → 主面 → 履带（深色侧带，覆盖在主面之上可见）→ 凸起 → 结构边。
 - 阈值全集记录在 metadata.json 的 generation.detailThresholds（非 Maus 专属）。
 
@@ -91,11 +99,16 @@ frontend/src/vehicle-models/assets/<modelKey>/
   "turretPivot": { "x": 160, "y": 193.23 },
   "generation": {
     "method": "blitzkit-model-topdown-extraction",
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
     "viewBox": "0 0 320 320",
     "hullBounds": { "min": [-1.86, -4.44], "max": [1.86, 4.6] },
     "turretBounds": { "min": [...], "max": [...] },
     "gunBounds": { "min": [...], "max": [...] },
-    "notes": "确定性提取自 BlitzKit model.glb（hull + tracks + selected turret/gun 节点）"
+    "detailMethod": "top-surface-and-major-edge-extraction",
+    "detailThresholds": { ... },
+    "notes": "确定性提取自 BlitzKit model.glb（HIGH-FIDELITY：真实比例 + visible structure 默认保留）"
   }
 }
 ```
@@ -104,9 +117,10 @@ frontend/src/vehicle-models/assets/<modelKey>/
 - `source.provider`：正式资产（mapping 内 modelKey）必须为 `blitzkit`；`source.tankId` 必须为正整数；
   `collisionModel` / `modelDefinitions` 必须为 http(s) URL。
 - `generation.method`：正式资产必须为 `blitzkit-model-topdown-extraction`。
+- **HIGH-FIDELITY 契约（正式资产强制）**：`generation.fidelity='high'`、
+  `geometryScale='faithful'`、`visibleDetailRetentionTarget ∈ (0,1]`（contract target，非测量值）。
 - `turretPivot`：turreted 必填、x/y ∈ [0, 320]；turretless 禁止。
 - 完整校验见 `frontend/src/vehicle-models/validate.js`（validateMetadata）。
-
 ## 8. 文件命名与 modelKey
 
 - modelKey 全部 kebab-case（`^[a-z0-9]+(?:-[a-z0-9]+)*$`），以

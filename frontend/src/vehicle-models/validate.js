@@ -123,6 +123,20 @@ export function validateMetadata(meta, { modelKey, expectedKind = null }) {
     if (gen.notes !== undefined && typeof gen.notes !== 'string') {
       errors.push('generation.notes 必须为字符串')
     }
+    // HIGH-FIDELITY 契约（正式资产强制）：fidelity=high、geometryScale=faithful、
+    // visibleDetailRetentionTarget ∈ (0,1]（contract target，非测量值）
+    if (expectedKind) {
+      if (gen.fidelity !== 'high') {
+        errors.push('正式资产 generation.fidelity 必须为 "high"（HIGH-FIDELITY ASSET）')
+      }
+      if (gen.geometryScale !== 'faithful') {
+        errors.push('正式资产 generation.geometryScale 必须为 "faithful"（真实比例，无夸大）')
+      }
+      const t = gen.visibleDetailRetentionTarget
+      if (typeof t !== 'number' || !(t > 0 && t <= 1)) {
+        errors.push('正式资产 generation.visibleDetailRetentionTarget 必须在 (0,1]')
+      }
+    }
   }
   // —— turretPivot ——
   if (meta.kind === 'turreted') {

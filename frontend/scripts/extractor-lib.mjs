@@ -91,16 +91,28 @@ export function hullToPath(hull, fit) {
   return d + ' Z'
 }
 
-/** SVG 文档（viewBox 0 0 W H；paths: [{ d, fill?, stroke?, strokeWidth?, fillRule? }]）。 */
-export function svgDocument(paths, viewBox) {
-  const body = paths
-    .map((p) => {
-      const attrs = [`d="${p.d}"`]
-      if (p.fill) attrs.push(`fill="${p.fill}"`)
-      if (p.stroke) attrs.push(`stroke="${p.stroke}"`)
-      if (p.strokeWidth) attrs.push(`stroke-width="${p.strokeWidth}"`)
-      if (p.fillRule) attrs.push(`fill-rule="${p.fillRule}"`)
-      return `  <path ${attrs.join(' ')}/>`
+/** SVG 文档（viewBox 0 0 W H）。
+ * 支持 detail-level grouping（高保真资产为未来 runtime LOD 准备结构）：
+ *   svgDocument({ groups: [{ group: 'vehicle-primary', paths: [...] }, ...] }, viewBox)
+ * 输出：
+ *   <g class="vehicle-primary">...</g>
+ * 也兼容平铺 paths（旧调用）。
+ */
+export function svgDocument(input, viewBox) {
+  const emitPath = (p) => {
+    const attrs = [`d="${p.d}"`]
+    if (p.fill) attrs.push(`fill="${p.fill}"`)
+    if (p.stroke) attrs.push(`stroke="${p.stroke}"`)
+    if (p.strokeWidth) attrs.push(`stroke-width="${p.strokeWidth}"`)
+    if (p.fillRule) attrs.push(`fill-rule="${p.fillRule}"`)
+    return `  <path ${attrs.join(' ')}/>`
+  }
+  const groups = Array.isArray(input) ? [{ group: null, paths: input }] : input.groups
+  const body = groups
+    .map(({ group, paths }) => {
+      const inner = paths.map(emitPath).join('\n')
+      if (!group) return inner
+      return `  <g class="${group}">\n${inner}\n  </g>`
     })
     .join('\n')
   return [
@@ -299,18 +311,24 @@ export function triangleNormal(a, b, c) {
  *   minAreaM2:    区域最小投影面积（模型平方米），过滤碎块。
  *   bumpDelta:    层内凸起判定的 z 抬升阈值（米）；
  *   minBumpAreaM2: 凸起区域最小投影面积（模型平方米）；
- *   bumpSignificanceRatio: 凸起区域在该层总凸起面积中的最低占比（< 该比例视为
- *     粗糙网格面片伪影/噪声，过滤——"少而强"：只保留有语义的大特征）。
+ *   bumpHeightDeltaM: 凸起分量与外部面的共享边高度差下限——低于该值视为
+ *     连续斜面面片（tessellation），高于或完全隔离视为真实凸起。
  * @returns {Array<{ z: number, polys: Array<{ring, holes}>, areaM2: number }>}
+ *
+ * 高保真策略（2026-08-18，HIGH-FIDELITY ASSET）：
+ * - 目标 >=90% 可见俯视结构保留：surfaces 全部 top-facing 区域（仅滤极端微小），
+ *   bumps 用「连通分量隔离/高度不连续」判据区分真实凸起与斜面面片；
+ * - 不按相对占比过滤（真实 hatch 即使只占屋顶 3-5% 也保留）；
+ * - 仅删除：sub-pixel 微小 / 连续斜面 tessellation / 极端小面积。
  */
 export function extractTopSurfaces(triangles3d, opts = {}) {
   const topFacingCos = opts.topFacingCos ?? 0.35
   const zTolerance = opts.zTolerance ?? 0.5
-  const minAreaM2 = opts.minAreaM2 ?? 0.08
+  const minAreaM2 = opts.minAreaM2 ?? 0.01
   const bumpDelta = opts.bumpDelta ?? 0.08
-  const minBumpAreaM2 = opts.minBumpAreaM2 ?? 0.05
-  const bumpSignificanceRatio = opts.bumpSignificanceRatio ?? 0.1
-  // 1) top-facing 筛选 + 重心 z
+  const minBumpAreaM2 = opts.minBumpAreaM2 ?? 0.01
+  const bumpHeightDeltaM = opts.bumpHeightDeltaM ?? 0.06
+  // 1) top-facing 筛选 + 重心 z + 面积
   const faces = []
   for (const tri of triangles3d) {
     const n = triangleNormal(tri[0], tri[1], tri[2])
@@ -319,7 +337,9 @@ export function extractTopSurfaces(triangles3d, opts = {}) {
     const nz = n[2] / len
     if (nz <= topFacingCos) continue
     const cz = (tri[0][2] + tri[1][2] + tri[2][2]) / 3
-    faces.push({ tri, z: cz })
+    const [a, b, c] = tri
+    const area = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2
+    faces.push({ tri, z: cz, area })
   }
   // 2) 粗高度聚类（zTolerance 0.5：连续曲面合并为主层，只分离明显高度带）
   faces.sort((a, b) => a.z - b.z)
@@ -329,20 +349,39 @@ export function extractTopSurfaces(triangles3d, opts = {}) {
     if (last && f.z - last.z <= zTolerance) last.faces.push(f)
     else layers.push({ z: f.z, faces: [f] })
   }
+  // 3D 共享边 key（跨层一致）
+  const keyOf = (a, b) => {
+    const pa = a.map((v) => v.toFixed(6)).join(',')
+    const pb = b.map((v) => v.toFixed(6)).join(',')
+    return pa < pb ? pa + '|' + pb : pb + '|' + pa
+  }
   // 3) 每层：主平面区域 + 层内凸起（raised regions：hatch / cupola / 甲板凸块）
   const out = []
   for (const layer of layers) {
+    const facesL = layer.faces
     // 面积加权平均 z（主面主导，避免小凸起抬高均值导致漏检）
-    const zMean =
-      layer.faces.reduce((s, f) => {
-        const [a, b, c] = f.tri
-        const area = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2
-        return { z: s.z + f.z * area, w: s.w + area }
-      }, { z: 0, w: 0 })
-    const zMeanFinal = zMean.w > 0 ? zMean.z / zMean.w : 0
-    const mainFaces = layer.faces.filter((f) => f.z <= zMeanFinal + bumpDelta)
-    const bumpFaces = layer.faces.filter((f) => f.z > zMeanFinal + bumpDelta)
-    // 主层 polygon 用 minAreaM2（过滤曲面碎块）；bump（凸起特征）用 minBumpAreaM2（保留 hatch/cupola）
+    let zs = 0
+    let ws = 0
+    for (const f of facesL) { zs += f.z * f.area; ws += f.area }
+    const zMeanFinal = ws > 0 ? zs / ws : 0
+    const bumpThreshold = zMeanFinal + bumpDelta
+    const bumpIdx = []
+    const mainFaces = []
+    for (let i = 0; i < facesL.length; i++) {
+      if (facesL[i].z > bumpThreshold) bumpIdx.push(i)
+      else mainFaces.push(facesL[i])
+    }
+    // 层内共享边邻接（3D 边，跨 top/non-top 邻居也记录——bump 判据需要与分量外
+    // 所有 top-facing 面比较，区分连续斜面面片与真实凸起）
+    const edgeOwners = new Map()
+    for (let i = 0; i < facesL.length; i++) {
+      const tri = facesL[i].tri
+      for (let e = 0; e < 3; e++) {
+        const k = keyOf(tri[e], tri[(e + 1) % 3])
+        if (!edgeOwners.has(k)) edgeOwners.set(k, [])
+        edgeOwners.get(k).push(i)
+      }
+    }
     const keepPolys = (fs, minA) => {
       const tris2d = fs.map((f) => f.tri.map((p) => [p[0], p[1]]))
       const polys = unionTriangles(tris2d)
@@ -359,16 +398,54 @@ export function extractTopSurfaces(triangles3d, opts = {}) {
     const main = keepPolys(mainFaces, minAreaM2)
     if (!main) continue
     const entry = { z: +layer.z.toFixed(2), polys: main.kept, areaM2: +main.area.toFixed(3), bumps: [] }
-    if (bumpFaces.length >= 2) {
-      // ≥2 个抬升面才视为凸起特征（单个游离三角形视为网格伪影）
-      const bump = keepPolys(bumpFaces, minBumpAreaM2)
-      if (bump) {
-        // 显著性过滤：该层凸起总量中占比过低的碎块（粗糙网格面片伪影）丢弃，
-        // 只保留有语义的大特征（hatch / cupola / 甲板条带）。
-        const total = bump.area
-        const kept = bump.kept.filter((p) => ringArea(p.ring) >= Math.max(minBumpAreaM2, total * bumpSignificanceRatio))
-        if (kept.length > 0) {
-          entry.bumps = [{ z: +(zMeanFinal + bumpDelta + 0.05).toFixed(2), polys: kept, areaM2: +kept.reduce((s, p) => s + ringArea(p.ring), 0).toFixed(3) }]
+    if (bumpIdx.length >= 1) {
+      // 凸起分量：bump 面经共享边连通（同一层内）
+      const inBump = new Set(bumpIdx)
+      const visited = new Set()
+      const comps = []
+      for (const h of bumpIdx) {
+        if (visited.has(h)) continue
+        const comp = []
+        const q = [h]
+        visited.add(h)
+        while (q.length) {
+          const cur = q.pop()
+          comp.push(cur)
+          const tri = facesL[cur].tri
+          for (let e = 0; e < 3; e++) {
+            const k = keyOf(tri[e], tri[(e + 1) % 3])
+            for (const nb of edgeOwners.get(k) || []) {
+              if (inBump.has(nb) && !visited.has(nb)) { visited.add(nb); q.push(nb) }
+            }
+          }
+        }
+        comps.push(comp)
+      }
+      // 分量保留判据：与分量外任何 top-facing 面无共享边（隔离凸起，如 cupola/hatch
+      // 隔垂直壁）→ 保留；有共享边但最大高度差 > bumpHeightDeltaM（台阶）→ 保留；
+      // 有共享边且高度连续（连续斜面面片，tessellation）→ 剔除。
+      const keptComps = []
+      for (const comp of comps) {
+        let touchesOutside = false
+        let maxDzOutside = 0
+        for (const fi of comp) {
+          const tri = facesL[fi].tri
+          for (let e = 0; e < 3; e++) {
+            const k = keyOf(tri[e], tri[(e + 1) % 3])
+            for (const oj of edgeOwners.get(k) || []) {
+              if (comp.includes(oj)) continue
+              touchesOutside = true
+              maxDzOutside = Math.max(maxDzOutside, Math.abs(facesL[fi].z - facesL[oj].z))
+            }
+          }
+        }
+        if (!touchesOutside || maxDzOutside > bumpHeightDeltaM) keptComps.push(comp)
+      }
+      if (keptComps.length > 0) {
+        const keptFaces = keptComps.flat()
+        const bump = keepPolys(keptFaces.map((i) => facesL[i]), minBumpAreaM2)
+        if (bump) {
+          entry.bumps = [{ z: +(zMeanFinal + bumpDelta + 0.05).toFixed(2), polys: bump.kept, areaM2: +bump.area.toFixed(3) }]
         }
       }
     }
@@ -389,18 +466,25 @@ export function ringArea(ring) {
 }
 
 /**
- * 提取顶面内部"主要结构边界"（高度差 / 法线差）。
- * 共享边去重；只输出强结构边（非 wireframe）。
+ * 提取顶面内部"结构边界"（component / height / normal discontinuity）。
+ * 共享边去重；区分真实 feature edge 与 triangle tessellation edge：
+ * - surface-edge：顶面 + 垂直壁/非顶面邻居 → 平台/甲板边缘，且垂直壁高度差必须
+ *   显著（> heightDeltaM）——低模斜面网格的微小面片台阶（壁高 ~0.05-0.1m）不算；
+ * - height：两顶面共享边高度差 > heightDeltaM（真实甲板台肩/凸起边缘）；
+ * - normal：法线突变伴随显著高度差（> heightDeltaM*0.6）才输出——收紧 normalDeltaCos
+ *   至 ~5°（0.995），剔除同一 smooth surface 内的 tessellation 对角线。
+ *
+ * 高保真策略（2026-08-18）：不设数量上限——只限制"是不是实际视觉结构"。
  *
  * @param {number[][][]} triangles3d
- * @param {object} opts { topFacingCos=0.35, heightDeltaM=0.15, normalDeltaCos=0.92, minEdgeLenM=0.5 }
+ * @param {object} opts { topFacingCos=0.35, heightDeltaM=0.15, normalDeltaCos=0.995, minEdgeLenM=1.0 }
  * @returns {Array<{ p1: [x,y], p2: [x,y], reason: string }>} 投影后的 2D 边（模型坐标）
  */
 export function extractMajorEdges(triangles3d, opts = {}) {
   const topFacingCos = opts.topFacingCos ?? 0.35
   const heightDeltaM = opts.heightDeltaM ?? 0.15
-  const normalDeltaCos = opts.normalDeltaCos ?? 0.92
-  const minEdgeLenM = opts.minEdgeLenM ?? 0.5
+  const normalDeltaCos = opts.normalDeltaCos ?? 0.995
+  const minEdgeLenM = opts.minEdgeLenM ?? 1.0
   // 三角形索引 → 法线/重心 z/投影边
   const tris = triangles3d.map((tri) => {
     const n = triangleNormal(tri[0], tri[1], tri[2])
@@ -442,15 +526,24 @@ export function extractMajorEdges(triangles3d, opts = {}) {
     const nonTopOwners = owners.filter((i) => tris[i].nz <= topFacingCos)
     let reason = null
     if (topOwners.length >= 1 && nonTopOwners.length >= 1) {
-      // 顶面边缘边：顶面 + 垂直壁/非顶面邻居 → 平台/甲板边缘
-      // （engine deck 边界、甲板台肩、屋顶边缘）
-      reason = 'surface-edge'
+      // 顶面边缘边：顶面 + 垂直壁邻居 → 平台/甲板边缘。
+      // 壁高（非 top-facing 邻居的顶点 z 跨度）必须显著（> heightDeltaM）：
+      // 低模斜面网格的面片台阶壁（~0.05-0.1m）是 tessellation，不输出；
+      // 用顶点 z 跨度而非三角形重心（重心会把壁高低估一半）。
+      const wallDelta = Math.max(
+        ...nonTopOwners.map((i) => {
+          const zs = tris[i].edges.flat().map((p) => p[2])
+          return Math.max(...zs) - Math.min(...zs)
+        }),
+      )
+      if (wallDelta > heightDeltaM) reason = 'surface-edge'
     } else if (topOwners.length >= 2) {
       const t1 = tris[topOwners[0]]
       const t2 = tris[topOwners[1]]
       const heightDelta = Math.abs(t1.z - t2.z)
       const dot = t1.normal[0] * t2.normal[0] + t1.normal[1] * t2.normal[1] + t1.normal[2] * t2.normal[2]
-      // 高度差驱动（主判据）；法线突变仅在伴随显著高度差时辅助触发（防密集格栅线）
+      // 高度差驱动（主判据）；法线突变仅在伴随显著高度差时辅助触发。
+      // normalDeltaCos 收紧（~5°）：同一平滑曲面内的面片法线微小差异不算 feature。
       if (heightDelta > heightDeltaM) reason = 'height'
       else if (heightDelta > heightDeltaM * 0.6 && dot < normalDeltaCos) reason = 'normal'
     }
@@ -506,9 +599,48 @@ export function clusterEdges(edges, opts = {}) {
 /**
  * 屏幕空间过滤：SVG units 阈值 = minPx × (viewBox 宽 / markerPx)。
  * markerPx 为实际 marker 屏幕尺寸（BattlePlayback 28px 桌面 / 22px 移动端）。
+ * 高保真策略：仅用于 asset-space 微小结构判断（如 minDetailUnits=0.3），
+ * 不再按 20-30px marker 过滤真实 detail（runtime LOD 负责小尺寸）。
  */
 export function minSvgUnits(minPx, viewBoxWidth, markerPx) {
   return minPx * (viewBoxWidth / markerPx)
+}
+
+/**
+ * 高保真 detail 分级（HIGH-FIDELITY ASSET → 未来 runtime LOD 的结构准备）：
+ * - vehicle-primary：任何尺寸必须保留——silhouette / tracks / turret body / mantlet /
+ *   gun / 大型 deck-roof 区域（surface ≥ primaryMinM2）；
+ * - vehicle-secondary：较大非核心结构——large hatch / cupola / vents / engine deck
+ *   plates / major panel boundaries（bump ≥ secondaryMinM2、surface 0.1-0.5 m²、
+ *   edge ≥ edgeSecondaryMinM）；
+ * - vehicle-micro-detail：较小但真实存在——small hatch / small roof features /
+ *   minor top-visible structures（< 0.1 m²）。
+ * 不把 bolt/tiny handle 级垃圾塞进 micro（它们在提取阶段已被 sub-pixel 阈值过滤）。
+ *
+ * @param {object} detail { kind: 'silhouette'|'track'|'surface'|'bump'|'edge'|'mantlet'|'gun', areaM2?, lengthM? }
+ * @param {object} opts { primaryMinM2=0.5, secondaryMinM2=0.1, edgeSecondaryMinM=3.0 }
+ * @returns {'vehicle-primary'|'vehicle-secondary'|'vehicle-micro-detail'}
+ */
+export function classifyDetail(detail, opts = {}) {
+  const primaryMinM2 = opts.primaryMinM2 ?? 0.5
+  const secondaryMinM2 = opts.secondaryMinM2 ?? 0.1
+  const edgeSecondaryMinM = opts.edgeSecondaryMinM ?? 3.0
+  const { kind, areaM2 = 0, lengthM = 0 } = detail
+  if (kind === 'silhouette' || kind === 'track' || kind === 'mantlet' || kind === 'gun') {
+    return 'vehicle-primary'
+  }
+  if (kind === 'surface') {
+    if (areaM2 >= primaryMinM2) return 'vehicle-primary'
+    if (areaM2 >= secondaryMinM2) return 'vehicle-secondary'
+    return 'vehicle-micro-detail'
+  }
+  if (kind === 'bump') {
+    return areaM2 >= secondaryMinM2 ? 'vehicle-secondary' : 'vehicle-micro-detail'
+  }
+  if (kind === 'edge') {
+    return lengthM >= edgeSecondaryMinM ? 'vehicle-secondary' : 'vehicle-micro-detail'
+  }
+  return 'vehicle-secondary'
 }
 
 /**

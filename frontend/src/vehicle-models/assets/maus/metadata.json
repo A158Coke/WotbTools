@@ -44,19 +44,22 @@
         5.683868408203125
       ]
     },
-    "notes": "确定性提取自 BlitzKit model.glb（Layer A silhouette + Layer B top-surface/major-edge details）",
+    "notes": "确定性提取自 BlitzKit model.glb（HIGH-FIDELITY：真实比例 + visible top-view structure 默认保留，仅滤 tiny/hidden/tessellation）",
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
     "detailMethod": "top-surface-and-major-edge-extraction",
     "detailThresholds": {
       "topFacingCos": 0.35,
       "zTolerance": 0.5,
-      "minAreaM2": 0.25,
+      "minAreaM2": 0.01,
       "bumpDelta": 0.08,
-      "minBumpAreaM2": 0.05,
-      "bumpSignificanceRatio": 0.1,
+      "minBumpAreaM2": 0.01,
+      "bumpHeightDeltaM": 0.06,
       "heightDeltaM": 0.15,
-      "normalDeltaCos": 0.92,
-      "minEdgeLenM": 1.5,
-      "minDetailPx": 0.8
+      "normalDeltaCos": 0.995,
+      "minEdgeLenM": 1,
+      "minDetailUnits": 0.3
     }
   }
 }

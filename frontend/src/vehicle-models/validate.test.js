@@ -29,6 +29,9 @@ const GOOD_META = {
     method: 'blitzkit-model-topdown-extraction',
     viewBox: '0 0 320 320',
     notes: 'test',
+    fidelity: 'high',
+    geometryScale: 'faithful',
+    visibleDetailRetentionTarget: 0.9,
   },
 }
 
@@ -98,6 +101,18 @@ describe('validateMetadata', () => {
       generation: { ...GOOD_META.generation, method: 'manual' },
     }
     expect(validateMetadata(badMethod, { modelKey: 'maus', expectedKind: 'turreted' })).not.toEqual([])
+  })
+  it('正式资产强制 HIGH-FIDELITY 契约（fidelity/geometryScale/retention target）', () => {
+    const noFidelity = { ...GOOD_META, generation: { ...GOOD_META.generation, fidelity: undefined } }
+    expect(validateMetadata(noFidelity, { modelKey: 'maus', expectedKind: 'turreted' })).not.toEqual([])
+    const notHigh = { ...GOOD_META, generation: { ...GOOD_META.generation, fidelity: 'low' } }
+    expect(validateMetadata(notHigh, { modelKey: 'maus', expectedKind: 'turreted' })).not.toEqual([])
+    const notFaithful = { ...GOOD_META, generation: { ...GOOD_META.generation, geometryScale: 'stylized' } }
+    expect(validateMetadata(notFaithful, { modelKey: 'maus', expectedKind: 'turreted' })).not.toEqual([])
+    const badTarget = { ...GOOD_META, generation: { ...GOOD_META.generation, visibleDetailRetentionTarget: 0 } }
+    expect(validateMetadata(badTarget, { modelKey: 'maus', expectedKind: 'turreted' })).not.toEqual([])
+    // 非正式资产（expectedKind=null，如 sample 目录）不强制 fidelity 契约
+    expect(validateMetadata({ ...GOOD_META, generation: { ...GOOD_META.generation, fidelity: undefined } }, { modelKey: 'maus' })).toEqual([])
   })
   it('source 缺失 / sourceTankId 非法 FAIL', () => {
     const { source, ...noSource } = GOOD_META
