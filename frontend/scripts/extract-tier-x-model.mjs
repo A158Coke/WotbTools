@@ -25,6 +25,8 @@ import tankopedia from '../../common/tankopedia-tier10.json' with { type: 'json'
 import { MODEL_DEFINITIONS, TANK_ID_TO_MODEL } from '../src/vehicle-models/mapping.js'
 import { VIEWBOX } from '../src/vehicle-models/types.js'
 import {
+  BLITZKIT_MODELS_PROTO,
+  BLITZKIT_TANKS_MIN_PROTO,
   bounds2D,
   buildFeatureAudit,
   buildMetadata,
@@ -34,6 +36,7 @@ import {
   clusterEdges,
   computeFit,
   correctZYTuple,
+  decodeBlitzkitPb,
   edgesToSvgPath,
   extractMajorEdges,
   extractTopSurfaces,
@@ -43,6 +46,7 @@ import {
   projectTopDown,
   projectTopFacingPolygons,
   projectTriangles,
+  selectDefaultModules,
   silhouetteToSvgPaths,
   simplifyRing,
   surfacesToSvgPaths,
@@ -92,36 +96,8 @@ function resolveTank() {
   throw new Error('必须提供 --tank-id 或 --model-key')
 }
 
-const MODELS_PROTO = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'protos/models.proto'), 'utf8')
-const TANK_MIN_PROTO = `
-syntax = "proto2";
-package blitzkit;
-message TankDefinitions { map<uint32, TankDefinition> tanks = 1; }
-message TankDefinition {
-  optional uint32 id = 1;
-  repeated TurretDefinition turrets = 20;
-  repeated TrackDefinition tracks = 22;
-}
-message TurretDefinition {
-  optional uint32 id = 1;
-  repeated GunDefinition guns = 9;
-}
-message GunDefinition { optional uint32 id = 4; }
-message TrackDefinition { optional uint32 id = 1; }
-`
-
-/** protobufjs toObject 的 map 键可能是 number 或 string，统一容错取数。 */
-function mapGet(map, key) {
-  if (map == null) return undefined
-  return map[key] ?? map[String(key)]
-}
-
-function decodePb(buffer, typeName, protoText) {
-  const root = protobuf.parse(protoText).root
-  const Type = root.lookupType(typeName)
-  const message = Type.decode(new Uint8Array(buffer))
-  return Type.toObject(message, { longs: Number, defaults: true, keepCase: true })
-}
+// BlitzKit definitions 解析共享：BLITZKIT_MODELS_PROTO / BLITZKIT_TANKS_MIN_PROTO /
+// mapGet / decodeBlitzkitPb / selectDefaultModules 在 extractor-lib.mjs（extractor 与 bake 共用）。
 
 const io = new NodeIO()
 
@@ -139,24 +115,11 @@ async function main() {
   const modelsPbPath = await download(`${API}/definitions/models.pb`, join(CACHE_DIR, 'definitions', 'models.pb'))
   const tanksPbPath = await download(`${API}/definitions/tanks.pb`, join(CACHE_DIR, 'definitions', 'tanks.pb'))
 
-  const modelDefs = decodePb(readFileSync(modelsPbPath), 'blitzkit.ModelDefinitions', MODELS_PROTO)
-  const modelDef = modelDefs.models[String(tankId)]
-  if (!modelDef) throw new Error(`models.pb 无 tankId ${tankId} 的 ModelDefinition`)
-
-  const tankDefs = decodePb(readFileSync(tanksPbPath), 'blitzkit.TankDefinitions', TANK_MIN_PROTO)
-  const tankDef = tankDefs.tanks[String(tankId)]
-  if (!tankDef || !tankDef.turrets || tankDef.turrets.length === 0) {
-    throw new Error(`tanks.pb 无 tankId ${tankId} 的 turrets 配置`)
-  }
-  const turretDef = tankDef.turrets[tankDef.turrets.length - 1]
-  const gunDef = turretDef.guns[turretDef.guns.length - 1]
-  const trackDef = tankDef.tracks[tankDef.tracks.length - 1]
-  const turretModelId = mapGet(modelDef.turrets, turretDef.id)?.modelId
-  const gunModelId = mapGet(mapGet(modelDef.turrets, turretDef.id)?.guns, gunDef.id)?.modelId
-  if (turretModelId === undefined || gunModelId === undefined) {
-    throw new Error(`models.pb 缺 turret/gun model_id（turret=${turretDef.id} gun=${gunDef.id}）`)
-  }
-  console.log(`  selected: turret=${turretDef.id} model_id=${turretModelId} gun=${gunDef.id} model_id=${gunModelId} track=${trackDef.id}`)
+  const modelDefs = decodeBlitzkitPb(readFileSync(modelsPbPath), 'blitzkit.ModelDefinitions', BLITZKIT_MODELS_PROTO)
+  const tankDefs = decodeBlitzkitPb(readFileSync(tanksPbPath), 'blitzkit.TankDefinitions', BLITZKIT_TANKS_MIN_PROTO)
+  const modules = selectDefaultModules(tankDefs, modelDefs, tankId)
+  const { turretModelId, gunModelId, trackId, turretId, gunId } = modules
+  console.log(`  selected: turret=${turretId} model_id=${turretModelId} gun=${gunId} model_id=${gunModelId} track=${trackId}`)
 
   const tmpGlb = join(CACHE_DIR, 'models', `${tankId}.tmp.glb`)
   mkdirSync(dirname(tmpGlb), { recursive: true })
@@ -484,13 +447,15 @@ async function main() {
   }, null, 2) + '\n')
   console.log(`  debug: ${debugDir}`)
 
-  const origin = modelDef.turretOrigin || { x: 0, y: 0, z: 0 }
+  const origin = modules.turretOrigin || { x: 0, y: 0, z: 0 }
   const modelPivot = correctZYTuple({ x: origin.x, y: origin.y, z: origin.z })
   const pivot2d = projectTopDown(modelPivot)
   const svgPivot = { x: pivot2d.x * fit.scale + fit.tx, y: -pivot2d.y * fit.scale + fit.ty }
   console.log(`  raw turret_origin=(${origin.x},${origin.y},${origin.z}) -> projected turretPivot=(${svgPivot.x.toFixed(2)},${svgPivot.y.toFixed(2)})`)
 
-  const outDir = outDirArg ? join(ROOT, outDirArg) : join(ROOT, 'frontend', 'src', 'vehicle-models', 'assets', modelKey)
+  // 正式资产契约已迁移为 texture-baked webp（bake-tier-x-topview.mjs 生成）——
+  // SVG 仅作 debug/reference：默认输出到 gitignored debug 目录，不再写入 assets/。
+  const outDir = outDirArg ? join(ROOT, outDirArg) : debugDir
   mkdirSync(outDir, { recursive: true })
   // hb/tb 已在 debug 段计算（feature audit 共用）
   const gb = bounds2D(polyPoints(gunPoly))
@@ -513,7 +478,7 @@ async function main() {
     turretBounds: { min: [tb.minX, tb.minY], max: [tb.maxX, tb.maxY] },
     gunBounds: { min: [gb.minX, gb.minY], max: [gb.maxX, gb.maxY] },
     viewBox: VIEWBOX,
-    generationNotes: '确定性提取自 BlitzKit model.glb（HIGH-FIDELITY：真实比例 + visible top-view structure 默认保留，仅滤 tiny/hidden/tessellation）',
+    generationNotes: 'SVG debug/reference（正式资产为 texture-baked webp）；真实 LOD0 geometry 提取，仅滤 tiny/hidden/tessellation',
   })
   metadata.generation.fidelity = 'high'
   metadata.generation.geometryScale = 'faithful'
@@ -521,7 +486,7 @@ async function main() {
   metadata.generation.detailMethod = 'top-surface-and-major-edge-extraction'
   metadata.generation.detailThresholds = DETAIL_THRESHOLDS
   writeFileSync(join(outDir, 'metadata.json'), JSON.stringify(metadata, null, 2) + '\n')
-  console.log(`  输出: ${join(outDir, 'hull.svg')} / turret.svg / metadata.json`)
+  console.log(`  输出(debug): ${join(outDir, 'hull.svg')} / turret.svg / metadata.json`)
   console.log('RESULT: EXTRACTION OK')
 }
 

@@ -64,22 +64,22 @@ describe('VehicleModelPreviewPage', () => {
     expect(await waitFor(() => wrapper.find('.vmp-toolbar').exists())).toBe(true)
     expect(wrapper.find('.vmp-canvas').exists()).toBe(true)
     const options = wrapper.findAll('select option')
-    expect(options.length).toBeGreaterThanOrEqual(2) // sample + 81 modelKeys
+    expect(options.length).toBeGreaterThanOrEqual(2) // 81 modelKeys
     expect(authFns.login).not.toHaveBeenCalled()
   })
 
-  it('默认选中 sample 契约样例并渲染双层标记', async () => {
+  it('默认选中 maus 并渲染双层 webp 标记', async () => {
     authState.roles = ['wotbtools-admin']
     authState.authenticated.value = true
     const wrapper = mount(VehicleModelPreviewPage)
     expect(await waitFor(() => wrapper.find('select').exists())).toBe(true)
     const select = wrapper.find('select').element
-    expect(select.value).toBe('sample')
+    expect(select.value).toBe('maus')
     expect(wrapper.find('.vmp-hull').exists()).toBe(true)
     expect(wrapper.find('.vmp-turret').exists()).toBe(true)
   })
 
-  it('turret img 的 transform-origin 精确等于 sample 非中心 pivot（160,150）', async () => {
+  it('turret img 的 transform-origin 精确等于 maus 非中心 pivot（160,193.23）', async () => {
     authState.roles = ['wotbtools-admin']
     authState.authenticated.value = true
     const wrapper = mount(VehicleModelPreviewPage)
@@ -88,8 +88,8 @@ describe('VehicleModelPreviewPage', () => {
     const turretStyle = wrapper.find('.vmp-turret').attributes('style') || ''
     // hull 绕画布中心 (160,160)
     expect(hullStyle).toContain('transform-origin: 160px 160px')
-    // turret 绕 metadata turretPivot (160,150)——非画布中心
-    expect(turretStyle).toContain('transform-origin: 160px 150px')
+    // turret 绕 metadata turretPivot (160,193.23)——非画布中心
+    expect(turretStyle).toContain('transform-origin: 160px 193.23px')
     expect(turretStyle).toContain('rotate(0deg)')
   })
 
@@ -99,11 +99,11 @@ describe('VehicleModelPreviewPage', () => {
     const wrapper = mount(VehicleModelPreviewPage)
     expect(await waitFor(() => wrapper.find('.vmp-pivot').exists())).toBe(true)
     const pivotEl = wrapper.find('.vmp-pivot').attributes('style') || ''
-    // 画布 320px：marker left/top = pivot × scale = 160px 150px
+    // 画布 320px：marker left/top = pivot × scale = 160px 193.23px（maus）
     expect(pivotEl).toContain('left: 160px')
-    expect(pivotEl).toContain('top: 150px')
+    expect(pivotEl).toContain('top: 193.23px')
     const turretStyle = wrapper.find('.vmp-turret').attributes('style') || ''
-    expect(turretStyle).toContain('transform-origin: 160px 150px')
+    expect(turretStyle).toContain('transform-origin: 160px 193.23px')
   })
 
   it('非 admin 角色显示无权限，不渲染工具栏', async () => {

@@ -1,22 +1,29 @@
-# Tier X 专属俯视车型 SVG — 全局生成规范（Global Generation Spec）
+# Tier X 专属俯视车型资产 — 全局生成规范（Global Generation Spec）
 
-> 本文是仓库正式文档：车型 SVG 由 **BlitzKit extractor 确定性生成**（`frontend/scripts/extract-tier-x-model.mjs`），
-> 几何必须来自真实模型（model.glb + models.pb），**禁止 AI / 人工绘制 geometry**。
-> 人工/ChatGPT 只做 visual QA；发现错误 → 修 extractor → 重新生成，禁止人工 patch SVG path。
-> 系统总览与生成交接见同目录 `README.md`。
+> **正式契约（2026-08-19 迁移）**：车型资产 = **Source-faithful PBR top-view asset**
+> （texture-baked RGBA WebP，由 `frontend/scripts/bake-tier-x-topview.mjs` 确定性生成）。
+> 视觉信息全部来自 BlitzKit `model.glb` 的真实 LOD0 geometry + 内嵌材质/纹理
+> （baseColor / normal / occlusion / alpha），**禁止 AI / 人工绘制 geometry / 纹理**、
+> 禁止 intentional exaggeration、禁止 fake detail。
+> 旧 `hull.svg / turret.svg`（extractor CLI 输出）仅为 debug/reference，不属于正式契约。
+> 几何上限 = BlitzKit/WoTB LOD0 source；runtime 可读性由 PR2 LOD/outline/label 解决。
 
 ## 1. 文件结构与分层契约
 
 ```
 frontend/src/vehicle-models/assets/<modelKey>/
-├── hull.svg          # 必填
-├── turret.svg        # 仅 turreted；turret + 完整炮管 = 刚性 layer
-└── metadata.json     # 必填（与资产同批就位）
+├── hull.webp         # 必填（640×640 physical / 320×320 logical，RGBA 透明背景）
+├── turret.webp       # 仅 turreted；turret + mantlet + 完整炮管 = 刚性 layer
+├── metadata.json     # 必填（Source-faithful PBR 契约，validator 强制）
+└── bake-report.json  # 必填（生成记录：modules/bounds/pivot/bytes）
 ```
 
-- 禁止独立 `gun.svg` / gun layer（炮管永远属于 turret 或 hull）。
-- turretless 车型只有 `hull.svg`，gun 直接属于 hull；**禁止为了统一代码伪造 turret**。
+- 禁止独立 gun asset / gun layer（炮管永远属于 turret 或 hull）。
+- turretless 车型只有 `hull.webp`，gun/mantlet/casemate 已 bake 进 hull；**禁止为了统一代码伪造 turret**。
 - 目录内不允许出现任何其他文件（validator 拒绝）。
+- bake 契约：turreted = hull 场景（hull + tracks）+ turret 场景（selected turret + mantlet + gun）
+  独立 z-buffer/bake（旋转 turret 不暴露 hull 空洞）；turretless = 单 hull 场景（全部结构）。
+- 模块选择数据驱动（tanks.pb + models.pb：turrets/tracks/guns 数组最后），不依赖 display name。
 
 ## 2. SVG 技术契约（validator 强制）
 

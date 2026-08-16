@@ -20,7 +20,7 @@ import {
   ASSET_FILES,
   MODEL_KEY_PATTERN,
   SOURCE_PROVIDER_BLITZKIT,
-  GENERATION_METHOD_EXTRACTION,
+  GENERATION_METHOD_TEXTURE_BAKE,
 } from './types.js'
 
 const ASSETS_DIR = fileURLToPath(new URL('./assets/', import.meta.url))
@@ -114,8 +114,8 @@ export function validateMetadata(meta, { modelKey, expectedKind = null }) {
   } else {
     if (typeof gen.method !== 'string' || gen.method === '') {
       errors.push('generation.method 必须为非空字符串')
-    } else if (expectedKind && gen.method !== GENERATION_METHOD_EXTRACTION) {
-      errors.push(`正式资产 generation.method 必须为 ${GENERATION_METHOD_EXTRACTION}，实际 ${JSON.stringify(gen.method)}`)
+    } else if (expectedKind && gen.method !== GENERATION_METHOD_TEXTURE_BAKE) {
+      errors.push(`正式资产 generation.method 必须为 ${GENERATION_METHOD_TEXTURE_BAKE}，实际 ${JSON.stringify(gen.method)}`)
     }
     if (typeof gen.viewBox !== 'string') {
       errors.push('generation.viewBox 必须为字符串')
@@ -184,19 +184,25 @@ export function validateModelEntry({ modelKey, kind, files }) {
       kind = meta.kind
     }
   }
-  if (!files.hull || files.hull.trim() === '') {
-    errors.push('hull.svg 缺失或为空')
-  } else {
-    errors.push(...validateSvgText(files.hull).map((e) => `hull.svg: ${e}`))
+  // 正式资产 = texture-baked webp（hull.webp 必填；turreted 必配 turret.webp）
+  if (!files.hull || !isWebp(files.hull)) {
+    errors.push('hull.webp 缺失或不是 WebP 二进制')
   }
   if (kind === 'turreted') {
-    if (!files.turret || files.turret.trim() === '') {
-      errors.push('turreted 车型必须提供 turret.svg')
-    } else {
-      errors.push(...validateSvgText(files.turret).map((e) => `turret.svg: ${e}`))
+    if (!files.turret || !isWebp(files.turret)) {
+      errors.push('turreted 车型必须提供 turret.webp（WebP 二进制）')
     }
   } else if (files.turret) {
-    errors.push('turretless 车型禁止 turret.svg')
+    errors.push('turretless 车型禁止 turret.webp')
+  }
+  if (!files.bakeReport || files.bakeReport.trim() === '') {
+    errors.push('bake-report.json 缺失或为空（生成记录契约）')
+  } else {
+    try {
+      JSON.parse(files.bakeReport)
+    } catch (e) {
+      errors.push(`bake-report.json 不是合法 JSON：${e.message}`)
+    }
   }
   if (files.extra && files.extra.length > 0) {
     errors.push(`目录含未契约文件（gun 禁止独立 layer）：${files.extra.join(', ')}`)
@@ -204,10 +210,20 @@ export function validateModelEntry({ modelKey, kind, files }) {
   return errors
 }
 
-/** 读取 assets/<modelKey>/ 目录（缺失文件为 null）。 */
+/** WebP 魔数检查（RIFF....WEBP）。 */
+function isWebp(buf) {
+  return (
+    typeof buf === 'string' &&
+    buf.length >= 12 &&
+    buf.slice(0, 4) === 'RIFF' &&
+    buf.slice(8, 12) === 'WEBP'
+  )
+}
+
+/** 读取 assets/<modelKey>/ 目录（缺失文件为 null；webp 按 latin1 读以便魔数检查）。 */
 export function readModelDir(modelKey) {
   const dir = path.join(ASSETS_DIR, modelKey)
-  const files = { hull: null, turret: null, metadata: null, extra: [] }
+  const files = { hull: null, turret: null, metadata: null, bakeReport: null, extra: [] }
   let names = []
   try {
     names = fs.readdirSync(dir)
@@ -220,9 +236,10 @@ export function readModelDir(modelKey) {
       files.extra.push(name + '/')
       continue
     }
-    if (name === ASSET_FILES.hull) files.hull = fs.readFileSync(full, 'utf8')
-    else if (name === ASSET_FILES.turret) files.turret = fs.readFileSync(full, 'utf8')
+    if (name === ASSET_FILES.hull) files.hull = fs.readFileSync(full, 'latin1')
+    else if (name === ASSET_FILES.turret) files.turret = fs.readFileSync(full, 'latin1')
     else if (name === ASSET_FILES.metadata) files.metadata = fs.readFileSync(full, 'utf8')
+    else if (name === ASSET_FILES.bakeReport) files.bakeReport = fs.readFileSync(full, 'utf8')
     else files.extra.push(name)
   }
   return files

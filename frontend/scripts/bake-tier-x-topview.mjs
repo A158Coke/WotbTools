@@ -1,18 +1,31 @@
 #!/usr/bin/env node
 /**
- * Texture-Baked Top-View prototype（Phase B，Maus-only developer 路线）。
+ * Texture-Baked Top-View baker（production-grade，泛化自 Maus prototype）。
  *
- * BlitzKit GLB → 真实 geometry + UV + material + textures
+ * BlitzKit GLB + tanks.pb + models.pb → 真实 geometry/UV/material/textures
  * → 确定性正交俯视 bake（z-buffer + barycentric UV + alpha test + 中性化）
- * → 独立 hull / turret 高保真资产（RGBA WebP，640×640 physical / 320×320 logical）
- * → bake-report.json（全部字段见 information-loss-audit.md / 任务说明 B15）。
+ * → 正式资产：hull.webp / turret.webp（turreted）/ metadata.json（640×640 / 320 logical）。
  *
- * 网络边界与 extractor CLI 相同：本脚本是 developer 工具，唯一允许访问
- * BlitzKit 网络的位置；production / Battle Playback / CI 不访问。
+ * 数据驱动（不依赖 display name、不假设 turret_01/gun_01 永远最终模块）：
+ * - tankId / baseModelKey / kind：frontend/src/vehicle-models/mapping.js（已审核 inventory）；
+ * - selected turret/gun/track：tanks.pb + models.pb（turrets/tracks/guns 数组最后，
+ *   BlitzKit tankToDuelMember 语义）→ model_id → GLB 节点名；
+ * - turretPivot：models.pb turretOrigin（引擎坐标 → 模型坐标 → 投影）。
+ *
+ * Contract：
+ * - turreted：hull 场景 = hull + tracks；turret 场景 = selected turret + mantlet + gun
+ *   （独立 z-buffer/bake——旋转 turret 不会暴露 hull 空洞）；
+ * - turretless：不生成独立 turret 层——gun/mantlet/casemate 全部 bake 进 hull asset；
+ * - metallic/roughness：顶视中性 bake 无 specular——检查后报告，不加入（§5）；
+ * - 输出适度去色（0.75）保留纹理结构（grille/panel/vent/AO/relief）（§6）。
+ *
+ * 网络边界与 extractor CLI 相同：本脚本是唯一允许访问 BlitzKit 网络的 developer 工具；
+ * production / Battle Playback / CI 不访问。依赖 python + PIL（仅 developer 环境）。
  *
  * 用法（frontend 目录）：
- *   node scripts/bake-tier-x-topview.mjs --model-key maus [--out-dir <dir>]
- * 依赖：python + PIL（仅 developer 环境，用于 WEBP 解码/编码）。
+ *   node scripts/bake-tier-x-topview.mjs --model-key maus
+ *   node scripts/bake-tier-x-topview.mjs --tank-id 6929
+ *   node scripts/bake-tier-x-topview.mjs --model-key maus --out-dir ../tmp/x
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
@@ -20,8 +33,17 @@ import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { NodeIO } from '@gltf-transform/core'
 import * as THREE from 'three'
-import { correctZYTuple, projectTopDown } from './extractor-lib.mjs'
+import { MODEL_DEFINITIONS, TANK_ID_TO_MODEL } from '../src/vehicle-models/mapping.js'
 import { bakeTopView, encodePng } from './texture-bake-lib.mjs'
+import {
+  BLITZKIT_MODELS_PROTO,
+  BLITZKIT_TANKS_MIN_PROTO,
+  correctZYTuple,
+  decodeBlitzkitPb,
+  projectTopDown,
+  resolveBakeScenes,
+  selectDefaultModules,
+} from './extractor-lib.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const CACHE_DIR = join(ROOT, 'frontend', 'scripts', '.vehicle-model-refs')
@@ -29,19 +51,34 @@ const API = 'https://api.blitzkit.app'
 const VIEWBOX = { width: 320, height: 320 }
 const PHYSICAL = 640
 const SUPERSAMPLE = 2 // 1280 内部渲染 → 640 输出（4x AA）
+const DESATURATE = 0.75
 
 const args = process.argv.slice(2)
 function argValue(argv, name) {
   const i = argv.indexOf(name)
   return i >= 0 ? argv[i + 1] : undefined
 }
-const modelKey = argValue(args, '--model-key')
-const tankId = Number(argValue(args, '--tank-id') ?? '')
+const modelKeyArg = argValue(args, '--model-key')
+const tankIdArg = Number(argValue(args, '--tank-id') ?? '')
 const outDirArg = argValue(args, '--out-dir')
-if (!modelKey && !tankId) {
+
+let modelKey
+let tankId
+if (modelKeyArg) {
+  const def = MODEL_DEFINITIONS[modelKeyArg]
+  if (!def) throw new Error(`modelKey ${modelKeyArg} 不在 MODEL_DEFINITIONS 中`)
+  modelKey = modelKeyArg
+  tankId = def.tankIds[0]
+} else if (tankIdArg) {
+  tankId = tankIdArg
+  modelKey = TANK_ID_TO_MODEL[String(tankId)]
+  if (!modelKey) throw new Error(`tankId ${tankId} 不在 Tier X mapping 中`)
+} else {
   console.error('必须提供 --model-key 或 --tank-id')
   process.exit(2)
 }
+const kind = MODEL_DEFINITIONS[modelKey].kind
+console.log(`== ${modelKey} (${tankId}) kind=${kind} ==`)
 
 async function download(url, dest) {
   if (existsSync(dest)) return dest
@@ -52,17 +89,27 @@ async function download(url, dest) {
   return dest
 }
 
+// —— 数据驱动：tanks.pb + models.pb → selected modules ——
+const glbPath = await download(`${API}/tanks/${tankId}/model.glb`, join(CACHE_DIR, 'models', `${tankId}.glb`))
+const modelsPbPath = await download(`${API}/definitions/models.pb`, join(CACHE_DIR, 'definitions', 'models.pb'))
+const tanksPbPath = await download(`${API}/definitions/tanks.pb`, join(CACHE_DIR, 'definitions', 'tanks.pb'))
+const tankDefs = decodeBlitzkitPb(readFileSync(tanksPbPath), 'blitzkit.TankDefinitions', BLITZKIT_TANKS_MIN_PROTO)
+const modelDefs = decodeBlitzkitPb(readFileSync(modelsPbPath), 'blitzkit.ModelDefinitions', BLITZKIT_MODELS_PROTO)
+const modules = selectDefaultModules(tankDefs, modelDefs, tankId)
+console.log(`  selected: turret=${modules.turretId} model_id=${modules.turretModelId} gun=${modules.gunId} model_id=${modules.gunModelId} track=${modules.trackId ?? 'n/a'}`)
+
 const io = new NodeIO()
-const doc = await io.read(await download(`${API}/tanks/${tankId}/model.glb`, join(CACHE_DIR, 'models', `${tankId}.glb`)))
+const doc = await io.read(glbPath)
 const root = doc.getRoot()
 
-// —— 材质 / 纹理解析 ——
+// —— 材质 / 纹理解析（baseColor / occlusion / normal；MR 检查后报告不加入）——
 const materials = root.listMaterials()
-const texDefs = [] // { name, bytes }
+const texDefs = []
 const texIndex = new Map()
+const mrPresent = []
 for (const mat of materials) {
   for (const slot of ['baseColor', 'occlusion', 'normal']) {
-    const tex = mat.getBaseColorTexture && slot === 'baseColor' ? mat.getBaseColorTexture()
+    const tex = slot === 'baseColor' ? mat.getBaseColorTexture()
       : slot === 'occlusion' ? mat.getOcclusionTexture()
       : mat.getNormalTexture()
     if (tex && !texIndex.has(tex)) {
@@ -70,14 +117,14 @@ for (const mat of materials) {
       texDefs.push({ name: tex.getName() ?? `tex${texDefs.length}`, bytes: tex.getImage() ?? null })
     }
   }
+  if (mat.getMetallicRoughnessTexture()) mrPresent.push(mat.getName())
 }
-if (texDefs.some((t) => !t.bytes)) throw new Error('GLB 纹理缺失（无内嵌 image）——texture missing 需显式报错（B16 #17）')
+if (texDefs.some((t) => !t.bytes)) throw new Error('GLB 纹理缺失（无内嵌 image）——texture missing 需显式报错')
 const tmpDir = join(CACHE_DIR, 'debug', 'bake-tmp')
 mkdirSync(tmpDir, { recursive: true })
 const textures = []
 for (let i = 0; i < texDefs.length; i++) {
-  const ext = 'webp'
-  const webpPath = join(tmpDir, `tex-${i}.${ext}`)
+  const webpPath = join(tmpDir, `tex-${i}.webp`)
   const rgbaPath = join(tmpDir, `tex-${i}.rgba`)
   writeFileSync(webpPath, Buffer.from(texDefs[i].bytes))
   const py = spawnSync('python', [join(ROOT, 'frontend', 'scripts', 'decode-webp.py'), webpPath, rgbaPath])
@@ -88,10 +135,20 @@ for (let i = 0; i < texDefs.length; i++) {
   const data = new Float32Array(buf.length - 8)
   for (let j = 0; j < data.length; j++) data[j] = buf[j + 8]
   textures.push({ data, width: w, height: h })
-  console.log(`  texture[${i}] ${texDefs[i].name}: ${w}x${h}`)
 }
+console.log(`  textures: ${texDefs.map((t, i) => `${t.name} ${textures[i].width}x${textures[i].height}`).join(' | ')}`)
+console.log(`  metallicRoughness textures present: ${mrPresent.length ? mrPresent.join(', ') : 'none'}——顶视中性 bake 无 specular，不加入（§5）`)
 
-// —— 分组三角形（含 hide_elements 子树；mask_01 等无关节点排除）——
+// —— 场景组装（resolveBakeScenes 按真实模块 id → 节点名）——
+const allNodes = root.listNodes()
+const nodeNames = allNodes.map((n) => n.getName())
+const { hullNames, turretNames } = resolveBakeScenes(nodeNames, {
+  turretModelId: modules.turretModelId,
+  gunModelId: modules.gunModelId,
+  kind,
+})
+console.log(`  scenes: hull=[${hullNames.join(', ')}] turret=[${turretNames.join(', ')}]`)
+
 const nodeMatrix = (node) => {
   const m = new THREE.Matrix4()
   m.compose(
@@ -101,7 +158,7 @@ const nodeMatrix = (node) => {
   )
   return m
 }
-const collectScene = (node, m, out) => {
+const collectScene = (node, m, out, source) => {
   const mesh = node.getMesh()
   if (mesh) {
     for (const prim of mesh.listPrimitives()) {
@@ -125,44 +182,37 @@ const collectScene = (node, m, out) => {
         const a = pa.set(verts[t[i] * 3], verts[t[i] * 3 + 1], verts[t[i] * 3 + 2])
         const b = pb.set(verts[t[i + 1] * 3], verts[t[i + 1] * 3 + 1], verts[t[i + 1] * 3 + 2])
         const c = pc.set(verts[t[i + 2] * 3], verts[t[i + 2] * 3 + 1], verts[t[i + 2] * 3 + 2])
-        const ab = new THREE.Vector3().subVectors(b, a)
-        const ac = new THREE.Vector3().subVectors(c, a)
-        const n = new THREE.Vector3().crossVectors(ab, ac).normalize()
-        if (n.z <= 0.35) continue // 顶视可见只含 top-facing
         out.push({
           p: [a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z],
           uv: uv0 ? [uv0[t[i] * 2], uv0[t[i] * 2 + 1], uv0[t[i + 1] * 2], uv0[t[i + 1] * 2 + 1], uv0[t[i + 2] * 2], uv0[t[i + 2] * 2 + 1]] : null,
           material: matIdx,
+          source,
         })
       }
     }
   }
-  for (const c of node.listChildren()) collectScene(c, m.clone().multiply(nodeMatrix(node)), out)
+  for (const c of node.listChildren()) collectScene(c, m.clone().multiply(nodeMatrix(node)), out, source)
 }
-const rootNode = root.listNodes().find((n) => n.getName() === 'Maus')
-const byName = {}
-for (const c of rootNode.listChildren()) byName[c.getName()] = c
-// 默认配置（与 extractor 相同：turret/gun/track 数组最后）
-const modelDefs = null // models.pb 不在此解析——tankId 场景固定用节点名；prototype 阶段按 tankId 的节点契约
-// 简化：hull = 'hull' 子树；turret = 'turret_01'（或 turret_{id:02d}，Maus = 01）+ mantlet + gun
-const turretNames = rootNode.listChildren().map((n) => n.getName()).filter((n) => n.startsWith('turret_'))
-const gunNames = rootNode.listChildren().map((n) => n.getName()).filter((n) => /^gun_\d+$/.test(n))
+const identity = new THREE.Matrix4()
 const hullScene = []
 const turretScene = []
-const turretMainScene = [] // fit 用（与 extractor 一致：hull + turret 主体，不含 gun）
-collectScene(byName['hull'], new THREE.Matrix4(), hullScene)
-for (const c of rootNode.listChildren()) {
-  const nm = c.getName()
-  if (nm.startsWith('chassis_track_')) collectScene(c, new THREE.Matrix4(), hullScene) // tracks 参与 hull 场景遮挡
-  if (turretNames.includes(nm)) {
-    collectScene(c, new THREE.Matrix4(), turretScene)
-    collectScene(c, new THREE.Matrix4(), turretMainScene)
-  }
-  if (gunNames.includes(nm) || gunNames.some((g) => nm === `${g}_mask`)) collectScene(c, new THREE.Matrix4(), turretScene)
+const gunScene = []
+const gunName = 'gun_' + String(modules.gunModelId).padStart(2, '0')
+for (const name of hullNames) {
+  const node = allNodes.find((n) => n.getName() === name)
+  if (node) collectScene(node, identity, hullScene, name)
 }
-console.log(`  scenes: hull tris=${hullScene.length} turret tris=${turretScene.length} (main ${turretMainScene.length}) materials=${materials.length} textures=${textures.length}`)
+for (const name of turretNames) {
+  const node = allNodes.find((n) => n.getName() === name)
+  if (!node) continue
+  collectScene(node, identity, turretScene, name)
+  if (name === gunName) collectScene(node, identity, gunScene, name)
+}
+if (hullScene.length === 0) throw new Error('hull 场景为空——节点名匹配失败（GLB 结构异常）')
+if (kind === 'turreted' && turretScene.length === 0) throw new Error(`turreted 但 turret 场景为空（turret_${String(modules.turretModelId).padStart(2, '0')} 未找到）`)
+console.log(`  tris: hull=${hullScene.length} turret=${turretScene.length} gun=${gunScene.length}`)
 
-// —— fit（与 extractor 相同的逻辑空间：hull+turret bounds → 320 画布）——
+// —— fit（与 extractor 相同的逻辑空间；turreted = hull + turret 主体，gun 允许 overflow）——
 const boundsOf = (tris) => {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   for (const t of tris) {
@@ -175,34 +225,27 @@ const boundsOf = (tris) => {
   }
   return { minX, minY, maxX, maxY }
 }
-// fit bounds 与 extractor 严格一致：优先复用已生成 metadata 的 hull/turret 2D-union bounds
-// （否则用 top-facing 三角形 bounds——prototype 阶段 Maus 必有 metadata）。
-const metaPath = join(ROOT, 'frontend', 'src', 'vehicle-models', 'assets', 'maus', 'metadata.json')
-const existingMeta = existsSync(metaPath) ? JSON.parse(readFileSync(metaPath, 'utf8')) : null
+const turretName = 'turret_' + String(modules.turretModelId).padStart(2, '0')
 const hullB = boundsOf(hullScene)
-const turretB = boundsOf(turretMainScene) // 主体（不含 gun——gun 允许 overflow，与 extractor fit 一致）
-const fitB = existingMeta
+const turretMainB = kind === 'turreted' ? boundsOf(turretScene.filter((t) => t.source === turretName)) : null
+const gunB = kind === 'turreted' ? boundsOf(gunScene) : null
+const fitB = kind === 'turreted'
   ? {
-      minX: Math.min(existingMeta.generation.hullBounds.min[0], existingMeta.generation.turretBounds.min[0]),
-      minY: Math.min(existingMeta.generation.hullBounds.min[1], existingMeta.generation.turretBounds.min[1]),
-      maxX: Math.max(existingMeta.generation.hullBounds.max[0], existingMeta.generation.turretBounds.max[0]),
-      maxY: Math.max(existingMeta.generation.hullBounds.max[1], existingMeta.generation.turretBounds.max[1]),
+      minX: Math.min(hullB.minX, turretMainB.minX),
+      minY: Math.min(hullB.minY, turretMainB.minY),
+      maxX: Math.max(hullB.maxX, turretMainB.maxX),
+      maxY: Math.max(hullB.maxY, turretMainB.maxY),
     }
-  : {
-      minX: Math.min(hullB.minX, turretB.minX),
-      minY: Math.min(hullB.minY, turretB.minY),
-      maxX: Math.max(hullB.maxX, turretB.maxX),
-      maxY: Math.max(hullB.maxY, turretB.maxY),
-    }
+  : hullB // turretless：gun/casemate 全部进 hull，fit 含全部
 const w = fitB.maxX - fitB.minX
 const h = fitB.maxY - fitB.minY
+if (!(w > 0) || !(h > 0)) throw new Error('fit bounds 无效')
 const scale = (Math.min(VIEWBOX.width, VIEWBOX.height) * 0.88) / Math.max(w, h)
 const cx = (fitB.minX + fitB.maxX) / 2
 const cy = (fitB.minY + fitB.maxY) / 2
 const tx = VIEWBOX.width / 2 - cx * scale
 const ty = VIEWBOX.height / 2 - cy * scale
-console.log(`  fit: scale=${scale.toFixed(4)} tx=${tx.toFixed(2)} ty=${ty.toFixed(2)}`)
-// 画布世界范围（320 逻辑画布对应世界坐标）
+console.log(`  fit: scale=${scale.toFixed(4)} bounds=(${fitB.minX.toFixed(2)},${fitB.minY.toFixed(2)})..(${fitB.maxX.toFixed(2)},${fitB.maxY.toFixed(2)})`)
 const canvasBounds = {
   minX: -tx / scale,
   maxX: (VIEWBOX.width - tx) / scale,
@@ -221,18 +264,10 @@ const materialsDef = materials.map((mat) => {
   }
 })
 
-// —— bake 主流程 ——
-const bake = (scene, label) => {
+// —— bake ——
+const bake = (scene) => {
   const res = SUPERSAMPLE * PHYSICAL
-  const out = bakeTopView({
-    triangles: scene,
-    textures,
-    materials: materialsDef,
-    bounds: canvasBounds,
-    resolution: res,
-    desaturate: 0.75,
-  })
-  // 4x box downsample → PHYSICAL
+  const out = bakeTopView({ triangles: scene, textures, materials: materialsDef, bounds: canvasBounds, resolution: res, desaturate: DESATURATE })
   const W = PHYSICAL
   const rgba = new Uint8Array(W * W * 4)
   const S = SUPERSAMPLE
@@ -258,39 +293,37 @@ const bake = (scene, label) => {
   }
   return { rgba, width: W, height: W, covered: out.covered }
 }
+const hullBaked = bake(hullScene)
+const turretBaked = kind === 'turreted' ? bake(turretScene) : null
+console.log(`  bake: hull covered=${hullBaked.covered}px${turretBaked ? ` turret covered=${turretBaked.covered}px` : ''}`)
 
-const hullBaked = bake(hullScene, 'hull')
-const turretBaked = bake(turretScene, 'turret')
-console.log(`  bake: hull covered=${hullBaked.covered}px turret covered=${turretBaked.covered}px`)
-
-// —— 输出 ——
-const outDir = outDirArg ? join(ROOT, outDirArg) : join(ROOT, 'frontend', 'src', 'vehicle-models', 'prototypes', 'maus')
+// —— 输出（正式资产：webp + metadata；debug：PNG + 通道图 + report）——
+const outDir = outDirArg ? join(ROOT, outDirArg) : join(ROOT, 'frontend', 'src', 'vehicle-models', 'assets', modelKey)
 mkdirSync(outDir, { recursive: true })
-const debugDir = join(CACHE_DIR, 'debug', 'maus-texture-bake')
+const debugDir = join(CACHE_DIR, 'debug', modelKey)
 mkdirSync(debugDir, { recursive: true })
 const pngToWebp = (pngPath, webpPath, quality = 90) => {
   const code = `from PIL import Image; Image.open(r'${pngPath}').save(r'${webpPath}', 'WEBP', quality=${quality}, method=6)`
   const r2 = spawnSync('python', ['-c', code])
   if (r2.status !== 0) throw new Error(`WEBP 编码失败: ${r2.stderr?.toString().slice(0, 300)}`)
 }
-const writeAssets = (label, baked) => {
+const writeAsset = (label, baked, isOfficial) => {
   const png = encodePng(baked.rgba, baked.width, baked.height)
   const pngPath = join(debugDir, `${label}-baked.png`)
   writeFileSync(pngPath, png)
-  const webpPath = join(outDir, `${label}-high-fidelity.webp`)
+  const webpPath = join(outDir, `${label}.webp`)
   pngToWebp(pngPath, webpPath)
-  console.log(`  ${label}: ${baked.width}x${baked.height} png=${png.length}B webp=${readFileSync(webpPath).length}B`)
-  return webpPath
+  console.log(`  ${label}: ${baked.width}x${baked.height} webp=${readFileSync(webpPath).length}B`)
+  return { webpPath, bytes: readFileSync(webpPath).length }
 }
-const hullWebp = writeAssets('hull', hullBaked)
-const turretWebp = writeAssets('turret', turretBaked)
+const hullAsset = writeAsset('hull', hullBaked, true)
+const turretAsset = kind === 'turreted' ? writeAsset('turret', turretBaked, true) : null
 
-// debug 通道图（baseColor / normal / occlusion 单独 bake）
+// debug 通道图（source-color / normal / ao）
 const debugChannel = (name, scene, slot) => {
   const mats = materialsDef.map((m) => ({ ...m, baseColor: m[slot], occlusion: slot === 'occlusion' ? m.occlusion : -1, normal: slot === 'normal' ? m.normal : -1 }))
   const res = SUPERSAMPLE * PHYSICAL
   const out = bakeTopView({ triangles: scene, textures, materials: mats, bounds: canvasBounds, resolution: res, desaturate: 0 })
-  // downsample
   const W = PHYSICAL
   const rgba = new Uint8Array(W * W * 4)
   const S = SUPERSAMPLE
@@ -313,45 +346,77 @@ const debugChannel = (name, scene, slot) => {
 debugChannel('hull-source-color', hullScene, 'baseColor')
 debugChannel('hull-normal', hullScene, 'normal')
 debugChannel('hull-ao', hullScene, 'occlusion')
-debugChannel('turret-source-color', turretScene, 'baseColor')
-debugChannel('turret-normal', turretScene, 'normal')
-debugChannel('turret-ao', turretScene, 'occlusion')
+if (kind === 'turreted') {
+  debugChannel('turret-source-color', turretScene, 'baseColor')
+  debugChannel('turret-normal', turretScene, 'normal')
+  debugChannel('turret-ao', turretScene, 'occlusion')
+}
 
-// turretPivot 与 extractor 同一公式（metadata 已有值；bake 与 SVG 共用同一 fit → pivot 一致）
+// turretPivot（turreted：models.pb turretOrigin → 模型坐标 → 投影，与 extractor 同一公式）
+let turretPivot = null
+if (kind === 'turreted') {
+  const origin = modules.turretOrigin || { x: 0, y: 0, z: 0 }
+  const modelPivot = correctZYTuple({ x: origin.x, y: origin.y, z: origin.z })
+  const pivot2d = projectTopDown(modelPivot)
+  turretPivot = { x: +(pivot2d.x * scale + tx).toFixed(2), y: +(-pivot2d.y * scale + ty).toFixed(2) }
+  console.log(`  turretPivot=${JSON.stringify(turretPivot)}`)
+}
+
 const report = {
   tankId,
   modelKey,
-  sourceModel: {
-    glbPath: join(CACHE_DIR, 'models', `${tankId}.glb`),
-    bytes: readFileSync(join(CACHE_DIR, 'models', `${tankId}.glb`)).length,
-  },
-  output: {
-    physicalPixelSize: [PHYSICAL, PHYSICAL],
-    logicalViewBox: '0 0 320 320',
-    supersample: SUPERSAMPLE,
-  },
+  kind,
+  sourceModel: { glbBytes: readFileSync(glbPath).length },
+  selectedModules: { turretId: modules.turretId, gunId: modules.gunId, trackId: modules.trackId ?? null, turretModelId: modules.turretModelId, gunModelId: modules.gunModelId },
+  output: { physicalPixelSize: [PHYSICAL, PHYSICAL], logicalViewBox: '0 0 320 320', supersample: SUPERSAMPLE },
   materials: materials.map((m) => m.getName()),
   texturesUsed: texDefs.map((t) => t.name),
   uvSetsUsed: ['TEXCOORD_0'],
-  visibleTriangleCounts: { hull: hullScene.length, turret: turretScene.length },
+  metallicRoughness: { present: mrPresent.length > 0, used: false, reason: '顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）' },
+  visibleTriangleCounts: { hull: hullScene.length, turret: kind === 'turreted' ? turretScene.length : null },
   alphaTested: materialsDef.filter((m) => m.alphaMode === 'MASK').length,
   hullBounds: { min: [hullB.minX, hullB.minY], max: [hullB.maxX, hullB.maxY] },
-  turretBounds: { min: [turretB.minX, turretB.minY], max: [turretB.maxX, turretB.maxY] },
-  turretPivot: existingMeta?.turretPivot ?? null,
+  turretBounds: kind === 'turreted' ? { min: [turretMainB.minX, turretMainB.minY], max: [turretMainB.maxX, turretMainB.maxY] } : null,
+  gunBounds: gunB ? { min: [gunB.minX, gunB.minY], max: [gunB.maxX, gunB.maxY] } : null,
+  turretPivot,
   fit: { scale, tx, ty },
   assets: {
-    hullWebp: readFileSync(hullWebp).length,
-    turretWebp: readFileSync(turretWebp).length,
+    hullWebp: hullAsset.bytes,
+    turretWebp: turretAsset?.bytes ?? null,
   },
   generation: {
-    method: 'texture-baked-topdown-prototype',
-    desaturate: 0.75,
+    method: 'blitzkit-model-topdown-texture-bake',
+    desaturate: DESATURATE,
     shading: 'baseColor x occlusion x normal-z relief (restrained)',
     determinism: 'pure arithmetic; same input -> same output',
   },
-  geometrySvgRecall: null, // Phase A 后由 audit 脚本回填（见 _phaseA-recall.py）
-  textureBakeRecall: null,
 }
+writeFileSync(join(outDir, 'metadata.json'), JSON.stringify({
+  modelKey,
+  kind,
+  source: {
+    provider: 'blitzkit',
+    tankId,
+    collisionModel: `${API}/tanks/${tankId}/model.glb`,
+    modelDefinitions: `${API}/definitions/models.pb`,
+  },
+  ...(turretPivot ? { turretPivot } : {}),
+  generation: {
+    method: 'blitzkit-model-topdown-texture-bake',
+    viewBox: `0 0 ${VIEWBOX.width} ${VIEWBOX.height}`,
+    physicalPixelSize: [PHYSICAL, PHYSICAL],
+    hullBounds: report.hullBounds,
+    turretBounds: report.turretBounds,
+    gunBounds: report.gunBounds,
+    selectedModules: report.selectedModules,
+    texturesUsed: report.texturesUsed,
+    desaturate: DESATURATE,
+    fidelity: 'high',
+    geometryScale: 'faithful',
+    visibleDetailRetentionTarget: 0.9,
+    notes: 'Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决',
+  },
+}, null, 2) + '\n')
 writeFileSync(join(outDir, 'bake-report.json'), JSON.stringify(report, null, 2) + '\n')
-console.log(`输出: ${outDir}/hull-high-fidelity.webp / turret-high-fidelity.webp / bake-report.json`)
+console.log(`输出: ${outDir}/hull.webp${turretAsset ? ' / turret.webp' : ''} / metadata.json / bake-report.json`)
 console.log('RESULT: BAKE OK')

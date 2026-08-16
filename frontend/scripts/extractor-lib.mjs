@@ -1116,3 +1116,105 @@ export function bumpsToSvgPaths(surfaces, fit, fill) {
   }
   return paths
 }
+// —— BlitzKit definitions 解析共享（extractor CLI 与 bake CLI 共用）——
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import protobuf from 'protobufjs'
+
+/** models.pb schema（BlitzKit 官方 protoc 字段号，勿改——见 protos/models.proto）。 */
+export const BLITZKIT_MODELS_PROTO = readFileSync(new URL('./protos/models.proto', import.meta.url), 'utf8')
+
+/** tanks.pb 最小 schema（只提取默认配置选择需要的字段）。 */
+export const BLITZKIT_TANKS_MIN_PROTO = [
+  'syntax = "proto2";',
+  'package blitzkit;',
+  'message TankDefinitions { map<uint32, TankDefinition> tanks = 1; }',
+  'message TankDefinition {',
+  '  optional uint32 id = 1;',
+  '  repeated TurretDefinition turrets = 20;',
+  '  repeated TrackDefinition tracks = 22;',
+  '}',
+  'message TurretDefinition {',
+  '  optional uint32 id = 1;',
+  '  repeated GunDefinition guns = 9;',
+  '}',
+  'message GunDefinition { optional uint32 id = 4; }',
+  'message TrackDefinition { optional uint32 id = 1; }',
+  '',
+].join('\n')
+
+/** protobufjs toObject 的 map 键可能是 number 或 string，统一容错取数。 */
+export function mapGet(map, key) {
+  if (map == null) return undefined
+  return map[key] ?? map[String(key)]
+}
+
+/** protobuf 解码（toObject：longs→Number、defaults、keepCase）。 */
+export function decodeBlitzkitPb(buffer, typeName, protoText) {
+  const root = protobuf.parse(protoText).root
+  const Type = root.lookupType(typeName)
+  const message = Type.decode(new Uint8Array(buffer))
+  return Type.toObject(message, { longs: Number, defaults: true, keepCase: true })
+}
+
+/**
+ * 默认配置模块选择（复刻 BlitzKit tankToDuelMember 语义：turrets/tracks/guns 数组最后）。
+ * 数据驱动（tanks.pb + models.pb），不依赖 display name、不假设 turret_01/gun_01。
+ *
+ * @param {object} tankDefs  TankDefinitions.toObject（tanks.pb）
+ * @param {object} modelDefs ModelDefinitions.toObject（models.pb）
+ * @param {number} tankId
+ * @returns {{ turretId, gunId, trackId, turretModelId, gunModelId, turretOrigin }}
+ *   turretOrigin 为 models.pb 引擎坐标（可能 null）
+ */
+export function selectDefaultModules(tankDefs, modelDefs, tankId) {
+  const tankDef = tankDefs.tanks[String(tankId)]
+  if (!tankDef) throw new Error('tanks.pb 无 tankId ' + tankId)
+  const modelDef = modelDefs.models[String(tankId)]
+  if (!modelDef) throw new Error('models.pb 无 tankId ' + tankId)
+  if (!tankDef.turrets || tankDef.turrets.length === 0) {
+    throw new Error('tanks.pb 无 turrets 配置（tankId ' + tankId + '）')
+  }
+  const turretDef = tankDef.turrets[tankDef.turrets.length - 1]
+  const gunDef = turretDef.guns[turretDef.guns.length - 1]
+  const trackDef = tankDef.tracks?.[tankDef.tracks.length - 1]
+  const turretModelId = mapGet(modelDef.turrets, turretDef.id)?.modelId
+  const gunModelId = mapGet(mapGet(modelDef.turrets, turretDef.id)?.guns, gunDef.id)?.modelId
+  if (turretModelId === undefined || gunModelId === undefined) {
+    throw new Error('models.pb 缺 turret/gun model_id（turret=' + turretDef.id + ' gun=' + gunDef.id + '）')
+  }
+  return {
+    turretId: turretDef.id,
+    gunId: gunDef.id,
+    trackId: trackDef?.id,
+    turretModelId,
+    gunModelId,
+    turretOrigin: modelDef.turretOrigin || null,
+  }
+}
+
+/**
+ * bake 场景分组（turreted / turretless contract）：
+ * - turreted：hull 场景 = hull + tracks（+wheels）；turret 场景 = selected turret + mantlet + gun；
+ * - turretless：不生成独立 turret 层——gun/mantlet（casemate）全部 bake 进 hull 场景。
+ * 仅按节点名匹配（TankModel.tsx 同款）；alternate turret/gun 节点天然排除。
+ *
+ * @param {string[]} nodeNames GLB 全部节点名（可含重复——内部去重）
+ * @param {object} opts { turretModelId, gunModelId, kind }
+ * @returns {{ hullNames: string[], turretNames: string[] }}
+ */
+export function resolveBakeScenes(nodeNames, { turretModelId, gunModelId, kind }) {
+  const turretName = 'turret_' + String(turretModelId).padStart(2, '0')
+  const gunName = 'gun_' + String(gunModelId).padStart(2, '0')
+  const hullNames = []
+  const turretNames = []
+  for (const name of new Set(nodeNames)) {
+    if (name === 'hull' || name.startsWith('chassis_track_') || name.startsWith('chassis_wheel_')) {
+      hullNames.push(name)
+    } else if (name === turretName || name === gunName + '_mask' || name === gunName) {
+      if (kind === 'turreted') turretNames.push(name)
+      else hullNames.push(name)
+    }
+  }
+  return { hullNames, turretNames }
+}

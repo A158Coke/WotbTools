@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { VIEWBOX } from './types.js'
 import { hullLayerTransform, pivotLayerTransform } from './pivot.js'
 
-// sample 使用非 (160,160) pivot：证明实现不是碰巧只支持中心 pivot
+// 测试用非中心 pivot：证明实现不是碰巧只支持中心 pivot（正式资产如 Maus turretPivot=(160,193.23)）
 const PIVOT = { x: 160, y: 150 }
 const ANGLES = [0, 90, 180, 270]
 

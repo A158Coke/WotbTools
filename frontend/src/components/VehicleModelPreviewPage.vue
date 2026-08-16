@@ -14,15 +14,14 @@ const { initPromise, tokenParsed, authenticated, login } = useAuth()
 
 const LOGIN_VIEW = 'vehicle-models'
 
-// 资产目录注册表：hull/turret URL + metadata（import.meta.glob，构建期解析）。
-const hullUrls = import.meta.glob('../vehicle-models/assets/*/hull.svg', { eager: true, query: '?url', import: 'default' })
-const turretUrls = import.meta.glob('../vehicle-models/assets/*/turret.svg', { eager: true, query: '?url', import: 'default' })
+// 资产目录注册表（正式契约 = texture-baked webp）：hull/turret URL + metadata。
+const hullUrls = import.meta.glob('../vehicle-models/assets/*/hull.webp', { eager: true, query: '?url', import: 'default' })
+const turretUrls = import.meta.glob('../vehicle-models/assets/*/turret.webp', { eager: true, query: '?url', import: 'default' })
 const metadataMap = import.meta.glob('../vehicle-models/assets/*/metadata.json', { eager: true, import: 'default' })
-// Phase B：Maus-only texture-baked prototype 对比（admin QA，仅 maus 有资产时显示）。
-const protoHullUrls = import.meta.glob('../vehicle-models/prototypes/*/hull-high-fidelity.webp', { eager: true, query: '?url', import: 'default' })
-const protoTurretUrls = import.meta.glob('../vehicle-models/prototypes/*/turret-high-fidelity.webp', { eager: true, query: '?url', import: 'default' })
-const protoRefUrls = import.meta.glob('../vehicle-models/prototypes/*/reference-topview.webp', { eager: true, query: '?url', import: 'default' })
-const protoReports = import.meta.glob('../vehicle-models/prototypes/*/bake-report.json', { eager: true, import: 'default' })
+const bakeReportMap = import.meta.glob('../vehicle-models/assets/*/bake-report.json', { eager: true, import: 'default' })
+// QA 对比（A=geometry SVG debug / C=source reference）仅 dev 环境存在（gitignored 缓存），构建后自动隐藏。
+const qaSvgUrls = import.meta.glob('../../scripts/.vehicle-model-refs/debug/*/final-hull.svg', { eager: true, query: '?url', import: 'default' })
+const qaRefUrls = import.meta.glob('../../scripts/.vehicle-model-refs/debug/*/_textured-canvas-320.png', { eager: true, query: '?url', import: 'default' })
 
 const isAdmin = computed(() => {
   const roles = tokenParsed.value?.realm_access?.roles
@@ -63,17 +62,12 @@ onMounted(async () => {
     tankIds: def.tankIds,
     names: def.tankIds.map((id) => byId.get(id)?.name || String(id)),
   }))
-  // sample 是契约样例（不在 mapping 中），并入清单供预览
-  const sampleMeta = metadataMap['../vehicle-models/assets/sample/metadata.json']
-  modelMeta.value = [
-    ...(sampleMeta ? [{ modelKey: 'sample', kind: sampleMeta.kind, tankIds: [], names: ['sample'] }] : []),
-    ...entries,
-  ]
+  modelMeta.value = entries
   ready.value = true
 })
 
 // —— 选择与状态 ——
-const selectedKey = ref('sample')
+const selectedKey = ref('maus')
 const hullDeg = ref(0)
 const turretDeg = ref(0)
 const showDestroyed = ref(false)
@@ -87,45 +81,37 @@ const selected = computed(() => modelMeta.value?.find((m) => m.modelKey === sele
 const isTurreted = computed(() => selected.value?.kind === 'turreted')
 const metadataJson = computed(() => metadataMap[`../vehicle-models/assets/${selectedKey.value}/metadata.json`] || null)
 const pivot = computed(() => metadataJson.value?.turretPivot || null)
-const hullUrl = computed(() => hullUrls[`../vehicle-models/assets/${selectedKey.value}/hull.svg`] || null)
-const turretUrl = computed(() => turretUrls[`../vehicle-models/assets/${selectedKey.value}/turret.svg`] || null)
+const hullUrl = computed(() => hullUrls[`../vehicle-models/assets/${selectedKey.value}/hull.webp`] || null)
+const turretUrl = computed(() => turretUrls[`../vehicle-models/assets/${selectedKey.value}/turret.webp`] || null)
 const hasAssets = computed(() => Boolean(hullUrl.value))
-const isSample = computed(() => selectedKey.value === 'sample')
-// —— Phase B prototype 对比（仅 maus）——
-const hasPrototype = computed(() => Boolean(protoHullUrls[`../vehicle-models/prototypes/${selectedKey.value}/hull-high-fidelity.webp`]))
-const protoHullUrl = computed(() => protoHullUrls[`../vehicle-models/prototypes/${selectedKey.value}/hull-high-fidelity.webp`] || null)
-const protoTurretUrl = computed(() => protoTurretUrls[`../vehicle-models/prototypes/${selectedKey.value}/turret-high-fidelity.webp`] || null)
-const protoRefUrl = computed(() => protoRefUrls[`../vehicle-models/prototypes/${selectedKey.value}/reference-topview.webp`] || null)
-const protoReport = computed(() => protoReports[`../vehicle-models/prototypes/${selectedKey.value}/bake-report.json`] || null)
+// —— QA 对比（正式 bake 为主；A=geometry SVG debug / C=source reference 仅 dev）——
+const qaSvgUrl = computed(() => qaSvgUrls[`../../scripts/.vehicle-model-refs/debug/${selectedKey.value}/final-hull.svg`] || null)
+const qaRefUrl = computed(() => qaRefUrls[`../../scripts/.vehicle-model-refs/debug/${selectedKey.value}/_textured-canvas-320.png`] || null)
+const bakeReport = computed(() => bakeReportMap[`../vehicle-models/assets/${selectedKey.value}/bake-report.json`] || null)
+const hasQa = computed(() => Boolean(hullUrl.value))
 const protoSize = ref(320)
 const PROTO_SIZES = [320, 128, 64, 28, 24, 20]
-// 几何 SVG 合成（A）：hull+turret 双层叠在 320 画布（与生产 BattlePlayback 同渲染）
-const protoGeomStyle = computed(() => {
-  const s = protoSize.value / VIEWBOX.width
-  return {
-    width: protoSize.value + 'px',
-    height: protoSize.value + 'px',
-    position: 'relative',
-    overflow: 'visible',
-  }
-})
-// bake 合成（B）：640 physical → 按逻辑 320 缩放显示
-const protoBakeStyle = computed(() => {
-  const s = (protoSize.value / 320) * 2 // 640px 资源按 320 逻辑缩放
-  return {
-    width: protoSize.value + 'px',
-    height: protoSize.value + 'px',
-    position: 'relative',
-  }
-})
-const bakeHullLayerStyle = computed(() => {
-  const s = protoSize.value / 320
-  return { position: 'absolute', left: '0', top: '0', width: '100%', height: '100%', transform: 'rotate(' + hullDeg.value + 'deg)', transformOrigin: '160px 193.23px' }
-})
+const protoGeomStyle = computed(() => ({
+  width: protoSize.value + 'px',
+  height: protoSize.value + 'px',
+  position: 'relative',
+  overflow: 'visible',
+}))
+const protoBakeStyle = computed(() => ({
+  width: protoSize.value + 'px',
+  height: protoSize.value + 'px',
+  position: 'relative',
+}))
+const bakeHullLayerStyle = computed(() => ({
+  position: 'absolute', left: '0', top: '0', width: '100%', height: '100%',
+  transform: 'rotate(' + hullDeg.value + 'deg)', transformOrigin: '160px 193.23px',
+}))
 const bakeTurretLayerStyle = computed(() => {
   if (!pivot.value) return null
-  const s = protoSize.value / 320
-  return { position: 'absolute', left: '0', top: '0', width: '100%', height: '100%', transform: 'rotate(' + turretDeg.value + 'deg)', transformOrigin: `${pivot.value.x}px ${pivot.value.y}px` }
+  return {
+    position: 'absolute', left: '0', top: '0', width: '100%', height: '100%',
+    transform: 'rotate(' + turretDeg.value + 'deg)', transformOrigin: `${pivot.value.x}px ${pivot.value.y}px`,
+  }
 })
 
 // 旋转数学（pivot.js）：img 与 320×320 画布 1:1 对齐（left:0 top:0），
@@ -158,7 +144,6 @@ const pivotStyle = computed(() => {
         <label>
           {{ t('adminPreview.model') }}
           <select v-model="selectedKey">
-            <option value="sample">{{ t('adminPreview.sample') }}</option>
             <option v-for="m in modelMeta" :key="m.modelKey" :value="m.modelKey">
               {{ m.modelKey }}（{{ m.names.join(' / ') }}）
             </option>
@@ -206,9 +191,9 @@ const pivotStyle = computed(() => {
         </div>
       </div>
 
-      <!-- Phase B：texture-baked prototype 对比（仅 maus；A=geometry SVG B=bake C=reference） -->
-      <div v-if="hasPrototype" class="vmp-proto">
-        <h3>Texture-Bake Prototype（Maus-only）</h3>
+      <!-- QA 对比（正式 bake 资产；A=geometry SVG debug / C=source reference 仅 dev 有缓存时显示） -->
+      <div v-if="hasQa" class="vmp-proto">
+        <h3>Texture-Bake QA（source-faithful PBR top-view）</h3>
         <div class="vmp-proto-sizes">
           <span>{{ t('adminPreview.protoSize') }}:</span>
           <button
@@ -221,36 +206,34 @@ const pivotStyle = computed(() => {
         </div>
         <div class="vmp-proto-row">
           <div class="vmp-proto-cell">
-            <p class="vmp-proto-label">A · geometry SVG</p>
-            <div :style="protoGeomStyle">
+            <p class="vmp-proto-label">A · geometry SVG (debug)</p>
+            <div v-if="qaSvgUrl" :style="protoGeomStyle">
+              <img class="vmp-proto-img" :src="qaSvgUrl" alt="" :style="bakeHullLayerStyle">
+            </div>
+            <p v-else class="vmp-proto-none">dev-only</p>
+          </div>
+          <div class="vmp-proto-cell">
+            <p class="vmp-proto-label">B · texture bake</p>
+            <div :style="protoBakeStyle">
               <img v-if="hullUrl" class="vmp-proto-img" :src="hullUrl" alt="" :style="bakeHullLayerStyle">
               <img v-if="isTurreted && turretUrl" class="vmp-proto-img" :src="turretUrl" alt="" :style="bakeTurretLayerStyle">
             </div>
           </div>
           <div class="vmp-proto-cell">
-            <p class="vmp-proto-label">B · texture bake</p>
-            <div :style="protoBakeStyle">
-              <img v-if="protoHullUrl" class="vmp-proto-img" :src="protoHullUrl" alt="" :style="bakeHullLayerStyle">
-              <img v-if="isTurreted && protoTurretUrl" class="vmp-proto-img" :src="protoTurretUrl" alt="" :style="bakeTurretLayerStyle">
-            </div>
-          </div>
-          <div class="vmp-proto-cell">
             <p class="vmp-proto-label">C · source reference</p>
-            <img v-if="protoRefUrl" class="vmp-proto-img" :src="protoRefUrl" alt="" :style="{ width: protoSize + 'px', height: protoSize + 'px', background: 'rgba(0,0,0,0.08)' }">
+            <img v-if="qaRefUrl" class="vmp-proto-img" :src="qaRefUrl" alt="" :style="{ width: protoSize + 'px', height: protoSize + 'px', background: 'rgba(0,0,0,0.08)' }">
+            <p v-else class="vmp-proto-none">dev-only</p>
           </div>
         </div>
-        <p v-if="protoReport" class="vmp-proto-report">
-          bake recall: {{ (protoReport.textureBakeRecall?.gtThr18 * 100).toFixed(1) }}% @thr18 /
-          {{ (protoReport.textureBakeRecall?.gtThr12 * 100).toFixed(1) }}% @thr12 ·
-          geometry SVG: {{ (protoReport.geometrySvgRecall?.gtThr18 * 100).toFixed(1) }}% ·
-          {{ protoReport.decorativeAnalysis?.verdict }} ·
-          hull {{ protoReport.assets?.hullWebp }}B / turret {{ protoReport.assets?.turretWebp }}B
+        <p v-if="bakeReport" class="vmp-proto-report">
+          {{ bakeReport.selectedModules ? 'turret ' + bakeReport.selectedModules.turretId + ' · gun ' + bakeReport.selectedModules.gunId : '' }}
+          · hull {{ bakeReport.assets?.hullWebp }}B / turret {{ bakeReport.assets?.turretWebp ? bakeReport.assets.turretWebp + 'B' : '—' }}
+          · pivot {{ bakeReport.turretPivot ? bakeReport.turretPivot.x + ',' + bakeReport.turretPivot.y : '—' }}
         </p>
       </div>
 
       <div class="vmp-info" v-if="selected">
         <p><strong>{{ selected.modelKey }}</strong> · {{ isTurreted ? t('adminPreview.turreted') : t('adminPreview.turretless') }} · {{ selected.tankIds.join(', ') }}</p>
-        <p v-if="isSample">{{ t('adminPreview.sampleNote') }}</p>
         <p v-if="!hasAssets">{{ t('adminPreview.pending') }}</p>
         <template v-else>
           <p v-if="pivot">{{ t('adminPreview.pivot') }}: {{ pivot.x }}, {{ pivot.y }}</p>
@@ -386,6 +369,7 @@ const pivotStyle = computed(() => {
 .vmp-proto-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
 .vmp-proto-cell { text-align: center; }
 .vmp-proto-label { font-size: 12px; color: var(--text-sub, #72796f); margin: 0 0 4px; }
+.vmp-proto-none { font-size: 11px; color: var(--text-sub, #72796f); margin: 40px 0; }
 .vmp-proto-img { image-rendering: auto; }
 .vmp-proto-report { margin: 10px 0 0; font-size: 12px; color: var(--text-sub, #72796f); }
 </style>
