@@ -144,7 +144,7 @@ const stateClasses = computed(() => ({
       v-if="st.destroyed"
       class="pb-death"
       aria-hidden="true"
-      :style="{ transform: `translateX(-50%) ${st.overlayInverseScale}` }"
+      :style="{ color: '#ff4d4f', fontSize: '22px', fontWeight: '800', zIndex: 6, transform: `translateX(-50%) ${st.overlayInverseScale}` }"
     >✕</span>
     <span
       class="pb-name"
@@ -188,17 +188,23 @@ const stateClasses = computed(() => ({
 }
 /* 阵亡：整层灰化（含 dedicated hull/turret） */
 .pb-destroyed .pb-hull, .pb-destroyed .pb-turret, .pb-destroyed .pb-turret-assembly { filter: grayscale(1); }
+/* 阵亡 ✕（PR #92 Review A）：红色 + 更大 + 多层描边——深/亮色地图背景都清晰可读，
+   与 last-known（仅淡化，无 ✕）语义区分明显。颜色/字号/z-index 由 inline style 提供
+   （可测试）；此块负责位置/形状/描边。 */
 .pb-death {
   position: absolute;
-  top: -6px;
+  top: -10px;
   left: 50%;
   transform: translateX(-50%);
-  color: #fff;
-  font-size: 16px;
-  font-weight: 700;
-  z-index: 4;
+  line-height: 1;
+  z-index: 6;
   pointer-events: none;
-  text-shadow: 0 0 2px #000, 0 0 2px #000;
+  text-shadow:
+    0 0 3px rgba(0, 0, 0, 0.9),
+    0 0 3px rgba(0, 0, 0, 0.9),
+    0 1px 2px rgba(0, 0, 0, 0.8),
+    -1px -1px 0 rgba(0, 0, 0, 0.55),
+    1px 1px 0 rgba(0, 0, 0, 0.55);
 }
 /* 常显坦克型号名标签：位于图标上方，经 overlayInverseScale 反缩放 → 字号不随地图缩放 */
 .pb-name {
