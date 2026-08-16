@@ -16,6 +16,10 @@
 - **跨站偏好**：主题/语言偏好写 `domain=.wotbtools.com` cookie（`utils/theme.js` 同款写法），localStorage 仅本地开发回退。
 - **versions.json**（`src/data/`）：仅用户可见变更新增条目；`v` 递增不跳号、三语同条目、顶部追加、不改历史条目；纯技术/CI 变更不写。
 - 测试文件与组件同目录（`*.test.js`），`// @vitest-environment happy-dom` 按需声明。
+- **Tier X 专属车型系统**（`src/vehicle-models/`）：Tankopedia Tier X 100% 覆盖由
+  `coverage.test.js` 强制；正式车型 SVG 由 ChatGPT 按 `docs/assets/tier-x-models/svg-generation-spec.md`
+  生成，资产放回后先跑 `node frontend/scripts/validate-vehicle-models.mjs` 自检；隐藏 QA 页
+  `?view=vehicle-models`（仅 wotbtools-admin）。
 
 ## AI 复盘前端边界
 

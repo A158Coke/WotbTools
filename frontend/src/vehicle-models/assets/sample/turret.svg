@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320">
+  <!-- sample contract turret — 炮塔 + 完整炮管刚性层（pivot 160,160） -->
+  <g id="turret">
+    <!-- 炮管（0° 朝上，允许溢出 viewBox） -->
+    <rect x="156" y="48" width="8" height="92" rx="3" fill="#4d534f"/>
+    <rect x="153" y="40" width="14" height="14" rx="2" fill="#3f4541"/>
+    <!-- 炮塔外壳 -->
+    <path d="M128 148 Q128 122 160 122 Q192 122 192 148 L192 172 Q192 192 160 192 Q128 192 128 172 Z" fill="#7a817c"/>
+    <!-- 炮塔座圈参考（顶部中央，pivot 十字由预览层绘制） -->
+    <circle cx="160" cy="160" r="26" fill="none" stroke="#565c58" stroke-width="3"/>
+  </g>
+</svg>
