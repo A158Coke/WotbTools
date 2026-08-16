@@ -374,11 +374,11 @@ describe('Layer B — Maus 生成资产细节（Layer 正确性）', () => {
     const paths = (svg.match(/<path/g) || []).length
     expect(paths).toBeGreaterThanOrEqual(4)
   })
-  it('无 wireframe 爆炸：edges 段数受限（hull ≤ 16，turret ≤ 12）', () => {
-    for (const [file, stroke, cap] of [['hull.svg', '#333833', 16], ['turret.svg', '#4a504c', 12]]) {
+  it('无 wireframe 爆炸：edges 段数受限（hull ≤ 8，turret ≤ 6）', () => {
+    for (const [file, stroke, cap] of [['hull.svg', '#333833', 8], ['turret.svg', '#4a504c', 6]]) {
       const svg = readFileSync(MAUS_DIR + file, 'utf8')
       const m = svg.match(new RegExp('<path d="([^"]*)" stroke="' + stroke + '"[^>]*>'))
-      if (m) expect(m[1].split(' M').length - 1).toBeLessThanOrEqual(cap)
+      if (m) expect((m[1].match(/M/g) || []).length).toBeLessThanOrEqual(cap)
     }
   })
   it('turret detail 与 silhouette 同一 fit（pivot 不变：detail 路径存在且 pivot 稳定）', () => {
@@ -460,7 +460,7 @@ describe('Layer B — bump（层内凸起特征）提取', () => {
     for (const [file, stroke, cap] of [['hull.svg', '#333833', 8], ['turret.svg', '#4a504c', 6]]) {
       const svg = readFileSync(MAUS_DIR + file, 'utf8')
       const m = svg.match(new RegExp('<path d="([^"]*)" stroke="' + stroke + '"[^>]*>'))
-      if (m) expect(m[1].split(' M').length - 1).toBeLessThanOrEqual(cap)
+      if (m) expect((m[1].match(/M/g) || []).length).toBeLessThanOrEqual(cap)
     }
   })
 })
