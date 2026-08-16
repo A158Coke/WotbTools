@@ -171,6 +171,7 @@ export function buildMetadata({
  * - 备选（未采用）：raster mask + contour trace（锯齿/分辨率权衡）、alpha shape（参数不稳）。
  */
 import polygonClipping from 'polygon-clipping'
+import * as THREE from 'three'
 
 /**
  * 从 POSITION + INDEX 数组构建三角形列表（3D 顶点引用）。
@@ -190,6 +191,86 @@ export function trianglesFromGeometry({ positions, indices }) {
     ])
   }
   return tris
+}
+
+/**
+ * 收集节点子树所有 mesh 的三角形（POSITION + INDEX，应用节点/世界矩阵）。
+ *
+ * 复刻 BlitzKit TankModel.tsx：匹配顶层节点后 jsxTree(node) 渲染整个子树——
+ * *_hide_elements* 子树属于真实视觉模型的一部分（audit 2026-08-19 源码确认），
+ * 不在此过滤（A1：不再无条件跳过）；最终是否可见由 rasterVisibility
+ * （真实 z-buffer）决定。无关节点（如 mask_01）由 groupRenderNodes 的
+ * 顶层名匹配天然排除，不设名字黑名单。
+ */
+export function collectNodeTriangles(node, out, matrix) {
+  const m = matrix.clone()
+  const t = node.getTranslation()
+  const r = node.getRotation()
+  const s = node.getScale()
+  if (t || r || s) {
+    const e = new THREE.Matrix4().compose(
+      new THREE.Vector3(t ? t[0] : 0, t ? t[1] : 0, t ? t[2] : 0),
+      new THREE.Quaternion(r ? r[0] : 0, r ? r[1] : 0, r ? r[2] : 0, r ? r[3] : 1),
+      new THREE.Vector3(s ? s[0] : 1, s ? s[1] : 1, s ? s[2] : 1),
+    )
+    m.multiply(e)
+  }
+  const mesh = node.getMesh()
+  if (mesh) {
+    for (const prim of mesh.listPrimitives()) {
+      const posAcc = prim.getAttribute('POSITION')
+      if (!posAcc) continue
+      const idxAcc = prim.getIndices()
+      const positions = posAcc.getArray()
+      const v = new THREE.Vector3()
+      const transformed = new Float32Array(positions.length)
+      for (let i = 0; i < positions.length; i += 3) {
+        v.set(positions[i], positions[i + 1], positions[i + 2]).applyMatrix4(m)
+        transformed[i] = v.x
+        transformed[i + 1] = v.y
+        transformed[i + 2] = v.z
+      }
+      out.push({
+        positions: transformed,
+        indices: idxAcc ? Array.from(idxAcc.getArray()) : null,
+      })
+    }
+  }
+  for (const c of node.listChildren()) {
+    collectNodeTriangles(c, out, m)
+  }
+}
+
+/**
+ * 节点分组（复刻 TankModel.tsx 渲染层 + A1 修正）：
+ * - hullBody：hull 节点本体（含 *_hide_elements* 子树——BlitzKit 实际渲染）；
+ * - tracks：chassis_track_{L,R}（可见性由 z-buffer 决定，顶视完全遮挡时视觉层不画）；
+ * - turret：turret_{id:02d}（含其 hide_elements 子树）；
+ * - mantlet：gun_{id:02d}_mask（炮盾，视觉层仅画顶视可见面）；
+ * - gun：gun_{id:02d}（炮管）。
+ * 仅按顶层节点名匹配（复刻 TankModel.tsx 的 isVisible 判定）——mask_01 等无关
+ * 顶层节点不在任何 layer，不会被采集（无需名字黑名单）。
+ */
+export function groupRenderNodes(rootNodes, { turretId, gunId, withWheels }) {
+  const turretName = `turret_${String(turretId).padStart(2, '0')}`
+  const gunName = `gun_${String(gunId).padStart(2, '0')}`
+  const groups = { hullBody: [], tracks: [], turret: [], mantlet: [], gun: [] }
+  const identity = new THREE.Matrix4()
+  for (const node of rootNodes) {
+    const name = node.getName()
+    if (name === 'hull') {
+      collectNodeTriangles(node, groups.hullBody, identity)
+    } else if (name.startsWith('chassis_track_') || (withWheels && name.startsWith('chassis_wheel_'))) {
+      collectNodeTriangles(node, groups.tracks, identity)
+    } else if (name === turretName) {
+      collectNodeTriangles(node, groups.turret, identity)
+    } else if (name === gunName) {
+      collectNodeTriangles(node, groups.gun, identity)
+    } else if (name === `${gunName}_mask`) {
+      collectNodeTriangles(node, groups.mantlet, identity)
+    }
+  }
+  return groups
 }
 
 /**
@@ -359,7 +440,8 @@ export function mergeVisualSurfaces(triangles3d, opts = {}) {
   const mergeAngleDeg = opts.mergeAngleDeg ?? 20
   const mergeHeightDeltaM = opts.mergeHeightDeltaM ?? 0.4
   const faces = []
-  for (const tri of triangles3d) {
+  for (let inputIdx = 0; inputIdx < triangles3d.length; inputIdx++) {
+    const tri = triangles3d[inputIdx]
     const n = triangleNormal(tri[0], tri[1], tri[2])
     const len = Math.hypot(n[0], n[1], n[2])
     if (len < 1e-12) continue
@@ -369,6 +451,7 @@ export function mergeVisualSurfaces(triangles3d, opts = {}) {
     const area = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2
     faces.push({
       tri,
+      inputIdx,
       z: (tri[0][2] + tri[1][2] + tri[2][2]) / 3,
       n: [n[0] / len, n[1] / len, n[2] / len],
       area,
@@ -428,7 +511,9 @@ export function mergeVisualSurfaces(triangles3d, opts = {}) {
     const area = polys.reduce((s, p) => s + ringArea(p.ring), 0)
     const wSum = comp.reduce((s, i) => s + faces[i].area, 0)
     const zMean = wSum > 0 ? comp.reduce((s, i) => s + faces[i].z * faces[i].area, 0) / wSum : 0
-    out.push({ polys, areaM2: +area.toFixed(3), zMean: +zMean.toFixed(2), faceCount: comp.length })
+    // faceIdx：surface 的组成三角形在 triangles3d 输入中的索引（surface 级可见性/审计用）
+    const faceIdx = comp.map((i) => faces[i].inputIdx)
+    out.push({ polys, areaM2: +area.toFixed(3), zMean: +zMean.toFixed(2), faceCount: comp.length, faceIdx })
   }
   out.sort((a, b) => b.areaM2 - a.areaM2)
   return { surfaces: out, stats: { rawFaces: faces.length, mergedFaces: mergeCount.merged, surfaceCount: out.length } }
@@ -480,7 +565,227 @@ export function filterOccludedSurfaces(surfaces, opts = {}) {
     covered = polygonClipping.union(covered, myUnion)
   }
   return kept.sort((a, b) => a.z - b.z)
-  return kept.sort((a, b) => a.z - b.z)
+}
+
+/**
+ * 顶视可见性（真实 z-buffer，A3：视觉层必须遵守 orthographic top-visible）。
+ *
+ * 在正交俯视栅格上做逐像素 z-buffer 遮挡判定：每个 top-facing 三角形按投影
+ * bbox 栅格化（像素内双线性 z 插值），z 最大者赢得该像素（owner 数组）。
+ * 返回每个输入 top-facing 三角形的可见像素数。
+ *
+ * 与 filterOccludedSurfaces（zMean 2D-union 近似）的区别：逐像素真实遮挡——
+ * 部分可见结构（低于主面但仍露出的凸起、甲板缘条）正确保留；被完全遮挡的
+ * 结构（如顶视被甲板盖住的 tracks）得到 0。
+ *
+ * 确定性：纯算术栅格化，相同输入相同输出。
+ * 性能：只遍历每三角形投影 bbox；Maus ~1200 top-facing 三角形、resolution=1024
+ * 约 1-3 秒（developer CLI 可接受）。
+ *
+ * @param {number[][][]} triangles3d 模型坐标三角形（x宽,y长,z高）
+ * @param {object} opts { topFacingCos=0.35, bounds={minX,minY,maxX,maxY}, resolution=1024 }
+ * @returns {{ visiblePx: number[], topFacing: number[][][], bounds, width, height, pxPerM }}
+ *   visiblePx[i] 与输入 triangles3d[i] 一一对应（非 top-facing = 0）；
+ *   topFacing 为 top-facing 三角形子集（debug 用）。
+ */
+export function rasterVisibility(triangles3d, opts = {}) {
+  const topFacingCos = opts.topFacingCos ?? 0.35
+  const resolution = opts.resolution ?? 1024
+  const groups = opts.groups ?? null // 与 triangles3d 等长；每组累计可见像素（-1 不统计）
+  const faces = []
+  for (let ti = 0; ti < triangles3d.length; ti++) {
+    const tri = triangles3d[ti]
+    const n = triangleNormal(tri[0], tri[1], tri[2])
+    const len = Math.hypot(n[0], n[1], n[2])
+    if (len < 1e-12) continue
+    if (n[2] / len <= topFacingCos) continue
+    faces.push({ tri, inputIdx: ti })
+  }
+  const empty = { visiblePx: [], topFacing: [], bounds: null, width: 0, height: 0, pxPerM: 0 }
+  if (faces.length === 0) return empty
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  if (opts.bounds) {
+    minX = opts.bounds.minX; minY = opts.bounds.minY; maxX = opts.bounds.maxX; maxY = opts.bounds.maxY
+  } else {
+    for (const f of faces) {
+      for (const p of f.tri) {
+        if (p[0] < minX) minX = p[0]
+        if (p[0] > maxX) maxX = p[0]
+        if (p[1] < minY) minY = p[1]
+        if (p[1] > maxY) maxY = p[1]
+      }
+    }
+  }
+  const w = maxX - minX
+  const h = maxY - minY
+  if (!(w > 0) || !(h > 0)) return empty
+  const scale = resolution / Math.max(w, h)
+  const W = Math.max(1, Math.ceil(w * scale))
+  const H = Math.max(1, Math.ceil(h * scale))
+  const zbuf = new Float32Array(W * H).fill(-Infinity)
+  const owner = new Int32Array(W * H).fill(-1)
+  for (let fi = 0; fi < faces.length; fi++) {
+    const [a, b, c] = faces[fi].tri
+    const ax = (a[0] - minX) * scale, ay = (a[1] - minY) * scale
+    const bx = (b[0] - minX) * scale, by = (b[1] - minY) * scale
+    const cx = (c[0] - minX) * scale, cy = (c[1] - minY) * scale
+    const x0 = Math.max(0, Math.floor(Math.min(ax, bx, cx)))
+    const x1 = Math.min(W - 1, Math.ceil(Math.max(ax, bx, cx)))
+    const y0 = Math.max(0, Math.floor(Math.min(ay, by, cy)))
+    const y1 = Math.min(H - 1, Math.ceil(Math.max(ay, by, cy)))
+    if (x1 < x0 || y1 < y0) continue
+    const v0x = bx - ax, v0y = by - ay
+    const v1x = cx - ax, v1y = cy - ay
+    const d = v0x * v1y - v0y * v1x
+    if (Math.abs(d) < 1e-12) continue
+    for (let y = y0; y <= y1; y++) {
+      const row = y * W
+      for (let x = x0; x <= x1; x++) {
+        const qx = x + 0.5 - ax, qy = y + 0.5 - ay
+        const w1 = (qx * v1y - qy * v1x) / d
+        const w2 = (v0x * qy - v0y * qx) / d
+        const w0 = 1 - w1 - w2
+        if (w0 < 0 || w1 < 0 || w2 < 0) continue
+        const z = w0 * a[2] + w1 * b[2] + w2 * c[2]
+        const idx = row + x
+        if (z > zbuf[idx]) {
+          zbuf[idx] = z
+          owner[idx] = fi
+        }
+      }
+    }
+  }
+  // per-input-triangle visible pixel count（非 top-facing = 0）——调用方按输入索引对齐
+  const perInput = new Uint32Array(triangles3d.length)
+  const topFacing = new Array(faces.length)
+  for (let i = 0; i < faces.length; i++) {
+    perInput[faces[i].inputIdx] = 0
+    topFacing[i] = faces[i].tri
+  }
+  for (let i = 0; i < owner.length; i++) {
+    const o = owner[i]
+    if (o >= 0) perInput[faces[o].inputIdx]++
+  }
+  const visibleMask = new Uint8Array(W * H)
+  for (let i = 0; i < owner.length; i++) if (owner[i] >= 0) visibleMask[i] = 1
+  // per-group visible pixel count（group = 输入三角形所属表面等；-1 不统计）
+  let visibleGroupPx = null
+  if (groups) {
+    const maxG = Math.max(-1, ...groups)
+    visibleGroupPx = new Uint32Array(maxG + 1)
+    for (let i = 0; i < owner.length; i++) {
+      const o = owner[i]
+      if (o >= 0) {
+        const g = groups[faces[o].inputIdx]
+        if (g >= 0) visibleGroupPx[g]++
+      }
+    }
+    visibleGroupPx = Array.from(visibleGroupPx)
+  }
+  return {
+    visiblePx: Array.from(perInput),
+    topFacing,
+    bounds: { minX, minY, maxX, maxY },
+    width: W,
+    height: H,
+    pxPerM: scale,
+    visibleMask,
+    visibleGroupPx,
+  }
+}
+
+/**
+ * 世界坐标点 → rasterVisibility 栅格像素索引（与 visibleMask 同坐标系）。
+ * 仅用于可见性判定查询（如结构边中点）。
+ */
+export function visibilityPixel(worldX, worldY, vis) {
+  const px = Math.floor((worldX - vis.bounds.minX) * vis.pxPerM)
+  const py = Math.floor((worldY - vis.bounds.minY) * vis.pxPerM)
+  if (px < 0 || py < 0 || px >= vis.width || py >= vis.height) return -1
+  return py * vis.width + px
+}
+
+/** 线段严格相交（不含端点接触）——自交检测用。 */
+function segmentsProperIntersect(a, b, c, d) {
+  const cross = (o, p, q) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0])
+  const d1 = cross(a, b, c)
+  const d2 = cross(a, b, d)
+  const d3 = cross(c, d, a)
+  const d4 = cross(c, d, b)
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+}
+
+/** ring 自交判定（非简单多边形——polygon-clipping 数值伪影特征）。 */
+function isSelfIntersecting(ring) {
+  const n = ring.length
+  for (let i = 0; i < n; i++) {
+    const a = ring[i]
+    const b = ring[(i + 1) % n]
+    for (let j = i + 1; j < n; j++) {
+      const nextJ = (j + 1) % n
+      if (nextJ === i || j === (i + 1) % n) continue // 跳过相邻边
+      const c = ring[j]
+      const d = ring[nextJ]
+      if (segmentsProperIntersect(a, b, c, d)) return true
+    }
+  }
+  return false
+}
+
+/**
+ * 几何退化 polygon 过滤（A2：替代"长且窄=artifact"的 sliver 规则）。
+ *
+ * 背景（information-loss-audit.md §4.2）：旧规则（宽高比>12 且窄边<0.15m）误删
+ * 真实长条结构（3.5m×0.087m 甲板缘条，320px 下 110×2.7px 可见）。真实 detail
+ * 的删除风险优先于少量 polygon-clipping artifact——artifact 只按几何退化判定：
+ * 1. 自交 ring（非简单多边形，数值伪影）；
+ * 2. near-zero 面积（< minAreaM2，默认 1e-6 m²）；
+ * 3. 数值 sliver：投影 bbox 窄边 < minEdgeLenM（默认 0.005m=5mm，320 下 0.16px
+ *    ——3.5m×0.001m 数值长条过滤；3.5m×0.087m 真实缘条保留）；
+ * 4. duplicate coincident polygon（点序列完全重合，去重）。
+ * 真实长条只要面积非退化 + source 几何连续 + 320 asset-space 稳定投影 → 保留。
+ *
+ * @param {Array<{ring, holes}>} polys
+ * @param {object} opts { minEdgeLenM=0.005, minAreaM2=1e-6 }
+ * @returns {{ kept: Array, removed: Array }}
+ */
+export function filterDegeneratePolys(polys, opts = {}) {
+  const minEdgeLenM = opts.minEdgeLenM ?? 0.005
+  const minAreaM2 = opts.minAreaM2 ?? 1e-6
+  const kept = []
+  const removed = []
+  const seen = new Set()
+  for (const poly of polys) {
+    const ring = simplifyRing(poly.ring)
+    if (ring.length < 3) {
+      removed.push(poly)
+      continue
+    }
+    if (ringArea(ring) < minAreaM2) {
+      removed.push(poly)
+      continue
+    }
+    const key = ring.map((p) => `${p[0].toFixed(6)},${p[1].toFixed(6)}`).join('|')
+    if (seen.has(key)) {
+      removed.push(poly)
+      continue
+    }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const p of ring) {
+      if (p[0] < minX) minX = p[0]
+      if (p[0] > maxX) maxX = p[0]
+      if (p[1] < minY) minY = p[1]
+      if (p[1] > maxY) maxY = p[1]
+    }
+    const narrow = Math.min(maxX - minX, maxY - minY)
+    if (narrow < minEdgeLenM || isSelfIntersecting(ring)) {
+      removed.push(poly)
+      continue
+    }
+    seen.add(key)
+    kept.push(poly)
+  }
+  return { kept, removed }
 }
 
 /** 2D ring 面积（Shoelace，正值）。 */

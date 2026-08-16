@@ -21,7 +21,6 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import protobuf from 'protobufjs'
 import { NodeIO } from '@gltf-transform/core'
-import * as THREE from 'three'
 import tankopedia from '../../common/tankopedia-tier10.json' with { type: 'json' }
 import { MODEL_DEFINITIONS, TANK_ID_TO_MODEL } from '../src/vehicle-models/mapping.js'
 import { VIEWBOX } from '../src/vehicle-models/types.js'
@@ -29,6 +28,8 @@ import {
   bounds2D,
   buildFeatureAudit,
   buildMetadata,
+  collectNodeTriangles,
+  groupRenderNodes,
   classifyDetail,
   clusterEdges,
   computeFit,
@@ -36,8 +37,9 @@ import {
   edgesToSvgPath,
   extractMajorEdges,
   extractTopSurfaces,
-  filterOccludedSurfaces,
+  filterDegeneratePolys,
   mergeVisualSurfaces,
+  rasterVisibility,
   projectTopDown,
   projectTopFacingPolygons,
   projectTriangles,
@@ -47,6 +49,7 @@ import {
   svgDocument,
   trianglesFromGeometry,
   unionTriangles,
+  visibilityPixel,
 } from './extractor-lib.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -122,89 +125,8 @@ function decodePb(buffer, typeName, protoText) {
 
 const io = new NodeIO()
 
-/**
- * 收集节点子树所有 mesh 的三角形（POSITION + INDEX，应用节点/世界矩阵）。
- * 递归时跳过 *_hide_elements* 子树（可隐藏元素，不参与正式 silhouette）。
- */
-function collectTriangles(node, out, matrix) {
-  const m = matrix.clone()
-  // @gltf-transform v3 的 Vector3/Quaternion 为数组 [x,y,z](,[w])
-  const t = node.getTranslation()
-  const r = node.getRotation()
-  const s = node.getScale()
-  if (t || r || s) {
-    const e = new THREE.Matrix4().compose(
-      new THREE.Vector3(t ? t[0] : 0, t ? t[1] : 0, t ? t[2] : 0),
-      new THREE.Quaternion(r ? r[0] : 0, r ? r[1] : 0, r ? r[2] : 0, r ? r[3] : 1),
-      new THREE.Vector3(s ? s[0] : 1, s ? s[1] : 1, s ? s[2] : 1),
-    )
-    m.multiply(e)
-  }
-  const mesh = node.getMesh()
-  if (mesh) {
-    for (const prim of mesh.listPrimitives()) {
-      const posAcc = prim.getAttribute('POSITION')
-      if (!posAcc) continue
-      const idxAcc = prim.getIndices()
-      const positions = posAcc.getArray()
-      const v = new THREE.Vector3()
-      const transformed = new Float32Array(positions.length)
-      for (let i = 0; i < positions.length; i += 3) {
-        v.set(positions[i], positions[i + 1], positions[i + 2]).applyMatrix4(m)
-        transformed[i] = v.x
-        transformed[i + 1] = v.y
-        transformed[i + 2] = v.z
-      }
-      out.push({
-        positions: transformed,
-        indices: idxAcc ? Array.from(idxAcc.getArray()) : null,
-      })
-    }
-  }
-  for (const c of node.listChildren()) {
-    if (c.getName().includes('_hide_elements')) continue
-    collectTriangles(c, out, m)
-  }
-}
-
-/**
- * 节点分组（复刻 TankModel.tsx 契约 + Blocker 3 修正）：
- * - hull 层：hull + chassis_track_*（+ 可选 wheels）；
- * - turret 层：turret_{id:02d} + gun_{id:02d}_mask（mask = mantlet 炮盾，静态 0° 属于
- *   炮塔正面轮廓——TankModel 源码确认 mask 与 gun 同层渲染，但它是炮塔视觉的一部分，
- *   不参与 gun silhouette，避免扩大炮管轮廓）；
- * - gun 层：仅 gun_{id:02d}（炮管）。
- */
-/**
- * 节点分组（复刻 TankModel.tsx 契约 + Blocker 3 修正 + 本轮细化）：
- * - hullBody：hull 节点本体（不含 tracks）；
- * - tracks：chassis_track_{L,R}（独立区域——履带/车体分界以区域色差表达）；
- * - turret：turret_{id:02d}（不含 hide_elements）；
- * - mantlet：gun_{id:02d}_mask（炮盾，独立区域显示边界）；
- * - gun：gun_{id:02d}（炮管）。
- */
-function groupNodes(rootNodes, { turretId, gunId, withWheels }) {
-  const turretName = `turret_${String(turretId).padStart(2, '0')}`
-  const gunName = `gun_${String(gunId).padStart(2, '0')}`
-  const groups = { hullBody: [], tracks: [], turret: [], mantlet: [], gun: [] }
-  const identity = new THREE.Matrix4()
-  for (const node of rootNodes) {
-    const name = node.getName()
-    if (name.includes('_hide_elements')) continue
-    if (name === 'hull') {
-      collectTriangles(node, groups.hullBody, identity)
-    } else if (name.startsWith('chassis_track_') || (withWheels && name.startsWith('chassis_wheel_'))) {
-      collectTriangles(node, groups.tracks, identity)
-    } else if (name === turretName) {
-      collectTriangles(node, groups.turret, identity)
-    } else if (name === gunName) {
-      collectTriangles(node, groups.gun, identity)
-    } else if (name === `${gunName}_mask`) {
-      collectTriangles(node, groups.mantlet, identity)
-    }
-  }
-  return groups
-}
+// collectNodeTriangles / groupRenderNodes 已移至 extractor-lib.mjs（可测试）：
+// 复刻 TankModel.tsx 顶层名匹配 + 完整子树采集（含 *_hide_elements*，无名字黑名单）。
 
 async function main() {
   const { tankId, modelKey } = resolveTank()
@@ -242,7 +164,7 @@ async function main() {
   const doc = await io.read(tmpGlb)
   // TankModel.tsx 的 nodes = Object.values(gltf.nodes)——遍历全部节点按名匹配
   const allNodes = doc.getRoot().listNodes()
-  const groups = groupNodes(allNodes, { turretId: turretModelId, gunId: gunModelId, withWheels: includeWheels })
+  const groups = groupRenderNodes(allNodes, { turretId: turretModelId, gunId: gunModelId, withWheels: includeWheels })
   const countTri = (g) => g.reduce((n, m) => n + (m.indices ? m.indices.length / 3 : m.positions.length / 9), 0)
   const hullTri = countTri(groups.hullBody)
   const turretTri = countTri(groups.turret)
@@ -262,9 +184,7 @@ async function main() {
   const mantletTris = tri3d(groups.mantlet)
   const gunTris = tri3d(groups.gun)
   const hullPoly = unionTriangles(projectTriangles(hullTris))
-  const trackPoly = unionTriangles(projectTriangles(trackTris))
   const turretPoly = unionTriangles(projectTriangles(turretTris))
-  const mantletPoly = unionTriangles(projectTriangles(mantletTris))
   const gunPoly = unionTriangles(projectTriangles(gunTris))
   if (hullPoly.length === 0) throw new Error('hull silhouette union 为空')
 
@@ -293,33 +213,100 @@ async function main() {
     minEdgeLenM: 1.0,         // 边最短投影长度（保留 hatch/panel 级边缘）
     minDetailUnits: 0.3,      // asset-space 微噪声（320px preview 下 0.3px）
   }
-  const hullSurfaces = extractTopSurfaces(hullTris, DETAIL_THRESHOLDS)
-  const turretSurfaces = extractTopSurfaces(turretTris, DETAIL_THRESHOLDS)
-  const hullMerge = mergeVisualSurfaces(hullTris, DETAIL_THRESHOLDS).stats
-  const turretMerge = mergeVisualSurfaces(turretTris, DETAIL_THRESHOLDS).stats
-  const hullEdges = extractMajorEdges(hullTris, DETAIL_THRESHOLDS)
-  const turretEdges = extractMajorEdges(turretTris, DETAIL_THRESHOLDS)
-  // asset-space 微噪声过滤（320 viewBox units）：只删宽/高 < 0.3 units 的退化 path；
-  // 不再按 28px marker 过滤真实 detail（未来 runtime LOD 决定小尺寸显示）。
+  // —— A3：真实 z-buffer 顶视可见性（视觉层基础）——
+  // 全量 merge → surface 级可见性（rasterVisibility 分组累计赢家像素）：
+  // 部分可见的 surface 保留整面（不切碎成三角形残留）；完全遮挡的 surface
+  // （可见像素 < VIS_MIN_PX ≈ 320px 视口 1px²）剔除——tracks 顶视可见 0 → 视觉层不画。
+  // silhouette 契约仍由完整几何 union 提供（hullPoly/turretPoly，见 Layer A）。
+  const VIS_RES = 1024
+  const VIS_MIN_PX = Number(process.env.VIS_MIN_PX ?? 13) // 1024 栅格 1px ≈ 8.8mm；13px² ≈ 10cm² ≈ 320px 视口 1px²
+  const hullMergeAll = mergeVisualSurfaces(hullTris, DETAIL_THRESHOLDS)
+  const hullSurfaceGroups = new Array(hullTris.length).fill(-1)
+  hullMergeAll.surfaces.forEach((s, si) => { for (const fi of s.faceIdx) hullSurfaceGroups[fi] = si })
+  const hullVis = rasterVisibility([...hullTris, ...trackTris], {
+    ...DETAIL_THRESHOLDS, resolution: VIS_RES,
+    groups: [...hullSurfaceGroups, ...new Array(trackTris.length).fill(-1)],
+  })
+  const trackVisibleCount = trackTris.filter((_, i) => hullVis.visiblePx[hullTris.length + i] > 0).length
+  const surfacesFromMerge = (mergeAll, vis, startGid) =>
+    mergeAll.surfaces
+      .filter((_, si) => (vis.visibleGroupPx[startGid + si] ?? 0) >= VIS_MIN_PX)
+      .filter((s) => s.areaM2 >= DETAIL_THRESHOLDS.minAreaM2) // 320 下 <1px² 的 surface 不输出
+      .map((s) => ({ z: s.zMean, polys: s.polys, areaM2: s.areaM2, faceCount: s.faceCount }))
+  const hullSurfaces = surfacesFromMerge(hullMergeAll, hullVis, 0)
+  // turret 场景 = turret + mantlet + gun（联合 z-buffer：mantlet 后部被屋顶遮挡剔除）
+  const turretMergeAll = mergeVisualSurfaces(turretTris, DETAIL_THRESHOLDS)
+  const mantletMergeAll = mergeVisualSurfaces(mantletTris, DETAIL_THRESHOLDS)
+  const gunMergeAll = mergeVisualSurfaces(gunTris, DETAIL_THRESHOLDS)
+  const sceneTris = [...turretTris, ...mantletTris, ...gunTris]
+  const sceneGroups = new Array(sceneTris.length).fill(-1)
+  let gid = 0
+  const partRanges = []
+  for (const { tris, mergeAll } of [
+    { tris: turretTris, mergeAll: turretMergeAll },
+    { tris: mantletTris, mergeAll: mantletMergeAll },
+    { tris: gunTris, mergeAll: gunMergeAll },
+  ]) {
+    const base = 0
+    mergeAll.surfaces.forEach((s, si) => {
+      for (const fi of s.faceIdx) sceneGroups[base + fi] = gid + si
+    })
+    partRanges.push([gid, gid + mergeAll.surfaces.length])
+    gid += mergeAll.surfaces.length
+  }
+  const turretVis = rasterVisibility(sceneTris, { ...DETAIL_THRESHOLDS, resolution: VIS_RES, groups: sceneGroups })
+  const [tStart, tEnd] = partRanges[0]
+  const [mStart, mEnd] = partRanges[1]
+  const [gStart, gEnd] = partRanges[2]
+  const visibleAndSized = (mergeAll, vis, startGid) =>
+    mergeAll.surfaces
+      .filter((_, si) => (vis.visibleGroupPx[startGid + si] ?? 0) >= VIS_MIN_PX)
+      .filter((s) => s.areaM2 >= DETAIL_THRESHOLDS.minAreaM2)
+      .map((s) => ({ z: s.zMean, polys: s.polys, areaM2: s.areaM2, faceCount: s.faceCount }))
+  const turretSurfaces = visibleAndSized(turretMergeAll, turretVis, tStart)
+  const mantletSurfaces = visibleAndSized(mantletMergeAll, turretVis, mStart)
+  const gunSurfaces = visibleAndSized(gunMergeAll, turretVis, gStart)
+  // source 统计（audit 对照：全量几何的 merge，不参与视觉层）
+  const hullMerge = hullMergeAll.stats
+  const turretMerge = turretMergeAll.stats
+  // 结构边从全量几何提取（surface-edge 需要垂直壁邻居配对，壁面非 top-facing），
+  // 再按"边中点是否真实可见"过滤（A3：被遮挡结构不画边）——保留顶视可见结构边。
+  const hullEdgesRaw = extractMajorEdges(hullTris, DETAIL_THRESHOLDS)
+  const turretEdgesRaw = extractMajorEdges(turretTris, DETAIL_THRESHOLDS)
+  // 沿边多点采样判定可见比例（≥60% 采样点可见才保留）——长结构边（如屋顶轮廓）
+  // 部分被遮挡时仍保留可见段，避免"中点恰被遮 → 整条丢失"。
+  const edgesVisible = (e, vis) => {
+    const len = Math.hypot(e.p2[0] - e.p1[0], e.p2[1] - e.p1[1])
+    const steps = Math.max(2, Math.ceil(len / 0.3))
+    let visCount = 0
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps
+      const wx = e.p1[0] + (e.p2[0] - e.p1[0]) * t
+      const wy = e.p1[1] + (e.p2[1] - e.p1[1]) * t
+      const pi = visibilityPixel(wx, wy, vis)
+      if (pi >= 0 && vis.visibleMask[pi] === 1) visCount++
+    }
+    return visCount / (steps + 1) >= 0.6
+  }
+  const hullEdges = hullEdgesRaw.filter((e) => edgesVisible(e, hullVis))
+  const turretEdges = turretEdgesRaw.filter((e) => edgesVisible(e, turretVis))
+  // asset-space 微噪声过滤（320 viewBox units）：只删宽/高 < 0.3 units（<1cm）的 path；
+  // A2：真实长条不再按纵横比删除——退化判定改为几何退化（filterDegeneratePolys）：
+  //   自交 ring / near-zero 面积 / bbox 窄边 <5mm 数值 sliver / 完全重合重复。
   const minUnits = DETAIL_THRESHOLDS.minDetailUnits
-  // sliver 判定：简化后 bbox 宽高比 > 12 且窄边 < 0.15m（≈4.7 units）→ 退化狭长 polygon
-  // （polygon-clipping 伪影，如 turret 68×2.5 units 细条）；真实长条（如发动机甲板带
-  // 112×5.5 units）窄边 ≥ 0.15m 保留。
-  const sliverRatio = 12
-  const sliverMinEdgeM = 0.15
   const removedTiny = []
   const assetFilterPolys = (polys) => {
-    const kept = []
+    const rest = []
     for (const p of polys) {
       const ring = simplifyRing(p.ring)
       const b = bounds2D(ring.map(([x, y]) => ({ x, y })))
       const wUnits = (b.maxX - b.minX) * fit.scale
       const hUnits = (b.maxY - b.minY) * fit.scale
-      const isSliver = Math.max(wUnits, hUnits) / Math.max(Math.min(wUnits, hUnits), 1e-9) > sliverRatio &&
-        Math.min(wUnits, hUnits) * (VIEWBOX.width / 320) < sliverMinEdgeM * fit.scale
-      if ((wUnits >= minUnits && hUnits >= minUnits) && !isSliver) kept.push(p)
+      if (wUnits >= minUnits && hUnits >= minUnits) rest.push(p)
       else removedTiny.push(p)
     }
+    const { kept, removed } = filterDegeneratePolys(rest)
+    removedTiny.push(...removed)
     return kept
   }
   const filterSurfaces = (surfaces) =>
@@ -328,11 +315,14 @@ async function main() {
       .filter((s) => s.polys.length > 0)
   // 去重聚类：duplicate/overlapping edge 合并为同一条结构线（保留最长边）；不截断数量
   const dedupeEdges = (edges) => clusterEdges(edges, { angleDeg: 5, maxDistM: 0.2 })
-  const hullSurfacesF = filterOccludedSurfaces(filterSurfaces(hullSurfaces))
-  const turretSurfacesF = filterOccludedSurfaces(filterSurfaces(turretSurfaces))
+  const hullSurfacesF = filterSurfaces(hullSurfaces)
+  const turretSurfacesF = filterSurfaces(turretSurfaces)
+  const mantletSurfacesF = filterSurfaces(mantletSurfaces)
+  const gunSurfacesF = filterSurfaces(gunSurfaces)
   const hullEdgesF = dedupeEdges(hullEdges)
   const turretEdgesF = dedupeEdges(turretEdges)
-  console.log(`  detail: hull surfaces ${hullSurfaces.length}→${hullSurfacesF.length} edges=${hullEdgesF.length} | turret surfaces ${turretSurfaces.length}→${turretSurfacesF.length} edges=${turretEdgesF.length}`)
+  console.log(`  visibility: hull surfaces ${hullMergeAll.surfaces.length}→${hullSurfaces.length} tracksVisible=${trackVisibleCount} | turret ${turretMergeAll.surfaces.length}→${turretSurfaces.length} mantlet ${mantletMergeAll.surfaces.length}→${mantletSurfaces.length} gun ${gunMergeAll.surfaces.length}→${gunSurfaces.length}`)
+  console.log(`  detail: hull surfaces ${hullSurfaces.length}→${hullSurfacesF.length} edges=${hullEdgesF.length} | turret ${turretSurfaces.length}→${turretSurfacesF.length} mantlet ${mantletSurfaces.length}→${mantletSurfacesF.length} gun ${gunSurfaces.length}→${gunSurfacesF.length} edges=${turretEdgesF.length}`)
 
   // —— SVG 输出（detail-level grouping：primary/secondary/micro，为未来 runtime LOD 准备结构）——
   const GROUPS = { primary: 'vehicle-primary', secondary: 'vehicle-secondary', micro: 'vehicle-micro-detail' }
@@ -351,10 +341,11 @@ async function main() {
   }
   const hullGroups = { [GROUPS.primary]: [], [GROUPS.secondary]: [], [GROUPS.micro]: [] }
   const turretGroups = { [GROUPS.primary]: [], [GROUPS.secondary]: [], [GROUPS.micro]: [] }
-  // 绘制顺序 = 视觉层次：轮廓 → 主面 → 履带（深色侧带）→ 凸起 → 结构边
+  // 绘制顺序 = 视觉层次：轮廓 → 顶视可见主面 → 结构边。
+  // A3：视觉层基于真实顶视可见性（rasterVisibility）——tracks 顶视可见 0，
+  // 不再画 2D union 深色条；mantlet/gun 只画顶视可见表面（不再画完整 2D 轮廓）。
   put(hullGroups, silhouetteToSvgPaths(hullPoly, fit, '#6d736f'), 'silhouette')
   for (const s of hullSurfacesF) put(hullGroups, surfacesToSvgPaths([s], fit, '#565e58'), 'surface', s.areaM2)
-  put(hullGroups, silhouetteToSvgPaths(trackPoly, fit, '#454b47'), 'track')
   {
     const { sec, mic } = splitEdges(hullEdgesF)
     const secP = edgesToSvgPath(sec, fit, '#333833')
@@ -370,7 +361,8 @@ async function main() {
 
   put(turretGroups, silhouetteToSvgPaths(turretPoly, fit, '#7a817c'), 'silhouette')
   for (const s of turretSurfacesF) put(turretGroups, surfacesToSvgPaths([s], fit, '#6d756f'), 'surface', s.areaM2)
-  put(turretGroups, silhouetteToSvgPaths(mantletPoly, fit, '#656c67'), 'mantlet')
+  // A3：mantlet/gun 视觉层 = 顶视可见表面（z-buffer），不再画完整 2D union 轮廓
+  for (const s of mantletSurfacesF) put(turretGroups, surfacesToSvgPaths([s], fit, '#656c67'), 'mantlet', s.areaM2)
   {
     const { sec, mic } = splitEdges(turretEdgesF)
     const secP = edgesToSvgPath(sec, fit, '#4a504c')
@@ -378,7 +370,7 @@ async function main() {
     if (secP) put(turretGroups, [secP], 'edge', 0, 3.0)
     if (micP) put(turretGroups, [micP], 'edge', 0, 0.5)
   }
-  put(turretGroups, silhouetteToSvgPaths(gunPoly, fit, '#4d534f'), 'gun') // 炮管（primary，组内最后）
+  for (const s of gunSurfacesF) put(turretGroups, surfacesToSvgPaths([s], fit, '#4d534f'), 'gun', s.areaM2) // 炮管顶面（primary，组内最后）
   const turretSvg = svgDocument({ groups: [
     { group: GROUPS.primary, paths: turretGroups[GROUPS.primary] },
     { group: GROUPS.secondary, paths: turretGroups[GROUPS.secondary] },
@@ -483,8 +475,11 @@ async function main() {
         groupPaths: groupStats(turretGroups),
       },
       tracks: countTri(groups.tracks),
+      tracksVisibleTopFacing: trackVisibleCount,
       mantlet: countTri(groups.mantlet),
+      mantletRetainedRegions: retainedRegionsOf(mantletSurfacesF),
       gun: gunTri,
+      gunRetainedRegions: retainedRegionsOf(gunSurfacesF),
     },
   }, null, 2) + '\n')
   console.log(`  debug: ${debugDir}`)
