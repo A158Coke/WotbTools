@@ -158,18 +158,23 @@ const stateClasses = computed(() => ({
       </template>
     </div>
 
-    <!-- PR3 §24 阵亡 ✕：红色 + 大号 + 多层描边（PR #92 Review 通过项）——容器外，完整强度 -->
+    <!-- PR3 增补 阵亡 ✕ 主状态化：红色 + 明显放大（30px）+ 覆盖车体中心（不再像名字旁的状态角标）；
+         容器外完整强度，不随 .pb-graphics grayscale/opacity 变淡；
+         overlayInverseScale 反缩放 → 不随地图 zoom 异常放大，保持屏幕恒定 -->
     <span
       v-if="st.destroyed"
       class="pb-death"
       aria-hidden="true"
-      :style="{ color: '#ff4d4f', fontSize: '22px', fontWeight: '800', zIndex: 6, transform: `translateX(-50%) ${st.overlayInverseScale}` }"
+      :style="{ color: '#ff4d4f', fontSize: '30px', fontWeight: '800', zIndex: 6, transform: `translate(-50%, -50%) ${st.overlayInverseScale}` }"
     >✕</span>
 
-    <!-- PR3 §22 Selected：红色倒三角（label 上方、永远朝下、screen-space 恒定、轻微浮动） -->
+    <!-- PR3 §22 Selected：红色倒三角（label 上方、永远朝下、screen-space 恒定、轻微浮动）；
+         阵亡车切换克制变体（pb-selected-restrained：更小 + 更淡，destroyed > selected，
+         仍可辨认被选中） -->
     <span
       v-if="selected"
       class="pb-selected-mark"
+      :class="{ 'pb-selected-restrained': st.destroyed }"
       aria-hidden="true"
       :style="{ transform: `translateX(-50%) ${st.overlayInverseScale}` }"
     ></span>
@@ -292,6 +297,16 @@ const stateClasses = computed(() => ({
   50% { margin-top: 2px; }
 }
 
+/* —— PR3 增补 destroyed + selected 克制表达：阵亡车仍可辨认被选中，但 selected 权重低于
+   destroyed——三角线性缩小 67%（9px→6px 高、6px→4px 边） + 透明度 0.55；存活 selected 保持
+   完整强度。与 .pb-selected-mark 同特异性且在其后 → border-width 覆盖生效。 —— */
+.pb-selected-restrained {
+  opacity: 0.55;
+  border-left-width: 4px;
+  border-right-width: 4px;
+  border-top-width: 6px;
+}
+
 /* —— PR3 §23 Recorder 空心菱形：tank 下方居中、地图 friendly 色（team outline）、静态 —— */
 .pb-recorder-badge {
   position: absolute;
@@ -304,14 +319,16 @@ const stateClasses = computed(() => ({
   pointer-events: none;
 }
 
-/* 阵亡 ✕（PR #92 Review A 通过项）：红色 + 更大 + 多层描边——深/亮色地图背景都清晰可读，
-   与 last-known（仅淡化，无 ✕）语义区分明显。颜色/字号/z-index 由 inline style 提供
-   （可测试）；此块负责位置/形状/描边。 */
+/* 阵亡 ✕（PR #92 Review A 通过项 + PR3 增补主状态化）：红色 + 明显放大 + 多层描边——
+   深/亮色地图背景都清晰可读，与 last-known（仅淡化，无 ✕）语义区分明显。
+   位置改为车体中心（top/left 50% + translate(-50%,-50%)，inline style 提供反缩放），
+   覆盖车辆主体而非名字旁角标——第一眼看出"这辆车死了"。
+   颜色/字号/z-index 由 inline style 提供（可测试）；此块负责位置/形状/描边。 */
 .pb-death {
   position: absolute;
-  top: -10px;
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   line-height: 1;
   z-index: 6;
   pointer-events: none;
