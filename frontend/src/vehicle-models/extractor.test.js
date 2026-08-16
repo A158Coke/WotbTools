@@ -116,7 +116,7 @@ describe('computeFit / toSvg / hullToPath（统一 320×320 fit）', () => {
   })
 })
 
-describe('buildMetadata（geometry-source schema）', () => {
+describe('buildMetadata（source 契约：provider/tankId/modelGlb）', () => {
   it('输出 source.provider=blitzkit + generation.method', () => {
     const meta = buildMetadata({
       modelKey: 'maus', kind: 'turreted', tankId: 6929,

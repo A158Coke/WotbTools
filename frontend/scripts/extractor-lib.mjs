@@ -146,7 +146,7 @@ export function buildMetadata({
     source: {
       provider: 'blitzkit',
       tankId,
-      collisionModel: modelGlbUrl,
+      modelGlb: modelGlbUrl,
       modelDefinitions: modelsPbUrl,
     },
     turretPivot: { x: +turretPivot.x.toFixed(2), y: +turretPivot.y.toFixed(2) },

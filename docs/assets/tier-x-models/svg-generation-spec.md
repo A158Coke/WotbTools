@@ -23,6 +23,12 @@ frontend/src/vehicle-models/assets/<modelKey>/
 - 目录内不允许出现任何其他文件（validator 拒绝）。
 - bake 契约：turreted = hull 场景（hull + tracks）+ turret 场景（selected turret + mantlet + gun）
   独立 z-buffer/bake（旋转 turret 不暴露 hull 空洞）；turretless = 单 hull 场景（全部结构）。
+- **raster overflow contract（RASTER_GUN_CLIPPING 修复）**：hull.webp 固定 640×640
+  （320 logical 画布）；turret.webp 画布 = turret + mantlet + **完整 gun** 的 logical bounds
+  （保持同一 fit.scale，主体不缩放；透明 canvas 可超出 320 画布，避免长炮管裁切）。
+  metadata 记录 `turretRaster`（logicalMin/Max、pixelWidth/Height、pivotX/pivotY——
+  pivot 相对 turret.webp 原点的逻辑坐标）；runtime 加载 turret 层时按 raster 原点定位 +
+  raster 内 pivot 旋转。
 - 模块选择数据驱动（tanks.pb + models.pb：turrets/tracks/guns 数组最后），不依赖 display name。
 
 ## 2. SVG 技术契约（validator 强制）
@@ -99,7 +105,7 @@ frontend/src/vehicle-models/assets/<modelKey>/
 - **绘制顺序**：hull = 轮廓 → 主面（按 z 升序）→ 履带（深色侧带）→ 结构边。
 - 阈值全集记录在 metadata.json 的 generation.detailThresholds（非 Maus 专属）。
 
-## 7. metadata.json 契约（geometry-source schema，任务 12）
+## 7. metadata.json 契约（Source-faithful PBR top-view asset schema）
 
 ```json
 {
@@ -108,7 +114,7 @@ frontend/src/vehicle-models/assets/<modelKey>/
   "source": {
     "provider": "blitzkit",
     "tankId": 6929,
-    "collisionModel": "https://api.blitzkit.app/tanks/6929/model.glb",
+    "modelGlb": "https://api.blitzkit.app/tanks/6929/model.glb",
     "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
   },
   "turretPivot": { "x": 160, "y": 193.23 },
@@ -130,7 +136,7 @@ frontend/src/vehicle-models/assets/<modelKey>/
 
 - 顶层键只能是 `modelKey / kind / source / turretPivot / generation` 5 个（validator 拒绝多余键）。
 - `source.provider`：正式资产（mapping 内 modelKey）必须为 `blitzkit`；`source.tankId` 必须为正整数；
-  `collisionModel` / `modelDefinitions` 必须为 http(s) URL。
+  `modelGlb`（视觉 model.glb，非 collision.glb）/ `modelDefinitions`（models.pb）必须为 http(s) URL。
 - `generation.method`：正式资产必须为 `blitzkit-model-topdown-extraction`。
 - **HIGH-FIDELITY 契约（正式资产强制）**：`generation.fidelity='high'`、
   `geometryScale='faithful'`、`visibleDetailRetentionTarget ∈ (0,1]`（contract target，非测量值）。

@@ -1,18 +1,16 @@
 /**
  * Tier X 专属俯视车型系统 — 类型契约（discriminated union）。
  *
- * 概念（docs/assets/tier-x-models/svg-generation-spec.md）：
- * - 所有正式车型 SVG 使用统一 viewBox（见 VIEWBOX）；
- * - 0° = hull 车头朝 12 点、turret/gun 朝车体正前；
- * - hull 中心 = viewBox 中心；hull 绕画布中心旋转；
- * - turret 使用车型真实 turret-ring pivot（viewBox 绝对坐标）；
- * - turretless 车型禁止伪造 turret 层。
+ * 正式资产 = Source-faithful PBR top-view WebP asset（640×640 physical / 320×320 logical，
+ * viewBox 见 VIEWBOX）；0° = hull 车头朝 12 点、turret/gun 朝车体正前；
+ * hull 绕画布中心旋转；turret 使用车型真实 turret-ring pivot（viewBox 绝对坐标）；
+ * turretless 车型禁止伪造 turret 层。旧 SVG 仅为 debug/reference（extractor CLI 输出）。
  *
  * 本文件只放纯类型/常量，不依赖 Vue、不读文件——
  * 供运行时、validator（vitest）与 CLI 脚本共用。
  */
 
-/** 统一 SVG viewBox（所有正式车型固定）。 */
+/** 统一逻辑 viewBox（所有正式车型固定；physical 渲染 640×640）。 */
 export const VIEWBOX = Object.freeze({ width: 320, height: 320 })
 
 /**
@@ -38,20 +36,26 @@ export const VIEWBOX = Object.freeze({ width: 320, height: 320 })
  */
 
 /**
- * 单车型 metadata.json 契约（geometry-source schema，任务 12）。
- * 几何必须来自 BlitzKit 真实模型（source.provider === 'blitzkit'，validator 强制）；
- * 人工 notes 只允许作为 QA 记录，不参与几何。
+ * 单车型 metadata.json 契约（Source-faithful PBR top-view asset）。
+ * 视觉信息必须来自 BlitzKit 真实模型 LOD0 geometry + 内嵌材质/纹理
+ * （source.provider === 'blitzkit'，validator 强制）；人工 notes 只允许作为 QA 记录。
  *
  * @typedef {Object} VehicleModelMetadata
  * @property {string} modelKey                         必须与所在目录名一致
  * @property {'turreted'|'turretless'} kind            必须与 mapping.js 中该 modelKey 一致
- * @property {{provider:string, tankId:number, collisionModel:string, modelDefinitions:string}} source
- *     provider 必填（正式资产必须 'blitzkit'）；tankId 必填；两个 URL 记录数据源
+ * @property {{provider:string, tankId:number, modelGlb:string, modelDefinitions:string}} source
+ *     provider 必填（正式资产必须 'blitzkit'）；tankId 必填；modelGlb = 视觉 model.glb URL
+ *     （非 collision.glb）；modelDefinitions = models.pb URL
  * @property {{x:number,y:number}} [turretPivot]       turreted 必填；x/y ∈ [0, VIEWBOX]
- * @property {{method:string, viewBox:string, physicalPixelSize?:number[], hullBounds?:object, turretBounds?:object, gunBounds?:object, selectedModules?:object, texturesUsed?:string[], desaturate?:number, notes?:string, fidelity?:string, geometryScale?:string, visibleDetailRetentionTarget?:number, detailMethod?:string, detailThresholds?:object}} generation
+ * @property {{logicalMinX:number, logicalMinY:number, logicalMaxX:number, logicalMaxY:number, pixelWidth:number, pixelHeight:number, pivotX:number, pivotY:number}} [turretRaster]
+ *     turreted 必填（raster overflow contract）：turret.webp 画布 = turret+mantlet+完整 gun 的
+ *     logical bounds（可超出 320 画布，避免炮管裁切）；pivotX/pivotY = turretPivot 在 turret.webp
+ *     内（相对 raster 原点）的逻辑坐标
+ * @property {{method:string, viewBox:string, physicalPixelSize?:number[], hullBounds?:object, turretBounds?:object, gunBounds?:object, turretRaster?:object, selectedModules?:object, texturesUsed?:string[], desaturate?:number, notes?:string, fidelity?:string, geometryScale?:string, visibleDetailRetentionTarget?:number, detailMethod?:string, detailThresholds?:object}} generation
  *     method 必填（正式资产必须 'blitzkit-model-topdown-texture-bake'）
- *     Source-faithful PBR top-view asset 契约（正式资产强制）：fidelity='high' /
- *     geometryScale='faithful' / visibleDetailRetentionTarget ∈ (0,1]（contract target，非测量值）
+ *     Source-faithful PBR 契约（正式资产强制）：fidelity='high' / geometryScale='faithful'；
+ *     visibleDetailRetentionTarget ∈ (0,1] 仅为 visual QA target（非 geometric-detail-retention
+ *     guarantee——几何上限 = BlitzKit/WoTB LOD0 source）
  */
 
 /** metadata.json 允许的顶层键（多余键视为契约违反，防漂移）。 */
@@ -60,6 +64,7 @@ export const METADATA_KEYS = Object.freeze([
   'kind',
   'source',
   'turretPivot',
+  'turretRaster',
   'generation',
 ])
 

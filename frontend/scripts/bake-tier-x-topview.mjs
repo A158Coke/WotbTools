@@ -264,19 +264,28 @@ const materialsDef = materials.map((mat) => {
   }
 })
 
-// —— bake ——
-const bake = (scene) => {
-  const res = SUPERSAMPLE * PHYSICAL
-  const out = bakeTopView({ triangles: scene, textures, materials: materialsDef, bounds: canvasBounds, resolution: res, desaturate: DESATURATE })
-  const W = PHYSICAL
-  const rgba = new Uint8Array(W * W * 4)
+// —— bake（raster overflow contract）——
+// hull：固定 320 logical 画布（640×640，outputSize 固定）；turret：画布扩展为
+// turret+mantlet+完整 gun 的 logical bounds（保持同一 fit.scale——车辆主体不缩放，
+// 透明 canvas 向 320 画布外扩展，避免炮管裁切）。
+const pxPerM = scale * 2 // 输出像素/米（640/320）
+const bakeScene = (scene, boundsWorld, outputSize = null) => {
+  const w = boundsWorld.maxX - boundsWorld.minX
+  const h = boundsWorld.maxY - boundsWorld.minY
+  if (!(w > 0) || !(h > 0)) throw new Error('scene bounds 无效')
+  const resW = Math.max(2, Math.ceil(w * pxPerM * SUPERSAMPLE / 2) * 2) // 偶数（可整除 supersample）
+  const resH = Math.max(2, Math.ceil(h * pxPerM * SUPERSAMPLE / 2) * 2)
+  const out = bakeTopView({ triangles: scene, textures, materials: materialsDef, bounds: boundsWorld, resolution: Math.max(resW, resH), desaturate: DESATURATE })
+  const W = outputSize ? outputSize.w : Math.floor(out.width / SUPERSAMPLE)
+  const H = outputSize ? outputSize.h : Math.floor(out.height / SUPERSAMPLE)
+  const rgba = new Uint8Array(W * H * 4)
   const S = SUPERSAMPLE
-  for (let y = 0; y < W; y++) {
+  for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       let r = 0, g = 0, b = 0, a = 0
       for (let dy = 0; dy < S; dy++) {
         for (let dx = 0; dx < S; dx++) {
-          const i = ((y * S + dy) * res + (x * S + dx)) * 4
+          const i = ((y * S + dy) * out.width + (x * S + dx)) * 4
           r += out.rgba[i]
           g += out.rgba[i + 1]
           b += out.rgba[i + 2]
@@ -291,11 +300,13 @@ const bake = (scene) => {
       rgba[o + 3] = a / n
     }
   }
-  return { rgba, width: W, height: W, covered: out.covered }
+  return { rgba, width: W, height: H, covered: out.covered }
 }
-const hullBaked = bake(hullScene)
-const turretBaked = kind === 'turreted' ? bake(turretScene) : null
-console.log(`  bake: hull covered=${hullBaked.covered}px${turretBaked ? ` turret covered=${turretBaked.covered}px` : ''}`)
+const hullBaked = bakeScene(hullScene, canvasBounds, { w: PHYSICAL, h: PHYSICAL })
+// turret 完整 bounds（含 mantlet + complete gun——raster overflow contract）
+const turretFullB = kind === 'turreted' ? boundsOf(turretScene) : null
+const turretBaked = kind === 'turreted' ? bakeScene(turretScene, turretFullB) : null
+console.log(`  bake: hull ${hullBaked.width}x${hullBaked.height} covered=${hullBaked.covered}px${turretBaked ? ` turret ${turretBaked.width}x${turretBaked.height} covered=${turretBaked.covered}px` : ''}`)
 
 // —— 输出（正式资产：webp + metadata；debug：PNG + 通道图 + report）——
 const outDir = outDirArg ? join(ROOT, outDirArg) : join(ROOT, 'frontend', 'src', 'vehicle-models', 'assets', modelKey)
@@ -319,20 +330,30 @@ const writeAsset = (label, baked, isOfficial) => {
 const hullAsset = writeAsset('hull', hullBaked, true)
 const turretAsset = kind === 'turreted' ? writeAsset('turret', turretBaked, true) : null
 
-// debug 通道图（source-color / normal / ao）
-const debugChannel = (name, scene, slot) => {
+// debug 通道图（source-color / normal / ao；与正式 bake 同一 bounds/scale）
+const debugChannel = (name, scene, boundsWorld, slot) => {
   const mats = materialsDef.map((m) => ({ ...m, baseColor: m[slot], occlusion: slot === 'occlusion' ? m.occlusion : -1, normal: slot === 'normal' ? m.normal : -1 }))
-  const res = SUPERSAMPLE * PHYSICAL
-  const out = bakeTopView({ triangles: scene, textures, materials: mats, bounds: canvasBounds, resolution: res, desaturate: 0 })
-  const W = PHYSICAL
-  const rgba = new Uint8Array(W * W * 4)
+  const out = bakeSceneWith(scene, boundsWorld, mats, 0)
+  writeFileSync(join(debugDir, `${name}.png`), encodePng(out.rgba, out.width, out.height))
+}
+const bakeSceneWith = (scene, boundsWorld, matsOverride, desaturate) => {
+  const prevMats = materialsDef
+  // 复用 bakeScene 逻辑但允许材质/去色覆盖——bakeScene 引用模块级 materialsDef/desaturate
+  const w = boundsWorld.maxX - boundsWorld.minX
+  const h = boundsWorld.maxY - boundsWorld.minY
+  const resW = Math.max(2, Math.ceil(w * pxPerM * SUPERSAMPLE / 2) * 2)
+  const resH = Math.max(2, Math.ceil(h * pxPerM * SUPERSAMPLE / 2) * 2)
+  const out = bakeTopView({ triangles: scene, textures, materials: matsOverride, bounds: boundsWorld, resolution: Math.max(resW, resH), desaturate })
+  const W = Math.floor(out.width / SUPERSAMPLE)
+  const H = Math.floor(out.height / SUPERSAMPLE)
+  const rgba = new Uint8Array(W * H * 4)
   const S = SUPERSAMPLE
-  for (let y = 0; y < W; y++) {
+  for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       let r = 0, g = 0, b = 0, a = 0
       for (let dy = 0; dy < S; dy++) {
         for (let dx = 0; dx < S; dx++) {
-          const i = ((y * S + dy) * res + (x * S + dx)) * 4
+          const i = ((y * S + dy) * out.width + (x * S + dx)) * 4
           r += out.rgba[i]; g += out.rgba[i + 1]; b += out.rgba[i + 2]; a += out.rgba[i + 3]
         }
       }
@@ -341,15 +362,15 @@ const debugChannel = (name, scene, slot) => {
       rgba[o] = r / n; rgba[o + 1] = g / n; rgba[o + 2] = b / n; rgba[o + 3] = a / n
     }
   }
-  writeFileSync(join(debugDir, `${name}.png`), encodePng(rgba, W, W))
+  return { rgba, width: W, height: H, covered: out.covered }
 }
-debugChannel('hull-source-color', hullScene, 'baseColor')
-debugChannel('hull-normal', hullScene, 'normal')
-debugChannel('hull-ao', hullScene, 'occlusion')
+debugChannel('hull-source-color', hullScene, canvasBounds, 'baseColor')
+debugChannel('hull-normal', hullScene, canvasBounds, 'normal')
+debugChannel('hull-ao', hullScene, canvasBounds, 'occlusion')
 if (kind === 'turreted') {
-  debugChannel('turret-source-color', turretScene, 'baseColor')
-  debugChannel('turret-normal', turretScene, 'normal')
-  debugChannel('turret-ao', turretScene, 'occlusion')
+  debugChannel('turret-source-color', turretScene, turretFullB, 'baseColor')
+  debugChannel('turret-normal', turretScene, turretFullB, 'normal')
+  debugChannel('turret-ao', turretScene, turretFullB, 'occlusion')
 }
 
 // turretPivot（turreted：models.pb turretOrigin → 模型坐标 → 投影，与 extractor 同一公式）
@@ -379,6 +400,26 @@ const report = {
   turretBounds: kind === 'turreted' ? { min: [turretMainB.minX, turretMainB.minY], max: [turretMainB.maxX, turretMainB.maxY] } : null,
   gunBounds: gunB ? { min: [gunB.minX, gunB.minY], max: [gunB.maxX, gunB.maxY] } : null,
   turretPivot,
+  // raster overflow contract：turret.webp 画布 = turret+mantlet+完整 gun 的 logical bounds
+  // （保持同一 fit.scale，主体不缩放；透明 canvas 向 320 逻辑画布外扩展，避免炮管裁切）
+  turretRaster: kind === 'turreted'
+    ? (() => {
+        const lMinX = turretFullB.minX * scale + tx
+        const lMaxX = turretFullB.maxX * scale + tx
+        const lMinY = -turretFullB.maxY * scale + ty
+        const lMaxY = -turretFullB.minY * scale + ty
+        return {
+          logicalMinX: +lMinX.toFixed(2),
+          logicalMinY: +lMinY.toFixed(2),
+          logicalMaxX: +lMaxX.toFixed(2),
+          logicalMaxY: +lMaxY.toFixed(2),
+          pixelWidth: turretBaked.width,
+          pixelHeight: turretBaked.height,
+          pivotX: +(turretPivot.x - lMinX).toFixed(2),
+          pivotY: +(turretPivot.y - lMinY).toFixed(2),
+        }
+      })()
+    : null,
   fit: { scale, tx, ty },
   assets: {
     hullWebp: hullAsset.bytes,
@@ -397,10 +438,11 @@ writeFileSync(join(outDir, 'metadata.json'), JSON.stringify({
   source: {
     provider: 'blitzkit',
     tankId,
-    collisionModel: `${API}/tanks/${tankId}/model.glb`,
+    modelGlb: `${API}/tanks/${tankId}/model.glb`,
     modelDefinitions: `${API}/definitions/models.pb`,
   },
   ...(turretPivot ? { turretPivot } : {}),
+  ...(report.turretRaster ? { turretRaster: report.turretRaster } : {}),
   generation: {
     method: 'blitzkit-model-topdown-texture-bake',
     viewBox: `0 0 ${VIEWBOX.width} ${VIEWBOX.height}`,
@@ -408,6 +450,7 @@ writeFileSync(join(outDir, 'metadata.json'), JSON.stringify({
     hullBounds: report.hullBounds,
     turretBounds: report.turretBounds,
     gunBounds: report.gunBounds,
+    turretRaster: report.turretRaster,
     selectedModules: report.selectedModules,
     texturesUsed: report.texturesUsed,
     desaturate: DESATURATE,
