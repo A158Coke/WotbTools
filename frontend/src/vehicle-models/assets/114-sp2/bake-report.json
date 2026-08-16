@@ -79,6 +79,30 @@
     "x": 160,
     "y": 136.49
   },
+  "rasterOrientation": {
+    "hull": {
+      "axisContract": "model +Y = screen up（raster top = bounds.maxY）",
+      "topModelY": 4.4046,
+      "bottomModelY": -4.4481,
+      "topRowCovered": 38,
+      "bottomRowCovered": 601,
+      "topCoveredModelY": 3.8781,
+      "bottomCoveredModelY": -3.9217,
+      "topWidthMean": 92.44,
+      "bottomWidthMean": 101.55
+    },
+    "turret": {
+      "axisContract": "model +Y = screen up（raster top = bounds.maxY）",
+      "topModelY": 8.0237,
+      "bottomModelY": -2.0613,
+      "topRowCovered": 0,
+      "bottomRowCovered": 729,
+      "topCoveredModelY": 8.0237,
+      "bottomCoveredModelY": -2.0613,
+      "topWidthMean": 20.58,
+      "bottomWidthMean": 178.25
+    }
+  },
   "turretRaster": {
     "logicalMinX": 109.64,
     "logicalMinY": -129.25,
@@ -95,12 +119,12 @@
     "ty": 160.78703714596566
   },
   "assets": {
-    "hullWebp": 37004,
-    "turretWebp": 16360
+    "hullWebp": 36864,
+    "turretWebp": 16666
   },
   "generation": {
     "method": "blitzkit-model-topdown-texture-bake",
-    "desaturate": 0.75,
+    "desaturate": 0.25,
     "shading": "baseColor x occlusion x normal-z relief (restrained)",
     "determinism": "pure arithmetic; same input -> same output"
   }

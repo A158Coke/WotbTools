@@ -73,7 +73,7 @@
       "It08_Progetto_M40_mod_65_track_mtr",
       "It08_Progetto_M40_mod_65_track_mtr"
     ],
-    "desaturate": 0.75,
+    "desaturate": 0.25,
     "fidelity": "high",
     "geometryScale": "faithful",
     "visibleDetailRetentionTarget": 0.9,

@@ -73,7 +73,7 @@
       "G_VK9001P_track_mtr",
       "G_VK9001P_track_mtr"
     ],
-    "desaturate": 0.75,
+    "desaturate": 0.25,
     "fidelity": "high",
     "geometryScale": "faithful",
     "visibleDetailRetentionTarget": 0.9,

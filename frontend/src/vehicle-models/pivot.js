@@ -2,29 +2,24 @@
  * 车型图层旋转数学（admin preview 与未来 production VehicleMarker 共用）。
  *
  * 契约（docs/assets/tier-x-models/svg-generation-spec.md）：
- * - hull.svg 与 turret.svg 都使用统一 viewBox（320×320），渲染时 img 与画布
- *   1:1 对齐（left:0 top:0，覆盖整个画布）→ img 局部坐标 == viewBox 坐标；
- * - hull 绕画布中心（viewBox 中心）旋转；
- * - turret 绕 metadata.turretPivot（viewBox 绝对坐标）旋转。
+ * - hull.webp 与 turret.webp（turreted）都是 Source-faithful 俯视资产：
+ *   model +Y（车头/炮管 forward）→ 图片 top（0° = 12 点），hull 与 turret 同一 orientation；
+ * - hull 绕画布中心（viewBox 中心，车辆几何中心 C）旋转 hullWorldDeg；
+ * - turret 是「随 hull 移动的装配」：OFF_CENTER_TURRET_HULL_COMPOSITION 修复——
+ *   P = metadata.turretPivot（viewBox 绝对坐标），H = hull world rotation；
+ *   hull 旋转后炮塔座圈的屏幕位置 P' = C + rotate(P - C, H)，不是固定不动点；
+ * - 最终 turret world yaw = authoritative turretWorldDeg（hull + 相对转角）。
  *
- * 因此旋转中心直接用 transform-origin 的像素值表达（无需 translate 技巧）：
- *   transform-origin = pivot × renderScale（renderScale = 画布 CSS 尺寸 / viewBox 尺寸）
- *   transform = rotate(deg)
- * rotate 以 transform-origin 为不动点——0°/90°/180°/270° 下 pivot 屏幕位置不变。
+ * 实现用嵌套 transform（无 translate 平移近似，与旧单层 transform-origin 方案同构）：
+ *   1) turret assembly 父层：rotate(hullWorldDeg) around C（与 hull 层同数学）——
+ *      座圈随车体围绕 C 移动（P → P'）；
+ *   2) turret image 子层：rotate(turretWorldDeg - hullWorldDeg) around image-local pivot
+ *      （raster.pivotX/pivotY）——子层旋转抵消父层 hull 分量后，最终 world yaw = T。
+ *
+ * rotate 以 transform-origin 为不动点；img 与 320×320 viewBox 1:1 对齐
+ * （局部坐标 == viewBox 坐标），origin 直接用 viewBox 像素值 × renderScale。
  */
 import { VIEWBOX } from './types.js'
-
-/**
- * turret 层样式：绕 pivot（viewBox 坐标）旋转。
- * @param {{deg:number, pivot:{x:number,y:number}, renderScale?:number}} p
- */
-export function pivotLayerTransform({ deg, pivot, renderScale = 1 }) {
-  const s = renderScale
-  return {
-    transformOrigin: `${pivot.x * s}px ${pivot.y * s}px`,
-    transform: `rotate(${deg}deg)`,
-  }
-}
 
 /**
  * hull 层样式：绕画布中心（viewBox 中心）旋转。
@@ -36,5 +31,48 @@ export function hullLayerTransform({ deg, renderScale = 1 }) {
   return {
     transformOrigin: `${cx}px ${cy}px`,
     transform: `rotate(${deg}deg)`,
+  }
+}
+
+/**
+ * turret assembly 父层样式：随 hull 绕车辆中心旋转（与 hullLayerTransform 同一数学）。
+ * 嵌套结构：父层负责把座圈从 P 移动到 P' = C + rotate(P - C, hullDeg)；
+ * 子层（turretImageTransform）只负责图像自身旋转。
+ * @param {{hullDeg:number, renderScale?:number}} p
+ */
+export function turretAssemblyTransform({ hullDeg, renderScale = 1 }) {
+  return hullLayerTransform({ deg: hullDeg, renderScale })
+}
+
+/**
+ * turret image 子层样式：绕 image-local pivot（raster.pivotX/pivotY）旋转
+ * (turretWorldDeg - hullDeg)——父层已旋转 hullDeg，抵消后最终 world yaw = turretWorldDeg。
+ * @param {{hullDeg:number, turretWorldDeg:number, pivot:{x:number,y:number}, renderScale?:number}} p
+ */
+export function turretImageTransform({ hullDeg, turretWorldDeg, pivot, renderScale = 1 }) {
+  const s = renderScale
+  return {
+    transformOrigin: `${pivot.x * s}px ${pivot.y * s}px`,
+    transform: `rotate(${turretWorldDeg - hullDeg}deg)`,
+  }
+}
+
+/**
+ * hull 旋转后炮塔座圈的真实屏幕位置（viewBox 坐标；y 向下，rotate 正角 = 屏幕顺时针）。
+ * P' = C + rotate(P - C, hullDeg)。非中心炮塔（Grille 15 等）必须用此值，
+ * 禁止把 turretPivot 当作 hull rotation 后的固定 screen point。
+ * @param {{pivot:{x:number,y:number}, hullDeg:number}} p
+ */
+export function turretRingPosition({ pivot, hullDeg }) {
+  const rad = (hullDeg * Math.PI) / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  const cx = VIEWBOX.width / 2
+  const cy = VIEWBOX.height / 2
+  const dx = pivot.x - cx
+  const dy = pivot.y - cy
+  return {
+    x: cx + dx * cos - dy * sin,
+    y: cy + dx * sin + dy * cos,
   }
 }

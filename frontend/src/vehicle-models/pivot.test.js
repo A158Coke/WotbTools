@@ -1,14 +1,22 @@
 /**
- * pivot 旋转数学测试（Blocker 2）：turret.svg 必须真正绕 metadata.turretPivot 旋转。
- * 核心断言：非中心 pivot 在 0°/90°/180°/270° 下屏幕位置保持不变（不动点）。
+ * pivot 旋转数学测试（Blocker 2 — OFF_CENTER_TURRET_HULL_COMPOSITION）：
+ * turret 是「随 hull 移动的装配」——hull 旋转后炮塔座圈屏幕位置
+ * P' = C + rotate(P - C, H)，不是固定不动点；最终 turret world yaw = T。
+ * 覆盖车型：Grille 15（明显后置 pivot）、Maus、FV4005、Leopard-1。
  */
 import { describe, expect, it } from 'vitest'
 import { VIEWBOX } from './types.js'
-import { hullLayerTransform, pivotLayerTransform } from './pivot.js'
+import { hullLayerTransform, turretAssemblyTransform, turretImageTransform, turretRingPosition } from './pivot.js'
 
-// 测试用非中心 pivot：证明实现不是碰巧只支持中心 pivot（正式资产如 Maus turretPivot=(160,193.23)）
-const PIVOT = { x: 160, y: 150 }
-const ANGLES = [0, 90, 180, 270]
+const C = { x: VIEWBOX.width / 2, y: VIEWBOX.height / 2 }
+
+// 真实 metadata.turretPivot（viewBox 绝对坐标）
+const PIVOTS = {
+  'grille-15': { x: 160.1, y: 220.36 }, // 明显后置（offset ≈ +60px）
+  maus: { x: 160, y: 193.23 }, // 轻度后置
+  fv4005: { x: 160.28, y: 163.22 }, // 近中心
+  'leopard-1': { x: 160, y: 143.61 }, // 轻度前置
+}
 
 /** 数学验证辅助：以 origin 为不动点的 rotate(deg) 下，点 point 的像（2D 仿射，角度制）。 */
 function rotatePointAround({ point, origin, deg }) {
@@ -23,53 +31,111 @@ function rotatePointAround({ point, origin, deg }) {
   }
 }
 
-describe('rotatePointAround（2D 仿射不动点）', () => {
-  it('pivot 绕自身旋转在 0/90/180/270 下不动', () => {
-    for (const deg of ANGLES) {
-      const img = rotatePointAround({ point: PIVOT, origin: PIVOT, deg })
-      expect(img.x).toBeCloseTo(PIVOT.x, 9)
-      expect(img.y).toBeCloseTo(PIVOT.y, 9)
+describe('turretRingPosition（座圈随 hull 移动，P2 = C + rotate(P-C, H)）', () => {
+  it('H=0 时座圈停留在 turretPivot（0° 渲染不变）', () => {
+    for (const [name, p] of Object.entries(PIVOTS)) {
+      const pos = turretRingPosition({ pivot: p, hullDeg: 0 })
+      expect(pos.x).toBeCloseTo(p.x, 9)
+      expect(pos.y).toBeCloseTo(p.y, 9)
     }
   })
 
-  it('任意点绕 pivot 旋转 90° 的像正确（验证矩阵方向）', () => {
-    // 点 (180,150) 在 pivot 右侧 → 绕 pivot 顺时针(屏幕 y 向下)旋转 90° 后到 (160,170)
-    const img = rotatePointAround({ point: { x: 180, y: 150 }, origin: PIVOT, deg: 90 })
-    expect(img.x).toBeCloseTo(160, 9)
-    expect(img.y).toBeCloseTo(170, 9)
+  it('Grille 15（后置 pivot）hull 90° 后座圈必须移动，不再是固定 screen point', () => {
+    const p = PIVOTS['grille-15']
+    const pos = turretRingPosition({ pivot: p, hullDeg: 90 })
+    // P-C = (0.1, 60.36) → R90 = (-60.36, 0.1) → P' = (99.64, 160.1)
+    expect(pos.x).toBeCloseTo(99.64, 6)
+    expect(pos.y).toBeCloseTo(160.1, 6)
+    // 旧错误假设：座圈停在 (160.1, 220.36) 不动 —— 必须 FAIL
+    expect(pos.x).not.toBeCloseTo(p.x, 1)
+    expect(pos.y).not.toBeCloseTo(p.y, 1)
   })
 
-  it('180° 旋转后点落在 pivot 的对称位置', () => {
-    const img = rotatePointAround({ point: { x: 180, y: 150 }, origin: PIVOT, deg: 180 })
-    expect(img.x).toBeCloseTo(140, 9)
-    expect(img.y).toBeCloseTo(150, 9)
+  it('hull 180° 时后置座圈对称到车辆中心另一侧（上移）', () => {
+    const p = PIVOTS['grille-15']
+    const pos = turretRingPosition({ pivot: p, hullDeg: 180 })
+    expect(pos.x).toBeCloseTo(159.9, 6)
+    expect(pos.y).toBeCloseTo(99.64, 6)
+  })
+
+  it('hull 270° 时座圈回到 P 的顺时针旋转位（P2 = C - R90(P-C)）', () => {
+    const p = PIVOTS['grille-15']
+    const pos = turretRingPosition({ pivot: p, hullDeg: 270 })
+    // R270(-60.36, 0.1) = (60.36, -0.1) → P' = (220.36, 159.9)
+    expect(pos.x).toBeCloseTo(220.36, 6)
+    expect(pos.y).toBeCloseTo(159.9, 6)
+  })
+
+  it('Maus / FV4005 / Leopard-1 也随 hull 移动（与参考 rotatePointAround 一致）', () => {
+    for (const deg of [0, 90, 180, 270]) {
+      for (const [name, p] of Object.entries(PIVOTS)) {
+        const pos = turretRingPosition({ pivot: p, hullDeg: deg })
+        const ref = rotatePointAround({ point: p, origin: C, deg })
+        expect(pos.x).toBeCloseTo(ref.x, 9)
+        expect(pos.y).toBeCloseTo(ref.y, 9)
+      }
+    }
   })
 })
 
-describe('pivotLayerTransform（turret 层）', () => {
-  it('transform-origin 精确等于 pivot（1:1 渲染）', () => {
-    const s = pivotLayerTransform({ deg: 45, pivot: PIVOT })
-    expect(s.transformOrigin).toBe('160px 150px')
-    expect(s.transform).toBe('rotate(45deg)')
+describe('嵌套 transform composition（最终 world yaw = T，座圈 = P2）', () => {
+  // H/T 组合（用户指定 + 全车辆）
+  const CASES = [
+    { hullDeg: 0, turretWorldDeg: 0 },
+    { hullDeg: 90, turretWorldDeg: 0 },
+    { hullDeg: 90, turretWorldDeg: 90 },
+    { hullDeg: 180, turretWorldDeg: 45 },
+    { hullDeg: 270, turretWorldDeg: 10 },
+  ]
+
+  it('transform-origin 与旋转角度正确（父层绕 C、子层绕 image-local pivot）', () => {
+    const parent = turretAssemblyTransform({ hullDeg: 90 })
+    expect(parent.transformOrigin).toBe('160px 160px')
+    expect(parent.transform).toBe('rotate(90deg)')
+    const child = turretImageTransform({ hullDeg: 90, turretWorldDeg: 120, pivot: { x: 40.09, y: 432.28 } })
+    expect(child.transformOrigin).toBe('40.09px 432.28px')
+    expect(child.transform).toBe('rotate(30deg)') // T - H
   })
 
-  it('renderScale 放大时 origin 按比例换算（画布 480 = 320×1.5）', () => {
-    const s = pivotLayerTransform({ deg: 90, pivot: PIVOT, renderScale: 1.5 })
-    expect(s.transformOrigin).toBe('240px 225px')
-  })
-
-  it('0/90/180/270 下 pivot 屏幕位置不变（origin 恒定 + 数学不动点）', () => {
-    const scale = 1.5
-    const screenOrigin = { x: PIVOT.x * scale, y: PIVOT.y * scale }
-    for (const deg of ANGLES) {
-      const s = pivotLayerTransform({ deg, pivot: PIVOT, renderScale: scale })
-      // transform-origin 就是旋转不动点的屏幕位置
-      expect(s.transformOrigin).toBe(`${screenOrigin.x}px ${screenOrigin.y}px`)
-      // 数学不动点：pivot 经旋转矩阵仍回到自身
-      const img = rotatePointAround({ point: PIVOT, origin: PIVOT, deg })
-      expect(img.x).toBeCloseTo(PIVOT.x, 9)
-      expect(img.y).toBeCloseTo(PIVOT.y, 9)
+  it('子层旋转 (T-H) + 父层旋转 H = 最终 world yaw T（炮管方向正确）', () => {
+    for (const { hullDeg: H, turretWorldDeg: T } of CASES) {
+      for (const [name, p] of Object.entries(PIVOTS)) {
+        // 炮管指向图片上方（viewBox y 向下 → up = -y）：v = P + (0, -1)
+        const v = { x: p.x, y: p.y - 1 }
+        const child = turretImageTransform({ hullDeg: H, turretWorldDeg: T, pivot: p })
+        const imgDeg = T - H
+        // 模拟 CSS 嵌套：子层绕 P 旋转 (T-H)，父层绕 C 旋转 H
+        const p1 = rotatePointAround({ point: v, origin: p, deg: imgDeg })
+        const p2 = rotatePointAround({ point: p1, origin: C, deg: H })
+        const ring = turretRingPosition({ pivot: p, hullDeg: H })
+        const dir = { x: p2.x - ring.x, y: p2.y - ring.y }
+        // 期望方向 = R(T)·(0,-1) = (sin T, -cos T)
+        const rad = (T * Math.PI) / 180
+        expect(dir.x).toBeCloseTo(Math.sin(rad), 6)
+        expect(dir.y).toBeCloseTo(-Math.cos(rad), 6)
+      }
     }
+  })
+
+  it('座圈像素经嵌套 transform 落在 P2（炮塔不脱离车体）', () => {
+    for (const { hullDeg: H, turretWorldDeg: T } of CASES) {
+      const p = PIVOTS['grille-15']
+      const imgDeg = T - H
+      // 子层原点像素（image-local pivot）经嵌套 transform 的像
+      const p1 = rotatePointAround({ point: p, origin: p, deg: imgDeg })
+      const p2 = rotatePointAround({ point: p1, origin: C, deg: H })
+      const ring = turretRingPosition({ pivot: p, hullDeg: H })
+      expect(p2.x).toBeCloseTo(ring.x, 9)
+      expect(p2.y).toBeCloseTo(ring.y, 9)
+    }
+  })
+
+  it('renderScale 放大时 origin 按比例换算', () => {
+    const parent = turretAssemblyTransform({ hullDeg: 45, renderScale: 1.5 })
+    expect(parent.transformOrigin).toBe('240px 240px')
+    const child = turretImageTransform({ hullDeg: 10, turretWorldDeg: 30, pivot: { x: 40, y: 432 }, renderScale: 1.5 })
+    expect(child.transformOrigin).toBe('60px 648px')
+    expect(child.transform).toBe('rotate(20deg)')
   })
 })
 
@@ -80,5 +146,9 @@ describe('hullLayerTransform（hull 层）', () => {
     const cy = VIEWBOX.height / 2
     expect(s.transformOrigin).toBe(`${cx}px ${cy}px`)
     expect(s.transform).toBe('rotate(30deg)')
+  })
+
+  it('turretAssemblyTransform 与 hullLayerTransform 同一数学（同绕车辆中心）', () => {
+    expect(turretAssemblyTransform({ hullDeg: 90, renderScale: 2 })).toEqual(hullLayerTransform({ deg: 90, renderScale: 2 }))
   })
 })

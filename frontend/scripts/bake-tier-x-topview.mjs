@@ -17,7 +17,8 @@
  *   （独立 z-buffer/bake——旋转 turret 不会暴露 hull 空洞）；
  * - turretless：不生成独立 turret 层——gun/mantlet/casemate 全部 bake 进 hull asset；
  * - metallic/roughness：顶视中性 bake 无 specular——检查后报告，不加入（§5）；
- * - 输出适度去色（0.75）保留纹理结构（grille/panel/vent/AO/relief）（§6）。
+ * - 输出适度去色（desaturate=0.25 → 75% 原色 + 25% luma）保留纹理结构
+ *   （grille/panel/vent/AO/relief）（§6；Blocker 3 语义反向修复，视觉不变）。
  *
  * 网络边界与 extractor CLI 相同：本脚本是唯一允许访问 BlitzKit 网络的 developer 工具；
  * production / Battle Playback / CI 不访问。依赖 python + PIL（仅 developer 环境）。
@@ -51,7 +52,9 @@ const API = 'https://api.blitzkit.app'
 const VIEWBOX = { width: 320, height: 320 }
 const PHYSICAL = 640
 const SUPERSAMPLE = 2 // 1280 内部渲染 → 640 输出（4x AA）
-const DESATURATE = 0.75
+// desaturate 语义（Blocker 3 修复）：neutralize amount = 去色强度（0=原色，1=纯灰）。
+// 0.25 = 保留 75% 原色 + 25% luma ——与旧 0.75（反向语义）视觉数学等价，像素不变。
+const DESATURATE = 0.25
 
 const args = process.argv.slice(2)
 function argValue(argv, name) {
@@ -127,8 +130,9 @@ for (let i = 0; i < texDefs.length; i++) {
   const webpPath = join(tmpDir, `tex-${i}.webp`)
   const rgbaPath = join(tmpDir, `tex-${i}.rgba`)
   writeFileSync(webpPath, Buffer.from(texDefs[i].bytes))
-  const py = spawnSync('python', [join(ROOT, 'frontend', 'scripts', 'decode-webp.py'), webpPath, rgbaPath])
-  if (py.status !== 0) throw new Error(`WEBP 解码失败 tex${i}: ${py.stderr?.toString().slice(0, 300)}`)
+  // stdio:'inherit'——沙箱/后台环境禁止捕获子进程 pipe 输出（EPERM）；结果走磁盘文件，仅需退出码
+  const py = spawnSync('python', [join(ROOT, 'frontend', 'scripts', 'decode-webp.py'), webpPath, rgbaPath], { stdio: 'inherit' })
+  if (py.status !== 0) throw new Error(`WEBP 解码失败 tex${i}（python 退出码 ${py.status}，详见上方输出）`)
   const buf = readFileSync(rgbaPath)
   const w = buf.readUInt32LE(0)
   const h = buf.readUInt32LE(4)
@@ -308,6 +312,42 @@ const turretFullB = kind === 'turreted' ? boundsOf(turretScene) : null
 const turretBaked = kind === 'turreted' ? bakeScene(turretScene, turretFullB) : null
 console.log(`  bake: hull ${hullBaked.width}x${hullBaked.height} covered=${hullBaked.covered}px${turretBaked ? ` turret ${turretBaked.width}x${turretBaked.height} covered=${turretBaked.covered}px` : ''}`)
 
+// —— rasterOrientation fingerprint（RASTER_Y_AXIS_CONTRACT 证据）：从实际 baked rgba 计算 ——
+// 记录图片 top/bottom 对应的 model Y、上下 10% 行的覆盖宽度均值与首/末覆盖行。
+// 方向契约：model +Y（forward）必须位于图片 top——即 topModelY 是场景 bounds 的最大 Y，
+// 且 topWidthMean 显著小于 bottomWidthMean（炮管/车首窄于车尾/炮塔体）。
+// vitest（orientation 回归）与开发者 QA 都以此字段断言真实 raster 方向，非 metadata 自洽。
+const rasterFingerprint = (baked, boundsWorld) => {
+  const { rgba, width: W, height: H } = baked
+  const rowWidth = new Array(H).fill(0)
+  let topRow = -1, bottomRow = -1
+  for (let y = 0; y < H; y++) {
+    let cnt = 0
+    for (let x = 0; x < W; x++) if (rgba[(y * W + x) * 4 + 3] > 40) cnt++
+    rowWidth[y] = cnt
+    if (cnt > 0) { if (topRow < 0) topRow = y; bottomRow = y }
+  }
+  const mean = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0)
+  const band = Math.max(1, Math.floor(H * 0.1))
+  // 行 r ↔ modelY = maxY - r*(maxY-minY)/(H-1)（raster 行 = 屏幕 y，上小下大）
+  const span = boundsWorld.maxY - boundsWorld.minY
+  const yAtRow = (r) => (r < 0 ? null : boundsWorld.maxY - (r * span) / Math.max(1, H - 1))
+  return {
+    axisContract: 'model +Y = screen up（raster top = bounds.maxY）',
+    topModelY: +boundsWorld.maxY.toFixed(4),
+    bottomModelY: +boundsWorld.minY.toFixed(4),
+    topRowCovered: topRow,
+    bottomRowCovered: bottomRow,
+    topCoveredModelY: topRow < 0 ? null : +yAtRow(topRow).toFixed(4),
+    bottomCoveredModelY: bottomRow < 0 ? null : +yAtRow(bottomRow).toFixed(4),
+    topWidthMean: +mean(rowWidth.slice(0, band)).toFixed(2),
+    bottomWidthMean: +mean(rowWidth.slice(H - band)).toFixed(2),
+  }
+}
+const hullOrientation = rasterFingerprint(hullBaked, canvasBounds)
+const turretOrientation = kind === 'turreted' ? rasterFingerprint(turretBaked, turretFullB) : null
+console.log(`  orientation: hull topModelY=${hullOrientation.topModelY} topW=${hullOrientation.topWidthMean} botW=${hullOrientation.bottomWidthMean}${turretOrientation ? ` turret topModelY=${turretOrientation.topModelY} topW=${turretOrientation.topWidthMean} botW=${turretOrientation.bottomWidthMean}` : ''}`)
+
 // —— 输出（正式资产：webp + metadata；debug：PNG + 通道图 + report）——
 const outDir = outDirArg ? join(ROOT, outDirArg) : join(ROOT, 'frontend', 'src', 'vehicle-models', 'assets', modelKey)
 mkdirSync(outDir, { recursive: true })
@@ -315,8 +355,8 @@ const debugDir = join(CACHE_DIR, 'debug', modelKey)
 mkdirSync(debugDir, { recursive: true })
 const pngToWebp = (pngPath, webpPath, quality = 90) => {
   const code = `from PIL import Image; Image.open(r'${pngPath}').save(r'${webpPath}', 'WEBP', quality=${quality}, method=6)`
-  const r2 = spawnSync('python', ['-c', code])
-  if (r2.status !== 0) throw new Error(`WEBP 编码失败: ${r2.stderr?.toString().slice(0, 300)}`)
+  const r2 = spawnSync('python', ['-c', code], { stdio: 'inherit' })
+  if (r2.status !== 0) throw new Error(`WEBP 编码失败（python 退出码 ${r2.status}，详见上方输出）`)
 }
 const writeAsset = (label, baked, isOfficial) => {
   const png = encodePng(baked.rgba, baked.width, baked.height)
@@ -400,6 +440,7 @@ const report = {
   turretBounds: kind === 'turreted' ? { min: [turretMainB.minX, turretMainB.minY], max: [turretMainB.maxX, turretMainB.maxY] } : null,
   gunBounds: gunB ? { min: [gunB.minX, gunB.minY], max: [gunB.maxX, gunB.maxY] } : null,
   turretPivot,
+  rasterOrientation: { hull: hullOrientation, ...(turretOrientation ? { turret: turretOrientation } : {}) },
   // raster overflow contract：turret.webp 画布 = turret+mantlet+完整 gun 的 logical bounds
   // （保持同一 fit.scale，主体不缩放；透明 canvas 向 320 逻辑画布外扩展，避免炮管裁切）
   turretRaster: kind === 'turreted'

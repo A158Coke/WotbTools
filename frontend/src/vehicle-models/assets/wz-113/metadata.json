@@ -73,7 +73,7 @@
       "wz_113_track",
       "wz_113_track"
     ],
-    "desaturate": 0.75,
+    "desaturate": 0.25,
     "fidelity": "high",
     "geometryScale": "faithful",
     "visibleDetailRetentionTarget": 0.9,

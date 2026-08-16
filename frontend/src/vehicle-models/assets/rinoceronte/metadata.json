@@ -73,7 +73,7 @@
       "It115_Rinoceronte_track_mtr",
       "It115_Rinoceronte_track_mtr"
     ],
-    "desaturate": 0.75,
+    "desaturate": 0.25,
     "fidelity": "high",
     "geometryScale": "faithful",
     "visibleDetailRetentionTarget": 0.9,

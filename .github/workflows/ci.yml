@@ -69,6 +69,9 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
+      - name: Bundle separation check (vehicle QA assets must stay out of initial bundle)
+        working-directory: frontend
+        run: node scripts/check-bundle-separation.mjs
       - name: Alpine Docker build (verify lockfile + native deps)
         run: docker build -f docker/Dockerfile.frontend -t wotbtools-frontend:pr .
 

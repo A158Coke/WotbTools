@@ -58,6 +58,19 @@
   "turretBounds": null,
   "gunBounds": null,
   "turretPivot": null,
+  "rasterOrientation": {
+    "hull": {
+      "axisContract": "model +Y = screen up（raster top = bounds.maxY）",
+      "topModelY": 7.7846,
+      "bottomModelY": -3.9431,
+      "topRowCovered": 38,
+      "bottomRowCovered": 602,
+      "topCoveredModelY": 7.0872,
+      "bottomCoveredModelY": -3.264,
+      "topWidthMean": 7.08,
+      "bottomWidthMean": 70.72
+    }
+  },
   "turretRaster": null,
   "fit": {
     "scale": 27.285936204492927,
@@ -65,12 +78,12 @@
     "ty": 107.59011132816046
   },
   "assets": {
-    "hullWebp": 17354,
+    "hullWebp": 18244,
     "turretWebp": null
   },
   "generation": {
     "method": "blitzkit-model-topdown-texture-bake",
-    "desaturate": 0.75,
+    "desaturate": 0.25,
     "shading": "baseColor x occlusion x normal-z relief (restrained)",
     "determinism": "pure arithmetic; same input -> same output"
   }
