@@ -39,6 +39,7 @@ import {
   filterOccludedSurfaces,
   mergeVisualSurfaces,
   projectTopDown,
+  projectTopFacingPolygons,
   projectTriangles,
   silhouetteToSvgPaths,
   simplifyRing,
@@ -385,19 +386,23 @@ async function main() {
   ] }, VIEWBOX)
   // —— debug artifacts（gitignored 缓存目录，不提交正式 repo）——
   // HIGH-FIDELITY evidence：
-  //   source-top-projection（ground truth：raw top-facing union，无 merge/过滤）
-  //   merged-surfaces（合并后、过滤前）
+  //   source-top-projection（真正的 raw ground truth：每个 top-facing 三角形独立投影，
+  //     无 merge / 无遮挡 / 无微小过滤——可显示 source 三角化结构）
+  //   merged-surfaces（视觉表面合并后、过滤前）
   //   retained-surfaces / removed-tiny-details / feature-edges
   //   final-hull / final-turret（最终 SVG）
   //   feature-fidelity-report.json（source vs final feature audit）
   const debugDir = join(CACHE_DIR, 'debug', modelKey)
   mkdirSync(debugDir, { recursive: true })
-  // ground truth：所有 top-facing faces 的 union（不做 merge/遮挡/微小过滤）
-  const sourceHullSurfaces = mergeVisualSurfaces(hullTris, DETAIL_THRESHOLDS).surfaces
-  const sourceTurretSurfaces = mergeVisualSurfaces(turretTris, DETAIL_THRESHOLDS).surfaces
+  // hull/turret 几何 bounds（由真实投影计算，非硬编码——feature audit 用）
+  const hb = bounds2D(polyPoints(hullPoly))
+  const tb = bounds2D(polyPoints(turretPoly))
+  // raw ground truth：top-facing 三角形逐个投影（不做视觉表面合并）
+  const sourceHullRaw = projectTopFacingPolygons(hullTris, DETAIL_THRESHOLDS)
+  const sourceTurretRaw = projectTopFacingPolygons(turretTris, DETAIL_THRESHOLDS)
   writeFileSync(join(debugDir, 'source-top-projection.svg'), svgDocument(
-    [...surfacesToSvgPaths(sourceHullSurfaces, fit, '#5c635e'),
-     ...surfacesToSvgPaths(sourceTurretSurfaces, fit, '#717873')], VIEWBOX))
+    [...silhouetteToSvgPaths(sourceHullRaw, fit, '#5c635e'),
+     ...silhouetteToSvgPaths(sourceTurretRaw, fit, '#717873')], VIEWBOX))
   writeFileSync(join(debugDir, 'retained-surfaces.svg'), svgDocument(
     [...surfacesToSvgPaths(hullSurfacesF, fit, '#5c635e'),
      ...surfacesToSvgPaths(turretSurfacesF, fit, '#717873')], VIEWBOX))
@@ -421,18 +426,20 @@ async function main() {
   writeFileSync(join(debugDir, 'final-turret.svg'), turretSvg)
   // —— feature fidelity audit（Blocker 3：region count ≠ visual fidelity）——
   // 基于几何（z 带 / 位置 / 面积）自动分类 source-visible 结构类别，
-  // 每类标记 detected（source 中存在）/ retained（final 中存在）/
+  // 每类标记 detected（source 合并后）/ retained（final 过滤后）/
   // filtered（仅微小/遮挡/退化过滤）/ merged-into（合并进主表面）。
-  // 无人工硬编码坐标——全部来自 extractor debug geometry。
+  // bounds 来自真实投影计算（hb/tb），无车型专属硬编码；
+  // source 用合并后表面（merge 是视觉连续性处理，非过滤）——final 与其比较。
+  const mergeResultHull = mergeVisualSurfaces(hullTris, DETAIL_THRESHOLDS)
+  const mergeResultTurret = mergeVisualSurfaces(turretTris, DETAIL_THRESHOLDS)
   const featureAudit = buildFeatureAudit({
     modelKey,
-    sourceHull: sourceHullSurfaces,
-    sourceTurret: sourceTurretSurfaces,
+    sourceHull: mergeResultHull.surfaces,
+    sourceTurret: mergeResultTurret.surfaces,
     finalHull: hullSurfacesF,
     finalTurret: turretSurfacesF,
-    hullBounds: { min: [-1.8600600957870483, -4.437963962554932], max: [1.8600600957870483, 4.595536231994629] },
-    turretBounds: { min: [-1.5337796211242676, -3.5188093185424805], max: [1.5337797403335571, 1.0040172338485718] },
-    fitScale: fit.scale,
+    hullBounds: { min: [hb.minX, hb.minY], max: [hb.maxX, hb.maxY] },
+    turretBounds: { min: [tb.minX, tb.minY], max: [tb.maxX, tb.maxY] },
   })
   writeFileSync(join(debugDir, 'feature-fidelity-report.json'), JSON.stringify(featureAudit, null, 2) + '\n')
   // 分组 path 统计（primary/secondary/micro）
@@ -490,8 +497,7 @@ async function main() {
 
   const outDir = outDirArg ? join(ROOT, outDirArg) : join(ROOT, 'frontend', 'src', 'vehicle-models', 'assets', modelKey)
   mkdirSync(outDir, { recursive: true })
-  const hb = bounds2D(polyPoints(hullPoly))
-  const tb = bounds2D(polyPoints(turretPoly))
+  // hb/tb 已在 debug 段计算（feature audit 共用）
   const gb = bounds2D(polyPoints(gunPoly))
   const tCenter = { x: (tb.minX + tb.maxX) / 2, y: (tb.minY + tb.maxY) / 2 }
   console.log('  [evidence] hull raw bbox:', JSON.stringify({ min: [hb.minX, hb.minY], max: [hb.maxX, hb.maxY] }))
