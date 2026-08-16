@@ -102,7 +102,7 @@ Błyskawica (19585) 与 SPHT (29985) 均经 BlitzKit 真实模型数据确认 **
 SPHT / AC Teichos：GLB turret_01 + gun_01 + gun_01_mask、models.pb turret 模块无 yaw 限位；
 NC 70 Błyskawica：GLB turret_01 为 1-triangle stub（casemate 主体在 hull_nc_01，属 hull 层；
 旋转层实际 = gun_01 + gun_01_mask，yaw ±10° limited-traverse，同 grille-15 处理）。
-三车 turretPivot 均通过 yaw0/90 几何反推验证（err=0.0000m，见 scripts/verify-turret-pivot.mjs）。
+三车 turretPivot 均通过 scene-graph 独立反推验证（err≤0.0002m，见 scripts/verify-pivot-independent.mjs）。
 
 ### B. 目标路径（正式）
 
@@ -177,8 +177,17 @@ PR1 DONE（78 资产确定性生成，方向契约测试全绿，PR #91 已合�
 
 ## 变更记录
 
+- PR92 Review B1 第二轮（2026-08-19）：**独立几何验证取代循环证明**——旧
+  verify-turret-pivot.mjs 用待验证 pivot 生成样本再反推（tautology），已删除；新
+  scripts/verify-pivot-independent.mjs 逐行复刻 useTankTransform.ts scene graph（origins 原始
+  数据 → container position/rotation → world positions → 反推），全 72 turreted err≤0.0002m、
+  minotauro 真实含 initial pitch=3°（0.0291m 原值）。**"pivot 偏后"视觉根因**：turret.webp 含
+  完整炮管（raster overflow contract）→ 图像像素质心被炮管拉前，座圈红圈在图像中下部
+  （Grille 15 85.6%），偏后感知 = 炮管占比效应（非数值偏差；GLB 底部环带中心与 pivot 吻合
+  ≤0.15m）；QA 页 proto cell transform-origin 写死 160px 未随 protoSize 缩放（旋转漂移误读）
+  已修复；QA 页新增炮塔视觉质心青色参照（checkbox，三语 i18n）。pivot 数值不变，资产不重生成。
 - PR92 Review 修复（2026-08-19）：**turretPivot source-of-truth 落地**（bake-report 记录 pivotSource：
-  modelPivot = correctZYTuple(trackOrigin) + correctZYTuple(turretOrigin)；`scripts/verify-turret-pivot.mjs` 用真实 GLB 旋转层几何做 yaw=0°/90° 反推，全 72 turreted 车型 err=0.0000m，含 minotauro
+  modelPivot = correctZYTuple(trackOrigin) + correctZYTuple(turretOrigin)；`scripts/verify-pivot-independent.mjs` 逐行复刻 useTankTransform.ts scene graph（turretContainer position/rotation 由 origins 构造，不经过 computeTurretModelPivot），yaw=0°/限位角反推，全 72 turreted 车型 err≤0.0002m，含 minotauro
   initial_turret_rotation（pitch=3°）影响量化 0.025m）；**confirmPending 清零**（spht / ac-teichos /
   nc-70-blyskawica 经 BlitzKit 真实模型数据确认 turreted，81 资产齐备）；**dedicated 阵营视觉**
   （VehicleMarker 友军暖橙 / 敌军冷青 halo，CSS drop-shadow，不动纹理/旋转/阵亡灰阶/红 ✕）。
