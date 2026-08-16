@@ -1,0 +1,82 @@
+{
+  "modelKey": "nc-70-blyskawica",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 19585,
+    "modelGlb": "https://api.blitzkit.app/tanks/19585/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 159.98,
+    "y": 58.01
+  },
+  "turretRaster": {
+    "logicalMinX": 146.32,
+    "logicalMinY": -144.56,
+    "logicalMaxX": 173.65,
+    "logicalMaxY": 58.66,
+    "pixelWidth": 55,
+    "pixelHeight": 407,
+    "pivotX": 13.66,
+    "pivotY": 202.57
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.7367600202560425,
+        -3.5457143783569336
+      ],
+      "max": [
+        1.7367602586746216,
+        3.507018804550171
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -0.0958511009812355,
+        2.5574121475219727
+      ],
+      "max": [
+        0.09490940719842911,
+        2.669157028198242
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.14760752022266388,
+        3.8477590084075928
+      ],
+      "max": [
+        0.14760899543762207,
+        7.647210121154785
+      ]
+    },
+    "selectedModules": {
+      "turretId": 28289,
+      "gunId": 33153,
+      "trackId": 30081,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "Pl29_NC_Wz_70T_mtr",
+      "Pl29_NC_Wz_70T_mtr",
+      "Pl29_NC_Wz_70T_mtr",
+      "Pl29_NC_Wz_70T_track_mtr",
+      "Pl29_NC_Wz_70T_track_mtr",
+      "Pl29_NC_Wz_70T_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

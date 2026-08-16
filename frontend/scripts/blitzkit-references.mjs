@@ -60,9 +60,11 @@ const KIND_EVIDENCE = {
   'obj-263': 'casemate 固定战斗室 TD（结构知识）',
   'fv217-badger': 'casemate 固定战斗室 TD（结构知识）',
   'object-268-4': 'casemate 固定战斗室 TD（结构知识）',
-  'spht': '无可靠公开结构资料 → 视觉确认待定（confirmPending）',
-  'ac-teichos': '无可靠公开结构资料 → 视觉确认待定（confirmPending）',
-  'nc-70-blyskawica': '官方文章未明确炮塔结构 → 视觉确认待定（confirmPending）',
+  // 2026-08-19 BlitzKit 真实模型数据确认（GLB 节点结构 + models.pb turret yaw 限位），
+  // confirmPending 全部清零，contract 冻结；turretPivot 均已通过 yaw0/90 几何反推验证（err=0.0000m）。
+  'spht': '2026-08-19 BlitzKit 数据确认：GLB turret_01 + gun_01 + gun_01_mask、models.pb turret 模块无 yaw 限位 → 确认 turreted',
+  'ac-teichos': '2026-08-19 BlitzKit 数据确认：GLB turret_01（631+1540 顶点）+ gun_01 + gun_01_mask、models.pb turret 模块无 yaw 限位 → 确认 turreted',
+  'nc-70-blyskawica': '2026-08-19 BlitzKit 数据确认：GLB turret_01 为 1-triangle stub（casemate 主体在 hull_nc_01，属 hull 层；旋转层实际 = gun_01 + gun_01_mask）、models.pb turret 模块 yaw ±10°（limited-traverse，同 grille-15）→ 确认 turreted',
 }
 
 /** 尽力而为的 BlitzKit 页面 slug（非 ASCII 字母会被剥离，页面链接仅作辅助）。 */
@@ -117,8 +119,9 @@ function renderMarkdown(inv, groups) {
   lines.push('> 不采用 BlitzKit TURRET module 或 turretRotationSpeed 字段（casemate 也有 turret module 且转速非零，不可判）。')
   lines.push('> 修正记录：minotauro → turreted（有炮塔 45° 限位）；foch-155 → turretless（fandom specs turret=no）；')
   lines.push('> xm66f → turreted（官方：non-fully-rotating turret）。')
-  lines.push('> **confirmPending**（spht / ac-teichos / nc-70-blyskawica）：无可靠公开结构资料，')
-  lines.push('> contract 未冻结——ChatGPT 生成时须对照 BlitzKit 参考图确认 kind，不一致需同步修正 mapping 与 metadata。')
+  lines.push('> **confirmPending 已全部清零（2026-08-19）**：spht / ac-teichos / nc-70-blyskawica')
+  lines.push('> 均经 BlitzKit 真实模型数据确认 kind（GLB 节点结构 + models.pb turret yaw 限位），contract 冻结；')
+  lines.push('> 三车已生成正式资产，turretPivot 通过 yaw0/90 几何反推验证（err=0.0000m）。')
   lines.push('')
   lines.push('## 按 baseModelKey 分组')
   lines.push('')

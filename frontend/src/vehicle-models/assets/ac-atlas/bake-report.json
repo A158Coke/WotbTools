@@ -79,6 +79,35 @@
     "x": 160,
     "y": 169.01
   },
+  "pivotSource": {
+    "contract": "BlitzKit useTankTransform: yaw center = correctZYTuple(trackOrigin) + correctZYTuple(turret_origin)",
+    "hullOrigin": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "turretOrigin": {
+      "x": -9.999999974752427e-7,
+      "y": 1.5930999517440796,
+      "z": -0.000003999999989900971
+    },
+    "hullOriginModel": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "turretOriginModel": {
+      "x": -0.000001,
+      "y": -0.000004,
+      "z": 1.5931
+    },
+    "modelPivot": {
+      "x": -0.000001,
+      "y": -0.000004,
+      "z": 1.5931
+    },
+    "initialTurretRotation": null
+  },
   "rasterOrientation": {
     "hull": {
       "axisContract": "model +Y = screen up（raster top = bounds.maxY）",

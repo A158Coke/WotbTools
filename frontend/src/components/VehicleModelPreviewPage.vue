@@ -3,7 +3,7 @@
 // 只允许 wotbtools-admin；不放导航入口，仅深链 ?view=vehicle-models。
 // 渲染方式与生产 BattlePlayback 一致（HTML 双层 + 绕 pivot CSS rotate），
 // PR2 落地 production VehicleMarker 后本页改为直接复用该组件。
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { VIEWBOX } from '../vehicle-models/types.js'
@@ -116,11 +116,17 @@ const protoBakeStyle = computed(() => ({
   height: protoSize.value + 'px',
   position: 'relative',
 }))
-const bakeHullLayerStyle = computed(() => ({
-  position: 'absolute', left: '0', top: '0', width: '100%', height: '100%',
-  transform: 'rotate(' + hullDeg.value + 'deg)',
-  transformOrigin: VIEWBOX.width / 2 + 'px ' + VIEWBOX.height / 2 + 'px', // hull 绕画布中心
-}))
+const bakeHullLayerStyle = computed(() => {
+  // PR92 Review B1 修复：transform-origin 必须随 protoSize 缩放（此前写死 160px，
+  // protoSize≠320 时 hull 绕盒外点旋转，车体视觉漂移、被误读为 pivot 偏后）——
+  // 与 bakeTurretAssemblyStyle 的 renderScale 同构。
+  const s = protoSize.value / 320
+  return {
+    position: 'absolute', left: '0', top: '0', width: '100%', height: '100%',
+    transform: 'rotate(' + hullDeg.value + 'deg)',
+    transformOrigin: (VIEWBOX.width / 2) * s + 'px ' + (VIEWBOX.height / 2) * s + 'px', // hull 绕画布中心（随 protoSize 缩放）
+  }
+})
 // QA 对比 cell：与正式渲染同构的嵌套 transform（父层随 hull 旋转，子层绕 image-local pivot）
 const bakeTurretAssemblyStyle = computed(() => {
   if (!pivot.value) return null
@@ -185,6 +191,53 @@ const pivotStyle = computed(() => {
   const ring = turretRingPosition({ pivot: pivot.value, hullDeg: hullDeg.value })
   return { left: ring.x * s + 'px', top: ring.y * s + 'px' }
 })
+
+// —— PR92 Review B1：炮塔视觉质心参照（人工 QA 辅助）——
+// turret.webp 含完整炮管（raster overflow contract）：炮管占图像上部，座圈（红圈）
+// 位于其下方——视觉上"pivot 偏后"，但这是真实几何（座圈=炮管根部），不是数值偏差。
+// 本标记显示 turret.webp 非透明像素质心（青色圆点），QA 对照红圈即可确认：
+// 座圈落在炮塔主体上即正确；"偏后"量 ≈ 炮管在图像中的占比效应。
+const showCentroid = ref(false)
+const turretCentroidLogical = ref(null) // {x,y} 320 logical 画布坐标
+watch(turretUrl, async () => {
+  turretCentroidLogical.value = null
+  const url = turretUrl.value
+  const raster = metadataJson.value?.turretRaster
+  if (!url || !raster) return
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return
+    const blob = await res.blob()
+    const bmp = await createImageBitmap(blob)
+    const cv = document.createElement('canvas')
+    cv.width = bmp.width
+    cv.height = bmp.height
+    const ctx = cv.getContext('2d')
+    if (!ctx) return
+    ctx.drawImage(bmp, 0, 0)
+    const data = ctx.getImageData(0, 0, cv.width, cv.height).data
+    let sx = 0, sy = 0, cnt = 0
+    for (let y = 0; y < cv.height; y++) {
+      for (let x = 0; x < cv.width; x++) {
+        if (data[(y * cv.width + x) * 4 + 3] > 40) { sx += x; sy += y; cnt++ }
+      }
+    }
+    if (!cnt) return
+    // 物理像素 / 2 = logical；+ raster 原点 → 320 画布坐标
+    turretCentroidLogical.value = {
+      x: raster.logicalMinX + (sx / cnt) / 2,
+      y: raster.logicalMinY + (sy / cnt) / 2,
+    }
+  } catch {
+    /* dev-only QA 辅助：图像解码失败静默（如 happy-dom 测试环境） */
+  }
+})
+const centroidStyle = computed(() => {
+  const c = turretCentroidLogical.value
+  if (!c) return { display: 'none' }
+  const s = renderScale.value
+  return { left: c.x * s + 'px', top: c.y * s + 'px' }
+})
 </script>
 
 <template>
@@ -228,6 +281,7 @@ const pivotStyle = computed(() => {
         <label><input v-model="showDestroyed" type="checkbox"> {{ t('adminPreview.destroyed') }}</label>
         <label><input v-model="showLastKnown" type="checkbox"> {{ t('adminPreview.lastKnown') }}</label>
         <label v-if="isTurreted"><input v-model="showPivot" type="checkbox"> {{ t('adminPreview.showPivot') }}</label>
+        <label v-if="isTurreted"><input v-model="showCentroid" type="checkbox"> {{ t('adminPreview.showCentroid') }}</label>
       </div>
 
       <div class="vmp-stage">
@@ -240,10 +294,16 @@ const pivotStyle = computed(() => {
           <div v-if="isTurreted && turretUrl" class="vmp-turret-assembly" :style="turretAssemblyStyle">
             <img class="vmp-turret" :src="turretUrl" alt="" :style="turretLayerStyle">
           </div>
-          <span v-if="showSelected" class="vmp-selected"></span>
+          <span
+            v-if="showSelected"
+            class="vmp-selected"
+            data-test="vmp-selected"
+            :style="{ borderTopColor: '#e5484d', zIndex: 6 }"
+          ></span>
           <span v-if="showRecorder" class="vmp-recorder"></span>
           <span v-if="showDestroyed" class="vmp-death">✕</span>
           <span v-if="isTurreted && showPivot && pivot" class="vmp-pivot" :style="pivotStyle"></span>
+          <span v-if="isTurreted && showCentroid" class="vmp-centroid" :style="centroidStyle"></span>
           <span v-if="selected && !hasAssets" class="vmp-pending">{{ t('adminPreview.pending') }}</span>
           <span v-if="selected" class="vmp-name">{{ selected.names.join(' / ') }}</span>
         </div>
@@ -358,10 +418,22 @@ const pivotStyle = computed(() => {
 /* 状态叠加：与生产 BattlePlayback 当前视觉语言一致（PR3 重设计后再同步） */
 .vmp-destroyed .vmp-hull, .vmp-destroyed .vmp-turret { opacity: 0.35; filter: grayscale(1); }
 .vmp-last-known .vmp-hull, .vmp-last-known .vmp-turret { opacity: 0.3; }
+/* selected 指示器（PR #92 Review B）：红色倒三角，车辆正上方——
+   位置在画布顶（overflow:visible 不裁剪）、z-index 最高（不被 hull/turret/其他 overlay
+   遮挡）、深色描边阴影保证浅/深背景都可见；border-top 颜色由 inline borderTopColor 提供
+   （可测试），此块负责形状/位置/阴影。 */
 .vmp-selected {
-  position: absolute; inset: -4px;
-  border: 2px solid #fff; border-radius: 50%;
-  z-index: 3; pointer-events: none;
+  position: absolute;
+  left: 50%;
+  top: -14px;
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-top: 14px solid transparent;
+  transform: translateX(-50%);
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
 }
 .vmp-recorder {
   position: absolute; inset: -4px;
@@ -392,6 +464,17 @@ const pivotStyle = computed(() => {
 }
 .vmp-pivot::before { width: 2px; height: 18px; transform: translate(-50%, -50%); }
 .vmp-pivot::after { width: 18px; height: 2px; transform: translate(-50%, -50%); }
+/* PR92 Review B1：炮塔视觉质心参照（青色圆点）——炮管占图像上部使质心偏前，
+   与红色座圈红圈对照，确认"偏后"感知来自炮管效应而非 pivot 数值偏差 */
+.vmp-centroid {
+  position: absolute;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: rgba(64, 192, 255, 0.85);
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.55);
+  transform: translate(-50%, -50%);
+  z-index: 5; pointer-events: none;
+}
 .vmp-name {
   position: absolute;
   bottom: calc(100% + 2px); left: 50%;

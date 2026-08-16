@@ -767,6 +767,7 @@
         "destroyed": "Destroyed",
         "lastKnown": "Last known",
         "showPivot": "Show pivot",
+        "showCentroid": "Show turret visual centroid (barrel fills image top → ring sits below it; not a numeric bias)",
         "kind": "Layout",
         "turreted": "Turreted",
         "turretless": "Turretless",
