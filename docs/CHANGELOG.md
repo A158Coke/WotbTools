@@ -36,6 +36,18 @@
     不保持历史 131% 而引入比例差）；zoom 契约不变（viewport 整体 scale，车辆随地图缩放，
     name/✕/selected/recorder 继续 inverse-scale 屏幕恒定）；Selected 三角 bottom +15 → +19px
     （避免与 name label 3px 重叠）；halo 固定 px 不随模型放大（不过度扩散）。
+  - **阵亡主状态 + 炮线短生命周期（PR3 增补 2，人工 QA 阵亡/炮线 UX）**：
+    - destroyed ✕ 22 → **30px** 并从名字旁移到**车体中心**（top/left 50% + translate(-50%,-50%)，
+      覆盖车辆主体、高对比、不随 .pb-graphics grayscale/opacity 变淡、overlayInverseScale
+      screen-space 恒定）——第一眼看出"这辆车死了"，不再像名字旁的状态角标；
+    - destroyed + selected 时 selected 红色倒三角切换**克制变体**（线性缩小 67% + 透明度 0.55，
+      destroyed > selected，仍可辨认被选中；存活 selected 保持完整强度）；
+    - 炮线由"挂地图整秒"改为**短 shot effect**：可见窗口 1.0 → **0.4s 真实时间**
+      （1×/2×/4× 一致，`TRACER_BASE_SEC=0.4`），保持期 0.4 → 0.15s 后快速线性淡出；
+      命中端闪光改**峰值曲线**（`flashOpacity`：0 → 0.1s 达峰值 0.9 → 0.35s 归零，
+      `TRACER_FLASH_PEAK_REAL_SEC=0.1`），闪光结束不再渲染圆点（不残留孤立端点）；
+    - 炮线端点仍为**事件时刻可信位置**（trustedPositionAt），绝不绑定车辆后来的位置——
+      历史射击几何不变，移动目标不再出现"炮线穿过坦克"的假象。
 - **Tier X 专属俯视车型系统（PR1：ASSET_GENERATION_READY）**：新增 frontend/src/vehicle-models/ 集中静态 mapping（common/tankopedia-tier10.json 84 辆 Tier X → 81 个 baseModelKey，skin/特殊版本复用基础模型：sheridan / kpz-70 / type-5-heavy 三组合并）与 discriminated union 类型契约（turreted 必配 turret + turretPivot，turretless 禁止）；统一 SVG viewBox 320×320 技术契约 + metadata.json schema（8 键）；validator（validate.js，CI 与 CLI 共用）与 Tier X 100% 覆盖门禁（coverage.test.js：新增 Tier X 无 mapping → CI FAIL、mapping 孤儿/未知引用/半成品资产目录均 FAIL）；契约样例资产 assets/sample/；BlitzKit 辅助脚本（frontend/scripts/blitzkit-references.mjs，参考图 URL 已验证并缓存 84 张，gitignored）与 CLI 自检（validate-vehicle-models.mjs）；隐藏 admin QA 页 ?view=vehicle-models（仅 wotbtools-admin，车体/炮塔旋转 + pivot + 状态叠加预览，复用生产 BattlePlayback 渲染方式）；文档 docs/assets/tier-x-models/（README 交接清单 + 全局 SVG 生成规范 + 生成的 84 辆 inventory）。正式车型 SVG 由 ChatGPT 按规范生成，到达 ASSET_GENERATION_READY Gate 后暂停（本 PR 不含正式车型资产）。
 
 ### Changed

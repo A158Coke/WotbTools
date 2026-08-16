@@ -78,8 +78,9 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
     `turretWorldYawDeg` 旋转（炮管不脱离炮塔）；**阵营视觉（PR3 §19–§21）**：整车 team outline+glow
     由 `VehicleMarker .pb-graphics` 双层 drop-shadow 表达（CSS vars `--pb-team-*/`--pb-enemy-*`，
     friendly 按地图显式 tone green|blue、enemy 固定 red，见 `data/mapTeamColors.js`；generic 素材
-    自身阵营色保留，叠加同一 team 光晕）；Selected 红色倒三角（label 上方、浮动、screen-space 恒定）、
-    Recorder 空心菱形（tank 下方、friendly 色）、最后已知淡化、阵亡 ✕ 均为独立 overlay，不烘焙进 PNG；
+    自身阵营色保留，叠加同一 team 光晕）；Selected 红色倒三角（label 上方、浮动、screen-space 恒定；
+    阵亡车为克制变体——缩小 + 淡化，destroyed 为主状态）、Recorder 空心菱形（tank 下方、friendly 色）、
+    最后已知淡化、阵亡 ✕（覆盖车体中心、明显放大 30px、screen-space 恒定）均为独立 overlay，不烘焙进 PNG；
     标记**上方**常显固定字号坦克型号名小标签
     （`PlaybackVehicle.tankName`，后端 `ReplayDisplayNames.tankName(tankId, tankName)` 权威解析自
     tankopedia，如 29985 → "SPHT"，不再是空串/纯数字；标签自身按 `1/view.scale` 反缩放 → 字号不随地图缩放、任意缩放下可见）。
@@ -89,12 +90,15 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
      按当前时间推导——候选 = 过滤后事件流中的 DAMAGE 与 KILL（攻击者已解析），同刻同 attacker/target
      去重为一条；两端都必须满足 `trustedPositionAt`（事件时刻落在该车路线首末点之间且所在段 gap ≤ 5s；
      末点后的最后已知位置/gap 内/首点前一律拒绝，不用最后已知位置伪造射击位置）；可见窗口 =
-     `1s × 播放倍速`（1×/2×/4× 各约 1s 真实时间，`TRACER_BASE_SEC=1.0`），**激光样式**：
+     `0.4s × 播放倍速`（1×/2×/4× 各约 **0.4s 真实时间**，`TRACER_BASE_SEC=0.4`——短 shot effect，
+     命中后 ≈400ms 完全消失，不再挂在地图上整秒），**激光样式**：
      每炮线渲染三层——外层阵营色光晕（`6/view.scale`、opacity×0.35）+ 内芯亮白细线
-     （`1.75/view.scale`、opacity）+ 命中端扩散闪光（`flashProgress` 0→1，半径 3→12px、
-     opacity 0.9→0，窗口 `TRACER_FLASH_REAL_SEC=0.35` 真实秒）；opacity 为「先亮后淡」
-     （前 `TRACER_HOLD_REAL_SEC=0.4` 真实秒保持全亮，之后线性淡出到窗口结束）；保持期/闪光窗口
-     随倍速换算，各倍速真实时长一致；纯函数依赖 now/speed → seek/倍速天然正确，无一次性定时器。
+     （`1.75/view.scale`、opacity）+ 命中端短促冲击闪光（`flashProgress` 0→1，半径 3→12px、
+     `flashOpacity` 峰值曲线：前 0.1s 由 0 升至 0.9、之后线性淡出到 0，窗口
+     `TRACER_FLASH_REAL_SEC=0.35` 真实秒，结束后不再渲染圆点）；opacity 为「先亮后淡」
+     （前 `TRACER_HOLD_REAL_SEC=0.15` 真实秒保持全亮，之后快速线性淡出到窗口结束）；保持期/闪光窗口
+     随倍速换算，各倍速真实时长一致；纯函数依赖 now/speed → seek/倍速天然正确，无一次性定时器；
+     端点恒为事件时刻可信位置（`trustedPositionAt`），绝不绑定车辆后来的位置——历史射击几何不变。
      未命中/盲射/弹道弧线/瞄准线无数据依据，不渲染。
    - **缩放平移**：`.pb-viewport` 单一 transform 层（translate+scale）同时承载 SVG 与 HTML 标记 →
      地图/网格/炮线/标记严格对齐；滚轮锚点缩放（1×–4×，`zoomViewAt` 锚点不动）、双指捏合、

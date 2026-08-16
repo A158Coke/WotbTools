@@ -262,14 +262,19 @@ export function trustedPositionAt(points, t) {
   return p
 }
 
-/** 炮线可见窗口基础时长（游戏时间秒）；实际窗口 = TRACER_BASE_SEC × 播放倍速（1×/2×/4× 各约 1s 真实时间）。 */
-export const TRACER_BASE_SEC = 1.0
+/** 炮线可见窗口基础时长（真实秒）：实际窗口 = TRACER_BASE_SEC × 播放倍速——1×/2×/4× 各约 0.4s 真实时间
+ * （游戏时间窗口 = 0.4 × speed）。短 shot effect：命中后 ≈400ms 完全消失，不再挂在地图上整秒。 */
+export const TRACER_BASE_SEC = 0.4
 
-/** 炮线全亮保持期（真实秒）：激光「先亮后淡」——保持期后平滑淡出到窗口结束（各倍速约 0.4s 真实时间）。 */
-export const TRACER_HOLD_REAL_SEC = 0.4
+/** 炮线全亮保持期（真实秒）：激光「先亮后淡」——保持 0.15s 后快速线性淡出到窗口结束（≈0.4s 完全消失）。 */
+export const TRACER_HOLD_REAL_SEC = 0.15
 
-/** 命中闪光窗口（真实秒）：命中端圆点扩散 + 淡出（各倍速约 0.35s 真实时间）。 */
+/** 命中闪光生命周期（真实秒）：0.35s 内完成「扩散 + 峰值→淡出」，短于炮线本体（≈0.35s 完全消失）。 */
 export const TRACER_FLASH_REAL_SEC = 0.35
+
+/** 命中闪光到达峰值的时间（真实秒）：前 0.1s 由 0 升至峰值（0.9），之后线性淡出到 0——短促冲击闪光，
+ * 不再出现长时间实体圆球/孤立 waypoint 感。 */
+export const TRACER_FLASH_PEAK_REAL_SEC = 0.1
 
 /** 同一次射击的判同窗口（秒）：同 attacker/target 且时间差 ≤ 该值的 DAMAGE/KILL 只画一条炮线。 */
 export const SAME_SHOT_WINDOW_SEC = 0.25
@@ -281,13 +286,15 @@ export const SAME_SHOT_WINDOW_SEC = 0.25
  * nowSec ∈ [timeSec, timeSec + TRACER_BASE_SEC × speed) 时可见。
  * 激光视觉派生：opacity 为「先亮后淡」（前 TRACER_HOLD_REAL_SEC × speed 秒全亮，
  * 之后线性淡出到窗口结束）；flashProgress 0→1 描述命中端闪光进度（窗口
- * TRACER_FLASH_REAL_SEC × speed 秒，扩散 + 淡出，由组件派生半径/透明度）。
+ * TRACER_FLASH_REAL_SEC × speed 秒），flashOpacity 为峰值曲线（前
+ * TRACER_FLASH_PEAK_REAL_SEC × speed 秒由 0 升至 0.9，之后线性淡出到 0；
+ * flashProgress=1 时 opacity=0，组件不再渲染圆点，不残留孤立端点）。
  *
  * @param events         过滤后的 playback 事件（DAMAGE/KILL）
  * @param routesByAccount Map<accountId, { points: [{x,y,timeSec}] }>
  * @param nowSec         当前播放时间（battle-relative 秒）
  * @param speed          播放倍速（1/2/4）
- * @returns [{ x1, y1, x2, y2, opacity, flashProgress, timeSec, attackerAccountId, targetAccountId }]
+ * @returns [{ x1, y1, x2, y2, opacity, flashProgress, flashOpacity, timeSec, attackerAccountId, targetAccountId }]
  */
 export function tracerLines(events, routesByAccount, nowSec, speed) {
   if (!Array.isArray(events) || !routesByAccount || !Number.isFinite(nowSec)) return []
@@ -344,6 +351,14 @@ export function tracerLines(events, routesByAccount, nowSec, speed) {
     const flashProgress = flashSec > 1e-9
       ? Math.max(0, Math.min(1, elapsed / flashSec))
       : 1
+    // 命中闪光亮度峰值曲线：前 TRACER_FLASH_PEAK_REAL_SEC 真实秒由 0 升至 0.9，之后线性淡出到 0——
+    // 短促冲击闪光（0ms 不可见 → ~100ms 峰值 → ~350ms 归零），不残留实体圆点
+    const flashPeak = TRACER_FLASH_PEAK_REAL_SEC / TRACER_FLASH_REAL_SEC
+    const flashOpacity = flashPeak > 1e-9 && flashPeak < 1 - 1e-9
+      ? (flashProgress < flashPeak
+          ? (flashProgress / flashPeak) * 0.9
+          : ((1 - flashProgress) / (1 - flashPeak)) * 0.9)
+      : (1 - flashProgress) * 0.9
     lines.push({
       x1: a.x,
       y1: a.y,
@@ -351,6 +366,7 @@ export function tracerLines(events, routesByAccount, nowSec, speed) {
       y2: b.y,
       opacity,
       flashProgress,
+      flashOpacity,
       timeSec: t,
       attackerAccountId: ev.accountId,
       targetAccountId: ev.targetAccountId

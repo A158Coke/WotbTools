@@ -337,37 +337,84 @@ describe('tracerLines', () => {
   ])
   const damage = { type: 'DAMAGE', timeSec: 12, accountId: 1, targetAccountId: 2, damage: 400 }
 
-  it('laser opacity holds bright then fades over the window (seek-safe)', () => {
+  it('laser opacity holds bright then fades over the short window (seek-safe)', () => {
     expect(tracerLines([damage], routes, 11.99, 1)).toEqual([])
     const at = tracerLines([damage], routes, 12, 1)
     expect(at).toHaveLength(1)
     expect(at[0].x1).toBeCloseTo(50)
     expect(at[0].y2).toBeCloseTo(100)
     expect(at[0].opacity).toBeCloseTo(1)
-    // 前 0.4s（真实时间）保持全亮（激光感），之后线性淡出
-    expect(tracerLines([damage], routes, 12.25, 1)[0].opacity).toBeCloseTo(1)
-    expect(tracerLines([damage], routes, 12.6, 1)[0].opacity).toBeCloseTo(2 / 3)
-    expect(tracerLines([damage], routes, 13, 1)).toEqual([])
+    // 前 0.15s（真实时间）保持全亮（激光感），之后快速线性淡出到 0.4s 窗口结束
+    expect(tracerLines([damage], routes, 12.15, 1)[0].opacity).toBeCloseTo(1)
+    expect(tracerLines([damage], routes, 12.25, 1)[0].opacity).toBeCloseTo(0.6) // 1 - 0.1/0.25
+    expect(tracerLines([damage], routes, 12.4, 1)).toEqual([])
     expect(tracerLines([damage], routes, 12, 1)).toHaveLength(1)
   })
 
-  it('impact flash progress runs 0→1 over the flash window at any speed', () => {
+  it('impact flash: short peak curve (invisible→0.9 at 0.1s→0) and vanishes at window end', () => {
+    // flashProgress 0→1 over 0.35s real at any speed
     expect(tracerLines([damage], routes, 12, 1)[0].flashProgress).toBeCloseTo(0)
     expect(tracerLines([damage], routes, 12.1, 1)[0].flashProgress).toBeCloseTo(0.1 / 0.35)
-    // 超过闪光窗口后钳制为 1（闪光不可见，线仍在淡出）
-    expect(tracerLines([damage], routes, 12.4, 1)[0].flashProgress).toBe(1)
+    // flashOpacity 峰值曲线：0ms 不可见 → 0.1s 达峰值 0.9 → 0.35s 归零（不再全程实体圆球）
+    expect(tracerLines([damage], routes, 12, 1)[0].flashOpacity).toBeCloseTo(0)
+    expect(tracerLines([damage], routes, 12.1, 1)[0].flashOpacity).toBeCloseTo(0.9)
+    // 闪光窗口结束点（真实 0.35s）：flashProgress 钳制为 1、flashOpacity 归零（组件不再渲染圆点），
+    // 而炮线本体仍在淡出（0.15→0.4s），不随闪光一起消失
+    const atFlashEnd = tracerLines([damage], routes, 12.35, 1)[0]
+    expect(atFlashEnd.flashProgress).toBeCloseTo(1)
+    expect(atFlashEnd.flashOpacity).toBeCloseTo(0)
+    expect(atFlashEnd.opacity).toBeCloseTo(0.2)
+    // 炮线窗口结束（真实 0.4s）后整条线消失
+    expect(tracerLines([damage], routes, 12.4, 1)).toEqual([])
     // 2×/4×：真实 0.35s 对应游戏 0.7s / 1.4s
     expect(tracerLines([damage], routes, 12.35, 2)[0].flashProgress).toBeCloseTo(0.5)
     expect(tracerLines([damage], routes, 12.7, 4)[0].flashProgress).toBeCloseTo(0.5)
   })
 
-  it('windows scale with playback speed (1x/2x/4x)', () => {
-    expect(tracerLines([damage], routes, 13, 1)).toEqual([])
-    // 2×：窗口 2s、保持 0.8s → 13.9s（elapsed 1.9）opacity = 1-(1.9-0.8)/1.2
-    expect(tracerLines([damage], routes, 13.9, 2)[0].opacity).toBeCloseTo(1 - 1.1 / 1.2)
-    // 4×：窗口 4s、保持 1.6s → 15.9s（elapsed 3.9）opacity = 1-(3.9-1.6)/2.4
-    expect(tracerLines([damage], routes, 15.9, 4)[0].opacity).toBeCloseTo(1 - 2.3 / 2.4)
-    expect(tracerLines([damage], routes, 16, 4)).toEqual([])
+  it('windows scale with playback speed (1x/2x/4x) — short shot effect', () => {
+    expect(tracerLines([damage], routes, 12.4, 1)).toEqual([])
+    // 1×：窗口 0.4s、保持 0.15s → 12.3（elapsed 0.3）opacity = 1-(0.3-0.15)/0.25 = 0.4
+    expect(tracerLines([damage], routes, 12.3, 1)[0].opacity).toBeCloseTo(0.4)
+    // 2×：窗口 0.8s、保持 0.3s → 12.75（elapsed 0.75）opacity = 1-(0.75-0.3)/0.5
+    expect(tracerLines([damage], routes, 12.75, 2)[0].opacity).toBeCloseTo(1 - 0.45 / 0.5)
+    expect(tracerLines([damage], routes, 12.8, 2)).toEqual([])
+    // 4×：窗口 1.6s、保持 0.6s → 13.5（elapsed 1.5）opacity = 1-(1.5-0.6)/1.0
+    expect(tracerLines([damage], routes, 13.5, 4)[0].opacity).toBeCloseTo(1 - 0.9 / 1.0)
+    expect(tracerLines([damage], routes, 13.6, 4)).toEqual([])
+  })
+
+  it('real visible duration is ≈0.4s at 1x/2x/4x (identical perceived lifetime)', () => {
+    // 真实时间 0.3s：三种倍速都仍可见（游戏时间 = 0.3 × speed）
+    expect(tracerLines([damage], routes, 12.3, 1)).toHaveLength(1)
+    expect(tracerLines([damage], routes, 12.6, 2)).toHaveLength(1)
+    expect(tracerLines([damage], routes, 13.2, 4)).toHaveLength(1)
+    // 真实时间 0.41s：三种倍速都已消失（不再挂在地图上整秒）
+    expect(tracerLines([damage], routes, 12.41, 1)).toEqual([])
+    expect(tracerLines([damage], routes, 12.82, 2)).toEqual([])
+    expect(tracerLines([damage], routes, 13.64, 4)).toEqual([])
+  })
+
+  it('shot geometry stays at event-time trusted positions while vehicles keep moving', () => {
+    const moving = new Map([
+      [1, { points: [{ x: 0, y: 0, timeSec: 10 }, { x: 100, y: 0, timeSec: 12 }, { x: 400, y: 0, timeSec: 14 }] }],
+      [2, { points: [{ x: 0, y: 100, timeSec: 10 }, { x: 100, y: 100, timeSec: 12 }, { x: 400, y: 400, timeSec: 14 }] }]
+    ])
+    // t=12（事件时刻）两端 = 采样点 (100,0)/(100,100)；此后双方继续移动
+    const l = tracerLines([damage], moving, 12.3, 1)[0]
+    expect(l.x1).toBeCloseTo(100)
+    expect(l.y1).toBeCloseTo(0)
+    expect(l.x2).toBeCloseTo(100)
+    expect(l.y2).toBeCloseTo(100)
+    // 禁止把端点改成 currentTime 车辆位置（此刻 attacker≈(400,0)、target≈(400,400)）
+    expect(l.x1).not.toBeCloseTo(400)
+    expect(l.y2).not.toBeCloseTo(400)
+  })
+
+  it('seek semantics: no tracer before the event, visible inside, gone after', () => {
+    expect(tracerLines([damage], routes, 11.9, 1)).toEqual([]) // 事件前
+    expect(tracerLines([damage], routes, 12.2, 1)).toHaveLength(1) // 窗口内
+    expect(tracerLines([damage], routes, 12.3, 4)).toHaveLength(1) // 4× 窗口内（游戏时间 1.2s）
+    expect(tracerLines([damage], routes, 12.5, 1)).toEqual([]) // 1× 窗口后
   })
 
   it('dedupes DAMAGE+KILL of the same shot into one line', () => {

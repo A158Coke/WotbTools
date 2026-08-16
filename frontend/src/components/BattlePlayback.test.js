@@ -873,6 +873,21 @@ describe('destroyed markers (symmetric contract)', () => {
     expect(enemy.findAll('img')[1].attributes('style')).toContain('rotate(0deg)')
     expect(enemy.find('.pb-death').text()).toBe('✕')
   })
+
+  it('destroyed + selected：selected 走克制变体（destroyed > selected，仍可辨认）；✕ 覆盖车体中心', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(destroyedOverview(), 40)
+    await flushPromises()
+    const friendly = wrapper.find('[data-test="pb-marker-1001"]')
+    await friendly.trigger('click')
+    const mark = friendly.find('.pb-selected-mark')
+    expect(mark.exists()).toBe(true)
+    expect(mark.classes()).toContain('pb-selected-restrained')
+    // ✕ 中心定位 + overlayInverseScale 反缩放（1× = scale(1)），覆盖车辆主体
+    const deathStyle = friendly.find('.pb-death').attributes('style')
+    expect(deathStyle).toContain('font-size: 30px')
+    expect(deathStyle).toContain('translate(-50%, -50%) scale(1)')
+  })
 })
 describe('PR2 — Tier X dedicated models in Battle Playback', () => {
   const mausRaster = {

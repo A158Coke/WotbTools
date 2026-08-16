@@ -96,16 +96,18 @@ describe('dedicated turreted（嵌套 transform）', () => {
     expect(w.find('.pb-death').exists()).toBe(true)
   })
 
-  it('阵亡 ✕：红色 + 更大 + 高层级 + 不被车辆淡化（PR #92 Review A + Blocker）', () => {
+  it('阵亡 ✕：红色 + 明显放大（主状态）+ 覆盖车体中心 + 不被车辆淡化（PR #92 Review A + PR3 增补）', () => {
     const w = mountMarker({ ...genericMarker, destroyed: true })
     const death = w.find('.pb-death')
     expect(death.exists()).toBe(true)
     expect(death.text()).toBe('✕')
     const style = death.attributes('style') || ''
     expect(style).toContain('color: #ff4d4f') // 红色
-    expect(style).toContain('font-size: 22px') // 比原 16px 更大
+    expect(style).toContain('font-size: 30px') // 22px → 30px 明显放大（主状态）
     expect(style).toContain('z-index: 6') // 高于 hull(1)/turret(2)/name(5)
-    // ✕ 是 button 直接子元素、与 .pb-graphics 视觉层容器平级——不继承 destroyed opacity
+    expect(style).toContain('translate(-50%, -50%)') // 车体中心定位（覆盖车辆主体，非名字旁角标）
+    expect(markerSource).toMatch(/\.pb-death \{[^}]*top: 50%[^}]*left: 50%[^}]*\}/)
+    // ✕ 是 button 直接子元素、与 .pb-graphics 视觉层容器平级——不继承 destroyed opacity/grayscale
     const graphics = w.find('.pb-graphics')
     expect(graphics.exists()).toBe(true)
     expect(death.element.parentElement).toBe(graphics.element.parentElement)
@@ -238,5 +240,30 @@ describe('PR3 §19–§25 — team outline/glow 与状态视觉', () => {
     expect(badge.attributes('style')).toContain('rotate(45deg)')
     const w2 = mountMarker({ ...dedicatedMarker, recorder: false })
     expect(w2.find('.pb-recorder-badge').exists()).toBe(false)
+  })
+
+  it('destroyed + selected：selected 克制变体（更小更淡，destroyed > selected）；generic/dedicated 都正常', () => {
+    const src = markerSource
+    // 克制规则：透明度 0.55 + 三角线性缩小（9px→6px 高、6px→4px 边）
+    expect(src).toMatch(/\.pb-selected-restrained \{[^}]*opacity: 0\.55[^}]*border-left-width: 4px[^}]*border-right-width: 4px[^}]*border-top-width: 6px[^}]*\}/)
+    const g = mountMarker({ ...genericMarker, destroyed: true }, true)
+    expect(g.find('.pb-selected-mark').classes()).toContain('pb-selected-restrained')
+    const d = mountMarker({ ...dedicatedMarker, destroyed: true }, true)
+    expect(d.find('.pb-selected-mark').classes()).toContain('pb-selected-restrained')
+    // 存活 selected：正常完整强度（无克制 class）
+    const alive = mountMarker(genericMarker, true)
+    expect(alive.find('.pb-selected-mark').classes()).not.toContain('pb-selected-restrained')
+    // 非 selected 不渲染任何 mark
+    const none = mountMarker({ ...genericMarker, destroyed: true }, false)
+    expect(none.find('.pb-selected-mark').exists()).toBe(false)
+  })
+
+  it('destroyed ✕ 与 name 保持 inverse-scale（不随地图 zoom 异常放大）；✕ 无 filter/opacity', () => {
+    const w = mountMarker({ ...genericMarker, destroyed: true, overlayInverseScale: 'scale(0.5)' })
+    expect(w.find('.pb-death').attributes('style')).toContain('translate(-50%, -50%) scale(0.5)')
+    expect(w.find('.pb-name').attributes('style')).toContain('translateX(-50%) scale(0.5)')
+    // ✕ 不套用 .pb-graphics 的 grayscale/opacity（自身规则不含 filter/opacity）
+    expect(markerSource).not.toMatch(/\.pb-death[^}]*filter:/)
+    expect(markerSource).not.toMatch(/\.pb-death[^}]*opacity:/)
   })
 })

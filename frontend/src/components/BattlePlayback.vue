@@ -1040,14 +1040,16 @@ const mapStyle = computed(() => ({
             :stroke-width="1.75 / view.scale"
             :opacity="l.opacity"
           />
-          <!-- 命中闪光：目标端圆点扩散 + 淡出（flashProgress 0→1） -->
+          <!-- 命中闪光：短促冲击闪光——扩散 + 峰值→淡出（flashOpacity 峰值曲线）；
+               flashProgress=1 后不再渲染（不残留孤立端点/waypoint 感） -->
           <circle
+            v-if="l.flashProgress < 1"
             class="pb-tracer-flash"
             :cx="mapView.toX(l.x2)"
             :cy="mapView.toY(l.y2)"
             :r="(3 + 9 * l.flashProgress) / view.scale"
             :fill="tracerColor(l.attackerAccountId)"
-            :opacity="(1 - l.flashProgress) * 0.9"
+            :opacity="l.flashOpacity"
           />
         </template>
       </g>
