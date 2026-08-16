@@ -67,12 +67,25 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
     directionSample/deathSec 强制 `[0, durationSec]`。
   - **双层坦克标记**：前端 `BattlePlayback.vue` 用 PR #72 四张运行时 PNG
     （`frontend/src/assets/tank-icons/tank-marker-{friendly,enemy}-{hull,turret}.png`，512×512
-    RGBA、共同 pivot 256,256）渲染 HTML overlay 标记（按钮约 28px，移动端 22px；按钮不再反缩放 →
-    坦克随地图同比缩放）：hull/turret img 放大到按钮 131% 并以共同 pivot 居中旋转
-    （`translate(-50%,-50%) rotate(...)`）——素材透明留白实测有效车体 bbox ≈210×336/512，
-    131% 后桌面有效可见车体 ≈15×24px，放大地图不再显小；hull 层按 `hullYawDeg` 旋转、turret 层按
-    `turretWorldYawDeg` 旋转（炮管不脱离炮塔）；阵营色只来自素材本身；录像者 gold halo、选中 ring、
-    最后已知淡化、阵亡 ✕ 为独立 overlay，不烘焙进 PNG；标记**上方**常显固定字号坦克型号名小标签
+    RGBA、共同 pivot 256,256）渲染 HTML overlay 标记（**PR3 增补：按钮约 36px，移动端 28px**
+    ——人工 QA 全局地图视角车型辨识度不足，约 +28%；按钮不再反缩放 → 坦克随地图同比缩放）：
+    hull/turret img 放大到按钮 **134%** 并以共同 pivot 居中旋转
+    （`translate(-50%,-50%) rotate(...)`）——generic 素材透明留白实测有效车体 bbox
+    ≈210×336/512（长边占 65.6%），dedicated hull.webp 车体长边 ≈88.1%（fit padding 0.88），
+    **134% = 0.881/0.656 使 generic 车体长边视觉与 dedicated 对齐**（36px 容器下均 ≈31.7px；
+    generic 车体宽 ≈19.8px、dedicated 按真实长宽比 ≈11–16px，宽体 icon 为素材固有比例）；
+    放大地图不再显小；hull 层按 `hullYawDeg` 旋转、turret 层按
+    `turretWorldYawDeg` 旋转（炮管不脱离炮塔）；**阵营视觉（PR3 §19–§21）**：整车 team outline+glow
+    由 `VehicleMarker .pb-graphics` 双层 drop-shadow 表达（CSS vars `--pb-team-*/`--pb-enemy-*`，
+    friendly 按地图显式 tone green|blue、enemy 固定 red，见 `data/mapTeamColors.js`；generic 素材
+    自身阵营色保留，叠加同一 team 光晕）；Selected 红色倒三角（label 上方、浮动、screen-space 恒定——
+    元素尺寸按 overlayInverse（=1/view.scale）反缩放；bottom 按推导式 X = 4.5 + 14.5×inv px
+    使三角底边跟随 name 顶边，selected→name 屏幕 gap 恒 3px（1× 即 19px 车辆契约；name 自身
+    anchor 按既有语义随 zoom 上移）；浮动幅度 2px × var(--pb-overlay-inv) 恒 ≈2px；
+    阵亡车为克制变体——缩小 + 淡化，destroyed 为主状态）、
+    Recorder 空心菱形（tank 下方、friendly 色、offset 按 5×inv 反缩放 → 屏幕间距恒 5px）、
+    最后已知淡化、阵亡 ✕（覆盖车体中心、明显放大 30px、screen-space 恒定）均为独立 overlay，不烘焙进 PNG；
+    标记**上方**常显固定字号坦克型号名小标签
     （`PlaybackVehicle.tankName`，后端 `ReplayDisplayNames.tankName(tankId, tankName)` 权威解析自
     tankopedia，如 29985 → "SPHT"，不再是空串/纯数字；标签自身按 `1/view.scale` 反缩放 → 字号不随地图缩放、任意缩放下可见）。
     旋转换算：地图 yaw 从北(+Z)顺时针 → 屏幕 `rotate(yawDeg)`（0=朝上/90=朝右/180=朝下/270=朝左，
@@ -81,12 +94,15 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
      按当前时间推导——候选 = 过滤后事件流中的 DAMAGE 与 KILL（攻击者已解析），同刻同 attacker/target
      去重为一条；两端都必须满足 `trustedPositionAt`（事件时刻落在该车路线首末点之间且所在段 gap ≤ 5s；
      末点后的最后已知位置/gap 内/首点前一律拒绝，不用最后已知位置伪造射击位置）；可见窗口 =
-     `1s × 播放倍速`（1×/2×/4× 各约 1s 真实时间，`TRACER_BASE_SEC=1.0`），**激光样式**：
+     `0.4s × 播放倍速`（1×/2×/4× 各约 **0.4s 真实时间**，`TRACER_BASE_SEC=0.4`——短 shot effect，
+     命中后 ≈400ms 完全消失，不再挂在地图上整秒），**激光样式**：
      每炮线渲染三层——外层阵营色光晕（`6/view.scale`、opacity×0.35）+ 内芯亮白细线
-     （`1.75/view.scale`、opacity）+ 命中端扩散闪光（`flashProgress` 0→1，半径 3→12px、
-     opacity 0.9→0，窗口 `TRACER_FLASH_REAL_SEC=0.35` 真实秒）；opacity 为「先亮后淡」
-     （前 `TRACER_HOLD_REAL_SEC=0.4` 真实秒保持全亮，之后线性淡出到窗口结束）；保持期/闪光窗口
-     随倍速换算，各倍速真实时长一致；纯函数依赖 now/speed → seek/倍速天然正确，无一次性定时器。
+     （`1.75/view.scale`、opacity）+ 命中端短促冲击闪光（`flashProgress` 0→1，半径 3→12px、
+     `flashOpacity` 峰值曲线：前 0.1s 由 0 升至 0.9、之后线性淡出到 0，窗口
+     `TRACER_FLASH_REAL_SEC=0.35` 真实秒，结束后不再渲染圆点）；opacity 为「先亮后淡」
+     （前 `TRACER_HOLD_REAL_SEC=0.15` 真实秒保持全亮，之后快速线性淡出到窗口结束）；保持期/闪光窗口
+     随倍速换算，各倍速真实时长一致；纯函数依赖 now/speed → seek/倍速天然正确，无一次性定时器；
+     端点恒为事件时刻可信位置（`trustedPositionAt`），绝不绑定车辆后来的位置——历史射击几何不变。
      未命中/盲射/弹道弧线/瞄准线无数据依据，不渲染。
    - **缩放平移**：`.pb-viewport` 单一 transform 层（translate+scale）同时承载 SVG 与 HTML 标记 →
      地图/网格/炮线/标记严格对齐；滚轮锚点缩放（1×–4×，`zoomViewAt` 锚点不动）、双指捏合、
@@ -116,11 +132,14 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
      位置（临时输入框 Enter/blur 提交、Esc 取消，committed 幂等防重复）。三语文案
      `recon.map.playback.annot.*`；纯函数与交互回归见 `utils/annotation.test.js` 与
      `BattlePlayback.annot.test.js`。
-   - **阵亡状态（pb-destroyed）**：destroyed 是显式独立状态，不并入 `pb-last-known`；敌我阵亡车
-     结构一致（hull+turret 双层 + 同款 ✕）：方向冻结在最后可信样本（`interpolateDirection` 末样本
-     冻结语义），无方向样本以素材默认 0° 渲染（不代表朝向）；`.pb-destroyed { opacity:.35 }` +
-     `img { filter: grayscale(1) }`（去饱和≠换阵营色）；录像者 halo/选中 ring 为独立 overlay，
-     不改变阵亡结构。
+   - **阵亡状态（pb-destroyed，PR3 §24）**：destroyed 是显式独立状态，不并入 `pb-last-known`；
+     敌我阵亡车结构一致（hull+turret 双层 + 同款 ✕）：方向冻结在最后可信样本
+     （`interpolateDirection` 末样本冻结语义），无方向样本以素材默认 0° 渲染（不代表朝向）；
+     **中度变暗**（`.pb-destroyed .pb-graphics { opacity:.55 }`，不再极端透明）+ grayscale +
+     team outline 弱化保留（drop-shadow 在 grayscale 后绘制不灰化）+ 一次性 transition 0.45s
+     （prefers-reduced-motion 直达终态）；红色 ✕ / Selected 三角 / Recorder 菱形在 `.pb-graphics`
+     容器外，保持完整强度。**Last-known（PR3 §25）**：`.pb-graphics` 淡化 0.35 + 仅弱 outline
+     （无 glow）；label 仅文字弱化（background 正常）；Selected/Recorder 正常强度。
    - **真实 i18n 回归**：三语 `recon.map.playback.last_known` 文案不得含裸 `@`（Vue I18n 11
      linked-message 语法），选中 last-known/已击毁车辆首次渲染该文案时编译报错会导致组件整体卸载；
      `BattlePlayback.i18n.test.js` 用真实 `createI18n`（不 mock `$t`）覆盖 zh/en/ru 选车路径。

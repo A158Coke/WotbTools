@@ -7,6 +7,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { VIEWBOX } from '../vehicle-models/types.js'
+import { TEAM_TOKENS } from '../data/mapTeamColors'
 import { hullLayerTransform, turretAssemblyTransform, turretImageTransform, turretRingPosition } from '../vehicle-models/pivot.js'
 
 const { t } = useI18n()
@@ -197,7 +198,24 @@ const pivotStyle = computed(() => {
 // 位于其下方——视觉上"pivot 偏后"，但这是真实几何（座圈=炮管根部），不是数值偏差。
 // 本标记显示 turret.webp 非透明像素质心（青色圆点），QA 对照红圈即可确认：
 // 座圈落在炮塔主体上即正确；"偏后"量 ≈ 炮管在图像中的占比效应。
+// PR3 §19/§20：阵营预览（friendly-green / friendly-blue / enemy-red）——设置 canvas 的
+// team CSS vars + team class，hull/turret 的 outline/glow 与生产 VehicleMarker 同构。
 const showCentroid = ref(false)
+const teamTone = ref('friendly-green')
+const teamVars = computed(() => {
+  const g = TEAM_TOKENS.green
+  const b = TEAM_TOKENS.blue
+  const r = TEAM_TOKENS.red
+  const fTone = teamTone.value === 'friendly-blue' ? b : g
+  return {
+    '--pb-team-text': fTone.text,
+    '--pb-team-outline': fTone.outline,
+    '--pb-team-glow': fTone.glow,
+    '--pb-enemy-text': r.text,
+    '--pb-enemy-outline': r.outline,
+    '--pb-enemy-glow': r.glow,
+  }
+})
 const turretCentroidLogical = ref(null) // {x,y} 320 logical 画布坐标
 watch(turretUrl, async () => {
   turretCentroidLogical.value = null
@@ -282,13 +300,21 @@ const centroidStyle = computed(() => {
         <label><input v-model="showLastKnown" type="checkbox"> {{ t('adminPreview.lastKnown') }}</label>
         <label v-if="isTurreted"><input v-model="showPivot" type="checkbox"> {{ t('adminPreview.showPivot') }}</label>
         <label v-if="isTurreted"><input v-model="showCentroid" type="checkbox"> {{ t('adminPreview.showCentroid') }}</label>
+        <label>
+          {{ t('adminPreview.teamTone') }}
+          <select v-model="teamTone" data-test="vmp-team-tone">
+            <option value="friendly-green">{{ t('adminPreview.teamFriendlyGreen') }}</option>
+            <option value="friendly-blue">{{ t('adminPreview.teamFriendlyBlue') }}</option>
+            <option value="enemy-red">{{ t('adminPreview.teamEnemyRed') }}</option>
+          </select>
+        </label>
       </div>
 
       <div class="vmp-stage">
         <div
           class="vmp-canvas"
-          :class="{ 'vmp-destroyed': showDestroyed, 'vmp-last-known': showLastKnown }"
-          :style="{ width: canvasSize + 'px', height: canvasSize + 'px' }"
+          :class="{ 'vmp-destroyed': showDestroyed, 'vmp-last-known': showLastKnown, ['vmp-team-' + teamTone]: true }"
+          :style="{ width: canvasSize + 'px', height: canvasSize + 'px', ...teamVars }"
         >
           <img v-if="hullUrl" class="vmp-hull" :src="hullUrl" alt="" :style="hullLayerStyle">
           <div v-if="isTurreted && turretUrl" class="vmp-turret-assembly" :style="turretAssemblyStyle">
@@ -415,9 +441,28 @@ const centroidStyle = computed(() => {
 /* turret assembly 父层：随 hull 绕画布中心旋转（座圈随车体移动，见 pivot.js） */
 .vmp-turret-assembly { z-index: 2; }
 .vmp-turret { z-index: 1; }
-/* 状态叠加：与生产 BattlePlayback 当前视觉语言一致（PR3 重设计后再同步） */
-.vmp-destroyed .vmp-hull, .vmp-destroyed .vmp-turret { opacity: 0.35; filter: grayscale(1); }
-.vmp-last-known .vmp-hull, .vmp-last-known .vmp-turret { opacity: 0.3; }
+/* PR3 §19/§20/§21 team outline/glow（整车 silhouette，friendly/enemy 同生产 VehicleMarker） */
+.vmp-team-friendly-green .vmp-hull, .vmp-team-friendly-green .vmp-turret,
+.vmp-team-friendly-blue .vmp-hull, .vmp-team-friendly-blue .vmp-turret {
+  filter:
+    drop-shadow(0 0 1px var(--pb-team-outline, rgba(255, 255, 255, 0.5)))
+    drop-shadow(0 0 6px var(--pb-team-glow, transparent));
+}
+.vmp-team-enemy-red .vmp-hull, .vmp-team-enemy-red .vmp-turret {
+  filter:
+    drop-shadow(0 0 1px var(--pb-enemy-outline, rgba(255, 255, 255, 0.5)))
+    drop-shadow(0 0 6px var(--pb-enemy-glow, transparent));
+}
+/* PR3 §24/§25：destroyed 中度变暗 + grayscale + team outline 弱化；last-known 淡化（同生产） */
+.vmp-destroyed .vmp-hull, .vmp-destroyed .vmp-turret { opacity: 0.55; }
+.vmp-destroyed.vmp-team-friendly-green .vmp-hull, .vmp-destroyed.vmp-team-friendly-green .vmp-turret,
+.vmp-destroyed.vmp-team-friendly-blue .vmp-hull, .vmp-destroyed.vmp-team-friendly-blue .vmp-turret {
+  filter: grayscale(1) drop-shadow(0 0 1px var(--pb-team-outline, rgba(255, 255, 255, 0.35)));
+}
+.vmp-destroyed.vmp-team-enemy-red .vmp-hull, .vmp-destroyed.vmp-team-enemy-red .vmp-turret {
+  filter: grayscale(1) drop-shadow(0 0 1px var(--pb-enemy-outline, rgba(255, 255, 255, 0.35)));
+}
+.vmp-last-known .vmp-hull, .vmp-last-known .vmp-turret { opacity: 0.35; }
 /* selected 指示器（PR #92 Review B）：红色倒三角，车辆正上方——
    位置在画布顶（overflow:visible 不裁剪）、z-index 最高（不被 hull/turret/其他 overlay
    遮挡）、深色描边阴影保证浅/深背景都可见；border-top 颜色由 inline borderTopColor 提供

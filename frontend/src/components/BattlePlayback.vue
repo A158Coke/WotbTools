@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { mapImages } from '../data/mapImages'
+import { teamCssVars } from '../data/mapTeamColors'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 import { createMapView } from '../utils/mapView'
 import VehicleMarker from './VehicleMarker.vue'
@@ -164,7 +165,10 @@ const viewportStyle = computed(() => `transform: translate(${view.tx}px, ${view.
 // 坦克名/阵亡 ✕ 等 UI 叠加层单独反缩放（overlayInverseScale）保持屏幕恒定；
 // hull/turret 的方向旋转在子元素 img 上，不受缩放影响。
 const markerTransform = computed(() => `translate(-50%, -50%)`)
-const overlayInverseScale = computed(() => `scale(${1 / view.scale})`)
+// overlay 反缩放数值（=1/view.scale）：元素尺寸（transform scale）与 layout offset（bottom/top calc）
+// 都按它反缩放 → zoom 下 selected/recorder 与车辆的屏幕间距恒定，不随 1×/2×/4× 增长
+const overlayInverse = computed(() => 1 / view.scale)
+const overlayInverseScale = computed(() => `scale(${overlayInverse.value})`)
 
 /** 指针 client 坐标 → 相对地图容器的**屏幕坐标**（zoomViewAt 契约，不参与任何变换）。 */
 function screenPoint(clientX, clientY) {
@@ -719,6 +723,7 @@ function vehicleState(vehicle) {
     // VehicleMarker 渲染用（位置/反缩放/无障碍标签在 view model 一次性算好）
     markerStyle: { left: markerLeft(last.x), top: markerTop(last.y), transform: markerTransform.value },
     overlayInverseScale: overlayInverseScale.value,
+    overlayInverse: overlayInverse.value, // 数值反缩放（VehicleMarker 用它反缩放 layout offset）
     ariaLabel: `${vehicle.playerName}: ${t(destroyed ? 'recon.map.playback.state_destroyed' : (covered ? 'recon.map.playback.state_position_reported' : 'recon.map.playback.state_position_stale'))}`,
     // lastKnown = 位置流未覆盖（covered=false）才淡化（最后已知位置）。
     // 注意：covered 只是「服务器位置流当前覆盖」，不等于录像者客户端点亮/失察（无 authoritative
@@ -847,7 +852,9 @@ const mapStyle = computed(() => ({
   '--map-spawn-friendly': palette.value.spawnFriendly,
   '--map-spawn-enemy': palette.value.spawnEnemy,
   '--map-route-outline': palette.value.routeOutline,
-  '--map-death-mark': palette.value.deathMark
+  '--map-death-mark': palette.value.deathMark,
+  // PR3 §19/§20：marker team tokens（friendly 按地图显式 tone，enemy 固定 red）
+  ...teamCssVars(props.overview.mapCode)
 }))
 </script>
 
@@ -1037,14 +1044,16 @@ const mapStyle = computed(() => ({
             :stroke-width="1.75 / view.scale"
             :opacity="l.opacity"
           />
-          <!-- 命中闪光：目标端圆点扩散 + 淡出（flashProgress 0→1） -->
+          <!-- 命中闪光：短促冲击闪光——扩散 + 峰值→淡出（flashOpacity 峰值曲线）；
+               flashProgress=1 后不再渲染（不残留孤立端点/waypoint 感） -->
           <circle
+            v-if="l.flashProgress < 1"
             class="pb-tracer-flash"
             :cx="mapView.toX(l.x2)"
             :cy="mapView.toY(l.y2)"
             :r="(3 + 9 * l.flashProgress) / view.scale"
             :fill="tracerColor(l.attackerAccountId)"
-            :opacity="(1 - l.flashProgress) * 0.9"
+            :opacity="l.flashOpacity"
           />
         </template>
       </g>
@@ -1258,10 +1267,13 @@ const mapStyle = computed(() => ({
   inset: 0;
   pointer-events: none;
 }
+/* PR3 增补：车辆视觉尺寸上调（人工 QA：全局地图视角下车型辨识度不足）——
+   desktop 28 → 36px / mobile 22 → 28px（约 +28%）；zoom 契约不变（viewport 整体 scale，
+   车辆随地图缩放；name/✕/selected/recorder 继续 inverse-scale 保持屏幕尺寸）。 */
 .pb-vehicle {
   position: absolute;
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   transform: translate(-50%, -50%);
   border: none;
   background: none;
@@ -1270,29 +1282,12 @@ const mapStyle = computed(() => ({
   pointer-events: auto;
 }
 @media (max-width: 768px) {
-  .pb-vehicle { width: 22px; height: 22px; }
+  .pb-vehicle { width: 28px; height: 28px; }
 }
-/* marker 内部样式（hull/turret/death/name/grayscale）已随 VehicleMarker 组件迁移。
-   last-known：整标记淡化（无 ✕）；destroyed：车辆淡化/灰化由 VehicleMarker .pb-graphics
-   容器承担（root 不再 opacity，否则红色 ✕ 也会被淡到 35%——opacity 无法被子元素抵消） */
-.pb-last-known { opacity: .3; }
-.pb-recorder { filter: drop-shadow(0 0 3px #ffd76a); }
-.pb-recorder::after {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border: 2px solid #ffd76a;
-  border-radius: 50%;
-  z-index: 3;
-}
-.pb-selected::before {
-  content: '';
-  position: absolute;
-  inset: -3px;
-  border: 2px solid #fff;
-  border-radius: 50%;
-  z-index: 3;
-}
+/* marker 内部样式（hull/turret/death/name/状态视觉）全部随 VehicleMarker 组件迁移：
+   PR3 —— last-known/destroyed 弱化由 VehicleMarker .pb-graphics 容器承担（root 不再
+   opacity，否则 ✕/label 也会被淡掉）；Selected 红色倒三角、Recorder 空心菱形、
+   team outline/glow（friendly green|blue / enemy red，CSS vars 由根元素提供）。 */
 .pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.16)); stroke-width: .5; fill: none; }
 /* 激光炮线：外层光晕/内芯线宽逐元素绑定（6/view.scale、1.75/view.scale），不随缩放变粗 */
 .pb-tracer, .pb-tracer-core { stroke-linecap: round; }

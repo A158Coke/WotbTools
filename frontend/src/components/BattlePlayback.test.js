@@ -247,9 +247,9 @@ describe('BattlePlayback', () => {
     await flushPromises()
     expect(wrapper.find('[data-test="pb-marker-2002"]').exists()).toBe(false)
     const recorder = wrapper.find('[data-test="pb-marker-1001"]')
-    expect(recorder.classes()).toContain('pb-recorder')
+    expect(recorder.find('.pb-recorder-badge').exists()).toBe(true)
     await recorder.trigger('click')
-    expect(recorder.classes()).toContain('pb-selected')
+    expect(recorder.find('.pb-selected-mark').exists()).toBe(true)
   })
 
   it('covered vehicles are not faded even when sampled route points have a >5s gap (position stream coverage)', async () => {
@@ -642,6 +642,58 @@ describe('fixed-size vehicle markers', () => {
     expect(marker.find('.pb-name').attributes('style')).toContain('scale(0.25)')
   })
 
+  it('zoom 下 selected→name gap 与 recorder→vehicle 恒定；浮动幅度恒 ≈2px（1×/≈2×/4×）', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
+    const readOffset = (sel) => {
+      const style = wrapper.find(sel).attributes('style') || ''
+      const m = style.match(/calc\(100% \+ ([\d.]+)px\)/)
+      return m ? Number(m[1]) : null
+    }
+    const readInv = () => {
+      const style = wrapper.find('.pb-selected-mark').attributes('style') || ''
+      const m = style.match(/--pb-overlay-inv: ([\d.]+)/)
+      return m ? Number(m[1]) : null
+    }
+    // 屏幕几何（layout→screen）：三角底边 = (X + 4.5)·s − 4.5；name 顶边 = 9·s + 7（name 锚点 2px + 盒高 14px，与 .pb-name CSS 一致）
+    const triBottom = (x, s) => (x + 4.5) * s - 4.5
+    const nameTop = (s) => 9 * s + 7
+    const check = () => {
+      const s = viewportScale(wrapper)
+      const x = readOffset('.pb-selected-mark')
+      const r = readOffset('.pb-recorder-badge')
+      const inv = readInv()
+      expect(x).toBeTruthy()
+      expect(r).toBeTruthy()
+      expect(inv).toBeTruthy()
+      // selected → name 顶边屏幕 gap 恒 3px（三角跟随 name 上移）
+      expect(triBottom(x, s) - nameTop(s)).toBeCloseTo(3, 6)
+      // recorder → vehicle 恒 5px
+      expect(r * s).toBeCloseTo(5, 6)
+      // 浮动幅度 = 2px × inv × s = 2px（inv = 1/s）
+      expect(inv * s).toBeCloseTo(1, 6)
+    }
+    // 1×：selected 19px / recorder 5px（既有基准契约）
+    expect(viewportScale(wrapper)).toBe(1)
+    expect(readOffset('.pb-selected-mark')).toBe(19)
+    expect(readOffset('.pb-recorder-badge')).toBe(5)
+    check()
+    // ≈2×（1.2^4 ≈ 2.07）
+    for (let i = 0; i < 4; i++) {
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+    }
+    expect(viewportScale(wrapper)).toBeGreaterThan(1.9)
+    check()
+    // 4×（钳制）
+    for (let i = 0; i < 12; i++) {
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 0, clientY: 0 })
+    }
+    expect(viewportScale(wrapper)).toBe(4)
+    check()
+  })
+
   it('marker map-coordinate anchor and child rotation/overlays survive zooming', async () => {
     stubRaf()
     const overview = makeOverview()
@@ -872,6 +924,21 @@ describe('destroyed markers (symmetric contract)', () => {
     expect(enemy.findAll('img')[0].attributes('style')).toContain('rotate(0deg)')
     expect(enemy.findAll('img')[1].attributes('style')).toContain('rotate(0deg)')
     expect(enemy.find('.pb-death').text()).toBe('✕')
+  })
+
+  it('destroyed + selected：selected 走克制变体（destroyed > selected，仍可辨认）；✕ 覆盖车体中心', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(destroyedOverview(), 40)
+    await flushPromises()
+    const friendly = wrapper.find('[data-test="pb-marker-1001"]')
+    await friendly.trigger('click')
+    const mark = friendly.find('.pb-selected-mark')
+    expect(mark.exists()).toBe(true)
+    expect(mark.classes()).toContain('pb-selected-restrained')
+    // ✕ 中心定位 + overlayInverseScale 反缩放（1× = scale(1)），覆盖车辆主体
+    const deathStyle = friendly.find('.pb-death').attributes('style')
+    expect(deathStyle).toContain('font-size: 30px')
+    expect(deathStyle).toContain('translate(-50%, -50%) scale(1)')
   })
 })
 describe('PR2 — Tier X dedicated models in Battle Playback', () => {

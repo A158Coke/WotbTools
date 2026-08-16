@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.19",
+    "date": "2026-08-19",
+    "tag": "chg",
+    "zh": "战局回放坦克阵营视觉升级：本方可选绿色或蓝色（按地图自动采用更易区分的主色调）、敌方固定红色，坦克整体带阵营色轮廓与光晕；车辆模型整体放大（桌面端约 36px、移动端约 28px），全局地图视角下更容易辨认车型与车体/炮塔朝向；选中车辆改为红色倒三角标记（轻微浮动）；录像者标记改为阵营色空心菱形；阵亡坦克不再过度透明（保留辨识度）并弱化阵营光晕，最后已知位置仅淡化车辆主体；阵亡车辆的红色 ✕ 移到车体中心并放大，成为明确的击毁主状态（选中阵亡车时选中标记自动弱化）；命中炮线改为约 0.4 秒的短促激光效果（命中闪光后立即消失），不再长时间停留在地图上。",
+    "en": "Battle playback marker visuals upgraded: friendly tanks use green or blue (the map picks the more distinguishable tone) and enemies are always red, with a team-colored outline and glow around the whole vehicle; vehicle models are rendered noticeably larger (about 36px on desktop, 28px on mobile), making hulls, turrets and vehicle silhouettes much easier to read on the overview map; the selected vehicle now shows a red downward triangle (gently floating); the recorder is marked with a hollow diamond in the friendly color; destroyed tanks are no longer overly transparent (kept recognizable) with a weakened team glow, and last-known positions fade only the vehicle body; the red ✕ of a destroyed tank moved onto the vehicle center and enlarged, becoming the clear primary \"destroyed\" state (selecting a destroyed tank now shows a subdued selection mark); hit tracers are now a brief ~0.4s laser effect with an impact flash that disappears immediately, instead of lingering on the map.",
+    "ru": "Улучшена визуализация команд в повторе боя: союзники — зелёные или синие (карта выбирает более различимый тон), противники всегда красные, вокруг всей машины — контур и свечение цвета команды; модели машин заметно увеличены (около 36px на десктопе, 28px на мобильных), на общей карте стало проще различать машины и направление корпуса/башни; выбранная машина отмечена красным треугольником (с лёгким покачиванием); оператор отмечен полым ромбом цвета союзников; уничтоженные машины больше не становятся чрезмерно прозрачными (остаются узнаваемыми) с ослабленным свечением команды, а последняя известная позиция затемняет только корпус машины; красный ✕ уничтоженной машины перемещён в центр корпуса и увеличен — это теперь явный главный признак уничтожения (при выборе уничтоженной машины маркер выбора приглушается); трассер попадания теперь короткий (~0,4 с) эффект лазера со вспышкой, исчезающий сразу, а не висящий на карте."
+  },
+  {
     "v": "2.11.18",
     "date": "2026-08-19",
     "tag": "add",
