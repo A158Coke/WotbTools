@@ -27,6 +27,7 @@ import { MODEL_DEFINITIONS, TANK_ID_TO_MODEL } from '../src/vehicle-models/mappi
 import { VIEWBOX } from '../src/vehicle-models/types.js'
 import {
   bounds2D,
+  buildFeatureAudit,
   buildMetadata,
   classifyDetail,
   clusterEdges,
@@ -383,15 +384,25 @@ async function main() {
     { group: GROUPS.micro, paths: turretGroups[GROUPS.micro] },
   ] }, VIEWBOX)
   // —— debug artifacts（gitignored 缓存目录，不提交正式 repo）——
-  // HIGH-FIDELITY evidence：all-visible / merged-visual-surfaces / retained /
-  // removed-tiny / feature-edges / final-high-fidelity（report 含 merge 统计）
+  // HIGH-FIDELITY evidence：
+  //   source-top-projection（ground truth：raw top-facing union，无 merge/过滤）
+  //   merged-surfaces（合并后、过滤前）
+  //   retained-surfaces / removed-tiny-details / feature-edges
+  //   final-hull / final-turret（最终 SVG）
+  //   feature-fidelity-report.json（source vs final feature audit）
   const debugDir = join(CACHE_DIR, 'debug', modelKey)
   mkdirSync(debugDir, { recursive: true })
+  // ground truth：所有 top-facing faces 的 union（不做 merge/遮挡/微小过滤）
+  const sourceHullSurfaces = mergeVisualSurfaces(hullTris, DETAIL_THRESHOLDS).surfaces
+  const sourceTurretSurfaces = mergeVisualSurfaces(turretTris, DETAIL_THRESHOLDS).surfaces
+  writeFileSync(join(debugDir, 'source-top-projection.svg'), svgDocument(
+    [...surfacesToSvgPaths(sourceHullSurfaces, fit, '#5c635e'),
+     ...surfacesToSvgPaths(sourceTurretSurfaces, fit, '#717873')], VIEWBOX))
   writeFileSync(join(debugDir, 'retained-surfaces.svg'), svgDocument(
     [...surfacesToSvgPaths(hullSurfacesF, fit, '#5c635e'),
      ...surfacesToSvgPaths(turretSurfacesF, fit, '#717873')], VIEWBOX))
   // merged visual surfaces（合并后、过滤前）
-  writeFileSync(join(debugDir, 'merged-visual-surfaces.svg'), svgDocument(
+  writeFileSync(join(debugDir, 'merged-surfaces.svg'), svgDocument(
     [...surfacesToSvgPaths(hullSurfaces, fit, '#5c635e'),
      ...surfacesToSvgPaths(turretSurfaces, fit, '#717873')], VIEWBOX))
   // removed tessellation：raw faces 中不属于任何保留表面的（即合并吸收的三角形）
@@ -406,7 +417,24 @@ async function main() {
   if (he) dbgEdges.push(he)
   if (te) dbgEdges.push(te)
   writeFileSync(join(debugDir, 'feature-edges.svg'), svgDocument(dbgEdges, VIEWBOX))
-  writeFileSync(join(debugDir, 'final-high-fidelity.svg'), hullSvg)
+  writeFileSync(join(debugDir, 'final-hull.svg'), hullSvg)
+  writeFileSync(join(debugDir, 'final-turret.svg'), turretSvg)
+  // —— feature fidelity audit（Blocker 3：region count ≠ visual fidelity）——
+  // 基于几何（z 带 / 位置 / 面积）自动分类 source-visible 结构类别，
+  // 每类标记 detected（source 中存在）/ retained（final 中存在）/
+  // filtered（仅微小/遮挡/退化过滤）/ merged-into（合并进主表面）。
+  // 无人工硬编码坐标——全部来自 extractor debug geometry。
+  const featureAudit = buildFeatureAudit({
+    modelKey,
+    sourceHull: sourceHullSurfaces,
+    sourceTurret: sourceTurretSurfaces,
+    finalHull: hullSurfacesF,
+    finalTurret: turretSurfacesF,
+    hullBounds: { min: [-1.8600600957870483, -4.437963962554932], max: [1.8600600957870483, 4.595536231994629] },
+    turretBounds: { min: [-1.5337796211242676, -3.5188093185424805], max: [1.5337797403335571, 1.0040172338485718] },
+    fitScale: fit.scale,
+  })
+  writeFileSync(join(debugDir, 'feature-fidelity-report.json'), JSON.stringify(featureAudit, null, 2) + '\n')
   // 分组 path 统计（primary/secondary/micro）
   const groupStats = (groups) => ({
     primary: groups[GROUPS.primary].length,
