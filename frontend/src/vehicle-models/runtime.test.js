@@ -1,7 +1,7 @@
 /**
  * 生产 runtime 车型资产解析测试（PR2 — Dedicated Tier X Models in Battle Playback；
  * PR #92 Review 补：module-lifetime cache 行为）。
- * import.meta.glob 在 vitest 中由 Vite 解析——直接读真实资产（maus / ho-ri / confirmPending）。
+ * import.meta.glob 在 vitest 中由 Vite 解析——直接读真实资产（maus / ho-ri / spht / ac-teichos / nc-70-blyskawica）。
  *
  * cache 测试隔离：module-lifetime cache 是模块级 Map——每个用例前 vi.resetModules() +
  * 动态 import 获取全新模块实例（不污染生产 API，不用 test-only reset hook）。
@@ -22,11 +22,10 @@ describe('modelKeyForTank（tankId → modelKey）', () => {
     expect(modelKeyForTank(999999)).toBeNull()
     expect(modelKeyForTank(null)).toBeNull()
   })
-  it('confirmPending 车型仍可映射（contract 未冻结，preload 阶段按 resolve 失败处理）', () => {
+  it('全部 81 组已确认 kind（confirmPending 清零，2026-08-19 BlitzKit 数据逐车确认）', () => {
+    expect(modelKeyForTank(29985)).toBe('spht')
     expect(modelKeyForTank(22129)).toBe('ac-teichos')
     expect(modelKeyForTank(19585)).toBe('nc-70-blyskawica')
-    // spht 已确认 turreted（2026-08-19 BlitzKit 数据）并解除 confirmPending
-    expect(modelKeyForTank(29985)).toBe('spht')
   })
 })
 
@@ -50,21 +49,19 @@ describe('resolveModel（modelKey → 正式资产）', () => {
     expect(m.turretPivot).toBeNull()
     expect(m.turretRaster).toBeNull()
   })
-  it('confirmPending（ac-teichos / nc-70-blyskawica）→ null（contract 未冻结，不生成/不 resolve）', () => {
-    expect(resolveModel('ac-teichos')).toBeNull()
-    expect(resolveModel('nc-70-blyskawica')).toBeNull()
-  })
-  it('spht（已确认 turreted）resolve 出正式资产（hull + turret + pivot）', () => {
-    const m = resolveModel('spht')
-    expect(m).not.toBeNull()
-    expect(m.kind).toBe('turreted')
-    expect(m.hullSrc).toMatch(/hull\.webp$/)
-    expect(m.turretSrc).toMatch(/turret\.webp$/)
-    expect(m.turretPivot).not.toBeNull()
-  })
-  it('未知 modelKey → null', () => {
+  it('未知 modelKey → null（generic fallback）', () => {
     expect(resolveModel('not-a-tank')).toBeNull()
     expect(resolveModel(null)).toBeNull()
+  })
+  it('已确认车型 resolve 出正式资产（spht / ac-teichos / nc-70-blyskawica，hull + turret + pivot）', () => {
+    for (const key of ['spht', 'ac-teichos', 'nc-70-blyskawica']) {
+      const m = resolveModel(key)
+      expect(m, key + ' resolve 失败').not.toBeNull()
+      expect(m.kind).toBe('turreted')
+      expect(m.hullSrc).toMatch(/hull\.webp$/)
+      expect(m.turretSrc).toMatch(/turret\.webp$/)
+      expect(m.turretPivot).not.toBeNull()
+    }
   })
 })
 
@@ -93,10 +90,11 @@ describe('preloadBattleModels（module-lifetime cache，PR #92 Blocker 2）', ()
     expect(r.byTank.get('6929')).toBe('maus')
   })
 
-  it('confirmPending / 未知 modelKey → failed（不 resolve）', async () => {
-    const r = await runtime.preloadBattleModels([22129, 999], { imageLoader: okLoader })
+  it('未知 tankId 不进入 preload（byTank null；不触发 loader）', async () => {
+    const r = await runtime.preloadBattleModels([999999], { imageLoader: okLoader })
     expect(r.resolved.size).toBe(0)
-    expect([...r.failed]).toEqual(['ac-teichos'])
+    expect(r.failed.size).toBe(0)
+    expect(r.byTank.get('999999')).toBeNull()
   })
 
   it('整场无 Tier X → 直接 ready（resolved/failed 空；渲染走 generic）', async () => {

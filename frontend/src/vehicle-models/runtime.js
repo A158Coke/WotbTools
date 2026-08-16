@@ -13,7 +13,7 @@
  * 必须由调用方**动态 import**（BattlePlayback 在 preload 时 await import 本模块），
  * 保证主入口 bundle 不含车型资产标记（scripts/check-bundle-separation.mjs 门禁）。
  *
- * 失败语义：resolve 失败（缺 metadata / confirmPending / 未知 tankId）→ null（generic）；
+ * 失败语义：resolve 失败（缺 metadata / 未知 tankId）→ null（generic）；
  * preload 图片解码超时/失败 → 该 modelKey failed（generic fallback）。静默，console.error 记录。
  */
 import { MODEL_DEFINITIONS, TANK_ID_TO_MODEL } from './mapping.js'
@@ -48,11 +48,11 @@ export function modelKeyForTank(tankId) {
   return TANK_ID_TO_MODEL[String(tankId)] ?? null
 }
 
-/** modelKey → 正式资产；缺失/confirmPending/结构非法 → null（fallback generic）。 */
+/** modelKey → 正式资产；缺失/结构非法 → null（fallback generic）。 */
 export function resolveModel(modelKey) {
   if (!modelKey) return null
   const def = MODEL_DEFINITIONS[modelKey]
-  if (!def || def.confirmPending) return null
+  if (!def) return null
   const meta = metadataMap[`./assets/${modelKey}/metadata.json`]
   if (!meta || meta.modelKey !== modelKey) return null
   const hullSrc = hullUrls[`./assets/${modelKey}/hull.webp`]

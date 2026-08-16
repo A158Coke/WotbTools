@@ -671,7 +671,7 @@ function vehicleColor(vehicle) {
  */
 /**
  * PR2：该车辆的 dedicated model 决策（preload 结果）——
- * 非 Tier X / confirmPending / preload 失败 / 模块加载失败 → null（generic marker 单车 fallback，
+ * 非 Tier X / preload 失败 / 模块加载失败 → null（generic marker 单车 fallback，
  * 计划 §11：不做整场 fallback）。
  */
 function vehicleModel(vehicle) {

@@ -1,0 +1,85 @@
+{
+  "modelKey": "ac-teichos",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 22129,
+    "modelGlb": "https://api.blitzkit.app/tanks/22129/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 164.31,
+    "y": 183.11
+  },
+  "turretRaster": {
+    "logicalMinX": 110.5,
+    "logicalMinY": -30.21,
+    "logicalMaxX": 218.12,
+    "logicalMaxY": 269.14,
+    "pixelWidth": 215,
+    "pixelHeight": 599,
+    "pivotX": 53.81,
+    "pivotY": 213.32
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.930042028427124,
+        -3.663032054901123
+      ],
+      "max": [
+        1.7171039581298828,
+        3.293375015258789
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.3292839527130127,
+        -2.511228084564209
+      ],
+      "max": [
+        1.329282522201538,
+        1.2125929594039917
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.09275499731302261,
+        1.78261399269104
+      ],
+      "max": [
+        0.09275499731302261,
+        4.8836259841918945
+      ]
+    },
+    "selectedModules": {
+      "turretId": 61553,
+      "gunId": 50801,
+      "trackId": 59761,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "Oth91_AC_U_MT_10_mtr",
+      "Oth91_AC_U_MT_10_mtr",
+      "Oth91_AC_U_MT_10_mtr",
+      "Oth91_AC_U_MT_10_track_mtr",
+      "Oth91_AC_U_MT_10_track_mtr",
+      "Oth91_AC_U_MT_10_track_mtr",
+      "Oth91_AC_U_MT_10_grill_mtr",
+      "Oth91_AC_U_MT_10_grill_mtr",
+      "Oth91_AC_U_MT_10_grill_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}
