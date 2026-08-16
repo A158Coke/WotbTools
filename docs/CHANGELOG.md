@@ -47,6 +47,18 @@
     debug artifacts（silhouette/top-surfaces/major-edges/final/extraction-report）输出到 gitignored 缓存。
   - 新增 14 用例（top-facing 判定/高度层聚类/碎片过滤/平台边缘/共享边去重/短边过滤/格栅过滤/
     确定性/分层正确性/wireframe 上限/pivot 稳定）。
+  - **Layer B V2「少而强」修复（2026-08-18，Maus Visual Gate 第二轮）**：
+    - simplifyRing 退化修复：polygon-clipping 的 ring 含相邻/闭合重复点，重复点使叉积退化 → 真实角点
+      被误删（Maus glacis 全宽带塌成细条、turret 环带塌成发丝线）——先按坐标去重再简化，bbox 不变；
+      屏幕空间过滤改用简化后的 ring（与实际渲染一致），发丝状退化 polygon 正确剔除。
+    - 凸起显著性过滤（bumpSignificanceRatio=0.1）：层内凸起面积占比过低的碎块 = 粗糙网格面片伪影
+      （Maus turret 屋顶 16 个 0.6m 面片块 + 2 条退化长条）→ 丢弃；只保留有语义的大特征
+      （hatch / cupola / 甲板条带）——turret 凸起从 20 个噪块收敛为 4 个真实特征。
+    - 结构边聚类去重（clusterEdges）：角度差 ≤5° 且中点距离 ≤0.5m 视为同一条结构线只留最长一条
+      （Maus 前甲板 4 条交叉斜线 X 形噪纹 → 1 条）；先聚类再按投影长度截断（hull ≤8 / turret ≤6）。
+    - hull 绘制顺序调整：主面 → 履带（深色侧带覆盖在主面之上可见）→ 凸起 → 结构边。
+    - Maus 资产更新：glacis 带恢复全宽 109×60px、turret 环带 20×133px、履带侧带可见；
+      新增 8 用例（simplifyRing 去重回归/bbox 不变、bump 显著性、clusterEdges 聚类/保留）。
 
     - 新增 9 用例：L 形凹轮廓不被 convex 填平 / 退化三角形过滤 / union 确定性 / 索引网格解析 /
       共线简化 / mantlet 边界断言 / method 命名 / evenodd 洞 path。

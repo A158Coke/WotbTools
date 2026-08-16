@@ -65,6 +65,17 @@ frontend/src/vehicle-models/assets/<modelKey>/
 - 内部结构线、履带细节等：仅当真实网格提供且经 extractor 显式支持才输出；默认 silhouette-only。
 - 颜色保持 neutral vehicle asset contract（hull/turret 中性灰阶，tracks neutral，不承担阵营色）。
 
+### 6.1 Layer B「少而强」规则（2026-08-18，全部车型通用）
+
+- **凸起显著性过滤**（bumpSignificanceRatio=0.1）：层内凸起面积占比过低的碎块 = 粗糙网格
+  面片伪影（如 Maus 屋顶 0.6m 级面片块），丢弃；只保留有语义的大特征（hatch / cupola / 甲板条带）。
+- **结构边聚类去重**（clusterEdges）：角度差 ≤5° 且中点距离 ≤0.5m 的边视为同一条结构线，
+  只保留最长一条（Maus 前甲板 4 条交叉斜线 → 1 条）；聚类后再按投影长度截断（hull ≤8 / turret ≤6）。
+- **simplifyRing 退化修复**：polygon-clipping 输出的 ring 可能含相邻/闭合重复点，先去重再简化，
+  防止真实角点被误删导致带状结构塌成细条/发丝线；屏幕空间过滤基于简化后的 ring（与实际渲染一致）。
+- **绘制顺序**：hull = 轮廓 → 主面 → 履带（深色侧带，覆盖在主面之上可见）→ 凸起 → 结构边。
+- 阈值全集记录在 metadata.json 的 generation.detailThresholds（非 Maus 专属）。
+
 ## 7. metadata.json 契约（geometry-source schema，任务 12）
 
 ```json
