@@ -1,0 +1,82 @@
+{
+  "modelKey": "cs-63",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 14977,
+    "modelGlb": "https://api.blitzkit.app/tanks/14977/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 150.54
+  },
+  "turretRaster": {
+    "logicalMinX": 103.44,
+    "logicalMinY": -110.16,
+    "logicalMaxX": 216.53,
+    "logicalMaxY": 218.28,
+    "pixelWidth": 226,
+    "pixelHeight": 657,
+    "pivotX": 56.56,
+    "pivotY": 260.7
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.6126397848129272,
+        -3.5405185222625732
+      ],
+      "max": [
+        1.612673044204712,
+        3.057278871536255
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.3251879215240479,
+        -1.1239155530929565
+      ],
+      "max": [
+        1.3244209289550781,
+        2.1937990188598633
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.11594285815954208,
+        2.103513717651367
+      ],
+      "max": [
+        0.11532306671142578,
+        6.571339130401611
+      ]
+    },
+    "selectedModules": {
+      "turretId": 21889,
+      "gunId": 23681,
+      "trackId": 22145,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "Pl21_CS_63_mtr",
+      "Pl21_CS_63_mtr",
+      "Pl21_CS_63_mtr",
+      "Pl21_CS_63_track_mtr",
+      "Pl21_CS_63_track_mtr",
+      "Pl21_CS_63_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

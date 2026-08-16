@@ -1,0 +1,85 @@
+{
+  "modelKey": "strv-k",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 12161,
+    "modelGlb": "https://api.blitzkit.app/tanks/12161/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160.06,
+    "y": 135.76
+  },
+  "turretRaster": {
+    "logicalMinX": 93.1,
+    "logicalMinY": -82.89,
+    "logicalMaxX": 226.9,
+    "logicalMaxY": 240.07,
+    "pixelWidth": 268,
+    "pixelHeight": 646,
+    "pivotX": 66.96,
+    "pivotY": 218.65
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.5718778371810913,
+        -3.5419185161590576
+      ],
+      "max": [
+        1.5718836784362793,
+        3.424891471862793
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.6565278768539429,
+        -1.9225107431411743
+      ],
+      "max": [
+        1.6535874605178833,
+        1.8822529315948486
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.15004120767116547,
+        1.958849310874939
+      ],
+      "max": [
+        0.15003494918346405,
+        6.0677409172058105
+      ]
+    },
+    "selectedModules": {
+      "turretId": 17537,
+      "gunId": 18561,
+      "trackId": 18305,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "S31_Strv_K_mtr",
+      "S31_Strv_K_mtr",
+      "S31_Strv_K_mtr",
+      "S31_Strv_K_track_mtr",
+      "S31_Strv_K_track_mtr",
+      "S31_Strv_K_track_mtr",
+      "S31_Strv_K_grill_mtr",
+      "S31_Strv_K_grill_mtr",
+      "S31_Strv_K_grill_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

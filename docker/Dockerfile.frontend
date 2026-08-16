@@ -4,6 +4,8 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm config set registry https://registry.npmmirror.com && npm ci
 COPY frontend/ .
 COPY common/map_names.json /common/map_names.json
+# 隐藏 QA 页（?view=vehicle-models）动态 import Tankopedia 车辆库（仅 tier10）
+COPY common/tankopedia-tier10.json /common/tankopedia-tier10.json
 COPY common/assets /common/assets
 RUN npm run build
 

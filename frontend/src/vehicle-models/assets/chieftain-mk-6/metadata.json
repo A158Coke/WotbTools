@@ -1,0 +1,85 @@
+{
+  "modelKey": "chieftain-mk-6",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 15697,
+    "modelGlb": "https://api.blitzkit.app/tanks/15697/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 164.03,
+    "y": 144.3
+  },
+  "turretRaster": {
+    "logicalMinX": 91.71,
+    "logicalMinY": -100.05,
+    "logicalMaxX": 223.49,
+    "logicalMaxY": 243.45,
+    "pixelWidth": 264,
+    "pixelHeight": 688,
+    "pivotX": 72.32,
+    "pivotY": 244.35
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.7135169506072998,
+        -3.80210018157959
+      ],
+      "max": [
+        1.7135169506072998,
+        3.7232437133789062
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.936602234840393,
+        -2.1907286643981934
+      ],
+      "max": [
+        1.5851455926895142,
+        2.1061418056488037
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.12892219424247742,
+        2.0084869861602783
+      ],
+      "max": [
+        0.12378992140293121,
+        6.988810062408447
+      ]
+    },
+    "selectedModules": {
+      "turretId": 257105,
+      "gunId": 257361,
+      "trackId": 257105,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "Chieftain_Mk6_tank_mtr",
+      "Chieftain_Mk6_tank_mtr",
+      "Chieftain_Mk6_tank_mtr",
+      "Chieftain_Mk6_track_mtr",
+      "Chieftain_Mk6_track_mtr",
+      "Chieftain_Mk6_track_mtr",
+      "Chieftain_Mk6_grill_mtr",
+      "Chieftain_Mk6_grill_mtr",
+      "Chieftain_Mk6_grill_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

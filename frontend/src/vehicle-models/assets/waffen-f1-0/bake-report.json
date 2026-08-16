@@ -1,0 +1,131 @@
+{
+  "tankId": 28945,
+  "modelKey": "waffen-f1-0",
+  "kind": "turreted",
+  "sourceModel": {
+    "glbBytes": 2398784
+  },
+  "selectedModules": {
+    "turretId": 266769,
+    "gunId": 269585,
+    "trackId": 267281,
+    "turretModelId": 1,
+    "gunModelId": 2
+  },
+  "output": {
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "logicalViewBox": "0 0 320 320",
+    "supersample": 2
+  },
+  "materials": [
+    "G98_Waffentragen_E100_mtr",
+    "G98_Waffentragen_E100_track_mtr"
+  ],
+  "texturesUsed": [
+    "G98_Waffentragen_E100_mtr",
+    "G98_Waffentragen_E100_mtr",
+    "G98_Waffentragen_E100_mtr",
+    "G98_Waffentragen_E100_track_mtr",
+    "G98_Waffentragen_E100_track_mtr",
+    "G98_Waffentragen_E100_track_mtr"
+  ],
+  "uvSetsUsed": [
+    "TEXCOORD_0"
+  ],
+  "metallicRoughness": {
+    "present": true,
+    "used": false,
+    "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
+  },
+  "visibleTriangleCounts": {
+    "hull": 5092,
+    "turret": 2706
+  },
+  "alphaTested": 1,
+  "hullBounds": {
+    "min": [
+      -2.0370328426361084,
+      -4.106727600097656
+    ],
+    "max": [
+      2.0370328426361084,
+      4.4076433181762695
+    ]
+  },
+  "turretBounds": {
+    "min": [
+      -1.8523283004760742,
+      -4.485124111175537
+    ],
+    "max": [
+      1.8642003536224365,
+      -0.21888886392116547
+    ]
+  },
+  "gunBounds": {
+    "min": [
+      -0.292557030916214,
+      -3.2118213176727295
+    ],
+    "max": [
+      0.2778030335903168,
+      4.3478546142578125
+    ]
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 223.57
+  },
+  "rasterOrientation": {
+    "hull": {
+      "axisContract": "model +Y = screen up（raster top = bounds.maxY）",
+      "topModelY": 5.014,
+      "bottomModelY": -5.0914,
+      "topRowCovered": 38,
+      "bottomRowCovered": 577,
+      "topCoveredModelY": 4.413,
+      "bottomCoveredModelY": -4.111,
+      "topWidthMean": 35.59,
+      "bottomWidthMean": 0.81
+    },
+    "turret": {
+      "axisContract": "model +Y = screen up（raster top = bounds.maxY）",
+      "topModelY": 4.3479,
+      "bottomModelY": -4.4851,
+      "topRowCovered": 0,
+      "bottomRowCovered": 559,
+      "topCoveredModelY": 4.3479,
+      "bottomCoveredModelY": -4.4851,
+      "topWidthMean": 17,
+      "bottomWidthMean": 236
+    }
+  },
+  "turretRaster": {
+    "logicalMinX": 101.34,
+    "logicalMinY": 23.55,
+    "logicalMaxX": 219.03,
+    "logicalMaxY": 303.25,
+    "pixelWidth": 236,
+    "pixelHeight": 560,
+    "pivotX": 58.66,
+    "pivotY": 200.02
+  },
+  "fit": {
+    "scale": 31.666182910680913,
+    "tx": 160,
+    "ty": 161.2267604815897
+  },
+  "assets": {
+    "hullWebp": 35358,
+    "turretWebp": 9142
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "desaturate": 0.25,
+    "shading": "baseColor x occlusion x normal-z relief (restrained)",
+    "determinism": "pure arithmetic; same input -> same output"
+  }
+}

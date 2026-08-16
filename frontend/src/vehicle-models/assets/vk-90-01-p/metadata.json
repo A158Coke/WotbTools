@@ -1,0 +1,82 @@
+{
+  "modelKey": "vk-90-01-p",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 21777,
+    "modelGlb": "https://api.blitzkit.app/tanks/21777/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160.2,
+    "y": 245.41
+  },
+  "turretRaster": {
+    "logicalMinX": 109.05,
+    "logicalMinY": -44.16,
+    "logicalMaxX": 211.31,
+    "logicalMaxY": 314.54,
+    "pixelWidth": 205,
+    "pixelHeight": 718,
+    "pivotX": 51.15,
+    "pivotY": 289.57
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.8067231178283691,
+        -4.262392520904541
+      ],
+      "max": [
+        1.8067231178283691,
+        3.6196181774139404
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.4260491132736206,
+        -4.004067420959473
+      ],
+      "max": [
+        1.4362765550613403,
+        -0.3835635185241699
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.15647706389427185,
+        0.8824248313903809
+      ],
+      "max": [
+        0.15647684037685394,
+        6.03575325012207
+      ]
+    },
+    "selectedModules": {
+      "turretId": 259601,
+      "gunId": 260625,
+      "trackId": 260113,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "G_VK9001P_mtr",
+      "G_VK9001P_mtr",
+      "G_VK9001P_mtr",
+      "G_VK9001P_track_mtr",
+      "G_VK9001P_track_mtr",
+      "G_VK9001P_track_mtr"
+    ],
+    "desaturate": 0.25,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

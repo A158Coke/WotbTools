@@ -1,0 +1,90 @@
+{
+  "tankId": 13889,
+  "modelKey": "foch-155",
+  "kind": "turretless",
+  "sourceModel": {
+    "glbBytes": 3283556
+  },
+  "selectedModules": {
+    "turretId": 18497,
+    "gunId": 19265,
+    "trackId": 23617,
+    "turretModelId": 1,
+    "gunModelId": 1
+  },
+  "output": {
+    "hullPhysicalPixelSize": [
+      640,
+      640
+    ],
+    "logicalViewBox": "0 0 320 320",
+    "supersample": 2
+  },
+  "materials": [
+    "F64_AMX_50FOsh_155_mtr",
+    "F64_AMX_50FOsh_155_track_mtr"
+  ],
+  "texturesUsed": [
+    "F64_AMX_50FOsh_155_mtr",
+    "F64_AMX_50FOsh_155_mtr",
+    "F64_AMX_50FOsh_155_mtr",
+    "F64_AMX_50FOsh_155_track_mtr",
+    "F64_AMX_50FOsh_155_track_mtr",
+    "F64_AMX_50FOsh_155_track_mtr"
+  ],
+  "uvSetsUsed": [
+    "TEXCOORD_0"
+  ],
+  "metallicRoughness": {
+    "present": true,
+    "used": false,
+    "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
+  },
+  "visibleTriangleCounts": {
+    "hull": 6465,
+    "turret": null
+  },
+  "alphaTested": 1,
+  "hullBounds": {
+    "min": [
+      -1.797044038772583,
+      -4.216423511505127
+    ],
+    "max": [
+      1.8465654850006104,
+      6.60983419418335
+    ]
+  },
+  "turretBounds": null,
+  "gunBounds": null,
+  "turretPivot": null,
+  "rasterOrientation": {
+    "hull": {
+      "axisContract": "model +Y = screen up（raster top = bounds.maxY）",
+      "topModelY": 7.348,
+      "bottomModelY": -4.9546,
+      "topRowCovered": 38,
+      "bottomRowCovered": 601,
+      "topCoveredModelY": 6.6164,
+      "bottomCoveredModelY": -4.223,
+      "topWidthMean": 9.91,
+      "bottomWidthMean": 49.78
+    }
+  },
+  "turretRaster": null,
+  "fit": {
+    "scale": 26.01083473673807,
+    "tx": 159.35595292311925,
+    "ty": 128.87269513785665
+  },
+  "assets": {
+    "hullWebp": 21718,
+    "turretWebp": null
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "desaturate": 0.25,
+    "shading": "baseColor x occlusion x normal-z relief (restrained)",
+    "determinism": "pure arithmetic; same input -> same output"
+  }
+}
