@@ -38,19 +38,3 @@ export function hullLayerTransform({ deg, renderScale = 1 }) {
     transform: `rotate(${deg}deg)`,
   }
 }
-
-/**
- * 数学验证：以 origin 为不动点的 rotate(deg) 下，点 point 的像。
- * 返回旋转后的坐标（2D 仿射，角度制）。
- */
-export function rotatePointAround({ point, origin, deg }) {
-  const rad = (deg * Math.PI) / 180
-  const cos = Math.cos(rad)
-  const sin = Math.sin(rad)
-  const dx = point.x - origin.x
-  const dy = point.y - origin.y
-  return {
-    x: origin.x + dx * cos - dy * sin,
-    y: origin.y + dx * sin + dy * cos,
-  }
-}
