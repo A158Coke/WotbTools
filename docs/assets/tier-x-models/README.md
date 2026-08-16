@@ -73,6 +73,9 @@ production / Battle Playback / backend / CI 均不访问 BlitzKit（任务 17）
 - **坐标**：GLB 顶点 = 模型坐标（x宽 / y长 forward=+y / z高）；models.pb origin = 引擎坐标（x宽 / y高 / z长 forward=-z）；
   `correctZYTuple(x,y,z) = (x, z, y)`（BlitzKit useTankTransform 复刻）；俯视投影 = (x, y)，SVG y = -y（车头朝 12 点）。
 - **默认配置**（BlitzKit tankToDuelMember）：`tank.turrets.at(-1)` / `turret.guns.at(-1)` / `tank.tracks.at(-1)`。
+- **silhouette（Blocker 1）**：projected triangle polygon union（polygon-clipping）——保留全部凹轮廓与洞；
+  convex hull 已禁用（会把 Maus 压成矩形）。`*_hide_elements*` 子树排除；`gun_{id}_mask`（mantlet 炮盾）
+  归入 turret 层（静态 0° 属于炮塔正面轮廓），gun 层仅炮管。
 - **turretPivot**：`turret_origin` → correctZYTuple → 投影 → 同一 fit 变换（与 hull/turret.svg 完全相同），自动计算，无人工猜测。
 
 ## Asset Handoff（生成交接清单）
@@ -111,7 +114,7 @@ turret 绕 metadata `turretPivot` 旋转；neutral 灰阶；长炮管允许溢�
 
 顶层 5 键：`modelKey / kind / source / turretPivot / generation`；
 `source.provider` 正式资产必须为 `blitzkit`（validator 强制）；`generation.method` 必须为
-`collision-glb-topdown-projection`。示例：`assets/maus/metadata.json`（Maus 实样）。
+`blitzkit-model-topdown-extraction`。示例：`assets/maus/metadata.json`（Maus 实样）。
 
 ### E. Mapping contract
 

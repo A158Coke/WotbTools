@@ -12,7 +12,7 @@
     "y": 193.23
   },
   "generation": {
-    "method": "collision-glb-topdown-projection",
+    "method": "blitzkit-model-topdown-extraction",
     "viewBox": "0 0 320 320",
     "hullBounds": {
       "min": [
@@ -31,19 +31,19 @@
       ],
       "max": [
         1.5337797403335571,
-        1.0040172338485718
+        2.5580697059631348
       ]
     },
     "gunBounds": {
       "min": [
-        -0.5080962181091309,
-        -0.14398309588432312
+        -0.2543160319328308,
+        1.031419277191162
       ],
       "max": [
-        0.6785486936569214,
+        0.24294689297676086,
         5.683868408203125
       ]
     },
-    "notes": "确定性提取自 BlitzKit model.glb（hull + tracks + selected turret/gun 节点）"
+    "notes": "确定性提取自 BlitzKit model.glb（hull + tracks + selected turret/gun 节点；projected triangle union silhouette）"
   }
 }

@@ -79,7 +79,7 @@ frontend/src/vehicle-models/assets/<modelKey>/
   },
   "turretPivot": { "x": 160, "y": 193.23 },
   "generation": {
-    "method": "collision-glb-topdown-projection",
+    "method": "blitzkit-model-topdown-extraction",
     "viewBox": "0 0 320 320",
     "hullBounds": { "min": [-1.86, -4.44], "max": [1.86, 4.6] },
     "turretBounds": { "min": [...], "max": [...] },
@@ -92,7 +92,7 @@ frontend/src/vehicle-models/assets/<modelKey>/
 - 顶层键只能是 `modelKey / kind / source / turretPivot / generation` 5 个（validator 拒绝多余键）。
 - `source.provider`：正式资产（mapping 内 modelKey）必须为 `blitzkit`；`source.tankId` 必须为正整数；
   `collisionModel` / `modelDefinitions` 必须为 http(s) URL。
-- `generation.method`：正式资产必须为 `collision-glb-topdown-projection`。
+- `generation.method`：正式资产必须为 `blitzkit-model-topdown-extraction`。
 - `turretPivot`：turreted 必填、x/y ∈ [0, 320]；turretless 禁止。
 - 完整校验见 `frontend/src/vehicle-models/validate.js`（validateMetadata）。
 
