@@ -28,6 +28,7 @@ import {
   zoomViewAt
 } from '../utils/battlePlayback'
 import {
+  PLAYER_FADE_MS,
   PLAYER_HIDE_MS,
   PLAYER_SHOW_MS,
   computeLabelLayout,
@@ -134,7 +135,9 @@ function hpBarFill(hp, kind) {
 const currentTime = ref(0)
 const playing = ref(false)
 const speed = ref(1)
-// PR4 §33：hysteresis 时间基准（performance.now，RAF/seek 推进；暂停时冻结）
+// PR4 §33：hysteresis 时间基准 = UI wall clock（performance.now）。
+// 播放时由 frame() 每帧刷新；暂停时由 ensureHysteresisClock 的轻量 RAF 继续推进
+//（仅当存在未决 transition），不依赖 replay 播放状态；replay currentTime 不是 collision 时钟。
 const nowMs = ref(typeof performance !== 'undefined' ? performance.now() : 0)
 
 // ---- PR4 §26：玩家/坦克名显示偏好（默认 showPlayerName=false / showTankName=true，localStorage 持久化）----
@@ -673,6 +676,7 @@ function toggleType(type) {
 
 onBeforeUnmount(() => {
   if (rafId != null) cancelAnimationFrame(rafId)
+  if (hystRafId != null) cancelAnimationFrame(hystRafId)
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
   window.removeEventListener('pointercancel', onPointerUp)
@@ -982,16 +986,53 @@ const labelLayout = computed(() => {
 
 const playerVisState = ref(new Map())
 const playerHidden = ref(new Set())
-const playerFading = ref(new Set())
+// fade-in 生命周期：accountId → fade 结束时刻（performance.now 基准）。
+// 非响应式 Map，由 nowMs 变化驱动重渲染；恢复帧开始计时 PLAYER_FADE_MS，
+// 期间不被下一次 collision resolve 取消（CSS animation 0.12s 与之一致）。
+const fadeUntil = new Map()
+let hystRafId = null
+
+/** 是否存在未决的 hysteresis transition（hide/show 截止未到，或 fade-in 未结束）。 */
+function hasPendingHysteresis(now) {
+  for (const s of playerVisState.value.values()) {
+    if (s.conflict && !s.hidden && now - s.since < PLAYER_HIDE_MS) return true
+    if (!s.conflict && s.hidden && now - s.since < PLAYER_SHOW_MS) return true
+  }
+  for (const until of fadeUntil.values()) if (until > now) return true
+  return false
+}
+
+/** 轻量时钟：仅当存在未决 transition 且未在播放时维持 RAF；播放时由 frame() 驱动，
+ *  无 pending 即停（不做永久轮询）。注意：只更新 nowMs 触发 watch，**不在 watcher 内
+ *  回写 nowMs**（nowMs 是 watch source，回写会自触发无限循环）。
+ * @param now 当前 resolve 使用的新鲜 wall clock（用于 pending 判定）
+ */
+function ensureHysteresisClock(now) {
+  if (hystRafId != null || playing.value) return
+  if (hasPendingHysteresis(now)) {
+    hystRafId = requestAnimationFrame(() => {
+      hystRafId = null
+      nowMs.value = typeof performance !== 'undefined' ? performance.now() : Date.now()
+      // nowMs 变化 → watch → resolve → ensureHysteresisClock(新鲜 now) 决定续/停
+    })
+  }
+}
+
 watch([labelLayout, nowMs], () => {
+  // 每次 resolve 取**新鲜** wall clock：即使 nowMs 因暂停而陈旧，冲突出现/解除时刻
+  // 也以真实时刻计，阈值不会因暂停冻结（B3）。
+  const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
   const conflicts = new Set()
   for (const [id, r] of labelLayout.value) {
     if (r.playerConflict) conflicts.add(id)
   }
-  const res = resolvePlayerVisibility(conflicts, playerVisState.value, nowMs.value, PLAYER_HIDE_MS, PLAYER_SHOW_MS)
+  const res = resolvePlayerVisibility(conflicts, playerVisState.value, now, PLAYER_HIDE_MS, PLAYER_SHOW_MS)
   playerVisState.value = res.state
   playerHidden.value = res.hidden
-  playerFading.value = res.fading
+  // fade-in：恢复帧开始计时，完整 PLAYER_FADE_MS 生命周期
+  for (const id of res.fading) fadeUntil.set(id, now + PLAYER_FADE_MS)
+  for (const [id, until] of fadeUntil) if (until <= now) fadeUntil.delete(id)
+  ensureHysteresisClock(now)
 }, { immediate: true })
 
 /** VehicleMarker label prop（每 marker 一个：显示开关 + 碰撞位移 + player 显隐/fade）。 */
@@ -1002,7 +1043,7 @@ function markerLabel(accountId) {
     showTank: labelPrefs.showTankName,
     tankDy: l ? l.tankDy : 0,
     playerHidden: playerHidden.value.has(accountId),
-    playerFading: playerFading.value.has(accountId),
+    playerFading: (fadeUntil.get(accountId) || 0) > nowMs.value,
   }
 }
 

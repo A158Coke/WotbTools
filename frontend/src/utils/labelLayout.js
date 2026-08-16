@@ -91,28 +91,43 @@ export function computeLabelLayout(items, opts = {}) {
     if (tankBox) tanks.push(entry)
   }
 
-  // 2) §34 TankName vs TankName：贪心从上到下，上方的标签上移让位（上限一行）
-  const ordered = [...tanks].sort((a, b) => a.y - b.y)
-  for (let i = 0; i < ordered.length; i++) {
-    const a = ordered[i]
+  // 2) §34 TankName vs TankName：**从下往上** greedy placement——
+  //    下方标签先 finalized（tankBox.y 已含其位移），当前（上方）标签只与已 finalized 的
+  //    下方 boxes 比较，计算消除全部重叠所需的最小上移；上方标签后续不会再被下方标签的
+  //    新位移撞回（下方已定型）→ 3+ 连锁碰撞不重新产生 overlap。
+  //    上限一行（TANK_SHIFT_MAX_PX），达到上限后接受剩余 overlap（产品契约 §34）。
+  //    排序按 y，同 y 用 accountId 决胜 → 输入顺序变化结果 deterministic。
+  const ordered = [...tanks].sort(
+    (a, b) => a.y - b.y || String(a.accountId).localeCompare(String(b.accountId)),
+  )
+  for (let i = ordered.length - 1; i >= 0; i--) {
+    const a = ordered[i] // 当前标签（上方）；j > i 均已被 finalized
+    let dy = 0
     for (let j = i + 1; j < ordered.length; j++) {
       const b = ordered[j]
-      // 水平重叠检查（用位移后的 a 盒）
-      const ax = a.tankBox.x + a.tankDy * 0 // x 不受垂直位移影响
-      if (ax + a.tankBox.w <= b.tankBox.x || ax >= b.tankBox.x + b.tankBox.w) continue
-      const aBottom = a.tankBox.y + a.tankBox.h + a.tankDy // 位移后 a 的底边
-      const bTop = b.tankBox.y
+      // 水平重叠检查（x 不受垂直位移影响）
+      if (a.tankBox.x + a.tankBox.w <= b.tankBox.x || a.tankBox.x >= b.tankBox.x + b.tankBox.w) continue
+      const aBottom = a.tankBox.y + a.tankBox.h + dy // 位移后 a 的底边
+      const bTop = b.tankBox.y // b 已是 final（含其自身位移）
       const overlap = aBottom - bTop
-      if (overlap > 0) {
-        const shift = Math.max(-TANK_SHIFT_MAX_PX, a.tankDy - overlap)
-        a.tankDy = shift
-      }
+      if (overlap > 0) dy = Math.max(-TANK_SHIFT_MAX_PX, dy - overlap)
     }
-    // 位移应用到盒
-    a.tankBox.y += a.tankDy
+    a.tankDy = dy
+    a.tankBox.y += dy
   }
 
-  // 3) §32 PlayerName 冲突：player 盒 vs 所有 TankName 盒（位移后）
+  // 3) §27/§28 PlayerName 与 TankName 共享同一 label 块（DOM：.pb-labels 整块一起位移，
+  //    tankDy 作用于整个块）。playerBox 必须从 **final** tankBox（含 tankDy）推导，
+  //    否则碰撞模型与真实渲染不一致（false/missed conflict，甚至旧 playerBox 与自家
+  //    final tankBox 产生假 overlap）。单一事实源：player 行底边 = tank 行顶边。
+  for (const entry of result.values()) {
+    if (!entry.playerBox) continue
+    entry.playerBox.y = entry.tankBox
+      ? entry.tankBox.y - playerH
+      : entry.y - LABEL_GAP_PX - playerH
+  }
+
+  // 4) §32 PlayerName 冲突：final playerBox vs 所有 final TankName 盒
   const tankBoxes = tanks.map(t => t.tankBox)
   for (const entry of result.values()) {
     if (!entry.playerBox) continue
@@ -130,15 +145,17 @@ export function computeLabelLayout(items, opts = {}) {
 /** §33 时间稳定阈值（hide/show，ms）。 */
 export const PLAYER_HIDE_MS = 250
 export const PLAYER_SHOW_MS = 300
-/* §33 恢复 fade-in 时长 ~120ms 由 CSS 承担（.pb-label-fading animation 0.12s），
-   不在 JS 重复定义，避免双事实源漂移。 */
+/** §33 恢复 fade-in 时长（ms）：与 VehicleMarker .pb-label-fading animation 0.12s 同步；
+ *  BattlePlayback 用其保证 fade 类完整生命周期（fadeUntil 计时，不被下一次 resolve 取消）。 */
+export const PLAYER_FADE_MS = 120
 
 /**
  * PlayerName 显示状态的 hysteresis 解析（§33，时间阈值）。
  *
  * @param conflicts Set<accountId>          当前帧冲突集合
  * @param prev Map<accountId, { hidden, conflict, since }>  上一帧状态（调用方维护）
- * @param nowMs number                      当前时间（performance.now，RAF/seek 推进）
+ * @param nowMs number                      当前时间（UI wall clock：performance.now，
+ *                                          暂停时由 BattlePlayback 轻量 RAF 继续推进）
  * @returns { state: Map<accountId, { hidden, conflict, since }>, hidden: Set<accountId>, fading: Set<accountId> }
  */
 export function resolvePlayerVisibility(conflicts, prev, nowMs, hideMs = PLAYER_HIDE_MS, showMs = PLAYER_SHOW_MS) {
