@@ -59,8 +59,13 @@ export function turretImageTransform({ hullDeg, turretWorldDeg, pivot, renderSca
 
 /**
  * —— Battle Playback marker 专用（标记盒尺寸由 CSS 控制，28px/22px，无固定 renderScale）——
- * 所有定位/原点用百分比表达：left/top/width/height % 相对 marker 盒（containing block），
- * transform-origin % 相对子元素自身盒——与 320 logical viewBox 按比例换算，任意标记尺寸成立。
+ * 百分比换算（Blocker 1 修复，与 PR91 VehicleModelPreviewPage.vue 的 px 数学严格同构）：
+ * - left/top/width/height：**相对 marker 盒**（containing block）——marker-global logical
+ *   坐标（logicalMinX/Y、pixelWidth/2、pixelHeight/2）除以 320 logical viewBox；
+ * - transform-origin：**相对 turret image 自身盒**——turretRaster.pivotX/pivotY 是
+ *   image-local logical pivot，必须除以 image 自身 logical 尺寸（pixelWidth/2 × pixelHeight/2），
+ *   等价于 QA 页的 origin = pivot * renderScale / 盒宽 = (pixelWidth/2) * renderScale。
+ *   错误做法（除以 320）会把 pivot 当成 marker-global 坐标，炮塔绕错误原点旋转。
  */
 
 /**
@@ -79,13 +84,19 @@ export function markerTurretAssemblyTransform({ hullDeg }) {
  */
 export function markerTurretImageTransform({ hullDeg, turretWorldDeg, raster }) {
   const { logicalMinX, logicalMinY, pixelWidth, pixelHeight, pivotX, pivotY } = raster
-  const pct = (v) => (v / VIEWBOX.width) * 100
+  // 相对 marker 盒（containing block）：marker-global logical 坐标 / 320 viewBox
+  const boxPct = (v) => (v / VIEWBOX.width) * 100
+  // image-local pivot（pivotX/pivotY）必须相对 turret image 自身盒：
+  // origin% = pivot / (pixelWidth/2) * 100（同构于 QA 页 origin = pivot * renderScale）
+  const imgW = pixelWidth / 2
+  const imgH = pixelHeight / 2
+  const originPct = (v, size) => (size > 0 ? (v / size) * 100 : 0)
   return {
-    left: `${pct(logicalMinX).toFixed(4)}%`,
-    top: `${pct(logicalMinY).toFixed(4)}%`,
-    width: `${pct(pixelWidth / 2).toFixed(4)}%`,
-    height: `${pct(pixelHeight / 2).toFixed(4)}%`,
-    transformOrigin: `${pct(pivotX).toFixed(4)}% ${pct(pivotY).toFixed(4)}%`,
+    left: `${boxPct(logicalMinX).toFixed(4)}%`,
+    top: `${boxPct(logicalMinY).toFixed(4)}%`,
+    width: `${boxPct(imgW).toFixed(4)}%`,
+    height: `${boxPct(imgH).toFixed(4)}%`,
+    transformOrigin: `${originPct(pivotX, imgW).toFixed(4)}% ${originPct(pivotY, imgH).toFixed(4)}%`,
     transform: `rotate(${turretWorldDeg - hullDeg}deg)`,
   }
 }
