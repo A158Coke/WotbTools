@@ -38,32 +38,34 @@ export const VIEWBOX = Object.freeze({ width: 320, height: 320 })
  */
 
 /**
- * 单车型 metadata.json 契约（docs/assets/tier-x-models/svg-generation-spec.md）。
- * 必填：modelKey / kind / blitzkitReference；turreted 必须 turretPivot。
- * 视觉字段（distinctiveFeatures 等）由 ChatGPT 生成资产时填写，可先为空。
+ * 单车型 metadata.json 契约（geometry-source schema，任务 12）。
+ * 几何必须来自 BlitzKit 真实模型（source.provider === 'blitzkit'，validator 强制）；
+ * 人工 notes 只允许作为 QA 记录，不参与几何。
  *
  * @typedef {Object} VehicleModelMetadata
- * @property {string} modelKey                    必须与所在目录名一致
- * @property {'turreted'|'turretless'} kind       必须与 mapping.js 中该 modelKey 一致
- * @property {string} blitzkitReference           BlitzKit 参考 URL / identifier（空串仅允许 sample）
- * @property {{x:number,y:number}} [turretPivot]  turreted 必填；x/y ∈ [0, VIEWBOX]
- * @property {string[]} [distinctiveFeatures]     3–5 个最有辨识价值的 top-down 特征
- * @property {string[]} [intentionalExaggeration] 为 20–30px 做过的刻意夸张
- * @property {string} [generationNotes]           车型特异生成说明
- * @property {string[]} [mustKeepStructures]      必须保留/禁止丢失的结构
+ * @property {string} modelKey                         必须与所在目录名一致
+ * @property {'turreted'|'turretless'} kind            必须与 mapping.js 中该 modelKey 一致
+ * @property {{provider:string, tankId:number, collisionModel:string, modelDefinitions:string}} source
+ *     provider 必填（正式资产必须 'blitzkit'）；tankId 必填；两个 URL 记录数据源
+ * @property {{x:number,y:number}} [turretPivot]       turreted 必填；x/y ∈ [0, VIEWBOX]
+ * @property {{method:string, viewBox:string, hullBounds?:object, turretBounds?:object, gunBounds?:object, notes?:string}} generation
+ *     method 必填（正式资产必须 'collision-glb-topdown-projection'）
  */
 
 /** metadata.json 允许的顶层键（多余键视为契约违反，防漂移）。 */
 export const METADATA_KEYS = Object.freeze([
   'modelKey',
   'kind',
-  'blitzkitReference',
+  'source',
   'turretPivot',
-  'distinctiveFeatures',
-  'intentionalExaggeration',
-  'generationNotes',
-  'mustKeepStructures',
+  'generation',
 ])
+
+/** 正式几何来源 provider（extractor 生成）。 */
+export const SOURCE_PROVIDER_BLITZKIT = 'blitzkit'
+
+/** 正式生成方法（extractor 生成）。 */
+export const GENERATION_METHOD_EXTRACTION = 'collision-glb-topdown-projection'
 
 /** 资产目录内允许出现的文件（gun 禁止独立 layer，故无 gun.svg）。 */
 export const ASSET_FILES = Object.freeze({
