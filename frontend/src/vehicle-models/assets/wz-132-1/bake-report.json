@@ -1,0 +1,111 @@
+{
+  "tankId": 10289,
+  "modelKey": "wz-132-1",
+  "kind": "turreted",
+  "sourceModel": {
+    "glbBytes": 3048812
+  },
+  "selectedModules": {
+    "turretId": 14897,
+    "gunId": 14385,
+    "trackId": 16177,
+    "turretModelId": 1,
+    "gunModelId": 1
+  },
+  "output": {
+    "physicalPixelSize": [
+      640,
+      640
+    ],
+    "logicalViewBox": "0 0 320 320",
+    "supersample": 2
+  },
+  "materials": [
+    "Ch29_Type_62C_prot_mtr",
+    "Ch29_Type_62C_prot_track_mtr",
+    "Ch29_Type_62C_prot_grid_mtr"
+  ],
+  "texturesUsed": [
+    "Ch29_Type_62C_prot_mtr",
+    "Ch29_Type_62C_prot_mtr",
+    "Ch29_Type_62C_prot_mtr",
+    "Ch29_Type_62C_prot_track_mtr",
+    "Ch29_Type_62C_prot_track_mtr",
+    "Ch29_Type_62C_prot_track_mtr",
+    "Ch29_Type_62C_prot_grid_mtr",
+    "Ch29_Type_62C_prot_grid_mtr",
+    "Ch29_Type_62C_prot_grid_mtr"
+  ],
+  "uvSetsUsed": [
+    "TEXCOORD_0"
+  ],
+  "metallicRoughness": {
+    "present": true,
+    "used": false,
+    "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
+  },
+  "visibleTriangleCounts": {
+    "hull": 3764,
+    "turret": 2236
+  },
+  "alphaTested": 2,
+  "hullBounds": {
+    "min": [
+      -1.4352669715881348,
+      -3.3638756275177
+    ],
+    "max": [
+      1.44392728805542,
+      2.8626627922058105
+    ]
+  },
+  "turretBounds": {
+    "min": [
+      -1.3504959344863892,
+      -1.6280380487442017
+    ],
+    "max": [
+      1.3504959344863892,
+      1.4086484909057617
+    ]
+  },
+  "gunBounds": {
+    "min": [
+      -0.12719649076461792,
+      1.6325572729110718
+    ],
+    "max": [
+      0.14291168749332428,
+      5.502773284912109
+    ]
+  },
+  "turretPivot": {
+    "x": 160.25,
+    "y": 173.61
+  },
+  "turretRaster": {
+    "logicalMinX": 98.73,
+    "logicalMinY": -77.53,
+    "logicalMaxX": 220.88,
+    "logicalMaxY": 244.96,
+    "pixelWidth": 244,
+    "pixelHeight": 645,
+    "pivotX": 61.52,
+    "pivotY": 251.14
+  },
+  "fit": {
+    "scale": 45.22577088868336,
+    "tx": 159.80416525581353,
+    "ty": 171.33386842814144
+  },
+  "assets": {
+    "hullWebp": 36542,
+    "turretWebp": 24364
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "desaturate": 0.75,
+    "shading": "baseColor x occlusion x normal-z relief (restrained)",
+    "determinism": "pure arithmetic; same input -> same output"
+  }
+}

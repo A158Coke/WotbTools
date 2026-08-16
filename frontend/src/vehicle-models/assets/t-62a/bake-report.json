@@ -1,0 +1,107 @@
+{
+  "tankId": 13825,
+  "modelKey": "t-62a",
+  "kind": "turreted",
+  "sourceModel": {
+    "glbBytes": 3375168
+  },
+  "selectedModules": {
+    "turretId": 26113,
+    "gunId": 26881,
+    "trackId": 31489,
+    "turretModelId": 1,
+    "gunModelId": 1
+  },
+  "output": {
+    "physicalPixelSize": [
+      640,
+      640
+    ],
+    "logicalViewBox": "0 0 320 320",
+    "supersample": 2
+  },
+  "materials": [
+    "R87_T62A_mtr",
+    "R87_T62A_track_mtr"
+  ],
+  "texturesUsed": [
+    "R87_T62A_mtr",
+    "R87_T62A_mtr",
+    "R87_T62A_mtr",
+    "R87_T62A_track_mtr",
+    "R87_T62A_track_mtr",
+    "R87_T62A_track_mtr"
+  ],
+  "uvSetsUsed": [
+    "TEXCOORD_0"
+  ],
+  "metallicRoughness": {
+    "present": true,
+    "used": false,
+    "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
+  },
+  "visibleTriangleCounts": {
+    "hull": 3907,
+    "turret": 2593
+  },
+  "alphaTested": 1,
+  "hullBounds": {
+    "min": [
+      -1.6908177137374878,
+      -3.4156274795532227
+    ],
+    "max": [
+      1.6908177137374878,
+      3.2900428771972656
+    ]
+  },
+  "turretBounds": {
+    "min": [
+      -1.3024343252182007,
+      -1.3571016788482666
+    ],
+    "max": [
+      1.3021084070205688,
+      1.7134760618209839
+    ]
+  },
+  "gunBounds": {
+    "min": [
+      -0.14323334395885468,
+      1.8581119775772095
+    ],
+    "max": [
+      0.14323334395885468,
+      5.92548942565918
+    ]
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 153.57
+  },
+  "turretRaster": {
+    "logicalMinX": 105.31,
+    "logicalMinY": -86.2,
+    "logicalMaxX": 214.68,
+    "logicalMaxY": 219.63,
+    "pixelWidth": 219,
+    "pixelHeight": 612,
+    "pivotX": 54.69,
+    "pivotY": 239.77
+  },
+  "fit": {
+    "scale": 41.99431004187641,
+    "tx": 160,
+    "ty": 162.63691936391092
+  },
+  "assets": {
+    "hullWebp": 36928,
+    "turretWebp": 13430
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "desaturate": 0.75,
+    "shading": "baseColor x occlusion x normal-z relief (restrained)",
+    "determinism": "pure arithmetic; same input -> same output"
+  }
+}

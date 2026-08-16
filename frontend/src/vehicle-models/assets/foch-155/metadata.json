@@ -1,0 +1,51 @@
+{
+  "modelKey": "foch-155",
+  "kind": "turretless",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 13889,
+    "modelGlb": "https://api.blitzkit.app/tanks/13889/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "physicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.797044038772583,
+        -4.216423511505127
+      ],
+      "max": [
+        1.8465654850006104,
+        6.60983419418335
+      ]
+    },
+    "turretBounds": null,
+    "gunBounds": null,
+    "turretRaster": null,
+    "selectedModules": {
+      "turretId": 18497,
+      "gunId": 19265,
+      "trackId": 23617,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "F64_AMX_50FOsh_155_mtr",
+      "F64_AMX_50FOsh_155_mtr",
+      "F64_AMX_50FOsh_155_mtr",
+      "F64_AMX_50FOsh_155_track_mtr",
+      "F64_AMX_50FOsh_155_track_mtr",
+      "F64_AMX_50FOsh_155_track_mtr"
+    ],
+    "desaturate": 0.75,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}

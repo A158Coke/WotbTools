@@ -1,0 +1,107 @@
+{
+  "tankId": 11825,
+  "modelKey": "bz-75",
+  "kind": "turreted",
+  "sourceModel": {
+    "glbBytes": 3098160
+  },
+  "selectedModules": {
+    "turretId": 16433,
+    "gunId": 19249,
+    "trackId": 19249,
+    "turretModelId": 1,
+    "gunModelId": 1
+  },
+  "output": {
+    "physicalPixelSize": [
+      640,
+      640
+    ],
+    "logicalViewBox": "0 0 320 320",
+    "supersample": 2
+  },
+  "materials": [
+    "Ch48_BZ_75_mtr",
+    "Ch48_BZ_75_track_mtr"
+  ],
+  "texturesUsed": [
+    "Ch48_BZ_75_mtr",
+    "Ch48_BZ_75_mtr",
+    "Ch48_BZ_75_mtr",
+    "Ch48_BZ_75_track_mtr",
+    "Ch48_BZ_75_track_mtr",
+    "Ch48_BZ_75_track_mtr"
+  ],
+  "uvSetsUsed": [
+    "TEXCOORD_0"
+  ],
+  "metallicRoughness": {
+    "present": true,
+    "used": false,
+    "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
+  },
+  "visibleTriangleCounts": {
+    "hull": 6291,
+    "turret": 2361
+  },
+  "alphaTested": 1,
+  "hullBounds": {
+    "min": [
+      -1.7072569131851196,
+      -3.4549551010131836
+    ],
+    "max": [
+      1.7072569131851196,
+      3.7260890007019043
+    ]
+  },
+  "turretBounds": {
+    "min": [
+      -1.65414297580719,
+      -1.479561686515808
+    ],
+    "max": [
+      1.6541433334350586,
+      2.523249626159668
+    ]
+  },
+  "gunBounds": {
+    "min": [
+      -0.12035919725894928,
+      2.5324788093566895
+    ],
+    "max": [
+      0.11928629875183105,
+      5.011777400970459
+    ]
+  },
+  "turretPivot": {
+    "x": 159.98,
+    "y": 124.42
+  },
+  "turretRaster": {
+    "logicalMinX": 95.13,
+    "logicalMinY": -41.85,
+    "logicalMaxX": 224.87,
+    "logicalMaxY": 212.7,
+    "pixelWidth": 260,
+    "pixelHeight": 510,
+    "pivotX": 64.85,
+    "pivotY": 166.27
+  },
+  "fit": {
+    "scale": 39.214353234892954,
+    "tx": 160,
+    "ty": 154.68382974182623
+  },
+  "assets": {
+    "hullWebp": 31818,
+    "turretWebp": 18450
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "desaturate": 0.75,
+    "shading": "baseColor x occlusion x normal-z relief (restrained)",
+    "determinism": "pure arithmetic; same input -> same output"
+  }
+}

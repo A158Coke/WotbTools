@@ -1,0 +1,77 @@
+{
+  "tankId": 12049,
+  "modelKey": "jgpz-e-100",
+  "kind": "turretless",
+  "sourceModel": {
+    "glbBytes": 3164532
+  },
+  "selectedModules": {
+    "turretId": 22801,
+    "gunId": 18193,
+    "trackId": 28433,
+    "turretModelId": 1,
+    "gunModelId": 4
+  },
+  "output": {
+    "physicalPixelSize": [
+      640,
+      640
+    ],
+    "logicalViewBox": "0 0 320 320",
+    "supersample": 2
+  },
+  "materials": [
+    "JagdPz_E100_mtr",
+    "JagdPz_E100_track_mtr"
+  ],
+  "texturesUsed": [
+    "JagdPz_E100_mtr",
+    "JagdPz_E100_mtr",
+    "JagdPz_E100_mtr",
+    "JagdPz_E100_track_mtr",
+    "JagdPz_E100_track_mtr",
+    "JagdPz_E100_track_mtr"
+  ],
+  "uvSetsUsed": [
+    "TEXCOORD_0"
+  ],
+  "metallicRoughness": {
+    "present": true,
+    "used": false,
+    "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
+  },
+  "visibleTriangleCounts": {
+    "hull": 5993,
+    "turret": null
+  },
+  "alphaTested": 1,
+  "hullBounds": {
+    "min": [
+      -2.2397661209106445,
+      -4.267731666564941
+    ],
+    "max": [
+      2.2390758991241455,
+      7.309948444366455
+    ]
+  },
+  "turretBounds": null,
+  "gunBounds": null,
+  "turretPivot": null,
+  "turretRaster": null,
+  "fit": {
+    "scale": 24.322661992890904,
+    "tx": 160.00839401560657,
+    "ty": 123.00259480221604
+  },
+  "assets": {
+    "hullWebp": 25030,
+    "turretWebp": null
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "desaturate": 0.75,
+    "shading": "baseColor x occlusion x normal-z relief (restrained)",
+    "determinism": "pure arithmetic; same input -> same output"
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "tankId": 17793,
+  "modelKey": "rinoceronte",
+  "kind": "turreted",
+  "sourceModel": {
+    "glbBytes": 3303756
+  },
+  "selectedModules": {
+    "turretId": 26497,
+    "gunId": 29825,
+    "trackId": 27009,
+    "turretModelId": 1,
+    "gunModelId": 1
+  },
+  "output": {
+    "physicalPixelSize": [
+      640,
+      640
+    ],
+    "logicalViewBox": "0 0 320 320",
+    "supersample": 2
+  },
+  "materials": [
+    "It115_Rinoceronte_mtr",
+    "It115_Rinoceronte_track_mtr"
+  ],
+  "texturesUsed": [
+    "It115_Rinoceronte_mtr",
+    "It115_Rinoceronte_mtr",
+    "It115_Rinoceronte_mtr",
+    "It115_Rinoceronte_track_mtr",
+    "It115_Rinoceronte_track_mtr",
+    "It115_Rinoceronte_track_mtr"
+  ],
+  "uvSetsUsed": [
+    "TEXCOORD_0"
+  ],
+  "metallicRoughness": {
+    "present": true,
+    "used": false,
+    "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
+  },
+  "visibleTriangleCounts": {
+    "hull": 4910,
+    "turret": 1570
+  },
+  "alphaTested": 1,
+  "hullBounds": {
+    "min": [
+      -1.631725549697876,
+      -3.64778470993042
+    ],
+    "max": [
+      1.631725549697876,
+      3.67352557182312
+    ]
+  },
+  "turretBounds": {
+    "min": [
+      -1.4425820112228394,
+      -1.5915794372558594
+    ],
+    "max": [
+      1.4424200057983398,
+      1.661021113395691
+    ]
+  },
+  "gunBounds": {
+    "min": [
+      -0.17718680202960968,
+      2.5113048553466797
+    ],
+    "max": [
+      0.17823942005634308,
+      6.614188194274902
+    ]
+  },
+  "turretPivot": {
+    "x": 160.01,
+    "y": 144
+  },
+  "turretRaster": {
+    "logicalMinX": 104.51,
+    "logicalMinY": -94.9,
+    "logicalMaxX": 215.48,
+    "logicalMaxY": 220.72,
+    "pixelWidth": 222,
+    "pixelHeight": 632,
+    "pivotX": 55.5,
+    "pivotY": 238.9
+  },
+  "fit": {
+    "scale": 38.46306045815525,
+    "tx": 160,
+    "ty": 159.50496383638801
+  },
+  "assets": {
+    "hullWebp": 32694,
+    "turretWebp": 15782
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "desaturate": 0.75,
+    "shading": "baseColor x occlusion x normal-z relief (restrained)",
+    "determinism": "pure arithmetic; same input -> same output"
+  }
+}

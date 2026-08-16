@@ -1,0 +1,107 @@
+{
+  "tankId": 20097,
+  "modelKey": "felice",
+  "kind": "turreted",
+  "sourceModel": {
+    "glbBytes": 3017120
+  },
+  "selectedModules": {
+    "turretId": 28801,
+    "gunId": 33665,
+    "trackId": 30593,
+    "turretModelId": 1,
+    "gunModelId": 1
+  },
+  "output": {
+    "physicalPixelSize": [
+      640,
+      640
+    ],
+    "logicalViewBox": "0 0 320 320",
+    "supersample": 2
+  },
+  "materials": [
+    "It35_Felice_mtr",
+    "It35_Felice_track_mtr"
+  ],
+  "texturesUsed": [
+    "It35_Felice_mtr",
+    "It35_Felice_mtr",
+    "It35_Felice_mtr",
+    "It35_Felice_track_mtr",
+    "It35_Felice_track_mtr",
+    "It35_Felice_track_mtr"
+  ],
+  "uvSetsUsed": [
+    "TEXCOORD_0"
+  ],
+  "metallicRoughness": {
+    "present": true,
+    "used": false,
+    "reason": "顶视中性 bake 无 specular——MR 对当前视觉无收益（§5）"
+  },
+  "visibleTriangleCounts": {
+    "hull": 6660,
+    "turret": 2274
+  },
+  "alphaTested": 1,
+  "hullBounds": {
+    "min": [
+      -1.578112006187439,
+      -3.917149066925049
+    ],
+    "max": [
+      1.5781116485595703,
+      3.5987727642059326
+    ]
+  },
+  "turretBounds": {
+    "min": [
+      -1.5413188934326172,
+      -2.2063376903533936
+    ],
+    "max": [
+      1.5426342487335205,
+      2.167804718017578
+    ]
+  },
+  "gunBounds": {
+    "min": [
+      -0.11875343322753906,
+      2.5707361698150635
+    ],
+    "max": [
+      0.11890837550163269,
+      6.7848334312438965
+    ]
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 152.42
+  },
+  "turretRaster": {
+    "logicalMinX": 102.25,
+    "logicalMinY": -88.24,
+    "logicalMaxX": 217.8,
+    "logicalMaxY": 248.63,
+    "pixelWidth": 231,
+    "pixelHeight": 674,
+    "pivotX": 57.75,
+    "pivotY": 240.66
+  },
+  "fit": {
+    "scale": 37.46712729682892,
+    "tx": 160.00000669964444,
+    "ty": 165.96432273113544
+  },
+  "assets": {
+    "hullWebp": 27720,
+    "turretWebp": 14588
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "desaturate": 0.75,
+    "shading": "baseColor x occlusion x normal-z relief (restrained)",
+    "determinism": "pure arithmetic; same input -> same output"
+  }
+}

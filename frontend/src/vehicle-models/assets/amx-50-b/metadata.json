@@ -1,0 +1,92 @@
+{
+  "modelKey": "amx-50-b",
+  "kind": "turreted",
+  "source": {
+    "provider": "blitzkit",
+    "tankId": 6209,
+    "modelGlb": "https://api.blitzkit.app/tanks/6209/model.glb",
+    "modelDefinitions": "https://api.blitzkit.app/definitions/models.pb"
+  },
+  "turretPivot": {
+    "x": 160,
+    "y": 159.74
+  },
+  "turretRaster": {
+    "logicalMinX": 103.11,
+    "logicalMinY": -119.61,
+    "logicalMaxX": 216.89,
+    "logicalMaxY": 263.24,
+    "pixelWidth": 228,
+    "pixelHeight": 766,
+    "pivotX": 56.89,
+    "pivotY": 279.35
+  },
+  "generation": {
+    "method": "blitzkit-model-topdown-texture-bake",
+    "viewBox": "0 0 320 320",
+    "physicalPixelSize": [
+      640,
+      640
+    ],
+    "hullBounds": {
+      "min": [
+        -1.7229690551757812,
+        -4.073575496673584
+      ],
+      "max": [
+        1.7229669094085693,
+        3.393326997756958
+      ]
+    },
+    "turretBounds": {
+      "min": [
+        -1.5084149837493896,
+        -0.8711128234863281
+      ],
+      "max": [
+        1.5084149837493896,
+        1.7097628116607666
+      ]
+    },
+    "gunBounds": {
+      "min": [
+        -0.22774605453014374,
+        2.3885514736175537
+      ],
+      "max": [
+        0.22773505747318268,
+        7.754372596740723
+      ]
+    },
+    "turretRaster": {
+      "logicalMinX": 103.11,
+      "logicalMinY": -119.61,
+      "logicalMaxX": 216.89,
+      "logicalMaxY": 263.24,
+      "pixelWidth": 228,
+      "pixelHeight": 766,
+      "pivotX": 56.89,
+      "pivotY": 279.35
+    },
+    "selectedModules": {
+      "turretId": 9281,
+      "gunId": 5697,
+      "trackId": 11329,
+      "turretModelId": 1,
+      "gunModelId": 1
+    },
+    "texturesUsed": [
+      "AMX_50B_mtr",
+      "AMX_50B_mtr",
+      "AMX_50B_mtr",
+      "AMX50_track_mtr",
+      "AMX50_track_mtr",
+      "AMX50_track_mtr"
+    ],
+    "desaturate": 0.75,
+    "fidelity": "high",
+    "geometryScale": "faithful",
+    "visibleDetailRetentionTarget": 0.9,
+    "notes": "Source-faithful PBR top-view asset：真实 LOD0 geometry + 内嵌纹理确定性 bake；几何上限 = BlitzKit/WoTB LOD0 source；无 AI/manual 细节；runtime 可读性由 PR2 LOD/outline/label 解决"
+  }
+}
