@@ -93,10 +93,23 @@
       surface-edge 壁高、bump 分量判据、classifyDetail 分级、faithful scale（gun 宽度无夸大）、
       fidelity 契约等 14 类用例——extractor 59 用例，全套 447 全绿。
     - 32 行 spec 重写为 "Asset fidelity first. Runtime readability handled later."。
-    hull 3800 顶点（hull+tracks）、turret 638、gun 625；turretPivot=(160.00,193.23)（真实
-    turret_origin 投影）；hull 比例 1:2.43 与真实 Maus 一致；gun 炮管溢出 viewBox 顶部（contract §5）。
-  - 新增 extractor 契约测试（15 用例：坐标转换/fit/凸包/资产契约/pivot 稳定性/确定性，CI 不联网）；
-    新增依赖（devDeps）：three / protobufjs / @gltf-transform/core（BlitzKit 同款 GLTF 库）。
+  - **视觉表面合并 + 遮挡过滤（2026-08-18，Maus High-Fidelity Gate Blocker 1/2/4）**：
+    - mergeVisualSurfaces：model.glb 的 triangle tessellation / low-poly topology 按共享 3D 边 +
+      法线差 ≤20° + 高度差 ≤0.4m 合并为视觉连续表面——连续 roof/deck/环带斜面是一个/少量
+      polygon，绝不输出三角马赛克（Maus turret ring 61→6 表面、roof 297→34、deck 205→79）；
+      真实结构分离（height step / vertical wall / gap / strong normal break / isolated feature）
+      保持独立表面——hatch/cupola/台阶带/面板自然成为独立表面，删除 zMean 切斜面机制；
+    - filterOccludedSurfaces：俯视可见性顶层优先，被高处表面完全覆盖的 hidden geometry
+      （甲板下方的裙板固定件等）剔除（Maus hull 122→31 表面、turret 22→19）；
+    - Maus 资产：hull.svg 6.4KB 36 paths（primary 6 / secondary 6 / micro 24）、
+      turret.svg 7.2KB 24 paths（primary 7 / secondary 9 / micro 8）——
+      turret 屋顶单一连续区域（无面片块马赛克）、环带合并为两条、甲板/glacis/后带/舱盖/
+      cupola/侧裙板条等真实结构保留；
+    - extraction-report 增加 merge 统计（rawProjectedRegions / mergedVisualSurfaces /
+      tessellationRegionsMerged / retainedRegions / removedTinyRegions）；
+      debug 增加 merged-visual-surfaces.svg；
+    - 测试：bump 相关用例全部替换为 merge 语义（共面合并/斜面合并/台阶分离/隔离凸起/
+      小凸起保留/遮挡过滤/确定性/无旧 bump 色）——extractor 61 用例，全套 449 全绿。
   - 人工/ChatGPT 只做 visual QA（admin 预览页验证 pivot/方向/结构）；AI 手绘草稿归档
     docs/assets/tier-x-models/manual-draft/（不参与正式流程）；AI 手绘 metadata 字段移除。
 

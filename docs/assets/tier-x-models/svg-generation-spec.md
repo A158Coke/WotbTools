@@ -69,9 +69,17 @@ frontend/src/vehicle-models/assets/<modelKey>/
 - **细节默认保留**（visible top-view structural detail retention target ≥ 90%）：
   真实 top-view 可见结构默认保留；只删除 sub-pixel 微小 / hidden / internal / duplicate /
   LOD & extraction artifact / 极小 bolt-hook-handle / 单个微小 track tooth / 无视觉贡献的 mesh seam。
-- **凸起判据**（bumpHeightDeltaM）：层内凸起分量（共享边连通）与外界的高度不连续或完全隔离
-  → 真实 hatch / cupola / 台阶带；连续斜面面片（tessellation）剔除。不做 relative-ratio 过滤
-  （真实 hatch 只占屋顶 3–5% 也保留）。
+- **视觉表面合并**（mergeVisualSurfaces，Blocker 1/2/4）：model.glb 的 triangle tessellation /
+  low-poly topology 按「共享 3D 边 + 法线差 ≤ mergeAngleDeg(20°) + 高度差 ≤ mergeHeightDeltaM(0.4m)」
+  合并为视觉连续表面——连续 roof / deck / 环带斜面是一个/少量 polygon，绝不输出三角马赛克
+  （Maus turret ring 61 面 → 6 表面、roof 297 面 → 34 表面、deck 205 面 → 79 表面；
+  合并后再经遮挡过滤 → turret 19 表面、hull 31 表面）。
+  只有真实结构分离才拆：height step / vertical wall / physical gap / node boundary /
+  strong normal discontinuity / isolated raised-recessed feature。
+- **遮挡过滤**（filterOccludedSurfaces）：俯视可见性 = 顶层优先——被更高处表面完全覆盖的
+  hidden geometry（甲板下方的裙板固定件等）剔除；部分可见的表面保留。
+- **凸起/面板**：真实 hatch / cupola / 台阶带 / 面板 = 合并后与主面分离的独立表面
+  （自然分离，无需 zMean 切斜面）；不做 relative-ratio 过滤（真实 hatch 只占屋顶 3–5% 也保留）。
 - **结构边**：真实 component / height / normal boundary 默认保留（无数量上限）；
   删除 duplicate / overlapping / tessellation 对角线 / 内部三角剖分线。
   surface-edge 需要显著壁高（> heightDeltaM）——低模斜面网格的面片台阶壁不算。
@@ -81,7 +89,7 @@ frontend/src/vehicle-models/assets/<modelKey>/
   major panel boundaries；micro = 小型 hatch/small roof features/minor structures）。
 - **simplifyRing 退化修复**：polygon-clipping 输出的 ring 可能含相邻/闭合重复点，先去重再简化，
   防止真实角点被误删导致带状结构塌成细条/发丝线；asset-space 过滤基于简化后的 ring。
-- **绘制顺序**：hull = 轮廓 → 主面 → 履带（深色侧带，覆盖在主面之上可见）→ 凸起 → 结构边。
+- **绘制顺序**：hull = 轮廓 → 主面（按 z 升序）→ 履带（深色侧带）→ 结构边。
 - 阈值全集记录在 metadata.json 的 generation.detailThresholds（非 Maus 专属）。
 
 ## 7. metadata.json 契约（geometry-source schema，任务 12）

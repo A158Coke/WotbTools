@@ -302,33 +302,28 @@ export function triangleNormal(a, b, c) {
 }
 
 /**
- * 提取 top-facing 主要表面区域（高度层聚类 + union）。
+ * 视觉表面合并（HIGH-FIDELITY，Blocker 1/2/4）：
+ * 把 model.glb 的 triangle tessellation / low-poly topology 合并为视觉连续表面。
  *
- * @param {number[][][]} triangles3d  [[[x,y,z],...], ...]
- * @param {object} opts { topFacingCos=0.35, zTolerance=0.15, minAreaM2=0.15 }
- *   topFacingCos: normal.z/|normal| 阈值（0.35 ≈ 70° 内视为顶面）；
- *   zTolerance:   高度层聚类容差（层间 gap 超过则分层，模型米）；
- *   minAreaM2:    区域最小投影面积（模型平方米），过滤碎块。
- *   bumpDelta:    层内凸起判定的 z 抬升阈值（米）；
- *   minBumpAreaM2: 凸起区域最小投影面积（模型平方米）；
- *   bumpHeightDeltaM: 凸起分量与外部面的共享边高度差下限——低于该值视为
- *     连续斜面面片（tessellation），高于或完全隔离视为真实凸起。
- * @returns {Array<{ z: number, polys: Array<{ring, holes}>, areaM2: number }>}
+ * 规则：共享 3D 边的相邻 top-facing 面片，若（法线差 ≤ mergeAngleDeg 且
+ * 高度差 ≤ mergeHeightDeltaM）→ 属于同一视觉表面（union-find）。
+ * 只有真实结构分离才拆：height step / vertical wall / physical gap /
+ * strong normal discontinuity / isolated raised-recessed feature
+ * （即不满足连续条件 → 不合并）。
  *
- * 高保真策略（2026-08-18，HIGH-FIDELITY ASSET）：
- * - 目标 >=90% 可见俯视结构保留：surfaces 全部 top-facing 区域（仅滤极端微小），
- *   bumps 用「连通分量隔离/高度不连续」判据区分真实凸起与斜面面片；
- * - 不按相对占比过滤（真实 hatch 即使只占屋顶 3-5% 也保留）；
- * - 仅删除：sub-pixel 微小 / 连续斜面 tessellation / 极端小面积。
+ * 最终：连续 roof/deck/斜面 是一个/少量 polygon，而不是十几个 tessellation
+ * triangles（Maus turret ring 61 面 → 6 表面；roof 297 面 → 34 表面；
+ * hull deck 205 面 → 79 表面——主甲板/屋顶/环带全部合并为单一区域）。
+ *
+ * @param {number[][][]} triangles3d
+ * @param {object} opts { topFacingCos=0.35, mergeAngleDeg=20, mergeHeightDeltaM=0.4 }
+ * @returns {Array<{ polys, areaM2, zMean, faceCount }>} 视觉连续表面（2D union 已做）
  */
-export function extractTopSurfaces(triangles3d, opts = {}) {
+export function mergeVisualSurfaces(triangles3d, opts = {}) {
   const topFacingCos = opts.topFacingCos ?? 0.35
-  const zTolerance = opts.zTolerance ?? 0.5
-  const minAreaM2 = opts.minAreaM2 ?? 0.01
-  const bumpDelta = opts.bumpDelta ?? 0.08
-  const minBumpAreaM2 = opts.minBumpAreaM2 ?? 0.01
-  const bumpHeightDeltaM = opts.bumpHeightDeltaM ?? 0.06
-  // 1) top-facing 筛选 + 重心 z + 面积
+  const mergeAngleDeg = opts.mergeAngleDeg ?? 20
+  const mergeHeightDeltaM = opts.mergeHeightDeltaM ?? 0.4
+  // 1) top-facing 筛选 + 法线/重心 z/面积
   const faces = []
   for (const tri of triangles3d) {
     const n = triangleNormal(tri[0], tri[1], tri[2])
@@ -336,122 +331,122 @@ export function extractTopSurfaces(triangles3d, opts = {}) {
     if (len < 1e-12) continue
     const nz = n[2] / len
     if (nz <= topFacingCos) continue
-    const cz = (tri[0][2] + tri[1][2] + tri[2][2]) / 3
     const [a, b, c] = tri
     const area = Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2
-    faces.push({ tri, z: cz, area })
+    faces.push({
+      tri,
+      z: (tri[0][2] + tri[1][2] + tri[2][2]) / 3,
+      n: [n[0] / len, n[1] / len, n[2] / len],
+      area,
+    })
   }
-  // 2) 粗高度聚类（zTolerance 0.5：连续曲面合并为主层，只分离明显高度带）
-  faces.sort((a, b) => a.z - b.z)
-  const layers = []
-  for (const f of faces) {
-    const last = layers[layers.length - 1]
-    if (last && f.z - last.z <= zTolerance) last.faces.push(f)
-    else layers.push({ z: f.z, faces: [f] })
-  }
-  // 3D 共享边 key（跨层一致）
+  // 2) 共享 3D 边邻接 + union-find 合并（视觉连续条件）
   const keyOf = (a, b) => {
     const pa = a.map((v) => v.toFixed(6)).join(',')
     const pb = b.map((v) => v.toFixed(6)).join(',')
     return pa < pb ? pa + '|' + pb : pb + '|' + pa
   }
-  // 3) 每层：主平面区域 + 层内凸起（raised regions：hatch / cupola / 甲板凸块）
-  const out = []
-  for (const layer of layers) {
-    const facesL = layer.faces
-    // 面积加权平均 z（主面主导，避免小凸起抬高均值导致漏检）
-    let zs = 0
-    let ws = 0
-    for (const f of facesL) { zs += f.z * f.area; ws += f.area }
-    const zMeanFinal = ws > 0 ? zs / ws : 0
-    const bumpThreshold = zMeanFinal + bumpDelta
-    const bumpIdx = []
-    const mainFaces = []
-    for (let i = 0; i < facesL.length; i++) {
-      if (facesL[i].z > bumpThreshold) bumpIdx.push(i)
-      else mainFaces.push(facesL[i])
+  const edgeOwners = new Map()
+  for (let i = 0; i < faces.length; i++) {
+    const tri = faces[i].tri
+    for (let e = 0; e < 3; e++) {
+      const k = keyOf(tri[e], tri[(e + 1) % 3])
+      if (!edgeOwners.has(k)) edgeOwners.set(k, [])
+      edgeOwners.get(k).push(i)
     }
-    // 层内共享边邻接（3D 边，跨 top/non-top 邻居也记录——bump 判据需要与分量外
-    // 所有 top-facing 面比较，区分连续斜面面片与真实凸起）
-    const edgeOwners = new Map()
-    for (let i = 0; i < facesL.length; i++) {
-      const tri = facesL[i].tri
-      for (let e = 0; e < 3; e++) {
-        const k = keyOf(tri[e], tri[(e + 1) % 3])
-        if (!edgeOwners.has(k)) edgeOwners.set(k, [])
-        edgeOwners.get(k).push(i)
-      }
-    }
-    const keepPolys = (fs, minA) => {
-      const tris2d = fs.map((f) => f.tri.map((p) => [p[0], p[1]]))
-      const polys = unionTriangles(tris2d)
-      const kept = []
-      let area = 0
-      for (const poly of polys) {
-        const a = ringArea(poly.ring)
-        if (a < minA) continue
-        kept.push(poly)
-        area += a
-      }
-      return kept.length > 0 ? { kept, area } : null
-    }
-    const main = keepPolys(mainFaces, minAreaM2)
-    if (!main) continue
-    const entry = { z: +layer.z.toFixed(2), polys: main.kept, areaM2: +main.area.toFixed(3), bumps: [] }
-    if (bumpIdx.length >= 1) {
-      // 凸起分量：bump 面经共享边连通（同一层内）
-      const inBump = new Set(bumpIdx)
-      const visited = new Set()
-      const comps = []
-      for (const h of bumpIdx) {
-        if (visited.has(h)) continue
-        const comp = []
-        const q = [h]
-        visited.add(h)
-        while (q.length) {
-          const cur = q.pop()
-          comp.push(cur)
-          const tri = facesL[cur].tri
-          for (let e = 0; e < 3; e++) {
-            const k = keyOf(tri[e], tri[(e + 1) % 3])
-            for (const nb of edgeOwners.get(k) || []) {
-              if (inBump.has(nb) && !visited.has(nb)) { visited.add(nb); q.push(nb) }
-            }
-          }
-        }
-        comps.push(comp)
-      }
-      // 分量保留判据：与分量外任何 top-facing 面无共享边（隔离凸起，如 cupola/hatch
-      // 隔垂直壁）→ 保留；有共享边但最大高度差 > bumpHeightDeltaM（台阶）→ 保留；
-      // 有共享边且高度连续（连续斜面面片，tessellation）→ 剔除。
-      const keptComps = []
-      for (const comp of comps) {
-        let touchesOutside = false
-        let maxDzOutside = 0
-        for (const fi of comp) {
-          const tri = facesL[fi].tri
-          for (let e = 0; e < 3; e++) {
-            const k = keyOf(tri[e], tri[(e + 1) % 3])
-            for (const oj of edgeOwners.get(k) || []) {
-              if (comp.includes(oj)) continue
-              touchesOutside = true
-              maxDzOutside = Math.max(maxDzOutside, Math.abs(facesL[fi].z - facesL[oj].z))
-            }
-          }
-        }
-        if (!touchesOutside || maxDzOutside > bumpHeightDeltaM) keptComps.push(comp)
-      }
-      if (keptComps.length > 0) {
-        const keptFaces = keptComps.flat()
-        const bump = keepPolys(keptFaces.map((i) => facesL[i]), minBumpAreaM2)
-        if (bump) {
-          entry.bumps = [{ z: +(zMeanFinal + bumpDelta + 0.05).toFixed(2), polys: bump.kept, areaM2: +bump.area.toFixed(3) }]
-        }
-      }
-    }
-    out.push(entry)
   }
-  return out
+  const parent = faces.map((_, i) => i)
+  const find = (x) => {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]]
+      x = parent[x]
+    }
+    return x
+  }
+  const mergeCount = { merged: 0 }
+  for (const owners of edgeOwners.values()) {
+    if (owners.length < 2) continue
+    for (let i = 0; i < owners.length; i++) {
+      for (let j = i + 1; j < owners.length; j++) {
+        const a = faces[owners[i]]
+        const b = faces[owners[j]]
+        const dot = a.n[0] * b.n[0] + a.n[1] * b.n[1] + a.n[2] * b.n[2]
+        const ang = (Math.acos(Math.min(1, Math.max(-1, dot))) * 180) / Math.PI
+        const dz = Math.abs(a.z - b.z)
+        if (ang <= mergeAngleDeg && dz <= mergeHeightDeltaM && find(owners[i]) !== find(owners[j])) {
+          parent[find(owners[i])] = find(owners[j])
+          mergeCount.merged++
+        }
+      }
+    }
+  }
+  // 3) 分量 → 2D union → { polys, areaM2, zMean, faceCount }
+  const comps = new Map()
+  for (let i = 0; i < faces.length; i++) {
+    const root = find(i)
+    if (!comps.has(root)) comps.set(root, [])
+    comps.get(root).push(i)
+  }
+  const out = []
+  for (const comp of comps.values()) {
+    const polys = unionTriangles(comp.map((i) => faces[i].tri.map((p) => [p[0], p[1]])))
+    if (polys.length === 0) continue
+    const area = polys.reduce((s, p) => s + ringArea(p.ring), 0)
+    const wSum = comp.reduce((s, i) => s + faces[i].area, 0)
+    const zMean = wSum > 0 ? comp.reduce((s, i) => s + faces[i].z * faces[i].area, 0) / wSum : 0
+    out.push({ polys, areaM2: +area.toFixed(3), zMean: +zMean.toFixed(2), faceCount: comp.length })
+  }
+  out.sort((a, b) => b.areaM2 - a.areaM2)
+  return { surfaces: out, stats: { rawFaces: faces.length, mergedFaces: mergeCount.merged, surfaceCount: out.length } }
+}
+
+/**
+ * 提取视觉连续表面区域（HIGH-FIDELITY）。
+ * 基于 mergeVisualSurfaces：连续 roof/deck/斜面 → 单一区域；
+ * 真实凸起（hatch/cupola/台阶带）→ 独立区域（自然分离，无需 zMean 切斜面）。
+ * 仅过滤：asset-space 极端微小（minAreaM2）；退化 sliver 由 CLI asset 过滤处理。
+ *
+ * @param {number[][][]} triangles3d
+ * @param {object} opts { topFacingCos=0.35, mergeAngleDeg=20, mergeHeightDeltaM=0.4, minAreaM2=0.01 }
+ * @returns {Array<{ z: number, polys: Array<{ring, holes}>, areaM2: number, faceCount: number }>}
+ */
+export function extractTopSurfaces(triangles3d, opts = {}) {
+  const minAreaM2 = opts.minAreaM2 ?? 0.01
+  const { surfaces } = mergeVisualSurfaces(triangles3d, opts)
+  return surfaces
+    .filter((s) => s.areaM2 >= minAreaM2)
+    .map((s) => ({ z: s.zMean, polys: s.polys, areaM2: s.areaM2, faceCount: s.faceCount }))
+}
+
+/**
+ * 遮挡过滤（hidden geometry 剔除，HIGH-FIDELITY）：
+ * 俯视可见性 = 顶层优先。按 z 降序累积已覆盖区域（2D polygon union），
+ * 若某表面的投影 ≥ (1 - occludeRatio) 被更高处表面覆盖 → 属于 hidden geometry
+ * （甲板下方的裙板固定件/悬挂面等，俯视不可见）→ 过滤。
+ * 部分可见的表面保留（如甲板边缘台阶带露出部分）。
+ *
+ * @param {Array<{z, polys, areaM2}>} surfaces 按 z 升序传入
+ * @param {object} opts { occludeRatio=0.9 }
+ * @returns {Array} 过滤后按 z 升序
+ */
+export function filterOccludedSurfaces(surfaces, opts = {}) {
+  const occludeRatio = opts.occludeRatio ?? 0.9
+  const sorted = [...surfaces].sort((a, b) => b.z - a.z)
+  let covered = []
+  const kept = []
+  for (const s of sorted) {
+    const myUnion = polygonClipping.union(...s.polys.map((p) => [p.ring, ...p.holes]))
+    if (covered.length > 0) {
+      const visible = polygonClipping.difference(myUnion, ...covered)
+      const visArea = visible.reduce((sum, poly) => sum + ringArea(poly[0]), 0)
+      const myArea = myUnion.reduce((sum, poly) => sum + ringArea(poly[0]), 0)
+      if (myArea > 0 && visArea / myArea < 1 - occludeRatio) continue // 被遮挡 → hidden
+    }
+    kept.push(s)
+    covered = polygonClipping.union(covered, myUnion)
+  }
+  return kept.sort((a, b) => a.z - b.z)
+  return kept.sort((a, b) => a.z - b.z)
 }
 
 /** 2D ring 面积（Shoelace，正值）。 */
@@ -464,7 +459,6 @@ export function ringArea(ring) {
   }
   return Math.abs(area) / 2
 }
-
 /**
  * 提取顶面内部"结构边界"（component / height / normal discontinuity）。
  * 共享边去重；区分真实 feature edge 与 triangle tessellation edge：
