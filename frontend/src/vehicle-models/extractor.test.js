@@ -17,23 +17,28 @@ import {
   buildMetadata,
   classifyDetail,
   clusterEdges,
+  collectNodeTriangles,
   computeFit,
   convexHull2D,
   correctZYTuple,
   extractMajorEdges,
   extractTopSurfaces,
+  filterDegeneratePolys,
   filterOccludedSurfaces,
+  groupRenderNodes,
   hullToPath,
   mergeVisualSurfaces,
   projectTopFacingPolygons,
   projectTopDown,
   projectTriangles,
+  rasterVisibility,
   silhouetteToSvgPaths,
   simplifyRing,
   svgDocument,
   toSvg,
   trianglesFromGeometry,
   unionTriangles,
+  visibilityPixel,
 } from '../../scripts/extractor-lib.mjs'
 
 /** 数学验证辅助：以 origin 为不动点的 rotate(deg) 下，点 point 的像（2D 仿射，角度制）。 */
@@ -230,9 +235,9 @@ describe('Blocker 2 — transform / hide_elements（collectTriangles 语义）',
     expect(b.maxX - b.minX).toBeCloseTo(a.maxX - a.minX, 6)
     expect(b.maxY - b.minY).toBeCloseTo(a.maxY - a.minY, 6)
   })
-  it('Maus 资产：turret 不含 hide_elements 细长条（bbox 仅炮塔本体；mantlet 独立）', () => {
+  it('Maus 资产：hide_elements 纳入后 turretBounds 保持（hide 在炮塔内，不改变轮廓；mantlet 独立）', () => {
     const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
-    // turretBounds = 炮塔本体（mantlet 已独立分组）→ y max ≈ 1.0（模型米）
+    // turretBounds = 炮塔本体（hide_elements 子树已在炮塔内；mantlet 独立分组）→ y max ≈ 1.0（模型米）
     expect(meta.generation.turretBounds.max[1]).toBeCloseTo(1.0, 0)
     // hull 主甲板层存在（Layer B surfaces 写入 hull.svg）
     const hullSvg = readFileSync(MAUS_DIR + 'hull.svg', 'utf8')
@@ -422,11 +427,11 @@ describe('Layer B — classifyDetail（high-fidelity detail 分级）', () => {
 })
 
 describe('Layer B — Maus 生成资产细节（Layer 正确性）', () => {
-  it('hull.svg 含履带独立区域与主甲板层（非单色）', () => {
+  it('hull.svg 无 track 深色条（A3：顶视 z-buffer 可见 0）+ 主甲板层存在', () => {
     const svg = readFileSync(MAUS_DIR + 'hull.svg', 'utf8')
     const paths = (svg.match(/<path/g) || []).length
-    expect(paths).toBeGreaterThanOrEqual(5) // silhouette + tracks×2 + surfaces + edges
-    expect(svg).toContain('#454b47') // tracks fill
+    expect(paths).toBeGreaterThanOrEqual(5) // silhouette + surfaces + edges
+    expect(svg).not.toContain('#454b47') // A3：tracks 顶视被甲板完全遮挡 → 视觉层不画
     expect(svg).toContain('#565e58') // surfaces fill
   })
   it('turret.svg 含 mantlet 独立区域与炮管（mask 不再并入 gun 轮廓）', () => {
@@ -562,10 +567,10 @@ describe('Layer B — visual surface merging（HIGH-FIDELITY，Blocker 1/2/4）'
     expect(a.surfaceCount).toBe(b.surfaceCount)
     expect(a.stats.rawFaces).toBe(b.stats.rawFaces)
   })
-  it('Maus hull.svg 含主面填充（#565e58）与履带（#454b47），无 tessellation 色（旧 bump 色已删除）', () => {
+  it('Maus hull.svg 含主面填充（#565e58）、无履带深色条（A3）与旧 bump 色', () => {
     const svg = readFileSync(MAUS_DIR + 'hull.svg', 'utf8')
     expect(svg).toContain('#565e58')
-    expect(svg).toContain('#454b47')
+    expect(svg).not.toContain('#454b47') // A3：tracks 顶视不可见，视觉层不再画 2D union 深色条
     expect(svg).not.toContain('#6f776f') // 旧 bump 填充色已随 bump 概念移除
   })
   it('Maus turret.svg 含屋顶主面（#6d756f）与炮盾（#656c67），无三角马赛克色', () => {
@@ -727,5 +732,148 @@ describe('Maus 生成资产契约（assets/maus）', () => {
     const fitB = computeFit(bounds2D(pts), VIEWBOX, 0.88)
     expect(fitA).toEqual(fitB)
     expect(convexHull2D(pts)).toEqual(convexHull2D(pts))
+  })
+})
+
+// —— Phase A（2026-08-19）：geometry correctness cleanup ——
+
+/** 构造 @gltf-transform 风格 mock 节点（仅 collectNodeTriangles/groupRenderNodes 使用的接口）。 */
+function mockNode(name, { mesh = null, children = [], t = null, r = null, s = null } = {}) {
+  return {
+    getName: () => name,
+    getMesh: () => mesh,
+    getTranslation: () => t,
+    getRotation: () => r,
+    getScale: () => s,
+    listChildren: () => children,
+  }
+}
+
+function mockPrim({ positions, indices }) {
+  return {
+    getAttribute: (n) => (n === 'POSITION' ? { getArray: () => positions } : null),
+    getIndices: () => (indices ? { getArray: () => indices } : null),
+  }
+}
+
+function mockMesh(positions, indices) {
+  return { listPrimitives: () => [mockPrim({ positions, indices })] }
+}
+
+describe('Phase A1 — hide_elements 子树采集（复刻 TankModel.tsx 完整子树渲染）', () => {
+  const tri = (x, y, z) => [x, y, z]
+  // hull 主 mesh：单个三角形；hull_hide_elements 子树：另一个三角形
+  const hullMain = mockMesh(
+    new Float32Array([...tri(0, 0, 2), ...tri(1, 0, 2), ...tri(0, 1, 2)]),
+    new Uint16Array([0, 1, 2]),
+  )
+  const hideMesh = mockMesh(
+    new Float32Array([...tri(0.5, 0.5, 2.4), ...tri(1.5, 0.5, 2.4), ...tri(0.5, 1.5, 2.4)]),
+    new Uint16Array([0, 1, 2]),
+  )
+  const maskMesh = mockMesh(
+    new Float32Array([...tri(5, 5, 5), ...tri(6, 5, 5), ...tri(5, 6, 5)]),
+    new Uint16Array([0, 1, 2]),
+  )
+  const nodes = [
+    mockNode('hull', { children: [mockNode('0001', { mesh: hullMain }), mockNode('hull_hide_elements_switch', { children: [mockNode('hull_hide_elements', { children: [mockNode('0000', { mesh: hideMesh })] })] })] }),
+    mockNode('mask_01', { children: [mockNode('0001', { mesh: maskMesh })] }),
+    mockNode('turret_01', { children: [mockNode('0001', { mesh: mockMesh(new Float32Array([...tri(0, 0, 4), ...tri(1, 0, 4), ...tri(0, 1, 4)]), new Uint16Array([0, 1, 2])) })] }),
+    mockNode('gun_01', { children: [mockNode('0001', { mesh: mockMesh(new Float32Array([...tri(0, 0, 3), ...tri(1, 0, 3), ...tri(0, 1, 3)]), new Uint16Array([0, 1, 2])) })] }),
+    mockNode('gun_01_mask', { children: [mockNode('0001', { mesh: mockMesh(new Float32Array([...tri(0, 0, 3.5), ...tri(1, 0, 3.5), ...tri(0, 1, 3.5)]), new Uint16Array([0, 1, 2])) })] }),
+  ]
+  it('matched render node 的 hide_elements child 会被采集（BlitzKit 实际渲染整个子树）', () => {
+    const groups = groupRenderNodes(nodes, { turretId: 1, gunId: 1, withWheels: false })
+    // hull 组包含主 mesh + hide 子树两个三角形
+    const tris = groups.hullBody.reduce((n, m) => n + m.indices.length / 3, 0)
+    expect(tris).toBe(2)
+    expect(groups.hullBody.some((m) => m.indices.length === 3)).toBe(true)
+  })
+  it('非 TankModel layer 的无关 mask 节点不会被采集', () => {
+    const groups = groupRenderNodes(nodes, { turretId: 1, gunId: 1, withWheels: false })
+    const all = [...groups.hullBody, ...groups.tracks, ...groups.turret, ...groups.mantlet, ...groups.gun]
+    const total = all.reduce((n, m) => n + m.indices.length / 3, 0)
+    expect(total).toBe(5) // hull 2 + turret 1 + gun 1 + mantlet 1（无 mask_01）
+  })
+  it('不是通过名字黑名单提前删除 hide 命名节点', () => {
+    const groups = groupRenderNodes(nodes, { turretId: 1, gunId: 1, withWheels: false })
+    // 直接调用 collectNodeTriangles 递归——hide 命名子树被遍历
+    const out = []
+    collectNodeTriangles(nodes[0], out, new (require('three').Matrix4)())
+    expect(out.length).toBe(2)
+  })
+})
+
+describe('Phase A2 — filterDegeneratePolys（几何退化判定，替代长窄 sliver 规则）', () => {
+  it('真实长条（3.5m × 0.087m）保留——320px 下 110×2.7px 可见，不能算 noise', () => {
+    const poly = { ring: [[0, 0], [3.5, 0], [3.5, 0.087], [0, 0.087], [0, 0]], holes: [] }
+    const { kept, removed } = filterDegeneratePolys([poly])
+    expect(kept).toHaveLength(1)
+    expect(removed).toHaveLength(0)
+  })
+  it('数值 sliver（3.5m × 0.001m）过滤（bbox 窄边 < 5mm）', () => {
+    const poly = { ring: [[0, 0], [3.5, 0], [3.5, 0.001], [0, 0.001], [0, 0]], holes: [] }
+    const { kept, removed } = filterDegeneratePolys([poly])
+    expect(kept).toHaveLength(0)
+    expect(removed).toHaveLength(1)
+  })
+  it('自交 ring（bowtie，polygon-clipping 数值伪影）过滤', () => {
+    const bowtie = { ring: [[0, 0], [2, 2], [0, 2], [2, 0], [0, 0]], holes: [] }
+    const { kept, removed } = filterDegeneratePolys([bowtie])
+    expect(kept).toHaveLength(0)
+    expect(removed).toHaveLength(1)
+  })
+  it('完全重合的 duplicate polygon 去重', () => {
+    const a = { ring: [[0, 0], [1, 0], [1, 1], [0, 0]], holes: [] }
+    const b = { ring: [[0, 0], [1, 0], [1, 1], [0, 0]], holes: [] }
+    const { kept, removed } = filterDegeneratePolys([a, b])
+    expect(kept).toHaveLength(1)
+    expect(removed).toHaveLength(1)
+  })
+  it('near-zero 面积过滤', () => {
+    const tiny = { ring: [[0, 0], [0.001, 0], [0, 0.001], [0, 0]], holes: [] }
+    const { kept, removed } = filterDegeneratePolys([tiny])
+    expect(kept).toHaveLength(0)
+    expect(removed).toHaveLength(1)
+  })
+  it('确定性：相同输入两次输出一致', () => {
+    const polys = [{ ring: [[0, 0], [3.5, 0], [3.5, 0.087], [0, 0.087], [0, 0]], holes: [] }]
+    expect(filterDegeneratePolys(polys)).toEqual(filterDegeneratePolys(polys))
+  })
+})
+
+describe('Phase A3 — rasterVisibility（真实 z-buffer 顶视可见性）', () => {
+  const deck = [[[0, 0, 2.0], [4, 0, 2.0], [0, 4, 2.0]]] // 顶层甲板
+  const under = [[[1, 1, 1.0], [3, 1, 1.0], [1, 3, 1.0]]] // 甲板下方（完全遮挡）
+  const peek = [[[3.2, 0.4, 1.5], [4.2, 0.4, 1.5], [3.2, 1.4, 1.5]]] // 部分露出（超出甲板 xy）
+  it('被上层完全遮挡的三角形可见像素 = 0（tracks 语义）', () => {
+    const vis = rasterVisibility([...deck, ...under], { resolution: 64 })
+    expect(vis.visiblePx[1]).toBe(0)
+    expect(vis.visiblePx[0]).toBeGreaterThan(0)
+  })
+  it('部分可见的组件保留（可见像素 > 0）', () => {
+    const vis = rasterVisibility([...deck, ...peek], { resolution: 64 })
+    expect(vis.visiblePx[1]).toBeGreaterThan(0)
+  })
+  it('按输入索引对齐（非 top-facing = 0）', () => {
+    const vertical = [[[0, 0, 0], [1, 0, 0], [0, 0, 1]]] // 垂直壁（nz = 0）
+    const vis = rasterVisibility([...deck, ...vertical], { resolution: 64 })
+    expect(vis.visiblePx[0]).toBeGreaterThan(0)
+    expect(vis.visiblePx[1]).toBe(0)
+  })
+  it('groups 参数：按组累计赢家像素（surface 级可见性）', () => {
+    const vis = rasterVisibility([...deck, ...under], { resolution: 64, groups: [0, 1] })
+    expect(vis.visibleGroupPx[0]).toBeGreaterThan(0)
+    expect(vis.visibleGroupPx[1]).toBe(0)
+  })
+  it('确定性：相同输入两次输出一致 + visibleMask 可用', () => {
+    const a = rasterVisibility(deck, { resolution: 64 })
+    const b = rasterVisibility(deck, { resolution: 64 })
+    expect(a.visiblePx).toEqual(b.visiblePx)
+    expect(a.visibleMask).toBeTruthy()
+    // visibilityPixel 查询与 visibleMask 一致
+    const mid = { x: 1, y: 1 } // deck 内部
+    const pi = visibilityPixel(mid.x, mid.y, a)
+    expect(pi >= 0 && a.visibleMask[pi] === 1).toBe(true)
   })
 })
