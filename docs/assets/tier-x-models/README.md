@@ -18,7 +18,9 @@
 | `frontend/src/vehicle-models/validate.js` | validator（CI 与 CLI 共用同一逻辑） |
 | `frontend/src/vehicle-models/coverage.test.js` | Tier X 100% 覆盖门禁（新增 Tier X 无 mapping → CI FAIL） |
 | `frontend/src/vehicle-models/validate.test.js` | validator 单测（21 用例） |
-| `frontend/src/components/VehicleModelPreviewPage.vue` | 隐藏 admin QA 页（`?view=vehicle-models`，仅 wotbtools-admin） |
+| `frontend/src/vehicle-models/pivot.js` | 图层旋转数学（transform-origin = pivot，非中心 pivot 支持） |
+| `frontend/src/components/VehicleModelPreviewPage.vue` | 隐藏 admin QA 页（`?view=vehicle-models`，仅 wotbtools-admin；异步 chunk，不污染主 bundle） |
+| `frontend/scripts/check-bundle-separation.mjs` | 构建后 bundle 分离检查（preview 资产不得进主入口） |
 | `frontend/scripts/blitzkit-references.mjs` | BlitzKit 辅助脚本（inventory + 参考图下载） |
 | `frontend/scripts/validate-vehicle-models.mjs` | CLI validator（资产放回后自检） |
 | `frontend/scripts/.vehicle-model-refs/` | 参考图本地缓存（gitignored） |
@@ -30,13 +32,19 @@
 ### A. Tier X inventory
 
 84 辆完整清单（tankId / display name / baseModelKey / turreted|turretless / class / nation /
-BlitzKit 参考链接）见 `tier-x-inventory.md`（由脚本从 Tankopedia + mapping.js 生成，权威）。
-3 组合并（skin/特殊版本复用基础模型）：`sheridan`（Sheridan + Sheridan Missile）、
+kind 核验依据 / BlitzKit 参考链接）见 `tier-x-inventory.md`（由脚本从 Tankopedia + mapping.js
+生成，权威）。3 组合并（skin/特殊版本复用基础模型）：`sheridan`（Sheridan + Sheridan Missile）、
 `kpz-70`（Kpz 70 + Kpz 70 Missile）、`type-5-heavy`（Type 5 Heavy + Type 5 H Zetsu）。
 
-**待视觉确认项**（新车型结构未知，生成时请对照参考图确认 kind 与 pivot）：
-114 SP2 (11057)、116-F3 (12849)、BZT-70 (14129)、AC Atlas (19825)、AC Teichos (22129)、
-NC 70 Błyskawica (19585)、GSOR the TANK (25169)、SPHT (29985)；
+**kind 核验（2026-08-17，全 81 modelKey 逐组完成）**：基于官方 tankopedia 描述 / fandom wiki /
+车辆实际俯视结构，**不采用** BlitzKit TURRET module 或 turretRotationSpeed 字段
+（casemate 也有 turret module 且转速非零，不可判）。修正 3 项：minotauro → turreted
+（fandom：有炮塔约 45° 限位）、foch-155 → turretless（fandom specs turret=no）、
+xm66f → turreted（官方：non-fully-rotating turret 前置炮塔）。每行核验依据见 inventory 表。
+
+**视觉确认待定（confirmPending，contract 未冻结）**：SPHT (29985)、AC Teichos (22129)、
+NC 70 Błyskawica (19585)——无可靠公开结构资料；ChatGPT 生成时须对照 BlitzKit 参考图确认
+kind，若与 mapping 不一致需同步修正 mapping 与 metadata（这三辆不在第一批生成清单内）。
 另有 Strv K（Kranvagn 底盘 + 不同炮塔，建议独立模型）与 121B（WZ-121 变体，建议独立模型）。
 
 ### B. 目标路径
@@ -82,22 +90,23 @@ mapping 已包含全部 84 辆 → 81 组，**生成资产时不要改 mapping**
 ```bash
 node frontend/scripts/validate-vehicle-models.mjs   # 全量自检（PASS/FAIL，退出码 1 表示有错）
 cd frontend && npm test                             # CI 同口径（coverage + validate 全绿）
+cd frontend && npm run build && node scripts/check-bundle-separation.mjs  # bundle 分离检查
 ```
 
-### H. 第一批生成建议（8 辆，结构差异最大化）
+### H. 第一批生成建议（8 辆，结构差异最大化，全部非 confirmPending）
 
 | modelKey | tankId | 覆盖结构 |
 |---|---|---|
 | maus | 6929 | giant heavy，宽大方形车体 |
 | leopard-1 | 14609 | narrow medium，细长车体 + 长炮 |
 | grille-15 | 19217 | turreted TD，后置炮塔 + 超长炮管（溢出验证） |
-| ho-ri | 3937 | turretless casemate TD |
-| kranvagn | 4481 | rounded turret heavy，后置炮塔 |
-| amx-50-b | 6209 | oscillating turret，前置炮塔 |
+| ho-ri | 3937 | turretless casemate TD（固定战斗室） |
+| minotauro | 10369 | limited-traverse 后置炮塔 TD（kind 修正案例） |
+| xm66f | 28705 | 前置 non-fully-rotating turret TD（kind 修正案例） |
 | fv4005 | 18001 | 巨大炮塔（barn） |
 | sheridan | 20257 | light tank，导弹变体共享（21793 同模型） |
 
-批 1 视觉语言稳定后再生成剩余 73 组。
+批 1 视觉语言稳定后再生成剩余 73 组（含 3 个 confirmPending 车型需先确认 kind）。
 
 ## 状态流转
 

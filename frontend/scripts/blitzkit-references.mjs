@@ -36,6 +36,35 @@ const limitIdx = args.indexOf('--limit')
 const limit = limitIdx >= 0 ? Number(args[limitIdx + 1]) : Infinity
 const emitDocs = args.includes('--emit-docs')
 
+/**
+ * kind 核验依据（2026-08-17，全 81 modelKey 逐组核验）。
+ * 依据来源：官方 tankopedia 描述 / fandom wiki / 车辆实际俯视结构知识。
+ * 注意：不采用 BlitzKit TURRET module 或 turretRotationSpeed 字段判定
+ * （casemate 也有 turret module 且转速非零，不可判）。
+ * 未列出的 turreted modelKey 均为「标准可旋转炮塔（HT/MT/LT，结构知识核验）」。
+ */
+const KIND_EVIDENCE = {
+  'ho-ri': 'fandom：无炮塔，仅 14° 总射界（casemate）',
+  'foch-155': 'fandom specs turret=no（固定/微转前向炮塔）',
+  'minotauro': 'fandom：有炮塔，约 45° 限位后置炮塔',
+  'xm66f': '官方 tankopedia：non-fully-rotating turret（前置炮塔）',
+  '114-sp2': '官方 tankopedia：360° 可旋转炮塔',
+  'gsor-the-tank': '官方 tankopedia：摇摆式炮塔',
+  'bzt-70': '官方 news：turret 正面装甲描述（有炮塔）',
+  'ac-atlas': 'fandom：炮塔正面坚不可摧 + Modules/Turret',
+  'waffen-f1-0': 'fandom：huge turret + 极慢炮塔旋转',
+  'wz-113g-ft': 'casemate 固定战斗室 TD（结构知识）',
+  'jgpz-e-100': 'casemate 固定战斗室 TD（结构知识）',
+  'obj-268': 'casemate 固定战斗室 TD（结构知识）',
+  't110e3': 'casemate 固定战斗室 TD（结构知识）',
+  'obj-263': 'casemate 固定战斗室 TD（结构知识）',
+  'fv217-badger': 'casemate 固定战斗室 TD（结构知识）',
+  'object-268-4': 'casemate 固定战斗室 TD（结构知识）',
+  'spht': '无可靠公开结构资料 → 视觉确认待定（confirmPending）',
+  'ac-teichos': '无可靠公开结构资料 → 视觉确认待定（confirmPending）',
+  'nc-70-blyskawica': '官方文章未明确炮塔结构 → 视觉确认待定（confirmPending）',
+}
+
 /** 尽力而为的 BlitzKit 页面 slug（非 ASCII 字母会被剥离，页面链接仅作辅助）。 */
 function slugify(name) {
   return name
@@ -46,9 +75,13 @@ function slugify(name) {
 
 function buildInventory() {
   const byId = new Map(tankopedia.vehicles.map((v) => [v.id, v]))
-  const groups = new Map() // modelKey -> { kind, entries: [] }
+  const groups = new Map() // modelKey -> { kind, confirmPending, entries: [] }
   for (const [modelKey, def] of Object.entries(MODEL_DEFINITIONS)) {
-    groups.set(modelKey, { kind: def.kind, entries: def.tankIds.map((id) => byId.get(id)).filter(Boolean) })
+    groups.set(modelKey, {
+      kind: def.kind,
+      confirmPending: Boolean(def.confirmPending),
+      entries: def.tankIds.map((id) => byId.get(id)).filter(Boolean),
+    })
   }
   const inventory = []
   for (const [modelKey, group] of groups) {
@@ -60,6 +93,8 @@ function buildInventory() {
         nation: v.nation,
         modelKey,
         kind: group.kind,
+        confirmPending: group.confirmPending,
+        kindEvidence: KIND_EVIDENCE[modelKey] || '标准可旋转炮塔（HT/MT/LT，结构知识核验）',
         iconUrl: blitzkitIconUrl(v.id),
         pageUrl: `https://blitzkit.app/tanks/${slugify(v.name)}`,
       })
@@ -76,13 +111,22 @@ function renderMarkdown(inv, groups) {
   lines.push('> `common/tankopedia-tier10.json` + `frontend/src/vehicle-models/mapping.js` 生成；')
   lines.push('> 覆盖完整性由 CI（coverage.test.js）强制。')
   lines.push('')
+  lines.push('## kind 核验（2026-08-17，全 81 modelKey 逐组核验）')
+  lines.push('')
+  lines.push('> 依据：官方 tankopedia 描述 / fandom wiki / 车辆实际俯视结构知识；')
+  lines.push('> 不采用 BlitzKit TURRET module 或 turretRotationSpeed 字段（casemate 也有 turret module 且转速非零，不可判）。')
+  lines.push('> 修正记录：minotauro → turreted（有炮塔 45° 限位）；foch-155 → turretless（fandom specs turret=no）；')
+  lines.push('> xm66f → turreted（官方：non-fully-rotating turret）。')
+  lines.push('> **confirmPending**（spht / ac-teichos / nc-70-blyskawica）：无可靠公开结构资料，')
+  lines.push('> contract 未冻结——ChatGPT 生成时须对照 BlitzKit 参考图确认 kind，不一致需同步修正 mapping 与 metadata。')
+  lines.push('')
   lines.push('## 按 baseModelKey 分组')
   lines.push('')
-  lines.push('| modelKey | kind | tankId | display name | class | nation | BlitzKit 参考 |')
-  lines.push('|---|---|---|---|---|---|---|')
+  lines.push('| modelKey | kind | confirmPending | tankId | display name | class | nation | kind 核验依据 | BlitzKit 参考 |')
+  lines.push('|---|---|---|---|---|---|---|---|---|')
   for (const item of inv) {
     lines.push(
-      `| ${item.modelKey} | ${item.kind} | ${item.tankId} | ${item.name} | ${item.class} | ${item.nation} | [icon](${item.iconUrl}) · [page](${item.pageUrl}) |`,
+      `| ${item.modelKey} | ${item.kind} | ${item.confirmPending ? '⚠️ 待确认' : '—'} | ${item.tankId} | ${item.name} | ${item.class} | ${item.nation} | ${item.kindEvidence} | [icon](${item.iconUrl}) · [page](${item.pageUrl}) |`,
     )
   }
   lines.push('')
@@ -90,7 +134,7 @@ function renderMarkdown(inv, groups) {
   lines.push('')
   lines.push(`- Tankopedia Tier X 总数：${tankopedia.vehicles.length}（meta.count=${tankopedia.meta.count}，generated_at=${tankopedia.meta.generated_at}）`)
   lines.push(`- baseModelKey 数：${groups.size}`)
-  lines.push(`- turreted：${[...groups.values()].filter((g) => g.kind === 'turreted').length}；turretless：${[...groups.values()].filter((g) => g.kind === 'turretless').length}`)
+  lines.push(`- turreted：${[...groups.values()].filter((g) => g.kind === 'turreted').length}；turretless：${[...groups.values()].filter((g) => g.kind === 'turretless').length}；confirmPending：${[...groups.values()].filter((g) => g.confirmPending).length}`)
   lines.push('')
   return lines.join('\n') + '\n'
 }

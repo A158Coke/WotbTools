@@ -7,6 +7,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { VIEWBOX } from '../vehicle-models/types.js'
+import { hullLayerTransform, pivotLayerTransform } from '../vehicle-models/pivot.js'
 
 const { t } = useI18n()
 const { initPromise, tokenParsed, authenticated, login } = useAuth()
@@ -86,23 +87,20 @@ const turretUrl = computed(() => turretUrls[`../vehicle-models/assets/${selected
 const hasAssets = computed(() => Boolean(hullUrl.value))
 const isSample = computed(() => selectedKey.value === 'sample')
 
-// 炮塔绕 turretPivot 旋转：先把 pivot 平移到画布中心再 rotate。
-const turretTransform = computed(() => {
+// 旋转数学（pivot.js）：img 与 320×320 画布 1:1 对齐（left:0 top:0），
+// transform-origin 直接用 viewBox 坐标 × renderScale —— rotate 以 origin 为不动点，
+// 0°/90°/180°/270° 下 pivot 屏幕位置不变（非中心 pivot 同样成立，见 pivot.test.js）。
+const renderScale = computed(() => canvasSize.value / VIEWBOX.width)
+const hullLayerStyle = computed(() => hullLayerTransform({ deg: hullDeg.value, renderScale: renderScale.value }))
+const turretLayerStyle = computed(() => {
   if (!isTurreted.value || !pivot.value) {
-    return `translate(-50%,-50%) rotate(${turretDeg.value}deg)`
+    return { transformOrigin: '0px 0px', transform: 'rotate(0deg)' }
   }
-  const s = canvasSize.value / VIEWBOX.width
-  const cx = VIEWBOX.width / 2
-  const cy = VIEWBOX.height / 2
-  const dx = (cx - pivot.value.x) * s
-  const dy = (cy - pivot.value.y) * s
-  return `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) rotate(${turretDeg.value}deg)`
+  return pivotLayerTransform({ deg: turretDeg.value, pivot: pivot.value, renderScale: renderScale.value })
 })
-
-const hullTransform = computed(() => `translate(-50%,-50%) rotate(${hullDeg.value}deg)`)
 const pivotStyle = computed(() => {
   if (!pivot.value) return {}
-  const s = canvasSize.value / VIEWBOX.width
+  const s = renderScale.value
   return { left: pivot.value.x * s + 'px', top: pivot.value.y * s + 'px' }
 })
 </script>
@@ -157,8 +155,8 @@ const pivotStyle = computed(() => {
           :class="{ 'vmp-destroyed': showDestroyed, 'vmp-last-known': showLastKnown }"
           :style="{ width: canvasSize + 'px', height: canvasSize + 'px' }"
         >
-          <img v-if="hullUrl" class="vmp-hull" :src="hullUrl" alt="" :style="{ transform: hullTransform }">
-          <img v-if="isTurreted && turretUrl" class="vmp-turret" :src="turretUrl" alt="" :style="{ transform: turretTransform }">
+          <img v-if="hullUrl" class="vmp-hull" :src="hullUrl" alt="" :style="hullLayerStyle">
+          <img v-if="isTurreted && turretUrl" class="vmp-turret" :src="turretUrl" alt="" :style="turretLayerStyle">
           <span v-if="showSelected" class="vmp-selected"></span>
           <span v-if="showRecorder" class="vmp-recorder"></span>
           <span v-if="showDestroyed" class="vmp-death">✕</span>
@@ -217,12 +215,16 @@ const pivotStyle = computed(() => {
   background-position: 0 0, 12px 12px;
   border: 1px solid var(--border, #d9ded2);
   border-radius: 6px;
-  overflow: hidden;
+  /* 契约 §5：长炮管允许合理超出统一 viewBox（overflow 仅为视觉显示，
+     不影响后续 production marker 的 collision bounds / hitbox contract） */
+  overflow: visible;
 }
 .vmp-hull, .vmp-turret {
   position: absolute;
-  left: 50%;
-  top: 50%;
+  /* img 与 320×320 viewBox 1:1 对齐：局部坐标 == viewBox 坐标，
+     transform-origin 可直接用 pivot 的 viewBox 像素值 */
+  left: 0;
+  top: 0;
   width: 100%;
   height: 100%;
   max-width: none;

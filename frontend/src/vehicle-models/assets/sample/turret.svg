@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320">
-  <!-- sample contract turret — 炮塔 + 完整炮管刚性层（pivot 160,160） -->
+  <!-- sample contract turret — 炮塔 + 完整炮管刚性层；pivot = (160,150) 非画布中心 -->
   <g id="turret">
-    <!-- 炮管（0° 朝上，允许溢出 viewBox） -->
-    <rect x="156" y="48" width="8" height="92" rx="3" fill="#4d534f"/>
-    <rect x="153" y="40" width="14" height="14" rx="2" fill="#3f4541"/>
-    <!-- 炮塔外壳 -->
-    <path d="M128 148 Q128 122 160 122 Q192 122 192 148 L192 172 Q192 192 160 192 Q128 192 128 172 Z" fill="#7a817c"/>
-    <!-- 炮塔座圈参考（顶部中央，pivot 十字由预览层绘制） -->
-    <circle cx="160" cy="160" r="26" fill="none" stroke="#565c58" stroke-width="3"/>
+    <!-- 炮管（0° 朝上，允许溢出 viewBox；炮管根部对齐 pivot (160,150)） -->
+    <rect x="156" y="38" width="8" height="92" rx="3" fill="#4d534f"/>
+    <rect x="152" y="128" width="16" height="16" rx="2" fill="#3f4541"/>
+    <!-- 炮塔外壳（几何中心 = pivot 160,150） -->
+    <path d="M128 138 Q128 112 160 112 Q192 112 192 138 L192 162 Q192 182 160 182 Q128 182 128 162 Z" fill="#7a817c"/>
+    <!-- 炮塔座圈参考（pivot 十字由预览层绘制） -->
+    <circle cx="160" cy="150" r="26" fill="none" stroke="#565c58" stroke-width="3"/>
   </g>
 </svg>
