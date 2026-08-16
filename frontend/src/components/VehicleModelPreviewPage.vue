@@ -240,7 +240,12 @@ const pivotStyle = computed(() => {
           <div v-if="isTurreted && turretUrl" class="vmp-turret-assembly" :style="turretAssemblyStyle">
             <img class="vmp-turret" :src="turretUrl" alt="" :style="turretLayerStyle">
           </div>
-          <span v-if="showSelected" class="vmp-selected"></span>
+          <span
+            v-if="showSelected"
+            class="vmp-selected"
+            data-test="vmp-selected"
+            :style="{ borderTopColor: '#e5484d', zIndex: 6 }"
+          ></span>
           <span v-if="showRecorder" class="vmp-recorder"></span>
           <span v-if="showDestroyed" class="vmp-death">✕</span>
           <span v-if="isTurreted && showPivot && pivot" class="vmp-pivot" :style="pivotStyle"></span>
@@ -358,10 +363,22 @@ const pivotStyle = computed(() => {
 /* 状态叠加：与生产 BattlePlayback 当前视觉语言一致（PR3 重设计后再同步） */
 .vmp-destroyed .vmp-hull, .vmp-destroyed .vmp-turret { opacity: 0.35; filter: grayscale(1); }
 .vmp-last-known .vmp-hull, .vmp-last-known .vmp-turret { opacity: 0.3; }
+/* selected 指示器（PR #92 Review B）：红色倒三角，车辆正上方——
+   位置在画布顶（overflow:visible 不裁剪）、z-index 最高（不被 hull/turret/其他 overlay
+   遮挡）、深色描边阴影保证浅/深背景都可见；border-top 颜色由 inline borderTopColor 提供
+   （可测试），此块负责形状/位置/阴影。 */
 .vmp-selected {
-  position: absolute; inset: -4px;
-  border: 2px solid #fff; border-radius: 50%;
-  z-index: 3; pointer-events: none;
+  position: absolute;
+  left: 50%;
+  top: -14px;
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-top: 14px solid transparent;
+  transform: translateX(-50%);
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
 }
 .vmp-recorder {
   position: absolute; inset: -4px;

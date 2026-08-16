@@ -94,6 +94,21 @@ describe('dedicated turreted（嵌套 transform）', () => {
     expect(w.find('.pb-turret-dedicated').attributes('style')).toContain('rotate(0deg)')
     expect(w.find('.pb-death').exists()).toBe(true)
   })
+
+  it('阵亡 ✕：红色 + 更大 + 高层级（PR #92 Review A——与 last-known 淡化区分明显）', () => {
+    const w = mountMarker({ ...genericMarker, destroyed: true })
+    const death = w.find('.pb-death')
+    expect(death.exists()).toBe(true)
+    expect(death.text()).toBe('✕')
+    const style = death.attributes('style') || ''
+    expect(style).toContain('color: #ff4d4f') // 红色
+    expect(style).toContain('font-size: 22px') // 比原 16px 更大
+    expect(style).toContain('z-index: 6') // 高于 hull(1)/turret(2)/name(5)
+    // 非 destroyed 不渲染 ✕（与 last-known 语义区分：淡化无 ✕）
+    const lk = mountMarker({ ...genericMarker, lastKnown: true, destroyed: false })
+    expect(lk.find('.pb-death').exists()).toBe(false)
+    expect(lk.find('button').classes()).toContain('pb-last-known')
+  })
 })
 
 describe('dedicated turretless（无 fake turret layer，§14）', () => {
