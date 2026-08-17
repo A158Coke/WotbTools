@@ -5,6 +5,9 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.leaderboard.dto.LeaderboardPageDto;
 import com.wotb.web.leaderboard.dto.LeaderboardRecordDto;
+import com.wotb.web.leaderboard.dto.ReplayDownload;
+import com.wotb.web.leaderboard.dto.ReplayFileMeta;
+import com.wotb.web.leaderboard.storage.LeaderboardReplayStorage;
 import com.wotb.web.leaderboard.entity.LeaderboardRecord;
 import com.wotb.web.leaderboard.repository.LeaderboardRecordRepository;
 import org.springframework.data.domain.Page;
@@ -12,16 +15,23 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 
 /**
- * 排行榜业务。MVP 只记录录像者本人单场成绩，不存全场 14 人，不存 replay 原文件。
+ * 排行榜业务。MVP 只记录录像者本人单场成绩，不存全场 14 人。
+ * 原始 .wotbreplay 由 {@link com.wotb.web.leaderboard.storage.LeaderboardReplayStorage}
+ * 内容寻址存储，本类只保存 replay metadata（hash/文件名/大小/上传者）。
  */
 @Service
 public class LeaderboardService {
@@ -32,18 +42,60 @@ public class LeaderboardService {
 
     private final LeaderboardRecordRepository repository;
     private final LeaderboardRecordMapper mapper;
+    private final LeaderboardReplayStorage storage;
 
-    public LeaderboardService(final LeaderboardRecordRepository repository, final LeaderboardRecordMapper mapper) {
+    public LeaderboardService(final LeaderboardRecordRepository repository,
+                              final LeaderboardRecordMapper mapper,
+                              final LeaderboardReplayStorage storage) {
         this.repository = repository;
         this.mapper = mapper;
+        this.storage = storage;
     }
 
-    public boolean recordRecorder(final Battle battle, final Tankopedia tankopedia) {
-        if (battle == null || battle.arenaId == null) return false;
-        if (battle.arenaBonusType == null || battle.arenaBonusType != BATTLE_TYPE) return false;
+    /** 下载回放：记录无 hash / 文件缺失（best-effort 语义）→ 404 REPLAY_FILE_NOT_FOUND。 */
+    public ReplayDownload downloadReplay(final long id) {
+        final LeaderboardRecord record = repository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "REPLAY_FILE_NOT_FOUND"));
+        final String hash = record.getReplayHash();
+        if (!StringUtils.hasText(hash)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "REPLAY_FILE_NOT_FOUND");
+        }
+        final Path file = storage.load(hash)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "REPLAY_FILE_NOT_FOUND"));
+        try {
+            return new ReplayDownload(Files.readAllBytes(file), record.getReplayFileName());
+        } catch (final IOException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "REPLAY_FILE_NOT_FOUND");
+        }
+    }
+
+    /**
+     * 录像者单场成绩入库状态机（含 replay metadata）：
+     * 新建 → SAVED；已存在且 replay_hash NULL → ATTACHED（补写）；
+     * 已存在且同 hash → IDEMPOTENT；已存在且异 hash → SKIPPED_HASH_CONFLICT（绝不覆盖）。
+     */
+    public RecordOutcome recordRecorder(final Battle battle, final Tankopedia tankopedia,
+                                        final ReplayFileMeta meta) {
+        if (battle == null || battle.arenaId == null) return RecordOutcome.SKIPPED_UNKNOWN_RECORDER;
+        if (battle.arenaBonusType == null || battle.arenaBonusType != BATTLE_TYPE) {
+            return RecordOutcome.SKIPPED_NON_RANDOM;
+        }
         final PlayerResult recorder = battle.recorderResult();
-        if (recorder == null) return false;
-        if (repository.findByArenaIdAndAccountId(battle.arenaId, recorder.accountId).isPresent()) return false;
+        if (recorder == null) return RecordOutcome.SKIPPED_UNKNOWN_RECORDER;
+
+        final var existing = repository.findByArenaIdAndAccountId(battle.arenaId, recorder.accountId);
+        if (existing.isPresent()) {
+            final LeaderboardRecord r = existing.get();
+            if (r.getReplayHash() == null) {
+                applyReplayMeta(r, meta);
+                repository.save(r);
+                return RecordOutcome.ATTACHED;
+            }
+            if (meta != null && meta.sha256().equals(r.getReplayHash())) {
+                return RecordOutcome.IDEMPOTENT;
+            }
+            return RecordOutcome.SKIPPED_HASH_CONFLICT;
+        }
 
         final LeaderboardRecord record = new LeaderboardRecord();
         record.setArenaId(battle.arenaId);
@@ -62,12 +114,24 @@ public class LeaderboardService {
                         Instant.ofEpochSecond(epochSeconds), ZoneOffset.UTC));
             }
         }
+        applyReplayMeta(record, meta);
         try {
             repository.save(record);
-            return true;
+            return RecordOutcome.SAVED;
         } catch (final DataIntegrityViolationException ignored) {
-            return false;
+            // 并发插入竞态：另一请求已建同 (arena_id, account_id) 记录，视为幂等。
+            return RecordOutcome.IDEMPOTENT;
         }
+    }
+
+    private static void applyReplayMeta(final LeaderboardRecord record, final ReplayFileMeta meta) {
+        if (meta == null) {
+            return;
+        }
+        record.setReplayHash(meta.sha256());
+        record.setReplayFileName(meta.originalName());
+        record.setReplaySize(meta.size());
+        record.setReplayUploadedBy(meta.uploadedBy());
     }
 
     /** 全局伤害榜（分页）。 */

@@ -14,7 +14,8 @@ public class LeaderboardRecordMapper implements Mapper<LeaderboardRecord, Leader
     public LeaderboardRecordDto toDto(final LeaderboardRecord r) {
         return new LeaderboardRecordDto(r.getId(), r.getArenaId(), r.getTankId(), r.getTankName(),
                 r.getAccountId(), r.getNickname(), r.getDamageDealt(), r.getMapName(),
-                r.getVersion(), r.getBattleTime(), r.getCreatedAt());
+                r.getVersion(), r.getBattleTime(), r.getCreatedAt(),
+                r.getReplayHash() != null);
     }
 
     public LeaderboardPageDto toPageDto(

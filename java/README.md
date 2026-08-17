@@ -162,7 +162,9 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 
 - `GET /api/leaderboard/top-damage?page=1&size=50` — 全局伤害榜（降序，`size` 最大 200）。
 - `GET /api/leaderboard/tanks/{tankId}/top-damage?page=1&size=50` — 指定车辆伤害榜。
-- `POST /api/leaderboard/upload` — 上传单场回放；跳过时返回英文 `reasonCode`，由前端本地化。
+- `POST /api/leaderboard/upload` — 上传单场回放（**需登录**）；跳过时返回英文 `reasonCode`（`NON_RANDOM_BATTLE` / `DUPLICATE_OR_UNKNOWN_RECORDER` / `REPLAY_HASH_CONFLICT`），由前端本地化。
+- `GET /api/leaderboard/{id}/replay` — 下载该记录原始回放文件（**需登录**，任意已登录用户；无文件 → 404 `REPLAY_FILE_NOT_FOUND`）。
+- 原始 .wotbreplay 以 SHA-256 内容寻址存 `LEADERBOARD_REPLAY_DIR`（默认 `data/replays`，生产 volume `/data/replays`）；老记录无文件不显示下载按钮。
 
 ### 陪练与打手（仅在线版）
 

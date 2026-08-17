@@ -5,6 +5,23 @@
 ## [Unreleased]
 
 ### Added
+- **排行榜回放文件存储与下载**：/api/leaderboard/upload 改为需登录（JwtUtil.requireUserId，
+  未登录 401 AUTHENTICATION_REQUIRED）；上传流程接入 ReplayUploadValidator（类型+20MB，复用既有
+  错误码）+ ReplayParser.parse 失败 → 400 INVALID_REPLAY_FILE（原 500）；新增
+  LeaderboardReplayStorage（SHA-256 内容寻址，临时文件 .tmp/ + 同目录原子 move 幂等落盘，
+  FileAlreadyExistsException 并发复用，不覆盖已有文件；磁盘 reserve 计入 incoming 大小
+  usable - incoming < minFreeBytes → 507 REPLAY_STORAGE_FULL；文件系统失败 → 500 REPLAY_STORAGE_ERROR）；
+  DB 更新失败不删除已入存储文件（保留安全 orphan，同 hash 未来上传复用；孤儿清理由未来 maintenance job 处理）；
+  LeaderboardService.recordRecorder 状态机 SAVED/ATTACHED/IDEMPOTENT/SKIPPED_*（历史记录 hash NULL →
+  ATTACHED 补写；同 hash → IDEMPOTENT；异 hash → SKIPPED_HASH_CONFLICT 绝不覆盖）；新端点
+  GET /api/leaderboard/{id}/replay（需登录，任意已登录用户可下载；无文件/文件丢失 → 404
+  REPLAY_FILE_NOT_FOUND；ContentDisposition UTF-8 安全编码原始文件名，不参与路径）；Flyway
+  V15__add_leaderboard_replay_file.sql（replay_hash/file_name/size/uploaded_by 可空，不 backfill）；
+  DTO 新增 replayAvailable（由 metadata 推导）；前端下载走 authenticated fetch → blob →
+  createObjectURL（禁止裸 href）；生产/本地 compose 挂 replay_data volume（/data/replays）。
+  配置：LEADERBOARD_REPLAY_DIR（默认 data/replays）、LEADERBOARD_REPLAY_MIN_FREE_BYTES（默认 512MiB）。
+  Replay 为 best-effort 可丢数据（不纳入 DB 备份；文件丢失下载 404 容错）。
+
 - **PR4 — Player/Tank Labels & Collision UX（§26–§37 + QA 场景）**：
   - **显示开关（§26）**：Battle Playback 控制栏新增「显示玩家名 / 显示坦克名」checkbox
     （默认 玩家名关 / 坦克名开），localStorage 持久化（`wotb.pb.label-prefs`），刷新/再次进入保留。
