@@ -83,13 +83,13 @@ description: >
 
 ---
 
-## 配方 H：Leaderboard 改动（Schema/端点/上传）
+## 配方 H：名人堂（Hall of Fame）改动（Schema/端点/上传/Admin）
 
 1. **Flyway**：改表结构必须新增下一序号 Flyway 迁移（当前最高 V14，命名 `V<N>__xxx.sql`），不改已应用版本。
 2. **列对齐**：JPA Entity、DTO、Repository 列与迁移逐列对齐，否则 `ddl-auto: validate` 启动失败。
-3. **分层**（真实调用链）：查询端点 `LeaderboardController` → `LeaderboardService` → `LeaderboardRecordRepository`；上传端点 `LeaderboardController` → `LeaderboardUploadService` → `LeaderboardService` → `LeaderboardRecordRepository`（Service 只调自己域的 Repository）。
-4. **API 纯英文稳定 key**（snake_case）；前端三语 label 在 `locales/*.json` 的 `leaderboard` 块。
-5. **前端上传/调用**：`api.leaderboardUpload(file)` → `POST /api/leaderboard/upload`；新增端点同步前端 API 调用函数。
+3. **分层**（真实调用链）：查询端点 `HallOfFameController` → `HallOfFameService` → `HallOfFameRecordRepository`；上传端点 `HallOfFameController` → `HallOfFameUploadService` → `HallOfFameService` → `HallOfFameRecordRepository`（Service 只调自己域的 Repository）；admin 域 `HallOfFameAdminController` → `HallOfFameAdminService`（audit + delete 单事务，ReplayHashLock 串行化文件清理）。
+4. **API 纯英文稳定 key**（snake_case）；前端三语 label 在 `locales/*.json` 的 `hof` 与 `hofAdmin` 块。
+5. **前端上传/调用**：`api.hofUpload(file)` → `POST /api/hof/upload`；统一查询 `api.hofList(params)` → `GET /api/hof`；新增端点同步前端 API 调用函数。
 6. **测试 + 文档**：Java `mvn test`（WebApiTest）+ 前端 `npm test`，并更新文档。
 
 ## 配方 I：新增跨站点状态（主题/语言/偏好）

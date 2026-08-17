@@ -257,7 +257,7 @@ java/wotb-web/src/test/resources
 
 ```text
 java/wotb-web/src/test/java/com/wotb/web/boost
-java/wotb-web/src/test/java/com/wotb/web/leaderboard
+java/wotb-web/src/test/java/com/wotb/web/hof
 java/wotb-web/src/test/java/com/wotb/web/replay
 java/wotb-web/src/test/java/com/wotb/web/security
 ```

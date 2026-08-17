@@ -5,6 +5,13 @@
 ## [Unreleased]
 
 ### Added
+- **排行榜 → 名人堂（Hall of Fame）全技术域迁移**：后端包 `com.wotb.web.leaderboard` → `com.wotb.web.hof`（`HallOfFameController/Service/UploadService/Record/Repository/Mapper/ReplayStorage/StorageException`）；旧 REST `/api/leaderboard/**` 全部移除，新 API `/api/hof/**`（统一公开查询 `GET /api/hof?battleType=&tankId=&nickname=&page=&size=`，排序 damage DESC → RATING 优先 RANDOM → battleTime ASC NULLS LAST → createdAt → id，rank = 当前 filter 上下文位置排名）；前端 `?view=hof`（`HoFPage.vue`），旧书签 `?view=leaderboard` canonicalize 到 `?view=hof`；三语文案 排行榜→名人堂（`hof.*` / `hofAdmin.*`）。
+- **战斗模式数据模型**：`hall_of_fame_record` 新增 `battle_type`（VARCHAR+CHECK：RANDOM/RATING）与 `arena_bonus_type`（raw integer）；`HallOfFameBattleTypePolicy` 集中 raw → 归一映射（1=RANDOM、7=RATING，训练房/联赛/娱乐/未知 → UNSUPPORTED，上传 400 `UNSUPPORTED_BATTLE_TYPE` 零持久化）；Flyway `V16__rename_leaderboard_to_hall_of_fame.sql`（rename-in-place + backfill RANDOM/1）与 `V17__create_hall_of_fame_admin_log.sql`（admin 审计表）。
+- **名人堂管理后台**：`GET/DELETE /api/admin/hof/**`（需 `HoF-admin` 或 `wotbtools-admin`；HoF-admin 只管理名人堂，不可访问其他 admin 域）；搜索 nickname/accountId/arenaId/uploadedBy/battleType/tankId/replayAvailable，排序 damage/battle_time/upload_time，分页 20/50/100；hard delete（audit+record delete 单事务，失败回滚；commit 后最后引用清理物理文件，失败仅 WARN；删除后同一回放可重新上传）；操作审计（DELETE_ENTRY 完整快照，只读）；前端 `?view=hof-admin`（`HoFAdminPage.vue`，角色门禁 + 删除二次确认 + 记录/日志双 tab）。
+- **并发安全**：`ReplayHashLock`（PostgreSQL advisory lock，hash 前 16 hex 为 key）串行化「upload：store+recordRecorder」与「admin delete：事务+引用计数+文件清理」，保证不变量「DB 引用 H ⇒ H.wotbreplay 存在」（多实例安全）；WebApiTest 真实 PG+FS 并发测试覆盖。
+- **配置迁移**：`LEADERBOARD_REPLAY_DIR` / `LEADERBOARD_REPLAY_MIN_FREE_BYTES` → `HOF_REPLAY_DIR` / `HOF_REPLAY_MIN_FREE_BYTES`（application.yml / prod+online compose / .env.example 同步，无旧变量 fallback）；Keycloak realm 增加 `HoF-admin` 角色（provision，无授予 UI）。
+- **测试**：WebApiTest 新增公开查询/排名/过滤器、安全矩阵（anonymous/wotbtools-user/HoF-admin/wotbtools-admin）、admin delete 全矩阵（audit/共享 hash/最后引用/404/hash null/文件缺失）、delete+upload 并发 invariant；新增 `HallOfFameMigrationTest`（V1..V15 旧 schema → V16/V17 迁移验证 rename/backfill/数据保留）、`HallOfFameBattleTypePolicyTest`、`HallOfFameAdminServiceTest`；SecurityConfigTest 补 HoF-admin 角色矩阵。
+
 - **排行榜回放文件存储与下载**：/api/leaderboard/upload 改为需登录（JwtUtil.requireUserId，
   未登录 401 AUTHENTICATION_REQUIRED）；上传流程接入 ReplayUploadValidator（类型+20MB，复用既有
   错误码）+ ReplayParser.parse 失败 → 400 INVALID_REPLAY_FILE（原 500）；新增

@@ -178,7 +178,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
    frontend (Vue 3 + Vite, 单文件 App.vue, vue-i18n 三语, Keycloak 认证)
 ```
 
-核心包结构（`com.wotb.core`）：`parse / ref / stats / export / model / processing / replay` 子包 + 顶层 `Columns`。Web 侧按 `user / leaderboard / replay / boost / admin` 业务域分包，每个域内部再分 controller/service/entity/repository/dto。
+核心包结构（`com.wotb.core`）：`parse / ref / stats / export / model / processing / replay` 子包 + 顶层 `Columns`。Web 侧按 `user / hof / replay / boost / admin` 业务域分包，每个域内部再分 controller/service/entity/repository/dto。
 
 ### 后端核心类
 
@@ -235,12 +235,15 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 | `ReplayCapacityLimiter` | `wotb-web/.../replay/service/ReplayCapacityLimiter.java` | 单实例回放解析并发闸门 |
 | `Mapper` | `wotb-web/.../replay/mapper/Mapper.java` | 核心模型 → DTO |
 | `WotbWebApplication` | `wotb-web/.../WotbWebApplication.java` | Spring Boot 入口 |
-| `LeaderboardController` | `wotb-web/.../leaderboard/controller/LeaderboardController.java` | 排行榜 REST API |
-| `LeaderboardService` | `wotb-web/.../leaderboard/service/LeaderboardService.java` | 排行榜业务：录像者匹配/replay 状态机（SAVED/ATTACHED/IDEMPOTENT/SKIPPED）/查询/下载 |
-| `LeaderboardUploadService` | `wotb-web/.../leaderboard/service/LeaderboardUploadService.java` | 需登录上传编排：校验→解析→SHA-256 落盘→入库 |
-| `LeaderboardReplayStorage` | `wotb-web/.../leaderboard/storage/LeaderboardReplayStorage.java` | SHA-256 内容寻址文件存储（原子 move、磁盘 reserve、幂等不覆盖） |
-| `LeaderboardRecord` | `wotb-web/.../leaderboard/entity/LeaderboardRecord.java` | JPA 实体（列与 Flyway 迁移逐列对齐，含 V15 replay 元数据列） |
-| `LeaderboardRecordRepository` | `wotb-web/.../leaderboard/repository/LeaderboardRecordRepository.java` | Spring Data JPA 仓库 |
+| `HallOfFameController` | `wotb-web/.../hof/controller/HallOfFameController.java` | 名人堂 REST API（统一公开查询 / 上传 / 下载） |
+| `HallOfFameService` | `wotb-web/.../hof/service/HallOfFameService.java` | 名人堂业务：录像者匹配/battle-type policy/replay 状态机（SAVED/ATTACHED/IDEMPOTENT/SKIPPED）/统一查询+排名/下载 |
+| `HallOfFameUploadService` | `wotb-web/.../hof/service/HallOfFameUploadService.java` | 需登录上传编排：校验→解析→policy 拒绝→SHA-256 落盘→入库（ReplayHashLock 内） |
+| `HallOfFameReplayStorage` | `wotb-web/.../hof/storage/HallOfFameReplayStorage.java` | SHA-256 内容寻址文件存储（原子 move、磁盘 reserve、幂等不覆盖、delete） |
+| `HallOfFameRecord` | `wotb-web/.../hof/entity/HallOfFameRecord.java` | JPA 实体（列与 Flyway 迁移逐列对齐，含 battle_type/arena_bonus_type + V15 replay 元数据列） |
+| `HallOfFameRecordRepository` | `wotb-web/.../hof/repository/HallOfFameRecordRepository.java` | Spring Data JPA 仓库 |
+| `HallOfFameAdminController` / `HallOfFameAdminService` | `wotb-web/.../hof/controller|service/` | 名人堂管理后台：搜索/审计/hard delete（audit+delete 单事务 + ReplayHashLock 文件清理） |
+| `HallOfFameBattleTypePolicy` | `wotb-web/.../hof/policy/HallOfFameBattleTypePolicy.java` | 战斗模式单一事实源：raw arenaBonusType → RANDOM/RATING/UNSUPPORTED |
+| `ReplayHashLock` | `wotb-web/.../hof/service/ReplayHashLock.java` | hash 级 PostgreSQL advisory lock（upload 落盘+入库 与 admin delete+文件清理串行化） |
 | `GlobalExceptionHandler` | `wotb-web/.../controller/GlobalExceptionHandler.java` | 统一异常处理 → `error + timestamp`；客户端/代理断连（Broken pipe、Connection reset，含 cause-chain 包装）仅记 WARN、不写错误 JSON |
 | `AdminUserController` | `wotb-web/.../admin/controller/AdminUserController.java` | 管理员用户管理 REST API |
 | `AdminUserService` | `wotb-web/.../admin/service/AdminUserService.java` | 管理员用户管理业务 |
@@ -268,7 +271,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 - Vue SPA 主入口视觉变量集中在 `App.vue` 的 `:root` / `[data-theme="dark"]`；独立 `/extended` 入口通过 `frontend/src/styles/theme.css` 复用同一套变量。首页、上传区、排行榜和表格应优先复用这些变量，避免局部硬编码色板。
 - 评分徽章样式使用 `r-elite` / `r-great` / `r-good` / `r-mid` / `r-poor`；最高/最低标记由 `utils/helpers.js` 的 `medal(...)` 统一计算，最低评分允许为 `0`，全员同分不显示奖惩。
 - 公共首页可通过 `?view=home` 本地预览；线上 `wotbtools.com` / `www.wotbtools.com` 无参数仍默认进入首页。
-- 首页首屏「最高伤害记录」读取 `/api/leaderboard/top-damage?page=1&size=1`，只展示当前全局第一条 `damageDealt`，接口失败或无数据时显示 `--`。
+- 首页首屏「最高伤害记录」读取 `/api/hof?page=1&size=1`，只展示当前全局第一条 `damageDealt`，接口失败或无数据时显示 `--`。
 - Keycloak `check-sso` 依赖 `frontend/public/silent-check-sso.html`，不要移除，否则公共页面会被静默登录流程整页跳转。
 - Keycloak 自助注册由 `docker/keycloak/wotbtools-realm.json` 的 `registrationAllowed` 控制；前端只触发登录流，不自建注册入口。
 
@@ -276,7 +279,8 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 
 - `?view=home`：进入工具集首页（本地预览可用）。
 - `?view=replay`：进入回放提取器。
-- `?view=leaderboard`：进入排行榜。
+- `?view=hof`：进入名人堂（旧书签 `?view=leaderboard` 自动 canonicalize 到 `hof`）。
+- `?view=hof-admin`：进入名人堂管理（仅 `HoF-admin` 或 `wotbtools-admin` 角色；无权限显示明确无权限状态）。
 - `?view=extended`：进入 Rating V2 扩展分析页。
 - `?view=boost`：进入陪练、打手申请与管理员资格审批页。
 - `?view=profile`：进入个人中心。
@@ -300,7 +304,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
   - `utils/page.js` — Spring `Page.number` 响应归一化与分页默认值
   - `utils/theme.js` — 纯函数（readTheme / saveTheme / resolveTheme / applyTheme），Cookie `.wotbtools.com` 域共享 + localStorage 回退
 - `utils/helpers.js` — 常量（DEFAULT_VISIBLE / EXTENDED_ONLY_PLAYER_KEYS / RATING_TIERS）+ 工具函数（按 locale 取地图名的 `mapLabel` / ratingTier / medal 等）
-- UI 组件在 `components/`：FileUploader / ColumnPicker / AggregateTable / BattleTable / RatingModal / RemoveConfirmModal / LeaderboardPage / LoginPage（QQ + Wargaming 登录选择页）/ ProfilePage（含站内通知面板）/ BoostPage / AdminUsersPage / HomePage / ExtendedPage / ReplayPage
+- UI 组件在 `components/`：FileUploader / ColumnPicker / AggregateTable / BattleTable / RatingModal / RemoveConfirmModal / HoFPage / HoFAdminPage / LoginPage（QQ + Wargaming 登录选择页）/ ProfilePage（含站内通知面板）/ BoostPage / AdminUsersPage / HomePage / ExtendedPage / ReplayPage
 - AI 复盘页组件：`ReconstructionPage`（登录门控 + 编排）→ `ReplayInputPanel`（`ReplayFilePicker` 选文件 + `ReplayAnalysisAction` 触发分析）→ 独立「地图鸟瞰」区块（`MapOverview` 三视图：热力/路线/战局回放，经 `POST /api/replay/map-overview` 只解析回放、不调 AI——不跑 AI 复盘也能看图；`AnalysisResultPanel` 不再渲染地图块，其 AI 报告时间链接把 `seek` 事件上抛给页面加载/跳转并自动滚动回地图区块）→ `AnalysisResultPanel`（Markdown 正文常驻展示，`MarkdownContent` 渲染）；赛前预测/复盘正文/地图鸟瞰三板块均可独立展开/收起（默认展开）；战局回放坦克标记随地图缩放（坦克名/阵亡 ✕ 叠加层屏幕恒定），地图下方显示双方总血量条（实时剩余，含装备/物资加成）与争霸赛点数；战局回放内置临时地图标注工具栏（画笔/形状/文字，纯本地不持久化，契约见 `docs/features/battle-playback.md`「地图标注」）
 - 回放解析上传页由 `FileUploader.vue` 负责交互，`App.vue` 提供全局上传区样式；空态、拖拽态、已选文件态共用 `upload.*` 三语文案。
 - 开发时 Vite 代理 `/api → localhost:8087`。
@@ -347,7 +351,7 @@ API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + �
 - **存活时间**：3 层 fallback（#104 → Damage → hybrid EntityLeave/Position），详见 `docs/reference/replay-data.md`。
 - **评分**：自包含、类 WN8，基准来自「一同计算的这批战斗」（相对分，非绝对天梯）。参数在 `common/rating.json`。细节见 `docs/features/rating.md`。
 - **数据库**：PostgreSQL 18，JPA/Flyway（`ddl-auto: validate`）；Flyway 自动配置依赖 `spring-boot-flyway`。
-- **排行榜**：schema 由 Flyway 管理；只记录录像者本人随机战斗（`arenaBonusType==1`）单场伤害；上传/下载需登录；原始 .wotbreplay 以 SHA-256 内容寻址存 `LEADERBOARD_REPLAY_DIR`（生产 volume `/data/replays`，best-effort 可丢、不纳入 DB 备份）。见 `docs/features/leaderboard.md`。
+- **名人堂（Hall of Fame）**：schema 由 Flyway 管理；只记录录像者本人随机战斗（`arenaBonusType==1`）与评级战斗（`==7`）单场伤害（`HallOfFameBattleTypePolicy` 单一事实源，其余模式 400 `UNSUPPORTED_BATTLE_TYPE` 零持久化）；统一公开查询 `GET /api/hof`（battleType/tank/nickname 过滤 + 位置排名，同伤害 RATING 优先）；上传/下载需登录；管理后台 `GET/DELETE /api/admin/hof/**`（HoF-admin 或 wotbtools-admin；audit + delete 单事务，ReplayHashLock 保证文件引用不变量）；原始 .wotbreplay 以 SHA-256 内容寻址存 `HOF_REPLAY_DIR`（生产 volume `/data/replays`，best-effort 可丢、不纳入 DB 备份）。见 `docs/features/hall-of-fame.md`。
 - **i18n**：vue-i18n 三语（zh/en/ru），`locales/*.json`；地图名 `common/map_names.json`，网页按当前语言显示，导出固定中文。
 - **API 端点**：`GET /api/health`、`GET/POST /api/rating`、`POST /api/preview`、`POST /api/export?mode=aggregate|each`；排行榜 / 站内通知端点见 `java/README.md`。
 - **公开解析边界**：最多 100 个回放、单文件 20 MiB、总请求 200 MiB；单实例默认同时处理 2 个任务；容量满 503 `REPLAY_BUSY`。
@@ -431,7 +435,7 @@ cd frontend && npm test
 | 完整回放重建流水线 | `docs/architecture/replay-pipeline.md` | 改重建 / decoder 时 |
 | 地图鸟瞰与战局回放 | `docs/features/battle-playback.md` | 改地图鸟瞰 / 战局回放 / 坦克标记时 |
 | 评分（Rating）与潜在伤害 | `docs/features/rating.md` | 改评分 / 潜在伤害时 |
-| 排行榜 | `docs/features/leaderboard.md` | 改排行榜时 |
+| 名人堂 | `docs/features/hall-of-fame.md` | 改名人堂时 |
 | Team AI 复盘设计 | `docs/features/team-ai-review.md` | 改团队复盘产品语义时 |
 | 回放数据字典 | `docs/reference/replay-data.md` | 深入回放格式 / 字段时 |
 | 已确认字段字典 | `docs/reference/replay-parsed-fields.md` | 查字段含义时 |
