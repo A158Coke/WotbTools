@@ -3,11 +3,17 @@ package com.wotb.web;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
+import com.wotb.core.model.Battle;
+import com.wotb.core.model.PlayerResult;
+import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.boost.dto.BoosterApplicationSummaryDto;
 import com.wotb.web.boost.entity.BoosterApplication;
 import com.wotb.web.boost.repository.BoosterApplicationRepository;
+import com.wotb.web.leaderboard.dto.ReplayFileMeta;
 import com.wotb.web.leaderboard.entity.LeaderboardRecord;
 import com.wotb.web.leaderboard.repository.LeaderboardRecordRepository;
+import com.wotb.web.leaderboard.service.LeaderboardService;
+import com.wotb.web.leaderboard.service.RecordOutcome;
 import org.hibernate.resource.jdbc.spi.StatementInspector;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -28,7 +34,17 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.function.IntFunction;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -90,6 +106,9 @@ public class WebApiTest {
 
     @Autowired
     LeaderboardRecordRepository leaderboardRecordRepository;
+
+    @Autowired
+    LeaderboardService leaderboardService;
 
     private final ObjectMapper om = JsonMapper.builder().build();
 
@@ -366,6 +385,139 @@ public class WebApiTest {
             leaderboardRecordRepository.delete(record);
             leaderboardRecordRepository.flush();
         }
+    }
+
+    // ── 排行榜 replay metadata DB 并发原子性（真实 PostgreSQL/Testcontainers）────────
+
+    private static Battle raceBattle(final String arena) {
+        final Battle b = new Battle();
+        b.arenaId = arena;
+        b.mapName = "rockfield";
+        b.recorder = "Racer";
+        b.arenaBonusType = 1;
+        final List<PlayerResult> players = new ArrayList<>();
+        final PlayerResult rec = new PlayerResult();
+        rec.accountId = 111L;
+        rec.nickname = "Racer";
+        rec.tankId = 6481L;
+        rec.damageDealt = 3200;
+        players.add(rec);
+        b.players = players;
+        return b;
+    }
+
+    private static ReplayFileMeta raceMeta(final String sha, final String name) {
+        return new ReplayFileMeta(sha, name, 1L, "racer-user");
+    }
+
+    private Map<RecordOutcome, Integer> concurrentRecordRecorder(
+            final Battle battle, final int threads, final IntFunction<ReplayFileMeta> metaSupplier)
+            throws Exception {
+        final ExecutorService pool = Executors.newFixedThreadPool(threads);
+        final CountDownLatch start = new CountDownLatch(1);
+        final List<Future<RecordOutcome>> futures = new ArrayList<>();
+        try {
+            for (int i = 0; i < threads; i++) {
+                final int idx = i;
+                futures.add(pool.submit(() -> {
+                    start.await();
+                    return leaderboardService.recordRecorder(
+                            battle, Tankopedia.load(), metaSupplier.apply(idx));
+                }));
+            }
+            start.countDown();
+            final Map<RecordOutcome, Integer> counts = new EnumMap<>(RecordOutcome.class);
+            for (final Future<RecordOutcome> f : futures) {
+                counts.merge(f.get(30, TimeUnit.SECONDS), 1, Integer::sum);
+            }
+            return counts;
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void concurrentAttachDifferentHashesHasSingleWinnerAndNoOverwrite() throws Exception {
+        final String arena = "ra-diff-" + UUID.randomUUID().toString().substring(0, 8);
+        final LeaderboardRecord row = new LeaderboardRecord();
+        row.setArenaId(arena);
+        row.setAccountId(111L);
+        row.setNickname("Racer");
+        row.setTankId(6481L);
+        row.setTankName("FV4005");
+        row.setDamageDealt(100);
+        leaderboardRecordRepository.saveAndFlush(row);
+
+        final String hashA = "a".repeat(64);
+        final String hashB = "b".repeat(64);
+        final Map<RecordOutcome, Integer> counts = concurrentRecordRecorder(
+                raceBattle(arena), 2,
+                i -> i == 0 ? raceMeta(hashA, "a.wotbreplay") : raceMeta(hashB, "b.wotbreplay"));
+
+        assertEquals(1, counts.getOrDefault(RecordOutcome.ATTACHED, 0), "只有一个 attach winner");
+        assertEquals(1, counts.getOrDefault(RecordOutcome.SKIPPED_HASH_CONFLICT, 0), "loser 必须 SKIPPED_HASH_CONFLICT");
+        assertEquals(0, counts.getOrDefault(RecordOutcome.IDEMPOTENT, 0));
+        final LeaderboardRecord winner = leaderboardRecordRepository
+                .findByArenaIdAndAccountId(arena, 111L).orElseThrow();
+        // DB 最终 hash 是 winner 的（不被 loser 覆盖）
+        assertTrue(hashA.equals(winner.getReplayHash()) || hashB.equals(winner.getReplayHash()),
+                "DB hash 必须为两个 hash 之一且未被覆盖");
+    }
+
+    @Test
+    void concurrentAttachSameHashIsAttachedPlusIdempotent() throws Exception {
+        final String arena = "ra-same-" + UUID.randomUUID().toString().substring(0, 8);
+        final LeaderboardRecord row = new LeaderboardRecord();
+        row.setArenaId(arena);
+        row.setAccountId(111L);
+        row.setNickname("Racer");
+        row.setTankId(6481L);
+        row.setTankName("FV4005");
+        row.setDamageDealt(100);
+        leaderboardRecordRepository.saveAndFlush(row);
+
+        final String hash = "c".repeat(64);
+        final Map<RecordOutcome, Integer> counts = concurrentRecordRecorder(
+                raceBattle(arena), 2, i -> raceMeta(hash, "same.wotbreplay"));
+
+        assertEquals(1, counts.getOrDefault(RecordOutcome.ATTACHED, 0));
+        assertEquals(1, counts.getOrDefault(RecordOutcome.IDEMPOTENT, 0));
+        final LeaderboardRecord winner = leaderboardRecordRepository
+                .findByArenaIdAndAccountId(arena, 111L).orElseThrow();
+        assertEquals(hash, winner.getReplayHash());
+    }
+
+    @Test
+    void concurrentInsertDifferentHashesCreatesOneRowAndLoserConflict() throws Exception {
+        final String arena = "ri-diff-" + UUID.randomUUID().toString().substring(0, 8);
+        final String hashA = "d".repeat(64);
+        final String hashB = "e".repeat(64);
+        final Map<RecordOutcome, Integer> counts = concurrentRecordRecorder(
+                raceBattle(arena), 2,
+                i -> i == 0 ? raceMeta(hashA, "d.wotbreplay") : raceMeta(hashB, "e.wotbreplay"));
+
+        assertEquals(1, counts.getOrDefault(RecordOutcome.SAVED, 0), "只有一个 SAVED");
+        assertEquals(1, counts.getOrDefault(RecordOutcome.SKIPPED_HASH_CONFLICT, 0),
+                "loser 必须在 re-read winner 后 SKIPPED_HASH_CONFLICT，不得无条件 IDEMPOTENT");
+        // 数据库只有一条 (arena_id, account_id)
+        assertEquals(1, leaderboardRecordRepository.findAll().stream()
+                .filter(r -> arena.equals(r.getArenaId())).count());
+    }
+
+    @Test
+    void concurrentInsertSameHashCreatesOneRowAndLoserIdempotent() throws Exception {
+        final String arena = "ri-same-" + UUID.randomUUID().toString().substring(0, 8);
+        final String hash = "f".repeat(64);
+        final Map<RecordOutcome, Integer> counts = concurrentRecordRecorder(
+                raceBattle(arena), 2, i -> raceMeta(hash, "same.wotbreplay"));
+
+        assertEquals(1, counts.getOrDefault(RecordOutcome.SAVED, 0));
+        assertEquals(1, counts.getOrDefault(RecordOutcome.IDEMPOTENT, 0));
+        assertEquals(1, leaderboardRecordRepository.findAll().stream()
+                .filter(r -> arena.equals(r.getArenaId())).count());
+        final LeaderboardRecord winner = leaderboardRecordRepository
+                .findByArenaIdAndAccountId(arena, 111L).orElseThrow();
+        assertEquals(hash, winner.getReplayHash());
     }
 
     private static void assertProjectionSelectExcludesImages() {

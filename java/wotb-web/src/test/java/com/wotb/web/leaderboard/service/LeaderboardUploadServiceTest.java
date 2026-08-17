@@ -22,6 +22,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -57,6 +58,8 @@ class LeaderboardUploadServiceTest {
         doAnswer(inv -> ((Callable<?>) inv.getArgument(0)).call())
                 .when(limiter).execute(any());
         uploadService = new LeaderboardUploadService(leaderboardService, limiter, storage);
+        when(leaderboardService.eligibility(any())).thenReturn(RecordOutcome.SAVED);
+        when(leaderboardService.preflightReplay(any(), any())).thenReturn(Optional.empty());
         login();
     }
 
@@ -156,6 +159,95 @@ class LeaderboardUploadServiceTest {
             assertEquals("INVALID_REPLAY_FILE", e.getMessage());
             verify(storage, never()).store(any(byte[].class), anyString());
         }
+    }
+
+    @Test
+    void nonRandomSkipsWithoutStoringFile() throws Exception {
+        when(leaderboardService.eligibility(any())).thenReturn(RecordOutcome.SKIPPED_NON_RANDOM);
+        try (final var mocked = mockStatic(ReplayParser.class)) {
+            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenReturn(battle());
+
+            final Map<String, Object> result = uploadService.upload(file());
+
+            assertEquals("skipped", result.get("status"));
+            assertEquals("NON_RANDOM_BATTLE", result.get("reasonCode"));
+            verify(storage, never()).store(any(byte[].class), anyString());
+            verify(leaderboardService, never()).recordRecorder(any(), any(), any());
+        }
+    }
+
+    @Test
+    void unknownRecorderSkipsWithoutStoringFile() throws Exception {
+        when(leaderboardService.eligibility(any())).thenReturn(RecordOutcome.SKIPPED_UNKNOWN_RECORDER);
+        try (final var mocked = mockStatic(ReplayParser.class)) {
+            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenReturn(battle());
+
+            final Map<String, Object> result = uploadService.upload(file());
+
+            assertEquals("skipped", result.get("status"));
+            assertEquals("DUPLICATE_OR_UNKNOWN_RECORDER", result.get("reasonCode"));
+            verify(storage, never()).store(any(byte[].class), anyString());
+        }
+    }
+
+    @Test
+    void hashConflictSkipsWithoutStoringNewFile() throws Exception {
+        when(leaderboardService.preflightReplay(any(), any()))
+                .thenReturn(Optional.of(RecordOutcome.SKIPPED_HASH_CONFLICT));
+        try (final var mocked = mockStatic(ReplayParser.class)) {
+            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenReturn(battle());
+
+            final Map<String, Object> result = uploadService.upload(file());
+
+            assertEquals("skipped", result.get("status"));
+            assertEquals("REPLAY_HASH_CONFLICT", result.get("reasonCode"));
+            verify(storage, never()).store(any(byte[].class), anyString());
+            verify(leaderboardService, never()).recordRecorder(any(), any(), any());
+        }
+    }
+
+    @Test
+    void idempotentPreflightStillStoresToRebuildMissingFile() throws Exception {
+        try (final var mocked = mockStatic(ReplayParser.class)) {
+            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenReturn(battle());
+            when(leaderboardService.preflightReplay(any(), any()))
+                    .thenReturn(Optional.of(RecordOutcome.IDEMPOTENT));
+            when(storage.store(any(byte[].class), anyString()))
+                    .thenReturn(new LeaderboardReplayStorage.StoreResult(false, null));
+            when(leaderboardService.recordRecorder(any(), any(), any())).thenReturn(RecordOutcome.IDEMPOTENT);
+
+            final Map<String, Object> result = uploadService.upload(file());
+
+            assertEquals("ok", result.get("status"));
+            verify(storage).store(any(byte[].class), anyString());
+            verify(leaderboardService).recordRecorder(any(), any(), any());
+        }
+    }
+
+    @Test
+    void originalNameFallsBackWhenNoValidBasename() {
+        assertEquals("replay.wotbreplay", LeaderboardUploadService.originalName(
+                new MockMultipartFile("file", "/", "application/octet-stream", new byte[]{1})));
+        assertEquals("replay.wotbreplay", LeaderboardUploadService.originalName(
+                new MockMultipartFile("file", "\\", "application/octet-stream", new byte[]{1})));
+        assertEquals("replay.wotbreplay", LeaderboardUploadService.originalName(
+                new MockMultipartFile("file", "foo/", "application/octet-stream", new byte[]{1})));
+        assertEquals("replay.wotbreplay", LeaderboardUploadService.originalName(
+                new MockMultipartFile("file", "foo\\", "application/octet-stream", new byte[]{1})));
+        assertEquals("replay.wotbreplay", LeaderboardUploadService.originalName(
+                new MockMultipartFile("file", "   ", "application/octet-stream", new byte[]{1})));
+    }
+
+    @Test
+    void originalNameKeepsBasenameAndTrimsOverlong() {
+        assertEquals("battle.wotbreplay", LeaderboardUploadService.originalName(file()));
+        assertEquals("b.wotbreplay", LeaderboardUploadService.originalName(
+                new MockMultipartFile("file", "dir/b.wotbreplay", "application/octet-stream", new byte[]{1})));
+        assertEquals("c.wotbreplay", LeaderboardUploadService.originalName(
+                new MockMultipartFile("file", "a\\b\\c.wotbreplay", "application/octet-stream", new byte[]{1})));
+        final String longName = "x".repeat(300) + ".wotbreplay";
+        assertEquals(255, LeaderboardUploadService.originalName(
+                new MockMultipartFile("file", longName, "application/octet-stream", new byte[]{1})).length());
     }
 
     @Test

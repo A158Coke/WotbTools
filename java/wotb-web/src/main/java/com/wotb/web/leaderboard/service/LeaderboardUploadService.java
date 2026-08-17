@@ -16,6 +16,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * 排行榜上传编排（需登录）：校验 → 解析 → SHA-256 内容寻址落盘 → 记录入库（含 metadata）。
@@ -48,8 +49,20 @@ public class LeaderboardUploadService {
             final byte[] bytes = file.getBytes();
             final Battle battle = parse(bytes);
             final String hash = sha256(bytes);
-            storage.store(bytes, hash);
             final ReplayFileMeta meta = new ReplayFileMeta(hash, originalName(file), bytes.length, uploadedBy);
+
+            // P1 preflight：写文件前确定无需落盘的 SKIPPED，避免正常请求稳定制造 orphan。
+            final RecordOutcome eligibility = leaderboardService.eligibility(battle);
+            if (eligibility.isSkipped()) {
+                return skipped(eligibility, battle);
+            }
+            final Optional<RecordOutcome> preflight = leaderboardService.preflightReplay(battle, meta);
+            if (preflight.isPresent() && preflight.get() == RecordOutcome.SKIPPED_HASH_CONFLICT) {
+                return skipped(preflight.get(), battle);
+            }
+
+            // 其他路径（记录不存在 / hash NULL 待 attach / 同 hash 幂等）→ 落盘（幂等复用、重建丢失文件）
+            storage.store(bytes, hash);
             final RecordOutcome outcome = leaderboardService.recordRecorder(battle, tankopedia, meta);
             final String arenaId = battle.arenaId == null ? "" : battle.arenaId;
             if (outcome.isSkipped()) {
@@ -63,6 +76,14 @@ public class LeaderboardUploadService {
         });
     }
 
+    private static Map<String, Object> skipped(final RecordOutcome outcome, final Battle battle) {
+        return Map.of(
+                "status", "skipped",
+                "arenaId", battle.arenaId == null ? "" : battle.arenaId,
+                "reasonCode", outcome.getReasonCode()
+        );
+    }
+
     /** 解析失败 → 稳定 400 INVALID_REPLAY_FILE（区别于 storage 的 5xx）。 */
     private static Battle parse(final byte[] bytes) {
         try {
@@ -72,16 +93,22 @@ public class LeaderboardUploadService {
         }
     }
 
-    /** 原始文件名仅用于 Content-Disposition：取 basename 并限长，绝不参与文件路径。 */
-    private static String originalName(final MultipartFile file) {
+    /**
+     * 原始文件名仅用于 Content-Disposition：取 basename 并限长（≤255），绝不参与文件路径。
+     * 无有效 basename（如 "/"、""、纯分隔符、空白）→ 安全 fallback "replay.wotbreplay"。
+     */
+    static String originalName(final MultipartFile file) {
         final String name = file.getOriginalFilename();
-        if (name == null || name.isBlank()) {
-            return "";
+        String base = "";
+        if (name != null) {
+            final int slash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
+            base = slash >= 0 ? name.substring(slash + 1) : name;
         }
-        final String base = name.contains("/") || name.contains("\\")
-                ? name.substring(Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\')) + 1)
-                : name;
-        return StringUtils.hasText(base) && base.length() <= MAX_ORIGINAL_NAME ? base : base.substring(0, MAX_ORIGINAL_NAME);
+        if (!StringUtils.hasText(base)) {
+            return "replay.wotbreplay";
+        }
+        return base.length() <= MAX_ORIGINAL_NAME
+                ? base : base.substring(0, MAX_ORIGINAL_NAME);
     }
 
     private static String sha256(final byte[] data) {
