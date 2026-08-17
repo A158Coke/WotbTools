@@ -702,6 +702,7 @@
         "INVALID_IMAGE_DATA": "Invalid image data",
         "NO_REPLAY_FILES": "Select at least one replay file",
         "INVALID_REPLAY_FILE": "Invalid replay file",
+        "NON_RANDOM_BATTLE": "This replay is not a random battle and cannot be uploaded to the leaderboard.",
         "TOO_MANY_REPLAY_FILES": "Too many replay files",
         "FILE_TOO_LARGE": "File is too large",
         "REQUEST_TOO_LARGE": "The upload is too large",

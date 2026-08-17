@@ -357,6 +357,37 @@ public class WebApiTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    /**
+     * Blocker 契约（真实训练房夹具 + 真实 parser + 真实 PG/storage）：
+     * arenaBonusType=2 → HTTP 400 NON_RANDOM_BATTLE；leaderboard DB 零新增/零修改；
+     * replay storage 不产生任何 .wotbreplay 文件。
+     */
+    @Test
+    void leaderboardUploadRejectsTrainingRoomReplay() throws Exception {
+        final Path training = Path.of(System.getProperty("user.dir"), "..", "..",
+                "common", "fixtures", "leaderboard", "training-room-example.wotbreplay").normalize();
+        Assumptions.assumeTrue(Files.isRegularFile(training), "训练房夹具缺失，跳过");
+
+        final long rowsBefore = leaderboardRecordRepository.count();
+        final long filesBefore = Files.isDirectory(REPLAY_DIR)
+                ? Files.list(REPLAY_DIR).filter(p -> p.getFileName().toString().endsWith(".wotbreplay")).count()
+                : 0L;
+
+        final String json = mvc().perform(multipart("/api/leaderboard/upload")
+                        .file(leaderboardFile(training))
+                        .with(jwt()))
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse().getContentAsString();
+        final JsonNode n = om.readTree(json);
+        assertEquals("NON_RANDOM_BATTLE", n.get("error").asText(), "errorCode 必须为 NON_RANDOM_BATTLE");
+
+        assertEquals(rowsBefore, leaderboardRecordRepository.count(), "训练房不得新增 leaderboard 记录");
+        final long filesAfter = Files.isDirectory(REPLAY_DIR)
+                ? Files.list(REPLAY_DIR).filter(p -> p.getFileName().toString().endsWith(".wotbreplay")).count()
+                : 0L;
+        assertEquals(filesBefore, filesAfter, "训练房不得在 replay storage 产生文件");
+    }
+
     @Test
     void leaderboardUploadRejectsCorruptFile() throws Exception {
         final MockMultipartFile bad = new MockMultipartFile("file", "bad.wotbreplay",

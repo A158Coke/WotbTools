@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
+import { ApiError } from '../utils/http.js'
 import LeaderboardPage from './LeaderboardPage.vue'
 
 let authenticated = true
@@ -32,7 +33,7 @@ vi.mock('../utils/helpers.js', () => ({
 }))
 
 vi.mock('../utils/display.js', () => ({
-  apiErrorLabel: () => 'api-error'
+  apiErrorLabel: (t, te, error) => (error?.code ? 'err:' + error.code : 'api-error')
 }))
 
 vi.mock('vue-i18n', () => ({
@@ -124,5 +125,28 @@ describe('LeaderboardPage', () => {
     await input.trigger('change')
     expect(lbApi.leaderboardUpload).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('leaderboard.upload_success')
+  })
+
+  it('shows NON_RANDOM_BATTLE business error, never network error, and does not treat upload as success', async () => {
+    lbApi.leaderboardUpload.mockRejectedValue(new ApiError('NON_RANDOM_BATTLE', 400))
+    const wrapper = mountPage()
+    await flushPromises()
+    const input = wrapper.find('input[type="file"]')
+    const file = new File([new Uint8Array([1, 2, 3])], 'battle.wotbreplay', { type: 'application/octet-stream' })
+    Object.defineProperty(input.element, 'files', { value: [file] })
+    await input.trigger('change')
+    await flushPromises()
+
+    const msg = wrapper.find('.lb-upload-msg')
+    expect(msg.exists()).toBe(true)
+    // apiErrorLabel 输出 locale 对应业务错误（mock 返回 'err:NON_RANDOM_BATTLE'）
+    expect(msg.text()).toContain('err:NON_RANDOM_BATTLE')
+    expect(msg.text()).not.toContain('network')
+    // uploadOk === false → 消息按错误样式渲染
+    expect(msg.classes()).toContain('err')
+    // 不得显示上传成功
+    expect(wrapper.text()).not.toContain('leaderboard.upload_success')
+    // 失败不得触发排行榜刷新当作成功处理（仅 mounted 时加载一次）
+    expect(lbApi.leaderboardTopDamage).toHaveBeenCalledTimes(1)
   })
 })
