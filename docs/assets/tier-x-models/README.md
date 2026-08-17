@@ -43,7 +43,6 @@ AI 只做 visual QA；发现错误 → 修 baker → 重新生成，禁止人工
 | `frontend/src/vehicle-models/pivot.js` | 图层旋转数学（嵌套 transform：assembly 绕车辆中心 + image 绕 raster 内 pivot） |
 | `frontend/src/vehicle-models/extractor.test.js` | extractor 契约测试（坐标/fit/资产/确定性，CI 不联网） |
 | `frontend/src/vehicle-models/texture-bake.test.js` | bake 纯函数契约 + **raster 方向回归（RASTER_Y_AXIS_CONTRACT）** |
-| `frontend/src/components/VehicleModelPreviewPage.vue` | 隐藏 admin QA 页（`?view=vehicle-models`，仅 wotbtools-admin；异步 chunk） |
 | `frontend/src/components/VehicleMarker.vue` | **生产 Battle Playback 正式单车 marker**（PR2：dedicated/generic 渲染 + hull/turret 旋转） |
 | `frontend/src/vehicle-models/runtime.js` | **生产 runtime 资产解析**（PR2：tankId→modelKey→资产、战局级 preload、单车 fallback；动态 import 保 bundle 分离） |
 | `frontend/scripts/bake-tier-x-topview.mjs` | **正式 baker**（`--model-key` / `--tank-id`，唯一网络点；依赖 python + PIL） |
