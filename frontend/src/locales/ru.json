@@ -187,7 +187,6 @@
         "upload_skipped": "Пропущено: {reason}",
         "upload_skipped_default": "Уже существует или автор реплея не определен",
         "reason": {
-            "NON_RANDOM_BATTLE": "Поддерживаются только случайные бои",
             "DUPLICATE_OR_UNKNOWN_RECORDER": "Уже существует или автор реплея не определен",
             "REPLAY_HASH_CONFLICT": "Этот бой уже привязан к другому файлу реплея"
         },
@@ -702,6 +701,7 @@
         "INVALID_IMAGE_DATA": "Некорректные данные изображения",
         "NO_REPLAY_FILES": "Выберите хотя бы один файл повтора",
         "INVALID_REPLAY_FILE": "Некорректный файл повтора",
+        "UNSUPPORTED_BATTLE_TYPE": "Поддерживаются только случайные и рейтинговые бои.",
         "TOO_MANY_REPLAY_FILES": "Слишком много файлов повторов",
         "FILE_TOO_LARGE": "Файл слишком большой",
         "REQUEST_TOO_LARGE": "Общий размер загрузки слишком велик",

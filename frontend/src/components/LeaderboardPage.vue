@@ -115,12 +115,22 @@ async function download(id) {
   }
 }
 
+// B2：未登录点击「选择回放文件」→ 立即 login('leaderboard')，绝不先打开系统文件选择器。
+// 登录完成后回跳 ?view=leaderboard，用户再次点击才会打开 picker。
+function onUploadButtonClick() {
+  if (uploading.value) return
+  if (!requireLogin()) return
+  fileInput.value?.click()
+}
+
 function onFileChange(e) {
   const f = e.target.files?.[0]
   if (f) upload(f)
 }
 
+// B2：未登录拖拽回放 → 立即 login，不读取/不发送文件。
 function onDrop(e) {
+  if (!requireLogin()) return
   const f = e.dataTransfer.files?.[0]
   if (f) upload(f)
 }
@@ -160,11 +170,11 @@ function rankClass(rank) {
         <span class="up-icon"><svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg></span>
         <div class="up-title">{{ $t('leaderboard.upload_title') }}</div>
         <div class="up-sub">{{ $t('leaderboard.upload_hint') }}</div>
-        <label class="filebtn" :class="{ 'lb-uploading': uploading }">
-          <input ref="fileInput" type="file" accept=".wotbreplay" @change="onFileChange" :disabled="uploading" />
+        <input ref="fileInput" type="file" accept=".wotbreplay" class="lb-hidden-input" @change="onFileChange" :disabled="uploading" />
+        <button type="button" class="filebtn" :class="{ 'lb-uploading': uploading }" @click="onUploadButtonClick">
           <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
           {{ uploading ? $t('leaderboard.uploading') : $t('leaderboard.upload_btn') }}
-        </label>
+        </button>
       </div>
       <p v-if="uploadMsg" class="lb-upload-msg" :class="{ err: !uploadOk }">{{ uploadMsg }}</p>
     </section>
@@ -320,7 +330,7 @@ function rankClass(rank) {
 .lb-upload-card .up-title { max-width: 420px; margin-top: 10px; line-height: 1.25; }
 .lb-upload-card .up-sub { max-width: 360px; margin-top: 8px; line-height: 1.5; }
 .lb-upload-card .filebtn { margin-top: 18px; position: relative; z-index: 1; }
-.lb-upload-card .filebtn input { display: none; }
+.lb-hidden-input { display: none; }
 .lb-upload-card .filebtn.lb-uploading { opacity: .6; pointer-events: none; }
 .lb-upload-msg { margin-top: 10px; font-size: 13px; text-align: center; }
 .lb-upload-msg.err { color: var(--error); }
