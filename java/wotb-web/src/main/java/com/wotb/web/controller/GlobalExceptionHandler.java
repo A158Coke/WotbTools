@@ -1,7 +1,7 @@
 package com.wotb.web.controller;
 
 import com.wotb.web.admin.exception.AdminBadRequestException;
-import com.wotb.web.leaderboard.exception.LeaderboardStorageException;
+import com.wotb.web.hof.exception.HallOfFameStorageException;
 import com.wotb.web.admin.exception.AdminConflictException;
 import com.wotb.web.admin.exception.AdminInternalException;
 import com.wotb.web.replay.exception.ReplayBusyException;
@@ -91,8 +91,8 @@ public class GlobalExceptionHandler {
                 .body(body("REPLAY_BUSY"));
     }
 
-    @ExceptionHandler(LeaderboardStorageException.class)
-    public ResponseEntity<Map<String, Object>> handleLeaderboardStorage(final LeaderboardStorageException e) {
+    @ExceptionHandler(HallOfFameStorageException.class)
+    public ResponseEntity<Map<String, Object>> handleHofStorage(final HallOfFameStorageException e) {
         return ResponseEntity.status(e.getStatus()).body(body(e.getCode()));
     }
 

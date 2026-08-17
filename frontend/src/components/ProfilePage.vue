@@ -7,7 +7,7 @@ import {
   deleteUserWotbAccount,
   getMyBoosterAssignments,
   getMyBoosterProfile,
-  getUserLeaderboardRecords,
+  getUserHofRecords,
   getUserProfile,
   updateMyBoosterAvailability,
   updateUserWotbAccount
@@ -263,7 +263,7 @@ async function loadBoosterAssignments() {
 async function loadRecords() {
   recordsError.value = ''
   try {
-    records.value = await getUserLeaderboardRecords()
+    records.value = await getUserHofRecords()
   } catch (error) {
     recordsError.value = apiError(error)
   }

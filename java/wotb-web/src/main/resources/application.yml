@@ -130,11 +130,11 @@ wotb:
     coordinate:
       half-extent: ${REPLAY_COORDINATE_HALF_EXTENT:250}
       clamp-tolerance: ${REPLAY_COORDINATE_CLAMP_TOLERANCE:12.5}
-  leaderboard:
-    # 排行榜回放文件内容寻址存储目录（生产挂 volume /data/replays）
-    replay-dir: ${LEADERBOARD_REPLAY_DIR:data/replays}
+  hof:
+    # 名人堂回放文件内容寻址存储目录（生产挂 volume /data/replays）
+    replay-dir: ${HOF_REPLAY_DIR:data/replays}
     # 磁盘保留阈值（字节，含本次写入大小）；低于则拒绝存储 REPLAY_STORAGE_FULL(507)
-    replay-min-free-bytes: ${LEADERBOARD_REPLAY_MIN_FREE_BYTES:536870912}
+    replay-min-free-bytes: ${HOF_REPLAY_MIN_FREE_BYTES:536870912}
   boost:
     auto-confirm-hours: ${BOOST_AUTO_CONFIRM_HOURS:72}
     auto-confirm-scan-ms: ${BOOST_AUTO_CONFIRM_SCAN_MS:300000}

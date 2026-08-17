@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from './http.js'
 
 // 只 mock useAuth（避免实例化 Keycloak）与全局 fetch——
-// 绝不 mock ../utils/api.js 本身，否则会漏掉 leaderboardUpload() 的真实实现 bug。
+// 绝不 mock ../utils/api.js 本身，否则会漏掉 hofUpload() 的真实实现 bug。
 const auth = vi.hoisted(() => ({
   token: vi.fn(() => 'test-token'),
   ensureToken: vi.fn(async () => true),
@@ -13,7 +13,7 @@ vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => auth,
 }))
 
-import { leaderboardDownload, leaderboardUpload } from './api.js'
+import { hofDownload, hofUpload } from './api.js'
 
 function jsonResponse(status, body) {
   return {
@@ -23,7 +23,7 @@ function jsonResponse(status, body) {
   }
 }
 
-describe('leaderboardUpload (real api.js, fetch mocked)', () => {
+describe('hofUpload (real api.js, fetch mocked)', () => {
   const file = new File(['bytes'], 'battle.wotbreplay', { type: 'application/octet-stream' })
 
   beforeEach(() => {
@@ -40,12 +40,12 @@ describe('leaderboardUpload (real api.js, fetch mocked)', () => {
   it('resolves parsed JSON on HTTP 200 — must catch old requireOk(r).json() Promise bug', async () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { status: 'ok', arenaId: 'arena-1' }))
 
-    const result = await leaderboardUpload(file)
+    const result = await hofUpload(file)
 
     expect(result).toEqual({ status: 'ok', arenaId: 'arena-1' })
     expect(auth.ensureToken).toHaveBeenCalledWith(30)
     expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-      '/api/leaderboard/upload',
+      '/api/hof/upload',
       expect.objectContaining({
         method: 'POST',
         headers: { Authorization: 'Bearer test-token' },
@@ -60,7 +60,7 @@ describe('leaderboardUpload (real api.js, fetch mocked)', () => {
       jsonResponse(400, { error: 'UNSUPPORTED_BATTLE_TYPE', timestamp: '2026-01-01T00:00:00Z' }),
     )
 
-    const err = await leaderboardUpload(file).catch(e => e)
+    const err = await hofUpload(file).catch(e => e)
 
     expect(err).toBeInstanceOf(ApiError)
     expect(err.code).toBe('UNSUPPORTED_BATTLE_TYPE')
@@ -69,30 +69,30 @@ describe('leaderboardUpload (real api.js, fetch mocked)', () => {
     expect(err.code).not.toBe('HTTP_400')
   })
 
-  it('keeps 401 → login("leaderboard") + AUTH_REQUIRED without regressing', async () => {
+  it('keeps 401 → login("hof") + AUTH_REQUIRED without regressing', async () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse(401, { error: 'unauthorized' }))
 
-    const err = await leaderboardUpload(file).catch(e => e)
+    const err = await hofUpload(file).catch(e => e)
 
-    expect(auth.login).toHaveBeenCalledWith('leaderboard')
+    expect(auth.login).toHaveBeenCalledWith('hof')
     expect(err).toBeInstanceOf(ApiError)
     expect(err.code).toBe('AUTH_REQUIRED')
     expect(err.status).toBe(401)
   })
 
-  it('leaderboardDownload 401 → login("leaderboard") + AUTH_REQUIRED, no download side effects', async () => {
+  it('hofDownload 401 → login("hof") + AUTH_REQUIRED, no download side effects', async () => {
     const objectUrlSpy = vi.fn(() => 'blob:fake')
     URL.createObjectURL = objectUrlSpy
     vi.mocked(fetch).mockResolvedValue(jsonResponse(401, { error: 'unauthorized' }))
 
-    const err = await leaderboardDownload(42).catch(e => e)
+    const err = await hofDownload(42).catch(e => e)
 
-    expect(auth.login).toHaveBeenCalledWith('leaderboard')
+    expect(auth.login).toHaveBeenCalledWith('hof')
     expect(err).toBeInstanceOf(ApiError)
     expect(err.code).toBe('AUTH_REQUIRED')
     expect(err.status).toBe(401)
     expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-      '/api/leaderboard/42/replay',
+      '/api/hof/42/replay',
       expect.objectContaining({ headers: { Authorization: 'Bearer test-token' } }),
     )
     // 401 在创建 blob / object URL / 触发下载之前抛错，不得有任何下载副作用
