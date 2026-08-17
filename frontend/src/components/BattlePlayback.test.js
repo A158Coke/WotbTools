@@ -1151,14 +1151,15 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
   })
 })
 
-describe('PR4 Â§33 B3 â€” hysteresis ä½¿ç”¨ UI wall clockï¼ˆæš‚åœä¸å†»ç»“ï¼›fade-in å®Œæ•´ç”Ÿå‘½å‘¨æœŸï¼‰', () => {
+
+describe('PR4 §33 B3 — hysteresis 使用 UI wall clock（暂停不冻结；fade-in 完整生命周期）', () => {
   afterEach(() => {
     localStorage.clear()
     vi.restoreAllMocks()
     vi.useRealTimers()
   })
 
-  /** ä¸¤è½¦åŒä½ï¼ˆt=12 æ’å†²çªï¼‰çš„ overviewï¼›2001 çŽ©å®¶åè¶³å¤Ÿé•¿ã€‚ */
+  /** 两车同位（t=12 恒冲突）的 overview；2001 玩家名足够长。 */
   function overlapOverview() {
     const overview = makeOverview()
     overview.routes[0].points = [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }]
@@ -1177,7 +1178,7 @@ describe('PR4 Â§33 B3 â€” hysteresis ä½¿ç”¨ UI wall clockï¼ˆæ�
     return wrapper.find('[data-test="pb-marker-2001"]').find('.pb-label-player')
   }
 
-  it('æš‚åœ + zoom äº§ç”Ÿ conflict â†’ ~250ms åŽæ­£å¸¸ hideï¼ˆä¸ä¾èµ–æ’­æ”¾ï¼‰', async () => {
+  it('暂停 + zoom 产生 conflict → ~250ms 后正常 hide（不依赖播放）', async () => {
     stubRaf()
     let fakeNow = 50_000
     const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
@@ -1185,24 +1186,24 @@ describe('PR4 Â§33 B3 â€” hysteresis ä½¿ç”¨ UI wall clockï¼ˆæ�
     await flushPromises()
     await wrapper.find('[data-test="pb-show-player"]').setValue(true)
     await flushPromises()
-    // æš‚åœæ€ zoomï¼ˆwheelï¼‰â†’ å¸ƒå±€å˜åŒ–ï¼›hysteresis æ—¶é’Ÿå¿…é¡»ç»§ç»­ï¼ˆè½»é‡ RAFï¼‰
+    // 暂停态 zoom（wheel）→ 布局变化；hysteresis 时钟必须继续（轻量 RAF）
     await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 400, clientY: 300 })
     await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toBeUndefined() // æœªåˆ°é˜ˆå€¼
-    expect(rafCb).toBeTruthy() // è½»é‡ hysteresis RAF å·²æ³¨å†Œï¼ˆæœªå†³ transitionï¼‰
+    expect(playerElOf(wrapper).attributes('style')).toBeUndefined() // 未到阈值
+    expect(rafCb).toBeTruthy() // 轻量 hysteresis RAF 已注册（未决 transition）
     fakeNow = 50_000 + PLAYER_HIDE_MS + 50
     rafCb(fakeNow)
     await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toContain('display: none') // æš‚åœæ€ 250ms åŽéšè—
+    expect(playerElOf(wrapper).attributes('style')).toContain('display: none') // 暂停态 250ms 后隐藏
     nowSpy.mockRestore()
   })
 
-  it('æš‚åœ + å†²çªè§£é™¤ â†’ ~300ms åŽæ­£å¸¸ showï¼ˆseek ä¸ç ´å hysteresisï¼‰', async () => {
+  it('暂停 + 冲突解除 → ~300ms 后正常 show（seek 不破坏 hysteresis）', async () => {
     stubRaf()
     let fakeNow = 60_000
     const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
     const overview = overlapOverview()
-    // tâ‰¤12 åŒä½å†²çªï¼›t=13.8 ä¸¤è½¦åˆ†ç¦»ï¼ˆçº¿æ€§æ’å€¼ï¼‰
+    // t≤12 同位冲突；t=13.8 两车分离（线性插值）
     overview.routes[0].points = [
       { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
       { x: -300, y: -260, timeSec: 14 },
@@ -1215,24 +1216,24 @@ describe('PR4 Â§33 B3 â€” hysteresis ä½¿ç”¨ UI wall clockï¼ˆæ�
     await flushPromises()
     await wrapper.find('[data-test="pb-show-player"]').setValue(true)
     await flushPromises()
-    // éšè—ï¼ˆ250msï¼‰
+    // 隐藏（250ms）
     fakeNow = 60_000 + PLAYER_HIDE_MS + 50
     rafCb(fakeNow)
     await flushPromises()
     expect(playerElOf(wrapper).attributes('style')).toContain('display: none')
-    // å†²çªè§£é™¤ï¼ˆseek åˆ°åˆ†ç¦»ä½ç½®ï¼‰â†’ show è®¡æ—¶é‡æ–°å¼€å§‹
+    // 冲突解除（seek 到分离位置）→ show 计时重新开始
     await wrapper.find('.pb-range').setValue(13.8)
     await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toContain('display: none') // æœªåˆ° 300ms
+    expect(playerElOf(wrapper).attributes('style')).toContain('display: none') // 未到 300ms
     fakeNow = 60_000 + PLAYER_HIDE_MS + 50 + PLAYER_SHOW_MS + 50
     rafCb(fakeNow)
     await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toBeUndefined() // æ¢å¤æ˜¾ç¤º
-    expect(playerElOf(wrapper).classes()).toContain('pb-label-fading') // fade-in å¼€å§‹
+    expect(playerElOf(wrapper).attributes('style')).toBeUndefined() // 恢复显示
+    expect(playerElOf(wrapper).classes()).toContain('pb-label-fading') // fade-in 开始
     nowSpy.mockRestore()
   })
 
-  it('fade-in ä¸ä¼šåœ¨ä¸‹ä¸€ä¸ª RAF ç«‹å³æ¶ˆå¤±ï¼ˆâ‰¥PLAYER_FADE_MS å®Œæ•´ç”Ÿå‘½å‘¨æœŸï¼‰', async () => {
+  it('fade-in 不会在下一个 RAF 立即消失（≥PLAYER_FADE_MS 完整生命周期）', async () => {
     stubRaf()
     let fakeNow = 70_000
     const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
@@ -1255,19 +1256,19 @@ describe('PR4 Â§33 B3 â€” hysteresis ä½¿ç”¨ UI wall clockï¼ˆæ�
     rafCb(fakeNow)
     await flushPromises()
     expect(el().attributes('style')).toContain('display: none')
-    // showï¼ˆè§£é™¤å†²çªï¼‰
+    // show（解除冲突）
     await wrapper.find('.pb-range').setValue(13.8)
     await flushPromises()
     fakeNow = 70_000 + PLAYER_HIDE_MS + 50 + PLAYER_SHOW_MS + 50
     rafCb(fakeNow)
     await flushPromises()
     expect(el().classes()).toContain('pb-label-fading')
-    // ä¸‹ä¸€ RAFï¼ˆ10ms åŽï¼‰ä»ä¿æŒ fade ç±»ï¼ˆä¸è¢«ä¸‹ä¸€æ¬¡ resolve å–æ¶ˆï¼‰
+    // 下一 RAF（10ms 后）仍保持 fade 类（不被下一次 resolve 取消）
     fakeNow += 10
     rafCb(fakeNow)
     await flushPromises()
     expect(el().classes()).toContain('pb-label-fading')
-    // è¶…è¿‡ PLAYER_FADE_MS â†’ ç±»ç§»é™¤
+    // 超过 PLAYER_FADE_MS → 类移除
     fakeNow += PLAYER_FADE_MS + 20
     rafCb(fakeNow)
     await flushPromises()
@@ -1275,7 +1276,7 @@ describe('PR4 Â§33 B3 â€” hysteresis ä½¿ç”¨ UI wall clockï¼ˆæ�
     nowSpy.mockRestore()
   })
 
-  it('æ’­æ”¾ä¸­åŒæ ·å·¥ä½œï¼ˆframe() é©±åŠ¨æ—¶é’Ÿï¼‰', async () => {
+  it('播放中同样工作（frame() 驱动时钟）', async () => {
     stubRaf()
     let fakeNow = 80_000
     const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
@@ -1283,13 +1284,368 @@ describe('PR4 Â§33 B3 â€” hysteresis ä½¿ç”¨ UI wall clockï¼ˆæ�
     await flushPromises()
     await wrapper.find('[data-test="pb-show-player"]').setValue(true)
     await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toBeUndefined() // æœªåˆ°é˜ˆå€¼
-    await wrapper.find('[data-test="pb-play"]').trigger('click') // æ’­æ”¾
+    expect(playerElOf(wrapper).attributes('style')).toBeUndefined() // 未到阈值
+    await wrapper.find('[data-test="pb-play"]').trigger('click') // 播放
     await flushPromises()
     fakeNow = 80_000 + PLAYER_HIDE_MS + 50
-    rafCb(fakeNow) // frame â†’ nowMs åˆ·æ–° â†’ resolve
+    rafCb(fakeNow) // frame → nowMs 刷新 → resolve
     await flushPromises()
-    expect(playerElOf(wrapper).attributes('style')).toContain('display: none') // æ’­æ”¾ä¸­ 250ms åŽéšè—
+    expect(playerElOf(wrapper).attributes('style')).toContain('display: none') // 播放中 250ms 后隐藏
     nowSpy.mockRestore()
+  })
+
+  it('Blocker1：播放中 conflict 未完成 → Pause → 轻量 clock 接管 → 到 250ms 正常 hide', async () => {
+    stubRaf()
+    let fakeNow = 90_000
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
+    const wrapper = mountWithPlayer(overlapOverview(), 12)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-show-player"]').setValue(true)
+    await flushPromises()
+    // 播放（frame 驱动 nowMs）
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
+    await flushPromises()
+    expect(rafCb).toBeTruthy()
+    fakeNow = 90_000 + 100 // 播放 100ms，conflict 尚未到 hide 阈值
+    rafCb(fakeNow) // frame：首帧 delta 0，nowMs 刷新
+    await flushPromises()
+    expect(playerElOf(wrapper).attributes('style')).toBeUndefined() // 未隐藏
+    // Pause：pending hide 的 clock 必须由轻量 hysteresis RAF 接管
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
+    await flushPromises()
+    fakeNow = 90_000 + PLAYER_HIDE_MS + 50
+    rafCb(fakeNow) // hystTick
+    await flushPromises()
+    expect(playerElOf(wrapper).attributes('style')).toContain('display: none') // Pause 后仍到达 250ms
+    nowSpy.mockRestore()
+  })
+
+  it('Blocker1：播放中隐藏 → 冲突解除（show pending）→ Pause → 到 300ms 正常 show', async () => {
+    stubRaf()
+    let fakeNow = 91_000
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
+    const overview = overlapOverview()
+    // 前段同位冲突，后段分离：seek 到分离段解除冲突
+    overview.routes[0].points = [
+      { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
+      { x: -300, y: -260, timeSec: 14 },
+    ]
+    overview.routes[1].points = [
+      { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
+      { x: 300, y: 260, timeSec: 14 },
+    ]
+    const wrapper = mountWithPlayer(overview, 11)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-show-player"]').setValue(true)
+    await flushPromises()
+    // 播放中完成 hide
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
+    await flushPromises()
+    fakeNow = 91_000 + PLAYER_HIDE_MS + 50
+    rafCb(fakeNow) // frame 首帧 delta 0
+    await flushPromises()
+    expect(playerElOf(wrapper).attributes('style')).toContain('display: none')
+    // 冲突解除（seek 分离段）→ show pending
+    await wrapper.find('.pb-range').setValue(13.8)
+    await flushPromises()
+    expect(playerElOf(wrapper).attributes('style')).toContain('display: none') // 未到 300ms
+    // Pause：show pending 的 clock 接管
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
+    await flushPromises()
+    fakeNow = 91_000 + PLAYER_HIDE_MS + 50 + PLAYER_SHOW_MS + 50
+    rafCb(fakeNow)
+    await flushPromises()
+    expect(playerElOf(wrapper).attributes('style')).toBeUndefined() // 已恢复显示
+    expect(playerElOf(wrapper).classes()).toContain('pb-label-fading')
+    nowSpy.mockRestore()
+  })
+
+  it('Blocker1：fade-in 开始 → Pause → 120ms 后 class 正常清除', async () => {
+    stubRaf()
+    let fakeNow = 92_000
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
+    const overview = overlapOverview()
+    // 前段同位冲突，后段分离：seek 到分离段解除冲突（保持 showPlayer on，player 元素恒存在）
+    overview.routes[0].points = [
+      { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
+      { x: -300, y: -260, timeSec: 14 },
+    ]
+    overview.routes[1].points = [
+      { x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 12 },
+      { x: 300, y: 260, timeSec: 14 },
+    ]
+    const wrapper = mountWithPlayer(overview, 11)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-show-player"]').setValue(true)
+    await flushPromises()
+    // 播放中 hide
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
+    await flushPromises()
+    fakeNow = 92_000 + PLAYER_HIDE_MS + 50
+    rafCb(fakeNow)
+    await flushPromises()
+    expect(playerElOf(wrapper).attributes('style')).toContain('display: none')
+    // 冲突解除（seek 分离段）→ show pending（播放中，frame 仍驱动时钟）
+    await wrapper.find('.pb-range').setValue(13.8)
+    await flushPromises()
+    expect(playerElOf(wrapper).attributes('style')).toContain('display: none') // 未到 300ms
+    fakeNow = 92_000 + PLAYER_HIDE_MS + 50 + PLAYER_SHOW_MS + 50
+    rafCb(fakeNow) // frame：delta 300 → currentTime 14.1（分离位置，无冲突）→ show + fade 开始
+    await flushPromises()
+    expect(playerElOf(wrapper).classes()).toContain('pb-label-fading')
+    // Pause：fade 剩余生命周期由轻量 clock 接管
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
+    await flushPromises()
+    fakeNow += 10
+    rafCb(fakeNow)
+    await flushPromises()
+    expect(playerElOf(wrapper).classes()).toContain('pb-label-fading') // 未到 120ms 仍保留
+    fakeNow += PLAYER_FADE_MS + 20
+    rafCb(fakeNow)
+    await flushPromises()
+    expect(playerElOf(wrapper).classes()).not.toContain('pb-label-fading')
+    nowSpy.mockRestore()
+  })
+
+  it('Blocker1：无 pending 时 Pause 不启动轻量 RAF（不永久轮询）', async () => {
+    stubRaf()
+    let fakeNow = 93_000
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
+    let rafCount = 0
+    vi.stubGlobal('requestAnimationFrame', (cb) => { rafCount++; rafCb = cb; return rafCount })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    const wrapper = mountPlayback(makeOverview(), 12) // 默认两车相距远 → 无冲突
+    await flushPromises()
+    await wrapper.find('[data-test="pb-show-player"]').setValue(true)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
+    await flushPromises()
+    const afterPlay = rafCount
+    expect(afterPlay).toBeGreaterThan(0)
+    // Pause：无 pending → 不新增 RAF
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
+    await flushPromises()
+    expect(rafCount).toBe(afterPlay)
+    nowSpy.mockRestore()
+  })
+
+  it('Blocker1：unmount 时正确 cancel hystRaf（不残留）', async () => {
+    stubRaf()
+    let fakeNow = 94_000
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => fakeNow)
+    const cancelled = []
+    vi.stubGlobal('cancelAnimationFrame', (id) => cancelled.push(id))
+    vi.stubGlobal('requestAnimationFrame', (cb) => { rafCb = cb; return 7 })
+    const wrapper = mountWithPlayer(overlapOverview(), 12)
+    await flushPromises()
+    await wrapper.find('[data-test="pb-show-player"]').setValue(true)
+    await flushPromises()
+    // pending hide → scheduler 已注册 hystRaf（id 7）
+    expect(cancelled).not.toContain(7)
+    wrapper.unmount()
+    expect(cancelled).toContain(7) // hystRaf 被 cancel
+    nowSpy.mockRestore()
+  })
+})
+describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
+  const origReqFs = typeof Element.prototype !== 'undefined' ? Element.prototype.requestFullscreen : undefined
+  const origExitFs = typeof document !== 'undefined' ? document.exitFullscreen : undefined
+  const origFsElDesc = typeof document !== 'undefined' ? Object.getOwnPropertyDescriptor(document, 'fullscreenElement') : undefined
+
+  function setFullscreen(el) {
+    Object.defineProperty(document, 'fullscreenElement', { value: el, configurable: true, writable: true })
+  }
+  function resetFullscreenGlobals() {
+    if (origReqFs === undefined) delete Element.prototype.requestFullscreen
+    else Element.prototype.requestFullscreen = origReqFs
+    if (origExitFs === undefined) delete document.exitFullscreen
+    else document.exitFullscreen = origExitFs
+    if (origFsElDesc) Object.defineProperty(document, 'fullscreenElement', origFsElDesc)
+    else delete document.fullscreenElement
+  }
+  function stubFullscreenApi() {
+    const reqFs = vi.fn().mockResolvedValue(undefined)
+    Element.prototype.requestFullscreen = reqFs
+    const exitFs = vi.fn().mockResolvedValue(undefined)
+    document.exitFullscreen = exitFs
+    return { reqFs, exitFs }
+  }
+  /** ResizeObserver stub：捕获回调，测试里手动触发模拟尺寸变化。 */
+  function stubResizeObserver() {
+    let roCb = null
+    const RO = vi.fn(function (cb) { roCb = cb; this.observe = vi.fn(); this.disconnect = vi.fn() })
+    vi.stubGlobal('ResizeObserver', RO)
+    return () => roCb
+  }
+
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+    resetFullscreenGlobals()
+  })
+
+  it('1/2/3/4/5：API 可用 → 按钮可见；进入调 root.requestFullscreen；fullscreenchange 同步；退出调 exitFullscreen；ESC 外部退出恢复', async () => {
+    stubRaf()
+    const { reqFs, exitFs } = stubFullscreenApi()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const btn = wrapper.find('[data-test="pb-fullscreen"]')
+    expect(btn.exists()).toBe(true)
+    expect(btn.text()).toContain('enter_fullscreen')
+    // 进入：requestFullscreen 调用在 Battle Playback root 上
+    await btn.trigger('click')
+    expect(reqFs).toHaveBeenCalledTimes(1)
+    expect(reqFs.mock.instances[0]).toBe(wrapper.find('[data-test="battle-playback"]').element)
+    // fullscreenchange + fullscreenElement=root → 显示退出全屏
+    setFullscreen(wrapper.find('[data-test="battle-playback"]').element)
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-fullscreen"]').text()).toContain('exit_fullscreen')
+    // 点击退出 → document.exitFullscreen
+    await wrapper.find('[data-test="pb-fullscreen"]').trigger('click')
+    expect(exitFs).toHaveBeenCalledTimes(1)
+    // ESC/外部退出：fullscreenElement=null → 状态恢复
+    setFullscreen(null)
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-fullscreen"]').text()).toContain('enter_fullscreen')
+  })
+
+  it('6：API 不可用 → 按钮隐藏，不抛错', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-fullscreen"]').exists()).toBe(false)
+  })
+
+  it('7/8/9/10：进入/退出 fullscreen 不 reset currentTime/speed/selected/zoom/pan', async () => {
+    stubRaf()
+    stubFullscreenApi()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    await wrapper.find('.pb-range').setValue(12)
+    await wrapper.find('[data-test="pb-speed"]').trigger('click') // 2×
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 }) // 选中
+    for (let i = 0; i < 3; i++) {
+      await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 400, clientY: 300 })
+    }
+    await flushPromises()
+    const timeBefore = wrapper.find('.pb-time').text()
+    const speedBefore = wrapper.find('[data-test="pb-speed"]').text()
+    const infoBefore = wrapper.find('[data-test="pb-info"]').text()
+    const viewportBefore = wrapper.find('[data-test="pb-viewport"]').attributes('style')
+    // 进入
+    setFullscreen(wrapper.find('[data-test="battle-playback"]').element)
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await flushPromises()
+    expect(wrapper.find('.pb-time').text()).toBe(timeBefore)
+    expect(wrapper.find('[data-test="pb-speed"]').text()).toBe(speedBefore)
+    expect(wrapper.find('[data-test="pb-info"]').text()).toBe(infoBefore)
+    expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toBe(viewportBefore)
+    // 退出
+    setFullscreen(null)
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await flushPromises()
+    expect(wrapper.find('.pb-time').text()).toBe(timeBefore)
+    expect(wrapper.find('[data-test="pb-speed"]').text()).toBe(speedBefore)
+    expect(wrapper.find('[data-test="pb-info"]').text()).toBe(infoBefore)
+    expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toBe(viewportBefore)
+  })
+
+  it('11/12/13：ResizeObserver 容器宽变化 → markerScreen/labelLayout 使用新尺寸（相对距离随容器缩放）', async () => {
+    stubRaf()
+    const roCb = stubResizeObserver()
+    const overview = makeOverview()
+    // markerScreen 返回容器比例坐标（×W/766）：两车 Δx=20 地图单位 → 800 宽屏幕距 ≈26.6px
+    // < 标签盒 30.4px → 冲突；1600 宽屏幕距 ≈53.3px > 30.4 → 无冲突（标签屏幕恒定）
+    overview.routes[0].points = [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }]
+    overview.routes[1].points = [{ x: -205, y: -196.7, timeSec: 10 }, { x: -205, y: -196.7, timeSec: 14 }]
+    const wrapper = mountPlayback(overview, 12)
+    await flushPromises()
+    expect(roCb()).toBeTruthy() // RO 已挂载
+    const mapEl = wrapper.find('[data-test="pb-map"]').element
+    // 2001（map y=-196.7）屏幕位置更靠上 → 是"上方"标签（冲突时上移让位）
+    const labelsStyle = () => wrapper.find('[data-test="pb-marker-2001"]').find('.pb-labels').attributes('style') || ''
+    const dy = (s) => parseFloat(s.match(/calc\(100% \+ (-?[\d.]+)px\)/)?.[1] || '2')
+    // 800 宽：两车屏幕距 ≈26.6px < 标签宽 30.4px → 冲突 → 上方 2001 上移
+    Object.defineProperty(mapEl, 'clientWidth', { value: 800, configurable: true })
+    roCb()([{ contentRect: { width: 800, height: 800 } }])
+    await flushPromises()
+    expect(dy(labelsStyle())).toBeLessThan(2)
+    // 800 → 1600（fullscreen 容器变化）→ RO 触发 → 屏幕距翻倍（≈53px）→ 无冲突 → 基准 2px
+    Object.defineProperty(mapEl, 'clientWidth', { value: 1600, configurable: true })
+    roCb()([{ contentRect: { width: 1600, height: 1600 } }])
+    await flushPromises()
+    expect(dy(labelsStyle())).toBe(2)
+  })
+
+  it('14：Resize 后 selectAt/hitbox 使用新尺寸（同一视觉位置点击选中最近车辆）', async () => {
+    stubRaf()
+    const roCb = stubResizeObserver()
+    const overview = makeOverview()
+    overview.routes[0].points = [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }]
+    overview.routes[1].points = [{ x: -232.5, y: -204.2, timeSec: 10 }, { x: -232.5, y: -204.2, timeSec: 14 }]
+    overview.playback.vehicles[1].positionIntervals = [{ startSec: 0, endSec: 60 }]
+    const wrapper = mountPlayback(overview, 12)
+    await flushPromises()
+    Object.defineProperty(wrapper.find('[data-test="pb-map"]').element, 'clientWidth', { value: 1600, configurable: true })
+    roCb()([{ contentRect: { width: 1600, height: 1600 } }])
+    await flushPromises()
+    // 1600 宽：A 中心 x=200、B 中心 x=180（generic hitbox 半宽 ≈10.4）
+    // 点击 A 按钮 (185, 1350)：命中 B（最近）；若仍用 800 旧尺寸（A=100/B=90）则 185 命中不了 → 选 A
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click', { clientX: 185, clientY: 1350 })
+    expect(wrapper.find('[data-test="pb-info"]').text()).toContain('EnemyA') // B = 2001 = EnemyA
+  })
+
+  it('15：fullscreen（1600）+ 1×/2× zoom → collision 使用新 viewport 继续正确', async () => {
+    stubRaf()
+    const roCb = stubResizeObserver()
+    const overview = makeOverview()
+    // 同位 → 任意尺寸/zoom 都冲突（screen 尺寸恒定）
+    overview.routes[0].points = [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }]
+    overview.routes[1].points = [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }]
+    overview.playback.vehicles[1].playerName = 'VeryLongEnemyPlayerNameCollisionTest'
+    const wrapper = mountPlayback(overview, 12)
+    await flushPromises()
+    Object.defineProperty(wrapper.find('[data-test="pb-map"]').element, 'clientWidth', { value: 1600, configurable: true })
+    roCb()([{ contentRect: { width: 1600, height: 1600 } }])
+    await flushPromises()
+    await wrapper.find('[data-test="pb-show-player"]').setValue(true)
+    await flushPromises()
+    const labelsStyle = () => wrapper.find('[data-test="pb-marker-1001"]').find('.pb-labels').attributes('style') || ''
+    expect(labelsStyle()).toContain('scale(1)') // 1× 反缩放
+    // 2× zoom：wheel 锚点 = 车辆所在容器 px（(96,646)，1× 时内容 (95.75,646.2)）——
+    // 避免 zoom 的 pan 把车辆移出 viewport 被裁剪（裁剪是真实机制，但本测试验证的是 zoom 后 collision）
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 96, clientY: 646 })
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { deltaY: -120, clientX: 96, clientY: 646 })
+    await flushPromises()
+    const style2x = labelsStyle()
+    expect(style2x).toContain('scale(0.6944') // 2× 反缩放
+    const dy2x = parseFloat(style2x.match(/calc\(100% \+ (-?[\d.]+)px\)/)?.[1] || '2')
+    expect(dy2x).toBeLessThan(2) // 2× 下同位冲突位移仍生效（tankDy×inv < 2）
+  })
+
+  it('16：重复进入/退出 fullscreen 不累积 fullscreenchange listener；unmount 移除', async () => {
+    stubRaf()
+    stubFullscreenApi()
+    const addSpy = vi.spyOn(document, 'addEventListener')
+    const removeSpy = vi.spyOn(document, 'removeEventListener')
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    expect(addSpy.mock.calls.filter(([t]) => t === 'fullscreenchange').length).toBe(1)
+    for (let i = 0; i < 3; i++) {
+      setFullscreen(wrapper.find('[data-test="battle-playback"]').element)
+      document.dispatchEvent(new Event('fullscreenchange'))
+      await flushPromises()
+      setFullscreen(null)
+      document.dispatchEvent(new Event('fullscreenchange'))
+      await flushPromises()
+    }
+    expect(addSpy.mock.calls.filter(([t]) => t === 'fullscreenchange').length).toBe(1) // 未重复 add
+    expect(wrapper.find('[data-test="pb-fullscreen"]').text()).toContain('enter_fullscreen')
+    wrapper.unmount()
+    expect(removeSpy.mock.calls.filter(([t]) => t === 'fullscreenchange').length).toBe(1)
   })
 })

@@ -172,8 +172,70 @@ const eventPopupSec = ref(null)
 let rafId = null
 let lastFrameTs = null
 
+// PR4 §33 hysteresis 状态（声明提前：seekTo watch immediate 可能在 setup 早期触发 pause →
+// ensureHysteresisClock/hasPendingHysteresis 必须能访问；ref/Map/let 需先初始化，避免 TDZ）
+const playerVisState = ref(new Map())
+const playerHidden = ref(new Set())
+// fade-in 生命周期：accountId → fade 结束时刻（performance.now 基准）。
+// 非响应式 Map，由 nowMs 变化驱动重渲染；恢复帧开始计时 PLAYER_FADE_MS，
+// 期间不被下一次 collision resolve 取消（CSS animation 0.12s 与之一致）。
+const fadeUntil = new Map()
+let hystRafId = null
+
 // ---- 地图视图缩放/平移：单一 transform 层保证地图/网格/炮线/标记严格对齐 ----
 const mapEl = ref(null)
+// ---- 地图容器真实渲染尺寸（reactive）：fullscreen enter/exit / 窗口缩放等任何尺寸变化
+// 由 ResizeObserver 更新 → 依赖容器尺寸的 screen-space 布局（markerScreen/labelLayout/
+// hitbox/textInput）在新尺寸下重新计算；无 RO 环境（测试/旧浏览器）回退 clientWidth 读取。
+const mapSize = ref({ w: 0, h: 0 })
+let mapResizeObserver = null
+function mapWidth() {
+  return mapSize.value.w || (mapEl.value ? mapEl.value.clientWidth : 0)
+}
+function mapHeight() {
+  return mapSize.value.h || (mapEl.value ? mapEl.value.clientHeight : 0)
+}
+
+// ---- Fullscreen：原生 Fullscreen API；document.fullscreenElement + fullscreenchange 为事实源
+//（不维护手工 isFullscreen = !isFullscreen，ESC/浏览器 UI 退出后状态自动同步）----
+const pbRoot = ref(null)
+const isFullscreen = ref(false)
+const fullscreenSupported = computed(() =>
+  typeof document !== 'undefined'
+  && pbRoot.value != null
+  && typeof pbRoot.value.requestFullscreen === 'function'
+)
+function onFullscreenChange() {
+  isFullscreen.value = !!(typeof document !== 'undefined' && document.fullscreenElement)
+}
+function toggleFullscreen() {
+  if (typeof document === 'undefined' || !pbRoot.value) return
+  if (document.fullscreenElement) {
+    if (typeof document.exitFullscreen === 'function') {
+      const p = document.exitFullscreen()
+      if (p && typeof p.catch === 'function') p.catch(() => {})
+    }
+  } else if (typeof pbRoot.value.requestFullscreen === 'function') {
+    const p = pbRoot.value.requestFullscreen()
+    if (p && typeof p.catch === 'function') p.catch(() => {})
+  }
+}
+
+// 地图容器尺寸观察：fullscreen enter/exit / 窗口缩放 → ResizeObserver 更新 mapSize
+//（reactive）→ markerScreen/labelLayout/selectAt/textInput 以新尺寸重算；不依赖 magic delay。
+watch(() => mapEl.value, (el) => {
+  if (!el || mapResizeObserver) return
+  if (typeof ResizeObserver === 'function') {
+    mapResizeObserver = new ResizeObserver((entries) => {
+      const e = entries && entries[0]
+      if (e && e.contentRect) {
+        mapSize.value = { w: e.contentRect.width, h: e.contentRect.height }
+      }
+    })
+    mapResizeObserver.observe(el)
+  }
+})
+
 const view = reactive({ scale: 1, tx: 0, ty: 0 })
 const PAN_THRESHOLD_PX = 5
 const PINCH_THRESHOLD_PX = 5
@@ -189,8 +251,8 @@ let gestureMoved = false
 function applyView(next) {
   const clamped = clampViewPan(
     next,
-    mapEl.value ? mapEl.value.clientWidth : 0,
-    mapEl.value ? mapEl.value.clientHeight : 0
+    mapWidth(),
+    mapHeight()
   )
   view.scale = clamped.scale
   view.tx = clamped.tx
@@ -438,8 +500,7 @@ function draftFromTool(tool, a, b) {
 /** 指针 client 坐标 → 语义坐标（CSS px → 撤销 viewport 变换 → CSS↔SVG 比例 → fromX/fromY）。 */
 function semanticPoint(e) {
   const sp = screenPoint(e.clientX, e.clientY)
-  const el = mapEl.value
-  return screenToSemantic(view, mapView.value, sp.x, sp.y, el ? el.clientWidth : 0, el ? el.clientHeight : 0)
+  return screenToSemantic(view, mapView.value, sp.x, sp.y, mapWidth(), mapHeight())
 }
 
 function startDrawing(e) {
@@ -535,14 +596,13 @@ function cancelSession(session) {
 const textInputStyle = computed(() => {
   const session = textSession.value
   if (!session) return null
-  const el = mapEl.value
   const s = svgToScreen(
     mapView.value,
     view,
     mapView.value.toX(session.point.x),
     mapView.value.toY(session.point.y),
-    el ? el.clientWidth : 0,
-    el ? el.clientHeight : 0
+    mapWidth(),
+    mapHeight()
   )
   if (!s) return null
   return { left: `${s.x}px`, top: `${s.y}px` }
@@ -587,6 +647,9 @@ onMounted(() => {
   window.addEventListener('pointermove', onPointerMove)
   window.addEventListener('pointerup', onPointerUp)
   window.addEventListener('pointercancel', onPointerUp)
+  if (typeof document !== 'undefined') {
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+  }
 })
 
 function frame(ts) {
@@ -606,6 +669,8 @@ function frame(ts) {
     }
     playing.value = false
     rafId = null
+    // Blocker 1：播放到末尾自然停止 → 若有未决 transition，轻量 clock 接管
+    ensureHysteresisClock(typeof performance !== 'undefined' ? performance.now() : Date.now())
     return
   }
   rafId = requestAnimationFrame(frame)
@@ -616,6 +681,10 @@ function play() {
   if (playing.value || duration.value <= 0) return
   playing.value = true
   lastFrameTs = null
+  // 播放开始：hysteresis 时钟由 playback frame() 驱动——作废可能残留的轻量 hystRAF
+  //（stub 环境只保留最近回调，若不清理，pause() 的 ensureHysteresisClock 会误判"已有 RAF"
+  //  而无法注册接管时钟；真实浏览器中残留回调至多无害地刷新一次 nowMs）
+  hystRafId = null
   rafId = requestAnimationFrame(frame)
 }
 
@@ -626,6 +695,9 @@ function pause() {
     cancelAnimationFrame(rafId)
     rafId = null
   }
+  // Blocker 1：播放中可能有未决 hide/show/fade transition——暂停后立即让轻量
+  // hysteresis clock（UI wall clock）接管；无 pending 时不启动 RAF（不永久轮询）。
+  ensureHysteresisClock(typeof performance !== 'undefined' ? performance.now() : Date.now())
 }
 
 watch(() => props.seekTo, (sec) => {
@@ -677,6 +749,17 @@ function toggleType(type) {
 onBeforeUnmount(() => {
   if (rafId != null) cancelAnimationFrame(rafId)
   if (hystRafId != null) cancelAnimationFrame(hystRafId)
+  if (mapResizeObserver) {
+    mapResizeObserver.disconnect()
+    mapResizeObserver = null
+  }
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('fullscreenchange', onFullscreenChange)
+    // 组件在 fullscreen 中被卸载 → 主动退出（浏览器通常会自动退出，这里兜底）
+    if (pbRoot.value && pbRoot.value === document.fullscreenElement && typeof document.exitFullscreen === 'function') {
+      document.exitFullscreen()
+    }
+  }
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
   window.removeEventListener('pointercancel', onPointerUp)
@@ -892,8 +975,7 @@ function onMarkerSelect(vehicle, event) {
 
 /** 标记中心 → 相对地图容器的屏幕 px（viewport 变换后）。 */
 function markerScreen(st) {
-  const el = mapEl.value
-  const W = el ? el.clientWidth : 0
+  const W = mapWidth()
   if (!W || mapView.value.W <= 0) return null
   const H = W * (mapView.value.H / mapView.value.W)
   return {
@@ -904,7 +986,7 @@ function markerScreen(st) {
 
 function selectAt(accountId, clientX, clientY) {
   const states = vehicleStates.value
-  const hasPoint = Number.isFinite(clientX) && mapEl.value && mapEl.value.clientWidth > 0
+  const hasPoint = Number.isFinite(clientX) && mapEl.value && mapWidth() > 0
   const rect = mapEl.value ? mapEl.value.getBoundingClientRect() : { left: 0, top: 0 }
   const px = hasPoint ? clientX - rect.left : NaN
   const py = hasPoint ? clientY - rect.top : NaN
@@ -915,7 +997,7 @@ function selectAt(accountId, clientX, clientY) {
   const hitTest = (s) => {
     const cx = (px - view.tx) / view.scale
     const cy = (py - view.ty) / view.scale
-    const W = mapEl.value.clientWidth
+    const W = mapWidth()
     const H = W * (mapView.value.H / mapView.value.W)
     const x = (mapView.value.toX(s.pos.x) / mapView.value.W) * W
     const y = (mapView.value.toY(s.pos.y) / mapView.value.H) * H
@@ -962,8 +1044,7 @@ const selectedState = computed(() => {
 
 // ---- PR4 §32–§35：标签碰撞布局（纯函数；screen px）+ PlayerName hysteresis ----
 const labelLayout = computed(() => {
-  const el = mapEl.value
-  const W = el ? el.clientWidth : 0
+  const W = mapWidth()
   if (!W || mapView.value.W <= 0) return new Map()
   const items = vehicleStates.value.map((st) => {
     const p = markerScreen(st)
@@ -984,13 +1065,8 @@ const labelLayout = computed(() => {
   })
 })
 
-const playerVisState = ref(new Map())
-const playerHidden = ref(new Set())
-// fade-in 生命周期：accountId → fade 结束时刻（performance.now 基准）。
-// 非响应式 Map，由 nowMs 变化驱动重渲染；恢复帧开始计时 PLAYER_FADE_MS，
-// 期间不被下一次 collision resolve 取消（CSS animation 0.12s 与之一致）。
-const fadeUntil = new Map()
-let hystRafId = null
+// （playerVisState / playerHidden / fadeUntil / hystRafId 声明见播放状态区——
+//   seekTo immediate watch 早期触发 pause 时需已初始化，避免 TDZ）
 
 /** 是否存在未决的 hysteresis transition（hide/show 截止未到，或 fade-in 未结束）。 */
 function hasPendingHysteresis(now) {
@@ -1076,7 +1152,7 @@ const mapStyle = computed(() => ({
 </script>
 
 <template>
-  <div v-if="image && playback" class="battle-playback" :style="mapStyle" data-test="battle-playback">
+  <div v-if="image && playback" ref="pbRoot" class="battle-playback" :style="mapStyle" data-test="battle-playback">
     <!-- 播放控制 -->
     <div class="pb-controls">
       <button type="button" class="pb-btn" data-test="pb-play" @click="togglePlay">
@@ -1106,6 +1182,14 @@ const mapStyle = computed(() => ({
           {{ $t('recon.map.playback.show_tank_name') }}
         </label>
       </span>
+      <!-- 全屏（原生 Fullscreen API；不支持时按钮隐藏，不抛错） -->
+      <button
+        v-if="fullscreenSupported"
+        type="button"
+        class="pb-btn"
+        data-test="pb-fullscreen"
+        @click="toggleFullscreen"
+      >{{ isFullscreen ? $t('recon.map.playback.exit_fullscreen') : $t('recon.map.playback.enter_fullscreen') }}</button>
     </div>
 
     <!-- 事件类型过滤 -->
@@ -1439,6 +1523,22 @@ const mapStyle = computed(() => ({
   flex-direction: column;
   gap: 6px;
   margin-top: 6px;
+}
+/* 全屏（原生 Fullscreen API，:fullscreen 作用于 .battle-playback 自身）：
+   填满视口、内部滚动兜底；地图保持自身宽高比（不拉伸/不 letterbox），
+   用垂直预算限制地图最大宽度以适配剩余空间，toolbar/时间轴不被挤出。 */
+.battle-playback:fullscreen {
+  width: 100%;
+  height: 100%;
+  margin-top: 0;
+  background: var(--bg, #0b0f0d);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.battle-playback:fullscreen .pb-map {
+  width: 100%;
+  max-width: calc(100vh - 190px); /* 全屏垂直预算：控制区/时间轴/血量条等固定 UI 约 190px */
+  margin: auto; /* 垂直居中利用剩余空间；超高时滚动兜底 */
 }
 .pb-controls, .pb-filters {
   display: flex;
