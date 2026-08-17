@@ -34,6 +34,8 @@ import static com.wotb.web.config.ApiPaths.COLUMNS;
 import static com.wotb.web.config.ApiPaths.EXPORT;
 import static com.wotb.web.config.ApiPaths.HEALTH;
 import static com.wotb.web.config.ApiPaths.LEADERBOARD_PATTERN;
+import static com.wotb.web.config.ApiPaths.LEADERBOARD_REPLAY_PATTERN;
+import static com.wotb.web.config.ApiPaths.LEADERBOARD_UPLOAD;
 import static com.wotb.web.config.ApiPaths.PREVIEW;
 import static com.wotb.web.config.ApiPaths.RATING;
 import static com.wotb.web.config.ApiPaths.REPLAY_ANALYZE;
@@ -69,6 +71,8 @@ public class SecurityConfig {
                 .requestMatchers(BOOST_OPTIONS).permitAll()
                 .requestMatchers(HEALTH, COLUMNS, RATING,
                         PREVIEW, EXPORT).permitAll()
+                // 排行榜查询公开；上传/下载需登录（必须置于 LEADERBOARD_PATTERN permitAll 之前）
+                .requestMatchers(LEADERBOARD_UPLOAD, LEADERBOARD_REPLAY_PATTERN).authenticated()
                 .requestMatchers(LEADERBOARD_PATTERN).permitAll()
 
                 // --- AI 复盘与批量处理 (wotbtools-user / wotbtools-admin) ---

@@ -6,6 +6,8 @@ import tools.jackson.databind.json.JsonMapper;
 import com.wotb.web.boost.dto.BoosterApplicationSummaryDto;
 import com.wotb.web.boost.entity.BoosterApplication;
 import com.wotb.web.boost.repository.BoosterApplicationRepository;
+import com.wotb.web.leaderboard.entity.LeaderboardRecord;
+import com.wotb.web.leaderboard.repository.LeaderboardRecordRepository;
 import org.hibernate.resource.jdbc.spi.StatementInspector;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -26,6 +28,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.UUID;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -36,8 +39,11 @@ import java.util.zip.ZipInputStream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 
 /**
  * MockMvc 进程内 REST API 测试 (不绑定端口)。
@@ -67,7 +73,13 @@ public class WebApiTest {
         registry.add("keycloak.admin.client-secret", () -> "test");
         registry.add("spring.jpa.properties.hibernate.session_factory.statement_inspector",
                 () -> SqlCaptureInspector.class.getName());
+        registry.add("wotb.leaderboard.replay-dir", () -> REPLAY_DIR.toString());
+        registry.add("wotb.leaderboard.replay-min-free-bytes", () -> "0");
     }
+
+    /** 集成测试专用回放存储目录（每次 JVM 唯一，避免串扰）。 */
+    private static final Path REPLAY_DIR = Path.of(
+            System.getProperty("java.io.tmpdir"), "wotb-it-replays-" + UUID.randomUUID());
 
 
     @Autowired
@@ -76,10 +88,15 @@ public class WebApiTest {
     @Autowired
     BoosterApplicationRepository boosterApplicationRepository;
 
+    @Autowired
+    LeaderboardRecordRepository leaderboardRecordRepository;
+
     private final ObjectMapper om = JsonMapper.builder().build();
 
     private MockMvc mvc() {
-        return MockMvcBuilders.webAppContextSetup(ctx).build();
+        // 必须挂 springSecurity()：with(jwt()) 依赖 Security filter 填充 SecurityContext，
+        // 否则需登录端点（leaderboard upload/download）的 requireUserId 会拿到空上下文直接 401。
+        return MockMvcBuilders.webAppContextSetup(ctx).apply(springSecurity()).build();
     }
 
     private static List<Path> replays() throws Exception {
@@ -253,6 +270,101 @@ public class WebApiTest {
             SqlCaptureInspector.endCapture();
             boosterApplicationRepository.deleteById(application.getId());
             boosterApplicationRepository.flush();
+        }
+    }
+
+    private static MockMultipartFile leaderboardFile(final Path p) throws Exception {
+        return new MockMultipartFile("file", p.getFileName().toString(),
+                "application/octet-stream", Files.readAllBytes(p));
+    }
+
+    private String leaderboardUpload(final Path p) throws Exception {
+        return mvc().perform(multipart("/api/leaderboard/upload")
+                        .file(leaderboardFile(p))
+                        .with(jwt()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+    }
+
+    @Test
+    void leaderboardUploadPersistsReplayAndAllowsByteIdenticalDownload() throws Exception {
+        final Path replay = replays().getFirst();
+        final String json = leaderboardUpload(replay);
+        final JsonNode n = om.readTree(json);
+        assertEquals("ok", n.get("status").asText());
+
+        final LeaderboardRecord record = leaderboardRecordRepository.findAll().stream()
+                .filter(r -> r.getReplayHash() != null)
+                .findFirst()
+                .orElseThrow();
+        assertTrue(record.getReplayHash().matches("[0-9a-f]{64}"));
+        assertTrue(Files.exists(REPLAY_DIR.resolve(record.getReplayHash() + ".wotbreplay")),
+                "content-addressed file must exist on disk");
+
+        final byte[] original = Files.readAllBytes(replay);
+        final var res = mvc().perform(get("/api/leaderboard/" + record.getId() + "/replay")
+                        .with(jwt()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse();
+        assertTrue(java.util.Arrays.equals(original, res.getContentAsByteArray()),
+                "download must be byte-for-byte identical to upload");
+        assertTrue(res.getHeader("Content-Disposition").startsWith("attachment"));
+    }
+
+    @Test
+    void leaderboardUploadIdempotentForSameFile() throws Exception {
+        final Path replay = replays().getFirst();
+        leaderboardUpload(replay);
+        final long filesAfterFirst = Files.list(REPLAY_DIR)
+                .filter(p -> p.getFileName().toString().endsWith(".wotbreplay")).count();
+
+        final String json2 = leaderboardUpload(replay);
+        assertEquals("ok", om.readTree(json2).get("status").asText());
+        final long filesAfterSecond = Files.list(REPLAY_DIR)
+                .filter(p -> p.getFileName().toString().endsWith(".wotbreplay")).count();
+        assertEquals(filesAfterFirst, filesAfterSecond, "同文件二次上传不得新增磁盘文件");
+    }
+
+    @Test
+    void leaderboardUploadRequiresLogin() throws Exception {
+        mvc().perform(multipart("/api/leaderboard/upload")
+                        .file(leaderboardFile(replays().getFirst())))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void leaderboardDownloadRequiresLogin() throws Exception {
+        mvc().perform(get("/api/leaderboard/1/replay"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void leaderboardUploadRejectsCorruptFile() throws Exception {
+        final MockMultipartFile bad = new MockMultipartFile("file", "bad.wotbreplay",
+                "application/octet-stream", new byte[]{0, 1, 2, 3});
+        final String json = mvc().perform(multipart("/api/leaderboard/upload")
+                        .file(bad).with(jwt()))
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse().getContentAsString();
+        assertTrue(json.contains("INVALID_REPLAY_FILE"));
+    }
+
+    @Test
+    void leaderboardDownloadOldRecordWithoutFileReturns404() throws Exception {
+        final LeaderboardRecord record = new LeaderboardRecord();
+        record.setArenaId("no-replay-arena");
+        record.setAccountId(4242L);
+        record.setNickname("NoReplay");
+        record.setTankId(6481L);
+        record.setTankName("FV4005");
+        record.setDamageDealt(100);
+        leaderboardRecordRepository.saveAndFlush(record);
+        try {
+            mvc().perform(get("/api/leaderboard/" + record.getId() + "/replay").with(jwt()))
+                    .andExpect(status().isNotFound());
+        } finally {
+            leaderboardRecordRepository.delete(record);
+            leaderboardRecordRepository.flush();
         }
     }
 

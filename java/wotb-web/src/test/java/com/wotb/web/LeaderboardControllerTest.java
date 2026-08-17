@@ -3,13 +3,17 @@ package com.wotb.web;
 import com.wotb.web.leaderboard.controller.LeaderboardController;
 import com.wotb.web.leaderboard.dto.LeaderboardPageDto;
 import com.wotb.web.leaderboard.dto.LeaderboardRecordDto;
+import com.wotb.web.leaderboard.dto.ReplayDownload;
+import com.wotb.web.controller.GlobalExceptionHandler;
 import com.wotb.web.leaderboard.service.LeaderboardService;
 import com.wotb.web.leaderboard.service.LeaderboardUploadService;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -36,7 +40,7 @@ class LeaderboardControllerTest {
     private static LeaderboardRecordDto dto() {
         return new LeaderboardRecordDto(1L, "arenaA", 6481L, "FV4005",
                 111L, "Recorder1", 3200, "milbase",
-                "11.18.0", OffsetDateTime.now(), OffsetDateTime.now());
+                "11.18.0", OffsetDateTime.now(), OffsetDateTime.now(), true);
     }
 
     private static LeaderboardPageDto pageOf(final LeaderboardRecordDto item) {
@@ -48,7 +52,9 @@ class LeaderboardControllerTest {
     }
 
     private MockMvc mvc(final LeaderboardService service, final LeaderboardUploadService uploadService) {
-        return MockMvcBuilders.standaloneSetup(new LeaderboardController(service, uploadService)).build();
+        return MockMvcBuilders.standaloneSetup(new LeaderboardController(service, uploadService))
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
     }
 
     @Test
@@ -79,6 +85,30 @@ class LeaderboardControllerTest {
         Assertions.assertThat(json).contains("\"items\"");
         Assertions.assertThat(json).contains("\"totalItems\"");
         Assertions.assertThat(json).contains("\"FV4005\"");
+    }
+
+    @Test
+    void downloadDelegatesAndSetsContentDisposition() throws Exception {
+        final LeaderboardService service = mock(LeaderboardService.class);
+        when(service.downloadReplay(eq(42L))).thenReturn(
+                new ReplayDownload(new byte[]{1, 2, 3}, "battle.wotbreplay"));
+
+        final var res = mvc(service).perform(get("/api/leaderboard/42/replay"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse();
+        Assertions.assertThat(res.getContentAsByteArray()).containsExactly(1, 2, 3);
+        final String cd = res.getHeader("Content-Disposition");
+        Assertions.assertThat(cd).startsWith("attachment");
+        Assertions.assertThat(cd).contains("battle.wotbreplay");
+    }
+
+    @Test
+    void downloadMissingReplayReturns404() throws Exception {
+        final LeaderboardService service = mock(LeaderboardService.class);
+        when(service.downloadReplay(eq(7L))).thenThrow(
+                new ResponseStatusException(HttpStatus.NOT_FOUND, "REPLAY_FILE_NOT_FOUND"));
+        mvc(service).perform(get("/api/leaderboard/7/replay"))
+                .andExpect(status().isNotFound());
     }
 
     @Test
