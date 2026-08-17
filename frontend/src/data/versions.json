@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.11.22",
+    "date": "2026-08-17",
+    "tag": "fix",
+    "zh": "排行榜上传优化：上传训练房/娱乐等非随机战回放时会明确提示「该回放不是随机战，无法上传至排行榜」，不再显示「已跳过」；修复上传成功回放时可能误显示「网络连接失败」的问题。",
+    "en": "Leaderboard upload improvements: uploading a non-random-battle replay (training room, special modes, etc.) now clearly says this replay is not a random battle and cannot be uploaded to the leaderboard instead of showing \"skipped\"; also fixes a bug where a successful upload could wrongly show a network connection failure.",
+    "ru": "Улучшения загрузки в рейтинг: при загрузке реплея не случайного боя (тренировочная комната, спецрежимы и т. п.) теперь чётко сообщается, что этот реплей не является случайным боем и не может быть загружен в таблицу лидеров, вместо «пропущено»; также исправлена ошибка, из-за которой успешная загрузка могла ошибочно показывать «сетевое соединение не удалось»."
+  },
+  {
     "v": "2.11.21",
     "date": "2026-08-21",
     "tag": "add",

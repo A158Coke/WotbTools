@@ -112,13 +112,13 @@ class LeaderboardControllerTest {
     }
 
     @Test
-    void uploadDelegatesToServiceAndReturnsReasonCode() throws Exception {
+    void uploadDelegatesToServiceAndReturnsSkippedReasonCode() throws Exception {
         final LeaderboardService service = mock(LeaderboardService.class);
         final LeaderboardUploadService uploadService = mock(LeaderboardUploadService.class);
         when(uploadService.upload(any())).thenReturn(Map.of(
                 "status", "skipped",
                 "arenaId", "arena-1",
-                "reasonCode", "NON_RANDOM_BATTLE"
+                "reasonCode", "DUPLICATE_OR_UNKNOWN_RECORDER"
         ));
 
         final String json = mvc(service, uploadService)
@@ -128,7 +128,29 @@ class LeaderboardControllerTest {
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
 
-        Assertions.assertThat(json).contains("\"reasonCode\":\"NON_RANDOM_BATTLE\"");
+        Assertions.assertThat(json).contains("\"reasonCode\":\"DUPLICATE_OR_UNKNOWN_RECORDER\"");
+        verify(uploadService).upload(any());
+    }
+
+    /**
+     * 非随机战（训练房等）错误语义契约：upload 抛 NON_RANDOM_BATTLE →
+     * GlobalExceptionHandler 统一错误格式 HTTP 400 {error: NON_RANDOM_BATTLE}，
+     * 绝不返回 200 skipped。
+     */
+    @Test
+    void uploadNonRandomRejectsWith400NonRandomBattle() throws Exception {
+        final LeaderboardService service = mock(LeaderboardService.class);
+        final LeaderboardUploadService uploadService = mock(LeaderboardUploadService.class);
+        when(uploadService.upload(any())).thenThrow(new IllegalArgumentException("NON_RANDOM_BATTLE"));
+
+        final String json = mvc(service, uploadService)
+                .perform(multipart("/api/leaderboard/upload")
+                        .file(new MockMultipartFile("file", "battle.wotbreplay",
+                                "application/octet-stream", new byte[]{1})))
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse().getContentAsString();
+
+        Assertions.assertThat(json).contains("\"error\":\"NON_RANDOM_BATTLE\"");
         verify(uploadService).upload(any());
     }
 }

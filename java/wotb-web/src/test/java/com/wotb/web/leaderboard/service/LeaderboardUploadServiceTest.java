@@ -8,7 +8,10 @@ import com.wotb.web.leaderboard.dto.ReplayFileMeta;
 import com.wotb.web.leaderboard.exception.LeaderboardStorageException;
 import com.wotb.web.leaderboard.storage.LeaderboardReplayStorage;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
+import com.wotb.web.leaderboard.repository.LeaderboardRecordRepository;
+import com.wotb.web.leaderboard.service.LeaderboardRecordMapper;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessException;
@@ -19,6 +22,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -161,19 +167,41 @@ class LeaderboardUploadServiceTest {
         }
     }
 
+    /**
+     * Blocker 契约（真实 parser + 真实训练房夹具，任何环境可跑，不依赖 Docker）：
+     * arenaBonusType=2 的回放 → 400 NON_RANDOM_BATTLE，且在 SHA-256/preflight/storage/DB
+     * 任何持久化之前被拒绝：storage 不落盘、leaderboard DB 零写入。
+     */
     @Test
-    void nonRandomSkipsWithoutStoringFile() throws Exception {
-        when(leaderboardService.eligibility(any())).thenReturn(RecordOutcome.SKIPPED_NON_RANDOM);
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenReturn(battle());
+    void nonRandomReplayRejectsWithNonRandomBattleBeforeAnyPersistence() throws Exception {
+        final Path fixture = Path.of(System.getProperty("user.dir"), "..", "..",
+                "common", "fixtures", "leaderboard", "training-room-example.wotbreplay").normalize();
+        Assumptions.assumeTrue(Files.isRegularFile(fixture), "训练房夹具缺失，跳过");
+        final byte[] bytes = Files.readAllBytes(fixture);
 
-            final Map<String, Object> result = uploadService.upload(file());
+        // eligibility 走真实 LeaderboardService（纯内存判定，不触 DB），验证 解析→判定 真实集成路径。
+        final LeaderboardRecordRepository repo = mock(LeaderboardRecordRepository.class);
+        final LeaderboardService realService = new LeaderboardService(
+                repo, mock(LeaderboardRecordMapper.class), mock(LeaderboardReplayStorage.class));
+        final ReplayCapacityLimiter limiter = mock(ReplayCapacityLimiter.class);
+        doAnswer(inv -> ((Callable<?>) inv.getArgument(0)).call()).when(limiter).execute(any());
+        final LeaderboardUploadService svc = new LeaderboardUploadService(realService, limiter, storage);
 
-            assertEquals("skipped", result.get("status"));
-            assertEquals("NON_RANDOM_BATTLE", result.get("reasonCode"));
-            verify(storage, never()).store(any(byte[].class), anyString());
-            verify(leaderboardService, never()).recordRecorder(any(), any(), any());
-        }
+        // 夹具语义守卫：确为训练房（非随机）且录像者可识别，避免 fixture 回归导致断言失效。
+        final Battle parsed = ReplayParser.parse(bytes);
+        assertEquals(Integer.valueOf(2), parsed.arenaBonusType, "训练房夹具 arenaBonusType 必须为 2");
+        assertTrue(parsed.recorderResult() != null, "训练房夹具应能识别录像者");
+
+        final MockMultipartFile file = new MockMultipartFile("file", "training-room-example.wotbreplay",
+                "application/octet-stream", bytes);
+
+        final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> svc.upload(file));
+        assertEquals("NON_RANDOM_BATTLE", e.getMessage());
+        // 任何持久化零发生：不落盘、不入库、不改已有记录。
+        verify(storage, never()).store(any(byte[].class), anyString());
+        verify(repo, never()).saveAndFlush(any());
+        verify(repo, never()).attachReplayMetadata(anyLong(), anyString(), anyString(), anyLong(), anyString());
     }
 
     @Test

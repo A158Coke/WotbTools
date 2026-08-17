@@ -702,6 +702,7 @@
         "INVALID_IMAGE_DATA": "图片数据无效",
         "NO_REPLAY_FILES": "请至少选择一个回放文件",
         "INVALID_REPLAY_FILE": "回放文件无效",
+        "NON_RANDOM_BATTLE": "该回放不是随机战，无法上传至排行榜。",
         "TOO_MANY_REPLAY_FILES": "回放文件数量过多",
         "FILE_TOO_LARGE": "文件过大",
         "REQUEST_TOO_LARGE": "本次上传总大小过大",
