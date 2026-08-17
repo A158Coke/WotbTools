@@ -49,6 +49,12 @@ describe('LeaderboardPage', () => {
     vi.clearAllMocks()
   })
 
+  function mountPage() {
+    return mount(LeaderboardPage, {
+      global: { mocks: { $t: key => key } }
+    })
+  }
+
   function makeRow(overrides = {}) {
     return {
       id: 1,
@@ -75,7 +81,7 @@ describe('LeaderboardPage', () => {
       ],
       page: 1, size: 50, totalItems: 2, totalPages: 1
     })
-    const wrapper = mount(LeaderboardPage)
+    const wrapper = mountPage()
     await flushPromises()
     const buttons = wrapper.findAll('.lb-download')
     expect(buttons).toHaveLength(1)
@@ -92,7 +98,7 @@ describe('LeaderboardPage', () => {
       items: [makeRow({ id: 1, replayAvailable: true })],
       page: 1, size: 50, totalItems: 1, totalPages: 1
     })
-    const wrapper = mount(LeaderboardPage)
+    const wrapper = mountPage()
     await flushPromises()
     await wrapper.find('.lb-download').trigger('click')
     expect(api.login).toHaveBeenCalledWith('leaderboard')
@@ -101,7 +107,7 @@ describe('LeaderboardPage', () => {
 
   it('triggers login when not authenticated and uploading', async () => {
     authenticated = false
-    const wrapper = mount(LeaderboardPage)
+    const wrapper = mountPage()
     const input = wrapper.find('input[type="file"]')
     const file = new File([new Uint8Array([1, 2, 3])], 'battle.wotbreplay', { type: 'application/octet-stream' })
     Object.defineProperty(input.element, 'files', { value: [file] })
@@ -111,7 +117,7 @@ describe('LeaderboardPage', () => {
   })
 
   it('uploads file with valid extension when authenticated', async () => {
-    const wrapper = mount(LeaderboardPage)
+    const wrapper = mountPage()
     const input = wrapper.find('input[type="file"]')
     const file = new File([new Uint8Array([1, 2, 3])], 'battle.wotbreplay', { type: 'application/octet-stream' })
     Object.defineProperty(input.element, 'files', { value: [file] })
