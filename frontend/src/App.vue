@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, defineAsyncComponent, ref } from 'vue'
 import { useTheme } from './composables/useTheme.js'
 import { useError } from './composables/useError.js'
 import HomePage from './components/HomePage.vue'
@@ -12,6 +12,9 @@ import ExtendedPage from './components/ExtendedPage.vue'
 import ReconstructionPage from './components/ReconstructionPage.vue'
 import VersionPage from './components/VersionPage.vue'
 import ContactPage from './components/ContactPage.vue'
+// 隐藏 QA 页（?view=playback-qa，仅 wotbtools-admin）：PR4 固定 14 车标签碰撞场景，
+// 复用生产 BattlePlayback（异步加载，不拖进普通用户初始 bundle）
+const PlaybackQaPage = defineAsyncComponent(() => import('./components/PlaybackQaPage.vue'))
 
 const { theme, handleTheme } = useTheme()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
@@ -31,6 +34,7 @@ const viewParam = params.get('view')
 const ALLOWED_VIEWS = [
   'home', 'replay', 'leaderboard', 'extended',
   'profile', 'boost', 'admin-users', 'reconstruction', 'version', 'contact',
+  'playback-qa',
 ]
 const activeTool = ref(ALLOWED_VIEWS.includes(viewParam) ? viewParam : defaultView)
 
@@ -46,7 +50,8 @@ const VIEW_COMPONENTS = {
   'admin-users': AdminUsersPage,
   reconstruction: ReconstructionPage,
   version: VersionPage,
-  contact: ContactPage
+  contact: ContactPage,
+  'playback-qa': PlaybackQaPage
 }
 const currentView = computed(() => VIEW_COMPONENTS[activeTool.value] || ReplayPage)
 

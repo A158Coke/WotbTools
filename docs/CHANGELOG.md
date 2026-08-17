@@ -5,6 +5,44 @@
 ## [Unreleased]
 
 ### Added
+- **PR4 — Player/Tank Labels & Collision UX（§26–§37 + QA 场景）**：
+  - **显示开关（§26）**：Battle Playback 控制栏新增「显示玩家名 / 显示坦克名」checkbox
+    （默认 玩家名关 / 坦克名开），localStorage 持久化（`wotb.pb.label-prefs`），刷新/再次进入保留。
+  - **两行共享背景 label 块（§27/§28/§29）**：PlayerName + TankName 共用一个半透明深色背景
+    （自适应宽度、小圆角、细边框、轻阴影）；只显示一行时背景自动收缩；文字色跟随 team token
+    （friendly green|blue / enemy red，`--pb-team-text`/`--pb-enemy-text`）；
+    destroyed/last-known 只弱化文字、background 保持正常。
+  - **PlayerName 截断 + tooltip（§30）**：按实际像素宽度截断（max-width + ellipsis，非字符数），
+    只有截断才显示完整名 tooltip；被碰撞隐藏时 tooltip 随行一起消失。
+  - **标签碰撞（§32/§33/§34/§35）**：新增纯函数 `utils/labelLayout.js`——viewport 内
+    marker 才参与（越界裁剪）；TankName 冲突 → 上方标签**从下往上** greedy 轻量上移（下方先
+    finalized、上限一行，接受剩余 overlap，3+ 连锁不重新产生 overlap，禁止复杂 solver）；
+    PlayerName 与任一 TankName 冲突 → 隐藏候选，经**时间稳定阈值**（hide 250ms / show 300ms，
+    `performance.now` **UI wall clock**——播放由 frame 刷新、暂停由轻量 RAF 继续推进，
+    不依赖播放状态）后 hide/show，恢复带 ~120ms opacity fade-in（类保持完整生命周期不被
+    下一次 resolve 取消）；PlayerName 盒从 final TankName 盒推导（与共享 label 块整体位移
+    一致）；zoom 由 computed 依赖 view.scale 天然在缩放结束重算。
+  - **hull hitbox + 重叠选中（§36/§37）**：点击命中从整盒改为车体视觉范围 + 小 padding
+    （dedicated 90%、generic 58%×90%，随 marker 缩放；不含 gun overflow/label/三角/菱形/✕，
+    destroyed/last-known 仍可点）；多个 hitbox 重叠 → 取指针距离最近车辆，距离几乎一致且已有
+    selected → 保持，否则 render order tie-break。
+  - **倍速与循环**：倍速循环加入 0.5×（0.5→1→2→4，§49 QA 场景需要）；BattlePlayback 新增
+    `loop` prop（时间线到末尾自动回绕，QA 场景用）。
+  - **隐藏 QA 页 `?view=playback-qa`（§48/§49）**：仅 wotbtools-admin；固定 14 车移动场景
+    （双密集簇碰撞压力 + 阵亡/失察/录像者状态混合），直接复用生产 BattlePlayback
+    （loop + Play/Pause/Reset + 0.5×–4×），不引入第二套渲染。
+  - **全屏模式（原生 Fullscreen API）**：控制栏「⛶ 全屏 / 退出全屏」按钮（zh/en/ru 三语）；
+    全屏对象 = 整个 Battle Playback 容器（地图 + 全部 controls + 标注），不含页面 header/nav；
+    状态事实源 = `document.fullscreenElement` + `fullscreenchange`（ESC/浏览器 UI 退出立即同步，
+    不维护手工翻转）；不支持 Fullscreen API 的浏览器隐藏按钮不抛错；进入/退出不 reset
+    currentTime / playing / speed / selected / zoom / pan / filters / label 偏好 / annotations。
+    尺寸响应：新增 ResizeObserver 驱动的 `mapSize` reactive（无 RO 环境回退 clientWidth），
+    markerScreen / labelLayout / selectAt / textInput / annotation 换算全部改用新尺寸——
+    fullscreen enter/exit 后 collision / hitbox / 标注坐标立即按真实容器尺寸重算（无 magic delay）；
+    zoom/pan 保持不 reset（无 auto-fit，Reset View 由用户使用）。
+  - **hysteresis 时钟接管（Review Blocker 1）**：播放中若有未决 hide/show/fade transition，
+    Pause 或播放自然结束时由轻量 hysteresis RAF 接管 wall clock（无 pending 不启动轮询）；
+    play() 作废残留 hystRAF（frame 驱动接管），避免 pause 时误判已有时钟。
 - **PR3 — Tactical Marker State Visual Redesign（§19–§25）**：
   - **Team Color System（§19/§20）**：新增 frontend/src/data/mapTeamColors.js——28 张地图
     全部显式配置 friendly tone（green|blue，与地图主基色避免混淆；初值可视觉 QA 调整）；
