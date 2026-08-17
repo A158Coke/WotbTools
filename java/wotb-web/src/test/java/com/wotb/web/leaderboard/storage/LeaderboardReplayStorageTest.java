@@ -58,7 +58,7 @@ class LeaderboardReplayStorageTest {
     }
 
     @Test
-    void concurrentSameHashStoreHasExactlyOneCreator(@TempDir final Path dir) throws Exception {
+    void concurrentSameHashStoreNeverExposesPartialFile(@TempDir final Path dir) throws Exception {
         final var storage = storage(dir);
         final int threads = 8;
         final ExecutorService pool = Executors.newFixedThreadPool(threads);
@@ -78,10 +78,35 @@ class LeaderboardReplayStorageTest {
             for (final Future<Boolean> f : futures) {
                 if (f.get(10, TimeUnit.SECONDS)) creators++;
             }
-            assertEquals(1, creators, "并发同 hash 只能有一个创建者");
+            // ATOMIC_MOVE 下 target 已存在的 provider-specific 行为（替换 vs FileAlreadyExists）
+            // 取决于平台：允许 1..threads 个 creator，但 final 文件必须完整且内容正确。
+            assertTrue(creators >= 1, "至少一个请求原子发布成功");
+            // final 文件 byte-for-byte 正确（同 hash 同内容 invariant）
             assertArrayEquals(data, Files.readAllBytes(dir.resolve(SHA + ".wotbreplay")));
+            // 无临时文件残留
+            try (var s = Files.list(dir.resolve(".tmp"))) {
+                assertEquals(0, s.count());
+            }
         } finally {
             pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void atomicMoveUnsupportedSurfacesAsStorageErrorAndCleansTmp(@TempDir final Path dir) throws IOException {
+        final var storage = org.mockito.Mockito.spy(storage(dir));
+        org.mockito.Mockito.doThrow(new java.nio.file.AtomicMoveNotSupportedException(
+                        "tmp", "target", "unsupported"))
+                .when(storage).moveAtomically(org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any());
+
+        final LeaderboardStorageException e = assertThrows(LeaderboardStorageException.class,
+                () -> storage.store(new byte[]{1}, SHA));
+        assertEquals("REPLAY_STORAGE_ERROR", e.getCode());
+        // 不 fallback：final 文件不存在、无半文件、tmp 清理
+        assertFalse(Files.exists(dir.resolve(SHA + ".wotbreplay")));
+        try (var s = Files.list(dir.resolve(".tmp"))) {
+            assertEquals(0, s.count());
         }
     }
 

@@ -27,6 +27,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 排行榜业务。MVP 只记录录像者本人单场成绩，不存全场 14 人。
@@ -70,8 +71,41 @@ public class LeaderboardService {
     }
 
     /**
-     * 录像者单场成绩入库状态机（含 replay metadata）：
-     * 新建 → SAVED；已存在且 replay_hash NULL → ATTACHED（补写）；
+     * 纯内存 eligibility（写文件前的 preflight）：非随机战 / 无录像者 → SKIPPED，
+     * 其余返回 SAVED（仅表示 eligible，不代表入库结果）。
+     */
+    public RecordOutcome eligibility(final Battle battle) {
+        if (battle == null || battle.arenaId == null) return RecordOutcome.SKIPPED_UNKNOWN_RECORDER;
+        if (battle.arenaBonusType == null || battle.arenaBonusType != BATTLE_TYPE) {
+            return RecordOutcome.SKIPPED_NON_RANDOM;
+        }
+        if (battle.recorderResult() == null) return RecordOutcome.SKIPPED_UNKNOWN_RECORDER;
+        return RecordOutcome.SAVED;
+    }
+
+    /**
+     * 写文件前的 hash 预判（避免无意义落盘）：已存在记录且 replay_hash 非 NULL 时
+     * 返回确定的 IDEMPOTENT / SKIPPED_HASH_CONFLICT；hash NULL 或记录不存在返回 empty
+     * （需要继续走完整原子状态机）。并发竞态下该预判可能过期，最终以
+     * {@link #recordRecorder} 的 DB 原子结果为准。
+     */
+    public Optional<RecordOutcome> preflightReplay(final Battle battle, final ReplayFileMeta meta) {
+        if (battle == null || battle.arenaId == null) return Optional.empty();
+        final PlayerResult recorder = battle.recorderResult();
+        if (recorder == null) return Optional.empty();
+        final var existing = repository.findByArenaIdAndAccountId(battle.arenaId, recorder.accountId);
+        if (existing.isEmpty()) return Optional.empty();
+        final String currentHash = existing.get().getReplayHash();
+        if (currentHash == null) return Optional.empty();
+        return meta != null && meta.sha256().equals(currentHash)
+                ? Optional.of(RecordOutcome.IDEMPOTENT)
+                : Optional.of(RecordOutcome.SKIPPED_HASH_CONFLICT);
+    }
+
+    /**
+     * 录像者单场成绩入库状态机（含 replay metadata），DB 原子：
+     * 新建 → SAVED（unique race 后 re-read winner 分类）；
+     * 已存在且 replay_hash NULL → 原子 conditional UPDATE（唯一 winner）→ ATTACHED，败者 re-read 分类；
      * 已存在且同 hash → IDEMPOTENT；已存在且异 hash → SKIPPED_HASH_CONFLICT（绝不覆盖）。
      */
     public RecordOutcome recordRecorder(final Battle battle, final Tankopedia tankopedia,
@@ -85,16 +119,21 @@ public class LeaderboardService {
 
         final var existing = repository.findByArenaIdAndAccountId(battle.arenaId, recorder.accountId);
         if (existing.isPresent()) {
-            final LeaderboardRecord r = existing.get();
-            if (r.getReplayHash() == null) {
-                applyReplayMeta(r, meta);
-                repository.save(r);
-                return RecordOutcome.ATTACHED;
+            final String currentHash = existing.get().getReplayHash();
+            if (currentHash == null) {
+                // 原子 attach：conditional UPDATE ... WHERE replay_hash IS NULL → affected=1 即唯一 winner。
+                final int updated = repository.attachReplayMetadata(
+                        existing.get().getId(), meta.sha256(), meta.originalName(),
+                        meta.size(), meta.uploadedBy());
+                if (updated == 1) {
+                    return RecordOutcome.ATTACHED;
+                }
+                // 并发竞态：另一个请求已先 attach → re-read winner 后重新分类，绝不覆盖。
+                return classifyByCurrentHash(battle.arenaId, recorder.accountId, meta);
             }
-            if (meta != null && meta.sha256().equals(r.getReplayHash())) {
-                return RecordOutcome.IDEMPOTENT;
-            }
-            return RecordOutcome.SKIPPED_HASH_CONFLICT;
+            return meta != null && meta.sha256().equals(currentHash)
+                    ? RecordOutcome.IDEMPOTENT
+                    : RecordOutcome.SKIPPED_HASH_CONFLICT;
         }
 
         final LeaderboardRecord record = new LeaderboardRecord();
@@ -116,12 +155,31 @@ public class LeaderboardService {
         }
         applyReplayMeta(record, meta);
         try {
-            repository.save(record);
+            repository.saveAndFlush(record);
             return RecordOutcome.SAVED;
-        } catch (final DataIntegrityViolationException ignored) {
-            // 并发插入竞态：另一请求已建同 (arena_id, account_id) 记录，视为幂等。
-            return RecordOutcome.IDEMPOTENT;
+        } catch (final DataIntegrityViolationException e) {
+            // 并发首次 insert 竞态：unique 约束只允许一条 → re-read winner 后重新分类 hash，
+            // 禁止无条件返回 IDEMPOTENT。
+            return classifyByCurrentHash(battle.arenaId, recorder.accountId, meta);
         }
+    }
+
+    /** 竞态后按 winner 当前 hash 分类：同 hash → IDEMPOTENT；异 hash / 无 hash → SKIPPED_HASH_CONFLICT。 */
+    private RecordOutcome classifyByCurrentHash(final String arenaId, final long accountId,
+                                                final ReplayFileMeta meta) {
+        final LeaderboardRecord winner = repository
+                .findByArenaIdAndAccountId(arenaId, accountId).orElse(null);
+        if (winner == null) {
+            return RecordOutcome.SKIPPED_UNKNOWN_RECORDER;
+        }
+        final String winnerHash = winner.getReplayHash();
+        if (winnerHash == null) {
+            // 防御：winner 无 hash（理论不发生，insert 恒带 meta）——不覆盖。
+            return RecordOutcome.SKIPPED_HASH_CONFLICT;
+        }
+        return meta != null && meta.sha256().equals(winnerHash)
+                ? RecordOutcome.IDEMPOTENT
+                : RecordOutcome.SKIPPED_HASH_CONFLICT;
     }
 
     private static void applyReplayMeta(final LeaderboardRecord record, final ReplayFileMeta meta) {

@@ -6,9 +6,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -17,14 +19,20 @@ import java.util.UUID;
  *
  * <p>一致性设计：文件不可变、同 hash 可安全复用 → {@link #store} 幂等
  * （目标已存在直接返回 created=false，绝不覆盖）；并发同 hash 上传通过
- * ATOMIC_MOVE + {@link FileAlreadyExistsException} 处理，无 race、无半文件。
+ * {@code ATOMIC_MOVE} + {@link FileAlreadyExistsException} 处理，无 race、无半文件。
  * DB 更新失败时<b>不删除</b>已入存储的文件——保留为安全 orphan（单文件 ≤20MiB，且受
  * 磁盘 reserve 保护），由未来 maintenance job 按「DB 无引用 + age grace」清理。</p>
  *
- * <p>磁盘保护：reserve 判断计入本次写入大小（usable &lt; minFreeBytes + data.length
- * → REPLAY_STORAGE_FULL 507）。临时文件放 baseDir/.tmp/（与 final
- * 同 filesystem 保证 ATOMIC_MOVE）；文件系统不支持 ATOMIC_MOVE 时明确失败
- * （REPLAY_STORAGE_ERROR 500），不 fallback 成可能产生半文件的普通 move。</p>
+ * <p>原子发布契约：临时文件写 {@code baseDir/.tmp/}（与 final 同 filesystem），随后以
+ * {@link StandardCopyOption#ATOMIC_MOVE} 原子移入 final path——任何观察到的 final 文件
+ * 都是完整文件，绝不暴露半写状态。Java 规范中 {@code ATOMIC_MOVE} 对「target 已存在」
+ * 的行为是 provider-specific（可能抛 {@link FileAlreadyExistsException} 或替换）；因 target
+ * 名是 SHA-256（同 hash = 同内容，cryptographic invariant），替换只可能以相同内容进行，
+ * 逻辑上无害。文件系统不支持 ATOMIC_MOVE 时明确失败（{@code AtomicMoveNotSupportedException}
+ * → REPLAY_STORAGE_ERROR 500），<b>不 fallback</b> 到无原子保证的普通 move。</p>
+ *
+ * <p>磁盘保护：reserve 判断计入本次写入大小（usable - data.length &lt; minFreeBytes
+ * → REPLAY_STORAGE_FULL 507，减法比较防溢出）。</p>
  */
 @Service
 public class LeaderboardReplayStorage {
@@ -68,17 +76,20 @@ public class LeaderboardReplayStorage {
             final Path tmp = tmpDir().resolve("." + sha256 + "." + UUID.randomUUID() + ".tmp");
             Files.write(tmp, data);
             try {
-                // 同目录普通 move 即原子 rename；目标已存在 → FileAlreadyExistsException。
-                // 不用 ATOMIC_MOVE：Windows 实现会替换已存在目标（Java 规范 implementation-specific），
-                // 违反 content-addressed「不覆盖」承诺。并发同 hash 竞态 → 复用胜者文件。
-                Files.move(tmp, target);
+                moveAtomically(tmp, target);
                 return new StoreResult(true, target);
             } catch (final FileAlreadyExistsException e) {
+                // 并发同 hash 竞态：胜者已原子发布，复用并清理自身临时文件。
                 Files.deleteIfExists(tmp);
                 return new StoreResult(false, target);
+            } catch (final AtomicMoveNotSupportedException e) {
+                Files.deleteIfExists(tmp);
+                throw new LeaderboardStorageException(
+                        "REPLAY_STORAGE_ERROR", HttpStatus.INTERNAL_SERVER_ERROR,
+                        "Atomic move is not supported for replay storage", e);
             } catch (final IOException e) {
                 // 部分平台并发竞态表现为普通 IOException（如 Windows AccessDeniedException）：
-                // 目标已被其他请求原子创建时视为复用，绝不覆盖已有文件。
+                // 目标已被其他请求原子发布时视为复用，绝不覆盖已有文件。
                 Files.deleteIfExists(tmp);
                 if (Files.exists(target)) {
                     return new StoreResult(false, target);
@@ -92,6 +103,14 @@ public class LeaderboardReplayStorage {
                     "REPLAY_STORAGE_ERROR", HttpStatus.INTERNAL_SERVER_ERROR,
                     "Failed to store replay file", e);
         }
+    }
+
+    /**
+     * 原子发布（package-private 便于测试注入 {@link AtomicMoveNotSupportedException}）：
+     * 同一 filesystem 上的 ATOMIC_MOVE；不支持时抛 {@link AtomicMoveNotSupportedException}。
+     */
+    void moveAtomically(final Path tmp, final Path target) throws IOException {
+        Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE);
     }
 
     /** 按 hash 定位文件；不存在返回 empty。路径由服务端 hash 拼成并校验仍位于 baseDir。 */
