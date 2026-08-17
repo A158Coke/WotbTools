@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineAsyncComponent, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useTheme } from './composables/useTheme.js'
 import { useError } from './composables/useError.js'
 import HomePage from './components/HomePage.vue'
@@ -12,12 +12,6 @@ import ExtendedPage from './components/ExtendedPage.vue'
 import ReconstructionPage from './components/ReconstructionPage.vue'
 import VersionPage from './components/VersionPage.vue'
 import ContactPage from './components/ContactPage.vue'
-// 隐藏 QA 页（?view=vehicle-models，仅 wotbtools-admin）必须异步加载：
-// preview 内含全部车型 QA 资产（import.meta.glob），静态 import 会把 81 组
-// Tier X 正式 WebP assets 拖进普通用户初始主 bundle。异步组件 → 独立 chunk，
-// 普通用户不访问该隐藏页面时完全不加载（见 scripts/check-bundle-separation.mjs）。
-// production Battle Playback 仍坚持「只 preload 当前战局实际出现 Tier X」的总计划边界。
-const VehicleModelPreviewPage = defineAsyncComponent(() => import('./components/VehicleModelPreviewPage.vue'))
 // 隐藏 QA 页（?view=playback-qa，仅 wotbtools-admin）：PR4 固定 14 车标签碰撞场景，
 // 复用生产 BattlePlayback（异步加载，不拖进普通用户初始 bundle）
 const PlaybackQaPage = defineAsyncComponent(() => import('./components/PlaybackQaPage.vue'))
@@ -40,8 +34,6 @@ const viewParam = params.get('view')
 const ALLOWED_VIEWS = [
   'home', 'replay', 'leaderboard', 'extended',
   'profile', 'boost', 'admin-users', 'reconstruction', 'version', 'contact',
-  // 隐藏 QA 页：车型预览（不在导航中，仅 wotbtools-admin 深链可进）
-  'vehicle-models',
   'playback-qa',
 ]
 const activeTool = ref(ALLOWED_VIEWS.includes(viewParam) ? viewParam : defaultView)
@@ -59,7 +51,6 @@ const VIEW_COMPONENTS = {
   reconstruction: ReconstructionPage,
   version: VersionPage,
   contact: ContactPage,
-  'vehicle-models': VehicleModelPreviewPage,
   'playback-qa': PlaybackQaPage
 }
 const currentView = computed(() => VIEW_COMPONENTS[activeTool.value] || ReplayPage)
