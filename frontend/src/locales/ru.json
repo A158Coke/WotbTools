@@ -169,6 +169,12 @@
         "version": "Версия",
         "battle_time": "Время боя",
         "upload_time": "Время загрузки",
+        "replay": "Реплей",
+        "download": "Скачать",
+        "downloading": "Загрузка...",
+        "login_to_upload": "Войдите, чтобы загрузить реплей",
+        "login_to_download": "Войдите, чтобы скачать реплей",
+        "download_failed": "Не удалось скачать",
         "loading": "Загрузка…",
         "empty": "Пока нет данных.",
         "error": "Не удалось загрузить рейтинг",
@@ -182,7 +188,8 @@
         "upload_skipped_default": "Уже существует или автор реплея не определен",
         "reason": {
             "NON_RANDOM_BATTLE": "Поддерживаются только случайные бои",
-            "DUPLICATE_OR_UNKNOWN_RECORDER": "Уже существует или автор реплея не определен"
+            "DUPLICATE_OR_UNKNOWN_RECORDER": "Уже существует или автор реплея не определен",
+            "REPLAY_HASH_CONFLICT": "Этот бой уже привязан к другому файлу реплея"
         },
         "all_tanks": "Все танки",
         "filter_tank": "Фильтр",

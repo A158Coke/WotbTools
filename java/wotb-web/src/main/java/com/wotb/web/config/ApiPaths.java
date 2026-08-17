@@ -32,6 +32,7 @@ public final class ApiPaths {
     public static final String ADMIN_BOOST_REQUEST_ASSIGNMENTS = "/api/admin/boost/requests/{id}/assignments";
 
     // ---- 精确端点（SecurityConfig 与 Controller 共用） ----
+    public static final String LEADERBOARD_UPLOAD = "/api/leaderboard/upload";
     public static final String HEALTH = "/api/health";
     public static final String COLUMNS = "/api/columns";
     public static final String RATING = "/api/rating";
@@ -47,6 +48,7 @@ public final class ApiPaths {
     // ---- 安全匹配模式（/** 通配，仅 SecurityConfig 使用） ----
     public static final String API_PATTERN = "/api/**";
     public static final String LEADERBOARD_PATTERN = "/api/leaderboard/**";
+    public static final String LEADERBOARD_REPLAY_PATTERN = "/api/leaderboard/*/replay";
     public static final String USERS_PATTERN = "/api/users/**";
     public static final String BOOST_REQUESTS_PATTERN = "/api/boost/requests/**";
     public static final String BOOST_BOOSTERS_PATTERN = "/api/boost/boosters/**";

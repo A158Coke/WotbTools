@@ -169,6 +169,12 @@
         "version": "版本",
         "battle_time": "战斗时间",
         "upload_time": "上传时间",
+        "replay": "回放",
+        "download": "下载",
+        "downloading": "下载中...",
+        "login_to_upload": "登录后即可上传回放",
+        "login_to_download": "登录后即可下载回放",
+        "download_failed": "下载失败",
         "loading": "加载中…",
         "empty": "暂无数据。上传随机战斗回放后即可上榜。",
         "error": "排行榜加载失败",
@@ -182,7 +188,8 @@
         "upload_skipped_default": "已存在或无法识别录像者",
         "reason": {
             "NON_RANDOM_BATTLE": "仅支持随机战斗",
-            "DUPLICATE_OR_UNKNOWN_RECORDER": "已存在或无法识别录像者"
+            "DUPLICATE_OR_UNKNOWN_RECORDER": "已存在或无法识别录像者",
+            "REPLAY_HASH_CONFLICT": "该战斗已绑定其他回放文件"
         },
         "all_tanks": "全部车辆",
         "filter_tank": "当前筛选",

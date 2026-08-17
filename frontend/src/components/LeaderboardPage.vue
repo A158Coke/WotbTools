@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useAuth } from '../composables/useAuth.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
 import * as api from '../utils/api.js'
@@ -17,6 +18,16 @@ const uploadMsg = ref('')
 const uploadOk = ref(false)
 const dragging = ref(false)
 const fileInput = ref(null)
+const downloadingId = ref(null)
+const downloadErr = ref('')
+
+const { isAuthenticated, login } = useAuth()
+
+function requireLogin() {
+  if (isAuthenticated()) return true
+  login('leaderboard')
+  return false
+}
 
 const selectedTankId = ref(null)
 const selectedTankName = ref('')
@@ -61,6 +72,7 @@ function goPage(p) {
 
 async function upload(file) {
   if (uploading.value) return
+  if (!requireLogin()) return
   if (!file || !file.name.toLowerCase().endsWith('.wotbreplay')) {
     uploadMsg.value = t('leaderboard.invalid_file')
     return
@@ -86,6 +98,20 @@ async function upload(file) {
     uploadMsg.value = apiErrorLabel(t, te, e)
   } finally {
     uploading.value = false
+  }
+}
+
+async function download(id) {
+  if (downloadingId.value) return
+  if (!requireLogin()) return
+  downloadErr.value = ''
+  downloadingId.value = id
+  try {
+    await api.leaderboardDownload(id)
+  } catch (e) {
+    downloadErr.value = apiErrorLabel(t, te, e)
+  } finally {
+    downloadingId.value = null
   }
 }
 
@@ -163,6 +189,7 @@ function rankClass(rank) {
       {{ $t('leaderboard.filter_tank') }}: <strong>{{ selectedTankName }}</strong>
     </p>
 
+    <p v-if="downloadErr" class="lb-upload-msg err">{{ downloadErr }}</p>
     <p v-if="error" class="error">{{ $t('leaderboard.error') }}: {{ error }}</p>
     <p v-else-if="loading" class="muted">{{ $t('leaderboard.loading') }}</p>
     <p v-else-if="!rows.length" class="muted">{{ $t('leaderboard.empty') }}</p>
@@ -178,6 +205,7 @@ function rankClass(rank) {
             <th>{{ $t('leaderboard.version') }}</th>
             <th>{{ $t('leaderboard.battle_time') }}</th>
             <th>{{ $t('leaderboard.upload_time') }}</th>
+            <th>{{ $t('leaderboard.replay') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -198,6 +226,19 @@ function rankClass(rank) {
             <td class="lb-version">{{ r.version || '-' }}</td>
             <td class="lb-time">{{ fmtTime(r.battleTime) || '-' }}</td>
             <td class="lb-time">{{ fmtTime(r.createdAt) }}</td>
+            <td class="lb-replay">
+              <button
+                v-if="r.replayAvailable"
+                class="lb-download"
+                :disabled="downloadingId === r.id"
+                :title="downloadingId === r.id ? $t('leaderboard.downloading') : $t('leaderboard.download')"
+                :aria-label="downloadingId === r.id ? $t('leaderboard.downloading') : $t('leaderboard.download')"
+                @click="download(r.id)"
+              >
+                <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 15l4 4 4-4M12 3v16" /></svg>
+              </button>
+              <span v-else class="lb-no-replay">—</span>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -222,6 +263,18 @@ function rankClass(rank) {
   background: var(--bg-card2); color: var(--text-label); padding: 5px 10px; border-radius: 7px;
   font-size: 13px; cursor: pointer; font-family: inherit; }
 .lb-dmg { font-weight: 800; color: var(--accent-dark); font-variant-numeric: tabular-nums; }
+.lb-replay { white-space: nowrap; }
+.lb-download {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 26px; padding: 0;
+  border: 1px solid var(--border-ghost); border-radius: 7px;
+  background: var(--bg-card2); color: var(--text-label);
+  font-family: inherit; cursor: pointer;
+}
+.lb-download .ic { width: 15px; height: 15px; }
+.lb-download:hover:not(:disabled) { background: var(--bg-card-hover); color: var(--accent); }
+.lb-download:disabled { opacity: .55; cursor: not-allowed; }
+.lb-no-replay { color: var(--text-muted); }
 .lb-time { color: var(--text-muted); font-size: .9em; white-space: nowrap; }
 .lb-version { color: var(--text-muted); font-size: .85em; }
 .lb-tank-link {

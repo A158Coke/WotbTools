@@ -1,9 +1,15 @@
 package com.wotb.web.leaderboard.controller;
 
 import com.wotb.web.leaderboard.dto.LeaderboardPageDto;
+import com.wotb.web.leaderboard.dto.ReplayDownload;
 import com.wotb.web.leaderboard.service.LeaderboardService;
 import com.wotb.web.leaderboard.service.LeaderboardUploadService;
 import com.wotb.web.config.ApiPaths;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -13,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 /**
@@ -45,6 +52,22 @@ public class LeaderboardController {
             @RequestParam(name = "page", defaultValue = "1") final int page,
             @RequestParam(name = "size", defaultValue = "50") final int size) {
         return service.topDamage(page, size);
+    }
+
+    /**
+     * 下载指定榜单记录的回放文件（需登录）。原始文件名只进 Content-Disposition
+     * （UTF-8 安全编码），绝不参与文件路径。
+     */
+    @GetMapping("/{id}/replay")
+    public ResponseEntity<byte[]> downloadReplay(@PathVariable final long id) {
+        final ReplayDownload download = service.downloadReplay(id);
+        final String fileName = StringUtils.hasText(download.fileName())
+                ? download.fileName() : "replay-" + id + ".wotbreplay";
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(fileName, StandardCharsets.UTF_8).build().toString())
+                .body(download.data());
     }
 
     /** 指定车辆的伤害榜（分页）。 */

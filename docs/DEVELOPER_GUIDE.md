@@ -236,9 +236,10 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 | `Mapper` | `wotb-web/.../replay/mapper/Mapper.java` | 核心模型 → DTO |
 | `WotbWebApplication` | `wotb-web/.../WotbWebApplication.java` | Spring Boot 入口 |
 | `LeaderboardController` | `wotb-web/.../leaderboard/controller/LeaderboardController.java` | 排行榜 REST API |
-| `LeaderboardService` | `wotb-web/.../leaderboard/service/LeaderboardService.java` | 排行榜业务：录像者匹配/去重/查询 |
-| `LeaderboardUploadService` | `wotb-web/.../leaderboard/service/LeaderboardUploadService.java` | 公开上传的限流、解析与入库编排 |
-| `LeaderboardRecord` | `wotb-web/.../leaderboard/entity/LeaderboardRecord.java` | JPA 实体（列与 Flyway V1 逐列对齐） |
+| `LeaderboardService` | `wotb-web/.../leaderboard/service/LeaderboardService.java` | 排行榜业务：录像者匹配/replay 状态机（SAVED/ATTACHED/IDEMPOTENT/SKIPPED）/查询/下载 |
+| `LeaderboardUploadService` | `wotb-web/.../leaderboard/service/LeaderboardUploadService.java` | 需登录上传编排：校验→解析→SHA-256 落盘→入库 |
+| `LeaderboardReplayStorage` | `wotb-web/.../leaderboard/storage/LeaderboardReplayStorage.java` | SHA-256 内容寻址文件存储（原子 move、磁盘 reserve、幂等不覆盖） |
+| `LeaderboardRecord` | `wotb-web/.../leaderboard/entity/LeaderboardRecord.java` | JPA 实体（列与 Flyway 迁移逐列对齐，含 V15 replay 元数据列） |
 | `LeaderboardRecordRepository` | `wotb-web/.../leaderboard/repository/LeaderboardRecordRepository.java` | Spring Data JPA 仓库 |
 | `GlobalExceptionHandler` | `wotb-web/.../controller/GlobalExceptionHandler.java` | 统一异常处理 → `error + timestamp`；客户端/代理断连（Broken pipe、Connection reset，含 cause-chain 包装）仅记 WARN、不写错误 JSON |
 | `AdminUserController` | `wotb-web/.../admin/controller/AdminUserController.java` | 管理员用户管理 REST API |
@@ -346,7 +347,7 @@ API 层为**纯英文**：`/api/columns` 与各 DTO 只回 `key`(snake_case) + �
 - **存活时间**：3 层 fallback（#104 → Damage → hybrid EntityLeave/Position），详见 `docs/reference/replay-data.md`。
 - **评分**：自包含、类 WN8，基准来自「一同计算的这批战斗」（相对分，非绝对天梯）。参数在 `common/rating.json`。细节见 `docs/features/rating.md`。
 - **数据库**：PostgreSQL 18，JPA/Flyway（`ddl-auto: validate`）；Flyway 自动配置依赖 `spring-boot-flyway`。
-- **排行榜**：schema 由 Flyway 管理；只记录录像者本人随机战斗（`arenaBonusType==1`）单场伤害。见 `docs/features/leaderboard.md`。
+- **排行榜**：schema 由 Flyway 管理；只记录录像者本人随机战斗（`arenaBonusType==1`）单场伤害；上传/下载需登录；原始 .wotbreplay 以 SHA-256 内容寻址存 `LEADERBOARD_REPLAY_DIR`（生产 volume `/data/replays`，best-effort 可丢、不纳入 DB 备份）。见 `docs/features/leaderboard.md`。
 - **i18n**：vue-i18n 三语（zh/en/ru），`locales/*.json`；地图名 `common/map_names.json`，网页按当前语言显示，导出固定中文。
 - **API 端点**：`GET /api/health`、`GET/POST /api/rating`、`POST /api/preview`、`POST /api/export?mode=aggregate|each`；排行榜 / 站内通知端点见 `java/README.md`。
 - **公开解析边界**：最多 100 个回放、单文件 20 MiB、总请求 200 MiB；单实例默认同时处理 2 个任务；容量满 503 `REPLAY_BUSY`。

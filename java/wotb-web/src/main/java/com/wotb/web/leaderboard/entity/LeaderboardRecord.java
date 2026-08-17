@@ -57,6 +57,18 @@ public class LeaderboardRecord {
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
+    @Column(name = "replay_hash", length = 64)
+    private String replayHash;
+
+    @Column(name = "replay_file_name", length = 255)
+    private String replayFileName;
+
+    @Column(name = "replay_size")
+    private Long replaySize;
+
+    @Column(name = "replay_uploaded_by", length = 255)
+    private String replayUploadedBy;
+
     public LeaderboardRecord() {
         // JPA / service 组装
     }
@@ -139,5 +151,37 @@ public class LeaderboardRecord {
 
     public OffsetDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public String getReplayHash() {
+        return replayHash;
+    }
+
+    public void setReplayHash(final String replayHash) {
+        this.replayHash = replayHash;
+    }
+
+    public String getReplayFileName() {
+        return replayFileName;
+    }
+
+    public void setReplayFileName(final String replayFileName) {
+        this.replayFileName = replayFileName;
+    }
+
+    public Long getReplaySize() {
+        return replaySize;
+    }
+
+    public void setReplaySize(final Long replaySize) {
+        this.replaySize = replaySize;
+    }
+
+    public String getReplayUploadedBy() {
+        return replayUploadedBy;
+    }
+
+    public void setReplayUploadedBy(final String replayUploadedBy) {
+        this.replayUploadedBy = replayUploadedBy;
     }
 }
