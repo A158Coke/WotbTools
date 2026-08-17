@@ -49,12 +49,13 @@ public class LeaderboardUploadService {
             final byte[] bytes = file.getBytes();
             final Battle battle = parse(bytes);
 
-            // Blocker：非随机战（arenaBonusType != 1，含训练房/娱乐/联赛/未知）在 SHA-256、
-            // preflight、storage、DB 任何持久化之前直接拒绝 → 400 NON_RANDOM_BATTLE，
-            // 不产生 DB 行、不落盘、不制造 orphan 文件。其余 SKIPPED（无录像者等）保持 skipped 语义。
+            // Blocker：不支持战斗模式（训练房/联赛/娱乐/未知等，见 LeaderboardService
+            // SUPPORTED_BATTLE_TYPES 单一事实源）在 SHA-256、preflight、storage、DB 任何持久化
+            // 之前直接拒绝 → 400 UNSUPPORTED_BATTLE_TYPE，不产生 DB 行、不落盘、不制造 orphan 文件。
+            // 其余 SKIPPED（无录像者等）保持 skipped 语义。
             final RecordOutcome eligibility = leaderboardService.eligibility(battle);
-            if (eligibility == RecordOutcome.SKIPPED_NON_RANDOM) {
-                throw new IllegalArgumentException("NON_RANDOM_BATTLE");
+            if (eligibility == RecordOutcome.SKIPPED_UNSUPPORTED_BATTLE_TYPE) {
+                throw new IllegalArgumentException("UNSUPPORTED_BATTLE_TYPE");
             }
             if (eligibility.isSkipped()) {
                 return skipped(eligibility, battle);

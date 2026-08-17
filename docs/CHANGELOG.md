@@ -1070,17 +1070,18 @@
 - 硬编码的 `thinking=enabled` 和 `reasoning_effort=high`
 
 ### Fixed
-- **排行榜上传：非随机战（训练房/娱乐/联赛/未知）改为 HTTP 400 NON_RANDOM_BATTLE**：原先
-  arenaBonusType != 1 的回放以 200 skipped 响应（前端显示"已跳过"），现改为在 SHA-256 / preflight /
-  storage / DB 任何持久化之前直接拒绝 → 400 `NON_RANDOM_BATTLE`（复用 GlobalExceptionHandler 统一
+- **排行榜上传：不支持战斗模式改为 HTTP 400 UNSUPPORTED_BATTLE_TYPE**：原先
+  arenaBonusType 不属于 `LeaderboardService.SUPPORTED_BATTLE_TYPES` 的回放以 200 skipped 响应（前端显示"已跳过"），现改为在 SHA-256 / preflight /
+  storage / DB 任何持久化之前直接拒绝 → 400 `UNSUPPORTED_BATTLE_TYPE`（复用 GlobalExceptionHandler 统一
   错误格式 `{error, timestamp}`），不落盘、不入库、不产生 orphan 文件；仅无录像者 / 已确定 hash 冲突
-  保持 skipped（200）。前端 `leaderboardUpload()` 修复 `requireOk(r).json()` Promise bug（先 await
+  保持 skipped（200）。战斗模式判断收敛为单一事实源 `isLeaderboardSupportedBattleType`（eligibility 与
+  recordRecorder 共用）。前端 `leaderboardUpload()` 修复 `requireOk(r).json()` Promise bug（先 await
   再读 body，否则 Promise 无 .json 抛 TypeError，被误显示为"网络连接失败"）；新增
-  `api_errors.NON_RANDOM_BATTLE` 三语文案（zh/en/ru）。测试：service 层真实 parser + 真实训练房夹具
+  `api_errors.UNSUPPORTED_BATTLE_TYPE` 三语文案（zh/en/ru）。测试：service 层真实 parser + 真实训练房夹具
   （400、storage/DB 零写入）、controller 400 映射、WebApiTest 集成（400 + DB 行数不变 + 无
-  .wotbreplay 文件生成）、前端 api.js 回归（200 解析 / NON_RANDOM_BATTLE / 401）与 LeaderboardPage
-  UX（业务错误文案、uploadOk=false、失败不刷新排行榜）。生产/本地 compose 显式传入
-  LEADERBOARD_REPLAY_DIR / LEADERBOARD_REPLAY_MIN_FREE_BYTES（默认保持 /data/replays 与 512MiB）。
+  .wotbreplay 文件生成）、前端 api.js 回归（200 解析 / UNSUPPORTED_BATTLE_TYPE / 401 上传+下载）与
+  LeaderboardPage UX（业务错误文案、uploadOk=false、失败不刷新排行榜；未登录点上传按钮先登录再开文件选择器）。
+  生产/本地 compose 显式传入 LEADERBOARD_REPLAY_DIR / LEADERBOARD_REPLAY_MIN_FREE_BYTES（默认保持 /data/replays 与 512MiB）。
 - **顶栏响应式修复**：`App.vue` 顶栏增加横向滚动兜底，并在 ≤1080px 时切换为 sticky + flex-wrap（导航换行第二行），屏幕不够宽时不再丢失右侧按钮。
 - **赞助页返回入口**：`frontend/homepage/sponsor.html` 顶栏新增「返回」按钮（`history.back()`，无历史时回首页），三语 `back` 文案随页面 i18n 切换。
 

@@ -187,7 +187,6 @@
         "upload_skipped": "Skipped: {reason}",
         "upload_skipped_default": "Already exists or recorder cannot be identified",
         "reason": {
-            "NON_RANDOM_BATTLE": "Only random battles are supported",
             "DUPLICATE_OR_UNKNOWN_RECORDER": "Already exists or recorder cannot be identified",
             "REPLAY_HASH_CONFLICT": "This battle is already bound to another replay file"
         },
@@ -702,7 +701,7 @@
         "INVALID_IMAGE_DATA": "Invalid image data",
         "NO_REPLAY_FILES": "Select at least one replay file",
         "INVALID_REPLAY_FILE": "Invalid replay file",
-        "NON_RANDOM_BATTLE": "This replay is not a random battle and cannot be uploaded to the leaderboard.",
+        "UNSUPPORTED_BATTLE_TYPE": "Only Random and Rating battles are supported.",
         "TOO_MANY_REPLAY_FILES": "Too many replay files",
         "FILE_TOO_LARGE": "File is too large",
         "REQUEST_TOO_LARGE": "The upload is too large",

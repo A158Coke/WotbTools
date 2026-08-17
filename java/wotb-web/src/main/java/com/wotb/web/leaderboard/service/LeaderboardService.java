@@ -28,6 +28,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 排行榜业务。MVP 只记录录像者本人单场成绩，不存全场 14 人。
@@ -39,7 +40,25 @@ public class LeaderboardService {
 
     private static final int MAX_LIMIT = 200;
     private static final int DEFAULT_LIMIT = 50;
-    private static final int BATTLE_TYPE = 1;
+
+    /**
+     * 排行榜支持的战斗模式（meta.json#arenaBonusType）——eligibility 与 recordRecorder 的
+     * 单一事实源，禁止两处各自判断再次漂移。
+     * <p>证据矩阵（真实回放探针 + 提交夹具，见 docs/features/leaderboard.md）：</p>
+     * <ul>
+     *   <li>1 = RANDOM（random-battle-example 等，supremacyCfg="regular"）→ 支持</li>
+     *   <li>2 = TRAINING（training-room-example，supremacyCfg="training"）→ 不支持</li>
+     *   <li>4 = TOURNAMENT supremacy（20260725_1555 等，supremacyCfg="tournament"）→ 不支持</li>
+     *   <li>RATING（评级战）：仓库内暂无真实 Rating 回放 / 权威 arenaBonusType 证据
+     *       （RATING_ARENA_BONUS_TYPE_NOT_PROVEN）→ 暂不支持；拿到真实样本证明后加入本集合。</li>
+     * </ul>
+     */
+    private static final Set<Integer> SUPPORTED_BATTLE_TYPES = Set.of(1);
+
+    /** 排行榜是否接受该战斗模式：raw arenaBonusType → RANDOM 支持 / 其余不支持（含 unknown/null）。 */
+    public static boolean isLeaderboardSupportedBattleType(final Integer arenaBonusType) {
+        return arenaBonusType != null && SUPPORTED_BATTLE_TYPES.contains(arenaBonusType);
+    }
 
     private final LeaderboardRecordRepository repository;
     private final LeaderboardRecordMapper mapper;
@@ -71,13 +90,13 @@ public class LeaderboardService {
     }
 
     /**
-     * 纯内存 eligibility（写文件前的 preflight）：非随机战 / 无录像者 → SKIPPED，
-     * 其余返回 SAVED（仅表示 eligible，不代表入库结果）。
+     * 纯内存 eligibility（写文件前的 preflight）：不支持战斗模式（含训练房/联赛/未知）/
+     * 无录像者 → SKIPPED，其余返回 SAVED（仅表示 eligible，不代表入库结果）。
      */
     public RecordOutcome eligibility(final Battle battle) {
         if (battle == null || battle.arenaId == null) return RecordOutcome.SKIPPED_UNKNOWN_RECORDER;
-        if (battle.arenaBonusType == null || battle.arenaBonusType != BATTLE_TYPE) {
-            return RecordOutcome.SKIPPED_NON_RANDOM;
+        if (!isLeaderboardSupportedBattleType(battle.arenaBonusType)) {
+            return RecordOutcome.SKIPPED_UNSUPPORTED_BATTLE_TYPE;
         }
         if (battle.recorderResult() == null) return RecordOutcome.SKIPPED_UNKNOWN_RECORDER;
         return RecordOutcome.SAVED;
@@ -111,8 +130,8 @@ public class LeaderboardService {
     public RecordOutcome recordRecorder(final Battle battle, final Tankopedia tankopedia,
                                         final ReplayFileMeta meta) {
         if (battle == null || battle.arenaId == null) return RecordOutcome.SKIPPED_UNKNOWN_RECORDER;
-        if (battle.arenaBonusType == null || battle.arenaBonusType != BATTLE_TYPE) {
-            return RecordOutcome.SKIPPED_NON_RANDOM;
+        if (!isLeaderboardSupportedBattleType(battle.arenaBonusType)) {
+            return RecordOutcome.SKIPPED_UNSUPPORTED_BATTLE_TYPE;
         }
         final PlayerResult recorder = battle.recorderResult();
         if (recorder == null) return RecordOutcome.SKIPPED_UNKNOWN_RECORDER;
