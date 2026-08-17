@@ -28,6 +28,13 @@ import {
   zoomViewAt
 } from '../utils/battlePlayback'
 import {
+  PLAYER_FADE_MS,
+  PLAYER_HIDE_MS,
+  PLAYER_SHOW_MS,
+  computeLabelLayout,
+  resolvePlayerVisibility,
+} from '../utils/labelLayout'
+import {
   ANNOT_COLORS,
   ANNOT_FONT_SIZE,
   ANNOT_WIDTH_DEFAULT,
@@ -54,7 +61,9 @@ import {
  */
 const props = defineProps({
   overview: { type: Object, required: true },
-  seekTo: { type: Number, default: null }
+  seekTo: { type: Number, default: null },
+  /** QA 场景循环播放（PR4 §49：时间线到末尾自动回到 0 继续） */
+  loop: { type: Boolean, default: false }
 })
 
 const { t } = useI18n()
@@ -126,6 +135,36 @@ function hpBarFill(hp, kind) {
 const currentTime = ref(0)
 const playing = ref(false)
 const speed = ref(1)
+// PR4 §33：hysteresis 时间基准 = UI wall clock（performance.now）。
+// 播放时由 frame() 每帧刷新；暂停时由 ensureHysteresisClock 的轻量 RAF 继续推进
+//（仅当存在未决 transition），不依赖 replay 播放状态；replay currentTime 不是 collision 时钟。
+const nowMs = ref(typeof performance !== 'undefined' ? performance.now() : 0)
+
+// ---- PR4 §26：玩家/坦克名显示偏好（默认 showPlayerName=false / showTankName=true，localStorage 持久化）----
+const LABEL_PREFS_KEY = 'wotb.pb.label-prefs'
+function loadLabelPrefs() {
+  try {
+    const raw = localStorage.getItem(LABEL_PREFS_KEY)
+    if (raw) {
+      const p = JSON.parse(raw)
+      return {
+        showPlayerName: p.showPlayerName === true,
+        showTankName: p.showTankName !== false,
+      }
+    }
+  } catch {
+    // 损坏/不可用 → 默认值
+  }
+  return { showPlayerName: false, showTankName: true }
+}
+const labelPrefs = reactive(loadLabelPrefs())
+watch(labelPrefs, (p) => {
+  try {
+    localStorage.setItem(LABEL_PREFS_KEY, JSON.stringify(p))
+  } catch {
+    // 隐私模式/配额满：静默（本次会话内仍生效）
+  }
+}, { deep: true })
 const showAll = ref(false)
 const typeFilter = ref(new Set(['DAMAGE', 'DESTROYED', 'KILL', 'POSITION_REPORTED', 'POSITION_STALE']))
 const selectedAccountId = ref(null)
@@ -133,8 +172,70 @@ const eventPopupSec = ref(null)
 let rafId = null
 let lastFrameTs = null
 
+// PR4 §33 hysteresis 状态（声明提前：seekTo watch immediate 可能在 setup 早期触发 pause →
+// ensureHysteresisClock/hasPendingHysteresis 必须能访问；ref/Map/let 需先初始化，避免 TDZ）
+const playerVisState = ref(new Map())
+const playerHidden = ref(new Set())
+// fade-in 生命周期：accountId → fade 结束时刻（performance.now 基准）。
+// 非响应式 Map，由 nowMs 变化驱动重渲染；恢复帧开始计时 PLAYER_FADE_MS，
+// 期间不被下一次 collision resolve 取消（CSS animation 0.12s 与之一致）。
+const fadeUntil = new Map()
+let hystRafId = null
+
 // ---- 地图视图缩放/平移：单一 transform 层保证地图/网格/炮线/标记严格对齐 ----
 const mapEl = ref(null)
+// ---- 地图容器真实渲染尺寸（reactive）：fullscreen enter/exit / 窗口缩放等任何尺寸变化
+// 由 ResizeObserver 更新 → 依赖容器尺寸的 screen-space 布局（markerScreen/labelLayout/
+// hitbox/textInput）在新尺寸下重新计算；无 RO 环境（测试/旧浏览器）回退 clientWidth 读取。
+const mapSize = ref({ w: 0, h: 0 })
+let mapResizeObserver = null
+function mapWidth() {
+  return mapSize.value.w || (mapEl.value ? mapEl.value.clientWidth : 0)
+}
+function mapHeight() {
+  return mapSize.value.h || (mapEl.value ? mapEl.value.clientHeight : 0)
+}
+
+// ---- Fullscreen：原生 Fullscreen API；document.fullscreenElement + fullscreenchange 为事实源
+//（不维护手工 isFullscreen = !isFullscreen，ESC/浏览器 UI 退出后状态自动同步）----
+const pbRoot = ref(null)
+const isFullscreen = ref(false)
+const fullscreenSupported = computed(() =>
+  typeof document !== 'undefined'
+  && pbRoot.value != null
+  && typeof pbRoot.value.requestFullscreen === 'function'
+)
+function onFullscreenChange() {
+  isFullscreen.value = !!(typeof document !== 'undefined' && document.fullscreenElement)
+}
+function toggleFullscreen() {
+  if (typeof document === 'undefined' || !pbRoot.value) return
+  if (document.fullscreenElement) {
+    if (typeof document.exitFullscreen === 'function') {
+      const p = document.exitFullscreen()
+      if (p && typeof p.catch === 'function') p.catch(() => {})
+    }
+  } else if (typeof pbRoot.value.requestFullscreen === 'function') {
+    const p = pbRoot.value.requestFullscreen()
+    if (p && typeof p.catch === 'function') p.catch(() => {})
+  }
+}
+
+// 地图容器尺寸观察：fullscreen enter/exit / 窗口缩放 → ResizeObserver 更新 mapSize
+//（reactive）→ markerScreen/labelLayout/selectAt/textInput 以新尺寸重算；不依赖 magic delay。
+watch(() => mapEl.value, (el) => {
+  if (!el || mapResizeObserver) return
+  if (typeof ResizeObserver === 'function') {
+    mapResizeObserver = new ResizeObserver((entries) => {
+      const e = entries && entries[0]
+      if (e && e.contentRect) {
+        mapSize.value = { w: e.contentRect.width, h: e.contentRect.height }
+      }
+    })
+    mapResizeObserver.observe(el)
+  }
+})
+
 const view = reactive({ scale: 1, tx: 0, ty: 0 })
 const PAN_THRESHOLD_PX = 5
 const PINCH_THRESHOLD_PX = 5
@@ -150,8 +251,8 @@ let gestureMoved = false
 function applyView(next) {
   const clamped = clampViewPan(
     next,
-    mapEl.value ? mapEl.value.clientWidth : 0,
-    mapEl.value ? mapEl.value.clientHeight : 0
+    mapWidth(),
+    mapHeight()
   )
   view.scale = clamped.scale
   view.tx = clamped.tx
@@ -399,8 +500,7 @@ function draftFromTool(tool, a, b) {
 /** 指针 client 坐标 → 语义坐标（CSS px → 撤销 viewport 变换 → CSS↔SVG 比例 → fromX/fromY）。 */
 function semanticPoint(e) {
   const sp = screenPoint(e.clientX, e.clientY)
-  const el = mapEl.value
-  return screenToSemantic(view, mapView.value, sp.x, sp.y, el ? el.clientWidth : 0, el ? el.clientHeight : 0)
+  return screenToSemantic(view, mapView.value, sp.x, sp.y, mapWidth(), mapHeight())
 }
 
 function startDrawing(e) {
@@ -496,14 +596,13 @@ function cancelSession(session) {
 const textInputStyle = computed(() => {
   const session = textSession.value
   if (!session) return null
-  const el = mapEl.value
   const s = svgToScreen(
     mapView.value,
     view,
     mapView.value.toX(session.point.x),
     mapView.value.toY(session.point.y),
-    el ? el.clientWidth : 0,
-    el ? el.clientHeight : 0
+    mapWidth(),
+    mapHeight()
   )
   if (!s) return null
   return { left: `${s.x}px`, top: `${s.y}px` }
@@ -548,6 +647,9 @@ onMounted(() => {
   window.addEventListener('pointermove', onPointerMove)
   window.addEventListener('pointerup', onPointerUp)
   window.addEventListener('pointercancel', onPointerUp)
+  if (typeof document !== 'undefined') {
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+  }
 })
 
 function frame(ts) {
@@ -558,9 +660,17 @@ function frame(ts) {
   const delta = lastFrameTs == null ? 0 : (ts - lastFrameTs)
   lastFrameTs = ts
   currentTime.value = Math.min(duration.value, currentTime.value + (delta / 1000) * speed.value)
+  nowMs.value = typeof performance !== 'undefined' ? performance.now() : 0
   if (currentTime.value >= duration.value) {
+    if (props.loop) {
+      currentTime.value = 0
+      rafId = requestAnimationFrame(frame)
+      return
+    }
     playing.value = false
     rafId = null
+    // Blocker 1：播放到末尾自然停止 → 若有未决 transition，轻量 clock 接管
+    ensureHysteresisClock(typeof performance !== 'undefined' ? performance.now() : Date.now())
     return
   }
   rafId = requestAnimationFrame(frame)
@@ -571,6 +681,10 @@ function play() {
   if (playing.value || duration.value <= 0) return
   playing.value = true
   lastFrameTs = null
+  // 播放开始：hysteresis 时钟由 playback frame() 驱动——作废可能残留的轻量 hystRAF
+  //（stub 环境只保留最近回调，若不清理，pause() 的 ensureHysteresisClock 会误判"已有 RAF"
+  //  而无法注册接管时钟；真实浏览器中残留回调至多无害地刷新一次 nowMs）
+  hystRafId = null
   rafId = requestAnimationFrame(frame)
 }
 
@@ -581,6 +695,9 @@ function pause() {
     cancelAnimationFrame(rafId)
     rafId = null
   }
+  // Blocker 1：播放中可能有未决 hide/show/fade transition——暂停后立即让轻量
+  // hysteresis clock（UI wall clock）接管；无 pending 时不启动 RAF（不永久轮询）。
+  ensureHysteresisClock(typeof performance !== 'undefined' ? performance.now() : Date.now())
 }
 
 watch(() => props.seekTo, (sec) => {
@@ -594,6 +711,7 @@ watch(() => props.seekTo, (sec) => {
 function seek(sec) {
   currentTime.value = Math.min(duration.value, Math.max(0, sec))
   eventPopupSec.value = Math.round(sec)
+  nowMs.value = typeof performance !== 'undefined' ? performance.now() : 0
 }
 
 function togglePlay() {
@@ -617,7 +735,8 @@ function step(delta) {
 }
 
 function toggleSpeed() {
-  speed.value = speed.value === 1 ? 2 : (speed.value === 2 ? 4 : 1)
+  // PR4 §49：QA 场景需要 0.5×——倍速循环 0.5 → 1 → 2 → 4 → 0.5
+  speed.value = speed.value === 0.5 ? 1 : (speed.value === 1 ? 2 : (speed.value === 2 ? 4 : 0.5))
 }
 
 function toggleType(type) {
@@ -629,6 +748,18 @@ function toggleType(type) {
 
 onBeforeUnmount(() => {
   if (rafId != null) cancelAnimationFrame(rafId)
+  if (hystRafId != null) cancelAnimationFrame(hystRafId)
+  if (mapResizeObserver) {
+    mapResizeObserver.disconnect()
+    mapResizeObserver = null
+  }
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('fullscreenchange', onFullscreenChange)
+    // 组件在 fullscreen 中被卸载 → 主动退出（浏览器通常会自动退出，这里兜底）
+    if (pbRoot.value && pbRoot.value === document.fullscreenElement && typeof document.exitFullscreen === 'function') {
+      document.exitFullscreen()
+    }
+  }
   window.removeEventListener('pointermove', onPointerMove)
   window.removeEventListener('pointerup', onPointerUp)
   window.removeEventListener('pointercancel', onPointerUp)
@@ -686,6 +817,12 @@ function vehicleModel(vehicle) {
   return p.resolved.get(modelKey) || null
 }
 
+/** PR4 §36 hull hitbox 比例（相对 marker 盒，随 marker 缩放；视觉车体 + 小 padding）。 */
+const HULL_HITBOX = Object.freeze({
+  dedicated: Object.freeze({ w: 0.9, h: 0.9 }),
+  generic: Object.freeze({ w: 0.58, h: 0.9 }),
+})
+
 function vehicleState(vehicle) {
   const route = routesByAccount.value.get(vehicle.accountId)
   const points = route ? route.points : []
@@ -724,6 +861,12 @@ function vehicleState(vehicle) {
     markerStyle: { left: markerLeft(last.x), top: markerTop(last.y), transform: markerTransform.value },
     overlayInverseScale: overlayInverseScale.value,
     overlayInverse: overlayInverse.value, // 数值反缩放（VehicleMarker 用它反缩放 layout offset）
+    // PR4 §26：标签数据（playerName 可为空串；tankName 权威显示名回退 tankId）
+    playerName: vehicle.playerName || '',
+    tankName: vehicle.tankName || String(vehicle.tankId),
+    // PR4 §36：hull hitbox 占 marker 盒比例（随 marker 一起缩放；dedicated 车体≈88% 视觉、
+    // generic 车体 55%×88%；+小 padding 容错）。用于点击命中判定。
+    hitbox: vehicleModel(vehicle) ? HULL_HITBOX.dedicated : HULL_HITBOX.generic,
     ariaLabel: `${vehicle.playerName}: ${t(destroyed ? 'recon.map.playback.state_destroyed' : (covered ? 'recon.map.playback.state_position_reported' : 'recon.map.playback.state_position_stale'))}`,
     // lastKnown = 位置流未覆盖（covered=false）才淡化（最后已知位置）。
     // 注意：covered 只是「服务器位置流当前覆盖」，不等于录像者客户端点亮/失察（无 authoritative
@@ -821,14 +964,164 @@ function eventLabel(event) {
   }
 }
 
-function selectVehicle(vehicle) {
-  selectedAccountId.value = selectedAccountId.value === vehicle.accountId ? null : vehicle.accountId
+// ---- PR4 §36/§37：hull hitbox 点击选中（重叠时取指针最近车辆；tie 保持 selected / render order）----
+function onMarkerSelect(vehicle, event) {
+  // §36：label 块（含 PlayerName tooltip 悬停区）不是 hitbox——点标签不选中车辆；
+  // .pb-label-player 为触发原生 title 需要 pointer-events:auto，点击事件会冒泡到这里，须拦截。
+  const t = event && event.target
+  if (t && typeof t.closest === 'function' && t.closest('.pb-labels')) return
+  selectAt(vehicle.accountId, event ? event.clientX : undefined, event ? event.clientY : undefined)
+}
+
+/** 标记中心 → 相对地图容器的屏幕 px（viewport 变换后）。 */
+function markerScreen(st) {
+  const W = mapWidth()
+  if (!W || mapView.value.W <= 0) return null
+  const H = W * (mapView.value.H / mapView.value.W)
+  return {
+    x: (mapView.value.toX(st.pos.x) / mapView.value.W) * W * view.scale + view.tx,
+    y: (mapView.value.toY(st.pos.y) / mapView.value.H) * H * view.scale + view.ty,
+  }
+}
+
+function selectAt(accountId, clientX, clientY) {
+  const states = vehicleStates.value
+  const hasPoint = Number.isFinite(clientX) && mapEl.value && mapWidth() > 0
+  const rect = mapEl.value ? mapEl.value.getBoundingClientRect() : { left: 0, top: 0 }
+  const px = hasPoint ? clientX - rect.left : NaN
+  const py = hasPoint ? clientY - rect.top : NaN
+  // §36 hitbox 尺寸（content px）：读取实际 marker 盒宽（CSS 36px desktop / 28px mobile，
+  // media query 生效于 viewport 变换前 → offsetWidth 即 content px）；测试环境无布局 → 回退 36
+  const markerBox = Number(mapEl.value?.querySelector('.pb-vehicle')?.offsetWidth) || 36
+  // 命中判定：内容坐标（撤销 viewport 变换）落在 hull hitbox 内
+  const hitTest = (s) => {
+    const cx = (px - view.tx) / view.scale
+    const cy = (py - view.ty) / view.scale
+    const W = mapWidth()
+    const H = W * (mapView.value.H / mapView.value.W)
+    const x = (mapView.value.toX(s.pos.x) / mapView.value.W) * W
+    const y = (mapView.value.toY(s.pos.y) / mapView.value.H) * H
+    const hw = (markerBox * s.hitbox.w) / 2
+    const hh = (markerBox * s.hitbox.h) / 2
+    return Math.abs(cx - x) <= hw && Math.abs(cy - y) <= hh
+  }
+  let candidates
+  if (hasPoint) {
+    candidates = states.filter(hitTest)
+    // 真实点击必然落在某 hitbox 内（label 点击已在 onMarkerSelect 拦截）；
+    // 此处兜底只为合成事件/坐标与布局瞬时不一致（既有 toggle 行为）
+    if (candidates.length === 0) {
+      const target = states.find((s) => s.vehicle.accountId === accountId)
+      candidates = target ? [target] : []
+    }
+  } else {
+    const target = states.find((s) => s.vehicle.accountId === accountId)
+    candidates = target ? [target] : []
+  }
+  if (candidates.length === 0) return
+  let best = candidates[0]
+  if (candidates.length > 1) {
+    const dist = (s) => {
+      const p = markerScreen(s)
+      return p ? Math.hypot(p.x - px, p.y - py) : Infinity
+    }
+    candidates.sort((a, b) => (dist(a) - dist(b)) || (states.indexOf(a) - states.indexOf(b)))
+    best = candidates[0]
+    // tie（与前二近者距离几乎一致）且已有 selected 在候选内 → 保持当前 selected，不切换
+    if (selectedAccountId.value != null && candidates.length > 1
+        && Math.abs(dist(best) - dist(candidates[1])) < 1) {
+      const sel = candidates.find((s) => s.vehicle.accountId === selectedAccountId.value)
+      if (sel) return
+    }
+  }
+  selectedAccountId.value = selectedAccountId.value === best.vehicle.accountId ? null : best.vehicle.accountId
 }
 
 const selectedState = computed(() => {
   if (selectedAccountId.value == null) return null
   return vehicleStates.value.find(st => st.vehicle.accountId === selectedAccountId.value) || null
 })
+
+// ---- PR4 §32–§35：标签碰撞布局（纯函数；screen px）+ PlayerName hysteresis ----
+const labelLayout = computed(() => {
+  const W = mapWidth()
+  if (!W || mapView.value.W <= 0) return new Map()
+  const items = vehicleStates.value.map((st) => {
+    const p = markerScreen(st)
+    if (!p) return null
+    return {
+      accountId: st.vehicle.accountId,
+      x: p.x,
+      y: p.y,
+      tankName: st.tankName,
+      playerName: st.playerName,
+    }
+  }).filter(Boolean)
+  return computeLabelLayout(items, {
+    showTank: labelPrefs.showTankName,
+    showPlayer: labelPrefs.showPlayerName,
+    viewportW: W,
+    viewportH: W * (mapView.value.H / mapView.value.W),
+  })
+})
+
+// （playerVisState / playerHidden / fadeUntil / hystRafId 声明见播放状态区——
+//   seekTo immediate watch 早期触发 pause 时需已初始化，避免 TDZ）
+
+/** 是否存在未决的 hysteresis transition（hide/show 截止未到，或 fade-in 未结束）。 */
+function hasPendingHysteresis(now) {
+  for (const s of playerVisState.value.values()) {
+    if (s.conflict && !s.hidden && now - s.since < PLAYER_HIDE_MS) return true
+    if (!s.conflict && s.hidden && now - s.since < PLAYER_SHOW_MS) return true
+  }
+  for (const until of fadeUntil.values()) if (until > now) return true
+  return false
+}
+
+/** 轻量时钟：仅当存在未决 transition 且未在播放时维持 RAF；播放时由 frame() 驱动，
+ *  无 pending 即停（不做永久轮询）。注意：只更新 nowMs 触发 watch，**不在 watcher 内
+ *  回写 nowMs**（nowMs 是 watch source，回写会自触发无限循环）。
+ * @param now 当前 resolve 使用的新鲜 wall clock（用于 pending 判定）
+ */
+function ensureHysteresisClock(now) {
+  if (hystRafId != null || playing.value) return
+  if (hasPendingHysteresis(now)) {
+    hystRafId = requestAnimationFrame(() => {
+      hystRafId = null
+      nowMs.value = typeof performance !== 'undefined' ? performance.now() : Date.now()
+      // nowMs 变化 → watch → resolve → ensureHysteresisClock(新鲜 now) 决定续/停
+    })
+  }
+}
+
+watch([labelLayout, nowMs], () => {
+  // 每次 resolve 取**新鲜** wall clock：即使 nowMs 因暂停而陈旧，冲突出现/解除时刻
+  // 也以真实时刻计，阈值不会因暂停冻结（B3）。
+  const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+  const conflicts = new Set()
+  for (const [id, r] of labelLayout.value) {
+    if (r.playerConflict) conflicts.add(id)
+  }
+  const res = resolvePlayerVisibility(conflicts, playerVisState.value, now, PLAYER_HIDE_MS, PLAYER_SHOW_MS)
+  playerVisState.value = res.state
+  playerHidden.value = res.hidden
+  // fade-in：恢复帧开始计时，完整 PLAYER_FADE_MS 生命周期
+  for (const id of res.fading) fadeUntil.set(id, now + PLAYER_FADE_MS)
+  for (const [id, until] of fadeUntil) if (until <= now) fadeUntil.delete(id)
+  ensureHysteresisClock(now)
+}, { immediate: true })
+
+/** VehicleMarker label prop（每 marker 一个：显示开关 + 碰撞位移 + player 显隐/fade）。 */
+function markerLabel(accountId) {
+  const l = labelLayout.value.get(accountId)
+  return {
+    showPlayer: labelPrefs.showPlayerName,
+    showTank: labelPrefs.showTankName,
+    tankDy: l ? l.tankDy : 0,
+    playerHidden: playerHidden.value.has(accountId),
+    playerFading: (fadeUntil.get(accountId) || 0) > nowMs.value,
+  }
+}
 
 const gridRegions = computed(() => {
   const regions = new Map()
@@ -859,7 +1152,7 @@ const mapStyle = computed(() => ({
 </script>
 
 <template>
-  <div v-if="image && playback" class="battle-playback" :style="mapStyle" data-test="battle-playback">
+  <div v-if="image && playback" ref="pbRoot" class="battle-playback" :style="mapStyle" data-test="battle-playback">
     <!-- 播放控制 -->
     <div class="pb-controls">
       <button type="button" class="pb-btn" data-test="pb-play" @click="togglePlay">
@@ -878,6 +1171,25 @@ const mapStyle = computed(() => ({
           {{ $t('recon.map.playback.all_events') }}
         </label>
       </span>
+      <!-- PR4 §26：玩家/坦克名显示开关（默认 玩家名关 / 坦克名开，localStorage 持久化） -->
+      <span class="pb-filter">
+        <label class="pb-check">
+          <input type="checkbox" v-model="labelPrefs.showPlayerName" data-test="pb-show-player" />
+          {{ $t('recon.map.playback.show_player_name') }}
+        </label>
+        <label class="pb-check">
+          <input type="checkbox" v-model="labelPrefs.showTankName" data-test="pb-show-tank" />
+          {{ $t('recon.map.playback.show_tank_name') }}
+        </label>
+      </span>
+      <!-- 全屏（原生 Fullscreen API；不支持时按钮隐藏，不抛错） -->
+      <button
+        v-if="fullscreenSupported"
+        type="button"
+        class="pb-btn"
+        data-test="pb-fullscreen"
+        @click="toggleFullscreen"
+      >{{ isFullscreen ? $t('recon.map.playback.exit_fullscreen') : $t('recon.map.playback.enter_fullscreen') }}</button>
     </div>
 
     <!-- 事件类型过滤 -->
@@ -1129,7 +1441,8 @@ const mapStyle = computed(() => ({
         :key="st.vehicle.accountId"
         :marker="st"
         :selected="selectedAccountId === st.vehicle.accountId"
-        @select="selectVehicle(st.vehicle)"
+        :label="markerLabel(st.vehicle.accountId)"
+        @select="onMarkerSelect(st.vehicle, $event)"
       />
     </div>
     </div>
@@ -1211,6 +1524,22 @@ const mapStyle = computed(() => ({
   gap: 6px;
   margin-top: 6px;
 }
+/* 全屏（原生 Fullscreen API，:fullscreen 作用于 .battle-playback 自身）：
+   填满视口、内部滚动兜底；地图保持自身宽高比（不拉伸/不 letterbox），
+   用垂直预算限制地图最大宽度以适配剩余空间，toolbar/时间轴不被挤出。 */
+.battle-playback:fullscreen {
+  width: 100%;
+  height: 100%;
+  margin-top: 0;
+  background: var(--bg, #0b0f0d);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.battle-playback:fullscreen .pb-map {
+  width: 100%;
+  max-width: calc(100vh - 190px); /* 全屏垂直预算：控制区/时间轴/血量条等固定 UI 约 190px */
+  margin: auto; /* 垂直居中利用剩余空间；超高时滚动兜底 */
+}
 .pb-controls, .pb-filters {
   display: flex;
   align-items: center;
@@ -1278,8 +1607,8 @@ const mapStyle = computed(() => ({
   border: none;
   background: none;
   padding: 0;
-  cursor: pointer;
-  pointer-events: auto;
+  /* PR4 §36：按钮本身不拦截点击，只有 .pb-hitbox（hull 范围）可点 */
+  pointer-events: none;
 }
 @media (max-width: 768px) {
   .pb-vehicle { width: 28px; height: 28px; }

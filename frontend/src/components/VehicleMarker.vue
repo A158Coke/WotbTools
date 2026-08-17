@@ -22,17 +22,23 @@
  *   pivot rotate(T-H)）——数学见 vehicle-models/pivot.js（marker*Transform）；
  * - dedicated turretless：仅 hull（gun/mantlet 已 bake 进 hull；无 fake turret layer）。
  */
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import {
   markerTurretAssemblyTransform,
   markerTurretImageTransform,
 } from '../vehicle-models/pivot.js'
+import { LABEL_LINE_H, LABEL_PAD_Y } from '../utils/labelLayout'
 
 const props = defineProps({
   /** vehicleState 视图模型（BattlePlayback 构建；含 model / hullScreenDeg / turretScreenDeg / 状态） */
   marker: { type: Object, required: true },
   /** 是否选中（selectedAccountId === accountId） */
   selected: { type: Boolean, default: false },
+  /** PR4 §26–§35：标签显示/碰撞结果（BattlePlayback 计算，本组件只渲染） */
+  label: {
+    type: Object,
+    default: () => ({ showPlayer: false, showTank: true, tankDy: 0, playerHidden: false, playerFading: false }),
+  },
 })
 
 const emit = defineEmits(['select'])
@@ -81,21 +87,28 @@ const genericTurretStyle = computed(() =>
 const overlayInv = computed(() =>
   Number.isFinite(st.value.overlayInverse) && st.value.overlayInverse > 0 ? st.value.overlayInverse : 1,
 )
-// selected 三角 bottom（layout px）推导（B2 残余）：
-// - name：bottom anchor 2px、盒高 14px（10px×1.2 + padding 1px×2）→ 中心 layout offset 9px；
-//   transform scale(inv) 绕中心 → name 顶边 screen = (9 + 7)·s。
+// selected 三角 bottom（layout px）推导（B2 残余 + PR4 §27 label 块高度适配）：
+// - label 块：bottom anchor 2px；块高 = 显示行数 × 行高 + 块 padding（PR4 单行/双行自适应）；
+//   transform scale(inv) 绕中心 → 块顶边 screen = (2 + half)·s + half。
 // - 三角：高 9px（border-top）→ 底边 screen = (X + 4.5)·s − 4.5。
-// - 要求 底边 = name顶 + 3px（1× 时即 19px，既有车辆契约）→ X = 4.5 + 14.5·inv。
-//   高 zoom 时三角跟随 name 上移，selected→name 屏幕 gap 恒 3px（name 自身 anchor 按既有语义
-//   随 zoom 上移，禁止重做 name）。若 .pb-name CSS 盒高/锚点变化需同步 NAME_LAYOUT_*。
-const NAME_LAYOUT_BOTTOM_PX = 2 // .pb-name bottom offset（.pb-name CSS 唯一事实源）
-const NAME_LAYOUT_HALF_PX = 7 // .pb-name 盒高 14px 的一半
+// - 要求 底边 = 块顶 + 3px（单行 tank 时 1× 即 19px，既有车辆契约）→ X = 2 + half − 4.5
+//   + (half + 3 + 4.5)·inv；§34 tankDy 时三角随块上移（+tankDy×inv）。
+const LABEL_ANCHOR_PX = 2 // .pb-labels bottom offset（.pb-labels CSS 唯一事实源）
+// 行高/块 padding 单一事实源 = utils/labelLayout（碰撞盒与选中偏移共用同一数字）
+const LABEL_TANK_LINE_H = LABEL_LINE_H.tank // .pb-label-tank 行高（font 10px × 1.2）
+const LABEL_PLAYER_LINE_H = LABEL_LINE_H.player // .pb-label-player 行高（font 9px × 1.22）
 const MARK_LAYOUT_HALF_PX = 4.5 // 三角高 9px 的一半
-const NAME_GAP_SCREEN_PX = 3 // 三角底边 ↔ name 顶边屏幕 gap（1× = 19 − 16）
+const NAME_GAP_SCREEN_PX = 3 // 三角底边 ↔ 块顶边屏幕 gap（单行 1× = 19 − 16）
+const labelBlockHalf = computed(() => {
+  const lines = (props.label.showTank ? LABEL_TANK_LINE_H : 0) + (props.label.showPlayer ? LABEL_PLAYER_LINE_H : 0)
+  return (lines + LABEL_PAD_Y) / 2
+})
 const selectedMarkStyle = computed(() => {
   const inv = overlayInv.value
-  const x = NAME_LAYOUT_BOTTOM_PX + NAME_LAYOUT_HALF_PX - MARK_LAYOUT_HALF_PX
-    + (NAME_LAYOUT_HALF_PX + NAME_GAP_SCREEN_PX + MARK_LAYOUT_HALF_PX) * inv
+  const half = labelBlockHalf.value
+  const x = LABEL_ANCHOR_PX + half - MARK_LAYOUT_HALF_PX
+    + (half + NAME_GAP_SCREEN_PX + MARK_LAYOUT_HALF_PX) * inv
+    + props.label.tankDy * inv
   return {
     transform: `translateX(-50%) ${st.value.overlayInverseScale}`,
     bottom: `calc(100% + ${x}px)`,
@@ -103,6 +116,30 @@ const selectedMarkStyle = computed(() => {
     '--pb-overlay-inv': inv,
   }
 })
+
+// —— PR4 §26–§35：label 块样式 + PlayerName 截断 tooltip（§30：只有截断才显示完整名）——
+const labelsStyle = computed(() => ({
+  transform: `translateX(-50%) ${st.value.overlayInverseScale}`,
+  // tankDy（screen px）→ layout px（×overlayInv）；碰撞位移只作用于标签块，不影响车体
+  bottom: `calc(100% + ${LABEL_ANCHOR_PX + props.label.tankDy * overlayInv.value}px)`,
+}))
+const playerLineEl = ref(null)
+const playerTruncated = ref(false)
+watch(
+  () => [props.label.showPlayer, props.label.playerHidden, st.value.playerName],
+  () => {
+    nextTick(() => {
+      const el = playerLineEl.value
+      playerTruncated.value = !!el && el.scrollWidth > el.clientWidth + 1
+    })
+  },
+  { immediate: true },
+)
+const playerTooltip = computed(() =>
+  playerTruncated.value && props.label.showPlayer && !props.label.playerHidden && st.value.playerName
+    ? st.value.playerName
+    : undefined,
+)
 const recorderBadgeStyle = computed(() => ({
   transform: `translate(-50%, -50%) rotate(45deg) ${st.value.overlayInverseScale}`,
   top: `calc(100% + ${5 * overlayInv.value}px)`,
@@ -127,10 +164,17 @@ const stateClasses = computed(() => ({
     :style="st.markerStyle"
     :aria-label="st.ariaLabel"
     :data-test="`pb-marker-${st.vehicle.accountId}`"
-    @click="emit('select')"
+    @click="emit('select', $event)"
   >
+    <!-- PR4 §36：hull hitbox（车体视觉范围 + 小 padding，随 marker 缩放；
+         按钮其余区域 pointer-events:none 不拦截点击，label/✕/三角/菱形均不可点） -->
+    <span
+      class="pb-hitbox"
+      :style="{ width: Math.round((st.hitbox ? st.hitbox.w : 0.9) * 100) + '%', height: Math.round((st.hitbox ? st.hitbox.h : 0.9) * 100) + '%' }"
+      aria-hidden="true"
+    ></span>
     <!-- 车型视觉层容器：destroyed/last-known 的 opacity/grayscale/team 光晕精确作用于此处
-         （而非整个 button）——pb-death ✕ / pb-selected-mark / pb-recorder-badge / pb-name
+         （而非整个 button）——pb-death ✕ / pb-selected-mark / pb-recorder-badge / pb-labels
          是 button 直接子元素、在容器外，保持完整强度（parent opacity 无法被子元素抵消）。 -->
     <div class="pb-graphics">
       <!-- dedicated turreted：hull 满盒 + turret assembly（父层绕盒中心 H，子层绕 image-local pivot T-H） -->
@@ -220,11 +264,29 @@ const stateClasses = computed(() => ({
       :style="recorderBadgeStyle"
     ></span>
 
-    <span
-      class="pb-name"
+    <!-- PR4 §27/§28：PlayerName + TankName 共享背景 label 块（两行 centered；只显示一项时
+         背景自动收缩到单行；tankDy 上移让位）；team 文字色见 CSS；
+         destroyed/last-known 只弱化文字、background 保持正常 -->
+    <div
+      class="pb-labels"
       aria-hidden="true"
-      :style="{ transform: `translateX(-50%) ${st.overlayInverseScale}` }"
-    >{{ st.vehicle.tankName || st.vehicle.tankId }}</span>
+      :style="labelsStyle"
+    >
+      <span
+        v-if="label.showPlayer && st.playerName"
+        v-show="!label.playerHidden"
+        ref="playerLineEl"
+        class="pb-label-player"
+        :class="{ 'pb-label-fading': label.playerFading }"
+        :title="playerTooltip"
+        data-test="pb-label-player"
+      >{{ st.playerName }}</span>
+      <span
+        v-if="label.showTank"
+        class="pb-label-tank pb-name"
+        data-test="pb-label-tank"
+      >{{ st.tankName }}</span>
+    </div>
   </button>
 </template>
 
@@ -267,6 +329,18 @@ const stateClasses = computed(() => ({
   inset: 0;
 }
 
+/* —— PR4 §36 hull hitbox：车体视觉范围 + 小 padding（inline 尺寸 % 随 marker 缩放）；
+   不含 gun overflow / 三角 / 菱形 / ✕ / label；destroyed/last-known 仍可点击（§36）—— */
+.pb-hitbox {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  cursor: pointer;
+  z-index: 3;
+}
+
 /* —— PR3 §19/§20/§21 team outline + glow（整车 silhouette；generic + dedicated）——
    双层 drop-shadow：近扩散 = outline，远扩散 = glow；色值来自 BattlePlayback 根元素
    CSS vars（friendly = 地图显式 tone green|blue；enemy = red）。
@@ -297,7 +371,7 @@ const stateClasses = computed(() => ({
 }
 
 /* —— PR3 §25 Last-known：模型明显弱于 OBSERVED（淡化 + 仅弱 outline，无 glow）；
-   label 文字弱化、background 正常（见 .pb-name）；Selected/Recorder 正常强度（容器外）。 */
+   label 文字弱化、background 正常（见 .pb-labels）；Selected/Recorder 正常强度（容器外）。 */
 .pb-last-known.pb-friendly .pb-graphics {
   opacity: 0.35;
   filter: drop-shadow(0 0 1px var(--pb-team-outline, rgba(255, 255, 255, 0.35)));
@@ -374,28 +448,71 @@ const stateClasses = computed(() => ({
     -1px -1px 0 rgba(0, 0, 0, 0.55),
     1px 1px 0 rgba(0, 0, 0, 0.55);
 }
-/* 常显坦克型号名标签：位于图标上方，经 overlayInverseScale 反缩放 → 字号不随地图缩放；
-   last-known 时仅文字弱化（§25：background 保持正常） */
-.pb-name {
+/* —— PR4 §27/§28：PlayerName + TankName 共享背景 label 块（screen-space 恒定；
+   单行/双行自适应；team 文字色 §29；destroyed/last-known 只弱化文字 §24/§25）—— */
+.pb-labels {
   position: absolute;
-  bottom: calc(100% + 2px);
+  bottom: calc(100% + 2px); /* 1× 兜底；实际 offset 由 inline style 提供 */
   left: 50%;
   transform: translateX(-50%);
-  font-size: 10px;
-  line-height: 1.2;
-  color: #fff;
-  background: rgba(0, 0, 0, .55);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   padding: 1px 4px;
   border-radius: 3px;
-  white-space: nowrap;
-  max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  background: rgba(0, 0, 0, .55);
+  border: 1px solid rgba(255, 255, 255, .14);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .35);
   z-index: 5;
   pointer-events: none;
 }
-.pb-last-known .pb-name {
-  color: rgba(255, 255, 255, 0.7);
+/* §31 TankName 永远完整：不截断、不缩字——无 max-width/ellipsis，允许 background 自然变宽；
+   150px 上限只存在于 labelLayout 碰撞估算（TANK_MAX_WIDTH_PX），不作用于视觉。 */
+.pb-label-tank {
+  font-size: 10px;
+  line-height: 1.2;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* §30 PlayerName：按实际像素宽度截断（max-width + ellipsis），截断才有 tooltip（inline title）；
+   pointer-events:auto 只为 hover 触发原生 title（§36 点击不选中的拦截在 BattlePlayback 层） */
+.pb-label-player {
+  font-size: 9px;
+  line-height: 1.22;
+  opacity: .9;
+  white-space: nowrap;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: auto;
+}
+/* §29 文字跟随 team text token（friendly green|blue / enemy red，根元素 CSS vars） */
+.pb-friendly .pb-label-tank,
+.pb-friendly .pb-label-player {
+  color: var(--pb-team-text, #fff);
+}
+.pb-enemy .pb-label-tank,
+.pb-enemy .pb-label-player {
+  color: var(--pb-enemy-text, #ff8d8d);
+}
+/* §24/§25 destroyed/last-known：只弱化文字，background/border/shadow 保持正常强度 */
+.pb-destroyed .pb-labels .pb-label-tank,
+.pb-destroyed .pb-labels .pb-label-player,
+.pb-last-known .pb-labels .pb-label-tank,
+.pb-last-known .pb-labels .pb-label-player {
+  opacity: .65;
+}
+/* §33 恢复 fade-in（约 120ms，仅 opacity；无 translate/bounce/背景过渡） */
+.pb-label-fading {
+  animation: pb-label-fade-in 0.12s ease;
+}
+@keyframes pb-label-fade-in {
+  from { opacity: 0; }
+  to { opacity: 0.9; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pb-label-fading { animation: none; }
 }
 
 /* —— PR3 §22/§24 reduced motion：停止浮动动画、跳过 destroyed transition（直达终态） —— */
