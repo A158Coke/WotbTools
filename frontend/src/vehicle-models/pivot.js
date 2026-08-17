@@ -59,7 +59,7 @@ export function turretImageTransform({ hullDeg, turretWorldDeg, pivot, renderSca
 
 /**
  * —— Battle Playback marker 专用（标记盒尺寸由 CSS 控制，28px/22px，无固定 renderScale）——
- * 百分比换算（Blocker 1 修复，与 PR91 VehicleModelPreviewPage.vue 的 px 数学严格同构）：
+ * 百分比换算（Blocker 1 修复，与 Battle Playback 生产 marker 的 px 数学严格同构）：
  * - left/top/width/height：**相对 marker 盒**（containing block）——marker-global logical
  *   坐标（logicalMinX/Y、pixelWidth/2、pixelHeight/2）除以 320 logical viewBox；
  * - transform-origin：**相对 turret image 自身盒**——turretRaster.pivotX/pivotY 是

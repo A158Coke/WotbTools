@@ -95,6 +95,14 @@
     name/✕ 既有语义与 zoom/pan 算法未动。
 - **Tier X 专属俯视车型系统（PR1：ASSET_GENERATION_READY）**：新增 frontend/src/vehicle-models/ 集中静态 mapping（common/tankopedia-tier10.json 84 辆 Tier X → 81 个 baseModelKey，skin/特殊版本复用基础模型：sheridan / kpz-70 / type-5-heavy 三组合并）与 discriminated union 类型契约（turreted 必配 turret + turretPivot，turretless 禁止）；统一 SVG viewBox 320×320 技术契约 + metadata.json schema（8 键）；validator（validate.js，CI 与 CLI 共用）与 Tier X 100% 覆盖门禁（coverage.test.js：新增 Tier X 无 mapping → CI FAIL、mapping 孤儿/未知引用/半成品资产目录均 FAIL）；契约样例资产 assets/sample/；BlitzKit 辅助脚本（frontend/scripts/blitzkit-references.mjs，参考图 URL 已验证并缓存 84 张，gitignored）与 CLI 自检（validate-vehicle-models.mjs）；隐藏 admin QA 页 ?view=vehicle-models（仅 wotbtools-admin，车体/炮塔旋转 + pivot + 状态叠加预览，复用生产 BattlePlayback 渲染方式）；文档 docs/assets/tier-x-models/（README 交接清单 + 全局 SVG 生成规范 + 生成的 84 辆 inventory）。正式车型 SVG 由 ChatGPT 按规范生成，到达 ASSET_GENERATION_READY Gate 后暂停（本 PR 不含正式车型资产）。
 
+### Removed
+- **隐藏 admin QA 页 `?view=vehicle-models`（车型预览）**：删除 VehicleModelPreviewPage.vue 及其测试、
+  App.vue 的异步入口/视图注册/注释、仅其使用的 i18n `adminPreview.*` 文案（`loading`/`denied` 保留，
+  PlaybackQaPage 共用）；`?view=vehicle-models` 不再是合法视图，输入该 query 回退默认视图。
+  正式 Tier X WebP 资产 / mapping / types / pivot / validator / coverage / texture-bake / extractor /
+  baker / runtime loader（Battle Playback 生产路径）全部保留；`check-bundle-separation.mjs` 门禁改为
+  以生产 runtime.js 动态 import chunk 为资产分离判据（主入口不得含车型资产标记）。
+
 ### Changed
 - **PR1 资产生成路线切换：BlitzKit 确定性提取（替代 AI 手绘）**：
   - 新增 `frontend/scripts/extract-tier-x-model.mjs`（extractor）+ `extractor-lib.mjs`（纯函数库）+
