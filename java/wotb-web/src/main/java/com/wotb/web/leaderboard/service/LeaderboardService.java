@@ -44,18 +44,22 @@ public class LeaderboardService {
     /**
      * 排行榜支持的战斗模式（meta.json#arenaBonusType）——eligibility 与 recordRecorder 的
      * 单一事实源，禁止两处各自判断再次漂移。
-     * <p>证据矩阵（真实回放探针 + 提交夹具，见 docs/features/leaderboard.md）：</p>
+     * <p>证据矩阵（见 docs/features/leaderboard.md）：</p>
      * <ul>
-     *   <li>1 = RANDOM（random-battle-example 等，supremacyCfg="regular"）→ 支持</li>
-     *   <li>2 = TRAINING（training-room-example，supremacyCfg="training"）→ 不支持</li>
-     *   <li>4 = TOURNAMENT supremacy（20260725_1555 等，supremacyCfg="tournament"）→ 不支持</li>
-     *   <li>RATING（评级战）：仓库内暂无真实 Rating 回放 / 权威 arenaBonusType 证据
-     *       （RATING_ARENA_BONUS_TYPE_NOT_PROVEN）→ 暂不支持；拿到真实样本证明后加入本集合。</li>
+     *   <li>1 = RANDOM/Regular——本项目真实回放证据（random-battle-example 等，supremacyCfg="regular"）
+     *       + 外部 Jylpah/blitz-tools 映射一致 → 支持</li>
+     *   <li>7 = RATING（评级战）——established external WoT Blitz replay tooling 证据
+     *       （Jylpah/blitz-tools analyze_wotb_replays.py BattleCategorizationList._battle_modes，
+     *       "Rating": 7，无不确定性注释；与 1/2/4 的真实样本映射一致）→ 支持。
+     *       未来拿到真实 Rating replay 后做真实 fixture integration 验证（follow-up，非 blocker）。</li>
+     *   <li>2 = TRAINING（本项目真实夹具）→ 不支持</li>
+     *   <li>4 = TOURNAMENT supremacy（本项目真实样本 cfg="tournament"）→ 不支持</li>
+     *   <li>8 = MAD GAMES（外部映射；本项目 20230512 SU_130PM 样本）→ 不支持</li>
      * </ul>
      */
-    private static final Set<Integer> SUPPORTED_BATTLE_TYPES = Set.of(1);
+    private static final Set<Integer> SUPPORTED_BATTLE_TYPES = Set.of(1, 7);
 
-    /** 排行榜是否接受该战斗模式：raw arenaBonusType → RANDOM 支持 / 其余不支持（含 unknown/null）。 */
+    /** 排行榜是否接受该战斗模式：raw arenaBonusType → RANDOM(1) / RATING(7) 支持，其余不支持（含 unknown/null）。 */
     public static boolean isLeaderboardSupportedBattleType(final Integer arenaBonusType) {
         return arenaBonusType != null && SUPPORTED_BATTLE_TYPES.contains(arenaBonusType);
     }
