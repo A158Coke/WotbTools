@@ -93,19 +93,43 @@ class LeaderboardServiceTest {
                 service.eligibility(unknownRecorder()));
         assertEquals(RecordOutcome.SAVED,
                 service.eligibility(battle("arenaA", "Recorder1", 111L)));
+        // Rating=7 与 Random 同为支持的战斗模式
+        final Battle rating = battle("arena-rating", "Recorder1", 111L);
+        rating.arenaBonusType = 7;
+        assertEquals(RecordOutcome.SAVED, service.eligibility(rating));
         verify(repo, never()).findByArenaIdAndAccountId(any(), anyLong());
     }
 
-    /** 单一事实源 policy：仅随机战（1）支持；训练房(2)/联赛(4)/未证明模式(8)/未知 一律不支持。 */
+    /** eligibility 对不支持模式（训练房/联赛/Mad Games/未知）一律 SKIPPED_UNSUPPORTED_BATTLE_TYPE。 */
     @Test
-    void supportedBattleTypesPolicyAcceptsOnlyRandom() {
+    void eligibilityRejectsUnsupportedBattleTypes() {
+        final LeaderboardRecordRepository repo = mock(LeaderboardRecordRepository.class);
+        final LeaderboardService service = service(repo);
+
+        for (final Integer bonus : new Integer[]{null, 2, 4, 8, 999}) {
+            final Battle b = battle("arena-elig-" + bonus, "Recorder1", 111L);
+            b.arenaBonusType = bonus;
+            assertEquals(RecordOutcome.SKIPPED_UNSUPPORTED_BATTLE_TYPE,
+                    service.eligibility(b), "arenaBonusType=" + bonus);
+        }
+    }
+
+    /**
+     * 单一事实源 policy：RANDOM(1) 与 RATING(7) 支持（Rating=7 依据 Jylpah/blitz-tools
+     * BattleCategorizationList._battle_modes 外部证据，与 1/2/4 真实样本映射一致）；
+     * 训练房(2)/联赛(4)/快速锦标赛(5)/Mad Games(8)/未知(null/0/999) 一律不支持。
+     */
+    @Test
+    void supportedBattleTypesPolicyAcceptsRandomAndRating() {
         assertTrue(LeaderboardService.isLeaderboardSupportedBattleType(1));
+        assertTrue(LeaderboardService.isLeaderboardSupportedBattleType(7));
         assertFalse(LeaderboardService.isLeaderboardSupportedBattleType(null));
         assertFalse(LeaderboardService.isLeaderboardSupportedBattleType(2));
         assertFalse(LeaderboardService.isLeaderboardSupportedBattleType(4));
+        assertFalse(LeaderboardService.isLeaderboardSupportedBattleType(5));
         assertFalse(LeaderboardService.isLeaderboardSupportedBattleType(8));
         assertFalse(LeaderboardService.isLeaderboardSupportedBattleType(0));
-        assertFalse(LeaderboardService.isLeaderboardSupportedBattleType(99));
+        assertFalse(LeaderboardService.isLeaderboardSupportedBattleType(999));
     }
 
     @Test
@@ -180,8 +204,8 @@ class LeaderboardServiceTest {
         final LeaderboardRecordRepository repo = mock(LeaderboardRecordRepository.class);
         final LeaderboardService service = service(repo);
 
-        // 训练房(2)、联赛/锦标赛(3/4/7)、未证明模式(8)、未知(null/22) 一律不入库
-        for (final Integer bonus : new Integer[]{null, 2, 3, 4, 7, 8, 22}) {
+        // 训练房(2)、联赛/锦标赛(3/4)、快速锦标赛(5)、Mad Games(8)、未知(null/22/999) 一律不入库
+        for (final Integer bonus : new Integer[]{null, 2, 3, 4, 5, 8, 22, 999}) {
             final Battle b = battle("arena-" + bonus, "Recorder1", 111L);
             b.arenaBonusType = bonus;
             assertEquals(RecordOutcome.SKIPPED_UNSUPPORTED_BATTLE_TYPE,
@@ -201,6 +225,23 @@ class LeaderboardServiceTest {
 
         assertEquals(RecordOutcome.SAVED,
                 service.recordRecorder(battle("arenaA", "Recorder1", 111L), tankopedia, meta(SHA_1)));
+    }
+
+    /** recordRecorder 最终 DB gate 不得再次拒绝 Rating(7)：与 eligibility 共用同一 policy。 */
+    @Test
+    void recordRecorderFinalGateAllowsRatingBattleType() {
+        final LeaderboardRecordRepository repo = mock(LeaderboardRecordRepository.class);
+        when(repo.findByArenaIdAndAccountId(eq("arena-rating"), eq(111L))).thenReturn(Optional.empty());
+        final LeaderboardService service = service(repo);
+
+        final Battle rating = battle("arena-rating", "Recorder1", 111L);
+        rating.arenaBonusType = 7;
+        assertEquals(RecordOutcome.SAVED,
+                service.recordRecorder(rating, tankopedia, meta(SHA_1)));
+
+        final var captor = org.mockito.ArgumentCaptor.forClass(LeaderboardRecord.class);
+        verify(repo).saveAndFlush(captor.capture());
+        assertEquals("arena-rating", captor.getValue().getArenaId());
     }
 
     @Test

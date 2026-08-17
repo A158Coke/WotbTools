@@ -1075,7 +1075,8 @@
   storage / DB 任何持久化之前直接拒绝 → 400 `UNSUPPORTED_BATTLE_TYPE`（复用 GlobalExceptionHandler 统一
   错误格式 `{error, timestamp}`），不落盘、不入库、不产生 orphan 文件；仅无录像者 / 已确定 hash 冲突
   保持 skipped（200）。战斗模式判断收敛为单一事实源 `isLeaderboardSupportedBattleType`（eligibility 与
-  recordRecorder 共用）。前端 `leaderboardUpload()` 修复 `requireOk(r).json()` Promise bug（先 await
+  recordRecorder 共用），支持 RANDOM(1) + RATING(7)（Rating=7 依据 Jylpah/blitz-tools 外部 replay tooling
+  证据 `analyze_wotb_replays.py` `BattleCategorizationList._battle_modes`，`"Rating": 7`；与 1/2/4 真实样本映射一致）。前端 `leaderboardUpload()` 修复 `requireOk(r).json()` Promise bug（先 await
   再读 body，否则 Promise 无 .json 抛 TypeError，被误显示为"网络连接失败"）；新增
   `api_errors.UNSUPPORTED_BATTLE_TYPE` 三语文案（zh/en/ru）。测试：service 层真实 parser + 真实训练房夹具
   （400、storage/DB 零写入）、controller 400 映射、WebApiTest 集成（400 + DB 行数不变 + 无
