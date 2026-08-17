@@ -20,8 +20,10 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -81,17 +83,29 @@ class LeaderboardServiceTest {
     // ── eligibility / preflight（P1：写文件前确定 SKIPPED）────────────────────
 
     @Test
-    void eligibilityFlagsNonRandomAndUnknownRecorder() {
+    void eligibilityFlagsUnsupportedBattleTypeAndUnknownRecorder() {
         final LeaderboardRecordRepository repo = mock(LeaderboardRecordRepository.class);
         final LeaderboardService service = service(repo);
 
-        assertEquals(RecordOutcome.SKIPPED_NON_RANDOM,
+        assertEquals(RecordOutcome.SKIPPED_UNSUPPORTED_BATTLE_TYPE,
                 service.eligibility(nonRandom()));
         assertEquals(RecordOutcome.SKIPPED_UNKNOWN_RECORDER,
                 service.eligibility(unknownRecorder()));
         assertEquals(RecordOutcome.SAVED,
                 service.eligibility(battle("arenaA", "Recorder1", 111L)));
         verify(repo, never()).findByArenaIdAndAccountId(any(), anyLong());
+    }
+
+    /** 单一事实源 policy：仅随机战（1）支持；训练房(2)/联赛(4)/未证明模式(8)/未知 一律不支持。 */
+    @Test
+    void supportedBattleTypesPolicyAcceptsOnlyRandom() {
+        assertTrue(LeaderboardService.isLeaderboardSupportedBattleType(1));
+        assertFalse(LeaderboardService.isLeaderboardSupportedBattleType(null));
+        assertFalse(LeaderboardService.isLeaderboardSupportedBattleType(2));
+        assertFalse(LeaderboardService.isLeaderboardSupportedBattleType(4));
+        assertFalse(LeaderboardService.isLeaderboardSupportedBattleType(8));
+        assertFalse(LeaderboardService.isLeaderboardSupportedBattleType(0));
+        assertFalse(LeaderboardService.isLeaderboardSupportedBattleType(99));
     }
 
     @Test
@@ -162,19 +176,31 @@ class LeaderboardServiceTest {
     }
 
     @Test
-    void skipsNonRandomBattleModes() {
+    void skipsUnsupportedBattleModes() {
         final LeaderboardRecordRepository repo = mock(LeaderboardRecordRepository.class);
         final LeaderboardService service = service(repo);
 
-        for (final Integer bonus : new Integer[]{null, 2, 3, 7, 22}) {
+        // 训练房(2)、联赛/锦标赛(3/4/7)、未证明模式(8)、未知(null/22) 一律不入库
+        for (final Integer bonus : new Integer[]{null, 2, 3, 4, 7, 8, 22}) {
             final Battle b = battle("arena-" + bonus, "Recorder1", 111L);
             b.arenaBonusType = bonus;
-            assertEquals(RecordOutcome.SKIPPED_NON_RANDOM,
+            assertEquals(RecordOutcome.SKIPPED_UNSUPPORTED_BATTLE_TYPE,
                     service.recordRecorder(b, tankopedia, meta(SHA_1)));
         }
 
         verify(repo, never()).findByArenaIdAndAccountId(any(), anyLong());
         verify(repo, never()).saveAndFlush(any());
+    }
+
+    /** recordRecorder 最终 DB gate 与 eligibility 同一 policy：随机战(1) 正常入库。 */
+    @Test
+    void recordRecorderAcceptsRandomBattleType() {
+        final LeaderboardRecordRepository repo = mock(LeaderboardRecordRepository.class);
+        when(repo.findByArenaIdAndAccountId(eq("arenaA"), eq(111L))).thenReturn(Optional.empty());
+        final LeaderboardService service = service(repo);
+
+        assertEquals(RecordOutcome.SAVED,
+                service.recordRecorder(battle("arenaA", "Recorder1", 111L), tankopedia, meta(SHA_1)));
     }
 
     @Test

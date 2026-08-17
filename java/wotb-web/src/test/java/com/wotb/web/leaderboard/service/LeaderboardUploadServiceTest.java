@@ -169,7 +169,7 @@ class LeaderboardUploadServiceTest {
 
     /**
      * Blocker 契约（真实 parser + 真实训练房夹具，任何环境可跑，不依赖 Docker）：
-     * arenaBonusType=2 的回放 → 400 NON_RANDOM_BATTLE，且在 SHA-256/preflight/storage/DB
+     * arenaBonusType=2 的训练房回放 → 400 UNSUPPORTED_BATTLE_TYPE，且在 SHA-256/preflight/storage/DB
      * 任何持久化之前被拒绝：storage 不落盘、leaderboard DB 零写入。
      */
     @Test
@@ -197,7 +197,7 @@ class LeaderboardUploadServiceTest {
 
         final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> svc.upload(file));
-        assertEquals("NON_RANDOM_BATTLE", e.getMessage());
+        assertEquals("UNSUPPORTED_BATTLE_TYPE", e.getMessage());
         // 任何持久化零发生：不落盘、不入库、不改已有记录。
         verify(storage, never()).store(any(byte[].class), anyString());
         verify(repo, never()).saveAndFlush(any());

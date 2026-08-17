@@ -359,7 +359,7 @@ public class WebApiTest {
 
     /**
      * Blocker 契约（真实训练房夹具 + 真实 parser + 真实 PG/storage）：
-     * arenaBonusType=2 → HTTP 400 NON_RANDOM_BATTLE；leaderboard DB 零新增/零修改；
+     * arenaBonusType=2 → HTTP 400 UNSUPPORTED_BATTLE_TYPE；leaderboard DB 零新增/零修改；
      * replay storage 不产生任何 .wotbreplay 文件。
      */
     @Test
@@ -379,7 +379,7 @@ public class WebApiTest {
                 .andExpect(status().isBadRequest())
                 .andReturn().getResponse().getContentAsString();
         final JsonNode n = om.readTree(json);
-        assertEquals("NON_RANDOM_BATTLE", n.get("error").asText(), "errorCode 必须为 NON_RANDOM_BATTLE");
+        assertEquals("UNSUPPORTED_BATTLE_TYPE", n.get("error").asText(), "errorCode 必须为 UNSUPPORTED_BATTLE_TYPE");
 
         assertEquals(rowsBefore, leaderboardRecordRepository.count(), "训练房不得新增 leaderboard 记录");
         final long filesAfter = Files.isDirectory(REPLAY_DIR)

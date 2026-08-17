@@ -133,15 +133,15 @@ class LeaderboardControllerTest {
     }
 
     /**
-     * 非随机战（训练房等）错误语义契约：upload 抛 NON_RANDOM_BATTLE →
-     * GlobalExceptionHandler 统一错误格式 HTTP 400 {error: NON_RANDOM_BATTLE}，
+     * 不支持战斗模式（训练房/联赛等）错误语义契约：upload 抛 UNSUPPORTED_BATTLE_TYPE →
+     * GlobalExceptionHandler 统一错误格式 HTTP 400 {error: UNSUPPORTED_BATTLE_TYPE}，
      * 绝不返回 200 skipped。
      */
     @Test
     void uploadNonRandomRejectsWith400NonRandomBattle() throws Exception {
         final LeaderboardService service = mock(LeaderboardService.class);
         final LeaderboardUploadService uploadService = mock(LeaderboardUploadService.class);
-        when(uploadService.upload(any())).thenThrow(new IllegalArgumentException("NON_RANDOM_BATTLE"));
+        when(uploadService.upload(any())).thenThrow(new IllegalArgumentException("UNSUPPORTED_BATTLE_TYPE"));
 
         final String json = mvc(service, uploadService)
                 .perform(multipart("/api/leaderboard/upload")
@@ -150,7 +150,7 @@ class LeaderboardControllerTest {
                 .andExpect(status().isBadRequest())
                 .andReturn().getResponse().getContentAsString();
 
-        Assertions.assertThat(json).contains("\"error\":\"NON_RANDOM_BATTLE\"");
+        Assertions.assertThat(json).contains("\"error\":\"UNSUPPORTED_BATTLE_TYPE\"");
         verify(uploadService).upload(any());
     }
 }
