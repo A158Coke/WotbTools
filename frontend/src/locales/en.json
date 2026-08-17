@@ -856,6 +856,8 @@
                 "all_events": "All known events",
                 "show_player_name": "Show player names",
                 "show_tank_name": "Show tank names",
+                "enter_fullscreen": "⛶ Fullscreen",
+                "exit_fullscreen": "Exit fullscreen",
                 "progress": "Progress",
                 "tank": "Tank",
                 "team": "Team",

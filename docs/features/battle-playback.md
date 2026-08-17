@@ -102,6 +102,21 @@ AI 复盘页面的独立「地图鸟瞰」区块：文件选中后点「加载�
     随 marker 缩放，不含 gun overflow/label/三角/菱形/✕；destroyed/last-known 仍可点），重叠时
     取指针最近车辆、距离几乎一致且已选中则保持、否则 render order tie-break；倍速含 0.5×；
     `loop` prop（QA 场景循环）。
+   - **全屏模式（原生 Fullscreen API）**：控制栏「⛶ 全屏 / 退出全屏」（i18n 三语 `enter_fullscreen`/`exit_fullscreen`）；
+    全屏对象 = `.battle-playback` 根容器（地图 + 全部 controls + 标注 + 信息面板，不含页面 header/nav）；
+    状态事实源 = `document.fullscreenElement` + `fullscreenchange`（ESC/浏览器 UI 退出立即同步，
+    禁止手工 isFullscreen=!isFullscreen）；`typeof root.requestFullscreen !== 'function'` → 按钮隐藏、
+    点击不抛错（不实现 fake fullscreen）；进入/退出不 reset currentTime / playing / speed /
+    selectedAccountId / zoom / pan / filters / label 偏好 / annotations（同一组件实例，仅容器变化）。
+    尺寸响应：`mapSize` reactive（`mapSize = ref({w,h})`）由 `ResizeObserver` 观察 `.pb-map` 更新，
+    无 RO 环境回退 `clientWidth`（`mapWidth()/mapHeight()`）；markerScreen / labelLayout（viewportW/H）/
+    selectAt（hitTest 像素→内容坐标）/ textInputStyle / semanticPoint 全部经 mapWidth/mapHeight 读取
+    → fullscreen enter/exit 后 collision / hitbox / 标注换算立即用新尺寸重算（禁止 magic delay）；
+    zoom/pan 不自动 reset（无 auto-fit；Reset View 由用户使用）。全屏样式 `.battle-playback:fullscreen`
+    （100%×100%、内部滚动兜底）与 `.battle-playback:fullscreen .pb-map`（100% 宽、垂直预算
+    `max-width: calc(100vh - 190px)`、`margin: auto` 居中——保持宽高比、不拉伸/不 letterbox）。
+    生命周期：`fullscreenchange` listener 与 ResizeObserver 在 unmount 时移除/disconnect；组件在全屏
+    中被卸载时主动 `exitFullscreen`。
     旋转换算：地图 yaw 从北(+Z)顺时针 → 屏幕 `rotate(yawDeg)`（0=朝上/90=朝右/180=朝下/270=朝左，
     两次翻转抵消，无符号/偏移修正）。
    - **炮线/曳光线（已知射击）**：`visibleTracers` 由纯函数 `tracerLines`（`utils/battlePlayback.js`）

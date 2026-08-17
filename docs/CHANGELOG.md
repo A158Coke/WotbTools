@@ -31,6 +31,18 @@
   - **隐藏 QA 页 `?view=playback-qa`（§48/§49）**：仅 wotbtools-admin；固定 14 车移动场景
     （双密集簇碰撞压力 + 阵亡/失察/录像者状态混合），直接复用生产 BattlePlayback
     （loop + Play/Pause/Reset + 0.5×–4×），不引入第二套渲染。
+  - **全屏模式（原生 Fullscreen API）**：控制栏「⛶ 全屏 / 退出全屏」按钮（zh/en/ru 三语）；
+    全屏对象 = 整个 Battle Playback 容器（地图 + 全部 controls + 标注），不含页面 header/nav；
+    状态事实源 = `document.fullscreenElement` + `fullscreenchange`（ESC/浏览器 UI 退出立即同步，
+    不维护手工翻转）；不支持 Fullscreen API 的浏览器隐藏按钮不抛错；进入/退出不 reset
+    currentTime / playing / speed / selected / zoom / pan / filters / label 偏好 / annotations。
+    尺寸响应：新增 ResizeObserver 驱动的 `mapSize` reactive（无 RO 环境回退 clientWidth），
+    markerScreen / labelLayout / selectAt / textInput / annotation 换算全部改用新尺寸——
+    fullscreen enter/exit 后 collision / hitbox / 标注坐标立即按真实容器尺寸重算（无 magic delay）；
+    zoom/pan 保持不 reset（无 auto-fit，Reset View 由用户使用）。
+  - **hysteresis 时钟接管（Review Blocker 1）**：播放中若有未决 hide/show/fade transition，
+    Pause 或播放自然结束时由轻量 hysteresis RAF 接管 wall clock（无 pending 不启动轮询）；
+    play() 作废残留 hystRAF（frame 驱动接管），避免 pause 时误判已有时钟。
 - **PR3 — Tactical Marker State Visual Redesign（§19–§25）**：
   - **Team Color System（§19/§20）**：新增 frontend/src/data/mapTeamColors.js——28 张地图
     全部显式配置 friendly tone（green|blue，与地图主基色避免混淆；初值可视觉 QA 调整）；
