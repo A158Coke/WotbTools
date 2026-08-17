@@ -48,14 +48,23 @@ public class LeaderboardUploadService {
             ReplayUploadValidator.validate(new MultipartFile[]{file});
             final byte[] bytes = file.getBytes();
             final Battle battle = parse(bytes);
+
+            // Blocker：不支持战斗模式（训练房/联赛/娱乐/未知等，见 LeaderboardService
+            // SUPPORTED_BATTLE_TYPES 单一事实源）在 SHA-256、preflight、storage、DB 任何持久化
+            // 之前直接拒绝 → 400 UNSUPPORTED_BATTLE_TYPE，不产生 DB 行、不落盘、不制造 orphan 文件。
+            // 其余 SKIPPED（无录像者等）保持 skipped 语义。
+            final RecordOutcome eligibility = leaderboardService.eligibility(battle);
+            if (eligibility == RecordOutcome.SKIPPED_UNSUPPORTED_BATTLE_TYPE) {
+                throw new IllegalArgumentException("UNSUPPORTED_BATTLE_TYPE");
+            }
+            if (eligibility.isSkipped()) {
+                return skipped(eligibility, battle);
+            }
+
             final String hash = sha256(bytes);
             final ReplayFileMeta meta = new ReplayFileMeta(hash, originalName(file), bytes.length, uploadedBy);
 
             // P1 preflight：写文件前确定无需落盘的 SKIPPED，避免正常请求稳定制造 orphan。
-            final RecordOutcome eligibility = leaderboardService.eligibility(battle);
-            if (eligibility.isSkipped()) {
-                return skipped(eligibility, battle);
-            }
             final Optional<RecordOutcome> preflight = leaderboardService.preflightReplay(battle, meta);
             if (preflight.isPresent() && preflight.get() == RecordOutcome.SKIPPED_HASH_CONFLICT) {
                 return skipped(preflight.get(), battle);

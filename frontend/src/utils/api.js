@@ -55,7 +55,9 @@ export async function leaderboardUpload(file) {
     login('leaderboard')
     throw new ApiError('AUTH_REQUIRED', 401)
   }
-  return requireOk(r).json()
+  // requireOk 是 async 函数（返回 Promise）：必须先 await 再读 body，否则 Promise.json 抛 TypeError
+  await requireOk(r)
+  return r.json()
 }
 
 /**

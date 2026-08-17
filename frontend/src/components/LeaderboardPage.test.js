@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
+import { ApiError } from '../utils/http.js'
 import LeaderboardPage from './LeaderboardPage.vue'
 
 let authenticated = true
@@ -32,7 +33,7 @@ vi.mock('../utils/helpers.js', () => ({
 }))
 
 vi.mock('../utils/display.js', () => ({
-  apiErrorLabel: () => 'api-error'
+  apiErrorLabel: (t, te, error) => (error?.code ? 'err:' + error.code : 'api-error')
 }))
 
 vi.mock('vue-i18n', () => ({
@@ -105,13 +106,35 @@ describe('LeaderboardPage', () => {
     expect(lbApi.leaderboardDownload).not.toHaveBeenCalled()
   })
 
-  it('triggers login when not authenticated and uploading', async () => {
+  it('B2: unauthenticated upload button click → login BEFORE file picker, no picker activation, no upload API', async () => {
     authenticated = false
     const wrapper = mountPage()
+    await flushPromises()
     const input = wrapper.find('input[type="file"]')
+    const clickSpy = vi.spyOn(input.element, 'click')
+    await wrapper.find('button.filebtn').trigger('click')
+    expect(api.login).toHaveBeenCalledWith('leaderboard')
+    expect(clickSpy).not.toHaveBeenCalled()
+    expect(lbApi.leaderboardUpload).not.toHaveBeenCalled()
+  })
+
+  it('B2: authenticated upload button click → opens the hidden file input (picker activation)', async () => {
+    authenticated = true
+    const wrapper = mountPage()
+    await flushPromises()
+    const input = wrapper.find('input[type="file"]')
+    const clickSpy = vi.spyOn(input.element, 'click')
+    await wrapper.find('button.filebtn').trigger('click')
+    expect(clickSpy).toHaveBeenCalledTimes(1)
+    expect(lbApi.leaderboardUpload).not.toHaveBeenCalled()
+  })
+
+  it('B2: unauthenticated drag/drop → login, never calls upload API and never reads the file', async () => {
+    authenticated = false
+    const wrapper = mountPage()
+    await flushPromises()
     const file = new File([new Uint8Array([1, 2, 3])], 'battle.wotbreplay', { type: 'application/octet-stream' })
-    Object.defineProperty(input.element, 'files', { value: [file] })
-    await input.trigger('change')
+    await wrapper.find('.lb-upload-section').trigger('drop', { dataTransfer: { files: [file] } })
     expect(api.login).toHaveBeenCalledWith('leaderboard')
     expect(lbApi.leaderboardUpload).not.toHaveBeenCalled()
   })
@@ -124,5 +147,28 @@ describe('LeaderboardPage', () => {
     await input.trigger('change')
     expect(lbApi.leaderboardUpload).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('leaderboard.upload_success')
+  })
+
+  it('shows UNSUPPORTED_BATTLE_TYPE business error, never network error, and does not treat upload as success', async () => {
+    lbApi.leaderboardUpload.mockRejectedValue(new ApiError('UNSUPPORTED_BATTLE_TYPE', 400))
+    const wrapper = mountPage()
+    await flushPromises()
+    const input = wrapper.find('input[type="file"]')
+    const file = new File([new Uint8Array([1, 2, 3])], 'battle.wotbreplay', { type: 'application/octet-stream' })
+    Object.defineProperty(input.element, 'files', { value: [file] })
+    await input.trigger('change')
+    await flushPromises()
+
+    const msg = wrapper.find('.lb-upload-msg')
+    expect(msg.exists()).toBe(true)
+    // apiErrorLabel 输出 locale 对应业务错误（mock 返回 'err:UNSUPPORTED_BATTLE_TYPE'）
+    expect(msg.text()).toContain('err:UNSUPPORTED_BATTLE_TYPE')
+    expect(msg.text()).not.toContain('network')
+    // uploadOk === false → 消息按错误样式渲染
+    expect(msg.classes()).toContain('err')
+    // 不得显示上传成功
+    expect(wrapper.text()).not.toContain('leaderboard.upload_success')
+    // 失败不得触发排行榜刷新当作成功处理（仅 mounted 时加载一次）
+    expect(lbApi.leaderboardTopDamage).toHaveBeenCalledTimes(1)
   })
 })
