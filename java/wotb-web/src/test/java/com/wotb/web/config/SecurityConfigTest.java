@@ -144,6 +144,23 @@ class SecurityConfigTest {
     }
 
     @Test
+    void leaderboardUploadAndDownloadRequireLoginWhileQueryStaysPublic() throws Exception {
+        // 匿名 → 401（上传/下载需登录）
+        mvc.perform(get("/api/leaderboard/upload"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/leaderboard/1/replay"))
+                .andExpect(status().isUnauthorized());
+        // 任意已登录用户 → 200
+        mvc.perform(get("/api/leaderboard/upload").with(jwt()))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/leaderboard/1/replay").with(jwt()))
+                .andExpect(status().isOk());
+        // 榜单查询保持公开
+        mvc.perform(get("/api/leaderboard/top-damage"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void publicAndStaticRoutesShouldRemainPublic() throws Exception {
         mvc.perform(get("/api/health"))
                 .andExpect(status().isOk());
@@ -187,6 +204,9 @@ class SecurityConfigTest {
                 "/api/users/probe",
                 "/api/replay/analyze",
                 "/api/replay/analyze/cancel",
+                "/api/leaderboard/upload",
+                "/api/leaderboard/1/replay",
+                "/api/leaderboard/top-damage",
                 "/static-probe"
         })
         String probe() {
