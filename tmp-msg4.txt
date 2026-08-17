@@ -1,9 +1,0 @@
-fix(leaderboard): PR #96 review blockers — DB 原子状态机 + storage ATOMIC_MOVE + preflight + originalName
-
-- Blocker 1: recordRecorder DB 原子化：existing replay_hash NULL → conditional UPDATE WHERE replay_hash IS NULL（affected=1 唯一 winner，败者 re-read 分类）；insert unique 竞态 catch 后 re-read winner 重新分类（同 hash→IDEMPOTENT / 异 hash→SKIPPED_HASH_CONFLICT），禁止无条件 IDEMPOTENT；无全局 synchronized（多实例安全）
-- Blocker 2: store 用 ATOMIC_MOVE 原子发布（moveAtomically seam 供测试注入 AtomicMoveNotSupportedException），AtomicMoveNotSupported → 500 REPLAY_STORAGE_ERROR 不 fallback；同 hash 同内容 invariant 处理 target 已存在；Javadoc 与实现一致
-- P1: upload 加 eligibility/preflight，非随机战/无录像者/已确定 hash 冲突在写文件前直接 SKIPPED（不落盘）；仅 DB 失败保留安全 orphan
-- P1: originalName 空 basename（/、\、foo/ 等）fallback replay.wotbreplay；限长 substring(0, Math.min(len,255))
-- 测试：契约 51（新增 attach/insert race 分类、eligibility/preflight、originalName 边界、ATOMIC_MOVE 失败路径）；WebApiTest 真实 PG 并发 4 用例（双 hash/same hash × attach/insert）；全量后端 801 绿；前端 615 绿 + build
-
-Co-Authored-By: A158Coke <ychen158253@gmail.com>
