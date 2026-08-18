@@ -52,19 +52,40 @@ public final class PersonalAiContextCompiler {
             sb.append("时间轴: battle-relative（由战斗结束事件推算，确定性）\n");
         }
 
-        final int episodeCount = episodes.size();
-        final boolean collapse = episodeCount > MAX_EPISODES;
-        final int renderCount = collapse ? MAX_EPISODES : episodeCount;
-
-        for (int i = 0; i < renderCount; i++) {
-            final TacticalEpisode ep = episodes.get(i);
-            renderEpisode(sb, timeline, ep, i, recorderAccountId);
+        // 首尾保留：高密度长战斗不丢残局关键决策；中间章节折叠为一行摘要（P1 review）
+        final List<Integer> selected = selectedEpisodeIndices(episodes.size(), MAX_EPISODES);
+        for (final int i : selected) {
+            renderEpisode(sb, timeline, episodes.get(i), i, recorderAccountId);
         }
-        if (collapse && episodeCount > renderCount) {
-            sb.append("（其余 ").append(episodeCount - renderCount)
+        if (selected.size() < episodes.size()) {
+            sb.append("（中间 ").append(episodes.size() - selected.size())
                     .append(" 个章节略：信息密度低，未进入上下文）\n");
         }
         return sb.toString();
+    }
+
+    /**
+     * Episode 选区（升序原始 index）：≤ maxEpisodes 全选；否则保留首部（ceil(max/2)）与
+     * 尾部（floor(max/2)），中间折叠——残局关键决策不因截断丢失。
+     */
+    static List<Integer> selectedEpisodeIndices(final int episodeCount, final int maxEpisodes) {
+        if (episodeCount <= maxEpisodes) {
+            final List<Integer> all = new ArrayList<>(episodeCount);
+            for (int i = 0; i < episodeCount; i++) {
+                all.add(i);
+            }
+            return all;
+        }
+        final int head = (maxEpisodes + 1) / 2;
+        final int tail = maxEpisodes - head;
+        final List<Integer> out = new ArrayList<>(maxEpisodes);
+        for (int i = 0; i < head; i++) {
+            out.add(i);
+        }
+        for (int i = episodeCount - tail; i < episodeCount; i++) {
+            out.add(i);
+        }
+        return out;
     }
 
     private static void renderEpisode(
@@ -174,11 +195,12 @@ public final class PersonalAiContextCompiler {
             case HP_CHANGE -> {
                 final double from = d.number("hpFrom", 0);
                 final double to = d.number("hpTo", 0);
-                return "敌方 " + tank + " HP " + Math.round(from) + "→" + Math.round(to);
+                return whoLabel(timeline, d, recorderAccountId) + " " + tank
+                        + " HP " + Math.round(from) + "→" + Math.round(to);
             }
             case HP_GAP_DELTA -> {
-                return "敌方 " + tank + " 信息空窗期损失约 "
-                        + Math.round(-d.number("hpDelta", 0))
+                return whoLabel(timeline, d, recorderAccountId) + " " + tank
+                        + " 信息空窗期损失约 " + Math.round(-d.number("hpDelta", 0))
                         + " HP（精确时刻/攻击者/原因未知，重亮后推断）";
             }
             case DESTROYED -> {
@@ -218,6 +240,36 @@ public final class PersonalAiContextCompiler {
                 return "";
             }
         }
+    }
+
+    /**
+     * HP 类 delta 的称谓（side 来自 delta 属性，绝不用文本猜测）：
+     * friendly+录像者本人 → 「你」；friendly 其它 → 「队友」；enemy → 「敌方」。
+     */
+    private static String whoLabel(
+            final BattleTimeline timeline, final BattleDelta d, final Long recorderAccountId) {
+        if ("friendly".equals(d.attr("side", "enemy"))) {
+            if (recorderAccountId != null && d.entityId() != null
+                    && isRecorderEntity(timeline, d.entityId(), recorderAccountId)) {
+                return "你";
+            }
+            return "队友";
+        }
+        return "敌方";
+    }
+
+    private static boolean isRecorderEntity(
+            final BattleTimeline timeline, final int entityId, final long recorderAccountId) {
+        final BattleFrame frame = timeline.frameAt(timeline.durationSec() / 2);
+        if (frame == null) {
+            return false;
+        }
+        for (final FrameVehicle v : frame.vehicles()) {
+            if (v.entityId() == entityId) {
+                return recorderAccountId == (v.accountId() == null ? -1L : v.accountId());
+            }
+        }
+        return false;
     }
 
     /** Episode tacticalChanges 短标签 → 中文（结构化标签不进入 prompt）。 */

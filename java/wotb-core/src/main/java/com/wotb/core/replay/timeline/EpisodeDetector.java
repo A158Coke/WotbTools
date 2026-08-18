@@ -84,10 +84,11 @@ public final class EpisodeDetector {
             scores[s] = score;
         }
 
-        // 贪心切分
-        final List<int[]> raw = new ArrayList<>(); // [start, end]
+        // 贪心切分：segment = [start, end) 半开秒区间（end 排他；最后一段 end = maxSecond+1）。
+        // 区间契约：每个 second 的 delta 恰好属于一个 segment（边界秒不重复）。
+        final List<int[]> raw = new ArrayList<>(); // [start, endExclusive)
         int start = 0;
-        int lastDeltaSeen = lastDeltaSecond < 0 ? 0 : lastDeltaSecond;
+        int lastDeltaSeen = 0; // 开局无 delta 历史：从 0 起算 quiet gap
         for (int s = 0; s <= maxSecond; s++) {
             final double length = s - start;
             final double elapsedSinceDelta = s - lastDeltaSeen;
@@ -107,14 +108,8 @@ public final class EpisodeDetector {
             }
         }
         if (start < maxSecond || raw.isEmpty()) {
-            raw.add(new int[]{start, Math.max(start + 1, maxSecond)});
+            raw.add(new int[]{start, Math.max(start + 1, maxSecond + 1)});
         }
-        // 收紧最后一个 episode 到 maxSecond（覆盖整场）
-        final int[] last = raw.get(raw.size() - 1);
-        if (last[1] < maxSecond) {
-            last[1] = maxSecond;
-        }
-        // 首个 episode 若从 0 前有 gap 不影响（episode 覆盖 [0, ...]）
 
         // 合并过短 episode（< MIN）
         final List<int[]> merged = new ArrayList<>();
@@ -141,19 +136,20 @@ public final class EpisodeDetector {
             }
         }
 
-        // 组装
+        // 组装：segment [start, endExclusive) → episode [startSec, endSec]，最后包含秒 = endExclusive-1
         final List<TacticalEpisode> episodes = new ArrayList<>();
         int idx = 0;
         for (final int[] seg : merged) {
             final double s = seg[0];
-            final double e = Math.max(seg[0] + MIN_EPISODE_SEC, seg[1]);
+            final int lastInclusiveSecond = Math.min(seg[1] - 1, maxSecond);
+            final double e = Math.max(s + MIN_EPISODE_SEC, lastInclusiveSecond + 1.0);
             final WorldSummary before = frameWorld(timeline, seg[0]);
-            final WorldSummary after = frameWorld(timeline, seg[1]);
+            final WorldSummary after = frameWorld(timeline, lastInclusiveSecond);
             final List<BattleDelta> deltas = collectDeltas(deltasBySecond, seg[0], seg[1]);
             episodes.add(new TacticalEpisode(
                     idx++, s, Math.min(e, endSec), before, after,
                     List.copyOf(deltas),
-                    List.copyOf(changes(deltas, seg[0], seg[1])),
+                    List.copyOf(changes(deltas)),
                     List.of()));
         }
         return List.copyOf(episodes);
@@ -164,17 +160,20 @@ public final class EpisodeDetector {
         return frame == null ? WorldSummary.EMPTY : frame.world();
     }
 
+    /** 半开区间 [startSecond, endExclusiveSecond) 收集 delta：边界秒只归前一段（无重复）。 */
     private static List<BattleDelta> collectDeltas(
-            final List<List<BattleDelta>> deltasBySecond, final int startInclusive, final int endInclusive) {
+            final List<List<BattleDelta>> deltasBySecond,
+            final int startSecond,
+            final int endExclusiveSecond) {
         final List<BattleDelta> out = new ArrayList<>();
-        for (int s = Math.max(0, startInclusive); s <= endInclusive && s < deltasBySecond.size(); s++) {
+        for (int s = Math.max(0, startSecond); s < endExclusiveSecond && s < deltasBySecond.size(); s++) {
             out.addAll(deltasBySecond.get(s));
         }
         return out;
     }
 
     /** 确定性短标签（供 Context Compiler 渲染；结构化，不编造）。 */
-    static List<String> changes(final List<BattleDelta> deltas, final int startSecond, final int endSecond) {
+    static List<String> changes(final List<BattleDelta> deltas) {
         final List<String> out = new ArrayList<>();
         for (final BattleDelta d : deltas) {
             switch (d.kind()) {

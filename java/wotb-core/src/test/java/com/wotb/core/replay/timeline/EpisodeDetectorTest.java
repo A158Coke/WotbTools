@@ -104,6 +104,57 @@ class EpisodeDetectorTest {
     }
 
     @Test
+    void episodeDeltasAppearExactlyOnceAcrossAllEpisodes() {
+        // P0 review：flatten 所有 Episode deltas 后，每个 canonical delta 恰好出现一次
+        // （半开区间 [start, end) 契约：边界秒的 delta 不重复）。
+        final Battle battle = TimelineTestFixtures.battle(120.0);
+        final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
+        events.add(TimelineTestFixtures.damage(TimelineTestFixtures.RECORDER_EID,
+                TimelineTestFixtures.ENEMY_EID, 5, 400));
+        events.add(TimelineTestFixtures.health(TimelineTestFixtures.ENEMY_EID, 30, 0, false));
+        events.add(TimelineTestFixtures.health(TimelineTestFixtures.ENEMY2_EID, 70, 900, true));
+        events.add(TimelineTestFixtures.damage(TimelineTestFixtures.RECORDER_EID,
+                TimelineTestFixtures.ENEMY2_EID, 90, 300));
+        final ReplayReconstruction recon = TimelineTestFixtures.recon(120.0, events);
+        final BattleTimeline timeline = BattleTimelineBuilder
+                .build(battle, recon, TimelineTestFixtures.personalPerspective()).timeline();
+        assertNotNull(timeline);
+
+        final int totalDeltas = timeline.frames().stream()
+                .mapToInt(frame -> frame.deltas() == null ? 0 : frame.deltas().size())
+                .sum();
+        final int episodeDeltas = EpisodeDetector.detect(timeline).stream()
+                .mapToInt(ep -> ep.deltas().size())
+                .sum();
+        assertEquals(totalDeltas, episodeDeltas,
+                "Episode deltas 必须恰好出现一次（无重复/无丢失）");
+    }
+
+    @Test
+    void openingQuietGapSplitsBeforeFirstContact() {
+        // P1 review：开局长时间无事件（quiet gap）后首次接敌，应产生切分；
+        // lastDeltaSeen 初始值不得使用整场最后一次 delta（未来信息）。
+        final Battle battle = TimelineTestFixtures.battle(120.0);
+        final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
+        // 前 25s 无任何战术事件（仅开局位置/血量）；25s 才首次接敌
+        events.add(TimelineTestFixtures.damage(TimelineTestFixtures.RECORDER_EID,
+                TimelineTestFixtures.ENEMY_EID, 25, 400));
+        final ReplayReconstruction recon = TimelineTestFixtures.recon(120.0, events);
+        final BattleTimeline timeline = BattleTimelineBuilder
+                .build(battle, recon, TimelineTestFixtures.personalPerspective()).timeline();
+
+        final List<TacticalEpisode> episodes = EpisodeDetector.detect(timeline);
+        // 第一个 Episode 必须覆盖开局安静期且结束于首次接敌附近（≤ 25s + MIN 展宽）
+        assertTrue(!episodes.isEmpty());
+        assertTrue(episodes.size() > 1,
+                "开局 25s 安静期应产生至少一个切分，实际 " + episodes.size()
+                        + " 个 episode: " + episodes);
+        // 首个 episode 结束不晚于 25s + 硬最小展宽（8s）
+        assertTrue(episodes.getFirst().endSec() <= 25.0 + 1e-9 + EpisodeDetector.MIN_EPISODE_SEC,
+                "首段应覆盖安静期，endSec=" + episodes.getFirst().endSec());
+    }
+
+    @Test
     void episodeContainsBothSidesWorldAndTacticalChanges() {
         final Battle battle = TimelineTestFixtures.battle(90.0);
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());

@@ -1,6 +1,7 @@
 package com.wotb.core.replay.timeline;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
@@ -126,6 +127,58 @@ class BattleTimelineBuilderTest {
         assertEquals(1, timeline.frameAt(55).world().enemyLastKnown());
         // 无阵亡：enemyAlive = 2
         assertEquals(2, world.enemyAlive());
+    }
+
+    @Test
+    void enemyKnowledgePartitionIsExclusiveAndDestroyedCountedOnce() {
+        // P0 review 回归：knowledge partition 必须互斥（known+lastKnown+unknown+destroyedKnown == total），
+        // 且一辆敌车阵亡只减少一个 enemyAlive（DESTROYED_KNOWN 不得双重计数）。
+        final Battle battle = TimelineTestFixtures.battle(60.0);
+        final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
+        // eid=3 保持位置流活跃（known）；eid=4 于 20s 阵亡（destroyed-known）
+        events.add(TimelineTestFixtures.position(TimelineTestFixtures.ENEMY_EID, 55, -12f, -12f, 0f));
+        events.add(TimelineTestFixtures.position(TimelineTestFixtures.ENEMY2_EID, 55, -25f, -25f, 0f));
+        events.add(TimelineTestFixtures.health(TimelineTestFixtures.ENEMY2_EID, 20, 0, false));
+        final ReplayReconstruction recon = TimelineTestFixtures.recon(60.0, events);
+        final BattleTimeline timeline = BattleTimelineBuilder
+                .build(battle, recon, TimelineTestFixtures.personalPerspective()).timeline();
+
+        final WorldSummary before = timeline.frameAt(10).world();
+        assertEquals(2, before.enemyAlive(), "阵亡前敌方 2 车存活");
+        assertEquals(2, before.enemyKnown() + before.enemyLastKnown()
+                + before.enemyUnknown() + before.enemyDestroyedKnown(),
+                "knowledge partition 必须等于 enemyTotal");
+
+        final WorldSummary after = timeline.frameAt(30).world();
+        assertEquals(1, after.enemyAlive(), "一辆敌车阵亡只减少一个 enemyAlive");
+        assertEquals(1, after.enemyDestroyedKnown(), "destroyed 只计一次");
+        assertEquals(2, after.enemyKnown() + after.enemyLastKnown()
+                + after.enemyUnknown() + after.enemyDestroyedKnown(),
+                "knowledge partition 必须等于 enemyTotal（互斥、无重复）");
+        // 阵亡车仍是 known（DESTROYED_KNOWN 属于已知），未知数不虚增
+        assertEquals(0, after.enemyUnknown());
+    }
+
+    @Test
+    void nullTimestampEventsAreExcludedNotBucketedIntoFrameZero() {
+        // P1 review：timestamp == null 的事件不得被塞进 frame 0，且计入 invalid 计数
+        final Battle battle = TimelineTestFixtures.battle(60.0);
+        final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
+        events.add(new com.wotb.core.replay.event.DamageEvent(
+                999, null, 8, DecodeConfidence.EXACT,
+                TimelineTestFixtures.RECORDER_EID, TimelineTestFixtures.ENEMY_EID,
+                null, null, 420, false));
+        final ReplayReconstruction recon = TimelineTestFixtures.recon(60.0, events);
+        final BattleTimelineResult result = BattleTimelineBuilder.build(
+                battle, recon, TimelineTestFixtures.personalPerspective());
+        assertTrue(result.usable());
+        final BattleTimeline timeline = result.timeline();
+        // null-timestamp 事件被排除在 timeline.events 之外（non-finite 过滤）
+        assertTrue(timeline.events().stream().noneMatch(e -> e.sequence() == 999),
+                "null timestamp 事件不得进入 timeline");
+        // frame 0 的 events 里也不得有它
+        assertTrue(timeline.frameAt(0).events().stream().noneMatch(e -> e.sequence() == 999),
+                "null timestamp 事件不得被塞进 frame 0");
     }
 
     @Test
