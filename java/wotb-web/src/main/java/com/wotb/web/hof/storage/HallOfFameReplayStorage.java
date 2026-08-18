@@ -20,7 +20,7 @@ import java.util.UUID;
  * <p>一致性设计：文件不可变、同 hash 可安全复用 → {@link #store} 幂等
  * （目标已存在直接返回 created=false，绝不覆盖）；并发同 hash 上传通过
  * {@code ATOMIC_MOVE} + {@link FileAlreadyExistsException} 处理，无 race、无半文件。
- * DB 更新失败时<b>不删除</b>已入存储的文件——保留为安全 orphan（单文件 ≤20MiB，且受
+ * DB 更新失败时<b>不删除</b>已入存储的文件——保留为安全 orphan（单文件 ≤5MiB，且受
  * 磁盘 reserve 保护），由未来 maintenance job 按「DB 无引用 + age grace」清理。</p>
  *
  * <p>原子发布契约：临时文件写 {@code baseDir/.tmp/}（与 final 同 filesystem），随后以

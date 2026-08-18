@@ -13,6 +13,7 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.junit.jupiter.api.BeforeEach;
@@ -197,7 +198,7 @@ class AiReplayReviewServiceTest {
         final var file = mock(MultipartFile.class);
         when(file.getOriginalFilename()).thenReturn("valid.wotbreplay");
         when(file.isEmpty()).thenReturn(false);
-        when(file.getSize()).thenReturn(20L * 1024 * 1024);
+        when(file.getSize()).thenReturn(ReplayUploadValidator.MAX_FILE_SIZE);
         when(file.getBytes()).thenReturn(new byte[]{1});
         when(processingFacade.process(any(), any()))
                 .thenThrow(new IllegalStateException("VALIDATION_PASSED"));
@@ -243,7 +244,7 @@ class AiReplayReviewServiceTest {
         final var file = mock(MultipartFile.class);
         when(file.getOriginalFilename()).thenReturn("valid.wotbreplay");
         when(file.isEmpty()).thenReturn(false);
-        when(file.getSize()).thenReturn(20L * 1024 * 1024);
+        when(file.getSize()).thenReturn(ReplayUploadValidator.MAX_FILE_SIZE);
         when(file.getBytes()).thenReturn(new byte[]{1});
         when(processingFacade.process(any(), any()))
                 .thenThrow(new IllegalStateException("VALIDATION_PASSED"));
@@ -257,7 +258,7 @@ class AiReplayReviewServiceTest {
         final var file = mock(MultipartFile.class);
         when(file.getOriginalFilename()).thenReturn("big.wotbreplay");
         when(file.isEmpty()).thenReturn(false);
-        when(file.getSize()).thenReturn(20L * 1024 * 1024 + 1);
+        when(file.getSize()).thenReturn(ReplayUploadValidator.MAX_FILE_SIZE + 1);
         final var ex = assertThrows(IllegalArgumentException.class,
                 () -> service.analyze(new MultipartFile[]{file}));
         assertEquals("FILE_TOO_LARGE", ex.getMessage());
