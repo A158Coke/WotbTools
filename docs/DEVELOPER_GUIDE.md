@@ -191,6 +191,7 @@ Wargaming ASIA 登录需要给 Keycloak 容器注入 `WG_APPLICATION_ID`（WoT B
 | `ReplayPacketParser` | `wotb-core/.../ReplayPacketParser.java` | data.wotreplay 包头/包解析 + 二进制读取（B3） |
 | `ReplayEventExtractors` | `wotb-core/.../ReplayEventExtractors.java` | EntityLeave/Position/updateArena/EntityMethod 提取（B3） |
 | `DeathTimeEstimator` | `wotb-core/.../DeathTimeEstimator.java` | 三条证据链死亡时间估算（B3） |
+| `DeathTimeReconciler` | `wotb-core/.../processing/DeathTimeReconciler.java` | 死亡时刻校准：结算缺失死亡时刻时用重建事件流 EXACT alive=false（HP=0，同实体→账号映射，取最后一条=最终阵亡）覆盖 `survivalTimeSec`（优先级：结算 > HP 死亡证据 > legacy 启发式） |
 | `Rating` | `wotb-core/.../Rating.java` | 评分引擎 |
 | `RatingAnalyzer` | `wotb-core/.../RatingAnalyzer.java` | 实时 rating V2（扩展页使用） |
 | `Tankopedia` | `wotb-core/.../Tankopedia.java` | 车辆库查表（via common/tankopedia-tier{7,8,9,10}.json） |

@@ -120,6 +120,19 @@
     name/✕ 既有语义与 zoom/pan 算法未动。
 - **Tier X 专属俯视车型系统（PR1：ASSET_GENERATION_READY）**：新增 frontend/src/vehicle-models/ 集中静态 mapping（common/tankopedia-tier10.json 84 辆 Tier X → 81 个 baseModelKey，skin/特殊版本复用基础模型：sheridan / kpz-70 / type-5-heavy 三组合并）与 discriminated union 类型契约（turreted 必配 turret + turretPivot，turretless 禁止）；统一 SVG viewBox 320×320 技术契约 + metadata.json schema（8 键）；validator（validate.js，CI 与 CLI 共用）与 Tier X 100% 覆盖门禁（coverage.test.js：新增 Tier X 无 mapping → CI FAIL、mapping 孤儿/未知引用/半成品资产目录均 FAIL）；契约样例资产 assets/sample/；BlitzKit 辅助脚本（frontend/scripts/blitzkit-references.mjs，参考图 URL 已验证并缓存 84 张，gitignored）与 CLI 自检（validate-vehicle-models.mjs）；隐藏 admin QA 页 ?view=vehicle-models（仅 wotbtools-admin，车体/炮塔旋转 + pivot + 状态叠加预览，复用生产 BattlePlayback 渲染方式）；文档 docs/assets/tier-x-models/（README 交接清单 + 全局 SVG 生成规范 + 生成的 84 辆 inventory）。正式车型 SVG 由 ChatGPT 按规范生成，到达 ASSET_GENERATION_READY Gate 后暂停（本 PR 不含正式车型资产）。
 
+### Fixed
+- **战局回放死亡时刻校准（`DeathTimeReconciler`）**：死亡时刻优先级链改为「结算 `deathTimeMillis`
+  （游戏权威）> 重建事件流 EXACT `alive=false`（HP=0，同实体→账号映射，取最后一条=最终阵亡）>
+  legacy 启发式（damage-threshold / EntityLeave / Position 停止，且不得早于最后一条 EXACT
+  `alive=true`——被 alive 证据证伪的 legacy 置 UNKNOWN=0，不保留也不伪造新时刻）」。实体身份
+  只复用 `TeamEntityMapper` 的权威 `TeamEntityMapping`（冲突/低置信实体证据拒绝，nickname
+  fallback 复用）。修复结算缺失死亡时刻（如 11.19 回放 proto #104=0）时 legacy damage-threshold
+  启发式只看累计伤害越阈、无视同实体 EXACT HP 观测，把「残血仍存活」提前误判为阵亡的问题——
+  真实样本 IS-4 在 96.9s 被误标（实际 HP=102 alive），校准后死亡时刻 128.12s。
+  `DefaultReplayProcessingFacade` 重建成功后对非存活且结算无死亡时刻的玩家校准 `survivalTimeSec`；
+  **覆盖范围为重建路径（playback 与 AI 复盘，`full()`）**，`summaryOnly()` 预览/导出路径无重建
+  事件源保留 legacy。前端死亡 ✕ 仍只消费 `deathSec` 单源，无前端改动。
+
 ### Removed
 - **隐藏 admin QA 页 `?view=vehicle-models`（车型预览）**：删除 VehicleModelPreviewPage.vue 及其测试、
   App.vue 的异步入口/视图注册/注释、仅其使用的 i18n `adminPreview.*` 文案（`loading`/`denied` 保留，

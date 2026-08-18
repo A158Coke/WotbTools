@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.1",
+    "date": "2026-08-18",
+    "tag": "fix",
+    "zh": "战局回放阵亡时刻修正：修复「残血但未阵亡」的坦克被提前标为阵亡（红色 ✕ 过早出现）的问题——此前结算缺少死亡时刻时按累计承伤估算，可能把仍有血量的坦克误判为已阵亡；现在优先采用回放事件流中可确认的阵亡证据（血量归零），残血坦克不再提前消失，正常阵亡的标记时间也更准确。",
+    "en": "Battle playback death timing fix: tanks that were merely low on HP but still alive could be marked as destroyed too early (red ✕ appearing prematurely) when the battle results lacked a death time - the old estimate was based on cumulative damage taken; now the playback trusts confirmed death evidence from the replay event stream (HP reaching zero), so low-HP tanks are no longer crossed out early and normal death markers land at the correct moment.",
+    "ru": "Исправлено время гибели в повторе боя: танк с малым запасом прочности, но ещё живой, мог слишком рано помечаться уничтоженным (красный ✕ появлялся преждевременно), когда в результатах боя не было времени гибели — старая оценка считалась по накопленному урону; теперь повтор опирается на подтверждённые свидетельства гибели из потока событий (запас прочности достиг нуля), поэтому повреждённые танки больше не вычёркиваются раньше времени, а обычные метки гибели появляются в точный момент."
+  },
+  {
     "v": "2.12.0",
     "date": "2026-08-18",
     "tag": "add",
