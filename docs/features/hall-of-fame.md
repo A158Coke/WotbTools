@@ -39,3 +39,47 @@
 - **Admin hard delete**：真实 hard delete（无 soft delete / tombstone / blocklist）。**audit + record delete 单事务**（`BEGIN → validate → audit snapshot(DELETE_ENTRY) → delete record → COMMIT`；audit 失败 → 记录不删；删除失败 → 无假审计）。commit 后：`replay_hash` 非空且无其他记录引用 → 删除 `{sha256}.wotbreplay`；仍有引用 → 保留；清理失败 → 仅 WARN（orphan 保留，不回滚已 commit 的删除）。删除后同一回放未来可重新上传（正常校验后重新 SAVED）。审计快照保存 timestamp / admin sub+username / action / recordId / arenaId / accountId / nickname / tankId / tankName / damage / battleType / arenaBonusType / replayHash（record 删除后原记录已不存在，不能只存 record_id FK）。第一版无 audit retention / cleanup scheduler。
 - **备份决策**：回放文件为 **best-effort 可丢数据**——数据库备份（`postgres-backup.sh`）只备份 metadata，不备份文件；VPS 损坏/迁移后可能出现下载 404（tolerance 设计）。
 - **解析边界**：最多 100 个回放、单文件 20 MiB、总请求 200 MiB；单实例默认同时处理 2 个任务。容量满返回 503 `REPLAY_BUSY`。
+
+
+---
+
+# 百场（Hundred Battles）排行榜
+
+> 国服名人堂「百场」：每辆 Tier X 车辆独立的生涯场均伤害排行榜，成绩需提交 1 张截图 + 正好 5 个回放并由管理员人工审核认证。实现见 `wotb-web/.../hundred/`。
+
+## 业务模型
+
+- **单表生命周期**：`hundred_battle_submission` 承载完整生命周期（PENDING / CURRENT / SUPERSEDED / REJECTED / CANCELLED / DELETED，VARCHAR+CHECK）。一条 submission 审核通过即成为 CURRENT；被更高纪录替代 → SUPERSEDED；管理员删除 → DELETED。
+- **数据库不变量**（Flyway `V18__create_hundred_battle_submission.sql`，partial unique index）：user+vehicle **最多一个 active PENDING**、**最多一个 CURRENT**；rank 永不落库。
+- **快照冻结**：创建瞬间冻结 `game_account_id_snapshot` / `nickname_snapshot`（Profile 后续修改 gameId/nickname 不影响历史 submission）；排行榜只读取审核通过的 `approvedAverageDamage` / `approvedBattleCount`，`claimed*` 仅作审计。
+- **gameId 唯一**：复用 `user_profile` 已有 `uk_user_profile_wotb_account (wotb_server, wotb_account_id)`，不新建约束。
+
+## 提交硬门禁（创建失败整单拒绝，不进入 PENDING）
+
+1. 需登录且 Profile 已配置 gameId + nickname（`HUNDRED_PROFILE_GAME_ID_REQUIRED` / `HUNDRED_PROFILE_NICKNAME_REQUIRED`）。
+2. 车辆必须为 authoritative Tier X（`Tankopedia.info(vehicleId).tier()==10`，`HUNDRED_NON_TIER_X`）。
+3. 固定 1 张成绩截图（base64 data URL，复用 Boost Apply 校验模式：`data:image/` 前缀 + 550 万字符上限）。
+4. 正好 5 个 `.wotbreplay`（复用 `ReplayUploadValidator` 大小/类型校验 + `HUNDRED_REPLAY_COUNT`）。
+5. 5 个回放**全部解析成功**，且每个回放内存在 accountId == snapshot gameId 的玩家（`HUNDRED_REPLAY_GAME_ID_MISMATCH`）、其 tankId == 所选 vehicleId（`HUNDRED_REPLAY_VEHICLE_MISMATCH`）、5 个 `arenaId` 互不相同（`HUNDRED_REPLAY_DUPLICATE_BATTLE`）。不校验 server/region。
+6. 新成绩必须严格高于当前 CURRENT（`HUNDRED_NOT_HIGHER`）；无 CURRENT 时历史 SUPERSEDED/DELETED 不限制重新提交。
+
+## 审核与并发（数据库一致性优先，无分布式锁）
+
+- `findByIdForUpdate`（PESSIMISTIC_WRITE 行锁）使 APPROVE / REJECT / CANCEL 从 PENDING → terminal **只成功一次**；败者得 `HUNDRED_SUBMISSION_NOT_PENDING`（409）。
+- APPROVE 事务内重新读取 CURRENT（行锁）并按管理员最终 `approvedAverageDamage > current.approvedAverageDamage` 比较（`HUNDRED_APPROVE_STALE`，409）；旧 CURRENT → SUPERSEDED，新 submission → CURRENT。
+- REJECT / 删除 CURRENT 原因强制（分类 + OTHER 必填文本）。
+- **proof 生命周期**：截图以 base64 存 DB（临时私有审核资产），审核终态事务内清空（不永久保存）；5 个 replay 不落库（multipart 临时文件由 Spring 清理）。proof 绝不进入公开 replay 下载体系：公开榜只输出审核后快照。
+
+## API
+
+| 端点 | 权限 | 说明 |
+|---|---|---|
+| `GET /api/hof/hundred?vehicleId=&page=&size=` | 匿名 | 单车辆独立排行榜（competition ranking 1,2,2,4，query-time 派生） |
+| `POST /api/hof/hundred/submissions` | 登录 | multipart 提交（vehicleId/averageDamage/battleCount/screenshot/replays×5） |
+| `POST /api/hof/hundred/submissions/{id}/cancel` | 登录（本人） | 用户撤销 PENDING |
+| `GET /api/users/hundred/status` | 登录 | 个人中心：CURRENT / PENDING / 最近拒绝 |
+| `GET /api/admin/hof/hundred/submissions` | HoF-admin/wotbtools-admin | 审核列表（status 过滤） |
+| `GET /api/admin/hof/hundred/submissions/{id}` | 同上 | 审核详情（proofScreenshot 仅 PENDING 返回） |
+| `POST /api/admin/hof/hundred/submissions/{id}/approve` | 同上 | 通过（approved 值可修正） |
+| `POST /api/admin/hof/hundred/submissions/{id}/reject` | 同上 | 拒绝（原因强制） |
+| `POST /api/admin/hof/hundred/submissions/{id}/delete` | 同上 | 删除 CURRENT（原因强制，不恢复 SUPERSEDED） |

@@ -165,6 +165,13 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 - `GET /api/hof/{id}/replay` — 下载该记录原始回放文件（**需登录**，任意已登录用户；无文件 → 404 `REPLAY_FILE_NOT_FOUND`）。
 - 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof`（搜索/筛选/排序/分页）、`GET /api/admin/hof/audit`（操作日志，只读）、`GET /api/admin/hof/{id}/replay`（下载）、`DELETE /api/admin/hof/{id}`（hard delete，audit+delete 单事务，最后引用清理物理文件；删除后同一回放可重新上传）。
 - 原始 .wotbreplay 以 SHA-256 内容寻址存 `HOF_REPLAY_DIR`（默认 `data/replays`，生产 volume `/data/replays`）；老记录无文件不显示下载按钮。
+- **百场（Hundred Battles）**：Tier X 车辆独立的生涯场均伤害排行榜，成绩需管理员人工审核（`com.wotb.web.hundred` 域）：
+  - `GET /api/hof/hundred?vehicleId=&page=&size=` — 公开排行榜（匿名；competition ranking 1,2,2,4 由分组计数前缀和 query-time 派生，不落库；只输出 approved* 快照）。
+  - `POST /api/hof/hundred/submissions` — 提交百场成绩（**需登录** + Profile gameId/nickname 已配置；multipart：vehicleId/averageDamage/battleCount/screenshot(base64)/replays×5）。硬门禁：Tier X authoritative 校验、5 个 replay 全部解析成功且 gameId/vehicleId 匹配、5 场不同 battle；任一失败整单拒绝不进入 PENDING。同车已有 PENDING → 409 `HUNDRED_PENDING_EXISTS`；新成绩未严格高于 CURRENT → 409 `HUNDRED_NOT_HIGHER`。
+  - `POST /api/hof/hundred/submissions/{id}/cancel` — 用户撤销自己的 PENDING（**需登录**）。
+  - `GET /api/users/hundred/status` — 个人中心百场状态（CURRENT / PENDING / 最近拒绝；**需登录**）。
+  - 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof/hundred/submissions`（status 过滤）、`GET .../submissions/{id}`（详情，proofScreenshot 仅 PENDING 返回）、`POST .../{id}/approve`（事务内重读 CURRENT 按 approvedAverageDamage 严格比较，旧 CURRENT→SUPERSEDED）、`POST .../{id}/reject`（原因强制）、`POST .../{id}/delete`（仅 CURRENT，原因强制，不恢复 SUPERSEDED）。
+  - 数据模型：`hundred_battle_submission` 单表生命周期（Flyway `V18`），partial unique index 保证 user+vehicle 最多一个 PENDING/CURRENT；身份/成绩快照创建瞬间冻结；proof 截图终态事务内清空（不永久保存），5 个 replay 不落库。
 
 ### 陪练与打手（仅在线版）
 

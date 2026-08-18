@@ -31,6 +31,10 @@ public final class ApiPaths {
     public static final String ADMIN_BOOST_BOOSTER_APPLICATIONS = "/api/admin/boost/booster-applications";
     public static final String ADMIN_BOOST_REQUEST_ASSIGNMENTS = "/api/admin/boost/requests/{id}/assignments";
     public static final String HOF_ADMIN = "/api/admin/hof";
+    public static final String HOF_HUNDRED = "/api/hof/hundred";
+    public static final String HOF_HUNDRED_SUBMISSIONS = "/api/hof/hundred/submissions";
+    public static final String USERS_HUNDRED = "/api/users/hundred";
+    public static final String HOF_HUNDRED_ADMIN = "/api/admin/hof/hundred";
 
     // ---- 精确端点（SecurityConfig 与 Controller 共用） ----
     public static final String HOF_UPLOAD = "/api/hof/upload";
@@ -51,6 +55,8 @@ public final class ApiPaths {
     public static final String HOF_PATTERN = "/api/hof/**";
     public static final String HOF_REPLAY_PATTERN = "/api/hof/*/replay";
     public static final String HOF_ADMIN_PATTERN = "/api/admin/hof/**";
+    public static final String HOF_HUNDRED_PATTERN = "/api/hof/hundred/**";
+    public static final String HOF_HUNDRED_SUBMISSIONS_PATTERN = "/api/hof/hundred/submissions/**";
     public static final String USERS_PATTERN = "/api/users/**";
     public static final String BOOST_REQUESTS_PATTERN = "/api/boost/requests/**";
     public static final String BOOST_BOOSTERS_PATTERN = "/api/boost/boosters/**";
