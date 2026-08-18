@@ -6,9 +6,11 @@ import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * 共享回放上传校验器：文件类型 / 单文件 20MiB / 总大小 200MiB / 空文件。
+ * 共享回放上传校验器：文件类型 / 单文件 5MiB / 总大小 200MiB / 空文件。
  *
- * <p>通用校验不限制文件数量（reconstruct-batch / process 允许多文件）；AI 单文件策略
+ * <p>单文件上限 5MiB（WoT Blitz 真实回放 1~3MiB，5MiB 充分覆盖且显著控制存储成本——
+ * 百场 submission 持久化 5 个原始回放，单文件 20MiB 时单申请最多 100MiB 的磁盘风险）。
+ * 通用校验不限制文件数量（reconstruct-batch / process 允许多文件）；AI 单文件策略
  * （{@link AiReplayBatchPolicy#MAX_FILES}=1）由 {@link #validateAiReview} 单独应用
  * （analyze / AiReplayReviewService）。</p>
  *
@@ -18,13 +20,13 @@ import org.springframework.web.multipart.MultipartFile;
  */
 public final class ReplayUploadValidator {
 
-    public static final long MAX_FILE_SIZE = 20L * 1024 * 1024;
+    public static final long MAX_FILE_SIZE = 5L * 1024 * 1024;
     public static final long MAX_TOTAL_SIZE = 200L * 1024 * 1024;
 
     private ReplayUploadValidator() {
     }
 
-    /** 通用上传校验：文件数组非空、每个文件非空/类型合法/单文件 ≤ 20MiB、累计 ≤ 200MiB。不限制文件数量。 */
+    /** 通用上传校验：文件数组非空、每个文件非空/类型合法/单文件 ≤ 5MiB、累计 ≤ 200MiB。不限制文件数量。 */
     public static void validate(final MultipartFile[] files) {
         if (files == null || files.length == 0) {
             throw new IllegalArgumentException("NO_REPLAY_FILES");

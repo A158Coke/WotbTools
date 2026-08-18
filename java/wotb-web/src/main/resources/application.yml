@@ -15,7 +15,8 @@ spring:
       - org.springframework.ai.model.openai.autoconfigure.OpenAiModerationAutoConfiguration
   servlet:
     multipart:
-      max-file-size: 20MB
+      # 单文件上限与 ReplayUploadValidator.MAX_FILE_SIZE（5MiB）对齐；总请求 200MB 保持
+      max-file-size: 5MB
       max-request-size: 200MB
   web:
     resources:
