@@ -1,11 +1,13 @@
 package com.wotb.web.replay.ai;
 
 import com.wotb.core.replay.timeline.BattleDelta;
+import com.wotb.core.replay.timeline.DeltaKind;
 import com.wotb.core.replay.timeline.BattleFrame;
 import com.wotb.core.replay.timeline.BattleTimeline;
 import com.wotb.core.replay.timeline.EpisodeDetector;
 import com.wotb.core.replay.timeline.FrameVehicle;
 import com.wotb.core.replay.timeline.TacticalEpisode;
+import com.wotb.core.replay.timeline.TimelineFocusWindowSelector;
 import com.wotb.core.replay.timeline.WorldSummary;
 
 import java.util.ArrayList;
@@ -51,6 +53,88 @@ public final class TeamAiContextCompiler {
         if (selected.size() < episodes.size()) {
             sb.append("（中间 ").append(episodes.size() - selected.size())
                     .append(" 个章节略：信息密度低，未进入上下文）\n");
+        }
+        return sb.toString();
+    }
+
+
+    /**
+     * 渲染 TEAM REVIEW FOCUS WINDOWS 段（确定性，docs/current-plan.md §4/§5）：
+     * 1–3 个信息密度最高的决策窗口，每个窗口输出 BEFORE / EVENTS / AFTER /
+     * OBSERVED FACTS / EVIDENCE LIMITATIONS。全部来自已验证 canonical timeline，
+     * 不编造战术原因；timeline 为 null 或无可选窗口时返回空串。
+     */
+    static String renderFocusWindowsSection(final BattleTimeline timeline, final int perspectiveTeam) {
+        if (timeline == null) {
+            return "";
+        }
+        final List<TimelineFocusWindowSelector.FocusWindow> windows =
+                TimelineFocusWindowSelector.select(timeline);
+        if (windows.isEmpty()) {
+            return "";
+        }
+        final StringBuilder sb = new StringBuilder(2048);
+        sb.append("=== TEAM REVIEW FOCUS WINDOWS（1-3 个信息密度最高的决策窗口·确定性） ===\n");
+        int index = 1;
+        for (final TimelineFocusWindowSelector.FocusWindow w : windows) {
+            sb.append("WINDOW ").append(index++).append(" time=")
+                    .append(PlayerAnalysisTerms.battleRange(
+                            (float) w.startSec(), (float) w.endSec())).append("\n");
+            sb.append("BEFORE 我方_alive=").append(w.before().friendlyAlive())
+                    .append(" 敌方_alive=").append(w.before().enemyAlive())
+                    .append(" 敌方_known=").append(w.before().enemyKnown())
+                    .append(" 敌方_last_known=").append(w.before().enemyLastKnown())
+                    .append(" 敌方_unknown=").append(w.before().enemyUnknown())
+                    .append("\n");
+            if (!w.events().isEmpty()) {
+                sb.append("EVENTS\n");
+                for (final BattleDelta d : w.events()) {
+                    final String line = renderDelta(timeline, d, perspectiveTeam);
+                    if (!line.isEmpty()) {
+                        sb.append("- ").append(line).append("\n");
+                    }
+                }
+            }
+            sb.append("AFTER 我方_alive=").append(w.after().friendlyAlive())
+                    .append(" 敌方_alive=").append(w.after().enemyAlive())
+                    .append(" 敌方_known=").append(w.after().enemyKnown())
+                    .append(" 敌方_last_known=").append(w.after().enemyLastKnown())
+                    .append(" 敌方_unknown=").append(w.after().enemyUnknown())
+                    .append("\n");
+            sb.append("OBSERVED FACTS\n");
+            if (w.friendlyDeaths() > 0 || w.enemyDeaths() > 0) {
+                sb.append("- 本方阵亡 ").append(w.friendlyDeaths())
+                        .append(" 辆，对方阵亡 ").append(w.enemyDeaths()).append(" 辆\n");
+            }
+            if (w.before().friendlyAlive() != w.after().friendlyAlive()
+                    || w.before().enemyAlive() != w.after().enemyAlive()) {
+                sb.append("- 双方存活 ").append(w.before().friendlyAlive())
+                        .append("v").append(w.before().enemyAlive())
+                        .append(" → ").append(w.after().friendlyAlive())
+                        .append("v").append(w.after().enemyAlive()).append("\n");
+            }
+            if (w.hpSwingObserved()) {
+                sb.append("- HP 变化合计约 ").append(Math.round(w.hpSwing()))
+                        .append("（事件流观测子集，非权威结算）\n");
+            }
+            if (w.engagementObserved()) {
+                sb.append("- 交火活动伤害约 ").append(w.engagementDamage())
+                        .append("（事件流观测子集）\n");
+            }
+            if (w.pointsChanged()) {
+                sb.append("- 点数发生变化（实时点数未解码，只表示存在变化）\n");
+            }
+            if (w.firstContact()) {
+                sb.append("- 首次接敌\n");
+            }
+            sb.append("EVIDENCE LIMITATIONS\n");
+            sb.append("- 阵亡时刻为当时已知事实；事件流伤害/HP 为观测子集，非权威结算。\n");
+            final boolean gapHp = w.events().stream()
+                    .anyMatch(d -> d.kind() == DeltaKind.HP_GAP_DELTA);
+            if (gapHp) {
+                sb.append("- 部分 HP 变化为信息空窗后推断（精确时刻/攻击者/原因未知）。\n");
+            }
+            sb.append("- 当前证据无法证明具体原因（掩体使用/射界/视野/指挥沟通/个人操作），不得据此编造归因。\n");
         }
         return sb.toString();
     }

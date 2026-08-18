@@ -62,7 +62,9 @@ class PromptRuleContractTest {
                     TeamPromptLocalizer.TEAM_REGION_RULE,
                     TeamPromptLocalizer.SOLO_INTENT_RULE,
                     TeamPromptLocalizer.CAPTURE_RULE,
-                    TeamPromptLocalizer.BEHIND_LINE_RULE));
+                    TeamPromptLocalizer.BEHIND_LINE_RULE,
+                    TeamPromptLocalizer.TEAM_OUTPUT_STRUCTURE_RULE,
+                    TeamPromptLocalizer.TEAM_EVIDENCE_CONTRACT_RULE));
 
     @Test
     void mdPromptsCarryRuleConstantsVerbatim() {

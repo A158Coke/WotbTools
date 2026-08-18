@@ -82,6 +82,8 @@ public final class TeamAutopsyPromptBuilder {
                     .append(")")
                     .append(" 结算级代理=").append(s.settlementOnly())
                     .append('\n');
+            sb.append("    归因限制: earlyDeath/weakOutput 只是规则候选; 仅凭结算与死亡时间无法确定阵亡原因是"
+                    + "站位失误/指挥问题/承担既定任务, 不得直接写成确定战术过错\n");
         }
         if (prior != null && prior.teamA() != null) {
             sb.append("\n赛前职责基线（Call #1 Strategic Prior，TEAM_A）:\n");
@@ -147,7 +149,7 @@ public final class TeamAutopsyPromptBuilder {
         sb.append("\n\n======================== 团队剖析 ========================\n");
         sb.append("胜负: ").append(winnerLabel(winner, teamLabel, battle, perspectiveTeam)).append('\n');
         if (!result.biggestLiabilities().isEmpty()) {
-            sb.append("**主要战犯：**\n");
+            sb.append("**重点复查对象：**\n");
             for (final TeamAutopsyResult.AutopsyVerdict v : result.biggestLiabilities()) {
                 sb.append("- **").append(renderPlayer(v.playerKey(), byKey)).append("**")
                         .append("（置信度: ")
@@ -159,7 +161,7 @@ public final class TeamAutopsyPromptBuilder {
             }
         }
         if (!result.mvps().isEmpty()) {
-            sb.append("**MVP：**\n");
+            sb.append("**高贡献者：**\n");
             for (final TeamAutopsyResult.AutopsyVerdict v : result.mvps()) {
                 sb.append("- **").append(renderPlayer(v.playerKey(), byKey)).append("**")
                         .append("（置信度: ")
