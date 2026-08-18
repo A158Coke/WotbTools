@@ -122,7 +122,7 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 `multipart/form-data`，字段名为 `files`，可上传一个或多个 `.wotbreplay`。
 
-入口限制：最多 100 个文件，单文件不超过 5 MiB，请求合计不超过 200 MiB；每个应用实例默认最多同时处理 2 个解析任务（`REPLAY_MAX_CONCURRENT_JOBS` 可调），容量满返回 HTTP 503 + `REPLAY_BUSY`。ZIP、pickle、protobuf、单场玩家数与事件流包/扫描次数另有独立预算。
+入口限制：最多 100 个文件，单文件不超过 20 MiB，请求合计不超过 200 MiB；每个应用实例默认最多同时处理 2 个解析任务（`REPLAY_MAX_CONCURRENT_JOBS` 可调），容量满返回 HTTP 503 + `REPLAY_BUSY`。ZIP、pickle、protobuf、单场玩家数与事件流包/扫描次数另有独立预算。
 
 返回：
 
@@ -146,7 +146,7 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 完整战斗重建：读取 `data.wotreplay` 全部事件包 → 解码为领域事件 → 重建战场状态。
 重建不单独暴露端点，由 `/analyze` 在内部完成。
 
-- `POST /api/replay/reconstruct-batch` — 批量重建（单文件 ≤ 5 MiB、请求合计 ≤ 200 MiB），返回 `ReplayBatchProcessingResult`（含 `suggestedAnalysisMode`、逐文件 `ReplayProcessingResult`）。
+- `POST /api/replay/reconstruct-batch` — 批量重建（单文件 ≤ 20 MiB、请求合计 ≤ 200 MiB），返回 `ReplayBatchProcessingResult`（含 `suggestedAnalysisMode`、逐文件 `ReplayProcessingResult`）。
 - `POST /api/replay/process?reconstruct=false` — 通用批量处理，可选开启重建。
 - `POST /api/replay/analyze` — 上传 `files[]` 生成 AI 战术复盘；**单文件限制（`AiReplayBatchPolicy.MAX_FILES=1`）**，仅 `SINGLE_PLAYER_BATTLE` / `SINGLE_TEAM_BATTLE` 模式（多文件 AI 复盘已移除，2026-08-12）。表单字段 `lang`（必填，白名单 `zh`/`en`/`ru`）控制 AI 复盘输出语言；缺失时返回 `400`，空白或未知值返回 `400 UNKNOWN_LOCALE`。可选表单字段 `correlationId` 用于客户端取消；`POST /api/replay/analyze/cancel?correlationId=...` 中断 in-flight 上游调用（返回 `204`，未注册返回 `404`），被取消请求稳定返回 `AI_CANCELLED`。`POST /api/replay/map-overview` — 上传 `files[]` 只解析回放并确定性生成 `MapOverview`（热力/路线/战局回放，**不调 AI**），同步 JSON 返回；地图不可构建（未知地图/无观测/无名册/视角未解析）返回 `204`；校验与错误码与 analyze 一致。**响应为 SSE 流式（breaking change，旧同步 JSON 端点不保留）**：事件 `call1_start` / `call1_done` / `evidence_done` / `call2_token`（`{"delta"}`）/ `autopsy_start` / `autopsy_done` / `done`（`{"analysis","preBattleSection","mapOverview"}`，`mapOverview` 可空，字段见 `docs/features/battle-playback.md`）/ `error`（`{"code"}`，worker 启动后的失败经 SSE 传达）；request-envelope 校验与 worker 池饱和在返回 `SseEmitter` 前由 HTTP 状态码 + 稳定错误码文本返回（400/503）。完整协议见 `docs/features/team-ai-review.md` §8。
 
@@ -245,7 +245,7 @@ management:
 spring:
   servlet:
     multipart:
-      max-file-size: 5MB
+      max-file-size: 20MB
       max-request-size: 200MB
   web:
     resources:

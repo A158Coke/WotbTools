@@ -67,13 +67,20 @@ class HundredBattleSubmissionServiceTest {
     @Mock
     HundredReplayEvidenceService evidenceService;
 
+    @Mock
+    com.wotb.web.hof.service.ReplayHashLock replayHashLock;
+
+    @Mock
+    org.springframework.transaction.PlatformTransactionManager transactionManager;
+
     HundredBattleSubmissionService service;
 
     @BeforeEach
     void setUp() {
         // 真实 mapper（无依赖），便于断言返回 DTO；Service 构造器注入，无 Spring。
         service = new HundredBattleSubmissionService(
-                repository, new HundredBattleMapper(), userProfileService, evidenceService);
+                repository, new HundredBattleMapper(), userProfileService, evidenceService,
+                replayHashLock, transactionManager);
         // 未触发终态保存的用例不报 UnnecessaryStubbing（lenient）；已触发时返回入参避免 mapper 吃 null。
         org.mockito.Mockito.lenient().when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         // saveAndFlush 返回带 id 的实体：createSubmission 需要 submission.getId() 供 evidence attach（无 DB 的真实 id）。
@@ -86,6 +93,13 @@ class HundredBattleSubmissionServiceTest {
             }
             return s;
         });
+        // runWithLocksResult 是具体方法（mock 不执行方法体）：直接执行 action（真实 advisory lock 由并发集成测试覆盖）。
+        org.mockito.Mockito.lenient().when(replayHashLock.runWithLocksResult(anyList(), any()))
+                .thenAnswer(inv -> ((java.util.function.Supplier<?>) inv.getArgument(1)).get());
+        // TransactionTemplate：getTransaction → mock status（isRollbackOnly=false → commit 路径）；
+        // 回调抛异常时 rollback 后 rethrow——与真实 Spring 语义对齐，但事务语义本身由并发集成测试用真实 PG 证明。
+        org.mockito.Mockito.lenient().when(transactionManager.getTransaction(any()))
+                .thenReturn(org.mockito.Mockito.mock(org.springframework.transaction.TransactionStatus.class));
     }
 
     // ── helpers ──────────────────────────────────────────────────────────
@@ -434,6 +448,10 @@ class HundredBattleSubmissionServiceTest {
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessage("HUNDRED_PENDING_EXISTS");
         }
+        // 锁内失败 → rollback 后引用计数保护清理（不允许留下无 DB 引用的孤儿文件常态）
+        verify(evidenceService).storeAll(anyList());
+        verify(evidenceService).cleanupStoredFiles(anyList());
+        verify(evidenceService, never()).attach(anyLong(), anyList());
     }
 
     @Test
@@ -819,7 +837,16 @@ class HundredBattleSubmissionServiceTest {
                     "data:image/png;base64,AAAA", fiveReplays());
         }
 
-        // 5 个 replay 全部落盘
+        // 锁协议：整段临界区在 sorted distinct hash locks 内（Blocker 2）
+        @SuppressWarnings("unchecked")
+        final ArgumentCaptor<List<String>> hashCaptor = ArgumentCaptor.forClass(List.class);
+        verify(replayHashLock).runWithLocksResult(hashCaptor.capture(), any());
+        assertThat(hashCaptor.getValue()).hasSize(5);
+        // 稳定顺序 + 去重（防 deadlock）
+        assertThat(hashCaptor.getValue()).isSorted();
+        assertThat(hashCaptor.getValue().stream().distinct()).hasSize(5);
+
+        // 5 个 replay 全部落盘（锁内）
         verify(evidenceService).storeAll(anyList());
         // attach 收到恰好 5 行，slot 1..5、原始文件名、内容寻址 hash（SHA-256 of arena bytes）
         @SuppressWarnings("unchecked")
@@ -901,5 +928,27 @@ class HundredBattleSubmissionServiceTest {
         verify(evidenceService).storeAll(anyList());
         verify(evidenceService).cleanupStoredFiles(anyList());
         verify(evidenceService, never()).attach(anyLong(), anyList());
+    }
+
+    @Test
+    void hundredReplayOver5MiBRejectedWithoutPersisting() throws Exception {
+        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+
+        // 第 1 份超 5MiB（域内独立限制；全局 ReplayUploadValidator 仍 20MiB）
+        final byte[] huge = new byte[5 * 1024 * 1024 + 1];
+        final MockMultipartFile big = new MockMultipartFile("replays", "big.wotbreplay",
+                "application/octet-stream", huge);
+        final List<MultipartFile> files = new ArrayList<>(List.of(big));
+        files.addAll(replays(4));
+
+        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", files))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("HUNDRED_REPLAY_TOO_LARGE");
+        // 校验阶段即拒绝：零持久化、零锁、零存储
+        verify(replayHashLock, never()).runWithLocksResult(anyList(), any());
+        verify(evidenceService, never()).storeAll(anyList());
+        verify(evidenceService, never()).attach(anyLong(), anyList());
+        verify(repository, never()).saveAndFlush(any());
     }
 }

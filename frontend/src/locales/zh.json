@@ -904,6 +904,7 @@
         "UNSUPPORTED_BATTLE_TYPE": "仅支持随机战斗和评级战斗回放。",
         "TOO_MANY_REPLAY_FILES": "回放文件数量过多",
         "FILE_TOO_LARGE": "文件过大",
+        "HUNDRED_REPLAY_TOO_LARGE": "百场回放单个文件不能超过 5MB",
         "REQUEST_TOO_LARGE": "本次上传总大小过大",
         "REPLAY_BUSY": "回放处理繁忙，请稍后重试",
         "AI_REVIEW_BUSY": "AI 复盘服务繁忙，请稍后重试",

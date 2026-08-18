@@ -6,6 +6,7 @@ import com.wotb.core.model.TankInfo;
 import com.wotb.core.parse.ReplayParser;
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.hof.service.HallOfFameUploadService;
+import com.wotb.web.hof.service.ReplayHashLock;
 import com.wotb.web.hundred.dto.HundredAdminDetailDto;
 import com.wotb.web.hundred.dto.HundredAdminPageDto;
 import com.wotb.web.hundred.dto.HundredCreateResult;
@@ -23,7 +24,9 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
@@ -66,6 +69,13 @@ public class HundredBattleSubmissionService {
     private static final int MAX_PAGE_SIZE = 100;
     private static final int REPLAY_COUNT = 5;
 
+    /**
+     * 百场单回放上限 5MiB（域内独立 size policy；全局 {@code ReplayUploadValidator.MAX_FILE_SIZE}
+     * 保持 20MiB 不动）。WoT Blitz 真实回放 1~3MiB；百场持久化 5 个原始回放，单文件 20MiB 时
+     * 单申请最多 100MiB 的磁盘风险显著。超过 → 400 HUNDRED_REPLAY_TOO_LARGE。
+     */
+    private static final int HUNDRED_MAX_REPLAY_SIZE = 5 * 1024 * 1024;
+
     /** 「百场」资格最低场次：管理员最终 approvedBattleCount 必须 ≥ 100（人工审核为最终资格判断）。 */
     private static final int MIN_APPROVED_BATTLE_COUNT = 100;
 
@@ -80,17 +90,23 @@ public class HundredBattleSubmissionService {
     private final HundredBattleMapper mapper;
     private final UserProfileService userProfileService;
     private final HundredReplayEvidenceService evidenceService;
+    private final ReplayHashLock replayHashLock;
+    private final TransactionTemplate transactionTemplate;
     private final Tankopedia tankopedia = Tankopedia.load();
 
     public HundredBattleSubmissionService(
             final HundredBattleSubmissionRepository repository,
             final HundredBattleMapper mapper,
             final UserProfileService userProfileService,
-            final HundredReplayEvidenceService evidenceService) {
+            final HundredReplayEvidenceService evidenceService,
+            final ReplayHashLock replayHashLock,
+            final PlatformTransactionManager transactionManager) {
         this.repository = repository;
         this.mapper = mapper;
         this.userProfileService = userProfileService;
         this.evidenceService = evidenceService;
+        this.replayHashLock = replayHashLock;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     // ── Phase 3：Submission ──────────────────────────────────────────────
@@ -98,12 +114,22 @@ public class HundredBattleSubmissionService {
     /**
      * 创建百场 submission（需登录且 Profile 已配置 gameId/nickname）。
      * 硬门禁：Tier X authoritative 校验 + 固定 1 张截图 + 正好 5 个 replay 全部解析成功、
-     * gameId/vehicleId 匹配、5 场不同 battle；任意失败 → 整单失败，不进入 PENDING，零持久化残留。
-     * 全部校验通过后：5 个原始 replay 内容寻址落盘（幂等）→ 单事务写 submission + 恰好 5 行
-     * {@code hundred_battle_replay_evidence}；文件存储失败或 DB 写入失败 → 整单失败 +
-     * 已存文件 best-effort 清理（引用计数保护），绝不产生「只保存 3/5 个 replay 的合法 PENDING」。
+     * gameId/vehicleId 匹配、5 场不同 battle、单文件 ≤ {@link #HUNDRED_MAX_REPLAY_SIZE}；
+     * 任意失败 → 整单失败，不进入 PENDING，零持久化残留。
+     *
+     * <p><b>锁与事务协议</b>（与 {@link ReplayHashLock} 全协议对齐，多实例安全）：</p>
+     * <pre>
+     * acquire sorted distinct hash advisory locks   （固定顺序防 deadlock）
+     *   ├ storage.store × 5（幂等，内容寻址）
+     *   ├ DB transaction（TransactionTemplate）：
+     *   │    create submission → attach 5 evidence rows
+     *   └ COMMIT  ← 必须发生在锁释放之前（DB 引用 H ⇒ 物理 H 存在）
+     * release locks（反向）
+     * </pre>
+     * DB 事务失败（含 PENDING unique index 竞态）：rollback 完成后、仍在锁内进行
+     * 引用计数保护的 best-effort 文件清理——绝不在 aborted transaction 内执行 DB 查询。
+     * 5 个 hash 由 {@code ReplayHashLock.runWithLocksResult} 按字典序去重排序后统一加锁。
      */
-    @Transactional
     public HundredCreateResult createSubmission(final String userId,
                                                 final long vehicleId,
                                                 final int claimedAverageDamage,
@@ -134,7 +160,7 @@ public class HundredBattleSubmissionService {
         ReplayUploadValidator.validate(replays.toArray(new MultipartFile[0]));
 
         // PENDING 唯一性 cheap check：明知已有同车 PENDING 时不再解析 5 个 replay；
-        // 并发竞态仍由 DB partial unique index 兜底（见下方 saveAndFlush 的 catch）。
+        // 并发竞态仍由 DB partial unique index 兜底（见 createLocked 内 saveAndFlush 的 catch）。
         if (repository.existsByUserKeycloakIdAndVehicleIdAndStatus(userId, vehicleId, "PENDING")) {
             throw new IllegalStateException("HUNDRED_PENDING_EXISTS");
         }
@@ -147,6 +173,10 @@ public class HundredBattleSubmissionService {
         for (final MultipartFile file : replays) {
             slot++;
             final byte[] bytes = readBytes(file);
+            if (bytes.length > HUNDRED_MAX_REPLAY_SIZE) {
+                // 百场域独立 size policy（全局 ReplayUploadValidator 保持 20MiB；百场单文件 5MiB 控磁盘成本）
+                throw new IllegalArgumentException("HUNDRED_REPLAY_TOO_LARGE");
+            }
             final Battle battle = parse(bytes);
             if (!StringUtils.hasText(battle.arenaId)) {
                 throw new IllegalArgumentException("INVALID_REPLAY_FILE");
@@ -177,39 +207,65 @@ public class HundredBattleSubmissionService {
             throw new IllegalStateException("HUNDRED_NOT_HIGHER");
         }
 
-        // 全部硬门禁通过后落盘 5 个原始回放（内容寻址幂等；失败时已存文件 best-effort 清理）。
-        // 文件落盘在 DB 写入之前：DB 提交成功 ⇒ 物理文件必已存在（不变量「DB 引用 H ⇒ H 存在」）。
-        evidenceService.storeAll(pendingReplays);
-        final List<String> storedHashes = pendingReplays.stream()
+        // 锁协议临界区：sorted distinct hash locks → store → DB tx(commit) → unlock。
+        final List<String> hashes = pendingReplays.stream()
                 .map(HundredReplayEvidenceService.PendingReplay::sha256)
+                .distinct()
+                .sorted()
                 .toList();
+        return replayHashLock.runWithLocksResult(hashes, () -> createLocked(
+                userId, vehicleId, gameId, claimedAverageDamage, claimedBattleCount,
+                proofScreenshot, vehicle.name(), profile.getWotbNickname().trim(), pendingReplays, hashes));
+    }
 
-        final HundredBattleSubmission submission = new HundredBattleSubmission();
-        submission.setUserKeycloakId(userId);
-        submission.setVehicleId(vehicleId);
-        submission.setVehicleName(vehicle.name());
-        submission.setGameAccountIdSnapshot(gameId);
-        submission.setNicknameSnapshot(profile.getWotbNickname().trim());
-        submission.setClaimedAverageDamage(claimedAverageDamage);
-        submission.setClaimedBattleCount(claimedBattleCount);
-        submission.setStatus(HundredBattleStatus.PENDING.name());
-        submission.setProofScreenshot(proofScreenshot.trim());
+    /**
+     * 锁内临界区：落盘 5 文件 → 单事务写 submission + 恰好 5 行 evidence → COMMIT。
+     * DB 失败（含 unique index 竞态）→ TransactionTemplate 已 rollback 完成 → 锁内
+     * 引用计数保护清理已存文件 → 映射错误码。绝不产生「只保存 3/5 个 replay 的合法 PENDING」。
+     */
+    private HundredCreateResult createLocked(final String userId,
+                                             final long vehicleId,
+                                             final long gameId,
+                                             final int claimedAverageDamage,
+                                             final int claimedBattleCount,
+                                             final String proofScreenshot,
+                                             final String vehicleName,
+                                             final String nickname,
+                                             final List<HundredReplayEvidenceService.PendingReplay> pendingReplays,
+                                             final List<String> hashes) {
+        // 全部硬门禁通过后落盘 5 个原始回放（内容寻址幂等；失败时已存文件 best-effort 清理，
+        // 复用当前外层锁——不嵌套取锁防 self-deadlock）。
+        evidenceService.storeAll(pendingReplays);
+
+        final Long submissionId;
         try {
-            repository.saveAndFlush(submission);
+            submissionId = transactionTemplate.execute(status -> {
+                final HundredBattleSubmission submission = new HundredBattleSubmission();
+                submission.setUserKeycloakId(userId);
+                submission.setVehicleId(vehicleId);
+                submission.setVehicleName(vehicleName);
+                submission.setGameAccountIdSnapshot(gameId);
+                submission.setNicknameSnapshot(nickname);
+                submission.setClaimedAverageDamage(claimedAverageDamage);
+                submission.setClaimedBattleCount(claimedBattleCount);
+                submission.setStatus(HundredBattleStatus.PENDING.name());
+                submission.setProofScreenshot(proofScreenshot.trim());
+                repository.saveAndFlush(submission);
+                // submission 与 5 行 evidence 同事务原子写入；attach 失败 → 事务回滚 submission。
+                evidenceService.attach(submission.getId(), pendingReplays);
+                return submission.getId();
+            });
         } catch (final DataIntegrityViolationException e) {
             // 并发双提交竞态：partial unique index 只允许一条 PENDING。
-            evidenceService.cleanupStoredFiles(storedHashes);
+            // 注意：TransactionTemplate 已先完成 rollback，aborted transaction 状态已清除，
+            // 此处 DB 引用计数查询可安全执行（Blocker 3）。
+            evidenceService.cleanupStoredFiles(hashes);
             throw new IllegalStateException("HUNDRED_PENDING_EXISTS");
-        }
-        try {
-            // submission 与 5 行 evidence 同事务原子写入；attach 失败 → 事务回滚 submission，
-            // 已落盘文件 best-effort 清理（引用计数保护，含 HoF 共享引用）。
-            evidenceService.attach(submission.getId(), pendingReplays);
         } catch (final RuntimeException e) {
-            evidenceService.cleanupStoredFiles(storedHashes);
+            evidenceService.cleanupStoredFiles(hashes);
             throw e;
         }
-        return new HundredCreateResult(submission.getId(), submission.getStatus());
+        return new HundredCreateResult(submissionId, HundredBattleStatus.PENDING.name());
     }
 
     /** 用户取消自己的 PENDING（不影响 CURRENT；proof 截图同事务清空）。 */
