@@ -156,15 +156,15 @@ Vite 开发服会把 `/api` 代理到 `http://localhost:8087`。
 
 AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`AI_CANCELLED`、`AI_UPSTREAM_UNAVAILABLE` 等），前端以 zh/en/ru 本地化。`/api/replay/**` 需要 `wotbtools-user` 或 `wotbtools-admin` 角色；未配置 `AI_API_KEY` 时 `/analyze` 返回 `AI_NOT_CONFIGURED`，应用其余功能不受影响。全链路超时对齐：整体 deadline 默认 1100s（团队 3 次 AI 调用 + 余量，`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）→ 前端 analyze 安全超时 1100s < 容器 nginx `/api/replay/analyze` 1120s，后端 AI 单次预算 `AI_CALL_TIMEOUT_SEC=315s` + 解析余量；`AI_TIMEOUT` 不再自动重试（上游可能已计费）。
 
-### 排行榜
+### 名人堂（Hall of Fame）
 
-每条记录 = 录像者本人在一场**随机战斗**（`arenaBonusType==1`，训练房/娱乐/联赛拒绝）中用某辆车打出的单场伤害；通过排行榜上传入口写入（去重键 `arena_id + account_id`）。
+每条记录 = 录像者本人在一场**随机战斗**（`arenaBonusType==1`）或**评级战斗**（`==7`）中用某辆车打出的单场伤害（战斗模式判断集中在 `HallOfFameBattleTypePolicy`，其余模式 → 400 `UNSUPPORTED_BATTLE_TYPE`，零持久化）；通过名人堂上传入口写入（去重键 `arena_id + account_id`）。
 
-- `GET /api/leaderboard/top-damage?page=1&size=50` — 全局伤害榜（降序，`size` 最大 200）。
-- `GET /api/leaderboard/tanks/{tankId}/top-damage?page=1&size=50` — 指定车辆伤害榜。
-- `POST /api/leaderboard/upload` — 上传单场回放（**需登录**）；不支持战斗模式（训练房/联赛/锦标赛/未知，见 `LeaderboardService.SUPPORTED_BATTLE_TYPES`）→ 400 `UNSUPPORTED_BATTLE_TYPE`；其余跳过时返回英文 `reasonCode`（`DUPLICATE_OR_UNKNOWN_RECORDER` / `REPLAY_HASH_CONFLICT`），由前端本地化。
-- `GET /api/leaderboard/{id}/replay` — 下载该记录原始回放文件（**需登录**，任意已登录用户；无文件 → 404 `REPLAY_FILE_NOT_FOUND`）。
-- 原始 .wotbreplay 以 SHA-256 内容寻址存 `LEADERBOARD_REPLAY_DIR`（默认 `data/replays`，生产 volume `/data/replays`）；老记录无文件不显示下载按钮。
+- `GET /api/hof?battleType=RANDOM|RATING&tankId=&nickname=&page=&size=` — 统一公开查询（匿名；排序 damage DESC → RATING 优先 → battleTime ASC NULLS LAST → createdAt → id；rank = 当前 filter 上下文位置排名）。
+- `POST /api/hof/upload` — 上传单场回放（**需登录**）；不支持战斗模式 → 400 `UNSUPPORTED_BATTLE_TYPE`；其余跳过时返回英文 `reasonCode`（`DUPLICATE_OR_UNKNOWN_RECORDER` / `REPLAY_HASH_CONFLICT`），由前端本地化。
+- `GET /api/hof/{id}/replay` — 下载该记录原始回放文件（**需登录**，任意已登录用户；无文件 → 404 `REPLAY_FILE_NOT_FOUND`）。
+- 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof`（搜索/筛选/排序/分页）、`GET /api/admin/hof/audit`（操作日志，只读）、`GET /api/admin/hof/{id}/replay`（下载）、`DELETE /api/admin/hof/{id}`（hard delete，audit+delete 单事务，最后引用清理物理文件；删除后同一回放可重新上传）。
+- 原始 .wotbreplay 以 SHA-256 内容寻址存 `HOF_REPLAY_DIR`（默认 `data/replays`，生产 volume `/data/replays`）；老记录无文件不显示下载按钮。
 
 ### 陪练与打手（仅在线版）
 
@@ -199,7 +199,7 @@ mvn -s settings.xml test
 测试覆盖：
 
 - `wotb-core` 的 `ParityTest`：集成测试，覆盖解析、字段不变量、去重、汇总、xlsx 导出。
-- `wotb-web` 的 boost / leaderboard / security / API 契约单元测试都会执行；无需数据库的 controller 契约已拆出，始终运行。
+- `wotb-web` 的 boost / hof / security / API 契约单元测试都会执行；无需数据库的 controller 契约已拆出，始终运行。
 - `WebApiTest` 只保留 PostgreSQL/真实回放集成路径；无 Docker 或无 `common/data` 时按条件跳过。
 
 测试样本来自仓库根目录的 `common/data/`。

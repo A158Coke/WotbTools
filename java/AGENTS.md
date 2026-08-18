@@ -10,7 +10,7 @@
 ## 模块边界（真实职责）
 
 - **wotb-core**：纯 Java 库，**无 Spring / 无 web 依赖**。包 `com.wotb.core`：`parse/`（解析）、`stats/`、`export/`（POI）、`ref/`（车辆库/地图名查表）、`model/`（record 模型）、`processing/`（统一门面 + 视角解析）、`replay/`（stream/decoder/event/reconstruction/feature/evidence/map）。确定性战斗语义只放这里。
-- **wotb-web**：Spring Boot 4（入口 `WotbWebApplication`）。**domain 分包**：`user/ leaderboard/ replay/ boost/ admin/`，每域内 `controller/ service/ entity/ repository/ dto/`（+ `mapper/ enums/ exception/` 按需）；共享的 `config/ util/` 例外。禁止层分包。
+- **wotb-web**：Spring Boot 4（入口 `WotbWebApplication`）。**domain 分包**：`user/ hof/ replay/ boost/ admin/`，每域内 `controller/ service/ entity/ repository/ dto/`（+ `mapper/ enums/ exception/` 按需）；共享的 `config/ util/` 例外。禁止层分包。
 
 ## 分层与风格（硬性）
 

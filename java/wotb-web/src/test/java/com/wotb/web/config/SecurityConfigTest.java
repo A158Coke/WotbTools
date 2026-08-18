@@ -144,19 +144,51 @@ class SecurityConfigTest {
     }
 
     @Test
-    void leaderboardUploadAndDownloadRequireLoginWhileQueryStaysPublic() throws Exception {
+    void hofUploadAndDownloadRequireLoginWhileQueryStaysPublic() throws Exception {
         // 匿名 → 401（上传/下载需登录）
-        mvc.perform(get("/api/leaderboard/upload"))
+        mvc.perform(get("/api/hof/upload"))
                 .andExpect(status().isUnauthorized());
-        mvc.perform(get("/api/leaderboard/1/replay"))
+        mvc.perform(get("/api/hof/1/replay"))
                 .andExpect(status().isUnauthorized());
-        // 任意已登录用户 → 200
-        mvc.perform(get("/api/leaderboard/upload").with(jwt()))
+        // 任意已登录用户 → 200（filter 放行，probe 返回 ok）
+        mvc.perform(get("/api/hof/upload").with(jwt()))
                 .andExpect(status().isOk());
-        mvc.perform(get("/api/leaderboard/1/replay").with(jwt()))
+        mvc.perform(get("/api/hof/1/replay").with(jwt()))
                 .andExpect(status().isOk());
-        // 榜单查询保持公开
-        mvc.perform(get("/api/leaderboard/top-damage"))
+        // 名人堂查询保持公开
+        mvc.perform(get("/api/hof"))
+                .andExpect(status().isOk());
+    }
+
+    /** HoF-admin 只管理名人堂；wotbtools-admin 拥有全部 admin 权限。 */
+    @Test
+    void hofAdminRoleGatesAreExact() throws Exception {
+        // anonymous → 401
+        mvc.perform(get("/api/admin/hof/probe"))
+                .andExpect(status().isUnauthorized());
+        // HoF-admin → 200（/api/admin/hof/**），其他 admin 域 403
+        mvc.perform(get("/api/admin/hof/probe").with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_HoF-admin"))))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/admin/hof/audit").with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_HoF-admin"))))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/admin/users/probe").with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_HoF-admin"))))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/admin/boost/probe").with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_HoF-admin"))))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/admin/other/probe").with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_HoF-admin"))))
+                .andExpect(status().isForbidden());
+        // wotbtools-user → 403
+        mvc.perform(get("/api/admin/hof/probe").with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_wotbtools-user"))))
+                .andExpect(status().isForbidden());
+        // wotbtools-admin → 200（super admin 拥有 HoF 权限）
+        mvc.perform(get("/api/admin/hof/probe").with(jwt().authorities(
+                        new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
                 .andExpect(status().isOk());
     }
 
@@ -204,9 +236,11 @@ class SecurityConfigTest {
                 "/api/users/probe",
                 "/api/replay/analyze",
                 "/api/replay/analyze/cancel",
-                "/api/leaderboard/upload",
-                "/api/leaderboard/1/replay",
-                "/api/leaderboard/top-damage",
+                "/api/hof/upload",
+                "/api/hof/1/replay",
+                "/api/hof",
+                "/api/admin/hof/probe",
+                "/api/admin/hof/audit",
                 "/static-probe"
         })
         String probe() {

@@ -1,7 +1,7 @@
 package com.wotb.web.user.controller;
 
-import com.wotb.web.leaderboard.dto.LeaderboardRecordDto;
-import com.wotb.web.leaderboard.service.LeaderboardService;
+import com.wotb.web.hof.dto.HallOfFameRecordDto;
+import com.wotb.web.hof.service.HallOfFameService;
 import com.wotb.web.user.dto.UpdateWotbAccountRequest;
 import com.wotb.web.user.dto.UserProfileDto;
 import com.wotb.web.user.service.UserProfileService;
@@ -25,12 +25,12 @@ import java.util.List;
 public class UserProfileController {
 
     private final UserProfileService service;
-    private final LeaderboardService leaderboardService;
+    private final HallOfFameService hallOfFameService;
 
     public UserProfileController(final UserProfileService service,
-                                  final LeaderboardService leaderboardService) {
+                                  final HallOfFameService hallOfFameService) {
         this.service = service;
-        this.leaderboardService = leaderboardService;
+        this.hallOfFameService = hallOfFameService;
     }
 
     /** 查询当前用户资料。未创建 → 404。 */
@@ -65,13 +65,13 @@ public class UserProfileController {
         return service.deleteWotbAccount(JwtUtil.requireUserId());
     }
 
-    /** 当前用户的排行榜战绩。 */
+    /** 当前用户的个人名人堂战绩。 */
     @GetMapping("/profile/records")
-    public List<LeaderboardRecordDto> myRecords() {
+    public List<HallOfFameRecordDto> myRecords() {
         final var profileOpt = service.findByKeycloakUserId(JwtUtil.requireUserId());
         if (profileOpt.isEmpty() || profileOpt.get().wotbAccountId() == null) {
             return List.of();
         }
-        return leaderboardService.recordsByAccountId(profileOpt.get().wotbAccountId(), 50);
+        return hallOfFameService.recordsByAccountId(profileOpt.get().wotbAccountId(), 50);
     }
 }
