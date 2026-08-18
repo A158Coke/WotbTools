@@ -225,6 +225,59 @@ class DeathTimeReconcilerTest {
                 "alive 证据早于 legacy，不构成否决");
     }
 
+    // ================= 最后权威 lifecycle state：旧 death 不能压过更晚的 alive =================
+
+    /** Test A：死亡 → 复生（60s dead EXACT → 70s alive EXACT），最终死亡证据缺失 → UNKNOWN，绝不能 60。 */
+    @Test
+    void earlyDeathRefutedByLaterAliveIsUnknown() {
+        final PlayerResult p = deadPlayer(1001L, "A", 1, 0.0); // legacy 无估算
+        final Battle battle = battle(300.0, p);
+
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(mappingEvent(1, 10, 1001L));
+        events.add(exactDeath(2, 60f, 10));     // 早期死亡
+        events.add(exactAlive(3, 70f, 10, 2000)); // 复生，之后无新的 alive=false
+
+        reconcile(battle, events, resolveMapping(battle, events));
+
+        assertEquals(0.0, PlayerResultFormat.deathSec(p), 1e-9,
+                "60s 的旧死亡已被 70s 复生否决，不得作为最终 deathSec");
+    }
+
+    /** Test C：同 timestamp，alive event sequence 更晚 → 最终权威状态 alive，60s dead 不得成为最终死亡证据。 */
+    @Test
+    void sameTimestampAliveLaterWins() {
+        final PlayerResult p = deadPlayer(1001L, "A", 1, 0.0);
+        final Battle battle = battle(300.0, p);
+
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(mappingEvent(1, 10, 1001L));
+        events.add(hp(100, 60f, 10, 0, false, DecodeConfidence.EXACT));    // seq100 dead
+        events.add(hp(101, 60f, 10, 2000, true, DecodeConfidence.EXACT)); // seq101 alive（更晚）
+
+        reconcile(battle, events, resolveMapping(battle, events));
+
+        assertEquals(0.0, PlayerResultFormat.deathSec(p), 1e-9,
+                "同秒 sequence 更晚的 alive 是最后权威状态，60s dead 不得成为最终死亡证据");
+    }
+
+    /** Test D：同 timestamp，dead event sequence 更晚 → 最终权威状态 dead → deathSec=60。 */
+    @Test
+    void sameTimestampDeadLaterWins() {
+        final PlayerResult p = deadPlayer(1001L, "A", 1, 0.0);
+        final Battle battle = battle(300.0, p);
+
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(mappingEvent(1, 10, 1001L));
+        events.add(hp(100, 60f, 10, 2000, true, DecodeConfidence.EXACT)); // seq100 alive
+        events.add(hp(101, 60f, 10, 0, false, DecodeConfidence.EXACT));   // seq101 dead（更晚）
+
+        reconcile(battle, events, resolveMapping(battle, events));
+
+        assertEquals(60.0, PlayerResultFormat.deathSec(p), 1e-9,
+                "同秒 sequence 更晚的 dead 是最后权威状态 → 最终死亡时刻 60s");
+    }
+
     // ================= 真实 IS-4 regression（必须持续通过） =================
 
     @Test
