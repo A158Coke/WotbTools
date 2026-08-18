@@ -1,5 +1,13 @@
 [
   {
+    "v": "2.12.0",
+    "date": "2026-08-18",
+    "tag": "add",
+    "zh": "名人堂新增「百场」排行榜：每辆 Tier X 车辆独立排行（生涯场均伤害，人工审核认证），公开展示排名 / 游戏昵称 / 场均伤害 / 战斗场次 / 认证日期；提交成绩需上传 1 张成绩截图与正好 5 个回放（回放仅用于验证账号与车辆，不公开、不下载）；个人中心可查看当前认证成绩、审核中的申请（可一键撤销）与最近拒绝原因。",
+    "en": "The Hall of Fame gains a 100-battles leaderboard: each Tier X vehicle ranks independently by career average damage (human-verified), showing rank, player nickname, average damage, battles played and certification date; submitting a score requires 1 proof screenshot and exactly 5 replays (replays only verify the account and vehicle - they are never published or downloadable); your profile shows your current certified records, pending submissions (withdrawable in one click) and recent rejection reasons.",
+    "ru": "В Зале славы появился рейтинг «100 боёв»: для каждой машины Tier X свой рейтинг по среднему урону за карьеру (подтверждается вручную), с местом, ником игрока, средним уроном, числом боёв и датой сертификации; для подачи результата нужны 1 скриншот-доказательство и ровно 5 реплеев (реплеи лишь подтверждают аккаунт и машину - они не публикуются и не скачиваются); в профиле видны текущие сертифицированные рекорды, заявки на проверке (отзыв в один клик) и причины последних отказов."
+  },
+  {
     "v": "2.11.23",
     "date": "2026-08-18",
     "tag": "chg",
