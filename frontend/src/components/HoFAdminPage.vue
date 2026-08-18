@@ -282,6 +282,11 @@ async function confirmApprove() {
     actionMsg.value = apiErrorLabel(t, te, { code: 'HUNDRED_INVALID_APPROVED' })
     return
   }
+  // 百场资格前端 UX 校验（backend 仍为 authoritative boundary）
+  if (battles < 100) {
+    actionMsg.value = t('hundredAdmin.approvedBattlesMin')
+    return
+  }
   actionBusy.value = true
   actionMsg.value = ''
   try {
@@ -619,7 +624,7 @@ function battleTypeLabel(tp) {
                   <input v-model.number="approveDamage" type="number" min="1" step="1" />
                 </label>
                 <label>{{ $t('hundredAdmin.approvedBattles') }}
-                  <input v-model.number="approveBattles" type="number" min="1" step="1" />
+                  <input v-model.number="approveBattles" type="number" min="100" step="1" />
                 </label>
               </div>
             </div>
@@ -670,7 +675,7 @@ function battleTypeLabel(tp) {
               <label class="hundred-reason-label">{{ $t('hundredAdmin.rejectReason') }}</label>
               <select v-model="rejectReason">
                 <option value="">{{ $t('hundredAdmin.rejectReasonRequired') }}</option>
-                <option v-for="(label, key) in $t('hundredAdmin.rejectReasonOptions')" :key="key" :value="key">{{ label }}</option>
+                <option v-for="(label, key) in $tm('hundredAdmin.rejectReasonOptions')" :key="key" :value="key">{{ label }}</option>
               </select>
               <textarea v-model="rejectReasonText" rows="2" :placeholder="$t('hundredAdmin.rejectReasonPlaceholder')"></textarea>
               <p class="hundred-confirm">{{ $t('hundredAdmin.rejectConfirm') }}</p>
@@ -699,7 +704,7 @@ function battleTypeLabel(tp) {
           <label class="hundred-reason-label">{{ $t('hundredAdmin.deleteReason') }}</label>
           <select v-model="hundredDeleteReason">
             <option value="">{{ $t('hundredAdmin.deleteReasonRequired') }}</option>
-            <option v-for="(label, key) in $t('hundredAdmin.deleteReasonOptions')" :key="key" :value="key">{{ label }}</option>
+            <option v-for="(label, key) in $tm('hundredAdmin.deleteReasonOptions')" :key="key" :value="key">{{ label }}</option>
           </select>
           <textarea v-model="hundredDeleteReasonText" rows="2" :placeholder="$t('hundredAdmin.deleteReasonPlaceholder')"></textarea>
           <p class="hundred-confirm">{{ $t('hundredAdmin.deleteConfirm') }}</p>

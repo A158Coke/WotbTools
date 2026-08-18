@@ -316,7 +316,8 @@
         "noPending": "暂无申请",
         "noRejected": "暂无拒绝记录",
         "reviewStatus": "审核中",
-        "certified": "已认证"
+        "certified": "已认证",
+        "pendingExistsLocal": "该车辆的百场成绩正在审核中，不能重复提交"
     },
     "hundredAdmin": {
         "tab": "百场审核",
@@ -388,7 +389,8 @@
         "pageInfo": "第 {page}/{total} 页 · 共 {items} 条",
         "size": "每页",
         "close": "关闭",
-        "cancel": "取消"
+        "cancel": "取消",
+        "approvedBattlesMin": "通过场次不能少于 100 场"
     },
     "player_labels": {
         "nickname": "玩家",
@@ -934,7 +936,8 @@
         "HUNDRED_INVALID_APPROVED": "通过数值必须为正整数",
         "HUNDRED_SUBMISSION_NOT_FOUND": "百场申请不存在",
         "PROOF_SCREENSHOT_REQUIRED": "请上传成绩截图",
-        "INVALID_HUNDRED_STATUS": "无效的百场状态"
+        "INVALID_HUNDRED_STATUS": "无效的百场状态",
+        "HUNDRED_APPROVED_BATTLE_COUNT_TOO_LOW": "通过场次必须不少于 100 场（百场资格）"
     },
     "admin": {
         "title": "用户管理",

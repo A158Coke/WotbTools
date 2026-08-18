@@ -58,6 +58,9 @@ public class HundredBattleSubmissionService {
     private static final int MAX_PAGE_SIZE = 100;
     private static final int REPLAY_COUNT = 5;
 
+    /** 「百场」资格最低场次：管理员最终 approvedBattleCount 必须 ≥ 100（人工审核为最终资格判断）。 */
+    private static final int MIN_APPROVED_BATTLE_COUNT = 100;
+
     /** 拒绝原因分类（docs/current-plan.md §32）。 */
     private static final Set<String> REJECT_CATEGORIES = Set.of(
             "SCREENSHOT_MISMATCH", "SCREENSHOT_UNREADABLE", "INSUFFICIENT_PROOF", "SUSPECTED_FRAUD", "OTHER");
@@ -116,6 +119,12 @@ public class HundredBattleSubmissionService {
         }
         ReplayUploadValidator.validate(replays.toArray(new MultipartFile[0]));
 
+        // PENDING 唯一性 cheap check：明知已有同车 PENDING 时不再解析 5 个 replay；
+        // 并发竞态仍由 DB partial unique index 兜底（见下方 saveAndFlush 的 catch）。
+        if (repository.existsByUserKeycloakIdAndVehicleIdAndStatus(userId, vehicleId, "PENDING")) {
+            throw new IllegalStateException("HUNDRED_PENDING_EXISTS");
+        }
+
         // 硬门禁：5 个 replay 全部解析成功 + gameId/vehicleId 匹配 + 5 场不同 battle。
         final Set<String> arenaIds = new HashSet<>();
         for (final MultipartFile file : replays) {
@@ -138,10 +147,6 @@ public class HundredBattleSubmissionService {
             throw new IllegalArgumentException("HUNDRED_REPLAY_DUPLICATE_BATTLE");
         }
 
-        // PENDING 唯一性（DB partial unique index 兜底并发竞态）。
-        if (repository.existsByUserKeycloakIdAndVehicleIdAndStatus(userId, vehicleId, "PENDING")) {
-            throw new IllegalStateException("HUNDRED_PENDING_EXISTS");
-        }
         // CURRENT 门槛：新成绩必须严格高于当前 CURRENT（无 CURRENT 时允许重新开始）。
         final HundredBattleSubmission current = repository
                 .findByUserKeycloakIdAndVehicleIdAndStatus(userId, vehicleId, "CURRENT").orElse(null);
@@ -271,6 +276,10 @@ public class HundredBattleSubmissionService {
         if (approvedAverageDamage <= 0 || approvedBattleCount <= 0) {
             throw new IllegalArgumentException("HUNDRED_INVALID_APPROVED");
         }
+        // 「百场」资格：管理员最终 approvedBattleCount 必须 ≥ 100（backend authoritative；前端仅 UX）。
+        if (approvedBattleCount < MIN_APPROVED_BATTLE_COUNT) {
+            throw new IllegalArgumentException("HUNDRED_APPROVED_BATTLE_COUNT_TOO_LOW");
+        }
         final HundredBattleSubmission submission = repository.findByIdForUpdate(submissionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "HUNDRED_SUBMISSION_NOT_FOUND"));
         requirePending(submission);
@@ -284,7 +293,10 @@ public class HundredBattleSubmissionService {
         }
         if (current != null) {
             current.setStatus(HundredBattleStatus.SUPERSEDED.name());
-            repository.save(current);
+            // 显式 flush：让旧行先退出 CURRENT partial unique index（不能依赖 Hibernate
+            // flush 顺序等于调用顺序）；整个 approve 仍是一个 @Transactional，后半段失败
+            // 时本 UPDATE 随事务一并 rollback。
+            repository.saveAndFlush(current);
         }
         submission.setApprovedAverageDamage(approvedAverageDamage);
         submission.setApprovedBattleCount(approvedBattleCount);
@@ -292,7 +304,7 @@ public class HundredBattleSubmissionService {
         submission.setApprovedAt(OffsetDateTime.now());
         submission.setApprovedBy(adminUserId);
         submission.setProofScreenshot(null);
-        return mapper.toSummary(repository.save(submission));
+        return mapper.toSummary(repository.saveAndFlush(submission));
     }
 
     /** REJECT：原因强制（OTHER 必须填文本）；proof 截图同事务清空；CURRENT 不变。 */

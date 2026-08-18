@@ -356,6 +356,11 @@ async function submitHundred() {
     submitError.value = t('hundred.fillRequired')
     return
   }
+  // 提交前本地提示：所选车辆已有 PENDING 时立即阻止（backend 409 仍保留为最终兜底）。
+  if (pendingList.value.some(p => Number(p.vehicleId) === Number(submitForm.vehicleId))) {
+    submitError.value = t('hundred.pendingExistsLocal')
+    return
+  }
   submitting.value = true
   submitError.value = ''
   needProfile.value = false
