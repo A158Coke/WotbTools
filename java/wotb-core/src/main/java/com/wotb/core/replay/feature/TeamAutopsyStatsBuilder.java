@@ -58,7 +58,8 @@ public final class TeamAutopsyStatsBuilder {
             index++;
             final String playerKey = "P" + index;
             final double deathSec = PlayerResultFormat.deathSec(p);
-            final boolean hasDeathData = !p.survived && duration > 0 && deathSec >= 0;
+            // deathSec<=0 = 死亡时刻未知（结算缺失 + 事件流被 alive 证据否决/无证据）：不得当作 0s 阵亡或早期阵亡
+            final boolean hasDeathData = !p.survived && duration > 0 && deathSec > 0;
             final boolean earlyDeath = hasDeathData
                     && deathSec < duration * EARLY_DEATH_DURATION_RATIO;
             final boolean weakOutput = meanDamage > 0
@@ -67,7 +68,7 @@ public final class TeamAutopsyStatsBuilder {
                     || p.accountId != recorderAccountId;
             DecodeConfidence windowConfidence = DecodeConfidence.UNKNOWN;
             boolean deathInWindow = false;
-            if (!p.survived) {
+            if (!p.survived && deathSec > 0) {
                 for (final AiEvidence w : windows) {
                     if (w != null && deathSec >= w.startSec() && deathSec <= w.endSec()) {
                         deathInWindow = true;
