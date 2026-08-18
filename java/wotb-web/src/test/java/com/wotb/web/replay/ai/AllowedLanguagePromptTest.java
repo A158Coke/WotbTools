@@ -4,7 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
@@ -16,7 +18,18 @@ import com.wotb.core.processing.ReplayPerspectiveGroup;
 import com.wotb.core.processing.ReplayProcessingCapabilities;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
+import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.HealthChangedEvent;
+import com.wotb.core.replay.event.ParticipantMappingEvent;
+import com.wotb.core.replay.event.PositionChangedEvent;
+import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.ReplayTimestamp;
+import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
+import com.wotb.core.replay.reconstruction.ReplayCoverage;
+import com.wotb.core.replay.reconstruction.ReplayMetadata;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
+import com.wotb.core.replay.stream.ReplayStreamHeader;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiChatResponse;
@@ -230,8 +243,33 @@ class AllowedLanguagePromptTest {
                 "stub.wotbreplay", ReplayProcessingStatus.PARTIAL_SUCCESS,
                 new com.wotb.core.processing.ReplayIdentity(
                         "h", "stub", "11.0", "team_map", 1001L, null),
-                battle, (ReplayReconstruction) null, null, capabilities, null, null);
+                battle, teamRecon(), null, capabilities, null, null);
         return new BatchAnalyzer().analyze(List.of(result)).groups().getFirst();
+    }
+
+    /** 有效团队 reconstruction（IDENTIFIED battle-relative 时钟 + 双方实体位置/血量）：通过 Team hard gate。 */
+    private static ReplayReconstruction teamRecon() {
+        final ReplayMetadata meta = new ReplayMetadata(
+                "arena", "team_map", "1", "1", 2, "rec1", "", 300.0, 0L);
+        final ReplayStreamHeader header = new ReplayStreamHeader(0x12345678L, new byte[8], "h", "v", 15);
+        final ReplayCoverage coverage = new ReplayCoverage(true, 4, 4, 0, 0, 0, 1.0, Map.of());
+        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
+                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true, 1000f, true);
+        final List<ReplayEvent> events = new ArrayList<>();
+        events.add(new ParticipantMappingEvent(0, new ReplayTimestamp(1000f, null), 8,
+                DecodeConfidence.EXACT, 1, 1001L));
+        events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(1000f, null), 8,
+                DecodeConfidence.EXACT, 2, 2001L));
+        events.add(new PositionChangedEvent(2, new ReplayTimestamp(1000f, null), 10,
+                DecodeConfidence.EXACT, 1, 0, 0, 10f, 0f, 10f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
+        events.add(new PositionChangedEvent(3, new ReplayTimestamp(1000f, null), 10,
+                DecodeConfidence.EXACT, 2, 0, 0, -10f, 0f, -10f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
+        events.add(new HealthChangedEvent(4, new ReplayTimestamp(1000f, null), 7,
+                DecodeConfidence.EXACT, 1, 2000, null, true));
+        events.add(new HealthChangedEvent(5, new ReplayTimestamp(1000f, null), 7,
+                DecodeConfidence.EXACT, 2, 1500, null, true));
+        return new ReplayReconstruction(meta, header, 300f, 1000f, List.of(),
+                events, List.of(), BattleStateSnapshot.empty(), coverage, diag);
     }
 
     private static PlayerResult player(final long id, final String name,

@@ -1118,6 +1118,7 @@
             "AI_TIMEOUT": "The AI provider timed out. Please try again later.",
             "AI_EMPTY_RESPONSE": "The AI provider returned an empty result. Please retry.",
             "AI_RESPONSE_INVALID": "The AI provider returned an invalid result. Please retry.",
+            "AI_TIMELINE_UNUSABLE": "This replay lacks enough battle-timeline data for an AI review.",
             "NO_BATTLE_DATA": "No analyzable battle data was found in the replay.",
             "UNSUPPORTED_BATTLE_CATEGORY": "This battle category is not supported for AI review.",
             "PERSPECTIVE_TEAM_UNRESOLVED": "The recorder's team could not be resolved reliably; AI was not called.",

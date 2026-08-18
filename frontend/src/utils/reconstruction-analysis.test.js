@@ -15,6 +15,12 @@ describe('reconstruction analysis presentation', () => {
       .toBe('recon.errors.FILE_TOO_LARGE')
     expect(localizeAiError('AI_REVIEW_BUSY', 503, t))
       .toBe('recon.errors.AI_REVIEW_BUSY')
+    expect(localizeAiError('AI_TIMELINE_UNUSABLE', 200, t))
+      .toBe('recon.errors.AI_TIMELINE_UNUSABLE')
+    // 防御性契约：后端一旦泄露 detail（内部 TIMELINE_* / NO_RECONSTRUCTION），
+    // 前端不得本地化内部码，只落到通用 HTTP 错误（内部码绝不出现在 UI）。
+    expect(localizeAiError('AI_TIMELINE_UNUSABLE:[TIMELINE_CLOCK_UNRESOLVED]', 200, t))
+      .toBe('recon.ai_error_http:200')
     expect(localizeAiError({ code: 'REPLAY_FILE_COUNT_EXCEEDED' }, 400, t))
       .toBe('recon.errors.REPLAY_FILE_COUNT_EXCEEDED:1')
     expect(localizeAiError({ code: 'REPLAY_FILE_COUNT_EXCEEDED', maxFiles: 3 }, 400, t))
