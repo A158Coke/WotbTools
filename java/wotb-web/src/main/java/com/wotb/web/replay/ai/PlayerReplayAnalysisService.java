@@ -11,10 +11,14 @@ import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.replay.timeline.BattleTimelineBuilder;
+import com.wotb.core.replay.timeline.BattleTimelineResult;
+import com.wotb.core.replay.timeline.TimelinePerspective;
 
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
+import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -136,13 +140,22 @@ public class PlayerReplayAnalysisService {
                                                  final AllowedLanguage language,
                                                  final AiReviewStreamListener listener) {
         if (result.battle() == null) throw new IllegalArgumentException("NO_BATTLE_DATA");
+        // docs/current-plan.md §3：无法构建 canonical BattleTimeline → 拒绝 AI Review，
+        // 禁止 settlement-only fallback 仍然调用 AI。
         if (result.reconstruction() == null) {
-            return analyze(result.battle(), null, language, listener);
+            throw new AiTimelineUnusableException("NO_RECONSTRUCTION");
         }
 
         final var recorder = AnalysisUnitAssembler.findRecorder(result);
         if (!recorder.resolved()) {
-            return analyze(result.battle(), result.reconstruction(), language, listener);
+            throw new AiTimelineUnusableException("RECORDER_UNRESOLVED");
+        }
+        // 个人复盘 Timeline 门禁：recorder 身份可用后立即构建 canonical timeline
+        final BattleTimelineResult timelineResult = BattleTimelineBuilder.build(
+                result.battle(), result.reconstruction(),
+                TimelinePerspective.personal(recorder.accountId(), recorder.team()));
+        if (!timelineResult.usable()) {
+            throw new AiTimelineUnusableException(timelineResult.validation().errors());
         }
 
         final PlayerBattleFeatureSet features;

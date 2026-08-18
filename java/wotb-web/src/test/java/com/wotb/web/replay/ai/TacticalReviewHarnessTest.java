@@ -14,7 +14,9 @@ import com.wotb.core.model.PlayerResult;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.ParticipantMappingEvent;
+import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.reconstruction.BattleLifecycle;
 import com.wotb.core.replay.reconstruction.BattleParticipant;
@@ -164,11 +166,23 @@ class TacticalReviewHarnessTest {
         final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
                 0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(),
                 true, 1000f, true);
+        // 事件流必须足以构建 canonical timeline：映射 + 位置 + 血量 + 伤害
         final List<com.wotb.core.replay.event.ReplayEvent> events = List.of(
                 new ParticipantMappingEvent(
                         0, new ReplayTimestamp(1000f, 0f), 8, DecodeConfidence.EXACT, 1, 1001),
+                new ParticipantMappingEvent(
+                        1, new ReplayTimestamp(1000f, 0f), 8, DecodeConfidence.EXACT, 4, 2001),
+                new PositionChangedEvent(
+                        2, new ReplayTimestamp(1000f, 0f), 10, DecodeConfidence.EXACT,
+                        1, 0, 0, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0),
+                new PositionChangedEvent(
+                        3, new ReplayTimestamp(1010f, 10f), 10, DecodeConfidence.EXACT,
+                        4, 0, 0, -10f, 0f, -10f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0),
+                new HealthChangedEvent(
+                        4, new ReplayTimestamp(1000f, 0f), 7, DecodeConfidence.EXACT,
+                        1, 1000, null, true),
                 new DamageEvent(
-                        1, new ReplayTimestamp(1010f, 10f), 8, DecodeConfidence.EXACT,
+                        5, new ReplayTimestamp(1010f, 10f), 8, DecodeConfidence.EXACT,
                         1, 4, null, null, 420, false));
         final List<BattleStateCheckpoint> checkpoints = List.of(
                 cp(1000f, 1, 1001, 1, 1000, 0f, 0f),
@@ -222,10 +236,12 @@ class TacticalReviewHarnessTest {
     }
 
     @Test
-    void noReconstructionFallsBackToOldPath() {
-        final AnalyzeResult result = harness(gateway(PRIOR_JSON))
-                .analyze(result(null), AllowedLanguage.ZH);
-        assertEquals("old-path-text", result.analysis());
+    void noReconstructionRejectsWithTimelineUnusable() {
+        // docs/current-plan.md §3：无 canonical timeline → 拒绝 AI Review（不走 settlement-only fallback）
+        final com.wotb.web.replay.exception.AiTimelineUnusableException e = assertThrows(
+                com.wotb.web.replay.exception.AiTimelineUnusableException.class,
+                () -> harness(gateway(PRIOR_JSON)).analyze(result(null), AllowedLanguage.ZH));
+        assertTrue(e.getMessage().contains("AI_TIMELINE_UNUSABLE"));
     }
 
     @Test

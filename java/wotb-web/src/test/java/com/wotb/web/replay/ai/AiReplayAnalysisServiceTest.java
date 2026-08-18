@@ -296,14 +296,13 @@ class AiReplayAnalysisServiceTest {
     }
 
     @Test
-    void playerRequestNoRawTeamLabels() {
+    void playerRequestWithoutReconstructionRejectsAiReview() {
+        // docs/current-plan.md §3：无法构建 canonical timeline → 拒绝 AI Review，不走 settlement-only
         final var service = startService();
-        final var result = service.analyzePlayerOrFallback(randomResultWithoutReconstruction());
-        assertNotNull(result.analysis());
-        assertFalse(lastBody().contains("队伍1"));
-        assertFalse(lastBody().contains("队伍2"));
-        assertFalse(lastBody().contains("Team 1"));
-        assertFalse(lastBody().contains("Team 2"));
+        final com.wotb.web.replay.exception.AiTimelineUnusableException e = assertThrows(
+                com.wotb.web.replay.exception.AiTimelineUnusableException.class,
+                () -> service.analyzePlayerOrFallback(randomResultWithoutReconstruction()));
+        assertTrue(e.getMessage().contains("AI_TIMELINE_UNUSABLE"));
     }
 
     @Test
@@ -540,16 +539,16 @@ class AiReplayAnalysisServiceTest {
     }
 
     @Test
-    void playerSummaryFallbackStillCallsProviderOnce() {
-        final var service = spy(new PlayerReplayAnalysisService(
+    void playerSummaryFallbackWithoutReconstructionNeverCallsProvider() {
+        // 无重建 → 拒绝：绝不调用 AI（settlement-only fallback 已按 V2 移除）
+        final var service = new PlayerReplayAnalysisService(
                 gateway, new AiReplayAnalysisConfig(
                         new ConservativeDeepSeekTokenEstimator(), "test-model",
-                        30000, 131072, 8192, 1000, true, "high", 315)));
-        doReturn(new AnalyzeResult("summary analysis"))
-                .when(service).analyze(any(), any(), any(AllowedLanguage.class), any());
-        service.analyzePlayerOrFallback(randomResultWithoutReconstruction());
-        verify(service, times(1)).analyze(any(), any(), any(AllowedLanguage.class), any());
-        verify(service, never()).analyzePlayerContext(any());
+                        30000, 131072, 8192, 1000, true, "high", 315));
+        assertThrows(com.wotb.web.replay.exception.AiTimelineUnusableException.class,
+                () -> service.analyzePlayerOrFallback(randomResultWithoutReconstruction()));
+        assertTrue(gateway.requests.isEmpty(),
+                "无重建时必须拒绝，绝不调用 AI Gateway");
     }
 
     // ========== Full feature path (analyzePlayerContext) ==========

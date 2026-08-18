@@ -15,6 +15,9 @@ import com.wotb.core.replay.feature.BattlePhaseSummary;
 import com.wotb.core.replay.feature.KeyBattleEvent;
 import com.wotb.core.replay.feature.SinglePlayerBattleAnalysisContext;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.replay.timeline.BattleTimelineBuilder;
+import com.wotb.core.replay.timeline.BattleTimelineResult;
+import com.wotb.core.replay.timeline.TimelinePerspective;
 import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.ArrayList;
@@ -61,13 +64,43 @@ final class PlayerSummaryBuilder {
         final String pointsSection = recorderTeam == null ? ""
                 : PointsSituationEvidence.renderSection(
                         battle, recon, recorderTeam, true, "你的队伍", "敌方");
+        // Canonical Timeline 段：fallback 不再是 settlement-only——时间线化主叙事注入
+        // （docs/current-plan.md §3/§33；recon 或 recorder 缺失时自动省略）
+        final String timelineSection = timelineSection(battle, recon);
         final String summary = buildSummary(battle, recon, keyEvents)
                 + (phaseSection.isEmpty() ? "" : "\n" + phaseSection)
                 + (enemySection.isEmpty() ? "" : "\n" + enemySection)
-                + (pointsSection.isEmpty() ? "" : "\n" + pointsSection);
+                + (pointsSection.isEmpty() ? "" : "\n" + pointsSection)
+                + (timelineSection.isEmpty() ? "" : "\n" + timelineSection);
         final String systemPrompt = PlayerPromptRules.localizePlayerSystemPrompt(PlayerPromptRules.SYSTEM_PROMPT, language);
         return new PreparedAiPrompt(systemPrompt, summary, "SINGLE_PLAYER_SUMMARY",
                 EvidenceDensity.LEVEL_1_COMPRESSED, 0);
+    }
+
+    /**
+     * 构建 fallback 的个人 canonical timeline 段（不抛错：不可用时省略）。
+     */
+    static String timelineSection(final Battle battle, final ReplayReconstruction recon) {
+        if (battle == null || recon == null) {
+            return "";
+        }
+        try {
+            final PlayerResult recorder = battle.recorderResult();
+            if (recorder == null || recorder.accountId <= 0 || recorder.team <= 0) {
+                return "";
+            }
+            final BattleTimelineResult result = BattleTimelineBuilder.build(
+                    battle, recon, TimelinePerspective.personal(
+                            recorder.accountId, recorder.team));
+            if (!result.usable()) {
+                return "";
+            }
+            return "\n======================== TACTICAL TIMELINE（时间有序战局章节·battle-relative 确定性） ========================\n"
+                    + PersonalAiContextCompiler.renderTimelineSection(result.timeline(), recorder.accountId);
+        } catch (final RuntimeException e) {
+            // Timeline 构建失败不阻断 fallback（上游门禁已拦截不可用 replay）
+            return "";
+        }
     }
 
     /**

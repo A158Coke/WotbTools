@@ -5,12 +5,17 @@ import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.replay.evidence.EvidenceSkillContext;
 import com.wotb.core.replay.evidence.EvidenceSkillEngine;
 import com.wotb.core.replay.evidence.EvidenceSkillResult;
+import com.wotb.core.replay.timeline.BattleTimeline;
+import com.wotb.core.replay.timeline.BattleTimelineBuilder;
+import com.wotb.core.replay.timeline.BattleTimelineResult;
+import com.wotb.core.replay.timeline.TimelinePerspective;
 import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.web.replay.ai.gateway.AiChatGateway;
 import com.wotb.web.replay.ai.gateway.AiChatRequest;
 import com.wotb.web.replay.ai.gateway.AiReplayAnalysisConfig;
 import com.wotb.web.replay.ai.gateway.AiRequestContext;
+import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -110,13 +115,25 @@ public class TacticalReviewHarness {
         if (!preBattleService.isConfigured()) {
             return new HarnessOutcome(fallback(result, language, "AI_NOT_CONFIGURED", listener), null);
         }
+        // docs/current-plan.md §3：无 canonical timeline 可用 → 拒绝 AI Review（不走 settlement-only fallback）
         if (result.reconstruction() == null) {
-            return new HarnessOutcome(fallback(result, language, "NO_RECONSTRUCTION", listener), null);
+            LOGGER.info("Harness rejecting AI review: NO_RECONSTRUCTION (timeline unusable)");
+            throw new AiTimelineUnusableException("NO_RECONSTRUCTION");
         }
         final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(result);
         if (!recorder.resolved()) {
-            return new HarnessOutcome(fallback(result, language, "RECORDER_UNRESOLVED", listener), null);
+            LOGGER.info("Harness rejecting AI review: RECORDER_UNRESOLVED (timeline unusable)");
+            throw new AiTimelineUnusableException("RECORDER_UNRESOLVED");
         }
+        final BattleTimelineResult timelineResult = BattleTimelineBuilder.build(
+                result.battle(), result.reconstruction(),
+                TimelinePerspective.personal(recorder.accountId(), recorder.team()));
+        if (!timelineResult.usable()) {
+            LOGGER.info("Harness rejecting AI review: timeline unusable: {}",
+                    timelineResult.validation().errors());
+            throw new AiTimelineUnusableException(timelineResult.validation().errors());
+        }
+        final BattleTimeline timeline = timelineResult.timeline();
         final PlayerBattleFeatureSet features;
         try {
             features = new DefaultPlayerBattleFeatureExtractor().extract(
@@ -156,6 +173,7 @@ public class TacticalReviewHarness {
                         evidence,
                         result.battle(),
                         result.reconstruction(),
+                        timeline,
                         features,
                         recorder,
                         config.estimator(),
@@ -169,6 +187,13 @@ public class TacticalReviewHarness {
                 config.contextWindowTokens(),
                 config.maxOutputTokens(),
                 config.promptSafetyMarginTokens());
+        // Context 可观测性（docs/current-plan.md 38/39）：低基数 section token 估算 + 完成计数
+        if (meterRegistry != null && prepared.sectionTokens() != null) {
+            prepared.sectionTokens().forEach((section, tokens) ->
+                    meterRegistry.counter(
+                            "wotb_ai_review_context_section_tokens", "section", section)
+                            .increment(tokens));
+        }
         final AiChatRequest request = new AiChatRequest(
                 prepared.systemPrompt(),
                 prepared.userContent(),

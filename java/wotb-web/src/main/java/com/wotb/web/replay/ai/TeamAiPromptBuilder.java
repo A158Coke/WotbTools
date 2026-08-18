@@ -3,6 +3,9 @@ package com.wotb.web.replay.ai;
 import com.wotb.core.ai.AiTokenEstimator;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext;
+import com.wotb.core.replay.timeline.BattleTimelineBuilder;
+import com.wotb.core.replay.timeline.BattleTimelineResult;
+import com.wotb.core.replay.timeline.TimelinePerspective;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 
 import java.util.HashMap;
@@ -97,8 +100,10 @@ public final class TeamAiPromptBuilder {
         headerBuf.append("unitLimitations=").append(limitations).append("\n");
         final String headerBlock = headerBuf.toString();
 
+        // Canonical Timeline 时间线段（团队视角·双方对称）：一次性构建，随 optional 预算裁剪
+        final String timelineBlock = teamTimelineBlock(context);
         // 构建所有 optional details（无固定截断；点数局势段作为完整区块参与预算）
-        String optBlock = buildOptionalBlock(context, limitations, true);
+        String optBlock = buildOptionalBlock(context, limitations, true, timelineBlock);
 
         // 如果 mandatory（header + HPF + prior）超出 token 预算，直接抛出异常
         if (estimator != null) {
@@ -108,7 +113,7 @@ public final class TeamAiPromptBuilder {
             }
             // 超预算时整个 POINTS_SITUATION 区块移除（不留半截正文再追加 AI_INPUT_TRUNCATED）
             if (estimator.estimateTextTokens(mandatoryContent + optBlock) > maxInputTokens) {
-                final String optNoPoints = buildOptionalBlock(context, limitations, false);
+                final String optNoPoints = buildOptionalBlock(context, limitations, false, timelineBlock);
                 if (!optNoPoints.equals(optBlock)) {
                     optBlock = optNoPoints;
                 }
@@ -131,9 +136,13 @@ public final class TeamAiPromptBuilder {
     private static String buildOptionalBlock(
             final SingleTeamBattleAnalysisContext context,
             final Set<String> limitations,
-            final boolean includePointsSituation
+            final boolean includePointsSituation,
+            final String timelineBlock
     ) {
         final TeamEvidenceFormatter.BudgetWriter optTemp = new TeamEvidenceFormatter.BudgetWriter();
+        if (timelineBlock != null && !timelineBlock.isBlank()) {
+            optTemp.append(timelineBlock);
+        }
         TeamEvidenceFormatter.appendOptionalDetails(optTemp, context.features(), context.analysisUnitId(),
                 context.battle() == null ? null : context.battle().mapName,
                 context.battle(), context.perspectiveTeam(), List.copyOf(limitations));
@@ -178,6 +187,33 @@ public final class TeamAiPromptBuilder {
         }
         }
         return optTemp.content();
+    }
+
+    /**
+     * 团队 canonical timeline 段（battle + reconstruction + perspectiveTeam；不可用时省略）。
+     * 只表达当时双方已知信息（anti-future-leak 由 timeline 保证），确定性渲染。
+     */
+    static String teamTimelineBlock(final SingleTeamBattleAnalysisContext context) {
+        if (context == null || context.battle() == null || context.reconstruction() == null) {
+            return "";
+        }
+        try {
+            final BattleTimelineResult result = BattleTimelineBuilder.build(
+                    context.battle(), context.reconstruction(),
+                    TimelinePerspective.team(context.perspectiveTeam()));
+            if (!result.usable()) {
+                return "";
+            }
+            final String section = TeamAiContextCompiler.renderTimelineSection(
+                    result.timeline(), context.perspectiveTeam());
+            if (section.isBlank()) {
+                return "";
+            }
+            return "\n=== TACTICAL TIMELINE（时间有序战局章节·battle-relative 确定性） ===\n" + section;
+        } catch (final RuntimeException e) {
+            // Timeline 构建失败不阻断团队复盘（该段省略）
+            return "";
+        }
     }
 
     private static Set<String> collectLimitations(
