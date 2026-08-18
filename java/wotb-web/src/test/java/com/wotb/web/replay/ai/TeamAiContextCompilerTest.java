@@ -114,14 +114,17 @@ class TeamAiContextCompilerTest {
     }
 
     @Test
-    void teamTimelineBlockFromBuilderIsInjectedWhenUsable() {
-        final com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext ctx =
-                new com.wotb.core.replay.feature.SingleTeamBattleAnalysisContext(
-                        "u1", null, "f.wotbreplay",
-                        com.wotb.core.processing.BattleCategory.TRAINING,
-                        battle(), 1, null, null, List.of(), recon());
-        final String block = TeamAiPromptBuilder.teamTimelineBlock(ctx);
+    void renderTimelineBlockInjectsValidatedTimelineSection() {
+        // PR #102 review B1：PromptBuilder 不再内部 build —— 由 orchestration 层验证后
+        // 传入 timeline，renderTimelineBlock 只做确定性渲染。
+        final BattleTimeline timeline = BattleTimelineBuilder.build(
+                battle(), recon(), TimelinePerspective.team(1)).timeline();
+        final String block = TeamAiPromptBuilder.renderTimelineBlock(timeline, 1);
         assertTrue(block.contains("TACTICAL TIMELINE"), "团队 prompt 必须注入 timeline 段");
         assertTrue(block.contains("EPISODE 1"));
+        // 确定性
+        assertTrue(block.equals(TeamAiPromptBuilder.renderTimelineBlock(timeline, 1)));
+        // null（兼容/测试入口未提供 validated timeline）→ 不渲染任何段
+        assertTrue(TeamAiPromptBuilder.renderTimelineBlock(null, 1).isEmpty());
     }
 }

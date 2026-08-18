@@ -31,8 +31,11 @@ import java.util.function.LongSupplier;
  * <p>随机战斗个人复盘不评判 MVP/战犯；Team Autopsy（战犯/MVP）只应用于
  * team perspective（训练房/联赛团队复盘），由 {@link TeamReplayAnalysisService}
  * 以结算级独立 TEAM_AUTOPSY 调用执行。</p>
- * <p>降级阶梯（保持现有单 Call 路径为兜底，用户可感知行为不倒退）：
- * 非 ZH / 无重建 / 录像者未解析 / 特征不可用 / Call #1 失败 / 无证据 → 旧路径。</p>
+ * <p>降级阶梯：非 ZH / 特征不可用 / Call #1 失败 / 无证据 → 旧路径（保持现有单 Call
+ * 路径为兜底，用户可感知行为不倒退）。</p>
+ * <p><b>hard reject（docs/current-plan.md §3，PR #102 review 已确认）</b>：无重建 /
+ * 录像者未解析 / canonical timeline 不可用 → 抛 {@code AiTimelineUnusableException}，
+ * <b>不</b>走旧路径、<b>不</b>调用 LLM（禁止 settlement-only fallback）。</p>
  */
 @Service
 public class TacticalReviewHarness {
