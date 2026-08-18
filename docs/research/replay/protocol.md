@@ -101,21 +101,31 @@ Type8
 
 ## DEATH_TIME_PRECEDENCE（死亡时刻优先级链 · 2026-08 落地）
 
-**结论**：玩家死亡时刻（`PlayerResultFormat#deathSec`，进而 playback 死亡 ✕ 与 AI/阶段/导出）只信
+**结论**：玩家死亡时刻（`PlayerResultFormat#deathSec`，供 playback 死亡 ✕ 与 AI/阶段消费）只信
 可归属到同一实体/账号的可靠死亡证据，优先级：
 
 ```
-1. battle_results 结算 deathTimeMillis（proto #104，游戏权威；>0 时直接采用）
+1. battle_results 结算 deathTimeMillis（proto #104，游戏权威；>0 时直接采用，不校准）
 2. 重建事件流 EXACT alive=false（type-7 propId=3 HP=0 / 0xFFFD 死亡 sentinel，同实体→账号映射，
    取该账号全部实体最后一条 = 最终阵亡；覆盖争霸/复生多次死亡）
-3. legacy 启发式估算（damage-threshold / EntityLeave / Position 停止；仅在无 1/2 证据时兜底）
+3. legacy 启发式估算（damage-threshold / EntityLeave / Position 停止）——仅兜底，且须通过一致性检查：
+   legacy 死亡时刻不得早于该账号最后一条 EXACT alive=true（HP>0）；若被证伪 → UNKNOWN
+   （survivalTimeSec=0，既有 unknown contract：playback deathSec=null、AI 显示「未知」），
+   绝不保留被证伪的值、也不伪造新时刻
 ```
 
 **落地**：`DeathTimeReconciler`（`DefaultReplayProcessingFacade` 重建成功后对
-`deathTimeMillis==0` 且非存活的玩家校准 `survivalTimeSec`）。damage-threshold 启发式只看累计伤害
-是否越过结算承伤阈值、无视同实体 EXACT HP 观测，会因 overcount/装备 HP 差提前越阈把「残血仍存活」
-误判为「已阵亡」（真实样本：IS-4 96.9s 被判死、实际 HP=102 alive、128.12s 才 HP=0）。位置/方向/伤害
-事件不参与推断（阵亡后服务器仍广播死车位置）；`summaryOnly()` 预览/导出路径无重建事件源，保留 legacy。
+`deathTimeMillis==0` 且非存活的玩家校准 `survivalTimeSec`）。**身份只复用**
+`TeamEntityMapper` 产出的权威 `TeamEntityMapping`：冲突实体（同一 entity 归属多账号 → 整体排除）
+与低置信映射（PARTIAL/UNKNOWN → 不可用）的证据一律拒绝；nickname fallback（accountId=0 + 唯一昵称
+→ 权威账号）直接复用——死亡校准的身份可信度与 playback 其它功能一致。damage-threshold 启发式只看
+累计伤害是否越过结算承伤阈值、无视同实体 EXACT HP 观测，会因 overcount/装备 HP 差提前越阈把
+「残血仍存活」误判为「已阵亡」（真实样本：IS-4 96.9s 被判死、实际 HP=102 alive、128.12s 才 HP=0）。
+位置/方向/伤害事件不参与推断（阵亡后服务器仍广播死车位置）。
+
+**覆盖范围**：校准只发生在重建路径（`ReplayProcessingOptions.full()`，即 playback 与 AI 复盘）；
+`summaryOnly()` 预览/导出路径不跑重建（无事件源），其死亡时刻保留 legacy 估算——文档与产品侧
+描述不得夸大「导出全局一致」。
 
 ## 关键结论
 

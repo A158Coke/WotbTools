@@ -123,12 +123,15 @@
 ### Fixed
 - **战局回放死亡时刻校准（`DeathTimeReconciler`）**：死亡时刻优先级链改为「结算 `deathTimeMillis`
   （游戏权威）> 重建事件流 EXACT `alive=false`（HP=0，同实体→账号映射，取最后一条=最终阵亡）>
-  legacy 启发式（damage-threshold / EntityLeave / Position 停止）」。修复结算缺失死亡时刻
-  （如 11.19 回放 proto #104=0）时 legacy damage-threshold 启发式只看累计伤害越阈、无视同实体
-  EXACT HP 观测，把「残血仍存活」提前误判为阵亡的问题——真实样本 IS-4 在 96.9s 被误标
-  （实际 HP=102 alive），校准后死亡时刻 128.12s。`DefaultReplayProcessingFacade` 重建成功后对
-  非存活且结算无死亡时刻的玩家校准 `survivalTimeSec`；`summaryOnly()` 预览/导出路径无重建事件源
-  保留 legacy。前端死亡 ✕ 仍只消费 `deathSec` 单源，无前端改动。
+  legacy 启发式（damage-threshold / EntityLeave / Position 停止，且不得早于最后一条 EXACT
+  `alive=true`——被 alive 证据证伪的 legacy 置 UNKNOWN=0，不保留也不伪造新时刻）」。实体身份
+  只复用 `TeamEntityMapper` 的权威 `TeamEntityMapping`（冲突/低置信实体证据拒绝，nickname
+  fallback 复用）。修复结算缺失死亡时刻（如 11.19 回放 proto #104=0）时 legacy damage-threshold
+  启发式只看累计伤害越阈、无视同实体 EXACT HP 观测，把「残血仍存活」提前误判为阵亡的问题——
+  真实样本 IS-4 在 96.9s 被误标（实际 HP=102 alive），校准后死亡时刻 128.12s。
+  `DefaultReplayProcessingFacade` 重建成功后对非存活且结算无死亡时刻的玩家校准 `survivalTimeSec`；
+  **覆盖范围为重建路径（playback 与 AI 复盘，`full()`）**，`summaryOnly()` 预览/导出路径无重建
+  事件源保留 legacy。前端死亡 ✕ 仍只消费 `deathSec` 单源，无前端改动。
 
 ### Removed
 - **隐藏 admin QA 页 `?view=vehicle-models`（车型预览）**：删除 VehicleModelPreviewPage.vue 及其测试、
