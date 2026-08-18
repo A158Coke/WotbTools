@@ -13,6 +13,11 @@ import com.wotb.core.processing.ReplayProcessingCapabilities;
 import com.wotb.core.processing.ReplayProcessingResult;
 import com.wotb.core.processing.ReplayProcessingStatus;
 import com.wotb.core.replay.event.DecodeConfidence;
+import com.wotb.core.replay.event.HealthChangedEvent;
+import com.wotb.core.replay.event.ParticipantMappingEvent;
+import com.wotb.core.replay.event.PositionChangedEvent;
+import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.ReplayTimestamp;
 import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.processing.BattleCategory;
 import com.wotb.core.replay.feature.KeyBattleEvent;
@@ -23,7 +28,11 @@ import com.wotb.core.replay.feature.TeamAggregateResult;
 import com.wotb.core.replay.feature.TeamBattleFeatureSet;
 import com.wotb.core.replay.feature.TeamFeatureCoverage;
 import com.wotb.core.replay.feature.TeamObservedAggregate;
+import com.wotb.core.replay.reconstruction.BattleStateSnapshot;
 import com.wotb.core.replay.reconstruction.ReplayCoverage;
+import com.wotb.core.replay.reconstruction.ReplayMetadata;
+import com.wotb.core.replay.stream.ReplayStreamDiagnostics;
+import com.wotb.core.replay.stream.ReplayStreamHeader;
 import com.wotb.core.replay.feature.EngagementOutcome;
 import com.wotb.core.replay.feature.EngagementSummary;
 import com.wotb.core.replay.feature.MovementSegment;
@@ -296,22 +305,21 @@ class AiReplayAnalysisServiceTest {
     }
 
     @Test
-    void playerRequestNoRawTeamLabels() {
+    void playerRequestWithoutReconstructionRejectsAiReview() {
+        // docs/current-plan.md §3：无法构建 canonical timeline → 拒绝 AI Review，不走 settlement-only
         final var service = startService();
-        final var result = service.analyzePlayerOrFallback(randomResultWithoutReconstruction());
-        assertNotNull(result.analysis());
-        assertFalse(lastBody().contains("队伍1"));
-        assertFalse(lastBody().contains("队伍2"));
-        assertFalse(lastBody().contains("Team 1"));
-        assertFalse(lastBody().contains("Team 2"));
+        final com.wotb.web.replay.exception.AiTimelineUnusableException e = assertThrows(
+                com.wotb.web.replay.exception.AiTimelineUnusableException.class,
+                () -> service.analyzePlayerOrFallback(randomResultWithoutReconstruction()));
+        assertTrue(e.getMessage().contains("AI_TIMELINE_UNUSABLE"));
     }
 
     @Test
     void multiTeamRequestKeepsOpposingPerspectivesIndependent() {
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResult("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1),
-                teamResult("enemy.wotbreplay", "shared-arena", "Enemy", 2001L, 2)));
+                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1),
+                teamResultWithRecon("enemy.wotbreplay", "shared-arena", "Enemy", 2001L, 2)));
         final var result = service.analyzeTeamGroups(groups);
         assertEquals("team review", result.analysis().analysis());
         // Opposing perspectives now use SEPARATE SINGLE_TEAM calls instead of one MULTI_TEAM call.
@@ -332,7 +340,7 @@ class AiReplayAnalysisServiceTest {
         gateway.preBattleCompletionText = PRIOR_JSON;
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResult("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
+                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
         final var result = service.analyzeTeamGroups(groups);
         assertEquals("team review", result.analysis().analysis(),
                 "analysis must be unaffected by preBattleSection");
@@ -349,7 +357,7 @@ class AiReplayAnalysisServiceTest {
     void teamAnalyzeGroupsNullSectionWhenPriorUnavailable() {
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResult("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
+                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
         final var result = service.analyzeTeamGroups(groups);
         assertEquals("team review", result.analysis().analysis());
         assertNull(result.preBattleSection(),
@@ -361,7 +369,7 @@ class AiReplayAnalysisServiceTest {
         // startService() 使用 4 参构造（call2 thinking 默认开启 true/high），验证团队入口透传
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResult("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
+                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
         service.analyzeTeamGroups(groups);
         final AiChatRequest review = gateway.requests.stream()
                 .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode()))
@@ -377,7 +385,7 @@ class AiReplayAnalysisServiceTest {
     void teamStreamingEmitsEvidenceDoneBeforeReviewCall() {
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResult("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
+                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1)));
         final List<String> stages = new CopyOnWriteArrayList<>();
         final List<String> tokens = new CopyOnWriteArrayList<>();
         service.analyzeTeamGroups(groups, AllowedLanguage.ZH, new AiReviewStreamListener() {
@@ -434,8 +442,8 @@ class AiReplayAnalysisServiceTest {
         gateway.nextCompletionText = "opposing review";
         final var service = startService();
         final List<ReplayPerspectiveGroup> groups = teamGroups(List.of(
-                teamResult("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1),
-                teamResult("enemy.wotbreplay", "shared-arena", "Enemy", 2001L, 2)));
+                teamResultWithRecon("ally.wotbreplay", "shared-arena", "Ally", 1001L, 1),
+                teamResultWithRecon("enemy.wotbreplay", "shared-arena", "Enemy", 2001L, 2)));
         service.analyzeTeamGroups(groups);
         final List<AiChatRequest> teamRequests = teamRequests();
         assertEquals(2, teamRequests.size(),
@@ -540,16 +548,16 @@ class AiReplayAnalysisServiceTest {
     }
 
     @Test
-    void playerSummaryFallbackStillCallsProviderOnce() {
-        final var service = spy(new PlayerReplayAnalysisService(
+    void playerSummaryFallbackWithoutReconstructionNeverCallsProvider() {
+        // 无重建 → 拒绝：绝不调用 AI（settlement-only fallback 已按 V2 移除）
+        final var service = new PlayerReplayAnalysisService(
                 gateway, new AiReplayAnalysisConfig(
                         new ConservativeDeepSeekTokenEstimator(), "test-model",
-                        30000, 131072, 8192, 1000, true, "high", 315)));
-        doReturn(new AnalyzeResult("summary analysis"))
-                .when(service).analyze(any(), any(), any(AllowedLanguage.class), any());
-        service.analyzePlayerOrFallback(randomResultWithoutReconstruction());
-        verify(service, times(1)).analyze(any(), any(), any(AllowedLanguage.class), any());
-        verify(service, never()).analyzePlayerContext(any());
+                        30000, 131072, 8192, 1000, true, "high", 315));
+        assertThrows(com.wotb.web.replay.exception.AiTimelineUnusableException.class,
+                () -> service.analyzePlayerOrFallback(randomResultWithoutReconstruction()));
+        assertTrue(gateway.requests.isEmpty(),
+                "无重建时必须拒绝，绝不调用 AI Gateway");
     }
 
     // ========== Full feature path (analyzePlayerContext) ==========
@@ -939,6 +947,50 @@ class AiReplayAnalysisServiceTest {
                         recorderAccountId, null),
                   battle, null, null, capabilities, null, null);
       }
+
+    /**
+     * {@link #teamResult} 的有效重建变体：通过 Team canonical Timeline hard gate
+     * （PR #102 review B1）—— analyzeTeamGroups 在 LLM 调用前要求 timeline 可构建。
+     */
+    private static ReplayProcessingResult teamResultWithRecon(
+            final String fileName, final String arenaId,
+            final String recorderNickname, final long recorderAccountId,
+            final int recorderTeam) {
+        final ReplayProcessingResult base = teamResult(
+                fileName, arenaId, recorderNickname, recorderAccountId, recorderTeam);
+        return new ReplayProcessingResult(
+                base.fileName(), base.status(), base.identity(), base.battle(),
+                teamReconstruction(base.battle()), base.diagnostics(), base.capabilities(),
+                base.error(), base.reconstructionError());
+    }
+
+    /** 由 battle roster 派生最小有效重建（IDENTIFIED 时钟 + 逐 player 映射/位置/血量）。 */
+    private static ReplayReconstruction teamReconstruction(final Battle battle) {
+        final ReplayMetadata meta = new ReplayMetadata(
+                "arena", "team_map", "1", "1", 2, "rec1", "", 300.0, 0L);
+        final ReplayStreamHeader header = new ReplayStreamHeader(0x12345678L, new byte[8], "h", "v", 15);
+        final ReplayCoverage coverage = new ReplayCoverage(true, 8, 8, 0, 0, 0, 1.0, Map.of());
+        final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(
+                0, 0, 0, 0, 0, 0, 0, 0, 0f, 0f, 0, Map.of(), true, 1000f, true);
+        final List<ReplayEvent> events = new ArrayList<>();
+        int seq = 0;
+        int eid = 1;
+        for (final PlayerResult p : battle.players) {
+            if (p == null || p.accountId <= 0 || p.team <= 0) {
+                continue;
+            }
+            events.add(new ParticipantMappingEvent(seq++, new ReplayTimestamp(1000f, null), 8,
+                    DecodeConfidence.EXACT, eid, p.accountId));
+            final float side = p.team == 1 ? 10f : -10f;
+            events.add(new PositionChangedEvent(seq++, new ReplayTimestamp(1000f, null), 10,
+                    DecodeConfidence.EXACT, eid, 0, 0, side, 0f, side, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
+            events.add(new HealthChangedEvent(seq++, new ReplayTimestamp(1000f, null), 7,
+                    DecodeConfidence.EXACT, eid, p.survived ? 1500 : 0, null, p.survived));
+            eid++;
+        }
+        return new ReplayReconstruction(meta, header, 300f, 1000f, List.of(),
+                events, List.of(), BattleStateSnapshot.empty(), coverage, diag);
+    }
 
     /** 完整 7 名本方玩家 + 1 名敌方的团队回放（Team Autopsy 成功 fixture）。 */
     private static ReplayProcessingResult sevenTeamResult(
