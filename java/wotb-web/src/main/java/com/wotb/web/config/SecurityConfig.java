@@ -34,6 +34,7 @@ import static com.wotb.web.config.ApiPaths.COLUMNS;
 import static com.wotb.web.config.ApiPaths.EXPORT;
 import static com.wotb.web.config.ApiPaths.HEALTH;
 import static com.wotb.web.config.ApiPaths.HOF_ADMIN_PATTERN;
+import static com.wotb.web.config.ApiPaths.HOF_HUNDRED_SUBMISSIONS_PATTERN;
 import static com.wotb.web.config.ApiPaths.HOF_PATTERN;
 import static com.wotb.web.config.ApiPaths.HOF_REPLAY_PATTERN;
 import static com.wotb.web.config.ApiPaths.HOF_UPLOAD;
@@ -74,6 +75,8 @@ public class SecurityConfig {
                         PREVIEW, EXPORT).permitAll()
                 // 名人堂查询公开；上传/下载需登录（必须置于 HOF_PATTERN permitAll 之前）
                 .requestMatchers(HOF_UPLOAD, HOF_REPLAY_PATTERN).authenticated()
+                // 百场：排行榜公开；提交/取消需登录（必须置于 HOF_PATTERN permitAll 之前）
+                .requestMatchers(HOF_HUNDRED_SUBMISSIONS_PATTERN).authenticated()
                 .requestMatchers(HOF_PATTERN).permitAll()
 
                 // --- AI 复盘与批量处理 (wotbtools-user / wotbtools-admin) ---

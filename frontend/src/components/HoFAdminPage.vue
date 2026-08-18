@@ -45,6 +45,34 @@ const auditTotalPages = ref(0)
 const auditTotalItems = ref(0)
 let auditGen = 0
 
+// ── 百场审核 tab ──
+const hundredRows = ref([])
+const hundredLoading = ref(false)
+const hundredPage = ref(1)
+const hundredTotalPages = ref(0)
+const hundredTotalItems = ref(0)
+const hundredStatus = ref('') // '' | PENDING | CURRENT
+let hundredGen = 0
+
+// ── 百场审核弹窗（PENDING 行）──
+const reviewTarget = ref(null)
+const reviewDetail = ref(null)
+const reviewLoading = ref(false)
+const reviewPhase = ref('view') // view | approve-confirm | reject-form
+const approveDamage = ref('')
+const approveBattles = ref('')
+const rejectReason = ref('')
+const rejectReasonText = ref('')
+const actionMsg = ref('')
+const actionBusy = ref(false)
+
+// ── 百场删除弹窗（CURRENT 行）──
+const hundredDeleteTarget = ref(null)
+const hundredDeleteReason = ref('')
+const hundredDeleteReasonText = ref('')
+const hundredDeleteMsg = ref('')
+const hundredDeleting = ref(false)
+
 // ── 删除确认 ──
 const deleteTarget = ref(null)
 const deleting = ref(false)
@@ -102,8 +130,13 @@ function search() {
 }
 
 function onSizeChange() {
-  page.value = 1
-  loadRecords()
+  if (activeTab.value === 'hundred') {
+    hundredPage.value = 1
+    loadHundred()
+  } else {
+    page.value = 1
+    loadRecords()
+  }
 }
 
 function goPage(p) {
@@ -130,6 +163,7 @@ async function loadAudit() {
 function switchTab(tab) {
   activeTab.value = tab
   if (tab === 'audit' && !auditRows.value.length) loadAudit()
+  if (tab === 'hundred' && !hundredRows.value.length) loadHundred()
 }
 
 async function download(id) {
@@ -166,6 +200,177 @@ async function confirmDelete() {
   }
 }
 
+// ── 百场审核 ──────────────────────────────────────────────────
+
+async function loadHundred() {
+  const g = ++hundredGen
+  hundredLoading.value = true
+  error.value = ''
+  try {
+    const params = { page: hundredPage.value, size: size.value }
+    if (hundredStatus.value) params.status = hundredStatus.value
+    const res = await api.hofAdminHundredList(params)
+    if (g !== hundredGen) return
+    hundredRows.value = res.items || []
+    hundredTotalPages.value = res.totalPages || 0
+    hundredTotalItems.value = res.totalItems || 0
+  } catch (e) {
+    if (g === hundredGen) error.value = apiErrorLabel(t, te, e)
+  } finally {
+    if (g === hundredGen) hundredLoading.value = false
+  }
+}
+
+function onHundredStatusChange() {
+  hundredPage.value = 1
+  loadHundred()
+}
+
+function goHundredPage(p) {
+  hundredPage.value = p
+  loadHundred()
+}
+
+function hundredStatusLabel(s) {
+  if (!s) return '-'
+  const k = 'hundredAdmin.status.' + s
+  return te(k) ? t(k) : String(s)
+}
+
+async function openReview(row) {
+  reviewTarget.value = row
+  reviewDetail.value = null
+  reviewLoading.value = true
+  reviewPhase.value = 'view'
+  actionMsg.value = ''
+  actionBusy.value = false
+  approveDamage.value = String(row.claimedAverageDamage ?? '')
+  approveBattles.value = String(row.claimedBattleCount ?? '')
+  rejectReason.value = ''
+  rejectReasonText.value = ''
+  try {
+    reviewDetail.value = await api.hofAdminHundredDetail(row.id)
+  } catch (e) {
+    actionMsg.value = apiErrorLabel(t, te, e)
+  } finally {
+    reviewLoading.value = false
+  }
+}
+
+function closeReview() {
+  if (actionBusy.value) return
+  reviewTarget.value = null
+  reviewDetail.value = null
+  actionMsg.value = ''
+}
+
+function askApprove() {
+  actionMsg.value = ''
+  reviewPhase.value = 'approve-confirm'
+}
+
+function askReject() {
+  actionMsg.value = ''
+  reviewPhase.value = 'reject-form'
+}
+
+async function confirmApprove() {
+  if (actionBusy.value || !reviewTarget.value) return
+  const dmg = Number(approveDamage.value)
+  const battles = Number(approveBattles.value)
+  if (!Number.isInteger(dmg) || dmg <= 0 || !Number.isInteger(battles) || battles <= 0) {
+    actionMsg.value = apiErrorLabel(t, te, { code: 'HUNDRED_INVALID_APPROVED' })
+    return
+  }
+  // 百场资格前端 UX 校验（backend 仍为 authoritative boundary）
+  if (battles < 100) {
+    actionMsg.value = t('hundredAdmin.approvedBattlesMin')
+    return
+  }
+  actionBusy.value = true
+  actionMsg.value = ''
+  try {
+    await api.hofAdminHundredApprove(reviewTarget.value.id, {
+      approvedAverageDamage: dmg,
+      approvedBattleCount: battles,
+    })
+  } catch (e) {
+    actionMsg.value = apiErrorLabel(t, te, e)
+    return
+  } finally {
+    actionBusy.value = false
+  }
+  closeReview()
+  loadHundred()
+}
+
+async function confirmReject() {
+  if (actionBusy.value || !reviewTarget.value) return
+  if (!rejectReason.value) {
+    actionMsg.value = t('hundredAdmin.rejectReasonRequired')
+    return
+  }
+  const text = rejectReasonText.value.trim()
+  if (rejectReason.value === 'OTHER' && !text) {
+    actionMsg.value = t('hundredAdmin.rejectReasonText')
+    return
+  }
+  actionBusy.value = true
+  actionMsg.value = ''
+  try {
+    await api.hofAdminHundredReject(reviewTarget.value.id, {
+      rejectReason: rejectReason.value,
+      ...(text ? { rejectReasonText: text } : {}),
+    })
+  } catch (e) {
+    actionMsg.value = apiErrorLabel(t, te, e)
+    return
+  } finally {
+    actionBusy.value = false
+  }
+  closeReview()
+  loadHundred()
+}
+
+function askHundredDelete(row) {
+  hundredDeleteTarget.value = row
+  hundredDeleteReason.value = ''
+  hundredDeleteReasonText.value = ''
+  hundredDeleteMsg.value = ''
+}
+
+function cancelHundredDelete() {
+  hundredDeleteTarget.value = null
+  hundredDeleteMsg.value = ''
+}
+
+async function confirmHundredDelete() {
+  if (hundredDeleting.value || !hundredDeleteTarget.value) return
+  if (!hundredDeleteReason.value) {
+    hundredDeleteMsg.value = t('hundredAdmin.deleteReasonRequired')
+    return
+  }
+  const text = hundredDeleteReasonText.value.trim()
+  if (hundredDeleteReason.value === 'OTHER' && !text) {
+    hundredDeleteMsg.value = t('hundredAdmin.deleteReasonText')
+    return
+  }
+  hundredDeleting.value = true
+  hundredDeleteMsg.value = ''
+  try {
+    await api.hofAdminHundredDelete(hundredDeleteTarget.value.id, {
+      deleteReason: hundredDeleteReason.value,
+      ...(text ? { deleteReasonText: text } : {}),
+    })
+    cancelHundredDelete()
+    loadHundred()
+  } catch (e) {
+    hundredDeleteMsg.value = apiErrorLabel(t, te, e)
+  } finally {
+    hundredDeleting.value = false
+  }
+}
+
 function fmtTime(s) {
   if (!s) return ''
   const d = new Date(s)
@@ -196,6 +401,7 @@ function battleTypeLabel(tp) {
       <div class="hof-admin-tabs">
         <button :class="{ active: activeTab === 'records' }" @click="switchTab('records')">{{ $t('hofAdmin.recordsTab') }}</button>
         <button :class="{ active: activeTab === 'audit' }" @click="switchTab('audit')">{{ $t('hofAdmin.auditTab') }}</button>
+        <button :class="{ active: activeTab === 'hundred' }" @click="switchTab('hundred')">{{ $t('hundredAdmin.tab') }}</button>
       </div>
 
       <!-- ── 名人堂记录 ── -->
@@ -289,7 +495,7 @@ function battleTypeLabel(tp) {
       </div>
 
       <!-- ── 操作日志（只读）── -->
-      <div v-else>
+      <div v-else-if="activeTab === 'audit'">
         <p v-if="auditLoading" class="muted">{{ $t('hofAdmin.loading') }}</p>
         <p v-else-if="!auditRows.length" class="muted">{{ $t('hofAdmin.auditEmpty') }}</p>
         <div v-else class="tablewrap">
@@ -332,6 +538,183 @@ function battleTypeLabel(tp) {
           <button :disabled="auditPage <= 1" @click="auditPage--; loadAudit()">{{ $t('hofAdmin.prev') }}</button>
           <span>{{ $t('hofAdmin.pageInfo', { page: auditPage, total: auditTotalPages, items: auditTotalItems }) }}</span>
           <button :disabled="auditPage >= auditTotalPages" @click="auditPage++; loadAudit()">{{ $t('hofAdmin.next') }}</button>
+        </div>
+      </div>
+
+      <!-- ── 百场审核 ── -->
+      <div v-else class="hof-hundred">
+        <div class="hof-admin-filters">
+          <select v-model="hundredStatus" @change="onHundredStatusChange">
+            <option value="">{{ $t('hundredAdmin.statusAll') }}</option>
+            <option value="PENDING">{{ $t('hundredAdmin.status.PENDING') }}</option>
+            <option value="CURRENT">{{ $t('hundredAdmin.status.CURRENT') }}</option>
+          </select>
+        </div>
+
+        <p v-if="error" class="error">{{ error }}</p>
+        <p v-if="hundredLoading" class="muted">{{ $t('hundredAdmin.loading') }}</p>
+        <p v-else-if="!hundredRows.length" class="muted">{{ $t('hundredAdmin.empty') }}</p>
+        <div v-else class="tablewrap">
+          <table class="hof-admin-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>{{ $t('hundredAdmin.vehicle') }}</th>
+                <th>{{ $t('hundredAdmin.nicknameSnapshot') }}</th>
+                <th>{{ $t('hundredAdmin.gameId') }}</th>
+                <th>{{ $t('hundredAdmin.claimedDamage') }}</th>
+                <th>{{ $t('hundredAdmin.claimedBattles') }}</th>
+                <th>{{ $t('hundredAdmin.statusLabel') }}</th>
+                <th>{{ $t('hundredAdmin.submittedAt') }}</th>
+                <th>{{ $t('hofAdmin.actions') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in hundredRows" :key="r.id">
+                <td class="muted">{{ r.id }}</td>
+                <td>{{ r.vehicleName }}</td>
+                <td>{{ r.nicknameSnapshot }}</td>
+                <td class="muted">{{ r.gameAccountIdSnapshot }}</td>
+                <td class="dmg">{{ r.claimedAverageDamage ?? '-' }}</td>
+                <td>{{ r.claimedBattleCount ?? '-' }}</td>
+                <td><span class="hundred-status" :class="'hundred-status-' + String(r.status).toLowerCase()">{{ hundredStatusLabel(r.status) }}</span></td>
+                <td class="muted">{{ fmtTime(r.submittedAt) || '-' }}</td>
+                <td class="actions">
+                  <button v-if="r.status === 'PENDING'" class="btn-sm" @click="openReview(r)">{{ $t('hundredAdmin.approve') }}</button>
+                  <button v-if="r.status === 'CURRENT'" class="btn-sm danger" @click="askHundredDelete(r)">{{ $t('hundredAdmin.delete') }}</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-if="hundredTotalPages > 1" class="pagination">
+          <button :disabled="hundredPage <= 1" @click="goHundredPage(hundredPage - 1)">{{ $t('hundredAdmin.prev') }}</button>
+          <span>{{ $t('hundredAdmin.pageInfo', { page: hundredPage, total: hundredTotalPages, items: hundredTotalItems }) }}</span>
+          <button :disabled="hundredPage >= hundredTotalPages" @click="goHundredPage(hundredPage + 1)">{{ $t('hundredAdmin.next') }}</button>
+        </div>
+        <label class="page-size">{{ $t('hundredAdmin.size') }}
+          <select v-model.number="size" @change="onSizeChange">
+            <option :value="20">20</option>
+            <option :value="50">50</option>
+            <option :value="100">100</option>
+          </select>
+        </label>
+      </div>
+
+      <!-- ── 百场审核弹窗（PENDING）── -->
+      <div v-if="reviewTarget" class="modal-overlay" @click.self="closeReview">
+        <div class="modal hof-review-modal">
+          <h3>{{ $t('hundredAdmin.tab') }}</h3>
+          <p v-if="reviewLoading" class="muted">{{ $t('hundredAdmin.loading') }}</p>
+          <template v-else-if="reviewDetail">
+            <table class="hof-delete-table">
+              <tbody>
+                <tr><th>{{ $t('hundredAdmin.user') }}</th><td>{{ reviewDetail.nicknameSnapshot }}</td></tr>
+                <tr><th>{{ $t('hundredAdmin.gameId') }}</th><td class="muted">{{ reviewDetail.gameAccountIdSnapshot }}</td></tr>
+                <tr><th>{{ $t('hundredAdmin.vehicle') }}</th><td>{{ reviewDetail.vehicleName }}</td></tr>
+                <tr><th>{{ $t('hundredAdmin.claimedDamage') }}</th><td class="dmg">{{ reviewDetail.claimedAverageDamage }}</td></tr>
+                <tr><th>{{ $t('hundredAdmin.claimedBattles') }}</th><td>{{ reviewDetail.claimedBattleCount }}</td></tr>
+              </tbody>
+            </table>
+
+            <div class="hundred-review-section">
+              <div class="hundred-review-label">{{ $t('hundredAdmin.approved') }}</div>
+              <div class="hundred-inputs">
+                <label>{{ $t('hundredAdmin.approvedDamage') }}
+                  <input v-model.number="approveDamage" type="number" min="1" step="1" />
+                </label>
+                <label>{{ $t('hundredAdmin.approvedBattles') }}
+                  <input v-model.number="approveBattles" type="number" min="100" step="1" />
+                </label>
+              </div>
+            </div>
+
+            <div class="hundred-review-section">
+              <div class="hundred-review-label">{{ $t('hundredAdmin.screenshot') }}</div>
+              <img v-if="reviewDetail.proofScreenshot" class="hundred-proof" :src="reviewDetail.proofScreenshot" :alt="$t('hundredAdmin.screenshot')" />
+              <span v-else class="hundred-proof-empty">—</span>
+            </div>
+
+            <div class="hundred-review-section">
+              <div class="hundred-review-label">{{ $t('hundredAdmin.replayValidation') }}</div>
+              <ul class="val-list">
+                <li :class="reviewDetail.replayParseOk ? 'val-ok' : 'val-bad'">
+                  <span class="val-mark">{{ reviewDetail.replayParseOk ? '✓' : '✗' }}</span>{{ $t('hundredAdmin.valParsed') }}
+                </li>
+                <li :class="reviewDetail.replayGameIdMatch ? 'val-ok' : 'val-bad'">
+                  <span class="val-mark">{{ reviewDetail.replayGameIdMatch ? '✓' : '✗' }}</span>{{ $t('hundredAdmin.valGameId') }}
+                </li>
+                <li :class="reviewDetail.replayVehicleMatch ? 'val-ok' : 'val-bad'">
+                  <span class="val-mark">{{ reviewDetail.replayVehicleMatch ? '✓' : '✗' }}</span>{{ $t('hundredAdmin.valVehicle') }}
+                </li>
+                <li :class="reviewDetail.replayDistinctBattles ? 'val-ok' : 'val-bad'">
+                  <span class="val-mark">{{ reviewDetail.replayDistinctBattles ? '✓' : '✗' }}</span>{{ $t('hundredAdmin.valDistinct') }}
+                </li>
+              </ul>
+            </div>
+
+            <p v-if="actionMsg" class="error">{{ actionMsg }}</p>
+
+            <div v-if="reviewPhase === 'view'" class="modal-actions">
+              <button class="btn-sm" :disabled="actionBusy" @click="closeReview">{{ $t('hundredAdmin.close') }}</button>
+              <button class="btn-sm danger" :disabled="actionBusy" @click="askReject">{{ $t('hundredAdmin.reject') }}</button>
+              <button class="btn-sm ok" :disabled="actionBusy" @click="askApprove">{{ $t('hundredAdmin.approve') }}</button>
+            </div>
+
+            <div v-else-if="reviewPhase === 'approve-confirm'" class="hundred-action-area">
+              <p class="hundred-confirm">{{ $t('hundredAdmin.approveConfirm') }}</p>
+              <div class="modal-actions">
+                <button class="btn-sm" :disabled="actionBusy" @click="reviewPhase = 'view'">{{ $t('hundredAdmin.cancel') }}</button>
+                <button class="btn-sm ok" :disabled="actionBusy" @click="confirmApprove">
+                  {{ actionBusy ? $t('hundredAdmin.approving') : $t('hundredAdmin.approve') }}
+                </button>
+              </div>
+            </div>
+
+            <div v-else class="hundred-action-area">
+              <label class="hundred-reason-label">{{ $t('hundredAdmin.rejectReason') }}</label>
+              <select v-model="rejectReason">
+                <option value="">{{ $t('hundredAdmin.rejectReasonRequired') }}</option>
+                <option v-for="(label, key) in $tm('hundredAdmin.rejectReasonOptions')" :key="key" :value="key">{{ label }}</option>
+              </select>
+              <textarea v-model="rejectReasonText" rows="2" :placeholder="$t('hundredAdmin.rejectReasonPlaceholder')"></textarea>
+              <p class="hundred-confirm">{{ $t('hundredAdmin.rejectConfirm') }}</p>
+              <div class="modal-actions">
+                <button class="btn-sm" :disabled="actionBusy" @click="reviewPhase = 'view'">{{ $t('hundredAdmin.cancel') }}</button>
+                <button class="btn-sm danger" :disabled="actionBusy" @click="confirmReject">
+                  {{ actionBusy ? $t('hundredAdmin.rejecting') : $t('hundredAdmin.reject') }}
+                </button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- ── 百场删除弹窗（CURRENT）── -->
+      <div v-if="hundredDeleteTarget" class="modal-overlay" @click.self="cancelHundredDelete">
+        <div class="modal hof-delete-modal">
+          <h3>{{ $t('hundredAdmin.delete') }}</h3>
+          <table class="hof-delete-table">
+            <tbody>
+              <tr><th>{{ $t('hundredAdmin.user') }}</th><td>{{ hundredDeleteTarget.nicknameSnapshot }}</td></tr>
+              <tr><th>{{ $t('hundredAdmin.vehicle') }}</th><td>{{ hundredDeleteTarget.vehicleName }}</td></tr>
+              <tr><th>{{ $t('hundredAdmin.claimed') }}</th><td>{{ hundredDeleteTarget.claimedAverageDamage }} / {{ hundredDeleteTarget.claimedBattleCount }}</td></tr>
+            </tbody>
+          </table>
+          <label class="hundred-reason-label">{{ $t('hundredAdmin.deleteReason') }}</label>
+          <select v-model="hundredDeleteReason">
+            <option value="">{{ $t('hundredAdmin.deleteReasonRequired') }}</option>
+            <option v-for="(label, key) in $tm('hundredAdmin.deleteReasonOptions')" :key="key" :value="key">{{ label }}</option>
+          </select>
+          <textarea v-model="hundredDeleteReasonText" rows="2" :placeholder="$t('hundredAdmin.deleteReasonPlaceholder')"></textarea>
+          <p class="hundred-confirm">{{ $t('hundredAdmin.deleteConfirm') }}</p>
+          <p v-if="hundredDeleteMsg" class="error">{{ hundredDeleteMsg }}</p>
+          <div class="modal-actions">
+            <button class="btn-sm" :disabled="hundredDeleting" @click="cancelHundredDelete">{{ $t('hundredAdmin.cancel') }}</button>
+            <button class="btn-sm danger" :disabled="hundredDeleting" @click="confirmHundredDelete">
+              {{ hundredDeleting ? $t('hundredAdmin.deleting') : $t('hundredAdmin.delete') }}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -385,10 +768,15 @@ function battleTypeLabel(tp) {
 .bt-random { background: var(--rating-good-bg); color: var(--rating-good-fg); }
 .bt-rating { background: var(--rating-great-bg); color: var(--rating-great-fg); }
 .audit-action { display: inline-block; padding: 1px 7px; border-radius: 6px; background: var(--status-warn-bg); color: var(--status-warn-fg); font-size: 11px; font-weight: 600; }
+.hundred-status { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.hundred-status-pending { background: var(--status-warn-bg); color: var(--status-warn-fg); }
+.hundred-status-current { background: var(--rating-good-bg); color: var(--rating-good-fg); }
 .btn-sm { padding: 5px 12px; border: 1px solid var(--border-ghost); border-radius: 7px; background: var(--bg-card2);
   color: var(--text-label); cursor: pointer; font-family: inherit; font-size: .8rem; }
 .btn-sm.danger { color: var(--delete); border-color: color-mix(in srgb, var(--delete) 45%, var(--border-ghost)); }
 .btn-sm.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--delete) 8%, var(--bg-card2)); }
+.btn-sm.ok { color: var(--rating-good-fg); border-color: color-mix(in srgb, var(--rating-good-fg) 45%, var(--border-ghost)); }
+.btn-sm.ok:hover:not(:disabled) { background: color-mix(in srgb, var(--rating-good-fg) 8%, var(--bg-card2)); }
 .btn-sm:disabled { opacity: .5; cursor: not-allowed; }
 .pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 14px 0; font-size: .82rem; }
 .pagination button { padding: 5px 12px; border: 1px solid var(--border-ghost); border-radius: 7px; background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-family: inherit; }
@@ -404,4 +792,25 @@ function battleTypeLabel(tp) {
 .hof-delete-table td { padding: 6px 10px; }
 .hof-delete-msg { color: var(--warn-text); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+.hof-review-modal { max-width: 620px; }
+.hundred-review-section { margin: 12px 0; }
+.hundred-review-label { font-weight: 600; color: var(--text-muted); font-size: .85rem; margin-bottom: 6px; }
+.hundred-inputs { display: flex; flex-wrap: wrap; gap: 14px; }
+.hundred-inputs label { display: flex; align-items: center; gap: 6px; font-size: .85rem; color: var(--text-label); }
+.hundred-inputs input {
+  width: 110px; border: 1px solid var(--border-ghost); background: var(--bg-card2); color: var(--text-label);
+  padding: 5px 8px; border-radius: 7px; font-size: 13px; font-family: inherit; }
+.hundred-proof { display: block; max-width: 100%; max-height: 320px; border: 1px solid var(--border-ghost); border-radius: 8px; }
+.hundred-proof-empty { color: var(--text-muted); }
+.val-list { list-style: none; padding: 0; margin: 6px 0; }
+.val-list li { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: .85rem; color: var(--text-label); }
+.val-mark { font-weight: 700; }
+.val-ok { color: var(--rating-good-fg); }
+.val-bad { color: var(--error); }
+.hundred-action-area { margin-top: 12px; }
+.hundred-action-area select, .hundred-action-area textarea {
+  width: 100%; border: 1px solid var(--border-ghost); background: var(--bg-card2); color: var(--text-label);
+  padding: 6px 10px; border-radius: 7px; font-size: 13px; font-family: inherit; margin: 4px 0 8px; }
+.hundred-reason-label { display: block; font-size: .85rem; color: var(--text-muted); font-weight: 600; margin-top: 8px; }
+.hundred-confirm { color: var(--warn-text); font-size: .85rem; margin: 8px 0; }
 </style>

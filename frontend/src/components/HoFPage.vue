@@ -1,10 +1,11 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../composables/useAuth.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
 import * as api from '../utils/api.js'
+import TANKOPEDIA from '../../../common/tankopedia-tier10.json'
 
 const { locale, t, te } = useI18n()
 const rows = ref([])
@@ -168,124 +169,510 @@ function battleTypeLabel(tp) {
 function rankClass(rank) {
   return rank === 1 ? 'rk-gold' : rank === 2 ? 'rk-silver' : rank === 3 ? 'rk-bronze' : ''
 }
+
+// ── Tab：单场 / 百场 ────────────────────────────────────────────
+const activeTab = ref('single')
+
+function switchTab(tab) {
+  activeTab.value = tab
+  if (tab === 'hundred') {
+    if (h100VehicleId.value) loadHundredList()
+    loadPending()
+  }
+}
+
+// ── 百场：车辆 / 排行榜 ─────────────────────────────────────────
+// common/tankopedia-tier10.json 本身即 Tier X 全集（84 辆）。
+const tier10Vehicles = TANKOPEDIA.vehicles
+  .map(v => ({ id: v.id, name: v.name }))
+  .sort((a, b) => a.name.localeCompare(b.name))
+
+const h100VehicleId = ref(null)
+const h100VehicleName = ref('')
+const h100VehicleSearch = ref('')
+const h100Rows = ref([])
+const h100Loading = ref(false)
+const h100Error = ref('')
+const h100Page = ref(1)
+const h100TotalPages = ref(0)
+const h100Size = 50
+let h100LoadGeneration = 0
+
+const pendingList = ref([])
+const withdrawingId = ref(null)
+const h100Msg = ref('')
+const h100MsgErr = ref(false)
+
+const filteredVehicles = computed(() => {
+  const q = h100VehicleSearch.value.trim().toLowerCase()
+  if (!q) return tier10Vehicles
+  return tier10Vehicles.filter(v => v.name.toLowerCase().includes(q))
+})
+
+const currentPending = computed(() => {
+  if (!h100VehicleId.value) return null
+  const id = Number(h100VehicleId.value)
+  return pendingList.value.find(p => Number(p.vehicleId) === id) || null
+})
+
+async function loadHundredList() {
+  if (!h100VehicleId.value) {
+    h100Rows.value = []
+    h100TotalPages.value = 0
+    return
+  }
+  const generation = ++h100LoadGeneration
+  h100Loading.value = true
+  h100Error.value = ''
+  try {
+    const res = await api.hofHundredList({ vehicleId: h100VehicleId.value, page: h100Page.value, size: h100Size })
+    if (generation !== h100LoadGeneration) return
+    h100Rows.value = res.items || []
+    h100TotalPages.value = res.totalPages || 0
+  } catch (e) {
+    if (generation === h100LoadGeneration) h100Error.value = apiErrorLabel(t, te, e)
+  } finally {
+    if (generation === h100LoadGeneration) h100Loading.value = false
+  }
+}
+
+function onHundredVehicleChange() {
+  const v = tier10Vehicles.find(x => x.id === Number(h100VehicleId.value))
+  h100VehicleName.value = v ? v.name : ''
+  h100Msg.value = ''
+  h100Page.value = 1
+  loadHundredList()
+  loadPending()
+}
+
+// 个人中心百场状态（需登录）：仅登录后拉取，避免匿名浏览触发 401 跳登录。
+async function loadPending() {
+  if (!isAuthenticated()) {
+    pendingList.value = []
+    return
+  }
+  try {
+    const status = await api.hofHundredMyStatus()
+    pendingList.value = status.pending || []
+  } catch {
+    pendingList.value = []
+  }
+}
+
+function goHundredPage(p) {
+  h100Page.value = p
+  loadHundredList()
+}
+
+// ── 百场：提交弹窗 ──────────────────────────────────────────────
+const showSubmit = ref(false)
+const submitting = ref(false)
+const submitError = ref('')
+const needProfile = ref(false)
+const screenshotErr = ref('')
+const replayErr = ref('')
+const screenshotInput = ref(null)
+const replaysInput = ref(null)
+const submitForm = reactive({
+  vehicleId: null,
+  averageDamage: '',
+  battleCount: '',
+  screenshot: '',
+  replays: []
+})
+
+function openSubmit() {
+  if (!requireLogin()) return
+  showSubmit.value = true
+  submitting.value = false
+  needProfile.value = false
+  submitError.value = ''
+  screenshotErr.value = ''
+  replayErr.value = ''
+  submitForm.vehicleId = h100VehicleId.value || null
+  submitForm.averageDamage = ''
+  submitForm.battleCount = ''
+  submitForm.screenshot = ''
+  submitForm.replays = []
+  if (screenshotInput.value) screenshotInput.value.value = ''
+  if (replaysInput.value) replaysInput.value.value = ''
+}
+
+function closeSubmit() {
+  if (submitting.value) return
+  showSubmit.value = false
+}
+
+function onScreenshotChange(e) {
+  const f = e.target.files?.[0]
+  if (!f) return
+  screenshotErr.value = ''
+  submitForm.screenshot = ''
+  if (!f.type.startsWith('image/')) {
+    screenshotErr.value = t('hundred.invalidImageType')
+    return
+  }
+  if (f.size > 4 * 1024 * 1024) {
+    screenshotErr.value = t('hundred.invalidImageSize')
+    return
+  }
+  const reader = new FileReader()
+  reader.onload = () => {
+    submitForm.screenshot = String(reader.result || '')
+  }
+  reader.onerror = () => {
+    screenshotErr.value = t('hundred.imageReadError')
+  }
+  reader.readAsDataURL(f)
+}
+
+function onReplaysChange(e) {
+  const files = Array.from(e.target.files || [])
+  const valid = []
+  for (const f of files) {
+    if (!f.name.toLowerCase().endsWith('.wotbreplay')) {
+      replayErr.value = t('hundred.invalidReplayType')
+      submitForm.replays = []
+      if (replaysInput.value) replaysInput.value.value = ''
+      return
+    }
+    valid.push(f)
+  }
+  replayErr.value = ''
+  submitForm.replays = valid
+}
+
+async function submitHundred() {
+  if (submitting.value) return
+  const damage = Number(submitForm.averageDamage)
+  const battles = Number(submitForm.battleCount)
+  if (
+    !submitForm.vehicleId ||
+    !Number.isInteger(damage) || damage <= 0 ||
+    !Number.isInteger(battles) || battles <= 0 ||
+    !submitForm.screenshot ||
+    submitForm.replays.length !== 5
+  ) {
+    submitError.value = t('hundred.fillRequired')
+    return
+  }
+  // 提交前本地提示：所选车辆已有 PENDING 时立即阻止（backend 409 仍保留为最终兜底）。
+  if (pendingList.value.some(p => Number(p.vehicleId) === Number(submitForm.vehicleId))) {
+    submitError.value = t('hundred.pendingExistsLocal')
+    return
+  }
+  submitting.value = true
+  submitError.value = ''
+  needProfile.value = false
+  try {
+    const fd = new FormData()
+    fd.append('vehicleId', String(submitForm.vehicleId))
+    fd.append('averageDamage', String(damage))
+    fd.append('battleCount', String(battles))
+    fd.append('screenshot', submitForm.screenshot)
+    for (const r of submitForm.replays) fd.append('replays', r)
+    await api.hofHundredSubmit(fd)
+    showSubmit.value = false
+    h100Msg.value = t('hundred.submitSuccess')
+    h100MsgErr.value = false
+    await loadHundredList()
+    await loadPending()
+  } catch (e) {
+    const code = e?.code
+    if (code === 'HUNDRED_PROFILE_GAME_ID_REQUIRED' || code === 'HUNDRED_PROFILE_NICKNAME_REQUIRED') {
+      needProfile.value = true
+      submitError.value = t('hundred.needProfile')
+    } else {
+      submitError.value = apiErrorLabel(t, te, e)
+    }
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function withdrawPending(p) {
+  if (withdrawingId.value) return
+  if (!window.confirm(t('hundred.withdrawConfirm'))) return
+  withdrawingId.value = p.id
+  h100Msg.value = ''
+  try {
+    await api.hofHundredCancel(p.id)
+    await loadPending()
+    h100Msg.value = t('hundred.withdrawSuccess')
+    h100MsgErr.value = false
+  } catch (e) {
+    h100Msg.value = apiErrorLabel(t, te, e)
+    h100MsgErr.value = true
+  } finally {
+    withdrawingId.value = null
+  }
+}
+
+function fmtDate(s) {
+  if (!s) return ''
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return ''
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
 </script>
 
 <template>
   <div class="lb-wrap">
-    <header class="lb-head">
-      <span class="lb-kicker">{{ $t('hof.btn') }}</span>
-      <h1>{{ $t('hof.title') }}</h1>
-      <p>{{ $t('hof.subtitle') }}</p>
-    </header>
+    <div class="tabs">
+      <button type="button" :class="{ active: activeTab === 'single' }" @click="switchTab('single')">{{ $t('hof.singleTab') }}</button>
+      <button type="button" :class="{ active: activeTab === 'hundred' }" @click="switchTab('hundred')">{{ $t('hundred.tab') }}</button>
+    </div>
 
-    <section class="lb-upload-section"
-             @dragover.prevent="dragging = true"
-             @dragleave.prevent="dragging = false"
-             @drop.prevent="dragging = false; onDrop($event)">
-      <div class="lb-upload-card" :class="{ dragging }">
-        <span class="up-icon"><svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg></span>
-        <div class="up-title">{{ $t('hof.upload_title') }}</div>
-        <div class="up-sub">{{ $t('hof.upload_hint') }}</div>
-        <input ref="fileInput" type="file" accept=".wotbreplay" class="lb-hidden-input" @change="onFileChange" :disabled="uploading" />
-        <button type="button" class="filebtn" :class="{ 'lb-uploading': uploading }" @click="onUploadButtonClick">
-          <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
-          {{ uploading ? $t('hof.uploading') : $t('hof.upload_btn') }}
+    <div v-show="activeTab === 'single'">
+      <header class="lb-head">
+        <span class="lb-kicker">{{ $t('hof.btn') }}</span>
+        <h1>{{ $t('hof.title') }}</h1>
+        <p>{{ $t('hof.subtitle') }}</p>
+      </header>
+
+      <section class="lb-upload-section"
+               @dragover.prevent="dragging = true"
+               @dragleave.prevent="dragging = false"
+               @drop.prevent="dragging = false; onDrop($event)">
+        <div class="lb-upload-card" :class="{ dragging }">
+          <span class="up-icon"><svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg></span>
+          <div class="up-title">{{ $t('hof.upload_title') }}</div>
+          <div class="up-sub">{{ $t('hof.upload_hint') }}</div>
+          <input ref="fileInput" type="file" accept=".wotbreplay" class="lb-hidden-input" @change="onFileChange" :disabled="uploading" />
+          <button type="button" class="filebtn" :class="{ 'lb-uploading': uploading }" @click="onUploadButtonClick">
+            <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
+            {{ uploading ? $t('hof.uploading') : $t('hof.upload_btn') }}
+          </button>
+        </div>
+        <p v-if="uploadMsg" class="lb-upload-msg" :class="{ err: !uploadOk }">{{ uploadMsg }}</p>
+      </section>
+
+      <div class="lb-toolbar">
+        <label class="lb-limit">{{ $t('hof.battleTypeLabel') }}
+          <select v-model="battleType" @change="onBattleTypeChange">
+            <option value="">{{ $t('hof.battleType.all') }}</option>
+            <option value="RANDOM">{{ $t('hof.battleType.random') }}</option>
+            <option value="RATING">{{ $t('hof.battleType.rating') }}</option>
+          </select>
+        </label>
+        <label class="lb-limit">{{ $t('hof.nicknameSearch') }}
+          <input v-model="nickname" class="lb-nick-input" :placeholder="$t('hof.nicknamePlaceholder')" @keyup.enter="searchNickname" />
+          <button type="button" class="ghost sm" @click="searchNickname">{{ $t('hof.search') }}</button>
+        </label>
+        <label class="lb-limit">{{ $t('hof.limit') }}
+          <select v-model.number="limit" @change="page = 1; load()">
+            <option :value="20">20</option>
+            <option :value="50">50</option>
+            <option :value="100">100</option>
+          </select>
+        </label>
+        <button v-if="selectedTankId" type="button" class="ghost sm" @click="clearFilter">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M12 20a8 8 0 1 1 0-16 8 8 0 0 1 0 16zM12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM14.8 9.2l-5.6 5.6M9.2 9.2l5.6 5.6" /></svg>{{ $t('hof.all_tanks') }}
+        </button>
+        <button type="button" class="ghost sm" :disabled="loading" @click="load">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v6h-6" /></svg>{{ $t('hof.refresh') }}
         </button>
       </div>
-      <p v-if="uploadMsg" class="lb-upload-msg" :class="{ err: !uploadOk }">{{ uploadMsg }}</p>
-    </section>
 
-    <div class="lb-toolbar">
-      <label class="lb-limit">{{ $t('hof.battleTypeLabel') }}
-        <select v-model="battleType" @change="onBattleTypeChange">
-          <option value="">{{ $t('hof.battleType.all') }}</option>
-          <option value="RANDOM">{{ $t('hof.battleType.random') }}</option>
-          <option value="RATING">{{ $t('hof.battleType.rating') }}</option>
-        </select>
-      </label>
-      <label class="lb-limit">{{ $t('hof.nicknameSearch') }}
-        <input v-model="nickname" class="lb-nick-input" :placeholder="$t('hof.nicknamePlaceholder')" @keyup.enter="searchNickname" />
-        <button type="button" class="ghost sm" @click="searchNickname">{{ $t('hof.search') }}</button>
-      </label>
-      <label class="lb-limit">{{ $t('hof.limit') }}
-        <select v-model.number="limit" @change="page = 1; load()">
-          <option :value="20">20</option>
-          <option :value="50">50</option>
-          <option :value="100">100</option>
-        </select>
-      </label>
-      <button v-if="selectedTankId" class="ghost sm" @click="clearFilter">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M12 20a8 8 0 1 1 0-16 8 8 0 0 1 0 16zM12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM14.8 9.2l-5.6 5.6M9.2 9.2l5.6 5.6" /></svg>{{ $t('hof.all_tanks') }}
-      </button>
-      <button class="ghost sm" :disabled="loading" @click="load">
-        <svg class="ic" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v6h-6" /></svg>{{ $t('hof.refresh') }}
-      </button>
+      <p v-if="selectedTankId" class="lb-filter-hint">
+        {{ $t('hof.filter_tank') }}: <strong>{{ selectedTankName }}</strong>
+      </p>
+
+      <p v-if="downloadErr" class="lb-upload-msg err">{{ downloadErr }}</p>
+      <p v-if="error" class="error">{{ $t('hof.error') }}: {{ error }}</p>
+      <p v-else-if="loading" class="muted">{{ $t('hof.loading') }}</p>
+      <p v-else-if="!rows.length" class="muted">{{ $t('hof.empty') }}</p>
+      <div v-else class="tablewrap">
+        <table>
+          <thead>
+            <tr>
+              <th>{{ $t('hof.rank') }}</th>
+              <th>{{ $t('hof.nickname') }}</th>
+              <th>{{ $t('hof.tank_name') }}</th>
+              <th>{{ $t('hof.battleTypeLabel') }}</th>
+              <th>{{ $t('hof.damage_dealt') }}</th>
+              <th>{{ $t('hof.map') }}</th>
+              <th>{{ $t('hof.version') }}</th>
+              <th>{{ $t('hof.battle_time') }}</th>
+              <th>{{ $t('hof.upload_time') }}</th>
+              <th>{{ $t('hof.replay') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in rows" :key="r.id">
+              <td><span class="rk" :class="rankClass(r.rank)">{{ r.rank }}</span></td>
+              <td>{{ r.nickname }}</td>
+              <td>
+                <button
+                  v-if="!selectedTankId"
+                  type="button"
+                  class="lb-tank-link"
+                  :title="$t('hof.filter_by_tank')"
+                  @click="filterByTank(r.tankId, r.tankName)"
+                >{{ r.tankName }}</button>
+                <span v-else>{{ r.tankName }}</span>
+              </td>
+              <td><span class="bt-badge" :class="r.battleType === 'RATING' ? 'bt-rating' : 'bt-random'">{{ battleTypeLabel(r.battleType) }}</span></td>
+              <td class="lb-dmg">{{ r.damageDealt.toLocaleString() }}</td>
+              <td>{{ mapLabel(r.mapName, locale) }}</td>
+              <td class="lb-version">{{ r.version || '-' }}</td>
+              <td class="lb-time">{{ fmtTime(r.battleTime) || '-' }}</td>
+              <td class="lb-time">{{ fmtTime(r.createdAt) }}</td>
+              <td class="lb-replay">
+                <button
+                  v-if="r.replayAvailable"
+                  type="button"
+                  class="lb-download"
+                  :disabled="downloadingId === r.id"
+                  :title="downloadingId === r.id ? $t('hof.downloading') : $t('hof.download')"
+                  :aria-label="downloadingId === r.id ? $t('hof.downloading') : $t('hof.download')"
+                  @click="download(r.id)"
+                >
+                  <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 15l4 4 4-4M12 3v16" /></svg>
+                </button>
+                <span v-else class="lb-no-replay">—</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div v-if="totalPages > 1" class="pagination">
+        <button type="button" :disabled="page <= 1" @click="goPage(page - 1)">{{ $t('hof.prev') }}</button>
+        <span>{{ $t('hof.page_info', { page, total: totalPages }) }}</span>
+        <button type="button" :disabled="page >= totalPages" @click="goPage(page + 1)">{{ $t('hof.next') }}</button>
+      </div>
     </div>
 
-    <p v-if="selectedTankId" class="lb-filter-hint">
-      {{ $t('hof.filter_tank') }}: <strong>{{ selectedTankName }}</strong>
-    </p>
+    <div v-show="activeTab === 'hundred'" class="h100-pane">
+      <header class="lb-head">
+        <span class="lb-kicker">{{ $t('hof.btn') }}</span>
+        <h1>{{ $t('hundred.tab') }}</h1>
+        <p>{{ $t('hundred.subtitle') }}</p>
+      </header>
 
-    <p v-if="downloadErr" class="lb-upload-msg err">{{ downloadErr }}</p>
-    <p v-if="error" class="error">{{ $t('hof.error') }}: {{ error }}</p>
-    <p v-else-if="loading" class="muted">{{ $t('hof.loading') }}</p>
-    <p v-else-if="!rows.length" class="muted">{{ $t('hof.empty') }}</p>
-    <div v-else class="tablewrap">
-      <table>
-        <thead>
-          <tr>
-            <th>{{ $t('hof.rank') }}</th>
-            <th>{{ $t('hof.nickname') }}</th>
-            <th>{{ $t('hof.tank_name') }}</th>
-            <th>{{ $t('hof.battleTypeLabel') }}</th>
-            <th>{{ $t('hof.damage_dealt') }}</th>
-            <th>{{ $t('hof.map') }}</th>
-            <th>{{ $t('hof.version') }}</th>
-            <th>{{ $t('hof.battle_time') }}</th>
-            <th>{{ $t('hof.upload_time') }}</th>
-            <th>{{ $t('hof.replay') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="r in rows" :key="r.id">
-            <td><span class="rk" :class="rankClass(r.rank)">{{ r.rank }}</span></td>
-            <td>{{ r.nickname }}</td>
-            <td>
-              <button
-                v-if="!selectedTankId"
-                class="lb-tank-link"
-                :title="$t('hof.filter_by_tank')"
-                @click="filterByTank(r.tankId, r.tankName)"
-              >{{ r.tankName }}</button>
-              <span v-else>{{ r.tankName }}</span>
-            </td>
-            <td><span class="bt-badge" :class="r.battleType === 'RATING' ? 'bt-rating' : 'bt-random'">{{ battleTypeLabel(r.battleType) }}</span></td>
-            <td class="lb-dmg">{{ r.damageDealt.toLocaleString() }}</td>
-            <td>{{ mapLabel(r.mapName, locale) }}</td>
-            <td class="lb-version">{{ r.version || '-' }}</td>
-            <td class="lb-time">{{ fmtTime(r.battleTime) || '-' }}</td>
-            <td class="lb-time">{{ fmtTime(r.createdAt) }}</td>
-            <td class="lb-replay">
-              <button
-                v-if="r.replayAvailable"
-                class="lb-download"
-                :disabled="downloadingId === r.id"
-                :title="downloadingId === r.id ? $t('hof.downloading') : $t('hof.download')"
-                :aria-label="downloadingId === r.id ? $t('hof.downloading') : $t('hof.download')"
-                @click="download(r.id)"
-              >
-                <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 15l4 4 4-4M12 3v16" /></svg>
-              </button>
-              <span v-else class="lb-no-replay">—</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="lb-toolbar h100-toolbar">
+        <label class="lb-limit h100-vehicle-filter">{{ $t('hundred.selectVehicle') }}
+          <input v-model="h100VehicleSearch" class="lb-nick-input h100-search-input" :placeholder="$t('hundred.vehiclePlaceholder')" />
+          <select v-model="h100VehicleId" class="h100-vehicle-select" @change="onHundredVehicleChange">
+            <option :value="null" disabled>{{ $t('hundred.allVehicles') }}</option>
+            <option v-for="v in filteredVehicles" :key="v.id" :value="v.id">{{ v.name }}</option>
+          </select>
+        </label>
+        <button type="button" class="ghost sm" :disabled="h100Loading" @click="loadHundredList">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v6h-6" /></svg>{{ $t('hof.refresh') }}
+        </button>
+        <button type="button" class="ghost sm h100-submit-btn" :disabled="!!currentPending || h100Loading" @click="openSubmit">
+          {{ $t('hundred.submit') }}
+        </button>
+      </div>
+
+      <p v-if="h100VehicleId" class="lb-filter-hint">
+        {{ $t('hundred.selectVehicle') }}: <strong>{{ h100VehicleName }}</strong>
+      </p>
+
+      <div v-if="currentPending" class="h100-pending-card">
+        <div class="h100-pending-body">
+          <div class="h100-pending-title">{{ $t('hundred.pendingTitle', { vehicle: currentPending.vehicleName || h100VehicleName }) }}</div>
+          <div class="h100-pending-meta">
+            <span>{{ $t('hundred.pendingDamage') }}: <strong>{{ currentPending.claimedAverageDamage.toLocaleString() }}</strong></span>
+            <span>{{ $t('hundred.pendingBattles') }}: <strong>{{ currentPending.claimedBattleCount }}</strong></span>
+            <span class="h100-pending-time">{{ $t('hundred.pendingTime') }}: {{ fmtDate(currentPending.submittedAt) || '-' }}</span>
+          </div>
+        </div>
+        <button type="button" class="ghost sm danger" :disabled="withdrawingId === currentPending.id" @click="withdrawPending(currentPending)">
+          {{ withdrawingId === currentPending.id ? $t('hundred.withdrawing') : $t('hundred.withdraw') }}
+        </button>
+      </div>
+
+      <p v-if="h100Msg" class="lb-upload-msg" :class="{ err: h100MsgErr }">{{ h100Msg }}</p>
+
+      <p v-if="h100Error" class="error">{{ h100Error }}</p>
+      <p v-else-if="h100Loading" class="muted">{{ $t('hundred.loading') }}</p>
+      <p v-else-if="!h100VehicleId" class="muted">{{ $t('hundred.selectVehicle') }}</p>
+      <p v-else-if="!h100Rows.length" class="muted">{{ $t('hundred.empty') }}</p>
+      <div v-else class="tablewrap">
+        <table>
+          <thead>
+            <tr>
+              <th>{{ $t('hundred.rank') }}</th>
+              <th>{{ $t('hundred.nickname') }}</th>
+              <th>{{ $t('hundred.avgDamage') }}</th>
+              <th>{{ $t('hundred.battleCount') }}</th>
+              <th>{{ $t('hundred.approvedAt') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in h100Rows" :key="r.id">
+              <td><span class="rk" :class="rankClass(r.rank)">{{ r.rank }}</span></td>
+              <td>{{ r.nickname }}</td>
+              <td class="lb-dmg">{{ r.approvedAverageDamage.toLocaleString() }}</td>
+              <td>{{ r.approvedBattleCount }}</td>
+              <td class="lb-time">{{ fmtDate(r.approvedAt) || '-' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div v-if="h100TotalPages > 1" class="pagination">
+        <button type="button" :disabled="h100Page <= 1" @click="goHundredPage(h100Page - 1)">{{ $t('hundred.prev') }}</button>
+        <span>{{ $t('hundred.pageInfo', { page: h100Page, total: h100TotalPages }) }}</span>
+        <button type="button" :disabled="h100Page >= h100TotalPages" @click="goHundredPage(h100Page + 1)">{{ $t('hundred.next') }}</button>
+      </div>
     </div>
-    <div v-if="totalPages > 1" class="pagination">
-      <button :disabled="page <= 1" @click="goPage(page - 1)">{{ $t('hof.prev') }}</button>
-      <span>{{ $t('hof.page_info', { page, total: totalPages }) }}</span>
-      <button :disabled="page >= totalPages" @click="goPage(page + 1)">{{ $t('hof.next') }}</button>
+
+    <div v-if="showSubmit" class="modal-overlay" @click.self="closeSubmit">
+      <div class="modal h100-modal">
+        <h2>{{ $t('hundred.submitTitle') }}</h2>
+        <p>{{ $t('hundred.submitDesc') }}</p>
+
+        <div class="h100-field">
+          <label class="h100-field-label" for="h100-submit-vehicle">{{ $t('hundred.selectVehicle') }}</label>
+          <select id="h100-submit-vehicle" v-model="submitForm.vehicleId">
+            <option :value="null" disabled>{{ $t('hundred.allVehicles') }}</option>
+            <option v-for="v in tier10Vehicles" :key="v.id" :value="v.id">{{ v.name }}</option>
+          </select>
+        </div>
+
+        <div class="h100-field">
+          <label class="h100-field-label" for="h100-submit-damage">{{ $t('hundred.claimedDamage') }}</label>
+          <input id="h100-submit-damage" v-model.number="submitForm.averageDamage" type="number" min="1" step="1" />
+          <small>{{ $t('hundred.claimedDamageHint') }}</small>
+        </div>
+
+        <div class="h100-field">
+          <label class="h100-field-label" for="h100-submit-battles">{{ $t('hundred.claimedBattles') }}</label>
+          <input id="h100-submit-battles" v-model.number="submitForm.battleCount" type="number" min="1" step="1" />
+          <small>{{ $t('hundred.claimedBattlesHint') }}</small>
+        </div>
+
+        <div class="h100-field">
+          <span class="h100-field-label">{{ $t('hundred.screenshotLabel') }}</span>
+          <input ref="screenshotInput" type="file" accept="image/*" @change="onScreenshotChange" />
+          <small>{{ $t('hundred.screenshotHint') }}</small>
+          <p v-if="screenshotErr" class="h100-err">{{ screenshotErr }}</p>
+        </div>
+
+        <div class="h100-field">
+          <span class="h100-field-label">{{ $t('hundred.replaysLabel') }}
+            <span class="h100-counter">{{ $t('hundred.replayCounter', { current: submitForm.replays.length }) }}</span>
+          </span>
+          <input ref="replaysInput" type="file" accept=".wotbreplay" multiple @change="onReplaysChange" />
+          <small>{{ $t('hundred.replaysHint') }}</small>
+          <p v-if="replayErr" class="h100-err">{{ replayErr }}</p>
+        </div>
+
+        <p v-if="needProfile" class="h100-need-profile">
+          {{ submitError }} <a href="/?view=profile">{{ $t('hundred.goProfile') }}</a>
+        </p>
+        <p v-else-if="submitError" class="h100-err">{{ submitError }}</p>
+
+        <div class="modal-actions">
+          <button type="button" class="ghost" :disabled="submitting" @click="closeSubmit">{{ $t('app.close') }}</button>
+          <button type="button" class="filebtn h100-modal-submit" :disabled="submitting" @click="submitHundred">
+            {{ submitting ? $t('hundred.submitting') : $t('hundred.submit') }}
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -373,6 +760,39 @@ function rankClass(rank) {
 .pagination button { padding: 6px 14px; border: 1px solid var(--border-ghost); border-radius: 7px; background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-family: inherit; font-size: .82rem; }
 .pagination button:disabled { opacity: .4; cursor: not-allowed; }
 .pagination button:hover:not(:disabled) { background: var(--bg-card-hover); }
+
+/* ── 百场 Tab ─────────────────────────────────── */
+.h100-vehicle-filter { flex-wrap: wrap; }
+.h100-vehicle-select { min-width: 200px; }
+.h100-search-input { width: 130px; }
+.h100-pending-card {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin: 12px 0; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg-card); box-shadow: var(--surface-shadow);
+}
+.h100-pending-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.h100-pending-title { font-size: 13px; font-weight: 700; color: var(--accent-dark); }
+.h100-pending-meta { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-label); }
+.h100-pending-meta strong { color: var(--accent-dark); font-variant-numeric: tabular-nums; }
+.h100-pending-time { color: var(--text-muted); }
+.h100-pending-card .ghost { margin-left: auto; }
+
+/* 提交弹窗 */
+.h100-field { margin: 12px 0; }
+.h100-field-label { display: block; font-size: 13px; color: var(--text-label); font-weight: 600; margin-bottom: 4px; }
+.h100-field select, .h100-field input[type="number"] {
+  border: 1px solid var(--border-ghost); background: var(--bg-card2); color: var(--text-label);
+  padding: 6px 10px; border-radius: 7px; font-size: 13px; font-family: inherit; max-width: 100%;
+}
+.h100-field input[type="number"] { width: 170px; }
+.h100-field small { display: block; color: var(--text-muted); font-size: 12px; margin-top: 3px; line-height: 1.5; }
+.h100-field input[type="file"] { font-size: 12px; color: var(--text-label); margin-top: 2px; }
+.h100-counter { font-size: 12px; font-weight: 700; color: var(--accent-dark); margin-left: 8px; }
+.h100-err { color: var(--error); font-size: 13px; margin: 6px 0 0; }
+.h100-need-profile { color: var(--error); font-size: 13px; margin: 8px 0 0; line-height: 1.6; }
+.h100-need-profile a { color: var(--accent); font-weight: 600; }
+
 @media (max-width: 560px) {
   .lb-wrap { padding: 14px 12px 48px; }
   .lb-head h1 { font-size: 1.55rem; }
