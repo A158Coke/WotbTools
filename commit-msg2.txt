@@ -1,0 +1,25 @@
+fix(hof): PR #99 三个 blocker 修复（百场资格门槛 / locale object 渲染 / approve flush 顺序）
+
+1. 百场资格门槛：approve 强制 approvedBattleCount >= 100（新错误码
+   HUNDRED_APPROVED_BATTLE_COUNT_TOO_LOW，400；backend authoritative，前端仅 UX：
+   HoFAdminPage 输入 min=100 + 提交前本地校验）。claimedBattleCount 不受影响，
+   人工审核仍为最终资格判断。三语 i18n 补齐。
+2. HoFAdminPage 原因选项：reject/delete reason options 是 locale object，改用 $tm()
+   渲染（vue-i18n 11 Composition API 语义），option value 保持 backend 稳定 category；
+   测试改用返回 object 的 tm mock 并断言 select 生成正确 category value（非字符/索引）。
+3. approve CURRENT replacement flush 顺序：旧 CURRENT 先 saveAndFlush 为 SUPERSEDED
+   （显式退出 V18 partial unique index），再 saveAndFlush 提升 PENDING 为 CURRENT；
+   单 @Transactional，后半段失败整体 rollback。新增真实 PostgreSQL 集成测试
+   （Testcontainers postgres:18-alpine，经 V18 partial unique index）：
+   场景 A existing CURRENT 4000 + PENDING 4200 → approve → 恰好一个 CURRENT、
+   旧行 SUPERSEDED、新行 CURRENT；场景 B 提升后 approved_by 超长触发事务失败 →
+   整体 rollback、旧行仍 CURRENT、PENDING 无半完成状态。
+
+额外小修：createSubmission 的 PENDING cheap check 提前到 replay parse 之前
+（DB partial unique index 仍作并发兜底）；submit modal 提交前本地提示所选车辆已有 PENDING
+（backend 409 保留）。
+
+验证：backend 全量 878 测试通过（含新增集成测试 2 例 + Mockito 44 例，WebApiTest 28 例）；
+前端容器内（node:24）npm test 36 文件 / 639 用例全绿 + npm run build 成功。
+
+Co-Authored-By: A158Coke <ychen158253@gmail.com>

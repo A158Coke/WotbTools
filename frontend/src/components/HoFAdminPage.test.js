@@ -35,7 +35,28 @@ vi.mock('../composables/useAuth.js', () => ({
 vi.mock('../utils/api.js', () => hofAdminApi)
 vi.mock('../utils/helpers.js', () => ({ mapLabel: () => '' }))
 vi.mock('../utils/display.js', () => ({ apiErrorLabel: (t, te, e) => (e?.code ? 'err:' + e.code : 'api-error') }))
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: k => k, te: () => true, locale: ref('zh') }) }))
+// 三语 reason options（object message：tm/$tm 才返回 object；$t 只用于字符串 key）
+const REJECT_OPTIONS = {
+  SCREENSHOT_MISMATCH: '截图数据与申报不符',
+  SCREENSHOT_UNREADABLE: '截图无法识别',
+  INSUFFICIENT_PROOF: '截图不足以证明百场成绩',
+  SUSPECTED_FRAUD: '疑似伪造',
+  OTHER: '其他'
+}
+const DELETE_OPTIONS = {
+  CHEATING_FORGERY: '作弊 / 伪造',
+  WRONG_REVIEW: '错误审核',
+  PLAYER_IDENTITY_ISSUE: '玩家身份问题',
+  DATA_ERROR: '数据错误',
+  ADMIN_CORRECTION: '管理员纠错',
+  OTHER: '其他'
+}
+const optionMessages = (key) => {
+  if (key === 'hundredAdmin.rejectReasonOptions') return REJECT_OPTIONS
+  if (key === 'hundredAdmin.deleteReasonOptions') return DELETE_OPTIONS
+  return {}
+}
+vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: k => k, te: () => true, tm: optionMessages, locale: ref('zh') }) }))
 
 const pendingItem = {
   id: 11, status: 'PENDING', vehicleId: 6481, vehicleName: 'FV4005',
@@ -69,7 +90,7 @@ describe('HoFAdminPage', () => {
   })
 
   function mountPage() {
-    return mount(HoFAdminPage, { global: { mocks: { $t: k => k } } })
+    return mount(HoFAdminPage, { global: { mocks: { $t: k => k, $tm: optionMessages } } })
   }
 
   async function switchToHundred(wrapper) {
@@ -220,5 +241,96 @@ describe('HoFAdminPage', () => {
     })
     expect(hofAdminApi.hofAdminHundredList).toHaveBeenCalledTimes(2)
     expect(wrapper.find('.hof-review-modal').exists()).toBe(false)
+  })
+
+  it('reject select renders stable category values from $tm object', async () => {
+    hofAdminApi.hofAdminHundredList.mockResolvedValue({
+      items: [pendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1
+    })
+    hofAdminApi.hofAdminHundredDetail.mockResolvedValue(pendingDetail)
+    const wrapper = mountPage()
+    await flushPromises()
+    await switchToHundred(wrapper)
+    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
+    await flushPromises()
+
+    // 进入拒绝表单
+    const rejectBtn = () => wrapper.findAll('.hof-review-modal button').find(b => b.text() === 'hundredAdmin.reject')
+    await rejectBtn().trigger('click')
+    const select = wrapper.find('.hof-review-modal select')
+    const values = select.findAll('option').map(o => o.attributes('value'))
+    // option value 必须是 backend 接受的稳定 category（不是字符串字符/索引）
+    expect(values).toEqual(['', 'SCREENSHOT_MISMATCH', 'SCREENSHOT_UNREADABLE', 'INSUFFICIENT_PROOF', 'SUSPECTED_FRAUD', 'OTHER'])
+    // 选择 category 并确认 → API 收到稳定 category value
+    await select.setValue('SCREENSHOT_MISMATCH')
+    await wrapper.findAll('.hof-review-modal .modal-actions button').find(b => b.text() === 'hundredAdmin.reject').trigger('click')
+    await flushPromises()
+    expect(hofAdminApi.hofAdminHundredReject).toHaveBeenCalledWith(11, { rejectReason: 'SCREENSHOT_MISMATCH' })
+  })
+
+  it('reject OTHER requires text and sends it with category value', async () => {
+    hofAdminApi.hofAdminHundredList.mockResolvedValue({
+      items: [pendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1
+    })
+    hofAdminApi.hofAdminHundredDetail.mockResolvedValue(pendingDetail)
+    const wrapper = mountPage()
+    await flushPromises()
+    await switchToHundred(wrapper)
+    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
+    await flushPromises()
+    await wrapper.findAll('.hof-review-modal button').find(b => b.text() === 'hundredAdmin.reject').trigger('click')
+
+    const select = wrapper.find('.hof-review-modal select')
+    await select.setValue('OTHER')
+    await wrapper.findAll('.hof-review-modal .modal-actions button').find(b => b.text() === 'hundredAdmin.reject').trigger('click')
+    await flushPromises()
+    expect(hofAdminApi.hofAdminHundredReject).not.toHaveBeenCalled()
+
+    await wrapper.find('.hof-review-modal textarea').setValue('手工复核发现异常')
+    await wrapper.findAll('.hof-review-modal .modal-actions button').find(b => b.text() === 'hundredAdmin.reject').trigger('click')
+    await flushPromises()
+    expect(hofAdminApi.hofAdminHundredReject).toHaveBeenCalledWith(11, {
+      rejectReason: 'OTHER',
+      rejectReasonText: '手工复核发现异常'
+    })
+  })
+
+  it('delete current renders stable category values from $tm object', async () => {
+    hofAdminApi.hofAdminHundredList.mockResolvedValue({
+      items: [currentItem], page: 1, size: 50, totalItems: 1, totalPages: 1
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    await switchToHundred(wrapper)
+
+    await wrapper.find('.hof-hundred .actions .btn-sm.danger').trigger('click')
+    const select = wrapper.find('.hof-delete-modal select')
+    const values = select.findAll('option').map(o => o.attributes('value'))
+    expect(values).toEqual(['', 'CHEATING_FORGERY', 'WRONG_REVIEW', 'PLAYER_IDENTITY_ISSUE', 'DATA_ERROR', 'ADMIN_CORRECTION', 'OTHER'])
+    await select.setValue('DATA_ERROR')
+    await wrapper.findAll('.hof-delete-modal .modal-actions button').find(b => b.text() === 'hundredAdmin.delete').trigger('click')
+    await flushPromises()
+    expect(hofAdminApi.hofAdminHundredDelete).toHaveBeenCalledWith(12, { deleteReason: 'DATA_ERROR' })
+  })
+
+  it('approve rejects battle count below 100 with local UX hint (backend still authoritative)', async () => {
+    hofAdminApi.hofAdminHundredList.mockResolvedValue({
+      items: [pendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1
+    })
+    hofAdminApi.hofAdminHundredDetail.mockResolvedValue(pendingDetail)
+    const wrapper = mountPage()
+    await flushPromises()
+    await switchToHundred(wrapper)
+    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
+    await flushPromises()
+
+    const inputs = wrapper.findAll('.hundred-inputs input')
+    await inputs[1].setValue(99)
+    const approveBtn = () => wrapper.findAll('.hof-review-modal button').find(b => b.text() === 'hundredAdmin.approve')
+    await approveBtn().trigger('click')
+    await approveBtn().trigger('click')
+    await flushPromises()
+    expect(hofAdminApi.hofAdminHundredApprove).not.toHaveBeenCalled()
+    expect(wrapper.find('.hof-review-modal').text()).toContain('hundredAdmin.approvedBattlesMin')
   })
 })

@@ -316,7 +316,8 @@
         "noPending": "Нет заявок на проверке",
         "noRejected": "Нет отклонённых заявок",
         "reviewStatus": "На проверке",
-        "certified": "Сертифицировано"
+        "certified": "Сертифицировано",
+        "pendingExistsLocal": "Результат по этой технике уже на проверке; повторная подача невозможна"
     },
     "hundredAdmin": {
         "tab": "Проверка 100 боёв",
@@ -388,7 +389,8 @@
         "pageInfo": "Стр. {page}/{total} · {items}",
         "size": "На странице",
         "close": "Закрыть",
-        "cancel": "Отмена"
+        "cancel": "Отмена",
+        "approvedBattlesMin": "Подтверждённое число боёв не может быть меньше 100"
     },
     "player_labels": {
         "nickname": "Игрок",
@@ -934,7 +936,8 @@
         "HUNDRED_INVALID_APPROVED": "Подтверждённые значения должны быть целыми положительными",
         "HUNDRED_SUBMISSION_NOT_FOUND": "Заявка не найдена",
         "PROOF_SCREENSHOT_REQUIRED": "Загрузите скриншот-доказательство",
-        "INVALID_HUNDRED_STATUS": "Недопустимый статус"
+        "INVALID_HUNDRED_STATUS": "Недопустимый статус",
+        "HUNDRED_APPROVED_BATTLE_COUNT_TOO_LOW": "Подтверждённое число боёв должно быть не меньше 100 (квалификация «100 боёв»)"
     },
     "admin": {
         "title": "Управление пользователями",

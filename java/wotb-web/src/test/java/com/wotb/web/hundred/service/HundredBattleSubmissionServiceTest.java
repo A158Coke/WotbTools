@@ -365,20 +365,16 @@ class HundredBattleSubmissionServiceTest {
     // ── Submission：PENDING 唯一性 & CURRENT 门槛 ───────────────────────
 
     @Test
-    void rejectsWhenSameUserSameVehicleAlreadyPending() throws Exception {
+    void rejectsWhenSameUserSameVehicleAlreadyPending() {
+        // PENDING cheap check 在 replay parse 之前：不解析任何 replay 即拒绝。
         when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
         when(repository.existsByUserKeycloakIdAndVehicleIdAndStatus(USER, TIER10_VEHICLE, "PENDING"))
                 .thenReturn(true);
 
-        try (final var mocked = mockStatic(ReplayParser.class)) {
-            mocked.when(() -> ReplayParser.parse(any(byte[].class))).thenAnswer(inv ->
-                    battle(new String((byte[]) inv.getArgument(0))));
-
-            assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
-                    "data:image/png;base64,AAAA", fiveReplays()))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessage("HUNDRED_PENDING_EXISTS");
-        }
+        assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
+                "data:image/png;base64,AAAA", fiveReplays()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("HUNDRED_PENDING_EXISTS");
         verify(repository, never()).saveAndFlush(any());
     }
 
@@ -509,8 +505,8 @@ class HundredBattleSubmissionServiceTest {
         assertThat(s.getApprovedBy()).isEqualTo(ADMIN);
         // APPROVE 终态：proof 截图事务内清空（不永久保存）
         assertThat(s.getProofScreenshot()).isNull();
-        // 无旧 CURRENT：仅保存 submission
-        verify(repository).save(s);
+        // 无旧 CURRENT：仅保存 submission（saveAndFlush 保证提交）
+        verify(repository).saveAndFlush(s);
     }
 
     @Test
@@ -525,8 +521,8 @@ class HundredBattleSubmissionServiceTest {
         assertThat(result.status()).isEqualTo("CURRENT");
         assertThat(current.getStatus()).isEqualTo("SUPERSEDED");
         assertThat(s.getStatus()).isEqualTo("CURRENT");
-        verify(repository).save(current);
-        verify(repository).save(s);
+        verify(repository).saveAndFlush(current);
+        verify(repository).saveAndFlush(s);
     }
 
     @Test
@@ -561,6 +557,28 @@ class HundredBattleSubmissionServiceTest {
         assertThatThrownBy(() -> service.approve(ADMIN, 10L, 0, 136))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_INVALID_APPROVED");
+    }
+
+    @Test
+    void approveRejectsBattleCountBelowOneHundred() {
+        // 百场资格：approvedBattleCount < 100 必须拒绝（backend authoritative，非前端校验）。
+        assertThatThrownBy(() -> service.approve(ADMIN, 10L, 4200, 99))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("HUNDRED_APPROVED_BATTLE_COUNT_TOO_LOW");
+        verify(repository, never()).saveAndFlush(any());
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void approveAllowsBattleCountExactlyOneHundred() {
+        final HundredBattleSubmission s = pendingSubmission();
+        when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
+
+        final HundredSubmissionSummaryDto result = service.approve(ADMIN, 10L, 4200, 100);
+
+        assertThat(result.status()).isEqualTo("CURRENT");
+        assertThat(s.getApprovedBattleCount()).isEqualTo(100);
+        assertThat(s.getApprovedAverageDamage()).isEqualTo(4200);
     }
 
     @Test

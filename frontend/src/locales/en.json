@@ -316,7 +316,8 @@
         "noPending": "No pending submission",
         "noRejected": "No rejected submissions",
         "reviewStatus": "Under review",
-        "certified": "Certified"
+        "certified": "Certified",
+        "pendingExistsLocal": "A score for this vehicle is already under review; you cannot submit again"
     },
     "hundredAdmin": {
         "tab": "100-battle review",
@@ -388,7 +389,8 @@
         "pageInfo": "Page {page}/{total} · {items} items",
         "size": "Per page",
         "close": "Close",
-        "cancel": "Cancel"
+        "cancel": "Cancel",
+        "approvedBattlesMin": "Approved battle count cannot be below 100"
     },
     "player_labels": {
         "nickname": "Player",
@@ -934,7 +936,8 @@
         "HUNDRED_INVALID_APPROVED": "Approved values must be positive integers",
         "HUNDRED_SUBMISSION_NOT_FOUND": "Submission not found",
         "PROOF_SCREENSHOT_REQUIRED": "Please upload a proof screenshot",
-        "INVALID_HUNDRED_STATUS": "Invalid hundred-battle status"
+        "INVALID_HUNDRED_STATUS": "Invalid hundred-battle status",
+        "HUNDRED_APPROVED_BATTLE_COUNT_TOO_LOW": "Approved battle count must be at least 100 (hundred-battle eligibility)"
     },
     "admin": {
         "title": "User Management",
