@@ -77,9 +77,13 @@ class HundredBattleSubmissionServiceTest {
         // 未触发终态保存的用例不报 UnnecessaryStubbing（lenient）；已触发时返回入参避免 mapper 吃 null。
         org.mockito.Mockito.lenient().when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         // saveAndFlush 返回带 id 的实体：createSubmission 需要 submission.getId() 供 evidence attach（无 DB 的真实 id）。
+        // 注意：测试打桩时 when(repository.saveAndFlush(any())) 的 any() 会以 null 触发本 answer（Mockito 先调用再登记），
+        // 必须空值守卫，不能对 null 调 setId。
         org.mockito.Mockito.lenient().when(repository.saveAndFlush(any())).thenAnswer(inv -> {
             final HundredBattleSubmission s = inv.getArgument(0);
-            s.setId(10L);
+            if (s != null) {
+                s.setId(10L);
+            }
             return s;
         });
     }
