@@ -29,10 +29,13 @@ public final class PlayerResultFormat {
         return p.survivalTimeSec;
     }
 
-    /** 存活/阵亡文本（含秒数）。 */
+    /** 存活/阵亡文本（含秒数）；死亡时刻未知（deathSec<=0）时如实标注，绝不伪造 0.0s。 */
     public static String deathDisplay(final PlayerResult p) {
-        return p.survived ? "存活"
-                : "阵亡@" + String.format("%.1f", deathSec(p)) + "s";
+        if (p.survived) {
+            return "存活";
+        }
+        final double ds = deathSec(p);
+        return ds > 0 ? "阵亡@" + String.format("%.1f", ds) + "s" : "阵亡（时刻未知）";
     }
 
     /** 录像者战绩行（输出/损失血量/助攻/格挡/击杀/存活）。 */
