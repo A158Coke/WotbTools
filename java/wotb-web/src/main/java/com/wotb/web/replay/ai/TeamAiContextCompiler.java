@@ -42,14 +42,14 @@ public final class TeamAiContextCompiler {
             sb.append("时间轴: battle-relative（由战斗结束事件推算，确定性）\n");
         }
 
-        final int episodeCount = episodes.size();
-        final boolean collapse = episodeCount > MAX_EPISODES;
-        final int renderCount = collapse ? MAX_EPISODES : episodeCount;
-        for (int i = 0; i < renderCount; i++) {
+        // 首尾保留：高密度长战斗不丢残局关键决策；中间章节折叠为一行摘要（P1 review）
+        final java.util.List<Integer> selected =
+                PersonalAiContextCompiler.selectedEpisodeIndices(episodes.size(), MAX_EPISODES);
+        for (final int i : selected) {
             renderEpisode(sb, timeline, episodes.get(i), i, perspectiveTeam);
         }
-        if (collapse && episodeCount > renderCount) {
-            sb.append("（其余 ").append(episodeCount - renderCount)
+        if (selected.size() < episodes.size()) {
+            sb.append("（中间 ").append(episodes.size() - selected.size())
                     .append(" 个章节略：信息密度低，未进入上下文）\n");
         }
         return sb.toString();
@@ -137,11 +137,11 @@ public final class TeamAiContextCompiler {
                 return "敌方 " + tank + " 重新出现";
             }
             case HP_CHANGE -> {
-                return "敌方 " + tank + " HP "
+                return whoLabel(d) + " " + tank + " HP "
                         + Math.round(d.number("hpFrom", 0)) + "→" + Math.round(d.number("hpTo", 0));
             }
             case HP_GAP_DELTA -> {
-                return "敌方 " + tank + " 信息空窗期损失约 "
+                return whoLabel(d) + " " + tank + " 信息空窗期损失约 "
                         + Math.round(-d.number("hpDelta", 0)) + " HP（精确时刻/攻击者/原因未知）";
             }
             case DESTROYED -> {
@@ -179,6 +179,11 @@ public final class TeamAiContextCompiler {
                 return "";
             }
         }
+    }
+
+    /** HP 类 delta 称谓：side 来自 delta 属性（friendly → 我方 / enemy → 敌方）。 */
+    private static String whoLabel(final BattleDelta d) {
+        return "friendly".equals(d.attr("side", "enemy")) ? "我方" : "敌方";
     }
 
     private static String tankLabel(final BattleTimeline timeline, final Integer entityId) {

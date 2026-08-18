@@ -114,6 +114,9 @@ final class BattleDeltaEngine {
                 final Double curObserved = v.health().currentHpObservedAtSec();
                 final boolean gapInPosition = prevPos != null
                         && prevPos.knowledge() != PositionKnowledge.CURRENT;
+                // side 属性：friendly/enemy，供 Context Compiler 渲染正确称谓（你/我方/敌方），
+                // 避免己方掉血被误渲染成敌方 HP 变化。
+                final String side = v.friendly() ? "friendly" : "enemy";
                 if (gapInPosition && delta < 0 && prevObserved != null && curObserved != null
                         && (curObserved - prevObserved) > 1.0) {
                     // 信息空窗后重亮：HP 下降只能确定幅度，不能确定精确时刻/攻击者/原因
@@ -122,13 +125,13 @@ final class BattleDeltaEngine {
                                     "newKnownHp", (double) curHp,
                                     "hpDelta", delta,
                                     "informationGapSec", curObserved - prevObserved),
-                            Map.of("exactCauseUnknown", "true")));
+                            Map.of("exactCauseUnknown", "true", "side", side)));
                 } else {
                     out.add(new BattleDelta(DeltaKind.HP_CHANGE, second, t, eid,
                             Map.of("hpDelta", delta,
                                     "hpFrom", (double) prevHpVal,
                                     "hpTo", (double) curHp),
-                            Map.of()));
+                            Map.of("side", side)));
                 }
             }
 

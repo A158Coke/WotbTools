@@ -92,6 +92,9 @@ public final class BattleTimelineBuilder {
         if (clock.resolution() == BattleTimelineClock.ESTIMATED) {
             limitations.add("CLOCK_ESTIMATED");
         }
+        if (TimelineClock.hasMixedClockDomains(recon.events())) {
+            limitations.add("MIXED_CLOCK_DOMAINS");
+        }
         if (index.invalidTimestampEvents() > 0) {
             limitations.add("INVALID_TIMESTAMP_EVENTS=" + index.invalidTimestampEvents());
         }
@@ -250,11 +253,23 @@ public final class BattleTimelineBuilder {
         if (start != null && Float.isFinite(start)) {
             return new ClockResult(start, BattleTimelineClock.IDENTIFIED);
         }
-        // 事件自带 battle-relative 时钟（未来 decoder 支持时）：以 0 为基准，事件时钟权威
+        // 事件自带 battle-relative 时钟（未来 decoder 支持时）：仅当时钟域一致（全部携带
+        // battleClockSec）才以 0 为基准；混合域（部分带、部分 raw-only）会混用两个时钟域，
+        // 拒绝 0 基准、落到 ESTIMATED（raw 域统一），并在 build 阶段标记 MIXED_CLOCK_DOMAINS。
+        boolean anyBattleClock = false;
+        boolean anyRawOnly = false;
         for (final ReplayEvent e : recon.events()) {
-            if (e.timestamp() != null && e.timestamp().battleClockSec() != null) {
-                return new ClockResult(0d, BattleTimelineClock.IDENTIFIED);
+            if (e.timestamp() == null) {
+                continue;
             }
+            if (e.timestamp().battleClockSec() != null) {
+                anyBattleClock = true;
+            } else {
+                anyRawOnly = true;
+            }
+        }
+        if (anyBattleClock && !anyRawOnly) {
+            return new ClockResult(0d, BattleTimelineClock.IDENTIFIED);
         }
         if (battle != null && battle.durationS != null
                 && Float.isFinite(battle.durationS.floatValue()) && battle.durationS > 0) {
@@ -502,19 +517,15 @@ public final class BattleTimelineBuilder {
                 }
             } else {
                 enemyTotal++;
+                // knowledge partition 必须互斥：一辆车只属于一种知识状态；
+                // DESTROYED_KNOWN ⟺ lifeState DESTROYED（frameVehicle 保证），只计一次 destroyed。
                 switch (v.knowledgeState()) {
                     case POSITION_STREAM_ACTIVE -> enemyKnown++;
                     case LAST_KNOWN -> enemyLastKnown++;
-                    case DESTROYED_KNOWN -> {
-                        enemyDestroyed++;
-                        enemyKnown++;
-                    }
+                    case DESTROYED_KNOWN -> enemyDestroyed++;
                     case UNKNOWN -> {
                         // 从未观测到位置：计入 roster 未知（见下方 roster 计算）
                     }
-                }
-                if (v.lifeState() == LifeState.DESTROYED) {
-                    enemyDestroyed++;
                 }
             }
         }

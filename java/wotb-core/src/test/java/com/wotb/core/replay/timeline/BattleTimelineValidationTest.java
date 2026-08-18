@@ -100,6 +100,35 @@ class BattleTimelineValidationTest {
     }
 
     @Test
+    void mixedClockDomainsRejectZeroBaselineAndMarkLimitation() {
+        // P1 review：同一 stream 部分事件带 battleClockSec、部分 raw-only → 时钟域混合，
+        // 不得用 0 基准（IDENTIFIED）；走 ESTIMATED 并标记 MIXED_CLOCK_DOMAINS。
+        final Battle battle = TimelineTestFixtures.battle(60.0);
+        final java.util.List<com.wotb.core.replay.event.ReplayEvent> events =
+                new java.util.ArrayList<>(TimelineTestFixtures.standardEvents());
+        // 一个事件带 battleClockSec（另一时钟域）
+        events.add(new com.wotb.core.replay.event.HealthChangedEvent(
+                900, new com.wotb.core.replay.event.ReplayTimestamp(1005f, 5f), 7,
+                com.wotb.core.replay.event.DecodeConfidence.EXACT,
+                TimelineTestFixtures.ENEMY_EID, 1200, null, true));
+        events.add(TimelineTestFixtures.battleEnded(60.0));
+        final ReplayReconstruction base = TimelineTestFixtures.recon(60.0, events);
+        final ReplayReconstruction mixed = new ReplayReconstruction(
+                base.metadata(), base.streamHeader(), base.replayDurationSec(), null,
+                base.participants(), base.events(), base.checkpoints(),
+                base.finalState(), base.coverage(), base.diagnostics());
+
+        assertTrue(com.wotb.core.replay.timeline.TimelineClock.hasMixedClockDomains(events),
+                "混合域必须被识别");
+        final BattleTimelineResult result = BattleTimelineBuilder.build(
+                battle, mixed, TimelineTestFixtures.personalPerspective());
+        assertTrue(result.usable());
+        assertEquals(BattleTimelineClock.ESTIMATED, result.timeline().clockResolution(),
+                "混合域不得走 0 基准 IDENTIFIED");
+        assertTrue(result.timeline().limitations().contains("MIXED_CLOCK_DOMAINS"));
+    }
+
+    @Test
     void validPersonalTimelineIsUsable() {
         final Battle battle = TimelineTestFixtures.battle(60.0);
         final ReplayReconstruction recon = TimelineTestFixtures.recon(
