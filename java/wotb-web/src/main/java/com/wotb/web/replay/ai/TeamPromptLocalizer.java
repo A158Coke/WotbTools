@@ -17,31 +17,144 @@ final class TeamPromptLocalizer {
             对手称为「对方队伍」或「对方主要军团」。
             录像者只用于确定 perspective（分析视角），不得围绕录像者个人组织团队复盘，也不得把他的个人表现当作队伍结论。
             禁止把整支队伍称为「你」，本文不使用第二人称。
-            必须逐车分析对方阵容并指出对方主要威胁车辆；对方数据缺失时明确说明，不得猜测。""";
+            分析对方阵容并指出对方主要威胁车辆（最多 3 辆，不逐车作文）；对方数据缺失时明确说明，不得猜测。
+            """;
 
     /** Team 专用：EN 团队规则（替换 TEAM_ANALYSIS_RULE）。 */
     static final String TEAM_ANALYSIS_RULE_EN = """
 
-            === TEAM REVIEW RULES (mandatory, training room / clan battle team review only) ===
-            The subject of the review is the entire team identified by teamLabel, not any individual player.
-            Refer to the opponents as "the opposing team"/"the enemy team".
-            The recorder is used only to determine the perspective; do not organize the team review around the
-            recorder as an individual, and do not present his personal performance as team conclusions.
-            Never address the whole team as "you"; do not use the second person in this review.
-            Analyze the opposing lineup tank by tank and point out the opposing team's main threat vehicles;
-            when opposing data is missing, say so explicitly instead of guessing."""; 
+                        === TEAM REVIEW RULES (mandatory, training room / clan battle team review only) ===
+                        The subject of the review is the entire team identified by teamLabel, not any individual player.
+                        Refer to the opponents as "the opposing team"/"the enemy team".
+                        The recorder is used only to determine the perspective; do not organize the team review around the
+                        recorder as an individual, and do not present his personal performance as team conclusions.
+                        Never address the whole team as "you"; do not use the second person in this review.
+                        Analyze the opposing lineup and point out the opposing team's main threat vehicles (at most 3,
+                        without a tank-by-tank essay); when opposing data is missing, say so explicitly instead of guessing.
+            """;
 
     /** Team 专用：RU 团队规则（替换 TEAM_ANALYSIS_RULE）。 */
     static final String TEAM_ANALYSIS_RULE_RU = """
 
-            === ПРАВИЛА КОМАНДНОГО РАЗБОРА (обязательно, только командный разбор тренировочного боя или клановой игры) ===
-            Объект разбора — вся команда, обозначенная teamLabel, а не отдельный игрок.
-            Противников называйте «команда противника»/«вражеская команда».
-            Рекордер используется только для определения перспективы; не стройте командный разбор вокруг рекордера
-            как личности и не выдавайте его личные действия за выводы о команде.
-            Не обращайтесь ко всей команде как к «вы»; в этом разборе не используйте второе лицо.
-            Разбирайте состав противника по машинам и указывайте основные угрозы команды противника;
-            при отсутствии данных о противнике прямо скажите об этом, не угадывая."""; 
+                        === ПРАВИЛА КОМАНДНОГО РАЗБОРА (обязательно, только командный разбор тренировочного боя или клановой игры) ===
+                        Объект разбора — вся команда, обозначенная teamLabel, а не отдельный игрок.
+                        Противников называйте «команда противника»/«вражеская команда».
+                        Рекордер используется только для определения перспективы; не стройте командный разбор вокруг рекордера
+                        как личности и не выдавайте его личные действия за выводы о команде.
+                        Не обращайтесь ко всей команде как к «вы»; в этом разборе не используйте второе лицо.
+                        Проанализируйте состав противника и укажите основные угрозы команды противника (не более 3 машин,
+                        без разбора каждой машины отдельно); при отсутствии данных о противнике прямо скажите об этом, не угадывая.
+            """;
+
+    static final String TEAM_OUTPUT_STRUCTURE_RULE = """
+
+            === 团队复盘输出结构（强制） ===
+            正文采用以下结构；证据不足的章节可以直接省略或写「无法从当前回放数据确定」，禁止为了凑章节硬写内容：
+            1. 核心结论：2-4 句，只回答——这局什么时候真正开始失控/建立优势；最大的、证据最强的团队问题是什么；哪些关键原因目前无法确认。
+            2. 关键决策窗口：只输出 1-3 个真正重要的窗口（优先分析输入中的 TEAM REVIEW FOCUS WINDOWS）。每个窗口按「发生了什么（canonical facts）/ 为什么重要（supported inference）/ 能够确认的问题（仅证据支持）/ 无法确认（evidence boundary）/ 更好的处理（只给与该窗口直接对应的 alternative，不创造精确战术数字）」组织。
+            3. 可确认的团队问题：只写 1-3 个；没有三个就写一个或两个，禁止为了结构完整凑数量。
+            4. 训练建议：只写 1-3 条；每一条必须明确对应前面的一个「可确认问题」；禁止通用教练式空话。
+            5. 对方关键威胁（可选）：只在确实有价值时写 1-3 辆；禁止逐车分析对方全部阵容。
+            完整阵容与结算数据由 UI/后端展示，正文不得重复罗列；禁止把复盘写成时间线流水账或 10 章作文。
+            """;
+
+    static final String TEAM_OUTPUT_STRUCTURE_RULE_EN = """
+
+                        === TEAM REVIEW OUTPUT STRUCTURE (mandatory) ===
+                        Organize the review as follows; sections with insufficient evidence may be omitted or marked "cannot be determined from the current replay data" — never pad sections just to fill a template:
+                        1. Core conclusion: 2-4 sentences answering only: when did this battle really start to slip away / build an advantage; what is the largest, best-supported team problem; which key causes cannot currently be confirmed.
+                        2. Key decision windows: output only 1-3 truly important windows (prioritize the TEAM REVIEW FOCUS WINDOWS in the input). For each window cover "what happened (canonical facts) / why it matters (supported inference) / issues that can be confirmed (evidence-backed only) / what cannot be confirmed (evidence boundary) / better handling (only an alternative directly tied to this window; never invent precise tactical numbers)".
+                        3. Confirmed team problems: only 1-3; if there are fewer than three, write one or two — never pad to reach a fixed count.
+                        4. Training recommendations: only 1-3; each must map to a confirmed problem above; no generic coaching filler.
+                        5. Opposing threats (optional): only 1-3 vehicles when genuinely useful; never write a tank-by-tank essay of the whole opposing lineup.
+                        Full lineups and settlement data are shown by the UI/backend; do not re-list them in the review body; never turn the review into a timeline log or a ten-chapter essay.
+            """;
+
+    static final String TEAM_OUTPUT_STRUCTURE_RULE_RU = """
+
+                        === СТРУКТУРА КОМАНДНОГО РАЗБОРА (обязательно) ===
+                        Стройте разбор по следующей структуре; разделы с недостаточными доказательствами можно опустить или пометить «невозможно определить по данным реплея» — не заполняйте разделы лишь ради шаблона:
+                        1. Ключевой вывод: 2–4 предложения, отвечающие только на: когда бой реально начал уходить из-под контроля / создавалось преимущество; какая самая крупная и лучше всего подтверждённая командная проблема; какие ключевые причины сейчас нельзя подтвердить.
+                        2. Ключевые окна решений: только 1–3 действительно важных окна (в первую очередь из TEAM REVIEW FOCUS WINDOWS во входе). По каждому окну — «что произошло (canonical факты) / почему это важно (подтверждённый вывод) / какие проблемы можно подтвердить (только на основе доказательств) / что подтвердить нельзя (граница доказательств) / как следовало поступить (только альтернатива, напрямую связанная с этим окном; не выдумывайте точных тактических цифр)».
+                        3. Подтверждённые командные проблемы: только 1–3; если их меньше трёх, напишите одну или две — не добирайте до фиксированного числа.
+                        4. Тренировочные рекомендации: только 1–3; каждая должна соответствовать подтверждённой проблеме выше; никаких общих тренерских шаблонов.
+                        5. Ключевые угрозы противника (опционально): только 1–3 машины, если это действительно полезно; не пишите разбор каждой машины противника отдельно.
+                        Полные составы и итоги показывает UI/бэкенд; не перечисляйте их в теле разбора; не превращайте разбор в лог таймлайна или сочинение из десяти глав.
+            """;
+
+    static final String TEAM_EVIDENCE_CONTRACT_RULE = """
+
+            === 证据契约（强制）：FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN ===
+            1. FACT（事实）：只能来自权威结算、权威阵容、已验证的 canonical timeline 与后端确定性证据。
+               例如「1分52秒至2分12秒，本方连续损失3辆，对方同期损失1辆」。
+            2. SUPPORTED INFERENCE（有支撑的推断）：必须有明确 FACT 支撑、不超出当前能力、不把相关性写成确定因果，
+               措辞保守。允许：「更符合…」「从当前证据看…」「可以确认的是…」「较可能意味着…」「无法进一步证明其具体原因…」。
+            3. UNKNOWN（未知）是正常答案，不是失败答案：证据不足时明确写「无法从当前回放数据确定」，
+               质量高于编造一个听起来合理的原因。例如可以确认「连续减员及交换效率恶化」，但不能确定主要原因时，
+               写「当前数据可以确认连续减员及交换效率恶化，但无法确定主要原因究竟是掩体使用、指挥沟通还是具体射界问题」。
+            4. RECOMMENDATION（建议）：必须从可确认问题反推、对应本局真实失败、不创造精确数字、不形成通用规则。
+            5. 没有对应后端证据时，禁止输出以下断言或其同义改写：
+                a. 视野/点亮/侦察类：「提供视野」「拿到了视野」「点亮了」「侦察到了」「开局散开就是图控/拿视野」；
+                b. 地形/掩体/LOS 类：「没有掩体」「没有掩体切割」「卡住掩体」「卖头」「hull-down」「对方有无遮挡射界」；
+                c. 位置感类：「位置感很好」「位置感差」；
+                d. 结算→时间线因果类：如「几乎每一波伤害都有他」「助攻高说明为队友提供输出窗口」「队友没有保护他」；
+                e. 必然性类：「必然导致」「必然被逐个击破」「必然被逐个收走」；
+                f. 精确数字类：禁止创造「15米」「25米」「三分之一血」「连续两炮」「5秒」等精确阈值，除非由后端提供、
+                   项目所有者登记的业务规则或已验证的车辆战术参数提供；改用非伪精确表达，如「低血量成员应减少继续承担
+                   第一接触火力」「有血量的队友应考虑承担下一轮交换」「目标切换应减少火力分散」；
+                g. 残局万能规则类：禁止「2v4/3v5 就必须立刻离开当前掩体向地图另一端转移」；残局决策取决于地图、位置、
+                   车型、血量、点数、时间与敌方分布，证据不足时只能描述观察到的行为并写明无法确定最优转场方向。
+                h. 车辆角色类：禁止自创「薄皮输出型」「前排坦克」「肉盾」「狙击车」等角色标签；角色只能来自后端提供的
+                   结构化字段（vehicleClass / 已验证的坦克战术 Profile 标签），后端未提供时只写坦克名称与车种；
+            6. 禁止为了结构完整凑数量：没有 3 个问题不要凑 3 个；没有 5 条建议不要凑 5 条；没有值得分析的 7 辆敌车不要
+                逐车作文；没有足够强的 positive 证据时不得硬写「做得好的团队行为」。
+            """;
+
+    static final String TEAM_EVIDENCE_CONTRACT_RULE_EN = """
+
+                        === EVIDENCE CONTRACT (mandatory): FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN ===
+                        1. FACT: only from the authoritative battle result, the authoritative roster/settlement, the validated canonical timeline, and backend-derived deterministic evidence.
+                           Example: "From 1m 52s to 2m 12s, your team lost 3 tanks in a row while the opposing team lost 1."
+                        2. SUPPORTED INFERENCE: must be backed by explicit FACTs, stay within current capabilities, never present correlation as proven causation, and use conservative wording.
+                           Allowed: "is more consistent with...", "based on the current evidence...", "what can be confirmed is...", "likely means...", "the specific cause cannot be proven further...".
+                        3. UNKNOWN is a normal answer, not a failure: when evidence is insufficient, explicitly write "cannot be determined from the current replay data".
+                           This is higher quality than inventing a plausible-sounding cause. Example: "The current data confirms a run of losses and worsening trade efficiency, but it cannot determine whether the main cause was cover usage, command communication, or specific firing angles."
+                        4. RECOMMENDATION: must derive from a confirmed problem, correspond to the real failure in this battle, never invent precise numbers, and never form universal rules.
+                        5. Without corresponding backend evidence, the following claims (or equivalent rewording) are forbidden:
+                           a. Vision/spotting/recon: "provided vision", "got vision", "spotted", "recon'd", "an opening spread is map control / vision gathering";
+                           b. Terrain/cover/LOS: "no cover", "no cover cutting", "held cover", "hull-down", "the enemy had an unobstructed firing angle";
+                           c. Positioning sense: "great positioning sense", "poor positioning sense";
+                           d. Turning settlement aggregates into timeline causation: "he was in every wave of damage", "high assisted damage proves he created firing windows for teammates", "teammates did not protect him";
+                           e. Certainty: "inevitably led to", "inevitably picked off one by one";
+                           f. Precise numbers: never invent thresholds such as "15m", "25m", "one third HP", "two consecutive hits", "5 seconds", unless provided by the backend, a registered business rule of the project owner, or a verified tank tactical profile parameter.
+                              Use non-false-precision phrasing instead: "low-HP members should stop absorbing first-contact fire", "teammates with HP should consider taking the next trade", "switching targets should reduce split fire";
+                           g. Endgame universal rules: never issue commands like "in a 2v4 or 3v5 you must immediately leave cover and rotate to the other end of the map"; endgame decisions depend on map, position, tank composition, HP, points, time and enemy distribution — with insufficient evidence, only describe observed behavior and state that the optimal rotation cannot be determined.
+               h. Vehicle roles: never invent role labels such as "thin-skinned damage dealer", "frontline tank", "meat shield", "sniper"; roles may only come from backend-provided structured fields (vehicleClass / verified tank tactical profile labels); when the backend provides none, write only the tank name and class;
+                        6. Never pad for structural completeness: do not force 3 problems, 5 recommendations, or a tank-by-tank essay of 7 enemy vehicles when there is not enough to analyze; without strong positive evidence, do not force a "what the team did well" section.
+            """;
+
+    static final String TEAM_EVIDENCE_CONTRACT_RULE_RU = """
+
+                        === КОНТРАКТ ДОКАЗАТЕЛЬСТВ (обязательно): FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN ===
+                        1. FACT (факт): только из авторитетного результата боя, авторитетного состава, проверенного canonical таймлайна и детерминированных свидетельств бэкенда.
+                           Пример: «С 1 мин 52 с по 2 мин 12 с ваша команда потеряла 3 машины подряд, а противник — 1».
+                        2. SUPPORTED INFERENCE (подтверждённый вывод): должен опираться на явные FACT, не выходить за текущие возможности, не превращать корреляцию в доказанную причинность и использовать сдержанные формулировки.
+                           Допустимо: «более соответствует…», «по текущим данным…», «можно подтвердить, что…», «вероятно, означает…», «конкретную причину далее доказать нельзя…».
+                        3. UNKNOWN (неизвестно) — нормальный ответ, а не провал: при недостатке доказательств прямо пишите «невозможно определить по данным реплея».
+                           Это качественнее, чем выдумать правдоподобную причину. Пример: «Текущие данные подтверждают серию потерь и ухудшение размена, но нельзя определить, была ли главная причина в использовании укрытий, командной коммуникации или конкретных углах обстрела».
+                        4. RECOMMENDATION (рекомендация): должна выводиться из подтверждённой проблемы, соответствовать реальному провалу в этом бою, не выдумывать точных цифр и не формулировать универсальные правила.
+                        5. Без соответствующих доказательств бэкенда запрещены следующие утверждения (или их пересказ):
+                           a. Обзор/засвет/разведка: «обеспечивал обзор», «получил обзор», «засветил», «разведал», «рассредоточение на старте = контроль карты / сбор обзора»;
+                           b. Рельеф/укрытия/линия огня: «нет укрытий», «нет работы по укрытиям», «держал укрытие», «игра с башни», «hull-down», «у противника был свободный угол обстрела»;
+                           c. Чувство позиции: «отличное чувство позиции», «плохое чувство позиции»;
+                           d. Итоги → причинность таймлайна: «он был в каждой волне урона», «высокий урон с ассистом доказывает, что он создавал окна для союзников», «союзники его не прикрывали»;
+                           e. Неизбежность: «неизбежно привело к», «неизбежно добили по одному»;
+                           f. Точные цифры: не выдумывайте пороги вроде «15 м», «25 м», «треть ОЗ», «два попадания подряд», «5 секунд», если их не дал бэкенд, не зарегистрировал владелец проекта как бизнес-правило или не подтвердил проверенный тактический профиль машины.
+                              Используйте формулировки без ложной точности: «участники с низким ОЗ должны перестать принимать первый огонь», «союзники с ОЗ должны рассмотреть следующий размен», «смена целей должна уменьшить распыление огня»;
+                           g. Универсальные правила концовки: запрещены приказы вроде «при 2v4/3v5 немедленно уйти из укрытия и ротироваться на другой конец карты»; решения концовки зависят от карты, позиции, состава машин, ОЗ, очков, времени и распределения противника — при недостатке доказательств описывайте только наблюдаемое поведение и указывайте, что оптимальное направление ротации определить нельзя.
+               h. Роли машин: не выдумывайте ярлыки вроде «тонкобронная машина поддержки», «танк первой линии», «танк-мясник», «снайпер»; роли могут браться только из структурированных полей бэкенда (vehicleClass / проверенные метки тактического профиля машины); если бэкенд их не дал, пишите только название и класс машины;
+                        6. Не добирайте объём ради полноты структуры: нет 3 проблем — не пишите 3; нет 5 рекомендаций — не пишите 5; нет смысла разбирать 7 машин противника — не пишите про каждую; без достаточно сильных положительных доказательств не вставляйте раздел «что команда сделала хорошо».
+            """;
 
     /** Team 专用：Call #1 赛前战略基线的使用规则（强制；EN/RU 本地化时替换）。 */
     static final String TEAM_PRIOR_RULE = """
@@ -188,29 +301,37 @@ final class TeamPromptLocalizer {
     static final String SOLO_INTENT_RULE = """
 
             === 单走行为判定规则（强制） ===
-            1. 开局散开（首次接敌前或开局 45 秒内、未接火未承伤未阵亡）是图控/拿视野，不是脱节，不得判为失误。
+            1. 开局散开（首次接敌前或开局 45 秒内、未接火未承伤未阵亡）本身是中性行为：不能仅凭分散判为脱节，
+               也不能仅凭分散判为图控/拿视野；只能描述车辆之间的实际位置、距离和移动关系。
+               只有后端提供可靠证据（如 OPENING_MAP_CONTROL 等候选）时才能进一步判断图控/侦察/点亮/视野收益/拖延收益/战术脱节；
+               证据不足时写「无法从当前回放数据确定其战术目的」。
             2. 单走成员是否判「拖延」取决于队友是否因他获利（转场/占点/另一侧推进/视野时间）：后端只提供时序关联，禁止声称「A 的行为导致 B 获利」的因果。
             3. 判「脱节」需要无拖延收益且被白吃/丢点（无接应、承伤高或阵亡、远离目标点）。
             4. 后端给出 OPENING_MAP_CONTROL / SOLO_DELAY / SOLO_DETACHED 候选时，先说明信号依据再下结论；信号不足或矛盾时明确写「无法从当前回放数据确定」，禁止硬下标签。
-            5. 只基于可观测行为（位置、移动、交火、占点）判定战术行为模式，不得把行为模式说成玩家心理意图；正文不得出现「簇/质心/候选/规则候选/PARTIAL」等内部术语，一律转成自然中文。""";
+            5. 只基于可观测行为（位置、移动、交火、占点）判定战术行为模式，不得把行为模式说成玩家心理意图；正文不得出现「簇/质心/候选/规则候选/PARTIAL」等内部术语，一律转成自然中文。
+            """;
 
     static final String SOLO_INTENT_RULE_EN = """
 
-            === SOLO-PLAY JUDGMENT RULES (mandatory) ===
-            1. An opening spread (before first contact or within the first 45 seconds, no damage dealt/received, no destruction) is map control / vision gathering, not detachment; never call it a mistake.
-            2. Whether a solo member's play is "delay" depends on whether teammates profited from it (rotation / capture / advance on another flank / vision time): the backend provides temporal correlation only; never claim causation ("A's play caused B's profit").
-            3. "Detachment" requires no delay benefit and being caught out / losing ground (no support, high damage taken or destruction, away from objectives).
-            4. When the backend provides OPENING_MAP_CONTROL / SOLO_DELAY / SOLO_DETACHED candidates, state the signal basis before concluding; when signals are insufficient or contradictory, explicitly write "cannot be determined from the current replay data" and never force a label.
-            5. Judge tactical behavior patterns only from observable behavior (position, movement, engagements, capture points); never describe a behavior pattern as the player's mental intent. Never echo internal terms such as cluster/centroid/candidate/PARTIAL; use natural language.""";
+                        === SOLO-PLAY JUDGMENT RULES (mandatory) ===
+                        1. An opening spread (before first contact or within the first 45 seconds, no damage dealt/received, no destruction) is a neutral behavior by itself: you may not call it detachment merely because the team is spread out, and you may not call it map control / vision gathering either; only describe the actual positional, distance and movement relations between vehicles.
+                           Only when the backend provides reliable evidence (e.g. an OPENING_MAP_CONTROL candidate) may you further judge map control / recon / spotting / vision benefit / delay benefit / tactical detachment; with insufficient evidence write "its tactical purpose cannot be determined from the current replay data".
+                        2. Whether a solo member's play is "delay" depends on whether teammates profited from it (rotation / capture / advance on another flank / vision time): the backend provides temporal correlation only; never claim causation ("A's play caused B's profit").
+                        3. "Detachment" requires no delay benefit and being caught out / losing ground (no support, high damage taken or destruction, away from objectives).
+                        4. When the backend provides OPENING_MAP_CONTROL / SOLO_DELAY / SOLO_DETACHED candidates, state the signal basis before concluding; when signals are insufficient or contradictory, explicitly write "cannot be determined from the current replay data" and never force a label.
+                        5. Judge tactical behavior patterns only from observable behavior (position, movement, engagements, capture points); never describe a behavior pattern as the player's mental intent. Never echo internal terms such as cluster/centroid/candidate/PARTIAL; use natural language.
+            """;
 
     static final String SOLO_INTENT_RULE_RU = """
 
-            === ПРАВИЛА ОЦЕНКИ ДЕЙСТВИЙ В ОДИНОЧКУ (обязательно) ===
-            1. Рассредоточение на старте (до первого контакта или в первые 45 секунд, без нанесённого/полученного урона, без уничтожения) — это контроль карты / сбор разведданных, а не отрыв; не считайте это ошибкой.
-            2. Является ли действие игрока «задержкой», зависит от того, извлекли ли союзники выгоду (ротация / захват / продвижение на другом фланге / время на разведку): бэкенд даёт только временну́ю корреляцию; запрещено утверждать причинность («действие A принесло выгоду B»).
-            3. «Отрыв» требует отсутствия выгоды от задержки и размена без пользы (без поддержки, высокий полученный урон или уничтожение, вдали от целей).
-            4. Когда бэкенд даёт кандидатов OPENING_MAP_CONTROL / SOLO_DELAY / SOLO_DETACHED, сначала укажите обоснование по сигналам; при недостатке или противоречивости сигналов прямо пишите «невозможно определить по данным реплея» и не навешивайте ярлык.
-            5. Оценивайте только наблюдаемые паттерны поведения (позиция, движение, перестрелки, захват точек); не выдавайте паттерн поведения за психологические намерения игрока. Не используйте внутренние термины (кластер/центроид/кандидат/PARTIAL); излагайте естественно.""";
+                        === ПРАВИЛА ОЦЕНКИ ДЕЙСТВИЙ В ОДИНОЧКУ (обязательно) ===
+                        1. Рассредоточение на старте (до первого контакта или в первые 45 секунд, без нанесённого/полученного урона, без уничтожения) само по себе нейтрально: нельзя называть его отрывом только из-за рассредоточения, но и контролем карты / сбором обзора — тоже; описывайте только фактические позиционные, дистанционные и двигательные отношения между машинами.
+                           Только при надёжных доказательствах бэкенда (например, кандидат OPENING_MAP_CONTROL) можно судить о контроле карты / разведке / засвете / выгоде обзора / выгоде задержки / тактическом отрыве; при недостатке доказательств пишите «его тактическая цель по данным реплея не определяется».
+                        2. Является ли действие игрока «задержкой», зависит от того, извлекли ли союзники выгоду (ротация / захват / продвижение на другом фланге / время на разведку): бэкенд даёт только временну́ю корреляцию; запрещено утверждать причинность («действие A принесло выгоду B»).
+                        3. «Отрыв» требует отсутствия выгоды от задержки и размена без пользы (без поддержки, высокий полученный урон или уничтожение, вдали от целей).
+                        4. Когда бэкенд даёт кандидатов OPENING_MAP_CONTROL / SOLO_DELAY / SOLO_DETACHED, сначала укажите обоснование по сигналам; при недостатке или противоречивости сигналов прямо пишите «невозможно определить по данным реплея» и не навешивайте ярлык.
+                        5. Оценивайте только наблюдаемые паттерны поведения (позиция, движение, перестрелки, захват точек); не выдавайте паттерн поведения за психологические намерения игрока. Не используйте внутренние термины (кластер/центроид/кандидат/PARTIAL); излагайте естественно.
+            """;
 
     /** Team 专用：争霸赛占点规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。 */
     static final String CAPTURE_RULE = """
@@ -361,7 +482,11 @@ final class TeamPromptLocalizer {
                 .replace(BEHIND_LINE_RULE,
                         en ? BEHIND_LINE_RULE_EN : BEHIND_LINE_RULE_RU)
                 .replace(FORMATION_DEPTH_RULE,
-                        en ? FORMATION_DEPTH_RULE_EN : FORMATION_DEPTH_RULE_RU);
+                        en ? FORMATION_DEPTH_RULE_EN : FORMATION_DEPTH_RULE_RU)
+                .replace(TEAM_OUTPUT_STRUCTURE_RULE,
+                        en ? TEAM_OUTPUT_STRUCTURE_RULE_EN : TEAM_OUTPUT_STRUCTURE_RULE_RU)
+                .replace(TEAM_EVIDENCE_CONTRACT_RULE,
+                        en ? TEAM_EVIDENCE_CONTRACT_RULE_EN : TEAM_EVIDENCE_CONTRACT_RULE_RU);
     }
 
     static final String SINGLE_TEAM_PROMPT = AiPromptLibrary.zh("team/single");

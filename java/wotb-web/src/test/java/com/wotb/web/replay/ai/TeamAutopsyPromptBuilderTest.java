@@ -137,7 +137,8 @@ class TeamAutopsyPromptBuilderTest {
     void systemPromptBansHindsightAndRequiresPlayerKeys() {
         final String settlement = TeamAutopsyPromptBuilder.AUTOPSY_SYSTEM_PROMPT_SETTLEMENT_ONLY;
         assertTrue(settlement.contains("严禁事后诸葛亮"));
-        assertTrue(settlement.contains("战犯"));
+        assertTrue(settlement.contains("重点复查对象"));
+        assertTrue(settlement.contains("高贡献者"));
         assertTrue(settlement.contains("biggestLiabilities"));
         assertTrue(settlement.contains("playerKey"));
         assertTrue(settlement
@@ -166,12 +167,12 @@ class TeamAutopsyPromptBuilderTest {
         assertTrue(section.contains("CHRD落败"));
         assertTrue(section.contains("置信度: 精确"), "EXACT must render as 精确");
         assertTrue(section.contains(": 高（"), "HIGH contribution must render as 高");
-        assertTrue(section.contains("**主要战犯：**"), "战犯标题必须加粗：" + section);
-        assertTrue(section.contains("**MVP：**"), "MVP 标题必须加粗：" + section);
+        assertTrue(section.contains("**重点复查对象：**"), "重点复查对象标题必须加粗：" + section);
+        assertTrue(section.contains("**高贡献者：**"), "高贡献者标题必须加粗：" + section);
         assertTrue(section.contains("**P2（\"nick2 / Kranvagn 2\"）**"),
-                "战犯玩家名必须加粗：" + section);
+                "重点复查对象玩家名必须加粗：" + section);
         assertTrue(section.contains("**P1（\"nick1 / Kranvagn 1\"）**"),
-                "MVP 玩家名必须加粗：" + section);
+                "高贡献者玩家名必须加粗：" + section);
         assertTrue(section.contains("逐人贡献"));
         assertFalse(section.contains("限制"), "用户可见复盘不得包含限制段：" + section);
         assertFalse(section.contains("未知玩家"));

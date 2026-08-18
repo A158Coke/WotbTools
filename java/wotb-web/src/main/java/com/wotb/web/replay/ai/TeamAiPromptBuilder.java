@@ -241,7 +241,11 @@ public final class TeamAiPromptBuilder {
             throw new IllegalStateException(
                     "validated team timeline rendered blank TACTICAL TIMELINE: map=" + timeline.mapCode());
         }
-        return "\n=== TACTICAL TIMELINE（时间有序战局章节·battle-relative 确定性） ===\n" + section;
+        // Focus Window 段（确定性）：与 TACTICAL TIMELINE 同一已验证 timeline 渲染，
+        // 只输出 1-3 个信息密度最高的决策窗口；无窗口时省略该段。
+        final String focusWindows = TeamAiContextCompiler.renderFocusWindowsSection(timeline, perspectiveTeam);
+        return "\n=== TACTICAL TIMELINE（时间有序战局章节·battle-relative 确定性） ===\n" + section
+                + (focusWindows.isBlank() ? "" : "\n" + focusWindows);
     }
 
     private static Set<String> collectLimitations(

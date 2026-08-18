@@ -284,7 +284,10 @@ final class PlayerPromptRules {
     static final String SOLO_INTENT_RULE = """
 
             === 单走行为判定规则（强制，随机战个人复盘） ===
-            1. 开局散开（首次接敌前或开局 45 秒内、未接火未承伤未阵亡）是图控/拿视野，不是脱节。
+            1. 开局散开（首次接敌前或开局 45 秒内、未接火未承伤未阵亡）本身是中性行为：不能仅凭分散判为脱节，
+               也不能仅凭分散判为图控/拿视野；只能描述车辆之间的实际位置、距离和移动关系。
+               只有后端提供可靠证据（如 OPENING_MAP_CONTROL 等候选）时才能进一步判断图控/侦察/点亮/视野收益/战术脱节；
+               证据不足时写「无法从当前回放数据确定其战术目的」。
             2. 单走判「拖延」需要可观测行为：静止/卡点/守点 + 有敌情压力（不撤退）；只基于位置、移动、交火判定行为模式，不得把行为模式说成玩家心理意图；正文不得出现「簇/质心/候选/规则候选/PARTIAL」等内部术语，一律转成自然中文。
             3. 判「脱节」需要持续拉大距离 + 无掩护/无收益 + 被白吃或阵亡。
             4. 证据不足或信号矛盾时明确写「无法从当前回放数据确定」，禁止硬下标签。""";
@@ -292,7 +295,8 @@ final class PlayerPromptRules {
     static final String SOLO_INTENT_RULE_EN = """
 
             === SOLO-PLAY JUDGMENT RULES (mandatory, random-battle personal review) ===
-            1. An opening spread (before first contact or within the first 45 seconds, no damage dealt/received, no destruction) is map control / vision gathering, not detachment.
+            1. An opening spread (before first contact or within the first 45 seconds, no damage dealt/received, no destruction) is a neutral behavior by itself: you may not call it detachment merely because the team is spread out, and you may not call it map control / vision gathering either; only describe the actual positional, distance and movement relations between vehicles.
+               Only when the backend provides reliable evidence (e.g. an OPENING_MAP_CONTROL candidate) may you further judge map control / recon / spotting / vision benefit / tactical detachment; with insufficient evidence write "its tactical purpose cannot be determined from the current replay data".
             2. Calling a solo play "delay" requires observable behavior: holding/stationary at a key point + enemy pressure (no retreat); judge behavior patterns only from position, movement and engagements, never describe a behavior pattern as the player's mental intent. Never echo internal terms such as cluster/centroid/candidate/PARTIAL; use natural language.
             3. "Detachment" requires continuously increasing distance + no cover/no payoff + being caught out or destroyed.
             4. When signals are insufficient or contradictory, explicitly write "cannot be determined from the current replay data" and never force a label.""";
@@ -300,7 +304,8 @@ final class PlayerPromptRules {
     static final String SOLO_INTENT_RULE_RU = """
 
             === ПРАВИЛА ОЦЕНКИ ДЕЙСТВИЙ В ОДИНОЧКУ (обязательно, личный разбор случайного боя) ===
-            1. Рассредоточение на старте (до первого контакта или в первые 45 секунд, без нанесённого/полученного урона, без уничтожения) — это контроль карты / сбор разведданных, а не отрыв.
+            1. Рассредоточение на старте (до первого контакта или в первые 45 секунд, без нанесённого/полученного урона, без уничтожения) само по себе нейтрально: нельзя называть его отрывом только из-за рассредоточения, но и контролем карты / сбором обзора — тоже; описывайте только фактические позиционные, дистанционные и двигательные отношения между машинами.
+               Только при надёжных доказательствах бэкенда (например, кандидат OPENING_MAP_CONTROL) можно судить о контроле карты / разведке / засвете / выгоде обзора / тактическом отрыве; при недостатке доказательств пишите «его тактическая цель по данным реплея не определяется».
             2. Называть действие «задержкой» можно только на основе наблюдаемого поведения: удержание/неподвижность на ключевой позиции + давление противника (без отхода); оценивайте паттерны только по позиции, движению и перестрелкам, не выдавайте паттерн за психологические намерения игрока. Не используйте внутренние термины (кластер/центроид/кандидат/PARTIAL); излагайте естественно.
             3. «Отрыв» требует непрерывного увеличения дистанции + отсутствия прикрытия/выгоды + размена без пользы или уничтожения.
             4. При недостатке или противоречивости сигналов прямо пишите «невозможно определить по данным реплея» и не навешивайте ярлык.""";

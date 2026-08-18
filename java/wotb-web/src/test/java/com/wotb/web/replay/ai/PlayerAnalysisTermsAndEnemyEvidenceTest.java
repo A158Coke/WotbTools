@@ -141,13 +141,18 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
     }
 
     @Test
-    void promptsRequirePerVehicleEnemyAnalysis() {
-        allSystemPrompts().forEach(prompt -> assertTrue(
-                prompt.contains("必须逐车分析敌方阵容") || prompt.contains("必须逐车分析对方阵容"), prompt));
+    void promptsRequireEnemyAnalysisWithTeamCap() {
+        // player 路径仍强制逐车分析敌方阵容（个人复盘需要逐对手威胁）
         assertTrue(PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT
                 .contains("敌方阵容逐车分析"), PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT);
         assertTrue(PlayerReplayPromptBuilder.SYSTEM_PROMPT
                 .contains("逐车分析敌方阵容"), PlayerReplayPromptBuilder.SYSTEM_PROMPT);
+        assertTrue(PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT
+                .contains("必须逐车分析敌方阵容"), PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT);
+        // 团队路径（AI Review V2.1）：不再强制逐车作文，改为指出对方主要威胁（最多 3 辆）
+        final String team = TeamReplayAnalysisService.SINGLE_TEAM_PROMPT;
+        assertTrue(team.contains("分析对方阵容并指出对方主要威胁车辆"), team);
+        assertFalse(team.contains("逐车分析对方阵容"), "团队复盘不得强制逐车作文");
     }
 
     // ---- 3. 双方对炮明细 ----
