@@ -71,6 +71,14 @@ public class HallOfFameService {
     }
 
     /**
+     * 某回放 hash 在名人堂记录中的引用数（百场 evidence 物理文件清理时的跨域引用计数）。
+     * 百场与名人堂共享同一内容寻址存储目录，删除文件前必须确认两个域都无引用。
+     */
+    public long countReplayHashReferences(final String sha256) {
+        return repository.countByReplayHash(sha256);
+    }
+
+    /**
      * 纯内存 eligibility（写文件前的 preflight）：不支持战斗模式（含训练房/联赛/未知）/
      * 无录像者 → SKIPPED，其余返回 SAVED（仅表示 eligible，不代表入库结果）。
      */

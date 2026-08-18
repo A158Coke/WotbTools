@@ -1,14 +1,22 @@
 package com.wotb.web.hundred.controller;
 
 import com.wotb.web.config.ApiPaths;
+import com.wotb.web.hof.dto.ReplayDownload;
 import com.wotb.web.hundred.dto.HundredAdminDetailDto;
 import com.wotb.web.hundred.dto.HundredAdminPageDto;
 import com.wotb.web.hundred.dto.HundredApproveRequest;
 import com.wotb.web.hundred.dto.HundredDeleteRequest;
 import com.wotb.web.hundred.dto.HundredRejectRequest;
+import com.wotb.web.hundred.dto.HundredReplayEvidenceDto;
 import com.wotb.web.hundred.dto.HundredSubmissionSummaryDto;
 import com.wotb.web.hundred.service.HundredBattleSubmissionService;
+import com.wotb.web.hundred.service.HundredReplayEvidenceService;
 import com.wotb.web.util.JwtUtil;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,6 +25,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 /**
  * 名人堂「百场」管理后台 REST API（/api/admin/hof/hundred/**，需 HoF-admin 或 wotbtools-admin；
@@ -28,9 +39,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class HundredBattleAdminController {
 
     private final HundredBattleSubmissionService service;
+    private final HundredReplayEvidenceService evidenceService;
 
-    public HundredBattleAdminController(final HundredBattleSubmissionService service) {
+    public HundredBattleAdminController(final HundredBattleSubmissionService service,
+                                        final HundredReplayEvidenceService evidenceService) {
         this.service = service;
+        this.evidenceService = evidenceService;
     }
 
     /** 审核列表：status 过滤（PENDING / CURRENT / ...，缺省全部），submitted_at 倒序。 */
@@ -46,6 +60,32 @@ public class HundredBattleAdminController {
     @GetMapping("/submissions/{id}")
     public HundredAdminDetailDto detail(@PathVariable final long id) {
         return service.adminDetail(id);
+    }
+
+    /**
+     * 审核证据列表：该 submission 的 replay metadata（slot / originalFilename / size / arenaId / sha256）。
+     * 旧 PENDING（证据持久化功能上线前创建）→ 空列表；不包含文件内容，下载走下方独立端点。
+     */
+    @GetMapping("/submissions/{id}/replays")
+    public List<HundredReplayEvidenceDto> replays(@PathVariable final long id) {
+        return evidenceService.adminListEvidence(id);
+    }
+
+    /**
+     * 下载单个审核证据（原始 .wotbreplay 字节）：replayId 必须属于 submissionId（ownership 校验）；
+     * Content-Type octet-stream，Content-Disposition attachment（UTF-8 安全编码原始文件名，绝不参与路径）。
+     */
+    @GetMapping("/submissions/{submissionId}/replays/{replayId}")
+    public ResponseEntity<byte[]> downloadReplay(@PathVariable final long submissionId,
+                                                 @PathVariable final long replayId) {
+        final ReplayDownload download = evidenceService.downloadEvidence(submissionId, replayId);
+        final String fileName = StringUtils.hasText(download.fileName())
+                ? download.fileName() : "replay-" + replayId + ".wotbreplay";
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(fileName, StandardCharsets.UTF_8).build().toString())
+                .body(download.data());
     }
 
     /** APPROVE：事务内重新读取 CURRENT 并比较 approvedAverageDamage；旧 CURRENT → SUPERSEDED。 */

@@ -4,7 +4,9 @@ import com.wotb.web.hundred.dto.HundredAdminDetailDto;
 import com.wotb.web.hundred.dto.HundredAdminListItemDto;
 import com.wotb.web.hundred.dto.HundredLeaderboardItemDto;
 import com.wotb.web.hundred.dto.HundredLeaderboardPageDto;
+import com.wotb.web.hundred.dto.HundredReplayEvidenceDto;
 import com.wotb.web.hundred.dto.HundredSubmissionSummaryDto;
+import com.wotb.web.hundred.entity.HundredBattleReplayEvidence;
 import com.wotb.web.hundred.entity.HundredBattleSubmission;
 import com.wotb.web.util.Mapper;
 import org.springframework.data.domain.Page;
@@ -50,6 +52,13 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
                 s.isReplayParseOk(), s.isReplayGameIdMatch(),
                 s.isReplayVehicleMatch(), s.isReplayDistinctBattles(),
                 s.getSubmittedAt(), s.getApprovedAt(), s.getRejectReason(), s.getDeleteReason());
+    }
+
+    /** 管理后台回放证据 metadata（admin-only；不含文件内容）。 */
+    public HundredReplayEvidenceDto toReplayEvidenceDto(final HundredBattleReplayEvidence e) {
+        return new HundredReplayEvidenceDto(
+                e.getId(), e.getSlot(), e.getOriginalFilename(),
+                e.getFileSize(), e.getArenaId(), e.getSha256(), e.getCreatedAt());
     }
 
     /** 管理后台详情；proofScreenshot 仅 PENDING 时对外（终态事务内已清空，双重保护）。 */

@@ -1,0 +1,202 @@
+package com.wotb.web.hundred.service;
+
+import com.wotb.web.hof.dto.ReplayDownload;
+import com.wotb.web.hof.service.HallOfFameService;
+import com.wotb.web.hof.storage.HallOfFameReplayStorage;
+import com.wotb.web.hundred.dto.HundredReplayEvidenceDto;
+import com.wotb.web.hundred.entity.HundredBattleReplayEvidence;
+import com.wotb.web.hundred.repository.HundredBattleReplayEvidenceRepository;
+import com.wotb.web.hundred.repository.HundredBattleSubmissionRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * 名人堂「百场」回放审核证据编排：原始 {@code .wotbreplay} 的内容寻址持久化、生命周期清理与 admin 访问。
+ *
+ * <p>物理文件复用 {@link HallOfFameReplayStorage}（{wotb.hof.replay-dir}/{sha256}.wotbreplay，
+ * 内容寻址幂等、原子发布、磁盘 reserve、路径防穿越）；本服务只维护 {@code hundred_battle_replay_evidence}
+ * 元数据行与文件清理编排。与 HoF 单场回放共享存储目录，因此物理文件删除必须<b>跨表引用计数</b>：
+ * hall_of_fame_record 与 hundred_battle_replay_evidence 均无引用时才删，保持
+ * 「DB 引用 H ⇒ 物理 H 存在」不变量。</p>
+ *
+ * <p>生命周期：创建时 {@link #storeAll} 落盘 → 单事务 {@link #attach} 写 5 行；
+ * 终态（APPROVE/REJECT/CANCEL）由 {@link #discardForSubmission} 同事务删行并在 commit 后
+ * best-effort 清理物理文件（失败仅 WARN，orphan 保留，与 HoF admin delete 同语义）。</p>
+ */
+@Service
+public class HundredReplayEvidenceService {
+
+    private static final Logger log = LoggerFactory.getLogger(HundredReplayEvidenceService.class);
+
+    private final HallOfFameReplayStorage storage;
+    private final HundredBattleReplayEvidenceRepository repository;
+    private final HundredBattleSubmissionRepository submissionRepository;
+    private final HundredBattleMapper mapper;
+    private final HallOfFameService hallOfFameService;
+
+    public HundredReplayEvidenceService(final HallOfFameReplayStorage storage,
+                                        final HundredBattleReplayEvidenceRepository repository,
+                                        final HundredBattleSubmissionRepository submissionRepository,
+                                        final HundredBattleMapper mapper,
+                                        final HallOfFameService hallOfFameService) {
+        this.storage = storage;
+        this.repository = repository;
+        this.submissionRepository = submissionRepository;
+        this.mapper = mapper;
+        this.hallOfFameService = hallOfFameService;
+    }
+
+    /** 待持久化的单个回放（createSubmission 解析阶段收集；bytes 为原始回放字节，内容寻址原样落盘）。 */
+    public record PendingReplay(int slot, String originalFilename, String sha256, long fileSize,
+                                String arenaId, byte[] data) {
+    }
+
+    /**
+     * 落盘一批回放（内容寻址幂等：同 hash 已存在直接复用）。任一文件存储失败 →
+     * best-effort 清理已存文件（引用计数保护，含 HoF 共享引用）+ 抛出
+     * {@code HallOfFameStorageException}（全局 handler 映射 REPLAY_STORAGE_FULL / REPLAY_STORAGE_ERROR）。
+     * 调用方必须保证：DB 尚未写入任何引用（失败清理不会误删他人文件）。
+     */
+    public void storeAll(final List<PendingReplay> replays) {
+        final List<String> stored = new ArrayList<>();
+        try {
+            for (final PendingReplay r : replays) {
+                storage.store(r.data(), r.sha256());
+                stored.add(r.sha256());
+            }
+        } catch (final RuntimeException e) {
+            cleanupFiles(stored);
+            throw e;
+        }
+    }
+
+    /**
+     * 单事务内插入 5 行 evidence（与 submission 创建同事务，原子；partial insert 不可能存在）。
+     */
+    @Transactional
+    public void attach(final long submissionId, final List<PendingReplay> replays) {
+        for (final PendingReplay r : replays) {
+            final HundredBattleReplayEvidence row = new HundredBattleReplayEvidence();
+            row.setSubmissionId(submissionId);
+            row.setSlot(r.slot());
+            row.setOriginalFilename(r.originalFilename());
+            row.setSha256(r.sha256());
+            row.setFileSize(r.fileSize());
+            row.setArenaId(r.arenaId());
+            repository.save(row);
+        }
+        repository.flush();
+    }
+
+    /**
+     * 终态迁移（APPROVE/REJECT/CANCEL）同事务调用：删除该 submission 全部 evidence 行，
+     * 并在事务 commit 后 best-effort 清理物理文件（跨表引用计数，失败仅 WARN 保留 orphan；
+     * 文件删除失败<b>不</b>回滚已完成的业务状态迁移）。
+     * {@code @Transactional}：被 approve/reject/cancel 的事务内调用时加入其事务（删除随业务
+     * 状态原子回滚）；独立调用（如集成测试）时自建事务，派生 delete 不抛 TransactionRequiredException。
+     */
+    @Transactional
+    public void discardForSubmission(final long submissionId) {
+        final List<String> hashes = repository.findBySubmissionId(submissionId).stream()
+                .map(HundredBattleReplayEvidence::getSha256)
+                .distinct()
+                .toList();
+        if (hashes.isEmpty()) {
+            return;
+        }
+        repository.deleteBySubmissionId(submissionId);
+        scheduleAfterCommit(() -> cleanupFiles(hashes));
+    }
+
+    /**
+     * 创建失败路径（文件已落盘但 DB 写入失败/回滚）：立即 best-effort 清理已存文件。
+     * 引用计数保护：本表或 HoF 记录仍引用该 hash 时保留文件（同 hash 内容相同，复用无害）。
+     */
+    public void cleanupStoredFiles(final List<String> sha256s) {
+        cleanupFiles(sha256s);
+    }
+
+    /** 管理后台 evidence 列表（admin-only；旧 PENDING 无 evidence → 空列表，不 500）。 */
+    @Transactional(readOnly = true)
+    public List<HundredReplayEvidenceDto> adminListEvidence(final long submissionId) {
+        requireSubmission(submissionId);
+        return repository.findBySubmissionIdOrderBySlotAsc(submissionId).stream()
+                .map(mapper::toReplayEvidenceDto)
+                .toList();
+    }
+
+    /**
+     * 管理后台下载单个回放（admin-only）：replayId 必须属于 submissionId（ownership 校验）；
+     * 无 hash / 物理文件缺失 → 明确 404。返回原始字节（内容寻址 = 用户原样字节）+
+     * 服务端清洗后的原始文件名（仅进 Content-Disposition，绝不参与路径）。
+     */
+    @Transactional(readOnly = true)
+    public ReplayDownload downloadEvidence(final long submissionId, final long replayId) {
+        requireSubmission(submissionId);
+        final HundredBattleReplayEvidence row = repository.findBySubmissionIdAndId(submissionId, replayId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "HUNDRED_REPLAY_EVIDENCE_NOT_FOUND"));
+        final Path file = storage.load(row.getSha256())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "HUNDRED_REPLAY_FILE_NOT_FOUND"));
+        try {
+            return new ReplayDownload(Files.readAllBytes(file), row.getOriginalFilename());
+        } catch (final IOException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "HUNDRED_REPLAY_FILE_NOT_FOUND");
+        }
+    }
+
+    // ── 辅助 ──────────────────────────────────────────────────────────────
+
+    private void requireSubmission(final long submissionId) {
+        if (!submissionRepository.existsById(submissionId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "HUNDRED_SUBMISSION_NOT_FOUND");
+        }
+    }
+
+    /** 物理文件清理：跨表引用计数（本表 + HoF 记录）均无引用才删；失败仅 WARN。 */
+    private void cleanupFiles(final List<String> sha256s) {
+        for (final String hash : sha256s) {
+            if (repository.countBySha256(hash) > 0) {
+                continue;
+            }
+            if (hallOfFameService.countReplayHashReferences(hash) > 0) {
+                continue;
+            }
+            try {
+                storage.delete(hash);
+                log.info("hundred evidence: replay file {} removed (no remaining reference)", hash);
+            } catch (final RuntimeException e) {
+                // DB 状态已提交；物理清理失败仅 WARN，orphan 保留供未来维护。
+                log.warn("hundred evidence: replay file {} cleanup failed, orphan retained: {}",
+                        hash, e.getMessage());
+            }
+        }
+    }
+
+    /** 事务 commit 后执行（终态文件清理）；无活动事务时立即执行（防御，如单元测试）。 */
+    private static void scheduleAfterCommit(final Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+        } else {
+            action.run();
+        }
+    }
+}
