@@ -2,6 +2,7 @@ package com.wotb.web.hundred.service;
 
 import com.wotb.web.hof.dto.ReplayDownload;
 import com.wotb.web.hof.service.HallOfFameService;
+import com.wotb.web.hof.service.ReplayHashLock;
 import com.wotb.web.hof.storage.HallOfFameReplayStorage;
 import com.wotb.web.hundred.dto.HundredReplayEvidenceDto;
 import com.wotb.web.hundred.entity.HundredBattleReplayEvidence;
@@ -45,17 +46,20 @@ public class HundredReplayEvidenceService {
     private final HundredBattleSubmissionRepository submissionRepository;
     private final HundredBattleMapper mapper;
     private final HallOfFameService hallOfFameService;
+    private final ReplayHashLock replayHashLock;
 
     public HundredReplayEvidenceService(final HallOfFameReplayStorage storage,
                                         final HundredBattleReplayEvidenceRepository repository,
                                         final HundredBattleSubmissionRepository submissionRepository,
                                         final HundredBattleMapper mapper,
-                                        final HallOfFameService hallOfFameService) {
+                                        final HallOfFameService hallOfFameService,
+                                        final ReplayHashLock replayHashLock) {
         this.storage = storage;
         this.repository = repository;
         this.submissionRepository = submissionRepository;
         this.mapper = mapper;
         this.hallOfFameService = hallOfFameService;
+        this.replayHashLock = replayHashLock;
     }
 
     /** 待持久化的单个回放（createSubmission 解析阶段收集；bytes 为原始回放字节，内容寻址原样落盘）。 */
@@ -166,23 +170,30 @@ public class HundredReplayEvidenceService {
         }
     }
 
-    /** 物理文件清理：跨表引用计数（本表 + HoF 记录）均无引用才删；失败仅 WARN。 */
+    /**
+     * 物理文件清理：跨表引用计数（本表 + HoF 记录）均无引用才删；失败仅 WARN。
+     * 引用检查 + 删除在 {@link ReplayHashLock}（PostgreSQL advisory lock）内串行化：
+     * 与 HoF 上传/删除同锁，防止「检查后、删除前」并发上传同 hash 引用该文件导致
+     * 破坏「DB 引用 H ⇒ 物理 H 存在」不变量（与 HallOfFameAdminService.cleanupReplayFile 同语义）。
+     */
     private void cleanupFiles(final List<String> sha256s) {
         for (final String hash : sha256s) {
-            if (repository.countBySha256(hash) > 0) {
-                continue;
-            }
-            if (hallOfFameService.countReplayHashReferences(hash) > 0) {
-                continue;
-            }
-            try {
-                storage.delete(hash);
-                log.info("hundred evidence: replay file {} removed (no remaining reference)", hash);
-            } catch (final RuntimeException e) {
-                // DB 状态已提交；物理清理失败仅 WARN，orphan 保留供未来维护。
-                log.warn("hundred evidence: replay file {} cleanup failed, orphan retained: {}",
-                        hash, e.getMessage());
-            }
+            replayHashLock.runWithLock(hash, () -> {
+                if (repository.countBySha256(hash) > 0) {
+                    return;
+                }
+                if (hallOfFameService.countReplayHashReferences(hash) > 0) {
+                    return;
+                }
+                try {
+                    storage.delete(hash);
+                    log.info("hundred evidence: replay file {} removed (no remaining reference)", hash);
+                } catch (final RuntimeException e) {
+                    // DB 状态已提交；物理清理失败仅 WARN，orphan 保留供未来维护。
+                    log.warn("hundred evidence: replay file {} cleanup failed, orphan retained: {}",
+                            hash, e.getMessage());
+                }
+            });
         }
     }
 

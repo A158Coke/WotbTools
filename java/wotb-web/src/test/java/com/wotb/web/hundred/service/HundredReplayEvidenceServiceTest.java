@@ -3,6 +3,7 @@ package com.wotb.web.hundred.service;
 import com.wotb.web.hof.dto.ReplayDownload;
 import com.wotb.web.hof.exception.HallOfFameStorageException;
 import com.wotb.web.hof.service.HallOfFameService;
+import com.wotb.web.hof.service.ReplayHashLock;
 import com.wotb.web.hof.storage.HallOfFameReplayStorage;
 import com.wotb.web.hundred.dto.HundredReplayEvidenceDto;
 import com.wotb.web.hundred.entity.HundredBattleReplayEvidence;
@@ -57,12 +58,21 @@ class HundredReplayEvidenceServiceTest {
     @Mock
     HallOfFameService hallOfFameService;
 
+    @Mock
+    ReplayHashLock replayHashLock;
+
     HundredReplayEvidenceService service;
 
     @BeforeEach
     void setUp() {
+        // runWithLock 是具体方法（mock 不执行方法体）：直接 stub 为执行 action（真实 advisory lock 由集成测试覆盖）
+        org.mockito.Mockito.lenient().doAnswer(inv -> {
+            ((Runnable) inv.getArgument(1)).run();
+            return null;
+        }).when(replayHashLock).runWithLock(anyString(), any());
         service = new HundredReplayEvidenceService(
-                storage, repository, submissionRepository, new HundredBattleMapper(), hallOfFameService);
+                storage, repository, submissionRepository, new HundredBattleMapper(),
+                hallOfFameService, replayHashLock);
     }
 
     private static HundredReplayEvidenceService.PendingReplay pending(final int slot, final String sha, final byte[] data) {
@@ -234,6 +244,8 @@ class HundredReplayEvidenceServiceTest {
         service.discardForSubmission(10L);
 
         verify(repository).deleteBySubmissionId(10L);
+        // 每个 hash 的「引用检查 + 删除」在 advisory lock 内串行化（防并发同 hash 上传破坏不变量）
+        verify(replayHashLock, times(2)).runWithLock(anyString(), any());
         verify(storage).delete(SHA_A);
         verify(storage).delete(SHA_B);
     }
@@ -247,6 +259,8 @@ class HundredReplayEvidenceServiceTest {
         service.discardForSubmission(10L);
 
         verify(repository).deleteBySubmissionId(10L);
+        // 即使决定保留文件，引用检查也在锁内完成（与 HoF 同语义）
+        verify(replayHashLock).runWithLock(anyString(), any());
         verify(storage, never()).delete(anyString());
     }
 
