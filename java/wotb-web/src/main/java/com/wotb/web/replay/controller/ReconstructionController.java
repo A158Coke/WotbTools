@@ -23,6 +23,7 @@ import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.dto.MapOverview;
 import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
+import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import com.wotb.web.replay.exception.AiReviewBusyException;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import com.wotb.web.replay.metrics.ReplayUsageMetrics;
@@ -228,8 +229,18 @@ public class ReconstructionController {
         }
     }
 
-    /** 稳定错误码提取（与 {@code @ExceptionHandler} 映射一致）。 */
-    private static String errorCodeOf(final Throwable e) {
+    /**
+     * 稳定错误码提取（与 {@code @ExceptionHandler} 映射一致）。
+     * <p>SSE 错误契约：对任何 {@link AiTimelineUnusableException} 只输出
+     * {@link AiTimelineUnusableException#STABLE_ERROR_CODE}；异常 message 冒号后的
+     * validation detail（{@code TIMELINE_*} / {@code NO_RECONSTRUCTION}）仅供后端
+     * 日志，绝不进入 SSE error 事件 / 客户端协议（GlobalExceptionHandler 同步路径按
+     * 冒号前前缀提取同一稳定码，message 前缀由异常构造函数保证单一来源）。</p>
+     */
+    static String errorCodeOf(final Throwable e) {
+        if (e instanceof AiTimelineUnusableException) {
+            return AiTimelineUnusableException.STABLE_ERROR_CODE;
+        }
         if (e instanceof AiUpstreamException upstream) {
             return upstream.code();
         }

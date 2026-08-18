@@ -30,6 +30,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import com.wotb.web.replay.ai.gateway.AiUpstreamException;
 import com.wotb.web.replay.dto.AnalyzeResponse;
 import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
+import com.wotb.web.replay.exception.AiTimelineUnusableException;
 import com.wotb.web.replay.ReplayUploadValidator;
 import com.wotb.web.replay.exception.ReplayFileCountExceededException;
 import org.springframework.stereotype.Service;
@@ -122,6 +123,12 @@ public class AiReplayReviewService {
         } catch (final ReplayFileCountExceededException e) {
             result = "rejected";
             errorType = "REPLAY_FILE_COUNT_EXCEEDED";
+            throw e;
+        } catch (final AiTimelineUnusableException e) {
+            // Timeline 不可用（PR #102 review）：拒绝且按稳定码记录错误类型指标
+            // （固定低基数值，不引入高基数 label；detail 只留日志不进指标）。
+            result = "rejected";
+            errorType = AiTimelineUnusableException.STABLE_ERROR_CODE;
             throw e;
         } catch (final IllegalArgumentException e) {
             // 文件校验 / NO_BATTLE_DATA / token budget 拒绝：均计入 rejected
