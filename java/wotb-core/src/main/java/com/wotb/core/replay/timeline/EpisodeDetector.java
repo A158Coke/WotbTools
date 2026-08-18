@@ -8,6 +8,18 @@ import java.util.List;
  * <p>禁止固定 30 秒机械切块；关键战术变化优先于固定长度：
  * 强信号（首次接敌/阵亡/存活人数变化/点数变化/信息空窗 HP 差异）触发切分，
  * 同时受时长约束（首选 15–45s，硬最小 8s，硬最大 60s）。覆盖整场、连续、无重叠。</p>
+ * <p><b>Episode state/event boundary contract（PR #102 review）</b>：segment 为半开秒区间
+ * {@code [start, end)}，second=start 的 delta 属于<b>该</b> Episode；
+ * {@code BattleFrame(second=N).world()} 已消费所有 battle-relative time ≤ N 的事件
+ * （stateAt=N、事件窗口 (N-1, N]），因此：
+ * <ul>
+ *   <li>{@code BEFORE} = {@code frameWorld(max(0, start - 1))}——非首段时表示 second=start
+ *       delta 发生<b>前</b>的状态（frame(start) 已包含该秒 delta 的效果，不能用作 BEFORE）；</li>
+ *   <li>首个 Episode 的 {@code start=0} 钳制到 0：t=0 之前无状态，取初始帧（roster 基线），
+ *       {@code BEFORE == AFTER} 于 t=0 已知状态；</li>
+ *   <li>{@code AFTER} = {@code frameWorld(lastInclusiveSecond)}（最后包含秒），包含该段全部
+ *       delta 的效果——保证 BEFORE → EVENTS → AFTER 因果顺序。</li>
+ * </ul></p>
  */
 public final class EpisodeDetector {
 
@@ -143,7 +155,10 @@ public final class EpisodeDetector {
             final double s = seg[0];
             final int lastInclusiveSecond = Math.min(seg[1] - 1, maxSecond);
             final double e = Math.max(s + MIN_EPISODE_SEC, lastInclusiveSecond + 1.0);
-            final WorldSummary before = frameWorld(timeline, seg[0]);
+            // BEFORE 因果契约：frame(second=seg[0]) 已消费 ≤seg[0] 的事件（含本段起始秒
+            // delta 的效果），BEFORE 必须取 seg[0]-1 的状态；首段 seg[0]=0 钳制到 0
+            // （t=0 前无状态，取初始帧）。after 取最后包含秒——BEFORE → EVENTS → AFTER 成立。
+            final WorldSummary before = frameWorld(timeline, Math.max(0, seg[0] - 1));
             final WorldSummary after = frameWorld(timeline, lastInclusiveSecond);
             final List<BattleDelta> deltas = collectDeltas(deltasBySecond, seg[0], seg[1]);
             episodes.add(new TacticalEpisode(

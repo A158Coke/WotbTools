@@ -1,7 +1,9 @@
 package com.wotb.core.replay.timeline;
 
 import com.wotb.core.model.Battle;
+import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.event.ReplayEvent;
+import com.wotb.core.replay.event.SupremacyPointsChangedEvent;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import org.junit.jupiter.api.Test;
 
@@ -174,5 +176,96 @@ class EpisodeDetectorTest {
             assertTrue(ep.before().friendlyTotal() >= 0);
             assertTrue(ep.before().enemyTotal() >= 0);
         }
+    }
+
+    @Test
+    void boundaryEpisodeBeforeExcludesSameSecondDestroyEffects() {
+        // Review V3 P0：second=30 敌车阵亡必须成为新 Episode 的起始强事件，
+        // BEFORE 表示该秒 delta 发生前的状态（enemyAlive=2）——
+        // 不能用 frame(30)（BattleFrame(30) 已消费 ≤30 事件 → 提前显示 enemyAlive=1）。
+        // 构造：录像者 HP delta 于 15/25s（score 0）抑制 ENEMY_LOST(6s) 引发的
+        // quiet-gap 切分（16/26s），使 30s 阵亡以 length=30 ≥ MIN 成为强信号边界。
+        final Battle battle = TimelineTestFixtures.battle(120.0);
+        final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
+        events.add(TimelineTestFixtures.health(TimelineTestFixtures.RECORDER_EID, 15, 1900, true));
+        events.add(TimelineTestFixtures.health(TimelineTestFixtures.RECORDER_EID, 25, 1800, true));
+        events.add(TimelineTestFixtures.health(TimelineTestFixtures.ENEMY_EID, 30, 0, false));
+        final ReplayReconstruction recon = TimelineTestFixtures.recon(120.0, events);
+        final BattleTimeline timeline = BattleTimelineBuilder
+                .build(battle, recon, TimelineTestFixtures.personalPerspective()).timeline();
+        assertNotNull(timeline);
+
+        final List<TacticalEpisode> episodes = EpisodeDetector.detect(timeline);
+        final TacticalEpisode boundary = episodes.stream()
+                .filter(ep -> Math.abs(ep.startSec() - 30.0) < 1e-9)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no episode starts at 30: " + episodes));
+
+        // BEFORE：阵亡发生前两辆敌车都存活（不含 second=30 阵亡效果）
+        assertEquals(2, boundary.before().enemyAlive(),
+                "BEFORE must exclude the same-second destroy effect: " + boundary.before());
+        // EVENTS：恰好一次 DESTROYED
+        final long destroyedInEpisode = boundary.deltas().stream()
+                .filter(d -> d.kind() == DeltaKind.DESTROYED)
+                .count();
+        assertEquals(1, destroyedInEpisode, "episode EVENTS must contain the destroy exactly once");
+        // AFTER：一辆敌车阵亡
+        assertEquals(1, boundary.after().enemyAlive(),
+                "AFTER must include the destroy effect: " + boundary.after());
+
+        // flatten 全部分集后 DESTROYED 仍恰好出现一次（半开段契约不回归）
+        final long totalDestroyed = episodes.stream()
+                .flatMap(ep -> ep.deltas().stream())
+                .filter(d -> d.kind() == DeltaKind.DESTROYED)
+                .count();
+        assertEquals(1, totalDestroyed,
+                "canonical DESTROYED delta must appear exactly once across all episodes");
+    }
+
+    @Test
+    void boundaryEpisodeBeforeExcludesSameSecondPointsChange() {
+        // Review V3 P0（POINTS_CHANGE 同类）：second=20 点数变化必须成为新 Episode 的
+        // 起始事件，BEFORE 不得提前包含该点数变化（friendlyPoints 仍为基线 0）。
+        // 构造：录像者 HP delta 于 12s（score 0）抑制 quiet-gap 切分（16s），
+        // second=20 由 HP_GAP_DELTA(score 2) + POINTS_CHANGE(score 1) = 3 触发强信号边界。
+        final Battle battle = TimelineTestFixtures.battle(120.0);
+        final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
+        // 先有基线点数（t=0，0 分），20s 变化为 100 → frame(20) 触发 POINTS_CHANGE
+        events.add(new SupremacyPointsChangedEvent(TimelineTestFixtures.seq++,
+                TimelineTestFixtures.ts(0), 8, DecodeConfidence.EXACT, 1, 0));
+        events.add(TimelineTestFixtures.health(TimelineTestFixtures.RECORDER_EID, 12, 1900, true));
+        events.add(new SupremacyPointsChangedEvent(TimelineTestFixtures.seq++,
+                TimelineTestFixtures.ts(20), 8, DecodeConfidence.EXACT, 1, 100));
+        events.add(TimelineTestFixtures.health(TimelineTestFixtures.RECORDER_EID, 20, 1800, true));
+        final ReplayReconstruction recon = TimelineTestFixtures.recon(120.0, events);
+        final BattleTimeline timeline = BattleTimelineBuilder
+                .build(battle, recon, TimelineTestFixtures.personalPerspective()).timeline();
+        assertNotNull(timeline);
+
+        final List<TacticalEpisode> episodes = EpisodeDetector.detect(timeline);
+        final TacticalEpisode boundary = episodes.stream()
+                .filter(ep -> Math.abs(ep.startSec() - 20.0) < 1e-9)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no episode starts at 20: " + episodes));
+
+        // BEFORE：点数变化前仍为基线 0（不含 second=20 的变化）
+        assertEquals(Integer.valueOf(0), boundary.before().friendlyPoints(),
+                "BEFORE must not include the same-second points change: " + boundary.before());
+        // EVENTS：恰好一次 POINTS_CHANGE
+        final long pointsChanges = boundary.deltas().stream()
+                .filter(d -> d.kind() == DeltaKind.POINTS_CHANGE)
+                .count();
+        assertEquals(1, pointsChanges, "episode EVENTS must contain the points change exactly once");
+        // AFTER：点数已更新为 100
+        assertEquals(Integer.valueOf(100), boundary.after().friendlyPoints(),
+                "AFTER must include the points change: " + boundary.after());
+
+        // flatten 全部分集后 POINTS_CHANGE 仍只出现一次
+        final long totalPointsChanges = episodes.stream()
+                .flatMap(ep -> ep.deltas().stream())
+                .filter(d -> d.kind() == DeltaKind.POINTS_CHANGE)
+                .count();
+        assertEquals(1, totalPointsChanges,
+                "canonical POINTS_CHANGE delta must appear exactly once across all episodes");
     }
 }
