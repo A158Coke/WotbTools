@@ -21,6 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -297,5 +298,104 @@ class HundredReplayEvidenceServiceTest {
         service.discardForSubmission(10L);
 
         verify(repository).deleteBySubmissionId(10L);
+    }
+
+    // ── requireCompleteEvidenceForApproval（approve 前置权威校验）────────────
+
+    private static List<HundredBattleReplayEvidence> rows(final int count) {
+        final List<HundredBattleReplayEvidence> out = new ArrayList<>();
+        for (int i = 1; i <= count; i++) {
+            out.add(evidenceRow((long) i, 10L, i, SHA_A));
+        }
+        return out;
+    }
+
+    private void filesExist(final List<HundredBattleReplayEvidence> rows) {
+        for (final HundredBattleReplayEvidence row : rows) {
+            when(storage.load(row.getSha256())).thenReturn(Optional.of(Path.of("t")));
+        }
+    }
+
+    @Test
+    void approvalValidationRejectsZeroEvidenceLegacyPending() {
+        when(repository.findBySubmissionIdOrderBySlotAsc(10L)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.requireCompleteEvidenceForApproval(10L, "data:image/png;base64,AAAA"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE");
+    }
+
+    @Test
+    void approvalValidationRejectsFourEvidence() {
+        when(repository.findBySubmissionIdOrderBySlotAsc(10L)).thenReturn(rows(4));
+
+        assertThatThrownBy(() -> service.requireCompleteEvidenceForApproval(10L, "data:image/png;base64,AAAA"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE");
+    }
+
+    @Test
+    void approvalValidationRejectsIncompleteSlots() {
+        // 5 行但 slot 重复（1,2,3,4,4）→ 防数据异常；DB unique 约束下正常不可能，防御性校验
+        final List<HundredBattleReplayEvidence> bad = rows(5);
+        bad.get(4).setSlot(4);
+        when(repository.findBySubmissionIdOrderBySlotAsc(10L)).thenReturn(bad);
+
+        assertThatThrownBy(() -> service.requireCompleteEvidenceForApproval(10L, "data:image/png;base64,AAAA"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE");
+    }
+
+    @Test
+    void approvalValidationRejectsMissingPhysicalFile() {
+        final List<HundredBattleReplayEvidence> complete = rows(5);
+        when(repository.findBySubmissionIdOrderBySlotAsc(10L)).thenReturn(complete);
+        // 只让前 4 个文件存在，第 5 个缺失
+        for (int i = 0; i < 4; i++) {
+            when(storage.load(complete.get(i).getSha256())).thenReturn(Optional.of(Path.of("t")));
+        }
+        when(storage.load(complete.get(4).getSha256())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.requireCompleteEvidenceForApproval(10L, "data:image/png;base64,AAAA"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("HUNDRED_REPLAY_FILE_NOT_FOUND");
+    }
+
+    @Test
+    void approvalValidationRejectsMissingScreenshot() {
+        final List<HundredBattleReplayEvidence> complete = rows(5);
+        when(repository.findBySubmissionIdOrderBySlotAsc(10L)).thenReturn(complete);
+        filesExist(complete);
+
+        assertThatThrownBy(() -> service.requireCompleteEvidenceForApproval(10L, null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE");
+        assertThatThrownBy(() -> service.requireCompleteEvidenceForApproval(10L, "not-a-data-url"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE");
+    }
+
+    @Test
+    void approvalValidationPassesWithCompleteEvidence() {
+        final List<HundredBattleReplayEvidence> complete = rows(5);
+        when(repository.findBySubmissionIdOrderBySlotAsc(10L)).thenReturn(complete);
+        filesExist(complete);
+
+        service.requireCompleteEvidenceForApproval(10L, "data:image/png;base64,AAAA");
+
+        // 校验通过：无异常；不读取/不清理任何东西
+        verify(storage, never()).delete(anyString());
+        verify(repository, never()).deleteBySubmissionId(anyLong());
+    }
+
+    @Test
+    void countReferencesSumsHundredAndHofExactlyOnce() {
+        when(repository.countBySha256(SHA_A)).thenReturn(1L);
+        when(hallOfFameService.countReplayHashReferences(SHA_A)).thenReturn(1L);
+        assertThat(service.countReferences(SHA_A)).isEqualTo(2L);
+
+        when(repository.countBySha256(SHA_A)).thenReturn(0L);
+        when(hallOfFameService.countReplayHashReferences(SHA_A)).thenReturn(0L);
+        assertThat(service.countReferences(SHA_A)).isZero();
     }
 }

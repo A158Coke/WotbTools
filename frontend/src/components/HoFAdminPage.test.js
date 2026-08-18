@@ -221,6 +221,7 @@ describe('HoFAdminPage', () => {
       page: 1, size: 50, totalItems: 1, totalPages: 1
     })
     hofAdminApi.hofAdminHundredDetail.mockResolvedValue(pendingDetail)
+    hofAdminApi.hofAdminHundredReplays.mockResolvedValue(replayEvidence) // 完整 5 evidence → approve 可用
     const wrapper = mountPage()
     await flushPromises()
     await switchToHundred(wrapper)
@@ -320,6 +321,7 @@ describe('HoFAdminPage', () => {
       items: [pendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1
     })
     hofAdminApi.hofAdminHundredDetail.mockResolvedValue(pendingDetail)
+    hofAdminApi.hofAdminHundredReplays.mockResolvedValue(replayEvidence) // 完整 5 evidence → approve 可用
     const wrapper = mountPage()
     await flushPromises()
     await switchToHundred(wrapper)
@@ -422,5 +424,51 @@ describe('HoFAdminPage', () => {
     await wrapper.findAll('.hundred-proof-row .btn-sm')[0].trigger('click')
     expect(clickSpy).toHaveBeenCalled()
     clickSpy.mockRestore()
+  })
+
+  function approveBtn(wrapper) {
+    return wrapper.findAll('.hof-review-modal button').find(b => b.text() === 'hundredAdmin.approve')
+  }
+
+  it('legacy PENDING with 0 evidence disables approve but keeps reject available', async () => {
+    const wrapper = mountPage()
+    await openReviewWithEvidence(wrapper, [])
+
+    expect(approveBtn(wrapper).attributes('disabled')).toBeDefined()
+    // REJECT 在 evidence 不完整时仍可用
+    const rejectBtn = wrapper.findAll('.hof-review-modal button').find(b => b.text() === 'hundredAdmin.reject')
+    expect(rejectBtn.attributes('disabled')).toBeUndefined()
+    // 点击禁用按钮不会进入 approve-confirm
+    await approveBtn(wrapper).trigger('click')
+    expect(wrapper.find('.hof-review-modal').text()).not.toContain('hundredAdmin.approveConfirm')
+    expect(hofAdminApi.hofAdminHundredApprove).not.toHaveBeenCalled()
+  })
+
+  it('evidence API failure disables approve', async () => {
+    const wrapper = mountPage()
+    hofAdminApi.hofAdminHundredList.mockResolvedValue({
+      items: [pendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1
+    })
+    hofAdminApi.hofAdminHundredDetail.mockResolvedValue(pendingDetail)
+    hofAdminApi.hofAdminHundredReplays.mockRejectedValue({ code: 'NETWORK_ERROR' })
+    await flushPromises()
+    await switchToHundred(wrapper)
+    await wrapper.find('.hof-hundred .actions .btn-sm').trigger('click')
+    await flushPromises()
+
+    expect(approveBtn(wrapper).attributes('disabled')).toBeDefined()
+    expect(wrapper.findAll('.hof-review-modal button').find(b => b.text() === 'hundredAdmin.reject').attributes('disabled')).toBeUndefined()
+  })
+
+  it('4 evidence disables approve', async () => {
+    const wrapper = mountPage()
+    await openReviewWithEvidence(wrapper, replayEvidence.slice(0, 4))
+    expect(approveBtn(wrapper).attributes('disabled')).toBeDefined()
+  })
+
+  it('exactly 5 evidence enables approve', async () => {
+    const wrapper = mountPage()
+    await openReviewWithEvidence(wrapper, replayEvidence)
+    expect(approveBtn(wrapper).attributes('disabled')).toBeUndefined()
   })
 })

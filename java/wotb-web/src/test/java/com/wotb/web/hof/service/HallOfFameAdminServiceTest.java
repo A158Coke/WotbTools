@@ -145,11 +145,12 @@ class HallOfFameAdminServiceTest {
 
     @Test
     void deleteSharedHashRetainsPhysicalFile() {
+        // 1 HoF + 0 Hundred → TOTAL=1 → 保留
         login();
         runLockInline();
         final HallOfFameRecord r = record(42L, "c".repeat(64));
         when(repository.findById(42L)).thenReturn(Optional.of(r));
-        when(repository.countByReplayHash("c".repeat(64))).thenReturn(2L);
+        when(hundredEvidenceService.countReferences("c".repeat(64))).thenReturn(1L);
 
         service().deleteEntry(42L);
 
@@ -160,11 +161,12 @@ class HallOfFameAdminServiceTest {
 
     @Test
     void deleteLastReferenceRemovesPhysicalFile() {
+        // 0 HoF + 0 Hundred → TOTAL=0 → 删除
         login();
         runLockInline();
         final HallOfFameRecord r = record(42L, "d".repeat(64));
         when(repository.findById(42L)).thenReturn(Optional.of(r));
-        when(repository.countByReplayHash("d".repeat(64))).thenReturn(0L);
+        when(hundredEvidenceService.countReferences("d".repeat(64))).thenReturn(0L);
 
         service().deleteEntry(42L);
 
@@ -173,13 +175,28 @@ class HallOfFameAdminServiceTest {
 
     @Test
     void deleteLastHoFReferenceRetainsFileWhenHundredEvidenceStillReferences() {
-        // Blocker 1 对称引用计数：HoF refs = 0 但 Hundred evidence 仍引用 → 物理文件必须保留
+        // 0 HoF + 1 Hundred → TOTAL=1 → 保留
         login();
         runLockInline();
         final HallOfFameRecord r = record(42L, "e".repeat(64));
         when(repository.findById(42L)).thenReturn(Optional.of(r));
-        when(repository.countByReplayHash("e".repeat(64))).thenReturn(0L);
         when(hundredEvidenceService.countReferences("e".repeat(64))).thenReturn(1L);
+
+        service().deleteEntry(42L);
+
+        verify(auditRepository).save(any(HallOfFameAdminLog.class));
+        verify(repository).delete(r);
+        verify(storage, never()).delete(anyString());
+    }
+
+    @Test
+    void deleteRetainsFileWhenBothDomainsReference() {
+        // 1 HoF + 1 Hundred → TOTAL=2 → 保留（且日志引用数正确）
+        login();
+        runLockInline();
+        final HallOfFameRecord r = record(42L, "f".repeat(64));
+        when(repository.findById(42L)).thenReturn(Optional.of(r));
+        when(hundredEvidenceService.countReferences("f".repeat(64))).thenReturn(2L);
 
         service().deleteEntry(42L);
 

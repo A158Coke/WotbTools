@@ -111,9 +111,12 @@ class HundredBattleSubmissionIntegrationTest {
 
     /** 场景 A：existing CURRENT(4000) + PENDING(4200) → approve(4200) 成功 → 恰好一个 CURRENT、旧行 SUPERSEDED。 */
     @Test
-    void approveReplacesCurrentWithSingleCurrentRow() {
+    void approveReplacesCurrentWithSingleCurrentRow() throws Exception {
         final HundredBattleSubmission current = insertRow("CURRENT", 4000, 150);
         final HundredBattleSubmission pending = insertRow("PENDING", 4200, 150);
+        pending.setProofScreenshot("data:image/png;base64,AAAA");
+        repository.saveAndFlush(pending);
+        attachCompleteEvidence(pending.getId());
 
         service.approve("admin-sub", pending.getId(), 4200, 150);
 
@@ -132,9 +135,14 @@ class HundredBattleSubmissionIntegrationTest {
      * 旧行仍 CURRENT、PENDING 无半完成状态、CURRENT 数量不变。
      */
     @Test
-    void approveRollbackKeepsOldCurrentAndPendingUnchanged() {
+    void approveRollbackKeepsOldCurrentAndPendingUnchanged() throws Exception {
         final HundredBattleSubmission current = insertRow("CURRENT", 4000, 150);
         final HundredBattleSubmission pending = insertRow("PENDING", 4200, 150);
+        pending.setProofScreenshot("data:image/png;base64,AAAA");
+        repository.saveAndFlush(pending);
+        // 通过 APPROVE 前置 evidence 校验（否则会先被 HUNDRED_INCOMPLETE_REVIEW_EVIDENCE 拦截，
+        // 测不到 approved_by 溢出导致的 rollback 场景）：附 5 完整 evidence + 物理文件
+        attachCompleteEvidence(pending.getId());
 
         assertThrows(DataIntegrityViolationException.class,
                 () -> service.approve("x".repeat(200), pending.getId(), 4200, 150));
@@ -193,12 +201,74 @@ class HundredBattleSubmissionIntegrationTest {
                 "无引用后物理文件应被清理");
     }
 
+    /** 给 PENDING 附 exactly 5 行 evidence + 物理文件（通过 APPROVE 前置校验用）。 */
+    private void attachCompleteEvidence(final long submissionId) throws Exception {
+        final List<HundredReplayEvidenceService.PendingReplay> replays = new ArrayList<>();
+        for (int i = 1; i <= 5; i++) {
+            final byte[] data = ("evidence-" + submissionId + "-" + i + "-" + UUID.randomUUID()).getBytes();
+            replays.add(new HundredReplayEvidenceService.PendingReplay(
+                    i, "battle-" + i + ".wotbreplay", sha256(data), data.length, "arena-" + i, data));
+        }
+        evidenceService.storeAll(replays);
+        evidenceService.attach(submissionId, replays);
+    }
+
     private static String sha256(final byte[] data) {
         try {
             final MessageDigest md = MessageDigest.getInstance("SHA-256");
             return HexFormat.of().formatHex(md.digest(data));
         } catch (final NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
+        }
+    }
+
+    /**
+     * Blocker：legacy PENDING（无 replay evidence）无法 APPROVE——backend authoritative 拒绝，
+     * status 保持 PENDING、不产生 CURRENT、evidence 无残留。
+     */
+    @Test
+    void approveRejectsLegacyPendingWithoutEvidence() {
+        final HundredBattleSubmission s = insertRow("PENDING", 4200, 150);
+        s.setProofScreenshot("data:image/png;base64,AAAA");
+        repository.saveAndFlush(s);
+
+        final IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> service.approve("admin-sub", s.getId(), 4200, 150));
+        assertEquals("HUNDRED_INCOMPLETE_REVIEW_EVIDENCE", ex.getMessage());
+        assertEquals("PENDING", repository.findById(s.getId()).orElseThrow().getStatus());
+        assertEquals(0, currentCount(), "approve 失败不得产生 CURRENT");
+        assertTrue(evidenceRepository.findBySubmissionId(s.getId()).isEmpty());
+    }
+
+    /**
+     * Blocker：完整审核证据（screenshot + exactly 5 evidence + 5 物理文件）才允许 APPROVE；
+     * 成功后按 terminal lifecycle 清理 evidence 行与物理文件。
+     */
+    @Test
+    void approveWithCompleteEvidenceSucceedsAndCleansEvidence() throws Exception {
+        final HundredBattleSubmission s = insertRow("PENDING", 4200, 150);
+        s.setProofScreenshot("data:image/png;base64,AAAA");
+        repository.saveAndFlush(s);
+        final Path storageDir = Path.of("data/replays-it");
+
+        final List<HundredReplayEvidenceService.PendingReplay> replays = new ArrayList<>();
+        for (int i = 1; i <= 5; i++) {
+            final byte[] data = ("approve-evidence-" + i + "-" + UUID.randomUUID()).getBytes();
+            replays.add(new HundredReplayEvidenceService.PendingReplay(
+                    i, "battle-" + i + ".wotbreplay", sha256(data), data.length, "arena-" + i, data));
+        }
+        evidenceService.storeAll(replays);
+        evidenceService.attach(s.getId(), replays);
+        assertEquals(5, evidenceRepository.findBySubmissionId(s.getId()).size());
+
+        service.approve("admin-sub", s.getId(), 4200, 150);
+
+        assertEquals("CURRENT", repository.findById(s.getId()).orElseThrow().getStatus());
+        // 终态：evidence 行同事务删除 + commit 后物理文件清理
+        assertTrue(evidenceRepository.findBySubmissionId(s.getId()).isEmpty());
+        for (final HundredReplayEvidenceService.PendingReplay r : replays) {
+            assertFalse(Files.exists(storageDir.resolve(r.sha256() + ".wotbreplay")),
+                    "approve 后物理文件应清理: " + r.sha256());
         }
     }
 }
